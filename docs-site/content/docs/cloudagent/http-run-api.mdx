@@ -1,0 +1,191 @@
+---
+title: CloudAgent HTTP Run API
+description: Durable CloudAgent HTTP protocol for sessions, runs, replay, and results.
+owner: cloudagent
+status: active
+last_reviewed: "2026-06-16"
+tags:
+  - cloudagent
+  - http-run
+  - durable-runs
+  - channelgateway
+source_path: cloudagent/gateway/docs/cloudagent-http-run-integration.md
+---
+
+The CloudAgent HTTP Run API is for channel gateways, backend services, and test
+clients that need to call CloudAgent without holding a long-lived ACP
+WebSocket.
+
+Use this API for durable channel traffic. Do not multiplex many channel
+conversations over one ACP WebSocket.
+
+## Base URL
+
+Use the CloudAgent gateway HTTP base URL. Do not append `/acp`.
+
+Devcloud internal endpoint:
+
+```text
+http://21.6.84.6
+```
+
+In-cluster endpoint:
+
+```text
+http://cloudagent-gateway.dep.svc.cluster.local
+```
+
+## Authentication And Scope
+
+Every request must identify the caller scope by either:
+
+| Method | Headers |
+| --- | --- |
+| Bearer token | `Authorization: Bearer <token>` |
+| Tenant/project scope | `X-Tenant-ID` and `X-Project-ID` |
+
+Devcloud test scope:
+
+```bash
+export CLOUDAGENT_BASE_URL=http://21.6.84.6
+export CLOUDAGENT_TENANT_ID=tenant-devcloud-dep
+export CLOUDAGENT_PROJECT_ID=project-devcloud-dep
+```
+
+Common error if scope is missing:
+
+```json
+{
+  "error": {
+    "message": "X-Tenant-ID/X-Project-ID or Authorization: Bearer is required",
+    "type": "invalid_request_error",
+    "code": "identity_missing"
+  }
+}
+```
+
+## Capability Probe
+
+```bash
+curl -sS \
+  -H "X-Tenant-ID: $CLOUDAGENT_TENANT_ID" \
+  -H "X-Project-ID: $CLOUDAGENT_PROJECT_ID" \
+  "$CLOUDAGENT_BASE_URL/v1/cloudagent/capabilities"
+```
+
+Expected fields:
+
+```json
+{
+  "object": "cloudagent.capabilities",
+  "protocol": "cloudagent.run",
+  "version": "v1",
+  "run_protocol": true,
+  "features": [
+    "session_create",
+    "session_load",
+    "session_list",
+    "run_submit",
+    "run_list",
+    "idempotent_run_id",
+    "after_seq_replay",
+    "ndjson_event_stream",
+    "durable_result",
+    "cancel"
+  ]
+}
+```
+
+## Basic Flow
+
+1. Create or load a session.
+2. Submit a run with a caller-generated `run_id`.
+3. Read events using `after_seq`.
+4. Read the final durable result.
+5. If the observer disconnects, resume from the last committed `after_seq`.
+
+## Stable Endpoints
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/v1/cloudagent/capabilities` | Probe protocol support. |
+| `GET` | `/v1/cloudagent/sessions` | List caller-scoped sessions. |
+| `POST` | `/v1/cloudagent/sessions` | Create a session. |
+| `GET` | `/v1/cloudagent/sessions/{session_id}` | Load a session. |
+| `POST` | `/v1/cloudagent/sessions/{session_id}/runs` | Submit a durable run. |
+| `GET` | `/v1/cloudagent/runs` | List caller-scoped runs. |
+| `GET` | `/v1/cloudagent/runs/{run_id}` | Read run status. |
+| `GET` | `/v1/cloudagent/runs/{run_id}/events?after_seq=N` | Replay events. |
+| `GET` | `/v1/cloudagent/runs/{run_id}/events?after_seq=N&stream=true` | Stream NDJSON events. |
+| `GET` | `/v1/cloudagent/runs/{run_id}/result` | Read durable result. |
+| `POST` | `/v1/cloudagent/runs/{run_id}/cancel` | Cancel a run. |
+
+## Create Session
+
+```bash
+curl -sS \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-ID: $CLOUDAGENT_TENANT_ID" \
+  -H "X-Project-ID: $CLOUDAGENT_PROJECT_ID" \
+  -d '{
+    "cwd": "/workspace",
+    "agent_version": "builtin.v1",
+    "workspace_version": "builtin.v1"
+  }' \
+  "$CLOUDAGENT_BASE_URL/v1/cloudagent/sessions"
+```
+
+Response:
+
+```json
+{
+  "session_id": "session_xxx",
+  "state": "ready",
+  "runtime_generation": 1
+}
+```
+
+## Submit Run
+
+Generate a stable idempotency key per inbound channel message:
+
+```bash
+export RUN_ID="job_channel_${MESSAGE_ID}"
+```
+
+Submit:
+
+```bash
+curl -sS \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-ID: $CLOUDAGENT_TENANT_ID" \
+  -H "X-Project-ID: $CLOUDAGENT_PROJECT_ID" \
+  -d '{
+    "run_id": "'$RUN_ID'",
+    "input": "你好",
+    "cwd": "/workspace"
+  }' \
+  "$CLOUDAGENT_BASE_URL/v1/cloudagent/sessions/$SESSION_ID/runs"
+```
+
+## Event Replay And Stream
+
+Replay committed events:
+
+```bash
+curl -sS \
+  -H "X-Tenant-ID: $CLOUDAGENT_TENANT_ID" \
+  -H "X-Project-ID: $CLOUDAGENT_PROJECT_ID" \
+  "$CLOUDAGENT_BASE_URL/v1/cloudagent/runs/$RUN_ID/events?after_seq=0"
+```
+
+Stream new events as newline-delimited JSON:
+
+```bash
+curl -N \
+  -H "X-Tenant-ID: $CLOUDAGENT_TENANT_ID" \
+  -H "X-Project-ID: $CLOUDAGENT_PROJECT_ID" \
+  "$CLOUDAGENT_BASE_URL/v1/cloudagent/runs/$RUN_ID/events?after_seq=0&stream=true"
+```
+
+The stream is HTTP NDJSON. It is not WebSocket and not Server-Sent Events.

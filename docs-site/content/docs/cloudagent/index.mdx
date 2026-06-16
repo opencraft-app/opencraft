@@ -1,0 +1,35 @@
+---
+title: CloudAgent
+description: Runtime and protocol documentation for CloudAgent.
+owner: cloudagent
+status: active
+last_reviewed: "2026-06-16"
+tags:
+  - cloudagent
+  - runtime
+  - protocol
+source_path: docs-site/content/docs/cloudagent/index.mdx
+---
+
+CloudAgent is the agent runtime and gateway surface for durable sessions,
+workspace-backed execution, and channel integrations.
+
+Start with the HTTP Run API if you are integrating a backend service, channel
+adapter, or automated test client.
+
+## Key Surfaces
+
+| Surface | Use |
+| --- | --- |
+| CloudAgent HTTP Run API | Durable session/run protocol for non-WebSocket clients. |
+| ACP | Interactive protocol compatibility layer. |
+| Wisp runtime | Persistent workspace and runtime recovery layer. |
+| ChannelGateway | Channel adapter that should use the HTTP Run API for durable traffic. |
+
+## Recommended Integration Path
+
+1. Probe `/v1/cloudagent/capabilities`.
+2. Create or load a CloudAgent session.
+3. Submit a run with an idempotent caller-generated `run_id`.
+4. Replay or stream events with `after_seq`.
+5. Read the durable result.

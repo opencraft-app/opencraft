@@ -1,0 +1,56 @@
+---
+title: makedocs.sh Contract
+description: Divide-and-conquer documentation generation contract for mono2 directories.
+owner: platform
+status: active
+last_reviewed: "2026-06-16"
+tags:
+  - mono2
+  - docs
+  - makedocs
+  - ai
+source_path: docs-site/content/docs/makedocs.mdx
+---
+
+`makedocs.sh` is the mono2 documentation generation contract.
+
+Each directory may own a local `makedocs.sh` that understands only that
+directory. The root script orchestrates those component scripts and then asks
+the docs site to render and validate the portal.
+
+## Why
+
+The docs portal should not need to understand every subsystem. CloudAgent,
+Wisp, ChannelGateway, frontend services, and future components can each export
+their own AI-friendly documentation fragments.
+
+## Root Behavior
+
+The root `./makedocs.sh`:
+
+1. sets `MONO2_DOCS_ROOT` to the root `docs-site`;
+2. calls component-level `makedocs.sh` scripts;
+3. runs `docs-site/makedocs.sh` to build the site.
+
+## Component Behavior
+
+A component `makedocs.sh` should:
+
+- read only its own directory unless explicitly configured otherwise;
+- write generated docs into `$MONO2_DOCS_ROOT/content/docs/<section>`;
+- make output deterministic so generated files are reviewable;
+- avoid requiring production credentials.
+
+## Current Component
+
+CloudAgent currently generates:
+
+```text
+docs-site/content/docs/cloudagent/generated-index.mdx
+```
+
+from:
+
+```text
+cloudagent/gateway/docs/*.md
+```
