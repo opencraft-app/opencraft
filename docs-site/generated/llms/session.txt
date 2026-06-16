@@ -1,0 +1,8 @@
+# session
+
+Component ID: session
+Source path: session
+Docs contract level: 0
+
+## Key documentation
+- Session: session/README.md

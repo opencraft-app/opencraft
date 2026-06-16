@@ -1,0 +1,648 @@
+{
+  "components": {
+    "parameters": {
+      "RunID": {
+        "in": "path",
+        "name": "run_id",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "SessionID": {
+        "in": "path",
+        "name": "session_id",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "schemas": {
+      "CancelRunResponse": {
+        "properties": {
+          "cancelled": {
+            "type": "boolean"
+          },
+          "run_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "cancelled"
+        ],
+        "type": "object"
+      },
+      "Capabilities": {
+        "properties": {
+          "endpoints": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "features": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "object": {
+            "const": "cloudagent.capabilities",
+            "type": "string"
+          },
+          "protocol": {
+            "const": "cloudagent.run",
+            "type": "string"
+          },
+          "run_protocol": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "object",
+          "protocol",
+          "version",
+          "run_protocol",
+          "features",
+          "endpoints"
+        ],
+        "type": "object"
+      },
+      "CreateSessionRequest": {
+        "properties": {
+          "agent_version": {
+            "default": "builtin.v1",
+            "type": "string"
+          },
+          "cwd": {
+            "default": "/workspace",
+            "type": "string"
+          },
+          "workspace_version": {
+            "default": "builtin.v1",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "EventList": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/RunEvent"
+            },
+            "type": "array"
+          },
+          "run": {
+            "$ref": "#/components/schemas/Run"
+          }
+        },
+        "required": [
+          "events"
+        ],
+        "type": "object"
+      },
+      "Run": {
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "last_seq": {
+            "type": "integer"
+          },
+          "output_text": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "stop_reason": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "status"
+        ],
+        "type": "object"
+      },
+      "RunEvent": {
+        "properties": {
+          "data": {
+            "type": "object"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "seq": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seq",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "RunList": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/Run"
+            },
+            "type": "array"
+          },
+          "object": {
+            "const": "list",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object",
+          "data"
+        ],
+        "type": "object"
+      },
+      "RunResult": {
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "output_text": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "status"
+        ],
+        "type": "object"
+      },
+      "Session": {
+        "properties": {
+          "closed": {
+            "type": "boolean"
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "runtime_generation": {
+            "type": "integer"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "type": "object"
+      },
+      "SessionList": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/Session"
+            },
+            "type": "array"
+          },
+          "object": {
+            "const": "list",
+            "type": "string"
+          }
+        },
+        "required": [
+          "object",
+          "data"
+        ],
+        "type": "object"
+      },
+      "SubmitRunRequest": {
+        "properties": {
+          "cwd": {
+            "default": "/workspace",
+            "type": "string"
+          },
+          "inbox_mode": {
+            "enum": [
+              "prompt",
+              "steer",
+              "follow_up"
+            ],
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "text"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "scheme": "bearer",
+        "type": "http"
+      },
+      "tenantProjectScope": {
+        "description": "Use together with X-Project-ID.",
+        "in": "header",
+        "name": "X-Tenant-ID",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "description": "Durable CloudAgent HTTP protocol for sessions, runs, replay, and results. 用于会话、运行、回放和结果读取的 CloudAgent 持久化 HTTP 协议。",
+    "title": "CloudAgent HTTP Run API",
+    "version": "v1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/v1/cloudagent/capabilities": {
+      "get": {
+        "description": "Probe CloudAgent HTTP Run protocol support and feature flags. 探测 CloudAgent HTTP Run 协议支持和功能开关。",
+        "operationId": "getCloudAgentCapabilities",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Capabilities"
+                }
+              }
+            },
+            "description": "CloudAgent capability metadata. CloudAgent 能力元数据。"
+          }
+        },
+        "summary": "Get CloudAgent capabilities",
+        "tags": [
+          "CloudAgent"
+        ]
+      }
+    },
+    "/v1/cloudagent/runs": {
+      "get": {
+        "description": "List caller-scoped durable runs, optionally filtered by session. 列出调用方作用域内的持久化运行，可按会话过滤。",
+        "operationId": "listCloudAgentRuns",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunList"
+                }
+              }
+            },
+            "description": "Caller-scoped run list. 调用方作用域内的运行列表。"
+          }
+        },
+        "summary": "List CloudAgent runs",
+        "tags": [
+          "CloudAgent"
+        ]
+      }
+    },
+    "/v1/cloudagent/runs/{run_id}": {
+      "get": {
+        "description": "Read durable run status. 读取持久化运行状态。",
+        "operationId": "getCloudAgentRun",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RunID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            },
+            "description": "CloudAgent response. CloudAgent 响应。"
+          }
+        },
+        "summary": "Get CloudAgent run",
+        "tags": [
+          "CloudAgent"
+        ]
+      }
+    },
+    "/v1/cloudagent/runs/{run_id}/cancel": {
+      "post": {
+        "description": "Request cancellation for a durable run. 请求取消持久化运行。",
+        "operationId": "cancelCloudAgentRun",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RunID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelRunResponse"
+                }
+              }
+            },
+            "description": "Cancellation request result. 取消请求结果。"
+          }
+        },
+        "summary": "Cancel CloudAgent run",
+        "tags": [
+          "CloudAgent"
+        ]
+      }
+    },
+    "/v1/cloudagent/runs/{run_id}/events": {
+      "get": {
+        "description": "Replay run events after a committed sequence number. When `stream=true`, responses are newline-delimited JSON. 在已提交序号之后回放运行事件；`stream=true` 时响应为 NDJSON。",
+        "operationId": "getCloudAgentRunEvents",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RunID"
+          },
+          {
+            "in": "query",
+            "name": "after_seq",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "stream",
+            "required": false,
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventList"
+                }
+              },
+              "application/x-ndjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunEvent"
+                }
+              }
+            },
+            "description": "Run events as JSON or NDJSON depending on `stream`. 根据 `stream` 返回 JSON 或 NDJSON 运行事件。"
+          }
+        },
+        "summary": "Replay or stream CloudAgent run events",
+        "tags": [
+          "CloudAgent"
+        ]
+      }
+    },
+    "/v1/cloudagent/runs/{run_id}/result": {
+      "get": {
+        "description": "Read the final durable run result. 读取最终持久化运行结果。",
+        "operationId": "getCloudAgentRunResult",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RunID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunResult"
+                }
+              }
+            },
+            "description": "Final durable run result. 最终持久化运行结果。"
+          }
+        },
+        "summary": "Get CloudAgent run result",
+        "tags": [
+          "CloudAgent"
+        ]
+      }
+    },
+    "/v1/cloudagent/sessions": {
+      "get": {
+        "description": "List caller-scoped CloudAgent sessions. 列出调用方作用域内的 CloudAgent 会话。",
+        "operationId": "listCloudAgentSessions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionList"
+                }
+              }
+            },
+            "description": "Caller-scoped session list. 调用方作用域内的会话列表。"
+          }
+        },
+        "summary": "List CloudAgent sessions",
+        "tags": [
+          "CloudAgent"
+        ]
+      },
+      "post": {
+        "description": "Create a CloudAgent session in the caller scope. 在调用方作用域内创建 CloudAgent 会话。",
+        "operationId": "createCloudAgentSession",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSessionRequest"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            },
+            "description": "CloudAgent session. CloudAgent 会话。"
+          }
+        },
+        "summary": "Create CloudAgent session",
+        "tags": [
+          "CloudAgent"
+        ]
+      }
+    },
+    "/v1/cloudagent/sessions/{session_id}": {
+      "get": {
+        "description": "Load a caller-scoped CloudAgent session. 加载调用方作用域内的 CloudAgent 会话。",
+        "operationId": "loadCloudAgentSession",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SessionID"
+          },
+          {
+            "in": "query",
+            "name": "cwd",
+            "required": false,
+            "schema": {
+              "default": "/workspace",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            },
+            "description": "CloudAgent session. CloudAgent 会话。"
+          }
+        },
+        "summary": "Load CloudAgent session",
+        "tags": [
+          "CloudAgent"
+        ]
+      }
+    },
+    "/v1/cloudagent/sessions/{session_id}/runs": {
+      "post": {
+        "description": "Submit an idempotent durable run to a CloudAgent session. 向 CloudAgent 会话提交幂等的持久化运行。",
+        "operationId": "submitCloudAgentRun",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SessionID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            },
+            "description": "CloudAgent response. CloudAgent 响应。"
+          }
+        },
+        "summary": "Submit CloudAgent run",
+        "tags": [
+          "CloudAgent"
+        ]
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    },
+    {
+      "tenantProjectScope": []
+    }
+  ],
+  "servers": [
+    {
+      "description": "Devcloud internal endpoint / Devcloud 内网入口",
+      "url": "http://21.6.84.6"
+    },
+    {
+      "description": "Devcloud in-cluster endpoint / Devcloud 集群内入口",
+      "url": "http://cloudagent-gateway.dep.svc.cluster.local"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+# nextgen-dashboard
+
+Component ID: nextgen-dashboard
+Source path: nextgen-dashboard
+Docs contract level: 0
+
+## Key documentation
+- Nextgen Dashboard Agent Guide: nextgen-dashboard/AGENTS.md
+- nextgen-dashboard: nextgen-dashboard/README.md

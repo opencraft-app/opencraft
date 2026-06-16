@@ -1,0 +1,44 @@
+{
+  "object": "mono2.docs.fragment",
+  "version": "v1",
+  "level": 2,
+  "component": "ai-gateway",
+  "component_path": "ai-gateway",
+  "owner": "ai-gateway",
+  "source_path": "ai-gateway",
+  "docs": [
+    {
+      "kind": "agents",
+      "path": "ai-gateway/AGENTS.md",
+      "title": "AI Gateway Deploy Agent Guide"
+    }
+  ],
+  "apis": [
+    {
+      "kind": "openapi",
+      "id": "ai-gateway",
+      "source_path": "ai-gateway/docs/swagger.json",
+      "path": "docs-site/openapi/ai-gateway.json",
+      "url": "/openapi/ai-gateway",
+      "reference_url": "/reference/ai-gateway"
+    }
+  ],
+  "generated": [
+    {
+      "kind": "mdx",
+      "path": "docs-site/content/docs/components/ai-gateway.mdx",
+      "url": "/docs/components/ai-gateway"
+    },
+    {
+      "kind": "llms",
+      "path": "docs-site/generated/llms/ai-gateway.txt",
+      "url": "/llms/ai-gateway.txt"
+    },
+    {
+      "kind": "openapi",
+      "path": "docs-site/openapi/ai-gateway.json",
+      "url": "/openapi/ai-gateway",
+      "reference_url": "/reference/ai-gateway"
+    }
+  ]
+}

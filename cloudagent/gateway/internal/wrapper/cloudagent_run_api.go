@@ -52,35 +52,14 @@ func (s *Server) handleCloudAgentCapabilities(w http.ResponseWriter, r *http.Req
 		return
 	}
 	serverTimeline(start, "cloudagent_capabilities_done", "tenant="+quoteServerField(scope.TenantID), "project="+quoteServerField(scope.ProjectID))
+	spec := CloudAgentRunSpec()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"object":       "cloudagent.capabilities",
-		"protocol":     "cloudagent.run",
-		"version":      "v1",
+		"object":       spec.Object,
+		"protocol":     spec.Protocol,
+		"version":      spec.Version,
 		"run_protocol": true,
-		"features": []string{
-			"session_create",
-			"session_load",
-			"session_list",
-			"run_submit",
-			"run_list",
-			"idempotent_run_id",
-			"after_seq_replay",
-			"ndjson_event_stream",
-			"durable_result",
-			"cancel",
-		},
-		"endpoints": []string{
-			"GET /v1/cloudagent/sessions",
-			"POST /v1/cloudagent/sessions",
-			"GET /v1/cloudagent/sessions/{session_id}",
-			"POST /v1/cloudagent/sessions/{session_id}/runs",
-			"GET /v1/cloudagent/runs",
-			"GET /v1/cloudagent/runs/{run_id}",
-			"GET /v1/cloudagent/runs/{run_id}/events?after_seq=N",
-			"GET /v1/cloudagent/runs/{run_id}/events?after_seq=N&stream=true",
-			"GET /v1/cloudagent/runs/{run_id}/result",
-			"POST /v1/cloudagent/runs/{run_id}/cancel",
-		},
+		"features":     spec.Features,
+		"endpoints":    spec.EndpointStrings(),
 	})
 }
 

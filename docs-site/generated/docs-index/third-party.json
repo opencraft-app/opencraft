@@ -1,0 +1,29 @@
+{
+  "object": "mono2.docs.fragment",
+  "version": "v1",
+  "level": 0,
+  "component": "third-party",
+  "component_path": "third_party",
+  "owner": "third-party",
+  "source_path": "third_party",
+  "docs": [
+    {
+      "kind": "readme",
+      "path": "third_party/README.md",
+      "title": "Third-party Source Drops"
+    }
+  ],
+  "apis": [],
+  "generated": [
+    {
+      "kind": "mdx",
+      "path": "docs-site/content/docs/components/third-party.mdx",
+      "url": "/docs/components/third-party"
+    },
+    {
+      "kind": "llms",
+      "path": "docs-site/generated/llms/third-party.txt",
+      "url": "/llms/third-party.txt"
+    }
+  ]
+}

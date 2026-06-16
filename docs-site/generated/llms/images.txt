@@ -1,0 +1,8 @@
+# images
+
+Component ID: images
+Source path: images
+Docs contract level: 0
+
+## Key documentation
+- LightClaw Sandbox Image Build: images/README.md

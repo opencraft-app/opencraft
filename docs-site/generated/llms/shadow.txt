@@ -1,0 +1,9 @@
+# shadow
+
+Component ID: shadow
+Source path: shadow
+Docs contract level: 0
+
+## Key documentation
+- AGENTS.md: shadow/AGENTS.md
+- shadow: shadow/README.md

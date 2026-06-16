@@ -1,0 +1,21 @@
+# CloudAgent
+
+Component ID: cloudagent
+Source path: cloudagent
+Docs contract level: 2
+
+## Human docs
+- Overview: /docs/cloudagent
+- HTTP Run API: /docs/cloudagent/http-run-api
+- Endpoint manifest: /docs/cloudagent/endpoint-manifest
+- Generated source index: /docs/cloudagent/generated-index
+
+## Machine-readable surfaces
+- OpenAPI JSON: /openapi/cloudagent
+- Scalar reference: /reference/cloudagent
+- Endpoint manifest: /cloudagent-endpoints.json
+
+## Source anchors
+- cloudagent/gateway/docs
+- cloudagent/gateway/cmd/cloudagent-openapi
+- cloudagent/makedocs.sh

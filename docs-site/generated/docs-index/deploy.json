@@ -1,0 +1,29 @@
+{
+  "object": "mono2.docs.fragment",
+  "version": "v1",
+  "level": 0,
+  "component": "deploy",
+  "component_path": "deploy",
+  "owner": "deploy",
+  "source_path": "deploy",
+  "docs": [
+    {
+      "kind": "readme",
+      "path": "deploy/README.md",
+      "title": "Deploy"
+    }
+  ],
+  "apis": [],
+  "generated": [
+    {
+      "kind": "mdx",
+      "path": "docs-site/content/docs/components/deploy.mdx",
+      "url": "/docs/components/deploy"
+    },
+    {
+      "kind": "llms",
+      "path": "docs-site/generated/llms/deploy.txt",
+      "url": "/llms/deploy.txt"
+    }
+  ]
+}

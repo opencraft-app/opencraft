@@ -1,0 +1,33 @@
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/black.css';
+@import 'fumadocs-ui/css/preset.css';
+
+:root {
+  --fd-layout-width: 1480px;
+}
+
+body {
+  min-height: 100vh;
+  font-feature-settings:
+    "cv02" 1,
+    "cv03" 1,
+    "cv04" 1;
+}
+
+html[data-docs-lang='en'] .lang-zh {
+  display: none !important;
+}
+
+html[data-docs-lang='zh'] .lang-en,
+html:not([data-docs-lang]) .lang-en {
+  display: none !important;
+}
+
+#nd-sidebar,
+#nd-subnav {
+  backdrop-filter: blur(14px);
+}
+
+#nd-page table {
+  overflow: hidden;
+}

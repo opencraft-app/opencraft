@@ -1,0 +1,9 @@
+# infra_pulumi
+
+Component ID: infra-pulumi
+Source path: infra_pulumi
+Docs contract level: 0
+
+## Key documentation
+- Infra Pulumi Agent Guide: infra_pulumi/AGENTS.md
+- Infra Pulumi: infra_pulumi/README.md

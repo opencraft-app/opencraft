@@ -1,0 +1,29 @@
+{
+  "object": "mono2.docs.fragment",
+  "version": "v1",
+  "level": 0,
+  "component": "docs",
+  "component_path": "docs",
+  "owner": "docs",
+  "source_path": "docs",
+  "docs": [
+    {
+      "kind": "readme",
+      "path": "docs/README.md",
+      "title": "Mono 项目文档索引"
+    }
+  ],
+  "apis": [],
+  "generated": [
+    {
+      "kind": "mdx",
+      "path": "docs-site/content/docs/components/docs.mdx",
+      "url": "/docs/components/docs"
+    },
+    {
+      "kind": "llms",
+      "path": "docs-site/generated/llms/docs.txt",
+      "url": "/llms/docs.txt"
+    }
+  ]
+}
