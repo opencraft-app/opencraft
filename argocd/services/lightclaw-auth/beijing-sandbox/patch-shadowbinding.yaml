@@ -1,0 +1,27 @@
+# Activate shadow binding lookup path for beijing-sandbox.
+#
+# Why this exists:
+#   beijing-sandbox is a near-prod sandbox cluster. lightclaw-auth's
+#   buildShadowBindingService() returns nil unless SHADOW_BINDING_ENABLED is
+#   "true", and a nil service makes /internal/shadow/binding always answer
+#   shadow_binding_not_found, which in turn makes trade Inquiry return 422
+#   BindingNotFound and the front end shows bundles without prices.
+#
+# Scope:
+#   Only the SHADOW_BINDING_ENABLED flag is flipped here. Tencent Cloud client
+#   credentials (SHADOW_SECRET_ID/KEY, CLOUDLADDER_*, callback tokens) are NOT
+#   wired in beijing-sandbox yet, so the shadow service starts with an
+#   UnavailableClient. That is fine for the read path: GetBindingByUserID only
+#   touches the MySQL store and never calls into the cloud client. Triggering a
+#   real shadow account registration (BindShadowAccount) still requires those
+#   secrets and is intentionally left disabled.
+#
+# This patch is overlay-local; it has no effect on shprod / sgprod / sandbox-bj-7
+# or any other environment.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lightclaw-auth-config
+  namespace: user-auth
+data:
+  SHADOW_BINDING_ENABLED: "true"
