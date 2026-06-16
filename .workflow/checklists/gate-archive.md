@@ -12,7 +12,8 @@
 - [ ] 不在范围内的"待办事项"已记录到 `openspec/changes/` 或 issue
 - [ ] 临时调试文件 / 截图 / 草稿已清理或归档
 - [ ] `openspec/current_state.md` 已追加本次归档的历史记录（项目级长期记忆）
-- [ ] `openspec/plan.md` / `proposal.md` / `spec.md` 已重置为占位语（可接受新需求）
+- [ ] `openspec/current_state.md` 的「## 当前进行中」段已被移除（避免状态分裂）
+- [ ] `openspec/plan.md` / `proposal.md` / `spec.md` 已重置为带「上一需求归档于 YYYY-MM-DD：{需求名}」指纹的占位语（grep "上一需求归档于" 命中 3 次）
 
 ---
 

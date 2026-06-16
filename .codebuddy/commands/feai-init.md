@@ -145,9 +145,9 @@
 
 > ⚠️ **严禁**在 AGENTS.md 中陈列业务目录树、路由表、状态树、API 列表等业务上下文。这些信息一律写入 `.workflow/project.yaml` 的 `context:` 段（见 5.2）。
 
-#### 5.2 更新 `.codebuddy/.workflow/project.yaml` 的 `context:` 段
+#### 5.2 更新 `.workflow/project.yaml` 的 `context:` 段
 
-读取 `<base>/.codebuddy/.workflow/project.yaml`，**只修改 `context:` 这一段**，其它段（`schema` / `context_loading` / `multi_agent` / `capabilities` / `gates` / `dependencies` / `forbidden_tools` 等）原样保留。
+读取 `<base>/.workflow/project.yaml`，**只修改 `context:` 这一段**，其它段（`schema` / `context_loading` / `multi_agent` / `capabilities` / `gates` / `dependencies` / `forbidden_tools` 等）原样保留。
 
 `context:` 段使用 YAML 多行字符串（`context: |`）填充以下内容：
 

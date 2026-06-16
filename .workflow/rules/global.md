@@ -151,13 +151,13 @@ L 级需求中，Leader 的唯一职责是调度和审核。禁止 Leader 直接
 | 规划 | 执行计划 | `openspec/plan.md` |
 | 规划 | 当前状态 | `openspec/current_state.md` |
 | 执行 | 变更记录 | `openspec/changes/` |
-| 执行 | 历史归档 | `openspec/changes/archive/` |
+| 执行 | 历史归档 | `openspec/changes/{YYYY-MM-DD}-{change-name}.md`（扁平单文件） |
 
 **写入到其他路径的规划类文件（如 `docs/plans/`、`.codebuddy/plans/`、项目根目录）不被视为有效产物，不满足门禁检查条件。**
 
 ## G22：未归档变更优先（防遗忘硬约束）
 
-当 `<base>/openspec/changes/` 下存在**非 `archive/` 子目录**的待归档变更时，**禁止**进入新需求的规划阶段，包括但不限于：
+当 `<base>/openspec/changes/` 下存在**子目录形态的开发期变更**（仅包含 `{change-name}/` 开发期多文件目录）时，**禁止**进入新需求的规划阶段（已归档的 `{YYYY-MM-DD}-{change-name}.md` 扁平单文件不在拦截范围），包括但不限于：
 
 - ❌ `/feai-start` 命令的 STEP 2-8（需求获取、插件检查、分支创建、规模判定、brainstorming、Figma 分析、生成 plan.md）
 - ❌ 普通对话中用户直接描述新需求时直接进入规划/编码
@@ -188,3 +188,112 @@ AI:  好的，进入 STEP 2...      ← ❌ 没有 SKIP-ARCHIVE 二次确认
 ```
 
 违反 G22 视同违反 G18（启动拦截），必须立即回退到归档流程或要求用户补充 SKIP-ARCHIVE 二次确认。
+
+## G23：工作流诊断埋点（v0.28.0+ 强制）
+
+为了让团队能基于真实数据持续改善工作流，所有 `/feai-*` 命令在每个 STEP 边界**必须**向 `.codebuddy/.cache/metrics/<change-name>/` 目录写入埋点日志：
+
+| 时机 | 必须写入 |
+|------|---------|
+| STEP 开始时 | `timeline.log` 追加 `{stage,phase:"begin",ts}` |
+| STEP 结束时 | `timeline.log` 追加 `{stage,phase:"end",ts,tokenIn,tokenOut}`（`userIdleRatio` v0.31 起 deprecated，允许留空；v0.34 下线了原 `outputChars` 输出侧估算路径） |
+| `/feai-review` 出结论时 | `gates.log` 追加 `{batch,attempt,result,failedChecks,rejectReason,durationSec}` |
+| 用户回复 `SKIP-ARCHIVE` 时 | `explicit-skips.log` 追加 `{rule:"G22",reason,at}` |
+| brainstorming 完成时 | `clarification.log` 追加 `{rounds,hasFigma}` |
+
+### AI 自报字段（核心约束）
+
+`tokenIn` / `tokenOut` 这两个字段没有 shell 兑底渠道，只能由 AI 从运行平台的 **usage 元数据**（如 `usage.input_tokens` / `usage.output_tokens`）读取后填入：
+
+- ✅ **只能**：从平台 usage 元数据读取真实数字后填写
+- ✅ **必须**：读不到时填 `null`（聚合脚本会跳过）
+- ❌ **严禁**：根据「对话长度感觉」「输入文件体量」估算一个看似合理的数字；archive 阶段会被 `dataIntegrity.tokenSource` 标记为 `ai-estimated`、不能跨需求对比
+- ❌ **不允许**：填 `0` 凑个数字偺装完成
+- ❌ **不允许**：因“埋点麻烦”而整段省略，必须至少写入 `{stage,phase,ts}` 三个 shell 可生成字段
+
+#### v0.34 下线提示：outputChars 输出侧粗估路径已移除
+
+v0.31 引入的 `outputChars` / `tokenOutEstimated` 输出侧粗估路径在 v0.34 干净下线。原因：bash 拿不到 LLM 上一轮可见输出、AI 心算字符数本身于「凭感觉估算」一样不可靠，实际上报值长期为 null。从 v0.34 起 timeline.log 只保留 `tokenIn` / `tokenOut` 两个由平台 usage 元数据上报的字段，`dataIntegrity.tokenSource` 三态为 `unavailable` / `platform-not-supported` / `ai-reported`。
+
+> `userIdleRatio` 在 v0.31 起标记为 **deprecated**：客户端无法可靠区分「等用户」与「跑工具」两段时间，该字段由聚合侧统一抹为 `null`，下个版本从 schema 移除。
+### 失败兜底
+
+所有埋点命令必须以 `2>/dev/null || true` 结尾，**埋点失败绝不阻塞主流程**：
+
+```bash
+NOW_MS=$(python3 -c 'import time;print(int(time.time()*1000))' 2>/dev/null || date +%s000)
+echo '{"stage":"start.step1","phase":"begin","ts":'$NOW_MS'}' \
+  >> "$METRICS_DIR/timeline.log" 2>/dev/null || true
+```
+
+> ⚠️ **不要使用 `date +%s%3N` 获取毫秒时间戳**
+>
+> macOS 自带的 BSD `date` **不支持 `%3N`**，会把 `N` 当字面量原样输出，导致日志变成：
+> ```json
+> {"stage":"start.step1","phase":"begin","ts":17811772463N}   // ❌ 非法 JSON
+> ```
+> 上报后端 JSON 解析直接失败，整段埋点数据丢失。
+>
+> **正确写法**（推荐 python3，全平台一致）：
+> ```bash
+> NOW_MS=$(python3 -c 'import time;print(int(time.time()*1000))' 2>/dev/null || date +%s000)
+> ```
+> - 优先 `python3`：macOS / Linux 默认都有，输出标准 13 位毫秒时间戳
+> - 兜底 `date +%s000`：秒级精度 + 补 3 个 0，毫秒精度损失但**绝不会出现 N 字面量**，确保 JSON 合法
+
+### 埋点 JSON 鲁棒性铁律（v0.28.x+ 强制）
+
+埋点数据的核心目标是「能被后端 JSON 解析」。任何让 JSON 变成非法的写法都会导致整段数据丢失。请严格遵守：
+
+#### 铁律 1：数字字段为空时必须填 `null`，不能留空
+
+```bash
+# ❌ 错误：TOKEN_IN 未赋值时输出 "tokenIn":, → 非法 JSON
+echo '{"tokenIn":'$TOKEN_IN'}'
+
+# ✅ 正确：${VAR:-null} 在变量为空时填字面量 null
+echo '{"tokenIn":'${TOKEN_IN:-null}'}'
+```
+
+> 适用范围：所有数字字段（`tokenIn` / `tokenOut` / `rounds` / `batch` / `attempt` / `durationSec` 等）。`userIdleRatio` 已 deprecated，如仍写入需同样遵守 `${VAR:-null}` 兌底。
+
+#### 铁律 2：字符串字段含特殊字符时必须用 `jq -nc --arg` 渲染
+
+```bash
+# ❌ 错误：用户填的中文双引号会破坏 JSON 结构
+REJECT_REASON='lint 失败："xxx" 报错'
+echo '{"reason":"'$REJECT_REASON'"}'   # → 输出 "reason":"lint 失败:"xxx" 报错" 非法
+
+# ✅ 正确：jq 自动转义所有特殊字符（双引号、反斜杠、换行、Unicode）
+jq -nc --arg reason "$REJECT_REASON" '{reason:$reason}'
+```
+
+> 适用范围：所有可能含中文/双引号/换行/Unicode 的字符串字段（`reason` / `rejectReason` / `description` / `message` 等）。`feai-review.md` 的 `gates.log` 主体已遵循此约定。
+
+#### 铁律 3：布尔字段必须先归一化为 `true`/`false`
+
+```bash
+# ❌ 错误：用户误填中文，输出 "hasFigma":是的 → 非法 JSON
+HAS_FIGMA="是的"
+echo '{"hasFigma":'$HAS_FIGMA'}'
+
+# ✅ 正确：case 兜底强制规范化
+HAS_FIGMA=${HAS_FIGMA:-false}
+case "$HAS_FIGMA" in true|false) ;; *) HAS_FIGMA=false ;; esac
+echo '{"hasFigma":'$HAS_FIGMA'}'
+```
+
+> 适用范围：所有 `xxxEnabled` / `hasXxx` / `isXxx` 等布尔字段。
+
+#### 铁律 4：jq 是软依赖，聚合段允许失败但单点埋点不依赖 jq
+
+- `feai-archive.md` 的聚合段（STEP 6.5b）依赖 `jq`，jq 不可用时聚合输出 `null`，**整段不阻塞归档**
+- `/feai-start` 和 `/feai-review` 的**单点埋点**用 `echo` 拼即可，不引入 jq 依赖；只有聚合段才用 jq
+- 例外：`feai-review.md` 的 `gates.log` 主体写入用 `jq -nc` 是因为 `failedChecks`/`rejectReason` 含数组和任意字符串，echo 拼无法保证合法性 → 此处 jq 不可用时 `2>/dev/null || true` 静默丢失，下次 review 重写即可
+
+### 隐私保障
+
+- `.codebuddy/.cache/metrics/` 必须出现在项目 `.gitignore`，禁止入库
+- 上报到团队 ReportHub 时，metrics 字段是 `metadata` 内的可选子段，可通过 `reporting.enabled=false` 一键关闭
+
+违反 G23（如完全不写埋点、伪造 token 数字）不阻塞工作流，但 reviewer 在 CR 阶段发现可要求修正后再合并。
