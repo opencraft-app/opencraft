@@ -273,17 +273,6 @@ base_url = ""
 token = ""
 timeout = 30
 
-#配置名称：adapter.trade
-#配置含义：trade 服务适配器配置（mono repo 内部 RPC，ctl `/v1/bundles` 询价 + 下单/续费链路用）
-#配置项结构与含义：
-#base_url = "" # trade 服务内部地址，如 http://trade.lightclaw.svc.cluster.local
-#token = ""    # 内部 API 认证 token，与 trade LIGHTCLAW_INTERNAL_SERVICE_TOKEN 同源
-#timeout = 10  # 请求超时（秒），默认 10
-[adapter.trade]
-base_url = ""
-token = ""
-timeout = 10
-
 #配置名称：adapter.clouddc
 #配置含义：磐石api相关配置
 #配置项结构与含义：
