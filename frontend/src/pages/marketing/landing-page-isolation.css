@@ -24,6 +24,11 @@
     Arial, sans-serif !important;
 }
 
+.lw-landing-root .lw-font-hyruiyisong,
+.lw-landing-root [style*="HYRuiYiSong"] {
+  font-family: "HYRuiYiSong:45J", sans-serif !important;
+}
+
 /* 2) 行高：免疫 tea 的 body{line-height:1.5} 继承污染。 */
 .lw-landing-root {
   line-height: normal !important;

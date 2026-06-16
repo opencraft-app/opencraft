@@ -46,6 +46,39 @@ const W = 1894;
 const H = 824;
 const p = (n: number, base = W) => `${(n / base) * 100}%`;
 
+function PlanetImage({
+  src,
+  left,
+  top,
+  width,
+  height,
+  className = '',
+  animationDelay,
+}: {
+  src: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  className?: string;
+  animationDelay: string;
+}) {
+  return (
+    <div
+      className={`absolute mix-blend-plus-lighter pointer-events-none ${className}`}
+      style={{
+        left: p(left),
+        top: p(top, H),
+        width: p(width),
+        aspectRatio: `${width} / ${height}`,
+        animationDelay,
+      }}
+    >
+      <img alt="" src={src} className="absolute inset-0 max-w-none object-bottom pointer-events-none size-full" />
+    </div>
+  );
+}
+
 export default function ProcessSection() {
   const ref = useScrollReveal();
   const t = useT();
@@ -101,14 +134,14 @@ export default function ProcessSection() {
           <circle cx="280" cy="280" r="279" stroke="url(#orbit-grad)" strokeWidth="1" strokeDasharray="5 5" />
           <circle cx="280" cy="280" r="156" stroke="url(#orbit-grad)" strokeWidth="1" strokeDasharray="5 5" />
         </svg>
-        {/* 右侧星球：轻微漂浮 */}
-        <img alt="" src={imgImage614591619} className="absolute mix-blend-plus-lighter pointer-events-none lv-float" style={{ left: p(1559), top: p(82, H), width: p(144), objectFit: 'contain', animationDelay: '0s' }} />
-        <img alt="" src={imgImage614591618} className="absolute mix-blend-plus-lighter pointer-events-none rotate-90 lv-float-sm" style={{ left: p(1517), top: p(226, H), width: p(51), objectFit: 'contain', animationDelay: '1s' }} />
-        <img alt="" src={imgImage614591620} className="absolute mix-blend-plus-lighter pointer-events-none lv-float-sm" style={{ left: p(1422), top: p(310, H), width: p(89), objectFit: 'contain', animationDelay: '2s' }} />
-        <img alt="" src={imgImage614591617} className="absolute mix-blend-plus-lighter pointer-events-none lv-float" style={{ left: p(1298), top: p(406, H), width: p(113), objectFit: 'contain', animationDelay: '0.5s' }} />
-        <img alt="" src={imgImage614591621} className="absolute mix-blend-plus-lighter pointer-events-none lv-float-sm" style={{ left: p(1216), top: p(543, H), width: p(56), objectFit: 'contain', animationDelay: '1.5s' }} />
-        <img alt="" src={imgImage614591622} className="absolute mix-blend-plus-lighter pointer-events-none lv-float" style={{ left: p(1128), top: p(606, H), width: p(99), objectFit: 'contain', animationDelay: '2.5s' }} />
-        <img alt="" src={imgImage614591623} className="absolute mix-blend-plus-lighter pointer-events-none lv-float-sm" style={{ left: p(1061), top: p(741, H), width: p(22), objectFit: 'contain', animationDelay: '3s' }} />
+        {/* 右侧星球：按 Figma 设计盒子比例渲染，避免使用 PNG 自然比例导致 PC 端变形 */}
+        <PlanetImage src={imgImage614591619} left={1560} top={83} width={144} height={133} className="lv-float" animationDelay="0s" />
+        <PlanetImage src={imgImage614591618} left={1516} top={229} width={55} height={51} className="rotate-90 lv-float-sm" animationDelay="1s" />
+        <PlanetImage src={imgImage614591620} left={1423} top={311} width={89} height={73} className="lv-float-sm" animationDelay="2s" />
+        <PlanetImage src={imgImage614591617} left={1298} top={406} width={113} height={108} className="lv-float" animationDelay="0.5s" />
+        <PlanetImage src={imgImage614591621} left={1217} top={544} width={56} height={56} className="lv-float-sm" animationDelay="1.5s" />
+        <PlanetImage src={imgImage614591622} left={1129} top={607} width={99} height={99} className="lv-float" animationDelay="2.5s" />
+        <PlanetImage src={imgImage614591623} left={1062} top={742} width={22} height={22} className="lv-float-sm" animationDelay="3s" />
         {/* process-title：标题居中 */}
         <div className="absolute left-0 right-0 flex flex-col items-center text-center gap-4 lv-reveal" style={{ top: '60px', zIndex: 10 }}>
           <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
@@ -236,9 +269,9 @@ export default function ProcessSection() {
         </div>
         {/* 星球图（移动端垂直堆叠展示） */}
         <div className="flex justify-center gap-4 flex-wrap opacity-70" aria-hidden="true">
-          <img alt="" src={imgImage614591622} className="mix-blend-plus-lighter w-16 h-16 object-contain" />
-          <img alt="" src={imgImage614591617} className="mix-blend-plus-lighter w-16 h-16 object-contain" />
-          <img alt="" src={imgImage614591619} className="mix-blend-plus-lighter w-16 h-16 object-contain" />
+          <img alt="" src={imgImage614591622} className="mix-blend-plus-lighter h-auto max-h-16 w-auto max-w-16 object-contain" />
+          <img alt="" src={imgImage614591617} className="mix-blend-plus-lighter h-auto max-h-16 w-auto max-w-16 object-contain" />
+          <img alt="" src={imgImage614591619} className="mix-blend-plus-lighter h-auto max-h-16 w-auto max-w-16 object-contain" />
         </div>
       </div>
     </section>
