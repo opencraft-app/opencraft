@@ -1,5 +1,6 @@
 import './global.css';
 
+import { LanguageToggle } from '@/components/language-toggle';
 import type { Metadata } from 'next';
 import { RootProvider } from 'fumadocs-ui/provider/next';
 import type { ReactNode } from 'react';
@@ -17,7 +18,16 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
-        <RootProvider theme={{ defaultTheme: 'dark' }}>{children}</RootProvider>
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{var l=localStorage.getItem('mono2-docs-language');if(l!=='en'&&l!=='zh')l=(navigator.language||'').toLowerCase().startsWith('zh')?'zh':'en';document.documentElement.dataset.docsLang=l;}catch(e){document.documentElement.dataset.docsLang='zh';}",
+          }}
+        />
+        <RootProvider theme={{ defaultTheme: 'dark' }}>
+          <LanguageToggle />
+          {children}
+        </RootProvider>
       </body>
     </html>
   );

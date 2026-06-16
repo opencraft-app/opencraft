@@ -14,6 +14,15 @@ body {
     "cv04" 1;
 }
 
+html[data-docs-lang='en'] .lang-zh {
+  display: none !important;
+}
+
+html[data-docs-lang='zh'] .lang-en,
+html:not([data-docs-lang]) .lang-en {
+  display: none !important;
+}
+
 #nd-sidebar,
 #nd-subnav {
   backdrop-filter: blur(14px);

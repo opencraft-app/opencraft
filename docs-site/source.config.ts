@@ -5,6 +5,10 @@ export const docs = defineDocs({
   dir: 'content/docs',
   docs: {
     schema: frontmatterSchema.extend({
+      title_en: z.string().optional(),
+      title_zh: z.string().optional(),
+      description_en: z.string().optional(),
+      description_zh: z.string().optional(),
       owner: z.string().optional(),
       status: z.enum(['draft', 'active', 'deprecated']).default('active'),
       last_reviewed: z.string().optional(),
