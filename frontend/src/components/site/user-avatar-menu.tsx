@@ -61,7 +61,7 @@ export const UserAvatarMenu = () => {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 6, scale: 0.97 }}
             transition={{ duration: 0.18, ease: [0.25, 0.1, 0.25, 1] }}
-            className="absolute right-0 top-full z-50 mt-2 w-52 overflow-hidden border border-[var(--border-subtle)] bg-[color-mix(in_oklab,var(--surface-base)_96%,white)]"
+            className="lw-user-avatar-menu absolute right-0 top-full z-50 mt-2 w-52 overflow-hidden border border-[var(--border-subtle)] bg-[color-mix(in_oklab,var(--surface-base)_96%,white)]"
             style={{
               borderRadius: "10px",
               boxShadow: "0 8px 24px rgba(0,0,0,0.10)",

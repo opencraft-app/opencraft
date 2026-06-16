@@ -79,14 +79,20 @@ html.lw-settings-scrollbar-stable {
 }
 
 .lw-settings-shell {
-  width: min(1440px, calc(100vw - 48px));
+  width: min(1760px, calc(100vw - 48px));
   margin-left: auto;
   margin-right: auto;
 }
 
 @media (min-width: 768px) {
   .lw-settings-shell {
-    width: min(1440px, calc(100vw - 160px));
+    width: min(1760px, calc(100vw - 80px));
+  }
+}
+
+@media (min-width: 1280px) {
+  .lw-settings-shell {
+    width: min(1760px, calc(100vw - 96px));
   }
 }
 
@@ -156,6 +162,21 @@ a {
 .lw-site-link--nav {
   --lw-site-link-color: rgb(0 0 0 / 0.9);
   --lw-site-link-hover-color: rgb(0 0 0 / 0.9);
+}
+
+.lw-user-avatar-menu a,
+.lw-user-avatar-menu button {
+  color: var(--text-secondary) !important;
+  text-decoration: none !important;
+}
+
+.lw-user-avatar-menu a:hover,
+.lw-user-avatar-menu button:hover {
+  color: var(--text-primary) !important;
+}
+
+.lw-user-avatar-menu svg {
+  color: var(--text-tertiary) !important;
 }
 
 .lw-landing-navbar {
