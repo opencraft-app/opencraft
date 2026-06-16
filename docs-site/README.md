@@ -81,14 +81,27 @@ It writes:
 它会写入：
 
 ```text
-docs-site/openapi/cloudagent.json
+docs-site/generated/docs-index.fragments.json
+docs-site/generated/docs-index/<component>.json
+docs-site/generated/llms/<component>.txt
+docs-site/content/docs/components/<component>.mdx
+docs-site/openapi/<api-id>.json|yaml        # when a component exposes OpenAPI
+docs-site/asyncapi/<api-id>.json|yaml       # when a component exposes AsyncAPI
 ```
 
-Fumadocs provides the mono2-wide shell. Scalar renders the interactive API
-reference at `/reference/cloudagent`, and the docs sidebar links directly to
-that native route.
+Fumadocs provides the mono2-wide shell. Scalar renders any generated OpenAPI
+surface at `/reference/<api-id>`. The root docs generator indexes first-level
+directories without business-specific knowledge:
 
-Fumadocs 提供 mono2-wide 文档外壳。Scalar 在 `/reference/cloudagent` 渲染交互式 API 参考，文档侧边栏直接链接到这个原生 route。
+- Level 0: no component script; index README, AGENTS, TEST, shallow docs, and API specs.
+- Level 1: component `makedocs.sh` owns docs-index and LLM fragments.
+- Level 2: Level 1 plus OpenAPI or AsyncAPI surfaces.
+
+Fumadocs 提供 mono2-wide 文档外壳。Scalar 会在 `/reference/<api-id>` 渲染任意生成的 OpenAPI 面。根文档生成器在不理解业务细节的前提下索引一级目录：
+
+- Level 0：没有组件脚本；索引 README、AGENTS、TEST、浅层 docs 和 API spec。
+- Level 1：组件级 `makedocs.sh` 自己维护 docs-index 和 LLM fragment。
+- Level 2：Level 1 加上 OpenAPI 或 AsyncAPI 面。
 
 ## Content Policy / 内容策略
 
@@ -96,8 +109,9 @@ Fumadocs 提供 mono2-wide 文档外壳。Scalar 在 `/reference/cloudagent` 渲
 - Use `lang-en` and `lang-zh` spans for curated docs so content switches in place.
 - Use frontmatter for `owner`, `status`, `last_reviewed`, `tags`, and
   `source_path`.
-- Keep CloudAgent gateway engineering docs under `cloudagent/gateway/docs` for
-  the first slice; copy curated public-facing content into `docs-site`.
+- Keep component-specific engineering docs in their owning directories; copy
+  curated public-facing content into `docs-site` only when it needs hand-written
+  presentation.
 - Generate full OpenAPI-style contracts from route/schema truth before treating
   them as canonical.
 
@@ -105,6 +119,6 @@ Fumadocs 提供 mono2-wide 文档外壳。Scalar 在 `/reference/cloudagent` 渲
 - 精选文档使用 `lang-en` 和 `lang-zh` 片段，让内容在同一位置切换。
 - 使用 frontmatter 记录 `owner`、`status`、`last_reviewed`、`tags` 和
   `source_path`。
-- 第一期 CloudAgent gateway 工程文档仍保留在 `cloudagent/gateway/docs`；
-  对外精选内容复制到 `docs-site`。
+- 组件工程文档保留在各自目录；只有需要手写呈现的对外精选内容才复制到
+  `docs-site`。
 - 完整 OpenAPI 风格契约必须从 route/schema truth 生成，生成后才能作为 canonical contract。

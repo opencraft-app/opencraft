@@ -1,0 +1,8 @@
+# third_party
+
+Component ID: third-party
+Source path: third_party
+Docs contract level: 0
+
+## Key documentation
+- Third-party Source Drops: third_party/README.md

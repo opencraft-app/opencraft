@@ -9,6 +9,8 @@ export MONO2_DOCS_ROOT="$DOCS_SITE_DIR"
 echo "[makedocs] root=$ROOT_DIR"
 echo "[makedocs] docs_site=$DOCS_SITE_DIR"
 
+node "$DOCS_SITE_DIR/scripts/aggregate-docs.mjs" prepare "$ROOT_DIR" "$DOCS_SITE_DIR"
+
 while IFS= read -r script; do
   component_dir="$(dirname "$script")"
   echo "[makedocs] component=${component_dir#$ROOT_DIR/}"
@@ -27,34 +29,7 @@ done < <(
     -print | sort
 )
 
-FRAGMENT_ROOT="$DOCS_SITE_DIR/generated/docs-index"
-FRAGMENT_BUNDLE="$DOCS_SITE_DIR/generated/docs-index.fragments.json"
-mkdir -p "$(dirname "$FRAGMENT_BUNDLE")"
-node - "$FRAGMENT_ROOT" "$FRAGMENT_BUNDLE" <<'NODE'
-const fs = require('node:fs');
-const path = require('node:path');
-
-const [fragmentRoot, outFile] = process.argv.slice(2);
-const fragments = [];
-if (fs.existsSync(fragmentRoot)) {
-  for (const name of fs.readdirSync(fragmentRoot).sort()) {
-    if (!name.endsWith('.json')) continue;
-    const fullPath = path.join(fragmentRoot, name);
-    fragments.push(JSON.parse(fs.readFileSync(fullPath, 'utf8')));
-  }
-}
-
-const bundle = {
-  object: 'mono2.docs.fragments',
-  version: 'v1',
-  generated_from: 'makedocs.sh',
-  fragments,
-};
-
-fs.writeFileSync(outFile + '.tmp', `${JSON.stringify(bundle, null, 2)}\n`);
-fs.renameSync(outFile + '.tmp', outFile);
-NODE
-echo "[makedocs] wrote ${FRAGMENT_BUNDLE#$ROOT_DIR/}"
+node "$DOCS_SITE_DIR/scripts/aggregate-docs.mjs" finalize "$ROOT_DIR" "$DOCS_SITE_DIR"
 
 if [ -f "$DOCS_SITE_DIR/makedocs.sh" ]; then
   echo "[makedocs] site=docs-site"

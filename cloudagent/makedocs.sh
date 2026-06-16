@@ -11,10 +11,13 @@ OPENAPI_DIR="$DOCS_SITE_DIR/openapi"
 OPENAPI_FILE="$OPENAPI_DIR/cloudagent.json"
 FRAGMENT_DIR="$DOCS_SITE_DIR/generated/docs-index"
 FRAGMENT_FILE="$FRAGMENT_DIR/cloudagent.json"
+LLMS_DIR="$DOCS_SITE_DIR/generated/llms"
+LLMS_FILE="$LLMS_DIR/cloudagent.txt"
 
 mkdir -p "$OUT_DIR"
 mkdir -p "$OPENAPI_DIR"
 mkdir -p "$FRAGMENT_DIR"
+mkdir -p "$LLMS_DIR"
 
 {
   printf '%s\n' '---'
@@ -84,13 +87,58 @@ mv "$TMP_OPENAPI_FILE" "$OPENAPI_FILE"
 
 echo "[makedocs] wrote ${OPENAPI_FILE#$ROOT_DIR/}"
 
+{
+  printf '%s\n' '# CloudAgent'
+  printf '\n'
+  printf '%s\n' 'Component ID: cloudagent'
+  printf '%s\n' 'Source path: cloudagent'
+  printf '%s\n' 'Docs contract level: 2'
+  printf '\n'
+  printf '%s\n' '## Human docs'
+  printf '%s\n' '- Overview: /docs/cloudagent'
+  printf '%s\n' '- HTTP Run API: /docs/cloudagent/http-run-api'
+  printf '%s\n' '- Endpoint manifest: /docs/cloudagent/endpoint-manifest'
+  printf '%s\n' '- Generated source index: /docs/cloudagent/generated-index'
+  printf '\n'
+  printf '%s\n' '## Machine-readable surfaces'
+  printf '%s\n' '- OpenAPI JSON: /openapi/cloudagent'
+  printf '%s\n' '- Scalar reference: /reference/cloudagent'
+  printf '%s\n' '- Endpoint manifest: /cloudagent-endpoints.json'
+  printf '\n'
+  printf '%s\n' '## Source anchors'
+  printf '%s\n' '- cloudagent/gateway/docs'
+  printf '%s\n' '- cloudagent/gateway/cmd/cloudagent-openapi'
+  printf '%s\n' '- cloudagent/makedocs.sh'
+} > "$LLMS_FILE.tmp"
+mv "$LLMS_FILE.tmp" "$LLMS_FILE"
+echo "[makedocs] wrote ${LLMS_FILE#$ROOT_DIR/}"
+
 cat > "$FRAGMENT_FILE.tmp" <<'JSON'
 {
   "object": "mono2.docs.fragment",
   "version": "v1",
+  "level": 2,
   "component": "cloudagent",
+  "component_path": "cloudagent",
   "owner": "cloudagent",
   "source_path": "cloudagent/makedocs.sh",
+  "docs": [
+    {
+      "kind": "readme",
+      "path": "cloudagent/README.md",
+      "title": "CloudAgent"
+    }
+  ],
+  "apis": [
+    {
+      "kind": "openapi",
+      "id": "cloudagent",
+      "source_path": "cloudagent/gateway/cmd/cloudagent-openapi",
+      "path": "docs-site/openapi/cloudagent.json",
+      "url": "/openapi/cloudagent",
+      "reference_url": "/reference/cloudagent"
+    }
+  ],
   "generated": [
     {
       "kind": "mdx",
@@ -98,9 +146,15 @@ cat > "$FRAGMENT_FILE.tmp" <<'JSON'
       "url": "/docs/cloudagent/generated-index"
     },
     {
+      "kind": "llms",
+      "path": "docs-site/generated/llms/cloudagent.txt",
+      "url": "/llms/cloudagent.txt"
+    },
+    {
       "kind": "openapi",
       "path": "docs-site/openapi/cloudagent.json",
-      "url": "/openapi/cloudagent"
+      "url": "/openapi/cloudagent",
+      "reference_url": "/reference/cloudagent"
     },
     {
       "kind": "api_reference",

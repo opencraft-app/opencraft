@@ -1,0 +1,49 @@
+{
+  "object": "mono2.docs.fragment",
+  "version": "v1",
+  "level": 2,
+  "component": "payment",
+  "component_path": "payment",
+  "owner": "payment",
+  "source_path": "payment",
+  "docs": [
+    {
+      "kind": "agents",
+      "path": "payment/AGENTS.md",
+      "title": "Payment Agent Guide"
+    },
+    {
+      "kind": "readme",
+      "path": "payment/README.md",
+      "title": "payment"
+    }
+  ],
+  "apis": [
+    {
+      "kind": "openapi",
+      "id": "payment",
+      "source_path": "payment/api/openapi.yaml",
+      "path": "docs-site/openapi/payment.yaml",
+      "url": "/openapi/payment",
+      "reference_url": "/reference/payment"
+    }
+  ],
+  "generated": [
+    {
+      "kind": "mdx",
+      "path": "docs-site/content/docs/components/payment.mdx",
+      "url": "/docs/components/payment"
+    },
+    {
+      "kind": "llms",
+      "path": "docs-site/generated/llms/payment.txt",
+      "url": "/llms/payment.txt"
+    },
+    {
+      "kind": "openapi",
+      "path": "docs-site/openapi/payment.yaml",
+      "url": "/openapi/payment",
+      "reference_url": "/reference/payment"
+    }
+  ]
+}

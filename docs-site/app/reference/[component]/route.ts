@@ -1,4 +1,5 @@
 import { ApiReference } from '@scalar/nextjs-api-reference';
+
 import { languageFromRequest } from '@/lib/language';
 
 const baseConfiguration = {
@@ -10,20 +11,25 @@ const baseConfiguration = {
   hideDarkModeToggle: boolean;
 };
 
-export function GET(request: Request) {
+export async function GET(request: Request, context: { params: Promise<{ component: string }> }) {
+  const { component } = await context.params;
+  if (!/^[a-z0-9-]+$/.test(component)) {
+    return Response.json({ error: `invalid component id: ${component}` }, { status: 400 });
+  }
+
   const lang = languageFromRequest(request);
   const configuration = {
     ...baseConfiguration,
-    url: `/openapi/cloudagent?lang=${lang}`,
+    url: `/openapi/${component}?lang=${lang}`,
     metaData:
       lang === 'en'
         ? {
-            title: 'CloudAgent HTTP Run API',
-            description: 'Generated OpenAPI reference for CloudAgent sessions, runs, replay, and results.',
+            title: `${component} API Reference`,
+            description: `Generated OpenAPI reference for ${component}.`,
           }
         : {
-            title: 'CloudAgent HTTP Run API',
-            description: 'CloudAgent 会话、运行、回放与结果读取的 OpenAPI 参考。',
+            title: `${component} API Reference`,
+            description: `${component} 的 OpenAPI 参考。`,
           },
   } as Parameters<typeof ApiReference>[0] & {
     darkMode: boolean;

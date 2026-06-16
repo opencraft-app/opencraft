@@ -1,0 +1,11 @@
+# ai-gateway
+
+Component ID: ai-gateway
+Source path: ai-gateway
+Docs contract level: 2
+
+## Key documentation
+- AI Gateway Deploy Agent Guide: ai-gateway/AGENTS.md
+
+## API surfaces
+- openapi: /openapi/ai-gateway (/reference/ai-gateway) from ai-gateway/docs/swagger.json

@@ -1,0 +1,29 @@
+{
+  "object": "mono2.docs.fragment",
+  "version": "v1",
+  "level": 0,
+  "component": "nextgen-dashboard-client",
+  "component_path": "nextgen-dashboard-client",
+  "owner": "nextgen-dashboard-client",
+  "source_path": "nextgen-dashboard-client",
+  "docs": [
+    {
+      "kind": "readme",
+      "path": "nextgen-dashboard-client/README.md",
+      "title": "nextgen-dashboard-client"
+    }
+  ],
+  "apis": [],
+  "generated": [
+    {
+      "kind": "mdx",
+      "path": "docs-site/content/docs/components/nextgen-dashboard-client.mdx",
+      "url": "/docs/components/nextgen-dashboard-client"
+    },
+    {
+      "kind": "llms",
+      "path": "docs-site/generated/llms/nextgen-dashboard-client.txt",
+      "url": "/llms/nextgen-dashboard-client.txt"
+    }
+  ]
+}

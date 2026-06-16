@@ -1,0 +1,34 @@
+{
+  "object": "mono2.docs.fragment",
+  "version": "v1",
+  "level": 0,
+  "component": "service-gateway",
+  "component_path": "service-gateway",
+  "owner": "service-gateway",
+  "source_path": "service-gateway",
+  "docs": [
+    {
+      "kind": "agents",
+      "path": "service-gateway/AGENTS.md",
+      "title": "Service Gateway Agent Notes"
+    },
+    {
+      "kind": "readme",
+      "path": "service-gateway/README.md",
+      "title": "service-gateway"
+    }
+  ],
+  "apis": [],
+  "generated": [
+    {
+      "kind": "mdx",
+      "path": "docs-site/content/docs/components/service-gateway.mdx",
+      "url": "/docs/components/service-gateway"
+    },
+    {
+      "kind": "llms",
+      "path": "docs-site/generated/llms/service-gateway.txt",
+      "url": "/llms/service-gateway.txt"
+    }
+  ]
+}

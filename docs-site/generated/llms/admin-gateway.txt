@@ -1,0 +1,9 @@
+# admin-gateway
+
+Component ID: admin-gateway
+Source path: admin-gateway
+Docs contract level: 0
+
+## Key documentation
+- Admin Gateway Agent Notes: admin-gateway/AGENTS.md
+- admin-gateway: admin-gateway/README.md

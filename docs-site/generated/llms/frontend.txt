@@ -1,0 +1,9 @@
+# frontend
+
+Component ID: frontend
+Source path: frontend
+Docs contract level: 0
+
+## Key documentation
+- 📋 agent-platform-frontend — AI Agent 指引: frontend/AGENTS.md
+- Lightclaw Frontend: frontend/README.md

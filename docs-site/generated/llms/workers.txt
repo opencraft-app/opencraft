@@ -1,0 +1,9 @@
+# workers
+
+Component ID: workers
+Source path: workers
+Docs contract level: 0
+
+## Key documentation
+- AGENTS.md - workers: workers/AGENTS.md
+- Tencent CVM Rescue Exporter: workers/README.md

@@ -1,0 +1,9 @@
+# gateway-dashboard
+
+Component ID: gateway-dashboard
+Source path: gateway-dashboard
+Docs contract level: 0
+
+## Key documentation
+- Gateway Dashboard Agent Guide: gateway-dashboard/AGENTS.md
+- Gateway Dashboard: gateway-dashboard/README.md

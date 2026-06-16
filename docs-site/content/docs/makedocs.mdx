@@ -43,19 +43,43 @@ source_path: docs-site/content/docs/makedocs.mdx
 
 <div className="lang-en">
 
-1. set `MONO2_DOCS_ROOT` to the root `docs-site`;
+1. prepare generated artifact directories;
 2. call component-level `makedocs.sh` scripts;
-3. run `docs-site/makedocs.sh` to build the site.
+3. scan first-level directories that do not have component scripts;
+4. generate Level 0 fallback indexes from README, AGENTS, TEST, shallow docs, and API specs;
+5. aggregate docs-index fragments and component LLM fragments;
+6. run `docs-site/makedocs.sh` to build and validate the site.
 
 </div>
 
 <div className="lang-zh">
 
-1. 将 `MONO2_DOCS_ROOT` 设置为根 `docs-site`；
+1. 准备生成物目录；
 2. 调用组件级 `makedocs.sh`；
-3. 运行 `docs-site/makedocs.sh` 构建站点。
+3. 扫描没有组件脚本的一级目录；
+4. 基于 README、AGENTS、TEST、浅层 docs 和 API spec 生成 Level 0 fallback 索引；
+5. 聚合 docs-index fragments 和组件级 LLM fragments；
+6. 运行 `docs-site/makedocs.sh` 构建并校验站点。
 
 </div>
+
+## <span className="lang-en">Contract Levels</span><span className="lang-zh">契约层级</span>
+
+| Level | <span className="lang-en">Owner</span><span className="lang-zh">归属</span> | <span className="lang-en">Required output</span><span className="lang-zh">必要产物</span> |
+| --- | --- | --- |
+| 0 | <span className="lang-en">Root aggregator</span><span className="lang-zh">根聚合器</span> | `docs-index fragment`, `llms fragment`, generated component index |
+| 1 | <span className="lang-en">Component `makedocs.sh`</span><span className="lang-zh">组件级 `makedocs.sh`</span> | `docs-index fragment`, `llms fragment` |
+| 2 | <span className="lang-en">Component or fallback scanner</span><span className="lang-zh">组件或 fallback 扫描器</span> | Level 1 outputs plus OpenAPI or AsyncAPI, mounted under `/reference/<id>` when OpenAPI is present |
+
+## <span className="lang-en">Artifact Shape</span><span className="lang-zh">产物形态</span>
+
+```text
+docs-site/generated/docs-index/<component>.json
+docs-site/generated/llms/<component>.txt
+docs-site/content/docs/components/<component>.mdx
+docs-site/openapi/<api-id>.json|yaml        # optional Level 2
+docs-site/asyncapi/<api-id>.json|yaml       # optional Level 2
+```
 
 ## <span className="lang-en">Component Behavior</span><span className="lang-zh">组件行为</span>
 
@@ -68,6 +92,8 @@ source_path: docs-site/content/docs/makedocs.mdx
 
 - read only its own directory unless explicitly configured otherwise;
 - write generated docs into `$MONO2_DOCS_ROOT/content/docs/<section>`;
+- write the docs-index fragment into `$MONO2_DOCS_ROOT/generated/docs-index/<component>.json`;
+- write the LLM fragment into `$MONO2_DOCS_ROOT/generated/llms/<component>.txt`;
 - make output deterministic so generated files are reviewable;
 - avoid requiring production credentials.
 
@@ -77,6 +103,8 @@ source_path: docs-site/content/docs/makedocs.mdx
 
 - 默认只读取自己的目录，除非显式配置允许跨目录读取；
 - 将生成文档写入 `$MONO2_DOCS_ROOT/content/docs/<section>`；
+- 将 docs-index fragment 写入 `$MONO2_DOCS_ROOT/generated/docs-index/<component>.json`；
+- 将 LLM fragment 写入 `$MONO2_DOCS_ROOT/generated/llms/<component>.txt`；
 - 保持输出确定性，方便代码审查；
 - 避免依赖生产凭据。
 
@@ -91,6 +119,9 @@ source_path: docs-site/content/docs/makedocs.mdx
 
 ```text
 docs-site/content/docs/cloudagent/generated-index.mdx
+docs-site/generated/docs-index/cloudagent.json
+docs-site/generated/llms/cloudagent.txt
+docs-site/openapi/cloudagent.json
 ```
 
 <p>

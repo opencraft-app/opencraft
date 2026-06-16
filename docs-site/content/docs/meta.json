@@ -1,4 +1,4 @@
 {
   "title": "mono2",
-  "pages": ["index", "makedocs", "cloudagent"]
+  "pages": ["index", "makedocs", "components", "cloudagent"]
 }
