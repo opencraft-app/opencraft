@@ -73,14 +73,24 @@ type GetPriceRequest struct {
 // Q71 拍板（2026-05-13）：GoodsCategoryID 类型从 string 改 int64，与 jifei PDF
 // §4.1 line 14 `"goodsCategoryId": 100019`（无引号 int）严格对齐。
 type GetPriceItem struct {
-	GoodsCategoryID int64                  `json:"goodsCategoryId"`
-	Currency        string                 `json:"currency,omitempty"`
-	RegionID        int                    `json:"regionId,omitempty"`
-	ZoneID          int                    `json:"zoneId,omitempty"`
-	GoodsNum        int                    `json:"goodsNum"`
-	PayMode         int                    `json:"payMode"`
-	Action          string                 `json:"action"`                // "purchase" / "renew" / "modify"，本期仅 purchase
-	GoodsDetail     map[string]interface{} `json:"goodsDetail,omitempty"` // 含 productCode / subProductCode / pid (int) / timeSpan / timeUnit / sv_* (int) 等字段
+	GoodsCategoryID int64  `json:"goodsCategoryId"`
+	Currency        string `json:"currency,omitempty"`
+	RegionID        int    `json:"regionId,omitempty"`
+	ZoneID          int    `json:"zoneId,omitempty"`
+	GoodsNum        int    `json:"goodsNum"`
+	PayMode         int    `json:"payMode"`
+	// Action 历史上传 "purchase" / "renew" / "modify" 表示订单类型；jifei PDF
+	// 《下单接口 qcloud.Deal.generateDeals》line 173 / 206 明示「**有 categoryid
+	// 则不用传 action**」。trade 调用 getPrice 时 GoodsCategoryID 必填（按
+	// scene=purchase/renew 从 trade_bundle_definition.category_ids 反查不同
+	// categoryId），因此 jifei 后台可由 categoryId 反查 scene，无需额外的 action
+	// 字段。生产环境实测：同时传 action + categoryId 会被 jifei 现网拒回
+	// `returnCode=100001 param error[action: is invalid]`（v1.7.x B17 修复）。
+	// json tag 加 `omitempty`，业务侧（inquiry/service.go）不再赋值，序列化时
+	// 自动省略；单元测试保留对该 struct 字段的赋值不影响行为（jifei mock
+	// server 不校验出向 body 含 action）。
+	Action      string                 `json:"action,omitempty"`
+	GoodsDetail map[string]interface{} `json:"goodsDetail,omitempty"` // 含 productCode / subProductCode / pid (int) / timeSpan / timeUnit / sv_* (int) 等字段
 }
 
 // GetPriceResponse 是 CGW returnValue 反序列化目标。

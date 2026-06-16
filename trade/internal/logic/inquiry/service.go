@@ -249,11 +249,13 @@ func (s *Service) Quote(ctx context.Context, req QuoteRequest) (*QuoteResult, er
 				Currency: s.currency,
 				// Q41 修订 2026-05-11 + v1.7.x A6.1：region/zone 在 New() 期按 site 解析一次缓存
 				// （cn=1/100001 广州 / intl=9/900001 新加坡，合规要求国际站资源落海外地域）
-				RegionID:    s.region.RegionID,
-				ZoneID:      s.region.ZoneID,
-				GoodsNum:    req.GoodsNum,
-				PayMode:     req.PayMode,
-				Action:      "purchase",
+				RegionID: s.region.RegionID,
+				ZoneID:   s.region.ZoneID,
+				GoodsNum: req.GoodsNum,
+				PayMode:  req.PayMode,
+				// Action 字段不传：jifei PDF《下单接口》line 173 明示「有 categoryid 则不用传 action」，
+				// trade 已通过 GoodsCategoryID 区分 purchase/renew/modify 场景；同时传 action + categoryId 会被
+				// jifei 现网拒回 `returnCode=100001 param error[action: is invalid]`（v1.7.x B17 修复）。
 				GoodsDetail: goodsDetail,
 			},
 		},
@@ -312,7 +314,8 @@ func (s *Service) Quote(ctx context.Context, req QuoteRequest) (*QuoteResult, er
 //
 // 与 QuoteRequest 的关键差异（设计稿 .tmp/trade-pass-renew-design.md §3.5 / §4.3）：
 //   - ResourceID（pass_id）必填：续费针对已有 pass，与新购无关
-//   - jifei action 固定 "renew"（与 GetPriceItem.Action="renew" 对齐）
+//   - jifei action 字段**不传**（PDF 明示「有 categoryid 则不用传 action」），
+//     场景由 jifei goodsCategoryId 反查（v1.7.x B17 修复，见 GetPriceItem.Action 注释）
 //   - jifei goodsCategoryId 取 BundleDefinition.CategoryIDForScene("renew")
 //
 // 字段语义其余与 QuoteRequest 对齐；本期 PayMode 同样固定 1，GoodsNum 同样固定 1。
@@ -343,7 +346,7 @@ type QuoteRenewRequest struct {
 //     1.5. 如果 ShadowClient 已注入且 Uin 空 → 反查 externalUserId 回填 Uin/AppID
 //  2. 反查 ctl bundle（确认存在 + 在售 — 续费同样需要 bundle 仍在售；下架的 bundle 不可续费）
 //  3. 反查 trade_bundle_definition（拿 jifei 协议元数据 + sv_* + category[scene=renew]）
-//  4. 拼装 jifei GetPriceRequest（goodsDetail 透传 sv_*；Action="renew"；resourceId 注入到
+//  4. 拼装 jifei GetPriceRequest（goodsDetail 透传 sv_*；不传 action 字段；resourceId 注入到
 //     ResInfo[0].GoodsDetail["resourceId"]，与 createResource/renewResource 协议字段一致）
 //  5. 调 jifei CGW GetPrice
 //  6. 拍平为 QuoteResult 返回
@@ -416,7 +419,7 @@ func (s *Service) QuoteRenew(ctx context.Context, req QuoteRenewRequest) (*Quote
 	// v1.7.21 B16: 续费询价同样注入 curDeadline (PDF §4.3 续费必填; 与 PlaceRenewOrder 共享同一字段集)
 	goodsDetail["curDeadline"] = req.CurDeadline
 
-	// 5. 调 jifei GetPrice（Action="renew"）
+	// 5. 调 jifei GetPrice（不传 action 字段，由 jifei 用 categoryId[scene=renew] 反查场景）
 	priceReq := &jifeiclient.GetPriceRequest{
 		OwnerUin: req.Uin,
 		Uin:      req.Uin,
@@ -424,12 +427,12 @@ func (s *Service) QuoteRenew(ctx context.Context, req QuoteRenewRequest) (*Quote
 			{
 				GoodsCategoryID: categoryID,
 				// v1.7.x A5 + A6.1：currency / region 同 Quote 装配点，按 deps.SiteKind 决定
-				Currency:    s.currency,
-				RegionID:    s.region.RegionID,
-				ZoneID:      s.region.ZoneID,
-				GoodsNum:    req.GoodsNum,
-				PayMode:     req.PayMode,
-				Action:      "renew",
+				Currency: s.currency,
+				RegionID: s.region.RegionID,
+				ZoneID:   s.region.ZoneID,
+				GoodsNum: req.GoodsNum,
+				PayMode:  req.PayMode,
+				// Action 字段不传，与 Quote 同款（PDF 明示「有 categoryid 则不用传」）
 				GoodsDetail: goodsDetail,
 			},
 		},
