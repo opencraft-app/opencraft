@@ -115,7 +115,7 @@ func TestCloudAgentHTTPProtocolCapabilities(t *testing.T) {
 	if out.Object != "cloudagent.capabilities" || out.Protocol != "cloudagent.run" || out.Version != "v1" || !out.RunProtocol {
 		t.Fatalf("unexpected capabilities response: %#v", out)
 	}
-	if !stringSliceContains(out.Features, "after_seq_replay") || !stringSliceContains(out.Features, "idempotent_run_id") {
+	if !stringSliceContains(out.Features, "after_seq_replay") || !stringSliceContains(out.Features, "idempotency_key") || !stringSliceContains(out.Features, "server_generated_run_id") {
 		t.Fatalf("capabilities missing durable protocol features: %#v", out.Features)
 	}
 	for _, endpoint := range []string{
@@ -269,7 +269,7 @@ func TestCloudAgentHTTPProtocolStreamsReplayAsNDJSON(t *testing.T) {
 	}
 }
 
-func TestCloudAgentHTTPProtocolSubmitRunIDIsIdempotent(t *testing.T) {
+func TestCloudAgentHTTPProtocolSubmitIdempotencyKeyIsIdempotent(t *testing.T) {
 	worker := &countingWorker{FakeWorker: FakeWorker{OutputText: "once"}}
 	srv, _ := newTestServer(t, worker)
 	sessionResp := jsonRequest(t, srv, http.MethodPost, "/v1/cloudagent/sessions", "tenant-a", "project-a", map[string]any{})
@@ -287,7 +287,14 @@ func TestCloudAgentHTTPProtocolSubmitRunIDIsIdempotent(t *testing.T) {
 	if first.Code != http.StatusOK {
 		t.Fatalf("first submit status=%d body=%s", first.Code, first.Body.String())
 	}
-	result := waitCloudAgentRun(t, srv, "job_idempotent")
+	var firstRun cloudAgentRunResponse
+	if err := json.Unmarshal(first.Body.Bytes(), &firstRun); err != nil {
+		t.Fatal(err)
+	}
+	if firstRun.RunID == "" || firstRun.RunID == "job_idempotent" || firstRun.IdempotencyKey != "job_idempotent" {
+		t.Fatalf("first submit should return server-generated run id and preserve idempotency key, got %#v", firstRun)
+	}
+	result := waitCloudAgentRun(t, srv, firstRun.RunID)
 	if result.OutputText != "once" {
 		t.Fatalf("unexpected first result: %#v", result)
 	}
@@ -299,11 +306,11 @@ func TestCloudAgentHTTPProtocolSubmitRunIDIsIdempotent(t *testing.T) {
 	if err := json.Unmarshal(second.Body.Bytes(), &secondResult); err != nil {
 		t.Fatal(err)
 	}
-	if secondResult.RunID != "job_idempotent" || secondResult.Status != "completed" || secondResult.OutputText != "once" {
+	if secondResult.RunID != firstRun.RunID || secondResult.IdempotencyKey != "job_idempotent" || secondResult.Status != "completed" || secondResult.OutputText != "once" {
 		t.Fatalf("duplicate submit should return existing run, got %#v", secondResult)
 	}
 	if got := worker.calls.Load(); got != 1 {
-		t.Fatalf("duplicate run_id must execute worker once, got %d", got)
+		t.Fatalf("duplicate idempotency key must execute worker once, got %d", got)
 	}
 }
 
@@ -352,41 +359,37 @@ func TestCloudAgentHTTPProtocolRejectsUnsafeRunIDBeforeRuntimeRecovery(t *testin
 	}
 }
 
-func TestCloudAgentHTTPProtocolRejectsCrossSessionRunIDBeforeRuntimeRecovery(t *testing.T) {
-	manager := &recordingACPRuntimeManager{}
-	srv := newACPTestServerWithRuntime(t, manager)
+func TestCloudAgentHTTPProtocolScopesIdempotencyKeyToSession(t *testing.T) {
+	worker := &countingWorker{FakeWorker: FakeWorker{OutputText: "ok"}}
+	srv, _ := newTestServer(t, worker)
 	sessionA := createCloudAgentHTTPSession(t, srv)
 	sessionB := createCloudAgentHTTPSession(t, srv)
-	if err := srv.store.CreateCloudAgentRun(cloudAgentRunRecord{
-		RunID:     "job_owned_by_a",
-		SessionID: sessionA,
-		Status:    "running",
-	}); err != nil {
+	body := map[string]any{"run_id": "shared_key", "text": "same external key, different sessions"}
+	first := jsonRequest(t, srv, http.MethodPost, "/v1/cloudagent/sessions/"+sessionA+"/runs", "tenant-a", "project-a", body)
+	if first.Code != http.StatusOK {
+		t.Fatalf("first submit status=%d body=%s", first.Code, first.Body.String())
+	}
+	second := jsonRequest(t, srv, http.MethodPost, "/v1/cloudagent/sessions/"+sessionB+"/runs", "tenant-a", "project-a", body)
+	if second.Code != http.StatusOK {
+		t.Fatalf("second submit status=%d body=%s", second.Code, second.Body.String())
+	}
+	var firstRun, secondRun cloudAgentRunResponse
+	if err := json.Unmarshal(first.Body.Bytes(), &firstRun); err != nil {
 		t.Fatal(err)
 	}
-	srv.acpGate.mu.Lock()
-	session := srv.acpGate.sessions[sessionB]
-	session.Closed = true
-	session.State = acpRuntimeStateClosed
-	session.Runtime.RuntimeID = "old_runtime_b"
-	session.Runtime.OuterSandboxID = "old_outer_b"
-	srv.acpGate.persistSession(session)
-	srv.acpGate.mu.Unlock()
-	manager.mu.Lock()
-	startsBefore := len(manager.starts)
-	manager.mu.Unlock()
-
-	resp := jsonRequest(t, srv, http.MethodPost, "/v1/cloudagent/sessions/"+sessionB+"/runs", "tenant-a", "project-a", map[string]any{
-		"run_id": "job_owned_by_a",
-		"text":   "must not recover runtime",
-	})
-	if resp.Code != http.StatusConflict {
-		t.Fatalf("cross-session run id should be rejected before runtime recovery, status=%d body=%s", resp.Code, resp.Body.String())
+	if err := json.Unmarshal(second.Body.Bytes(), &secondRun); err != nil {
+		t.Fatal(err)
 	}
-	manager.mu.Lock()
-	defer manager.mu.Unlock()
-	if got := len(manager.starts); got != startsBefore {
-		t.Fatalf("cross-session run id should not start/recover runtime, starts before=%d after=%d", startsBefore, got)
+	if firstRun.RunID == "" || secondRun.RunID == "" || firstRun.RunID == secondRun.RunID {
+		t.Fatalf("same idempotency key in different sessions must create distinct server runs: first=%#v second=%#v", firstRun, secondRun)
+	}
+	if firstRun.IdempotencyKey != "shared_key" || secondRun.IdempotencyKey != "shared_key" {
+		t.Fatalf("responses should expose stable idempotency key: first=%#v second=%#v", firstRun, secondRun)
+	}
+	waitCloudAgentRun(t, srv, firstRun.RunID)
+	waitCloudAgentRun(t, srv, secondRun.RunID)
+	if got := worker.calls.Load(); got != 2 {
+		t.Fatalf("different sessions must execute independently, got %d calls", got)
 	}
 }
 
@@ -403,7 +406,8 @@ func TestCloudAgentHTTPProtocolDuplicateSubmitDispatchesReservedUnstartedRun(t *
 	if err := json.Unmarshal(sessionResp.Body.Bytes(), &session); err != nil {
 		t.Fatal(err)
 	}
-	if _, existed, err := srv.store.TryReserveCloudAgentRun(Scope{TenantID: "tenant-a", ProjectID: "project-a"}, "job_reserved_unstarted", session.SessionID); err != nil || existed {
+	fingerprint := cloudAgentRunRequestFingerprint(cloudAgentSubmitRunRequest{Text: "recover this"})
+	if _, existed, err := srv.store.TryReserveCloudAgentRun(Scope{TenantID: "tenant-a", ProjectID: "project-a"}, "job_reserved_unstarted", session.SessionID, "job_reserved_unstarted", fingerprint); err != nil || existed {
 		t.Fatalf("reserve unstarted run existed=%t err=%v", existed, err)
 	}
 	submit := jsonRequest(t, srv, http.MethodPost, "/v1/cloudagent/sessions/"+session.SessionID+"/runs", "tenant-a", "project-a", map[string]any{
@@ -456,7 +460,7 @@ func TestCloudAgentHTTPProtocolRunSurvivesSubmitRequestCancellation(t *testing.T
 	if err := json.Unmarshal(resp.Body.Bytes(), &submitted); err != nil {
 		t.Fatal(err)
 	}
-	if submitted.RunID != "job_submit_disconnect" {
+	if submitted.RunID == "" || submitted.RunID == "job_submit_disconnect" || submitted.IdempotencyKey != "job_submit_disconnect" {
 		t.Fatalf("unexpected submitted run: %#v", submitted)
 	}
 	select {
@@ -488,6 +492,10 @@ func TestCloudAgentHTTPProtocolFailsRunWhenEventLedgerAppendFails(t *testing.T) 
 	if submit.Code != http.StatusOK {
 		t.Fatalf("submit status=%d body=%s", submit.Code, submit.Body.String())
 	}
+	var submitted cloudAgentRunResponse
+	if err := json.Unmarshal(submit.Body.Bytes(), &submitted); err != nil {
+		t.Fatal(err)
+	}
 	select {
 	case <-worker.started:
 	case <-time.After(time.Second):
@@ -495,7 +503,7 @@ func TestCloudAgentHTTPProtocolFailsRunWhenEventLedgerAppendFails(t *testing.T) 
 	}
 	store.SetFailCloudAgentEventAppend(true)
 	close(worker.release)
-	result := waitCloudAgentRun(t, srv, "job_event_append_failure")
+	result := waitCloudAgentRun(t, srv, submitted.RunID)
 	if result.Status != "failed" || result.StopReason != "failed" {
 		t.Fatalf("run should fail when durable event append fails, got %#v", result)
 	}
@@ -531,6 +539,13 @@ func TestCloudAgentHTTPProtocolDuplicateRunIDAcrossGatewayInstancesExecutesOnce(
 	if first.Code != http.StatusOK {
 		t.Fatalf("first submit status=%d body=%s", first.Code, first.Body.String())
 	}
+	var firstRun cloudAgentRunResponse
+	if err := json.Unmarshal(first.Body.Bytes(), &firstRun); err != nil {
+		t.Fatal(err)
+	}
+	if firstRun.RunID == "" || firstRun.RunID == "job_cross_gateway" || firstRun.IdempotencyKey != "job_cross_gateway" {
+		t.Fatalf("first submit should return server-generated run id and preserve idempotency key, got %#v", firstRun)
+	}
 	select {
 	case <-workerA.started:
 	case <-time.After(time.Second):
@@ -539,7 +554,7 @@ func TestCloudAgentHTTPProtocolDuplicateRunIDAcrossGatewayInstancesExecutesOnce(
 
 	second := jsonRequest(t, gatewayB, http.MethodPost, "/v1/cloudagent/sessions/"+sessionID+"/runs", "tenant-a", "project-a", map[string]any{
 		"run_id": "job_cross_gateway",
-		"text":   "duplicate should only attach",
+		"text":   "do it once",
 	})
 	if second.Code != http.StatusOK {
 		t.Fatalf("second submit status=%d body=%s", second.Code, second.Body.String())
@@ -548,7 +563,7 @@ func TestCloudAgentHTTPProtocolDuplicateRunIDAcrossGatewayInstancesExecutesOnce(
 	if err := json.Unmarshal(second.Body.Bytes(), &duplicate); err != nil {
 		t.Fatal(err)
 	}
-	if duplicate.RunID != "job_cross_gateway" || duplicate.Status != "running" {
+	if duplicate.RunID != firstRun.RunID || duplicate.IdempotencyKey != "job_cross_gateway" || duplicate.Status != "running" {
 		t.Fatalf("duplicate submit should return existing running run, got %#v", duplicate)
 	}
 	if got := workerB.calls.Load(); got != 0 {
@@ -556,7 +571,7 @@ func TestCloudAgentHTTPProtocolDuplicateRunIDAcrossGatewayInstancesExecutesOnce(
 	}
 
 	close(workerA.release)
-	result := waitCloudAgentRun(t, gatewayB, "job_cross_gateway")
+	result := waitCloudAgentRun(t, gatewayB, firstRun.RunID)
 	if result.Status != "completed" || result.OutputText != "completed by gateway a" {
 		t.Fatalf("second gateway should observe first gateway result, got %#v", result)
 	}
@@ -590,6 +605,13 @@ func TestCloudAgentHTTPProtocolStreamsAppendOnlyEventsAcrossGatewayInstances(t *
 	if submit.Code != http.StatusOK {
 		t.Fatalf("submit status=%d body=%s", submit.Code, submit.Body.String())
 	}
+	var submitted cloudAgentRunResponse
+	if err := json.Unmarshal(submit.Body.Bytes(), &submitted); err != nil {
+		t.Fatal(err)
+	}
+	if submitted.RunID == "" || submitted.RunID == "job_cross_gateway_stream" {
+		t.Fatalf("submit should return server-generated run id, got %#v", submitted)
+	}
 	select {
 	case <-workerA.started:
 	case <-time.After(time.Second):
@@ -598,7 +620,7 @@ func TestCloudAgentHTTPProtocolStreamsAppendOnlyEventsAcrossGatewayInstances(t *
 
 	streamDone := make(chan *httptest.ResponseRecorder, 1)
 	go func() {
-		streamDone <- request(t, gatewayB, http.MethodGet, "/v1/cloudagent/runs/job_cross_gateway_stream/events?after_seq=0&stream=true", "tenant-a", "project-a", nil, "")
+		streamDone <- request(t, gatewayB, http.MethodGet, "/v1/cloudagent/runs/"+submitted.RunID+"/events?after_seq=0&stream=true", "tenant-a", "project-a", nil, "")
 	}()
 	time.Sleep(100 * time.Millisecond)
 	close(workerA.release)
@@ -991,7 +1013,7 @@ func submitCloudAgentHTTPRun(t *testing.T, srv *Server, sessionID, runID, text s
 	if err := json.Unmarshal(resp.Body.Bytes(), &submitted); err != nil {
 		t.Fatal(err)
 	}
-	if submitted.RunID != runID || submitted.SessionID != sessionID {
+	if submitted.RunID == "" || submitted.RunID == runID || submitted.SessionID != sessionID || submitted.IdempotencyKey != runID {
 		t.Fatalf("unexpected submit response: %#v", submitted)
 	}
 	return submitted.RunID

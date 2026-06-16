@@ -165,14 +165,14 @@ func TestCloudAgentClientPromptUsesRunReplayAndResult(t *testing.T) {
 			writeTestJSON(t, w, map[string]any{"session_id": "session-http", "state": "ready"})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/cloudagent/sessions/session-http/runs":
 			var req struct {
-				RunID string `json:"run_id"`
-				Text  string `json:"text"`
+				Text string `json:"text"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				t.Errorf("decode run submit: %v", err)
 			}
-			if req.RunID == "" || req.Text != "hello" {
-				t.Errorf("run submit should include idempotency run_id and text, got %#v", req)
+			idempotencyKey := r.Header.Get("Idempotency-Key")
+			if idempotencyKey == "" || req.Text != "hello" {
+				t.Errorf("run submit should include Idempotency-Key and text, got key=%q req=%#v", idempotencyKey, req)
 			}
 			writeTestJSON(t, w, map[string]any{"run_id": "job-http", "session_id": "session-http", "status": "running"})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/cloudagent/runs/job-http/events":
@@ -311,7 +311,7 @@ func TestCloudAgentClientPreservesSubmittedRunWhenContextEnds(t *testing.T) {
 		t.Fatal(err)
 	}
 	if result.Text != "still running after observer timeout" || result.StopReason != "end_turn" {
-		t.Fatalf("same run_id should be resumable after observer timeout, got %#v", result)
+		t.Fatalf("same idempotency key should be resumable after observer timeout, got %#v", result)
 	}
 }
 
@@ -357,6 +357,49 @@ func TestCloudAgentClientTreatsSubmitTimeoutAsReplayable(t *testing.T) {
 	}
 	if result.Text != "submit recovered" {
 		t.Fatalf("unexpected recovered result: %#v", result)
+	}
+}
+
+func TestCloudAgentClientRegeneratesRunIDOnCrossSessionConflict(t *testing.T) {
+	var submittedKeys []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/cloudagent/sessions/session-http/runs":
+			idempotencyKey := r.Header.Get("Idempotency-Key")
+			submittedKeys = append(submittedKeys, idempotencyKey)
+			if len(submittedKeys) == 1 {
+				w.WriteHeader(http.StatusConflict)
+				writeTestJSON(t, w, map[string]any{"error": map[string]any{"message": "run id belongs to another session"}})
+				return
+			}
+			if idempotencyKey == "" || idempotencyKey == "job-stale-session" {
+				t.Fatalf("cross-session conflict retry must use a fresh idempotency key, got %q", idempotencyKey)
+			}
+			writeTestJSON(t, w, map[string]any{"run_id": "run-server-retry", "session_id": "session-http", "status": "running"})
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/cloudagent/runs/") && strings.HasSuffix(r.URL.Path, "/events"):
+			runID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/cloudagent/runs/"), "/events")
+			writeTestJSON(t, w, map[string]any{
+				"run": map[string]any{"run_id": runID, "session_id": "session-http", "status": "completed", "stop_reason": "end_turn", "output_text": "recovered"},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewCloudAgentClient(server.URL, nil)
+	result, err := client.PromptWithRunID(context.Background(), "session-http", "hello", "job-stale-session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Text != "recovered" {
+		t.Fatalf("unexpected conflict retry result: %#v", result)
+	}
+	if len(submittedKeys) != 2 {
+		t.Fatalf("expected one conflict retry, got submitted idempotency keys %#v", submittedKeys)
+	}
+	if submittedKeys[0] != "job-stale-session" || submittedKeys[1] == submittedKeys[0] {
+		t.Fatalf("idempotency key was not regenerated after cross-session conflict: %#v", submittedKeys)
 	}
 }
 

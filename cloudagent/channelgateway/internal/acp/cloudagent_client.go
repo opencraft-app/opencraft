@@ -186,15 +186,20 @@ func (c *CloudAgentClient) PromptWithRunID(ctx context.Context, sessionID, text,
 	}
 	var submitted cloudAgentRunResponse
 	submitBody := map[string]any{
-		"run_id":     runID,
 		"text":       text,
 		"inbox_mode": "prompt",
 	}
+	submitHeaders := http.Header{"Idempotency-Key": []string{runID}}
 	var submitErr error
 	for attempt := 0; attempt < 2; attempt++ {
-		submitErr = c.doJSON(ctx, http.MethodPost, "/v1/cloudagent/sessions/"+url.PathEscape(sessionID)+"/runs", submitBody, &submitted)
+		submitErr = c.doJSONWithHeaders(ctx, http.MethodPost, "/v1/cloudagent/sessions/"+url.PathEscape(sessionID)+"/runs", submitBody, &submitted, submitHeaders)
 		if submitErr == nil {
 			break
+		}
+		if attempt == 0 && isCloudAgentRunIDSessionConflict(submitErr) {
+			runID = newCloudAgentClientRunID()
+			submitHeaders.Set("Idempotency-Key", runID)
+			continue
 		}
 		if ctx.Err() != nil {
 			return PromptResult{}, RunObservationInterruptedError{RunID: runID, Err: ctx.Err()}
@@ -464,6 +469,10 @@ func (c *CloudAgentClient) checkSelfCheckRunProtocol(ctx context.Context) error 
 }
 
 func (c *CloudAgentClient) doJSON(ctx context.Context, method, path string, in any, out any) error {
+	return c.doJSONWithHeaders(ctx, method, path, in, out, nil)
+}
+
+func (c *CloudAgentClient) doJSONWithHeaders(ctx context.Context, method, path string, in any, out any, extraHeaders http.Header) error {
 	var body io.Reader
 	if in != nil {
 		raw, err := json.Marshal(in)
@@ -477,6 +486,11 @@ func (c *CloudAgentClient) doJSON(ctx context.Context, method, path string, in a
 		return err
 	}
 	for key, values := range c.headers {
+		for _, value := range values {
+			req.Header.Add(key, value)
+		}
+	}
+	for key, values := range extraHeaders {
 		for _, value := range values {
 			req.Header.Add(key, value)
 		}
@@ -503,6 +517,17 @@ func (c *CloudAgentClient) doJSON(ctx context.Context, method, path string, in a
 		return fmt.Errorf("decode cloudagent response: %w", err)
 	}
 	return nil
+}
+
+func isCloudAgentRunIDSessionConflict(err error) bool {
+	var httpErr CloudAgentHTTPError
+	if !errors.As(err, &httpErr) {
+		return false
+	}
+	if httpErr.StatusCode < 400 || httpErr.StatusCode >= 500 {
+		return false
+	}
+	return strings.Contains(strings.ToLower(httpErr.Body), "run id belongs to another session")
 }
 
 func isCloudAgentRetriableSubmitError(err error) bool {

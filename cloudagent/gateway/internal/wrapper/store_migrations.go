@@ -125,6 +125,8 @@ func migrateStoreForDialect(db *sql.DB, dialect string) error {
 		`CREATE TABLE IF NOT EXISTS cloudagent_runs (
 			run_id TEXT PRIMARY KEY,
 			session_id TEXT NOT NULL,
+			idempotency_key TEXT NOT NULL DEFAULT '',
+			request_fingerprint TEXT NOT NULL DEFAULT '',
 			turn_id TEXT NOT NULL DEFAULT '',
 			response_id TEXT NOT NULL DEFAULT '',
 			status TEXT NOT NULL,
@@ -137,6 +139,7 @@ func migrateStoreForDialect(db *sql.DB, dialect string) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS cloudagent_runs_session_idx ON cloudagent_runs(session_id, updated_at)`,
 		`CREATE INDEX IF NOT EXISTS cloudagent_runs_turn_idx ON cloudagent_runs(turn_id)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS cloudagent_runs_idempotency_idx ON cloudagent_runs(session_id, idempotency_key) WHERE idempotency_key <> ''`,
 		`CREATE TABLE IF NOT EXISTS cloudagent_run_events (
 			run_id TEXT NOT NULL,
 			seq INTEGER NOT NULL,
@@ -357,6 +360,8 @@ func migrateStoreForDialect(db *sql.DB, dialect string) error {
 		`ALTER TABLE session_runtimes ADD COLUMN workspace_fence INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE session_runtimes ADD COLUMN workspace_lease_until TEXT`,
 		`ALTER TABLE session_runtimes ADD COLUMN workspace_attach_state TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE cloudagent_runs ADD COLUMN idempotency_key TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE cloudagent_runs ADD COLUMN request_fingerprint TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE workspaces ADD COLUMN owner_session_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE workspaces ADD COLUMN workspace_version TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE workspaces ADD COLUMN provider_region TEXT NOT NULL DEFAULT ''`,
@@ -381,6 +386,9 @@ func migrateStoreForDialect(db *sql.DB, dialect string) error {
 		if _, err := db.Exec(stmt); err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
 			return err
 		}
+	}
+	if _, err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS cloudagent_runs_idempotency_idx ON cloudagent_runs(session_id, idempotency_key) WHERE idempotency_key <> ''`); err != nil {
+		return err
 	}
 	return nil
 }

@@ -121,14 +121,18 @@ SESSION_ID=$(
   python3 -c 'import json,sys; print(json.load(sys.stdin)["session_id"])'
 )
 
-RUN_ID="job_channel_example_$(date +%s)"
+IDEMPOTENCY_KEY="job_channel_example_$(date +%s)"
 
-curl -sS \
+RUN_ID=$(
+  curl -sS \
   -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $IDEMPOTENCY_KEY" \
   -H "X-Tenant-ID: $CLOUDAGENT_TENANT_ID" \
   -H "X-Project-ID: $CLOUDAGENT_PROJECT_ID" \
-  -d "{\"run_id\":\"$RUN_ID\",\"text\":\"Please reply CLOUDAGENT_RUN_OK only.\",\"cwd\":\"/workspace\",\"inbox_mode\":\"prompt\"}" \
-  "$CLOUDAGENT_BASE_URL/v1/cloudagent/sessions/$SESSION_ID/runs"
+  -d '{"text":"Please reply CLOUDAGENT_RUN_OK only.","cwd":"/workspace","inbox_mode":"prompt"}' \
+  "$CLOUDAGENT_BASE_URL/v1/cloudagent/sessions/$SESSION_ID/runs" |
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["run_id"])'
+)
 
 curl -N -sS \
   -H "X-Tenant-ID: $CLOUDAGENT_TENANT_ID" \
@@ -145,14 +149,18 @@ Streaming response frames use `Content-Type: application/x-ndjson`; each line is
 one JSON frame:
 
 ```json
-{"type":"event","event":{"seq":1,"run_id":"job_channel_example","kind":"message_delta","event":{}}}
+{"type":"event","event":{"seq":1,"run_id":"job_server_generated","kind":"message_delta","event":{}}}
 {"type":"heartbeat","after_seq":1}
-{"type":"run","run":{"run_id":"job_channel_example","status":"completed","stop_reason":"end_turn","output_text":"CLOUDAGENT_RUN_OK"}}
+{"type":"run","run":{"run_id":"job_server_generated","status":"completed","stop_reason":"end_turn","output_text":"CLOUDAGENT_RUN_OK"}}
 ```
 
 Persist the largest observed `seq` and reconnect with
 `after_seq=<last_seq>` after any timeout, restart, or network disconnect. The
 run continues even if the observer stream disconnects.
+
+`Idempotency-Key` is the caller retry key. `run_id` is returned by the gateway
+and is the only id to use for stream/result/cancel. Legacy request body
+`run_id` is still accepted as an idempotency key for older clients.
 
 Devcloud uses the same mode with the in-cluster CloudAgent gateway service.
 Full integration details and live verification commands are documented in
