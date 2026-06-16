@@ -276,6 +276,12 @@ func (s *stubSandboxAdapterInline) RunProcessWithStdin(_ context.Context, _ stri
 func (s *stubSandboxAdapterInline) SendProcessSignal(_ context.Context, _ string, _ uint32, _ string) error {
 	return nil
 }
+func (s *stubSandboxAdapterInline) CreateSnapshot(_ context.Context, _ string, _ *psandbox.CreateSnapshotRequest) (*psandbox.CreateSnapshotResponse, error) {
+	return nil, nil
+}
+func (s *stubSandboxAdapterInline) GetSnapshotStatus(_ context.Context, _, _ string) (*psandbox.GetSnapshotStatusResponse, error) {
+	return nil, nil
+}
 
 type stubAiGatewayAdapterInline struct{}
 
@@ -299,8 +305,12 @@ func (s *stubAiGatewayAdapterInline) GetPlan(_ context.Context, _ string) (*paig
 	return nil, fmt.Errorf("plan lookup not configured")
 }
 
-func (s *stubAiGatewayAdapterInline) ApplySubscription(_ context.Context, _ string, _ string) (*paigateway.Subscription, error) {
+func (s *stubAiGatewayAdapterInline) ApplySubscription(_ context.Context, _ *paigateway.ApplySubscriptionRequest) (*paigateway.Subscription, error) {
 	return nil, fmt.Errorf("subscription apply not configured")
+}
+
+func (s *stubAiGatewayAdapterInline) ExtendSubscription(_ context.Context, _ *paigateway.ExtendSubscriptionRequest) (*paigateway.ExtendSubscriptionResponse, error) {
+	return nil, fmt.Errorf("subscription extend not configured")
 }
 
 func (s *stubAiGatewayAdapterInline) CancelSubscription(_ context.Context, _ string) error {
@@ -392,6 +402,7 @@ func TestInlineCreateTask_Success(t *testing.T) {
 	l := NewLogicForTest(instanceDao, quotaDao, sandboxStub, nil, nil, zap.NewNop(), "test-template")
 
 	ctx := testutil.NewContext(t, userID)
+	testutil.SeedActivePass(t, ctx)
 	resp, err := l.CreateInstance(ctx, nil)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
@@ -434,6 +445,7 @@ func TestInlineCreateTask_SandboxFail(t *testing.T) {
 	l := NewLogicForTest(instanceDao, quotaDao, sandboxStub, nil, nil, zap.NewNop(), "test-template")
 
 	ctx := testutil.NewContext(t, userID)
+	testutil.SeedActivePass(t, ctx)
 	_, err := l.CreateInstance(ctx, nil)
 	require.Error(t, err)
 
@@ -494,6 +506,7 @@ func TestInlineCreateTask_ReordersPoolsFromPressureSnapshotAndRetries(t *testing
 	l := NewLogicForTest(instanceDao, quotaDao, sandboxStub, nil, nil, zap.NewNop(), "pool-a", "pool-b", "pool-c")
 
 	ctx := testutil.NewContext(t, userID)
+	testutil.SeedActivePass(t, ctx)
 	resp, err := l.CreateInstance(ctx, nil)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
@@ -550,6 +563,7 @@ func TestInlineCreateTask_StopsAtConfiguredAttemptLimit(t *testing.T) {
 	l := NewLogicForTest(instanceDao, quotaDao, sandboxStub, nil, nil, zap.NewNop(), "pool-a", "pool-b", "pool-c")
 
 	ctx := testutil.NewContext(t, userID)
+	testutil.SeedActivePass(t, ctx)
 	_, err := l.CreateInstance(ctx, nil)
 	require.Error(t, err)
 	assert.Equal(t, []string{"pool-b", "pool-c"}, attempted)

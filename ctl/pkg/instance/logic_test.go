@@ -23,6 +23,7 @@ import (
 	quota "ctl/pkg/model/userresourcequota"
 	"ctl/pkg/transport"
 	"ctl/test/testutil"
+
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 )
@@ -110,8 +111,12 @@ func (s *aiGatewayAdapterStub) GetPlan(_ context.Context, _ string) (*paigateway
 	return nil, fmt.Errorf("plan lookup not configured")
 }
 
-func (s *aiGatewayAdapterStub) ApplySubscription(_ context.Context, _ string, _ string) (*paigateway.Subscription, error) {
+func (s *aiGatewayAdapterStub) ApplySubscription(_ context.Context, _ *paigateway.ApplySubscriptionRequest) (*paigateway.Subscription, error) {
 	return nil, fmt.Errorf("subscription apply not configured")
+}
+
+func (s *aiGatewayAdapterStub) ExtendSubscription(_ context.Context, _ *paigateway.ExtendSubscriptionRequest) (*paigateway.ExtendSubscriptionResponse, error) {
+	return nil, fmt.Errorf("subscription extend not configured")
 }
 
 func (s *aiGatewayAdapterStub) CancelSubscription(_ context.Context, _ string) error {
@@ -287,6 +292,7 @@ func TestCreateInstanceRejectsInvalidSoulTemplateID(t *testing.T) {
 	ensureInstanceConfigForTest(t)
 
 	ctx := testutil.NewContext(t, "user-invalid-soul")
+	testutil.SeedActivePass(t, ctx)
 	logic := instancelogic.NewLogicForTest(
 		modelfactory.DefaultDaoFactory.InstanceDao(ctx),
 		modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx),
@@ -308,6 +314,7 @@ func TestCreateInstanceSkipsSoulTemplateApplyDuringCreate(t *testing.T) {
 	ensureInstanceConfigForTest(t)
 
 	ctx := testutil.NewContext(t, "user-soul")
+	testutil.SeedActivePass(t, ctx)
 	db := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx)
 	if err := db.DB().Create(&quota.Entity{
 		UserID:                 ctx.GetUserID(),
@@ -394,6 +401,14 @@ func (s *sandboxAdapterStub) SendProcessSignal(_ context.Context, _ string, _ ui
 	panic("unexpected call")
 }
 
+func (s *sandboxAdapterStub) CreateSnapshot(_ context.Context, _ string, _ *psandbox.CreateSnapshotRequest) (*psandbox.CreateSnapshotResponse, error) {
+	panic("unexpected call")
+}
+
+func (s *sandboxAdapterStub) GetSnapshotStatus(_ context.Context, _, _ string) (*psandbox.GetSnapshotStatusResponse, error) {
+	panic("unexpected call")
+}
+
 func (d *quotaDaoStub) FreeQuota(_ string, _, _ string, _ int64) (bool, error) {
 	return d.freeQuotaOK, d.freeQuotaErr
 }
@@ -416,6 +431,7 @@ func TestCreateInstanceSuccess(t *testing.T) {
 	testutil.NewMySQLDB(t, "..", "..", "migrations")
 
 	ctx := testutil.NewContext(t, "user-1")
+	testutil.SeedActivePass(t, ctx)
 	db := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx)
 	if err := db.DB().Create(&quota.Entity{
 		UserID:                 ctx.GetUserID(),
@@ -473,6 +489,7 @@ func TestCreateInstanceAutoSeedsDefaultQuotaWhenMissing(t *testing.T) {
 	testutil.NewMySQLDB(t, "..", "..", "migrations")
 
 	ctx := testutil.NewContext(t, "user-auto-quota")
+	testutil.SeedActivePass(t, ctx)
 	logic := instancelogic.NewLogicForTest(
 		modelfactory.DefaultDaoFactory.InstanceDao(ctx),
 		modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx),
@@ -511,6 +528,7 @@ func TestCreateInstanceRollbackOnSandboxFailure(t *testing.T) {
 	testutil.NewMySQLDB(t, "..", "..", "migrations")
 
 	ctx := testutil.NewContext(t, "user-1")
+	testutil.SeedActivePass(t, ctx)
 	if err := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx).DB().Create(&quota.Entity{
 		UserID:                 ctx.GetUserID(),
 		ResourceName:           "OPENCLAW_INSTANCE",
@@ -561,6 +579,7 @@ func TestCreateInstanceFallsBackToNextTemplateAfterFailure(t *testing.T) {
 	testutil.NewMySQLDB(t, "..", "..", "migrations")
 
 	ctx := testutil.NewContext(t, "user-1")
+	testutil.SeedActivePass(t, ctx)
 	if err := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx).DB().Create(&quota.Entity{
 		UserID:                 ctx.GetUserID(),
 		ResourceName:           "OPENCLAW_INSTANCE",
@@ -620,6 +639,7 @@ func TestCreateInstanceUsesRuntimePoolOrderOverConfiguredCandidates(t *testing.T
 	testutil.NewMySQLDB(t, "..", "..", "migrations")
 
 	ctx := testutil.NewContext(t, "user-1")
+	testutil.SeedActivePass(t, ctx)
 	if err := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx).DB().Create(&quota.Entity{
 		UserID:                 ctx.GetUserID(),
 		ResourceName:           "OPENCLAW_INSTANCE",
@@ -668,6 +688,7 @@ func TestCreateInstanceFallsBackToLivePoolsWhenConfiguredMissing(t *testing.T) {
 	testutil.NewMySQLDB(t, "..", "..", "migrations")
 
 	ctx := testutil.NewContext(t, "user-1")
+	testutil.SeedActivePass(t, ctx)
 	if err := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx).DB().Create(&quota.Entity{
 		UserID:                 ctx.GetUserID(),
 		ResourceName:           "OPENCLAW_INSTANCE",
@@ -714,6 +735,7 @@ func TestCreateInstanceFailsWhenListPoolsFails(t *testing.T) {
 	testutil.NewMySQLDB(t, "..", "..", "migrations")
 
 	ctx := testutil.NewContext(t, "user-1")
+	testutil.SeedActivePass(t, ctx)
 	if err := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx).DB().Create(&quota.Entity{
 		UserID:                 ctx.GetUserID(),
 		ResourceName:           "OPENCLAW_INSTANCE",
@@ -751,6 +773,7 @@ func TestCreateInstanceFailsWhenRuntimePoolsEmpty(t *testing.T) {
 	testutil.NewMySQLDB(t, "..", "..", "migrations")
 
 	ctx := testutil.NewContext(t, "user-1")
+	testutil.SeedActivePass(t, ctx)
 	if err := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx).DB().Create(&quota.Entity{
 		UserID:                 ctx.GetUserID(),
 		ResourceName:           "OPENCLAW_INSTANCE",
@@ -786,6 +809,7 @@ func TestCreateInstanceSkipsPoolsWithPausedCapacityState(t *testing.T) {
 	testutil.NewMySQLDB(t, "..", "..", "migrations")
 
 	ctx := testutil.NewContext(t, "user-1")
+	testutil.SeedActivePass(t, ctx)
 	if err := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx).DB().Create(&quota.Entity{
 		UserID:                 ctx.GetUserID(),
 		ResourceName:           "OPENCLAW_INSTANCE",
@@ -833,6 +857,7 @@ func TestCreateInstanceSendsTemplateClassIDAlongsideLegacyTemplateFallback(t *te
 	testutil.NewMySQLDB(t, "..", "..", "migrations")
 
 	ctx := testutil.NewContext(t, "user-template-class")
+	testutil.SeedActivePass(t, ctx)
 	if err := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx).DB().Create(&quota.Entity{
 		UserID:                 ctx.GetUserID(),
 		ResourceName:           "OPENCLAW_INSTANCE",
@@ -889,6 +914,7 @@ func TestCreateInstanceSkipsLegacyTemplateAliasCandidatesInTemplateClassMode(t *
 	testutil.NewMySQLDB(t, "..", "..", "migrations")
 
 	ctx := testutil.NewContext(t, "user-template-class-legacy")
+	testutil.SeedActivePass(t, ctx)
 	if err := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx).DB().Create(&quota.Entity{
 		UserID:                 ctx.GetUserID(),
 		ResourceName:           "OPENCLAW_INSTANCE",
@@ -954,6 +980,7 @@ func TestCreateInstanceUsesRuntimePoolsOverLegacyAliasesInTemplateClassMode(t *t
 	testutil.NewMySQLDB(t, "..", "..", "migrations")
 
 	ctx := testutil.NewContext(t, "user-template-class-runtime")
+	testutil.SeedActivePass(t, ctx)
 	if err := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx).DB().Create(&quota.Entity{
 		UserID:                 ctx.GetUserID(),
 		ResourceName:           "OPENCLAW_INSTANCE",
@@ -1018,6 +1045,7 @@ func TestCreateInstanceFailsAfterAllCandidateTemplatesFail(t *testing.T) {
 	testutil.NewMySQLDB(t, "..", "..", "migrations")
 
 	ctx := testutil.NewContext(t, "user-1")
+	testutil.SeedActivePass(t, ctx)
 	if err := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx).DB().Create(&quota.Entity{
 		UserID:                 ctx.GetUserID(),
 		ResourceName:           "OPENCLAW_INSTANCE",
@@ -1083,6 +1111,7 @@ func TestCreateInstanceStopsFallbackOnUnauthorizedError(t *testing.T) {
 	testutil.NewMySQLDB(t, "..", "..", "migrations")
 
 	ctx := testutil.NewContext(t, "user-1")
+	testutil.SeedActivePass(t, ctx)
 	if err := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx).DB().Create(&quota.Entity{
 		UserID:                 ctx.GetUserID(),
 		ResourceName:           "OPENCLAW_INSTANCE",
@@ -1130,6 +1159,7 @@ func TestCreateInstanceStopsFallbackAtConfiguredAttemptLimit(t *testing.T) {
 	})
 
 	ctx := testutil.NewContext(t, "user-attempt-limit")
+	testutil.SeedActivePass(t, ctx)
 	if err := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx).DB().Create(&quota.Entity{
 		UserID:                 ctx.GetUserID(),
 		ResourceName:           "OPENCLAW_INSTANCE",
@@ -1174,10 +1204,54 @@ func TestCreateInstanceStopsFallbackAtConfiguredAttemptLimit(t *testing.T) {
 	}
 }
 
+func TestCreateInstanceRejectedWhenNoActivePass(t *testing.T) {
+	testutil.NewMySQLDB(t, "..", "..", "migrations")
+
+	ctx := testutil.NewContext(t, "user-no-pass")
+	// 故意不 seed pass，验证 CreateInstance 入口对 active pass 的强校验
+	// （bundle/design.md §5.1 2026-06-08 更新：杜绝「无 pass 用户白嫖默认 5 配额」旧路径）
+
+	logic := instancelogic.NewLogicForTest(
+		modelfactory.DefaultDaoFactory.InstanceDao(ctx),
+		modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx),
+		&sandboxAdapterStub{createResp: &psandbox.Sandbox{SandboxID: "sbx-should-not-be-created"}},
+		nil, // aiGatewayAdapter
+		nil, // operationHistoryDao
+		nil,
+		"tpl-1",
+	)
+
+	_, err := logic.CreateInstance(ctx, &transport.CreateInstanceRequest{})
+	if !errors.Is(err, errcode.ErrInstanceNoActivePass) {
+		t.Fatalf("expected ErrInstanceNoActivePass, got %v", err)
+	}
+
+	// 验证不会因兜底 ensureDefaultQuota 写入历史 5 配额（强校验前置 → quota 行不应被写）
+	quotaEntity, err := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx).
+		SelectQuota(ctx.GetUserID(), "OPENCLAW_INSTANCE", "")
+	if err != nil {
+		t.Fatalf("query quota: %v", err)
+	}
+	if quotaEntity != nil {
+		t.Fatalf("no-active-pass path must reject before ensureDefaultQuota; unexpected quota row total=%d available=%d",
+			quotaEntity.ResourceQuotaTotal, quotaEntity.ResourceQuotaAvailable)
+	}
+
+	// 验证未创建任何 instance
+	list, total, err := modelfactory.DefaultDaoFactory.InstanceDao(ctx).ListByUserID(ctx, ctx.GetUserID(), 1, 10)
+	if err != nil {
+		t.Fatalf("list instances: %v", err)
+	}
+	if total != 0 || len(list) != 0 {
+		t.Fatalf("no-active-pass should not create instance, total=%d len=%d", total, len(list))
+	}
+}
+
 func TestCreateInstanceQuotaExceeded(t *testing.T) {
 	testutil.NewMySQLDB(t, "..", "..", "migrations")
 
 	ctx := testutil.NewContext(t, "user-1")
+	testutil.SeedActivePass(t, ctx)
 	if err := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx).DB().Create(&quota.Entity{
 		UserID:                 ctx.GetUserID(),
 		ResourceName:           "OPENCLAW_INSTANCE",
@@ -1216,6 +1290,7 @@ func TestCreateInstanceRollsBackWhenStatusPersistenceFailsAfterSandboxCreated(t 
 	testutil.NewMySQLDB(t, "..", "..", "migrations")
 
 	ctx := testutil.NewContext(t, "user-1")
+	testutil.SeedActivePass(t, ctx)
 	if err := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx).DB().Create(&quota.Entity{
 		UserID:                 ctx.GetUserID(),
 		ResourceName:           "OPENCLAW_INSTANCE",
@@ -1277,6 +1352,7 @@ func TestCreateInstanceLogsWarningWhenRollbackQuotaAffectsNoRows(t *testing.T) {
 	testutil.NewMySQLDB(t, "..", "..", "migrations")
 
 	ctx := testutil.NewContext(t, "user-1")
+	testutil.SeedActivePass(t, ctx)
 	if err := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx).DB().Create(&quota.Entity{
 		UserID:                 ctx.GetUserID(),
 		ResourceName:           "OPENCLAW_INSTANCE",
@@ -1323,6 +1399,7 @@ func TestCreateInstanceFailsWhenSandboxIDAlreadyExists(t *testing.T) {
 	testutil.NewMySQLDB(t, "..", "..", "migrations")
 
 	ctx := testutil.NewContext(t, "user-1")
+	testutil.SeedActivePass(t, ctx)
 	if err := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx).DB().Create(&quota.Entity{
 		UserID:                 ctx.GetUserID(),
 		ResourceName:           "OPENCLAW_INSTANCE",
@@ -1413,6 +1490,7 @@ func TestCreateInstanceSkipsAiGatewayOnboardWhenConfigMissing(t *testing.T) {
 	})
 
 	ctx := testutil.NewContext(t, "user-aigw-config-missing")
+	testutil.SeedActivePass(t, ctx)
 	if err := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx).DB().Create(&quota.Entity{
 		UserID:                 ctx.GetUserID(),
 		ResourceName:           "OPENCLAW_INSTANCE",
@@ -1478,6 +1556,7 @@ func TestCreateInstanceSkipsAiGatewayOnboardCommandDuringCreate(t *testing.T) {
 	})
 
 	ctx := testutil.NewContext(t, "user-aigw-onboard-fail")
+	testutil.SeedActivePass(t, ctx)
 	if err := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx).DB().Create(&quota.Entity{
 		UserID:                 ctx.GetUserID(),
 		ResourceName:           "OPENCLAW_INSTANCE",
@@ -1556,6 +1635,7 @@ func TestCreateInstanceSkipsAiGatewayProvisioningDuringCreate(t *testing.T) {
 	})
 
 	ctx := testutil.NewContext(t, "user-aigw-success")
+	testutil.SeedActivePass(t, ctx)
 	if err := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx).DB().Create(&quota.Entity{
 		UserID:                 ctx.GetUserID(),
 		ResourceName:           "OPENCLAW_INSTANCE",
@@ -2628,6 +2708,7 @@ func TestCreateInstanceRecordsOperationHistory(t *testing.T) {
 	testutil.NewMySQLDB(t, "..", "..", "migrations")
 
 	ctx := testutil.NewContext(t, "user-op-hist")
+	testutil.SeedActivePass(t, ctx)
 	quotaDB := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx)
 	if err := quotaDB.DB().Create(&quota.Entity{
 		UserID:                 ctx.GetUserID(),
@@ -2679,6 +2760,7 @@ func TestPauseInstanceRecordsOperationHistory(t *testing.T) {
 	testutil.NewMySQLDB(t, "..", "..", "migrations")
 
 	ctx := testutil.NewContext(t, "user-op-pause")
+	testutil.SeedActivePass(t, ctx)
 	quotaDB := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx)
 	if err := quotaDB.DB().Create(&quota.Entity{
 		UserID:                 ctx.GetUserID(),
@@ -2735,6 +2817,7 @@ func TestListOperationsReturnsOperationHistory(t *testing.T) {
 	testutil.NewMySQLDB(t, "..", "..", "migrations")
 
 	ctx := testutil.NewContext(t, "user-list-ops")
+	testutil.SeedActivePass(t, ctx)
 	quotaDB := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx)
 	if err := quotaDB.DB().Create(&quota.Entity{
 		UserID:                 ctx.GetUserID(),
@@ -2786,6 +2869,7 @@ func TestGetInstanceLogsRejectsNonRunningInstance(t *testing.T) {
 	testutil.NewMySQLDB(t, "..", "..", "migrations")
 
 	ctx := testutil.NewContext(t, "user-logs-status")
+	testutil.SeedActivePass(t, ctx)
 	quotaDB := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx)
 	if err := quotaDB.DB().Create(&quota.Entity{
 		UserID:                 ctx.GetUserID(),
@@ -2846,6 +2930,7 @@ func TestFailedOperationRecordsErrorInHistory(t *testing.T) {
 	testutil.NewMySQLDB(t, "..", "..", "migrations")
 
 	ctx := testutil.NewContext(t, "user-fail-record")
+	testutil.SeedActivePass(t, ctx)
 	quotaDB := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx)
 	if err := quotaDB.DB().Create(&quota.Entity{
 		UserID:                 ctx.GetUserID(),

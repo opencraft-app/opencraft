@@ -872,11 +872,11 @@ func maxInt(a, b int) int {
 	return b
 }
 
-func (l *logic) evaluateCreateChurnGuard(ctx pctx.Context, skuID string) (churnGuardDecision, error) {
+func (l *logic) evaluateCreateChurnGuard(ctx pctx.Context, instanceSpecID string) (churnGuardDecision, error) {
 	if l == nil || l.churnGuard == nil {
 		return churnGuardDecision{Allow: true}, nil
 	}
-	candidates, err := l.resolveCreateCandidatePools(ctx, skuID)
+	candidates, err := l.resolveCreateCandidatePools(ctx, instanceSpecID)
 	if err != nil {
 		return churnGuardDecision{}, err
 	}

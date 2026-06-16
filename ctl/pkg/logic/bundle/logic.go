@@ -8,32 +8,36 @@ import (
 	"fmt"
 	"time"
 
-	adapterfactory "ctl/pkg/adapter/factory"
 	"ctl/pkg/adapter/aigateway"
+	adapterfactory "ctl/pkg/adapter/factory"
 	"ctl/pkg/config"
 	"ctl/pkg/errcode"
 	"ctl/pkg/logic/objectid"
 	bundlemodel "ctl/pkg/model/bundle"
 	modelfactory "ctl/pkg/model/factory"
+	"ctl/pkg/model/instancespec"
 
 	"gorm.io/gorm"
 )
 
 // BundleDetail 套餐详情
 type BundleDetail struct {
-	BundleID              string
-	BundleName            string
-	Description           string // JSON: [{"Key":"...","Value":"..."}]
-	BundleState           string
-	AgentQuota            int64
-	Credit                int64  // 用户可见积分额度
-	TimeSpan              int    // 套餐周期数值
-	TimeUnit              string // 套餐周期单位 "m"=月 / "d"=天
-	AiGatewayPlanID       string // ai-gateway Plan UUID（credit=0 时允许空）
+	BundleID        string
+	BundleName      string
+	Description     string // JSON: [{"Key":"...","Value":"..."}]
+	BundleState     string
+	AgentQuota      int64
+	Credit          int64  // 用户可见积分额度
+	TimeSpan        int    // 套餐周期数值
+	TimeUnit        string // 套餐周期单位 "m"=月 / "d"=天
+	AiGatewayPlanID string // ai-gateway Plan UUID（credit=0 时允许空）
 	// AiGatewayPlans 多对多 plan 列表（JSON 字符串），DB 内部字段。
 	// 唯一消费方：ctl/pass.CompletePaidPassFromJifei 按 period 选 plan_id；
 	// trade 不感知；ctl 任何 user-facing / internal-facing 出参一律不暴露（Q37/Q38 拍板）。
-	AiGatewayPlans        string
+	AiGatewayPlans string
+	// InstanceSpecID 实例规格 ID。空字符串表示兼容期 fallback 到全局默认 spec-2c4g50g。
+	// 详见 .tmp/bundle-instance-spec-design.md（Q1=a / Q4=a）。
+	InstanceSpecID        string
 	StaticSoldOut         bool
 	BundleSalesAvailCount int
 	BundleSalesTotalCount int
@@ -44,14 +48,17 @@ type BundleDetail struct {
 
 // ModifyBundleFields 可修改字段，指针类型
 type ModifyBundleFields struct {
-	BundleName            *string `json:"bundle_name,omitempty"`
-	Description           *string `json:"description,omitempty"`
-	BundleState           *string `json:"bundle_state,omitempty"`
-	AgentQuota            *int64  `json:"agent_quota,omitempty"`
-	Credit                *int64  `json:"credit,omitempty"`
-	TimeSpan              *int    `json:"time_span,omitempty"`
-	TimeUnit              *string `json:"time_unit,omitempty"`
-	AiGatewayPlanID       *string `json:"ai_gateway_plan_id,omitempty"`
+	BundleName      *string `json:"bundle_name,omitempty"`
+	Description     *string `json:"description,omitempty"`
+	BundleState     *string `json:"bundle_state,omitempty"`
+	AgentQuota      *int64  `json:"agent_quota,omitempty"`
+	Credit          *int64  `json:"credit,omitempty"`
+	TimeSpan        *int    `json:"time_span,omitempty"`
+	TimeUnit        *string `json:"time_unit,omitempty"`
+	AiGatewayPlanID *string `json:"ai_gateway_plan_id,omitempty"`
+	// InstanceSpecID 实例规格 ID（设计稿 Q4=a / Q-NAMING-1=a）。
+	// nil 表示该字段不修改；非 nil 时 logic 校验值在 instancespec.KnownSpecs 字典中。
+	InstanceSpecID        *string `json:"instance_spec_id,omitempty"`
 	StaticSoldOut         *bool   `json:"static_sold_out,omitempty"`
 	BundleSalesAvailCount *int    `json:"bundle_sales_available_count,omitempty"`
 	BundleSalesTotalCount *int    `json:"bundle_sales_total_count,omitempty"`
@@ -60,9 +67,13 @@ type ModifyBundleFields struct {
 // Logic Bundle 业务逻辑接口
 type Logic interface {
 	// ImportBundle 导入套餐：不存在则创建，存在则覆盖性更新
-	// 执行三项强一致性校验（credit / plan / period），校验不通过直接返回错误
+	// 执行三项强一致性校验（credit / plan / period），校验不通过直接返回错误。
+	//
+	// instanceSpecID（设计稿 Q4=a / Q-NAMING-1=a）：
+	//   - 空字符串 → 兼容期 fallback 到全局默认 spec-2c4g50g
+	//   - 非空 → 必须在 instancespec.KnownSpecs 字典中，否则报 ErrBundleInstanceSpecNotFound
 	ImportBundle(bundleID string, bundleName string, description string, agentQuota int64,
-		credit int64, timeSpan int, timeUnit string, aiGatewayPlanID string,
+		credit int64, timeSpan int, timeUnit string, aiGatewayPlanID string, instanceSpecID string,
 		staticSoldOut bool, salesAvailCount int, salesTotalCount int) (*BundleDetail, error)
 
 	// GetBundles 查询所有套餐（含 ONLINE 和 OFFLINE）
@@ -166,7 +177,7 @@ func validateCreditPlanPeriod(credit int64, timeSpan int, timeUnit, aiGatewayPla
 }
 
 func (l *logic) ImportBundle(bundleID string, bundleName string, description string, agentQuota int64,
-	credit int64, timeSpan int, timeUnit string, aiGatewayPlanID string,
+	credit int64, timeSpan int, timeUnit string, aiGatewayPlanID string, instanceSpecID string,
 	staticSoldOut bool, salesAvailCount int, salesTotalCount int) (*BundleDetail, error) {
 
 	if bundleID == "" {
@@ -184,6 +195,12 @@ func (l *logic) ImportBundle(bundleID string, bundleName string, description str
 		return nil, err
 	}
 
+	// 实例规格校验（设计稿 Q4=a / Q-NAMING-1=a）：空字符串走兼容期；非空时必须在常量字典中。
+	if !instancespec.IsKnown(instanceSpecID) {
+		return nil, errcode.Wrap(errcode.ErrBundleInstanceSpecNotFound,
+			"unknown instance_spec_id: %s", instanceSpecID)
+	}
+
 	// 如果没有提供 bundleID，生成一个
 	if bundleID == "" {
 		bundleID = objectid.NewLogic().GenerateBundleId()
@@ -199,6 +216,7 @@ func (l *logic) ImportBundle(bundleID string, bundleName string, description str
 		TimeSpan:              timeSpan,
 		TimeUnit:              timeUnit,
 		AiGatewayPlanID:       aiGatewayPlanID,
+		InstanceSpecID:        instanceSpecID,
 		StaticSoldOut:         staticSoldOut,
 		BundleSalesAvailCount: salesAvailCount,
 		BundleSalesTotalCount: salesTotalCount,
@@ -271,13 +289,21 @@ func (l *logic) ModifyBundles(bundleIDs []string, req *ModifyBundleFields) (int6
 		updates[bundlemodel.ColumnTimeSpan] = *req.TimeSpan
 	}
 	if req.TimeUnit != nil {
-		if *req.TimeUnit != bundlemodel.TimeUnitMonth && *req.TimeUnit != bundlemodel.TimeUnitDay {
-			return 0, errcode.Wrap(errcode.ErrBundleConfigInvalid, "time_unit must be 'm' or 'd'")
+		if *req.TimeUnit != bundlemodel.TimeUnitMonth && *req.TimeUnit != bundlemodel.TimeUnitDay && *req.TimeUnit != bundlemodel.TimeUnitYear {
+			return 0, errcode.Wrap(errcode.ErrBundleConfigInvalid, "time_unit must be 'm', 'd' or 'y'")
 		}
 		updates[bundlemodel.ColumnTimeUnit] = *req.TimeUnit
 	}
 	if req.AiGatewayPlanID != nil {
 		updates[bundlemodel.ColumnAiGatewayPlanID] = *req.AiGatewayPlanID
+	}
+	if req.InstanceSpecID != nil {
+		// 设计稿 §10 Q4=a / Q-NAMING-1=a：空字符串走兼容期 fallback；非空必须在常量字典中
+		if !instancespec.IsKnown(*req.InstanceSpecID) {
+			return 0, errcode.Wrap(errcode.ErrBundleInstanceSpecNotFound,
+				"unknown instance_spec_id: %s", *req.InstanceSpecID)
+		}
+		updates[bundlemodel.ColumnInstanceSpecID] = *req.InstanceSpecID
 	}
 	if req.StaticSoldOut != nil {
 		updates[bundlemodel.ColumnStaticSoldOut] = *req.StaticSoldOut
@@ -377,6 +403,7 @@ func entityToDetail(e *bundlemodel.Entity) *BundleDetail {
 		TimeUnit:              e.TimeUnit,
 		AiGatewayPlanID:       e.AiGatewayPlanID,
 		AiGatewayPlans:        e.AiGatewayPlans,
+		InstanceSpecID:        e.InstanceSpecID,
 		StaticSoldOut:         e.StaticSoldOut,
 		BundleSalesAvailCount: e.BundleSalesAvailCount,
 		BundleSalesTotalCount: e.BundleSalesTotalCount,

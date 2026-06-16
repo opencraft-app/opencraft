@@ -747,8 +747,14 @@ user_resource_quota 表
   ├── resource_name = "OPENCLAW_INSTANCE"
   ├── resource_key  = ""
   ├── resource_quota_available  (可用配额)
-  └── resource_quota_total      (总配额, 默认 5)
+  └── resource_quota_total      (总配额, 由 bundle.agent_quota 主导)
 ```
+
+> **2026-06-08 更新**：`OPENCLAW_INSTANCE` 全局默认值（`server_conf.toml -> [global_quota.resource_default_quotas].OPENCLAW_INSTANCE = 5`）已**退化为防御性兜底**：
+>
+> - **正常付费链路**：用户购买 bundle 后，`modelpass.CreatePassWithQuota` 在同一事务内按 `bundle.agent_quota` 直接覆盖 `user_resource_quota.resource_quota_total`，**完全不经过默认 5 的兜底路径**
+> - **`CreateInstance` 强校验**：bundle 引入后，`CreateInstance` 入口已强校验「用户必须存在 active pass」（无 active pass → `INSTANCE_NO_ACTIVE_PASS` 403），杜绝了「无 pass 用户白嫖默认 5 配额」的旧路径
+> - **`ensureDefaultQuota` 当前语义**：仅作 last-resort 兜底，处理「active pass 存在但 quota 行被外力（运维 SQL / 数据迁移异常）删除」的极端场景；INSERT ON CONFLICT DO NOTHING 幂等，对正常路径无副作用
 
 ### 5.2 Bundle 引入后的演进方向
 
