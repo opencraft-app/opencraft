@@ -20,12 +20,15 @@ const SITE = {
     locale: "en_US",
     name: "LightVela",
     defaultUrl: "https://lightvela.ai",
-    titleSuffix: "LightVela 云端专属个人 Agent",
-    description: "LightVela 是腾讯轻量云团队推出的云端 Agent 托管产品，致力于让每个人都能拥有一个真正属于自己的 AI 伙伴——不是每次打开都要重新自我介绍的工具，而是认识你、记得你、越聊越懂你的长期存在。",
+    titleSuffix: "LightVela · Your Personal Cloud AI Agent",
+    description: "LightVela is a cloud-hosted AI Agent product from Tencent Cloud Lightweight team, giving everyone a personal AI companion that remembers you and grows with you over time — always online in the cloud.",
   },
 };
 
-const SITE_KEYWORDS = "LightVela, LightVela Agent, 云端 Agent, 个人 Agent, AI 伙伴, 腾讯轻量云, Agent 托管, 长期记忆, 个性化 AI, Hermes Agent, OpenClaw, 智能助手, AI 助手, 自动任务, 多渠道接入, QQ 机器人, 微信 Agent, 企业微信 Agent, 飞书 Agent, AI 陪伴, 个人智能体";
+const SITE_KEYWORDS = {
+  cn: "LightVela, LightVela Agent, 云端 Agent, 个人 Agent, AI 伙伴, 腾讯轻量云, Agent 托管, 长期记忆, 个性化 AI, Hermes Agent, OpenClaw, 智能助手, AI 助手, 自动任务, 多渠道接入, QQ 机器人, 微信 Agent, 企业微信 Agent, 飞书 Agent, AI 陪伴, 个人智能体",
+  global: "LightVela, LightVela Agent, cloud AI agent, personal AI agent, AI companion, Tencent Cloud, agent hosting, long-term memory, personalized AI, Hermes Agent, OpenClaw, AI assistant, automations, multi-channel, WeChat agent, Telegram bot, WhatsApp bot, Discord bot, personal agent",
+};
 
 const DOCS = {
   cn: [
@@ -335,7 +338,7 @@ function baseRoutes(region) {
     {
       kind: "home",
       path: "/",
-      title: isGlobal ? "Cloud-hosted AI Agent companion" : "越用越懂你的云端智能伙伴",
+      title: isGlobal ? "Your Personal Cloud AI Agent" : "越用越懂你的云端智能伙伴",
       description: SITE[region].description,
     },
     {
@@ -401,17 +404,18 @@ function renderStaticSiteCriticalStyle() {
   ].join("");
 }
 
-function renderHead({ route, site, siteUrl, canonicalPath, description, indexable, jsonLd }) {
+function renderHead({ route, site, region, siteUrl, canonicalPath, description, indexable, jsonLd }) {
   const title = routeTitle(route, site);
   const canonical = absoluteUrl(siteUrl, canonicalPath);
   const robots = indexable ? "index,follow" : "noindex,nofollow";
   const image = absoluteUrl(siteUrl, "/lightvela-logo.jpg");
+  const keywords = SITE_KEYWORDS[region] ?? SITE_KEYWORDS.cn;
   return [
     "<meta charset=\"UTF-8\">",
     "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">",
     `<title>${escapeHtml(title)}</title>`,
     `<meta name="description" content="${escapeHtml(description)}">`,
-    `<meta name="keywords" content="${escapeHtml(SITE_KEYWORDS)}">`,
+    `<meta name="keywords" content="${escapeHtml(keywords)}">`,
     `<meta name="robots" content="${robots}">`,
     `<link rel="canonical" href="${canonical}">`,
     "<link rel=\"icon\" type=\"image/jpeg\" href=\"/lightvela-logo.jpg\">",
@@ -704,7 +708,7 @@ async function renderRoute({ template, route, region, siteUrl, indexable, fronte
   }
 
   const jsonLd = jsonLdForRoute({ route, region, siteUrl, canonicalPath, description });
-  const head = renderHead({ route, site, siteUrl, canonicalPath, description, indexable, jsonLd });
+  const head = renderHead({ route, site, region, siteUrl, canonicalPath, description, indexable, jsonLd });
   return wrapPage({ template, site, head, body });
 }
 

@@ -449,14 +449,14 @@ function replaceOrInsertMeta(html: string, name: string, content: string): strin
   return html.replace(/(\s*<title>)/i, `    ${tag}\n$1`);
 }
 
-function applySeoToHtml(html: string, requestPath: string): string {
-  const meta = getSeoMeta(normalizeSeoRequestPath(requestPath));
+function applySeoToHtml(html: string, requestPath: string, region: "cn" | "global"): string {
+  const meta = getSeoMeta(normalizeSeoRequestPath(requestPath), region);
   const htmlWithTitle = html.replace(/<title>.*?<\/title>/i, `<title>${escapeHtmlAttribute(meta.title)}</title>`);
   const htmlWithDescription = replaceOrInsertMeta(htmlWithTitle, "description", meta.description);
   return replaceOrInsertMeta(htmlWithDescription, "keywords", meta.keywords);
 }
 
-function seoHtmlPlugin(): PluginOption {
+function seoHtmlPlugin(region: "cn" | "global"): PluginOption {
   return {
     name: "lightvela-seo-html",
     enforce: "pre",
@@ -464,7 +464,14 @@ function seoHtmlPlugin(): PluginOption {
       server.middlewares.use(async (req, res, next) => {
         const method = req.method ?? "GET";
         const url = req.url?.split("?")[0] ?? "/";
-        const acceptsHtml = req.headers.accept?.includes("text/html") ?? false;
+        // 仅当客户端明确不接受 HTML（例如 fetch JSON）时才跳过；
+        // 缺省 / 含 text/html / 通配 */* 一律视为页面导航请求，注入 SEO meta。
+        // 历史实现要求 accept 必须含 "text/html"，导致不带标准 Accept 头的
+        // 页面请求（查看源代码、部分爬虫、curl 等）拿到的是未注入 SEO 的
+        // 原始 index.html，title 卡在默认值而非规范的 `页面名 | 后缀`。
+        const accept = req.headers.accept;
+        const acceptsHtml =
+          !accept || accept.includes("text/html") || accept.includes("*/*");
 
         if (
           !["GET", "HEAD"].includes(method)
@@ -493,7 +500,7 @@ function seoHtmlPlugin(): PluginOption {
     transformIndexHtml: {
       order: "pre",
       handler(html, ctx) {
-        return applySeoToHtml(html, ctx.path);
+        return applySeoToHtml(html, ctx.path, region);
       },
     },
   };
@@ -540,6 +547,10 @@ export default defineConfig(({ mode }) => {
     }
     : undefined;
 
+  /* dev SEO 中间件按构建 mode 区分国内/国际站，注入对应语言的 title/meta。
+   * mode 由 `vite --mode cn|global`（pnpm dev:cn / dev:global）决定。 */
+  const seoRegion: "cn" | "global" = mode === "global" ? "global" : "cn";
+
   return {
     // tea-app i18n.init() 内部引用了 PRODUCTION / INTL_TRANSLATION_ID 全局变量
     // （webpack 环境由 DefinePlugin 注入），Vite 需要显式 define。
@@ -553,7 +564,7 @@ export default defineConfig(({ mode }) => {
       sdkI18nPlugin(),
       reactDomFindDOMNodeVitePlugin(),
       reactDomPolyfillBuildPlugin(),
-      seoHtmlPlugin(),
+      seoHtmlPlugin(seoRegion),
     ] as unknown as PluginOption[],
     resolve: {
       // Deduplicate React so the locally-linked SDK shares the host app's copy

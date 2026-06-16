@@ -24,4 +24,14 @@ describe("seo meta", () => {
     expect(getSeoMeta("/bots/bot-1/terminal").title).toBe("终端 | LightVela 云端专属个人 Agent");
     expect(getSeoMeta("/missing-page").title).toBe("页面不存在 | LightVela 云端专属个人 Agent");
   });
+
+  it("renders English titles and suffix for the global region", () => {
+    const globalSuffix = "LightVela · Your Personal Cloud AI Agent";
+    expect(getSeoMeta("/", "global").title).toBe("LightVela | Your Personal Cloud AI Agent");
+    expect(getSeoMeta("/about", "global").title).toBe(`About | ${globalSuffix}`);
+    expect(getSeoMeta("/docs/overview", "global").title).toBe(`What is LightVela | ${globalSuffix}`);
+    expect(getSeoMeta("/agents/memory", "global").title).toBe(`Memory | ${globalSuffix}`);
+    expect(getSeoMeta("/bots/bot-1/terminal", "global").title).toBe(`Terminal | ${globalSuffix}`);
+    expect(getSeoMeta("/missing-page", "global").title).toBe(`Page Not Found | ${globalSuffix}`);
+  });
 });
