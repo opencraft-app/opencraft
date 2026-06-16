@@ -129,6 +129,12 @@ func (s *createTaskSandboxAdapterStub) RunProcessWithStdin(context.Context, stri
 func (s *createTaskSandboxAdapterStub) SendProcessSignal(context.Context, string, uint32, string) error {
 	return nil
 }
+func (s *createTaskSandboxAdapterStub) CreateSnapshot(context.Context, string, *psandbox.CreateSnapshotRequest) (*psandbox.CreateSnapshotResponse, error) {
+	panic("unexpected call")
+}
+func (s *createTaskSandboxAdapterStub) GetSnapshotStatus(context.Context, string, string) (*psandbox.GetSnapshotStatusResponse, error) {
+	panic("unexpected call")
+}
 
 type createTaskAiGatewayAdapterStub struct {
 	paigateway.Adapter

@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"os"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -12,15 +15,15 @@ import (
 
 // Binding shadow 服务的绑定信息
 type Binding struct {
-	UserID          string `json:"user_id"`
-	ShadowUserName  string `json:"shadow_user_name"`
-	Uin             int64  `json:"uin"`
-	OwnerUin        int64  `json:"owner_uin"`
-	AppID           int64  `json:"app_id"`
-	InstanceID      string `json:"instance_id"`
-	CountryCode     string `json:"country_code"`
-	PhoneNumber     string `json:"phone_number"`
-	CreatedAt       string `json:"created_at"`
+	UserID         string `json:"user_id"`
+	ShadowUserName string `json:"shadow_user_name"`
+	Uin            int64  `json:"uin"`
+	OwnerUin       int64  `json:"owner_uin"`
+	AppID          int64  `json:"app_id"`
+	InstanceID     string `json:"instance_id"`
+	CountryCode    string `json:"country_code"`
+	PhoneNumber    string `json:"phone_number"`
+	CreatedAt      string `json:"created_at"`
 }
 
 // Adapter shadow 服务适配器接口
@@ -34,6 +37,7 @@ type Config struct {
 	BaseURL string `toml:"base_url"`
 	Token   string `toml:"token"`
 	Timeout int    `toml:"timeout"` // 请求超时（秒），默认 10
+	Enabled bool   `toml:"enabled"`
 }
 
 type adapter struct {
@@ -46,6 +50,15 @@ type adapter struct {
 func NewShadowAdapter(cfg *Config, logger *zap.Logger) Adapter {
 	if cfg == nil {
 		cfg = &Config{}
+	}
+	if strings.TrimSpace(cfg.BaseURL) == "" {
+		cfg.BaseURL = os.Getenv("SHADOW_BASE_URL")
+	}
+	if strings.TrimSpace(cfg.Token) == "" {
+		cfg.Token = os.Getenv("SHADOW_INTERNAL_TOKEN")
+		if strings.TrimSpace(cfg.Token) == "" {
+			cfg.Token = os.Getenv("LIGHTCLAW_INTERNAL_SERVICE_TOKEN")
+		}
 	}
 	timeout := time.Duration(cfg.Timeout) * time.Second
 	if timeout <= 0 {
@@ -68,15 +81,16 @@ func (a *adapter) GetBindingByUserID(userID string) (*Binding, error) {
 	if a.config.BaseURL == "" {
 		return nil, fmt.Errorf("shadow adapter: base_url not configured")
 	}
+	if strings.TrimSpace(a.config.Token) == "" {
+		return nil, fmt.Errorf("shadow adapter: token not configured")
+	}
 
-	url := fmt.Sprintf("%s/internal/shadow/binding?user_id=%s", a.config.BaseURL, userID)
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	endpoint := fmt.Sprintf("%s/internal/shadow/binding?user_id=%s", strings.TrimRight(a.config.BaseURL, "/"), url.QueryEscape(userID))
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("shadow adapter: build request: %w", err)
 	}
-	if a.config.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+a.config.Token)
-	}
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(a.config.Token))
 
 	resp, err := a.client.Do(req)
 	if err != nil {

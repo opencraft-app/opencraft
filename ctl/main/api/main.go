@@ -80,6 +80,11 @@ func main() {
 		metric.RemoteCommandTotalCounterVec,
 		metric.RemoteCommandDurationHistogramVec,
 		metric.RemoteCommandInflightGaugeVec,
+		// trade-pass-destroy 销毁链路指标（D-9 切片）
+		metric.DestroyPassTotal,
+		metric.DestroyTradeCallFailedTotal,
+		metric.DestroyFinalizeStepTotal,
+		metric.SnapshotCleanupTotal,
 		// 实例状态 Gauge（实时查询 DB）
 		metric.NewInstanceGaugeCollector(resource.GormDB),
 		// 基础设施指标（DB/Redis 连接池）
