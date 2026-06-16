@@ -122,6 +122,7 @@ func TestInstanceLogicIntegration(t *testing.T) {
 
 	ctx := testutil.NewContext(t, "user-1")
 	otherCtx := testutil.NewContext(t, "user-2")
+	testutil.SeedActivePass(t, ctx)
 	quotaDao := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx)
 	if err := quotaDao.DB().Create(&quota.Entity{
 		UserID:                 ctx.GetUserID(),
