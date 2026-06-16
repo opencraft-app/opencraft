@@ -45,9 +45,9 @@ mkdir -p "$FRAGMENT_DIR"
   printf '%s\n' '  <span className="lang-zh">它让 CloudAgent 自己维护目录级文档摘要，同时保持根文档门户足够通用。</span>'
   printf '%s\n' '</p>'
   printf '\n'
-  printf '%s\n' '## Source Files / 源文件'
+  printf '%s\n' '## <span className="lang-en">Source Files</span><span className="lang-zh">源文件</span>'
   printf '\n'
-  printf '%s\n' '| Source path | Title / 标题 |'
+  printf '%s\n' '| Source path | <span className="lang-en">Title</span><span className="lang-zh">标题</span> |'
   printf '%s\n' '| --- | --- |'
 
   while IFS= read -r file; do
@@ -60,7 +60,7 @@ mkdir -p "$FRAGMENT_DIR"
   done < <(find "$COMPONENT_DIR/gateway/docs" -maxdepth 1 -type f -name '*.md' | sort)
 
   printf '\n'
-  printf '%s\n' '## Regeneration / 重新生成'
+  printf '%s\n' '## <span className="lang-en">Regeneration</span><span className="lang-zh">重新生成</span>'
   printf '\n'
   printf '%s\n' '<p>'
   printf '%s\n' '  <span className="lang-en">Run from repository root:</span>'

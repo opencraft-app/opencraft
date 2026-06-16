@@ -3,7 +3,7 @@
   "pages": [
     "index",
     "http-run-api",
-    "[API Reference / API 参考](/reference/cloudagent)",
+    "[CloudAgent API Reference / CloudAgent API 参考](/docs/cloudagent/api)",
     "endpoint-manifest",
     "generated-index"
   ]

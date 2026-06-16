@@ -1,5 +1,5 @@
+import { APIReferenceRedirect } from '@/components/api-reference-redirect';
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
 
 export const metadata: Metadata = {
   title: 'CloudAgent API Reference / CloudAgent API 参考',
@@ -8,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function CloudAgentAPIReferenceRedirect() {
-  redirect('/reference/cloudagent');
+  return <APIReferenceRedirect />;
 }

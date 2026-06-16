@@ -11,14 +11,14 @@ and integration clients.
 
 ## Bilingual Policy / 双语策略
 
-v1 uses same-page English and Chinese content instead of locale routing.
+v1 uses an in-place English/Chinese toggle instead of locale routing.
 
-v1 采用同页中英双语，不先做 `/zh`、`/en` 这类 locale routing。
+v1 采用原位 EN/中文切换，不先做 `/zh`、`/en` 这类 locale routing。
 
-This keeps URLs stable for humans, agents, and generated indexes while still
-making the content usable by Chinese and English readers.
+This keeps URLs stable for humans, agents, and generated indexes while letting
+readers switch the visible language without duplicate paragraphs.
 
-这样可以保持人类、Agent 和生成式索引使用的 URL 稳定，同时让中英文读者都能直接阅读。
+这样可以保持人类、Agent 和生成式索引使用的 URL 稳定，同时避免中英文段落堆叠。
 
 ## Local Development / 本地开发
 
@@ -93,7 +93,7 @@ Fumadocs 提供 mono2-wide 文档外壳。Scalar 在 `/reference/cloudagent` 渲
 ## Content Policy / 内容策略
 
 - Keep source MDX readable without running the web app.
-- Use same-page English and Chinese for curated docs.
+- Use `lang-en` and `lang-zh` spans for curated docs so content switches in place.
 - Use frontmatter for `owner`, `status`, `last_reviewed`, `tags`, and
   `source_path`.
 - Keep CloudAgent gateway engineering docs under `cloudagent/gateway/docs` for
@@ -102,7 +102,7 @@ Fumadocs 提供 mono2-wide 文档外壳。Scalar 在 `/reference/cloudagent` 渲
   them as canonical.
 
 - 源 MDX 在不运行 Web app 的情况下也应可读。
-- 精选文档使用同页中英双语。
+- 精选文档使用 `lang-en` 和 `lang-zh` 片段，让内容在同一位置切换。
 - 使用 frontmatter 记录 `owner`、`status`、`last_reviewed`、`tags` 和
   `source_path`。
 - 第一期 CloudAgent gateway 工程文档仍保留在 `cloudagent/gateway/docs`；

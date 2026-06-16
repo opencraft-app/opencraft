@@ -1,3 +1,4 @@
+import { bilingualText, localizedPageTree } from '@/lib/bilingual';
 import { source } from '@/lib/source';
 import { DocsLayout } from 'fumadocs-ui/layouts/docs';
 import type { ReactNode } from 'react';
@@ -5,9 +6,9 @@ import type { ReactNode } from 'react';
 export default function Layout({ children }: { children: ReactNode }) {
   return (
     <DocsLayout
-      tree={source.pageTree}
+      tree={localizedPageTree(source.pageTree)}
       nav={{
-        title: 'mono2 Docs / 文档',
+        title: bilingualText('mono2 Docs', 'mono2 文档', 'mono2 Docs'),
       }}
     >
       {children}

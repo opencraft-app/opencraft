@@ -27,7 +27,7 @@ source_path: cloudagent/gateway/docs/cloudagent-http-run-integration.md
   <span className="lang-zh">持久渠道流量应该使用这套 API。不要把多个渠道会话复用到同一条 ACP WebSocket 上。</span>
 </p>
 
-## Base URL / 基础地址
+## <span className="lang-en">Base URL</span><span className="lang-zh">基础地址</span>
 
 <p>
   <span className="lang-en">Use the CloudAgent gateway HTTP base URL. Do not append `/acp`.</span>
@@ -52,7 +52,7 @@ http://21.6.84.6
 http://cloudagent-gateway.dep.svc.cluster.local
 ```
 
-## Authentication And Scope / 鉴权与作用域
+## <span className="lang-en">Authentication And Scope</span><span className="lang-zh">鉴权与作用域</span>
 
 <p>
   <span className="lang-en">Every request must identify the caller scope by either:</span>
@@ -90,7 +90,7 @@ export CLOUDAGENT_PROJECT_ID=project-devcloud-dep
 }
 ```
 
-## Capability Probe / 能力探测
+## <span className="lang-en">Capability Probe</span><span className="lang-zh">能力探测</span>
 
 ```bash
 curl -sS \
@@ -125,7 +125,7 @@ curl -sS \
 }
 ```
 
-## Basic Flow / 基本流程
+## <span className="lang-en">Basic Flow</span><span className="lang-zh">基本流程</span>
 
 <div className="lang-en">
 
@@ -147,7 +147,7 @@ curl -sS \
 
 </div>
 
-## Generated API Reference / 生成式 API 参考
+## <span className="lang-en">Generated API Reference</span><span className="lang-zh">生成式 API 参考</span>
 
 <p>
   <span className="lang-en">The API reference is rendered by Scalar from the generated OpenAPI schema:</span>
@@ -176,7 +176,7 @@ curl -sS \
 docs-site/openapi/cloudagent.json
 ```
 
-## Create Session / 创建会话
+## <span className="lang-en">Create Session</span><span className="lang-zh">创建会话</span>
 
 ```bash
 curl -sS \
@@ -204,7 +204,7 @@ curl -sS \
 }
 ```
 
-## Submit Run / 提交运行
+## <span className="lang-en">Submit Run</span><span className="lang-zh">提交运行</span>
 
 <p>
   <span className="lang-en">Generate a stable idempotency key per inbound channel message:</span>
@@ -233,7 +233,7 @@ curl -sS \
   "$CLOUDAGENT_BASE_URL/v1/cloudagent/sessions/$SESSION_ID/runs"
 ```
 
-## Event Replay And Stream / 事件回放与流式读取
+## <span className="lang-en">Event Replay And Stream</span><span className="lang-zh">事件回放与流式读取</span>
 
 <p>
   <span className="lang-en">Replay committed events:</span>

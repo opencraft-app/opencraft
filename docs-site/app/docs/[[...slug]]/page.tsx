@@ -1,18 +1,8 @@
+import { bilingualText } from '@/lib/bilingual';
 import { getMDXComponents } from '@/mdx-components';
 import { source } from '@/lib/source';
 import { DocsBody, DocsDescription, DocsPage, DocsTitle } from 'fumadocs-ui/page';
 import { notFound } from 'next/navigation';
-
-function languageText(en: string | undefined, zh: string | undefined, fallback: string | undefined) {
-  if (!en || !zh) return fallback ?? null;
-
-  return (
-    <>
-      <span className="lang-en">{en}</span>
-      <span className="lang-zh">{zh}</span>
-    </>
-  );
-}
 
 export default async function Page({ params }: { params: Promise<{ slug?: string[] }> }) {
   const { slug } = await params;
@@ -24,9 +14,9 @@ export default async function Page({ params }: { params: Promise<{ slug?: string
 
   return (
     <DocsPage toc={page.data.toc} full={page.data.full}>
-      <DocsTitle>{languageText(page.data.title_en, page.data.title_zh, page.data.title)}</DocsTitle>
+      <DocsTitle>{bilingualText(page.data.title_en, page.data.title_zh, page.data.title)}</DocsTitle>
       <DocsDescription>
-        {languageText(page.data.description_en, page.data.description_zh, page.data.description)}
+        {bilingualText(page.data.description_en, page.data.description_zh, page.data.description)}
       </DocsDescription>
       <DocsBody>
         <MDX components={getMDXComponents()} />

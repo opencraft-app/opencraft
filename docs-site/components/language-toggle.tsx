@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 type DocsLanguage = 'en' | 'zh';
 
 const storageKey = 'mono2-docs-language';
+const cookieName = 'mono2-docs-language';
 
 function resolveInitialLanguage(): DocsLanguage {
   if (typeof window === 'undefined') return 'zh';
@@ -22,12 +23,14 @@ export function LanguageToggle() {
     const initial = resolveInitialLanguage();
     setLanguage(initial);
     document.documentElement.dataset.docsLang = initial;
+    document.cookie = `${cookieName}=${initial}; path=/; max-age=31536000; SameSite=Lax`;
   }, []);
 
   function updateLanguage(next: DocsLanguage) {
     setLanguage(next);
     document.documentElement.dataset.docsLang = next;
     window.localStorage.setItem(storageKey, next);
+    document.cookie = `${cookieName}=${next}; path=/; max-age=31536000; SameSite=Lax`;
   }
 
   return (

@@ -26,16 +26,16 @@ source_path: docs-site/content/docs/index.mdx
   <span className="lang-zh">当前优先整理 CloudAgent：它已经有持久化 HTTP Run 协议、runtime 生命周期说明和接入文档，需要稳定的中英双语入口。</span>
 </p>
 
-## AI Entry Points / AI 入口
+## <span className="lang-en">AI Entry Points</span><span className="lang-zh">AI 入口</span>
 
-| Endpoint | Purpose / 用途 |
+| Endpoint | <span className="lang-en">Purpose</span><span className="lang-zh">用途</span> |
 | --- | --- |
 | `/llms.txt` | <span className="lang-en">Compact AI index for crawlers and coding agents.</span><span className="lang-zh">给爬虫和 coding agent 使用的精简索引。</span> |
 | `/llms-full.txt` | <span className="lang-en">Full text export of the curated docs.</span><span className="lang-zh">已整理文档的全文导出。</span> |
 | `/docs-index.json` | <span className="lang-en">Machine-readable page index.</span><span className="lang-zh">机器可读页面索引。</span> |
 | `/cloudagent-endpoints.json` | <span className="lang-en">Compact endpoint inventory derived from the CloudAgent OpenAPI schema.</span><span className="lang-zh">从 CloudAgent OpenAPI 派生的紧凑端点清单。</span> |
 
-## Generation Contract / 生成契约
+## <span className="lang-en">Generation Contract</span><span className="lang-zh">生成契约</span>
 
 <p>
   <span className="lang-en">The repository root exposes `./makedocs.sh`. Each component can own a local `makedocs.sh` that exports deterministic docs fragments into this portal.</span>
@@ -47,7 +47,7 @@ source_path: docs-site/content/docs/index.mdx
   <span className="lang-zh">这样根文档站保持通用，每个目录负责解释自己，避免中央生成器必须理解所有子系统细节。</span>
 </p>
 
-## Source Policy / 来源策略
+## <span className="lang-en">Source Policy</span><span className="lang-zh">来源策略</span>
 
 <p>
   <span className="lang-en">The docs-site keeps source MDX readable and stable. Pages should include frontmatter with owner, status, last review date, tags, and source path so AI systems can reason about freshness and ownership.</span>
