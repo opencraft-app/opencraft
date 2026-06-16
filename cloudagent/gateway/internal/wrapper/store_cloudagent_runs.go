@@ -181,6 +181,42 @@ func (s *Store) LoadCloudAgentRun(scope Scope, runID string) (cloudAgentRunRecor
 	return run, nil
 }
 
+func (s *Store) ListCloudAgentRuns(scope Scope, sessionID string, limit int) ([]cloudAgentRunRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if limit <= 0 {
+		limit = 50
+	}
+	args := []any{scope.TenantID, scope.ProjectID, scope.SandboxScope}
+	filter := ""
+	if sessionID != "" {
+		filter = " AND r.session_id = ?"
+		args = append(args, sessionID)
+	}
+	args = append(args, limit)
+	rows, err := s.db.Query(`
+SELECT r.run_id, r.session_id, r.turn_id, r.response_id, r.status, r.stop_reason,
+	r.error_message, r.output_text, r.created_at, r.updated_at, r.completed_at
+FROM cloudagent_runs r
+JOIN sessions s ON s.session_id = r.session_id
+WHERE s.scope_tenant = ? AND s.scope_project = ? AND s.scope_sandbox = ? AND s.deleted_at IS NULL`+filter+`
+ORDER BY r.updated_at DESC
+LIMIT ?`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var runs []cloudAgentRunRecord
+	for rows.Next() {
+		run, err := scanCloudAgentRun(rows)
+		if err != nil {
+			return nil, err
+		}
+		runs = append(runs, run)
+	}
+	return runs, rows.Err()
+}
+
 func (s *Store) CloudAgentRunEventsSince(scope Scope, runID string, afterSeq int64) (cloudAgentRunRecord, []cloudAgentRunEvent, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -353,18 +389,27 @@ func (s *Store) ensureCloudAgentRunScopeLocked(scope Scope, sessionID string) er
 }
 
 func (s *Store) loadCloudAgentRunLocked(runID string) (cloudAgentRunRecord, error) {
-	var run cloudAgentRunRecord
-	var createdAt, updatedAt string
-	var completedAt sql.NullString
-	err := s.db.QueryRow(`
+	run, err := scanCloudAgentRun(s.db.QueryRow(`
 SELECT run_id, session_id, turn_id, response_id, status, stop_reason, error_message, output_text, created_at, updated_at, completed_at
-FROM cloudagent_runs WHERE run_id = ?`, runID).Scan(
-		&run.RunID, &run.SessionID, &run.TurnID, &run.ResponseID, &run.Status, &run.StopReason,
-		&run.ErrorMessage, &run.OutputText, &createdAt, &updatedAt, &completedAt,
-	)
+	FROM cloudagent_runs WHERE run_id = ?`, runID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return cloudAgentRunRecord{}, fmt.Errorf("run not found")
 	}
+	return run, err
+}
+
+type cloudAgentRunScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanCloudAgentRun(scanner cloudAgentRunScanner) (cloudAgentRunRecord, error) {
+	var run cloudAgentRunRecord
+	var createdAt, updatedAt string
+	var completedAt sql.NullString
+	err := scanner.Scan(
+		&run.RunID, &run.SessionID, &run.TurnID, &run.ResponseID, &run.Status, &run.StopReason,
+		&run.ErrorMessage, &run.OutputText, &createdAt, &updatedAt, &completedAt,
+	)
 	if err != nil {
 		return cloudAgentRunRecord{}, err
 	}

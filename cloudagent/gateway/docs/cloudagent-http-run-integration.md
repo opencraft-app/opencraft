@@ -71,7 +71,9 @@ Expected fields:
   "features": [
     "session_create",
     "session_load",
+    "session_list",
     "run_submit",
+    "run_list",
     "idempotent_run_id",
     "after_seq_replay",
     "ndjson_event_stream",
@@ -93,9 +95,11 @@ Stable endpoints:
 
 ```text
 GET  /v1/cloudagent/capabilities
+GET  /v1/cloudagent/sessions
 POST /v1/cloudagent/sessions
 GET  /v1/cloudagent/sessions/{session_id}
 POST /v1/cloudagent/sessions/{session_id}/runs
+GET  /v1/cloudagent/runs
 GET  /v1/cloudagent/runs/{run_id}
 GET  /v1/cloudagent/runs/{run_id}/events?after_seq=N
 GET  /v1/cloudagent/runs/{run_id}/events?after_seq=N&stream=true
@@ -150,6 +154,38 @@ curl -sS \
 
 Use this when a channel conversation already has a `session_id`.
 
+### List Sessions
+
+```bash
+curl -sS \
+  -H "X-Tenant-ID: $CLOUDAGENT_TENANT_ID" \
+  -H "X-Project-ID: $CLOUDAGENT_PROJECT_ID" \
+  "$CLOUDAGENT_BASE_URL/v1/cloudagent/sessions?limit=50"
+```
+
+Response:
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "session_id": "session_xxx",
+      "state": "ready",
+      "runtime_generation": 1,
+      "cwd": "/workspace",
+      "workspace_key": "",
+      "closed": false,
+      "created_at": "2026-06-16T10:00:00Z",
+      "updated_at": "2026-06-16T10:01:00Z"
+    }
+  ]
+}
+```
+
+The list is scoped by the caller identity. It never returns sessions from other
+tenant/project scopes.
+
 ### Submit Run
 
 Generate a stable idempotency key per inbound channel message:
@@ -195,6 +231,43 @@ to a different session, the request is rejected.
 | `prompt` | Normal user message. This is the default for channel adapters. |
 | `follow_up` | Queue after the active run without interrupting it. |
 | `steer` | High-priority steering input; may interrupt active work depending on runtime policy. |
+
+### List Runs
+
+List recent runs in the caller scope:
+
+```bash
+curl -sS \
+  -H "X-Tenant-ID: $CLOUDAGENT_TENANT_ID" \
+  -H "X-Project-ID: $CLOUDAGENT_PROJECT_ID" \
+  "$CLOUDAGENT_BASE_URL/v1/cloudagent/runs?limit=50"
+```
+
+List runs for one session:
+
+```bash
+curl -sS \
+  -H "X-Tenant-ID: $CLOUDAGENT_TENANT_ID" \
+  -H "X-Project-ID: $CLOUDAGENT_PROJECT_ID" \
+  "$CLOUDAGENT_BASE_URL/v1/cloudagent/runs?session_id=$SESSION_ID&limit=50"
+```
+
+Response:
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "run_id": "job_channel_msg_123",
+      "session_id": "session_xxx",
+      "status": "completed",
+      "stop_reason": "end_turn",
+      "output_text": "CLOUDAGENT_RUN_OK"
+    }
+  ]
+}
+```
 
 ### Read Events
 

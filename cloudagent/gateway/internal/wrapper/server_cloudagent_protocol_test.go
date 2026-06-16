@@ -118,8 +118,94 @@ func TestCloudAgentHTTPProtocolCapabilities(t *testing.T) {
 	if !stringSliceContains(out.Features, "after_seq_replay") || !stringSliceContains(out.Features, "idempotent_run_id") {
 		t.Fatalf("capabilities missing durable protocol features: %#v", out.Features)
 	}
-	if !stringSliceContains(out.Endpoints, "GET /v1/cloudagent/runs/{run_id}/events?after_seq=N&stream=true") {
-		t.Fatalf("capabilities missing stream replay endpoint: %#v", out.Endpoints)
+	for _, endpoint := range []string{
+		"GET /v1/cloudagent/sessions",
+		"GET /v1/cloudagent/runs",
+		"GET /v1/cloudagent/runs/{run_id}/events?after_seq=N&stream=true",
+	} {
+		if !stringSliceContains(out.Endpoints, endpoint) {
+			t.Fatalf("capabilities missing endpoint %q: %#v", endpoint, out.Endpoints)
+		}
+	}
+	for _, feature := range []string{"session_list", "run_list"} {
+		if !stringSliceContains(out.Features, feature) {
+			t.Fatalf("capabilities missing feature %q: %#v", feature, out.Features)
+		}
+	}
+}
+
+func TestCloudAgentHTTPProtocolListsSessionsAndRuns(t *testing.T) {
+	srv, _ := newTestServer(t, FakeWorker{OutputText: "listed"})
+	sessionA := createCloudAgentHTTPSession(t, srv)
+	sessionB := createCloudAgentHTTPSession(t, srv)
+	otherScopeResp := jsonRequest(t, srv, http.MethodPost, "/v1/cloudagent/sessions", "tenant-b", "project-a", map[string]any{})
+	if otherScopeResp.Code != http.StatusOK {
+		t.Fatalf("other scope session create status=%d body=%s", otherScopeResp.Code, otherScopeResp.Body.String())
+	}
+	var otherScopeSession struct {
+		SessionID string `json:"session_id"`
+	}
+	if err := json.Unmarshal(otherScopeResp.Body.Bytes(), &otherScopeSession); err != nil {
+		t.Fatal(err)
+	}
+
+	runA := submitCloudAgentHTTPRun(t, srv, sessionA, "job_list_a", "first")
+	runB := submitCloudAgentHTTPRun(t, srv, sessionB, "job_list_b", "second")
+	otherRunResp := jsonRequest(t, srv, http.MethodPost, "/v1/cloudagent/sessions/"+otherScopeSession.SessionID+"/runs", "tenant-b", "project-a", map[string]any{
+		"run_id": "job_other_scope",
+		"text":   "other",
+	})
+	if otherRunResp.Code != http.StatusOK {
+		t.Fatalf("other scope run submit status=%d body=%s", otherRunResp.Code, otherRunResp.Body.String())
+	}
+	_ = waitCloudAgentRun(t, srv, runA)
+	_ = waitCloudAgentRun(t, srv, runB)
+
+	sessionsResp := request(t, srv, http.MethodGet, "/v1/cloudagent/sessions?limit=1", "tenant-a", "project-a", nil, "")
+	if sessionsResp.Code != http.StatusOK {
+		t.Fatalf("list sessions status=%d body=%s", sessionsResp.Code, sessionsResp.Body.String())
+	}
+	var sessionsList struct {
+		Object string           `json:"object"`
+		Data   []map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(sessionsResp.Body.Bytes(), &sessionsList); err != nil {
+		t.Fatal(err)
+	}
+	if sessionsList.Object != "list" || len(sessionsList.Data) != 1 {
+		t.Fatalf("expected limited session list, got %#v", sessionsList)
+	}
+	if sessionsList.Data[0]["session_id"] == otherScopeSession.SessionID {
+		t.Fatalf("session list leaked cross-scope session: %#v", sessionsList.Data)
+	}
+
+	runsResp := request(t, srv, http.MethodGet, "/v1/cloudagent/runs?limit=10", "tenant-a", "project-a", nil, "")
+	if runsResp.Code != http.StatusOK {
+		t.Fatalf("list runs status=%d body=%s", runsResp.Code, runsResp.Body.String())
+	}
+	var runsList struct {
+		Object string                  `json:"object"`
+		Data   []cloudAgentRunResponse `json:"data"`
+	}
+	if err := json.Unmarshal(runsResp.Body.Bytes(), &runsList); err != nil {
+		t.Fatal(err)
+	}
+	if runsList.Object != "list" || !cloudAgentRunListContains(runsList.Data, runA) || !cloudAgentRunListContains(runsList.Data, runB) || cloudAgentRunListContains(runsList.Data, "job_other_scope") {
+		t.Fatalf("unexpected scoped run list: %#v", runsList)
+	}
+
+	filteredResp := request(t, srv, http.MethodGet, "/v1/cloudagent/runs?session_id="+sessionA, "tenant-a", "project-a", nil, "")
+	if filteredResp.Code != http.StatusOK {
+		t.Fatalf("filtered list runs status=%d body=%s", filteredResp.Code, filteredResp.Body.String())
+	}
+	var filtered struct {
+		Data []cloudAgentRunResponse `json:"data"`
+	}
+	if err := json.Unmarshal(filteredResp.Body.Bytes(), &filtered); err != nil {
+		t.Fatal(err)
+	}
+	if len(filtered.Data) != 1 || filtered.Data[0].RunID != runA || filtered.Data[0].SessionID != sessionA {
+		t.Fatalf("expected one run for session %s, got %#v", sessionA, filtered.Data)
 	}
 }
 
@@ -890,6 +976,34 @@ func createCloudAgentHTTPSession(t *testing.T, srv *Server) string {
 		t.Fatalf("missing session id: %#v", session)
 	}
 	return session.SessionID
+}
+
+func submitCloudAgentHTTPRun(t *testing.T, srv *Server, sessionID, runID, text string) string {
+	t.Helper()
+	resp := jsonRequest(t, srv, http.MethodPost, "/v1/cloudagent/sessions/"+sessionID+"/runs", "tenant-a", "project-a", map[string]any{
+		"run_id": runID,
+		"text":   text,
+	})
+	if resp.Code != http.StatusOK {
+		t.Fatalf("run submit status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	var submitted cloudAgentRunResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &submitted); err != nil {
+		t.Fatal(err)
+	}
+	if submitted.RunID != runID || submitted.SessionID != sessionID {
+		t.Fatalf("unexpected submit response: %#v", submitted)
+	}
+	return submitted.RunID
+}
+
+func cloudAgentRunListContains(runs []cloudAgentRunResponse, runID string) bool {
+	for _, run := range runs {
+		if run.RunID == runID {
+			return true
+		}
+	}
+	return false
 }
 
 type countingWorker struct {

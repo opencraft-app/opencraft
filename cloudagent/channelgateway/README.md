@@ -75,9 +75,11 @@ run events:
 
 ```text
 GET  /v1/cloudagent/capabilities
+GET  /v1/cloudagent/sessions
 POST /v1/cloudagent/sessions
 GET  /v1/cloudagent/sessions/{session_id}
 POST /v1/cloudagent/sessions/{session_id}/runs
+GET  /v1/cloudagent/runs
 GET  /v1/cloudagent/runs/{run_id}
 GET  /v1/cloudagent/runs/{run_id}/events?after_seq=N
 GET  /v1/cloudagent/runs/{run_id}/events?after_seq=N&stream=true

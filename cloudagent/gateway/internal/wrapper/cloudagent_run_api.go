@@ -60,7 +60,9 @@ func (s *Server) handleCloudAgentCapabilities(w http.ResponseWriter, r *http.Req
 		"features": []string{
 			"session_create",
 			"session_load",
+			"session_list",
 			"run_submit",
+			"run_list",
 			"idempotent_run_id",
 			"after_seq_replay",
 			"ndjson_event_stream",
@@ -68,15 +70,42 @@ func (s *Server) handleCloudAgentCapabilities(w http.ResponseWriter, r *http.Req
 			"cancel",
 		},
 		"endpoints": []string{
+			"GET /v1/cloudagent/sessions",
 			"POST /v1/cloudagent/sessions",
 			"GET /v1/cloudagent/sessions/{session_id}",
 			"POST /v1/cloudagent/sessions/{session_id}/runs",
+			"GET /v1/cloudagent/runs",
 			"GET /v1/cloudagent/runs/{run_id}",
 			"GET /v1/cloudagent/runs/{run_id}/events?after_seq=N",
 			"GET /v1/cloudagent/runs/{run_id}/events?after_seq=N&stream=true",
 			"GET /v1/cloudagent/runs/{run_id}/result",
 			"POST /v1/cloudagent/runs/{run_id}/cancel",
 		},
+	})
+}
+
+func (s *Server) handleCloudAgentListSessions(w http.ResponseWriter, r *http.Request) {
+	scope, errResp := scopeFromRequest(r)
+	if errResp != nil {
+		writeError(w, http.StatusUnauthorized, errResp.Code, errResp.Message)
+		return
+	}
+	limit := parseCloudAgentListLimit(r.URL.Query().Get("limit"))
+	sessions, err := s.store.ListACPSessions(scope)
+	if err != nil {
+		writeError(w, httpStatusForGatewayError(err), "session_list_failed", err.Error())
+		return
+	}
+	items := make([]map[string]any, 0, minInt(len(sessions), limit))
+	for _, session := range sessions {
+		if len(items) >= limit {
+			break
+		}
+		items = append(items, cloudAgentSessionListItem(session))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"object": "list",
+		"data":   items,
 	})
 }
 
@@ -140,6 +169,29 @@ func (s *Server) handleCloudAgentLoadSession(w http.ResponseWriter, r *http.Requ
 		"session_id":         session.SessionID,
 		"state":              string(session.State),
 		"runtime_generation": session.RuntimeGeneration,
+	})
+}
+
+func (s *Server) handleCloudAgentListRuns(w http.ResponseWriter, r *http.Request) {
+	scope, errResp := scopeFromRequest(r)
+	if errResp != nil {
+		writeError(w, http.StatusUnauthorized, errResp.Code, errResp.Message)
+		return
+	}
+	limit := parseCloudAgentListLimit(r.URL.Query().Get("limit"))
+	sessionID := strings.TrimSpace(r.URL.Query().Get("session_id"))
+	runs, err := s.store.ListCloudAgentRuns(scope, sessionID, limit)
+	if err != nil {
+		writeError(w, httpStatusForGatewayError(err), "run_list_failed", err.Error())
+		return
+	}
+	items := make([]cloudAgentRunResponse, 0, len(runs))
+	for _, run := range runs {
+		items = append(items, cloudAgentRunRecordResponse(run))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"object": "list",
+		"data":   items,
 	})
 }
 
@@ -644,6 +696,26 @@ func cloudAgentRunRecordResponse(run cloudAgentRunRecord) cloudAgentRunResponse 
 	}
 }
 
+func cloudAgentSessionListItem(session *acpSession) map[string]any {
+	item := map[string]any{
+		"session_id":         session.SessionID,
+		"state":              string(session.State),
+		"runtime_generation": session.RuntimeGeneration,
+		"cwd":                session.CWD,
+		"workspace_key":      session.WorkspaceKey,
+		"closed":             session.Closed,
+		"created_at":         session.CreatedAt,
+		"updated_at":         session.UpdatedAt,
+	}
+	if session.ReadOnlyReason != "" {
+		item["read_only_reason"] = session.ReadOnlyReason
+	}
+	if session.LastRuntimeError != "" {
+		item["last_runtime_error"] = session.LastRuntimeError
+	}
+	return item
+}
+
 func cloudAgentRunTerminal(status string) bool {
 	switch status {
 	case "completed", "failed", "cancelled", "interrupted":
@@ -673,6 +745,23 @@ func cloudAgentRunNeedsDispatch(run cloudAgentRunRecord) bool {
 	return run.Status == "running" && strings.TrimSpace(run.TurnID) == "" && strings.TrimSpace(run.ResponseID) == ""
 }
 
+func parseCloudAgentListLimit(value string) int {
+	const defaultLimit = 50
+	const maxLimit = 200
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return defaultLimit
+	}
+	limit, err := strconv.Atoi(value)
+	if err != nil || limit <= 0 {
+		return defaultLimit
+	}
+	if limit > maxLimit {
+		return maxLimit
+	}
+	return limit
+}
+
 func cloudAgentRuntimeRunStatus(run ACPSessionRuntimeRunRecord) (status, stopReason, errorMessage string, ok bool) {
 	switch strings.ToLower(strings.TrimSpace(run.Status)) {
 	case "succeeded", "completed":
@@ -695,6 +784,13 @@ func parseBoolQuery(value string) bool {
 	default:
 		return false
 	}
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func parseCloudAgentAfterSeq(value string) (int64, error) {
