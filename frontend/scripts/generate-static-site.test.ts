@@ -241,6 +241,27 @@ describe("generate-static-site", () => {
 
       /* 国际站不应输出无前缀的 docs HTML（旧行为下生成的 /docs/overview/index.html 不再存在） */
       expect(existsSync(join(distDir, "docs", "overview", "index.html"))).toBe(false);
+
+      /* P1-a：vite 留下的中文 dist/index.html 必须被覆盖为指向 /en/ 的别名页。
+         - canonical 指 /en/，让 Google 把权重收敛到带前缀版本
+         - hreflang 集群完整，把 /、/en/、/zh/ 收成一组
+         - <html lang> 不再是中文 zh-CN（旧 vite 模板的 lang），而是 en-US */
+      const rootIndex = readFileSync(join(distDir, "index.html"), "utf8");
+      expect(rootIndex).not.toMatch(/<title>old<\/title>/); // 旧 vite 模板已被覆盖
+      expect(rootIndex).toMatch(/<html\s+lang="en-US">/);
+      expect(rootIndex).toContain("<link rel=\"canonical\" href=\"https://lightvela.ai/en/\">");
+      expect(rootIndex).toContain("<link rel=\"alternate\" hreflang=\"en\" href=\"https://lightvela.ai/en/\">");
+      expect(rootIndex).toContain("<link rel=\"alternate\" hreflang=\"zh\" href=\"https://lightvela.ai/zh/\">");
+      expect(rootIndex).toContain("<link rel=\"alternate\" hreflang=\"x-default\" href=\"https://lightvela.ai/en/\">");
+
+      /* P2：/zh/docs 产物 sidebar / breadcrumb 用中文标题，与 <html lang="zh-CN"> 匹配 */
+      const zhConfig = readFileSync(join(distDir, "zh", "docs", "configuration", "model", "index.html"), "utf8");
+      expect(zhConfig).toContain("配置指南"); // sidebar group title
+      expect(zhConfig).toContain("配置模型"); // sidebar item title + breadcrumb leaf
+      expect(zhConfig).not.toContain("Configuration Guide"); // 英文不应泄漏到 zh 产物的 crawl-visible 区域
+      const enConfig = readFileSync(join(distDir, "en", "docs", "configuration", "model", "index.html"), "utf8");
+      expect(enConfig).toContain("Configuration Guide");
+      expect(enConfig).toContain("Configure Models");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

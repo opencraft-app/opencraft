@@ -81,25 +81,46 @@ const DOCS = {
     { slug: "configuration/skill", title: "配置技能", file: "configuration/skill.md", group: "配置指南" },
     { slug: "faq", title: "常见问题 FAQ", file: "07-faq.md", group: "参考" },
   ],
+  /**
+   * 国际站 docs 列表：每条 title / group 是 { en-US, zh-CN } 双语对象，
+   * 与运行时 `src/config/docs-sidebar.ts::GLOBAL_SIDEBAR` 的 title/titleEn
+   * 保持一致。中文翻译来自该文件，便于一处修改、两处同步。
+   *
+   * 注意：file 仍是物理文件名（en/zh 用同名）。markdown 内容按 locale
+   * 在 readDocMarkdown 内分流到 docs/en 或 docs/global。
+   */
   global: [
-    { slug: "overview", title: "What is LightVela", file: "01-overview.md", group: "Getting Started" },
-    { slug: "quickstart", title: "Quickstart", file: "02-quickstart.md", group: "Getting Started" },
-    { slug: "core-concepts", title: "Core Concepts", file: "04-core-concepts.md", group: "Getting Started" },
-    { slug: "configuration", title: "Configuration Overview", file: "05-configuration.md", group: "Configuration Guide" },
-    { slug: "configuration/model", title: "Configure Models", file: "configuration/model.md", group: "Configuration Guide" },
-    { slug: "configuration/channel-wechat", title: "WeChat", file: "configuration/channel-wechat.md", group: "Configuration Guide" },
-    { slug: "configuration/channel-telegram", title: "Telegram", file: "configuration/channel-telegram.md", group: "Configuration Guide" },
-    { slug: "configuration/channel-whatsapp", title: "WhatsApp", file: "configuration/channel-whatsapp.md", group: "Configuration Guide" },
-    { slug: "configuration/channel-discord", title: "Discord", file: "configuration/channel-discord.md", group: "Configuration Guide" },
-    { slug: "configuration/channel-qq", title: "QQ", file: "configuration/channel-qq.md", group: "Configuration Guide" },
-    { slug: "configuration/channel-wecom", title: "WeCom", file: "configuration/channel-wecom.md", group: "Configuration Guide" },
-    { slug: "configuration/channel-feishu", title: "Lark", file: "configuration/channel-feishu.md", group: "Configuration Guide" },
-    { slug: "configuration/skill", title: "Configure Skills", file: "configuration/skill.md", group: "Configuration Guide" },
-    { slug: "configuration/automation", title: "Automations", file: "configuration/automation.md", group: "Configuration Guide" },
-    { slug: "configuration/agent-chat", title: "Chat", file: "configuration/agent-chat.md", group: "Configuration Guide" },
-    { slug: "faq", title: "FAQ", file: "07-faq.md", group: "Reference" },
-    { slug: "faq/using-lightvela-safely", title: "Using LightVela Safely", file: "faq/using-lightvela-safely.md", group: "Reference" },
+    { slug: "overview", title: { "en-US": "What is LightVela", "zh-CN": "LightVela 是什么" }, file: "01-overview.md", group: { "en-US": "Getting Started", "zh-CN": "开始使用" } },
+    { slug: "quickstart", title: { "en-US": "Quickstart", "zh-CN": "快速开始" }, file: "02-quickstart.md", group: { "en-US": "Getting Started", "zh-CN": "开始使用" } },
+    { slug: "core-concepts", title: { "en-US": "Core Concepts", "zh-CN": "核心概念" }, file: "04-core-concepts.md", group: { "en-US": "Getting Started", "zh-CN": "开始使用" } },
+    { slug: "configuration", title: { "en-US": "Configuration Overview", "zh-CN": "配置总览" }, file: "05-configuration.md", group: { "en-US": "Configuration Guide", "zh-CN": "配置指南" } },
+    { slug: "configuration/model", title: { "en-US": "Configure Models", "zh-CN": "配置模型" }, file: "configuration/model.md", group: { "en-US": "Configuration Guide", "zh-CN": "配置指南" } },
+    /* 通道名（WeChat / Telegram 等）属于专有名词，中英文可一致；保留对象形式以便未来差异化 */
+    { slug: "configuration/channel-wechat", title: { "en-US": "WeChat", "zh-CN": "WeChat" }, file: "configuration/channel-wechat.md", group: { "en-US": "Configuration Guide", "zh-CN": "配置指南" } },
+    { slug: "configuration/channel-telegram", title: { "en-US": "Telegram", "zh-CN": "Telegram" }, file: "configuration/channel-telegram.md", group: { "en-US": "Configuration Guide", "zh-CN": "配置指南" } },
+    { slug: "configuration/channel-whatsapp", title: { "en-US": "WhatsApp", "zh-CN": "WhatsApp" }, file: "configuration/channel-whatsapp.md", group: { "en-US": "Configuration Guide", "zh-CN": "配置指南" } },
+    { slug: "configuration/channel-discord", title: { "en-US": "Discord", "zh-CN": "Discord" }, file: "configuration/channel-discord.md", group: { "en-US": "Configuration Guide", "zh-CN": "配置指南" } },
+    { slug: "configuration/channel-qq", title: { "en-US": "QQ", "zh-CN": "QQ" }, file: "configuration/channel-qq.md", group: { "en-US": "Configuration Guide", "zh-CN": "配置指南" } },
+    { slug: "configuration/channel-wecom", title: { "en-US": "WeCom", "zh-CN": "企业微信" }, file: "configuration/channel-wecom.md", group: { "en-US": "Configuration Guide", "zh-CN": "配置指南" } },
+    { slug: "configuration/channel-feishu", title: { "en-US": "Lark", "zh-CN": "飞书" }, file: "configuration/channel-feishu.md", group: { "en-US": "Configuration Guide", "zh-CN": "配置指南" } },
+    { slug: "configuration/skill", title: { "en-US": "Configure Skills", "zh-CN": "配置技能" }, file: "configuration/skill.md", group: { "en-US": "Configuration Guide", "zh-CN": "配置指南" } },
+    { slug: "configuration/automation", title: { "en-US": "Automations", "zh-CN": "自动任务" }, file: "configuration/automation.md", group: { "en-US": "Configuration Guide", "zh-CN": "配置指南" } },
+    { slug: "configuration/agent-chat", title: { "en-US": "Chat", "zh-CN": "对话" }, file: "configuration/agent-chat.md", group: { "en-US": "Configuration Guide", "zh-CN": "配置指南" } },
+    { slug: "faq", title: { "en-US": "FAQ", "zh-CN": "常见问题 FAQ" }, file: "07-faq.md", group: { "en-US": "Reference", "zh-CN": "参考" } },
+    { slug: "faq/using-lightvela-safely", title: { "en-US": "Using LightVela Safely", "zh-CN": "安全使用 LightVela" }, file: "faq/using-lightvela-safely.md", group: { "en-US": "Reference", "zh-CN": "参考" } },
   ],
+};
+
+/**
+ * 从 doc.title / doc.group（cn 是字符串，global 是 {en-US, zh-CN} 对象）按 locale 取字符串。
+ * 用于 docs sidebar / breadcrumb / JSON-LD 等所有需要文本标题的地方。
+ */
+const docFieldFor = (field, locale) => {
+  if (typeof field === "string") return field;
+  if (field && typeof field === "object") {
+    return field[locale] ?? field["en-US"] ?? "";
+  }
+  return "";
 };
 
 const SPA_REWRITES = [
@@ -504,16 +525,12 @@ export function resolveStaticRoutes(region = "cn") {
   }
   const isGlobal = region === "global";
   const docsRoutes = DOCS[region].map((doc) => {
-    /* 国际站 doc 标题 / 描述按 locale 区分；国内站统一中文 */
-    let title = doc.title;
-    if (isGlobal) {
-      const cnDoc = DOCS.cn.find((d) => d.slug === doc.slug);
-      title = { "en-US": doc.title, "zh-CN": cnDoc?.title ?? doc.title };
-    }
+    /* doc.title 在 DOCS.global 已是 { en-US, zh-CN } 对象；DOCS.cn 是字符串。
+       这里直接透传——renderRoute / jsonLdForRoute 等下游消费方会按 locale 取值。 */
     return {
       kind: "doc",
       path: `/docs/${doc.slug}`,
-      title,
+      title: doc.title,
       description: "",
       doc,
     };
@@ -735,31 +752,32 @@ function renderChangelog(region, locale) {
 }
 
 /**
- * docs 侧边栏使用 DOCS[region] 的标题；DOCS[global] 标题已经是英文，
- * 中文站只走 DOCS.cn 中文标题。
+ * docs 侧边栏：按当前 locale 从 doc.title / doc.group 取出对应语言的标题。
  *
- * 当 region=global + locale=zh-CN 时，DOCS[global] 的英文标题在中文页面上
- * 会显得突兀。但这与运行时 React 侧 `getLocalizedSidebar` 在 zh-CN 模式下
- * 也使用英文 titleEn 的位置是相反的——React 侧 `title` 才是中文。
+ * 国际站：title / group 是 { en-US, zh-CN } 对象，与运行时 React 侧
+ * `getLocalizedSidebar` 行为一致，保证 `/zh/docs/...` 静态产物的 sidebar
+ * 也是中文，与 `<html lang="zh-CN">` 声明匹配（hreflang 质量必要条件）。
  *
- * 现实约束：静态站点产物的 docs 标题不接 React i18n 系统，且 zh-CN 国际站
- * 文档主要给中文搜索用户使用，sidebar 的少量英文条目对 SEO 抓取不构成阻塞。
- * 后续如需更精细可以再单独迭代——本次保持 DOCS[region] 的现有取值不变。
+ * 国内站：title / group 是字符串，docFieldFor 直接返回。
+ *
+ * 分组键用 group 的英文名（locale-stable）做 Map key，避免英文/中文混用时
+ * Map 把同一组拆成两条；显示时再按 locale 取展示文本。
  */
 function renderDocsTree(region, locale, currentSlug) {
   const docs = DOCS[region];
   const groups = new Map();
   for (const doc of docs) {
-    const group = groups.get(doc.group) ?? [];
-    group.push(doc);
-    groups.set(doc.group, group);
+    const groupKey = docFieldFor(doc.group, "en-US") || docFieldFor(doc.group, locale);
+    const entry = groups.get(groupKey) ?? { displayTitle: docFieldFor(doc.group, locale), items: [] };
+    entry.items.push(doc);
+    groups.set(groupKey, entry);
   }
-  return `<aside aria-label="${isEn(locale) ? "Docs navigation" : "文档导航"}" class="static-docs-sidebar">${[...groups.entries()].map(([group, items]) => `<section><h2>${escapeHtml(group)}</h2><ul>${items.map((item) => `<li><a href="${localizePath("/docs/" + item.slug, region, locale)}"${item.slug === currentSlug ? " aria-current=\"page\"" : ""}>${escapeHtml(item.title)}</a></li>`).join("")}</ul></section>`).join("")}</aside>`;
+  return `<aside aria-label="${isEn(locale) ? "Docs navigation" : "文档导航"}" class="static-docs-sidebar">${[...groups.values()].map(({ displayTitle, items }) => `<section><h2>${escapeHtml(displayTitle)}</h2><ul>${items.map((item) => `<li><a href="${localizePath("/docs/" + item.slug, region, locale)}"${item.slug === currentSlug ? " aria-current=\"page\"" : ""}>${escapeHtml(docFieldFor(item.title, locale))}</a></li>`).join("")}</ul></section>`).join("")}</aside>`;
 }
 
 function renderBreadcrumb(region, locale, doc) {
   const docsLabel = isEn(locale) ? "Docs" : "文档";
-  return `<nav aria-label="breadcrumb" class="static-breadcrumb"><a href="${localizePath("/docs/overview", region, locale)}">${docsLabel}</a><span>›</span><span>${escapeHtml(doc.group)}</span><span>›</span><span>${escapeHtml(doc.title)}</span></nav>`;
+  return `<nav aria-label="breadcrumb" class="static-breadcrumb"><a href="${localizePath("/docs/overview", region, locale)}">${docsLabel}</a><span>›</span><span>${escapeHtml(docFieldFor(doc.group, locale))}</span><span>›</span><span>${escapeHtml(docFieldFor(doc.title, locale))}</span></nav>`;
 }
 
 function renderToc(region, locale, toc) {
@@ -804,8 +822,10 @@ function jsonLdForRoute({ route, region, locale, siteUrl, canonicalPath, descrip
   const docsRootUrl = absoluteUrl(siteUrl, localizePath("/docs/overview", region, locale));
   if (route.kind === "doc") {
     const doc = route.doc;
-    /* doc.title 在国际站是 { en-US, zh-CN } 形式；国内站是字符串 */
-    const docTitle = typeof doc.title === "string" ? doc.title : doc.title; // route.doc.title 是 DOCS[region][i].title 字符串
+    /* doc.title / doc.group 在国际站是 { en-US, zh-CN } 双语对象，国内站是字符串。
+       docFieldFor 同时处理两种形态，按当前 locale 取显示文本。 */
+    const docTitle = docFieldFor(doc.title, locale);
+    const docGroup = docFieldFor(doc.group, locale);
     return [
       {
         "@context": "https://schema.org",
@@ -821,7 +841,7 @@ function jsonLdForRoute({ route, region, locale, siteUrl, canonicalPath, descrip
         "@type": "BreadcrumbList",
         itemListElement: [
           { "@type": "ListItem", position: 1, name: isEn(locale) ? "Docs" : "文档", item: docsRootUrl },
-          { "@type": "ListItem", position: 2, name: doc.group },
+          { "@type": "ListItem", position: 2, name: docGroup },
           { "@type": "ListItem", position: 3, name: docTitle, item: url },
         ],
       },
@@ -839,7 +859,7 @@ function jsonLdForRoute({ route, region, locale, siteUrl, canonicalPath, descrip
         itemListElement: DOCS[region].map((doc, index) => ({
           "@type": "ListItem",
           position: index + 1,
-          name: doc.title,
+          name: docFieldFor(doc.title, locale),
           url: absoluteUrl(siteUrl, localizePath(`/docs/${doc.slug}`, region, locale)),
         })),
       },
@@ -898,7 +918,24 @@ async function createReactStaticRenderer({ frontendRoot, distDir, region }) {
   };
 }
 
-async function renderRoute({ template, route, region, locale, siteUrl, indexable, frontendRoot, availableImages, staticRenderer }) {
+async function renderRoute({
+  template,
+  route,
+  region,
+  locale,
+  siteUrl,
+  indexable,
+  frontendRoot,
+  availableImages,
+  staticRenderer,
+  /**
+   * 当为 true 时，渲染产物用于「裸 `/` 入口」（覆盖 vite 留下的 dist/index.html）。
+   * 主要目的：让国际站 `lightvela.ai/` 也成为 hreflang 集群的合法成员，
+   * canonical 指向 `/en/`（让 Google 把权重收敛到带前缀版本），但页面体验
+   * 与 `/en/` 一致——访客不会经历跳转闪烁。
+   */
+  rootAliasOfEn = false,
+} = {}) {
   const site = siteMetaFor(region, locale);
   let body = "";
   /* description 也可能是按 locale 二选一的对象 */
@@ -930,8 +967,13 @@ async function renderRoute({ template, route, region, locale, siteUrl, indexable
     description = truncateDescription(markdown, baseDescription);
   }
 
-  /* 把 canonicalPath 加上语言前缀（cn / 不在白名单的路径下 identity） */
-  const localizedCanonical = localizePath(canonicalPath, region, locale);
+  /* 把 canonicalPath 加上语言前缀（cn / 不在白名单的路径下 identity）。
+     rootAliasOfEn 模式下：内容沿用 en-US 渲染，但 canonical 仍指向 `/en/`，
+     hreflang 集群保持一致（renderHreflangLinks 内部以 canonicalPath 推断备用 URL，
+     传 `/en/` 即可覆盖 `/`、`/en/`、`/zh/` 三个 URL 为同一集群）。 */
+  const localizedCanonical = rootAliasOfEn
+    ? localizePath(canonicalPath, region, "en-US")
+    : localizePath(canonicalPath, region, locale);
 
   const jsonLd = jsonLdForRoute({ route, region, locale, siteUrl, canonicalPath: localizedCanonical, description });
   const head = renderHead({ route, site, siteUrl, canonicalPath: localizedCanonical, description, indexable, jsonLd, region, locale });
@@ -1105,6 +1147,31 @@ export async function buildStaticSite({ frontendRoot = defaultFrontendRoot, dist
         });
         writeRouteHtml({ distDir, route, region, locale, html });
       }
+    }
+
+    /**
+     * 国际站补一份「裸 `/`」首页：内容与 `/en/` 完全一致，但 canonical 指向 `/en/`，
+     * 让 vite 留下的中文 dist/index.html 被覆盖，并把 `/`、`/en/`、`/zh/` 收敛到
+     * 同一 hreflang 集群（避免 Google 看到三个游离的首页 URL）。
+     */
+    if (region === "global") {
+      const homeRoute = routes.find((route) => route.kind === "home");
+      if (!homeRoute) {
+        throw new Error("global build expects a home route, but none was found in resolveStaticRoutes");
+      }
+      const aliasHtml = await renderRoute({
+        template,
+        route: homeRoute,
+        region,
+        locale: "en-US",
+        siteUrl: normalizedSiteUrl,
+        indexable,
+        frontendRoot,
+        availableImages,
+        staticRenderer,
+        rootAliasOfEn: true,
+      });
+      writeFileSync(join(distDir, "index.html"), aliasHtml);
     }
   } finally {
     await staticRenderer?.close();

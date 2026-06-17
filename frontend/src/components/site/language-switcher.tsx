@@ -18,6 +18,7 @@
 import { Check, ChevronDown, Globe } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 
 import { setLocale } from "@/i18n";
 import { switchLocaleInPath } from "@/lib/region";
@@ -48,26 +49,43 @@ function currentOption(lang: string | undefined): Option {
  * 使用 SDK 的页面（settings）依赖 tea-app i18n，而 tea-app i18n 是
  * init-once 设计——运行时改 `window.VERSION` 或重新调 `i18n.init()`
  * 都不会重新渲染已挂载的 SDK 组件。reload 是当前唯一可靠的切换路径。
+ *
+ * URL 路径前缀切换（仅国际站 SEO 页面）：
+ *   - reloadAfterSwitch=true：直接走 location.assign，让浏览器原生跳过去并刷新，
+ *     SDK 区域的 tea-app i18n 也会跟随 reload 切换。
+ *   - reloadAfterSwitch=false：用 react-router 的 navigate 替换历史，让
+ *     useLocation / useNavigate / ScrollRestoration 等所有 router 消费者
+ *     都能感知到 pathname 变化。**不能用 window.history.replaceState**——
+ *     直接改 history 会让 react-router 的 location 状态停在旧 pathname。
  */
-function applyLocaleChange(value: Locale, reloadAfterSwitch: boolean): void {
+function applyLocaleChange(
+  value: Locale,
+  reloadAfterSwitch: boolean,
+  navigate: ReturnType<typeof useNavigate>,
+): void {
   setLocale(value);
+
+  if (typeof window === "undefined") return;
 
   /* 国际站 SEO 页面（/docs、/about、/privacy-policy 等）按规则切换 URL
      语言前缀；非 SEO 页面（/agents、/auth 等）以及国内站，URL 不变。
      switchLocaleInPath 内部已自动处理 isGlobal 与白名单判断。 */
-  if (typeof window !== "undefined") {
-    const target = switchLocaleInPath(window.location.pathname, value);
-    if (target !== window.location.pathname) {
-      // 直接修改 history，避免触发 react-router 重新挂载（reload 会拿到新 URL）
-      window.history.replaceState(null, "", target + window.location.search + window.location.hash);
-    }
-  }
+  const target = switchLocaleInPath(window.location.pathname, value);
+  const targetUrl = target + window.location.search + window.location.hash;
 
   if (reloadAfterSwitch) {
-    // 给 setLocale 内部 localStorage 写入留出微任务窗口，再触发 reload
-    // （setLocale 是同步写 localStorage，理论上不需要等待，但 reload
-    // 立即触发可能在某些浏览器下与 storage event 派发顺序竞争）
-    window.location.reload();
+    if (target !== window.location.pathname) {
+      window.location.assign(targetUrl); // 跳到带新前缀的 URL 并 reload
+    } else {
+      window.location.reload();
+    }
+    return;
+  }
+
+  if (target !== window.location.pathname) {
+    /* 通过 react-router 切 URL，确保 useLocation / 路由 effect / ScrollRestoration
+       都能拿到新 pathname。 */
+    navigate(targetUrl, { replace: true });
   }
 }
 
@@ -76,6 +94,7 @@ function applyLocaleChange(value: Locale, reloadAfterSwitch: boolean): void {
  */
 function DropdownSwitcher({ reloadAfterSwitch }: { reloadAfterSwitch: boolean }) {
   const { i18n } = useTranslation();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const active = currentOption(i18n.language);
@@ -93,7 +112,7 @@ function DropdownSwitcher({ reloadAfterSwitch }: { reloadAfterSwitch: boolean })
 
   const handlePick = (value: Locale) => {
     setOpen(false);
-    if (value !== i18n.language) applyLocaleChange(value, reloadAfterSwitch);
+    if (value !== i18n.language) applyLocaleChange(value, reloadAfterSwitch, navigate);
   };
 
   return (
@@ -148,6 +167,7 @@ function DropdownSwitcher({ reloadAfterSwitch }: { reloadAfterSwitch: boolean })
  */
 function InlineSwitcher({ reloadAfterSwitch }: { reloadAfterSwitch: boolean }) {
   const { i18n } = useTranslation();
+  const navigate = useNavigate();
   const active = currentOption(i18n.language);
 
   return (
@@ -159,7 +179,7 @@ function InlineSwitcher({ reloadAfterSwitch }: { reloadAfterSwitch: boolean }) {
             key={opt.value}
             type="button"
             onClick={() => {
-              if (!selected) applyLocaleChange(opt.value, reloadAfterSwitch);
+              if (!selected) applyLocaleChange(opt.value, reloadAfterSwitch, navigate);
             }}
             className={`inline-flex items-center justify-center h-[32px] px-3 rounded-[100px] text-[13px] transition-colors ${
               selected
