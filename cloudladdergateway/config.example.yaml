@@ -219,9 +219,9 @@ backends:
       timeout: 10s
       allowed_methods: ["POST"]
 
-  - alias: lightclaw-auth-sandbox-bj-7
+  - alias: lightclaw-auth-beijing-sandbox
     upstream:
-      base_url: "https://api-sandbox-bj-7.lightclaw.tech"
+      base_url: "https://lightclaw.tech"
       timeout: 10s
       allowed_methods: ["POST"]
       headers_from_env:
@@ -250,7 +250,7 @@ auth:
     - billing-trade-intl-pre
     - billing-trade-intl-prod
     - jifei-test
-    - tencentcloud-account-callback-sandbox-bj-7
+    - tencentcloud-account-callback-beijing-sandbox
   callers:
     - id: shadow
       secret_env: CLOUDLADDER_SHADOW_HMAC_SECRET
@@ -284,7 +284,7 @@ audit:
 external_routes:
   - path: /internal/tencentcloud/account
     methods: ["POST"]
-    route_id: tencentcloud-account-callback-sandbox-bj-7
+    route_id: tencentcloud-account-callback-beijing-sandbox
     upstream_path: /auth/internal/tencentcloud/account
 
 routes:
@@ -662,8 +662,8 @@ routes:
     upstream:
       backend: tcapi-billing-cn-dev
 
-  - id: tencentcloud-account-callback-sandbox-bj-7
-    description: "TencentCloud SaaS account callback compatibility route for sandbox-bj-7."
+  - id: tencentcloud-account-callback-beijing-sandbox
+    description: "TencentCloud SaaS account callback compatibility route for Beijing main sandbox."
     condition: 'request.method == "POST"'
     upstream:
-      backend: lightclaw-auth-sandbox-bj-7
+      backend: lightclaw-auth-beijing-sandbox
