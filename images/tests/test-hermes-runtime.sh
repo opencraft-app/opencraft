@@ -27,6 +27,9 @@ Usage:
 Options:
   --port <port>            SSH port. Default: 22
   --runtime-user <user>    Runtime user. Default: agentuser
+  --expected-hermes-version <ver>
+                           Expected Hermes Agent src version. Default: runtime_hermes.src_version
+                           from build-manifest.json, or latest.json when the manifest leaves it empty.
   -h, --help               Show help
 EOF
 }
@@ -47,6 +50,7 @@ SSH_PORT=22
 FAILURES=0
 RUNTIME_USER="${LIGHTCLAW_RUNTIME_USER:-agentuser}"
 RUNTIME_HOME="/home/${RUNTIME_USER}"
+EXPECTED_HERMES_VERSION="${EXPECTED_HERMES_VERSION:-}"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -57,6 +61,10 @@ while [ $# -gt 0 ]; do
     --runtime-user)
       RUNTIME_USER="$2"
       RUNTIME_HOME="/home/${RUNTIME_USER}"
+      shift 2
+      ;;
+    --expected-hermes-version)
+      EXPECTED_HERMES_VERSION="$2"
       shift 2
       ;;
     -h|--help)
@@ -86,8 +94,58 @@ remote_exec_runtime() {
   remote_exec "sudo -u ${RUNTIME_USER} -H bash -lc ${escaped}"
 }
 
+resolve_expected_hermes_version() {
+  if [ -n "${EXPECTED_HERMES_VERSION}" ]; then
+    printf '%s\n' "${EXPECTED_HERMES_VERSION}"
+    return 0
+  fi
+
+  python3 - "${SCRIPT_DIR}/../build-manifest.json" <<'PY'
+import json
+import sys
+from urllib import request
+
+manifest_path = sys.argv[1]
+try:
+    with open(manifest_path, "r", encoding="utf-8") as fh:
+        manifest = json.load(fh)
+except Exception:
+    raise SystemExit(0)
+
+runtime = manifest.get("runtime_hermes") or {}
+src_version = str(runtime.get("src_version") or "").strip()
+if src_version:
+    print(src_version)
+    raise SystemExit(0)
+
+cos_base = str(runtime.get("cos_base") or "").rstrip("/")
+if not cos_base:
+    raise SystemExit(0)
+
+try:
+    req = request.Request(
+        f"{cos_base}/latest.json",
+        headers={"Accept": "application/json", "User-Agent": "lightclaw-hermes-runtime-test/1.0"},
+    )
+    with request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read().decode(resp.headers.get_content_charset() or "utf-8"))
+except Exception:
+    raise SystemExit(0)
+
+src_version = str(data.get("src_version") or "").strip()
+if src_version:
+    print(src_version)
+PY
+}
+
 sshlib_init "${REMOTE_HOST}" "${SSH_PORT}"
 sshlib_ensure_ready
+EXPECTED_HERMES_VERSION="$(resolve_expected_hermes_version || true)"
+if [ -n "${EXPECTED_HERMES_VERSION}" ]; then
+  info "expected Hermes runtime version: ${EXPECTED_HERMES_VERSION}"
+else
+  info "expected Hermes runtime version: unknown"
+fi
 
 info "checking runtime user"
 if remote_exec "id ${RUNTIME_USER}" >/dev/null 2>&1; then
@@ -173,6 +231,16 @@ else
   echo "parsed hermes version: ${HERMES_BIN_VERSION}"
   echo "identity runtime_version: ${HERMES_IDENTITY_VERSION}"
 fi
+if [ -z "${EXPECTED_HERMES_VERSION}" ]; then
+  info "skipping exact Hermes latest metadata version check"
+elif [ "${HERMES_BIN_VERSION}" = "${EXPECTED_HERMES_VERSION}" ]; then
+  pass "hermes runtime version matches expected metadata: ${EXPECTED_HERMES_VERSION}"
+else
+  fail "hermes runtime version does not match expected metadata"
+  echo "expected hermes version: ${EXPECTED_HERMES_VERSION}"
+  echo "actual hermes version: ${HERMES_BIN_VERSION:-<empty>}"
+  echo "hermes --version output: ${HERMES_VERSION_OUTPUT}"
+fi
 
 info "checking hermes command topology"
 HERMES_TOPOLOGY_OUTPUT="$(remote_exec_runtime '
@@ -245,6 +313,18 @@ ACLI_OUTPUT="$(remote_exec_runtime "if command -v acli >/dev/null 2>&1; then acl
 if echo "${ACLI_OUTPUT}" | grep -Eqi 'error|failed|missing'; then
   fail "acli doctor failed"
   echo "${ACLI_OUTPUT}"
+  info "acli diagnostic context"
+  remote_exec_runtime '
+    set +e
+    echo "acli_path=$(command -v acli || true)"
+    acli --version 2>&1 || true
+    echo "--- /etc/acli/identity.yaml ---"
+    sed -n "1,120p" /etc/acli/identity.yaml 2>/dev/null || true
+    echo "--- hermes version ---"
+    hermes --version 2>&1 || true
+    echo "--- runtime paths ---"
+    ls -ld "$HOME" "$HOME/.hermes" "$HOME/.hermes/hermes-agent" "$HOME/.hermes/hermes-agent/venv/bin" 2>&1 || true
+  ' 2>&1 || true
 else
   pass "acli command is available"
 fi

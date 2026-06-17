@@ -1018,6 +1018,35 @@ ensure_hermes_gateway_service() {
   run_as_runtime_user "${user_env_prefix} hermes gateway stop >/dev/null 2>&1 || true"
 }
 
+verify_hermes_runtime_version() {
+  local expected="${HERMES_SRC_VERSION}"
+  local hermes_bin="${RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/hermes"
+  local version_output=""
+  local actual=""
+
+  if [ ! -x "${hermes_bin}" ]; then
+    log_error "Hermes runtime binary not found: ${hermes_bin}"
+    return 1
+  fi
+
+  version_output="$(run_as_runtime_user "${hermes_bin} --version 2>/dev/null" || true)"
+  actual="$(printf '%s\n' "${version_output}" | sed -n 's/^Hermes Agent v\([^ ]*\).*/\1/p' | head -1)"
+  if [ -z "${actual}" ]; then
+    actual="$(printf '%s\n' "${version_output}" | grep -Eo '[0-9]+(\.[0-9]+){1,2}' | head -1 || true)"
+  fi
+
+  log_info "Hermes runtime version after install: ${actual:-unknown} (output: ${version_output:-<empty>})"
+  if [ -z "${expected}" ]; then
+    log_info "Hermes expected src_version is unknown; skipping exact version check"
+    return 0
+  fi
+  if [ "${actual}" != "${expected}" ]; then
+    log_error "Hermes runtime version mismatch: expected ${expected} from latest.json, got ${actual:-unknown}"
+    return 1
+  fi
+  log_info "Hermes runtime version matches latest metadata: ${expected}"
+}
+
 install_hermes_runtime() {
   local installer=""
   local qwen_spec="@qwen-code/qwen-code"
@@ -1089,6 +1118,7 @@ EOF
   printf -v installer_escaped '%q' "${installer}"
   run_as_runtime_user "unset PLAYWRIGHT_BROWSERS_PATH; bash ${installer_escaped} ${HERMES_INSTALL_ARGS} --branch main"
   rm -rf "${tarball}" "${stage_dir}" "${installer}"
+  verify_hermes_runtime_version
 
   log_info "installing ${qwen_spec}"
   npm install -g "${qwen_spec}"
