@@ -7,6 +7,8 @@ components:
 generators:
 - ksops-secret-generator.yaml
 - ksops-content-audit-secret-generator.yaml
+- ksops-shadow-runtime-secret-generator.yaml
+- ksops-cloudladder-callback-secret-generator.yaml
 patches:
 - target:
     kind: ConfigMap
