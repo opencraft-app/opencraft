@@ -201,6 +201,24 @@ backends:
       timeout: 10s
       allowed_methods: ["POST"]
 
+  - alias: tcapi-account-cn-prod
+    upstream:
+      base_url: "https://account.tencentcloudapi.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - alias: tcapi-cam-cn-prod
+    upstream:
+      base_url: "https://cam.tencentcloudapi.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - alias: tcapi-sts-cn-prod
+    upstream:
+      base_url: "https://sts.tencentcloudapi.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
   - alias: lightclaw-auth-sandbox-bj-7
     upstream:
       base_url: "https://api-sandbox-bj-7.lightclaw.tech"
@@ -242,9 +260,15 @@ auth:
         - tcapi-account-cn-test
         - tcapi-cam-cn-test
         - tcapi-sts-cn-test
+        - tcapi-account-cn-prod
+        - tcapi-cam-cn-prod
+        - tcapi-sts-cn-prod
         - shadow-account-test
         - shadow-cam-test
         - shadow-sts-test
+        - shadow-account-prod
+        - shadow-cam-prod
+        - shadow-sts-prod
         - shadow-billing-api-test
 
 audit:
@@ -581,6 +605,54 @@ routes:
     condition: 'request.method == "POST"'
     upstream:
       backend: tcapi-sts-cn-test
+
+  - id: tcapi-account-cn-prod
+    description: "Signed tunnel for TencentCloud account API production endpoint."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-account-cn-prod
+
+  - id: tcapi-cam-cn-prod
+    description: "Signed tunnel for TencentCloud CAM API production endpoint."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-cam-cn-prod
+
+  - id: tcapi-sts-cn-prod
+    description: "Signed tunnel for TencentCloud STS API production endpoint."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-sts-cn-prod
+
+  - id: shadow-account-prod
+    description: "Compatibility alias for TencentCloud account API production endpoint."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-account-cn-prod
+
+  - id: shadow-cam-prod
+    description: "Compatibility alias for TencentCloud CAM API production endpoint."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-cam-cn-prod
+
+  - id: shadow-sts-prod
+    description: "Compatibility alias for TencentCloud STS API production endpoint."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-sts-cn-prod
 
   - id: shadow-billing-api-test
     description: "Compatibility alias for TencentCloud billing API dev endpoint."

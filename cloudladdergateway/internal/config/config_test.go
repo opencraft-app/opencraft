@@ -46,10 +46,16 @@ func TestExampleConfigLoads(t *testing.T) {
 		"tcapi-account-cn-test":                      false,
 		"tcapi-cam-cn-test":                          false,
 		"tcapi-sts-cn-test":                          false,
+		"tcapi-account-cn-prod":                      false,
+		"tcapi-cam-cn-prod":                          false,
+		"tcapi-sts-cn-prod":                          false,
 		"jifei-test":                                 false,
 		"shadow-account-test":                        false,
 		"shadow-cam-test":                            false,
 		"shadow-sts-test":                            false,
+		"shadow-account-prod":                        false,
+		"shadow-cam-prod":                            false,
+		"shadow-sts-prod":                            false,
 		"shadow-billing-api-test":                    false,
 		"tencentcloud-account-callback-sandbox-bj-7": false,
 	}
@@ -64,6 +70,12 @@ func TestExampleConfigLoads(t *testing.T) {
 				wantBackend = "tcapi-cam-cn-test"
 			case "shadow-sts-test":
 				wantBackend = "tcapi-sts-cn-test"
+			case "shadow-account-prod":
+				wantBackend = "tcapi-account-cn-prod"
+			case "shadow-cam-prod":
+				wantBackend = "tcapi-cam-cn-prod"
+			case "shadow-sts-prod":
+				wantBackend = "tcapi-sts-cn-prod"
 			case "shadow-billing-api-test":
 				wantBackend = "tcapi-billing-cn-dev"
 			case "tencentcloud-account-callback-sandbox-bj-7":
