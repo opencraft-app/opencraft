@@ -70,6 +70,15 @@ describe("vite.config top-level imports must stay node-loadable", () => {
     expect(mod.getSeoMeta("/about", "global").title).toContain("About LightVela");
   });
 
+  it("does not throw for malformed encoded Agent route segments", async () => {
+    const mod = await import("../seo-data");
+
+    expect(() => mod.getSeoMeta("/agents/%E4%B8", "cn")).not.toThrow();
+    expect(() => mod.getSeoMeta("/agents/%ZZ", "cn")).not.toThrow();
+    expect(mod.getSeoMeta("/agents/%ZZ", "cn").title).toContain("Agent 控制台");
+    expect(mod.getSeoMeta("/agents/%ZZ", "global").title).toContain("Agent Console");
+  });
+
   it("exposes applySeoToHtml importable without vite alias", async () => {
     // seo-html.ts 也是 vite.config 顶层 import，必须在 node 上下文可加载。
     const mod = await import("../seo-html");

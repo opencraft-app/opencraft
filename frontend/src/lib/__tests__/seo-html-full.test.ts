@@ -148,4 +148,50 @@ describe("applyFullSeoToHtml", () => {
     expect(descCount).toBe(1);
     expect(keywordsCount).toBe(1);
   });
+
+  it("replaces reversed-attribute head tags instead of inserting duplicates", () => {
+    const template = `<!doctype html>
+<html>
+  <head>
+    <meta content="OLD" name="description">
+    <meta content="OLD" property="og:title">
+    <meta content="OLD" name="twitter:title">
+    <link href="https://old.example/about" rel = "canonical">
+    <title>OLD</title>
+  </head>
+  <body></body>
+</html>`;
+
+    const out = applyFullSeoToHtml(template, "/about", "global");
+
+    expect((out.match(/\bname="description"/g) ?? []).length).toBe(1);
+    expect((out.match(/\bproperty="og:title"/g) ?? []).length).toBe(1);
+    expect((out.match(/\bname="twitter:title"/g) ?? []).length).toBe(1);
+    expect((out.match(/\brel="canonical"/g) ?? []).length).toBe(1);
+    expect(out).not.toContain("OLD");
+    expect(out).toContain(
+      '<meta property="og:title" content="About LightVela | LightVela · Your Personal Cloud AI Agent"',
+    );
+    expect(out).toContain('<link rel="canonical" href="https://lightvela.ai/about"');
+  });
+
+  it("deduplicates repeated title/meta/link tags", () => {
+    const template = `<!doctype html><html><head>
+      <title>OLD1</title>
+      <title>OLD2</title>
+      <meta name="description" content="OLD1">
+      <meta content="OLD2" name="description">
+      <link rel="canonical" href="https://old.example/a">
+      <link href="https://old.example/b" rel="canonical">
+    </head><body></body></html>`;
+
+    const out = applyFullSeoToHtml(template, "/docs/overview", "cn");
+
+    expect((out.match(/<title\b/g) ?? []).length).toBe(1);
+    expect((out.match(/\bname="description"/g) ?? []).length).toBe(1);
+    expect((out.match(/\brel="canonical"/g) ?? []).length).toBe(1);
+    expect(out).not.toContain("OLD1");
+    expect(out).not.toContain("OLD2");
+    expect(out).toContain("<title>LightVela 是什么 | LightVela 云端专属个人 Agent</title>");
+  });
 });

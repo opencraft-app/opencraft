@@ -424,6 +424,8 @@ function manualChunks(id: string) {
 }
 
 function seoHtmlPlugin(region: "cn" | "global"): PluginOption {
+  const staticAssetRe = /\.(?:js|mjs|cjs|ts|tsx|css|map|png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|otf|wasm|json)(?:$|\?)/i;
+
   return {
     name: "lightvela-seo-html",
     enforce: "pre",
@@ -447,7 +449,7 @@ function seoHtmlPlugin(region: "cn" | "global"): PluginOption {
           || url.startsWith("/src/")
           || url.startsWith("/node_modules/")
           || url.startsWith("/assets/")
-          || path.extname(url)
+          || staticAssetRe.test(url)
         ) {
           next();
           return;

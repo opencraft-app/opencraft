@@ -25,6 +25,17 @@ describe("seo meta", () => {
     expect(getSeoMeta("/missing-page").title).toBe("页面不存在 | LightVela 云端专属个人 Agent");
   });
 
+  it("uses route-specific titles for auth helper pages", () => {
+    expect(getSeoMeta("/auth/sign-up-code").title).toBe("输入验证码 | LightVela 云端专属个人 Agent");
+    expect(getSeoMeta("/auth/forgot-password").title).toBe("找回密码 | LightVela 云端专属个人 Agent");
+    expect(getSeoMeta("/auth/sign-up-code", "global").title).toBe(
+      "Verify Code | LightVela · Your Personal Cloud AI Agent",
+    );
+    expect(getSeoMeta("/auth/forgot-password", "global").title).toBe(
+      "Forgot Password | LightVela · Your Personal Cloud AI Agent",
+    );
+  });
+
   it("renders English titles and suffix for the global region", () => {
     const globalSuffix = "LightVela · Your Personal Cloud AI Agent";
     expect(getSeoMeta("/", "global").title).toBe("LightVela | Your Personal Cloud AI Agent");

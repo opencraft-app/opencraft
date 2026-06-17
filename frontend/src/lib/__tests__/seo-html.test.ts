@@ -56,4 +56,35 @@ describe("seo-html escaping", () => {
     expect(out).toContain('<meta name="keywords" content="a, b, c" />');
     expect(out.indexOf("keywords")).toBeLessThan(out.indexOf("<title>"));
   });
+
+  it("matches meta tags regardless of attribute order and does not duplicate them", () => {
+    const out = replaceOrInsertMeta(
+      `<head><meta content="OLD" data-source="fixture" name = "description"><title>T</title></head>`,
+      "description",
+      "next",
+    );
+
+    expect(out).toContain('<meta name="description" content="next" />');
+    expect(out).not.toContain('content="OLD"');
+    expect(out.match(/name="description"/g) ?? []).toHaveLength(1);
+  });
+
+  it("deduplicates repeated matching meta tags while replacing the first one", () => {
+    const out = replaceOrInsertMeta(
+      [
+        "<head>",
+        '<meta name="description" content="OLD1">',
+        '<meta content="OLD2" name="description">',
+        "<title>T</title>",
+        "</head>",
+      ].join(""),
+      "description",
+      "next",
+    );
+
+    expect(out.match(/name="description"/g) ?? []).toHaveLength(1);
+    expect(out).toContain('<meta name="description" content="next" />');
+    expect(out).not.toContain("OLD1");
+    expect(out).not.toContain("OLD2");
+  });
 });

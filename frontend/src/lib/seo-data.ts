@@ -273,9 +273,9 @@ const STATIC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = 
     "/auth/email-bind-result": "邮箱绑定结果",
     "/auth/sign-in": "登录",
     "/auth/sign-up": "注册",
-    "/auth/sign-up-code": "登录",
+    "/auth/sign-up-code": "输入验证码",
     "/auth/invite": "邀请码",
-    "/auth/forgot-password": "登录",
+    "/auth/forgot-password": "找回密码",
     "/plans/select": "选择套餐",
     "/settings/account": "账号设置",
     "/internal/style-lab": "设计系统",
@@ -297,9 +297,9 @@ const STATIC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = 
     "/auth/email-bind-result": "Email Binding Result",
     "/auth/sign-in": "Sign In",
     "/auth/sign-up": "Sign Up",
-    "/auth/sign-up-code": "Sign In",
+    "/auth/sign-up-code": "Verify Code",
     "/auth/invite": "Invite Code",
-    "/auth/forgot-password": "Sign In",
+    "/auth/forgot-password": "Forgot Password",
     "/plans/select": "Select Plan",
     "/settings/account": "Account Settings",
     "/internal/style-lab": "Design System",
@@ -427,6 +427,14 @@ function normalizePathname(pathname: string): string {
   return pathname.replace(/\/+$/, "");
 }
 
+function safeDecodeURIComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 function getAgentsPageTitle(pathname: string, region: SeoRegion): string | null {
   if (pathname === "/agents") {
     return AGENTS_HOME_TITLE_BY_REGION[region];
@@ -437,7 +445,7 @@ function getAgentsPageTitle(pathname: string, region: SeoRegion): string | null 
     return null;
   }
 
-  const section = decodeURIComponent(match[1] ?? "");
+  const section = safeDecodeURIComponent(match[1] ?? "");
   return AGENT_SECTION_TITLES_BY_REGION[region][section] ?? AGENTS_HOME_TITLE_BY_REGION[region];
 }
 

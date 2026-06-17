@@ -1,37 +1,3 @@
----
-title: 支持调整 Hermes 记忆字符上限
-issue: wisp/mono2#69
-status: active
----
+# 当前需求提案
 
-# 支持调整 Hermes 记忆字符上限
-
-## 背景
-
-当前 OpenClaw 设置页的「记忆」面板已经能读取 Hermes 实例中的 `.hermes/config.yaml`
-以及 `MEMORY.md` / `USER.md` 内容，并展示两类文件的字符占用与上限。但用户无法在控制台
-内调整上限，只能进入实例手动执行命令。
-
-## 目标
-
-- 在「记忆」面板内分别支持调整 `MEMORY.md` 与 `USER.md` 的字符上限。
-- 通过现有 `debug/exec` 通道注入 Hermes CLI 命令，不新增后端接口。
-- 前端提供清晰的范围校验和保存反馈，成功写入配置并重启 Hermes 网关后刷新当前记忆快照。
-
-## 非目标
-
-- 不编辑 `MEMORY.md` / `USER.md` 内容本身。
-- 不新增后端 API。
-- 不改 Hermes CLI 行为。
-
-## 验收
-
-- Agent 记忆上限范围为 500-4000。
-- 用户画像上限范围为 500-3000。
-- 实际可填下限还必须不低于当前文件已有字符数。
-- 调小上限且接近当前占用时展示风险提示，避免用户无感知地压缩写入余量。
-- 保存命令分别为：
-  - `hermes config set memory.memory_char_limit <value>`
-  - `hermes config set memory.user_char_limit <value>`
-- 配置命令或网关重启命令失败时展示摘要错误；配置已保存但重启失败时仍刷新快照，避免 UI 与实际配置脱节。
-- 网关重启成功后必须回读校验目标上限已经生效，确认后再提示修改成功。
+工作区已清理（上一需求归档于 2026-06-17：SEO CR 边界加固）。请通过 `/feai-start` 启动新流程。

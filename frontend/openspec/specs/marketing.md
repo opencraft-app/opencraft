@@ -172,7 +172,13 @@
    - 粒子/星空背景 Canvas 组件按需启用，注意性能（低端设备降级）
 4. **i18n 与文案抽取**：业务文案不再硬编码，统一通过 `useT()`（`src/i18n/t.ts`）以中文原文作为 key 调用，由 `pnpm i18n:extract` 扫描生成 `src/i18n/generated/*.json` 字典；运行时反查 hash → 目标语言。`pnpm i18n:check` 作为 CI 门禁拦截缺失翻译。`landing/constants.ts` 只承载非文案常量（配色 / 时长 / 动效参数），文案出现在组件内 `t("…中文…")` 字面量调用处，便于 extract 脚本扫描。
 5. **SEO**：Landing 使用 BrowserRouter 而非 Hash，需要配合后端/Cloudflare 返回
-   index.html 做 SPA 兜底。
+   index.html 做 SPA 兜底。SEO 元数据由 `src/lib/seo-data.ts` 统一维护，按
+   `cn/global` region 输出不同 title suffix、description、keywords、OG/Twitter/
+   canonical/robots 字段；`src/lib/seo-html.ts` 负责 dev/prerender HTML 注入。
+   由于 `generate-static-site.mjs` 暂时维护了一份镜像数据，必须通过
+   `src/lib/__tests__/seo-site-mirror.test.ts` 守护 prerender route 与运行时
+   `getSeoMeta()` 一致。head 标签 upsert 必须支持任意属性顺序并去重重复
+   `title/meta/link`，避免爬虫在多条同名 SEO 标签之间取错值。
 6. **响应式断点**：营销模块统一采用 Tailwind 默认断点
    - `default`（< 768px）：移动端单列堆叠布局，内边距 `px-4`，CTA 按钮 `w-full`
    - `md`（≥ 768px）：平板双列或多列，内边距 `px-6`

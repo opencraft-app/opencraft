@@ -56,24 +56,41 @@ export function normalizeSeoRequestPath(requestPath: string): string {
   return pathname === "/index.html" ? "/" : pathname;
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function htmlTagWithAttributeMatcher(
+  tagName: "link" | "meta",
+  attrName: "name" | "property" | "rel",
+  attrValue: string,
+): RegExp {
+  return new RegExp(
+    `<${tagName}\\b(?=[^>]*\\b${attrName}\\s*=\\s*["']${escapeRegExp(attrValue)}["'])[^>]*>`,
+    "i",
+  );
+}
+
+function toGlobalMatcher(matcher: RegExp): RegExp {
+  return new RegExp(matcher.source, matcher.flags.includes("g") ? matcher.flags : `${matcher.flags}g`);
+}
+
+const TITLE_MATCHER = /<title\b[^>]*>[\s\S]*?<\/title>/i;
+
 export function replaceOrInsertMeta(html: string, name: string, content: string): string {
   const tag = `<meta name="${name}" content="${escapeHtmlAttribute(content)}" />`;
-  const pattern = new RegExp(`<meta\\s+name=["']${name}["'][^>]*>`, "i");
+  const matcher = htmlTagWithAttributeMatcher("meta", "name", name);
 
   // 用函数式 replacement，避免 content 含 `$`（如 `$1` / `$&` / `$$`）时
   // 被 String.prototype.replace 当作特殊替换模式，造成元字符注入 bug。
-  if (pattern.test(html)) {
-    return html.replace(pattern, () => tag);
-  }
-
-  return insertBeforeTitle(html, tag);
+  return upsertHeadTag(html, matcher, tag);
 }
 
 export function applySeoToHtml(html: string, requestPath: string, region: SeoRegion): string {
   const meta = getSeoMeta(normalizeSeoRequestPath(requestPath), region);
   // <title> 是文本内容，用文本转义（不转 `"`）；函数式 replacement 规避 `$` 注入。
   const titleTag = `<title>${escapeHtmlText(meta.title)}</title>`;
-  const htmlWithTitle = html.replace(/<title>.*?<\/title>/i, () => titleTag);
+  const htmlWithTitle = upsertHeadTag(html, TITLE_MATCHER, titleTag);
   const htmlWithDescription = replaceOrInsertMeta(htmlWithTitle, "description", meta.description);
   return replaceOrInsertMeta(htmlWithDescription, "keywords", meta.keywords);
 }
@@ -102,27 +119,35 @@ function insertBeforeTitle(html: string, tag: string): string {
  * 用函数式 replacement 防止 content 含 `$` 元字符被解释为替换模式（CR2 同源风险）。
  */
 function upsertHeadTag(html: string, matcher: RegExp, tag: string): string {
-  if (matcher.test(html)) {
-    return html.replace(matcher, () => tag);
+  const globalMatcher = toGlobalMatcher(matcher);
+  let seen = 0;
+  const replaced = html.replace(globalMatcher, () => {
+    seen += 1;
+    return seen === 1 ? tag : "";
+  });
+
+  if (seen > 0) {
+    return replaced;
   }
+
   return insertBeforeTitle(html, tag);
 }
 
 function setMetaProperty(html: string, property: string, content: string): string {
   const tag = `<meta property="${property}" content="${escapeHtmlAttribute(content)}" />`;
-  const matcher = new RegExp(`<meta\\s+property=["']${property}["'][^>]*>`, "i");
+  const matcher = htmlTagWithAttributeMatcher("meta", "property", property);
   return upsertHeadTag(html, matcher, tag);
 }
 
 function setMetaName(html: string, name: string, content: string): string {
   const tag = `<meta name="${name}" content="${escapeHtmlAttribute(content)}" />`;
-  const matcher = new RegExp(`<meta\\s+name=["']${name}["'][^>]*>`, "i");
+  const matcher = htmlTagWithAttributeMatcher("meta", "name", name);
   return upsertHeadTag(html, matcher, tag);
 }
 
 function setLink(html: string, rel: string, href: string): string {
   const tag = `<link rel="${rel}" href="${escapeHtmlAttribute(href)}" />`;
-  const matcher = new RegExp(`<link\\s+rel=["']${rel}["'][^>]*>`, "i");
+  const matcher = htmlTagWithAttributeMatcher("link", "rel", rel);
   return upsertHeadTag(html, matcher, tag);
 }
 
@@ -153,11 +178,7 @@ export function applyFullSeoToHtml(
 
   // <title> 文本内容（不转引号）
   const titleTag = `<title>${escapeHtmlText(meta.title)}</title>`;
-  if (/<title>.*?<\/title>/i.test(next)) {
-    next = next.replace(/<title>.*?<\/title>/i, () => titleTag);
-  } else {
-    next = next.replace(/<head>/i, (m) => `${m}\n    ${titleTag}`);
-  }
+  next = upsertHeadTag(next, TITLE_MATCHER, titleTag);
 
   // 基础 meta
   next = replaceOrInsertMeta(next, "description", meta.description);

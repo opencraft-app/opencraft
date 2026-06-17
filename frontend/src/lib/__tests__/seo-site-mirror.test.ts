@@ -14,11 +14,18 @@
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { getSeoMeta, getSiteConfig, SEO_DESCRIPTION, SEO_KEYWORDS } from "@/lib/seo-data";
 
 const SCRIPT_PATH = path.resolve(process.cwd(), "scripts/generate-static-site.mjs");
 const SCRIPT_SOURCE = readFileSync(SCRIPT_PATH, "utf8");
+
+type StaticRoute = {
+  kind: string;
+  path: string;
+  title: string;
+};
 
 /**
  * 从 generate-static-site.mjs 源码里抽取一个简单字面量字段。
@@ -34,6 +41,22 @@ function extractStringField(source: string, blockHeader: RegExp, field: string):
   if (!match) throw new Error(`field not found: ${field} in block ${blockHeader}`);
   // 还原 JSON 字符串转义（`\"`、`\\` 等）
   return JSON.parse(`"${match[1]}"`);
+}
+
+async function resolvePrerenderRoutes(region: "cn" | "global"): Promise<StaticRoute[]> {
+  const mod = await import(pathToFileURL(SCRIPT_PATH).href) as {
+    resolveStaticRoutes: (region: "cn" | "global") => StaticRoute[];
+  };
+  return mod.resolveStaticRoutes(region);
+}
+
+function seoPageTitle(pathname: string, region: "cn" | "global"): string {
+  const fullTitle = getSeoMeta(pathname, region).title;
+  const suffix = getSeoMeta("/about", region).title.split(" | ")[1];
+  if (!suffix) return fullTitle;
+  return fullTitle.endsWith(` | ${suffix}`)
+    ? fullTitle.slice(0, -` | ${suffix}`.length)
+    : fullTitle;
 }
 
 describe("prerender SITE constants mirror seo-data.ts", () => {
@@ -93,4 +116,28 @@ describe("prerender SITE_KEYWORDS mirror seo-data.ts", () => {
     const global = extractStringField(block![0], /^/, "global");
     expect(global).toBe(getSeoMeta("/", "global").keywords);
   });
+});
+
+describe("prerender route titles mirror seo-data.ts", () => {
+  for (const region of ["cn", "global"] as const) {
+    it(`${region}: base route titles stay aligned`, async () => {
+      const routes = await resolvePrerenderRoutes(region);
+      const mirroredRoutes = routes.filter((route) => ["about", "changelog"].includes(route.kind));
+
+      expect(mirroredRoutes.length).toBeGreaterThan(0);
+      for (const route of mirroredRoutes) {
+        expect(route.title).toBe(seoPageTitle(route.path, region));
+      }
+    });
+
+    it(`${region}: docs route titles stay aligned`, async () => {
+      const routes = await resolvePrerenderRoutes(region);
+      const docsRoutes = routes.filter((route) => route.kind === "doc");
+
+      expect(docsRoutes.length).toBeGreaterThan(0);
+      for (const route of docsRoutes) {
+        expect(route.title).toBe(seoPageTitle(route.path, region));
+      }
+    });
+  }
 });
