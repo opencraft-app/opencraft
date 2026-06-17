@@ -32,6 +32,7 @@ func isNonRetryableActivityError(err error) bool {
 		"missing --cos-upload-bucket-url",
 		"invalid cos bucket url",
 		"tat uploader script is too large",
+		"unknown archive mode",
 		"returned no invocationid",
 		"unknown tat archive mode",
 	} {

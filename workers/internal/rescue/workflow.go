@@ -10,6 +10,7 @@ import (
 )
 
 func ExportWorkflow(ctx workflow.Context, req ExportRequest, cfg TencentConfig) (ExportResult, error) {
+	req = NormalizeExportRequest(req)
 	retry := &temporal.RetryPolicy{MaximumAttempts: 3}
 	result := ExportResult{DryRun: !req.Execute}
 	status, err := InitExportStatus(ctx, req)

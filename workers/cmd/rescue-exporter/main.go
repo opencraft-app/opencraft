@@ -193,13 +193,27 @@ func startWorkflow(argv []string) error {
 
 	userProvidedRemotePaths := len(req.RemotePaths) > 0
 	req.DeviceGlobs = splitRepeated(req.DeviceGlobs, []string{"/dev/vda*", "/dev/vdb*"})
-	req.RemotePaths = splitRepeated(req.RemotePaths, []string{"/"})
+	req.ArchiveMode = strings.ToLower(strings.TrimSpace(req.ArchiveMode))
+	if req.ArchiveMode == "" {
+		req.ArchiveMode = rescue.ArchiveModeHermes
+	}
+	if req.ArchiveMode != rescue.ArchiveModeHermes && req.ArchiveMode != rescue.ArchiveModeGeneric {
+		return fmt.Errorf("--archive-mode must be hermes or generic")
+	}
+	defaultRemotePaths := []string{"/home/agentuser/.hermes"}
+	if req.ArchiveMode == rescue.ArchiveModeGeneric {
+		defaultRemotePaths = []string{"/"}
+	}
+	req.RemotePaths = splitRepeated(req.RemotePaths, defaultRemotePaths)
 	cfg.RegionCandidates = splitRepeated(cfg.RegionCandidates, rescue.CommonRegions)
 	if req.Execute && !req.Confirmed {
 		return fmt.Errorf("--execute requires --i-understand-this-enters-rescue-mode-and-copies-data")
 	}
-	if req.Execute && !userProvidedRemotePaths {
+	if req.Execute && req.ArchiveMode == rescue.ArchiveModeGeneric && !userProvidedRemotePaths {
 		return fmt.Errorf("--execute requires at least one explicit --remote-path; refusing to export / by default")
+	}
+	if req.ArchiveMode == rescue.ArchiveModeHermes && len(req.RemotePaths) != 1 {
+		return fmt.Errorf("--archive-mode hermes requires exactly one --remote-path")
 	}
 	req.CommandTransport = strings.ToLower(strings.TrimSpace(req.CommandTransport))
 	if req.CommandTransport == "" {
@@ -330,7 +344,7 @@ func addTemporalFlags(fs *flag.FlagSet) *rescue.TemporalConfig {
 }
 
 func addStartFlags(fs *flag.FlagSet) (*rescue.ExportRequest, *rescue.TencentConfig) {
-	req := &rescue.ExportRequest{InstanceID: "ins-0fverxpd", RescueUsername: "root", RescuePasswordEnv: "RESCUE_PASSWORD", StopType: "SOFT_FIRST", CommandTransport: "tat", SSHUser: "root", SSHPort: 22, TATUsername: "root", TATWorkingDirectory: "/root", TATWaitTimeoutSeconds: 180, COSUploadRegion: "ap-beijing", COSUploadKeyPrefix: "rescue-exports", COSUploadURLTTLSeconds: 28800, LocalOutputDir: "./exports", MountRoot: "/mnt/rescue-root", RemoteWorkDir: "/root", WaitTimeoutSeconds: 90, CommandTimeoutSeconds: 1800}
+	req := &rescue.ExportRequest{InstanceID: "ins-0fverxpd", RescueUsername: "root", RescuePasswordEnv: "RESCUE_PASSWORD", StopType: "SOFT_FIRST", CommandTransport: "tat", SSHUser: "root", SSHPort: 22, TATUsername: "root", TATWorkingDirectory: "/root", TATWaitTimeoutSeconds: 180, COSUploadRegion: "ap-beijing", COSUploadKeyPrefix: "rescue-exports", COSUploadURLTTLSeconds: 28800, LocalOutputDir: "./exports", MountRoot: "/mnt/rescue-root", RemoteWorkDir: "/root", ArchiveMode: rescue.ArchiveModeHermes, WaitTimeoutSeconds: 90, CommandTimeoutSeconds: 1800}
 	cfg := &rescue.TencentConfig{}
 	fs.StringVar(&cfg.CredentialFile, "credential-file", "", "Optional Tencent credential JSON; env vars take precedence")
 	fs.StringVar(&req.InstanceID, "instance-id", req.InstanceID, "Tencent CVM instance ID")
@@ -341,7 +355,8 @@ func addStartFlags(fs *flag.FlagSet) (*rescue.ExportRequest, *rescue.TencentConf
 	fs.StringVar(&req.StopType, "stop-type", req.StopType, "Tencent rescue stop type: SOFT, HARD, SOFT_FIRST")
 	fs.BoolVar(&req.ReenterRescue, "reenter-rescue", false, "If already in rescue mode, exit and re-enter to reset rescue password")
 	fs.Var((*appendFlag)(&req.DeviceGlobs), "device-glob", "Block device glob to mount; repeatable or comma-separated")
-	fs.Var((*appendFlag)(&req.RemotePaths), "remote-path", "Path on rescued disk to archive; repeatable or comma-separated")
+	fs.StringVar(&req.ArchiveMode, "archive-mode", req.ArchiveMode, "Archive mode: hermes creates a hermes import-compatible zip; generic creates the legacy tar.gz")
+	fs.Var((*appendFlag)(&req.RemotePaths), "remote-path", "Path on rescued disk to archive. In hermes mode defaults to /home/agentuser/.hermes and must resolve to one Hermes home; in generic mode repeatable or comma-separated")
 	fs.StringVar(&req.MountRoot, "mount-root", req.MountRoot, "Mount path inside rescue OS")
 	fs.StringVar(&req.RemoteWorkDir, "remote-work-dir", req.RemoteWorkDir, "Remote directory for temporary archive")
 	fs.StringVar(&req.LocalOutputDir, "local-output-dir", req.LocalOutputDir, "Local directory for copied archive")

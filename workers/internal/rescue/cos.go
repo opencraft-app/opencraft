@@ -118,7 +118,11 @@ func DeleteCOSObject(ctx context.Context, cfg TencentConfig, req COSDeleteReques
 
 func cosObjectKey(req ExportRequest) string {
 	prefix := strings.Trim(req.COSUploadKeyPrefix, "/")
-	name := fmt.Sprintf("%s-%d.tar.gz", req.InstanceID, time.Now().Unix())
+	suffix := ".tar.gz"
+	if normalizeArchiveMode(req.ArchiveMode) == ArchiveModeHermes {
+		suffix = ".zip"
+	}
+	name := fmt.Sprintf("%s-%d%s", req.InstanceID, time.Now().Unix(), suffix)
 	if prefix == "" {
 		return name
 	}

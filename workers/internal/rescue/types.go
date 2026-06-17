@@ -1,5 +1,7 @@
 package rescue
 
+import "fmt"
+
 var CommonRegions = []string{
 	"ap-guangzhou",
 	"ap-shanghai",
@@ -30,6 +32,11 @@ type TencentConfig struct {
 	RegionCandidates []string
 }
 
+const (
+	ArchiveModeHermes  = "hermes"
+	ArchiveModeGeneric = "generic"
+)
+
 type ExportRequest struct {
 	BotID                  string
 	BotName                string
@@ -43,6 +50,7 @@ type ExportRequest struct {
 	ReenterRescue          bool
 	DeviceGlobs            []string
 	RemotePaths            []string
+	ArchiveMode            string
 	MountRoot              string
 	RemoteWorkDir          string
 	LocalOutputDir         string
@@ -71,6 +79,25 @@ type ExportRequest struct {
 	Confirmed              bool
 	WaitTimeoutSeconds     int
 	CommandTimeoutSeconds  int
+}
+
+func NormalizeExportRequest(req ExportRequest) ExportRequest {
+	req.ArchiveMode = normalizeArchiveMode(req.ArchiveMode)
+	if req.ArchiveMode == ArchiveModeHermes && len(req.RemotePaths) == 0 {
+		req.RemotePaths = []string{"/home/agentuser/.hermes"}
+	}
+	if req.CommandTransport == "" {
+		req.CommandTransport = "tat"
+	}
+	return req
+}
+
+func ValidateArchiveMode(mode string) error {
+	mode = normalizeArchiveMode(mode)
+	if mode != ArchiveModeHermes && mode != ArchiveModeGeneric {
+		return fmt.Errorf("unknown archive mode %q", mode)
+	}
+	return nil
 }
 
 type InstanceInfo struct {
