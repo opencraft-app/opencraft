@@ -1,5 +1,5 @@
 /**
- * 临时版本更新公告条（北京时间 2026-06-18 03:00 自动撤下）
+ * 临时版本更新公告条（北京时间 2026-06-18 05:30 自动撤下）
  *
  * 显示位置：仅 landing（"/"）页顶部。
  * 显示条件：国内站（isCN）且未到撤下时刻、且用户未点击关闭。
@@ -7,11 +7,10 @@
  *
  * 关闭行为：localStorage key 带版本号，下次新公告换 ID 即可重新弹。
  *
- * 过期处理：构建期常量 EXPIRES_AT 是北京时间 2026-06-18 03:00 (UTC+8)
+ * 过期处理：构建期常量 EXPIRES_AT 是北京时间 2026-06-18 05:30 (UTC+8)
  * 对应的 Unix 毫秒，到期后无论 localStorage 状态都不再显示。
  *
- * 注意：升级窗口是 21:00-24:00，公告撤下时间是次日 03:00，留 3 小时缓冲让
- * 错过升级窗口刚醒来的用户也能看到说明。
+ * 注意：升级窗口是 21:00-次日 05:30，公告在窗口结束时自动撤下。
  */
 
 import { Megaphone, X } from "lucide-react";
@@ -25,8 +24,8 @@ const ANNOUNCEMENT_ID = "0617-hermes-agent-upgrade";
 
 const STORAGE_KEY = `lw-announcement-dismissed:${ANNOUNCEMENT_ID}`;
 
-/** 北京时间 2026-06-18 03:00:00 = UTC 2026-06-17 19:00:00 */
-const EXPIRES_AT = Date.UTC(2026, 5 /* 0-indexed: June */, 17, 19, 0, 0);
+/** 北京时间 2026-06-18 05:30:00 = UTC 2026-06-17 21:30:00 */
+const EXPIRES_AT = Date.UTC(2026, 5 /* 0-indexed: June */, 17, 21, 30, 0);
 
 /** 显示的路径白名单 */
 const VISIBLE_PATHS = new Set<string>(["/"]);
@@ -51,7 +50,7 @@ export function MaintenanceAnnouncementBanner() {
     }
   }, []);
 
-  // 用户挂着浏览器跨过 03:00 的场景：不依赖刷新 / 切路由，到点强制隐藏。
+  // 用户挂着浏览器跨过 05:30 的场景：不依赖刷新 / 切路由，到点强制隐藏。
   // setTimeout 上限 ~24 天（i32 ms），公告窗口最多几小时所以稳。
   useEffect(() => {
     const remaining = EXPIRES_AT - Date.now();
@@ -84,7 +83,7 @@ export function MaintenanceAnnouncementBanner() {
         <span className="inline-flex items-center gap-2 pr-8 leading-9">
           <Megaphone className="h-4 w-4 shrink-0" aria-hidden="true" />
           {t(
-            "通知：我们将于北京时间2026年6月17日21点～24点，对 Hermes Agent 进行后台版本升级，升级期间可能导致智能体对话或任务执行短暂中止，带来不便尽请谅解。",
+            "通知：我们将于北京时间2026年6月17日21点～次日5点30分，对 Hermes Agent 进行后台版本升级，升级期间可能导致智能体对话或任务执行短暂中止，带来不便尽请谅解。",
           )}
         </span>
       </div>
