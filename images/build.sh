@@ -1142,9 +1142,14 @@ verify_hermes_source_tree_version() {
 
   actual="$(read_hermes_source_tree_version "${hermes_dir}/pyproject.toml" || true)"
   log_info "Hermes source tree version ${label}: ${actual:-unknown}"
+  if [ -z "${expected}" ] && [ -n "${actual}" ]; then
+    HERMES_SRC_VERSION="${actual}"
+    expected="${HERMES_SRC_VERSION}"
+    log_info "Hermes expected src_version filled from source tree ${label}: ${HERMES_SRC_VERSION}"
+  fi
   if [ -z "${expected}" ]; then
-    log_info "Hermes expected src_version is unknown; skipping source tree version check"
-    return 0
+    log_error "Hermes expected src_version is unknown and source tree did not provide a version"
+    return 1
   fi
   if [ "${actual}" != "${expected}" ]; then
     log_error "Hermes source tree version mismatch ${label}: expected ${expected} from latest.json, got ${actual:-unknown}"
@@ -1304,6 +1309,9 @@ ensure_hermes_version_resolved() {
   fi
   HERMES_VERSION="${version}"
   log_info "Resolved Hermes metadata: version=${HERMES_VERSION} src_version=${HERMES_SRC_VERSION:-unknown} git_commit=${HERMES_GIT_COMMIT:-unknown}"
+  if [ -z "${HERMES_SRC_VERSION}" ]; then
+    log_warn "Hermes metadata did not include src_version; will require the COS tarball source tree to provide it"
+  fi
 }
 
 ensure_yuanbao_allow_all_users() {
