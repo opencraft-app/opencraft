@@ -228,10 +228,10 @@ func TestGinHTTPExternalRouteForwardsToConfiguredUpstreamPath(t *testing.T) {
 		Auth: config.AuthConfig{
 			Enabled:              true,
 			TimestampSkew:        "5m",
-			AllowUnauthenticated: []string{"tencentcloud-account-callback-sandbox-bj-7"},
+			AllowUnauthenticated: []string{"tencentcloud-account-callback-beijing-sandbox"},
 		},
 		Routes: []config.RouteConfig{{
-			ID: "tencentcloud-account-callback-sandbox-bj-7",
+			ID: "tencentcloud-account-callback-beijing-sandbox",
 			Upstream: config.UpstreamConfig{
 				BaseURL:        upstream.URL,
 				AllowedMethods: []string{http.MethodPost},
@@ -243,7 +243,7 @@ func TestGinHTTPExternalRouteForwardsToConfiguredUpstreamPath(t *testing.T) {
 		External: []config.ExternalRoute{{
 			Path:         "/internal/tencentcloud/account",
 			Methods:      []string{http.MethodPost},
-			RouteID:      "tencentcloud-account-callback-sandbox-bj-7",
+			RouteID:      "tencentcloud-account-callback-beijing-sandbox",
 			UpstreamPath: "/auth/internal/tencentcloud/account",
 		}},
 	}

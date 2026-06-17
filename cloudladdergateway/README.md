@@ -248,18 +248,20 @@ http://21.215.157.57:8080/internal/tencentcloud/account
 
 这不是 HTTP 302 场景。腾讯会用 `POST` 发送 JSON body，gateway 必须在服务端做 reverse proxy，保留 body、状态码和响应体。配置方式：
 
+当前腾讯侧 SaaS callback 配置服务于北京主沙箱绑定链路；即使 clgateway 运行在预发布/TKEx 环境，也必须回调 `https://lightclaw.tech/auth/internal/tencentcloud/account`，不要路由到 `sandbox-bj-7` 这类隔离 playground 环境。
+
 ```yaml
 external_routes:
   - path: /internal/tencentcloud/account
     methods: ["POST"]
-    route_id: tencentcloud-account-callback-sandbox-bj-7
+    route_id: tencentcloud-account-callback-beijing-sandbox
     upstream_path: /auth/internal/tencentcloud/account
 
 routes:
-  - id: tencentcloud-account-callback-sandbox-bj-7
+  - id: tencentcloud-account-callback-beijing-sandbox
     condition: 'request.method == "POST"'
     upstream:
-      base_url: "https://api-sandbox-bj-7.lightclaw.tech"
+      base_url: "https://lightclaw.tech"
       timeout: 10s
       allowed_methods: ["POST"]
       headers_from_env:
