@@ -10,6 +10,7 @@
 #   [openclaw_version]         可选，OpenClaw 版本；默认从 build-manifest.json 读取
 #   --runtime <kind>           openclaw | hermes，默认 openclaw
 #   --hermes-version <ver>     Hermes COS 版本；默认从 runtime_hermes.cos_base/latest.json 读取
+#   --hermes-src-version <ver> Hermes 源码版本；默认从 latest.json 或 COS 包 pyproject.toml 读取
 #   --envd-only                仅安装 envd
 #   --base-only                仅安装基础层（Node/Python/Playwright/系统依赖）
 #   --app-only                 仅安装应用层（OpenClaw/plugins/skills/gateway）
@@ -78,6 +79,7 @@ WEIXIN_VERSION="${WEIXIN_VERSION:-}"
 SKILLS_MODE="essential"
 CUSTOM_SKILLS="${CUSTOM_SKILLS:-}"
 ARG_HERMES_VERSION="${ARG_HERMES_VERSION:-}"
+ARG_HERMES_SRC_VERSION="${ARG_HERMES_SRC_VERSION:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || pwd)"
 MANIFEST_PATH="${SCRIPT_DIR}/build-manifest.json"
@@ -110,6 +112,8 @@ Options:
   --app-only               Install only the application layer
   --runtime <kind>         Runtime flavor: openclaw | hermes (default: openclaw)
   --hermes-version <ver>   Hermes COS version, for example hermes-agent-v20260520 (default: latest.json)
+  --hermes-src-version <ver>
+                           Hermes source version resolved from latest.json
   --only-plugins <list>    Only install the specified plugins (comma-separated)
   --qqbot-version <ver>    QQBot plugin version (default: build-manifest.json runtime.qqbot_version)
   --weixin-version <ver>   Weixin plugin version (default: build-manifest.json runtime.weixin_version)
@@ -232,6 +236,10 @@ parse_args() {
         ARG_HERMES_VERSION="$2"
         shift 2
         ;;
+      --hermes-src-version)
+        ARG_HERMES_SRC_VERSION="$2"
+        shift 2
+        ;;
       --envd-only)
         ENVD_ONLY=true
         shift
@@ -322,6 +330,9 @@ parse_args() {
   fi
   if [ "${RUNTIME_KIND}" = "hermes" ] && [ -n "${ARG_HERMES_VERSION}" ]; then
     HERMES_VERSION="${ARG_HERMES_VERSION}"
+  fi
+  if [ "${RUNTIME_KIND}" = "hermes" ] && [ -n "${ARG_HERMES_SRC_VERSION}" ]; then
+    HERMES_SRC_VERSION="${ARG_HERMES_SRC_VERSION}"
   fi
 }
 

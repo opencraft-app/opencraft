@@ -238,6 +238,27 @@ def fetch_pypi_latest_version(package_name):
     return version
 
 
+def fetch_hermes_latest_metadata():
+    runtime = BUILD_MANIFEST.get("runtime_hermes") or {}
+    cos_base = str(runtime.get("cos_base") or "").rstrip("/")
+    if not cos_base:
+        raise RuntimeError("runtime_hermes.cos_base is required to resolve Hermes latest metadata")
+    data = fetch_json(f"{cos_base}/latest.json")
+    version = str(data.get("version") or "").strip()
+    src_version = str(data.get("src_version") or "").strip()
+    git_commit = str(data.get("git_commit_full") or data.get("git_commit") or "").strip()
+    if not version:
+        raise RuntimeError("Hermes latest metadata is missing version")
+    if not src_version:
+        raise RuntimeError("Hermes latest metadata is missing src_version")
+    return {
+        "version": version,
+        "src_version": src_version,
+        "git_commit": git_commit,
+        "cos_url": str(data.get("cos_url") or "").strip(),
+    }
+
+
 def fetch_node_latest_lts_version():
     releases = fetch_json("https://nodejs.org/dist/index.json")
     for release in releases:
@@ -1035,7 +1056,7 @@ def build_image_metadata(args, image_name, image_version, build_mode, verify_sui
         "hermes_runtime_user": args.runtime_user if args.runtime == "hermes" else "",
         "hermes_node_major": DEFAULT_HERMES_NODE_MAJOR if args.runtime == "hermes" else "",
         "hermes_version": args.hermes_version if args.runtime == "hermes" else "",
-        "hermes_src_version": DEFAULT_HERMES_SRC_VERSION if args.runtime == "hermes" else "",
+        "hermes_src_version": args.hermes_src_version if args.runtime == "hermes" else "",
         "hermes_git_commit": DEFAULT_HERMES_GIT_COMMIT if args.runtime == "hermes" else "",
         "hermes_qwen_code_version": DEFAULT_HERMES_QWEN_CODE_VERSION if args.runtime == "hermes" else "",
         "skills_mode": args.skills,
@@ -1418,7 +1439,7 @@ def terminate_instance(instance_id, region, dry_run=False):
 
 def step_deploy_build(ssh_host, ssh_port, openclaw_version=None, build_mode=None,
                       runtime_kind="openclaw",
-                      hermes_version=None,
+                      hermes_version=None, hermes_src_version=None,
                       only_plugins=None, qqbot_version=None, weixin_version=None,
                       skills_mode="essential", custom_skills=None,
                       runtime_user=DEFAULT_RUNTIME_USER,
@@ -1438,6 +1459,8 @@ def step_deploy_build(ssh_host, ssh_port, openclaw_version=None, build_mode=None
         build_args.extend(["--runtime", runtime_kind])
     if runtime_kind == "hermes" and hermes_version:
         build_args.extend(["--hermes-version", hermes_version])
+    if runtime_kind == "hermes" and hermes_src_version:
+        build_args.extend(["--hermes-src-version", hermes_src_version])
     if runtime_kind == "openclaw" and openclaw_version:
         build_args.append(openclaw_version)
     if build_mode == "base-only":
@@ -1850,6 +1873,10 @@ def main():
         help=f"Hermes COS 版本，例如 hermes-agent-v20260520 (default: {DEFAULT_HERMES_VERSION or 'latest.json'})",
     )
     parser.add_argument(
+        "--hermes-src-version", default=DEFAULT_HERMES_SRC_VERSION,
+        help=f"Hermes source version resolved from latest.json (default: {DEFAULT_HERMES_SRC_VERSION or 'latest.json'})",
+    )
+    parser.add_argument(
         "--remote-build-dir", default=DEFAULT_REMOTE_BUILD_DIR,
         help=f"远端构建工作目录；制镜前会清理 (default: {DEFAULT_REMOTE_BUILD_DIR})",
     )
@@ -1948,6 +1975,18 @@ def main():
 
     if args.runtime == "hermes" and args.runtime_user == DEFAULT_RUNTIME_USER:
         args.runtime_user = DEFAULT_HERMES_RUNTIME_USER
+
+    if args.runtime == "hermes" and (not args.hermes_version or not args.hermes_src_version):
+        hermes_latest = fetch_hermes_latest_metadata()
+        if not args.hermes_version:
+            args.hermes_version = hermes_latest["version"]
+        if not args.hermes_src_version:
+            args.hermes_src_version = hermes_latest["src_version"]
+        log(
+            "Resolved Hermes latest metadata in CI worker: "
+            f"version={args.hermes_version} src_version={args.hermes_src_version} "
+            f"git_commit={hermes_latest.get('git_commit') or 'unknown'}"
+        )
 
     # --custom-skills 自动启用 custom 模式
     if args.custom_skills:
@@ -2060,7 +2099,7 @@ def main():
         log(f"  Hermes 用户:  {args.runtime_user}")
         log(f"  Hermes Node:  {DEFAULT_HERMES_NODE_MAJOR}")
         log(f"  Hermes 版本:  {args.hermes_version or 'latest.json'}")
-        log(f"  Hermes 源版本: {DEFAULT_HERMES_SRC_VERSION or '未知'}")
+        log(f"  Hermes 源版本: {args.hermes_src_version or '未知'}")
         log(f"  Qwen Code:    {DEFAULT_HERMES_QWEN_CODE_VERSION}")
     else:
         log(f"  OpenClaw:     {args.openclaw_version or '默认'}")
@@ -2139,6 +2178,7 @@ def main():
                 build_mode="base-only",
                 runtime_kind=args.runtime,
                 hermes_version=args.hermes_version,
+                hermes_src_version=args.hermes_src_version,
                 runtime_user=args.runtime_user,
                 remote_dir=args.remote_build_dir,
                 dry_run=args.dry_run,
@@ -2182,6 +2222,7 @@ def main():
                     build_mode=build_mode,
                     runtime_kind=args.runtime,
                     hermes_version=args.hermes_version,
+                    hermes_src_version=args.hermes_src_version,
                     only_plugins=args.only_plugins,
                     qqbot_version=args.qqbot_version,
                     weixin_version=args.weixin_version,
@@ -2239,6 +2280,7 @@ def main():
                 build_mode=build_mode,
                 runtime_kind=args.runtime,
                 hermes_version=args.hermes_version,
+                hermes_src_version=args.hermes_src_version,
                 only_plugins=args.only_plugins,
                 qqbot_version=args.qqbot_version,
                 weixin_version=args.weixin_version,
@@ -2273,6 +2315,7 @@ def main():
                 build_mode=build_mode,
                 runtime_kind=args.runtime,
                 hermes_version=args.hermes_version,
+                hermes_src_version=args.hermes_src_version,
                 only_plugins=args.only_plugins,
                 qqbot_version=args.qqbot_version,
                 weixin_version=args.weixin_version,
