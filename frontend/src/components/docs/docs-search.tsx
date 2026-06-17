@@ -26,7 +26,7 @@ import {
   getLocalizedSidebar,
   isEnglishLocale,
 } from "@/config/docs-sidebar";
-import { isGlobal } from "@/lib/region";
+import { isGlobal, localizedPath } from "@/lib/region";
 import { overlayBackdropClass } from "@/components/ui/control-shell";
 import { cn } from "@/lib/utils";
 
@@ -87,11 +87,15 @@ function buildIndex(locale?: string): SearchEntry[] {
   const entries: SearchEntry[] = [];
   const sidebar = getLocalizedSidebar(locale);
   const useEnglish = isEnglishLocale(locale);
+  /* 国际站：搜索结果跳转 URL 也带 `/en` `/zh` 前缀（与侧边栏 / 上下篇保持一致）。
+     国内站：localizedPath 是 identity，无影响。 */
+  const i18nLocale: "zh-CN" | "en-US" =
+    locale === "zh-CN" || locale === "en-US" ? locale : "en-US";
   for (const group of sidebar) {
     for (const item of group.items) {
       // 跳过没有对应文档的分组表头（如"配置通道"）
       if (item.slug === null) continue;
-      const to = `/docs/${item.slug}`;
+      const to = localizedPath(`/docs/${item.slug}`, i18nLocale);
       entries.push({
         kind: "doc",
         to,
@@ -429,6 +433,9 @@ function KbdMini({ children }: { children: React.ReactNode }) {
 /** 未输入时的首屏提示 —— 简略分组罗列，便于浏览式进入。 */
 function EmptyHint({ locale }: { locale?: string }) {
   const sidebar = getLocalizedSidebar(locale);
+  /* 与 buildIndex 一致：国际站为本地化提示链接补齐 `/en` `/zh` 前缀。 */
+  const i18nLocale: "zh-CN" | "en-US" =
+    locale === "zh-CN" || locale === "en-US" ? locale : "en-US";
   return (
     <div className="py-2">
       {sidebar.map((group) => (
@@ -442,7 +449,7 @@ function EmptyHint({ locale }: { locale?: string }) {
               .map((item) => (
                 <li key={item.slug}>
                   <a
-                    href={`/docs/${item.slug}`}
+                    href={localizedPath(`/docs/${item.slug}`, i18nLocale)}
                     className="flex items-center gap-3 px-4 py-1.5 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)]"
                   >
                     <FileText className="size-3.5 text-[var(--text-tertiary)]" />

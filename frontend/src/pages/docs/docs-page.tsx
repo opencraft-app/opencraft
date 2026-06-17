@@ -26,14 +26,16 @@ import {
   rewriteImagePaths,
   rewriteMarkdownLinks,
 } from "@/lib/docs/docs-loader";
+import { localizedPath } from "@/lib/region";
 
 /**
  * 根据 slug 计算面包屑：文档 › 分组 › 当前页。
  * 找不到分组时只返回 [文档, 当前页]；找不到当前页就只返回 [文档]。
  */
 function buildBreadcrumb(slug: string, locale?: string): Array<{ label: string; to?: string }> {
+  const i18nLocale = (locale === "zh-CN" || locale === "en-US") ? locale : "en-US";
   const crumbs: Array<{ label: string; to?: string }> = [
-    { label: isEnglishLocale(locale) ? "Docs" : "文档", to: "/docs" },
+    { label: isEnglishLocale(locale) ? "Docs" : "文档", to: localizedPath("/docs", i18nLocale) },
   ];
   const sidebar = getLocalizedSidebar(locale);
   const flatSlugs = getLocalizedFlatSlugs(locale);
@@ -60,7 +62,7 @@ export function DocsPage() {
 
   const rawContent = getDocBySlug(slug, i18n.language);
   const content = rawContent
-    ? fixBoldBoundary(rewriteImagePaths(rewriteMarkdownLinks(rawContent), i18n.language))
+    ? fixBoldBoundary(rewriteImagePaths(rewriteMarkdownLinks(rawContent, i18n.language), i18n.language))
     : null;
 
   // 切页时的滚动归位由根布局的 <ScrollRestoration /> 统一处理：
@@ -71,9 +73,11 @@ export function DocsPage() {
   // 未知 slug 自动跳回默认页
   useEffect(() => {
     if (!rawContent && slug !== DEFAULT_SLUG) {
-      navigate(`/docs/${DEFAULT_SLUG}`, { replace: true });
+      const i18nLocale: "zh-CN" | "en-US" =
+        i18n.language === "zh-CN" || i18n.language === "en-US" ? i18n.language : "en-US";
+      navigate(localizedPath(`/docs/${DEFAULT_SLUG}`, i18nLocale), { replace: true });
     }
-  }, [rawContent, slug, navigate]);
+  }, [rawContent, slug, navigate, i18n.language]);
 
   // 浏览器页签标题统一沿用 index.html 中的默认值，不在文档页内改写。
   // 历史上此处会把 title 改成 `${某文档标题} · LightVela 文档`，但缺少卸载时的还原逻辑，

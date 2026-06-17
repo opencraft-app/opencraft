@@ -20,6 +20,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { setLocale } from "@/i18n";
+import { switchLocaleInPath } from "@/lib/region";
 
 type Locale = "zh-CN" | "en-US";
 
@@ -50,6 +51,18 @@ function currentOption(lang: string | undefined): Option {
  */
 function applyLocaleChange(value: Locale, reloadAfterSwitch: boolean): void {
   setLocale(value);
+
+  /* 国际站 SEO 页面（/docs、/about、/privacy-policy 等）按规则切换 URL
+     语言前缀；非 SEO 页面（/agents、/auth 等）以及国内站，URL 不变。
+     switchLocaleInPath 内部已自动处理 isGlobal 与白名单判断。 */
+  if (typeof window !== "undefined") {
+    const target = switchLocaleInPath(window.location.pathname, value);
+    if (target !== window.location.pathname) {
+      // 直接修改 history，避免触发 react-router 重新挂载（reload 会拿到新 URL）
+      window.history.replaceState(null, "", target + window.location.search + window.location.hash);
+    }
+  }
+
   if (reloadAfterSwitch) {
     // 给 setLocale 内部 localStorage 写入留出微任务窗口，再触发 reload
     // （setLocale 是同步写 localStorage，理论上不需要等待，但 reload
