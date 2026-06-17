@@ -12,17 +12,22 @@ const SITE = {
     locale: "zh_CN",
     name: "LightVela",
     defaultUrl: "https://lightvela.com",
-    titleSuffix: "LightVela",
-    description: "LightVela 是腾讯轻量云团队推出的云端 Agent 托管产品，让 Hermes Agent 7×24 小时在线，越聊越懂你。",
+    titleSuffix: "LightVela 云端专属个人 Agent",
+    description: "LightVela 是腾讯轻量云团队推出的云端 Agent 托管产品，致力于让每个人都能拥有一个真正属于自己的 AI 伙伴——不是每次打开都要重新自我介绍的工具，而是认识你、记得你、越聊越懂你的长期存在。",
   },
   global: {
     lang: "en-US",
     locale: "en_US",
     name: "LightVela",
     defaultUrl: "https://lightvela.ai",
-    titleSuffix: "LightVela",
-    description: "LightVela is a cloud Agent hosting product for running a dedicated Hermes Agent that stays online and understands you better over time.",
+    titleSuffix: "LightVela · Your Personal Cloud AI Agent",
+    description: "LightVela is a cloud Agent hosting product from the Tencent Lighthouse team. It is designed to let everyone own an AI companion that truly belongs to them—not a tool that asks you to introduce yourself every time, but a long-term presence that knows you, remembers you, and understands you better over time.",
   },
+};
+
+const SITE_KEYWORDS = {
+  cn: "LightVela, LightVela Agent, 云端 Agent, 个人 Agent, AI 伙伴, 腾讯轻量云, Agent 托管, 长期记忆, 个性化 AI, Hermes Agent, OpenClaw, 智能助手, AI 助手, 自动任务, 多渠道接入, QQ 机器人, 微信 Agent, 企业微信 Agent, 飞书 Agent, AI 陪伴, 个人智能体",
+  global: "LightVela, LightVela Agent, cloud AI agent, personal AI agent, AI companion, Tencent Cloud, agent hosting, long-term memory, personalized AI, Hermes Agent, OpenClaw, AI assistant, automations, multi-channel, WeChat agent, Telegram bot, WhatsApp bot, Discord bot, personal agent",
 };
 
 const DOCS = {
@@ -333,16 +338,14 @@ function baseRoutes(region) {
     {
       kind: "home",
       path: "/",
-      title: isGlobal ? "Cloud-hosted AI Agent companion" : "越用越懂你的云端智能伙伴",
+      title: isGlobal ? "Your Personal Cloud AI Agent" : "越用越懂你的云端智能伙伴",
       description: SITE[region].description,
     },
     {
       kind: "about",
       path: "/about",
-      title: isGlobal ? "About LightVela" : "关于 LightVela",
-      description: isGlobal
-        ? "Learn why LightVela brings cloud-hosted AI Agents to everyone."
-        : "了解 LightVela 如何让 AI Agent 在云端为你待命，随时召之即来。",
+      title: isGlobal ? "About LightVela" : "关于我们",
+      description: SITE[region].description,
     },
     ...(isGlobal ? [] : [{
       kind: "changelog",
@@ -401,16 +404,18 @@ function renderStaticSiteCriticalStyle() {
   ].join("");
 }
 
-function renderHead({ route, site, siteUrl, canonicalPath, description, indexable, jsonLd }) {
+function renderHead({ route, site, region, siteUrl, canonicalPath, description, indexable, jsonLd }) {
   const title = routeTitle(route, site);
   const canonical = absoluteUrl(siteUrl, canonicalPath);
   const robots = indexable ? "index,follow" : "noindex,nofollow";
   const image = absoluteUrl(siteUrl, "/lightvela-logo.jpg");
+  const keywords = SITE_KEYWORDS[region] ?? SITE_KEYWORDS.cn;
   return [
     "<meta charset=\"UTF-8\">",
     "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">",
     `<title>${escapeHtml(title)}</title>`,
     `<meta name="description" content="${escapeHtml(description)}">`,
+    `<meta name="keywords" content="${escapeHtml(keywords)}">`,
     `<meta name="robots" content="${robots}">`,
     `<link rel="canonical" href="${canonical}">`,
     "<link rel=\"icon\" type=\"image/jpeg\" href=\"/lightvela-logo.jpg\">",
@@ -703,7 +708,7 @@ async function renderRoute({ template, route, region, siteUrl, indexable, fronte
   }
 
   const jsonLd = jsonLdForRoute({ route, region, siteUrl, canonicalPath, description });
-  const head = renderHead({ route, site, siteUrl, canonicalPath, description, indexable, jsonLd });
+  const head = renderHead({ route, site, region, siteUrl, canonicalPath, description, indexable, jsonLd });
   return wrapPage({ template, site, head, body });
 }
 

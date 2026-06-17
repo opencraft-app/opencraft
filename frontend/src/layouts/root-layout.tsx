@@ -13,8 +13,11 @@ import { Outlet, ScrollRestoration } from "react-router-dom";
 import { CookieConsentBanner } from "@/components/site/cookie-consent-banner";
 import { ImpersonationBanner } from "@/components/site/impersonation-banner";
 import { MaintenanceAnnouncementBanner } from "@/components/site/maintenance-announcement-banner";
+import { useRouteSeoMeta } from "@/lib/seo";
 
 export function RootLayout() {
+  useRouteSeoMeta();
+
   return (
     <>
       <ImpersonationBanner />

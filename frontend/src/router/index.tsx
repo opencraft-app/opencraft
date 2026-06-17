@@ -6,6 +6,7 @@ import { lazyNamed, lazyRoute, lazySiteRoute } from "@/router/lazy-page";
 import { AGENTS_HOME_PATH } from "@/router/paths";
 import { AppAccessGuard, AuthenticatedGuard, AuthRouteGuard, MarketingAuthGuard, PlanGuard } from "@/router/guards";
 import { isGlobal } from "@/lib/region";
+import { useRouteSeoMeta } from "@/lib/seo";
 
 const LandingPage = lazyNamed(() => import("@/pages/marketing/landing-page"), "LandingPage");
 
@@ -36,12 +37,16 @@ const ChangelogPage = lazyNamed(() => import("@/pages/marketing/changelog-page")
 const DocsPage = lazyNamed(() => import("@/pages/docs/docs-page"), "DocsPage");
 const DocsLayout = lazyNamed(() => import("@/components/docs/docs-layout"), "DocsLayout");
 
-const NotFoundPage = () => (
-  <div className="mx-auto max-w-2xl px-4 py-20 text-center">
-    <h1 className="font-display-zh text-3xl font-semibold">页面不存在</h1>
-    <p className="mt-2 text-[var(--text-secondary)]">你访问的地址不在当前原型路由中。</p>
-  </div>
-);
+const NotFoundPage = () => {
+  useRouteSeoMeta();
+
+  return (
+    <div className="mx-auto max-w-2xl px-4 py-20 text-center">
+      <h1 className="font-display-zh text-3xl font-semibold">页面不存在</h1>
+      <p className="mt-2 text-[var(--text-secondary)]">你访问的地址不在当前原型路由中。</p>
+    </div>
+  );
+};
 
 const RedirectToAgents = () => {
   const location = useLocation();

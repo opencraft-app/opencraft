@@ -5,6 +5,7 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { loadEnv, type PluginOption } from "vite";
 import { defineConfig } from "vitest/config";
+import { applyFullSeoToHtml } from "./src/lib/seo-html";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -422,6 +423,64 @@ function manualChunks(id: string) {
   return undefined;
 }
 
+function seoHtmlPlugin(region: "cn" | "global"): PluginOption {
+  const staticAssetRe = /\.(?:js|mjs|cjs|ts|tsx|css|map|png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|otf|wasm|json)(?:$|\?)/i;
+
+  return {
+    name: "lightvela-seo-html",
+    enforce: "pre",
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        const method = req.method ?? "GET";
+        const url = req.url?.split("?")[0] ?? "/";
+        // 仅当客户端明确不接受 HTML（例如 fetch JSON）时才跳过；
+        // 缺省 / 含 text/html / 通配 */* 一律视为页面导航请求，注入 SEO meta。
+        // 历史实现要求 accept 必须含 "text/html"，导致不带标准 Accept 头的
+        // 页面请求（查看源代码、部分爬虫、curl 等）拿到的是未注入 SEO 的
+        // 原始 index.html，title 卡在默认值而非规范的 `页面名 | 后缀`。
+        const accept = req.headers.accept;
+        const acceptsHtml =
+          !accept || accept.includes("text/html") || accept.includes("*/*");
+
+        if (
+          !["GET", "HEAD"].includes(method)
+          || !acceptsHtml
+          || url.startsWith("/@")
+          || url.startsWith("/src/")
+          || url.startsWith("/node_modules/")
+          || url.startsWith("/assets/")
+          || staticAssetRe.test(url)
+        ) {
+          next();
+          return;
+        }
+
+        try {
+          const template = await fs.promises.readFile(path.join(rootDir, "index.html"), "utf8");
+          const html = await server.transformIndexHtml(url, template);
+          res.statusCode = 200;
+          res.setHeader("Content-Type", "text/html");
+          res.end(html);
+        } catch (error) {
+          next(error);
+        }
+      });
+    },
+    transformIndexHtml: {
+      order: "pre",
+      handler(html, ctx) {
+        // dev 环境使用请求 host 拼 canonical / og:url，避免硬编码 production
+        // origin（lightvela.com / lightvela.ai）出现在本地调试 HTML 里。
+        const host = (ctx.originalUrl && ctx.server?.config?.server?.host) || undefined;
+        const reqHost = (ctx as { req?: { headers?: { host?: string } } }).req?.headers?.host;
+        const proto = "http";
+        const siteUrl = reqHost ? `${proto}://${reqHost}` : host ? `${proto}://${host}` : undefined;
+        return applyFullSeoToHtml(html, ctx.path, region, { siteUrl });
+      },
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   /* 读取 .env / .env.local / .env.development 里以 VITE_DEV_ 开头的变量
    * 这样 dev server 的网络配置可以针对不同开发者/不同调试方式灵活切换，
@@ -463,6 +522,10 @@ export default defineConfig(({ mode }) => {
     }
     : undefined;
 
+  /* dev SEO 中间件按构建 mode 区分国内/国际站，注入对应语言的 title/meta。
+   * mode 由 `vite --mode cn|global`（pnpm dev:cn / dev:global）决定。 */
+  const seoRegion: "cn" | "global" = mode === "global" ? "global" : "cn";
+
   return {
     // tea-app i18n.init() 内部引用了 PRODUCTION / INTL_TRANSLATION_ID 全局变量
     // （webpack 环境由 DefinePlugin 注入），Vite 需要显式 define。
@@ -476,6 +539,7 @@ export default defineConfig(({ mode }) => {
       sdkI18nPlugin(),
       reactDomFindDOMNodeVitePlugin(),
       reactDomPolyfillBuildPlugin(),
+      seoHtmlPlugin(seoRegion),
     ] as unknown as PluginOption[],
     resolve: {
       // Deduplicate React so the locally-linked SDK shares the host app's copy
