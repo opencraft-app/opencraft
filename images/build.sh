@@ -1091,16 +1091,19 @@ force_reinstall_hermes_local_package() {
   local hermes_python="${hermes_dir}/venv/bin/python"
   local hermes_dir_escaped=""
   local hermes_python_escaped=""
+  local hermes_uv_escaped=""
 
   if [ ! -x "${hermes_python}" ]; then
     log_error "Hermes venv python not found before local reinstall: ${hermes_python}"
     return 1
   fi
 
+  ensure_hermes_uv
   printf -v hermes_dir_escaped '%q' "${hermes_dir}"
   printf -v hermes_python_escaped '%q' "${hermes_python}"
+  printf -v hermes_uv_escaped '%q' "${HERMES_UV_CMD}"
   log_info "pinning Hermes venv package to COS source tree"
-  run_as_runtime_user "${hermes_python_escaped} -m pip install --no-deps --force-reinstall -e ${hermes_dir_escaped}"
+  run_as_runtime_user "${hermes_uv_escaped} pip install --python ${hermes_python_escaped} --no-deps --reinstall-package hermes-agent -e ${hermes_dir_escaped}"
 }
 
 read_hermes_source_tree_version() {

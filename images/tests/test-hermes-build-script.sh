@@ -92,10 +92,6 @@ echo "0.14.0"
 INNER
 cat >"$HOME/.hermes/hermes-agent/venv/bin/python" <<'INNER'
 #!/usr/bin/env bash
-if [ "${1:-}" = "-m" ] && [ "${2:-}" = "pip" ]; then
-  echo "python-pip-install $*" >>"__LOG_FILE__"
-  exit 0
-fi
 if [ "${1:-}" = "-c" ]; then
   if [[ "${2:-}" == *"import hermes_cli"* ]]; then
     echo "0.14.0"
@@ -313,7 +309,7 @@ grep -Fq -- "--dir ${RUNTIME_HOME}/.hermes/hermes-agent --hermes-home ${RUNTIME_
 grep -Fq -- "--dir ${RUNTIME_HOME}/.hermes/hermes-agent --hermes-home ${RUNTIME_HOME}/.hermes --skip-browser --non-interactive --stage node-deps" "${LOG_FILE}"
 grep -Fq -- "--dir ${RUNTIME_HOME}/.hermes/hermes-agent --hermes-home ${RUNTIME_HOME}/.hermes --skip-browser --non-interactive --stage path" "${LOG_FILE}"
 grep -Fq -- "--dir ${RUNTIME_HOME}/.hermes/hermes-agent --hermes-home ${RUNTIME_HOME}/.hermes --skip-browser --non-interactive --stage config" "${LOG_FILE}"
-grep -Fq "python-pip-install -m pip install --no-deps --force-reinstall -e ${RUNTIME_HOME}/.hermes/hermes-agent" "${LOG_FILE}"
+grep -Fq "uv-pip-install pip install --python ${RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/python --no-deps --reinstall-package hermes-agent -e ${RUNTIME_HOME}/.hermes/hermes-agent" "${LOG_FILE}"
 grep -q "npm-install @qwen-code/qwen-code@latest" "${LOG_FILE}"
 grep -q ".hermes/bin/uv.*--version" "${LOG_FILE}"
 grep -q "uv-pip-install pip install --index-url https://mirrors.tencent.com/pypi/simple --extra-index-url https://mirrors.cloud.tencent.com/pypi/simple --python ${RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/python lark-oapi==1.5.3 qrcode==7.4.2" "${LOG_FILE}"
