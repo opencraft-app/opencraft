@@ -197,9 +197,12 @@ describe("generate-static-site", () => {
         "faq/using-lightvela-safely.md",
       ];
       for (const f of docFiles) {
-        writeFileSync(join(frontendRoot, "src", "content", "docs", "global", f), `# 中文 ${f}\n\n中文内容。`);
-        writeFileSync(join(frontendRoot, "src", "content", "docs", "en", f), `# English ${f}\n\nEnglish content.`);
-      }
+        const DOCS_BASE_PATH = ["src", "content", "docs"];
+        const CONTENT_ZH = (filename: string) => `# 中文 ${filename}\n\n中文内容。`;
+        const CONTENT_EN = (filename: string) => `# English ${filename}\n\nEnglish content.`;
+
+        writeFileSync(join(frontendRoot, ...DOCS_BASE_PATH, "global", f), CONTENT_ZH(f));
+        writeFileSync(join(frontendRoot, ...DOCS_BASE_PATH, "en", f), CONTENT_EN(f));
 
       await buildStaticSite({
         frontendRoot,
