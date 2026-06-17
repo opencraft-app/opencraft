@@ -10,6 +10,12 @@ import {
   resolveStaticRoutes,
 } from "./generate-static-site.mjs";
 
+/** docs 目录路径片段，用于 join(frontendRoot, ...DOCS_BASE_PATH, locale, file)。 */
+const DOCS_BASE_PATH = ["src", "content", "docs"];
+/** 双语 fixture markdown 内容生成器；测试只关心存在性，文案随便。 */
+const CONTENT_ZH = (filename: string) => `# 中文 ${filename}\n\n中文内容。`;
+const CONTENT_EN = (filename: string) => `# English ${filename}\n\nEnglish content.`;
+
 const createFixture = ({ withStaticRenderer = false } = {}) => {
   const root = mkdtempSync(join(tmpdir(), "static-site-"));
   const frontendRoot = join(root, "frontend");
@@ -197,12 +203,9 @@ describe("generate-static-site", () => {
         "faq/using-lightvela-safely.md",
       ];
       for (const f of docFiles) {
-        const DOCS_BASE_PATH = ["src", "content", "docs"];
-        const CONTENT_ZH = (filename: string) => `# 中文 ${filename}\n\n中文内容。`;
-        const CONTENT_EN = (filename: string) => `# English ${filename}\n\nEnglish content.`;
-
         writeFileSync(join(frontendRoot, ...DOCS_BASE_PATH, "global", f), CONTENT_ZH(f));
         writeFileSync(join(frontendRoot, ...DOCS_BASE_PATH, "en", f), CONTENT_EN(f));
+      }
 
       await buildStaticSite({
         frontendRoot,
@@ -306,11 +309,11 @@ describe("generate-static-site", () => {
         "configuration/agent-chat.md",
         "faq/using-lightvela-safely.md",
       ];
-      mkdirSync(join(frontendRoot, "src", "content", "docs", "global", "faq"), { recursive: true });
-      mkdirSync(join(frontendRoot, "src", "content", "docs", "en", "faq"), { recursive: true });
+      mkdirSync(join(frontendRoot, ...DOCS_BASE_PATH, "global", "faq"), { recursive: true });
+      mkdirSync(join(frontendRoot, ...DOCS_BASE_PATH, "en", "faq"), { recursive: true });
       for (const f of docFiles) {
-        writeFileSync(join(frontendRoot, "src", "content", "docs", "global", f), `# 中文 ${f}\n\n中文内容。`);
-        writeFileSync(join(frontendRoot, "src", "content", "docs", "en", f), `# English ${f}\n\nEnglish content.`);
+        writeFileSync(join(frontendRoot, ...DOCS_BASE_PATH, "global", f), CONTENT_ZH(f));
+        writeFileSync(join(frontendRoot, ...DOCS_BASE_PATH, "en", f), CONTENT_EN(f));
       }
 
       await buildStaticSite({
