@@ -427,6 +427,30 @@ function normalizePathname(pathname: string): string {
   return pathname.replace(/\/+$/, "");
 }
 
+/**
+ * 国际站 multi-URL i18n：剥掉 `/en` 或 `/zh` 前缀，返回逻辑路径 + URL 语言。
+ * 用于让 SEO 表（按裸路径建索引）能命中带前缀的实际访问路径，并让
+ * `<html lang>` / `og:locale` 跟随 URL 前缀切换中英文（与 prerender 输出一致）。
+ *
+ * - `/en/about`        → { bare: "/about", urlLang: "en" }
+ * - `/zh/docs/overview`→ { bare: "/docs/overview", urlLang: "zh" }
+ * - `/en/`             → { bare: "/", urlLang: "en" }
+ * - `/about` （裸）    → { bare: "/about", urlLang: null }
+ */
+function stripUrlLangPrefix(pathname: string): { bare: string; urlLang: "en" | "zh" | null } {
+  const m = pathname.match(/^\/(en|zh)(?:\/(.*))?$/);
+  if (!m) return { bare: pathname, urlLang: null };
+  const rest = m[2] ?? "";
+  return {
+    bare: rest === "" ? "/" : `/${rest}`,
+    urlLang: m[1] as "en" | "zh",
+  };
+}
+
+/** URL 语言前缀 → htmlLang / ogLocale 映射（仅国际站使用） */
+const URL_LANG_TO_HTML_LANG = { en: "en-US", zh: "zh-CN" } as const;
+const URL_LANG_TO_OG_LOCALE = { en: "en_US", zh: "zh_CN" } as const;
+
 function safeDecodeURIComponent(value: string): string {
   try {
     return decodeURIComponent(value);
@@ -467,28 +491,50 @@ function getAppPageTitle(pathname: string, region: SeoRegion): string | null {
   return null;
 }
 
+/**
+ * 把 (region, urlLang) 映射成「查表用的 effective region」：
+ *   - region=cn                       → "cn"（国内站不开多语言）
+ *   - region=global + urlLang=null    → "global"（裸路径，默认英文）
+ *   - region=global + urlLang="en"    → "global"（英文）
+ *   - region=global + urlLang="zh"    → "cn"（复用国内站的中文表，避免给 global 多
+ *                                        维护一份中文 title / description 镜像）
+ *
+ * 为何复用 cn 表：所有 `/zh/...` 想看到的 title / description 文案都已经在
+ *   cn 表里维护好了（"关于我们"、"LightVela 是什么" 等），并由 `seo-site-mirror`
+ *   测试守护与 prerender 的 DOCS.cn 一致。复用避免双源漂移。
+ */
+function effectiveRegionForLookup(region: SeoRegion, urlLang: "en" | "zh" | null): SeoRegion {
+  if (region !== "global") return region;
+  return urlLang === "zh" ? "cn" : "global";
+}
+
 export function getSeoMeta(pathname: string, region?: SeoRegion): SeoMeta {
   const r = normalizeRegion(region);
-  const normalizedPathname = normalizePathname(pathname);
+  /* 国际站剥掉 /en /zh URL 前缀后查表；国内站 stripUrlLangPrefix 对裸路径返回
+     { bare: pathname, urlLang: null }，行为与改造前等价。 */
+  const { bare, urlLang } = stripUrlLangPrefix(normalizePathname(pathname));
+  const lookupRegion = effectiveRegionForLookup(r, urlLang);
   const pageTitle =
-    normalizedPathname === "/"
+    bare === "/"
       ? null
-      : STATIC_PAGE_TITLES_BY_REGION[r][normalizedPathname] ??
-        DOC_PAGE_TITLES_BY_REGION[r][normalizedPathname] ??
-        getAgentsPageTitle(normalizedPathname, r) ??
-        getAppPageTitle(normalizedPathname, r) ??
-        NOT_FOUND_TITLE_BY_REGION[r];
+      : STATIC_PAGE_TITLES_BY_REGION[lookupRegion][bare] ??
+        DOC_PAGE_TITLES_BY_REGION[lookupRegion][bare] ??
+        getAgentsPageTitle(bare, lookupRegion) ??
+        getAppPageTitle(bare, lookupRegion) ??
+        NOT_FOUND_TITLE_BY_REGION[lookupRegion];
 
   // description 优先取页面级覆盖，缺失才回退到全站默认。
   // keywords 不分页面，全站统一（按 SEO 规范，keywords 字段权重已极低，
   // 不值得为每页维护一份，集中维护一套即可）。
-  const pageDescription = PAGE_DESCRIPTIONS_BY_REGION[r][normalizedPathname];
+  const pageDescription = PAGE_DESCRIPTIONS_BY_REGION[lookupRegion][bare];
 
   return {
     title: pageTitle
-      ? `${pageTitle} | ${SEO_TITLE_SUFFIX_BY_REGION[r]}`
-      : DEFAULT_SEO_TITLE_BY_REGION[r],
-    description: pageDescription ?? SEO_DESCRIPTION_BY_REGION[r],
+      ? `${pageTitle} | ${SEO_TITLE_SUFFIX_BY_REGION[lookupRegion]}`
+      : DEFAULT_SEO_TITLE_BY_REGION[lookupRegion],
+    description: pageDescription ?? SEO_DESCRIPTION_BY_REGION[lookupRegion],
+    /* keywords 始终用 region 自身（与原行为一致）：国际站 keywords 是英文站
+       SEO 关键词，不随 URL 前缀切换——/zh/ 也想被英文关键词命中。 */
     keywords: SEO_KEYWORDS_BY_REGION[r],
   };
 }
@@ -540,21 +586,29 @@ export function getFullSeoMeta(
   const site = SITE_BY_REGION[r];
   const base = getSeoMeta(pathname, r);
   const normalizedPathname = normalizePathname(pathname);
+  /* 国际站从 URL 前缀解析 htmlLang / ogLocale；国内站 / 裸路径退化到 site 默认。
+     这样 prerender 写入 dist/zh/...html 的 <html lang="zh-CN"> 不会在 SPA
+     hydration 时被 useRouteSeoMeta 覆盖回 en-US（P0-B 回归）。 */
+  const { urlLang } = stripUrlLangPrefix(normalizedPathname);
+  const htmlLang = urlLang && r === "global" ? URL_LANG_TO_HTML_LANG[urlLang] : site.htmlLang;
+  const ogLocale = urlLang && r === "global" ? URL_LANG_TO_OG_LOCALE[urlLang] : site.locale;
   const siteUrl = trimTrailingSlash(options.siteUrl ?? site.defaultUrl);
+  /* canonical 保留带前缀的完整 pathname：国际站 `/zh/about` canonical 就是 `/zh/about`，
+     与 prerender 的 hreflang 集群对齐（每个 URL canonical 指向自己）。 */
   const canonical = joinUrl(siteUrl, normalizedPathname);
   const indexable = options.indexable ?? isPathIndexable(normalizedPathname);
   const ogImage = joinUrl(siteUrl, options.ogImagePath ?? DEFAULT_OG_IMAGE_PATH);
 
   return {
     ...base,
-    htmlLang: site.htmlLang,
+    htmlLang,
     canonical,
     robots: indexable ? "index,follow" : "noindex,nofollow",
     ogTitle: base.title,
     ogDescription: base.description,
     ogUrl: canonical,
     ogImage,
-    ogLocale: site.locale,
+    ogLocale,
     ogSiteName: site.siteName,
     ogType: "website",
     twitterCard: "summary_large_image",

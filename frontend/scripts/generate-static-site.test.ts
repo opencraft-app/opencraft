@@ -267,6 +267,77 @@ describe("generate-static-site", () => {
     }
   });
 
+  it("passes locale into renderStaticRoute so /zh/index.html body matches <html lang=zh-CN>", async () => {
+    /* codex CR P0-A 守护：renderStaticRoute 之前忽略 locale，导致
+       dist/zh/index.html 的 React DOM 是英文，与 <html lang="zh-CN"> 矛盾。
+       这里用一个 locale-aware fake renderer 验证 mjs 主循环把 locale 正确
+       传递下去，并按 locale 在产物中体现不同正文。 */
+    const { root, frontendRoot, distDir } = createFixture();
+    try {
+      mkdirSync(join(frontendRoot, "src", "static"), { recursive: true });
+      writeFileSync(join(frontendRoot, "src", "static", "render-static-route.tsx"), [
+        "export async function renderStaticRoute({ route, locale }) {",
+        "  if (route.kind !== 'home') return null;",
+        "  const text = locale === 'zh-CN' ? '中文首屏' : 'English Hero';",
+        "  return `<main data-locale=\"${locale ?? 'unknown'}\"><h1>${text}</h1></main>`;",
+        "}",
+      ].join("\n"));
+
+      /* 国际站构建需要每个 DOCS.global slug 在 docs/global/ 与 docs/en/ 都有 md，
+         否则 prerender 在写第二个 doc 时抛 missing markdown。补齐 fixture。 */
+      const docFiles = [
+        "02-quickstart.md",
+        "04-core-concepts.md",
+        "05-configuration.md",
+        "07-faq.md",
+        "configuration/model.md",
+        "configuration/channel-wechat.md",
+        "configuration/channel-telegram.md",
+        "configuration/channel-whatsapp.md",
+        "configuration/channel-discord.md",
+        "configuration/channel-qq.md",
+        "configuration/channel-wecom.md",
+        "configuration/channel-feishu.md",
+        "configuration/skill.md",
+        "configuration/automation.md",
+        "configuration/agent-chat.md",
+        "faq/using-lightvela-safely.md",
+      ];
+      mkdirSync(join(frontendRoot, "src", "content", "docs", "global", "faq"), { recursive: true });
+      mkdirSync(join(frontendRoot, "src", "content", "docs", "en", "faq"), { recursive: true });
+      for (const f of docFiles) {
+        writeFileSync(join(frontendRoot, "src", "content", "docs", "global", f), `# 中文 ${f}\n\n中文内容。`);
+        writeFileSync(join(frontendRoot, "src", "content", "docs", "en", f), `# English ${f}\n\nEnglish content.`);
+      }
+
+      await buildStaticSite({
+        frontendRoot,
+        distDir,
+        region: "global",
+        siteUrl: "https://lightvela.ai",
+        indexable: true,
+      });
+
+      const enHome = readFileSync(join(distDir, "en", "index.html"), "utf8");
+      const zhHome = readFileSync(join(distDir, "zh", "index.html"), "utf8");
+
+      expect(enHome).toContain("data-locale=\"en-US\"");
+      expect(enHome).toContain("English Hero");
+      expect(enHome).not.toContain("中文首屏");
+
+      expect(zhHome).toContain("data-locale=\"zh-CN\"");
+      expect(zhHome).toContain("中文首屏");
+      expect(zhHome).not.toContain("English Hero");
+
+      /* 裸 / 别名首页（覆盖 vite dist/index.html）走 en-US，与 canonical /en/ 一致 */
+      const rootHome = readFileSync(join(distDir, "index.html"), "utf8");
+      expect(rootHome).toContain("data-locale=\"en-US\"");
+      expect(rootHome).toContain("English Hero");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("marks preview output as noindex", async () => {
     const { root, frontendRoot, distDir } = createFixture();
     try {

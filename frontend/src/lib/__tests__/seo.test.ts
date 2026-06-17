@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SEO_TITLE, SEO_DESCRIPTION, SEO_KEYWORDS, getSeoMeta } from "@/lib/seo";
+import { DEFAULT_SEO_TITLE, SEO_DESCRIPTION, SEO_KEYWORDS, getFullSeoMeta, getSeoMeta } from "@/lib/seo";
 
 describe("seo meta", () => {
   it("keeps the landing page title unchanged", () => {
@@ -44,5 +44,62 @@ describe("seo meta", () => {
     expect(getSeoMeta("/agents/memory", "global").title).toBe(`Memory | ${globalSuffix}`);
     expect(getSeoMeta("/bots/bot-1/terminal", "global").title).toBe(`Terminal | ${globalSuffix}`);
     expect(getSeoMeta("/missing-page", "global").title).toBe(`Page Not Found | ${globalSuffix}`);
+  });
+});
+
+/**
+ * 国际站 multi-URL i18n：访问 `/en/...` 应返回英文 meta；访问 `/zh/...`
+ * 应返回中文 meta（复用 cn 表，避免双源），且 `<html lang>` / `og:locale`
+ * 跟随 URL 前缀切换。
+ *
+ * 这一组断言是 codex CR P0-B 的回归守护：之前 SPA hydration 后
+ * `useRouteSeoMeta` 会把 prerender 写好的 `<html lang="zh-CN">` 覆盖回 en-US，
+ * title 也被覆盖成 "Page Not Found | ..."（裸路径表 miss）。
+ */
+describe("seo meta — global multi-URL language prefix", () => {
+  const cnSuffix = "LightVela 云端专属个人 Agent";
+  const globalSuffix = "LightVela · Your Personal Cloud AI Agent";
+
+  it("/en/about returns English title (default global) without 'Page Not Found'", () => {
+    expect(getSeoMeta("/en/about", "global").title).toBe(`About LightVela | ${globalSuffix}`);
+    expect(getSeoMeta("/en/about", "global").title).not.toContain("Page Not Found");
+  });
+
+  it("/zh/about returns Chinese title (reuses cn table)", () => {
+    expect(getSeoMeta("/zh/about", "global").title).toBe(`关于我们 | ${cnSuffix}`);
+    expect(getSeoMeta("/zh/about", "global").title).not.toContain("Page Not Found");
+  });
+
+  it("/en/docs/overview returns English doc title", () => {
+    expect(getSeoMeta("/en/docs/overview", "global").title).toBe(`What is LightVela | ${globalSuffix}`);
+  });
+
+  it("/zh/docs/overview returns Chinese doc title", () => {
+    expect(getSeoMeta("/zh/docs/overview", "global").title).toBe(`LightVela 是什么 | ${cnSuffix}`);
+  });
+
+  it("getFullSeoMeta htmlLang follows URL prefix", () => {
+    expect(getFullSeoMeta("/en/about", "global").htmlLang).toBe("en-US");
+    expect(getFullSeoMeta("/zh/about", "global").htmlLang).toBe("zh-CN");
+    expect(getFullSeoMeta("/about", "global").htmlLang).toBe("en-US"); // 裸路径走 site 默认
+  });
+
+  it("getFullSeoMeta ogLocale follows URL prefix", () => {
+    expect(getFullSeoMeta("/en/docs/overview", "global").ogLocale).toBe("en_US");
+    expect(getFullSeoMeta("/zh/docs/overview", "global").ogLocale).toBe("zh_CN");
+  });
+
+  it("getFullSeoMeta canonical preserves the language prefix", () => {
+    /* canonical 必须保留 /en /zh 前缀，与 prerender hreflang 集群对齐
+       （每个 URL 的 canonical 指向自己，而不是裸路径） */
+    const meta = getFullSeoMeta("/zh/docs/overview", "global", { siteUrl: "https://lightvela.ai" });
+    expect(meta.canonical).toBe("https://lightvela.ai/zh/docs/overview");
+  });
+
+  it("cn region is unaffected (no /en /zh prefix concept)", () => {
+    /* 国内站 stripUrlLangPrefix 不应影响行为 —— /en/foo 在 cn 站算未知路径，
+       走 fallback。这里只断言不破坏现有 cn 测试。 */
+    expect(getFullSeoMeta("/about", "cn").htmlLang).toBe("zh-CN");
+    expect(getFullSeoMeta("/about", "cn").ogLocale).toBe("zh_CN");
   });
 });

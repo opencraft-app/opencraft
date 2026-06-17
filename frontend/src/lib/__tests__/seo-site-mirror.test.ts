@@ -12,7 +12,7 @@
  * 与开发态出现漂移（典型事故：CR4 之前国际站 description 被改了 prerender，
  * 但 dev 中间件还跑老文案）。
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -151,4 +151,76 @@ describe("prerender route titles mirror seo-data.ts", () => {
       }
     });
   }
+});
+
+/**
+ * codex CR P1-1 守护：`LOCALIZED_PATH_PREFIXES` 在 `region.ts`（运行时）和
+ * `generate-static-site.mjs`（prerender）维护两份。新增公开 SEO 路径时若漏改
+ * 一边，会出现"prerender 没产出 /en/X、但运行时 useEnsureLangPrefix 又会重写
+ * 到 /en/X"的 404，或反之。这条测试断言两份数组 byte-equal。
+ */
+/**
+ * codex CR P1-4 守护：`DOCS.global` 列表里每个 slug 必须在 `docs/en/` 与
+ * `docs/global/` 两个目录都有对应 markdown，否则国际站 prerender 会在
+ * `pnpm build:global` 阶段抛 "missing markdown" 直接挂。
+ *
+ * 这个 fail-fast 检查直接读源码 + fs.exists，不需要跑完整 build，CI 几毫秒
+ * 就能反馈，且与 generate-static-site.test.ts 的 fixture 写文件路径互补——
+ * fixture 测试只能保证「构造的 fixture 能跑通」，不能保证真实仓库的 md 齐全。
+ */
+describe("real docs/global markdown coverage matches DOCS.global", () => {
+  function extractDocsGlobalFiles(): string[] {
+    const block = SCRIPT_SOURCE.match(/global:\s*\[([\s\S]*?)\],\s*\};/);
+    expect(block).not.toBeNull();
+    const fileMatches = block![1]!.matchAll(/file:\s*"([^"]+)"/g);
+    return [...fileMatches].map((m) => m[1]!);
+  }
+
+  it("docs/global 与 docs/en 都包含 DOCS.global 的所有 markdown 文件", () => {
+    const files = extractDocsGlobalFiles();
+    expect(files.length).toBeGreaterThan(10);
+
+    const docsGlobal = path.resolve(process.cwd(), "src/content/docs/global");
+    const docsEn = path.resolve(process.cwd(), "src/content/docs/en");
+    for (const f of files) {
+      expect.soft(
+        existsSync(path.join(docsGlobal, f)),
+        `missing zh markdown for global build: docs/global/${f}`,
+      ).toBe(true);
+      expect.soft(
+        existsSync(path.join(docsEn, f)),
+        `missing en markdown for global build: docs/en/${f}`,
+      ).toBe(true);
+    }
+  });
+});
+
+describe("prerender LOCALIZED_PATH_PREFIXES mirror region.ts", () => {
+  it("两边数组完全一致（含顺序）", () => {
+    /* prerender 一份在 mjs 里写成单行字面量 */
+    const mjsMatch = SCRIPT_SOURCE.match(
+      /const\s+LOCALIZED_PATH_PREFIXES\s*=\s*\[([^\]]+)\]/,
+    );
+    expect(mjsMatch).not.toBeNull();
+    const mjsList = mjsMatch![1]!
+      .split(",")
+      .map((s) => s.trim().replace(/^["']|["']$/g, ""))
+      .filter(Boolean);
+
+    /* 运行时一份在 region.ts 里写成多行字面量 */
+    const regionSource = readFileSync(
+      path.resolve(process.cwd(), "src/lib/region.ts"),
+      "utf8",
+    );
+    const tsMatch = regionSource.match(
+      /LOCALIZED_PATH_PREFIXES\s*=\s*\[([\s\S]*?)\]\s*as\s+const/,
+    );
+    expect(tsMatch).not.toBeNull();
+    const tsList = tsMatch![1]!
+      .split(/[\n,]/)
+      .map((s) => s.trim().replace(/^["']|["']$/g, "").replace(/,$/, ""))
+      .filter(Boolean);
+
+    expect(mjsList).toEqual(tsList);
+  });
 });
