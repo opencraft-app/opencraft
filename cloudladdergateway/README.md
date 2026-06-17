@@ -234,6 +234,9 @@ client.WithHttpTransport(transport)
 | `tcapi-account-cn-test` | `account.test.tencentcloudapi.com` | `shadow/scripts/start-tencent-test.sh` |
 | `tcapi-cam-cn-test` | `cam.test.tencentcloudapi.com` | `shadow/scripts/start-tencent-test.sh` |
 | `tcapi-sts-cn-test` | `sts.test.tencentcloudapi.com` | `shadow/scripts/start-tencent-test.sh` |
+| `tcapi-account-cn-prod` | `account.tencentcloudapi.com` | SaaS 注册/安全手机生产环境 |
+| `tcapi-cam-cn-prod` | `cam.tencentcloudapi.com` | SaaS BasicAuth 生产环境 |
+| `tcapi-sts-cn-prod` | `sts.tencentcloudapi.com` | SaaS BasicAuth 生产环境 |
 
 ## TencentCloud SaaS callback 兼容入口
 
