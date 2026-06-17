@@ -21,11 +21,22 @@ import { getSeoMeta, getSiteConfig, SEO_DESCRIPTION, SEO_KEYWORDS } from "@/lib/
 const SCRIPT_PATH = path.resolve(process.cwd(), "scripts/generate-static-site.mjs");
 const SCRIPT_SOURCE = readFileSync(SCRIPT_PATH, "utf8");
 
+/**
+ * route.title 在国际站为 `{ "en-US": ..., "zh-CN": ... }` 双语对象（multi-URL i18n
+ * 引入），在国内站仍是字符串。本测试断言「prerender 与 seo-data.ts 一致」时
+ * 用各自 region 的默认 locale 字符串作对照——cn 默认 zh-CN，global 默认 en-US。
+ */
 type StaticRoute = {
   kind: string;
   path: string;
-  title: string;
+  title: string | { "en-US": string; "zh-CN": string };
 };
+
+/** 取 region 默认 locale 下的 title 字符串：cn → 字符串透传；global → en-US 字段 */
+function defaultLocaleTitle(title: StaticRoute["title"], region: "cn" | "global"): string {
+  if (typeof title === "string") return title;
+  return region === "global" ? title["en-US"] : title["zh-CN"];
+}
 
 /**
  * 从 generate-static-site.mjs 源码里抽取一个简单字面量字段。
@@ -126,7 +137,7 @@ describe("prerender route titles mirror seo-data.ts", () => {
 
       expect(mirroredRoutes.length).toBeGreaterThan(0);
       for (const route of mirroredRoutes) {
-        expect(route.title).toBe(seoPageTitle(route.path, region));
+        expect(defaultLocaleTitle(route.title, region)).toBe(seoPageTitle(route.path, region));
       }
     });
 
@@ -136,7 +147,7 @@ describe("prerender route titles mirror seo-data.ts", () => {
 
       expect(docsRoutes.length).toBeGreaterThan(0);
       for (const route of docsRoutes) {
-        expect(route.title).toBe(seoPageTitle(route.path, region));
+        expect(defaultLocaleTitle(route.title, region)).toBe(seoPageTitle(route.path, region));
       }
     });
   }
