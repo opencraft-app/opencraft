@@ -149,7 +149,7 @@ func (Activities) PrepareArchive(ctx context.Context, req ExportRequest, cfg Ten
 	if !req.Execute {
 		fmt.Println("[dry-run] SSH archive command:")
 		fmt.Println(script)
-		return PreparedArchive{InstanceID: req.InstanceID, Region: region, RemotePath: req.RemoteWorkDir + "/dry-run-rescue-export.tar.gz", MountedDevice: "dry-run-device", SHA256: "dry-run-sha256"}, nil
+		return PreparedArchive{InstanceID: req.InstanceID, Region: region, RemotePath: req.RemoteWorkDir + "/dry-run-rescue-export" + archiveSuffix(req), MountedDevice: "dry-run-device", SHA256: "dry-run-sha256"}, nil
 	}
 	return PreparedArchive{}, fmt.Errorf("PrepareArchive requires instance-aware SSH; use PrepareArchiveOverSSH")
 }
@@ -159,7 +159,7 @@ func (Activities) PrepareArchiveOverSSH(ctx context.Context, req ExportRequest, 
 	if !req.Execute {
 		fmt.Println("[dry-run] SSH archive command:")
 		fmt.Println(script)
-		return PreparedArchive{InstanceID: req.InstanceID, Region: instance.Region, RemotePath: req.RemoteWorkDir + "/dry-run-rescue-export.tar.gz", MountedDevice: "dry-run-device", SHA256: "dry-run-sha256"}, nil
+		return PreparedArchive{InstanceID: req.InstanceID, Region: instance.Region, RemotePath: req.RemoteWorkDir + "/dry-run-rescue-export" + archiveSuffix(req), MountedDevice: "dry-run-device", SHA256: "dry-run-sha256"}, nil
 	}
 	host := sshHost(req, instance)
 	if host == "" {
@@ -196,7 +196,7 @@ func (Activities) PrepareArchiveOverTAT(ctx context.Context, req ExportRequest, 
 }
 
 func (Activities) PrepareArchiveTATCommand(ctx context.Context, req ExportRequest, cfg TencentConfig, region string) (PreparedTATArchive, error) {
-	logActivity(ctx, "preparing TAT archive command", "instance_id", req.InstanceID, "region", region, "transport", req.CommandTransport, "stream_upload", req.COSUploadBucket != "")
+	logActivity(ctx, "preparing TAT archive command", "instance_id", req.InstanceID, "region", region, "transport", req.CommandTransport, "archive_mode", normalizeArchiveMode(req.ArchiveMode), "stream_upload", req.COSUploadBucket != "")
 	prepared, err := prepareArchiveTATCommand(ctx, req, cfg, region)
 	if err != nil {
 		return PreparedTATArchive{}, err
@@ -242,6 +242,9 @@ func (Activities) FinalizeArchiveOverTAT(ctx context.Context, req ExportRequest,
 }
 
 func prepareArchiveTATCommand(ctx context.Context, req ExportRequest, cfg TencentConfig, region string) (PreparedTATArchive, error) {
+	if err := ValidateArchiveMode(req.ArchiveMode); err != nil {
+		return PreparedTATArchive{}, temporalActivityError(err)
+	}
 	if req.COSUploadBucket != "" {
 		return prepareStreamUploadTATCommand(ctx, req, cfg, region)
 	}
@@ -259,7 +262,7 @@ func prepareArchiveTATCommand(ctx context.Context, req ExportRequest, cfg Tencen
 	if !req.Execute {
 		fmt.Println("[dry-run] TAT archive command:")
 		fmt.Println(script)
-		prepared.RemotePath = req.RemoteWorkDir + "/dry-run-rescue-export.tar.gz"
+		prepared.RemotePath = req.RemoteWorkDir + "/dry-run-rescue-export" + archiveSuffix(req)
 		prepared.MountedDevice = "dry-run-device"
 		prepared.SHA256 = "dry-run-sha256"
 		return prepared, nil
@@ -316,6 +319,7 @@ func prepareStreamUploadTATCommand(ctx context.Context, req ExportRequest, cfg T
 		"mount_root":   req.MountRoot,
 		"device_globs": req.DeviceGlobs,
 		"remote_paths": req.RemotePaths,
+		"archive_mode": normalizeArchiveMode(req.ArchiveMode),
 	})
 	if err != nil {
 		return PreparedTATArchive{}, err
@@ -414,7 +418,7 @@ func (Activities) SCPArchive(ctx context.Context, req ExportRequest, cfg Tencent
 	if err := os.MkdirAll(localDir, 0o755); err != nil {
 		return SCPResult{}, err
 	}
-	localPath := filepath.Join(localDir, fmt.Sprintf("%s-%d.tar.gz", req.InstanceID, time.Now().Unix()))
+	localPath := filepath.Join(localDir, fmt.Sprintf("%s-%d%s", req.InstanceID, time.Now().Unix(), archiveSuffix(req)))
 	cmd := []string{"ssh-native-copy", fmt.Sprintf("%s@%s:%s", req.SSHUser, host, archive.RemotePath), localPath}
 	if !req.Execute {
 		fmt.Printf("[dry-run] would run: %s\n", strings.Join(cmd, " "))
@@ -551,7 +555,7 @@ func copyArchiveOverTAT(ctx context.Context, req ExportRequest, cfg TencentConfi
 	if err := os.MkdirAll(localDir, 0o755); err != nil {
 		return SCPResult{}, err
 	}
-	localPath := filepath.Join(localDir, fmt.Sprintf("%s-%d.tar.gz", req.InstanceID, time.Now().Unix()))
+	localPath := filepath.Join(localDir, fmt.Sprintf("%s-%d%s", req.InstanceID, time.Now().Unix(), archiveSuffix(req)))
 	cmd := []string{"tat-run-command", req.InstanceID, "base64", archive.RemotePath}
 	if !req.Execute {
 		fmt.Printf("[dry-run] would run: %s\n", strings.Join(cmd, " "))

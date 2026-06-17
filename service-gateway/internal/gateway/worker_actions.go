@@ -28,6 +28,9 @@ const (
 	workerActionRescueExport    = "rescue_export"
 	workerActionWorkflowName    = "ExportWorkflow"
 	workerActionStatusQueryName = "status"
+	rescueArchiveModeHermes     = "hermes"
+	rescueArchiveModeGeneric    = "generic"
+	defaultHermesRemotePath     = "/home/agentuser/.hermes"
 )
 
 var workerActionIDSafePattern = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
@@ -67,6 +70,7 @@ type workerActionCancelRequest struct {
 
 type rescueExportActionParams struct {
 	RemotePaths []string `json:"remote_paths"`
+	ArchiveMode string   `json:"archive_mode"`
 }
 
 type workerActionResponse struct {
@@ -106,6 +110,7 @@ type rescueExportStartRequest struct {
 	StopType               string
 	DeviceGlobs            []string
 	RemotePaths            []string
+	ArchiveMode            string
 	MountRoot              string
 	RemoteWorkDir          string
 	LocalOutputDir         string
@@ -520,9 +525,19 @@ func (s *workerActionService) buildRescueExportRequest(raw json.RawMessage, targ
 			return rescueExportStartRequest{}, errors.New("invalid_params")
 		}
 	}
+	archiveMode := normalizeRescueArchiveMode(params.ArchiveMode)
+	if archiveMode != rescueArchiveModeHermes && archiveMode != rescueArchiveModeGeneric {
+		return rescueExportStartRequest{}, errors.New("invalid_archive_mode")
+	}
 	remotePaths := normalizeWorkerActionRemotePaths(params.RemotePaths)
-	if len(remotePaths) == 0 {
+	if len(remotePaths) == 0 && archiveMode == rescueArchiveModeHermes {
+		remotePaths = []string{defaultHermesRemotePath}
+	}
+	if len(remotePaths) == 0 && archiveMode == rescueArchiveModeGeneric {
 		return rescueExportStartRequest{}, errors.New("remote_paths_required")
+	}
+	if archiveMode == rescueArchiveModeHermes && len(remotePaths) != 1 {
+		return rescueExportStartRequest{}, errors.New("hermes_remote_path_must_be_single")
 	}
 	if strings.TrimSpace(s.cfg.RescueExport.COSUploadBucket) == "" {
 		return rescueExportStartRequest{}, errors.New("cos_upload_bucket_not_configured")
@@ -539,6 +554,7 @@ func (s *workerActionService) buildRescueExportRequest(raw json.RawMessage, targ
 		StopType:               "SOFT_FIRST",
 		DeviceGlobs:            []string{"/dev/vda*", "/dev/vdb*"},
 		RemotePaths:            remotePaths,
+		ArchiveMode:            archiveMode,
 		MountRoot:              "/mnt/rescue-root",
 		RemoteWorkDir:          "/root",
 		LocalOutputDir:         "./exports",
@@ -555,6 +571,14 @@ func (s *workerActionService) buildRescueExportRequest(raw json.RawMessage, targ
 		WaitTimeoutSeconds:     90,
 		CommandTimeoutSeconds:  1800,
 	}, nil
+}
+
+func normalizeRescueArchiveMode(mode string) string {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode == "" {
+		return rescueArchiveModeHermes
+	}
+	return mode
 }
 
 func normalizeWorkerActionRemotePaths(paths []string) []string {

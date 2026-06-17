@@ -29,15 +29,16 @@ func TestExportWorkflowCancelAfterEnterStillExitsRescue(t *testing.T) {
 		COSUploadBucket:        "https://bucket-123.cos.ap-beijing.myqcloud.com",
 		COSUploadURLTTLSeconds: 28800,
 	}
+	normalizedReq := NormalizeExportRequest(req)
 	cfg := TencentConfig{}
 	instance := InstanceInfo{InstanceID: req.InstanceID, Region: "ap-beijing", State: "RUNNING"}
 
-	env.OnActivity("LocateInstance", mock.Anything, req, cfg).Return(instance, nil).Once()
-	env.OnActivity("EnterRescueMode", mock.Anything, req, cfg, instance.Region).Run(func(mock.Arguments) {
+	env.OnActivity("LocateInstance", mock.Anything, normalizedReq, cfg).Return(instance, nil).Once()
+	env.OnActivity("EnterRescueMode", mock.Anything, normalizedReq, cfg, instance.Region).Run(func(mock.Arguments) {
 		env.CancelWorkflow()
 	}).Return(nil).Once()
-	env.OnActivity("ExitRescueMode", mock.Anything, req, cfg, instance.Region).Return(true, nil).Once()
-	env.OnActivity("WaitInstanceRunning", mock.Anything, req, cfg, instance.Region).Return("RUNNING", nil).Once()
+	env.OnActivity("ExitRescueMode", mock.Anything, normalizedReq, cfg, instance.Region).Return(true, nil).Once()
+	env.OnActivity("WaitInstanceRunning", mock.Anything, normalizedReq, cfg, instance.Region).Return("RUNNING", nil).Once()
 
 	env.ExecuteWorkflow(ExportWorkflow, req, cfg)
 
@@ -64,13 +65,17 @@ func TestExportWorkflowFailureSendsNotification(t *testing.T) {
 		Execute:           true,
 		NotificationEmail: "user@example.com",
 	}
+	normalizedReq := NormalizeExportRequest(req)
 	cfg := TencentConfig{}
 	locateErr := errors.New("locate failed")
 
-	env.OnActivity("LocateInstance", mock.Anything, req, cfg).Return(InstanceInfo{}, locateErr).Times(3)
+	env.OnActivity("LocateInstance", mock.Anything, normalizedReq, cfg).Return(InstanceInfo{}, locateErr).Times(3)
 	env.OnActivity("SendFailureNotification", mock.Anything, mock.MatchedBy(func(notification FailureNotification) bool {
-		return notification.Request.InstanceID == req.InstanceID &&
-			notification.Request.NotificationEmail == req.NotificationEmail &&
+		return notification.Request.InstanceID == normalizedReq.InstanceID &&
+			notification.Request.NotificationEmail == normalizedReq.NotificationEmail &&
+			notification.Request.ArchiveMode == normalizedReq.ArchiveMode &&
+			len(notification.Request.RemotePaths) == 1 &&
+			notification.Request.RemotePaths[0] == normalizedReq.RemotePaths[0] &&
 			notification.Error != ""
 	}), cfg).Return(FailureNotificationResult{Sent: true, Recipients: []string{req.NotificationEmail}}, nil).Once()
 
@@ -117,15 +122,16 @@ func TestExportWorkflowSchedulesCOSAutoDeleteChild(t *testing.T) {
 		COSUploadRegion:        "ap-beijing",
 		COSUploadURLTTLSeconds: 123,
 	}
+	normalizedReq := NormalizeExportRequest(req)
 	cfg := TencentConfig{}
 	instance := InstanceInfo{InstanceID: req.InstanceID, Region: "ap-beijing", State: "RUNNING"}
 	prepared := PreparedTATArchive{
 		InstanceID:  req.InstanceID,
 		Region:      instance.Region,
 		Mode:        "stream-upload",
-		ObjectURL:   req.COSUploadBucket + "/rescue/a.tar.gz",
-		DownloadURL: req.COSUploadBucket + "/rescue/a.tar.gz?q-signature=abc",
-		ObjectKey:   "rescue/a.tar.gz",
+		ObjectURL:   req.COSUploadBucket + "/rescue/a.zip",
+		DownloadURL: req.COSUploadBucket + "/rescue/a.zip?q-signature=abc",
+		ObjectKey:   "rescue/a.zip",
 		Bucket:      req.COSUploadBucket,
 		Command:     TATCommandRequest{CommandName: "rescue-export-stream-upload", Script: "true", TimeoutSeconds: 30},
 	}
@@ -147,25 +153,25 @@ func TestExportWorkflowSchedulesCOSAutoDeleteChild(t *testing.T) {
 		EmailDelivered: true,
 	}
 
-	env.OnActivity("LocateInstance", mock.Anything, req, cfg).Return(instance, nil).Once()
-	env.OnActivity("EnterRescueMode", mock.Anything, req, cfg, instance.Region).Return(nil).Once()
-	env.OnActivity("WaitRescueRunning", mock.Anything, req, cfg, instance.Region).Return("RESCUE_MODE", nil).Once()
-	env.OnActivity("WaitRescueTAT", mock.Anything, req, cfg, instance.Region).Return(nil).Once()
-	env.OnActivity("PrepareArchiveTATCommand", mock.Anything, req, cfg, instance.Region).Return(prepared, nil).Once()
-	env.OnActivity("StartTATCommand", mock.Anything, req, cfg, instance.Region, prepared.Command).Return(submitted, nil).Once()
-	env.OnActivity("WaitTATCommand", mock.Anything, req, cfg, instance.Region, submitted).Return(submitted, nil).Once()
-	env.OnActivity("FinalizeArchiveOverTAT", mock.Anything, req, prepared, submitted).Return(archive, nil).Once()
-	env.OnActivity("SCPArchive", mock.Anything, req, cfg, instance, archive).Return(scp, nil).Once()
+	env.OnActivity("LocateInstance", mock.Anything, normalizedReq, cfg).Return(instance, nil).Once()
+	env.OnActivity("EnterRescueMode", mock.Anything, normalizedReq, cfg, instance.Region).Return(nil).Once()
+	env.OnActivity("WaitRescueRunning", mock.Anything, normalizedReq, cfg, instance.Region).Return("RESCUE_MODE", nil).Once()
+	env.OnActivity("WaitRescueTAT", mock.Anything, normalizedReq, cfg, instance.Region).Return(nil).Once()
+	env.OnActivity("PrepareArchiveTATCommand", mock.Anything, normalizedReq, cfg, instance.Region).Return(prepared, nil).Once()
+	env.OnActivity("StartTATCommand", mock.Anything, normalizedReq, cfg, instance.Region, prepared.Command).Return(submitted, nil).Once()
+	env.OnActivity("WaitTATCommand", mock.Anything, normalizedReq, cfg, instance.Region, submitted).Return(submitted, nil).Once()
+	env.OnActivity("FinalizeArchiveOverTAT", mock.Anything, normalizedReq, prepared, submitted).Return(archive, nil).Once()
+	env.OnActivity("SCPArchive", mock.Anything, normalizedReq, cfg, instance, archive).Return(scp, nil).Once()
 	env.OnWorkflow(DeleteCOSObjectWorkflow, mock.Anything, mock.MatchedBy(func(deleteReq COSDeleteRequest) bool {
 		return deleteReq.ObjectKey == archive.ObjectKey &&
 			deleteReq.BucketURL == archive.Bucket &&
 			deleteReq.DelaySeconds == req.COSUploadURLTTLSeconds &&
 			deleteReq.WorkflowID == "default-test-workflow-id-cos-delete"
 	}), cfg).Return(COSDeleteResult{ObjectKey: archive.ObjectKey, ObjectURL: archive.ObjectURL, Deleted: true}, nil).Once()
-	env.OnActivity("SendExportNotificationEmail", mock.Anything, req, archive.DownloadURL, req.COSUploadURLTTLSeconds).Return(emailSent, nil).Once()
-	env.OnActivity("ConfirmExportNotificationDelivered", mock.Anything, req, emailSent).Return(emailDelivered, nil).Once()
-	env.OnActivity("ExitRescueMode", mock.Anything, req, cfg, instance.Region).Return(true, nil).Once()
-	env.OnActivity("WaitInstanceRunning", mock.Anything, req, cfg, instance.Region).Return("RUNNING", nil).Once()
+	env.OnActivity("SendExportNotificationEmail", mock.Anything, normalizedReq, archive.DownloadURL, req.COSUploadURLTTLSeconds).Return(emailSent, nil).Once()
+	env.OnActivity("ConfirmExportNotificationDelivered", mock.Anything, normalizedReq, emailSent).Return(emailDelivered, nil).Once()
+	env.OnActivity("ExitRescueMode", mock.Anything, normalizedReq, cfg, instance.Region).Return(true, nil).Once()
+	env.OnActivity("WaitInstanceRunning", mock.Anything, normalizedReq, cfg, instance.Region).Return("RUNNING", nil).Once()
 
 	env.ExecuteWorkflow(ExportWorkflow, req, cfg)
 

@@ -1020,6 +1020,7 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
           bot_id: botId,
           action: "rescue_export",
           params: {
+            archive_mode: "hermes",
             remote_paths: [DEFAULT_RESCUE_EXPORT_REMOTE_PATH],
           },
         },

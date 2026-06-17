@@ -601,8 +601,74 @@ func TestWorkerActionStartResolvesBotAndStartsRescueExportWorkflow(t *testing.T)
 	if len(exportReq.RemotePaths) != 1 || exportReq.RemotePaths[0] != "/workspace" {
 		t.Fatalf("unexpected params: %+v", exportReq)
 	}
+	if exportReq.ArchiveMode != "hermes" {
+		t.Fatalf("unexpected archive mode: %+v", exportReq)
+	}
 	if !exportReq.Execute || !exportReq.Confirmed {
 		t.Fatalf("expected real export request, got execute=%v confirmed=%v", exportReq.Execute, exportReq.Confirmed)
+	}
+}
+
+func TestWorkerActionStartDefaultsToHermesExport(t *testing.T) {
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"session": map[string]any{
+				"user": map[string]any{
+					"id":               "usr_123",
+					"email":            "user@example.com",
+					"realnameVerified": true,
+				},
+			},
+		})
+	}))
+	defer auth.Close()
+	ctl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": "OK",
+			"data": map[string]any{"instance_id": "bot-1", "sandbox_id": "sbx-1", "status": "Running"},
+		})
+	}))
+	defer ctl.Close()
+	sandbox := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"sandboxID": "sbx-1", "cloudID": "ins-abc123", "region": "ap-shanghai"})
+	}))
+	defer sandbox.Close()
+
+	backend := &fakeWorkerActionBackend{}
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		Routes: []Route{
+			{Name: "ctl", Prefix: "/v1/instances", Upstream: ctl.URL, Access: AccessAuthenticated},
+			{Name: "sandbox", Prefix: "/sandboxes", Upstream: sandbox.URL, Access: AccessAuthenticated},
+		},
+		WorkerActions: WorkerActionsConfig{
+			Enabled:      true,
+			Temporal:     WorkerActionTemporalConfig{TaskQueue: "tencent-cvm-rescue-export"},
+			RescueExport: WorkerActionRescueExportConfig{COSUploadBucket: "bucket"},
+		},
+	}, WithWorkerActionBackend(backend))
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/worker-actions", strings.NewReader(`{
+		"bot_id":"bot-1",
+		"action":"rescue_export",
+		"params":{}
+	}`))
+	req.Header.Set("Authorization", "Bearer tok-123")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	exportReq, ok := backend.startArgs[0].(rescueExportStartRequest)
+	if !ok {
+		t.Fatalf("unexpected request arg type %T", backend.startArgs[0])
+	}
+	if exportReq.ArchiveMode != "hermes" || len(exportReq.RemotePaths) != 1 || exportReq.RemotePaths[0] != "/home/agentuser/.hermes" {
+		t.Fatalf("unexpected default Hermes export request: %+v", exportReq)
 	}
 }
 

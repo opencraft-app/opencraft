@@ -597,6 +597,7 @@ describe("http repositories auth token bootstrap", () => {
           bot_id: "ins_export",
           action: "rescue_export",
           params: {
+            archive_mode: "hermes",
             remote_paths: ["/home/agentuser/.hermes"],
           },
         }),

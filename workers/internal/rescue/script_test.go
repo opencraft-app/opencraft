@@ -8,6 +8,7 @@ import (
 func TestBuildArchiveScriptUsesReadOnlyMountAndPaths(t *testing.T) {
 	req := ExportRequest{
 		InstanceID:    "ins-0fverxpd",
+		ArchiveMode:   ArchiveModeGeneric,
 		RemoteWorkDir: "/tmp",
 		MountRoot:     "/mnt/rescue-root",
 		DeviceGlobs:   []string{"/dev/vda*"},
@@ -18,6 +19,25 @@ func TestBuildArchiveScriptUsesReadOnlyMountAndPaths(t *testing.T) {
 		if !strings.Contains(script, want) {
 			t.Fatalf("script missing %q:\n%s", want, script)
 		}
+	}
+}
+
+func TestBuildArchiveScriptDefaultsToHermesCompatibleZip(t *testing.T) {
+	req := ExportRequest{
+		InstanceID:    "ins-0fverxpd",
+		RemoteWorkDir: "/tmp",
+		MountRoot:     "/mnt/rescue-root",
+		DeviceGlobs:   []string{"/dev/vda*"},
+		RemotePaths:   []string{"/home/agentuser/.hermes"},
+	}
+	script := BuildArchiveScript(req)
+	for _, want := range []string{".zip", "HERMES_PATH='/home/agentuser/.hermes'", "config.yaml", "state.db", "zipfile.ZipFile", "RESCUE_EXPORT_RESULT="} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("script missing %q:\n%s", want, script)
+		}
+	}
+	if strings.Contains(script, "tar --numeric-owner") {
+		t.Fatalf("Hermes-compatible mode must not use tar archive:\n%s", script)
 	}
 }
 

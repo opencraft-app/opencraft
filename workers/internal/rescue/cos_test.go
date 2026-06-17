@@ -25,3 +25,15 @@ func TestSignCOSURLIncludesMethodScopedQuerySignature(t *testing.T) {
 		t.Fatalf("unexpected url: %s", signed)
 	}
 }
+
+func TestCOSObjectKeyUsesArchiveModeExtension(t *testing.T) {
+	hermes := cosObjectKey(ExportRequest{InstanceID: "ins-test", COSUploadKeyPrefix: "rescue", ArchiveMode: ArchiveModeHermes})
+	if !strings.HasPrefix(hermes, "rescue/ins-test-") || !strings.HasSuffix(hermes, ".zip") {
+		t.Fatalf("unexpected hermes object key: %s", hermes)
+	}
+
+	generic := cosObjectKey(ExportRequest{InstanceID: "ins-test", COSUploadKeyPrefix: "rescue", ArchiveMode: ArchiveModeGeneric})
+	if !strings.HasPrefix(generic, "rescue/ins-test-") || !strings.HasSuffix(generic, ".tar.gz") {
+		t.Fatalf("unexpected generic object key: %s", generic)
+	}
+}

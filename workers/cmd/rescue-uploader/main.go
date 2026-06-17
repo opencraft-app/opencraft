@@ -3,20 +3,19 @@
 package main
 
 import (
-	"archive/tar"
-	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
+
+	"github.com/lightclaw/tencent-rescue-exporter/internal/rescuearchive"
 )
 
 type Config struct {
@@ -25,6 +24,7 @@ type Config struct {
 	MountRoot   string   `json:"mount_root"`
 	DeviceGlobs []string `json:"device_globs"`
 	RemotePaths []string `json:"remote_paths"`
+	ArchiveMode string   `json:"archive_mode"`
 }
 
 type countingHashWriter struct {
@@ -78,6 +78,13 @@ func readConfig(path string) (Config, error) {
 	}
 	if cfg.UploadURL == "" || cfg.ObjectURL == "" || cfg.MountRoot == "" || len(cfg.DeviceGlobs) == 0 || len(cfg.RemotePaths) == 0 {
 		return Config{}, errors.New("missing required config fields")
+	}
+	cfg.ArchiveMode = rescuearchive.NormalizeMode(cfg.ArchiveMode)
+	if cfg.ArchiveMode != rescuearchive.ModeHermes && cfg.ArchiveMode != rescuearchive.ModeGeneric {
+		return Config{}, fmt.Errorf("unknown archive mode %q", cfg.ArchiveMode)
+	}
+	if cfg.ArchiveMode == rescuearchive.ModeHermes && len(cfg.RemotePaths) != 1 {
+		return Config{}, errors.New("hermes archive mode requires exactly one remote path")
 	}
 	return cfg, nil
 }
@@ -146,7 +153,11 @@ func streamArchiveToCOS(cfg Config) (int64, string, error) {
 	counting := &countingHashWriter{out: pw, hash: hash}
 	errCh := make(chan error, 1)
 	go func() {
-		err := writeTarGzip(cfg, counting)
+		err := rescuearchive.Write(rescuearchive.Config{
+			MountRoot:   cfg.MountRoot,
+			RemotePaths: cfg.RemotePaths,
+			ArchiveMode: cfg.ArchiveMode,
+		}, counting)
 		_ = pw.CloseWithError(err)
 		errCh <- err
 	}()
@@ -155,7 +166,7 @@ func streamArchiveToCOS(cfg Config) (int64, string, error) {
 	if err != nil {
 		return 0, "", err
 	}
-	req.Header.Set("Content-Type", "application/gzip")
+	req.Header.Set("Content-Type", rescuearchive.ContentType(cfg.ArchiveMode))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return counting.n, "", err
@@ -169,75 +180,6 @@ func streamArchiveToCOS(cfg Config) (int64, string, error) {
 		return counting.n, "", err
 	}
 	return counting.n, hex.EncodeToString(hash.Sum(nil)), nil
-}
-
-func writeTarGzip(cfg Config, out io.Writer) error {
-	gz := gzip.NewWriter(out)
-	tw := tar.NewWriter(gz)
-	for _, requested := range cfg.RemotePaths {
-		rel := strings.TrimPrefix(requested, "/")
-		if rel == "" {
-			rel = "."
-		}
-		full := filepath.Join(cfg.MountRoot, rel)
-		if _, err := os.Lstat(full); err != nil {
-			fmt.Fprintf(os.Stderr, "Skipping missing path: %s\n", requested)
-			continue
-		}
-		if err := addPathToTar(tw, cfg.MountRoot, rel); err != nil {
-			tw.Close()
-			gz.Close()
-			return err
-		}
-	}
-	if err := tw.Close(); err != nil {
-		gz.Close()
-		return err
-	}
-	return gz.Close()
-}
-
-func addPathToTar(tw *tar.Writer, root string, rel string) error {
-	full := filepath.Join(root, rel)
-	return filepath.WalkDir(full, func(pathOnDisk string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-		link := ""
-		if info.Mode()&os.ModeSymlink != 0 {
-			link, _ = os.Readlink(pathOnDisk)
-		}
-		header, err := tar.FileInfoHeader(info, link)
-		if err != nil {
-			return err
-		}
-		name, err := filepath.Rel(root, pathOnDisk)
-		if err != nil {
-			return err
-		}
-		header.Name = filepath.ToSlash(name)
-		if stat, ok := info.Sys().(*syscall.Stat_t); ok {
-			header.Uid = int(stat.Uid)
-			header.Gid = int(stat.Gid)
-		}
-		if err := tw.WriteHeader(header); err != nil {
-			return err
-		}
-		if !info.Mode().IsRegular() {
-			return nil
-		}
-		file, err := os.Open(pathOnDisk)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-		_, err = io.Copy(tw, file)
-		return err
-	})
 }
 
 func fail(message string) {

@@ -6,7 +6,7 @@ Go Temporal worker/client for Tencent CVM rescue-mode export.
 and concrete worker deploy units. CI contract tests keep that catalog aligned
 with Argo and `WorkerDeployment` manifests.
 
-The workflow enters rescue mode, waits for the instance and TAT/SSH to become reachable, read-only mounts candidate disks such as `/dev/vda*`, streams selected paths into a gzip archive, uploads it to an existing COS bucket through signed URLs, and attempts `ExitRescueMode` after rescue may have been entered. Cleanup uses Temporal compensation activities so cancellation can still drive the instance back out of rescue mode. After the signed download URL TTL expires, a detached Temporal child workflow deletes the exported COS object.
+The workflow enters rescue mode, waits for the instance and TAT/SSH to become reachable, read-only mounts candidate disks such as `/dev/vda*`, exports the Hermes home as a `hermes import` compatible zip by default, uploads it to an existing COS bucket through signed URLs, and attempts `ExitRescueMode` after rescue may have been entered. Cleanup uses Temporal compensation activities so cancellation can still drive the instance back out of rescue mode. After the signed download URL TTL expires, a detached Temporal child workflow deletes the exported COS object.
 
 Secrets are intentionally not stored in this repo or passed as Temporal workflow arguments. The worker process reads Tencent credentials and rescue passwords from its own environment.
 
@@ -73,9 +73,13 @@ Dry-run first:
 ```bash
 ./rescue-exporter start \
   --instance-id ins-0fverxpd \
-  --remote-path /etc \
-  --remote-path /var/log \
   --local-output-dir ./exports
+```
+
+By default, export mode is `hermes`, which looks for `/home/agentuser/.hermes` and produces a zip that can be restored with:
+
+```bash
+hermes import hermes-backup.zip
 ```
 
 Real execution with the default TAT/COS path:
@@ -88,13 +92,26 @@ Real execution with the default TAT/COS path:
   --tat-username root \
   --tat-working-directory /root \
   --cos-upload-bucket-url https://bucket-appid.cos.ap-beijing.myqcloud.com \
-  --remote-path /etc \
-  --remote-path /var/log \
   --execute \
   --i-understand-this-enters-rescue-mode-and-copies-data
 ```
 
-Real execution refuses to default to `/`; pass every export path explicitly with `--remote-path`.
+Use `--remote-path /root/.hermes` only when the rescued Hermes home is somewhere other than `/home/agentuser/.hermes`. Hermes mode accepts exactly one Hermes home path and writes zip entries relative to that directory, such as `config.yaml`, `.env`, `state.db`, `profiles/...`, `skills/...`, and `memories/...`.
+
+The legacy generic mode is still available for arbitrary path bundles:
+
+```bash
+./rescue-exporter start \
+  --instance-id ins-0fverxpd \
+  --archive-mode generic \
+  --remote-path /etc \
+  --remote-path /var/log \
+  --cos-upload-bucket-url https://bucket-appid.cos.ap-beijing.myqcloud.com \
+  --execute \
+  --i-understand-this-enters-rescue-mode-and-copies-data
+```
+
+Generic real execution refuses to default to `/`; pass every export path explicitly with `--remote-path`.
 
 If the legacy SSH path is used and scp must use the rescue password rather than a key or ssh-agent, pass:
 
@@ -108,6 +125,7 @@ export RESCUE_SSH_PASSWORD="$RESCUE_PASSWORD"
 - Region is optional; if omitted, the workflow probes common Tencent Cloud regions until it finds the instance.
 - Disk candidates default to `/dev/vda*` then `/dev/vdb*`; override with repeated `--device-glob`.
 - The export flow does not create CVM images. It reads selected paths from rescue mode and relies on the exported archive plus COS lifecycle cleanup.
+- Default Hermes export creates a zip compatible with `hermes import`; it is not nested under `/home/agentuser/.hermes` or `sources/...`.
 - The mount is read-only and the workflow attempts `ExitRescueMode` after export or cancellation once rescue may have been entered.
 - COS archive objects are automatically deleted after `--cos-upload-url-ttl-seconds` seconds, defaulting to 28800 seconds. Use `--disable-cos-auto-delete` only for debugging or retention exceptions.
 - `NotifyEmail` / `NotificationEmail` may be supplied by ctl from the authenticated user's bound email. When a COS download URL is available, the workflow sends a Tencent SES notification and polls delivery status before completing.
