@@ -1117,6 +1117,17 @@ force_reinstall_hermes_local_package() {
   run_as_runtime_user "${hermes_uv_escaped} pip install --python ${hermes_python_escaped} --no-deps --reinstall-package hermes-agent -e ${hermes_dir_escaped}"
 }
 
+finalize_hermes_runtime_pin() {
+  local hermes_dir="${RUNTIME_HOME}/.hermes/hermes-agent"
+
+  # acli/backend bootstrap may touch the Hermes home after the initial runtime
+  # install, so make the COS source tree the final source of truth.
+  verify_hermes_source_tree_version "${hermes_dir}" "after Hermes post-install steps"
+  force_reinstall_hermes_local_package "${hermes_dir}"
+  verify_hermes_runtime_version
+  ensure_hermes_acli_identity
+}
+
 read_hermes_source_tree_version() {
   local pyproject_path="$1"
   if [ ! -f "${pyproject_path}" ]; then
@@ -1853,6 +1864,7 @@ build_app_layer() {
     install_hermes_extra_tools
     install_hermes_acli
     upgrade_hermes_backend_blueprint
+    finalize_hermes_runtime_pin
   else
     install_openclaw
     install_all_plugins

@@ -248,6 +248,9 @@ acli() {
   if [[ "${1:-}" == "bundle-update" ]]; then
     touch "${ACLI_BACKEND_MARKER}"
   fi
+  if [[ "${1:-}" == "backend" && "${2:-}" == "upgrade-start" ]]; then
+    sed -i.bak -e 's/^runtime_version:.*/runtime_version: 0.10.0/' "${ACLI_IDENTITY_PATH}"
+  fi
   return 0
 }
 
@@ -300,6 +303,7 @@ ensure_hermes_gateway_service
 install_hermes_extra_tools
 install_hermes_acli
 upgrade_hermes_backend_blueprint
+finalize_hermes_runtime_pin
 
 grep -q "curl-hermes-latest" "${LOG_FILE}"
 grep -q "curl-hermes-tarball" "${LOG_FILE}"
@@ -310,6 +314,7 @@ grep -Fq -- "--dir ${RUNTIME_HOME}/.hermes/hermes-agent --hermes-home ${RUNTIME_
 grep -Fq -- "--dir ${RUNTIME_HOME}/.hermes/hermes-agent --hermes-home ${RUNTIME_HOME}/.hermes --skip-browser --non-interactive --stage path" "${LOG_FILE}"
 grep -Fq -- "--dir ${RUNTIME_HOME}/.hermes/hermes-agent --hermes-home ${RUNTIME_HOME}/.hermes --skip-browser --non-interactive --stage config" "${LOG_FILE}"
 grep -Fq "uv-pip-install pip install --python ${RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/python --no-deps --reinstall-package hermes-agent -e ${RUNTIME_HOME}/.hermes/hermes-agent" "${LOG_FILE}"
+test "$(grep -Fc "uv-pip-install pip install --python ${RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/python --no-deps --reinstall-package hermes-agent -e ${RUNTIME_HOME}/.hermes/hermes-agent" "${LOG_FILE}")" -ge 2
 grep -q "npm-install @qwen-code/qwen-code@latest" "${LOG_FILE}"
 grep -q ".hermes/bin/uv.*--version" "${LOG_FILE}"
 grep -q "uv-pip-install pip install --index-url https://mirrors.tencent.com/pypi/simple --extra-index-url https://mirrors.cloud.tencent.com/pypi/simple --python ${RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/python lark-oapi==1.5.3 qrcode==7.4.2" "${LOG_FILE}"

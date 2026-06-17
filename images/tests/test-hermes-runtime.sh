@@ -223,6 +223,64 @@ HERMES_IDENTITY_VERSION="$(remote_exec "awk -F': *' '/^runtime_version:/ {print 
 info "hermes --version output: ${HERMES_VERSION_OUTPUT}"
 info "parsed hermes version: ${HERMES_BIN_VERSION}"
 info "identity runtime_version: ${HERMES_IDENTITY_VERSION}"
+HERMES_DIAGNOSTICS="$(remote_exec_runtime '
+  export HOME='"${RUNTIME_HOME}"'
+  export USER='"${RUNTIME_USER}"'
+  export PATH=/usr/local/bin:/usr/bin:/bin:$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.hermes/hermes-agent/venv/bin
+  echo "source_pyproject_version=$(python3 - "$HOME/.hermes/hermes-agent/pyproject.toml" <<'"'"'PY'"'"'
+import sys
+path = sys.argv[1]
+version = ""
+try:
+    with open(path, "r", encoding="utf-8") as fh:
+        in_project = False
+        for raw in fh:
+            line = raw.strip()
+            if line == "[project]":
+                in_project = True
+                continue
+            if in_project and line.startswith("[") and line.endswith("]"):
+                break
+            if in_project and line.startswith("version"):
+                version = line.split("=", 1)[1].strip().strip("\"").strip("'"'"'")
+                break
+except Exception as exc:
+    version = f"ERROR:{exc}"
+print(version)
+PY
+)"
+  "$HOME/.hermes/hermes-agent/venv/bin/python" - <<'"'"'PY'"'"'
+import importlib.metadata as md
+import pathlib
+import sys
+
+try:
+    import hermes_cli
+except Exception as exc:
+    print(f"import_error={exc}")
+    raise SystemExit(0)
+
+print(f"import_version={getattr(hermes_cli, '"'"'__version__'"'"', '"'"''"'"')}")
+print(f"import_file={getattr(hermes_cli, '"'"'__file__'"'"', '"'"''"'"')}")
+try:
+    dist = md.distribution("hermes-agent")
+except Exception as exc:
+    print(f"dist_error={exc}")
+    raise SystemExit(0)
+print(f"dist_version={dist.version}")
+for file_name in ("direct_url.json", "METADATA"):
+    try:
+        path = pathlib.Path(dist.locate_file("")) / f"{dist.metadata['"'"'Name'"'"'].replace('"'"'-'"'"', '"'"'_'"'"')}-{dist.version}.dist-info" / file_name
+        if path.exists():
+            print(f"dist_{file_name}={path}")
+            for line in path.read_text(encoding="utf-8", errors="replace").splitlines()[:8]:
+                print(f"  {line}")
+    except Exception as exc:
+        print(f"dist_{file_name}_error={exc}")
+PY
+' 2>&1 || true)"
+info "hermes package diagnostics:"
+printf '%s\n' "${HERMES_DIAGNOSTICS}"
 if [ -n "${HERMES_BIN_VERSION}" ] && [ -n "${HERMES_IDENTITY_VERSION}" ] && [ "${HERMES_BIN_VERSION}" = "${HERMES_IDENTITY_VERSION}" ]; then
   pass "hermes runtime version matches identity: ${HERMES_BIN_VERSION}"
 else
