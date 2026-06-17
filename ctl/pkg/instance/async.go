@@ -20,6 +20,7 @@ import (
 	modelfactory "ctl/pkg/model/factory"
 	modelinstance "ctl/pkg/model/instance"
 	"ctl/pkg/model/operationhistory"
+	modelsnapshot "ctl/pkg/model/snapshot"
 	taskmodel "ctl/pkg/model/task"
 	"ctl/pkg/mq"
 	mqfactory "ctl/pkg/mq/factory"
@@ -74,6 +75,427 @@ func FinalizeCreateInstanceTaskFailure(ctx pctx.Context, payload *CreateInstance
 
 func FinalizeDestroyInstanceTaskFailure(ctx pctx.Context, payload *DestroyInstanceTaskPayload, taskErr error) {
 	NewLogic().(*logic).FinalizeDestroyInstanceTaskFailure(ctx, payload, taskErr)
+}
+
+// === trade-pass-isolate 子 task 公开入口（设计稿 §10 Q22-I-D / Q26-D 修订版）===
+
+// IsolateInstanceTaskPayload 是子 task IsolateInstance 的 payload 类型别名
+type IsolateInstanceTaskPayload = common.IsolateInstanceTaskPayload
+
+// ExecuteIsolateInstanceTask 由 worker 层 isolate_task.go 反向调用
+func ExecuteIsolateInstanceTask(ctx pctx.Context, payload *IsolateInstanceTaskPayload) error {
+	return NewLogic().(*logic).RunIsolateInstanceTask(ctx, payload)
+}
+
+// FinalizeIsolateInstanceTaskFailure 子 task 重试耗尽 / 显式失败时的兜底回调
+//
+// 行为：仅记录失败 message + 关联 operation_id 为 ERROR；不做 instance 状态回滚
+//   - 子 task execute 是 "Running → Paused" 的直接迁移，失败时 instance 仍是 Running，
+//     不存在中间态需要回滚（与 Pausing 设计有别）
+//   - 父 task IsolatePass 看到该子 task FAILED 仍会推进 pass.status 到 isolated（最终一致性）
+func FinalizeIsolateInstanceTaskFailure(ctx pctx.Context, payload *IsolateInstanceTaskPayload, taskErr error) {
+	NewLogic().(*logic).FinalizeIsolateInstanceTaskFailure(ctx, payload, taskErr)
+}
+
+// === trade-pass-renew 子 task 公开入口（设计稿 §3.4 / §5 / R-D-4）===
+
+// ExecuteRenewInstanceTask 由 worker 层 renew_task.go 反向调用（与 ExecuteIsolateInstanceTask 对偶）
+func ExecuteRenewInstanceTask(ctx pctx.Context, payload *RenewInstanceTaskPayload) error {
+	return NewLogic().(*logic).RunRenewInstanceTask(ctx, payload)
+}
+
+// FinalizeRenewInstanceTaskFailure 子 task 重试耗尽 / 显式失败时的兜底回调
+//
+// 行为（与 IsolateInstance 对偶反向）：仅记录失败 message + 关联 operation_id 为 ERROR；
+// 不做 instance 状态回滚（execute 走 Paused → Running 直接迁移，失败时 instance 仍是 Paused）。
+// 父 task RenewPass 看到该子 task FAILED 仍会推进 pass.status 到 active（与 isolate 同 "最终一致性"）。
+func FinalizeRenewInstanceTaskFailure(ctx pctx.Context, payload *RenewInstanceTaskPayload, taskErr error) {
+	NewLogic().(*logic).FinalizeRenewInstanceTaskFailure(ctx, payload, taskErr)
+}
+
+// EnqueueIsolateInstanceTask 由父 task IsolatePass 调用，派发一个子 task
+//
+// 入参 executeInterval / maxExecuteCount 由 caller 显式控制（IsolateInstance 子 task 默认 60s × 60 = 1h）。
+// parentTaskID 必传，用于父 task 反查 child_registry。
+//
+// userID 必传：用于注入 ctx → enqueueTaskWithSchedule 把 task entity.UserID 持久化到 tasks 表；
+// task 框架后续 reload 子 task 时通过 GenerateMessageDataByTaskEntity 把 entity.UserID 写入
+// msg.Account.UserID，再由 processor.newContext 反向恢复到执行 ctx，instanceDao 才不会报
+// `context user is required`（BUG-30 修订）。
+func EnqueueIsolateInstanceTask(ctx pctx.Context, instanceID, passID, userID, operationID, parentTaskID string, executeInterval int64, maxExecuteCount int) error {
+	if instanceID == "" {
+		return errors.New("instanceID is required")
+	}
+	if parentTaskID == "" {
+		return errors.New("parentTaskID is required")
+	}
+	if userID == "" {
+		return errors.New("userID is required")
+	}
+	if executeInterval <= 0 {
+		executeInterval = defaultTaskExecuteIntervalSeconds
+	}
+	if maxExecuteCount <= 0 {
+		maxExecuteCount = defaultTaskMaxExecuteCount
+	}
+	payload := &IsolateInstanceTaskPayload{
+		InstanceID:  instanceID,
+		PassID:      passID,
+		OperationID: operationID,
+	}
+	// BUG-30 修订：把 userID 注入 ctx，让 enqueueTaskWithSchedule 写 task entity.UserID 不为空。
+	if ctx == nil {
+		ctx = pctx.NewContext(nil)
+	}
+	ctx = ctx.WithUserID(userID)
+	_, err := NewLogic().(*logic).enqueueTaskWithSchedule(
+		ctx,
+		common.TaskNameIsolateInstance,
+		payload,
+		parentTaskID,
+		executeInterval,
+		maxExecuteCount,
+	)
+	return err
+}
+
+// EnqueueIsolatePassTask 由 logic/pass.IsolatePass 调用，派发父 task
+//
+// 入参：
+//   - passID / userID / operationID：父 task 业务标识
+//   - tradeFlowID：trade 侧 trade_flow.id PK（端到端闭环 2026-05-15）；
+//     父 task 终态时 best-effort 反向调 trade callback；0 值表示无 trade callback 链路（dev/test）
+//   - newDeadline：jifei 退费场景下的"新到期时间"（v1.7.30 BUG-35）；
+//     非 nil 时父 task 终态在同一事务里 CAS isolating→isolated + 写 pass.expired_time = *newDeadline；
+//     nil 时父 task 终态仅 CAS isolating→isolated（生命周期隔离场景，**不动** pass.expired_time）。
+//   - dealName：jifei 退费场景下的子订单号（v1.7.30 BUG-35）；仅日志透传，不参与状态机。
+//   - executeInterval / maxExecuteCount：默认 30s × 极大值（Q35=a 修订版兜底，"永不放弃"）
+func EnqueueIsolatePassTask(ctx pctx.Context, passID, userID, operationID string, tradeFlowID int64, newDeadline *time.Time, dealName string, executeInterval int64, maxExecuteCount int) (taskID string, err error) {
+	if passID == "" {
+		return "", errors.New("passID is required")
+	}
+	if userID == "" {
+		return "", errors.New("userID is required")
+	}
+	if executeInterval <= 0 {
+		executeInterval = defaultTaskExecuteIntervalSeconds
+	}
+	if maxExecuteCount <= 0 {
+		maxExecuteCount = defaultTaskMaxExecuteCount
+	}
+	payload := &common.IsolatePassTaskPayload{
+		PassID:      passID,
+		UserID:      userID,
+		OperationID: operationID,
+		TradeFlowID: tradeFlowID,
+		NewDeadline: newDeadline,
+		DealName:    dealName,
+	}
+	// BUG-30 修订：把 userID 注入 ctx，让 enqueueTaskWithSchedule 写 task entity.UserID 不为空，
+	// 子 task 派发链路（父 task execute → EnqueueIsolateInstanceTask）依赖此 ctx user 透传。
+	if ctx == nil {
+		ctx = pctx.NewContext(nil)
+	}
+	ctx = ctx.WithUserID(userID)
+	return NewLogic().(*logic).enqueueTaskWithSchedule(
+		ctx,
+		common.TaskNameIsolatePass,
+		payload,
+		"",
+		executeInterval,
+		maxExecuteCount,
+	)
+}
+
+// === trade-pass-renew 父子 task 公开入口（设计稿 §3.4 / §5 / R-D-2）===
+
+// RenewPassTaskPayload / RenewInstanceTaskPayload 是父子 task payload 的类型别名
+type RenewPassTaskPayload = common.RenewPassTaskPayload
+type RenewInstanceTaskPayload = common.RenewInstanceTaskPayload
+
+// EnqueueRenewPassTask 由 logic/pass.RenewPass 异步分支（pass.status='isolated' 路径）调用，派发父 task
+//
+// 入参（与 EnqueueIsolatePassTask 对偶 + 续费独有 timeSpan/timeUnit + R-MR-5 回滚基线字段）：
+//   - passID / userID / operationID：父 task 业务标识
+//   - tradeFlowID：trade 侧 trade_flow.id PK（与 isolate 同语义）
+//   - timeSpan / timeUnit：续费时长（父 task 收尾计算 new_expired_time 的依据；
+//     基线 = pass.expired_time，v1.7.20 B15 修订）
+//   - originalExpiredTime / originalIsolatedTime：R-MR-5 续费失败回滚基线（2026-05-24 用户拍板）
+//     · originalExpiredTime：续费前的 pass.expired_time（active / isolated 续费均为 entity.ExpiredTime）
+//     · originalIsolatedTime：续费前的 pass.isolated_time（active 分支传 nil；isolated 分支传 entity.IsolatedTime
+//     的副本指针）；决定回滚目标状态：nil → active；非 nil → isolated
+//   - executeInterval / maxExecuteCount：默认 30s × 5 次（R-MR-5：父 task 失败有限重试 +
+//     失败后派发 RollbackRenewPassTask 回滚副作用）
+func EnqueueRenewPassTask(ctx pctx.Context, passID, userID, operationID string, tradeFlowID int64, timeSpan int, timeUnit string, originalExpiredTime time.Time, originalIsolatedTime *time.Time, executeInterval int64, maxExecuteCount int) (taskID string, err error) {
+	if passID == "" {
+		return "", errors.New("passID is required")
+	}
+	if userID == "" {
+		return "", errors.New("userID is required")
+	}
+	if timeSpan <= 0 {
+		return "", fmt.Errorf("timeSpan must be > 0, got %d", timeSpan)
+	}
+	if timeUnit == "" {
+		return "", errors.New("timeUnit is required")
+	}
+	if originalExpiredTime.IsZero() {
+		// R-MR-5：回滚基线必须传入；零值会让回滚 task 把 pass.expired_time 写成 1970 年。
+		return "", errors.New("originalExpiredTime is required (R-MR-5 rollback baseline)")
+	}
+	if executeInterval <= 0 {
+		executeInterval = defaultTaskExecuteIntervalSeconds
+	}
+	if maxExecuteCount <= 0 {
+		maxExecuteCount = defaultTaskMaxExecuteCount
+	}
+	payload := &common.RenewPassTaskPayload{
+		PassID:               passID,
+		UserID:               userID,
+		OperationID:          operationID,
+		TimeSpan:             timeSpan,
+		TimeUnit:             timeUnit,
+		TradeFlowID:          tradeFlowID,
+		OriginalExpiredTime:  originalExpiredTime,
+		OriginalIsolatedTime: originalIsolatedTime,
+	}
+	// BUG-30 修订：与 EnqueueIsolatePassTask 同范式，注入 ctx user 让 task entity.UserID 不为空。
+	if ctx == nil {
+		ctx = pctx.NewContext(nil)
+	}
+	ctx = ctx.WithUserID(userID)
+	return NewLogic().(*logic).enqueueTaskWithSchedule(
+		ctx,
+		common.TaskNameRenewPass,
+		payload,
+		"",
+		executeInterval,
+		maxExecuteCount,
+	)
+}
+
+// === R-MR-5 续费失败回滚 task 入队接口（2026-05-24 用户拍板）===
+
+// RollbackRenewPassTaskPayload 是回滚 task payload 的类型别名
+type RollbackRenewPassTaskPayload = common.RollbackRenewPassTaskPayload
+
+// EnqueueRollbackRenewPassTask 由 renewPassTask.finalizeFailure 在 max_execute_count
+// 用尽（=5）时调用，派发回滚父 task。
+//
+// 入参（payload 字段透传 + execute schedule 参数）：
+//   - passID / userID / operationID：业务标识（继承自原 RenewPass payload）
+//   - tradeFlowID：透传到回滚 task；> 0 时回滚收尾步骤 6 调 trade.CompleteFlow(failed)
+//   - originalExpiredTime / originalIsolatedTime：续费前基线，决定 RollbackRenewal 写回的目标值
+//   - failureReason：原父 task 最后一次 execute 错误（写入 trade.CompleteFlow message 字段）
+//   - originalParentTaskID：原 RenewPass 父 task 的 task_id（回滚 task 步骤 1 等子 task 终态时反查用）
+//   - executeInterval / maxExecuteCount：默认 30s × 5 次（与父 task 同节奏；失败即终态由人工介入）
+func EnqueueRollbackRenewPassTask(ctx pctx.Context, passID, userID, operationID string, tradeFlowID int64, originalExpiredTime time.Time, originalIsolatedTime *time.Time, failureReason, originalParentTaskID string, executeInterval int64, maxExecuteCount int) (taskID string, err error) {
+	if passID == "" {
+		return "", errors.New("passID is required")
+	}
+	if userID == "" {
+		return "", errors.New("userID is required")
+	}
+	if originalExpiredTime.IsZero() {
+		return "", errors.New("originalExpiredTime is required (R-MR-5 rollback baseline)")
+	}
+	if originalParentTaskID == "" {
+		return "", errors.New("originalParentTaskID is required (used to wait child tasks)")
+	}
+	if executeInterval <= 0 {
+		executeInterval = defaultTaskExecuteIntervalSeconds
+	}
+	if maxExecuteCount <= 0 {
+		maxExecuteCount = defaultTaskMaxExecuteCount
+	}
+	payload := &common.RollbackRenewPassTaskPayload{
+		PassID:               passID,
+		UserID:               userID,
+		OperationID:          operationID,
+		TradeFlowID:          tradeFlowID,
+		OriginalExpiredTime:  originalExpiredTime,
+		OriginalIsolatedTime: originalIsolatedTime,
+		FailureReason:        failureReason,
+		OriginalParentTaskID: originalParentTaskID,
+	}
+	if ctx == nil {
+		ctx = pctx.NewContext(nil)
+	}
+	ctx = ctx.WithUserID(userID)
+	return NewLogic().(*logic).enqueueTaskWithSchedule(
+		ctx,
+		common.TaskNameRollbackRenewPass,
+		payload,
+		"",
+		executeInterval,
+		maxExecuteCount,
+	)
+}
+
+// EnqueueRenewInstanceTask 由父 task RenewPassTask 调用，派发一个续费子 task
+//
+// 入参（与 EnqueueIsolateInstanceTask 对偶）：
+//   - instanceID / passID / userID / operationID：业务标识；userID 必传，用于 ctx 注入 →
+//     task entity.UserID 持久化（BUG-30 修订），子 task reload 时才能恢复 ctx user，
+//     instanceDao.GetByInstanceID 才不会报 `context user is required`。
+//   - parentTaskID 必传，用于父 task 反查 child_registry
+//   - executeInterval / maxExecuteCount：默认 60s × 60 = 1h 重试窗口（与 IsolateInstance 子 task 对偶）
+func EnqueueRenewInstanceTask(ctx pctx.Context, instanceID, passID, userID, operationID, parentTaskID string, executeInterval int64, maxExecuteCount int) error {
+	if instanceID == "" {
+		return errors.New("instanceID is required")
+	}
+	if parentTaskID == "" {
+		return errors.New("parentTaskID is required")
+	}
+	if userID == "" {
+		return errors.New("userID is required")
+	}
+	if executeInterval <= 0 {
+		executeInterval = defaultTaskExecuteIntervalSeconds
+	}
+	if maxExecuteCount <= 0 {
+		maxExecuteCount = defaultTaskMaxExecuteCount
+	}
+	payload := &common.RenewInstanceTaskPayload{
+		InstanceID:  instanceID,
+		PassID:      passID,
+		OperationID: operationID,
+	}
+	// BUG-30 修订：注入 ctx user，让 enqueueTaskWithSchedule 写 task entity.UserID 不为空。
+	if ctx == nil {
+		ctx = pctx.NewContext(nil)
+	}
+	ctx = ctx.WithUserID(userID)
+	_, err := NewLogic().(*logic).enqueueTaskWithSchedule(
+		ctx,
+		common.TaskNameRenewInstance,
+		payload,
+		parentTaskID,
+		executeInterval,
+		maxExecuteCount,
+	)
+	return err
+}
+
+// === trade-pass-destroy 父子 task 公开入口（设计稿 §3.5 / §4.5.2 / §4.5.3 / §4.6 / §4.7）===
+
+// DestroyPassTaskPayload / DestroyInstanceForPassTaskPayload 是父子 task payload 的类型别名。
+//
+// 命名说明（Q5 ✅ 拍板）：销毁子 task payload 用 `DestroyInstanceForPassTaskPayload`（设计稿 §4.8 正式命名）
+// 与已存在的 `DestroyInstanceTaskPayload`（老的纯 instance 销毁链路）区分；TaskName 命名为
+// `TaskNameDestroyInstanceWithSnapshot` 体现"含快照"语义（详见 taskruntime/common/instance_task.go）。
+type DestroyPassTaskPayload = common.DestroyPassTaskPayload
+type DestroyInstanceForPassTaskPayload = common.DestroyInstanceForPassTaskPayload
+
+// EnqueueDestroyPassTask 由 logic/pass.DestroyPass 调用，派发销毁父 task
+//
+// 入参（与 EnqueueIsolatePassTask 对偶 + 销毁独有 destroyReason / region）：
+//   - passID / userID / operationID：父 task 业务标识
+//   - tradeFlowID：trade 侧 trade_flow.id PK（与 isolate 同语义；> 0 时父 task 收尾步 5c 反向 callback）
+//   - destroyReason：jifei `para.source` 透传值（biz/qn/other/空串；Q24 ✅ 拍板），
+//     父 task 收尾步 5b 调 dao.MoveToHistory(passID, deletedTime, destroyReason)
+//   - region：ctl 进程配置 config.ServerConf.MiscConfig.Region（Q21 ✅ 拍板），父 task 派子 task
+//     时透传到 DestroyInstanceForPassTaskPayload，子 task 入 snapshot 表时作为 snapshot.region 列值
+//   - executeInterval / maxExecuteCount：默认 30s × 极大值（与 isolate / renew 父 task 同 "永不放弃"）
+func EnqueueDestroyPassTask(ctx pctx.Context, passID, userID, operationID string, tradeFlowID int64, destroyReason, region string, executeInterval int64, maxExecuteCount int) (taskID string, err error) {
+	if passID == "" {
+		return "", errors.New("passID is required")
+	}
+	if executeInterval <= 0 {
+		executeInterval = defaultTaskExecuteIntervalSeconds
+	}
+	if maxExecuteCount <= 0 {
+		maxExecuteCount = defaultTaskMaxExecuteCount
+	}
+	payload := &common.DestroyPassTaskPayload{
+		PassID:        passID,
+		UserID:        userID,
+		OperationID:   operationID,
+		TradeFlowID:   tradeFlowID,
+		DestroyReason: destroyReason,
+		Region:        region,
+		// 三个进度位 SubscriptionDone / PassDeleted / FlowCompleted 默认 false，由父 task
+		// 各收尾子步骤成功后通过 UpdatePayload 持久化（D-7 切片落实现）。
+	}
+	return NewLogic().(*logic).enqueueTaskWithSchedule(
+		ctx,
+		common.TaskNameDestroyPass,
+		payload,
+		"",
+		executeInterval,
+		maxExecuteCount,
+	)
+}
+
+// EnqueueDestroyInstanceForPassTask 由父 task DestroyPassTask 调用，派发一个销毁子 task
+//
+// 入参（与 EnqueueIsolateInstanceTask 对偶 + 销毁独有快照 + 销毁事件 ID）：
+//   - payload：DestroyInstanceForPassTaskPayload — 由父 task 在 enqueue 时填齐字段
+//     （InstanceID / PassID / UserID / SandboxID / Region / UIN / AppID / TradeFlowID 等；
+//     SnapshotID / SnapshotsDone 默认 zero，由子 task execute 阶段写回）
+//   - parentTaskID：父 task 的 task_id，用于父 task 反查 child_registry 防重派发
+//   - executeInterval / maxExecuteCount：默认 60s × 60 = 1h 重试窗口（与 IsolateInstance 子 task 对偶）
+//
+// payload.UserID 必传：用于注入 ctx → enqueueTaskWithSchedule 把 task entity.UserID 持久化到 tasks 表；
+// task 框架后续 reload 子 task 时通过 GenerateMessageDataByTaskEntity 把 entity.UserID 写入
+// msg.Account.UserID，再由 processor.newContext 反向恢复到执行 ctx，instanceDao.GetByInstanceID
+// 才不会报 `context user is required`（BUG-30 修订在销毁子 task 链路的延伸 — sandbox-bj-7
+// 联调 2026-05-25 实测：原实现漏注入 ctx user，导致 DestroyInstanceWithSnapshot 子 task
+// reload 时 ctx user 为空 → 父 task 一直等不到子 task 终态、销毁链路卡死）。
+func EnqueueDestroyInstanceForPassTask(ctx pctx.Context, payload common.DestroyInstanceForPassTaskPayload, parentTaskID string, executeInterval int64, maxExecuteCount int) error {
+	if payload.InstanceID == "" {
+		return errors.New("payload.InstanceID is required")
+	}
+	if payload.UserID == "" {
+		return errors.New("payload.UserID is required")
+	}
+	if parentTaskID == "" {
+		return errors.New("parentTaskID is required")
+	}
+	if executeInterval <= 0 {
+		executeInterval = defaultTaskExecuteIntervalSeconds
+	}
+	if maxExecuteCount <= 0 {
+		maxExecuteCount = defaultTaskMaxExecuteCount
+	}
+	// BUG-30 销毁链路延伸：把 payload.UserID 注入 ctx，让 enqueueTaskWithSchedule 写
+	// task entity.UserID 不为空，子 task reload 后才能恢复 ctx user，
+	// 否则 instanceDao.GetByInstanceID 报 `context user is required`，
+	// 父 task DestroyPass 一直等不到子 task 终态。
+	if ctx == nil {
+		ctx = pctx.NewContext(nil)
+	}
+	ctx = ctx.WithUserID(payload.UserID)
+	_, err := NewLogic().(*logic).enqueueTaskWithSchedule(
+		ctx,
+		common.TaskNameDestroyInstanceWithSnapshot,
+		&payload,
+		parentTaskID,
+		executeInterval,
+		maxExecuteCount,
+	)
+	return err
+}
+
+// UpdateDestroyInstanceForPassPayload 子 task DestroyInstanceWithSnapshot 阶段 1+2 持久化进度位用：
+//
+//   - 阶段 1 sandbox.CreateSnapshot 成功后：把返回的 snapshotID 写回 payload.SnapshotID
+//   - 阶段 2 sandbox.GetSnapshotStatus 返 ready / 无系统盘场景：写 SnapshotsDone=true
+//
+// 实现：MarshalJSON payload → UPDATE task.task_params WHERE task_id=?
+// 不持任何子 task 内部状态（每次重投都从 DB 读最新 task_params 后再 unmarshal）。
+func UpdateDestroyInstanceForPassPayload(ctx pctx.Context, taskID string, payload *common.DestroyInstanceForPassTaskPayload) error {
+	return NewLogic().(*logic).updateTaskPayload(ctx, taskID, payload)
+}
+
+// ExecuteDestroyInstanceForPassTask 由 worker 层 destroy_for_pass_task.go 反向调用执行 4 阶段流程
+func ExecuteDestroyInstanceForPassTask(ctx pctx.Context, taskID string, payload *DestroyInstanceForPassTaskPayload) error {
+	return NewLogic().(*logic).RunDestroyInstanceForPassTask(ctx, taskID, payload)
+}
+
+// FinalizeDestroyInstanceForPassTaskFailure 子 task 失败兜底
+func FinalizeDestroyInstanceForPassTaskFailure(ctx pctx.Context, payload *DestroyInstanceForPassTaskPayload, taskErr error) {
+	NewLogic().(*logic).FinalizeDestroyInstanceForPassTaskFailure(ctx, payload, taskErr)
 }
 
 func CompleteAsyncOperation(ctx pctx.Context, operationID string, err error) {
@@ -144,6 +566,67 @@ func (l *logic) enqueueTask(ctx pctx.Context, taskName string, payload interface
 	return taskID, nil
 }
 
+// enqueueTaskWithSchedule 是 enqueueTask 的扩展：允许 caller 显式指定 ExecuteInterval / MaxExecuteCount
+//
+// 用于 trade-pass-isolate 父子 task：
+//   - 父 task IsolatePass：interval=30s, max=极大（"永不放弃"兜底）
+//   - 子 task IsolateInstance：interval=60s, max=60（1h 重试窗口）
+//
+// 与 enqueueTask 共享其余 schema（task_id 自生成 / state=CREATED / params=json marshal / MQ.Send）
+func (l *logic) enqueueTaskWithSchedule(ctx pctx.Context, taskName string, payload interface{}, parentTaskID string, executeInterval int64, maxExecuteCount int) (taskID string, err error) {
+	ctx, span := tracing.StartTrace(ctx, "Instance.EnqueueTaskWithSchedule")
+	defer func() { span.EndWithError(err) }()
+
+	if l.taskDao == nil {
+		return "", errors.New("task dao is nil")
+	}
+	if l.producer == nil {
+		return "", errors.New("mq producer is nil")
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("marshal task payload: %w", err)
+	}
+
+	taskID = l.generateTaskID()
+	taskEntity := &taskmodel.Entity{
+		TaskId:          taskID,
+		ParentTaskId:    parentTaskID,
+		TaskName:        taskName,
+		TaskParams:      string(body),
+		TaskState:       taskmodel.StateCreated,
+		TaskMessage:     "",
+		TraceId:         ctx.GetRequestId(),
+		ExecuteInterval: executeInterval,
+		ExecuteCount:    0,
+		MaxExecuteCount: maxExecuteCount,
+		LastExecuteTime: time.Unix(0, 0),
+	}
+	taskEntity.UserID = ctx.GetUserID()
+
+	if err := l.taskDao.Insert(taskEntity); err != nil {
+		return "", fmt.Errorf("insert task: %w", err)
+	}
+
+	messageData, err := common.GenerateMessageData(ctx, taskName, taskID, payload)
+	if err != nil {
+		_ = l.taskDao.UpdateByKeyColumn(map[string]interface{}{
+			taskmodel.ColumnTaskState:   taskmodel.StateFailed,
+			taskmodel.ColumnTaskMessage: err.Error(),
+		}, taskID)
+		return taskID, fmt.Errorf("generate task message: %w", err)
+	}
+	if err := l.producer.Send(&mq.Message{Data: messageData}); err != nil {
+		_ = l.taskDao.UpdateByKeyColumn(map[string]interface{}{
+			taskmodel.ColumnTaskState:   taskmodel.StateFailed,
+			taskmodel.ColumnTaskMessage: err.Error(),
+		}, taskID)
+		return taskID, fmt.Errorf("send task message: %w", err)
+	}
+	return taskID, nil
+}
+
 func (l *logic) markOperationRunning(ctx pctx.Context, operationID string) {
 	if operationID == "" || l.operationHistoryDao == nil {
 		return
@@ -156,10 +639,10 @@ func (l *logic) markOperationRunning(ctx pctx.Context, operationID string) {
 	}
 }
 
-func (l *logic) enqueueCreateInstanceTask(ctx pctx.Context, entity *modelinstance.Entity, skuID string, timeout int32, soulTemplateID string, operationID string) error {
+func (l *logic) enqueueCreateInstanceTask(ctx pctx.Context, entity *modelinstance.Entity, instanceSpecID string, timeout int32, soulTemplateID string, operationID string) error {
 	taskID, err := l.enqueueTask(ctx, TaskNameCreateInstance, &CreateInstanceTaskPayload{
 		InstanceID:     entity.InstanceId,
-		SKUID:          skuID,
+		InstanceSpecID: instanceSpecID,
 		Timeout:        timeout,
 		SoulTemplateID: soulTemplateID,
 		OperationID:    operationID,
@@ -169,7 +652,7 @@ func (l *logic) enqueueCreateInstanceTask(ctx pctx.Context, entity *modelinstanc
 	}
 	return l.runCreateTaskInline(ctx, taskID, &CreateInstanceTaskPayload{
 		InstanceID:     entity.InstanceId,
-		SKUID:          skuID,
+		InstanceSpecID: instanceSpecID,
 		Timeout:        timeout,
 		SoulTemplateID: soulTemplateID,
 		OperationID:    operationID,
@@ -278,20 +761,21 @@ func (l *logic) RunCreateInstanceTask(ctx pctx.Context, payload *CreateInstanceT
 		return errcode.ErrInstanceStatusInvalid
 	}
 
-	candidates, err := l.resolveCreateCandidatePools(ctx, payload.SKUID)
+	candidates, err := l.resolveCreateCandidatePools(ctx, payload.InstanceSpecID)
 	if err != nil {
 		return err
 	}
 	selection := l.selectCreateCandidatePools(ctx, candidates)
 	l.logger.Info("selected sandbox candidate pools for create",
 		zap.String("instance_id", entity.InstanceId),
+		zap.String("instance_spec_id", payload.InstanceSpecID),
 		zap.Strings("candidate_pools", selection.Pools),
 		zap.Int("attempt_limit", selection.AttemptLimit),
 		zap.Bool("used_pressure_snapshot", selection.UsedSnapshot),
 		zap.Time("snapshot_refreshed_at", selection.SnapshotRefreshedAt),
 	)
 
-	sandboxResp, err := l.createSandboxWithFallback(ctx, entity.InstanceId, payload.SKUID, selection, payload.Timeout)
+	sandboxResp, err := l.createSandboxWithFallback(ctx, entity.InstanceId, payload.InstanceSpecID, selection, payload.Timeout)
 	if err != nil {
 		return err
 	}
@@ -328,7 +812,7 @@ func (l *logic) RunCreateInstanceTask(ctx pctx.Context, payload *CreateInstanceT
 		_ = l.cleanupCreatedSandbox(ctx, entity.InstanceId, sandboxResp.SandboxID, "persist sandbox info failed")
 		return errcode.Wrap(errcode.ErrInstanceCreationFailed, "persist sandbox status for sandbox %s: %v", sandboxResp.SandboxID, err)
 	}
-	metric.RecordInstanceCreate("success", sandboxResp.TemplateID, time.Since(entity.CreatedAt).Seconds())
+	metric.RecordInstanceCreate("success", sandboxResp.TemplateID, payload.InstanceSpecID, time.Since(entity.CreatedAt).Seconds())
 	l.recordCreateSuccessEvent(ctx, entity.InstanceId)
 	if err := l.enqueueBirthProfileTask(ctx, entity.InstanceId, payload.OperationID); err != nil {
 		l.logger.Warn("enqueue birth profile task failed",
@@ -374,7 +858,7 @@ func (l *logic) FinalizeCreateInstanceTaskFailure(ctx pctx.Context, payload *Cre
 	}
 	entity, err := l.instanceDao.GetByInstanceID(ctx, payload.InstanceID)
 	if err == nil && entity.Status == modelinstance.InstanceStatusCreating {
-		metric.RecordInstanceCreate("fail", "unknown", time.Since(entity.CreatedAt).Seconds())
+		metric.RecordInstanceCreate("fail", "unknown", payload.InstanceSpecID, time.Since(entity.CreatedAt).Seconds())
 		if updateErr := l.instanceDao.UpdateStatus(ctx, entity.Id, modelinstance.InstanceStatusFailed); updateErr != nil {
 			l.logger.Warn("update create task instance failed state failed",
 				zap.Error(updateErr),
@@ -427,6 +911,550 @@ func (l *logic) FinalizeDestroyInstanceTaskFailure(ctx pctx.Context, payload *De
 		return
 	}
 	l.completeOperation(ctx, payload.OperationID, taskErr)
+}
+
+// === trade-pass-isolate 子 task 业务实现（设计稿 §10 Q22-I-D）===
+
+// RunIsolateInstanceTask 子 task IsolateInstance 的 execute 入口
+//
+// 流程：
+//  1. 反查 instance；NotFound / 已 Paused / 已 Deleted/Failed → 直接成功（幂等）
+//  2. 校验 sandbox_id；空 / pending → 跳过 sandbox 调用，仅 CAS 状态
+//  3. 调 sandbox.PauseSandbox：
+//     - sandbox not_found        → 视为成功，继续 CAS（与 RenewInstance / DestroyInstance 容错对偶；
+//     I-MR-1 修复：sandbox 已不存在意味着 "instance 已无可暂停目标"，业务目标天然达成，
+//     不能让 sandbox 偶发缺失阻塞父 IsolatePass 收尾）
+//     - sandbox already-paused   → 视为成功，继续 CAS
+//     - 其它错误                 → 冒泡，触发父 task 重试
+//  4. CAS Running → Paused（与 PauseInstance 同语义）
+func (l *logic) RunIsolateInstanceTask(ctx pctx.Context, payload *common.IsolateInstanceTaskPayload) error {
+	if payload == nil || strings.TrimSpace(payload.InstanceID) == "" {
+		return errcode.ErrInstanceInvalidParam
+	}
+	logger := l.logger.With(
+		zap.String("instance_id", payload.InstanceID),
+		zap.String("pass_id", payload.PassID),
+	)
+
+	entity, err := l.instanceDao.GetByInstanceID(ctx, payload.InstanceID)
+	if err != nil {
+		if errors.Is(err, errcode.ErrInstanceNotFound) {
+			logger.Info("isolate task: instance not found, treat as success")
+			return nil
+		}
+		return err
+	}
+	switch entity.Status {
+	case modelinstance.InstanceStatusPaused:
+		logger.Info("isolate task: instance already paused, short-circuit")
+		return nil
+	case modelinstance.InstanceStatusDeleted, modelinstance.InstanceStatusFailed:
+		logger.Info("isolate task: instance in terminal state, no-op",
+			zap.String("status", entity.Status),
+		)
+		return nil
+	case modelinstance.InstanceStatusRunning:
+		// 正常路径
+	default:
+		// Creating / Deleting 等中间态：让框架按 60s interval 重试，等其先到 Running/终态
+		return fmt.Errorf("instance status=%s not eligible for isolate yet", entity.Status)
+	}
+
+	if entity.SandboxId != "" && !isPendingSandboxID(entity.SandboxId) {
+		if err := l.sandboxAdapter.PauseSandbox(ctx, entity.SandboxId); err != nil {
+			switch {
+			case isSandboxNotFound(err):
+				// I-MR-1 修复：sandbox 已不存在（被人工或异常流程删除）→ instance 已无可暂停的 sandbox。
+				// 业务上 IsolateInstance 子 task 的语义是"让 instance 回到 Paused 终态"，
+				// 与 RenewInstance / DestroyInstance 的 sandbox 容错保持一致：
+				// 视为幂等成功，继续走 CAS Running→Paused，不阻塞隔离父 task 收尾。
+				logger.Warn("isolate task: sandbox not found, treating as success and continuing CAS",
+					zap.String("sandbox_id", entity.SandboxId),
+					zap.Error(err),
+				)
+			case isExpectedSandboxConflict(err, expectedPauseConflictMessages):
+				logger.Warn("isolate task: sandbox already paused, treating as success",
+					zap.String("sandbox_id", entity.SandboxId),
+					zap.Error(err),
+				)
+			default:
+				return fmt.Errorf("pause sandbox: %w", err)
+			}
+		}
+	} else {
+		logger.Warn("isolate task: instance has no usable sandbox, skip pause call",
+			zap.String("sandbox_id", entity.SandboxId),
+		)
+	}
+
+	if err := l.instanceDao.TransitionStatus(
+		ctx,
+		entity.Id,
+		[]string{modelinstance.InstanceStatusRunning},
+		modelinstance.InstanceStatusPaused,
+	); err != nil {
+		// CAS 失败常见于并发被 PauseInstance 改了状态：再次 GetByInstanceID 兜底
+		current, getErr := l.instanceDao.GetByInstanceID(ctx, entity.InstanceId)
+		if getErr == nil && current.Status == modelinstance.InstanceStatusPaused {
+			logger.Info("isolate task: state already paused after CAS reject, success")
+			return nil
+		}
+		return fmt.Errorf("persist paused state: %w", err)
+	}
+	logger.Info("isolate task: instance paused successfully")
+	return nil
+}
+
+// FinalizeIsolateInstanceTaskFailure 子 task IsolateInstance 失败兜底
+//
+// 不做 instance 状态回滚（execute 走的是 Running → Paused 直接迁移），仅记录 operation 失败
+func (l *logic) FinalizeIsolateInstanceTaskFailure(ctx pctx.Context, payload *common.IsolateInstanceTaskPayload, taskErr error) {
+	if payload == nil {
+		return
+	}
+	l.completeOperation(ctx, payload.OperationID, taskErr)
+	l.logger.Warn("isolate instance task finalize failure",
+		zap.Error(taskErr),
+		zap.String("instance_id", payload.InstanceID),
+		zap.String("pass_id", payload.PassID),
+	)
+}
+
+// === trade-pass-renew 子 task 业务实现（设计稿 §3.4 / §5 / R-D-4）===
+//
+// RunRenewInstanceTask 子 task RenewInstance 的 execute 入口（与 RunIsolateInstanceTask 对偶反向）
+//
+// 流程：
+//  1. 反查 instance；NotFound / 已 Running / 已 Deleted/Failed → 直接成功（幂等）
+//  2. 校验 sandbox_id；空 / pending → 跳过 sandbox 调用，仅 CAS 状态
+//  3. 调 sandbox.ResumeSandbox；遇 already-running 视为成功
+//  4. CAS Paused → Running（与 ResumeInstance 同语义）
+//
+// ⚠️ R-F 阻塞：sandbox.ResumeSandbox handler 当前是 noop（不调 cp.StartInstance / 不调 CVM SDK），
+// 等 R-F 落地后续费链路才真闭环；本期单测用 mock adapter 验证调用路径即可。
+func (l *logic) RunRenewInstanceTask(ctx pctx.Context, payload *common.RenewInstanceTaskPayload) error {
+	if payload == nil || strings.TrimSpace(payload.InstanceID) == "" {
+		return errcode.ErrInstanceInvalidParam
+	}
+	logger := l.logger.With(
+		zap.String("instance_id", payload.InstanceID),
+		zap.String("pass_id", payload.PassID),
+	)
+
+	entity, err := l.instanceDao.GetByInstanceID(ctx, payload.InstanceID)
+	if err != nil {
+		if errors.Is(err, errcode.ErrInstanceNotFound) {
+			logger.Info("renew task: instance not found, treat as success")
+			return nil
+		}
+		return err
+	}
+	switch entity.Status {
+	case modelinstance.InstanceStatusRunning:
+		logger.Info("renew task: instance already running, short-circuit")
+		return nil
+	case modelinstance.InstanceStatusDeleted, modelinstance.InstanceStatusFailed:
+		logger.Info("renew task: instance in terminal state, no-op",
+			zap.String("status", entity.Status),
+		)
+		return nil
+	case modelinstance.InstanceStatusPaused:
+		// 正常路径
+	default:
+		// Creating / Deleting 等中间态：让框架按 60s interval 重试，等其先到 Running/Paused/终态
+		return fmt.Errorf("instance status=%s not eligible for renew yet", entity.Status)
+	}
+
+	if entity.SandboxId != "" && !isPendingSandboxID(entity.SandboxId) {
+		// ResumeSandbox 默认请求体（不带 timeout 覆盖；timeout 维持 sandbox 服务侧默认值）
+		// 与 ResumeInstance 主路径一致，但本子 task 是系统侧自动续费，不强制重置 timeout
+		if _, err := l.sandboxAdapter.ResumeSandbox(ctx, entity.SandboxId, &psandbox.ResumeSandboxRequest{}); err != nil {
+			switch {
+			case isSandboxNotFound(err):
+				// sandbox 已不存在（被人工或异常流程删除）→ instance 已无可恢复的 sandbox。
+				// 业务上 RenewInstance 子 task 的语义是"让 instance 回到 Running 终态"，
+				// 与 IsolateInstance / DestroyInstance 的 DeleteSandbox 容错保持一致：
+				// 视为幂等成功，继续走 CAS Paused→Running，不阻塞续费父 task 收尾。
+				logger.Warn("renew task: sandbox not found, treating as success and continuing CAS",
+					zap.String("sandbox_id", entity.SandboxId),
+					zap.Error(err),
+				)
+			case isExpectedSandboxConflict(err, expectedResumeConflictMessages):
+				logger.Warn("renew task: sandbox already running, treating as success",
+					zap.String("sandbox_id", entity.SandboxId),
+					zap.Error(err),
+				)
+			default:
+				return fmt.Errorf("resume sandbox: %w", err)
+			}
+		}
+	} else {
+		logger.Warn("renew task: instance has no usable sandbox, skip resume call",
+			zap.String("sandbox_id", entity.SandboxId),
+		)
+	}
+
+	if err := l.instanceDao.TransitionStatus(
+		ctx,
+		entity.Id,
+		[]string{modelinstance.InstanceStatusPaused},
+		modelinstance.InstanceStatusRunning,
+	); err != nil {
+		// CAS 失败常见于并发被 ResumeInstance 改了状态：再次 GetByInstanceID 兜底
+		current, getErr := l.instanceDao.GetByInstanceID(ctx, entity.InstanceId)
+		if getErr == nil && current.Status == modelinstance.InstanceStatusRunning {
+			logger.Info("renew task: state already running after CAS reject, success")
+			return nil
+		}
+		return fmt.Errorf("persist running state: %w", err)
+	}
+	logger.Info("renew task: instance resumed successfully")
+	return nil
+}
+
+// FinalizeRenewInstanceTaskFailure 子 task RenewInstance 失败兜底
+//
+// 不做 instance 状态回滚（execute 走的是 Paused → Running 直接迁移），仅记录 operation 失败
+func (l *logic) FinalizeRenewInstanceTaskFailure(ctx pctx.Context, payload *common.RenewInstanceTaskPayload, taskErr error) {
+	if payload == nil {
+		return
+	}
+	l.completeOperation(ctx, payload.OperationID, taskErr)
+	l.logger.Warn("renew instance task finalize failure",
+		zap.Error(taskErr),
+		zap.String("instance_id", payload.InstanceID),
+		zap.String("pass_id", payload.PassID),
+	)
+}
+
+// === trade-pass-destroy 子 task 业务实现（设计稿 §4.7 4 阶段流程 / §11-A Q4-a / Q5 / Q9 / Q10 / Q21 / Q25）===
+
+// snapshotPollWaitErr 是子 task 阶段 1+2 中"sandbox 已接受快照创建但尚未 ready"的标准错误。
+//
+// 与子 task worker 层 finalizeFailure 配合：execute 返回任何非 nil error 都会被 stepMap 路由到
+// finalizeFailure；后者默认走 markRetryable（task_state=Created）让 checkTasks bypass 60s 后重投，
+// max_execute_count(60) 兜底；只有 ErrSnapshotPermanentFailed 哨兵和 max_execute_count 耗尽才进真终态
+// Failed → 父 task 重派新子 task。
+var snapshotPollWaitErr = errors.New("waiting for snapshot ready")
+
+// ErrSnapshotPermanentFailed 是 fail-fast 哨兵：子 task 命中后跳过 60 次重试 1h 重试窗口，直接终态
+// Failed，让父 task 立刻重派新子 task。命中场景：
+//   - cbs 后端报 snapshot StateError（不可逆终态，重试无意义）
+//   - payload 关键字段缺失（PassID / TradeFlowID 等参数性致命错，重试无法自愈）
+//
+// worker 层 finalizeFailure 通过 errors.Is 命中后调 failTask 走 completeTaskFailure。
+var ErrSnapshotPermanentFailed = errors.New("snapshot permanent failed")
+
+// RunDestroyInstanceForPassTask 子 task DestroyInstanceWithSnapshot 的 execute 入口
+//
+// 4 阶段流程（设计稿 §4.7）：
+//  1. 阶段 1（payload.SnapshotID==""）：调 sandbox.CreateSnapshot 触发系统盘快照创建
+//     - 收到 snapshotID → 写回 payload + UpdatePayload → return snapshotPollWaitErr 让框架重投
+//     - sandbox 端返 ErrInstanceNoSystemDisk（Q10/Q25）→ 标记 SnapshotID="<no-disk>" + SnapshotsDone=true
+//     直接进入阶段 3+4（snapshot 表也不入）
+//  2. 阶段 2（SnapshotsDone==false）：调 sandbox.GetSnapshotStatus 轮询：
+//     - "ready"       → 入 ctl snapshot 表（Q9-fix：(flow_id, instance_id) 唯一键防重投冲突）→
+//     SnapshotsDone=true + UpdatePayload，进入阶段 3
+//     - "in_progress" → return snapshotPollWaitErr 重投
+//     - "failed"      → 子 task 终态失败（return 业务错；finalizeFailure 不回滚 instance.status）
+//  3. 阶段 3：调 sandbox.DeleteSandbox（与老 DestroyInstance 同接口）销毁 cvm
+//  4. 阶段 4：CAS instance.status (Running/Paused/Deleting) → Deleted
+//
+// 重投幂等：
+//   - SnapshotID != "" → 跳过阶段 1
+//   - SnapshotsDone == true → 跳过阶段 1+2，直接进 3+4
+//   - 阶段 3+4 通过反查 instance.status==Deleted 判断已完成
+//
+// 入参 taskID 用于 UpdatePayload 持久化进度位（写回 task.task_params 列）。
+func (l *logic) RunDestroyInstanceForPassTask(ctx pctx.Context, taskID string, payload *common.DestroyInstanceForPassTaskPayload) error {
+	if payload == nil || strings.TrimSpace(payload.InstanceID) == "" {
+		// 参数性致命错：payload 缺失 / InstanceID 为空 — 重试无法自愈，fail-fast 让父 task 重派。
+		return fmt.Errorf("%w: %v", ErrSnapshotPermanentFailed, errcode.ErrInstanceInvalidParam)
+	}
+	if payload.PassID == "" {
+		return fmt.Errorf("%w: payload.PassID is required", ErrSnapshotPermanentFailed)
+	}
+	if payload.TradeFlowID <= 0 {
+		// trade_flow_id 是 snapshot 表 (flow_id, instance_id) UNIQUE 键左半，必须 > 0；
+		// 0 值通常是父 task payload 没透传 — fail-fast 让父 task 重派（防止 snapshot 表脏数据 + 60min 重试空转）。
+		return fmt.Errorf("%w: payload.TradeFlowID must be > 0, got %d", ErrSnapshotPermanentFailed, payload.TradeFlowID)
+	}
+
+	logger := l.logger.With(
+		zap.String("instance_id", payload.InstanceID),
+		zap.String("pass_id", payload.PassID),
+		zap.Int64("trade_flow_id", payload.TradeFlowID),
+		zap.String("task_id", taskID),
+	)
+
+	// 反查 instance（任何阶段都需要）— 不存在 / 已 Deleted 直接成功（幂等）
+	entity, err := l.instanceDao.GetByInstanceID(ctx, payload.InstanceID)
+	if err != nil {
+		if errors.Is(err, errcode.ErrInstanceNotFound) {
+			logger.Info("destroy task: instance not found, treat as already destroyed (success)")
+			return nil
+		}
+		return fmt.Errorf("get instance: %w", err)
+	}
+	if entity.Status == modelinstance.InstanceStatusDeleted {
+		logger.Info("destroy task: instance already deleted, success")
+		return nil
+	}
+	if entity.Status == modelinstance.InstanceStatusFailed {
+		// Failed 是终态，sandbox 已不可达；记录 warn 后视为成功（不强行删 cvm，避免无限重试）
+		logger.Warn("destroy task: instance in Failed terminal state, treat as success",
+			zap.String("status", entity.Status))
+		return nil
+	}
+
+	// === 阶段 1：发起快照创建 ===
+	if payload.SnapshotID == "" {
+		if entity.SandboxId == "" || isPendingSandboxID(entity.SandboxId) {
+			// instance 没有可用 sandbox → 跳过快照（无系统盘语义同等价处理）
+			logger.Warn("destroy task: instance has no usable sandbox, skip snapshot phase",
+				zap.String("sandbox_id", entity.SandboxId))
+			payload.SnapshotID = "<no-sandbox>"
+			payload.SnapshotsDone = true
+			if updErr := l.updateTaskPayload(ctx, taskID, payload); updErr != nil {
+				return fmt.Errorf("update task payload after no-sandbox skip: %w", updErr)
+			}
+		} else {
+			// 调 sandbox.CreateSnapshot
+			retentionSec := int64(snapshotRetentionSeconds())
+			req := &psandbox.CreateSnapshotRequest{
+				InstanceID:       payload.InstanceID,
+				PassID:           payload.PassID,
+				UserID:           payload.UserID,
+				Region:           payload.Region,
+				RetentionSeconds: retentionSec,
+			}
+			resp, sErr := l.sandboxAdapter.CreateSnapshot(ctx, entity.SandboxId, req)
+			if sErr != nil {
+				if isInstanceNoSystemDiskError(sErr) {
+					// Q10/Q25 联动：无系统盘 → 跳过快照阶段，直接进入阶段 3+4
+					logger.Info("destroy task: sandbox returned INSTANCE_NO_SYSTEM_DISK, skip snapshot phases",
+						zap.Error(sErr))
+					payload.SnapshotID = "<no-disk>"
+					payload.SnapshotsDone = true
+					if updErr := l.updateTaskPayload(ctx, taskID, payload); updErr != nil {
+						return fmt.Errorf("update task payload after no-disk skip: %w", updErr)
+					}
+				} else {
+					// 其它错（包括 sandbox 5xx / 网络）：让框架重投
+					return fmt.Errorf("sandbox.CreateSnapshot: %w", sErr)
+				}
+			} else {
+				if resp == nil || resp.SnapshotID == "" {
+					return errors.New("sandbox.CreateSnapshot: empty snapshotID")
+				}
+				payload.SnapshotID = resp.SnapshotID
+				if updErr := l.updateTaskPayload(ctx, taskID, payload); updErr != nil {
+					return fmt.Errorf("update task payload after CreateSnapshot: %w", updErr)
+				}
+				logger.Info("destroy task: snapshot creation initiated",
+					zap.String("snapshot_id", resp.SnapshotID),
+					zap.Int64("retention_seconds", retentionSec))
+				// 阶段 1 完成 — 让框架按 60s ExecuteInterval 重投，下一轮进入阶段 2
+				return snapshotPollWaitErr
+			}
+		}
+	}
+
+	// === 阶段 2：轮询快照状态 + 入 snapshot 表 ===
+	if !payload.SnapshotsDone {
+		// payload.SnapshotID != "<no-disk>" / "<no-sandbox>" 时才真调 sandbox 轮询
+		if !isSnapshotSentinel(payload.SnapshotID) && entity.SandboxId != "" && !isPendingSandboxID(entity.SandboxId) {
+			statusResp, sErr := l.sandboxAdapter.GetSnapshotStatus(ctx, entity.SandboxId, payload.SnapshotID)
+			if sErr != nil {
+				return fmt.Errorf("sandbox.GetSnapshotStatus: %w", sErr)
+			}
+			if statusResp == nil {
+				return errors.New("sandbox.GetSnapshotStatus: nil response")
+			}
+			switch statusResp.Status {
+			case modelsnapshot.StateError:
+				// 快照失败 — cbs 后端不可逆终态，重试无意义；fail-fast 让父 task 立刻重派新子 task
+				// （结合 sandbox 端 cbs.ClientToken 幂等，新子 task 阶段 1 触发的 CreateSnapshot 会拿到全新 SnapshotId）。
+				return fmt.Errorf("%w: snapshot failed: %s", ErrSnapshotPermanentFailed, statusResp.Reason)
+			case modelsnapshot.StateInProgress:
+				// 仍在创建中，让框架按 60s 重投
+				logger.Info("destroy task: snapshot still in progress, will retry",
+					zap.String("snapshot_id", payload.SnapshotID))
+				return snapshotPollWaitErr
+			case modelsnapshot.StateNormal:
+				// ready — 入 snapshot 表
+			default:
+				return fmt.Errorf("sandbox.GetSnapshotStatus unexpected status: %q (reason=%s)",
+					statusResp.Status, statusResp.Reason)
+			}
+
+			// 入表（Q9-fix：(flow_id, instance_id) 唯一键防重投冲突）
+			snapshotDao := modelsnapshot.NewDao()
+			existing, getErr := snapshotDao.GetByFlowAndInstance(ctx, payload.TradeFlowID, payload.InstanceID)
+			if getErr == nil && existing != nil {
+				// 重投场景：本子 task 上一轮已入表，跳过
+				logger.Info("destroy task: snapshot already persisted (idempotent re-entry), skip insert",
+					zap.String("snapshot_id", payload.SnapshotID))
+			} else {
+				retention := time.Duration(snapshotRetentionSeconds()) * time.Second
+				snapshotEntity := &modelsnapshot.Entity{
+					SnapshotID:    payload.SnapshotID,
+					FlowID:        payload.TradeFlowID,
+					PassID:        payload.PassID,
+					InstanceID:    payload.InstanceID,
+					UserID:        payload.UserID,
+					Uin:           payload.UIN,
+					AppID:         payload.AppID,
+					Region:        payload.Region,
+					SnapshotState: modelsnapshot.StateNormal,
+					ExpireTime:    time.Now().UTC().Add(retention),
+				}
+				if insErr := snapshotDao.Create(ctx, snapshotEntity); insErr != nil {
+					return fmt.Errorf("snapshot.Create: %w", insErr)
+				}
+				logger.Info("destroy task: snapshot persisted in ctl snapshot table",
+					zap.String("snapshot_id", payload.SnapshotID),
+					zap.Time("expire_time", snapshotEntity.ExpireTime))
+			}
+		}
+		payload.SnapshotsDone = true
+		if updErr := l.updateTaskPayload(ctx, taskID, payload); updErr != nil {
+			return fmt.Errorf("update task payload after snapshot ready: %w", updErr)
+		}
+	}
+
+	// === 阶段 3：删除 sandbox（与老 DestroyInstance 同接口）===
+	if entity.SandboxId != "" && !isPendingSandboxID(entity.SandboxId) {
+		if err := l.sandboxAdapter.DeleteSandbox(ctx, entity.SandboxId); err != nil && !isSandboxNotFound(err) {
+			return fmt.Errorf("sandbox.DeleteSandbox: %w", err)
+		}
+		logger.Info("destroy task: sandbox deleted")
+	} else {
+		logger.Warn("destroy task: instance has no usable sandbox, skip DeleteSandbox call",
+			zap.String("sandbox_id", entity.SandboxId))
+	}
+
+	// === 阶段 4：CAS instance.status → Deleted + 软删 instance 行 ===
+	//
+	// 设计稿 §4.7 步骤 4 落地（trade-pass-destroy 销毁链路）：
+	//   - status CAS：from-states 包含 Running/Paused/Deleting/Creating（trade-pass 销毁链路不前置改 Deleting，
+	//     instance 进入子 task 时可能仍是任意活跃态，全部接住）
+	//   - 软删 instance 行（GORM `Delete(&Entity{})` 写 `deleted_at`），与老 DestroyInstance 链路保持一致：
+	//     软删后 GORM 默认查询过滤 deleted_at IS NULL，列表/详情查询自动屏蔽该 instance。
+	//
+	// 配额释放：本阶段**不**调 +1 release，配额回收完全交给父 task `MoveToHistory` step 4 的整行删
+	//（`DELETE user_resource_quota WHERE user_id=? AND resource_name='OPENCLAW_INSTANCE'`），
+	// 销毁链路里"配额回收"由父 task 单点接管，子 task 单一职责（status + 软删）。
+	if err := l.instanceDao.TransitionStatus(
+		ctx,
+		entity.Id,
+		[]string{
+			modelinstance.InstanceStatusRunning,
+			modelinstance.InstanceStatusPaused,
+			modelinstance.InstanceStatusDeleting,
+			modelinstance.InstanceStatusCreating,
+		},
+		modelinstance.InstanceStatusDeleted,
+	); err != nil {
+		// CAS 失败常见于并发被 PauseInstance / DeleteInstance 改了状态：再次反查兜底
+		current, getErr := l.instanceDao.GetByInstanceID(ctx, entity.InstanceId)
+		if getErr == nil && current.Status == modelinstance.InstanceStatusDeleted {
+			// 已被并发改成 Deleted：仍需保证软删落地（CAS 路径绕过本函数 DeleteByID，
+			// 兜底补一刀，幂等）
+			if delErr := l.instanceDao.DeleteByID(ctx, entity.Id); delErr != nil &&
+				!errors.Is(delErr, errcode.ErrInstanceNotFound) {
+				return fmt.Errorf("soft-delete instance after concurrent CAS reject: %w", delErr)
+			}
+			logger.Info("destroy task: instance already deleted after CAS reject, success")
+			return nil
+		}
+		return fmt.Errorf("persist deleted state: %w", err)
+	}
+
+	// 软删 instance 行（GORM 自动写 deleted_at；重投场景行已软删时 RowsAffected=0 → ErrInstanceNotFound，幂等接住）
+	if err := l.instanceDao.DeleteByID(ctx, entity.Id); err != nil {
+		if errors.Is(err, errcode.ErrInstanceNotFound) {
+			logger.Info("destroy task: instance row already soft-deleted (idempotent), success")
+			return nil
+		}
+		return fmt.Errorf("soft-delete instance row: %w", err)
+	}
+	logger.Info("destroy task: instance deleted successfully")
+	return nil
+}
+
+// FinalizeDestroyInstanceForPassTaskFailure 子 task DestroyInstanceWithSnapshot 失败兜底
+//
+// 不做 instance 状态回滚（execute 是单向迁移）；仅记录 operation 失败 + 留 instance 当前状态。
+// 父 task DestroyPass 看到该子 task FAILED 仍会推进收尾步（本期最终一致性策略，与 isolate 对偶）。
+func (l *logic) FinalizeDestroyInstanceForPassTaskFailure(ctx pctx.Context, payload *common.DestroyInstanceForPassTaskPayload, taskErr error) {
+	if payload == nil {
+		return
+	}
+	l.completeOperation(ctx, payload.OperationID, taskErr)
+	l.logger.Warn("destroy instance for pass task finalize failure",
+		zap.Error(taskErr),
+		zap.String("instance_id", payload.InstanceID),
+		zap.String("pass_id", payload.PassID),
+	)
+}
+
+// updateTaskPayload 子 task 阶段 1+2 持久化进度位 — 把 payload marshal 后 UPDATE task.task_params 列。
+//
+// 关键：每次重投开始时框架会从 task.task_params 重新 unmarshal payload，所以这里持久化后下次重投自动可见。
+// 不更新 last_execute_time / execute_count（框架已在每轮 update_task_execute 步骤自维护）。
+func (l *logic) updateTaskPayload(ctx pctx.Context, taskID string, payload interface{}) error {
+	if taskID == "" {
+		return errors.New("updateTaskPayload: taskID empty")
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal payload: %w", err)
+	}
+	if err := l.taskDao.UpdateByKeyColumn(map[string]interface{}{
+		taskmodel.ColumnTaskParams: string(body),
+	}, taskID); err != nil {
+		return fmt.Errorf("update task params: %w", err)
+	}
+	return nil
+}
+
+// snapshotRetentionSeconds 返回 snapshot 表 expire_time 字段的"现在 + retention"窗口秒数。
+//
+// Q7 ✅ 拍板（2026-05-17，方案 B）：snapshot 有效期写到 ctl 配置文件，**默认 3 个月**。
+// 配置项：config.ServerConf.MiscConfig.SnapshotRetentionSeconds（int），<=0 时回退到默认 90 天。
+//
+// sandbox.CreateSnapshot 的 RetentionSeconds 入参也复用此函数（同一窗口透传给 cbs Deadline）。
+func snapshotRetentionSeconds() int64 {
+	const defaultDays = 90 // 3 个月（Q7 默认值）
+	if config.ServerConf != nil {
+		if v := config.ServerConf.MiscConfig.SnapshotRetentionSeconds; v > 0 {
+			return int64(v)
+		}
+	}
+	return int64(defaultDays) * 24 * 3600
+}
+
+// isSnapshotSentinel 判断 SnapshotID 是否是 ctl 子 task 内部哨兵值（"<no-disk>" / "<no-sandbox>"）：
+// 这些值表明跳过了 sandbox.CreateSnapshot，因此阶段 2 也不应调 sandbox.GetSnapshotStatus。
+func isSnapshotSentinel(snapshotID string) bool {
+	switch snapshotID {
+	case "<no-disk>", "<no-sandbox>":
+		return true
+	}
+	return false
+}
+
+// isInstanceNoSystemDiskError 判断 sandbox.CreateSnapshot 的错误是否是 INSTANCE_NO_SYSTEM_DISK 业务码（HTTP 422）。
+//
+// Q10/Q25 联动：sandbox handler 在 inst.CloudID==空 / cbs DescribeDisks 反查不到系统盘时返
+// 422 + code=INSTANCE_NO_SYSTEM_DISK；ctl 子 task 据此跳过快照阶段直接销毁。
+func isInstanceNoSystemDiskError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// sandbox adapter 把响应 envelope 错误码透传到 errcode；ctl 这边按字符串匹配（避免循环引入 sandbox 错误类型）。
+	return strings.Contains(err.Error(), "INSTANCE_NO_SYSTEM_DISK")
 }
 
 func (l *logic) runCreateTaskInline(ctx pctx.Context, taskID string, payload *CreateInstanceTaskPayload) (err error) {

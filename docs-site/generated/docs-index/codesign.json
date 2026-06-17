@@ -1,0 +1,34 @@
+{
+  "object": "mono2.docs.fragment",
+  "version": "v1",
+  "level": 0,
+  "component": "codesign",
+  "component_path": "codesign",
+  "owner": "codesign",
+  "source_path": "codesign",
+  "docs": [
+    {
+      "kind": "agents",
+      "path": "codesign/AGENTS.md",
+      "title": "Codesign 文档约定"
+    },
+    {
+      "kind": "readme",
+      "path": "codesign/README.md",
+      "title": "Codesign 文档入口"
+    }
+  ],
+  "apis": [],
+  "generated": [
+    {
+      "kind": "mdx",
+      "path": "docs-site/content/docs/components/codesign.mdx",
+      "url": "/docs/components/codesign"
+    },
+    {
+      "kind": "llms",
+      "path": "docs-site/generated/llms/codesign.txt",
+      "url": "/llms/codesign.txt"
+    }
+  ]
+}

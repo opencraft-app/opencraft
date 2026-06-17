@@ -51,6 +51,19 @@ SERVICE_SPECS: dict[tuple[str, str], dict[str, Any]] = {
             'export SUBSCRIPTION_MYSQL_DSN="${SUBSCRIPTION_DB_USER}:${SUBSCRIPTION_DB_PASSWORD}@tcp(${MYSQL_HOST}:${MYSQL_PORT})/${SUBSCRIPTION_DB}?parseTime=true&multiStatements=true"; exec /usr/local/bin/subscription-migrate',
         ],
     },
+    ("trade", "migration"): {
+        "namespace": "trade",
+        "deployment": "trade",
+        "configmap": "trade-config",
+        "secret": "trade-runtime-secrets",
+        "platform_env_file": "argocd/services/trade/{env}/trade-platform.env",
+        "image_env_key": "TRADE_IMAGE",
+        "command": [
+            "/bin/sh",
+            "-ec",
+            'export TRADE_MYSQL_DSN="${TRADE_DB_USER}:${TRADE_DB_PASSWORD}@tcp(${MYSQL_HOST}:${MYSQL_PORT})/${TRADE_DB}?parseTime=true&multiStatements=true"; exec /usr/local/bin/trade-migrate',
+        ],
+    },
     ("lightclaw-auth", "migration"): {
         "namespace": "user-auth",
         "deployment": "lightclaw-auth",

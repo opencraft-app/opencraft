@@ -34,13 +34,14 @@ var (
 	)
 
 	// 实例创建指标
-	// OpenClawInstanceCreateTotal 记录实例创建尝试次数，按结果和模板 ID 分类
+	// OpenClawInstanceCreateTotal 记录实例创建尝试次数，按结果、模板 ID 与实例规格 ID 分类
+	// spec_id label：设计稿 Q-METRIC-1=a，未知/未解析时填 "unknown"
 	OpenClawInstanceCreateTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "openclaw_instance_create_total",
-			Help: "Total instance creation attempts by result and template",
+			Help: "Total instance creation attempts by result, template and instance spec",
 		},
-		[]string{"result", "template_id"},
+		[]string{"result", "template_id", "spec_id"},
 	)
 
 	// OpenClawInstanceCreateDuration 记录实例创建耗时（端到端，含沙箱调用）
@@ -370,11 +371,19 @@ func RecordSandboxAPICall(action string, durationSeconds float64, err error) {
 
 // RecordInstanceCreate 记录实例创建指标（计数 + 延迟）
 // templateID 为空时使用 "unknown" 防止高基数空标签
-func RecordInstanceCreate(result string, templateID string, durationSeconds float64) {
+// RecordInstanceCreate 记录实例创建指标（计数 + 延迟）。
+//
+// specID 为本次创建请求对应的实例规格 ID（设计稿 Q-METRIC-1=a）。空字符串 / 未知
+// 时会被折叠为 "unknown" 以表示「未从 bundle 反查到 spec」（例如 churn-guard 拦截、pass
+// 状态拦截等与规格无关的拒绝路径）。
+func RecordInstanceCreate(result string, templateID string, specID string, durationSeconds float64) {
 	if templateID == "" {
 		templateID = "unknown"
 	}
-	OpenClawInstanceCreateTotal.WithLabelValues(result, templateID).Inc()
+	if specID == "" {
+		specID = "unknown"
+	}
+	OpenClawInstanceCreateTotal.WithLabelValues(result, templateID, specID).Inc()
 	if durationSeconds > 0 {
 		OpenClawInstanceCreateDuration.WithLabelValues(result).Observe(durationSeconds)
 	}

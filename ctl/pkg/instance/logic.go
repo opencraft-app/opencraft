@@ -22,6 +22,7 @@ import (
 	modelfactory "ctl/pkg/model/factory"
 	modelinstance "ctl/pkg/model/instance"
 	"ctl/pkg/model/operationhistory"
+	modelpass "ctl/pkg/model/pass"
 	taskmodel "ctl/pkg/model/task"
 	quota "ctl/pkg/model/userresourcequota"
 	"ctl/pkg/mq"
@@ -53,6 +54,7 @@ var expectedResumeConflictMessages = []string{
 
 type Logic interface {
 	CreateInstance(ctx pctx.Context, req *transport.CreateInstanceRequest) (*transport.InstanceResponse, error)
+	GetCreatePrerequisites(ctx pctx.Context) (*transport.CreatePrerequisitesResponse, error)
 	UpdateInstance(ctx pctx.Context, instanceID string, req *transport.UpdateInstanceRequest) (*transport.InstanceResponse, error)
 	ResetInstanceConfig(ctx pctx.Context, instanceID string) (*transport.InstanceConfigResetResponse, error)
 	ListSoulTemplates(ctx pctx.Context) (*transport.ListSoulTemplatesResponse, error)
@@ -313,10 +315,57 @@ func (l *logic) CreateInstance(ctx pctx.Context, req *transport.CreateInstanceRe
 		return nil, err
 	}
 
+	if err := l.ensureShadowBindingIfRequired(ctx); err != nil {
+		return nil, err
+	}
+
+	// trade-pass 拦截：检查用户 pass 状态
+	// 设计稿：
+	//   - .tmp/trade-pass-isolate-design.md §10 Q23 = C1 修订版（isolating / isolated）
+	//   - .tmp/trade-pass-renew-design.md §3.1 / §3.4 v3.8（renewing 拦截）
+	//   - bundle-instance-spec-design.md Q3=a / §4.3：顺手取出 active pass.bundle_id 反查
+	//     instance_spec_id 选 per-spec 候选池
+	//
+	// 拦截策略：
+	//   - 用户存在任何一个 pass.status='isolating' → 返回 PASS_ISOLATING（403）
+	//   - 用户存在任何一个 pass.status='renewing' → 返回 PASS_RENEWING（403）
+	//   - 用户存在任何一个 pass.status='isolated'  → 返回 PASS_ISOLATED（403）
+	//   - 用户没有任何 active pass（无 pass / 全部 isolating-renewing-isolated 已被前面拦） →
+	//     返回 ErrInstanceNoActivePass（403），强校验「必须先购买 bundle」
+	//   - 用户至少有一个 active pass → 放行，由后续 AllocQuota / churn guard / 任务派发处理
+	//
+	// 顺序约束（必须在 ensureDefaultQuota / AllocQuota 之前）：
+	//   - bundle 引入后 quota 行由 CreatePassWithQuota 按 bundle.agent_quota 同事务初始化；
+	//     ensureDefaultQuota 仅作 last-resort 兜底（quota 行被外力删除时回写）
+	//   - 把 active pass 强校验提前到这里，可彻底杜绝「无 pass 用户白嫖默认 5 配额」的旧路径
+	//   - AllocQuota 会真的扣 available 配额，必须放在拦截之后避免误扣
+	//
+	// 实现注意：
+	//   - 这里直接读 PassDao 不走 cache，因为 isolation 操作低频（管理员触发），
+	//     CreateInstance 高频但 pass 数量可控（用户唯一 pass 强约束）
+	//   - 用 modelpass 而不是 logic/pass，避免 instance ↔ pass 双向 logic 依赖循环
+	activePassBundleID, err := l.checkPassNotIsolated(ctx)
+	if err != nil {
+		metric.RecordInstanceCreate("rejected_pass_isolated", "", "", 0)
+		return nil, err
+	}
+	if activePassBundleID == "" {
+		l.logger.Info("CreateInstance rejected: no active pass",
+			zap.String("user_id", ctx.GetUserID()))
+		metric.RecordInstanceCreate("rejected_no_active_pass", "", "", 0)
+		return nil, errcode.ErrInstanceNoActivePass
+	}
+
+	// last-resort 防御性兜底：理论上 active pass 存在时 quota 行必然由 CreatePassWithQuota
+	// 同事务初始化好；只有 quota 行被外力（运维 SQL / 数据迁移异常）删除时才会触发写入。
+	// INSERT ON CONFLICT DO NOTHING 幂等，对正常路径无副作用。
 	if err := l.ensureDefaultQuota(ctx, resourceNameOpenClawInstance, ""); err != nil {
 		return nil, errcode.Wrap(errcode.ErrInstanceCreationFailed, "ensure quota: %v", err)
 	}
 
+	// 反查 bundle.instance_spec_id（设计稿 Q3=a）。
+	// activePassBundleID 非空（已被强校验）；bundle 查询失败时 specID = "" 走兼容期 fallback。
+	instanceSpecID := l.resolveInstanceSpecID(ctx, activePassBundleID)
 	quotaAllocated, err := l.quotaDao.AllocQuota(ctx.GetUserID(), resourceNameOpenClawInstance, "", 1)
 	if err != nil {
 		return nil, errcode.Wrap(errcode.ErrInstanceCreationFailed, "alloc quota: %v", err)
@@ -325,14 +374,14 @@ func (l *logic) CreateInstance(ctx pctx.Context, req *transport.CreateInstanceRe
 		return nil, errcode.ErrInstanceQuotaExceeded
 	}
 
-	decision, err := l.evaluateCreateChurnGuard(ctx, l.defaultSKUID)
+	decision, err := l.evaluateCreateChurnGuard(ctx, instanceSpecID)
 	if err != nil {
 		l.rollbackQuota(ctx)
 		return nil, err
 	}
 	if !decision.Allow {
 		l.rollbackQuota(ctx)
-		metric.RecordInstanceCreate("rejected", firstTemplateOrUnknown(decision.CandidatePools), 0)
+		metric.RecordInstanceCreate("rejected", firstTemplateOrUnknown(decision.CandidatePools), instanceSpecID, 0)
 		return nil, newInstanceChurnLimitedError(decision.RetryAfter)
 	}
 
@@ -352,7 +401,7 @@ func (l *logic) CreateInstance(ctx pctx.Context, req *transport.CreateInstanceRe
 		return nil, errcode.Wrap(errcode.ErrInstanceCreationFailed, "create instance record: %v", err)
 	}
 
-	if err := l.enqueueCreateInstanceTask(ctx, entity, l.defaultSKUID, timeout, soulTemplateID, operationID); err != nil {
+	if err := l.enqueueCreateInstanceTask(ctx, entity, instanceSpecID, timeout, soulTemplateID, operationID); err != nil {
 		if l.executeTasksInline {
 			return nil, err
 		}
@@ -372,6 +421,26 @@ func (l *logic) CreateInstance(ctx pctx.Context, req *transport.CreateInstanceRe
 	}
 
 	return toInstanceResponse(entity, true), nil
+}
+
+func (l *logic) GetCreatePrerequisites(ctx pctx.Context) (*transport.CreatePrerequisitesResponse, error) {
+	if ctx == nil || strings.TrimSpace(ctx.GetUserID()) == "" {
+		return nil, errcode.ErrInstanceMissingUserID
+	}
+	resp := &transport.CreatePrerequisitesResponse{
+		SiteKind:             config.SiteKind(),
+		ShadowAccountEnabled: config.ShadowBindingRequired(),
+		ShadowBound:          false,
+	}
+	if !resp.ShadowAccountEnabled {
+		return resp, nil
+	}
+	binding, err := adapterfactory.DefaultAdapterFactory.ShadowAdapter().GetBindingByUserID(ctx.GetUserID())
+	if err != nil {
+		return nil, errcode.Wrap(errcode.ErrInstanceCreationFailed, "check shadow binding: %v", err)
+	}
+	resp.ShadowBound = binding != nil
+	return resp, nil
 }
 
 func (l *logic) UpdateInstance(ctx pctx.Context, instanceID string, req *transport.UpdateInstanceRequest) (*transport.InstanceResponse, error) {
@@ -402,6 +471,19 @@ func (l *logic) UpdateInstance(ctx pctx.Context, instanceID string, req *transpo
 	return toInstanceResponse(entity, true), nil
 }
 
+// ensureDefaultQuota 是 OPENCLAW_INSTANCE 配额的 last-resort 防御性兜底。
+//
+// 历史背景（v1，bundle 未引入前）：作为「用户首次 createInstance 自动分配 5 个配额」的入口。
+//
+// 当前语义（v2，bundle/pass 引入后，2026-06-08 调整）：
+//   - 正常付费用户的 quota 行由 modelpass.CreatePassWithQuota 按 bundle.agent_quota 同事务初始化
+//   - CreateInstance 已强校验 active pass 存在（见 ErrInstanceNoActivePass）；
+//     因此进入 ensureDefaultQuota 时 quota 行**必然**已存在，INSERT ON CONFLICT DO NOTHING 直接跳过
+//   - 仅当 quota 行被外力删除（运维 SQL / 数据迁移异常）时，本兜底才会真正写入一行
+//     total=available=defaultQuotaTotal(=5)，避免 AllocQuota 直接 NPE
+//   - 即便兜底命中，bundle.agent_quota 后续也会通过 CreatePassWithQuota 的 UPDATE 同步覆盖回正确值
+//
+// 不再用于「无 active pass 用户白嫖默认 5 配额」的旧路径。
 func (l *logic) ensureDefaultQuota(ctx pctx.Context, resourceName, resourceKey string) error {
 	quotaTotal := defaultQuotaTotal(resourceName)
 	if quotaTotal <= 0 {
@@ -426,6 +508,102 @@ func (l *logic) ensureDefaultQuota(ctx pctx.Context, resourceName, resourceKey s
 		}).Error
 }
 
+func (l *logic) ensureShadowBindingIfRequired(ctx pctx.Context) error {
+	if !config.ShadowBindingRequired() {
+		return nil
+	}
+	binding, err := adapterfactory.DefaultAdapterFactory.ShadowAdapter().GetBindingByUserID(ctx.GetUserID())
+	if err != nil {
+		return errcode.Wrap(errcode.ErrInstanceCreationFailed, "check shadow binding: %v", err)
+	}
+	if binding == nil {
+		return errcode.ErrInstanceShadowBindingRequired
+	}
+	return nil
+}
+
+// checkPassNotIsolated 拦截 pass 处于 isolating / isolated / renewing 状态的 CreateInstance 调用
+// 设计稿：
+//   - .tmp/trade-pass-isolate-design.md §10 Q23 = C1 修订版（isolating / isolated）
+//   - .tmp/trade-pass-renew-design.md §3.1 / §3.4 v3.8（renewing 拦截：续费 task 进行中不允许创建实例）
+//   - bundle-instance-spec-design.md v9 / Q3=a：顺手返回 active pass.bundle_id 供调用方反查 instance_spec_id
+//
+// 返回值：
+//   - activePassBundleID：用户当前 active pass.bundle_id。无 pass / 无 active pass 时返回空字符串；
+//     用户同时有多个 active pass 是异常状况（业务上唯一 pass 强约束），返回第一个。
+//   - error：
+//   - errcode.ErrPassIsolating：发现至少一个 isolating 状态的 pass
+//   - errcode.ErrPassRenewing：发现至少一个 renewing 状态的 pass（且无 isolating）
+//   - errcode.ErrPassIsolated：发现至少一个 isolated 状态的 pass（且无 isolating/renewing）
+//   - 其他 error：DB 异常，应让 caller 把请求快速失败
+//
+// 多个 pass 同时存在多种状态时的优先级：isolating > renewing > isolated
+//   - 用更"短暂"的状态覆盖，引导 caller 先重试再判断永久拦截
+//   - 本期用户唯一 pass 约束下不会同时出现
+func (l *logic) checkPassNotIsolated(ctx pctx.Context) (string, error) {
+	userID := ctx.GetUserID()
+	if userID == "" {
+		return "", nil
+	}
+	passDao := modelfactory.DefaultDaoFactory.PassDao(nil)
+	passes, err := passDao.ListByUserID(userID)
+	if err != nil {
+		return "", errcode.Wrap(errcode.ErrInstanceCreationFailed, "check pass status: %v", err)
+	}
+	if len(passes) == 0 {
+		return "", nil
+	}
+	hasIsolated := false
+	hasRenewing := false
+	activePassBundleID := ""
+	for _, p := range passes {
+		switch p.Status {
+		case modelpass.StatusIsolating:
+			l.logger.Info("CreateInstance blocked by pass isolating",
+				zap.String("user_id", userID), zap.String("pass_id", p.PassID))
+			return "", errcode.ErrPassIsolating
+		case modelpass.StatusRenewing:
+			hasRenewing = true
+		case modelpass.StatusIsolated:
+			hasIsolated = true
+		case modelpass.StatusActive:
+			if activePassBundleID == "" {
+				activePassBundleID = p.BundleID
+			}
+		}
+	}
+	if hasRenewing {
+		l.logger.Info("CreateInstance blocked by pass renewing",
+			zap.String("user_id", userID))
+		return "", errcode.ErrPassRenewing
+	}
+	if hasIsolated {
+		l.logger.Info("CreateInstance blocked by pass isolated",
+			zap.String("user_id", userID))
+		return "", errcode.ErrPassIsolated
+	}
+	return activePassBundleID, nil
+}
+
+// resolveInstanceSpecID 反查 bundle.instance_spec_id。
+// activePassBundleID 为空或 bundle 查询失败时返回空字符串，调用方走兼容期全局候选池。
+func (l *logic) resolveInstanceSpecID(ctx pctx.Context, activePassBundleID string) string {
+	activePassBundleID = strings.TrimSpace(activePassBundleID)
+	if activePassBundleID == "" {
+		return ""
+	}
+	bundleDao := modelfactory.DefaultDaoFactory.BundleDao(nil)
+	bundle, err := bundleDao.GetByBundleID(activePassBundleID)
+	if err != nil {
+		l.logger.Warn("resolve instance spec id: bundle not found, fallback to default",
+			zap.String("bundle_id", activePassBundleID),
+			zap.Error(err),
+		)
+		return ""
+	}
+	return strings.TrimSpace(bundle.InstanceSpecID)
+}
+
 func defaultQuotaTotal(resourceName string) int64 {
 	if config.ServerConf.GlobalQuotaConfig != nil && config.ServerConf.GlobalQuotaConfig.ResourceDefaultQuotas != nil {
 		if quotaTotal, ok := config.ServerConf.GlobalQuotaConfig.ResourceDefaultQuotas[resourceName]; ok && quotaTotal > 0 {
@@ -444,7 +622,56 @@ func (l *logic) templateCandidates() []string {
 	return uniqueNonEmptyStringsPreserveOrder(append([]string{l.defaultTemplate}, l.candidateTemplates...))
 }
 
-func (l *logic) resolveCreateCandidatePools(ctx pctx.Context, skuID string) ([]string, error) {
+// templateCandidatesForSpec 返回指定实例规格的候选池列表。
+func (l *logic) templateCandidatesForSpec(specID string) ([]string, error) {
+	specID = strings.TrimSpace(specID)
+	if specID == "" {
+		return l.templateCandidates(), nil
+	}
+	conf := currentInstanceAPIConfig()
+	if sp, ok := conf.SpecPoolFor(specID); ok {
+		return uniqueNonEmptyStringsPreserveOrder(
+			append([]string{sp.DefaultTemplateID}, sp.CandidateTemplateIDs...),
+		), nil
+	}
+	return nil, errcode.Wrap(errcode.ErrBundleInstanceSpecNoPool,
+		"no candidate pools configured for instance_spec_id %q", specID)
+}
+
+// templateClassForSpec 返回指定实例规格对应的 sandbox template_class_id。
+func (l *logic) templateClassForSpec(specID string) string {
+	specID = strings.TrimSpace(specID)
+	if specID == "" {
+		return l.defaultTemplateClass
+	}
+	conf := currentInstanceAPIConfig()
+	if sp, ok := conf.SpecPoolFor(specID); ok {
+		if classID := strings.TrimSpace(sp.TemplateClassID); classID != "" {
+			return classID
+		}
+	}
+	return l.defaultTemplateClass
+}
+
+// skuIDForSpec 返回指定实例规格对应的 sandbox sku_id。
+func (l *logic) skuIDForSpec(specID string) string {
+	specID = strings.TrimSpace(specID)
+	if specID == "" {
+		return l.defaultSKUID
+	}
+	conf := currentInstanceAPIConfig()
+	if sp, ok := conf.SpecPoolFor(specID); ok {
+		if skuID := strings.TrimSpace(sp.SKUID); skuID != "" {
+			return skuID
+		}
+	}
+	return l.defaultSKUID
+}
+
+func (l *logic) resolveCreateCandidatePools(ctx pctx.Context, instanceSpecID string) ([]string, error) {
+	if _, err := l.templateCandidatesForSpec(instanceSpecID); err != nil {
+		return nil, err
+	}
 	if l.sandboxAdapter == nil {
 		return nil, errcode.Wrap(errcode.ErrSandboxServiceError, "sandbox adapter is unavailable")
 	}
@@ -454,7 +681,11 @@ func (l *logic) resolveCreateCandidatePools(ctx pctx.Context, skuID string) ([]s
 		return nil, errcode.Wrap(errcode.ErrSandboxServiceError, "list pools: %v", err)
 	}
 
-	livePools := uniqueNonEmptyStringsPreserveOrder(listPoolIDs(livePoolEntities, l.defaultTemplateClass, skuID))
+	livePools := uniqueNonEmptyStringsPreserveOrder(listPoolIDs(
+		livePoolEntities,
+		l.templateClassForSpec(instanceSpecID),
+		l.skuIDForSpec(instanceSpecID),
+	))
 	if len(livePools) == 0 {
 		return nil, errcode.Wrap(errcode.ErrSandboxServiceError, "no active sandbox pools available")
 	}
@@ -507,7 +738,7 @@ func poolEligibleForCreate(pool psandbox.Pool, templateClassID, skuID string) bo
 	return true
 }
 
-func (l *logic) createSandboxWithFallback(ctx pctx.Context, instanceID string, skuID string, ordered orderedCandidatePools, timeout int32) (*psandbox.Sandbox, error) {
+func (l *logic) createSandboxWithFallback(ctx pctx.Context, instanceID string, instanceSpecID string, ordered orderedCandidatePools, timeout int32) (*psandbox.Sandbox, error) {
 	candidateTemplates := ordered.Pools
 	if ordered.AttemptLimit > 0 && ordered.AttemptLimit < len(candidateTemplates) {
 		candidateTemplates = candidateTemplates[:ordered.AttemptLimit]
@@ -516,12 +747,18 @@ func (l *logic) createSandboxWithFallback(ctx pctx.Context, instanceID string, s
 		return nil, errcode.Wrap(errcode.ErrSandboxServiceError, "no candidate templates configured")
 	}
 
+	templateClassID := l.templateClassForSpec(instanceSpecID)
+	// 设计稿 §13.2 R1f 对偶项：sku 解析全权由 skuIDForSpec 处理 — spec 命中显式 sku_id
+	// 时返 spec 级值（多规格隔离），未命中或为空时 fallback 到全局 defaultSKUID（兼容
+	// 期 / 单 sku 部署）。函数返回值已是最终生效 sku，无需额外兜底。
+	effectiveSKUID := l.skuIDForSpec(instanceSpecID)
+
 	var failures []string
 	for _, templateID := range candidateTemplates {
 		resp, err := l.sandboxAdapter.CreateSandbox(ctx, &psandbox.CreateSandboxRequest{
-			TemplateClassID: l.defaultTemplateClass,
+			TemplateClassID: templateClassID,
 			TemplateID:      templateID,
-			SKUID:           skuID,
+			SKUID:           effectiveSKUID,
 			Timeout:         &timeout,
 			Metadata: map[string]string{
 				"user_id":     ctx.GetUserID(),

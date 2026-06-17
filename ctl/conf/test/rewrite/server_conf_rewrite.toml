@@ -63,6 +63,7 @@ use_mock = true
 base_url = "http://shadow-api.shadow.svc.cluster.local"
 token = "${CTL_TEST_SHADOW_TOKEN}"
 timeout = 10
+enabled = false
 
 [log.api]
 enable_color = false

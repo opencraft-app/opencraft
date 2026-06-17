@@ -71,7 +71,7 @@
 2. 生成变更记录：`openspec/changes/YYYY-MM-DD-{需求简述}.md`
 3. 更新业务文档（如适用）
 4. 同步架构文档（条件触发）
-5. 清理 OpenSpec 工作区
+5. 清理 OpenSpec 工作区（v0.33+ 新规则：plan/proposal/spec.md 重置为带「上一需求归档于」指纹的占位语；current_state.md 追加历史归档行 + 移除「## 当前进行中」段；详见 `feai-archive.md` STEP 7）
 6. **通过 `.workflow/checklists/gate-archive.md` 门禁检查**
 
 ---

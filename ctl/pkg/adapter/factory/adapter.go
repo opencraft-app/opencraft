@@ -88,6 +88,7 @@ func (f *adapterFactory) ShadowAdapter() shadow.Adapter {
 				BaseURL: config.ServerConf.AdapterConfig.Shadow.BaseURL,
 				Token:   config.ServerConf.AdapterConfig.Shadow.Token,
 				Timeout: config.ServerConf.AdapterConfig.Shadow.Timeout,
+				Enabled: config.ServerConf.AdapterConfig.Shadow.Enabled,
 			}
 		}
 		f.shadowAdapter = shadow.NewShadowAdapter(cfg, resource.ZapLogger)

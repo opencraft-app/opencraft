@@ -1,0 +1,44 @@
+{
+  "object": "mono2.docs.fragment",
+  "version": "v1",
+  "level": 2,
+  "component": "subscription",
+  "component_path": "subscription",
+  "owner": "subscription",
+  "source_path": "subscription",
+  "docs": [
+    {
+      "kind": "agents",
+      "path": "subscription/AGENTS.md",
+      "title": "Subscription Agent Guide"
+    }
+  ],
+  "apis": [
+    {
+      "kind": "openapi",
+      "id": "subscription",
+      "source_path": "subscription/api/openapi.yaml",
+      "path": "docs-site/openapi/subscription.yaml",
+      "url": "/openapi/subscription",
+      "reference_url": "/reference/subscription"
+    }
+  ],
+  "generated": [
+    {
+      "kind": "mdx",
+      "path": "docs-site/content/docs/components/subscription.mdx",
+      "url": "/docs/components/subscription"
+    },
+    {
+      "kind": "llms",
+      "path": "docs-site/generated/llms/subscription.txt",
+      "url": "/llms/subscription.txt"
+    },
+    {
+      "kind": "openapi",
+      "path": "docs-site/openapi/subscription.yaml",
+      "url": "/openapi/subscription",
+      "reference_url": "/reference/subscription"
+    }
+  ]
+}

@@ -19,7 +19,7 @@ type stubBundleLogic struct {
 	describeErr    error
 }
 
-func (s *stubBundleLogic) ImportBundle(string, string, string, int64, int64, int, string, string, bool, int, int) (*bundlelogic.BundleDetail, error) {
+func (s *stubBundleLogic) ImportBundle(string, string, string, int64, int64, int, string, string, string, bool, int, int) (*bundlelogic.BundleDetail, error) {
 	panic("stubBundleLogic.ImportBundle: not implemented")
 }
 func (s *stubBundleLogic) GetBundles() ([]*bundlelogic.BundleDetail, error) {
@@ -48,14 +48,33 @@ func (s *stubTradeAdapter) InquiryBatch(_ context.Context, req *tradeadapter.Inq
 	s.inquiryReq = req
 	return s.inquiryResult, s.inquiryErr
 }
+func (s *stubTradeAdapter) InquiryRenew(context.Context, *tradeadapter.InquiryRenewRequest) (*tradeadapter.InquiryRenewResult, error) {
+	panic("stubTradeAdapter.InquiryRenew: not implemented")
+}
 func (s *stubTradeAdapter) PlaceOrder(context.Context, *tradeadapter.PlaceOrderRequest) (*tradeadapter.PlaceOrderResult, error) {
 	panic("stubTradeAdapter.PlaceOrder: not implemented")
 }
 func (s *stubTradeAdapter) PlaceOrderAndPay(context.Context, *tradeadapter.PlaceOrderRequest) (*tradeadapter.PlaceOrderResult, error) {
 	panic("stubTradeAdapter.PlaceOrderAndPay: not implemented")
 }
-func (s *stubTradeAdapter) GeneratePayURL(context.Context, string) (*tradeadapter.PayURLResult, error) {
+func (s *stubTradeAdapter) PlaceRenewOrder(context.Context, *tradeadapter.PlaceRenewOrderRequest) (*tradeadapter.PlaceOrderResult, error) {
+	panic("stubTradeAdapter.PlaceRenewOrder: not implemented")
+}
+func (s *stubTradeAdapter) PlaceRenewOrderAndPay(context.Context, *tradeadapter.PlaceRenewOrderRequest) (*tradeadapter.PlaceOrderResult, error) {
+	panic("stubTradeAdapter.PlaceRenewOrderAndPay: not implemented")
+}
+func (s *stubTradeAdapter) GeneratePayURL(context.Context, string, *tradeadapter.GeneratePayURLOptions) (*tradeadapter.PayURLResult, error) {
 	panic("stubTradeAdapter.GeneratePayURL: not implemented")
+}
+func (s *stubTradeAdapter) CompleteFlow(context.Context, int64, string, string) error {
+	panic("stubTradeAdapter.CompleteFlow: not implemented")
+}
+func (s *stubTradeAdapter) DeleteResource(context.Context, string, *tradeadapter.DeleteResourceRequest) (*tradeadapter.DeleteResourceResult, error) {
+	panic("stubTradeAdapter.DeleteResource: not implemented")
+}
+
+func (s *stubTradeAdapter) QueryOrderStatus(context.Context, string, string) (*tradeadapter.OrderStatusResult, error) {
+	panic("stubTradeAdapter.QueryOrderStatus: not implemented")
 }
 
 func sampleBundleDetails() []*bundlelogic.BundleDetail {
@@ -107,7 +126,6 @@ func TestDescribeBundles_LoggedIn_QuotesBackfilled(t *testing.T) {
 			Prices: []*tradeadapter.BundleQuote{
 				{
 					BundleID:      "bundle_basic",
-					BundleName:    "Basic",
 					Price:         "9.90",
 					TotalCost:     "9.90",
 					RealTotalCost: "8.91",
@@ -281,10 +299,10 @@ func TestDescribeBundles_DefaultPeriod(t *testing.T) {
 // TestParseTimeSpanUnit 单元测试 parseTimeSpanUnit 各种 query 输入。
 func TestParseTimeSpanUnit(t *testing.T) {
 	cases := []struct {
-		name        string
-		query       string
-		wantSpan    int
-		wantUnit    string
+		name     string
+		query    string
+		wantSpan int
+		wantUnit string
 	}{
 		{"empty", "", 1, "m"},
 		{"valid_y", "time_span=3&time_unit=y", 3, "y"},

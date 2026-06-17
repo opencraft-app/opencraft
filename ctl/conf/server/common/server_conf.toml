@@ -30,6 +30,22 @@ soul_template_dir = "/etc/ctl/souls"
 #pressure_clean_ratio_threshold = 0.25 # CLEAN 库存低于 desired_capacity 总和该比例时视为 HOT
 #pressure_min_clean_floor = 2 # 全局最小 CLEAN 底线，默认 2
 
+# bundle-instance-spec-design.md §3.3 Q2=a：per-spec 候选池子段（双轨：保留全局 default
+# / candidate 作为兼容期 fallback；新增 [[api.instance.spec_pools]] 承载 per-spec 候选池）。
+# bundle.instance_spec_id 命中以下 spec_id 时，CreateInstance 走对应 spec 的候选池；为空
+# 时（兼容期）落到全局 default_template_id；命中字典但缺配 spec_pool 直接 fail（Q7=a）。
+#
+# 示例：现网部署放开后请填实际 pool 名称（与 sandbox-dashboard 录入的 pool 行 id 一致）。
+#[[api.instance.spec_pools]]
+#spec_id                = "spec-2c4g50g"
+#default_template_id    = "pool-bj-2c4g50g-default"
+#candidate_template_ids = ["pool-bj-2c4g50g-default", "pool-bj-2c4g50g-backup"]
+#
+#[[api.instance.spec_pools]]
+#spec_id                = "spec-4c8g80g"
+#default_template_id    = "pool-bj-4c8g80g-default"
+#candidate_template_ids = ["pool-bj-4c8g80g-default"]
+
 #配置名称：bypass
 #配置含义：bypass相关配置
 #配置项结构与含义：
@@ -236,21 +252,26 @@ default_provider_id = ""
 #base_url = "" # shadow 服务内部地址，如 http://shadow-api.shadow.svc.cluster.local
 #token = "" # 内部 API 认证 token
 #timeout = 10 # 请求超时（秒），默认 10
+#enabled = false # 是否启用 shadow account 能力；可用 SHADOW_ACCOUNT_ENABLED 覆盖。强制绑定 gate 优先由 SHADOW_BINDING_REQUIRED 控制，未配置时兼容回退到本值。
 [adapter.shadow]
 base_url = ""
 token = ""
 timeout = 10
+enabled = false
 
 #配置名称：adapter.trade
-#配置含义：trade 服务适配器配置（mono repo 内部 RPC，ctl `/v1/bundles` 询价 + 下单/续费链路用）
+#配置含义：trade 服务适配器配置（mono repo 内部 RPC，ctl /v1/bundles 询价 + 下单/续费链路用）
 #配置项结构与含义：
 #base_url = "" # trade 服务内部地址，如 http://trade.lightclaw.svc.cluster.local
 #token = ""    # 内部 API 认证 token，与 trade LIGHTCLAW_INTERNAL_SERVICE_TOKEN 同源
-#timeout = 10  # 请求超时（秒），默认 10
+#timeout = 30  # 请求超时（秒），默认 30；jifei.qcloud.Deal.generateDealsAndPay 同步动作
+#               实测 8~15s，必须 >= 业务侧 ctx 超时（PlaceOrderAndPay = 30s ctx），否则
+#               http.Client.Timeout 与 ctx.Deadline 取小值会让下单请求被提前截断
+#               （v1.7.32 sandbox-bj-7 BUG：现网手工配 5s 直接报 context deadline exceeded）。
 [adapter.trade]
 base_url = ""
 token = ""
-timeout = 10
+timeout = 30
 
 #配置名称：adapter.clouddc
 #配置含义：磐石api相关配置

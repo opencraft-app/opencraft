@@ -223,8 +223,9 @@ func TestQuote_HappyPath(t *testing.T) {
 	if res.GoodsCategoryID != 100059 {
 		t.Errorf("GoodsCategoryID = %d, want 100059", res.GoodsCategoryID)
 	}
-	if res.Action != "purchase" {
-		t.Errorf("Action = %q, want purchase", res.Action)
+	// v1.7.x B17：jifei PDF明示「有 categoryid 则不用传 action」，生产路径不再传 action。
+	if res.Action != "" {
+		t.Errorf("Action = %q, want empty (PDF: when categoryId is set, action must be omitted)", res.Action)
 	}
 	if res.Currency != "CNY" {
 		t.Errorf("Currency = %q, want CNY", res.Currency)
@@ -728,8 +729,9 @@ func TestQuoteRenew_HappyPath(t *testing.T) {
 		t.Fatalf("ResInfo len = %d, want 1", len(args.ResInfo))
 	}
 	res := args.ResInfo[0]
-	if res.Action != "renew" {
-		t.Errorf("Action = %q, want renew", res.Action)
+	// v1.7.x B17：jifei PDF明示「有 categoryid 则不用传 action」，续费同款不再传 action。
+	if res.Action != "" {
+		t.Errorf("Action = %q, want empty (PDF: when categoryId is set, action must be omitted)", res.Action)
 	}
 	if res.GoodsCategoryID != 100060 {
 		t.Errorf("GoodsCategoryID = %d, want 100060 (scene=renew)", res.GoodsCategoryID)

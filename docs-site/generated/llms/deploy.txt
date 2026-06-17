@@ -1,0 +1,8 @@
+# deploy
+
+Component ID: deploy
+Source path: deploy
+Docs contract level: 0
+
+## Key documentation
+- Deploy: deploy/README.md

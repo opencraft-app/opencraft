@@ -58,6 +58,7 @@ func TestCreateInstanceConcurrentRequestsSucceedWithPendingSandboxIDs(t *testing
 	defer server.Close()
 
 	ctx := testutil.NewContext(t, "user-1")
+	testutil.SeedActivePass(t, ctx)
 	quotaDao := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx)
 	if err := quotaDao.DB().Create(&quota.Entity{
 		UserID:                 ctx.GetUserID(),

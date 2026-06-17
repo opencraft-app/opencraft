@@ -527,6 +527,14 @@ func (testSandboxAdapter) SendProcessSignal(context.Context, string, uint32, str
 	panic("unexpected call")
 }
 
+func (testSandboxAdapter) CreateSnapshot(context.Context, string, *psandbox.CreateSnapshotRequest) (*psandbox.CreateSnapshotResponse, error) {
+	panic("unexpected call")
+}
+
+func (testSandboxAdapter) GetSnapshotStatus(context.Context, string, string) (*psandbox.GetSnapshotStatusResponse, error) {
+	panic("unexpected call")
+}
+
 func (testSandboxAdapter) ListPools(context.Context) ([]psandbox.Pool, error) {
 	panic("unexpected call")
 }

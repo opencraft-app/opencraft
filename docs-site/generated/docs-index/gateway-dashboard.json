@@ -1,0 +1,34 @@
+{
+  "object": "mono2.docs.fragment",
+  "version": "v1",
+  "level": 0,
+  "component": "gateway-dashboard",
+  "component_path": "gateway-dashboard",
+  "owner": "gateway-dashboard",
+  "source_path": "gateway-dashboard",
+  "docs": [
+    {
+      "kind": "agents",
+      "path": "gateway-dashboard/AGENTS.md",
+      "title": "Gateway Dashboard Agent Guide"
+    },
+    {
+      "kind": "readme",
+      "path": "gateway-dashboard/README.md",
+      "title": "Gateway Dashboard"
+    }
+  ],
+  "apis": [],
+  "generated": [
+    {
+      "kind": "mdx",
+      "path": "docs-site/content/docs/components/gateway-dashboard.mdx",
+      "url": "/docs/components/gateway-dashboard"
+    },
+    {
+      "kind": "llms",
+      "path": "docs-site/generated/llms/gateway-dashboard.txt",
+      "url": "/llms/gateway-dashboard.txt"
+    }
+  ]
+}

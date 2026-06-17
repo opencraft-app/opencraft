@@ -54,8 +54,15 @@ func (s *automationAiGatewayAdapterStub) GetPlan(_ context.Context, planID strin
 	return &paigateway.Plan{ID: planID}, nil
 }
 
-func (s *automationAiGatewayAdapterStub) ApplySubscription(_ context.Context, userID string, planID string) (*paigateway.Subscription, error) {
-	return &paigateway.Subscription{UserID: userID, PlanID: planID}, nil
+func (s *automationAiGatewayAdapterStub) ApplySubscription(_ context.Context, req *paigateway.ApplySubscriptionRequest) (*paigateway.Subscription, error) {
+	return &paigateway.Subscription{UserID: req.UserID, PlanID: req.PlanID}, nil
+}
+
+func (s *automationAiGatewayAdapterStub) ExtendSubscription(_ context.Context, req *paigateway.ExtendSubscriptionRequest) (*paigateway.ExtendSubscriptionResponse, error) {
+	return &paigateway.ExtendSubscriptionResponse{
+		Subscription: &paigateway.Subscription{UserID: req.UserID},
+		Updated:      true,
+	}, nil
 }
 
 func (s *automationAiGatewayAdapterStub) CancelSubscription(_ context.Context, _ string) error {

@@ -1,0 +1,34 @@
+{
+  "object": "mono2.docs.fragment",
+  "version": "v1",
+  "level": 0,
+  "component": "ci",
+  "component_path": ".ci",
+  "owner": "ci",
+  "source_path": ".ci",
+  "docs": [
+    {
+      "kind": "agents",
+      "path": ".ci/AGENTS.md",
+      "title": "CI/CD Agent Guide"
+    },
+    {
+      "kind": "readme",
+      "path": ".ci/README.md",
+      "title": "Stream CI Layout"
+    }
+  ],
+  "apis": [],
+  "generated": [
+    {
+      "kind": "mdx",
+      "path": "docs-site/content/docs/components/ci.mdx",
+      "url": "/docs/components/ci"
+    },
+    {
+      "kind": "llms",
+      "path": "docs-site/generated/llms/ci.txt",
+      "url": "/llms/ci.txt"
+    }
+  ]
+}

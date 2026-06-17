@@ -1,0 +1,74 @@
+---
+title: CloudAgent
+title_en: CloudAgent
+title_zh: CloudAgent
+description: Runtime and protocol documentation for CloudAgent. CloudAgent 运行时与协议文档。
+description_en: Runtime and protocol documentation for CloudAgent.
+description_zh: CloudAgent 运行时与协议文档。
+owner: cloudagent
+status: active
+last_reviewed: "2026-06-16"
+tags:
+  - cloudagent
+  - runtime
+  - protocol
+  - bilingual
+source_path: docs-site/content/docs/cloudagent/index.mdx
+---
+
+<p>
+  <span className="lang-en">CloudAgent is the agent runtime and gateway surface for durable sessions, workspace-backed execution, and channel integrations.</span>
+  <span className="lang-zh">CloudAgent 是面向持久会话、Workspace 执行和渠道集成的 Agent runtime 与 gateway 边界。</span>
+</p>
+
+<p>
+  <span className="lang-en">Start with the HTTP Run API if you are integrating a backend service, channel adapter, or automated test client.</span>
+  <span className="lang-zh">如果你要接入后端服务、渠道适配器或自动化测试客户端，请从 HTTP Run API 开始。</span>
+</p>
+
+## <span className="lang-en">Key Surfaces</span><span className="lang-zh">关键边界</span>
+
+| Surface | <span className="lang-en">Use</span><span className="lang-zh">用途</span> |
+| --- | --- |
+| CloudAgent HTTP Run API | <span className="lang-en">Durable session/run protocol for non-WebSocket clients.</span><span className="lang-zh">非 WebSocket 客户端使用的持久会话与运行协议。</span> |
+| ACP | <span className="lang-en">Interactive protocol compatibility layer.</span><span className="lang-zh">交互式协议兼容层。</span> |
+| Wisp runtime | <span className="lang-en">Persistent workspace and runtime recovery layer.</span><span className="lang-zh">持久化 Workspace 与运行时恢复层。</span> |
+| ChannelGateway | <span className="lang-en">Channel adapter that should use the HTTP Run API for durable traffic.</span><span className="lang-zh">渠道适配器，持久流量应接入 HTTP Run API。</span> |
+
+## <span className="lang-en">Recommended Integration Path</span><span className="lang-zh">推荐接入路径</span>
+
+<div className="lang-en">
+
+1. Probe `/v1/cloudagent/capabilities`.
+2. Create or load a CloudAgent session.
+3. Submit a run with an idempotent caller-generated `run_id`.
+4. Replay or stream events with `after_seq`.
+5. Read the durable result.
+
+</div>
+
+<div className="lang-zh">
+
+1. 探测 `/v1/cloudagent/capabilities`。
+2. 创建或加载 CloudAgent 会话。
+3. 使用调用方生成的幂等 `run_id` 提交运行。
+4. 通过 `after_seq` 回放或读取事件流。
+5. 读取持久化结果。
+
+</div>
+
+## <span className="lang-en">Generated API Docs</span><span className="lang-zh">生成式 API 文档</span>
+
+<p>
+  <span className="lang-en">The detailed API reference is rendered by Scalar from the generated OpenAPI schema:</span>
+  <span className="lang-zh">详细 API 参考由 Scalar 基于生成的 OpenAPI schema 渲染：</span>
+</p>
+
+```text
+/reference/cloudagent
+```
+
+<p>
+  <span className="lang-en">The schema comes from CloudAgent gateway Go protocol metadata, not from a hand-maintained endpoint table.</span>
+  <span className="lang-zh">该 schema 来自 CloudAgent gateway 的 Go 协议元数据，不来自手写 endpoint 表格。</span>
+</p>

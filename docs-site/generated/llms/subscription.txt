@@ -1,0 +1,11 @@
+# subscription
+
+Component ID: subscription
+Source path: subscription
+Docs contract level: 2
+
+## Key documentation
+- Subscription Agent Guide: subscription/AGENTS.md
+
+## API surfaces
+- openapi: /openapi/subscription (/reference/subscription) from subscription/api/openapi.yaml

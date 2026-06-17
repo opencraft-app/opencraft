@@ -63,6 +63,26 @@ type Adapter interface {
 	StartProcessStream(ctx context.Context, sandboxID string, req *ProcessStartRequest, onEvent func(ProcessStreamEvent) error) error
 	RunProcessWithStdin(ctx context.Context, sandboxID string, req *ProcessStartRequest, stdin []byte) (*ExecCommandResult, error)
 	SendProcessSignal(ctx context.Context, sandboxID string, pid uint32, signal string) error
+
+	// === trade-pass-destroy 设计稿落地（§5.2 sandbox snapshot 端点）===
+	// 设计稿：.tmp/trade-pass-destroy-design.md §5.2 / §11-A Q4 / Q4-b / Q9 / Q25
+	//
+	// CreateSnapshot 调 sandbox `POST /sandboxes/{sandboxID}/snapshot` 触发系统盘快照创建。
+	//
+	// sandbox 端实现链：DescribeDisks 反查 SystemDiskId → cbs.CreateSnapshot → 返 snapshotID。
+	// 调用方：ctl 销毁子 task 阶段 1（payload.SnapshotID 为空时调用，已有时跳过 — Q4-b 拍板）。
+	// ctl 用 payload.SnapshotID 判空控制不重复调用，sandbox 端不引入幂等键。
+	CreateSnapshot(ctx context.Context, sandboxID string, req *CreateSnapshotRequest) (*CreateSnapshotResponse, error)
+
+	// GetSnapshotStatus 调 sandbox `GET /sandboxes/{sandboxID}/snapshot-status?snapshotID=...` 查询快照就绪状态。
+	//
+	// sandbox 端实现：cbs.DescribeSnapshots(SnapshotIds=[snap-xxx]) → 状态机抽象映射：
+	//   - NORMAL → "ready"
+	//   - ERROR → "failed"（reason 透传 cbs 错误信息）
+	//   - CREATING / CREATING_PERCENT → "in_progress"
+	//
+	// 调用方：ctl 销毁子 task 阶段 2 轮询 + ctl admin 反查使用。
+	GetSnapshotStatus(ctx context.Context, sandboxID, snapshotID string) (*GetSnapshotStatusResponse, error)
 }
 
 // RetryConfig defines retry behavior for the sandbox adapter.
@@ -1038,6 +1058,79 @@ func endSpanWithError(span trace.Span, err error) {
 		span.SetStatus(codes.Error, err.Error())
 	}
 	span.End()
+}
+
+// === trade-pass-destroy 设计稿落地（§5.2 sandbox snapshot 端点出向 adapter）===
+// 设计稿：.tmp/trade-pass-destroy-design.md §5.2 / §11-A Q4 / Q4-b / Q9 / Q25
+
+// CreateSnapshot 详见 Adapter 接口注释
+func (a *SandboxAdapter) CreateSnapshot(
+	ctx context.Context,
+	sandboxID string,
+	req *CreateSnapshotRequest,
+) (resp *CreateSnapshotResponse, err error) {
+	ctx, span := otel.Tracer("ctl/pkg/adapter/sandbox").Start(ctx, "SandboxAdapter.CreateSnapshot")
+	defer func() { endSpanWithError(span, err) }()
+
+	if err = validateSandboxID(sandboxID); err != nil {
+		return nil, err
+	}
+	if req == nil {
+		return nil, errcode.Wrap(errcode.ErrSandboxInvalidParam, "CreateSnapshot: nil request")
+	}
+	if req.InstanceID == "" || req.PassID == "" {
+		return nil, errcode.Wrap(errcode.ErrSandboxInvalidParam, "CreateSnapshot: missing instanceID/passID")
+	}
+	if req.RetentionSeconds <= 0 {
+		return nil, errcode.Wrap(errcode.ErrSandboxInvalidParam, "CreateSnapshot: retentionSeconds must be > 0")
+	}
+	resp = new(CreateSnapshotResponse)
+	if err = a.doRequest(
+		ctx,
+		"create_snapshot",
+		http.MethodPost,
+		"/sandboxes/"+url.PathEscape(sandboxID)+"/snapshot",
+		nil,
+		req,
+		http.StatusOK,
+		resp,
+	); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+// GetSnapshotStatus 详见 Adapter 接口注释
+func (a *SandboxAdapter) GetSnapshotStatus(
+	ctx context.Context,
+	sandboxID string,
+	snapshotID string,
+) (resp *GetSnapshotStatusResponse, err error) {
+	ctx, span := otel.Tracer("ctl/pkg/adapter/sandbox").Start(ctx, "SandboxAdapter.GetSnapshotStatus")
+	defer func() { endSpanWithError(span, err) }()
+
+	if err = validateSandboxID(sandboxID); err != nil {
+		return nil, err
+	}
+	if snapshotID == "" {
+		return nil, errcode.Wrap(errcode.ErrSandboxInvalidParam, "GetSnapshotStatus: snapshotID empty")
+	}
+	query := url.Values{}
+	query.Set("snapshotID", snapshotID)
+	resp = new(GetSnapshotStatusResponse)
+	if err = a.doRequest(
+		ctx,
+		"get_snapshot_status",
+		http.MethodGet,
+		"/sandboxes/"+url.PathEscape(sandboxID)+"/snapshot-status",
+		query,
+		nil,
+		http.StatusOK,
+		resp,
+	); err != nil {
+		return nil, err
+	}
+	return resp, nil
 }
 
 var _ Adapter = (*SandboxAdapter)(nil)

@@ -52,6 +52,9 @@
 | `POST /admin/api/ctl/passes/order-and-pay` | **联调测试 / e2e**（⚠️ 同上） | 后台触发一体化下单+支付 | admin |
 | `GET /internal/ctl/passes?external_user_id=xxx` | trade.checkCreate | 互斥占用查询（Q66 / Q69：返回数组非空即报 `USER_HAS_ACTIVE_PASS`） | CTL_INTERNAL_TOKEN |
 | `POST /internal/ctl/passes/complete` | trade.createResource 反向回调 | 落 pass + quota + 调 ai-gateway `ApplySubscription` 完成发货 | CTL_INTERNAL_TOKEN |
+| `GET /internal/ctl/passes/app-ids` | trade.getAllAppIds 反查 | 按 `bundle_ids`（可空）+ 分页 (`page_no`,`page_size≤20000`) 返回去重 app_id 列表 + total | CTL_INTERNAL_TOKEN |
+| `GET /internal/ctl/passes/by-app` | trade.getUserResources 反查 | 按 `app_id` + 可选 `bundle_ids` + 分页 (`page_no`,`page_size≤1000`) 返回 pass 实体列表 + total | CTL_INTERNAL_TOKEN |
+| `POST /internal/ctl/passes/by-resource-ids` | trade.queryResource 反查 | body: `{app_id, pass_ids[]}` (pass_ids 1~100，POST 因 GET URL 长度限制，Q12) → pass 实体列表（命中数即数量） | CTL_INTERNAL_TOKEN |
 
 ### 关键设计要点
 
@@ -84,5 +87,11 @@
 | `ctl/pkg/transport/pass.go` | `CreatePassOrderRequest` / `CreatePassOrderResult` / `CreatePassOrderAndPayResult` |
 | `ctl/main/api/pass_handler.go` | `handleAdminPassesOrder` / `handleUserPassesOrder` / `handleAdminPassesOrderAndPay` / `handleUserPassesOrderAndPay` |
 | `ctl/main/api/server.go` | mux 注册 + `normalizePath` 静态白名单（避免高基数 metric 标签） |
+| `ctl/pkg/model/pass/dao.go` | trade 反查三件套 DAO：`ListDistinctAppIDsByBundleIDs` / `ListByAppIDAndBundleIDs` / `ListByAppIDAndPassIDs` |
+| `ctl/pkg/logic/pass/logic.go` | trade 反查三件套 Logic：`ListPassAppIDs` / `ListPassesByAppID` / `ListPassesByResourceIDs` |
+| `ctl/pkg/transport/pass.go` | trade 反查三件套 DTO：`ListPassAppIDsResponse` / `ListPassesByResourceIDsRequest` 等 + `Entity.RenewFlag` 字段 |
+| `ctl/main/api/integration_test.go` | trade 反查三件套集成测试（设计稿 §4.1 对齐） |
 
-<!-- ci-retrigger: master ctl pipeline @ 2026-06-15 18:25 +0800 -->
+## CI 触发说明
+
+- `ctl` 流水线的 webhook paths 监听 `ctl/**`；当只修复共享 CI runtime 但需要重跑 ctl gate 时，可用本文件承载无运行时影响的触发说明变更。

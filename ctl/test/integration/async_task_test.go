@@ -130,8 +130,15 @@ func (s *stubAiGatewayAdapter) GetPlan(_ context.Context, planID string) (*paiga
 	return &paigateway.Plan{ID: planID, IsActive: true}, nil
 }
 
-func (s *stubAiGatewayAdapter) ApplySubscription(_ context.Context, userID string, planID string) (*paigateway.Subscription, error) {
-	return &paigateway.Subscription{UserID: userID, PlanID: planID, Status: "active"}, nil
+func (s *stubAiGatewayAdapter) ApplySubscription(_ context.Context, req *paigateway.ApplySubscriptionRequest) (*paigateway.Subscription, error) {
+	return &paigateway.Subscription{UserID: req.UserID, PlanID: req.PlanID, Status: "active"}, nil
+}
+
+func (s *stubAiGatewayAdapter) ExtendSubscription(_ context.Context, req *paigateway.ExtendSubscriptionRequest) (*paigateway.ExtendSubscriptionResponse, error) {
+	return &paigateway.ExtendSubscriptionResponse{
+		Subscription: &paigateway.Subscription{UserID: req.UserID, Status: "active"},
+		Updated:      true,
+	}, nil
 }
 
 func (s *stubAiGatewayAdapter) CancelSubscription(_ context.Context, _ string) error {

@@ -23,13 +23,16 @@ import (
 	instancelogic "ctl/pkg/instance"
 	logfields "ctl/pkg/log"
 	bundlelogic "ctl/pkg/logic/bundle"
+	orderlogic "ctl/pkg/logic/order"
 	passlogic "ctl/pkg/logic/pass"
+	snapshotlogic "ctl/pkg/logic/snapshot"
 	"ctl/pkg/metric"
 	"ctl/pkg/resource"
 	"ctl/pkg/tracing"
 	"ctl/pkg/transport"
 
 	adapterfactory "ctl/pkg/adapter/factory"
+
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.uber.org/zap"
@@ -151,6 +154,9 @@ func newAPIServer() (*apiServer, error) {
 }
 
 func newRouter(handler *instanceHandler, bh *bundleHandler, ph *passHandler) http.Handler {
+	// orderHandler 在函数内部实例化避免修改现有 newRouter 调用点的签名。
+	// 后续如需 mock orderHandler，可抽出为可选参数。
+	oh := &orderHandler{logic: orderlogic.NewLogic()}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		writeSuccess(w, r, http.StatusOK, map[string]string{"status": "ok"})
@@ -169,20 +175,39 @@ func newRouter(handler *instanceHandler, bh *bundleHandler, ph *passHandler) htt
 	mux.HandleFunc("/v1/bundles", bh.handleUserBundles)
 	mux.HandleFunc("/internal/ctl/bundles/", bh.handleInternalBundleByID)
 
+	// Instance Spec 路由（设计稿 §10 Q8=a，只读字典查询；运营 bundle 编辑页 spec 下拉框使用）
+	mux.HandleFunc("/admin/api/ctl/instance-specs", bh.handleAdminInstanceSpecs)
+
 	// Pass 路由
 	mux.HandleFunc("/admin/api/ctl/passes", ph.handleAdminPasses)
 	mux.HandleFunc("/admin/api/ctl/passes/order", ph.handleAdminPassesOrder)
+	// /admin/api/ctl/passes/order-url — v1.7.31 接口拆分：拉取支付 URL
+	mux.HandleFunc("/admin/api/ctl/passes/order-url", ph.handleAdminPassesOrderUrl)
 	// /admin/api/ctl/passes/order-and-pay — 仅用于联调测试 / 自动化 e2e，现网控制台禁止暴露
 	mux.HandleFunc("/admin/api/ctl/passes/order-and-pay", ph.handleAdminPassesOrderAndPay)
 	mux.HandleFunc("/v1/passes", ph.handleUserPasses)
 	mux.HandleFunc("/v1/passes/order", ph.handleUserPassesOrder)
+	// /v1/passes/order-url — v1.7.31 接口拆分：拉取支付 URL
+	mux.HandleFunc("/v1/passes/order-url", ph.handleUserPassesOrderUrl)
 	// /v1/passes/order-and-pay — 仅用于联调测试 / 自动化 e2e，现网控制台禁止暴露
 	mux.HandleFunc("/v1/passes/order-and-pay", ph.handleUserPassesOrderAndPay)
+	// R-D-5b 续费支付 URL 入口（trade-pass-renew §3.3 / §4.4）：
+	//   POST /v1/passes/{pass_id}/renew/order-url             前端鉴权 X-User-Id
+	//   POST /admin/api/ctl/passes/{pass_id}/renew/order-url  后台 admin 鉴权
+	// http.ServeMux 最长前缀匹配：精确路径如 /v1/passes/order 仍命中各自 handler，
+	// 其他子路径 fall-through 到 trailing-slash prefix handler 并按子路径解析。
+	mux.HandleFunc("/v1/passes/", ph.handleUserPassesByID)
+	mux.HandleFunc("/admin/api/ctl/passes/", ph.handleAdminPassesByID)
 	// 内部反向回调（trade -> ctl）：
 	//   - 裸路径 /internal/ctl/passes 承载 GET 互斥占用查询（Q66 拍板）
 	//   - 子路径 /internal/ctl/passes/{action} 承载 POST 生命周期动作（complete / 后续 renew/isolate/destroy）
 	mux.HandleFunc("/internal/ctl/passes", ph.handleInternalPasses)
 	mux.HandleFunc("/internal/ctl/passes/", ph.handleInternalPasses)
+
+	// Order 路由（v1.7.32 引入，订单状态反查）：
+	//   GET /v1/orders/{dealName}/status — 前端轮询订单支付状态（X-User-Id 鉴权）
+	// 设计稿：.tmp/ctl-order-status-query-design.md §5.5 + Q-OS-1/Q-OS-3/Q-OS-7 拍板。
+	mux.HandleFunc("/v1/orders/", oh.handleUserOrders)
 
 	return requestMetadataMiddleware(metricsMiddleware(notFoundMiddleware(mux)))
 }
@@ -191,6 +216,8 @@ func (gs *apiServer) run() error {
 	// 启动后台定时任务
 	cronDone := make(chan struct{})
 	bundlelogic.StartDailyAvailCountRefresh(resource.ZapLogger, 10, cronDone) // 每天 10:00 (UTC+8)
+	// trade-pass-destroy snapshot 清理 cron（设计稿 §4.10 / Q7 拍板，默认凌晨 03:00 UTC+8 低峰期跑）
+	snapshotlogic.StartDailyExpiredSnapshotCleanup(resource.ZapLogger, 3, cronDone)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -316,6 +343,47 @@ func normalizePath(path string) string {
 		// 避免后续生命周期接口加进来时高基数
 		return "/internal/ctl/passes/{action}"
 	}
+	// R-D-5b 续费支付 URL 入口路径归一（trade-pass-renew §3.3 / §4.4）：
+	//   /v1/passes/{pass_id}/renew/order-url             → /v1/passes/{passId}/renew/order-url
+	//   /admin/api/ctl/passes/{pass_id}/renew/order-url  → /admin/api/ctl/passes/{passId}/renew/order-url
+	if strings.HasPrefix(path, "/v1/passes/") && strings.HasSuffix(path, "/renew/order-url") {
+		return "/v1/passes/{passId}/renew/order-url"
+	}
+	if strings.HasPrefix(path, "/admin/api/ctl/passes/") && strings.HasSuffix(path, "/renew/order-url") {
+		return "/admin/api/ctl/passes/{passId}/renew/order-url"
+	}
+	// R-D-7c 续费一体化下单+支付入口路径归一（trade-pass-renew §3.3 / §4.4 / R-D-7）：
+	//   /v1/passes/{pass_id}/renew/order-and-pay             → /v1/passes/{passId}/renew/order-and-pay
+	//   /admin/api/ctl/passes/{pass_id}/renew/order-and-pay  → /admin/api/ctl/passes/{passId}/renew/order-and-pay
+	if strings.HasPrefix(path, "/v1/passes/") && strings.HasSuffix(path, "/renew/order-and-pay") {
+		return "/v1/passes/{passId}/renew/order-and-pay"
+	}
+	if strings.HasPrefix(path, "/admin/api/ctl/passes/") && strings.HasSuffix(path, "/renew/order-and-pay") {
+		return "/admin/api/ctl/passes/{passId}/renew/order-and-pay"
+	}
+	// 续费询价入口路径归一（v1.7.21 B16 / R-C-4）：
+	//   /v1/passes/{pass_id}/renew/price             → /v1/passes/{passId}/renew/price
+	//   /admin/api/ctl/passes/{pass_id}/renew/price  → /admin/api/ctl/passes/{passId}/renew/price
+	if strings.HasPrefix(path, "/v1/passes/") && strings.HasSuffix(path, "/renew/price") {
+		return "/v1/passes/{passId}/renew/price"
+	}
+	if strings.HasPrefix(path, "/admin/api/ctl/passes/") && strings.HasSuffix(path, "/renew/price") {
+		return "/admin/api/ctl/passes/{passId}/renew/price"
+	}
+	// D-2.3 主动销毁触发入口路径归一（trade-pass-destroy §4.5.1）：
+	//   /v1/passes/{pass_id}/delete             → /v1/passes/{passId}/delete
+	//   /admin/api/ctl/passes/{pass_id}/delete  → /admin/api/ctl/passes/{passId}/delete
+	if strings.HasPrefix(path, "/v1/passes/") && strings.HasSuffix(path, "/delete") {
+		return "/v1/passes/{passId}/delete"
+	}
+	if strings.HasPrefix(path, "/admin/api/ctl/passes/") && strings.HasSuffix(path, "/delete") {
+		return "/admin/api/ctl/passes/{passId}/delete"
+	}
+	// 订单状态反查入口路径归一（v1.7.32）：
+	//   /v1/orders/{deal_name}/status → /v1/orders/{dealName}/status
+	if strings.HasPrefix(path, "/v1/orders/") && strings.HasSuffix(path, "/status") {
+		return "/v1/orders/{dealName}/status"
+	}
 
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	// 检查是否是 /v1/instances/{id}... 模式
@@ -327,6 +395,25 @@ func normalizePath(path string) string {
 
 	// 未知路径归一到 /other catch-all 桶，防止高基数标签
 	return "/other"
+}
+
+func (h *instanceHandler) handleCreatePrerequisites(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+	ctx, ok := newRequestContext(r)
+	if !ok {
+		writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+		return
+	}
+	resp, err := h.logic.GetCreatePrerequisites(ctx)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, resp)
 }
 
 func (h *instanceHandler) handleInstances(w http.ResponseWriter, r *http.Request) {

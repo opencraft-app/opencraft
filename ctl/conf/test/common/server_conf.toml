@@ -227,10 +227,23 @@ default_provider_id = ""
 #base_url = "" # shadow 服务内部地址
 #token = "" # 内部 API 认证 token
 #timeout = 10 # 请求超时（秒），默认 10
+#enabled = false # 是否启用 shadow account 能力；可用 SHADOW_ACCOUNT_ENABLED 覆盖。强制绑定 gate 优先由 SHADOW_BINDING_REQUIRED 控制，未配置时兼容回退到本值。
 [adapter.shadow]
 base_url = "http://shadow-api.shadow.svc.cluster.local"
 token = "${CTL_TEST_SHADOW_TOKEN}"
 timeout = 10
+enabled = false
+
+#配置名称：adapter.trade
+#配置含义：trade 服务适配器配置（mono repo 内部 RPC，ctl 询价 + 下单/续费链路用）
+#配置项结构与含义：
+#base_url = "" # trade 服务内部地址
+#token = ""    # 内部 API 认证 token
+#timeout = 30  # 请求超时（秒），默认 30；详见 server/common/server_conf.toml 注释
+[adapter.trade]
+base_url = ""
+token = ""
+timeout = 30
 
 #配置名称：adapter.clouddc
 #配置含义：磐石api相关配置

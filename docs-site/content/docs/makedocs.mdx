@@ -1,0 +1,134 @@
+---
+title: makedocs.sh Contract / makedocs.sh 契约
+title_en: makedocs.sh Contract
+title_zh: makedocs.sh 契约
+description: Divide-and-conquer bilingual documentation generation contract for mono2 directories. mono2 目录级分治文档生成契约。
+description_en: Divide-and-conquer documentation generation contract for mono2 directories.
+description_zh: mono2 目录级分治文档生成契约。
+owner: platform
+status: active
+last_reviewed: "2026-06-16"
+tags:
+  - mono2
+  - docs
+  - makedocs
+  - ai
+  - bilingual
+source_path: docs-site/content/docs/makedocs.mdx
+---
+
+<p>
+  <span className="lang-en">`makedocs.sh` is the mono2 documentation generation contract.</span>
+  <span className="lang-zh">`makedocs.sh` 是 mono2 的文档生成契约。</span>
+</p>
+
+<p>
+  <span className="lang-en">Each directory may own a local `makedocs.sh` that understands only that directory. The root script orchestrates those component scripts and then asks the docs site to render and validate the portal.</span>
+  <span className="lang-zh">每个目录可以拥有自己的 `makedocs.sh`，只理解本目录的事实。根脚本负责调度这些组件脚本，再让文档站点渲染并校验整个门户。</span>
+</p>
+
+## <span className="lang-en">Why</span><span className="lang-zh">为什么</span>
+
+<p>
+  <span className="lang-en">The docs portal should not need to understand every subsystem. CloudAgent, Wisp, ChannelGateway, frontend services, and future components can each export their own AI-friendly documentation fragments.</span>
+  <span className="lang-zh">文档门户不应该理解每个子系统的内部细节。CloudAgent、Wisp、ChannelGateway、前端服务以及未来组件，都可以导出自己面向 AI 友好的文档片段。</span>
+</p>
+
+## <span className="lang-en">Root Behavior</span><span className="lang-zh">根目录行为</span>
+
+<p>
+  <span className="lang-en">The root `./makedocs.sh`:</span>
+  <span className="lang-zh">根目录 `./makedocs.sh` 会：</span>
+</p>
+
+<div className="lang-en">
+
+1. prepare generated artifact directories;
+2. call component-level `makedocs.sh` scripts;
+3. scan first-level directories that do not have component scripts;
+4. generate Level 0 fallback indexes from README, AGENTS, TEST, shallow docs, and API specs;
+5. aggregate docs-index fragments and component LLM fragments;
+6. run `docs-site/makedocs.sh` to build and validate the site.
+
+</div>
+
+<div className="lang-zh">
+
+1. 准备生成物目录；
+2. 调用组件级 `makedocs.sh`；
+3. 扫描没有组件脚本的一级目录；
+4. 基于 README、AGENTS、TEST、浅层 docs 和 API spec 生成 Level 0 fallback 索引；
+5. 聚合 docs-index fragments 和组件级 LLM fragments；
+6. 运行 `docs-site/makedocs.sh` 构建并校验站点。
+
+</div>
+
+## <span className="lang-en">Contract Levels</span><span className="lang-zh">契约层级</span>
+
+| Level | <span className="lang-en">Owner</span><span className="lang-zh">归属</span> | <span className="lang-en">Required output</span><span className="lang-zh">必要产物</span> |
+| --- | --- | --- |
+| 0 | <span className="lang-en">Root aggregator</span><span className="lang-zh">根聚合器</span> | `docs-index fragment`, `llms fragment`, generated component index |
+| 1 | <span className="lang-en">Component `makedocs.sh`</span><span className="lang-zh">组件级 `makedocs.sh`</span> | `docs-index fragment`, `llms fragment` |
+| 2 | <span className="lang-en">Component or fallback scanner</span><span className="lang-zh">组件或 fallback 扫描器</span> | Level 1 outputs plus OpenAPI or AsyncAPI, mounted under `/reference/<id>` when OpenAPI is present |
+
+## <span className="lang-en">Artifact Shape</span><span className="lang-zh">产物形态</span>
+
+```text
+docs-site/generated/docs-index/<component>.json
+docs-site/generated/llms/<component>.txt
+docs-site/content/docs/components/<component>.mdx
+docs-site/openapi/<api-id>.json|yaml        # optional Level 2
+docs-site/asyncapi/<api-id>.json|yaml       # optional Level 2
+```
+
+## <span className="lang-en">Component Behavior</span><span className="lang-zh">组件行为</span>
+
+<p>
+  <span className="lang-en">A component `makedocs.sh` should:</span>
+  <span className="lang-zh">组件级 `makedocs.sh` 应该：</span>
+</p>
+
+<div className="lang-en">
+
+- read only its own directory unless explicitly configured otherwise;
+- write generated docs into `$MONO2_DOCS_ROOT/content/docs/<section>`;
+- write the docs-index fragment into `$MONO2_DOCS_ROOT/generated/docs-index/<component>.json`;
+- write the LLM fragment into `$MONO2_DOCS_ROOT/generated/llms/<component>.txt`;
+- make output deterministic so generated files are reviewable;
+- avoid requiring production credentials.
+
+</div>
+
+<div className="lang-zh">
+
+- 默认只读取自己的目录，除非显式配置允许跨目录读取；
+- 将生成文档写入 `$MONO2_DOCS_ROOT/content/docs/<section>`；
+- 将 docs-index fragment 写入 `$MONO2_DOCS_ROOT/generated/docs-index/<component>.json`；
+- 将 LLM fragment 写入 `$MONO2_DOCS_ROOT/generated/llms/<component>.txt`；
+- 保持输出确定性，方便代码审查；
+- 避免依赖生产凭据。
+
+</div>
+
+## <span className="lang-en">Current Component</span><span className="lang-zh">当前组件</span>
+
+<p>
+  <span className="lang-en">CloudAgent currently generates:</span>
+  <span className="lang-zh">CloudAgent 当前生成：</span>
+</p>
+
+```text
+docs-site/content/docs/cloudagent/generated-index.mdx
+docs-site/generated/docs-index/cloudagent.json
+docs-site/generated/llms/cloudagent.txt
+docs-site/openapi/cloudagent.json
+```
+
+<p>
+  <span className="lang-en">from:</span>
+  <span className="lang-zh">来源是：</span>
+</p>
+
+```text
+cloudagent/gateway/docs/*.md
+```

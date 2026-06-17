@@ -238,6 +238,8 @@ apiVersion: v1
 kind: Service
 metadata:
   name: cloudagent-gateway
+  annotations:
+    service.kubernetes.io/qcloud-loadbalancer-internal-subnetid: "REPLACE_ME_DEVCLOUD_DEP_INTERNAL_SUBNET_ID"
   labels:
     app.kubernetes.io/name: cloudagent-gateway
     cloudagent.dev/environment: devcloud-dep

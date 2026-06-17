@@ -60,10 +60,12 @@
 4. 同步架构文档（条件触发，如新增了核心模块或对外接口）
 5. 对照 `.workflow/checklists/gate-archive.md` 逐项检查
 
-### Phase 3：工作区清理
+### Phase 3：工作区清理（v0.33+ 新规则）
 
-1. 清空 `openspec/proposal.md` / `spec.md` / `plan.md`（移到 `openspec/changes/archive/` 历史归档）
-2. 确认可接受新需求
+1. **重置 3 个快照文件**：将 `openspec/plan.md` / `proposal.md` / `spec.md` 重写为带「上一需求归档于 YYYY-MM-DD：{需求名}」指纹的占位语（不是简单清空，详见 `feai-archive.md` STEP 7.0）
+2. **更新长期记忆**：在 `openspec/current_state.md` 的「上一个需求」段更新为本次归档，并在「历史归档」段追加一行；同时**移除**由 `/feai-start` STEP 8.2.5 注入的「## 当前进行中」段（详见 `feai-archive.md` STEP 7.1.1）
+3. **写后自检**：`grep -c "上一需求归档于" openspec/{plan,proposal,spec}.md` 必须命中 3 次；`grep '^## 当前进行中' openspec/current_state.md` 必须为空
+4. 确认可接受新需求
 
 ### Phase 4：提交审核
 
@@ -93,5 +95,6 @@
 | 5 | 变更记录已生成（含经验沉淀） | |
 | 6 | 业务文档已更新（如适用） | |
 | 7 | 架构文档已同步（如适用） | |
-| 8 | OpenSpec 工作区已清理 | |
-| 9 | 步骤编号 `[STEP N/M]` 已输出（G20） | |
+| 8 | 3 个快照文件已重置为带指纹占位语（plan/proposal/spec.md 都命中「上一需求归档于」） | |
+| 9 | current_state.md 已追加历史归档行 + 「## 当前进行中」段已移除 | |
+| 10 | 步骤编号 `[STEP N/M]` 已输出（G20） | |

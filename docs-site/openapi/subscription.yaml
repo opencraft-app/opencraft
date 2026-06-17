@@ -1,0 +1,200 @@
+openapi: 3.0.3
+info:
+  title: Lightclaw Subscription API
+  version: 0.1.0
+servers:
+  - url: /
+paths:
+  /subscriptions/current:
+    get:
+      operationId: getCurrentSubscription
+      summary: Get current subscription
+      responses:
+        '200':
+          description: Current subscription state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentSubscriptionResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+  /subscriptions/checkout:
+    post:
+      operationId: checkoutSubscription
+      summary: Start or apply a subscription change
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutRequest'
+      responses:
+        '200':
+          description: Checkout handled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '502':
+          $ref: '#/components/responses/ErrorResponse'
+  /internal/subscriptions/apply-payment:
+    post:
+      operationId: applyPaymentToSubscription
+      summary: Apply a successful payment to a subscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplyPaymentRequest'
+      responses:
+        '200':
+          description: Updated subscription
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionRecord'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+components:
+  responses:
+    ErrorResponse:
+      description: Error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    CheckoutRequest:
+      type: object
+      required:
+        - code
+      properties:
+        code:
+          type: string
+          enum: [free, lite, pro]
+    CheckoutResponse:
+      type: object
+      required:
+        - mode
+        - code
+      properties:
+        mode:
+          type: string
+          enum: [active, payment_required]
+        code:
+          type: string
+        subscription:
+          $ref: '#/components/schemas/SubscriptionRecord'
+        order:
+          $ref: '#/components/schemas/PaymentOrder'
+    CurrentSubscriptionResponse:
+      type: object
+      required:
+        - hasSubscription
+      properties:
+        hasSubscription:
+          type: boolean
+        subscription:
+          $ref: '#/components/schemas/SubscriptionRecord'
+    SubscriptionRecord:
+      type: object
+      required:
+        - id
+        - externalUserId
+        - code
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        externalUserId:
+          type: string
+        code:
+          type: string
+        status:
+          type: string
+          enum: [active, pending_payment, cancelled, expired]
+        aiGatewayPlanId:
+          type: string
+        aiGatewaySubscriptionId:
+          type: string
+        currentPeriodStart:
+          type: string
+          format: date-time
+        currentPeriodEnd:
+          type: string
+          format: date-time
+        sourceOrderId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    PaymentOrder:
+      type: object
+      required:
+        - id
+        - externalUserId
+        - code
+        - status
+        - provider
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        externalUserId:
+          type: string
+        code:
+          type: string
+        status:
+          type: string
+          enum: [pending, paid, failed, cancelled]
+        provider:
+          type: string
+        providerOrderId:
+          type: string
+        checkoutUrl:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ApplyPaymentRequest:
+      type: object
+      required:
+        - orderId
+        - externalUserId
+        - code
+      properties:
+        orderId:
+          type: string
+        externalUserId:
+          type: string
+        code:
+          type: string
+        providerOrderId:
+          type: string
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string

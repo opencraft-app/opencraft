@@ -111,6 +111,31 @@ spec:
           envFrom:
             - secretRef:
                 name: ctl-runtime-secrets
+          env:
+            - name: SHADOW_ACCOUNT_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: ctl-platform-values
+                  key: SHADOW_ACCOUNT_ENABLED
+                  optional: true
+            - name: SHADOW_BINDING_REQUIRED
+              valueFrom:
+                configMapKeyRef:
+                  name: ctl-platform-values
+                  key: SHADOW_BINDING_REQUIRED
+                  optional: true
+            - name: LIGHTVELA_SITE_KIND
+              valueFrom:
+                configMapKeyRef:
+                  name: ctl-platform-values
+                  key: LIGHTVELA_SITE_KIND
+                  optional: true
+            - name: SHADOW_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: ctl-platform-values
+                  key: SHADOW_BASE_URL
+                  optional: true
           command: ["/usr/local/lightglobal/bin/api"]
           args: ["-conf-dir", "/etc/ctl/conf"]
           ports:
@@ -192,6 +217,31 @@ spec:
           envFrom:
             - secretRef:
                 name: ctl-runtime-secrets
+          env:
+            - name: SHADOW_ACCOUNT_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: ctl-platform-values
+                  key: SHADOW_ACCOUNT_ENABLED
+                  optional: true
+            - name: SHADOW_BINDING_REQUIRED
+              valueFrom:
+                configMapKeyRef:
+                  name: ctl-platform-values
+                  key: SHADOW_BINDING_REQUIRED
+                  optional: true
+            - name: LIGHTVELA_SITE_KIND
+              valueFrom:
+                configMapKeyRef:
+                  name: ctl-platform-values
+                  key: LIGHTVELA_SITE_KIND
+                  optional: true
+            - name: SHADOW_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: ctl-platform-values
+                  key: SHADOW_BASE_URL
+                  optional: true
           command: ["/usr/local/lightglobal/bin/service"]
           args: ["-conf-dir", "/etc/ctl/conf"]
           ports:
@@ -270,6 +320,31 @@ spec:
           envFrom:
             - secretRef:
                 name: ctl-runtime-secrets
+          env:
+            - name: SHADOW_ACCOUNT_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: ctl-platform-values
+                  key: SHADOW_ACCOUNT_ENABLED
+                  optional: true
+            - name: SHADOW_BINDING_REQUIRED
+              valueFrom:
+                configMapKeyRef:
+                  name: ctl-platform-values
+                  key: SHADOW_BINDING_REQUIRED
+                  optional: true
+            - name: LIGHTVELA_SITE_KIND
+              valueFrom:
+                configMapKeyRef:
+                  name: ctl-platform-values
+                  key: LIGHTVELA_SITE_KIND
+                  optional: true
+            - name: SHADOW_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: ctl-platform-values
+                  key: SHADOW_BASE_URL
+                  optional: true
           command: ["/usr/local/lightglobal/bin/bypass"]
           args: ["-conf-dir", "/etc/ctl/conf"]
           ports:

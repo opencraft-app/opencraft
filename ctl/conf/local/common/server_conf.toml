@@ -142,6 +142,7 @@ inner_secret_key = ""
 base_url = "http://127.0.0.1:18080"
 token = "local-dev-token"
 timeout = 5
+enabled = false
 
 [adapter.clouddc]
 url = "https://clouddc.tencentcloudapi.com"

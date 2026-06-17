@@ -9,17 +9,19 @@ import (
 )
 
 type cloudAgentRunRecord struct {
-	RunID        string    `json:"run_id"`
-	SessionID    string    `json:"session_id"`
-	TurnID       string    `json:"turn_id,omitempty"`
-	ResponseID   string    `json:"response_id,omitempty"`
-	Status       string    `json:"status"`
-	StopReason   string    `json:"stop_reason,omitempty"`
-	ErrorMessage string    `json:"error_message,omitempty"`
-	OutputText   string    `json:"output_text,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
-	CompletedAt  time.Time `json:"completed_at,omitempty"`
+	RunID              string    `json:"run_id"`
+	SessionID          string    `json:"session_id"`
+	IdempotencyKey     string    `json:"idempotency_key,omitempty"`
+	RequestFingerprint string    `json:"request_fingerprint,omitempty"`
+	TurnID             string    `json:"turn_id,omitempty"`
+	ResponseID         string    `json:"response_id,omitempty"`
+	Status             string    `json:"status"`
+	StopReason         string    `json:"stop_reason,omitempty"`
+	ErrorMessage       string    `json:"error_message,omitempty"`
+	OutputText         string    `json:"output_text,omitempty"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
+	CompletedAt        time.Time `json:"completed_at,omitempty"`
 }
 
 type cloudAgentRunEvent struct {
@@ -47,10 +49,12 @@ func (s *Store) CreateCloudAgentRun(run cloudAgentRunRecord) error {
 	}
 	if s.dialect == storeDialectMySQL {
 		_, err := s.db.Exec(`
-INSERT INTO cloudagent_runs (run_id, session_id, turn_id, response_id, status, stop_reason, error_message, output_text, created_at, updated_at, completed_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO cloudagent_runs (run_id, session_id, idempotency_key, request_fingerprint, turn_id, response_id, status, stop_reason, error_message, output_text, created_at, updated_at, completed_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON DUPLICATE KEY UPDATE
 	session_id = VALUES(session_id),
+	idempotency_key = IF(VALUES(idempotency_key) = '', idempotency_key, VALUES(idempotency_key)),
+	request_fingerprint = IF(VALUES(request_fingerprint) = '', request_fingerprint, VALUES(request_fingerprint)),
 	turn_id = VALUES(turn_id),
 	response_id = VALUES(response_id),
 	status = VALUES(status),
@@ -59,16 +63,18 @@ ON DUPLICATE KEY UPDATE
 	output_text = VALUES(output_text),
 	updated_at = VALUES(updated_at),
 	completed_at = VALUES(completed_at)`,
-			run.RunID, run.SessionID, run.TurnID, run.ResponseID, run.Status, run.StopReason,
+			run.RunID, run.SessionID, run.IdempotencyKey, run.RequestFingerprint, run.TurnID, run.ResponseID, run.Status, run.StopReason,
 			run.ErrorMessage, run.OutputText, run.CreatedAt.Format(time.RFC3339Nano),
 			run.UpdatedAt.Format(time.RFC3339Nano), formatOptionalRunTime(run.CompletedAt))
 		return err
 	}
 	_, err := s.db.Exec(`
-INSERT INTO cloudagent_runs (run_id, session_id, turn_id, response_id, status, stop_reason, error_message, output_text, created_at, updated_at, completed_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO cloudagent_runs (run_id, session_id, idempotency_key, request_fingerprint, turn_id, response_id, status, stop_reason, error_message, output_text, created_at, updated_at, completed_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(run_id) DO UPDATE SET
 	session_id = excluded.session_id,
+	idempotency_key = CASE WHEN excluded.idempotency_key = '' THEN cloudagent_runs.idempotency_key ELSE excluded.idempotency_key END,
+	request_fingerprint = CASE WHEN excluded.request_fingerprint = '' THEN cloudagent_runs.request_fingerprint ELSE excluded.request_fingerprint END,
 	turn_id = excluded.turn_id,
 	response_id = excluded.response_id,
 	status = excluded.status,
@@ -77,19 +83,19 @@ ON CONFLICT(run_id) DO UPDATE SET
 	output_text = excluded.output_text,
 	updated_at = excluded.updated_at,
 	completed_at = excluded.completed_at`,
-		run.RunID, run.SessionID, run.TurnID, run.ResponseID, run.Status, run.StopReason,
+		run.RunID, run.SessionID, run.IdempotencyKey, run.RequestFingerprint, run.TurnID, run.ResponseID, run.Status, run.StopReason,
 		run.ErrorMessage, run.OutputText, run.CreatedAt.Format(time.RFC3339Nano),
 		run.UpdatedAt.Format(time.RFC3339Nano), formatOptionalRunTime(run.CompletedAt))
 	return err
 }
 
-func (s *Store) TryReserveCloudAgentRun(scope Scope, runID, sessionID string) (cloudAgentRunRecord, bool, error) {
+func (s *Store) TryReserveCloudAgentRun(scope Scope, runID, sessionID, idempotencyKey, requestFingerprint string) (cloudAgentRunRecord, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if existing, err := s.loadCloudAgentRunLocked(runID); err == nil {
-		if existing.SessionID != sessionID {
-			return cloudAgentRunRecord{}, true, fmt.Errorf("run id belongs to another session")
-		}
+	if idempotencyKey == "" {
+		return cloudAgentRunRecord{}, false, fmt.Errorf("idempotency_key is required")
+	}
+	if existing, err := s.loadCloudAgentRunByIdempotencyKeyLocked(sessionID, idempotencyKey); err == nil {
 		if err := s.ensureCloudAgentRunScopeLocked(scope, existing.SessionID); err != nil {
 			return cloudAgentRunRecord{}, true, err
 		}
@@ -102,24 +108,45 @@ func (s *Store) TryReserveCloudAgentRun(scope Scope, runID, sessionID string) (c
 	}
 	now := time.Now().UTC()
 	run := cloudAgentRunRecord{
-		RunID:     runID,
-		SessionID: sessionID,
-		Status:    "running",
-		CreatedAt: now,
-		UpdatedAt: now,
+		RunID:              runID,
+		SessionID:          sessionID,
+		IdempotencyKey:     idempotencyKey,
+		RequestFingerprint: requestFingerprint,
+		Status:             "running",
+		CreatedAt:          now,
+		UpdatedAt:          now,
 	}
-	_, err := s.db.Exec(`
-INSERT INTO cloudagent_runs (run_id, session_id, turn_id, response_id, status, stop_reason, error_message, output_text, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		run.RunID, run.SessionID, run.TurnID, run.ResponseID, run.Status, run.StopReason, run.ErrorMessage, run.OutputText,
+	insertSQL := `
+INSERT INTO cloudagent_runs (run_id, session_id, idempotency_key, request_fingerprint, turn_id, response_id, status, stop_reason, error_message, output_text, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	if s.dialect == storeDialectMySQL {
+		insertSQL = `
+INSERT INTO cloudagent_runs (run_id, session_id, idempotency_key, request_fingerprint, turn_id, response_id, status, stop_reason, error_message, output_text, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	}
+	_, err := s.db.Exec(insertSQL,
+		run.RunID, run.SessionID, run.IdempotencyKey, run.RequestFingerprint, run.TurnID, run.ResponseID, run.Status, run.StopReason, run.ErrorMessage, run.OutputText,
 		run.CreatedAt.Format(time.RFC3339Nano), run.UpdatedAt.Format(time.RFC3339Nano))
 	if err != nil {
-		if existing, loadErr := s.loadCloudAgentRunLocked(runID); loadErr == nil {
+		if existing, loadErr := s.loadCloudAgentRunByIdempotencyKeyLocked(sessionID, idempotencyKey); loadErr == nil {
 			return existing, true, nil
 		}
 		return cloudAgentRunRecord{}, false, err
 	}
 	return run, false, nil
+}
+
+func (s *Store) LoadCloudAgentRunByIdempotencyKey(scope Scope, sessionID, idempotencyKey string) (cloudAgentRunRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	run, err := s.loadCloudAgentRunByIdempotencyKeyLocked(sessionID, idempotencyKey)
+	if err != nil {
+		return cloudAgentRunRecord{}, err
+	}
+	if err := s.ensureCloudAgentRunScopeLocked(scope, run.SessionID); err != nil {
+		return cloudAgentRunRecord{}, err
+	}
+	return run, nil
 }
 
 func (s *Store) UpdateCloudAgentRun(runID, status, stopReason, errorMessage, outputText string) error {
@@ -195,7 +222,7 @@ func (s *Store) ListCloudAgentRuns(scope Scope, sessionID string, limit int) ([]
 	}
 	args = append(args, limit)
 	rows, err := s.db.Query(`
-SELECT r.run_id, r.session_id, r.turn_id, r.response_id, r.status, r.stop_reason,
+SELECT r.run_id, r.session_id, r.idempotency_key, r.request_fingerprint, r.turn_id, r.response_id, r.status, r.stop_reason,
 	r.error_message, r.output_text, r.created_at, r.updated_at, r.completed_at
 FROM cloudagent_runs r
 JOIN sessions s ON s.session_id = r.session_id
@@ -390,9 +417,23 @@ func (s *Store) ensureCloudAgentRunScopeLocked(scope Scope, sessionID string) er
 
 func (s *Store) loadCloudAgentRunLocked(runID string) (cloudAgentRunRecord, error) {
 	run, err := scanCloudAgentRun(s.db.QueryRow(`
-SELECT run_id, session_id, turn_id, response_id, status, stop_reason, error_message, output_text, created_at, updated_at, completed_at
+SELECT run_id, session_id, idempotency_key, request_fingerprint, turn_id, response_id, status, stop_reason, error_message, output_text, created_at, updated_at, completed_at
 	FROM cloudagent_runs WHERE run_id = ?`, runID))
 	if errors.Is(err, sql.ErrNoRows) {
+		return cloudAgentRunRecord{}, fmt.Errorf("run not found")
+	}
+	return run, err
+}
+
+func (s *Store) loadCloudAgentRunByIdempotencyKeyLocked(sessionID, idempotencyKey string) (cloudAgentRunRecord, error) {
+	run, err := scanCloudAgentRun(s.db.QueryRow(`
+SELECT run_id, session_id, idempotency_key, request_fingerprint, turn_id, response_id, status, stop_reason, error_message, output_text, created_at, updated_at, completed_at
+FROM cloudagent_runs WHERE session_id = ? AND idempotency_key = ?`, sessionID, idempotencyKey))
+	if errors.Is(err, sql.ErrNoRows) {
+		legacy, legacyErr := s.loadCloudAgentRunLocked(idempotencyKey)
+		if legacyErr == nil && legacy.SessionID == sessionID {
+			return legacy, nil
+		}
 		return cloudAgentRunRecord{}, fmt.Errorf("run not found")
 	}
 	return run, err
@@ -407,7 +448,7 @@ func scanCloudAgentRun(scanner cloudAgentRunScanner) (cloudAgentRunRecord, error
 	var createdAt, updatedAt string
 	var completedAt sql.NullString
 	err := scanner.Scan(
-		&run.RunID, &run.SessionID, &run.TurnID, &run.ResponseID, &run.Status, &run.StopReason,
+		&run.RunID, &run.SessionID, &run.IdempotencyKey, &run.RequestFingerprint, &run.TurnID, &run.ResponseID, &run.Status, &run.StopReason,
 		&run.ErrorMessage, &run.OutputText, &createdAt, &updatedAt, &completedAt,
 	)
 	if err != nil {

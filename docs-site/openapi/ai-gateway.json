@@ -1,0 +1,4813 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "AI Gateway SaaS - OpenAI-compatible API proxy with token billing, rate limiting, and multi-provider support.",
+        "title": "AI Gateway API",
+        "contact": {},
+        "version": "1.0"
+    },
+    "host": "localhost:18080",
+    "basePath": "/",
+    "paths": {
+        "/api/admin/api-keys": {
+            "get": {
+                "description": "List all API keys across all users with pagination. Includes user phone and status mapping.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - API Keys"
+                ],
+                "summary": "List all API keys",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Page size (max 100)",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search by key prefix or name",
+                        "name": "search",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Paginated API key list across all users",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerAllApiKeyListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/api-keys/{id}": {
+            "delete": {
+                "description": "Revoke (deactivate) an API key by its ID. The key will no longer be usable for authentication.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - API Keys"
+                ],
+                "summary": "Revoke API key",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API Key ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "API key revoked successfully",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerMessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request - invalid key ID or revocation failed",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/cache": {
+            "delete": {
+                "description": "Truncates the entire response cache table",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Cache"
+                ],
+                "summary": "Clear all cache",
+                "responses": {
+                    "200": {
+                        "description": "Cache cleared",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/cache/config": {
+            "get": {
+                "description": "Returns the current semantic cache configuration",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Cache"
+                ],
+                "summary": "Get cache config",
+                "responses": {
+                    "200": {
+                        "description": "Current cache configuration",
+                        "schema": {
+                            "$ref": "#/definitions/handler.CacheConfigResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Partially update semantic cache configuration (PATCH semantics)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Cache"
+                ],
+                "summary": "Update cache config",
+                "parameters": [
+                    {
+                        "description": "Update cache config request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.UpdateCacheConfigRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated cache configuration",
+                        "schema": {
+                            "$ref": "#/definitions/handler.CacheConfigResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/cache/stats": {
+            "get": {
+                "description": "Returns semantic cache hit/miss statistics",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Cache"
+                ],
+                "summary": "Get cache stats",
+                "responses": {
+                    "200": {
+                        "description": "Cache statistics",
+                        "schema": {
+                            "$ref": "#/definitions/service.CacheStats"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/cache/test-embedding": {
+            "post": {
+                "description": "Tests the configured embedding provider by generating a test embedding",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Cache"
+                ],
+                "summary": "Test embedding provider",
+                "responses": {
+                    "200": {
+                        "description": "Test result with latency",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "502": {
+                        "description": "Embedding provider error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/config/routing": {
+            "get": {
+                "description": "Returns the current routing configuration including circuit breaker and strategy settings",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Config"
+                ],
+                "summary": "Get routing config",
+                "responses": {
+                    "200": {
+                        "description": "Current routing configuration",
+                        "schema": {
+                            "$ref": "#/definitions/handler.RoutingConfigResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/config/routing/circuit-breaker": {
+            "put": {
+                "description": "Update circuit breaker configuration (PATCH semantics)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Config"
+                ],
+                "summary": "Update circuit breaker config",
+                "parameters": [
+                    {
+                        "description": "Circuit breaker config (all fields optional)",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.UpdateCircuitBreakerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated circuit breaker config",
+                        "schema": {
+                            "$ref": "#/definitions/handler.CircuitBreakerConfigResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/config/routing/strategy": {
+            "put": {
+                "description": "Update Portkey routing strategy configuration and default auto-selected model (PATCH semantics)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Config"
+                ],
+                "summary": "Update routing strategy",
+                "parameters": [
+                    {
+                        "description": "Strategy config (all fields optional)",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.UpdatePortkeyStrategyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated routing config",
+                        "schema": {
+                            "$ref": "#/definitions/handler.RoutingConfigResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/model-mappings": {
+            "get": {
+                "description": "返回所有模型映射规则，包含关联的提供商信息",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Model Mappings"
+                ],
+                "summary": "列出所有模型映射",
+                "responses": {
+                    "200": {
+                        "description": "Mapping list with provider details",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerModelMappingListResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "创建模型名到提供商的映射规则，支持通配符（如 \"gpt-4*\", \"claude-*\"）",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Model Mappings"
+                ],
+                "summary": "创建模型映射",
+                "parameters": [
+                    {
+                        "description": "Create mapping request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.createModelMappingRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Created mapping",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerModelMapping"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request - missing fields or provider not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/model-mappings/resolve": {
+            "get": {
+                "description": "输入模型名，返回匹配的提供商列表（API key 已脱敏）",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Model Mappings"
+                ],
+                "summary": "测试模型路由",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Model name to resolve (e.g. gpt-4, claude-3-opus)",
+                        "name": "model",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Resolved providers for the model",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerResolveModelResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/model-mappings/{id}": {
+            "put": {
+                "description": "更新指定模型映射规则的属性（部分更新，仅非 nil 字段会被修改）",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Model Mappings"
+                ],
+                "summary": "更新模型映射",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Mapping ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Update mapping request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.updateModelMappingRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated mapping",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerModelMapping"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request - invalid ID or provider not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "删除指定的模型映射规则",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Model Mappings"
+                ],
+                "summary": "删除模型映射",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Mapping ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Mapping deleted successfully",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerMessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid mapping ID format",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/plans": {
+            "get": {
+                "description": "List all subscription plans with pagination, optionally filtered by active status",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Plans"
+                ],
+                "summary": "List plans",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "Filter active plans only",
+                        "name": "active",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Page size (max 100)",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Paginated plan list",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerPlanListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a new subscription plan with rate limits, allowed models, and token multipliers",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Plans"
+                ],
+                "summary": "Create plan",
+                "parameters": [
+                    {
+                        "description": "Create plan request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerCreatePlanRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Created plan",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerPlan"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request - missing required fields or invalid rate limits",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/plans/{id}": {
+            "get": {
+                "description": "Get a subscription plan by ID with full details",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Plans"
+                ],
+                "summary": "Get plan",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Plan ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Plan details",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerPlan"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid plan ID format",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Plan not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update an existing subscription plan (partial update, only non-nil fields are updated)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Plans"
+                ],
+                "summary": "Update plan",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Plan ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Update plan request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerUpdatePlanRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated plan",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerPlan"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request - invalid rate limits or request body",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Plan not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Soft delete a subscription plan by setting is_active to false",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Plans"
+                ],
+                "summary": "Delete plan",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Plan ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Plan deleted successfully",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerMessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid plan ID format",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Plan not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/providers": {
+            "get": {
+                "description": "List all registered LLM providers with pagination (API keys masked in response)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Providers"
+                ],
+                "summary": "List providers",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Page size (max 100)",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Paginated provider list",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerProviderListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Register a new LLM provider. The API key will be encrypted at rest and masked in the response.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Providers"
+                ],
+                "summary": "Create provider",
+                "parameters": [
+                    {
+                        "description": "Create provider request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.createProviderRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Created provider (API key masked in response)",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerProvider"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request - missing required fields",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/providers/validate": {
+            "post": {
+                "description": "Tests provider base_url/api_key reachability without saving changes.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Providers"
+                ],
+                "summary": "Validate provider configuration",
+                "parameters": [
+                    {
+                        "description": "Provider validation request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.validateProviderRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Validation result",
+                        "schema": {
+                            "$ref": "#/definitions/service.ProviderValidationResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Provider not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/providers/{id}": {
+            "get": {
+                "description": "Get provider details by ID (API key masked in response)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Providers"
+                ],
+                "summary": "Get provider",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Provider ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Provider details (API key masked)",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerProvider"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid provider ID format",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Provider not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update an existing LLM provider (partial update, only non-empty fields are updated)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Providers"
+                ],
+                "summary": "Update provider",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Provider ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Update provider request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.updateProviderRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated provider (API key masked in response)",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerProvider"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request - invalid request body",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Provider not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/providers/{id}/usage": {
+            "get": {
+                "description": "Returns quota usage, request count, and last used time for a specific provider",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Stats"
+                ],
+                "summary": "Get provider usage",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Provider ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Provider usage statistics",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerProviderUsageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid provider ID format",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Provider not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/provision": {
+            "post": {
+                "description": "One-shot operation: create or reuse a user, subscribe to a plan, and optionally generate an API key",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Provision"
+                ],
+                "summary": "Provision user",
+                "parameters": [
+                    {
+                        "description": "Provision request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.provisionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Provisioned user with subscription and optional API key",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerProvisionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request - missing required fields or plan not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/stats": {
+            "get": {
+                "description": "Get high-level platform statistics: total users, active subscriptions, providers, and active plans",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Stats"
+                ],
+                "summary": "Get stats overview",
+                "responses": {
+                    "200": {
+                        "description": "Platform statistics overview",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerStatsOverviewResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/stats/token-pool": {
+            "get": {
+                "description": "Returns global token pool information: total distributed, consumed, remaining, and 7-day change percentage",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Stats"
+                ],
+                "summary": "Get token pool statistics",
+                "responses": {
+                    "200": {
+                        "description": "Global token pool statistics",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerStatsTokenPoolResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/stats/usage": {
+            "get": {
+                "description": "Returns today's total token consumption, interaction count, and change percentages compared to yesterday",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Stats"
+                ],
+                "summary": "Get usage statistics",
+                "responses": {
+                    "200": {
+                        "description": "Today's usage statistics with day-over-day change",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerStatsUsageResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/stats/usage/trend": {
+            "get": {
+                "description": "Returns daily usage trend data and model distribution for the specified period (7d or 30d)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Stats"
+                ],
+                "summary": "Get usage trend",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "7d",
+                        "description": "Time period: '7d' or '30d'",
+                        "name": "period",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "default": "daily",
+                        "description": "Data granularity: 'daily'",
+                        "name": "granularity",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Usage trend with daily data and model distribution",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerStatsUsageTrendResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/stats/users": {
+            "get": {
+                "description": "Returns user counts by status: total, active, disabled (suspended), and expired",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Stats"
+                ],
+                "summary": "Get user statistics",
+                "responses": {
+                    "200": {
+                        "description": "User statistics by status",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerStatsUsersResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/stats/users/top": {
+            "get": {
+                "description": "Returns the top users ranked by token consumption over the specified number of days",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Stats"
+                ],
+                "summary": "Get top users by token usage",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 7,
+                        "description": "Number of days to look back",
+                        "name": "days",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 5,
+                        "description": "Maximum number of users to return",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Top users by token usage",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerTopUsersResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/subscriptions/{id}/tokens": {
+            "put": {
+                "description": "Adjust a subscription's token balance by a delta value. Positive delta adds tokens, negative delta removes tokens.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Subscriptions"
+                ],
+                "summary": "Adjust token balance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Subscription ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Token adjustment request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerAdjustTokensRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated subscription with new token balance",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerSubscription"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request - missing delta or resulting balance would be negative",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Subscription not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/users": {
+            "get": {
+                "description": "List users with pagination. Each user includes current plan name and token balance.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Users"
+                ],
+                "summary": "List users",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Page size (max 100)",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search by phone or nickname",
+                        "name": "search",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Paginated user list with plan info",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerUserListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a new user with phone, user_id and optional nickname",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Users"
+                ],
+                "summary": "Create user",
+                "parameters": [
+                    {
+                        "description": "Create user request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.createUserRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Created user",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerUser"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request - missing required fields or duplicate user",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/users/{user_id}": {
+            "get": {
+                "description": "Get user details by business user_id, including active subscription and plan information",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Users"
+                ],
+                "summary": "Get user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Business user ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "User details with subscription and plan",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerUserDetailResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid user ID",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update an existing user identified by business user_id (partial update, only non-empty fields are updated)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Users"
+                ],
+                "summary": "Update user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Business user ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Update user request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.updateUserRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated user",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerUser"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request - invalid request body",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Soft delete a user by business user_id (sets status to 'deleted')",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Users"
+                ],
+                "summary": "Delete user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Business user ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "User deleted successfully",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerMessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid user ID",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/users/{user_id}/api-keys": {
+            "get": {
+                "description": "List all API keys belonging to a user identified by business user_id",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - API Keys"
+                ],
+                "summary": "List user API keys",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Business user ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "User's API key list",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerApiKeyListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request - invalid user_id",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Generate a new API key for a user identified by business user_id. The plain-text key is only returned once in the response.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - API Keys"
+                ],
+                "summary": "Create API key",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Business user ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Create API key request (name is optional, defaults to 'default')",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/handler.createApiKeyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Created API key (plain-text key shown only once)",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerCreateApiKeyResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request - invalid user_id or key generation failed",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/users/{user_id}/subscriptions": {
+            "get": {
+                "description": "Get the active subscription for a user identified by business user_id, including plan details",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Subscriptions"
+                ],
+                "summary": "Get user subscription",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Business user ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Active subscription",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerSubscription"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid user ID",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No active subscription found for this user",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a new subscription for a user identified by business user_id. PeriodStart is optional (defaults to now).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Subscriptions"
+                ],
+                "summary": "Subscribe user to plan",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Business user ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Subscribe request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.subscribeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Created subscription",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerSubscription"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request - invalid plan ID or user already subscribed",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Cancel the active subscription for a user identified by business user_id",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Subscriptions"
+                ],
+                "summary": "Cancel user subscription",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Business user ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Cancelled subscription",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerSubscription"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid user ID",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/users/{user_id}/usage": {
+            "get": {
+                "description": "Returns token usage statistics for a specific user identified by business user_id over the specified number of days",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin - Stats"
+                ],
+                "summary": "Get user usage",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Business user ID",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 7,
+                        "description": "Number of days to look back",
+                        "name": "days",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "User usage statistics with daily breakdown",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerUserUsageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid user ID",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid admin token",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/registry/deregister": {
+            "delete": {
+                "security": [
+                    {
+                        "RegistryAuth": []
+                    }
+                ],
+                "description": "AI 服务实例注销，删除 provider 和所有关联的模型映射",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Registry"
+                ],
+                "summary": "注销 AI 服务实例",
+                "parameters": [
+                    {
+                        "description": "Deregister request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.deregisterRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Service deregistered successfully",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerMessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request - missing provider_id or provider not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/registry/heartbeat": {
+            "post": {
+                "security": [
+                    {
+                        "RegistryAuth": []
+                    }
+                ],
+                "description": "AI 服务实例定期发送心跳，保持 active 状态。如果 provider 处于 unhealthy 状态，心跳会将其恢复为 active。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Registry"
+                ],
+                "summary": "发送心跳",
+                "parameters": [
+                    {
+                        "description": "Heartbeat request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.heartbeatRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Heartbeat received successfully",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerRegistryStatusResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request - missing provider_id or provider not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/registry/register": {
+            "post": {
+                "security": [
+                    {
+                        "RegistryAuth": []
+                    }
+                ],
+                "description": "新的 AI 服务实例自注册到网关，自动创建 provider 和模型映射。按 base_url 去重，已存在则更新。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Registry"
+                ],
+                "summary": "注册 AI 服务实例",
+                "parameters": [
+                    {
+                        "description": "Register request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerRegisterRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Registration result with provider_id and heartbeat interval",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerRegisterResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request - missing required fields",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/health": {
+            "get": {
+                "description": "Returns 200 OK if the service is running. Use this for liveness probes.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Health"
+                ],
+                "summary": "Health check",
+                "responses": {
+                    "200": {
+                        "description": "Service is healthy",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerHealthResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/ready": {
+            "get": {
+                "description": "Checks database, Redis, and Portkey Gateway connectivity.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Health"
+                ],
+                "summary": "Readiness check",
+                "responses": {
+                    "200": {
+                        "description": "All dependencies are ready",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerReadyResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "One or more dependencies are not ready",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerReadyResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/chat/completions": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Proxy request to LLM provider for chat completions (OpenAI-compatible). Supports streaming via stream=true.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Proxy"
+                ],
+                "summary": "Create chat completion",
+                "parameters": [
+                    {
+                        "description": "Chat completion request (OpenAI format)",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerChatCompletionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Chat completion response",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerChatCompletionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid API key",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Quota or rate limit exceeded",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Upstream provider error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/completions": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Proxy request to LLM provider for text completions (OpenAI-compatible, legacy endpoint)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Proxy"
+                ],
+                "summary": "Create completion",
+                "parameters": [
+                    {
+                        "description": "Completion request (OpenAI format)",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerCompletionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Completion response",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerCompletionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid API key",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/embeddings": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Proxy request to LLM provider for text embeddings (OpenAI-compatible, no streaming)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Embeddings"
+                ],
+                "summary": "Create embeddings",
+                "parameters": [
+                    {
+                        "description": "Embeddings request (OpenAI format)",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerEmbeddingRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Embeddings response",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerEmbeddingResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid API key",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/me": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the authenticated user's profile, active subscription, and plan details",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "User"
+                ],
+                "summary": "Get current user info",
+                "responses": {
+                    "200": {
+                        "description": "User info with subscription and plan",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerMeResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid API key",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/me/token-balance": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the authenticated user's token balance, subscription status, and period end. Unlimited plans are explicitly marked.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "User"
+                ],
+                "summary": "Get current user token balance",
+                "responses": {
+                    "200": {
+                        "description": "Token balance information",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerTokenBalanceResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid API key",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/me/usage": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns package total, used tokens, remaining tokens, and billing period for the authenticated user. The query user_id must match the authenticated user.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "User"
+                ],
+                "summary": "Get usage statistics",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Business user ID",
+                        "name": "user_id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Usage overview",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerUsageStatsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request - missing or invalid user_id",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid API key",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden - user_id does not match the authenticated user",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/messages": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Anthropic Claude Messages API 端点，支持 messages、system、streaming。FormatAdapter 自动将 Anthropic 格式转为 OpenAI 格式，ResponseAdapter 将响应转回 Anthropic 格式。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json",
+                    " text/event-stream"
+                ],
+                "tags": [
+                    "Proxy"
+                ],
+                "summary": "Claude Messages API",
+                "parameters": [
+                    {
+                        "description": "Claude Messages API 请求体",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerAnthropicRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerAnthropicResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid API key",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Quota or rate limit exceeded",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Upstream provider error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/models": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the list of models allowed for the authenticated user's plan (OpenAI-compatible format)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Models"
+                ],
+                "summary": "List models",
+                "responses": {
+                    "200": {
+                        "description": "Model list (OpenAI format)",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerModelListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid API key",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1beta/models/{path}": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Google Gemini generateContent API 端点，支持 generateContent 和 streamGenerateContent。FormatAdapter 自动将 Gemini 格式转为 OpenAI 格式，ResponseAdapter 将响应转回 Gemini 格式。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json",
+                    " text/event-stream"
+                ],
+                "tags": [
+                    "Proxy"
+                ],
+                "summary": "Gemini Generate Content API",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Gemini 模型路径，如 gemini-2.0-flash:generateContent",
+                        "name": "path",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Gemini generateContent 请求体",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerGeminiRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerGeminiResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - invalid API key",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Quota or rate limit exceeded",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Upstream provider error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.SwaggerErrorResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "handler.CacheConfigResponse": {
+            "type": "object",
+            "properties": {
+                "embedding_api_key": {
+                    "type": "string"
+                },
+                "embedding_base_url": {
+                    "type": "string"
+                },
+                "embedding_model": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "max_cache_entries": {
+                    "type": "integer"
+                },
+                "max_response_bytes": {
+                    "type": "integer"
+                },
+                "scope_mode": {
+                    "type": "string"
+                },
+                "similarity_threshold": {
+                    "type": "number"
+                },
+                "ttl_seconds": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.CircuitBreakerConfigResponse": {
+            "type": "object",
+            "properties": {
+                "cooldown_duration_s": {
+                    "type": "integer"
+                },
+                "failure_threshold": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.PortkeyStrategyResponse": {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "type": "string"
+                },
+                "on_status_codes": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "retry_attempts": {
+                    "type": "integer"
+                },
+                "retry_status_codes": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "handler.RoutingConfigResponse": {
+            "type": "object",
+            "properties": {
+                "cooldown_duration_s": {
+                    "type": "integer"
+                },
+                "default_model": {
+                    "type": "string"
+                },
+                "failure_threshold": {
+                    "type": "integer"
+                },
+                "strategy": {
+                    "$ref": "#/definitions/handler.PortkeyStrategyResponse"
+                }
+            }
+        },
+        "handler.SwaggerAdjustTokensRequest": {
+            "type": "object",
+            "required": [
+                "delta"
+            ],
+            "properties": {
+                "delta": {
+                    "type": "integer",
+                    "example": 100000
+                }
+            }
+        },
+        "handler.SwaggerAllApiKeyListResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.SwaggerApiKeyItem"
+                    }
+                },
+                "page": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "page_size": {
+                    "type": "integer",
+                    "example": 20
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 50
+                }
+            }
+        },
+        "handler.SwaggerAnthropicBlock": {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "example": "Hello! How can I help you?"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "text"
+                }
+            }
+        },
+        "handler.SwaggerAnthropicMessage": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "example": "Hello, Claude"
+                },
+                "role": {
+                    "type": "string",
+                    "example": "user"
+                }
+            }
+        },
+        "handler.SwaggerAnthropicRequest": {
+            "type": "object",
+            "properties": {
+                "max_tokens": {
+                    "type": "integer",
+                    "example": 1024
+                },
+                "messages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.SwaggerAnthropicMessage"
+                    }
+                },
+                "model": {
+                    "type": "string",
+                    "example": "claude-sonnet-4-20250514"
+                },
+                "stop_sequences": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "[]"
+                    ]
+                },
+                "stream": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "system": {
+                    "type": "string",
+                    "example": "你是一个有帮助的助手"
+                },
+                "temperature": {
+                    "type": "number",
+                    "example": 1
+                },
+                "top_p": {
+                    "type": "number",
+                    "example": 0.9
+                }
+            }
+        },
+        "handler.SwaggerAnthropicResponse": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.SwaggerAnthropicBlock"
+                    }
+                },
+                "id": {
+                    "type": "string",
+                    "example": "msg_abc123"
+                },
+                "model": {
+                    "type": "string",
+                    "example": "claude-sonnet-4-20250514"
+                },
+                "role": {
+                    "type": "string",
+                    "example": "assistant"
+                },
+                "stop_reason": {
+                    "type": "string",
+                    "example": "end_turn"
+                },
+                "stop_sequence": {
+                    "type": "string",
+                    "example": ""
+                },
+                "type": {
+                    "type": "string",
+                    "example": "message"
+                },
+                "usage": {
+                    "$ref": "#/definitions/handler.SwaggerAnthropicUsage"
+                }
+            }
+        },
+        "handler.SwaggerAnthropicUsage": {
+            "type": "object",
+            "properties": {
+                "input_tokens": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "output_tokens": {
+                    "type": "integer",
+                    "example": 20
+                }
+            }
+        },
+        "handler.SwaggerApiKey": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "key_prefix": {
+                    "type": "string",
+                    "example": "sk-xxxxxxxx"
+                },
+                "last_used_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "default"
+                },
+                "user_id": {
+                    "type": "string",
+                    "example": "usr_000001"
+                }
+            }
+        },
+        "handler.SwaggerApiKeyItem": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string",
+                    "example": "2024-01-01T00:00:00Z"
+                },
+                "gateway_user_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "key_prefix": {
+                    "type": "string",
+                    "example": "sk-xxxxxxxx"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "default"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "active"
+                },
+                "user_id": {
+                    "type": "string",
+                    "example": "usr_000001"
+                },
+                "user_phone": {
+                    "type": "string",
+                    "example": "138****8000"
+                }
+            }
+        },
+        "handler.SwaggerApiKeyListResponse": {
+            "type": "object",
+            "properties": {
+                "api_keys": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.SwaggerApiKey"
+                    }
+                }
+            }
+        },
+        "handler.SwaggerChatCompletionChoice": {
+            "type": "object",
+            "properties": {
+                "finish_reason": {
+                    "type": "string",
+                    "example": "stop"
+                },
+                "index": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "message": {
+                    "$ref": "#/definitions/handler.SwaggerChatMessage"
+                }
+            }
+        },
+        "handler.SwaggerChatCompletionRequest": {
+            "type": "object",
+            "properties": {
+                "frequency_penalty": {
+                    "type": "number",
+                    "example": 0
+                },
+                "max_tokens": {
+                    "type": "integer",
+                    "example": 1024
+                },
+                "messages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.SwaggerChatMessage"
+                    }
+                },
+                "model": {
+                    "type": "string",
+                    "example": "gpt-4"
+                },
+                "n": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "presence_penalty": {
+                    "type": "number",
+                    "example": 0
+                },
+                "stream": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "temperature": {
+                    "type": "number",
+                    "example": 0.7
+                },
+                "top_p": {
+                    "type": "number",
+                    "example": 1
+                },
+                "user": {
+                    "type": "string",
+                    "example": "user-123"
+                }
+            }
+        },
+        "handler.SwaggerChatCompletionResponse": {
+            "type": "object",
+            "properties": {
+                "choices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.SwaggerChatCompletionChoice"
+                    }
+                },
+                "created": {
+                    "type": "integer",
+                    "example": 1677858242
+                },
+                "id": {
+                    "type": "string",
+                    "example": "chatcmpl-abc123"
+                },
+                "model": {
+                    "type": "string",
+                    "example": "gpt-4"
+                },
+                "object": {
+                    "type": "string",
+                    "example": "chat.completion"
+                },
+                "usage": {
+                    "$ref": "#/definitions/handler.SwaggerUsage"
+                }
+            }
+        },
+        "handler.SwaggerChatMessage": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "example": "Hello, how are you?"
+                },
+                "role": {
+                    "type": "string",
+                    "example": "user"
+                }
+            }
+        },
+        "handler.SwaggerCompletionChoice": {
+            "type": "object",
+            "properties": {
+                "finish_reason": {
+                    "type": "string",
+                    "example": "stop"
+                },
+                "index": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "text": {
+                    "type": "string",
+                    "example": "This is a test."
+                }
+            }
+        },
+        "handler.SwaggerCompletionRequest": {
+            "type": "object",
+            "properties": {
+                "max_tokens": {
+                    "type": "integer",
+                    "example": 256
+                },
+                "model": {
+                    "type": "string",
+                    "example": "gpt-3.5-turbo-instruct"
+                },
+                "prompt": {
+                    "type": "string",
+                    "example": "Say this is a test"
+                },
+                "stream": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "temperature": {
+                    "type": "number",
+                    "example": 0.7
+                }
+            }
+        },
+        "handler.SwaggerCompletionResponse": {
+            "type": "object",
+            "properties": {
+                "choices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.SwaggerCompletionChoice"
+                    }
+                },
+                "created": {
+                    "type": "integer",
+                    "example": 1677858242
+                },
+                "id": {
+                    "type": "string",
+                    "example": "cmpl-abc123"
+                },
+                "model": {
+                    "type": "string",
+                    "example": "gpt-3.5-turbo-instruct"
+                },
+                "object": {
+                    "type": "string",
+                    "example": "text_completion"
+                },
+                "usage": {
+                    "$ref": "#/definitions/handler.SwaggerUsage"
+                }
+            }
+        },
+        "handler.SwaggerCreateApiKeyResponse": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "type": "string",
+                    "example": "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "key_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "key_prefix": {
+                    "type": "string",
+                    "example": "sk-xxxxxxxx"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "default"
+                }
+            }
+        },
+        "handler.SwaggerCreatePlanRequest": {
+            "type": "object",
+            "required": [
+                "monthly_tokens",
+                "name",
+                "rate_limits"
+            ],
+            "properties": {
+                "allowed_models": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "gpt-4",
+                        "claude-3-opus"
+                    ]
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "monthly_tokens": {
+                    "type": "integer",
+                    "example": 10000000
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Pro Plan"
+                },
+                "price_cents": {
+                    "type": "integer",
+                    "example": 9900
+                },
+                "rate_limits": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/handler.SwaggerRateLimit"
+                    }
+                },
+                "token_multipliers": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "number",
+                        "format": "float64"
+                    }
+                }
+            }
+        },
+        "handler.SwaggerDailyTrendPoint": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string",
+                    "example": "2024-01-15"
+                },
+                "total_interactions": {
+                    "type": "integer",
+                    "example": 200
+                },
+                "total_tokens": {
+                    "type": "integer",
+                    "example": 50000
+                }
+            }
+        },
+        "handler.SwaggerEmbeddingData": {
+            "type": "object",
+            "properties": {
+                "embedding": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "index": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "object": {
+                    "type": "string",
+                    "example": "embedding"
+                }
+            }
+        },
+        "handler.SwaggerEmbeddingRequest": {
+            "type": "object",
+            "properties": {
+                "input": {
+                    "type": "string",
+                    "example": "The quick brown fox jumps over the lazy dog"
+                },
+                "model": {
+                    "type": "string",
+                    "example": "text-embedding-ada-002"
+                }
+            }
+        },
+        "handler.SwaggerEmbeddingResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.SwaggerEmbeddingData"
+                    }
+                },
+                "model": {
+                    "type": "string",
+                    "example": "text-embedding-ada-002"
+                },
+                "object": {
+                    "type": "string",
+                    "example": "list"
+                },
+                "usage": {
+                    "$ref": "#/definitions/handler.SwaggerEmbeddingUsage"
+                }
+            }
+        },
+        "handler.SwaggerEmbeddingUsage": {
+            "type": "object",
+            "properties": {
+                "prompt_tokens": {
+                    "type": "integer",
+                    "example": 8
+                },
+                "total_tokens": {
+                    "type": "integer",
+                    "example": 8
+                }
+            }
+        },
+        "handler.SwaggerErrorDetail": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "invalid_api_key"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "Invalid API key provided."
+                },
+                "type": {
+                    "type": "string",
+                    "example": "authentication_error"
+                }
+            }
+        },
+        "handler.SwaggerErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "$ref": "#/definitions/handler.SwaggerErrorDetail"
+                }
+            }
+        },
+        "handler.SwaggerGeminiCandidate": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "$ref": "#/definitions/handler.SwaggerGeminiContent"
+                },
+                "finishReason": {
+                    "type": "string",
+                    "example": "STOP"
+                }
+            }
+        },
+        "handler.SwaggerGeminiContent": {
+            "type": "object",
+            "properties": {
+                "parts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.SwaggerGeminiPart"
+                    }
+                },
+                "role": {
+                    "type": "string",
+                    "example": "user"
+                }
+            }
+        },
+        "handler.SwaggerGeminiGenCfg": {
+            "type": "object",
+            "properties": {
+                "maxOutputTokens": {
+                    "type": "integer",
+                    "example": 8192
+                },
+                "stopSequences": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "temperature": {
+                    "type": "number",
+                    "example": 0.9
+                },
+                "topK": {
+                    "type": "integer",
+                    "example": 40
+                },
+                "topP": {
+                    "type": "number",
+                    "example": 0.95
+                }
+            }
+        },
+        "handler.SwaggerGeminiPart": {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "example": "Hello, Gemini"
+                }
+            }
+        },
+        "handler.SwaggerGeminiPromptFB": {
+            "type": "object",
+            "properties": {
+                "blockReason": {
+                    "type": "string",
+                    "example": "NONE"
+                }
+            }
+        },
+        "handler.SwaggerGeminiRequest": {
+            "type": "object",
+            "properties": {
+                "contents": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.SwaggerGeminiContent"
+                    }
+                },
+                "generationConfig": {
+                    "$ref": "#/definitions/handler.SwaggerGeminiGenCfg"
+                },
+                "systemInstruction": {
+                    "$ref": "#/definitions/handler.SwaggerGeminiPart"
+                }
+            }
+        },
+        "handler.SwaggerGeminiResponse": {
+            "type": "object",
+            "properties": {
+                "candidates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.SwaggerGeminiCandidate"
+                    }
+                },
+                "promptFeedback": {
+                    "$ref": "#/definitions/handler.SwaggerGeminiPromptFB"
+                },
+                "usageMetadata": {
+                    "$ref": "#/definitions/handler.SwaggerGeminiUsage"
+                }
+            }
+        },
+        "handler.SwaggerGeminiUsage": {
+            "type": "object",
+            "properties": {
+                "candidatesTokenCount": {
+                    "type": "integer",
+                    "example": 20
+                },
+                "promptTokenCount": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "totalTokenCount": {
+                    "type": "integer",
+                    "example": 30
+                }
+            }
+        },
+        "handler.SwaggerHealthResponse": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "example": "ok"
+                }
+            }
+        },
+        "handler.SwaggerMeResponse": {
+            "type": "object",
+            "properties": {
+                "plan": {
+                    "$ref": "#/definitions/handler.SwaggerPlan"
+                },
+                "subscription": {
+                    "$ref": "#/definitions/handler.SwaggerSubSummary"
+                },
+                "user": {
+                    "$ref": "#/definitions/handler.SwaggerUser"
+                }
+            }
+        },
+        "handler.SwaggerMessageResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "Operation successful"
+                }
+            }
+        },
+        "handler.SwaggerModelDistPoint": {
+            "type": "object",
+            "properties": {
+                "model": {
+                    "type": "string",
+                    "example": "gpt-4"
+                },
+                "requests": {
+                    "type": "integer",
+                    "example": 100
+                },
+                "tokens": {
+                    "type": "integer",
+                    "example": 30000
+                }
+            }
+        },
+        "handler.SwaggerModelListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.SwaggerModelObject"
+                    }
+                },
+                "object": {
+                    "type": "string",
+                    "example": "list"
+                }
+            }
+        },
+        "handler.SwaggerModelMapping": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "model_pattern": {
+                    "type": "string",
+                    "example": "gpt-4*"
+                },
+                "priority": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "provider": {
+                    "$ref": "#/definitions/handler.SwaggerProvider"
+                },
+                "provider_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "weight": {
+                    "type": "integer",
+                    "example": 100
+                }
+            }
+        },
+        "handler.SwaggerModelMappingListResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.SwaggerModelMapping"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 10
+                }
+            }
+        },
+        "handler.SwaggerModelObject": {
+            "type": "object",
+            "properties": {
+                "created": {
+                    "type": "integer",
+                    "example": 1677858242
+                },
+                "id": {
+                    "type": "string",
+                    "example": "gpt-4"
+                },
+                "object": {
+                    "type": "string",
+                    "example": "model"
+                },
+                "owned_by": {
+                    "type": "string",
+                    "example": "organization"
+                }
+            }
+        },
+        "handler.SwaggerPlan": {
+            "type": "object",
+            "properties": {
+                "allowed_models": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "gpt-4",
+                        "claude-3-opus"
+                    ]
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "monthly_tokens": {
+                    "type": "integer",
+                    "example": 10000000
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Pro Plan"
+                },
+                "price_cents": {
+                    "type": "integer",
+                    "example": 9900
+                },
+                "rate_limits": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.SwaggerRateLimit"
+                    }
+                },
+                "token_multipliers": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "number",
+                        "format": "float64"
+                    }
+                }
+            }
+        },
+        "handler.SwaggerPlanListResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.SwaggerPlan"
+                    }
+                },
+                "page": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "page_size": {
+                    "type": "integer",
+                    "example": 20
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 5
+                }
+            }
+        },
+        "handler.SwaggerProvider": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "type": "string",
+                    "example": "sk-xxxx***xxxx"
+                },
+                "base_url": {
+                    "type": "string",
+                    "example": "https://api.openai.com"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "health_check_url": {
+                    "type": "string",
+                    "example": "https://api.openai.com/v1/models"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "last_heartbeat": {
+                    "type": "string"
+                },
+                "model_discovery_protocol": {
+                    "type": "string",
+                    "example": "openai_compatible"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "OpenAI Primary"
+                },
+                "priority": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "provider_type": {
+                    "type": "string",
+                    "example": "openai"
+                },
+                "registration_source": {
+                    "type": "string",
+                    "example": "manual"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "active"
+                },
+                "supported_models": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "gpt-4",
+                        "gpt-3.5-turbo"
+                    ]
+                },
+                "total_quota": {
+                    "type": "integer",
+                    "example": 10000000
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "used_quota": {
+                    "type": "integer",
+                    "example": 500000
+                },
+                "weight": {
+                    "type": "integer",
+                    "example": 100
+                }
+            }
+        },
+        "handler.SwaggerProviderListResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.SwaggerProvider"
+                    }
+                },
+                "page": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "page_size": {
+                    "type": "integer",
+                    "example": 20
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 3
+                }
+            }
+        },
+        "handler.SwaggerProviderUsageResponse": {
+            "type": "object",
+            "properties": {
+                "last_used_at": {
+                    "type": "string",
+                    "example": "2024-01-15T10:30:00Z"
+                },
+                "request_count": {
+                    "type": "integer",
+                    "example": 2500
+                },
+                "total_quota": {
+                    "type": "integer",
+                    "example": 10000000
+                },
+                "used_quota": {
+                    "type": "integer",
+                    "example": 500000
+                }
+            }
+        },
+        "handler.SwaggerProvisionResponse": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "type": "string",
+                    "example": "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                },
+                "api_key_assigned": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "subscription": {
+                    "$ref": "#/definitions/handler.SwaggerSubscription"
+                },
+                "user": {
+                    "$ref": "#/definitions/handler.SwaggerUser"
+                }
+            }
+        },
+        "handler.SwaggerRateLimit": {
+            "type": "object",
+            "properties": {
+                "label": {
+                    "type": "string",
+                    "example": "每分钟"
+                },
+                "max_requests": {
+                    "type": "integer",
+                    "example": 60
+                },
+                "window": {
+                    "type": "string",
+                    "example": "1m"
+                }
+            }
+        },
+        "handler.SwaggerReadyChecks": {
+            "type": "object",
+            "properties": {
+                "database": {
+                    "type": "string",
+                    "example": "ok"
+                },
+                "redis": {
+                    "type": "string",
+                    "example": "ok"
+                }
+            }
+        },
+        "handler.SwaggerReadyResponse": {
+            "type": "object",
+            "properties": {
+                "checks": {
+                    "$ref": "#/definitions/handler.SwaggerReadyChecks"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "ready"
+                }
+            }
+        },
+        "handler.SwaggerRegisterRequest": {
+            "type": "object",
+            "required": [
+                "api_key",
+                "base_url",
+                "name",
+                "provider_type"
+            ],
+            "properties": {
+                "api_key": {
+                    "type": "string",
+                    "example": "sk-xxxx"
+                },
+                "base_url": {
+                    "type": "string",
+                    "example": "https://api.openai.com"
+                },
+                "health_check_url": {
+                    "type": "string",
+                    "example": "https://api.openai.com/v1/models"
+                },
+                "models_supported": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "gpt-4",
+                        "gpt-3.5-turbo"
+                    ]
+                },
+                "name": {
+                    "type": "string",
+                    "example": "my-ai-service"
+                },
+                "provider_type": {
+                    "type": "string",
+                    "example": "openai"
+                },
+                "total_quota": {
+                    "type": "integer",
+                    "example": 1000000000
+                },
+                "weight": {
+                    "type": "integer",
+                    "example": 100
+                }
+            }
+        },
+        "handler.SwaggerRegisterResponse": {
+            "type": "object",
+            "properties": {
+                "heartbeat_interval_s": {
+                    "type": "integer",
+                    "example": 30
+                },
+                "provider_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                }
+            }
+        },
+        "handler.SwaggerRegistryStatusResponse": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "example": "ok"
+                }
+            }
+        },
+        "handler.SwaggerResolveModelResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "message": {
+                    "type": "string",
+                    "example": "检测到部分 provider 的模型映射与 supported_models 不一致，已从候选集中剔除"
+                },
+                "mismatches": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.SwaggerRouteMismatch"
+                    }
+                },
+                "model": {
+                    "type": "string",
+                    "example": "gpt-4"
+                },
+                "providers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.SwaggerResolvedProvider"
+                    }
+                }
+            }
+        },
+        "handler.SwaggerResolvedProvider": {
+            "type": "object",
+            "properties": {
+                "base_url": {
+                    "type": "string",
+                    "example": "https://api.openai.com"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "OpenAI Primary"
+                },
+                "priority": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "provider_type": {
+                    "type": "string",
+                    "example": "openai"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "active"
+                },
+                "weight": {
+                    "type": "integer",
+                    "example": 100
+                }
+            }
+        },
+        "handler.SwaggerRouteMismatch": {
+            "type": "object",
+            "properties": {
+                "provider_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "provider_name": {
+                    "type": "string",
+                    "example": "OpenAI Primary"
+                },
+                "reason": {
+                    "type": "string",
+                    "example": "provider mapping matched model but supported_models does not include it"
+                },
+                "source": {
+                    "type": "string",
+                    "example": "mapping_vs_supported_models_mismatch"
+                }
+            }
+        },
+        "handler.SwaggerStatsOverviewResponse": {
+            "type": "object",
+            "properties": {
+                "active_plans": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "active_subscriptions": {
+                    "type": "integer",
+                    "example": 800
+                },
+                "total_providers": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "total_users": {
+                    "type": "integer",
+                    "example": 1000
+                }
+            }
+        },
+        "handler.SwaggerStatsTokenPoolResponse": {
+            "type": "object",
+            "properties": {
+                "consumed_change_7d_pct": {
+                    "type": "number",
+                    "example": 15.2
+                },
+                "global_remaining": {
+                    "type": "integer",
+                    "example": 5000000
+                },
+                "total_consumed": {
+                    "type": "integer",
+                    "example": 5000000
+                },
+                "total_distributed": {
+                    "type": "integer",
+                    "example": 10000000
+                }
+            }
+        },
+        "handler.SwaggerStatsUsageResponse": {
+            "type": "object",
+            "properties": {
+                "interactions_change_pct": {
+                    "type": "number",
+                    "example": 8.3
+                },
+                "tokens_change_pct": {
+                    "type": "number",
+                    "example": 12.5
+                },
+                "total_interactions": {
+                    "type": "integer",
+                    "example": 5000
+                },
+                "total_tokens": {
+                    "type": "integer",
+                    "example": 1500000
+                }
+            }
+        },
+        "handler.SwaggerStatsUsageTrendResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.SwaggerDailyTrendPoint"
+                    }
+                },
+                "granularity": {
+                    "type": "string",
+                    "example": "daily"
+                },
+                "model_distribution": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.SwaggerModelDistPoint"
+                    }
+                },
+                "period": {
+                    "type": "string",
+                    "example": "7d"
+                }
+            }
+        },
+        "handler.SwaggerStatsUsersResponse": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "integer",
+                    "example": 800
+                },
+                "disabled": {
+                    "type": "integer",
+                    "example": 50
+                },
+                "expired": {
+                    "type": "integer",
+                    "example": 150
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 1000
+                }
+            }
+        },
+        "handler.SwaggerSubSummary": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "period_end": {
+                    "type": "string"
+                },
+                "period_start": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "active"
+                },
+                "token_balance": {
+                    "type": "integer",
+                    "example": 1000000
+                }
+            }
+        },
+        "handler.SwaggerSubscription": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "period_end": {
+                    "type": "string"
+                },
+                "period_start": {
+                    "type": "string"
+                },
+                "plan_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "active"
+                },
+                "token_balance": {
+                    "type": "integer",
+                    "example": 1000000
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                }
+            }
+        },
+        "handler.SwaggerTokenBalanceResponse": {
+            "type": "object",
+            "properties": {
+                "display_text": {
+                    "type": "string",
+                    "example": "1000000"
+                },
+                "is_unlimited": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "period_end": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "active"
+                },
+                "token_balance": {
+                    "type": "integer",
+                    "x-nullable": true,
+                    "example": 1000000
+                }
+            }
+        },
+        "handler.SwaggerTopUserItem": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "nickname": {
+                    "type": "string",
+                    "example": "张三"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "active"
+                },
+                "total_interactions": {
+                    "type": "integer",
+                    "example": 120
+                },
+                "total_tokens": {
+                    "type": "integer",
+                    "example": 50000
+                },
+                "user_id": {
+                    "type": "string",
+                    "example": "usr_000001"
+                }
+            }
+        },
+        "handler.SwaggerTopUsersResponse": {
+            "type": "object",
+            "properties": {
+                "days": {
+                    "type": "integer",
+                    "example": 7
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.SwaggerTopUserItem"
+                    }
+                },
+                "limit": {
+                    "type": "integer",
+                    "example": 5
+                }
+            }
+        },
+        "handler.SwaggerUpdatePlanRequest": {
+            "type": "object",
+            "properties": {
+                "allowed_models": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "gpt-4",
+                        "claude-3-opus"
+                    ]
+                },
+                "is_active": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "monthly_tokens": {
+                    "type": "integer",
+                    "example": 10000000
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Pro Plan"
+                },
+                "price_cents": {
+                    "type": "integer",
+                    "example": 9900
+                },
+                "rate_limits": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.SwaggerRateLimit"
+                    }
+                },
+                "token_multipliers": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "number",
+                        "format": "float64"
+                    }
+                }
+            }
+        },
+        "handler.SwaggerUsage": {
+            "type": "object",
+            "properties": {
+                "completion_tokens": {
+                    "type": "integer",
+                    "example": 20
+                },
+                "prompt_tokens": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "total_tokens": {
+                    "type": "integer",
+                    "example": 30
+                }
+            }
+        },
+        "handler.SwaggerUsageStatsResponse": {
+            "type": "object",
+            "properties": {
+                "is_unlimited": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "period_end": {
+                    "type": "string"
+                },
+                "period_start": {
+                    "type": "string"
+                },
+                "plan_total_tokens": {
+                    "type": "integer",
+                    "x-nullable": true,
+                    "example": 1000000
+                },
+                "remaining_tokens": {
+                    "type": "integer",
+                    "x-nullable": true,
+                    "example": 700000
+                },
+                "status": {
+                    "type": "string",
+                    "example": "active"
+                },
+                "total_requests": {
+                    "type": "integer",
+                    "example": 120
+                },
+                "used_tokens": {
+                    "type": "integer",
+                    "example": 300000
+                },
+                "user_id": {
+                    "type": "string",
+                    "example": "usr_000001"
+                }
+            }
+        },
+        "handler.SwaggerUser": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "nickname": {
+                    "type": "string",
+                    "example": "张三"
+                },
+                "phone": {
+                    "type": "string",
+                    "example": "138****8000"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "active"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string",
+                    "example": "usr_000001"
+                }
+            }
+        },
+        "handler.SwaggerUserDetailResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "nickname": {
+                    "type": "string",
+                    "example": "张三"
+                },
+                "phone": {
+                    "type": "string",
+                    "example": "138****8000"
+                },
+                "plan": {
+                    "$ref": "#/definitions/handler.SwaggerPlan"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "active"
+                },
+                "subscription": {
+                    "$ref": "#/definitions/handler.SwaggerSubscription"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string",
+                    "example": "usr_000001"
+                }
+            }
+        },
+        "handler.SwaggerUserListResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.SwaggerUserWithPlan"
+                    }
+                },
+                "page": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "page_size": {
+                    "type": "integer",
+                    "example": 20
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 100
+                }
+            }
+        },
+        "handler.SwaggerUserUsageResponse": {
+            "type": "object",
+            "properties": {
+                "daily": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.SwaggerDailyTrendPoint"
+                    }
+                },
+                "days": {
+                    "type": "integer",
+                    "example": 7
+                },
+                "total_interactions": {
+                    "type": "integer",
+                    "example": 200
+                },
+                "total_tokens": {
+                    "type": "integer",
+                    "example": 50000
+                },
+                "user_id": {
+                    "type": "string",
+                    "example": "usr_000001"
+                }
+            }
+        },
+        "handler.SwaggerUserWithPlan": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "current_plan": {
+                    "type": "string",
+                    "example": "Pro Plan"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "nickname": {
+                    "type": "string",
+                    "example": "张三"
+                },
+                "phone": {
+                    "type": "string",
+                    "example": "138****8000"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "active"
+                },
+                "token_balance": {
+                    "type": "integer",
+                    "example": 500000
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string",
+                    "example": "usr_000001"
+                }
+            }
+        },
+        "handler.UpdateCacheConfigRequest": {
+            "type": "object",
+            "properties": {
+                "embedding_api_key": {
+                    "type": "string"
+                },
+                "embedding_base_url": {
+                    "type": "string"
+                },
+                "embedding_model": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "max_cache_entries": {
+                    "type": "integer"
+                },
+                "max_response_bytes": {
+                    "type": "integer"
+                },
+                "scope_mode": {
+                    "type": "string"
+                },
+                "similarity_threshold": {
+                    "type": "number"
+                },
+                "ttl_seconds": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.UpdateCircuitBreakerRequest": {
+            "type": "object",
+            "properties": {
+                "cooldown_duration_s": {
+                    "type": "integer"
+                },
+                "failure_threshold": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.UpdatePortkeyStrategyRequest": {
+            "type": "object",
+            "properties": {
+                "default_model": {
+                    "type": "string"
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "on_status_codes": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "retry_attempts": {
+                    "type": "integer"
+                },
+                "retry_status_codes": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "handler.createApiKeyRequest": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.createModelMappingRequest": {
+            "type": "object",
+            "required": [
+                "model_pattern",
+                "provider_id"
+            ],
+            "properties": {
+                "is_active": {
+                    "type": "boolean"
+                },
+                "model_pattern": {
+                    "description": "如 \"gpt-4*\", \"claude-*\"",
+                    "type": "string"
+                },
+                "on_status_codes": {
+                    "description": "策略触发状态码覆盖",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "override_params": {
+                    "description": "Portkey target 参数覆盖",
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "priority": {
+                    "type": "integer"
+                },
+                "provider_id": {
+                    "type": "string"
+                },
+                "retry_attempts": {
+                    "description": "重试次数覆盖",
+                    "type": "integer"
+                },
+                "strategy_mode": {
+                    "description": "\"loadbalance\" / \"fallback\"，留空继承全局",
+                    "type": "string"
+                },
+                "weight": {
+                    "description": "权重，默认 100",
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.createProviderRequest": {
+            "type": "object",
+            "required": [
+                "api_key",
+                "base_url",
+                "name",
+                "provider_type",
+                "total_quota"
+            ],
+            "properties": {
+                "api_key": {
+                    "type": "string"
+                },
+                "base_url": {
+                    "type": "string"
+                },
+                "health_check_url": {
+                    "type": "string"
+                },
+                "model_discovery_protocol": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "priority": {
+                    "type": "integer"
+                },
+                "provider_type": {
+                    "type": "string"
+                },
+                "supported_models": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "total_quota": {
+                    "type": "integer"
+                },
+                "weight": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.createUserRequest": {
+            "type": "object",
+            "required": [
+                "phone",
+                "user_id"
+            ],
+            "properties": {
+                "nickname": {
+                    "type": "string"
+                },
+                "phone": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.deregisterRequest": {
+            "type": "object",
+            "required": [
+                "provider_id"
+            ],
+            "properties": {
+                "provider_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.heartbeatRequest": {
+            "type": "object",
+            "required": [
+                "provider_id"
+            ],
+            "properties": {
+                "provider_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.provisionRequest": {
+            "type": "object",
+            "required": [
+                "plan_id",
+                "user_id"
+            ],
+            "properties": {
+                "assign_api_key": {
+                    "type": "boolean"
+                },
+                "nickname": {
+                    "type": "string"
+                },
+                "period_start": {
+                    "description": "PeriodStart 可选，RFC3339 格式。nil 时使用当前时间作为订阅起始时间。",
+                    "type": "string"
+                },
+                "phone": {
+                    "type": "string"
+                },
+                "plan_id": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.subscribeRequest": {
+            "type": "object",
+            "required": [
+                "plan_id"
+            ],
+            "properties": {
+                "period_start": {
+                    "description": "PeriodStart 可选，RFC3339 格式。nil 时使用当前时间作为订阅起始时间。",
+                    "type": "string"
+                },
+                "plan_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.updateModelMappingRequest": {
+            "type": "object",
+            "properties": {
+                "is_active": {
+                    "type": "boolean"
+                },
+                "model_pattern": {
+                    "type": "string"
+                },
+                "on_status_codes": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "override_params": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "priority": {
+                    "type": "integer"
+                },
+                "provider_id": {
+                    "type": "string"
+                },
+                "retry_attempts": {
+                    "type": "integer"
+                },
+                "strategy_mode": {
+                    "type": "string"
+                },
+                "weight": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.updateProviderRequest": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "type": "string"
+                },
+                "base_url": {
+                    "type": "string"
+                },
+                "health_check_url": {
+                    "type": "string"
+                },
+                "model_discovery_protocol": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "priority": {
+                    "type": "integer"
+                },
+                "provider_type": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "supported_models": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "total_quota": {
+                    "type": "integer"
+                },
+                "weight": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.updateUserRequest": {
+            "type": "object",
+            "properties": {
+                "nickname": {
+                    "type": "string"
+                },
+                "phone": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.validateProviderRequest": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "type": "string"
+                },
+                "base_url": {
+                    "type": "string"
+                },
+                "health_check_url": {
+                    "type": "string"
+                },
+                "provider_id": {
+                    "type": "string"
+                },
+                "provider_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.CacheStats": {
+            "type": "object",
+            "properties": {
+                "cache_entries": {
+                    "type": "integer"
+                },
+                "hit_rate": {
+                    "type": "number"
+                },
+                "today_hits": {
+                    "type": "integer"
+                },
+                "today_misses": {
+                    "type": "integer"
+                },
+                "tokens_saved": {
+                    "type": "integer"
+                },
+                "total_hits": {
+                    "type": "integer"
+                },
+                "total_misses": {
+                    "type": "integer"
+                }
+            }
+        },
+        "service.ProviderValidationResult": {
+            "type": "object",
+            "properties": {
+                "endpoint": {
+                    "type": "string"
+                },
+                "error_type": {
+                    "type": "string"
+                },
+                "latency_ms": {
+                    "type": "integer"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "ok": {
+                    "type": "boolean"
+                },
+                "response_excerpt": {
+                    "type": "string"
+                },
+                "status_code": {
+                    "type": "integer"
+                },
+                "used_saved_api_key": {
+                    "type": "boolean"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "description": "Enter your API key with the `Bearer ` prefix, e.g. \"Bearer sk-xxxx\"",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    }
+}

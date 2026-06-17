@@ -1,0 +1,265 @@
+---
+title: CloudAgent HTTP Run API
+title_en: CloudAgent HTTP Run API
+title_zh: CloudAgent HTTP Run API
+description: Durable CloudAgent HTTP protocol for sessions, runs, replay, and results. 用于会话、运行、回放与结果读取的 CloudAgent 持久化 HTTP 协议。
+description_en: Durable CloudAgent HTTP protocol for sessions, runs, replay, and results.
+description_zh: 用于会话、运行、回放与结果读取的 CloudAgent 持久化 HTTP 协议。
+owner: cloudagent
+status: active
+last_reviewed: "2026-06-16"
+tags:
+  - cloudagent
+  - http-run
+  - durable-runs
+  - channelgateway
+  - bilingual
+source_path: cloudagent/gateway/docs/cloudagent-http-run-integration.md
+---
+
+<p>
+  <span className="lang-en">The CloudAgent HTTP Run API is for channel gateways, backend services, and test clients that need to call CloudAgent without holding a long-lived ACP WebSocket.</span>
+  <span className="lang-zh">CloudAgent HTTP Run API 面向渠道网关、后端服务和测试客户端。它们可以调用 CloudAgent，而不需要持有长生命周期 ACP WebSocket。</span>
+</p>
+
+<p>
+  <span className="lang-en">Use this API for durable channel traffic. Do not multiplex many channel conversations over one ACP WebSocket.</span>
+  <span className="lang-zh">持久渠道流量应该使用这套 API。不要把多个渠道会话复用到同一条 ACP WebSocket 上。</span>
+</p>
+
+## <span className="lang-en">Base URL</span><span className="lang-zh">基础地址</span>
+
+<p>
+  <span className="lang-en">Use the CloudAgent gateway HTTP base URL. Do not append `/acp`.</span>
+  <span className="lang-zh">使用 CloudAgent gateway 的 HTTP 基础地址，不要追加 `/acp`。</span>
+</p>
+
+<p>
+  <span className="lang-en">Devcloud internal endpoint:</span>
+  <span className="lang-zh">Devcloud 内网入口：</span>
+</p>
+
+```text
+http://21.6.84.6
+```
+
+<p>
+  <span className="lang-en">In-cluster endpoint:</span>
+  <span className="lang-zh">集群内入口：</span>
+</p>
+
+```text
+http://cloudagent-gateway.dep.svc.cluster.local
+```
+
+## <span className="lang-en">Authentication And Scope</span><span className="lang-zh">鉴权与作用域</span>
+
+<p>
+  <span className="lang-en">Every request must identify the caller scope by either:</span>
+  <span className="lang-zh">每个请求必须通过以下任一方式标识调用方作用域：</span>
+</p>
+
+| Method | Headers |
+| --- | --- |
+| <span className="lang-en">Bearer token</span><span className="lang-zh">Bearer 令牌</span> | `Authorization: Bearer <token>` |
+| <span className="lang-en">Tenant/project scope</span><span className="lang-zh">租户项目作用域</span> | `X-Tenant-ID` and `X-Project-ID` |
+
+<p>
+  <span className="lang-en">Devcloud test scope:</span>
+  <span className="lang-zh">Devcloud 测试作用域：</span>
+</p>
+
+```bash
+export CLOUDAGENT_BASE_URL=http://21.6.84.6
+export CLOUDAGENT_TENANT_ID=tenant-devcloud-dep
+export CLOUDAGENT_PROJECT_ID=project-devcloud-dep
+```
+
+<p>
+  <span className="lang-en">Common error if scope is missing:</span>
+  <span className="lang-zh">缺少作用域时的常见错误：</span>
+</p>
+
+```json
+{
+  "error": {
+    "message": "X-Tenant-ID/X-Project-ID or Authorization: Bearer is required",
+    "type": "invalid_request_error",
+    "code": "identity_missing"
+  }
+}
+```
+
+## <span className="lang-en">Capability Probe</span><span className="lang-zh">能力探测</span>
+
+```bash
+curl -sS \
+  -H "X-Tenant-ID: $CLOUDAGENT_TENANT_ID" \
+  -H "X-Project-ID: $CLOUDAGENT_PROJECT_ID" \
+  "$CLOUDAGENT_BASE_URL/v1/cloudagent/capabilities"
+```
+
+<p>
+  <span className="lang-en">Expected fields:</span>
+  <span className="lang-zh">预期字段：</span>
+</p>
+
+```json
+{
+  "object": "cloudagent.capabilities",
+  "protocol": "cloudagent.run",
+  "version": "v1",
+  "run_protocol": true,
+  "features": [
+    "session_create",
+    "session_load",
+    "session_list",
+    "run_submit",
+    "run_list",
+    "idempotent_run_id",
+    "after_seq_replay",
+    "ndjson_event_stream",
+    "durable_result",
+    "cancel"
+  ]
+}
+```
+
+## <span className="lang-en">Basic Flow</span><span className="lang-zh">基本流程</span>
+
+<div className="lang-en">
+
+1. Create or load a session.
+2. Submit a run with a caller-generated `run_id`.
+3. Read events using `after_seq`.
+4. Read the final durable result.
+5. If the observer disconnects, resume from the last committed `after_seq`.
+
+</div>
+
+<div className="lang-zh">
+
+1. 创建或加载会话。
+2. 使用调用方生成的 `run_id` 提交运行。
+3. 使用 `after_seq` 读取事件。
+4. 读取最终持久化结果。
+5. 如果观察方断开连接，从最后确认的 `after_seq` 继续读取。
+
+</div>
+
+## <span className="lang-en">Generated API Reference</span><span className="lang-zh">生成式 API 参考</span>
+
+<p>
+  <span className="lang-en">The API reference is rendered by Scalar from the generated OpenAPI schema:</span>
+  <span className="lang-zh">API 参考由 Scalar 基于生成的 OpenAPI schema 渲染：</span>
+</p>
+
+```text
+/reference/cloudagent
+```
+
+<p>
+  <span className="lang-en">The docs sidebar links directly to this native Scalar route. The old `/docs/cloudagent/api` path redirects here for compatibility.</span>
+  <span className="lang-zh">文档侧边栏会直接链接到这个原生 Scalar route。旧的 `/docs/cloudagent/api` 路径会重定向到这里，保持兼容。</span>
+</p>
+
+```text
+/docs/cloudagent/api
+```
+
+<p>
+  <span className="lang-en">The component-level generator writes the schema by running Go code from `cloudagent/gateway/internal/wrapper/cloudagent_run_spec.go`:</span>
+  <span className="lang-zh">组件级生成器会运行 `cloudagent/gateway/internal/wrapper/cloudagent_run_spec.go` 中的 Go 代码，写出 schema：</span>
+</p>
+
+```text
+docs-site/openapi/cloudagent.json
+```
+
+## <span className="lang-en">Create Session</span><span className="lang-zh">创建会话</span>
+
+```bash
+curl -sS \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-ID: $CLOUDAGENT_TENANT_ID" \
+  -H "X-Project-ID: $CLOUDAGENT_PROJECT_ID" \
+  -d '{
+    "cwd": "/workspace",
+    "agent_version": "builtin.v1",
+    "workspace_version": "builtin.v1"
+  }' \
+  "$CLOUDAGENT_BASE_URL/v1/cloudagent/sessions"
+```
+
+<p>
+  <span className="lang-en">Response:</span>
+  <span className="lang-zh">响应：</span>
+</p>
+
+```json
+{
+  "session_id": "session_xxx",
+  "state": "ready",
+  "runtime_generation": 1
+}
+```
+
+## <span className="lang-en">Submit Run</span><span className="lang-zh">提交运行</span>
+
+<p>
+  <span className="lang-en">Generate a stable idempotency key per inbound channel message:</span>
+  <span className="lang-zh">为每条入站渠道消息生成稳定的幂等 key：</span>
+</p>
+
+```bash
+export RUN_ID="job_channel_${MESSAGE_ID}"
+```
+
+<p>
+  <span className="lang-en">Submit:</span>
+  <span className="lang-zh">提交：</span>
+</p>
+
+```bash
+curl -sS \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-ID: $CLOUDAGENT_TENANT_ID" \
+  -H "X-Project-ID: $CLOUDAGENT_PROJECT_ID" \
+  -d '{
+    "run_id": "'$RUN_ID'",
+    "text": "你好",
+    "cwd": "/workspace"
+  }' \
+  "$CLOUDAGENT_BASE_URL/v1/cloudagent/sessions/$SESSION_ID/runs"
+```
+
+## <span className="lang-en">Event Replay And Stream</span><span className="lang-zh">事件回放与流式读取</span>
+
+<p>
+  <span className="lang-en">Replay committed events:</span>
+  <span className="lang-zh">回放已提交事件：</span>
+</p>
+
+```bash
+curl -sS \
+  -H "X-Tenant-ID: $CLOUDAGENT_TENANT_ID" \
+  -H "X-Project-ID: $CLOUDAGENT_PROJECT_ID" \
+  "$CLOUDAGENT_BASE_URL/v1/cloudagent/runs/$RUN_ID/events?after_seq=0"
+```
+
+<p>
+  <span className="lang-en">Stream new events as newline-delimited JSON:</span>
+  <span className="lang-zh">以 newline-delimited JSON 方式读取新增事件：</span>
+</p>
+
+```bash
+curl -N \
+  -H "X-Tenant-ID: $CLOUDAGENT_TENANT_ID" \
+  -H "X-Project-ID: $CLOUDAGENT_PROJECT_ID" \
+  "$CLOUDAGENT_BASE_URL/v1/cloudagent/runs/$RUN_ID/events?after_seq=0&stream=true"
+```
+
+<p>
+  <span className="lang-en">The stream is HTTP NDJSON. It is not WebSocket and not Server-Sent Events.</span>
+  <span className="lang-zh">该流是 HTTP NDJSON，不是 WebSocket，也不是 Server-Sent Events。</span>
+</p>
