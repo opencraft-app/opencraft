@@ -1047,10 +1047,71 @@ verify_hermes_runtime_version() {
   log_info "Hermes runtime version matches latest metadata: ${expected}"
 }
 
+read_hermes_source_tree_version() {
+  local pyproject_path="$1"
+  if [ ! -f "${pyproject_path}" ]; then
+    return 1
+  fi
+  python3 - "${pyproject_path}" <<'PY'
+import sys
+
+path = sys.argv[1]
+version = ""
+with open(path, "r", encoding="utf-8") as fh:
+    in_project = False
+    for raw in fh:
+        line = raw.strip()
+        if line == "[project]":
+            in_project = True
+            continue
+        if in_project and line.startswith("[") and line.endswith("]"):
+            break
+        if in_project and line.startswith("version"):
+            _, value = line.split("=", 1)
+            version = value.strip().strip('"').strip("'")
+            break
+if version:
+    print(version)
+PY
+}
+
+verify_hermes_source_tree_version() {
+  local hermes_dir="$1"
+  local label="$2"
+  local expected="${HERMES_SRC_VERSION}"
+  local actual=""
+
+  actual="$(read_hermes_source_tree_version "${hermes_dir}/pyproject.toml" || true)"
+  log_info "Hermes source tree version ${label}: ${actual:-unknown}"
+  if [ -z "${expected}" ]; then
+    log_info "Hermes expected src_version is unknown; skipping source tree version check"
+    return 0
+  fi
+  if [ "${actual}" != "${expected}" ]; then
+    log_error "Hermes source tree version mismatch ${label}: expected ${expected} from latest.json, got ${actual:-unknown}"
+    return 1
+  fi
+}
+
+run_hermes_installer_stage() {
+  local installer="$1"
+  local hermes_home="$2"
+  local hermes_dir="$3"
+  local stage="$4"
+  local installer_escaped=""
+  local hermes_home_escaped=""
+  local hermes_dir_escaped=""
+
+  printf -v installer_escaped '%q' "${installer}"
+  printf -v hermes_home_escaped '%q' "${hermes_home}"
+  printf -v hermes_dir_escaped '%q' "${hermes_dir}"
+  log_info "running Hermes installer stage: ${stage}"
+  run_as_runtime_user "unset PLAYWRIGHT_BROWSERS_PATH; bash ${installer_escaped} ${HERMES_INSTALL_ARGS} --dir ${hermes_dir_escaped} --hermes-home ${hermes_home_escaped} --skip-browser --non-interactive --stage ${stage}"
+}
+
 install_hermes_runtime() {
   local installer=""
   local qwen_spec="@qwen-code/qwen-code"
-  local installer_escaped=""
   local hermes_cos_dir=""
   local hermes_tarball_url=""
   local hermes_home="${RUNTIME_HOME}/.hermes"
@@ -1058,6 +1119,7 @@ install_hermes_runtime() {
   local tarball=""
   local stage_dir=""
   local top_dir=""
+  local installer_stage=""
 
   log_info "installing hermes runtime for ${RUNTIME_USER}"
 
@@ -1097,6 +1159,7 @@ install_hermes_runtime() {
   rm -rf "${hermes_dir}"
   mv "${top_dir}" "${hermes_dir}"
   chown -R "${RUNTIME_USER}:${RUNTIME_USER}" "${hermes_home}"
+  verify_hermes_source_tree_version "${hermes_dir}" "from COS tarball"
 
   run_as_runtime_user "$(cat <<EOF
 set -e
@@ -1115,9 +1178,11 @@ EOF
   installer="$(mktemp "${TMPDIR:-/tmp}/hermes-install-XXXXXX.sh")"
   curl -fsSL "${HERMES_INSTALL_SCRIPT_URL}" -o "${installer}"
   chmod 0755 "${installer}"
-  printf -v installer_escaped '%q' "${installer}"
-  run_as_runtime_user "unset PLAYWRIGHT_BROWSERS_PATH; bash ${installer_escaped} ${HERMES_INSTALL_ARGS} --branch main"
+  for installer_stage in venv python-deps node-deps path config; do
+    run_hermes_installer_stage "${installer}" "${hermes_home}" "${hermes_dir}" "${installer_stage}"
+  done
   rm -rf "${tarball}" "${stage_dir}" "${installer}"
+  verify_hermes_source_tree_version "${hermes_dir}" "after installer stages"
   verify_hermes_runtime_version
 
   log_info "installing ${qwen_spec}"

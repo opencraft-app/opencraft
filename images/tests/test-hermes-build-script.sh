@@ -114,6 +114,11 @@ mkdir -p "${TMPDIR}/hermes-src/hermes-agent/scripts/whatsapp-bridge"
 cat >"${TMPDIR}/hermes-src/hermes-agent/README.md" <<'EOF'
 hermes fixture
 EOF
+cat >"${TMPDIR}/hermes-src/hermes-agent/pyproject.toml" <<'EOF'
+[project]
+name = "hermes-agent"
+version = "0.14.0"
+EOF
 cat >"${TMPDIR}/hermes-src/hermes-agent/scripts/whatsapp-bridge/package.json" <<'EOF'
 {"private":true,"name":"whatsapp-bridge-fixture"}
 EOF
@@ -284,6 +289,11 @@ upgrade_hermes_backend_blueprint
 grep -q "curl-hermes-latest" "${LOG_FILE}"
 grep -q "curl-hermes-tarball" "${LOG_FILE}"
 grep -q "curl-installer" "${LOG_FILE}"
+grep -Fq -- "--dir ${RUNTIME_HOME}/.hermes/hermes-agent --hermes-home ${RUNTIME_HOME}/.hermes --skip-browser --non-interactive --stage venv" "${LOG_FILE}"
+grep -Fq -- "--dir ${RUNTIME_HOME}/.hermes/hermes-agent --hermes-home ${RUNTIME_HOME}/.hermes --skip-browser --non-interactive --stage python-deps" "${LOG_FILE}"
+grep -Fq -- "--dir ${RUNTIME_HOME}/.hermes/hermes-agent --hermes-home ${RUNTIME_HOME}/.hermes --skip-browser --non-interactive --stage node-deps" "${LOG_FILE}"
+grep -Fq -- "--dir ${RUNTIME_HOME}/.hermes/hermes-agent --hermes-home ${RUNTIME_HOME}/.hermes --skip-browser --non-interactive --stage path" "${LOG_FILE}"
+grep -Fq -- "--dir ${RUNTIME_HOME}/.hermes/hermes-agent --hermes-home ${RUNTIME_HOME}/.hermes --skip-browser --non-interactive --stage config" "${LOG_FILE}"
 grep -q "npm-install @qwen-code/qwen-code@latest" "${LOG_FILE}"
 grep -q ".hermes/bin/uv.*--version" "${LOG_FILE}"
 grep -q "uv-pip-install pip install --index-url https://mirrors.tencent.com/pypi/simple --extra-index-url https://mirrors.cloud.tencent.com/pypi/simple --python ${RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/python lark-oapi==1.5.3 qrcode==7.4.2" "${LOG_FILE}"
