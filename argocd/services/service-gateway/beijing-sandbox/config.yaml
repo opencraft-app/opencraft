@@ -122,6 +122,8 @@ routes:
         path: /auth/invite/prepare
       - method: POST
         path: /auth/tat/device-bind
+      - method: POST
+        path: /auth/internal/tencentcloud/account
       - method: GET
         path: /auth/oauth/qq/start
       - method: GET

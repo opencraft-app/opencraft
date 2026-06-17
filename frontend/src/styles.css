@@ -1268,37 +1268,15 @@ code {
   text-decoration-color: var(--text-primary);
 }
 
-/* ─── 临时维护公告条 ─────────────────────────────────────────────────────────
- * 公告条本身用 `fixed top-0` 占据 viewport 顶端 36px。
- * 当公告条挂载时（见 maintenance-announcement-banner.tsx），<body> 被加上
- * `lw-has-announcement` class，下面这两条规则会把页面其它 fixed top-0 的
- * 元素和 hero 顶部 padding 整体下移 36px，避免被公告条覆盖。
- *
- * 用法：
- *   navbar:    className="... lw-fixed-top ..."（仍然 fixed top-0）
- *   hero pad:  className="... lw-hero-top-pad ..."（替换原来的 pt-[60px]）
- *
- * class 始终存在；只在 body.lw-has-announcement 时触发偏移。
- */
+/* ─── 顶部固定栏基础定位 ────────────────────────────────────────────────────── */
 .lw-fixed-top {
   top: 0;
-}
-body.lw-has-announcement .lw-fixed-top {
-  top: 36px;
 }
 .lw-hero-top-pad {
   padding-top: 60px;
 }
-body.lw-has-announcement .lw-hero-top-pad {
-  padding-top: 96px; /* 60px navbar + 36px announcement */
-}
-/* settings 页 main 原 pt-24 (96px) = navbar 60 + 留 36 间距；
- * 公告条状态下整体再下推 36 → 132px */
 .lw-app-top-pad {
   padding-top: 96px;
-}
-body.lw-has-announcement .lw-app-top-pad {
-  padding-top: 132px;
 }
 
 /* ─── Settings 人设面板：按内容容器自适应，避免小屏互相覆盖 ─────────────── */

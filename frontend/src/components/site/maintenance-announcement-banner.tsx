@@ -1,12 +1,13 @@
 /**
- * 临时维护公告条（北京时间 2026-06-04 03:00 自动撤下）
+ * 临时版本更新公告条（北京时间 2026-06-18 03:00 自动撤下）
  *
  * 显示位置：仅 landing（"/"）页顶部。
  * 显示条件：国内站（isCN）且未到撤下时刻、且用户未点击关闭。
+ * 布局方式：普通文档流顶部条，出现时把首页整体向下推，避免覆盖首屏内容。
  *
  * 关闭行为：localStorage key 带版本号，下次新公告换 ID 即可重新弹。
  *
- * 过期处理：构建期常量 EXPIRES_AT 是北京时间 2026-06-04 03:00 (UTC+8)
+ * 过期处理：构建期常量 EXPIRES_AT 是北京时间 2026-06-18 03:00 (UTC+8)
  * 对应的 Unix 毫秒，到期后无论 localStorage 状态都不再显示。
  *
  * 注意：升级窗口是 21:00-24:00，公告撤下时间是次日 03:00，留 3 小时缓冲让
@@ -20,34 +21,18 @@ import { useT } from "@/i18n/t";
 import { isCN } from "@/lib/region";
 
 /** 这条公告的唯一 ID。下一次发新公告时改这个 key（例如 "0601"），让用户重新看到。 */
-const ANNOUNCEMENT_ID = "0603-hermes-agent-upgrade";
+const ANNOUNCEMENT_ID = "0617-hermes-agent-upgrade";
 
 const STORAGE_KEY = `lw-announcement-dismissed:${ANNOUNCEMENT_ID}`;
 
-/** 北京时间 2026-06-04 03:00:00 = UTC 2026-06-03 19:00:00 */
-const EXPIRES_AT = Date.UTC(2026, 5 /* 0-indexed: June */, 3, 19, 0, 0);
+/** 北京时间 2026-06-18 03:00:00 = UTC 2026-06-17 19:00:00 */
+const EXPIRES_AT = Date.UTC(2026, 5 /* 0-indexed: June */, 17, 19, 0, 0);
 
 /** 显示的路径白名单 */
 const VISIBLE_PATHS = new Set<string>(["/"]);
 
-/** 公告条占据的 viewport 高度（px）。同步给 LandingNavbar / SettingsNavbar /
- * HeroSection 留位时使用，硬编码而非测量，避免布局抖动。 */
+/** 公告条占据的页面高度（px）。 */
 export const ANNOUNCEMENT_BANNER_HEIGHT_PX = 36;
-
-/**
- * 给 <body> 设 `lw-has-announcement` class —— 全局 CSS 据此把
- * 下方的 fixed navbar / hero padding 偏移 ANNOUNCEMENT_BANNER_HEIGHT_PX。
- * 这样 navbar / hero 不需要 import 公告组件、也不需要 React state 联动。
- */
-function useBodyAnnouncementClass(visible: boolean) {
-  useEffect(() => {
-    if (!visible) return;
-    document.body.classList.add("lw-has-announcement");
-    return () => {
-      document.body.classList.remove("lw-has-announcement");
-    };
-  }, [visible]);
-}
 
 export function MaintenanceAnnouncementBanner() {
   const t = useT();
@@ -66,7 +51,7 @@ export function MaintenanceAnnouncementBanner() {
     }
   }, []);
 
-  // 用户挂着浏览器跨过 06:00 的场景：不依赖刷新 / 切路由，到点强制隐藏。
+  // 用户挂着浏览器跨过 03:00 的场景：不依赖刷新 / 切路由，到点强制隐藏。
   // setTimeout 上限 ~24 天（i32 ms），公告窗口最多几小时所以稳。
   useEffect(() => {
     const remaining = EXPIRES_AT - Date.now();
@@ -78,14 +63,11 @@ export function MaintenanceAnnouncementBanner() {
     return () => clearTimeout(timer);
   }, []);
 
-  // 把"是否实际渲染"汇成一个布尔，方便 useBodyAnnouncementClass 跟随
   const visible =
     isCN &&
     !expired &&
     VISIBLE_PATHS.has(location.pathname) &&
     !dismissed;
-
-  useBodyAnnouncementClass(visible);
 
   if (!visible) return null;
 
@@ -94,7 +76,7 @@ export function MaintenanceAnnouncementBanner() {
       // 公告条强制 36px 单行高（h-9）。喇叭和文案打成一个 inline-flex 整体，
       // 在 flex-1 容器里居中。X 按钮 absolute 脱离居中流，<p> 上 pr-8 安全
       // padding 避免长文字撞到 X。窄屏文案放不下时整组横向滚动看完。
-      className="fixed inset-x-0 top-0 z-[60] flex h-9 items-center justify-center border-b border-amber-300 bg-amber-50 px-4 text-sm text-amber-950 shadow-sm"
+      className="relative flex h-9 items-center justify-center border-b border-amber-300 bg-amber-50 px-4 text-sm text-amber-950 shadow-sm"
       role="status"
       aria-live="polite"
     >
@@ -102,7 +84,7 @@ export function MaintenanceAnnouncementBanner() {
         <span className="inline-flex items-center gap-2 pr-8 leading-9">
           <Megaphone className="h-4 w-4 shrink-0" aria-hidden="true" />
           {t(
-            "通知：我们将于北京时间2026年6月3日21点～24点，对 Hermes Agent 进行后台版本升级，升级期间可能导致智能体对话或任务执行短暂中止，带来不便尽请谅解。",
+            "通知：我们将于北京时间2026年6月17日21点～24点，对 Hermes Agent 进行后台版本升级，升级期间可能导致智能体对话或任务执行短暂中止，带来不便尽请谅解。",
           )}
         </span>
       </div>
