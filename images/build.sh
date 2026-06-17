@@ -1020,12 +1020,51 @@ ensure_hermes_gateway_service() {
 
 verify_hermes_runtime_version() {
   local expected="${HERMES_SRC_VERSION}"
+  local hermes_dir="${RUNTIME_HOME}/.hermes/hermes-agent"
   local hermes_bin="${RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/hermes"
+  local hermes_python="${RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/python"
   local version_output=""
   local actual=""
+  local import_info=""
+  local import_version=""
+  local import_file=""
+  local hermes_dir_real=""
+  local import_file_real=""
+  local hermes_python_escaped=""
 
   if [ ! -x "${hermes_bin}" ]; then
     log_error "Hermes runtime binary not found: ${hermes_bin}"
+    return 1
+  fi
+  if [ ! -x "${hermes_python}" ]; then
+    log_error "Hermes runtime python not found: ${hermes_python}"
+    return 1
+  fi
+
+  printf -v hermes_python_escaped '%q' "${hermes_python}"
+  import_info="$(
+    run_as_runtime_user "${hermes_python_escaped} -c 'import hermes_cli; print(getattr(hermes_cli, \"__version__\", \"\")); print(getattr(hermes_cli, \"__file__\", \"\"))'" || true
+  )"
+  import_version="$(printf '%s\n' "${import_info}" | sed -n '1p')"
+  import_file="$(printf '%s\n' "${import_info}" | sed -n '2p')"
+  hermes_dir_real="$(readlink -f "${hermes_dir}" 2>/dev/null || printf '%s\n' "${hermes_dir}")"
+  import_file_real="$(readlink -f "${import_file}" 2>/dev/null || printf '%s\n' "${import_file}")"
+
+  log_info "Hermes venv import version after install: ${import_version:-unknown} (${import_file_real:-unknown})"
+  if [ -z "${import_version}" ] || [ -z "${import_file}" ]; then
+    log_error "Hermes venv import check failed: hermes_cli did not report version and module path"
+    return 1
+  fi
+  case "${import_file_real}" in
+    "${hermes_dir_real}/"*) ;;
+    *)
+      log_error "Hermes venv imports hermes_cli outside pinned COS source: ${import_file_real}"
+      log_error "expected import path under: ${hermes_dir_real}"
+      return 1
+      ;;
+  esac
+  if [ -n "${expected}" ] && [ "${import_version}" != "${expected}" ]; then
+    log_error "Hermes venv import version mismatch: expected ${expected} from latest.json, got ${import_version}"
     return 1
   fi
 
@@ -1045,6 +1084,23 @@ verify_hermes_runtime_version() {
     return 1
   fi
   log_info "Hermes runtime version matches latest metadata: ${expected}"
+}
+
+force_reinstall_hermes_local_package() {
+  local hermes_dir="$1"
+  local hermes_python="${hermes_dir}/venv/bin/python"
+  local hermes_dir_escaped=""
+  local hermes_python_escaped=""
+
+  if [ ! -x "${hermes_python}" ]; then
+    log_error "Hermes venv python not found before local reinstall: ${hermes_python}"
+    return 1
+  fi
+
+  printf -v hermes_dir_escaped '%q' "${hermes_dir}"
+  printf -v hermes_python_escaped '%q' "${hermes_python}"
+  log_info "pinning Hermes venv package to COS source tree"
+  run_as_runtime_user "${hermes_python_escaped} -m pip install --no-deps --force-reinstall -e ${hermes_dir_escaped}"
 }
 
 read_hermes_source_tree_version() {
@@ -1181,6 +1237,7 @@ EOF
   for installer_stage in venv python-deps node-deps path config; do
     run_hermes_installer_stage "${installer}" "${hermes_home}" "${hermes_dir}" "${installer_stage}"
   done
+  force_reinstall_hermes_local_package "${hermes_dir}"
   rm -rf "${tarball}" "${stage_dir}" "${installer}"
   verify_hermes_source_tree_version "${hermes_dir}" "after installer stages"
   verify_hermes_runtime_version
