@@ -1,0 +1,58 @@
+---
+title: 总览
+description: velaChat 第一版 SPEC 草案。
+---
+
+# velaChat SPEC
+
+velaChat 是一套 **localhost-first、多客户端、多后端 Agent Runtime**。本地 daemon 是事实源，桌面、网页、手机、嵌入式 UI 都只是同一套 API 的 client。
+
+## 我们要解决什么
+
+- 在一台电脑上运行多个 coding agent 后端：Codex、Claude Code、Pi、OpenCode、ACP 兼容 runtime。
+- 让桌面和手机同时观看、输入、审批、打断同一个 agent session。
+- 把 provider 输出归一成细粒度 runtime events，支撑 chat、activity、permission dock、diff/review、warning、task panel。
+- 用事件账本保存事实，projection 只负责显示；后续可以把事件镜像到 Pulsar。
+- 先服务本地桌面和移动端，再为 cloud/relay/Pulsar 预留演进空间。
+
+## 非目标
+
+- v1 不要求 cloud-hosted execution。
+- v1 不让 Pulsar 成为用户输入主控平面。
+- 不把 provider 原始协议直接暴露给客户端作为主 API。
+- 不设计一个巨大的 `ClientSnapshot` 作为核心模型。
+
+## 参考来源
+
+- **Paseo**：daemon 是 source of truth；所有端都是 client；live stream + history fetch + cursor/epoch/seq。
+- **Synara**：provider 输出归一为细粒度 runtime events，并保留 raw payload 方便调试。
+- **Palot**：renderer 侧 message/part/streaming overlay 的状态组织方式。
+- **Qoder / Claude Managed Agents**：cloud agent 的资源模型、长期 session、event stream、requires-action 模式。
+
+## 第一批架构决定
+
+| 领域 | 决定 |
+| --- | --- |
+| Source of truth | 本地 daemon / server |
+| 客户端模型 | Desktop、Web、Mobile 都是 peer client |
+| 内部排序 | 明确的 `epoch + seq + event` |
+| 公共游标 | `event_id`，内部映射到 epoch/seq |
+| Provider 边界 | adapter 输出 canonical runtime events |
+| Read model | 多个窄 projection，不做大 snapshot |
+| Pulsar | 预留为 event fabric，不做 v1 command authority |
+| 实现语言 | Rust workspace / crates |
+
+## Rust Workspace 方向
+
+```txt
+crates/
+  vela-core/        # 命令、事件、领域对象、读模型类型
+  vela-store/       # event log、idempotency、epoch/seq、SQLite
+  vela-backends/    # BackendAdapter trait + mock/pi/codex/claude adapters
+  vela-runtime/     # command authority、sequencer、backend orchestration
+  vela-projection/  # canonical events -> transcript/activity/request/diff views
+  vela-protocol/    # REST/SSE DTO、OpenAPI schema
+  velad/            # axum HTTP shell + dependency wiring
+```
+
+核心原则：**`velad` 不写业务状态，`vela-backends` 不写 store，`vela-runtime` 才是 command authority。**

@@ -1,0 +1,67 @@
+---
+title: 同步协议
+description: 使用 read models 和 recoverable events 支撑多客户端。
+---
+
+# 同步协议
+
+同步协议的核心原则：**daemon 拥有状态，client 只有缓存。**
+
+对外 API 可以使用友好的 `event_id` cursor；内部 event log 必须保留明确的 `epoch + seq`。
+
+## 不使用核心 ClientSnapshot
+
+velaChat 不把一个巨大的 `ClientSnapshot` 当核心模型，而是提供多个窄 read models：
+
+- `SessionListView`
+- `SessionView`
+- `ChatTranscriptView`
+- `ActivityShelfView`
+- `PendingRequestsView`
+- `BackendStatusView`
+- `DiffReviewView`
+
+## Requirements
+
+### Requirement: 可恢复事件流
+
+Daemon MUST 提供可恢复的 session/workbench event stream。
+
+#### Scenario: client 带 cursor 重连
+
+- **WHEN** client 使用 `after_id` 重连
+- **THEN** daemon 在可能时补发 cursor 之后的事件
+- **AND** cursor stale 时返回 `sync.reset`
+
+### Requirement: 历史查询
+
+Daemon MUST 提供 read model history fetch endpoints。
+
+#### Scenario: 打开已有 session
+
+- **WHEN** client 打开没有本地缓存的 session
+- **THEN** 它先 fetch session 和 transcript/activity history
+- **AND** 再从返回 cursor 订阅 live events
+
+### Requirement: 按 projection 刷新
+
+Client MUST 能局部刷新受影响 projection，而不是每次重载整个 workbench。
+
+#### Scenario: 只有 backend status 改变
+
+- **WHEN** backend availability 变化
+- **THEN** client 只刷新 backend status
+- **AND** transcript 不受影响
+
+## Cursor Window
+
+```ts
+export type CursorWindow = {
+  epoch: number;
+  fromSeq?: number;
+  toSeq?: number;
+  nextEventId?: string;
+  hasOlder: boolean;
+  hasNewer: boolean;
+};
+```

@@ -1,0 +1,37 @@
+---
+title: Backend API
+description: 发现和诊断可用 agent backends。
+---
+
+# Backends API
+
+Backends API 暴露 provider availability、capabilities、models、health diagnostics。
+
+## Endpoints
+
+| Method | Path | 用途 |
+| --- | --- | --- |
+| `GET` | `/backends` | 列出 backends |
+| `GET` | `/backends/{backend}` | 获取 backend details |
+| `POST` | `/backends/{backend}/probe` | 探测 backend health |
+
+## Requirements
+
+### Requirement: capabilities 必须显式
+
+API MUST 在创建 session 前暴露 backend capabilities。
+
+#### Scenario: client 渲染 backend picker
+
+- **WHEN** client 打开 backend picker
+- **THEN** 它能显示 streaming、cancel、permission、structured diff 是否支持
+
+### Requirement: backend health 可观测
+
+API SHOULD 暴露不泄露 secret 的 health diagnostics。
+
+#### Scenario: Pi binary 缺失
+
+- **WHEN** 本地 `pi` 不存在
+- **THEN** backend status 是 unavailable
+- **AND** diagnostics 给出安全修复提示

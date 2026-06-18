@@ -1,0 +1,4 @@
+{
+  "title": "velaChat SPEC",
+  "pages": ["index", "architecture", "api", "domain", "guides"]
+}

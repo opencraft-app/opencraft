@@ -1,0 +1,229 @@
+---
+title: UI Read Model API
+description: 面向 UI surface 的投影 API，与 Agent 基础 API 分层。
+---
+
+# UI Read Model API
+
+velaChat 的 API 必须分成两层：
+
+- **Agent 基础 API**：面向 daemon/runtime 的事实和控制面。
+- **UI Read Model API**：面向 Desktop、Mobile、Web、Embed 的投影读取面。
+
+这两层不是同一个东西。Agent 基础 API 决定系统事实；UI Read Model API 只是把事实整理成具体 UI surface 能直接渲染的形状。
+
+```txt
+Agent 基础 API
+  -> Input Event API
+  -> Runtime Event API
+  -> Session History API
+  -> Backend Capability API
+  -> Diagnostics API
+
+Projector functions
+  -> projectTranscript()
+  -> projectActivity()
+  -> projectRequests()
+  -> projectDiffs()
+
+UI Read Model API
+  -> /transcript
+  -> /activity
+  -> /requests
+  -> /diffs
+
+Session History / Audit API
+  -> /timeline
+  -> /trace
+```
+
+## 分层原则
+
+### Agent 基础 API
+
+Agent 基础 API 负责“系统发生什么”和“用户要求系统做什么”：
+
+| 类别 | 示例 | 说明 |
+| --- | --- | --- |
+| Input Event API | `POST /sessions/{id}/events` | 用户意图入口，必须有权威校验和幂等 |
+| Runtime Event API | `GET /sessions/{id}/events` | canonical event log，支持恢复、审计、replay |
+| Session History API | `GET /sessions/{id}/timeline` | session 综合历史、审计、回放、导出 |
+| Backend API | `GET /backends` | 后端能力、健康状态、模型能力 |
+| Diagnostics API | `GET /sessions/{id}/trace` | 调试 raw event、normalization、command trace |
+
+Agent 基础 API 不为某个 UI 组件设计。它应该稳定、可审计、可测试。
+
+### UI Read Model API
+
+UI Read Model API 负责“某个 UI surface 现在怎么显示”：
+
+| Read Model | 用途 | 主消费者 |
+| --- | --- | --- |
+| `SessionListView` | session rail / sidebar | Desktop、Web、Mobile navigation |
+| `ChatTranscriptView` | 聊天正文 | Web Chat Engine、Mobile WebView、Embed Chat |
+| `ActivityShelfView` | 工具调用、命令、进度、warning | Desktop/Web activity shelf |
+| `PendingRequestsView` | 权限、确认、用户输入请求 | Permission dock、Mobile approval |
+| `DiffReviewView` | 文件变更和 review | Review panel |
+
+UI Read Model API 可以通过 HTTP/SSE 暴露，也可以在同进程内直接调用 projector 函数。API 只是 transport，本体是 projector。
+
+## Timeline 的位置
+
+Timeline 必须保留，但不能作为普通 UI 的主输入。
+
+```txt
+Event Log
+  -> ChatTranscriptView        # Chat UI
+  -> ActivityShelfView         # 工具/进度
+  -> PendingRequestsView       # 权限/确认
+  -> DiffReviewView            # 文件变更
+  -> SessionTimeline           # 主 API：综合历史/审计/全量历史
+  -> SessionTrace              # diagnostics：command/raw/normalization trace
+```
+
+`SessionTimeline` 适合：
+
+- DevTools
+- audit
+- replay
+- debugging
+- export
+- full historical inspection
+
+`SessionTimeline` 和 `SessionTrace` 不适合：
+
+- Chat transcript 主渲染
+- Session sidebar 主渲染
+- Permission dock 主渲染
+- Activity shelf 主渲染
+- Mobile 主 UI
+
+## 建议 endpoint 形状
+
+### Agent 基础 API
+
+```txt
+POST /sessions
+POST /sessions/{session_id}/events
+POST /sessions/{session_id}/cancel
+POST /sessions/{session_id}/close
+
+GET  /sessions/{session_id}/events
+GET  /sessions/{session_id}/events/stream
+GET  /events/stream
+
+GET  /backends
+GET  /backends/{backend}
+POST /backends/{backend}/probe
+```
+
+`POST /sessions/{session_id}/events` 是 velaChat 的统一输入面，不要求每个 backend 原生都有同名语义。Backend adapter 负责把 input events 翻译成各后端自己的协议。
+
+例如 Qoder 的公开 API 更偏 event-shaped：
+
+| velaChat Input | Qoder 风格映射 |
+| --- | --- |
+| `user.message` | `POST /v1/sessions/{id}/events` with `user.message` |
+| `user.tool_confirmation` | `POST /v1/sessions/{id}/events` with `user.tool_confirmation` |
+| `user.custom_tool_result` | `POST /v1/sessions/{id}/events` with `user.custom_tool_result` |
+| `POST /sessions/{id}/cancel` | `POST /v1/sessions/{id}/cancel` |
+
+我们吸收 Qoder 的 event-shaped input 形状，但仍保留 daemon authority：POST 进来的 input events 是用户意图，只有 daemon 接受后才会成为 canonical runtime events。
+
+## Live 订阅和 Read Model 刷新
+
+UI 感知状态变化的方式是：
+
+```txt
+Client boots
+  -> fetch initial read models
+  -> subscribe /sessions/{session_id}/events/stream
+  -> receive canonical events
+  -> refresh affected read models
+  -> render from read models
+```
+
+事件流告诉 UI “发生了什么”和“哪些 view 需要刷新”；UI 组件本身不从事件里拼最终界面。
+
+常见映射：
+
+| Canonical event | UI 刷新 |
+| --- | --- |
+| `user.message.accepted` | `ChatTranscriptView` |
+| `assistant.message.delta` | `ChatTranscriptView` |
+| `request.opened` | `PendingRequestsView`、可选 `ActivityShelfView` |
+| `request.resolved` | `PendingRequestsView`、`ActivityShelfView` |
+| `tool.started` / `tool.updated` / `tool.completed` | `ActivityShelfView` |
+| `command.started` / `command.output.delta` / `command.completed` | `ActivityShelfView` |
+| `diff.updated` | `DiffReviewView` |
+| `session.updated` | `SessionListView`、session view |
+
+完整词表见 [事件词表](/docs/api/event-vocabulary)。UI 组件必须以 read model 为主输入，不能跳过 projector 直接解释 runtime event payload。
+
+如果 stream 断线，client 使用 `Last-Event-ID` 或 `after_id` 补拉；如果收到 `sync.reset`，按 `views[]` 刷新对应 read models。
+
+### UI Read Model API
+
+```txt
+GET /views/sessions
+GET /sessions/{session_id}/views/session
+GET /sessions/{session_id}/views/transcript
+GET /sessions/{session_id}/views/activity
+GET /sessions/{session_id}/views/requests
+GET /sessions/{session_id}/views/diffs
+```
+
+使用 `/views/*` 是为了避免误解：这些 endpoint 返回的是投影，不是事实源。
+
+### Session History / Audit API
+
+```txt
+GET /sessions/{session_id}/timeline
+GET /sessions/{session_id}/timeline/{item_id}
+GET /sessions/{session_id}/trace
+```
+
+使用 `/sessions/{id}/timeline` 是为了明确 timeline 是 CloudAgent-style session history 主资源；使用 `/sessions/{id}/trace` 是为了提供 diagnostics 链路。二者都不是普通 UI surface 的渲染输入。
+
+## Requirements
+
+### Requirement: UI API 不写事实
+
+UI Read Model API MUST NOT 修改 canonical events、session state 或 backend runtime。
+
+#### Scenario: transcript view 被读取
+
+- **WHEN** client 请求 `/sessions/{id}/views/transcript`
+- **THEN** daemon 返回 `ChatTranscriptView`
+- **AND** 不追加任何 canonical event
+
+### Requirement: UI API 从 projector 派生
+
+UI Read Model API MUST 由 projector functions 或 projector cache 提供。
+
+#### Scenario: activity view cache 丢失
+
+- **WHEN** `ActivityShelfView` cache 丢失
+- **THEN** daemon 可以 replay canonical events
+- **AND** 重新生成同样的 activity view
+
+### Requirement: Timeline 是 session history 主资源
+
+Session timeline MUST NOT 成为普通 UI surface 的直接数据源，也不应该挂在 UI Read Model API 下。
+
+#### Scenario: Chat UI 加载会话
+
+- **WHEN** Chat UI 打开 session
+- **THEN** 它请求 `ChatTranscriptView`
+- **AND** 不请求 session timeline 来拼 transcript row
+
+### Requirement: Mobile 使用窄 read model
+
+Mobile clients SHOULD 使用窄 read model，而不是拉完整 timeline 自己拼 UI。
+
+#### Scenario: 手机审批权限
+
+- **WHEN** 手机打开 approval screen
+- **THEN** 它读取 `PendingRequestsView`
+- **AND** 它通过 Input Event API 提交 approve/deny
+- **AND** 不需要读取 session timeline

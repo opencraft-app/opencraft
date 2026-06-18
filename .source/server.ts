@@ -1,0 +1,46 @@
+// @ts-nocheck
+import { default as __fd_glob_35 } from "../content/docs/guides/meta.json?collection=docs"
+import { default as __fd_glob_34 } from "../content/docs/domain/meta.json?collection=docs"
+import { default as __fd_glob_33 } from "../content/docs/architecture/meta.json?collection=docs"
+import { default as __fd_glob_32 } from "../content/docs/api/meta.json?collection=docs"
+import { default as __fd_glob_31 } from "../content/docs/meta.json?collection=docs"
+import * as __fd_glob_30 from "../content/docs/guides/pulsar-output.mdx?collection=docs"
+import * as __fd_glob_29 from "../content/docs/guides/pi-backend.mdx?collection=docs"
+import * as __fd_glob_28 from "../content/docs/guides/mobile-client.mdx?collection=docs"
+import * as __fd_glob_27 from "../content/docs/guides/desktop-client.mdx?collection=docs"
+import * as __fd_glob_26 from "../content/docs/guides/adding-backend.mdx?collection=docs"
+import * as __fd_glob_25 from "../content/docs/domain/session-thread.mdx?collection=docs"
+import * as __fd_glob_24 from "../content/docs/domain/runtime-environment.mdx?collection=docs"
+import * as __fd_glob_23 from "../content/docs/domain/read-models.mdx?collection=docs"
+import * as __fd_glob_22 from "../content/docs/domain/event-envelope.mdx?collection=docs"
+import * as __fd_glob_21 from "../content/docs/domain/agent-definition.mdx?collection=docs"
+import * as __fd_glob_20 from "../content/docs/architecture/webui-first.mdx?collection=docs"
+import * as __fd_glob_19 from "../content/docs/architecture/sync-protocol.mdx?collection=docs"
+import * as __fd_glob_18 from "../content/docs/architecture/pulsar-integration.mdx?collection=docs"
+import * as __fd_glob_17 from "../content/docs/architecture/overview.mdx?collection=docs"
+import * as __fd_glob_16 from "../content/docs/architecture/local-daemon.mdx?collection=docs"
+import * as __fd_glob_15 from "../content/docs/architecture/event-log.mdx?collection=docs"
+import * as __fd_glob_14 from "../content/docs/architecture/crate-boundaries.mdx?collection=docs"
+import * as __fd_glob_13 from "../content/docs/architecture/components.mdx?collection=docs"
+import * as __fd_glob_12 from "../content/docs/architecture/command-event-boundary.mdx?collection=docs"
+import * as __fd_glob_11 from "../content/docs/architecture/backend-adapters.mdx?collection=docs"
+import * as __fd_glob_10 from "../content/docs/api/ui-read-models.mdx?collection=docs"
+import * as __fd_glob_9 from "../content/docs/api/sessions.mdx?collection=docs"
+import * as __fd_glob_8 from "../content/docs/api/session-history.mdx?collection=docs"
+import * as __fd_glob_7 from "../content/docs/api/requests.mdx?collection=docs"
+import * as __fd_glob_6 from "../content/docs/api/openapi.mdx?collection=docs"
+import * as __fd_glob_5 from "../content/docs/api/input-events.mdx?collection=docs"
+import * as __fd_glob_4 from "../content/docs/api/events.mdx?collection=docs"
+import * as __fd_glob_3 from "../content/docs/api/event-vocabulary.mdx?collection=docs"
+import * as __fd_glob_2 from "../content/docs/api/conventions.mdx?collection=docs"
+import * as __fd_glob_1 from "../content/docs/api/backends.mdx?collection=docs"
+import * as __fd_glob_0 from "../content/docs/index.mdx?collection=docs"
+import { server } from 'fumadocs-mdx/runtime/server';
+import type * as Config from '../source.config';
+
+const create = server<typeof Config, import("fumadocs-mdx/runtime/types").InternalTypeConfig & {
+  DocData: {
+  }
+}>({"doc":{"passthroughs":["extractedReferences"]}});
+
+export const docs = await create.docs("docs", "content/docs", {"meta.json": __fd_glob_31, "api/meta.json": __fd_glob_32, "architecture/meta.json": __fd_glob_33, "domain/meta.json": __fd_glob_34, "guides/meta.json": __fd_glob_35, }, {"index.mdx": __fd_glob_0, "api/backends.mdx": __fd_glob_1, "api/conventions.mdx": __fd_glob_2, "api/event-vocabulary.mdx": __fd_glob_3, "api/events.mdx": __fd_glob_4, "api/input-events.mdx": __fd_glob_5, "api/openapi.mdx": __fd_glob_6, "api/requests.mdx": __fd_glob_7, "api/session-history.mdx": __fd_glob_8, "api/sessions.mdx": __fd_glob_9, "api/ui-read-models.mdx": __fd_glob_10, "architecture/backend-adapters.mdx": __fd_glob_11, "architecture/command-event-boundary.mdx": __fd_glob_12, "architecture/components.mdx": __fd_glob_13, "architecture/crate-boundaries.mdx": __fd_glob_14, "architecture/event-log.mdx": __fd_glob_15, "architecture/local-daemon.mdx": __fd_glob_16, "architecture/overview.mdx": __fd_glob_17, "architecture/pulsar-integration.mdx": __fd_glob_18, "architecture/sync-protocol.mdx": __fd_glob_19, "architecture/webui-first.mdx": __fd_glob_20, "domain/agent-definition.mdx": __fd_glob_21, "domain/event-envelope.mdx": __fd_glob_22, "domain/read-models.mdx": __fd_glob_23, "domain/runtime-environment.mdx": __fd_glob_24, "domain/session-thread.mdx": __fd_glob_25, "guides/adding-backend.mdx": __fd_glob_26, "guides/desktop-client.mdx": __fd_glob_27, "guides/mobile-client.mdx": __fd_glob_28, "guides/pi-backend.mdx": __fd_glob_29, "guides/pulsar-output.mdx": __fd_glob_30, });

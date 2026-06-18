@@ -1,0 +1,1098 @@
+openapi: 3.1.0
+info:
+  title: velaChat 本地 Runtime API
+  version: 0.1.0
+  summary: localhost-first、多客户端、多后端的 agent runtime API。
+  description: |
+    velaChat 为桌面、网页和手机客户端暴露本地 daemon API。
+    daemon 是 source of truth；client 消费资源端点和可恢复事件流。
+    对外 cursor 使用 event_id；daemon 内部映射到 epoch + seq。
+servers:
+  - url: http://127.0.0.1:3857/api/v1
+    description: 本地 daemon
+tags:
+  - name: Sessions
+  - name: Input Events
+  - name: Events
+  - name: Session Timeline
+  - name: UI Read Models
+  - name: Diagnostics
+  - name: Requests
+  - name: Backends
+paths:
+  /sessions:
+    get:
+      tags: [Sessions]
+      operationId: listSessions
+      summary: 列出 sessions
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/AfterId'
+      responses:
+        '200':
+          description: Session directory view。
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sessions]
+                properties:
+                  sessions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SessionSummary'
+                  cursor:
+                    $ref: '#/components/schemas/CursorWindow'
+    post:
+      tags: [Sessions]
+      operationId: createSession
+      summary: 创建 session
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSessionRequest'
+      responses:
+        '201':
+          description: 创建成功的 session。
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session, cursor]
+                properties:
+                  session:
+                    $ref: '#/components/schemas/Session'
+                  cursor:
+                    $ref: '#/components/schemas/EventCursor'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /sessions/{session_id}:
+    get:
+      tags: [Sessions]
+      operationId: getSession
+      summary: 获取 session view
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: Session view。
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session]
+                properties:
+                  session:
+                    $ref: '#/components/schemas/Session'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /sessions/{session_id}/cancel:
+    post:
+      tags: [Input Events]
+      operationId: cancelSession
+      summary: 取消当前运行中的 turn
+      description: |
+        语义化 cancel command。Backend adapter 可映射到后端 cancel 机制；
+        如果某些后端内部称为打断，也只能停留在 adapter 边界内。
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: Cancel 已被接受。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandAck'
+  /sessions/{session_id}/close:
+    post:
+      tags: [Sessions]
+      operationId: closeSession
+      summary: 关闭 session
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: Close 已被接受。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptedCommand'
+  /sessions/{session_id}/events:
+    post:
+      tags: [Input Events]
+      operationId: sendSessionInputEvents
+      summary: 向 session 投递用户输入事件
+      description: |
+        velaChat 的统一 input command surface。POST 进来的 input events 是用户意图，
+        不是 canonical runtime facts；daemon 接受后才会 append canonical events。
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendSessionEventsRequest'
+      responses:
+        '202':
+          description: Input events 已被接受、排队或拒绝。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandAck'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    get:
+      tags: [Events]
+      operationId: listSessionEvents
+      summary: 获取 canonical event history
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/AfterId'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Canonical events。
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [events, cursor]
+                properties:
+                  events:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/VelaEvent'
+                  cursor:
+                    $ref: '#/components/schemas/CursorWindow'
+        '409':
+          description: Cursor 已 stale，需要 reset。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncReset'
+  /sessions/{session_id}/events/stream:
+    get:
+      tags: [Events]
+      operationId: streamSessionEvents
+      summary: 订阅 canonical session events
+      description: |
+        Server-Sent Events stream. Each SSE message uses the canonical event_id
+        as the SSE id field. Clients may reconnect with after_id or Last-Event-ID.
+        Request lifecycle events such as request.opened/request.resolved notify
+        clients to refresh PendingRequestsView; clients must not render raw
+        request events directly as chat transcript text.
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/AfterId'
+      responses:
+        '200':
+          description: SSE stream of VelaEvent or sync.reset messages.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+  /events/stream:
+    get:
+      tags: [Events]
+      operationId: streamWorkbenchEvents
+      summary: 订阅 workbench-wide events
+      parameters:
+        - $ref: '#/components/parameters/AfterId'
+      responses:
+        '200':
+          description: SSE stream of events across sessions and backend state.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+  /views/sessions:
+    get:
+      tags: [UI Read Models]
+      operationId: getSessionListView
+      summary: 获取 session sidebar / rail 投影
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/AfterId'
+      responses:
+        '200':
+          description: SessionListView projection。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionListView'
+  /sessions/{session_id}/views/session:
+    get:
+      tags: [UI Read Models]
+      operationId: getSessionView
+      summary: 获取当前 session 的 UI 投影
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: SessionView projection。
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session, cursor]
+                properties:
+                  session:
+                    $ref: '#/components/schemas/Session'
+                  cursor:
+                    $ref: '#/components/schemas/EventCursor'
+  /sessions/{session_id}/views/transcript:
+    get:
+      tags: [UI Read Models]
+      operationId: getChatTranscriptView
+      summary: 获取 ChatTranscriptView
+      description: Chat UI 的主输入。只包含 message-like rows 和明确的 structured markers，不包含 raw timeline。
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/Limit'
+        - name: before_id
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Chat transcript projection。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatTranscriptView'
+  /sessions/{session_id}/views/activity:
+    get:
+      tags: [UI Read Models]
+      operationId: getActivityShelfView
+      summary: 获取 ActivityShelfView
+      description: 工具调用、命令、进度、warning、task 的主投影。
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Activity shelf projection。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivityShelfView'
+  /sessions/{session_id}/views/requests:
+    get:
+      tags: [UI Read Models]
+      operationId: getPendingRequestsView
+      summary: 获取 PendingRequestsView
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/RequestStatus'
+      responses:
+        '200':
+          description: Pending requests projection。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PendingRequestsView'
+  /sessions/{session_id}/views/diffs:
+    get:
+      tags: [UI Read Models]
+      operationId: getDiffReviewView
+      summary: 获取 DiffReviewView
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: Diff review projection。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiffReviewView'
+  /sessions/{session_id}/timeline:
+    get:
+      tags: [Session Timeline]
+      operationId: getSessionTimeline
+      summary: 获取 session timeline
+      description: |
+        CloudAgent-style session history resource，用于综合历史、audit、replay、debug、export。
+        它属于主 Agent API，不属于 UI Read Models；普通 UI surface 不应直接消费它来拼界面。
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/Limit'
+        - name: before_id
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Timeline projection。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimelineProjection'
+  /sessions/{session_id}/timeline/{item_id}:
+    get:
+      tags: [Session Timeline]
+      operationId: getSessionTimelineItem
+      summary: 获取单个 session timeline item
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - name: item_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Timeline item。
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [item]
+                properties:
+                  item:
+                    $ref: '#/components/schemas/TimelineItem'
+  /sessions/{session_id}/trace:
+    get:
+      tags: [Diagnostics]
+      operationId: getSessionTrace
+      summary: 获取 session command/runtime trace
+      description: |
+        调试 command acceptance、backend raw output、normalization、projection invalidation 的链路。
+        普通 UI surface 不应依赖 trace 构建界面。
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/AfterId'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Diagnostic trace。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiagnosticTrace'
+  /requests/{request_id}:
+    get:
+      tags: [Requests]
+      operationId: getRequest
+      summary: 获取 request
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Agent request。
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [request]
+                properties:
+                  request:
+                    $ref: '#/components/schemas/AgentRequest'
+  /backends:
+    get:
+      tags: [Backends]
+      operationId: listBackends
+      summary: 列出已配置 backends
+      responses:
+        '200':
+          description: Backends 与 capabilities。
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [backends]
+                properties:
+                  backends:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Backend'
+  /backends/{backend}:
+    get:
+      tags: [Backends]
+      operationId: getBackend
+      summary: 获取 backend details
+      parameters:
+        - $ref: '#/components/parameters/BackendKind'
+      responses:
+        '200':
+          description: Backend details。
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [backend]
+                properties:
+                  backend:
+                    $ref: '#/components/schemas/Backend'
+  /backends/{backend}/probe:
+    post:
+      tags: [Backends]
+      operationId: probeBackend
+      summary: 探测 backend health
+      parameters:
+        - $ref: '#/components/parameters/BackendKind'
+      responses:
+        '200':
+          description: Probe result。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackendProbeResult'
+components:
+  parameters:
+    SessionId:
+      name: session_id
+      in: path
+      required: true
+      schema:
+        type: string
+    RequestId:
+      name: request_id
+      in: path
+      required: true
+      schema:
+        type: string
+    BackendKind:
+      name: backend
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/BackendKind'
+    AfterId:
+      name: after_id
+      in: query
+      required: false
+      schema:
+        type: string
+      description: Opaque event cursor；SSE 重连时等价于 Last-Event-ID。
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 500
+        default: 100
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+  responses:
+    NotFound:
+      description: 资源不存在。
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Conflict:
+      description: 资源状态冲突。
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+  schemas:
+    BackendKind:
+      type: string
+      enum: [codex, cloudagent, claude_code, pi, opencode, acp, qoder]
+    SessionStatus:
+      type: string
+      enum: [starting, idle, running, waiting_for_input, canceling, failed, closed]
+    RequestStatus:
+      type: string
+      enum: [pending, approved, denied, answered, expired, cancelled]
+    CreateSessionRequest:
+      type: object
+      required: [backend, working_directory]
+      properties:
+        backend:
+          $ref: '#/components/schemas/BackendKind'
+        working_directory:
+          type: string
+        model:
+          type: string
+        title:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    SendSessionEventsRequest:
+      type: object
+      required: [events]
+      properties:
+        events:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ClientInputEvent'
+        options:
+          type: object
+          additionalProperties: true
+    ClientInputEvent:
+      type: object
+      required: [type]
+      properties:
+        type:
+          $ref: '#/components/schemas/ClientInputEventType'
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/InputPart'
+        request_id:
+          type: string
+        result:
+          type: string
+          enum: [allow, deny]
+        scope:
+          type: string
+          enum: [once, session, project]
+        answer:
+          type: string
+        options:
+          type: object
+          additionalProperties: true
+    ClientInputEventType:
+      type: string
+      enum:
+        - user.message
+        - user.tool_confirmation
+        - user.custom_tool_result
+        - user.request_answer
+    InputPart:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [text, file_ref, image_ref]
+        text:
+          type: string
+        uri:
+          type: string
+    SessionSummary:
+      type: object
+      required: [id, backend, status, title, updated_at]
+      properties:
+        id:
+          type: string
+        backend:
+          $ref: '#/components/schemas/BackendKind'
+        status:
+          $ref: '#/components/schemas/SessionStatus'
+        title:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+    Session:
+      allOf:
+        - $ref: '#/components/schemas/SessionSummary'
+        - type: object
+          required: [working_directory, created_at]
+          properties:
+            working_directory:
+              type: string
+            model:
+              type: string
+            created_at:
+              type: string
+              format: date-time
+            metadata:
+              type: object
+              additionalProperties: true
+    EventCursor:
+      type: object
+      required: [event_id, epoch, seq]
+      properties:
+        event_id:
+          type: string
+        epoch:
+          type: integer
+        seq:
+          type: integer
+    CursorWindow:
+      type: object
+      properties:
+        epoch:
+          type: integer
+        from_seq:
+          type: integer
+        to_seq:
+          type: integer
+        next_event_id:
+          type: string
+        has_older:
+          type: boolean
+        has_newer:
+          type: boolean
+    VelaEvent:
+      type: object
+      required: [event_id, epoch, seq, session_id, type, created_at, payload]
+      properties:
+        event_id:
+          type: string
+        epoch:
+          type: integer
+        seq:
+          type: integer
+        session_id:
+          type: string
+        thread_id:
+          type: string
+        type:
+          $ref: '#/components/schemas/VelaEventType'
+        created_at:
+          type: string
+          format: date-time
+        affected_views:
+          type: array
+          items:
+            $ref: '#/components/schemas/AffectedView'
+        source:
+          type: object
+          additionalProperties: true
+        payload:
+          type: object
+          additionalProperties: true
+        raw:
+          type: object
+          additionalProperties: true
+    VelaEventType:
+      type: string
+      enum:
+        - session.created
+        - session.updated
+        - session.status.changed
+        - session.closed
+        - backend.status.changed
+        - user.message.accepted
+        - input.queued
+        - input.rejected
+        - turn.cancel.accepted
+        - request.response.accepted
+        - turn.started
+        - turn.completed
+        - turn.failed
+        - turn.cancelled
+        - assistant.message.started
+        - assistant.message.delta
+        - assistant.message.completed
+        - assistant.reasoning.delta
+        - assistant.reasoning.completed
+        - tool.started
+        - tool.updated
+        - tool.output.delta
+        - tool.completed
+        - tool.failed
+        - command.started
+        - command.output.delta
+        - command.completed
+        - command.failed
+        - task.started
+        - task.updated
+        - task.completed
+        - request.opened
+        - request.updated
+        - request.resolved
+        - diff.updated
+        - usage.updated
+        - warning.raised
+        - error.raised
+        - projection.invalidated
+    AffectedView:
+      type: string
+      enum: [sessions, session, transcript, activity, requests, diffs, timeline, backends, workbench]
+    SyncReset:
+      type: object
+      required: [reason, views, latest_event_id]
+      properties:
+        reason:
+          type: string
+          enum: [stale_cursor, compacted, epoch_changed]
+        views:
+          type: array
+          items:
+            $ref: '#/components/schemas/AffectedView'
+        latest_event_id:
+          type: string
+    SessionListView:
+      type: object
+      required: [sessions, cursor]
+      properties:
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionSummary'
+        cursor:
+          $ref: '#/components/schemas/CursorWindow'
+    ChatTranscriptView:
+      type: object
+      required: [rows, cursor]
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatTranscriptRow'
+        cursor:
+          $ref: '#/components/schemas/CursorWindow'
+    ChatTranscriptRow:
+      type: object
+      required: [id, kind, created_at]
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [user_message, assistant_message, working, activity_marker]
+        created_at:
+          type: string
+          format: date-time
+        turn_id:
+          type: string
+        text:
+          type: string
+        parts:
+          type: array
+          items:
+            $ref: '#/components/schemas/TranscriptPart'
+        activity_id:
+          type: string
+        label:
+          type: string
+        status:
+          type: string
+          enum: [pending, streaming, completed, failed, cancelled]
+    TranscriptPart:
+      type: object
+      required: [id, type]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [markdown, text, code, image, file_reference]
+        text:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+    ActivityShelfView:
+      type: object
+      required: [items, cursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActivityShelfItem'
+        cursor:
+          $ref: '#/components/schemas/CursorWindow'
+    ActivityShelfItem:
+      type: object
+      required: [id, kind, status, title, created_at]
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [tool, command, task, warning, runtime]
+        status:
+          type: string
+          enum: [pending, running, completed, failed, cancelled]
+        title:
+          type: string
+        summary:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        event_range:
+          $ref: '#/components/schemas/EventRange'
+    PendingRequestsView:
+      type: object
+      required: [requests, cursor]
+      properties:
+        requests:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentRequest'
+        cursor:
+          $ref: '#/components/schemas/CursorWindow'
+    DiffReviewView:
+      type: object
+      required: [diffs, cursor]
+      properties:
+        diffs:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiffSummary'
+        cursor:
+          $ref: '#/components/schemas/CursorWindow'
+    TimelineProjection:
+      type: object
+      required: [items, cursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimelineItem'
+        cursor:
+          $ref: '#/components/schemas/CursorWindow'
+    EventRange:
+      type: object
+      properties:
+        from_event_id:
+          type: string
+        to_event_id:
+          type: string
+    TimelineItem:
+      type: object
+      required: [id, kind, status, parts]
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [message, tool, request, diff, warning, task]
+        role:
+          type: string
+          enum: [user, assistant, system, tool]
+        status:
+          type: string
+          enum: [pending, streaming, completed, failed, cancelled]
+        parts:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimelinePart'
+        event_range:
+          $ref: '#/components/schemas/EventRange'
+    DiagnosticTrace:
+      type: object
+      required: [session_id, spans, cursor]
+      properties:
+        session_id:
+          type: string
+        spans:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiagnosticTraceSpan'
+        cursor:
+          $ref: '#/components/schemas/CursorWindow'
+    DiagnosticTraceSpan:
+      type: object
+      required: [id, kind, created_at]
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [command, backend_raw, normalization, projection, warning, error]
+        created_at:
+          type: string
+          format: date-time
+        event_id:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+    TimelinePart:
+      type: object
+      required: [id, type]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [text, code, tool_call, tool_result, file_diff, image, warning]
+        text:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+    DiffSummary:
+      type: object
+      required: [file_path, status]
+      properties:
+        file_path:
+          type: string
+        status:
+          type: string
+          enum: [added, modified, deleted, renamed]
+        additions:
+          type: integer
+        deletions:
+          type: integer
+    AgentRequest:
+      type: object
+      required: [id, session_id, type, status, created_at]
+      properties:
+        id:
+          type: string
+        session_id:
+          type: string
+        type:
+          type: string
+          enum: [permission, tool_confirmation, custom_input]
+        status:
+          $ref: '#/components/schemas/RequestStatus'
+        title:
+          type: string
+        description:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+        backend_ref:
+          description: Backend-specific reference used by adapters, such as a Qoder pending action event id.
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        resolved_at:
+          type: string
+          format: date-time
+    Backend:
+      type: object
+      required: [kind, status, display_name, capabilities]
+      properties:
+        kind:
+          $ref: '#/components/schemas/BackendKind'
+        status:
+          type: string
+          enum: [available, unavailable, degraded]
+        display_name:
+          type: string
+        capabilities:
+          type: object
+          required: [streaming, cancel, permission_requests, structured_diff]
+          properties:
+            streaming:
+              type: boolean
+            cancel:
+              type: boolean
+            permission_requests:
+              type: boolean
+            structured_diff:
+              type: boolean
+        models:
+          type: array
+          items:
+            type: string
+        diagnostics:
+          type: object
+          additionalProperties: true
+    BackendProbeResult:
+      type: object
+      required: [backend, status]
+      properties:
+        backend:
+          $ref: '#/components/schemas/BackendKind'
+        status:
+          type: string
+          enum: [available, unavailable, degraded]
+        message:
+          type: string
+    CommandAck:
+      oneOf:
+        - $ref: '#/components/schemas/AcceptedCommandAck'
+        - $ref: '#/components/schemas/QueuedCommandAck'
+        - $ref: '#/components/schemas/RejectedCommandAck'
+      discriminator:
+        propertyName: status
+        mapping:
+          accepted: '#/components/schemas/AcceptedCommandAck'
+          queued: '#/components/schemas/QueuedCommandAck'
+          rejected: '#/components/schemas/RejectedCommandAck'
+    AcceptedCommandAck:
+      type: object
+      required: [status, command_id, session_id, cursor]
+      properties:
+        status:
+          type: string
+          const: accepted
+        command_id:
+          type: string
+        session_id:
+          type: string
+        turn_id:
+          type: string
+        cursor:
+          $ref: '#/components/schemas/EventCursor'
+    QueuedCommandAck:
+      type: object
+      required: [status, command_id, session_id, queued_message_id, cursor]
+      properties:
+        status:
+          type: string
+          const: queued
+        command_id:
+          type: string
+        session_id:
+          type: string
+        queued_message_id:
+          type: string
+        cursor:
+          $ref: '#/components/schemas/EventCursor'
+    RejectedCommandAck:
+      type: object
+      required: [status, code, message]
+      properties:
+        status:
+          type: string
+          const: rejected
+        code:
+          type: string
+          enum:
+            - session_not_found
+            - session_closed
+            - turn_running
+            - permission_blocked
+            - backend_unavailable
+            - duplicate_command
+        message:
+          type: string
+        command_id:
+          type: string
+        session_id:
+          type: string
+        cursor:
+          $ref: '#/components/schemas/EventCursor'
+    AcceptedCommand:
+      allOf:
+        - $ref: '#/components/schemas/AcceptedCommandAck'
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true

@@ -1,0 +1,76 @@
+---
+title: 后端适配器
+description: 多个 coding agent runtime 如何接入 velaChat。
+---
+
+# 后端适配器
+
+Backend adapter 把 provider quirks 隔离在边界内。它负责启动 session、发送 input events、取消运行、回应 request，并把 provider raw output 转成 runtime output。
+
+## Adapter Trait 草案
+
+```rust
+#[async_trait::async_trait]
+pub trait BackendAdapter: Send + Sync {
+    fn kind(&self) -> BackendKind;
+    fn capabilities(&self) -> BackendCapabilities;
+    async fn start_session(&self, input: StartSessionInput) -> Result<BackendSessionRef>;
+    async fn send_input_events(&self, input: SendInputEventsInput) -> Result<()>;
+    async fn cancel_session(&self, input: CancelSessionInput) -> Result<()>;
+    fn stream_events(&self, input: StreamBackendEventsInput) -> BackendEventStream;
+}
+```
+
+## Adapter 输出
+
+Adapter 输出的是 `BackendRuntimeOutput`，不是 canonical event。canonical ordering 只能由 `vela-runtime + vela-store` 产生。
+
+Adapter 可以输出接近 canonical 的 runtime output，但最终事件名必须由 daemon/sequencer 映射到 [事件词表](/docs/api/event-vocabulary)。
+
+推荐 runtime output family：
+
+- `session.status.changed`
+- `turn.started`
+- `assistant.message.delta`
+- `assistant.reasoning.delta`
+- `request.opened`
+- `request.resolved`
+- `tool.started`
+- `tool.updated`
+- `tool.output.delta`
+- `command.output.delta`
+- `diff.updated`
+- `warning.raised`
+- `turn.completed`
+
+## Requirements
+
+### Requirement: Provider 隔离
+
+Provider-specific protocol MUST 被限制在 backend adapter 内。
+
+#### Scenario: 接入 Claude Code
+
+- **WHEN** 增加 Claude Code 支持
+- **THEN** adapter 把 Claude 输出转成 vela runtime output
+- **AND** 客户端不需要 Claude-specific 分支
+
+### Requirement: Capability discovery
+
+每个 adapter MUST 在启动 session 前声明能力。
+
+#### Scenario: backend 不支持 structured diff
+
+- **WHEN** backend 没有 structured diff 能力
+- **THEN** API 暴露该能力不可用
+- **AND** UI 降级或隐藏 review panel
+
+### Requirement: Pi 适配 agent harness 而不是模型网关
+
+Pi adapter SHOULD 启动 `pi --mode rpc` 并消费 Pi RPC events，而不是直接调用 MiniMax/TokenHub API。
+
+#### Scenario: Pi 使用 MiniMax extension
+
+- **WHEN** Pi 通过 extension 使用 MiniMax-M2.7
+- **THEN** velaChat 只看到 Pi RPC runtime output
+- **AND** MiniMax/TokenHub 的模型细节留在 Pi provider 配置中

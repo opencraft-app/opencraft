@@ -1,0 +1,29 @@
+---
+title: 桌面客户端
+description: 桌面端如何消费 daemon API。
+---
+
+# 桌面客户端
+
+桌面客户端是一等 client，不是事实源。它可以负责 native shell、窗口、托盘、local discovery，但 canonical session state 在 daemon。
+
+## 启动流程
+
+1. 启动或发现本地 `velad`。
+2. Fetch `/backends`。
+3. Fetch `/sessions`。
+4. 恢复上次 active session。
+5. Fetch transcript、activity、pending requests。
+6. 订阅 `/events/stream` 或 session stream。
+
+## Requirements
+
+### Requirement: 桌面不能绕过 daemon 状态
+
+Desktop UI MUST 通过 daemon API 发送用户动作。
+
+#### Scenario: 用户点击 stop
+
+- **WHEN** 用户在桌面点击 stop
+- **THEN** desktop 调用 `/sessions/{session_id}/cancel`
+- **AND** 等待 streamed event 更新 UI 状态

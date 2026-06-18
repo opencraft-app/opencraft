@@ -1,0 +1,81 @@
+---
+title: Session API
+description: 创建、读取、控制 agent sessions。
+---
+
+# Sessions API
+
+Session 绑定用户意图、backend runtime、工作目录、事件账本和 read model projections。
+
+Session API 管 session resource 本身。用户消息、权限响应、自定义工具结果等输入统一走 [Input Event API](/docs/api/input-events)。
+
+## Endpoints
+
+| Method | Path | 用途 |
+| --- | --- | --- |
+| `GET` | `/sessions` | 列出 sessions |
+| `POST` | `/sessions` | 创建 session |
+| `GET` | `/sessions/{session_id}` | 获取 session view |
+| `POST` | `/sessions/{session_id}/events` | 投递用户输入事件 |
+| `POST` | `/sessions/{session_id}/cancel` | 取消当前运行中的 turn |
+| `POST` | `/sessions/{session_id}/close` | 关闭 session |
+
+## Create Session
+
+```json
+{
+  "backend": "pi",
+  "working_directory": "/Users/alice/project",
+  "model": "minimax/MiniMax-M2.7",
+  "title": "修复登录 bug"
+}
+```
+
+## Send Input Event
+
+```json
+{
+  "events": [
+    {
+      "type": "user.message",
+      "content": [{ "type": "text", "text": "跑一下相关测试并修复失败断言。" }]
+    }
+  ]
+}
+```
+
+Input event 不等于“直接把 UI bubble 写进 transcript”。Daemon 接受 `user.message` 后先产生 `user.message.accepted`，projector 再把它投影到 `ChatTranscriptView`。如果当前 session 正在等待权限或后端不允许并发输入，daemon 可以返回 queued 或 rejected command ack。
+
+## Backend 映射
+
+不同后端的输入形状不同，Session API 不随后端变化：
+
+| velaChat | Qoder 风格 | 说明 |
+| --- | --- | --- |
+| `POST /sessions/{id}/events` with `user.message` | `POST /v1/sessions/{id}/events` | 发送用户消息 |
+| `POST /sessions/{id}/events` with `user.tool_confirmation` | `POST /v1/sessions/{id}/events` | 响应工具确认 |
+| `POST /sessions/{id}/events` with `user.custom_tool_result` | `POST /v1/sessions/{id}/events` | 返回自定义工具结果 |
+| `POST /sessions/{id}/cancel` | `POST /v1/sessions/{id}/cancel` | 取消当前 processing turn |
+
+## Requirements
+
+### Requirement: 创建 session 必须记录事件
+
+创建 session MUST append `session.created` canonical event。
+
+#### Scenario: 新 session 创建成功
+
+- **WHEN** client 创建 session
+- **THEN** server 返回 session view 和 cursor
+- **AND** event stream 中包含 `session.created`
+
+### Requirement: 用户输入必须先被 daemon 接受
+
+发送用户输入 MUST 先通过 Input Event API 进入 daemon，再由 daemon 创建 accepted command fact。
+
+#### Scenario: 用户发送 prompt
+
+- **WHEN** 用户提交 prompt
+- **THEN** client posts `user.message` to `/sessions/{session_id}/events`
+- **AND** daemon 记录 `user.message.accepted`
+- **AND** 再把 turn 交给 backend adapter

@@ -1,0 +1,15 @@
+{
+  "title": "架构",
+  "pages": [
+    "overview",
+    "components",
+    "crate-boundaries",
+    "local-daemon",
+    "command-event-boundary",
+    "webui-first",
+    "event-log",
+    "backend-adapters",
+    "sync-protocol",
+    "pulsar-integration"
+  ]
+}

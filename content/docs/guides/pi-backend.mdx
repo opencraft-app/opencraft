@@ -1,0 +1,91 @@
+---
+title: Pi 后端
+description: Pi Coding Agent 的本地安装和 TokenHub 适配经验。
+---
+
+# Pi Backend
+
+Paseo 的经验非常明确：**适配 Pi 时，适配的是 agent harness，不是 MiniMax/TokenHub 模型 API。**
+
+也就是说，velaChat 应该启动 `pi --mode rpc`，消费 Pi RPC events，再转换为 vela canonical events。MiniMax、TokenHub、OpenRouter 等模型网关留在 Pi provider/extension 配置里。
+
+## 本地安装
+
+```bash
+brew install pi-coding-agent
+pi --version
+```
+
+Pi CLI 支持：
+
+- interactive mode：`pi`
+- non-interactive mode：`pi -p "prompt"`
+- RPC mode：`pi --mode rpc`
+- session control：`--session`、`--session-id`、`--continue`、`--resume`
+- provider/model：`--provider`、`--model`
+- package system：`pi install npm:<package>`
+
+## MiniMax Provider Extension
+
+```bash
+pi install npm:@sinamtz/pi-minimax-provider
+```
+
+这个扩展注册 `minimax` provider 和模型：
+
+- `MiniMax-M2.7`
+- `MiniMax-M2.7-highspeed`
+- `MiniMax-M3`
+
+它走 MiniMax Anthropic Messages-compatible streaming API，不是 OpenAI Chat Completions。
+
+## TokenHub 适配
+
+TokenHub 同时有 OpenAI-compatible 和 Anthropic-compatible 协议。社区 Pi MiniMax provider 期待 Anthropic `/v1/messages` 风格，因此更适合这样配置：
+
+```bash
+export MINIMAX_API_HOST=https://tokenhub.tencentmaas.com/plan
+export MINIMAX_API_KEY=YOUR_TOKENHUB_API_KEY
+pi --provider minimax --model MiniMax-M2.7 -p "你好"
+```
+
+风险点：TokenHub 文档常用小写 model id，例如 `minimax-m2.7`；社区扩展发送 `MiniMax-M2.7`。如果网关不兼容大小写，需要 fork provider 或写 velaChat-owned tokenhub provider。
+
+## 对 velaChat 的设计结论
+
+- `PiBackendAdapter` 启动 `pi --mode rpc`。
+- Adapter 不直接 call TokenHub。
+- Adapter 不写 store。
+- Adapter 输出 raw/runtime output。
+- Runtime 负责 append `user.message.accepted`，再触发 Pi side effect。
+- Runtime 负责把 Pi RPC events 归一成 canonical events。
+
+## Requirements
+
+### Requirement: Pi 作为 subprocess 运行
+
+Daemon MUST 以受控 subprocess 启动 Pi。
+
+#### Scenario: 创建 Pi session
+
+- **WHEN** 用户选择 Pi backend
+- **THEN** daemon 启动 `pi --mode rpc`
+- **AND** 通过 stdin/stdout JSON-RPC 与 Pi 通信
+
+### Requirement: TokenHub secret 不进入文档和日志
+
+TokenHub API key MUST 从环境变量或平台 secret store 注入。
+
+#### Scenario: 用户配置 TokenHub
+
+- **WHEN** 用户输入 API key
+- **THEN** velaChat 不把 raw key 写入 docs、logs、session transcript
+
+### Requirement: Pi output 必须归一
+
+Pi output MUST 在进入 client 前转换成 canonical runtime events。
+
+#### Scenario: Pi streaming text 和 tool call
+
+- **WHEN** Pi 输出 text delta 和 tool execution event
+- **THEN** daemon append `assistant.message.delta`、`tool.started` 等 canonical events

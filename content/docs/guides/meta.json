@@ -1,0 +1,4 @@
+{
+  "title": "指南",
+  "pages": ["desktop-client", "mobile-client", "adding-backend", "pi-backend", "pulsar-output"]
+}

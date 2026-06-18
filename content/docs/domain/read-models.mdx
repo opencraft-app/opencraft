@@ -1,0 +1,43 @@
+---
+title: 读模型
+description: 从事件派生的客户端投影视图。
+---
+
+# Read Models
+
+Read models 是 server-owned projections，为客户端渲染优化。它们可以缓存，也必须可重建。
+
+## 初始 Read Models
+
+| Read Model | 用途 |
+| --- | --- |
+| `SessionListView` | session rail / recent sessions |
+| `SessionView` | 当前 session metadata/status |
+| `ChatTranscriptView` | chat renderer 专用窄 transcript |
+| `ActivityShelfView` | tools、commands、warnings、tasks |
+| `PendingRequestsView` | permission / confirmation dock |
+| `DiffReviewView` | 文件 diff 和 review panel |
+| `BackendStatusView` | backend picker 和 health |
+| `WorkbenchStateView` | active session、selected thread、global warnings |
+
+## Requirements
+
+### Requirement: read models 从事实派生
+
+Read models MUST 从 canonical events 或安全 daemon state 派生。
+
+#### Scenario: client cache 为空
+
+- **WHEN** client 第一次打开 app
+- **THEN** 它从 daemon fetch read models
+- **AND** 从返回 cursor 开始订阅 events
+
+### Requirement: read models 必须窄
+
+API SHOULD 提供多个窄 read models，而不是一个 monolithic snapshot。
+
+#### Scenario: 只有 request dock 变化
+
+- **WHEN** 新 request opened
+- **THEN** client 更新 request view 和必要的 transcript/activity marker
+- **AND** 不需要刷新 backend status

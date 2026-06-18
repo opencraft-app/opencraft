@@ -1,0 +1,93 @@
+---
+title: Session History API
+description: CloudAgent-style timeline 和 trace 读取面。
+---
+
+# Session History API
+
+Session history endpoints 是主 Agent API 的一部分。它们返回 session 的综合历史、审计和调试视图，不是 source of truth，也不是普通 UI surface 的主输入。
+
+普通 UI 应该优先使用 [UI Read Model API](/docs/api/ui-read-models)：`ChatTranscriptView`、`ActivityShelfView`、`PendingRequestsView`、`DiffReviewView` 等窄投影。
+
+## Endpoints
+
+| Method | Path | 用途 |
+| --- | --- | --- |
+| `GET` | `/sessions/{session_id}/timeline` | 获取 CloudAgent-style session timeline |
+| `GET` | `/sessions/{session_id}/timeline/{item_id}` | 获取单个 session timeline item |
+| `GET` | `/sessions/{session_id}/trace` | 获取 command、raw backend output、normalization、projection trace |
+
+## Timeline 和 Trace
+
+`SessionTimeline` 是综合历史视图，适合：
+
+- DevTools
+- audit
+- replay
+- debugging
+- export
+- full historical inspection
+
+`SessionTrace` 是链路调试视图，适合检查：
+
+- command acceptance / rejection
+- idempotency decision
+- backend raw event
+- raw-to-canonical normalization
+- projection invalidation
+- warning / error diagnostics
+
+它们都不能替代普通 UI read model。
+
+## Projection 区分
+
+UI read models 应该拆成更窄 endpoints：
+
+- `/sessions/{id}/views/transcript`：只给 chat renderer
+- `/sessions/{id}/views/activity`：tool、command、task、warning
+- `/sessions/{id}/views/requests`：permission/request dock
+- `/sessions/{id}/views/diffs`：review panel
+
+Timeline 是 session history resource。Trace 是 diagnostics resource。普通客户端不应该通过它们拼 UI。
+
+## Requirements
+
+### Requirement: Timeline 是主 Agent API，不是 UI read model
+
+Session timeline MUST 挂在 session 主资源下面，而不是 `/views/*` 下面。
+
+#### Scenario: client 读取综合历史
+
+- **WHEN** client 请求 `/sessions/{session_id}/timeline`
+- **THEN** daemon 返回 session 的综合 timeline
+- **AND** 这个请求不改变任何 canonical event
+
+### Requirement: History 视图是派生视图
+
+Session timeline 和 trace MUST 从 canonical events、raw retention、normalization records 或安全 daemon state 派生，不能成为事实源。
+
+#### Scenario: timeline cache 被清空
+
+- **WHEN** session timeline projection 被清空
+- **THEN** daemon 可以 replay canonical events 重建
+- **AND** 不改变任何 canonical event
+
+### Requirement: Transcript 必须窄
+
+Chat transcript MUST 只包含 message-like rows，不直接渲染 session timeline。
+
+#### Scenario: tool command 完成
+
+- **WHEN** backend command 完成
+- **THEN** activity projection 显示 command summary
+- **AND** transcript 不把 raw command output 当 assistant message
+
+### Requirement: Timeline 不驱动普通 UI
+
+普通 UI surface MUST NOT 直接消费 session timeline 或 trace 来构建自身状态。
+
+#### Scenario: Mobile 打开会话
+
+- **WHEN** mobile 打开 session
+- **THEN** 它读取 session view、transcript view、requests view
+- **AND** 不读取 session timeline 来拼聊天正文

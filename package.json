@@ -1,0 +1,26 @@
+{
+  "name": "velachat",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@scalar/nextjs-api-reference": "latest",
+    "fumadocs-core": "latest",
+    "fumadocs-mdx": "latest",
+    "fumadocs-ui": "latest",
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "@types/mdx": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "typescript": "latest"
+  }
+}

@@ -1,0 +1,174 @@
+---
+title: 事件词表
+description: velaChat v1 的输入事件、运行时事件和投影归属。
+---
+
+# 事件词表
+
+这一页定义 velaChat v1 的事件词表。它是 backend adapter、daemon、projector、Desktop/Web/Mobile/Embed UI 之间的共同语言。
+
+## 参考证据
+
+我们参考的是“分层原则”，不是照搬字段：
+
+| 项目 | 证据 | 我们吸收的原则 |
+| --- | --- | --- |
+| Synara provider runtime | `/Users/skipzhang/synara/packages/contracts/src/providerRuntime.ts:20` 定义 raw source，`:156` 起定义 provider runtime event family，`:129` 起区分 canonical item type，`:143` 起区分 request type | raw provider event 和 canonical runtime event 分开；message、reasoning、tool lifecycle、request lifecycle 不是同一类东西 |
+| Synara orchestration | `/Users/skipzhang/synara/packages/contracts/src/orchestration.ts:462` 定义 activity，`:701` 起定义 shell stream，`:1323` 起定义 command/requested 类事件 | read model / shell stream 可以只推送 upsert/remove；用户请求类事件和运行时输出类事件分开 |
+| Paseo stream coalescer | `/Users/skipzhang/code/paseo/packages/server/src/server/agent/agent-stream-coalescer.ts:56` 只 coalesce `assistant_message`、`reasoning`、`tool_call`，`:160` 用 `callId` 覆盖 tool lifecycle | 流式增量先进入稳定 item 身份，再 flush；tool lifecycle 按 call id 合并 |
+| Paseo timeline projection | `/Users/skipzhang/code/paseo/packages/server/src/server/agent/timeline-projection.ts:4` 区分 canonical/projected，`:121` 起 collapse tool lifecycle，`:163` 起 merge reasoning chunks | canonical log 可以细，UI projection 必须合并；普通 UI 不直接吃 raw timeline |
+
+## 三层事件
+
+```txt
+Client Input Event        # 用户意图，POST /sessions/{id}/events
+  -> daemon validate / dedupe / authorize
+Canonical Runtime Event   # daemon 排序后的事实，GET/stream /sessions/{id}/events
+  -> projectors
+UI Read Models            # transcript/activity/requests/diffs/sessions
+```
+
+Client input event 不是事实。它只有被 daemon 接受后，才会产生 canonical runtime event。
+
+## 客户端输入事件
+
+这些事件只能出现在 `POST /sessions/{session_id}/events` 的 request body 里。
+
+| 类型 | 必填字段 | 说明 | 接受后常见 canonical event |
+| --- | --- | --- | --- |
+| `user.message` | `content[]` | 用户发送消息。`content` 可以包含文本、文件引用、图片引用 | `user.message.accepted` |
+| `user.tool_confirmation` | `request_id`, `result` | 用户响应工具/权限确认。`result` 为 `allow` 或 `deny` | `request.response.accepted`、`request.resolved` |
+| `user.custom_tool_result` | `request_id`, `content[]` | 客户端或用户返回自定义工具结果 | `request.response.accepted`、`tool.completed` |
+| `user.request_answer` | `request_id`, `answer` | 用户回答 agent-to-user 普通问题 | `request.response.accepted`、`request.resolved` |
+
+`POST /sessions/{session_id}/cancel` 不是 input event。它是独立 control command，用来取消当前运行中的 turn。
+
+## 运行时事实事件
+
+这些事件只能由 daemon/sequencer 写入 canonical event log。Backend adapter 可以提供 raw output，但不能直接决定 canonical `event_id`、`epoch`、`seq`。
+
+### Session / Backend
+
+| Type | 主要投影 | 说明 |
+| --- | --- | --- |
+| `session.created` | `SessionListView`, `SessionView` | session 被创建 |
+| `session.updated` | `SessionListView`, `SessionView` | title、working directory、model、metadata 等发生变化 |
+| `session.status.changed` | `SessionListView`, `SessionView`, `ChatTranscriptView` | `idle`、`running`、`waiting_for_input`、`canceling`、`failed`、`closed` 等状态变化 |
+| `session.closed` | `SessionListView`, `SessionView` | session 被关闭 |
+| `backend.status.changed` | `BackendStatusView`, `SessionListView` | backend 可用性、健康状态、capability 变化 |
+
+### 命令接收结果
+
+| Type | 主要投影 | 说明 |
+| --- | --- | --- |
+| `user.message.accepted` | `ChatTranscriptView`, `SessionListView` | daemon 接受用户消息。正式 user row 只能来自这个事件或它派生的 transcript view |
+| `input.queued` | `ChatTranscriptView`, `ActivityShelfView` | 输入被接受但暂时排队，例如当前 turn 正在运行 |
+| `input.rejected` | `ActivityShelfView`, diagnostics | 输入被拒绝，例如 session closed、permission blocked、duplicate command |
+| `turn.cancel.accepted` | `SessionView`, `ActivityShelfView` | cancel command 被接受 |
+| `request.response.accepted` | `PendingRequestsView`, `ActivityShelfView` | request response 被 daemon 接受，后续才交给 adapter |
+
+### 回合生命周期
+
+| Type | 主要投影 | 说明 |
+| --- | --- | --- |
+| `turn.started` | `SessionView`, `ActivityShelfView`, `ChatTranscriptView` | 一个 agent turn 开始 |
+| `turn.completed` | `SessionView`, `ActivityShelfView` | turn 正常完成 |
+| `turn.failed` | `SessionView`, `ActivityShelfView`, `ChatTranscriptView` | turn 失败 |
+| `turn.cancelled` | `SessionView`, `ActivityShelfView`, `ChatTranscriptView` | turn 被取消 |
+
+### 消息和思考
+
+| Type | 主要投影 | 说明 |
+| --- | --- | --- |
+| `assistant.message.started` | `ChatTranscriptView` | assistant message 开始，建立稳定 message id |
+| `assistant.message.delta` | `ChatTranscriptView` | assistant 正文增量 |
+| `assistant.message.completed` | `ChatTranscriptView` | assistant message 完成 |
+| `assistant.reasoning.delta` | `ActivityShelfView`, 可选 `ChatTranscriptView.working` | reasoning 增量默认不进正式正文，只能显示在 thinking/working surface |
+| `assistant.reasoning.completed` | `ActivityShelfView` | reasoning 结束或摘要完成 |
+
+### 活动、工具和命令
+
+| Type | 主要投影 | 说明 |
+| --- | --- | --- |
+| `tool.started` | `ActivityShelfView`, `SessionTimeline` | 工具调用开始，必须带稳定 `tool_id` 或 backend refs |
+| `tool.updated` | `ActivityShelfView`, `SessionTimeline` | 工具参数、进度、摘要变化 |
+| `tool.output.delta` | `ActivityShelfView`, `SessionTimeline` | 工具输出增量。不得直接作为 assistant text 进入 transcript |
+| `tool.completed` | `ActivityShelfView`, `SessionTimeline` | 工具调用完成 |
+| `tool.failed` | `ActivityShelfView`, `SessionTimeline` | 工具调用失败 |
+| `command.started` | `ActivityShelfView`, `SessionTimeline` | shell/command 类工具开始 |
+| `command.output.delta` | `ActivityShelfView`, `SessionTimeline` | command stdout/stderr 增量。不得进入 transcript 正文 |
+| `command.completed` | `ActivityShelfView`, `SessionTimeline` | command 完成 |
+| `command.failed` | `ActivityShelfView`, `SessionTimeline` | command 失败 |
+| `task.started` | `ActivityShelfView` | 子任务开始 |
+| `task.updated` | `ActivityShelfView` | 子任务进度变化 |
+| `task.completed` | `ActivityShelfView` | 子任务完成 |
+
+### 请求、审查和诊断
+
+| Type | 主要投影 | 说明 |
+| --- | --- | --- |
+| `request.opened` | `PendingRequestsView`, `ActivityShelfView` | 权限、工具确认、用户输入请求打开 |
+| `request.updated` | `PendingRequestsView`, `ActivityShelfView` | request 文案、选项或状态变化 |
+| `request.resolved` | `PendingRequestsView`, `ActivityShelfView` | request 被 approve、deny、answer、expire 或 cancel |
+| `diff.updated` | `DiffReviewView`, `ActivityShelfView` | 文件变更摘要或 diff 更新 |
+| `usage.updated` | `SessionView`, `BackendStatusView` | token、费用、线程占用等 usage 变化 |
+| `warning.raised` | `ActivityShelfView`, diagnostics | 可恢复 warning |
+| `error.raised` | `ActivityShelfView`, `ChatTranscriptView`, diagnostics | 运行时错误。只有用户可理解的错误摘要可进入 transcript |
+| `projection.invalidated` | affected read models | daemon 明确通知某些 read model 需要刷新 |
+
+### 流控制消息
+
+`sync.reset` 是 stream control message，不是普通 `VelaEvent`。它用于 cursor stale、epoch 改变、compaction 后的恢复。
+
+## 投影规则
+
+| 运行时事件 | ChatTranscriptView | ActivityShelfView | PendingRequestsView | DiffReviewView | SessionTimeline |
+| --- | --- | --- | --- | --- | --- |
+| `user.message.accepted` | user row | 可选 |  |  | message item |
+| `assistant.message.*` | assistant row / delta |  |  |  | message item |
+| `assistant.reasoning.*` | 仅可投影为 `working` | thinking item |  |  | reasoning item |
+| `tool.*` | 仅可投影为 `activity_marker` | tool item |  |  | tool item |
+| `command.*` | 仅可投影为 `activity_marker` | command item |  |  | command item |
+| `request.*` | 仅可投影为 `activity_marker` | request activity | request item |  | request item |
+| `diff.updated` | 仅可投影为 `activity_marker` | diff activity |  | diff item | diff item |
+| `warning.raised` | 通常不进入；严重时可显示摘要 | warning item |  |  | warning item |
+| `error.raised` | 用户可理解错误摘要 | error item |  |  | error item |
+
+这条规则是为了防止：
+
+- raw tool text 混进聊天正文；
+- backend replay 的用户输入变成第二个 user bubble；
+- reasoning/status 被当成 assistant markdown；
+- 切会话后 timeline snapshot 被当成 transcript rows。
+
+## Requirements
+
+### Requirement: Event type 必须来自词表
+
+Canonical runtime event 的 `type` MUST 来自本页的 `VelaEventType`。
+
+#### Scenario: Backend 输出未知事件
+
+- **WHEN** backend adapter 收到未知 provider event
+- **THEN** daemon 可以把 raw event 存入 diagnostics
+- **AND** 对 UI 暴露时必须映射成 `warning.raised`、`error.raised` 或已知 canonical event
+
+### Requirement: Transcript 不能消费 activity event 正文
+
+Chat transcript MUST NOT directly render `tool.*`、`command.*`、`request.*`、`diff.updated` 的 payload text。
+
+#### Scenario: shell command 输出
+
+- **WHEN** daemon append `command.output.delta`
+- **THEN** `ActivityShelfView` 可以更新 command output
+- **AND** `ChatTranscriptView` 不新增 assistant message
+
+### Requirement: 正式 user row 只能来自 accepted fact
+
+Chat UI MUST NOT convert pending input event into formal user row.
+
+#### Scenario: 用户消息被排队
+
+- **WHEN** client submits `user.message` and daemon returns `queued`
+- **THEN** UI 可以显示 pending/queue affordance
+- **AND** 正式 user row 必须等待 `user.message.accepted` 或 `ChatTranscriptView` 更新

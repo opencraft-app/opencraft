@@ -1,0 +1,49 @@
+---
+title: Pulsar 集成
+description: 为未来事件账本和云端消费预留边界。
+---
+
+# Pulsar 集成
+
+Pulsar 适合做 durable event fabric：审计、分析、远端 replay、分布式 projection、raw provider output ingest。但 v1 不能让 Pulsar 替代本地 daemon 的 command authority。
+
+## 集成阶段
+
+1. v1：本地 SQLite event log。
+2. 增加 `EventSink`，可把 canonical events 镜像出去。
+3. Pulsar mirror：审计和分析。
+4. Pulsar raw ingest：agent 直接上报 raw output。
+5. Pulsar-derived canonical ledger：云端或分布式部署。
+
+## Requirements
+
+### Requirement: EventSink 边界
+
+Daemon MUST 通过 `EventSink` 抽象发布事件，而不是硬编码 Pulsar。
+
+#### Scenario: 本地开发没有 Pulsar
+
+- **WHEN** Pulsar 未配置
+- **THEN** daemon 仍然正常记录本地事件
+- **AND** 使用 no-op sink 或 file sink 测试
+
+### Requirement: Output-first Pulsar path
+
+Agent output MAY 直接或间接进入 Pulsar，但必须经过 ingest/normalizer/sequencer 后才能成为 canonical events。
+
+#### Scenario: agent 直接上报 raw output
+
+- **WHEN** agent runtime 发布 raw output 到 Pulsar topic
+- **THEN** ingest service 校验、归一、排序
+- **AND** client 只消费 canonical events 或 projections
+
+### Requirement: v1 command 不走 Pulsar 主控
+
+用户输入、权限审批、cancel SHOULD 通过 daemon/API authority。
+
+#### Scenario: 用户批准破坏性操作
+
+- **WHEN** 用户批准 request
+- **THEN** daemon 校验 request 仍 pending
+- **AND** 记录 accepted/rejected command event
+- **AND** 再把结果发送给 backend
