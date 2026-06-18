@@ -10,14 +10,15 @@ import (
 )
 
 type agentRunEnvelope struct {
+	InputID              string `json:"input_id"`
 	OutputText           string `json:"output_text"`
 	InnerSandboxID       string `json:"inner_sandbox_id"`
 	InnerSandboxDomain   string `json:"inner_sandbox_domain"`
 	InnerEnvdAccessToken string `json:"inner_envd_access_token"`
 }
 
-func parseAgentOutput(stdout string) string {
-	envelope, ok := parseAgentRunEnvelope(stdout)
+func parseAgentOutput(stdout string, expectedInputIDs ...string) string {
+	envelope, ok := parseAgentRunEnvelope(stdout, expectedInputIDs...)
 	if ok {
 		return envelope.OutputText
 	}

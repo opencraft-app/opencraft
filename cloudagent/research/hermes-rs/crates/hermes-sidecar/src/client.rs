@@ -162,7 +162,8 @@ pub(crate) async fn run_client(args: ClientArgs) -> Result<()> {
                     .context("failed to decode client session input history")?
                     .unwrap_or_default(),
             };
-            stream_runtime_input_response_lines(&args.addr, &request).await?;
+            stream_runtime_input_response_lines(&args.addr, &request, request.input_id.as_deref())
+                .await?;
         }
         ClientCommand::SessionAbort {
             session_id,
@@ -358,7 +359,7 @@ pub(crate) async fn run_client(args: ClientArgs) -> Result<()> {
                 for line in response.body.lines() {
                     let line = line.trim();
                     if !line.is_empty() {
-                        print_prompt_response_line(line, &mut saw_result)?;
+                        print_prompt_response_line(line, &mut saw_result, None)?;
                     }
                 }
                 if !saw_result {
@@ -375,7 +376,7 @@ pub(crate) async fn run_client(args: ClientArgs) -> Result<()> {
                 for line in response.body.lines() {
                     let line = line.trim();
                     if !line.is_empty() {
-                        print_prompt_response_line(line, &mut saw_result)?;
+                        print_prompt_response_line(line, &mut saw_result, None)?;
                     }
                 }
             }
@@ -577,8 +578,9 @@ async fn http_request(
 async fn stream_runtime_input_response_lines(
     addr: &str,
     request: &RuntimeInputRequest,
+    input_id: Option<&str>,
 ) -> Result<()> {
-    stream_response_lines(addr, "/session/input/stream", request).await
+    stream_response_lines(addr, "/session/input/stream", request, input_id).await
 }
 
 async fn stream_runtime_run_events(
@@ -597,7 +599,12 @@ async fn stream_runtime_run_events(
             serde_json::from_str(&response.body).context("failed to decode run events response")?;
         let mut saw_terminal = false;
         for event in events.events {
-            print_prompt_response_line_with_seq(&event.line, Some(event.seq), &mut saw_terminal)?;
+            print_prompt_response_line_with_seq(
+                &event.line,
+                Some(event.seq),
+                None,
+                &mut saw_terminal,
+            )?;
         }
         return Ok(());
     }
@@ -671,7 +678,12 @@ async fn stream_runtime_run_events(
     Ok(())
 }
 
-async fn stream_response_lines<T: Serialize>(addr: &str, path: &str, request: &T) -> Result<()> {
+async fn stream_response_lines<T: Serialize>(
+    addr: &str,
+    path: &str,
+    request: &T,
+    input_id: Option<&str>,
+) -> Result<()> {
     let authority = parse_http_authority(addr)?;
     let mut stream = TcpStream::connect(&authority)
         .await
@@ -721,7 +733,7 @@ async fn stream_response_lines<T: Serialize>(addr: &str, path: &str, request: &T
     }
 
     let mut saw_result = false;
-    process_prompt_response_bytes(&mut pending, &mut saw_result)?;
+    process_prompt_response_bytes(&mut pending, &mut saw_result, input_id)?;
     loop {
         let count = stream
             .read(&mut chunk)
@@ -731,12 +743,12 @@ async fn stream_response_lines<T: Serialize>(addr: &str, path: &str, request: &T
             break;
         }
         pending.extend_from_slice(&chunk[..count]);
-        process_prompt_response_bytes(&mut pending, &mut saw_result)?;
+        process_prompt_response_bytes(&mut pending, &mut saw_result, input_id)?;
     }
     if !pending.iter().all(|byte| byte.is_ascii_whitespace()) {
         let line = String::from_utf8(std::mem::take(&mut pending))
             .context("daemon prompt response line is not UTF-8")?;
-        print_prompt_response_line(line.trim_end(), &mut saw_result)?;
+        print_prompt_response_line(line.trim_end(), &mut saw_result, input_id)?;
     }
     if !saw_result {
         bail!("daemon streaming response did not include a result line");
@@ -825,13 +837,17 @@ fn ensure_http_ok(response: &ClientHttpResponse, path: &str) -> Result<()> {
     )
 }
 
-fn process_prompt_response_bytes(pending: &mut Vec<u8>, saw_result: &mut bool) -> Result<()> {
+fn process_prompt_response_bytes(
+    pending: &mut Vec<u8>,
+    saw_result: &mut bool,
+    input_id: Option<&str>,
+) -> Result<()> {
     while let Some(position) = pending.iter().position(|byte| *byte == b'\n') {
         let line_bytes: Vec<u8> = pending.drain(..=position).collect();
         let line = String::from_utf8(line_bytes).context("daemon prompt response is not UTF-8")?;
         let line = line.trim_end();
         if !line.trim().is_empty() {
-            print_prompt_response_line(line, saw_result)?;
+            print_prompt_response_line(line, saw_result, input_id)?;
         }
     }
     Ok(())
@@ -852,20 +868,25 @@ fn process_run_event_record_bytes(pending: &mut Vec<u8>, saw_terminal: &mut bool
 fn print_run_event_record(line: &str, saw_terminal: &mut bool) -> Result<()> {
     let record: RuntimeRunEventRecord = serde_json::from_str(line)
         .with_context(|| format!("failed to parse daemon run event '{}'", line))?;
-    print_prompt_response_line_with_seq(&record.line, Some(record.seq), saw_terminal)
+    print_prompt_response_line_with_seq(&record.line, Some(record.seq), None, saw_terminal)
 }
 
-fn print_prompt_response_line(line: &str, saw_result: &mut bool) -> Result<()> {
+fn print_prompt_response_line(
+    line: &str,
+    saw_result: &mut bool,
+    input_id: Option<&str>,
+) -> Result<()> {
     match serde_json::from_str::<PromptResponseLine>(line)
         .with_context(|| format!("failed to parse daemon line '{}'", line))?
     {
-        parsed => print_prompt_response_line_with_seq(&parsed, None, saw_result),
+        parsed => print_prompt_response_line_with_seq(&parsed, None, input_id, saw_result),
     }
 }
 
 fn print_prompt_response_line_with_seq(
     line: &PromptResponseLine,
     run_seq: Option<u64>,
+    input_id: Option<&str>,
     saw_result: &mut bool,
 ) -> Result<()> {
     match line {
@@ -877,6 +898,7 @@ fn print_prompt_response_line_with_seq(
                 wrapper_json_with_seq(
                     json!({
                     "type": "output_text_delta",
+                    "input_id": input_id,
                     "delta": delta,
                     }),
                     run_seq,
@@ -892,6 +914,7 @@ fn print_prompt_response_line_with_seq(
                 wrapper_json_with_seq(
                     json!({
                     "type": "reasoning_delta",
+                    "input_id": input_id,
                     "delta": delta,
                     }),
                     run_seq,
@@ -912,6 +935,7 @@ fn print_prompt_response_line_with_seq(
                 wrapper_json_with_seq(
                     json!({
                     "type": "tool_call",
+                    "input_id": input_id,
                     "tool_call_id": tool_call_id,
                     "name": name,
                     "status": status,
@@ -937,6 +961,7 @@ fn print_prompt_response_line_with_seq(
                 wrapper_json_with_seq(
                     json!({
                     "type": "tool_call_update",
+                    "input_id": input_id,
                     "tool_call_id": tool_call_id,
                     "name": name,
                     "status": status,
@@ -969,6 +994,7 @@ fn print_prompt_response_line_with_seq(
                 wrapper_json_with_seq(
                     json!({
                     "type": "runtime_host",
+                    "input_id": input_id,
                     "event": event,
                     "session_id": session_id,
                     "sandbox_id": sandbox_id,
@@ -998,6 +1024,7 @@ fn print_prompt_response_line_with_seq(
                 "WRAPPER_RESULT_JSON={}",
                 wrapper_json_with_seq(
                     json!({
+                    "input_id": input_id,
                     "output_text": output_text,
                     "inner_sandbox_id": inner_sandbox_id,
                     "inner_sandbox_domain": inner_sandbox_domain,
@@ -1016,6 +1043,7 @@ fn print_prompt_response_line_with_seq(
                 "WRAPPER_ERROR_JSON={}",
                 wrapper_json_with_seq(
                     json!({
+                    "input_id": input_id,
                     "code": code
                         .clone()
                         .unwrap_or_else(|| classify_error_code(error).to_string()),

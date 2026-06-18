@@ -1524,7 +1524,7 @@ func (w *AgentSidecarWorker) runACPSessionPrompt(ctx context.Context, job worker
 		return nil
 	})
 	if err != nil {
-		if runErr, ok := parseAgentRunErrorEnvelope(result.Stdout); ok {
+		if runErr, ok := parseAgentRunErrorEnvelope(result.Stdout, job.JobID); ok {
 			fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=acp_runtime_prompt_agent_error mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s job_id=%s code=%s message=%s\n", time.Since(start).Seconds(), job.ACPSessionID, job.ACPSessionGeneration, runtime.OuterSandboxID, job.JobID, runErr.Code, quoteTimelineField(runErr.Message))
 			return workerResult{}, workerFailureFromAgentRunError(runErr)
 		}
@@ -1534,14 +1534,14 @@ func (w *AgentSidecarWorker) runACPSessionPrompt(ctx context.Context, job worker
 	if err := emitStdoutEvents(stdoutParser.Finish()); err != nil {
 		return workerResult{}, err
 	}
-	envelope, sawEnvelope := parseAgentRunEnvelope(result.Stdout)
-	if runErr, ok := parseAgentRunErrorEnvelope(result.Stdout); ok {
+	envelope, sawEnvelope := parseAgentRunEnvelope(result.Stdout, job.JobID)
+	if runErr, ok := parseAgentRunErrorEnvelope(result.Stdout, job.JobID); ok {
 		fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=acp_runtime_result_error mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s job_id=%s code=%s message=%s stdout_bytes=%d\n", time.Since(start).Seconds(), job.ACPSessionID, job.ACPSessionGeneration, runtime.OuterSandboxID, job.JobID, runErr.Code, quoteTimelineField(runErr.Message), len(result.Stdout))
 		return workerResult{}, workerFailureFromAgentRunError(runErr)
 	}
 	output := cleanAgentVisibleOutput(envelope.OutputText)
 	if output == "" && !sawEnvelope {
-		output = cleanAgentVisibleOutput(parseAgentOutput(result.Stdout))
+		output = cleanAgentVisibleOutput(parseAgentOutput(result.Stdout, job.JobID))
 	}
 	if output == "" && streamedOutput.Len() > 0 {
 		output = cleanAgentVisibleOutput(streamedOutput.String())
@@ -2687,10 +2687,10 @@ func acpDaemonAddr(sessionID string) string {
 	return fmt.Sprintf("http://127.0.0.1:%d", port)
 }
 
-func parseAgentRunEnvelope(stdout string) (agentRunEnvelope, bool) {
+func parseAgentRunEnvelope(stdout string, expectedInputIDs ...string) (agentRunEnvelope, bool) {
 	for _, line := range strings.Split(stdout, "\n") {
 		var envelope agentRunEnvelope
-		if decodeSidecarWrapperJSON(line, sidecarWrapperResultMarker, &envelope) {
+		if decodeSidecarWrapperJSON(line, sidecarWrapperResultMarker, &envelope) && sidecarInputMatches(envelope.InputID, expectedInputIDs...) {
 			return envelope, true
 		}
 	}
@@ -2698,14 +2698,15 @@ func parseAgentRunEnvelope(stdout string) (agentRunEnvelope, bool) {
 }
 
 type agentRunErrorEnvelope struct {
+	InputID string `json:"input_id"`
 	Code    string `json:"code"`
 	Message string `json:"message"`
 }
 
-func parseAgentRunErrorEnvelope(stdout string) (agentRunErrorEnvelope, bool) {
+func parseAgentRunErrorEnvelope(stdout string, expectedInputIDs ...string) (agentRunErrorEnvelope, bool) {
 	for _, line := range strings.Split(stdout, "\n") {
 		var envelope agentRunErrorEnvelope
-		if decodeSidecarWrapperJSON(line, sidecarWrapperErrorMarker, &envelope) && envelope.Message != "" {
+		if decodeSidecarWrapperJSON(line, sidecarWrapperErrorMarker, &envelope) && envelope.Message != "" && sidecarInputMatches(envelope.InputID, expectedInputIDs...) {
 			if envelope.Code == "" {
 				envelope.Code = "agent_runtime_error"
 			}
@@ -2713,6 +2714,18 @@ func parseAgentRunErrorEnvelope(stdout string) (agentRunErrorEnvelope, bool) {
 		}
 	}
 	return agentRunErrorEnvelope{}, false
+}
+
+func sidecarInputMatches(inputID string, expectedInputIDs ...string) bool {
+	if inputID == "" || len(expectedInputIDs) == 0 {
+		return true
+	}
+	for _, expected := range expectedInputIDs {
+		if expected != "" && inputID == expected {
+			return true
+		}
+	}
+	return false
 }
 
 func workerFailureFromAgentRunError(envelope agentRunErrorEnvelope) error {
@@ -2924,7 +2937,7 @@ func (w *AgentSidecarWorker) Run(ctx context.Context, job workerJob, emit func(w
 		return nil
 	})
 	if err != nil {
-		if runErr, ok := parseAgentRunErrorEnvelope(result.Stdout); ok {
+		if runErr, ok := parseAgentRunErrorEnvelope(result.Stdout, job.JobID); ok {
 			timeline("sidecar_agent_error", "code="+runErr.Code, "message="+quoteTimelineField(runErr.Message))
 			return workerResult{}, workerFailureFromAgentRunError(runErr)
 		}
@@ -2938,14 +2951,14 @@ func (w *AgentSidecarWorker) Run(ctx context.Context, job workerJob, emit func(w
 		timeline("sidecar_download_done")
 	}
 	timeline("sidecar_command_done", fmt.Sprintf("stdout_bytes=%d", len(result.Stdout)), fmt.Sprintf("stderr_bytes=%d", len(result.Stderr)))
-	envelope, sawEnvelope := parseAgentRunEnvelope(result.Stdout)
-	if runErr, ok := parseAgentRunErrorEnvelope(result.Stdout); ok {
+	envelope, sawEnvelope := parseAgentRunEnvelope(result.Stdout, job.JobID)
+	if runErr, ok := parseAgentRunErrorEnvelope(result.Stdout, job.JobID); ok {
 		timeline("sidecar_result_error", "code="+runErr.Code, "message="+quoteTimelineField(runErr.Message), fmt.Sprintf("stdout_bytes=%d", len(result.Stdout)))
 		return workerResult{}, workerFailureFromAgentRunError(runErr)
 	}
 	output := cleanAgentVisibleOutput(envelope.OutputText)
 	if output == "" && !sawEnvelope {
-		output = cleanAgentVisibleOutput(parseAgentOutput(result.Stdout))
+		output = cleanAgentVisibleOutput(parseAgentOutput(result.Stdout, job.JobID))
 	}
 	if output == "" && streamedOutput.Len() > 0 {
 		output = cleanAgentVisibleOutput(streamedOutput.String())
