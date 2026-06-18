@@ -31,6 +31,8 @@ spec:
         - /usr/local/bin/rescue-exporter
         args:
         - worker
+        - --mode
+        - rescue-export
         env:
         - name: TEMPORAL_TLS
           value: "true"

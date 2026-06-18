@@ -1,2 +1,3 @@
 rescue-exporter/generated/platform.env
+hermes-importer/generated/platform.env
 shared/generated/workers-runtime-secrets.env

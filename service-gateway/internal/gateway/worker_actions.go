@@ -236,6 +236,9 @@ func withWorkerActionDefaults(cfg WorkerActionsConfig) WorkerActionsConfig {
 	if value := strings.TrimSpace(os.Getenv("WORKER_ACTION_RESCUE_EXPORT_COS_UPLOAD_BUCKET")); value != "" {
 		cfg.RescueExport.COSUploadBucket = value
 	}
+	if value := strings.TrimSpace(os.Getenv("WORKER_ACTION_RESCUE_EXPORT_TASK_QUEUE")); value != "" {
+		cfg.RescueExport.TaskQueue = value
+	}
 	if value := strings.TrimSpace(os.Getenv("WORKER_ACTION_RESCUE_EXPORT_COS_UPLOAD_REGION")); value != "" {
 		cfg.RescueExport.COSUploadRegion = value
 	}
@@ -248,12 +251,15 @@ func withWorkerActionDefaults(cfg WorkerActionsConfig) WorkerActionsConfig {
 		}
 	}
 	if value := strings.TrimSpace(os.Getenv("WORKER_ACTION_HERMES_IMPORT_UPLOAD_KEY_PREFIX")); value != "" {
-		cfg.RescueExport.ImportUploadKeyPrefix = value
+		cfg.HermesImport.UploadKeyPrefix = value
 	}
 	if value := strings.TrimSpace(os.Getenv("WORKER_ACTION_HERMES_IMPORT_UPLOAD_URL_TTL_SECONDS")); value != "" {
 		if seconds, err := strconv.Atoi(value); err == nil {
-			cfg.RescueExport.ImportUploadURLTTLSeconds = seconds
+			cfg.HermesImport.UploadURLTTLSeconds = seconds
 		}
+	}
+	if value := strings.TrimSpace(os.Getenv("WORKER_ACTION_HERMES_IMPORT_TASK_QUEUE")); value != "" {
+		cfg.HermesImport.TaskQueue = value
 	}
 	if strings.TrimSpace(cfg.Temporal.Namespace) == "" {
 		cfg.Temporal.Namespace = "default"
@@ -264,6 +270,12 @@ func withWorkerActionDefaults(cfg WorkerActionsConfig) WorkerActionsConfig {
 	if strings.TrimSpace(cfg.Temporal.TokenEnv) == "" {
 		cfg.Temporal.TokenEnv = "TEMPORAL_BEARER_TOKEN"
 	}
+	if strings.TrimSpace(cfg.RescueExport.TaskQueue) == "" {
+		cfg.RescueExport.TaskQueue = cfg.Temporal.TaskQueue
+	}
+	if strings.TrimSpace(cfg.HermesImport.TaskQueue) == "" {
+		cfg.HermesImport.TaskQueue = "hermes-import"
+	}
 	if strings.TrimSpace(cfg.RescueExport.COSUploadRegion) == "" {
 		cfg.RescueExport.COSUploadRegion = "ap-beijing"
 	}
@@ -273,11 +285,17 @@ func withWorkerActionDefaults(cfg WorkerActionsConfig) WorkerActionsConfig {
 	if cfg.RescueExport.COSUploadURLTTLSeconds <= 0 {
 		cfg.RescueExport.COSUploadURLTTLSeconds = 28800
 	}
-	if strings.TrimSpace(cfg.RescueExport.ImportUploadKeyPrefix) == "" {
-		cfg.RescueExport.ImportUploadKeyPrefix = "rescue-imports"
+	if strings.TrimSpace(cfg.HermesImport.UploadKeyPrefix) == "" {
+		cfg.HermesImport.UploadKeyPrefix = strings.TrimSpace(cfg.RescueExport.ImportUploadKeyPrefix)
 	}
-	if cfg.RescueExport.ImportUploadURLTTLSeconds <= 0 {
-		cfg.RescueExport.ImportUploadURLTTLSeconds = defaultImportUploadTTLSeconds
+	if strings.TrimSpace(cfg.HermesImport.UploadKeyPrefix) == "" {
+		cfg.HermesImport.UploadKeyPrefix = "rescue-imports"
+	}
+	if cfg.HermesImport.UploadURLTTLSeconds <= 0 {
+		cfg.HermesImport.UploadURLTTLSeconds = cfg.RescueExport.ImportUploadURLTTLSeconds
+	}
+	if cfg.HermesImport.UploadURLTTLSeconds <= 0 {
+		cfg.HermesImport.UploadURLTTLSeconds = defaultImportUploadTTLSeconds
 	}
 	return cfg
 }
@@ -414,7 +432,8 @@ func (s *workerActionService) handleStart(w http.ResponseWriter, r *http.Request
 		return
 	}
 	workflowID := buildWorkerActionWorkflowID(botID, action)
-	run, err := s.backend.StartWorkflow(r.Context(), s.cfg.Temporal.TaskQueue, workflowID, workflowName, startReq, rescueTencentConfig{RegionCandidates: regionCandidates})
+	taskQueue := s.taskQueueForAction(action)
+	run, err := s.backend.StartWorkflow(r.Context(), taskQueue, workflowID, workflowName, startReq, rescueTencentConfig{RegionCandidates: regionCandidates})
 	if err != nil {
 		if started, ok := workflowAlreadyStartedRun(err); ok {
 			writeJSONAny(w, http.StatusConflict, map[string]any{
@@ -434,7 +453,7 @@ func (s *workerActionService) handleStart(w http.ResponseWriter, r *http.Request
 			"action", action,
 			"bot_id", botID,
 			"workflow_id", workflowID,
-			"task_queue", s.cfg.Temporal.TaskQueue,
+			"task_queue", taskQueue,
 			"temporal_address_configured", strings.TrimSpace(s.cfg.Temporal.Address) != "",
 			"error", err,
 		)
@@ -674,7 +693,7 @@ func (s *workerActionService) buildHermesImportRequest(raw json.RawMessage, targ
 		ImportObjectURL:        objectURL,
 		COSUploadBucket:        strings.TrimSpace(s.cfg.RescueExport.COSUploadBucket),
 		COSUploadRegion:        s.cfg.RescueExport.COSUploadRegion,
-		COSUploadKeyPrefix:     s.cfg.RescueExport.ImportUploadKeyPrefix,
+		COSUploadKeyPrefix:     s.importUploadKeyPrefix(),
 		COSUploadURLTTLSeconds: s.importUploadTTLSeconds(),
 		TATUsername:            "agentuser",
 		TATWorkingDirectory:    "/home/agentuser",
@@ -683,6 +702,20 @@ func (s *workerActionService) buildHermesImportRequest(raw json.RawMessage, targ
 		WaitTimeoutSeconds:     90,
 		CommandTimeoutSeconds:  1800,
 	}, nil
+}
+
+func (s *workerActionService) taskQueueForAction(action string) string {
+	switch action {
+	case workerActionHermesImport:
+		if queue := strings.TrimSpace(s.cfg.HermesImport.TaskQueue); queue != "" {
+			return queue
+		}
+	case workerActionRescueExport:
+		if queue := strings.TrimSpace(s.cfg.RescueExport.TaskQueue); queue != "" {
+			return queue
+		}
+	}
+	return strings.TrimSpace(s.cfg.Temporal.TaskQueue)
 }
 
 func (s *workerActionService) buildRescueExportRequest(raw json.RawMessage, target resolvedBotTarget, notifyEmail string) (rescueExportStartRequest, error) {
@@ -756,11 +789,11 @@ func (s *workerActionService) buildHermesImportObjectKey(botID string, fileName 
 	if name == "" || name == "unknown" {
 		name = "hermes-backup"
 	}
-	return path.Join(strings.Trim(s.cfg.RescueExport.ImportUploadKeyPrefix, "/"), safeWorkerActionIDPart(botID), fmt.Sprintf("%d-%s-%s.zip", time.Now().Unix(), hex.EncodeToString(random), name)), nil
+	return path.Join(strings.Trim(s.importUploadKeyPrefix(), "/"), safeWorkerActionIDPart(botID), fmt.Sprintf("%d-%s-%s.zip", time.Now().Unix(), hex.EncodeToString(random), name)), nil
 }
 
 func (s *workerActionService) isHermesImportObjectKey(objectKey string) bool {
-	prefix := strings.Trim(s.cfg.RescueExport.ImportUploadKeyPrefix, "/")
+	prefix := strings.Trim(s.importUploadKeyPrefix(), "/")
 	if prefix == "" {
 		return false
 	}
@@ -768,7 +801,20 @@ func (s *workerActionService) isHermesImportObjectKey(objectKey string) bool {
 	return objectKey == prefix || strings.HasPrefix(objectKey, prefix+"/")
 }
 
+func (s *workerActionService) importUploadKeyPrefix() string {
+	if prefix := strings.TrimSpace(s.cfg.HermesImport.UploadKeyPrefix); prefix != "" {
+		return prefix
+	}
+	if prefix := strings.TrimSpace(s.cfg.RescueExport.ImportUploadKeyPrefix); prefix != "" {
+		return prefix
+	}
+	return "rescue-imports"
+}
+
 func (s *workerActionService) importUploadTTLSeconds() int {
+	if s.cfg.HermesImport.UploadURLTTLSeconds > 0 {
+		return s.cfg.HermesImport.UploadURLTTLSeconds
+	}
 	if s.cfg.RescueExport.ImportUploadURLTTLSeconds > 0 {
 		return s.cfg.RescueExport.ImportUploadURLTTLSeconds
 	}

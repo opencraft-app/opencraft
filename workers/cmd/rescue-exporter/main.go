@@ -97,6 +97,7 @@ func runWorker(argv []string) error {
 	fs := flag.NewFlagSet("worker", flag.ExitOnError)
 	temporal := addTemporalFlags(fs)
 	healthAddr := fs.String("health-addr", envDefault("WORKERS_HEALTH_ADDR", ":9090"), "HTTP health address for Kubernetes probes; empty disables")
+	mode := fs.String("mode", envDefault("WORKER_MODE", "all"), "Workflow registration mode: all, rescue-export, or hermes-import")
 	fs.Parse(argv)
 
 	tc, err := dialTemporal(*temporal)
@@ -111,36 +112,53 @@ func runWorker(argv []string) error {
 		return err
 	}
 	w := worker.New(tc, temporal.TaskQueue, workerOptions)
-	w.RegisterWorkflow(rescue.ExportWorkflow)
-	w.RegisterWorkflow(rescue.ImportWorkflow)
-	w.RegisterWorkflow(rescue.DeleteCOSObjectWorkflow)
+	workerMode := strings.ToLower(strings.TrimSpace(*mode))
+	if workerMode == "" {
+		workerMode = "all"
+	}
+	registerExport := workerMode == "all" || workerMode == "rescue-export"
+	registerImport := workerMode == "all" || workerMode == "hermes-import"
+	if !registerExport && !registerImport {
+		return fmt.Errorf("--mode must be all, rescue-export, or hermes-import")
+	}
+	if registerExport {
+		w.RegisterWorkflow(rescue.ExportWorkflow)
+		w.RegisterWorkflow(rescue.DeleteCOSObjectWorkflow)
+	}
+	if registerImport {
+		w.RegisterWorkflow(rescue.ImportWorkflow)
+	}
 	w.RegisterActivityWithOptions(acts.LocateInstance, rescue.ActivityOptions("LocateInstance"))
-	w.RegisterActivityWithOptions(acts.EnterRescueMode, rescue.ActivityOptions("EnterRescueMode"))
 	w.RegisterActivityWithOptions(acts.WaitInstanceRunning, rescue.ActivityOptions("WaitInstanceRunning"))
-	w.RegisterActivityWithOptions(acts.WaitRescueRunning, rescue.ActivityOptions("WaitRescueRunning"))
-	w.RegisterActivityWithOptions(acts.WaitRescueSSH, rescue.ActivityOptions("WaitRescueSSH"))
 	w.RegisterActivityWithOptions(acts.WaitRescueTAT, rescue.ActivityOptions("WaitRescueTAT"))
-	w.RegisterActivityWithOptions(acts.PrepareArchiveOverSSH, rescue.ActivityOptions("PrepareArchiveOverSSH"))
-	w.RegisterActivityWithOptions(acts.PrepareArchiveOverTAT, rescue.ActivityOptions("PrepareArchiveOverTAT"))
-	w.RegisterActivityWithOptions(acts.PrepareArchiveTATCommand, rescue.ActivityOptions("PrepareArchiveTATCommand"))
 	w.RegisterActivityWithOptions(acts.StartTATCommand, rescue.ActivityOptions("StartTATCommand"))
 	w.RegisterActivityWithOptions(acts.WaitTATCommand, rescue.ActivityOptions("WaitTATCommand"))
-	w.RegisterActivityWithOptions(acts.FinalizeArchiveOverTAT, rescue.ActivityOptions("FinalizeArchiveOverTAT"))
-	w.RegisterActivityWithOptions(acts.PrepareImportTATCommand, rescue.ActivityOptions("PrepareImportTATCommand"))
-	w.RegisterActivityWithOptions(acts.FinalizeImportOverTAT, rescue.ActivityOptions("FinalizeImportOverTAT"))
-	w.RegisterActivityWithOptions(acts.SCPArchive, rescue.ActivityOptions("SCPArchive"))
-	w.RegisterActivityWithOptions(acts.CleanupRemoteArchive, rescue.ActivityOptions("CleanupRemoteArchive"))
-	w.RegisterActivityWithOptions(acts.ExitRescueMode, rescue.ActivityOptions("ExitRescueMode"))
 	w.RegisterActivityWithOptions(acts.DeleteCOSObject, rescue.ActivityOptions("DeleteCOSObject"))
-	w.RegisterActivityWithOptions(acts.SendExportNotificationEmail, rescue.ActivityOptions("SendExportNotificationEmail"))
-	w.RegisterActivityWithOptions(acts.ConfirmExportNotificationDelivered, rescue.ActivityOptions("ConfirmExportNotificationDelivered"))
-	w.RegisterActivityWithOptions(acts.SendFailureNotification, rescue.ActivityOptions("SendFailureNotification"))
+	if registerExport {
+		w.RegisterActivityWithOptions(acts.EnterRescueMode, rescue.ActivityOptions("EnterRescueMode"))
+		w.RegisterActivityWithOptions(acts.WaitRescueRunning, rescue.ActivityOptions("WaitRescueRunning"))
+		w.RegisterActivityWithOptions(acts.WaitRescueSSH, rescue.ActivityOptions("WaitRescueSSH"))
+		w.RegisterActivityWithOptions(acts.PrepareArchiveOverSSH, rescue.ActivityOptions("PrepareArchiveOverSSH"))
+		w.RegisterActivityWithOptions(acts.PrepareArchiveOverTAT, rescue.ActivityOptions("PrepareArchiveOverTAT"))
+		w.RegisterActivityWithOptions(acts.PrepareArchiveTATCommand, rescue.ActivityOptions("PrepareArchiveTATCommand"))
+		w.RegisterActivityWithOptions(acts.FinalizeArchiveOverTAT, rescue.ActivityOptions("FinalizeArchiveOverTAT"))
+		w.RegisterActivityWithOptions(acts.SCPArchive, rescue.ActivityOptions("SCPArchive"))
+		w.RegisterActivityWithOptions(acts.CleanupRemoteArchive, rescue.ActivityOptions("CleanupRemoteArchive"))
+		w.RegisterActivityWithOptions(acts.ExitRescueMode, rescue.ActivityOptions("ExitRescueMode"))
+		w.RegisterActivityWithOptions(acts.SendExportNotificationEmail, rescue.ActivityOptions("SendExportNotificationEmail"))
+		w.RegisterActivityWithOptions(acts.ConfirmExportNotificationDelivered, rescue.ActivityOptions("ConfirmExportNotificationDelivered"))
+		w.RegisterActivityWithOptions(acts.SendFailureNotification, rescue.ActivityOptions("SendFailureNotification"))
+	}
+	if registerImport {
+		w.RegisterActivityWithOptions(acts.PrepareImportTATCommand, rescue.ActivityOptions("PrepareImportTATCommand"))
+		w.RegisterActivityWithOptions(acts.FinalizeImportOverTAT, rescue.ActivityOptions("FinalizeImportOverTAT"))
+	}
 
 	if *healthAddr != "" {
 		stopHealth := startHealthServer(*healthAddr)
 		defer stopHealth()
 	}
-	stdlog.Printf("worker listening on task_queue=%s", temporal.TaskQueue)
+	stdlog.Printf("worker listening on task_queue=%s mode=%s", temporal.TaskQueue, workerMode)
 	return w.Run(worker.InterruptCh())
 }
 

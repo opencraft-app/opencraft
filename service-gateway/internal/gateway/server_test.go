@@ -555,6 +555,7 @@ func TestWorkerActionStartResolvesBotAndStartsRescueExportWorkflow(t *testing.T)
 			Enabled:  true,
 			Temporal: WorkerActionTemporalConfig{TaskQueue: "tencent-cvm-rescue-export"},
 			RescueExport: WorkerActionRescueExportConfig{
+				TaskQueue:              "tencent-cvm-rescue-export",
 				COSUploadBucket:        "https://bucket-123.cos.ap-shanghai.myqcloud.com",
 				COSUploadRegion:        "ap-shanghai",
 				COSUploadKeyPrefix:     "rescue-exports",
@@ -708,10 +709,12 @@ func TestWorkerActionCreatesHermesImportUploadURL(t *testing.T) {
 		WorkerActions: WorkerActionsConfig{
 			Enabled: true,
 			RescueExport: WorkerActionRescueExportConfig{
-				COSUploadBucket:           "https://bucket-123.cos.ap-beijing.myqcloud.com",
-				COSUploadRegion:           "ap-beijing",
-				ImportUploadKeyPrefix:     "rescue-imports",
-				ImportUploadURLTTLSeconds: 600,
+				COSUploadBucket: "https://bucket-123.cos.ap-beijing.myqcloud.com",
+				COSUploadRegion: "ap-beijing",
+			},
+			HermesImport: WorkerActionHermesImportConfig{
+				UploadKeyPrefix:     "rescue-imports",
+				UploadURLTTLSeconds: 600,
 			},
 		},
 	}, WithWorkerActionBackend(&fakeWorkerActionBackend{}))
@@ -784,10 +787,13 @@ func TestWorkerActionStartHermesImportWorkflow(t *testing.T) {
 			Enabled:  true,
 			Temporal: WorkerActionTemporalConfig{TaskQueue: "tencent-cvm-rescue-export"},
 			RescueExport: WorkerActionRescueExportConfig{
-				COSUploadBucket:       "https://bucket-123.cos.ap-beijing.myqcloud.com",
-				COSUploadRegion:       "ap-beijing",
-				ImportUploadKeyPrefix: "rescue-imports",
-				RegionCandidates:      []string{"ap-beijing"},
+				COSUploadBucket:  "https://bucket-123.cos.ap-beijing.myqcloud.com",
+				COSUploadRegion:  "ap-beijing",
+				RegionCandidates: []string{"ap-beijing"},
+			},
+			HermesImport: WorkerActionHermesImportConfig{
+				TaskQueue:       "hermes-import",
+				UploadKeyPrefix: "rescue-imports",
 			},
 		},
 	}, WithWorkerActionBackend(backend))
@@ -809,6 +815,9 @@ func TestWorkerActionStartHermesImportWorkflow(t *testing.T) {
 	}
 	if backend.startWorkflowID != "worker-action-bot-1-hermes_import" || backend.startWorkflowName != workerActionImportWorkflowName {
 		t.Fatalf("unexpected import workflow start: id=%s name=%s", backend.startWorkflowID, backend.startWorkflowName)
+	}
+	if backend.startTaskQueue != "hermes-import" {
+		t.Fatalf("expected import task queue hermes-import, got %s", backend.startTaskQueue)
 	}
 	importReq, ok := backend.startArgs[0].(hermesImportStartRequest)
 	if !ok {

@@ -12,11 +12,16 @@ worker_actions:
     task_queue: tencent-cvm-rescue-export
     timeout: 10s
   rescue_export:
+    task_queue: tencent-cvm-rescue-export
     cos_upload_bucket: https://lightclawuser-1388575217.cos.ap-beijing.myqcloud.com
     cos_upload_region: ap-beijing
     cos_upload_key_prefix: rescue-exports
     cos_upload_url_ttl_seconds: 28800
     region_candidates: [ap-beijing, ap-shanghai, ap-guangzhou]
+  hermes_import:
+    task_queue: hermes-import
+    upload_key_prefix: rescue-imports
+    upload_url_ttl_seconds: 900
 routes:
   - name: users
     prefix: /users
