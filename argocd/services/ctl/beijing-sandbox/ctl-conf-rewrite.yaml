@@ -18,7 +18,27 @@ data:
     enable_inner_sign = false
 
     [api.instance]
+    default_template_class_id = "openclaw-default"
     default_template_id = "pool-c3"
+    default_sku_id = "sku-hermes-2c4g"
+    candidate_template_ids = ["pool-c0", "pool-c1", "pool-c2", "pool-c3", "pool-c4", "pool-c5"]
+
+    # bundle-instance-spec-design.md §3.3 Q2=a / §10 Q7=a / §13.2 R1f / §13.4 上线纪律：
+    # bundle.instance_spec_id 命中字典但 server_conf 未配 spec_pools 时直接 fail（ErrBundleInstanceSpecNoPool）。
+    # beijing-sandbox 的 ctl bundle 表已有 instance_spec_id=spec-2c4g50g（free_trial/launch）
+    # 与 spec-4c8g80g（cruise/voyage）；此处先补 2C4G 链路（B 方案最小集），4C8G 待 sandbox 侧
+    # 4C8G 池就绪后再加 spec-4c8g80g 段（A 方案）。
+    # spec-2c4g50g 复用现网 default + candidate（pool-c3 + pool-c0..c5），保持兼容期行为不变。
+    # 不显式设 template_class_id，复用全局 default_template_class_id=openclaw-default。
+    #
+    # sku_id 显式声明（v1.7.32 §13.2 R1f 对偶项）：sandbox `selectTemplateSKUBindingsForAllocation`
+    # 严格校验 sku.template_class_id == requested.templateClassID，否则返 ErrSKUNotFound。
+    # 此处显式声明 sku-hermes-2c4g（其 template_class_id=openclaw-default）以匹配全局
+    # default_template_class_id；不依赖全局 default_sku_id 兜底以避免多 spec 部署时 sku 漂移。
+    [[api.instance.spec_pools]]
+    spec_id                = "spec-2c4g50g"
+    sku_id                 = "sku-hermes-2c4g"
+    default_template_id    = "pool-c3"
     candidate_template_ids = ["pool-c0", "pool-c1", "pool-c2", "pool-c3", "pool-c4", "pool-c5"]
 
     [db]
