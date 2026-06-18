@@ -316,6 +316,8 @@ export interface BotRepository {
   execDebugCommand(botId: string, command: string): Promise<{ status: string; exitCode: number; output: string }>;
   startRescueExport(botId: string): Promise<WorkerActionStartResult>;
   getRescueExportStatus(botId: string): Promise<WorkerActionStatusResult | null>;
+  importHermesWorkspace(botId: string, file: File): Promise<WorkerActionStartResult>;
+  getHermesImportStatus(botId: string): Promise<WorkerActionStatusResult | null>;
   /**
    * 重置实例配置（轮换 API Key）。
    *

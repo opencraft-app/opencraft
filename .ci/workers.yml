@@ -25,7 +25,7 @@ extends:
   # Refresh compiled Stream pipeline after service-release template changes.
   parameters:
     SERVICE: workers
-    BUNDLE: workers-rescue-exporter
+    BUNDLE: workers-rescue-exporter,workers-hermes-importer
     DISPLAY_NAME: workers
     DEFAULT_TARGET_ENV: beijing-sandbox
     MASTER_BUILD_ENVS: beijing-sandbox,shanghai-workers

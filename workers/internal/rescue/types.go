@@ -1,6 +1,9 @@
 package rescue
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 var CommonRegions = []string{
 	"ap-guangzhou",
@@ -79,6 +82,66 @@ type ExportRequest struct {
 	Confirmed              bool
 	WaitTimeoutSeconds     int
 	CommandTimeoutSeconds  int
+}
+
+type ImportRequest struct {
+	BotID                  string
+	BotName                string
+	InstanceID             string
+	Region                 string
+	RegionCandidates       []string
+	ImportObjectKey        string
+	ImportObjectURL        string
+	COSUploadBucket        string
+	COSUploadRegion        string
+	COSUploadKeyPrefix     string
+	COSUploadURLTTLSeconds int
+	TATUsername            string
+	TATWorkingDirectory    string
+	TATWaitTimeoutSeconds  int
+	SearchAttributes       []string
+	Execute                bool
+	WaitTimeoutSeconds     int
+	CommandTimeoutSeconds  int
+}
+
+func NormalizeImportRequest(req ImportRequest) ImportRequest {
+	if strings.TrimSpace(req.TATUsername) == "" {
+		req.TATUsername = "agentuser"
+	}
+	if strings.TrimSpace(req.TATWorkingDirectory) == "" {
+		req.TATWorkingDirectory = "/home/agentuser"
+	}
+	if req.TATWaitTimeoutSeconds <= 0 {
+		req.TATWaitTimeoutSeconds = req.WaitTimeoutSeconds
+	}
+	if req.COSUploadURLTTLSeconds <= 0 {
+		req.COSUploadURLTTLSeconds = 900
+	}
+	return req
+}
+
+func (req ImportRequest) exportRequest() ExportRequest {
+	return ExportRequest{
+		BotID:                  req.BotID,
+		BotName:                req.BotName,
+		InstanceID:             req.InstanceID,
+		Region:                 req.Region,
+		ArchiveMode:            ArchiveModeHermes,
+		CommandTransport:       "tat",
+		TATUsername:            req.TATUsername,
+		TATWorkingDirectory:    req.TATWorkingDirectory,
+		TATWaitTimeoutSeconds:  req.TATWaitTimeoutSeconds,
+		COSUploadBucket:        req.COSUploadBucket,
+		COSUploadRegion:        req.COSUploadRegion,
+		COSUploadKeyPrefix:     req.COSUploadKeyPrefix,
+		COSUploadURLTTLSeconds: req.COSUploadURLTTLSeconds,
+		SearchAttributes:       req.SearchAttributes,
+		Execute:                req.Execute,
+		Confirmed:              true,
+		WaitTimeoutSeconds:     req.WaitTimeoutSeconds,
+		CommandTimeoutSeconds:  req.CommandTimeoutSeconds,
+	}
 }
 
 func NormalizeExportRequest(req ExportRequest) ExportRequest {
@@ -166,6 +229,26 @@ type ExportResult struct {
 	DryRun                bool
 }
 
+type PreparedImport struct {
+	InstanceID   string
+	Region       string
+	ObjectURL    string
+	ObjectKey    string
+	Bucket       string
+	ArchivePath  string
+	ByteSize     int64
+	RemoteOutput string
+	Command      TATCommandRequest
+}
+
+type ImportResult struct {
+	Instance   InstanceInfo
+	Import     PreparedImport
+	TATCommand TATCommandResult
+	COSDeleted bool
+	DryRun     bool
+}
+
 type ExportStatusLog struct {
 	Time    string `json:"time"`
 	Phase   string `json:"phase"`
@@ -192,6 +275,19 @@ type ExportStatus struct {
 	Error                 string
 	DryRun                bool
 	Logs                  []ExportStatusLog
+}
+
+type ImportStatus struct {
+	WorkflowID string
+	RunID      string
+	Phase      string
+	Instance   InstanceInfo
+	Import     PreparedImport
+	TATCommand TATCommandResult
+	COSDeleted bool
+	Error      string
+	DryRun     bool
+	Logs       []ExportStatusLog
 }
 
 type COSDeleteRequest struct {

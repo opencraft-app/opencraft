@@ -555,6 +555,7 @@ func TestWorkerActionStartResolvesBotAndStartsRescueExportWorkflow(t *testing.T)
 			Enabled:  true,
 			Temporal: WorkerActionTemporalConfig{TaskQueue: "tencent-cvm-rescue-export"},
 			RescueExport: WorkerActionRescueExportConfig{
+				TaskQueue:              "tencent-cvm-rescue-export",
 				COSUploadBucket:        "https://bucket-123.cos.ap-shanghai.myqcloud.com",
 				COSUploadRegion:        "ap-shanghai",
 				COSUploadKeyPrefix:     "rescue-exports",
@@ -669,6 +670,167 @@ func TestWorkerActionStartDefaultsToHermesExport(t *testing.T) {
 	}
 	if exportReq.ArchiveMode != "hermes" || len(exportReq.RemotePaths) != 1 || exportReq.RemotePaths[0] != "/home/agentuser/.hermes" {
 		t.Fatalf("unexpected default Hermes export request: %+v", exportReq)
+	}
+}
+
+func TestWorkerActionCreatesHermesImportUploadURL(t *testing.T) {
+	t.Setenv("TENCENTCLOUD_SECRET_ID", "AKIDexample")
+	t.Setenv("TENCENTCLOUD_SECRET_KEY", "secret")
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"session": map[string]any{
+				"user": map[string]any{
+					"id":               "usr_123",
+					"email":            "user@example.com",
+					"realnameVerified": true,
+				},
+			},
+		})
+	}))
+	defer auth.Close()
+	ctl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": "OK",
+			"data": map[string]any{"instance_id": "bot-1", "sandbox_id": "sbx-1", "status": "Running"},
+		})
+	}))
+	defer ctl.Close()
+	sandbox := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"sandboxID": "sbx-1", "cloudID": "ins-abc123", "region": "ap-beijing"})
+	}))
+	defer sandbox.Close()
+
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		Routes: []Route{
+			{Name: "ctl", Prefix: "/v1/instances", Upstream: ctl.URL, Access: AccessAuthenticated},
+			{Name: "sandbox", Prefix: "/sandboxes", Upstream: sandbox.URL, Access: AccessAuthenticated},
+		},
+		WorkerActions: WorkerActionsConfig{
+			Enabled: true,
+			RescueExport: WorkerActionRescueExportConfig{
+				COSUploadBucket: "https://bucket-123.cos.ap-beijing.myqcloud.com",
+				COSUploadRegion: "ap-beijing",
+			},
+			HermesImport: WorkerActionHermesImportConfig{
+				UploadKeyPrefix:     "rescue-imports",
+				UploadURLTTLSeconds: 600,
+			},
+		},
+	}, WithWorkerActionBackend(&fakeWorkerActionBackend{}))
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/worker-actions", strings.NewReader(`{
+		"bot_id":"bot-1",
+		"action":"hermes_import_upload",
+		"params":{"file_name":"hermes-backup.zip","byte_size":123}
+	}`))
+	req.Header.Set("Authorization", "Bearer tok-123")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Data workerActionUploadResponse `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Data.Action != workerActionHermesImportUpload || body.Data.Status != "upload_url_created" {
+		t.Fatalf("unexpected upload response: %+v", body.Data)
+	}
+	if !strings.HasPrefix(body.Data.ObjectKey, "rescue-imports/bot-1/") || !strings.HasSuffix(body.Data.ObjectKey, ".zip") {
+		t.Fatalf("unexpected object key: %s", body.Data.ObjectKey)
+	}
+	if !strings.Contains(body.Data.UploadURL, "q-signature=") || body.Data.ObjectURL == "" || body.Data.ExpiresAt == "" {
+		t.Fatalf("expected signed upload target, got %+v", body.Data)
+	}
+}
+
+func TestWorkerActionStartHermesImportWorkflow(t *testing.T) {
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"session": map[string]any{
+				"user": map[string]any{
+					"id":               "usr_123",
+					"email":            "user@example.com",
+					"realnameVerified": true,
+				},
+			},
+		})
+	}))
+	defer auth.Close()
+	ctl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": "OK",
+			"data": map[string]any{"instance_id": "bot-1", "sandbox_id": "sbx-1", "status": "Running"},
+		})
+	}))
+	defer ctl.Close()
+	sandbox := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"sandboxID": "sbx-1", "cloudID": "ins-abc123", "region": "ap-beijing"})
+	}))
+	defer sandbox.Close()
+
+	backend := &fakeWorkerActionBackend{}
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		Routes: []Route{
+			{Name: "ctl", Prefix: "/v1/instances", Upstream: ctl.URL, Access: AccessAuthenticated},
+			{Name: "sandbox", Prefix: "/sandboxes", Upstream: sandbox.URL, Access: AccessAuthenticated},
+		},
+		WorkerActions: WorkerActionsConfig{
+			Enabled:  true,
+			Temporal: WorkerActionTemporalConfig{TaskQueue: "tencent-cvm-rescue-export"},
+			RescueExport: WorkerActionRescueExportConfig{
+				COSUploadBucket:  "https://bucket-123.cos.ap-beijing.myqcloud.com",
+				COSUploadRegion:  "ap-beijing",
+				RegionCandidates: []string{"ap-beijing"},
+			},
+			HermesImport: WorkerActionHermesImportConfig{
+				TaskQueue:       "hermes-import",
+				UploadKeyPrefix: "rescue-imports",
+			},
+		},
+	}, WithWorkerActionBackend(backend))
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/worker-actions", strings.NewReader(`{
+		"bot_id":"bot-1",
+		"action":"hermes_import",
+		"params":{"object_key":"rescue-imports/bot-1/hermes-backup.zip"}
+	}`))
+	req.Header.Set("Authorization", "Bearer tok-123")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if backend.startWorkflowID != "worker-action-bot-1-hermes_import" || backend.startWorkflowName != workerActionImportWorkflowName {
+		t.Fatalf("unexpected import workflow start: id=%s name=%s", backend.startWorkflowID, backend.startWorkflowName)
+	}
+	if backend.startTaskQueue != "hermes-import" {
+		t.Fatalf("expected import task queue hermes-import, got %s", backend.startTaskQueue)
+	}
+	importReq, ok := backend.startArgs[0].(hermesImportStartRequest)
+	if !ok {
+		t.Fatalf("unexpected request arg type %T", backend.startArgs[0])
+	}
+	if importReq.InstanceID != "ins-abc123" || importReq.Region != "ap-beijing" || importReq.ImportObjectKey != "rescue-imports/bot-1/hermes-backup.zip" {
+		t.Fatalf("unexpected import request target: %+v", importReq)
+	}
+	if importReq.TATUsername != "agentuser" || importReq.TATWorkingDirectory != "/home/agentuser" {
+		t.Fatalf("expected agentuser TAT import request, got %+v", importReq)
+	}
+	if !importReq.Execute {
+		t.Fatalf("expected real import request, got %+v", importReq)
 	}
 }
 

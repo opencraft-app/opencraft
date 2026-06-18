@@ -135,6 +135,16 @@ interface WorkerActionStartPayload {
   status: string;
 }
 
+interface WorkerActionUploadPayload {
+  action: string;
+  bot_id: string;
+  object_key: string;
+  object_url: string;
+  upload_url: string;
+  expires_at: string;
+  status: string;
+}
+
 type WorkerActionStatusPayload = Record<string, unknown>;
 
 const AUTH_TOKEN_STORAGE_KEY = "lightclaw-auth-token-v1";
@@ -1040,6 +1050,66 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
         const payload = await requestEnvelope<WorkerActionStatusPayload>(
           baseUrl,
           `/api/worker-actions?bot_id=${encodeURIComponent(botId)}&action=rescue_export`,
+          { method: "GET" },
+        );
+        return normalizeWorkerActionStatus(payload);
+      } catch (err) {
+        if (err instanceof RepositoryError && err.status === 404 && err.code === "action_not_found") {
+          return null;
+        }
+        throw err;
+      }
+    },
+
+    async importHermesWorkspace(botId: string, file: File) {
+      if (!file.name.toLowerCase().endsWith(".zip")) {
+        throw new RepositoryError("请选择 Hermes 导出的 zip 文件。", 400, "hermes_import_zip_required");
+      }
+      const upload = await requestEnvelope<WorkerActionUploadPayload>(baseUrl, "/api/worker-actions", {
+        method: "POST",
+        body: {
+          bot_id: botId,
+          action: "hermes_import_upload",
+          params: {
+            file_name: file.name,
+            byte_size: file.size,
+          },
+        },
+      });
+      const putResp = await fetch(upload.upload_url, {
+        method: "PUT",
+        headers: { "Content-Type": "application/zip" },
+        body: file,
+      });
+      if (!putResp.ok) {
+        throw new RepositoryError(`上传导入包失败（${putResp.status}）`, putResp.status, "hermes_import_upload_failed");
+      }
+      const payload = await requestEnvelope<WorkerActionStartPayload>(baseUrl, "/api/worker-actions", {
+        method: "POST",
+        body: {
+          bot_id: botId,
+          action: "hermes_import",
+          params: {
+            object_key: upload.object_key,
+            object_url: upload.object_url,
+          },
+        },
+      });
+      return {
+        actionRunId: payload.action_run_id,
+        workflowId: payload.workflow_id,
+        runId: payload.run_id,
+        action: payload.action,
+        botId: payload.bot_id,
+        status: payload.status,
+      };
+    },
+
+    async getHermesImportStatus(botId: string) {
+      try {
+        const payload = await requestEnvelope<WorkerActionStatusPayload>(
+          baseUrl,
+          `/api/worker-actions?bot_id=${encodeURIComponent(botId)}&action=hermes_import`,
           { method: "GET" },
         );
         return normalizeWorkerActionStatus(payload);

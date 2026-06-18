@@ -34,6 +34,25 @@ spec:
             - /usr/local/bin/rescue-exporter
           args:
             - worker
+            - --mode
+            - rescue-export
           temporalNamespace: default
           taskQueue: tencent-cvm-rescue-export
+          imagePullSecret: tcr-lightclaw-shprod
+        hermes-importer:
+          serviceId: workers-hermes-importer
+          appName: workers-hermes-importer-shanghai-workers
+          appPath: argocd/services/workers-hermes-importer/shanghai-workers
+          sourceOverlay: workers/k8s/overlays/shanghai-workers/hermes-importer
+          workerDeploymentName: hermes-import-worker
+          containerName: hermes-import-worker
+          serviceAccountName: hermes-import-worker
+          command:
+            - /usr/local/bin/rescue-exporter
+          args:
+            - worker
+            - --mode
+            - hermes-import
+          temporalNamespace: default
+          taskQueue: hermes-import
           imagePullSecret: tcr-lightclaw-shprod

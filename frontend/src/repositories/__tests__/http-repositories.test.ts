@@ -663,6 +663,138 @@ describe("http repositories auth token bootstrap", () => {
     await expect(repositories.bots.getRescueExportStatus("ins_export")).resolves.toBeNull();
   });
 
+  it("uploads and starts a Hermes import worker action for a bot", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              action: "hermes_import_upload",
+              bot_id: "ins_import",
+              object_key: "rescue-imports/ins_import/backup.zip",
+              object_url: "https://bucket.cos.ap-beijing.myqcloud.com/rescue-imports/ins_import/backup.zip",
+              upload_url: "https://bucket.cos.ap-beijing.myqcloud.com/rescue-imports/ins_import/backup.zip?q-signature=abc",
+              expires_at: "2026-06-18T12:00:00Z",
+              status: "upload_url_created",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(new Response("", { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              action_run_id: "worker-action-ins_import-hermes_import",
+              workflow_id: "worker-action-ins_import-hermes_import",
+              run_id: "run-456",
+              action: "hermes_import",
+              bot_id: "ins_import",
+              status: "accepted",
+            },
+          }),
+          {
+            status: 202,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const result = await repositories.bots.importHermesWorkspace("ins_import", new File(["zip"], "hermes-backup.zip", { type: "application/zip" }));
+
+    expect(result).toEqual({
+      actionRunId: "worker-action-ins_import-hermes_import",
+      workflowId: "worker-action-ins_import-hermes_import",
+      runId: "run-456",
+      action: "hermes_import",
+      botId: "ins_import",
+      status: "accepted",
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "https://lightclaw.tech/api/worker-actions",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          bot_id: "ins_import",
+          action: "hermes_import_upload",
+          params: {
+            file_name: "hermes-backup.zip",
+            byte_size: 3,
+          },
+        }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "https://bucket.cos.ap-beijing.myqcloud.com/rescue-imports/ins_import/backup.zip?q-signature=abc",
+      expect.objectContaining({ method: "PUT" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "https://lightclaw.tech/api/worker-actions",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          bot_id: "ins_import",
+          action: "hermes_import",
+          params: {
+            object_key: "rescue-imports/ins_import/backup.zip",
+            object_url: "https://bucket.cos.ap-beijing.myqcloud.com/rescue-imports/ins_import/backup.zip",
+          },
+        }),
+      }),
+    );
+  });
+
+  it("queries the current Hermes import worker action status", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: {
+            WorkflowID: "worker-action-ins_import-hermes_import",
+            RunID: "run-456",
+            Phase: "wait_tat",
+            Logs: [
+              { Time: "2026-06-18T12:00:00Z", Phase: "prepare_import", Message: "正在准备工作区导入包。", Level: "info" },
+            ],
+          },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const result = await repositories.bots.getHermesImportStatus("ins_import");
+
+    expect(result).toEqual({
+      workflowId: "worker-action-ins_import-hermes_import",
+      runId: "run-456",
+      phase: "wait_tat",
+      error: undefined,
+      dryRun: undefined,
+      logs: [
+        { time: "2026-06-18T12:00:00Z", phase: "prepare_import", message: "正在准备工作区导入包。", level: "info" },
+      ],
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://lightclaw.tech/api/worker-actions?bot_id=ins_import&action=hermes_import",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
   it("destroys bots through ctl instances", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi.fn().mockResolvedValue(
