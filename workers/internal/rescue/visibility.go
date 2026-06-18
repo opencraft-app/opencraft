@@ -27,6 +27,9 @@ const (
 	PhaseWaitRunning          = "wait_running"
 	PhaseCompleted            = "completed"
 	PhaseFailed               = "failed"
+	PhasePrepareImport        = "prepare_import"
+	PhaseFinalizeImport       = "finalize_import"
+	PhaseCleanupImportObject  = "cleanup_import_object"
 )
 
 const (
@@ -70,11 +73,39 @@ func InitExportStatus(ctx workflow.Context, req ExportRequest) (*ExportStatus, e
 	return status, nil
 }
 
+func InitImportStatus(ctx workflow.Context, req ImportRequest) (*ImportStatus, error) {
+	info := workflow.GetInfo(ctx)
+	status := &ImportStatus{
+		WorkflowID: info.WorkflowExecution.ID,
+		RunID:      info.WorkflowExecution.RunID,
+		Phase:      PhaseLocating,
+		DryRun:     !req.Execute,
+	}
+	if err := workflow.SetQueryHandler(ctx, ExportStatusQuery, func() (ImportStatus, error) {
+		return *status, nil
+	}); err != nil {
+		return status, err
+	}
+	updateImportWorkflowPhase(ctx, req, status, PhaseLocating)
+	return status, nil
+}
+
 func updateWorkflowPhase(ctx workflow.Context, req ExportRequest, status *ExportStatus, phase string) {
 	status.Phase = phase
 	appendExportStatusLog(ctx, status, phase, phaseStatusMessage(phase, status.DryRun), "info")
 	workflow.GetLogger(ctx).Info("rescue workflow phase", "phase", phase, "instance_id", req.InstanceID, "region", status.Instance.Region)
 	upsertRescueSearchAttributes(ctx, req, map[string]interface{}{
+		SearchAttrInstanceID: req.InstanceID,
+		SearchAttrRegion:     status.Instance.Region,
+		SearchAttrPhase:      phase,
+	})
+}
+
+func updateImportWorkflowPhase(ctx workflow.Context, req ImportRequest, status *ImportStatus, phase string) {
+	status.Phase = phase
+	appendImportStatusLog(ctx, status, phase, importPhaseStatusMessage(phase, status.DryRun), "info")
+	workflow.GetLogger(ctx).Info("hermes import workflow phase", "phase", phase, "instance_id", req.InstanceID, "region", status.Instance.Region)
+	upsertRescueSearchAttributes(ctx, req.exportRequest(), map[string]interface{}{
 		SearchAttrInstanceID: req.InstanceID,
 		SearchAttrRegion:     status.Instance.Region,
 		SearchAttrPhase:      phase,
@@ -112,6 +143,48 @@ func completeWorkflowStatus(ctx workflow.Context, req ExportRequest, status *Exp
 	})
 }
 
+func completeImportWorkflowStatus(ctx workflow.Context, req ImportRequest, status *ImportStatus, result ImportResult, err error) {
+	status.Instance = result.Instance
+	status.Import = result.Import
+	status.TATCommand = result.TATCommand
+	status.COSDeleted = result.COSDeleted
+	status.DryRun = result.DryRun
+	if err != nil {
+		status.Phase = PhaseFailed
+		status.Error = productFailureReason(err.Error())
+		appendImportStatusLog(ctx, status, PhaseFailed, status.Error, "error")
+	} else {
+		status.Phase = PhaseCompleted
+		appendImportStatusLog(ctx, status, PhaseCompleted, importPhaseStatusMessage(PhaseCompleted, status.DryRun), "success")
+	}
+	upsertRescueSearchAttributes(ctx, req.exportRequest(), map[string]interface{}{
+		SearchAttrInstanceID: req.InstanceID,
+		SearchAttrRegion:     result.Instance.Region,
+		SearchAttrPhase:      status.Phase,
+		SearchAttrObjectKey:  result.Import.ObjectKey,
+	})
+}
+
+func updateImportObjectVisibility(ctx workflow.Context, req ImportRequest, status *ImportStatus, prepared PreparedImport) {
+	status.Import = prepared
+	appendImportStatusLog(ctx, status, PhasePrepareImport, "导入包已确认，正在下发恢复命令。", "info")
+	upsertRescueSearchAttributes(ctx, req.exportRequest(), map[string]interface{}{
+		SearchAttrObjectKey: prepared.ObjectKey,
+	})
+}
+
+func updateImportCleanupVisibility(ctx workflow.Context, req ImportRequest, status *ImportStatus, deleted bool) {
+	status.COSDeleted = deleted
+	if deleted {
+		appendImportStatusLog(ctx, status, PhaseCleanupImportObject, "临时上传文件已清理。", "success")
+	} else {
+		appendImportStatusLog(ctx, status, PhaseCleanupImportObject, "正在清理临时上传文件。", "info")
+	}
+	upsertRescueSearchAttributes(ctx, req.exportRequest(), map[string]interface{}{
+		SearchAttrObjectKey: req.ImportObjectKey,
+	})
+}
+
 func updateArchiveVisibility(ctx workflow.Context, req ExportRequest, status *ExportStatus, archive PreparedArchive) {
 	status.Archive = archive
 	if strings.TrimSpace(archive.ObjectURL) != "" {
@@ -138,6 +211,22 @@ func updateDeleteVisibility(ctx workflow.Context, req ExportRequest, status *Exp
 }
 
 func appendExportStatusLog(ctx workflow.Context, status *ExportStatus, phase string, message string, level string) {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return
+	}
+	status.Logs = append(status.Logs, ExportStatusLog{
+		Time:    workflow.Now(ctx).Format(time.RFC3339),
+		Phase:   phase,
+		Message: message,
+		Level:   level,
+	})
+	if len(status.Logs) > maxExportStatusLogs {
+		status.Logs = status.Logs[len(status.Logs)-maxExportStatusLogs:]
+	}
+}
+
+func appendImportStatusLog(ctx workflow.Context, status *ImportStatus, phase string, message string, level string) {
 	message = strings.TrimSpace(message)
 	if message == "" {
 		return
@@ -199,6 +288,39 @@ func phaseStatusMessage(phase string, dryRun bool) string {
 		return "导出未完成。"
 	default:
 		return "导出任务处理中。"
+	}
+}
+
+func importPhaseStatusMessage(phase string, dryRun bool) string {
+	if dryRun {
+		switch phase {
+		case PhaseLocating:
+			return "正在检查 Agent 导入配置。"
+		case PhaseCompleted:
+			return "检查完成，当前配置可以发起导入。"
+		}
+	}
+	switch phase {
+	case PhaseLocating:
+		return "正在定位 Agent 运行环境。"
+	case PhaseWaitRemoteAccess:
+		return "正在等待远程命令通道可用。"
+	case PhasePrepareImport:
+		return "正在准备工作区导入包。"
+	case PhaseStartTAT:
+		return "正在下发导入命令。"
+	case PhaseWaitTAT:
+		return "导入命令执行中。"
+	case PhaseFinalizeImport:
+		return "正在确认导入结果。"
+	case PhaseCleanupImportObject:
+		return "正在清理临时上传文件。"
+	case PhaseCompleted:
+		return "导入完成。"
+	case PhaseFailed:
+		return "导入未完成。"
+	default:
+		return "导入任务处理中。"
 	}
 }
 

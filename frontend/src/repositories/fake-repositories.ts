@@ -1199,6 +1199,44 @@ const createBotRepository = (): BotRepository => {
       };
     },
 
+    async importHermesWorkspace(botId, file) {
+      await wait(NETWORK_DELAY_MS);
+      const bot = botStore.get(botId);
+      if (!bot) {
+        throw new Error("Bot 不存在，请先创建。");
+      }
+      if (!file.name.toLowerCase().endsWith(".zip")) {
+        throw new Error("请选择 Hermes 导出的 zip 文件。");
+      }
+      const actionRunId = `worker-action-${bot.id}-hermes_import`;
+      return {
+        actionRunId,
+        workflowId: actionRunId,
+        runId: `run_${Date.now()}`,
+        action: "hermes_import",
+        botId: bot.id,
+        status: "accepted",
+      };
+    },
+
+    async getHermesImportStatus(botId) {
+      await wait(NETWORK_DELAY_MS);
+      const bot = botStore.get(botId);
+      if (!bot) {
+        throw new Error("Bot 不存在，请先创建。");
+      }
+      return {
+        workflowId: `worker-action-${bot.id}-hermes_import`,
+        runId: "run_fake",
+        phase: "completed",
+        logs: [
+          { time: new Date(Date.now() - 90000).toISOString(), phase: "locating", message: "正在定位 Agent 运行环境。", level: "info" },
+          { time: new Date(Date.now() - 45000).toISOString(), phase: "wait_tat", message: "导入命令执行中。", level: "info" },
+          { time: new Date().toISOString(), phase: "completed", message: "导入完成。", level: "success" },
+        ],
+      };
+    },
+
     async resetInstanceConfig(_botId) {
       await wait(NETWORK_DELAY_MS);
       const fakeKey = `sk-fake-${Math.random().toString(36).slice(2, 10)}`;

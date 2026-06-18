@@ -37,12 +37,13 @@ import {
   Stethoscope,
   Trash2,
   Trophy,
+  UploadCloud,
   UserRound,
   Wand2,
   Wrench,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, type ChangeEvent } from "react";
 import { createPortal } from "react-dom";
 import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { FitAddon } from "@xterm/addon-fit";
@@ -3421,6 +3422,11 @@ export const OpenClawSettingsPage = () => {
   const [exportStatusByBotId, setExportStatusByBotId] = useState<Record<string, WorkerActionStatusResult | null>>({});
   const [exportStatusLoadingBotIds, setExportStatusLoadingBotIds] = useState<Set<string>>(new Set());
   const [exportStatusErrors, setExportStatusErrors] = useState<Record<string, string | null>>({});
+  const [importingBotIds, setImportingBotIds] = useState<Set<string>>(new Set());
+  const [importStatusByBotId, setImportStatusByBotId] = useState<Record<string, WorkerActionStatusResult | null>>({});
+  const [importStatusLoadingBotIds, setImportStatusLoadingBotIds] = useState<Set<string>>(new Set());
+  const [importStatusErrors, setImportStatusErrors] = useState<Record<string, string | null>>({});
+  const importFileInputRef = useRef<HTMLInputElement | null>(null);
   // 错误按 bot 维度存储，多 bot 并行失败时各自保留错误信息
   const [restartErrors, setRestartErrors] = useState<RestartErrors>(new Map());
 
@@ -3473,10 +3479,31 @@ export const OpenClawSettingsPage = () => {
     }
   }, [repositories.bots, t]);
 
+  const loadHermesImportStatus = useCallback(async (botId: string) => {
+    setImportStatusLoadingBotIds((prev) => new Set(prev).add(botId));
+    try {
+      const status = await repositories.bots.getHermesImportStatus(botId);
+      setImportStatusByBotId((prev) => ({ ...prev, [botId]: status }));
+      setImportStatusErrors((prev) => ({ ...prev, [botId]: null }));
+      return status;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t("导入状态查询失败");
+      setImportStatusErrors((prev) => ({ ...prev, [botId]: message }));
+      throw err;
+    } finally {
+      setImportStatusLoadingBotIds((prev) => {
+        const next = new Set(prev);
+        next.delete(botId);
+        return next;
+      });
+    }
+  }, [repositories.bots, t]);
+
   const handleOpenExportPanel = () => {
     if (!activeBot) return;
     setShowExportPanel(true);
     void loadRescueExportStatus(activeBot.id).catch(() => undefined);
+    void loadHermesImportStatus(activeBot.id).catch(() => undefined);
   };
 
   const handleExportWorkspace = async () => {
@@ -3527,12 +3554,62 @@ export const OpenClawSettingsPage = () => {
     }
   };
 
+  const handleSelectHermesImportFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
+    if (!file || !activeBot || activeBot.status !== "running" || importingBotIds.has(activeBot.id)) return;
+    const targetBotId = activeBot.id;
+    setShowExportPanel(true);
+    setImportingBotIds((prev) => new Set(prev).add(targetBotId));
+    setImportStatusByBotId((prev) => ({
+      ...prev,
+      [targetBotId]: {
+        phase: "starting",
+        logs: [{ time: new Date().toISOString(), phase: "starting", message: t("正在上传工作区导入包。"), level: "info" }],
+      },
+    }));
+    try {
+      await repositories.bots.importHermesWorkspace(targetBotId, file);
+      toast.success(t("导入任务已发起。"));
+      await loadHermesImportStatus(targetBotId).catch(() => undefined);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "";
+      if (message.includes("action_already_running")) {
+        toast.success(t("已有导入任务正在执行，已为你加载当前进度。"));
+        await loadHermesImportStatus(targetBotId).catch(() => undefined);
+        return;
+      }
+      const friendlyMessage = message.includes("hermes_import_zip_required")
+        ? t("请选择 Hermes 导出的 zip 文件。")
+        : message || t("导入任务发起失败");
+      setImportStatusByBotId((prev) => ({
+        ...prev,
+        [targetBotId]: {
+          phase: "failed",
+          error: friendlyMessage,
+          logs: [{ time: new Date().toISOString(), phase: "failed", message: friendlyMessage, level: "error" }],
+        },
+      }));
+      toast.error(friendlyMessage);
+    } finally {
+      setImportingBotIds((prev) => {
+        const next = new Set(prev);
+        next.delete(targetBotId);
+        return next;
+      });
+    }
+  };
+
   // 当前 tab 的 bot 是否正在重启
   const isActiveBotRestarting = computeIsActiveBotRestarting(activeBot, restartingBotIds);
   const isActiveBotExporting = activeBot ? exportingBotIds.has(activeBot.id) : false;
+  const isActiveBotImporting = activeBot ? importingBotIds.has(activeBot.id) : false;
   const activeExportStatus = activeBot ? exportStatusByBotId[activeBot.id] ?? null : null;
+  const activeImportStatus = activeBot ? importStatusByBotId[activeBot.id] ?? null : null;
   const isActiveExportStatusLoading = activeBot ? exportStatusLoadingBotIds.has(activeBot.id) : false;
+  const isActiveImportStatusLoading = activeBot ? importStatusLoadingBotIds.has(activeBot.id) : false;
   const activeExportStatusError = activeBot ? exportStatusErrors[activeBot.id] ?? null : null;
+  const activeImportStatusError = activeBot ? importStatusErrors[activeBot.id] ?? null : null;
   // 当前 tab 是否展示错误
   const activeBotRestartError = getActiveBotRestartError(activeBot, restartErrors);
 
@@ -3543,6 +3620,14 @@ export const OpenClawSettingsPage = () => {
     }, RESCUE_EXPORT_POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
   }, [showExportPanel, activeBot?.id, activeExportStatus?.phase, loadRescueExportStatus]);
+
+  useEffect(() => {
+    if (!showExportPanel || !activeBot?.id || !isRescueExportRunning(activeImportStatus)) return;
+    const timer = window.setInterval(() => {
+      void loadHermesImportStatus(activeBot.id).catch(() => undefined);
+    }, RESCUE_EXPORT_POLL_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [showExportPanel, activeBot?.id, activeImportStatus?.phase, loadHermesImportStatus]);
 
   useEffect(() => {
     return installOpenClawConsoleHelpers({
@@ -3785,9 +3870,11 @@ export const OpenClawSettingsPage = () => {
       case "wait_remote_access":
         return t("准备导出环境");
       case "prepare_archive":
+      case "prepare_import":
       case "start_tat":
       case "wait_tat":
       case "finalize_archive":
+      case "finalize_import":
         return t("打包中");
       case "copy_archive":
         return t("上传中");
@@ -3795,6 +3882,7 @@ export const OpenClawSettingsPage = () => {
       case "confirm_email_delivery":
         return t("发送邮件");
       case "cleanup_remote":
+      case "cleanup_import_object":
       case "exit_rescue":
       case "wait_running":
         return t("恢复环境");
@@ -3807,8 +3895,11 @@ export const OpenClawSettingsPage = () => {
     }
   };
   const exportPanelLogs = activeExportStatus?.logs ?? [];
+  const importPanelLogs = activeImportStatus?.logs ?? [];
   const exportPanelPhase = activeExportStatus?.phase;
+  const importPanelPhase = activeImportStatus?.phase;
   const canStartExportFromPanel = Boolean(activeBot && activeBot.status === "running" && !resettingAcli && !isActiveBotExporting && !isRescueExportRunning(activeExportStatus));
+  const canStartImportFromPanel = Boolean(activeBot && activeBot.status === "running" && !resettingAcli && !isActiveBotImporting && !isRescueExportRunning(activeImportStatus));
   const formatExportLogTime = (value?: string) => {
     if (!value) return "";
     const date = new Date(value);
@@ -4117,7 +4208,7 @@ export const OpenClawSettingsPage = () => {
           >
             <div className="flex items-start justify-between gap-4 border-b border-black/[0.06] px-5 py-4">
               <div className="min-w-0">
-                <h3 className="text-[17px] font-semibold text-black/90">{t("工作区导出")}</h3>
+                <h3 className="text-[17px] font-semibold text-black/90">{t("工作区备份与恢复")}</h3>
                 <p className="mt-1 truncate text-xs text-black/45" title={activeBot.name}>
                   {activeBot.name} · /home/agentuser/.hermes
                 </p>
@@ -4133,6 +4224,13 @@ export const OpenClawSettingsPage = () => {
             </div>
 
             <div className="px-5 py-4">
+              <input
+                ref={importFileInputRef}
+                type="file"
+                accept=".zip,application/zip"
+                className="hidden"
+                onChange={(event) => void handleSelectHermesImportFile(event)}
+              />
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-black/[0.06] bg-black/[0.02] px-3 py-3">
                 <div className="flex items-center gap-2">
                   <span className={cn(
@@ -4172,6 +4270,45 @@ export const OpenClawSettingsPage = () => {
                 </div>
               </div>
 
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-black/[0.06] bg-black/[0.02] px-3 py-3">
+                <div className="flex items-center gap-2">
+                  <span className={cn(
+                    "inline-flex h-2.5 w-2.5 rounded-full",
+                    importPanelPhase === "completed"
+                      ? "bg-emerald-500"
+                      : importPanelPhase === "failed"
+                        ? "bg-red-500"
+                        : activeImportStatus
+                          ? "bg-amber-500"
+                          : "bg-black/20",
+                  )} />
+                  <span className="text-sm font-medium text-black/80">{t("工作区导入")} · {exportPhaseLabel(importPanelPhase)}</span>
+                  {(isActiveBotImporting || isActiveImportStatusLoading || isRescueExportRunning(activeImportStatus)) && (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-black/35" />
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void loadHermesImportStatus(activeBot.id).catch(() => undefined)}
+                    disabled={isActiveImportStatusLoading}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-md border border-black/[0.08] bg-white px-2.5 text-xs font-medium text-black/65 transition-colors hover:bg-black/[0.035] disabled:cursor-not-allowed disabled:text-black/25"
+                  >
+                    <RefreshCw className={cn("h-3.5 w-3.5", isActiveImportStatusLoading && "animate-spin")} />
+                    {t("刷新")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => importFileInputRef.current?.click()}
+                    disabled={!canStartImportFromPanel}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-md bg-black/90 px-3 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-black/20"
+                  >
+                    {isActiveBotImporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UploadCloud className="h-3.5 w-3.5" />}
+                    {isActiveBotImporting ? t("上传中") : t("上传并导入")}
+                  </button>
+                </div>
+              </div>
+
               {activeExportStatusError && (
                 <div className="mt-3 flex gap-2 rounded-md border border-red-500/15 bg-red-500/[0.04] px-3 py-2 text-xs leading-relaxed text-red-600">
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
@@ -4186,15 +4323,29 @@ export const OpenClawSettingsPage = () => {
                 </div>
               )}
 
+              {activeImportStatusError && (
+                <div className="mt-3 flex gap-2 rounded-md border border-red-500/15 bg-red-500/[0.04] px-3 py-2 text-xs leading-relaxed text-red-600">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                  <span>{activeImportStatusError}</span>
+                </div>
+              )}
+
+              {activeImportStatus?.error && !activeImportStatusError && (
+                <div className="mt-3 flex gap-2 rounded-md border border-red-500/15 bg-red-500/[0.04] px-3 py-2 text-xs leading-relaxed text-red-600">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                  <span>{activeImportStatus.error}</span>
+                </div>
+              )}
+
               <div className="mt-4 max-h-[320px] overflow-y-auto pr-1">
-                {exportPanelLogs.length === 0 ? (
+                {exportPanelLogs.length === 0 && importPanelLogs.length === 0 ? (
                   <div className="rounded-md border border-dashed border-black/[0.12] px-4 py-8 text-center text-sm text-black/45">
-                    {isActiveExportStatusLoading ? t("正在读取导出状态...") : t("暂无导出记录")}
+                    {(isActiveExportStatusLoading || isActiveImportStatusLoading) ? t("正在读取任务状态...") : t("暂无导入导出记录")}
                   </div>
                 ) : (
                   <ol className="space-y-0">
-                    {exportPanelLogs.map((log, index) => {
-                      const isLast = index === exportPanelLogs.length - 1;
+                    {[...exportPanelLogs, ...importPanelLogs].map((log, index, allLogs) => {
+                      const isLast = index === allLogs.length - 1;
                       const tone = log.level === "error" ? "bg-red-500" : log.level === "success" ? "bg-emerald-500" : "bg-black/35";
                       return (
                         <li key={`${log.time ?? "log"}-${index}`} className="grid grid-cols-[72px_16px_minmax(0,1fr)] gap-3">

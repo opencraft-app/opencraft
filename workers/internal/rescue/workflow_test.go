@@ -219,3 +219,92 @@ func TestExportWorkflowSchedulesCOSAutoDeleteChild(t *testing.T) {
 	}
 	env.AssertExpectations(t)
 }
+
+func TestImportWorkflowRunsOverTATAndDeletesUploadObject(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(ImportWorkflow)
+	acts := Activities{}
+	env.RegisterActivityWithOptions(acts.LocateInstance, ActivityOptions("LocateInstance"))
+	env.RegisterActivityWithOptions(acts.WaitRescueTAT, ActivityOptions("WaitRescueTAT"))
+	env.RegisterActivityWithOptions(acts.PrepareImportTATCommand, ActivityOptions("PrepareImportTATCommand"))
+	env.RegisterActivityWithOptions(acts.StartTATCommand, ActivityOptions("StartTATCommand"))
+	env.RegisterActivityWithOptions(acts.WaitTATCommand, ActivityOptions("WaitTATCommand"))
+	env.RegisterActivityWithOptions(acts.FinalizeImportOverTAT, ActivityOptions("FinalizeImportOverTAT"))
+	env.RegisterActivityWithOptions(acts.DeleteCOSObject, ActivityOptions("DeleteCOSObject"))
+
+	req := NormalizeImportRequest(ImportRequest{
+		BotID:                 "bot-1",
+		InstanceID:            "ins-test",
+		Region:                "ap-beijing",
+		ImportObjectKey:       "rescue-imports/bot-1/hermes.zip",
+		ImportObjectURL:       "https://bucket.cos.ap-beijing.myqcloud.com/rescue-imports/bot-1/hermes.zip",
+		COSUploadBucket:       "https://bucket.cos.ap-beijing.myqcloud.com",
+		COSUploadRegion:       "ap-beijing",
+		COSUploadKeyPrefix:    "rescue-imports",
+		TATUsername:           "agentuser",
+		TATWorkingDirectory:   "/home/agentuser",
+		Execute:               true,
+		WaitTimeoutSeconds:    90,
+		CommandTimeoutSeconds: 1800,
+	})
+	cfg := TencentConfig{RegionCandidates: []string{"ap-beijing"}}
+	exportReq := req.exportRequest()
+	instance := InstanceInfo{InstanceID: "ins-test", Region: "ap-beijing", State: "RUNNING"}
+	prepared := PreparedImport{
+		InstanceID: req.InstanceID,
+		Region:     req.Region,
+		ObjectKey:  req.ImportObjectKey,
+		ObjectURL:  req.ImportObjectURL,
+		Bucket:     req.COSUploadBucket,
+		Command:    TATCommandRequest{CommandName: "hermes-import-workspace", Script: "true", TimeoutSeconds: 1800},
+	}
+	submitted := TATCommandResult{
+		CommandID:    "cmd-import",
+		InvocationID: "inv-import",
+		TaskStatus:   "SUCCESS",
+		Output:       hermesImportResultMarker + " archive_bytes=42 archive_path=/tmp/hermes.zip\n",
+	}
+	finalImport := prepared
+	finalImport.ByteSize = 42
+
+	env.OnActivity("LocateInstance", mock.Anything, exportReq, cfg).Return(instance, nil).Once()
+	env.OnActivity("WaitRescueTAT", mock.Anything, exportReq, cfg, instance.Region).Return(nil).Once()
+	env.OnActivity("PrepareImportTATCommand", mock.Anything, req, cfg, instance.Region).Return(prepared, nil).Once()
+	env.OnActivity("StartTATCommand", mock.Anything, exportReq, cfg, instance.Region, prepared.Command).Return(submitted, nil).Once()
+	env.OnActivity("WaitTATCommand", mock.Anything, exportReq, cfg, instance.Region, submitted).Return(submitted, nil).Once()
+	env.OnActivity("FinalizeImportOverTAT", mock.Anything, req, prepared, submitted).Return(finalImport, nil).Once()
+	env.OnActivity("DeleteCOSObject", mock.Anything, mock.MatchedBy(func(deleteReq COSDeleteRequest) bool {
+		return deleteReq.ObjectKey == req.ImportObjectKey &&
+			deleteReq.DelaySeconds == 0 &&
+			deleteReq.BucketURL == req.COSUploadBucket
+	}), cfg).Return(COSDeleteResult{ObjectKey: req.ImportObjectKey, ObjectURL: req.ImportObjectURL, Deleted: true}, nil).Once()
+
+	env.ExecuteWorkflow(ImportWorkflow, req, cfg)
+
+	if !env.IsWorkflowCompleted() {
+		t.Fatal("workflow did not complete")
+	}
+	if err := env.GetWorkflowError(); err != nil {
+		t.Fatalf("workflow failed: %v", err)
+	}
+	var result ImportResult
+	if err := env.GetWorkflowResult(&result); err != nil {
+		t.Fatalf("get result: %v", err)
+	}
+	if !result.COSDeleted || result.Import.ByteSize != 42 {
+		t.Fatalf("unexpected import result: %+v", result)
+	}
+	encodedStatus, err := env.QueryWorkflow(ExportStatusQuery)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var status ImportStatus
+	if err := encodedStatus.Get(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status.Phase != PhaseCompleted || !status.COSDeleted {
+		t.Fatalf("unexpected status: %+v", status)
+	}
+	env.AssertExpectations(t)
+}

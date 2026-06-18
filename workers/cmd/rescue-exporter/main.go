@@ -112,6 +112,7 @@ func runWorker(argv []string) error {
 	}
 	w := worker.New(tc, temporal.TaskQueue, workerOptions)
 	w.RegisterWorkflow(rescue.ExportWorkflow)
+	w.RegisterWorkflow(rescue.ImportWorkflow)
 	w.RegisterWorkflow(rescue.DeleteCOSObjectWorkflow)
 	w.RegisterActivityWithOptions(acts.LocateInstance, rescue.ActivityOptions("LocateInstance"))
 	w.RegisterActivityWithOptions(acts.EnterRescueMode, rescue.ActivityOptions("EnterRescueMode"))
@@ -125,6 +126,8 @@ func runWorker(argv []string) error {
 	w.RegisterActivityWithOptions(acts.StartTATCommand, rescue.ActivityOptions("StartTATCommand"))
 	w.RegisterActivityWithOptions(acts.WaitTATCommand, rescue.ActivityOptions("WaitTATCommand"))
 	w.RegisterActivityWithOptions(acts.FinalizeArchiveOverTAT, rescue.ActivityOptions("FinalizeArchiveOverTAT"))
+	w.RegisterActivityWithOptions(acts.PrepareImportTATCommand, rescue.ActivityOptions("PrepareImportTATCommand"))
+	w.RegisterActivityWithOptions(acts.FinalizeImportOverTAT, rescue.ActivityOptions("FinalizeImportOverTAT"))
 	w.RegisterActivityWithOptions(acts.SCPArchive, rescue.ActivityOptions("SCPArchive"))
 	w.RegisterActivityWithOptions(acts.CleanupRemoteArchive, rescue.ActivityOptions("CleanupRemoteArchive"))
 	w.RegisterActivityWithOptions(acts.ExitRescueMode, rescue.ActivityOptions("ExitRescueMode"))

@@ -59,11 +59,13 @@ type WorkerActionTemporalConfig struct {
 }
 
 type WorkerActionRescueExportConfig struct {
-	COSUploadBucket        string   `yaml:"cos_upload_bucket"`
-	COSUploadRegion        string   `yaml:"cos_upload_region"`
-	COSUploadKeyPrefix     string   `yaml:"cos_upload_key_prefix"`
-	COSUploadURLTTLSeconds int      `yaml:"cos_upload_url_ttl_seconds"`
-	RegionCandidates       []string `yaml:"region_candidates"`
+	COSUploadBucket           string   `yaml:"cos_upload_bucket"`
+	COSUploadRegion           string   `yaml:"cos_upload_region"`
+	COSUploadKeyPrefix        string   `yaml:"cos_upload_key_prefix"`
+	COSUploadURLTTLSeconds    int      `yaml:"cos_upload_url_ttl_seconds"`
+	ImportUploadKeyPrefix     string   `yaml:"import_upload_key_prefix"`
+	ImportUploadURLTTLSeconds int      `yaml:"import_upload_url_ttl_seconds"`
+	RegionCandidates          []string `yaml:"region_candidates"`
 }
 
 func LoadConfigFile(path string) (Config, error) {
