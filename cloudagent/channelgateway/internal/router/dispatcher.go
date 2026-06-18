@@ -35,6 +35,10 @@ type DispatcherOptions struct {
 	InboundStale   time.Duration
 }
 
+const runtimeOwnershipRetryAttempts = 8
+
+var runtimeOwnershipRetryBaseDelay = 250 * time.Millisecond
+
 type SessionStore interface {
 	InsertInboundMessage(ctx context.Context, rec store.MessageRecord) (bool, error)
 	ClaimInboundMessage(ctx context.Context, lease store.ChannelLease, externalMessageID string, staleAfter time.Duration) (store.MessageRecord, bool, error)
@@ -494,9 +498,23 @@ func (d *Dispatcher) handleACPError(ctx context.Context, msg channel.Message, co
 }
 
 func (d *Dispatcher) ensureRuntimeReady(ctx context.Context, msg channel.Message, conversation store.Conversation, sessionID string) error {
-	ready, err := d.acp.EnsureRuntimeReady(ctx, sessionID, d.cwd)
-	if err != nil {
-		return err
+	var ready acp.RuntimeReadyResult
+	var err error
+	for attempt := 0; ; attempt++ {
+		ready, err = d.acp.EnsureRuntimeReady(ctx, sessionID, d.cwd)
+		if err == nil {
+			break
+		}
+		if !isRuntimeOwnershipError(err) {
+			return err
+		}
+		if attempt >= runtimeOwnershipRetryAttempts {
+			d.logRuntimeOwnershipExhausted(msg, conversation, sessionID, "ensure_runtime_ready", attempt, err)
+			return err
+		}
+		if waitErr := d.waitRuntimeOwnership(ctx, msg, conversation, sessionID, "ensure_runtime_ready", attempt+1, err); waitErr != nil {
+			return waitErr
+		}
 	}
 	if !ready.Changed {
 		return nil
@@ -581,9 +599,23 @@ func lifecycleMessageID(event acp.WorkspaceLifecycleEvent) string {
 }
 
 func (d *Dispatcher) promptWithRuntimeRecovery(ctx context.Context, conversation store.Conversation, msg channel.Message, sessionID string) (acp.PromptResult, string, error) {
-	result, err := d.acp.Prompt(ctx, sessionID, msg.Text)
-	if err == nil {
-		return result, sessionID, nil
+	var result acp.PromptResult
+	var err error
+	for attempt := 0; ; attempt++ {
+		result, err = d.acp.Prompt(ctx, sessionID, msg.Text)
+		if err == nil {
+			return result, sessionID, nil
+		}
+		if !isRuntimeOwnershipError(err) {
+			break
+		}
+		if attempt >= runtimeOwnershipRetryAttempts {
+			d.logRuntimeOwnershipExhausted(msg, conversation, sessionID, "prompt", attempt, err)
+			break
+		}
+		if waitErr := d.waitRuntimeOwnership(ctx, msg, conversation, sessionID, "prompt", attempt+1, err); waitErr != nil {
+			return acp.PromptResult{}, sessionID, waitErr
+		}
 	}
 	if !isRecoverableRuntimeError(err) {
 		return acp.PromptResult{}, sessionID, err
@@ -592,6 +624,40 @@ func (d *Dispatcher) promptWithRuntimeRecovery(ctx context.Context, conversation
 		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID),
 		logValue(conversation.ConversationID), logValue(conversation.SessionKey), logValue(sessionID), logValue(err.Error()))
 	return acp.PromptResult{}, sessionID, err
+}
+
+func (d *Dispatcher) waitRuntimeOwnership(ctx context.Context, msg channel.Message, conversation store.Conversation, sessionID, stage string, attempt int, err error) error {
+	delay := runtimeOwnershipRetryDelay(attempt)
+	log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=runtime_ownership_wait_retry stage=%s attempt=%d delay_ms=%d error=%s",
+		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID),
+		logValue(conversation.ConversationID), logValue(conversation.SessionKey), logValue(sessionID),
+		logValue(stage), attempt, delay.Milliseconds(), logValue(err.Error()))
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func (d *Dispatcher) logRuntimeOwnershipExhausted(msg channel.Message, conversation store.Conversation, sessionID, stage string, attempts int, err error) {
+	log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=runtime_ownership_wait_exhausted stage=%s attempts=%d error=%s",
+		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID),
+		logValue(conversation.ConversationID), logValue(conversation.SessionKey), logValue(sessionID),
+		logValue(stage), attempts, logValue(err.Error()))
+}
+
+func runtimeOwnershipRetryDelay(attempt int) time.Duration {
+	if attempt < 1 {
+		attempt = 1
+	}
+	delay := time.Duration(attempt) * runtimeOwnershipRetryBaseDelay
+	if maxDelay := 2 * time.Second; delay > maxDelay {
+		return maxDelay
+	}
+	return delay
 }
 
 func (d *Dispatcher) lockForSessionKey(sessionKey string) *sync.Mutex {
@@ -626,6 +692,19 @@ func isRecoverableRuntimeError(err error) bool {
 	return strings.Contains(message, "session runtime is unavailable") ||
 		strings.Contains(message, "runtime_not_recovered") ||
 		strings.Contains(message, "runtime unavailable")
+}
+
+func isRuntimeOwnershipError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if acp.IsCloudAgentRuntimeOwnership(err) {
+		return true
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "runtime_owned") ||
+		strings.Contains(message, "runtime ownership") ||
+		strings.Contains(message, "ownership is held")
 }
 
 func (d *Dispatcher) enqueueTextReply(ctx context.Context, msg channel.Message, sessionID, text string) (store.OutboxRecord, error) {

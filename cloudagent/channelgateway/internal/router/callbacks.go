@@ -70,6 +70,9 @@ func (DefaultChannelCallbacks) HandleACPError(stage CallbackStage, err error) (s
 	if err == nil {
 		return "", false
 	}
+	if isRuntimeOwnershipError(err) {
+		return runtimeBusyReply, true
+	}
 	switch stage {
 	case CallbackStageLoadSession, CallbackStageNewSession, CallbackStagePrompt, CallbackStageReset:
 		return runtimeRecoveryFailedReply, true

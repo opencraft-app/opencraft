@@ -124,6 +124,20 @@ func IsCloudAgentSessionCloseUnsupported(err error) bool {
 	return errors.As(err, &target)
 }
 
+func IsCloudAgentRuntimeOwnership(err error) bool {
+	var httpErr CloudAgentHTTPError
+	if !errors.As(err, &httpErr) {
+		return false
+	}
+	if httpErr.StatusCode != http.StatusConflict {
+		return false
+	}
+	body := strings.ToLower(httpErr.Body)
+	return strings.Contains(body, "runtime_owned") ||
+		strings.Contains(body, "runtime ownership") ||
+		strings.Contains(body, "ownership is held")
+}
+
 func NewCloudAgentClient(baseURL string, headers http.Header) *CloudAgentClient {
 	return &CloudAgentClient{
 		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
@@ -251,6 +265,14 @@ func (c *CloudAgentClient) PromptWithRunID(ctx context.Context, sessionID, text,
 		runID = firstNonEmpty(submitted.RunID, idempotencyKey)
 	}
 	var afterSeq int64
+	for _, event := range submitEvents {
+		if event.RunID != "" && runID != "" && event.RunID != runID {
+			continue
+		}
+		if event.Seq > afterSeq {
+			afterSeq = event.Seq
+		}
+	}
 	var observed strings.Builder
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
@@ -270,6 +292,9 @@ func (c *CloudAgentClient) PromptWithRunID(ctx context.Context, sessionID, text,
 				continue
 			}
 			afterSeq = event.Seq
+			if runID != "" && event.RunID != "" && event.RunID != runID {
+				continue
+			}
 			if event.RunID != "" {
 				runID = event.RunID
 			}
@@ -277,7 +302,7 @@ func (c *CloudAgentClient) PromptWithRunID(ctx context.Context, sessionID, text,
 				observed.WriteString(text)
 			}
 		}
-		if cloudAgentTerminal(eventBatch.Run.Status) {
+		if cloudAgentTerminal(eventBatch.Run.Status) && (eventBatch.Run.RunID == "" || runID == "" || eventBatch.Run.RunID == runID) {
 			result := eventBatch.Run
 			if result.Status == "failed" {
 				return PromptResult{}, errors.New(firstNonEmpty(result.Error, "cloudagent run failed"))

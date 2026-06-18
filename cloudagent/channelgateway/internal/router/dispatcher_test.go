@@ -1210,6 +1210,190 @@ func TestDispatcherPreservesBindingWhenPromptReportsRuntimeUnavailable(t *testin
 	}
 }
 
+func TestDispatcherRetriesRuntimeOwnershipDuringEnsureReady(t *testing.T) {
+	withFastRuntimeOwnershipRetry(t)
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	account := store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main"}
+	lease, err := st.AcquireChannelLease(ctx, "wecom-a", "owner-a", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
+	seedMsg := channel.Message{
+		ChannelType:            channel.TypeWeCom,
+		ChatType:               channel.ChatDM,
+		ExternalConversationID: "chat-a",
+	}
+	sessionKey := channel.BuildSessionKey("main", seedMsg, true, false)
+	if _, err := st.GetOrCreateConversation(ctx, store.Conversation{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            "wecom",
+		ExternalConversationID: "chat-a",
+		ChatType:               string(channel.ChatDM),
+		AgentID:                "main",
+		ACPSessionID:           "session-stale",
+		WorkspaceKey:           "workspace-stable",
+		SessionKey:             sessionKey,
+	}); err != nil {
+		t.Fatalf("seed conversation: %v", err)
+	}
+	client := &fakeACP{
+		ensureErrs: []error{acp.CloudAgentHTTPError{
+			Method:     "POST",
+			Path:       "/v1/cloudagent/sessions/session-stale/events",
+			StatusCode: 409,
+			Body:       `{"error":{"code":"runtime_owned","message":"runtime ownership for session session-stale is held"}}`,
+		}},
+		reply: "answer after wait",
+	}
+	dispatcher := NewDispatcher(st, account, client, "/workspace")
+	logs := captureLogs(t, func() {
+		err = dispatcher.HandleInbound(ctx, channel.Message{
+			ChannelAccountID:       "wecom-a",
+			ChannelType:            channel.TypeWeCom,
+			ExternalMessageID:      "msg-a",
+			ExternalConversationID: "chat-a",
+			ChatType:               channel.ChatDM,
+			Kind:                   channel.MessageText,
+			Text:                   "hello",
+			Raw:                    json.RawMessage(`{"ok":true}`),
+		})
+	})
+	if err != nil {
+		t.Fatalf("handle inbound should retry runtime ownership: %v", err)
+	}
+	if client.ensureSnapshot() != 2 {
+		t.Fatalf("expected ensure retry after runtime ownership, got %d calls", client.ensureSnapshot())
+	}
+	reply := claimOneReply(t, ctx, st, lease)
+	if reply.Text != "answer after wait" || strings.Contains(reply.Text, runtimeRecoveryFailedReply) {
+		t.Fatalf("expected prompt reply after ownership wait, got %#v", reply)
+	}
+	if !strings.Contains(logs, "action=runtime_ownership_wait_retry stage=ensure_runtime_ready") {
+		t.Fatalf("expected runtime ownership retry log, got:\n%s", logs)
+	}
+}
+
+func TestDispatcherRetriesRuntimeOwnershipDuringPrompt(t *testing.T) {
+	withFastRuntimeOwnershipRetry(t)
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	account := store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main"}
+	lease, err := st.AcquireChannelLease(ctx, "wecom-a", "owner-a", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
+	seedMsg := channel.Message{
+		ChannelType:            channel.TypeWeCom,
+		ChatType:               channel.ChatDM,
+		ExternalConversationID: "chat-a",
+	}
+	sessionKey := channel.BuildSessionKey("main", seedMsg, true, false)
+	if _, err := st.GetOrCreateConversation(ctx, store.Conversation{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            "wecom",
+		ExternalConversationID: "chat-a",
+		ChatType:               string(channel.ChatDM),
+		AgentID:                "main",
+		ACPSessionID:           "session-stale",
+		WorkspaceKey:           "workspace-stable",
+		SessionKey:             sessionKey,
+	}); err != nil {
+		t.Fatalf("seed conversation: %v", err)
+	}
+	client := &fakeACP{
+		promptErrs: []error{acp.CloudAgentHTTPError{
+			Method:     "POST",
+			Path:       "/v1/cloudagent/sessions/session-stale/events",
+			StatusCode: 409,
+			Body:       `{"error":{"message":"runtime ownership for session session-stale is held by gateway_x"}}`,
+		}},
+		reply: "queued answer",
+	}
+	dispatcher := NewDispatcher(st, account, client, "/workspace")
+	logs := captureLogs(t, func() {
+		err = dispatcher.HandleInbound(ctx, channel.Message{
+			ChannelAccountID:       "wecom-a",
+			ChannelType:            channel.TypeWeCom,
+			ExternalMessageID:      "msg-a",
+			ExternalConversationID: "chat-a",
+			ChatType:               channel.ChatDM,
+			Kind:                   channel.MessageText,
+			Text:                   "hello",
+			Raw:                    json.RawMessage(`{"ok":true}`),
+		})
+	})
+	if err != nil {
+		t.Fatalf("handle inbound should retry runtime ownership: %v", err)
+	}
+	_, loadCalls, promptCalls, _ := client.snapshot()
+	if loadCalls != 1 || promptCalls != 2 {
+		t.Fatalf("expected prompt retry after runtime ownership, load=%d prompt=%d", loadCalls, promptCalls)
+	}
+	reply := claimOneReply(t, ctx, st, lease)
+	if reply.Text != "queued answer" || strings.Contains(reply.Text, runtimeRecoveryFailedReply) {
+		t.Fatalf("expected prompt reply after ownership wait, got %#v", reply)
+	}
+	if !strings.Contains(logs, "action=runtime_ownership_wait_retry stage=prompt") {
+		t.Fatalf("expected runtime ownership retry log, got:\n%s", logs)
+	}
+}
+
+func TestDispatcherMapsPersistentRuntimeOwnershipToBusyReply(t *testing.T) {
+	withFastRuntimeOwnershipRetry(t)
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	account := store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main"}
+	lease, err := st.AcquireChannelLease(ctx, "wecom-a", "owner-a", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
+	client := &fakeACP{
+		promptErrs: []error{
+			errors.New("runtime ownership for session session-a is held by gateway_x"),
+			errors.New("runtime ownership for session session-a is held by gateway_x"),
+			errors.New("runtime ownership for session session-a is held by gateway_x"),
+			errors.New("runtime ownership for session session-a is held by gateway_x"),
+			errors.New("runtime ownership for session session-a is held by gateway_x"),
+			errors.New("runtime ownership for session session-a is held by gateway_x"),
+			errors.New("runtime ownership for session session-a is held by gateway_x"),
+			errors.New("runtime ownership for session session-a is held by gateway_x"),
+			errors.New("runtime ownership for session session-a is held by gateway_x"),
+		},
+		sessionID: "session-a",
+	}
+	dispatcher := NewDispatcher(st, account, client, "/workspace")
+	err = dispatcher.HandleInbound(ctx, channel.Message{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            channel.TypeWeCom,
+		ExternalMessageID:      "msg-a",
+		ExternalConversationID: "chat-a",
+		ChatType:               channel.ChatDM,
+		Kind:                   channel.MessageText,
+		Text:                   "hello",
+		Raw:                    json.RawMessage(`{"ok":true}`),
+	})
+	if err != nil {
+		t.Fatalf("handle inbound should enqueue busy fallback: %v", err)
+	}
+	reply := claimOneReply(t, ctx, st, lease)
+	if reply.Text != runtimeBusyReply || strings.Contains(reply.Text, runtimeRecoveryFailedReply) {
+		t.Fatalf("expected busy fallback, got %#v", reply)
+	}
+}
+
 func TestDispatcherEnqueuesFallbackWhenPromptFails(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
@@ -1408,4 +1592,13 @@ func claimOneReply(t *testing.T, ctx context.Context, st *store.Store, lease sto
 		t.Fatalf("decode reply: %v", err)
 	}
 	return reply
+}
+
+func withFastRuntimeOwnershipRetry(t *testing.T) {
+	t.Helper()
+	old := runtimeOwnershipRetryBaseDelay
+	runtimeOwnershipRetryBaseDelay = time.Millisecond
+	t.Cleanup(func() {
+		runtimeOwnershipRetryBaseDelay = old
+	})
 }
