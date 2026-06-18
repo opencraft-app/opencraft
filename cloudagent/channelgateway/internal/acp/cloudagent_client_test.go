@@ -406,6 +406,111 @@ func TestCloudAgentClientPromptUsesRunReplayAndResult(t *testing.T) {
 	}
 }
 
+func TestCloudAgentClientStartsSessionStreamAfterSubmittedEventSeq(t *testing.T) {
+	var afterSeqs []int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/cloudagent/sessions/session-http/events":
+			writeTestJSON(t, w, map[string]any{
+				"run_id":     "job-new",
+				"session_id": "session-http",
+				"status":     "running",
+				"events": []map[string]any{{
+					"id":         "evt_session-http_4",
+					"seq":        4,
+					"type":       "user.message",
+					"run_id":     "job-new",
+					"session_id": "session-http",
+					"content":    "new prompt",
+				}},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/cloudagent/sessions/session-http/events/stream":
+			afterSeq, _ := strconv.ParseInt(r.URL.Query().Get("after_seq"), 10, 64)
+			afterSeqs = append(afterSeqs, afterSeq)
+			if afterSeq < 4 {
+				writeCloudAgentTestSSE(t, w, "agent.message", cloudAgentTestMessageEvent("job-old", "session-http", 2, "old reply"))
+				writeCloudAgentTestSSE(t, w, "session.status_idle", map[string]any{
+					"id": "evt_session-http_3", "seq": 3, "type": "session.status_idle", "run_id": "job-old", "session_id": "session-http",
+					"status": "idle", "stop_reason": map[string]any{"type": "end_turn"},
+				})
+				return
+			}
+			writeCloudAgentTestSSE(t, w, "agent.message", map[string]any{
+				"id": "evt_session-http_5", "seq": 5, "type": "agent.message", "run_id": "job-new", "session_id": "session-http",
+				"content": []any{map[string]any{"type": "text", "text": "new reply"}},
+			})
+			writeCloudAgentTestSSE(t, w, "session.status_idle", map[string]any{
+				"id": "evt_session-http_6", "seq": 6, "type": "session.status_idle", "run_id": "job-new", "session_id": "session-http",
+				"status": "idle", "stop_reason": map[string]any{"type": "end_turn"},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewCloudAgentClient(server.URL, nil)
+	result, err := client.PromptWithRunID(context.Background(), "session-http", "new prompt", "job-new")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Text != "new reply" {
+		t.Fatalf("client must not replay old session messages, got %#v", result)
+	}
+	if len(afterSeqs) == 0 || afterSeqs[0] != 4 {
+		t.Fatalf("client should start session stream after submitted user event seq, got %v", afterSeqs)
+	}
+}
+
+func TestCloudAgentClientIgnoresTerminalEventsFromOtherRuns(t *testing.T) {
+	var streamCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/cloudagent/sessions/session-http/events":
+			writeTestJSON(t, w, map[string]any{
+				"run_id":     "job-new",
+				"session_id": "session-http",
+				"status":     "running",
+				"events": []map[string]any{{
+					"id": "evt_session-http_1", "seq": 1, "type": "user.message", "run_id": "job-new", "session_id": "session-http",
+				}},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/cloudagent/sessions/session-http/events/stream":
+			streamCalls++
+			if streamCalls == 1 {
+				writeCloudAgentTestSSE(t, w, "session.status_idle", map[string]any{
+					"id": "evt_session-http_2", "seq": 2, "type": "session.status_idle", "run_id": "job-old", "session_id": "session-http",
+					"status": "idle", "stop_reason": map[string]any{"type": "end_turn"},
+				})
+				return
+			}
+			writeCloudAgentTestSSE(t, w, "agent.message", map[string]any{
+				"id": "evt_session-http_3", "seq": 3, "type": "agent.message", "run_id": "job-new", "session_id": "session-http",
+				"content": []any{map[string]any{"type": "text", "text": "new final"}},
+			})
+			writeCloudAgentTestSSE(t, w, "session.status_idle", map[string]any{
+				"id": "evt_session-http_4", "seq": 4, "type": "session.status_idle", "run_id": "job-new", "session_id": "session-http",
+				"status": "idle", "stop_reason": map[string]any{"type": "end_turn"},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewCloudAgentClient(server.URL, nil)
+	result, err := client.PromptWithRunID(context.Background(), "session-http", "new prompt", "job-new")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Text != "new final" {
+		t.Fatalf("client must ignore terminal events from other runs, got %#v", result)
+	}
+	if streamCalls < 2 {
+		t.Fatalf("client should continue after unrelated terminal event, stream_calls=%d", streamCalls)
+	}
+}
+
 func TestCloudAgentClientFallbackOutputIgnoresUserReplayChunks(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
