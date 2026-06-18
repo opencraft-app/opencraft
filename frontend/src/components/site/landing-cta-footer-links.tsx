@@ -20,6 +20,11 @@ const linkClassName = "transition-colors hover:text-black";
 
 export function LandingCtaFooterLinks() {
   const t = useT();
+
+  if (isGlobal) {
+    return null;
+  }
+
   return (
     <p
       className="mt-6 text-[14px] font-['PingFang_SC:Regular',sans-serif] leading-6 lv-reveal lv-delay-200 flex items-center gap-x-2"
