@@ -9,6 +9,7 @@ import (
 
 type sidecarStdoutEvent struct {
 	Type        string          `json:"type"`
+	InputID     string          `json:"input_id"`
 	RunSeq      int64           `json:"run_seq"`
 	Event       string          `json:"event"`
 	Delta       string          `json:"delta"`
@@ -104,6 +105,9 @@ func timelineTextTail(value string, limit int) string {
 }
 
 func workerEventFromSidecarEvent(jobID string, sequence int64, event sidecarStdoutEvent) (workerEvent, bool) {
+	if !sidecarInputMatches(event.InputID, jobID) {
+		return workerEvent{}, false
+	}
 	ev := workerEvent{
 		WorkerContractVersion: WorkerContractVersion,
 		EventID:               fmt.Sprintf("evt_%s_%s_%d", jobID, event.Type, sequence),

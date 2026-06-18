@@ -93,6 +93,30 @@ func TestSidecarStdoutParserHandlesPrefixedWrapperEvents(t *testing.T) {
 	}
 }
 
+func TestWorkerEventFromSidecarEventDropsMismatchedInputID(t *testing.T) {
+	event := sidecarStdoutEvent{
+		Type:    "output_text_delta",
+		InputID: "job_previous",
+		Delta:   "stale answer",
+	}
+	workerEvent, textDelta := workerEventFromSidecarEvent("job_current", 1, event)
+	if textDelta || workerEvent.Kind != "" {
+		t.Fatalf("stale input event should be dropped, worker=%+v textDelta=%t", workerEvent, textDelta)
+	}
+}
+
+func TestWorkerEventFromSidecarEventAcceptsMatchingInputID(t *testing.T) {
+	event := sidecarStdoutEvent{
+		Type:    "output_text_delta",
+		InputID: "job_current",
+		Delta:   "current answer",
+	}
+	workerEvent, textDelta := workerEventFromSidecarEvent("job_current", 1, event)
+	if !textDelta || workerEvent.Kind != "output_text_delta" || workerEvent.Delta != "current answer" {
+		t.Fatalf("current input event not accepted, worker=%+v textDelta=%t", workerEvent, textDelta)
+	}
+}
+
 func TestSidecarToolEventFieldsSummarizesAndRedactsPayloads(t *testing.T) {
 	fields := sidecarToolEventFields(sidecarStdoutEvent{
 		Type:       "tool_call_update",
@@ -168,6 +192,24 @@ func TestParseAgentRunEnvelopeHandlesPrefixedControlLine(t *testing.T) {
 	}
 }
 
+func TestParseAgentRunEnvelopeIgnoresMismatchedInputID(t *testing.T) {
+	_, ok := parseAgentRunEnvelope(`WRAPPER_RESULT_JSON={"input_id":"job_previous","output_text":"stale"}`, "job_current")
+	if ok {
+		t.Fatal("stale result envelope should be ignored")
+	}
+	envelope, ok := parseAgentRunEnvelope(`WRAPPER_RESULT_JSON={"input_id":"job_current","output_text":"fresh"}`, "job_current")
+	if !ok || envelope.OutputText != "fresh" {
+		t.Fatalf("matching result envelope not parsed, ok=%t envelope=%+v", ok, envelope)
+	}
+}
+
+func TestParseAgentOutputDoesNotFallbackToMismatchedInputID(t *testing.T) {
+	raw := `WRAPPER_RESULT_JSON={"input_id":"job_previous","output_text":"stale"}`
+	if got := cleanAgentVisibleOutput(parseAgentOutput(raw, "job_current")); got != "" {
+		t.Fatalf("stale fallback output leaked: %q", got)
+	}
+}
+
 func TestParseAgentRunErrorEnvelope(t *testing.T) {
 	envelope, ok := parseAgentRunErrorEnvelope(`noise
 WRAPPER_ERROR_JSON={"code":"max_iterations_exceeded","message":"Max iterations exceeded: 256"}`)
@@ -186,6 +228,17 @@ func TestParseAgentRunErrorEnvelopeDefaultsCode(t *testing.T) {
 	}
 	if envelope.Code != "agent_runtime_error" {
 		t.Fatalf("code=%q", envelope.Code)
+	}
+}
+
+func TestParseAgentRunErrorEnvelopeIgnoresMismatchedInputID(t *testing.T) {
+	_, ok := parseAgentRunErrorEnvelope(`WRAPPER_ERROR_JSON={"input_id":"job_previous","message":"stale"}`, "job_current")
+	if ok {
+		t.Fatal("stale error envelope should be ignored")
+	}
+	envelope, ok := parseAgentRunErrorEnvelope(`WRAPPER_ERROR_JSON={"input_id":"job_current","message":"fresh"}`, "job_current")
+	if !ok || envelope.Message != "fresh" {
+		t.Fatalf("matching error envelope not parsed, ok=%t envelope=%+v", ok, envelope)
 	}
 }
 
