@@ -24,7 +24,7 @@ export function DocsLayout() {
       <LandingNavbar onLoginClick={() => setShowLogin(true)} />
 
       {/* LandingNavbar 为 fixed（h-[60px]），此处留出占位避免被遮挡 */}
-      <div className="pt-[60px]">
+      <div className="flex-1 pt-[60px]">
         <Outlet />
       </div>
 

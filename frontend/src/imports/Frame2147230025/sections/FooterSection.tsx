@@ -1,5 +1,7 @@
 import { useT } from '@/i18n/t';
 import { BEIAN_URL, ICP_LICENSE, shouldShowICP } from '@/constants/legal';
+import { LightVelaFooter } from '@/components/site/lightvela-footer';
+import { isGlobal } from '@/lib/region';
 
 function LightVelaLogo() {
   // 高度 26px，宽度按 svg viewBox (131:28) 自适应 ≈ 121.6px。
@@ -18,6 +20,11 @@ function LightVelaLogo() {
 export default function FooterSection() {
   const t = useT();
   const showICP = shouldShowICP();
+
+  if (isGlobal) {
+    return <LightVelaFooter />;
+  }
+
   return (
     <footer
       className="w-full bg-white mx-auto"

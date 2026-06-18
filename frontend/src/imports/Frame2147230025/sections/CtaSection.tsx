@@ -144,7 +144,7 @@ export default function CtaSection({ onCreateClick }: CtaSectionProps = {}) {
   }, []);
 
   return (
-    <section ref={sectionRef} className="w-full bg-white relative overflow-hidden">
+    <section ref={sectionRef} className="w-full bg-[#fbfbfd] relative overflow-hidden">
       {/* 背景装饰光晕 */}
       <img
         src={imgCtaDeco}
@@ -157,7 +157,7 @@ export default function CtaSection({ onCreateClick }: CtaSectionProps = {}) {
       <div
         ref={ref as React.RefObject<HTMLDivElement>}
         className="mx-auto relative"
-        style={{ width: 'min(1440px, calc(100vw - 128px))', paddingTop: 80, paddingBottom: 80 }}
+        style={{ width: 'min(1440px, calc(100vw - 128px))', paddingTop: 80, paddingBottom: 40 }}
       >
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-12">
           {/* 左侧 .journey-copy */}

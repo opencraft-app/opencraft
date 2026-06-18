@@ -1,9 +1,11 @@
 import { Link, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   svgPaths } from '../assets';
 import '../motion.css';
 import { useT } from '@/i18n/t';
-import { isGlobal } from '@/lib/region';
+import { isGlobal, localizedPath } from '@/lib/region';
+import { BrandMark } from '@/components/site/brand-mark';
 import { LanguageSwitcher } from '@/components/site/language-switcher';
 import { UserAvatarMenu } from '@/components/site/user-avatar-menu';
 import { useSession } from '@/contexts/session-context';
@@ -129,14 +131,25 @@ function Frame5({
 }
 
 /** 顶部导航项配置（与现网 lightvela.com 保持一致）
- * 概览 → /  ·  更新日志 → /changelog（仅国内站）  ·  产品文档 → /docs  ·  关于我们 → /about
+ * 概览 → /  ·  更新日志 → /changelog（仅国内站）  ·  产品文档 → /docs/overview  ·  关于我们 → /about
  */
 const NAV_LINKS = [
   { label: '概览', href: '/' },
   { label: '更新日志', href: '/changelog' },
-  { label: '产品文档', href: '/docs' },
+  { label: '产品文档', href: '/docs/overview' },
   { label: '关于我们', href: '/about' },
 ];
+
+function stripLocalePrefix(pathname: string): string {
+  const normalized = pathname.replace(/^\/(en|zh)(?=\/|$)/, "") || "/";
+  return normalized === "//" ? "/" : normalized;
+}
+
+function isNavLinkActive(href: string, pathname: string): boolean {
+  const activePath = stripLocalePrefix(pathname);
+  const activeHref = stripLocalePrefix(href);
+  return activeHref === "/" ? activePath === "/" : activePath === activeHref || activePath.startsWith(`${activeHref}/`);
+}
 
 interface HeaderSectionProps {
   onLoginClick?: () => void;
@@ -151,22 +164,25 @@ interface HeaderSectionContentProps extends HeaderSectionProps {
 export function HeaderSectionContent({ onLoginClick, onCreateClick, authSnapshot }: HeaderSectionContentProps) {
   const location = useLocation();
   const t = useT();
+  const { i18n } = useTranslation();
+  const locale = i18n.language === "zh-CN" ? "zh-CN" : "en-US";
+  const sitePath = (href: string) => (href === "/" ? href : localizedPath(href, locale));
 
   return (
     <header className="lw-landing-header w-full absolute top-0 left-0 z-20">
-      <div className="w-full flex items-center justify-between px-16 py-3 relative">
+      <div className="mx-auto flex h-[60px] max-w-[1440px] items-center justify-between px-6 md:px-10 lg:px-[80px] relative">
         {/* Logo */}
-        <Frame4 />
+        <BrandMark to="/" />
         {/* 中间导航：绝对居中（仅大屏显示）
             点击跳转对应路由，hover 时轻微上抬 */}
         <nav className="hidden lg:flex gap-8 absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
           {NAV_LINKS.filter((link) => !(isGlobal && link.href === '/changelog')).map((link) => {
-            const active =
-              link.href === '/' ? location.pathname === '/' : location.pathname.startsWith(link.href);
+            const href = sitePath(link.href);
+            const active = isNavLinkActive(link.href, location.pathname);
             return (
               <Link
                 key={link.href}
-                to={link.href}
+                to={href}
                 className={`lw-nav-link text-[14px] font-['PingFang_SC:Medium',sans-serif] transition-all duration-200 ease-out hover:-translate-y-[2px] hover:text-black no-underline ${
                   active ? 'lw-nav-link--active text-black/90 font-semibold' : 'text-[rgba(0,0,0,0.7)]'
                 }`}

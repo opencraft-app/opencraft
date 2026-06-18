@@ -1,13 +1,14 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowRight, Menu, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "react-router-dom";
 import { BrandMark } from "@/components/site/brand-mark";
 import { LanguageSwitcher } from "@/components/site/language-switcher";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
 import { useSession } from "@/contexts/session-context";
 import { useT } from "@/i18n/t";
-import { isGlobal } from "@/lib/region";
+import { isGlobal, localizedPath } from "@/lib/region";
 import { cn } from "@/lib/utils";
 
 type NavLink = {
@@ -44,18 +45,29 @@ function useIsDesktop(): boolean {
 
 function useNavLinks(): NavLink[] {
   const t = useT();
+  const { i18n } = useTranslation();
+  const locale = i18n.language === "zh-CN" ? "zh-CN" : "en-US";
+  const sitePath = (href: string) => (href === "/" ? href : localizedPath(href, locale));
+
   return [
     { label: t("概览"), href: "/" },
-    ...(!isGlobal ? [{ label: t("更新日志"), href: "/changelog" }] : []),
-    { label: t("产品文档"), href: "/docs" },
-    { label: t("关于我们"), href: "/about" },
+    ...(!isGlobal ? [{ label: t("更新日志"), href: sitePath("/changelog") }] : []),
+    { label: t("产品文档"), href: sitePath("/docs/overview") },
+    { label: t("关于我们"), href: sitePath("/about") },
   ];
+}
+
+function stripLocalePrefix(pathname: string): string {
+  const normalized = pathname.replace(/^\/(en|zh)(?=\/|$)/, "") || "/";
+  return normalized === "//" ? "/" : normalized;
 }
 
 function isLinkActive(href: string, pathname: string): boolean {
   if (href === "#") return false;
-  if (href === "/") return pathname === "/";
-  return pathname === href || pathname.startsWith(`${href}/`);
+  const activePath = stripLocalePrefix(pathname);
+  const activeHref = stripLocalePrefix(href);
+  if (activeHref === "/") return activePath === "/";
+  return activePath === activeHref || activePath.startsWith(`${activeHref}/`);
 }
 
 export function SiteHeader({
@@ -96,10 +108,10 @@ export function SiteHeader({
         className,
       )}
     >
-      <div className="mx-auto flex h-[60px] max-w-[1440px] items-center px-6 md:px-10 lg:px-[80px]">
+      <div className="relative mx-auto flex h-[60px] max-w-[1440px] items-center justify-between px-6 md:px-10 lg:px-[80px]">
         <BrandMark to="/" />
 
-        <nav className="lw-landing-navbar__nav hidden flex-1 items-center justify-center gap-6 md:flex">
+        <nav className="lw-landing-navbar__nav absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-8 md:flex">
           {navLinks.map((link) => {
             const active = isLinkActive(link.href, location.pathname);
             const linkClassName = cn(

@@ -1,8 +1,5 @@
 # 当前执行计划
 
-> 工作区已清理（上一需求归档于 2026-06-17：Hermes Agent 版本更新公告）。
->
-> - 详细变更记录：`openspec/changes/2026-06-17-frontsandbox-hermes-agent-version-announcement.md`
-> - 源分支：`frontsandbox/hermes-agent-version-announcement`
->
-> 请通过 `/feai-start` 启动新流程。
+> 当前需求：国际站 LightVela footer 调整。
+
+- [x] 为国际站首页新增可复用 footer，并将现有法律 / 社区链接移动到对应分组。
