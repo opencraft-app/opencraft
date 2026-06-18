@@ -10,6 +10,12 @@ import {
   resolveStaticRoutes,
 } from "./generate-static-site.mjs";
 
+/** docs 目录路径片段，用于 join(frontendRoot, ...DOCS_BASE_PATH, locale, file)。 */
+const DOCS_BASE_PATH = ["src", "content", "docs"];
+/** 双语 fixture markdown 内容生成器；测试只关心存在性，文案随便。 */
+const CONTENT_ZH = (filename: string) => `# 中文 ${filename}\n\n中文内容。`;
+const CONTENT_EN = (filename: string) => `# English ${filename}\n\nEnglish content.`;
+
 const createFixture = ({ withStaticRenderer = false } = {}) => {
   const root = mkdtempSync(join(tmpdir(), "static-site-"));
   const frontendRoot = join(root, "frontend");
@@ -159,6 +165,180 @@ describe("generate-static-site", () => {
       expect(homeHtml).toContain("/assets/static-render/static/logo.png");
       expect(existsSync(join(distDir, "assets", "static-render", "static", "logo.png"))).toBe(true);
       expect(homeHtml).not.toContain("能帮我做什么");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("emits both /en and /zh trees with hreflang on global region", async () => {
+    const { root, frontendRoot, distDir } = createFixture();
+    try {
+      /* 国际站需要 docs/global 中文 markdown 真实存在；fixture 默认只放了 overview，
+         补一份 quickstart 让 docs/quickstart/index.html 也能渲染（避免缺文件抛错） */
+      writeFileSync(join(frontendRoot, "src", "content", "docs", "global", "02-quickstart.md"), "# 快速开始\n\nGlobal 中文 quickstart.");
+      writeFileSync(join(frontendRoot, "src", "content", "docs", "global", "04-core-concepts.md"), "# 核心概念\n\nGlobal 中文 core concepts.");
+      writeFileSync(join(frontendRoot, "src", "content", "docs", "global", "05-configuration.md"), "# 配置总览\n\nGlobal 中文 configuration.");
+      writeFileSync(join(frontendRoot, "src", "content", "docs", "global", "07-faq.md"), "# 常见问题 FAQ\n\nGlobal 中文 faq.");
+      writeFileSync(join(frontendRoot, "src", "content", "docs", "en", "02-quickstart.md"), "# Quickstart\n\nGet started in 5 minutes.");
+      writeFileSync(join(frontendRoot, "src", "content", "docs", "en", "04-core-concepts.md"), "# Core Concepts\n\nHermes, models, channels, skills.");
+      writeFileSync(join(frontendRoot, "src", "content", "docs", "en", "05-configuration.md"), "# Configuration Overview\n\nConsole walkthrough.");
+      writeFileSync(join(frontendRoot, "src", "content", "docs", "en", "07-faq.md"), "# FAQ\n\nFrequently asked questions.");
+      /* configuration/* 文档也需补齐两个 locale 各一份 */
+      mkdirSync(join(frontendRoot, "src", "content", "docs", "global", "configuration"), { recursive: true });
+      mkdirSync(join(frontendRoot, "src", "content", "docs", "en", "configuration"), { recursive: true });
+      mkdirSync(join(frontendRoot, "src", "content", "docs", "global", "faq"), { recursive: true });
+      mkdirSync(join(frontendRoot, "src", "content", "docs", "en", "faq"), { recursive: true });
+      const docFiles = [
+        "configuration/model.md",
+        "configuration/channel-wechat.md",
+        "configuration/channel-telegram.md",
+        "configuration/channel-whatsapp.md",
+        "configuration/channel-discord.md",
+        "configuration/channel-qq.md",
+        "configuration/channel-wecom.md",
+        "configuration/channel-feishu.md",
+        "configuration/skill.md",
+        "configuration/automation.md",
+        "configuration/agent-chat.md",
+        "faq/using-lightvela-safely.md",
+      ];
+      for (const f of docFiles) {
+        writeFileSync(join(frontendRoot, ...DOCS_BASE_PATH, "global", f), CONTENT_ZH(f));
+        writeFileSync(join(frontendRoot, ...DOCS_BASE_PATH, "en", f), CONTENT_EN(f));
+      }
+
+      await buildStaticSite({
+        frontendRoot,
+        distDir,
+        region: "global",
+        siteUrl: "https://lightvela.ai",
+        indexable: true,
+      });
+
+      /* 两套树都被生成 */
+      const enOverview = readFileSync(join(distDir, "en", "docs", "overview", "index.html"), "utf8");
+      const zhOverview = readFileSync(join(distDir, "zh", "docs", "overview", "index.html"), "utf8");
+      expect(enOverview).toContain("What is LightVela");
+      expect(zhOverview).toContain("LightVela 是什么");
+
+      /* <html lang> 跟随 locale 切换 */
+      expect(enOverview).toMatch(/<html\s+lang="en-US">/);
+      expect(zhOverview).toMatch(/<html\s+lang="zh-CN">/);
+
+      /* hreflang 互相指向且包含 x-default */
+      expect(enOverview).toContain("<link rel=\"alternate\" hreflang=\"en\" href=\"https://lightvela.ai/en/docs/overview\">");
+      expect(enOverview).toContain("<link rel=\"alternate\" hreflang=\"zh\" href=\"https://lightvela.ai/zh/docs/overview\">");
+      expect(enOverview).toContain("<link rel=\"alternate\" hreflang=\"x-default\" href=\"https://lightvela.ai/en/docs/overview\">");
+
+      /* sitemap 同时包含 /en/ 和 /zh/ URL，并带 xhtml hreflang */
+      const sitemap = readFileSync(join(distDir, "sitemap.xml"), "utf8");
+      expect(sitemap).toContain("xmlns:xhtml=\"http://www.w3.org/1999/xhtml\"");
+      expect(sitemap).toContain("<loc>https://lightvela.ai/en/docs/configuration/model</loc>");
+      expect(sitemap).toContain("<loc>https://lightvela.ai/zh/docs/configuration/model</loc>");
+      expect(sitemap).toContain("<xhtml:link rel=\"alternate\" hreflang=\"en\" href=\"https://lightvela.ai/en/docs/configuration/model\"/>");
+      expect(sitemap).toContain("<xhtml:link rel=\"alternate\" hreflang=\"zh\" href=\"https://lightvela.ai/zh/docs/configuration/model\"/>");
+      expect(sitemap).toContain("<xhtml:link rel=\"alternate\" hreflang=\"x-default\"");
+      /* 不包含「无前缀」doc URL（避免与多语言版本冲突） */
+      expect(sitemap).not.toMatch(/<loc>https:\/\/lightvela\.ai\/docs\/configuration\/model<\/loc>/);
+
+      /* docs sidebar 内部链接包含语言前缀 */
+      expect(enOverview).toMatch(/href="\/en\/docs\/configuration\/model"/);
+      expect(zhOverview).toMatch(/href="\/zh\/docs\/configuration\/model"/);
+
+      /* 国际站不应输出无前缀的 docs HTML（旧行为下生成的 /docs/overview/index.html 不再存在） */
+      expect(existsSync(join(distDir, "docs", "overview", "index.html"))).toBe(false);
+
+      /* P1-a：vite 留下的中文 dist/index.html 必须被覆盖为指向 /en/ 的别名页。
+         - canonical 指 /en/，让 Google 把权重收敛到带前缀版本
+         - hreflang 集群完整，把 /、/en/、/zh/ 收成一组
+         - <html lang> 不再是中文 zh-CN（旧 vite 模板的 lang），而是 en-US */
+      const rootIndex = readFileSync(join(distDir, "index.html"), "utf8");
+      expect(rootIndex).not.toMatch(/<title>old<\/title>/); // 旧 vite 模板已被覆盖
+      expect(rootIndex).toMatch(/<html\s+lang="en-US">/);
+      expect(rootIndex).toContain("<link rel=\"canonical\" href=\"https://lightvela.ai/en/\">");
+      expect(rootIndex).toContain("<link rel=\"alternate\" hreflang=\"en\" href=\"https://lightvela.ai/en/\">");
+      expect(rootIndex).toContain("<link rel=\"alternate\" hreflang=\"zh\" href=\"https://lightvela.ai/zh/\">");
+      expect(rootIndex).toContain("<link rel=\"alternate\" hreflang=\"x-default\" href=\"https://lightvela.ai/en/\">");
+
+      /* P2：/zh/docs 产物 sidebar / breadcrumb 用中文标题，与 <html lang="zh-CN"> 匹配 */
+      const zhConfig = readFileSync(join(distDir, "zh", "docs", "configuration", "model", "index.html"), "utf8");
+      expect(zhConfig).toContain("配置指南"); // sidebar group title
+      expect(zhConfig).toContain("配置模型"); // sidebar item title + breadcrumb leaf
+      expect(zhConfig).not.toContain("Configuration Guide"); // 英文不应泄漏到 zh 产物的 crawl-visible 区域
+      const enConfig = readFileSync(join(distDir, "en", "docs", "configuration", "model", "index.html"), "utf8");
+      expect(enConfig).toContain("Configuration Guide");
+      expect(enConfig).toContain("Configure Models");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("passes locale into renderStaticRoute so /zh/index.html body matches <html lang=zh-CN>", async () => {
+    /* codex CR P0-A 守护：renderStaticRoute 之前忽略 locale，导致
+       dist/zh/index.html 的 React DOM 是英文，与 <html lang="zh-CN"> 矛盾。
+       这里用一个 locale-aware fake renderer 验证 mjs 主循环把 locale 正确
+       传递下去，并按 locale 在产物中体现不同正文。 */
+    const { root, frontendRoot, distDir } = createFixture();
+    try {
+      mkdirSync(join(frontendRoot, "src", "static"), { recursive: true });
+      writeFileSync(join(frontendRoot, "src", "static", "render-static-route.tsx"), [
+        "export async function renderStaticRoute({ route, locale }) {",
+        "  if (route.kind !== 'home') return null;",
+        "  const text = locale === 'zh-CN' ? '中文首屏' : 'English Hero';",
+        "  return `<main data-locale=\"${locale ?? 'unknown'}\"><h1>${text}</h1></main>`;",
+        "}",
+      ].join("\n"));
+
+      /* 国际站构建需要每个 DOCS.global slug 在 docs/global/ 与 docs/en/ 都有 md，
+         否则 prerender 在写第二个 doc 时抛 missing markdown。补齐 fixture。 */
+      const docFiles = [
+        "02-quickstart.md",
+        "04-core-concepts.md",
+        "05-configuration.md",
+        "07-faq.md",
+        "configuration/model.md",
+        "configuration/channel-wechat.md",
+        "configuration/channel-telegram.md",
+        "configuration/channel-whatsapp.md",
+        "configuration/channel-discord.md",
+        "configuration/channel-qq.md",
+        "configuration/channel-wecom.md",
+        "configuration/channel-feishu.md",
+        "configuration/skill.md",
+        "configuration/automation.md",
+        "configuration/agent-chat.md",
+        "faq/using-lightvela-safely.md",
+      ];
+      mkdirSync(join(frontendRoot, ...DOCS_BASE_PATH, "global", "faq"), { recursive: true });
+      mkdirSync(join(frontendRoot, ...DOCS_BASE_PATH, "en", "faq"), { recursive: true });
+      for (const f of docFiles) {
+        writeFileSync(join(frontendRoot, ...DOCS_BASE_PATH, "global", f), CONTENT_ZH(f));
+        writeFileSync(join(frontendRoot, ...DOCS_BASE_PATH, "en", f), CONTENT_EN(f));
+      }
+
+      await buildStaticSite({
+        frontendRoot,
+        distDir,
+        region: "global",
+        siteUrl: "https://lightvela.ai",
+        indexable: true,
+      });
+
+      const enHome = readFileSync(join(distDir, "en", "index.html"), "utf8");
+      const zhHome = readFileSync(join(distDir, "zh", "index.html"), "utf8");
+
+      expect(enHome).toContain("data-locale=\"en-US\"");
+      expect(enHome).toContain("English Hero");
+      expect(enHome).not.toContain("中文首屏");
+
+      expect(zhHome).toContain("data-locale=\"zh-CN\"");
+      expect(zhHome).toContain("中文首屏");
+      expect(zhHome).not.toContain("English Hero");
+
+      /* 裸 / 别名首页（覆盖 vite dist/index.html）走 en-US，与 canonical /en/ 一致 */
+      const rootHome = readFileSync(join(distDir, "index.html"), "utf8");
+      expect(rootHome).toContain("data-locale=\"en-US\"");
+      expect(rootHome).toContain("English Hero");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

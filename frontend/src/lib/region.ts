@@ -38,3 +38,131 @@ export const isGlobal: boolean = REGION === "global";
  * 国内站默认中文，国际站默认英文；运行时仍可通过 i18n 动态切换。
  */
 export const DEFAULT_LOCALE: "zh-CN" | "en-US" = isGlobal ? "en-US" : "zh-CN";
+
+/**
+ * 国际站 URL 语言前缀
+ * ──────────────────────────────────────────────────────────────
+ * 用于 SEO：让搜索引擎能区分中英文两套静态产物。
+ *
+ * 仅作用于「公开可索引」路径：landing / docs / about / privacy 等
+ * 营销与法律页面。登录后的应用路由（/agents、/auth、/dashboard 等）
+ * 不加前缀，避免 OAuth redirect_uri 白名单需要变更。
+ *
+ * 国内站（isGlobal=false）这些函数全是 identity，不影响行为。
+ */
+
+/** URL 路径里允许出现的语言前缀 → i18n locale 映射 */
+const URL_LANG_TO_LOCALE: Record<string, "zh-CN" | "en-US"> = {
+  en: "en-US",
+  zh: "zh-CN",
+};
+
+/** i18n locale → URL 路径里使用的短前缀 */
+const LOCALE_TO_URL_LANG: Record<"zh-CN" | "en-US", "en" | "zh"> = {
+  "en-US": "en",
+  "zh-CN": "zh",
+};
+
+/**
+ * 哪些路径段需要带语言前缀（仅影响国际站）。
+ * 这些是 SEO 公开页面：营销 + 文档 + 法律。
+ * 登录后应用 / OAuth 回调相关路径**不**加前缀。
+ */
+const LOCALIZED_PATH_PREFIXES = [
+  "/docs",
+  "/about",
+  "/privacy-policy",
+  "/cookie-policy",
+  "/open-source-licenses",
+] as const;
+
+/** 判断路径首段是否合法语言前缀 */
+const matchLangPrefix = (pathname: string): { lang: "en" | "zh"; rest: string } | null => {
+  const m = pathname.match(/^\/(en|zh)(\/|$)(.*)$/);
+  if (!m) return null;
+  const lang = m[1] as "en" | "zh";
+  const rest = "/" + (m[3] ?? "");
+  return { lang, rest: rest === "//" ? "/" : rest };
+};
+
+/** 判断给定路径（去掉语言前缀后的部分）是否属于「应当带语言前缀」的范围 */
+const shouldLocalize = (pathWithoutLang: string): boolean => {
+  if (pathWithoutLang === "/") return true; // landing 也需要 SEO
+  return LOCALIZED_PATH_PREFIXES.some(
+    (p) => pathWithoutLang === p || pathWithoutLang.startsWith(p + "/"),
+  );
+};
+
+/**
+ * 从浏览器路径中读取语言（仅国际站；国内站固定返回 null）。
+ * - 不在白名单的路径或没有前缀都返回 null（调用方应回退到 localStorage / DEFAULT_LOCALE）
+ */
+export const readLocaleFromPath = (pathname: string): "zh-CN" | "en-US" | null => {
+  if (!isGlobal) return null;
+  const m = matchLangPrefix(pathname);
+  if (!m) return null;
+  return URL_LANG_TO_LOCALE[m.lang] ?? null;
+};
+
+/**
+ * 把绝对路径变成带语言前缀的版本（仅在国际站 + 该路径在白名单内时生效）。
+ * - 国内站：identity
+ * - 国际站、不需要本地化的路径（/agents、/auth 等）：identity
+ * - 国际站、需要本地化的路径：加前缀；如已存在前缀则替换
+ *
+ * @param path 绝对路径，例如 "/docs/configuration/model"
+ * @param locale 目标 i18n locale；不传则使用当前 i18n.language（运行时调用方负责传入）
+ */
+export const localizedPath = (path: string, locale: "zh-CN" | "en-US"): string => {
+  if (!isGlobal) return path;
+  if (!path.startsWith("/")) return path; // 防御：相对路径 / 外链不处理
+
+  // 已有语言前缀 → 剥掉后再决定是否本地化
+  const existing = matchLangPrefix(path);
+  const bare = existing ? existing.rest : path;
+
+  if (!shouldLocalize(bare)) return bare; // 这个路径段不需要本地化（如 /agents、/auth）
+
+  const lang = LOCALE_TO_URL_LANG[locale];
+  // 根路径特殊处理：/{lang}/  ←  /
+  if (bare === "/") return `/${lang}/`;
+  return `/${lang}${bare}`;
+};
+
+/**
+ * 切换当前路径中的语言段（不改变非语言部分）。
+ * 用于「语言切换器」点击时，保持当前页面 + 切换语言。
+ *
+ * - 国内站：identity（国内站不开多语言）
+ * - 国际站：根据路径是否在本地化白名单决定加 / 改前缀；不在白名单则原样返回
+ */
+export const switchLocaleInPath = (
+  pathname: string,
+  newLocale: "zh-CN" | "en-US",
+): string => localizedPath(pathname, newLocale);
+
+/**
+ * 判断给定 unprefixed 路径在国际站当前 locale 下是否需要补前缀重定向。
+ *
+ * 规则（仅国际站生效）：
+ *   - 已带 `/en` 或 `/zh` 前缀          → 不重定向
+ *   - 不在白名单（`/agents`、`/auth`…）→ 不重定向
+ *   - 根路径 `/`                          → **不**重定向（首页保持裸 URL，
+ *      与 Tencent Cloud `cloud.tencent.com/` 行为一致；多语言只对子路径生效）
+ *   - 其他白名单子路径（如 `/docs/...`、`/about`、`/privacy-policy`）
+ *     → 返回需要跳转到的目标路径
+ *
+ * 返回 null 表示「保持原 URL，不重定向」。
+ *
+ * 用于 RootLayout 的 mount-时 / 路由变化时一次性补前缀。
+ */
+export const langPrefixRedirectTarget = (
+  pathname: string,
+  locale: "zh-CN" | "en-US",
+): string | null => {
+  if (!isGlobal) return null;
+  if (matchLangPrefix(pathname)) return null; // 已带前缀
+  if (pathname === "/") return null; // 根路径例外
+  if (!shouldLocalize(pathname)) return null; // 非 SEO 路径
+  return localizedPath(pathname, locale);
+};

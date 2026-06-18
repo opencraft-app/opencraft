@@ -11,7 +11,7 @@
  */
 
 import { SLUG_TO_FILE, isEnglishLocale } from "@/config/docs-sidebar";
-import { isGlobal } from "@/lib/region";
+import { isGlobal, localizedPath } from "@/lib/region";
 
 // ── markdown 原文 ────────────────────────────────────────────────
 const markdownModules = import.meta.glob("/src/content/docs/**/*.md", {
@@ -135,11 +135,18 @@ export function fixBoldBoundary(md: string): string {
 
 /**
  * 把 markdown 里的相对链接改写为文档站内部路由。
- * - `./02-quickstart.md` → `/docs/quickstart`
+ * - `./02-quickstart.md` → `/docs/quickstart`（国际站会得到 /en/docs/... 或 /zh/docs/... 前缀）
  * - `./configuration/model.md` → `/docs/configuration/model`
  * - 外链 / 锚点 / mailto / tel 保持不变
+ *
+ * @param md       markdown 原文
+ * @param locale   当前 i18n locale；国际站决定输出 /en/ 还是 /zh/ 前缀，国内站忽略
  */
-export function rewriteMarkdownLinks(md: string): string {
+export function rewriteMarkdownLinks(md: string, locale?: string): string {
+  /* localizedPath 接受严格的 "zh-CN" | "en-US"；其它值默认按英文走（国际站默认） */
+  const normalizedLocale: "zh-CN" | "en-US" =
+    locale === "zh-CN" || locale === "en-US" ? locale : "en-US";
+
   return md.replace(/\]\(([^)]+)\)/g, (match, url: string) => {
     if (/^(https?:|mailto:|tel:|#)/i.test(url)) return match;
     if (!/\.md($|#)/.test(url)) return match;
@@ -166,6 +173,6 @@ export function rewriteMarkdownLinks(md: string): string {
     };
     if (map[u]) u = map[u] ?? u;
 
-    return `](/docs/${u}${hash})`;
+    return `](${localizedPath(`/docs/${u}`, normalizedLocale)}${hash})`;
   });
 }

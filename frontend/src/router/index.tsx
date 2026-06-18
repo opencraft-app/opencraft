@@ -53,61 +53,92 @@ const RedirectToAgents = () => {
   return <Navigate to={{ pathname: AGENTS_HOME_PATH, search: location.search }} replace />;
 };
 
+/**
+ * 国际站 SEO 路由（landing / about / docs / 法律页）的 children 抽象。
+ * 同一组 children 同时挂在「无语言前缀」和「带语言前缀（/en、/zh）」两套父路由下，
+ * 以支持 multi-URL i18n（Google 索引 /en/docs/... 与 /zh/docs/... 为不同语言版本）。
+ *
+ * 所有 children 复用同一组 React 组件——locale 由 i18n 单例运行时决定，
+ * URL 前缀只是声明给搜索引擎的语言标识。
+ */
+const seoSiteRouteChildren = [
+  {
+    index: true,
+    element: lazyRoute(LandingPage),
+  },
+  ...(!isGlobal
+    ? [
+        {
+          path: "changelog",
+          element: lazySiteRoute(ChangelogPage),
+        },
+      ]
+    : []),
+  {
+    path: "about",
+    element: lazySiteRoute(AboutPage),
+  },
+  /* ── 产品文档（LightVela Docs） ──
+     /docs             → 重定向到 /docs/overview
+     /docs/:slug       → 一级文档，例如 /docs/overview、/docs/faq
+     /docs/:cat/:slug  → 二级文档，例如 /docs/configuration/model */
+  {
+    element: lazySiteRoute(DocsLayout),
+    children: [
+      {
+        path: "docs",
+        element: <Navigate to="/docs/overview" replace />,
+      },
+      {
+        path: "docs/:slug",
+        element: lazyRoute(DocsPage),
+      },
+      {
+        path: "docs/:category/:slug",
+        element: lazyRoute(DocsPage),
+      },
+    ],
+  },
+  ...(isGlobal
+    ? [
+        {
+          path: "privacy-policy",
+          element: lazyRoute(PrivacyPolicyPage),
+        },
+        {
+          path: "cookie-policy",
+          element: lazyRoute(CookiePolicyPage),
+        },
+        {
+          path: "open-source-licenses",
+          element: lazyRoute(OpenSourceLicensesPage),
+        },
+      ]
+    : []),
+];
+
 export const router = createBrowserRouter([
   {
     path: "/",
     element: <RootLayout />,
     children: [
-      {
-        index: true,
-        element: lazyRoute(LandingPage),
-      },
-      ...(!isGlobal
-        ? [
-            {
-              path: "changelog",
-              element: lazySiteRoute(ChangelogPage),
-            },
-          ]
-        : []),
-      {
-        path: "about",
-        element: lazySiteRoute(AboutPage),
-      },
-      /* ── 产品文档（LightVela Docs） ──
-         /docs             → 重定向到 /docs/overview
-         /docs/:slug       → 一级文档，例如 /docs/overview、/docs/faq
-         /docs/:cat/:slug  → 二级文档，例如 /docs/configuration/model */
-      {
-        element: lazySiteRoute(DocsLayout),
-        children: [
-          {
-            path: "docs",
-            element: <Navigate to="/docs/overview" replace />,
-          },
-          {
-            path: "docs/:slug",
-            element: lazyRoute(DocsPage),
-          },
-          {
-            path: "docs/:category/:slug",
-            element: lazyRoute(DocsPage),
-          },
-        ],
-      },
+      ...seoSiteRouteChildren,
+      /**
+       * 国际站镜像路由：把同样一组 SEO 子路由再挂一份到 `/en/*` `/zh/*` 下。
+       * 这些 child 路由相对于父路由是「无前缀」的——例如 `/en/about` 命中
+       * 父 `/en` + child `about`；命中后渲染同一组 React 组件。
+       *
+       * 国内站不挂这一段（编译期 isGlobal=false → 整个数组被 terser 消除）。
+       */
       ...(isGlobal
         ? [
             {
-              path: "privacy-policy",
-              element: lazyRoute(PrivacyPolicyPage),
+              path: "en",
+              children: seoSiteRouteChildren,
             },
             {
-              path: "cookie-policy",
-              element: lazyRoute(CookiePolicyPage),
-            },
-            {
-              path: "open-source-licenses",
-              element: lazyRoute(OpenSourceLicensesPage),
+              path: "zh",
+              children: seoSiteRouteChildren,
             },
           ]
         : []),

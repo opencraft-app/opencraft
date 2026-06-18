@@ -9,14 +9,18 @@ import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "react-router-dom";
 import { getLocalizedSidebar } from "@/config/docs-sidebar";
 import { DocsSearch } from "@/components/docs/docs-search";
+import { localizedPath } from "@/lib/region";
 import { cn } from "@/lib/utils";
 
 export function DocsSidebar() {
   const { pathname } = useLocation();
   const { i18n } = useTranslation();
   const sidebar = useMemo(() => getLocalizedSidebar(i18n.language), [i18n.language]);
-  // 当前 slug：去掉 `/docs/` 前缀
-  const activeSlug = pathname.replace(/^\/docs\/?/, "");
+  /* 当前 slug：先剥掉国际站可能存在的 `/en` `/zh` 语言前缀，再剥掉 `/docs/` */
+  const activeSlug = pathname.replace(/^\/(en|zh)(?=\/|$)/, "").replace(/^\/docs\/?/, "");
+  const locale = (i18n.language === "zh-CN" || i18n.language === "en-US")
+    ? i18n.language
+    : "en-US";
 
   return (
     <aside className="w-64 shrink-0 border-r border-[var(--border-subtle)] py-8 pr-4">
@@ -83,7 +87,7 @@ export function DocsSidebar() {
                         return (
                           <li key={`heading-${item.title}`}>
                             <Link
-                              to={`/docs/${item.defaultChildSlug}`}
+                              to={localizedPath(`/docs/${item.defaultChildSlug}`, locale)}
                               className={cn(
                                 headingClass,
                                 !childrenActive &&
@@ -112,7 +116,7 @@ export function DocsSidebar() {
                     return (
                       <li key={item.slug}>
                         <Link
-                          to={`/docs/${item.slug}`}
+                          to={localizedPath(`/docs/${item.slug}`, locale)}
                           className={cn(
                             "flex items-center gap-2 py-1.5 text-sm rounded-md transition-colors",
                             // 二级项只用左内边距缩进，去掉竖线，保持与普通项同样的轻盈
