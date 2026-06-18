@@ -49,6 +49,8 @@ HERMES_SRC_VERSION=""
 HERMES_GIT_COMMIT=""
 HERMES_ACLI_INSTALL_URL=""
 HERMES_BACKEND_BLUEPRINT_ID="${HERMES_BACKEND_BLUEPRINT_ID:-}"
+HERMES_SOURCE_CACHE_DIR="${HERMES_SOURCE_CACHE_DIR:-/var/cache/lightclaw/hermes}"
+HERMES_SOURCE_TARBALL_CACHE=""
 HERMES_SYSTEM_BIN_DIR="${HERMES_SYSTEM_BIN_DIR:-/usr/local/bin}"
 HERMES_SYSTEM_LINK_DIR="${HERMES_SYSTEM_LINK_DIR:-/usr/bin}"
 HERMES_WHATSAPP_BRIDGE_USER="${HERMES_WHATSAPP_BRIDGE_USER:-}"
@@ -1117,11 +1119,76 @@ force_reinstall_hermes_local_package() {
   run_as_runtime_user "${hermes_uv_escaped} pip install --python ${hermes_python_escaped} --no-deps --reinstall-package hermes-agent -e ${hermes_dir_escaped}"
 }
 
+snapshot_hermes_source_tree_git() {
+  local hermes_dir="$1"
+  local label="$2"
+
+  run_as_runtime_user "$(cat <<EOF
+set -e
+cd '${hermes_dir}'
+git init -q
+git add -A
+git -c user.email=build@local -c user.name=build commit -q -m 'snapshot ${label}' || true
+git branch -M main
+git remote remove origin >/dev/null 2>&1 || true
+git remote add origin '${hermes_dir}'
+git fetch origin -q
+git branch --set-upstream-to=origin/main main >/dev/null
+EOF
+)"
+}
+
+restore_hermes_source_tree_from_cache() {
+  local hermes_dir="$1"
+  local actual=""
+  local expected="${HERMES_SRC_VERSION}"
+  local stage_dir=""
+  local top_dir=""
+  local preserved_venv=""
+
+  actual="$(read_hermes_source_tree_version "${hermes_dir}/pyproject.toml" || true)"
+  if [ -n "${expected}" ] && [ "${actual}" = "${expected}" ]; then
+    return 0
+  fi
+  if [ -z "${HERMES_SOURCE_TARBALL_CACHE}" ] || [ ! -s "${HERMES_SOURCE_TARBALL_CACHE}" ]; then
+    log_error "Hermes source tree drifted to ${actual:-unknown}, but COS tarball cache is missing: ${HERMES_SOURCE_TARBALL_CACHE:-<empty>}"
+    return 1
+  fi
+
+  log_warn "Hermes source tree drifted after post-install steps: expected ${expected}, got ${actual:-unknown}; restoring COS source tree"
+  stage_dir="$(mktemp -d "${TMPDIR:-/tmp}/lightclaw-hermes-restore-XXXXXX")"
+  tar -xzf "${HERMES_SOURCE_TARBALL_CACHE}" -C "${stage_dir}"
+  top_dir="$(find "${stage_dir}" -mindepth 1 -maxdepth 1 -type d | head -1)"
+  if [ -z "${top_dir}" ]; then
+    log_error "Hermes cached tarball layout unexpected: no top-level directory"
+    rm -rf "${stage_dir}"
+    return 1
+  fi
+
+  if [ -d "${hermes_dir}/venv" ]; then
+    preserved_venv="$(mktemp -d "${TMPDIR:-/tmp}/lightclaw-hermes-venv-XXXXXX")/venv"
+    mv "${hermes_dir}/venv" "${preserved_venv}"
+  fi
+  rm -rf "${hermes_dir}"
+  mkdir -p "$(dirname "${hermes_dir}")"
+  mv "${top_dir}" "${hermes_dir}"
+  if [ -n "${preserved_venv}" ] && [ -d "${preserved_venv}" ]; then
+    rm -rf "${hermes_dir}/venv"
+    mv "${preserved_venv}" "${hermes_dir}/venv"
+    rm -rf "$(dirname "${preserved_venv}")"
+  fi
+  chown -R "${RUNTIME_USER}:${RUNTIME_USER}" "${hermes_dir}"
+  rm -rf "${stage_dir}"
+  verify_hermes_source_tree_version "${hermes_dir}" "after COS source restore"
+  snapshot_hermes_source_tree_git "${hermes_dir}" "restored ${HERMES_VERSION:-hermes}"
+}
+
 finalize_hermes_runtime_pin() {
   local hermes_dir="${RUNTIME_HOME}/.hermes/hermes-agent"
 
   # acli/backend bootstrap may touch the Hermes home after the initial runtime
-  # install, so make the COS source tree the final source of truth.
+  # install, so make the COS tarball the final source of truth.
+  restore_hermes_source_tree_from_cache "${hermes_dir}"
   verify_hermes_source_tree_version "${hermes_dir}" "after Hermes post-install steps"
   force_reinstall_hermes_local_package "${hermes_dir}"
   verify_hermes_runtime_version
@@ -1233,6 +1300,9 @@ install_hermes_runtime() {
   stage_dir="$(mktemp -d "${TMPDIR:-/tmp}/lightclaw-hermes-stage-XXXXXX")"
 
   curl -fsSL "${hermes_tarball_url}" -o "${tarball}"
+  HERMES_SOURCE_TARBALL_CACHE="${HERMES_SOURCE_CACHE_DIR}/${hermes_cos_dir}/hermes-agent.tar.gz"
+  mkdir -p "$(dirname "${HERMES_SOURCE_TARBALL_CACHE}")"
+  cp "${tarball}" "${HERMES_SOURCE_TARBALL_CACHE}"
   tar -xzf "${tarball}" -C "${stage_dir}"
   top_dir="$(find "${stage_dir}" -mindepth 1 -maxdepth 1 -type d | head -1)"
   if [ -z "${top_dir}" ]; then
@@ -1247,19 +1317,7 @@ install_hermes_runtime() {
   chown -R "${RUNTIME_USER}:${RUNTIME_USER}" "${hermes_home}"
   verify_hermes_source_tree_version "${hermes_dir}" "from COS tarball"
 
-  run_as_runtime_user "$(cat <<EOF
-set -e
-cd '${hermes_dir}'
-git init -q
-git add -A
-git -c user.email=build@local -c user.name=build commit -q -m 'snapshot ${HERMES_VERSION:-${hermes_cos_dir}}'
-git branch -M main
-git remote remove origin >/dev/null 2>&1 || true
-git remote add origin '${hermes_dir}'
-git fetch origin -q
-git branch --set-upstream-to=origin/main main >/dev/null
-EOF
-)"
+  snapshot_hermes_source_tree_git "${hermes_dir}" "${HERMES_VERSION:-${hermes_cos_dir}}"
 
   installer="$(mktemp "${TMPDIR:-/tmp}/hermes-install-XXXXXX.sh")"
   curl -fsSL "${HERMES_INSTALL_SCRIPT_URL}" -o "${installer}"

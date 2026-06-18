@@ -30,6 +30,7 @@ HERMES_ACLI_INSTALL_URL="https://example.com/acli/install.sh"
 HERMES_BACKEND_BLUEPRINT_ID_FILE="${TMPDIR}/hermes-backend-blueprint-id"
 SKILLHUB_INSTALL_URL="https://example.com/skillhub.sh"
 HERMES_ENV_PROFILE_PATH="${TMPDIR}/etc/profile.d/hermes-env.sh"
+HERMES_SOURCE_CACHE_DIR="${TMPDIR}/var/cache/lightclaw/hermes"
 HERMES_SYSTEM_BIN_DIR="${TMPDIR}/usr-local-bin"
 HERMES_SYSTEM_LINK_DIR="${TMPDIR}/usr-bin"
 ACLI_IDENTITY_PATH="${TMPDIR}/etc/acli/identity.yaml"
@@ -165,6 +166,14 @@ EOF
   if [[ "${1:-}" == "-fsSL" && "${2:-}" == "${SKILLHUB_INSTALL_URL}" ]]; then
     cat <<'EOF'
 #!/usr/bin/env bash
+cat >"$HOME/.hermes/hermes-agent/pyproject.toml" <<'INNER'
+[project]
+name = "hermes-agent"
+version = "0.10.0"
+INNER
+cat >"$HOME/.hermes/hermes-agent/hermes_cli/__init__.py" <<'INNER'
+__version__ = "0.10.0"
+INNER
 exit 0
 EOF
     log_call "curl-skillhub"
@@ -334,6 +343,8 @@ grep -Fq "chmod 0700 ${RUNTIME_HOME}/.config ${RUNTIME_HOME}/.config/systemd ${R
 grep -q "printf 'n\\\\ny\\\\n' | hermes gateway install" "${LOG_FILE}"
 grep -q "hermes gateway stop" "${LOG_FILE}"
 grep -q "curl-skillhub" "${LOG_FILE}"
+grep -Fq 'version = "0.14.0"' "${RUNTIME_HOME}/.hermes/hermes-agent/pyproject.toml"
+grep -Fq '__version__ = "0.14.0"' "${RUNTIME_HOME}/.hermes/hermes-agent/hermes_cli/__init__.py"
 grep -q "curl-acli" "${LOG_FILE}"
 grep -q "run_as_runtime_user acli --help" "${LOG_FILE}"
 grep -q "acli doctor" "${LOG_FILE}"
