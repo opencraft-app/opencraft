@@ -21,19 +21,22 @@ type CloudAgentRunProtocolSpec struct {
 func CloudAgentRunSpec() CloudAgentRunProtocolSpec {
 	return CloudAgentRunProtocolSpec{
 		Object:   "cloudagent.capabilities",
-		Protocol: "cloudagent.run",
+		Protocol: "cloudagent.session_events",
 		Version:  "v1",
 		Features: []string{
 			"session_create",
 			"session_load",
 			"session_list",
-			"run_submit",
-			"run_list",
+			"session_event_submit",
+			"session_event_replay",
+			"session_event_stream",
+			"session_close",
 			"idempotency_key",
-			"server_generated_run_id",
-			"after_seq_replay",
-			"ndjson_event_stream",
-			"durable_result",
+			"client_event_id",
+			"last_event_id_replay",
+			"after_id_replay",
+			"sse_event_stream",
+			"internal_run_ledger",
 			"cancel",
 		},
 		Endpoints: []CloudAgentRunEndpoint{
@@ -42,7 +45,7 @@ func CloudAgentRunSpec() CloudAgentRunProtocolSpec {
 				Path:        "/v1/cloudagent/capabilities",
 				OperationID: "getCloudAgentCapabilities",
 				Summary:     "Get CloudAgent capabilities",
-				Description: "Probe CloudAgent HTTP Run protocol support and feature flags. 探测 CloudAgent HTTP Run 协议支持和功能开关。",
+				Description: "Probe CloudAgent HTTP session-event protocol support and feature flags. 探测 CloudAgent HTTP 会话事件协议支持和功能开关。",
 			},
 			{
 				Method:      "GET",
@@ -67,10 +70,31 @@ func CloudAgentRunSpec() CloudAgentRunProtocolSpec {
 			},
 			{
 				Method:      "POST",
-				Path:        "/v1/cloudagent/sessions/{session_id}/runs",
-				OperationID: "submitCloudAgentRun",
-				Summary:     "Submit CloudAgent run",
-				Description: "Submit an idempotent durable run to a CloudAgent session. 向 CloudAgent 会话提交幂等的持久化运行。",
+				Path:        "/v1/cloudagent/sessions/{session_id}/close",
+				OperationID: "closeCloudAgentSession",
+				Summary:     "Close CloudAgent session runtime",
+				Description: "Persist and release the runtime for a caller-scoped CloudAgent session without deleting the session identity. 贮藏并释放调用方作用域内 CloudAgent 会话的运行时，但不删除会话身份。",
+			},
+			{
+				Method:      "POST",
+				Path:        "/v1/cloudagent/sessions/{session_id}/events",
+				OperationID: "submitCloudAgentSessionEvents",
+				Summary:     "Submit CloudAgent session events",
+				Description: "Append public events, currently `user.message`, to a CloudAgent session. The gateway creates an internal run ledger entry. 向 CloudAgent 会话追加公开事件，目前支持 `user.message`；Gateway 会创建内部 run ledger。",
+			},
+			{
+				Method:      "GET",
+				Path:        "/v1/cloudagent/sessions/{session_id}/events",
+				OperationID: "listCloudAgentSessionEvents",
+				Summary:     "List CloudAgent session events",
+				Description: "Replay public session events after a committed cursor. 按游标回放公开会话事件。",
+			},
+			{
+				Method:      "GET",
+				Path:        "/v1/cloudagent/sessions/{session_id}/events/stream",
+				OperationID: "streamCloudAgentSessionEvents",
+				Summary:     "Stream CloudAgent session events",
+				Description: "Stream public session events with Server-Sent Events. 使用 Server-Sent Events 读取公开会话事件流。",
 			},
 			{
 				Method:      "GET",
@@ -91,7 +115,7 @@ func CloudAgentRunSpec() CloudAgentRunProtocolSpec {
 				Path:        "/v1/cloudagent/runs/{run_id}/events",
 				OperationID: "getCloudAgentRunEvents",
 				Summary:     "Replay or stream CloudAgent run events",
-				Description: "Replay run events after a committed sequence number. When `stream=true`, responses are newline-delimited JSON. 在已提交序号之后回放运行事件；`stream=true` 时响应为 NDJSON。",
+				Description: "Replay run events after a committed sequence number. When `stream=true`, responses are Server-Sent Events with public CloudAgent event payloads. 在已提交序号之后回放运行事件；`stream=true` 时响应为 Server-Sent Events，并承载 CloudAgent 公开事件。",
 			},
 			{
 				Method:      "GET",
@@ -115,10 +139,10 @@ func (spec CloudAgentRunProtocolSpec) EndpointStrings() []string {
 	out := make([]string, 0, len(spec.Endpoints)+1)
 	for _, endpoint := range spec.Endpoints {
 		out = append(out, endpoint.Method+" "+endpoint.Path)
-		if endpoint.Path == "/v1/cloudagent/runs/{run_id}/events" {
+		if endpoint.Path == "/v1/cloudagent/sessions/{session_id}/events" {
 			out = append(out,
-				"GET /v1/cloudagent/runs/{run_id}/events?after_seq=N",
-				"GET /v1/cloudagent/runs/{run_id}/events?after_seq=N&stream=true",
+				"GET /v1/cloudagent/sessions/{session_id}/events?after_seq=N",
+				"GET /v1/cloudagent/sessions/{session_id}/events?after_id=evt_x",
 			)
 		}
 	}
@@ -140,9 +164,9 @@ func CloudAgentOpenAPISpec() map[string]any {
 	return map[string]any{
 		"openapi": "3.1.0",
 		"info": map[string]any{
-			"title":       "CloudAgent HTTP Run API",
+			"title":       "CloudAgent Session Events API",
 			"version":     spec.Version,
-			"description": "Durable CloudAgent HTTP protocol for sessions, runs, replay, and results. 用于会话、运行、回放和结果读取的 CloudAgent 持久化 HTTP 协议。",
+			"description": "Qoder-like CloudAgent HTTP protocol for sessions, public events, replay, and SSE streaming. 类 Qoder 的 CloudAgent HTTP 协议，用于会话、公开事件、回放和 SSE 流式读取。",
 		},
 		"servers": []any{
 			map[string]any{"url": "http://21.6.84.6", "description": "Devcloud internal endpoint / Devcloud 内网入口"},
@@ -171,6 +195,9 @@ func cloudAgentOpenAPIOperation(endpoint CloudAgentRunEndpoint) map[string]any {
 	}
 	if endpoint.OperationID == "createCloudAgentSession" {
 		operation["requestBody"] = jsonRequestBody("#/components/schemas/CreateSessionRequest", false)
+	}
+	if endpoint.OperationID == "submitCloudAgentSessionEvents" {
+		operation["requestBody"] = jsonRequestBody("#/components/schemas/SubmitSessionEventsRequest", true)
 	}
 	if endpoint.OperationID == "submitCloudAgentRun" {
 		operation["requestBody"] = jsonRequestBody("#/components/schemas/SubmitRunRequest", true)
@@ -214,7 +241,15 @@ func cloudAgentOpenAPIParameters(path string, operationID string) []any {
 			"required": false,
 			"schema":   map[string]any{"type": "string", "default": "/workspace"},
 		})
-	case "getCloudAgentRunEvents":
+	case "submitCloudAgentSessionEvents", "submitCloudAgentRun":
+		params = append(params, map[string]any{
+			"name":        "Idempotency-Key",
+			"in":          "header",
+			"required":    false,
+			"schema":      map[string]any{"type": "string"},
+			"description": "Caller retry key scoped by tenant, project, and session. 调用方重试 key，作用域为租户、项目和会话。",
+		})
+	case "listCloudAgentSessionEvents", "streamCloudAgentSessionEvents", "getCloudAgentRunEvents":
 		params = append(params,
 			map[string]any{
 				"name":     "after_seq",
@@ -223,12 +258,28 @@ func cloudAgentOpenAPIParameters(path string, operationID string) []any {
 				"schema":   map[string]any{"type": "integer", "minimum": 0, "default": 0},
 			},
 			map[string]any{
+				"name":        "after_id",
+				"in":          "query",
+				"required":    false,
+				"schema":      map[string]any{"type": "string"},
+				"description": "SSE event id resume cursor. If present and `after_seq` is absent, the numeric suffix is used as the sequence cursor. SSE 事件 ID 恢复游标；当缺少 `after_seq` 时，使用 ID 的数字后缀作为序号游标。",
+			},
+			map[string]any{
+				"name":        "Last-Event-ID",
+				"in":          "header",
+				"required":    false,
+				"schema":      map[string]any{"type": "string"},
+				"description": "Standard SSE resume header used when `after_seq` and `after_id` are absent. 标准 SSE 恢复 header；当 `after_seq` 和 `after_id` 都缺失时使用。",
+			},
+		)
+		if operationID == "getCloudAgentRunEvents" {
+			params = append(params, map[string]any{
 				"name":     "stream",
 				"in":       "query",
 				"required": false,
 				"schema":   map[string]any{"type": "boolean", "default": false},
-			},
-		)
+			})
+		}
 	}
 	return params
 }
@@ -243,19 +294,21 @@ func cloudAgentOpenAPIResponses(operationID string) map[string]any {
 	case "listCloudAgentSessions":
 		schema = "#/components/schemas/SessionList"
 		description = "Caller-scoped session list. 调用方作用域内的会话列表。"
-	case "createCloudAgentSession", "loadCloudAgentSession":
+	case "createCloudAgentSession", "loadCloudAgentSession", "closeCloudAgentSession":
 		schema = "#/components/schemas/Session"
 		description = "CloudAgent session. CloudAgent 会话。"
 	case "listCloudAgentRuns":
 		schema = "#/components/schemas/RunList"
 		description = "Caller-scoped run list. 调用方作用域内的运行列表。"
-	case "getCloudAgentRunEvents":
+	case "submitCloudAgentSessionEvents", "listCloudAgentSessionEvents":
+		schema = "#/components/schemas/EventList"
+		description = "Public session events. 公开会话事件。"
+	case "streamCloudAgentSessionEvents", "getCloudAgentRunEvents":
 		return map[string]any{
 			"200": map[string]any{
-				"description": "Run events as JSON or NDJSON depending on `stream`. 根据 `stream` 返回 JSON 或 NDJSON 运行事件。",
+				"description": "Public events as Server-Sent Events. 以 Server-Sent Events 返回公开事件。",
 				"content": map[string]any{
-					"application/json":     map[string]any{"schema": map[string]any{"$ref": "#/components/schemas/EventList"}},
-					"application/x-ndjson": map[string]any{"schema": map[string]any{"$ref": "#/components/schemas/RunEvent"}},
+					"text/event-stream": map[string]any{"schema": map[string]any{"type": "string", "description": "Server-Sent Events. Each `data:` payload is a CloudAgent public event JSON object."}},
 				},
 			},
 		}
@@ -312,14 +365,15 @@ func cloudAgentOpenAPIComponents() map[string]any {
 			"Capabilities": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"object":       map[string]any{"type": "string", "const": "cloudagent.capabilities"},
-					"protocol":     map[string]any{"type": "string", "const": "cloudagent.run"},
-					"version":      map[string]any{"type": "string"},
-					"run_protocol": map[string]any{"type": "boolean"},
-					"features":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-					"endpoints":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+					"object":                 map[string]any{"type": "string", "const": "cloudagent.capabilities"},
+					"protocol":               map[string]any{"type": "string", "const": "cloudagent.session_events"},
+					"version":                map[string]any{"type": "string"},
+					"run_protocol":           map[string]any{"type": "boolean"},
+					"session_event_protocol": map[string]any{"type": "boolean"},
+					"features":               map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+					"endpoints":              map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 				},
-				"required": []any{"object", "protocol", "version", "run_protocol", "features", "endpoints"},
+				"required": []any{"object", "protocol", "version", "features", "endpoints"},
 			},
 			"CreateSessionRequest": map[string]any{
 				"type": "object",
@@ -341,15 +395,46 @@ func cloudAgentOpenAPIComponents() map[string]any {
 				"required": []any{"session_id"},
 			},
 			"SessionList": objectListSchema("#/components/schemas/Session"),
+			"SubmitSessionEventsRequest": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"events": map[string]any{
+						"type": "array",
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"type":            map[string]any{"type": "string", "enum": []any{"user.message"}},
+								"client_event_id": map[string]any{"type": "string"},
+								"content": map[string]any{
+									"type": "array",
+									"items": map[string]any{
+										"type": "object",
+										"properties": map[string]any{
+											"type": map[string]any{"type": "string", "enum": []any{"text"}},
+											"text": map[string]any{"type": "string"},
+										},
+										"required": []any{"type", "text"},
+									},
+								},
+							},
+							"required": []any{"type", "content"},
+						},
+					},
+				},
+				"required": []any{"events"},
+			},
 			"SubmitRunRequest": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"run_id":     map[string]any{"type": "string"},
+					"run_id": map[string]any{
+						"type":        "string",
+						"description": "Legacy idempotency key field. The server still returns its own durable `run_id`. 兼容旧客户端的幂等 key 字段；服务端仍返回自己的持久化 `run_id`。",
+					},
 					"text":       map[string]any{"type": "string"},
 					"cwd":        map[string]any{"type": "string", "default": "/workspace"},
 					"inbox_mode": map[string]any{"type": "string", "enum": []any{"prompt", "steer", "follow_up"}},
 				},
-				"required": []any{"run_id", "text"},
+				"required": []any{"text"},
 			},
 			"Run": map[string]any{
 				"type": "object",
@@ -370,16 +455,30 @@ func cloudAgentOpenAPIComponents() map[string]any {
 			"RunEvent": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"seq":  map[string]any{"type": "integer"},
-					"kind": map[string]any{"type": "string"},
-					"data": map[string]any{"type": "object"},
+					"id":             map[string]any{"type": "string", "description": "Stable SSE event id with numeric sequence suffix."},
+					"seq":            map[string]any{"type": "integer"},
+					"type":           map[string]any{"type": "string", "enum": []any{"user.message", "agent.thinking", "agent.message", "agent.tool_use", "agent.tool_result", "session.status_idle", "session.error", "heartbeat"}},
+					"run_id":         map[string]any{"type": "string"},
+					"session_id":     map[string]any{"type": "string"},
+					"schema_version": map[string]any{"type": "string"},
+					"content":        map[string]any{},
+					"thinking":       map[string]any{"type": "string"},
+					"tool_use_id":    map[string]any{"type": "string"},
+					"name":           map[string]any{"type": "string"},
+					"input":          map[string]any{},
+					"is_error":       map[string]any{"type": "boolean"},
+					"status":         map[string]any{"type": "string"},
+					"stop_reason":    map[string]any{},
+					"error":          map[string]any{},
 				},
-				"required": []any{"seq", "kind"},
+				"required": []any{"seq", "type", "run_id"},
 			},
 			"EventList": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"run":    map[string]any{"$ref": "#/components/schemas/Run"},
+					"object": map[string]any{"type": "string", "const": "list"},
+					"data":   map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/RunEvent"}},
 					"events": map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/RunEvent"}},
 				},
 				"required": []any{"events"},

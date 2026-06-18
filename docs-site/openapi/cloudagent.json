@@ -53,10 +53,13 @@
             "type": "string"
           },
           "protocol": {
-            "const": "cloudagent.run",
+            "const": "cloudagent.session_events",
             "type": "string"
           },
           "run_protocol": {
+            "type": "boolean"
+          },
+          "session_event_protocol": {
             "type": "boolean"
           },
           "version": {
@@ -67,7 +70,6 @@
           "object",
           "protocol",
           "version",
-          "run_protocol",
           "features",
           "endpoints"
         ],
@@ -92,11 +94,21 @@
       },
       "EventList": {
         "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/RunEvent"
+            },
+            "type": "array"
+          },
           "events": {
             "items": {
               "$ref": "#/components/schemas/RunEvent"
             },
             "type": "array"
+          },
+          "object": {
+            "const": "list",
+            "type": "string"
           },
           "run": {
             "$ref": "#/components/schemas/Run"
@@ -145,19 +157,59 @@
       },
       "RunEvent": {
         "properties": {
-          "data": {
-            "type": "object"
+          "content": {},
+          "error": {},
+          "id": {
+            "description": "Stable SSE event id with numeric sequence suffix.",
+            "type": "string"
           },
-          "kind": {
+          "input": {},
+          "is_error": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "schema_version": {
             "type": "string"
           },
           "seq": {
             "type": "integer"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "stop_reason": {},
+          "thinking": {
+            "type": "string"
+          },
+          "tool_use_id": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "user.message",
+              "agent.thinking",
+              "agent.message",
+              "agent.tool_use",
+              "agent.tool_result",
+              "session.status_idle",
+              "session.error",
+              "heartbeat"
+            ],
+            "type": "string"
           }
         },
         "required": [
           "seq",
-          "kind"
+          "type",
+          "run_id"
         ],
         "type": "object"
       },
@@ -258,6 +310,7 @@
             "type": "string"
           },
           "run_id": {
+            "description": "Legacy idempotency key field. The server still returns its own durable `run_id`. 兼容旧客户端的幂等 key 字段；服务端仍返回自己的持久化 `run_id`。",
             "type": "string"
           },
           "text": {
@@ -265,8 +318,57 @@
           }
         },
         "required": [
-          "run_id",
           "text"
+        ],
+        "type": "object"
+      },
+      "SubmitSessionEventsRequest": {
+        "properties": {
+          "events": {
+            "items": {
+              "properties": {
+                "client_event_id": {
+                  "type": "string"
+                },
+                "content": {
+                  "items": {
+                    "properties": {
+                      "text": {
+                        "type": "string"
+                      },
+                      "type": {
+                        "enum": [
+                          "text"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "text"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "type": {
+                  "enum": [
+                    "user.message"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "content"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "events"
         ],
         "type": "object"
       }
@@ -285,15 +387,15 @@
     }
   },
   "info": {
-    "description": "Durable CloudAgent HTTP protocol for sessions, runs, replay, and results. 用于会话、运行、回放和结果读取的 CloudAgent 持久化 HTTP 协议。",
-    "title": "CloudAgent HTTP Run API",
+    "description": "Qoder-like CloudAgent HTTP protocol for sessions, public events, replay, and SSE streaming. 类 Qoder 的 CloudAgent HTTP 协议，用于会话、公开事件、回放和 SSE 流式读取。",
+    "title": "CloudAgent Session Events API",
     "version": "v1"
   },
   "openapi": "3.1.0",
   "paths": {
     "/v1/cloudagent/capabilities": {
       "get": {
-        "description": "Probe CloudAgent HTTP Run protocol support and feature flags. 探测 CloudAgent HTTP Run 协议支持和功能开关。",
+        "description": "Probe CloudAgent HTTP session-event protocol support and feature flags. 探测 CloudAgent HTTP 会话事件协议支持和功能开关。",
         "operationId": "getCloudAgentCapabilities",
         "responses": {
           "200": {
@@ -412,7 +514,7 @@
     },
     "/v1/cloudagent/runs/{run_id}/events": {
       "get": {
-        "description": "Replay run events after a committed sequence number. When `stream=true`, responses are newline-delimited JSON. 在已提交序号之后回放运行事件；`stream=true` 时响应为 NDJSON。",
+        "description": "Replay run events after a committed sequence number. When `stream=true`, responses are Server-Sent Events with public CloudAgent event payloads. 在已提交序号之后回放运行事件；`stream=true` 时响应为 Server-Sent Events，并承载 CloudAgent 公开事件。",
         "operationId": "getCloudAgentRunEvents",
         "parameters": [
           {
@@ -429,6 +531,24 @@
             }
           },
           {
+            "description": "SSE event id resume cursor. If present and `after_seq` is absent, the numeric suffix is used as the sequence cursor. SSE 事件 ID 恢复游标；当缺少 `after_seq` 时，使用 ID 的数字后缀作为序号游标。",
+            "in": "query",
+            "name": "after_id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Standard SSE resume header used when `after_seq` and `after_id` are absent. 标准 SSE 恢复 header；当 `after_seq` 和 `after_id` 都缺失时使用。",
+            "in": "header",
+            "name": "Last-Event-ID",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "in": "query",
             "name": "stream",
             "required": false,
@@ -441,18 +561,14 @@
         "responses": {
           "200": {
             "content": {
-              "application/json": {
+              "text/event-stream": {
                 "schema": {
-                  "$ref": "#/components/schemas/EventList"
-                }
-              },
-              "application/x-ndjson": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunEvent"
+                  "description": "Server-Sent Events. Each `data:` payload is a CloudAgent public event JSON object.",
+                  "type": "string"
                 }
               }
             },
-            "description": "Run events as JSON or NDJSON depending on `stream`. 根据 `stream` 返回 JSON 或 NDJSON 运行事件。"
+            "description": "Public events as Server-Sent Events. 以 Server-Sent Events 返回公开事件。"
           }
         },
         "summary": "Replay or stream CloudAgent run events",
@@ -589,20 +705,109 @@
         ]
       }
     },
-    "/v1/cloudagent/sessions/{session_id}/runs": {
+    "/v1/cloudagent/sessions/{session_id}/close": {
       "post": {
-        "description": "Submit an idempotent durable run to a CloudAgent session. 向 CloudAgent 会话提交幂等的持久化运行。",
-        "operationId": "submitCloudAgentRun",
+        "description": "Persist and release the runtime for a caller-scoped CloudAgent session without deleting the session identity. 贮藏并释放调用方作用域内 CloudAgent 会话的运行时，但不删除会话身份。",
+        "operationId": "closeCloudAgentSession",
         "parameters": [
           {
             "$ref": "#/components/parameters/SessionID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            },
+            "description": "CloudAgent session. CloudAgent 会话。"
+          }
+        },
+        "summary": "Close CloudAgent session runtime",
+        "tags": [
+          "CloudAgent"
+        ]
+      }
+    },
+    "/v1/cloudagent/sessions/{session_id}/events": {
+      "get": {
+        "description": "Replay public session events after a committed cursor. 按游标回放公开会话事件。",
+        "operationId": "listCloudAgentSessionEvents",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SessionID"
+          },
+          {
+            "in": "query",
+            "name": "after_seq",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "SSE event id resume cursor. If present and `after_seq` is absent, the numeric suffix is used as the sequence cursor. SSE 事件 ID 恢复游标；当缺少 `after_seq` 时，使用 ID 的数字后缀作为序号游标。",
+            "in": "query",
+            "name": "after_id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Standard SSE resume header used when `after_seq` and `after_id` are absent. 标准 SSE 恢复 header；当 `after_seq` 和 `after_id` 都缺失时使用。",
+            "in": "header",
+            "name": "Last-Event-ID",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventList"
+                }
+              }
+            },
+            "description": "Public session events. 公开会话事件。"
+          }
+        },
+        "summary": "List CloudAgent session events",
+        "tags": [
+          "CloudAgent"
+        ]
+      },
+      "post": {
+        "description": "Append public events, currently `user.message`, to a CloudAgent session. The gateway creates an internal run ledger entry. 向 CloudAgent 会话追加公开事件，目前支持 `user.message`；Gateway 会创建内部 run ledger。",
+        "operationId": "submitCloudAgentSessionEvents",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SessionID"
+          },
+          {
+            "description": "Caller retry key scoped by tenant, project, and session. 调用方重试 key，作用域为租户、项目和会话。",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SubmitRunRequest"
+                "$ref": "#/components/schemas/SubmitSessionEventsRequest"
               }
             }
           },
@@ -613,14 +818,70 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Run"
+                  "$ref": "#/components/schemas/EventList"
                 }
               }
             },
-            "description": "CloudAgent response. CloudAgent 响应。"
+            "description": "Public session events. 公开会话事件。"
           }
         },
-        "summary": "Submit CloudAgent run",
+        "summary": "Submit CloudAgent session events",
+        "tags": [
+          "CloudAgent"
+        ]
+      }
+    },
+    "/v1/cloudagent/sessions/{session_id}/events/stream": {
+      "get": {
+        "description": "Stream public session events with Server-Sent Events. 使用 Server-Sent Events 读取公开会话事件流。",
+        "operationId": "streamCloudAgentSessionEvents",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SessionID"
+          },
+          {
+            "in": "query",
+            "name": "after_seq",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "SSE event id resume cursor. If present and `after_seq` is absent, the numeric suffix is used as the sequence cursor. SSE 事件 ID 恢复游标；当缺少 `after_seq` 时，使用 ID 的数字后缀作为序号游标。",
+            "in": "query",
+            "name": "after_id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Standard SSE resume header used when `after_seq` and `after_id` are absent. 标准 SSE 恢复 header；当 `after_seq` 和 `after_id` 都缺失时使用。",
+            "in": "header",
+            "name": "Last-Event-ID",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "description": "Server-Sent Events. Each `data:` payload is a CloudAgent public event JSON object.",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Public events as Server-Sent Events. 以 Server-Sent Events 返回公开事件。"
+          }
+        },
+        "summary": "Stream CloudAgent session events",
         "tags": [
           "CloudAgent"
         ]

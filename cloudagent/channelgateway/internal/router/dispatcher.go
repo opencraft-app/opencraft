@@ -188,6 +188,12 @@ func (d *Dispatcher) closeIdleConversationLocked(ctx context.Context, item store
 		logValue(current.ChannelAccountID), logValue(d.account.AgentID), logValue(current.ConversationID),
 		logValue(current.SessionKey), logValue(current.ACPSessionID), time.Since(updatedAt).Seconds())
 	if err := d.acp.CloseSession(ctx, current.ACPSessionID); err != nil {
+		if acp.IsCloudAgentSessionCloseUnsupported(err) {
+			log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=session_idle_close_skip reason=close_unsupported_by_protocol",
+				logValue(current.ChannelAccountID), logValue(d.account.AgentID), logValue(current.ConversationID),
+				logValue(current.SessionKey), logValue(current.ACPSessionID))
+			return false, nil
+		}
 		if isMissingACPSessionError(err) {
 			log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=session_idle_close_already_closed error=%s",
 				logValue(current.ChannelAccountID), logValue(d.account.AgentID), logValue(current.ConversationID),
@@ -348,19 +354,10 @@ func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) (re
 					logValue(conversation.SessionKey), logValue(sessionID), isRecoverableRuntimeError(err), logValue(err.Error()))
 				return d.handleACPError(setupCtx, msg, conversation, sessionID, CallbackStageLoadSession, err)
 			}
-			reason := "ensure_ready_missing_acp_runtime_session"
-			if isRecoverableRuntimeError(err) {
-				reason = "runtime_unavailable"
-			}
-			rebuiltSessionID, rebuildErr := d.recreateSessionWithSameWorkspace(setupCtx, msg, conversation, sessionID, reason)
-			if rebuildErr != nil {
-				return d.handleACPError(setupCtx, msg, conversation, sessionID, CallbackStageNewSession, rebuildErr)
-			}
-			sessionID = rebuiltSessionID
-			conversation.ACPSessionID = rebuiltSessionID
-			if err := d.ensureRuntimeReady(setupCtx, msg, conversation, sessionID); err != nil {
-				return d.handleACPError(setupCtx, msg, conversation, sessionID, CallbackStageLoadSession, err)
-			}
+			log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s workspace_key=%s acp_session_id=%s action=runtime_unavailable_preserve_binding stage=ensure_runtime_ready error=%s",
+				logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
+				logValue(conversation.SessionKey), logValue(conversation.WorkspaceKey), logValue(sessionID), logValue(err.Error()))
+			return d.handleACPError(setupCtx, msg, conversation, sessionID, CallbackStageLoadSession, err)
 		}
 	}
 	promptStartedAt := time.Now()
@@ -471,30 +468,6 @@ func (d *Dispatcher) handleCommand(ctx context.Context, msg channel.Message, con
 	default:
 		return nil
 	}
-}
-
-func (d *Dispatcher) recreateSessionWithSameWorkspace(ctx context.Context, msg channel.Message, conversation store.Conversation, oldSessionID, reason string) (string, error) {
-	workspaceKey := strings.TrimSpace(conversation.WorkspaceKey)
-	if workspaceKey == "" {
-		workspaceKey = strings.TrimSpace(oldSessionID)
-	}
-	if workspaceKey == "" {
-		workspaceKey = store.NewWorkspaceKeyForReset()
-	}
-	log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s workspace_key=%s acp_session_id=%s action=session_recreate_same_workspace reason=%s",
-		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
-		logValue(conversation.SessionKey), logValue(workspaceKey), logValue(oldSessionID), logValue(reason))
-	sessionID, err := d.acp.NewSession(ctx, d.cwd, workspaceKey)
-	if err != nil {
-		return "", err
-	}
-	if err := d.store.BindACPWorkspaceSession(ctx, conversation.ChannelAccountID, conversation.SessionKey, sessionID, workspaceKey); err != nil {
-		return "", err
-	}
-	log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s workspace_key=%s old_acp_session_id=%s acp_session_id=%s action=session_recreate_same_workspace_bound reason=%s",
-		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
-		logValue(conversation.SessionKey), logValue(workspaceKey), logValue(oldSessionID), logValue(sessionID), logValue(reason))
-	return sessionID, nil
 }
 
 func (d *Dispatcher) handleACPError(ctx context.Context, msg channel.Message, conversation store.Conversation, sessionID string, stage CallbackStage, err error) error {
@@ -615,21 +588,10 @@ func (d *Dispatcher) promptWithRuntimeRecovery(ctx context.Context, conversation
 	if !isRecoverableRuntimeError(err) {
 		return acp.PromptResult{}, sessionID, err
 	}
-	log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=session_recreate reason=runtime_unavailable",
+	log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=runtime_unavailable_preserve_binding stage=prompt error=%s",
 		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID),
-		logValue(conversation.ConversationID), logValue(conversation.SessionKey), logValue(sessionID))
-	newSessionID, newErr := d.recreateSessionWithSameWorkspace(ctx, msg, conversation, sessionID, "runtime_unavailable")
-	if newErr != nil {
-		return acp.PromptResult{}, sessionID, newErr
-	}
-	log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s conversation_id=%s session_key=%s old_acp_session_id=%s acp_session_id=%s action=session_bound reason=runtime_recreated",
-		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID),
-		logValue(conversation.ConversationID), logValue(conversation.SessionKey), logValue(sessionID), logValue(newSessionID))
-	result, retryErr := d.acp.Prompt(ctx, newSessionID, msg.Text)
-	if retryErr != nil {
-		return acp.PromptResult{}, newSessionID, retryErr
-	}
-	return result, newSessionID, nil
+		logValue(conversation.ConversationID), logValue(conversation.SessionKey), logValue(sessionID), logValue(err.Error()))
+	return acp.PromptResult{}, sessionID, err
 }
 
 func (d *Dispatcher) lockForSessionKey(sessionKey string) *sync.Mutex {

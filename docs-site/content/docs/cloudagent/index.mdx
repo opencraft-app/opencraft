@@ -22,18 +22,18 @@ source_path: docs-site/content/docs/cloudagent/index.mdx
 </p>
 
 <p>
-  <span className="lang-en">Start with the HTTP Run API if you are integrating a backend service, channel adapter, or automated test client.</span>
-  <span className="lang-zh">如果你要接入后端服务、渠道适配器或自动化测试客户端，请从 HTTP Run API 开始。</span>
+  <span className="lang-en">Start with the HTTP Session Events API if you are integrating a backend service, channel adapter, or automated test client.</span>
+  <span className="lang-zh">如果你要接入后端服务、渠道适配器或自动化测试客户端，请从 HTTP Session Events API 开始。</span>
 </p>
 
 ## <span className="lang-en">Key Surfaces</span><span className="lang-zh">关键边界</span>
 
 | Surface | <span className="lang-en">Use</span><span className="lang-zh">用途</span> |
 | --- | --- |
-| CloudAgent HTTP Run API | <span className="lang-en">Durable session/run protocol for non-WebSocket clients.</span><span className="lang-zh">非 WebSocket 客户端使用的持久会话与运行协议。</span> |
+| CloudAgent HTTP Session Events API | <span className="lang-en">Qoder-like durable session event protocol for non-WebSocket clients, with SSE streaming and replay.</span><span className="lang-zh">面向非 WebSocket 客户端的类 Qoder 持久会话事件协议，支持 SSE 事件流和回放。</span> |
 | ACP | <span className="lang-en">Interactive protocol compatibility layer.</span><span className="lang-zh">交互式协议兼容层。</span> |
 | Wisp runtime | <span className="lang-en">Persistent workspace and runtime recovery layer.</span><span className="lang-zh">持久化 Workspace 与运行时恢复层。</span> |
-| ChannelGateway | <span className="lang-en">Channel adapter that should use the HTTP Run API for durable traffic.</span><span className="lang-zh">渠道适配器，持久流量应接入 HTTP Run API。</span> |
+| ChannelGateway | <span className="lang-en">Channel adapter that should use the HTTP Session Events API for durable traffic.</span><span className="lang-zh">渠道适配器，持久流量应接入 HTTP Session Events API。</span> |
 
 ## <span className="lang-en">Recommended Integration Path</span><span className="lang-zh">推荐接入路径</span>
 
@@ -41,9 +41,9 @@ source_path: docs-site/content/docs/cloudagent/index.mdx
 
 1. Probe `/v1/cloudagent/capabilities`.
 2. Create or load a CloudAgent session.
-3. Submit a run with an idempotent caller-generated `run_id`.
-4. Replay or stream events with `after_seq`.
-5. Read the durable result.
+3. Submit a `user.message` event with an idempotent caller-generated `Idempotency-Key` or `client_event_id`.
+4. Replay or stream public session events with `after_seq` / `after_id`.
+5. Stop on `session.status_idle` or `session.error`.
 
 </div>
 
@@ -51,9 +51,9 @@ source_path: docs-site/content/docs/cloudagent/index.mdx
 
 1. 探测 `/v1/cloudagent/capabilities`。
 2. 创建或加载 CloudAgent 会话。
-3. 使用调用方生成的幂等 `run_id` 提交运行。
-4. 通过 `after_seq` 回放或读取事件流。
-5. 读取持久化结果。
+3. 使用调用方生成的幂等 `Idempotency-Key` 或 `client_event_id` 提交 `user.message` 事件。
+4. 通过 `after_seq` / `after_id` 回放或读取公开会话事件流。
+5. 遇到 `session.status_idle` 或 `session.error` 后结束本轮观察。
 
 </div>
 

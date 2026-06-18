@@ -6,7 +6,7 @@ Current shape:
 
 - channel adapter: WeCom AI Bot WebSocket
 - session truth: SQLite store with embedded Go migrations
-- runtime target: CloudAgent HTTP run protocol, with ACP WebSocket kept as a
+- runtime target: CloudAgent HTTP session-event protocol, with ACP WebSocket kept as a
   compatibility fallback
 - ownership: one channel account connection is held by one process lease owner
 - multi-tenant runner model: every active `channel_accounts` row gets an independent lease, WeCom WSS adapter, ACP client, dispatcher, and outbox pump
@@ -58,8 +58,8 @@ CHANNELGATEWAY_DB_PATH='user:password@tcp(mysql-host:3306)/channelgateway?charse
 `CHANNELGATEWAY_DB_PATH` also accepts `mysql://user:password@host:3306/db`
 URLs and converts them to the Go MySQL driver DSN internally.
 
-For durable channel traffic, use CloudAgent HTTP run protocol instead of ACP
-WebSocket:
+For durable channel traffic, use the CloudAgent HTTP session-event protocol
+instead of ACP WebSocket:
 
 ```bash
 CHANNELGATEWAY_ACP_URL=http://127.0.0.1:18094
@@ -69,22 +69,19 @@ CHANNELGATEWAY_RUNTIME_PROTOCOL=cloudagent
 In this mode `CHANNELGATEWAY_ACP_URL` is a legacy variable name: it is treated
 as the CloudAgent HTTP base URL. Do not append `/acp`.
 
-The CloudAgent HTTP run protocol is not WebSocket and not SSE. It uses ordinary
-HTTP JSON for session/run/result APIs, plus newline-delimited JSON streaming for
-run events:
+The CloudAgent HTTP session-event protocol is not WebSocket. It uses ordinary
+HTTP JSON for session APIs and user-message submit, plus Server-Sent Events for
+session event streaming:
 
 ```text
 GET  /v1/cloudagent/capabilities
 GET  /v1/cloudagent/sessions
 POST /v1/cloudagent/sessions
 GET  /v1/cloudagent/sessions/{session_id}
-POST /v1/cloudagent/sessions/{session_id}/runs
-GET  /v1/cloudagent/runs
-GET  /v1/cloudagent/runs/{run_id}
-GET  /v1/cloudagent/runs/{run_id}/events?after_seq=N
-GET  /v1/cloudagent/runs/{run_id}/events?after_seq=N&stream=true
-GET  /v1/cloudagent/runs/{run_id}/result
-POST /v1/cloudagent/runs/{run_id}/cancel
+POST /v1/cloudagent/sessions/{session_id}/events
+GET  /v1/cloudagent/sessions/{session_id}/events?after_seq=N
+GET  /v1/cloudagent/sessions/{session_id}/events?after_id=evt_x
+GET  /v1/cloudagent/sessions/{session_id}/events/stream
 ```
 
 All requests must include either `Authorization: Bearer ...` or both
@@ -105,10 +102,12 @@ curl -sS \
   "$CLOUDAGENT_BASE_URL/v1/cloudagent/capabilities"
 ```
 
-The response must advertise `protocol: "cloudagent.run"` and
-`run_protocol: true`.
+The response must advertise `protocol: "cloudagent.session_events"` and
+`session_event_protocol: true`. `run_protocol: true` may also appear because
+CloudAgent still keeps an internal durable run ledger for operators and
+debugging.
 
-Minimal HTTP run flow:
+Minimal HTTP session event flow:
 
 ```bash
 SESSION_ID=$(
@@ -121,42 +120,39 @@ SESSION_ID=$(
   python3 -c 'import json,sys; print(json.load(sys.stdin)["session_id"])'
 )
 
-IDEMPOTENCY_KEY="job_channel_example_$(date +%s)"
+IDEMPOTENCY_KEY="msg_channel_example_$(date +%s)"
 
-RUN_ID=$(
-  curl -sS \
+curl -sS \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: $IDEMPOTENCY_KEY" \
   -H "X-Tenant-ID: $CLOUDAGENT_TENANT_ID" \
   -H "X-Project-ID: $CLOUDAGENT_PROJECT_ID" \
-  -d '{"text":"Please reply CLOUDAGENT_RUN_OK only.","cwd":"/workspace","inbox_mode":"prompt"}' \
-  "$CLOUDAGENT_BASE_URL/v1/cloudagent/sessions/$SESSION_ID/runs" |
-  python3 -c 'import json,sys; print(json.load(sys.stdin)["run_id"])'
-)
+  -d '{"events":[{"type":"user.message","client_event_id":"'"$IDEMPOTENCY_KEY"'","content":[{"type":"text","text":"Please reply CLOUDAGENT_RUN_OK only."}]}]}' \
+  "$CLOUDAGENT_BASE_URL/v1/cloudagent/sessions/$SESSION_ID/events"
 
 curl -N -sS \
   -H "X-Tenant-ID: $CLOUDAGENT_TENANT_ID" \
   -H "X-Project-ID: $CLOUDAGENT_PROJECT_ID" \
-  "$CLOUDAGENT_BASE_URL/v1/cloudagent/runs/$RUN_ID/events?after_seq=0&stream=true"
-
-curl -sS \
-  -H "X-Tenant-ID: $CLOUDAGENT_TENANT_ID" \
-  -H "X-Project-ID: $CLOUDAGENT_PROJECT_ID" \
-  "$CLOUDAGENT_BASE_URL/v1/cloudagent/runs/$RUN_ID/result"
+  "$CLOUDAGENT_BASE_URL/v1/cloudagent/sessions/$SESSION_ID/events/stream?after_seq=0"
 ```
 
-Streaming response frames use `Content-Type: application/x-ndjson`; each line is
-one JSON frame:
+Streaming response frames use `Content-Type: text/event-stream`. Each `data:`
+payload is one public CloudAgent event JSON object:
 
-```json
-{"type":"event","event":{"seq":1,"run_id":"job_server_generated","kind":"message_delta","event":{}}}
-{"type":"heartbeat","after_seq":1}
-{"type":"run","run":{"run_id":"job_server_generated","status":"completed","stop_reason":"end_turn","output_text":"CLOUDAGENT_RUN_OK"}}
+```text
+id: evt_session_xxx_1
+event: agent.message
+data: {"id":"evt_session_xxx_1","seq":1,"type":"agent.message","run_id":"job_server_generated","session_id":"session_xxx","schema_version":"1.0","content":[{"type":"text","text":"CLOUDAGENT_RUN_OK"}]}
+
+id: evt_session_xxx_2
+event: session.status_idle
+data: {"id":"evt_session_xxx_2","seq":2,"type":"session.status_idle","run_id":"job_server_generated","session_id":"session_xxx","schema_version":"1.0","status":"idle","stop_reason":{"type":"end_turn"}}
 ```
 
 Persist the largest observed `seq` and reconnect with
 `after_seq=<last_seq>` after any timeout, restart, or network disconnect. The
-run continues even if the observer stream disconnects.
+run continues even if the observer stream disconnects. Clients may also resume
+with `after_id=<last_event_id>` or the standard `Last-Event-ID` SSE header.
 
 `Idempotency-Key` is the caller retry key. `run_id` is returned by the gateway
 and is the only id to use for stream/result/cancel. Legacy request body
@@ -165,6 +161,27 @@ and is the only id to use for stream/result/cancel. Legacy request body
 Devcloud uses the same mode with the in-cluster CloudAgent gateway service.
 Full integration details and live verification commands are documented in
 [`cloudagent-http-run-integration.md`](../gateway/docs/cloudagent-http-run-integration.md).
+
+### Session Identity Contract
+
+For CloudAgent HTTP mode, ChannelGateway treats `cloudagent_session_id` as the
+durable identity for a channel conversation. The binding is:
+
+```text
+channel conversation -> channel_conversations.session_key -> cloudagent_session_id
+```
+
+ChannelGateway must not silently replace that CloudAgent session when runtime
+restore fails. A failed restore returns the normal recovery fallback reply and
+keeps the existing binding so operators can retry the same session. `/reset` is
+the only user-facing path that creates a new CloudAgent session and a fresh
+workspace.
+
+`workspace_key` is retained in the ChannelGateway store for old rows and
+diagnostics, but it is not part of the CloudAgent HTTP protocol unless the
+CloudAgent capability document explicitly advertises workspace reuse support.
+Current CloudAgent HTTP deployments should rely on the server-side session
+identity to own workspace state.
 
 For local or CI bootstrap, multiple WeCom accounts can be seeded with snake_case
 JSON. This is a bootstrap surface; production should treat the database account
@@ -208,10 +225,13 @@ still preserving the one-owner channel lease contract.
 
 `CHANNELGATEWAY_SESSION_IDLE_CLOSE` controls proactive ACP session storage for
 channel conversations. The default is `1m`: if a conversation has an ACP session
-and no channel activity for that duration, the active channel owner calls
-standard ACP `session/close`. CloudAgent then emits workspace lifecycle storage
-events, and the channel callback may send the configured "sleep" notice. Set it
-to `0` to disable proactive idle close.
+and no channel activity for that duration, the active channel owner calls the
+runtime close operation only when the selected runtime protocol advertises it.
+CloudAgent HTTP mode requires the `/v1/cloudagent/capabilities` response to
+explicitly list close support; otherwise idle close is skipped without marking
+the conversation closed. When close succeeds, CloudAgent emits workspace
+lifecycle storage events, and the channel callback may send the configured
+"sleep" notice. Set the value to `0` to disable proactive idle close.
 
 ## WeCom Handshake Check
 

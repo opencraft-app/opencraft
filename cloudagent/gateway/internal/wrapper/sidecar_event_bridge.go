@@ -30,6 +30,13 @@ type sidecarStdoutEvent struct {
 	RawOutput   json.RawMessage `json:"raw_output"`
 }
 
+const (
+	sidecarWrapperEventMarker  = "WRAPPER_EVENT_JSON="
+	sidecarWrapperResultMarker = "WRAPPER_RESULT_JSON="
+	sidecarWrapperErrorMarker  = "WRAPPER_ERROR_JSON="
+	sidecarTimelineSource      = "timeline source=hermes_sidecar"
+)
+
 func sidecarRuntimeHostEventFields(event sidecarStdoutEvent) string {
 	var fields []string
 	if event.ExitCode != nil {
@@ -176,15 +183,29 @@ func (p *sidecarStdoutParser) drain(flush bool) []sidecarStdoutEvent {
 func parseSidecarStdoutEvents(lines []string) []sidecarStdoutEvent {
 	var events []sidecarStdoutEvent
 	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "WRAPPER_EVENT_JSON=") {
-			continue
-		}
-		raw := strings.TrimPrefix(line, "WRAPPER_EVENT_JSON=")
 		var event sidecarStdoutEvent
-		if err := json.Unmarshal([]byte(raw), &event); err == nil {
+		if decodeSidecarWrapperJSON(line, sidecarWrapperEventMarker, &event) {
 			events = append(events, event)
 		}
 	}
 	return events
+}
+
+func decodeSidecarWrapperJSON(line, marker string, out any) bool {
+	idx := strings.Index(line, marker)
+	if idx < 0 {
+		return false
+	}
+	raw := strings.TrimSpace(line[idx+len(marker):])
+	if raw == "" {
+		return false
+	}
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	return decoder.Decode(out) == nil
+}
+
+func containsSidecarWrapperControl(line string) bool {
+	return strings.Contains(line, sidecarWrapperEventMarker) ||
+		strings.Contains(line, sidecarWrapperResultMarker) ||
+		strings.Contains(line, sidecarWrapperErrorMarker)
 }
