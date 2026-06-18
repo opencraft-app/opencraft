@@ -59,7 +59,7 @@ func TestCloudAgentHTTPProtocolRunReplayAndResult(t *testing.T) {
 	}
 	var replay struct {
 		Run    cloudAgentRunResponse `json:"run"`
-		Events []cloudAgentRunEvent  `json:"events"`
+		Events []map[string]any      `json:"events"`
 	}
 	if err := json.Unmarshal(eventsResp.Body.Bytes(), &replay); err != nil {
 		t.Fatal(err)
@@ -67,25 +67,130 @@ func TestCloudAgentHTTPProtocolRunReplayAndResult(t *testing.T) {
 	if replay.Run.RunID != submitted.RunID || len(replay.Events) == 0 {
 		t.Fatalf("expected replay events for run, got %#v", replay)
 	}
-	if replay.Events[0].Seq <= 0 || replay.Events[0].SessionID != session.SessionID {
+	if replay.Events[0]["seq"].(float64) <= 0 || replay.Events[0]["session_id"] != session.SessionID {
 		t.Fatalf("bad replay event identity: %#v", replay.Events[0])
 	}
-	if replay.Events[0].Kind == "" {
-		t.Fatalf("cloudagent protocol events must expose stable kind: %#v", replay.Events[0])
+	if replay.Events[0]["type"] == "" {
+		t.Fatalf("cloudagent protocol events must expose Qoder-style type: %#v", replay.Events[0])
+	}
+	replayBody := eventsResp.Body.String()
+	for _, forbidden := range []string{`"sessionUpdate"`, `"kind":"`, `"event":{`, `WRAPPER_EVENT_JSON`, `timeline source=hermes_sidecar`} {
+		if strings.Contains(replayBody, forbidden) {
+			t.Fatalf("non-stream replay leaked internal field %q in:\n%s", forbidden, replayBody)
+		}
 	}
 
-	afterResp := request(t, srv, http.MethodGet, "/v1/cloudagent/runs/"+submitted.RunID+"/events?after_seq="+itoa64(replay.Events[len(replay.Events)-1].Seq), "tenant-a", "project-a", nil, "")
+	lastSeq := int64(replay.Events[len(replay.Events)-1]["seq"].(float64))
+	afterResp := request(t, srv, http.MethodGet, "/v1/cloudagent/runs/"+submitted.RunID+"/events?after_seq="+itoa64(lastSeq), "tenant-a", "project-a", nil, "")
 	if afterResp.Code != http.StatusOK {
 		t.Fatalf("after events status=%d body=%s", afterResp.Code, afterResp.Body.String())
 	}
 	var afterReplay struct {
-		Events []cloudAgentRunEvent `json:"events"`
+		Events []map[string]any `json:"events"`
 	}
 	if err := json.Unmarshal(afterResp.Body.Bytes(), &afterReplay); err != nil {
 		t.Fatal(err)
 	}
 	if len(afterReplay.Events) != 0 {
 		t.Fatalf("after_seq replay should not repeat old events: %#v", afterReplay.Events)
+	}
+}
+
+func TestCloudAgentHTTPSessionEventAPIIsQoderLike(t *testing.T) {
+	originalHeartbeat := cloudAgentRunStreamHeartbeatInterval
+	cloudAgentRunStreamHeartbeatInterval = 10 * time.Millisecond
+	t.Cleanup(func() {
+		cloudAgentRunStreamHeartbeatInterval = originalHeartbeat
+	})
+	srv, _ := newTestServer(t, FakeWorker{OutputText: "hello from session events"})
+	sessionResp := jsonRequest(t, srv, http.MethodPost, "/v1/cloudagent/sessions", "tenant-a", "project-a", map[string]any{
+		"cwd": "/workspace",
+	})
+	if sessionResp.Code != http.StatusOK {
+		t.Fatalf("session create status=%d body=%s", sessionResp.Code, sessionResp.Body.String())
+	}
+	var session struct {
+		SessionID string `json:"session_id"`
+	}
+	if err := json.Unmarshal(sessionResp.Body.Bytes(), &session); err != nil {
+		t.Fatal(err)
+	}
+
+	submitResp := jsonRequestWithHeaders(t, srv, http.MethodPost, "/v1/cloudagent/sessions/"+session.SessionID+"/events", "tenant-a", "project-a", map[string]any{
+		"events": []map[string]any{
+			{
+				"type":            "user.message",
+				"client_event_id": "client_msg_1",
+				"content":         []map[string]string{{"type": "text", "text": "say hi"}},
+			},
+		},
+	}, map[string]string{"Idempotency-Key": "client_msg_1"})
+	if submitResp.Code != http.StatusOK {
+		t.Fatalf("session event submit status=%d body=%s", submitResp.Code, submitResp.Body.String())
+	}
+	var submitted struct {
+		Events []map[string]any `json:"events"`
+	}
+	if err := json.Unmarshal(submitResp.Body.Bytes(), &submitted); err != nil {
+		t.Fatal(err)
+	}
+	if len(submitted.Events) == 0 || submitted.Events[0]["type"] != "user.message" || submitted.Events[0]["session_id"] != session.SessionID {
+		t.Fatalf("submit should return public user.message event, got %#v", submitted.Events)
+	}
+	runID, _ := submitted.Events[0]["run_id"].(string)
+	if runID == "" {
+		t.Fatalf("public event may expose run_id as metadata, got %#v", submitted.Events[0])
+	}
+
+	result := waitCloudAgentRun(t, srv, runID)
+	if result.Status != "completed" {
+		t.Fatalf("run backing session event did not complete: %#v", result)
+	}
+	streamResp := request(t, srv, http.MethodGet, "/v1/cloudagent/sessions/"+session.SessionID+"/events/stream?after_seq=0", "tenant-a", "project-a", nil, "")
+	if streamResp.Code != http.StatusOK {
+		t.Fatalf("session stream status=%d body=%s", streamResp.Code, streamResp.Body.String())
+	}
+	body := streamResp.Body.String()
+	for _, want := range []string{
+		"event: user.message",
+		"event: agent.message",
+		"event: session.status_idle",
+		"hello",
+		"events",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("session stream missing %q in:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, `"sessionUpdate"`) || strings.Contains(body, "WRAPPER_EVENT_JSON") {
+		t.Fatalf("session stream leaked internal event shape:\n%s", body)
+	}
+	terminalID := cloudAgentSSEEventID(body, "session.status_idle")
+	if terminalID == "" {
+		t.Fatalf("session stream terminal event id missing:\n%s", body)
+	}
+	replayResp := request(t, srv, http.MethodGet, "/v1/cloudagent/sessions/"+session.SessionID+"/events?after_id="+terminalID, "tenant-a", "project-a", nil, "")
+	if replayResp.Code != http.StatusOK {
+		t.Fatalf("session replay status=%d body=%s", replayResp.Code, replayResp.Body.String())
+	}
+	if strings.Contains(replayResp.Body.String(), "agent.message") {
+		t.Fatalf("after_id replay should not repeat terminal run events: %s", replayResp.Body.String())
+	}
+}
+
+func TestCloudAgentHTTPSessionEventsRejectMissingSession(t *testing.T) {
+	srv, _ := newTestServer(t, FakeWorker{})
+	for _, target := range []string{
+		"/v1/cloudagent/sessions/session_missing/events?after_seq=0",
+		"/v1/cloudagent/sessions/session_missing/events/stream?after_seq=0",
+	} {
+		resp := request(t, srv, http.MethodGet, target, "tenant-a", "project-a", nil, "")
+		if resp.Code != http.StatusNotFound {
+			t.Fatalf("%s status=%d body=%s", target, resp.Code, resp.Body.String())
+		}
+		if !strings.Contains(resp.Body.String(), "session_not_found") {
+			t.Fatalf("%s should return structured session_not_found, got %s", target, resp.Body.String())
+		}
 	}
 }
 
@@ -102,35 +207,79 @@ func TestCloudAgentHTTPProtocolCapabilities(t *testing.T) {
 		t.Fatalf("capabilities status=%d body=%s", resp.Code, resp.Body.String())
 	}
 	var out struct {
-		Object      string   `json:"object"`
-		Protocol    string   `json:"protocol"`
-		Version     string   `json:"version"`
-		RunProtocol bool     `json:"run_protocol"`
-		Features    []string `json:"features"`
-		Endpoints   []string `json:"endpoints"`
+		Object               string   `json:"object"`
+		Protocol             string   `json:"protocol"`
+		Version              string   `json:"version"`
+		RunProtocol          bool     `json:"run_protocol"`
+		SessionEventProtocol bool     `json:"session_event_protocol"`
+		Features             []string `json:"features"`
+		Endpoints            []string `json:"endpoints"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &out); err != nil {
 		t.Fatal(err)
 	}
-	if out.Object != "cloudagent.capabilities" || out.Protocol != "cloudagent.run" || out.Version != "v1" || !out.RunProtocol {
+	if out.Object != "cloudagent.capabilities" || out.Protocol != "cloudagent.session_events" || out.Version != "v1" || !out.SessionEventProtocol || !out.RunProtocol {
 		t.Fatalf("unexpected capabilities response: %#v", out)
 	}
-	if !stringSliceContains(out.Features, "after_seq_replay") || !stringSliceContains(out.Features, "idempotency_key") || !stringSliceContains(out.Features, "server_generated_run_id") {
+	if !stringSliceContains(out.Features, "session_event_submit") || !stringSliceContains(out.Features, "idempotency_key") || !stringSliceContains(out.Features, "last_event_id_replay") || !stringSliceContains(out.Features, "sse_event_stream") || !stringSliceContains(out.Features, "session_close") {
 		t.Fatalf("capabilities missing durable protocol features: %#v", out.Features)
 	}
 	for _, endpoint := range []string{
 		"GET /v1/cloudagent/sessions",
-		"GET /v1/cloudagent/runs",
-		"GET /v1/cloudagent/runs/{run_id}/events?after_seq=N&stream=true",
+		"POST /v1/cloudagent/sessions/{session_id}/close",
+		"POST /v1/cloudagent/sessions/{session_id}/events",
+		"GET /v1/cloudagent/sessions/{session_id}/events/stream",
 	} {
 		if !stringSliceContains(out.Endpoints, endpoint) {
 			t.Fatalf("capabilities missing endpoint %q: %#v", endpoint, out.Endpoints)
 		}
 	}
-	for _, feature := range []string{"session_list", "run_list"} {
+	for _, feature := range []string{"session_list", "internal_run_ledger"} {
 		if !stringSliceContains(out.Features, feature) {
 			t.Fatalf("capabilities missing feature %q: %#v", feature, out.Features)
 		}
+	}
+}
+
+func TestCloudAgentHTTPSessionClosePersistsClosedSession(t *testing.T) {
+	srv, _ := newTestServer(t, FakeWorker{})
+	sessionID := createCloudAgentHTTPSession(t, srv)
+
+	closeResp := request(t, srv, http.MethodPost, "/v1/cloudagent/sessions/"+sessionID+"/close", "tenant-a", "project-a", nil, "")
+	if closeResp.Code != http.StatusOK {
+		t.Fatalf("session close status=%d body=%s", closeResp.Code, closeResp.Body.String())
+	}
+	var closed map[string]any
+	if err := json.Unmarshal(closeResp.Body.Bytes(), &closed); err != nil {
+		t.Fatal(err)
+	}
+	if closed["session_id"] != sessionID || closed["closed"] != true || closed["state"] != string(acpRuntimeStateClosed) {
+		t.Fatalf("unexpected close response: %#v", closed)
+	}
+
+	loadResp := request(t, srv, http.MethodGet, "/v1/cloudagent/sessions/"+sessionID, "tenant-a", "project-a", nil, "")
+	if loadResp.Code != http.StatusOK {
+		t.Fatalf("session load status=%d body=%s", loadResp.Code, loadResp.Body.String())
+	}
+	var loaded map[string]any
+	if err := json.Unmarshal(loadResp.Body.Bytes(), &loaded); err != nil {
+		t.Fatal(err)
+	}
+	if loaded["session_id"] != sessionID || loaded["state"] != string(acpRuntimeStateClosed) {
+		t.Fatalf("load after close should preserve the same closed session: %#v", loaded)
+	}
+}
+
+func TestCloudAgentHTTPSessionCloseRejectsOtherScope(t *testing.T) {
+	srv, _ := newTestServer(t, FakeWorker{})
+	sessionID := createCloudAgentHTTPSession(t, srv)
+
+	closeResp := request(t, srv, http.MethodPost, "/v1/cloudagent/sessions/"+sessionID+"/close", "tenant-b", "project-a", nil, "")
+	if closeResp.Code != http.StatusForbidden {
+		t.Fatalf("cross-scope close status=%d body=%s", closeResp.Code, closeResp.Body.String())
+	}
+	if !strings.Contains(closeResp.Body.String(), "session_close_failed") || !strings.Contains(closeResp.Body.String(), "outside caller scope") {
+		t.Fatalf("cross-scope close should return structured scope error: %s", closeResp.Body.String())
 	}
 }
 
@@ -158,8 +307,16 @@ func TestCloudAgentHTTPProtocolListsSessionsAndRuns(t *testing.T) {
 	if otherRunResp.Code != http.StatusOK {
 		t.Fatalf("other scope run submit status=%d body=%s", otherRunResp.Code, otherRunResp.Body.String())
 	}
+	var otherSubmitted cloudAgentRunResponse
+	if err := json.Unmarshal(otherRunResp.Body.Bytes(), &otherSubmitted); err != nil {
+		t.Fatal(err)
+	}
+	if otherSubmitted.RunID == "" {
+		t.Fatalf("other scope run response missing run_id: %s", otherRunResp.Body.String())
+	}
 	_ = waitCloudAgentRun(t, srv, runA)
 	_ = waitCloudAgentRun(t, srv, runB)
+	_ = waitCloudAgentRunWithScope(t, srv, otherSubmitted.RunID, "tenant-b", "project-a")
 
 	sessionsResp := request(t, srv, http.MethodGet, "/v1/cloudagent/sessions?limit=1", "tenant-a", "project-a", nil, "")
 	if sessionsResp.Code != http.StatusOK {
@@ -190,7 +347,7 @@ func TestCloudAgentHTTPProtocolListsSessionsAndRuns(t *testing.T) {
 	if err := json.Unmarshal(runsResp.Body.Bytes(), &runsList); err != nil {
 		t.Fatal(err)
 	}
-	if runsList.Object != "list" || !cloudAgentRunListContains(runsList.Data, runA) || !cloudAgentRunListContains(runsList.Data, runB) || cloudAgentRunListContains(runsList.Data, "job_other_scope") {
+	if runsList.Object != "list" || !cloudAgentRunListContains(runsList.Data, runA) || !cloudAgentRunListContains(runsList.Data, runB) || cloudAgentRunListContains(runsList.Data, otherSubmitted.RunID) {
 		t.Fatalf("unexpected scoped run list: %#v", runsList)
 	}
 
@@ -237,7 +394,7 @@ func TestCloudAgentHTTPProtocolScopeGuardsRuns(t *testing.T) {
 	}
 }
 
-func TestCloudAgentHTTPProtocolStreamsReplayAsNDJSON(t *testing.T) {
+func TestCloudAgentHTTPProtocolStreamsReplayAsQoderSSE(t *testing.T) {
 	srv, _ := newTestServer(t, FakeWorker{OutputText: "stream replay"})
 	sessionResp := jsonRequest(t, srv, http.MethodPost, "/v1/cloudagent/sessions", "tenant-a", "project-a", map[string]any{})
 	if sessionResp.Code != http.StatusOK {
@@ -263,9 +420,169 @@ func TestCloudAgentHTTPProtocolStreamsReplayAsNDJSON(t *testing.T) {
 	if streamResp.Code != http.StatusOK {
 		t.Fatalf("stream status=%d body=%s", streamResp.Code, streamResp.Body.String())
 	}
+	if got := streamResp.Header().Get("Content-Type"); !strings.Contains(got, "text/event-stream") {
+		t.Fatalf("stream content-type=%q body=%s", got, streamResp.Body.String())
+	}
 	body := streamResp.Body.String()
-	if !strings.Contains(body, `"type":"event"`) || !strings.Contains(body, `"type":"run"`) || !strings.Contains(body, `"status":"completed"`) {
-		t.Fatalf("stream replay should include event and terminal run records, got:\n%s", body)
+	for _, want := range []string{
+		"event: user.message",
+		"event: agent.message",
+		"event: session.status_idle",
+		`"schema_version":"1.0"`,
+		`"stop_reason":{"type":"end_turn"}`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("stream replay missing %q in:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, `"type":"event"`) || strings.Contains(body, `"sessionUpdate"`) {
+		t.Fatalf("stream replay should not expose internal frame or ACP update shape:\n%s", body)
+	}
+	var currentID string
+	var terminalID string
+	for _, line := range strings.Split(body, "\n") {
+		if strings.HasPrefix(line, "id: ") {
+			currentID = strings.TrimSpace(strings.TrimPrefix(line, "id: "))
+		}
+		if strings.HasPrefix(line, "event: session.status_idle") {
+			terminalID = currentID
+		}
+	}
+	if terminalID == "" || strings.HasSuffix(terminalID, "_terminal") {
+		t.Fatalf("terminal SSE event must have a numeric Last-Event-ID-compatible id, got %q in:\n%s", terminalID, body)
+	}
+	resumeResp := request(t, srv, http.MethodGet, "/v1/cloudagent/runs/"+submitted.RunID+"/events?after_id="+terminalID+"&stream=true", "tenant-a", "project-a", nil, "")
+	if resumeResp.Code != http.StatusOK {
+		t.Fatalf("terminal after_id should be accepted, status=%d body=%s", resumeResp.Code, resumeResp.Body.String())
+	}
+}
+
+func TestCloudAgentHTTPProtocolSSECursorsPreferAfterSeqAndSupportLastEventID(t *testing.T) {
+	srv, _ := newTestServer(t, FakeWorker{OutputText: "cursor replay"})
+	sessionID := createCloudAgentHTTPSession(t, srv)
+	runID := submitCloudAgentHTTPRun(t, srv, sessionID, "job_cursor", "cursor input")
+	_ = waitCloudAgentRun(t, srv, runID)
+
+	full := request(t, srv, http.MethodGet, "/v1/cloudagent/runs/"+runID+"/events?after_seq=0&stream=true", "tenant-a", "project-a", nil, "")
+	if full.Code != http.StatusOK {
+		t.Fatalf("full stream status=%d body=%s", full.Code, full.Body.String())
+	}
+	userID := cloudAgentSSEEventID(full.Body.String(), "user.message")
+	terminalID := cloudAgentSSEEventID(full.Body.String(), "session.status_idle")
+	if userID == "" || terminalID == "" {
+		t.Fatalf("expected user and terminal SSE ids, user=%q terminal=%q body=\n%s", userID, terminalID, full.Body.String())
+	}
+
+	afterSeqWins := request(t, srv, http.MethodGet, "/v1/cloudagent/runs/"+runID+"/events?after_seq=1&after_id="+terminalID+"&stream=true", "tenant-a", "project-a", nil, "")
+	if afterSeqWins.Code != http.StatusOK {
+		t.Fatalf("after_seq stream status=%d body=%s", afterSeqWins.Code, afterSeqWins.Body.String())
+	}
+	if strings.Contains(afterSeqWins.Body.String(), "event: user.message") || !strings.Contains(afterSeqWins.Body.String(), "event: agent.message") {
+		t.Fatalf("after_seq must win over after_id and replay only seq > 1, got:\n%s", afterSeqWins.Body.String())
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/cloudagent/runs/"+runID+"/events?stream=true", nil)
+	req.Header.Set("X-Tenant-ID", "tenant-a")
+	req.Header.Set("X-Project-ID", "project-a")
+	req.Header.Set("Last-Event-ID", userID)
+	resp := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("Last-Event-ID stream status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	if strings.Contains(resp.Body.String(), "event: user.message") || !strings.Contains(resp.Body.String(), "event: agent.message") {
+		t.Fatalf("Last-Event-ID should resume after the supplied event id, got:\n%s", resp.Body.String())
+	}
+}
+
+func TestCloudAgentHTTPProtocolStreamsErrorsAsSequencedSSE(t *testing.T) {
+	srv, _ := newTestServer(t, FakeWorker{OutputText: "unused"})
+
+	resp := request(t, srv, http.MethodGet, "/v1/cloudagent/runs/job_missing/events?after_seq=3&stream=true", "tenant-a", "project-a", nil, "")
+	if resp.Code != http.StatusOK {
+		t.Fatalf("stream error status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	body := resp.Body.String()
+	for _, want := range []string{
+		"id: evt_job_missing_4",
+		"event: session.error",
+		`"seq":4`,
+		`"type":"session.error"`,
+		`"run_id":"job_missing"`,
+		`"schema_version":"1.0"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("stream error missing %q in:\n%s", want, body)
+		}
+	}
+}
+
+func TestCloudAgentHTTPProtocolFailedRunStreamsPublicSessionError(t *testing.T) {
+	srv, _ := newTestServer(t, failingCloudAgentWorker{message: "provider exploded"})
+	sessionID := createCloudAgentHTTPSession(t, srv)
+	runID := submitCloudAgentHTTPRun(t, srv, sessionID, "job_failed_public_stream", "fail")
+	result := waitCloudAgentRun(t, srv, runID)
+	if result.Status != "failed" || !strings.Contains(result.Error, "provider exploded") {
+		t.Fatalf("expected failed run, got %#v", result)
+	}
+
+	resp := request(t, srv, http.MethodGet, "/v1/cloudagent/runs/"+runID+"/events?after_seq=0&stream=true", "tenant-a", "project-a", nil, "")
+	if resp.Code != http.StatusOK {
+		t.Fatalf("failed stream status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	body := resp.Body.String()
+	for _, want := range []string{
+		"event: user.message",
+		"event: session.error",
+		`"type":"session.error"`,
+		`"status":"error"`,
+		"provider exploded",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("failed stream missing %q in:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, `"type":"event"`) || strings.Contains(body, `"sessionUpdate"`) {
+		t.Fatalf("failed stream leaked internal event shape:\n%s", body)
+	}
+
+	replay := request(t, srv, http.MethodGet, "/v1/cloudagent/runs/"+runID+"/events?after_seq=0", "tenant-a", "project-a", nil, "")
+	if replay.Code != http.StatusOK {
+		t.Fatalf("failed replay status=%d body=%s", replay.Code, replay.Body.String())
+	}
+	replayBody := replay.Body.String()
+	for _, want := range []string{`"type":"session.error"`, "provider exploded"} {
+		if !strings.Contains(replayBody, want) {
+			t.Fatalf("failed non-stream replay missing %q in:\n%s", want, replayBody)
+		}
+	}
+	if strings.Contains(replayBody, `"sessionUpdate"`) || strings.Contains(replayBody, `"type":"agent.raw"`) {
+		t.Fatalf("failed non-stream replay leaked internal event shape:\n%s", replayBody)
+	}
+}
+
+func TestCloudAgentPublicRunEventPreservesToolResultContent(t *testing.T) {
+	event := cloudAgentRunEvent{
+		Seq:       1,
+		RunID:     "job_tool",
+		SessionID: "session_tool",
+		Kind:      "tool_call_update",
+		Event: json.RawMessage(`{
+			"sessionUpdate":"tool_call_update",
+			"toolCallId":"call_1",
+			"name":"terminal",
+			"status":"completed",
+			"content":[{"type":"content","content":"ok"}]
+		}`),
+		CreatedAt: time.Now().UTC(),
+	}
+	public := cloudAgentPublicRunEvent(event)
+	if public["type"] != "agent.tool_result" || public["tool_use_id"] != "call_1" {
+		t.Fatalf("unexpected public tool event: %#v", public)
+	}
+	content, ok := public["content"].([]map[string]any)
+	if !ok || len(content) != 1 || content[0]["text"] != "ok" {
+		t.Fatalf("tool result content was not preserved: %#v", public["content"])
 	}
 }
 
@@ -311,6 +628,57 @@ func TestCloudAgentHTTPProtocolSubmitIdempotencyKeyIsIdempotent(t *testing.T) {
 	}
 	if got := worker.calls.Load(); got != 1 {
 		t.Fatalf("duplicate idempotency key must execute worker once, got %d", got)
+	}
+}
+
+func TestCloudAgentHTTPProtocolIdempotencyHeaderOverridesBodyRunID(t *testing.T) {
+	worker := &countingWorker{FakeWorker: FakeWorker{OutputText: "header wins"}}
+	srv, _ := newTestServer(t, worker)
+	sessionID := createCloudAgentHTTPSession(t, srv)
+
+	first := jsonRequestWithHeaders(t, srv, http.MethodPost, "/v1/cloudagent/sessions/"+sessionID+"/runs", "tenant-a", "project-a", map[string]any{
+		"run_id": "body_key_one",
+		"text":   "same text",
+	}, map[string]string{"Idempotency-Key": "header_key"})
+	if first.Code != http.StatusOK {
+		t.Fatalf("first submit status=%d body=%s", first.Code, first.Body.String())
+	}
+	var firstRun cloudAgentRunResponse
+	if err := json.Unmarshal(first.Body.Bytes(), &firstRun); err != nil {
+		t.Fatal(err)
+	}
+	if firstRun.IdempotencyKey != "header_key" || firstRun.RunID == "header_key" || firstRun.RunID == "body_key_one" {
+		t.Fatalf("header idempotency key should override body run_id and server should generate run_id, got %#v", firstRun)
+	}
+	_ = waitCloudAgentRun(t, srv, firstRun.RunID)
+
+	duplicate := jsonRequestWithHeaders(t, srv, http.MethodPost, "/v1/cloudagent/sessions/"+sessionID+"/runs", "tenant-a", "project-a", map[string]any{
+		"run_id": "body_key_two",
+		"text":   "same text",
+	}, map[string]string{"Idempotency-Key": "header_key"})
+	if duplicate.Code != http.StatusOK {
+		t.Fatalf("duplicate submit status=%d body=%s", duplicate.Code, duplicate.Body.String())
+	}
+	var duplicateRun cloudAgentRunResponse
+	if err := json.Unmarshal(duplicate.Body.Bytes(), &duplicateRun); err != nil {
+		t.Fatal(err)
+	}
+	if duplicateRun.RunID != firstRun.RunID || duplicateRun.IdempotencyKey != "header_key" {
+		t.Fatalf("body run_id changes must not affect header idempotency, got %#v want run_id %s", duplicateRun, firstRun.RunID)
+	}
+
+	conflict := jsonRequestWithHeaders(t, srv, http.MethodPost, "/v1/cloudagent/sessions/"+sessionID+"/runs", "tenant-a", "project-a", map[string]any{
+		"run_id": "body_key_three",
+		"text":   "different text",
+	}, map[string]string{"Idempotency-Key": "header_key"})
+	if conflict.Code != http.StatusConflict {
+		t.Fatalf("same idempotency key with different body should conflict, status=%d body=%s", conflict.Code, conflict.Body.String())
+	}
+	if !strings.Contains(conflict.Body.String(), "idempotency key reused with a different request body") {
+		t.Fatalf("conflict should explain idempotency mismatch, body=%s", conflict.Body.String())
+	}
+	if got := worker.calls.Load(); got != 1 {
+		t.Fatalf("conflicting duplicate must not execute worker again, got %d calls", got)
 	}
 }
 
@@ -635,20 +1003,23 @@ func TestCloudAgentHTTPProtocolStreamsAppendOnlyEventsAcrossGatewayInstances(t *
 	}
 	body := streamResp.Body.String()
 	for _, want := range []string{
-		`"type":"event"`,
-		`"kind":"user_message"`,
+		`event: user.message`,
+		`event: agent.message`,
 		`stream from gateway b`,
 		`first `,
 		`second`,
-		`"type":"run"`,
-		`"status":"completed"`,
+		`event: session.status_idle`,
+		`"status":"idle"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("cross-gateway stream missing %q in:\n%s", want, body)
 		}
 	}
-	if strings.Count(body, `"type":"event"`) < 3 {
+	if strings.Count(body, "event: agent.message") < 2 || strings.Count(body, "event: user.message") < 1 {
 		t.Fatalf("cross-gateway stream should expose append-only user + two assistant events, got:\n%s", body)
+	}
+	if strings.Contains(body, `"sessionUpdate"`) {
+		t.Fatalf("cross-gateway stream must not expose ACP update shape:\n%s", body)
 	}
 }
 
@@ -701,6 +1072,44 @@ func TestCloudAgentHTTPProtocolRejectsInvalidAfterSeq(t *testing.T) {
 		if !strings.Contains(resp.Body.String(), "invalid_after_seq") {
 			t.Fatalf("invalid after_seq response should expose protocol error code, got %s", resp.Body.String())
 		}
+	}
+}
+
+func TestCloudAgentHTTPProtocolRejectsInvalidEventCursors(t *testing.T) {
+	srv, _ := newTestServer(t, FakeWorker{OutputText: "unused"})
+	sessionID := createCloudAgentHTTPSession(t, srv)
+	if err := srv.store.CreateCloudAgentRun(cloudAgentRunRecord{
+		RunID:     "job_invalid_cursor",
+		SessionID: sessionID,
+		Status:    "running",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, target := range []string{
+		"/v1/cloudagent/runs/job_invalid_cursor/events?after_id=evt_job_invalid_cursor_terminal",
+		"/v1/cloudagent/runs/job_invalid_cursor/events?after_id=not-an-event-id&stream=true",
+	} {
+		resp := request(t, srv, http.MethodGet, target, "tenant-a", "project-a", nil, "")
+		if resp.Code != http.StatusBadRequest {
+			t.Fatalf("invalid event cursor target %s should return 400, got status=%d body=%s", target, resp.Code, resp.Body.String())
+		}
+		if !strings.Contains(resp.Body.String(), "invalid_after_seq") {
+			t.Fatalf("invalid event cursor response should expose protocol error code, got %s", resp.Body.String())
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/cloudagent/runs/job_invalid_cursor/events?stream=true", nil)
+	req.Header.Set("X-Tenant-ID", "tenant-a")
+	req.Header.Set("X-Project-ID", "project-a")
+	req.Header.Set("Last-Event-ID", "evt_job_invalid_cursor_terminal")
+	resp := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(resp, req)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("invalid Last-Event-ID should return 400, got status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "invalid_after_seq") {
+		t.Fatalf("invalid Last-Event-ID response should expose protocol error code, got %s", resp.Body.String())
 	}
 }
 
@@ -823,7 +1232,7 @@ func TestCloudAgentHTTPProtocolReplaysRuntimeEventsAfterGatewayLedgerLoss(t *tes
 	}
 	var replay struct {
 		Run    cloudAgentRunResponse `json:"run"`
-		Events []cloudAgentRunEvent  `json:"events"`
+		Events []map[string]any      `json:"events"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &replay); err != nil {
 		t.Fatal(err)
@@ -834,15 +1243,19 @@ func TestCloudAgentHTTPProtocolReplaysRuntimeEventsAfterGatewayLedgerLoss(t *tes
 	if len(replay.Events) != 1 {
 		t.Fatalf("expected one recovered runtime event, got %#v", replay.Events)
 	}
-	if replay.Events[0].Seq != 2 || replay.Events[0].Kind != "assistant_text" {
+	if gotSeq, _ := replay.Events[0]["seq"].(float64); gotSeq != 2 {
 		t.Fatalf("runtime event should be offset after local user event, got %#v", replay.Events[0])
 	}
-	var payload map[string]any
-	if err := json.Unmarshal(replay.Events[0].Event, &payload); err != nil {
-		t.Fatal(err)
+	if replay.Events[0]["type"] != "agent.message" || replay.Events[0]["turn_id"] != turn.TurnID {
+		t.Fatalf("unexpected recovered event: %#v", replay.Events[0])
 	}
-	if payload["sessionUpdate"] != "agent_message_chunk" || payload["turnId"] != turn.TurnID {
-		t.Fatalf("unexpected recovered payload: %#v", payload)
+	content, ok := replay.Events[0]["content"].([]any)
+	if !ok || len(content) != 1 {
+		t.Fatalf("unexpected recovered content: %#v", replay.Events[0]["content"])
+	}
+	block, ok := content[0].(map[string]any)
+	if !ok || block["type"] != "text" || block["text"] != "runtime replayed answer" {
+		t.Fatalf("unexpected recovered content block: %#v", content)
 	}
 	manager.mu.Lock()
 	manager.runReadErr = errors.New("runtime reader is gone")
@@ -853,7 +1266,7 @@ func TestCloudAgentHTTPProtocolReplaysRuntimeEventsAfterGatewayLedgerLoss(t *tes
 	}
 	var durableReplay struct {
 		Run    cloudAgentRunResponse `json:"run"`
-		Events []cloudAgentRunEvent  `json:"events"`
+		Events []map[string]any      `json:"events"`
 	}
 	if err := json.Unmarshal(durableResp.Body.Bytes(), &durableReplay); err != nil {
 		t.Fatal(err)
@@ -864,8 +1277,8 @@ func TestCloudAgentHTTPProtocolReplaysRuntimeEventsAfterGatewayLedgerLoss(t *tes
 	if len(durableReplay.Events) != 2 {
 		t.Fatalf("runtime replay import should persist user and assistant events, got %#v", durableReplay.Events)
 	}
-	if durableReplay.Events[0].Kind != "user_message" || durableReplay.Events[1].Kind != "assistant_text" {
-		t.Fatalf("durable replay should keep event order and kinds, got %#v", durableReplay.Events)
+	if durableReplay.Events[0]["type"] != "user.message" || durableReplay.Events[1]["type"] != "agent.message" {
+		t.Fatalf("durable replay should keep public event order and types, got %#v", durableReplay.Events)
 	}
 }
 
@@ -962,10 +1375,14 @@ func TestCloudAgentHTTPProtocolCancelMarksRunTerminalWhenRuntimeIdentityIsMissin
 }
 
 func waitCloudAgentRun(t *testing.T, srv *Server, runID string) cloudAgentRunResponse {
+	return waitCloudAgentRunWithScope(t, srv, runID, "tenant-a", "project-a")
+}
+
+func waitCloudAgentRunWithScope(t *testing.T, srv *Server, runID, tenantID, projectID string) cloudAgentRunResponse {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		resp := request(t, srv, http.MethodGet, "/v1/cloudagent/runs/"+runID+"/result", "tenant-a", "project-a", nil, "")
+		resp := request(t, srv, http.MethodGet, "/v1/cloudagent/runs/"+runID+"/result", tenantID, projectID, nil, "")
 		if resp.Code != http.StatusOK {
 			t.Fatalf("run result status=%d body=%s", resp.Code, resp.Body.String())
 		}
@@ -1019,6 +1436,28 @@ func submitCloudAgentHTTPRun(t *testing.T, srv *Server, sessionID, runID, text s
 	return submitted.RunID
 }
 
+func jsonRequestWithHeaders(t *testing.T, srv *Server, method, target, tenant, project string, body any, headers map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(method, target, bytes.NewBuffer(raw))
+	req.Header.Set("Content-Type", "application/json")
+	if tenant != "" {
+		req.Header.Set("X-Tenant-ID", tenant)
+	}
+	if project != "" {
+		req.Header.Set("X-Project-ID", project)
+	}
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+	resp := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(resp, req)
+	return resp
+}
+
 func cloudAgentRunListContains(runs []cloudAgentRunResponse, runID string) bool {
 	for _, run := range runs {
 		if run.RunID == runID {
@@ -1026,6 +1465,20 @@ func cloudAgentRunListContains(runs []cloudAgentRunResponse, runID string) bool 
 		}
 	}
 	return false
+}
+
+func cloudAgentSSEEventID(body, eventName string) string {
+	var currentID string
+	for _, line := range strings.Split(body, "\n") {
+		if strings.HasPrefix(line, "id: ") {
+			currentID = strings.TrimSpace(strings.TrimPrefix(line, "id: "))
+			continue
+		}
+		if strings.TrimSpace(line) == "event: "+eventName {
+			return currentID
+		}
+	}
+	return ""
 }
 
 type countingWorker struct {
@@ -1036,6 +1489,18 @@ type countingWorker struct {
 func (w *countingWorker) Run(ctx context.Context, job workerJob, emit func(workerEvent) error) (workerResult, error) {
 	w.calls.Add(1)
 	return w.FakeWorker.Run(ctx, job, emit)
+}
+
+type failingCloudAgentWorker struct {
+	message string
+}
+
+func (w failingCloudAgentWorker) Run(ctx context.Context, job workerJob, emit func(workerEvent) error) (workerResult, error) {
+	return workerResult{}, workerError("provider_error", w.message)
+}
+
+func (w failingCloudAgentWorker) FetchArtifact(ctx context.Context, job workerJob, artifact artifactDescriptor) ([]byte, error) {
+	return nil, errors.New("no artifact")
 }
 
 type blockingCloudAgentWorker struct {

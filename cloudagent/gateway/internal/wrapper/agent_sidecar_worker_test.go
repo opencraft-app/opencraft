@@ -68,6 +68,31 @@ func TestSidecarStdoutParserHandlesReasoningAndToolEvents(t *testing.T) {
 	}
 }
 
+func TestSidecarStdoutParserHandlesPrefixedWrapperEvents(t *testing.T) {
+	var parser sidecarStdoutParser
+	raw := `timeline source=hermes_sidecar t=0.000s event=process_start mode="client" addr="http://127.0.0.1:43420/" WRAPPER_EVENT_JSON={"type":"reasoning_delta","delta":"\nThe"}` + "\n" +
+		`timeline source=hermes_sidecar t=0.001s event=stream WRAPPER_EVENT_JSON={"type":"output_text_delta","delta":"answer"}` + "\n"
+	events := parser.Feed(raw)
+	if len(events) != 2 {
+		t.Fatalf("events=%v", events)
+	}
+	if events[0].Type != "reasoning_delta" || events[0].Delta != "\nThe" {
+		t.Fatalf("reasoning event=%+v", events[0])
+	}
+	if events[1].Type != "output_text_delta" || events[1].Delta != "answer" {
+		t.Fatalf("output event=%+v", events[1])
+	}
+
+	reasoning, reasoningTextDelta := workerEventFromSidecarEvent("job_1", 1, events[0])
+	if reasoning.Kind != "reasoning_delta" || reasoningTextDelta {
+		t.Fatalf("reasoning worker event=%+v textDelta=%t", reasoning, reasoningTextDelta)
+	}
+	message, messageTextDelta := workerEventFromSidecarEvent("job_1", 2, events[1])
+	if message.Kind != "output_text_delta" || !messageTextDelta {
+		t.Fatalf("message worker event=%+v textDelta=%t", message, messageTextDelta)
+	}
+}
+
 func TestSidecarToolEventFieldsSummarizesAndRedactsPayloads(t *testing.T) {
 	fields := sidecarToolEventFields(sidecarStdoutEvent{
 		Type:       "tool_call_update",
@@ -133,6 +158,16 @@ func TestParseAgentRunEnvelopeReportsEmptyResultPresence(t *testing.T) {
 	}
 }
 
+func TestParseAgentRunEnvelopeHandlesPrefixedControlLine(t *testing.T) {
+	envelope, ok := parseAgentRunEnvelope(`timeline source=hermes_sidecar t=0.000s event=result WRAPPER_RESULT_JSON={"output_text":"clean","inner_sandbox_id":"inner_1"}`)
+	if !ok {
+		t.Fatal("expected prefixed wrapper result envelope")
+	}
+	if envelope.OutputText != "clean" || envelope.InnerSandboxID != "inner_1" {
+		t.Fatalf("envelope=%+v", envelope)
+	}
+}
+
 func TestParseAgentRunErrorEnvelope(t *testing.T) {
 	envelope, ok := parseAgentRunErrorEnvelope(`noise
 WRAPPER_ERROR_JSON={"code":"max_iterations_exceeded","message":"Max iterations exceeded: 256"}`)
@@ -165,6 +200,25 @@ func TestStripWrapperControlLinesPreventsResultLeak(t *testing.T) {
 	raw := "noise\nWRAPPER_EVENT_JSON={\"type\":\"output_text_delta\",\"delta\":\"x\"}\nWRAPPER_RESULT_JSON={\"output_text\":\"\"}\nWRAPPER_ERROR_JSON={\"message\":\"boom\"}\n"
 	if got := stripWrapperControlLines(raw); got != "noise" {
 		t.Fatalf("stripWrapperControlLines returned %q", got)
+	}
+}
+
+func TestStripWrapperControlLinesPreventsPrefixedTimelineLeak(t *testing.T) {
+	raw := strings.Join([]string{
+		"timeline source=hermes_sidecar t=0.000s event=process_start mode=\"client\" WRAPPER_EVENT_JSON={\"type\":\"reasoning_delta\",\"delta\":\"hidden\"}",
+		"visible answer",
+		"timeline source=hermes_sidecar t=0.001s event=result WRAPPER_RESULT_JSON={\"output_text\":\"visible answer\"}",
+		"",
+	}, "\n")
+	if got := stripWrapperControlLines(raw); got != "visible answer" {
+		t.Fatalf("stripWrapperControlLines returned %q", got)
+	}
+}
+
+func TestCleanAgentVisibleOutputDropsWrapperAndReasoningLeak(t *testing.T) {
+	raw := "timeline source=hermes_sidecar t=0.000s event=process_start WRAPPER_EVENT_JSON={\"type\":\"reasoning_delta\",\"delta\":\"\\nThe\"}\nfinal answer\n"
+	if got := cleanAgentVisibleOutput(raw); got != "final answer" {
+		t.Fatalf("cleanAgentVisibleOutput returned %q", got)
 	}
 }
 

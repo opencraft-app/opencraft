@@ -708,8 +708,8 @@ func TestProtocolE2EACPErrorSendsRecoveryFallbackReply(t *testing.T) {
 	waitRouterClosed(t, wecomReady, "wecom subscribe")
 	drainUntil(t, ctx, st, lease, adapter, 1)
 	waitRouterClosed(t, replyDone, "fallback reply")
-	if got := promptCalls.Load(); got != 2 {
-		t.Fatalf("expected failed prompt plus runtime-recovery retry, got %d", got)
+	if got := promptCalls.Load(); got != 1 {
+		t.Fatalf("runtime recovery failure must not recreate/retry another session, got %d prompts", got)
 	}
 	cancel()
 	_ = <-startErr

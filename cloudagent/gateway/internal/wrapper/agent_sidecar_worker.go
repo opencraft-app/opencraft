@@ -1539,12 +1539,12 @@ func (w *AgentSidecarWorker) runACPSessionPrompt(ctx context.Context, job worker
 		fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=acp_runtime_result_error mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s job_id=%s code=%s message=%s stdout_bytes=%d\n", time.Since(start).Seconds(), job.ACPSessionID, job.ACPSessionGeneration, runtime.OuterSandboxID, job.JobID, runErr.Code, quoteTimelineField(runErr.Message), len(result.Stdout))
 		return workerResult{}, workerFailureFromAgentRunError(runErr)
 	}
-	output := envelope.OutputText
+	output := cleanAgentVisibleOutput(envelope.OutputText)
 	if output == "" && !sawEnvelope {
-		output = parseAgentOutput(result.Stdout)
+		output = cleanAgentVisibleOutput(parseAgentOutput(result.Stdout))
 	}
 	if output == "" && streamedOutput.Len() > 0 {
-		output = streamedOutput.String()
+		output = cleanAgentVisibleOutput(streamedOutput.String())
 	}
 	fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=acp_runtime_result_envelope mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s job_id=%s saw_result=%t stdout_bytes=%d streamed_bytes=%d output_bytes=%d inner_sandbox_id=%s\n", time.Since(start).Seconds(), job.ACPSessionID, job.ACPSessionGeneration, runtime.OuterSandboxID, job.JobID, sawEnvelope, len(result.Stdout), streamedOutput.Len(), len(output), envelope.InnerSandboxID)
 	if output == "" && sawEnvelope {
@@ -2689,13 +2689,8 @@ func acpDaemonAddr(sessionID string) string {
 
 func parseAgentRunEnvelope(stdout string) (agentRunEnvelope, bool) {
 	for _, line := range strings.Split(stdout, "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "WRAPPER_RESULT_JSON=") {
-			continue
-		}
-		raw := strings.TrimPrefix(line, "WRAPPER_RESULT_JSON=")
 		var envelope agentRunEnvelope
-		if err := json.Unmarshal([]byte(raw), &envelope); err == nil {
+		if decodeSidecarWrapperJSON(line, sidecarWrapperResultMarker, &envelope) {
 			return envelope, true
 		}
 	}
@@ -2709,13 +2704,8 @@ type agentRunErrorEnvelope struct {
 
 func parseAgentRunErrorEnvelope(stdout string) (agentRunErrorEnvelope, bool) {
 	for _, line := range strings.Split(stdout, "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "WRAPPER_ERROR_JSON=") {
-			continue
-		}
-		raw := strings.TrimPrefix(line, "WRAPPER_ERROR_JSON=")
 		var envelope agentRunErrorEnvelope
-		if err := json.Unmarshal([]byte(raw), &envelope); err == nil && envelope.Message != "" {
+		if decodeSidecarWrapperJSON(line, sidecarWrapperErrorMarker, &envelope) && envelope.Message != "" {
 			if envelope.Code == "" {
 				envelope.Code = "agent_runtime_error"
 			}
@@ -2738,7 +2728,7 @@ func stripWrapperControlLines(stdout string) string {
 	var lines []string
 	for _, line := range strings.Split(stdout, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "WRAPPER_RESULT_JSON=") || strings.HasPrefix(trimmed, "WRAPPER_EVENT_JSON=") || strings.HasPrefix(trimmed, "WRAPPER_ERROR_JSON=") {
+		if containsSidecarWrapperControl(trimmed) || strings.Contains(trimmed, sidecarTimelineSource) {
 			continue
 		}
 		if trimmed == "" {
@@ -2747,6 +2737,10 @@ func stripWrapperControlLines(stdout string) string {
 		lines = append(lines, line)
 	}
 	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+func cleanAgentVisibleOutput(output string) string {
+	return stripWrapperControlLines(output)
 }
 
 func commandFailureDetail(err error, result CommandResult) string {
@@ -2949,12 +2943,12 @@ func (w *AgentSidecarWorker) Run(ctx context.Context, job workerJob, emit func(w
 		timeline("sidecar_result_error", "code="+runErr.Code, "message="+quoteTimelineField(runErr.Message), fmt.Sprintf("stdout_bytes=%d", len(result.Stdout)))
 		return workerResult{}, workerFailureFromAgentRunError(runErr)
 	}
-	output := envelope.OutputText
+	output := cleanAgentVisibleOutput(envelope.OutputText)
 	if output == "" && !sawEnvelope {
-		output = parseAgentOutput(result.Stdout)
+		output = cleanAgentVisibleOutput(parseAgentOutput(result.Stdout))
 	}
 	if output == "" && streamedOutput.Len() > 0 {
-		output = streamedOutput.String()
+		output = cleanAgentVisibleOutput(streamedOutput.String())
 	}
 	timeline("sidecar_result_envelope", fmt.Sprintf("saw_result=%t", sawEnvelope), fmt.Sprintf("stdout_bytes=%d", len(result.Stdout)), fmt.Sprintf("streamed_bytes=%d", streamedOutput.Len()), fmt.Sprintf("output_bytes=%d", len(output)), "inner_sandbox_id="+quoteTimelineField(envelope.InnerSandboxID))
 	if output == "" && sawEnvelope {

@@ -886,7 +886,7 @@ func TestDispatcherMarksGhostSessionClosedDuringIdleClose(t *testing.T) {
 	}
 }
 
-func TestDispatcherRecreatesSessionWhenEnsureReadyReportsRuntimeUnavailableAtLoad(t *testing.T) {
+func TestDispatcherSkipsIdleCloseWhenCloudAgentDoesNotAdvertiseClose(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
 	if err != nil {
@@ -894,6 +894,54 @@ func TestDispatcherRecreatesSessionWhenEnsureReadyReportsRuntimeUnavailableAtLoa
 	}
 	defer st.Close()
 	account := store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main"}
+	sessionKey := "agent:main:wecom:dm:chat-idle"
+	if _, err := st.GetOrCreateConversation(ctx, store.Conversation{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            "wecom",
+		ExternalConversationID: "chat-idle",
+		ChatType:               string(channel.ChatDM),
+		AgentID:                "main",
+		ACPSessionID:           "session-idle",
+		SessionKey:             sessionKey,
+	}); err != nil {
+		t.Fatalf("seed conversation: %v", err)
+	}
+	fake := &fakeACP{closeErr: acp.CloudAgentSessionCloseUnsupportedError{}}
+	dispatcher := NewDispatcher(st, account, fake, "/workspace")
+	time.Sleep(time.Millisecond)
+	logs := captureLogs(t, func() {
+		closed, err := dispatcher.CloseIdleConversations(ctx, time.Nanosecond, 10)
+		if err != nil {
+			t.Fatalf("close unsupported should not abort idle close batch: %v", err)
+		}
+		if closed != 0 || fake.closeSnapshot() != 1 {
+			t.Fatalf("unsupported close must not mark closed, closed=%d closeCalls=%d", closed, fake.closeSnapshot())
+		}
+	})
+	if !strings.Contains(logs, "action=session_idle_close_skip reason=close_unsupported_by_protocol") {
+		t.Fatalf("expected unsupported-close skip log, got:\n%s", logs)
+	}
+	conv, ok, err := st.LoadConversationBySessionKey(ctx, "wecom-a", sessionKey)
+	if err != nil || !ok {
+		t.Fatalf("reload conversation: ok=%v err=%v", ok, err)
+	}
+	if conv.RuntimeClosedAt != "" {
+		t.Fatalf("unsupported close must not mark runtime closed: %#v", conv)
+	}
+}
+
+func TestDispatcherPreservesBindingWhenEnsureReadyReportsRuntimeUnavailableAtLoad(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	account := store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main"}
+	lease, err := st.AcquireChannelLease(ctx, "wecom-a", "owner-a", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
 	seedMsg := channel.Message{
 		ChannelType:            channel.TypeWeCom,
 		ChatType:               channel.ChatDM,
@@ -914,7 +962,6 @@ func TestDispatcherRecreatesSessionWhenEnsureReadyReportsRuntimeUnavailableAtLoa
 	}
 	client := &fakeACP{
 		ensureErrs: []error{errors.New("rpc error -32003: session runtime is unavailable")},
-		reply:      "answer after load recreate",
 		sessionID:  "session-new",
 	}
 	dispatcher := NewDispatcher(st, account, client, "/workspace")
@@ -931,14 +978,32 @@ func TestDispatcherRecreatesSessionWhenEnsureReadyReportsRuntimeUnavailableAtLoa
 		})
 	})
 	if err != nil {
-		t.Fatalf("handle inbound should recreate after load-phase runtime unavailable: %v", err)
+		t.Fatalf("handle inbound should enqueue runtime unavailable fallback: %v", err)
 	}
 	newCalls, loadCalls, promptCalls, _ := client.snapshot()
-	if newCalls != 1 || loadCalls != 1 || promptCalls != 1 {
+	if newCalls != 0 || loadCalls != 1 || promptCalls != 0 {
 		t.Fatalf("unexpected acp calls: new=%d load=%d prompt=%d", newCalls, loadCalls, promptCalls)
 	}
-	if !strings.Contains(logs, "action=session_recreate_same_workspace reason=runtime_unavailable") {
-		t.Fatalf("expected load-phase runtime recovery logs, got:\n%s", logs)
+	if !strings.Contains(logs, "action=runtime_unavailable_preserve_binding stage=ensure_runtime_ready") {
+		t.Fatalf("expected preserve-binding runtime recovery logs, got:\n%s", logs)
+	}
+	reply := claimOneReply(t, ctx, st, lease)
+	if !strings.Contains(reply.Text, runtimeRecoveryFailedReply) || !strings.Contains(reply.Text, "/reset") {
+		t.Fatalf("expected recovery fallback reply, got %#v", reply)
+	}
+	conversation, err := st.GetOrCreateConversation(ctx, store.Conversation{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            "wecom",
+		ExternalConversationID: "chat-a",
+		ChatType:               string(channel.ChatDM),
+		AgentID:                "main",
+		SessionKey:             sessionKey,
+	})
+	if err != nil {
+		t.Fatalf("reload conversation: %v", err)
+	}
+	if conversation.ACPSessionID != "session-stale" || conversation.WorkspaceKey != "workspace-stable" || len(client.workspaceKeys) != 0 {
+		t.Fatalf("runtime unavailable must preserve session/workspace binding: conv=%#v workspace_keys=%#v", conversation, client.workspaceKeys)
 	}
 }
 
@@ -1062,7 +1127,7 @@ func TestDispatcherPreservesBindingWhenExistingACPSessionIsMissing(t *testing.T)
 	}
 }
 
-func TestDispatcherRecreatesAndRetriesWhenRuntimeUnavailable(t *testing.T) {
+func TestDispatcherPreservesBindingWhenPromptReportsRuntimeUnavailable(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
 	if err != nil {
@@ -1094,7 +1159,6 @@ func TestDispatcherRecreatesAndRetriesWhenRuntimeUnavailable(t *testing.T) {
 	}
 	client := &fakeACP{
 		promptErrs: []error{errors.New("rpc error -32003: session runtime is unavailable")},
-		reply:      "answer after recreate",
 		sessionID:  "session-new",
 	}
 	dispatcher := NewDispatcher(st, account, client, "/workspace")
@@ -1111,10 +1175,10 @@ func TestDispatcherRecreatesAndRetriesWhenRuntimeUnavailable(t *testing.T) {
 		})
 	})
 	if err != nil {
-		t.Fatalf("handle inbound should retry after runtime unavailable: %v", err)
+		t.Fatalf("handle inbound should enqueue runtime unavailable fallback: %v", err)
 	}
 	newCalls, loadCalls, promptCalls, _ := client.snapshot()
-	if newCalls != 1 || loadCalls != 1 || promptCalls != 2 {
+	if newCalls != 0 || loadCalls != 1 || promptCalls != 1 {
 		t.Fatalf("unexpected acp calls: new=%d load=%d prompt=%d", newCalls, loadCalls, promptCalls)
 	}
 	conversation, err := st.GetOrCreateConversation(ctx, store.Conversation{
@@ -1128,22 +1192,21 @@ func TestDispatcherRecreatesAndRetriesWhenRuntimeUnavailable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload conversation: %v", err)
 	}
-	if conversation.ACPSessionID != "session-new" {
-		t.Fatalf("expected recreated session binding, got %#v", conversation)
+	if conversation.ACPSessionID != "session-stale" {
+		t.Fatalf("runtime unavailable must preserve existing session binding, got %#v", conversation)
 	}
-	if conversation.WorkspaceKey != "workspace-stable" || len(client.workspaceKeys) != 1 || client.workspaceKeys[0] != "workspace-stable" {
-		t.Fatalf("runtime recovery must preserve workspace key: conv=%#v workspace_keys=%#v", conversation, client.workspaceKeys)
+	if conversation.WorkspaceKey != "workspace-stable" || len(client.workspaceKeys) != 0 {
+		t.Fatalf("runtime unavailable must not rotate workspace key: conv=%#v workspace_keys=%#v", conversation, client.workspaceKeys)
 	}
-	if !strings.Contains(logs, "action=session_recreate reason=runtime_unavailable") ||
-		!strings.Contains(logs, "action=session_bound reason=runtime_recreated") {
-		t.Fatalf("expected runtime recovery logs, got:\n%s", logs)
+	if !strings.Contains(logs, "action=runtime_unavailable_preserve_binding stage=prompt") {
+		t.Fatalf("expected preserve-binding runtime unavailable log, got:\n%s", logs)
 	}
 	items, err := st.ClaimPendingOutbox(ctx, lease, 10)
 	if err != nil {
 		t.Fatalf("claim outbox: %v", err)
 	}
-	if len(items) != 1 || !strings.Contains(items[0].PayloadJSON, "answer after recreate") {
-		t.Fatalf("expected model reply after recreate, got %#v", items)
+	if len(items) != 1 || !strings.Contains(items[0].PayloadJSON, runtimeRecoveryFailedReply) || !strings.Contains(items[0].PayloadJSON, "/reset") {
+		t.Fatalf("expected runtime recovery fallback, got %#v", items)
 	}
 }
 

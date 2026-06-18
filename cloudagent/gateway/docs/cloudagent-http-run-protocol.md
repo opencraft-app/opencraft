@@ -1,24 +1,30 @@
-# CloudAgent HTTP Run Protocol
+# CloudAgent HTTP Session Events Protocol
 
-This document records the durable HTTP run protocol used by channel adapters
-that must survive transport disconnects and long-running prompts.
+This document records the Qoder-like durable HTTP session-event protocol used
+by channel adapters that must survive transport disconnects and long-running
+prompts.
 
 For caller-facing setup and curl examples, see
 [`cloudagent-http-run-integration.md`](cloudagent-http-run-integration.md).
 
 ## Purpose
 
-ACP WebSocket remains the interactive client protocol. Channel adapters such as
-`channelgateway` should use the CloudAgent HTTP run protocol when they need a
-durable request/replay boundary:
+ACP WebSocket remains the interactive compatibility protocol. Channel adapters
+such as `channelgateway` should use the CloudAgent HTTP session-event protocol
+when they need a durable request/replay boundary:
 
-- submit a run without keeping a WebSocket open;
-- poll or stream events with `after_seq`;
+- append `user.message` events without keeping a WebSocket open;
+- poll or stream public session events with `after_seq`, `after_id`, or the
+  standard SSE `Last-Event-ID` header;
 - recover after channel gateway restart;
-- read the final durable run result.
+- observe terminal session status without coupling clients to internal run ids.
 
 The gateway owns session/runtime state. Channel adapters should not create
 their own ACP websocket multiplexing layer for multiple conversations.
+
+`run_id` still exists as an internal durable ledger id. Public clients may see it
+as metadata on events for debugging and cancellation, but should not model the
+conversation around `/runs`.
 
 ## Endpoints
 
@@ -29,45 +35,102 @@ GET  /v1/cloudagent/capabilities
 GET  /v1/cloudagent/sessions
 POST /v1/cloudagent/sessions
 GET  /v1/cloudagent/sessions/{session_id}
-POST /v1/cloudagent/sessions/{session_id}/runs
-GET  /v1/cloudagent/runs
-GET  /v1/cloudagent/runs/{run_id}
-GET  /v1/cloudagent/runs/{run_id}/events?after_seq=N
-GET  /v1/cloudagent/runs/{run_id}/events?after_seq=N&stream=true
-GET  /v1/cloudagent/runs/{run_id}/result
-POST /v1/cloudagent/runs/{run_id}/cancel
+POST /v1/cloudagent/sessions/{session_id}/events
+GET  /v1/cloudagent/sessions/{session_id}/events?after_seq=N
+GET  /v1/cloudagent/sessions/{session_id}/events?after_id=evt_x
+GET  /v1/cloudagent/sessions/{session_id}/events/stream
 ```
+
+Internal/debug endpoints still exist for gateway operators:
+`GET /v1/cloudagent/runs`, `GET /v1/cloudagent/runs/{run_id}`,
+`GET /v1/cloudagent/runs/{run_id}/events`,
+`GET /v1/cloudagent/runs/{run_id}/result`, and
+`POST /v1/cloudagent/runs/{run_id}/cancel`.
 
 Capabilities must return:
 
 ```json
 {
   "object": "cloudagent.capabilities",
-  "protocol": "cloudagent.run",
+  "protocol": "cloudagent.session_events",
+  "session_event_protocol": true,
   "run_protocol": true,
-  "features": ["idempotency_key", "server_generated_run_id"]
+  "features": ["session_event_submit", "session_event_replay", "session_event_stream", "idempotency_key", "last_event_id_replay", "sse_event_stream", "internal_run_ledger"]
 }
 ```
 
-## Run Identity
+## Event Identity
 
-The submit retry key and the run resource id are different:
+The submit retry key, public session event id, and internal run id are
+different:
 
-- callers send `Idempotency-Key` to deduplicate retries for the same session and
-  request body;
-- the gateway returns a server-generated `run_id`;
-- all observation APIs use that returned `run_id`;
-- legacy JSON body field `run_id` is accepted as an idempotency key, not as the
-  durable resource id.
+- callers send `Idempotency-Key` or `client_event_id` to deduplicate retries for
+  the same session and user message;
+- the gateway appends public session events with stable `id` and `seq`;
+- the gateway creates a server-generated `run_id` internally to execute the
+  message;
+- clients resume observation with session-level `after_seq`, `after_id`, or
+  `Last-Event-ID`.
 
 The idempotency scope is `(tenant, project, session_id, idempotency_key)`.
-The same key may be reused in a different session and will create a distinct
-server run. Reusing the same key in the same session with a different request
-body is rejected.
+The same key may be reused in a different session without conflict. Reusing the
+same key in the same session with a different request body is rejected.
+
+## Event Stream Shape
+
+Submit a user message:
+
+```json
+{
+  "events": [
+    {
+      "type": "user.message",
+      "client_event_id": "msg_123",
+      "content": [{"type": "text", "text": "hello"}]
+    }
+  ]
+}
+```
+
+Non-streaming `GET /v1/cloudagent/sessions/{session_id}/events` returns JSON:
+
+```json
+{
+  "object": "list",
+  "events": [
+    {
+      "id": "evt_session_xxx_1",
+      "seq": 1,
+      "type": "agent.message",
+      "run_id": "job_durable_123",
+      "session_id": "session_xxx",
+      "schema_version": "1.0",
+      "content": [{"type": "text", "text": "hello"}]
+    }
+  ]
+}
+```
+
+`GET /v1/cloudagent/sessions/{session_id}/events/stream` returns
+`Content-Type: text/event-stream`:
+
+```text
+id: evt_session_xxx_1
+event: agent.message
+data: {"id":"evt_session_xxx_1","seq":1,"type":"agent.message","run_id":"job_durable_123","session_id":"session_xxx","schema_version":"1.0","content":[{"type":"text","text":"hello"}]}
+```
+
+Public event types are `user.message`, `agent.thinking`, `agent.message`,
+`agent.tool_use`, `agent.tool_result`, `session.status_idle`, `session.error`,
+and `heartbeat`.
+
+The public event stream must not expose ACP `sessionUpdate` payloads, Hermes
+`WRAPPER_EVENT_JSON`, or `timeline source=hermes_sidecar` stdout as visible
+assistant text.
 
 ## ChannelGateway Configuration
 
-Devcloud uses the HTTP run protocol:
+Devcloud uses the HTTP session-event protocol:
 
 ```bash
 CHANNELGATEWAY_ACP_URL=http://cloudagent-gateway.dep.svc.cluster.local
@@ -105,9 +168,9 @@ GOWORK=off go test ./internal/acp \
 This e2e proves:
 
 - session create/load works through the HTTP protocol;
-- run submit succeeds;
-- run events are replayable by `after_seq`;
-- the durable final result can be read after completion.
+- user.message submit succeeds;
+- session events are replayable by `after_seq`;
+- the durable terminal event can be observed after completion.
 
 ## MySQL Compatibility Notes
 

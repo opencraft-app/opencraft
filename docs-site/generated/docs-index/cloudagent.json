@@ -26,11 +26,6 @@
   "generated": [
     {
       "kind": "mdx",
-      "path": "docs-site/content/docs/components/cloudagent.mdx",
-      "url": "/docs/components/cloudagent"
-    },
-    {
-      "kind": "mdx",
       "path": "docs-site/content/docs/cloudagent/generated-index.mdx",
       "url": "/docs/cloudagent/generated-index"
     },

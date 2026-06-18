@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -229,6 +230,43 @@ JOIN sessions s ON s.session_id = r.session_id
 WHERE s.scope_tenant = ? AND s.scope_project = ? AND s.scope_sandbox = ? AND s.deleted_at IS NULL`+filter+`
 ORDER BY r.updated_at DESC
 LIMIT ?`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var runs []cloudAgentRunRecord
+	for rows.Next() {
+		run, err := scanCloudAgentRun(rows)
+		if err != nil {
+			return nil, err
+		}
+		runs = append(runs, run)
+	}
+	return runs, rows.Err()
+}
+
+func (s *Store) ListCloudAgentRunsForSession(scope Scope, sessionID string, limit int) ([]cloudAgentRunRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if strings.TrimSpace(sessionID) == "" {
+		return nil, fmt.Errorf("session_id is required")
+	}
+	if limit <= 0 {
+		limit = 200
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+	if err := s.ensureCloudAgentRunScopeLocked(scope, sessionID); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.Query(`
+SELECT run_id, session_id, idempotency_key, request_fingerprint, turn_id, response_id, status, stop_reason,
+	error_message, output_text, created_at, updated_at, completed_at
+FROM cloudagent_runs
+WHERE session_id = ?
+ORDER BY created_at ASC, run_id ASC
+LIMIT ?`, sessionID, limit)
 	if err != nil {
 		return nil, err
 	}
