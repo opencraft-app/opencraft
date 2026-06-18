@@ -8,8 +8,20 @@ vi.mock("@/i18n/t", () => ({
   useT: () => (text: string) => text,
 }));
 
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    i18n: {
+      language: "en-US",
+    },
+  }),
+}));
+
 vi.mock("@/lib/region", () => ({
   isGlobal: true,
+  localizedPath: (path: string, locale: "zh-CN" | "en-US") => {
+    const lang = locale === "zh-CN" ? "zh" : "en";
+    return path === "/" ? `/${lang}/` : `/${lang}${path}`;
+  },
 }));
 
 describe("LightVelaFooter", () => {
@@ -26,14 +38,14 @@ describe("LightVelaFooter", () => {
     expect(companySection).not.toBeNull();
     expect(within(companySection as HTMLElement).getByRole("link", { name: "关于我们" })).toHaveAttribute(
       "href",
-      "/about",
+      "/en/about",
     );
 
     const legalSection = screen.getByRole("heading", { name: "法律" }).closest("section");
     expect(legalSection).not.toBeNull();
     expect(within(legalSection as HTMLElement).getByRole("link", { name: "隐私政策" })).toHaveAttribute(
       "href",
-      "/privacy-policy",
+      "/en/privacy-policy",
     );
     expect(within(legalSection as HTMLElement).getByRole("link", { name: "服务条款" })).toHaveAttribute(
       "href",
@@ -41,7 +53,7 @@ describe("LightVelaFooter", () => {
     );
     expect(within(legalSection as HTMLElement).getByRole("link", { name: "开源声明" })).toHaveAttribute(
       "href",
-      "/open-source-licenses",
+      "/en/open-source-licenses",
     );
 
     const communitySection = screen.getByRole("heading", { name: "社区" }).closest("section");

@@ -1,8 +1,9 @@
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 
 import { CN_PRIVACY_POLICY_URL } from "@/constants/legal";
 import { useT } from "@/i18n/t";
-import { isGlobal } from "@/lib/region";
+import { isGlobal, localizedPath } from "@/lib/region";
 import { cn } from "@/lib/utils";
 
 type FooterLink =
@@ -96,6 +97,8 @@ function LightVelaFooterLogo() {
 
 function FooterTextLink({ link, className }: { link: FooterLink; className?: string }) {
   const t = useT();
+  const { i18n } = useTranslation();
+  const locale = i18n.language === "zh-CN" ? "zh-CN" : "en-US";
   const linkClassName = cn(footerLinkClassName, className);
   const label = shouldTranslateLabel(link.label) ? t(link.label) : link.label;
 
@@ -113,7 +116,7 @@ function FooterTextLink({ link, className }: { link: FooterLink; className?: str
   }
 
   return (
-    <Link to={link.to} className={linkClassName}>
+    <Link to={localizedPath(link.to, locale)} className={linkClassName}>
       {label}
     </Link>
   );
