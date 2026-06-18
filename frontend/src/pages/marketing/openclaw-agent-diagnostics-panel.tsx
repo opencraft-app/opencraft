@@ -133,6 +133,7 @@ export function AgentDiagnosticsPanel({
   resetAgentAction,
   resetAgentConsole,
   resetAgentConsoleRef,
+  workspaceRecoveryPanel,
 }: {
   botId: string;
   execDebugCommand: ExecDebugCommand;
@@ -140,6 +141,7 @@ export function AgentDiagnosticsPanel({
   resetAgentAction: DiagnosticsMaintenanceAction;
   resetAgentConsole: string[];
   resetAgentConsoleRef: RefObject<HTMLPreElement | null>;
+  workspaceRecoveryPanel?: ReactNode;
 }) {
   const t = useT();
   const [logsSince, setLogsSince] = useState<LogsSinceOption>(DEFAULT_LOGS_SINCE);
@@ -238,6 +240,7 @@ export function AgentDiagnosticsPanel({
             consoleRef={resetAgentConsoleRef}
           />
         </div>
+        {workspaceRecoveryPanel}
         {commands.map((item) => (
           <DiagnosticCard
             key={item.id}
