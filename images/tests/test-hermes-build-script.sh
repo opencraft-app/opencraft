@@ -336,7 +336,9 @@ grep -Fq "chmod 0700 ${RUNTIME_HOME}/.config" "${LOG_FILE}"
 grep -q "sudo-npm-install pnpm" "${LOG_FILE}"
 grep -q "sudo-user agentuser" "${LOG_FILE}"
 grep -q "pnpm-add-whatsapp-bridge" "${LOG_FILE}"
+test "$(grep -c "pnpm-add-whatsapp-bridge" "${LOG_FILE}")" -ge 2
 grep -q "node-resolve-whatsapp-bridge" "${LOG_FILE}"
+test "$(grep -c "node-resolve-whatsapp-bridge" "${LOG_FILE}")" -ge 2
 test -d "${RUNTIME_HOME}/.config/systemd/user"
 grep -Fq "chown agentuser:agentuser ${RUNTIME_HOME}/.config ${RUNTIME_HOME}/.config/systemd ${RUNTIME_HOME}/.config/systemd/user" "${LOG_FILE}"
 grep -Fq "chmod 0700 ${RUNTIME_HOME}/.config ${RUNTIME_HOME}/.config/systemd ${RUNTIME_HOME}/.config/systemd/user" "${LOG_FILE}"
