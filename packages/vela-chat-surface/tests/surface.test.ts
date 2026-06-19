@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildChatSurfaceFromReadModels,
   buildConversationHistoryPrependPlan,
+  canApplyConversationHistoryPrependPlan,
   deriveConversationWindowState,
   prependActivityWindow,
   prependTranscriptWindow,
@@ -233,6 +234,107 @@ test("prepends activity windows without duplicating items and preserves latest c
   assert.equal(merged.window?.has_older, false);
   assert.equal(merged.window?.has_newer, false);
   assert.equal(merged.cursor.event_id, "evt_newer");
+});
+
+test("rejects stale conversation history prepend plans after the visible window changes", () => {
+  const plan = buildConversationHistoryPrependPlan({
+    transcript: {
+      rows: [],
+      cursor: {},
+      window: {
+        first_row_id: "row_10",
+        last_row_id: "row_20",
+        has_older: true,
+        has_newer: false,
+      },
+    },
+    activity: {
+      items: [],
+      cursor: {},
+      window: {
+        first_item_id: "act_10",
+        last_item_id: "act_20",
+        has_older: true,
+        has_newer: false,
+      },
+    },
+  });
+
+  assert.equal(
+    canApplyConversationHistoryPrependPlan(plan, {
+      transcript: {
+        rows: [],
+        cursor: {},
+        window: {
+          first_row_id: "row_10",
+          last_row_id: "row_21",
+          has_older: true,
+          has_newer: false,
+        },
+      },
+      activity: {
+        items: [],
+        cursor: {},
+        window: {
+          first_item_id: "act_10",
+          last_item_id: "act_21",
+          has_older: true,
+          has_newer: false,
+        },
+      },
+    }),
+    true,
+  );
+  assert.equal(
+    canApplyConversationHistoryPrependPlan(plan, {
+      transcript: {
+        rows: [],
+        cursor: {},
+        window: {
+          first_row_id: "row_09",
+          last_row_id: "row_21",
+          has_older: true,
+          has_newer: false,
+        },
+      },
+      activity: {
+        items: [],
+        cursor: {},
+        window: {
+          first_item_id: "act_10",
+          last_item_id: "act_21",
+          has_older: true,
+          has_newer: false,
+        },
+      },
+    }),
+    false,
+  );
+  assert.equal(
+    canApplyConversationHistoryPrependPlan(plan, {
+      transcript: {
+        rows: [],
+        cursor: {},
+        window: {
+          first_row_id: "row_10",
+          last_row_id: "row_21",
+          has_older: true,
+          has_newer: false,
+        },
+      },
+      activity: {
+        items: [],
+        cursor: {},
+        window: {
+          first_item_id: "act_09",
+          last_item_id: "act_21",
+          has_older: true,
+          has_newer: false,
+        },
+      },
+    }),
+    false,
+  );
 });
 
 test("derives conversation window state across transcript and activity windows", () => {

@@ -28,6 +28,7 @@ import {
 import { buildChatRenderModel } from "../../packages/vela-chat-render-model/src";
 import {
   buildConversationHistoryPrependPlan,
+  canApplyConversationHistoryPrependPlan,
   deriveConversationWindowState,
   buildChatSurfaceFromReadModels,
   prependActivityWindow,
@@ -87,11 +88,16 @@ export function ChatWorkbench({
   const [conversationScrollDebug, setConversationScrollDebug] =
     useState<VelaChatDebugScrollRuntime | null>(null);
   const transcriptRef = useRef<typeof transcript>(null);
+  const activityRef = useRef<typeof activity>(null);
 
   const client = useMemo(() => createVeladClient({ baseUrl }), [baseUrl]);
   const commitTranscript = useCallback((nextTranscript: typeof transcript) => {
     transcriptRef.current = nextTranscript;
     setTranscript(nextTranscript);
+  }, []);
+  const commitActivity = useCallback((nextActivity: typeof activity) => {
+    activityRef.current = nextActivity;
+    setActivity(nextActivity);
   }, []);
 
   const loadTranscript = useCallback(async () => {
@@ -108,11 +114,11 @@ export function ChatWorkbench({
     if (!activeSessionId) return;
     try {
       setError(null);
-      setActivity(await client.getActivity(activeSessionId));
+      commitActivity(await client.getActivity(activeSessionId));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [activeSessionId, client]);
+  }, [activeSessionId, client, commitActivity]);
 
   const loadSession = useCallback(async () => {
     if (!activeSessionId) return;
@@ -146,13 +152,13 @@ export function ChatWorkbench({
         client.getBackends(),
       ]);
       commitTranscript(nextTranscript);
-      setActivity(nextActivity);
+      commitActivity(nextActivity);
       setSession(nextSession.session);
       setBackends(nextBackends.backends);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [activeSessionId, client, commitTranscript]);
+  }, [activeSessionId, client, commitActivity, commitTranscript]);
 
   useEffect(() => {
     void loadReadModels();
@@ -263,25 +269,36 @@ export function ChatWorkbench({
 
   const loadOlderConversation = useCallback(async () => {
     if (!activeSessionId || !conversationHistoryPrependPlan.has_older || isLoadingOlder) return;
+    const requestedPrependPlan = conversationHistoryPrependPlan;
     try {
       setIsLoadingOlder(true);
       setError(null);
       const [older, olderActivity] = await Promise.all([
-        conversationHistoryPrependPlan.transcript
-          ? client.getTranscript(activeSessionId, conversationHistoryPrependPlan.transcript)
+        requestedPrependPlan.transcript
+          ? client.getTranscript(activeSessionId, requestedPrependPlan.transcript)
           : Promise.resolve(null),
-        conversationHistoryPrependPlan.activity
-          ? client.getActivity(activeSessionId, conversationHistoryPrependPlan.activity)
+        requestedPrependPlan.activity
+          ? client.getActivity(activeSessionId, requestedPrependPlan.activity)
           : Promise.resolve(null),
       ]);
+      if (
+        !canApplyConversationHistoryPrependPlan(requestedPrependPlan, {
+          transcript: transcriptRef.current,
+          activity: activityRef.current,
+        })
+      ) {
+        return;
+      }
       if (older) {
         commitTranscript(
           transcriptRef.current ? prependTranscriptWindow(transcriptRef.current, older) : older,
         );
       }
       if (olderActivity) {
-        setActivity((current) =>
-          current ? prependActivityWindow(current, olderActivity) : olderActivity,
+        commitActivity(
+          activityRef.current
+            ? prependActivityWindow(activityRef.current, olderActivity)
+            : olderActivity,
         );
       }
     } catch (err) {
@@ -296,6 +313,7 @@ export function ChatWorkbench({
   }, [
     activeSessionId,
     client,
+    commitActivity,
     commitTranscript,
     conversationHistoryPrependPlan,
     isLoadingOlder,
@@ -454,7 +472,7 @@ export function ChatWorkbench({
       setActiveSessionId(created.session.id);
       setSession(created.session);
       commitTranscript(null);
-      setActivity(null);
+      commitActivity(null);
       logVelaChatConsoleEvent("create_session", {
         agentConfig: setupAgentConfig,
         backend: resolvedSelectedBackend,
@@ -470,6 +488,7 @@ export function ChatWorkbench({
     }
   }, [
     client,
+    commitActivity,
     commitTranscript,
     isCreatingSession,
     resolvedSelectedBackend,

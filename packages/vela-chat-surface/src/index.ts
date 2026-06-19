@@ -309,6 +309,21 @@ export function buildConversationHistoryPrependPlan({
   };
 }
 
+export function canApplyConversationHistoryPrependPlan(
+  plan: ConversationHistoryPrependPlan,
+  current: ConversationWindowInput,
+): boolean {
+  if (plan.transcript) {
+    const currentFirstRowId = current.transcript?.window?.first_row_id;
+    if (currentFirstRowId !== plan.transcript.anchorRowId) return false;
+  }
+  if (plan.activity) {
+    const currentFirstItemId = current.activity?.window?.first_item_id;
+    if (currentFirstItemId !== plan.activity.anchorItemId) return false;
+  }
+  return true;
+}
+
 export function prependTranscriptWindow<T extends ChatTranscriptWireView>(current: T, older: T): T {
   const seen = new Set<string>();
   const rows = [...older.rows, ...current.rows].filter((row) => {

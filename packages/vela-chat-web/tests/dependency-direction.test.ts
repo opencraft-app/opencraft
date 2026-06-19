@@ -284,12 +284,15 @@ test("chat history paging keeps transcript and activity windows in sync", () => 
   const source = readFileSync(join(root, "app/chat/ChatWorkbench.tsx"), "utf8");
 
   assert.match(source, /buildConversationHistoryPrependPlan/);
+  assert.match(source, /canApplyConversationHistoryPrependPlan/);
   assert.match(source, /deriveConversationWindowState/);
   assert.match(source, /prependActivityWindow/);
-  assert.match(source, /conversationHistoryPrependPlan\.transcript/);
-  assert.match(source, /conversationHistoryPrependPlan\.activity/);
-  assert.match(source, /client\.getActivity\(activeSessionId,\s*conversationHistoryPrependPlan\.activity\)/);
-  assert.match(source, /setActivity\(/);
+  assert.match(source, /const requestedPrependPlan = conversationHistoryPrependPlan/);
+  assert.match(source, /requestedPrependPlan\.transcript/);
+  assert.match(source, /requestedPrependPlan\.activity/);
+  assert.match(source, /client\.getActivity\(activeSessionId,\s*requestedPrependPlan\.activity\)/);
+  assert.match(source, /activityRef/);
+  assert.match(source, /commitActivity/);
   assert.doesNotMatch(source, /canLoadOlder=\{transcript\?\.window\?\.has_older/);
 });
 
