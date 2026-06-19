@@ -860,6 +860,22 @@ const agentConfigPatchKeys = new Set([
 const permissionModes = new Set(["read_only", "auto", "auto_review", "full_access"]);
 const viewWindowDirections = new Set(["tail", "before", "after", "around"]);
 const backendStatuses = new Set(["available", "unavailable", "degraded"]);
+const transcriptRowKinds = new Set([
+  "user_message",
+  "assistant_message",
+  "working",
+  "activity_marker",
+  "error",
+]);
+const transcriptRowStatuses = new Set([
+  "pending",
+  "streaming",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+const activityItemKinds = new Set(["tool", "command", "task", "warning", "runtime"]);
+const activityItemStatuses = new Set(["pending", "running", "completed", "failed", "cancelled"]);
 const backendCapabilityFields = [
   "streaming",
   "cancel",
@@ -1225,11 +1241,43 @@ export function parseChatTranscriptWireView(data: unknown): ChatTranscriptWireVi
   if (!isRecord(data)) {
     throw invalidTranscriptView("ChatTranscriptView must be an object");
   }
+  const rows = requiredViewArray(data, "rows", "ChatTranscriptView", invalidTranscriptView);
   return {
     session_id: requiredViewString(data, "session_id", "ChatTranscriptView", invalidTranscriptView),
-    rows: requiredViewArray(data, "rows", "ChatTranscriptView", invalidTranscriptView) as TranscriptWireRow[],
+    rows: rows.map((row, index) =>
+      parseTranscriptWireRow(row, `ChatTranscriptView.rows[${index}]`),
+    ),
     window: parseTranscriptWindow(data.window, invalidTranscriptView),
     cursor: requiredViewEventCursor(data, "cursor", "ChatTranscriptView", invalidTranscriptView),
+  };
+}
+
+function parseTranscriptWireRow(data: unknown, owner: string): TranscriptWireRow {
+  if (!isRecord(data)) {
+    throw invalidTranscriptView(`${owner} must be an object`);
+  }
+  const kind = requiredViewString(data, "kind", owner, invalidTranscriptView);
+  if (!transcriptRowKinds.has(kind)) {
+    throw invalidTranscriptView(`${owner}.kind must be a known transcript row kind`);
+  }
+  const status = requiredViewString(data, "status", owner, invalidTranscriptView);
+  if (!transcriptRowStatuses.has(status)) {
+    throw invalidTranscriptView(`${owner}.status must be pending, streaming, completed, failed, or cancelled`);
+  }
+  return {
+    ...(data as unknown as TranscriptWireRow),
+    id: requiredViewString(data, "id", owner, invalidTranscriptView),
+    kind: kind as TranscriptWireRow["kind"],
+    created_at: requiredViewString(data, "created_at", owner, invalidTranscriptView),
+    updated_at: requiredViewString(data, "updated_at", owner, invalidTranscriptView),
+    revision: requiredViewInteger(data, "revision", owner, invalidTranscriptView, { minimum: 1 }),
+    status,
+    source_event_ids: requiredViewStringArray(
+      data,
+      "source_event_ids",
+      owner,
+      invalidTranscriptView,
+    ),
   };
 }
 
@@ -1241,11 +1289,39 @@ export function parseActivityWireView(data: unknown): ActivityWireView {
   if (!isRecord(data)) {
     throw invalidActivityView("ActivityShelfView must be an object");
   }
+  const items = requiredViewArray(data, "items", "ActivityShelfView", invalidActivityView);
   return {
     session_id: requiredViewString(data, "session_id", "ActivityShelfView", invalidActivityView),
-    items: requiredViewArray(data, "items", "ActivityShelfView", invalidActivityView) as ActivityWireItem[],
+    items: items.map((item, index) =>
+      parseActivityWireItem(item, `ActivityShelfView.items[${index}]`),
+    ),
     window: parseActivityWindow(data.window, invalidActivityView),
     cursor: requiredViewEventCursor(data, "cursor", "ActivityShelfView", invalidActivityView),
+  };
+}
+
+function parseActivityWireItem(data: unknown, owner: string): ActivityWireItem {
+  if (!isRecord(data)) {
+    throw invalidActivityView(`${owner} must be an object`);
+  }
+  const kind = requiredViewString(data, "kind", owner, invalidActivityView);
+  if (!activityItemKinds.has(kind)) {
+    throw invalidActivityView(`${owner}.kind must be a known activity item kind`);
+  }
+  const status = requiredViewString(data, "status", owner, invalidActivityView);
+  if (!activityItemStatuses.has(status)) {
+    throw invalidActivityView(`${owner}.status must be pending, running, completed, failed, or cancelled`);
+  }
+  return {
+    ...(data as unknown as ActivityWireItem),
+    id: requiredViewString(data, "id", owner, invalidActivityView),
+    kind,
+    status,
+    title: requiredViewString(data, "title", owner, invalidActivityView),
+    created_at: requiredViewString(data, "created_at", owner, invalidActivityView),
+    ...(data.updated_at !== undefined
+      ? { updated_at: optionalViewString(data, "updated_at", owner, invalidActivityView) }
+      : {}),
   };
 }
 
@@ -1397,6 +1473,50 @@ function requiredViewArray(
     throw invalid(`${owner} requires ${field}`);
   }
   return value;
+}
+
+function optionalViewString(
+  data: Record<string, unknown>,
+  field: string,
+  owner: string,
+  invalid: ViewContractErrorFactory,
+) {
+  const value = data[field];
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") {
+    throw invalid(`${owner}.${field} must be a string`);
+  }
+  return value;
+}
+
+function requiredViewInteger(
+  data: Record<string, unknown>,
+  field: string,
+  owner: string,
+  invalid: ViewContractErrorFactory,
+  options?: { minimum?: number },
+) {
+  const value = data[field];
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw invalid(`${owner} requires ${field}`);
+  }
+  if (options?.minimum !== undefined && value < options.minimum) {
+    throw invalid(`${owner}.${field} must be at least ${options.minimum}`);
+  }
+  return value;
+}
+
+function requiredViewStringArray(
+  data: Record<string, unknown>,
+  field: string,
+  owner: string,
+  invalid: ViewContractErrorFactory,
+) {
+  const value = data[field];
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw invalid(`${owner} requires ${field}`);
+  }
+  return value as string[];
 }
 
 function requiredBackendCapabilities(data: Record<string, unknown>, owner: string) {

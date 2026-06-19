@@ -279,6 +279,19 @@ External clients MUST generate or validate wire DTOs from `public/openapi/velach
 - **AND** `window.has_older` / `window.has_newer` 必须是 boolean
 - **AND** 缺失 envelope 字段视为 wire contract violation，而不是交给 UI fallback 猜测
 
+#### Scenario: 手写 client 校验 read-model row/item shape
+
+- **WHEN** client 处理 `ChatTranscriptView.rows`
+- **THEN** 每个 row 必须校验 OpenAPI required `id`、`kind`、`created_at`、`updated_at`、`revision`、`status` 和 `source_event_ids`
+- **AND** `kind` 必须是 `user_message` / `assistant_message` / `working` / `activity_marker` / `error`
+- **AND** `status` 必须是 `pending` / `streaming` / `completed` / `failed` / `cancelled`
+- **AND** `revision` 必须是大于等于 1 的 integer，`source_event_ids` 必须是 string array
+- **WHEN** client 处理 `ActivityShelfView.items`
+- **THEN** 每个 item 必须校验 OpenAPI required `id`、`kind`、`status`、`title` 和 `created_at`
+- **AND** `kind` 必须是 `tool` / `command` / `task` / `warning` / `runtime`
+- **AND** `status` 必须是 `pending` / `running` / `completed` / `failed` / `cancelled`
+- **AND** malformed row/item 不得进入 surface projection、virtual list 或 markdown renderer
+
 ### Requirement: Provider 差异不泄露到客户端
 
 Provider-specific control methods MUST stay inside daemon/backend adapters.
@@ -306,9 +319,9 @@ Session config changes MUST be visible through SessionView/read model updates.
 
 这些点还不够确定，先记录，不直接改代码：
 
-- 是否在手写 client 中逐字段校验 `ChatTranscriptRow` / `ActivityShelfItem` / `TranscriptPart`。OpenAPI 已经定义 required 字段，但一次性严格化可能暴露历史 fixture、projection fallback 或第三方 client 的兼容问题。
+- 是否在手写 client 中继续逐字段校验 `TranscriptPart` / `ActivityShelfItem.detail`。row/item 的 required 字段和 enum 已经在 client boundary 校验；深层 renderer payload 是否也收紧，需要结合真实 provider 样本确认。
 - 是否在手写 client 中逐字段校验 `Session` / `SessionSummary`。目前只校验 session response envelope；完整校验会影响很多测试 fixture，需要先确认 daemon 输出和 OpenAPI 完全一致。
-- 是否在手写 client 中逐字段校验 `Backend` / `Backend.capabilities` / `BackendFeature`。OpenAPI 已经定义 required 字段，但当前 fixture 和不同 provider catalog 仍在收敛，先只校验 `/backends` 顶层 envelope。
+- 是否在手写 client 中逐字段校验 `BackendModel` / `PermissionModeOption` / `BackendFeature`。backend item identity、status、display label 和 capability flags 已经校验；catalog option 的深层字段是否收紧，需要先确认 provider catalog 输出。
 - `AgentConfig.model` / `reasoning_effort` / `permission_mode` 是否允许 `null` 表示清空配置。当前 TypeScript 类型历史上允许 `null`，但 OpenAPI `AgentConfig` 没有声明 nullable；在语义确定前，手写 client 保留这些字段的 `null` 兼容，同时校验非 null 值的 OpenAPI 类型和枚举。
 - 是否为所有 read models 引入 generated validator。长期更像 Paseo 的成熟路线是统一 schema boundary；短期若手写，容易和 OpenAPI 漂移。
 - 是否把 SSE event 也升级成严格 `VelaEvent` parser。当前为了断线恢复和未知 provider event 的容错仍偏宽松，具体收紧范围需要结合真实 Codex/ACP/Pi 录制样本确认。

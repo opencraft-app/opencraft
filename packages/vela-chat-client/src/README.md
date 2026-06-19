@@ -47,3 +47,8 @@ field-type/enum checks.
 Read-model envelope validation belongs here too. The client boundary should
 reject transcript/activity views that are missing OpenAPI-required `session_id`,
 `window`, or full `EventCursor` fields before UI layers consume them.
+
+Read-model row/item validation belongs here for OpenAPI-required transcript
+row and activity item fields/enums. Surface projection, virtualization, and
+renderers should receive already validated read-model items instead of
+inventing fallback wire shapes.

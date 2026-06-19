@@ -30,6 +30,9 @@ Command submission validates both sides of the OpenAPI boundary:
   anchor id, and boolean bounds before any transcript/activity request is sent
 - incoming transcript/activity read-model envelopes include their required
   `session_id`, `window`, and full `EventCursor`
+- incoming transcript rows and activity items include their OpenAPI-required
+  fields and enums before surface projection, virtualization, or markdown
+  rendering consume them
 
 Do not widen these contracts back into loose optional-field objects.
 
