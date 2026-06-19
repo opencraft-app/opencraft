@@ -11,6 +11,7 @@ import {
   needsTranscriptRefreshAfterLiveOverlay,
   parseSseJsonFrames,
   readVelaStreamEvent,
+  isVelaStreamEventForSession,
   streamReadModelRefreshPlan,
   subscribeVelaEventSource,
 } from "../src/index";
@@ -1084,6 +1085,32 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
       session: true,
       backends: false,
     },
+  );
+});
+
+test("matches stream events to the active session while accepting legacy events", () => {
+  assert.equal(
+    isVelaStreamEventForSession("sess_1", {
+      event_id: "evt_same",
+      session_id: "sess_1",
+      type: "turn.completed",
+    }),
+    true,
+  );
+  assert.equal(
+    isVelaStreamEventForSession("sess_1", {
+      event_id: "evt_legacy",
+      type: "turn.completed",
+    }),
+    true,
+  );
+  assert.equal(
+    isVelaStreamEventForSession("sess_1", {
+      event_id: "evt_other",
+      session_id: "sess_2",
+      type: "turn.completed",
+    }),
+    false,
   );
 });
 

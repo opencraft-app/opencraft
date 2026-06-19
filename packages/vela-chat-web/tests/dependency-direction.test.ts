@@ -363,6 +363,11 @@ test("chat stream handler applies local overlays and scopes read-model refresh",
   const source = readFileSync(join(root, "app/chat/ChatWorkbench.tsx"), "utf8");
 
   assert.match(source, /readVelaStreamEvent/);
+  assert.match(source, /isVelaStreamEventForSession/);
+  assert.match(
+    source,
+    /if \(!isVelaStreamEventForSession\(activeSessionId,\s*streamEvent\)\) return;/,
+  );
   assert.match(source, /applyTranscriptLiveOverlay/);
   assert.match(source, /streamReadModelRefreshPlan/);
   assert.match(source, /transcriptRefreshScheduler\.notifyStreamEvent/);

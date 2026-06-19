@@ -417,6 +417,13 @@ export function readVelaStreamEvent(event: MessageEvent | Event): VelaStreamEven
   }
 }
 
+export function isVelaStreamEventForSession(
+  sessionId: string | undefined,
+  event: VelaStreamEventWire,
+) {
+  return !isDifferentKnownStreamSession(sessionId, event.session_id);
+}
+
 export function applyTranscriptLiveOverlay(
   transcript: ChatTranscriptWireView,
   event: VelaStreamEventWire,
