@@ -281,6 +281,7 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
 
   const refreshChannelStatus = useCallback(async () => {
     if (!botId) {
+      // No bot selected means there is no Hermes instance to configure; unlike fetch failures, disable all channels.
       setEnabledChannels(new Set());
       setChannelStatus("ready");
       return;
