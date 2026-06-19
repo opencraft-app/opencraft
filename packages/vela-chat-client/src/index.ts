@@ -44,6 +44,7 @@ export interface TranscriptWireRow {
   revision?: number;
   text?: string;
   parts?: TranscriptWirePart[];
+  activity_id?: string;
   label?: string;
   status?: string;
   source_event_ids?: string[];
@@ -1575,6 +1576,9 @@ function parseTranscriptWireRow(data: unknown, owner: string): TranscriptWireRow
       : {}),
     ...(data.parts !== undefined
       ? { parts: parseTranscriptWireParts(data, `${owner}.parts`) }
+      : {}),
+    ...(data.activity_id !== undefined
+      ? { activity_id: optionalViewString(data, "activity_id", owner, invalidTranscriptView) }
       : {}),
     ...(data.label !== undefined
       ? { label: optionalViewString(data, "label", owner, invalidTranscriptView) }
