@@ -2409,7 +2409,7 @@ function AutomationFormModal({
           <label className="block text-sm font-medium text-black/80">
             {t("通知方式")}<span className="ml-1 text-xs font-normal text-black/40">{t("（可选）")}</span>
           </label>
-          {mode === "edit" && channelStatus === "loading" ? (
+          {channelStatus === "loading" ? (
             <div className="mt-2 inline-flex min-h-6 items-center gap-1.5 text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
               {t("加载中...")}
@@ -2431,11 +2431,10 @@ function AutomationFormModal({
                 ] as const)
             ).map(({ key, label, comingSoon }) => {
               // comingSoon 通道一律强制为「不可配置」，无论 acli channel status 怎么报
-              const channelsLoading = mode === "edit" && channelStatus === "loading";
-              const configured = !comingSoon && !channelsLoading && enabledChannels.has(key);
+              const configured = !comingSoon && enabledChannels.has(key);
               const blockedByFrequency = key === "weixin" && weixinBlockedByFrequency;
               const selected = deliverPlatforms.includes(key);
-              const checkboxDisabled = channelsLoading || !configured || blockedByFrequency;
+              const checkboxDisabled = !configured || blockedByFrequency;
               return (
                 <div key={key}>
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -2473,28 +2472,26 @@ function AutomationFormModal({
                         {label}
                         {comingSoon ? (
                           <span className="ml-1 text-xs">{t("（即将推出）")}</span>
-                        ) : channelsLoading ? (
-                          <span className="ml-1 text-xs">{t("加载中...")}</span>
                         ) : (
                           !configured && <span className="ml-1 text-xs">{t("（未配置）")}</span>
                         )}
                       </span>
                     </label>
-                    {!channelsLoading && blockedByFrequency && (
+                    {(blockedByFrequency || (selected && key === "weixin")) && (
                       <span className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
                         {t("微信不建议频繁通知，否则可能会被限流")}
                       </span>
                     )}
-                    {!channelsLoading && selected && key === "qqbot" && (
+                    {selected && key === "qqbot" && (
                       <span className="inline-flex items-center text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
                         {t("如未生效，可尝试向绑定的QQ机器人发送")}
                         <InlineCopyText value="/set-home" />
                       </span>
                     )}
-                    {!channelsLoading && selected && key === "feishu" && (
+                    {selected && key === "feishu" && (
                       <span className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>{t("支持通过默认的 home 对话或指定 Chat ID 发送通知")}</span>
                     )}
-                    {!channelsLoading && selected && (key === "telegram" || key === "discord") && (
+                    {selected && (key === "telegram" || key === "discord") && (
                       <span className="inline-flex items-center text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
                         {t("请先在")}
                         {label}
@@ -2503,12 +2500,7 @@ function AutomationFormModal({
                         {t("给机器人")}
                       </span>
                     )}
-                    {!channelsLoading && selected && key === "weixin" && !blockedByFrequency && (
-                      <span className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
-                        {t("微信不建议频繁通知，否则可能会被限流")}
-                      </span>
-                    )}
-                    {!channelsLoading && selected && !comingSoon && (
+                    {selected && !comingSoon && (
                       <button
                         type="button"
                         onClick={() => void handleSendTestMessage(key)}
