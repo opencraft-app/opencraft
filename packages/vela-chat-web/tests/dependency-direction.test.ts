@@ -275,7 +275,7 @@ test("conversation runtime owns history prepend scroll anchoring", () => {
   const chatWorkbench = readFileSync(join(root, "app/chat/ChatWorkbench.tsx"), "utf8");
 
   assert.match(controller, /pendingHistoryPrependAnchorRef/);
-  assert.match(controller, /deriveScrollTopAfterHistoryPrepend/);
+  assert.match(controller, /deriveHistoryPrependAnchorAfterResize/);
   assert.doesNotMatch(chatWorkbench, /captureTranscriptScrollAnchor/);
   assert.doesNotMatch(chatWorkbench, /querySelector<HTMLElement>\('\\[aria-label="Chat transcript"\\]'\)/);
 });

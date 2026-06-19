@@ -25,6 +25,7 @@ import {
   USER_SCROLL_DELTA_EPSILON,
 } from "../src/conversation-runtime/scroll/bottomAnchor";
 import {
+  deriveHistoryPrependAnchorAfterResize,
   DEFAULT_HISTORY_START_THRESHOLD_PX,
   deriveScrollTopAfterHistoryPrepend,
   shouldRequestOlderHistory,
@@ -828,6 +829,37 @@ test("history prepend preserves viewport by offsetting the scroll height delta",
       scrollHeight: 1200,
     }),
     40,
+  );
+});
+
+test("history prepend anchor survives loader height changes while older history is loading", () => {
+  const loaderResize = deriveHistoryPrependAnchorAfterResize({
+    anchor: {
+      previousScrollHeight: 1200,
+      previousScrollTop: 40,
+    },
+    isLoadingOlderHistory: true,
+    scrollHeight: 1232,
+  });
+
+  assert.deepEqual(loaderResize, {
+    scrollTop: 72,
+    nextAnchor: {
+      previousScrollHeight: 1232,
+      previousScrollTop: 72,
+    },
+  });
+
+  assert.deepEqual(
+    deriveHistoryPrependAnchorAfterResize({
+      anchor: loaderResize.nextAnchor,
+      isLoadingOlderHistory: false,
+      scrollHeight: 1532,
+    }),
+    {
+      scrollTop: 372,
+      nextAnchor: null,
+    },
   );
 });
 

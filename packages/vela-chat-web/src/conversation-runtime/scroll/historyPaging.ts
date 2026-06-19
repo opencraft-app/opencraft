@@ -14,6 +14,22 @@ export interface HistoryPrependScrollAnchor {
   scrollHeight: number;
 }
 
+export interface ActiveHistoryPrependAnchor {
+  previousScrollHeight: number;
+  previousScrollTop: number;
+}
+
+export interface HistoryPrependAnchorResizeState {
+  anchor: ActiveHistoryPrependAnchor | null;
+  isLoadingOlderHistory: boolean;
+  scrollHeight: number;
+}
+
+export interface HistoryPrependAnchorResizeResult {
+  nextAnchor: ActiveHistoryPrependAnchor | null;
+  scrollTop: number | null;
+}
+
 export function shouldRequestOlderHistory({
   hasOlderHistory,
   isHistoryStartReady = true,
@@ -41,4 +57,35 @@ export function deriveScrollTopAfterHistoryPrepend({
 
   const heightDelta = Math.max(0, scrollHeight - previousScrollHeight);
   return safePreviousScrollTop + heightDelta;
+}
+
+export function deriveHistoryPrependAnchorAfterResize({
+  anchor,
+  isLoadingOlderHistory,
+  scrollHeight,
+}: HistoryPrependAnchorResizeState): HistoryPrependAnchorResizeResult {
+  if (!anchor || !Number.isFinite(scrollHeight)) {
+    return { nextAnchor: anchor, scrollTop: null };
+  }
+  if (scrollHeight <= anchor.previousScrollHeight) {
+    return { nextAnchor: anchor, scrollTop: null };
+  }
+
+  const scrollTop = deriveScrollTopAfterHistoryPrepend({
+    previousScrollHeight: anchor.previousScrollHeight,
+    previousScrollTop: anchor.previousScrollTop,
+    scrollHeight,
+  });
+
+  if (isLoadingOlderHistory) {
+    return {
+      scrollTop,
+      nextAnchor: {
+        previousScrollHeight: scrollHeight,
+        previousScrollTop: scrollTop,
+      },
+    };
+  }
+
+  return { nextAnchor: null, scrollTop };
 }

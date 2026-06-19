@@ -12,7 +12,8 @@ import {
   shouldRestickOnViewportSizeChange,
 } from "./bottomAnchor";
 import {
-  deriveScrollTopAfterHistoryPrepend,
+  type ActiveHistoryPrependAnchor,
+  deriveHistoryPrependAnchorAfterResize,
   shouldRequestOlderHistory,
 } from "./historyPaging";
 import {
@@ -77,10 +78,8 @@ export function useConversationScrollController(
   const pendingScrollResumePersistFrameRef = useRef<number | null>(null);
   const latestScrollResumePersistStateRef =
     useRef<ConversationScrollResumeState | null>(null);
-  const pendingHistoryPrependAnchorRef = useRef<{
-    scrollHeight: number;
-    scrollTop: number;
-  } | null>(null);
+  const pendingHistoryPrependAnchorRef =
+    useRef<ActiveHistoryPrependAnchor | null>(null);
   const pendingUserScrollUpIntentRef = useRef(false);
   const historyStartReadyRef = useRef(false);
   const userScrollActiveRef = useRef(false);
@@ -393,8 +392,8 @@ export function useConversationScrollController(
         })
       ) {
         pendingHistoryPrependAnchorRef.current = {
-          scrollHeight: element.scrollHeight,
-          scrollTop: element.scrollTop,
+          previousScrollHeight: element.scrollHeight,
+          previousScrollTop: element.scrollTop,
         };
         latest.onNearHistoryStart?.();
       }
@@ -446,19 +445,16 @@ export function useConversationScrollController(
       lastKnownViewportHeightRef.current = viewportHeight;
       lastKnownViewportWidthRef.current = viewportWidth;
 
-      const pendingHistoryPrependAnchor = pendingHistoryPrependAnchorRef.current;
-      if (
-        pendingHistoryPrependAnchor &&
-        scrollElement.scrollHeight > pendingHistoryPrependAnchor.scrollHeight
-      ) {
-        const nextScrollTop = deriveScrollTopAfterHistoryPrepend({
-          previousScrollHeight: pendingHistoryPrependAnchor.scrollHeight,
-          previousScrollTop: pendingHistoryPrependAnchor.scrollTop,
-          scrollHeight: scrollElement.scrollHeight,
-        });
-        scrollElement.scrollTop = nextScrollTop;
-        lastKnownScrollTopRef.current = nextScrollTop;
-        pendingHistoryPrependAnchorRef.current = null;
+      const prependAnchorUpdate = deriveHistoryPrependAnchorAfterResize({
+        anchor: pendingHistoryPrependAnchorRef.current,
+        isLoadingOlderHistory:
+          optionsRef.current.isLoadingOlderHistory ?? false,
+        scrollHeight: scrollElement.scrollHeight,
+      });
+      if (prependAnchorUpdate.scrollTop !== null) {
+        scrollElement.scrollTop = prependAnchorUpdate.scrollTop;
+        lastKnownScrollTopRef.current = prependAnchorUpdate.scrollTop;
+        pendingHistoryPrependAnchorRef.current = prependAnchorUpdate.nextAnchor;
       }
 
       if (tryRestoreScrollResume()) return;
