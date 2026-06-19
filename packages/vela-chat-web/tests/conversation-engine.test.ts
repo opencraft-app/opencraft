@@ -421,6 +421,47 @@ test("web adapter invalidates agent work cache when display intent changes", () 
   }
 });
 
+test("web adapter invalidates assistant cache when settled label changes", () => {
+  const firstSnapshot: ChatRenderModel = {
+    session_id: "sess_settled_label",
+    host: { kind: "desktop_web" },
+    rows: [
+      {
+        kind: "assistant_message",
+        id: "a1",
+        key: "assistant:a1",
+        blocks: [{ id: "a1:block:0", text: "done" }],
+        createdAt: "2026-06-18T00:00:00Z",
+        status: "completed",
+        streaming: false,
+        settledLabel: "Worked for 1s",
+        revision: 1,
+        debug: { projection: "transcript", source_event_ids: ["evt_1"] },
+      },
+    ],
+    composer: { placeholder: "要求后续变更", can_send: true },
+  };
+  const secondSnapshot: ChatRenderModel = {
+    ...firstSnapshot,
+    rows: [
+      {
+        ...firstSnapshot.rows[0]!,
+        settledLabel: "Worked for 2s",
+      },
+    ],
+  };
+
+  const first = toWebChatModel(firstSnapshot);
+  const second = toWebChatModel(secondSnapshot);
+
+  assert.notEqual(second.turns[0], first.turns[0]);
+  assert.notEqual(second.turns[0]?.fingerprint, first.turns[0]?.fingerprint);
+  assert.equal(second.turns[0]?.blocks[0]?.kind, "assistant_markdown");
+  if (second.turns[0]?.blocks[0]?.kind === "assistant_markdown") {
+    assert.equal(second.turns[0].blocks[0].settledLabel, "Worked for 2s");
+  }
+});
+
 test("conversation stream reuses unchanged item identities across fresh render model snapshots", () => {
   const firstSnapshot: ChatRenderModel = {
     session_id: "sess_1",

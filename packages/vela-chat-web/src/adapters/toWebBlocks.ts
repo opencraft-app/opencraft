@@ -113,7 +113,7 @@ function rowFingerprint(row: ChatRenderRow) {
     const blockHash = hashString(
       row.blocks.map((block) => `${block.id}:${block.text}`).join("\n---block---\n"),
     );
-    return `${row.key}:${row.status}:rev:${row.revision}:len:${textLength}:hash:${blockHash}`;
+    return `${row.key}:${row.status}:streaming:${row.streaming}:settled:${hashString(row.settledLabel ?? "")}:rev:${row.revision}:len:${textLength}:hash:${blockHash}`;
   }
   if (row.kind === "user_message") {
     return `${row.key}:len:${row.text.length}:hash:${hashString(row.copy_text)}:parts:${partsFingerprint(row.parts)}`;
