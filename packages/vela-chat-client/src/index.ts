@@ -228,6 +228,10 @@ export interface BackendsWireResponse {
   backends: BackendWire[];
 }
 
+export interface BackendWireResponse {
+  backend: BackendWire;
+}
+
 export interface UpdateAgentConfigWireResponse {
   session: SessionWire;
   effective_after: "current_session" | "next_turn";
@@ -288,6 +292,7 @@ export interface VeladClient {
   createSession: (input: CreateSessionInput) => Promise<CreateSessionWireResponse>;
   getSession: (sessionId: string) => Promise<SessionWireResponse>;
   getBackends: () => Promise<BackendsWireResponse>;
+  getBackend: (backend: string) => Promise<BackendWireResponse>;
   updateAgentConfig: (input: {
     sessionId: string;
     patch: AgentConfigPatchWire;
@@ -712,6 +717,11 @@ export function createVeladClient(options: VeladClientOptions): VeladClient {
       const response = await doFetch(url);
       return readBackendsResponse(response);
     },
+    async getBackend(backend) {
+      const url = new URL(`backends/${encodeBackendKind(backend)}`, baseUrl);
+      const response = await doFetch(url);
+      return readBackendResponse(response);
+    },
     async updateAgentConfig({ sessionId, patch, idempotencyKey }) {
       validateAgentConfigPatch(patch);
       const headerIdempotencyKey = validateOptionalIdempotencyKey(idempotencyKey) ?? createConfigIdempotencyKey();
@@ -805,6 +815,13 @@ function validateAfterId(afterId: string | null | undefined) {
     throw invalidAfterId("after_id must be a string");
   }
   return afterId;
+}
+
+function encodeBackendKind(backend: unknown) {
+  if (typeof backend !== "string" || !backendKinds.has(backend)) {
+    throw invalidBackendKind("backend must be a known BackendKind");
+  }
+  return encodeURIComponent(backend);
 }
 
 const backendKinds = new Set([
@@ -1200,6 +1217,23 @@ export function parseBackendsWireResponse(data: unknown): BackendsWireResponse {
     backends: backends.map((backend, index) =>
       parseBackendWire(backend, `BackendsResponse.backends[${index}]`),
     ),
+  };
+}
+
+async function readBackendResponse(response: Response): Promise<BackendWireResponse> {
+  return parseBackendWireResponse(await readJsonResponse<unknown>(response));
+}
+
+export function parseBackendWireResponse(data: unknown): BackendWireResponse {
+  if (!isRecord(data)) {
+    throw invalidBackendsResponse("BackendResponse must be an object");
+  }
+  const backend = data.backend;
+  if (!isRecord(backend)) {
+    throw invalidBackendsResponse("BackendResponse requires backend");
+  }
+  return {
+    backend: parseBackendWire(backend, "BackendResponse.backend"),
   };
 }
 
@@ -1814,6 +1848,10 @@ function invalidSessionId(message: string) {
 
 function invalidAfterId(message: string) {
   return new VeladClientError("invalid_after_id", message);
+}
+
+function invalidBackendKind(message: string) {
+  return new VeladClientError("invalid_backend_kind", message);
 }
 
 function invalidCreateSessionRequest(message: string) {

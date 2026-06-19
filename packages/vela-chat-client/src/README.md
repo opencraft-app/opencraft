@@ -14,7 +14,8 @@ responses.
 
 Query response envelope validation belongs here for simple OpenAPI required
 wrappers, such as `GET /sessions/{session_id}` requiring `session` and
-`GET /backends` requiring a `backends` array.
+`GET /backends` requiring a `backends` array or `GET /backends/{backend}`
+requiring `backend`.
 
 Backend catalog item validation also belongs here for OpenAPI-required backend
 identity, status, display label, and capability flags before composer controls
@@ -27,6 +28,8 @@ composer sees them.
 
 Path/query parameter validation belongs here before URLs are constructed,
 including OpenAPI string parameters such as `session_id` and `after_id`.
+Backend path parameters should also be validated against the OpenAPI
+`BackendKind` enum before constructing `/backends/{backend}` URLs.
 
 Header parameter validation belongs here for OpenAPI mutating command
 boundaries, including explicit `Idempotency-Key` values before a request is

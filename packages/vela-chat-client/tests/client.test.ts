@@ -737,6 +737,50 @@ test("validates backend catalog nested option shapes at the client wire boundary
   );
 });
 
+test("fetches one backend detail and validates backend path kind before fetch", async () => {
+  const requests: Array<{ url: string; init?: RequestInit }> = [];
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async (url, init) => {
+      requests.push({ url: String(url), init });
+      return new Response(
+        JSON.stringify({
+          backend: {
+            kind: "pi",
+            display_name: "Pi Coding",
+            status: "available",
+            capabilities: {
+              streaming: true,
+              cancel: true,
+              permission_requests: false,
+              structured_diff: false,
+              session_agent_config: true,
+            },
+            models: [{ id: "minimax-m2.7", label: "MiniMax M2.7" }],
+            permission_modes: [{ id: "full_access", label: "Full access" }],
+            features: [],
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    },
+  });
+
+  const backend = await client.getBackend("pi");
+
+  assert.equal(backend.backend.kind, "pi");
+  assert.equal(requests[0]?.url, "http://127.0.0.1:3857/api/v1/backends/pi");
+
+  await assert.rejects(
+    () => client.getBackend("unknown_backend"),
+    (err) =>
+      err instanceof VeladClientError &&
+      err.code === "invalid_backend_kind" &&
+      /backend/.test(err.message),
+  );
+  assert.equal(requests.length, 1);
+});
+
 test("fetches session, backend catalog, and patches agent config", async () => {
   const requests: Array<{ url: string; init?: RequestInit }> = [];
   const client = createVeladClient({

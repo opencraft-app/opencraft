@@ -22,7 +22,7 @@ Command submission validates both sides of the OpenAPI boundary:
   and `effective_after` enum where OpenAPI requires it
 - incoming query response envelopes include OpenAPI-required top-level fields,
   such as `session` for `GET /sessions/{session_id}` and a `backends` array for
-  `GET /backends`
+  `GET /backends`, plus `backend` for `GET /backends/{backend}`
 - incoming backend catalog items include OpenAPI-required backend identity,
   status, display label, and boolean capability flags before composer controls
   consume them
