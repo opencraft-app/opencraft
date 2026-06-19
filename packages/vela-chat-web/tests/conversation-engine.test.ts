@@ -381,6 +381,46 @@ test("web adapter reuses unchanged turns across fresh render model snapshots", (
   assert.match(second.turns[1]?.fingerprint ?? "", /rev:2/);
 });
 
+test("web adapter invalidates agent work cache when display intent changes", () => {
+  const firstSnapshot: ChatRenderModel = {
+    session_id: "sess_work_display",
+    host: { kind: "desktop_web" },
+    rows: [
+      {
+        kind: "agent_work",
+        id: "work_1",
+        key: "tool:work_1",
+        title: "Searched code",
+        summary: "CommandAck",
+        status: "completed",
+        display: "compact",
+        createdAt: "2026-06-18T00:00:00Z",
+        debug: { projection: "activity", source_event_ids: ["evt_1"] },
+      },
+    ],
+    composer: { placeholder: "要求后续变更", can_send: true },
+  };
+  const secondSnapshot: ChatRenderModel = {
+    ...firstSnapshot,
+    rows: [
+      {
+        ...firstSnapshot.rows[0]!,
+        display: "prominent",
+      },
+    ],
+  };
+
+  const first = toWebChatModel(firstSnapshot);
+  const second = toWebChatModel(secondSnapshot);
+
+  assert.notEqual(second.turns[0], first.turns[0]);
+  assert.notEqual(second.turns[0]?.fingerprint, first.turns[0]?.fingerprint);
+  assert.equal(second.turns[0]?.blocks[0]?.kind, "agent_work");
+  if (second.turns[0]?.blocks[0]?.kind === "agent_work") {
+    assert.equal(second.turns[0].blocks[0].display, "prominent");
+  }
+});
+
 test("conversation stream reuses unchanged item identities across fresh render model snapshots", () => {
   const firstSnapshot: ChatRenderModel = {
     session_id: "sess_1",

@@ -119,7 +119,7 @@ function rowFingerprint(row: ChatRenderRow) {
     return `${row.key}:len:${row.text.length}:hash:${hashString(row.copy_text)}:parts:${partsFingerprint(row.parts)}`;
   }
   if (row.kind === "agent_work") {
-    return `${row.key}:${row.status}:title:${hashString(row.title)}:summary:${hashString(row.summary)}`;
+    return `${row.key}:${row.status}:display:${row.display}:title:${hashString(row.title)}:summary:${hashString(row.summary)}`;
   }
   return `${row.key}:label:${hashString(row.label)}`;
 }
