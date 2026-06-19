@@ -1589,6 +1589,9 @@ function parseActivityWireItem(data: unknown, owner: string): ActivityWireItem {
     kind,
     status,
     title: requiredViewString(data, "title", owner, invalidActivityView),
+    ...(data.summary !== undefined
+      ? { summary: optionalViewString(data, "summary", owner, invalidActivityView) }
+      : {}),
     created_at: requiredViewString(data, "created_at", owner, invalidActivityView),
     ...(data.updated_at !== undefined
       ? { updated_at: optionalViewString(data, "updated_at", owner, invalidActivityView) }
