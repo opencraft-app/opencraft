@@ -47,12 +47,35 @@ Client input event 不是事实。它只有被 daemon 接受后，才会产生 c
 
 这些事件只能由 daemon/sequencer 写入 canonical event log。Backend adapter 可以提供 raw output，但不能直接决定 canonical `event_id`、`epoch`、`seq`。
 
+## 生命周期归属
+
+Vela 的生命周期以 canonical event 为准，不以 provider 原始事件名为准。Provider 可以有自己的
+`agent_start`、`turn_start`、`message_start`、`message_update`、`turn_end`、`agent_end` 等事件，但这些只是
+adapter 的输入。
+
+| Lifecycle | Canonical owner | 规则 |
+| --- | --- | --- |
+| command accepted / queued / rejected | daemon command handler | 先做 idempotency、session 状态和 backend availability 判断，再写入 command fact 或返回 `CommandAck.rejected` |
+| `turn.started` | runtime sequencer | runtime 在调用 backend side effect 前追加，provider 的 `turn_start` 不再重复生成 canonical `turn.started` |
+| assistant message lifecycle | backend normalizer | 只有 provider 给出 assistant role 和稳定 message id 时才生成 `assistant.message.started` / `assistant.message.completed`；否则吸收 lifecycle 噪音，避免制造不稳定 row |
+| assistant text / reasoning delta | backend normalizer | `message_update` 类增量映射为 `assistant.message.delta` 或 `assistant.reasoning.delta` |
+| tool lifecycle | backend normalizer | provider tool start/update/end 映射为 `tool.started`、`tool.updated`、`tool.completed` 或 `tool.failed`，并尽量保留稳定 `tool_id` |
+| turn completion | backend normalizer + runtime | provider 明确完成信号映射为 `turn.completed`；provider process/error 信号映射为 `turn.failed` |
+| diagnostics | adapter / runtime | 只有异常、未知、未实现、需要人工关注的 provider 信号才进入 `warning.raised` 或 `error.raised` |
+
+这条边界很重要：正常 provider 生命周期事件应该被“吸收”或映射成稳定 canonical event，不能因为我们还没有 UI 呈现需求就降级成 warning。`warning.raised` 表示需要关注的异常信号，不是普通 lifecycle trace。
+
+### Canonical vs Trace
+
+Canonical event log 是 read model 的事实来源；trace/timeline 是诊断视角。普通 UI 应消费 transcript/activity/requests 等 read model，而不是 provider raw timeline。Provider raw payload 可以被保留在 canonical event 的 `raw` 字段或诊断 trace 中，但客户端兼容性只能依赖 OpenAPI 定义的 canonical event 和 read model 字段。
+
 ### Session / Backend
 
 | Type | 主要投影 | 说明 |
 | --- | --- | --- |
 | `session.created` | `SessionListView`, `SessionView` | session 被创建 |
 | `session.updated` | `SessionListView`, `SessionView` | title、working directory、model、metadata 等发生变化 |
+| `session.config.updated` | `SessionListView`, `SessionView` | session-level `agent_config` 默认值改变；running turn 仍使用自己的 `resolved_agent_config` |
 | `session.status.changed` | `SessionListView`, `SessionView`, `ChatTranscriptView` | `idle`、`running`、`waiting_for_input`、`canceling`、`failed`、`closed` 等状态变化 |
 | `session.closed` | `SessionListView`, `SessionView` | session 被关闭 |
 | `backend.status.changed` | `BackendStatusView`, `SessionListView` | backend 可用性、健康状态、capability 变化 |
@@ -140,6 +163,8 @@ Client input event 不是事实。它只有被 daemon 接受后，才会产生 c
 - backend replay 的用户输入变成第二个 user bubble；
 - reasoning/status 被当成 assistant markdown；
 - 切会话后 timeline snapshot 被当成 transcript rows。
+
+`ActivityShelfView` 对工具调用采用“全量工具、结构化投影”的规则：所有 normalized `tool.*` lifecycle 都必须合并到稳定 tool activity item，短工具不因为耗时短而从 activity 消失。普通 UI 可以折叠或虚拟化这些 work rows，但不应该读取 trace/raw event 来补工具展示。`Worked for ...` 这类 turn-level 文案由前端按 user/assistant row 时间边界派生，不是 canonical event 词汇的一部分。
 
 ## Requirements
 

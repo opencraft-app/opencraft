@@ -32,6 +32,24 @@ Read models MUST 从 canonical events 或安全 daemon state 派生。
 - **THEN** 它从 daemon fetch read models
 - **AND** 从返回 cursor 开始订阅 events
 
+### Requirement: ChatTranscriptView 支持 row window
+
+`ChatTranscriptView` MUST expose a row window contract for chat surfaces. The window cursor is row-based; the response cursor remains the latest canonical event cursor.
+
+#### Scenario: 长会话首屏
+
+- **WHEN** client 打开一个长会话
+- **THEN** 它请求 `/sessions/{id}/views/transcript?direction=tail&limit=80`
+- **AND** daemon 返回尾部 transcript rows
+- **AND** `window.has_older` 表示是否可以继续向上加载
+- **AND** `cursor` 用于随后订阅 live events
+
+#### Scenario: 向上加载旧 transcript rows
+
+- **WHEN** client 使用 `/sessions/{id}/views/transcript?direction=before&anchor_row_id=row_x&limit=80`
+- **THEN** daemon 返回 anchor row 之前的 projected transcript rows
+- **AND** 不要求 client 用 canonical event cursor 拼 UI window
+
 ### Requirement: read models 必须窄
 
 API SHOULD 提供多个窄 read models，而不是一个 monolithic snapshot。

@@ -27,6 +27,12 @@ export type VelaEventEnvelope<TPayload = unknown> = {
 
 `VelaEventType` 必须来自 [事件词表](/docs/api/event-vocabulary)。`affected_views` 用来告诉 client 哪些 read model 需要刷新；它不是 payload 的任意字段。
 
+## Raw Provider Event
+
+`raw` 是诊断材料，不是 wire compatibility contract。它可以保存 provider 原始 JSONL、stderr 摘要或 adapter 处理时的原始片段，但普通 UI、SDK 和 read model 不得依赖 `raw` 字段决定显示逻辑。
+
+正常 provider lifecycle 可以被 adapter 吸收而不产生 canonical event，因此并不是每个 provider raw event 都一定有对应的 `VelaEventEnvelope`。如果需要完整 provider trace，应使用 diagnostics/trace 或测试 cassette；canonical event log 只保存会影响 replay、projection 或诊断的事实。
+
 ## Requirements
 
 ### Requirement: canonical events 可 replay
@@ -46,3 +52,13 @@ Raw provider payload MAY 保留，但 client MUST NOT 依赖它。
 
 - **WHEN** raw retention 被关闭
 - **THEN** clients 仍然可以通过 canonical projections 正常渲染
+
+### Requirement: raw trace 不等于 canonical event
+
+Provider raw lifecycle event MAY be absorbed by adapter and never become a canonical event.
+
+#### Scenario: provider 输出普通 turn_start
+
+- **WHEN** provider 输出普通 `turn_start`
+- **THEN** adapter 可以吸收它
+- **AND** canonical log 仍然只依赖 runtime 写入的 `turn.started`

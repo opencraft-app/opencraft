@@ -17,8 +17,10 @@ crates/
   vela-runtime/
   vela-projection/
   vela-protocol/
-  velad/
+  velad/                 # API shell；支持 daemon 和 in-process library integration
 ```
+
+当前实现包含 `vela-core`、`vela-store`、`vela-backends`、`vela-runtime`、`vela-projection`、`vela-protocol`、`velad`。`velad` 只是 API server 表层，不能承载业务状态机；它暴露可被进程内集成的 library entrypoint，用于桌面壳、测试 harness 或后续 daemon binary 复用同一套路由。
 
 ## 依赖方向
 
@@ -71,6 +73,7 @@ flowchart TD
 - `BackendAdapter` trait
 - `MockBackendAdapter`
 - `PiBackendAdapter`
+- OpenAI-compatible / CloudAgents-style chat completion adapter for provider-independent tests
 - 后续 `CodexBackendAdapter`、`ClaudeCodeBackendAdapter`
 
 Adapter MAY 产生 `BackendRuntimeOutput`，MUST NOT 产生 canonical `seq`。
@@ -108,17 +111,20 @@ Adapter MAY 产生 `BackendRuntimeOutput`，MUST NOT 产生 canonical `seq`。
 - OpenAPI schema
 - API error envelope
 
+`vela-protocol` MUST 只表达 wire DTO，不能定义和 OpenAPI 冲突的独立契约，也不能承载 command 业务规则。
+
 ### `velad`
 
-二进制 daemon：
+API server shell：
 
 - axum routes
+- in-process `Router` / state wiring for library integration
 - local auth / CORS / port selection
 - dependency wiring
 - graceful shutdown
 - tracing
 
-`velad` SHOULD 尽量薄。任何需要测试业务状态机的逻辑都应该下沉到 `vela-runtime`。
+`velad` SHOULD 尽量薄。任何需要测试业务状态机的逻辑都应该下沉到 `vela-runtime`。进程内集成 MUST 使用同一个 route builder，而不是另起一套测试-only API。
 
 ## Requirements
 

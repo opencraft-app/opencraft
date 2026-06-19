@@ -90,6 +90,44 @@ paths:
                     $ref: '#/components/schemas/Session'
         '404':
           $ref: '#/components/responses/NotFound'
+  /sessions/{session_id}/agent-config:
+    patch:
+      tags: [Sessions]
+      operationId: updateSessionAgentConfig
+      summary: 更新 session 当前 agent 配置
+      description: |
+        Updates the session-level agent config preference. Running turns keep the
+        resolved_agent_config that was frozen when their turn.started event was
+        appended; new input commands use the updated session agent_config.
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSessionAgentConfigRequest'
+      responses:
+        '200':
+          description: Agent config updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session, effective_after, cursor]
+                properties:
+                  session:
+                    $ref: '#/components/schemas/Session'
+                  effective_after:
+                    type: string
+                    enum: [current_session, next_turn]
+                  cursor:
+                    $ref: '#/components/schemas/EventCursor'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /sessions/{session_id}/cancel:
     post:
       tags: [Input Events]
@@ -255,14 +293,28 @@ paths:
       tags: [UI Read Models]
       operationId: getChatTranscriptView
       summary: 获取 ChatTranscriptView
-      description: Chat UI 的主输入。只包含 message-like rows 和明确的 structured markers，不包含 raw timeline。
+      description: |
+        Chat UI 的主输入。返回 transcript row window，而不是 raw events 或 timeline。
+        Row cursor 用于列表分页；response cursor 仍是 event cursor，用于 live stream/reconnect/reset。
       parameters:
         - $ref: '#/components/parameters/SessionId'
         - $ref: '#/components/parameters/Limit'
-        - name: before_id
+        - name: direction
           in: query
+          description: View window direction. Defaults to tail when omitted. before/after/around require anchor_row_id.
+          schema:
+            $ref: '#/components/schemas/ViewWindowDirection'
+        - name: anchor_row_id
+          in: query
+          description: Opaque transcript row anchor used with direction=before|after|around. direction=tail must not include an anchor.
           schema:
             type: string
+        - name: include_live
+          in: query
+          description: 是否包含当前 live transcript row。false 时排除 pending/streaming rows。
+          schema:
+            type: boolean
+            default: true
       responses:
         '200':
           description: Chat transcript projection。
@@ -270,6 +322,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ChatTranscriptView'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /sessions/{session_id}/views/activity:
     get:
       tags: [UI Read Models]
@@ -279,6 +333,16 @@ paths:
       parameters:
         - $ref: '#/components/parameters/SessionId'
         - $ref: '#/components/parameters/Limit'
+        - name: direction
+          in: query
+          description: View window direction. Defaults to tail when omitted. before/after/around require anchor_item_id.
+          schema:
+            $ref: '#/components/schemas/ViewWindowDirection'
+        - name: anchor_item_id
+          in: query
+          description: Opaque activity item anchor used with direction=before|after|around. direction=tail must not include an anchor.
+          schema:
+            type: string
       responses:
         '200':
           description: Activity shelf projection。
@@ -286,6 +350,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ActivityShelfView'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /sessions/{session_id}/views/requests:
     get:
       tags: [UI Read Models]
@@ -509,6 +575,9 @@ components:
     BackendKind:
       type: string
       enum: [codex, cloudagent, claude_code, pi, opencode, acp, qoder]
+    ViewWindowDirection:
+      type: string
+      enum: [tail, before, after, around]
     SessionStatus:
       type: string
       enum: [starting, idle, running, waiting_for_input, canceling, failed, closed]
@@ -523,13 +592,45 @@ components:
           $ref: '#/components/schemas/BackendKind'
         working_directory:
           type: string
+        agent_config:
+          $ref: '#/components/schemas/AgentConfig'
         model:
+          deprecated: true
+          description: Deprecated compatibility alias for agent_config.model.
           type: string
         title:
           type: string
         metadata:
           type: object
           additionalProperties: true
+    UpdateSessionAgentConfigRequest:
+      allOf:
+        - $ref: '#/components/schemas/AgentConfig'
+      minProperties: 1
+    AgentConfig:
+      type: object
+      additionalProperties: false
+      properties:
+        model:
+          type: string
+        reasoning_effort:
+          type: string
+        permission_mode:
+          $ref: '#/components/schemas/PermissionMode'
+        feature_values:
+          type: object
+          additionalProperties: true
+    ResolvedAgentConfig:
+      allOf:
+        - $ref: '#/components/schemas/AgentConfig'
+        - type: object
+          required: [backend]
+          properties:
+            backend:
+              $ref: '#/components/schemas/BackendKind'
+    PermissionMode:
+      type: string
+      enum: [read_only, auto, auto_review, full_access]
     SendSessionEventsRequest:
       type: object
       required: [events]
@@ -573,15 +674,52 @@ components:
         - user.custom_tool_result
         - user.request_answer
     InputPart:
+      oneOf:
+        - $ref: '#/components/schemas/TextInputPart'
+        - $ref: '#/components/schemas/FileRefInputPart'
+        - $ref: '#/components/schemas/ImageRefInputPart'
+        - $ref: '#/components/schemas/ImageInputPart'
+      discriminator:
+        propertyName: type
+    TextInputPart:
       type: object
-      required: [type]
+      required: [type, text]
       properties:
         type:
           type: string
-          enum: [text, file_ref, image_ref]
+          enum: [text]
         text:
           type: string
+    FileRefInputPart:
+      type: object
+      required: [type, uri]
+      properties:
+        type:
+          type: string
+          enum: [file_ref]
         uri:
+          type: string
+    ImageRefInputPart:
+      type: object
+      required: [type, uri]
+      properties:
+        type:
+          type: string
+          enum: [image_ref]
+        uri:
+          type: string
+    ImageInputPart:
+      type: object
+      required: [type, data, mime_type]
+      properties:
+        type:
+          type: string
+          enum: [image]
+        data:
+          description: Base64 encoded binary payload without a data URL prefix.
+          type: string
+        mime_type:
+          description: Media type for image data, for example image/png.
           type: string
     SessionSummary:
       type: object
@@ -595,6 +733,8 @@ components:
           $ref: '#/components/schemas/SessionStatus'
         title:
           type: string
+        agent_config:
+          $ref: '#/components/schemas/AgentConfig'
         updated_at:
           type: string
           format: date-time
@@ -607,13 +747,76 @@ components:
             working_directory:
               type: string
             model:
+              deprecated: true
+              description: Deprecated compatibility alias for agent_config.model.
               type: string
+            agent_config:
+              $ref: '#/components/schemas/AgentConfig'
+            runtime_info:
+              $ref: '#/components/schemas/SessionRuntimeInfo'
+            operations:
+              $ref: '#/components/schemas/SessionOperations'
             created_at:
               type: string
               format: date-time
             metadata:
               type: object
               additionalProperties: true
+    SessionRuntimeInfo:
+      type: object
+      required: [provider]
+      properties:
+        provider:
+          $ref: '#/components/schemas/BackendKind'
+        native_session_id:
+          description: Provider-native durable session handle when available; opaque to clients.
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        reasoning_effort:
+          type: string
+          nullable: true
+        permission_mode:
+          allOf:
+            - $ref: '#/components/schemas/PermissionMode'
+          nullable: true
+        feature_values:
+          type: object
+          additionalProperties: true
+    SessionOperations:
+      type: object
+      additionalProperties:
+        $ref: '#/components/schemas/SessionOperation'
+      properties:
+        send_message:
+          $ref: '#/components/schemas/SessionOperation'
+        cancel:
+          $ref: '#/components/schemas/SessionOperation'
+        update_agent_config:
+          allOf:
+            - $ref: '#/components/schemas/SessionOperation'
+            - type: object
+              properties:
+                effective_after:
+                  type: string
+                  enum: [current_session, next_turn]
+        respond_to_request:
+          $ref: '#/components/schemas/SessionOperation'
+        rewind_conversation:
+          $ref: '#/components/schemas/SessionOperation'
+        rewind_files:
+          $ref: '#/components/schemas/SessionOperation'
+    SessionOperation:
+      type: object
+      required: [available]
+      properties:
+        available:
+          type: boolean
+        reason:
+          type: string
+          nullable: true
     EventCursor:
       type: object
       required: [event_id, epoch, seq]
@@ -676,6 +879,7 @@ components:
       enum:
         - session.created
         - session.updated
+        - session.config.updated
         - session.status.changed
         - session.closed
         - backend.status.changed
@@ -741,26 +945,54 @@ components:
           $ref: '#/components/schemas/CursorWindow'
     ChatTranscriptView:
       type: object
-      required: [rows, cursor]
+      required: [session_id, rows, window, cursor]
       properties:
+        session_id:
+          type: string
         rows:
           type: array
           items:
             $ref: '#/components/schemas/ChatTranscriptRow'
+        window:
+          $ref: '#/components/schemas/TranscriptWindow'
         cursor:
-          $ref: '#/components/schemas/CursorWindow'
+          $ref: '#/components/schemas/EventCursor'
+    TranscriptWindow:
+      type: object
+      required: [has_older, has_newer]
+      properties:
+        first_row_id:
+          type: string
+          nullable: true
+        last_row_id:
+          type: string
+          nullable: true
+        anchor_row_id:
+          type: string
+          nullable: true
+        has_older:
+          type: boolean
+        has_newer:
+          type: boolean
     ChatTranscriptRow:
       type: object
-      required: [id, kind, created_at]
+      required: [id, kind, created_at, updated_at, revision, status, source_event_ids]
       properties:
         id:
           type: string
+          description: Opaque transcript row id. Clients must pass it back unchanged.
         kind:
           type: string
-          enum: [user_message, assistant_message, working, activity_marker]
+          enum: [user_message, assistant_message, working, activity_marker, error]
         created_at:
           type: string
           format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        revision:
+          type: integer
+          minimum: 1
         turn_id:
           type: string
         text:
@@ -776,6 +1008,10 @@ components:
         status:
           type: string
           enum: [pending, streaming, completed, failed, cancelled]
+        source_event_ids:
+          type: array
+          items:
+            type: string
     TranscriptPart:
       type: object
       required: [id, type]
@@ -792,14 +1028,35 @@ components:
           additionalProperties: true
     ActivityShelfView:
       type: object
-      required: [items, cursor]
+      required: [session_id, items, window, cursor]
       properties:
+        session_id:
+          type: string
         items:
           type: array
           items:
             $ref: '#/components/schemas/ActivityShelfItem'
+        window:
+          $ref: '#/components/schemas/ActivityWindow'
         cursor:
-          $ref: '#/components/schemas/CursorWindow'
+          $ref: '#/components/schemas/EventCursor'
+    ActivityWindow:
+      type: object
+      required: [has_older, has_newer]
+      properties:
+        first_item_id:
+          type: string
+          nullable: true
+        last_item_id:
+          type: string
+          nullable: true
+        anchor_item_id:
+          type: string
+          nullable: true
+        has_older:
+          type: boolean
+        has_newer:
+          type: boolean
     ActivityShelfItem:
       type: object
       required: [id, kind, status, title, created_at]
@@ -816,6 +1073,8 @@ components:
           type: string
         summary:
           type: string
+        detail:
+          $ref: '#/components/schemas/ActivityItemDetail'
         created_at:
           type: string
           format: date-time
@@ -824,6 +1083,110 @@ components:
           format: date-time
         event_range:
           $ref: '#/components/schemas/EventRange'
+    ActivityItemDetail:
+      $ref: '#/components/schemas/ActivityToolDetail'
+    ActivityToolDetail:
+      description: UI-safe projected tool detail. Provider raw events remain available only through diagnostics APIs.
+      oneOf:
+        - $ref: '#/components/schemas/ActivityShellToolDetail'
+        - $ref: '#/components/schemas/ActivityFileToolDetail'
+        - $ref: '#/components/schemas/ActivitySearchToolDetail'
+        - $ref: '#/components/schemas/ActivityFetchToolDetail'
+        - $ref: '#/components/schemas/ActivityGenericToolDetail'
+      discriminator:
+        propertyName: type
+    ActivityShellToolDetail:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [shell]
+        command:
+          type: string
+        cwd:
+          type: string
+        output:
+          type: string
+        stdout:
+          type: string
+        stderr:
+          type: string
+        exit_code:
+          type: integer
+        error:
+          type: string
+    ActivityFileToolDetail:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [read, edit, write]
+        file_path:
+          type: string
+        path:
+          type: string
+          deprecated: true
+        content:
+          type: string
+        old_string:
+          type: string
+        new_string:
+          type: string
+        unified_diff:
+          type: string
+    ActivitySearchToolDetail:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [search]
+        query:
+          type: string
+        mode:
+          type: string
+          enum: [code, web, files, unknown]
+        content:
+          type: string
+        num_files:
+          type: integer
+        num_matches:
+          type: integer
+        duration_ms:
+          type: integer
+        truncated:
+          type: boolean
+    ActivityFetchToolDetail:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [fetch]
+        url:
+          type: string
+        prompt:
+          type: string
+        result:
+          type: string
+        code:
+          type: integer
+        code_text:
+          type: string
+        bytes:
+          type: integer
+        duration_ms:
+          type: integer
+    ActivityGenericToolDetail:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [browser, mcp_tool, dynamic_tool, sub_agent, image_generation, image_view, plan, plain_text, unknown, tool]
+      additionalProperties: true
     PendingRequestsView:
       type: object
       required: [requests, cursor]
@@ -952,7 +1315,7 @@ components:
           type: string
         type:
           type: string
-          enum: [permission, tool_confirmation, custom_input]
+          enum: [permission, question, tool_call, tool_confirmation, custom_input, other]
         status:
           $ref: '#/components/schemas/RequestStatus'
         title:
@@ -985,7 +1348,7 @@ components:
           type: string
         capabilities:
           type: object
-          required: [streaming, cancel, permission_requests, structured_diff]
+          required: [streaming, cancel, permission_requests, structured_diff, session_agent_config]
           properties:
             streaming:
               type: boolean
@@ -995,11 +1358,117 @@ components:
               type: boolean
             structured_diff:
               type: boolean
+            session_agent_config:
+              type: boolean
         models:
           type: array
           items:
-            type: string
+            $ref: '#/components/schemas/BackendModel'
+        permission_modes:
+          type: array
+          items:
+            $ref: '#/components/schemas/PermissionModeOption'
+        features:
+          type: array
+          items:
+            $ref: '#/components/schemas/BackendFeature'
         diagnostics:
+          type: object
+          additionalProperties: true
+    BackendModel:
+      type: object
+      required: [id, label]
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        description:
+          type: string
+        is_default:
+          type: boolean
+        reasoning_efforts:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReasoningEffortOption'
+        metadata:
+          type: object
+          additionalProperties: true
+    ReasoningEffortOption:
+      type: object
+      required: [id, label]
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        description:
+          type: string
+        is_default:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties: true
+    PermissionModeOption:
+      type: object
+      required: [id, label]
+      properties:
+        id:
+          $ref: '#/components/schemas/PermissionMode'
+        label:
+          type: string
+        description:
+          type: string
+        is_default:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties: true
+    BackendFeature:
+      oneOf:
+        - $ref: '#/components/schemas/BackendToggleFeature'
+        - $ref: '#/components/schemas/BackendSelectFeature'
+      discriminator:
+        propertyName: type
+    BackendToggleFeature:
+      type: object
+      required: [type, id, label, default_value]
+      properties:
+        type:
+          type: string
+          const: toggle
+        id:
+          type: string
+        label:
+          type: string
+        description:
+          type: string
+        default_value:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties: true
+    BackendSelectFeature:
+      type: object
+      required: [type, id, label, options]
+      properties:
+        type:
+          type: string
+          const: select
+        id:
+          type: string
+        label:
+          type: string
+        description:
+          type: string
+        default_value:
+          type: string
+          nullable: true
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReasoningEffortOption'
+        metadata:
           type: object
           additionalProperties: true
     BackendProbeResult:

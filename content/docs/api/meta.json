@@ -3,6 +3,7 @@
   "pages": [
     "conventions",
     "openapi",
+    "client-contract",
     "sessions",
     "input-events",
     "event-vocabulary",

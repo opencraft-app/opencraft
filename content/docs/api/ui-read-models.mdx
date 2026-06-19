@@ -138,12 +138,12 @@ UI 感知状态变化的方式是：
 Client boots
   -> fetch initial read models
   -> subscribe /sessions/{session_id}/events/stream
-  -> receive canonical events
-  -> refresh affected read models
+  -> receive canonical events in an isolated live adapter
+  -> refresh or patch affected read models
   -> render from read models
 ```
 
-事件流告诉 UI “发生了什么”和“哪些 view 需要刷新”；UI 组件本身不从事件里拼最终界面。
+事件流告诉 UI “发生了什么”和“哪些 view 需要刷新”；UI 组件本身不从事件里拼最终界面。Day 0 允许一个隔离的 transcript live adapter 把 canonical events 转成本地 row patch；组件层仍然只消费 transcript rows。Projected transcript stream 是下一阶段 API，不能在组件层提前复制一套 projector。
 
 常见映射：
 
@@ -153,14 +153,68 @@ Client boots
 | `assistant.message.delta` | `ChatTranscriptView` |
 | `request.opened` | `PendingRequestsView`、可选 `ActivityShelfView` |
 | `request.resolved` | `PendingRequestsView`、`ActivityShelfView` |
-| `tool.started` / `tool.updated` / `tool.completed` | `ActivityShelfView` |
+| `tool.started` / `tool.updated` / `tool.output.delta` / `tool.completed` / `tool.failed` | `ActivityShelfView` |
 | `command.started` / `command.output.delta` / `command.completed` | `ActivityShelfView` |
 | `diff.updated` | `DiffReviewView` |
 | `session.updated` | `SessionListView`、session view |
 
 完整词表见 [事件词表](/docs/api/event-vocabulary)。UI 组件必须以 read model 为主输入，不能跳过 projector 直接解释 runtime event payload。
 
+`ActivityShelfView` MUST 保留所有 projected tool calls。长运行工具和短工具都进入 activity；差异只体现在 render model 的折叠、密度和虚拟化策略。`detail` 字段是 normalized tool detail union，例如 `shell`、`read`、`edit`、`write`、`search`、`fetch` 或通用兜底类型；它只能包含 UI-safe projected fields，不能暴露 provider raw event，也不能把所有工具粗暴包装成 `{ type: "tool" }`。完整 raw/debug 信息仍然属于 `/sessions/{session_id}/timeline` 和 `/sessions/{session_id}/trace`。
+
 如果 stream 断线，client 使用 `Last-Event-ID` 或 `after_id` 补拉；如果收到 `sync.reset`，按 `views[]` 刷新对应 read models。
+
+### ChatTranscriptView row window
+
+`GET /sessions/{session_id}/views/transcript` 返回 transcript row window，而不是 event window。
+
+```txt
+GET /sessions/{session_id}/views/transcript?direction=tail&limit=80
+GET /sessions/{session_id}/views/transcript?direction=before&anchor_row_id=row_x&limit=80
+GET /sessions/{session_id}/views/transcript?direction=after&anchor_row_id=row_x&limit=80
+GET /sessions/{session_id}/views/transcript?direction=around&anchor_row_id=row_x&limit=80
+```
+
+`direction` 控制 view window：`tail` 拉尾部，`before` 拉 anchor 之前，`after` 拉 anchor 之后，`around` 拉 anchor 附近。`direction=before|after|around` 必须提供 `anchor_row_id`；`direction=tail` 不得提供 anchor。都不传时等价于 `direction=tail`。
+
+Transcript window 的分页参数只有 `direction` 和 `anchor_row_id`。OpenAPI 名称是唯一 wire contract。
+
+`row_id` 是 opaque view anchor，client 只能原样传回。未知 row anchor 表示 client window 已过期，daemon 返回 `409 stale_cursor`，client 必须重新拉取 transcript window。
+
+`include_live=false` 会排除 `pending` / `streaming` rows，适合只恢复稳定历史窗口；默认 `true`，适合 chat 首屏和普通尾部窗口。
+
+Response 同时包含两种 cursor：
+
+- `window`：UI list window，用于虚拟列表、上拉旧消息、搜索跳转和滚动恢复。
+- `cursor`：canonical event cursor，用于 event stream reconnect、stale detection 和 reset。
+
+Projected transcript stream 的终局形状是 `/sessions/{session_id}/views/transcript/stream?after_event_id=...`，输出 `TranscriptPatch`。当前阶段先不把它作为必选运行时 API；前端 live adapter 必须保持隔离，后续可以无痛下沉到 Rust projector。
+
+### Conversation window composition
+
+OpenAPI 不定义独立的 `ConversationView` wire DTO。对话列表运行时可以把 `ChatTranscriptView` 和 `ActivityShelfView` 合成为 app-side conversation window，但这个合成层属于 client/runtime model，不是新的 daemon contract。
+
+Client 在做上拉旧历史时 MUST 同时考虑 transcript 和 activity 两侧的 window：
+
+- `conversation.has_older = transcript.window.has_older || activity.window.has_older`
+- 如果 transcript 仍有旧 row，client 使用 `direction=before&anchor_row_id=<first_row_id>&include_live=false`
+- 如果 activity 仍有旧 item，client 使用 `direction=before&anchor_item_id=<first_item_id>`
+- 两侧请求可以并行；任一侧返回 `409 stale_cursor` 时，client 丢弃本地窗口并重新拉 tail
+
+这样可以接近 Paseo-style agent stream 的使用体验，同时保留 Vela 的 provider normalization 边界：正文来自 transcript，agent work 来自 activity，普通 UI 不直接读取 timeline/trace。
+
+### ActivityShelfView item window
+
+`GET /sessions/{session_id}/views/activity` 返回 activity item window。Activity 已经是 projected UI-safe item，不是 raw provider event。
+
+```txt
+GET /sessions/{session_id}/views/activity?direction=tail&limit=80
+GET /sessions/{session_id}/views/activity?direction=before&anchor_item_id=act_x&limit=80
+GET /sessions/{session_id}/views/activity?direction=after&anchor_item_id=act_x&limit=80
+GET /sessions/{session_id}/views/activity?direction=around&anchor_item_id=act_x&limit=80
+```
+
+`direction=before|after|around` 必须提供 `anchor_item_id`；`direction=tail` 不得提供 anchor。Activity window 是按 projected item 切片，所以 tool lifecycle 合并后的 item 不会因为 canonical event 分页被切碎。
 
 ### UI Read Model API
 
@@ -194,8 +248,27 @@ UI Read Model API MUST NOT 修改 canonical events、session state 或 backend r
 #### Scenario: transcript view 被读取
 
 - **WHEN** client 请求 `/sessions/{id}/views/transcript`
-- **THEN** daemon 返回 `ChatTranscriptView`
+- **THEN** daemon 返回 `ChatTranscriptView` row window
+- **AND** response 包含 `window` 和 canonical event `cursor`
 - **AND** 不追加任何 canonical event
+
+### Requirement: transcript paging 使用 row cursor
+
+Chat transcript pagination MUST 使用 transcript row anchor，不得要求普通 Chat UI 用 event cursor 拼列表窗口。`cursor` 仍然专指 canonical event cursor；view 翻页必须使用 `anchor_row_id`。
+
+#### Scenario: 上拉旧消息
+
+- **WHEN** client 使用 `direction=before&anchor_row_id=...` 请求 `/sessions/{id}/views/transcript`
+- **THEN** daemon 返回该 row 之前的 transcript rows
+- **AND** `window.has_newer` 为 `true`
+- **AND** `cursor` 仍然指向该 session 当前最新 canonical event
+
+#### Scenario: row cursor 过期
+
+- **WHEN** client 使用未知 `anchor_row_id`
+- **THEN** daemon 返回 `409 stale_cursor`
+- **AND** client 丢弃本地 transcript window
+- **AND** client 重新请求 `/sessions/{id}/views/transcript`
 
 ### Requirement: UI API 从 projector 派生
 
