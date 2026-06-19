@@ -998,6 +998,24 @@ const transcriptRowStatuses = new Set([
 const transcriptPartTypes = new Set(["markdown", "text", "code", "image", "file_reference"]);
 const activityItemKinds = new Set(["tool", "command", "task", "warning", "runtime"]);
 const activityItemStatuses = new Set(["pending", "running", "completed", "failed", "cancelled"]);
+const activityDetailTypes = new Set([
+  "shell",
+  "read",
+  "edit",
+  "write",
+  "search",
+  "fetch",
+  "browser",
+  "mcp_tool",
+  "dynamic_tool",
+  "sub_agent",
+  "image_generation",
+  "image_view",
+  "plan",
+  "plain_text",
+  "unknown",
+  "tool",
+]);
 const backendCapabilityFields = [
   "streaming",
   "cancel",
@@ -1636,11 +1654,25 @@ function parseActivityWireItem(data: unknown, owner: string): ActivityWireItem {
     ...(data.summary !== undefined
       ? { summary: optionalViewString(data, "summary", owner, invalidActivityView) }
       : {}),
+    ...(data.detail !== undefined
+      ? { detail: parseActivityWireDetail(data.detail, `${owner}.detail`) }
+      : {}),
     created_at: requiredViewString(data, "created_at", owner, invalidActivityView),
     ...(data.updated_at !== undefined
       ? { updated_at: optionalViewString(data, "updated_at", owner, invalidActivityView) }
       : {}),
   };
+}
+
+function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDetail {
+  if (!isRecord(data)) {
+    throw invalidActivityView(`${owner} must be an object`);
+  }
+  const type = data.type;
+  if (typeof type !== "string" || !activityDetailTypes.has(type)) {
+    throw invalidActivityView(`${owner}.type must be a known activity detail type`);
+  }
+  return data as ActivityWireDetail;
 }
 
 async function readCommandAckResponse(response: Response): Promise<CommandAckWire> {

@@ -447,6 +447,39 @@ test("validates optional activity item summary at the client wire boundary", asy
   );
 });
 
+test("validates optional activity item detail at the client wire boundary", async () => {
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async () =>
+      new Response(
+        JSON.stringify({
+          session_id: "sess_123",
+          items: [
+            {
+              id: "act_bad_detail",
+              kind: "tool",
+              status: "completed",
+              title: "Tool",
+              detail: { command: "ls -la" },
+              created_at: "2026-06-19T00:00:00Z",
+            },
+          ],
+          window: { has_older: false, has_newer: false },
+          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+  });
+
+  await assert.rejects(
+    () => client.getActivity("sess_123"),
+    (err) =>
+      err instanceof VeladClientError &&
+      err.code === "invalid_activity_view" &&
+      /detail\.type/.test(err.message),
+  );
+});
+
 test("creates a local pi session with idempotency key", async () => {
   const requests: Array<{ url: string; init?: RequestInit }> = [];
   const client = createVeladClient({
