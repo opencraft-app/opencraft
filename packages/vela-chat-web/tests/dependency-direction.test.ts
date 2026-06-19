@@ -432,3 +432,12 @@ test("user message copy control is omitted when there is no text to copy", () =>
   assert.match(source, /\{copyText \? \(/);
   assert.match(source, /copyMessageText\(copyText\)/);
 });
+
+test("user message timestamps use stable twenty-four hour display", () => {
+  const source = readFileSync(
+    join(root, "packages/vela-chat-web/src/renderers/blocks/UserMessageRenderer.tsx"),
+    "utf8",
+  );
+
+  assert.match(source, /toLocaleTimeString\(\[\], \{ hour: "2-digit", minute: "2-digit", hour12: false \}\)/);
+});

@@ -96,7 +96,7 @@ function textFromParts(block: Extract<WebBlock, { kind: "user_message" }>) {
 function formatTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
 async function copyMessageText(text: string) {
