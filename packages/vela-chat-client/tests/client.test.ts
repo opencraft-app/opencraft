@@ -1043,6 +1043,7 @@ test("reads velad stream events from browser MessageEvent payloads", () => {
         session_id: "sess_1",
         type: "assistant.message.delta",
         created_at: "2026-06-19T00:00:00Z",
+        affected_views: ["transcript", "activity"],
         payload: { message_id: "msg_1", delta: "hi" },
       }),
     }),
@@ -1050,6 +1051,7 @@ test("reads velad stream events from browser MessageEvent payloads", () => {
 
   assert.equal(event?.event_id, "evt_2");
   assert.equal(event?.type, "assistant.message.delta");
+  assert.deepEqual(event?.affected_views, ["transcript", "activity"]);
   assert.equal(event?.payload?.delta, "hi");
 });
 
@@ -1086,6 +1088,35 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
       activity: false,
       session: true,
       backends: false,
+    },
+  );
+});
+
+test("uses affected_views as forward-compatible refresh hints for canonical stream events", () => {
+  assert.deepEqual(
+    streamReadModelRefreshPlan({
+      event_id: "evt_future",
+      type: "future.provider.event",
+      affected_views: ["requests", "diffs"],
+    }),
+    {
+      transcript: false,
+      activity: true,
+      session: false,
+      backends: false,
+    },
+  );
+  assert.deepEqual(
+    streamReadModelRefreshPlan({
+      event_id: "evt_backend_hint",
+      type: "future.backend.event",
+      affected_views: ["backends"],
+    }),
+    {
+      transcript: false,
+      activity: false,
+      session: false,
+      backends: true,
     },
   );
 });

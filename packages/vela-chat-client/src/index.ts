@@ -62,6 +62,7 @@ export interface VelaStreamEventWire {
   type: string;
   created_at?: string;
   payload?: Record<string, unknown>;
+  affected_views?: string[];
   views?: string[];
 }
 
@@ -412,6 +413,9 @@ export function readVelaStreamEvent(event: MessageEvent | Event): VelaStreamEven
       type: eventType,
       created_at: typeof parsed.created_at === "string" ? parsed.created_at : undefined,
       payload: isRecord(parsed.payload) ? parsed.payload : undefined,
+      affected_views: Array.isArray(parsed.affected_views)
+        ? parsed.affected_views.filter((view): view is string => typeof view === "string")
+        : undefined,
       views: Array.isArray(parsed.views)
         ? parsed.views.filter((view): view is string => typeof view === "string")
         : undefined,
@@ -475,12 +479,19 @@ export function streamReadModelRefreshPlan(
   if (!event) return emptyRefreshPlan();
   if (event.type === "sync.reset") return resetRefreshPlan(event.views);
   if (event.type === "assistant.message.delta") return emptyRefreshPlan();
-
-  return {
+  const hintedPlan = affectedViewsRefreshPlan(event.affected_views);
+  const typePlan = {
     transcript: transcriptRefreshEvents.has(event.type),
     activity: isActivityRefreshEvent(event.type),
     session: sessionRefreshEvents.has(event.type),
     backends: event.type.startsWith("backend."),
+  };
+
+  return {
+    transcript: typePlan.transcript || hintedPlan.transcript,
+    activity: typePlan.activity || hintedPlan.activity,
+    session: typePlan.session || hintedPlan.session,
+    backends: typePlan.backends || hintedPlan.backends,
   };
 }
 
@@ -724,6 +735,17 @@ function resetRefreshPlan(views: string[] | undefined): StreamReadModelRefreshPl
       viewSet.has("requests") ||
       viewSet.has("diffs"),
     session: workbench || viewSet.has("session"),
+    backends: viewSet.has("backends"),
+  };
+}
+
+function affectedViewsRefreshPlan(views: string[] | undefined): StreamReadModelRefreshPlan {
+  if (!views?.length) return emptyRefreshPlan();
+  const viewSet = new Set(views);
+  return {
+    transcript: viewSet.has("transcript"),
+    activity: viewSet.has("activity") || viewSet.has("requests") || viewSet.has("diffs"),
+    session: viewSet.has("session") || viewSet.has("sessions"),
     backends: viewSet.has("backends"),
   };
 }
