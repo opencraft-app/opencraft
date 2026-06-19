@@ -1009,6 +1009,44 @@ test("bottom anchor retries after layout settle only when still following and no
   );
 });
 
+test("bottom anchor detects browser overscroll past the visual bottom", async () => {
+  const bottomAnchor = (await import(
+    "../src/conversation-runtime/scroll/bottomAnchor"
+  )) as typeof import("../src/conversation-runtime/scroll/bottomAnchor") & {
+    isOverscrolledPastBottom?: (input: {
+      clientHeight: number;
+      scrollHeight: number;
+      scrollTop: number;
+    }) => boolean;
+  };
+
+  assert.equal(typeof bottomAnchor.isOverscrolledPastBottom, "function");
+  assert.equal(
+    bottomAnchor.isOverscrolledPastBottom?.({
+      clientHeight: 400,
+      scrollHeight: 1000,
+      scrollTop: 621,
+    }),
+    true,
+  );
+  assert.equal(
+    bottomAnchor.isOverscrolledPastBottom?.({
+      clientHeight: 400,
+      scrollHeight: 1000,
+      scrollTop: 600,
+    }),
+    false,
+  );
+  assert.equal(
+    bottomAnchor.isOverscrolledPastBottom?.({
+      clientHeight: 400,
+      scrollHeight: 1000,
+      scrollTop: Number.NaN,
+    }),
+    false,
+  );
+});
+
 test("bottom anchor cancels pending stick when user starts scrolling upward", () => {
   assert.equal(
     shouldCancelPendingStickForUserScrollIntent({ scrollUpIntent: true }),

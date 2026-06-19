@@ -205,6 +205,16 @@ test("conversation scroll controller cancels pending stick on user scroll-away i
   assert.match(controller, /cancelPendingFrame\(\)/);
 });
 
+test("conversation scroll controller ignores bottom anchoring while browser overscrolls past bottom", () => {
+  const controller = readFileSync(
+    join(root, "packages/vela-chat-web/src/conversation-runtime/scroll/useConversationScrollController.ts"),
+    "utf8",
+  );
+
+  assert.match(controller, /isOverscrolledPastBottom/);
+  assert.match(controller, /scrollToBottom/);
+});
+
 test("conversation scroll controller retries bottom stick after layout settle", () => {
   const controller = readFileSync(
     join(root, "packages/vela-chat-web/src/conversation-runtime/scroll/useConversationScrollController.ts"),

@@ -45,6 +45,12 @@ export interface BottomAnchorSettleRetryInput {
   scrollTop: number;
 }
 
+export interface BottomAnchorOverscrollInput {
+  clientHeight: number;
+  scrollHeight: number;
+  scrollTop: number;
+}
+
 export type BottomAnchorRouteBlockedReason =
   | "missing_route_request"
   | "waiting_for_history_readiness"
@@ -186,6 +192,18 @@ export function shouldRetryBottomStickAfterSettle({
 
   const distanceFromBottom = scrollHeight - clientHeight - scrollTop;
   return distanceFromBottom > NEAR_BOTTOM_THRESHOLD_PX;
+}
+
+export function isOverscrolledPastBottom({
+  clientHeight,
+  scrollHeight,
+  scrollTop,
+}: BottomAnchorOverscrollInput): boolean {
+  if (![clientHeight, scrollHeight, scrollTop].every(Number.isFinite)) {
+    return false;
+  }
+
+  return scrollHeight - clientHeight - scrollTop < 0;
 }
 
 export function deriveBottomAnchorRouteReadiness({

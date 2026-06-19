@@ -5,6 +5,7 @@ import {
   type BottomAnchorRouteBlockedReason,
   deriveBottomAnchorFollowState,
   deriveBottomAnchorRouteReadiness,
+  isOverscrolledPastBottom,
   shouldCancelPendingStickForUserScrollIntent,
   shouldRestickOnContentSizeChange,
   shouldRetryBottomStickAfterSettle,
@@ -168,6 +169,15 @@ export function useConversationScrollController(
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     const element = scrollRef.current;
     if (!element) return;
+    if (
+      isOverscrolledPastBottom({
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+        scrollTop: element.scrollTop,
+      })
+    ) {
+      return;
+    }
     element.scrollTo({ top: element.scrollHeight, behavior });
     lastKnownScrollTopRef.current = element.scrollTop;
   }, []);
@@ -238,6 +248,16 @@ export function useConversationScrollController(
     lastBottomAnchorBlockedReasonRef.current = blockedReason;
     publishScrollDebug({ bottomAnchorBlockedReason: blockedReason });
     if (!canAttempt) {
+      return;
+    }
+    if (
+      element &&
+      isOverscrolledPastBottom({
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+        scrollTop: element.scrollTop,
+      })
+    ) {
       return;
     }
 
