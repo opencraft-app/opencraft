@@ -1424,10 +1424,10 @@ function InfoDialog({
           className="text-left text-[13px] leading-relaxed"
           style={{ color: "rgba(0,0,0,0.55)", paddingTop: 10, paddingBottom: 10 }}
         >
-          {/* 把 message 里的 /new 高亮成红色加粗，便于用户一眼识别要输入的命令 */}
-          {message.split(/(\/new)/g).map((part, i) =>
-            part === "/new" ? (
-              <strong key={i} style={{ color: "#cf3d4c", fontWeight: 600 }}>{part}</strong>
+          {/* 把 message 里的命令高亮成蓝色加粗，便于用户一眼识别要输入的内容 */}
+          {message.split(/(\/new|\/approve)/g).map((part, i) =>
+            part === "/new" || part === "/approve" ? (
+              <strong key={i} style={{ color: "#2563EB", fontWeight: 600 }}>{part}</strong>
             ) : (
               <span key={i}>{part}</span>
             ),
