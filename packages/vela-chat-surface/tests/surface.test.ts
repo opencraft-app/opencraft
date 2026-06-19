@@ -184,6 +184,13 @@ test("prepends transcript windows without duplicating rows and preserves latest 
     ).cursor.event_id,
     "evt_live",
   );
+  assert.equal(
+    prependTranscriptWindow(
+      { ...current, cursor: { event_id: "evt_live", epoch: 1, seq: 12 } },
+      { ...older, cursor: { latest_event_id: "evt_legacy" } },
+    ).cursor.event_id,
+    "evt_live",
+  );
   assert.strictEqual(
     prependTranscriptWindow(current, { ...older, session_id: "sess_other" }),
     current,
@@ -262,6 +269,13 @@ test("prepends activity windows without duplicating items and preserves latest c
     prependActivityWindow(
       { ...current, cursor: { event_id: "evt_live", epoch: 1, seq: 12 } },
       { ...older, cursor: { event_id: "evt_older", epoch: 1, seq: 10 } },
+    ).cursor.event_id,
+    "evt_live",
+  );
+  assert.equal(
+    prependActivityWindow(
+      { ...current, cursor: { event_id: "evt_live", epoch: 1, seq: 12 } },
+      { ...older, cursor: { latest_event_id: "evt_legacy" } },
     ).cursor.event_id,
     "evt_live",
   );

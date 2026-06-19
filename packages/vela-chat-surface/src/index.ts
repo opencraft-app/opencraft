@@ -445,6 +445,8 @@ function isDifferentKnownSession(
 function latestCursor(current: ChatSurfaceCursor, older: ChatSurfaceCursor) {
   const currentOrder = cursorOrder(current);
   const olderOrder = cursorOrder(older);
+  if (currentOrder && !olderOrder) return current;
+  if (!currentOrder && olderOrder) return older;
   if (!currentOrder || !olderOrder) return older ?? current;
   if (currentOrder.epoch > olderOrder.epoch) return current;
   if (currentOrder.epoch < olderOrder.epoch) return older;
