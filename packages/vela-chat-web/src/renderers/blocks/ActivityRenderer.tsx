@@ -1,6 +1,6 @@
 import type { WebBlock } from "../../adapters/toWebBlocks";
 import styles from "../../styles/desktop.module.css";
-import { activityAccessibleLabel } from "./activityLabel";
+import { activityAccessibleLabel, activityVisualStatus } from "./activityLabel";
 
 export function ActivityRenderer({
   block,
@@ -8,6 +8,7 @@ export function ActivityRenderer({
   block: Extract<WebBlock, { kind: "status" | "agent_work" }>;
 }) {
   const label = activityAccessibleLabel(block);
+  const status = activityVisualStatus(block);
 
   if (block.kind === "agent_work") {
     return (
@@ -15,7 +16,7 @@ export function ActivityRenderer({
         aria-label={label}
         className={styles.activityBlock}
         data-display={block.display}
-        data-status={block.status}
+        data-status={status}
         title={label}
       >
         <span className={styles.activityDot} aria-hidden="true" />
@@ -28,7 +29,12 @@ export function ActivityRenderer({
   }
 
   return (
-    <div aria-label={label} className={styles.activityBlock} title={label}>
+    <div
+      aria-label={label}
+      className={styles.activityBlock}
+      data-status={status}
+      title={label}
+    >
       <span className={styles.activityDot} aria-hidden="true" />
       <span>{block.label}</span>
     </div>

@@ -58,3 +58,19 @@ test("activity renderer exposes full labels to hover and assistive technology", 
   assert.match(source, /aria-label=\{label\}/);
   assert.match(source, /title=\{label\}/);
 });
+
+test("failed activity status rows expose failed visual status", () => {
+  const activityLabel = readFileSync(
+    join(root, "packages/vela-chat-web/src/renderers/blocks/activityLabel.ts"),
+    "utf8",
+  );
+  const activityRenderer = readFileSync(
+    join(root, "packages/vela-chat-web/src/renderers/blocks/ActivityRenderer.tsx"),
+    "utf8",
+  );
+
+  assert.match(activityLabel, /export function activityVisualStatus/);
+  assert.match(activityLabel, /block\.label\.startsWith\("处理失败："\)/);
+  assert.match(activityRenderer, /const status = activityVisualStatus\(block\);/);
+  assert.match(activityRenderer, /data-status=\{status\}/);
+});
