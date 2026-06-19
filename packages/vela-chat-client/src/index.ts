@@ -42,6 +42,7 @@ export interface TranscriptWireRow {
   created_at: string;
   updated_at?: string;
   revision?: number;
+  turn_id?: string;
   text?: string;
   parts?: TranscriptWirePart[];
   activity_id?: string;
@@ -1571,6 +1572,9 @@ function parseTranscriptWireRow(data: unknown, owner: string): TranscriptWireRow
     created_at: requiredViewString(data, "created_at", owner, invalidTranscriptView),
     updated_at: requiredViewString(data, "updated_at", owner, invalidTranscriptView),
     revision: requiredViewInteger(data, "revision", owner, invalidTranscriptView, { minimum: 1 }),
+    ...(data.turn_id !== undefined
+      ? { turn_id: optionalViewString(data, "turn_id", owner, invalidTranscriptView) }
+      : {}),
     ...(data.text !== undefined
       ? { text: optionalViewString(data, "text", owner, invalidTranscriptView) }
       : {}),
