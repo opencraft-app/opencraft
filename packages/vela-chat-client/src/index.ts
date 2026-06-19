@@ -232,6 +232,12 @@ export interface BackendWireResponse {
   backend: BackendWire;
 }
 
+export interface BackendProbeResultWire {
+  backend: string;
+  status: "available" | "unavailable" | "degraded";
+  message?: string;
+}
+
 export interface UpdateAgentConfigWireResponse {
   session: SessionWire;
   effective_after: "current_session" | "next_turn";
@@ -293,6 +299,7 @@ export interface VeladClient {
   getSession: (sessionId: string) => Promise<SessionWireResponse>;
   getBackends: () => Promise<BackendsWireResponse>;
   getBackend: (backend: string) => Promise<BackendWireResponse>;
+  probeBackend: (backend: string) => Promise<BackendProbeResultWire>;
   updateAgentConfig: (input: {
     sessionId: string;
     patch: AgentConfigPatchWire;
@@ -721,6 +728,11 @@ export function createVeladClient(options: VeladClientOptions): VeladClient {
       const url = new URL(`backends/${encodeBackendKind(backend)}`, baseUrl);
       const response = await doFetch(url);
       return readBackendResponse(response);
+    },
+    async probeBackend(backend) {
+      const url = new URL(`backends/${encodeBackendKind(backend)}/probe`, baseUrl);
+      const response = await doFetch(url, { method: "POST" });
+      return readBackendProbeResponse(response);
     },
     async updateAgentConfig({ sessionId, patch, idempotencyKey }) {
       validateAgentConfigPatch(patch);
@@ -1379,6 +1391,35 @@ function parseBackendFeatureWire(data: unknown, owner: string): BackendFeatureWi
   throw invalidBackendsResponse(`${owner}.type must be toggle or select`);
 }
 
+async function readBackendProbeResponse(response: Response): Promise<BackendProbeResultWire> {
+  return parseBackendProbeResultWire(await readJsonResponse<unknown>(response));
+}
+
+export function parseBackendProbeResultWire(data: unknown): BackendProbeResultWire {
+  if (!isRecord(data)) {
+    throw invalidBackendProbeResponse("BackendProbeResult must be an object");
+  }
+  const backend = data.backend;
+  if (typeof backend !== "string" || !backendKinds.has(backend)) {
+    throw invalidBackendProbeResponse("BackendProbeResult.backend must be a known BackendKind");
+  }
+  const status = data.status;
+  if (typeof status !== "string" || !backendStatuses.has(status)) {
+    throw invalidBackendProbeResponse(
+      "BackendProbeResult.status must be available, unavailable, or degraded",
+    );
+  }
+  const message = data.message;
+  if (message !== undefined && typeof message !== "string") {
+    throw invalidBackendProbeResponse("BackendProbeResult.message must be a string");
+  }
+  return {
+    backend,
+    status: status as BackendProbeResultWire["status"],
+    ...(message !== undefined ? { message } : {}),
+  };
+}
+
 async function readTranscriptViewResponse(response: Response): Promise<ChatTranscriptWireView> {
   return parseChatTranscriptWireView(await readJsonResponse<unknown>(response));
 }
@@ -1876,6 +1917,10 @@ function invalidSessionResponse(message: string) {
 
 function invalidBackendsResponse(message: string) {
   return new VeladClientError("invalid_backends_response", message);
+}
+
+function invalidBackendProbeResponse(message: string) {
+  return new VeladClientError("invalid_backend_probe_response", message);
 }
 
 function invalidTranscriptView(message: string) {

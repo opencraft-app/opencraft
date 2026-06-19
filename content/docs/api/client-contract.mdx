@@ -276,6 +276,14 @@ External clients MUST generate or validate wire DTOs from `public/openapi/velach
 - **AND** `features` item 必须按 OpenAPI `BackendFeature.oneOf` 校验：`toggle` 需要 boolean `default_value`，`select` 需要 `options` array
 - **AND** malformed backend catalog 不得交给 composer 或 UI fallback 猜测
 
+#### Scenario: 手写 client 校验 backend probe response
+
+- **WHEN** client 发送 `POST /backends/{backend}/probe`
+- **THEN** `backend` path 参数必须按 OpenAPI `BackendKind` enum 在发出 HTTP 请求前校验
+- **AND** response 必须按 OpenAPI `BackendProbeResult` 校验 required `backend` 和 `status`
+- **AND** `status` 必须是 `available` / `unavailable` / `degraded`
+- **AND** malformed probe result 视为 wire contract violation，而不是交给 UI 猜测 backend health
+
 #### Scenario: 手写 client 校验 read-model envelope
 
 - **WHEN** client 处理 `ChatTranscriptView` 或 `ActivityShelfView`

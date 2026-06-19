@@ -781,6 +781,58 @@ test("fetches one backend detail and validates backend path kind before fetch", 
   assert.equal(requests.length, 1);
 });
 
+test("probes backend health and validates probe response before callers see it", async () => {
+  const requests: Array<{ url: string; init?: RequestInit }> = [];
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async (url, init) => {
+      requests.push({ url: String(url), init });
+      return new Response(
+        JSON.stringify({
+          backend: "pi",
+          status: "available",
+          message: "ready",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    },
+  });
+
+  const result = await client.probeBackend("pi");
+
+  assert.deepEqual(result, { backend: "pi", status: "available", message: "ready" });
+  assert.equal(requests[0]?.url, "http://127.0.0.1:3857/api/v1/backends/pi/probe");
+  assert.equal(requests[0]?.init?.method, "POST");
+
+  await assert.rejects(
+    () => client.probeBackend("unknown_backend"),
+    (err) =>
+      err instanceof VeladClientError &&
+      err.code === "invalid_backend_kind" &&
+      /backend/.test(err.message),
+  );
+  assert.equal(requests.length, 1);
+});
+
+test("rejects malformed backend probe responses at the client wire boundary", async () => {
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async () =>
+      new Response(JSON.stringify({ backend: "pi", status: "sleepy" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+  });
+
+  await assert.rejects(
+    () => client.probeBackend("pi"),
+    (err) =>
+      err instanceof VeladClientError &&
+      err.code === "invalid_backend_probe_response" &&
+      /status/.test(err.message),
+  );
+});
+
 test("fetches session, backend catalog, and patches agent config", async () => {
   const requests: Array<{ url: string; init?: RequestInit }> = [];
   const client = createVeladClient({

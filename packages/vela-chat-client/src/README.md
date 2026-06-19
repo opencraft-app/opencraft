@@ -31,6 +31,9 @@ including OpenAPI string parameters such as `session_id` and `after_id`.
 Backend path parameters should also be validated against the OpenAPI
 `BackendKind` enum before constructing `/backends/{backend}` URLs.
 
+Backend probe response validation belongs here for OpenAPI `BackendProbeResult`
+fields and status enums before health UI or diagnostics consume the result.
+
 Header parameter validation belongs here for OpenAPI mutating command
 boundaries, including explicit `Idempotency-Key` values before a request is
 sent.
