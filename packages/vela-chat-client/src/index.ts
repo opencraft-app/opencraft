@@ -43,8 +43,16 @@ export interface TranscriptWireRow {
   updated_at?: string;
   revision?: number;
   text?: string;
+  parts?: TranscriptWirePart[];
   status?: string;
   source_event_ids?: string[];
+}
+
+export interface TranscriptWirePart {
+  id: string;
+  type: "markdown" | "text" | "code" | "image" | "file_reference";
+  text?: string;
+  data?: Record<string, unknown>;
 }
 
 export interface ChatTranscriptWireView {
@@ -987,6 +995,7 @@ const transcriptRowStatuses = new Set([
   "failed",
   "cancelled",
 ]);
+const transcriptPartTypes = new Set(["markdown", "text", "code", "image", "file_reference"]);
 const activityItemKinds = new Set(["tool", "command", "task", "warning", "runtime"]);
 const activityItemStatuses = new Set(["pending", "running", "completed", "failed", "cancelled"]);
 const backendCapabilityFields = [
@@ -1542,6 +1551,9 @@ function parseTranscriptWireRow(data: unknown, owner: string): TranscriptWireRow
     created_at: requiredViewString(data, "created_at", owner, invalidTranscriptView),
     updated_at: requiredViewString(data, "updated_at", owner, invalidTranscriptView),
     revision: requiredViewInteger(data, "revision", owner, invalidTranscriptView, { minimum: 1 }),
+    ...(data.parts !== undefined
+      ? { parts: parseTranscriptWireParts(data, `${owner}.parts`) }
+      : {}),
     status,
     source_event_ids: requiredViewStringArray(
       data,
@@ -1549,6 +1561,38 @@ function parseTranscriptWireRow(data: unknown, owner: string): TranscriptWireRow
       owner,
       invalidTranscriptView,
     ),
+  };
+}
+
+function parseTranscriptWireParts(
+  data: Record<string, unknown>,
+  owner: string,
+): TranscriptWirePart[] {
+  const parts = data.parts;
+  if (!Array.isArray(parts)) {
+    throw invalidTranscriptView(`${owner} must be an array`);
+  }
+  return parts.map((part, index) => parseTranscriptWirePart(part, `${owner}[${index}]`));
+}
+
+function parseTranscriptWirePart(data: unknown, owner: string): TranscriptWirePart {
+  if (!isRecord(data)) {
+    throw invalidTranscriptView(`${owner} must be an object`);
+  }
+  const type = requiredViewString(data, "type", owner, invalidTranscriptView);
+  if (!transcriptPartTypes.has(type)) {
+    throw invalidTranscriptView(`${owner}.type must be a known transcript part type`);
+  }
+  return {
+    ...(data as unknown as TranscriptWirePart),
+    id: requiredViewString(data, "id", owner, invalidTranscriptView),
+    type: type as TranscriptWirePart["type"],
+    ...(data.text !== undefined
+      ? { text: optionalViewString(data, "text", owner, invalidTranscriptView) }
+      : {}),
+    ...(data.data !== undefined
+      ? { data: optionalViewObject(data, "data", owner, invalidTranscriptView) }
+      : {}),
   };
 }
 
@@ -1759,6 +1803,20 @@ function optionalViewString(
   if (value === undefined) return undefined;
   if (typeof value !== "string") {
     throw invalid(`${owner}.${field} must be a string`);
+  }
+  return value;
+}
+
+function optionalViewObject(
+  data: Record<string, unknown>,
+  field: string,
+  owner: string,
+  invalid: ViewContractErrorFactory,
+) {
+  const value = data[field];
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) {
+    throw invalid(`${owner}.${field} must be an object`);
   }
   return value;
 }
