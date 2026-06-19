@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   VeladClientError,
   applyTranscriptLiveOverlay,
+  commandAckRejectionMessage,
   createVeladClient,
   createStreamRefreshScheduler,
   imageFileToInputPart,
@@ -369,7 +370,12 @@ export function ChatWorkbench({
     ];
     try {
       setError(null);
-      await client.sendUserMessage({ sessionId: activeSessionId, content: messageContent });
+      const ack = await client.sendUserMessage({ sessionId: activeSessionId, content: messageContent });
+      const rejectionMessage = commandAckRejectionMessage(ack);
+      if (rejectionMessage) {
+        setError(rejectionMessage);
+        return;
+      }
       setDraft("");
       setPendingAttachments([]);
       await loadReadModels();
@@ -537,7 +543,13 @@ export function ChatWorkbench({
           sessionId: activeSessionId,
           textLength: trimmed.length,
         });
-        await client.sendUserMessage({ sessionId: activeSessionId, text: trimmed });
+        const ack = await client.sendUserMessage({ sessionId: activeSessionId, text: trimmed });
+        const rejectionMessage = commandAckRejectionMessage(ack);
+        if (rejectionMessage) {
+          setError(rejectionMessage);
+          logVelaChatConsoleEvent("send_message_rejected", { message: rejectionMessage });
+          return;
+        }
         setDraft("");
         await loadReadModels();
       } catch (err) {

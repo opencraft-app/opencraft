@@ -294,6 +294,10 @@ export interface RejectedCommandAckWire {
   cursor?: EventCursorWire;
 }
 
+export function commandAckRejectionMessage(ack: CommandAckWire) {
+  return ack.status === "rejected" ? ack.message : null;
+}
+
 export interface VeladClient {
   createSession: (input: CreateSessionInput) => Promise<CreateSessionWireResponse>;
   getSession: (sessionId: string) => Promise<SessionWireResponse>;

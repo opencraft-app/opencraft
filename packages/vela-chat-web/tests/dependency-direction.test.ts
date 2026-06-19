@@ -351,6 +351,19 @@ test("chat example creates sessions with backend and agent config selections", (
   assert.match(source, /backend: resolvedSelectedBackend/);
 });
 
+test("chat composer preserves draft when velad returns a rejected CommandAck", () => {
+  const source = readFileSync(join(root, "app/chat/ChatWorkbench.tsx"), "utf8");
+
+  assert.match(source, /commandAckRejectionMessage/);
+  assert.match(source, /const ack = await client\.sendUserMessage/);
+  assert.match(source, /const rejectionMessage = commandAckRejectionMessage\(ack\);/);
+  assert.match(source, /if \(rejectionMessage\) \{\s*setError\(rejectionMessage\);\s*return;\s*\}/);
+  assert.doesNotMatch(
+    source,
+    /await client\.sendUserMessage\(\{ sessionId: activeSessionId, content: messageContent \}\);\s*setDraft\(""\);/,
+  );
+});
+
 test("chat stream connection is keyed by session readiness instead of every cursor update", () => {
   const source = readFileSync(join(root, "app/chat/ChatWorkbench.tsx"), "utf8");
 

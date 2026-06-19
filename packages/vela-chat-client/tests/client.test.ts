@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   VeladClientError,
   applyTranscriptLiveOverlay,
+  commandAckRejectionMessage,
   createIdempotencyKey,
   createStreamRefreshScheduler,
   createVeladClient,
@@ -1546,6 +1547,36 @@ test("validates CommandAck oneOf branches at the client wire boundary", async ()
       err instanceof VeladClientError &&
       err.code === "invalid_command_ack" &&
       /queued_message_id/.test(err.message),
+  );
+});
+
+test("extracts user-visible rejected CommandAck messages without treating accepted or queued as errors", () => {
+  assert.equal(
+    commandAckRejectionMessage({
+      status: "accepted",
+      command_id: "cmd_1",
+      session_id: "ses_1",
+      cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
+    }),
+    null,
+  );
+  assert.equal(
+    commandAckRejectionMessage({
+      status: "queued",
+      command_id: "cmd_2",
+      session_id: "ses_1",
+      queued_message_id: "queued_1",
+      cursor: { event_id: "evt_2", epoch: 1, seq: 2 },
+    }),
+    null,
+  );
+  assert.equal(
+    commandAckRejectionMessage({
+      status: "rejected",
+      code: "turn_running",
+      message: "A turn is already running",
+    }),
+    "A turn is already running",
   );
 });
 
