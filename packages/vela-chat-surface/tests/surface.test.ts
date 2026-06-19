@@ -111,7 +111,143 @@ test("keeps surface renderer-free", async () => {
 });
 
 test("prepends transcript windows without duplicating rows and preserves latest cursor", () => {
-  const merged = prependTranscriptWindow(
+  const current = {
+    session_id: "sess_1",
+    rows: [
+      {
+        id: "row_2",
+        kind: "assistant_message" as const,
+        created_at: "2026-06-18T10:00:02Z",
+        text: "two",
+      },
+      {
+        id: "row_3",
+        kind: "assistant_message" as const,
+        created_at: "2026-06-18T10:00:03Z",
+        text: "three",
+      },
+    ],
+    window: {
+      first_row_id: "row_2",
+      last_row_id: "row_3",
+      has_older: true,
+      has_newer: false,
+    },
+    cursor: { event_id: "evt_latest", seq: 9 },
+  };
+  const older = {
+    session_id: "sess_1",
+    rows: [
+      {
+        id: "row_1",
+        kind: "user_message" as const,
+        created_at: "2026-06-18T10:00:01Z",
+        text: "one",
+      },
+      {
+        id: "row_2",
+        kind: "assistant_message" as const,
+        created_at: "2026-06-18T10:00:02Z",
+        text: "two",
+      },
+    ],
+    window: {
+      first_row_id: "row_1",
+      last_row_id: "row_2",
+      has_older: false,
+      has_newer: true,
+    },
+    cursor: { event_id: "evt_newer", seq: 10 },
+  };
+  const merged = prependTranscriptWindow(current, older);
+
+  assert.deepEqual(
+    merged.rows.map((row) => row.id),
+    ["row_1", "row_2", "row_3"],
+  );
+  assert.equal(merged.window?.first_row_id, "row_1");
+  assert.equal(merged.window?.last_row_id, "row_3");
+  assert.equal(merged.window?.has_older, false);
+  assert.equal(merged.window?.has_newer, false);
+  assert.equal(merged.cursor.event_id, "evt_newer");
+  assert.strictEqual(
+    prependTranscriptWindow(current, { ...older, session_id: "sess_other" }),
+    current,
+  );
+});
+
+test("prepends activity windows without duplicating items and preserves latest cursor", () => {
+  const current = {
+    session_id: "sess_1",
+    items: [
+      {
+        id: "act_2",
+        kind: "tool",
+        status: "completed",
+        title: "Read file",
+        created_at: "2026-06-18T10:00:02Z",
+      },
+      {
+        id: "act_3",
+        kind: "tool",
+        status: "completed",
+        title: "Ran command",
+        created_at: "2026-06-18T10:00:03Z",
+      },
+    ],
+    window: {
+      first_item_id: "act_2",
+      last_item_id: "act_3",
+      has_older: true,
+      has_newer: false,
+    },
+    cursor: { event_id: "evt_latest", seq: 9 },
+  };
+  const older = {
+    session_id: "sess_1",
+    items: [
+      {
+        id: "act_1",
+        kind: "tool",
+        status: "completed",
+        title: "Searched code",
+        created_at: "2026-06-18T10:00:01Z",
+      },
+      {
+        id: "act_2",
+        kind: "tool",
+        status: "completed",
+        title: "Read file",
+        created_at: "2026-06-18T10:00:02Z",
+      },
+    ],
+    window: {
+      first_item_id: "act_1",
+      last_item_id: "act_2",
+      has_older: false,
+      has_newer: true,
+    },
+    cursor: { event_id: "evt_newer", seq: 10 },
+  };
+  const merged = prependActivityWindow(current, older);
+
+  assert.deepEqual(
+    merged.items.map((item) => item.id),
+    ["act_1", "act_2", "act_3"],
+  );
+  assert.equal(merged.window?.first_item_id, "act_1");
+  assert.equal(merged.window?.last_item_id, "act_3");
+  assert.equal(merged.window?.has_older, false);
+  assert.equal(merged.window?.has_newer, false);
+  assert.equal(merged.cursor.event_id, "evt_newer");
+  assert.strictEqual(
+    prependActivityWindow(current, { ...older, session_id: "sess_other" }),
+    current,
+  );
+});
+
+test("legacy prepend fixtures keep working without session ids", () => {
+  const transcript = prependTranscriptWindow(
     {
       rows: [
         {
@@ -161,18 +297,16 @@ test("prepends transcript windows without duplicating rows and preserves latest 
   );
 
   assert.deepEqual(
-    merged.rows.map((row) => row.id),
+    transcript.rows.map((row) => row.id),
     ["row_1", "row_2", "row_3"],
   );
-  assert.equal(merged.window?.first_row_id, "row_1");
-  assert.equal(merged.window?.last_row_id, "row_3");
-  assert.equal(merged.window?.has_older, false);
-  assert.equal(merged.window?.has_newer, false);
-  assert.equal(merged.cursor.event_id, "evt_newer");
-});
+  assert.equal(transcript.window?.first_row_id, "row_1");
+  assert.equal(transcript.window?.last_row_id, "row_3");
+  assert.equal(transcript.window?.has_older, false);
+  assert.equal(transcript.window?.has_newer, false);
+  assert.equal(transcript.cursor.event_id, "evt_newer");
 
-test("prepends activity windows without duplicating items and preserves latest cursor", () => {
-  const merged = prependActivityWindow(
+  const activity = prependActivityWindow(
     {
       items: [
         {
@@ -226,14 +360,14 @@ test("prepends activity windows without duplicating items and preserves latest c
   );
 
   assert.deepEqual(
-    merged.items.map((item) => item.id),
+    activity.items.map((item) => item.id),
     ["act_1", "act_2", "act_3"],
   );
-  assert.equal(merged.window?.first_item_id, "act_1");
-  assert.equal(merged.window?.last_item_id, "act_3");
-  assert.equal(merged.window?.has_older, false);
-  assert.equal(merged.window?.has_newer, false);
-  assert.equal(merged.cursor.event_id, "evt_newer");
+  assert.equal(activity.window?.first_item_id, "act_1");
+  assert.equal(activity.window?.last_item_id, "act_3");
+  assert.equal(activity.window?.has_older, false);
+  assert.equal(activity.window?.has_newer, false);
+  assert.equal(activity.cursor.event_id, "evt_newer");
 });
 
 test("rejects stale conversation history prepend plans after the visible window changes", () => {

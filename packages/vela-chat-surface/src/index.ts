@@ -341,6 +341,8 @@ export function canApplyConversationHistoryPrependPlan(
 }
 
 export function prependTranscriptWindow<T extends ChatTranscriptWireView>(current: T, older: T): T {
+  if (isDifferentKnownSession(current.session_id, older.session_id)) return current;
+
   const seen = new Set<string>();
   const rows = [...older.rows, ...current.rows].filter((row) => {
     if (seen.has(row.id)) return false;
@@ -369,6 +371,8 @@ export function prependTranscriptWindow<T extends ChatTranscriptWireView>(curren
 }
 
 export function prependActivityWindow<T extends ActivityWireView>(current: T, older: T): T {
+  if (isDifferentKnownSession(current.session_id, older.session_id)) return current;
+
   const seen = new Set<string>();
   const items = [...older.items, ...current.items].filter((item) => {
     if (seen.has(item.id)) return false;
@@ -439,6 +443,13 @@ function transcriptKindToRole(kind: ChatTranscriptWireRow["kind"]): ChatSurfaceT
   if (kind === "assistant_message") return "assistant";
   if (kind === "activity_marker") return "activity";
   return "working";
+}
+
+function isDifferentKnownSession(
+  currentSessionId: string | undefined,
+  olderSessionId: string | undefined,
+) {
+  return Boolean(currentSessionId && olderSessionId && currentSessionId !== olderSessionId);
 }
 
 function normalizeWindowLimit(limit: number) {
