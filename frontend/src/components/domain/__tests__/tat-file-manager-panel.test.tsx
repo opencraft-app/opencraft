@@ -175,25 +175,33 @@ describe("TatFileManagerPanel upload limits", () => {
     const pathInput = await screen.findByDisplayValue("/home/agentuser/.hermes");
     expect(screen.queryByRole("button", { name: "进入" })).not.toBeInTheDocument();
 
-    fireEvent.change(pathInput, { target: { value: "/home/agentuser/.hermes/logs" } });
+    fireEvent.change(pathInput, { target: { value: "/home/agentuser/workspace" } });
     fireEvent.keyDown(pathInput, { key: "Enter" });
 
-    await waitFor(() => expect(listPathMock).toHaveBeenCalledWith("/home/agentuser/.hermes/logs"));
+    await waitFor(() => expect(listPathMock).toHaveBeenCalledWith("/home/agentuser/workspace"));
   });
 
-  it("keeps browsing inside the managed Hermes directory", async () => {
+  it("keeps browsing inside the managed agentuser home directory", async () => {
     render(<TatFileManagerPanel botId="bot-managed-root" />);
     const pathInput = await screen.findByDisplayValue("/home/agentuser/.hermes");
-    expect(screen.getByRole("button", { name: "上级" })).toBeDisabled();
-    expect(screen.getByText("不支持返回上一级目录")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "上级" })).toBeEnabled();
     listPathMock.mockClear();
 
     fireEvent.change(pathInput, { target: { value: "/home/agentuser" } });
     fireEvent.keyDown(pathInput, { key: "Enter" });
 
-    expect(await screen.findByText("只能访问 /home/agentuser/.hermes 目录下的文件和文件夹。")).toBeInTheDocument();
+    await waitFor(() => expect(listPathMock).toHaveBeenCalledWith("/home/agentuser"));
+    await waitFor(() => expect(pathInput).toHaveValue("/home/agentuser"));
+    expect(screen.getByRole("button", { name: "上级" })).toBeDisabled();
+    expect(screen.getByText("不支持返回上一级目录")).toBeInTheDocument();
+    listPathMock.mockClear();
+
+    fireEvent.change(pathInput, { target: { value: "/home" } });
+    fireEvent.keyDown(pathInput, { key: "Enter" });
+
+    expect(await screen.findByText("只能访问 /home/agentuser 目录下的文件和文件夹。")).toBeInTheDocument();
     expect(listPathMock).not.toHaveBeenCalled();
-    expect(pathInput).toHaveValue("/home/agentuser/.hermes");
+    expect(pathInput).toHaveValue("/home/agentuser");
   });
 
   it("shows enter and hides hidden/refresh controls while editing the path", async () => {
@@ -210,10 +218,10 @@ describe("TatFileManagerPanel upload limits", () => {
     expect(screen.queryByRole("button", { name: "显示隐藏文件" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "刷新" })).not.toBeInTheDocument();
 
-    fireEvent.change(pathInput, { target: { value: "/home/agentuser/.hermes/logs" } });
+    fireEvent.change(pathInput, { target: { value: "/home/agentuser/workspace" } });
     fireEvent.click(screen.getByRole("button", { name: "进入" }));
 
-    await waitFor(() => expect(listPathMock).toHaveBeenCalledWith("/home/agentuser/.hermes/logs"));
+    await waitFor(() => expect(listPathMock).toHaveBeenCalledWith("/home/agentuser/workspace"));
     expect(screen.queryByRole("button", { name: "进入" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "显示隐藏文件" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "刷新" })).toBeInTheDocument();
@@ -239,7 +247,7 @@ describe("TatFileManagerPanel upload limits", () => {
 
     expect(screen.getByRole("button", { name: "进入" })).toBeInTheDocument();
 
-    fireEvent.change(pathInput, { target: { value: "/home/agentuser/.hermes/logs" } });
+    fireEvent.change(pathInput, { target: { value: "/home/agentuser/workspace" } });
     fireEvent.pointerDown(await screen.findByText("当前目录为空。"));
 
     expect(screen.queryByRole("button", { name: "进入" })).not.toBeInTheDocument();
