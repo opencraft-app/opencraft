@@ -23,6 +23,9 @@ Command submission validates both sides of the OpenAPI boundary:
 - incoming query response envelopes include OpenAPI-required top-level fields,
   such as `session` for `GET /sessions/{session_id}` and a `backends` array for
   `GET /backends`
+- incoming backend catalog items include OpenAPI-required backend identity,
+  status, display label, and boolean capability flags before composer controls
+  consume them
 - outgoing view-window query options follow OpenAPI `Limit`, `direction`,
   anchor id, and boolean bounds before any transcript/activity request is sent
 - incoming transcript/activity read-model envelopes include their required

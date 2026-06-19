@@ -581,6 +581,23 @@ test("validates query response envelopes at the client wire boundary", async () 
       err.code === "invalid_backends_response" &&
       /backends/.test(err.message),
   );
+
+  const backendItemClient = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async () =>
+      new Response(JSON.stringify({ backends: [{ kind: "pi", status: "available" }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+  });
+
+  await assert.rejects(
+    () => backendItemClient.getBackends(),
+    (err) =>
+      err instanceof VeladClientError &&
+      err.code === "invalid_backends_response" &&
+      /display_name/.test(err.message),
+  );
 });
 
 test("fetches session, backend catalog, and patches agent config", async () => {
@@ -597,7 +614,13 @@ test("fetches session, backend catalog, and patches agent config", async () => {
                 kind: "pi",
                 display_name: "Pi Coding",
                 status: "available",
-                capabilities: { session_agent_config: true },
+                capabilities: {
+                  streaming: true,
+                  cancel: true,
+                  permission_requests: false,
+                  structured_diff: false,
+                  session_agent_config: true,
+                },
                 models: [{ id: "minimax-m2.7", label: "MiniMax M2.7" }],
                 permission_modes: [{ id: "full_access", label: "Full access" }],
                 features: [],

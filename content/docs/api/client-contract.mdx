@@ -262,6 +262,15 @@ External clients MUST generate or validate wire DTOs from `public/openapi/velach
 - **THEN** 它必须校验 OpenAPI required `backends` array
 - **AND** 缺失顶层 envelope 字段视为 wire contract violation
 
+#### Scenario: 手写 client 校验 backend catalog item shape
+
+- **WHEN** client 处理 `GET /backends` response
+- **THEN** 每个 backend item 必须校验 OpenAPI required `kind`、`status`、`display_name` 和 `capabilities`
+- **AND** `kind` 必须是 OpenAPI `BackendKind`，`status` 必须是 `available` / `unavailable` / `degraded`
+- **AND** `capabilities.streaming`、`cancel`、`permission_requests`、`structured_diff`、`session_agent_config` 必须是 boolean
+- **AND** OpenAPI optional 的 `models`、`permission_modes`、`features` 缺省时可规范化为空数组；存在时必须是 array
+- **AND** malformed backend catalog 不得交给 composer 或 UI fallback 猜测
+
 #### Scenario: 手写 client 校验 read-model envelope
 
 - **WHEN** client 处理 `ChatTranscriptView` 或 `ActivityShelfView`

@@ -859,6 +859,14 @@ const agentConfigPatchKeys = new Set([
 
 const permissionModes = new Set(["read_only", "auto", "auto_review", "full_access"]);
 const viewWindowDirections = new Set(["tail", "before", "after", "around"]);
+const backendStatuses = new Set(["available", "unavailable", "degraded"]);
+const backendCapabilityFields = [
+  "streaming",
+  "cancel",
+  "permission_requests",
+  "structured_diff",
+  "session_agent_config",
+];
 
 function validateAgentConfigPatch(patch: unknown): asserts patch is AgentConfigPatchWire {
   if (!isRecord(patch)) {
@@ -1166,13 +1174,46 @@ export function parseBackendsWireResponse(data: unknown): BackendsWireResponse {
   if (!isRecord(data)) {
     throw invalidBackendsResponse("BackendsResponse must be an object");
   }
+  const backends = requiredViewArray(
+    data,
+    "backends",
+    "BackendsResponse",
+    invalidBackendsResponse,
+  );
   return {
-    backends: requiredViewArray(
+    backends: backends.map((backend, index) =>
+      parseBackendWire(backend, `BackendsResponse.backends[${index}]`),
+    ),
+  };
+}
+
+function parseBackendWire(data: unknown, owner: string): BackendWire {
+  if (!isRecord(data)) {
+    throw invalidBackendsResponse(`${owner} must be an object`);
+  }
+  const kind = requiredViewString(data, "kind", owner, invalidBackendsResponse);
+  if (!backendKinds.has(kind)) {
+    throw invalidBackendsResponse(`${owner}.kind must be a known BackendKind`);
+  }
+  const status = requiredViewString(data, "status", owner, invalidBackendsResponse);
+  if (!backendStatuses.has(status)) {
+    throw invalidBackendsResponse(`${owner}.status must be available, unavailable, or degraded`);
+  }
+  return {
+    kind,
+    status,
+    display_name: requiredViewString(data, "display_name", owner, invalidBackendsResponse),
+    capabilities: requiredBackendCapabilities(data, owner),
+    models: optionalBackendArray(data, "models", owner) as BackendModelWire[],
+    permission_modes: optionalBackendArray(
       data,
-      "backends",
-      "BackendsResponse",
-      invalidBackendsResponse,
-    ) as BackendWire[],
+      "permission_modes",
+      owner,
+    ) as PermissionModeOptionWire[],
+    features: optionalBackendArray(data, "features", owner) as BackendFeatureWire[],
+    ...(data.diagnostics !== undefined
+      ? { diagnostics: optionalBackendObject(data, "diagnostics", owner) }
+      : {}),
   };
 }
 
@@ -1354,6 +1395,36 @@ function requiredViewArray(
   const value = data[field];
   if (!Array.isArray(value)) {
     throw invalid(`${owner} requires ${field}`);
+  }
+  return value;
+}
+
+function requiredBackendCapabilities(data: Record<string, unknown>, owner: string) {
+  const value = data.capabilities;
+  if (!isRecord(value)) {
+    throw invalidBackendsResponse(`${owner} requires capabilities`);
+  }
+  for (const field of backendCapabilityFields) {
+    if (typeof value[field] !== "boolean") {
+      throw invalidBackendsResponse(`${owner}.capabilities requires ${field}`);
+    }
+  }
+  return value;
+}
+
+function optionalBackendArray(data: Record<string, unknown>, field: string, owner: string) {
+  const value = data[field];
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    throw invalidBackendsResponse(`${owner}.${field} must be an array`);
+  }
+  return value;
+}
+
+function optionalBackendObject(data: Record<string, unknown>, field: string, owner: string) {
+  const value = data[field];
+  if (!isRecord(value)) {
+    throw invalidBackendsResponse(`${owner}.${field} must be an object`);
   }
   return value;
 }
