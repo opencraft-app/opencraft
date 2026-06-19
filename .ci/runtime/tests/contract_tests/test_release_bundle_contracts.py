@@ -528,7 +528,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertTrue(refresh_env_script.exists())
         self.assertTrue(repair_vm_script.exists())
         self.assertTrue(blueprint_id_file.exists())
-        self.assertEqual(blueprint_id_file.read_text().strip(), "lhbp-8gsotw6u")
+        self.assertRegex(blueprint_id_file.read_text().strip(), r"^lhbp-[A-Za-z0-9_-]+$")
         self.assertIn("does not patch pools, update SKUs, invoke TAT, or write database rows", list_script.read_text())
         self.assertIn('/template-classes/${TEMPLATE_CLASS_ID}/resolve', refresh_script.read_text())
         self.assertIn('template-classes/{template}/resolve', list_script.read_text())

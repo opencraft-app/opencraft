@@ -20,6 +20,7 @@
  */
 
 import { useTranslation } from "react-i18next";
+import { useCallback } from "react";
 
 import zhToKey from "./generated/zh-to-key.json";
 
@@ -70,7 +71,7 @@ const warnMissing = (zh: string): void => {
  */
 export const useT = (): ((zh: string, options?: Record<string, unknown>) => string) => {
   const { t: rawT } = useTranslation();
-  return (zh, options) => {
+  return useCallback((zh: string, options?: Record<string, unknown>) => {
     const key = zhToKeyMap[zh];
     if (!key) {
       warnMissing(zh);
@@ -79,7 +80,7 @@ export const useT = (): ((zh: string, options?: Record<string, unknown>) => stri
     }
     /* defaultValue 设为中文原文，key 在字典缺失时也能回落中文 */
     return rawT(key, { defaultValue: zh, ...(options ?? {}) });
-  };
+  }, [rawT]);
 };
 
 /**
