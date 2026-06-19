@@ -428,6 +428,7 @@ export function applyTranscriptLiveOverlay(
   ) {
     return transcript;
   }
+  if (!isStreamEventNewerThanCursor(transcript.cursor, event)) return transcript;
 
   if (event.type === "assistant.message.delta") {
     const delta = stringPayload(event, "delta");
@@ -443,6 +444,7 @@ export function needsTranscriptRefreshAfterLiveOverlay(
   event: VelaStreamEventWire,
 ) {
   if (event.type !== "assistant.message.delta") return false;
+  if (!isStreamEventNewerThanCursor(transcript.cursor, event)) return false;
   const delta = stringPayload(event, "delta");
   if (!delta) return false;
   return !hasAssistantOverlayTarget(transcript, event);
@@ -614,6 +616,40 @@ function updateTranscriptCursor(
       epoch: event.epoch ?? transcript.cursor.epoch,
       seq: event.seq ?? transcript.cursor.seq,
     },
+  };
+}
+
+function isStreamEventNewerThanCursor(
+  cursor: EventCursorWire,
+  event: VelaStreamEventWire,
+) {
+  const cursorOrder = eventCursorOrder(cursor);
+  const eventOrder = streamEventOrder(event);
+  if (!cursorOrder || !eventOrder) return true;
+  if (eventOrder.epoch > cursorOrder.epoch) return true;
+  if (eventOrder.epoch < cursorOrder.epoch) return false;
+  return eventOrder.seq > cursorOrder.seq;
+}
+
+function eventCursorOrder(cursor: EventCursorWire) {
+  if (typeof cursor.seq !== "number" || !Number.isFinite(cursor.seq)) return null;
+  return {
+    epoch:
+      typeof cursor.epoch === "number" && Number.isFinite(cursor.epoch)
+        ? cursor.epoch
+        : 0,
+    seq: cursor.seq,
+  };
+}
+
+function streamEventOrder(event: VelaStreamEventWire) {
+  if (typeof event.seq !== "number" || !Number.isFinite(event.seq)) return null;
+  return {
+    epoch:
+      typeof event.epoch === "number" && Number.isFinite(event.epoch)
+        ? event.epoch
+        : 0,
+    seq: event.seq,
   };
 }
 

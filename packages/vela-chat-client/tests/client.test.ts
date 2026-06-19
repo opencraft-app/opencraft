@@ -1150,6 +1150,67 @@ test("does not append duplicate assistant delta live overlays", () => {
   assert.equal(next.rows[0]?.revision, 2);
 });
 
+test("ignores stale assistant delta live overlay events", () => {
+  const transcript = {
+    session_id: "sess_1",
+    cursor: { event_id: "evt_live", epoch: 1, seq: 12 },
+    rows: [
+      {
+        id: "msg_1",
+        kind: "assistant_message" as const,
+        created_at: "2026-06-19T00:00:00Z",
+        revision: 12,
+        text: "新文本",
+        status: "streaming",
+        source_event_ids: ["evt_live"],
+      },
+    ],
+  };
+
+  const next = applyTranscriptLiveOverlay(transcript, {
+    event_id: "evt_old",
+    epoch: 1,
+    seq: 10,
+    session_id: "sess_1",
+    type: "assistant.message.delta",
+    payload: { message_id: "msg_1", delta: "旧" },
+  });
+
+  assert.equal(next, transcript);
+  assert.equal(next.rows[0]?.text, "新文本");
+  assert.equal(next.cursor.event_id, "evt_live");
+  assert.equal(next.cursor.seq, 12);
+});
+
+test("ignores stale non-delta live overlay events", () => {
+  const transcript = {
+    session_id: "sess_1",
+    cursor: { event_id: "evt_live", epoch: 1, seq: 12 },
+    rows: [
+      {
+        id: "msg_1",
+        kind: "assistant_message" as const,
+        created_at: "2026-06-19T00:00:00Z",
+        revision: 12,
+        text: "done",
+        status: "completed",
+      },
+    ],
+  };
+
+  const next = applyTranscriptLiveOverlay(transcript, {
+    event_id: "evt_old",
+    epoch: 1,
+    seq: 10,
+    session_id: "sess_1",
+    type: "turn.completed",
+  });
+
+  assert.equal(next, transcript);
+  assert.equal(next.cursor.event_id, "evt_live");
+  assert.equal(next.cursor.seq, 12);
+});
+
 test("applies message-id-free assistant delta live overlays only to the latest streaming row", () => {
   const transcript = {
     session_id: "sess_1",
@@ -1236,6 +1297,23 @@ test("requests transcript refresh when assistant delta overlay has no local row"
         ],
       },
       event,
+    ),
+    false,
+  );
+  assert.equal(
+    needsTranscriptRefreshAfterLiveOverlay(
+      {
+        session_id: "sess_1",
+        cursor: { event_id: "evt_live", epoch: 1, seq: 12 },
+        rows: [],
+      },
+      {
+        event_id: "evt_old",
+        epoch: 1,
+        seq: 10,
+        type: "assistant.message.delta",
+        payload: { message_id: "msg_backend_owned", delta: "server truth" },
+      },
     ),
     false,
   );
