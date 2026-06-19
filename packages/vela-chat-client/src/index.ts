@@ -1220,17 +1220,129 @@ function parseBackendWire(data: unknown, owner: string): BackendWire {
     status,
     display_name: requiredViewString(data, "display_name", owner, invalidBackendsResponse),
     capabilities: requiredBackendCapabilities(data, owner),
-    models: optionalBackendArray(data, "models", owner) as BackendModelWire[],
-    permission_modes: optionalBackendArray(
-      data,
-      "permission_modes",
-      owner,
-    ) as PermissionModeOptionWire[],
-    features: optionalBackendArray(data, "features", owner) as BackendFeatureWire[],
+    models: optionalBackendArray(data, "models", owner).map((model, index) =>
+      parseBackendModelWire(model, `${owner}.models[${index}]`),
+    ),
+    permission_modes: optionalBackendArray(data, "permission_modes", owner).map((mode, index) =>
+      parsePermissionModeOptionWire(mode, `${owner}.permission_modes[${index}]`),
+    ),
+    features: optionalBackendArray(data, "features", owner).map((feature, index) =>
+      parseBackendFeatureWire(feature, `${owner}.features[${index}]`),
+    ),
     ...(data.diagnostics !== undefined
       ? { diagnostics: optionalBackendObject(data, "diagnostics", owner) }
       : {}),
   };
+}
+
+function parseBackendModelWire(data: unknown, owner: string): BackendModelWire {
+  if (!isRecord(data)) {
+    throw invalidBackendsResponse(`${owner} must be an object`);
+  }
+  return {
+    ...(data as unknown as BackendModelWire),
+    id: requiredBackendString(data, "id", owner),
+    label: requiredBackendString(data, "label", owner),
+    ...(data.description !== undefined
+      ? { description: optionalBackendString(data, "description", owner) }
+      : {}),
+    ...(data.is_default !== undefined
+      ? { is_default: optionalBackendBoolean(data, "is_default", owner) }
+      : {}),
+    reasoning_efforts: optionalBackendArray(data, "reasoning_efforts", owner).map(
+      (option, index) => parseReasoningEffortOptionWire(option, `${owner}.reasoning_efforts[${index}]`),
+    ),
+    ...(data.metadata !== undefined
+      ? { metadata: optionalBackendObject(data, "metadata", owner) }
+      : {}),
+  };
+}
+
+function parseReasoningEffortOptionWire(
+  data: unknown,
+  owner: string,
+): ReasoningEffortOptionWire {
+  if (!isRecord(data)) {
+    throw invalidBackendsResponse(`${owner} must be an object`);
+  }
+  return {
+    ...(data as unknown as ReasoningEffortOptionWire),
+    id: requiredBackendString(data, "id", owner),
+    label: requiredBackendString(data, "label", owner),
+    ...(data.description !== undefined
+      ? { description: optionalBackendString(data, "description", owner) }
+      : {}),
+    ...(data.is_default !== undefined
+      ? { is_default: optionalBackendBoolean(data, "is_default", owner) }
+      : {}),
+    ...(data.metadata !== undefined
+      ? { metadata: optionalBackendObject(data, "metadata", owner) }
+      : {}),
+  };
+}
+
+function parsePermissionModeOptionWire(data: unknown, owner: string): PermissionModeOptionWire {
+  if (!isRecord(data)) {
+    throw invalidBackendsResponse(`${owner} must be an object`);
+  }
+  const id = requiredBackendString(data, "id", owner);
+  if (!permissionModes.has(id)) {
+    throw invalidBackendsResponse(`${owner}.id must be a known PermissionMode`);
+  }
+  return {
+    ...(data as unknown as PermissionModeOptionWire),
+    id: id as PermissionModeWire,
+    label: requiredBackendString(data, "label", owner),
+    ...(data.description !== undefined
+      ? { description: optionalBackendString(data, "description", owner) }
+      : {}),
+    ...(data.is_default !== undefined
+      ? { is_default: optionalBackendBoolean(data, "is_default", owner) }
+      : {}),
+    ...(data.metadata !== undefined
+      ? { metadata: optionalBackendObject(data, "metadata", owner) }
+      : {}),
+  };
+}
+
+function parseBackendFeatureWire(data: unknown, owner: string): BackendFeatureWire {
+  if (!isRecord(data)) {
+    throw invalidBackendsResponse(`${owner} must be an object`);
+  }
+  const type = requiredBackendString(data, "type", owner);
+  const base = {
+    ...(data as unknown as BackendFeatureWire),
+    type,
+    id: requiredBackendString(data, "id", owner),
+    label: requiredBackendString(data, "label", owner),
+    ...(data.description !== undefined
+      ? { description: optionalBackendString(data, "description", owner) }
+      : {}),
+    ...(data.metadata !== undefined
+      ? { metadata: optionalBackendObject(data, "metadata", owner) }
+      : {}),
+  };
+
+  if (type === "toggle") {
+    return {
+      ...base,
+      default_value: requiredBackendBoolean(data, "default_value", owner),
+    };
+  }
+
+  if (type === "select") {
+    return {
+      ...base,
+      ...(data.default_value !== undefined
+        ? { default_value: optionalBackendStringOrNull(data, "default_value", owner) }
+        : {}),
+      options: requiredBackendArray(data, "options", owner).map((option, index) =>
+        parseReasoningEffortOptionWire(option, `${owner}.options[${index}]`),
+      ),
+    };
+  }
+
+  throw invalidBackendsResponse(`${owner}.type must be toggle or select`);
 }
 
 async function readTranscriptViewResponse(response: Response): Promise<ChatTranscriptWireView> {
@@ -1537,6 +1649,59 @@ function optionalBackendArray(data: Record<string, unknown>, field: string, owne
   if (value === undefined) return [];
   if (!Array.isArray(value)) {
     throw invalidBackendsResponse(`${owner}.${field} must be an array`);
+  }
+  return value;
+}
+
+function requiredBackendArray(data: Record<string, unknown>, field: string, owner: string) {
+  const value = data[field];
+  if (!Array.isArray(value)) {
+    throw invalidBackendsResponse(`${owner}.${field} must be an array`);
+  }
+  return value;
+}
+
+function requiredBackendString(data: Record<string, unknown>, field: string, owner: string) {
+  const value = data[field];
+  if (typeof value !== "string") {
+    throw invalidBackendsResponse(`${owner}.${field} must be a string`);
+  }
+  return value;
+}
+
+function optionalBackendString(data: Record<string, unknown>, field: string, owner: string) {
+  const value = data[field];
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") {
+    throw invalidBackendsResponse(`${owner}.${field} must be a string`);
+  }
+  return value;
+}
+
+function optionalBackendStringOrNull(
+  data: Record<string, unknown>,
+  field: string,
+  owner: string,
+) {
+  const value = data[field];
+  if (value === undefined) return undefined;
+  if (value === null || typeof value === "string") return value;
+  throw invalidBackendsResponse(`${owner}.${field} must be a string or null`);
+}
+
+function requiredBackendBoolean(data: Record<string, unknown>, field: string, owner: string) {
+  const value = data[field];
+  if (typeof value !== "boolean") {
+    throw invalidBackendsResponse(`${owner}.${field} must be a boolean`);
+  }
+  return value;
+}
+
+function optionalBackendBoolean(data: Record<string, unknown>, field: string, owner: string) {
+  const value = data[field];
+  if (value === undefined) return undefined;
+  if (typeof value !== "boolean") {
+    throw invalidBackendsResponse(`${owner}.${field} must be a boolean`);
   }
   return value;
 }

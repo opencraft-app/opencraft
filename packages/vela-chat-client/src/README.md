@@ -20,6 +20,11 @@ Backend catalog item validation also belongs here for OpenAPI-required backend
 identity, status, display label, and capability flags before composer controls
 consume the catalog.
 
+Nested backend catalog option validation belongs here too. Models, reasoning
+effort options, permission modes, and backend features should be checked
+against OpenAPI required fields, enums, and feature discriminators before the
+composer sees them.
+
 Path/query parameter validation belongs here before URLs are constructed,
 including OpenAPI string parameters such as `session_id` and `after_id`.
 

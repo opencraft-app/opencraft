@@ -26,6 +26,9 @@ Command submission validates both sides of the OpenAPI boundary:
 - incoming backend catalog items include OpenAPI-required backend identity,
   status, display label, and boolean capability flags before composer controls
   consume them
+- incoming backend catalog option items include OpenAPI-required model,
+  reasoning effort, permission mode, and feature fields before composer
+  controls consume them
 - outgoing view-window query options follow OpenAPI `Limit`, `direction`,
   anchor id, and boolean bounds before any transcript/activity request is sent
 - incoming transcript/activity read-model envelopes include their required
