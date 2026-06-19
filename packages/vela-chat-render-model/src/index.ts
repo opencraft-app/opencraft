@@ -101,13 +101,14 @@ export function buildChatRenderModel(surface: ChatSurface, host: ChatHostPolicy)
 
 function renderTranscriptRow(row: ChatSurfaceTranscriptRow): ChatRenderRow {
   if (row.role === "user") {
-    const collapsed = row.text.length > USER_COLLAPSE_LIMIT;
+    const text = row.text || textFromTranscriptParts(row.parts);
+    const collapsed = text.length > USER_COLLAPSE_LIMIT;
     return {
       kind: "user_message",
       id: row.id,
       key: `user:${row.id}`,
-      text: collapsed ? `${row.text.slice(0, USER_COLLAPSE_LIMIT).trimEnd()}...` : row.text,
-      copy_text: row.text,
+      text: collapsed ? `${text.slice(0, USER_COLLAPSE_LIMIT).trimEnd()}...` : text,
+      copy_text: text,
       collapsed,
       parts: row.parts,
       createdAt: row.created_at,
@@ -141,6 +142,18 @@ function renderTranscriptRow(row: ChatSurfaceTranscriptRow): ChatRenderRow {
     createdAt: row.created_at,
     debug: row.debug,
   };
+}
+
+function textFromTranscriptParts(parts: ChatTranscriptPart[]): string {
+  return parts
+    .filter(isTextualTranscriptPart)
+    .map((part) => part.text)
+    .filter((text): text is string => Boolean(text))
+    .join("\n");
+}
+
+function isTextualTranscriptPart(part: ChatTranscriptPart): boolean {
+  return part.type === "text" || part.type === "markdown" || part.type === "code";
 }
 
 function sortRenderRows(rows: ChatRenderRow[]): ChatRenderRow[] {

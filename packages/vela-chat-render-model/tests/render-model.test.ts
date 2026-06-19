@@ -91,6 +91,48 @@ test("turns surface rows into host-aware render rows", () => {
   assert.equal(model.host.kind, "desktop_web");
 });
 
+test("derives user message text from OpenAPI textual parts when row text is absent", () => {
+  const surface: ChatSurface = {
+    session_id: "sess_user_parts",
+    transcript: {
+      rows: [
+        {
+          id: "u_parts",
+          role: "user",
+          text: "",
+          parts: [
+            { id: "u_parts:part:0", type: "markdown", text: "**请看这个**" },
+            { id: "u_parts:part:1", type: "code", text: "console.log('hello')" },
+            {
+              id: "u_parts:part:2",
+              type: "image",
+              data: { mime_type: "image/png", data: "aGVsbG8=", size_bytes: 5 },
+            },
+          ],
+          created_at: "2026-06-18T10:00:00Z",
+          status: "completed",
+          revision: 1,
+          debug: { projection: "transcript", source_event_ids: ["evt_user_parts"] },
+        },
+      ],
+    },
+    activity: { items: [] },
+    pending_requests: { items: [] },
+    cursors: {},
+    stream: { connected: false, running: false },
+  };
+
+  const model = buildChatRenderModel(surface, { kind: "desktop_web" });
+  const row = model.rows[0];
+
+  assert.equal(row?.kind, "user_message");
+  if (row?.kind === "user_message") {
+    assert.equal(row.text, "**请看这个**\nconsole.log('hello')");
+    assert.equal(row.copy_text, "**请看这个**\nconsole.log('hello')");
+    assert.equal(row.parts[2]?.type, "image");
+  }
+});
+
 test("keeps agent work separate from transcript and derives worked label from message boundaries", () => {
   const surface: ChatSurface = {
     session_id: "sess_work",
