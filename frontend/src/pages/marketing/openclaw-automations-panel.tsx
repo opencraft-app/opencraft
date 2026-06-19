@@ -253,7 +253,7 @@ function ImmediateTooltipText({ label, message }: { label: string; message: stri
 export function AutomationsPanel({ botId }: { botId: string | null }) {
   const t = useT();
   const [jobs, setJobs] = useState<CronJob[]>([]);
-  const [enabledChannels, setEnabledChannels] = useState<Set<string>>(() => new Set());
+  const [enabledChannels, setEnabledChannels] = useState<Set<string> | null>(null);
   const [channelStatus, setChannelStatus] = useState<"loading" | "ready">("loading");
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [loadingRecentRuns, setLoadingRecentRuns] = useState(false);
@@ -290,7 +290,7 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
       const result = await execCommand(botId, "acli channel status");
       setEnabledChannels(parseEnabledHermesChannels(result.output));
     } catch {
-      setEnabledChannels(new Set());
+      setEnabledChannels(null);
     } finally {
       setChannelStatus("ready");
     }
@@ -1918,7 +1918,7 @@ function AutomationFormModal({
   mode: "create" | "edit";
   initialJob?: CronJob;
   template?: AutomationTemplate;
-  enabledChannels: Set<string>;
+  enabledChannels: Set<string> | null;
   channelStatus: "loading" | "ready";
   onClose: () => void;
   onSaved: () => void;
@@ -2024,7 +2024,7 @@ function AutomationFormModal({
   const intervalMinutes = useMemo(() => getIntervalMinutes(intervalNum, intervalUnit), [intervalNum, intervalUnit]);
   const weixinBlockedByFrequency = kind === "interval"
     && intervalMinutes < 15
-    && enabledChannels.has("weixin");
+    && isHermesNotificationChannelConfigured(enabledChannels, "weixin");
 
   useEffect(() => {
     if (!weixinBlockedByFrequency) return;
@@ -2431,7 +2431,7 @@ function AutomationFormModal({
                 ] as const)
             ).map(({ key, label, comingSoon }) => {
               // comingSoon 通道一律强制为「不可配置」，无论 acli channel status 怎么报
-              const configured = !comingSoon && enabledChannels.has(key);
+              const configured = isHermesNotificationChannelConfigured(enabledChannels, key, comingSoon);
               const blockedByFrequency = key === "weixin" && weixinBlockedByFrequency;
               const selected = deliverPlatforms.includes(key);
               const checkboxDisabled = !configured || blockedByFrequency;
@@ -3503,6 +3503,15 @@ export function parseEnabledHermesChannels(output: string): Set<string> {
       .filter((entry) => entry.enabled)
       .map((entry) => normalizeHermesChannelKey(entry.channel || entry.value)),
   );
+}
+
+export function isHermesNotificationChannelConfigured(
+  enabledChannels: Set<string> | null,
+  key: string,
+  comingSoon = false,
+): boolean {
+  if (comingSoon) return false;
+  return enabledChannels === null || enabledChannels.has(key);
 }
 
 function formatTestSendError(error: unknown, fallback: string): string {

@@ -12,6 +12,7 @@ import {
   formatScheduleTooltip,
   getLastAgentRunForJob,
   getEffectiveWindowStatus,
+  isHermesNotificationChannelConfigured,
   isCronJobExpiredBeyondGrace,
   isEffectiveWindowRangeInvalid,
   normalizeDailyTimesForEditing,
@@ -287,6 +288,23 @@ describe("parseEnabledHermesChannels", () => {
     });
 
     expect(parseEnabledHermesChannels(output)).toEqual(new Set(["weixin"]));
+  });
+});
+
+describe("isHermesNotificationChannelConfigured", () => {
+  it("treats unknown channel status as configurable so users can still try", () => {
+    expect(isHermesNotificationChannelConfigured(null, "feishu")).toBe(true);
+  });
+
+  it("uses the loaded enabled-channel set when channel status is known", () => {
+    const enabledChannels = new Set(["weixin"]);
+
+    expect(isHermesNotificationChannelConfigured(enabledChannels, "weixin")).toBe(true);
+    expect(isHermesNotificationChannelConfigured(enabledChannels, "feishu")).toBe(false);
+  });
+
+  it("keeps coming-soon channels disabled even when status is unknown", () => {
+    expect(isHermesNotificationChannelConfigured(null, "telegram", true)).toBe(false);
   });
 });
 

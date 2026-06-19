@@ -93,6 +93,9 @@ describe("LoginModal (国内站 默认 isGlobal=false)", () => {
     render(<LoginModal open onClose={vi.fn()} />);
 
     const [qqButton] = screen.getAllByRole("button", { name: "QQQQ账号登录" });
+    expect(qqButton).not.toBeDisabled();
+    expect(qqButton).toHaveAttribute("aria-disabled", "true");
+    expect(qqButton).toHaveClass("cursor-not-allowed", "opacity-50");
     fireEvent.click(qqButton as HTMLElement);
 
     expect(screen.getByText("请先勾选同意服务协议")).toBeInTheDocument();
