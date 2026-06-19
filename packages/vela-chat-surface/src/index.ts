@@ -366,7 +366,7 @@ export function prependTranscriptWindow<T extends ChatTranscriptWireView>(curren
       has_older: older.window?.has_older ?? false,
       has_newer: current.window?.has_newer ?? false,
     },
-    cursor: older.cursor ?? current.cursor,
+    cursor: latestCursor(current.cursor, older.cursor),
   } as T;
 }
 
@@ -396,7 +396,7 @@ export function prependActivityWindow<T extends ActivityWireView>(current: T, ol
       has_older: older.window?.has_older ?? false,
       has_newer: current.window?.has_newer ?? false,
     },
-    cursor: older.cursor ?? current.cursor,
+    cursor: latestCursor(current.cursor, older.cursor),
   } as T;
 }
 
@@ -450,6 +450,26 @@ function isDifferentKnownSession(
   olderSessionId: string | undefined,
 ) {
   return Boolean(currentSessionId && olderSessionId && currentSessionId !== olderSessionId);
+}
+
+function latestCursor(current: ChatSurfaceCursor, older: ChatSurfaceCursor) {
+  const currentOrder = cursorOrder(current);
+  const olderOrder = cursorOrder(older);
+  if (!currentOrder || !olderOrder) return older ?? current;
+  if (currentOrder.epoch > olderOrder.epoch) return current;
+  if (currentOrder.epoch < olderOrder.epoch) return older;
+  return currentOrder.seq >= olderOrder.seq ? current : older;
+}
+
+function cursorOrder(cursor: ChatSurfaceCursor) {
+  if (typeof cursor.seq !== "number" || !Number.isFinite(cursor.seq)) return null;
+  return {
+    epoch:
+      typeof cursor.epoch === "number" && Number.isFinite(cursor.epoch)
+        ? cursor.epoch
+        : 0,
+    seq: cursor.seq,
+  };
 }
 
 function normalizeWindowLimit(limit: number) {

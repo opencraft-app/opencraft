@@ -170,6 +170,13 @@ test("prepends transcript windows without duplicating rows and preserves latest 
   assert.equal(merged.window?.has_older, false);
   assert.equal(merged.window?.has_newer, false);
   assert.equal(merged.cursor.event_id, "evt_newer");
+  assert.equal(
+    prependTranscriptWindow(
+      { ...current, cursor: { event_id: "evt_live", epoch: 1, seq: 12 } },
+      { ...older, cursor: { event_id: "evt_older", epoch: 1, seq: 10 } },
+    ).cursor.event_id,
+    "evt_live",
+  );
   assert.strictEqual(
     prependTranscriptWindow(current, { ...older, session_id: "sess_other" }),
     current,
@@ -240,6 +247,13 @@ test("prepends activity windows without duplicating items and preserves latest c
   assert.equal(merged.window?.has_older, false);
   assert.equal(merged.window?.has_newer, false);
   assert.equal(merged.cursor.event_id, "evt_newer");
+  assert.equal(
+    prependActivityWindow(
+      { ...current, cursor: { event_id: "evt_live", epoch: 1, seq: 12 } },
+      { ...older, cursor: { event_id: "evt_older", epoch: 1, seq: 10 } },
+    ).cursor.event_id,
+    "evt_live",
+  );
   assert.strictEqual(
     prependActivityWindow(current, { ...older, session_id: "sess_other" }),
     current,
