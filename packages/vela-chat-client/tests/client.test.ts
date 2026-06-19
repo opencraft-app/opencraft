@@ -1304,6 +1304,24 @@ test("requests transcript refresh when assistant delta overlay has no local row"
     needsTranscriptRefreshAfterLiveOverlay(
       {
         session_id: "sess_1",
+        cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
+        rows: [],
+      },
+      {
+        event_id: "evt_other_session",
+        epoch: 1,
+        seq: 2,
+        session_id: "sess_2",
+        type: "assistant.message.delta",
+        payload: { message_id: "msg_backend_owned", delta: "server truth" },
+      },
+    ),
+    false,
+  );
+  assert.equal(
+    needsTranscriptRefreshAfterLiveOverlay(
+      {
+        session_id: "sess_1",
         cursor: { event_id: "evt_live", epoch: 1, seq: 12 },
         rows: [],
       },

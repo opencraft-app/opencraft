@@ -422,9 +422,7 @@ export function applyTranscriptLiveOverlay(
   event: VelaStreamEventWire,
 ): ChatTranscriptWireView {
   if (
-    transcript.session_id &&
-    event.session_id &&
-    transcript.session_id !== event.session_id
+    isDifferentKnownStreamSession(transcript.session_id, event.session_id)
   ) {
     return transcript;
   }
@@ -444,6 +442,9 @@ export function needsTranscriptRefreshAfterLiveOverlay(
   event: VelaStreamEventWire,
 ) {
   if (event.type !== "assistant.message.delta") return false;
+  if (isDifferentKnownStreamSession(transcript.session_id, event.session_id)) {
+    return false;
+  }
   if (!isStreamEventNewerThanCursor(transcript.cursor, event)) return false;
   const delta = stringPayload(event, "delta");
   if (!delta) return false;
@@ -629,6 +630,13 @@ function isStreamEventNewerThanCursor(
   if (eventOrder.epoch > cursorOrder.epoch) return true;
   if (eventOrder.epoch < cursorOrder.epoch) return false;
   return eventOrder.seq > cursorOrder.seq;
+}
+
+function isDifferentKnownStreamSession(
+  transcriptSessionId: string | undefined,
+  eventSessionId: string | undefined,
+) {
+  return Boolean(transcriptSessionId && eventSessionId && transcriptSessionId !== eventSessionId);
 }
 
 function eventCursorOrder(cursor: EventCursorWire) {
