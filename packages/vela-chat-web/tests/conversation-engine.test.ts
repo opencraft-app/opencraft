@@ -249,6 +249,87 @@ test("streaming assistant rows stay live and expose a changing fingerprint", () 
   }
 });
 
+test("streaming assistant markdown split items keep only the tail block live", () => {
+  const model: ChatRenderModel = {
+    session_id: "sess_1",
+    host: { kind: "desktop_web" },
+    rows: [
+      {
+        kind: "assistant_message",
+        id: "a1",
+        key: "assistant:a1",
+        blocks: [
+          { id: "a1:block:0", text: "stable intro" },
+          { id: "a1:block:1", text: "stable middle" },
+          { id: "a1:block:2", text: "tail still streaming" },
+        ],
+        createdAt: "2026-06-18T00:00:00Z",
+        status: "streaming",
+        streaming: true,
+        revision: 4,
+        debug: { projection: "transcript", source_event_ids: ["evt_1"] },
+      },
+    ],
+    composer: { placeholder: "要求后续变更", can_send: true },
+  };
+
+  const items = buildConversationStreamItems(toWebChatModel(model).turns);
+
+  assert.deepEqual(
+    items.map((item) => item.live),
+    [false, false, true],
+  );
+  assert.deepEqual(
+    items.map((item) =>
+      item.block.kind === "assistant_markdown" ? item.block.streaming : null,
+    ),
+    [false, false, true],
+  );
+});
+
+test("streaming assistant markdown split items keep stable head fingerprints", () => {
+  const firstSnapshot: ChatRenderModel = {
+    session_id: "sess_1",
+    host: { kind: "desktop_web" },
+    rows: [
+      {
+        kind: "assistant_message",
+        id: "a1",
+        key: "assistant:a1",
+        blocks: [
+          { id: "a1:block:0", text: "stable intro" },
+          { id: "a1:block:1", text: "tail grows" },
+        ],
+        createdAt: "2026-06-18T00:00:00Z",
+        status: "streaming",
+        streaming: true,
+        revision: 1,
+        debug: { projection: "transcript", source_event_ids: ["evt_1"] },
+      },
+    ],
+    composer: { placeholder: "要求后续变更", can_send: true },
+  };
+  const secondSnapshot: ChatRenderModel = {
+    ...firstSnapshot,
+    rows: [
+      {
+        ...firstSnapshot.rows[0]!,
+        blocks: [
+          { id: "a1:block:0", text: "stable intro" },
+          { id: "a1:block:1", text: "tail grows with another delta" },
+        ],
+        revision: 2,
+      },
+    ],
+  };
+
+  const firstItems = buildConversationStreamItems(toWebChatModel(firstSnapshot).turns);
+  const secondItems = buildConversationStreamItems(toWebChatModel(secondSnapshot).turns);
+
+  assert.equal(firstItems[0]?.fingerprint, secondItems[0]?.fingerprint);
+  assert.notEqual(firstItems[1]?.fingerprint, secondItems[1]?.fingerprint);
+});
+
 test("web adapter reuses unchanged turns across fresh render model snapshots", () => {
   const firstSnapshot: ChatRenderModel = {
     session_id: "sess_1",
