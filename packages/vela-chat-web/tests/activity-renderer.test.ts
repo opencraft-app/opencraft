@@ -3,7 +3,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
-import { activityAccessibleLabel } from "../src/renderers/blocks/activityLabel";
+import {
+  activityAccessibleLabel,
+  activityVisualSummary,
+} from "../src/renderers/blocks/activityLabel";
 
 const root = process.cwd();
 
@@ -57,6 +60,20 @@ test("activity renderer exposes full labels to hover and assistive technology", 
   assert.match(source, /activityAccessibleLabel/);
   assert.match(source, /aria-label=\{label\}/);
   assert.match(source, /title=\{label\}/);
+});
+
+test("activity visual summaries omit duplicate generic text", () => {
+  assert.equal(activityVisualSummary("Read file", "Read file"), "");
+  assert.equal(activityVisualSummary("README.md", "Read file"), "README.md");
+
+  const source = readFileSync(
+    join(root, "packages/vela-chat-web/src/renderers/blocks/ActivityRenderer.tsx"),
+    "utf8",
+  );
+
+  assert.match(source, /activityVisualSummary/);
+  assert.match(source, /const summary = activityVisualSummary\(block\.summary,\s*block\.title\);/);
+  assert.doesNotMatch(source, /block\.summary \? <span className=\{styles\.activitySummary\}>\{block\.summary\}/);
 });
 
 test("failed activity status rows expose failed visual status", () => {
