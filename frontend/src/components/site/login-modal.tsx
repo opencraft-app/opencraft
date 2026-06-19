@@ -266,7 +266,6 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
                       key={provider}
                       type="button"
                       onClick={() => handleOAuthLogin(provider)}
-                      disabled={!agreed}
                       className={BUTTON_BASE_CLASS}
                       style={visual.style}
                     >

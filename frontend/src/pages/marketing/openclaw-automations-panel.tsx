@@ -14,29 +14,25 @@
  * - 生效日期区间通过 Hermes 官方 pre-run script gate 实现：区间外返回 wakeAgent=false
  */
 
-import { AlertTriangle, Activity, BellRing, BriefcaseBusiness, CalendarRange, ChevronDown, CircleHelp, Clock, Droplets, Eraser, Eye, FolderKanban, LayoutTemplate, Loader2, Newspaper, Pause, Pencil, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, X } from "lucide-react";
+import { AlertTriangle, Activity, BellRing, BriefcaseBusiness, CalendarRange, CheckCircle2, ChevronDown, CircleHelp, Clock, Droplets, Eraser, Eye, FolderKanban, LayoutTemplate, Loader2, Newspaper, Pause, Pencil, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, X } from "lucide-react";
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { parseHermesChannelList } from "@tencent/tea-sdk-lightclaw/scripts";
 import { useT } from "@/i18n/t";
-import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
 import { isGlobal } from "@/lib/region";
-import {
-  AUTH_UNAUTHORIZED_EVENT,
-  readStoredAuthToken,
-  writeStoredAuthToken,
-} from "@/repositories/http-repositories";
 import {
   CronCommandError,
   createCronJobWithScriptRollback,
   createEffectiveWindowScriptName,
   editCronJob,
+  execCommand,
   listCronJobs,
   listRecentCronRuns,
   pauseCronJob,
   writeEffectiveWindowScript,
   removeCronJob,
   resumeCronJob,
+  shellQuote,
   type CronEffectiveWindow,
   type CronJob,
   type CronLightVelaScriptConfig,
@@ -53,17 +49,24 @@ const MODAL_CONTROL_TEXT_STYLE: React.CSSProperties = { fontSize: 16, lineHeight
 const MODAL_COMPACT_CONTROL_TEXT_STYLE: React.CSSProperties = { fontSize: 14, lineHeight: "20px" };
 const MODAL_HELP_TEXT_STYLE: React.CSSProperties = { fontSize: 13, lineHeight: "20px" };
 const EXPIRED_CRON_JOB_HIDE_AFTER_MS = 10 * 60 * 1000;
+const AUTOMATION_PROMPT_MAX_LENGTH = 1000;
 const CHAT_ID_MAX_LENGTH = 60;
 const CHINESE_TEXT_RE = /[\u3400-\u9fff\uf900-\ufaff]/;
 const CHINESE_TEXT_RE_GLOBAL = /[\u3400-\u9fff\uf900-\ufaff]/g;
 
-/** 顶部红色 toast；与 settings 主页 SkillInstallToast 视觉一致 */
-function ErrorToast({ message, onClose }: { message: string; onClose: () => void }) {
+/** 顶部 toast；与 settings 主页 SkillInstallToast 视觉一致 */
+function ErrorToast({ message, onClose, tone = "error" }: { message: string; onClose: () => void; tone?: "error" | "success" }) {
   const t = useT();
+  const Icon = tone === "success" ? CheckCircle2 : AlertTriangle;
   return createPortal(
     <div className="fixed inset-x-0 top-4 z-[300] flex justify-center px-4" role="status" aria-live="polite">
-      <div className="inline-flex max-w-[min(92vw,720px)] items-center gap-2 rounded-full bg-[#B91C1C] px-4 py-2 text-sm font-medium text-white shadow-lg">
-        <AlertTriangle className="h-4 w-4 shrink-0" />
+      <div
+        className={
+          "inline-flex max-w-[min(92vw,720px)] items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-white shadow-lg " +
+          (tone === "success" ? "bg-[#0F8A4B]" : "bg-[#B91C1C]")
+        }
+      >
+        <Icon className="h-4 w-4 shrink-0" />
         <span className="truncate">{message}</span>
         <button
           type="button"
@@ -250,6 +253,8 @@ function ImmediateTooltipText({ label, message }: { label: string; message: stri
 export function AutomationsPanel({ botId }: { botId: string | null }) {
   const t = useT();
   const [jobs, setJobs] = useState<CronJob[]>([]);
+  const [enabledChannels, setEnabledChannels] = useState<Set<string>>(() => new Set());
+  const [channelStatus, setChannelStatus] = useState<"loading" | "ready">("loading");
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [loadingRecentRuns, setLoadingRecentRuns] = useState(false);
   const [recentRuns, setRecentRuns] = useState<CronRunRecord[]>([]);
@@ -273,6 +278,23 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
   const visibleJobs = useMemo(() => jobs.filter((job) => !isCronJobExpiredBeyondGrace(job)), [jobs]);
   const jobLimitReached = visibleJobs.length >= MAX_CRON_JOBS_PER_BOT;
   const templates = useMemo(() => getAutomationTemplates(t), [t]);
+
+  const refreshChannelStatus = useCallback(async () => {
+    if (!botId) {
+      setEnabledChannels(new Set());
+      setChannelStatus("ready");
+      return;
+    }
+    setChannelStatus("loading");
+    try {
+      const result = await execCommand(botId, "acli channel status");
+      setEnabledChannels(parseEnabledHermesChannels(result.output));
+    } catch {
+      setEnabledChannels(new Set());
+    } finally {
+      setChannelStatus("ready");
+    }
+  }, [botId]);
 
   const requestCreate = useCallback((mode: "blank" | "template") => {
     if (jobLimitReached) {
@@ -360,6 +382,10 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
   useEffect(() => {
     void refreshAll();
   }, [refreshAll]);
+
+  useEffect(() => {
+    void refreshChannelStatus();
+  }, [refreshChannelStatus]);
 
   const handleAction = useCallback(async (
     job: CronJob,
@@ -524,6 +550,8 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
         <AutomationFormModal
           botId={botId}
           mode="create"
+          enabledChannels={enabledChannels}
+          channelStatus={channelStatus}
           onClose={() => setCreating(false)}
           onSaved={async () => {
             setCreating(false);
@@ -549,6 +577,8 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
           botId={botId}
           mode="create"
           template={creatingFromTemplate}
+          enabledChannels={enabledChannels}
+          channelStatus={channelStatus}
           onClose={() => setCreatingFromTemplate(null)}
           onSaved={async () => {
             setCreatingFromTemplate(null);
@@ -579,6 +609,8 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
           botId={botId}
           mode="edit"
           initialJob={editingJob}
+          enabledChannels={enabledChannels}
+          channelStatus={channelStatus}
           onClose={() => setEditingJob(null)}
           onSaved={async () => {
             setEditingJob(null);
@@ -1876,6 +1908,8 @@ function AutomationFormModal({
   mode,
   initialJob,
   template,
+  enabledChannels,
+  channelStatus,
   onClose,
   onSaved,
   onError,
@@ -1884,6 +1918,8 @@ function AutomationFormModal({
   mode: "create" | "edit";
   initialJob?: CronJob;
   template?: AutomationTemplate;
+  enabledChannels: Set<string>;
+  channelStatus: "loading" | "ready";
   onClose: () => void;
   onSaved: () => void;
   onError: (message: string) => void;
@@ -1959,50 +1995,27 @@ function AutomationFormModal({
   const [effectiveWindowEnabled, setEffectiveWindowEnabled] = useState(() => Boolean(initialJob?.effective_window?.start_at || initialJob?.effective_window?.end_at));
   const canEditEffectiveWindow = !initialJob?.script || isLightVelaEffectiveWindowScriptName(initialJob.script);
   const shouldShowEffectiveWindow = kind !== "once";
-  /** 已配置的 channel key 集合（weixin/qqbot/feishu/...）；null = 还没拉 */
-  const [enabledChannels, setEnabledChannels] = useState<Set<string> | null>(null);
   const [chatIdErrors, setChatIdErrors] = useState<Record<string, string>>({});
+  const [testSendResults, setTestSendResults] = useState<Record<string, { status: "sending" }>>({});
+  const [testSendToast, setTestSendToast] = useState<{ tone: "success" | "error"; message: string } | null>(null);
+  const testSendToastTimerRef = useRef<number | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
 
-  // 表单打开时拉一次 channel 列表，决定哪些 deliver 选项可用
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const baseUrl = resolveConfiguredAuthApiBaseUrl();
-        if (baseUrl === null) throw new Error("auth API base URL not configured");
-        const headers = new Headers({ "Content-Type": "application/json" });
-        const token = readStoredAuthToken();
-        if (token) headers.set("Authorization", `Bearer ${token}`);
-        const resp = await fetch(
-          `${baseUrl.replace(/\/+$/, "")}/v1/instances/${encodeURIComponent(botId)}/debug/exec`,
-          {
-            method: "POST",
-            credentials: "include",
-            headers,
-            body: JSON.stringify({ command: "acli channel status", run_as_user: "agentuser" }),
-          },
-        );
-        if (!resp.ok) {
-          if (resp.status === 401 || resp.status === 403) {
-            writeStoredAuthToken(null);
-            window.dispatchEvent(new Event(AUTH_UNAUTHORIZED_EVENT));
-          }
-          throw new Error(`HTTP ${resp.status}`);
-        }
-        const envelope = (await resp.json()) as { data?: { output?: string } };
-        const output = envelope.data?.output ?? "";
-        const entries = parseHermesChannelList(output);
-        if (cancelled) return;
-        setEnabledChannels(new Set(entries.filter((e) => e.enabled).map((e) => e.channel)));
-      } catch {
-        // 拉失败不阻塞表单；保留 null（视为未知 → 全部 enabled，让 hermes 自己报错）
-        if (!cancelled) setEnabledChannels(null);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [botId]);
+  const showTestSendToast = useCallback((tone: "success" | "error", message: string) => {
+    if (testSendToastTimerRef.current) {
+      window.clearTimeout(testSendToastTimerRef.current);
+    }
+    setTestSendToast({ tone, message });
+    testSendToastTimerRef.current = window.setTimeout(() => {
+      setTestSendToast(null);
+      testSendToastTimerRef.current = null;
+    }, 5000);
+  }, []);
+
+  useEffect(() => () => {
+    if (testSendToastTimerRef.current) window.clearTimeout(testSendToastTimerRef.current);
+  }, []);
 
   const normalizedDailyTimes = useMemo(() => normalizeDailyTimes(dailyTimes, time), [dailyTimes, time]);
   const dailyTimesForScript = kind === "recurring" && period === "daily" && normalizedDailyTimes.length > 1
@@ -2011,7 +2024,6 @@ function AutomationFormModal({
   const intervalMinutes = useMemo(() => getIntervalMinutes(intervalNum, intervalUnit), [intervalNum, intervalUnit]);
   const weixinBlockedByFrequency = kind === "interval"
     && intervalMinutes < 15
-    && enabledChannels !== null
     && enabledChannels.has("weixin");
 
   useEffect(() => {
@@ -2051,6 +2063,11 @@ function AutomationFormModal({
 
   const handleChatIdChange = useCallback((channel: string, value: string) => {
     const nextValue = value.slice(0, CHAT_ID_MAX_LENGTH);
+    setTestSendResults((prev) => {
+      if (!Object.prototype.hasOwnProperty.call(prev, channel)) return prev;
+      const { [channel]: _removed, ...rest } = prev;
+      return rest;
+    });
     if (CHINESE_TEXT_RE.test(value)) {
       setChatIdErrors((prev) => ({ ...prev, [channel]: t("Chat ID 不支持输入中文") }));
       setDeliverChatIds((prev) => ({ ...prev, [channel]: nextValue.replace(CHINESE_TEXT_RE_GLOBAL, "") }));
@@ -2063,6 +2080,31 @@ function AutomationFormModal({
     });
     setDeliverChatIds((prev) => ({ ...prev, [channel]: nextValue }));
   }, [t]);
+
+  const handleSendTestMessage = useCallback(async (channel: string) => {
+    if (chatIdErrors[channel]) return;
+    setTestSendResults((prev) => ({
+      ...prev,
+      [channel]: { status: "sending" },
+    }));
+    try {
+      await execCommand(
+        botId,
+        buildHermesSendTestCommand(channel, deliverChatIds[channel] ?? "", t("LightVela 自动任务测试消息：通知通道已连接。")),
+      );
+      setTestSendResults((prev) => {
+        const { [channel]: _removed, ...rest } = prev;
+        return rest;
+      });
+      showTestSendToast("success", t("测试消息已发送"));
+    } catch (error) {
+      setTestSendResults((prev) => {
+        const { [channel]: _removed, ...rest } = prev;
+        return rest;
+      });
+      showTestSendToast("error", formatTestSendError(error, t("发送失败，请检查通道配置")));
+    }
+  }, [botId, chatIdErrors, deliverChatIds, showTestSendToast, t]);
 
   const handleSubmit = useCallback(async () => {
     if (!canSubmit) return;
@@ -2166,6 +2208,13 @@ function AutomationFormModal({
 
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 py-3" role="dialog" aria-modal="true">
+      {testSendToast && (
+        <ErrorToast
+          message={testSendToast.message}
+          tone={testSendToast.tone}
+          onClose={() => setTestSendToast(null)}
+        />
+      )}
       <div className="relative max-h-[calc(100vh-24px)] w-full max-w-[635px] overflow-y-auto rounded-lg bg-white p-6 shadow-2xl">
         <button
           type="button"
@@ -2259,13 +2308,13 @@ function AutomationFormModal({
         <div className="mt-4">
           <div className="flex items-baseline justify-between">
             <label className="block text-sm font-medium text-black/80">{t("任务说明")}</label>
-            <span className="text-[11px] text-black/40">{prompt.length}/800</span>
+            <span className="text-[11px] text-black/40">{prompt.length}/{AUTOMATION_PROMPT_MAX_LENGTH}</span>
           </div>
           <textarea
             value={prompt}
-            onChange={(e) => setPrompt(e.target.value.slice(0, 800))}
+            onChange={(e) => setPrompt(e.target.value.slice(0, AUTOMATION_PROMPT_MAX_LENGTH))}
             rows={5}
-            maxLength={800}
+            maxLength={AUTOMATION_PROMPT_MAX_LENGTH}
             placeholder={t("请用提示词的形式描述需要执行的任务，比如：提醒我喝水")}
             className="mt-1.5 w-full resize-none rounded-md border border-black/10 bg-white px-3 py-2 text-sm placeholder:text-sm placeholder:text-black/35 focus:border-black/30 focus:outline-none"
             style={{ ...MODAL_COMPACT_CONTROL_TEXT_STYLE, marginTop: 6 }}
@@ -2360,8 +2409,14 @@ function AutomationFormModal({
           <label className="block text-sm font-medium text-black/80">
             {t("通知方式")}<span className="ml-1 text-xs font-normal text-black/40">{t("（可选）")}</span>
           </label>
-          <div className="mt-2 space-y-2">
-            {(
+          {mode === "edit" && channelStatus === "loading" ? (
+            <div className="mt-2 inline-flex min-h-6 items-center gap-1.5 text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              {t("加载中...")}
+            </div>
+          ) : (
+            <div className="mt-2 space-y-1">
+              {(
               isGlobal
                 ? ([
                   { key: "telegram", label: "Telegram", comingSoon: false },
@@ -2376,62 +2431,70 @@ function AutomationFormModal({
                 ] as const)
             ).map(({ key, label, comingSoon }) => {
               // comingSoon 通道一律强制为「不可配置」，无论 acli channel status 怎么报
-              const configured = !comingSoon && (enabledChannels === null || enabledChannels.has(key));
+              const channelsLoading = mode === "edit" && channelStatus === "loading";
+              const configured = !comingSoon && !channelsLoading && enabledChannels.has(key);
               const blockedByFrequency = key === "weixin" && weixinBlockedByFrequency;
               const selected = deliverPlatforms.includes(key);
-              const checkboxDisabled = !configured || blockedByFrequency;
+              const checkboxDisabled = channelsLoading || !configured || blockedByFrequency;
               return (
                 <div key={key}>
-                  <label
-                    className={
-                      "inline-flex items-center gap-1.5 text-sm " +
-                      (!checkboxDisabled ? "cursor-pointer text-black/80" : "cursor-not-allowed text-black/30")
-                    }
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selected}
-                      disabled={checkboxDisabled}
-                      onChange={() => {
-                        setDeliverPlatforms((prev) => {
-                          if (!prev.includes(key)) return [...prev, key];
-                          setDeliverChatIds((ids) => {
-                            const { [key]: _removed, ...rest } = ids;
-                            return rest;
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <label
+                      className={
+                        "inline-flex min-h-6 items-center gap-1.5 text-sm " +
+                        (!checkboxDisabled ? "cursor-pointer text-black/80" : "cursor-not-allowed text-black/30")
+                      }
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        disabled={checkboxDisabled}
+                        onChange={() => {
+                          setDeliverPlatforms((prev) => {
+                            if (!prev.includes(key)) return [...prev, key];
+                            setDeliverChatIds((ids) => {
+                              const { [key]: _removed, ...rest } = ids;
+                              return rest;
+                            });
+                            setChatIdErrors((errors) => {
+                              const { [key]: _removed, ...rest } = errors;
+                              return rest;
+                            });
+                            setTestSendResults((results) => {
+                              const { [key]: _removed, ...rest } = results;
+                              return rest;
+                            });
+                            return prev.filter((p) => p !== key);
                           });
-                          setChatIdErrors((errors) => {
-                            const { [key]: _removed, ...rest } = errors;
-                            return rest;
-                          });
-                          return prev.filter((p) => p !== key);
-                        });
-                      }}
-                      className="h-4 w-4 cursor-pointer rounded border-black/20 accent-black disabled:cursor-not-allowed"
-                    />
-                    <span className="text-sm leading-5">
-                      {label}
-                      {comingSoon ? (
-                        <span className="ml-1 text-xs">{t("（即将推出）")}</span>
-                      ) : (
-                        !configured && <span className="ml-1 text-xs">{t("（未配置）")}</span>
-                      )}
-                    </span>
-                    {blockedByFrequency && (
+                        }}
+                        className="h-4 w-4 cursor-pointer rounded border-black/20 accent-black disabled:cursor-not-allowed"
+                      />
+                      <span className="text-sm leading-5">
+                        {label}
+                        {comingSoon ? (
+                          <span className="ml-1 text-xs">{t("（即将推出）")}</span>
+                        ) : channelsLoading ? (
+                          <span className="ml-1 text-xs">{t("加载中...")}</span>
+                        ) : (
+                          !configured && <span className="ml-1 text-xs">{t("（未配置）")}</span>
+                        )}
+                      </span>
+                    </label>
+                    {!channelsLoading && blockedByFrequency && (
                       <span className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
                         {t("微信不建议频繁通知，否则可能会被限流")}
                       </span>
                     )}
-                    {selected && key === "qqbot" && (
+                    {!channelsLoading && selected && key === "qqbot" && (
                       <span className="inline-flex items-center text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
-                        {t("如未生效，可尝试在 QQ 对话中发送")}
+                        {t("如未生效，可尝试向绑定的QQ机器人发送")}
                         <InlineCopyText value="/set-home" />
-                        {t("给 QQ 机器人")}
                       </span>
                     )}
-                    {selected && key === "feishu" && (
-                      <span className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>{t("支持通过 home 对话或指定 Chat ID 发送通知")}</span>
+                    {!channelsLoading && selected && key === "feishu" && (
+                      <span className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>{t("支持通过默认的 home 对话或指定 Chat ID 发送通知")}</span>
                     )}
-                    {selected && (key === "telegram" || key === "discord") && (
+                    {!channelsLoading && selected && (key === "telegram" || key === "discord") && (
                       <span className="inline-flex items-center text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
                         {t("请先在")}
                         {label}
@@ -2440,19 +2503,37 @@ function AutomationFormModal({
                         {t("给机器人")}
                       </span>
                     )}
-                  </label>
+                    {!channelsLoading && selected && key === "weixin" && !blockedByFrequency && (
+                      <span className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
+                        {t("微信不建议频繁通知，否则可能会被限流")}
+                      </span>
+                    )}
+                    {!channelsLoading && selected && !comingSoon && (
+                      <button
+                        type="button"
+                        onClick={() => void handleSendTestMessage(key)}
+                        disabled={testSendResults[key]?.status === "sending" || Boolean(chatIdErrors[key])}
+                        className="inline-flex h-[26px] items-center justify-center gap-1 rounded-md border border-black/10 bg-white px-2 text-[12px] font-medium text-black/70 transition hover:bg-black/[0.04] disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        {testSendResults[key]?.status === "sending" ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : null}
+                        {t("发送测试消息")}
+                      </button>
+                    )}
+                  </div>
 
                   {selected && key === "feishu" && (
                     <div className="mt-1.5 space-y-1.5 pl-5">
                       <div className="flex items-center gap-1">
-                        <span className="w-14 shrink-0 text-sm text-black/50" style={MODAL_HELP_TEXT_STYLE}>{t("Chat ID")}</span>
+                        <span className="w-[104px] shrink-0 whitespace-nowrap text-sm text-black/50" style={MODAL_HELP_TEXT_STYLE}>{t("Chat ID（可选）")}</span>
                         <input
                           type="text"
                           value={deliverChatIds[key] ?? ""}
                           maxLength={CHAT_ID_MAX_LENGTH}
                           onChange={(e) => handleChatIdChange(key, e.target.value)}
-                          placeholder={t("可留空，默认通过 home 对话通知；也可指定 Chat ID 通知")}
-                          className="min-w-0 flex-[1.1] rounded-lg border border-black/10 bg-white px-3 py-1.5 text-[12px] placeholder:text-[12px] placeholder:text-black/35 focus:border-black/30 focus:outline-none"
+                          placeholder={t("可留空，即通过默认的 home 对话通知；也可指定 Chat ID 通知")}
+                          className="min-w-0 flex-1 rounded-lg border border-black/10 bg-white px-3 py-1.5 text-[12px] placeholder:text-[12px] placeholder:text-black/35 focus:border-black/30 focus:outline-none"
                           style={{ fontSize: 12, lineHeight: "18px" }}
                         />
                       </div>
@@ -2468,7 +2549,7 @@ function AutomationFormModal({
                         <div>
                           <div className="flex items-center gap-1.5">
                             <CircleHelp className="h-3.5 w-3.5 shrink-0 text-black/35" />
-                            <span>{t("如何设置 home 对话？")}</span>
+                            <span>{t("什么是 home 对话？")}</span>
                           </div>
                           <p className="mt-1 pl-5">
                             {t("扫码连接飞书后，默认的对话即为home对话。如需切换，可在其他对话中发送")}
@@ -2482,8 +2563,8 @@ function AutomationFormModal({
                             <span>{t("如何获取 Chat ID？")}</span>
                           </div>
                           <p className="mt-1 pl-5">
-                            {t("在飞书应用中，找到希望发送通知的对话，向 Agent 发送提示词")}
-                            <InlineCopyText value={t("当前Chat ID是什么")} />
+                            {t("进入飞书应用，在希望发送通知的私聊或群聊中，向 Hermes Agent 发送提示词")}
+                            <InlineCopyText value={t("查一下当前对话的oc_ chat ID")} />
                             {t("，正常会回复前缀为oc_的一长串字符。")}
                           </p>
                         </div>
@@ -2494,7 +2575,8 @@ function AutomationFormModal({
                 </div>
               );
             })}
-          </div>
+            </div>
+          )}
           {/* 间距用 div 显式 spacer 拉开，避免 mt-* 被 layout 影响 */}
           <div aria-hidden="true" style={{ height: 4 }} />
           {deliverPlatforms.length === 0 ? (
@@ -3404,4 +3486,50 @@ export function buildDeliverString(platforms: string[], chatIds: Record<string, 
       return chatId ? `${platform}:${chatId}` : platform;
     })
     .join(",");
+}
+
+export function buildHermesSendTarget(platform: string, chatId: string): string {
+  const normalizedPlatform = platform.trim();
+  const normalizedChatId = chatId.trim();
+  return normalizedChatId ? `${normalizedPlatform}:${normalizedChatId}` : normalizedPlatform;
+}
+
+export function buildHermesSendTestCommand(platform: string, chatId: string, message: string): string {
+  return [
+    "hermes",
+    "send",
+    "--to",
+    shellQuote(buildHermesSendTarget(platform, chatId)),
+    shellQuote(message),
+  ].join(" ");
+}
+
+export function parseEnabledHermesChannels(output: string): Set<string> {
+  const entries = parseHermesChannelList(output);
+  return new Set(
+    entries
+      .filter((entry) => entry.enabled)
+      .map((entry) => normalizeHermesChannelKey(entry.channel || entry.value)),
+  );
+}
+
+function formatTestSendError(error: unknown, fallback: string): string {
+  const raw = error instanceof CronCommandError
+    ? error.output || error.message
+    : error instanceof Error
+      ? error.message
+      : String(error);
+  const message = raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(-3)
+    .join("；");
+  return message || fallback;
+}
+
+function normalizeHermesChannelKey(channel: string): string {
+  const normalized = channel.trim();
+  if (normalized === "wechat" || normalized === "openclaw-weixin") return "weixin";
+  return normalized;
 }

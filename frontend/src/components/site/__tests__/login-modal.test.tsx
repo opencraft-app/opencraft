@@ -87,6 +87,19 @@ describe("LoginModal (国内站 默认 isGlobal=false)", () => {
     redirectSpy.mockRestore();
   });
 
+  it("未勾选协议时点击 QQ 展示提示而不是静默无响应", () => {
+    const redirectSpy = vi.spyOn(oauthModule, "redirectToOAuthStart").mockImplementation(() => undefined);
+
+    render(<LoginModal open onClose={vi.fn()} />);
+
+    const [qqButton] = screen.getAllByRole("button", { name: "QQQQ账号登录" });
+    fireEvent.click(qqButton as HTMLElement);
+
+    expect(screen.getByText("请先勾选同意服务协议")).toBeInTheDocument();
+    expect(redirectSpy).not.toHaveBeenCalled();
+    redirectSpy.mockRestore();
+  });
+
   it("普通手机浏览器点击微信时提示在微信中打开，不跳转", () => {
     Object.defineProperty(window.navigator, "userAgent", {
       value: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) Mobile/15E148 Safari/604.1",

@@ -546,7 +546,7 @@ const MemoryLimitCard = ({
             }}
             className="ml-1 inline-flex h-7 items-center rounded-md border border-black/[0.10] bg-white px-2.5 text-xs font-medium text-black/55 transition-colors hover:border-black/[0.18] hover:bg-black/[0.04] hover:text-black/80"
           >
-            {t("修改")}
+            {t("调整限额")}
           </button>
         ) : (
           <>
@@ -659,7 +659,7 @@ const MemoryPanel = ({
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-black/90">{t("记忆")}</h2>
-          <p className="mt-1 text-sm text-black/45">{t("查看当前 Hermes 的记忆、用户画像和字符占用。")}</p>
+          <p className="mt-1 text-sm text-black/45">{t("查看当前 Hermes Agent 的记忆和用户画像文件。")}</p>
         </div>
         <button
           type="button"
@@ -4298,9 +4298,9 @@ export const OpenClawSettingsPage = () => {
           >
             <div className="flex items-center gap-3" style={{ marginBottom: "20px" }}>
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "rgba(7,193,96,0.08)" }}>
-                <Sparkles className="h-5 w-5" style={{ color: "#07C160" }} />
+                <Plus className="h-5 w-5" style={{ color: "#07C160" }} />
               </div>
-              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("创建新智能体")}</h3>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("创建智能体")}</h3>
             </div>
             <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
               {t("即刻创建全新的 Hermes Agent")}
@@ -4314,6 +4314,8 @@ export const OpenClawSettingsPage = () => {
                 style={{
                   backgroundColor: directCreating ? "#9CA3AF" : "var(--lw-fg)",
                   cursor: directCreating ? "not-allowed" : "pointer",
+                  fontSize: "14px",
+                  lineHeight: "20px",
                 }}
               >
                 {directCreating && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -4323,7 +4325,7 @@ export const OpenClawSettingsPage = () => {
                 onClick={() => setShowCreateConfirm(false)}
                 disabled={directCreating}
                 className="py-2 text-sm transition-colors hover:opacity-70"
-                style={{ color: "#999", background: "none", border: "none", cursor: directCreating ? "not-allowed" : "pointer" }}
+                style={{ color: "#999", background: "none", border: "none", cursor: directCreating ? "not-allowed" : "pointer", fontSize: "14px", lineHeight: "20px" }}
               >
                 {t("取消")}
               </button>
@@ -4770,7 +4772,7 @@ export const OpenClawSettingsPage = () => {
           {
             !isCreating && !botsLoading && visibleBots.length === 0 && (
               <div className="flex flex-col items-center justify-center py-20 text-center">
-                <p className="text-sm" style={{ color: "rgba(0,0,0,0.40)" }}>{t("即刻创建你的第一个云端智能体伙伴")}</p>
+                <p className="text-sm" style={{ color: "rgba(0,0,0,0.40)" }}>{t("即刻创建你的云端智能体伙伴")}</p>
                 {createLimitMessage && (
                   <p className="mt-3 max-w-sm text-xs leading-relaxed" style={{ color: "rgba(0,0,0,0.48)" }}>
                     {createLimitMessage}
@@ -4780,12 +4782,12 @@ export const OpenClawSettingsPage = () => {
                   onClick={handleCreateNew}
                   disabled={!canCreateBot}
                   className={cn(
-                    "mt-6 inline-flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-semibold text-white transition-all",
+                    "mt-6 inline-flex items-center gap-2 rounded-full px-6 py-2.5 font-semibold text-white transition-all",
                     canCreateBot
                       ? "bg-black/90 hover:opacity-90"
                       : "cursor-not-allowed bg-black/30",
                   )}
-                  style={{ marginTop: 20 }}
+                  style={{ marginTop: 20, fontSize: 14, lineHeight: "20px" }}
                 >
                   {canCreateBot ? t("立即创建") : t("暂不可创建")}
                 </button>
