@@ -685,6 +685,46 @@ test("web adapter invalidates user cache when visible timestamp changes", () => 
   }
 });
 
+test("web adapter invalidates user cache when visible text changes", () => {
+  const firstSnapshot: ChatRenderModel = {
+    session_id: "sess_user_text",
+    host: { kind: "desktop_web" },
+    rows: [
+      {
+        kind: "user_message",
+        id: "u1",
+        key: "user:u1",
+        text: "hello",
+        copy_text: "copy source",
+        collapsed: false,
+        parts: [{ id: "u1:part:0", type: "text", text: "copy source" }],
+        createdAt: "2026-06-18T00:00:00Z",
+        debug: { projection: "transcript", source_event_ids: ["evt_1"] },
+      },
+    ],
+    composer: { placeholder: "要求后续变更", can_send: true },
+  };
+  const secondSnapshot: ChatRenderModel = {
+    ...firstSnapshot,
+    rows: [
+      {
+        ...firstSnapshot.rows[0]!,
+        text: "hullo",
+      },
+    ],
+  };
+
+  const first = toWebChatModel(firstSnapshot);
+  const second = toWebChatModel(secondSnapshot);
+
+  assert.notEqual(second.turns[0], first.turns[0]);
+  assert.notEqual(second.turns[0]?.fingerprint, first.turns[0]?.fingerprint);
+  assert.equal(second.turns[0]?.blocks[0]?.kind, "user_message");
+  if (second.turns[0]?.blocks[0]?.kind === "user_message") {
+    assert.equal(second.turns[0].blocks[0].text, "hullo");
+  }
+});
+
 test("conversation runtime keeps small histories on the plain mounted path", () => {
   const turns = [turn("one"), turn("two")];
   const items = buildConversationStreamItems(turns);
