@@ -10,7 +10,6 @@ type UserMessagePart = Extract<ChatRenderRow, { kind: "user_message" }>["parts"]
 export interface WebChatModel {
   sessionId: string;
   host: ChatHostPolicy;
-  memoryReferenceCount: number;
   turns: WebTurn[];
   composer: {
     placeholder: string;
@@ -72,7 +71,6 @@ export function toWebChatModel(model: ChatRenderModel): WebChatModel {
   return {
     sessionId: model.session_id,
     host: model.host,
-    memoryReferenceCount: model.rows.length,
     turns: model.rows.map((row) => rowToTurn(model.session_id, row)),
     composer: {
       placeholder: model.composer.placeholder,

@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { useMemo } from "react";
 import type { AgentConfigPatchWire } from "../../../../vela-chat-client/src";
 import type { ChatRenderModel } from "../../../../vela-chat-render-model/src";
@@ -10,6 +11,10 @@ import { VelaComposer } from "../composer/VelaComposer";
 import { VelaConversation } from "../conversation/VelaConversation";
 import type { ConversationScrollControllerDebug } from "../../conversation-runtime/scroll/useConversationScrollController";
 import styles from "../../styles/desktop.module.css";
+
+const frameWithoutTopbarStyle = {
+  gridTemplateRows: "minmax(0, 1fr)",
+} satisfies CSSProperties;
 
 export interface ChatWorkbenchViewProps {
   model: ChatRenderModel;
@@ -50,11 +55,7 @@ export function ChatWorkbenchView({
 
   return (
     <main className={styles.shell}>
-      <div className={styles.frame}>
-        <header className={styles.topbar}>
-          <span aria-hidden="true">›</span>
-          <span>{webModel.memoryReferenceCount} 条记忆引用</span>
-        </header>
+      <div className={styles.frame} style={frameWithoutTopbarStyle}>
         <VelaConversation
           canLoadOlder={canLoadOlder}
           isLoadingOlder={isLoadingOlder}

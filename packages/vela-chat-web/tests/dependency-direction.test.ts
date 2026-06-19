@@ -306,6 +306,22 @@ test("workbench memoizes the web render model adapter output", () => {
   assert.match(source, /toWebChatModel\(model\)/);
 });
 
+test("workbench does not invent memory references without a render-model field", () => {
+  const workbench = readFileSync(
+    join(root, "packages/vela-chat-web/src/components/workbench/ChatWorkbenchView.tsx"),
+    "utf8",
+  );
+  const adapter = readFileSync(
+    join(root, "packages/vela-chat-web/src/adapters/toWebBlocks.ts"),
+    "utf8",
+  );
+
+  assert.doesNotMatch(workbench, /条记忆引用/);
+  assert.doesNotMatch(workbench, /styles\.topbar/);
+  assert.match(workbench, /frameWithoutTopbarStyle/);
+  assert.doesNotMatch(adapter, /memoryReferenceCount/);
+});
+
 test("chat typography follows Codex-style reading weight and size", () => {
   const css = readFileSync(
     join(root, "packages/vela-chat-web/src/styles/desktop.module.css"),
