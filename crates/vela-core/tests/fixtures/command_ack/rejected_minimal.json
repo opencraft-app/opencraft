@@ -1,0 +1,5 @@
+{
+  "status": "rejected",
+  "code": "turn_running",
+  "message": "session already has a running turn"
+}

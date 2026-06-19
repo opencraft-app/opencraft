@@ -1,0 +1,4 @@
+{"event_type":"user.message.accepted","payload":{"content":"hello"}}
+{"event_type":"tool.output.delta","payload":{"tool_id":"tool_1","delta":"stdout should stay out"}}
+{"event_type":"assistant.message.delta","payload":{"message_id":"msg_1","delta":"hi"}}
+{"event_type":"assistant.message.delta","payload":{"message_id":"msg_1","delta":" there"}}

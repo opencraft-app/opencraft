@@ -51,8 +51,9 @@ id_type!(CommandId);
 id_type!(EventId);
 id_type!(RequestId);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EventCursor {
+    pub event_id: EventId,
     pub epoch: i64,
     pub seq: i64,
 }

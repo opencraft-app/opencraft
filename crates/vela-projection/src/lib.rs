@@ -1,0 +1,496 @@
+use std::collections::BTreeMap;
+
+use serde_json::Value;
+use vela_core::{
+    ActivityItem, ActivityKind, ActivityShelfView, CanonicalEvent, ChatTranscriptView,
+    ChatTranscriptWindow, EventCursor, EventType, PendingRequest, PendingRequestsView, RequestId,
+    SessionId, TranscriptPart, TranscriptRole, TranscriptRow, TranscriptWindow,
+};
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TranscriptWindowQuery {
+    pub before_row_id: Option<String>,
+    pub after_row_id: Option<String>,
+    pub around_row_id: Option<String>,
+    pub include_live: bool,
+    pub limit: usize,
+}
+
+impl Default for TranscriptWindowQuery {
+    fn default() -> Self {
+        Self {
+            before_row_id: None,
+            after_row_id: None,
+            around_row_id: None,
+            include_live: true,
+            limit: 0,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TranscriptWindowError {
+    UnknownRowId(String),
+}
+
+pub fn project_transcript(events: &[CanonicalEvent]) -> ChatTranscriptView {
+    let session_id = session_id_from_events(events);
+    let mut rows = Vec::new();
+
+    for event in events {
+        if event.event_type == EventType::USER_MESSAGE_ACCEPTED {
+            rows.push(TranscriptRow {
+                row_id: event.event_id.to_string(),
+                session_id: event.session_id.clone(),
+                role: TranscriptRole::User,
+                created_at: event.created_at,
+                updated_at: event.created_at,
+                revision: 1,
+                status: "completed".to_string(),
+                text: text_from_payload(&event.payload),
+                parts: transcript_parts_from_payload(&event.payload, event.event_id.as_str()),
+                source_event_ids: vec![event.event_id.clone()],
+            });
+            continue;
+        }
+
+        if event.event_type == EventType::ASSISTANT_MESSAGE_STARTED {
+            let row_id = stable_message_id(event);
+            rows.push(TranscriptRow {
+                row_id,
+                session_id: event.session_id.clone(),
+                role: TranscriptRole::Assistant,
+                created_at: event.created_at,
+                updated_at: event.created_at,
+                revision: 1,
+                status: "streaming".to_string(),
+                text: String::new(),
+                parts: Vec::new(),
+                source_event_ids: vec![event.event_id.clone()],
+            });
+            continue;
+        }
+
+        if event.event_type == EventType::ASSISTANT_MESSAGE_DELTA {
+            let row_id = stable_message_id(event);
+            match rows
+                .iter_mut()
+                .rev()
+                .find(|row| row.role == TranscriptRole::Assistant && row.row_id == row_id)
+            {
+                Some(row) => {
+                    row.text.push_str(delta_from_payload(&event.payload));
+                    row.source_event_ids.push(event.event_id.clone());
+                    row.updated_at = event.created_at;
+                    row.revision += 1;
+                }
+                None => rows.push(TranscriptRow {
+                    row_id,
+                    session_id: event.session_id.clone(),
+                    role: TranscriptRole::Assistant,
+                    created_at: event.created_at,
+                    updated_at: event.created_at,
+                    revision: 1,
+                    status: "streaming".to_string(),
+                    text: delta_from_payload(&event.payload).to_string(),
+                    parts: Vec::new(),
+                    source_event_ids: vec![event.event_id.clone()],
+                }),
+            }
+            continue;
+        }
+
+        if event.event_type == EventType::ASSISTANT_MESSAGE_COMPLETED {
+            let row_id = stable_message_id(event);
+            if let Some(row) = rows
+                .iter_mut()
+                .rev()
+                .find(|row| row.role == TranscriptRole::Assistant && row.row_id == row_id)
+            {
+                row.status = "completed".to_string();
+                row.updated_at = event.created_at;
+                row.revision += 1;
+                row.source_event_ids.push(event.event_id.clone());
+            }
+            continue;
+        }
+
+        if event.event_type == EventType::TURN_COMPLETED {
+            if let Some(row) = rows
+                .iter_mut()
+                .rev()
+                .find(|row| row.role == TranscriptRole::Assistant && row.status == "streaming")
+            {
+                row.status = "completed".to_string();
+                row.updated_at = event.created_at;
+                row.revision += 1;
+                row.source_event_ids.push(event.event_id.clone());
+            }
+        }
+    }
+
+    ChatTranscriptView { session_id, rows }
+}
+
+pub fn project_transcript_window(
+    events: &[CanonicalEvent],
+    query: TranscriptWindowQuery,
+) -> Result<ChatTranscriptWindow, TranscriptWindowError> {
+    let transcript = project_transcript(events);
+    let mut rows = transcript.rows;
+    if !query.include_live {
+        rows.retain(|row| row.status != "streaming" && row.status != "pending");
+    }
+    let total = rows.len();
+    let limit = normalize_limit(query.limit);
+    let (start, end) = transcript_window_bounds(
+        &rows,
+        limit,
+        query.before_row_id.as_deref(),
+        query.after_row_id.as_deref(),
+        query.around_row_id.as_deref(),
+    )?;
+    let selected = rows[start..end].to_vec();
+    let first_row_id = selected.first().map(|row| row.row_id.clone());
+    let last_row_id = selected.last().map(|row| row.row_id.clone());
+
+    Ok(ChatTranscriptWindow {
+        session_id: transcript.session_id,
+        rows: selected,
+        window: TranscriptWindow {
+            first_row_id,
+            last_row_id,
+            anchor_row_id: query.around_row_id,
+            has_older: start > 0,
+            has_newer: end < total,
+        },
+        cursor: latest_cursor(events),
+    })
+}
+
+pub fn project_activity(events: &[CanonicalEvent]) -> ActivityShelfView {
+    let session_id = session_id_from_events(events);
+    let mut items: Vec<ActivityItem> = Vec::new();
+
+    for event in events {
+        let Some((kind, item_id, title)) = activity_identity(event) else {
+            continue;
+        };
+        let status = status_from_payload(&event.payload, &event.event_type);
+        if let Some(item) = items.iter_mut().find(|item| item.item_id == item_id) {
+            item.kind = kind;
+            item.status = status;
+            item.updated_at = event.created_at;
+            item.payload = merge_payload(&item.payload, &event.payload);
+            item.source_event_ids.push(event.event_id.clone());
+        } else {
+            items.push(ActivityItem {
+                item_id,
+                session_id: event.session_id.clone(),
+                kind,
+                title,
+                created_at: event.created_at,
+                updated_at: event.created_at,
+                status,
+                payload: event.payload.clone(),
+                source_event_ids: vec![event.event_id.clone()],
+            });
+        }
+    }
+
+    ActivityShelfView { session_id, items }
+}
+
+pub fn project_pending_requests(events: &[CanonicalEvent]) -> PendingRequestsView {
+    let session_id = session_id_from_events(events);
+    let mut requests: BTreeMap<String, PendingRequest> = BTreeMap::new();
+
+    for event in events {
+        if event.event_type == EventType::REQUEST_OPENED
+            || event.event_type == EventType::REQUEST_UPDATED
+        {
+            let request_id = string_field(&event.payload, "request_id")
+                .unwrap_or_else(|| event.event_id.to_string());
+            let title = string_field(&event.payload, "title").unwrap_or_else(|| "Request".into());
+            requests
+                .entry(request_id.clone())
+                .and_modify(|request| {
+                    request.title = title.clone();
+                    request.payload = merge_payload(&request.payload, &event.payload);
+                    request.source_event_ids.push(event.event_id.clone());
+                })
+                .or_insert_with(|| PendingRequest {
+                    request_id: RequestId::from(request_id),
+                    session_id: event.session_id.clone(),
+                    title,
+                    status: "pending".to_string(),
+                    payload: event.payload.clone(),
+                    source_event_ids: vec![event.event_id.clone()],
+                });
+            continue;
+        }
+
+        if event.event_type == EventType::REQUEST_RESOLVED {
+            if let Some(request_id) = string_field(&event.payload, "request_id") {
+                requests.remove(&request_id);
+            }
+        }
+    }
+
+    PendingRequestsView {
+        session_id,
+        requests: requests.into_values().collect(),
+    }
+}
+
+fn session_id_from_events(events: &[CanonicalEvent]) -> SessionId {
+    events
+        .first()
+        .map(|event| event.session_id.clone())
+        .unwrap_or_else(|| SessionId::from(""))
+}
+
+fn normalize_limit(limit: usize) -> usize {
+    match limit {
+        0 => 100,
+        value => value.min(500),
+    }
+}
+
+fn transcript_window_bounds(
+    rows: &[TranscriptRow],
+    limit: usize,
+    before_row_id: Option<&str>,
+    after_row_id: Option<&str>,
+    around_row_id: Option<&str>,
+) -> Result<(usize, usize), TranscriptWindowError> {
+    let total = rows.len();
+    if total == 0 {
+        if let Some(row_id) = before_row_id.or(after_row_id).or(around_row_id) {
+            return Err(TranscriptWindowError::UnknownRowId(row_id.to_string()));
+        }
+        return Ok((0, 0));
+    }
+
+    if let Some(before_row_id) = before_row_id {
+        let end = rows
+            .iter()
+            .position(|row| row.row_id == before_row_id)
+            .ok_or_else(|| TranscriptWindowError::UnknownRowId(before_row_id.to_string()))?;
+        return Ok((end.saturating_sub(limit), end));
+    }
+
+    if let Some(after_row_id) = after_row_id {
+        let start = rows
+            .iter()
+            .position(|row| row.row_id == after_row_id)
+            .map(|index| index + 1)
+            .ok_or_else(|| TranscriptWindowError::UnknownRowId(after_row_id.to_string()))?;
+        return Ok((start, (start + limit).min(total)));
+    }
+
+    if let Some(around_row_id) = around_row_id {
+        let anchor = rows
+            .iter()
+            .position(|row| row.row_id == around_row_id)
+            .ok_or_else(|| TranscriptWindowError::UnknownRowId(around_row_id.to_string()))?;
+        let before = limit / 2;
+        let mut start = anchor.saturating_sub(before);
+        let mut end = (start + limit).min(total);
+        start = start.saturating_sub(limit.saturating_sub(end - start));
+        end = (start + limit).min(total);
+        return Ok((start, end));
+    }
+
+    Ok((total.saturating_sub(limit), total))
+}
+
+fn latest_cursor(events: &[CanonicalEvent]) -> Option<EventCursor> {
+    events.last().map(CanonicalEvent::cursor)
+}
+
+fn text_from_payload(payload: &Value) -> String {
+    string_field(payload, "content")
+        .or_else(|| string_field(payload, "text"))
+        .or_else(|| text_from_blocks(payload))
+        .unwrap_or_default()
+}
+
+fn text_from_blocks(payload: &Value) -> Option<String> {
+    let text = payload
+        .get("blocks")?
+        .as_array()?
+        .iter()
+        .filter_map(|block| {
+            (block.get("type").and_then(Value::as_str) == Some("text"))
+                .then(|| block.get("text").and_then(Value::as_str))
+                .flatten()
+        })
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    (!text.is_empty()).then_some(text)
+}
+
+fn transcript_parts_from_payload(payload: &Value, row_id: &str) -> Vec<TranscriptPart> {
+    let Some(blocks) = payload.get("blocks").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+
+    blocks
+        .iter()
+        .enumerate()
+        .filter_map(
+            |(index, block)| match block.get("type").and_then(Value::as_str) {
+                Some("text") => text_part_from_block(block, row_id, index),
+                Some("image") => image_part_from_block(block, row_id, index),
+                _ => None,
+            },
+        )
+        .collect()
+}
+
+fn text_part_from_block(block: &Value, row_id: &str, index: usize) -> Option<TranscriptPart> {
+    let text = block.get("text").and_then(Value::as_str)?;
+    if text.is_empty() {
+        return None;
+    }
+    Some(TranscriptPart {
+        id: format!("{row_id}:part:{index}"),
+        part_type: "text".to_string(),
+        text: Some(text.to_string()),
+        data: Value::Null,
+    })
+}
+
+fn image_part_from_block(block: &Value, row_id: &str, index: usize) -> Option<TranscriptPart> {
+    let blob = block.get("blob")?;
+    let mime_type = string_field(blob, "mime_type")?;
+    let mut data = serde_json::Map::new();
+    data.insert("mime_type".to_string(), Value::String(mime_type));
+    if let Some(kind) = string_field(blob, "kind") {
+        data.insert("kind".to_string(), Value::String(kind));
+    }
+    if let Some(encoded) = string_field(blob, "data") {
+        data.insert("data".to_string(), Value::String(encoded));
+    }
+    if let Some(blob_id) = string_field(blob, "blob_id") {
+        data.insert("blob_id".to_string(), Value::String(blob_id));
+    }
+    if let Some(sha256) = string_field(blob, "sha256") {
+        data.insert("sha256".to_string(), Value::String(sha256));
+    }
+    if let Some(size_bytes) = blob.get("size_bytes").and_then(Value::as_u64) {
+        data.insert("size_bytes".to_string(), Value::from(size_bytes));
+    }
+
+    Some(TranscriptPart {
+        id: format!("{row_id}:part:{index}"),
+        part_type: "image".to_string(),
+        text: None,
+        data: Value::Object(data),
+    })
+}
+
+fn delta_from_payload(payload: &Value) -> &str {
+    payload.get("delta").and_then(Value::as_str).unwrap_or("")
+}
+
+fn stable_message_id(event: &CanonicalEvent) -> String {
+    string_field(&event.payload, "message_id").unwrap_or_else(|| event.event_id.to_string())
+}
+
+fn string_field(payload: &Value, field: &str) -> Option<String> {
+    payload
+        .get(field)
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+fn activity_identity(event: &CanonicalEvent) -> Option<(ActivityKind, String, String)> {
+    if matches_event(event, "tool.") {
+        return Some((
+            ActivityKind::Tool,
+            string_field(&event.payload, "tool_id").unwrap_or_else(|| event.event_id.to_string()),
+            string_field(&event.payload, "name").unwrap_or_else(|| "Tool".into()),
+        ));
+    }
+    if matches_event(event, "command.") {
+        return Some((
+            ActivityKind::Command,
+            string_field(&event.payload, "command_id")
+                .unwrap_or_else(|| event.event_id.to_string()),
+            string_field(&event.payload, "command").unwrap_or_else(|| "Command".into()),
+        ));
+    }
+    if matches_event(event, "task.") {
+        return Some((
+            ActivityKind::Task,
+            string_field(&event.payload, "task_id").unwrap_or_else(|| event.event_id.to_string()),
+            string_field(&event.payload, "title").unwrap_or_else(|| "Task".into()),
+        ));
+    }
+    if matches_event(event, "request.") {
+        return Some((
+            ActivityKind::Request,
+            string_field(&event.payload, "request_id")
+                .unwrap_or_else(|| event.event_id.to_string()),
+            string_field(&event.payload, "title").unwrap_or_else(|| "Request".into()),
+        ));
+    }
+    if event.event_type == EventType::DIFF_UPDATED {
+        return Some((
+            ActivityKind::Diff,
+            string_field(&event.payload, "diff_id").unwrap_or_else(|| event.event_id.to_string()),
+            string_field(&event.payload, "title").unwrap_or_else(|| "Diff".into()),
+        ));
+    }
+    if event.event_type == EventType::WARNING_RAISED {
+        return Some((
+            ActivityKind::Warning,
+            event.event_id.to_string(),
+            string_field(&event.payload, "message").unwrap_or_else(|| "Warning".into()),
+        ));
+    }
+    if event.event_type == EventType::ERROR_RAISED {
+        return Some((
+            ActivityKind::Error,
+            event.event_id.to_string(),
+            string_field(&event.payload, "message").unwrap_or_else(|| "Error".into()),
+        ));
+    }
+    if matches_event(event, "turn.") {
+        return Some((
+            ActivityKind::Turn,
+            string_field(&event.payload, "turn_id").unwrap_or_else(|| "current_turn".into()),
+            event.event_type.0.to_string(),
+        ));
+    }
+    None
+}
+
+fn matches_event(event: &CanonicalEvent, prefix: &str) -> bool {
+    event.event_type.0.starts_with(prefix)
+}
+
+fn status_from_payload(payload: &Value, event_type: &EventType) -> Option<String> {
+    string_field(payload, "status").or_else(|| {
+        event_type
+            .0
+            .rsplit_once('.')
+            .map(|(_, status)| status.to_string())
+    })
+}
+
+fn merge_payload(old: &Value, new: &Value) -> Value {
+    match (old, new) {
+        (Value::Object(old), Value::Object(new)) => {
+            let mut merged = old.clone();
+            for (key, value) in new {
+                merged.insert(key.clone(), value.clone());
+            }
+            Value::Object(merged)
+        }
+        (_, new) => new.clone(),
+    }
+}

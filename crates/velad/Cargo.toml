@@ -1,0 +1,27 @@
+[package]
+name = "velad"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+base64.workspace = true
+chrono.workspace = true
+dotenvy.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+vela-backends.workspace = true
+vela-core.workspace = true
+vela-projection.workspace = true
+vela-protocol.workspace = true
+vela-runtime.workspace = true
+vela-store.workspace = true
+
+[dev-dependencies]
+http-body-util.workspace = true
+tower.workspace = true

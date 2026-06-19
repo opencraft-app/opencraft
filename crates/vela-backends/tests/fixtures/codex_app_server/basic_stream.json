@@ -1,0 +1,100 @@
+{
+  "notifications": [
+    {
+      "method": "item/agentMessage/delta",
+      "params": {
+        "threadId": "thr_fixture",
+        "itemId": "msg_fixture",
+        "delta": "Hello"
+      }
+    },
+    {
+      "method": "item/reasoning/summaryTextDelta",
+      "params": {
+        "threadId": "thr_fixture",
+        "itemId": "reasoning_fixture",
+        "delta": "Need inspect"
+      }
+    },
+    {
+      "method": "codex/event/exec_command_begin",
+      "params": {
+        "msg": {
+          "call_id": "cmd_fixture",
+          "command": ["cargo", "test"],
+          "cwd": "/repo"
+        }
+      }
+    },
+    {
+      "method": "codex/event/exec_command_output_delta",
+      "params": {
+        "msg": {
+          "call_id": "cmd_fixture",
+          "stream": "stdout",
+          "chunk": "running"
+        }
+      }
+    },
+    {
+      "method": "codex/event/exec_command_end",
+      "params": {
+        "msg": {
+          "call_id": "cmd_fixture",
+          "command": ["cargo", "test"],
+          "success": true,
+          "exit_code": 0,
+          "aggregated_output": "ok"
+        }
+      }
+    },
+    {
+      "method": "turn/diff/updated",
+      "params": {
+        "diff": "diff --git a/src/lib.rs b/src/lib.rs"
+      }
+    },
+    {
+      "method": "turn/plan/updated",
+      "params": {
+        "plan": [
+          {
+            "step": "Add test",
+            "status": "completed"
+          },
+          {
+            "step": "Implement",
+            "status": "in_progress"
+          }
+        ]
+      }
+    },
+    {
+      "method": "thread/compacted",
+      "params": {
+        "threadId": "thr_fixture",
+        "turnId": "turn_fixture"
+      }
+    },
+    {
+      "method": "turn/completed",
+      "params": {
+        "threadId": "thr_fixture",
+        "turn": {
+          "status": "completed"
+        }
+      }
+    }
+  ],
+  "expect_event_types": [
+    "assistant.message.delta",
+    "assistant.reasoning.delta",
+    "command.started",
+    "command.output.delta",
+    "command.completed",
+    "diff.updated",
+    "task.updated",
+    "task.updated",
+    "turn.completed"
+  ]
+}

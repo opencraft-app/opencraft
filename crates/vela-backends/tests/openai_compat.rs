@@ -5,8 +5,10 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpListener,
 };
-use vela_backends::{BackendAdapter, BackendSend, OpenAiChatBackendAdapter};
+use vela_backends::{BackendSend, OpenAiChatBackendAdapter};
 use vela_core::EventType;
+
+mod support;
 
 #[tokio::test]
 async fn openai_compat_adapter_posts_chat_completion_and_normalizes_answer() {
@@ -23,10 +25,7 @@ async fn openai_compat_adapter_posts_chat_completion_and_normalizes_answer() {
     .await;
     let adapter = OpenAiChatBackendAdapter::new(server.base_url(), "minimax-m2.7", "test-key");
 
-    let outputs = adapter
-        .send_user_message(BackendSend {
-            content: "hello".to_string(),
-        })
+    let outputs = support::collect_backend_outputs(&adapter, BackendSend::new("hello".to_string()))
         .await
         .expect("send chat completion");
 
@@ -61,10 +60,7 @@ async fn openai_compat_adapter_surfaces_error_response() {
     .with_status(401);
     let adapter = OpenAiChatBackendAdapter::new(server.base_url(), "minimax-m2.7", "bad-key");
 
-    let error = adapter
-        .send_user_message(BackendSend {
-            content: "hello".to_string(),
-        })
+    let error = support::collect_backend_outputs(&adapter, BackendSend::new("hello".to_string()))
         .await
         .expect_err("error response should fail");
 
@@ -72,7 +68,12 @@ async fn openai_compat_adapter_surfaces_error_response() {
 }
 
 #[tokio::test]
+#[cfg(feature = "real-providers")]
 async fn cloudagents_real_chat_completion_completes_when_key_is_configured() {
+    if std::env::var("VELA_RUN_REAL_PROVIDERS").as_deref() != Ok("1") {
+        eprintln!("skipping CloudAgents real test because VELA_RUN_REAL_PROVIDERS=1 is not set");
+        return;
+    }
     let Ok(api_key) = std::env::var("VELA_CLOUDAGENTS_API_KEY") else {
         eprintln!("skipping CloudAgents real test because VELA_CLOUDAGENTS_API_KEY is not set");
         return;
@@ -80,12 +81,12 @@ async fn cloudagents_real_chat_completion_completes_when_key_is_configured() {
     let adapter =
         OpenAiChatBackendAdapter::new("https://tokenhub.tencentmaas.com", "minimax-m2.7", api_key);
 
-    let outputs = adapter
-        .send_user_message(BackendSend {
-            content: "Reply with exactly: vela-ok".to_string(),
-        })
-        .await
-        .expect("real CloudAgents completion");
+    let outputs = support::collect_backend_outputs(
+        &adapter,
+        BackendSend::new("Reply with exactly: vela-ok".to_string()),
+    )
+    .await
+    .expect("real CloudAgents completion");
 
     assert!(
         outputs

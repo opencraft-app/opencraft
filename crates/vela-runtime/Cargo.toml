@@ -4,6 +4,10 @@ version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 
+[features]
+default = []
+real-providers = []
+
 [dependencies]
 anyhow.workspace = true
 sha2.workspace = true
@@ -15,5 +19,7 @@ serde_json.workspace = true
 
 [dev-dependencies]
 async-trait.workspace = true
+serde.workspace = true
+sqlx.workspace = true
 tempfile.workspace = true
 tokio.workspace = true

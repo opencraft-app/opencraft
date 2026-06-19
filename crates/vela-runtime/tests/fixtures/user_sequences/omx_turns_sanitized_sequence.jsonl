@@ -1,0 +1,4 @@
+{"source":".omx/logs/turns-*.jsonl","source_shape":"agent-turn-complete","idempotency_key":"omx-turn-1","content":"Implement the requested API contract change.","expect_status":"accepted","expect_replay":false}
+{"source":".omx/logs/turns-*.jsonl","source_shape":"agent-turn-complete","idempotency_key":"omx-turn-2","content":"Run the focused test suite and summarize failures.","expect_status":"accepted","expect_replay":false}
+{"source":".omx/logs/turns-*.jsonl","source_shape":"agent-turn-complete","idempotency_key":"omx-turn-3","content":"Refactor the harness without changing public behavior.","expect_status":"accepted","expect_replay":false}
+{"source":".omx/logs/turns-*.jsonl","source_shape":"agent-turn-complete","idempotency_key":"omx-turn-4","content":"Add a regression fixture for the observed replay bug.","expect_status":"accepted","expect_replay":false}

@@ -1,4 +1,4 @@
-use crate::{BackendAdapter, BackendOutput, BackendSend};
+use crate::{BackendAdapter, BackendOutput, BackendOutputSink, BackendSend};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -70,7 +70,11 @@ impl PiBackendAdapter {
 
 #[async_trait]
 impl BackendAdapter for PiBackendAdapter {
-    async fn send_user_message(&self, input: BackendSend) -> anyhow::Result<Vec<BackendOutput>> {
+    async fn stream_user_message(
+        &self,
+        input: BackendSend,
+        sink: BackendOutputSink,
+    ) -> anyhow::Result<()> {
         let mut child = Command::new(&self.command)
             .args(self.launch_args())
             .current_dir(&self.cwd)
@@ -93,7 +97,6 @@ impl BackendAdapter for PiBackendAdapter {
             .await?;
         stdin.flush().await?;
 
-        let mut outputs = Vec::new();
         loop {
             let line = timeout(Duration::from_secs(120), lines.next_line()).await??;
             let Some(line) = line else {
@@ -116,7 +119,9 @@ impl BackendAdapter for PiBackendAdapter {
                     let done = normalized
                         .iter()
                         .any(|output| output.event_type == EventType::TURN_COMPLETED);
-                    outputs.extend(normalized);
+                    for output in normalized {
+                        sink.send(output).await?;
+                    }
                     if done {
                         break;
                     }
@@ -125,7 +130,7 @@ impl BackendAdapter for PiBackendAdapter {
         }
 
         let _ = child.kill().await;
-        Ok(outputs)
+        Ok(())
     }
 }
 
@@ -181,17 +186,19 @@ pub fn normalize_pi_event(event: Value) -> Vec<BackendOutput> {
     };
 
     match event_type {
-        "turn_start" => vec![with_raw(EventType::TURN_STARTED, json!({}), event)],
+        "agent_start" | "turn_start" | "turn_end" => Vec::new(),
+        "message_start" => normalize_message_lifecycle(event, EventType::ASSISTANT_MESSAGE_STARTED),
+        "message_end" => normalize_message_lifecycle(event, EventType::ASSISTANT_MESSAGE_COMPLETED),
         "message_update" => normalize_message_update(event),
         "tool_execution_start" => vec![with_raw(
-            EventType::TOOL_CALL_STARTED,
+            EventType::TOOL_STARTED,
             tool_payload(&event, "running", false),
             event,
         )],
         "tool_execution_update" => vec![with_raw(
-            EventType::TOOL_CALL_UPDATED,
+            EventType::TOOL_UPDATED,
             json!({
-                "tool_call_id": event.get("toolCallId").or_else(|| event.get("tool_call_id")),
+                "tool_id": event.get("toolCallId").or_else(|| event.get("tool_call_id")),
                 "partial_result": event.get("partialResult").or_else(|| event.get("partial_result")),
             }),
             event,
@@ -204,9 +211,9 @@ pub fn normalize_pi_event(event: Value) -> Vec<BackendOutput> {
                 .unwrap_or(false);
             vec![with_raw(
                 if is_error {
-                    EventType::TOOL_CALL_FAILED
+                    EventType::TOOL_FAILED
                 } else {
-                    EventType::TOOL_CALL_COMPLETED
+                    EventType::TOOL_COMPLETED
                 },
                 tool_payload(
                     &event,
@@ -233,7 +240,7 @@ pub fn normalize_pi_event(event: Value) -> Vec<BackendOutput> {
 }
 
 fn tool_payload(event: &Value, status: &str, is_error: bool) -> Value {
-    let tool_call_id = get_string(event, "toolCallId")
+    let tool_id = get_string(event, "toolCallId")
         .or_else(|| get_string(event, "tool_call_id"))
         .unwrap_or_default();
     let tool_name = get_string(event, "toolName")
@@ -250,7 +257,7 @@ fn tool_payload(event: &Value, status: &str, is_error: bool) -> Value {
     };
 
     json!({
-        "tool_call_id": tool_call_id,
+        "tool_id": tool_id,
         "name": name,
         "status": status,
         "detail": detail,
@@ -329,6 +336,33 @@ fn get_string(value: &Value, key: &str) -> Option<String> {
     value.get(key).and_then(Value::as_str).map(str::to_string)
 }
 
+fn normalize_message_lifecycle(event: Value, event_type: EventType) -> Vec<BackendOutput> {
+    if event
+        .get("message")
+        .and_then(|message| message.get("role"))
+        .and_then(Value::as_str)
+        != Some("assistant")
+    {
+        return Vec::new();
+    }
+    let Some(message_id) = pi_message_id(&event, None) else {
+        return Vec::new();
+    };
+    let mut payload = json!({ "message_id": message_id });
+    if let Some(stop_reason) = event
+        .get("message")
+        .and_then(|message| {
+            message
+                .get("stopReason")
+                .or_else(|| message.get("stop_reason"))
+        })
+        .and_then(Value::as_str)
+    {
+        payload["stop_reason"] = json!(stop_reason);
+    }
+    vec![with_raw(event_type, payload, event)]
+}
+
 fn normalize_message_update(event: Value) -> Vec<BackendOutput> {
     if event
         .get("message")
@@ -352,19 +386,47 @@ fn normalize_message_update(event: Value) -> Vec<BackendOutput> {
         .and_then(|value| value.get("delta"))
         .and_then(Value::as_str)
         .unwrap_or("");
+    let message_id = pi_message_id(&event, assistant_event);
     match kind {
         "text_delta" => vec![with_raw(
             EventType::ASSISTANT_MESSAGE_DELTA,
-            json!({ "delta": delta }),
+            message_delta_payload(delta, message_id.as_deref()),
             event,
         )],
         "thinking_delta" => vec![with_raw(
-            EventType::REASONING_DELTA,
-            json!({ "delta": delta }),
+            EventType::ASSISTANT_REASONING_DELTA,
+            message_delta_payload(delta, message_id.as_deref()),
             event,
         )],
         _ => Vec::new(),
     }
+}
+
+fn pi_message_id(event: &Value, assistant_event: Option<&Value>) -> Option<String> {
+    event
+        .get("message")
+        .and_then(|message| {
+            get_string(message, "id")
+                .or_else(|| get_string(message, "messageId"))
+                .or_else(|| get_string(message, "responseId"))
+        })
+        .or_else(|| {
+            assistant_event
+                .and_then(|value| value.get("partial"))
+                .and_then(|partial| {
+                    get_string(partial, "id")
+                        .or_else(|| get_string(partial, "messageId"))
+                        .or_else(|| get_string(partial, "responseId"))
+                })
+        })
+}
+
+fn message_delta_payload(delta: &str, message_id: Option<&str>) -> Value {
+    let mut payload = json!({ "delta": delta });
+    if let Some(message_id) = message_id {
+        payload["message_id"] = json!(message_id);
+    }
+    payload
 }
 
 fn with_raw(event_type: EventType, payload: Value, raw: Value) -> BackendOutput {

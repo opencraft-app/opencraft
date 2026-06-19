@@ -1,9 +1,10 @@
+use chrono::{DateTime, Utc};
 use serde_json::Value;
 use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
 use thiserror::Error;
 use vela_core::{
-    AcceptedCommandAck, BackendKind, CanonicalEvent, CommandAck, CommandId, EventCursor,
-    EventSource, EventType, SessionId,
+    AcceptedCommandAck, AgentConfig, BackendKind, CanonicalEvent, CommandAck, CommandId,
+    EventCursor, EventSource, EventType, SessionId,
 };
 
 #[derive(Debug, Error)]
@@ -27,6 +28,22 @@ pub struct SqliteEventStore {
 pub struct AppendResult {
     pub event: CanonicalEvent,
     pub cursor: EventCursor,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct StoredSession {
+    pub session_id: SessionId,
+    pub backend: BackendKind,
+    pub status: String,
+    pub working_directory: String,
+    pub title: String,
+    pub model: Option<String>,
+    pub agent_config: AgentConfig,
+    pub metadata: Value,
+    pub epoch: i64,
+    pub next_seq: i64,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug)]
@@ -62,9 +79,13 @@ impl IdempotencyAcceptance {
 
 impl SqliteEventStore {
     pub async fn in_memory() -> Result<Self> {
+        Self::connect("sqlite::memory:").await
+    }
+
+    pub async fn connect(database_url: &str) -> Result<Self> {
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
-            .connect("sqlite::memory:")
+            .connect(database_url)
             .await?;
         let store = Self { pool };
         store.migrate().await?;
@@ -79,6 +100,10 @@ impl SqliteEventStore {
                 backend TEXT NOT NULL,
                 status TEXT NOT NULL,
                 working_directory TEXT NOT NULL,
+                title TEXT NOT NULL DEFAULT '',
+                model TEXT,
+                agent_config_json TEXT NOT NULL DEFAULT '{}',
+                metadata_json TEXT NOT NULL DEFAULT '{}',
                 epoch INTEGER NOT NULL DEFAULT 1,
                 next_seq INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -113,6 +138,31 @@ impl SqliteEventStore {
         )
         .execute(&self.pool)
         .await?;
+        self.ensure_column(
+            "sessions",
+            "agent_config_json",
+            "TEXT NOT NULL DEFAULT '{}'",
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn ensure_column(&self, table: &str, column: &str, definition: &str) -> Result<()> {
+        let rows = sqlx::query(&format!("PRAGMA table_info({table})"))
+            .fetch_all(&self.pool)
+            .await?;
+        let exists = rows.iter().any(|row| {
+            row.try_get::<String, _>("name")
+                .map(|name| name == column)
+                .unwrap_or(false)
+        });
+        if !exists {
+            sqlx::query(&format!(
+                "ALTER TABLE {table} ADD COLUMN {column} {definition}"
+            ))
+            .execute(&self.pool)
+            .await?;
+        }
         Ok(())
     }
 
@@ -122,18 +172,86 @@ impl SqliteEventStore {
         backend: BackendKind,
         working_directory: &str,
     ) -> Result<()> {
+        self.create_session_with_details(session_id, backend, working_directory, None, None, None)
+            .await
+    }
+
+    pub async fn create_session_with_details(
+        &self,
+        session_id: &SessionId,
+        backend: BackendKind,
+        working_directory: &str,
+        title: Option<&str>,
+        model: Option<&str>,
+        metadata: Option<Value>,
+    ) -> Result<()> {
+        self.create_session_with_agent_config(
+            session_id,
+            backend,
+            working_directory,
+            title,
+            AgentConfig::with_model(model),
+            metadata,
+        )
+        .await
+    }
+
+    pub async fn create_session_with_agent_config(
+        &self,
+        session_id: &SessionId,
+        backend: BackendKind,
+        working_directory: &str,
+        title: Option<&str>,
+        agent_config: AgentConfig,
+        metadata: Option<Value>,
+    ) -> Result<()> {
         sqlx::query(
             r#"
-            INSERT INTO sessions (session_id, backend, status, working_directory)
-            VALUES (?1, ?2, 'idle', ?3)
+            INSERT INTO sessions (session_id, backend, status, working_directory, title, model, agent_config_json, metadata_json)
+            VALUES (?1, ?2, 'idle', ?3, ?4, ?5, ?6, ?7)
             "#,
         )
         .bind(session_id.as_str())
         .bind(backend.as_str())
         .bind(working_directory)
+        .bind(title.unwrap_or(session_id.as_str()))
+        .bind(agent_config.model.as_deref())
+        .bind(serde_json::to_string(&agent_config)?)
+        .bind(serde_json::to_string(
+            &metadata.unwrap_or_else(|| serde_json::json!({})),
+        )?)
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+
+    pub async fn get_session(&self, session_id: &SessionId) -> Result<Option<StoredSession>> {
+        let row = sqlx::query(
+            r#"
+            SELECT session_id, backend, status, working_directory, title, model, agent_config_json, metadata_json, epoch, next_seq, created_at, updated_at
+            FROM sessions
+            WHERE session_id = ?1
+            "#,
+        )
+        .bind(session_id.as_str())
+        .fetch_optional(&self.pool)
+        .await?;
+
+        row.map(row_to_session).transpose()
+    }
+
+    pub async fn list_sessions(&self) -> Result<Vec<StoredSession>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT session_id, backend, status, working_directory, title, model, agent_config_json, metadata_json, epoch, next_seq, created_at, updated_at
+            FROM sessions
+            ORDER BY updated_at DESC, session_id ASC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.into_iter().map(row_to_session).collect()
     }
 
     pub async fn session_exists(&self, session_id: &SessionId) -> Result<bool> {
@@ -142,6 +260,40 @@ impl SqliteEventStore {
             .fetch_optional(&self.pool)
             .await?;
         Ok(row.is_some())
+    }
+
+    pub async fn update_session_status(&self, session_id: &SessionId, status: &str) -> Result<()> {
+        sqlx::query(
+            "UPDATE sessions SET status = ?2, updated_at = CURRENT_TIMESTAMP WHERE session_id = ?1",
+        )
+        .bind(session_id.as_str())
+        .bind(status)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn update_session_agent_config(
+        &self,
+        session_id: &SessionId,
+        agent_config: &AgentConfig,
+    ) -> Result<()> {
+        let result = sqlx::query(
+            r#"
+            UPDATE sessions
+            SET model = ?2, agent_config_json = ?3, updated_at = CURRENT_TIMESTAMP
+            WHERE session_id = ?1
+            "#,
+        )
+        .bind(session_id.as_str())
+        .bind(agent_config.model.as_deref())
+        .bind(serde_json::to_string(agent_config)?)
+        .execute(&self.pool)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(StoreError::SessionNotFound(session_id.to_string()));
+        }
+        Ok(())
     }
 
     pub async fn append_event(
@@ -218,6 +370,31 @@ impl SqliteEventStore {
         .await?;
         tx.commit().await?;
         Ok(IdempotencyAcceptance::Fresh(ack))
+    }
+
+    pub async fn resolve_idempotency(
+        &self,
+        session_id: &SessionId,
+        key: &str,
+        command_hash: &str,
+    ) -> Result<Option<IdempotencyAcceptance>> {
+        let Some(row) =
+            sqlx::query("SELECT command_hash, command_ack_json FROM idempotency_keys WHERE session_id = ?1 AND key = ?2")
+                .bind(session_id.as_str())
+                .bind(key)
+                .fetch_optional(&self.pool)
+                .await?
+        else {
+            return Ok(None);
+        };
+
+        let existing_hash: String = row.try_get("command_hash")?;
+        if existing_hash != command_hash {
+            return Ok(Some(IdempotencyAcceptance::HashMismatch));
+        }
+        let ack_json: String = row.try_get("command_ack_json")?;
+        let ack = serde_json::from_str(&ack_json)?;
+        Ok(Some(IdempotencyAcceptance::Replay(ack)))
     }
 
     pub async fn list_events(&self, session_id: &SessionId) -> Result<Vec<CanonicalEvent>> {
@@ -318,4 +495,47 @@ fn row_to_event(row: sqlx::sqlite::SqliteRow) -> Result<CanonicalEvent> {
             .map(|value| serde_json::from_str(&value))
             .transpose()?,
     })
+}
+
+fn row_to_session(row: sqlx::sqlite::SqliteRow) -> Result<StoredSession> {
+    let backend = match row.try_get::<String, _>("backend")?.as_str() {
+        "pi" => BackendKind::Pi,
+        "codex" => BackendKind::Codex,
+        "claude" => BackendKind::Claude,
+        "acp" => BackendKind::Acp,
+        _ => BackendKind::Pi,
+    };
+    let created_at = parse_sqlite_datetime(row.try_get("created_at")?);
+    let updated_at = parse_sqlite_datetime(row.try_get("updated_at")?);
+
+    Ok(StoredSession {
+        session_id: row.try_get::<String, _>("session_id")?.into(),
+        backend,
+        status: row.try_get("status")?,
+        working_directory: row.try_get("working_directory")?,
+        title: row.try_get("title")?,
+        model: row.try_get("model")?,
+        agent_config: row_to_agent_config(&row)?,
+        metadata: serde_json::from_str(&row.try_get::<String, _>("metadata_json")?)?,
+        epoch: row.try_get("epoch")?,
+        next_seq: row.try_get("next_seq")?,
+        created_at,
+        updated_at,
+    })
+}
+
+fn row_to_agent_config(row: &sqlx::sqlite::SqliteRow) -> Result<AgentConfig> {
+    let model: Option<String> = row.try_get("model")?;
+    let mut agent_config: AgentConfig =
+        serde_json::from_str(&row.try_get::<String, _>("agent_config_json")?)?;
+    if agent_config.model.is_none() {
+        agent_config.model = model;
+    }
+    Ok(agent_config)
+}
+
+fn parse_sqlite_datetime(value: String) -> DateTime<Utc> {
+    DateTime::parse_from_rfc3339(&value)
+        .map(|dt| dt.with_timezone(&Utc))
+        .unwrap_or_else(|_| Utc::now())
 }

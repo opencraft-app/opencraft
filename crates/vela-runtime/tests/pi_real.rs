@@ -1,3 +1,5 @@
+#![cfg(feature = "real-providers")]
+
 use std::sync::Arc;
 use std::{env, fs};
 
@@ -9,6 +11,10 @@ use vela_store::SqliteEventStore;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pi_rpc_real_send_turn_completes_with_temp_session_dir() {
+    if env::var("VELA_RUN_REAL_PROVIDERS").as_deref() != Ok("1") {
+        eprintln!("skipping Pi real test because VELA_RUN_REAL_PROVIDERS=1 is not set");
+        return;
+    }
     let workspace = tempdir().expect("temp workspace");
     let session_dir = tempdir().expect("temp pi session dir");
     let agent_dir = tempdir().expect("temp pi agent dir");
@@ -17,7 +23,7 @@ async fn pi_rpc_real_send_turn_completes_with_temp_session_dir() {
     adapter.session_dir = Some(session_dir.path().to_string_lossy().to_string());
     adapter.no_tools = true;
 
-    if env::var("VELA_PI_REAL_API_KEY").is_ok() {
+    if env::var("VELA_CLOUDAGENTS_API_KEY").is_ok() {
         fs::write(
             agent_dir.path().join("models.json"),
             r#"{
@@ -25,7 +31,7 @@ async fn pi_rpc_real_send_turn_completes_with_temp_session_dir() {
                 "cloudagents": {
                   "baseUrl": "https://tokenhub.tencentmaas.com/v1",
                   "api": "openai-completions",
-                  "apiKey": "$VELA_PI_REAL_API_KEY",
+                  "apiKey": "$VELA_CLOUDAGENTS_API_KEY",
                   "authHeader": true,
                   "compat": {
                     "supportsDeveloperRole": false,

@@ -1,4 +1,4 @@
-use crate::{BackendAdapter, BackendOutput, BackendSend};
+use crate::{BackendAdapter, BackendOutput, BackendOutputSink, BackendSend, emit_backend_outputs};
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -30,7 +30,11 @@ impl OpenAiChatBackendAdapter {
 
 #[async_trait]
 impl BackendAdapter for OpenAiChatBackendAdapter {
-    async fn send_user_message(&self, input: BackendSend) -> anyhow::Result<Vec<BackendOutput>> {
+    async fn stream_user_message(
+        &self,
+        input: BackendSend,
+        sink: BackendOutputSink,
+    ) -> anyhow::Result<()> {
         let request = ChatCompletionRequest {
             model: self.model.clone(),
             messages: vec![ChatMessage {
@@ -62,18 +66,22 @@ impl BackendAdapter for OpenAiChatBackendAdapter {
             .unwrap_or("")
             .to_string();
 
-        Ok(vec![
-            BackendOutput {
-                event_type: EventType::ASSISTANT_MESSAGE_DELTA,
-                payload: json!({ "delta": content }),
-                raw: Some(body.clone()),
-            },
-            BackendOutput {
-                event_type: EventType::TURN_COMPLETED,
-                payload: json!({}),
-                raw: Some(body),
-            },
-        ])
+        emit_backend_outputs(
+            sink,
+            vec![
+                BackendOutput {
+                    event_type: EventType::ASSISTANT_MESSAGE_DELTA,
+                    payload: json!({ "delta": content }),
+                    raw: Some(body.clone()),
+                },
+                BackendOutput {
+                    event_type: EventType::TURN_COMPLETED,
+                    payload: json!({}),
+                    raw: Some(body),
+                },
+            ],
+        )
+        .await
     }
 }
 

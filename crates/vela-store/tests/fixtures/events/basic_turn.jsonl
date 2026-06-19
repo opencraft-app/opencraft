@@ -1,0 +1,5 @@
+{"event_type":"session.created","payload":{"backend":"pi","working_directory":"/tmp/vela"}}
+{"event_type":"user.message.accepted","payload":{"content":"hello"}}
+{"event_type":"turn.started","payload":{}}
+{"event_type":"assistant.message.delta","payload":{"delta":"hi"}}
+{"event_type":"turn.completed","payload":{}}
