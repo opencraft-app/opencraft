@@ -12,6 +12,7 @@ import {
   needsTranscriptRefreshAfterLiveOverlay,
   parseSseJsonFrames,
   readVelaStreamEvent,
+  isVelaStreamEventFreshForCursor,
   isVelaStreamEventForSession,
   streamReadModelRefreshPlan,
   subscribeVelaEventSource,
@@ -1112,6 +1113,45 @@ test("matches stream events to the active session while accepting legacy events"
       type: "turn.completed",
     }),
     false,
+  );
+});
+
+test("matches stream events to cursor order while accepting legacy cursorless events", () => {
+  const cursor = { event_id: "evt_5", epoch: 1, seq: 5 };
+
+  assert.equal(
+    isVelaStreamEventFreshForCursor(cursor, {
+      event_id: "evt_6",
+      epoch: 1,
+      seq: 6,
+      type: "turn.completed",
+    }),
+    true,
+  );
+  assert.equal(
+    isVelaStreamEventFreshForCursor(cursor, {
+      event_id: "evt_5",
+      epoch: 1,
+      seq: 5,
+      type: "turn.completed",
+    }),
+    false,
+  );
+  assert.equal(
+    isVelaStreamEventFreshForCursor(cursor, {
+      event_id: "evt_old_epoch",
+      epoch: 0,
+      seq: 99,
+      type: "turn.completed",
+    }),
+    false,
+  );
+  assert.equal(
+    isVelaStreamEventFreshForCursor(cursor, {
+      event_id: "evt_legacy",
+      type: "turn.completed",
+    }),
+    true,
   );
 });
 

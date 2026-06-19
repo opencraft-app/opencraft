@@ -428,6 +428,13 @@ export function isVelaStreamEventForSession(
   return !isDifferentKnownStreamSession(sessionId, event.session_id);
 }
 
+export function isVelaStreamEventFreshForCursor(
+  cursor: EventCursorWire | undefined,
+  event: VelaStreamEventWire,
+) {
+  return cursor ? isStreamEventNewerThanCursor(cursor, event) : true;
+}
+
 export function applyTranscriptLiveOverlay(
   transcript: ChatTranscriptWireView,
   event: VelaStreamEventWire,

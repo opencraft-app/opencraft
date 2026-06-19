@@ -8,6 +8,7 @@ import {
   createVeladClient,
   createStreamRefreshScheduler,
   imageFileToInputPart,
+  isVelaStreamEventFreshForCursor,
   isVelaStreamEventForSession,
   needsTranscriptRefreshAfterLiveOverlay,
   readVelaStreamEvent,
@@ -234,6 +235,7 @@ export function ChatWorkbench({
         if (streamEvent) {
           if (!isVelaStreamEventForSession(activeSessionId, streamEvent)) return;
           const currentTranscript = transcriptRef.current;
+          if (currentTranscript && !isVelaStreamEventFreshForCursor(currentTranscript.cursor, streamEvent)) return;
           const forceTranscriptRefresh = currentTranscript
             ? needsTranscriptRefreshAfterLiveOverlay(currentTranscript, streamEvent)
             : false;

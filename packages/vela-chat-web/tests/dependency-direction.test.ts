@@ -377,9 +377,14 @@ test("chat stream handler applies local overlays and scopes read-model refresh",
 
   assert.match(source, /readVelaStreamEvent/);
   assert.match(source, /isVelaStreamEventForSession/);
+  assert.match(source, /isVelaStreamEventFreshForCursor/);
   assert.match(
     source,
     /if \(!isVelaStreamEventForSession\(activeSessionId,\s*streamEvent\)\) return;/,
+  );
+  assert.match(
+    source,
+    /if \(currentTranscript && !isVelaStreamEventFreshForCursor\(currentTranscript\.cursor,\s*streamEvent\)\) return;/,
   );
   assert.match(source, /applyTranscriptLiveOverlay/);
   assert.match(source, /streamReadModelRefreshPlan/);
