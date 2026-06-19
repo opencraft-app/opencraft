@@ -15,6 +15,7 @@ export function UserMessageRenderer({
       typeof part.data?.mime_type === "string",
   );
   const text = block.text || textFromParts(block);
+  const copyText = block.copyText || text;
 
   return (
     <Message from="user">
@@ -34,31 +35,33 @@ export function UserMessageRenderer({
         {text ? <div className={styles.userBubble}>{text}</div> : null}
         <div className={styles.userMeta}>
           <span>{formatTime(block.createdAt)}</span>
-          <button
-            aria-label="Copy message"
-            onClick={() => {
-              void copyMessageText(block.copyText || text);
-            }}
-            style={copyButtonStyle}
-            title="Copy message"
-            type="button"
-          >
-            <svg
-              aria-hidden="true"
-              fill="none"
-              height="16"
-              stroke="currentColor"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="1.8"
-              style={copyIconStyle}
-              viewBox="0 0 24 24"
-              width="16"
+          {copyText ? (
+            <button
+              aria-label="Copy message"
+              onClick={() => {
+                void copyMessageText(copyText);
+              }}
+              style={copyButtonStyle}
+              title="Copy message"
+              type="button"
             >
-              <rect height="13" rx="2" ry="2" width="13" x="9" y="9" />
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-            </svg>
-          </button>
+              <svg
+                aria-hidden="true"
+                fill="none"
+                height="16"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="1.8"
+                style={copyIconStyle}
+                viewBox="0 0 24 24"
+                width="16"
+              >
+                <rect height="13" rx="2" ry="2" width="13" x="9" y="9" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+            </button>
+          ) : null}
         </div>
       </div>
     </Message>

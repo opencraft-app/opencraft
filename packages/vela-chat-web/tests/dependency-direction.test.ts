@@ -421,3 +421,14 @@ test("composer send control has a stable accessible action label", () => {
   assert.match(promptInput, /aria-label="Send message"/);
   assert.match(promptInput, /title="Send message"/);
 });
+
+test("user message copy control is omitted when there is no text to copy", () => {
+  const source = readFileSync(
+    join(root, "packages/vela-chat-web/src/renderers/blocks/UserMessageRenderer.tsx"),
+    "utf8",
+  );
+
+  assert.match(source, /const copyText = block\.copyText \|\| text;/);
+  assert.match(source, /\{copyText \? \(/);
+  assert.match(source, /copyMessageText\(copyText\)/);
+});
