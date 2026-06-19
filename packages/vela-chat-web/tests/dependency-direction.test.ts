@@ -422,6 +422,21 @@ test("composer send control has a stable accessible action label", () => {
   assert.match(promptInput, /title="Send message"/);
 });
 
+test("composer does not expose dictation as an enabled mock action", () => {
+  const promptInput = readFileSync(
+    join(root, "packages/vela-chat-web/src/primitives/prompt-input/PromptInput.tsx"),
+    "utf8",
+  );
+
+  assert.match(promptInput, /aria-label="Dictation unavailable"/);
+  assert.match(promptInput, /title="Dictation unavailable"/);
+  assert.match(
+    promptInput,
+    /<button[\s\S]*aria-label="Dictation unavailable"[\s\S]*disabled[\s\S]*>\s*⌘\s*<\/button>/,
+  );
+  assert.doesNotMatch(promptInput, /aria-label="Dictation"/);
+});
+
 test("user message copy control is omitted when there is no text to copy", () => {
   const source = readFileSync(
     join(root, "packages/vela-chat-web/src/renderers/blocks/UserMessageRenderer.tsx"),

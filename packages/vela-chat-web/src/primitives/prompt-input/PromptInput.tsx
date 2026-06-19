@@ -110,7 +110,13 @@ export function PromptInput({
           </div>
           <div className={styles.composerRight}>
             {rightToolbarControls}
-            <button className={styles.iconButton} type="button" aria-label="Dictation">
+            <button
+              aria-label="Dictation unavailable"
+              className={styles.iconButton}
+              disabled
+              title="Dictation unavailable"
+              type="button"
+            >
               ⌘
             </button>
             <button
