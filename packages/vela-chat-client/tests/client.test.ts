@@ -359,6 +359,41 @@ test("validates transcript row parts at the client wire boundary", async () => {
   );
 });
 
+test("validates optional transcript row text at the client wire boundary", async () => {
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async () =>
+      new Response(
+        JSON.stringify({
+          session_id: "sess_123",
+          rows: [
+            {
+              id: "row_bad_text",
+              kind: "assistant_message",
+              created_at: "2026-06-19T00:00:00Z",
+              updated_at: "2026-06-19T00:00:00Z",
+              revision: 1,
+              text: 123,
+              status: "completed",
+              source_event_ids: ["evt_1"],
+            },
+          ],
+          window: { has_older: false, has_newer: false },
+          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+  });
+
+  await assert.rejects(
+    () => client.getTranscript("sess_123"),
+    (err) =>
+      err instanceof VeladClientError &&
+      err.code === "invalid_transcript_view" &&
+      /text/.test(err.message),
+  );
+});
+
 test("validates activity view cursor at the client wire boundary", async () => {
   const client = createVeladClient({
     baseUrl: "http://127.0.0.1:3857/api/v1/",

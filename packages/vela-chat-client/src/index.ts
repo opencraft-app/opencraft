@@ -1569,6 +1569,9 @@ function parseTranscriptWireRow(data: unknown, owner: string): TranscriptWireRow
     created_at: requiredViewString(data, "created_at", owner, invalidTranscriptView),
     updated_at: requiredViewString(data, "updated_at", owner, invalidTranscriptView),
     revision: requiredViewInteger(data, "revision", owner, invalidTranscriptView, { minimum: 1 }),
+    ...(data.text !== undefined
+      ? { text: optionalViewString(data, "text", owner, invalidTranscriptView) }
+      : {}),
     ...(data.parts !== undefined
       ? { parts: parseTranscriptWireParts(data, `${owner}.parts`) }
       : {}),
