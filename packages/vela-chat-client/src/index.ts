@@ -1661,6 +1661,9 @@ function parseActivityWireItem(data: unknown, owner: string): ActivityWireItem {
     ...(data.updated_at !== undefined
       ? { updated_at: optionalViewString(data, "updated_at", owner, invalidActivityView) }
       : {}),
+    ...(data.event_range !== undefined
+      ? { event_range: parseActivityEventRange(data.event_range, `${owner}.event_range`) }
+      : {}),
   };
 }
 
@@ -1673,6 +1676,23 @@ function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDeta
     throw invalidActivityView(`${owner}.type must be a known activity detail type`);
   }
   return data as ActivityWireDetail;
+}
+
+function parseActivityEventRange(
+  data: unknown,
+  owner: string,
+): NonNullable<ActivityWireItem["event_range"]> {
+  if (!isRecord(data)) {
+    throw invalidActivityView(`${owner} must be an object`);
+  }
+  return {
+    ...(data.from_event_id !== undefined
+      ? { from_event_id: optionalViewString(data, "from_event_id", owner, invalidActivityView) }
+      : {}),
+    ...(data.to_event_id !== undefined
+      ? { to_event_id: optionalViewString(data, "to_event_id", owner, invalidActivityView) }
+      : {}),
+  };
 }
 
 async function readCommandAckResponse(response: Response): Promise<CommandAckWire> {
