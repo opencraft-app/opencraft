@@ -343,12 +343,7 @@ export function canApplyConversationHistoryPrependPlan(
 export function prependTranscriptWindow<T extends ChatTranscriptWireView>(current: T, older: T): T {
   if (isDifferentKnownSession(current.session_id, older.session_id)) return current;
 
-  const seen = new Set<string>();
-  const rows = [...older.rows, ...current.rows].filter((row) => {
-    if (seen.has(row.id)) return false;
-    seen.add(row.id);
-    return true;
-  });
+  const rows = prependMissingItemsById(older.rows, current.rows);
 
   return {
     ...current,
@@ -373,12 +368,7 @@ export function prependTranscriptWindow<T extends ChatTranscriptWireView>(curren
 export function prependActivityWindow<T extends ActivityWireView>(current: T, older: T): T {
   if (isDifferentKnownSession(current.session_id, older.session_id)) return current;
 
-  const seen = new Set<string>();
-  const items = [...older.items, ...current.items].filter((item) => {
-    if (seen.has(item.id)) return false;
-    seen.add(item.id);
-    return true;
-  });
+  const items = prependMissingItemsById(older.items, current.items);
 
   return {
     ...current,
@@ -475,4 +465,18 @@ function cursorOrder(cursor: ChatSurfaceCursor) {
 function normalizeWindowLimit(limit: number) {
   if (!Number.isFinite(limit)) return 80;
   return Math.max(1, Math.floor(limit));
+}
+
+function prependMissingItemsById<T extends { id: string }>(
+  olderItems: readonly T[],
+  currentItems: readonly T[],
+): T[] {
+  const currentIds = new Set(currentItems.map((item) => item.id));
+  const seenOlderIds = new Set<string>();
+  const prepended = olderItems.filter((item) => {
+    if (currentIds.has(item.id) || seenOlderIds.has(item.id)) return false;
+    seenOlderIds.add(item.id);
+    return true;
+  });
+  return [...prepended, ...currentItems];
 }

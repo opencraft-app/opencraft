@@ -118,7 +118,9 @@ test("prepends transcript windows without duplicating rows and preserves latest 
         id: "row_2",
         kind: "assistant_message" as const,
         created_at: "2026-06-18T10:00:02Z",
-        text: "two",
+        text: "two current",
+        status: "streaming",
+        revision: 2,
       },
       {
         id: "row_3",
@@ -148,7 +150,9 @@ test("prepends transcript windows without duplicating rows and preserves latest 
         id: "row_2",
         kind: "assistant_message" as const,
         created_at: "2026-06-18T10:00:02Z",
-        text: "two",
+        text: "two stale",
+        status: "completed",
+        revision: 1,
       },
     ],
     window: {
@@ -165,6 +169,9 @@ test("prepends transcript windows without duplicating rows and preserves latest 
     merged.rows.map((row) => row.id),
     ["row_1", "row_2", "row_3"],
   );
+  assert.equal(merged.rows[1]?.text, "two current");
+  assert.equal(merged.rows[1]?.status, "streaming");
+  assert.equal(merged.rows[1]?.revision, 2);
   assert.equal(merged.window?.first_row_id, "row_1");
   assert.equal(merged.window?.last_row_id, "row_3");
   assert.equal(merged.window?.has_older, false);
@@ -190,8 +197,9 @@ test("prepends activity windows without duplicating items and preserves latest c
       {
         id: "act_2",
         kind: "tool",
-        status: "completed",
+        status: "running",
         title: "Read file",
+        summary: "README.md current",
         created_at: "2026-06-18T10:00:02Z",
       },
       {
@@ -225,6 +233,7 @@ test("prepends activity windows without duplicating items and preserves latest c
         kind: "tool",
         status: "completed",
         title: "Read file",
+        summary: "README.md stale",
         created_at: "2026-06-18T10:00:02Z",
       },
     ],
@@ -242,6 +251,8 @@ test("prepends activity windows without duplicating items and preserves latest c
     merged.items.map((item) => item.id),
     ["act_1", "act_2", "act_3"],
   );
+  assert.equal(merged.items[1]?.status, "running");
+  assert.equal(merged.items[1]?.summary, "README.md current");
   assert.equal(merged.window?.first_item_id, "act_1");
   assert.equal(merged.window?.last_item_id, "act_3");
   assert.equal(merged.window?.has_older, false);
