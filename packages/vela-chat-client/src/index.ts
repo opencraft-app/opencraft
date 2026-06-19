@@ -1,0 +1,1567 @@
+export interface VeladClientOptions {
+  baseUrl: string;
+  fetch?: typeof fetch;
+}
+
+export interface CursorWindow {
+  event_id?: string;
+  epoch?: number;
+  seq?: number;
+  latest_event_id?: string;
+  next_event_id?: string;
+  has_more?: boolean;
+  has_newer?: boolean;
+  has_older?: boolean;
+}
+
+export interface EventCursorWire {
+  event_id: string;
+  epoch: number;
+  seq: number;
+}
+
+export interface TranscriptWindow {
+  first_row_id?: string | null;
+  last_row_id?: string | null;
+  anchor_row_id?: string | null;
+  has_older: boolean;
+  has_newer: boolean;
+}
+
+export interface ActivityWindow {
+  first_item_id?: string | null;
+  last_item_id?: string | null;
+  anchor_item_id?: string | null;
+  has_older: boolean;
+  has_newer: boolean;
+}
+
+export interface TranscriptWireRow {
+  id: string;
+  kind: "user_message" | "assistant_message" | "working" | "activity_marker" | "error";
+  created_at: string;
+  updated_at?: string;
+  revision?: number;
+  text?: string;
+  status?: string;
+  source_event_ids?: string[];
+}
+
+export interface ChatTranscriptWireView {
+  session_id: string;
+  rows: TranscriptWireRow[];
+  cursor: EventCursorWire;
+  window: TranscriptWindow;
+}
+
+export interface VelaStreamEventWire {
+  event_id?: string;
+  epoch?: number;
+  seq?: number;
+  session_id?: string;
+  type: string;
+  created_at?: string;
+  payload?: Record<string, unknown>;
+  views?: string[];
+}
+
+export interface StreamReadModelRefreshPlan {
+  transcript: boolean;
+  activity: boolean;
+  session: boolean;
+  backends: boolean;
+}
+
+export type ViewWindowDirection = "tail" | "before" | "after" | "around";
+
+export interface TranscriptWindowOptions {
+  limit?: number;
+  direction?: ViewWindowDirection;
+  anchorRowId?: string;
+  includeLive?: boolean;
+}
+
+export interface ActivityWindowOptions {
+  limit?: number;
+  direction?: ViewWindowDirection;
+  anchorItemId?: string;
+}
+
+export interface ActivityWireDetail {
+  type: string;
+  [key: string]: unknown;
+}
+
+export interface ActivityWireItem {
+  id: string;
+  kind: string;
+  status: string;
+  title: string;
+  summary?: string;
+  detail?: ActivityWireDetail;
+  created_at: string;
+  updated_at?: string;
+  event_range?: {
+    from_event_id?: string;
+    to_event_id?: string;
+  };
+}
+
+export interface ActivityWireView {
+  session_id: string;
+  items: ActivityWireItem[];
+  window: ActivityWindow;
+  cursor: EventCursorWire;
+}
+
+export type PermissionModeWire = "read_only" | "auto" | "auto_review" | "full_access";
+
+export interface AgentConfigWire {
+  model?: string | null;
+  reasoning_effort?: string | null;
+  permission_mode?: PermissionModeWire | null;
+  feature_values?: Record<string, unknown>;
+}
+
+export interface AgentConfigPatchWire {
+  model?: string | null;
+  reasoning_effort?: string | null;
+  permission_mode?: PermissionModeWire | null;
+  feature_values?: Record<string, unknown>;
+}
+
+export interface SessionRuntimeInfoWire {
+  provider: string;
+  native_session_id?: string | null;
+  model?: string | null;
+  reasoning_effort?: string | null;
+  permission_mode?: PermissionModeWire | null;
+  feature_values?: Record<string, unknown>;
+}
+
+export interface SessionOperationWire {
+  available: boolean;
+  reason?: string;
+  effective_after?: "current_session" | "next_turn";
+}
+
+export interface SessionWire {
+  id: string;
+  backend: "pi" | string;
+  status: string;
+  working_directory?: string;
+  title?: string;
+  model?: string | null;
+  agent_config?: AgentConfigWire;
+  runtime_info?: SessionRuntimeInfoWire;
+  operations?: Record<string, SessionOperationWire | undefined>;
+  metadata?: Record<string, unknown>;
+}
+
+export interface CreateSessionInput {
+  workingDirectory: string;
+  idempotencyKey?: string;
+  backend?: "pi" | "codex" | "acp" | string;
+  title?: string;
+  model?: string;
+  agentConfig?: AgentConfigWire;
+  metadata?: Record<string, unknown>;
+}
+
+export interface CreateSessionWireResponse {
+  session: SessionWire;
+  cursor: EventCursorWire;
+}
+
+export interface SessionWireResponse {
+  session: SessionWire;
+  cursor?: CursorWindow;
+}
+
+export interface ReasoningEffortOptionWire {
+  id: string;
+  label: string;
+  description?: string;
+  is_default?: boolean;
+  metadata?: Record<string, unknown>;
+}
+
+export interface BackendModelWire {
+  id: string;
+  label: string;
+  description?: string;
+  is_default?: boolean;
+  reasoning_efforts?: ReasoningEffortOptionWire[];
+  metadata?: Record<string, unknown>;
+}
+
+export interface PermissionModeOptionWire {
+  id: PermissionModeWire;
+  label: string;
+  description?: string;
+  is_default?: boolean;
+  metadata?: Record<string, unknown>;
+}
+
+export interface BackendFeatureWire {
+  type: string;
+  id: string;
+  label: string;
+  description?: string;
+  default_value?: unknown;
+  options?: ReasoningEffortOptionWire[];
+  metadata?: Record<string, unknown>;
+}
+
+export interface BackendWire {
+  kind: string;
+  status: string;
+  display_name: string;
+  capabilities: Record<string, unknown>;
+  models: BackendModelWire[];
+  permission_modes: PermissionModeOptionWire[];
+  features: BackendFeatureWire[];
+  diagnostics?: Record<string, unknown>;
+}
+
+export interface BackendsWireResponse {
+  backends: BackendWire[];
+}
+
+export interface UpdateAgentConfigWireResponse {
+  session: SessionWire;
+  effective_after: "current_session" | "next_turn";
+  cursor: EventCursorWire;
+}
+
+export type ClientInputPart =
+  | { type: "text"; text: string }
+  | { type: "file_ref"; uri: string }
+  | { type: "image_ref"; uri: string }
+  | { type: "image"; data: string; mime_type: string };
+
+export type ClientInputEvent = {
+  type: "user.message";
+  content: ClientInputPart[];
+};
+
+export type CommandAckWire =
+  | AcceptedCommandAckWire
+  | QueuedCommandAckWire
+  | RejectedCommandAckWire;
+
+export interface AcceptedCommandAckWire {
+  status: "accepted";
+  command_id: string;
+  session_id: string;
+  turn_id?: string;
+  cursor: EventCursorWire;
+}
+
+export interface QueuedCommandAckWire {
+  status: "queued";
+  command_id: string;
+  session_id: string;
+  queued_message_id: string;
+  cursor: EventCursorWire;
+}
+
+export type CommandRejectionCodeWire =
+  | "session_not_found"
+  | "session_closed"
+  | "turn_running"
+  | "permission_blocked"
+  | "backend_unavailable"
+  | "duplicate_command"
+  | (string & {});
+
+export interface RejectedCommandAckWire {
+  status: "rejected";
+  code: CommandRejectionCodeWire;
+  message: string;
+  command_id?: string;
+  session_id?: string;
+  cursor?: EventCursorWire;
+}
+
+export interface VeladClient {
+  createSession: (input: CreateSessionInput) => Promise<CreateSessionWireResponse>;
+  getSession: (sessionId: string) => Promise<SessionWireResponse>;
+  getBackends: () => Promise<BackendsWireResponse>;
+  updateAgentConfig: (input: {
+    sessionId: string;
+    patch: AgentConfigPatchWire;
+    idempotencyKey?: string;
+  }) => Promise<UpdateAgentConfigWireResponse>;
+  transcriptUrl: (sessionId: string, options?: TranscriptWindowOptions) => URL;
+  activityUrl: (sessionId: string, options?: ActivityWindowOptions) => URL;
+  sessionEventStreamUrl: (sessionId: string, afterId?: string | null) => URL;
+  getTranscript: (
+    sessionId: string,
+    options?: TranscriptWindowOptions,
+  ) => Promise<ChatTranscriptWireView>;
+  getActivity: (sessionId: string, options?: ActivityWindowOptions) => Promise<ActivityWireView>;
+  sendUserMessage: (input: {
+    sessionId: string;
+    text?: string;
+    content?: ClientInputPart[];
+    idempotencyKey?: string;
+  }) => Promise<CommandAckWire>;
+}
+
+export interface VelaEventSourceHandlers {
+  onEvent: (event: MessageEvent | Event) => void;
+  onOpen?: (event: Event) => void;
+  onError?: (event: Event) => void;
+}
+
+export interface StreamRefreshScheduler {
+  notifyStreamEvent: () => void;
+  dispose: () => void;
+}
+
+export interface StreamRefreshSchedulerOptions {
+  refresh: () => void | Promise<void>;
+  minIntervalMs?: number;
+  now?: () => number;
+  setTimeout?: (callback: () => void, delay: number) => unknown;
+  clearTimeout?: (timer: unknown) => void;
+}
+
+export const VELA_SESSION_STREAM_EVENT_TYPES = [
+  "session.created",
+  "session.updated",
+  "user.message.accepted",
+  "turn.started",
+  "assistant.message.started",
+  "assistant.message.delta",
+  "assistant.message.completed",
+  "assistant.reasoning.delta",
+  "assistant.reasoning.completed",
+  "tool.started",
+  "tool.updated",
+  "tool.output.delta",
+  "tool.completed",
+  "tool.failed",
+  "request.opened",
+  "request.updated",
+  "request.resolved",
+  "diff.updated",
+  "warning.raised",
+  "error.raised",
+  "turn.completed",
+  "turn.failed",
+  "backend.status.changed",
+  "sync.reset",
+] as const;
+
+export function subscribeVelaEventSource(
+  source: EventSource,
+  handlers: VelaEventSourceHandlers,
+) {
+  source.onopen = handlers.onOpen ?? null;
+  source.onerror = handlers.onError ?? null;
+  source.onmessage = handlers.onEvent;
+  for (const eventType of VELA_SESSION_STREAM_EVENT_TYPES) {
+    source.addEventListener(eventType, handlers.onEvent);
+  }
+
+  return () => {
+    source.onopen = null;
+    source.onerror = null;
+    source.onmessage = null;
+    for (const eventType of VELA_SESSION_STREAM_EVENT_TYPES) {
+      source.removeEventListener(eventType, handlers.onEvent);
+    }
+  };
+}
+
+export function readVelaStreamEvent(event: MessageEvent | Event): VelaStreamEventWire | null {
+  const data = "data" in event ? event.data : undefined;
+  if (typeof data !== "string" || data.length === 0) return null;
+  try {
+    const parsed = JSON.parse(data) as Partial<VelaStreamEventWire>;
+    const eventType =
+      typeof parsed.type === "string"
+        ? parsed.type
+        : event.type && event.type !== "message"
+          ? event.type
+          : "";
+    if (!eventType) return null;
+    return {
+      event_id: typeof parsed.event_id === "string" ? parsed.event_id : undefined,
+      epoch: typeof parsed.epoch === "number" ? parsed.epoch : undefined,
+      seq: typeof parsed.seq === "number" ? parsed.seq : undefined,
+      session_id: typeof parsed.session_id === "string" ? parsed.session_id : undefined,
+      type: eventType,
+      created_at: typeof parsed.created_at === "string" ? parsed.created_at : undefined,
+      payload: isRecord(parsed.payload) ? parsed.payload : undefined,
+      views: Array.isArray(parsed.views)
+        ? parsed.views.filter((view): view is string => typeof view === "string")
+        : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function applyTranscriptLiveOverlay(
+  transcript: ChatTranscriptWireView,
+  event: VelaStreamEventWire,
+): ChatTranscriptWireView {
+  if (
+    transcript.session_id &&
+    event.session_id &&
+    transcript.session_id !== event.session_id
+  ) {
+    return transcript;
+  }
+
+  if (event.type === "assistant.message.delta") {
+    const delta = stringPayload(event, "delta");
+    if (!delta) return updateTranscriptCursor(transcript, event);
+    return appendAssistantDelta(transcript, event, delta);
+  }
+
+  return updateTranscriptCursor(transcript, event);
+}
+
+export function needsTranscriptRefreshAfterLiveOverlay(
+  transcript: ChatTranscriptWireView,
+  event: VelaStreamEventWire,
+) {
+  if (event.type !== "assistant.message.delta") return false;
+  const delta = stringPayload(event, "delta");
+  if (!delta) return false;
+  return !hasAssistantOverlayTarget(transcript, event);
+}
+
+export function streamReadModelRefreshPlan(
+  event: VelaStreamEventWire | null,
+): StreamReadModelRefreshPlan {
+  if (!event) return emptyRefreshPlan();
+  if (event.type === "sync.reset") return resetRefreshPlan(event.views);
+  if (event.type === "assistant.message.delta") return emptyRefreshPlan();
+
+  return {
+    transcript: transcriptRefreshEvents.has(event.type),
+    activity: isActivityRefreshEvent(event.type),
+    session: sessionRefreshEvents.has(event.type),
+    backends: event.type.startsWith("backend."),
+  };
+}
+
+export function createStreamRefreshScheduler({
+  refresh,
+  minIntervalMs = 120,
+  now = () => Date.now(),
+  setTimeout = (callback, delay) => globalThis.setTimeout(callback, delay),
+  clearTimeout = (timer) =>
+    globalThis.clearTimeout(timer as ReturnType<typeof globalThis.setTimeout>),
+}: StreamRefreshSchedulerOptions): StreamRefreshScheduler {
+  let disposed = false;
+  let dirty = false;
+  let inFlight = false;
+  let timer: unknown | null = null;
+  let lastRefreshAt = Number.NEGATIVE_INFINITY;
+
+  const schedule = (delay: number) => {
+    if (timer !== null || disposed) return;
+    timer = setTimeout(() => {
+      timer = null;
+      void runRefresh();
+    }, Math.max(0, delay));
+  };
+
+  const finishRefresh = () => {
+    inFlight = false;
+    if (!disposed && dirty) {
+      const elapsed = now() - lastRefreshAt;
+      if (elapsed >= minIntervalMs) {
+        runRefresh();
+      } else {
+        schedule(minIntervalMs - elapsed);
+      }
+    }
+  };
+
+  const runRefresh = () => {
+    if (disposed) return;
+    if (inFlight) {
+      dirty = true;
+      return;
+    }
+
+    inFlight = true;
+    dirty = false;
+    lastRefreshAt = now();
+    try {
+      const result = refresh();
+      if (isPromiseLike(result)) {
+        void Promise.resolve(result).catch(() => undefined).finally(finishRefresh);
+      } else {
+        finishRefresh();
+      }
+    } catch {
+      finishRefresh();
+    }
+  };
+
+  return {
+    notifyStreamEvent() {
+      if (disposed) return;
+      dirty = true;
+      if (inFlight || timer !== null) return;
+
+      const elapsed = now() - lastRefreshAt;
+      if (elapsed >= minIntervalMs) {
+        runRefresh();
+      } else {
+        schedule(minIntervalMs - elapsed);
+      }
+    },
+    dispose() {
+      disposed = true;
+      dirty = false;
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    },
+  };
+}
+
+function isPromiseLike(value: void | Promise<void>): value is Promise<void> {
+  return typeof value === "object" && value !== null && "then" in value;
+}
+
+function appendAssistantDelta(
+  transcript: ChatTranscriptWireView,
+  event: VelaStreamEventWire,
+  delta: string,
+): ChatTranscriptWireView {
+  const { rowId, fallbackIndex } = assistantOverlayTarget(transcript, event);
+  const rows = transcript.rows.map((row, index) => {
+    if (row.kind !== "assistant_message") return row;
+    if (rowId ? row.id !== rowId : index !== fallbackIndex) return row;
+    if (event.event_id && row.source_event_ids?.includes(event.event_id)) return row;
+    return {
+      ...row,
+      updated_at: event.created_at ?? row.updated_at ?? row.created_at,
+      revision: (row.revision ?? 1) + 1,
+      status: "streaming",
+      text: `${row.text ?? ""}${delta}`,
+      source_event_ids: event.event_id
+        ? [...(row.source_event_ids ?? []), event.event_id]
+        : row.source_event_ids,
+    };
+  });
+
+  const changed = rows.some((row, index) => row !== transcript.rows[index]);
+  if (changed) return { ...updateTranscriptCursor(transcript, event), rows };
+
+  return updateTranscriptCursor(transcript, event);
+}
+
+function hasAssistantOverlayTarget(
+  transcript: ChatTranscriptWireView,
+  event: VelaStreamEventWire,
+) {
+  const { rowId, fallbackIndex } = assistantOverlayTarget(transcript, event);
+  if (rowId) {
+    return transcript.rows.some(
+      (row) => row.kind === "assistant_message" && row.id === rowId,
+    );
+  }
+  return fallbackIndex >= 0;
+}
+
+function assistantOverlayTarget(
+  transcript: ChatTranscriptWireView,
+  event: VelaStreamEventWire,
+) {
+  const rowId = messageRowId(event);
+  const fallbackIndex = rowId
+    ? -1
+    : findLastIndex(
+        transcript.rows,
+        (row) => row.kind === "assistant_message" && row.status === "streaming",
+      );
+  return { rowId, fallbackIndex };
+}
+
+function updateTranscriptCursor(
+  transcript: ChatTranscriptWireView,
+  event: VelaStreamEventWire,
+): ChatTranscriptWireView {
+  return {
+    ...transcript,
+    cursor: {
+      ...transcript.cursor,
+      ...(event.event_id ? { event_id: event.event_id } : {}),
+      epoch: event.epoch ?? transcript.cursor.epoch,
+      seq: event.seq ?? transcript.cursor.seq,
+    },
+  };
+}
+
+const transcriptRefreshEvents = new Set([
+  "user.message.accepted",
+  "assistant.message.started",
+  "assistant.message.completed",
+  "turn.completed",
+  "turn.failed",
+]);
+
+const sessionRefreshEvents = new Set([
+  "session.created",
+  "session.updated",
+  "user.message.accepted",
+  "turn.started",
+  "turn.completed",
+  "turn.failed",
+]);
+
+function isActivityRefreshEvent(eventType: string) {
+  return (
+    eventType.startsWith("tool.") ||
+    eventType.startsWith("request.") ||
+    eventType === "assistant.reasoning.delta" ||
+    eventType === "assistant.reasoning.completed" ||
+    eventType === "diff.updated" ||
+    eventType === "warning.raised" ||
+    eventType === "error.raised" ||
+    eventType === "turn.failed"
+  );
+}
+
+function emptyRefreshPlan(): StreamReadModelRefreshPlan {
+  return { transcript: false, activity: false, session: false, backends: false };
+}
+
+function resetRefreshPlan(views: string[] | undefined): StreamReadModelRefreshPlan {
+  const viewSet = new Set(views?.length ? views : ["workbench"]);
+  const workbench = viewSet.has("workbench");
+  return {
+    transcript: workbench || viewSet.has("transcript"),
+    activity:
+      workbench ||
+      viewSet.has("activity") ||
+      viewSet.has("requests") ||
+      viewSet.has("diffs"),
+    session: workbench || viewSet.has("session"),
+    backends: viewSet.has("backends"),
+  };
+}
+
+function messageRowId(event: VelaStreamEventWire) {
+  return stringPayload(event, "message_id");
+}
+
+function stringPayload(event: VelaStreamEventWire, field: string) {
+  const value = event.payload?.[field];
+  return typeof value === "string" ? value : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function findLastIndex<T>(values: T[], predicate: (value: T) => boolean) {
+  for (let index = values.length - 1; index >= 0; index -= 1) {
+    if (predicate(values[index] as T)) return index;
+  }
+  return -1;
+}
+
+export function createVeladClient(options: VeladClientOptions): VeladClient {
+  const baseUrl = normalizeBaseUrl(options.baseUrl);
+  const doFetch = options.fetch ?? fetch;
+
+  return {
+    async createSession(input) {
+      validateCreateSessionInput(input);
+      const idempotencyKey = validateOptionalIdempotencyKey(input.idempotencyKey) ?? createSessionIdempotencyKey();
+      const url = new URL("sessions", baseUrl);
+      const body: Record<string, unknown> = {
+        backend: input.backend ?? "pi",
+        working_directory: input.workingDirectory,
+      };
+      if (input.title) body.title = input.title;
+      if (input.model) body.model = input.model;
+      if (input.agentConfig) body.agent_config = input.agentConfig;
+      if (input.metadata) body.metadata = input.metadata;
+
+      const response = await doFetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify(body),
+      });
+      return readCreateSessionResponse(response);
+    },
+    async getSession(sessionId) {
+      const url = new URL(`sessions/${encodeSessionId(sessionId)}`, baseUrl);
+      const response = await doFetch(url);
+      return readSessionResponse(response);
+    },
+    async getBackends() {
+      const url = new URL("backends", baseUrl);
+      const response = await doFetch(url);
+      return readBackendsResponse(response);
+    },
+    async updateAgentConfig({ sessionId, patch, idempotencyKey }) {
+      validateAgentConfigPatch(patch);
+      const headerIdempotencyKey = validateOptionalIdempotencyKey(idempotencyKey) ?? createConfigIdempotencyKey();
+      const url = new URL(`sessions/${encodeSessionId(sessionId)}/agent-config`, baseUrl);
+      const response = await doFetch(url, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": headerIdempotencyKey,
+        },
+        body: JSON.stringify(patch),
+      });
+      return readUpdateAgentConfigResponse(response);
+    },
+    transcriptUrl(sessionId, options) {
+      validateTranscriptWindowOptions(options);
+      const url = new URL(`sessions/${encodeSessionId(sessionId)}/views/transcript`, baseUrl);
+      if (options?.limit !== undefined) url.searchParams.set("limit", String(options.limit));
+      if (options?.direction) url.searchParams.set("direction", options.direction);
+      if (options?.anchorRowId) url.searchParams.set("anchor_row_id", options.anchorRowId);
+      if (options?.includeLive !== undefined) {
+        url.searchParams.set("include_live", String(options.includeLive));
+      }
+      return url;
+    },
+    activityUrl(sessionId, options) {
+      validateActivityWindowOptions(options);
+      const url = new URL(`sessions/${encodeSessionId(sessionId)}/views/activity`, baseUrl);
+      if (options?.limit !== undefined) url.searchParams.set("limit", String(options.limit));
+      if (options?.direction) url.searchParams.set("direction", options.direction);
+      if (options?.anchorItemId) url.searchParams.set("anchor_item_id", options.anchorItemId);
+      return url;
+    },
+    sessionEventStreamUrl(sessionId, afterId) {
+      const url = new URL(`sessions/${encodeSessionId(sessionId)}/events/stream`, baseUrl);
+      const validAfterId = validateAfterId(afterId);
+      if (validAfterId) url.searchParams.set("after_id", validAfterId);
+      return url;
+    },
+    async getTranscript(sessionId, options) {
+      const response = await doFetch(this.transcriptUrl(sessionId, options));
+      return readTranscriptViewResponse(response);
+    },
+    async getActivity(sessionId, options) {
+      const response = await doFetch(this.activityUrl(sessionId, options));
+      return readActivityViewResponse(response);
+    },
+    async sendUserMessage({ sessionId, text, content, idempotencyKey }) {
+      const url = new URL(`sessions/${encodeSessionId(sessionId)}/events`, baseUrl);
+      const headerIdempotencyKey = validateOptionalIdempotencyKey(idempotencyKey) ?? createIdempotencyKey();
+      const messageContent = content ?? (text ? [{ type: "text", text } as const] : []);
+      validateClientInputParts(messageContent);
+      const response = await doFetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": headerIdempotencyKey,
+        },
+        body: JSON.stringify({
+          events: [
+            {
+              type: "user.message",
+              content: messageContent,
+            } satisfies ClientInputEvent,
+          ],
+        }),
+      });
+      return readCommandAckResponse(response);
+    },
+  };
+}
+
+function validateOptionalIdempotencyKey(idempotencyKey: unknown) {
+  if (idempotencyKey === undefined) return undefined;
+  if (typeof idempotencyKey !== "string") {
+    throw invalidIdempotencyKey("Idempotency-Key must be a string");
+  }
+  return idempotencyKey;
+}
+
+function encodeSessionId(sessionId: unknown) {
+  if (typeof sessionId !== "string") {
+    throw invalidSessionId("session_id must be a string");
+  }
+  return encodeURIComponent(sessionId);
+}
+
+function validateAfterId(afterId: string | null | undefined) {
+  if (afterId === undefined || afterId === null) return undefined;
+  if (typeof afterId !== "string") {
+    throw invalidAfterId("after_id must be a string");
+  }
+  return afterId;
+}
+
+const backendKinds = new Set([
+  "codex",
+  "cloudagent",
+  "claude_code",
+  "pi",
+  "opencode",
+  "acp",
+  "qoder",
+]);
+
+function validateCreateSessionInput(input: unknown): asserts input is CreateSessionInput {
+  if (!isRecord(input)) {
+    throw invalidCreateSessionRequest("CreateSessionRequest must be an object");
+  }
+
+  const workingDirectory = input.workingDirectory;
+  if (typeof workingDirectory !== "string") {
+    throw invalidCreateSessionRequest("CreateSessionRequest requires working_directory");
+  }
+
+  const backend = input.backend ?? "pi";
+  if (typeof backend !== "string" || !backendKinds.has(backend)) {
+    throw invalidCreateSessionRequest("CreateSessionRequest backend must be a known BackendKind");
+  }
+
+  validateOptionalCreateSessionString(input, "title");
+  validateOptionalCreateSessionString(input, "model");
+
+  if (input.metadata !== undefined && !isRecord(input.metadata)) {
+    throw invalidCreateSessionRequest("CreateSessionRequest metadata must be an object");
+  }
+
+  if (input.agentConfig !== undefined) {
+    validateAgentConfigShape(input.agentConfig, invalidCreateSessionRequest, "CreateSessionRequest.agent_config");
+  }
+}
+
+function validateOptionalCreateSessionString(input: Record<string, unknown>, field: string) {
+  if (input[field] !== undefined && typeof input[field] !== "string") {
+    throw invalidCreateSessionRequest(`CreateSessionRequest ${field} must be a string`);
+  }
+}
+
+const agentConfigPatchKeys = new Set([
+  "model",
+  "reasoning_effort",
+  "permission_mode",
+  "feature_values",
+]);
+
+const permissionModes = new Set(["read_only", "auto", "auto_review", "full_access"]);
+const viewWindowDirections = new Set(["tail", "before", "after", "around"]);
+
+function validateAgentConfigPatch(patch: unknown): asserts patch is AgentConfigPatchWire {
+  if (!isRecord(patch)) {
+    throw invalidAgentConfigPatch("AgentConfig patch must be an object");
+  }
+
+  const keys = Object.keys(patch);
+  if (keys.length === 0) {
+    throw invalidAgentConfigPatch("AgentConfig patch requires at least one field");
+  }
+
+  validateAgentConfigShape(patch, invalidAgentConfigPatch, "AgentConfig patch");
+}
+
+function validateAgentConfigShape(
+  config: unknown,
+  invalid: ViewContractErrorFactory,
+  owner: string,
+): asserts config is AgentConfigWire {
+  if (!isRecord(config)) {
+    throw invalid(`${owner} must be an object`);
+  }
+
+  const keys = Object.keys(config);
+  for (const key of keys) {
+    if (!agentConfigPatchKeys.has(key)) {
+      throw invalid(`${owner} does not support ${key}`);
+    }
+    if (config[key] === undefined) {
+      throw invalid(`${owner} ${key} must not be undefined`);
+    }
+    validateAgentConfigValue(key, config[key], invalid, owner);
+  }
+}
+
+function validateAgentConfigValue(
+  key: string,
+  value: unknown,
+  invalid: ViewContractErrorFactory,
+  owner: string,
+) {
+  switch (key) {
+    case "model":
+    case "reasoning_effort":
+      if (value !== null && typeof value !== "string") {
+        throw invalid(`${owner} ${key} must be a string`);
+      }
+      return;
+    case "permission_mode":
+      if (value !== null && (typeof value !== "string" || !permissionModes.has(value))) {
+        throw invalid(
+          `${owner} permission_mode must be read_only, auto, auto_review, or full_access`,
+        );
+      }
+      return;
+    case "feature_values":
+      if (!isRecord(value)) {
+        throw invalid(`${owner} feature_values must be an object`);
+      }
+      return;
+  }
+}
+
+function validateClientInputParts(parts: readonly ClientInputPart[]) {
+  for (const part of parts) {
+    validateClientInputPart(part);
+  }
+}
+
+function validateClientInputPart(part: unknown): asserts part is ClientInputPart {
+  if (!isRecord(part)) {
+    throw invalidInputPart("InputPart must be an object");
+  }
+  switch (part.type) {
+    case "text":
+      requireInputPartString(part, "text");
+      return;
+    case "file_ref":
+    case "image_ref":
+      requireInputPartString(part, "uri");
+      return;
+    case "image":
+      requireInputPartString(part, "data");
+      requireInputPartString(part, "mime_type");
+      return;
+    default:
+      throw invalidInputPart("InputPart.type must be text, file_ref, image_ref, or image");
+  }
+}
+
+function requireInputPartString(part: Record<string, unknown>, field: string) {
+  if (typeof part[field] !== "string") {
+    throw invalidInputPart(`InputPart.${String(part.type)} requires ${field}`);
+  }
+}
+
+function validateTranscriptWindowOptions(options: TranscriptWindowOptions | undefined) {
+  const unsupportedKey = firstUnsupportedTranscriptWindowOption(options);
+  if (unsupportedKey) {
+    throw new VeladClientError(
+      "invalid_transcript_window_options",
+      `unsupported transcript window option: ${unsupportedKey}`,
+    );
+  }
+  validateViewWindowLimit(options?.limit, "invalid_transcript_window_options");
+  validateViewWindowDirection(options?.direction, "invalid_transcript_window_options");
+  validateOptionalViewWindowString(
+    options?.anchorRowId,
+    "anchorRowId",
+    "invalid_transcript_window_options",
+  );
+  validateOptionalViewWindowBoolean(
+    options?.includeLive,
+    "includeLive",
+    "invalid_transcript_window_options",
+  );
+  if (options?.direction) {
+    if (options.direction === "tail") {
+      if (options.anchorRowId) {
+        throw new VeladClientError(
+          "invalid_transcript_window_options",
+          "direction=tail cannot include anchorRowId",
+        );
+      }
+    } else if (!options.anchorRowId) {
+      throw new VeladClientError(
+        "invalid_transcript_window_options",
+        `anchorRowId is required when direction=${options.direction}`,
+      );
+    }
+    return;
+  }
+  if (options?.anchorRowId) {
+    throw new VeladClientError(
+      "invalid_transcript_window_options",
+      "anchorRowId requires direction",
+    );
+  }
+}
+
+function validateActivityWindowOptions(options: ActivityWindowOptions | undefined) {
+  validateViewWindowLimit(options?.limit, "invalid_activity_window_options");
+  validateViewWindowDirection(options?.direction, "invalid_activity_window_options");
+  validateOptionalViewWindowString(
+    options?.anchorItemId,
+    "anchorItemId",
+    "invalid_activity_window_options",
+  );
+  if (!options?.direction) {
+    if (options?.anchorItemId) {
+      throw new VeladClientError(
+        "invalid_activity_window_options",
+        "anchorItemId requires direction",
+      );
+    }
+    return;
+  }
+  if (options.direction === "tail") {
+    if (options.anchorItemId) {
+      throw new VeladClientError(
+        "invalid_activity_window_options",
+        "direction=tail cannot include anchorItemId",
+      );
+    }
+    return;
+  }
+  if (!options.anchorItemId) {
+    throw new VeladClientError(
+      "invalid_activity_window_options",
+      `anchorItemId is required when direction=${options.direction}`,
+    );
+  }
+}
+
+function validateViewWindowDirection(direction: string | undefined, code: string) {
+  if (direction === undefined) return;
+  if (typeof direction !== "string" || !viewWindowDirections.has(direction)) {
+    throw new VeladClientError(code, "direction must be tail, before, after, or around");
+  }
+}
+
+function validateOptionalViewWindowString(value: string | undefined, field: string, code: string) {
+  if (value === undefined) return;
+  if (typeof value !== "string") {
+    throw new VeladClientError(code, `${field} must be a string`);
+  }
+}
+
+function validateOptionalViewWindowBoolean(
+  value: boolean | undefined,
+  field: string,
+  code: string,
+) {
+  if (value === undefined) return;
+  if (typeof value !== "boolean") {
+    throw new VeladClientError(code, `${field} must be a boolean`);
+  }
+}
+
+function validateViewWindowLimit(limit: number | undefined, code: string) {
+  if (limit === undefined) return;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 500) {
+    throw new VeladClientError(code, "limit must be an integer between 1 and 500");
+  }
+}
+
+const transcriptWindowOptionKeys = new Set([
+  "limit",
+  "direction",
+  "anchorRowId",
+  "includeLive",
+]);
+
+function firstUnsupportedTranscriptWindowOption(options: TranscriptWindowOptions | undefined) {
+  if (!options) return false;
+  return Object.keys(options).find((key) => !transcriptWindowOptionKeys.has(key));
+}
+
+function normalizeBaseUrl(baseUrl: string) {
+  const withSlash = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  if (/^[a-z][a-z\d+\-.]*:\/\//i.test(withSlash)) {
+    return withSlash;
+  }
+
+  const origin =
+    typeof window !== "undefined" && typeof window.location?.origin === "string"
+      ? window.location.origin
+      : "http://localhost";
+  return new URL(withSlash, origin).toString();
+}
+
+async function readJsonResponse<T>(response: Response): Promise<T> {
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!response.ok) {
+    const message =
+      typeof data?.error?.message === "string"
+        ? data.error.message
+        : `velad request failed with ${response.status}`;
+    throw new VeladClientError("velad_request_failed", message, data);
+  }
+  return data as T;
+}
+
+async function readCreateSessionResponse(response: Response): Promise<CreateSessionWireResponse> {
+  return parseCreateSessionWireResponse(await readJsonResponse<unknown>(response));
+}
+
+export function parseCreateSessionWireResponse(data: unknown): CreateSessionWireResponse {
+  if (!isRecord(data)) {
+    throw invalidCreateSessionResponse("CreateSessionResponse must be an object");
+  }
+  return {
+    session: requiredSessionObject(data, "CreateSessionResponse", invalidCreateSessionResponse),
+    cursor: requiredViewEventCursor(data, "cursor", "CreateSessionResponse", invalidCreateSessionResponse),
+  };
+}
+
+async function readUpdateAgentConfigResponse(
+  response: Response,
+): Promise<UpdateAgentConfigWireResponse> {
+  return parseUpdateAgentConfigWireResponse(await readJsonResponse<unknown>(response));
+}
+
+export function parseUpdateAgentConfigWireResponse(
+  data: unknown,
+): UpdateAgentConfigWireResponse {
+  if (!isRecord(data)) {
+    throw invalidUpdateAgentConfigResponse("UpdateAgentConfigResponse must be an object");
+  }
+  return {
+    session: requiredSessionObject(
+      data,
+      "UpdateAgentConfigResponse",
+      invalidUpdateAgentConfigResponse,
+    ),
+    effective_after: requiredEffectiveAfter(data),
+    cursor: requiredViewEventCursor(
+      data,
+      "cursor",
+      "UpdateAgentConfigResponse",
+      invalidUpdateAgentConfigResponse,
+    ),
+  };
+}
+
+async function readSessionResponse(response: Response): Promise<SessionWireResponse> {
+  return parseSessionWireResponse(await readJsonResponse<unknown>(response));
+}
+
+export function parseSessionWireResponse(data: unknown): SessionWireResponse {
+  if (!isRecord(data)) {
+    throw invalidSessionResponse("SessionResponse must be an object");
+  }
+  return {
+    session: requiredSessionObject(data, "SessionResponse", invalidSessionResponse),
+  };
+}
+
+async function readBackendsResponse(response: Response): Promise<BackendsWireResponse> {
+  return parseBackendsWireResponse(await readJsonResponse<unknown>(response));
+}
+
+export function parseBackendsWireResponse(data: unknown): BackendsWireResponse {
+  if (!isRecord(data)) {
+    throw invalidBackendsResponse("BackendsResponse must be an object");
+  }
+  return {
+    backends: requiredViewArray(
+      data,
+      "backends",
+      "BackendsResponse",
+      invalidBackendsResponse,
+    ) as BackendWire[],
+  };
+}
+
+async function readTranscriptViewResponse(response: Response): Promise<ChatTranscriptWireView> {
+  return parseChatTranscriptWireView(await readJsonResponse<unknown>(response));
+}
+
+export function parseChatTranscriptWireView(data: unknown): ChatTranscriptWireView {
+  if (!isRecord(data)) {
+    throw invalidTranscriptView("ChatTranscriptView must be an object");
+  }
+  return {
+    session_id: requiredViewString(data, "session_id", "ChatTranscriptView", invalidTranscriptView),
+    rows: requiredViewArray(data, "rows", "ChatTranscriptView", invalidTranscriptView) as TranscriptWireRow[],
+    window: parseTranscriptWindow(data.window, invalidTranscriptView),
+    cursor: requiredViewEventCursor(data, "cursor", "ChatTranscriptView", invalidTranscriptView),
+  };
+}
+
+async function readActivityViewResponse(response: Response): Promise<ActivityWireView> {
+  return parseActivityWireView(await readJsonResponse<unknown>(response));
+}
+
+export function parseActivityWireView(data: unknown): ActivityWireView {
+  if (!isRecord(data)) {
+    throw invalidActivityView("ActivityShelfView must be an object");
+  }
+  return {
+    session_id: requiredViewString(data, "session_id", "ActivityShelfView", invalidActivityView),
+    items: requiredViewArray(data, "items", "ActivityShelfView", invalidActivityView) as ActivityWireItem[],
+    window: parseActivityWindow(data.window, invalidActivityView),
+    cursor: requiredViewEventCursor(data, "cursor", "ActivityShelfView", invalidActivityView),
+  };
+}
+
+async function readCommandAckResponse(response: Response): Promise<CommandAckWire> {
+  return parseCommandAckWire(await readJsonResponse<unknown>(response));
+}
+
+export function parseCommandAckWire(data: unknown): CommandAckWire {
+  if (!isRecord(data)) {
+    throw invalidCommandAck("CommandAck must be an object");
+  }
+
+  switch (data.status) {
+    case "accepted":
+      return {
+        status: "accepted",
+        command_id: requiredStringField(data, "command_id"),
+        session_id: requiredStringField(data, "session_id"),
+        ...(optionalStringField(data, "turn_id")
+          ? { turn_id: optionalStringField(data, "turn_id") }
+          : {}),
+        cursor: requiredEventCursor(data, "cursor"),
+      };
+    case "queued":
+      return {
+        status: "queued",
+        command_id: requiredStringField(data, "command_id"),
+        session_id: requiredStringField(data, "session_id"),
+        queued_message_id: requiredStringField(data, "queued_message_id"),
+        cursor: requiredEventCursor(data, "cursor"),
+      };
+    case "rejected": {
+      const cursor = optionalEventCursor(data, "cursor");
+      return {
+        status: "rejected",
+        code: requiredStringField(data, "code") as CommandRejectionCodeWire,
+        message: requiredStringField(data, "message"),
+        ...(optionalStringField(data, "command_id")
+          ? { command_id: optionalStringField(data, "command_id") }
+          : {}),
+        ...(optionalStringField(data, "session_id")
+          ? { session_id: optionalStringField(data, "session_id") }
+          : {}),
+        ...(cursor ? { cursor } : {}),
+      };
+    }
+    default:
+      throw invalidCommandAck("CommandAck.status must be accepted, queued, or rejected");
+  }
+}
+
+function requiredStringField(data: Record<string, unknown>, field: string) {
+  const value = data[field];
+  if (typeof value !== "string" || value.length === 0) {
+    throw invalidCommandAck(`CommandAck.${String(data.status)} requires ${field}`);
+  }
+  return value;
+}
+
+function optionalStringField(data: Record<string, unknown>, field: string) {
+  const value = data[field];
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string" || value.length === 0) {
+    throw invalidCommandAck(`CommandAck.${String(data.status)} ${field} must be a string`);
+  }
+  return value;
+}
+
+function requiredEventCursor(data: Record<string, unknown>, field: string) {
+  const cursor = optionalEventCursor(data, field);
+  if (!cursor) {
+    throw invalidCommandAck(`CommandAck.${String(data.status)} requires ${field}`);
+  }
+  return cursor;
+}
+
+function optionalEventCursor(
+  data: Record<string, unknown>,
+  field: string,
+): EventCursorWire | undefined {
+  const value = data[field];
+  if (value === undefined || value === null) return undefined;
+  if (!isRecord(value)) {
+    throw invalidCommandAck(`CommandAck.${String(data.status)} ${field} must be an object`);
+  }
+  const eventId = value.event_id;
+  const epoch = value.epoch;
+  const seq = value.seq;
+  if (
+    typeof eventId !== "string" ||
+    eventId.length === 0 ||
+    typeof epoch !== "number" ||
+    !Number.isInteger(epoch) ||
+    typeof seq !== "number" ||
+    !Number.isInteger(seq)
+  ) {
+    throw invalidCommandAck(
+      `CommandAck.${String(data.status)} ${field} must include event_id, epoch, and seq`,
+    );
+  }
+  return { event_id: eventId, epoch, seq };
+}
+
+type ViewContractErrorFactory = (message: string) => VeladClientError;
+
+function requiredSessionObject(
+  data: Record<string, unknown>,
+  owner: string,
+  invalid: ViewContractErrorFactory,
+) {
+  const session = data.session;
+  if (!isRecord(session)) {
+    throw invalid(`${owner} requires session`);
+  }
+  return session as unknown as SessionWire;
+}
+
+function requiredEffectiveAfter(data: Record<string, unknown>) {
+  const value = data.effective_after;
+  if (value !== "current_session" && value !== "next_turn") {
+    throw invalidUpdateAgentConfigResponse(
+      "UpdateAgentConfigResponse.effective_after must be current_session or next_turn",
+    );
+  }
+  return value;
+}
+
+function requiredViewString(
+  data: Record<string, unknown>,
+  field: string,
+  owner: string,
+  invalid: ViewContractErrorFactory,
+) {
+  const value = data[field];
+  if (typeof value !== "string") {
+    throw invalid(`${owner} requires ${field}`);
+  }
+  return value;
+}
+
+function requiredViewArray(
+  data: Record<string, unknown>,
+  field: string,
+  owner: string,
+  invalid: ViewContractErrorFactory,
+) {
+  const value = data[field];
+  if (!Array.isArray(value)) {
+    throw invalid(`${owner} requires ${field}`);
+  }
+  return value;
+}
+
+function requiredViewEventCursor(
+  data: Record<string, unknown>,
+  field: string,
+  owner: string,
+  invalid: ViewContractErrorFactory,
+) {
+  return parseViewEventCursor(data[field], `${owner}.${field}`, invalid);
+}
+
+function parseViewEventCursor(
+  value: unknown,
+  owner: string,
+  invalid: ViewContractErrorFactory,
+): EventCursorWire {
+  if (!isRecord(value)) {
+    throw invalid(`${owner} must be an object`);
+  }
+  const eventId = value.event_id;
+  const epoch = value.epoch;
+  const seq = value.seq;
+  if (
+    typeof eventId !== "string" ||
+    eventId.length === 0 ||
+    typeof epoch !== "number" ||
+    !Number.isInteger(epoch) ||
+    typeof seq !== "number" ||
+    !Number.isInteger(seq)
+  ) {
+    throw invalid(`${owner} must include event_id, epoch, and seq`);
+  }
+  return { event_id: eventId, epoch, seq };
+}
+
+function parseTranscriptWindow(
+  value: unknown,
+  invalid: ViewContractErrorFactory,
+): TranscriptWindow {
+  const window = parseViewWindow(value, "ChatTranscriptView.window", invalid);
+  return {
+    ...optionalNullableWindowString(window, "first_row_id", "ChatTranscriptView.window", invalid),
+    ...optionalNullableWindowString(window, "last_row_id", "ChatTranscriptView.window", invalid),
+    ...optionalNullableWindowString(window, "anchor_row_id", "ChatTranscriptView.window", invalid),
+    has_older: window.has_older,
+    has_newer: window.has_newer,
+  };
+}
+
+function parseActivityWindow(value: unknown, invalid: ViewContractErrorFactory): ActivityWindow {
+  const window = parseViewWindow(value, "ActivityShelfView.window", invalid);
+  return {
+    ...optionalNullableWindowString(window, "first_item_id", "ActivityShelfView.window", invalid),
+    ...optionalNullableWindowString(window, "last_item_id", "ActivityShelfView.window", invalid),
+    ...optionalNullableWindowString(window, "anchor_item_id", "ActivityShelfView.window", invalid),
+    has_older: window.has_older,
+    has_newer: window.has_newer,
+  };
+}
+
+function parseViewWindow(value: unknown, owner: string, invalid: ViewContractErrorFactory) {
+  if (!isRecord(value)) {
+    throw invalid(`${owner} must be an object`);
+  }
+  const hasOlder = value.has_older;
+  const hasNewer = value.has_newer;
+  if (typeof hasOlder !== "boolean" || typeof hasNewer !== "boolean") {
+    throw invalid(`${owner} requires has_older and has_newer`);
+  }
+  return { ...value, has_older: hasOlder, has_newer: hasNewer };
+}
+
+function optionalNullableWindowString(
+  data: Record<string, unknown>,
+  field: string,
+  owner: string,
+  invalid: ViewContractErrorFactory,
+) {
+  const value = data[field];
+  if (value === undefined) return {};
+  if (value === null || typeof value === "string") return { [field]: value };
+  throw invalid(`${owner}.${field} must be a string or null`);
+}
+
+function invalidCommandAck(message: string) {
+  return new VeladClientError("invalid_command_ack", message);
+}
+
+function invalidInputPart(message: string) {
+  return new VeladClientError("invalid_input_part", message);
+}
+
+function invalidIdempotencyKey(message: string) {
+  return new VeladClientError("invalid_idempotency_key", message);
+}
+
+function invalidSessionId(message: string) {
+  return new VeladClientError("invalid_session_id", message);
+}
+
+function invalidAfterId(message: string) {
+  return new VeladClientError("invalid_after_id", message);
+}
+
+function invalidCreateSessionRequest(message: string) {
+  return new VeladClientError("invalid_create_session_request", message);
+}
+
+function invalidAgentConfigPatch(message: string) {
+  return new VeladClientError("invalid_agent_config_patch", message);
+}
+
+function invalidCreateSessionResponse(message: string) {
+  return new VeladClientError("invalid_create_session_response", message);
+}
+
+function invalidUpdateAgentConfigResponse(message: string) {
+  return new VeladClientError("invalid_update_agent_config_response", message);
+}
+
+function invalidSessionResponse(message: string) {
+  return new VeladClientError("invalid_session_response", message);
+}
+
+function invalidBackendsResponse(message: string) {
+  return new VeladClientError("invalid_backends_response", message);
+}
+
+function invalidTranscriptView(message: string) {
+  return new VeladClientError("invalid_transcript_view", message);
+}
+
+function invalidActivityView(message: string) {
+  return new VeladClientError("invalid_activity_view", message);
+}
+
+export class VeladClientError extends Error {
+  constructor(
+    public readonly code: string,
+    message: string,
+    public readonly detail?: unknown,
+  ) {
+    super(message);
+    this.name = "VeladClientError";
+  }
+}
+
+export async function imageFileToInputPart(file: Pick<File, "arrayBuffer" | "type">) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  return {
+    type: "image",
+    data: bytesToBase64(bytes),
+    mime_type: file.type || "application/octet-stream",
+  } satisfies ClientInputPart;
+}
+
+export function createIdempotencyKey() {
+  return createRandomKey("cmd");
+}
+
+export function createSessionIdempotencyKey() {
+  return createRandomKey("ses");
+}
+
+export function createConfigIdempotencyKey() {
+  return createRandomKey("cfg");
+}
+
+function createRandomKey(prefix: string) {
+  const bytes = new Uint8Array(16);
+  if (globalThis.crypto?.getRandomValues) {
+    globalThis.crypto.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
+  }
+  const suffix = Array.from(bytes, (byte) => byte.toString(36).padStart(2, "0")).join("");
+  return `${prefix}_${suffix}`;
+}
+
+function bytesToBase64(bytes: Uint8Array) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  let output = "";
+  for (let index = 0; index < bytes.length; index += 3) {
+    const first = bytes[index] ?? 0;
+    const second = bytes[index + 1] ?? 0;
+    const third = bytes[index + 2] ?? 0;
+    const packed = (first << 16) | (second << 8) | third;
+    output += alphabet[(packed >> 18) & 63];
+    output += alphabet[(packed >> 12) & 63];
+    output += index + 1 < bytes.length ? alphabet[(packed >> 6) & 63] : "=";
+    output += index + 2 < bytes.length ? alphabet[packed & 63] : "=";
+  }
+  return output;
+}
+
+export function parseSseJsonFrames(chunk: string): unknown[] {
+  const frames: unknown[] = [];
+  for (const frame of chunk.split(/\n\n+/)) {
+    const dataLines = frame
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice("data:".length).trimStart());
+    if (dataLines.length === 0) continue;
+    frames.push(JSON.parse(dataLines.join("\n")));
+  }
+  return frames;
+}

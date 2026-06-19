@@ -1,0 +1,305 @@
+---
+title: Client API Contract
+description: 外部客户端、SDK、移动端和 WebUI 应依赖的稳定 API 面。
+---
+
+# Client API Contract
+
+velaChat 的对外 API 面向 desktop、mobile、Web、embed 和 SDK。Client-facing wire contract 只以 `public/openapi/velachat.v1.yaml` 为准；本文解释客户端应该如何组合这些资源。
+
+外部客户端不需要知道 Codex、Pi、Claude 或 OpenCode 的 provider 方法。Provider 差异必须被 daemon 收敛成稳定的 session、backend、request 和 read model。
+
+## Client Model
+
+客户端应该围绕四类资源建模：
+
+| Resource | 作用 | 客户端用途 |
+| --- | --- | --- |
+| `Backend` / `BackendStatusView` | 创建 session 前的能力发现 | 渲染 backend picker、model selector、thinking selector、permission selector、feature toggles |
+| `SessionView` | 单个 session 当前权威状态 | 渲染 title、status、当前 `agent_config`、runtime info、可用操作 |
+| `ChatTranscriptView` | Chat renderer 的窄投影 | 渲染消息列表、streaming assistant row、activity marker |
+| `PendingRequestsView` | 权限、确认、自定义输入 | 渲染 permission dock / mobile approval sheet |
+
+客户端不应该直接从 provider raw event、diagnostic trace 或 session timeline 推导普通 UI 状态。
+
+## Agent Config
+
+模型、思考等级、权限模式和功能开关统一进入 `agent_config`：
+
+```json
+{
+  "backend": "codex",
+  "agent_config": {
+    "model": "gpt-5",
+    "reasoning_effort": "high",
+    "permission_mode": "auto",
+    "feature_values": {
+      "fast_mode": true,
+      "plan_mode": false
+    }
+  }
+}
+```
+
+`agent_config` 是 session 当前默认配置。每个 turn 开始时，runtime MUST 冻结一份 `resolved_agent_config` 写入 `turn.started`，表示该 turn 实际使用的配置。
+
+### 生效规则
+
+- `POST /sessions` 可以带初始 `agent_config`。
+- `PATCH /sessions/{session_id}/agent-config` 修改当前 session 默认配置。
+- 正在运行的 turn 不会被 retroactively 修改。
+- 修改模型、思考等级、权限模式或 feature 后，下一次 input command 使用新配置。
+- 如果当前没有 running turn，返回的 `effective_after` 可以是 `current_session`。
+- 如果当前有 running turn，返回的 `effective_after` 应为 `next_turn`。
+
+## Backend Discovery
+
+客户端必须从 Backends API 获取可选项，不得硬编码 provider 私有词汇。
+
+```json
+{
+  "backend": {
+    "kind": "codex",
+    "status": "available",
+    "models": [
+      {
+        "id": "gpt-5",
+        "label": "GPT-5",
+        "is_default": true,
+        "reasoning_efforts": [
+          { "id": "medium", "label": "Medium", "is_default": true },
+          { "id": "high", "label": "High" }
+        ]
+      }
+    ],
+    "permission_modes": [
+      { "id": "read_only", "label": "Read only" },
+      { "id": "auto", "label": "Auto", "is_default": true },
+      { "id": "full_access", "label": "Full access" }
+    ],
+    "features": [
+      { "type": "toggle", "id": "fast_mode", "label": "Fast", "default_value": false },
+      { "type": "toggle", "id": "plan_mode", "label": "Plan", "default_value": false }
+    ]
+  }
+}
+```
+
+Backend discovery 是创建前的能力面；SessionView 是创建后的状态面。两者不能互相替代。
+
+## Session Capabilities
+
+SessionView SHOULD expose 当前 session 的能力快照，而不是暴露 provider 内部方法表。
+
+这采用 Paseo 式折中：daemon 内部可以有 provider SPI，例如
+`getRuntimeInfo`、`getAvailableModes`、`setMode`、`respondToPermission`、
+`interrupt`、`revertConversation`；client-facing API 不复制这张方法表。
+这些能力必须被 daemon 收敛成稳定的 `runtime_info`、`operations`、
+`agent_config`、`PendingRequestsView` 和 Input Event API。这样桌面、Web、
+移动端只依赖一套 OpenAPI wire contract，Codex、Pi、Claude、OpenCode
+或后续 in-process app server 都只是 adapter 实现细节。
+
+推荐形状：
+
+```json
+{
+  "session": {
+    "id": "ses_123",
+    "backend": "codex",
+    "status": "running",
+    "agent_config": {
+      "model": "gpt-5",
+      "reasoning_effort": "high",
+      "permission_mode": "auto",
+      "feature_values": {
+        "fast_mode": true
+      }
+    },
+    "runtime_info": {
+      "provider": "codex",
+      "native_session_id": "thread_abc",
+      "model": "gpt-5",
+      "reasoning_effort": "high",
+      "permission_mode": "auto"
+    },
+    "operations": {
+      "send_message": { "available": false, "reason": "turn_running" },
+      "cancel": { "available": true },
+      "update_agent_config": { "available": true, "effective_after": "next_turn" },
+      "respond_to_request": { "available": true },
+      "rewind_conversation": { "available": false, "reason": "unsupported_by_backend" }
+    }
+  }
+}
+```
+
+`operations` 表达当前是否能做某个动作和不可用原因。它不是 provider SPI；client 不能从它推断要调用 `setModel()` 或其他 provider-native 方法。
+
+`runtime_info.native_session_id` 是 opaque handle，只用于显示和诊断；client
+不得把它拼进 provider-native request。需要执行动作时，仍然调用 velaChat
+的 session API。
+
+## Input And Requests
+
+用户消息、权限响应、自定义工具结果都通过 Input Event API 进入 daemon。
+
+| 用户意图 | API |
+| --- | --- |
+| 发送消息 | `POST /sessions/{session_id}/events` with `user.message` |
+| 响应工具确认 | `POST /sessions/{session_id}/events` with `user.tool_confirmation` |
+| 回答自定义输入 | `POST /sessions/{session_id}/events` with `user.request_answer` |
+| 取消当前 turn | `POST /sessions/{session_id}/cancel` |
+
+Pending request 的展示只读 `PendingRequestsView`。客户端不应该从 transcript text 或 timeline item 猜测“现在需要批准”。
+
+## Streaming And Recovery
+
+客户端的推荐流程：
+
+1. Fetch `SessionView`。
+2. Fetch `ChatTranscriptView` tail window。
+3. Fetch `PendingRequestsView`。
+4. Subscribe session SSE。
+5. 根据 SSE 的 cursor、affected views 或 reset 指令刷新对应 read model。
+
+SSE 是可恢复更新通道，不是普通 UI 的唯一事实源。断线、cursor 过期或检测到 gap 时，客户端必须重新 fetch read models。
+
+## Provider SPI Boundary
+
+这些是 daemon 内部 SPI，不属于对外 API：
+
+- `setModel`
+- `setThinkingOption`
+- `setFeature`
+- `respondToPermission`
+- `streamHistory`
+- provider raw JSONL / JSON-RPC
+- provider-native sandbox / approval 字段
+
+外部 API 只暴露 OpenAPI 定义的 resources、commands、read models 和 DTO。
+
+## Requirements
+
+### Requirement: OpenAPI 是唯一 wire contract
+
+External clients MUST generate or validate wire DTOs from `public/openapi/velachat.v1.yaml`.
+
+#### Scenario: SDK 生成类型
+
+- **WHEN** SDK 需要更新 session 或 backend 类型
+- **THEN** 它从 OpenAPI 生成 wire types
+
+#### Scenario: 手写 client 校验 command ack
+
+- **WHEN** client 处理 `POST /sessions/{session_id}/events` response
+- **THEN** 它必须按 OpenAPI `CommandAck.oneOf` 和 `status` discriminator 校验分支 required 字段
+- **AND** `accepted` / `queued` 的 `cursor` 必须是完整 `EventCursor`
+- **AND** 缺少 `queued_message_id` 的 `queued` ack 视为 wire contract violation，而不是普通 pending 状态
+- **AND** MDX 示例只作为行为解释
+
+#### Scenario: 手写 client 校验 input parts
+
+- **WHEN** client 发送 `user.message` content blocks
+- **THEN** 它必须按 OpenAPI `InputPart.oneOf` 和 `type` discriminator 校验分支 required 字段
+- **AND** 缺少 `mime_type` 的 inline image、缺少 `uri` 的 file/image ref、缺少 `text` 的 text part 都必须在发出 HTTP 请求前失败
+- **AND** UI 上传、拖放、粘贴和普通 JavaScript 调用都不能绕过这个 wire boundary
+
+#### Scenario: 手写 client 校验 create session request shape
+
+- **WHEN** client 发送 `POST /sessions`
+- **THEN** 它必须按 OpenAPI `CreateSessionRequest` 校验 request object shape
+- **AND** `working_directory` 必须是 string，`backend` 必须是 OpenAPI `BackendKind`
+- **AND** `title` / deprecated `model` 如果存在必须是 string，`metadata` 如果存在必须是 object
+- **AND** 嵌套 `agent_config` 必须复用 AgentConfig 字段名、类型和枚举校验
+- **AND** 这些错误必须在发出 HTTP 请求前失败
+
+#### Scenario: 手写 client 校验 view window query options
+
+- **WHEN** client 请求 `ChatTranscriptView` 或 `ActivityShelfView`
+- **THEN** 它必须按 OpenAPI shared `Limit` 参数校验 `limit`
+- **AND** 非 integer、小于 1、大于 500 的 `limit` 都必须在发出 HTTP 请求前失败
+- **AND** `direction` 必须是 `tail` / `before` / `after` / `around`
+- **AND** `anchor_row_id` / `anchor_item_id` 必须是 string，`include_live` 必须是 boolean
+- **AND** 这只覆盖 OpenAPI 已经明确的 query 参数规则，不在这里决定分页预取或虚拟列表策略
+
+#### Scenario: 手写 client 校验 path/query string 参数
+
+- **WHEN** client 构造包含 `session_id` path 参数的 URL
+- **THEN** `session_id` 必须按 OpenAPI parameter schema 校验为 string
+- **WHEN** client 构造包含 `after_id` query 参数的 URL
+- **THEN** `after_id` 如果存在必须按 OpenAPI parameter schema 校验为 string
+- **AND** 这些错误必须在 URL 构造或 HTTP 请求前失败
+
+#### Scenario: 手写 client 校验 mutating command header 参数
+
+- **WHEN** client 显式传入 `Idempotency-Key` header 值
+- **THEN** 它必须按 OpenAPI parameter schema 校验为 string
+- **AND** 非 string 的 `idempotencyKey` 必须在发出 HTTP 请求前失败
+- **AND** client 可以继续为未显式传入 key 的 mutation 自动生成 string key
+- **AND** 这只覆盖 header wire type，不在 client 层猜测 key 的格式、过期时间或 replay 语义
+
+#### Scenario: 手写 client 校验 agent config patch shape
+
+- **WHEN** client 发送 `PATCH /sessions/{session_id}/agent-config`
+- **THEN** 它必须按 OpenAPI `UpdateSessionAgentConfigRequest` 校验 request object shape
+- **AND** 空 patch、未知字段、值为 `undefined` 而会被 JSON 丢弃的字段都必须在发出 HTTP 请求前失败
+- **AND** 明确的字段类型和枚举也必须被校验，例如 `model`/`reasoning_effort` 为 string、`permission_mode` 为 OpenAPI 枚举、`feature_values` 为 object
+- **AND** 这只覆盖明确的 object-shape 规则，不在这里猜测 provider-specific config 语义
+
+#### Scenario: 手写 client 校验 session mutation response
+
+- **WHEN** client 处理 `POST /sessions` response
+- **THEN** 它必须校验 OpenAPI required `session` 和完整 `EventCursor`
+- **WHEN** client 处理 `PATCH /sessions/{session_id}/agent-config` response
+- **THEN** 它必须校验 OpenAPI required `session`、`effective_after` enum 和完整 `EventCursor`
+- **AND** 缺失 `cursor` 或未知 `effective_after` 视为 wire contract violation
+
+#### Scenario: 手写 client 校验 query response envelope
+
+- **WHEN** client 处理 `GET /sessions/{session_id}` response
+- **THEN** 它必须校验 OpenAPI required `session`
+- **WHEN** client 处理 `GET /backends` response
+- **THEN** 它必须校验 OpenAPI required `backends` array
+- **AND** 缺失顶层 envelope 字段视为 wire contract violation
+
+#### Scenario: 手写 client 校验 read-model envelope
+
+- **WHEN** client 处理 `ChatTranscriptView` 或 `ActivityShelfView`
+- **THEN** 它必须按 OpenAPI required 字段校验 view envelope
+- **AND** `session_id`、`window`、完整 `EventCursor` 都必须存在
+- **AND** `window.has_older` / `window.has_newer` 必须是 boolean
+- **AND** 缺失 envelope 字段视为 wire contract violation，而不是交给 UI fallback 猜测
+
+### Requirement: Provider 差异不泄露到客户端
+
+Provider-specific control methods MUST stay inside daemon/backend adapters.
+
+#### Scenario: Codex 切换模型
+
+- **WHEN** user changes model in UI
+- **THEN** client PATCHes `agent_config.model`
+- **AND** daemon maps it to Codex app-server internally
+- **AND** client never calls `setModel`
+
+### Requirement: 配置变化通过 SessionView 可观察
+
+Session config changes MUST be visible through SessionView/read model updates.
+
+#### Scenario: running turn 中切换 thinking
+
+- **GIVEN** session has a running turn
+- **WHEN** client PATCHes `reasoning_effort`
+- **THEN** SessionView shows the new session default
+- **AND** current turn keeps its existing `resolved_agent_config`
+- **AND** response indicates `effective_after: "next_turn"`
+
+## Open Questions
+
+这些点还不够确定，先记录，不直接改代码：
+
+- 是否在手写 client 中逐字段校验 `ChatTranscriptRow` / `ActivityShelfItem` / `TranscriptPart`。OpenAPI 已经定义 required 字段，但一次性严格化可能暴露历史 fixture、projection fallback 或第三方 client 的兼容问题。
+- 是否在手写 client 中逐字段校验 `Session` / `SessionSummary`。目前只校验 session response envelope；完整校验会影响很多测试 fixture，需要先确认 daemon 输出和 OpenAPI 完全一致。
+- 是否在手写 client 中逐字段校验 `Backend` / `Backend.capabilities` / `BackendFeature`。OpenAPI 已经定义 required 字段，但当前 fixture 和不同 provider catalog 仍在收敛，先只校验 `/backends` 顶层 envelope。
+- `AgentConfig.model` / `reasoning_effort` / `permission_mode` 是否允许 `null` 表示清空配置。当前 TypeScript 类型历史上允许 `null`，但 OpenAPI `AgentConfig` 没有声明 nullable；在语义确定前，手写 client 保留这些字段的 `null` 兼容，同时校验非 null 值的 OpenAPI 类型和枚举。
+- 是否为所有 read models 引入 generated validator。长期更像 Paseo 的成熟路线是统一 schema boundary；短期若手写，容易和 OpenAPI 漂移。
+- 是否把 SSE event 也升级成严格 `VelaEvent` parser。当前为了断线恢复和未知 provider event 的容错仍偏宽松，具体收紧范围需要结合真实 Codex/ACP/Pi 录制样本确认。
