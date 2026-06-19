@@ -331,6 +331,50 @@ test("streaming assistant markdown split items keep stable head fingerprints", (
   assert.notEqual(firstItems[1]?.fingerprint, secondItems[1]?.fingerprint);
 });
 
+test("assistant markdown split item fingerprints include settled labels", () => {
+  const firstSnapshot: ChatRenderModel = {
+    session_id: "sess_split_label",
+    host: { kind: "desktop_web" },
+    rows: [
+      {
+        kind: "assistant_message",
+        id: "a1",
+        key: "assistant:a1",
+        blocks: [
+          { id: "a1:block:0", text: "stable intro" },
+          { id: "a1:block:1", text: "stable tail" },
+        ],
+        createdAt: "2026-06-18T00:00:00Z",
+        status: "completed",
+        streaming: false,
+        settledLabel: "Worked for 1s",
+        revision: 1,
+        debug: { projection: "transcript", source_event_ids: ["evt_1"] },
+      },
+    ],
+    composer: { placeholder: "要求后续变更", can_send: true },
+  };
+  const secondSnapshot: ChatRenderModel = {
+    ...firstSnapshot,
+    rows: [
+      {
+        ...firstSnapshot.rows[0]!,
+        settledLabel: "Worked for 2s",
+      },
+    ],
+  };
+
+  const firstItems = buildConversationStreamItems(toWebChatModel(firstSnapshot).turns);
+  const secondItems = buildConversationStreamItems(toWebChatModel(secondSnapshot).turns);
+
+  assert.notEqual(firstItems[0]?.fingerprint, secondItems[0]?.fingerprint);
+  assert.equal(firstItems[1]?.fingerprint, secondItems[1]?.fingerprint);
+  assert.equal(secondItems[0]?.block.kind, "assistant_markdown");
+  if (secondItems[0]?.block.kind === "assistant_markdown") {
+    assert.equal(secondItems[0].block.settledLabel, "Worked for 2s");
+  }
+});
+
 test("web adapter reuses unchanged turns across fresh render model snapshots", () => {
   const firstSnapshot: ChatRenderModel = {
     session_id: "sess_1",

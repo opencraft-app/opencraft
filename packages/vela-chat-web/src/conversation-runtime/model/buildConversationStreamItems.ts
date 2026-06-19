@@ -55,7 +55,7 @@ function blockToItems(turn: WebTurn, block: WebBlock): ConversationStreamItem[] 
         id: `${turn.id}:${markdownBlock.id}`,
         key: `${turn.key}:${markdownBlock.id}`,
         continuation: index > 0,
-        fingerprint: `md:${markdownBlock.id}:${hashString(markdownBlock.text)}`,
+        fingerprint: `md:${markdownBlock.id}:streaming:${splitBlock.streaming}:settled:${hashString(splitBlock.settledLabel ?? "")}:${hashString(markdownBlock.text)}`,
       });
     });
   }
