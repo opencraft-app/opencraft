@@ -790,7 +790,7 @@ export const AchievementsPanel = ({ botId, botName }: AchievementsPanelProps) =>
           <div className="min-w-0">
             <h2 className="text-2xl font-semibold tracking-normal text-black/90">{t("{{name}} 的成就", { name: botName })}</h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-black/52">
-              {t("谨以此向 Hermes Agent 项目致以诚挚谢意。和你的 Hermes Agent 一起，解锁更多成就吧！")}
+              {t("和你的 Hermes Agent 一起，解锁更多成就吧！")}
             </p>
           </div>
           <button
