@@ -3466,7 +3466,7 @@ export const OpenClawSettingsPage = () => {
       setExportStatusErrors((prev) => ({ ...prev, [botId]: null }));
       return status;
     } catch (err) {
-      const message = err instanceof Error ? err.message : t("导出状态查询失败");
+      const message = err instanceof Error ? err.message : rawT("导出状态查询失败");
       setExportStatusErrors((prev) => ({ ...prev, [botId]: message }));
       throw err;
     } finally {
@@ -3476,7 +3476,7 @@ export const OpenClawSettingsPage = () => {
         return next;
       });
     }
-  }, [repositories.bots, t]);
+  }, [repositories.bots]);
 
   const loadHermesImportStatus = useCallback(async (botId: string) => {
     setImportStatusLoadingBotIds((prev) => new Set(prev).add(botId));
@@ -3486,7 +3486,7 @@ export const OpenClawSettingsPage = () => {
       setImportStatusErrors((prev) => ({ ...prev, [botId]: null }));
       return status;
     } catch (err) {
-      const message = err instanceof Error ? err.message : t("导入状态查询失败");
+      const message = err instanceof Error ? err.message : rawT("导入状态查询失败");
       setImportStatusErrors((prev) => ({ ...prev, [botId]: message }));
       throw err;
     } finally {
@@ -3496,7 +3496,7 @@ export const OpenClawSettingsPage = () => {
         return next;
       });
     }
-  }, [repositories.bots, t]);
+  }, [repositories.bots]);
 
   const handleExportWorkspace = async () => {
     if (!activeBot || activeBot.status !== "running" || exportingBotIds.has(activeBot.id)) return;
