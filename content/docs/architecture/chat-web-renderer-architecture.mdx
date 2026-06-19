@@ -170,6 +170,14 @@ Day 1 的 route resume 是浏览器 session 级体验能力：`conversation-runt
 
 `strategyResolver.ts` 只做纯策略名决策，必须可被 Node tests 直接 import；`strategyRegistry.ts` 才把策略名映射到具体 React strategy。组件层只能调用 registry，不能自己 import `webPlainStrategy` / `webVirtualizedStrategy` 并写判断。
 
+### Paseo 对照与本轮不改项
+
+Paseo 的 app-side agent stream 已经验证了 `head/tail + bottom anchor + partial virtualization` 路线。Vela 当前采用同一方向，但有几个需要显式记录的差异：
+
+- Paseo Web 在 mobile breakpoint 下不会切出 partial virtualized history；它的真正移动端由 native inverted list 承担。Vela 的 `mobile_web` 仍是 DOM/WebView renderer，所以当前继续使用 Web partial virtualization。不要在没有移动 WebView 实测前直接照搬 Paseo 的 mobile breakpoint 分支。
+- Vela 只把 assistant markdown 按空行和 fenced-code 边界拆成 item。一个超长代码块或超长单段 markdown 仍然是单个 item；本轮不在 renderer 内部再切，因为那会影响 copy、markdown 语义和 Streamdown streaming 行为。
+- 当前 SSE 仍是 canonical event stream，前端只做 local overlay 与 scoped read-model refresh。更省流的 read-model patch stream 可以后续进入 OpenAPI，但这不是本轮 ChatUI renderer 的 JS 小修范围。
+
 ### `renderers/`
 
 Change here when a `block.kind` needs a different DOM output.
