@@ -457,6 +457,17 @@ test("user message timestamps use stable twenty-four hour display", () => {
   assert.match(source, /toLocaleTimeString\(\[\], \{ hour: "2-digit", minute: "2-digit", hour12: false \}\)/);
 });
 
+test("user message renderer preserves explicit multiline text breaks", () => {
+  const source = readFileSync(
+    join(root, "packages/vela-chat-web/src/renderers/blocks/UserMessageRenderer.tsx"),
+    "utf8",
+  );
+
+  assert.match(source, /renderUserTextWithLineBreaks\(text\)/);
+  assert.match(source, /text\.split\("\\n"\)/);
+  assert.match(source, /<br key=\{`line-break:\$\{index\}`\} \/>/);
+});
+
 test("user uploaded images avoid blocking long conversation rendering", () => {
   const source = readFileSync(
     join(root, "packages/vela-chat-web/src/renderers/blocks/UserMessageRenderer.tsx"),

@@ -1,7 +1,7 @@
 import type { WebBlock } from "../../adapters/toWebBlocks";
 import { Message } from "../../primitives/message/Message";
 import styles from "../../styles/desktop.module.css";
-import type { CSSProperties } from "react";
+import { Fragment, type CSSProperties } from "react";
 
 export function UserMessageRenderer({
   block,
@@ -34,7 +34,9 @@ export function UserMessageRenderer({
             ))}
           </div>
         ) : null}
-        {text ? <div className={styles.userBubble}>{text}</div> : null}
+        {text ? (
+          <div className={styles.userBubble}>{renderUserTextWithLineBreaks(text)}</div>
+        ) : null}
         <div className={styles.userMeta}>
           <span>{formatTime(block.createdAt)}</span>
           {copyText ? (
@@ -93,6 +95,15 @@ function textFromParts(block: Extract<WebBlock, { kind: "user_message" }>) {
     .filter((part) => part.type === "text" && part.text)
     .map((part) => part.text)
     .join("\n");
+}
+
+function renderUserTextWithLineBreaks(text: string) {
+  return text.split("\n").map((line, index) => (
+    <Fragment key={`line:${index}`}>
+      {index > 0 ? <br key={`line-break:${index}`} /> : null}
+      {line}
+    </Fragment>
+  ));
 }
 
 function formatTime(value: string) {
