@@ -152,6 +152,46 @@ test("conversation runtime reuses measured assistant markdown heights across sta
   assert.equal(estimateStreamItemHeight(second!, { width: 640 }), 212);
 });
 
+test("conversation runtime scopes assistant markdown heights by rendered status label", () => {
+  clearStreamItemHeightEstimateCache();
+  const firstSnapshot: ChatRenderModel = {
+    session_id: "sess_assistant_height_label",
+    host: { kind: "desktop_web" },
+    rows: [
+      {
+        kind: "assistant_message",
+        id: "a1",
+        key: "assistant:a1",
+        blocks: [{ id: "a1:block:0", text: "same paragraph" }],
+        createdAt: "2026-06-18T00:00:00Z",
+        status: "completed",
+        streaming: false,
+        revision: 1,
+        debug: { projection: "transcript", source_event_ids: ["evt_1"] },
+      },
+    ],
+    composer: { placeholder: "要求后续变更", can_send: true },
+  };
+  const secondSnapshot: ChatRenderModel = {
+    ...firstSnapshot,
+    rows: [
+      {
+        ...firstSnapshot.rows[0]!,
+        settledLabel: "Worked for 2s",
+      },
+    ],
+  };
+
+  const first = buildConversationStreamItems(toWebChatModel(firstSnapshot).turns)[0]!;
+  const second = buildConversationStreamItems(toWebChatModel(secondSnapshot).turns)[0]!;
+
+  assert.equal(first.kind, "assistant_markdown");
+  assert.equal(second.kind, "assistant_markdown");
+  assert.equal(estimateStreamItemHeight(second, { width: 640 }), 120);
+  assert.equal(recordMeasuredStreamItemHeight(first, 211.4, { width: 640 }), 212);
+  assert.equal(estimateStreamItemHeight(second, { width: 640 }), 120);
+});
+
 test("conversation runtime caps live head so long running turns can still virtualize older live work", () => {
   const items = buildConversationStreamItems(
     Array.from({ length: 8 }, (_, index) =>
