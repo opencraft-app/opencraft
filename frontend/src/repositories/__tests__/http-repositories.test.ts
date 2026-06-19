@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  AUTH_SERVICE_UNAVAILABLE_MESSAGE,
   AUTH_UNAUTHORIZED_EVENT,
   createHttpRepositories,
   createRepositories,
@@ -98,6 +99,19 @@ describe("http repositories auth token bootstrap", () => {
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const headers = new Headers(init.headers);
     expect(headers.get("Authorization")).toBe("Bearer persisted-bearer-token");
+  });
+
+  it("uses a product-safe message when the auth API is unreachable", async () => {
+    const fetchMock = vi.fn().mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+
+    await expect(repositories.auth.getSession()).rejects.toMatchObject({
+      message: AUTH_SERVICE_UNAVAILABLE_MESSAGE,
+      status: 0,
+      code: "network_error",
+    });
   });
 
   it("hydrates current subscription from the subscriptions endpoint", async () => {

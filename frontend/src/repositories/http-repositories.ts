@@ -153,6 +153,7 @@ const HTTP_BOT_DRAFTS_STORAGE_KEY = "lightclaw-http-bot-drafts-v1";
 const DEFAULT_INSTANCE_TIMEOUT_SECONDS = 60 * 60;
 const DEFAULT_RESCUE_EXPORT_REMOTE_PATH = "/home/agentuser/.hermes";
 export const AUTH_UNAUTHORIZED_EVENT = "lightclaw:auth-unauthorized";
+export const AUTH_SERVICE_UNAVAILABLE_MESSAGE = "认证服务暂时不可用，请稍后重试。";
 
 class RepositoryError extends Error {
   status: number;
@@ -167,6 +168,8 @@ class RepositoryError extends Error {
     this.retryAfterSeconds = retryAfterSeconds;
   }
 }
+
+const createNetworkUnavailableError = () => new RepositoryError(AUTH_SERVICE_UNAVAILABLE_MESSAGE, 0, "network_error");
 
 const authStorage = () => {
   if (typeof globalThis === "undefined") {
@@ -370,7 +373,7 @@ const request = async <T>(
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
-    throw new RepositoryError("认证服务不可用，请先启动 Go auth 服务。", 0, "network_error");
+    throw createNetworkUnavailableError();
   }
 
   if (!response.ok) {
@@ -483,7 +486,7 @@ const requestMultipart = async <T>(
       body: formData,
     });
   } catch {
-    throw new RepositoryError("认证服务不可用，请先启动 Go auth 服务。", 0, "network_error");
+    throw createNetworkUnavailableError();
   }
 
   if (!response.ok) {
@@ -969,7 +972,7 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
           body: JSON.stringify({ command, run_as_user: "agentuser" }),
         });
       } catch {
-        throw new RepositoryError("认证服务不可用，请先启动 Go auth 服务。", 0, "network_error");
+        throw createNetworkUnavailableError();
       }
 
       let body: unknown = null;

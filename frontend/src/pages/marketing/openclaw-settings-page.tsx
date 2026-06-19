@@ -62,7 +62,7 @@ import { isGlobal } from "@/lib/region";
 import { useSession } from "@/contexts/session-context";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
-import { readStoredAuthToken } from "@/repositories/http-repositories";
+import { AUTH_SERVICE_UNAVAILABLE_MESSAGE, readStoredAuthToken } from "@/repositories/http-repositories";
 import {
   AGENTS_HOME_PATH,
   AGENT_SECTION_PATH_BY_ID,
@@ -215,7 +215,7 @@ async function execDebugCommandStream(
 ): Promise<DebugExecStreamResult> {
   const baseUrl = resolveConfiguredAuthApiBaseUrl();
   if (!baseUrl) {
-    throw new Error("Auth service is unavailable.");
+    throw new Error(AUTH_SERVICE_UNAVAILABLE_MESSAGE);
   }
 
   const headers = new Headers({
@@ -2996,7 +2996,7 @@ export const OpenClawSettingsPage = () => {
     const baseUrl = resolveConfiguredAuthApiBaseUrl();
     if (!baseUrl) {
       setLaunchTokenStatus("error");
-      setLaunchTokenError("未配置后端地址（VITE_AUTH_API_BASE_URL）");
+      setLaunchTokenError(AUTH_SERVICE_UNAVAILABLE_MESSAGE);
       return;
     }
 
