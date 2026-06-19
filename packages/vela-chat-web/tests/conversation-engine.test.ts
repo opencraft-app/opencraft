@@ -708,6 +708,53 @@ test("conversation runtime starts the mounted recent window at a user message bo
   ]);
 });
 
+test("conversation runtime can virtualize inside one long split assistant message", () => {
+  const model: ChatRenderModel = {
+    session_id: "sess_1",
+    host: { kind: "desktop_web" },
+    rows: [
+      {
+        kind: "user_message",
+        id: "u1",
+        key: "user:u1",
+        text: "write a long report",
+        copy_text: "write a long report",
+        collapsed: false,
+        parts: [{ id: "u1:part:0", type: "text", text: "write a long report" }],
+        createdAt: "2026-06-18T00:00:00Z",
+        debug: { projection: "transcript", source_event_ids: ["evt_1"] },
+      },
+      {
+        kind: "assistant_message",
+        id: "a1",
+        key: "assistant:a1",
+        blocks: Array.from({ length: 120 }, (_, index) => ({
+          id: `a1:block:${index}`,
+          text: `section ${index + 1}`,
+        })),
+        createdAt: "2026-06-18T00:00:01Z",
+        status: "completed",
+        streaming: false,
+        revision: 1,
+        debug: { projection: "transcript", source_event_ids: ["evt_2"] },
+      },
+    ],
+    composer: { placeholder: "要求后续变更", can_send: true },
+  };
+  const items = buildConversationStreamItems(toWebChatModel(model).turns);
+
+  const segments = buildConversationRuntimeSegments(items, {
+    virtualizeAfterItemCount: 100,
+    mountedRecentItemCount: 50,
+  });
+
+  assert.equal(items.length, 121);
+  assert.equal(segments.historyMounted.length, 50);
+  assert.equal(segments.historyMounted[0]?.continuation, true);
+  assert.equal(segments.historyVirtualized.length, 71);
+  assert.equal(segments.historyVirtualized[0]?.kind, "user_message");
+});
+
 test("history paging triggers near the top threshold only when older history is available", () => {
   assert.equal(DEFAULT_HISTORY_START_THRESHOLD_PX, 96);
   assert.equal(

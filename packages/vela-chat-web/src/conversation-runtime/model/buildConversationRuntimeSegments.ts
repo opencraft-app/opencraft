@@ -119,10 +119,16 @@ function findMountedWindowStart({
   const fallbackStart = Math.max(0, items.length - minMountedItemCount);
   let start = fallbackStart;
 
-  while (start > 0 && items[start]?.kind !== "user_message") {
+  while (
+    start > 0 &&
+    items[start]?.kind !== "user_message" &&
+    !items[start]?.continuation
+  ) {
     start -= 1;
   }
 
-  if (items[start]?.kind === "user_message") return start;
+  if (items[start]?.kind === "user_message" || items[start]?.continuation) {
+    return start;
+  }
   return fallbackStart;
 }
