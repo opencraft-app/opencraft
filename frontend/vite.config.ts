@@ -425,6 +425,21 @@ function manualChunks(id: string) {
 
 function seoHtmlPlugin(region: "cn" | "global"): PluginOption {
   const staticAssetRe = /\.(?:js|mjs|cjs|ts|tsx|css|map|png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|otf|wasm|json)(?:$|\?)/i;
+  const backendRoutePrefixes = [
+    "/auth/oauth",
+    "/auth/session",
+    "/auth/profile",
+    "/auth/sms",
+    "/auth/invite",
+    "/auth/realname",
+    "/auth/tat",
+    "/auth/guest",
+    "/subscriptions",
+    "/users",
+    "/v1",
+    "/sandboxes",
+    "/__skillhub",
+  ];
 
   return {
     name: "lightvela-seo-html",
@@ -449,6 +464,7 @@ function seoHtmlPlugin(region: "cn" | "global"): PluginOption {
           || url.startsWith("/src/")
           || url.startsWith("/node_modules/")
           || url.startsWith("/assets/")
+          || backendRoutePrefixes.some((prefix) => url === prefix || url.startsWith(`${prefix}/`))
           || staticAssetRe.test(url)
         ) {
           next();

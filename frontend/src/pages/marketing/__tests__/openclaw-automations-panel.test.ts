@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildEffectiveWindowFromInputs,
   buildDeliverString,
+  buildHermesSendTarget,
+  buildHermesSendTestCommand,
   buildScheduleString,
   formatEffectiveWindow,
   formatEffectiveWindowPeriod,
@@ -10,11 +12,13 @@ import {
   formatScheduleTooltip,
   getLastAgentRunForJob,
   getEffectiveWindowStatus,
+  isHermesNotificationChannelConfigured,
   isCronJobExpiredBeyondGrace,
   isEffectiveWindowRangeInvalid,
   normalizeDailyTimesForEditing,
   normalizeDailyTimesForForm,
   normalizeEffectiveWindowInput,
+  parseEnabledHermesChannels,
   parseCronDate,
   parseInitialDeliver,
   parseInitialSchedule,
@@ -235,6 +239,72 @@ describe("parseInitialDeliver", () => {
     const parsed = parseInitialDeliver("weixin:wx_123,qqbot:qq_123,feishu:oc_123");
 
     expect(buildDeliverString(["weixin", "feishu"], parsed.chatIds)).toBe("weixin:wx_123,feishu:oc_123");
+  });
+});
+
+describe("buildHermesSendTestCommand", () => {
+  it("uses the platform home target when chat id is empty", () => {
+    expect(buildHermesSendTarget("feishu", "")).toBe("feishu");
+    expect(buildHermesSendTestCommand("feishu", "", "deploy finished")).toBe(
+      "hermes send --to 'feishu' 'deploy finished'",
+    );
+  });
+
+  it("uses platform:chat_id target when chat id is provided", () => {
+    expect(buildHermesSendTarget("feishu", " oc_123 ")).toBe("feishu:oc_123");
+    expect(buildHermesSendTestCommand("feishu", "oc_123", "it's ready")).toBe(
+      "hermes send --to 'feishu:oc_123' 'it'\\''s ready'",
+    );
+  });
+});
+
+describe("parseEnabledHermesChannels", () => {
+  const channelStatusPayload = JSON.stringify({
+    success: true,
+    data: {
+      platforms: [
+        { name: "weixin", status: "connected" },
+        { name: "qqbot", status: "disconnected" },
+        { name: "feishu", status: "connected" },
+      ],
+    },
+    error: null,
+  });
+
+  it("parses pure acli channel status json", () => {
+    expect(parseEnabledHermesChannels(channelStatusPayload)).toEqual(new Set(["weixin", "feishu"]));
+  });
+
+  it("normalizes wechat aliases to the weixin notification key", () => {
+    const output = JSON.stringify({
+      success: true,
+      data: {
+        platforms: [
+          { name: "wechat", status: "connected" },
+          { name: "openclaw-weixin", status: "connected" },
+        ],
+      },
+      error: null,
+    });
+
+    expect(parseEnabledHermesChannels(output)).toEqual(new Set(["weixin"]));
+  });
+});
+
+describe("isHermesNotificationChannelConfigured", () => {
+  it("treats unknown channel status as configurable so users can still try", () => {
+    expect(isHermesNotificationChannelConfigured(null, "feishu")).toBe(true);
+  });
+
+  it("uses the loaded enabled-channel set when channel status is known", () => {
+    const enabledChannels = new Set(["weixin"]);
+
+    expect(isHermesNotificationChannelConfigured(enabledChannels, "weixin")).toBe(true);
+    expect(isHermesNotificationChannelConfigured(enabledChannels, "feishu")).toBe(false);
+  });
+
+  it("keeps coming-soon channels disabled even when status is unknown", () => {
+    expect(isHermesNotificationChannelConfigured(null, "telegram", true)).toBe(false);
   });
 });
 

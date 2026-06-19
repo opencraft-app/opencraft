@@ -549,7 +549,7 @@ const stateLabel = (state: AchievementState, t: ReturnType<typeof useT>) => {
 const stateBadgeClass = (state: AchievementState) => {
   switch (state) {
     case "unlocked":
-      return "bg-black text-white";
+      return "bg-gradient-to-r from-[#7C3AED] via-[#A855F7] to-[#EC4899] text-white shadow-[0_6px_16px_rgba(168,85,247,0.32)]";
     case "secret":
       return "border border-black/[0.12] bg-black/[0.03] text-black/45";
     case "discovered":

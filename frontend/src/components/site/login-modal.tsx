@@ -28,6 +28,7 @@ const wechatLogo = assetUrl("/login/wechat-logo.png");
  */
 const BUTTON_BASE_CLASS =
   "group relative flex w-full items-center justify-center gap-2 rounded-full border px-8 py-[10px] text-sm font-medium transition-all duration-200 hover:shadow-sm active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:shadow-none";
+const AGREEMENT_PENDING_BUTTON_CLASS = "cursor-not-allowed opacity-50 hover:shadow-none active:scale-100";
 
 type ProviderButtonVisual = {
   /** i18n key 原文（中文），渲染时由 useT() 转换 */
@@ -266,8 +267,8 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
                       key={provider}
                       type="button"
                       onClick={() => handleOAuthLogin(provider)}
-                      disabled={!agreed}
-                      className={BUTTON_BASE_CLASS}
+                      aria-disabled={!agreed}
+                      className={`${BUTTON_BASE_CLASS} ${!agreed ? AGREEMENT_PENDING_BUTTON_CLASS : ""}`}
                       style={visual.style}
                     >
                       {visual.renderIcon()}

@@ -97,7 +97,7 @@ export class CronCommandError extends Error {
   }
 }
 
-interface DebugExecPayload {
+export interface DebugExecPayload {
   status: string;
   exit_code: number;
   output: string;
@@ -164,7 +164,7 @@ export function buildCreateCommand(input: CreateCronJobInput): string {
 }
 
 /** 同步执行一条命令；非零 exit_code 抛 CronCommandError */
-async function execCommand(botId: string, command: string): Promise<DebugExecPayload> {
+export async function execCommand(botId: string, command: string): Promise<DebugExecPayload> {
   const baseUrl = resolveConfiguredAuthApiBaseUrl();
   if (baseUrl === null) {
     throw new Error("[hermes-cron] auth API base URL not configured");
