@@ -239,6 +239,7 @@ test("prepends activity windows without duplicating items and preserves latest c
 test("rejects stale conversation history prepend plans after the visible window changes", () => {
   const plan = buildConversationHistoryPrependPlan({
     transcript: {
+      session_id: "sess_old",
       rows: [],
       cursor: {},
       window: {
@@ -249,6 +250,7 @@ test("rejects stale conversation history prepend plans after the visible window 
       },
     },
     activity: {
+      session_id: "sess_old",
       items: [],
       cursor: {},
       window: {
@@ -260,9 +262,12 @@ test("rejects stale conversation history prepend plans after the visible window 
     },
   });
 
+  assert.equal(Reflect.get(plan.transcript ?? {}, "sessionId"), "sess_old");
+  assert.equal(Reflect.get(plan.activity ?? {}, "sessionId"), "sess_old");
   assert.equal(
     canApplyConversationHistoryPrependPlan(plan, {
       transcript: {
+        session_id: "sess_old",
         rows: [],
         cursor: {},
         window: {
@@ -273,6 +278,7 @@ test("rejects stale conversation history prepend plans after the visible window 
         },
       },
       activity: {
+        session_id: "sess_old",
         items: [],
         cursor: {},
         window: {
@@ -288,16 +294,18 @@ test("rejects stale conversation history prepend plans after the visible window 
   assert.equal(
     canApplyConversationHistoryPrependPlan(plan, {
       transcript: {
+        session_id: "sess_new",
         rows: [],
         cursor: {},
         window: {
-          first_row_id: "row_09",
+          first_row_id: "row_10",
           last_row_id: "row_21",
           has_older: true,
           has_newer: false,
         },
       },
       activity: {
+        session_id: "sess_new",
         items: [],
         cursor: {},
         window: {
@@ -313,6 +321,34 @@ test("rejects stale conversation history prepend plans after the visible window 
   assert.equal(
     canApplyConversationHistoryPrependPlan(plan, {
       transcript: {
+        session_id: "sess_old",
+        rows: [],
+        cursor: {},
+        window: {
+          first_row_id: "row_09",
+          last_row_id: "row_21",
+          has_older: true,
+          has_newer: false,
+        },
+      },
+      activity: {
+        session_id: "sess_old",
+        items: [],
+        cursor: {},
+        window: {
+          first_item_id: "act_10",
+          last_item_id: "act_21",
+          has_older: true,
+          has_newer: false,
+        },
+      },
+    }),
+    false,
+  );
+  assert.equal(
+    canApplyConversationHistoryPrependPlan(plan, {
+      transcript: {
+        session_id: "sess_old",
         rows: [],
         cursor: {},
         window: {
@@ -323,6 +359,7 @@ test("rejects stale conversation history prepend plans after the visible window 
         },
       },
       activity: {
+        session_id: "sess_old",
         items: [],
         cursor: {},
         window: {

@@ -212,19 +212,21 @@ export interface ConversationHistoryPrependPlan {
   transcript: {
     direction: "before";
     anchorRowId: string;
+    sessionId?: string;
     includeLive: false;
     limit: number;
   } | null;
   activity: {
     direction: "before";
     anchorItemId: string;
+    sessionId?: string;
     limit: number;
   } | null;
 }
 
 export interface ConversationWindowInput {
-  transcript?: Pick<ChatTranscriptWireView, "window"> | null;
-  activity?: Pick<ActivityWireView, "window"> | null;
+  transcript?: Pick<ChatTranscriptWireView, "session_id" | "window"> | null;
+  activity?: Pick<ActivityWireView, "session_id" | "window"> | null;
 }
 
 export interface ConversationHistoryPrependPlanInput extends ConversationWindowInput {
@@ -289,6 +291,7 @@ export function buildConversationHistoryPrependPlan({
       ? {
           direction: "before" as const,
           anchorRowId: firstRowId,
+          ...(transcript?.session_id ? { sessionId: transcript.session_id } : {}),
           includeLive: false as const,
           limit: normalizedLimit,
         }
@@ -298,6 +301,7 @@ export function buildConversationHistoryPrependPlan({
       ? {
           direction: "before" as const,
           anchorItemId: firstActivityItemId,
+          ...(activity?.session_id ? { sessionId: activity.session_id } : {}),
           limit: normalizedLimit,
         }
       : null;
@@ -314,10 +318,22 @@ export function canApplyConversationHistoryPrependPlan(
   current: ConversationWindowInput,
 ): boolean {
   if (plan.transcript) {
+    if (
+      plan.transcript.sessionId &&
+      current.transcript?.session_id !== plan.transcript.sessionId
+    ) {
+      return false;
+    }
     const currentFirstRowId = current.transcript?.window?.first_row_id;
     if (currentFirstRowId !== plan.transcript.anchorRowId) return false;
   }
   if (plan.activity) {
+    if (
+      plan.activity.sessionId &&
+      current.activity?.session_id !== plan.activity.sessionId
+    ) {
+      return false;
+    }
     const currentFirstItemId = current.activity?.window?.first_item_id;
     if (currentFirstItemId !== plan.activity.anchorItemId) return false;
   }
