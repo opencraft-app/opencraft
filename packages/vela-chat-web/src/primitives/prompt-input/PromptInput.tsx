@@ -113,7 +113,13 @@ export function PromptInput({
             <button className={styles.iconButton} type="button" aria-label="Dictation">
               ⌘
             </button>
-            <button className={styles.sendButton} type="submit" disabled={!canSubmit}>
+            <button
+              aria-label="Send message"
+              className={styles.sendButton}
+              disabled={!canSubmit}
+              title="Send message"
+              type="submit"
+            >
               ↑
             </button>
           </div>

@@ -411,3 +411,13 @@ test("composer plus control is wired to image attachments instead of being decor
   assert.match(chatWorkbench, /imageFileToInputPart/);
   assert.match(chatWorkbench, /content: messageContent/);
 });
+
+test("composer send control has a stable accessible action label", () => {
+  const promptInput = readFileSync(
+    join(root, "packages/vela-chat-web/src/primitives/prompt-input/PromptInput.tsx"),
+    "utf8",
+  );
+
+  assert.match(promptInput, /aria-label="Send message"/);
+  assert.match(promptInput, /title="Send message"/);
+});
