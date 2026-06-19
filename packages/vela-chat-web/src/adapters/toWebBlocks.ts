@@ -176,10 +176,18 @@ function rowToBlock(row: ChatRenderRow): WebBlock {
 function partsFingerprint(parts: UserMessagePart[]) {
   return parts
     .map((part) => {
+      const data = part.data;
       const encodedLength =
-        typeof part.data?.data === "string" ? part.data.data.length : 0;
-      const encodedHash = typeof part.data?.data === "string" ? hashString(part.data.data) : "";
-      return `${part.id}:${part.type}:text:${hashString(part.text ?? "")}:data:${encodedLength}:${encodedHash}`;
+        typeof data?.data === "string" ? data.data.length : 0;
+      const encodedHash = typeof data?.data === "string" ? hashString(data.data) : "";
+      const mimeType = typeof data?.mime_type === "string" ? data.mime_type : "";
+      const sha256 = typeof data?.sha256 === "string" ? data.sha256 : "";
+      const blobId = typeof data?.blob_id === "string" ? data.blob_id : "";
+      const sizeBytes =
+        typeof data?.size_bytes === "number" && Number.isFinite(data.size_bytes)
+          ? data.size_bytes
+          : "";
+      return `${part.id}:${part.type}:text:${hashString(part.text ?? "")}:mime:${mimeType}:sha:${sha256}:blob:${blobId}:size:${sizeBytes}:data:${encodedLength}:${encodedHash}`;
     })
     .join("|");
 }
