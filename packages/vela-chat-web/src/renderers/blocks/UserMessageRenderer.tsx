@@ -26,7 +26,9 @@ export function UserMessageRenderer({
               <img
                 alt="Uploaded image"
                 className={styles.userImage}
+                decoding="async"
                 key={part.id}
+                loading="lazy"
                 src={`data:${part.data?.mime_type};base64,${part.data?.data}`}
               />
             ))}
