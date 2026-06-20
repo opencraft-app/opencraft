@@ -11,6 +11,7 @@ import {
   formatEffectiveWindowTooltipLines,
   formatScheduleTooltip,
   formatTestSendError,
+  getTestSendFailureFallback,
   getLastAgentRunForJob,
   getEffectiveWindowStatus,
   isHermesNotificationChannelConfigured,
@@ -325,6 +326,17 @@ describe("formatTestSendError", () => {
   it("hides low-level missing-command details from users", () => {
     expect(formatTestSendError(new Error("hermes: command not found"), "发送失败，请检查通道配置或稍后重试"))
       .toBe("发送失败，请检查通道配置或稍后重试");
+  });
+});
+
+describe("getTestSendFailureFallback", () => {
+  it("uses the more specific Weixin home-channel hint for weixin aliases", () => {
+    expect(getTestSendFailureFallback("weixin", "通用失败", "微信失败")).toBe("微信失败");
+    expect(getTestSendFailureFallback("wechat", "通用失败", "微信失败")).toBe("微信失败");
+  });
+
+  it("keeps the generic fallback for other platforms", () => {
+    expect(getTestSendFailureFallback("feishu", "通用失败", "微信失败")).toBe("通用失败");
   });
 });
 

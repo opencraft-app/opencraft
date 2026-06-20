@@ -2103,7 +2103,11 @@ function AutomationFormModal({
         const { [channel]: _removed, ...rest } = prev;
         return rest;
       });
-      showTestSendToast("error", formatTestSendError(error, t("发送失败，请检查通道配置或稍后重试")));
+      showTestSendToast("error", formatTestSendError(error, getTestSendFailureFallback(
+        channel,
+        t("发送失败，请检查通道配置或稍后重试"),
+        t("发送失败，请先在微信中向 Hermes Agent 发送任意消息，或稍后重试"),
+      )));
     }
   }, [botId, chatIdErrors, deliverChatIds, showTestSendToast, t]);
 
@@ -3530,6 +3534,10 @@ export function formatTestSendError(error: unknown, fallback: string): string {
   if (!message) return fallback;
   const formatted = formatKnownTestSendError(message);
   return formatted ? `${fallback}：${formatted}` : fallback;
+}
+
+export function getTestSendFailureFallback(platform: string, fallback: string, weixinFallback: string): string {
+  return normalizeHermesChannelKey(platform) === "weixin" ? weixinFallback : fallback;
 }
 
 function formatKnownTestSendError(message: string): string {
