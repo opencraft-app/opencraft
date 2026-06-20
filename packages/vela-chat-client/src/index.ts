@@ -231,6 +231,11 @@ export interface CreateSessionWireResponse {
   cursor: EventCursorWire;
 }
 
+export interface CancelSessionInput {
+  sessionId: string;
+  idempotencyKey?: string;
+}
+
 export interface SessionWireResponse {
   session: SessionWire;
   cursor?: CursorWindow;
@@ -382,6 +387,7 @@ export interface VeladClient {
     options?: PendingRequestsOptions,
   ) => Promise<PendingRequestsWireView>;
   getDiffs: (sessionId: string) => Promise<DiffReviewWireView>;
+  cancelSession: (input: CancelSessionInput) => Promise<CommandAckWire>;
   sendUserMessage: (input: {
     sessionId: string;
     text?: string;
@@ -997,6 +1003,17 @@ export function createVeladClient(options: VeladClientOptions): VeladClient {
     async getDiffs(sessionId) {
       const response = await doFetch(this.diffsUrl(sessionId));
       return readDiffReviewViewResponse(response);
+    },
+    async cancelSession({ sessionId, idempotencyKey }) {
+      const url = new URL(`sessions/${encodeSessionId(sessionId)}/cancel`, baseUrl);
+      const headerIdempotencyKey = validateOptionalIdempotencyKey(idempotencyKey) ?? createIdempotencyKey();
+      const response = await doFetch(url, {
+        method: "POST",
+        headers: {
+          "Idempotency-Key": headerIdempotencyKey,
+        },
+      });
+      return readCommandAckResponse(response);
     },
     async sendUserMessage({ sessionId, text, content, idempotencyKey }) {
       const url = new URL(`sessions/${encodeSessionId(sessionId)}/events`, baseUrl);

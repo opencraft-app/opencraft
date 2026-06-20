@@ -3172,6 +3172,40 @@ test("sends explicit mixed content parts for image messages", async () => {
   assert.equal(ack.command_id, "cmd_image");
 });
 
+test("cancels a running session with idempotency key", async () => {
+  const requests: Array<{ url: string; init?: RequestInit }> = [];
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async (url, init) => {
+      requests.push({ url: String(url), init });
+      return new Response(
+        JSON.stringify({
+          status: "accepted",
+          command_id: "cmd_cancel",
+          session_id: "ses_running",
+          cursor: { event_id: "evt_cancel", epoch: 1, seq: 8 },
+        }),
+        { status: 202, headers: { "Content-Type": "application/json" } },
+      );
+    },
+  });
+
+  const ack = await client.cancelSession({
+    sessionId: "ses_running",
+    idempotencyKey: "cmd_cancel",
+  });
+
+  assert.equal(requests[0]?.url, "http://127.0.0.1:3857/api/v1/sessions/ses_running/cancel");
+  assert.equal(requests[0]?.init?.method, "POST");
+  assert.equal((requests[0]?.init?.headers as Record<string, string>)["Idempotency-Key"], "cmd_cancel");
+  assert.deepEqual(ack, {
+    status: "accepted",
+    command_id: "cmd_cancel",
+    session_id: "ses_running",
+    cursor: { event_id: "evt_cancel", epoch: 1, seq: 8 },
+  });
+});
+
 test("rejects invalid InputPart oneOf branches before sending", async () => {
   let fetchCalled = false;
   const client = createVeladClient({
