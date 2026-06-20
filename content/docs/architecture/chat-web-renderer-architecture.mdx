@@ -242,6 +242,14 @@ contract and Paseo's agent-stream shape. Do not turn these into heuristic fixes:
   from `payload` or `backend_ref`. If Codex / ACP / Pi need richer permission
   choices, extend the OpenAPI request contract first, then flow it through
   client -> surface -> render-model -> `RequestDock`.
+- `vela-chat-web` is render-model driven for the conversation surface, but it
+  still contains two input/control adapters: `components/requests/requestResponses.ts`
+  maps a `RequestDockResponse` into OpenAPI `ClientInputEvent`, and composer
+  controls use `SessionWire` / `BackendWire`-derived capability data. This is a
+  deliberate Day 1 boundary, not permission to parse transcript/timeline wire
+  DTOs in renderers. If the package must become strictly render-only, move these
+  adapters into the route shell or a dedicated `vela-chat-input-model` package
+  instead of letting block renderers import `vela-chat-client`.
 
 ### `renderers/`
 
