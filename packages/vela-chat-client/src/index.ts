@@ -83,6 +83,7 @@ export interface StreamReadModelRefreshPlan {
   transcript: boolean;
   activity: boolean;
   requests: boolean;
+  diffs: boolean;
   session: boolean;
   backends: boolean;
 }
@@ -609,6 +610,7 @@ export function streamReadModelRefreshPlan(
     transcript: transcriptRefreshEvents.has(event.type),
     activity: isActivityRefreshEvent(event.type),
     requests: isRequestRefreshEvent(event.type),
+    diffs: event.type === "diff.updated",
     session: sessionRefreshEvents.has(event.type),
     backends: event.type.startsWith("backend."),
   };
@@ -617,6 +619,7 @@ export function streamReadModelRefreshPlan(
     transcript: typePlan.transcript || hintedPlan.transcript,
     activity: typePlan.activity || hintedPlan.activity,
     requests: typePlan.requests || hintedPlan.requests,
+    diffs: typePlan.diffs || hintedPlan.diffs,
     session: typePlan.session || hintedPlan.session,
     backends: typePlan.backends || event.type === "usage.updated" || hintedPlan.backends,
   };
@@ -885,6 +888,7 @@ function emptyRefreshPlan(): StreamReadModelRefreshPlan {
     transcript: false,
     activity: false,
     requests: false,
+    diffs: false,
     session: false,
     backends: false,
   };
@@ -901,6 +905,7 @@ function resetRefreshPlan(views: string[] | undefined): StreamReadModelRefreshPl
       viewSet.has("requests") ||
       viewSet.has("diffs"),
     requests: workbench || viewSet.has("requests"),
+    diffs: workbench || viewSet.has("diffs"),
     session: workbench || viewSet.has("session") || viewSet.has("sessions"),
     backends: workbench || viewSet.has("backends"),
   };
@@ -918,6 +923,7 @@ function affectedViewsRefreshPlan(views: string[] | undefined): StreamReadModelR
       viewSet.has("requests") ||
       viewSet.has("diffs"),
     requests: workbench || viewSet.has("requests"),
+    diffs: workbench || viewSet.has("diffs"),
     session: workbench || viewSet.has("session") || viewSet.has("sessions"),
     backends: workbench || viewSet.has("backends"),
   };
