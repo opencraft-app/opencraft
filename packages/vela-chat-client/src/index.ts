@@ -1728,6 +1728,9 @@ function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDeta
       ...(data.mode !== undefined
         ? { mode: optionalViewEnum(data, "mode", owner, invalidActivityView, activitySearchModes) }
         : {}),
+      ...(data.content !== undefined
+        ? { content: optionalViewString(data, "content", owner, invalidActivityView) }
+        : {}),
       ...(data.num_matches !== undefined
         ? { num_matches: optionalViewInteger(data, "num_matches", owner, invalidActivityView) }
         : {}),
