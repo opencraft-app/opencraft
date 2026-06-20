@@ -2412,6 +2412,22 @@ test("rejects already-seen stream event ids even when order fields are absent", 
   );
 });
 
+test("rejects already-seen stream event cursor aliases when order fields are absent", () => {
+  for (const cursor of [
+    { latest_event_id: "evt_same" },
+    { next_event_id: "evt_same" },
+  ]) {
+    assert.equal(
+      isVelaStreamEventFreshForCursor(cursor, {
+        event_id: "evt_same",
+        type: "assistant.message.delta",
+        payload: { delta: "duplicate" },
+      }),
+      false,
+    );
+  }
+});
+
 test("applies assistant delta live overlays to existing transcript rows immediately", () => {
   const transcript = {
     session_id: "sess_1",

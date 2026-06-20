@@ -18,6 +18,8 @@ export interface EventCursorWire {
   event_id: string;
   epoch: number;
   seq: number;
+  latest_event_id?: string;
+  next_event_id?: string;
 }
 
 export interface TranscriptWindow {
@@ -664,13 +666,22 @@ function isStreamEventNewerThanCursor(
   cursor: EventCursorWire,
   event: VelaStreamEventWire,
 ) {
-  if (event.event_id && cursor.event_id === event.event_id) return false;
+  if (isKnownCursorEvent(cursor, event.event_id)) return false;
   const cursorOrder = eventCursorOrder(cursor);
   const eventOrder = streamEventOrder(event);
   if (!cursorOrder || !eventOrder) return true;
   if (eventOrder.epoch > cursorOrder.epoch) return true;
   if (eventOrder.epoch < cursorOrder.epoch) return false;
   return eventOrder.seq > cursorOrder.seq;
+}
+
+function isKnownCursorEvent(cursor: EventCursorWire, eventId: string | undefined) {
+  return Boolean(
+    eventId &&
+      (cursor.event_id === eventId ||
+        cursor.latest_event_id === eventId ||
+        cursor.next_event_id === eventId),
+  );
 }
 
 function isDifferentKnownStreamSession(
