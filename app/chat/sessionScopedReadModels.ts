@@ -19,6 +19,7 @@ export function pendingRequestsForActiveSession<T extends PendingRequestsSession
   requests: T | null | undefined,
 ): T | null {
   if (!activeSessionId || !requests) return null;
+  if (requests.requests.length === 0) return null;
   return requests.requests.every((request) => request.session_id === activeSessionId)
     ? requests
     : null;

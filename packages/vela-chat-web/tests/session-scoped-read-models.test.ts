@@ -45,6 +45,13 @@ test("pending request views reject request rows from another session", () => {
 
   assert.equal(pendingRequestsForActiveSession("sess_active", requests), requests);
   assert.equal(pendingRequestsForActiveSession("sess_active", staleRequests), null);
+  assert.equal(
+    pendingRequestsForActiveSession("sess_active", {
+      requests: [],
+      cursor: { event_id: "evt_empty_from_unknown_session", epoch: 1, seq: 2 },
+    }),
+    null,
+  );
   assert.equal(pendingRequestsForActiveSession("", requests), null);
   assert.equal(pendingRequestsForActiveSession("sess_active", null), null);
 });
