@@ -9,6 +9,7 @@ import type { ComposerControlsModel } from "../composer-controls/model";
 import type { PromptInputAttachment } from "../../primitives/prompt-input/PromptInput";
 import { VelaComposer } from "../composer/VelaComposer";
 import { VelaConversation } from "../conversation/VelaConversation";
+import { RequestDock, type RequestDockResponse } from "../requests/RequestDock";
 import type { ConversationScrollControllerDebug } from "../../conversation-runtime/scroll/useConversationScrollController";
 import styles from "../../styles/desktop.module.css";
 
@@ -24,6 +25,7 @@ export interface ChatWorkbenchViewProps {
   isLoadingOlder?: boolean;
   composerControls?: ComposerControlsModel;
   isUpdatingComposerControls?: boolean;
+  isRespondingToRequest?: boolean;
   pendingAttachments?: PromptInputAttachment[];
   onDraftChange: (value: string) => void;
   onAttachImages?: (files: File[]) => void;
@@ -31,6 +33,7 @@ export interface ChatWorkbenchViewProps {
   onLoadOlder?: () => void;
   onConversationScrollDebugChange?: (debug: ConversationScrollControllerDebug) => void;
   onRemoveAttachment?: (attachmentId: string) => void;
+  onRespondToRequest?: (response: RequestDockResponse) => void;
   onSubmit: () => void;
 }
 
@@ -42,6 +45,7 @@ export function ChatWorkbenchView({
   isLoadingOlder = false,
   composerControls,
   isUpdatingComposerControls = false,
+  isRespondingToRequest = false,
   pendingAttachments,
   onDraftChange,
   onAttachImages,
@@ -49,6 +53,7 @@ export function ChatWorkbenchView({
   onConversationScrollDebugChange,
   onLoadOlder,
   onRemoveAttachment,
+  onRespondToRequest,
   onSubmit,
 }: ChatWorkbenchViewProps) {
   const webModel = useMemo(() => toWebChatModel(model), [model]);
@@ -62,6 +67,11 @@ export function ChatWorkbenchView({
           onLoadOlder={onLoadOlder}
           onScrollDebugChange={onConversationScrollDebugChange}
           webModel={webModel}
+        />
+        <RequestDock
+          requests={model.requests}
+          isResponding={isRespondingToRequest}
+          onRespondToRequest={onRespondToRequest}
         />
         {error ? <div className={styles.error}>{error}</div> : null}
         <VelaComposer

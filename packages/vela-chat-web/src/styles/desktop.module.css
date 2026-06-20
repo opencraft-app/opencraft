@@ -326,6 +326,112 @@
   white-space: nowrap;
 }
 
+.requestDock {
+  position: fixed;
+  right: 0;
+  bottom: 156px;
+  left: 0;
+  z-index: 6;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 0 24px;
+  pointer-events: none;
+}
+
+.requestCard {
+  display: flex;
+  width: min(100%, 1120px);
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border: 1px solid var(--vela-border-strong);
+  border-radius: 18px;
+  background: rgb(255 255 255 / 97%);
+  box-shadow:
+    0 14px 42px rgb(0 0 0 / 8%),
+    0 2px 8px rgb(0 0 0 / 4%);
+  padding: 13px 14px 13px 16px;
+  pointer-events: auto;
+  backdrop-filter: blur(18px);
+}
+
+.requestContent {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.requestKicker {
+  color: var(--vela-accent);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.requestTitle {
+  overflow: hidden;
+  color: #26272a;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.requestDescription {
+  overflow: hidden;
+  color: #777b83;
+  font-size: 13px;
+  font-weight: 440;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.requestActions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.requestPrimaryButton,
+.requestSecondaryButton {
+  min-height: 32px;
+  border-radius: 999px;
+  padding: 6px 13px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.requestPrimaryButton {
+  border: 0;
+  background: #171717;
+  color: #ffffff;
+}
+
+.requestSecondaryButton {
+  border: 1px solid var(--vela-border-strong);
+  background: #ffffff;
+  color: #666a72;
+}
+
+.requestPrimaryButton:disabled,
+.requestSecondaryButton:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.requestWaitingLabel {
+  flex: 0 0 auto;
+  color: #8b9098;
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .composerDock {
   position: fixed;
   right: 0;

@@ -50,6 +50,7 @@ import {
   conversationRuntimePolicyForHost,
   summarizeConversationRuntime,
 } from "../../packages/vela-chat-web/src/conversation-runtime/model";
+import type { RequestDockResponse } from "../../packages/vela-chat-web/src/components/requests/RequestDock";
 
 const DEFAULT_BASE_URL = "/chat/api/velad/api/v1";
 
@@ -75,6 +76,7 @@ export function ChatWorkbench({
   const [workingDirectory, setWorkingDirectory] = useState(initialWorkingDirectory ?? "");
   const [transcript, setTranscript] = useState<Awaited<ReturnType<ReturnType<typeof createVeladClient>["getTranscript"]>> | null>(null);
   const [activity, setActivity] = useState<Awaited<ReturnType<ReturnType<typeof createVeladClient>["getActivity"]>> | null>(null);
+  const [requests, setRequests] = useState<Awaited<ReturnType<ReturnType<typeof createVeladClient>["getPendingRequests"]>> | null>(null);
   const [session, setSession] = useState<SessionWire | null>(null);
   const [backends, setBackends] = useState<BackendWire[]>([]);
   const [selectedBackend, setSelectedBackend] = useState("");
@@ -88,10 +90,12 @@ export function ChatWorkbench({
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [isUpdatingAgentConfig, setIsUpdatingAgentConfig] = useState(false);
+  const [isRespondingToRequest, setIsRespondingToRequest] = useState(false);
   const [conversationScrollDebug, setConversationScrollDebug] =
     useState<VelaChatDebugScrollRuntime | null>(null);
   const transcriptRef = useRef<typeof transcript>(null);
   const activityRef = useRef<typeof activity>(null);
+  const requestsRef = useRef<typeof requests>(null);
 
   const client = useMemo(() => createVeladClient({ baseUrl }), [baseUrl]);
   const commitTranscript = useCallback((nextTranscript: typeof transcript) => {
@@ -101,6 +105,10 @@ export function ChatWorkbench({
   const commitActivity = useCallback((nextActivity: typeof activity) => {
     activityRef.current = nextActivity;
     setActivity(nextActivity);
+  }, []);
+  const commitRequests = useCallback((nextRequests: typeof requests) => {
+    requestsRef.current = nextRequests;
+    setRequests(nextRequests);
   }, []);
 
   const loadTranscript = useCallback(async () => {
@@ -122,6 +130,16 @@ export function ChatWorkbench({
       setError(err instanceof Error ? err.message : String(err));
     }
   }, [activeSessionId, client, commitActivity]);
+
+  const loadRequests = useCallback(async () => {
+    if (!activeSessionId) return;
+    try {
+      setError(null);
+      commitRequests(await client.getPendingRequests(activeSessionId, { status: "pending" }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [activeSessionId, client, commitRequests]);
 
   const loadSession = useCallback(async () => {
     if (!activeSessionId) return;
@@ -148,20 +166,22 @@ export function ChatWorkbench({
     if (!activeSessionId) return;
     try {
       setError(null);
-      const [nextTranscript, nextActivity, nextSession, nextBackends] = await Promise.all([
+      const [nextTranscript, nextActivity, nextRequests, nextSession, nextBackends] = await Promise.all([
         client.getTranscript(activeSessionId),
         client.getActivity(activeSessionId),
+        client.getPendingRequests(activeSessionId, { status: "pending" }),
         client.getSession(activeSessionId),
         client.getBackends(),
       ]);
       commitTranscript(nextTranscript);
       commitActivity(nextActivity);
+      commitRequests(nextRequests);
       setSession(nextSession.session);
       setBackends(nextBackends.backends);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [activeSessionId, client, commitActivity, commitTranscript]);
+  }, [activeSessionId, client, commitActivity, commitRequests, commitTranscript]);
 
   useEffect(() => {
     void loadReadModels();
@@ -218,6 +238,10 @@ export function ChatWorkbench({
       refresh: loadActivity,
       minIntervalMs: 240,
     });
+    const requestsRefreshScheduler = createStreamRefreshScheduler({
+      refresh: loadRequests,
+      minIntervalMs: 240,
+    });
     const sessionRefreshScheduler = createStreamRefreshScheduler({
       refresh: loadSession,
       minIntervalMs: 320,
@@ -246,6 +270,7 @@ export function ChatWorkbench({
           if (forceTranscriptRefresh) transcriptRefreshScheduler.notifyStreamEvent();
           if (refreshPlan.transcript) transcriptRefreshScheduler.notifyStreamEvent();
           if (refreshPlan.activity) activityRefreshScheduler.notifyStreamEvent();
+          if (refreshPlan.requests) requestsRefreshScheduler.notifyStreamEvent();
           if (refreshPlan.session) sessionRefreshScheduler.notifyStreamEvent();
           if (refreshPlan.backends) backendsRefreshScheduler.notifyStreamEvent();
         }
@@ -256,6 +281,7 @@ export function ChatWorkbench({
       unsubscribe();
       transcriptRefreshScheduler.dispose();
       activityRefreshScheduler.dispose();
+      requestsRefreshScheduler.dispose();
       sessionRefreshScheduler.dispose();
       backendsRefreshScheduler.dispose();
       source.close();
@@ -268,6 +294,7 @@ export function ChatWorkbench({
     loadActivity,
     loadBackends,
     commitTranscript,
+    loadRequests,
     loadSession,
     loadTranscript,
   ]);
@@ -330,10 +357,11 @@ export function ChatWorkbench({
       sessionId: activeSessionId || "unselected",
       transcript: transcript ?? { rows: [], cursor: {} },
       activity: activity ?? { items: [], cursor: {} },
+      requests: requests ?? { requests: [], cursor: {} },
       stream: { connected: streamConnected },
     });
     return buildChatRenderModel(surface, { kind: "desktop_web" });
-  }, [activeSessionId, activity, streamConnected, transcript]);
+  }, [activeSessionId, activity, requests, streamConnected, transcript]);
 
   const conversationDebug = useMemo(() => {
     const webModel = toWebChatModel(model);
@@ -483,6 +511,7 @@ export function ChatWorkbench({
       setSession(created.session);
       commitTranscript(null);
       commitActivity(null);
+      commitRequests(null);
       logVelaChatConsoleEvent("create_session", {
         agentConfig: setupAgentConfig,
         backend: resolvedSelectedBackend,
@@ -499,6 +528,7 @@ export function ChatWorkbench({
   }, [
     client,
     commitActivity,
+    commitRequests,
     commitTranscript,
     isCreatingSession,
     resolvedSelectedBackend,
@@ -532,6 +562,37 @@ export function ChatWorkbench({
       }
     },
     [activeSessionId, client, isUpdatingAgentConfig, loadReadModels],
+  );
+
+  const respondToRequest = useCallback(
+    async ({ requestId, result }: RequestDockResponse) => {
+      if (!activeSessionId || isRespondingToRequest) return;
+      try {
+        setIsRespondingToRequest(true);
+        setError(null);
+        const ack = await client.sendSessionInputEvents({
+          sessionId: activeSessionId,
+          events: [
+            {
+              type: "user.tool_confirmation",
+              request_id: requestId,
+              result,
+            },
+          ],
+        });
+        const rejectionMessage = commandAckRejectionMessage(ack);
+        if (rejectionMessage) {
+          setError(rejectionMessage);
+          return;
+        }
+        await Promise.all([loadRequests(), loadActivity()]);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setIsRespondingToRequest(false);
+      }
+    },
+    [activeSessionId, client, isRespondingToRequest, loadActivity, loadRequests],
   );
 
   const sendDebugMessage = useCallback(
@@ -584,7 +645,9 @@ export function ChatWorkbench({
           key: row.key,
         })),
         latestEventId:
-          cursorEventId(activity?.cursor) ?? cursorEventId(transcript?.cursor),
+          cursorEventId(requests?.cursor) ??
+          cursorEventId(activity?.cursor) ??
+          cursorEventId(transcript?.cursor),
       }),
     [
       activeSessionId,
@@ -596,6 +659,7 @@ export function ChatWorkbench({
       isCreatingSession,
       isUpdatingAgentConfig,
       model.rows,
+      requests,
       sessionId,
       session,
       backends,
@@ -791,12 +855,14 @@ export function ChatWorkbench({
       error={error}
       isLoadingOlder={isLoadingOlder}
       isUpdatingComposerControls={isUpdatingAgentConfig}
+      isRespondingToRequest={isRespondingToRequest}
       onAttachImages={attachImages}
       onAgentConfigChange={updateAgentConfig}
       onConversationScrollDebugChange={handleConversationScrollDebugChange}
       onDraftChange={setDraft}
       onLoadOlder={loadOlderConversation}
       onRemoveAttachment={removeAttachment}
+      onRespondToRequest={respondToRequest}
       onSubmit={submit}
       pendingAttachments={pendingAttachments}
     />

@@ -1527,10 +1527,12 @@ test("validates optional activity item event range at the client wire boundary",
 });
 
 test("validates pending requests view at the client wire boundary", async () => {
+  let fetchCount = 0;
   const client = createVeladClient({
     baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
+    fetch: async () => {
+      fetchCount += 1;
+      return new Response(
         JSON.stringify({
           requests: [
             {
@@ -1548,10 +1550,11 @@ test("validates pending requests view at the client wire boundary", async () => 
           cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
+      );
+    },
   });
 
-  assert.deepEqual(await client.getRequests("sess_123", { status: "pending" }), {
+  const expected = {
     requests: [
       {
         id: "req_1",
@@ -1566,7 +1569,11 @@ test("validates pending requests view at the client wire boundary", async () => 
       },
     ],
     cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-  });
+  };
+
+  assert.deepEqual(await client.getRequests("sess_123", { status: "pending" }), expected);
+  assert.deepEqual(await client.getPendingRequests("sess_123", { status: "pending" }), expected);
+  assert.equal(fetchCount, 2);
 });
 
 test("validates pending request required fields at the client wire boundary", async () => {
@@ -2462,6 +2469,7 @@ test("plans assistant delta stream events as local overlay only", () => {
     {
       transcript: false,
       activity: false,
+      requests: false,
       session: false,
       backends: false,
     },
@@ -2477,6 +2485,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
     {
       transcript: false,
       activity: false,
+      requests: false,
       session: true,
       backends: false,
     },
@@ -2489,6 +2498,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
     {
       transcript: true,
       activity: false,
+      requests: false,
       session: true,
       backends: false,
     },
@@ -2498,6 +2508,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
     {
       transcript: false,
       activity: false,
+      requests: false,
       session: true,
       backends: false,
     },
@@ -2510,6 +2521,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
     {
       transcript: false,
       activity: false,
+      requests: false,
       session: true,
       backends: true,
     },
@@ -2519,6 +2531,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
     {
       transcript: true,
       activity: true,
+      requests: false,
       session: false,
       backends: false,
     },
@@ -2528,6 +2541,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
     {
       transcript: false,
       activity: true,
+      requests: false,
       session: false,
       backends: false,
     },
@@ -2537,6 +2551,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
     {
       transcript: true,
       activity: true,
+      requests: false,
       session: true,
       backends: false,
     },
@@ -2549,6 +2564,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
     {
       transcript: false,
       activity: true,
+      requests: false,
       session: true,
       backends: false,
     },
@@ -2561,6 +2577,20 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
     {
       transcript: false,
       activity: true,
+      requests: true,
+      session: false,
+      backends: false,
+    },
+  );
+  assert.deepEqual(
+    streamReadModelRefreshPlan({
+      event_id: "evt_request_opened",
+      type: "request.opened",
+    }),
+    {
+      transcript: false,
+      activity: true,
+      requests: true,
       session: false,
       backends: false,
     },
@@ -2570,6 +2600,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
     {
       transcript: false,
       activity: true,
+      requests: false,
       session: false,
       backends: false,
     },
@@ -2579,6 +2610,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
     {
       transcript: false,
       activity: true,
+      requests: false,
       session: false,
       backends: false,
     },
@@ -2588,6 +2620,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
     {
       transcript: false,
       activity: true,
+      requests: false,
       session: false,
       backends: false,
     },
@@ -2597,6 +2630,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
     {
       transcript: true,
       activity: true,
+      requests: false,
       session: true,
       backends: false,
     },
@@ -2606,6 +2640,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
     {
       transcript: true,
       activity: true,
+      requests: false,
       session: true,
       backends: false,
     },
@@ -2615,6 +2650,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
     {
       transcript: false,
       activity: false,
+      requests: false,
       session: true,
       backends: true,
     },
@@ -2624,6 +2660,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
     {
       transcript: true,
       activity: true,
+      requests: false,
       session: false,
       backends: false,
     },
@@ -2640,6 +2677,7 @@ test("uses affected_views as forward-compatible refresh hints for canonical stre
     {
       transcript: true,
       activity: true,
+      requests: true,
       session: true,
       backends: true,
     },
@@ -2653,6 +2691,7 @@ test("uses affected_views as forward-compatible refresh hints for canonical stre
     {
       transcript: false,
       activity: true,
+      requests: true,
       session: false,
       backends: false,
     },
@@ -2666,6 +2705,7 @@ test("uses affected_views as forward-compatible refresh hints for canonical stre
     {
       transcript: false,
       activity: false,
+      requests: false,
       session: false,
       backends: true,
     },
@@ -2682,6 +2722,7 @@ test("plans workbench sync resets as full workbench refreshes", () => {
     {
       transcript: true,
       activity: true,
+      requests: true,
       session: true,
       backends: true,
     },
@@ -2698,6 +2739,7 @@ test("accepts plural session view hints in sync resets", () => {
     {
       transcript: false,
       activity: false,
+      requests: false,
       session: true,
       backends: false,
     },

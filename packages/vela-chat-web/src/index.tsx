@@ -1,6 +1,7 @@
 import type { AgentConfigPatchWire } from "../../vela-chat-client/src";
 import type { ChatRenderModel } from "../../vela-chat-render-model/src";
 import type { ComposerControlsModel } from "./components/composer-controls/model";
+import type { RequestDockResponse } from "./components/requests/RequestDock";
 import type { PromptInputAttachment } from "./primitives/prompt-input/PromptInput";
 import type { ConversationScrollControllerDebug } from "./conversation-runtime/scroll/useConversationScrollController";
 import { ChatWorkbenchView } from "./components/workbench/ChatWorkbenchView";
@@ -13,6 +14,7 @@ export interface VelaChatWebProps {
   isLoadingOlder?: boolean;
   composerControls?: ComposerControlsModel;
   isUpdatingComposerControls?: boolean;
+  isRespondingToRequest?: boolean;
   pendingAttachments?: PromptInputAttachment[];
   onDraftChange: (value: string) => void;
   onAttachImages?: (files: File[]) => void;
@@ -20,6 +22,7 @@ export interface VelaChatWebProps {
   onConversationScrollDebugChange?: (debug: ConversationScrollControllerDebug) => void;
   onLoadOlder?: () => void;
   onRemoveAttachment?: (attachmentId: string) => void;
+  onRespondToRequest?: (response: RequestDockResponse) => void;
   onSubmit: () => void;
 }
 
@@ -31,6 +34,7 @@ export function VelaChatWeb({
   isLoadingOlder,
   composerControls,
   isUpdatingComposerControls,
+  isRespondingToRequest,
   pendingAttachments,
   onDraftChange,
   onAttachImages,
@@ -38,6 +42,7 @@ export function VelaChatWeb({
   onConversationScrollDebugChange,
   onLoadOlder,
   onRemoveAttachment,
+  onRespondToRequest,
   onSubmit,
 }: VelaChatWebProps) {
   return (
@@ -48,6 +53,7 @@ export function VelaChatWeb({
       error={error}
       isLoadingOlder={isLoadingOlder}
       isUpdatingComposerControls={isUpdatingComposerControls}
+      isRespondingToRequest={isRespondingToRequest}
       model={model}
       onAttachImages={onAttachImages}
       onAgentConfigChange={onAgentConfigChange}
@@ -55,6 +61,7 @@ export function VelaChatWeb({
       onDraftChange={onDraftChange}
       onLoadOlder={onLoadOlder}
       onRemoveAttachment={onRemoveAttachment}
+      onRespondToRequest={onRespondToRequest}
       onSubmit={onSubmit}
       pendingAttachments={pendingAttachments}
     />

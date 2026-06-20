@@ -139,6 +139,23 @@ export interface ActivityWireView {
   cursor: ChatSurfaceCursor;
 }
 
+export interface AgentRequestWire {
+  id: string;
+  session_id: string;
+  type: string;
+  status: string;
+  title?: string;
+  description?: string;
+  payload?: Record<string, unknown>;
+  created_at: string;
+  resolved_at?: string;
+}
+
+export interface PendingRequestsWireView {
+  requests: AgentRequestWire[];
+  cursor: ChatSurfaceCursor;
+}
+
 export interface ChatSurfaceDebug {
   projection: "transcript" | "activity" | "requests" | "diffs";
   source_event_ids: string[];
@@ -168,6 +185,18 @@ export interface ChatSurfaceActivityItem {
   debug: ChatSurfaceDebug;
 }
 
+export interface ChatSurfacePendingRequest {
+  id: string;
+  type: string;
+  status: string;
+  title: string;
+  description: string;
+  payload?: Record<string, unknown>;
+  created_at: string;
+  resolved_at?: string;
+  debug: ChatSurfaceDebug;
+}
+
 export interface ChatSurface {
   session_id: string;
   transcript: {
@@ -179,11 +208,12 @@ export interface ChatSurface {
     window?: ActivityWindow;
   };
   pending_requests: {
-    items: unknown[];
+    items: ChatSurfacePendingRequest[];
   };
   cursors: {
     transcript?: ChatSurfaceCursor;
     activity?: ChatSurfaceCursor;
+    requests?: ChatSurfaceCursor;
   };
   stream: {
     connected: boolean;
@@ -195,6 +225,7 @@ export interface BuildChatSurfaceInput {
   sessionId: string;
   transcript: ChatTranscriptWireView;
   activity?: ActivityWireView;
+  requests?: PendingRequestsWireView;
   stream?: Partial<ChatSurface["stream"]>;
 }
 
@@ -244,16 +275,52 @@ export function buildChatSurfaceFromReadModels(input: BuildChatSurfaceInput): Ch
       items: input.activity?.items.map(normalizeActivityItem) ?? [],
       window: input.activity?.window,
     },
-    pending_requests: { items: [] },
+    pending_requests: {
+      items: input.requests?.requests.map(normalizePendingRequest) ?? [],
+    },
     cursors: {
       transcript: input.transcript.cursor,
       ...(input.activity ? { activity: input.activity.cursor } : {}),
+      ...(input.requests ? { requests: input.requests.cursor } : {}),
     },
     stream: {
       connected: input.stream?.connected ?? false,
       running: input.stream?.running ?? false,
     },
   };
+}
+
+function normalizePendingRequest(request: AgentRequestWire): ChatSurfacePendingRequest {
+  return {
+    id: request.id,
+    type: request.type,
+    status: request.status,
+    title: request.title?.trim() || titleFromRequestType(request.type),
+    description: request.description?.trim() || "",
+    ...(request.payload ? { payload: request.payload } : {}),
+    created_at: request.created_at,
+    ...(request.resolved_at ? { resolved_at: request.resolved_at } : {}),
+    debug: {
+      projection: "requests",
+      source_event_ids: [request.id],
+    },
+  };
+}
+
+function titleFromRequestType(type: string) {
+  switch (type) {
+    case "permission":
+      return "Permission required";
+    case "tool_confirmation":
+    case "tool_call":
+      return "Tool confirmation";
+    case "question":
+      return "Question";
+    case "custom_input":
+      return "Input required";
+    default:
+      return "Request";
+  }
 }
 
 export function deriveConversationWindowState({

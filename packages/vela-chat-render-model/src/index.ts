@@ -1,6 +1,7 @@
 import type {
   ChatSurface,
   ChatSurfaceDebug,
+  ChatSurfacePendingRequest,
   ChatTranscriptPart,
   ChatSurfaceTranscriptRow,
 } from "../../vela-chat-surface/src";
@@ -21,10 +22,26 @@ export interface ChatRenderModel {
   session_id: string;
   host: ChatHostPolicy;
   rows: ChatRenderRow[];
+  requests: RequestDockRenderModel;
   composer: {
     placeholder: string;
     can_send: boolean;
   };
+}
+
+export interface RequestDockRenderModel {
+  items: RequestDockRenderItem[];
+}
+
+export interface RequestDockRenderItem {
+  id: string;
+  type: string;
+  title: string;
+  description: string;
+  status: string;
+  confirmable: boolean;
+  createdAt: string;
+  debug: ChatSurfaceDebug;
 }
 
 export type ChatRenderRow =
@@ -92,11 +109,36 @@ export function buildChatRenderModel(surface: ChatSurface, host: ChatHostPolicy)
     session_id: surface.session_id,
     host,
     rows,
+    requests: {
+      items: surface.pending_requests.items.map(renderPendingRequest),
+    },
     composer: {
       placeholder: "要求后续变更",
       can_send: true,
     },
   };
+}
+
+function renderPendingRequest(request: ChatSurfacePendingRequest): RequestDockRenderItem {
+  return {
+    id: request.id,
+    type: request.type,
+    title: request.title,
+    description: request.description,
+    status: request.status,
+    confirmable: isConfirmableRequest(request),
+    createdAt: request.created_at,
+    debug: request.debug,
+  };
+}
+
+function isConfirmableRequest(request: ChatSurfacePendingRequest): boolean {
+  return (
+    request.status === "pending" &&
+    (request.type === "permission" ||
+      request.type === "tool_confirmation" ||
+      request.type === "tool_call")
+  );
 }
 
 function renderTranscriptRow(row: ChatSurfaceTranscriptRow): ChatRenderRow {

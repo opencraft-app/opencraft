@@ -82,6 +82,7 @@ export interface VelaStreamEventWire {
 export interface StreamReadModelRefreshPlan {
   transcript: boolean;
   activity: boolean;
+  requests: boolean;
   session: boolean;
   backends: boolean;
 }
@@ -417,6 +418,10 @@ export interface VeladClient {
     sessionId: string,
     options?: PendingRequestsOptions,
   ) => Promise<PendingRequestsWireView>;
+  getPendingRequests: (
+    sessionId: string,
+    options?: PendingRequestsOptions,
+  ) => Promise<PendingRequestsWireView>;
   getDiffs: (sessionId: string) => Promise<DiffReviewWireView>;
   cancelSession: (input: CancelSessionInput) => Promise<CommandAckWire>;
   sendSessionInputEvents: (input: SendSessionInputEventsInput) => Promise<CommandAckWire>;
@@ -603,6 +608,7 @@ export function streamReadModelRefreshPlan(
   const typePlan = {
     transcript: transcriptRefreshEvents.has(event.type),
     activity: isActivityRefreshEvent(event.type),
+    requests: isRequestRefreshEvent(event.type),
     session: sessionRefreshEvents.has(event.type),
     backends: event.type.startsWith("backend."),
   };
@@ -610,6 +616,7 @@ export function streamReadModelRefreshPlan(
   return {
     transcript: typePlan.transcript || hintedPlan.transcript,
     activity: typePlan.activity || hintedPlan.activity,
+    requests: typePlan.requests || hintedPlan.requests,
     session: typePlan.session || hintedPlan.session,
     backends: typePlan.backends || event.type === "usage.updated" || hintedPlan.backends,
   };
@@ -869,8 +876,18 @@ function isActivityRefreshEvent(eventType: string) {
   );
 }
 
+function isRequestRefreshEvent(eventType: string) {
+  return eventType.startsWith("request.");
+}
+
 function emptyRefreshPlan(): StreamReadModelRefreshPlan {
-  return { transcript: false, activity: false, session: false, backends: false };
+  return {
+    transcript: false,
+    activity: false,
+    requests: false,
+    session: false,
+    backends: false,
+  };
 }
 
 function resetRefreshPlan(views: string[] | undefined): StreamReadModelRefreshPlan {
@@ -883,6 +900,7 @@ function resetRefreshPlan(views: string[] | undefined): StreamReadModelRefreshPl
       viewSet.has("activity") ||
       viewSet.has("requests") ||
       viewSet.has("diffs"),
+    requests: workbench || viewSet.has("requests"),
     session: workbench || viewSet.has("session") || viewSet.has("sessions"),
     backends: workbench || viewSet.has("backends"),
   };
@@ -899,6 +917,7 @@ function affectedViewsRefreshPlan(views: string[] | undefined): StreamReadModelR
       viewSet.has("activity") ||
       viewSet.has("requests") ||
       viewSet.has("diffs"),
+    requests: workbench || viewSet.has("requests"),
     session: workbench || viewSet.has("session") || viewSet.has("sessions"),
     backends: workbench || viewSet.has("backends"),
   };
@@ -1057,6 +1076,9 @@ export function createVeladClient(options: VeladClientOptions): VeladClient {
     async getRequests(sessionId, options) {
       const response = await doFetch(this.requestsUrl(sessionId, options));
       return readPendingRequestsViewResponse(response);
+    },
+    async getPendingRequests(sessionId, options) {
+      return this.getRequests(sessionId, options);
     },
     async getDiffs(sessionId) {
       const response = await doFetch(this.diffsUrl(sessionId));

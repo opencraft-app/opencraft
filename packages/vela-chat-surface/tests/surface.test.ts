@@ -101,6 +101,40 @@ test("normalizes transcript wire rows into stable semantic surface rows", () => 
   assert.equal(surface.cursors.activity?.latest_event_id, "evt_turn_failed");
 });
 
+test("normalizes pending requests as a separate surface lane", () => {
+  const surface = buildChatSurfaceFromReadModels({
+    sessionId: "sess_requests",
+    transcript: {
+      rows: [],
+      cursor: { latest_event_id: "evt_transcript" },
+    },
+    requests: {
+      requests: [
+        {
+          id: "req_allow_shell",
+          session_id: "sess_requests",
+          type: "permission",
+          status: "pending",
+          title: "Allow command?",
+          description: "bash: npm test",
+          payload: { command: "npm test" },
+          created_at: "2026-06-18T10:00:02Z",
+        },
+      ],
+      cursor: { latest_event_id: "evt_request_opened" },
+    },
+  });
+
+  assert.equal(surface.pending_requests.items.length, 1);
+  assert.equal(surface.pending_requests.items[0]?.id, "req_allow_shell");
+  assert.equal(surface.pending_requests.items[0]?.title, "Allow command?");
+  assert.equal(surface.pending_requests.items[0]?.debug.projection, "requests");
+  assert.deepEqual(surface.pending_requests.items[0]?.debug.source_event_ids, [
+    "req_allow_shell",
+  ]);
+  assert.equal(surface.cursors.requests?.latest_event_id, "evt_request_opened");
+});
+
 test("keeps surface renderer-free", async () => {
   const source = await import("node:fs/promises").then((fs) =>
     fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),

@@ -91,6 +91,37 @@ test("turns surface rows into host-aware render rows", () => {
   assert.equal(model.host.kind, "desktop_web");
 });
 
+test("builds a request dock from pending surface requests without mixing it into transcript rows", () => {
+  const surface: ChatSurface = {
+    session_id: "sess_requests",
+    transcript: { rows: [] },
+    activity: { items: [] },
+    pending_requests: {
+      items: [
+        {
+          id: "req_tool",
+          type: "tool_confirmation",
+          status: "pending",
+          title: "Allow command?",
+          description: "bash: npm test",
+          created_at: "2026-06-18T10:00:00Z",
+          debug: { projection: "requests", source_event_ids: ["req_tool"] },
+        },
+      ],
+    },
+    cursors: {},
+    stream: { connected: true, running: true },
+  };
+
+  const model = buildChatRenderModel(surface, { kind: "desktop_web" });
+
+  assert.equal(model.rows.length, 0);
+  assert.equal(model.requests.items.length, 1);
+  assert.equal(model.requests.items[0]?.id, "req_tool");
+  assert.equal(model.requests.items[0]?.title, "Allow command?");
+  assert.equal(model.requests.items[0]?.confirmable, true);
+});
+
 test("derives user message text from OpenAPI textual parts when row text is absent", () => {
   const surface: ChatSurface = {
     session_id: "sess_user_parts",
