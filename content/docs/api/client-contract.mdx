@@ -334,6 +334,7 @@ Session config changes MUST be visible through SessionView/read model updates.
 
 - 是否在手写 client 中继续逐字段校验 `TranscriptPart` / `ActivityShelfItem.detail`。row/item 的 required 字段和 enum 已经在 client boundary 校验；深层 renderer payload 是否也收紧，需要结合真实 provider 样本确认。
 - 是否在手写 client 中逐字段校验 `Session` / `SessionSummary`。目前只校验 session response envelope；完整校验会影响很多测试 fixture，需要先确认 daemon 输出和 OpenAPI 完全一致。
+- 是否把 `ClientInputEvent` 升级成 OpenAPI `oneOf` branch union。当前 OpenAPI 只在顶层 required `type`，而手写 client 已经按 `type` 校验分支字段：`user.message.content`、`user.tool_confirmation.request_id/result`、`user.custom_tool_result.request_id/content`、`user.request_answer.request_id/answer`。这不是新的 MDX wire DTO；下一步应先把 OpenAPI 表达成 discriminator union，再让 client/generated types 跟随。
 - `AgentConfig.model` / `reasoning_effort` / `permission_mode` 是否允许 `null` 表示清空配置。当前 TypeScript 类型历史上允许 `null`，但 OpenAPI `AgentConfig` 没有声明 nullable；在语义确定前，手写 client 保留这些字段的 `null` 兼容，同时校验非 null 值的 OpenAPI 类型和枚举。
 - 是否为所有 read models 引入 generated validator。长期更像 Paseo 的成熟路线是统一 schema boundary；短期若手写，容易和 OpenAPI 漂移。
 - 是否把 SSE event 也升级成严格 `VelaEvent` parser。当前为了断线恢复和未知 provider event 的容错仍偏宽松，具体收紧范围需要结合真实 Codex/ACP/Pi 录制样本确认。
