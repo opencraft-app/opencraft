@@ -517,10 +517,10 @@ export function prependActivityWindow<T extends ActivityWireView>(current: T, ol
 }
 
 function normalizeActivityItem(item: ActivityWireItem): ChatSurfaceActivityItem {
-  const sourceEventIds = [
+  const sourceEventIds = uniqueStrings([
     item.event_range?.from_event_id,
     item.event_range?.to_event_id,
-  ].filter((id): id is string => Boolean(id));
+  ].filter((id): id is string => Boolean(id)));
   return {
     id: item.id,
     kind: item.kind,
@@ -535,6 +535,10 @@ function normalizeActivityItem(item: ActivityWireItem): ChatSurfaceActivityItem 
       source_event_ids: sourceEventIds,
     },
   };
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values));
 }
 
 function normalizeTranscriptRow(row: ChatTranscriptWireRow): ChatSurfaceTranscriptRow {

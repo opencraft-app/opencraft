@@ -170,6 +170,34 @@ test("does not invent source event ids for projected read models without provena
   assert.deepEqual(surface.pending_requests.items[0]?.debug.source_event_ids, []);
 });
 
+test("deduplicates single-event activity provenance ranges", () => {
+  const surface = buildChatSurfaceFromReadModels({
+    sessionId: "sess_activity_single_event",
+    transcript: {
+      rows: [],
+      cursor: { event_id: "evt_transcript", epoch: 1, seq: 1 },
+    },
+    activity: {
+      items: [
+        {
+          id: "activity_tool_1",
+          kind: "tool",
+          status: "completed",
+          title: "Tool",
+          created_at: "2026-06-18T10:00:03Z",
+          event_range: {
+            from_event_id: "evt_tool_1",
+            to_event_id: "evt_tool_1",
+          },
+        },
+      ],
+      cursor: { event_id: "evt_tool_1", epoch: 1, seq: 2 },
+    },
+  });
+
+  assert.deepEqual(surface.activity.items[0]?.debug.source_event_ids, ["evt_tool_1"]);
+});
+
 test("uses transcript row label for non-message rows when wire text is absent", () => {
   const surface = buildChatSurfaceFromReadModels({
     sessionId: "sess_labels",
