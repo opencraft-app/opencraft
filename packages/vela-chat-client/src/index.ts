@@ -131,6 +131,20 @@ export interface PendingRequestsWireView {
   cursor: CursorWindow;
 }
 
+export type DiffSummaryStatusWire = "added" | "modified" | "deleted" | "renamed";
+
+export interface DiffSummaryWire {
+  file_path: string;
+  status: DiffSummaryStatusWire;
+  additions?: number;
+  deletions?: number;
+}
+
+export interface DiffReviewWireView {
+  diffs: DiffSummaryWire[];
+  cursor: CursorWindow;
+}
+
 export interface ActivityWireDetail {
   type: string;
   [key: string]: unknown;
@@ -356,6 +370,7 @@ export interface VeladClient {
   transcriptUrl: (sessionId: string, options?: TranscriptWindowOptions) => URL;
   activityUrl: (sessionId: string, options?: ActivityWindowOptions) => URL;
   requestsUrl: (sessionId: string, options?: PendingRequestsOptions) => URL;
+  diffsUrl: (sessionId: string) => URL;
   sessionEventStreamUrl: (sessionId: string, afterId?: string | null) => URL;
   getTranscript: (
     sessionId: string,
@@ -366,6 +381,7 @@ export interface VeladClient {
     sessionId: string,
     options?: PendingRequestsOptions,
   ) => Promise<PendingRequestsWireView>;
+  getDiffs: (sessionId: string) => Promise<DiffReviewWireView>;
   sendUserMessage: (input: {
     sessionId: string;
     text?: string;
@@ -957,6 +973,9 @@ export function createVeladClient(options: VeladClientOptions): VeladClient {
       if (options?.status) url.searchParams.set("status", options.status);
       return url;
     },
+    diffsUrl(sessionId) {
+      return new URL(`sessions/${encodeSessionId(sessionId)}/views/diffs`, baseUrl);
+    },
     sessionEventStreamUrl(sessionId, afterId) {
       const url = new URL(`sessions/${encodeSessionId(sessionId)}/events/stream`, baseUrl);
       const validAfterId = validateAfterId(afterId);
@@ -974,6 +993,10 @@ export function createVeladClient(options: VeladClientOptions): VeladClient {
     async getRequests(sessionId, options) {
       const response = await doFetch(this.requestsUrl(sessionId, options));
       return readPendingRequestsViewResponse(response);
+    },
+    async getDiffs(sessionId) {
+      const response = await doFetch(this.diffsUrl(sessionId));
+      return readDiffReviewViewResponse(response);
     },
     async sendUserMessage({ sessionId, text, content, idempotencyKey }) {
       const url = new URL(`sessions/${encodeSessionId(sessionId)}/events`, baseUrl);
@@ -1125,6 +1148,7 @@ const requestStatuses = new Set([
   "expired",
   "cancelled",
 ]);
+const diffSummaryStatuses = new Set(["added", "modified", "deleted", "renamed"]);
 const activitySearchModes = new Set(["code", "web", "files", "unknown"]);
 const activityDetailTypes = new Set([
   "shell",
@@ -1855,6 +1879,10 @@ async function readPendingRequestsViewResponse(response: Response): Promise<Pend
   return parsePendingRequestsWireView(await readJsonResponse<unknown>(response));
 }
 
+async function readDiffReviewViewResponse(response: Response): Promise<DiffReviewWireView> {
+  return parseDiffReviewWireView(await readJsonResponse<unknown>(response));
+}
+
 export function parseActivityWireView(data: unknown): ActivityWireView {
   if (!isRecord(data)) {
     throw invalidActivityView("ActivityShelfView must be an object");
@@ -1890,6 +1918,44 @@ export function parsePendingRequestsWireView(data: unknown): PendingRequestsWire
       "PendingRequestsView",
       invalidPendingRequestsView,
     ),
+  };
+}
+
+export function parseDiffReviewWireView(data: unknown): DiffReviewWireView {
+  if (!isRecord(data)) {
+    throw invalidDiffReviewView("DiffReviewView must be an object");
+  }
+  const diffs = requiredViewArray(
+    data,
+    "diffs",
+    "DiffReviewView",
+    invalidDiffReviewView,
+  );
+  return {
+    diffs: diffs.map((diff, index) =>
+      parseDiffSummaryWire(diff, `DiffReviewView.diffs[${index}]`),
+    ),
+    cursor: requiredCursorWindow(data, "cursor", "DiffReviewView", invalidDiffReviewView),
+  };
+}
+
+function parseDiffSummaryWire(data: unknown, owner: string): DiffSummaryWire {
+  if (!isRecord(data)) {
+    throw invalidDiffReviewView(`${owner} must be an object`);
+  }
+  const status = requiredViewString(data, "status", owner, invalidDiffReviewView);
+  if (!diffSummaryStatuses.has(status)) {
+    throw invalidDiffReviewView(`${owner}.status must be added, modified, deleted, or renamed`);
+  }
+  return {
+    file_path: requiredViewString(data, "file_path", owner, invalidDiffReviewView),
+    status: status as DiffSummaryStatusWire,
+    ...(data.additions !== undefined
+      ? { additions: optionalViewInteger(data, "additions", owner, invalidDiffReviewView) }
+      : {}),
+    ...(data.deletions !== undefined
+      ? { deletions: optionalViewInteger(data, "deletions", owner, invalidDiffReviewView) }
+      : {}),
   };
 }
 
@@ -2669,6 +2735,10 @@ function invalidActivityView(message: string) {
 
 function invalidPendingRequestsView(message: string) {
   return new VeladClientError("invalid_pending_requests_view", message);
+}
+
+function invalidDiffReviewView(message: string) {
+  return new VeladClientError("invalid_diff_review_view", message);
 }
 
 export class VeladClientError extends Error {

@@ -158,6 +158,15 @@ test("builds pending requests view URLs with status filters", () => {
   );
 });
 
+test("builds diff review view URLs", () => {
+  const client = createVeladClient({ baseUrl: "http://127.0.0.1:3857/api/v1/" });
+
+  assert.equal(
+    client.diffsUrl("sess_123").toString(),
+    "http://127.0.0.1:3857/api/v1/sessions/sess_123/views/diffs",
+  );
+});
+
 test("rejects invalid activity direction anchor options before fetch", async () => {
   const client = createVeladClient({ baseUrl: "http://127.0.0.1:3857/api/v1/" });
 
@@ -529,6 +538,69 @@ test("validates optional transcript row turn_id at the client wire boundary", as
       err instanceof VeladClientError &&
       err.code === "invalid_transcript_view" &&
       /turn_id/.test(err.message),
+  );
+});
+
+test("validates diff review view at the client wire boundary", async () => {
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async () =>
+      new Response(
+        JSON.stringify({
+          diffs: [
+            {
+              file_path: "src/app.ts",
+              status: "modified",
+              additions: 12,
+              deletions: 3,
+            },
+            {
+              file_path: "README.md",
+              status: "added",
+            },
+          ],
+          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+  });
+
+  assert.deepEqual(await client.getDiffs("sess_123"), {
+    diffs: [
+      {
+        file_path: "src/app.ts",
+        status: "modified",
+        additions: 12,
+        deletions: 3,
+      },
+      {
+        file_path: "README.md",
+        status: "added",
+      },
+    ],
+    cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
+  });
+});
+
+test("validates diff summary required fields at the client wire boundary", async () => {
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async () =>
+      new Response(
+        JSON.stringify({
+          diffs: [{ file_path: "src/app.ts" }],
+          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+  });
+
+  await assert.rejects(
+    () => client.getDiffs("sess_123"),
+    (err) =>
+      err instanceof VeladClientError &&
+      err.code === "invalid_diff_review_view" &&
+      /status/.test(err.message),
   );
 });
 
