@@ -1749,6 +1749,9 @@ function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDeta
       ...(data.path !== undefined
         ? { path: optionalViewString(data, "path", owner, invalidActivityView) }
         : {}),
+      ...(data.unified_diff !== undefined
+        ? { unified_diff: optionalViewString(data, "unified_diff", owner, invalidActivityView) }
+        : {}),
     };
   }
   if (type === "fetch") {
