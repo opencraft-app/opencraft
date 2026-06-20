@@ -373,10 +373,18 @@ export const VELA_SESSION_STREAM_EVENT_TYPES = [
   "tool.output.delta",
   "tool.completed",
   "tool.failed",
+  "command.started",
+  "command.output.delta",
+  "command.completed",
+  "command.failed",
+  "task.started",
+  "task.updated",
+  "task.completed",
   "request.opened",
   "request.updated",
   "request.resolved",
   "diff.updated",
+  "projection.invalidated",
   "warning.raised",
   "error.raised",
   "turn.completed",
@@ -734,6 +742,8 @@ const sessionRefreshEvents = new Set([
 function isActivityRefreshEvent(eventType: string) {
   return (
     eventType.startsWith("tool.") ||
+    eventType.startsWith("command.") ||
+    eventType.startsWith("task.") ||
     eventType.startsWith("request.") ||
     eventType === "assistant.reasoning.delta" ||
     eventType === "assistant.reasoning.completed" ||

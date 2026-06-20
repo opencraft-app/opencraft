@@ -2305,6 +2305,24 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
     },
   );
   assert.deepEqual(
+    streamReadModelRefreshPlan({ event_id: "evt_command", type: "command.started" }),
+    {
+      transcript: false,
+      activity: true,
+      session: false,
+      backends: false,
+    },
+  );
+  assert.deepEqual(
+    streamReadModelRefreshPlan({ event_id: "evt_task", type: "task.updated" }),
+    {
+      transcript: false,
+      activity: true,
+      session: false,
+      backends: false,
+    },
+  );
+  assert.deepEqual(
     streamReadModelRefreshPlan({ event_id: "evt_turn", type: "turn.completed" }),
     {
       transcript: true,
@@ -2732,12 +2750,16 @@ test("subscribes to named velad SSE events as stream updates", () => {
 
   source.emit("assistant.message.delta");
   source.emit("turn.completed");
+  source.emit("command.started");
+  source.emit("task.updated");
+  source.emit("projection.invalidated");
   source.emitMessage();
 
-  assert.equal(updates, 3);
+  assert.equal(updates, 6);
   unsubscribe();
   source.emit("assistant.message.delta");
-  assert.equal(updates, 3);
+  source.emit("command.started");
+  assert.equal(updates, 6);
 });
 
 test("stream refresh scheduler paints the first event immediately and throttles bursts", () => {
