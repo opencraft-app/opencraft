@@ -15,6 +15,7 @@ export interface AgentWorkRenderRow {
   display: AgentWorkDisplay;
   createdAt: string;
   updatedAt?: string;
+  activityId?: string;
   debug: ChatSurfaceDebug;
 }
 

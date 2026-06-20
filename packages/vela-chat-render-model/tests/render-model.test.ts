@@ -1,8 +1,24 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 
 import { buildChatRenderModel, splitMarkdownBlocks } from "../src";
 import type { ChatSurface } from "../../vela-chat-surface/src";
+
+const root = process.cwd();
+
+test("agent work render row declares the activity id it emits", () => {
+  const source = readFileSync(
+    join(root, "packages/vela-chat-render-model/src/activity/tools.ts"),
+    "utf8",
+  );
+
+  assert.match(
+    source,
+    /export interface AgentWorkRenderRow \{[\s\S]*\n  activityId\?: string;/,
+  );
+});
 
 test("splits assistant markdown into stable blocks without splitting fenced code", () => {
   assert.deepEqual(
