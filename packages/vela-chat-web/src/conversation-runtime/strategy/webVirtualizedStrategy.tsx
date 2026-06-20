@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, type ReactNode, type RefObject } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useRef,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { measureElement, useVirtualizer } from "@tanstack/react-virtual";
 import {
   estimateStreamItemHeight,
@@ -149,15 +156,14 @@ function WebPartialVirtualizedItemList({
             const item = segments.historyVirtualized[virtualItem.index];
             if (!item) return null;
             return (
-              <div
-                className={styles.virtualizedHistoryItem}
-                data-index={virtualItem.index}
+              <VirtualizedHistoryRow
+                index={virtualItem.index}
+                item={item}
                 key={virtualItem.key}
-                ref={(node) => measureVirtualizedRowElement(node, item)}
-                style={{ transform: `translateY(${virtualItem.start}px)` }}
-              >
-                {renderItem(item)}
-              </div>
+                measureVirtualizedRowElement={measureVirtualizedRowElement}
+                renderItem={renderItem}
+                start={virtualItem.start}
+              />
             );
           })}
         </div>
@@ -167,6 +173,41 @@ function WebPartialVirtualizedItemList({
     </div>
   );
 }
+
+const VirtualizedHistoryRow = memo(function VirtualizedHistoryRow({
+  index,
+  item,
+  measureVirtualizedRowElement,
+  renderItem,
+  start,
+}: {
+  index: number;
+  item: ConversationStreamItem;
+  measureVirtualizedRowElement: (
+    node: HTMLDivElement | null,
+    item: ConversationStreamItem,
+  ) => void;
+  renderItem: (item: ConversationStreamItem) => ReactNode;
+  start: number;
+}) {
+  const handleMeasureRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      measureVirtualizedRowElement(node, item);
+    },
+    [item, measureVirtualizedRowElement],
+  );
+
+  return (
+    <div
+      className={styles.virtualizedHistoryItem}
+      data-index={index}
+      ref={handleMeasureRef}
+      style={{ transform: `translateY(${start}px)` }}
+    >
+      {renderItem(item)}
+    </div>
+  );
+});
 
 function readConversationEstimateWidth(
   scrollElement: HTMLElement | null | undefined,

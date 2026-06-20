@@ -106,6 +106,21 @@ test("web partial virtualization batches row measurement through animation frame
   assert.doesNotMatch(source, /ref=\{rowVirtualizer\.measureElement\}/);
 });
 
+test("web partial virtualization keeps row measurement refs stable across parent renders", () => {
+  const source = readFileSync(
+    join(root, "packages/vela-chat-web/src/conversation-runtime/strategy/webVirtualizedStrategy.tsx"),
+    "utf8",
+  );
+
+  assert.match(source, /memo\(function VirtualizedHistoryRow/);
+  assert.match(source, /const handleMeasureRef = useCallback/);
+  assert.match(source, /ref=\{handleMeasureRef\}/);
+  assert.doesNotMatch(
+    source,
+    /ref=\{\(node\) => measureVirtualizedRowElement\(node, item\)\}/,
+  );
+});
+
 test("web partial virtualization records measured row heights for future estimates", () => {
   const source = readFileSync(
     join(root, "packages/vela-chat-web/src/conversation-runtime/strategy/webVirtualizedStrategy.tsx"),
