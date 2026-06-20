@@ -482,6 +482,11 @@ test("chat stream handler applies local overlays and scopes read-model refresh",
 
 test("chat request dock uses PendingRequestsView and responds through input events", () => {
   const chatWorkbench = readFileSync(join(root, "app/chat/ChatWorkbench.tsx"), "utf8");
+  const requestResponses = readFileSync(join(root, "app/chat/requestResponses.ts"), "utf8");
+  const requestDock = readFileSync(
+    join(root, "packages/vela-chat-web/src/components/requests/RequestDock.tsx"),
+    "utf8",
+  );
   const workbenchView = readFileSync(
     join(root, "packages/vela-chat-web/src/components/workbench/ChatWorkbenchView.tsx"),
     "utf8",
@@ -491,8 +496,12 @@ test("chat request dock uses PendingRequestsView and responds through input even
   assert.match(chatWorkbench, /requestsRefreshScheduler\.notifyStreamEvent/);
   assert.match(chatWorkbench, /refreshPlan\.requests/);
   assert.match(chatWorkbench, /client\.sendSessionInputEvents\(\{\s*sessionId:\s*activeSessionId/);
-  assert.match(chatWorkbench, /type:\s*"user\.tool_confirmation"/);
-  assert.match(chatWorkbench, /request_id:\s*requestId/);
+  assert.match(chatWorkbench, /buildRequestResponseInputEvent/);
+  assert.match(requestResponses, /type:\s*"user\.tool_confirmation"/);
+  assert.match(requestResponses, /type:\s*"user\.request_answer"/);
+  assert.match(requestResponses, /request_id:\s*response\.requestId/);
+  assert.match(requestDock, /response_kind === "answer"/);
+  assert.match(requestDock, /textarea/);
   assert.match(workbenchView, /RequestDock/);
   assert.match(workbenchView, /onRespondToRequest/);
   assert.doesNotMatch(workbenchView, /AgentRequestWire/);

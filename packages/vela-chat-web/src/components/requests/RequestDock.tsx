@@ -1,12 +1,21 @@
 "use client";
 
+import { useState } from "react";
+
 import type { RequestDockRenderModel } from "../../../../vela-chat-render-model/src";
 import styles from "../../styles/desktop.module.css";
 
-export interface RequestDockResponse {
-  requestId: string;
-  result: "allow" | "deny";
-}
+export type RequestDockResponse =
+  | {
+      kind: "confirmation";
+      requestId: string;
+      result: "allow" | "deny";
+    }
+  | {
+      kind: "answer";
+      requestId: string;
+      answer: string;
+    };
 
 export interface RequestDockProps {
   requests: RequestDockRenderModel;
@@ -19,6 +28,7 @@ export function RequestDock({
   isResponding = false,
   onRespondToRequest,
 }: RequestDockProps) {
+  const [answers, setAnswers] = useState<Record<string, string>>({});
   const pending = requests.items.filter((request) => request.status === "pending");
   if (!pending.length) return null;
 
@@ -33,13 +43,19 @@ export function RequestDock({
               <span className={styles.requestDescription}>{request.description}</span>
             ) : null}
           </div>
-          {request.confirmable && onRespondToRequest ? (
+          {request.response_kind === "confirmation" && onRespondToRequest ? (
             <div className={styles.requestActions}>
               <button
                 className={styles.requestSecondaryButton}
                 disabled={isResponding}
                 type="button"
-                onClick={() => onRespondToRequest({ requestId: request.id, result: "deny" })}
+                onClick={() =>
+                  onRespondToRequest({
+                    kind: "confirmation",
+                    requestId: request.id,
+                    result: "deny",
+                  })
+                }
               >
                 Deny
               </button>
@@ -47,9 +63,45 @@ export function RequestDock({
                 className={styles.requestPrimaryButton}
                 disabled={isResponding}
                 type="button"
-                onClick={() => onRespondToRequest({ requestId: request.id, result: "allow" })}
+                onClick={() =>
+                  onRespondToRequest({
+                    kind: "confirmation",
+                    requestId: request.id,
+                    result: "allow",
+                  })
+                }
               >
                 Allow
+              </button>
+            </div>
+          ) : request.response_kind === "answer" && onRespondToRequest ? (
+            <div className={styles.requestAnswerForm}>
+              <textarea
+                className={styles.requestAnswerInput}
+                disabled={isResponding}
+                placeholder="Answer..."
+                rows={1}
+                value={answers[request.id] ?? ""}
+                onChange={(event) =>
+                  setAnswers((current) => ({
+                    ...current,
+                    [request.id]: event.currentTarget.value,
+                  }))
+                }
+              />
+              <button
+                className={styles.requestPrimaryButton}
+                disabled={isResponding || !(answers[request.id] ?? "").trim()}
+                type="button"
+                onClick={() =>
+                  onRespondToRequest({
+                    kind: "answer",
+                    requestId: request.id,
+                    answer: (answers[request.id] ?? "").trim(),
+                  })
+                }
+              >
+                Send
               </button>
             </div>
           ) : (

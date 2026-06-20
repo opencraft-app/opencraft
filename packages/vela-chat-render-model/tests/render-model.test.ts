@@ -122,6 +122,34 @@ test("builds a request dock from pending surface requests without mixing it into
   assert.equal(model.requests.items[0]?.confirmable, true);
 });
 
+test("marks question requests as answerable instead of confirmation-only", () => {
+  const surface: ChatSurface = {
+    session_id: "sess_requests",
+    transcript: { rows: [] },
+    activity: { items: [] },
+    pending_requests: {
+      items: [
+        {
+          id: "req_question",
+          type: "question",
+          status: "pending",
+          title: "Choose an option",
+          description: "A or B?",
+          created_at: "2026-06-18T10:00:00Z",
+          debug: { projection: "requests", source_event_ids: ["req_question"] },
+        },
+      ],
+    },
+    cursors: {},
+    stream: { connected: true, running: true },
+  };
+
+  const model = buildChatRenderModel(surface, { kind: "desktop_web" });
+
+  assert.equal(model.requests.items[0]?.confirmable, false);
+  assert.equal(model.requests.items[0]?.response_kind, "answer");
+});
+
 test("derives user message text from OpenAPI textual parts when row text is absent", () => {
   const surface: ChatSurface = {
     session_id: "sess_user_parts",

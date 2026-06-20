@@ -51,6 +51,7 @@ import {
   summarizeConversationRuntime,
 } from "../../packages/vela-chat-web/src/conversation-runtime/model";
 import type { RequestDockResponse } from "../../packages/vela-chat-web/src/components/requests/RequestDock";
+import { buildRequestResponseInputEvent } from "./requestResponses";
 
 const DEFAULT_BASE_URL = "/chat/api/velad/api/v1";
 
@@ -565,20 +566,14 @@ export function ChatWorkbench({
   );
 
   const respondToRequest = useCallback(
-    async ({ requestId, result }: RequestDockResponse) => {
+    async (response: RequestDockResponse) => {
       if (!activeSessionId || isRespondingToRequest) return;
       try {
         setIsRespondingToRequest(true);
         setError(null);
         const ack = await client.sendSessionInputEvents({
           sessionId: activeSessionId,
-          events: [
-            {
-              type: "user.tool_confirmation",
-              request_id: requestId,
-              result,
-            },
-          ],
+          events: [buildRequestResponseInputEvent(response)],
         });
         const rejectionMessage = commandAckRejectionMessage(ack);
         if (rejectionMessage) {

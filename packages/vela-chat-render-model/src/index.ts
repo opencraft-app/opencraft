@@ -40,6 +40,7 @@ export interface RequestDockRenderItem {
   description: string;
   status: string;
   confirmable: boolean;
+  response_kind: "confirmation" | "answer" | "unsupported";
   createdAt: string;
   debug: ChatSurfaceDebug;
 }
@@ -127,9 +128,18 @@ function renderPendingRequest(request: ChatSurfacePendingRequest): RequestDockRe
     description: request.description,
     status: request.status,
     confirmable: isConfirmableRequest(request),
+    response_kind: responseKindForRequest(request),
     createdAt: request.created_at,
     debug: request.debug,
   };
+}
+
+function responseKindForRequest(
+  request: ChatSurfacePendingRequest,
+): RequestDockRenderItem["response_kind"] {
+  if (isConfirmableRequest(request)) return "confirmation";
+  if (request.status === "pending" && request.type === "question") return "answer";
+  return "unsupported";
 }
 
 function isConfirmableRequest(request: ChatSurfacePendingRequest): boolean {

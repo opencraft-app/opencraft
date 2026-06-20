@@ -396,6 +396,33 @@
   gap: 8px;
 }
 
+.requestAnswerForm {
+  display: grid;
+  flex: 0 1 360px;
+  grid-template-columns: minmax(160px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.requestAnswerInput {
+  min-height: 32px;
+  resize: none;
+  border: 1px solid var(--vela-border-strong);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #26272a;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 440;
+  line-height: 1.35;
+  outline: none;
+  padding: 6px 12px;
+}
+
+.requestAnswerInput:focus {
+  border-color: #b8bcc5;
+}
+
 .requestPrimaryButton,
 .requestSecondaryButton {
   min-height: 32px;
