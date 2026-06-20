@@ -1099,6 +1099,53 @@ function validateAgentConfigValue(
   }
 }
 
+function validateSessionRuntimeInfoShape(
+  runtimeInfo: unknown,
+  invalid: ViewContractErrorFactory,
+  owner: string,
+): asserts runtimeInfo is SessionRuntimeInfoWire {
+  if (!isRecord(runtimeInfo)) {
+    throw invalid(`${owner} must be an object`);
+  }
+
+  const provider = runtimeInfo.provider;
+  if (typeof provider !== "string" || !backendKinds.has(provider)) {
+    throw invalid(`${owner}.provider must be a known BackendKind`);
+  }
+
+  validateOptionalNullableSessionString(runtimeInfo, "native_session_id", invalid, owner);
+  validateOptionalNullableSessionString(runtimeInfo, "model", invalid, owner);
+  validateOptionalNullableSessionString(runtimeInfo, "reasoning_effort", invalid, owner);
+
+  const permissionMode = runtimeInfo.permission_mode;
+  if (
+    permissionMode !== undefined &&
+    permissionMode !== null &&
+    (typeof permissionMode !== "string" || !permissionModes.has(permissionMode))
+  ) {
+    throw invalid(
+      `${owner}.permission_mode must be read_only, auto, auto_review, or full_access`,
+    );
+  }
+
+  const featureValues = runtimeInfo.feature_values;
+  if (featureValues !== undefined && !isRecord(featureValues)) {
+    throw invalid(`${owner}.feature_values must be an object`);
+  }
+}
+
+function validateOptionalNullableSessionString(
+  data: Record<string, unknown>,
+  field: string,
+  invalid: ViewContractErrorFactory,
+  owner: string,
+) {
+  const value = data[field];
+  if (value !== undefined && value !== null && typeof value !== "string") {
+    throw invalid(`${owner}.${field} must be a string or null`);
+  }
+}
+
 function validateClientInputParts(parts: readonly ClientInputPart[]) {
   for (const part of parts) {
     validateClientInputPart(part);
@@ -1960,12 +2007,17 @@ function parseSessionWire(
   if (agentConfig !== undefined) {
     validateAgentConfigShape(agentConfig, invalid, `${owner}.agent_config`);
   }
+  const runtimeInfo = data.runtime_info;
+  if (runtimeInfo !== undefined) {
+    validateSessionRuntimeInfoShape(runtimeInfo, invalid, `${owner}.runtime_info`);
+  }
   return {
     ...(data as unknown as SessionWire),
     id,
     backend,
     status,
     ...(agentConfig !== undefined ? { agent_config: agentConfig } : {}),
+    ...(runtimeInfo !== undefined ? { runtime_info: runtimeInfo } : {}),
   };
 }
 

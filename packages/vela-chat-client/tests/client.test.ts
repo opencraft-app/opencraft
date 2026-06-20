@@ -1738,6 +1738,35 @@ test("validates session mutation response envelopes at the client wire boundary"
       /agent_config permission_mode/.test(err.message),
   );
 
+  const badSessionRuntimeInfoClient = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async () =>
+      new Response(
+        JSON.stringify({
+          session: {
+            id: "ses_bad_runtime_info",
+            backend: "pi",
+            status: "idle",
+            runtime_info: { model: "minimax-m2.7" },
+          },
+          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
+        }),
+        { status: 201, headers: { "Content-Type": "application/json" } },
+      ),
+  });
+
+  await assert.rejects(
+    () =>
+      badSessionRuntimeInfoClient.createSession({
+        idempotencyKey: "ses_bad_runtime_info",
+        workingDirectory: "/tmp/project",
+      }),
+    (err) =>
+      err instanceof VeladClientError &&
+      err.code === "invalid_create_session_response" &&
+      /runtime_info\.provider/.test(err.message),
+  );
+
   const updateClient = createVeladClient({
     baseUrl: "http://127.0.0.1:3857/api/v1/",
     fetch: async () =>
