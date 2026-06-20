@@ -1708,6 +1708,15 @@ function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDeta
         : {}),
     };
   }
+  if (type === "read" || type === "edit" || type === "write") {
+    return {
+      ...(data as ActivityWireDetail),
+      type,
+      ...(data.file_path !== undefined
+        ? { file_path: optionalViewString(data, "file_path", owner, invalidActivityView) }
+        : {}),
+    };
+  }
   return data as ActivityWireDetail;
 }
 
