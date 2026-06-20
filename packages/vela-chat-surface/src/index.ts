@@ -447,7 +447,7 @@ function latestCursor(current: ChatSurfaceCursor, older: ChatSurfaceCursor) {
   const olderOrder = cursorOrder(older);
   if (currentOrder && !olderOrder) return current;
   if (!currentOrder && olderOrder) return older;
-  if (!currentOrder || !olderOrder) return older ?? current;
+  if (!currentOrder || !olderOrder) return current;
   if (currentOrder.epoch > olderOrder.epoch) return current;
   if (currentOrder.epoch < olderOrder.epoch) return older;
   return currentOrder.seq >= olderOrder.seq ? current : older;
