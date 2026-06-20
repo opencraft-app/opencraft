@@ -110,6 +110,20 @@ test("conversation runtime scopes measured item heights by viewport width", () =
   );
 });
 
+test("conversation runtime keeps measured heights across current long-history windows", () => {
+  clearStreamItemHeightEstimateCache();
+  const items = buildConversationStreamItems(
+    Array.from({ length: 2_500 }, (_, index) => turn(`measured-${index + 1}`)),
+  );
+
+  for (const [index, item] of items.entries()) {
+    recordMeasuredStreamItemHeight(item, 96 + index, { width: 640 });
+  }
+
+  assert.equal(estimateStreamItemHeight(items[0]!, { width: 640 }), 96);
+  assert.equal(estimateStreamItemHeight(items[2_499]!, { width: 640 }), 2_595);
+});
+
 test("conversation runtime reuses measured assistant markdown heights across stable content", () => {
   clearStreamItemHeightEstimateCache();
   const model: ChatRenderModel = {

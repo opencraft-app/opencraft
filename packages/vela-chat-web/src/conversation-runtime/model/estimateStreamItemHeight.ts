@@ -1,6 +1,6 @@
 import type { ConversationStreamItem } from "./buildConversationStreamItems";
 
-const STREAM_ITEM_HEIGHT_CACHE_LIMIT = 2_000;
+const STREAM_ITEM_HEIGHT_CACHE_LIMIT = 5_000;
 const streamItemHeightCache = new Map<string, number>();
 const assistantMarkdownHeightCache = new Map<string, number>();
 
