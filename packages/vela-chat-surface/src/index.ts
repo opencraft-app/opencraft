@@ -17,6 +17,14 @@ export interface ChatTranscriptWindow {
   has_newer: boolean;
 }
 
+export type ChatTranscriptRowStatusWire =
+  | "pending"
+  | "streaming"
+  | "completed"
+  | "failed"
+  | "cancelled";
+export type ChatTranscriptPartTypeWire = "markdown" | "text" | "code" | "image" | "file_reference";
+
 export interface ChatTranscriptWireRow {
   id: string;
   kind: "user_message" | "assistant_message" | "working" | "activity_marker" | "error";
@@ -26,13 +34,13 @@ export interface ChatTranscriptWireRow {
   text?: string;
   label?: string;
   parts?: ChatTranscriptPart[];
-  status: string;
+  status: ChatTranscriptRowStatusWire;
   source_event_ids: string[];
 }
 
 export interface ChatTranscriptPart {
   id: string;
-  type: "markdown" | "text" | "code" | "image" | "file_reference" | string;
+  type: ChatTranscriptPartTypeWire;
   text?: string;
   data?: {
     [key: string]: unknown;
@@ -179,7 +187,7 @@ export interface ChatSurfaceTranscriptRow {
   parts: ChatTranscriptPart[];
   created_at: string;
   updated_at: string;
-  status: string;
+  status: ChatTranscriptRowStatusWire;
   revision: number;
   debug: ChatSurfaceDebug;
 }

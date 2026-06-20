@@ -185,7 +185,7 @@ test("does not invent OpenAPI-required transcript row fields in the surface laye
 
   assert.match(rowInterface, /updated_at:\s*string/);
   assert.match(rowInterface, /revision:\s*number/);
-  assert.match(rowInterface, /status:\s*string/);
+  assert.match(rowInterface, /status:\s*ChatTranscriptRowStatusWire/);
   assert.match(rowInterface, /source_event_ids:\s*string\[\]/);
   assert.doesNotMatch(rowInterface, /updated_at\?:\s*string/);
   assert.doesNotMatch(rowInterface, /revision\?:\s*number/);
@@ -194,6 +194,26 @@ test("does not invent OpenAPI-required transcript row fields in the surface laye
   assert.doesNotMatch(source, /row\.status\s*\?\?/);
   assert.doesNotMatch(source, /row\.revision\s*\?\?/);
   assert.doesNotMatch(source, /row\.source_event_ids\?\./);
+});
+
+test("keeps OpenAPI transcript enums narrow in surface wire types", async () => {
+  const source = await import("node:fs/promises").then((fs) =>
+    fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
+  );
+  const rowInterface =
+    source.match(/export interface ChatTranscriptWireRow \{[\s\S]*?\n\}/)?.[0] ?? "";
+  const surfaceRowInterface =
+    source.match(/export interface ChatSurfaceTranscriptRow \{[\s\S]*?\n\}/)?.[0] ?? "";
+  const partInterface = source.match(/export interface ChatTranscriptPart \{[\s\S]*?\n\}/)?.[0] ?? "";
+
+  assert.match(source, /export type ChatTranscriptRowStatusWire\s*=/);
+  assert.match(source, /export type ChatTranscriptPartTypeWire\s*=/);
+  assert.match(rowInterface, /status:\s*ChatTranscriptRowStatusWire/);
+  assert.match(surfaceRowInterface, /status:\s*ChatTranscriptRowStatusWire/);
+  assert.match(partInterface, /type:\s*ChatTranscriptPartTypeWire/);
+  assert.doesNotMatch(rowInterface, /status:\s*string/);
+  assert.doesNotMatch(surfaceRowInterface, /status:\s*string/);
+  assert.doesNotMatch(partInterface, /\|\s*string/);
 });
 
 test("keeps OpenAPI-required read model envelope fields required in surface wire types", async () => {

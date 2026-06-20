@@ -49,13 +49,16 @@ export interface TranscriptWireRow {
   parts?: TranscriptWirePart[];
   activity_id?: string;
   label?: string;
-  status: string;
+  status: TranscriptRowStatusWire;
   source_event_ids: string[];
 }
 
+export type TranscriptRowStatusWire = "pending" | "streaming" | "completed" | "failed" | "cancelled";
+export type TranscriptPartTypeWire = "markdown" | "text" | "code" | "image" | "file_reference";
+
 export interface TranscriptWirePart {
   id: string;
-  type: "markdown" | "text" | "code" | "image" | "file_reference";
+  type: TranscriptPartTypeWire;
   text?: string;
   data?: Record<string, unknown>;
 }
@@ -300,7 +303,7 @@ export interface BackendFeatureWire {
 
 export interface BackendWire {
   kind: string;
-  status: string;
+  status: BackendStatusWire;
   display_name: string;
   capabilities: Record<string, unknown>;
   models: BackendModelWire[];
@@ -308,6 +311,8 @@ export interface BackendWire {
   features: BackendFeatureWire[];
   diagnostics?: Record<string, unknown>;
 }
+
+export type BackendStatusWire = "available" | "unavailable" | "degraded";
 
 export interface BackendsWireResponse {
   backends: BackendWire[];
@@ -735,7 +740,7 @@ function appendAssistantDelta(
   delta: string,
 ): ChatTranscriptWireView {
   const { rowId, fallbackIndex } = assistantOverlayTarget(transcript, event);
-  const rows = transcript.rows.map((row, index) => {
+  const rows = transcript.rows.map((row, index): TranscriptWireRow => {
     if (row.kind !== "assistant_message") return row;
     if (rowId ? row.id !== rowId : index !== fallbackIndex) return row;
     if (event.event_id && row.source_event_ids.includes(event.event_id)) return row;
@@ -1239,14 +1244,12 @@ const transcriptRowKinds = new Set([
   "activity_marker",
   "error",
 ]);
-const transcriptRowStatuses = new Set([
-  "pending",
-  "streaming",
-  "completed",
-  "failed",
-  "cancelled",
-]);
-const transcriptPartTypes = new Set(["markdown", "text", "code", "image", "file_reference"]);
+const transcriptRowStatuses = new Set<string>(
+  ["pending", "streaming", "completed", "failed", "cancelled"] satisfies TranscriptRowStatusWire[],
+);
+const transcriptPartTypes = new Set<string>(
+  ["markdown", "text", "code", "image", "file_reference"] satisfies TranscriptPartTypeWire[],
+);
 const activityItemKinds = new Set<string>(
   ["tool", "command", "task", "warning", "runtime"] satisfies ActivityItemKindWire[],
 );
@@ -1808,7 +1811,7 @@ function parseBackendWire(data: unknown, owner: string): BackendWire {
   }
   return {
     kind,
-    status,
+    status: status as BackendStatusWire,
     display_name: requiredViewString(data, "display_name", owner, invalidBackendsResponse),
     capabilities: requiredBackendCapabilities(data, owner),
     models: optionalBackendArray(data, "models", owner).map((model, index) =>
@@ -2018,7 +2021,7 @@ function parseTranscriptWireRow(data: unknown, owner: string): TranscriptWireRow
     ...(data.label !== undefined
       ? { label: optionalViewString(data, "label", owner, invalidTranscriptView) }
       : {}),
-    status,
+    status: status as TranscriptRowStatusWire,
     source_event_ids: requiredViewStringArray(
       data,
       "source_event_ids",
@@ -2050,7 +2053,7 @@ function parseTranscriptWirePart(data: unknown, owner: string): TranscriptWirePa
   return {
     ...(data as unknown as TranscriptWirePart),
     id: requiredViewString(data, "id", owner, invalidTranscriptView),
-    type: type as TranscriptWirePart["type"],
+    type: type as TranscriptPartTypeWire,
     ...(data.text !== undefined
       ? { text: optionalViewString(data, "text", owner, invalidTranscriptView) }
       : {}),

@@ -477,7 +477,7 @@ test("keeps OpenAPI-required transcript row fields required in the client wire m
 
   assert.match(rowInterface, /updated_at:\s*string/);
   assert.match(rowInterface, /revision:\s*number/);
-  assert.match(rowInterface, /status:\s*string/);
+  assert.match(rowInterface, /status:\s*TranscriptRowStatusWire/);
   assert.match(rowInterface, /source_event_ids:\s*string\[\]/);
   assert.doesNotMatch(rowInterface, /updated_at\?:\s*string/);
   assert.doesNotMatch(rowInterface, /revision\?:\s*number/);
@@ -486,6 +486,23 @@ test("keeps OpenAPI-required transcript row fields required in the client wire m
   assert.doesNotMatch(source, /row\.source_event_ids\?\./);
   assert.doesNotMatch(source, /row\.revision\s*\?\?/);
   assert.doesNotMatch(source, /row\.source_event_ids\s*\?\?/);
+});
+
+test("keeps OpenAPI transcript enums narrow in the client wire model", async () => {
+  const source = await import("node:fs/promises").then((fs) =>
+    fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
+  );
+  const rowInterface = source.match(/export interface TranscriptWireRow \{[\s\S]*?\n\}/)?.[0] ?? "";
+  const partInterface =
+    source.match(/export interface TranscriptWirePart \{[\s\S]*?\n\}/)?.[0] ?? "";
+
+  assert.match(source, /export type TranscriptRowStatusWire\s*=/);
+  assert.match(source, /export type TranscriptPartTypeWire\s*=/);
+  assert.match(rowInterface, /status:\s*TranscriptRowStatusWire/);
+  assert.match(partInterface, /type:\s*TranscriptPartTypeWire/);
+  assert.match(source, /status:\s*status as TranscriptRowStatusWire/);
+  assert.doesNotMatch(rowInterface, /status:\s*string/);
+  assert.doesNotMatch(partInterface, /type:\s*string/);
 });
 
 test("keeps OpenAPI activity enums narrow in the client wire model", async () => {
@@ -505,6 +522,19 @@ test("keeps OpenAPI activity enums narrow in the client wire model", async () =>
   assert.doesNotMatch(itemInterface, /kind:\s*string/);
   assert.doesNotMatch(itemInterface, /status:\s*string/);
   assert.doesNotMatch(detailInterface, /type:\s*string/);
+});
+
+test("keeps OpenAPI backend status enum separate from transcript status", async () => {
+  const source = await import("node:fs/promises").then((fs) =>
+    fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
+  );
+  const backendInterface = source.match(/export interface BackendWire \{[\s\S]*?\n\}/)?.[0] ?? "";
+
+  assert.match(source, /export type BackendStatusWire\s*=/);
+  assert.match(backendInterface, /status:\s*BackendStatusWire/);
+  assert.doesNotMatch(backendInterface, /status:\s*string/);
+  assert.match(source, /status:\s*status as BackendStatusWire/);
+  assert.doesNotMatch(source, /status:\s*status as TranscriptRowStatusWire,\n\s*display_name/);
 });
 
 test("validates optional transcript row activity_id at the client wire boundary", async () => {
