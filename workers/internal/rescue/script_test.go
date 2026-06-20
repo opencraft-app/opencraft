@@ -31,7 +31,7 @@ func TestBuildArchiveScriptDefaultsToHermesCompatibleZip(t *testing.T) {
 		RemotePaths:   []string{"/home/agentuser/.hermes"},
 	}
 	script := BuildArchiveScript(req)
-	for _, want := range []string{".zip", "HERMES_PATH='/home/agentuser/.hermes'", "config.yaml", "state.db", "zipfile.ZipFile", "RESCUE_EXPORT_RESULT="} {
+	for _, want := range []string{".zip", "HERMES_PATH='/home/agentuser/.hermes'", "config.yaml", "state.db", "bin|bin/*", "zipfile.ZipFile", "RESCUE_EXPORT_RESULT="} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("script missing %q:\n%s", want, script)
 		}
@@ -71,6 +71,18 @@ func TestBuildUploaderRunScript(t *testing.T) {
 		if !strings.Contains(script, want) {
 			t.Fatalf("script missing %q:\n%s", want, script)
 		}
+	}
+}
+
+func TestBuildHermesImportScriptForcesNonInteractiveImport(t *testing.T) {
+	script := BuildHermesImportScript("https://example.com/hermes.zip")
+	for _, want := range []string{"curl -fL", "unzip -t", "hermes import --force \"$archive\"", hermesImportResultMarker} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("script missing %q:\n%s", want, script)
+		}
+	}
+	if strings.Contains(script, "hermes import \"$archive\"") {
+		t.Fatalf("script must not run interactive hermes import:\n%s", script)
 	}
 }
 
