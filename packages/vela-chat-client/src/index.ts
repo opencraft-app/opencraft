@@ -1927,7 +1927,22 @@ function requiredSessionObject(
   if (!isRecord(session)) {
     throw invalid(`${owner} requires session`);
   }
-  return session as unknown as SessionWire;
+  return parseSessionWire(session, `${owner}.session`, invalid);
+}
+
+function parseSessionWire(
+  data: Record<string, unknown>,
+  owner: string,
+  invalid: ViewContractErrorFactory,
+): SessionWire {
+  const id = data.id;
+  if (typeof id !== "string") {
+    throw invalid(`${owner}.id must be a string`);
+  }
+  return {
+    ...(data as unknown as SessionWire),
+    id,
+  };
 }
 
 function requiredEffectiveAfter(data: Record<string, unknown>) {
