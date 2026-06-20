@@ -74,6 +74,18 @@ func TestBuildUploaderRunScript(t *testing.T) {
 	}
 }
 
+func TestBuildHermesImportScriptForcesNonInteractiveImport(t *testing.T) {
+	script := BuildHermesImportScript("https://example.com/hermes.zip")
+	for _, want := range []string{"curl -fL", "unzip -t", "hermes import --force \"$archive\"", hermesImportResultMarker} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("script missing %q:\n%s", want, script)
+		}
+	}
+	if strings.Contains(script, "hermes import \"$archive\"") {
+		t.Fatalf("script must not run interactive hermes import:\n%s", script)
+	}
+}
+
 func TestBuildSCPCommand(t *testing.T) {
 	req := ExportRequest{SSHUser: "root", SSHPort: 2222, SSHIdentityFile: "~/.ssh/id_rsa"}
 	cmd := BuildSCPCommand(req, "1.2.3.4", "/tmp/a.tar.gz", "/out/a.tar.gz")
