@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildRequestResponseInputEvent } from "../../../app/chat/requestResponses";
+import { buildRequestResponseInputEvent } from "../src/components/requests/requestResponses";
 
 test("maps question dock answers to user.request_answer input events", () => {
   assert.deepEqual(

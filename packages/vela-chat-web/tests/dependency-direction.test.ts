@@ -50,6 +50,9 @@ test("desktop renderer is split into agent-friendly component folders with local
     "packages/vela-chat-web/src/primitives/prompt-input/README.md",
     "packages/vela-chat-web/src/primitives/prompt-input/PromptInput.tsx",
     "packages/vela-chat-web/src/components/README.md",
+    "packages/vela-chat-web/src/components/requests/README.md",
+    "packages/vela-chat-web/src/components/requests/RequestDock.tsx",
+    "packages/vela-chat-web/src/components/requests/requestResponses.ts",
     "packages/vela-chat-web/src/components/workbench/README.md",
     "packages/vela-chat-web/src/components/workbench/ChatWorkbenchView.tsx",
     "packages/vela-chat-web/src/components/conversation/README.md",
@@ -482,7 +485,10 @@ test("chat stream handler applies local overlays and scopes read-model refresh",
 
 test("chat request dock uses PendingRequestsView and responds through input events", () => {
   const chatWorkbench = readFileSync(join(root, "app/chat/ChatWorkbench.tsx"), "utf8");
-  const requestResponses = readFileSync(join(root, "app/chat/requestResponses.ts"), "utf8");
+  const requestResponses = readFileSync(
+    join(root, "packages/vela-chat-web/src/components/requests/requestResponses.ts"),
+    "utf8",
+  );
   const requestDock = readFileSync(
     join(root, "packages/vela-chat-web/src/components/requests/RequestDock.tsx"),
     "utf8",
@@ -505,6 +511,7 @@ test("chat request dock uses PendingRequestsView and responds through input even
   assert.match(workbenchView, /RequestDock/);
   assert.match(workbenchView, /onRespondToRequest/);
   assert.doesNotMatch(workbenchView, /AgentRequestWire/);
+  assert.equal(existsSync(join(root, "app/chat/requestResponses.ts")), false);
 });
 
 test("composer plus control is wired to image attachments instead of being decorative", () => {

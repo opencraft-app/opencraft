@@ -1,5 +1,5 @@
-import type { ClientInputEvent } from "../../packages/vela-chat-client/src";
-import type { RequestDockResponse } from "../../packages/vela-chat-web/src/components/requests/RequestDock";
+import type { ClientInputEvent } from "../../../../vela-chat-client/src";
+import type { RequestDockResponse } from "./RequestDock";
 
 export function buildRequestResponseInputEvent(response: RequestDockResponse): ClientInputEvent {
   switch (response.kind) {

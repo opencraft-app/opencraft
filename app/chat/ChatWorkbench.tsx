@@ -51,7 +51,7 @@ import {
   summarizeConversationRuntime,
 } from "../../packages/vela-chat-web/src/conversation-runtime/model";
 import type { RequestDockResponse } from "../../packages/vela-chat-web/src/components/requests/RequestDock";
-import { buildRequestResponseInputEvent } from "./requestResponses";
+import { buildRequestResponseInputEvent } from "../../packages/vela-chat-web/src/components/requests/requestResponses";
 
 const DEFAULT_BASE_URL = "/chat/api/velad/api/v1";
 
