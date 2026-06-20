@@ -584,6 +584,26 @@ test("keeps OpenAPI-required Session fields required in the client wire model", 
   }
 });
 
+test("keeps OpenAPI EventCursor separate from cursor windows in the client wire model", async () => {
+  const source = await import("node:fs/promises").then((fs) =>
+    fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
+  );
+  const eventCursorInterface = source.match(/export interface EventCursorWire \{[\s\S]*?\n\}/)?.[0] ?? "";
+  const cursorWindowInterface = source.match(/export interface CursorWindow \{[\s\S]*?\n\}/)?.[0] ?? "";
+
+  for (const field of ["event_id", "epoch", "seq"]) {
+    assert.match(eventCursorInterface, new RegExp(`${field}:\\s*`));
+  }
+  assert.doesNotMatch(eventCursorInterface, /latest_event_id/);
+  assert.doesNotMatch(eventCursorInterface, /next_event_id/);
+  assert.match(cursorWindowInterface, /latest_event_id\?:\s*string/);
+  assert.match(cursorWindowInterface, /next_event_id\?:\s*string/);
+  assert.match(
+    source,
+    /isVelaStreamEventFreshForCursor\(\s*cursor:\s*EventCursorWire\s*\|\s*CursorWindow\s*\|\s*undefined/,
+  );
+});
+
 test("keeps OpenAPI backend feature discriminators narrow in the client wire model", async () => {
   const source = await import("node:fs/promises").then((fs) =>
     fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),

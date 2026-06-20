@@ -18,8 +18,6 @@ export interface EventCursorWire {
   event_id: string;
   epoch: number;
   seq: number;
-  latest_event_id?: string;
-  next_event_id?: string;
 }
 
 export interface TranscriptWindow {
@@ -631,7 +629,7 @@ export function isVelaStreamEventForSession(
 }
 
 export function isVelaStreamEventFreshForCursor(
-  cursor: EventCursorWire | undefined,
+  cursor: EventCursorWire | CursorWindow | undefined,
   event: VelaStreamEventWire,
 ) {
   return cursor ? isStreamEventNewerThanCursor(cursor, event) : true;
@@ -852,7 +850,7 @@ function updateTranscriptCursor(
 }
 
 function isStreamEventNewerThanCursor(
-  cursor: EventCursorWire,
+  cursor: EventCursorWire | CursorWindow,
   event: VelaStreamEventWire,
 ) {
   if (isKnownCursorEvent(cursor, event.event_id)) return false;
@@ -864,12 +862,15 @@ function isStreamEventNewerThanCursor(
   return eventOrder.seq > cursorOrder.seq;
 }
 
-function isKnownCursorEvent(cursor: EventCursorWire, eventId: string | undefined) {
+function isKnownCursorEvent(
+  cursor: EventCursorWire | CursorWindow,
+  eventId: string | undefined,
+) {
+  const latestEventId = "latest_event_id" in cursor ? cursor.latest_event_id : undefined;
+  const nextEventId = "next_event_id" in cursor ? cursor.next_event_id : undefined;
   return Boolean(
     eventId &&
-      (cursor.event_id === eventId ||
-        cursor.latest_event_id === eventId ||
-        cursor.next_event_id === eventId),
+      (cursor.event_id === eventId || latestEventId === eventId || nextEventId === eventId),
   );
 }
 
@@ -880,7 +881,7 @@ function isDifferentKnownStreamSession(
   return Boolean(transcriptSessionId && eventSessionId && transcriptSessionId !== eventSessionId);
 }
 
-function eventCursorOrder(cursor: EventCursorWire) {
+function eventCursorOrder(cursor: EventCursorWire | CursorWindow) {
   if (typeof cursor.seq !== "number" || !Number.isFinite(cursor.seq)) return null;
   return {
     epoch:
