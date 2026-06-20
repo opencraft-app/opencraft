@@ -1565,6 +1565,53 @@ test("bottom anchor resticks on viewport resize only while following output", ()
   );
 });
 
+test("streaming bottom anchor auto scroll ignores smooth CSS scroll behavior", async () => {
+  const module = (await import(
+    "../src/conversation-runtime/scroll/useConversationScrollController"
+  )) as Record<string, unknown>;
+  const scrollElementToBottom = module.scrollElementToBottom as
+    | ((
+        element: {
+          clientHeight: number;
+          scrollHeight: number;
+          scrollTop: number;
+          scrollTo: (options: { top?: number; behavior?: ScrollBehavior }) => void;
+          style: { scrollBehavior: string };
+        },
+        behavior: ScrollBehavior,
+      ) => boolean)
+    | undefined;
+
+  assert.equal(typeof scrollElementToBottom, "function");
+
+  const calls: Array<{
+    behavior?: ScrollBehavior;
+    inlineScrollBehavior: string;
+    top?: number;
+  }> = [];
+  const element = {
+    clientHeight: 400,
+    scrollHeight: 1200,
+    scrollTop: 700,
+    style: { scrollBehavior: "smooth" },
+    scrollTo(options: { top?: number; behavior?: ScrollBehavior }) {
+      calls.push({
+        behavior: options.behavior,
+        inlineScrollBehavior: this.style.scrollBehavior,
+        top: options.top,
+      });
+      if (typeof options.top === "number") this.scrollTop = options.top;
+    },
+  };
+
+  assert.equal(scrollElementToBottom(element, "auto"), true);
+  assert.deepEqual(calls, [
+    { behavior: "auto", inlineScrollBehavior: "auto", top: 1200 },
+  ]);
+  assert.equal(element.style.scrollBehavior, "smooth");
+  assert.equal(element.scrollTop, 1200);
+});
+
 test("bottom anchor retries after layout settle only when still following and not near bottom", () => {
   assert.equal(
     shouldRetryBottomStickAfterSettle({

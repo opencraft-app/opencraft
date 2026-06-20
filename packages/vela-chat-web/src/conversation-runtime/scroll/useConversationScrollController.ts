@@ -26,6 +26,13 @@ import {
 const USER_SCROLL_ACTIVITY_RESET_MS = 180;
 const BOTTOM_STICK_SETTLE_RETRY_MS = 200;
 
+type ScrollableElement = Pick<
+  HTMLElement,
+  "clientHeight" | "scrollHeight" | "scrollTo" | "scrollTop"
+> & {
+  style: Pick<CSSStyleDeclaration, "scrollBehavior">;
+};
+
 export interface ConversationScrollControllerOptions {
   hasOlderHistory?: boolean;
   historyStartKey?: unknown;
@@ -53,6 +60,34 @@ export type ConversationScrollRouteResumeStatus =
   | "idle"
   | "pending"
   | "restored";
+
+export function scrollElementToBottom(
+  element: ScrollableElement,
+  behavior: ScrollBehavior = "smooth",
+): boolean {
+  if (
+    isOverscrolledPastBottom({
+      clientHeight: element.clientHeight,
+      scrollHeight: element.scrollHeight,
+      scrollTop: element.scrollTop,
+    })
+  ) {
+    return false;
+  }
+
+  const previousScrollBehavior = element.style.scrollBehavior;
+  if (behavior === "auto") {
+    element.style.scrollBehavior = "auto";
+  }
+  try {
+    element.scrollTo({ top: element.scrollHeight, behavior });
+  } finally {
+    if (behavior === "auto") {
+      element.style.scrollBehavior = previousScrollBehavior;
+    }
+  }
+  return true;
+}
 
 export function useConversationScrollController(
   dependency: unknown,
@@ -168,17 +203,9 @@ export function useConversationScrollController(
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     const element = scrollRef.current;
     if (!element) return;
-    if (
-      isOverscrolledPastBottom({
-        clientHeight: element.clientHeight,
-        scrollHeight: element.scrollHeight,
-        scrollTop: element.scrollTop,
-      })
-    ) {
-      return;
+    if (scrollElementToBottom(element, behavior)) {
+      lastKnownScrollTopRef.current = element.scrollTop;
     }
-    element.scrollTo({ top: element.scrollHeight, behavior });
-    lastKnownScrollTopRef.current = element.scrollTop;
   }, []);
 
   const schedulePersistScrollResume = useCallback(
