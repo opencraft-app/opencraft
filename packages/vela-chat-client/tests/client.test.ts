@@ -1028,6 +1028,39 @@ test("validates file activity detail content at the client wire boundary", async
   );
 });
 
+test("validates file activity detail old string at the client wire boundary", async () => {
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async () =>
+      new Response(
+        JSON.stringify({
+          session_id: "sess_123",
+          items: [
+            {
+              id: "act_bad_file_old_string",
+              kind: "tool",
+              status: "completed",
+              title: "Edited file",
+              detail: { type: "edit", file_path: "README.md", old_string: ["before"] },
+              created_at: "2026-06-19T00:00:00Z",
+            },
+          ],
+          window: { has_older: false, has_newer: false },
+          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+  });
+
+  await assert.rejects(
+    () => client.getActivity("sess_123"),
+    (err) =>
+      err instanceof VeladClientError &&
+      err.code === "invalid_activity_view" &&
+      /detail\.old_string/.test(err.message),
+  );
+});
+
 test("validates file activity detail unified diff at the client wire boundary", async () => {
   const client = createVeladClient({
     baseUrl: "http://127.0.0.1:3857/api/v1/",
