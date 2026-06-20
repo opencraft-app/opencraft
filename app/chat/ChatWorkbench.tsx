@@ -354,10 +354,21 @@ export function ChatWorkbench({
   ]);
 
   const model = useMemo(() => {
+    const surfaceSessionId = activeSessionId || "unselected";
     const surface = buildChatSurfaceFromReadModels({
-      sessionId: activeSessionId || "unselected",
-      transcript: transcript ?? { rows: [], cursor: {} },
-      activity: activity ?? { items: [], cursor: {} },
+      sessionId: surfaceSessionId,
+      transcript: transcript ?? {
+        session_id: surfaceSessionId,
+        rows: [],
+        window: { has_older: false, has_newer: false },
+        cursor: {},
+      },
+      activity: activity ?? {
+        session_id: surfaceSessionId,
+        items: [],
+        window: { has_older: false, has_newer: false },
+        cursor: {},
+      },
       requests: requests ?? { requests: [], cursor: {} },
       stream: { connected: streamConnected },
     });

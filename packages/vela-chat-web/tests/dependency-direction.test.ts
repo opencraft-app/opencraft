@@ -370,6 +370,18 @@ test("chat history paging keeps transcript and activity windows in sync", () => 
   assert.doesNotMatch(source, /canLoadOlder=\{transcript\?\.window\?\.has_older/);
 });
 
+test("chat fallback read models keep OpenAPI-required envelopes", () => {
+  const source = readFileSync(join(root, "app/chat/ChatWorkbench.tsx"), "utf8");
+
+  assert.match(source, /const surfaceSessionId = activeSessionId \|\| "unselected"/);
+  assert.match(source, /transcript: transcript \?\? \{/);
+  assert.match(source, /activity: activity \?\? \{/);
+  assert.match(source, /session_id: surfaceSessionId/);
+  assert.match(source, /window: \{ has_older: false, has_newer: false \}/);
+  assert.doesNotMatch(source, /transcript: transcript \?\? \{ rows: \[\], cursor: \{\} \}/);
+  assert.doesNotMatch(source, /activity: activity \?\? \{ items: \[\], cursor: \{\} \}/);
+});
+
 test("workbench memoizes the web render model adapter output", () => {
   const source = readFileSync(
     join(root, "packages/vela-chat-web/src/components/workbench/ChatWorkbenchView.tsx"),

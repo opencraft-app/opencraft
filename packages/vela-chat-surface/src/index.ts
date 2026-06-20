@@ -45,10 +45,10 @@ export interface ChatTranscriptPart {
 }
 
 export interface ChatTranscriptWireView {
-  session_id?: string;
+  session_id: string;
   rows: ChatTranscriptWireRow[];
   cursor: ChatSurfaceCursor;
-  window?: ChatTranscriptWindow;
+  window: ChatTranscriptWindow;
 }
 
 export interface ActivityWireItem {
@@ -134,9 +134,9 @@ export type ActivityWireDetail =
     };
 
 export interface ActivityWireView {
-  session_id?: string;
+  session_id: string;
   items: ActivityWireItem[];
-  window?: ActivityWindow;
+  window: ActivityWindow;
   cursor: ChatSurfaceCursor;
 }
 

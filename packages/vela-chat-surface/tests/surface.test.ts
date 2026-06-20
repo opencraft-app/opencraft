@@ -196,6 +196,25 @@ test("does not invent OpenAPI-required transcript row fields in the surface laye
   assert.doesNotMatch(source, /row\.source_event_ids\?\./);
 });
 
+test("keeps OpenAPI-required read model envelope fields required in surface wire types", async () => {
+  const source = await import("node:fs/promises").then((fs) =>
+    fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
+  );
+  const transcriptViewInterface =
+    source.match(/export interface ChatTranscriptWireView \{[\s\S]*?\n\}/)?.[0] ?? "";
+  const activityViewInterface =
+    source.match(/export interface ActivityWireView \{[\s\S]*?\n\}/)?.[0] ?? "";
+
+  assert.match(transcriptViewInterface, /session_id:\s*string/);
+  assert.match(transcriptViewInterface, /window:\s*ChatTranscriptWindow/);
+  assert.doesNotMatch(transcriptViewInterface, /session_id\?:\s*string/);
+  assert.doesNotMatch(transcriptViewInterface, /window\?:\s*ChatTranscriptWindow/);
+  assert.match(activityViewInterface, /session_id:\s*string/);
+  assert.match(activityViewInterface, /window:\s*ActivityWindow/);
+  assert.doesNotMatch(activityViewInterface, /session_id\?:\s*string/);
+  assert.doesNotMatch(activityViewInterface, /window\?:\s*ActivityWindow/);
+});
+
 test("prepends transcript windows without duplicating rows and preserves latest cursor", () => {
   const current = {
     session_id: "sess_1",
