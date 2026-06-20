@@ -213,6 +213,14 @@ contract and Paseo's agent-stream shape. Do not turn these into heuristic fixes:
   tolerant stream reader. Tighten that only after real Codex / ACP / Pi stream
   cassettes prove which malformed frames should be rejected at the browser
   boundary.
+- Paseo has a dedicated `layoutStream` layer that computes neighbor-aware
+  assistant spacing, tool sequences, footer ownership, and history/live-head
+  boundary relationships before React renders rows. Vela currently encodes a
+  smaller subset through `ConversationStreamItem.continuation` and CSS sibling
+  selectors such as `agent_work + assistant_markdown`. Do not keep extending
+  those selectors for more agent-work states; the next proven need should add a
+  pure `conversation-runtime/layout` model with tests modeled after Paseo's
+  split-history/live-head cases.
 
 ### `renderers/`
 
