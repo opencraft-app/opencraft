@@ -18,6 +18,19 @@ import {
   subscribeVelaEventSource,
 } from "../src/index";
 
+function sessionFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "ses_1",
+    backend: "pi",
+    status: "idle",
+    title: "New chat",
+    working_directory: "/tmp/project",
+    created_at: "2026-06-19T00:00:00Z",
+    updated_at: "2026-06-19T00:00:00Z",
+    ...overrides,
+  };
+}
+
 test("builds transcript and event URLs for local velad", () => {
   const client = createVeladClient({ baseUrl: "http://127.0.0.1:3857/api/v1/" });
 
@@ -558,6 +571,19 @@ test("keeps OpenAPI session backend and status enums narrow in the client wire m
   assert.doesNotMatch(runtimeInfoInterface, /provider:\s*string/);
 });
 
+test("keeps OpenAPI-required Session fields required in the client wire model", async () => {
+  const source = await import("node:fs/promises").then((fs) =>
+    fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
+  );
+  const sessionInterface = source.match(/export interface SessionWire \{[\s\S]*?\n\}/)?.[0] ?? "";
+
+  for (const field of ["title", "working_directory", "created_at", "updated_at"]) {
+    assert.match(sessionInterface, new RegExp(`${field}:\\s*string`));
+    assert.doesNotMatch(sessionInterface, new RegExp(`${field}\\?:\\s*string`));
+    assert.match(source, new RegExp(`requiredViewString\\(data,\\s*"${field}"`));
+  }
+});
+
 test("keeps OpenAPI backend feature discriminators narrow in the client wire model", async () => {
   const source = await import("node:fs/promises").then((fs) =>
     fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
@@ -621,7 +647,7 @@ test("keeps OpenAPI AgentConfig fields non-null while runtime info may be nullab
       requests.push({ url: String(url), init });
       return new Response(
         JSON.stringify({
-          session: { id: "ses_config", backend: "pi", status: "idle" },
+          session: sessionFixture({ id: "ses_config" }),
           effective_after: "current_session",
           cursor: { event_id: "evt_config", epoch: 1, seq: 2 },
         }),
@@ -1814,7 +1840,7 @@ test("creates a local pi session with idempotency key", async () => {
       requests.push({ url: String(url), init });
       return new Response(
         JSON.stringify({
-          session: { id: "ses_created", backend: "pi", status: "idle", title: "New chat" },
+          session: sessionFixture({ id: "ses_created", title: "New chat" }),
           cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
         }),
         { status: 201, headers: { "Content-Type": "application/json" } },
@@ -1847,17 +1873,16 @@ test("creates a session with selected backend and agent config", async () => {
       requests.push({ url: String(url), init });
       return new Response(
         JSON.stringify({
-          session: {
+          session: sessionFixture({
             id: "ses_acp",
             backend: "acp",
-            status: "idle",
             title: "Hermes test",
             agent_config: {
               model: "minimax-m2.7",
               reasoning_effort: "medium",
               permission_mode: "auto",
             },
-          },
+          }),
           cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
         }),
         { status: 201, headers: { "Content-Type": "application/json" } },
@@ -1897,7 +1922,7 @@ test("rejects invalid create session requests before sending", async () => {
       requests.push({ url: String(url), init });
       return new Response(
         JSON.stringify({
-          session: { id: "ses_created", backend: "pi", status: "idle" },
+          session: sessionFixture({ id: "ses_created" }),
           cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
         }),
         { status: 201, headers: { "Content-Type": "application/json" } },
@@ -2001,7 +2026,7 @@ test("validates session mutation response envelopes at the client wire boundary"
     fetch: async () =>
       new Response(
         JSON.stringify({
-          session: { id: "ses_missing_cursor", backend: "pi", status: "idle" },
+          session: sessionFixture({ id: "ses_missing_cursor" }),
         }),
         { status: 201, headers: { "Content-Type": "application/json" } },
       ),
@@ -2024,7 +2049,7 @@ test("validates session mutation response envelopes at the client wire boundary"
     fetch: async () =>
       new Response(
         JSON.stringify({
-          session: { id: 123, backend: "pi", status: "idle" },
+          session: sessionFixture({ id: 123 }),
           cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
         }),
         { status: 201, headers: { "Content-Type": "application/json" } },
@@ -2048,7 +2073,7 @@ test("validates session mutation response envelopes at the client wire boundary"
     fetch: async () =>
       new Response(
         JSON.stringify({
-          session: { id: "ses_bad_backend", backend: "unknown", status: "idle" },
+          session: sessionFixture({ id: "ses_bad_backend", backend: "unknown" }),
           cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
         }),
         { status: 201, headers: { "Content-Type": "application/json" } },
@@ -2072,7 +2097,7 @@ test("validates session mutation response envelopes at the client wire boundary"
     fetch: async () =>
       new Response(
         JSON.stringify({
-          session: { id: "ses_bad_status", backend: "pi", status: "sleeping" },
+          session: sessionFixture({ id: "ses_bad_status", status: "sleeping" }),
           cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
         }),
         { status: 201, headers: { "Content-Type": "application/json" } },
@@ -2091,17 +2116,39 @@ test("validates session mutation response envelopes at the client wire boundary"
       /session\.status/.test(err.message),
   );
 
+  const missingSessionTitleClient = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async () =>
+      new Response(
+        JSON.stringify({
+          session: sessionFixture({ id: "ses_missing_title", title: undefined }),
+          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
+        }),
+        { status: 201, headers: { "Content-Type": "application/json" } },
+      ),
+  });
+
+  await assert.rejects(
+    () =>
+      missingSessionTitleClient.createSession({
+        idempotencyKey: "ses_missing_title",
+        workingDirectory: "/tmp/project",
+      }),
+    (err) =>
+      err instanceof VeladClientError &&
+      err.code === "invalid_create_session_response" &&
+      /session requires title/.test(err.message),
+  );
+
   const badSessionAgentConfigClient = createVeladClient({
     baseUrl: "http://127.0.0.1:3857/api/v1/",
     fetch: async () =>
       new Response(
         JSON.stringify({
-          session: {
+          session: sessionFixture({
             id: "ses_bad_agent_config",
-            backend: "pi",
-            status: "idle",
             agent_config: { permission_mode: "god_mode" },
-          },
+          }),
           cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
         }),
         { status: 201, headers: { "Content-Type": "application/json" } },
@@ -2125,12 +2172,10 @@ test("validates session mutation response envelopes at the client wire boundary"
     fetch: async () =>
       new Response(
         JSON.stringify({
-          session: {
+          session: sessionFixture({
             id: "ses_bad_runtime_info",
-            backend: "pi",
-            status: "idle",
             runtime_info: { model: "minimax-m2.7" },
-          },
+          }),
           cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
         }),
         { status: 201, headers: { "Content-Type": "application/json" } },
@@ -2154,14 +2199,12 @@ test("validates session mutation response envelopes at the client wire boundary"
     fetch: async () =>
       new Response(
         JSON.stringify({
-          session: {
+          session: sessionFixture({
             id: "ses_bad_operations",
-            backend: "pi",
-            status: "idle",
             operations: {
               update_agent_config: { effective_after: "next_turn" },
             },
-          },
+          }),
           cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
         }),
         { status: 201, headers: { "Content-Type": "application/json" } },
@@ -2185,7 +2228,7 @@ test("validates session mutation response envelopes at the client wire boundary"
     fetch: async () =>
       new Response(
         JSON.stringify({
-          session: { id: "ses_bad_effect", backend: "pi", status: "idle" },
+          session: sessionFixture({ id: "ses_bad_effect" }),
           effective_after: "immediate",
           cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
         }),
@@ -2463,16 +2506,14 @@ test("fetches session, backend catalog, and patches agent config", async () => {
       if (String(url).endsWith("/agent-config")) {
         return new Response(
           JSON.stringify({
-            session: {
+            session: sessionFixture({
               id: "ses_config",
-              backend: "pi",
-              status: "idle",
               agent_config: {
                 model: "minimax-m2.7",
                 reasoning_effort: "high",
                 permission_mode: "full_access",
               },
-            },
+            }),
             effective_after: "current_session",
             cursor: { event_id: "evt_config", epoch: 1, seq: 2 },
           }),
@@ -2481,13 +2522,11 @@ test("fetches session, backend catalog, and patches agent config", async () => {
       }
       return new Response(
         JSON.stringify({
-          session: {
+          session: sessionFixture({
             id: "ses_config",
-            backend: "pi",
-            status: "idle",
             agent_config: { model: "minimax-m2.7" },
             runtime_info: { provider: "pi", model: "minimax-m2.7" },
-          },
+          }),
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
@@ -2527,7 +2566,7 @@ test("rejects invalid agent config patches before sending", async () => {
       requests.push({ url: String(url), init });
       return new Response(
         JSON.stringify({
-          session: { id: "ses_config", backend: "pi", status: "idle" },
+          session: sessionFixture({ id: "ses_config" }),
           effective_after: "current_session",
           cursor: { event_id: "evt_config", epoch: 1, seq: 2 },
         }),

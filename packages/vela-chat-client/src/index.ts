@@ -249,8 +249,10 @@ export interface SessionWire {
   id: string;
   backend: BackendKindWire;
   status: SessionStatusWire;
-  working_directory?: string;
-  title?: string;
+  working_directory: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
   model?: string | null;
   agent_config?: AgentConfigWire;
   runtime_info?: SessionRuntimeInfoWire;
@@ -2557,6 +2559,10 @@ function parseSessionWire(
   if (typeof status !== "string" || !sessionStatuses.has(status)) {
     throw invalid(`${owner}.status must be a known SessionStatus`);
   }
+  const title = requiredViewString(data, "title", owner, invalid);
+  const workingDirectory = requiredViewString(data, "working_directory", owner, invalid);
+  const createdAt = requiredViewString(data, "created_at", owner, invalid);
+  const updatedAt = requiredViewString(data, "updated_at", owner, invalid);
   const agentConfig = data.agent_config;
   if (agentConfig !== undefined) {
     validateAgentConfigShape(agentConfig, invalid, `${owner}.agent_config`);
@@ -2575,6 +2581,10 @@ function parseSessionWire(
     id,
     backend: backend as BackendKindWire,
     status: status as SessionStatusWire,
+    title,
+    working_directory: workingDirectory,
+    created_at: createdAt,
+    updated_at: updatedAt,
     ...(agentConfig !== undefined ? { agent_config: agentConfig } : {}),
     ...(parsedRuntimeInfo !== undefined ? { runtime_info: parsedRuntimeInfo } : {}),
     ...(operations !== undefined ? { operations } : {}),
