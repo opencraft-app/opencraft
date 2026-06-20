@@ -30,8 +30,8 @@ describe("applyFullSeoToHtml", () => {
   it("keeps the SPA shell favicon aligned with prerendered public pages", () => {
     const template = readFileSync(resolve(process.cwd(), "index.html"), "utf8");
 
-    expect(template).toContain('<link rel="icon" type="image/jpeg" href="/lightvela-logo.jpg" />');
-    expect(template).not.toContain("/lightvela-icon.png");
+    expect(template).toContain('<link rel="icon" type="image/png" href="/lightvela-icon.png" />');
+    expect(template).not.toContain('<link rel="icon" type="image/jpeg" href="/lightvela-logo.jpg" />');
   });
 
   it("injects all required SEO fields for cn region", () => {

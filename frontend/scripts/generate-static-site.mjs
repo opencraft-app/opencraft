@@ -626,7 +626,7 @@ function renderHead({ route, site, siteUrl, canonicalPath, description, indexabl
     `<meta name="robots" content="${robots}">`,
     `<link rel="canonical" href="${canonical}">`,
     renderHreflangLinks({ siteUrl, region, canonicalPath }),
-    "<link rel=\"icon\" type=\"image/jpeg\" href=\"/lightvela-logo.jpg\">",
+    "<link rel=\"icon\" type=\"image/png\" href=\"/lightvela-icon.png\">",
     "<meta name=\"theme-color\" content=\"#ffffff\">",
     `<meta property="og:locale" content="${site.locale}">`,
     "<meta property=\"og:type\" content=\"website\">",
@@ -672,7 +672,7 @@ function renderAppShell(template, site) {
     "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">",
     `<title>${site.name}</title>`,
     "<meta name=\"robots\" content=\"noindex,nofollow\">",
-    "<link rel=\"icon\" type=\"image/jpeg\" href=\"/lightvela-logo.jpg\">",
+    "<link rel=\"icon\" type=\"image/png\" href=\"/lightvela-icon.png\">",
     assetTags,
   ].join("");
   const body = "<div class=\"flex min-h-dvh items-center justify-center bg-white px-4 text-sm text-[var(--text-secondary)]\">正在恢复会话...</div>";
