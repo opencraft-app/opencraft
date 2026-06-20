@@ -75,3 +75,42 @@ test("composer controls keep current session values selectable when backend cata
   assert.equal(controls.selectedReasoningEffort?.label, "High");
   assert.equal(controls.selectedPermissionMode?.label, "Auto review");
 });
+
+test("composer controls disable agent config changes when backend capability is unavailable", () => {
+  const session: SessionWire = {
+    id: "ses_readonly_backend",
+    backend: "acp",
+    status: "idle",
+    operations: {
+      update_agent_config: { available: true },
+    },
+    agent_config: {
+      model: "hermes",
+      reasoning_effort: "medium",
+      permission_mode: "auto",
+    },
+  };
+  const backends: BackendWire[] = [
+    {
+      kind: "acp",
+      status: "available",
+      display_name: "Hermes ACP",
+      capabilities: {
+        streaming: true,
+        cancel: true,
+        permission_requests: true,
+        structured_diff: false,
+        session_agent_config: false,
+      },
+      models: [{ id: "hermes", label: "Hermes" }],
+      permission_modes: [{ id: "auto", label: "Auto" }],
+      features: [],
+    },
+  ];
+
+  const controls = buildComposerControlsModel({ session, backends });
+
+  assert.equal(controls.disabled, true);
+  assert.equal(controls.selectedModel?.id, "hermes");
+  assert.equal(controls.selectedPermissionMode?.id, "auto");
+});

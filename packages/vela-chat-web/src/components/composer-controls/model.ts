@@ -77,9 +77,10 @@ export function buildComposerControlsModel({
     permissionModeOptions.find((option) => option.id === "auto") ??
     permissionModeOptions[0];
   const updateOperation = session?.operations?.update_agent_config;
+  const backendSupportsAgentConfig = backend?.capabilities.session_agent_config !== false;
 
   return {
-    disabled: updateOperation?.available === false,
+    disabled: updateOperation?.available === false || !backendSupportsAgentConfig,
     providerLabel,
     selectedModel,
     selectedReasoningEffort,
