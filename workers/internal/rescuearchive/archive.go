@@ -221,6 +221,9 @@ func shouldExcludeHermesZipEntry(rel string) bool {
 	if name == "gateway.pid" || name == "cron.pid" || strings.HasSuffix(name, ".pyc") || strings.HasSuffix(name, ".pyo") {
 		return true
 	}
+	if rel == "bin" || strings.HasPrefix(rel, "bin/") {
+		return true
+	}
 	for _, part := range strings.Split(rel, "/") {
 		switch part {
 		case "hermes-agent", "__pycache__", ".git", "node_modules":
