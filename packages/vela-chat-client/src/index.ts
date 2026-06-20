@@ -156,11 +156,6 @@ export interface DiffReviewWireView {
   cursor: CursorWindow;
 }
 
-export interface ActivityWireDetail {
-  type: ActivityDetailTypeWire;
-  [key: string]: unknown;
-}
-
 export type ActivityItemKindWire = "tool" | "command" | "task" | "warning" | "runtime";
 export type ActivityItemStatusWire = "pending" | "running" | "completed" | "failed" | "cancelled";
 export type ActivityDetailTypeWire =
@@ -180,6 +175,67 @@ export type ActivityDetailTypeWire =
   | "plain_text"
   | "unknown"
   | "tool";
+export type ActivityFileDetailTypeWire = "read" | "edit" | "write";
+export type ActivitySearchModeWire = "code" | "web" | "files" | "unknown";
+export type ActivityGenericDetailTypeWire = Exclude<
+  ActivityDetailTypeWire,
+  "shell" | ActivityFileDetailTypeWire | "search" | "fetch"
+>;
+
+export type ActivityWireDetail =
+  | ActivityShellToolDetailWire
+  | ActivityFileToolDetailWire
+  | ActivitySearchToolDetailWire
+  | ActivityFetchToolDetailWire
+  | ActivityGenericToolDetailWire;
+
+export interface ActivityShellToolDetailWire {
+  type: "shell";
+  command?: string;
+  cwd?: string;
+  output?: string;
+  stdout?: string;
+  stderr?: string;
+  exit_code?: number;
+  error?: string;
+}
+
+export interface ActivityFileToolDetailWire {
+  type: ActivityFileDetailTypeWire;
+  file_path?: string;
+  path?: string;
+  content?: string;
+  old_string?: string;
+  new_string?: string;
+  unified_diff?: string;
+}
+
+export interface ActivitySearchToolDetailWire {
+  type: "search";
+  query?: string;
+  mode?: ActivitySearchModeWire;
+  content?: string;
+  num_files?: number;
+  num_matches?: number;
+  duration_ms?: number;
+  truncated?: boolean;
+}
+
+export interface ActivityFetchToolDetailWire {
+  type: "fetch";
+  url?: string;
+  prompt?: string;
+  result?: string;
+  code?: number;
+  code_text?: string;
+  bytes?: number;
+  duration_ms?: number;
+}
+
+export interface ActivityGenericToolDetailWire {
+  type: ActivityGenericDetailTypeWire;
+  [key: string]: unknown;
+}
 
 export interface ActivityWireItem {
   id: string;
@@ -1329,7 +1385,9 @@ const requestStatuses = new Set<string>(
   ] satisfies RequestStatusWire[],
 );
 const diffSummaryStatuses = new Set(["added", "modified", "deleted", "renamed"]);
-const activitySearchModes = new Set(["code", "web", "files", "unknown"]);
+const activitySearchModes = new Set<ActivitySearchModeWire>(
+  ["code", "web", "files", "unknown"] satisfies ActivitySearchModeWire[],
+);
 const activityDetailTypes = new Set<string>(
   [
     "shell",
@@ -2306,8 +2364,8 @@ function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDeta
   }
   if (type === "shell") {
     return {
-      ...(data as ActivityWireDetail),
-      type: type as ActivityDetailTypeWire,
+      ...(data as Record<string, unknown>),
+      type: "shell",
       ...(data.command !== undefined
         ? { command: optionalViewString(data, "command", owner, invalidActivityView) }
         : {}),
@@ -2333,8 +2391,8 @@ function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDeta
   }
   if (type === "search") {
     return {
-      ...(data as ActivityWireDetail),
-      type: type as ActivityDetailTypeWire,
+      ...(data as Record<string, unknown>),
+      type: "search",
       ...(data.query !== undefined
         ? { query: optionalViewString(data, "query", owner, invalidActivityView) }
         : {}),
@@ -2360,8 +2418,8 @@ function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDeta
   }
   if (type === "read" || type === "edit" || type === "write") {
     return {
-      ...(data as ActivityWireDetail),
-      type: type as ActivityDetailTypeWire,
+      ...(data as Record<string, unknown>),
+      type: type as ActivityFileDetailTypeWire,
       ...(data.file_path !== undefined
         ? { file_path: optionalViewString(data, "file_path", owner, invalidActivityView) }
         : {}),
@@ -2384,8 +2442,8 @@ function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDeta
   }
   if (type === "fetch") {
     return {
-      ...(data as ActivityWireDetail),
-      type: type as ActivityDetailTypeWire,
+      ...(data as Record<string, unknown>),
+      type: "fetch",
       ...(data.url !== undefined
         ? { url: optionalViewString(data, "url", owner, invalidActivityView) }
         : {}),
@@ -2409,7 +2467,7 @@ function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDeta
         : {}),
     };
   }
-  return { ...(data as ActivityWireDetail), type: type as ActivityDetailTypeWire };
+  return { ...(data as Record<string, unknown>), type: type as ActivityGenericDetailTypeWire };
 }
 
 function parseActivityEventRange(
@@ -2642,19 +2700,19 @@ function optionalViewString(
   return value;
 }
 
-function optionalViewEnum(
+function optionalViewEnum<T extends string>(
   data: Record<string, unknown>,
   field: string,
   owner: string,
   invalid: ViewContractErrorFactory,
-  values: Set<string>,
+  values: ReadonlySet<T>,
 ) {
   const value = data[field];
   if (value === undefined) return undefined;
-  if (typeof value !== "string" || !values.has(value)) {
+  if (typeof value !== "string" || !(values as ReadonlySet<string>).has(value)) {
     throw invalid(`${owner}.${field} must be a known value`);
   }
-  return value;
+  return value as T;
 }
 
 function optionalViewInteger(

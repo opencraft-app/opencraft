@@ -525,16 +525,31 @@ test("keeps OpenAPI activity enums narrow in the client wire model", async () =>
   const itemInterface = source.match(/export interface ActivityWireItem \{[\s\S]*?\n\}/)?.[0] ?? "";
   const detailInterface =
     source.match(/export interface ActivityWireDetail \{[\s\S]*?\n\}/)?.[0] ?? "";
+  const detailUnion =
+    source.match(/export type ActivityWireDetail\s*=[\s\S]*?ActivityGenericToolDetailWire;/)?.[0] ??
+    "";
 
   assert.match(source, /export type ActivityItemKindWire\s*=/);
   assert.match(source, /export type ActivityItemStatusWire\s*=/);
   assert.match(source, /export type ActivityDetailTypeWire\s*=/);
+  assert.match(source, /export type ActivitySearchModeWire\s*=/);
   assert.match(itemInterface, /kind:\s*ActivityItemKindWire/);
   assert.match(itemInterface, /status:\s*ActivityItemStatusWire/);
-  assert.match(detailInterface, /type:\s*ActivityDetailTypeWire/);
+  assert.match(source, /export type ActivityWireDetail\s*=/);
+  assert.match(detailUnion, /ActivityShellToolDetailWire/);
+  assert.match(detailUnion, /ActivityFileToolDetailWire/);
+  assert.match(detailUnion, /ActivitySearchToolDetailWire/);
+  assert.match(detailUnion, /ActivityFetchToolDetailWire/);
+  assert.match(detailUnion, /ActivityGenericToolDetailWire/);
+  assert.match(source, /export interface ActivityShellToolDetailWire \{[\s\S]*?type:\s*"shell"[\s\S]*?command\?:\s*string[\s\S]*?exit_code\?:\s*number/);
+  assert.match(source, /export interface ActivityFileToolDetailWire \{[\s\S]*?type:\s*ActivityFileDetailTypeWire[\s\S]*?file_path\?:\s*string[\s\S]*?unified_diff\?:\s*string/);
+  assert.match(source, /export interface ActivitySearchToolDetailWire \{[\s\S]*?type:\s*"search"[\s\S]*?mode\?:\s*ActivitySearchModeWire[\s\S]*?num_matches\?:\s*number/);
+  assert.match(source, /export interface ActivityFetchToolDetailWire \{[\s\S]*?type:\s*"fetch"[\s\S]*?url\?:\s*string[\s\S]*?duration_ms\?:\s*number/);
+  assert.match(source, /export interface ActivityGenericToolDetailWire \{[\s\S]*?type:\s*ActivityGenericDetailTypeWire[\s\S]*?\[key:\s*string\]:\s*unknown/);
   assert.doesNotMatch(itemInterface, /kind:\s*string/);
   assert.doesNotMatch(itemInterface, /status:\s*string/);
   assert.doesNotMatch(detailInterface, /type:\s*string/);
+  assert.doesNotMatch(source, /export interface ActivityWireDetail \{[\s\S]*?\[key:\s*string\]:\s*unknown/);
 });
 
 test("keeps OpenAPI backend status enum separate from transcript status", async () => {
