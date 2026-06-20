@@ -222,6 +222,8 @@ test("keeps OpenAPI-required read model envelope fields required in surface wire
   const source = await import("node:fs/promises").then((fs) =>
     fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
   );
+  const cursorWindowInterface =
+    source.match(/export interface ChatSurfaceCursor \{[\s\S]*?\n\}/)?.[0] ?? "";
   const eventCursorInterface =
     source.match(/export interface ChatSurfaceEventCursor \{[\s\S]*?\n\}/)?.[0] ?? "";
   const transcriptViewInterface =
@@ -229,6 +231,8 @@ test("keeps OpenAPI-required read model envelope fields required in surface wire
   const activityViewInterface =
     source.match(/export interface ActivityWireView \{[\s\S]*?\n\}/)?.[0] ?? "";
 
+  assert.match(cursorWindowInterface, /from_seq\?:\s*number/);
+  assert.match(cursorWindowInterface, /to_seq\?:\s*number/);
   assert.match(eventCursorInterface, /event_id:\s*string/);
   assert.match(eventCursorInterface, /epoch:\s*number/);
   assert.match(eventCursorInterface, /seq:\s*number/);

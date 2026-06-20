@@ -7,6 +7,8 @@ export interface CursorWindow {
   event_id?: string;
   epoch?: number;
   seq?: number;
+  from_seq?: number;
+  to_seq?: number;
   latest_event_id?: string;
   next_event_id?: string;
   has_more?: boolean;
@@ -938,13 +940,19 @@ function isDifferentKnownStreamSession(
 }
 
 function eventCursorOrder(cursor: EventCursorWire | CursorWindow) {
-  if (typeof cursor.seq !== "number" || !Number.isFinite(cursor.seq)) return null;
+  const seq =
+    typeof cursor.seq === "number"
+      ? cursor.seq
+      : "to_seq" in cursor
+        ? cursor.to_seq
+        : undefined;
+  if (typeof seq !== "number" || !Number.isFinite(seq)) return null;
   return {
     epoch:
       typeof cursor.epoch === "number" && Number.isFinite(cursor.epoch)
         ? cursor.epoch
         : 0,
-    seq: cursor.seq,
+    seq,
   };
 }
 
@@ -2777,6 +2785,12 @@ function requiredCursorWindow(
       : {}),
     ...(value.seq !== undefined
       ? { seq: optionalViewInteger(value, "seq", cursorOwner, invalid) }
+      : {}),
+    ...(value.from_seq !== undefined
+      ? { from_seq: optionalViewInteger(value, "from_seq", cursorOwner, invalid) }
+      : {}),
+    ...(value.to_seq !== undefined
+      ? { to_seq: optionalViewInteger(value, "to_seq", cursorOwner, invalid) }
       : {}),
     ...(value.latest_event_id !== undefined
       ? {

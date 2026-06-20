@@ -2,6 +2,8 @@ export interface ChatSurfaceCursor {
   event_id?: string;
   epoch?: number;
   seq?: number;
+  from_seq?: number;
+  to_seq?: number;
   latest_event_id?: string;
   next_event_id?: string;
   has_more?: boolean;
@@ -583,13 +585,14 @@ function latestCursor(current: ChatSurfaceCursor, older: ChatSurfaceCursor) {
 }
 
 function cursorOrder(cursor: ChatSurfaceCursor) {
-  if (typeof cursor.seq !== "number" || !Number.isFinite(cursor.seq)) return null;
+  const seq = typeof cursor.seq === "number" ? cursor.seq : cursor.to_seq;
+  if (typeof seq !== "number" || !Number.isFinite(seq)) return null;
   return {
     epoch:
       typeof cursor.epoch === "number" && Number.isFinite(cursor.epoch)
         ? cursor.epoch
         : 0,
-    seq: cursor.seq,
+    seq,
   };
 }
 

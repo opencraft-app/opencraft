@@ -622,8 +622,12 @@ test("keeps OpenAPI EventCursor separate from cursor windows in the client wire 
   }
   assert.doesNotMatch(eventCursorInterface, /latest_event_id/);
   assert.doesNotMatch(eventCursorInterface, /next_event_id/);
+  assert.match(cursorWindowInterface, /from_seq\?:\s*number/);
+  assert.match(cursorWindowInterface, /to_seq\?:\s*number/);
   assert.match(cursorWindowInterface, /latest_event_id\?:\s*string/);
   assert.match(cursorWindowInterface, /next_event_id\?:\s*string/);
+  assert.match(source, /optionalViewInteger\(value,\s*"from_seq"/);
+  assert.match(source, /optionalViewInteger\(value,\s*"to_seq"/);
   assert.match(
     source,
     /isVelaStreamEventFreshForCursor\(\s*cursor:\s*EventCursorWire\s*\|\s*CursorWindow\s*\|\s*undefined/,
@@ -1820,7 +1824,7 @@ test("validates pending requests view at the client wire boundary", async () => 
               created_at: "2026-06-19T00:00:00Z",
             },
           ],
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
+          cursor: { epoch: 1, from_seq: 10, to_seq: 11, next_event_id: "evt_2" },
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
@@ -1841,7 +1845,7 @@ test("validates pending requests view at the client wire boundary", async () => 
         created_at: "2026-06-19T00:00:00Z",
       },
     ],
-    cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
+    cursor: { epoch: 1, from_seq: 10, to_seq: 11, next_event_id: "evt_2" },
   };
 
   assert.deepEqual(await client.getRequests("sess_123", { status: "pending" }), expected);
@@ -3126,6 +3130,7 @@ test("matches stream events to the active session while accepting legacy events"
 
 test("matches stream events to cursor order while accepting legacy cursorless events", () => {
   const cursor = { event_id: "evt_5", epoch: 1, seq: 5 };
+  const windowCursor = { epoch: 1, from_seq: 1, to_seq: 5 };
 
   assert.equal(
     isVelaStreamEventFreshForCursor(cursor, {
@@ -3150,6 +3155,24 @@ test("matches stream events to cursor order while accepting legacy cursorless ev
       event_id: "evt_old_epoch",
       epoch: 0,
       seq: 99,
+      type: "turn.completed",
+    }),
+    false,
+  );
+  assert.equal(
+    isVelaStreamEventFreshForCursor(windowCursor, {
+      event_id: "evt_6",
+      epoch: 1,
+      seq: 6,
+      type: "turn.completed",
+    }),
+    true,
+  );
+  assert.equal(
+    isVelaStreamEventFreshForCursor(windowCursor, {
+      event_id: "evt_5",
+      epoch: 1,
+      seq: 5,
       type: "turn.completed",
     }),
     false,
