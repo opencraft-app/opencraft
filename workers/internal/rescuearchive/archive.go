@@ -218,7 +218,9 @@ func hasHermesMarker(root string) bool {
 
 func shouldExcludeHermesZipEntry(rel string) bool {
 	name := filepath.Base(rel)
-	if name == "gateway.pid" || name == "cron.pid" || strings.HasSuffix(name, ".pyc") || strings.HasSuffix(name, ".pyo") {
+	if name == "gateway.pid" || name == "cron.pid" ||
+		strings.HasSuffix(name, ".pyc") || strings.HasSuffix(name, ".pyo") ||
+		strings.HasSuffix(name, ".db-wal") || strings.HasSuffix(name, ".db-shm") || strings.HasSuffix(name, ".db-journal") {
 		return true
 	}
 	if rel == "bin" || strings.HasPrefix(rel, "bin/") {
@@ -226,7 +228,7 @@ func shouldExcludeHermesZipEntry(rel string) bool {
 	}
 	for _, part := range strings.Split(rel, "/") {
 		switch part {
-		case "hermes-agent", "__pycache__", ".git", "node_modules":
+		case "backups", "checkpoints", "hermes-agent", "__pycache__", ".git", "node_modules":
 			return true
 		}
 	}

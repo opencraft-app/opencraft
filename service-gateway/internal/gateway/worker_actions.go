@@ -164,6 +164,8 @@ type hermesImportStartRequest struct {
 	InstanceID             string
 	Region                 string
 	RegionCandidates       []string
+	NotificationEmail      string
+	NotifyEmail            string
 	ImportObjectKey        string
 	ImportObjectURL        string
 	COSUploadBucket        string
@@ -621,7 +623,7 @@ func (s *workerActionService) buildWorkerActionStartRequest(action string, raw j
 		startReq, err := s.buildRescueExportRequest(raw, target, notifyEmail)
 		return startReq, workerActionWorkflowName, startReq.RegionCandidates, err
 	case workerActionHermesImport:
-		startReq, err := s.buildHermesImportRequest(raw, target)
+		startReq, err := s.buildHermesImportRequest(raw, target, notifyEmail)
 		return startReq, workerActionImportWorkflowName, startReq.RegionCandidates, err
 	default:
 		return nil, "", nil, errors.New("unsupported_action")
@@ -667,7 +669,7 @@ func (s *workerActionService) buildHermesImportUpload(raw json.RawMessage, botID
 	}, nil
 }
 
-func (s *workerActionService) buildHermesImportRequest(raw json.RawMessage, target resolvedBotTarget) (hermesImportStartRequest, error) {
+func (s *workerActionService) buildHermesImportRequest(raw json.RawMessage, target resolvedBotTarget, notifyEmail string) (hermesImportStartRequest, error) {
 	var params hermesImportActionParams
 	if len(bytes.TrimSpace(raw)) > 0 {
 		if err := json.Unmarshal(raw, &params); err != nil {
@@ -693,6 +695,8 @@ func (s *workerActionService) buildHermesImportRequest(raw json.RawMessage, targ
 		InstanceID:             target.CloudID,
 		Region:                 target.Region,
 		RegionCandidates:       s.cfg.RescueExport.RegionCandidates,
+		NotificationEmail:      notifyEmail,
+		NotifyEmail:            notifyEmail,
 		ImportObjectKey:        objectKey,
 		ImportObjectURL:        objectURL,
 		COSUploadBucket:        strings.TrimSpace(s.cfg.RescueExport.COSUploadBucket),

@@ -1232,7 +1232,7 @@ const createBotRepository = (): BotRepository => {
         logs: [
           { time: new Date(Date.now() - 90000).toISOString(), phase: "locating", message: "正在定位 Agent 运行环境。", level: "info" },
           { time: new Date(Date.now() - 45000).toISOString(), phase: "wait_tat", message: "导入命令执行中。", level: "info" },
-          { time: new Date().toISOString(), phase: "completed", message: "导入完成。", level: "success" },
+          { time: new Date().toISOString(), phase: "completed", message: "导入完成，结果已发送到绑定邮箱。", level: "success" },
         ],
       };
     },

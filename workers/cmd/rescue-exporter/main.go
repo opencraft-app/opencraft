@@ -152,6 +152,11 @@ func runWorker(argv []string) error {
 	if registerImport {
 		w.RegisterActivityWithOptions(acts.PrepareImportTATCommand, rescue.ActivityOptions("PrepareImportTATCommand"))
 		w.RegisterActivityWithOptions(acts.FinalizeImportOverTAT, rescue.ActivityOptions("FinalizeImportOverTAT"))
+		w.RegisterActivityWithOptions(acts.SendImportNotificationEmail, rescue.ActivityOptions("SendImportNotificationEmail"))
+		if !registerExport {
+			w.RegisterActivityWithOptions(acts.ConfirmExportNotificationDelivered, rescue.ActivityOptions("ConfirmExportNotificationDelivered"))
+			w.RegisterActivityWithOptions(acts.SendFailureNotification, rescue.ActivityOptions("SendFailureNotification"))
+		}
 	}
 
 	if *healthAddr != "" {

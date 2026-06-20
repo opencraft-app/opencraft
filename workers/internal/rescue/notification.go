@@ -18,6 +18,7 @@ const (
 type FailureNotification struct {
 	WorkflowID string
 	RunID      string
+	Operation  string
 	Request    ExportRequest
 	Status     ExportStatus
 	Error      string
@@ -100,8 +101,21 @@ func buildFailureNotificationContent(notification FailureNotification) (subject 
 	if errText == "" {
 		errText = strings.TrimSpace(status.Error)
 	}
-	reason := productFailureReason(errText)
+	operation := strings.TrimSpace(notification.Operation)
+	if operation == "" {
+		operation = "export"
+	}
+	reason := productFailureReasonForOperation(errText, operation)
 	agentLabel := exportAgentLabel(req)
+	if operation == "import" {
+		data := importFailureEmailTemplateData{
+			AgentLabel: agentLabel,
+			Reason:     reason,
+		}
+		return renderRescueTextTemplate("import_failure.subject", data),
+			renderRescueHTMLTemplate("import_failure.html", data),
+			renderRescueTextTemplate("import_failure.txt", data)
+	}
 	remotePaths := strings.Join(req.RemotePaths, ", ")
 	if strings.TrimSpace(remotePaths) == "" {
 		remotePaths = "/home/agentuser/.hermes"
@@ -117,19 +131,35 @@ func buildFailureNotificationContent(notification FailureNotification) (subject 
 }
 
 func productFailureReason(errText string) string {
+	return productFailureReasonForOperation(errText, "export")
+}
+
+func productFailureReasonForOperation(errText string, operation string) string {
 	cleaned := strings.TrimSpace(errText)
+	actionText := "导出"
+	serviceText := "导出服务"
+	if operation == "import" {
+		actionText = "导入"
+		serviceText = "恢复服务"
+	}
 	if cleaned == "" {
-		return "导出过程中遇到异常，请稍后重试。"
+		return actionText + "过程中遇到异常，请稍后重试。"
 	}
 	switch {
 	case strings.Contains(cleaned, "ResourceUnavailable.SnapshotCreating"):
 		return "云盘快照正在处理中，当前无法完成导出准备。请等待快照任务完成后再重试。"
 	case strings.Contains(cleaned, "Request unauthorized"), strings.Contains(cleaned, "PermissionDenied"):
-		return "导出服务鉴权未通过，请稍后重试；如果仍然失败，请联系支持处理。"
+		return serviceText + "鉴权未通过，请稍后重试；如果仍然失败，请联系支持处理。"
 	case strings.Contains(cleaned, "AuthFailure"), strings.Contains(cleaned, "UnauthorizedOperation"):
 		return "云账号权限暂时不可用，请联系支持确认云资源授权。"
 	case strings.Contains(cleaned, "ResourceNotFound"):
-		return "未找到需要导出的运行环境，请确认 Agent 状态后重试。"
+		return "未找到需要处理的运行环境，请确认 Agent 状态后重试。"
+	case strings.Contains(cleaned, "hermes command is not available"), strings.Contains(cleaned, "command not found"):
+		return "目标 Agent 的 Hermes 运行环境不可用，请稍后重试；如果仍然失败，请联系支持处理。"
+	case strings.Contains(cleaned, "uploaded archive is empty"), strings.Contains(cleaned, "bad zip member"), strings.Contains(cleaned, "Not a valid zip"):
+		return "导入包无法识别或已损坏，请重新选择 Hermes 导出的 zip 文件后再试。"
+	case strings.Contains(cleaned, "Aborted."):
+		return "目标工作区已有数据，导入未能继续。请重新发起导入任务。"
 	}
 	cleaned = stripBeforeLastMarker(cleaned, "): ")
 	cleaned = stripBeforeLastMarker(cleaned, "] ")
@@ -141,7 +171,7 @@ func productFailureReason(errText string) string {
 	cleaned = strings.ReplaceAll(cleaned, "cvm.tencentcloudapi.com", "云服务")
 	cleaned = strings.TrimSpace(cleaned)
 	if cleaned == "" {
-		return "导出过程中遇到异常，请稍后重试。"
+		return actionText + "过程中遇到异常，请稍后重试。"
 	}
 	if len([]rune(cleaned)) > 140 {
 		runes := []rune(cleaned)

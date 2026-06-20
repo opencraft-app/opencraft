@@ -18,10 +18,19 @@ type exportSuccessEmailTemplateData struct {
 	TTLLabel    string
 }
 
+type importSuccessEmailTemplateData struct {
+	AgentLabel string
+}
+
 type exportFailureEmailTemplateData struct {
 	AgentLabel  string
 	RemotePaths string
 	Reason      string
+}
+
+type importFailureEmailTemplateData struct {
+	AgentLabel string
+	Reason     string
 }
 
 func renderRescueTextTemplate(name string, data any) string {

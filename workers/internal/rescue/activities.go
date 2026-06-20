@@ -628,6 +628,19 @@ func (Activities) SendExportNotificationEmail(ctx context.Context, req ExportReq
 	return result, nil
 }
 
+func (Activities) SendImportNotificationEmail(ctx context.Context, req ImportRequest) (EmailNotificationResult, error) {
+	exportReq := req.exportRequest()
+	toEmail := notificationEmail(exportReq)
+	logActivity(ctx, "sending import notification email", "instance_id", req.InstanceID, "to", toEmail)
+	subject, htmlBody, textBody := buildImportNotificationContent(req)
+	result, err := deliverExportNotificationEmail(ctx, TencentConfig{}, LoadSESConfig(), toEmail, subject, htmlBody, textBody, !req.Execute)
+	if err != nil {
+		return EmailNotificationResult{}, err
+	}
+	logActivity(ctx, "import notification email sent", "instance_id", req.InstanceID, "to", toEmail, "message_id", result.MessageID, "dry_run", result.DryRun)
+	return result, nil
+}
+
 func (Activities) ConfirmExportNotificationDelivered(ctx context.Context, req ExportRequest, sent EmailNotificationResult) (EmailNotificationResult, error) {
 	logActivity(ctx, "confirming export notification delivery", "instance_id", req.InstanceID, "to", sent.ToEmail, "message_id", sent.MessageID)
 	result, err := confirmExportNotificationDelivered(ctx, TencentConfig{}, LoadSESConfig(), sent, !req.Execute)

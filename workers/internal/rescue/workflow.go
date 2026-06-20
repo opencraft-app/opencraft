@@ -259,6 +259,7 @@ func notifyExportFailure(ctx workflow.Context, req ExportRequest, cfg TencentCon
 	notification := FailureNotification{
 		WorkflowID: workflow.GetInfo(ctx).WorkflowExecution.ID,
 		RunID:      workflow.GetInfo(ctx).WorkflowExecution.RunID,
+		Operation:  "export",
 		Request:    req,
 		Status:     *status,
 		Error:      workflowErr.Error(),

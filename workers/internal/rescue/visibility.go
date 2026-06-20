@@ -148,6 +148,11 @@ func completeImportWorkflowStatus(ctx workflow.Context, req ImportRequest, statu
 	status.Import = result.Import
 	status.TATCommand = result.TATCommand
 	status.COSDeleted = result.COSDeleted
+	status.NotificationEmail = result.NotificationEmail
+	status.EmailMessageID = result.EmailMessageID
+	status.EmailDelivered = result.EmailDelivered
+	status.EmailDeliverStatus = result.EmailDeliverStatus
+	status.EmailDeliverMessage = result.EmailDeliverMessage
 	status.DryRun = result.DryRun
 	if err != nil {
 		status.Phase = PhaseFailed
@@ -315,8 +320,12 @@ func importPhaseStatusMessage(phase string, dryRun bool) string {
 		return "正在确认导入结果。"
 	case PhaseCleanupImportObject:
 		return "正在清理临时上传文件。"
+	case PhaseNotifyEmail:
+		return "正在发送导入结果邮件。"
+	case PhaseConfirmEmailDelivery:
+		return "正在确认邮件投递状态。"
 	case PhaseCompleted:
-		return "导入完成。"
+		return "导入完成，结果已发送到绑定邮箱。"
 	case PhaseFailed:
 		return "导入未完成。"
 	default:

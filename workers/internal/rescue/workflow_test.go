@@ -232,11 +232,15 @@ func TestImportWorkflowRunsOverTATAndDeletesUploadObject(t *testing.T) {
 	env.RegisterActivityWithOptions(acts.WaitTATCommand, ActivityOptions("WaitTATCommand"))
 	env.RegisterActivityWithOptions(acts.FinalizeImportOverTAT, ActivityOptions("FinalizeImportOverTAT"))
 	env.RegisterActivityWithOptions(acts.DeleteCOSObject, ActivityOptions("DeleteCOSObject"))
+	env.RegisterActivityWithOptions(acts.SendImportNotificationEmail, ActivityOptions("SendImportNotificationEmail"))
+	env.RegisterActivityWithOptions(acts.ConfirmExportNotificationDelivered, ActivityOptions("ConfirmExportNotificationDelivered"))
 
 	req := NormalizeImportRequest(ImportRequest{
 		BotID:                 "bot-1",
+		BotName:               "我的 Agent",
 		InstanceID:            "ins-test",
 		Region:                "ap-beijing",
+		NotificationEmail:     "user@example.com",
 		ImportObjectKey:       "rescue-imports/bot-1/hermes.zip",
 		ImportObjectURL:       "https://bucket.cos.ap-beijing.myqcloud.com/rescue-imports/bot-1/hermes.zip",
 		COSUploadBucket:       "https://bucket.cos.ap-beijing.myqcloud.com",
@@ -267,6 +271,13 @@ func TestImportWorkflowRunsOverTATAndDeletesUploadObject(t *testing.T) {
 	}
 	finalImport := prepared
 	finalImport.ByteSize = 42
+	emailSent := EmailNotificationResult{MessageID: "20260620-import-message-id", ToEmail: req.NotificationEmail}
+	emailDelivered := EmailNotificationResult{
+		MessageID:      emailSent.MessageID,
+		ToEmail:        req.NotificationEmail,
+		EmailDelivered: true,
+		DeliverStatus:  sesDeliverStatusSuccess,
+	}
 
 	env.OnActivity("LocateInstance", mock.Anything, exportReq, cfg).Return(instance, nil).Once()
 	env.OnActivity("WaitRescueTAT", mock.Anything, exportReq, cfg, instance.Region).Return(nil).Once()
@@ -279,6 +290,8 @@ func TestImportWorkflowRunsOverTATAndDeletesUploadObject(t *testing.T) {
 			deleteReq.DelaySeconds == 0 &&
 			deleteReq.BucketURL == req.COSUploadBucket
 	}), cfg).Return(COSDeleteResult{ObjectKey: req.ImportObjectKey, ObjectURL: req.ImportObjectURL, Deleted: true}, nil).Once()
+	env.OnActivity("SendImportNotificationEmail", mock.Anything, req).Return(emailSent, nil).Once()
+	env.OnActivity("ConfirmExportNotificationDelivered", mock.Anything, exportReq, emailSent).Return(emailDelivered, nil).Once()
 
 	env.ExecuteWorkflow(ImportWorkflow, req, cfg)
 
@@ -292,7 +305,7 @@ func TestImportWorkflowRunsOverTATAndDeletesUploadObject(t *testing.T) {
 	if err := env.GetWorkflowResult(&result); err != nil {
 		t.Fatalf("get result: %v", err)
 	}
-	if !result.COSDeleted || result.Import.ByteSize != 42 {
+	if !result.COSDeleted || result.Import.ByteSize != 42 || result.NotificationEmail != req.NotificationEmail || result.EmailMessageID != emailSent.MessageID || !result.EmailDelivered {
 		t.Fatalf("unexpected import result: %+v", result)
 	}
 	encodedStatus, err := env.QueryWorkflow(ExportStatusQuery)
@@ -303,8 +316,53 @@ func TestImportWorkflowRunsOverTATAndDeletesUploadObject(t *testing.T) {
 	if err := encodedStatus.Get(&status); err != nil {
 		t.Fatal(err)
 	}
-	if status.Phase != PhaseCompleted || !status.COSDeleted {
+	if status.Phase != PhaseCompleted || !status.COSDeleted || status.NotificationEmail != req.NotificationEmail || status.EmailMessageID != emailSent.MessageID || !status.EmailDelivered {
 		t.Fatalf("unexpected status: %+v", status)
+	}
+	env.AssertExpectations(t)
+}
+
+func TestImportWorkflowFailureSendsNotification(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(ImportWorkflow)
+	acts := Activities{}
+	env.RegisterActivityWithOptions(acts.LocateInstance, ActivityOptions("LocateInstance"))
+	env.RegisterActivityWithOptions(acts.SendFailureNotification, ActivityOptions("SendFailureNotification"))
+
+	req := NormalizeImportRequest(ImportRequest{
+		BotID:             "bot-1",
+		BotName:           "我的 Agent",
+		InstanceID:        "ins-test",
+		Region:            "ap-beijing",
+		NotificationEmail: "user@example.com",
+		ImportObjectKey:   "rescue-imports/bot-1/hermes.zip",
+		COSUploadBucket:   "https://bucket.cos.ap-beijing.myqcloud.com",
+		COSUploadRegion:   "ap-beijing",
+		Execute:           true,
+	})
+	cfg := TencentConfig{RegionCandidates: []string{"ap-beijing"}}
+	exportReq := req.exportRequest()
+	locateErr := errors.New("locate failed")
+
+	env.OnActivity("LocateInstance", mock.Anything, exportReq, cfg).Return(InstanceInfo{}, locateErr).Times(3)
+	env.OnActivity("SendFailureNotification", mock.Anything, mock.MatchedBy(func(notification FailureNotification) bool {
+		return notification.Operation == "import" &&
+			notification.Request.BotName == req.BotName &&
+			notification.Request.NotificationEmail == req.NotificationEmail &&
+			notification.Request.ArchiveMode == ArchiveModeHermes &&
+			len(notification.Request.RemotePaths) == 1 &&
+			notification.Request.RemotePaths[0] == "/home/agentuser/.hermes" &&
+			notification.Error != ""
+	}), cfg).Return(FailureNotificationResult{Sent: true, Recipients: []string{req.NotificationEmail}}, nil).Once()
+
+	env.ExecuteWorkflow(ImportWorkflow, req, cfg)
+
+	if !env.IsWorkflowCompleted() {
+		t.Fatal("workflow did not complete")
+	}
+	if env.GetWorkflowError() == nil {
+		t.Fatal("workflow should report import failure")
 	}
 	env.AssertExpectations(t)
 }

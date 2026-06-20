@@ -31,7 +31,7 @@ func TestBuildArchiveScriptDefaultsToHermesCompatibleZip(t *testing.T) {
 		RemotePaths:   []string{"/home/agentuser/.hermes"},
 	}
 	script := BuildArchiveScript(req)
-	for _, want := range []string{".zip", "HERMES_PATH='/home/agentuser/.hermes'", "config.yaml", "state.db", "bin|bin/*", "zipfile.ZipFile", "RESCUE_EXPORT_RESULT="} {
+	for _, want := range []string{".zip", "HERMES_PATH='/home/agentuser/.hermes'", "config.yaml", "state.db", "bin|bin/*", "backups|backups/*", "*.db-wal", "zipfile.ZipFile", "RESCUE_EXPORT_RESULT="} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("script missing %q:\n%s", want, script)
 		}

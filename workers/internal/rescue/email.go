@@ -90,6 +90,15 @@ func buildExportNotificationContent(req ExportRequest, downloadURL string, ttlSe
 		renderRescueTextTemplate("export_success.txt", data)
 }
 
+func buildImportNotificationContent(req ImportRequest) (subject, html, text string) {
+	data := importSuccessEmailTemplateData{
+		AgentLabel: exportAgentLabel(req.exportRequest()),
+	}
+	return renderRescueTextTemplate("import_success.subject", data),
+		renderRescueHTMLTemplate("import_success.html", data),
+		renderRescueTextTemplate("import_success.txt", data)
+}
+
 func formatDownloadTTLLabel(seconds int) string {
 	if seconds <= 0 {
 		seconds = 28800
