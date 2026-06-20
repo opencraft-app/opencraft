@@ -121,6 +121,16 @@ test("web partial virtualization keeps row measurement refs stable across parent
   );
 });
 
+test("web partial virtualization keeps mounted list hooks unconditional", () => {
+  const source = readFileSync(
+    join(root, "packages/vela-chat-web/src/conversation-runtime/strategy/webVirtualizedStrategy.tsx"),
+    "utf8",
+  );
+
+  assert.equal(source.match(/return empty;/g)?.length, 1);
+  assert.doesNotMatch(source, /function WebPartialVirtualizedItemList[\s\S]*return empty;/);
+});
+
 test("web partial virtualization records measured row heights for future estimates", () => {
   const source = readFileSync(
     join(root, "packages/vela-chat-web/src/conversation-runtime/strategy/webVirtualizedStrategy.tsx"),

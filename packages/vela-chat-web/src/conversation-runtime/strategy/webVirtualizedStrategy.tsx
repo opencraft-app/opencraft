@@ -36,7 +36,6 @@ export const webPartialVirtualizedConversationStrategy: ConversationStrategy = {
     return (
       <WebPartialVirtualizedItemList
         contentRef={contentRef}
-        empty={empty}
         isLoadingOlderHistory={isLoadingOlderHistory}
         renderItem={renderItem}
         scrollRef={scrollRef}
@@ -48,28 +47,17 @@ export const webPartialVirtualizedConversationStrategy: ConversationStrategy = {
 
 function WebPartialVirtualizedItemList({
   contentRef,
-  empty,
   isLoadingOlderHistory = false,
   renderItem,
   scrollRef,
   segments,
 }: {
   contentRef?: RefObject<HTMLDivElement | null>;
-  empty: ReactNode;
   isLoadingOlderHistory?: boolean;
   renderItem: (item: ConversationStreamItem) => ReactNode;
   scrollRef?: RefObject<HTMLElement | null>;
   segments: ConversationRuntimeSegments;
 }) {
-  if (
-    segments.historyVirtualized.length === 0 &&
-    segments.historyMounted.length === 0 &&
-    segments.liveHead.length === 0 &&
-    !isLoadingOlderHistory
-  ) {
-    return empty;
-  }
-
   const rowVirtualizer = useVirtualizer({
     count: segments.historyVirtualized.length,
     getScrollElement: () => scrollRef?.current ?? null,
