@@ -475,10 +475,11 @@ test("chat stream connection is keyed by session readiness instead of every curs
   const source = readFileSync(join(root, "app/chat/ChatWorkbench.tsx"), "utf8");
 
   assert.match(source, /const isTranscriptReady = transcript !== null/);
+  assert.match(source, /const isActivityReady = activity !== null/);
   assert.match(source, /selectSessionEventStreamAfterId/);
   assert.match(source, /transcript:\s*transcript\?\.cursor/);
   assert.match(source, /activity:\s*activity\?\.cursor/);
-  assert.match(source, /if \(!activeSessionId \|\| !isTranscriptReady\) return/);
+  assert.match(source, /if \(!activeSessionId \|\| !isTranscriptReady \|\| !isActivityReady\) return/);
   assert.doesNotMatch(source, /\[[^\]]*transcriptEventCursor[^\]]*\]/);
   assert.doesNotMatch(source, /const transcriptEventCursor = cursorEventId\(transcript\?\.cursor\)/);
 });

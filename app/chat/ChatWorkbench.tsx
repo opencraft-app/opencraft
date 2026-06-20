@@ -224,6 +224,7 @@ export function ChatWorkbench({
     activity: activity?.cursor,
   });
   const isTranscriptReady = transcript !== null;
+  const isActivityReady = activity !== null;
   const conversationWindow = useMemo(
     () => deriveConversationWindowState({ transcript, activity }),
     [activity, transcript],
@@ -234,7 +235,7 @@ export function ChatWorkbench({
   );
 
   useEffect(() => {
-    if (!activeSessionId || !isTranscriptReady) return;
+    if (!activeSessionId || !isTranscriptReady || !isActivityReady) return;
     const url = client.sessionEventStreamUrl(activeSessionId, sessionEventStreamAfterId);
     const source = new EventSource(url);
     const transcriptRefreshScheduler = createStreamRefreshScheduler({
@@ -302,6 +303,7 @@ export function ChatWorkbench({
   }, [
     activeSessionId,
     client,
+    isActivityReady,
     isTranscriptReady,
     loadActivity,
     loadBackends,
