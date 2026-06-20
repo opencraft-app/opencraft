@@ -138,7 +138,12 @@ function responseKindForRequest(
   request: ChatSurfacePendingRequest,
 ): RequestDockRenderItem["response_kind"] {
   if (isConfirmableRequest(request)) return "confirmation";
-  if (request.status === "pending" && request.type === "question") return "answer";
+  if (
+    request.status === "pending" &&
+    (request.type === "question" || request.type === "custom_input")
+  ) {
+    return "answer";
+  }
   return "unsupported";
 }
 

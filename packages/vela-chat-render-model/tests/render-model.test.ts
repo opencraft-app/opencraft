@@ -150,6 +150,34 @@ test("marks question requests as answerable instead of confirmation-only", () =>
   assert.equal(model.requests.items[0]?.response_kind, "answer");
 });
 
+test("marks custom input requests as answerable request prompts", () => {
+  const surface: ChatSurface = {
+    session_id: "sess_custom_input",
+    transcript: { rows: [] },
+    activity: { items: [] },
+    pending_requests: {
+      items: [
+        {
+          id: "req_custom_input",
+          type: "custom_input",
+          status: "pending",
+          title: "Need more context",
+          description: "Which branch should I inspect?",
+          created_at: "2026-06-18T10:00:00Z",
+          debug: { projection: "requests", source_event_ids: ["req_custom_input"] },
+        },
+      ],
+    },
+    cursors: {},
+    stream: { connected: true, running: true },
+  };
+
+  const model = buildChatRenderModel(surface, { kind: "desktop_web" });
+
+  assert.equal(model.requests.items[0]?.confirmable, false);
+  assert.equal(model.requests.items[0]?.response_kind, "answer");
+});
+
 test("derives user message text from OpenAPI textual parts when row text is absent", () => {
   const surface: ChatSurface = {
     session_id: "sess_user_parts",
