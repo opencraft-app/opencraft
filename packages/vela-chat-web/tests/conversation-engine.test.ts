@@ -736,6 +736,47 @@ test("web adapter invalidates agent work cache when display intent changes", () 
   }
 });
 
+test("web adapter invalidates agent work cache when activity timestamps change", () => {
+  const firstSnapshot: ChatRenderModel = {
+    session_id: "sess_work_timestamp",
+    host: { kind: "desktop_web" },
+    rows: [
+      {
+        kind: "agent_work",
+        id: "work_1",
+        key: "tool:work_1",
+        title: "Running command",
+        summary: "npm test",
+        status: "running",
+        display: "compact",
+        createdAt: "2026-06-18T00:00:00Z",
+        updatedAt: "2026-06-18T00:00:01Z",
+        debug: { projection: "activity", source_event_ids: ["evt_1"] },
+      },
+    ],
+    composer: { placeholder: "要求后续变更", can_send: true },
+  };
+  const secondSnapshot: ChatRenderModel = {
+    ...firstSnapshot,
+    rows: [
+      {
+        ...firstSnapshot.rows[0]!,
+        updatedAt: "2026-06-18T00:00:05Z",
+      },
+    ],
+  };
+
+  const first = toWebChatModel(firstSnapshot);
+  const second = toWebChatModel(secondSnapshot);
+
+  assert.notEqual(second.turns[0], first.turns[0]);
+  assert.notEqual(second.turns[0]?.fingerprint, first.turns[0]?.fingerprint);
+  assert.equal(second.turns[0]?.blocks[0]?.kind, "agent_work");
+  if (second.turns[0]?.blocks[0]?.kind === "agent_work") {
+    assert.equal(second.turns[0].blocks[0].updatedAt, "2026-06-18T00:00:05Z");
+  }
+});
+
 test("web adapter invalidates assistant cache when settled label changes", () => {
   const firstSnapshot: ChatRenderModel = {
     session_id: "sess_settled_label",
