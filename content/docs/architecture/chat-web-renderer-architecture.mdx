@@ -206,6 +206,13 @@ contract and Paseo's agent-stream shape. Do not turn these into heuristic fixes:
   `ChatWorkbench` schedules scoped read-model refreshes for non-delta events,
   and requests transcript refresh only when a delta has no local assistant row
   target.
+- `streamReadModelRefreshPlan` can return `diffs: true` for `diff.updated`
+  and `affected_views: ["diffs"]`, but the example `/chat` route currently has
+  no `DiffReviewView` state, no `ChatSurfaceDiffs`, and no review lane renderer.
+  Treat this as an unmaterialized OpenAPI/client capability, not a rendering
+  bug in the conversation list. Do not route `diff.updated` through transcript,
+  activity work rows, or timeline/raw events to make it visible. Add a dedicated
+  review lane and tests before consuming `refreshPlan.diffs` in `ChatWorkbench`.
 - `ChatTranscriptView` and `ActivityShelfView` are still handwritten TypeScript
   wire interfaces, but their OpenAPI-required envelopes are now enforced in both
   `vela-chat-client` and `vela-chat-surface`: `session_id`, `window`, and full

@@ -47,7 +47,7 @@ flowchart TD
 
 - `GET /sessions/{session_id}/views/activity`
 - `GET /sessions/{session_id}/views/requests`
-- `GET /sessions/{session_id}/views/diffs`
+- `GET /sessions/{session_id}/views/diffs`，当页面存在 review lane 时
 
 诊断和审计面板 MAY 消费：
 
@@ -89,12 +89,19 @@ interface ChatSurface {
   transcript: ChatSurfaceTranscript;
   activity: ChatSurfaceActivity;
   pending_requests: ChatSurfacePendingRequests;
-  diffs: ChatSurfaceDiffs;
   stream: ChatSurfaceStreamState;
   cursors: ChatSurfaceCursors;
   diagnostics: ChatSurfaceDiagnostics;
 }
 ```
+
+Current implementation note: `vela-chat-client` already supports
+`DiffReviewView`, and `streamReadModelRefreshPlan` can plan `diffs` refreshes.
+The current `ChatSurface` and `/chat` example route do not yet materialize a
+review lane or `ChatSurfaceDiffs`. Do not silently merge `/views/diffs` into
+activity rows, transcript rows, or timeline-derived blocks. Add a dedicated
+review lane contract, surface field, render-model tests, and route refresh state
+when the UI is ready to display diffs.
 
 这一层保留可定位信息：
 
@@ -182,7 +189,7 @@ type ChatHostPolicy =
 
 - 读取 `session_id`、`base_url` 和 host mode。
 - 创建 `vela-chat-client`。
-- 拉取 read models。
+- 拉取当前 route 实际渲染的 read models。
 - 订阅 SSE。
 - 把 wire DTO 交给 `vela-chat-surface`。
 - 把 `ChatSurface` 交给 `vela-chat-render-model`。
