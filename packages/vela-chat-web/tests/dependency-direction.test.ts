@@ -179,6 +179,17 @@ test("user message renderer uses a semantic copy control instead of a placeholde
   assert.match(source, /navigator\.clipboard\.writeText/);
 });
 
+test("assistant markdown renderer exposes a semantic copy control", () => {
+  const source = readFileSync(
+    join(root, "packages/vela-chat-web/src/renderers/blocks/AssistantMarkdownRenderer.tsx"),
+    "utf8",
+  );
+
+  assert.doesNotMatch(source, />□</);
+  assert.match(source, /aria-label="Copy assistant message"/);
+  assert.match(source, /navigator\.clipboard\.writeText/);
+});
+
 test("conversation scroll controller observes content size changes for post-layout bottom anchoring", () => {
   const controller = readFileSync(
     join(root, "packages/vela-chat-web/src/conversation-runtime/scroll/useConversationScrollController.ts"),
