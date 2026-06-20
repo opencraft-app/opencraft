@@ -1698,6 +1698,18 @@ function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDeta
       ...(data.command !== undefined
         ? { command: optionalViewString(data, "command", owner, invalidActivityView) }
         : {}),
+      ...(data.output !== undefined
+        ? { output: optionalViewString(data, "output", owner, invalidActivityView) }
+        : {}),
+      ...(data.stdout !== undefined
+        ? { stdout: optionalViewString(data, "stdout", owner, invalidActivityView) }
+        : {}),
+      ...(data.stderr !== undefined
+        ? { stderr: optionalViewString(data, "stderr", owner, invalidActivityView) }
+        : {}),
+      ...(data.error !== undefined
+        ? { error: optionalViewString(data, "error", owner, invalidActivityView) }
+        : {}),
     };
   }
   if (type === "search") {
