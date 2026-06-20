@@ -563,14 +563,15 @@ test("keeps OpenAPI session backend and status enums narrow in the client wire m
   assert.match(source, /export type BackendKindWire\s*=/);
   assert.match(source, /export type SessionStatusWire\s*=/);
   assert.match(sessionInterface, /backend:\s*BackendKindWire/);
-  assert.match(createSessionInputInterface, /backend\?:\s*BackendKindWire/);
+  assert.match(createSessionInputInterface, /backend:\s*BackendKindWire/);
   assert.match(sessionInterface, /status:\s*SessionStatusWire/);
   assert.match(runtimeInfoInterface, /provider:\s*BackendKindWire/);
   assert.match(source, /backend:\s*backend as BackendKindWire/);
   assert.match(source, /status:\s*status as SessionStatusWire/);
   assert.match(source, /provider:\s*provider as BackendKindWire/);
   assert.doesNotMatch(sessionInterface, /backend:\s*"pi"\s*\|\s*string/);
-  assert.doesNotMatch(createSessionInputInterface, /backend\?:[\s\S]*\|\s*string/);
+  assert.doesNotMatch(createSessionInputInterface, /backend\?:/);
+  assert.doesNotMatch(createSessionInputInterface, /backend:[\s\S]*\|\s*string/);
   assert.doesNotMatch(sessionInterface, /status:\s*string/);
   assert.doesNotMatch(runtimeInfoInterface, /provider:\s*string/);
 });
@@ -1874,6 +1875,7 @@ test("creates a local pi session with idempotency key", async () => {
 
   const created = await client.createSession({
     idempotencyKey: "ses_created",
+    backend: "pi",
     title: "New chat",
     workingDirectory: "/tmp/project",
   });
@@ -1968,6 +1970,17 @@ test("rejects invalid create session requests before sending", async () => {
   await assert.rejects(
     () =>
       client.createSession({
+        workingDirectory: "/tmp/project",
+      } as unknown as Parameters<typeof client.createSession>[0]),
+    (err) =>
+      err instanceof VeladClientError &&
+      err.code === "invalid_create_session_request" &&
+      /backend/.test(err.message),
+  );
+
+  await assert.rejects(
+    () =>
+      client.createSession({
         backend: "unknown_backend",
         workingDirectory: "/tmp/project",
       } as unknown as Parameters<typeof client.createSession>[0]),
@@ -2007,6 +2020,7 @@ test("rejects invalid idempotency key header values before mutating requests", a
     () =>
       client.createSession({
         idempotencyKey: 99 as unknown as string,
+        backend: "pi",
         workingDirectory: "/tmp/project",
       }),
     (err) =>
@@ -2060,6 +2074,7 @@ test("validates session mutation response envelopes at the client wire boundary"
     () =>
       createClient.createSession({
         idempotencyKey: "ses_missing_cursor",
+        backend: "pi",
         workingDirectory: "/tmp/project",
       }),
     (err) =>
@@ -2084,6 +2099,7 @@ test("validates session mutation response envelopes at the client wire boundary"
     () =>
       badSessionIdClient.createSession({
         idempotencyKey: "ses_bad_id",
+        backend: "pi",
         workingDirectory: "/tmp/project",
       }),
     (err) =>
@@ -2108,6 +2124,7 @@ test("validates session mutation response envelopes at the client wire boundary"
     () =>
       badSessionBackendClient.createSession({
         idempotencyKey: "ses_bad_backend",
+        backend: "pi",
         workingDirectory: "/tmp/project",
       }),
     (err) =>
@@ -2132,6 +2149,7 @@ test("validates session mutation response envelopes at the client wire boundary"
     () =>
       badSessionStatusClient.createSession({
         idempotencyKey: "ses_bad_status",
+        backend: "pi",
         workingDirectory: "/tmp/project",
       }),
     (err) =>
@@ -2156,6 +2174,7 @@ test("validates session mutation response envelopes at the client wire boundary"
     () =>
       missingSessionTitleClient.createSession({
         idempotencyKey: "ses_missing_title",
+        backend: "pi",
         workingDirectory: "/tmp/project",
       }),
     (err) =>
@@ -2183,6 +2202,7 @@ test("validates session mutation response envelopes at the client wire boundary"
     () =>
       badSessionAgentConfigClient.createSession({
         idempotencyKey: "ses_bad_agent_config",
+        backend: "pi",
         workingDirectory: "/tmp/project",
       }),
     (err) =>
@@ -2210,6 +2230,7 @@ test("validates session mutation response envelopes at the client wire boundary"
     () =>
       badSessionRuntimeInfoClient.createSession({
         idempotencyKey: "ses_bad_runtime_info",
+        backend: "pi",
         workingDirectory: "/tmp/project",
       }),
     (err) =>
@@ -2239,6 +2260,7 @@ test("validates session mutation response envelopes at the client wire boundary"
     () =>
       badSessionOperationsClient.createSession({
         idempotencyKey: "ses_bad_operations",
+        backend: "pi",
         workingDirectory: "/tmp/project",
       }),
     (err) =>

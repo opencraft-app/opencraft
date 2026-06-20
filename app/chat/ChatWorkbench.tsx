@@ -16,6 +16,7 @@ import {
   subscribeVelaEventSource,
   type AgentConfigPatchWire,
   type AgentConfigWire,
+  type BackendKindWire,
   type BackendWire,
   type ClientInputPart,
   type PermissionModeWire,
@@ -80,7 +81,7 @@ export function ChatWorkbench({
   const [requests, setRequests] = useState<Awaited<ReturnType<ReturnType<typeof createVeladClient>["getPendingRequests"]>> | null>(null);
   const [session, setSession] = useState<SessionWire | null>(null);
   const [backends, setBackends] = useState<BackendWire[]>([]);
-  const [selectedBackend, setSelectedBackend] = useState("");
+  const [selectedBackend, setSelectedBackend] = useState<BackendKindWire | "">("");
   const [selectedModel, setSelectedModel] = useState("");
   const [selectedReasoningEffort, setSelectedReasoningEffort] = useState("");
   const [selectedPermissionMode, setSelectedPermissionMode] = useState<PermissionModeWire | "">("");
@@ -454,6 +455,7 @@ export function ChatWorkbench({
     [backends, selectedBackend],
   );
   const resolvedSelectedBackend = selectedBackendDetails?.kind ?? selectedBackend;
+  const backendKinds = useMemo(() => new Set(backends.map((backend) => backend.kind)), [backends]);
   const setupModelOptions = selectedBackendDetails?.models ?? [];
   const setupSelectedModel = useMemo(() => {
     if (selectedModel && setupModelOptions.some((model) => model.id === selectedModel)) {
@@ -508,7 +510,7 @@ export function ChatWorkbench({
 
   const createSession = useCallback(async () => {
     const trimmedWorkingDirectory = workingDirectory.trim();
-    if (!trimmedWorkingDirectory || isCreatingSession) return;
+    if (!trimmedWorkingDirectory || !resolvedSelectedBackend || isCreatingSession) return;
     try {
       setIsCreatingSession(true);
       setError(null);
@@ -762,7 +764,12 @@ export function ChatWorkbench({
               style={setupInputStyle}
               value={resolvedSelectedBackend}
               onChange={(event) => {
-                setSelectedBackend(event.target.value);
+                const nextBackend = event.target.value;
+                setSelectedBackend(
+                  backendKinds.has(nextBackend as BackendKindWire)
+                    ? (nextBackend as BackendKindWire)
+                    : "",
+                );
                 setSelectedModel("");
                 setSelectedReasoningEffort("");
                 setSelectedPermissionMode("");

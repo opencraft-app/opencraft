@@ -270,7 +270,7 @@ export type SessionStatusWire =
 export interface CreateSessionInput {
   workingDirectory: string;
   idempotencyKey?: string;
-  backend?: BackendKindWire;
+  backend: BackendKindWire;
   title?: string;
   model?: string;
   agentConfig?: AgentConfigWire;
@@ -1058,7 +1058,7 @@ export function createVeladClient(options: VeladClientOptions): VeladClient {
       const idempotencyKey = validateOptionalIdempotencyKey(input.idempotencyKey) ?? createSessionIdempotencyKey();
       const url = new URL("sessions", baseUrl);
       const body: Record<string, unknown> = {
-        backend: input.backend ?? "pi",
+        backend: input.backend,
         working_directory: input.workingDirectory,
       };
       if (input.title) body.title = input.title;
@@ -1245,7 +1245,7 @@ function validateCreateSessionInput(input: unknown): asserts input is CreateSess
     throw invalidCreateSessionRequest("CreateSessionRequest requires working_directory");
   }
 
-  const backend = input.backend ?? "pi";
+  const backend = input.backend;
   if (typeof backend !== "string" || !backendKinds.has(backend)) {
     throw invalidCreateSessionRequest("CreateSessionRequest backend must be a known BackendKind");
   }
