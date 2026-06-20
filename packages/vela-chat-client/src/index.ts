@@ -153,7 +153,7 @@ export interface SessionRuntimeInfoWire {
 
 export interface SessionOperationWire {
   available: boolean;
-  reason?: string;
+  reason?: string | null;
   effective_after?: "current_session" | "next_turn";
 }
 
@@ -1146,6 +1146,40 @@ function validateOptionalNullableSessionString(
   }
 }
 
+function validateSessionOperationsShape(
+  operations: unknown,
+  invalid: ViewContractErrorFactory,
+  owner: string,
+): asserts operations is Record<string, SessionOperationWire | undefined> {
+  if (!isRecord(operations)) {
+    throw invalid(`${owner} must be an object`);
+  }
+
+  for (const [key, operation] of Object.entries(operations)) {
+    const operationOwner = `${owner}.${key}`;
+    if (!isRecord(operation)) {
+      throw invalid(`${operationOwner} must be an object`);
+    }
+    if (typeof operation.available !== "boolean") {
+      throw invalid(`${operationOwner}.available must be a boolean`);
+    }
+    if (
+      operation.reason !== undefined &&
+      operation.reason !== null &&
+      typeof operation.reason !== "string"
+    ) {
+      throw invalid(`${operationOwner}.reason must be a string or null`);
+    }
+    if (
+      operation.effective_after !== undefined &&
+      operation.effective_after !== "current_session" &&
+      operation.effective_after !== "next_turn"
+    ) {
+      throw invalid(`${operationOwner}.effective_after must be current_session or next_turn`);
+    }
+  }
+}
+
 function validateClientInputParts(parts: readonly ClientInputPart[]) {
   for (const part of parts) {
     validateClientInputPart(part);
@@ -2011,6 +2045,10 @@ function parseSessionWire(
   if (runtimeInfo !== undefined) {
     validateSessionRuntimeInfoShape(runtimeInfo, invalid, `${owner}.runtime_info`);
   }
+  const operations = data.operations;
+  if (operations !== undefined) {
+    validateSessionOperationsShape(operations, invalid, `${owner}.operations`);
+  }
   return {
     ...(data as unknown as SessionWire),
     id,
@@ -2018,6 +2056,7 @@ function parseSessionWire(
     status,
     ...(agentConfig !== undefined ? { agent_config: agentConfig } : {}),
     ...(runtimeInfo !== undefined ? { runtime_info: runtimeInfo } : {}),
+    ...(operations !== undefined ? { operations } : {}),
   };
 }
 
