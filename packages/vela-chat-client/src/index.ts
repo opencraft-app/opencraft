@@ -759,7 +759,7 @@ function resetRefreshPlan(views: string[] | undefined): StreamReadModelRefreshPl
       viewSet.has("requests") ||
       viewSet.has("diffs"),
     session: workbench || viewSet.has("session"),
-    backends: viewSet.has("backends"),
+    backends: workbench || viewSet.has("backends"),
   };
 }
 

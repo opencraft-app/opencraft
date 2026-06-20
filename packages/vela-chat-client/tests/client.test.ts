@@ -2344,6 +2344,22 @@ test("uses affected_views as forward-compatible refresh hints for canonical stre
   );
 });
 
+test("plans workbench sync resets as full workbench refreshes", () => {
+  assert.deepEqual(
+    streamReadModelRefreshPlan({
+      event_id: "evt_reset",
+      type: "sync.reset",
+      views: ["workbench"],
+    }),
+    {
+      transcript: true,
+      activity: true,
+      session: true,
+      backends: true,
+    },
+  );
+});
+
 test("matches stream events to the active session while accepting legacy events", () => {
   assert.equal(
     isVelaStreamEventForSession("sess_1", {
