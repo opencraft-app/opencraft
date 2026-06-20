@@ -1717,6 +1717,15 @@ function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDeta
         : {}),
     };
   }
+  if (type === "fetch") {
+    return {
+      ...(data as ActivityWireDetail),
+      type,
+      ...(data.url !== undefined
+        ? { url: optionalViewString(data, "url", owner, invalidActivityView) }
+        : {}),
+    };
+  }
   return data as ActivityWireDetail;
 }
 
