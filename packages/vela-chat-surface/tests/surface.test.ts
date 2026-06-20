@@ -176,6 +176,26 @@ test("keeps surface renderer-free", async () => {
   assert.equal(source.includes("next/"), false);
 });
 
+test("does not invent OpenAPI-required transcript row fields in the surface layer", async () => {
+  const source = await import("node:fs/promises").then((fs) =>
+    fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
+  );
+  const rowInterface =
+    source.match(/export interface ChatTranscriptWireRow \{[\s\S]*?\n\}/)?.[0] ?? "";
+
+  assert.match(rowInterface, /updated_at:\s*string/);
+  assert.match(rowInterface, /revision:\s*number/);
+  assert.match(rowInterface, /status:\s*string/);
+  assert.match(rowInterface, /source_event_ids:\s*string\[\]/);
+  assert.doesNotMatch(rowInterface, /updated_at\?:\s*string/);
+  assert.doesNotMatch(rowInterface, /revision\?:\s*number/);
+  assert.doesNotMatch(rowInterface, /status\?:\s*string/);
+  assert.doesNotMatch(rowInterface, /source_event_ids\?:\s*string\[\]/);
+  assert.doesNotMatch(source, /row\.status\s*\?\?/);
+  assert.doesNotMatch(source, /row\.revision\s*\?\?/);
+  assert.doesNotMatch(source, /row\.source_event_ids\?\./);
+});
+
 test("prepends transcript windows without duplicating rows and preserves latest cursor", () => {
   const current = {
     session_id: "sess_1",

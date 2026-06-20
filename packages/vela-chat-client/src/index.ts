@@ -42,15 +42,15 @@ export interface TranscriptWireRow {
   id: string;
   kind: "user_message" | "assistant_message" | "working" | "activity_marker" | "error";
   created_at: string;
-  updated_at?: string;
-  revision?: number;
+  updated_at: string;
+  revision: number;
   turn_id?: string;
   text?: string;
   parts?: TranscriptWirePart[];
   activity_id?: string;
   label?: string;
-  status?: string;
-  source_event_ids?: string[];
+  status: string;
+  source_event_ids: string[];
 }
 
 export interface TranscriptWirePart {
@@ -718,15 +718,15 @@ function appendAssistantDelta(
   const rows = transcript.rows.map((row, index) => {
     if (row.kind !== "assistant_message") return row;
     if (rowId ? row.id !== rowId : index !== fallbackIndex) return row;
-    if (event.event_id && row.source_event_ids?.includes(event.event_id)) return row;
+    if (event.event_id && row.source_event_ids.includes(event.event_id)) return row;
     return {
       ...row,
-      updated_at: event.created_at ?? row.updated_at ?? row.created_at,
-      revision: (row.revision ?? 1) + 1,
+      updated_at: event.created_at ?? row.updated_at,
+      revision: row.revision + 1,
       status: "streaming",
       text: `${row.text ?? ""}${delta}`,
       source_event_ids: event.event_id
-        ? [...(row.source_event_ids ?? []), event.event_id]
+        ? [...row.source_event_ids, event.event_id]
         : row.source_event_ids,
     };
   });

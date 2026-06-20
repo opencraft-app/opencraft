@@ -21,13 +21,13 @@ export interface ChatTranscriptWireRow {
   id: string;
   kind: "user_message" | "assistant_message" | "working" | "activity_marker" | "error";
   created_at: string;
-  updated_at?: string;
-  revision?: number;
+  updated_at: string;
+  revision: number;
   text?: string;
   label?: string;
   parts?: ChatTranscriptPart[];
-  status?: string;
-  source_event_ids?: string[];
+  status: string;
+  source_event_ids: string[];
 }
 
 export interface ChatTranscriptPart {
@@ -168,7 +168,7 @@ export interface ChatSurfaceTranscriptRow {
   text: string;
   parts: ChatTranscriptPart[];
   created_at: string;
-  updated_at?: string;
+  updated_at: string;
   status: string;
   revision: number;
   debug: ChatSurfaceDebug;
@@ -487,11 +487,11 @@ function normalizeTranscriptRow(row: ChatTranscriptWireRow): ChatSurfaceTranscri
     parts: row.parts ?? [],
     created_at: row.created_at,
     updated_at: row.updated_at,
-    status: row.status ?? "completed",
-    revision: row.revision ?? 1,
+    status: row.status,
+    revision: row.revision,
     debug: {
       projection: "transcript",
-      source_event_ids: row.source_event_ids?.length ? row.source_event_ids : [row.id],
+      source_event_ids: row.source_event_ids,
     },
   };
 }

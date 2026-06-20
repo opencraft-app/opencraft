@@ -469,6 +469,25 @@ test("validates optional transcript row label at the client wire boundary", asyn
   );
 });
 
+test("keeps OpenAPI-required transcript row fields required in the client wire model", async () => {
+  const source = await import("node:fs/promises").then((fs) =>
+    fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
+  );
+  const rowInterface = source.match(/export interface TranscriptWireRow \{[\s\S]*?\n\}/)?.[0] ?? "";
+
+  assert.match(rowInterface, /updated_at:\s*string/);
+  assert.match(rowInterface, /revision:\s*number/);
+  assert.match(rowInterface, /status:\s*string/);
+  assert.match(rowInterface, /source_event_ids:\s*string\[\]/);
+  assert.doesNotMatch(rowInterface, /updated_at\?:\s*string/);
+  assert.doesNotMatch(rowInterface, /revision\?:\s*number/);
+  assert.doesNotMatch(rowInterface, /status\?:\s*string/);
+  assert.doesNotMatch(rowInterface, /source_event_ids\?:\s*string\[\]/);
+  assert.doesNotMatch(source, /row\.source_event_ids\?\./);
+  assert.doesNotMatch(source, /row\.revision\s*\?\?/);
+  assert.doesNotMatch(source, /row\.source_event_ids\s*\?\?/);
+});
+
 test("validates optional transcript row activity_id at the client wire boundary", async () => {
   const client = createVeladClient({
     baseUrl: "http://127.0.0.1:3857/api/v1/",
