@@ -663,6 +663,20 @@ describe("http repositories auth token bootstrap", () => {
     await expect(repositories.bots.getRescueExportStatus("ins_export")).resolves.toBeNull();
   });
 
+  it("returns null when rescue export worker action status is empty", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ data: { WorkflowID: "worker-action-ins_export-rescue_export", Phase: "not_found", Logs: [] } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    await expect(repositories.bots.getRescueExportStatus("ins_export")).resolves.toBeNull();
+  });
+
   it("uploads and starts a Hermes import worker action for a bot", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi.fn()
@@ -793,6 +807,34 @@ describe("http repositories auth token bootstrap", () => {
       "https://lightclaw.tech/api/worker-actions?bot_id=ins_import&action=hermes_import",
       expect.objectContaining({ method: "GET" }),
     );
+  });
+
+  it("returns null when no Hermes import worker action exists", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: "action_not_found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    await expect(repositories.bots.getHermesImportStatus("ins_import")).resolves.toBeNull();
+  });
+
+  it("returns null when Hermes import worker action status is empty", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ data: { WorkflowID: "worker-action-ins_import-hermes_import", Phase: "not_found", Logs: [] } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    await expect(repositories.bots.getHermesImportStatus("ins_import")).resolves.toBeNull();
   });
 
   it("destroys bots through ctl instances", async () => {

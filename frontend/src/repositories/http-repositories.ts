@@ -460,6 +460,11 @@ const normalizeWorkerActionStatus = (payload: WorkerActionStatusPayload): Worker
   };
 };
 
+const normalizeNullableWorkerActionStatus = (payload: WorkerActionStatusPayload): WorkerActionStatusResult | null => {
+  const status = normalizeWorkerActionStatus(payload);
+  return status.phase === "not_found" || status.phase === "idle" ? null : status;
+};
+
 const requestMultipart = async <T>(
   baseUrl: string,
   path: string,
@@ -1052,7 +1057,7 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
           `/api/worker-actions?bot_id=${encodeURIComponent(botId)}&action=rescue_export`,
           { method: "GET" },
         );
-        return normalizeWorkerActionStatus(payload);
+        return normalizeNullableWorkerActionStatus(payload);
       } catch (err) {
         if (err instanceof RepositoryError && err.status === 404 && err.code === "action_not_found") {
           return null;
@@ -1112,7 +1117,7 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
           `/api/worker-actions?bot_id=${encodeURIComponent(botId)}&action=hermes_import`,
           { method: "GET" },
         );
-        return normalizeWorkerActionStatus(payload);
+        return normalizeNullableWorkerActionStatus(payload);
       } catch (err) {
         if (err instanceof RepositoryError && err.status === 404 && err.code === "action_not_found") {
           return null;
