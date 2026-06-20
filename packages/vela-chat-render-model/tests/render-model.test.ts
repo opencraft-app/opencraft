@@ -354,6 +354,60 @@ test("formats short worked labels using elapsed whole seconds", () => {
   assert.equal(assistant?.settledLabel, "Worked for 1s");
 });
 
+test("attaches worked labels only to the terminal assistant row in a user segment", () => {
+  const surface: ChatSurface = {
+    session_id: "sess_multi_assistant_work",
+    transcript: {
+      rows: [
+        {
+          id: "user_1",
+          role: "user",
+          text: "investigate this",
+          parts: [],
+          created_at: "2026-06-18T10:00:00Z",
+          updated_at: "2026-06-18T10:00:00Z",
+          status: "completed",
+          revision: 1,
+          debug: { projection: "transcript", source_event_ids: ["evt_user"] },
+        },
+        {
+          id: "assistant_progress",
+          role: "assistant",
+          text: "I found the entry point.",
+          parts: [],
+          created_at: "2026-06-18T10:00:01Z",
+          updated_at: "2026-06-18T10:00:02Z",
+          status: "completed",
+          revision: 1,
+          debug: { projection: "transcript", source_event_ids: ["evt_assistant_progress"] },
+        },
+        {
+          id: "assistant_final",
+          role: "assistant",
+          text: "The fix is ready.",
+          parts: [],
+          created_at: "2026-06-18T10:00:03Z",
+          updated_at: "2026-06-18T10:00:05Z",
+          status: "completed",
+          revision: 1,
+          debug: { projection: "transcript", source_event_ids: ["evt_assistant_final"] },
+        },
+      ],
+    },
+    activity: { items: [] },
+    pending_requests: { items: [] },
+    cursors: {},
+    stream: { connected: false, running: false },
+  };
+
+  const model = buildChatRenderModel(surface, { kind: "desktop_web" });
+  const assistants = model.rows.filter((row) => row.kind === "assistant_message");
+
+  assert.equal(assistants.length, 2);
+  assert.equal(assistants[0]?.settledLabel, undefined);
+  assert.equal(assistants[1]?.settledLabel, "Worked for 5s");
+});
+
 test("renders canonical tool details as agent work instead of generic Tool labels", () => {
   const surface: ChatSurface = {
     session_id: "sess_tool_detail",

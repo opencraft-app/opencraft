@@ -233,24 +233,36 @@ function rowSortPriority(row: ChatRenderRow): number {
 
 function applyMessageBoundaryLabels(rows: ChatRenderRow[]): ChatRenderRow[] {
   let currentUserStartedAt: string | undefined;
+  let terminalAssistantIndex: number | undefined;
+  const labelledRows = [...rows];
 
-  return rows.map((row) => {
-    if (row.kind === "user_message") {
-      currentUserStartedAt = row.createdAt;
-      return row;
-    }
-    if (row.kind !== "assistant_message" || row.streaming) return row;
+  const labelTerminalAssistant = () => {
+    if (terminalAssistantIndex === undefined || !currentUserStartedAt) return;
+    const row = labelledRows[terminalAssistantIndex];
+    if (!row || row.kind !== "assistant_message") return;
 
-    const durationLabel = currentUserStartedAt
-      ? formatWorkedFor(currentUserStartedAt, row.updatedAt ?? row.createdAt)
-      : undefined;
-
-    if (!durationLabel) return row;
-    return {
+    const durationLabel = formatWorkedFor(currentUserStartedAt, row.updatedAt ?? row.createdAt);
+    if (!durationLabel) return;
+    labelledRows[terminalAssistantIndex] = {
       ...row,
       settledLabel: durationLabel,
     };
-  });
+  };
+
+  for (const [index, row] of rows.entries()) {
+    if (row.kind === "user_message") {
+      labelTerminalAssistant();
+      currentUserStartedAt = row.createdAt;
+      terminalAssistantIndex = undefined;
+      continue;
+    }
+    if (row.kind !== "assistant_message") continue;
+
+    terminalAssistantIndex = row.streaming ? undefined : index;
+  }
+  labelTerminalAssistant();
+
+  return labelledRows;
 }
 
 function formatWorkedFor(startIso: string, endIso: string): string | undefined {
