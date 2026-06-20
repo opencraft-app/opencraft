@@ -1939,9 +1939,14 @@ function parseSessionWire(
   if (typeof id !== "string") {
     throw invalid(`${owner}.id must be a string`);
   }
+  const backend = data.backend;
+  if (typeof backend !== "string" || !backendKinds.has(backend)) {
+    throw invalid(`${owner}.backend must be a known BackendKind`);
+  }
   return {
     ...(data as unknown as SessionWire),
     id,
+    backend,
   };
 }
 
