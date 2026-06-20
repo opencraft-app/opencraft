@@ -128,7 +128,7 @@ function rowFingerprint(row: ChatRenderRow) {
     return `${row.key}:created:${hashString(row.createdAt)}:${row.status}:streaming:${row.streaming}:settled:${hashString(row.settledLabel ?? "")}:rev:${row.revision}:len:${textLength}:hash:${blockHash}`;
   }
   if (row.kind === "user_message") {
-    return `${row.key}:created:${hashString(row.createdAt)}:len:${row.text.length}:text:${hashString(row.text)}:copy:${hashString(row.copy_text)}:parts:${partsFingerprint(row.parts)}`;
+    return `${row.key}:created:${hashString(row.createdAt)}:collapsed:${row.collapsed}:len:${row.text.length}:text:${hashString(row.text)}:copy:${hashString(row.copy_text)}:parts:${partsFingerprint(row.parts)}`;
   }
   if (row.kind === "agent_work") {
     return `${row.key}:${row.status}:display:${row.display}:created:${hashString(row.createdAt)}:updated:${hashString(row.updatedAt ?? "")}:title:${hashString(row.title)}:summary:${hashString(row.summary)}`;

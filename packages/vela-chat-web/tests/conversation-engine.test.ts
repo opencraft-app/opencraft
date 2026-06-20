@@ -1063,6 +1063,46 @@ test("web adapter invalidates user image cache when image metadata changes", () 
   }
 });
 
+test("web adapter invalidates user cache when collapsed state changes", () => {
+  const firstSnapshot: ChatRenderModel = {
+    session_id: "sess_user_collapsed",
+    host: { kind: "desktop_web" },
+    rows: [
+      {
+        kind: "user_message",
+        id: "u1",
+        key: "user:u1",
+        text: "long user message",
+        copy_text: "long user message",
+        collapsed: false,
+        parts: [{ id: "u1:part:0", type: "text", text: "long user message" }],
+        createdAt: "2026-06-18T00:00:00Z",
+        debug: { projection: "transcript", source_event_ids: ["evt_1"] },
+      },
+    ],
+    composer: { placeholder: "要求后续变更", can_send: true },
+  };
+  const secondSnapshot: ChatRenderModel = {
+    ...firstSnapshot,
+    rows: [
+      {
+        ...firstSnapshot.rows[0]!,
+        collapsed: true,
+      },
+    ],
+  };
+
+  const first = toWebChatModel(firstSnapshot);
+  const second = toWebChatModel(secondSnapshot);
+
+  assert.notEqual(second.turns[0], first.turns[0]);
+  assert.notEqual(second.turns[0]?.fingerprint, first.turns[0]?.fingerprint);
+  assert.equal(second.turns[0]?.blocks[0]?.kind, "user_message");
+  if (second.turns[0]?.blocks[0]?.kind === "user_message") {
+    assert.equal(second.turns[0].blocks[0].collapsed, true);
+  }
+});
+
 test("web adapter invalidates user cache when visible timestamp changes", () => {
   const firstSnapshot: ChatRenderModel = {
     session_id: "sess_user_timestamp",
