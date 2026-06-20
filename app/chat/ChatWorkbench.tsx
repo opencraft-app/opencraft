@@ -19,6 +19,7 @@ import {
   type BackendKindWire,
   type BackendWire,
   type ClientInputPart,
+  type CursorWindow,
   type PermissionModeWire,
   type SessionWire,
 } from "../../packages/vela-chat-client/src";
@@ -62,6 +63,7 @@ import {
 
 const DEFAULT_BASE_URL = "/chat/api/velad/api/v1";
 const EMPTY_EVENT_CURSOR: ChatSurfaceEventCursor = { event_id: "", epoch: 0, seq: 0 };
+const EMPTY_CURSOR_WINDOW: CursorWindow = {};
 
 interface PendingImageAttachment {
   id: string;
@@ -422,7 +424,7 @@ export function ChatWorkbench({
         window: { has_older: false, has_newer: false },
         cursor: EMPTY_EVENT_CURSOR,
       },
-      requests: activeRequests ?? { requests: [], cursor: {} },
+      requests: activeRequests ?? { requests: [], cursor: EMPTY_CURSOR_WINDOW },
       stream: { connected: streamConnected },
     });
     return buildChatRenderModel(surface, { kind: "desktop_web" });

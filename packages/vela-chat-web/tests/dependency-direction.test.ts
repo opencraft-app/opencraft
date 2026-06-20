@@ -383,8 +383,10 @@ test("chat fallback read models keep OpenAPI-required envelopes", () => {
   assert.match(source, /seq: 0/);
   assert.match(source, /transcript: activeTranscript \?\? \{[\s\S]*?cursor: EMPTY_EVENT_CURSOR,[\s\S]*?\n      \},\n      activity:/);
   assert.match(source, /activity: activeActivity \?\? \{[\s\S]*?cursor: EMPTY_EVENT_CURSOR,[\s\S]*?\n      \},\n      requests:/);
+  assert.match(source, /requests: activeRequests \?\? \{ requests: \[\], cursor: EMPTY_CURSOR_WINDOW \}/);
   assert.doesNotMatch(source, /transcript: transcript \?\? \{ rows: \[\], cursor: \{\} \}/);
   assert.doesNotMatch(source, /activity: activity \?\? \{ items: \[\], cursor: \{\} \}/);
+  assert.doesNotMatch(source, /requests: activeRequests \?\? \{ requests: \[\], cursor: \{\} \}/);
 });
 
 test("chat workbench scopes read models to the active session before stream and render", () => {
@@ -399,7 +401,7 @@ test("chat workbench scopes read models to the active session before stream and 
   assert.match(source, /const isActivityReady = activeActivity !== null/);
   assert.match(source, /transcript: activeTranscript \?\? \{/);
   assert.match(source, /activity: activeActivity \?\? \{/);
-  assert.match(source, /requests: activeRequests \?\? \{ requests: \[\], cursor: \{\} \}/);
+  assert.match(source, /requests: activeRequests \?\? \{ requests: \[\], cursor: EMPTY_CURSOR_WINDOW \}/);
 });
 
 test("chat workbench ignores late read-model responses from stale sessions", () => {
