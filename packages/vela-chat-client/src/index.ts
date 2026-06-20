@@ -365,6 +365,10 @@ export const VELA_SESSION_STREAM_EVENT_TYPES = [
   "session.status.changed",
   "session.closed",
   "user.message.accepted",
+  "input.queued",
+  "input.rejected",
+  "turn.cancel.accepted",
+  "request.response.accepted",
   "turn.started",
   "assistant.message.started",
   "assistant.message.delta",
@@ -392,7 +396,9 @@ export const VELA_SESSION_STREAM_EVENT_TYPES = [
   "error.raised",
   "turn.completed",
   "turn.failed",
+  "turn.cancelled",
   "backend.status.changed",
+  "usage.updated",
   "sync.reset",
 ] as const;
 
@@ -516,7 +522,7 @@ export function streamReadModelRefreshPlan(
     transcript: typePlan.transcript || hintedPlan.transcript,
     activity: typePlan.activity || hintedPlan.activity,
     session: typePlan.session || hintedPlan.session,
-    backends: typePlan.backends || hintedPlan.backends,
+    backends: typePlan.backends || event.type === "usage.updated" || hintedPlan.backends,
   };
 }
 
@@ -727,11 +733,15 @@ function streamEventOrder(event: VelaStreamEventWire) {
 
 const transcriptRefreshEvents = new Set([
   "user.message.accepted",
+  "input.queued",
+  "turn.started",
   "assistant.message.started",
   "assistant.message.completed",
   "session.status.changed",
   "turn.completed",
   "turn.failed",
+  "turn.cancelled",
+  "error.raised",
 ]);
 
 const sessionRefreshEvents = new Set([
@@ -742,16 +752,24 @@ const sessionRefreshEvents = new Set([
   "session.closed",
   "user.message.accepted",
   "turn.started",
+  "turn.cancel.accepted",
   "turn.completed",
   "turn.failed",
+  "turn.cancelled",
+  "usage.updated",
 ]);
 
 function isActivityRefreshEvent(eventType: string) {
   return (
+    eventType.startsWith("input.") ||
     eventType.startsWith("tool.") ||
     eventType.startsWith("command.") ||
     eventType.startsWith("task.") ||
     eventType.startsWith("request.") ||
+    eventType === "turn.started" ||
+    eventType === "turn.completed" ||
+    eventType === "turn.cancel.accepted" ||
+    eventType === "turn.cancelled" ||
     eventType === "assistant.reasoning.delta" ||
     eventType === "assistant.reasoning.completed" ||
     eventType === "diff.updated" ||

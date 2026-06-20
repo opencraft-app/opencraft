@@ -2329,6 +2329,57 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
     },
   );
   assert.deepEqual(
+    streamReadModelRefreshPlan({ event_id: "evt_input_queued", type: "input.queued" }),
+    {
+      transcript: true,
+      activity: true,
+      session: false,
+      backends: false,
+    },
+  );
+  assert.deepEqual(
+    streamReadModelRefreshPlan({ event_id: "evt_input_rejected", type: "input.rejected" }),
+    {
+      transcript: false,
+      activity: true,
+      session: false,
+      backends: false,
+    },
+  );
+  assert.deepEqual(
+    streamReadModelRefreshPlan({ event_id: "evt_turn_started", type: "turn.started" }),
+    {
+      transcript: true,
+      activity: true,
+      session: true,
+      backends: false,
+    },
+  );
+  assert.deepEqual(
+    streamReadModelRefreshPlan({
+      event_id: "evt_turn_cancel_accepted",
+      type: "turn.cancel.accepted",
+    }),
+    {
+      transcript: false,
+      activity: true,
+      session: true,
+      backends: false,
+    },
+  );
+  assert.deepEqual(
+    streamReadModelRefreshPlan({
+      event_id: "evt_request_response",
+      type: "request.response.accepted",
+    }),
+    {
+      transcript: false,
+      activity: true,
+      session: false,
+      backends: false,
+    },
+  );
+  assert.deepEqual(
     streamReadModelRefreshPlan({ event_id: "evt_tool", type: "tool.started" }),
     {
       transcript: false,
@@ -2359,8 +2410,35 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
     streamReadModelRefreshPlan({ event_id: "evt_turn", type: "turn.completed" }),
     {
       transcript: true,
+      activity: true,
+      session: true,
+      backends: false,
+    },
+  );
+  assert.deepEqual(
+    streamReadModelRefreshPlan({ event_id: "evt_turn_cancelled", type: "turn.cancelled" }),
+    {
+      transcript: true,
+      activity: true,
+      session: true,
+      backends: false,
+    },
+  );
+  assert.deepEqual(
+    streamReadModelRefreshPlan({ event_id: "evt_usage", type: "usage.updated" }),
+    {
+      transcript: false,
       activity: false,
       session: true,
+      backends: true,
+    },
+  );
+  assert.deepEqual(
+    streamReadModelRefreshPlan({ event_id: "evt_error", type: "error.raised" }),
+    {
+      transcript: true,
+      activity: true,
+      session: false,
       backends: false,
     },
   );
@@ -2786,17 +2864,25 @@ test("subscribes to named velad SSE events as stream updates", () => {
   source.emit("session.config.updated");
   source.emit("session.status.changed");
   source.emit("session.closed");
+  source.emit("input.queued");
+  source.emit("input.rejected");
+  source.emit("turn.cancel.accepted");
+  source.emit("request.response.accepted");
+  source.emit("turn.cancelled");
+  source.emit("usage.updated");
   source.emit("command.started");
   source.emit("task.updated");
   source.emit("projection.invalidated");
   source.emitMessage();
 
-  assert.equal(updates, 9);
+  assert.equal(updates, 15);
   unsubscribe();
   source.emit("assistant.message.delta");
   source.emit("session.status.changed");
+  source.emit("input.queued");
+  source.emit("usage.updated");
   source.emit("command.started");
-  assert.equal(updates, 9);
+  assert.equal(updates, 15);
 });
 
 test("stream refresh scheduler paints the first event immediately and throttles bursts", () => {
