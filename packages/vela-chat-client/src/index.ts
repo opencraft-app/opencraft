@@ -753,6 +753,51 @@ export function streamReadModelRefreshPlan(
   };
 }
 
+export interface SessionEventStreamAfterIdInput {
+  transcript?: EventCursorWire | null;
+  activity?: EventCursorWire | null;
+}
+
+export function selectSessionEventStreamAfterId({
+  transcript,
+  activity,
+}: SessionEventStreamAfterIdInput): string | null {
+  const cursors = [transcript, activity].filter(
+    (cursor): cursor is EventCursorWire => Boolean(cursor?.event_id),
+  );
+  if (cursors.length === 0) return null;
+  let oldest = cursors[0];
+  for (const cursor of cursors.slice(1)) {
+    if (compareCursorOrder(cursor, oldest) < 0) {
+      oldest = cursor;
+    }
+  }
+  return oldest.event_id;
+}
+
+export interface StreamReadModelRefreshCursors {
+  transcript?: EventCursorWire | null;
+  activity?: EventCursorWire | null;
+  requests?: CursorWindow | null;
+  diffs?: CursorWindow | null;
+}
+
+export function streamReadModelRefreshPlanForCursors(
+  event: VelaStreamEventWire | null,
+  cursors: StreamReadModelRefreshCursors,
+): StreamReadModelRefreshPlan {
+  const plan = streamReadModelRefreshPlan(event);
+  if (!event || event.type === "sync.reset") return plan;
+  return {
+    ...plan,
+    transcript:
+      plan.transcript && isStreamEventFreshForReadModelCursor(cursors.transcript, event),
+    activity: plan.activity && isStreamEventFreshForReadModelCursor(cursors.activity, event),
+    requests: plan.requests && isStreamEventFreshForReadModelCursor(cursors.requests, event),
+    diffs: plan.diffs && isStreamEventFreshForReadModelCursor(cursors.diffs, event),
+  };
+}
+
 export function createStreamRefreshScheduler({
   refresh,
   minIntervalMs = 120,
@@ -918,6 +963,26 @@ function isStreamEventNewerThanCursor(
   if (eventOrder.epoch > cursorOrder.epoch) return true;
   if (eventOrder.epoch < cursorOrder.epoch) return false;
   return eventOrder.seq > cursorOrder.seq;
+}
+
+function isStreamEventFreshForReadModelCursor(
+  cursor: EventCursorWire | CursorWindow | null | undefined,
+  event: VelaStreamEventWire,
+) {
+  return cursor ? isStreamEventNewerThanCursor(cursor, event) : true;
+}
+
+function compareCursorOrder(
+  left: EventCursorWire | CursorWindow,
+  right: EventCursorWire | CursorWindow,
+) {
+  const leftOrder = eventCursorOrder(left);
+  const rightOrder = eventCursorOrder(right);
+  if (!leftOrder && !rightOrder) return 0;
+  if (!leftOrder) return 1;
+  if (!rightOrder) return -1;
+  if (leftOrder.epoch !== rightOrder.epoch) return leftOrder.epoch - rightOrder.epoch;
+  return leftOrder.seq - rightOrder.seq;
 }
 
 function isKnownCursorEvent(

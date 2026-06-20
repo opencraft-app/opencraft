@@ -475,8 +475,12 @@ test("chat stream connection is keyed by session readiness instead of every curs
   const source = readFileSync(join(root, "app/chat/ChatWorkbench.tsx"), "utf8");
 
   assert.match(source, /const isTranscriptReady = transcript !== null/);
+  assert.match(source, /selectSessionEventStreamAfterId/);
+  assert.match(source, /transcript:\s*transcript\?\.cursor/);
+  assert.match(source, /activity:\s*activity\?\.cursor/);
   assert.match(source, /if \(!activeSessionId \|\| !isTranscriptReady\) return/);
   assert.doesNotMatch(source, /\[[^\]]*transcriptEventCursor[^\]]*\]/);
+  assert.doesNotMatch(source, /const transcriptEventCursor = cursorEventId\(transcript\?\.cursor\)/);
 });
 
 test("chat stream handler applies local overlays and scopes read-model refresh", () => {
@@ -484,17 +488,16 @@ test("chat stream handler applies local overlays and scopes read-model refresh",
 
   assert.match(source, /readVelaStreamEvent/);
   assert.match(source, /isVelaStreamEventForSession/);
-  assert.match(source, /isVelaStreamEventFreshForCursor/);
   assert.match(
     source,
     /if \(!isVelaStreamEventForSession\(activeSessionId,\s*streamEvent\)\) return;/,
   );
-  assert.match(
-    source,
-    /if \(currentTranscript && !isVelaStreamEventFreshForCursor\(currentTranscript\.cursor,\s*streamEvent\)\) return;/,
-  );
+  assert.doesNotMatch(source, /isVelaStreamEventFreshForCursor/);
+  assert.doesNotMatch(source, /currentTranscript\.cursor,\s*streamEvent\)\) return/);
   assert.match(source, /applyTranscriptLiveOverlay/);
-  assert.match(source, /streamReadModelRefreshPlan/);
+  assert.match(source, /streamReadModelRefreshPlanForCursors/);
+  assert.match(source, /activity:\s*currentActivity\?\.cursor/);
+  assert.match(source, /requests:\s*currentRequests\?\.cursor/);
   assert.match(source, /transcriptRefreshScheduler\.notifyStreamEvent/);
   assert.match(source, /activityRefreshScheduler\.notifyStreamEvent/);
   assert.doesNotMatch(source, /refresh:\s*loadReadModels/);

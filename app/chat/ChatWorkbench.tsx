@@ -8,11 +8,11 @@ import {
   createVeladClient,
   createStreamRefreshScheduler,
   imageFileToInputPart,
-  isVelaStreamEventFreshForCursor,
   isVelaStreamEventForSession,
   needsTranscriptRefreshAfterLiveOverlay,
   readVelaStreamEvent,
-  streamReadModelRefreshPlan,
+  selectSessionEventStreamAfterId,
+  streamReadModelRefreshPlanForCursors,
   subscribeVelaEventSource,
   type AgentConfigPatchWire,
   type AgentConfigWire,
@@ -219,7 +219,10 @@ export function ChatWorkbench({
     };
   }, [activeSessionId, client]);
 
-  const transcriptEventCursor = cursorEventId(transcript?.cursor);
+  const sessionEventStreamAfterId = selectSessionEventStreamAfterId({
+    transcript: transcript?.cursor,
+    activity: activity?.cursor,
+  });
   const isTranscriptReady = transcript !== null;
   const conversationWindow = useMemo(
     () => deriveConversationWindowState({ transcript, activity }),
@@ -232,7 +235,7 @@ export function ChatWorkbench({
 
   useEffect(() => {
     if (!activeSessionId || !isTranscriptReady) return;
-    const url = client.sessionEventStreamUrl(activeSessionId, transcriptEventCursor);
+    const url = client.sessionEventStreamUrl(activeSessionId, sessionEventStreamAfterId);
     const source = new EventSource(url);
     const transcriptRefreshScheduler = createStreamRefreshScheduler({
       refresh: loadTranscript,
@@ -263,14 +266,19 @@ export function ChatWorkbench({
         if (streamEvent) {
           if (!isVelaStreamEventForSession(activeSessionId, streamEvent)) return;
           const currentTranscript = transcriptRef.current;
-          if (currentTranscript && !isVelaStreamEventFreshForCursor(currentTranscript.cursor, streamEvent)) return;
+          const currentActivity = activityRef.current;
+          const currentRequests = requestsRef.current;
           const forceTranscriptRefresh = currentTranscript
             ? needsTranscriptRefreshAfterLiveOverlay(currentTranscript, streamEvent)
             : false;
           if (currentTranscript) {
             commitTranscript(applyTranscriptLiveOverlay(currentTranscript, streamEvent));
           }
-          const refreshPlan = streamReadModelRefreshPlan(streamEvent);
+          const refreshPlan = streamReadModelRefreshPlanForCursors(streamEvent, {
+            transcript: currentTranscript?.cursor,
+            activity: currentActivity?.cursor,
+            requests: currentRequests?.cursor,
+          });
           if (forceTranscriptRefresh) transcriptRefreshScheduler.notifyStreamEvent();
           if (refreshPlan.transcript) transcriptRefreshScheduler.notifyStreamEvent();
           if (refreshPlan.activity) activityRefreshScheduler.notifyStreamEvent();

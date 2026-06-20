@@ -14,7 +14,9 @@ import {
   readVelaStreamEvent,
   isVelaStreamEventFreshForCursor,
   isVelaStreamEventForSession,
+  selectSessionEventStreamAfterId,
   streamReadModelRefreshPlan,
+  streamReadModelRefreshPlanForCursors,
   subscribeVelaEventSource,
 } from "../src/index";
 
@@ -3183,6 +3185,49 @@ test("matches stream events to cursor order while accepting legacy cursorless ev
       type: "turn.completed",
     }),
     true,
+  );
+});
+
+test("selects a conservative session stream replay cursor from event-cursor read models", () => {
+  assert.equal(
+    selectSessionEventStreamAfterId({
+      transcript: { event_id: "evt_transcript_100", epoch: 1, seq: 100 },
+      activity: { event_id: "evt_activity_90", epoch: 1, seq: 90 },
+    }),
+    "evt_activity_90",
+  );
+  assert.equal(
+    selectSessionEventStreamAfterId({
+      transcript: { event_id: "evt_transcript_100", epoch: 1, seq: 100 },
+      activity: null,
+    }),
+    "evt_transcript_100",
+  );
+});
+
+test("filters stream refresh plans per read-model cursor instead of the transcript cursor", () => {
+  assert.deepEqual(
+    streamReadModelRefreshPlanForCursors(
+      {
+        event_id: "evt_turn_completed_95",
+        epoch: 1,
+        seq: 95,
+        session_id: "sess_1",
+        type: "turn.completed",
+      },
+      {
+        transcript: { event_id: "evt_transcript_100", epoch: 1, seq: 100 },
+        activity: { event_id: "evt_activity_90", epoch: 1, seq: 90 },
+      },
+    ),
+    {
+      transcript: false,
+      activity: true,
+      requests: false,
+      diffs: false,
+      session: true,
+      backends: false,
+    },
   );
 });
 
