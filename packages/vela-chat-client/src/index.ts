@@ -1698,6 +1698,9 @@ function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDeta
       ...(data.command !== undefined
         ? { command: optionalViewString(data, "command", owner, invalidActivityView) }
         : {}),
+      ...(data.cwd !== undefined
+        ? { cwd: optionalViewString(data, "cwd", owner, invalidActivityView) }
+        : {}),
       ...(data.output !== undefined
         ? { output: optionalViewString(data, "output", owner, invalidActivityView) }
         : {}),
