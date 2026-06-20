@@ -582,6 +582,31 @@ test("keeps OpenAPI backend feature discriminators narrow in the client wire mod
   assert.doesNotMatch(source, /export interface BackendFeatureWire \{[\s\S]*?type:\s*string/);
 });
 
+test("keeps OpenAPI backend capabilities required booleans in the client wire model", async () => {
+  const source = await import("node:fs/promises").then((fs) =>
+    fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
+  );
+  const capabilitiesInterface =
+    source.match(/export interface BackendCapabilitiesWire \{[\s\S]*?\n\}/)?.[0] ?? "";
+  const backendInterface = source.match(/export interface BackendWire \{[\s\S]*?\n\}/)?.[0] ?? "";
+
+  for (const field of [
+    "streaming",
+    "cancel",
+    "permission_requests",
+    "structured_diff",
+    "session_agent_config",
+  ]) {
+    assert.match(capabilitiesInterface, new RegExp(`${field}:\\s*boolean`));
+  }
+  assert.match(backendInterface, /capabilities:\s*BackendCapabilitiesWire/);
+  assert.match(
+    source,
+    /function requiredBackendCapabilities\([\s\S]*?data: Record<string, unknown>[\s\S]*?owner: string[\s\S]*?\): BackendCapabilitiesWire/,
+  );
+  assert.doesNotMatch(backendInterface, /capabilities:\s*Record<string, unknown>/);
+});
+
 test("keeps OpenAPI agent request enums narrow in the client wire model", async () => {
   const source = await import("node:fs/promises").then((fs) =>
     fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),

@@ -337,11 +337,20 @@ export interface BackendSelectFeatureWire extends BackendFeatureBaseWire {
   options: ReasoningEffortOptionWire[];
 }
 
+export interface BackendCapabilitiesWire {
+  streaming: boolean;
+  cancel: boolean;
+  permission_requests: boolean;
+  structured_diff: boolean;
+  session_agent_config: boolean;
+  [key: string]: unknown;
+}
+
 export interface BackendWire {
   kind: BackendKindWire;
   status: BackendStatusWire;
   display_name: string;
-  capabilities: Record<string, unknown>;
+  capabilities: BackendCapabilitiesWire;
   models: BackendModelWire[];
   permission_modes: PermissionModeOptionWire[];
   features: BackendFeatureWire[];
@@ -2750,7 +2759,10 @@ function requiredViewStringArray(
   return value as string[];
 }
 
-function requiredBackendCapabilities(data: Record<string, unknown>, owner: string) {
+function requiredBackendCapabilities(
+  data: Record<string, unknown>,
+  owner: string,
+): BackendCapabilitiesWire {
   const value = data.capabilities;
   if (!isRecord(value)) {
     throw invalidBackendsResponse(`${owner} requires capabilities`);
@@ -2760,7 +2772,7 @@ function requiredBackendCapabilities(data: Record<string, unknown>, owner: strin
       throw invalidBackendsResponse(`${owner}.capabilities requires ${field}`);
     }
   }
-  return value;
+  return value as BackendCapabilitiesWire;
 }
 
 function optionalBackendArray(data: Record<string, unknown>, field: string, owner: string) {
