@@ -82,6 +82,8 @@ export type ActivityGenericDetailTypeWire = Exclude<
   ActivityDetailTypeWire,
   "shell" | "read" | "edit" | "write" | "search" | "fetch"
 >;
+export type ActivityFileDetailTypeWire = "read" | "edit" | "write";
+export type ActivitySearchModeWire = "code" | "web" | "files" | "unknown";
 
 export interface ActivityWireItem {
   id: string;
@@ -107,49 +109,59 @@ export interface ActivityWindow {
 }
 
 export type ActivityWireDetail =
-  | {
-      type: "shell";
-      command?: string;
-      cwd?: string;
-      output?: string;
-      stdout?: string;
-      stderr?: string;
-      exit_code?: number;
-      error?: string;
-    }
-  | {
-      type: "read" | "edit" | "write";
-      file_path?: string;
-      path?: string;
-      content?: string;
-      old_string?: string;
-      new_string?: string;
-      unified_diff?: string;
-    }
-  | {
-      type: "search";
-      query?: string;
-      mode?: string;
-      content?: string;
-      num_files?: number;
-      num_matches?: number;
-      duration_ms?: number;
-      truncated?: boolean;
-    }
-  | {
-      type: "fetch";
-      url?: string;
-      prompt?: string;
-      result?: string;
-      code?: number;
-      code_text?: string;
-      bytes?: number;
-      duration_ms?: number;
-    }
-  | {
-      type: ActivityGenericDetailTypeWire;
-      [key: string]: unknown;
-    };
+  | ActivityShellToolDetailWire
+  | ActivityFileToolDetailWire
+  | ActivitySearchToolDetailWire
+  | ActivityFetchToolDetailWire
+  | ActivityGenericToolDetailWire;
+
+export interface ActivityShellToolDetailWire {
+  type: "shell";
+  command?: string;
+  cwd?: string;
+  output?: string;
+  stdout?: string;
+  stderr?: string;
+  exit_code?: number;
+  error?: string;
+}
+
+export interface ActivityFileToolDetailWire {
+  type: ActivityFileDetailTypeWire;
+  file_path?: string;
+  path?: string;
+  content?: string;
+  old_string?: string;
+  new_string?: string;
+  unified_diff?: string;
+}
+
+export interface ActivitySearchToolDetailWire {
+  type: "search";
+  query?: string;
+  mode?: ActivitySearchModeWire;
+  content?: string;
+  num_files?: number;
+  num_matches?: number;
+  duration_ms?: number;
+  truncated?: boolean;
+}
+
+export interface ActivityFetchToolDetailWire {
+  type: "fetch";
+  url?: string;
+  prompt?: string;
+  result?: string;
+  code?: number;
+  code_text?: string;
+  bytes?: number;
+  duration_ms?: number;
+}
+
+export interface ActivityGenericToolDetailWire {
+  type: ActivityGenericDetailTypeWire;
+  [key: string]: unknown;
+}
 
 export interface ActivityWireView {
   session_id: string;
