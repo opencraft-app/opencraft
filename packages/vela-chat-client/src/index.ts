@@ -1690,6 +1690,15 @@ function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDeta
   if (typeof type !== "string" || !activityDetailTypes.has(type)) {
     throw invalidActivityView(`${owner}.type must be a known activity detail type`);
   }
+  if (type === "shell") {
+    return {
+      ...(data as ActivityWireDetail),
+      type,
+      ...(data.command !== undefined
+        ? { command: optionalViewString(data, "command", owner, invalidActivityView) }
+        : {}),
+    };
+  }
   return data as ActivityWireDetail;
 }
 
