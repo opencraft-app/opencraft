@@ -1728,6 +1728,12 @@ function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDeta
       ...(data.num_files !== undefined
         ? { num_files: optionalViewInteger(data, "num_files", owner, invalidActivityView) }
         : {}),
+      ...(data.duration_ms !== undefined
+        ? { duration_ms: optionalViewInteger(data, "duration_ms", owner, invalidActivityView) }
+        : {}),
+      ...(data.truncated !== undefined
+        ? { truncated: optionalViewBoolean(data, "truncated", owner, invalidActivityView) }
+        : {}),
     };
   }
   if (type === "read" || type === "edit" || type === "write") {
@@ -1963,6 +1969,20 @@ function optionalViewInteger(
   if (value === undefined) return undefined;
   if (typeof value !== "number" || !Number.isInteger(value)) {
     throw invalid(`${owner}.${field} must be an integer`);
+  }
+  return value;
+}
+
+function optionalViewBoolean(
+  data: Record<string, unknown>,
+  field: string,
+  owner: string,
+  invalid: ViewContractErrorFactory,
+) {
+  const value = data[field];
+  if (value === undefined) return undefined;
+  if (typeof value !== "boolean") {
+    throw invalid(`${owner}.${field} must be a boolean`);
   }
   return value;
 }
