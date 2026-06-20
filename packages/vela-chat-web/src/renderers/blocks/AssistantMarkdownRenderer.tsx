@@ -9,8 +9,6 @@ export function AssistantMarkdownRenderer({
 }: {
   block: Extract<WebBlock, { kind: "assistant_markdown" }>;
 }) {
-  const copyText = block.blocks.map((markdownBlock) => markdownBlock.text).join("\n\n");
-
   return (
     <Message from="assistant">
       {block.settledLabel ? <div className={styles.statusDivider}>{block.settledLabel}</div> : null}
@@ -19,12 +17,12 @@ export function AssistantMarkdownRenderer({
           {markdownBlock.text}
         </MessageResponse>
       ))}
-      {copyText ? (
+      {block.showCopyAction && block.copyText ? (
         <div style={assistantFooterStyle}>
           <button
             aria-label="Copy assistant message"
             onClick={() => {
-              void copyMessageText(copyText);
+              void copyMessageText(block.copyText);
             }}
             style={copyButtonStyle}
             title="Copy assistant message"

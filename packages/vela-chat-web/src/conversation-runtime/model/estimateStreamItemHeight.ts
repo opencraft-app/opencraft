@@ -94,7 +94,7 @@ function assistantMarkdownHeightCacheKey(
   const markdown = item.block.blocks.map((block) => block.text).join("\n---block---\n");
   if (!markdown) return null;
   const settledLabel = item.block.settledLabel ?? "";
-  return `assistant:${streamItemWidthKey(options.width)}:streaming:${item.block.streaming}:settled:${hashString(settledLabel)}:${hashString(markdown)}`;
+  return `assistant:${streamItemWidthKey(options.width)}:streaming:${item.block.streaming}:copy:${item.block.showCopyAction}:settled:${hashString(settledLabel)}:${hashString(markdown)}`;
 }
 
 function touchHeightCache(cache: Map<string, number>, key: string, height: number) {

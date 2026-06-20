@@ -49,6 +49,7 @@ function blockToItems(turn: WebTurn, block: WebBlock): ConversationStreamItem[] 
         key: `${block.key}:${markdownBlock.id}`,
         blocks: [markdownBlock],
         streaming: block.streaming && isTailBlock,
+        showCopyAction: block.showCopyAction && isTailBlock,
         settledLabel: index === 0 ? block.settledLabel : undefined,
       };
       return itemFromBlock(turn, splitBlock, {

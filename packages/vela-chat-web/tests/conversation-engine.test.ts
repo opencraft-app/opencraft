@@ -192,6 +192,44 @@ test("conversation runtime scopes assistant markdown heights by rendered status 
   assert.equal(estimateStreamItemHeight(second, { width: 640 }), 120);
 });
 
+test("conversation runtime scopes assistant markdown heights by copy footer visibility", () => {
+  clearStreamItemHeightEstimateCache();
+  const baseItem = {
+    id: "assistant_without_copy",
+    key: "assistant_without_copy",
+    kind: "assistant_markdown",
+    sourceTurnId: "turn:a1",
+    live: false,
+    continuation: false,
+    fingerprint: "same-markdown",
+    createdAt: "2026-06-18T00:00:00Z",
+    block: {
+      kind: "assistant_markdown",
+      id: "a1",
+      key: "assistant:a1",
+      blocks: [{ id: "a1:block:0", text: "same paragraph" }],
+      createdAt: "2026-06-18T00:00:00Z",
+      streaming: false,
+      copyText: "same paragraph",
+      showCopyAction: false,
+    },
+  } as const;
+  const itemWithCopy = {
+    ...baseItem,
+    id: "assistant_with_copy",
+    key: "assistant_with_copy",
+    block: {
+      ...baseItem.block,
+      id: "a2",
+      key: "assistant:a2",
+      showCopyAction: true,
+    },
+  } as const;
+
+  assert.equal(recordMeasuredStreamItemHeight(baseItem, 211.4, { width: 640 }), 212);
+  assert.equal(estimateStreamItemHeight(itemWithCopy, { width: 640 }), 120);
+});
+
 test("conversation runtime caps live head so long running turns can still virtualize older live work", () => {
   const items = buildConversationStreamItems(
     Array.from({ length: 8 }, (_, index) =>
@@ -256,6 +294,43 @@ test("conversation stream items split assistant markdown blocks inside one long 
       item.block.kind === "assistant_markdown" ? item.block.blocks[0]?.id : undefined,
     ),
     ["a1:block:0", "a1:block:1", "a1:block:2"],
+  );
+});
+
+test("assistant markdown split items keep one full-turn copy action on the tail", () => {
+  const model: ChatRenderModel = {
+    session_id: "sess_assistant_copy",
+    host: { kind: "desktop_web" },
+    rows: [
+      {
+        kind: "assistant_message",
+        id: "a1",
+        key: "assistant:a1",
+        blocks: [
+          { id: "a1:block:0", text: "first paragraph" },
+          { id: "a1:block:1", text: "second paragraph" },
+          { id: "a1:block:2", text: "third paragraph" },
+        ],
+        createdAt: "2026-06-18T00:00:00Z",
+        status: "completed",
+        streaming: false,
+        revision: 1,
+        debug: { projection: "transcript", source_event_ids: ["evt_1"] },
+      },
+    ],
+    composer: { placeholder: "要求后续变更", can_send: true },
+  };
+
+  const items = buildConversationStreamItems(toWebChatModel(model).turns);
+  const assistantBlocks = items.map((item) => item.block).filter((block) => block.kind === "assistant_markdown");
+
+  assert.deepEqual(
+    assistantBlocks.map((block) => block.showCopyAction),
+    [false, false, true],
+  );
+  assert.equal(
+    assistantBlocks[2]?.copyText,
+    "first paragraph\n\nsecond paragraph\n\nthird paragraph",
   );
 });
 

@@ -41,8 +41,10 @@ export type WebBlock =
       id: string;
       key: string;
       blocks: MarkdownBlock[];
+      copyText: string;
       createdAt: string;
       streaming: boolean;
+      showCopyAction: boolean;
       settledLabel?: string;
     }
   | {
@@ -137,13 +139,16 @@ function rowToBlock(row: ChatRenderRow): WebBlock {
   }
 
   if (row.kind === "assistant_message") {
+    const copyText = row.blocks.map((block) => block.text).join("\n\n");
     return {
       kind: "assistant_markdown",
       id: row.id,
       key: row.key,
       blocks: row.blocks,
+      copyText,
       createdAt: row.createdAt,
       streaming: row.streaming,
+      showCopyAction: Boolean(copyText),
       settledLabel: row.streaming ? "处理中" : row.settledLabel,
     };
   }
