@@ -196,6 +196,45 @@ test("keeps agent work separate from transcript and derives worked label from me
   assert.equal(assistant.settledLabel, "Worked for 5s");
 });
 
+test("formats short worked labels using elapsed whole seconds", () => {
+  const surface: ChatSurface = {
+    session_id: "sess_short_work",
+    transcript: {
+      rows: [
+        {
+          id: "u1",
+          role: "user",
+          text: "快查一下",
+          created_at: "2026-06-18T10:00:00.000Z",
+          status: "completed",
+          revision: 1,
+          debug: { projection: "transcript", source_event_ids: ["evt_user"] },
+        },
+        {
+          id: "a1",
+          role: "assistant",
+          text: "查到了。",
+          created_at: "2026-06-18T10:00:00.500Z",
+          updated_at: "2026-06-18T10:00:01.900Z",
+          status: "completed",
+          revision: 2,
+          debug: { projection: "transcript", source_event_ids: ["evt_assistant"] },
+        },
+      ],
+    },
+    activity: { items: [] },
+    pending_requests: { items: [] },
+    cursors: {},
+    stream: { connected: false, running: false },
+  };
+
+  const model = buildChatRenderModel(surface, { kind: "desktop_web" });
+  const assistant = model.rows.find((row) => row.kind === "assistant_message");
+
+  assert.equal(assistant?.kind, "assistant_message");
+  assert.equal(assistant?.settledLabel, "Worked for 1s");
+});
+
 test("renders canonical tool details as agent work instead of generic Tool labels", () => {
   const surface: ChatSurface = {
     session_id: "sess_tool_detail",

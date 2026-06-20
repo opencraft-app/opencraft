@@ -198,7 +198,7 @@ function formatWorkedFor(startIso: string, endIso: string): string | undefined {
   const end = Date.parse(endIso);
   if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return undefined;
 
-  const seconds = Math.max(0, Math.round((end - start) / 1000));
+  const seconds = Math.max(0, Math.floor((end - start) / 1000));
   if (seconds < 60) return `Worked for ${seconds}s`;
 
   const minutes = Math.floor(seconds / 60);
