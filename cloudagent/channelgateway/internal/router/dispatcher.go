@@ -368,13 +368,15 @@ func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) (re
 	log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=acp_prompt_start text_bytes=%d",
 		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID),
 		logValue(conversation.ConversationID), logValue(conversation.SessionKey), logValue(sessionID), len([]byte(msg.Text)))
-	result, sessionID, err := d.promptWithRuntimeRecovery(ctx, conversation, msg, sessionID)
+	promptCtx, promptCancel := d.requestContext(ctx)
+	defer promptCancel()
+	result, sessionID, err := d.promptWithRuntimeRecovery(promptCtx, conversation, msg, sessionID)
 	if err != nil {
 		log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=acp_prompt_failed duration_ms=%d error=%s",
 			logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID),
 			logValue(conversation.ConversationID), logValue(conversation.SessionKey), logValue(sessionID),
 			time.Since(promptStartedAt).Milliseconds(), logValue(err.Error()))
-		return d.handleACPError(ctx, msg, conversation, sessionID, CallbackStagePrompt, err)
+		return d.handleACPError(promptCtx, msg, conversation, sessionID, CallbackStagePrompt, err)
 	}
 	log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=acp_prompt_done duration_ms=%d stop_reason=%s output_bytes=%d",
 		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID),

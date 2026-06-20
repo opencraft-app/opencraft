@@ -1465,7 +1465,7 @@ func TestDispatcherRequestTimeoutAppliesToSessionSetup(t *testing.T) {
 	}
 }
 
-func TestDispatcherRequestTimeoutDoesNotCancelLongPrompt(t *testing.T) {
+func TestDispatcherRequestTimeoutReleasesLongPromptWorker(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
 	if err != nil {
@@ -1493,17 +1493,14 @@ func TestDispatcherRequestTimeoutDoesNotCancelLongPrompt(t *testing.T) {
 		Raw:                    json.RawMessage(`{"ok":true}`),
 	})
 	if err != nil {
-		t.Fatalf("long prompt should complete despite request timeout: %v", err)
+		t.Fatalf("long prompt timeout should enqueue fallback: %v", err)
 	}
-	if elapsed := time.Since(startedAt); elapsed < 200*time.Millisecond {
-		t.Fatalf("dispatcher returned before prompt completed: elapsed=%s", elapsed)
+	if elapsed := time.Since(startedAt); elapsed > 200*time.Millisecond {
+		t.Fatalf("dispatcher should release worker after request timeout: elapsed=%s", elapsed)
 	}
 	reply := claimOneReply(t, context.Background(), st, lease)
-	if strings.Contains(reply.Text, runtimeRecoveryFailedReply) {
-		t.Fatalf("long prompt should not enqueue recovery fallback, got %#v", reply)
-	}
-	if reply.Text != "sleep done" {
-		t.Fatalf("expected prompt reply, got %#v", reply)
+	if !strings.Contains(reply.Text, runtimeRecoveryFailedReply) {
+		t.Fatalf("expected timeout fallback reply, got %#v", reply)
 	}
 }
 
