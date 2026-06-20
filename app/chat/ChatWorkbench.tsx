@@ -54,6 +54,11 @@ import {
 } from "../../packages/vela-chat-web/src/conversation-runtime/model";
 import type { RequestDockResponse } from "../../packages/vela-chat-web/src/components/requests/RequestDock";
 import { buildRequestResponseInputEvent } from "../../packages/vela-chat-web/src/components/requests/requestResponses";
+import {
+  isCurrentSessionRequest,
+  pendingRequestsForActiveSession,
+  readModelForActiveSession,
+} from "./sessionScopedReadModels";
 
 const DEFAULT_BASE_URL = "/chat/api/velad/api/v1";
 const EMPTY_EVENT_CURSOR: ChatSurfaceEventCursor = { event_id: "", epoch: 0, seq: 0 };
@@ -100,6 +105,8 @@ export function ChatWorkbench({
   const transcriptRef = useRef<typeof transcript>(null);
   const activityRef = useRef<typeof activity>(null);
   const requestsRef = useRef<typeof requests>(null);
+  const activeSessionIdRef = useRef(activeSessionId);
+  activeSessionIdRef.current = activeSessionId;
 
   const client = useMemo(() => createVeladClient({ baseUrl }), [baseUrl]);
   const commitTranscript = useCallback((nextTranscript: typeof transcript) => {
@@ -114,44 +121,66 @@ export function ChatWorkbench({
     requestsRef.current = nextRequests;
     setRequests(nextRequests);
   }, []);
+  const resetSessionReadModels = useCallback(() => {
+    commitTranscript(null);
+    commitActivity(null);
+    commitRequests(null);
+    setStreamConnected(false);
+    setIsLoadingOlder(false);
+  }, [commitActivity, commitRequests, commitTranscript]);
 
   const loadTranscript = useCallback(async () => {
-    if (!activeSessionId) return;
+    const requestedSessionId = activeSessionId;
+    if (!requestedSessionId) return;
     try {
       setError(null);
-      commitTranscript(await client.getTranscript(activeSessionId));
+      const nextTranscript = await client.getTranscript(requestedSessionId);
+      if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
+      commitTranscript(nextTranscript);
     } catch (err) {
+      if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
       setError(err instanceof Error ? err.message : String(err));
     }
   }, [activeSessionId, client, commitTranscript]);
 
   const loadActivity = useCallback(async () => {
-    if (!activeSessionId) return;
+    const requestedSessionId = activeSessionId;
+    if (!requestedSessionId) return;
     try {
       setError(null);
-      commitActivity(await client.getActivity(activeSessionId));
+      const nextActivity = await client.getActivity(requestedSessionId);
+      if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
+      commitActivity(nextActivity);
     } catch (err) {
+      if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
       setError(err instanceof Error ? err.message : String(err));
     }
   }, [activeSessionId, client, commitActivity]);
 
   const loadRequests = useCallback(async () => {
-    if (!activeSessionId) return;
+    const requestedSessionId = activeSessionId;
+    if (!requestedSessionId) return;
     try {
       setError(null);
-      commitRequests(await client.getPendingRequests(activeSessionId, { status: "pending" }));
+      const nextRequests = await client.getPendingRequests(requestedSessionId, { status: "pending" });
+      if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
+      commitRequests(nextRequests);
     } catch (err) {
+      if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
       setError(err instanceof Error ? err.message : String(err));
     }
   }, [activeSessionId, client, commitRequests]);
 
   const loadSession = useCallback(async () => {
-    if (!activeSessionId) return;
+    const requestedSessionId = activeSessionId;
+    if (!requestedSessionId) return;
     try {
       setError(null);
-      const nextSession = await client.getSession(activeSessionId);
+      const nextSession = await client.getSession(requestedSessionId);
+      if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
       setSession(nextSession.session);
     } catch (err) {
+      if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
       setError(err instanceof Error ? err.message : String(err));
     }
   }, [activeSessionId, client]);
@@ -167,22 +196,25 @@ export function ChatWorkbench({
   }, [client]);
 
   const loadReadModels = useCallback(async () => {
-    if (!activeSessionId) return;
+    const requestedSessionId = activeSessionId;
+    if (!requestedSessionId) return;
     try {
       setError(null);
       const [nextTranscript, nextActivity, nextRequests, nextSession, nextBackends] = await Promise.all([
-        client.getTranscript(activeSessionId),
-        client.getActivity(activeSessionId),
-        client.getPendingRequests(activeSessionId, { status: "pending" }),
-        client.getSession(activeSessionId),
+        client.getTranscript(requestedSessionId),
+        client.getActivity(requestedSessionId),
+        client.getPendingRequests(requestedSessionId, { status: "pending" }),
+        client.getSession(requestedSessionId),
         client.getBackends(),
       ]);
+      if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
       commitTranscript(nextTranscript);
       commitActivity(nextActivity);
       commitRequests(nextRequests);
       setSession(nextSession.session);
       setBackends(nextBackends.backends);
     } catch (err) {
+      if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
       setError(err instanceof Error ? err.message : String(err));
     }
   }, [activeSessionId, client, commitActivity, commitRequests, commitTranscript]);
@@ -219,19 +251,22 @@ export function ChatWorkbench({
     };
   }, [activeSessionId, client]);
 
+  const activeTranscript = readModelForActiveSession(activeSessionId, transcript);
+  const activeActivity = readModelForActiveSession(activeSessionId, activity);
+  const activeRequests = pendingRequestsForActiveSession(activeSessionId, requests);
   const sessionEventStreamAfterId = selectSessionEventStreamAfterId({
-    transcript: transcript?.cursor,
-    activity: activity?.cursor,
+    transcript: activeTranscript?.cursor,
+    activity: activeActivity?.cursor,
   });
-  const isTranscriptReady = transcript !== null;
-  const isActivityReady = activity !== null;
+  const isTranscriptReady = activeTranscript !== null;
+  const isActivityReady = activeActivity !== null;
   const conversationWindow = useMemo(
-    () => deriveConversationWindowState({ transcript, activity }),
-    [activity, transcript],
+    () => deriveConversationWindowState({ transcript: activeTranscript, activity: activeActivity }),
+    [activeActivity, activeTranscript],
   );
   const conversationHistoryPrependPlan = useMemo(
-    () => buildConversationHistoryPrependPlan({ transcript, activity, limit: 80 }),
-    [activity, transcript],
+    () => buildConversationHistoryPrependPlan({ transcript: activeTranscript, activity: activeActivity, limit: 80 }),
+    [activeActivity, activeTranscript],
   );
 
   useEffect(() => {
@@ -266,9 +301,9 @@ export function ChatWorkbench({
         const streamEvent = readVelaStreamEvent(event);
         if (streamEvent) {
           if (!isVelaStreamEventForSession(activeSessionId, streamEvent)) return;
-          const currentTranscript = transcriptRef.current;
-          const currentActivity = activityRef.current;
-          const currentRequests = requestsRef.current;
+          const currentTranscript = readModelForActiveSession(activeSessionId, transcriptRef.current);
+          const currentActivity = readModelForActiveSession(activeSessionId, activityRef.current);
+          const currentRequests = pendingRequestsForActiveSession(activeSessionId, requestsRef.current);
           const forceTranscriptRefresh = currentTranscript
             ? needsTranscriptRefreshAfterLiveOverlay(currentTranscript, streamEvent)
             : false;
@@ -315,39 +350,44 @@ export function ChatWorkbench({
 
   const loadOlderConversation = useCallback(async () => {
     if (!activeSessionId || !conversationHistoryPrependPlan.has_older || isLoadingOlder) return;
+    const requestedSessionId = activeSessionId;
     const requestedPrependPlan = conversationHistoryPrependPlan;
     try {
       setIsLoadingOlder(true);
       setError(null);
       const [older, olderActivity] = await Promise.all([
         requestedPrependPlan.transcript
-          ? client.getTranscript(activeSessionId, requestedPrependPlan.transcript)
+          ? client.getTranscript(requestedSessionId, requestedPrependPlan.transcript)
           : Promise.resolve(null),
         requestedPrependPlan.activity
-          ? client.getActivity(activeSessionId, requestedPrependPlan.activity)
+          ? client.getActivity(requestedSessionId, requestedPrependPlan.activity)
           : Promise.resolve(null),
       ]);
+      if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
+      const currentTranscript = readModelForActiveSession(requestedSessionId, transcriptRef.current);
+      const currentActivity = readModelForActiveSession(requestedSessionId, activityRef.current);
       if (
         !canApplyConversationHistoryPrependPlan(requestedPrependPlan, {
-          transcript: transcriptRef.current,
-          activity: activityRef.current,
+          transcript: currentTranscript,
+          activity: currentActivity,
         })
       ) {
         return;
       }
       if (older) {
         commitTranscript(
-          transcriptRef.current ? prependTranscriptWindow(transcriptRef.current, older) : older,
+          currentTranscript ? prependTranscriptWindow(currentTranscript, older) : older,
         );
       }
       if (olderActivity) {
         commitActivity(
-          activityRef.current
-            ? prependActivityWindow(activityRef.current, olderActivity)
+          currentActivity
+            ? prependActivityWindow(currentActivity, olderActivity)
             : olderActivity,
         );
       }
     } catch (err) {
+      if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
       if (isStaleCursorError(err)) {
         await loadReadModels();
         return;
@@ -370,23 +410,23 @@ export function ChatWorkbench({
     const surfaceSessionId = activeSessionId || "unselected";
     const surface = buildChatSurfaceFromReadModels({
       sessionId: surfaceSessionId,
-      transcript: transcript ?? {
+      transcript: activeTranscript ?? {
         session_id: surfaceSessionId,
         rows: [],
         window: { has_older: false, has_newer: false },
         cursor: EMPTY_EVENT_CURSOR,
       },
-      activity: activity ?? {
+      activity: activeActivity ?? {
         session_id: surfaceSessionId,
         items: [],
         window: { has_older: false, has_newer: false },
         cursor: EMPTY_EVENT_CURSOR,
       },
-      requests: requests ?? { requests: [], cursor: {} },
+      requests: activeRequests ?? { requests: [], cursor: {} },
       stream: { connected: streamConnected },
     });
     return buildChatRenderModel(surface, { kind: "desktop_web" });
-  }, [activeSessionId, activity, requests, streamConnected, transcript]);
+  }, [activeActivity, activeRequests, activeSessionId, activeTranscript, streamConnected]);
 
   const conversationDebug = useMemo(() => {
     const webModel = toWebChatModel(model);
@@ -535,9 +575,7 @@ export function ChatWorkbench({
       setSessionId(created.session.id);
       setActiveSessionId(created.session.id);
       setSession(created.session);
-      commitTranscript(null);
-      commitActivity(null);
-      commitRequests(null);
+      resetSessionReadModels();
       logVelaChatConsoleEvent("create_session", {
         agentConfig: setupAgentConfig,
         backend: resolvedSelectedBackend,
@@ -553,11 +591,9 @@ export function ChatWorkbench({
     }
   }, [
     client,
-    commitActivity,
-    commitRequests,
-    commitTranscript,
     isCreatingSession,
     resolvedSelectedBackend,
+    resetSessionReadModels,
     setupAgentConfig,
     workingDirectory,
   ]);
@@ -665,13 +701,15 @@ export function ChatWorkbench({
           key: row.key,
         })),
         latestEventId:
-          cursorEventId(requests?.cursor) ??
-          cursorEventId(activity?.cursor) ??
-          cursorEventId(transcript?.cursor),
+          cursorEventId(activeRequests?.cursor) ??
+          cursorEventId(activeActivity?.cursor) ??
+          cursorEventId(activeTranscript?.cursor),
       }),
     [
       activeSessionId,
-      activity,
+      activeActivity,
+      activeRequests,
+      activeTranscript,
       baseUrl,
       conversationDebug,
       draft,
@@ -679,12 +717,10 @@ export function ChatWorkbench({
       isCreatingSession,
       isUpdatingAgentConfig,
       model.rows,
-      requests,
       sessionId,
       session,
       backends,
       streamConnected,
-      transcript,
       workingDirectory,
     ],
   );
@@ -711,6 +747,8 @@ export function ChatWorkbench({
       },
       openSession: (nextSessionId) => {
         const resolvedSessionId = (nextSessionId ?? sessionId).trim();
+        resetSessionReadModels();
+        setSession(null);
         setSessionId(resolvedSessionId);
         setActiveSessionId(resolvedSessionId);
         logVelaChatConsoleEvent("open_session", { sessionId: resolvedSessionId });
@@ -737,7 +775,7 @@ export function ChatWorkbench({
 
     installVelaChatDebugApi({ api, snapshot });
     logVelaChatConsoleEvent("debug_api_ready", snapshot);
-  }, [activeSessionId, createSession, loadReadModels, sendDebugMessage, sessionId, snapshot]);
+  }, [activeSessionId, createSession, loadReadModels, resetSessionReadModels, sendDebugMessage, sessionId, snapshot]);
 
   if (!activeSessionId) {
     return (
@@ -853,7 +891,11 @@ export function ChatWorkbench({
           <button
             style={setupButtonStyle}
             type="button"
-            onClick={() => setActiveSessionId(sessionId.trim())}
+            onClick={() => {
+              resetSessionReadModels();
+              setSession(null);
+              setActiveSessionId(sessionId.trim());
+            }}
             disabled={!sessionId.trim()}
           >
             打开 ChatUI

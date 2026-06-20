@@ -364,7 +364,7 @@ test("chat history paging keeps transcript and activity windows in sync", () => 
   assert.match(source, /const requestedPrependPlan = conversationHistoryPrependPlan/);
   assert.match(source, /requestedPrependPlan\.transcript/);
   assert.match(source, /requestedPrependPlan\.activity/);
-  assert.match(source, /client\.getActivity\(activeSessionId,\s*requestedPrependPlan\.activity\)/);
+  assert.match(source, /client\.getActivity\(requestedSessionId,\s*requestedPrependPlan\.activity\)/);
   assert.match(source, /activityRef/);
   assert.match(source, /commitActivity/);
   assert.doesNotMatch(source, /canLoadOlder=\{transcript\?\.window\?\.has_older/);
@@ -374,17 +374,45 @@ test("chat fallback read models keep OpenAPI-required envelopes", () => {
   const source = readFileSync(join(root, "app/chat/ChatWorkbench.tsx"), "utf8");
 
   assert.match(source, /const surfaceSessionId = activeSessionId \|\| "unselected"/);
-  assert.match(source, /transcript: transcript \?\? \{/);
-  assert.match(source, /activity: activity \?\? \{/);
+  assert.match(source, /transcript: activeTranscript \?\? \{/);
+  assert.match(source, /activity: activeActivity \?\? \{/);
   assert.match(source, /session_id: surfaceSessionId/);
   assert.match(source, /window: \{ has_older: false, has_newer: false \}/);
   assert.match(source, /event_id: ""/);
   assert.match(source, /epoch: 0/);
   assert.match(source, /seq: 0/);
-  assert.match(source, /transcript: transcript \?\? \{[\s\S]*?cursor: EMPTY_EVENT_CURSOR,[\s\S]*?\n      \},\n      activity:/);
-  assert.match(source, /activity: activity \?\? \{[\s\S]*?cursor: EMPTY_EVENT_CURSOR,[\s\S]*?\n      \},\n      requests:/);
+  assert.match(source, /transcript: activeTranscript \?\? \{[\s\S]*?cursor: EMPTY_EVENT_CURSOR,[\s\S]*?\n      \},\n      activity:/);
+  assert.match(source, /activity: activeActivity \?\? \{[\s\S]*?cursor: EMPTY_EVENT_CURSOR,[\s\S]*?\n      \},\n      requests:/);
   assert.doesNotMatch(source, /transcript: transcript \?\? \{ rows: \[\], cursor: \{\} \}/);
   assert.doesNotMatch(source, /activity: activity \?\? \{ items: \[\], cursor: \{\} \}/);
+});
+
+test("chat workbench scopes read models to the active session before stream and render", () => {
+  const source = readFileSync(join(root, "app/chat/ChatWorkbench.tsx"), "utf8");
+
+  assert.match(source, /readModelForActiveSession\(activeSessionId,\s*transcript\)/);
+  assert.match(source, /readModelForActiveSession\(activeSessionId,\s*activity\)/);
+  assert.match(source, /pendingRequestsForActiveSession\(activeSessionId,\s*requests\)/);
+  assert.match(source, /transcript:\s*activeTranscript\?\.cursor/);
+  assert.match(source, /activity:\s*activeActivity\?\.cursor/);
+  assert.match(source, /const isTranscriptReady = activeTranscript !== null/);
+  assert.match(source, /const isActivityReady = activeActivity !== null/);
+  assert.match(source, /transcript: activeTranscript \?\? \{/);
+  assert.match(source, /activity: activeActivity \?\? \{/);
+  assert.match(source, /requests: activeRequests \?\? \{ requests: \[\], cursor: \{\} \}/);
+});
+
+test("chat workbench ignores late read-model responses from stale sessions", () => {
+  const source = readFileSync(join(root, "app/chat/ChatWorkbench.tsx"), "utf8");
+
+  assert.match(source, /activeSessionIdRef/);
+  assert.match(source, /const requestedSessionId = activeSessionId/);
+  assert.match(
+    source,
+    /if \(!isCurrentSessionRequest\(activeSessionIdRef\.current,\s*requestedSessionId\)\) return;/,
+  );
+  assert.match(source, /resetSessionReadModels/);
+  assert.match(source, /openSession:[\s\S]*?resetSessionReadModels\(\);/);
 });
 
 test("workbench memoizes the web render model adapter output", () => {
@@ -474,11 +502,11 @@ test("chat composer preserves draft when velad returns a rejected CommandAck", (
 test("chat stream connection is keyed by session readiness instead of every cursor update", () => {
   const source = readFileSync(join(root, "app/chat/ChatWorkbench.tsx"), "utf8");
 
-  assert.match(source, /const isTranscriptReady = transcript !== null/);
-  assert.match(source, /const isActivityReady = activity !== null/);
+  assert.match(source, /const isTranscriptReady = activeTranscript !== null/);
+  assert.match(source, /const isActivityReady = activeActivity !== null/);
   assert.match(source, /selectSessionEventStreamAfterId/);
-  assert.match(source, /transcript:\s*transcript\?\.cursor/);
-  assert.match(source, /activity:\s*activity\?\.cursor/);
+  assert.match(source, /transcript:\s*activeTranscript\?\.cursor/);
+  assert.match(source, /activity:\s*activeActivity\?\.cursor/);
   assert.match(source, /if \(!activeSessionId \|\| !isTranscriptReady \|\| !isActivityReady\) return/);
   assert.doesNotMatch(source, /\[[^\]]*transcriptEventCursor[^\]]*\]/);
   assert.doesNotMatch(source, /const transcriptEventCursor = cursorEventId\(transcript\?\.cursor\)/);
@@ -519,7 +547,7 @@ test("chat request dock uses PendingRequestsView and responds through input even
     "utf8",
   );
 
-  assert.match(chatWorkbench, /client\.getPendingRequests\(activeSessionId,\s*\{\s*status:\s*"pending"\s*\}\)/);
+  assert.match(chatWorkbench, /client\.getPendingRequests\(requestedSessionId,\s*\{\s*status:\s*"pending"\s*\}\)/);
   assert.match(chatWorkbench, /requestsRefreshScheduler\.notifyStreamEvent/);
   assert.match(chatWorkbench, /refreshPlan\.requests/);
   assert.match(chatWorkbench, /client\.sendSessionInputEvents\(\{\s*sessionId:\s*activeSessionId/);
