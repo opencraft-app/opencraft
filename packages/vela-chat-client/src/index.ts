@@ -1749,6 +1749,9 @@ function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDeta
       ...(data.url !== undefined
         ? { url: optionalViewString(data, "url", owner, invalidActivityView) }
         : {}),
+      ...(data.result !== undefined
+        ? { result: optionalViewString(data, "result", owner, invalidActivityView) }
+        : {}),
     };
   }
   return data as ActivityWireDetail;
