@@ -17,6 +17,9 @@ func ImportWorkflow(ctx workflow.Context, req ImportRequest, cfg TencentConfig) 
 	}
 	finish := func(err error) (ImportResult, error) {
 		completeImportWorkflowStatus(ctx, req, status, result, err)
+		if err != nil {
+			notifyImportFailure(ctx, req, cfg, status, err)
+		}
 		return result, err
 	}
 
@@ -89,7 +92,96 @@ func ImportWorkflow(ctx workflow.Context, req ImportRequest, cfg TencentConfig) 
 	if workflowErr != nil {
 		return finish(workflowErr)
 	}
-	return finish(cleanupErr)
+	if cleanupErr != nil {
+		return finish(cleanupErr)
+	}
+	if emailResult, err := maybeSendImportNotification(ctx, req, status, &result); err != nil {
+		return finish(err)
+	} else if emailResult.MessageID != "" {
+		result.NotificationEmail = emailResult.ToEmail
+		result.EmailMessageID = emailResult.MessageID
+		result.EmailDelivered = emailResult.EmailDelivered
+		result.EmailDeliverStatus = emailResult.DeliverStatus
+		result.EmailDeliverMessage = emailResult.DeliverMessage
+		status.NotificationEmail = emailResult.ToEmail
+		status.EmailMessageID = emailResult.MessageID
+		status.EmailDelivered = emailResult.EmailDelivered
+		status.EmailDeliverStatus = emailResult.DeliverStatus
+		status.EmailDeliverMessage = emailResult.DeliverMessage
+	}
+	return finish(nil)
+}
+
+func maybeSendImportNotification(ctx workflow.Context, req ImportRequest, status *ImportStatus, result *ImportResult) (EmailNotificationResult, error) {
+	empty := EmailNotificationResult{}
+	toEmail := notificationEmail(req.exportRequest())
+	if toEmail == "" {
+		return empty, nil
+	}
+	updateImportWorkflowPhase(ctx, req, status, PhaseNotifyEmail)
+	notifyCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 2 * time.Minute,
+		RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 3},
+	})
+	var emailResult EmailNotificationResult
+	if err := workflow.ExecuteActivity(notifyCtx, "SendImportNotificationEmail", req).Get(notifyCtx, &emailResult); err != nil {
+		return empty, err
+	}
+	if strings.TrimSpace(emailResult.MessageID) == "" {
+		return emailResult, nil
+	}
+	updateImportWorkflowPhase(ctx, req, status, PhaseConfirmEmailDelivery)
+	confirmCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 12 * time.Minute,
+		HeartbeatTimeout:    30 * time.Second,
+		RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
+	})
+	var delivered EmailNotificationResult
+	if err := workflow.ExecuteActivity(confirmCtx, "ConfirmExportNotificationDelivered", req.exportRequest(), emailResult).Get(confirmCtx, &delivered); err != nil {
+		return empty, err
+	}
+	delivered.ToEmail = emailResult.ToEmail
+	if delivered.MessageID == "" {
+		delivered.MessageID = emailResult.MessageID
+	}
+	result.NotificationEmail = delivered.ToEmail
+	result.EmailMessageID = delivered.MessageID
+	result.EmailDelivered = delivered.EmailDelivered
+	result.EmailDeliverStatus = delivered.DeliverStatus
+	result.EmailDeliverMessage = delivered.DeliverMessage
+	return delivered, nil
+}
+
+func notifyImportFailure(ctx workflow.Context, req ImportRequest, cfg TencentConfig, status *ImportStatus, workflowErr error) {
+	notifyCtx := cleanupActivityContext(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 30 * time.Second,
+		RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
+	})
+	exportReq := req.exportRequest()
+	notification := FailureNotification{
+		WorkflowID: workflow.GetInfo(ctx).WorkflowExecution.ID,
+		RunID:      workflow.GetInfo(ctx).WorkflowExecution.RunID,
+		Operation:  "import",
+		Request:    exportReq,
+		Status: ExportStatus{
+			WorkflowID: status.WorkflowID,
+			RunID:      status.RunID,
+			Phase:      status.Phase,
+			Instance:   status.Instance,
+			Error:      status.Error,
+			DryRun:     status.DryRun,
+			Logs:       status.Logs,
+		},
+		Error: workflowErr.Error(),
+	}
+	var sent FailureNotificationResult
+	if err := workflow.ExecuteActivity(notifyCtx, "SendFailureNotification", notification, cfg).Get(notifyCtx, &sent); err != nil {
+		workflow.GetLogger(ctx).Warn("failed to send Hermes import failure notification", "error", err, "instance_id", req.InstanceID)
+		return
+	}
+	if sent.Sent {
+		workflow.GetLogger(ctx).Info("Hermes import failure notification sent", "instance_id", req.InstanceID, "recipients", sent.Recipients)
+	}
 }
 
 func cleanupImportObject(ctx workflow.Context, req ImportRequest, cfg TencentConfig, status *ImportStatus, result *ImportResult) error {

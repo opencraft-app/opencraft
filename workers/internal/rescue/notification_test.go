@@ -53,3 +53,40 @@ func TestBuildFailureNotificationContentIsProductized(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildImportFailureNotificationContentUsesImportTemplate(t *testing.T) {
+	notification := FailureNotification{
+		Operation: "import",
+		Request: ExportRequest{
+			BotID:             "bot-test",
+			BotName:           "我的 Agent",
+			InstanceID:        "ins-test",
+			Region:            "ap-beijing",
+			NotificationEmail: "user@example.com",
+			ArchiveMode:       ArchiveModeHermes,
+			RemotePaths:       []string{"/home/agentuser/.hermes"},
+		},
+		Status: ExportStatus{Phase: PhaseFailed},
+		Error:  "TAT command failed status=FAILED exit_code=22 error= output=[import] hermes command is not available",
+	}
+
+	subject, htmlBody, textBody := buildFailureNotificationContent(notification)
+	for _, value := range []string{subject, htmlBody, textBody} {
+		if !strings.Contains(value, "我的 Agent") {
+			t.Fatalf("content missing agent label: %q", value)
+		}
+		if strings.Contains(value, "导出") {
+			t.Fatalf("import failure content must not say export: %s", value)
+		}
+	}
+	if !strings.Contains(subject, "导入未完成") || !strings.Contains(textBody, "Hermes 运行环境不可用") || !strings.Contains(htmlBody, "导入任务没有完成") {
+		t.Fatalf("unexpected import failure content: subject=%s text=%s html=%s", subject, textBody, htmlBody)
+	}
+	for _, body := range []string{subject, htmlBody, textBody} {
+		for _, hidden := range []string{"ins-test", "ap-beijing", "TAT command failed", "exit_code", "status=FAILED"} {
+			if strings.Contains(body, hidden) {
+				t.Fatalf("content leaks %q: %s", hidden, body)
+			}
+		}
+	}
+}

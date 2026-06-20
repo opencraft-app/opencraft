@@ -1,0 +1,5 @@
+Agent 工作区导入已完成。
+
+Agent：{{.AgentLabel}}
+
+目标 Agent 的 Hermes 工作区已完成恢复。导入过程会覆盖目标 Hermes 工作区中同名文件。

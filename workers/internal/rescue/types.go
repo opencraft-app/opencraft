@@ -90,6 +90,9 @@ type ImportRequest struct {
 	InstanceID             string
 	Region                 string
 	RegionCandidates       []string
+	NotificationEmail      string
+	NotifyEmail            string
+	NotificationEmails     []string
 	ImportObjectKey        string
 	ImportObjectURL        string
 	COSUploadBucket        string
@@ -127,6 +130,10 @@ func (req ImportRequest) exportRequest() ExportRequest {
 		BotName:                req.BotName,
 		InstanceID:             req.InstanceID,
 		Region:                 req.Region,
+		NotificationEmail:      req.NotificationEmail,
+		NotifyEmail:            req.NotifyEmail,
+		NotificationEmails:     req.NotificationEmails,
+		RemotePaths:            []string{"/home/agentuser/.hermes"},
 		ArchiveMode:            ArchiveModeHermes,
 		CommandTransport:       "tat",
 		TATUsername:            req.TATUsername,
@@ -242,11 +249,16 @@ type PreparedImport struct {
 }
 
 type ImportResult struct {
-	Instance   InstanceInfo
-	Import     PreparedImport
-	TATCommand TATCommandResult
-	COSDeleted bool
-	DryRun     bool
+	Instance            InstanceInfo
+	Import              PreparedImport
+	TATCommand          TATCommandResult
+	COSDeleted          bool
+	NotificationEmail   string
+	EmailMessageID      string
+	EmailDelivered      bool
+	EmailDeliverStatus  int
+	EmailDeliverMessage string
+	DryRun              bool
 }
 
 type ExportStatusLog struct {
@@ -278,16 +290,21 @@ type ExportStatus struct {
 }
 
 type ImportStatus struct {
-	WorkflowID string
-	RunID      string
-	Phase      string
-	Instance   InstanceInfo
-	Import     PreparedImport
-	TATCommand TATCommandResult
-	COSDeleted bool
-	Error      string
-	DryRun     bool
-	Logs       []ExportStatusLog
+	WorkflowID          string
+	RunID               string
+	Phase               string
+	Instance            InstanceInfo
+	Import              PreparedImport
+	TATCommand          TATCommandResult
+	COSDeleted          bool
+	NotificationEmail   string
+	EmailMessageID      string
+	EmailDelivered      bool
+	EmailDeliverStatus  int
+	EmailDeliverMessage string
+	Error               string
+	DryRun              bool
+	Logs                []ExportStatusLog
 }
 
 type COSDeleteRequest struct {

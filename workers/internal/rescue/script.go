@@ -153,7 +153,7 @@ zip_args=()
 while IFS= read -r -d '' path; do
   rel_path="${path#./}"
   case "$rel_path" in
-    bin|bin/*|hermes-agent|hermes-agent/*|.git|.git/*|node_modules|node_modules/*|__pycache__|*/__pycache__/*|gateway.pid|*/gateway.pid|cron.pid|*/cron.pid|*.pyc|*.pyo)
+    bin|bin/*|backups|backups/*|checkpoints|checkpoints/*|hermes-agent|hermes-agent/*|.git|.git/*|node_modules|node_modules/*|__pycache__|*/__pycache__/*|gateway.pid|*/gateway.pid|cron.pid|*/cron.pid|*.pyc|*.pyo|*.db-wal|*.db-shm|*.db-journal)
       continue
       ;;
   esac

@@ -98,6 +98,8 @@ Real execution with the default TAT/COS path:
 
 Use `--remote-path /root/.hermes` only when the rescued Hermes home is somewhere other than `/home/agentuser/.hermes`. Hermes mode accepts exactly one Hermes home path and writes zip entries relative to that directory, such as `config.yaml`, `.env`, `state.db`, `profiles/...`, `skills/...`, and `memories/...`.
 
+Hermes mode is a migration/import package, not a full machine backup. It exports only the selected Hermes home and excludes regeneratable runtime or transient entries: `hermes-agent/`, root `bin/`, `backups/`, `checkpoints/`, `node_modules/`, `.git/`, `__pycache__/`, `gateway.pid`, `cron.pid`, Python bytecode, and SQLite sidecars (`*.db-wal`, `*.db-shm`, `*.db-journal`).
+
 The legacy generic mode is still available for arbitrary path bundles:
 
 ```bash

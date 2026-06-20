@@ -826,6 +826,9 @@ func TestWorkerActionStartHermesImportWorkflow(t *testing.T) {
 	if importReq.InstanceID != "ins-abc123" || importReq.Region != "ap-beijing" || importReq.ImportObjectKey != "rescue-imports/bot-1/hermes-backup.zip" {
 		t.Fatalf("unexpected import request target: %+v", importReq)
 	}
+	if importReq.NotificationEmail != "user@example.com" || importReq.NotifyEmail != "user@example.com" {
+		t.Fatalf("expected import notification email, got %+v", importReq)
+	}
 	if importReq.TATUsername != "agentuser" || importReq.TATWorkingDirectory != "/home/agentuser" {
 		t.Fatalf("expected agentuser TAT import request, got %+v", importReq)
 	}

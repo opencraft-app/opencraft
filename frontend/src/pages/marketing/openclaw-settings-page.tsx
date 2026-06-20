@@ -2894,6 +2894,7 @@ const hermesScripts = lightVelaHermesScripts.hermes;
 const hermesGatewayCommands = hermesScripts.gateway;
 const hermesModelCommands = hermesScripts.model;
 const RESCUE_EXPORT_POLL_INTERVAL_MS = 5000;
+const HERMES_WORKSPACE_EXPORT_PATH = "/home/agentuser/.hermes";
 const RESCUE_EXPORT_TERMINAL_PHASES = new Set(["completed", "failed"]);
 
 const isRescueExportRunning = (status: WorkerActionStatusResult | null | undefined) => {
@@ -3500,6 +3501,18 @@ export const OpenClawSettingsPage = () => {
 
   const handleExportWorkspace = async () => {
     if (!activeBot || activeBot.status !== "running" || exportingBotIds.has(activeBot.id)) return;
+    if (!user?.email) {
+      toast.error(t("请先在账号页绑定邮箱，导出结果会通过邮件通知。"));
+      return;
+    }
+    const confirmed = window.confirm([
+      t("确认导出 Hermes 工作区？"),
+      "",
+      t("导出范围：仅包含 {{path}}，不是整机备份，也不会包含其它目录。", { path: HERMES_WORKSPACE_EXPORT_PATH }),
+      t("兼容包会排除 hermes-agent、bin/、backups/、checkpoints/、node_modules、.git、__pycache__、pid 文件、Python 字节码和 SQLite 临时 sidecar。"),
+      t("导出成功或失败都会通过绑定邮箱通知。"),
+    ].join("\n"));
+    if (!confirmed) return;
     const targetBotId = activeBot.id;
     setExportingBotIds((prev) => new Set(prev).add(targetBotId));
     setExportStatusByBotId((prev) => ({
@@ -3520,9 +3533,11 @@ export const OpenClawSettingsPage = () => {
         await loadRescueExportStatus(targetBotId).catch(() => undefined);
         return;
       }
-      const friendlyMessage = message.includes("cos_upload_bucket_not_configured")
-        ? t("导出存储桶未配置，请稍后再试。")
-        : message || t("导出任务发起失败");
+      const friendlyMessage = message.includes("missing_user_email")
+        ? t("请先在账号页绑定邮箱，导出结果会通过邮件通知。")
+        : message.includes("cos_upload_bucket_not_configured")
+          ? t("导出存储桶未配置，请稍后再试。")
+          : message || t("导出任务发起失败");
       setExportStatusByBotId((prev) => ({
         ...prev,
         [targetBotId]: {
@@ -3549,6 +3564,18 @@ export const OpenClawSettingsPage = () => {
     const file = event.target.files?.[0] ?? null;
     event.target.value = "";
     if (!file || !activeBot || activeBot.status !== "running" || importingBotIds.has(activeBot.id)) return;
+    if (!user?.email) {
+      toast.error(t("请先在账号页绑定邮箱，导入结果会通过邮件通知。"));
+      return;
+    }
+    const confirmed = window.confirm([
+      t("确认导入 Hermes 工作区？"),
+      "",
+      t("导入会覆盖目标 Agent 的 {{path}}。", { path: HERMES_WORKSPACE_EXPORT_PATH }),
+      t("请确认选择的是 Hermes 工作区导出的 zip 兼容包。"),
+      t("导入成功或失败都会通过绑定邮箱通知。"),
+    ].join("\n"));
+    if (!confirmed) return;
     const targetBotId = activeBot.id;
     setImportingBotIds((prev) => new Set(prev).add(targetBotId));
     setImportStatusByBotId((prev) => ({
@@ -3560,7 +3587,7 @@ export const OpenClawSettingsPage = () => {
     }));
     try {
       await repositories.bots.importHermesWorkspace(targetBotId, file);
-      toast.success(t("导入任务已发起。"));
+      toast.success(t("导入任务已发起，完成后会发送到绑定邮箱。"));
       await loadHermesImportStatus(targetBotId).catch(() => undefined);
     } catch (err) {
       const message = err instanceof Error ? err.message : "";
@@ -3571,7 +3598,9 @@ export const OpenClawSettingsPage = () => {
       }
       const friendlyMessage = message.includes("hermes_import_zip_required")
         ? t("请选择 Hermes 导出的 zip 文件。")
-        : message || t("导入任务发起失败");
+        : message.includes("missing_user_email")
+          ? t("请先在账号页绑定邮箱，导入结果会通过邮件通知。")
+          : message || t("导入任务发起失败");
       setImportStatusByBotId((prev) => ({
         ...prev,
         [targetBotId]: {
@@ -3907,7 +3936,16 @@ export const OpenClawSettingsPage = () => {
       <div className="mb-4">
         <h3 className="text-base font-semibold text-black/90">{t("工作区备份与恢复")}</h3>
         <p className="mt-1 truncate text-xs text-black/45" title={activeBot.name}>
-          {activeBot.name} · /home/agentuser/.hermes
+          {activeBot.name} · {HERMES_WORKSPACE_EXPORT_PATH}
+        </p>
+      </div>
+      <div className="mb-4 rounded-md border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-xs leading-relaxed text-black/65">
+        <p className="font-medium text-black/75">{t("导出只包含 Hermes 工作区，不是整机备份。")}</p>
+        <p className="mt-1">
+          {t("导出范围：{{path}}。会排除 hermes-agent、bin/、backups/、checkpoints/、node_modules、.git、__pycache__、pid 文件、Python 字节码和 SQLite 临时 sidecar。", { path: HERMES_WORKSPACE_EXPORT_PATH })}
+        </p>
+        <p className="mt-1">
+          {t("导入会覆盖目标 Agent 的 Hermes 工作区。导入、导出成功或失败都会通过绑定邮箱通知；如果没有绑定邮箱，请先到账号页绑定。")}
         </p>
       </div>
       <input
