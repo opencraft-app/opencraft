@@ -34,6 +34,7 @@ export function renderToolActivityRows(items: ChatSurfaceActivityItem[]): AgentW
         display: toolDisplayIntent(item),
         createdAt: item.created_at,
         updatedAt: item.updated_at,
+        activityId: item.id,
         debug: item.debug,
       },
     ];

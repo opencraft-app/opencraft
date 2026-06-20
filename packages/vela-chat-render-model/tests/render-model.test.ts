@@ -349,6 +349,7 @@ test("keeps agent work separate from transcript and derives worked label from me
   assert.equal(work.title, "Searched code");
   assert.equal(work.status, "completed");
   assert.equal(work.summary, "12 matches");
+  assert.equal(work.activityId, "tool_1");
 
   const assistant = model.rows[2];
   assert.equal(assistant.kind, "assistant_message");
