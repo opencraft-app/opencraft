@@ -16,6 +16,12 @@ content dimensions, and any pending post-layout verification retry. Keep those
 blocked reasons in the pure model so regressions stay easy to test without a
 browser.
 
+Paseo has a stronger bottom-anchor driver that owns container-keyed measurement
+state and rejects stale viewport/content measurements. Vela's current split is
+good enough for Day 1, but if bugs appear around session switches, strategy
+switches, virtualized-row remeasurement, or delayed content growth, add a pure
+`bottomAnchorDriver.ts` with table tests before adding more hook-local effects.
+
 Route resume is also owned here, not by the page shell. The controller writes a
 small `sessionStorage` snapshot per route/session key and restores only detached
 positions. If the user was following output, the normal bottom-anchor behavior
