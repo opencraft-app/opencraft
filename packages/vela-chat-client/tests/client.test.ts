@@ -607,6 +607,53 @@ test("keeps OpenAPI backend capabilities required booleans in the client wire mo
   assert.doesNotMatch(backendInterface, /capabilities:\s*Record<string, unknown>/);
 });
 
+test("keeps OpenAPI AgentConfig fields non-null while runtime info may be nullable", async () => {
+  const source = await import("node:fs/promises").then((fs) =>
+    fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
+  );
+  const agentConfigInterface = source.match(/export interface AgentConfigWire \{[\s\S]*?\n\}/)?.[0] ?? "";
+  const runtimeInfoInterface =
+    source.match(/export interface SessionRuntimeInfoWire \{[\s\S]*?\n\}/)?.[0] ?? "";
+  const requests: Array<{ url: string; init?: RequestInit }> = [];
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async (url, init) => {
+      requests.push({ url: String(url), init });
+      return new Response(
+        JSON.stringify({
+          session: { id: "ses_config", backend: "pi", status: "idle" },
+          effective_after: "current_session",
+          cursor: { event_id: "evt_config", epoch: 1, seq: 2 },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    },
+  });
+
+  assert.doesNotMatch(agentConfigInterface, /model\?:\s*string\s*\|\s*null/);
+  assert.doesNotMatch(agentConfigInterface, /reasoning_effort\?:\s*string\s*\|\s*null/);
+  assert.doesNotMatch(agentConfigInterface, /permission_mode\?:\s*PermissionModeWire\s*\|\s*null/);
+  assert.match(runtimeInfoInterface, /model\?:\s*string\s*\|\s*null/);
+  assert.match(runtimeInfoInterface, /reasoning_effort\?:\s*string\s*\|\s*null/);
+  assert.match(runtimeInfoInterface, /permission_mode\?:\s*PermissionModeWire\s*\|\s*null/);
+
+  await assert.rejects(
+    () =>
+      client.updateAgentConfig({
+        sessionId: "ses_config",
+        idempotencyKey: "cfg_null_model",
+        patch: { model: null } as unknown as Parameters<
+          typeof client.updateAgentConfig
+        >[0]["patch"],
+      }),
+    (err) =>
+      err instanceof VeladClientError &&
+      err.code === "invalid_agent_config_patch" &&
+      /model/.test(err.message),
+  );
+  assert.equal(requests.length, 0);
+});
+
 test("keeps OpenAPI agent request enums narrow in the client wire model", async () => {
   const source = await import("node:fs/promises").then((fs) =>
     fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),

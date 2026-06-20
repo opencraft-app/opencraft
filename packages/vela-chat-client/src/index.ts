@@ -217,16 +217,16 @@ export type BackendKindWire =
 export type PermissionModeWire = "read_only" | "auto" | "auto_review" | "full_access";
 
 export interface AgentConfigWire {
-  model?: string | null;
-  reasoning_effort?: string | null;
-  permission_mode?: PermissionModeWire | null;
+  model?: string;
+  reasoning_effort?: string;
+  permission_mode?: PermissionModeWire;
   feature_values?: Record<string, unknown>;
 }
 
 export interface AgentConfigPatchWire {
-  model?: string | null;
-  reasoning_effort?: string | null;
-  permission_mode?: PermissionModeWire | null;
+  model?: string;
+  reasoning_effort?: string;
+  permission_mode?: PermissionModeWire;
   feature_values?: Record<string, unknown>;
 }
 
@@ -1398,12 +1398,12 @@ function validateAgentConfigValue(
   switch (key) {
     case "model":
     case "reasoning_effort":
-      if (value !== null && typeof value !== "string") {
+      if (typeof value !== "string") {
         throw invalid(`${owner} ${key} must be a string`);
       }
       return;
     case "permission_mode":
-      if (value !== null && (typeof value !== "string" || !permissionModes.has(value))) {
+      if (typeof value !== "string" || !permissionModes.has(value)) {
         throw invalid(
           `${owner} permission_mode must be read_only, auto, auto_review, or full_access`,
         );
