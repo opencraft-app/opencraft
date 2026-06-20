@@ -199,6 +199,11 @@ contract and Paseo's agent-stream shape. Do not turn these into heuristic fixes:
   `vela-chat-client` and `vela-chat-surface`: `session_id`, `window`, and full
   `cursor` are required before UI layers consume them. Do not reintroduce local
   fallback DTOs that omit those fields.
+- `Backend.models`, `Backend.permission_modes`, and `Backend.features` are
+  optional in OpenAPI. `vela-chat-client` currently normalizes missing arrays to
+  `[]` so the example ChatUI can render controls without nullish branching. This
+  is a client-normalized response shape, not a raw wire mirror; revisit the
+  naming if generated validators/types replace the handwritten client boundary.
 - The remaining deliberate looseness is the SSE parser: it still accepts
   canonical `VelaEvent`-like messages and `sync.reset` messages through one
   tolerant stream reader. Tighten that only after real Codex / ACP / Pi stream
