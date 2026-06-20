@@ -1709,6 +1709,35 @@ test("validates session mutation response envelopes at the client wire boundary"
       /session\.status/.test(err.message),
   );
 
+  const badSessionAgentConfigClient = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async () =>
+      new Response(
+        JSON.stringify({
+          session: {
+            id: "ses_bad_agent_config",
+            backend: "pi",
+            status: "idle",
+            agent_config: { permission_mode: "god_mode" },
+          },
+          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
+        }),
+        { status: 201, headers: { "Content-Type": "application/json" } },
+      ),
+  });
+
+  await assert.rejects(
+    () =>
+      badSessionAgentConfigClient.createSession({
+        idempotencyKey: "ses_bad_agent_config",
+        workingDirectory: "/tmp/project",
+      }),
+    (err) =>
+      err instanceof VeladClientError &&
+      err.code === "invalid_create_session_response" &&
+      /agent_config permission_mode/.test(err.message),
+  );
+
   const updateClient = createVeladClient({
     baseUrl: "http://127.0.0.1:3857/api/v1/",
     fetch: async () =>

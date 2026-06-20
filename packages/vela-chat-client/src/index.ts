@@ -1956,11 +1956,16 @@ function parseSessionWire(
   if (typeof status !== "string" || !sessionStatuses.has(status)) {
     throw invalid(`${owner}.status must be a known SessionStatus`);
   }
+  const agentConfig = data.agent_config;
+  if (agentConfig !== undefined) {
+    validateAgentConfigShape(agentConfig, invalid, `${owner}.agent_config`);
+  }
   return {
     ...(data as unknown as SessionWire),
     id,
     backend,
     status,
+    ...(agentConfig !== undefined ? { agent_config: agentConfig } : {}),
   };
 }
 
