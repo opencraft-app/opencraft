@@ -9,6 +9,8 @@
  *   - Open Graph：og:locale / og:type / og:site_name / og:title / og:description / og:url / og:image
  *   - Twitter Card：twitter:card / twitter:title / twitter:description / twitter:image
  */
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { applyFullSeoToHtml } from "@/lib/seo-html";
 
@@ -25,6 +27,13 @@ const TEMPLATE = `<!doctype html>
 </html>`;
 
 describe("applyFullSeoToHtml", () => {
+  it("keeps the SPA shell favicon aligned with prerendered public pages", () => {
+    const template = readFileSync(resolve(process.cwd(), "index.html"), "utf8");
+
+    expect(template).toContain('<link rel="icon" type="image/jpeg" href="/lightvela-logo.jpg" />');
+    expect(template).not.toContain("/lightvela-icon.png");
+  });
+
   it("injects all required SEO fields for cn region", () => {
     const html = applyFullSeoToHtml(TEMPLATE, "/about", "cn");
 
