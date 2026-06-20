@@ -47,6 +47,7 @@ function isToolActivity(item: ChatSurfaceActivityItem): boolean {
     item.kind === "tool" ||
     item.kind === "command" ||
     item.kind === "task" ||
+    item.kind === "warning" ||
     Boolean(item.detail?.type)
   );
 }

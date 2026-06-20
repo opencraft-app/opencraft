@@ -590,6 +590,39 @@ test("renders OpenAPI command and task activity items without tool detail", () =
   );
 });
 
+test("renders OpenAPI warning activity items without tool detail", () => {
+  const surface: ChatSurface = {
+    session_id: "sess_warning",
+    transcript: { rows: [] },
+    activity: {
+      items: [
+        {
+          id: "activity_warning_1",
+          kind: "warning",
+          status: "completed",
+          title: "Warning",
+          summary: "Provider sent an unsupported extension UI request",
+          created_at: "2026-06-18T10:00:03Z",
+          debug: { projection: "activity", source_event_ids: ["evt_warning"] },
+        },
+      ],
+    },
+    pending_requests: { items: [] },
+    cursors: {},
+    stream: { connected: false, running: false },
+  };
+
+  const model = buildChatRenderModel(surface, { kind: "desktop_web" });
+  const warning = model.rows[0];
+
+  assert.equal(warning?.kind, "agent_work");
+  if (warning?.kind !== "agent_work") assert.fail("expected warning activity row");
+  assert.equal(warning.title, "Warning");
+  assert.equal(warning.summary, "Provider sent an unsupported extension UI request");
+  assert.equal(warning.status, "completed");
+  assert.equal(warning.activityId, "activity_warning_1");
+});
+
 test("turns provider-style activity titles into quiet action labels", () => {
   const surface: ChatSurface = {
     session_id: "sess_raw_titles",
