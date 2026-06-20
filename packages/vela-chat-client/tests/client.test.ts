@@ -2817,6 +2817,17 @@ test("rejects invalid InputPart oneOf branches before sending", async () => {
       err.code === "invalid_input_part" &&
       /mime_type/.test(err.message),
   );
+  await assert.rejects(
+    () =>
+      client.sendUserMessage({
+        sessionId: "ses_image",
+        content: { type: "text", text: "not an array" } as never,
+      }),
+    (err) =>
+      err instanceof VeladClientError &&
+      err.code === "invalid_input_part" &&
+      /array/.test(err.message),
+  );
   assert.equal(fetchCalled, false);
 });
 

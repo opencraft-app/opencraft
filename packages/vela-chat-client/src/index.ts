@@ -1194,6 +1194,9 @@ function validateSessionOperationsShape(
 }
 
 function validateClientInputParts(parts: readonly ClientInputPart[]) {
+  if (!Array.isArray(parts)) {
+    throw invalidInputPart("InputPart content must be an array");
+  }
   for (const part of parts) {
     validateClientInputPart(part);
   }
