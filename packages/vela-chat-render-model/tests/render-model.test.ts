@@ -623,6 +623,37 @@ test("renders OpenAPI warning activity items without tool detail", () => {
   assert.equal(warning.activityId, "activity_warning_1");
 });
 
+test("does not render non-failed runtime activity as agent work even when detail is present", () => {
+  const surface: ChatSurface = {
+    session_id: "sess_runtime_detail",
+    transcript: { rows: [] },
+    activity: {
+      items: [
+        {
+          id: "activity_runtime_1",
+          kind: "runtime",
+          status: "completed",
+          title: "turn.completed",
+          summary: "Turn completed",
+          detail: {
+            type: "plain_text",
+            text: "lifecycle bookkeeping",
+          },
+          created_at: "2026-06-18T10:00:03Z",
+          debug: { projection: "activity", source_event_ids: ["evt_turn_completed"] },
+        },
+      ],
+    },
+    pending_requests: { items: [] },
+    cursors: {},
+    stream: { connected: false, running: false },
+  };
+
+  const model = buildChatRenderModel(surface, { kind: "desktop_web" });
+
+  assert.equal(model.rows.length, 0);
+});
+
 test("turns provider-style activity titles into quiet action labels", () => {
   const surface: ChatSurface = {
     session_id: "sess_raw_titles",
