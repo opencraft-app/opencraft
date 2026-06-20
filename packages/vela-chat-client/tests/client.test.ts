@@ -2459,6 +2459,19 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
 test("uses affected_views as forward-compatible refresh hints for canonical stream events", () => {
   assert.deepEqual(
     streamReadModelRefreshPlan({
+      event_id: "evt_workbench_hint",
+      type: "projection.invalidated",
+      affected_views: ["workbench"],
+    }),
+    {
+      transcript: true,
+      activity: true,
+      session: true,
+      backends: true,
+    },
+  );
+  assert.deepEqual(
+    streamReadModelRefreshPlan({
       event_id: "evt_future",
       type: "future.provider.event",
       affected_views: ["requests", "diffs"],

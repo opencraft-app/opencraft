@@ -802,11 +802,16 @@ function resetRefreshPlan(views: string[] | undefined): StreamReadModelRefreshPl
 function affectedViewsRefreshPlan(views: string[] | undefined): StreamReadModelRefreshPlan {
   if (!views?.length) return emptyRefreshPlan();
   const viewSet = new Set(views);
+  const workbench = viewSet.has("workbench");
   return {
-    transcript: viewSet.has("transcript"),
-    activity: viewSet.has("activity") || viewSet.has("requests") || viewSet.has("diffs"),
-    session: viewSet.has("session") || viewSet.has("sessions"),
-    backends: viewSet.has("backends"),
+    transcript: workbench || viewSet.has("transcript"),
+    activity:
+      workbench ||
+      viewSet.has("activity") ||
+      viewSet.has("requests") ||
+      viewSet.has("diffs"),
+    session: workbench || viewSet.has("session") || viewSet.has("sessions"),
+    backends: workbench || viewSet.has("backends"),
   };
 }
 
