@@ -1707,6 +1707,9 @@ function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDeta
       ...(data.stderr !== undefined
         ? { stderr: optionalViewString(data, "stderr", owner, invalidActivityView) }
         : {}),
+      ...(data.exit_code !== undefined
+        ? { exit_code: optionalViewInteger(data, "exit_code", owner, invalidActivityView) }
+        : {}),
       ...(data.error !== undefined
         ? { error: optionalViewString(data, "error", owner, invalidActivityView) }
         : {}),
