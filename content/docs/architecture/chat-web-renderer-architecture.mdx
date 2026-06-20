@@ -190,6 +190,15 @@ contract and Paseo's agent-stream shape. Do not turn these into heuristic fixes:
   `tool` / `command` / `task` / `warning` / `runtime`, and
   `vela-chat-client` uses the same allowlist. Do not add `request` / `diff`
   activity kinds unless OpenAPI changes first.
+- The JS render model now preserves projected `tool`, `command`, `task`, and
+  `warning` activity rows, and still surfaces failed runtime activity as a
+  failed status row. It intentionally does not render every non-failed
+  `kind: runtime` item as agent work: `turn.started` / `turn.completed` can
+  duplicate session status, transcript working rows, and the frontend-derived
+  `Worked for ...` label. If runtime lifecycle rows should become visible,
+  first define a presentation rule that separates user-visible progress from
+  lifecycle bookkeeping, then add tests. Do not fix this by simply adding
+  `runtime` to the activity work predicate.
 - Transcript and activity history paging already use the OpenAPI
   `direction + anchor_row_id` / `direction + anchor_item_id` contract. Legacy
   row-anchor options are rejected at the client boundary.
