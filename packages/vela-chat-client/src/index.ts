@@ -758,7 +758,7 @@ function resetRefreshPlan(views: string[] | undefined): StreamReadModelRefreshPl
       viewSet.has("activity") ||
       viewSet.has("requests") ||
       viewSet.has("diffs"),
-    session: workbench || viewSet.has("session"),
+    session: workbench || viewSet.has("session") || viewSet.has("sessions"),
     backends: workbench || viewSet.has("backends"),
   };
 }

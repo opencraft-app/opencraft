@@ -2360,6 +2360,22 @@ test("plans workbench sync resets as full workbench refreshes", () => {
   );
 });
 
+test("accepts plural session view hints in sync resets", () => {
+  assert.deepEqual(
+    streamReadModelRefreshPlan({
+      event_id: "evt_reset_sessions",
+      type: "sync.reset",
+      views: ["sessions"],
+    }),
+    {
+      transcript: false,
+      activity: false,
+      session: true,
+      backends: false,
+    },
+  );
+});
+
 test("matches stream events to the active session while accepting legacy events", () => {
   assert.equal(
     isVelaStreamEventForSession("sess_1", {
