@@ -212,6 +212,8 @@ function legacyToolSummary(detail: ChatSurfaceActivityItem["detail"]): string {
 
 function toolDisplayIntent(item: ChatSurfaceActivityItem): AgentWorkDisplay {
   if (item.status === "failed") return "prominent";
+  const providerDisplay = providerLabelDisplayIntent(item.title) ?? providerLabelDisplayIntent(item.summary);
+  if (providerDisplay) return providerDisplay;
   if (!item.detail) return "compact";
 
   switch (item.detail.type) {
@@ -245,6 +247,35 @@ function toolDisplayIntent(item: ChatSurfaceActivityItem): AgentWorkDisplay {
   }
 
   return "compact";
+}
+
+function providerLabelDisplayIntent(value: string | undefined): AgentWorkDisplay | undefined {
+  const label = (value ?? "").trim();
+  const separator = label.indexOf(":");
+  if (separator <= 0) return undefined;
+
+  const prefix = label.slice(0, separator).trim().toLowerCase();
+  switch (prefix) {
+    case "terminal":
+    case "shell":
+    case "bash":
+    case "command":
+    case "python":
+    case "edit":
+    case "write":
+    case "fetch":
+    case "curl":
+      return "prominent";
+    case "search":
+    case "grep":
+    case "rg":
+    case "find":
+    case "read":
+    case "cat":
+      return "compact";
+    default:
+      return undefined;
+  }
 }
 
 function stringField(value: unknown): string {

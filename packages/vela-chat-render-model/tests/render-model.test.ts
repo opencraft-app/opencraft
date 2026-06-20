@@ -276,6 +276,15 @@ test("turns provider-style activity titles into quiet action labels", () => {
           created_at: "2026-06-18T10:00:03Z",
           debug: { projection: "activity", source_event_ids: ["evt_read"] },
         },
+        {
+          id: "tool_python",
+          kind: "tool",
+          status: "completed",
+          title: "python: from PIL import Image",
+          summary: "python: from PIL import Image",
+          created_at: "2026-06-18T10:00:04Z",
+          debug: { projection: "activity", source_event_ids: ["evt_python"] },
+        },
       ],
     },
     pending_requests: { items: [] },
@@ -292,6 +301,16 @@ test("turns provider-style activity titles into quiet action labels", () => {
       ["Searched code", "*"],
       ["Ran command", "ls -la"],
       ["Read file", "README.md"],
+      ["Ran Python", "from PIL import Image"],
+    ],
+  );
+  assert.deepEqual(
+    workRows.map((row) => [row.title, row.display]),
+    [
+      ["Searched code", "compact"],
+      ["Ran command", "prominent"],
+      ["Read file", "compact"],
+      ["Ran Python", "prominent"],
     ],
   );
 });
