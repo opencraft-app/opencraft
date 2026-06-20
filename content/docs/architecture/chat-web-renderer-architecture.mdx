@@ -207,6 +207,18 @@ contract and Paseo's agent-stream shape. Do not turn these into heuristic fixes:
   `[]` so the example ChatUI can render controls without nullish branching. This
   is a client-normalized response shape, not a raw wire mirror; revisit the
   naming if generated validators/types replace the handwritten client boundary.
+- The package-level renderer has `desktop_web`, `mobile_web`, and
+  `desktop_shell` host policies, but the example `/chat` route still constructs
+  the render model as `desktop_web`. Do not treat that as a renderer-layer bug:
+  the missing decision is the host shell / route breakpoint policy. Add a
+  tested host selector before changing `ChatWorkbench` to pass `mobile_web`.
+- User message rendering currently displays OpenAPI `TranscriptPart.type =
+  image` only when the projected part carries inline base64 `data` plus
+  `mime_type`. `image_ref` / `file_reference`-style transcript rendering is not
+  yet specified by the `TranscriptPart.data` shape. If remote/blob-backed media
+  needs to render in transcript, extend the OpenAPI part data contract or blob
+  API first; do not guess field names such as `url`, `uri`, or `blob_id` inside
+  `UserMessageRenderer`.
 - `CursorWindow.next_event_id` still needs a sharper OpenAPI description before
   changing JS freshness logic. The current client treats it as an optional cursor
   alias for duplicate suppression, but the contract should explicitly state
