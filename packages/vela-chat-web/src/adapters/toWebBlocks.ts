@@ -63,6 +63,7 @@ export type WebBlock =
       id: string;
       key: string;
       label: string;
+      status: string;
       createdAt: string;
     };
 
@@ -121,7 +122,7 @@ function rowFingerprint(row: ChatRenderRow) {
   if (row.kind === "agent_work") {
     return `${row.key}:${row.status}:display:${row.display}:title:${hashString(row.title)}:summary:${hashString(row.summary)}`;
   }
-  return `${row.key}:label:${hashString(row.label)}`;
+  return `${row.key}:status:${row.status}:label:${hashString(row.label)}`;
 }
 
 function rowToBlock(row: ChatRenderRow): WebBlock {
@@ -172,6 +173,7 @@ function rowToBlock(row: ChatRenderRow): WebBlock {
     id: row.id,
     key: row.key,
     label: row.label,
+    status: row.status,
     createdAt: row.createdAt,
   };
 }

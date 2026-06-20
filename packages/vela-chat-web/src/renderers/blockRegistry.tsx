@@ -3,6 +3,7 @@ import { ActivityRenderer } from "./blocks/ActivityRenderer";
 import { AssistantMarkdownRenderer } from "./blocks/AssistantMarkdownRenderer";
 import { StatusRenderer } from "./blocks/StatusRenderer";
 import { UserMessageRenderer } from "./blocks/UserMessageRenderer";
+import { activityVisualStatus } from "./blocks/activityLabel";
 
 export function renderWebBlock(block: WebBlock) {
   switch (block.kind) {
@@ -13,12 +14,8 @@ export function renderWebBlock(block: WebBlock) {
     case "agent_work":
       return <ActivityRenderer block={block} />;
     case "status":
-      return isActivityStatus(block.label)
+      return activityVisualStatus(block)
         ? <ActivityRenderer block={block} />
         : <StatusRenderer block={block} />;
   }
-}
-
-function isActivityStatus(label: string) {
-  return label.startsWith("处理失败：");
 }

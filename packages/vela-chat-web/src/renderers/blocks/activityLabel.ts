@@ -9,6 +9,7 @@ export function activityAccessibleLabel(block: ActivityLabelBlock): string {
 
 export function activityVisualStatus(block: ActivityLabelBlock): string | undefined {
   if (block.kind === "agent_work") return block.status;
+  if (block.status === "failed") return "failed";
   if (block.label.startsWith("处理失败：")) return "failed";
   return undefined;
 }

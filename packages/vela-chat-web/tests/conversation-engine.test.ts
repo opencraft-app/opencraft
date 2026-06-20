@@ -807,6 +807,33 @@ test("user image parts stay renderable in web blocks", () => {
   }
 });
 
+test("web adapter preserves status row status for visual rendering", () => {
+  const model: ChatRenderModel = {
+    session_id: "sess_status",
+    host: { kind: "desktop_web" },
+    rows: [
+      {
+        kind: "status",
+        id: "status_failed",
+        key: "status:failed",
+        label: "Backend unavailable",
+        status: "failed",
+        createdAt: "2026-06-18T00:00:00Z",
+        debug: { projection: "transcript", source_event_ids: ["evt_error"] },
+      } as Extract<ChatRenderModel["rows"][number], { kind: "status" }>,
+    ],
+    requests: { items: [] },
+    composer: { placeholder: "要求后续变更", can_send: true },
+  };
+
+  const webModel = toWebChatModel(model);
+  const block = webModel.turns[0]?.blocks[0];
+
+  assert.equal(block?.kind, "status");
+  if (block?.kind !== "status") assert.fail("expected status block");
+  assert.equal(block.status, "failed");
+});
+
 test("web adapter invalidates user image cache when image metadata changes", () => {
   const firstSnapshot: ChatRenderModel = {
     session_id: "sess_image_metadata",

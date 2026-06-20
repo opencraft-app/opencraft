@@ -76,6 +76,7 @@ export type ChatRenderRow =
       id: string;
       key: string;
       label: string;
+      status: string;
       createdAt: string;
       debug: ChatSurfaceDebug;
     };
@@ -99,6 +100,7 @@ export function buildChatRenderModel(surface: ChatSurface, host: ChatHostPolicy)
         id: item.id,
         key: `activity:${item.id}`,
         label: `处理失败：${label}`,
+        status: item.status,
         createdAt: item.updated_at ?? item.created_at,
         debug: item.debug,
       },
@@ -196,6 +198,7 @@ function renderTranscriptRow(row: ChatSurfaceTranscriptRow): ChatRenderRow {
     id: row.id,
     key: `status:${row.id}`,
     label: row.text,
+    status: row.status,
     createdAt: row.created_at,
     debug: row.debug,
   };

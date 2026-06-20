@@ -5,6 +5,7 @@ import test from "node:test";
 
 import {
   activityAccessibleLabel,
+  activityVisualStatus,
   activityVisualSummary,
 } from "../src/renderers/blocks/activityLabel";
 
@@ -90,4 +91,18 @@ test("failed activity status rows expose failed visual status", () => {
   assert.match(activityLabel, /block\.label\.startsWith\("处理失败："\)/);
   assert.match(activityRenderer, /const status = activityVisualStatus\(block\);/);
   assert.match(activityRenderer, /data-status=\{status\}/);
+});
+
+test("status rows use explicit render status for failed visual state", () => {
+  assert.equal(
+    activityVisualStatus({
+      kind: "status",
+      id: "status_failed",
+      key: "status:failed",
+      label: "Backend unavailable",
+      status: "failed",
+      createdAt: "2026-06-20T00:00:00Z",
+    } as Parameters<typeof activityVisualStatus>[0]),
+    "failed",
+  );
 });

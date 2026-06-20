@@ -178,6 +178,38 @@ test("marks custom input requests as answerable request prompts", () => {
   assert.equal(model.requests.items[0]?.response_kind, "answer");
 });
 
+test("preserves transcript status on status render rows", () => {
+  const surface: ChatSurface = {
+    session_id: "sess_error_status",
+    transcript: {
+      rows: [
+        {
+          id: "row_error",
+          role: "working",
+          text: "Backend unavailable",
+          parts: [],
+          created_at: "2026-06-18T10:00:00Z",
+          status: "failed",
+          revision: 1,
+          debug: { projection: "transcript", source_event_ids: ["evt_error"] },
+        },
+      ],
+    },
+    activity: { items: [] },
+    pending_requests: { items: [] },
+    cursors: {},
+    stream: { connected: false, running: false },
+  };
+
+  const model = buildChatRenderModel(surface, { kind: "desktop_web" });
+  const row = model.rows[0];
+
+  assert.equal(row?.kind, "status");
+  if (row?.kind !== "status") assert.fail("expected status row");
+  assert.equal(row.label, "Backend unavailable");
+  assert.equal(row.status, "failed");
+});
+
 test("derives user message text from OpenAPI textual parts when row text is absent", () => {
   const surface: ChatSurface = {
     session_id: "sess_user_parts",
