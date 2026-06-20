@@ -1,8 +1,13 @@
+import { memo } from "react";
 import type { ConversationStreamItem } from "../../conversation-runtime/model";
 import { renderWebBlock } from "../../renderers/blockRegistry";
 import styles from "../../styles/desktop.module.css";
 
-export function VelaTurnGroup({ item }: { item: ConversationStreamItem }) {
+export const VelaTurnGroup = memo(function VelaTurnGroup({
+  item,
+}: {
+  item: ConversationStreamItem;
+}) {
   return (
     <article
       className={styles.turnGroup}
@@ -13,4 +18,4 @@ export function VelaTurnGroup({ item }: { item: ConversationStreamItem }) {
       <div className={styles.turnBlock}>{renderWebBlock(item.block)}</div>
     </article>
   );
-}
+});

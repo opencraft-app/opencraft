@@ -168,6 +168,16 @@ test("turn list delegates list strategy selection to the conversation strategy r
   assert.doesNotMatch(source, /webPartialVirtualizedConversationStrategy/);
 });
 
+test("turn group memoizes stable stream items during high-frequency streaming", () => {
+  const source = readFileSync(
+    join(root, "packages/vela-chat-web/src/components/conversation/VelaTurnGroup.tsx"),
+    "utf8",
+  );
+
+  assert.match(source, /memo\(function VelaTurnGroup/);
+  assert.match(source, /item:\s*ConversationStreamItem/);
+});
+
 test("user message renderer uses a semantic copy control instead of a placeholder glyph", () => {
   const source = readFileSync(
     join(root, "packages/vela-chat-web/src/renderers/blocks/UserMessageRenderer.tsx"),
