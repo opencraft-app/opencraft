@@ -157,16 +157,40 @@ describe("AccountPage nickname audit state", () => {
     expect(screen.queryByText(/验证码/)).not.toBeInTheDocument();
   });
 
-  it("does not expose the internal account id on the account page", () => {
+  it("shows the account id and lets users copy it", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
     currentUser = {
       ...currentUser,
-      id: "shadow_user_internal_id",
+      id: "usr_visible_account_id",
     };
 
     renderAccountPage();
 
-    expect(screen.queryByText("账号 ID")).not.toBeInTheDocument();
-    expect(screen.queryByText("shadow_user_internal_id")).not.toBeInTheDocument();
+    expect(screen.getByText("账号 ID")).toBeInTheDocument();
+    expect(screen.getByText("usr_visible_account_id")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "复制" }));
+
+    expect(writeText).toHaveBeenCalledWith("usr_visible_account_id");
+  });
+
+  it("keeps verified email row compact without the explanatory helper text", () => {
+    currentUser = {
+      ...currentUser,
+      email: "user@example.com",
+      emailVerified: true,
+    };
+
+    renderAccountPage();
+
+    expect(screen.getByText("绑定邮箱")).toBeInTheDocument();
+    expect(screen.getByText("user@example.com")).toBeInTheDocument();
+    expect(screen.getByText("已验证")).toBeInTheDocument();
+    expect(screen.queryByText("该邮箱已验证，可用于接收导出完成通知等重要消息。")).not.toBeInTheDocument();
   });
 
   it("does not mention shadow account internals in the pure realname modal", async () => {

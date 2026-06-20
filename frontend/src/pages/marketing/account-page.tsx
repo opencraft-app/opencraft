@@ -4,6 +4,7 @@ import {
   Camera,
   Check,
   ChevronRight,
+  Copy,
   CreditCard,
   Loader2,
   Pencil,
@@ -1867,6 +1868,8 @@ export const AccountPage = () => {
   const [emailBindError, setEmailBindError] = useState<string | null>(null);
   const [emailBindSuccess, setEmailBindSuccess] = useState<string | null>(null);
   const [emailBindCooldown, setEmailBindCooldown] = useState(0);
+  const [copiedUserId, setCopiedUserId] = useState(false);
+  const copyResetTimer = useRef<number | null>(null);
 
   useEffect(() => {
     if (isGlobal || typeof window === "undefined") return undefined;
@@ -2101,6 +2104,20 @@ export const AccountPage = () => {
       setEmailBindError(mapEmailBindError(err));
     } finally {
       setEmailBindSubmitting(false);
+    }
+  };
+
+  const handleCopyUserId = async () => {
+    if (!user?.id) return;
+    try {
+      await navigator.clipboard.writeText(user.id);
+      setCopiedUserId(true);
+      if (copyResetTimer.current) {
+        window.clearTimeout(copyResetTimer.current);
+      }
+      copyResetTimer.current = window.setTimeout(() => setCopiedUserId(false), 1500);
+    } catch {
+      // Users can still select the visible ID manually when clipboard permission is unavailable.
     }
   };
 
@@ -2417,6 +2434,35 @@ export const AccountPage = () => {
                 </div>
               </div>
 
+              {user?.id && (
+                <div className="flex flex-col gap-12 px-8 py-8" style={{ borderBottom: (showEmailBindSection || showRealnameSection) ? "1px solid #E6E9EF" : undefined }}>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-sm flex-shrink-0" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>
+                      {t("账号 ID")}
+                    </span>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span
+                        className="truncate text-sm"
+                        style={{ color: "rgba(0,0,0,0.9)", fontFamily: "JetBrains Mono, monospace", maxWidth: 260 }}
+                        title={user.id}
+                      >
+                        {user.id}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void handleCopyUserId()}
+                        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-[rgba(0,0,0,0.04)]"
+                        aria-label={t("复制")}
+                        title={copiedUserId ? t("已复制") : t("复制")}
+                        style={{ color: copiedUserId ? "var(--color-success)" : "var(--text-tertiary)" }}
+                      >
+                        {copiedUserId ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {(showEmailBindSection || showRealnameSection) && (
                 /* Bottom: info rows —— 安全手机 / 实名认证 / 绑定邮箱 */
                 <div className="flex flex-col gap-12 px-8 pb-8">
@@ -2466,11 +2512,11 @@ export const AccountPage = () => {
                           </div>
                         )}
                       </div>
-                      <p className="m-0 text-xs" style={{ color: "rgba(0,0,0,0.45)", lineHeight: 1.5 }}>
-                        {user?.emailVerified
-                          ? t("该邮箱已验证，可用于接收导出完成通知等重要消息。")
-                          : t("绑定邮箱后可用于接收导出完成通知等重要消息。")}
-                      </p>
+                      {!user?.emailVerified && (
+                        <p className="m-0 text-xs" style={{ color: "rgba(0,0,0,0.45)", lineHeight: 1.5 }}>
+                          {t("绑定邮箱后可用于接收导出完成通知等重要消息。")}
+                        </p>
+                      )}
                       {emailBindSuccess && (
                         <p className="m-0 text-xs" style={{ color: "var(--color-success)", lineHeight: 1.5 }}>
                           {emailBindSuccess}
