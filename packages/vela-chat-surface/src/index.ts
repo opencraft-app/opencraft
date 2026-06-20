@@ -361,7 +361,7 @@ function normalizePendingRequest(request: AgentRequestWire): ChatSurfacePendingR
     ...(request.resolved_at ? { resolved_at: request.resolved_at } : {}),
     debug: {
       projection: "requests",
-      source_event_ids: [request.id],
+      source_event_ids: [],
     },
   };
 }
@@ -532,7 +532,7 @@ function normalizeActivityItem(item: ActivityWireItem): ChatSurfaceActivityItem 
     updated_at: item.updated_at,
     debug: {
       projection: "activity",
-      source_event_ids: sourceEventIds.length > 0 ? sourceEventIds : [item.id],
+      source_event_ids: sourceEventIds,
     },
   };
 }

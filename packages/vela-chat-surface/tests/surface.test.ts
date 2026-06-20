@@ -129,10 +129,45 @@ test("normalizes pending requests as a separate surface lane", () => {
   assert.equal(surface.pending_requests.items[0]?.id, "req_allow_shell");
   assert.equal(surface.pending_requests.items[0]?.title, "Allow command?");
   assert.equal(surface.pending_requests.items[0]?.debug.projection, "requests");
-  assert.deepEqual(surface.pending_requests.items[0]?.debug.source_event_ids, [
-    "req_allow_shell",
-  ]);
+  assert.deepEqual(surface.pending_requests.items[0]?.debug.source_event_ids, []);
   assert.equal(surface.cursors.requests?.latest_event_id, "evt_request_opened");
+});
+
+test("does not invent source event ids for projected read models without provenance", () => {
+  const surface = buildChatSurfaceFromReadModels({
+    sessionId: "sess_projected_provenance",
+    transcript: {
+      rows: [],
+      cursor: { event_id: "evt_transcript", epoch: 1, seq: 1 },
+    },
+    activity: {
+      items: [
+        {
+          id: "activity_tool_1",
+          kind: "tool",
+          status: "completed",
+          title: "Tool",
+          created_at: "2026-06-18T10:00:03Z",
+        },
+      ],
+      cursor: { event_id: "evt_activity", epoch: 1, seq: 2 },
+    },
+    requests: {
+      requests: [
+        {
+          id: "req_question_1",
+          session_id: "sess_projected_provenance",
+          type: "question",
+          status: "pending",
+          created_at: "2026-06-18T10:00:04Z",
+        },
+      ],
+      cursor: { latest_event_id: "evt_request_opened" },
+    },
+  });
+
+  assert.deepEqual(surface.activity.items[0]?.debug.source_event_ids, []);
+  assert.deepEqual(surface.pending_requests.items[0]?.debug.source_event_ids, []);
 });
 
 test("uses transcript row label for non-message rows when wire text is absent", () => {
