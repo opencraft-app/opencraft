@@ -9,6 +9,12 @@ export interface ChatSurfaceCursor {
   has_older?: boolean;
 }
 
+export interface ChatSurfaceEventCursor {
+  event_id: string;
+  epoch: number;
+  seq: number;
+}
+
 export interface ChatTranscriptWindow {
   first_row_id?: string | null;
   last_row_id?: string | null;
@@ -57,7 +63,7 @@ export interface ChatTranscriptPart {
 export interface ChatTranscriptWireView {
   session_id: string;
   rows: ChatTranscriptWireRow[];
-  cursor: ChatSurfaceCursor;
+  cursor: ChatSurfaceEventCursor;
   window: ChatTranscriptWindow;
 }
 
@@ -169,7 +175,7 @@ export interface ActivityWireView {
   session_id: string;
   items: ActivityWireItem[];
   window: ActivityWindow;
-  cursor: ChatSurfaceCursor;
+  cursor: ChatSurfaceEventCursor;
 }
 
 export type AgentRequestTypeWire =

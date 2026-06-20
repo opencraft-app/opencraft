@@ -222,19 +222,31 @@ test("keeps OpenAPI-required read model envelope fields required in surface wire
   const source = await import("node:fs/promises").then((fs) =>
     fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
   );
+  const eventCursorInterface =
+    source.match(/export interface ChatSurfaceEventCursor \{[\s\S]*?\n\}/)?.[0] ?? "";
   const transcriptViewInterface =
     source.match(/export interface ChatTranscriptWireView \{[\s\S]*?\n\}/)?.[0] ?? "";
   const activityViewInterface =
     source.match(/export interface ActivityWireView \{[\s\S]*?\n\}/)?.[0] ?? "";
 
+  assert.match(eventCursorInterface, /event_id:\s*string/);
+  assert.match(eventCursorInterface, /epoch:\s*number/);
+  assert.match(eventCursorInterface, /seq:\s*number/);
+  assert.doesNotMatch(eventCursorInterface, /event_id\?:\s*string/);
+  assert.doesNotMatch(eventCursorInterface, /epoch\?:\s*number/);
+  assert.doesNotMatch(eventCursorInterface, /seq\?:\s*number/);
   assert.match(transcriptViewInterface, /session_id:\s*string/);
   assert.match(transcriptViewInterface, /window:\s*ChatTranscriptWindow/);
+  assert.match(transcriptViewInterface, /cursor:\s*ChatSurfaceEventCursor/);
   assert.doesNotMatch(transcriptViewInterface, /session_id\?:\s*string/);
   assert.doesNotMatch(transcriptViewInterface, /window\?:\s*ChatTranscriptWindow/);
+  assert.doesNotMatch(transcriptViewInterface, /cursor:\s*ChatSurfaceCursor/);
   assert.match(activityViewInterface, /session_id:\s*string/);
   assert.match(activityViewInterface, /window:\s*ActivityWindow/);
+  assert.match(activityViewInterface, /cursor:\s*ChatSurfaceEventCursor/);
   assert.doesNotMatch(activityViewInterface, /session_id\?:\s*string/);
   assert.doesNotMatch(activityViewInterface, /window\?:\s*ActivityWindow/);
+  assert.doesNotMatch(activityViewInterface, /cursor:\s*ChatSurfaceCursor/);
 });
 
 test("keeps OpenAPI activity enums narrow in surface wire types", async () => {

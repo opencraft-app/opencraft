@@ -37,6 +37,7 @@ import {
   buildChatSurfaceFromReadModels,
   prependActivityWindow,
   prependTranscriptWindow,
+  type ChatSurfaceEventCursor,
 } from "../../packages/vela-chat-surface/src";
 import { VelaChatWeb } from "../../packages/vela-chat-web/src";
 import { toWebChatModel } from "../../packages/vela-chat-web/src/adapters/toWebBlocks";
@@ -55,6 +56,7 @@ import type { RequestDockResponse } from "../../packages/vela-chat-web/src/compo
 import { buildRequestResponseInputEvent } from "../../packages/vela-chat-web/src/components/requests/requestResponses";
 
 const DEFAULT_BASE_URL = "/chat/api/velad/api/v1";
+const EMPTY_EVENT_CURSOR: ChatSurfaceEventCursor = { event_id: "", epoch: 0, seq: 0 };
 
 interface PendingImageAttachment {
   id: string;
@@ -362,13 +364,13 @@ export function ChatWorkbench({
         session_id: surfaceSessionId,
         rows: [],
         window: { has_older: false, has_newer: false },
-        cursor: {},
+        cursor: EMPTY_EVENT_CURSOR,
       },
       activity: activity ?? {
         session_id: surfaceSessionId,
         items: [],
         window: { has_older: false, has_newer: false },
-        cursor: {},
+        cursor: EMPTY_EVENT_CURSOR,
       },
       requests: requests ?? { requests: [], cursor: {} },
       stream: { connected: streamConnected },

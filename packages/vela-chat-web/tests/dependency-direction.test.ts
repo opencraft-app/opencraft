@@ -378,6 +378,11 @@ test("chat fallback read models keep OpenAPI-required envelopes", () => {
   assert.match(source, /activity: activity \?\? \{/);
   assert.match(source, /session_id: surfaceSessionId/);
   assert.match(source, /window: \{ has_older: false, has_newer: false \}/);
+  assert.match(source, /event_id: ""/);
+  assert.match(source, /epoch: 0/);
+  assert.match(source, /seq: 0/);
+  assert.match(source, /transcript: transcript \?\? \{[\s\S]*?cursor: EMPTY_EVENT_CURSOR,[\s\S]*?\n      \},\n      activity:/);
+  assert.match(source, /activity: activity \?\? \{[\s\S]*?cursor: EMPTY_EVENT_CURSOR,[\s\S]*?\n      \},\n      requests:/);
   assert.doesNotMatch(source, /transcript: transcript \?\? \{ rows: \[\], cursor: \{\} \}/);
   assert.doesNotMatch(source, /activity: activity \?\? \{ items: \[\], cursor: \{\} \}/);
 });
