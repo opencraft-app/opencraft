@@ -2398,6 +2398,20 @@ test("matches stream events to cursor order while accepting legacy cursorless ev
   );
 });
 
+test("rejects already-seen stream event ids even when order fields are absent", () => {
+  assert.equal(
+    isVelaStreamEventFreshForCursor(
+      { event_id: "evt_same" },
+      {
+        event_id: "evt_same",
+        type: "assistant.message.delta",
+        payload: { delta: "duplicate" },
+      },
+    ),
+    false,
+  );
+});
+
 test("applies assistant delta live overlays to existing transcript rows immediately", () => {
   const transcript = {
     session_id: "sess_1",

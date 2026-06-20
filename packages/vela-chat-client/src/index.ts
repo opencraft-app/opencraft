@@ -664,6 +664,7 @@ function isStreamEventNewerThanCursor(
   cursor: EventCursorWire,
   event: VelaStreamEventWire,
 ) {
+  if (event.event_id && cursor.event_id === event.event_id) return false;
   const cursorOrder = eventCursorOrder(cursor);
   const eventOrder = streamEventOrder(event);
   if (!cursorOrder || !eventOrder) return true;
