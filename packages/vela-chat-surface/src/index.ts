@@ -24,6 +24,7 @@ export interface ChatTranscriptWireRow {
   updated_at?: string;
   revision?: number;
   text?: string;
+  label?: string;
   parts?: ChatTranscriptPart[];
   status?: string;
   source_event_ids?: string[];
@@ -482,7 +483,7 @@ function normalizeTranscriptRow(row: ChatTranscriptWireRow): ChatSurfaceTranscri
   return {
     id: row.id,
     role: transcriptKindToRole(row.kind),
-    text: row.text ?? "",
+    text: transcriptRowText(row),
     parts: row.parts ?? [],
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -493,6 +494,13 @@ function normalizeTranscriptRow(row: ChatTranscriptWireRow): ChatSurfaceTranscri
       source_event_ids: row.source_event_ids?.length ? row.source_event_ids : [row.id],
     },
   };
+}
+
+function transcriptRowText(row: ChatTranscriptWireRow) {
+  if (row.kind === "user_message" || row.kind === "assistant_message") {
+    return row.text ?? "";
+  }
+  return row.text ?? row.label ?? "";
 }
 
 function transcriptKindToRole(kind: ChatTranscriptWireRow["kind"]): ChatSurfaceTranscriptRow["role"] {

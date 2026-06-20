@@ -135,6 +135,38 @@ test("normalizes pending requests as a separate surface lane", () => {
   assert.equal(surface.cursors.requests?.latest_event_id, "evt_request_opened");
 });
 
+test("uses transcript row label for non-message rows when wire text is absent", () => {
+  const surface = buildChatSurfaceFromReadModels({
+    sessionId: "sess_labels",
+    transcript: {
+      rows: [
+        {
+          id: "row_working_1",
+          kind: "working",
+          created_at: "2026-06-18T10:00:00Z",
+          label: "Searched code",
+          status: "completed",
+          source_event_ids: ["evt_reasoning_1"],
+        },
+        {
+          id: "row_activity_1",
+          kind: "activity_marker",
+          created_at: "2026-06-18T10:00:01Z",
+          label: "Ran command",
+          status: "completed",
+          source_event_ids: ["evt_tool_1"],
+        },
+      ],
+      cursor: { event_id: "evt_tool_1", seq: 2 },
+    },
+  });
+
+  assert.equal(surface.transcript.rows[0]?.role, "working");
+  assert.equal(surface.transcript.rows[0]?.text, "Searched code");
+  assert.equal(surface.transcript.rows[1]?.role, "activity");
+  assert.equal(surface.transcript.rows[1]?.text, "Ran command");
+});
+
 test("keeps surface renderer-free", async () => {
   const source = await import("node:fs/promises").then((fs) =>
     fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
