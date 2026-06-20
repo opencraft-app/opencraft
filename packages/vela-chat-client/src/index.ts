@@ -101,6 +101,36 @@ export interface ActivityWindowOptions {
   anchorItemId?: string;
 }
 
+export type RequestStatusWire =
+  | "pending"
+  | "approved"
+  | "denied"
+  | "answered"
+  | "expired"
+  | "cancelled";
+
+export interface PendingRequestsOptions {
+  status?: RequestStatusWire;
+}
+
+export interface AgentRequestWire {
+  id: string;
+  session_id: string;
+  type: string;
+  status: RequestStatusWire;
+  title?: string;
+  description?: string;
+  payload?: Record<string, unknown>;
+  backend_ref?: Record<string, unknown>;
+  created_at: string;
+  resolved_at?: string;
+}
+
+export interface PendingRequestsWireView {
+  requests: AgentRequestWire[];
+  cursor: CursorWindow;
+}
+
 export interface ActivityWireDetail {
   type: string;
   [key: string]: unknown;
@@ -325,12 +355,17 @@ export interface VeladClient {
   }) => Promise<UpdateAgentConfigWireResponse>;
   transcriptUrl: (sessionId: string, options?: TranscriptWindowOptions) => URL;
   activityUrl: (sessionId: string, options?: ActivityWindowOptions) => URL;
+  requestsUrl: (sessionId: string, options?: PendingRequestsOptions) => URL;
   sessionEventStreamUrl: (sessionId: string, afterId?: string | null) => URL;
   getTranscript: (
     sessionId: string,
     options?: TranscriptWindowOptions,
   ) => Promise<ChatTranscriptWireView>;
   getActivity: (sessionId: string, options?: ActivityWindowOptions) => Promise<ActivityWireView>;
+  getRequests: (
+    sessionId: string,
+    options?: PendingRequestsOptions,
+  ) => Promise<PendingRequestsWireView>;
   sendUserMessage: (input: {
     sessionId: string;
     text?: string;
@@ -916,6 +951,12 @@ export function createVeladClient(options: VeladClientOptions): VeladClient {
       if (options?.anchorItemId) url.searchParams.set("anchor_item_id", options.anchorItemId);
       return url;
     },
+    requestsUrl(sessionId, options) {
+      validatePendingRequestsOptions(options);
+      const url = new URL(`sessions/${encodeSessionId(sessionId)}/views/requests`, baseUrl);
+      if (options?.status) url.searchParams.set("status", options.status);
+      return url;
+    },
     sessionEventStreamUrl(sessionId, afterId) {
       const url = new URL(`sessions/${encodeSessionId(sessionId)}/events/stream`, baseUrl);
       const validAfterId = validateAfterId(afterId);
@@ -929,6 +970,10 @@ export function createVeladClient(options: VeladClientOptions): VeladClient {
     async getActivity(sessionId, options) {
       const response = await doFetch(this.activityUrl(sessionId, options));
       return readActivityViewResponse(response);
+    },
+    async getRequests(sessionId, options) {
+      const response = await doFetch(this.requestsUrl(sessionId, options));
+      return readPendingRequestsViewResponse(response);
     },
     async sendUserMessage({ sessionId, text, content, idempotencyKey }) {
       const url = new URL(`sessions/${encodeSessionId(sessionId)}/events`, baseUrl);
@@ -1064,6 +1109,22 @@ const transcriptRowStatuses = new Set([
 const transcriptPartTypes = new Set(["markdown", "text", "code", "image", "file_reference"]);
 const activityItemKinds = new Set(["tool", "command", "task", "warning", "runtime"]);
 const activityItemStatuses = new Set(["pending", "running", "completed", "failed", "cancelled"]);
+const requestTypes = new Set([
+  "permission",
+  "question",
+  "tool_call",
+  "tool_confirmation",
+  "custom_input",
+  "other",
+]);
+const requestStatuses = new Set([
+  "pending",
+  "approved",
+  "denied",
+  "answered",
+  "expired",
+  "cancelled",
+]);
 const activitySearchModes = new Set(["code", "web", "files", "unknown"]);
 const activityDetailTypes = new Set([
   "shell",
@@ -1344,6 +1405,15 @@ function validateActivityWindowOptions(options: ActivityWindowOptions | undefine
     throw new VeladClientError(
       "invalid_activity_window_options",
       `anchorItemId is required when direction=${options.direction}`,
+    );
+  }
+}
+
+function validatePendingRequestsOptions(options: PendingRequestsOptions | undefined) {
+  if (options?.status !== undefined && !requestStatuses.has(options.status)) {
+    throw new VeladClientError(
+      "invalid_pending_requests_options",
+      "PendingRequestsView status must be pending, approved, denied, answered, expired, or cancelled",
     );
   }
 }
@@ -1781,6 +1851,10 @@ async function readActivityViewResponse(response: Response): Promise<ActivityWir
   return parseActivityWireView(await readJsonResponse<unknown>(response));
 }
 
+async function readPendingRequestsViewResponse(response: Response): Promise<PendingRequestsWireView> {
+  return parsePendingRequestsWireView(await readJsonResponse<unknown>(response));
+}
+
 export function parseActivityWireView(data: unknown): ActivityWireView {
   if (!isRecord(data)) {
     throw invalidActivityView("ActivityShelfView must be an object");
@@ -1793,6 +1867,79 @@ export function parseActivityWireView(data: unknown): ActivityWireView {
     ),
     window: parseActivityWindow(data.window, invalidActivityView),
     cursor: requiredViewEventCursor(data, "cursor", "ActivityShelfView", invalidActivityView),
+  };
+}
+
+export function parsePendingRequestsWireView(data: unknown): PendingRequestsWireView {
+  if (!isRecord(data)) {
+    throw invalidPendingRequestsView("PendingRequestsView must be an object");
+  }
+  const requests = requiredViewArray(
+    data,
+    "requests",
+    "PendingRequestsView",
+    invalidPendingRequestsView,
+  );
+  return {
+    requests: requests.map((request, index) =>
+      parseAgentRequestWire(request, `PendingRequestsView.requests[${index}]`),
+    ),
+    cursor: requiredCursorWindow(
+      data,
+      "cursor",
+      "PendingRequestsView",
+      invalidPendingRequestsView,
+    ),
+  };
+}
+
+function parseAgentRequestWire(data: unknown, owner: string): AgentRequestWire {
+  if (!isRecord(data)) {
+    throw invalidPendingRequestsView(`${owner} must be an object`);
+  }
+  const type = requiredViewString(data, "type", owner, invalidPendingRequestsView);
+  if (!requestTypes.has(type)) {
+    throw invalidPendingRequestsView(`${owner}.type must be a known request type`);
+  }
+  const status = requiredViewString(data, "status", owner, invalidPendingRequestsView);
+  if (!requestStatuses.has(status)) {
+    throw invalidPendingRequestsView(`${owner}.status must be a known request status`);
+  }
+  return {
+    id: requiredViewString(data, "id", owner, invalidPendingRequestsView),
+    session_id: requiredViewString(data, "session_id", owner, invalidPendingRequestsView),
+    type,
+    status: status as RequestStatusWire,
+    ...(data.title !== undefined
+      ? { title: optionalViewString(data, "title", owner, invalidPendingRequestsView) }
+      : {}),
+    ...(data.description !== undefined
+      ? {
+          description: optionalViewString(
+            data,
+            "description",
+            owner,
+            invalidPendingRequestsView,
+          ),
+        }
+      : {}),
+    ...(data.payload !== undefined
+      ? { payload: optionalViewObject(data, "payload", owner, invalidPendingRequestsView) }
+      : {}),
+    ...(data.backend_ref !== undefined
+      ? {
+          backend_ref: optionalViewObject(
+            data,
+            "backend_ref",
+            owner,
+            invalidPendingRequestsView,
+          ),
+        }
+      : {}),
+    created_at: requiredViewString(data, "created_at", owner, invalidPendingRequestsView),
+    ...(data.resolved_at !== undefined
+      ? { resolved_at: optionalViewString(data, "resolved_at", owner, invalidPendingRequestsView) }
+      : {}),
   };
 }
 
@@ -2224,6 +2371,47 @@ function optionalViewObject(
   return value;
 }
 
+function requiredCursorWindow(
+  data: Record<string, unknown>,
+  field: string,
+  owner: string,
+  invalid: ViewContractErrorFactory,
+): CursorWindow {
+  const value = data[field];
+  if (!isRecord(value)) {
+    throw invalid(`${owner} requires ${field}`);
+  }
+  const cursorOwner = `${owner}.${field}`;
+  return {
+    ...(value.event_id !== undefined
+      ? { event_id: optionalViewString(value, "event_id", cursorOwner, invalid) }
+      : {}),
+    ...(value.epoch !== undefined
+      ? { epoch: optionalViewInteger(value, "epoch", cursorOwner, invalid) }
+      : {}),
+    ...(value.seq !== undefined
+      ? { seq: optionalViewInteger(value, "seq", cursorOwner, invalid) }
+      : {}),
+    ...(value.latest_event_id !== undefined
+      ? {
+          latest_event_id: optionalViewString(value, "latest_event_id", cursorOwner, invalid),
+        }
+      : {}),
+    ...(value.next_event_id !== undefined
+      ? { next_event_id: optionalViewString(value, "next_event_id", cursorOwner, invalid) }
+      : {}),
+    ...(value.has_more !== undefined
+      ? { has_more: optionalViewBoolean(value, "has_more", cursorOwner, invalid) }
+      : {}),
+    ...(value.has_newer !== undefined
+      ? { has_newer: optionalViewBoolean(value, "has_newer", cursorOwner, invalid) }
+      : {}),
+    ...(value.has_older !== undefined
+      ? { has_older: optionalViewBoolean(value, "has_older", cursorOwner, invalid) }
+      : {}),
+  };
+}
+
 function requiredViewInteger(
   data: Record<string, unknown>,
   field: string,
@@ -2477,6 +2665,10 @@ function invalidTranscriptView(message: string) {
 
 function invalidActivityView(message: string) {
   return new VeladClientError("invalid_activity_view", message);
+}
+
+function invalidPendingRequestsView(message: string) {
+  return new VeladClientError("invalid_pending_requests_view", message);
 }
 
 export class VeladClientError extends Error {

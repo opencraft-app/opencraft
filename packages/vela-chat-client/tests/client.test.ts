@@ -145,6 +145,19 @@ test("builds activity direction anchor URLs", () => {
   );
 });
 
+test("builds pending requests view URLs with status filters", () => {
+  const client = createVeladClient({ baseUrl: "http://127.0.0.1:3857/api/v1/" });
+
+  assert.equal(
+    client.requestsUrl("sess_123").toString(),
+    "http://127.0.0.1:3857/api/v1/sessions/sess_123/views/requests",
+  );
+  assert.equal(
+    client.requestsUrl("sess_123", { status: "pending" }).toString(),
+    "http://127.0.0.1:3857/api/v1/sessions/sess_123/views/requests?status=pending",
+  );
+});
+
 test("rejects invalid activity direction anchor options before fetch", async () => {
   const client = createVeladClient({ baseUrl: "http://127.0.0.1:3857/api/v1/" });
 
@@ -160,6 +173,23 @@ test("rejects invalid activity direction anchor options before fetch", async () 
     () => client.getActivity("sess_123", { anchorItemId: "act_1" }),
     /anchorItemId requires direction/,
   );
+});
+
+test("rejects invalid pending request status filters before fetch", async () => {
+  const requests: Array<{ url: string; init?: RequestInit }> = [];
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async (url, init) => {
+      requests.push({ url: String(url), init });
+      return new Response("{}", { status: 200 });
+    },
+  });
+
+  await assert.rejects(
+    () => client.getRequests("sess_123", { status: "blocked" as never }),
+    /status/,
+  );
+  assert.equal(requests.length, 0);
 });
 
 test("rejects invalid view window limits before fetch", async () => {
@@ -1421,6 +1451,78 @@ test("validates optional activity item event range at the client wire boundary",
       err instanceof VeladClientError &&
       err.code === "invalid_activity_view" &&
       /event_range\.from_event_id/.test(err.message),
+  );
+});
+
+test("validates pending requests view at the client wire boundary", async () => {
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async () =>
+      new Response(
+        JSON.stringify({
+          requests: [
+            {
+              id: "req_1",
+              session_id: "sess_123",
+              type: "permission",
+              status: "pending",
+              title: "Allow command?",
+              description: "The agent wants to run ls",
+              payload: { command: "ls" },
+              backend_ref: { event_id: "backend_evt_1" },
+              created_at: "2026-06-19T00:00:00Z",
+            },
+          ],
+          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+  });
+
+  assert.deepEqual(await client.getRequests("sess_123", { status: "pending" }), {
+    requests: [
+      {
+        id: "req_1",
+        session_id: "sess_123",
+        type: "permission",
+        status: "pending",
+        title: "Allow command?",
+        description: "The agent wants to run ls",
+        payload: { command: "ls" },
+        backend_ref: { event_id: "backend_evt_1" },
+        created_at: "2026-06-19T00:00:00Z",
+      },
+    ],
+    cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
+  });
+});
+
+test("validates pending request required fields at the client wire boundary", async () => {
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async () =>
+      new Response(
+        JSON.stringify({
+          requests: [
+            {
+              id: "req_bad",
+              session_id: "sess_123",
+              type: "permission",
+              created_at: "2026-06-19T00:00:00Z",
+            },
+          ],
+          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+  });
+
+  await assert.rejects(
+    () => client.getRequests("sess_123"),
+    (err) =>
+      err instanceof VeladClientError &&
+      err.code === "invalid_pending_requests_view" &&
+      /status/.test(err.message),
   );
 });
 
