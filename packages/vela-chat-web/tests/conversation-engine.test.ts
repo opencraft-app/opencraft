@@ -592,6 +592,41 @@ test("web adapter reuses unchanged turns across fresh render model snapshots", (
   assert.match(second.turns[1]?.fingerprint ?? "", /rev:2/);
 });
 
+test("web adapter reuses stable turns across current long-history snapshots", () => {
+  const snapshot: ChatRenderModel = {
+    session_id: "sess_long_adapter_cache",
+    host: { kind: "desktop_web" },
+    rows: Array.from({ length: 2_500 }, (_, index) => ({
+      kind: "user_message",
+      id: `u${index + 1}`,
+      key: `user:u${index + 1}`,
+      text: `message ${index + 1}`,
+      copy_text: `message ${index + 1}`,
+      collapsed: false,
+      parts: [
+        {
+          id: `u${index + 1}:part:0`,
+          type: "text",
+          text: `message ${index + 1}`,
+        },
+      ],
+      createdAt: "2026-06-18T00:00:00Z",
+      debug: { projection: "transcript", source_event_ids: [`evt_${index + 1}`] },
+    })),
+    composer: { placeholder: "要求后续变更", can_send: true },
+  };
+
+  const first = toWebChatModel(snapshot);
+  const second = toWebChatModel({
+    ...snapshot,
+    rows: snapshot.rows.map((row) => ({ ...row })),
+  });
+
+  assert.equal(second.turns.length, 2_500);
+  assert.equal(second.turns[2_000], first.turns[2_000]);
+  assert.equal(second.turns[2_499], first.turns[2_499]);
+});
+
 test("web adapter invalidates agent work cache when display intent changes", () => {
   const firstSnapshot: ChatRenderModel = {
     session_id: "sess_work_display",

@@ -66,7 +66,7 @@ export type WebBlock =
       createdAt: string;
     };
 
-const MAX_CACHED_WEB_TURNS = 2_000;
+const MAX_CACHED_WEB_TURNS = 5_000;
 const webTurnCache = new Map<string, WebTurn>();
 
 export function toWebChatModel(model: ChatRenderModel): WebChatModel {
