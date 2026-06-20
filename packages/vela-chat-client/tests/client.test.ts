@@ -559,11 +559,15 @@ test("keeps OpenAPI session backend and status enums narrow in the client wire m
     source.match(/export interface CreateSessionInput \{[\s\S]*?\n\}/)?.[0] ?? "";
   const runtimeInfoInterface =
     source.match(/export interface SessionRuntimeInfoWire \{[\s\S]*?\n\}/)?.[0] ?? "";
+  const veladClientInterface =
+    source.match(/export interface VeladClient \{[\s\S]*?\n\}/)?.[0] ?? "";
 
   assert.match(source, /export type BackendKindWire\s*=/);
   assert.match(source, /export type SessionStatusWire\s*=/);
   assert.match(sessionInterface, /backend:\s*BackendKindWire/);
   assert.match(createSessionInputInterface, /backend:\s*BackendKindWire/);
+  assert.match(veladClientInterface, /getBackend:\s*\(backend:\s*BackendKindWire\)/);
+  assert.match(veladClientInterface, /probeBackend:\s*\(backend:\s*BackendKindWire\)/);
   assert.match(sessionInterface, /status:\s*SessionStatusWire/);
   assert.match(runtimeInfoInterface, /provider:\s*BackendKindWire/);
   assert.match(source, /backend:\s*backend as BackendKindWire/);
@@ -572,6 +576,8 @@ test("keeps OpenAPI session backend and status enums narrow in the client wire m
   assert.doesNotMatch(sessionInterface, /backend:\s*"pi"\s*\|\s*string/);
   assert.doesNotMatch(createSessionInputInterface, /backend\?:/);
   assert.doesNotMatch(createSessionInputInterface, /backend:[\s\S]*\|\s*string/);
+  assert.doesNotMatch(veladClientInterface, /getBackend:\s*\(backend:\s*string\)/);
+  assert.doesNotMatch(veladClientInterface, /probeBackend:\s*\(backend:\s*string\)/);
   assert.doesNotMatch(sessionInterface, /status:\s*string/);
   assert.doesNotMatch(runtimeInfoInterface, /provider:\s*string/);
 });
@@ -2458,7 +2464,7 @@ test("fetches one backend detail and validates backend path kind before fetch", 
   assert.equal(requests[0]?.url, "http://127.0.0.1:3857/api/v1/backends/pi");
 
   await assert.rejects(
-    () => client.getBackend("unknown_backend"),
+    () => client.getBackend("unknown_backend" as unknown as Parameters<typeof client.getBackend>[0]),
     (err) =>
       err instanceof VeladClientError &&
       err.code === "invalid_backend_kind" &&
@@ -2491,7 +2497,7 @@ test("probes backend health and validates probe response before callers see it",
   assert.equal(requests[0]?.init?.method, "POST");
 
   await assert.rejects(
-    () => client.probeBackend("unknown_backend"),
+    () => client.probeBackend("unknown_backend" as unknown as Parameters<typeof client.probeBackend>[0]),
     (err) =>
       err instanceof VeladClientError &&
       err.code === "invalid_backend_kind" &&

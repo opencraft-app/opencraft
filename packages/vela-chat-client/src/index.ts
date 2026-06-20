@@ -468,8 +468,8 @@ export interface VeladClient {
   createSession: (input: CreateSessionInput) => Promise<CreateSessionWireResponse>;
   getSession: (sessionId: string) => Promise<SessionWireResponse>;
   getBackends: () => Promise<BackendsWireResponse>;
-  getBackend: (backend: string) => Promise<BackendWireResponse>;
-  probeBackend: (backend: string) => Promise<BackendProbeResultWire>;
+  getBackend: (backend: BackendKindWire) => Promise<BackendWireResponse>;
+  probeBackend: (backend: BackendKindWire) => Promise<BackendProbeResultWire>;
   updateAgentConfig: (input: {
     sessionId: string;
     patch: AgentConfigPatchWire;
