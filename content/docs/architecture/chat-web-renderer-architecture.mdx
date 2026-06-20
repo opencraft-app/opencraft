@@ -204,6 +204,10 @@ contract and Paseo's agent-stream shape. Do not turn these into heuristic fixes:
   `[]` so the example ChatUI can render controls without nullish branching. This
   is a client-normalized response shape, not a raw wire mirror; revisit the
   naming if generated validators/types replace the handwritten client boundary.
+- `CursorWindow.next_event_id` still needs a sharper OpenAPI description before
+  changing JS freshness logic. The current client treats it as an optional cursor
+  alias for duplicate suppression, but the contract should explicitly state
+  whether it is an already-consumed event waterline or only a forward-page token.
 - The remaining deliberate looseness is the SSE parser: it still accepts
   canonical `VelaEvent`-like messages and `sync.reset` messages through one
   tolerant stream reader. Tighten that only after real Codex / ACP / Pi stream

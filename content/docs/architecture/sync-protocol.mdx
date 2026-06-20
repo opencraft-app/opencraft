@@ -58,10 +58,14 @@ Client MUST 能局部刷新受影响 projection，而不是每次重载整个 wo
 ```ts
 export type CursorWindow = {
   epoch: number;
-  fromSeq?: number;
-  toSeq?: number;
-  nextEventId?: string;
-  hasOlder: boolean;
-  hasNewer: boolean;
+  from_seq?: number;
+  to_seq?: number;
+  next_event_id?: string;
+  has_older: boolean;
+  has_newer: boolean;
 };
 ```
+
+This example uses OpenAPI wire names. Client/runtime-local types may map these
+to idiomatic names internally, but wire compatibility is determined by
+`public/openapi/velachat.v1.yaml`.
