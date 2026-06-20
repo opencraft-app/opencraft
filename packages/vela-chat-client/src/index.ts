@@ -1776,6 +1776,9 @@ function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDeta
       ...(data.url !== undefined
         ? { url: optionalViewString(data, "url", owner, invalidActivityView) }
         : {}),
+      ...(data.prompt !== undefined
+        ? { prompt: optionalViewString(data, "prompt", owner, invalidActivityView) }
+        : {}),
       ...(data.result !== undefined
         ? { result: optionalViewString(data, "result", owner, invalidActivityView) }
         : {}),
