@@ -116,7 +116,7 @@ if ! command -v hermes >/dev/null 2>&1; then
 fi
 
 echo "[import] running hermes import"
-hermes import --force "$archive"
+printf 'y\n' | hermes import --force "$archive"
 printf '` + hermesImportResultMarker + ` archive_bytes=%s archive_path=%s\n' "$bytes" "$archive"
 `)
 }
