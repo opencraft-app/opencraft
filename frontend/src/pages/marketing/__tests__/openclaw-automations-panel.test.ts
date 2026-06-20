@@ -321,6 +321,11 @@ describe("formatTestSendError", () => {
     expect(formatTestSendError(new Error("Unknown platform: wechat"), "发送失败，请检查通道配置或稍后重试"))
       .toBe("发送失败，请检查通道配置或稍后重试：未知通知通道：wechat");
   });
+
+  it("hides low-level missing-command details from users", () => {
+    expect(formatTestSendError(new Error("hermes: command not found"), "发送失败，请检查通道配置或稍后重试"))
+      .toBe("发送失败，请检查通道配置或稍后重试");
+  });
 });
 
 describe("cron date parsing and expiration filtering", () => {

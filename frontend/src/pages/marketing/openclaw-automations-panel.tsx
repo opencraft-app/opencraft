@@ -3528,14 +3528,15 @@ export function formatTestSendError(error: unknown, fallback: string): string {
     .slice(-3)
     .join("；");
   if (!message) return fallback;
-  return `${fallback}：${formatKnownTestSendError(message)}`;
+  const formatted = formatKnownTestSendError(message);
+  return formatted ? `${fallback}：${formatted}` : fallback;
 }
 
 function formatKnownTestSendError(message: string): string {
   if (/command\s+timed\s+out/i.test(message)) return "命令执行超时";
   const unknownPlatform = message.match(/unknown platform:?\s*(.+)$/i);
   if (unknownPlatform?.[1]) return `未知通知通道：${unknownPlatform[1].trim()}`;
-  if (/command\s+not\s+found|not found/i.test(message)) return "实例内未找到 hermes send 命令";
+  if (/command\s+not\s+found|not found/i.test(message)) return "";
   if (/permission denied/i.test(message)) return "实例内命令执行权限不足";
   return message;
 }
