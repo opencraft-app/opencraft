@@ -984,6 +984,15 @@ const agentConfigPatchKeys = new Set([
 const permissionModes = new Set(["read_only", "auto", "auto_review", "full_access"]);
 const viewWindowDirections = new Set(["tail", "before", "after", "around"]);
 const backendStatuses = new Set(["available", "unavailable", "degraded"]);
+const sessionStatuses = new Set([
+  "starting",
+  "idle",
+  "running",
+  "waiting_for_input",
+  "canceling",
+  "failed",
+  "closed",
+]);
 const transcriptRowKinds = new Set([
   "user_message",
   "assistant_message",
@@ -1943,10 +1952,15 @@ function parseSessionWire(
   if (typeof backend !== "string" || !backendKinds.has(backend)) {
     throw invalid(`${owner}.backend must be a known BackendKind`);
   }
+  const status = data.status;
+  if (typeof status !== "string" || !sessionStatuses.has(status)) {
+    throw invalid(`${owner}.status must be a known SessionStatus`);
+  }
   return {
     ...(data as unknown as SessionWire),
     id,
     backend,
+    status,
   };
 }
 
