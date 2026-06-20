@@ -1001,6 +1001,7 @@ const transcriptRowStatuses = new Set([
 const transcriptPartTypes = new Set(["markdown", "text", "code", "image", "file_reference"]);
 const activityItemKinds = new Set(["tool", "command", "task", "warning", "runtime"]);
 const activityItemStatuses = new Set(["pending", "running", "completed", "failed", "cancelled"]);
+const activitySearchModes = new Set(["code", "web", "files", "unknown"]);
 const activityDetailTypes = new Set([
   "shell",
   "read",
@@ -1706,6 +1707,9 @@ function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDeta
       ...(data.query !== undefined
         ? { query: optionalViewString(data, "query", owner, invalidActivityView) }
         : {}),
+      ...(data.mode !== undefined
+        ? { mode: optionalViewEnum(data, "mode", owner, invalidActivityView, activitySearchModes) }
+        : {}),
       ...(data.num_matches !== undefined
         ? { num_matches: optionalViewInteger(data, "num_matches", owner, invalidActivityView) }
         : {}),
@@ -1912,6 +1916,21 @@ function optionalViewString(
   if (value === undefined) return undefined;
   if (typeof value !== "string") {
     throw invalid(`${owner}.${field} must be a string`);
+  }
+  return value;
+}
+
+function optionalViewEnum(
+  data: Record<string, unknown>,
+  field: string,
+  owner: string,
+  invalid: ViewContractErrorFactory,
+  values: Set<string>,
+) {
+  const value = data[field];
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !values.has(value)) {
+    throw invalid(`${owner}.${field} must be a known value`);
   }
   return value;
 }
