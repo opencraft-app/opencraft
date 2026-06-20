@@ -7,6 +7,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { LoginModal, InviteCodeModal } from "@/components/site/login-modal";
+import { ProductFooter } from "@/components/site/product-chrome";
 import { useSession } from "@/contexts/session-context";
 import { useOpenClaw } from "@/contexts/openclaw-context";
 import { oauthErrorMessage } from "@/lib/oauth";
@@ -18,7 +19,6 @@ import BrandIconsSection from "@/imports/Frame2147230025/sections/BrandIconsSect
 import FeatureSection, { CardsSection } from "@/imports/Frame2147230025/sections/FeatureSection";
 import ProcessSection from "@/imports/Frame2147230025/sections/ProcessSection";
 import CtaSection from "@/imports/Frame2147230025/sections/CtaSection";
-import FooterSection from "@/imports/Frame2147230025/sections/FooterSection";
 
 // 落地页全局样式隔离层：始终生效，用「无层 + !important」锁定首页字体/链接等
 // 关键样式，免疫 tea 多包注入的无层全局 reset（详见 CSS 注释）。
@@ -84,7 +84,7 @@ export const LandingPage = () => {
       <CardsSection />
       <ProcessSection />
       <CtaSection onCreateClick={handleCreateClick} />
-      <FooterSection />
+      <ProductFooter />
 
       <LoginModal
         open={showLogin}
