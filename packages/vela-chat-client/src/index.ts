@@ -2421,8 +2421,10 @@ function parseActivityWireItem(data: unknown, owner: string): ActivityWireItem {
   if (!activityItemStatuses.has(status)) {
     throw invalidActivityView(`${owner}.status must be pending, running, completed, failed, or cancelled`);
   }
+  const { detail: _wireDetail, ...baseItem } = data;
+  void _wireDetail;
   return {
-    ...(data as unknown as ActivityWireItem),
+    ...(baseItem as unknown as ActivityWireItem),
     id: requiredViewString(data, "id", owner, invalidActivityView),
     kind: kind as ActivityItemKindWire,
     status: status as ActivityItemStatusWire,
@@ -2430,7 +2432,7 @@ function parseActivityWireItem(data: unknown, owner: string): ActivityWireItem {
     ...(data.summary !== undefined
       ? { summary: optionalViewString(data, "summary", owner, invalidActivityView) }
       : {}),
-    ...(data.detail !== undefined
+    ...(data.detail !== undefined && data.detail !== null
       ? { detail: parseActivityWireDetail(data.detail, `${owner}.detail`) }
       : {}),
     created_at: requiredViewString(data, "created_at", owner, invalidActivityView),

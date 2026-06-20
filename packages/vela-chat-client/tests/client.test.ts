@@ -1004,6 +1004,36 @@ test("validates optional activity item detail at the client wire boundary", asyn
   );
 });
 
+test("treats null optional activity item detail as absent", async () => {
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async () =>
+      new Response(
+        JSON.stringify({
+          session_id: "sess_123",
+          items: [
+            {
+              id: "act_runtime",
+              kind: "runtime",
+              status: "completed",
+              title: "turn.completed",
+              detail: null,
+              created_at: "2026-06-19T00:00:00Z",
+            },
+          ],
+          window: { has_older: false, has_newer: false },
+          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+  });
+
+  const activity = await client.getActivity("sess_123");
+
+  assert.equal(activity.items[0]?.id, "act_runtime");
+  assert.equal(activity.items[0]?.detail, undefined);
+});
+
 test("validates shell activity detail command at the client wire boundary", async () => {
   const client = createVeladClient({
     baseUrl: "http://127.0.0.1:3857/api/v1/",
