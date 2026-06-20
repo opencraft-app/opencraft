@@ -555,18 +555,22 @@ test("keeps OpenAPI session backend and status enums narrow in the client wire m
     fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
   );
   const sessionInterface = source.match(/export interface SessionWire \{[\s\S]*?\n\}/)?.[0] ?? "";
+  const createSessionInputInterface =
+    source.match(/export interface CreateSessionInput \{[\s\S]*?\n\}/)?.[0] ?? "";
   const runtimeInfoInterface =
     source.match(/export interface SessionRuntimeInfoWire \{[\s\S]*?\n\}/)?.[0] ?? "";
 
   assert.match(source, /export type BackendKindWire\s*=/);
   assert.match(source, /export type SessionStatusWire\s*=/);
   assert.match(sessionInterface, /backend:\s*BackendKindWire/);
+  assert.match(createSessionInputInterface, /backend\?:\s*BackendKindWire/);
   assert.match(sessionInterface, /status:\s*SessionStatusWire/);
   assert.match(runtimeInfoInterface, /provider:\s*BackendKindWire/);
   assert.match(source, /backend:\s*backend as BackendKindWire/);
   assert.match(source, /status:\s*status as SessionStatusWire/);
   assert.match(source, /provider:\s*provider as BackendKindWire/);
   assert.doesNotMatch(sessionInterface, /backend:\s*"pi"\s*\|\s*string/);
+  assert.doesNotMatch(createSessionInputInterface, /backend\?:[\s\S]*\|\s*string/);
   assert.doesNotMatch(sessionInterface, /status:\s*string/);
   assert.doesNotMatch(runtimeInfoInterface, /provider:\s*string/);
 });

@@ -270,7 +270,7 @@ export type SessionStatusWire =
 export interface CreateSessionInput {
   workingDirectory: string;
   idempotencyKey?: string;
-  backend?: "pi" | "codex" | "acp" | string;
+  backend?: BackendKindWire;
   title?: string;
   model?: string;
   agentConfig?: AgentConfigWire;
