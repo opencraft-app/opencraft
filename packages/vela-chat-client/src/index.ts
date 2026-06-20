@@ -1699,6 +1699,15 @@ function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDeta
         : {}),
     };
   }
+  if (type === "search") {
+    return {
+      ...(data as ActivityWireDetail),
+      type,
+      ...(data.query !== undefined
+        ? { query: optionalViewString(data, "query", owner, invalidActivityView) }
+        : {}),
+    };
+  }
   return data as ActivityWireDetail;
 }
 
