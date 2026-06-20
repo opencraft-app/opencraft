@@ -1,4 +1,4 @@
-import type { RefObject } from "react";
+import { useCallback, type RefObject } from "react";
 import type {
   ConversationRuntimeHostKind,
   ConversationRuntimeSegments,
@@ -22,6 +22,12 @@ export function VelaTurnList({
   segments: ConversationRuntimeSegments;
 }) {
   const strategy = resolveConversationStrategy({ hostKind, segments });
+  const renderConversationItem = useCallback(
+    (item: ConversationStreamItem) => (
+      <VelaTurnGroup item={item} key={item.key} />
+    ),
+    [],
+  );
 
   return strategy.render({
     contentRef,
@@ -29,8 +35,6 @@ export function VelaTurnList({
     segments,
     scrollRef,
     empty: <div className={styles.empty}>连接本地 velad 后，这里会显示 transcript。</div>,
-    renderItem: (item: ConversationStreamItem) => (
-      <VelaTurnGroup item={item} key={item.key} />
-    ),
+    renderItem: renderConversationItem,
   });
 }

@@ -183,6 +183,21 @@ test("turn list delegates list strategy selection to the conversation strategy r
   assert.doesNotMatch(source, /webPartialVirtualizedConversationStrategy/);
 });
 
+test("turn list passes a stable item renderer into conversation strategies", () => {
+  const source = readFileSync(
+    join(root, "packages/vela-chat-web/src/components/conversation/VelaTurnList.tsx"),
+    "utf8",
+  );
+
+  assert.match(source, /useCallback/);
+  assert.match(source, /const renderConversationItem = useCallback/);
+  assert.match(source, /renderItem:\s*renderConversationItem/);
+  assert.doesNotMatch(
+    source,
+    /renderItem:\s*\(item:\s*ConversationStreamItem\)\s*=>\s*\(/,
+  );
+});
+
 test("turn group memoizes stable stream items during high-frequency streaming", () => {
   const source = readFileSync(
     join(root, "packages/vela-chat-web/src/components/conversation/VelaTurnGroup.tsx"),
