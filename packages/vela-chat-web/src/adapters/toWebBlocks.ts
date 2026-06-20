@@ -148,7 +148,7 @@ function rowToBlock(row: ChatRenderRow): WebBlock {
       copyText,
       createdAt: row.createdAt,
       streaming: row.streaming,
-      showCopyAction: Boolean(copyText),
+      showCopyAction: Boolean(copyText) && !row.streaming,
       settledLabel: row.streaming ? "处理中" : row.settledLabel,
     };
   }

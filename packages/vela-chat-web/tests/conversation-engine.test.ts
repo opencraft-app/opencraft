@@ -362,6 +362,7 @@ test("streaming assistant rows stay live and expose a changing fingerprint", () 
   assert.equal(webModel.turns[0]?.blocks[0]?.kind, "assistant_markdown");
   if (webModel.turns[0]?.blocks[0]?.kind === "assistant_markdown") {
     assert.equal(webModel.turns[0].blocks[0].streaming, true);
+    assert.equal(webModel.turns[0].blocks[0].showCopyAction, false);
   }
 });
 
@@ -400,6 +401,12 @@ test("streaming assistant markdown split items keep only the tail block live", (
       item.block.kind === "assistant_markdown" ? item.block.streaming : null,
     ),
     [false, false, true],
+  );
+  assert.deepEqual(
+    items.map((item) =>
+      item.block.kind === "assistant_markdown" ? item.block.showCopyAction : null,
+    ),
+    [false, false, false],
   );
 });
 
