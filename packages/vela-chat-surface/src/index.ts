@@ -31,7 +31,9 @@ export interface ChatTranscriptWireRow {
   created_at: string;
   updated_at: string;
   revision: number;
+  turn_id?: string;
   text?: string;
+  activity_id?: string;
   label?: string;
   parts?: ChatTranscriptPart[];
   status: ChatTranscriptRowStatusWire;
@@ -193,6 +195,7 @@ export interface AgentRequestWire {
   title?: string;
   description?: string;
   payload?: Record<string, unknown>;
+  backend_ref?: Record<string, unknown>;
   created_at: string;
   resolved_at?: string;
 }

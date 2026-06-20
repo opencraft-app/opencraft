@@ -187,6 +187,8 @@ test("does not invent OpenAPI-required transcript row fields in the surface laye
   assert.match(rowInterface, /revision:\s*number/);
   assert.match(rowInterface, /status:\s*ChatTranscriptRowStatusWire/);
   assert.match(rowInterface, /source_event_ids:\s*string\[\]/);
+  assert.match(rowInterface, /turn_id\?:\s*string/);
+  assert.match(rowInterface, /activity_id\?:\s*string/);
   assert.doesNotMatch(rowInterface, /updated_at\?:\s*string/);
   assert.doesNotMatch(rowInterface, /revision\?:\s*number/);
   assert.doesNotMatch(rowInterface, /status\?:\s*string/);
@@ -275,6 +277,7 @@ test("keeps OpenAPI pending request enums narrow in surface wire types", async (
   assert.match(source, /export type RequestStatusWire\s*=/);
   assert.match(wireInterface, /type:\s*AgentRequestTypeWire/);
   assert.match(wireInterface, /status:\s*RequestStatusWire/);
+  assert.match(wireInterface, /backend_ref\?:\s*Record<string,\s*unknown>/);
   assert.match(surfaceInterface, /type:\s*AgentRequestTypeWire/);
   assert.match(surfaceInterface, /status:\s*RequestStatusWire/);
   assert.doesNotMatch(wireInterface, /type:\s*string/);
