@@ -177,6 +177,7 @@ Paseo 的 app-side agent stream 已经验证了 `head/tail + bottom anchor + par
 - Paseo Web 在 mobile breakpoint 下不会切出 partial virtualized history；它的真正移动端由 native inverted list 承担。Vela 的 `mobile_web` 仍是 DOM/WebView renderer，所以当前继续使用 Web partial virtualization。不要在没有移动 WebView 实测前直接照搬 Paseo 的 mobile breakpoint 分支。
 - Vela 只把 assistant markdown 按空行和 fenced-code 边界拆成 item。一个超长代码块或超长单段 markdown 仍然是单个 item；本轮不在 renderer 内部再切，因为那会影响 copy、markdown 语义和 Streamdown streaming 行为。
 - Paseo 的 render model 接收显式 `tail` / `head`，而 Vela 当前从 OpenAPI read-model rows 上的 `live` 状态推导 `history` / `liveHead`。这适合 Day 1 的 `ChatTranscriptView + ActivityShelfView` 契约，但不要把 provider 专属事件直接塞进 Web runtime 来补 head/tail；如果真实 Codex / ACP / Pi cassette 证明会出现“前序 activity 仍 running，但后续 assistant 已 terminal”的交错窗口，应先提升为 provider-agnostic conversation-head 模型或 read-model 契约，再改 JS 分段算法。
+- Paseo 的 pending permission 是 agent-stream 的 `liveAuxiliary`，和 running / completed turn footer 一起参与列表底部布局。Vela 当前故意不同：pending request 是 OpenAPI `PendingRequestsView`，Web 只在 workbench shell 里渲染 floating `RequestDock`，不把 request 伪装成 transcript row。这样能保持 read-model 分层清晰，但它不是 Paseo auxiliary lane 的完整等价物：如果后续真实弱网、移动 WebView 或多 request 场景证明 dock 会遮挡 live head / composer / bottom anchor，下一步应该新增明确的 `conversation-runtime/auxiliary` 布局入口，或先升级 OpenAPI conversation view，而不是让 `RequestDock` 读取 timeline/raw event。
 - 当前 SSE 仍是 canonical event stream，前端只做 local overlay 与 scoped read-model refresh。更省流的 read-model patch stream 可以后续进入 OpenAPI，但这不是本轮 ChatUI renderer 的 JS 小修范围。
 
 ### 2026-06-20 renderer audit notes
@@ -222,6 +223,12 @@ contract and Paseo's agent-stream shape. Do not turn these into heuristic fixes:
   those selectors for more agent-work states; the next proven need should add a
   pure `conversation-runtime/layout` model with tests modeled after Paseo's
   split-history/live-head cases.
+- `AgentRequest` currently has no OpenAPI action/options list for provider
+  permissions. Web may render generic allow/deny or answer affordances from
+  `PendingRequestsView`, but it must not infer provider-specific action labels
+  from `payload` or `backend_ref`. If Codex / ACP / Pi need richer permission
+  choices, extend the OpenAPI request contract first, then flow it through
+  client -> surface -> render-model -> `RequestDock`.
 
 ### `renderers/`
 
@@ -344,6 +351,7 @@ Do not:
 | 路由进入后没有贴到底、首帧滚动被过早触发 | 先看 `conversation.scroll.bottomAnchorBlockedReason`，再看 `conversation-runtime/scroll/bottomAnchor.ts`、`useConversationScrollController.ts` |
 | 刷新或返回 session 后阅读位置没恢复 | 先看 `conversation.scroll.routeResumeStatus` / `routeResumeScrollTop`，再看 `conversation-runtime/scroll/routeResume.ts`、`useConversationScrollController.ts` |
 | 上拉旧历史、prepend 后视口跳动 | `conversation-runtime/scroll/historyPaging.ts`、`components/conversation/VelaConversation.tsx` |
+| pending permission / request dock 遮挡 live head、composer 或 bottom anchor | 先看 `PendingRequestsView` 是否正确刷新，再看 `components/requests/RequestDock.tsx` 和 `components/workbench/ChatWorkbenchView.tsx`；不要从 transcript/timeline 猜 request |
 | 输入框高度、Enter / Shift+Enter 行为错 | `hooks/useAutoResizeTextarea.ts`、`hooks/useComposerKeyboard.ts` |
 | 桌面和移动间距不对 | `styles/desktop.module.css`、`styles/mobile.module.css` |
 | 页面装配、空状态、错误条位置错 | `components/workbench/ChatWorkbenchView.tsx` |
