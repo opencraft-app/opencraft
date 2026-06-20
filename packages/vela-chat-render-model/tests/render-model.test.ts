@@ -252,6 +252,46 @@ test("derives user message text from OpenAPI textual parts when row text is abse
   }
 });
 
+test("derives assistant markdown blocks from OpenAPI textual parts when row text is absent", () => {
+  const surface: ChatSurface = {
+    session_id: "sess_assistant_parts",
+    transcript: {
+      rows: [
+        {
+          id: "a_parts",
+          role: "assistant",
+          text: "",
+          parts: [
+            { id: "a_parts:part:0", type: "markdown", text: "第一段" },
+            { id: "a_parts:part:1", type: "markdown", text: "第二段" },
+            {
+              id: "a_parts:part:2",
+              type: "image",
+              data: { mime_type: "image/png", data: "aGVsbG8=", size_bytes: 5 },
+            },
+          ],
+          created_at: "2026-06-18T10:00:00Z",
+          status: "completed",
+          revision: 1,
+          debug: { projection: "transcript", source_event_ids: ["evt_assistant_parts"] },
+        },
+      ],
+    },
+    activity: { items: [] },
+    pending_requests: { items: [] },
+    cursors: {},
+    stream: { connected: false, running: false },
+  };
+
+  const model = buildChatRenderModel(surface, { kind: "desktop_web" });
+  const row = model.rows[0];
+
+  assert.equal(row?.kind, "assistant_message");
+  if (row?.kind === "assistant_message") {
+    assert.deepEqual(row.blocks.map((block) => block.text), ["第一段\n第二段"]);
+  }
+});
+
 test("keeps agent work separate from transcript and derives worked label from message boundaries", () => {
   const surface: ChatSurface = {
     session_id: "sess_work",

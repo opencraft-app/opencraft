@@ -3294,6 +3294,40 @@ test("applies assistant delta live overlays to existing transcript rows immediat
   assert.equal(next.cursor.event_id, "evt_2");
 });
 
+test("appends assistant delta live overlays after existing textual parts", () => {
+  const transcript = {
+    session_id: "sess_1",
+    cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
+    window: { has_older: false, has_newer: false },
+    rows: [
+      {
+        id: "msg_1",
+        kind: "assistant_message" as const,
+        created_at: "2026-06-19T00:00:00Z",
+        updated_at: "2026-06-19T00:00:00Z",
+        revision: 1,
+        text: "",
+        parts: [{ id: "msg_1:part:0", type: "markdown" as const, text: "第一段" }],
+        status: "streaming" as const,
+        source_event_ids: ["evt_1"],
+      },
+    ],
+  };
+
+  const next = applyTranscriptLiveOverlay(transcript, {
+    event_id: "evt_2",
+    epoch: 1,
+    seq: 2,
+    session_id: "sess_1",
+    type: "assistant.message.delta",
+    created_at: "2026-06-19T00:00:01Z",
+    payload: { message_id: "msg_1", delta: "第二段" },
+  });
+
+  assert.equal(next.rows[0]?.text, "第一段第二段");
+  assert.equal(next.rows[0]?.revision, 2);
+});
+
 test("does not append duplicate assistant delta live overlays", () => {
   const transcript = {
     session_id: "sess_1",

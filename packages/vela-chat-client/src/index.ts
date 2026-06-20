@@ -897,7 +897,7 @@ function appendAssistantDelta(
       updated_at: event.created_at ?? row.updated_at,
       revision: row.revision + 1,
       status: "streaming",
-      text: `${row.text ?? ""}${delta}`,
+      text: `${assistantRowText(row)}${delta}`,
       source_event_ids: event.event_id
         ? [...row.source_event_ids, event.event_id]
         : row.source_event_ids,
@@ -908,6 +908,22 @@ function appendAssistantDelta(
   if (changed) return { ...updateTranscriptCursor(transcript, event), rows };
 
   return updateTranscriptCursor(transcript, event);
+}
+
+function assistantRowText(row: TranscriptWireRow): string {
+  return row.text || textFromTranscriptWireParts(row.parts);
+}
+
+function textFromTranscriptWireParts(parts: TranscriptWirePart[] | undefined): string {
+  return (parts ?? [])
+    .filter(isTextualTranscriptWirePart)
+    .map((part) => part.text)
+    .filter((text): text is string => Boolean(text))
+    .join("\n");
+}
+
+function isTextualTranscriptWirePart(part: TranscriptWirePart): boolean {
+  return part.type === "text" || part.type === "markdown" || part.type === "code";
 }
 
 function hasAssistantOverlayTarget(

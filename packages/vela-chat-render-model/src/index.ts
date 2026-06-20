@@ -185,11 +185,12 @@ function renderTranscriptRow(row: ChatSurfaceTranscriptRow): ChatRenderRow {
   }
 
   if (row.role === "assistant") {
+    const text = row.text || textFromTranscriptParts(row.parts);
     return {
       kind: "assistant_message",
       id: row.id,
       key: `assistant:${row.id}`,
-      blocks: splitMarkdownBlocks(row.text).map((text, index) => ({
+      blocks: splitMarkdownBlocks(text).map((text, index) => ({
         id: `${row.id}:block:${index}`,
         text,
       })),
