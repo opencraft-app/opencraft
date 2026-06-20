@@ -176,6 +176,7 @@ Paseo 的 app-side agent stream 已经验证了 `head/tail + bottom anchor + par
 
 - Paseo Web 在 mobile breakpoint 下不会切出 partial virtualized history；它的真正移动端由 native inverted list 承担。Vela 的 `mobile_web` 仍是 DOM/WebView renderer，所以当前继续使用 Web partial virtualization。不要在没有移动 WebView 实测前直接照搬 Paseo 的 mobile breakpoint 分支。
 - Vela 只把 assistant markdown 按空行和 fenced-code 边界拆成 item。一个超长代码块或超长单段 markdown 仍然是单个 item；本轮不在 renderer 内部再切，因为那会影响 copy、markdown 语义和 Streamdown streaming 行为。
+- Paseo 的 render model 接收显式 `tail` / `head`，而 Vela 当前从 OpenAPI read-model rows 上的 `live` 状态推导 `history` / `liveHead`。这适合 Day 1 的 `ChatTranscriptView + ActivityShelfView` 契约，但不要把 provider 专属事件直接塞进 Web runtime 来补 head/tail；如果真实 Codex / ACP / Pi cassette 证明会出现“前序 activity 仍 running，但后续 assistant 已 terminal”的交错窗口，应先提升为 provider-agnostic conversation-head 模型或 read-model 契约，再改 JS 分段算法。
 - 当前 SSE 仍是 canonical event stream，前端只做 local overlay 与 scoped read-model refresh。更省流的 read-model patch stream 可以后续进入 OpenAPI，但这不是本轮 ChatUI renderer 的 JS 小修范围。
 
 ### 2026-06-20 renderer audit notes
