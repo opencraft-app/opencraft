@@ -18,6 +18,7 @@ reqwest.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
+tracing.workspace = true
 vela-core.workspace = true
 
 [dev-dependencies]

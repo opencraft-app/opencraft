@@ -76,6 +76,51 @@ fn codex_app_server_normalizer_absorbs_normal_item_lifecycle_without_warning() {
 }
 
 #[test]
+fn codex_app_server_normalizer_absorbs_control_plane_notifications_without_warning() {
+    let notifications = [
+        (
+            "remoteControl/status/changed",
+            json!({ "serverName": "Mac", "status": "disabled" }),
+        ),
+        (
+            "mcpServer/startupStatus/updated",
+            json!({ "name": "node_repl", "status": "ready", "error": null }),
+        ),
+        (
+            "thread/status/changed",
+            json!({ "threadId": "thr_1", "status": { "type": "active" } }),
+        ),
+        (
+            "account/rateLimits/updated",
+            json!({ "rateLimits": { "limitId": "codex", "planType": "pro" } }),
+        ),
+        (
+            "warning",
+            json!({ "message": "Skill descriptions were shortened to fit the context budget." }),
+        ),
+        (
+            "error",
+            json!({
+                "threadId": "thr_1",
+                "turnId": "turn_1",
+                "error": {
+                    "codexErrorInfo": "contextWindowExceeded",
+                    "message": "Codex ran out of room in the model's context window."
+                }
+            }),
+        ),
+    ];
+
+    for (method, params) in notifications {
+        let outputs = normalize_codex_app_server_notification(method, params);
+        assert!(
+            outputs.is_empty(),
+            "{method} should be logged as provider control-plane diagnostics, not projected as canonical events: {outputs:#?}"
+        );
+    }
+}
+
+#[test]
 fn codex_app_server_normalizer_maps_plan_diff_usage_compaction_and_failed_turn() {
     let outputs = normalize_codex_app_server_notification(
         "turn/plan/updated",

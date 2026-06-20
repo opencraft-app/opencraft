@@ -62,6 +62,7 @@ adapter 的输入。
 | tool lifecycle | backend normalizer | provider tool start/update/end 映射为 `tool.started`、`tool.updated`、`tool.completed` 或 `tool.failed`，并尽量保留稳定 `tool_id` |
 | turn completion | backend normalizer + runtime | provider 明确完成信号映射为 `turn.completed`；provider process/error 信号映射为 `turn.failed` |
 | diagnostics | adapter / runtime | 只有异常、未知、未实现、需要人工关注的 provider 信号才进入 `warning.raised` 或 `error.raised` |
+| provider control-plane telemetry | adapter logger | 例如 Codex remote-control、MCP startup、thread status、rate-limit 更新；记录为 trace/debug，不进入 canonical event log |
 
 这条边界很重要：正常 provider 生命周期事件应该被“吸收”或映射成稳定 canonical event，不能因为我们还没有 UI 呈现需求就降级成 warning。`warning.raised` 表示需要关注的异常信号，不是普通 lifecycle trace。
 
@@ -175,8 +176,9 @@ Canonical runtime event 的 `type` MUST 来自本页的 `VelaEventType`。
 #### Scenario: Backend 输出未知事件
 
 - **WHEN** backend adapter 收到未知 provider event
-- **THEN** daemon 可以把 raw event 存入 diagnostics
-- **AND** 对 UI 暴露时必须映射成 `warning.raised`、`error.raised` 或已知 canonical event
+- **THEN** daemon 可以把 raw event 存入 diagnostics 或 adapter logger
+- **AND** 如果它是控制面 telemetry，普通 UI 不应看到 canonical event
+- **AND** 如果它是未知业务/异常信号，对 UI 暴露时必须映射成 `warning.raised`、`error.raised` 或已知 canonical event
 
 ### Requirement: Transcript 不能消费 activity event 正文
 

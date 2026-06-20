@@ -15,6 +15,7 @@ use vela_store::SqliteEventStore;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     load_local_env_files();
+    init_logging();
 
     let listen_addr = env::var("VELAD_LISTEN_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:3857".to_string())
@@ -51,6 +52,16 @@ async fn main() -> anyhow::Result<()> {
     eprintln!("velad listening on http://{listen_addr}/api/v1");
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+fn init_logging() {
+    use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
+
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn"));
+    let _ = tracing_subscriber::registry()
+        .with(filter)
+        .with(fmt::layer())
+        .try_init();
 }
 
 fn acp_backend_from_env(cwd: String) -> AcpBackendAdapter {

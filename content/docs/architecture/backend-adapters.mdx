@@ -127,9 +127,10 @@ Adapter normalizer 的目标不是完整复刻 provider 的事件词汇，而是
 | tool start/update/end | 映射为 `tool.started`、`tool.updated`、`tool.completed` 或 `tool.failed` |
 | provider turn/agent done | 映射为 `turn.completed` |
 | provider process/error exit | 映射为 `turn.failed` |
-| unknown / malformed / unsupported control request | 映射为 `warning.raised`，并保留 raw 供 diagnostics 使用 |
+| provider control-plane telemetry | 记录到 adapter logger / diagnostics；不写 canonical event |
+| unknown business signal / malformed payload / unsupported control request | 映射为 `warning.raised`，并保留 raw 供 diagnostics 使用 |
 
-正常 lifecycle 被吸收时，不会写入 canonical event log。需要调试 provider 时，应通过 diagnostics/trace 或测试 cassette 观察 raw JSONL，而不是让普通 UI 消费 provider event。
+正常 lifecycle 和控制面 telemetry 被吸收时，不会写入 canonical event log。需要调试 provider 时，应通过 adapter logger、diagnostics/trace 或测试 cassette 观察 raw JSONL，而不是让普通 UI 消费 provider event。
 
 ## Message Identity
 
@@ -208,6 +209,13 @@ Provider 的正常生命周期事件 MUST 被吸收或映射为 canonical event�
 - **WHEN** Pi 输出 `turn_start`
 - **THEN** adapter 不产生 `warning.raised`
 - **AND** runtime 已经拥有自己的 `turn.started`
+
+#### Scenario: Codex app-server 输出控制面状态
+
+- **WHEN** Codex app-server 输出 `remoteControl/status/changed`、`mcpServer/startupStatus/updated`、`thread/status/changed` 或 `account/rateLimits/updated`
+- **THEN** adapter 记录 trace/debug 日志
+- **AND** adapter 不产生 `warning.raised`
+- **AND** 普通 UI read model 不显示这些 provider 控制面状态
 
 ### Requirement: Adapter 只走 streaming path
 

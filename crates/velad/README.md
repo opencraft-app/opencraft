@@ -25,6 +25,7 @@ Environment:
 - `VELAD_ACP_ENV_*`: extra environment variables passed to the ACP process after stripping the prefix. For example `VELAD_ACP_ENV_FOO=bar` becomes `FOO=bar`.
 - `VELAD_PI_COMMAND`: Pi CLI command, default `pi`.
 - `VELAD_PI_SESSION_DIR`, `VELAD_PI_MODEL`, `VELAD_PI_THINKING`, `VELAD_PI_SESSION`, `VELAD_PI_PROVIDER`, `VELAD_PI_API_KEY`, `VELAD_PI_NO_TOOLS`: optional Pi adapter configuration.
+- `RUST_LOG`: adapter/runtime diagnostics filter, default `warn`. For Codex app-server protocol debugging, use `RUST_LOG=vela_backends::codex=trace,velad=debug`.
 - `VELA_CLOUDAGENTS_API_KEY`: when set, velad configures both local defaults:
   - Pi: writes a temporary Pi `models.json` that registers the `cloudagents` OpenAI-compatible provider at `https://tokenhub.tencentmaas.com/v1`, then starts Pi with `--provider cloudagents --model minimax-m2.7` unless `VELAD_PI_PROVIDER` or `VELAD_PI_MODEL` overrides them.
   - ACP: passes OpenAI-compatible environment variables to the ACP process and advertises `minimax-m2.7` unless `VELAD_ACP_MODEL` overrides it.

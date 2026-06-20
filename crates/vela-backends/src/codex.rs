@@ -781,6 +781,16 @@ fn dynamic_tool_content_items(content: Option<&Value>) -> Value {
 }
 
 pub fn normalize_codex_app_server_notification(method: &str, params: Value) -> Vec<BackendOutput> {
+    if is_codex_control_plane_notification(method) {
+        tracing::trace!(
+            target: "vela_backends::codex",
+            method,
+            params = %params,
+            "absorbed Codex app-server control-plane notification"
+        );
+        return Vec::new();
+    }
+
     match method {
         "thread/started"
         | "turn/started"
@@ -928,6 +938,18 @@ pub fn normalize_codex_app_server_notification(method: &str, params: Value) -> V
             json!({ "method": method, "params": params }),
         )],
     }
+}
+
+fn is_codex_control_plane_notification(method: &str) -> bool {
+    matches!(
+        method,
+        "remoteControl/status/changed"
+            | "mcpServer/startupStatus/updated"
+            | "thread/status/changed"
+            | "account/rateLimits/updated"
+            | "warning"
+            | "error"
+    )
 }
 
 fn with_raw(event_type: EventType, payload: Value, method: &str, params: Value) -> BackendOutput {
