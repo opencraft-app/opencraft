@@ -395,10 +395,44 @@ test("renders canonical tool details as agent work instead of generic Tool label
   const model = buildChatRenderModel(surface, { kind: "desktop_web" });
   const workRows = model.rows.filter((row) => row.kind === "agent_work");
 
-  assert.equal(workRows.length, 1);
+  assert.equal(workRows.length, 2);
   assert.equal(workRows[0]?.title, "Searched code");
   assert.equal(workRows[0]?.summary, "import CommandAck · 12 matches");
   assert.equal(workRows[0]?.status, "completed");
+  assert.equal(workRows[1]?.title, "Tool call");
+  assert.equal(workRows[1]?.summary, "");
+  assert.equal(workRows[1]?.status, "completed");
+});
+
+test("keeps low-information projected tool items as compact agent work rows", () => {
+  const surface: ChatSurface = {
+    session_id: "sess_minimal_tool",
+    transcript: { rows: [] },
+    activity: {
+      items: [
+        {
+          id: "tool_minimal",
+          kind: "tool",
+          status: "completed",
+          title: "Tool",
+          summary: "Tool",
+          created_at: "2026-06-18T10:00:04Z",
+          debug: { projection: "activity", source_event_ids: ["evt_minimal"] },
+        },
+      ],
+    },
+    pending_requests: { items: [] },
+    cursors: {},
+    stream: { connected: false, running: false },
+  };
+
+  const model = buildChatRenderModel(surface, { kind: "desktop_web" });
+  const workRows = model.rows.filter((row) => row.kind === "agent_work");
+
+  assert.equal(workRows.length, 1);
+  assert.equal(workRows[0]?.title, "Tool call");
+  assert.equal(workRows[0]?.summary, "");
+  assert.equal(workRows[0]?.display, "compact");
 });
 
 test("turns provider-style activity titles into quiet action labels", () => {

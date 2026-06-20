@@ -54,14 +54,15 @@ function toolPresentation(
     titleFromDetail(detail, item.status) ||
     rawLabel?.title ||
     explicitTitle ||
-    legacyToolTitle(detail);
+    legacyToolTitle(detail) ||
+    (item.kind === "tool" ? "Tool call" : "");
   const summary =
     summaryFromDetail(detail) ||
     rawLabel?.summary ||
     nonDuplicateSummary(item.summary, item.title) ||
     legacyToolSummary(detail);
 
-  if (!title || (isGenericToolTitle(title) && !summary && !hasDetailContent(detail))) {
+  if (!title) {
     return undefined;
   }
 
@@ -328,18 +329,6 @@ function truncateMiddle(value: string, limit = 96): string {
   const head = Math.ceil((limit - 1) * 0.62);
   const tail = Math.floor((limit - 1) * 0.38);
   return `${value.slice(0, head)}…${value.slice(value.length - tail)}`;
-}
-
-function hasDetailContent(detail: ChatSurfaceActivityItem["detail"]): boolean {
-  if (!detail) return false;
-  return Object.entries(detail).some(
-    ([key, value]) =>
-      key !== "type" &&
-      value !== undefined &&
-      value !== null &&
-      value !== "" &&
-      !(Array.isArray(value) && value.length === 0),
-  );
 }
 
 function isGenericToolTitle(value: string | undefined): boolean {
