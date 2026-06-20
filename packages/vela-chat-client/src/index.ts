@@ -1758,6 +1758,9 @@ function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDeta
       ...(data.old_string !== undefined
         ? { old_string: optionalViewString(data, "old_string", owner, invalidActivityView) }
         : {}),
+      ...(data.new_string !== undefined
+        ? { new_string: optionalViewString(data, "new_string", owner, invalidActivityView) }
+        : {}),
       ...(data.unified_diff !== undefined
         ? { unified_diff: optionalViewString(data, "unified_diff", owner, invalidActivityView) }
         : {}),
