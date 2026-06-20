@@ -104,6 +104,7 @@ test("turns surface rows into host-aware render rows", () => {
   assert.deepEqual(model.rows[1]?.blocks.map((block) => block.text), ["第一段", "第二段"]);
   assert.equal(model.rows[2]?.kind, "status");
   assert.match(model.rows[2]?.label ?? "", /No API key/);
+  assert.equal(model.rows[2]?.activityId, "current_turn");
   assert.equal(model.host.kind, "desktop_web");
 });
 

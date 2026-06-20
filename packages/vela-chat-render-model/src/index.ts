@@ -109,6 +109,7 @@ export function buildChatRenderModel(surface: ChatSurface, host: ChatHostPolicy)
         label: `处理失败：${label}`,
         status: item.status,
         createdAt: item.updated_at ?? item.created_at,
+        activityId: item.id,
         debug: item.debug,
       },
     ];
