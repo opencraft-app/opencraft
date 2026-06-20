@@ -818,6 +818,46 @@ test("web adapter invalidates assistant cache when settled label changes", () =>
   }
 });
 
+test("web adapter invalidates assistant cache when timestamp changes", () => {
+  const firstSnapshot: ChatRenderModel = {
+    session_id: "sess_assistant_timestamp",
+    host: { kind: "desktop_web" },
+    rows: [
+      {
+        kind: "assistant_message",
+        id: "a1",
+        key: "assistant:a1",
+        blocks: [{ id: "a1:block:0", text: "done" }],
+        createdAt: "2026-06-18T00:00:00Z",
+        status: "completed",
+        streaming: false,
+        revision: 1,
+        debug: { projection: "transcript", source_event_ids: ["evt_1"] },
+      },
+    ],
+    composer: { placeholder: "要求后续变更", can_send: true },
+  };
+  const secondSnapshot: ChatRenderModel = {
+    ...firstSnapshot,
+    rows: [
+      {
+        ...firstSnapshot.rows[0]!,
+        createdAt: "2026-06-18T00:01:00Z",
+      },
+    ],
+  };
+
+  const first = toWebChatModel(firstSnapshot);
+  const second = toWebChatModel(secondSnapshot);
+
+  assert.notEqual(second.turns[0], first.turns[0]);
+  assert.notEqual(second.turns[0]?.fingerprint, first.turns[0]?.fingerprint);
+  assert.equal(second.turns[0]?.blocks[0]?.kind, "assistant_markdown");
+  if (second.turns[0]?.blocks[0]?.kind === "assistant_markdown") {
+    assert.equal(second.turns[0].blocks[0].createdAt, "2026-06-18T00:01:00Z");
+  }
+});
+
 test("conversation stream reuses unchanged item identities across fresh render model snapshots", () => {
   const firstSnapshot: ChatRenderModel = {
     session_id: "sess_1",
@@ -928,6 +968,45 @@ test("web adapter preserves status row status for visual rendering", () => {
   assert.equal(block?.kind, "status");
   if (block?.kind !== "status") assert.fail("expected status block");
   assert.equal(block.status, "failed");
+});
+
+test("web adapter invalidates status cache when timestamp changes", () => {
+  const firstSnapshot: ChatRenderModel = {
+    session_id: "sess_status_timestamp",
+    host: { kind: "desktop_web" },
+    rows: [
+      {
+        kind: "status",
+        id: "status_failed",
+        key: "status:failed",
+        label: "Backend unavailable",
+        status: "failed",
+        createdAt: "2026-06-18T00:00:00Z",
+        debug: { projection: "transcript", source_event_ids: ["evt_error"] },
+      } as Extract<ChatRenderModel["rows"][number], { kind: "status" }>,
+    ],
+    requests: { items: [] },
+    composer: { placeholder: "要求后续变更", can_send: true },
+  };
+  const secondSnapshot: ChatRenderModel = {
+    ...firstSnapshot,
+    rows: [
+      {
+        ...firstSnapshot.rows[0]!,
+        createdAt: "2026-06-18T00:01:00Z",
+      },
+    ],
+  };
+
+  const first = toWebChatModel(firstSnapshot);
+  const second = toWebChatModel(secondSnapshot);
+
+  assert.notEqual(second.turns[0], first.turns[0]);
+  assert.notEqual(second.turns[0]?.fingerprint, first.turns[0]?.fingerprint);
+  assert.equal(second.turns[0]?.blocks[0]?.kind, "status");
+  if (second.turns[0]?.blocks[0]?.kind === "status") {
+    assert.equal(second.turns[0].blocks[0].createdAt, "2026-06-18T00:01:00Z");
+  }
 });
 
 test("web adapter invalidates user image cache when image metadata changes", () => {
