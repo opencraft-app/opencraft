@@ -1725,6 +1725,9 @@ function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDeta
       ...(data.file_path !== undefined
         ? { file_path: optionalViewString(data, "file_path", owner, invalidActivityView) }
         : {}),
+      ...(data.path !== undefined
+        ? { path: optionalViewString(data, "path", owner, invalidActivityView) }
+        : {}),
     };
   }
   if (type === "fetch") {
