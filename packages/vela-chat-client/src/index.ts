@@ -410,7 +410,8 @@ export function readVelaStreamEvent(event: MessageEvent | Event): VelaStreamEven
   const data = "data" in event ? event.data : undefined;
   if (typeof data !== "string" || data.length === 0) return null;
   try {
-    const parsed = JSON.parse(data) as Partial<VelaStreamEventWire>;
+    const parsed = JSON.parse(data) as unknown;
+    if (!isRecord(parsed)) return null;
     const eventType =
       typeof parsed.type === "string"
         ? parsed.type

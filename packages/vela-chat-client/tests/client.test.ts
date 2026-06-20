@@ -2267,6 +2267,17 @@ test("reads velad stream events from browser MessageEvent payloads", () => {
   assert.equal(event?.payload?.delta, "hi");
 });
 
+test("ignores named velad stream events with non-object JSON payloads", () => {
+  assert.equal(
+    readVelaStreamEvent(
+      new MessageEvent("assistant.message.delta", {
+        data: JSON.stringify("not an event object"),
+      }),
+    ),
+    null,
+  );
+});
+
 test("plans assistant delta stream events as local overlay only", () => {
   assert.deepEqual(
     streamReadModelRefreshPlan({
