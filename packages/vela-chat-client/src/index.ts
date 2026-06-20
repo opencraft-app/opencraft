@@ -197,6 +197,15 @@ export interface ActivityWireView {
   cursor: EventCursorWire;
 }
 
+export type BackendKindWire =
+  | "codex"
+  | "cloudagent"
+  | "claude_code"
+  | "pi"
+  | "opencode"
+  | "acp"
+  | "qoder";
+
 export type PermissionModeWire = "read_only" | "auto" | "auto_review" | "full_access";
 
 export interface AgentConfigWire {
@@ -214,7 +223,7 @@ export interface AgentConfigPatchWire {
 }
 
 export interface SessionRuntimeInfoWire {
-  provider: string;
+  provider: BackendKindWire;
   native_session_id?: string | null;
   model?: string | null;
   reasoning_effort?: string | null;
@@ -230,8 +239,8 @@ export interface SessionOperationWire {
 
 export interface SessionWire {
   id: string;
-  backend: "pi" | string;
-  status: string;
+  backend: BackendKindWire;
+  status: SessionStatusWire;
   working_directory?: string;
   title?: string;
   model?: string | null;
@@ -240,6 +249,15 @@ export interface SessionWire {
   operations?: Record<string, SessionOperationWire | undefined>;
   metadata?: Record<string, unknown>;
 }
+
+export type SessionStatusWire =
+  | "starting"
+  | "idle"
+  | "running"
+  | "waiting_for_input"
+  | "canceling"
+  | "failed"
+  | "closed";
 
 export interface CreateSessionInput {
   workingDirectory: string;
@@ -302,7 +320,7 @@ export interface BackendFeatureWire {
 }
 
 export interface BackendWire {
-  kind: string;
+  kind: BackendKindWire;
   status: BackendStatusWire;
   display_name: string;
   capabilities: Record<string, unknown>;
@@ -323,7 +341,7 @@ export interface BackendWireResponse {
 }
 
 export interface BackendProbeResultWire {
-  backend: string;
+  backend: BackendKindWire;
   status: "available" | "unavailable" | "degraded";
   message?: string;
 }
@@ -1175,15 +1193,17 @@ function encodeBackendKind(backend: unknown) {
   return encodeURIComponent(backend);
 }
 
-const backendKinds = new Set([
-  "codex",
-  "cloudagent",
-  "claude_code",
-  "pi",
-  "opencode",
-  "acp",
-  "qoder",
-]);
+const backendKinds = new Set<string>(
+  [
+    "codex",
+    "cloudagent",
+    "claude_code",
+    "pi",
+    "opencode",
+    "acp",
+    "qoder",
+  ] satisfies BackendKindWire[],
+);
 
 function validateCreateSessionInput(input: unknown): asserts input is CreateSessionInput {
   if (!isRecord(input)) {
@@ -1228,15 +1248,17 @@ const agentConfigPatchKeys = new Set([
 const permissionModes = new Set(["read_only", "auto", "auto_review", "full_access"]);
 const viewWindowDirections = new Set(["tail", "before", "after", "around"]);
 const backendStatuses = new Set(["available", "unavailable", "degraded"]);
-const sessionStatuses = new Set([
-  "starting",
-  "idle",
-  "running",
-  "waiting_for_input",
-  "canceling",
-  "failed",
-  "closed",
-]);
+const sessionStatuses = new Set<string>(
+  [
+    "starting",
+    "idle",
+    "running",
+    "waiting_for_input",
+    "canceling",
+    "failed",
+    "closed",
+  ] satisfies SessionStatusWire[],
+);
 const transcriptRowKinds = new Set([
   "user_message",
   "assistant_message",
@@ -1364,11 +1386,11 @@ function validateAgentConfigValue(
   }
 }
 
-function validateSessionRuntimeInfoShape(
+function parseSessionRuntimeInfoWire(
   runtimeInfo: unknown,
   invalid: ViewContractErrorFactory,
   owner: string,
-): asserts runtimeInfo is SessionRuntimeInfoWire {
+): SessionRuntimeInfoWire {
   if (!isRecord(runtimeInfo)) {
     throw invalid(`${owner} must be an object`);
   }
@@ -1397,6 +1419,11 @@ function validateSessionRuntimeInfoShape(
   if (featureValues !== undefined && !isRecord(featureValues)) {
     throw invalid(`${owner}.feature_values must be an object`);
   }
+
+  return {
+    ...(runtimeInfo as unknown as SessionRuntimeInfoWire),
+    provider: provider as BackendKindWire,
+  };
 }
 
 function validateOptionalNullableSessionString(
@@ -1810,7 +1837,7 @@ function parseBackendWire(data: unknown, owner: string): BackendWire {
     throw invalidBackendsResponse(`${owner}.status must be available, unavailable, or degraded`);
   }
   return {
-    kind,
+    kind: kind as BackendKindWire,
     status: status as BackendStatusWire,
     display_name: requiredViewString(data, "display_name", owner, invalidBackendsResponse),
     capabilities: requiredBackendCapabilities(data, owner),
@@ -1962,7 +1989,7 @@ export function parseBackendProbeResultWire(data: unknown): BackendProbeResultWi
     throw invalidBackendProbeResponse("BackendProbeResult.message must be a string");
   }
   return {
-    backend,
+    backend: backend as BackendKindWire,
     status: status as BackendProbeResultWire["status"],
     ...(message !== undefined ? { message } : {}),
   };
@@ -2504,9 +2531,10 @@ function parseSessionWire(
     validateAgentConfigShape(agentConfig, invalid, `${owner}.agent_config`);
   }
   const runtimeInfo = data.runtime_info;
-  if (runtimeInfo !== undefined) {
-    validateSessionRuntimeInfoShape(runtimeInfo, invalid, `${owner}.runtime_info`);
-  }
+  const parsedRuntimeInfo =
+    runtimeInfo !== undefined
+      ? parseSessionRuntimeInfoWire(runtimeInfo, invalid, `${owner}.runtime_info`)
+      : undefined;
   const operations = data.operations;
   if (operations !== undefined) {
     validateSessionOperationsShape(operations, invalid, `${owner}.operations`);
@@ -2514,10 +2542,10 @@ function parseSessionWire(
   return {
     ...(data as unknown as SessionWire),
     id,
-    backend,
-    status,
+    backend: backend as BackendKindWire,
+    status: status as SessionStatusWire,
     ...(agentConfig !== undefined ? { agent_config: agentConfig } : {}),
-    ...(runtimeInfo !== undefined ? { runtime_info: runtimeInfo } : {}),
+    ...(parsedRuntimeInfo !== undefined ? { runtime_info: parsedRuntimeInfo } : {}),
     ...(operations !== undefined ? { operations } : {}),
   };
 }
