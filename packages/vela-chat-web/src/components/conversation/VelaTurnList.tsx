@@ -1,4 +1,4 @@
-import { useCallback, type RefObject } from "react";
+import { memo, useCallback, type RefObject } from "react";
 import type {
   ConversationRuntimeHostKind,
   ConversationRuntimeSegments,
@@ -8,7 +8,7 @@ import { resolveConversationStrategy } from "../../conversation-runtime/strategy
 import styles from "../../styles/desktop.module.css";
 import { VelaTurnGroup } from "./VelaTurnGroup";
 
-export function VelaTurnList({
+export const VelaTurnList = memo(function VelaTurnList({
   contentRef,
   isLoadingOlderHistory = false,
   scrollRef,
@@ -37,4 +37,4 @@ export function VelaTurnList({
     empty: <div className={styles.empty}>连接本地 velad 后，这里会显示 transcript。</div>,
     renderItem: renderConversationItem,
   });
-}
+});

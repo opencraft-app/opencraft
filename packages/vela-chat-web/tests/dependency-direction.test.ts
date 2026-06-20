@@ -208,6 +208,16 @@ test("turn list passes a stable item renderer into conversation strategies", () 
   );
 });
 
+test("turn list is a memoized boundary below conversation scroll state", () => {
+  const source = readFileSync(
+    join(root, "packages/vela-chat-web/src/components/conversation/VelaTurnList.tsx"),
+    "utf8",
+  );
+
+  assert.match(source, /memo\(function VelaTurnList/);
+  assert.match(source, /segments:\s*ConversationRuntimeSegments/);
+});
+
 test("turn group memoizes stable stream items during high-frequency streaming", () => {
   const source = readFileSync(
     join(root, "packages/vela-chat-web/src/components/conversation/VelaTurnGroup.tsx"),
