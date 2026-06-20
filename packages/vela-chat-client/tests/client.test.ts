@@ -558,6 +558,30 @@ test("keeps OpenAPI session backend and status enums narrow in the client wire m
   assert.doesNotMatch(runtimeInfoInterface, /provider:\s*string/);
 });
 
+test("keeps OpenAPI backend feature discriminators narrow in the client wire model", async () => {
+  const source = await import("node:fs/promises").then((fs) =>
+    fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
+  );
+  const toggleInterface =
+    source.match(/export interface BackendToggleFeatureWire(?: extends \w+)? \{[\s\S]*?\n\}/)?.[0] ??
+    "";
+  const selectInterface =
+    source.match(/export interface BackendSelectFeatureWire(?: extends \w+)? \{[\s\S]*?\n\}/)?.[0] ??
+    "";
+
+  assert.match(
+    source,
+    /export type BackendFeatureWire\s*=\s*BackendToggleFeatureWire\s*\|\s*BackendSelectFeatureWire/,
+  );
+  assert.match(toggleInterface, /type:\s*"toggle"/);
+  assert.match(toggleInterface, /default_value:\s*boolean/);
+  assert.match(selectInterface, /type:\s*"select"/);
+  assert.match(selectInterface, /options:\s*ReasoningEffortOptionWire\[\]/);
+  assert.match(source, /type:\s*"toggle"/);
+  assert.match(source, /type:\s*"select"/);
+  assert.doesNotMatch(source, /export interface BackendFeatureWire \{[\s\S]*?type:\s*string/);
+});
+
 test("keeps OpenAPI agent request enums narrow in the client wire model", async () => {
   const source = await import("node:fs/promises").then((fs) =>
     fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),

@@ -317,14 +317,24 @@ export interface PermissionModeOptionWire {
   metadata?: Record<string, unknown>;
 }
 
-export interface BackendFeatureWire {
-  type: string;
+export type BackendFeatureWire = BackendToggleFeatureWire | BackendSelectFeatureWire;
+
+export interface BackendFeatureBaseWire {
   id: string;
   label: string;
   description?: string;
-  default_value?: unknown;
-  options?: ReasoningEffortOptionWire[];
   metadata?: Record<string, unknown>;
+}
+
+export interface BackendToggleFeatureWire extends BackendFeatureBaseWire {
+  type: "toggle";
+  default_value: boolean;
+}
+
+export interface BackendSelectFeatureWire extends BackendFeatureBaseWire {
+  type: "select";
+  default_value?: string | null;
+  options: ReasoningEffortOptionWire[];
 }
 
 export interface BackendWire {
@@ -1943,9 +1953,7 @@ function parseBackendFeatureWire(data: unknown, owner: string): BackendFeatureWi
     throw invalidBackendsResponse(`${owner} must be an object`);
   }
   const type = requiredBackendString(data, "type", owner);
-  const base = {
-    ...(data as unknown as BackendFeatureWire),
-    type,
+  const base: BackendFeatureBaseWire = {
     id: requiredBackendString(data, "id", owner),
     label: requiredBackendString(data, "label", owner),
     ...(data.description !== undefined
@@ -1959,6 +1967,7 @@ function parseBackendFeatureWire(data: unknown, owner: string): BackendFeatureWi
   if (type === "toggle") {
     return {
       ...base,
+      type: "toggle",
       default_value: requiredBackendBoolean(data, "default_value", owner),
     };
   }
@@ -1966,6 +1975,7 @@ function parseBackendFeatureWire(data: unknown, owner: string): BackendFeatureWi
   if (type === "select") {
     return {
       ...base,
+      type: "select",
       ...(data.default_value !== undefined
         ? { default_value: optionalBackendStringOrNull(data, "default_value", owner) }
         : {}),
