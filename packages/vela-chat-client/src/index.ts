@@ -1767,6 +1767,9 @@ function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDeta
       ...(data.bytes !== undefined
         ? { bytes: optionalViewInteger(data, "bytes", owner, invalidActivityView) }
         : {}),
+      ...(data.duration_ms !== undefined
+        ? { duration_ms: optionalViewInteger(data, "duration_ms", owner, invalidActivityView) }
+        : {}),
     };
   }
   return data as ActivityWireDetail;
