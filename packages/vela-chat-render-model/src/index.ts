@@ -45,7 +45,12 @@ export interface RequestDockRenderItem {
   debug: ChatSurfaceDebug;
 }
 
-export type ChatRenderRow =
+interface ChatRenderCorrelation {
+  turnId?: string;
+  activityId?: string;
+}
+
+export type ChatRenderRow = (
   | {
       kind: "user_message";
       id: string;
@@ -79,7 +84,9 @@ export type ChatRenderRow =
       status: string;
       createdAt: string;
       debug: ChatSurfaceDebug;
-    };
+    }
+) &
+  ChatRenderCorrelation;
 
 export interface MarkdownBlock {
   id: string;
@@ -171,6 +178,8 @@ function renderTranscriptRow(row: ChatSurfaceTranscriptRow): ChatRenderRow {
       collapsed,
       parts: row.parts,
       createdAt: row.created_at,
+      ...(row.turn_id !== undefined ? { turnId: row.turn_id } : {}),
+      ...(row.activity_id !== undefined ? { activityId: row.activity_id } : {}),
       debug: row.debug,
     };
   }
@@ -189,6 +198,8 @@ function renderTranscriptRow(row: ChatSurfaceTranscriptRow): ChatRenderRow {
       updatedAt: row.updated_at,
       revision: row.revision,
       createdAt: row.created_at,
+      ...(row.turn_id !== undefined ? { turnId: row.turn_id } : {}),
+      ...(row.activity_id !== undefined ? { activityId: row.activity_id } : {}),
       debug: row.debug,
     };
   }
@@ -200,6 +211,8 @@ function renderTranscriptRow(row: ChatSurfaceTranscriptRow): ChatRenderRow {
     label: row.text,
     status: row.status,
     createdAt: row.created_at,
+    ...(row.turn_id !== undefined ? { turnId: row.turn_id } : {}),
+    ...(row.activity_id !== undefined ? { activityId: row.activity_id } : {}),
     debug: row.debug,
   };
 }

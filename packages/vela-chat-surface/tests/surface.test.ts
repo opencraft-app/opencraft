@@ -167,6 +167,51 @@ test("uses transcript row label for non-message rows when wire text is absent", 
   assert.equal(surface.transcript.rows[1]?.text, "Ran command");
 });
 
+test("preserves OpenAPI transcript row correlation ids in surface rows", () => {
+  const surface = buildChatSurfaceFromReadModels({
+    sessionId: "sess_correlation",
+    transcript: {
+      rows: [
+        {
+          id: "row_assistant_1",
+          kind: "assistant_message",
+          created_at: "2026-06-18T10:00:00Z",
+          updated_at: "2026-06-18T10:00:02Z",
+          revision: 2,
+          turn_id: "turn_1",
+          text: "我来查。",
+          status: "completed",
+          source_event_ids: ["evt_assistant_1"],
+        },
+        {
+          id: "row_activity_1",
+          kind: "activity_marker",
+          created_at: "2026-06-18T10:00:01Z",
+          updated_at: "2026-06-18T10:00:01Z",
+          revision: 1,
+          turn_id: "turn_1",
+          activity_id: "activity_terminal_1",
+          label: "Ran command",
+          status: "completed",
+          source_event_ids: ["evt_tool_1"],
+        },
+      ],
+      cursor: { event_id: "evt_tool_1", epoch: 1, seq: 2 },
+    },
+  });
+
+  const assistantRow = surface.transcript.rows[0] as
+    | { turn_id?: string }
+    | undefined;
+  const activityRow = surface.transcript.rows[1] as
+    | { activity_id?: string; turn_id?: string }
+    | undefined;
+
+  assert.equal(assistantRow?.turn_id, "turn_1");
+  assert.equal(activityRow?.turn_id, "turn_1");
+  assert.equal(activityRow?.activity_id, "activity_terminal_1");
+});
+
 test("keeps surface renderer-free", async () => {
   const source = await import("node:fs/promises").then((fs) =>
     fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),

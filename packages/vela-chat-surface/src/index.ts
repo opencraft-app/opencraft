@@ -225,6 +225,8 @@ export interface ChatSurfaceTranscriptRow {
   parts: ChatTranscriptPart[];
   created_at: string;
   updated_at: string;
+  turn_id?: string;
+  activity_id?: string;
   status: ChatTranscriptRowStatusWire;
   revision: number;
   debug: ChatSurfaceDebug;
@@ -543,6 +545,8 @@ function normalizeTranscriptRow(row: ChatTranscriptWireRow): ChatSurfaceTranscri
     parts: row.parts ?? [],
     created_at: row.created_at,
     updated_at: row.updated_at,
+    ...(row.turn_id !== undefined ? { turn_id: row.turn_id } : {}),
+    ...(row.activity_id !== undefined ? { activity_id: row.activity_id } : {}),
     status: row.status,
     revision: row.revision,
     debug: {

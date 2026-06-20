@@ -5,6 +5,7 @@ export interface ConversationStreamItem {
   key: string;
   kind: WebBlock["kind"];
   sourceTurnId: string;
+  sourceActivityId?: string;
   live: boolean;
   continuation: boolean;
   fingerprint: string;
@@ -85,7 +86,8 @@ function itemFromBlock(
     id: identity.id,
     key: identity.key,
     kind: block.kind,
-    sourceTurnId: turn.id,
+    sourceTurnId: turn.sourceTurnId ?? turn.id,
+    sourceActivityId: turn.sourceActivityId,
     live: isLiveBlock(block, turn.live),
     continuation: identity.continuation,
     fingerprint: identity.fingerprint,

@@ -22,6 +22,8 @@ export interface WebTurn {
   key: string;
   fingerprint: string;
   live: boolean;
+  sourceTurnId?: string;
+  sourceActivityId?: string;
   blocks: WebBlock[];
 }
 
@@ -84,7 +86,14 @@ export function toWebChatModel(model: ChatRenderModel): WebChatModel {
 
 function rowToTurn(sessionId: string, row: ChatRenderRow): WebTurn {
   const fingerprint = rowFingerprint(row);
-  const cacheKey = `${sessionId}:${row.kind}:${row.key}:${fingerprint}`;
+  const cacheKey = [
+    sessionId,
+    row.kind,
+    row.key,
+    `turn:${row.turnId ?? ""}`,
+    `activity:${row.activityId ?? ""}`,
+    fingerprint,
+  ].join(":");
   const cached = webTurnCache.get(cacheKey);
   if (cached) return cached;
 
@@ -94,6 +103,8 @@ function rowToTurn(sessionId: string, row: ChatRenderRow): WebTurn {
     key: `turn:${row.key}`,
     fingerprint,
     live: isLiveRenderRow(row),
+    sourceTurnId: row.turnId,
+    sourceActivityId: row.activityId,
     blocks: [block],
   };
   webTurnCache.set(cacheKey, turn);

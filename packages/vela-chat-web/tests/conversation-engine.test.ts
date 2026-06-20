@@ -37,7 +37,11 @@ import {
   serializeConversationScrollResumeState,
 } from "../src/conversation-runtime/scroll/routeResume";
 import { resolveConversationStrategyName } from "../src/conversation-runtime/strategy/strategyResolver";
-import type { ChatRenderModel } from "../../vela-chat-render-model/src";
+import {
+  buildChatRenderModel,
+  type ChatRenderModel,
+} from "../../vela-chat-render-model/src";
+import type { ChatSurface } from "../../vela-chat-surface/src";
 
 function turn(id: string, options: { live?: boolean } = {}): WebTurn {
   return {
@@ -56,6 +60,57 @@ function turn(id: string, options: { live?: boolean } = {}): WebTurn {
     ],
   };
 }
+
+test("conversation stream items use transcript correlation ids from OpenAPI", () => {
+  const surface: ChatSurface = {
+    session_id: "sess_correlation",
+    transcript: {
+      rows: [
+        {
+          id: "row_assistant_1",
+          role: "assistant",
+          text: "我来查。",
+          created_at: "2026-06-18T00:00:00Z",
+          updated_at: "2026-06-18T00:00:01Z",
+          turn_id: "turn_1",
+          status: "completed",
+          revision: 1,
+          debug: { projection: "transcript", source_event_ids: ["evt_assistant_1"] },
+        },
+        {
+          id: "row_activity_1",
+          role: "activity",
+          text: "Ran command",
+          created_at: "2026-06-18T00:00:00.500Z",
+          updated_at: "2026-06-18T00:00:00.500Z",
+          turn_id: "turn_1",
+          activity_id: "activity_terminal_1",
+          status: "completed",
+          revision: 1,
+          debug: { projection: "transcript", source_event_ids: ["evt_tool_1"] },
+        },
+      ],
+    },
+    activity: { items: [] },
+    pending_requests: { items: [] },
+    cursors: {},
+    stream: { connected: false, running: false },
+  };
+
+  const items = buildConversationStreamItems(
+    toWebChatModel(buildChatRenderModel(surface, { kind: "desktop_web" })).turns,
+  );
+
+  const assistant = items.find((item) => item.kind === "assistant_markdown");
+  const activity = items.find((item) => item.id === "row_activity_1");
+
+  assert.equal(assistant?.sourceTurnId, "turn_1");
+  assert.equal(activity?.sourceTurnId, "turn_1");
+  assert.equal(
+    (activity as { sourceActivityId?: string } | undefined)?.sourceActivityId,
+    "activity_terminal_1",
+  );
+});
 
 test("conversation runtime keeps live items out of virtualized history", () => {
   const turns = [turn("old-1"), turn("old-2"), turn("live", { live: true })];
