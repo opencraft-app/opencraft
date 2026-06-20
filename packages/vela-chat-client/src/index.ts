@@ -750,6 +750,7 @@ const sessionRefreshEvents = new Set([
   "session.config.updated",
   "session.status.changed",
   "session.closed",
+  "backend.status.changed",
   "user.message.accepted",
   "turn.started",
   "turn.cancel.accepted",

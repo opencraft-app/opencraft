@@ -2329,6 +2329,18 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
     },
   );
   assert.deepEqual(
+    streamReadModelRefreshPlan({
+      event_id: "evt_backend_status",
+      type: "backend.status.changed",
+    }),
+    {
+      transcript: false,
+      activity: false,
+      session: true,
+      backends: true,
+    },
+  );
+  assert.deepEqual(
     streamReadModelRefreshPlan({ event_id: "evt_input_queued", type: "input.queued" }),
     {
       transcript: true,
