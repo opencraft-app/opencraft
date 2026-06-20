@@ -361,6 +361,9 @@ export interface StreamRefreshSchedulerOptions {
 export const VELA_SESSION_STREAM_EVENT_TYPES = [
   "session.created",
   "session.updated",
+  "session.config.updated",
+  "session.status.changed",
+  "session.closed",
   "user.message.accepted",
   "turn.started",
   "assistant.message.started",
@@ -726,6 +729,7 @@ const transcriptRefreshEvents = new Set([
   "user.message.accepted",
   "assistant.message.started",
   "assistant.message.completed",
+  "session.status.changed",
   "turn.completed",
   "turn.failed",
 ]);
@@ -733,6 +737,9 @@ const transcriptRefreshEvents = new Set([
 const sessionRefreshEvents = new Set([
   "session.created",
   "session.updated",
+  "session.config.updated",
+  "session.status.changed",
+  "session.closed",
   "user.message.accepted",
   "turn.started",
   "turn.completed",

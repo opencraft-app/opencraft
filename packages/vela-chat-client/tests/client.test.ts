@@ -2296,6 +2296,39 @@ test("plans assistant delta stream events as local overlay only", () => {
 
 test("plans non-message stream events as scoped read-model refreshes", () => {
   assert.deepEqual(
+    streamReadModelRefreshPlan({
+      event_id: "evt_session_config",
+      type: "session.config.updated",
+    }),
+    {
+      transcript: false,
+      activity: false,
+      session: true,
+      backends: false,
+    },
+  );
+  assert.deepEqual(
+    streamReadModelRefreshPlan({
+      event_id: "evt_session_status",
+      type: "session.status.changed",
+    }),
+    {
+      transcript: true,
+      activity: false,
+      session: true,
+      backends: false,
+    },
+  );
+  assert.deepEqual(
+    streamReadModelRefreshPlan({ event_id: "evt_session_closed", type: "session.closed" }),
+    {
+      transcript: false,
+      activity: false,
+      session: true,
+      backends: false,
+    },
+  );
+  assert.deepEqual(
     streamReadModelRefreshPlan({ event_id: "evt_tool", type: "tool.started" }),
     {
       transcript: false,
@@ -2750,16 +2783,20 @@ test("subscribes to named velad SSE events as stream updates", () => {
 
   source.emit("assistant.message.delta");
   source.emit("turn.completed");
+  source.emit("session.config.updated");
+  source.emit("session.status.changed");
+  source.emit("session.closed");
   source.emit("command.started");
   source.emit("task.updated");
   source.emit("projection.invalidated");
   source.emitMessage();
 
-  assert.equal(updates, 6);
+  assert.equal(updates, 9);
   unsubscribe();
   source.emit("assistant.message.delta");
+  source.emit("session.status.changed");
   source.emit("command.started");
-  assert.equal(updates, 6);
+  assert.equal(updates, 9);
 });
 
 test("stream refresh scheduler paints the first event immediately and throttles bursts", () => {
