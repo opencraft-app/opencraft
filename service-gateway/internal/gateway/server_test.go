@@ -1003,7 +1003,7 @@ func TestWorkerActionCurrentResolvesBotAndQueriesStableWorkflowID(t *testing.T) 
 	}
 }
 
-func TestWorkerActionCurrentReturnsNotFoundWhenNoWorkflowExists(t *testing.T) {
+func TestWorkerActionCurrentReturnsEmptyStatusWhenNoWorkflowExists(t *testing.T) {
 	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"session": map[string]any{
@@ -1042,8 +1042,20 @@ func TestWorkerActionCurrentReturnsNotFoundWhenNoWorkflowExists(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Data struct {
+			WorkflowID string `json:"WorkflowID"`
+			Phase      string `json:"Phase"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.Data.WorkflowID != "worker-action-bot-1-rescue_export" || body.Data.Phase != "not_found" {
+		t.Fatalf("unexpected empty status: %+v", body.Data)
 	}
 }
 

@@ -492,7 +492,11 @@ func (s *workerActionService) handleCurrent(w http.ResponseWriter, r *http.Reque
 	status, err := s.backend.QueryWorkflow(r.Context(), workflowID, "", workerActionStatusQueryName)
 	if err != nil {
 		if workflowNotFound(err) {
-			writeJSONAny(w, http.StatusNotFound, map[string]string{"error": "action_not_found"})
+			writeJSONAny(w, http.StatusOK, map[string]any{"data": map[string]any{
+				"WorkflowID": workflowID,
+				"Phase":      "not_found",
+				"Logs":       []any{},
+			}})
 			return
 		}
 		writeJSONAny(w, http.StatusBadGateway, map[string]string{"error": "query_workflow_failed"})
