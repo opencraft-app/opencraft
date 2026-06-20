@@ -148,14 +148,34 @@ export interface DiffReviewWireView {
 }
 
 export interface ActivityWireDetail {
-  type: string;
+  type: ActivityDetailTypeWire;
   [key: string]: unknown;
 }
 
+export type ActivityItemKindWire = "tool" | "command" | "task" | "warning" | "runtime";
+export type ActivityItemStatusWire = "pending" | "running" | "completed" | "failed" | "cancelled";
+export type ActivityDetailTypeWire =
+  | "shell"
+  | "read"
+  | "edit"
+  | "write"
+  | "search"
+  | "fetch"
+  | "browser"
+  | "mcp_tool"
+  | "dynamic_tool"
+  | "sub_agent"
+  | "image_generation"
+  | "image_view"
+  | "plan"
+  | "plain_text"
+  | "unknown"
+  | "tool";
+
 export interface ActivityWireItem {
   id: string;
-  kind: string;
-  status: string;
+  kind: ActivityItemKindWire;
+  status: ActivityItemStatusWire;
   title: string;
   summary?: string;
   detail?: ActivityWireDetail;
@@ -1227,8 +1247,12 @@ const transcriptRowStatuses = new Set([
   "cancelled",
 ]);
 const transcriptPartTypes = new Set(["markdown", "text", "code", "image", "file_reference"]);
-const activityItemKinds = new Set(["tool", "command", "task", "warning", "runtime"]);
-const activityItemStatuses = new Set(["pending", "running", "completed", "failed", "cancelled"]);
+const activityItemKinds = new Set<string>(
+  ["tool", "command", "task", "warning", "runtime"] satisfies ActivityItemKindWire[],
+);
+const activityItemStatuses = new Set<string>(
+  ["pending", "running", "completed", "failed", "cancelled"] satisfies ActivityItemStatusWire[],
+);
 const requestTypes = new Set([
   "permission",
   "question",
@@ -1247,24 +1271,26 @@ const requestStatuses = new Set([
 ]);
 const diffSummaryStatuses = new Set(["added", "modified", "deleted", "renamed"]);
 const activitySearchModes = new Set(["code", "web", "files", "unknown"]);
-const activityDetailTypes = new Set([
-  "shell",
-  "read",
-  "edit",
-  "write",
-  "search",
-  "fetch",
-  "browser",
-  "mcp_tool",
-  "dynamic_tool",
-  "sub_agent",
-  "image_generation",
-  "image_view",
-  "plan",
-  "plain_text",
-  "unknown",
-  "tool",
-]);
+const activityDetailTypes = new Set<string>(
+  [
+    "shell",
+    "read",
+    "edit",
+    "write",
+    "search",
+    "fetch",
+    "browser",
+    "mcp_tool",
+    "dynamic_tool",
+    "sub_agent",
+    "image_generation",
+    "image_view",
+    "plan",
+    "plain_text",
+    "unknown",
+    "tool",
+  ] satisfies ActivityDetailTypeWire[],
+);
 const backendCapabilityFields = [
   "streaming",
   "cancel",
@@ -2187,8 +2213,8 @@ function parseActivityWireItem(data: unknown, owner: string): ActivityWireItem {
   return {
     ...(data as unknown as ActivityWireItem),
     id: requiredViewString(data, "id", owner, invalidActivityView),
-    kind,
-    status,
+    kind: kind as ActivityItemKindWire,
+    status: status as ActivityItemStatusWire,
     title: requiredViewString(data, "title", owner, invalidActivityView),
     ...(data.summary !== undefined
       ? { summary: optionalViewString(data, "summary", owner, invalidActivityView) }
@@ -2217,7 +2243,7 @@ function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDeta
   if (type === "shell") {
     return {
       ...(data as ActivityWireDetail),
-      type,
+      type: type as ActivityDetailTypeWire,
       ...(data.command !== undefined
         ? { command: optionalViewString(data, "command", owner, invalidActivityView) }
         : {}),
@@ -2244,7 +2270,7 @@ function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDeta
   if (type === "search") {
     return {
       ...(data as ActivityWireDetail),
-      type,
+      type: type as ActivityDetailTypeWire,
       ...(data.query !== undefined
         ? { query: optionalViewString(data, "query", owner, invalidActivityView) }
         : {}),
@@ -2271,7 +2297,7 @@ function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDeta
   if (type === "read" || type === "edit" || type === "write") {
     return {
       ...(data as ActivityWireDetail),
-      type,
+      type: type as ActivityDetailTypeWire,
       ...(data.file_path !== undefined
         ? { file_path: optionalViewString(data, "file_path", owner, invalidActivityView) }
         : {}),
@@ -2295,7 +2321,7 @@ function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDeta
   if (type === "fetch") {
     return {
       ...(data as ActivityWireDetail),
-      type,
+      type: type as ActivityDetailTypeWire,
       ...(data.url !== undefined
         ? { url: optionalViewString(data, "url", owner, invalidActivityView) }
         : {}),
@@ -2319,7 +2345,7 @@ function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDeta
         : {}),
     };
   }
-  return data as ActivityWireDetail;
+  return { ...(data as ActivityWireDetail), type: type as ActivityDetailTypeWire };
 }
 
 function parseActivityEventRange(

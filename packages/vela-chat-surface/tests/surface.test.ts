@@ -215,6 +215,22 @@ test("keeps OpenAPI-required read model envelope fields required in surface wire
   assert.doesNotMatch(activityViewInterface, /window\?:\s*ActivityWindow/);
 });
 
+test("keeps OpenAPI activity enums narrow in surface wire types", async () => {
+  const source = await import("node:fs/promises").then((fs) =>
+    fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
+  );
+  const itemInterface = source.match(/export interface ActivityWireItem \{[\s\S]*?\n\}/)?.[0] ?? "";
+
+  assert.match(source, /export type ActivityItemKindWire\s*=/);
+  assert.match(source, /export type ActivityItemStatusWire\s*=/);
+  assert.match(source, /export type ActivityDetailTypeWire\s*=/);
+  assert.match(itemInterface, /kind:\s*ActivityItemKindWire/);
+  assert.match(itemInterface, /status:\s*ActivityItemStatusWire/);
+  assert.doesNotMatch(itemInterface, /kind:\s*string/);
+  assert.doesNotMatch(itemInterface, /status:\s*string/);
+  assert.doesNotMatch(source, /\|\s*\{\s*\n\s*type:\s*string;\s*\n\s*\[key: string\]: unknown;\s*\n\s*\}/);
+});
+
 test("prepends transcript windows without duplicating rows and preserves latest cursor", () => {
   const current = {
     session_id: "sess_1",

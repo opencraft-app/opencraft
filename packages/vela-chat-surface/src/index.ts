@@ -51,10 +51,34 @@ export interface ChatTranscriptWireView {
   window: ChatTranscriptWindow;
 }
 
+export type ActivityItemKindWire = "tool" | "command" | "task" | "warning" | "runtime";
+export type ActivityItemStatusWire = "pending" | "running" | "completed" | "failed" | "cancelled";
+export type ActivityDetailTypeWire =
+  | "shell"
+  | "read"
+  | "edit"
+  | "write"
+  | "search"
+  | "fetch"
+  | "browser"
+  | "mcp_tool"
+  | "dynamic_tool"
+  | "sub_agent"
+  | "image_generation"
+  | "image_view"
+  | "plan"
+  | "plain_text"
+  | "unknown"
+  | "tool";
+export type ActivityGenericDetailTypeWire = Exclude<
+  ActivityDetailTypeWire,
+  "shell" | "read" | "edit" | "write" | "search" | "fetch"
+>;
+
 export interface ActivityWireItem {
   id: string;
-  kind: string;
-  status: string;
+  kind: ActivityItemKindWire;
+  status: ActivityItemStatusWire;
   title: string;
   summary?: string;
   detail?: ActivityWireDetail;
@@ -115,21 +139,7 @@ export type ActivityWireDetail =
       duration_ms?: number;
     }
   | {
-      type:
-        | "browser"
-        | "mcp_tool"
-        | "dynamic_tool"
-        | "sub_agent"
-        | "image_generation"
-        | "image_view"
-        | "plan"
-        | "plain_text"
-        | "unknown"
-        | "tool";
-      [key: string]: unknown;
-    }
-  | {
-      type: string;
+      type: ActivityGenericDetailTypeWire;
       [key: string]: unknown;
     };
 
@@ -176,8 +186,8 @@ export interface ChatSurfaceTranscriptRow {
 
 export interface ChatSurfaceActivityItem {
   id: string;
-  kind: string;
-  status: string;
+  kind: ActivityItemKindWire;
+  status: ActivityItemStatusWire;
   title: string;
   summary: string;
   detail?: ActivityWireDetail;

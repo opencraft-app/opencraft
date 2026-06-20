@@ -488,6 +488,25 @@ test("keeps OpenAPI-required transcript row fields required in the client wire m
   assert.doesNotMatch(source, /row\.source_event_ids\s*\?\?/);
 });
 
+test("keeps OpenAPI activity enums narrow in the client wire model", async () => {
+  const source = await import("node:fs/promises").then((fs) =>
+    fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
+  );
+  const itemInterface = source.match(/export interface ActivityWireItem \{[\s\S]*?\n\}/)?.[0] ?? "";
+  const detailInterface =
+    source.match(/export interface ActivityWireDetail \{[\s\S]*?\n\}/)?.[0] ?? "";
+
+  assert.match(source, /export type ActivityItemKindWire\s*=/);
+  assert.match(source, /export type ActivityItemStatusWire\s*=/);
+  assert.match(source, /export type ActivityDetailTypeWire\s*=/);
+  assert.match(itemInterface, /kind:\s*ActivityItemKindWire/);
+  assert.match(itemInterface, /status:\s*ActivityItemStatusWire/);
+  assert.match(detailInterface, /type:\s*ActivityDetailTypeWire/);
+  assert.doesNotMatch(itemInterface, /kind:\s*string/);
+  assert.doesNotMatch(itemInterface, /status:\s*string/);
+  assert.doesNotMatch(detailInterface, /type:\s*string/);
+});
+
 test("validates optional transcript row activity_id at the client wire boundary", async () => {
   const client = createVeladClient({
     baseUrl: "http://127.0.0.1:3857/api/v1/",
