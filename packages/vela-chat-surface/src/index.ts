@@ -158,11 +158,26 @@ export interface ActivityWireView {
   cursor: ChatSurfaceCursor;
 }
 
+export type AgentRequestTypeWire =
+  | "permission"
+  | "question"
+  | "tool_call"
+  | "tool_confirmation"
+  | "custom_input"
+  | "other";
+export type RequestStatusWire =
+  | "pending"
+  | "approved"
+  | "denied"
+  | "answered"
+  | "expired"
+  | "cancelled";
+
 export interface AgentRequestWire {
   id: string;
   session_id: string;
-  type: string;
-  status: string;
+  type: AgentRequestTypeWire;
+  status: RequestStatusWire;
   title?: string;
   description?: string;
   payload?: Record<string, unknown>;
@@ -206,8 +221,8 @@ export interface ChatSurfaceActivityItem {
 
 export interface ChatSurfacePendingRequest {
   id: string;
-  type: string;
-  status: string;
+  type: AgentRequestTypeWire;
+  status: RequestStatusWire;
   title: string;
   description: string;
   payload?: Record<string, unknown>;

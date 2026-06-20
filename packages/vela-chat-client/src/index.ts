@@ -106,6 +106,14 @@ export interface ActivityWindowOptions {
   anchorItemId?: string;
 }
 
+export type AgentRequestTypeWire =
+  | "permission"
+  | "question"
+  | "tool_call"
+  | "tool_confirmation"
+  | "custom_input"
+  | "other";
+
 export type RequestStatusWire =
   | "pending"
   | "approved"
@@ -121,7 +129,7 @@ export interface PendingRequestsOptions {
 export interface AgentRequestWire {
   id: string;
   session_id: string;
-  type: string;
+  type: AgentRequestTypeWire;
   status: RequestStatusWire;
   title?: string;
   description?: string;
@@ -1278,22 +1286,26 @@ const activityItemKinds = new Set<string>(
 const activityItemStatuses = new Set<string>(
   ["pending", "running", "completed", "failed", "cancelled"] satisfies ActivityItemStatusWire[],
 );
-const requestTypes = new Set([
-  "permission",
-  "question",
-  "tool_call",
-  "tool_confirmation",
-  "custom_input",
-  "other",
-]);
-const requestStatuses = new Set([
-  "pending",
-  "approved",
-  "denied",
-  "answered",
-  "expired",
-  "cancelled",
-]);
+const requestTypes = new Set<string>(
+  [
+    "permission",
+    "question",
+    "tool_call",
+    "tool_confirmation",
+    "custom_input",
+    "other",
+  ] satisfies AgentRequestTypeWire[],
+);
+const requestStatuses = new Set<string>(
+  [
+    "pending",
+    "approved",
+    "denied",
+    "answered",
+    "expired",
+    "cancelled",
+  ] satisfies RequestStatusWire[],
+);
 const diffSummaryStatuses = new Set(["added", "modified", "deleted", "renamed"]);
 const activitySearchModes = new Set(["code", "web", "files", "unknown"]);
 const activityDetailTypes = new Set<string>(
@@ -2193,7 +2205,7 @@ function parseAgentRequestWire(data: unknown, owner: string): AgentRequestWire {
   return {
     id: requiredViewString(data, "id", owner, invalidPendingRequestsView),
     session_id: requiredViewString(data, "session_id", owner, invalidPendingRequestsView),
-    type,
+    type: type as AgentRequestTypeWire,
     status: status as RequestStatusWire,
     ...(data.title !== undefined
       ? { title: optionalViewString(data, "title", owner, invalidPendingRequestsView) }

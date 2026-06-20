@@ -251,6 +251,26 @@ test("keeps OpenAPI activity enums narrow in surface wire types", async () => {
   assert.doesNotMatch(source, /\|\s*\{\s*\n\s*type:\s*string;\s*\n\s*\[key: string\]: unknown;\s*\n\s*\}/);
 });
 
+test("keeps OpenAPI pending request enums narrow in surface wire types", async () => {
+  const source = await import("node:fs/promises").then((fs) =>
+    fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
+  );
+  const wireInterface = source.match(/export interface AgentRequestWire \{[\s\S]*?\n\}/)?.[0] ?? "";
+  const surfaceInterface =
+    source.match(/export interface ChatSurfacePendingRequest \{[\s\S]*?\n\}/)?.[0] ?? "";
+
+  assert.match(source, /export type AgentRequestTypeWire\s*=/);
+  assert.match(source, /export type RequestStatusWire\s*=/);
+  assert.match(wireInterface, /type:\s*AgentRequestTypeWire/);
+  assert.match(wireInterface, /status:\s*RequestStatusWire/);
+  assert.match(surfaceInterface, /type:\s*AgentRequestTypeWire/);
+  assert.match(surfaceInterface, /status:\s*RequestStatusWire/);
+  assert.doesNotMatch(wireInterface, /type:\s*string/);
+  assert.doesNotMatch(wireInterface, /status:\s*string/);
+  assert.doesNotMatch(surfaceInterface, /type:\s*string/);
+  assert.doesNotMatch(surfaceInterface, /status:\s*string/);
+});
+
 test("prepends transcript windows without duplicating rows and preserves latest cursor", () => {
   const current = {
     session_id: "sess_1",

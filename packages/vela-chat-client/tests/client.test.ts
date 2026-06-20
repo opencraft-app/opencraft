@@ -558,6 +558,22 @@ test("keeps OpenAPI session backend and status enums narrow in the client wire m
   assert.doesNotMatch(runtimeInfoInterface, /provider:\s*string/);
 });
 
+test("keeps OpenAPI agent request enums narrow in the client wire model", async () => {
+  const source = await import("node:fs/promises").then((fs) =>
+    fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
+  );
+  const requestInterface = source.match(/export interface AgentRequestWire \{[\s\S]*?\n\}/)?.[0] ?? "";
+
+  assert.match(source, /export type AgentRequestTypeWire\s*=/);
+  assert.match(source, /export type RequestStatusWire\s*=/);
+  assert.match(requestInterface, /type:\s*AgentRequestTypeWire/);
+  assert.match(requestInterface, /status:\s*RequestStatusWire/);
+  assert.match(source, /type:\s*type as AgentRequestTypeWire/);
+  assert.match(source, /status:\s*status as RequestStatusWire/);
+  assert.doesNotMatch(requestInterface, /type:\s*string/);
+  assert.doesNotMatch(requestInterface, /status:\s*string/);
+});
+
 test("validates optional transcript row activity_id at the client wire boundary", async () => {
   const client = createVeladClient({
     baseUrl: "http://127.0.0.1:3857/api/v1/",
