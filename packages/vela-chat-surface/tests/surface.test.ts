@@ -54,7 +54,7 @@ test("normalizes transcript wire rows into stable semantic surface rows", () => 
         has_older: true,
         has_newer: false,
       },
-      cursor: { latest_event_id: "evt_assistant_1", has_more: false },
+      cursor: { event_id: "evt_assistant_1", epoch: 1, seq: 2 },
     },
     activity: {
       items: [
@@ -72,7 +72,7 @@ test("normalizes transcript wire rows into stable semantic surface rows", () => 
           },
         },
       ],
-      cursor: { latest_event_id: "evt_turn_failed", has_more: false },
+      cursor: { event_id: "evt_turn_failed", epoch: 1, seq: 4 },
     },
   });
 
@@ -97,8 +97,8 @@ test("normalizes transcript wire rows into stable semantic surface rows", () => 
     "evt_turn_started",
     "evt_turn_failed",
   ]);
-  assert.equal(surface.cursors.transcript?.latest_event_id, "evt_assistant_1");
-  assert.equal(surface.cursors.activity?.latest_event_id, "evt_turn_failed");
+  assert.equal(surface.cursors.transcript?.event_id, "evt_assistant_1");
+  assert.equal(surface.cursors.activity?.event_id, "evt_turn_failed");
 });
 
 test("normalizes pending requests as a separate surface lane", () => {
@@ -106,7 +106,7 @@ test("normalizes pending requests as a separate surface lane", () => {
     sessionId: "sess_requests",
     transcript: {
       rows: [],
-      cursor: { latest_event_id: "evt_transcript" },
+      cursor: { event_id: "evt_transcript", epoch: 1, seq: 1 },
     },
     requests: {
       requests: [
