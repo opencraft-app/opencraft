@@ -2103,7 +2103,7 @@ function AutomationFormModal({
         const { [channel]: _removed, ...rest } = prev;
         return rest;
       });
-      showTestSendToast("error", formatTestSendError(error, t("发送失败，请检查通道配置")));
+      showTestSendToast("error", formatTestSendError(error, t("发送失败，请检查通道配置或稍后重试")));
     }
   }, [botId, chatIdErrors, deliverChatIds, showTestSendToast, t]);
 
@@ -3515,7 +3515,7 @@ export function isHermesNotificationChannelConfigured(
   return enabledChannels === null || enabledChannels.has(key);
 }
 
-function formatTestSendError(error: unknown, fallback: string): string {
+export function formatTestSendError(error: unknown, fallback: string): string {
   const raw = error instanceof CronCommandError
     ? error.output || error.message
     : error instanceof Error
@@ -3527,7 +3527,17 @@ function formatTestSendError(error: unknown, fallback: string): string {
     .filter(Boolean)
     .slice(-3)
     .join("；");
-  return message || fallback;
+  if (!message) return fallback;
+  return `${fallback}：${formatKnownTestSendError(message)}`;
+}
+
+function formatKnownTestSendError(message: string): string {
+  if (/command\s+timed\s+out/i.test(message)) return "命令执行超时";
+  const unknownPlatform = message.match(/unknown platform:?\s*(.+)$/i);
+  if (unknownPlatform?.[1]) return `未知通知通道：${unknownPlatform[1].trim()}`;
+  if (/command\s+not\s+found|not found/i.test(message)) return "实例内未找到 hermes send 命令";
+  if (/permission denied/i.test(message)) return "实例内命令执行权限不足";
+  return message;
 }
 
 function normalizeHermesChannelKey(channel: string): string {

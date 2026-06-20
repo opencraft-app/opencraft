@@ -10,6 +10,7 @@ import {
   formatEffectiveWindowPeriod,
   formatEffectiveWindowTooltipLines,
   formatScheduleTooltip,
+  formatTestSendError,
   getLastAgentRunForJob,
   getEffectiveWindowStatus,
   isHermesNotificationChannelConfigured,
@@ -305,6 +306,20 @@ describe("isHermesNotificationChannelConfigured", () => {
 
   it("keeps coming-soon channels disabled even when status is unknown", () => {
     expect(isHermesNotificationChannelConfigured(null, "telegram", true)).toBe(false);
+  });
+});
+
+describe("formatTestSendError", () => {
+  it("wraps raw send failures in actionable Chinese copy", () => {
+    expect(formatTestSendError(new Error("backend failed"), "发送失败，请检查通道配置或稍后重试"))
+      .toBe("发送失败，请检查通道配置或稍后重试：backend failed");
+  });
+
+  it("translates common English command errors", () => {
+    expect(formatTestSendError(new Error("Command timed out"), "发送失败，请检查通道配置或稍后重试"))
+      .toBe("发送失败，请检查通道配置或稍后重试：命令执行超时");
+    expect(formatTestSendError(new Error("Unknown platform: wechat"), "发送失败，请检查通道配置或稍后重试"))
+      .toBe("发送失败，请检查通道配置或稍后重试：未知通知通道：wechat");
   });
 });
 
