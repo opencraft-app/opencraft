@@ -313,10 +313,41 @@ export type ClientInputPart =
   | { type: "image_ref"; uri: string }
   | { type: "image"; data: string; mime_type: string };
 
-export type ClientInputEvent = {
-  type: "user.message";
-  content: ClientInputPart[];
-};
+export type ToolConfirmationResultWire = "allow" | "deny";
+export type ToolConfirmationScopeWire = "once" | "session" | "project";
+
+export type ClientInputEvent =
+  | {
+      type: "user.message";
+      content: ClientInputPart[];
+      options?: Record<string, unknown>;
+    }
+  | {
+      type: "user.tool_confirmation";
+      request_id: string;
+      result: ToolConfirmationResultWire;
+      scope?: ToolConfirmationScopeWire;
+      options?: Record<string, unknown>;
+    }
+  | {
+      type: "user.custom_tool_result";
+      request_id: string;
+      content: ClientInputPart[];
+      options?: Record<string, unknown>;
+    }
+  | {
+      type: "user.request_answer";
+      request_id: string;
+      answer: string;
+      options?: Record<string, unknown>;
+    };
+
+export interface SendSessionInputEventsInput {
+  sessionId: string;
+  events: ClientInputEvent[];
+  idempotencyKey?: string;
+  options?: Record<string, unknown>;
+}
 
 export type CommandAckWire =
   | AcceptedCommandAckWire
@@ -388,6 +419,7 @@ export interface VeladClient {
   ) => Promise<PendingRequestsWireView>;
   getDiffs: (sessionId: string) => Promise<DiffReviewWireView>;
   cancelSession: (input: CancelSessionInput) => Promise<CommandAckWire>;
+  sendSessionInputEvents: (input: SendSessionInputEventsInput) => Promise<CommandAckWire>;
   sendUserMessage: (input: {
     sessionId: string;
     text?: string;
@@ -896,6 +928,32 @@ export function createVeladClient(options: VeladClientOptions): VeladClient {
   const baseUrl = normalizeBaseUrl(options.baseUrl);
   const doFetch = options.fetch ?? fetch;
 
+  const postSessionInputEvents = async ({
+    sessionId,
+    events,
+    idempotencyKey,
+    options: requestOptions,
+  }: SendSessionInputEventsInput) => {
+    validateClientInputEvents(events);
+    if (requestOptions !== undefined && !isRecord(requestOptions)) {
+      throw invalidInputEvent("SendSessionEventsRequest.options must be an object");
+    }
+    const url = new URL(`sessions/${encodeSessionId(sessionId)}/events`, baseUrl);
+    const headerIdempotencyKey = validateOptionalIdempotencyKey(idempotencyKey) ?? createIdempotencyKey();
+    const response = await doFetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": headerIdempotencyKey,
+      },
+      body: JSON.stringify({
+        events,
+        ...(requestOptions !== undefined ? { options: requestOptions } : {}),
+      }),
+    });
+    return readCommandAckResponse(response);
+  };
+
   return {
     async createSession(input) {
       validateCreateSessionInput(input);
@@ -1015,27 +1073,21 @@ export function createVeladClient(options: VeladClientOptions): VeladClient {
       });
       return readCommandAckResponse(response);
     },
+    async sendSessionInputEvents(input) {
+      return postSessionInputEvents(input);
+    },
     async sendUserMessage({ sessionId, text, content, idempotencyKey }) {
-      const url = new URL(`sessions/${encodeSessionId(sessionId)}/events`, baseUrl);
-      const headerIdempotencyKey = validateOptionalIdempotencyKey(idempotencyKey) ?? createIdempotencyKey();
       const messageContent = content ?? (text ? [{ type: "text", text } as const] : []);
-      validateClientInputParts(messageContent);
-      const response = await doFetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Idempotency-Key": headerIdempotencyKey,
-        },
-        body: JSON.stringify({
-          events: [
-            {
-              type: "user.message",
-              content: messageContent,
-            } satisfies ClientInputEvent,
-          ],
-        }),
+      return postSessionInputEvents({
+        sessionId,
+        idempotencyKey,
+        events: [
+          {
+            type: "user.message",
+            content: messageContent,
+          },
+        ],
       });
-      return readCommandAckResponse(response);
     },
   };
 }
@@ -1345,6 +1397,46 @@ function validateClientInputParts(parts: readonly ClientInputPart[]) {
   }
 }
 
+function validateClientInputEvents(events: readonly ClientInputEvent[]) {
+  if (!Array.isArray(events) || events.length === 0) {
+    throw invalidInputEvent("SendSessionEventsRequest.events requires at least one event");
+  }
+  for (const event of events) {
+    validateClientInputEvent(event);
+  }
+}
+
+function validateClientInputEvent(event: unknown): asserts event is ClientInputEvent {
+  if (!isRecord(event)) {
+    throw invalidInputEvent("ClientInputEvent must be an object");
+  }
+  validateOptionalInputEventOptions(event);
+  switch (event.type) {
+    case "user.message":
+      validateClientInputParts(event.content as ClientInputPart[]);
+      return;
+    case "user.tool_confirmation":
+      requireInputEventString(event, "request_id");
+      requireInputEventEnum(event, "result", toolConfirmationResults);
+      if (event.scope !== undefined) {
+        requireInputEventEnum(event, "scope", toolConfirmationScopes);
+      }
+      return;
+    case "user.custom_tool_result":
+      requireInputEventString(event, "request_id");
+      validateClientInputParts(event.content as ClientInputPart[]);
+      return;
+    case "user.request_answer":
+      requireInputEventString(event, "request_id");
+      requireInputEventString(event, "answer");
+      return;
+    default:
+      throw invalidInputEvent(
+        "ClientInputEvent.type must be user.message, user.tool_confirmation, user.custom_tool_result, or user.request_answer",
+      );
+  }
+}
+
 function validateClientInputPart(part: unknown): asserts part is ClientInputPart {
   if (!isRecord(part)) {
     throw invalidInputPart("InputPart must be an object");
@@ -1363,6 +1455,32 @@ function validateClientInputPart(part: unknown): asserts part is ClientInputPart
       return;
     default:
       throw invalidInputPart("InputPart.type must be text, file_ref, image_ref, or image");
+  }
+}
+
+const toolConfirmationResults = new Set(["allow", "deny"]);
+const toolConfirmationScopes = new Set(["once", "session", "project"]);
+
+function requireInputEventString(event: Record<string, unknown>, field: string) {
+  if (typeof event[field] !== "string") {
+    throw invalidInputEvent(`ClientInputEvent.${String(event.type)} requires ${field}`);
+  }
+}
+
+function requireInputEventEnum(
+  event: Record<string, unknown>,
+  field: string,
+  values: Set<string>,
+) {
+  const value = event[field];
+  if (typeof value !== "string" || !values.has(value)) {
+    throw invalidInputEvent(`ClientInputEvent.${String(event.type)} ${field} must be a known value`);
+  }
+}
+
+function validateOptionalInputEventOptions(event: Record<string, unknown>) {
+  if (event.options !== undefined && !isRecord(event.options)) {
+    throw invalidInputEvent(`ClientInputEvent.${String(event.type)} options must be an object`);
   }
 }
 
@@ -2696,6 +2814,10 @@ function invalidCommandAck(message: string) {
 
 function invalidInputPart(message: string) {
   return new VeladClientError("invalid_input_part", message);
+}
+
+function invalidInputEvent(message: string) {
+  return new VeladClientError("invalid_input_event", message);
 }
 
 function invalidIdempotencyKey(message: string) {

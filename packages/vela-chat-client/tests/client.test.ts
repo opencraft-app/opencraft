@@ -3206,6 +3206,126 @@ test("cancels a running session with idempotency key", async () => {
   });
 });
 
+test("sends request response input events through the unified event endpoint", async () => {
+  const requests: Array<{ url: string; init?: RequestInit }> = [];
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async (url, init) => {
+      requests.push({ url: String(url), init });
+      return new Response(
+        JSON.stringify({
+          status: "accepted",
+          command_id: "cmd_request_response",
+          session_id: "ses_requests",
+          cursor: { event_id: "evt_request_response", epoch: 1, seq: 12 },
+        }),
+        { status: 202, headers: { "Content-Type": "application/json" } },
+      );
+    },
+  });
+
+  const ack = await client.sendSessionInputEvents({
+    sessionId: "ses_requests",
+    idempotencyKey: "cmd_request_response",
+    events: [
+      {
+        type: "user.tool_confirmation",
+        request_id: "req_tool",
+        result: "allow",
+        scope: "once",
+      },
+      {
+        type: "user.custom_tool_result",
+        request_id: "req_custom",
+        content: [{ type: "text", text: "result text" }],
+      },
+      {
+        type: "user.request_answer",
+        request_id: "req_question",
+        answer: "方案 B",
+      },
+    ],
+  });
+
+  assert.equal(requests[0]?.url, "http://127.0.0.1:3857/api/v1/sessions/ses_requests/events");
+  assert.equal(requests[0]?.init?.method, "POST");
+  assert.equal(
+    (requests[0]?.init?.headers as Record<string, string>)["Idempotency-Key"],
+    "cmd_request_response",
+  );
+  assert.deepEqual(JSON.parse(String(requests[0]?.init?.body)), {
+    events: [
+      {
+        type: "user.tool_confirmation",
+        request_id: "req_tool",
+        result: "allow",
+        scope: "once",
+      },
+      {
+        type: "user.custom_tool_result",
+        request_id: "req_custom",
+        content: [{ type: "text", text: "result text" }],
+      },
+      {
+        type: "user.request_answer",
+        request_id: "req_question",
+        answer: "方案 B",
+      },
+    ],
+  });
+  assert.equal(ack.status, "accepted");
+  assert.equal(ack.command_id, "cmd_request_response");
+});
+
+test("rejects invalid request response input events before sending", async () => {
+  let fetchCalled = false;
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async () => {
+      fetchCalled = true;
+      return new Response("{}", { status: 202 });
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      client.sendSessionInputEvents({
+        sessionId: "ses_requests",
+        events: [],
+      }),
+    (err) =>
+      err instanceof VeladClientError &&
+      err.code === "invalid_input_event" &&
+      /at least one/.test(err.message),
+  );
+
+  await assert.rejects(
+    () =>
+      client.sendSessionInputEvents({
+        sessionId: "ses_requests",
+        events: [{ type: "user.tool_confirmation", request_id: "req_tool", result: "maybe" } as never],
+      }),
+    (err) =>
+      err instanceof VeladClientError &&
+      err.code === "invalid_input_event" &&
+      /result/.test(err.message),
+  );
+
+  await assert.rejects(
+    () =>
+      client.sendSessionInputEvents({
+        sessionId: "ses_requests",
+        events: [{ type: "user.request_answer", request_id: "req_question" } as never],
+      }),
+    (err) =>
+      err instanceof VeladClientError &&
+      err.code === "invalid_input_event" &&
+      /answer/.test(err.message),
+  );
+
+  assert.equal(fetchCalled, false);
+});
+
 test("rejects invalid InputPart oneOf branches before sending", async () => {
   let fetchCalled = false;
   const client = createVeladClient({
