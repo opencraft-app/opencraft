@@ -195,10 +195,15 @@ contract and Paseo's agent-stream shape. Do not turn these into heuristic fixes:
   and requests transcript refresh only when a delta has no local assistant row
   target.
 - `ChatTranscriptView` and `ActivityShelfView` are still handwritten TypeScript
-  wire interfaces. Runtime parsers validate OpenAPI required fields, but some
-  interface fields remain wider because local overlay and test fixtures still
-  construct intermediate snapshots. Tighten this only together with generated
-  validators or a dedicated wire-type hardening pass.
+  wire interfaces, but their OpenAPI-required envelopes are now enforced in both
+  `vela-chat-client` and `vela-chat-surface`: `session_id`, `window`, and full
+  `cursor` are required before UI layers consume them. Do not reintroduce local
+  fallback DTOs that omit those fields.
+- The remaining deliberate looseness is the SSE parser: it still accepts
+  canonical `VelaEvent`-like messages and `sync.reset` messages through one
+  tolerant stream reader. Tighten that only after real Codex / ACP / Pi stream
+  cassettes prove which malformed frames should be rejected at the browser
+  boundary.
 
 ### `renderers/`
 
