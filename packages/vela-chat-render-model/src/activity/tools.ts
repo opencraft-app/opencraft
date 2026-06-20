@@ -43,7 +43,12 @@ export function renderToolActivityRows(items: ChatSurfaceActivityItem[]): AgentW
 }
 
 function isToolActivity(item: ChatSurfaceActivityItem): boolean {
-  return item.kind === "tool" || Boolean(item.detail?.type);
+  return (
+    item.kind === "tool" ||
+    item.kind === "command" ||
+    item.kind === "task" ||
+    Boolean(item.detail?.type)
+  );
 }
 
 function toolPresentation(

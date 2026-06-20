@@ -547,6 +547,49 @@ test("keeps low-information projected tool items as compact agent work rows", ()
   assert.equal(workRows[0]?.display, "compact");
 });
 
+test("renders OpenAPI command and task activity items without tool detail", () => {
+  const surface: ChatSurface = {
+    session_id: "sess_command_task",
+    transcript: { rows: [] },
+    activity: {
+      items: [
+        {
+          id: "activity_command_1",
+          kind: "command",
+          status: "completed",
+          title: "Ran command",
+          summary: "npm test",
+          created_at: "2026-06-18T10:00:01Z",
+          debug: { projection: "activity", source_event_ids: ["evt_command"] },
+        },
+        {
+          id: "activity_task_1",
+          kind: "task",
+          status: "running",
+          title: "Running task",
+          summary: "Indexing workspace",
+          created_at: "2026-06-18T10:00:02Z",
+          debug: { projection: "activity", source_event_ids: ["evt_task"] },
+        },
+      ],
+    },
+    pending_requests: { items: [] },
+    cursors: {},
+    stream: { connected: false, running: false },
+  };
+
+  const model = buildChatRenderModel(surface, { kind: "desktop_web" });
+  const workRows = model.rows.filter((row) => row.kind === "agent_work");
+
+  assert.deepEqual(
+    workRows.map((row) => [row.title, row.summary, row.status, row.activityId]),
+    [
+      ["Ran command", "npm test", "completed", "activity_command_1"],
+      ["Running task", "Indexing workspace", "running", "activity_task_1"],
+    ],
+  );
+});
+
 test("turns provider-style activity titles into quiet action labels", () => {
   const surface: ChatSurface = {
     session_id: "sess_raw_titles",
