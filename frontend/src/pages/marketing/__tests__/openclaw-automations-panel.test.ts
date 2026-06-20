@@ -10,6 +10,8 @@ import {
   formatEffectiveWindowPeriod,
   formatEffectiveWindowTooltipLines,
   formatScheduleTooltip,
+  formatTestSendError,
+  getTestSendFailureFallback,
   getLastAgentRunForJob,
   getEffectiveWindowStatus,
   isHermesNotificationChannelConfigured,
@@ -305,6 +307,36 @@ describe("isHermesNotificationChannelConfigured", () => {
 
   it("keeps coming-soon channels disabled even when status is unknown", () => {
     expect(isHermesNotificationChannelConfigured(null, "telegram", true)).toBe(false);
+  });
+});
+
+describe("formatTestSendError", () => {
+  it("wraps raw send failures in actionable Chinese copy", () => {
+    expect(formatTestSendError(new Error("backend failed"), "发送失败，请检查通道配置或稍后重试"))
+      .toBe("发送失败，请检查通道配置或稍后重试：backend failed");
+  });
+
+  it("translates common English command errors", () => {
+    expect(formatTestSendError(new Error("Command timed out"), "发送失败，请检查通道配置或稍后重试"))
+      .toBe("发送失败，请检查通道配置或稍后重试：命令执行超时");
+    expect(formatTestSendError(new Error("Unknown platform: wechat"), "发送失败，请检查通道配置或稍后重试"))
+      .toBe("发送失败，请检查通道配置或稍后重试：未知通知通道：wechat");
+  });
+
+  it("hides low-level missing-command details from users", () => {
+    expect(formatTestSendError(new Error("hermes: command not found"), "发送失败，请检查通道配置或稍后重试"))
+      .toBe("发送失败，请检查通道配置或稍后重试");
+  });
+});
+
+describe("getTestSendFailureFallback", () => {
+  it("uses the more specific Weixin home-channel hint for weixin aliases", () => {
+    expect(getTestSendFailureFallback("weixin", "通用失败", "微信失败")).toBe("微信失败");
+    expect(getTestSendFailureFallback("wechat", "通用失败", "微信失败")).toBe("微信失败");
+  });
+
+  it("keeps the generic fallback for other platforms", () => {
+    expect(getTestSendFailureFallback("feishu", "通用失败", "微信失败")).toBe("通用失败");
   });
 });
 

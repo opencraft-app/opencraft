@@ -105,6 +105,8 @@ describe("generate-static-site", () => {
       expect(docsHtml).not.toMatch(/(?:^|[{}])h1\{/);
       expect(docsHtml).toContain("<script type=\"module\" crossorigin src=\"/assets/index-test.js\"></script>");
       expect(docsHtml).toContain("<link rel=\"stylesheet\" crossorigin href=\"/assets/index.css\">");
+      expect(docsHtml).toContain("<link rel=\"icon\" type=\"image/png\" href=\"/lightvela-icon.png\">");
+      expect(docsHtml).not.toContain("<link rel=\"icon\" type=\"image/jpeg\" href=\"/lightvela-logo.jpg\">");
       expect(docsHtml).toContain("aria-label=\"文档导航\"");
       expect(docsHtml).toContain("aria-label=\"本文目录\"");
       expect(docsHtml).toContain("\"@type\":\"TechArticle\"");
@@ -117,11 +119,13 @@ describe("generate-static-site", () => {
       expect(appHtml).toContain("<meta name=\"robots\" content=\"noindex,nofollow\"");
       expect(appHtml).toContain("正在恢复会话...");
       expect(appHtml).toContain("<script type=\"module\" crossorigin src=\"/assets/index-test.js\"></script>");
+      expect(appHtml).toContain("<link rel=\"icon\" type=\"image/png\" href=\"/lightvela-icon.png\">");
       expect(appHtml).not.toContain("data-static-site-critical");
       expect(appHtml).not.toContain("能帮我做什么");
 
       const agentsHtml = readFileSync(join(distDir, "agents", "index.html"), "utf8");
       expect(agentsHtml).toContain("正在恢复会话...");
+      expect(agentsHtml).toContain("<link rel=\"icon\" type=\"image/png\" href=\"/lightvela-icon.png\">");
       expect(agentsHtml).not.toContain("能帮我做什么");
 
       const sitemap = readFileSync(join(distDir, "sitemap.xml"), "utf8");
@@ -163,6 +167,7 @@ describe("generate-static-site", () => {
       expect(homeHtml).toContain("data-react-prerendered=\"home\"");
       expect(homeHtml).toContain("<h1>React home</h1>");
       expect(homeHtml).toContain("/assets/static-render/static/logo.png");
+      expect(homeHtml).toContain("<link rel=\"icon\" type=\"image/png\" href=\"/lightvela-icon.png\">");
       expect(existsSync(join(distDir, "assets", "static-render", "static", "logo.png"))).toBe(true);
       expect(homeHtml).not.toContain("能帮我做什么");
     } finally {
@@ -220,6 +225,7 @@ describe("generate-static-site", () => {
       const zhOverview = readFileSync(join(distDir, "zh", "docs", "overview", "index.html"), "utf8");
       expect(enOverview).toContain("What is LightVela");
       expect(zhOverview).toContain("LightVela 是什么");
+      expect(enOverview).toContain("<link rel=\"icon\" type=\"image/png\" href=\"/lightvela-icon.png\">");
 
       /* <html lang> 跟随 locale 切换 */
       expect(enOverview).toMatch(/<html\s+lang="en-US">/);

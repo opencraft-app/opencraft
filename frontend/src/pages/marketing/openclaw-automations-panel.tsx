@@ -2103,7 +2103,11 @@ function AutomationFormModal({
         const { [channel]: _removed, ...rest } = prev;
         return rest;
       });
-      showTestSendToast("error", formatTestSendError(error, t("发送失败，请检查通道配置")));
+      showTestSendToast("error", formatTestSendError(error, getTestSendFailureFallback(
+        channel,
+        t("发送失败，请检查通道配置或稍后重试"),
+        t("发送失败，请先在微信中向 Hermes Agent 发送任意消息，或稍后重试"),
+      )));
     }
   }, [botId, chatIdErrors, deliverChatIds, showTestSendToast, t]);
 
@@ -3515,7 +3519,7 @@ export function isHermesNotificationChannelConfigured(
   return enabledChannels === null || enabledChannels.has(key);
 }
 
-function formatTestSendError(error: unknown, fallback: string): string {
+export function formatTestSendError(error: unknown, fallback: string): string {
   const raw = error instanceof CronCommandError
     ? error.output || error.message
     : error instanceof Error
@@ -3527,7 +3531,22 @@ function formatTestSendError(error: unknown, fallback: string): string {
     .filter(Boolean)
     .slice(-3)
     .join("；");
-  return message || fallback;
+  if (!message) return fallback;
+  const formatted = formatKnownTestSendError(message);
+  return formatted ? `${fallback}：${formatted}` : fallback;
+}
+
+export function getTestSendFailureFallback(platform: string, fallback: string, weixinFallback: string): string {
+  return normalizeHermesChannelKey(platform) === "weixin" ? weixinFallback : fallback;
+}
+
+function formatKnownTestSendError(message: string): string {
+  if (/command\s+timed\s+out/i.test(message)) return "命令执行超时";
+  const unknownPlatform = message.match(/unknown platform:?\s*(.+)$/i);
+  if (unknownPlatform?.[1]) return `未知通知通道：${unknownPlatform[1].trim()}`;
+  if (/command\s+not\s+found|not found/i.test(message)) return "";
+  if (/permission denied/i.test(message)) return "实例内命令执行权限不足";
+  return message;
 }
 
 function normalizeHermesChannelKey(channel: string): string {
