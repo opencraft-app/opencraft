@@ -15,6 +15,7 @@ import (
 	"cloudagent/channelgateway/internal/channel"
 	"cloudagent/channelgateway/internal/channel/wecom"
 	"cloudagent/channelgateway/internal/config"
+	"cloudagent/channelgateway/internal/eventbus"
 	"cloudagent/channelgateway/internal/router"
 	"cloudagent/channelgateway/internal/store"
 )
@@ -209,7 +210,6 @@ func (r *accountRunner) run(ctx context.Context) error {
 	}()
 	acpClient := r.acpFactory(r.cfg, r.account)
 	defer acpClient.Close()
-	adapter := r.adapterFactory(runtimeCfg)
 	dispatcher := router.NewDispatcherWithOptions(
 		r.store,
 		r.account,
@@ -221,6 +221,7 @@ func (r *accountRunner) run(ctx context.Context) error {
 			InboundStale:   inboundRecoveryStaleAfter,
 		},
 	)
+	adapter := r.adapterFactory(runtimeCfg)
 	acpClient.SetWorkspaceLifecycleHandler(func(event acp.WorkspaceLifecycleEvent) {
 		go func() {
 			lifecycleCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -253,13 +254,46 @@ func (r *accountRunner) run(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go r.renewLeaseLoop(runCtx, cancel)
-	go r.inboundRecoveryLoop(runCtx, dispatcher)
 	go r.outboxLoop(runCtx, adapter)
 	go r.sessionIdleCloseLoop(runCtx, dispatcher)
+	inboundBus, eventBusDriver, err := eventbus.NewInboundBus(eventbus.Options{
+		Driver:               r.cfg.EventBus.Driver,
+		Store:                r.store,
+		Lease:                lease,
+		RedisAddr:            r.cfg.EventBus.RedisAddr,
+		RedisPassword:        r.cfg.EventBus.RedisPassword,
+		RedisDB:              r.cfg.EventBus.RedisDB,
+		RedisStreamPrefix:    r.cfg.EventBus.RedisStreamPrefix,
+		RedisConsumerGroup:   r.cfg.EventBus.RedisConsumerGroup,
+		RedisConsumerName:    r.cfg.OwnerID,
+		RedisClaimIdle:       r.cfg.EventBus.RedisClaimIdle,
+		RedisReadBlock:       r.cfg.EventBus.RedisReadBlock,
+		DatabasePollInterval: r.cfg.EventBus.PollInterval,
+		InboundStaleAfter:    inboundRecoveryStaleAfter,
+	})
+	if err != nil {
+		r.states.SetError(r.account.ChannelAccountID, err)
+		return fmt.Errorf("initialize event bus: %w", err)
+	}
+	defer inboundBus.Close()
+	inboundWorkers := r.cfg.EventBus.InboundWorkerCount
+	if inboundWorkers <= 0 {
+		inboundWorkers = 1
+	}
+	go func() {
+		if err := inboundBus.RunInboundConsumers(runCtx, r.account.ChannelAccountID, inboundWorkers, dispatcher); err != nil && !errors.Is(err, context.Canceled) {
+			log.Printf("channelgateway eventbus_trace account_id=%s agent_id=%s action=inbound_consumer_stopped error=%s",
+				runtimeLogValue(r.account.ChannelAccountID), runtimeLogValue(r.account.AgentID), runtimeLogValue(err.Error()))
+			cancel()
+		}
+	}()
+	inboundHandler := eventbus.InboundPublisher{Bus: inboundBus}
+	log.Printf("channelgateway eventbus_trace account_id=%s agent_id=%s action=event_bus_enabled driver=%s inbound_workers=%d",
+		runtimeLogValue(r.account.ChannelAccountID), runtimeLogValue(r.account.AgentID), runtimeLogValue(eventBusDriver), inboundWorkers)
 	r.states.SetStatus(r.account.ChannelAccountID, "running")
 	log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s action=wecom_adapter_start websocket_url=%s",
 		runtimeLogValue(r.account.ChannelAccountID), runtimeLogValue(r.account.AgentID), runtimeLogValue(runtimeCfg.WebSocketURL))
-	err = adapter.Start(runCtx, dispatcher)
+	err = adapter.Start(runCtx, inboundHandler)
 	if err != nil {
 		r.states.SetError(r.account.ChannelAccountID, err)
 	}
@@ -300,60 +334,6 @@ func isLeaseHeld(err error) bool {
 	}
 	var held store.LeaseHeldError
 	return errors.As(err, &held)
-}
-
-func (r *accountRunner) inboundRecoveryLoop(ctx context.Context, dispatcher *router.Dispatcher) {
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-	for {
-		r.recoverInboundOnce(ctx, dispatcher)
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
-	}
-}
-
-func (r *accountRunner) recoverInboundOnce(ctx context.Context, dispatcher *router.Dispatcher) {
-	lease := r.states.GetLease(r.account.ChannelAccountID)
-	if lease.ChannelAccountID == "" {
-		return
-	}
-	items, err := r.store.ListRecoverableInboundMessages(ctx, lease, 16, inboundRecoveryStaleAfter)
-	if err != nil {
-		log.Printf("recover inbound account=%s failed: %v", lease.ChannelAccountID, err)
-		return
-	}
-	for _, item := range items {
-		var msg channel.Message
-		if err := json.Unmarshal([]byte(item.PayloadJSON), &msg); err != nil {
-			_ = r.store.MarkInboundMessageFailed(ctx, lease, item.MessageID, item.ACPSessionID, fmt.Sprintf("decode inbound payload: %v", err), time.Now().UTC().Add(time.Minute))
-			continue
-		}
-		if strings.TrimSpace(msg.ChannelAccountID) == "" {
-			msg.ChannelAccountID = item.ChannelAccountID
-		}
-		if msg.ChannelType == "" {
-			msg.ChannelType = channel.Type(item.ChannelType)
-		}
-		if strings.TrimSpace(msg.ExternalMessageID) == "" {
-			msg.ExternalMessageID = item.ExternalMessageID
-		}
-		if strings.TrimSpace(msg.ExternalConversationID) == "" {
-			msg.ExternalConversationID = item.ExternalConversationID
-		}
-		log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s message_id=%s action=inbound_recover_start status=%s retry_count=%d",
-			runtimeLogValue(item.ChannelAccountID), runtimeLogValue(r.account.AgentID), runtimeLogValue(item.ExternalMessageID),
-			runtimeLogValue(item.Status), item.RetryCount)
-		if err := dispatcher.HandleInbound(ctx, msg); err != nil {
-			log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s message_id=%s action=inbound_recover_failed error=%s",
-				runtimeLogValue(item.ChannelAccountID), runtimeLogValue(r.account.AgentID), runtimeLogValue(item.ExternalMessageID), runtimeLogValue(err.Error()))
-			continue
-		}
-		log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s message_id=%s action=inbound_recover_done",
-			runtimeLogValue(item.ChannelAccountID), runtimeLogValue(r.account.AgentID), runtimeLogValue(item.ExternalMessageID))
-	}
 }
 
 func (r *accountRunner) renewLeaseLoop(ctx context.Context, cancel context.CancelFunc) {
@@ -471,13 +451,11 @@ func weComChannelAccount(cfg config.WeComConfig) (store.ChannelAccount, error) {
 		return store.ChannelAccount{}, errors.New("wecom agent_id is required")
 	}
 	configJSON, err := json.Marshal(map[string]any{
-		"bot_id":             cfg.BotID,
-		"secret":             cfg.Secret,
-		"websocket_url":      cfg.WebSocketURL,
-		"dm_policy":          cfg.DMPolicy,
-		"group_policy":       cfg.GroupPolicy,
-		"handler_workers":    cfg.HandlerWorkers,
-		"handler_queue_size": cfg.HandlerQueueSize,
+		"bot_id":        cfg.BotID,
+		"secret":        cfg.Secret,
+		"websocket_url": cfg.WebSocketURL,
+		"dm_policy":     cfg.DMPolicy,
+		"group_policy":  cfg.GroupPolicy,
 	})
 	if err != nil {
 		return store.ChannelAccount{}, err
@@ -495,13 +473,11 @@ func weComChannelAccount(cfg config.WeComConfig) (store.ChannelAccount, error) {
 
 func weComConfigForAccount(account store.ChannelAccount) (wecom.Config, error) {
 	var raw struct {
-		BotID            string `json:"bot_id"`
-		Secret           string `json:"secret"`
-		WebSocketURL     string `json:"websocket_url"`
-		DMPolicy         string `json:"dm_policy"`
-		GroupPolicy      string `json:"group_policy"`
-		HandlerWorkers   int    `json:"handler_workers"`
-		HandlerQueueSize int    `json:"handler_queue_size"`
+		BotID        string `json:"bot_id"`
+		Secret       string `json:"secret"`
+		WebSocketURL string `json:"websocket_url"`
+		DMPolicy     string `json:"dm_policy"`
+		GroupPolicy  string `json:"group_policy"`
 	}
 	if strings.TrimSpace(account.ConfigJSON) != "" {
 		if err := json.Unmarshal([]byte(account.ConfigJSON), &raw); err != nil {
@@ -509,14 +485,12 @@ func weComConfigForAccount(account store.ChannelAccount) (wecom.Config, error) {
 		}
 	}
 	cfg := wecom.Config{
-		AccountID:        account.ChannelAccountID,
-		BotID:            strings.TrimSpace(raw.BotID),
-		Secret:           strings.TrimSpace(raw.Secret),
-		WebSocketURL:     strings.TrimSpace(raw.WebSocketURL),
-		DMPolicy:         strings.TrimSpace(raw.DMPolicy),
-		GroupPolicy:      strings.TrimSpace(raw.GroupPolicy),
-		HandlerWorkers:   raw.HandlerWorkers,
-		HandlerQueueSize: raw.HandlerQueueSize,
+		AccountID:    account.ChannelAccountID,
+		BotID:        strings.TrimSpace(raw.BotID),
+		Secret:       strings.TrimSpace(raw.Secret),
+		WebSocketURL: strings.TrimSpace(raw.WebSocketURL),
+		DMPolicy:     strings.TrimSpace(raw.DMPolicy),
+		GroupPolicy:  strings.TrimSpace(raw.GroupPolicy),
 	}
 	if cfg.WebSocketURL == "" {
 		cfg.WebSocketURL = "wss://openws.work.weixin.qq.com"

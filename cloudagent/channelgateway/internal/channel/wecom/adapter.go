@@ -19,14 +19,12 @@ import (
 const maxMessageLength = 4096
 
 type Config struct {
-	AccountID        string
-	BotID            string
-	Secret           string
-	WebSocketURL     string
-	DMPolicy         string
-	GroupPolicy      string
-	HandlerWorkers   int
-	HandlerQueueSize int
+	AccountID    string
+	BotID        string
+	Secret       string
+	WebSocketURL string
+	DMPolicy     string
+	GroupPolicy  string
 }
 
 type Adapter struct {
@@ -40,9 +38,17 @@ type Adapter struct {
 	closed           bool
 }
 
-type inboundTask struct {
-	ctx context.Context
-	msg channel.Message
+type inboundDispatchError struct {
+	messageID string
+	err       error
+}
+
+func (e inboundDispatchError) Error() string {
+	return fmt.Sprintf("dispatch inbound message %s: %v", e.messageID, e.err)
+}
+
+func (e inboundDispatchError) Unwrap() error {
+	return e.err
 }
 
 func NewAdapter(cfg Config) *Adapter {
@@ -69,6 +75,10 @@ func (a *Adapter) Start(ctx context.Context, handler channel.InboundHandler) err
 		err := a.runOnce(ctx, handler)
 		if err == nil || ctx.Err() != nil {
 			return ctx.Err()
+		}
+		var dispatchErr inboundDispatchError
+		if errors.As(err, &dispatchErr) {
+			return err
 		}
 		wait := backoff[min(attempt, len(backoff)-1)]
 		attempt++
@@ -182,12 +192,8 @@ func (a *Adapter) runOnce(ctx context.Context, handler channel.InboundHandler) e
 			logValue(a.cfg.AccountID), logValue(reqID), time.Since(subscribeStartedAt).Milliseconds(), logValue(err.Error()))
 		return err
 	}
-	log.Printf("wecom account=%s action=subscribe_done req_id=%s duration_ms=%d handler_workers=%d handler_queue_size=%d",
-		logValue(a.cfg.AccountID), logValue(reqID), time.Since(subscribeStartedAt).Milliseconds(), a.handlerWorkers(), a.handlerQueueSize())
-	tasks := make(chan inboundTask, a.handlerQueueSize())
-	for i := 0; i < a.handlerWorkers(); i++ {
-		go a.handleInboundWorker(ctx, handler, tasks)
-	}
+	log.Printf("wecom account=%s action=subscribe_done req_id=%s duration_ms=%d dispatch_mode=sync",
+		logValue(a.cfg.AccountID), logValue(reqID), time.Since(subscribeStartedAt).Milliseconds())
 	errCh := make(chan error, 1)
 	go a.heartbeat(ctx, errCh)
 	for {
@@ -222,32 +228,13 @@ func (a *Adapter) runOnce(ctx context.Context, handler channel.InboundHandler) e
 			logValue(a.cfg.AccountID), logValue(msg.ExternalMessageID), logValue(msg.ExternalConversationID), logValue(msg.ExternalUserID),
 			logValue(msg.ThreadID), logValue(string(msg.ChatType)), logValue(string(msg.Kind)), len(raw))
 		a.rememberReplyReqID(msg.ExternalMessageID, raw)
-		select {
-		case tasks <- inboundTask{ctx: ctx, msg: msg}:
-			log.Printf("wecom account=%s action=inbound_dispatched external_message_id=%s external_conversation_id=%s",
-				logValue(a.cfg.AccountID), logValue(msg.ExternalMessageID), logValue(msg.ExternalConversationID))
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			log.Printf("wecom account=%s action=inbound_queue_full external_message_id=%s external_conversation_id=%s",
-				logValue(a.cfg.AccountID), logValue(msg.ExternalMessageID), logValue(msg.ExternalConversationID))
+		if err := handler.HandleInbound(ctx, msg); err != nil {
+			log.Printf("wecom account=%s action=inbound_dispatch_failed external_message_id=%s external_conversation_id=%s error=%s",
+				logValue(a.cfg.AccountID), logValue(msg.ExternalMessageID), logValue(msg.ExternalConversationID), logValue(err.Error()))
+			return inboundDispatchError{messageID: msg.ExternalMessageID, err: err}
 		}
-	}
-}
-
-func (a *Adapter) handleInboundWorker(ctx context.Context, handler channel.InboundHandler, tasks <-chan inboundTask) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case task, ok := <-tasks:
-			if !ok {
-				return
-			}
-			if err := handler.HandleInbound(task.ctx, task.msg); err != nil {
-				log.Printf("wecom account=%s handle inbound failed msg_id=%s: %v", a.cfg.AccountID, task.msg.ExternalMessageID, err)
-			}
-		}
+		log.Printf("wecom account=%s action=inbound_dispatched external_message_id=%s external_conversation_id=%s",
+			logValue(a.cfg.AccountID), logValue(msg.ExternalMessageID), logValue(msg.ExternalConversationID))
 	}
 }
 
@@ -275,20 +262,6 @@ func (a *Adapter) allowMessage(msg channel.Message) bool {
 	default:
 		return true
 	}
-}
-
-func (a *Adapter) handlerWorkers() int {
-	if a.cfg.HandlerWorkers > 0 {
-		return a.cfg.HandlerWorkers
-	}
-	return 4
-}
-
-func (a *Adapter) handlerQueueSize() int {
-	if a.cfg.HandlerQueueSize > 0 {
-		return a.cfg.HandlerQueueSize
-	}
-	return 128
 }
 
 func (a *Adapter) waitHandshake(ctx context.Context, reqID string) error {

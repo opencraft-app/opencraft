@@ -129,7 +129,13 @@ func TestRolloutE2EInFlightInboundRecoveredAfterOldPodDrain(t *testing.T) {
 	defer newStore.Close()
 
 	accountCfg := config.WeComConfig{Enabled: true, AccountID: "wecom-a", BotID: "bot-a", Secret: "secret-a", AgentID: "agent-a"}
-	oldCfg := config.Config{OwnerID: "owner-old", LeaseTTL: time.Minute, RequestTimeout: 30 * time.Second, WeComAccounts: []config.WeComConfig{accountCfg}}
+	oldCfg := config.Config{
+		OwnerID:        "owner-old",
+		LeaseTTL:       time.Minute,
+		RequestTimeout: 30 * time.Second,
+		EventBus:       config.EventBusConfig{PollInterval: 10 * time.Millisecond, InboundWorkerCount: 1},
+		WeComAccounts:  []config.WeComConfig{accountCfg},
+	}
 	if err := seedWeComAccounts(ctx, oldStore, oldCfg); err != nil {
 		t.Fatalf("seed accounts: %v", err)
 	}
@@ -169,7 +175,13 @@ func TestRolloutE2EInFlightInboundRecoveredAfterOldPodDrain(t *testing.T) {
 	expectAdapterStart(t, started, rolloutAdapterStart{OwnerID: "owner-old", AccountID: "wecom-a"})
 	waitClosedRollout(t, oldPromptStarted, "old prompt start")
 
-	newCfg := config.Config{OwnerID: "owner-new", LeaseTTL: time.Minute, RequestTimeout: 30 * time.Second, WeComAccounts: []config.WeComConfig{accountCfg}}
+	newCfg := config.Config{
+		OwnerID:        "owner-new",
+		LeaseTTL:       time.Minute,
+		RequestTimeout: 30 * time.Second,
+		EventBus:       config.EventBusConfig{PollInterval: 10 * time.Millisecond, InboundWorkerCount: 1},
+		WeComAccounts:  []config.WeComConfig{accountCfg},
+	}
 	recoveredReply := make(chan channel.Reply, 2)
 	newStates := newChannelRuntimeStates()
 	newSupervisor := newWeComSupervisor(newCfg, newStore, newStates)
@@ -338,6 +350,10 @@ func (a *rolloutInboundAdapter) Start(ctx context.Context, handler channel.Inbou
 		a.started <- rolloutAdapterStart{OwnerID: a.ownerID, AccountID: a.accountID}
 	}
 	err := handler.HandleInbound(ctx, a.inbound)
+	if err == nil {
+		<-ctx.Done()
+		err = ctx.Err()
+	}
 	if a.handled != nil {
 		a.handled <- err
 	}

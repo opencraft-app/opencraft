@@ -5,7 +5,7 @@
 Current shape:
 
 - channel adapter: WeCom AI Bot WebSocket
-- session truth: SQLite store with embedded Go migrations
+- session truth: shared SQL store with embedded Go migrations
 - runtime target: CloudAgent HTTP session-event protocol, with ACP WebSocket kept as a
   compatibility fallback
 - ownership: one channel account connection is held by one process lease owner
@@ -274,3 +274,19 @@ Hot upgrade contract:
 - Finished jobs are marked `done`; failed or interrupted jobs remain retryable.
 - New owners scan `received`, `failed`, and stale `processing` jobs after acquiring the channel lease.
 - `channel_outbox` remains the durable send ledger, so replies queued before a restart are sent by the next owner.
+
+Inbound event bus:
+
+- The WeCom adapter is a protocol adapter only. It publishes inbound messages and does not own worker queues, retries, CloudAgent sessions, or prompt execution.
+- `CHANNELGATEWAY_EVENT_BUS_DRIVER` selects the inbound transport. Empty value defaults to `database`.
+- `database` uses the existing `channel_messages` ledger as a durable inbound bus. This is the simplest backend for local, CI, and environments without Redis.
+- `redis` uses Redis Streams. It keeps MySQL as the session/control-plane truth for conversation binding, CloudAgent session IDs, fences, and outbox status while moving inbound message transport to Redis.
+- A future Pulsar backend should implement the same event bus interface. It should not require changes in the WeCom adapter or dispatcher.
+- Useful knobs:
+  - `CHANNELGATEWAY_EVENT_BUS_DRIVER` default `database`; supported values: `database`, `redis`
+  - `CHANNELGATEWAY_EVENT_BUS_INBOUND_WORKERS` default `4`
+  - `CHANNELGATEWAY_EVENT_BUS_POLL_INTERVAL` default `1s` for the database backend
+  - `CHANNELGATEWAY_REDIS_STREAM_PREFIX` default `channelgateway`
+  - `CHANNELGATEWAY_REDIS_CONSUMER_GROUP` default `channelgateway`
+  - `CHANNELGATEWAY_REDIS_CLAIM_IDLE` default `30s`
+  - `CHANNELGATEWAY_REDIS_READ_BLOCK` default `2s`
