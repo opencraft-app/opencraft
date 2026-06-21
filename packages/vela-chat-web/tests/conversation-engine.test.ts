@@ -200,6 +200,75 @@ test("web adapter groups turn shell blocks while preserving per-block source ids
   assert.equal(assistant?.sourceTurnId, "turn_1");
 });
 
+test("web adapter preserves render-model-only agent work groups", () => {
+  const model: ChatRenderModel = {
+    session_id: "sess_agent_work_group",
+    host: { kind: "desktop_web" },
+    rows: [
+      {
+        kind: "agent_work_group",
+        id: "agent_work_group:turn_1:tool_1-tool_2",
+        key: "agent_work_group:turn_1:tool_1-tool_2",
+        title: "已运行 2 条命令",
+        summary: "ls -la · git status",
+        status: "completed",
+        display: "compact",
+        defaultCollapsed: true,
+        createdAt: "2026-06-18T00:00:01Z",
+        updatedAt: "2026-06-18T00:00:02Z",
+        turnId: "turn_1",
+        agentWorkId: "tool_1",
+        children: [
+          {
+            kind: "agent_work",
+            id: "tool_1",
+            key: "tool:tool_1",
+            title: "Ran command",
+            summary: "ls -la",
+            status: "completed",
+            display: "compact",
+            createdAt: "2026-06-18T00:00:01Z",
+            updatedAt: "2026-06-18T00:00:01Z",
+            turnId: "turn_1",
+            agentWorkId: "tool_1",
+            debug: { projection: "conversation", source_event_ids: ["evt_tool_1"] },
+          },
+          {
+            kind: "agent_work",
+            id: "tool_2",
+            key: "tool:tool_2",
+            title: "Ran command",
+            summary: "git status",
+            status: "completed",
+            display: "compact",
+            createdAt: "2026-06-18T00:00:02Z",
+            updatedAt: "2026-06-18T00:00:02Z",
+            turnId: "turn_1",
+            agentWorkId: "tool_2",
+            debug: { projection: "conversation", source_event_ids: ["evt_tool_2"] },
+          },
+        ],
+        debug: { projection: "conversation", source_event_ids: ["evt_tool_1", "evt_tool_2"] },
+      },
+    ] as ChatRenderModel["rows"],
+    requests: { items: [] },
+    composer: { placeholder: "要求后续变更", can_send: true },
+  };
+
+  const webModel = toWebChatModel(model);
+  const block = webModel.turns[0]?.blocks[0];
+
+  assert.equal(block?.kind, "agent_work_group");
+  if (block?.kind !== "agent_work_group") assert.fail("expected agent work group block");
+  assert.equal(block.title, "已运行 2 条命令");
+  assert.equal(block.children.length, 2);
+  assert.deepEqual(block.children.map((child) => child.summary), ["ls -la", "git status"]);
+
+  const items = buildConversationStreamItems(webModel.turns);
+  assert.equal(items[0]?.kind, "agent_work_group");
+  assert.equal(items[0]?.sourceAgentWorkId, "tool_1");
+});
+
 test("conversation runtime keeps live items out of virtualized history", () => {
   const turns = [turn("old-1"), turn("old-2"), turn("live", { live: true })];
   const items = buildConversationStreamItems(turns);

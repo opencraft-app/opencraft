@@ -266,8 +266,14 @@ test("renders normalized agent work details without provider-label fallbacks", (
     { kind: "desktop_web" },
   );
 
+  const agentWorkRows = model.rows.flatMap((row) => {
+    if (row.kind === "agent_work_group") return row.children;
+    if (row.kind === "agent_work") return [row];
+    return [];
+  });
+
   assert.deepEqual(
-    model.rows.map((row) => (row.kind === "agent_work" ? [row.title, row.summary] : null)),
+    agentWorkRows.map((row) => [row.title, row.summary]),
     [
       ["Ran command", "ls -la"],
       ["Read file", "README.md"],
@@ -282,4 +288,103 @@ test("renders normalized agent work details without provider-label fallbacks", (
   assert.doesNotMatch(source, /providerLabelPresentation/);
   assert.doesNotMatch(source, /legacyToolTitle/);
   assert.doesNotMatch(source, /legacyToolSummary/);
+});
+
+test("groups consecutive completed agent work as a render-model-only row", () => {
+  const model = buildChatRenderModel(
+    surface([
+      baseItem({
+        id: "u1",
+        kind: "user_message",
+        turn_id: "turn_1",
+        text: "inspect",
+        parts: [{ id: "u1:part:0", type: "text", text: "inspect" }],
+      }),
+      baseItem({
+        id: "turn_meta:turn_1",
+        kind: "turn_meta",
+        turn_id: "turn_1",
+        status: "completed",
+        created_at: "2026-06-18T10:00:00Z",
+        completed_at: "2026-06-18T10:00:03Z",
+      }),
+      baseItem({
+        id: "shell_1",
+        kind: "agent_work",
+        turn_id: "turn_1",
+        detail: { type: "shell", command: "ls -la" },
+        created_at: "2026-06-18T10:00:01Z",
+      }),
+      baseItem({
+        id: "shell_2",
+        kind: "agent_work",
+        turn_id: "turn_1",
+        detail: { type: "shell", command: "git status" },
+        created_at: "2026-06-18T10:00:02Z",
+      }),
+      baseItem({
+        id: "read_1",
+        kind: "agent_work",
+        turn_id: "turn_1",
+        detail: { type: "read", file_path: "README.md" },
+        created_at: "2026-06-18T10:00:03Z",
+      }),
+      baseItem({
+        id: "a1",
+        kind: "assistant_message",
+        turn_id: "turn_1",
+        text: "done",
+        created_at: "2026-06-18T10:00:04Z",
+      }),
+    ]),
+    { kind: "desktop_web" },
+  );
+
+  assert.deepEqual(
+    model.rows.map((row) => row.kind),
+    ["user_message", "turn_meta", "agent_work_group", "assistant_message"],
+  );
+  const group = model.rows[2];
+  assert.equal(group?.kind, "agent_work_group");
+  if (group?.kind !== "agent_work_group") assert.fail("expected grouped agent work");
+  assert.equal(group.title, "已运行 2 条命令并读取 1 个文件");
+  assert.equal(group.defaultCollapsed, true);
+  assert.deepEqual(group.children.map((child) => child.agentWorkId), [
+    "shell_1",
+    "shell_2",
+    "read_1",
+  ]);
+});
+
+test("agent work grouping stays out of the OpenAPI wire contract", () => {
+  const openapi = readFileSync(join(root, "public/openapi/velachat.v1.yaml"), "utf8");
+
+  assert.doesNotMatch(openapi, /agent_work_group/);
+});
+
+test("does not group running or failed agent work rows", () => {
+  const model = buildChatRenderModel(
+    surface([
+      baseItem({
+        id: "shell_running",
+        kind: "agent_work",
+        status: "running",
+        detail: { type: "shell", command: "npm test" },
+      }),
+      baseItem({
+        id: "shell_failed",
+        kind: "agent_work",
+        status: "failed",
+        detail: { type: "shell", command: "npm test", stderr: "boom" },
+      }),
+    ]),
+    { kind: "desktop_web" },
+  );
+
+  assert.deepEqual(
+    model.rows.map((row) => row.kind),
+    ["agent_work", "agent_work", "status"],
+  );
+  assert.equal(model.rows[0]?.kind === "agent_work" ? model.rows[0].display : "", "prominent");
+  assert.equal(model.rows[1]?.kind === "agent_work" ? model.rows[1].display : "", "prominent");
 });

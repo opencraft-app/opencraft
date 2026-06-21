@@ -1,4 +1,5 @@
 import type { WebBlock } from "../adapters/toWebBlocks";
+import { AgentWorkGroupRenderer } from "./blocks/AgentWorkGroupRenderer";
 import { AgentWorkRenderer } from "./blocks/AgentWorkRenderer";
 import { AssistantMarkdownRenderer } from "./blocks/AssistantMarkdownRenderer";
 import { StatusRenderer } from "./blocks/StatusRenderer";
@@ -16,6 +17,8 @@ export function renderWebBlock(block: WebBlock) {
       return <TurnMetaRenderer block={block} />;
     case "agent_work":
       return <AgentWorkRenderer block={block} />;
+    case "agent_work_group":
+      return <AgentWorkGroupRenderer block={block} />;
     case "status":
       return agentWorkVisualStatus(block)
         ? <AgentWorkRenderer block={block} />

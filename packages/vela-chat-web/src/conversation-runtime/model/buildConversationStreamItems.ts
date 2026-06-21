@@ -125,6 +125,9 @@ function isLiveBlock(block: WebBlock, turnLive: boolean) {
   if (block.kind === "agent_work") {
     return block.status === "running" || block.status === "pending";
   }
+  if (block.kind === "agent_work_group") {
+    return block.children.some((child) => child.status === "running" || child.status === "pending");
+  }
   return turnLive;
 }
 
@@ -144,6 +147,9 @@ function blockFingerprint(block: WebBlock): string {
   }
   if (block.kind === "agent_work") {
     return `${block.key}:${block.status}:display:${block.display}:created:${hashString(block.createdAt)}:updated:${hashString(block.updatedAt ?? "")}:title:${hashString(block.title)}:summary:${hashString(block.summary)}`;
+  }
+  if (block.kind === "agent_work_group") {
+    return `${block.key}:${block.status}:display:${block.display}:collapsed:${block.defaultCollapsed}:created:${hashString(block.createdAt)}:updated:${hashString(block.updatedAt ?? "")}:title:${hashString(block.title)}:summary:${hashString(block.summary)}:children:${block.children.map(blockFingerprint).join(",")}`;
   }
   return `${block.key}:created:${hashString(block.createdAt)}:status:${block.status}:label:${hashString(block.label)}`;
 }

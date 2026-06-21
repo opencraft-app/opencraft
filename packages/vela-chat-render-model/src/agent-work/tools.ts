@@ -143,14 +143,14 @@ function summaryFromDetail(detail: ChatSurfaceAgentWorkItem["detail"]): string {
 }
 
 function toolDisplayIntent(item: ChatSurfaceAgentWorkItem): AgentWorkDisplay {
-  if (item.status === "failed") return "prominent";
+  if (item.status === "failed" || item.status === "running" || item.status === "pending") {
+    return "prominent";
+  }
   if (!item.detail) return "compact";
 
   switch (item.detail.type) {
-    case "shell":
     case "edit":
     case "write":
-    case "fetch":
     case "browser":
     case "mcp_tool":
     case "dynamic_tool":

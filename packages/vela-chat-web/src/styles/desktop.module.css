@@ -336,6 +336,53 @@
   color: #b44322;
 }
 
+.agentWorkGroup {
+  display: grid;
+  gap: 7px;
+  width: fit-content;
+  max-width: min(100%, 780px);
+  color: #9a9ea5;
+}
+
+.agentWorkGroupButton {
+  display: grid;
+  grid-template-columns: 18px minmax(0, auto) 14px;
+  align-items: center;
+  column-gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 2px 0;
+  text-align: left;
+}
+
+.agentWorkGroupButton:hover .agentWorkTitle,
+.agentWorkGroupButton:hover .agentWorkSummary {
+  color: #7e848c;
+}
+
+.agentWorkGroupChevron {
+  color: #a9adb3;
+  font-size: 17px;
+  line-height: 1;
+  transition: transform 120ms ease;
+}
+
+.agentWorkGroupButton[aria-expanded="true"] .agentWorkGroupChevron {
+  transform: rotate(90deg);
+}
+
+.agentWorkGroupChildren {
+  display: grid;
+  gap: 5px;
+  padding-left: 26px;
+}
+
 .agentWorkIcon {
   display: inline-grid;
   width: 15px;

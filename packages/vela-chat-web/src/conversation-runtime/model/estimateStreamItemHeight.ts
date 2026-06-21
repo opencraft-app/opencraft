@@ -29,6 +29,8 @@ export function estimateStreamItemHeight(
       return item.block.kind === "agent_work" && item.block.display === "prominent"
         ? 88
         : 40;
+    case "agent_work_group":
+      return 42;
     case "status":
       return 48;
     default:

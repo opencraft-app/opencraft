@@ -6,6 +6,19 @@ import type {
 } from "../../../vela-chat-render-model/src";
 
 type UserMessagePart = Extract<ChatRenderRow, { kind: "user_message" }>["parts"][number];
+type AgentWorkWebBlock = {
+  kind: "agent_work";
+  id: string;
+  key: string;
+  title: string;
+  summary: string;
+  status: string;
+  display: "compact" | "prominent";
+  createdAt: string;
+  updatedAt?: string;
+  sourceTurnId?: string;
+  sourceAgentWorkId?: string;
+};
 
 export interface WebChatModel {
   sessionId: string;
@@ -62,14 +75,17 @@ export type WebBlock =
       sourceTurnId?: string;
       sourceAgentWorkId?: string;
     }
+  | AgentWorkWebBlock
   | {
-      kind: "agent_work";
+      kind: "agent_work_group";
       id: string;
       key: string;
       title: string;
       summary: string;
-      status: string;
-      display: "compact" | "prominent";
+      status: "completed";
+      display: "compact";
+      defaultCollapsed: boolean;
+      children: AgentWorkWebBlock[];
       createdAt: string;
       updatedAt?: string;
       sourceTurnId?: string;
@@ -195,6 +211,7 @@ function rowToTurn(sessionId: string, row: ChatRenderRow): WebTurn {
 function isLiveRenderRow(row: ChatRenderRow): boolean {
   if (row.kind === "assistant_message") return row.streaming;
   if (row.kind === "agent_work") return row.status === "running" || row.status === "pending";
+  if (row.kind === "agent_work_group") return row.children.some(isLiveRenderRow);
   if (row.kind === "turn_meta") return row.status === "running";
   if (row.kind !== "status") return false;
   return row.label === "处理中" || row.label.startsWith("处理中 ");
@@ -213,6 +230,9 @@ function rowFingerprint(row: ChatRenderRow): string {
   }
   if (row.kind === "agent_work") {
     return `${row.key}:${row.status}:display:${row.display}:created:${hashString(row.createdAt)}:updated:${hashString(row.updatedAt ?? "")}:title:${hashString(row.title)}:summary:${hashString(row.summary)}`;
+  }
+  if (row.kind === "agent_work_group") {
+    return `${row.key}:${row.status}:display:${row.display}:collapsed:${row.defaultCollapsed}:created:${hashString(row.createdAt)}:updated:${hashString(row.updatedAt ?? "")}:title:${hashString(row.title)}:summary:${hashString(row.summary)}:children:${row.children.map(rowFingerprint).join(",")}`;
   }
   if (row.kind === "turn_meta") {
     return `${row.key}:created:${hashString(row.createdAt)}:updated:${hashString(row.updatedAt ?? "")}:completed:${hashString(row.completedAt ?? "")}:status:${row.status}:label:${hashString(row.label)}`;
@@ -265,14 +285,20 @@ function rowToBlock(row: ChatRenderRow): WebBlock {
   }
 
   if (row.kind === "agent_work") {
+    return agentWorkRowToBlock(row);
+  }
+
+  if (row.kind === "agent_work_group") {
     return {
-      kind: "agent_work",
+      kind: "agent_work_group",
       id: row.id,
       key: row.key,
       title: row.title,
       summary: row.summary,
       status: row.status,
-      display: row.display,
+      display: "compact",
+      defaultCollapsed: row.defaultCollapsed,
+      children: row.children.map(agentWorkRowToBlock),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       sourceTurnId: row.turnId,
@@ -287,6 +313,22 @@ function rowToBlock(row: ChatRenderRow): WebBlock {
     label: row.label,
     status: row.status,
     createdAt: row.createdAt,
+    sourceTurnId: row.turnId,
+    sourceAgentWorkId: row.agentWorkId,
+  };
+}
+
+function agentWorkRowToBlock(row: Extract<ChatRenderRow, { kind: "agent_work" }>): AgentWorkWebBlock {
+  return {
+    kind: "agent_work",
+    id: row.id,
+    key: row.key,
+    title: row.title,
+    summary: row.summary,
+    status: row.status,
+    display: row.display,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
     sourceTurnId: row.turnId,
     sourceAgentWorkId: row.agentWorkId,
   };

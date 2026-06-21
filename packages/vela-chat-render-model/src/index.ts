@@ -7,6 +7,11 @@ import type {
   ConversationMessagePart,
 } from "../../vela-chat-surface/src";
 import {
+  type AgentWorkGroupRenderRow,
+  groupAgentWorkRows,
+  isGroupableAgentWork,
+} from "./agent-work/grouping";
+import {
   type AgentWorkRenderRow,
   renderAgentWorkRows,
 } from "./agent-work/tools";
@@ -105,6 +110,7 @@ export type ChatRenderRow =
   | AssistantMessageRenderRow
   | TurnMetaRenderRow
   | AgentWorkRenderRow
+  | AgentWorkGroupRenderRow
   | StatusRenderRow;
 
 export interface MarkdownBlock {
@@ -144,7 +150,7 @@ export function buildChatRenderModel(surface: ChatSurface, host: ChatHostPolicy)
     ];
   });
   const rows = applyTurnMetaRows(
-    sortRenderRows([...conversationRows, ...failedWorkRows]),
+    groupAgentWorkRuns(sortRenderRows([...conversationRows, ...failedWorkRows])),
     Array.from(turnById.values()),
   );
 
@@ -299,8 +305,34 @@ function rowSortPriority(row: ChatRenderRow): number {
   if (row.kind === "user_message") return 0;
   if (row.kind === "turn_meta") return 1;
   if (row.kind === "agent_work") return 1;
+  if (row.kind === "agent_work_group") return 1;
   if (row.kind === "assistant_message") return 2;
   return 3;
+}
+
+function groupAgentWorkRuns(rows: ChatRenderRow[]): ChatRenderRow[] {
+  const output: ChatRenderRow[] = [];
+  let pending: AgentWorkRenderRow[] = [];
+
+  const flush = () => {
+    if (pending.length > 0) {
+      output.push(...groupAgentWorkRows(pending));
+      pending = [];
+    }
+  };
+
+  for (const row of rows) {
+    if (row.kind === "agent_work" && isGroupableAgentWork(row)) {
+      pending.push(row);
+      continue;
+    }
+
+    flush();
+    output.push(row);
+  }
+
+  flush();
+  return output;
 }
 
 function applyTurnMetaRows(
