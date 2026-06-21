@@ -26,7 +26,7 @@ const createFixture = ({ withStaticRenderer = false } = {}) => {
     writeFileSync(join(frontendRoot, "src", "static", "render-static-route.tsx"), [
       "export function renderStaticRoute({ route }) {",
       "  if (route.kind !== 'home') return null;",
-      "  return '<main data-react-prerendered=\"home\"><h1>React home</h1><img src=\"/src/static/logo.png\"></main>';",
+      "  return '<link rel=\"preload\" as=\"image\" href=\"/src/static/logo.png\"/><main data-react-prerendered=\"home\"><h1>React home</h1><img src=\"/src/static/logo.png\"></main>';",
       "}",
     ].join("\n"));
   }
@@ -101,6 +101,7 @@ describe("generate-static-site", () => {
       expect(docsHtml).toContain("LightVela 是什么");
       expect(docsHtml).toContain("data-static-site-critical");
       expect(docsHtml).toContain(":where(.static-site-main,.static-docs-page)");
+      expect(docsHtml).toContain(".lw-landing-root header nav");
       expect(docsHtml).not.toMatch(/(?:^|[{}])main\{/);
       expect(docsHtml).not.toMatch(/(?:^|[{}])h1\{/);
       expect(docsHtml).toContain("<script type=\"module\" crossorigin src=\"/assets/index-test.js\"></script>");
@@ -167,7 +168,11 @@ describe("generate-static-site", () => {
       expect(homeHtml).toContain("data-react-prerendered=\"home\"");
       expect(homeHtml).toContain("<h1>React home</h1>");
       expect(homeHtml).toContain("/assets/static-render/static/logo.png");
+      expect(homeHtml).toMatch(/<head>[\s\S]*<link rel="preload" as="image" href="\/assets\/static-render\/static\/logo\.png"\/>[\s\S]*<\/head>/);
+      expect(homeHtml).not.toContain("<div id=\"root\"><link rel=\"preload\" as=\"image\"");
       expect(homeHtml).toContain("<link rel=\"icon\" type=\"image/png\" href=\"/lightvela-icon.png\">");
+      expect(homeHtml).toContain(".lw-landing-root header nav{");
+      expect(homeHtml).toContain("@media(min-width:1024px){.lw-landing-root header nav{display:flex;}}");
       expect(existsSync(join(distDir, "assets", "static-render", "static", "logo.png"))).toBe(true);
       expect(homeHtml).not.toContain("能帮我做什么");
     } finally {

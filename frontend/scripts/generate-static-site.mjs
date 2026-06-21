@@ -562,6 +562,34 @@ function renderStaticSiteCriticalStyle() {
   return [
     "<style data-static-site-critical>",
     "body{margin:0;background:#fff;color:#171717;font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;}",
+    ".lw-landing-root{width:100%;background:#fff;overflow-x:hidden;line-height:normal;font-family:\"PingFang SC\",\"HarmonyOS Sans SC\",-apple-system,BlinkMacSystemFont,\"Helvetica Neue\",Helvetica,\"Microsoft YaHei\",Arial,sans-serif;}",
+    ".lw-landing-root *{box-sizing:border-box;}",
+    ".lw-landing-root a{color:inherit;text-decoration:none;background-color:transparent;}",
+    ".lw-landing-root img{max-width:100%;}",
+    ".lw-landing-root .relative{position:relative;}",
+    ".lw-landing-root .absolute{position:absolute;}",
+    ".lw-landing-root .inset-0{inset:0;}",
+    ".lw-landing-root .w-full{width:100%;}",
+    ".lw-landing-root .h-full{height:100%;}",
+    ".lw-landing-root .object-cover{object-fit:cover;}",
+    ".lw-landing-root .pointer-events-none{pointer-events:none;}",
+    ".lw-landing-root .select-none{user-select:none;}",
+    ".lw-landing-root header{left:0;top:0;z-index:20;width:100%;border-bottom:1px solid transparent;background:transparent;}",
+    ".lw-landing-root .lw-settings-shell{position:relative;display:flex;height:60px;align-items:center;justify-content:space-between;}",
+    ".lw-landing-root header a:first-child{display:flex;flex-shrink:0;align-items:center;}",
+    ".lw-landing-root header img[alt=\"LightVela\"]{display:block;height:32px;width:auto;object-fit:contain;}",
+    ".lw-landing-root header nav{position:absolute;left:50%;top:50%;display:none;transform:translate(-50%,-50%);align-items:center;gap:32px;}",
+    ".lw-landing-root header nav a.lw-nav-link{white-space:nowrap;font-size:14px;line-height:20px;color:rgba(0,0,0,.7);}",
+    ".lw-landing-root header nav a.lw-nav-link.lw-nav-link--active{font-weight:600;color:rgba(0,0,0,.9);}",
+    ".lw-landing-root header .lw-settings-shell>div:last-child{display:flex;flex-shrink:0;align-items:center;gap:12px;}",
+    ".lw-landing-root [data-testid=\"landing-header-auth-loading\"]{display:flex;align-items:center;gap:12px;}",
+    ".lw-landing-root [data-testid=\"landing-header-auth-loading\"] span{display:block;height:36px;border-radius:100px;}",
+    ".lw-landing-root [data-testid=\"landing-header-auth-loading\"] span:first-child{width:96px;background:rgba(0,0,0,.06);}",
+    ".lw-landing-root [data-testid=\"landing-header-auth-loading\"] span+span{width:64px;background:rgba(0,0,0,.04);}",
+    ".lw-landing-root section>img:first-child{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none;user-select:none;}",
+    ".lw-landing-root section>.absolute.inset-0.flex{display:flex;flex-direction:column;align-items:center;justify-content:center;}",
+    "@media(min-width:1024px){.lw-landing-root header nav{display:flex;}}",
+    "@media(max-width:1023px){.lw-landing-root header nav{display:none;}}",
     ".static-site-header{border-bottom:1px solid rgba(0,0,0,.08);background:#fff;}",
     ".static-site-header nav{box-sizing:border-box;min-height:60px;max-width:1440px;margin:0 auto;padding:0 80px;display:flex;align-items:center;gap:24px;}",
     ".static-site-header a{color:#171717;text-decoration:none;font-size:14px;}",
@@ -657,12 +685,22 @@ function extractViteAssetTags(template) {
   return tags.join("");
 }
 
+function hoistBodyImagePreloads(body) {
+  const tags = [];
+  const nextBody = body.replace(/<link\b(?=[^>]*\brel=["']preload["'])(?=[^>]*\bas=["']image["'])[^>]*\/?>/gi, (tag) => {
+    tags.push(tag);
+    return "";
+  });
+  return { body: nextBody, tags: tags.join("") };
+}
+
 function wrapPage({ template, site, head, body }) {
   const assetTags = extractViteAssetTags(template);
+  const { body: bodyWithoutPreloads, tags: bodyImagePreloads } = hoistBodyImagePreloads(body);
   return template
     .replace(/<html[^>]*>/i, `<html lang="${site.lang}">`)
-    .replace(/<head>[\s\S]*?<\/head>/i, `<head>${head}${assetTags}</head>`)
-    .replace(/<div id="root">[\s\S]*?<\/div>/i, `<div id="root">${body}</div>`);
+    .replace(/<head>[\s\S]*?<\/head>/i, `<head>${head}${bodyImagePreloads}${assetTags}</head>`)
+    .replace(/<div id="root">[\s\S]*?<\/div>/i, `<div id="root">${bodyWithoutPreloads}</div>`);
 }
 
 function renderAppShell(template, site) {
