@@ -318,3 +318,149 @@ async fn activity_view_exposes_tool_detail_without_trace_payloads() {
     assert!(tool["event_range"]["to_event_id"].as_str().is_some());
     assert!(tool.get("raw").is_none());
 }
+
+#[tokio::test]
+async fn activity_view_projects_command_payload_as_shell_detail() {
+    let (app, _) = test_app_with_backend_outputs(vec![
+        BackendOutput::event(
+            EventType::COMMAND_STARTED,
+            json!({
+                "command_id": "cmd_ls",
+                "command": "ls -la",
+                "cwd": "/tmp/project",
+                "status": "running"
+            }),
+        ),
+        BackendOutput::event(
+            EventType::COMMAND_COMPLETED,
+            json!({
+                "command_id": "cmd_ls",
+                "command": "ls -la",
+                "cwd": "/tmp/project",
+                "status": "completed",
+                "exit_code": 0,
+                "stdout": "total 0\n"
+            }),
+        ),
+        BackendOutput::event(
+            EventType::ASSISTANT_MESSAGE_DELTA,
+            json!({ "delta": "done" }),
+        ),
+        BackendOutput::event(EventType::TURN_COMPLETED, json!({})),
+    ])
+    .await;
+    let (_, created) = json_request(
+        app.clone(),
+        Method::POST,
+        "/api/v1/sessions",
+        json!({ "backend": "pi", "working_directory": "/tmp/project" }),
+        Some("ses-activity-command-detail"),
+    )
+    .await;
+    let session_id = created["session"]["id"].as_str().unwrap();
+
+    let (status, _) = json_request(
+        app.clone(),
+        Method::POST,
+        &format!("/api/v1/sessions/{session_id}/events"),
+        json!({
+            "events": [{
+                "type": "user.message",
+                "content": [{ "type": "text", "text": "list files" }]
+            }]
+        }),
+        Some("cmd-activity-command-detail"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    wait_for_session_event(app.clone(), session_id, "command.completed").await;
+
+    let (status, activity) = get_json(
+        app,
+        &format!("/api/v1/sessions/{session_id}/views/activity"),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    let command = activity["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["id"] == "cmd_ls")
+        .expect("command activity item");
+    assert_eq!(command["kind"], "command");
+    assert_eq!(command["status"], "completed");
+    assert_eq!(command["detail"]["type"], "shell");
+    assert_eq!(command["detail"]["command"], "ls -la");
+    assert_eq!(command["detail"]["cwd"], "/tmp/project");
+    assert_eq!(command["detail"]["exit_code"], 0);
+    assert_eq!(command["detail"]["stdout"], "total 0\n");
+}
+
+#[tokio::test]
+async fn activity_view_normalizes_legacy_tool_payloads_into_specific_details() {
+    let (app, _) = test_app_with_backend_outputs(vec![
+        BackendOutput::event(
+            EventType::TOOL_STARTED,
+            json!({
+                "tool_id": "tool_read",
+                "name": "read",
+                "status": "running",
+                "file_path": "README.md"
+            }),
+        ),
+        BackendOutput::event(
+            EventType::TOOL_COMPLETED,
+            json!({
+                "tool_id": "tool_read",
+                "name": "read",
+                "status": "completed",
+                "file_path": "README.md"
+            }),
+        ),
+        BackendOutput::event(EventType::TURN_COMPLETED, json!({})),
+    ])
+    .await;
+    let (_, created) = json_request(
+        app.clone(),
+        Method::POST,
+        "/api/v1/sessions",
+        json!({ "backend": "pi", "working_directory": "/tmp/project" }),
+        Some("ses-activity-legacy-tool-detail"),
+    )
+    .await;
+    let session_id = created["session"]["id"].as_str().unwrap();
+
+    let (status, _) = json_request(
+        app.clone(),
+        Method::POST,
+        &format!("/api/v1/sessions/{session_id}/events"),
+        json!({
+            "events": [{
+                "type": "user.message",
+                "content": [{ "type": "text", "text": "read" }]
+            }]
+        }),
+        Some("cmd-activity-legacy-tool-detail"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    wait_for_session_event(app.clone(), session_id, "tool.completed").await;
+
+    let (status, activity) = get_json(
+        app,
+        &format!("/api/v1/sessions/{session_id}/views/activity"),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    let tool = activity["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["id"] == "tool_read")
+        .expect("tool activity item");
+    assert_eq!(tool["kind"], "tool");
+    assert_eq!(tool["detail"]["type"], "read");
+    assert_eq!(tool["detail"]["file_path"], "README.md");
+}

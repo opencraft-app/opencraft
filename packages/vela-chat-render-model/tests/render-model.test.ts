@@ -867,6 +867,58 @@ test("renders OpenAPI command and task activity items without tool detail", () =
   );
 });
 
+test("renders OpenAPI activity detail fields as informative work rows", () => {
+  const surface: ChatSurface = {
+    session_id: "sess_activity_detail_display",
+    transcript: { rows: [], turns: [] },
+    activity: {
+      items: [
+        {
+          id: "activity_command",
+          kind: "command",
+          status: "completed",
+          title: "Command",
+          summary: "",
+          detail: {
+            type: "shell",
+            command: "cargo test -p velad",
+            cwd: "/repo",
+          },
+          created_at: "2026-06-18T10:00:01Z",
+          debug: { projection: "activity", source_event_ids: ["evt_command"] },
+        },
+        {
+          id: "activity_read",
+          kind: "tool",
+          status: "completed",
+          title: "read",
+          summary: "",
+          detail: {
+            type: "read",
+            file_path: "README.md",
+          },
+          created_at: "2026-06-18T10:00:02Z",
+          debug: { projection: "activity", source_event_ids: ["evt_read"] },
+        },
+      ],
+    },
+    pending_requests: { items: [] },
+    cursors: {},
+    stream: { connected: false, running: false },
+  };
+
+  const model = buildChatRenderModel(surface, { kind: "desktop_web" });
+  const workRows = model.rows.filter((row) => row.kind === "agent_work");
+
+  assert.deepEqual(
+    workRows.map((row) => [row.title, row.summary, row.display]),
+    [
+      ["Ran command", "cargo test -p velad", "prominent"],
+      ["Read file", "README.md", "compact"],
+    ],
+  );
+});
+
 test("renders OpenAPI warning activity items without tool detail", () => {
   const surface: ChatSurface = {
     session_id: "sess_warning",

@@ -2392,40 +2392,168 @@ fn activity_summary(payload: &Value) -> &str {
 }
 
 fn activity_detail_json(kind: &str, payload: &Value) -> Option<Value> {
-    if kind != "tool" {
-        return None;
-    }
-
     if let Some(detail) = payload.get("detail").and_then(Value::as_object) {
         if detail.get("type").and_then(Value::as_str).is_some() {
             return Some(Value::Object(detail.clone()));
         }
     }
 
-    let mut detail = serde_json::Map::new();
-    detail.insert("type".to_string(), Value::String("tool".to_string()));
-    for field in [
-        "tool_id",
-        "call_id",
-        "name",
-        "command",
-        "cwd",
-        "query",
-        "path",
-        "summary",
-        "delta",
-        "output",
-        "stdout",
-        "stderr",
-        "exit_code",
-        "error",
-    ] {
-        if let Some(value) = payload.get(field) {
-            detail.insert(field.to_string(), value.clone());
+    match kind {
+        "command" => Some(activity_shell_detail_json(payload)),
+        "tool" => Some(activity_tool_detail_json(payload)),
+        _ => None,
+    }
+}
+
+fn activity_tool_detail_json(payload: &Value) -> Value {
+    match inferred_activity_tool_detail_type(payload) {
+        "shell" => activity_shell_detail_json(payload),
+        "read" | "edit" | "write" => {
+            activity_file_detail_json(inferred_activity_tool_detail_type(payload), payload)
         }
+        "search" => activity_search_detail_json(payload),
+        "fetch" => activity_fetch_detail_json(payload),
+        _ => activity_generic_tool_detail_json(payload),
+    }
+}
+
+fn inferred_activity_tool_detail_type(payload: &Value) -> &'static str {
+    let name = payload
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_lowercase();
+
+    if payload.get("command").is_some() {
+        return "shell";
+    }
+    if payload.get("query").is_some() {
+        return "search";
+    }
+    if payload.get("url").is_some() {
+        return "fetch";
+    }
+    if name.contains("edit") || name.contains("patch") || payload.get("unified_diff").is_some() {
+        return "edit";
+    }
+    if name.contains("write") {
+        return "write";
+    }
+    if name.contains("read") || name == "cat" || payload.get("file_path").is_some() {
+        return "read";
     }
 
-    Some(Value::Object(detail))
+    "tool"
+}
+
+fn activity_shell_detail_json(payload: &Value) -> Value {
+    detail_json(
+        "shell",
+        payload,
+        &[
+            "command",
+            "cwd",
+            "output",
+            "stdout",
+            "stderr",
+            "exit_code",
+            "error",
+        ],
+    )
+}
+
+fn activity_file_detail_json(detail_type: &str, payload: &Value) -> Value {
+    let mut detail = detail_json(
+        detail_type,
+        payload,
+        &[
+            "content",
+            "old_string",
+            "new_string",
+            "unified_diff",
+            "error",
+        ],
+    );
+    let Some(object) = detail.as_object_mut() else {
+        return detail;
+    };
+    if let Some(path) = payload
+        .get("file_path")
+        .or_else(|| payload.get("path"))
+        .cloned()
+    {
+        object.insert("file_path".to_string(), path);
+    }
+    detail
+}
+
+fn activity_search_detail_json(payload: &Value) -> Value {
+    detail_json(
+        "search",
+        payload,
+        &[
+            "query",
+            "mode",
+            "content",
+            "num_files",
+            "num_matches",
+            "duration_ms",
+            "truncated",
+        ],
+    )
+}
+
+fn activity_fetch_detail_json(payload: &Value) -> Value {
+    detail_json(
+        "fetch",
+        payload,
+        &[
+            "url",
+            "prompt",
+            "result",
+            "code",
+            "code_text",
+            "bytes",
+            "duration_ms",
+        ],
+    )
+}
+
+fn activity_generic_tool_detail_json(payload: &Value) -> Value {
+    detail_json(
+        "tool",
+        payload,
+        &[
+            "tool_id",
+            "call_id",
+            "name",
+            "command",
+            "cwd",
+            "query",
+            "file_path",
+            "path",
+            "url",
+            "summary",
+            "delta",
+            "output",
+            "stdout",
+            "stderr",
+            "exit_code",
+            "error",
+        ],
+    )
+}
+
+fn detail_json(detail_type: &str, payload: &Value, fields: &[&str]) -> Value {
+    let mut detail = serde_json::Map::new();
+    detail.insert("type".to_string(), Value::String(detail_type.to_string()));
+    for field in fields {
+        if let Some(value) = payload.get(field) {
+            detail.insert((*field).to_string(), value.clone());
+        }
+    }
+    Value::Object(detail)
 }
 
 fn publish_new_events<B>(state: &ApiState<B>, events: &[CanonicalEvent], before_len: usize) {
