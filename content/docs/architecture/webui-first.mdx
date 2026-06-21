@@ -11,7 +11,7 @@ velaChat 第一版应该先把 WebUI 跑通。这里的 WebUI 不是临时 demo�
 
 - Desktop 通过桌面 host shell 承载同一套 workbench。
 - Web 直接运行同一套 workbench。
-- Embed 可以只挂载 Chat transcript / Composer / Activity 的子集。
+- Embed 可以只挂载 Conversation / Composer / Requests 的子集。
 - Mobile 可以用原生 shell 承载 Web Chat Engine，也可以逐步把 sidebar、composer 等 shell 部分换成原生。
 
 所以 WebUI first 的复用边界必须从第一天就清楚：可复用的是 **contracts、controller、projection adapter、chat engine、markdown renderer、row logic**；不可强行复用的是平台 chrome、窗口控制、系统菜单、移动导航和原生输入法适配。
@@ -20,9 +20,9 @@ velaChat 第一版应该先把 WebUI 跑通。这里的 WebUI 不是临时 demo�
 
 - command 入口唯一
 - event / projection 边界清楚
-- transcript 不直接消费 raw timeline
+- conversation 不直接消费 raw timeline
 - scroll 由列表层拥有
-- composer 不让 transcript 热路径重渲染
+- composer 不让 conversation 热路径重渲染
 - ChatUI 可以脱离 sidebar 单独嵌入
 
 ## 复用边界
@@ -50,12 +50,12 @@ flowchart TD
 这些层跨 Desktop、Web、Embed、Mobile 都应该复用：
 
 - command 类型和 `CommandAck`
-- read model 类型：`SessionListView`、`ChatTranscriptView`、`ActivityShelfView`、`PendingRequestsView`
+- read model 类型：`SessionListView`、`ConversationView`、`PendingRequestsView`
 - projection adapter 纯函数
 - chat row derivation 纯函数
 - markdown renderer 和代码块 renderer
 - streaming row 更新策略
-- activity marker / working row / user row / assistant row 的结构
+- conversation item 结构：`user_message`、`assistant_message`、`turn_meta`、`agent_work`、`status`
 - scroll follow 逻辑的核心状态机
 
 ### 可以按平台替换
@@ -72,11 +72,11 @@ flowchart TD
 
 ### 禁止跨平台泄漏
 
-- Desktop chrome token 不能进入 `ChatTranscriptView`。
+- Desktop chrome token 不能进入 `ConversationView`。
 - Mobile safe-area 不能进入 row derivation。
 - Web hover 逻辑不能决定 command 行为。
 - Chat engine 不能知道后端是 Codex、CloudAgent、ACP 还是 Pi。
-- Session sidebar 不能读取 transcript raw events。
+- Session sidebar 不能读取 conversation raw events。
 
 ## 参考结论
 
@@ -88,9 +88,9 @@ flowchart TD
 
 - UI 只能发送 command
 - UI 只消费 projection
-- Chat transcript 只消费 `ChatTranscriptView`
+- Chat conversation 只消费 `ConversationView`
 - Sidebar 只消费 `SessionListView`
-- Activity / permission / review 不进 transcript 正文
+- Activity / permission / review 不进 assistant 正文
 
 ### Paseo 的处理方式
 
@@ -105,7 +105,7 @@ Paseo 是跨端优先：
 
 它的启发是：**协议、client、UI 必须分包；同步正确性不能靠 UI 猜。**
 
-它不适合我们直接照搬的地方是：Paseo 的 UI 是 React Native first。我们现在要 WebUI first，Chat transcript 需要优先利用成熟 DOM markdown、选择、滚动、虚拟列表和 WebView 复用能力。
+它不适合我们直接照搬的地方是：Paseo 的 UI 是 React Native first。我们现在要 WebUI first，Chat conversation 需要优先利用成熟 DOM markdown、选择、滚动、虚拟列表和 WebView 复用能力。
 
 ### Synara 的处理方式
 
@@ -173,7 +173,7 @@ src/host/vela-stream-client.ts
 - `stopTurn`
 - `approveRequest`
 - `listSessions`
-- `getChatTranscriptView`
+- `getConversationView`
 - `subscribeSessionEvents`
 
 这一层只知道 HTTP/SSE，不知道 React。
@@ -198,7 +198,7 @@ src/workbench/useSessionSubscription.ts
 - 管当前 read models
 - 暴露 command methods
 
-这一层可以用 React Query / Zustand / useSyncExternalStore，但不能产生 transcript row。
+这一层可以用 React Query / Zustand / useSyncExternalStore，但不能产生 conversation item。
 
 ### 4. Projection Adapter Layer
 
@@ -207,16 +207,15 @@ src/workbench/useSessionSubscription.ts
 建议文件：
 
 ```txt
-src/projections/chatTranscriptAdapter.ts
+src/projections/conversationAdapter.ts
 src/projections/sessionListAdapter.ts
-src/projections/activityShelfAdapter.ts
+src/projections/requestDockAdapter.ts
 ```
 
 职责：
 
-- `ChatTranscriptView -> VelaChatRows`
+- `ConversationView -> VelaConversationItems`
 - `SessionListView -> SidebarSections`
-- `ActivityShelfView -> ActivityShelfItems`
 - `PendingRequestsView -> PermissionDockState`
 
 这里是最重要的防腐层。它必须是纯函数，可单测。
@@ -261,8 +260,8 @@ src/permissions/PermissionDock.tsx
 规则：
 
 - `SessionSidebar` 只消费 `SessionListView`
-- `ChatTranscriptPane` 只消费 `ChatTranscriptView`
-- `ActivityShelf` 只消费 `ActivityShelfView`
+- `ConversationPane` 只消费 `ConversationView`
+- `AgentWorkRows` 从 `ConversationView.items[kind=agent_work]` 派生
 - `PermissionDock` 只消费 `PendingRequestsView`
 - `ComposerDock` 只能发 command，不能本地创造正式消息行
 
@@ -282,8 +281,8 @@ src/sessions/sessionSections.logic.ts
 
 - row derivation 是纯函数
 - structural sharing 保证 streaming 时少重渲染
-- working row 和 message row 是不同 kind
-- activity marker 是结构化 row，不是普通文本
+- `turn_meta` 和 message item 是不同 kind
+- `agent_work` 是结构化 item，不是普通文本
 - user bubble 只来自 accepted user message fact
 
 ### 8. Primitive / Skin Layer
@@ -435,12 +434,12 @@ type VelaChatRow =
 
 第一版至少要有这些红测：
 
-- 同一个 `CommandAck` replay 两次，transcript 只有一条 user row。
-- backend echo 用户输入，transcript 不新增 user row。
-- tool raw text 进入 activity shelf，不进入 assistant message。
-- 切换 session A -> B -> A，rows 来自各自 `ChatTranscriptView`。
-- streaming delta 更新同一个 assistant row，不创建新 row。
-- composer state 改变时，`MessagesTimeline` row 引用尽量稳定。
+- 同一个 `CommandAck` replay 两次，conversation 只有一条 user item。
+- backend echo 用户输入，conversation 不新增 user item。
+- tool raw text 进入 `agent_work`，不进入 assistant message。
+- 切换 session A -> B -> A，items 来自各自 `ConversationView`。
+- streaming delta 更新同一个 assistant item，不创建新 item。
+- composer state 改变时，`ConversationPane` item 引用尽量稳定。
 
 ## 结论
 

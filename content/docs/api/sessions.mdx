@@ -126,7 +126,7 @@ Session 的配置和操作面遵循 [Agent 能力模型](/docs/architecture/agen
 }
 ```
 
-Input event 不等于“直接把 UI bubble 写进 transcript”。Daemon 接受 `user.message` 后先产生 `user.message.accepted`，projector 再把它投影到 `ChatTranscriptView`。如果当前 session 正在等待权限或后端不允许并发输入，daemon 可以返回 queued 或 rejected command ack。
+Input event 不等于“直接把 UI bubble 写进 conversation”。Daemon 接受 `user.message` 后先产生 `user.message.accepted` 或 `input.queued`，projector 再把它投影到 `ConversationView`。Running turn 下的普通发送应该进入 queue；真正 malformed request、session closed、duplicate idempotency 等才会失败或 rejected。
 
 ## Backend 映射
 

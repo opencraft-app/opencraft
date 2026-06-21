@@ -7,7 +7,7 @@ description: CloudAgent-style timeline 和 trace 读取面。
 
 Session history endpoints 是主 Agent API 的一部分。它们返回 session 的综合历史、审计和调试视图，不是 source of truth，也不是普通 UI surface 的主输入。
 
-普通 UI 应该优先使用 [UI Read Model API](/docs/api/ui-read-models)：`ChatTranscriptView`、`ActivityShelfView`、`PendingRequestsView`、`DiffReviewView` 等窄投影。
+普通 UI 应该优先使用 [UI Read Model API](/docs/api/ui-read-models)：`ConversationView`、`PendingRequestsView`、`DiffReviewView` 等投影。
 
 ## Endpoints
 
@@ -19,7 +19,7 @@ Session history endpoints 是主 Agent API 的一部分。它们返回 session �
 
 ## Timeline 和 Trace
 
-`SessionTimeline` 是综合历史视图，适合：
+`SessionTimeline` 适合：
 
 - DevTools
 - audit
@@ -28,7 +28,7 @@ Session history endpoints 是主 Agent API 的一部分。它们返回 session �
 - export
 - full historical inspection
 
-`SessionTrace` 是链路调试视图，适合检查：
+`SessionTrace` 适合检查：
 
 - command acceptance / rejection
 - idempotency decision
@@ -41,10 +41,9 @@ Session history endpoints 是主 Agent API 的一部分。它们返回 session �
 
 ## Projection 区分
 
-UI read models 应该拆成更窄 endpoints：
+UI read models 是展示面：
 
-- `/sessions/{id}/views/transcript`：只给 chat renderer
-- `/sessions/{id}/views/activity`：tool、command、task、warning
+- `/sessions/{id}/views/conversation`：chat 主列表，包含 message、turn meta、agent work、status
 - `/sessions/{id}/views/requests`：permission/request dock
 - `/sessions/{id}/views/diffs`：review panel
 
@@ -72,22 +71,13 @@ Session timeline 和 trace MUST 从 canonical events、raw retention、normaliza
 - **THEN** daemon 可以 replay canonical events 重建
 - **AND** 不改变任何 canonical event
 
-### Requirement: Transcript 必须窄
+### Requirement: Conversation 必须是普通 UI 主输入
 
-Chat transcript MUST 只包含 message-like rows，不直接渲染 session timeline。
+Chat conversation MUST 使用 `ConversationView`，不直接渲染 session timeline。
 
 #### Scenario: tool command 完成
 
-- **WHEN** backend command 完成
-- **THEN** activity projection 显示 command summary
-- **AND** transcript 不把 raw command output 当 assistant message
-
-### Requirement: Timeline 不驱动普通 UI
-
-普通 UI surface MUST NOT 直接消费 session timeline 或 trace 来构建自身状态。
-
-#### Scenario: Mobile 打开会话
-
-- **WHEN** mobile 打开 session
-- **THEN** 它读取 session view、transcript view、requests view
-- **AND** 不读取 session timeline 来拼聊天正文
+- **WHEN** backend 完成一个 command
+- **THEN** daemon 可以在 timeline 中保留完整历史
+- **AND** projector 输出相应 `agent_work` item
+- **AND**普通 UI 从 `ConversationView` 渲染这个 work item

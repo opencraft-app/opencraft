@@ -7,7 +7,7 @@ use vela_backends::{
     BackendSend, backend_output_channel,
 };
 use vela_core::{
-    AgentConfig, BackendKind, CanonicalEvent, CommandAck, EventSource, EventType,
+    AgentConfig, BackendKind, CanonicalEvent, CommandAck, CommandId, EventId, EventSource, EventType,
     ResolvedAgentConfig, SessionId, TurnId, UserMessageBlock,
 };
 use vela_store::{AppendResult, SqliteEventStore};
@@ -180,14 +180,29 @@ where
         {
             return Ok(acceptance.ack());
         }
+        let command_id = input
+            .command_id
+            .clone()
+            .unwrap_or_else(|| CommandId::from(input.idempotency_key.clone()));
         if self.running.lock().await.contains(&input.session_id) {
-            return Ok(CommandAck::Rejected(vela_core::RejectedCommandAck {
-                code: "turn_running".to_string(),
-                message: "session already has a running turn".to_string(),
-                cursor: None,
-                command_id: input.command_id,
-                session_id: Some(input.session_id),
-            }));
+            let queued_message_id = EventId::new().to_string();
+            let acceptance = self
+                .store
+                .record_idempotency_acceptance(
+                    &input.session_id,
+                    &input.idempotency_key,
+                    &command_hash,
+                    Some(command_id),
+                    EventType::INPUT_QUEUED,
+                    EventSource::runtime("vela-runtime"),
+                    json!({
+                        "queued_message_id": queued_message_id,
+                        "content": input.content,
+                        "blocks": blocks,
+                    }),
+                )
+                .await?;
+            return Ok(acceptance.ack());
         }
         let acceptance = self
             .store
@@ -195,7 +210,7 @@ where
                 &input.session_id,
                 &input.idempotency_key,
                 &command_hash,
-                input.command_id.clone(),
+                Some(command_id),
                 EventType::USER_MESSAGE_ACCEPTED,
                 EventSource::runtime("vela-runtime"),
                 user_message_accepted_payload(&input, &blocks)?,

@@ -34,7 +34,7 @@ Agent 需要用户授权时，daemon 把后端 raw event 归一成 canonical req
 ```txt
 id: evt_0042
 event: request.opened
-data: {"event_id":"evt_0042","epoch":1,"seq":42,"session_id":"ses_123","type":"request.opened","affected_views":["requests","activity"],"payload":{"request_id":"req_abc","request_type":"tool_confirmation","title":"Allow shell command?"}}
+data: {"event_id":"evt_0042","epoch":1,"seq":42,"session_id":"ses_123","type":"request.opened","affected_views":["requests","conversation"],"payload":{"request_id":"req_abc","request_type":"tool_confirmation","title":"Allow shell command?"}}
 ```
 
 Client 收到 `request.opened` 后：
@@ -44,7 +44,7 @@ Client 收到 `request.opened` 后：
 3. 用户点击 approve / deny / answer 后调用 `POST /sessions/{session_id}/events`，投递 `user.tool_confirmation` / `user.request_answer` 等 input event。
 4. Daemon 校验 request 状态并 append `request.response.accepted`、`request.resolved` 或 `input.rejected`。
 
-Chat transcript 不直接消费 `request.opened`。如果正文需要提示，只能通过 `ChatTranscriptView` 里明确的 `activity_marker` 或 `working` row 出现。
+Conversation 正文不直接消费 `request.opened` raw payload。如果正文需要提示，只能通过 `ConversationView` 里明确的 `agent_work` 或 `status` item 出现。
 
 ## Reset 示例
 
@@ -84,4 +84,4 @@ Request lifecycle event MUST declare that request-related UI read models are sta
 - **THEN** daemon emits `request.opened`
 - **AND** event `affected_views` marks `requests` view as affected
 - **AND** clients refresh `PendingRequestsView`
-- **AND** transcript renderer does not render the raw request event as assistant text
+- **AND** conversation renderer does not render the raw request event as assistant text

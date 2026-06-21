@@ -25,7 +25,7 @@ Client Input Event        # 用户意图，POST /sessions/{id}/events
   -> daemon validate / dedupe / authorize
 Canonical Runtime Event   # daemon 排序后的事实，GET/stream /sessions/{id}/events
   -> projectors
-UI Read Models            # transcript/activity/requests/diffs/sessions
+UI Read Models            # conversation/requests/diffs/sessions
 ```
 
 Client input event 不是事实。它只有被 daemon 接受后，才会产生 canonical runtime event。
@@ -68,7 +68,7 @@ adapter 的输入。
 
 ### Canonical vs Trace
 
-Canonical event log 是 read model 的事实来源；trace/timeline 是诊断视角。普通 UI 应消费 transcript/activity/requests 等 read model，而不是 provider raw timeline。Provider raw payload 可以被保留在 canonical event 的 `raw` 字段或诊断 trace 中，但客户端兼容性只能依赖 OpenAPI 定义的 canonical event 和 read model 字段。
+Canonical event log 是 read model 的事实来源；trace/timeline 是诊断视角。普通 UI 应消费 conversation/requests 等 read model，而不是 provider raw timeline。Provider raw payload 可以被保留在 canonical event 的 `raw` 字段或诊断 trace 中，但客户端兼容性只能依赖 OpenAPI 定义的 canonical event 和 read model 字段。
 
 ### Session / Backend
 
@@ -77,7 +77,7 @@ Canonical event log 是 read model 的事实来源；trace/timeline 是诊断视
 | `session.created` | `SessionListView`, `SessionView` | session 被创建 |
 | `session.updated` | `SessionListView`, `SessionView` | title、working directory、model、metadata 等发生变化 |
 | `session.config.updated` | `SessionListView`, `SessionView` | session-level `agent_config` 默认值改变；running turn 仍使用自己的 `resolved_agent_config` |
-| `session.status.changed` | `SessionListView`, `SessionView`, `ChatTranscriptView` | `idle`、`running`、`waiting_for_input`、`canceling`、`failed`、`closed` 等状态变化 |
+| `session.status.changed` | `SessionListView`, `SessionView`, `ConversationView` | `idle`、`running`、`waiting_for_input`、`canceling`、`failed`、`closed` 等状态变化 |
 | `session.closed` | `SessionListView`, `SessionView` | session 被关闭 |
 | `backend.status.changed` | `BackendStatusView`, `SessionListView` | backend 可用性、健康状态、capability 变化 |
 
@@ -85,59 +85,59 @@ Canonical event log 是 read model 的事实来源；trace/timeline 是诊断视
 
 | Type | 主要投影 | 说明 |
 | --- | --- | --- |
-| `user.message.accepted` | `ChatTranscriptView`, `SessionListView` | daemon 接受用户消息。正式 user row 只能来自这个事件或它派生的 transcript view |
-| `input.queued` | `ChatTranscriptView`, `ActivityShelfView` | 输入被接受但暂时排队，例如当前 turn 正在运行 |
-| `input.rejected` | `ActivityShelfView`, diagnostics | 输入被拒绝，例如 session closed、permission blocked、duplicate command |
-| `turn.cancel.accepted` | `SessionView`, `ActivityShelfView` | cancel command 被接受 |
-| `request.response.accepted` | `PendingRequestsView`, `ActivityShelfView` | request response 被 daemon 接受，后续才交给 adapter |
+| `user.message.accepted` | `ConversationView`, `SessionListView` | daemon 接受用户消息。正式 `user_message` item 只能来自这个事件或它派生的 conversation view |
+| `input.queued` | `ConversationView` | 输入被接受但暂时排队，例如当前 turn 正在运行 |
+| `input.rejected` | `ConversationView`, diagnostics | 输入被拒绝，例如 session closed、permission blocked、duplicate command |
+| `turn.cancel.accepted` | `SessionView`, `ConversationView` | cancel command 被接受 |
+| `request.response.accepted` | `PendingRequestsView`, `ConversationView` | request response 被 daemon 接受，后续才交给 adapter |
 
 ### 回合生命周期
 
 | Type | 主要投影 | 说明 |
 | --- | --- | --- |
-| `turn.started` | `SessionView`, `ActivityShelfView`, `ChatTranscriptView` | 一个 agent turn 开始 |
-| `turn.completed` | `SessionView`, `ActivityShelfView`, `ChatTranscriptView` | turn 正常完成 |
-| `turn.failed` | `SessionView`, `ActivityShelfView`, `ChatTranscriptView` | turn 失败 |
-| `turn.cancelled` | `SessionView`, `ActivityShelfView`, `ChatTranscriptView` | turn 被取消 |
+| `turn.started` | `SessionView`, `ConversationView` | 一个 agent turn 开始，投影为 `turn_meta` |
+| `turn.completed` | `SessionView`, `ConversationView` | turn 正常完成，更新 `turn_meta` |
+| `turn.failed` | `SessionView`, `ConversationView` | turn 失败，更新 `turn_meta` 并可生成 `status` |
+| `turn.cancelled` | `SessionView`, `ConversationView` | turn 被取消，更新 `turn_meta` |
 
 ### 消息和思考
 
 | Type | 主要投影 | 说明 |
 | --- | --- | --- |
-| `assistant.message.started` | `ChatTranscriptView` | assistant message 开始，建立稳定 message id |
-| `assistant.message.delta` | `ChatTranscriptView` | assistant 正文增量 |
-| `assistant.message.completed` | `ChatTranscriptView` | assistant message 完成 |
-| `assistant.reasoning.delta` | `ActivityShelfView`, 可选 `ChatTranscriptView.working` | reasoning 增量默认不进正式正文，只能显示在 thinking/working surface |
-| `assistant.reasoning.completed` | `ActivityShelfView` | reasoning 结束或摘要完成 |
+| `assistant.message.started` | `ConversationView` | assistant message 开始，建立稳定 message id |
+| `assistant.message.delta` | `ConversationView` | assistant 正文增量 |
+| `assistant.message.completed` | `ConversationView` | assistant message 完成 |
+| `assistant.reasoning.delta` | `ConversationView` | reasoning 增量默认不进正式正文，可投影为 agent work / thinking item |
+| `assistant.reasoning.completed` | `ConversationView` | reasoning 结束或摘要完成 |
 
 ### 活动、工具和命令
 
 | Type | 主要投影 | 说明 |
 | --- | --- | --- |
-| `tool.started` | `ActivityShelfView`, `SessionTimeline` | 工具调用开始，必须带稳定 `tool_id` 或 backend refs |
-| `tool.updated` | `ActivityShelfView`, `SessionTimeline` | 工具参数、进度、摘要变化 |
-| `tool.output.delta` | `ActivityShelfView`, `SessionTimeline` | 工具输出增量。不得直接作为 assistant text 进入 transcript |
-| `tool.completed` | `ActivityShelfView`, `SessionTimeline` | 工具调用完成 |
-| `tool.failed` | `ActivityShelfView`, `SessionTimeline` | 工具调用失败 |
-| `command.started` | `ActivityShelfView`, `SessionTimeline` | shell/command 类工具开始 |
-| `command.output.delta` | `ActivityShelfView`, `SessionTimeline` | command stdout/stderr 增量。不得进入 transcript 正文 |
-| `command.completed` | `ActivityShelfView`, `SessionTimeline` | command 完成 |
-| `command.failed` | `ActivityShelfView`, `SessionTimeline` | command 失败 |
-| `task.started` | `ActivityShelfView` | 子任务开始 |
-| `task.updated` | `ActivityShelfView` | 子任务进度变化 |
-| `task.completed` | `ActivityShelfView` | 子任务完成 |
+| `tool.started` | `ConversationView`, `SessionTimeline` | 工具调用开始，必须带稳定 `tool_id` 或 backend refs |
+| `tool.updated` | `ConversationView`, `SessionTimeline` | 工具参数、进度、摘要变化 |
+| `tool.output.delta` | `ConversationView`, `SessionTimeline` | 工具输出增量。不得直接作为 assistant text 进入 conversation |
+| `tool.completed` | `ConversationView`, `SessionTimeline` | 工具调用完成 |
+| `tool.failed` | `ConversationView`, `SessionTimeline` | 工具调用失败 |
+| `command.started` | `ConversationView`, `SessionTimeline` | shell/command 类工具开始 |
+| `command.output.delta` | `ConversationView`, `SessionTimeline` | command stdout/stderr 增量。不得进入 assistant 正文 |
+| `command.completed` | `ConversationView`, `SessionTimeline` | command 完成 |
+| `command.failed` | `ConversationView`, `SessionTimeline` | command 失败 |
+| `task.started` | `ConversationView` | 子任务开始 |
+| `task.updated` | `ConversationView` | 子任务进度变化 |
+| `task.completed` | `ConversationView` | 子任务完成 |
 
 ### 请求、审查和诊断
 
 | Type | 主要投影 | 说明 |
 | --- | --- | --- |
-| `request.opened` | `PendingRequestsView`, `ActivityShelfView` | 权限、工具确认、用户输入请求打开 |
-| `request.updated` | `PendingRequestsView`, `ActivityShelfView` | request 文案、选项或状态变化 |
-| `request.resolved` | `PendingRequestsView`, `ActivityShelfView` | request 被 approve、deny、answer、expire 或 cancel |
-| `diff.updated` | `DiffReviewView`, `ActivityShelfView` | 文件变更摘要或 diff 更新 |
+| `request.opened` | `PendingRequestsView`, `ConversationView` | 权限、工具确认、用户输入请求打开 |
+| `request.updated` | `PendingRequestsView`, `ConversationView` | request 文案、选项或状态变化 |
+| `request.resolved` | `PendingRequestsView`, `ConversationView` | request 被 approve、deny、answer、expire 或 cancel |
+| `diff.updated` | `DiffReviewView`, `ConversationView` | 文件变更摘要或 diff 更新 |
 | `usage.updated` | `SessionView`, `BackendStatusView` | token、费用、线程占用等 usage 变化 |
-| `warning.raised` | `ActivityShelfView`, diagnostics | 可恢复 warning |
-| `error.raised` | `ActivityShelfView`, `ChatTranscriptView`, diagnostics | 运行时错误。只有用户可理解的错误摘要可进入 transcript |
+| `warning.raised` | `ConversationView`, diagnostics | 可恢复 warning |
+| `error.raised` | `ConversationView`, diagnostics | 运行时错误。只有用户可理解的错误摘要可进入 conversation |
 | `projection.invalidated` | affected read models | daemon 明确通知某些 read model 需要刷新 |
 
 ### 流控制消息
@@ -146,27 +146,28 @@ Canonical event log 是 read model 的事实来源；trace/timeline 是诊断视
 
 ## 投影规则
 
-| 运行时事件 | ChatTranscriptView | ActivityShelfView | PendingRequestsView | DiffReviewView | SessionTimeline |
-| --- | --- | --- | --- | --- | --- |
-| `user.message.accepted` | user row | 可选 |  |  | message item |
-| `turn.*` | `turns[]` summary | turn lifecycle item |  |  | turn item |
-| `assistant.message.*` | assistant row / delta |  |  |  | message item |
-| `assistant.reasoning.*` | 仅可投影为 `working` | thinking item |  |  | reasoning item |
-| `tool.*` | 仅可投影为 `activity_marker` | tool item |  |  | tool item |
-| `command.*` | 仅可投影为 `activity_marker` | command item |  |  | command item |
-| `request.*` | 仅可投影为 `activity_marker` | request activity | request item |  | request item |
-| `diff.updated` | 仅可投影为 `activity_marker` | diff activity |  | diff item | diff item |
-| `warning.raised` | 通常不进入；严重时可显示摘要 | warning item |  |  | warning item |
-| `error.raised` | 用户可理解错误摘要 | error item |  |  | error item |
+| 运行时事件 | ConversationView item | PendingRequestsView | DiffReviewView | SessionTimeline |
+| --- | --- | --- | --- | --- |
+| `user.message.accepted` | `user_message` |  |  | message item |
+| `input.queued` | `user_message` with queued status or `status` |  |  | input item |
+| `turn.*` | `turn_meta` |  |  | turn item |
+| `assistant.message.*` | `assistant_message` |  |  | message item |
+| `assistant.reasoning.*` | optional `agent_work` |  |  | reasoning item |
+| `tool.*` | `agent_work` |  |  | tool item |
+| `command.*` | `agent_work` |  |  | command item |
+| `request.*` | optional `agent_work` / `status` | request item |  | request item |
+| `diff.updated` | optional `agent_work` |  | diff item | diff item |
+| `warning.raised` | `agent_work` / `status` |  |  | warning item |
+| `error.raised` | `status` |  |  | error item |
 
 这条规则是为了防止：
 
-- raw tool text 混进聊天正文；
+- raw tool text 混进 assistant 正文；
 - backend replay 的用户输入变成第二个 user bubble；
 - reasoning/status 被当成 assistant markdown；
-- 切会话后 timeline snapshot 被当成 transcript rows。
+- 切会话后 timeline snapshot 被当成 conversation items。
 
-`ActivityShelfView` 对工具调用采用“全量工具、结构化投影”的规则：所有 normalized `tool.*` lifecycle 都必须合并到稳定 tool activity item，短工具不因为耗时短而从 activity 消失。普通 UI 可以调整这些 work rows 的密度、分组或虚拟化策略，但不应该读取 trace/raw event 来补工具展示。`已处理 ...` / `处理中 ...` 这类 turn-level 文案不是 canonical event 词汇的一部分；render model 必须从 `ChatTranscriptView.turns` 的 `started_at`、`completed_at` 和 `status` 派生，不能从 assistant streaming row 或 activity rows 反推 turn 生命周期。
+`ConversationView` 对工具调用采用“全量工具、结构化投影”的规则：所有 normalized `tool.*` lifecycle 都必须合并到稳定 `agent_work` item，短工具不因为耗时短而从 conversation 消失。普通 UI 可以调整这些 work rows 的密度、分组、显隐和虚拟化策略，但不应该读取 trace/raw event 来补工具展示。`已处理 ...` / `处理中 ...` 这类 turn-level 文案不是 canonical event 词汇的一部分；render model 必须从 `turn_meta` item 的 `started_at`、`completed_at` 和 `status` 派生，不能从 assistant streaming row 或 agent work rows 反推 turn 生命周期。
 
 ## Requirements
 
@@ -181,22 +182,22 @@ Canonical runtime event 的 `type` MUST 来自本页的 `VelaEventType`。
 - **AND** 如果它是控制面 telemetry，普通 UI 不应看到 canonical event
 - **AND** 如果它是未知业务/异常信号，对 UI 暴露时必须映射成 `warning.raised`、`error.raised` 或已知 canonical event
 
-### Requirement: Transcript 不能消费 activity event 正文
+### Requirement: Conversation 不能把 work event 当正文
 
-Chat transcript MUST NOT directly render `tool.*`、`command.*`、`request.*`、`diff.updated` 的 payload text。
+Conversation MUST NOT directly render `tool.*`、`command.*`、`request.*`、`diff.updated` 的 payload text as assistant message text。
 
 #### Scenario: shell command 输出
 
 - **WHEN** daemon append `command.output.delta`
-- **THEN** `ActivityShelfView` 可以更新 command output
-- **AND** `ChatTranscriptView` 不新增 assistant message
+- **THEN** `ConversationView` 可以更新 `agent_work` item
+- **AND** 不新增 assistant message
 
-### Requirement: 正式 user row 只能来自 accepted fact
+### Requirement: 正式 user item 只能来自 projected fact
 
-Chat UI MUST NOT convert pending input event into formal user row.
+Chat UI MUST NOT convert pending input event into formal user item.
 
 #### Scenario: 用户消息被排队
 
 - **WHEN** client submits `user.message` and daemon returns `queued`
 - **THEN** UI 可以显示 pending/queue affordance
-- **AND** 正式 user row 必须等待 `user.message.accepted` 或 `ChatTranscriptView` 更新
+- **AND** 正式 user item 必须等待 `input.queued` / `user.message.accepted` 经 `ConversationView` 投影后出现

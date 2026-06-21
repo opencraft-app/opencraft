@@ -1,10 +1,7 @@
 import {
-  applyTranscriptLiveOverlay,
   isVelaStreamEventForSession,
-  needsTranscriptRefreshAfterLiveOverlay,
   streamReadModelRefreshPlanForCursors,
-  type ActivityWireView,
-  type ChatTranscriptWireView,
+  type ConversationWireView,
   type PendingRequestsWireView,
   type StreamRefreshScheduler,
   type VelaStreamEventWire,
@@ -13,44 +10,32 @@ import {
 export function handleWorkbenchStreamEvent({
   activeSessionId,
   streamEvent,
-  currentTranscript,
-  currentActivity,
+  currentConversation,
   currentRequests,
-  commitTranscript,
-  transcriptRefreshScheduler,
-  activityRefreshScheduler,
+  conversationRefreshScheduler,
+  forceConversationRefresh,
   requestsRefreshScheduler,
   sessionRefreshScheduler,
   backendsRefreshScheduler,
 }: {
   activeSessionId: string;
   streamEvent: VelaStreamEventWire;
-  currentTranscript: ChatTranscriptWireView | null;
-  currentActivity: ActivityWireView | null;
+  currentConversation: ConversationWireView | null;
   currentRequests: PendingRequestsWireView | null;
-  commitTranscript: (nextTranscript: ChatTranscriptWireView) => void;
-  transcriptRefreshScheduler: StreamRefreshScheduler;
-  activityRefreshScheduler: StreamRefreshScheduler;
+  conversationRefreshScheduler: StreamRefreshScheduler;
+  forceConversationRefresh: boolean;
   requestsRefreshScheduler: StreamRefreshScheduler;
   sessionRefreshScheduler: StreamRefreshScheduler;
   backendsRefreshScheduler: StreamRefreshScheduler;
 }) {
   if (!isVelaStreamEventForSession(activeSessionId, streamEvent)) return;
 
-  const forceTranscriptRefresh = currentTranscript
-    ? needsTranscriptRefreshAfterLiveOverlay(currentTranscript, streamEvent)
-    : false;
-  if (currentTranscript) {
-    commitTranscript(applyTranscriptLiveOverlay(currentTranscript, streamEvent));
-  }
   const refreshPlan = streamReadModelRefreshPlanForCursors(streamEvent, {
-    transcript: currentTranscript?.cursor,
-    activity: currentActivity?.cursor,
+    conversation: currentConversation?.cursor,
     requests: currentRequests?.cursor,
   });
-  if (forceTranscriptRefresh) transcriptRefreshScheduler.notifyStreamEvent();
-  if (refreshPlan.transcript) transcriptRefreshScheduler.notifyStreamEvent();
-  if (refreshPlan.activity) activityRefreshScheduler.notifyStreamEvent();
+  if (forceConversationRefresh) conversationRefreshScheduler.notifyStreamEvent();
+  if (refreshPlan.conversation) conversationRefreshScheduler.notifyStreamEvent();
   if (refreshPlan.requests) requestsRefreshScheduler.notifyStreamEvent();
   if (refreshPlan.session) sessionRefreshScheduler.notifyStreamEvent();
   if (refreshPlan.backends) backendsRefreshScheduler.notifyStreamEvent();

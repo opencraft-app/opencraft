@@ -22,15 +22,7 @@ export interface EventCursorWire {
   seq: number;
 }
 
-export interface TranscriptWindow {
-  first_row_id?: string | null;
-  last_row_id?: string | null;
-  anchor_row_id?: string | null;
-  has_older: boolean;
-  has_newer: boolean;
-}
-
-export interface ActivityWindow {
+export interface ConversationWindow {
   first_item_id?: string | null;
   last_item_id?: string | null;
   anchor_item_id?: string | null;
@@ -38,48 +30,84 @@ export interface ActivityWindow {
   has_newer: boolean;
 }
 
-export interface TranscriptWireRow {
+export type ConversationItemKindWire =
+  | "user_message"
+  | "assistant_message"
+  | "turn_meta"
+  | "agent_work"
+  | "status";
+export type ConversationItemStatusWire =
+  | "pending"
+  | "running"
+  | "streaming"
+  | "completed"
+  | "failed"
+  | "cancelled";
+export type MessagePartTypeWire = "text" | "image" | "file_reference";
+
+export interface MessagePartWire {
   id: string;
-  kind: "user_message" | "assistant_message" | "working" | "activity_marker" | "error";
-  created_at: string;
-  updated_at: string;
-  revision: number;
-  turn_id?: string;
-  text?: string;
-  parts?: TranscriptWirePart[];
-  activity_id?: string;
-  label?: string;
-  status: TranscriptRowStatusWire;
-  source_event_ids: string[];
-}
-
-export type TranscriptRowStatusWire = "pending" | "streaming" | "completed" | "failed" | "cancelled";
-export type TranscriptTurnStatusWire = "running" | "completed" | "failed" | "cancelled";
-export type TranscriptPartTypeWire = "markdown" | "text" | "code" | "image" | "file_reference";
-
-export interface TranscriptTurnSummaryWire {
-  turn_id: string;
-  status: TranscriptTurnStatusWire;
-  started_at: string;
-  completed_at?: string | null;
-  first_row_id?: string | null;
-  last_row_id?: string | null;
-  source_event_ids: string[];
-}
-
-export interface TranscriptWirePart {
-  id: string;
-  type: TranscriptPartTypeWire;
+  type: MessagePartTypeWire;
   text?: string;
   data?: Record<string, unknown>;
 }
 
-export interface ChatTranscriptWireView {
+export type ConversationWireItem =
+  | UserMessageConversationWireItem
+  | AssistantMessageConversationWireItem
+  | TurnMetaConversationWireItem
+  | AgentWorkConversationWireItem
+  | StatusConversationWireItem;
+
+export interface ConversationWireItemBase {
+  id: string;
+  kind: ConversationItemKindWire;
+  turn_id?: string;
+  created_at: string;
+  updated_at: string;
+  revision: number;
+  status: ConversationItemStatusWire;
+  source_event_ids: string[];
+}
+
+export interface UserMessageConversationWireItem extends ConversationWireItemBase {
+  kind: "user_message";
+  text: string;
+  parts?: MessagePartWire[];
+}
+
+export interface AssistantMessageConversationWireItem extends ConversationWireItemBase {
+  kind: "assistant_message";
+  text: string;
+  parts?: MessagePartWire[];
+}
+
+export interface TurnMetaConversationWireItem extends ConversationWireItemBase {
+  kind: "turn_meta";
+  turn_id: string;
+}
+
+export interface AgentWorkConversationWireItem extends ConversationWireItemBase {
+  kind: "agent_work";
+  title: string;
+  summary?: string;
+  detail: AgentWorkDetailWire;
+  event_range?: {
+    from_event_id?: string;
+    to_event_id?: string;
+  };
+}
+
+export interface StatusConversationWireItem extends ConversationWireItemBase {
+  kind: "status";
+  text: string;
+}
+
+export interface ConversationWireView {
   session_id: string;
-  rows: TranscriptWireRow[];
-  turns: TranscriptTurnSummaryWire[];
+  items: ConversationWireItem[];
   cursor: EventCursorWire;
-  window: TranscriptWindow;
+  window: ConversationWindow;
 }
 
 export interface VelaStreamEventWire {
@@ -95,8 +123,7 @@ export interface VelaStreamEventWire {
 }
 
 export interface StreamReadModelRefreshPlan {
-  transcript: boolean;
-  activity: boolean;
+  conversation: boolean;
   requests: boolean;
   diffs: boolean;
   session: boolean;
@@ -105,14 +132,7 @@ export interface StreamReadModelRefreshPlan {
 
 export type ViewWindowDirection = "tail" | "before" | "after" | "around";
 
-export interface TranscriptWindowOptions {
-  limit?: number;
-  direction?: ViewWindowDirection;
-  anchorRowId?: string;
-  includeLive?: boolean;
-}
-
-export interface ActivityWindowOptions {
+export interface ConversationWindowOptions {
   limit?: number;
   direction?: ViewWindowDirection;
   anchorItemId?: string;
@@ -170,9 +190,7 @@ export interface DiffReviewWireView {
   cursor: CursorWindow;
 }
 
-export type ActivityItemKindWire = "tool" | "command" | "task" | "warning" | "runtime";
-export type ActivityItemStatusWire = "pending" | "running" | "completed" | "failed" | "cancelled";
-export type ActivityDetailTypeWire =
+export type AgentWorkDetailTypeWire =
   | "shell"
   | "read"
   | "edit"
@@ -189,21 +207,21 @@ export type ActivityDetailTypeWire =
   | "plain_text"
   | "unknown"
   | "tool";
-export type ActivityFileDetailTypeWire = "read" | "edit" | "write";
-export type ActivitySearchModeWire = "code" | "web" | "files" | "unknown";
-export type ActivityGenericDetailTypeWire = Exclude<
-  ActivityDetailTypeWire,
-  "shell" | ActivityFileDetailTypeWire | "search" | "fetch"
+export type AgentWorkFileDetailTypeWire = "read" | "edit" | "write";
+export type AgentWorkSearchModeWire = "code" | "web" | "files" | "unknown";
+export type AgentWorkGenericDetailTypeWire = Exclude<
+  AgentWorkDetailTypeWire,
+  "shell" | AgentWorkFileDetailTypeWire | "search" | "fetch"
 >;
 
-export type ActivityWireDetail =
-  | ActivityShellToolDetailWire
-  | ActivityFileToolDetailWire
-  | ActivitySearchToolDetailWire
-  | ActivityFetchToolDetailWire
-  | ActivityGenericToolDetailWire;
+export type AgentWorkDetailWire =
+  | AgentWorkShellDetailWire
+  | AgentWorkFileDetailWire
+  | AgentWorkSearchDetailWire
+  | AgentWorkFetchDetailWire
+  | AgentWorkGenericDetailWire;
 
-export interface ActivityShellToolDetailWire {
+export interface AgentWorkShellDetailWire {
   type: "shell";
   command?: string;
   cwd?: string;
@@ -214,8 +232,8 @@ export interface ActivityShellToolDetailWire {
   error?: string;
 }
 
-export interface ActivityFileToolDetailWire {
-  type: ActivityFileDetailTypeWire;
+export interface AgentWorkFileDetailWire {
+  type: AgentWorkFileDetailTypeWire;
   file_path?: string;
   path?: string;
   content?: string;
@@ -224,10 +242,10 @@ export interface ActivityFileToolDetailWire {
   unified_diff?: string;
 }
 
-export interface ActivitySearchToolDetailWire {
+export interface AgentWorkSearchDetailWire {
   type: "search";
   query?: string;
-  mode?: ActivitySearchModeWire;
+  mode?: AgentWorkSearchModeWire;
   content?: string;
   num_files?: number;
   num_matches?: number;
@@ -235,7 +253,7 @@ export interface ActivitySearchToolDetailWire {
   truncated?: boolean;
 }
 
-export interface ActivityFetchToolDetailWire {
+export interface AgentWorkFetchDetailWire {
   type: "fetch";
   url?: string;
   prompt?: string;
@@ -246,32 +264,9 @@ export interface ActivityFetchToolDetailWire {
   duration_ms?: number;
 }
 
-export interface ActivityGenericToolDetailWire {
-  type: ActivityGenericDetailTypeWire;
+export interface AgentWorkGenericDetailWire {
+  type: AgentWorkGenericDetailTypeWire;
   [key: string]: unknown;
-}
-
-export interface ActivityWireItem {
-  id: string;
-  turn_id?: string;
-  kind: ActivityItemKindWire;
-  status: ActivityItemStatusWire;
-  title: string;
-  summary?: string;
-  detail?: ActivityWireDetail;
-  created_at: string;
-  updated_at?: string;
-  event_range?: {
-    from_event_id?: string;
-    to_event_id?: string;
-  };
-}
-
-export interface ActivityWireView {
-  session_id: string;
-  items: ActivityWireItem[];
-  window: ActivityWindow;
-  cursor: EventCursorWire;
 }
 
 export type BackendKindWire =
@@ -516,7 +511,6 @@ export interface QueuedCommandAckWire {
 export type CommandRejectionCodeWire =
   | "session_not_found"
   | "session_closed"
-  | "turn_running"
   | "permission_blocked"
   | "backend_unavailable"
   | "duplicate_command"

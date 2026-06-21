@@ -17,7 +17,7 @@ velaChat 的对外 API 面向 desktop、mobile、Web、embed 和 SDK。Client-fa
 | --- | --- | --- |
 | `Backend` / `BackendStatusView` | 创建 session 前的能力发现 | 渲染 backend picker、model selector、thinking selector、permission selector、feature toggles |
 | `SessionView` | 单个 session 当前权威状态 | 渲染 title、status、当前 `agent_config`、runtime info、可用操作 |
-| `ChatTranscriptView` | Chat renderer 的窄投影 | 渲染消息列表、streaming assistant row、activity marker |
+| `ConversationView` | Chat renderer 的窄投影 | 渲染消息列表、streaming assistant row、activity marker |
 | `PendingRequestsView` | 权限、确认、自定义输入 | 渲染 permission dock / mobile approval sheet |
 
 客户端不应该直接从 provider raw event、diagnostic trace 或 session timeline 推导普通 UI 状态。
@@ -123,7 +123,7 @@ SessionView SHOULD expose 当前 session 的能力快照，而不是暴露 provi
       "permission_mode": "auto"
     },
     "operations": {
-      "send_message": { "available": false, "reason": "turn_running" },
+      "send_message": { "available": true },
       "cancel": { "available": true },
       "update_agent_config": { "available": true, "effective_after": "next_turn" },
       "respond_to_request": { "available": true },
@@ -150,14 +150,14 @@ SessionView SHOULD expose 当前 session 的能力快照，而不是暴露 provi
 | 回答自定义输入 | `POST /sessions/{session_id}/events` with `user.request_answer` |
 | 取消当前 turn | `POST /sessions/{session_id}/cancel` |
 
-Pending request 的展示只读 `PendingRequestsView`。客户端不应该从 transcript text 或 timeline item 猜测“现在需要批准”。
+Pending request 的展示只读 `PendingRequestsView`。客户端不应该从 conversation text 或 timeline item 猜测“现在需要批准”。
 
 ## Streaming And Recovery
 
 客户端的推荐流程：
 
 1. Fetch `SessionView`。
-2. Fetch `ChatTranscriptView` tail window。
+2. Fetch `ConversationView` tail window。
 3. Fetch `PendingRequestsView`。
 4. Subscribe session SSE。
 5. 根据 SSE 的 cursor、affected views 或 reset 指令刷新对应 read model。
@@ -215,11 +215,11 @@ External clients MUST generate or validate wire DTOs from `public/openapi/velach
 
 #### Scenario: 手写 client 校验 view window query options
 
-- **WHEN** client 请求 `ChatTranscriptView` 或 `ActivityShelfView`
+- **WHEN** client 请求 `ConversationView`
 - **THEN** 它必须按 OpenAPI shared `Limit` 参数校验 `limit`
 - **AND** 非 integer、小于 1、大于 500 的 `limit` 都必须在发出 HTTP 请求前失败
 - **AND** `direction` 必须是 `tail` / `before` / `after` / `around`
-- **AND** `anchor_row_id` / `anchor_item_id` 必须是 string，`include_live` 必须是 boolean
+- **AND** `anchor_item_id` 必须是 string
 - **AND** 这只覆盖 OpenAPI 已经明确的 query 参数规则，不在这里决定分页预取或虚拟列表策略
 
 #### Scenario: 手写 client 校验 path/query string 参数
@@ -286,24 +286,20 @@ External clients MUST generate or validate wire DTOs from `public/openapi/velach
 
 #### Scenario: 手写 client 校验 read-model envelope
 
-- **WHEN** client 处理 `ChatTranscriptView` 或 `ActivityShelfView`
+- **WHEN** client 处理 `ConversationView`
 - **THEN** 它必须按 OpenAPI required 字段校验 view envelope
 - **AND** `session_id`、`window`、完整 `EventCursor` 都必须存在
 - **AND** `window.has_older` / `window.has_newer` 必须是 boolean
 - **AND** 缺失 envelope 字段视为 wire contract violation，而不是交给 UI fallback 猜测
 
-#### Scenario: 手写 client 校验 read-model row/item shape
+#### Scenario: 手写 client 校验 conversation item shape
 
-- **WHEN** client 处理 `ChatTranscriptView.rows`
-- **THEN** 每个 row 必须校验 OpenAPI required `id`、`kind`、`created_at`、`updated_at`、`revision`、`status` 和 `source_event_ids`
-- **AND** `kind` 必须是 `user_message` / `assistant_message` / `working` / `activity_marker` / `error`
-- **AND** `status` 必须是 `pending` / `streaming` / `completed` / `failed` / `cancelled`
-- **AND** `revision` 必须是大于等于 1 的 integer，`source_event_ids` 必须是 string array
-- **WHEN** client 处理 `ActivityShelfView.items`
-- **THEN** 每个 item 必须校验 OpenAPI required `id`、`kind`、`status`、`title` 和 `created_at`
-- **AND** `kind` 必须是 `tool` / `command` / `task` / `warning` / `runtime`
-- **AND** `status` 必须是 `pending` / `running` / `completed` / `failed` / `cancelled`
-- **AND** malformed row/item 不得进入 surface projection、virtual list 或 markdown renderer
+- **WHEN** client 处理 `ConversationView.items`
+- **THEN** 每个 item 必须校验 OpenAPI required `id`、`kind`、`created_at`、`updated_at`、`revision`、`status` 和 `source_event_ids`
+- **AND** `kind` 必须是 `user_message` / `assistant_message` / `turn_meta` / `agent_work` / `status`
+- **AND** message item 的 `parts` 必须按 `MessagePart.oneOf` 校验
+- **AND** `agent_work.detail` 必须按 `AgentWorkDetail.oneOf` 校验
+- **AND** malformed item 不得进入 surface projection、virtual list 或 markdown renderer
 
 ### Requirement: Provider 差异不泄露到客户端
 

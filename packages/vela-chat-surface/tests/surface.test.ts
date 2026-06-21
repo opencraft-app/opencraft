@@ -6,20 +6,47 @@ import {
   buildConversationHistoryPrependPlan,
   canApplyConversationHistoryPrependPlan,
   deriveConversationWindowState,
-  prependActivityWindow,
-  prependTranscriptWindow,
+  prependConversationWindow,
 } from "../src";
 
-test("normalizes transcript wire rows into stable semantic surface rows", () => {
+function conversationView(overrides: Record<string, unknown> = {}) {
+  return {
+    session_id: "sess_1",
+    items: [],
+    window: {
+      first_item_id: null,
+      last_item_id: null,
+      has_older: false,
+      has_newer: false,
+    },
+    cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
+    ...overrides,
+  };
+}
+
+function conversationItem(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "item_1",
+    kind: "assistant_message",
+    created_at: "2026-06-18T10:00:00Z",
+    updated_at: "2026-06-18T10:00:00Z",
+    revision: 1,
+    status: "completed",
+    source_event_ids: ["evt_1"],
+    text: "",
+    ...overrides,
+  };
+}
+
+test("normalizes ConversationView items into stable semantic surface lanes", () => {
   const surface = buildChatSurfaceFromReadModels({
     sessionId: "sess_1",
-    transcript: {
-      turns: [],
-      rows: [
-        {
+    conversation: conversationView({
+      items: [
+        conversationItem({
           id: "evt_user_1",
           kind: "user_message",
-          created_at: "2026-06-18T10:00:00Z",
+          turn_id: "turn_1",
           text: "导入功能在哪了 至少前端没看到?",
           parts: [
             {
@@ -37,44 +64,49 @@ test("normalizes transcript wire rows into stable semantic surface rows", () => 
               },
             },
           ],
-          status: "completed",
           source_event_ids: ["evt_user_1"],
-        },
-        {
+        }),
+        conversationItem({
+          id: "turn_1:meta",
+          kind: "turn_meta",
+          turn_id: "turn_1",
+          created_at: "2026-06-18T10:00:00Z",
+          updated_at: "2026-06-18T10:00:03Z",
+          source_event_ids: ["evt_turn_started", "evt_turn_completed"],
+        }),
+        conversationItem({
           id: "evt_assistant_1",
           kind: "assistant_message",
+          turn_id: "turn_1",
           created_at: "2026-06-18T10:00:01Z",
+          updated_at: "2026-06-18T10:00:03Z",
           text: "我先按前端入口查。",
-          status: "completed",
           source_event_ids: ["evt_assistant_started", "evt_assistant_delta"],
-        },
-      ],
-      window: {
-        first_row_id: "evt_user_1",
-        last_row_id: "evt_assistant_1",
-        has_older: true,
-        has_newer: false,
-      },
-      cursor: { event_id: "evt_assistant_1", epoch: 1, seq: 2 },
-    },
-    activity: {
-      items: [
-        {
-          id: "current_turn",
-          kind: "runtime",
-          status: "failed",
-          title: "turn.started",
-          summary: "No API key found for the selected model.",
+        }),
+        conversationItem({
+          id: "work_1",
+          kind: "agent_work",
+          turn_id: "turn_1",
+          title: "Ran command",
+          summary: "npm test",
+          detail: { type: "shell", command: "npm test" },
           created_at: "2026-06-18T10:00:02Z",
           updated_at: "2026-06-18T10:00:03Z",
           event_range: {
-            from_event_id: "evt_turn_started",
-            to_event_id: "evt_turn_failed",
+            from_event_id: "evt_tool_started",
+            to_event_id: "evt_tool_completed",
           },
-        },
+          source_event_ids: ["evt_tool_started", "evt_tool_completed"],
+        }),
       ],
-      cursor: { event_id: "evt_turn_failed", epoch: 1, seq: 4 },
-    },
+      window: {
+        first_item_id: "evt_user_1",
+        last_item_id: "work_1",
+        has_older: true,
+        has_newer: false,
+      },
+      cursor: { event_id: "evt_tool_completed", epoch: 1, seq: 4 },
+    }),
   });
 
   assert.equal(surface.session_id, "sess_1");
@@ -82,34 +114,32 @@ test("normalizes transcript wire rows into stable semantic surface rows", () => 
     surface.transcript.rows.map((row) => row.role),
     ["user", "assistant"],
   );
-  assert.equal(surface.transcript.rows[0]?.debug.projection, "transcript");
+  assert.equal(surface.transcript.rows[0]?.debug.projection, "conversation");
   assert.equal(surface.transcript.rows[0]?.parts[1]?.type, "image");
   assert.equal(surface.transcript.rows[0]?.parts[1]?.data?.mime_type, "image/png");
-  assert.deepEqual(surface.transcript.rows[0]?.debug.source_event_ids, ["evt_user_1"]);
+  assert.equal(surface.transcript.rows[0]?.turn_id, "turn_1");
   assert.deepEqual(surface.transcript.rows[1]?.debug.source_event_ids, [
     "evt_assistant_started",
     "evt_assistant_delta",
   ]);
+  assert.equal(surface.transcript.turns[0]?.turn_id, "turn_1");
+  assert.equal(surface.transcript.turns[0]?.status, "completed");
   assert.equal(surface.transcript.window?.has_older, true);
-  assert.equal(surface.transcript.window?.last_row_id, "evt_assistant_1");
-  assert.equal(surface.activity.items[0]?.status, "failed");
-  assert.equal(surface.activity.items[0]?.summary, "No API key found for the selected model.");
+  assert.equal(surface.transcript.window?.last_row_id, "work_1");
+  assert.equal(surface.activity.items[0]?.kind, "command");
+  assert.equal(surface.activity.items[0]?.title, "Ran command");
+  assert.equal(surface.activity.items[0]?.summary, "npm test");
   assert.deepEqual(surface.activity.items[0]?.debug.source_event_ids, [
-    "evt_turn_started",
-    "evt_turn_failed",
+    "evt_tool_started",
+    "evt_tool_completed",
   ]);
-  assert.equal(surface.cursors.transcript?.event_id, "evt_assistant_1");
-  assert.equal(surface.cursors.activity?.event_id, "evt_turn_failed");
+  assert.equal(surface.cursors.conversation?.event_id, "evt_tool_completed");
 });
 
 test("normalizes pending requests as a separate surface lane", () => {
   const surface = buildChatSurfaceFromReadModels({
     sessionId: "sess_requests",
-    transcript: {
-      turns: [],
-      rows: [],
-      cursor: { event_id: "evt_transcript", epoch: 1, seq: 1 },
-    },
+    conversation: conversationView({ session_id: "sess_requests" }),
     requests: {
       requests: [
         {
@@ -135,26 +165,20 @@ test("normalizes pending requests as a separate surface lane", () => {
   assert.equal(surface.cursors.requests?.latest_event_id, "evt_request_opened");
 });
 
-test("does not invent source event ids for projected read models without provenance", () => {
+test("does not invent source event ids for projected items without provenance", () => {
   const surface = buildChatSurfaceFromReadModels({
     sessionId: "sess_projected_provenance",
-    transcript: {
-      turns: [],
-      rows: [],
-      cursor: { event_id: "evt_transcript", epoch: 1, seq: 1 },
-    },
-    activity: {
+    conversation: conversationView({
       items: [
-        {
-          id: "activity_tool_1",
-          kind: "tool",
-          status: "completed",
+        conversationItem({
+          id: "work_1",
+          kind: "agent_work",
           title: "Tool",
-          created_at: "2026-06-18T10:00:03Z",
-        },
+          detail: { type: "tool" },
+          source_event_ids: [],
+        }),
       ],
-      cursor: { event_id: "evt_activity", epoch: 1, seq: 2 },
-    },
+    }),
     requests: {
       requests: [
         {
@@ -173,112 +197,72 @@ test("does not invent source event ids for projected read models without provena
   assert.deepEqual(surface.pending_requests.items[0]?.debug.source_event_ids, []);
 });
 
-test("deduplicates single-event activity provenance ranges", () => {
+test("deduplicates single-event agent work provenance ranges", () => {
   const surface = buildChatSurfaceFromReadModels({
-    sessionId: "sess_activity_single_event",
-    transcript: {
-      turns: [],
-      rows: [],
-      cursor: { event_id: "evt_transcript", epoch: 1, seq: 1 },
-    },
-    activity: {
+    sessionId: "sess_agent_work_single_event",
+    conversation: conversationView({
       items: [
-        {
-          id: "activity_tool_1",
-          kind: "tool",
-          status: "completed",
+        conversationItem({
+          id: "work_1",
+          kind: "agent_work",
           title: "Tool",
-          created_at: "2026-06-18T10:00:03Z",
+          detail: { type: "tool" },
           event_range: {
             from_event_id: "evt_tool_1",
             to_event_id: "evt_tool_1",
           },
-        },
+          source_event_ids: ["evt_tool_1"],
+        }),
       ],
-      cursor: { event_id: "evt_tool_1", epoch: 1, seq: 2 },
-    },
+    }),
   });
 
   assert.deepEqual(surface.activity.items[0]?.debug.source_event_ids, ["evt_tool_1"]);
 });
 
-test("uses transcript row label for non-message rows when wire text is absent", () => {
+test("uses status conversation items as working surface rows", () => {
   const surface = buildChatSurfaceFromReadModels({
     sessionId: "sess_labels",
-    transcript: {
-      turns: [],
-      rows: [
-        {
-          id: "row_working_1",
-          kind: "working",
-          created_at: "2026-06-18T10:00:00Z",
-          label: "Searched code",
-          status: "completed",
+    conversation: conversationView({
+      items: [
+        conversationItem({
+          id: "status_1",
+          kind: "status",
+          text: "Searched code",
           source_event_ids: ["evt_reasoning_1"],
-        },
-        {
-          id: "row_activity_1",
-          kind: "activity_marker",
-          created_at: "2026-06-18T10:00:01Z",
-          label: "Ran command",
-          status: "completed",
-          source_event_ids: ["evt_tool_1"],
-        },
+        }),
       ],
-      cursor: { event_id: "evt_tool_1", seq: 2 },
-    },
+    }),
   });
 
   assert.equal(surface.transcript.rows[0]?.role, "working");
   assert.equal(surface.transcript.rows[0]?.text, "Searched code");
-  assert.equal(surface.transcript.rows[1]?.role, "activity");
-  assert.equal(surface.transcript.rows[1]?.text, "Ran command");
 });
 
-test("preserves OpenAPI transcript row correlation ids in surface rows", () => {
+test("preserves conversation item correlation ids in surface lanes", () => {
   const surface = buildChatSurfaceFromReadModels({
     sessionId: "sess_correlation",
-    transcript: {
-      turns: [],
-      rows: [
-        {
+    conversation: conversationView({
+      items: [
+        conversationItem({
           id: "row_assistant_1",
           kind: "assistant_message",
-          created_at: "2026-06-18T10:00:00Z",
-          updated_at: "2026-06-18T10:00:02Z",
-          revision: 2,
           turn_id: "turn_1",
           text: "我来查。",
-          status: "completed",
-          source_event_ids: ["evt_assistant_1"],
-        },
-        {
-          id: "row_activity_1",
-          kind: "activity_marker",
-          created_at: "2026-06-18T10:00:01Z",
-          updated_at: "2026-06-18T10:00:01Z",
-          revision: 1,
+        }),
+        conversationItem({
+          id: "work_1",
+          kind: "agent_work",
           turn_id: "turn_1",
-          activity_id: "activity_terminal_1",
-          label: "Ran command",
-          status: "completed",
-          source_event_ids: ["evt_tool_1"],
-        },
+          title: "Ran command",
+          detail: { type: "shell", command: "ls -la" },
+        }),
       ],
-      cursor: { event_id: "evt_tool_1", epoch: 1, seq: 2 },
-    },
+    }),
   });
 
-  const assistantRow = surface.transcript.rows[0] as
-    | { turn_id?: string }
-    | undefined;
-  const activityRow = surface.transcript.rows[1] as
-    | { activity_id?: string; turn_id?: string }
-    | undefined;
-
-  assert.equal(assistantRow?.turn_id, "turn_1");
-  assert.equal(activityRow?.turn_id, "turn_1");
-  assert.equal(activityRow?.activity_id, "activity_terminal_1");
+  assert.equal(surface.transcript.rows[0]?.turn_id, "turn_1");
+  assert.equal(surface.activity.items[0]?.turn_id, "turn_1");
 });
 
 test("keeps surface renderer-free", async () => {
@@ -290,111 +274,91 @@ test("keeps surface renderer-free", async () => {
   assert.equal(source.includes("next/"), false);
 });
 
-test("does not invent OpenAPI-required transcript row fields in the surface layer", async () => {
+test("does not expose retired transcript or activity read-model inputs", async () => {
   const source = await import("node:fs/promises").then((fs) =>
     fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
   );
-  const rowInterface =
-    source.match(/export interface ChatTranscriptWireRow \{[\s\S]*?\n\}/)?.[0] ?? "";
 
-  assert.match(rowInterface, /updated_at:\s*string/);
-  assert.match(rowInterface, /revision:\s*number/);
-  assert.match(rowInterface, /status:\s*ChatTranscriptRowStatusWire/);
-  assert.match(rowInterface, /source_event_ids:\s*string\[\]/);
-  assert.match(rowInterface, /turn_id\?:\s*string/);
-  assert.match(rowInterface, /activity_id\?:\s*string/);
-  assert.doesNotMatch(rowInterface, /updated_at\?:\s*string/);
-  assert.doesNotMatch(rowInterface, /revision\?:\s*number/);
-  assert.doesNotMatch(rowInterface, /status\?:\s*string/);
-  assert.doesNotMatch(rowInterface, /source_event_ids\?:\s*string\[\]/);
-  assert.doesNotMatch(source, /row\.status\s*\?\?/);
-  assert.doesNotMatch(source, /row\.revision\s*\?\?/);
-  assert.doesNotMatch(source, /row\.source_event_ids\?\./);
+  assert.doesNotMatch(source, /ChatTranscriptWireView/);
+  assert.doesNotMatch(source, /ActivityWireView/);
+  assert.doesNotMatch(source, /prependTranscriptWindow/);
+  assert.doesNotMatch(source, /prependActivityWindow/);
 });
 
-test("keeps OpenAPI transcript enums narrow in surface wire types", async () => {
+test("keeps OpenAPI-required conversation item fields required in surface wire types", async () => {
   const source = await import("node:fs/promises").then((fs) =>
     fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
   );
-  const rowInterface =
-    source.match(/export interface ChatTranscriptWireRow \{[\s\S]*?\n\}/)?.[0] ?? "";
-  const surfaceRowInterface =
-    source.match(/export interface ChatSurfaceTranscriptRow \{[\s\S]*?\n\}/)?.[0] ?? "";
-  const partInterface = source.match(/export interface ChatTranscriptPart \{[\s\S]*?\n\}/)?.[0] ?? "";
+  const itemBaseInterface =
+    source.match(/export interface ConversationWireItemBase \{[\s\S]*?\n\}/)?.[0] ?? "";
 
-  assert.match(source, /export type ChatTranscriptRowStatusWire\s*=/);
-  assert.match(source, /export type ChatTranscriptPartTypeWire\s*=/);
-  assert.match(rowInterface, /status:\s*ChatTranscriptRowStatusWire/);
-  assert.match(surfaceRowInterface, /status:\s*ChatTranscriptRowStatusWire/);
-  assert.match(partInterface, /type:\s*ChatTranscriptPartTypeWire/);
-  assert.doesNotMatch(rowInterface, /status:\s*string/);
-  assert.doesNotMatch(surfaceRowInterface, /status:\s*string/);
-  assert.doesNotMatch(partInterface, /\|\s*string/);
+  assert.match(itemBaseInterface, /updated_at:\s*string/);
+  assert.match(itemBaseInterface, /revision:\s*number/);
+  assert.match(itemBaseInterface, /status:\s*ConversationItemStatusWire/);
+  assert.match(itemBaseInterface, /source_event_ids:\s*string\[\]/);
+  assert.match(itemBaseInterface, /turn_id\?:\s*string/);
+  assert.doesNotMatch(itemBaseInterface, /updated_at\?:\s*string/);
+  assert.doesNotMatch(itemBaseInterface, /revision\?:\s*number/);
+  assert.doesNotMatch(itemBaseInterface, /status\?:\s*string/);
+  assert.doesNotMatch(itemBaseInterface, /source_event_ids\?:\s*string\[\]/);
+});
+
+test("keeps OpenAPI conversation enums narrow in surface wire types", async () => {
+  const source = await import("node:fs/promises").then((fs) =>
+    fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
+  );
+  const itemBaseInterface =
+    source.match(/export interface ConversationWireItemBase \{[\s\S]*?\n\}/)?.[0] ?? "";
+  const messagePartInterface =
+    source.match(/export interface ConversationMessagePart \{[\s\S]*?\n\}/)?.[0] ?? "";
+
+  assert.match(source, /export type ConversationItemStatusWire\s*=/);
+  assert.match(source, /export type ConversationMessagePartTypeWire\s*=/);
+  assert.match(itemBaseInterface, /status:\s*ConversationItemStatusWire/);
+  assert.match(messagePartInterface, /type:\s*ConversationMessagePartTypeWire/);
+  assert.doesNotMatch(itemBaseInterface, /status:\s*string/);
+  assert.doesNotMatch(messagePartInterface, /\|\s*string/);
 });
 
 test("keeps OpenAPI-required read model envelope fields required in surface wire types", async () => {
   const source = await import("node:fs/promises").then((fs) =>
     fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
   );
-  const cursorWindowInterface =
-    source.match(/export interface ChatSurfaceCursor \{[\s\S]*?\n\}/)?.[0] ?? "";
   const eventCursorInterface =
     source.match(/export interface ChatSurfaceEventCursor \{[\s\S]*?\n\}/)?.[0] ?? "";
-  const transcriptViewInterface =
-    source.match(/export interface ChatTranscriptWireView \{[\s\S]*?\n\}/)?.[0] ?? "";
-  const activityViewInterface =
-    source.match(/export interface ActivityWireView \{[\s\S]*?\n\}/)?.[0] ?? "";
+  const conversationViewInterface =
+    source.match(/export interface ConversationWireView \{[\s\S]*?\n\}/)?.[0] ?? "";
 
-  assert.match(cursorWindowInterface, /from_seq\?:\s*number/);
-  assert.match(cursorWindowInterface, /to_seq\?:\s*number/);
   assert.match(eventCursorInterface, /event_id:\s*string/);
   assert.match(eventCursorInterface, /epoch:\s*number/);
   assert.match(eventCursorInterface, /seq:\s*number/);
   assert.doesNotMatch(eventCursorInterface, /event_id\?:\s*string/);
-  assert.doesNotMatch(eventCursorInterface, /epoch\?:\s*number/);
-  assert.doesNotMatch(eventCursorInterface, /seq\?:\s*number/);
-  assert.match(transcriptViewInterface, /session_id:\s*string/);
-  assert.match(transcriptViewInterface, /turns:\s*ChatTranscriptTurnSummaryWire\[\]/);
-  assert.match(transcriptViewInterface, /window:\s*ChatTranscriptWindow/);
-  assert.match(transcriptViewInterface, /cursor:\s*ChatSurfaceEventCursor/);
-  assert.doesNotMatch(transcriptViewInterface, /session_id\?:\s*string/);
-  assert.doesNotMatch(transcriptViewInterface, /turns\?:\s*ChatTranscriptTurnSummaryWire\[\]/);
-  assert.doesNotMatch(transcriptViewInterface, /window\?:\s*ChatTranscriptWindow/);
-  assert.doesNotMatch(transcriptViewInterface, /cursor:\s*ChatSurfaceCursor/);
-  assert.match(activityViewInterface, /session_id:\s*string/);
-  assert.match(activityViewInterface, /window:\s*ActivityWindow/);
-  assert.match(activityViewInterface, /cursor:\s*ChatSurfaceEventCursor/);
-  assert.doesNotMatch(activityViewInterface, /session_id\?:\s*string/);
-  assert.doesNotMatch(activityViewInterface, /window\?:\s*ActivityWindow/);
-  assert.doesNotMatch(activityViewInterface, /cursor:\s*ChatSurfaceCursor/);
+  assert.match(conversationViewInterface, /session_id:\s*string/);
+  assert.match(conversationViewInterface, /items:\s*ConversationWireItem\[\]/);
+  assert.match(conversationViewInterface, /window:\s*ConversationWindow/);
+  assert.match(conversationViewInterface, /cursor:\s*ChatSurfaceEventCursor/);
+  assert.doesNotMatch(conversationViewInterface, /session_id\?:\s*string/);
+  assert.doesNotMatch(conversationViewInterface, /items\?:\s*ConversationWireItem\[\]/);
 });
 
-test("keeps OpenAPI activity enums narrow in surface wire types", async () => {
+test("keeps OpenAPI agent work detail fields narrow in surface wire types", async () => {
   const source = await import("node:fs/promises").then((fs) =>
     fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
   );
-  const itemInterface = source.match(/export interface ActivityWireItem \{[\s\S]*?\n\}/)?.[0] ?? "";
   const detailUnion =
-    source.match(/export type ActivityWireDetail\s*=[\s\S]*?ActivityGenericToolDetailWire;/)?.[0] ??
+    source.match(/export type AgentWorkDetailWire\s*=[\s\S]*?AgentWorkGenericDetailWire;/)?.[0] ??
     "";
 
-  assert.match(source, /export type ActivityItemKindWire\s*=/);
-  assert.match(source, /export type ActivityItemStatusWire\s*=/);
-  assert.match(source, /export type ActivityDetailTypeWire\s*=/);
-  assert.match(source, /export type ActivitySearchModeWire\s*=/);
-  assert.match(itemInterface, /kind:\s*ActivityItemKindWire/);
-  assert.match(itemInterface, /status:\s*ActivityItemStatusWire/);
-  assert.match(source, /export type ActivityWireDetail\s*=/);
-  assert.match(detailUnion, /ActivityShellToolDetailWire/);
-  assert.match(detailUnion, /ActivityFileToolDetailWire/);
-  assert.match(detailUnion, /ActivitySearchToolDetailWire/);
-  assert.match(detailUnion, /ActivityFetchToolDetailWire/);
-  assert.match(detailUnion, /ActivityGenericToolDetailWire/);
-  assert.match(source, /export interface ActivitySearchToolDetailWire \{[\s\S]*?type:\s*"search"[\s\S]*?mode\?:\s*ActivitySearchModeWire[\s\S]*?num_matches\?:\s*number/);
-  assert.doesNotMatch(itemInterface, /kind:\s*string/);
-  assert.doesNotMatch(itemInterface, /status:\s*string/);
+  assert.match(source, /export type AgentWorkDetailTypeWire\s*=/);
+  assert.match(source, /export type AgentWorkSearchModeWire\s*=/);
+  assert.match(source, /export type AgentWorkDetailWire\s*=/);
+  assert.match(detailUnion, /AgentWorkShellDetailWire/);
+  assert.match(detailUnion, /AgentWorkFileDetailWire/);
+  assert.match(detailUnion, /AgentWorkSearchDetailWire/);
+  assert.match(detailUnion, /AgentWorkFetchDetailWire/);
+  assert.match(detailUnion, /AgentWorkGenericDetailWire/);
+  assert.match(source, /export interface AgentWorkSearchDetailWire \{[\s\S]*?type:\s*"search"[\s\S]*?mode\?:\s*AgentWorkSearchModeWire[\s\S]*?num_matches\?:\s*number/);
   assert.doesNotMatch(source, /mode\?:\s*string/);
-  assert.doesNotMatch(source, /\|\s*\{\s*\n\s*type:\s*string;\s*\n\s*\[key: string\]: unknown;\s*\n\s*\}/);
 });
 
 test("keeps OpenAPI pending request enums narrow in surface wire types", async () => {
@@ -418,550 +382,189 @@ test("keeps OpenAPI pending request enums narrow in surface wire types", async (
   assert.doesNotMatch(surfaceInterface, /status:\s*string/);
 });
 
-test("prepends transcript windows without duplicating rows and preserves latest cursor", () => {
-  const current = {
-    session_id: "sess_1",
-    turns: [
-      {
-        turn_id: "turn_2",
-        status: "running" as const,
-        started_at: "2026-06-18T10:00:02Z",
-        source_event_ids: ["evt_turn_2_start"],
-      },
-    ],
-    rows: [
-      {
-        id: "row_2",
-        kind: "assistant_message" as const,
-        created_at: "2026-06-18T10:00:02Z",
-        text: "two current",
-        status: "streaming",
-        revision: 2,
-      },
-      {
-        id: "row_3",
-        kind: "assistant_message" as const,
-        created_at: "2026-06-18T10:00:03Z",
-        text: "three",
-      },
+test("prepends conversation windows without duplicating items and preserves latest cursor", () => {
+  const current = conversationView({
+    items: [
+      conversationItem({ id: "item_2", text: "two current", status: "streaming", revision: 2 }),
+      conversationItem({ id: "item_3", text: "three" }),
     ],
     window: {
-      first_row_id: "row_2",
-      last_row_id: "row_3",
+      first_item_id: "item_2",
+      last_item_id: "item_3",
       has_older: true,
       has_newer: false,
     },
     cursor: { event_id: "evt_latest", seq: 9 },
-  };
-  const older = {
-    session_id: "sess_1",
-    turns: [
-      {
-        turn_id: "turn_1",
-        status: "completed" as const,
-        started_at: "2026-06-18T10:00:01Z",
-        completed_at: "2026-06-18T10:00:01Z",
-        source_event_ids: ["evt_turn_1_start", "evt_turn_1_done"],
-      },
-      {
-        turn_id: "turn_2",
-        status: "completed" as const,
-        started_at: "2026-06-18T10:00:02Z",
-        completed_at: "2026-06-18T10:00:02Z",
-        source_event_ids: ["evt_turn_2_stale"],
-      },
-    ],
-    rows: [
-      {
-        id: "row_1",
-        kind: "user_message" as const,
-        created_at: "2026-06-18T10:00:01Z",
-        text: "one",
-      },
-      {
-        id: "row_2",
-        kind: "assistant_message" as const,
-        created_at: "2026-06-18T10:00:02Z",
-        text: "two stale",
-        status: "completed",
-        revision: 1,
-      },
+  });
+  const older = conversationView({
+    items: [
+      conversationItem({ id: "item_1", kind: "user_message", text: "one" }),
+      conversationItem({ id: "item_2", text: "two stale", status: "completed", revision: 1 }),
     ],
     window: {
-      first_row_id: "row_1",
-      last_row_id: "row_2",
+      first_item_id: "item_1",
+      last_item_id: "item_2",
       has_older: false,
       has_newer: true,
     },
     cursor: { event_id: "evt_newer", seq: 10 },
-  };
-  const merged = prependTranscriptWindow(current, older);
-
-  assert.deepEqual(
-    merged.rows.map((row) => row.id),
-    ["row_1", "row_2", "row_3"],
-  );
-  assert.equal(merged.rows[1]?.text, "two current");
-  assert.equal(merged.rows[1]?.status, "streaming");
-  assert.equal(merged.rows[1]?.revision, 2);
-  assert.deepEqual(
-    merged.turns.map((turn) => turn.turn_id),
-    ["turn_1", "turn_2"],
-  );
-  assert.equal(merged.turns[1]?.status, "running");
-  assert.equal(merged.window?.first_row_id, "row_1");
-  assert.equal(merged.window?.last_row_id, "row_3");
-  assert.equal(merged.window?.has_older, false);
-  assert.equal(merged.window?.has_newer, false);
-  assert.equal(merged.cursor.event_id, "evt_newer");
-  assert.equal(
-    prependTranscriptWindow(
-      { ...current, cursor: { event_id: "evt_live", epoch: 1, seq: 12 } },
-      { ...older, cursor: { event_id: "evt_older", epoch: 1, seq: 10 } },
-    ).cursor.event_id,
-    "evt_live",
-  );
-  assert.equal(
-    prependTranscriptWindow(
-      { ...current, cursor: { event_id: "evt_live", epoch: 1, seq: 12 } },
-      { ...older, cursor: { latest_event_id: "evt_legacy" } },
-    ).cursor.event_id,
-    "evt_live",
-  );
-  assert.equal(
-    prependTranscriptWindow(
-      { ...current, cursor: { event_id: "evt_current_legacy" } },
-      { ...older, cursor: { event_id: "evt_older_legacy" } },
-    ).cursor.event_id,
-    "evt_current_legacy",
-  );
-  assert.strictEqual(
-    prependTranscriptWindow(current, { ...older, session_id: "sess_other" }),
-    current,
-  );
-});
-
-test("prepends activity windows without duplicating items and preserves latest cursor", () => {
-  const current = {
-    session_id: "sess_1",
-    items: [
-      {
-        id: "act_2",
-        kind: "tool",
-        status: "running",
-        title: "Read file",
-        summary: "README.md current",
-        created_at: "2026-06-18T10:00:02Z",
-      },
-      {
-        id: "act_3",
-        kind: "tool",
-        status: "completed",
-        title: "Ran command",
-        created_at: "2026-06-18T10:00:03Z",
-      },
-    ],
-    window: {
-      first_item_id: "act_2",
-      last_item_id: "act_3",
-      has_older: true,
-      has_newer: false,
-    },
-    cursor: { event_id: "evt_latest", seq: 9 },
-  };
-  const older = {
-    session_id: "sess_1",
-    items: [
-      {
-        id: "act_1",
-        kind: "tool",
-        status: "completed",
-        title: "Searched code",
-        created_at: "2026-06-18T10:00:01Z",
-      },
-      {
-        id: "act_2",
-        kind: "tool",
-        status: "completed",
-        title: "Read file",
-        summary: "README.md stale",
-        created_at: "2026-06-18T10:00:02Z",
-      },
-    ],
-    window: {
-      first_item_id: "act_1",
-      last_item_id: "act_2",
-      has_older: false,
-      has_newer: true,
-    },
-    cursor: { event_id: "evt_newer", seq: 10 },
-  };
-  const merged = prependActivityWindow(current, older);
+  });
+  const merged = prependConversationWindow(current, older);
 
   assert.deepEqual(
     merged.items.map((item) => item.id),
-    ["act_1", "act_2", "act_3"],
+    ["item_1", "item_2", "item_3"],
   );
-  assert.equal(merged.items[1]?.status, "running");
-  assert.equal(merged.items[1]?.summary, "README.md current");
-  assert.equal(merged.window?.first_item_id, "act_1");
-  assert.equal(merged.window?.last_item_id, "act_3");
+  assert.equal(merged.items[1]?.text, "two current");
+  assert.equal(merged.items[1]?.status, "streaming");
+  assert.equal(merged.items[1]?.revision, 2);
+  assert.equal(merged.window?.first_item_id, "item_1");
+  assert.equal(merged.window?.last_item_id, "item_3");
   assert.equal(merged.window?.has_older, false);
   assert.equal(merged.window?.has_newer, false);
   assert.equal(merged.cursor.event_id, "evt_newer");
   assert.equal(
-    prependActivityWindow(
+    prependConversationWindow(
       { ...current, cursor: { event_id: "evt_live", epoch: 1, seq: 12 } },
       { ...older, cursor: { event_id: "evt_older", epoch: 1, seq: 10 } },
     ).cursor.event_id,
     "evt_live",
   );
-  assert.equal(
-    prependActivityWindow(
-      { ...current, cursor: { event_id: "evt_live", epoch: 1, seq: 12 } },
-      { ...older, cursor: { latest_event_id: "evt_legacy" } },
-    ).cursor.event_id,
-    "evt_live",
-  );
-  assert.equal(
-    prependActivityWindow(
-      { ...current, cursor: { event_id: "evt_current_legacy" } },
-      { ...older, cursor: { event_id: "evt_older_legacy" } },
-    ).cursor.event_id,
-    "evt_current_legacy",
-  );
   assert.strictEqual(
-    prependActivityWindow(current, { ...older, session_id: "sess_other" }),
+    prependConversationWindow(current, { ...older, session_id: "sess_other" }),
     current,
   );
 });
 
-test("prepend fixtures can omit session ids while keeping required transcript turns", () => {
-  const transcript = prependTranscriptWindow(
-    {
-      turns: [],
-      rows: [
-        {
-          id: "row_2",
-          kind: "assistant_message",
-          created_at: "2026-06-18T10:00:02Z",
-          text: "two",
-        },
-        {
-          id: "row_3",
-          kind: "assistant_message",
-          created_at: "2026-06-18T10:00:03Z",
-          text: "three",
-        },
-      ],
+test("prepend fixtures can omit session ids", () => {
+  const conversation = prependConversationWindow(
+    conversationView({
+      session_id: undefined,
+      items: [conversationItem({ id: "item_2" }), conversationItem({ id: "item_3" })],
       window: {
-        first_row_id: "row_2",
-        last_row_id: "row_3",
+        first_item_id: "item_2",
+        last_item_id: "item_3",
         has_older: true,
         has_newer: false,
       },
       cursor: { event_id: "evt_latest", seq: 9 },
-    },
-    {
-      turns: [],
-      rows: [
-        {
-          id: "row_1",
-          kind: "user_message",
-          created_at: "2026-06-18T10:00:01Z",
-          text: "one",
-        },
-        {
-          id: "row_2",
-          kind: "assistant_message",
-          created_at: "2026-06-18T10:00:02Z",
-          text: "two",
-        },
-      ],
+    }),
+    conversationView({
+      session_id: undefined,
+      items: [conversationItem({ id: "item_1" }), conversationItem({ id: "item_2" })],
       window: {
-        first_row_id: "row_1",
-        last_row_id: "row_2",
+        first_item_id: "item_1",
+        last_item_id: "item_2",
         has_older: false,
         has_newer: true,
       },
       cursor: { event_id: "evt_newer", seq: 10 },
-    },
+    }),
   );
 
   assert.deepEqual(
-    transcript.rows.map((row) => row.id),
-    ["row_1", "row_2", "row_3"],
+    conversation.items.map((item) => item.id),
+    ["item_1", "item_2", "item_3"],
   );
-  assert.equal(transcript.window?.first_row_id, "row_1");
-  assert.equal(transcript.window?.last_row_id, "row_3");
-  assert.equal(transcript.window?.has_older, false);
-  assert.equal(transcript.window?.has_newer, false);
-  assert.equal(transcript.cursor.event_id, "evt_newer");
-
-  const activity = prependActivityWindow(
-    {
-      items: [
-        {
-          id: "act_2",
-          kind: "tool",
-          status: "completed",
-          title: "Read file",
-          created_at: "2026-06-18T10:00:02Z",
-        },
-        {
-          id: "act_3",
-          kind: "tool",
-          status: "completed",
-          title: "Ran command",
-          created_at: "2026-06-18T10:00:03Z",
-        },
-      ],
-      window: {
-        first_item_id: "act_2",
-        last_item_id: "act_3",
-        has_older: true,
-        has_newer: false,
-      },
-      cursor: { event_id: "evt_latest", seq: 9 },
-    },
-    {
-      items: [
-        {
-          id: "act_1",
-          kind: "tool",
-          status: "completed",
-          title: "Searched code",
-          created_at: "2026-06-18T10:00:01Z",
-        },
-        {
-          id: "act_2",
-          kind: "tool",
-          status: "completed",
-          title: "Read file",
-          created_at: "2026-06-18T10:00:02Z",
-        },
-      ],
-      window: {
-        first_item_id: "act_1",
-        last_item_id: "act_2",
-        has_older: false,
-        has_newer: true,
-      },
-      cursor: { event_id: "evt_newer", seq: 10 },
-    },
-  );
-
-  assert.deepEqual(
-    activity.items.map((item) => item.id),
-    ["act_1", "act_2", "act_3"],
-  );
-  assert.equal(activity.window?.first_item_id, "act_1");
-  assert.equal(activity.window?.last_item_id, "act_3");
-  assert.equal(activity.window?.has_older, false);
-  assert.equal(activity.window?.has_newer, false);
-  assert.equal(activity.cursor.event_id, "evt_newer");
+  assert.equal(conversation.window?.first_item_id, "item_1");
+  assert.equal(conversation.window?.last_item_id, "item_3");
+  assert.equal(conversation.cursor.event_id, "evt_newer");
 });
 
 test("rejects stale conversation history prepend plans after the visible window changes", () => {
   const plan = buildConversationHistoryPrependPlan({
-    transcript: {
+    conversation: conversationView({
       session_id: "sess_old",
-      rows: [],
-      cursor: {},
       window: {
-        first_row_id: "row_10",
-        last_row_id: "row_20",
+        first_item_id: "item_10",
+        last_item_id: "item_20",
         has_older: true,
         has_newer: false,
       },
-    },
-    activity: {
-      session_id: "sess_old",
-      items: [],
-      cursor: {},
-      window: {
-        first_item_id: "act_10",
-        last_item_id: "act_20",
-        has_older: true,
-        has_newer: false,
-      },
-    },
+    }),
   });
 
-  assert.equal(Reflect.get(plan.transcript ?? {}, "sessionId"), "sess_old");
-  assert.equal(Reflect.get(plan.activity ?? {}, "sessionId"), "sess_old");
+  assert.equal(Reflect.get(plan.conversation ?? {}, "sessionId"), "sess_old");
   assert.equal(
     canApplyConversationHistoryPrependPlan(plan, {
-      transcript: {
+      conversation: conversationView({
         session_id: "sess_old",
-        rows: [],
-        cursor: {},
         window: {
-          first_row_id: "row_10",
-          last_row_id: "row_21",
+          first_item_id: "item_10",
+          last_item_id: "item_21",
           has_older: true,
           has_newer: false,
         },
-      },
-      activity: {
-        session_id: "sess_old",
-        items: [],
-        cursor: {},
-        window: {
-          first_item_id: "act_10",
-          last_item_id: "act_21",
-          has_older: true,
-          has_newer: false,
-        },
-      },
+      }),
     }),
     true,
   );
   assert.equal(
     canApplyConversationHistoryPrependPlan(plan, {
-      transcript: {
+      conversation: conversationView({
         session_id: "sess_new",
-        rows: [],
-        cursor: {},
         window: {
-          first_row_id: "row_10",
-          last_row_id: "row_21",
+          first_item_id: "item_10",
+          last_item_id: "item_21",
           has_older: true,
           has_newer: false,
         },
-      },
-      activity: {
-        session_id: "sess_new",
-        items: [],
-        cursor: {},
-        window: {
-          first_item_id: "act_10",
-          last_item_id: "act_21",
-          has_older: true,
-          has_newer: false,
-        },
-      },
+      }),
     }),
     false,
   );
   assert.equal(
     canApplyConversationHistoryPrependPlan(plan, {
-      transcript: {
+      conversation: conversationView({
         session_id: "sess_old",
-        rows: [],
-        cursor: {},
         window: {
-          first_row_id: "row_09",
-          last_row_id: "row_21",
+          first_item_id: "item_09",
+          last_item_id: "item_21",
           has_older: true,
           has_newer: false,
         },
-      },
-      activity: {
-        session_id: "sess_old",
-        items: [],
-        cursor: {},
-        window: {
-          first_item_id: "act_10",
-          last_item_id: "act_21",
-          has_older: true,
-          has_newer: false,
-        },
-      },
-    }),
-    false,
-  );
-  assert.equal(
-    canApplyConversationHistoryPrependPlan(plan, {
-      transcript: {
-        session_id: "sess_old",
-        rows: [],
-        cursor: {},
-        window: {
-          first_row_id: "row_10",
-          last_row_id: "row_21",
-          has_older: true,
-          has_newer: false,
-        },
-      },
-      activity: {
-        session_id: "sess_old",
-        items: [],
-        cursor: {},
-        window: {
-          first_item_id: "act_09",
-          last_item_id: "act_21",
-          has_older: true,
-          has_newer: false,
-        },
-      },
+      }),
     }),
     false,
   );
 });
 
-test("derives conversation window state across transcript and activity windows", () => {
+test("derives conversation window state from the single conversation window", () => {
   const state = deriveConversationWindowState({
-    transcript: {
-      turns: [],
-      rows: [],
+    conversation: conversationView({
       window: {
-        first_row_id: "row_1",
-        last_row_id: "row_2",
-        has_older: false,
-        has_newer: false,
-      },
-      cursor: { event_id: "evt_transcript" },
-    },
-    activity: {
-      items: [],
-      window: {
-        first_item_id: "act_1",
-        last_item_id: "act_8",
+        first_item_id: "item_1",
+        last_item_id: "item_8",
         has_older: true,
         has_newer: false,
       },
-      cursor: { event_id: "evt_activity" },
-    },
+    }),
   });
 
   assert.equal(state.has_older, true);
   assert.equal(state.has_newer, false);
-  assert.equal(state.first_row_id, "row_1");
-  assert.equal(state.first_activity_item_id, "act_1");
+  assert.equal(state.first_item_id, "item_1");
+  assert.equal(state.last_item_id, "item_8");
 });
 
-test("plans older conversation loads even when only activity has older items", () => {
+test("plans older conversation loads from ConversationView anchors", () => {
   const plan = buildConversationHistoryPrependPlan({
-    transcript: {
-      turns: [],
-      rows: [],
+    conversation: conversationView({
       window: {
-        first_row_id: "row_1",
-        last_row_id: "row_2",
-        has_older: false,
-        has_newer: false,
-      },
-      cursor: { event_id: "evt_transcript" },
-    },
-    activity: {
-      items: [],
-      window: {
-        first_item_id: "act_1",
-        last_item_id: "act_8",
+        first_item_id: "item_1",
+        last_item_id: "item_8",
         has_older: true,
         has_newer: false,
       },
-      cursor: { event_id: "evt_activity" },
-    },
+    }),
     limit: 80,
   });
 
   assert.equal(plan.has_older, true);
-  assert.equal(plan.transcript, null);
-  assert.deepEqual(plan.activity, {
+  assert.deepEqual(plan.conversation, {
     direction: "before",
-    anchorItemId: "act_1",
+    anchorItemId: "item_1",
+    sessionId: "sess_1",
     limit: 80,
   });
 });

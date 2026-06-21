@@ -19,13 +19,14 @@ use sha2::{Digest, Sha256};
 use tokio::sync::broadcast;
 use vela_backends::BackendAdapter;
 use vela_core::{
-    AcceptedCommandAck, ActivityItem, AgentConfig, AgentConfigPatch, BackendFeature, BackendKind,
-    BackendModel, BlobRef, CanonicalEvent, CommandAck, CommandId, EventCursor, EventId,
-    EventSource, EventType, PermissionMode, PermissionModeOption, ReasoningEffortOption,
-    RejectedCommandAck, SessionId, UserMessageBlock,
+    AcceptedCommandAck, AgentConfig, AgentConfigPatch, BackendFeature, BackendKind, BackendModel,
+    BlobRef, CanonicalEvent, CommandAck, CommandId, EventCursor, EventId, EventSource, EventType,
+    PermissionMode, PermissionModeOption, ReasoningEffortOption, RejectedCommandAck, SessionId,
+    UserMessageBlock,
 };
 use vela_projection::{
-    TranscriptWindowError, TranscriptWindowQuery, project_activity, project_transcript_window,
+    ConversationWindowDirection, ConversationWindowError, ConversationWindowQuery,
+    project_conversation_window,
 };
 use vela_runtime::{Runtime, SendUserMessage};
 use vela_store::{SqliteEventStore, StoredSession};
@@ -179,12 +180,8 @@ where
             get(get_session_view::<B>),
         )
         .route(
-            "/api/v1/sessions/{session_id}/views/transcript",
-            get(get_transcript_view::<B>),
-        )
-        .route(
-            "/api/v1/sessions/{session_id}/views/activity",
-            get(get_activity_view::<B>),
+            "/api/v1/sessions/{session_id}/views/conversation",
+            get(get_conversation_view::<B>),
         )
         .route(
             "/api/v1/sessions/{session_id}/views/requests",
@@ -262,7 +259,6 @@ struct PageQuery {
     direction: Option<ViewWindowDirection>,
     anchor_row_id: Option<String>,
     anchor_item_id: Option<String>,
-    include_live: Option<bool>,
     limit: Option<usize>,
     status: Option<String>,
 }
@@ -1016,7 +1012,7 @@ where
     sse_live_response(page.events, state.events.subscribe(), None)
 }
 
-async fn get_transcript_view<B>(
+async fn get_conversation_view<B>(
     State(state): State<ApiState<B>>,
     Path(session_id): Path<String>,
     query: Result<Query<PageQuery>, QueryRejection>,
@@ -1032,7 +1028,7 @@ where
         Ok(limit) => limit,
         Err(response) => return response,
     };
-    let window_query = match transcript_window_query(&query, limit.unwrap_or(80)) {
+    let window_query = match conversation_window_query(&query, limit.unwrap_or(80)) {
         Ok(query) => query,
         Err(response) => return response,
     };
@@ -1040,115 +1036,65 @@ where
         Ok(events) => events,
         Err(response) => return response,
     };
-    let view = match project_transcript_window(&events, window_query) {
+    let view = match project_conversation_window(&events, window_query) {
         Ok(view) => view,
-        Err(TranscriptWindowError::UnknownRowId(_)) => {
+        Err(ConversationWindowError::UnknownItemId(_)) => {
             return (StatusCode::CONFLICT, Json(sync_reset_json(&events))).into_response();
         }
     };
     Json(json!({
         "session_id": view.session_id.as_str(),
-        "rows": view.rows.iter().map(|row| {
-            let mut row_json = json!({
-                "id": row.row_id,
-                "kind": match row.role.as_str() {
-                    "user" => "user_message",
-                    "assistant" => "assistant_message",
-                    _ => "working",
-                },
-                "created_at": row.created_at.to_rfc3339(),
-                "updated_at": row.updated_at.to_rfc3339(),
-                "revision": row.revision,
-                "text": row.text,
-                "parts": row.parts,
-                "status": row.status,
-                "source_event_ids": row.source_event_ids.iter().map(|id| id.as_str()).collect::<Vec<_>>(),
-            });
-            if let (Value::Object(object), Some(turn_id)) = (&mut row_json, row.turn_id.as_ref()) {
-                object.insert("turn_id".to_string(), json!(turn_id.as_str()));
-            }
-            row_json
-        }).collect::<Vec<_>>(),
-        "turns": view.turns.iter().map(|turn| json!({
-            "turn_id": turn.turn_id.as_str(),
-            "status": turn.status.as_str(),
-            "started_at": turn.started_at.to_rfc3339(),
-            "completed_at": turn.completed_at.as_ref().map(|completed_at| completed_at.to_rfc3339()),
-            "first_row_id": turn.first_row_id.as_deref(),
-            "last_row_id": turn.last_row_id.as_deref(),
-            "source_event_ids": turn.source_event_ids.iter().map(|id| id.as_str()).collect::<Vec<_>>(),
-        })).collect::<Vec<_>>(),
-        "window": {
-            "first_row_id": view.window.first_row_id,
-            "last_row_id": view.window.last_row_id,
-            "anchor_row_id": view.window.anchor_row_id,
-            "has_older": view.window.has_older,
-            "has_newer": view.window.has_newer,
-        },
-        "cursor": view.cursor.as_ref().map(event_cursor_value).unwrap_or_else(empty_cursor_json),
-    }))
-    .into_response()
-}
-
-async fn get_activity_view<B>(
-    State(state): State<ApiState<B>>,
-    Path(session_id): Path<String>,
-    query: Result<Query<PageQuery>, QueryRejection>,
-) -> Response
-where
-    B: BackendAdapter + 'static,
-{
-    let query = match parsed_page_query(query) {
-        Ok(query) => query,
-        Err(response) => return response,
-    };
-    let limit = match validated_limit(&query) {
-        Ok(limit) => limit,
-        Err(response) => return response,
-    };
-    let events = match events_or_404(&state, &SessionId::from(session_id)).await {
-        Ok(events) => events,
-        Err(response) => return response,
-    };
-    let window_query = match activity_window_query(&query, limit.unwrap_or(80)) {
-        Ok(query) => query,
-        Err(response) => return response,
-    };
-    let view = project_activity(&events);
-    let window = match activity_window_bounds(&view.items, &window_query) {
-        Ok(window) => window,
-        Err(ActivityWindowError::UnknownItemId(_)) => {
-            return (StatusCode::CONFLICT, Json(sync_reset_json(&events))).into_response();
-        }
-    };
-    let selected_items = &view.items[window.start..window.end];
-    Json(json!({
-        "session_id": view.session_id.as_str(),
-        "items": selected_items.iter().map(|item| {
+        "items": view.items.iter().map(|item| {
             let mut item_json = json!({
                 "id": item.item_id,
-                "kind": activity_kind_wire(item.kind.as_str()),
-                "status": activity_status_wire(item.status.as_deref().unwrap_or("running")),
-                "title": item.title,
-                "summary": activity_summary(&item.payload),
+                "kind": item.kind.as_str(),
                 "created_at": item.created_at.to_rfc3339(),
                 "updated_at": item.updated_at.to_rfc3339(),
-                "detail": activity_detail_json(item.kind.as_str(), &item.payload),
-                "event_range": event_range_json(&item.source_event_ids),
+                "revision": item.revision,
+                "status": item.status,
+                "source_event_ids": item.source_event_ids.iter().map(|id| id.as_str()).collect::<Vec<_>>(),
             });
-            if let (Value::Object(object), Some(turn_id)) = (&mut item_json, item.turn_id.as_ref()) {
-                object.insert("turn_id".to_string(), json!(turn_id.as_str()));
+            if let Value::Object(object) = &mut item_json {
+                if let Some(turn_id) = item.turn_id.as_ref() {
+                    object.insert("turn_id".to_string(), json!(turn_id.as_str()));
+                }
+                if let Some(text) = item.text.as_ref() {
+                    object.insert("text".to_string(), json!(text));
+                }
+                if !item.parts.is_empty() {
+                    object.insert("parts".to_string(), json!(item.parts));
+                }
+                if let Some(title) = item.title.as_ref() {
+                    object.insert("title".to_string(), json!(title));
+                }
+                if let Some(summary) = item.summary.as_ref() {
+                    object.insert("summary".to_string(), json!(summary));
+                }
+                if item.kind.as_str() == "agent_work" {
+                    object.insert(
+                        "status".to_string(),
+                        json!(activity_status_wire(item.status.as_str())),
+                    );
+                    object.insert(
+                        "detail".to_string(),
+                        activity_detail_json("tool", &item.detail).unwrap_or(Value::Null),
+                    );
+                    object.insert(
+                        "event_range".to_string(),
+                        event_range_json(&item.source_event_ids),
+                    );
+                }
             }
             item_json
         }).collect::<Vec<_>>(),
         "window": {
-            "first_item_id": window.first_item_id,
-            "last_item_id": window.last_item_id,
-            "anchor_item_id": window.anchor_item_id,
-            "has_older": window.has_older,
-            "has_newer": window.has_newer,
+            "first_item_id": view.window.first_item_id,
+            "last_item_id": view.window.last_item_id,
+            "anchor_item_id": view.window.anchor_item_id,
+            "has_older": view.window.has_older,
+            "has_newer": view.window.has_newer,
         },
-        "cursor": events.last().map(|event| event_cursor_value(&event.cursor())).unwrap_or_else(empty_cursor_json),
+        "cursor": view.cursor.as_ref().map(event_cursor_value).unwrap_or_else(empty_cursor_json),
     }))
     .into_response()
 }
@@ -1440,239 +1386,61 @@ fn validated_limit(query: &PageQuery) -> Result<Option<usize>, Response> {
     }
 }
 
-fn transcript_window_query(
+fn conversation_window_query(
     query: &PageQuery,
     limit: usize,
-) -> Result<TranscriptWindowQuery, Response> {
-    let include_live = query.include_live.unwrap_or(true);
-    let legacy_anchors = [
-        query.before_row_id.as_ref(),
-        query.after_row_id.as_ref(),
-        query.around_row_id.as_ref(),
-        query.before_id.as_ref(),
-    ]
-    .into_iter()
-    .flatten()
-    .count();
-    if query.anchor_item_id.is_some() {
-        return Err(invalid_parameter(
-            "anchor_item_id",
-            "anchor_item_id is not valid for transcript windows",
-        ));
-    }
-    if legacy_anchors > 0 {
-        return Err(invalid_parameter(
-            "row_cursor",
-            "legacy transcript row parameters are not supported; use direction and anchor_row_id",
-        ));
-    }
-    if let Some(direction) = query.direction {
-        let anchor_row_id = query.anchor_row_id.clone();
-        return match direction {
-            ViewWindowDirection::Tail => {
-                if anchor_row_id.is_some() {
-                    Err(invalid_parameter(
-                        "anchor_row_id",
-                        "direction=tail cannot include anchor_row_id",
-                    ))
-                } else {
-                    Ok(TranscriptWindowQuery {
-                        before_row_id: None,
-                        after_row_id: None,
-                        around_row_id: None,
-                        include_live,
-                        limit,
-                    })
-                }
-            }
-            ViewWindowDirection::Before => match anchor_row_id {
-                Some(anchor) => Ok(TranscriptWindowQuery {
-                    before_row_id: Some(anchor),
-                    after_row_id: None,
-                    around_row_id: None,
-                    include_live,
-                    limit,
-                }),
-                None => Err(invalid_parameter(
-                    "anchor_row_id",
-                    "anchor_row_id is required when direction=before",
-                )),
-            },
-            ViewWindowDirection::After => match anchor_row_id {
-                Some(anchor) => Ok(TranscriptWindowQuery {
-                    before_row_id: None,
-                    after_row_id: Some(anchor),
-                    around_row_id: None,
-                    include_live,
-                    limit,
-                }),
-                None => Err(invalid_parameter(
-                    "anchor_row_id",
-                    "anchor_row_id is required when direction=after",
-                )),
-            },
-            ViewWindowDirection::Around => match anchor_row_id {
-                Some(anchor) => Ok(TranscriptWindowQuery {
-                    before_row_id: None,
-                    after_row_id: None,
-                    around_row_id: Some(anchor),
-                    include_live,
-                    limit,
-                }),
-                None => Err(invalid_parameter(
-                    "anchor_row_id",
-                    "anchor_row_id is required when direction=around",
-                )),
-            },
-        };
-    }
-
-    if query.anchor_row_id.is_some() {
+) -> Result<ConversationWindowQuery, Response> {
+    if query.anchor_row_id.is_some()
+        || query.before_row_id.is_some()
+        || query.after_row_id.is_some()
+        || query.around_row_id.is_some()
+    {
         return Err(invalid_parameter(
             "anchor_row_id",
-            "anchor_row_id requires direction",
-        ));
-    }
-
-    Ok(TranscriptWindowQuery {
-        before_row_id: None,
-        after_row_id: None,
-        around_row_id: None,
-        include_live,
-        limit,
-    })
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct ActivityWindowQuery {
-    direction: ViewWindowDirection,
-    anchor_item_id: Option<String>,
-    limit: usize,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct ActivityWindow {
-    start: usize,
-    end: usize,
-    first_item_id: Option<String>,
-    last_item_id: Option<String>,
-    anchor_item_id: Option<String>,
-    has_older: bool,
-    has_newer: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum ActivityWindowError {
-    UnknownItemId(String),
-}
-
-fn activity_window_query(query: &PageQuery, limit: usize) -> Result<ActivityWindowQuery, Response> {
-    if query.anchor_row_id.is_some() {
-        return Err(invalid_parameter(
-            "anchor_row_id",
-            "anchor_row_id is not valid for activity windows",
+            "conversation windows use anchor_item_id",
         ));
     }
     if query.after_id.is_some() || query.before_id.is_some() {
         return Err(invalid_parameter(
             "event_cursor",
-            "activity windows use direction and anchor_item_id, not after_id or before_id",
+            "conversation windows use direction and anchor_item_id, not event ids",
         ));
     }
     let direction = query.direction.unwrap_or(ViewWindowDirection::Tail);
+    let direction = match direction {
+        ViewWindowDirection::Tail => ConversationWindowDirection::Tail,
+        ViewWindowDirection::Before => ConversationWindowDirection::Before,
+        ViewWindowDirection::After => ConversationWindowDirection::After,
+        ViewWindowDirection::Around => ConversationWindowDirection::Around,
+    };
     match direction {
-        ViewWindowDirection::Tail => {
+        ConversationWindowDirection::Tail => {
             if query.anchor_item_id.is_some() {
                 Err(invalid_parameter(
                     "anchor_item_id",
                     "direction=tail cannot include anchor_item_id",
                 ))
             } else {
-                Ok(ActivityWindowQuery {
-                    direction,
+                Ok(ConversationWindowQuery {
                     anchor_item_id: None,
+                    direction,
                     limit,
                 })
             }
         }
-        ViewWindowDirection::Before | ViewWindowDirection::After | ViewWindowDirection::Around => {
-            match query.anchor_item_id.clone() {
-                Some(anchor) => Ok(ActivityWindowQuery {
-                    direction,
-                    anchor_item_id: Some(anchor),
-                    limit,
-                }),
-                None => Err(invalid_parameter(
-                    "anchor_item_id",
-                    format!(
-                        "anchor_item_id is required when direction={}",
-                        direction.as_query_value()
-                    ),
-                )),
-            }
-        }
-    }
-}
-
-fn activity_window_bounds(
-    items: &[ActivityItem],
-    query: &ActivityWindowQuery,
-) -> Result<ActivityWindow, ActivityWindowError> {
-    let total = items.len();
-    let limit = query.limit.clamp(1, 500);
-    let (start, end, anchor_item_id) = match query.direction {
-        ViewWindowDirection::Tail => (total.saturating_sub(limit), total, None),
-        ViewWindowDirection::Before => {
-            let anchor = query.anchor_item_id.clone().unwrap_or_default();
-            let end = activity_item_index(items, &anchor)?;
-            (end.saturating_sub(limit), end, Some(anchor))
-        }
-        ViewWindowDirection::After => {
-            let anchor = query.anchor_item_id.clone().unwrap_or_default();
-            let start = activity_item_index(items, &anchor)?.saturating_add(1);
-            (start, (start + limit).min(total), Some(anchor))
-        }
-        ViewWindowDirection::Around => {
-            let anchor = query.anchor_item_id.clone().unwrap_or_default();
-            let anchor_index = activity_item_index(items, &anchor)?;
-            let before = limit / 2;
-            let mut start = anchor_index.saturating_sub(before);
-            let mut end = (start + limit).min(total);
-            start = start.saturating_sub(limit.saturating_sub(end - start));
-            end = (start + limit).min(total);
-            (start, end, Some(anchor))
-        }
-    };
-    let selected = &items[start..end];
-    Ok(ActivityWindow {
-        start,
-        end,
-        first_item_id: selected.first().map(|item| item.item_id.clone()),
-        last_item_id: selected.last().map(|item| item.item_id.clone()),
-        anchor_item_id,
-        has_older: start > 0,
-        has_newer: end < total,
-    })
-}
-
-fn activity_item_index(
-    items: &[ActivityItem],
-    item_id: &str,
-) -> Result<usize, ActivityWindowError> {
-    items
-        .iter()
-        .position(|item| item.item_id == item_id)
-        .ok_or_else(|| ActivityWindowError::UnknownItemId(item_id.to_string()))
-}
-
-impl ViewWindowDirection {
-    fn as_query_value(self) -> &'static str {
-        match self {
-            ViewWindowDirection::Tail => "tail",
-            ViewWindowDirection::Before => "before",
-            ViewWindowDirection::After => "after",
-            ViewWindowDirection::Around => "around",
-        }
+        ConversationWindowDirection::Before
+        | ConversationWindowDirection::After
+        | ConversationWindowDirection::Around => match query.anchor_item_id.clone() {
+            Some(anchor) => Ok(ConversationWindowQuery {
+                anchor_item_id: Some(anchor),
+                direction,
+                limit,
+            }),
+            None => Err(invalid_parameter(
+                "anchor_item_id",
+                "anchor_item_id is required for anchored conversation windows",
+            )),
+        },
     }
 }
 
@@ -2048,7 +1816,7 @@ fn cursor_is_stale(
 fn sync_reset_json(events: &[CanonicalEvent]) -> Value {
     json!({
         "reason": "stale_cursor",
-        "views": ["session", "transcript", "activity", "requests", "diffs", "timeline", "workbench"],
+        "views": ["session", "conversation", "requests", "diffs", "timeline", "workbench"],
         "latest_event_id": events.last().map(|event| event.event_id.as_str()).unwrap_or(""),
     })
 }
@@ -2360,16 +2128,6 @@ fn event_range_json(event_ids: &[EventId]) -> Value {
     })
 }
 
-fn activity_kind_wire(kind: &str) -> &str {
-    match kind {
-        "tool" => "tool",
-        "command" => "command",
-        "task" => "task",
-        "warning" | "error" => "warning",
-        _ => "runtime",
-    }
-}
-
 fn activity_status_wire(status: &str) -> &str {
     match status {
         "pending" => "pending",
@@ -2379,16 +2137,6 @@ fn activity_status_wire(status: &str) -> &str {
         "cancelled" | "canceled" => "cancelled",
         _ => "running",
     }
-}
-
-fn activity_summary(payload: &Value) -> &str {
-    payload
-        .get("message")
-        .or_else(|| payload.get("error"))
-        .or_else(|| payload.get("summary"))
-        .or_else(|| payload.get("description"))
-        .and_then(Value::as_str)
-        .unwrap_or("")
 }
 
 fn activity_detail_json(kind: &str, payload: &Value) -> Option<Value> {
@@ -2734,11 +2482,9 @@ fn session_operations_json(status: &str) -> Value {
     let running = matches!(status, "running" | "canceling" | "waiting_for_input");
     json!({
         "send_message": {
-            "available": !closed && !running,
+            "available": !closed,
             "reason": if closed {
                 Value::String("session_closed".to_string())
-            } else if running {
-                Value::String("turn_running".to_string())
             } else {
                 Value::Null
             },

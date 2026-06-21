@@ -5,7 +5,9 @@ import {
   commandAckRejectionMessage,
   createVeladClient,
   createStreamRefreshScheduler,
+  applyConversationLiveOverlay,
   readVelaStreamEvent,
+  needsConversationRefreshAfterLiveOverlay,
   selectSessionEventStreamAfterId,
   subscribeVelaEventSource,
   type AgentConfigPatchWire,
@@ -26,8 +28,7 @@ import {
   buildConversationHistoryPrependPlan,
   canApplyConversationHistoryPrependPlan,
   deriveConversationWindowState,
-  prependActivityWindow,
-  prependTranscriptWindow,
+  prependConversationWindow,
 } from "../../packages/vela-chat-surface/src";
 import { VelaChatWeb } from "../../packages/vela-chat-web/src";
 import { toWebChatModel } from "../../packages/vela-chat-web/src/adapters/toWebBlocks";
@@ -66,8 +67,7 @@ export function ChatWorkbench({
   const [activeSessionId, setActiveSessionId] = useState(initialSessionId ?? "");
   const [baseUrl, setBaseUrl] = useState(initialBaseUrl ?? DEFAULT_BASE_URL);
   const [workingDirectory, setWorkingDirectory] = useState(initialWorkingDirectory ?? "");
-  const [transcript, setTranscript] = useState<Awaited<ReturnType<ReturnType<typeof createVeladClient>["getTranscript"]>> | null>(null);
-  const [activity, setActivity] = useState<Awaited<ReturnType<ReturnType<typeof createVeladClient>["getActivity"]>> | null>(null);
+  const [conversation, setConversation] = useState<Awaited<ReturnType<ReturnType<typeof createVeladClient>["getConversation"]>> | null>(null);
   const [requests, setRequests] = useState<Awaited<ReturnType<ReturnType<typeof createVeladClient>["getPendingRequests"]>> | null>(null);
   const [session, setSession] = useState<SessionWire | null>(null);
   const [backends, setBackends] = useState<BackendWire[]>([]);
@@ -85,60 +85,40 @@ export function ChatWorkbench({
   const [isRespondingToRequest, setIsRespondingToRequest] = useState(false);
   const [conversationScrollDebug, setConversationScrollDebug] =
     useState<VelaChatDebugScrollRuntime | null>(null);
-  const transcriptRef = useRef<typeof transcript>(null);
-  const activityRef = useRef<typeof activity>(null);
+  const conversationRef = useRef<typeof conversation>(null);
   const requestsRef = useRef<typeof requests>(null);
   const activeSessionIdRef = useRef(activeSessionId);
   activeSessionIdRef.current = activeSessionId;
 
   const client = useMemo(() => createVeladClient({ baseUrl }), [baseUrl]);
-  const commitTranscript = useCallback((nextTranscript: typeof transcript) => {
-    transcriptRef.current = nextTranscript;
-    setTranscript(nextTranscript);
-  }, []);
-  const commitActivity = useCallback((nextActivity: typeof activity) => {
-    activityRef.current = nextActivity;
-    setActivity(nextActivity);
+  const commitConversation = useCallback((nextConversation: typeof conversation) => {
+    conversationRef.current = nextConversation;
+    setConversation(nextConversation);
   }, []);
   const commitRequests = useCallback((nextRequests: typeof requests) => {
     requestsRef.current = nextRequests;
     setRequests(nextRequests);
   }, []);
   const resetSessionReadModels = useCallback(() => {
-    commitTranscript(null);
-    commitActivity(null);
+    commitConversation(null);
     commitRequests(null);
     setStreamConnected(false);
     setIsLoadingOlder(false);
-  }, [commitActivity, commitRequests, commitTranscript]);
+  }, [commitConversation, commitRequests]);
 
-  const loadTranscript = useCallback(async () => {
+  const loadConversation = useCallback(async () => {
     const requestedSessionId = activeSessionId;
     if (!requestedSessionId) return;
     try {
       setError(null);
-      const nextTranscript = await client.getTranscript(requestedSessionId);
+      const nextConversation = await client.getConversation(requestedSessionId);
       if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
-      commitTranscript(nextTranscript);
+      commitConversation(nextConversation);
     } catch (err) {
       if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [activeSessionId, client, commitTranscript]);
-
-  const loadActivity = useCallback(async () => {
-    const requestedSessionId = activeSessionId;
-    if (!requestedSessionId) return;
-    try {
-      setError(null);
-      const nextActivity = await client.getActivity(requestedSessionId);
-      if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
-      commitActivity(nextActivity);
-    } catch (err) {
-      if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }, [activeSessionId, client, commitActivity]);
+  }, [activeSessionId, client, commitConversation]);
 
   const loadRequests = useCallback(async () => {
     const requestedSessionId = activeSessionId;
@@ -187,16 +167,14 @@ export function ChatWorkbench({
     if (!requestedSessionId) return;
     try {
       setError(null);
-      const [nextTranscript, nextActivity, nextRequests, nextSession, nextBackends] = await Promise.all([
-        client.getTranscript(requestedSessionId),
-        client.getActivity(requestedSessionId),
+      const [nextConversation, nextRequests, nextSession, nextBackends] = await Promise.all([
+        client.getConversation(requestedSessionId),
         client.getPendingRequests(requestedSessionId, { status: "pending" }),
         client.getSession(requestedSessionId),
         client.getBackends(),
       ]);
       if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
-      commitTranscript(nextTranscript);
-      commitActivity(nextActivity);
+      commitConversation(nextConversation);
       commitRequests(nextRequests);
       setSession(nextSession.session);
       setBackends(nextBackends.backends);
@@ -204,7 +182,7 @@ export function ChatWorkbench({
       if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [activeSessionId, client, commitActivity, commitRequests, commitTranscript]);
+  }, [activeSessionId, client, commitConversation, commitRequests]);
 
   useEffect(() => {
     void loadReadModels();
@@ -218,34 +196,27 @@ export function ChatWorkbench({
     void loadBackends();
   }, [loadBackends]);
 
-  const activeTranscript = readModelForActiveSession(activeSessionId, transcript);
-  const activeActivity = readModelForActiveSession(activeSessionId, activity);
+  const activeConversation = readModelForActiveSession(activeSessionId, conversation);
   const activeRequests = pendingRequestsForActiveSession(activeSessionId, requests);
   const sessionEventStreamAfterId = selectSessionEventStreamAfterId({
-    transcript: activeTranscript?.cursor,
-    activity: activeActivity?.cursor,
+    conversation: activeConversation?.cursor,
   });
-  const isTranscriptReady = activeTranscript !== null;
-  const isActivityReady = activeActivity !== null;
+  const isConversationReady = activeConversation !== null;
   const conversationWindow = useMemo(
-    () => deriveConversationWindowState({ transcript: activeTranscript, activity: activeActivity }),
-    [activeActivity, activeTranscript],
+    () => deriveConversationWindowState({ conversation: activeConversation }),
+    [activeConversation],
   );
   const conversationHistoryPrependPlan = useMemo(
-    () => buildConversationHistoryPrependPlan({ transcript: activeTranscript, activity: activeActivity, limit: 80 }),
-    [activeActivity, activeTranscript],
+    () => buildConversationHistoryPrependPlan({ conversation: activeConversation, limit: 80 }),
+    [activeConversation],
   );
 
   useEffect(() => {
-    if (!activeSessionId || !isTranscriptReady || !isActivityReady) return;
+    if (!activeSessionId || !isConversationReady) return;
     const url = client.sessionEventStreamUrl(activeSessionId, sessionEventStreamAfterId);
     const source = new EventSource(url);
-    const transcriptRefreshScheduler = createStreamRefreshScheduler({
-      refresh: loadTranscript,
-      minIntervalMs: 240,
-    });
-    const activityRefreshScheduler = createStreamRefreshScheduler({
-      refresh: loadActivity,
+    const conversationRefreshScheduler = createStreamRefreshScheduler({
+      refresh: loadConversation,
       minIntervalMs: 240,
     });
     const requestsRefreshScheduler = createStreamRefreshScheduler({
@@ -267,30 +238,31 @@ export function ChatWorkbench({
       onEvent: (event) => {
         const streamEvent = readVelaStreamEvent(event);
         if (streamEvent) {
-          const currentTranscript = readModelForActiveSession(activeSessionId, transcriptRef.current);
-          const currentActivity = readModelForActiveSession(activeSessionId, activityRef.current);
+          const currentConversation = readModelForActiveSession(activeSessionId, conversationRef.current);
           const currentRequests = pendingRequestsForActiveSession(activeSessionId, requestsRef.current);
-          handleWorkbenchStreamEvent({
-            activeSessionId,
-            streamEvent,
-            currentTranscript,
-            currentActivity,
-            currentRequests,
-            commitTranscript,
-            transcriptRefreshScheduler,
-            activityRefreshScheduler,
-            requestsRefreshScheduler,
-            sessionRefreshScheduler,
-            backendsRefreshScheduler,
-          });
+          if (currentConversation) {
+            const forceConversationRefresh =
+              needsConversationRefreshAfterLiveOverlay(currentConversation, streamEvent);
+            commitConversation(applyConversationLiveOverlay(currentConversation, streamEvent));
+            handleWorkbenchStreamEvent({
+              activeSessionId,
+              streamEvent,
+              currentConversation,
+              currentRequests,
+              conversationRefreshScheduler,
+              forceConversationRefresh,
+              requestsRefreshScheduler,
+              sessionRefreshScheduler,
+              backendsRefreshScheduler,
+            });
+          }
         }
       },
     });
 
     return () => {
       unsubscribe();
-      transcriptRefreshScheduler.dispose();
-      activityRefreshScheduler.dispose();
+      conversationRefreshScheduler.dispose();
       requestsRefreshScheduler.dispose();
       sessionRefreshScheduler.dispose();
       backendsRefreshScheduler.dispose();
@@ -300,14 +272,12 @@ export function ChatWorkbench({
   }, [
     activeSessionId,
     client,
-    isActivityReady,
-    isTranscriptReady,
-    loadActivity,
+    isConversationReady,
     loadBackends,
-    commitTranscript,
+    commitConversation,
+    loadConversation,
     loadRequests,
     loadSession,
-    loadTranscript,
   ]);
 
   const loadOlderConversation = useCallback(async () => {
@@ -317,35 +287,21 @@ export function ChatWorkbench({
     try {
       setIsLoadingOlder(true);
       setError(null);
-      const [older, olderActivity] = await Promise.all([
-        requestedPrependPlan.transcript
-          ? client.getTranscript(requestedSessionId, requestedPrependPlan.transcript)
-          : Promise.resolve(null),
-        requestedPrependPlan.activity
-          ? client.getActivity(requestedSessionId, requestedPrependPlan.activity)
-          : Promise.resolve(null),
-      ]);
+      const older = requestedPrependPlan.conversation
+        ? await client.getConversation(requestedSessionId, requestedPrependPlan.conversation)
+        : null;
       if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
-      const currentTranscript = readModelForActiveSession(requestedSessionId, transcriptRef.current);
-      const currentActivity = readModelForActiveSession(requestedSessionId, activityRef.current);
+      const currentConversation = readModelForActiveSession(requestedSessionId, conversationRef.current);
       if (
         !canApplyConversationHistoryPrependPlan(requestedPrependPlan, {
-          transcript: currentTranscript,
-          activity: currentActivity,
+          conversation: currentConversation,
         })
       ) {
         return;
       }
       if (older) {
-        commitTranscript(
-          currentTranscript ? prependTranscriptWindow(currentTranscript, older) : older,
-        );
-      }
-      if (olderActivity) {
-        commitActivity(
-          currentActivity
-            ? prependActivityWindow(currentActivity, olderActivity)
-            : olderActivity,
+        commitConversation(
+          currentConversation ? prependConversationWindow(currentConversation, older) : older,
         );
       }
     } catch (err) {
@@ -361,8 +317,7 @@ export function ChatWorkbench({
   }, [
     activeSessionId,
     client,
-    commitActivity,
-    commitTranscript,
+    commitConversation,
     conversationHistoryPrependPlan,
     isLoadingOlder,
     loadReadModels,
@@ -371,12 +326,11 @@ export function ChatWorkbench({
   const model = useMemo(() => {
     return buildWorkbenchRenderModel({
       activeSessionId,
-      transcript: activeTranscript,
-      activity: activeActivity,
+      conversation: activeConversation,
       requests: activeRequests,
       streamConnected,
     });
-  }, [activeActivity, activeRequests, activeSessionId, activeTranscript, streamConnected]);
+  }, [activeConversation, activeRequests, activeSessionId, streamConnected]);
 
   const conversationDebug = useMemo(() => {
     const webModel = toWebChatModel(model);
@@ -548,14 +502,14 @@ export function ChatWorkbench({
           setError(rejectionMessage);
           return;
         }
-        await Promise.all([loadRequests(), loadActivity()]);
+        await Promise.all([loadRequests(), loadConversation()]);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       } finally {
         setIsRespondingToRequest(false);
       }
     },
-    [activeSessionId, client, isRespondingToRequest, loadActivity, loadRequests],
+    [activeSessionId, client, isRespondingToRequest, loadConversation, loadRequests],
   );
 
   const sendDebugMessage = useCallback(
@@ -609,14 +563,12 @@ export function ChatWorkbench({
         })),
         latestEventId:
           cursorEventId(activeRequests?.cursor) ??
-          cursorEventId(activeActivity?.cursor) ??
-          cursorEventId(activeTranscript?.cursor),
+          cursorEventId(activeConversation?.cursor),
       }),
     [
       activeSessionId,
-      activeActivity,
       activeRequests,
-      activeTranscript,
+      activeConversation,
       baseUrl,
       conversationDebug,
       draft,
@@ -667,7 +619,7 @@ export function ChatWorkbench({
       },
       sendMessage: sendDebugMessage,
       reloadTranscript: async () => {
-        logVelaChatConsoleEvent("reload_transcript", { sessionId: activeSessionId });
+        logVelaChatConsoleEvent("reload_conversation", { sessionId: activeSessionId });
         await loadReadModels();
       },
       clearError: () => {

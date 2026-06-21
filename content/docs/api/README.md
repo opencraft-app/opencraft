@@ -9,6 +9,6 @@ API contract explanations live here. The OpenAPI YAML remains the only client-fa
 
 Start with:
 
-- `client-contract.mdx`: how external clients should combine Backend discovery, SessionView, transcript, requests, and input commands.
+- `client-contract.mdx`: how external clients should combine Backend discovery, SessionView, ConversationView, requests, and input commands.
 - `openapi.mdx`: source-of-truth rules and Scalar reference.
 - `sessions.mdx`, `backends.mdx`, `input-events.mdx`, `ui-read-models.mdx`: endpoint behavior and boundaries.

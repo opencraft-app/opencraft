@@ -288,48 +288,14 @@ paths:
                     $ref: '#/components/schemas/Session'
                   cursor:
                     $ref: '#/components/schemas/EventCursor'
-  /sessions/{session_id}/views/transcript:
+  /sessions/{session_id}/views/conversation:
     get:
       tags: [UI Read Models]
-      operationId: getChatTranscriptView
-      summary: 获取 ChatTranscriptView
+      operationId: getConversationView
+      summary: 获取 ConversationView
       description: |
-        Chat UI 的主输入。返回 transcript row window，而不是 raw events 或 timeline。
-        Row cursor 用于列表分页；response cursor 仍是 event cursor，用于 live stream/reconnect/reset。
-      parameters:
-        - $ref: '#/components/parameters/SessionId'
-        - $ref: '#/components/parameters/Limit'
-        - name: direction
-          in: query
-          description: View window direction. Defaults to tail when omitted. before/after/around require anchor_row_id.
-          schema:
-            $ref: '#/components/schemas/ViewWindowDirection'
-        - name: anchor_row_id
-          in: query
-          description: Opaque transcript row anchor used with direction=before|after|around. direction=tail must not include an anchor.
-          schema:
-            type: string
-        - name: include_live
-          in: query
-          description: 是否包含当前 live transcript row。false 时排除 pending/streaming rows。
-          schema:
-            type: boolean
-            default: true
-      responses:
-        '200':
-          description: Chat transcript projection。
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ChatTranscriptView'
-        '409':
-          $ref: '#/components/responses/Conflict'
-  /sessions/{session_id}/views/activity:
-    get:
-      tags: [UI Read Models]
-      operationId: getActivityShelfView
-      summary: 获取 ActivityShelfView
-      description: 工具调用、命令、进度、warning、task 的主投影。
+        Chat UI 的主输入。返回 conversation item window，而不是 raw events 或 timeline。
+        Item cursor 用于列表分页；response cursor 仍是 event cursor，用于 live stream/reconnect/reset。
       parameters:
         - $ref: '#/components/parameters/SessionId'
         - $ref: '#/components/parameters/Limit'
@@ -340,16 +306,16 @@ paths:
             $ref: '#/components/schemas/ViewWindowDirection'
         - name: anchor_item_id
           in: query
-          description: Opaque activity item anchor used with direction=before|after|around. direction=tail must not include an anchor.
+          description: Opaque conversation item anchor used with direction=before|after|around. direction=tail must not include an anchor.
           schema:
             type: string
       responses:
         '200':
-          description: Activity shelf projection。
+          description: Conversation projection。
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ActivityShelfView'
+                $ref: '#/components/schemas/ConversationView'
         '409':
           $ref: '#/components/responses/Conflict'
   /sessions/{session_id}/views/requests:
@@ -919,7 +885,15 @@ components:
         - projection.invalidated
     AffectedView:
       type: string
-      enum: [sessions, session, transcript, activity, requests, diffs, timeline, backends, workbench]
+      enum:
+        - sessions
+        - session
+        - conversation
+        - requests
+        - diffs
+        - timeline
+        - backends
+        - workbench
     SyncReset:
       type: object
       required: [reason, views, latest_event_id]
@@ -943,121 +917,7 @@ components:
             $ref: '#/components/schemas/SessionSummary'
         cursor:
           $ref: '#/components/schemas/CursorWindow'
-    ChatTranscriptView:
-      type: object
-      required: [session_id, rows, turns, window, cursor]
-      properties:
-        session_id:
-          type: string
-        rows:
-          type: array
-          items:
-            $ref: '#/components/schemas/ChatTranscriptRow'
-        turns:
-          type: array
-          description: Turn lifecycle summaries for turn ids referenced by rows in this transcript window.
-          items:
-            $ref: '#/components/schemas/ChatTurnSummary'
-        window:
-          $ref: '#/components/schemas/TranscriptWindow'
-        cursor:
-          $ref: '#/components/schemas/EventCursor'
-    ChatTurnSummary:
-      type: object
-      required: [turn_id, status, started_at, source_event_ids]
-      properties:
-        turn_id:
-          type: string
-        status:
-          type: string
-          enum: [running, completed, failed, cancelled]
-        started_at:
-          type: string
-          format: date-time
-        completed_at:
-          type: string
-          format: date-time
-          nullable: true
-        first_row_id:
-          type: string
-          nullable: true
-        last_row_id:
-          type: string
-          nullable: true
-        source_event_ids:
-          type: array
-          items:
-            type: string
-    TranscriptWindow:
-      type: object
-      required: [has_older, has_newer]
-      properties:
-        first_row_id:
-          type: string
-          nullable: true
-        last_row_id:
-          type: string
-          nullable: true
-        anchor_row_id:
-          type: string
-          nullable: true
-        has_older:
-          type: boolean
-        has_newer:
-          type: boolean
-    ChatTranscriptRow:
-      type: object
-      required: [id, kind, created_at, updated_at, revision, status, source_event_ids]
-      properties:
-        id:
-          type: string
-          description: Opaque transcript row id. Clients must pass it back unchanged.
-        kind:
-          type: string
-          enum: [user_message, assistant_message, working, activity_marker, error]
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-        revision:
-          type: integer
-          minimum: 1
-        turn_id:
-          type: string
-        text:
-          type: string
-        parts:
-          type: array
-          items:
-            $ref: '#/components/schemas/TranscriptPart'
-        activity_id:
-          type: string
-        label:
-          type: string
-        status:
-          type: string
-          enum: [pending, streaming, completed, failed, cancelled]
-        source_event_ids:
-          type: array
-          items:
-            type: string
-    TranscriptPart:
-      type: object
-      required: [id, type]
-      properties:
-        id:
-          type: string
-        type:
-          type: string
-          enum: [markdown, text, code, image, file_reference]
-        text:
-          type: string
-        data:
-          type: object
-          additionalProperties: true
-    ActivityShelfView:
+    ConversationView:
       type: object
       required: [session_id, items, window, cursor]
       properties:
@@ -1066,12 +926,27 @@ components:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/ActivityShelfItem'
+            $ref: '#/components/schemas/ConversationItem'
         window:
-          $ref: '#/components/schemas/ActivityWindow'
+          $ref: '#/components/schemas/ConversationWindow'
         cursor:
           $ref: '#/components/schemas/EventCursor'
-    ActivityWindow:
+    ConversationItem:
+      oneOf:
+        - $ref: '#/components/schemas/UserMessageItem'
+        - $ref: '#/components/schemas/AssistantMessageItem'
+        - $ref: '#/components/schemas/TurnMetaItem'
+        - $ref: '#/components/schemas/AgentWorkItem'
+        - $ref: '#/components/schemas/StatusItem'
+      discriminator:
+        propertyName: kind
+        mapping:
+          user_message: '#/components/schemas/UserMessageItem'
+          assistant_message: '#/components/schemas/AssistantMessageItem'
+          turn_meta: '#/components/schemas/TurnMetaItem'
+          agent_work: '#/components/schemas/AgentWorkItem'
+          status: '#/components/schemas/StatusItem'
+    ConversationWindow:
       type: object
       required: [has_older, has_newer]
       properties:
@@ -1088,48 +963,128 @@ components:
           type: boolean
         has_newer:
           type: boolean
-    ActivityShelfItem:
+    MessagePart:
       type: object
-      required: [id, kind, status, title, created_at]
+      required: [id, type]
       properties:
         id:
           type: string
-        turn_id:
+        type:
           type: string
-          description: Turn that produced this activity item, when the item belongs to a turn.
+          enum: [text, image, file_reference]
+        text:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+    ConversationItemBase:
+      type: object
+      required: [id, kind, created_at, updated_at, revision, status, source_event_ids]
+      properties:
+        id:
+          type: string
+          description: Opaque conversation item id. Clients must pass it back unchanged.
         kind:
           type: string
-          enum: [tool, command, task, warning, runtime]
-        status:
+          enum: [user_message, assistant_message, turn_meta, agent_work, status]
+        turn_id:
           type: string
-          enum: [pending, running, completed, failed, cancelled]
-        title:
-          type: string
-        summary:
-          type: string
-        detail:
-          $ref: '#/components/schemas/ActivityItemDetail'
         created_at:
           type: string
           format: date-time
         updated_at:
           type: string
           format: date-time
-        event_range:
-          $ref: '#/components/schemas/EventRange'
-    ActivityItemDetail:
-      $ref: '#/components/schemas/ActivityToolDetail'
-    ActivityToolDetail:
-      description: UI-safe projected tool detail. Provider raw events remain available only through diagnostics APIs.
+        revision:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum: [pending, running, streaming, completed, failed, cancelled]
+        source_event_ids:
+          type: array
+          items:
+            type: string
+    UserMessageItem:
+      allOf:
+        - $ref: '#/components/schemas/ConversationItemBase'
+        - type: object
+          required: [kind, text]
+          properties:
+            kind:
+              type: string
+              enum: [user_message]
+            text:
+              type: string
+            parts:
+              type: array
+              items:
+                $ref: '#/components/schemas/MessagePart'
+    AssistantMessageItem:
+      allOf:
+        - $ref: '#/components/schemas/ConversationItemBase'
+        - type: object
+          required: [kind, text]
+          properties:
+            kind:
+              type: string
+              enum: [assistant_message]
+            text:
+              type: string
+            parts:
+              type: array
+              items:
+                $ref: '#/components/schemas/MessagePart'
+    TurnMetaItem:
+      allOf:
+        - $ref: '#/components/schemas/ConversationItemBase'
+        - type: object
+          required: [kind, turn_id]
+          properties:
+            kind:
+              type: string
+              enum: [turn_meta]
+    AgentWorkItem:
+      allOf:
+        - $ref: '#/components/schemas/ConversationItemBase'
+        - type: object
+          required: [kind, title, event_range, detail]
+          properties:
+            kind:
+              type: string
+              enum: [agent_work]
+            title:
+              type: string
+            summary:
+              type: string
+            detail:
+              $ref: '#/components/schemas/AgentWorkItemDetail'
+            event_range:
+              $ref: '#/components/schemas/EventRange'
+    StatusItem:
+      allOf:
+        - $ref: '#/components/schemas/ConversationItemBase'
+        - type: object
+          required: [kind, text]
+          properties:
+            kind:
+              type: string
+              enum: [status]
+            text:
+              type: string
+    AgentWorkItemDetail:
+      $ref: '#/components/schemas/AgentWorkToolDetail'
+    AgentWorkToolDetail:
+      description: UI-safe projected agent work detail. Provider raw events remain available only through diagnostics APIs.
       oneOf:
-        - $ref: '#/components/schemas/ActivityShellToolDetail'
-        - $ref: '#/components/schemas/ActivityFileToolDetail'
-        - $ref: '#/components/schemas/ActivitySearchToolDetail'
-        - $ref: '#/components/schemas/ActivityFetchToolDetail'
-        - $ref: '#/components/schemas/ActivityGenericToolDetail'
+        - $ref: '#/components/schemas/AgentWorkShellDetail'
+        - $ref: '#/components/schemas/AgentWorkFileDetail'
+        - $ref: '#/components/schemas/AgentWorkSearchDetail'
+        - $ref: '#/components/schemas/AgentWorkFetchDetail'
+        - $ref: '#/components/schemas/AgentWorkGenericDetail'
       discriminator:
         propertyName: type
-    ActivityShellToolDetail:
+    AgentWorkShellDetail:
       type: object
       required: [type]
       properties:
@@ -1150,7 +1105,7 @@ components:
           type: integer
         error:
           type: string
-    ActivityFileToolDetail:
+    AgentWorkFileDetail:
       type: object
       required: [type]
       properties:
@@ -1170,7 +1125,7 @@ components:
           type: string
         unified_diff:
           type: string
-    ActivitySearchToolDetail:
+    AgentWorkSearchDetail:
       type: object
       required: [type]
       properties:
@@ -1192,7 +1147,7 @@ components:
           type: integer
         truncated:
           type: boolean
-    ActivityFetchToolDetail:
+    AgentWorkFetchDetail:
       type: object
       required: [type]
       properties:
@@ -1213,7 +1168,7 @@ components:
           type: integer
         duration_ms:
           type: integer
-    ActivityGenericToolDetail:
+    AgentWorkGenericDetail:
       type: object
       required: [type]
       properties:
@@ -1581,7 +1536,6 @@ components:
           enum:
             - session_not_found
             - session_closed
-            - turn_running
             - permission_blocked
             - backend_unavailable
             - duplicate_command

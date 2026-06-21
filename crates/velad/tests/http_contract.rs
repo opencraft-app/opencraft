@@ -152,23 +152,23 @@ async fn eventually_backend_called(backend: &MockBackendAdapter) {
     .expect("backend call");
 }
 
-async fn wait_for_transcript_rows(app: axum::Router, session_id: &str, rows: usize) -> Value {
+async fn wait_for_conversation_items(app: axum::Router, session_id: &str, items: usize) -> Value {
     timeout(Duration::from_secs(2), async {
         loop {
-            let (status, transcript) = get_json(
+            let (status, conversation) = get_json(
                 app.clone(),
-                &format!("/api/v1/sessions/{session_id}/views/transcript"),
+                &format!("/api/v1/sessions/{session_id}/views/conversation"),
             )
             .await;
             assert_eq!(status, StatusCode::OK);
-            if transcript["rows"].as_array().unwrap().len() >= rows {
-                return transcript;
+            if conversation["items"].as_array().unwrap().len() >= items {
+                return conversation;
             }
             sleep(Duration::from_millis(10)).await;
         }
     })
     .await
-    .unwrap_or_else(|_| panic!("transcript should reach at least {rows} rows"))
+    .unwrap_or_else(|_| panic!("conversation should reach at least {items} items"))
 }
 
 #[path = "http_contract/sessions.rs"]
@@ -179,9 +179,6 @@ mod commands;
 
 #[path = "http_contract/views.rs"]
 mod views;
-
-#[path = "http_contract/activity.rs"]
-mod activity;
 
 #[path = "http_contract/diagnostics.rs"]
 mod diagnostics;

@@ -17,6 +17,65 @@ export interface ChatSurfaceEventCursor {
   seq: number;
 }
 
+export interface ConversationWindow {
+  first_item_id?: string | null;
+  last_item_id?: string | null;
+  anchor_item_id?: string | null;
+  has_older: boolean;
+  has_newer: boolean;
+}
+
+export type ConversationItemStatusWire =
+  | "pending"
+  | "running"
+  | "streaming"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export interface ConversationWireItemBase {
+  id: string;
+  kind: "user_message" | "assistant_message" | "turn_meta" | "agent_work" | "status";
+  turn_id?: string;
+  created_at: string;
+  updated_at: string;
+  revision: number;
+  status: ConversationItemStatusWire;
+  source_event_ids: string[];
+}
+
+export type ConversationWireItem =
+  | (ConversationWireItemBase & {
+      kind: "user_message" | "assistant_message";
+      text: string;
+      parts?: ConversationMessagePart[];
+    })
+  | (ConversationWireItemBase & {
+      kind: "turn_meta";
+      turn_id: string;
+    })
+  | (ConversationWireItemBase & {
+      kind: "agent_work";
+      title: string;
+      summary?: string;
+      detail?: AgentWorkDetailWire;
+      event_range?: {
+        from_event_id?: string;
+        to_event_id?: string;
+      };
+    })
+  | (ConversationWireItemBase & {
+      kind: "status";
+      text: string;
+    });
+
+export interface ConversationWireView {
+  session_id: string;
+  items: ConversationWireItem[];
+  cursor: ChatSurfaceEventCursor;
+  window: ConversationWindow;
+}
+
 export interface ChatTranscriptWindow {
   first_row_id?: string | null;
   last_row_id?: string | null;
@@ -32,21 +91,21 @@ export type ChatTranscriptRowStatusWire =
   | "failed"
   | "cancelled";
 export type ChatTranscriptTurnStatusWire = "running" | "completed" | "failed" | "cancelled";
+export type ConversationMessagePartTypeWire = "text" | "image" | "file_reference";
 export type ChatTranscriptPartTypeWire = "markdown" | "text" | "code" | "image" | "file_reference";
 
-export interface ChatTranscriptWireRow {
+export interface ConversationMessagePart {
   id: string;
-  kind: "user_message" | "assistant_message" | "working" | "activity_marker" | "error";
-  created_at: string;
-  updated_at: string;
-  revision: number;
-  turn_id?: string;
+  type: ConversationMessagePartTypeWire;
   text?: string;
-  activity_id?: string;
-  label?: string;
-  parts?: ChatTranscriptPart[];
-  status: ChatTranscriptRowStatusWire;
-  source_event_ids: string[];
+  data?: {
+    [key: string]: unknown;
+    data?: string;
+    mime_type?: string;
+    sha256?: string;
+    size_bytes?: number;
+    blob_id?: string;
+  };
 }
 
 export interface ChatTranscriptPart {
@@ -63,27 +122,9 @@ export interface ChatTranscriptPart {
   };
 }
 
-export interface ChatTranscriptTurnSummaryWire {
-  turn_id: string;
-  status: ChatTranscriptTurnStatusWire;
-  started_at: string;
-  completed_at?: string | null;
-  first_row_id?: string | null;
-  last_row_id?: string | null;
-  source_event_ids: string[];
-}
-
-export interface ChatTranscriptWireView {
-  session_id: string;
-  rows: ChatTranscriptWireRow[];
-  turns: ChatTranscriptTurnSummaryWire[];
-  cursor: ChatSurfaceEventCursor;
-  window: ChatTranscriptWindow;
-}
-
 export type ActivityItemKindWire = "tool" | "command" | "task" | "warning" | "runtime";
 export type ActivityItemStatusWire = "pending" | "running" | "completed" | "failed" | "cancelled";
-export type ActivityDetailTypeWire =
+export type AgentWorkDetailTypeWire =
   | "shell"
   | "read"
   | "edit"
@@ -100,45 +141,21 @@ export type ActivityDetailTypeWire =
   | "plain_text"
   | "unknown"
   | "tool";
-export type ActivityGenericDetailTypeWire = Exclude<
-  ActivityDetailTypeWire,
+export type AgentWorkGenericDetailTypeWire = Exclude<
+  AgentWorkDetailTypeWire,
   "shell" | "read" | "edit" | "write" | "search" | "fetch"
 >;
-export type ActivityFileDetailTypeWire = "read" | "edit" | "write";
-export type ActivitySearchModeWire = "code" | "web" | "files" | "unknown";
+export type AgentWorkFileDetailTypeWire = "read" | "edit" | "write";
+export type AgentWorkSearchModeWire = "code" | "web" | "files" | "unknown";
 
-export interface ActivityWireItem {
-  id: string;
-  turn_id?: string;
-  kind: ActivityItemKindWire;
-  status: ActivityItemStatusWire;
-  title: string;
-  summary?: string;
-  detail?: ActivityWireDetail;
-  created_at: string;
-  updated_at?: string;
-  event_range?: {
-    from_event_id?: string;
-    to_event_id?: string;
-  };
-}
+export type AgentWorkDetailWire =
+  | AgentWorkShellDetailWire
+  | AgentWorkFileDetailWire
+  | AgentWorkSearchDetailWire
+  | AgentWorkFetchDetailWire
+  | AgentWorkGenericDetailWire;
 
-export interface ActivityWindow {
-  first_item_id?: string | null;
-  last_item_id?: string | null;
-  anchor_item_id?: string | null;
-  has_older: boolean;
-  has_newer: boolean;
-}
-
-export type ActivityWireDetail =
-  | ActivityShellToolDetailWire
-  | ActivityFileToolDetailWire
-  | ActivitySearchToolDetailWire
-  | ActivityFetchToolDetailWire
-  | ActivityGenericToolDetailWire;
-
-export interface ActivityShellToolDetailWire {
+export interface AgentWorkShellDetailWire {
   type: "shell";
   command?: string;
   cwd?: string;
@@ -149,8 +166,8 @@ export interface ActivityShellToolDetailWire {
   error?: string;
 }
 
-export interface ActivityFileToolDetailWire {
-  type: ActivityFileDetailTypeWire;
+export interface AgentWorkFileDetailWire {
+  type: AgentWorkFileDetailTypeWire;
   file_path?: string;
   path?: string;
   content?: string;
@@ -159,10 +176,10 @@ export interface ActivityFileToolDetailWire {
   unified_diff?: string;
 }
 
-export interface ActivitySearchToolDetailWire {
+export interface AgentWorkSearchDetailWire {
   type: "search";
   query?: string;
-  mode?: ActivitySearchModeWire;
+  mode?: AgentWorkSearchModeWire;
   content?: string;
   num_files?: number;
   num_matches?: number;
@@ -170,7 +187,7 @@ export interface ActivitySearchToolDetailWire {
   truncated?: boolean;
 }
 
-export interface ActivityFetchToolDetailWire {
+export interface AgentWorkFetchDetailWire {
   type: "fetch";
   url?: string;
   prompt?: string;
@@ -181,16 +198,9 @@ export interface ActivityFetchToolDetailWire {
   duration_ms?: number;
 }
 
-export interface ActivityGenericToolDetailWire {
-  type: ActivityGenericDetailTypeWire;
+export interface AgentWorkGenericDetailWire {
+  type: AgentWorkGenericDetailTypeWire;
   [key: string]: unknown;
-}
-
-export interface ActivityWireView {
-  session_id: string;
-  items: ActivityWireItem[];
-  window: ActivityWindow;
-  cursor: ChatSurfaceEventCursor;
 }
 
 export type AgentRequestTypeWire =
@@ -227,7 +237,7 @@ export interface PendingRequestsWireView {
 }
 
 export interface ChatSurfaceDebug {
-  projection: "transcript" | "activity" | "requests" | "diffs";
+  projection: "conversation" | "transcript" | "activity" | "requests" | "diffs";
   source_event_ids: string[];
 }
 
@@ -262,7 +272,7 @@ export interface ChatSurfaceActivityItem {
   status: ActivityItemStatusWire;
   title: string;
   summary: string;
-  detail?: ActivityWireDetail;
+  detail?: AgentWorkDetailWire;
   created_at: string;
   updated_at?: string;
   debug: ChatSurfaceDebug;
@@ -289,12 +299,13 @@ export interface ChatSurface {
   };
   activity: {
     items: ChatSurfaceActivityItem[];
-    window?: ActivityWindow;
+    window?: ConversationWindow;
   };
   pending_requests: {
     items: ChatSurfacePendingRequest[];
   };
   cursors: {
+    conversation?: ChatSurfaceCursor;
     transcript?: ChatSurfaceCursor;
     activity?: ChatSurfaceCursor;
     requests?: ChatSurfaceCursor;
@@ -307,31 +318,21 @@ export interface ChatSurface {
 
 export interface BuildChatSurfaceInput {
   sessionId: string;
-  transcript: ChatTranscriptWireView;
-  activity?: ActivityWireView;
+  conversation: ConversationWireView;
   requests?: PendingRequestsWireView;
   stream?: Partial<ChatSurface["stream"]>;
 }
 
 export interface ConversationWindowState {
-  first_row_id?: string | null;
-  last_row_id?: string | null;
-  first_activity_item_id?: string | null;
-  last_activity_item_id?: string | null;
+  first_item_id?: string | null;
+  last_item_id?: string | null;
   has_older: boolean;
   has_newer: boolean;
 }
 
 export interface ConversationHistoryPrependPlan {
   has_older: boolean;
-  transcript: {
-    direction: "before";
-    anchorRowId: string;
-    sessionId?: string;
-    includeLive: false;
-    limit: number;
-  } | null;
-  activity: {
+  conversation: {
     direction: "before";
     anchorItemId: string;
     sessionId?: string;
@@ -340,8 +341,7 @@ export interface ConversationHistoryPrependPlan {
 }
 
 export interface ConversationWindowInput {
-  transcript?: Pick<ChatTranscriptWireView, "session_id" | "window"> | null;
-  activity?: Pick<ActivityWireView, "session_id" | "window"> | null;
+  conversation?: Pick<ConversationWireView, "session_id" | "window"> | null;
 }
 
 export interface ConversationHistoryPrependPlanInput extends ConversationWindowInput {
@@ -352,40 +352,24 @@ export function buildChatSurfaceFromReadModels(input: BuildChatSurfaceInput): Ch
   return {
     session_id: input.sessionId,
     transcript: {
-      rows: input.transcript.rows.map(normalizeTranscriptRow),
-      turns: input.transcript.turns.map(normalizeTranscriptTurnSummary),
-      window: input.transcript.window,
+      rows: input.conversation.items.flatMap(normalizeConversationTranscriptRow),
+      turns: input.conversation.items.flatMap(normalizeConversationTurnMeta),
+      window: conversationWindowAsTranscriptWindow(input.conversation.window),
     },
     activity: {
-      items: input.activity?.items.map(normalizeActivityItem) ?? [],
-      window: input.activity?.window,
+      items: input.conversation.items.flatMap(normalizeConversationAgentWork),
+      window: input.conversation.window,
     },
     pending_requests: {
       items: input.requests?.requests.map(normalizePendingRequest) ?? [],
     },
     cursors: {
-      transcript: input.transcript.cursor,
-      ...(input.activity ? { activity: input.activity.cursor } : {}),
+      conversation: input.conversation.cursor,
       ...(input.requests ? { requests: input.requests.cursor } : {}),
     },
     stream: {
       connected: input.stream?.connected ?? false,
       running: input.stream?.running ?? false,
-    },
-  };
-}
-
-function normalizeTranscriptTurnSummary(turn: ChatTranscriptTurnSummaryWire): ChatSurfaceTranscriptTurn {
-  return {
-    turn_id: turn.turn_id,
-    status: turn.status,
-    started_at: turn.started_at,
-    ...(turn.completed_at !== undefined ? { completed_at: turn.completed_at } : {}),
-    ...(turn.first_row_id !== undefined ? { first_row_id: turn.first_row_id } : {}),
-    ...(turn.last_row_id !== undefined ? { last_row_id: turn.last_row_id } : {}),
-    debug: {
-      projection: "transcript",
-      source_event_ids: turn.source_event_ids,
     },
   };
 }
@@ -424,59 +408,37 @@ function titleFromRequestType(type: string) {
 }
 
 export function deriveConversationWindowState({
-  transcript,
-  activity,
+  conversation,
 }: ConversationWindowInput): ConversationWindowState {
   return {
-    first_row_id: transcript?.window?.first_row_id ?? null,
-    last_row_id: transcript?.window?.last_row_id ?? null,
-    first_activity_item_id: activity?.window?.first_item_id ?? null,
-    last_activity_item_id: activity?.window?.last_item_id ?? null,
-    has_older: Boolean(
-      transcript?.window?.has_older || activity?.window?.has_older,
-    ),
-    has_newer: Boolean(
-      transcript?.window?.has_newer || activity?.window?.has_newer,
-    ),
+    first_item_id: conversation?.window?.first_item_id ?? null,
+    last_item_id: conversation?.window?.last_item_id ?? null,
+    has_older: Boolean(conversation?.window?.has_older),
+    has_newer: Boolean(conversation?.window?.has_newer),
   };
 }
 
 export function buildConversationHistoryPrependPlan({
-  transcript,
-  activity,
+  conversation,
   limit = 80,
 }: ConversationHistoryPrependPlanInput): ConversationHistoryPrependPlan {
   const normalizedLimit = normalizeWindowLimit(limit);
-  const firstRowId = transcript?.window?.has_older
-    ? transcript.window.first_row_id
+  const firstItemId = conversation?.window?.has_older
+    ? conversation.window.first_item_id
     : null;
-  const firstActivityItemId = activity?.window?.has_older
-    ? activity.window.first_item_id
-    : null;
-  const transcriptPlan =
-    typeof firstRowId === "string" && firstRowId.length > 0
+  const conversationPlan =
+    typeof firstItemId === "string" && firstItemId.length > 0
       ? {
           direction: "before" as const,
-          anchorRowId: firstRowId,
-          ...(transcript?.session_id ? { sessionId: transcript.session_id } : {}),
-          includeLive: false as const,
-          limit: normalizedLimit,
-        }
-      : null;
-  const activityPlan =
-    typeof firstActivityItemId === "string" && firstActivityItemId.length > 0
-      ? {
-          direction: "before" as const,
-          anchorItemId: firstActivityItemId,
-          ...(activity?.session_id ? { sessionId: activity.session_id } : {}),
+          anchorItemId: firstItemId,
+          ...(conversation?.session_id ? { sessionId: conversation.session_id } : {}),
           limit: normalizedLimit,
         }
       : null;
 
   return {
-    has_older: transcriptPlan !== null || activityPlan !== null,
-    transcript: transcriptPlan,
-    activity: activityPlan,
+    has_older: conversationPlan !== null,
+    conversation: conversationPlan,
   };
 }
 
@@ -484,57 +446,20 @@ export function canApplyConversationHistoryPrependPlan(
   plan: ConversationHistoryPrependPlan,
   current: ConversationWindowInput,
 ): boolean {
-  if (plan.transcript) {
+  if (plan.conversation) {
     if (
-      plan.transcript.sessionId &&
-      current.transcript?.session_id !== plan.transcript.sessionId
+      plan.conversation.sessionId &&
+      current.conversation?.session_id !== plan.conversation.sessionId
     ) {
       return false;
     }
-    const currentFirstRowId = current.transcript?.window?.first_row_id;
-    if (currentFirstRowId !== plan.transcript.anchorRowId) return false;
-  }
-  if (plan.activity) {
-    if (
-      plan.activity.sessionId &&
-      current.activity?.session_id !== plan.activity.sessionId
-    ) {
-      return false;
-    }
-    const currentFirstItemId = current.activity?.window?.first_item_id;
-    if (currentFirstItemId !== plan.activity.anchorItemId) return false;
+    const currentFirstItemId = current.conversation?.window?.first_item_id;
+    if (currentFirstItemId !== plan.conversation.anchorItemId) return false;
   }
   return true;
 }
 
-export function prependTranscriptWindow<T extends ChatTranscriptWireView>(current: T, older: T): T {
-  if (isDifferentKnownSession(current.session_id, older.session_id)) return current;
-
-  const rows = prependMissingItemsById(older.rows, current.rows);
-  const turns = prependMissingTurnsById(older.turns, current.turns);
-
-  return {
-    ...current,
-    session_id: current.session_id ?? older.session_id,
-    rows,
-    turns,
-    window: {
-      first_row_id:
-        older.window?.first_row_id ?? rows[0]?.id ?? current.window?.first_row_id ?? null,
-      last_row_id:
-        current.window?.last_row_id ??
-        rows[rows.length - 1]?.id ??
-        older.window?.last_row_id ??
-        null,
-      anchor_row_id: current.window?.anchor_row_id ?? older.window?.anchor_row_id ?? null,
-      has_older: older.window?.has_older ?? false,
-      has_newer: current.window?.has_newer ?? false,
-    },
-    cursor: latestCursor(current.cursor, older.cursor),
-  } as T;
-}
-
-export function prependActivityWindow<T extends ActivityWireView>(current: T, older: T): T {
+export function prependConversationWindow<T extends ConversationWireView>(current: T, older: T): T {
   if (isDifferentKnownSession(current.session_id, older.session_id)) return current;
 
   const items = prependMissingItemsById(older.items, current.items);
@@ -559,63 +484,115 @@ export function prependActivityWindow<T extends ActivityWireView>(current: T, ol
   } as T;
 }
 
-function normalizeActivityItem(item: ActivityWireItem): ChatSurfaceActivityItem {
+function normalizeConversationTranscriptRow(item: ConversationWireItem): ChatSurfaceTranscriptRow[] {
+  if (item.kind !== "user_message" && item.kind !== "assistant_message" && item.kind !== "status") {
+    return [];
+  }
+  return [
+    {
+      id: item.id,
+      role:
+        item.kind === "user_message"
+          ? "user"
+          : item.kind === "assistant_message"
+            ? "assistant"
+            : "working",
+      text: item.text,
+      parts: "parts" in item ? item.parts ?? [] : [],
+      created_at: item.created_at,
+      updated_at: item.updated_at,
+      ...(item.turn_id !== undefined ? { turn_id: item.turn_id } : {}),
+      status: messageStatusFromConversationItem(item.status),
+      revision: item.revision,
+      debug: {
+        projection: "conversation",
+        source_event_ids: item.source_event_ids,
+      },
+    },
+  ];
+}
+
+function normalizeConversationTurnMeta(item: ConversationWireItem): ChatSurfaceTranscriptTurn[] {
+  if (item.kind !== "turn_meta") return [];
+  return [
+    {
+      turn_id: item.turn_id,
+      status: turnStatusFromConversationItem(item.status),
+      started_at: item.created_at,
+      completed_at: item.status === "running" ? null : item.updated_at,
+      debug: {
+        projection: "conversation",
+        source_event_ids: item.source_event_ids,
+      },
+    },
+  ];
+}
+
+function normalizeConversationAgentWork(item: ConversationWireItem): ChatSurfaceActivityItem[] {
+  if (item.kind !== "agent_work") return [];
   const sourceEventIds = uniqueStrings([
     item.event_range?.from_event_id,
     item.event_range?.to_event_id,
+    ...item.source_event_ids,
   ].filter((id): id is string => Boolean(id)));
-  return {
-    id: item.id,
-    ...(item.turn_id !== undefined ? { turn_id: item.turn_id } : {}),
-    kind: item.kind,
-    status: item.status,
-    title: item.title,
-    summary: item.summary ?? "",
-    detail: item.detail,
-    created_at: item.created_at,
-    updated_at: item.updated_at,
-    debug: {
-      projection: "activity",
-      source_event_ids: sourceEventIds,
+  return [
+    {
+      id: item.id,
+      ...(item.turn_id !== undefined ? { turn_id: item.turn_id } : {}),
+      kind: agentWorkKindFromDetail(item.detail),
+      status: activityStatusFromConversationItem(item.status),
+      title: item.title,
+      summary: item.summary ?? "",
+      detail: item.detail,
+      created_at: item.created_at,
+      updated_at: item.updated_at,
+      debug: {
+        projection: "conversation",
+        source_event_ids: sourceEventIds,
+      },
     },
+  ];
+}
+
+function conversationWindowAsTranscriptWindow(window: ConversationWindow): ChatTranscriptWindow {
+  return {
+    first_row_id: window.first_item_id,
+    last_row_id: window.last_item_id,
+    anchor_row_id: window.anchor_item_id,
+    has_older: window.has_older,
+    has_newer: window.has_newer,
   };
+}
+
+function messageStatusFromConversationItem(
+  status: ConversationItemStatusWire,
+): ChatTranscriptRowStatusWire {
+  return status === "running" ? "streaming" : status;
+}
+
+function turnStatusFromConversationItem(
+  status: ConversationItemStatusWire,
+): ChatTranscriptTurnStatusWire {
+  return status === "streaming" || status === "pending" || status === "running"
+    ? "running"
+    : status;
+}
+
+function activityStatusFromConversationItem(
+  status: ConversationItemStatusWire,
+): ActivityItemStatusWire {
+  return status === "streaming" ? "running" : status;
+}
+
+function agentWorkKindFromDetail(detail: AgentWorkDetailWire | undefined): ActivityItemKindWire {
+  if (!detail) return "runtime";
+  if (detail.type === "shell") return "command";
+  if (detail.type === "unknown" || detail.type === "plain_text") return "runtime";
+  return "tool";
 }
 
 function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values));
-}
-
-function normalizeTranscriptRow(row: ChatTranscriptWireRow): ChatSurfaceTranscriptRow {
-  return {
-    id: row.id,
-    role: transcriptKindToRole(row.kind),
-    text: transcriptRowText(row),
-    parts: row.parts ?? [],
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-    ...(row.turn_id !== undefined ? { turn_id: row.turn_id } : {}),
-    ...(row.activity_id !== undefined ? { activity_id: row.activity_id } : {}),
-    status: row.status,
-    revision: row.revision,
-    debug: {
-      projection: "transcript",
-      source_event_ids: row.source_event_ids,
-    },
-  };
-}
-
-function transcriptRowText(row: ChatTranscriptWireRow) {
-  if (row.kind === "user_message" || row.kind === "assistant_message") {
-    return row.text ?? "";
-  }
-  return row.text ?? row.label ?? "";
-}
-
-function transcriptKindToRole(kind: ChatTranscriptWireRow["kind"]): ChatSurfaceTranscriptRow["role"] {
-  if (kind === "user_message") return "user";
-  if (kind === "assistant_message") return "assistant";
-  if (kind === "activity_marker") return "activity";
-  return "working";
 }
 
 function isDifferentKnownSession(
@@ -665,18 +642,4 @@ function prependMissingItemsById<T extends { id: string }>(
     return true;
   });
   return [...prepended, ...currentItems];
-}
-
-function prependMissingTurnsById<T extends { turn_id: string }>(
-  olderTurns: readonly T[],
-  currentTurns: readonly T[],
-): T[] {
-  const currentIds = new Set(currentTurns.map((turn) => turn.turn_id));
-  const seenOlderIds = new Set<string>();
-  const prepended = olderTurns.filter((turn) => {
-    if (currentIds.has(turn.turn_id) || seenOlderIds.has(turn.turn_id)) return false;
-    seenOlderIds.add(turn.turn_id);
-    return true;
-  });
-  return [...prepended, ...currentTurns];
 }

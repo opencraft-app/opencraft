@@ -407,10 +407,10 @@ async fn send_user_message_appends_turn_failed_and_allows_next_turn_after_backen
 }
 
 #[tokio::test]
-async fn send_user_message_rejects_distinct_command_while_turn_is_running() {
+async fn send_user_message_queues_distinct_command_while_turn_is_running() {
     let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
     let backend = Arc::new(BlockingBackend::default());
-    let runtime = Arc::new(Runtime::new(store, backend.clone()));
+    let runtime = Arc::new(Runtime::new(store.clone(), backend.clone()));
     let session_id = SessionId::from("ses_runtime_2");
     runtime
         .create_session(session_id.clone(), BackendKind::Pi, "/tmp/vela")
@@ -434,7 +434,7 @@ async fn send_user_message_rejects_distinct_command_while_turn_is_running() {
 
     let second = runtime
         .send_user_message(SendUserMessage {
-            session_id,
+            session_id: session_id.clone(),
             idempotency_key: "idem-2".to_string(),
             content: "second".to_string(),
             command_id: None,
@@ -442,10 +442,23 @@ async fn send_user_message_rejects_distinct_command_while_turn_is_running() {
         .await
         .expect("second send");
 
-    match second {
-        CommandAck::Rejected(rejected) => assert_eq!(rejected.code, "turn_running"),
-        other => panic!("expected running rejection, got {other:?}"),
-    }
+    let queued = match second {
+        CommandAck::Queued(queued) => queued,
+        other => panic!("expected queued ack, got {other:?}"),
+    };
+    assert_eq!(queued.session_id, session_id);
+    assert_eq!(queued.command_id, CommandId::from("idem-2"));
+    assert!(!queued.queued_message_id.is_empty());
+    let events = eventually_contains_event(&store, &session_id, EventType::INPUT_QUEUED).await;
+    let queued_event = events
+        .iter()
+        .find(|event| event.event_type == EventType::INPUT_QUEUED)
+        .expect("input.queued");
+    assert_eq!(queued_event.payload["content"], "second");
+    assert_eq!(
+        queued_event.payload["queued_message_id"],
+        queued.queued_message_id
+    );
 
     backend.release().await;
     first.await.expect("join").expect("first send");

@@ -1,15 +1,14 @@
 import type {
-  ActivityWireView,
-  ActivityWindowOptions,
   AgentConfigPatchWire,
   BackendKindWire,
   BackendProbeResultWire,
   BackendWireResponse,
   BackendsWireResponse,
-  ChatTranscriptWireView,
   ClientInputPart,
   CommandAckWire,
   CancelSessionInput,
+  ConversationWindowOptions,
+  ConversationWireView,
   CreateSessionInput,
   CreateSessionWireResponse,
   DiffReviewWireView,
@@ -17,7 +16,6 @@ import type {
   PendingRequestsWireView,
   SendSessionInputEventsInput,
   SessionWireResponse,
-  TranscriptWindowOptions,
   UpdateAgentConfigWireResponse,
   VeladClientOptions,
 } from "./wire";
@@ -26,26 +24,24 @@ import {
   encodeBackendKind,
   encodeSessionId,
   normalizeBaseUrl,
-  readActivityViewResponse,
   readBackendProbeResponse,
   readBackendResponse,
   readBackendsResponse,
   readCommandAckResponse,
+  readConversationViewResponse,
   readCreateSessionResponse,
   readDiffReviewViewResponse,
   readPendingRequestsViewResponse,
   readSessionResponse,
-  readTranscriptViewResponse,
   readUpdateAgentConfigResponse,
-  validateActivityWindowOptions,
   validateAfterId,
   validateAgentConfigPatch,
   validateClientInputEvents,
+  validateConversationWindowOptions,
   validateCreateSessionInput,
   validateOptionalIdempotencyKey,
   validatePendingRequestsOptions,
   validateSendSessionEventsOptions,
-  validateTranscriptWindowOptions,
 } from "./wire-contract";
 
 export interface VeladClient {
@@ -59,16 +55,14 @@ export interface VeladClient {
     patch: AgentConfigPatchWire;
     idempotencyKey?: string;
   }) => Promise<UpdateAgentConfigWireResponse>;
-  transcriptUrl: (sessionId: string, options?: TranscriptWindowOptions) => URL;
-  activityUrl: (sessionId: string, options?: ActivityWindowOptions) => URL;
+  conversationUrl: (sessionId: string, options?: ConversationWindowOptions) => URL;
   requestsUrl: (sessionId: string, options?: PendingRequestsOptions) => URL;
   diffsUrl: (sessionId: string) => URL;
   sessionEventStreamUrl: (sessionId: string, afterId?: string | null) => URL;
-  getTranscript: (
+  getConversation: (
     sessionId: string,
-    options?: TranscriptWindowOptions,
-  ) => Promise<ChatTranscriptWireView>;
-  getActivity: (sessionId: string, options?: ActivityWindowOptions) => Promise<ActivityWireView>;
+    options?: ConversationWindowOptions,
+  ) => Promise<ConversationWireView>;
   getRequests: (
     sessionId: string,
     options?: PendingRequestsOptions,
@@ -174,20 +168,9 @@ export function createVeladClient(options: VeladClientOptions): VeladClient {
       });
       return readUpdateAgentConfigResponse(response);
     },
-    transcriptUrl(sessionId, options) {
-      validateTranscriptWindowOptions(options);
-      const url = new URL(`sessions/${encodeSessionId(sessionId)}/views/transcript`, baseUrl);
-      if (options?.limit !== undefined) url.searchParams.set("limit", String(options.limit));
-      if (options?.direction) url.searchParams.set("direction", options.direction);
-      if (options?.anchorRowId) url.searchParams.set("anchor_row_id", options.anchorRowId);
-      if (options?.includeLive !== undefined) {
-        url.searchParams.set("include_live", String(options.includeLive));
-      }
-      return url;
-    },
-    activityUrl(sessionId, options) {
-      validateActivityWindowOptions(options);
-      const url = new URL(`sessions/${encodeSessionId(sessionId)}/views/activity`, baseUrl);
+    conversationUrl(sessionId, options) {
+      validateConversationWindowOptions(options);
+      const url = new URL(`sessions/${encodeSessionId(sessionId)}/views/conversation`, baseUrl);
       if (options?.limit !== undefined) url.searchParams.set("limit", String(options.limit));
       if (options?.direction) url.searchParams.set("direction", options.direction);
       if (options?.anchorItemId) url.searchParams.set("anchor_item_id", options.anchorItemId);
@@ -208,13 +191,9 @@ export function createVeladClient(options: VeladClientOptions): VeladClient {
       if (validAfterId) url.searchParams.set("after_id", validAfterId);
       return url;
     },
-    async getTranscript(sessionId, options) {
-      const response = await doFetch(this.transcriptUrl(sessionId, options));
-      return readTranscriptViewResponse(response);
-    },
-    async getActivity(sessionId, options) {
-      const response = await doFetch(this.activityUrl(sessionId, options));
-      return readActivityViewResponse(response);
+    async getConversation(sessionId, options) {
+      const response = await doFetch(this.conversationUrl(sessionId, options));
+      return readConversationViewResponse(response);
     },
     async getRequests(sessionId, options) {
       const response = await doFetch(this.requestsUrl(sessionId, options));

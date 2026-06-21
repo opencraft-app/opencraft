@@ -1,10 +1,9 @@
 import type {
-  ChatTranscriptWireView,
+  ConversationWireItem,
+  ConversationWireView,
   CursorWindow,
   EventCursorWire,
   StreamReadModelRefreshPlan,
-  TranscriptWirePart,
-  TranscriptWireRow,
   VelaStreamEventWire,
 } from "./wire";
 import { findLastIndex, isRecord } from "./guards";
@@ -140,38 +139,36 @@ export function isVelaStreamEventFreshForCursor(
   return cursor ? isStreamEventNewerThanCursor(cursor, event) : true;
 }
 
-export function applyTranscriptLiveOverlay(
-  transcript: ChatTranscriptWireView,
+export function applyConversationLiveOverlay(
+  conversation: ConversationWireView,
   event: VelaStreamEventWire,
-): ChatTranscriptWireView {
-  if (
-    isDifferentKnownStreamSession(transcript.session_id, event.session_id)
-  ) {
-    return transcript;
+): ConversationWireView {
+  if (isDifferentKnownStreamSession(conversation.session_id, event.session_id)) {
+    return conversation;
   }
-  if (!isStreamEventNewerThanCursor(transcript.cursor, event)) return transcript;
+  if (!isStreamEventNewerThanCursor(conversation.cursor, event)) return conversation;
 
   if (event.type === "assistant.message.delta") {
     const delta = stringPayload(event, "delta");
-    if (!delta) return updateTranscriptCursor(transcript, event);
-    return appendAssistantDelta(transcript, event, delta);
+    if (!delta) return updateConversationCursor(conversation, event);
+    return appendConversationAssistantDelta(conversation, event, delta);
   }
 
-  return updateTranscriptCursor(transcript, event);
+  return updateConversationCursor(conversation, event);
 }
 
-export function needsTranscriptRefreshAfterLiveOverlay(
-  transcript: ChatTranscriptWireView,
+export function needsConversationRefreshAfterLiveOverlay(
+  conversation: ConversationWireView,
   event: VelaStreamEventWire,
 ) {
   if (event.type !== "assistant.message.delta") return false;
-  if (isDifferentKnownStreamSession(transcript.session_id, event.session_id)) {
+  if (isDifferentKnownStreamSession(conversation.session_id, event.session_id)) {
     return false;
   }
-  if (!isStreamEventNewerThanCursor(transcript.cursor, event)) return false;
+  if (!isStreamEventNewerThanCursor(conversation.cursor, event)) return false;
   const delta = stringPayload(event, "delta");
   if (!delta) return false;
-  return !hasAssistantOverlayTarget(transcript, event);
+  return !hasConversationAssistantOverlayTarget(conversation, event);
 }
 
 export function streamReadModelRefreshPlan(
@@ -182,8 +179,7 @@ export function streamReadModelRefreshPlan(
   if (event.type === "assistant.message.delta") return emptyRefreshPlan();
   const hintedPlan = affectedViewsRefreshPlan(event.affected_views);
   const typePlan = {
-    transcript: transcriptRefreshEvents.has(event.type),
-    activity: isActivityRefreshEvent(event.type),
+    conversation: isConversationRefreshEvent(event.type),
     requests: isRequestRefreshEvent(event.type),
     diffs: event.type === "diff.updated",
     session: sessionRefreshEvents.has(event.type),
@@ -191,8 +187,7 @@ export function streamReadModelRefreshPlan(
   };
 
   return {
-    transcript: typePlan.transcript || hintedPlan.transcript,
-    activity: typePlan.activity || hintedPlan.activity,
+    conversation: typePlan.conversation || hintedPlan.conversation,
     requests: typePlan.requests || hintedPlan.requests,
     diffs: typePlan.diffs || hintedPlan.diffs,
     session: typePlan.session || hintedPlan.session,
@@ -201,15 +196,13 @@ export function streamReadModelRefreshPlan(
 }
 
 export interface SessionEventStreamAfterIdInput {
-  transcript?: EventCursorWire | null;
-  activity?: EventCursorWire | null;
+  conversation?: EventCursorWire | null;
 }
 
 export function selectSessionEventStreamAfterId({
-  transcript,
-  activity,
+  conversation,
 }: SessionEventStreamAfterIdInput): string | null {
-  const cursors = [transcript, activity].filter(
+  const cursors = [conversation].filter(
     (cursor): cursor is EventCursorWire => Boolean(cursor?.event_id),
   );
   if (cursors.length === 0) return null;
@@ -223,8 +216,7 @@ export function selectSessionEventStreamAfterId({
 }
 
 export interface StreamReadModelRefreshCursors {
-  transcript?: EventCursorWire | null;
-  activity?: EventCursorWire | null;
+  conversation?: EventCursorWire | null;
   requests?: CursorWindow | null;
   diffs?: CursorWindow | null;
 }
@@ -237,9 +229,8 @@ export function streamReadModelRefreshPlanForCursors(
   if (!event || event.type === "sync.reset") return plan;
   return {
     ...plan,
-    transcript:
-      plan.transcript && isStreamEventFreshForReadModelCursor(cursors.transcript, event),
-    activity: plan.activity && isStreamEventFreshForReadModelCursor(cursors.activity, event),
+    conversation:
+      plan.conversation && isStreamEventFreshForReadModelCursor(cursors.conversation, event),
     requests: plan.requests && isStreamEventFreshForReadModelCursor(cursors.requests, event),
     diffs: plan.diffs && isStreamEventFreshForReadModelCursor(cursors.diffs, event),
   };
@@ -329,93 +320,80 @@ function isPromiseLike(value: void | Promise<void>): value is Promise<void> {
   return typeof value === "object" && value !== null && "then" in value;
 }
 
-function appendAssistantDelta(
-  transcript: ChatTranscriptWireView,
+function appendConversationAssistantDelta(
+  conversation: ConversationWireView,
   event: VelaStreamEventWire,
   delta: string,
-): ChatTranscriptWireView {
-  const { rowId, fallbackIndex } = assistantOverlayTarget(transcript, event);
-  const rows = transcript.rows.map((row, index): TranscriptWireRow => {
-    if (row.kind !== "assistant_message") return row;
-    if (rowId ? row.id !== rowId : index !== fallbackIndex) return row;
-    if (!isLiveAssistantRow(row)) return row;
-    if (event.event_id && row.source_event_ids.includes(event.event_id)) return row;
+): ConversationWireView {
+  const { itemId, fallbackIndex } = conversationAssistantOverlayTarget(conversation, event);
+  const items = conversation.items.map((item, index): ConversationWireItem => {
+    if (item.kind !== "assistant_message") return item;
+    if (itemId ? item.id !== itemId : index !== fallbackIndex) return item;
+    if (!isLiveConversationAssistantItem(item)) return item;
+    if (event.event_id && item.source_event_ids.includes(event.event_id)) return item;
     return {
-      ...row,
-      updated_at: event.created_at ?? row.updated_at,
-      revision: row.revision + 1,
+      ...item,
+      updated_at: event.created_at ?? item.updated_at,
+      revision: item.revision + 1,
       status: "streaming",
-      text: `${assistantRowText(row)}${delta}`,
+      text: `${item.text ?? ""}${delta}`,
       source_event_ids: event.event_id
-        ? [...row.source_event_ids, event.event_id]
-        : row.source_event_ids,
+        ? [...item.source_event_ids, event.event_id]
+        : item.source_event_ids,
     };
   });
 
-  const changed = rows.some((row, index) => row !== transcript.rows[index]);
-  if (changed) return { ...updateTranscriptCursor(transcript, event), rows };
+  const changed = items.some((item, index) => item !== conversation.items[index]);
+  if (changed) return { ...updateConversationCursor(conversation, event), items };
 
-  return updateTranscriptCursor(transcript, event);
+  return updateConversationCursor(conversation, event);
 }
 
-function assistantRowText(row: TranscriptWireRow): string {
-  return row.text || textFromTranscriptWireParts(row.parts);
-}
-
-function textFromTranscriptWireParts(parts: TranscriptWirePart[] | undefined): string {
-  return (parts ?? [])
-    .filter(isTextualTranscriptWirePart)
-    .map((part) => part.text)
-    .filter((text): text is string => Boolean(text))
-    .join("\n");
-}
-
-function isTextualTranscriptWirePart(part: TranscriptWirePart): boolean {
-  return part.type === "text" || part.type === "markdown" || part.type === "code";
-}
-
-function hasAssistantOverlayTarget(
-  transcript: ChatTranscriptWireView,
+function hasConversationAssistantOverlayTarget(
+  conversation: ConversationWireView,
   event: VelaStreamEventWire,
 ) {
-  const { rowId, fallbackIndex } = assistantOverlayTarget(transcript, event);
-  if (rowId) {
-    return transcript.rows.some(
-      (row) => row.kind === "assistant_message" && row.id === rowId && isLiveAssistantRow(row),
+  const { itemId, fallbackIndex } = conversationAssistantOverlayTarget(conversation, event);
+  if (itemId) {
+    return conversation.items.some(
+      (item) =>
+        item.kind === "assistant_message" &&
+        item.id === itemId &&
+        isLiveConversationAssistantItem(item),
     );
   }
   return fallbackIndex >= 0;
 }
 
-function assistantOverlayTarget(
-  transcript: ChatTranscriptWireView,
+function conversationAssistantOverlayTarget(
+  conversation: ConversationWireView,
   event: VelaStreamEventWire,
 ) {
-  const rowId = messageRowId(event);
-  const fallbackIndex = rowId
+  const itemId = messageRowId(event);
+  const fallbackIndex = itemId
     ? -1
     : findLastIndex(
-        transcript.rows,
-        (row) => row.kind === "assistant_message" && row.status === "streaming",
+        conversation.items,
+        (item) => item.kind === "assistant_message" && item.status === "streaming",
       );
-  return { rowId, fallbackIndex };
+  return { itemId, fallbackIndex };
 }
 
-function isLiveAssistantRow(row: TranscriptWireRow) {
-  return row.status === "streaming" || row.status === "pending";
+function isLiveConversationAssistantItem(item: ConversationWireItem) {
+  return item.kind === "assistant_message" && (item.status === "streaming" || item.status === "pending");
 }
 
-function updateTranscriptCursor(
-  transcript: ChatTranscriptWireView,
+function updateConversationCursor(
+  conversation: ConversationWireView,
   event: VelaStreamEventWire,
-): ChatTranscriptWireView {
+): ConversationWireView {
   return {
-    ...transcript,
+    ...conversation,
     cursor: {
-      ...transcript.cursor,
+      ...conversation.cursor,
       ...(event.event_id ? { event_id: event.event_id } : {}),
-      epoch: event.epoch ?? transcript.cursor.epoch,
-      seq: event.seq ?? transcript.cursor.seq,
+      epoch: event.epoch ?? conversation.cursor.epoch,
+      seq: event.seq ?? conversation.cursor.seq,
     },
   };
 }
@@ -500,16 +478,21 @@ function streamEventOrder(event: VelaStreamEventWire) {
   };
 }
 
-const transcriptRefreshEvents = new Set([
+const conversationRefreshEvents = new Set([
   "user.message.accepted",
   "input.queued",
+  "input.rejected",
+  "request.response.accepted",
   "turn.started",
   "assistant.message.started",
   "assistant.message.completed",
   "session.status.changed",
+  "turn.cancel.accepted",
   "turn.completed",
   "turn.failed",
   "turn.cancelled",
+  "diff.updated",
+  "warning.raised",
   "error.raised",
 ]);
 
@@ -529,23 +512,14 @@ const sessionRefreshEvents = new Set([
   "usage.updated",
 ]);
 
-function isActivityRefreshEvent(eventType: string) {
+function isConversationRefreshEvent(eventType: string) {
   return (
-    eventType.startsWith("input.") ||
+    conversationRefreshEvents.has(eventType) ||
     eventType.startsWith("tool.") ||
     eventType.startsWith("command.") ||
     eventType.startsWith("task.") ||
     eventType.startsWith("request.") ||
-    eventType === "turn.started" ||
-    eventType === "turn.completed" ||
-    eventType === "turn.cancel.accepted" ||
-    eventType === "turn.cancelled" ||
-    eventType === "assistant.reasoning.delta" ||
-    eventType === "assistant.reasoning.completed" ||
-    eventType === "diff.updated" ||
-    eventType === "warning.raised" ||
-    eventType === "error.raised" ||
-    eventType === "turn.failed"
+    eventType.startsWith("assistant.reasoning.")
   );
 }
 
@@ -555,8 +529,7 @@ function isRequestRefreshEvent(eventType: string) {
 
 function emptyRefreshPlan(): StreamReadModelRefreshPlan {
   return {
-    transcript: false,
-    activity: false,
+    conversation: false,
     requests: false,
     diffs: false,
     session: false,
@@ -568,12 +541,7 @@ function resetRefreshPlan(views: string[] | undefined): StreamReadModelRefreshPl
   const viewSet = new Set(views?.length ? views : ["workbench"]);
   const workbench = viewSet.has("workbench");
   return {
-    transcript: workbench || viewSet.has("transcript"),
-    activity:
-      workbench ||
-      viewSet.has("activity") ||
-      viewSet.has("requests") ||
-      viewSet.has("diffs"),
+    conversation: workbench || viewSet.has("conversation"),
     requests: workbench || viewSet.has("requests"),
     diffs: workbench || viewSet.has("diffs"),
     session: workbench || viewSet.has("session") || viewSet.has("sessions"),
@@ -586,12 +554,7 @@ function affectedViewsRefreshPlan(views: string[] | undefined): StreamReadModelR
   const viewSet = new Set(views);
   const workbench = viewSet.has("workbench");
   return {
-    transcript: workbench || viewSet.has("transcript"),
-    activity:
-      workbench ||
-      viewSet.has("activity") ||
-      viewSet.has("requests") ||
-      viewSet.has("diffs"),
+    conversation: workbench || viewSet.has("conversation"),
     requests: workbench || viewSet.has("requests"),
     diffs: workbench || viewSet.has("diffs"),
     session: workbench || viewSet.has("session") || viewSet.has("sessions"),

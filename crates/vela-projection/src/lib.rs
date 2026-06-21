@@ -3,9 +3,10 @@ use std::collections::BTreeMap;
 use serde_json::Value;
 use vela_core::{
     ActivityItem, ActivityKind, ActivityShelfView, CanonicalEvent, ChatTranscriptView,
-    ChatTranscriptWindow, EventCursor, EventType, PendingRequest, PendingRequestsView, RequestId,
-    SessionId, TranscriptPart, TranscriptRole, TranscriptRow, TranscriptTurnSummary,
-    TranscriptWindow, TurnId,
+    ChatTranscriptWindow, ConversationItem, ConversationItemKind, ConversationView,
+    ConversationWindow, ConversationWindowView, EventCursor, EventType, PendingRequest,
+    PendingRequestsView, RequestId, SessionId, TranscriptPart, TranscriptRole, TranscriptRow,
+    TranscriptTurnSummary, TranscriptWindow, TurnId,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -32,6 +33,36 @@ impl Default for TranscriptWindowQuery {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TranscriptWindowError {
     UnknownRowId(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConversationWindowQuery {
+    pub anchor_item_id: Option<String>,
+    pub direction: ConversationWindowDirection,
+    pub limit: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConversationWindowDirection {
+    Tail,
+    Before,
+    After,
+    Around,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ConversationWindowError {
+    UnknownItemId(String),
+}
+
+impl Default for ConversationWindowQuery {
+    fn default() -> Self {
+        Self {
+            anchor_item_id: None,
+            direction: ConversationWindowDirection::Tail,
+            limit: 0,
+        }
+    }
 }
 
 pub fn project_transcript(events: &[CanonicalEvent]) -> ChatTranscriptView {
@@ -177,6 +208,190 @@ pub fn project_transcript(events: &[CanonicalEvent]) -> ChatTranscriptView {
         rows,
         turns,
     }
+}
+
+pub fn project_conversation(events: &[CanonicalEvent]) -> ConversationView {
+    let transcript = project_transcript(events);
+    let activity = project_activity(events);
+    let mut items = Vec::new();
+
+    for row in transcript.rows {
+        let kind = match row.role {
+            TranscriptRole::User => ConversationItemKind::UserMessage,
+            TranscriptRole::Assistant => ConversationItemKind::AssistantMessage,
+            TranscriptRole::System => ConversationItemKind::Status,
+        };
+        items.push(ConversationItem {
+            item_id: row.row_id,
+            session_id: row.session_id,
+            kind,
+            turn_id: row.turn_id,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            revision: row.revision,
+            status: row.status,
+            text: Some(row.text),
+            parts: row.parts,
+            title: None,
+            summary: None,
+            detail: Value::Null,
+            source_event_ids: row.source_event_ids,
+        });
+    }
+
+    for turn in transcript.turns {
+        items.push(ConversationItem {
+            item_id: format!("turn:{}:meta", turn.turn_id.as_str()),
+            session_id: transcript.session_id.clone(),
+            kind: ConversationItemKind::TurnMeta,
+            turn_id: Some(turn.turn_id),
+            created_at: turn.started_at,
+            updated_at: turn.completed_at.unwrap_or(turn.started_at),
+            revision: turn.source_event_ids.len() as u64,
+            status: turn.status,
+            text: None,
+            parts: Vec::new(),
+            title: None,
+            summary: None,
+            detail: Value::Null,
+            source_event_ids: turn.source_event_ids,
+        });
+    }
+
+    for activity_item in activity.items {
+        if activity_item.kind == ActivityKind::Turn {
+            continue;
+        }
+        items.push(ConversationItem {
+            item_id: format!("work:{}", activity_item.item_id),
+            session_id: activity_item.session_id,
+            kind: ConversationItemKind::AgentWork,
+            turn_id: activity_item.turn_id,
+            created_at: activity_item.created_at,
+            updated_at: activity_item.updated_at,
+            revision: activity_item.source_event_ids.len() as u64,
+            status: activity_item
+                .status
+                .clone()
+                .unwrap_or_else(|| "running".to_string()),
+            text: None,
+            parts: Vec::new(),
+            title: Some(activity_item.title),
+            summary: activity_summary_text(&activity_item.payload),
+            detail: activity_item.payload,
+            source_event_ids: activity_item.source_event_ids,
+        });
+    }
+
+    items.sort_by(|left, right| {
+        left.created_at
+            .cmp(&right.created_at)
+            .then(item_kind_order(left.kind).cmp(&item_kind_order(right.kind)))
+            .then(left.item_id.cmp(&right.item_id))
+    });
+
+    ConversationView {
+        session_id: transcript.session_id,
+        items,
+    }
+}
+
+pub fn project_conversation_window(
+    events: &[CanonicalEvent],
+    query: ConversationWindowQuery,
+) -> Result<ConversationWindowView, ConversationWindowError> {
+    let conversation = project_conversation(events);
+    let total = conversation.items.len();
+    let limit = normalize_limit(query.limit);
+    let (start, end, anchor_item_id) = conversation_window_bounds(
+        &conversation.items,
+        limit,
+        query.direction,
+        query.anchor_item_id.clone(),
+    )?;
+    let selected = conversation.items[start..end].to_vec();
+
+    Ok(ConversationWindowView {
+        session_id: conversation.session_id,
+        items: selected.clone(),
+        window: ConversationWindow {
+            first_item_id: selected.first().map(|item| item.item_id.clone()),
+            last_item_id: selected.last().map(|item| item.item_id.clone()),
+            anchor_item_id,
+            has_older: start > 0,
+            has_newer: end < total,
+        },
+        cursor: latest_cursor(events),
+    })
+}
+
+fn conversation_window_bounds(
+    items: &[ConversationItem],
+    limit: usize,
+    direction: ConversationWindowDirection,
+    anchor_item_id: Option<String>,
+) -> Result<(usize, usize, Option<String>), ConversationWindowError> {
+    let total = items.len();
+    if total == 0 {
+        if let Some(item_id) = anchor_item_id {
+            return Err(ConversationWindowError::UnknownItemId(item_id));
+        }
+        return Ok((0, 0, None));
+    }
+
+    match direction {
+        ConversationWindowDirection::Tail => Ok((total.saturating_sub(limit), total, None)),
+        ConversationWindowDirection::Before => {
+            let anchor = anchor_item_id.unwrap_or_default();
+            let end = conversation_item_index(items, &anchor)?;
+            Ok((end.saturating_sub(limit), end, Some(anchor)))
+        }
+        ConversationWindowDirection::After => {
+            let anchor = anchor_item_id.unwrap_or_default();
+            let start = conversation_item_index(items, &anchor)?.saturating_add(1);
+            Ok((start, (start + limit).min(total), Some(anchor)))
+        }
+        ConversationWindowDirection::Around => {
+            let anchor = anchor_item_id.unwrap_or_default();
+            let anchor_index = conversation_item_index(items, &anchor)?;
+            let before = limit / 2;
+            let mut start = anchor_index.saturating_sub(before);
+            let mut end = (start + limit).min(total);
+            start = start.saturating_sub(limit.saturating_sub(end - start));
+            end = (start + limit).min(total);
+            Ok((start, end, Some(anchor)))
+        }
+    }
+}
+
+fn conversation_item_index(
+    items: &[ConversationItem],
+    item_id: &str,
+) -> Result<usize, ConversationWindowError> {
+    items
+        .iter()
+        .position(|item| item.item_id == item_id)
+        .ok_or_else(|| ConversationWindowError::UnknownItemId(item_id.to_string()))
+}
+
+fn item_kind_order(kind: ConversationItemKind) -> u8 {
+    match kind {
+        ConversationItemKind::UserMessage => 0,
+        ConversationItemKind::TurnMeta => 1,
+        ConversationItemKind::AgentWork => 2,
+        ConversationItemKind::AssistantMessage => 3,
+        ConversationItemKind::Status => 4,
+    }
+}
+
+fn activity_summary_text(payload: &Value) -> Option<String> {
+    payload
+        .get("message")
+        .or_else(|| payload.get("error"))
+        .or_else(|| payload.get("summary"))
+        .or_else(|| payload.get("description"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
 }
 
 pub fn project_transcript_window(

@@ -27,43 +27,30 @@ test("client enum allowlists stay aligned with the OpenAPI wire contract", () =>
   assertSetEqual(openapiSchemaEnum("PermissionMode"), clientStringSet("permissionModes"));
 
   assertSetEqual(
-    openapiSchemaPropertyEnum("ChatTranscriptRow", "kind"),
-    clientStringSet("transcriptRowKinds"),
+    openapiSchemaPropertyEnum("ConversationItemBase", "kind"),
+    clientStringSet("conversationItemKinds"),
   );
   assertSetEqual(
-    openapiSchemaPropertyEnum("ChatTranscriptRow", "status"),
-    clientStringSet("transcriptRowStatuses"),
+    openapiSchemaPropertyEnum("ConversationItemBase", "status"),
+    clientStringSet("conversationItemStatuses"),
   );
   assertSetEqual(
-    openapiSchemaPropertyEnum("ChatTurnSummary", "status"),
-    clientStringSet("transcriptTurnStatuses"),
-  );
-  assertSetEqual(
-    openapiSchemaPropertyEnum("TranscriptPart", "type"),
-    clientStringSet("transcriptPartTypes"),
-  );
-
-  assertSetEqual(
-    openapiSchemaPropertyEnum("ActivityShelfItem", "kind"),
-    clientStringSet("activityItemKinds"),
-  );
-  assertSetEqual(
-    openapiSchemaPropertyEnum("ActivityShelfItem", "status"),
-    clientStringSet("activityItemStatuses"),
+    openapiSchemaPropertyEnum("MessagePart", "type"),
+    clientStringSet("messagePartTypes"),
   );
   assertSetEqual(openapiSchemaPropertyEnum("AgentRequest", "type"), clientStringSet("requestTypes"));
 });
 
-test("client activity detail allowlist covers the OpenAPI detail union", () => {
+test("client agent work detail allowlist covers the OpenAPI detail union", () => {
   const openapiDetailTypes = [
-    ...openapiSchemaPropertyEnum("ActivityShellToolDetail", "type"),
-    ...openapiSchemaPropertyEnum("ActivityFileToolDetail", "type"),
-    ...openapiSchemaPropertyEnum("ActivitySearchToolDetail", "type"),
-    ...openapiSchemaPropertyEnum("ActivityFetchToolDetail", "type"),
-    ...openapiSchemaPropertyEnum("ActivityGenericToolDetail", "type"),
+    ...openapiSchemaPropertyEnum("AgentWorkShellDetail", "type"),
+    ...openapiSchemaPropertyEnum("AgentWorkFileDetail", "type"),
+    ...openapiSchemaPropertyEnum("AgentWorkSearchDetail", "type"),
+    ...openapiSchemaPropertyEnum("AgentWorkFetchDetail", "type"),
+    ...openapiSchemaPropertyEnum("AgentWorkGenericDetail", "type"),
   ];
 
-  assertSetEqual(openapiDetailTypes, clientStringSet("activityDetailTypes"));
+  assertSetEqual(openapiDetailTypes, clientStringSet("agentWorkDetailTypes"));
 });
 
 function openapiSchemaEnum(schemaName: string) {

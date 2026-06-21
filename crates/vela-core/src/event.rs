@@ -163,7 +163,7 @@ fn affected_views_for(event_type: EventType) -> Vec<&'static str> {
         }
         EventType::BACKEND_STATUS_CHANGED => vec!["backends", "workbench"],
         EventType::USER_MESSAGE_ACCEPTED => {
-            vec!["session", "transcript", "timeline", "workbench"]
+            vec!["session", "conversation", "timeline", "workbench"]
         }
         EventType::INPUT_QUEUED
         | EventType::INPUT_REJECTED
@@ -172,12 +172,12 @@ fn affected_views_for(event_type: EventType) -> Vec<&'static str> {
         | EventType::TURN_COMPLETED
         | EventType::TURN_FAILED
         | EventType::TURN_CANCELLED => {
-            vec!["session", "transcript", "activity", "timeline", "workbench"]
+            vec!["session", "conversation", "timeline", "workbench"]
         }
         EventType::ASSISTANT_MESSAGE_STARTED
         | EventType::ASSISTANT_MESSAGE_DELTA
         | EventType::ASSISTANT_MESSAGE_COMPLETED => {
-            vec!["session", "transcript", "timeline", "workbench"]
+            vec!["session", "conversation", "timeline", "workbench"]
         }
         EventType::ASSISTANT_REASONING_DELTA
         | EventType::ASSISTANT_REASONING_COMPLETED
@@ -194,20 +194,19 @@ fn affected_views_for(event_type: EventType) -> Vec<&'static str> {
         | EventType::TASK_UPDATED
         | EventType::TASK_COMPLETED
         | EventType::WARNING_RAISED
-        | EventType::ERROR_RAISED => vec!["activity", "timeline", "workbench"],
+        | EventType::ERROR_RAISED => vec!["conversation", "timeline", "workbench"],
         EventType::REQUEST_RESPONSE_ACCEPTED
         | EventType::REQUEST_OPENED
         | EventType::REQUEST_UPDATED
         | EventType::REQUEST_RESOLVED => {
-            vec!["requests", "activity", "timeline", "workbench"]
+            vec!["requests", "conversation", "timeline", "workbench"]
         }
-        EventType::DIFF_UPDATED => vec!["diffs", "activity", "timeline", "workbench"],
+        EventType::DIFF_UPDATED => vec!["diffs", "conversation", "timeline", "workbench"],
         EventType::USAGE_UPDATED => vec!["session", "workbench"],
         EventType::PROJECTION_INVALIDATED => vec![
             "sessions",
             "session",
-            "transcript",
-            "activity",
+            "conversation",
             "requests",
             "diffs",
             "timeline",

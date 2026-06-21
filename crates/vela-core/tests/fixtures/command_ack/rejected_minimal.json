@@ -1,5 +1,5 @@
 {
   "status": "rejected",
-  "code": "turn_running",
-  "message": "session already has a running turn"
+  "code": "duplicate_command",
+  "message": "idempotency key was reused with different command content"
 }

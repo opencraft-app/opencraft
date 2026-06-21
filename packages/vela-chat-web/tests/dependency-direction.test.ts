@@ -369,19 +369,22 @@ test("conversation runtime owns history prepend scroll anchoring", () => {
   assert.doesNotMatch(chatWorkbench, /querySelector<HTMLElement>\('\\[aria-label="Chat transcript"\\]'\)/);
 });
 
-test("chat history paging keeps transcript and activity windows in sync", () => {
+test("chat history paging uses the ConversationView window contract", () => {
   const source = readChatWorkbenchSource();
 
   assert.match(source, /buildConversationHistoryPrependPlan/);
   assert.match(source, /canApplyConversationHistoryPrependPlan/);
   assert.match(source, /deriveConversationWindowState/);
-  assert.match(source, /prependActivityWindow/);
+  assert.match(source, /prependConversationWindow/);
   assert.match(source, /const requestedPrependPlan = conversationHistoryPrependPlan/);
-  assert.match(source, /requestedPrependPlan\.transcript/);
-  assert.match(source, /requestedPrependPlan\.activity/);
-  assert.match(source, /client\.getActivity\(requestedSessionId,\s*requestedPrependPlan\.activity\)/);
-  assert.match(source, /activityRef/);
-  assert.match(source, /commitActivity/);
+  assert.match(source, /requestedPrependPlan\.conversation/);
+  assert.match(source, /client\.getConversation\(requestedSessionId,\s*requestedPrependPlan\.conversation\)/);
+  assert.match(source, /conversationRef/);
+  assert.match(source, /commitConversation/);
+  assert.doesNotMatch(source, /prependActivityWindow/);
+  assert.doesNotMatch(source, /prependTranscriptWindow/);
+  assert.doesNotMatch(source, /requestedPrependPlan\.activity/);
+  assert.doesNotMatch(source, /requestedPrependPlan\.transcript/);
   assert.doesNotMatch(source, /canLoadOlder=\{transcript\?\.window\?\.has_older/);
 });
 
@@ -389,15 +392,13 @@ test("chat fallback read models keep OpenAPI-required envelopes", () => {
   const source = readChatWorkbenchSource();
 
   assert.match(source, /const surfaceSessionId = activeSessionId \|\| "unselected"/);
-  assert.match(source, /transcript: transcript \?\? \{/);
-  assert.match(source, /activity: activity \?\? \{/);
+  assert.match(source, /conversation: conversation \?\? \{/);
   assert.match(source, /session_id: surfaceSessionId/);
   assert.match(source, /window: \{ has_older: false, has_newer: false \}/);
   assert.match(source, /event_id: ""/);
   assert.match(source, /epoch: 0/);
   assert.match(source, /seq: 0/);
-  assert.match(source, /transcript: transcript \?\? \{[\s\S]*?cursor: EMPTY_EVENT_CURSOR,[\s\S]*?\n    \},\n    activity:/);
-  assert.match(source, /activity: activity \?\? \{[\s\S]*?cursor: EMPTY_EVENT_CURSOR,[\s\S]*?\n    \},\n    requests:/);
+  assert.match(source, /conversation: conversation \?\? \{[\s\S]*?cursor: EMPTY_EVENT_CURSOR,[\s\S]*?\n    \},\n    requests:/);
   assert.match(source, /requests: requests \?\? \{ requests: \[\], cursor: EMPTY_CURSOR_WINDOW \}/);
   assert.doesNotMatch(source, /transcript: transcript \?\? \{ rows: \[\], cursor: \{\} \}/);
   assert.doesNotMatch(source, /activity: activity \?\? \{ items: \[\], cursor: \{\} \}/);
@@ -407,15 +408,11 @@ test("chat fallback read models keep OpenAPI-required envelopes", () => {
 test("chat workbench scopes read models to the active session before stream and render", () => {
   const source = readChatWorkbenchSource();
 
-  assert.match(source, /readModelForActiveSession\(activeSessionId,\s*transcript\)/);
-  assert.match(source, /readModelForActiveSession\(activeSessionId,\s*activity\)/);
+  assert.match(source, /readModelForActiveSession\(activeSessionId,\s*conversation\)/);
   assert.match(source, /pendingRequestsForActiveSession\(activeSessionId,\s*requests\)/);
-  assert.match(source, /transcript:\s*activeTranscript\?\.cursor/);
-  assert.match(source, /activity:\s*activeActivity\?\.cursor/);
-  assert.match(source, /const isTranscriptReady = activeTranscript !== null/);
-  assert.match(source, /const isActivityReady = activeActivity !== null/);
-  assert.match(source, /buildWorkbenchRenderModel\(\{[\s\S]*?transcript: activeTranscript/);
-  assert.match(source, /buildWorkbenchRenderModel\(\{[\s\S]*?activity: activeActivity/);
+  assert.match(source, /conversation:\s*activeConversation\?\.cursor/);
+  assert.match(source, /const isConversationReady = activeConversation !== null/);
+  assert.match(source, /buildWorkbenchRenderModel\(\{[\s\S]*?conversation: activeConversation/);
   assert.match(source, /buildWorkbenchRenderModel\(\{[\s\S]*?requests: activeRequests/);
 });
 
@@ -519,12 +516,10 @@ test("chat composer preserves draft when velad returns a rejected CommandAck", (
 test("chat stream connection is keyed by session readiness instead of every cursor update", () => {
   const source = readChatWorkbenchSource();
 
-  assert.match(source, /const isTranscriptReady = activeTranscript !== null/);
-  assert.match(source, /const isActivityReady = activeActivity !== null/);
+  assert.match(source, /const isConversationReady = activeConversation !== null/);
   assert.match(source, /selectSessionEventStreamAfterId/);
-  assert.match(source, /transcript:\s*activeTranscript\?\.cursor/);
-  assert.match(source, /activity:\s*activeActivity\?\.cursor/);
-  assert.match(source, /if \(!activeSessionId \|\| !isTranscriptReady \|\| !isActivityReady\) return/);
+  assert.match(source, /conversation:\s*activeConversation\?\.cursor/);
+  assert.match(source, /if \(!activeSessionId \|\| !isConversationReady\) return/);
   assert.doesNotMatch(source, /\[[^\]]*transcriptEventCursor[^\]]*\]/);
   assert.doesNotMatch(source, /const transcriptEventCursor = cursorEventId\(transcript\?\.cursor\)/);
 });
@@ -540,12 +535,12 @@ test("chat stream handler applies local overlays and scopes read-model refresh",
   );
   assert.doesNotMatch(source, /isVelaStreamEventFreshForCursor/);
   assert.doesNotMatch(source, /currentTranscript\.cursor,\s*streamEvent\)\) return/);
-  assert.match(source, /applyTranscriptLiveOverlay/);
+  assert.match(source, /applyConversationLiveOverlay/);
   assert.match(source, /streamReadModelRefreshPlanForCursors/);
-  assert.match(source, /activity:\s*currentActivity\?\.cursor/);
+  assert.match(source, /conversation:\s*currentConversation\?\.cursor/);
   assert.match(source, /requests:\s*currentRequests\?\.cursor/);
-  assert.match(source, /transcriptRefreshScheduler\.notifyStreamEvent/);
-  assert.match(source, /activityRefreshScheduler\.notifyStreamEvent/);
+  assert.match(source, /conversationRefreshScheduler\.notifyStreamEvent/);
+  assert.doesNotMatch(source, /activityRefreshScheduler\.notifyStreamEvent/);
   assert.doesNotMatch(source, /refresh:\s*loadReadModels/);
 });
 

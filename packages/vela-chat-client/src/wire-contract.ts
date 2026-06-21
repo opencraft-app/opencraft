@@ -1,15 +1,9 @@
 import type {
-  ActivityDetailTypeWire,
-  ActivityFileDetailTypeWire,
-  ActivityGenericDetailTypeWire,
-  ActivityItemKindWire,
-  ActivityItemStatusWire,
-  ActivitySearchModeWire,
-  ActivityWireDetail,
-  ActivityWireItem,
-  ActivityWireView,
-  ActivityWindow,
-  ActivityWindowOptions,
+  AgentWorkDetailTypeWire,
+  AgentWorkFileDetailTypeWire,
+  AgentWorkGenericDetailTypeWire,
+  AgentWorkSearchModeWire,
+  AgentWorkDetailWire,
   AgentConfigPatchWire,
   AgentConfigWire,
   AgentRequestTypeWire,
@@ -24,11 +18,16 @@ import type {
   BackendWire,
   BackendWireResponse,
   BackendsWireResponse,
-  ChatTranscriptWireView,
   ClientInputEvent,
   ClientInputPart,
   CommandAckWire,
   CommandRejectionCodeWire,
+  ConversationItemKindWire,
+  ConversationItemStatusWire,
+  ConversationWindow,
+  ConversationWindowOptions,
+  ConversationWireItem,
+  ConversationWireView,
   CreateSessionInput,
   CreateSessionWireResponse,
   CursorWindow,
@@ -36,6 +35,8 @@ import type {
   DiffSummaryStatusWire,
   DiffSummaryWire,
   EventCursorWire,
+  MessagePartTypeWire,
+  MessagePartWire,
   PendingRequestsOptions,
   PendingRequestsWireView,
   PermissionModeOptionWire,
@@ -47,14 +48,6 @@ import type {
   SessionStatusWire,
   SessionWire,
   SessionWireResponse,
-  TranscriptPartTypeWire,
-  TranscriptRowStatusWire,
-  TranscriptTurnStatusWire,
-  TranscriptTurnSummaryWire,
-  TranscriptWindow,
-  TranscriptWindowOptions,
-  TranscriptWirePart,
-  TranscriptWireRow,
   UpdateAgentConfigWireResponse,
 } from "./wire";
 import { VeladClientError } from "./errors";
@@ -156,27 +149,14 @@ const sessionStatuses = new Set<string>(
     "closed",
   ] satisfies SessionStatusWire[],
 );
-const transcriptRowKinds = new Set([
-  "user_message",
-  "assistant_message",
-  "working",
-  "activity_marker",
-  "error",
-]);
-const transcriptRowStatuses = new Set<string>(
-  ["pending", "streaming", "completed", "failed", "cancelled"] satisfies TranscriptRowStatusWire[],
+const conversationItemKinds = new Set<string>(
+  ["user_message", "assistant_message", "turn_meta", "agent_work", "status"] satisfies ConversationItemKindWire[],
 );
-const transcriptTurnStatuses = new Set<string>(
-  ["running", "completed", "failed", "cancelled"] satisfies TranscriptTurnStatusWire[],
+const conversationItemStatuses = new Set<string>(
+  ["pending", "running", "streaming", "completed", "failed", "cancelled"] satisfies ConversationItemStatusWire[],
 );
-const transcriptPartTypes = new Set<string>(
-  ["markdown", "text", "code", "image", "file_reference"] satisfies TranscriptPartTypeWire[],
-);
-const activityItemKinds = new Set<string>(
-  ["tool", "command", "task", "warning", "runtime"] satisfies ActivityItemKindWire[],
-);
-const activityItemStatuses = new Set<string>(
-  ["pending", "running", "completed", "failed", "cancelled"] satisfies ActivityItemStatusWire[],
+const messagePartTypes = new Set<string>(
+  ["text", "image", "file_reference"] satisfies MessagePartTypeWire[],
 );
 const requestTypes = new Set<string>(
   [
@@ -199,10 +179,10 @@ const requestStatuses = new Set<string>(
   ] satisfies RequestStatusWire[],
 );
 const diffSummaryStatuses = new Set(["added", "modified", "deleted", "renamed"]);
-const activitySearchModes = new Set<ActivitySearchModeWire>(
-  ["code", "web", "files", "unknown"] satisfies ActivitySearchModeWire[],
+const agentWorkSearchModes = new Set<AgentWorkSearchModeWire>(
+  ["code", "web", "files", "unknown"] satisfies AgentWorkSearchModeWire[],
 );
-const activityDetailTypes = new Set<string>(
+const agentWorkDetailTypes = new Set<string>(
   [
     "shell",
     "read",
@@ -220,7 +200,7 @@ const activityDetailTypes = new Set<string>(
     "plain_text",
     "unknown",
     "tool",
-  ] satisfies ActivityDetailTypeWire[],
+  ] satisfies AgentWorkDetailTypeWire[],
 );
 const backendCapabilityFields = [
   "streaming",
@@ -486,62 +466,18 @@ function requireInputPartString(part: Record<string, unknown>, field: string) {
   }
 }
 
-export function validateTranscriptWindowOptions(options: TranscriptWindowOptions | undefined) {
-  const unsupportedKey = firstUnsupportedTranscriptWindowOption(options);
-  if (unsupportedKey) {
-    throw new VeladClientError(
-      "invalid_transcript_window_options",
-      `unsupported transcript window option: ${unsupportedKey}`,
-    );
-  }
-  validateViewWindowLimit(options?.limit, "invalid_transcript_window_options");
-  validateViewWindowDirection(options?.direction, "invalid_transcript_window_options");
-  validateOptionalViewWindowString(
-    options?.anchorRowId,
-    "anchorRowId",
-    "invalid_transcript_window_options",
-  );
-  validateOptionalViewWindowBoolean(
-    options?.includeLive,
-    "includeLive",
-    "invalid_transcript_window_options",
-  );
-  if (options?.direction) {
-    if (options.direction === "tail") {
-      if (options.anchorRowId) {
-        throw new VeladClientError(
-          "invalid_transcript_window_options",
-          "direction=tail cannot include anchorRowId",
-        );
-      }
-    } else if (!options.anchorRowId) {
-      throw new VeladClientError(
-        "invalid_transcript_window_options",
-        `anchorRowId is required when direction=${options.direction}`,
-      );
-    }
-    return;
-  }
-  if (options?.anchorRowId) {
-    throw new VeladClientError(
-      "invalid_transcript_window_options",
-      "anchorRowId requires direction",
-    );
-  }
-}
-
-export function validateActivityWindowOptions(options: ActivityWindowOptions | undefined) {
-  validateViewWindowLimit(options?.limit, "invalid_activity_window_options");
-  validateViewWindowDirection(options?.direction, "invalid_activity_window_options");
+export function validateConversationWindowOptions(options: ConversationWindowOptions | undefined) {
+  validateViewWindowLimit(options?.limit, "invalid_conversation_window_options");
+  validateViewWindowDirection(options?.direction, "invalid_conversation_window_options");
   validateOptionalViewWindowString(
     options?.anchorItemId,
     "anchorItemId",
-    "invalid_activity_window_options",
+    "invalid_conversation_window_options",
   );
   if (!options?.direction) {
     if (options?.anchorItemId) {
       throw new VeladClientError(
-        "invalid_activity_window_options",
+        "invalid_conversation_window_options",
         "anchorItemId requires direction",
       );
     }
@@ -550,7 +486,7 @@ export function validateActivityWindowOptions(options: ActivityWindowOptions | u
   if (options.direction === "tail") {
     if (options.anchorItemId) {
       throw new VeladClientError(
-        "invalid_activity_window_options",
+        "invalid_conversation_window_options",
         "direction=tail cannot include anchorItemId",
       );
     }
@@ -558,7 +494,7 @@ export function validateActivityWindowOptions(options: ActivityWindowOptions | u
   }
   if (!options.anchorItemId) {
     throw new VeladClientError(
-      "invalid_activity_window_options",
+      "invalid_conversation_window_options",
       `anchorItemId is required when direction=${options.direction}`,
     );
   }
@@ -587,34 +523,11 @@ function validateOptionalViewWindowString(value: string | undefined, field: stri
   }
 }
 
-function validateOptionalViewWindowBoolean(
-  value: boolean | undefined,
-  field: string,
-  code: string,
-) {
-  if (value === undefined) return;
-  if (typeof value !== "boolean") {
-    throw new VeladClientError(code, `${field} must be a boolean`);
-  }
-}
-
 function validateViewWindowLimit(limit: number | undefined, code: string) {
   if (limit === undefined) return;
   if (!Number.isInteger(limit) || limit < 1 || limit > 500) {
     throw new VeladClientError(code, "limit must be an integer between 1 and 500");
   }
-}
-
-const transcriptWindowOptionKeys = new Set([
-  "limit",
-  "direction",
-  "anchorRowId",
-  "includeLive",
-]);
-
-function firstUnsupportedTranscriptWindowOption(options: TranscriptWindowOptions | undefined) {
-  if (!options) return false;
-  return Object.keys(options).find((key) => !transcriptWindowOptionKeys.has(key));
 }
 
 export function normalizeBaseUrl(baseUrl: string) {
@@ -907,137 +820,126 @@ export function parseBackendProbeResultWire(data: unknown): BackendProbeResultWi
   };
 }
 
-export async function readTranscriptViewResponse(response: Response): Promise<ChatTranscriptWireView> {
-  return parseChatTranscriptWireView(await readJsonResponse<unknown>(response));
+export async function readConversationViewResponse(response: Response): Promise<ConversationWireView> {
+  return parseConversationWireView(await readJsonResponse<unknown>(response));
 }
 
-export function parseChatTranscriptWireView(data: unknown): ChatTranscriptWireView {
+export function parseConversationWireView(data: unknown): ConversationWireView {
   if (!isRecord(data)) {
-    throw invalidTranscriptView("ChatTranscriptView must be an object");
+    throw invalidConversationView("ConversationView must be an object");
   }
-  const rows = requiredViewArray(data, "rows", "ChatTranscriptView", invalidTranscriptView);
-  const turns = requiredViewArray(data, "turns", "ChatTranscriptView", invalidTranscriptView);
+  const items = requiredViewArray(data, "items", "ConversationView", invalidConversationView);
   return {
-    session_id: requiredViewString(data, "session_id", "ChatTranscriptView", invalidTranscriptView),
-    rows: rows.map((row, index) =>
-      parseTranscriptWireRow(row, `ChatTranscriptView.rows[${index}]`),
+    session_id: requiredViewString(data, "session_id", "ConversationView", invalidConversationView),
+    items: items.map((item, index) =>
+      parseConversationWireItem(item, `ConversationView.items[${index}]`),
     ),
-    turns: turns.map((turn, index) =>
-      parseTranscriptTurnSummaryWire(turn, `ChatTranscriptView.turns[${index}]`),
-    ),
-    window: parseTranscriptWindow(data.window, invalidTranscriptView),
-    cursor: requiredViewEventCursor(data, "cursor", "ChatTranscriptView", invalidTranscriptView),
+    window: parseConversationWindow(data.window, invalidConversationView),
+    cursor: requiredViewEventCursor(data, "cursor", "ConversationView", invalidConversationView),
   };
 }
 
-function parseTranscriptTurnSummaryWire(data: unknown, owner: string): TranscriptTurnSummaryWire {
+function parseConversationWireItem(data: unknown, owner: string): ConversationWireItem {
   if (!isRecord(data)) {
-    throw invalidTranscriptView(`${owner} must be an object`);
+    throw invalidConversationView(`${owner} must be an object`);
   }
-  const status = requiredViewString(data, "status", owner, invalidTranscriptView);
-  if (!transcriptTurnStatuses.has(status)) {
-    throw invalidTranscriptView(`${owner}.status must be running, completed, failed, or cancelled`);
+  const kind = requiredViewString(data, "kind", owner, invalidConversationView);
+  if (!conversationItemKinds.has(kind)) {
+    throw invalidConversationView(`${owner}.kind must be a known conversation item kind`);
   }
-  return {
-    turn_id: requiredViewString(data, "turn_id", owner, invalidTranscriptView),
-    status: status as TranscriptTurnStatusWire,
-    started_at: requiredViewString(data, "started_at", owner, invalidTranscriptView),
-    ...(data.completed_at !== undefined
-      ? { completed_at: optionalNullableViewString(data, "completed_at", owner, invalidTranscriptView) }
-      : {}),
-    ...(data.first_row_id !== undefined
-      ? { first_row_id: optionalNullableViewString(data, "first_row_id", owner, invalidTranscriptView) }
-      : {}),
-    ...(data.last_row_id !== undefined
-      ? { last_row_id: optionalNullableViewString(data, "last_row_id", owner, invalidTranscriptView) }
-      : {}),
-    source_event_ids: requiredViewStringArray(
-      data,
-      "source_event_ids",
-      owner,
-      invalidTranscriptView,
-    ),
-  };
-}
-
-function parseTranscriptWireRow(data: unknown, owner: string): TranscriptWireRow {
-  if (!isRecord(data)) {
-    throw invalidTranscriptView(`${owner} must be an object`);
+  const status = requiredViewString(data, "status", owner, invalidConversationView);
+  if (!conversationItemStatuses.has(status)) {
+    throw invalidConversationView(
+      `${owner}.status must be pending, running, streaming, completed, failed, or cancelled`,
+    );
   }
-  const kind = requiredViewString(data, "kind", owner, invalidTranscriptView);
-  if (!transcriptRowKinds.has(kind)) {
-    throw invalidTranscriptView(`${owner}.kind must be a known transcript row kind`);
-  }
-  const status = requiredViewString(data, "status", owner, invalidTranscriptView);
-  if (!transcriptRowStatuses.has(status)) {
-    throw invalidTranscriptView(`${owner}.status must be pending, streaming, completed, failed, or cancelled`);
-  }
-  return {
-    ...(data as unknown as TranscriptWireRow),
-    id: requiredViewString(data, "id", owner, invalidTranscriptView),
-    kind: kind as TranscriptWireRow["kind"],
-    created_at: requiredViewString(data, "created_at", owner, invalidTranscriptView),
-    updated_at: requiredViewString(data, "updated_at", owner, invalidTranscriptView),
-    revision: requiredViewInteger(data, "revision", owner, invalidTranscriptView, { minimum: 1 }),
+  const base = {
+    ...(data as Record<string, unknown>),
+    id: requiredViewString(data, "id", owner, invalidConversationView),
+    kind: kind as ConversationItemKindWire,
     ...(data.turn_id !== undefined
-      ? { turn_id: optionalViewString(data, "turn_id", owner, invalidTranscriptView) }
+      ? { turn_id: optionalViewString(data, "turn_id", owner, invalidConversationView) }
       : {}),
-    ...(data.text !== undefined
-      ? { text: optionalViewString(data, "text", owner, invalidTranscriptView) }
-      : {}),
-    ...(data.parts !== undefined
-      ? { parts: parseTranscriptWireParts(data, `${owner}.parts`) }
-      : {}),
-    ...(data.activity_id !== undefined
-      ? { activity_id: optionalViewString(data, "activity_id", owner, invalidTranscriptView) }
-      : {}),
-    ...(data.label !== undefined
-      ? { label: optionalViewString(data, "label", owner, invalidTranscriptView) }
-      : {}),
-    status: status as TranscriptRowStatusWire,
+    created_at: requiredViewString(data, "created_at", owner, invalidConversationView),
+    updated_at: requiredViewString(data, "updated_at", owner, invalidConversationView),
+    revision: requiredViewInteger(data, "revision", owner, invalidConversationView, { minimum: 1 }),
+    status: status as ConversationItemStatusWire,
     source_event_ids: requiredViewStringArray(
       data,
       "source_event_ids",
       owner,
-      invalidTranscriptView,
+      invalidConversationView,
     ),
   };
+
+  if (kind === "user_message" || kind === "assistant_message") {
+    return {
+      ...base,
+      kind,
+      text: requiredViewString(data, "text", owner, invalidConversationView),
+      ...(data.parts !== undefined
+        ? { parts: parseMessageParts(data, `${owner}.parts`) }
+        : {}),
+    } as ConversationWireItem;
+  }
+  if (kind === "turn_meta") {
+    return {
+      ...base,
+      kind,
+      turn_id: requiredViewString(data, "turn_id", owner, invalidConversationView),
+    } as ConversationWireItem;
+  }
+  if (kind === "agent_work") {
+    return {
+      ...base,
+      kind,
+      title: requiredViewString(data, "title", owner, invalidConversationView),
+      ...(data.summary !== undefined
+        ? { summary: optionalViewString(data, "summary", owner, invalidConversationView) }
+        : {}),
+      detail: parseAgentWorkDetailWire(data.detail, `${owner}.detail`),
+      ...(data.event_range !== undefined
+        ? { event_range: parseAgentWorkEventRange(data.event_range, `${owner}.event_range`) }
+        : {}),
+    } as ConversationWireItem;
+  }
+  return {
+    ...base,
+    kind: "status",
+    text: requiredViewString(data, "text", owner, invalidConversationView),
+  } as ConversationWireItem;
 }
 
-function parseTranscriptWireParts(
+function parseMessageParts(
   data: Record<string, unknown>,
   owner: string,
-): TranscriptWirePart[] {
+): MessagePartWire[] {
   const parts = data.parts;
   if (!Array.isArray(parts)) {
-    throw invalidTranscriptView(`${owner} must be an array`);
+    throw invalidConversationView(`${owner} must be an array`);
   }
-  return parts.map((part, index) => parseTranscriptWirePart(part, `${owner}[${index}]`));
+  return parts.map((part, index) => parseMessagePart(part, `${owner}[${index}]`));
 }
 
-function parseTranscriptWirePart(data: unknown, owner: string): TranscriptWirePart {
+function parseMessagePart(data: unknown, owner: string): MessagePartWire {
   if (!isRecord(data)) {
-    throw invalidTranscriptView(`${owner} must be an object`);
+    throw invalidConversationView(`${owner} must be an object`);
   }
-  const type = requiredViewString(data, "type", owner, invalidTranscriptView);
-  if (!transcriptPartTypes.has(type)) {
-    throw invalidTranscriptView(`${owner}.type must be a known transcript part type`);
+  const type = requiredViewString(data, "type", owner, invalidConversationView);
+  if (!messagePartTypes.has(type)) {
+    throw invalidConversationView(`${owner}.type must be a known message part type`);
   }
   return {
-    ...(data as unknown as TranscriptWirePart),
-    id: requiredViewString(data, "id", owner, invalidTranscriptView),
-    type: type as TranscriptPartTypeWire,
+    ...(data as unknown as MessagePartWire),
+    id: requiredViewString(data, "id", owner, invalidConversationView),
+    type: type as MessagePartTypeWire,
     ...(data.text !== undefined
-      ? { text: optionalViewString(data, "text", owner, invalidTranscriptView) }
+      ? { text: optionalViewString(data, "text", owner, invalidConversationView) }
       : {}),
     ...(data.data !== undefined
-      ? { data: optionalViewObject(data, "data", owner, invalidTranscriptView) }
+      ? { data: optionalViewObject(data, "data", owner, invalidConversationView) }
       : {}),
   };
-}
-
-export async function readActivityViewResponse(response: Response): Promise<ActivityWireView> {
-  return parseActivityWireView(await readJsonResponse<unknown>(response));
 }
 
 export async function readPendingRequestsViewResponse(response: Response): Promise<PendingRequestsWireView> {
@@ -1046,21 +948,6 @@ export async function readPendingRequestsViewResponse(response: Response): Promi
 
 export async function readDiffReviewViewResponse(response: Response): Promise<DiffReviewWireView> {
   return parseDiffReviewWireView(await readJsonResponse<unknown>(response));
-}
-
-export function parseActivityWireView(data: unknown): ActivityWireView {
-  if (!isRecord(data)) {
-    throw invalidActivityView("ActivityShelfView must be an object");
-  }
-  const items = requiredViewArray(data, "items", "ActivityShelfView", invalidActivityView);
-  return {
-    session_id: requiredViewString(data, "session_id", "ActivityShelfView", invalidActivityView),
-    items: items.map((item, index) =>
-      parseActivityWireItem(item, `ActivityShelfView.items[${index}]`),
-    ),
-    window: parseActivityWindow(data.window, invalidActivityView),
-    cursor: requiredViewEventCursor(data, "cursor", "ActivityShelfView", invalidActivityView),
-  };
 }
 
 export function parsePendingRequestsWireView(data: unknown): PendingRequestsWireView {
@@ -1174,77 +1061,38 @@ function parseAgentRequestWire(data: unknown, owner: string): AgentRequestWire {
   };
 }
 
-function parseActivityWireItem(data: unknown, owner: string): ActivityWireItem {
+function parseAgentWorkDetailWire(data: unknown, owner: string): AgentWorkDetailWire {
   if (!isRecord(data)) {
-    throw invalidActivityView(`${owner} must be an object`);
-  }
-  const kind = requiredViewString(data, "kind", owner, invalidActivityView);
-  if (!activityItemKinds.has(kind)) {
-    throw invalidActivityView(`${owner}.kind must be a known activity item kind`);
-  }
-  const status = requiredViewString(data, "status", owner, invalidActivityView);
-  if (!activityItemStatuses.has(status)) {
-    throw invalidActivityView(`${owner}.status must be pending, running, completed, failed, or cancelled`);
-  }
-  const { detail: _wireDetail, ...baseItem } = data;
-  void _wireDetail;
-  return {
-    ...(baseItem as unknown as ActivityWireItem),
-    id: requiredViewString(data, "id", owner, invalidActivityView),
-    ...(data.turn_id !== undefined
-      ? { turn_id: optionalViewString(data, "turn_id", owner, invalidActivityView) }
-      : {}),
-    kind: kind as ActivityItemKindWire,
-    status: status as ActivityItemStatusWire,
-    title: requiredViewString(data, "title", owner, invalidActivityView),
-    ...(data.summary !== undefined
-      ? { summary: optionalViewString(data, "summary", owner, invalidActivityView) }
-      : {}),
-    ...(data.detail !== undefined && data.detail !== null
-      ? { detail: parseActivityWireDetail(data.detail, `${owner}.detail`) }
-      : {}),
-    created_at: requiredViewString(data, "created_at", owner, invalidActivityView),
-    ...(data.updated_at !== undefined
-      ? { updated_at: optionalViewString(data, "updated_at", owner, invalidActivityView) }
-      : {}),
-    ...(data.event_range !== undefined
-      ? { event_range: parseActivityEventRange(data.event_range, `${owner}.event_range`) }
-      : {}),
-  };
-}
-
-function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDetail {
-  if (!isRecord(data)) {
-    throw invalidActivityView(`${owner} must be an object`);
+    throw invalidAgentWorkDetail(`${owner} must be an object`);
   }
   const type = data.type;
-  if (typeof type !== "string" || !activityDetailTypes.has(type)) {
-    throw invalidActivityView(`${owner}.type must be a known activity detail type`);
+  if (typeof type !== "string" || !agentWorkDetailTypes.has(type)) {
+    throw invalidAgentWorkDetail(`${owner}.type must be a known activity detail type`);
   }
   if (type === "shell") {
     return {
       ...(data as Record<string, unknown>),
       type: "shell",
       ...(data.command !== undefined
-        ? { command: optionalViewString(data, "command", owner, invalidActivityView) }
+        ? { command: optionalViewString(data, "command", owner, invalidAgentWorkDetail) }
         : {}),
       ...(data.cwd !== undefined
-        ? { cwd: optionalViewString(data, "cwd", owner, invalidActivityView) }
+        ? { cwd: optionalViewString(data, "cwd", owner, invalidAgentWorkDetail) }
         : {}),
       ...(data.output !== undefined
-        ? { output: optionalViewString(data, "output", owner, invalidActivityView) }
+        ? { output: optionalViewString(data, "output", owner, invalidAgentWorkDetail) }
         : {}),
       ...(data.stdout !== undefined
-        ? { stdout: optionalViewString(data, "stdout", owner, invalidActivityView) }
+        ? { stdout: optionalViewString(data, "stdout", owner, invalidAgentWorkDetail) }
         : {}),
       ...(data.stderr !== undefined
-        ? { stderr: optionalViewString(data, "stderr", owner, invalidActivityView) }
+        ? { stderr: optionalViewString(data, "stderr", owner, invalidAgentWorkDetail) }
         : {}),
       ...(data.exit_code !== undefined
-        ? { exit_code: optionalViewInteger(data, "exit_code", owner, invalidActivityView) }
+        ? { exit_code: optionalViewInteger(data, "exit_code", owner, invalidAgentWorkDetail) }
         : {}),
       ...(data.error !== undefined
-        ? { error: optionalViewString(data, "error", owner, invalidActivityView) }
+        ? { error: optionalViewString(data, "error", owner, invalidAgentWorkDetail) }
         : {}),
     };
   }
@@ -1253,49 +1101,49 @@ function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDeta
       ...(data as Record<string, unknown>),
       type: "search",
       ...(data.query !== undefined
-        ? { query: optionalViewString(data, "query", owner, invalidActivityView) }
+        ? { query: optionalViewString(data, "query", owner, invalidAgentWorkDetail) }
         : {}),
       ...(data.mode !== undefined
-        ? { mode: optionalViewEnum(data, "mode", owner, invalidActivityView, activitySearchModes) }
+        ? { mode: optionalViewEnum(data, "mode", owner, invalidAgentWorkDetail, agentWorkSearchModes) }
         : {}),
       ...(data.content !== undefined
-        ? { content: optionalViewString(data, "content", owner, invalidActivityView) }
+        ? { content: optionalViewString(data, "content", owner, invalidAgentWorkDetail) }
         : {}),
       ...(data.num_matches !== undefined
-        ? { num_matches: optionalViewInteger(data, "num_matches", owner, invalidActivityView) }
+        ? { num_matches: optionalViewInteger(data, "num_matches", owner, invalidAgentWorkDetail) }
         : {}),
       ...(data.num_files !== undefined
-        ? { num_files: optionalViewInteger(data, "num_files", owner, invalidActivityView) }
+        ? { num_files: optionalViewInteger(data, "num_files", owner, invalidAgentWorkDetail) }
         : {}),
       ...(data.duration_ms !== undefined
-        ? { duration_ms: optionalViewInteger(data, "duration_ms", owner, invalidActivityView) }
+        ? { duration_ms: optionalViewInteger(data, "duration_ms", owner, invalidAgentWorkDetail) }
         : {}),
       ...(data.truncated !== undefined
-        ? { truncated: optionalViewBoolean(data, "truncated", owner, invalidActivityView) }
+        ? { truncated: optionalViewBoolean(data, "truncated", owner, invalidAgentWorkDetail) }
         : {}),
     };
   }
   if (type === "read" || type === "edit" || type === "write") {
     return {
       ...(data as Record<string, unknown>),
-      type: type as ActivityFileDetailTypeWire,
+      type: type as AgentWorkFileDetailTypeWire,
       ...(data.file_path !== undefined
-        ? { file_path: optionalViewString(data, "file_path", owner, invalidActivityView) }
+        ? { file_path: optionalViewString(data, "file_path", owner, invalidAgentWorkDetail) }
         : {}),
       ...(data.path !== undefined
-        ? { path: optionalViewString(data, "path", owner, invalidActivityView) }
+        ? { path: optionalViewString(data, "path", owner, invalidAgentWorkDetail) }
         : {}),
       ...(data.content !== undefined
-        ? { content: optionalViewString(data, "content", owner, invalidActivityView) }
+        ? { content: optionalViewString(data, "content", owner, invalidAgentWorkDetail) }
         : {}),
       ...(data.old_string !== undefined
-        ? { old_string: optionalViewString(data, "old_string", owner, invalidActivityView) }
+        ? { old_string: optionalViewString(data, "old_string", owner, invalidAgentWorkDetail) }
         : {}),
       ...(data.new_string !== undefined
-        ? { new_string: optionalViewString(data, "new_string", owner, invalidActivityView) }
+        ? { new_string: optionalViewString(data, "new_string", owner, invalidAgentWorkDetail) }
         : {}),
       ...(data.unified_diff !== undefined
-        ? { unified_diff: optionalViewString(data, "unified_diff", owner, invalidActivityView) }
+        ? { unified_diff: optionalViewString(data, "unified_diff", owner, invalidAgentWorkDetail) }
         : {}),
     };
   }
@@ -1304,44 +1152,44 @@ function parseActivityWireDetail(data: unknown, owner: string): ActivityWireDeta
       ...(data as Record<string, unknown>),
       type: "fetch",
       ...(data.url !== undefined
-        ? { url: optionalViewString(data, "url", owner, invalidActivityView) }
+        ? { url: optionalViewString(data, "url", owner, invalidAgentWorkDetail) }
         : {}),
       ...(data.prompt !== undefined
-        ? { prompt: optionalViewString(data, "prompt", owner, invalidActivityView) }
+        ? { prompt: optionalViewString(data, "prompt", owner, invalidAgentWorkDetail) }
         : {}),
       ...(data.result !== undefined
-        ? { result: optionalViewString(data, "result", owner, invalidActivityView) }
+        ? { result: optionalViewString(data, "result", owner, invalidAgentWorkDetail) }
         : {}),
       ...(data.code !== undefined
-        ? { code: optionalViewInteger(data, "code", owner, invalidActivityView) }
+        ? { code: optionalViewInteger(data, "code", owner, invalidAgentWorkDetail) }
         : {}),
       ...(data.code_text !== undefined
-        ? { code_text: optionalViewString(data, "code_text", owner, invalidActivityView) }
+        ? { code_text: optionalViewString(data, "code_text", owner, invalidAgentWorkDetail) }
         : {}),
       ...(data.bytes !== undefined
-        ? { bytes: optionalViewInteger(data, "bytes", owner, invalidActivityView) }
+        ? { bytes: optionalViewInteger(data, "bytes", owner, invalidAgentWorkDetail) }
         : {}),
       ...(data.duration_ms !== undefined
-        ? { duration_ms: optionalViewInteger(data, "duration_ms", owner, invalidActivityView) }
+        ? { duration_ms: optionalViewInteger(data, "duration_ms", owner, invalidAgentWorkDetail) }
         : {}),
     };
   }
-  return { ...(data as Record<string, unknown>), type: type as ActivityGenericDetailTypeWire };
+  return { ...(data as Record<string, unknown>), type: type as AgentWorkGenericDetailTypeWire };
 }
 
-function parseActivityEventRange(
+function parseAgentWorkEventRange(
   data: unknown,
   owner: string,
-): NonNullable<ActivityWireItem["event_range"]> {
+): { from_event_id?: string; to_event_id?: string } {
   if (!isRecord(data)) {
-    throw invalidActivityView(`${owner} must be an object`);
+    throw invalidAgentWorkDetail(`${owner} must be an object`);
   }
   return {
     ...(data.from_event_id !== undefined
-      ? { from_event_id: optionalViewString(data, "from_event_id", owner, invalidActivityView) }
+      ? { from_event_id: optionalViewString(data, "from_event_id", owner, invalidAgentWorkDetail) }
       : {}),
     ...(data.to_event_id !== undefined
-      ? { to_event_id: optionalViewString(data, "to_event_id", owner, invalidActivityView) }
+      ? { to_event_id: optionalViewString(data, "to_event_id", owner, invalidAgentWorkDetail) }
       : {}),
   };
 }
@@ -1812,26 +1660,12 @@ function parseViewEventCursor(
   return { event_id: eventId, epoch, seq };
 }
 
-function parseTranscriptWindow(
-  value: unknown,
-  invalid: ViewContractErrorFactory,
-): TranscriptWindow {
-  const window = parseViewWindow(value, "ChatTranscriptView.window", invalid);
+function parseConversationWindow(value: unknown, invalid: ViewContractErrorFactory): ConversationWindow {
+  const window = parseViewWindow(value, "ConversationView.window", invalid);
   return {
-    ...optionalNullableWindowString(window, "first_row_id", "ChatTranscriptView.window", invalid),
-    ...optionalNullableWindowString(window, "last_row_id", "ChatTranscriptView.window", invalid),
-    ...optionalNullableWindowString(window, "anchor_row_id", "ChatTranscriptView.window", invalid),
-    has_older: window.has_older,
-    has_newer: window.has_newer,
-  };
-}
-
-function parseActivityWindow(value: unknown, invalid: ViewContractErrorFactory): ActivityWindow {
-  const window = parseViewWindow(value, "ActivityShelfView.window", invalid);
-  return {
-    ...optionalNullableWindowString(window, "first_item_id", "ActivityShelfView.window", invalid),
-    ...optionalNullableWindowString(window, "last_item_id", "ActivityShelfView.window", invalid),
-    ...optionalNullableWindowString(window, "anchor_item_id", "ActivityShelfView.window", invalid),
+    ...optionalNullableWindowString(window, "first_item_id", "ConversationView.window", invalid),
+    ...optionalNullableWindowString(window, "last_item_id", "ConversationView.window", invalid),
+    ...optionalNullableWindowString(window, "anchor_item_id", "ConversationView.window", invalid),
     has_older: window.has_older,
     has_newer: window.has_newer,
   };
@@ -1928,12 +1762,12 @@ function invalidBackendProbeResponse(message: string) {
   return new VeladClientError("invalid_backend_probe_response", message);
 }
 
-function invalidTranscriptView(message: string) {
-  return new VeladClientError("invalid_transcript_view", message);
+function invalidConversationView(message: string) {
+  return new VeladClientError("invalid_conversation_view", message);
 }
 
-function invalidActivityView(message: string) {
-  return new VeladClientError("invalid_activity_view", message);
+function invalidAgentWorkDetail(message: string) {
+  return new VeladClientError("invalid_agent_work_detail", message);
 }
 
 function invalidPendingRequestsView(message: string) {

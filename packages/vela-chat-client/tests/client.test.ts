@@ -4,13 +4,13 @@ import test from "node:test";
 
 import {
   VeladClientError,
-  applyTranscriptLiveOverlay,
+  applyConversationLiveOverlay,
   commandAckRejectionMessage,
   createIdempotencyKey,
   createStreamRefreshScheduler,
   createVeladClient,
   imageFileToInputPart,
-  needsTranscriptRefreshAfterLiveOverlay,
+  needsConversationRefreshAfterLiveOverlay,
   parseSseJsonFrames,
   readVelaStreamEvent,
   isVelaStreamEventFreshForCursor,
@@ -45,12 +45,41 @@ function sessionFixture(overrides: Record<string, unknown> = {}) {
   };
 }
 
-test("builds transcript and event URLs for local velad", () => {
+function conversationFixture({
+  items = [],
+  cursor = { event_id: "evt_1", epoch: 1, seq: 1 },
+}: {
+  items?: Array<Record<string, unknown>>;
+  cursor?: Record<string, unknown>;
+} = {}) {
+  return {
+    session_id: "sess_1",
+    cursor,
+    window: { has_older: false, has_newer: false },
+    items,
+  };
+}
+
+function assistantConversationItem(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "msg_1",
+    kind: "assistant_message" as const,
+    created_at: "2026-06-19T00:00:00Z",
+    updated_at: "2026-06-19T00:00:00Z",
+    revision: 1,
+    text: "",
+    status: "streaming" as const,
+    source_event_ids: ["evt_1"],
+    ...overrides,
+  };
+}
+
+test("builds conversation and event URLs for local velad", () => {
   const client = createVeladClient({ baseUrl: "http://127.0.0.1:3857/api/v1/" });
 
   assert.equal(
-    client.transcriptUrl("sess_123").toString(),
-    "http://127.0.0.1:3857/api/v1/sessions/sess_123/views/transcript",
+    client.conversationUrl("sess_123").toString(),
+    "http://127.0.0.1:3857/api/v1/sessions/sess_123/views/conversation",
   );
   assert.equal(
     client.sessionEventStreamUrl("sess_123", "evt_9").toString(),
@@ -89,7 +118,7 @@ test("rejects invalid session path and event cursor parameter types", async () =
   );
 
   assert.throws(
-    () => client.transcriptUrl({ id: "sess_123" } as unknown as string),
+    () => client.conversationUrl({ id: "sess_123" } as unknown as string),
     (err) =>
       err instanceof VeladClientError &&
       err.code === "invalid_session_id" &&
@@ -107,68 +136,44 @@ test("rejects invalid session path and event cursor parameter types", async () =
   assert.equal(requests.length, 0);
 });
 
-test("builds transcript direction anchor URLs", () => {
+test("builds conversation direction anchor URLs", () => {
   const client = createVeladClient({ baseUrl: "http://127.0.0.1:3857/api/v1/" });
 
   assert.equal(
     client
-      .transcriptUrl("sess_123", {
+      .conversationUrl("sess_123", {
         direction: "before",
-        anchorRowId: "row_9",
+        anchorItemId: "item_9",
         limit: 40,
-        includeLive: false,
       })
       .toString(),
-    "http://127.0.0.1:3857/api/v1/sessions/sess_123/views/transcript?limit=40&direction=before&anchor_row_id=row_9&include_live=false",
+    "http://127.0.0.1:3857/api/v1/sessions/sess_123/views/conversation?limit=40&direction=before&anchor_item_id=item_9",
   );
   assert.equal(
     client
-      .transcriptUrl("sess_123", {
+      .conversationUrl("sess_123", {
         direction: "tail",
         limit: 80,
       })
       .toString(),
-    "http://127.0.0.1:3857/api/v1/sessions/sess_123/views/transcript?limit=80&direction=tail",
+    "http://127.0.0.1:3857/api/v1/sessions/sess_123/views/conversation?limit=80&direction=tail",
   );
 });
 
-test("rejects legacy transcript row anchors before fetch", async () => {
+test("rejects invalid conversation direction anchor options before fetch", async () => {
   const client = createVeladClient({ baseUrl: "http://127.0.0.1:3857/api/v1/" });
 
   await assert.rejects(
-    () =>
-      client.getTranscript("sess_123", {
-        beforeRowId: "row_1",
-      } as unknown as Parameters<typeof client.getTranscript>[1]),
-    /unsupported transcript window option: beforeRowId/,
-  );
-});
-
-test("rejects invalid transcript direction anchor options before fetch", async () => {
-  const client = createVeladClient({ baseUrl: "http://127.0.0.1:3857/api/v1/" });
-
-  await assert.rejects(
-    () => client.getTranscript("sess_123", { direction: "before" }),
-    /anchorRowId is required/,
+    () => client.getConversation("sess_123", { direction: "before" }),
+    /anchorItemId is required/,
   );
   await assert.rejects(
-    () => client.getTranscript("sess_123", { direction: "tail", anchorRowId: "row_1" }),
-    /direction=tail cannot include anchorRowId/,
+    () => client.getConversation("sess_123", { direction: "tail", anchorItemId: "item_1" }),
+    /direction=tail cannot include anchorItemId/,
   );
-});
-
-test("builds activity direction anchor URLs", () => {
-  const client = createVeladClient({ baseUrl: "http://127.0.0.1:3857/api/v1/" });
-
-  assert.equal(
-    client
-      .activityUrl("sess_123", {
-        direction: "before",
-        anchorItemId: "act_9",
-        limit: 40,
-      })
-      .toString(),
-    "http://127.0.0.1:3857/api/v1/sessions/sess_123/views/activity?limit=40&direction=before&anchor_item_id=act_9",
+  await assert.rejects(
+    () => client.getConversation("sess_123", { anchorItemId: "item_1" }),
+    /anchorItemId requires direction/,
   );
 });
 
@@ -194,23 +199,6 @@ test("builds diff review view URLs", () => {
   );
 });
 
-test("rejects invalid activity direction anchor options before fetch", async () => {
-  const client = createVeladClient({ baseUrl: "http://127.0.0.1:3857/api/v1/" });
-
-  await assert.rejects(
-    () => client.getActivity("sess_123", { direction: "before" }),
-    /anchorItemId is required/,
-  );
-  await assert.rejects(
-    () => client.getActivity("sess_123", { direction: "tail", anchorItemId: "act_1" }),
-    /direction=tail cannot include anchorItemId/,
-  );
-  await assert.rejects(
-    () => client.getActivity("sess_123", { anchorItemId: "act_1" }),
-    /anchorItemId requires direction/,
-  );
-});
-
 test("rejects invalid pending request status filters before fetch", async () => {
   const requests: Array<{ url: string; init?: RequestInit }> = [];
   const client = createVeladClient({
@@ -228,7 +216,7 @@ test("rejects invalid pending request status filters before fetch", async () => 
   assert.equal(requests.length, 0);
 });
 
-test("rejects invalid view window limits before fetch", async () => {
+test("rejects invalid conversation view window options before fetch", async () => {
   const requests: Array<{ url: string; init?: RequestInit }> = [];
   const client = createVeladClient({
     baseUrl: "http://127.0.0.1:3857/api/v1/",
@@ -239,132 +227,50 @@ test("rejects invalid view window limits before fetch", async () => {
   });
 
   await assert.rejects(
-    () => client.getTranscript("sess_123", { limit: 0 }),
+    () => client.getConversation("sess_123", { limit: 0 }),
     (err) =>
       err instanceof VeladClientError &&
-      err.code === "invalid_transcript_window_options" &&
+      err.code === "invalid_conversation_window_options" &&
       /limit/.test(err.message),
   );
-
-  await assert.rejects(
-    () => client.getActivity("sess_123", { limit: 501 }),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_window_options" &&
-      /limit/.test(err.message),
-  );
-
-  assert.equal(requests.length, 0);
-});
-
-test("rejects invalid view window query option types before fetch", async () => {
-  const requests: Array<{ url: string; init?: RequestInit }> = [];
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async (url, init) => {
-      requests.push({ url: String(url), init });
-      return new Response("{}", { status: 200 });
-    },
-  });
 
   await assert.rejects(
     () =>
-      client.getTranscript("sess_123", {
+      client.getConversation("sess_123", {
         direction: "sideways",
-        anchorRowId: "row_1",
-      } as unknown as Parameters<typeof client.getTranscript>[1]),
+        anchorItemId: "item_1",
+      } as unknown as Parameters<typeof client.getConversation>[1]),
     (err) =>
       err instanceof VeladClientError &&
-      err.code === "invalid_transcript_window_options" &&
+      err.code === "invalid_conversation_window_options" &&
       /direction/.test(err.message),
   );
 
   await assert.rejects(
     () =>
-      client.getTranscript("sess_123", {
-        direction: "before",
-        anchorRowId: 123,
-      } as unknown as Parameters<typeof client.getTranscript>[1]),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_transcript_window_options" &&
-      /anchorRowId/.test(err.message),
-  );
-
-  await assert.rejects(
-    () =>
-      client.getTranscript("sess_123", {
-        includeLive: "false",
-      } as unknown as Parameters<typeof client.getTranscript>[1]),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_transcript_window_options" &&
-      /includeLive/.test(err.message),
-  );
-
-  await assert.rejects(
-    () =>
-      client.getActivity("sess_123", {
-        direction: "sideways",
-        anchorItemId: "act_1",
-      } as unknown as Parameters<typeof client.getActivity>[1]),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_window_options" &&
-      /direction/.test(err.message),
-  );
-
-  await assert.rejects(
-    () =>
-      client.getActivity("sess_123", {
+      client.getConversation("sess_123", {
         direction: "before",
         anchorItemId: 123,
-      } as unknown as Parameters<typeof client.getActivity>[1]),
+      } as unknown as Parameters<typeof client.getConversation>[1]),
     (err) =>
       err instanceof VeladClientError &&
-      err.code === "invalid_activity_window_options" &&
+      err.code === "invalid_conversation_window_options" &&
       /anchorItemId/.test(err.message),
   );
 
   assert.equal(requests.length, 0);
 });
 
-test("validates transcript view envelope at the client wire boundary", async () => {
+test("validates conversation view item shape at the client wire boundary", async () => {
   const client = createVeladClient({
     baseUrl: "http://127.0.0.1:3857/api/v1/",
     fetch: async () =>
       new Response(
         JSON.stringify({
           session_id: "sess_123",
-          turns: [],
-          rows: [],
-          turns: [],
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getTranscript("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_transcript_view" &&
-      /window/.test(err.message),
-  );
-});
-
-test("validates transcript row shape at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          turns: [],
-          rows: [
+          items: [
             {
-              id: "row_bad",
+              id: "msg_bad",
               kind: "assistant_message",
               created_at: "2026-06-19T00:00:00Z",
               status: "streaming",
@@ -379,29 +285,29 @@ test("validates transcript row shape at the client wire boundary", async () => {
   });
 
   await assert.rejects(
-    () => client.getTranscript("sess_123"),
+    () => client.getConversation("sess_123"),
     (err) =>
       err instanceof VeladClientError &&
-      err.code === "invalid_transcript_view" &&
+      err.code === "invalid_conversation_view" &&
       /updated_at/.test(err.message),
   );
 });
 
-test("validates transcript row parts at the client wire boundary", async () => {
+test("validates conversation message parts at the client wire boundary", async () => {
   const client = createVeladClient({
     baseUrl: "http://127.0.0.1:3857/api/v1/",
     fetch: async () =>
       new Response(
         JSON.stringify({
           session_id: "sess_123",
-          turns: [],
-          rows: [
+          items: [
             {
-              id: "row_bad_parts",
+              id: "msg_bad_parts",
               kind: "user_message",
               created_at: "2026-06-19T00:00:00Z",
               updated_at: "2026-06-19T00:00:00Z",
               revision: 1,
+              text: "see image",
               status: "completed",
               source_event_ids: ["evt_1"],
               parts: [
@@ -421,31 +327,31 @@ test("validates transcript row parts at the client wire boundary", async () => {
   });
 
   await assert.rejects(
-    () => client.getTranscript("sess_123"),
+    () => client.getConversation("sess_123"),
     (err) =>
       err instanceof VeladClientError &&
-      err.code === "invalid_transcript_view" &&
+      err.code === "invalid_conversation_view" &&
       /parts\[0\]\.data/.test(err.message),
   );
 });
 
-test("validates optional transcript row text at the client wire boundary", async () => {
+test("validates conversation agent work detail at the client wire boundary", async () => {
   const client = createVeladClient({
     baseUrl: "http://127.0.0.1:3857/api/v1/",
     fetch: async () =>
       new Response(
         JSON.stringify({
           session_id: "sess_123",
-          turns: [],
-          rows: [
+          items: [
             {
-              id: "row_bad_text",
-              kind: "assistant_message",
+              id: "work_bad_detail",
+              kind: "agent_work",
               created_at: "2026-06-19T00:00:00Z",
               updated_at: "2026-06-19T00:00:00Z",
               revision: 1,
-              text: 123,
               status: "completed",
+              title: "Ran command",
+              detail: { command: "ls -la" },
               source_event_ids: ["evt_1"],
             },
           ],
@@ -457,120 +363,59 @@ test("validates optional transcript row text at the client wire boundary", async
   });
 
   await assert.rejects(
-    () => client.getTranscript("sess_123"),
+    () => client.getConversation("sess_123"),
     (err) =>
       err instanceof VeladClientError &&
-      err.code === "invalid_transcript_view" &&
-      /text/.test(err.message),
+      err.code === "invalid_agent_work_detail" &&
+      /detail\.type/.test(err.message),
   );
 });
 
-test("validates optional transcript row label at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          turns: [],
-          rows: [
-            {
-              id: "row_bad_label",
-              kind: "activity_marker",
-              created_at: "2026-06-19T00:00:00Z",
-              updated_at: "2026-06-19T00:00:00Z",
-              revision: 1,
-              text: "Searching",
-              label: { bad: true },
-              status: "completed",
-              source_event_ids: ["evt_1"],
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getTranscript("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_transcript_view" &&
-      /label/.test(err.message),
-  );
-});
-
-test("keeps OpenAPI-required transcript row fields required in the client wire model", async () => {
+test("keeps OpenAPI-required conversation item fields required in the client wire model", async () => {
   const source = clientSource;
-  const rowInterface = source.match(/export interface TranscriptWireRow \{[\s\S]*?\n\}/)?.[0] ?? "";
+  const baseInterface =
+    source.match(/export interface ConversationWireItemBase \{[\s\S]*?\n\}/)?.[0] ?? "";
   const viewInterface =
-    source.match(/export interface ChatTranscriptWireView \{[\s\S]*?\n\}/)?.[0] ?? "";
+    source.match(/export interface ConversationWireView \{[\s\S]*?\n\}/)?.[0] ?? "";
 
-  assert.match(viewInterface, /turns:\s*TranscriptTurnSummaryWire\[\]/);
-  assert.doesNotMatch(viewInterface, /turns\?:\s*TranscriptTurnSummaryWire\[\]/);
-  assert.match(rowInterface, /updated_at:\s*string/);
-  assert.match(rowInterface, /revision:\s*number/);
-  assert.match(rowInterface, /status:\s*TranscriptRowStatusWire/);
-  assert.match(rowInterface, /source_event_ids:\s*string\[\]/);
-  assert.doesNotMatch(rowInterface, /updated_at\?:\s*string/);
-  assert.doesNotMatch(rowInterface, /revision\?:\s*number/);
-  assert.doesNotMatch(rowInterface, /status\?:\s*string/);
-  assert.doesNotMatch(rowInterface, /source_event_ids\?:\s*string\[\]/);
-  assert.doesNotMatch(source, /row\.source_event_ids\?\./);
-  assert.doesNotMatch(source, /row\.revision\s*\?\?/);
-  assert.doesNotMatch(source, /row\.source_event_ids\s*\?\?/);
+  assert.match(viewInterface, /items:\s*ConversationWireItem\[\]/);
+  assert.match(baseInterface, /updated_at:\s*string/);
+  assert.match(baseInterface, /revision:\s*number/);
+  assert.match(baseInterface, /status:\s*ConversationItemStatusWire/);
+  assert.match(baseInterface, /source_event_ids:\s*string\[\]/);
+  assert.doesNotMatch(baseInterface, /updated_at\?:\s*string/);
+  assert.doesNotMatch(baseInterface, /revision\?:\s*number/);
+  assert.doesNotMatch(baseInterface, /status\?:\s*string/);
+  assert.doesNotMatch(baseInterface, /source_event_ids\?:\s*string\[\]/);
 });
 
-test("keeps OpenAPI transcript enums narrow in the client wire model", async () => {
+test("keeps OpenAPI conversation and agent work enums narrow in the client wire model", async () => {
   const source = clientSource;
-  const rowInterface = source.match(/export interface TranscriptWireRow \{[\s\S]*?\n\}/)?.[0] ?? "";
+  const baseInterface =
+    source.match(/export interface ConversationWireItemBase \{[\s\S]*?\n\}/)?.[0] ?? "";
   const partInterface =
-    source.match(/export interface TranscriptWirePart \{[\s\S]*?\n\}/)?.[0] ?? "";
-
-  assert.match(source, /export type TranscriptRowStatusWire\s*=/);
-  assert.match(source, /export type TranscriptPartTypeWire\s*=/);
-  assert.match(rowInterface, /status:\s*TranscriptRowStatusWire/);
-  assert.match(partInterface, /type:\s*TranscriptPartTypeWire/);
-  assert.match(source, /status:\s*status as TranscriptRowStatusWire/);
-  assert.doesNotMatch(rowInterface, /status:\s*string/);
-  assert.doesNotMatch(partInterface, /type:\s*string/);
-});
-
-test("keeps OpenAPI activity enums narrow in the client wire model", async () => {
-  const source = clientSource;
-  const itemInterface = source.match(/export interface ActivityWireItem \{[\s\S]*?\n\}/)?.[0] ?? "";
-  const detailInterface =
-    source.match(/export interface ActivityWireDetail \{[\s\S]*?\n\}/)?.[0] ?? "";
+    source.match(/export interface MessagePartWire \{[\s\S]*?\n\}/)?.[0] ?? "";
   const detailUnion =
-    source.match(/export type ActivityWireDetail\s*=[\s\S]*?ActivityGenericToolDetailWire;/)?.[0] ??
+    source.match(/export type AgentWorkDetailWire\s*=[\s\S]*?AgentWorkGenericDetailWire;/)?.[0] ??
     "";
 
-  assert.match(source, /export type ActivityItemKindWire\s*=/);
-  assert.match(source, /export type ActivityItemStatusWire\s*=/);
-  assert.match(source, /export type ActivityDetailTypeWire\s*=/);
-  assert.match(source, /export type ActivitySearchModeWire\s*=/);
-  assert.match(itemInterface, /kind:\s*ActivityItemKindWire/);
-  assert.match(itemInterface, /status:\s*ActivityItemStatusWire/);
-  assert.match(source, /export type ActivityWireDetail\s*=/);
-  assert.match(detailUnion, /ActivityShellToolDetailWire/);
-  assert.match(detailUnion, /ActivityFileToolDetailWire/);
-  assert.match(detailUnion, /ActivitySearchToolDetailWire/);
-  assert.match(detailUnion, /ActivityFetchToolDetailWire/);
-  assert.match(detailUnion, /ActivityGenericToolDetailWire/);
-  assert.match(source, /export interface ActivityShellToolDetailWire \{[\s\S]*?type:\s*"shell"[\s\S]*?command\?:\s*string[\s\S]*?exit_code\?:\s*number/);
-  assert.match(source, /export interface ActivityFileToolDetailWire \{[\s\S]*?type:\s*ActivityFileDetailTypeWire[\s\S]*?file_path\?:\s*string[\s\S]*?unified_diff\?:\s*string/);
-  assert.match(source, /export interface ActivitySearchToolDetailWire \{[\s\S]*?type:\s*"search"[\s\S]*?mode\?:\s*ActivitySearchModeWire[\s\S]*?num_matches\?:\s*number/);
-  assert.match(source, /export interface ActivityFetchToolDetailWire \{[\s\S]*?type:\s*"fetch"[\s\S]*?url\?:\s*string[\s\S]*?duration_ms\?:\s*number/);
-  assert.match(source, /export interface ActivityGenericToolDetailWire \{[\s\S]*?type:\s*ActivityGenericDetailTypeWire[\s\S]*?\[key:\s*string\]:\s*unknown/);
-  assert.doesNotMatch(itemInterface, /kind:\s*string/);
-  assert.doesNotMatch(itemInterface, /status:\s*string/);
-  assert.doesNotMatch(detailInterface, /type:\s*string/);
-  assert.doesNotMatch(source, /export interface ActivityWireDetail \{[\s\S]*?\[key:\s*string\]:\s*unknown/);
+  assert.match(source, /export type ConversationItemKindWire\s*=/);
+  assert.match(source, /export type ConversationItemStatusWire\s*=/);
+  assert.match(source, /export type MessagePartTypeWire\s*=/);
+  assert.match(baseInterface, /kind:\s*ConversationItemKindWire/);
+  assert.match(baseInterface, /status:\s*ConversationItemStatusWire/);
+  assert.match(partInterface, /type:\s*MessagePartTypeWire/);
+  assert.match(source, /export type AgentWorkDetailWire\s*=/);
+  assert.match(detailUnion, /AgentWorkShellDetailWire/);
+  assert.match(detailUnion, /AgentWorkFileDetailWire/);
+  assert.match(detailUnion, /AgentWorkSearchDetailWire/);
+  assert.match(detailUnion, /AgentWorkFetchDetailWire/);
+  assert.match(detailUnion, /AgentWorkGenericDetailWire/);
+  assert.doesNotMatch(source, /export interface ChatTranscriptWireView/);
+  assert.doesNotMatch(source, /export interface ActivityWireView/);
 });
 
-test("keeps OpenAPI backend status enum separate from transcript status", async () => {
+test("keeps OpenAPI backend status enum separate from conversation item status", async () => {
   const source = clientSource;
   const backendInterface = source.match(/export interface BackendWire \{[\s\S]*?\n\}/)?.[0] ?? "";
 
@@ -578,7 +423,7 @@ test("keeps OpenAPI backend status enum separate from transcript status", async 
   assert.match(backendInterface, /status:\s*BackendStatusWire/);
   assert.doesNotMatch(backendInterface, /status:\s*string/);
   assert.match(source, /status:\s*status as BackendStatusWire/);
-  assert.doesNotMatch(source, /status:\s*status as TranscriptRowStatusWire,\n\s*display_name/);
+  assert.doesNotMatch(source, /status:\s*status as ConversationItemStatusWire,\n\s*display_name/);
 });
 
 test("keeps OpenAPI session backend and status enums narrow in the client wire model", async () => {
@@ -748,80 +593,6 @@ test("keeps OpenAPI agent request enums narrow in the client wire model", async 
   assert.doesNotMatch(requestInterface, /status:\s*string/);
 });
 
-test("validates optional transcript row activity_id at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          turns: [],
-          rows: [
-            {
-              id: "row_bad_activity_id",
-              kind: "activity_marker",
-              created_at: "2026-06-19T00:00:00Z",
-              updated_at: "2026-06-19T00:00:00Z",
-              revision: 1,
-              text: "Searching",
-              activity_id: 42,
-              status: "completed",
-              source_event_ids: ["evt_1"],
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getTranscript("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_transcript_view" &&
-      /activity_id/.test(err.message),
-  );
-});
-
-test("validates optional transcript row turn_id at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          turns: [],
-          rows: [
-            {
-              id: "row_bad_turn_id",
-              kind: "assistant_message",
-              created_at: "2026-06-19T00:00:00Z",
-              updated_at: "2026-06-19T00:00:00Z",
-              revision: 1,
-              turn_id: ["turn_1"],
-              text: "done",
-              status: "completed",
-              source_event_ids: ["evt_1"],
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getTranscript("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_transcript_view" &&
-      /turn_id/.test(err.message),
-  );
-});
-
 test("validates diff review view at the client wire boundary", async () => {
   const client = createVeladClient({
     baseUrl: "http://127.0.0.1:3857/api/v1/",
@@ -882,958 +653,6 @@ test("validates diff summary required fields at the client wire boundary", async
       err instanceof VeladClientError &&
       err.code === "invalid_diff_review_view" &&
       /status/.test(err.message),
-  );
-});
-
-test("validates activity view cursor at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          items: [],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1" },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getActivity("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_view" &&
-      /cursor/.test(err.message),
-  );
-});
-
-test("validates activity item shape at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          items: [
-            {
-              id: "act_bad",
-              kind: "tool",
-              status: "running",
-              created_at: "2026-06-19T00:00:00Z",
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getActivity("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_view" &&
-      /title/.test(err.message),
-  );
-});
-
-test("validates optional activity item summary at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          items: [
-            {
-              id: "act_bad_summary",
-              kind: "tool",
-              status: "completed",
-              title: "Read file",
-              summary: 123,
-              created_at: "2026-06-19T00:00:00Z",
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getActivity("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_view" &&
-      /summary/.test(err.message),
-  );
-});
-
-test("validates optional activity item detail at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          items: [
-            {
-              id: "act_bad_detail",
-              kind: "tool",
-              status: "completed",
-              title: "Tool",
-              detail: { command: "ls -la" },
-              created_at: "2026-06-19T00:00:00Z",
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getActivity("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_view" &&
-      /detail\.type/.test(err.message),
-  );
-});
-
-test("treats null optional activity item detail as absent", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          items: [
-            {
-              id: "act_runtime",
-              kind: "runtime",
-              status: "completed",
-              title: "turn.completed",
-              detail: null,
-              created_at: "2026-06-19T00:00:00Z",
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  const activity = await client.getActivity("sess_123");
-
-  assert.equal(activity.items[0]?.id, "act_runtime");
-  assert.equal(activity.items[0]?.detail, undefined);
-});
-
-test("validates shell activity detail command at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          items: [
-            {
-              id: "act_bad_shell_command",
-              kind: "tool",
-              status: "completed",
-              title: "Ran command",
-              detail: { type: "shell", command: 123 },
-              created_at: "2026-06-19T00:00:00Z",
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getActivity("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_view" &&
-      /detail\.command/.test(err.message),
-  );
-});
-
-test("validates shell activity detail cwd at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          items: [
-            {
-              id: "act_bad_shell_cwd",
-              kind: "tool",
-              status: "completed",
-              title: "Ran command",
-              detail: { type: "shell", command: "npm test", cwd: ["workspace"] },
-              created_at: "2026-06-19T00:00:00Z",
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getActivity("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_view" &&
-      /detail\.cwd/.test(err.message),
-  );
-});
-
-test("validates shell activity detail output at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          items: [
-            {
-              id: "act_bad_shell_output",
-              kind: "tool",
-              status: "completed",
-              title: "Ran command",
-              detail: { type: "shell", stdout: ["ok"] },
-              created_at: "2026-06-19T00:00:00Z",
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getActivity("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_view" &&
-      /detail\.stdout/.test(err.message),
-  );
-});
-
-test("validates shell activity detail exit code at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          items: [
-            {
-              id: "act_bad_shell_exit_code",
-              kind: "tool",
-              status: "completed",
-              title: "Ran command",
-              detail: { type: "shell", command: "npm test", exit_code: "1" },
-              created_at: "2026-06-19T00:00:00Z",
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getActivity("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_view" &&
-      /detail\.exit_code/.test(err.message),
-  );
-});
-
-test("validates search activity detail query at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          items: [
-            {
-              id: "act_bad_search_query",
-              kind: "tool",
-              status: "completed",
-              title: "Searched code",
-              detail: { type: "search", query: ["TODO"] },
-              created_at: "2026-06-19T00:00:00Z",
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getActivity("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_view" &&
-      /detail\.query/.test(err.message),
-  );
-});
-
-test("validates search activity detail content at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          items: [
-            {
-              id: "act_bad_search_content",
-              kind: "tool",
-              status: "completed",
-              title: "Searched code",
-              detail: { type: "search", query: "TODO", content: ["match"] },
-              created_at: "2026-06-19T00:00:00Z",
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getActivity("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_view" &&
-      /detail\.content/.test(err.message),
-  );
-});
-
-test("validates search activity detail result counts at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          items: [
-            {
-              id: "act_bad_search_count",
-              kind: "tool",
-              status: "completed",
-              title: "Searched code",
-              detail: { type: "search", query: "TODO", num_matches: "2" },
-              created_at: "2026-06-19T00:00:00Z",
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getActivity("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_view" &&
-      /detail\.num_matches/.test(err.message),
-  );
-});
-
-test("validates search activity detail mode at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          items: [
-            {
-              id: "act_bad_search_mode",
-              kind: "tool",
-              status: "completed",
-              title: "Searched code",
-              detail: { type: "search", query: "TODO", mode: "browser" },
-              created_at: "2026-06-19T00:00:00Z",
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getActivity("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_view" &&
-      /detail\.mode/.test(err.message),
-  );
-});
-
-test("validates search activity detail duration at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          items: [
-            {
-              id: "act_bad_search_timing",
-              kind: "tool",
-              status: "completed",
-              title: "Searched code",
-              detail: {
-                type: "search",
-                query: "TODO",
-                duration_ms: "17",
-              },
-              created_at: "2026-06-19T00:00:00Z",
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getActivity("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_view" &&
-      /detail\.duration_ms/.test(err.message),
-  );
-});
-
-test("validates search activity detail truncated flag at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          items: [
-            {
-              id: "act_bad_search_truncated",
-              kind: "tool",
-              status: "completed",
-              title: "Searched code",
-              detail: {
-                type: "search",
-                query: "TODO",
-                duration_ms: 17,
-                truncated: "false",
-              },
-              created_at: "2026-06-19T00:00:00Z",
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getActivity("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_view" &&
-      /detail\.truncated/.test(err.message),
-  );
-});
-
-test("validates file activity detail file_path at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          items: [
-            {
-              id: "act_bad_file_path",
-              kind: "tool",
-              status: "completed",
-              title: "Read file",
-              detail: { type: "read", file_path: ["README.md"] },
-              created_at: "2026-06-19T00:00:00Z",
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getActivity("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_view" &&
-      /detail\.file_path/.test(err.message),
-  );
-});
-
-test("validates file activity detail legacy path at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          items: [
-            {
-              id: "act_bad_file_legacy_path",
-              kind: "tool",
-              status: "completed",
-              title: "Read file",
-              detail: { type: "read", path: ["README.md"] },
-              created_at: "2026-06-19T00:00:00Z",
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getActivity("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_view" &&
-      /detail\.path/.test(err.message),
-  );
-});
-
-test("validates file activity detail content at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          items: [
-            {
-              id: "act_bad_file_content",
-              kind: "tool",
-              status: "completed",
-              title: "Read file",
-              detail: { type: "read", file_path: "README.md", content: { text: "hello" } },
-              created_at: "2026-06-19T00:00:00Z",
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getActivity("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_view" &&
-      /detail\.content/.test(err.message),
-  );
-});
-
-test("validates file activity detail old string at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          items: [
-            {
-              id: "act_bad_file_old_string",
-              kind: "tool",
-              status: "completed",
-              title: "Edited file",
-              detail: { type: "edit", file_path: "README.md", old_string: ["before"] },
-              created_at: "2026-06-19T00:00:00Z",
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getActivity("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_view" &&
-      /detail\.old_string/.test(err.message),
-  );
-});
-
-test("validates file activity detail new string at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          items: [
-            {
-              id: "act_bad_file_new_string",
-              kind: "tool",
-              status: "completed",
-              title: "Edited file",
-              detail: { type: "edit", file_path: "README.md", new_string: ["after"] },
-              created_at: "2026-06-19T00:00:00Z",
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getActivity("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_view" &&
-      /detail\.new_string/.test(err.message),
-  );
-});
-
-test("validates file activity detail unified diff at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          items: [
-            {
-              id: "act_bad_file_diff",
-              kind: "tool",
-              status: "completed",
-              title: "Edited file",
-              detail: { type: "edit", file_path: "README.md", unified_diff: ["bad"] },
-              created_at: "2026-06-19T00:00:00Z",
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getActivity("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_view" &&
-      /detail\.unified_diff/.test(err.message),
-  );
-});
-
-test("validates fetch activity detail url at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          items: [
-            {
-              id: "act_bad_fetch_url",
-              kind: "tool",
-              status: "completed",
-              title: "Fetched URL",
-              detail: { type: "fetch", url: { href: "https://example.com" } },
-              created_at: "2026-06-19T00:00:00Z",
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getActivity("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_view" &&
-      /detail\.url/.test(err.message),
-  );
-});
-
-test("validates fetch activity detail prompt at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          items: [
-            {
-              id: "act_bad_fetch_prompt",
-              kind: "tool",
-              status: "completed",
-              title: "Fetched URL",
-              detail: { type: "fetch", url: "https://example.com", prompt: ["summarize"] },
-              created_at: "2026-06-19T00:00:00Z",
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getActivity("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_view" &&
-      /detail\.prompt/.test(err.message),
-  );
-});
-
-test("validates fetch activity detail result at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          items: [
-            {
-              id: "act_bad_fetch_result",
-              kind: "tool",
-              status: "completed",
-              title: "Fetched URL",
-              detail: { type: "fetch", result: { summary: "ok" } },
-              created_at: "2026-06-19T00:00:00Z",
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getActivity("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_view" &&
-      /detail\.result/.test(err.message),
-  );
-});
-
-test("validates fetch activity detail status code at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          items: [
-            {
-              id: "act_bad_fetch_code",
-              kind: "tool",
-              status: "completed",
-              title: "Fetched URL",
-              detail: { type: "fetch", url: "https://example.com", code: "200" },
-              created_at: "2026-06-19T00:00:00Z",
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getActivity("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_view" &&
-      /detail\.code/.test(err.message),
-  );
-});
-
-test("validates fetch activity detail status text at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          items: [
-            {
-              id: "act_bad_fetch_code_text",
-              kind: "tool",
-              status: "completed",
-              title: "Fetched URL",
-              detail: { type: "fetch", url: "https://example.com", code_text: ["OK"] },
-              created_at: "2026-06-19T00:00:00Z",
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getActivity("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_view" &&
-      /detail\.code_text/.test(err.message),
-  );
-});
-
-test("validates fetch activity detail byte count at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          items: [
-            {
-              id: "act_bad_fetch_bytes",
-              kind: "tool",
-              status: "completed",
-              title: "Fetched URL",
-              detail: { type: "fetch", url: "https://example.com", bytes: "1024" },
-              created_at: "2026-06-19T00:00:00Z",
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getActivity("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_view" &&
-      /detail\.bytes/.test(err.message),
-  );
-});
-
-test("validates fetch activity detail duration at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          items: [
-            {
-              id: "act_bad_fetch_duration",
-              kind: "tool",
-              status: "completed",
-              title: "Fetched URL",
-              detail: { type: "fetch", url: "https://example.com", duration_ms: "120" },
-              created_at: "2026-06-19T00:00:00Z",
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getActivity("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_view" &&
-      /detail\.duration_ms/.test(err.message),
-  );
-});
-
-test("validates optional activity item event range at the client wire boundary", async () => {
-  const client = createVeladClient({
-    baseUrl: "http://127.0.0.1:3857/api/v1/",
-    fetch: async () =>
-      new Response(
-        JSON.stringify({
-          session_id: "sess_123",
-          items: [
-            {
-              id: "act_bad_range",
-              kind: "tool",
-              status: "completed",
-              title: "Tool",
-              event_range: { from_event_id: 123, to_event_id: "evt_2" },
-              created_at: "2026-06-19T00:00:00Z",
-            },
-          ],
-          window: { has_older: false, has_newer: false },
-          cursor: { event_id: "evt_2", epoch: 1, seq: 2 },
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-  });
-
-  await assert.rejects(
-    () => client.getActivity("sess_123"),
-    (err) =>
-      err instanceof VeladClientError &&
-      err.code === "invalid_activity_view" &&
-      /event_range\.from_event_id/.test(err.message),
   );
 });
 
@@ -2760,8 +1579,8 @@ test("builds URLs from same-origin proxy base paths", () => {
   const client = createVeladClient({ baseUrl: "/chat/api/velad/api/v1/" });
 
   assert.equal(
-    client.transcriptUrl("sess_123").toString(),
-    "http://localhost/chat/api/velad/api/v1/sessions/sess_123/views/transcript",
+    client.conversationUrl("sess_123").toString(),
+    "http://localhost/chat/api/velad/api/v1/sessions/sess_123/views/conversation",
   );
 });
 
@@ -2781,7 +1600,7 @@ test("reads velad stream events from browser MessageEvent payloads", () => {
         session_id: "sess_1",
         type: "assistant.message.delta",
         created_at: "2026-06-19T00:00:00Z",
-        affected_views: ["transcript", "activity"],
+        affected_views: ["conversation"],
         payload: { message_id: "msg_1", delta: "hi" },
       }),
     }),
@@ -2789,7 +1608,7 @@ test("reads velad stream events from browser MessageEvent payloads", () => {
 
   assert.equal(event?.event_id, "evt_2");
   assert.equal(event?.type, "assistant.message.delta");
-  assert.deepEqual(event?.affected_views, ["transcript", "activity"]);
+  assert.deepEqual(event?.affected_views, ["conversation"]);
   assert.equal(event?.payload?.delta, "hi");
 });
 
@@ -2812,8 +1631,7 @@ test("plans assistant delta stream events as local overlay only", () => {
       payload: { message_id: "msg_1", delta: "好" },
     }),
     {
-      transcript: false,
-      activity: false,
+      conversation: false,
       requests: false,
       diffs: false,
       session: false,
@@ -2829,8 +1647,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
       type: "session.config.updated",
     }),
     {
-      transcript: false,
-      activity: false,
+      conversation: false,
       requests: false,
       diffs: false,
       session: true,
@@ -2843,8 +1660,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
       type: "session.status.changed",
     }),
     {
-      transcript: true,
-      activity: false,
+      conversation: true,
       requests: false,
       diffs: false,
       session: true,
@@ -2854,8 +1670,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
   assert.deepEqual(
     streamReadModelRefreshPlan({ event_id: "evt_session_closed", type: "session.closed" }),
     {
-      transcript: false,
-      activity: false,
+      conversation: false,
       requests: false,
       diffs: false,
       session: true,
@@ -2868,8 +1683,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
       type: "backend.status.changed",
     }),
     {
-      transcript: false,
-      activity: false,
+      conversation: false,
       requests: false,
       diffs: false,
       session: true,
@@ -2879,8 +1693,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
   assert.deepEqual(
     streamReadModelRefreshPlan({ event_id: "evt_input_queued", type: "input.queued" }),
     {
-      transcript: true,
-      activity: true,
+      conversation: true,
       requests: false,
       diffs: false,
       session: false,
@@ -2890,8 +1703,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
   assert.deepEqual(
     streamReadModelRefreshPlan({ event_id: "evt_input_rejected", type: "input.rejected" }),
     {
-      transcript: false,
-      activity: true,
+      conversation: true,
       requests: false,
       diffs: false,
       session: false,
@@ -2901,8 +1713,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
   assert.deepEqual(
     streamReadModelRefreshPlan({ event_id: "evt_turn_started", type: "turn.started" }),
     {
-      transcript: true,
-      activity: true,
+      conversation: true,
       requests: false,
       diffs: false,
       session: true,
@@ -2915,8 +1726,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
       type: "turn.cancel.accepted",
     }),
     {
-      transcript: false,
-      activity: true,
+      conversation: true,
       requests: false,
       diffs: false,
       session: true,
@@ -2929,8 +1739,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
       type: "request.response.accepted",
     }),
     {
-      transcript: false,
-      activity: true,
+      conversation: true,
       requests: true,
       diffs: false,
       session: false,
@@ -2943,8 +1752,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
       type: "request.opened",
     }),
     {
-      transcript: false,
-      activity: true,
+      conversation: true,
       requests: true,
       diffs: false,
       session: false,
@@ -2954,8 +1762,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
   assert.deepEqual(
     streamReadModelRefreshPlan({ event_id: "evt_tool", type: "tool.started" }),
     {
-      transcript: false,
-      activity: true,
+      conversation: true,
       requests: false,
       diffs: false,
       session: false,
@@ -2965,8 +1772,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
   assert.deepEqual(
     streamReadModelRefreshPlan({ event_id: "evt_command", type: "command.started" }),
     {
-      transcript: false,
-      activity: true,
+      conversation: true,
       requests: false,
       diffs: false,
       session: false,
@@ -2976,8 +1782,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
   assert.deepEqual(
     streamReadModelRefreshPlan({ event_id: "evt_task", type: "task.updated" }),
     {
-      transcript: false,
-      activity: true,
+      conversation: true,
       requests: false,
       diffs: false,
       session: false,
@@ -2987,8 +1792,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
   assert.deepEqual(
     streamReadModelRefreshPlan({ event_id: "evt_turn", type: "turn.completed" }),
     {
-      transcript: true,
-      activity: true,
+      conversation: true,
       requests: false,
       diffs: false,
       session: true,
@@ -2998,8 +1802,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
   assert.deepEqual(
     streamReadModelRefreshPlan({ event_id: "evt_turn_cancelled", type: "turn.cancelled" }),
     {
-      transcript: true,
-      activity: true,
+      conversation: true,
       requests: false,
       diffs: false,
       session: true,
@@ -3009,8 +1812,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
   assert.deepEqual(
     streamReadModelRefreshPlan({ event_id: "evt_usage", type: "usage.updated" }),
     {
-      transcript: false,
-      activity: false,
+      conversation: false,
       requests: false,
       diffs: false,
       session: true,
@@ -3020,8 +1822,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
   assert.deepEqual(
     streamReadModelRefreshPlan({ event_id: "evt_error", type: "error.raised" }),
     {
-      transcript: true,
-      activity: true,
+      conversation: true,
       requests: false,
       diffs: false,
       session: false,
@@ -3038,8 +1839,7 @@ test("uses affected_views as forward-compatible refresh hints for canonical stre
       affected_views: ["workbench"],
     }),
     {
-      transcript: true,
-      activity: true,
+      conversation: true,
       requests: true,
       diffs: true,
       session: true,
@@ -3053,8 +1853,7 @@ test("uses affected_views as forward-compatible refresh hints for canonical stre
       affected_views: ["requests", "diffs"],
     }),
     {
-      transcript: false,
-      activity: true,
+      conversation: false,
       requests: true,
       diffs: true,
       session: false,
@@ -3068,8 +1867,7 @@ test("uses affected_views as forward-compatible refresh hints for canonical stre
       affected_views: ["backends"],
     }),
     {
-      transcript: false,
-      activity: false,
+      conversation: false,
       requests: false,
       diffs: false,
       session: false,
@@ -3082,8 +1880,7 @@ test("plans diff stream events for the DiffReviewView read model", () => {
   assert.deepEqual(
     streamReadModelRefreshPlan({ event_id: "evt_diff", type: "diff.updated" }),
     {
-      transcript: false,
-      activity: true,
+      conversation: true,
       requests: false,
       diffs: true,
       session: false,
@@ -3108,8 +1905,7 @@ test("plans workbench sync resets as full workbench refreshes", () => {
       views: ["workbench"],
     }),
     {
-      transcript: true,
-      activity: true,
+      conversation: true,
       requests: true,
       diffs: true,
       session: true,
@@ -3126,8 +1922,7 @@ test("accepts plural session view hints in sync resets", () => {
       views: ["sessions"],
     }),
     {
-      transcript: false,
-      activity: false,
+      conversation: false,
       requests: false,
       diffs: false,
       session: true,
@@ -3136,7 +1931,7 @@ test("accepts plural session view hints in sync resets", () => {
   );
 });
 
-test("matches stream events to the active session while accepting legacy events", () => {
+test("matches stream events to the active session while accepting cursorless events", () => {
   assert.equal(
     isVelaStreamEventForSession("sess_1", {
       event_id: "evt_same",
@@ -3147,7 +1942,7 @@ test("matches stream events to the active session while accepting legacy events"
   );
   assert.equal(
     isVelaStreamEventForSession("sess_1", {
-      event_id: "evt_legacy",
+      event_id: "evt_cursorless",
       type: "turn.completed",
     }),
     true,
@@ -3162,7 +1957,7 @@ test("matches stream events to the active session while accepting legacy events"
   );
 });
 
-test("matches stream events to cursor order while accepting legacy cursorless events", () => {
+test("matches stream events to cursor order while accepting cursorless events", () => {
   const cursor = { event_id: "evt_5", epoch: 1, seq: 5 };
   const windowCursor = { epoch: 1, from_seq: 1, to_seq: 5 };
 
@@ -3213,7 +2008,7 @@ test("matches stream events to cursor order while accepting legacy cursorless ev
   );
   assert.equal(
     isVelaStreamEventFreshForCursor(cursor, {
-      event_id: "evt_legacy",
+      event_id: "evt_cursorless",
       type: "turn.completed",
     }),
     true,
@@ -3223,21 +2018,19 @@ test("matches stream events to cursor order while accepting legacy cursorless ev
 test("selects a conservative session stream replay cursor from event-cursor read models", () => {
   assert.equal(
     selectSessionEventStreamAfterId({
-      transcript: { event_id: "evt_transcript_100", epoch: 1, seq: 100 },
-      activity: { event_id: "evt_activity_90", epoch: 1, seq: 90 },
+      conversation: { event_id: "evt_conversation_100", epoch: 1, seq: 100 },
     }),
-    "evt_activity_90",
+    "evt_conversation_100",
   );
   assert.equal(
     selectSessionEventStreamAfterId({
-      transcript: { event_id: "evt_transcript_100", epoch: 1, seq: 100 },
-      activity: null,
+      conversation: null,
     }),
-    "evt_transcript_100",
+    null,
   );
 });
 
-test("filters stream refresh plans per read-model cursor instead of the transcript cursor", () => {
+test("filters stream refresh plans with the conversation read-model cursor", () => {
   assert.deepEqual(
     streamReadModelRefreshPlanForCursors(
       {
@@ -3248,13 +2041,11 @@ test("filters stream refresh plans per read-model cursor instead of the transcri
         type: "turn.completed",
       },
       {
-        transcript: { event_id: "evt_transcript_100", epoch: 1, seq: 100 },
-        activity: { event_id: "evt_activity_90", epoch: 1, seq: 90 },
+        conversation: { event_id: "evt_conversation_100", epoch: 1, seq: 100 },
       },
     ),
     {
-      transcript: false,
-      activity: true,
+      conversation: false,
       requests: false,
       diffs: false,
       session: true,
@@ -3293,25 +2084,12 @@ test("rejects already-seen stream event cursor aliases when order fields are abs
   }
 });
 
-test("applies assistant delta live overlays to existing transcript rows immediately", () => {
-  const transcript = {
-    session_id: "sess_1",
-    cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-    rows: [
-      {
-        id: "msg_1",
-        kind: "assistant_message" as const,
-        created_at: "2026-06-19T00:00:00Z",
-        updated_at: "2026-06-19T00:00:00Z",
-        revision: 1,
-        text: "你",
-        status: "streaming",
-        source_event_ids: ["evt_1"],
-      },
-    ],
-  };
+test("applies assistant delta live overlays to existing conversation assistant items immediately", () => {
+  const conversation = conversationFixture({
+    items: [assistantConversationItem({ text: "你" })],
+  });
 
-  const next = applyTranscriptLiveOverlay(transcript, {
+  const next = applyConversationLiveOverlay(conversation, {
     event_id: "evt_2",
     epoch: 1,
     seq: 2,
@@ -3321,32 +2099,23 @@ test("applies assistant delta live overlays to existing transcript rows immediat
     payload: { message_id: "msg_1", delta: "好" },
   });
 
-  assert.equal(next.rows[0]?.text, "你好");
-  assert.equal(next.rows[0]?.revision, 2);
+  assert.equal(next.items[0]?.kind, "assistant_message");
+  assert.equal(next.items[0]?.text, "你好");
+  assert.equal(next.items[0]?.revision, 2);
   assert.equal(next.cursor.event_id, "evt_2");
 });
 
-test("appends assistant delta live overlays after existing textual parts", () => {
-  const transcript = {
-    session_id: "sess_1",
-    cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-    window: { has_older: false, has_newer: false },
-    rows: [
-      {
-        id: "msg_1",
-        kind: "assistant_message" as const,
-        created_at: "2026-06-19T00:00:00Z",
-        updated_at: "2026-06-19T00:00:00Z",
-        revision: 1,
-        text: "",
-        parts: [{ id: "msg_1:part:0", type: "markdown" as const, text: "第一段" }],
-        status: "streaming" as const,
-        source_event_ids: ["evt_1"],
-      },
+test("appends assistant delta live overlays after existing conversation text", () => {
+  const conversation = conversationFixture({
+    items: [
+      assistantConversationItem({
+        text: "第一段",
+        parts: [{ id: "msg_1:part:0", type: "text" as const, text: "第一段" }],
+      }),
     ],
-  };
+  });
 
-  const next = applyTranscriptLiveOverlay(transcript, {
+  const next = applyConversationLiveOverlay(conversation, {
     event_id: "evt_2",
     epoch: 1,
     seq: 2,
@@ -3356,28 +2125,24 @@ test("appends assistant delta live overlays after existing textual parts", () =>
     payload: { message_id: "msg_1", delta: "第二段" },
   });
 
-  assert.equal(next.rows[0]?.text, "第一段第二段");
-  assert.equal(next.rows[0]?.revision, 2);
+  assert.equal(next.items[0]?.kind, "assistant_message");
+  assert.equal(next.items[0]?.text, "第一段第二段");
+  assert.equal(next.items[0]?.revision, 2);
 });
 
 test("does not append duplicate assistant delta live overlays", () => {
-  const transcript = {
-    session_id: "sess_1",
+  const conversation = conversationFixture({
     cursor: { event_id: "evt_2", epoch: 1, seq: 2 },
-    rows: [
-      {
-        id: "msg_1",
-        kind: "assistant_message" as const,
-        created_at: "2026-06-19T00:00:00Z",
+    items: [
+      assistantConversationItem({
         revision: 2,
         text: "你好",
-        status: "streaming",
         source_event_ids: ["evt_1", "evt_2"],
-      },
+      }),
     ],
-  };
+  });
 
-  const next = applyTranscriptLiveOverlay(transcript, {
+  const next = applyConversationLiveOverlay(conversation, {
     event_id: "evt_2",
     epoch: 1,
     seq: 2,
@@ -3386,28 +2151,24 @@ test("does not append duplicate assistant delta live overlays", () => {
     payload: { message_id: "msg_1", delta: "好" },
   });
 
-  assert.equal(next.rows[0]?.text, "你好");
-  assert.equal(next.rows[0]?.revision, 2);
+  assert.equal(next.items[0]?.kind, "assistant_message");
+  assert.equal(next.items[0]?.text, "你好");
+  assert.equal(next.items[0]?.revision, 2);
 });
 
-test("does not resurrect completed assistant rows from late delta overlays", () => {
-  const transcript = {
-    session_id: "sess_1",
+test("does not resurrect completed assistant items from late delta overlays", () => {
+  const conversation = conversationFixture({
     cursor: { event_id: "evt_completed", epoch: 1, seq: 10 },
-    rows: [
-      {
-        id: "msg_1",
-        kind: "assistant_message" as const,
-        created_at: "2026-06-19T00:00:00Z",
+    items: [
+      assistantConversationItem({
         updated_at: "2026-06-19T00:00:10Z",
         revision: 4,
         text: "已经完成",
         status: "completed" as const,
         source_event_ids: ["evt_1", "evt_completed"],
-      },
+      }),
     ],
-  };
-
+  });
   const event = {
     event_id: "evt_late_delta",
     epoch: 1,
@@ -3418,32 +2179,22 @@ test("does not resurrect completed assistant rows from late delta overlays", () 
     payload: { message_id: "msg_1", delta: "迟到" },
   };
 
-  const next = applyTranscriptLiveOverlay(transcript, event);
+  const next = applyConversationLiveOverlay(conversation, event);
 
-  assert.equal(next.rows[0]?.text, "已经完成");
-  assert.equal(next.rows[0]?.status, "completed");
-  assert.equal(next.rows[0]?.revision, 4);
-  assert.equal(needsTranscriptRefreshAfterLiveOverlay(transcript, event), true);
+  assert.equal(next.items[0]?.kind, "assistant_message");
+  assert.equal(next.items[0]?.text, "已经完成");
+  assert.equal(next.items[0]?.status, "completed");
+  assert.equal(next.items[0]?.revision, 4);
+  assert.equal(needsConversationRefreshAfterLiveOverlay(conversation, event), true);
 });
 
 test("ignores stale assistant delta live overlay events", () => {
-  const transcript = {
-    session_id: "sess_1",
+  const conversation = conversationFixture({
     cursor: { event_id: "evt_live", epoch: 1, seq: 12 },
-    rows: [
-      {
-        id: "msg_1",
-        kind: "assistant_message" as const,
-        created_at: "2026-06-19T00:00:00Z",
-        revision: 12,
-        text: "新文本",
-        status: "streaming",
-        source_event_ids: ["evt_live"],
-      },
-    ],
-  };
+    items: [assistantConversationItem({ revision: 12, text: "新文本", source_event_ids: ["evt_live"] })],
+  });
 
-  const next = applyTranscriptLiveOverlay(transcript, {
+  const next = applyConversationLiveOverlay(conversation, {
     event_id: "evt_old",
     epoch: 1,
     seq: 10,
@@ -3452,29 +2203,20 @@ test("ignores stale assistant delta live overlay events", () => {
     payload: { message_id: "msg_1", delta: "旧" },
   });
 
-  assert.equal(next, transcript);
-  assert.equal(next.rows[0]?.text, "新文本");
+  assert.equal(next, conversation);
+  assert.equal(next.items[0]?.kind, "assistant_message");
+  assert.equal(next.items[0]?.text, "新文本");
   assert.equal(next.cursor.event_id, "evt_live");
   assert.equal(next.cursor.seq, 12);
 });
 
 test("ignores stale non-delta live overlay events", () => {
-  const transcript = {
-    session_id: "sess_1",
+  const conversation = conversationFixture({
     cursor: { event_id: "evt_live", epoch: 1, seq: 12 },
-    rows: [
-      {
-        id: "msg_1",
-        kind: "assistant_message" as const,
-        created_at: "2026-06-19T00:00:00Z",
-        revision: 12,
-        text: "done",
-        status: "completed",
-      },
-    ],
-  };
+    items: [assistantConversationItem({ revision: 12, text: "done", status: "completed" as const })],
+  });
 
-  const next = applyTranscriptLiveOverlay(transcript, {
+  const next = applyConversationLiveOverlay(conversation, {
     event_id: "evt_old",
     epoch: 1,
     seq: 10,
@@ -3482,107 +2224,69 @@ test("ignores stale non-delta live overlay events", () => {
     type: "turn.completed",
   });
 
-  assert.equal(next, transcript);
+  assert.equal(next, conversation);
   assert.equal(next.cursor.event_id, "evt_live");
   assert.equal(next.cursor.seq, 12);
 });
 
-test("applies message-id-free assistant delta live overlays only to the latest streaming row", () => {
-  const transcript = {
-    session_id: "sess_1",
-    cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-    rows: [
-      {
-        id: "old",
-        kind: "assistant_message" as const,
-        created_at: "2026-06-19T00:00:00Z",
-        revision: 1,
-        text: "old",
-        status: "streaming",
-        source_event_ids: ["evt_old"],
-      },
-      {
+test("applies message-id-free assistant delta live overlays only to the latest streaming item", () => {
+  const conversation = conversationFixture({
+    items: [
+      assistantConversationItem({ id: "old", text: "old", source_event_ids: ["evt_old"] }),
+      assistantConversationItem({
         id: "latest",
-        kind: "assistant_message" as const,
         created_at: "2026-06-19T00:00:01Z",
-        revision: 1,
         text: "new",
-        status: "streaming",
         source_event_ids: ["evt_new"],
-      },
+      }),
     ],
-  };
+  });
 
-  const next = applyTranscriptLiveOverlay(transcript, {
+  const next = applyConversationLiveOverlay(conversation, {
     event_id: "evt_2",
     type: "assistant.message.delta",
     payload: { delta: "!" },
   });
 
-  assert.equal(next.rows[0]?.text, "old");
-  assert.equal(next.rows[1]?.text, "new!");
+  assert.equal(next.items[0]?.kind, "assistant_message");
+  assert.equal(next.items[0]?.text, "old");
+  assert.equal(next.items[1]?.kind, "assistant_message");
+  assert.equal(next.items[1]?.text, "new!");
 });
 
-test("does not invent transcript rows from live overlay events", () => {
-  const transcript = {
-    session_id: "sess_1",
-    cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-    rows: [],
-  };
+test("does not invent conversation items from live overlay events", () => {
+  const conversation = conversationFixture({ items: [] });
 
-  const next = applyTranscriptLiveOverlay(transcript, {
+  const next = applyConversationLiveOverlay(conversation, {
     event_id: "evt_2",
     type: "assistant.message.delta",
     payload: { message_id: "msg_backend_owned", delta: "server truth" },
   });
 
-  assert.deepEqual(next.rows, []);
+  assert.deepEqual(next.items, []);
   assert.equal(next.cursor.event_id, "evt_2");
 });
 
-test("requests transcript refresh when assistant delta overlay has no local row", () => {
+test("requests conversation refresh when assistant delta overlay has no local item", () => {
   const event = {
     event_id: "evt_2",
     type: "assistant.message.delta",
     payload: { message_id: "msg_backend_owned", delta: "server truth" },
   };
 
+  assert.equal(needsConversationRefreshAfterLiveOverlay(conversationFixture({ items: [] }), event), true);
   assert.equal(
-    needsTranscriptRefreshAfterLiveOverlay(
-      {
-        session_id: "sess_1",
-        cursor: { event_id: "evt_1" },
-        rows: [],
-      },
-      event,
-    ),
-    true,
-  );
-  assert.equal(
-    needsTranscriptRefreshAfterLiveOverlay(
-      {
-        session_id: "sess_1",
-        cursor: { event_id: "evt_1" },
-        rows: [
-          {
-            id: "msg_backend_owned",
-            kind: "assistant_message",
-            created_at: "2026-06-19T00:00:00Z",
-            status: "streaming",
-          },
-        ],
-      },
+    needsConversationRefreshAfterLiveOverlay(
+      conversationFixture({
+        items: [assistantConversationItem({ id: "msg_backend_owned" })],
+      }),
       event,
     ),
     false,
   );
   assert.equal(
-    needsTranscriptRefreshAfterLiveOverlay(
-      {
-        session_id: "sess_1",
-        cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
-        rows: [],
-      },
+    needsConversationRefreshAfterLiveOverlay(
+      conversationFixture({ items: [] }),
       {
         event_id: "evt_other_session",
         epoch: 1,
@@ -3595,12 +2299,8 @@ test("requests transcript refresh when assistant delta overlay has no local row"
     false,
   );
   assert.equal(
-    needsTranscriptRefreshAfterLiveOverlay(
-      {
-        session_id: "sess_1",
-        cursor: { event_id: "evt_live", epoch: 1, seq: 12 },
-        rows: [],
-      },
+    needsConversationRefreshAfterLiveOverlay(
+      conversationFixture({ cursor: { event_id: "evt_live", epoch: 1, seq: 12 }, items: [] }),
       {
         event_id: "evt_old",
         epoch: 1,
@@ -3936,8 +2636,8 @@ test("validates CommandAck oneOf branches at the client wire boundary", async ()
     },
     {
       status: "rejected",
-      code: "turn_running",
-      message: "turn is running",
+      code: "duplicate_command",
+      message: "idempotency key was reused with different command content",
     },
   ];
   for (const ack of validAcks) {
@@ -4002,10 +2702,10 @@ test("extracts user-visible rejected CommandAck messages without treating accept
   assert.equal(
     commandAckRejectionMessage({
       status: "rejected",
-      code: "turn_running",
-      message: "A turn is already running",
+      code: "duplicate_command",
+      message: "Idempotency key was reused with different command content",
     }),
-    "A turn is already running",
+    "Idempotency key was reused with different command content",
   );
 });
 

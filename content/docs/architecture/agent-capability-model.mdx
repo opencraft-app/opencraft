@@ -19,7 +19,7 @@ flowchart TD
   Adapter --> Runtime["vela-runtime\ncommand authority + ownership gate"]
   Runtime --> Store["vela-store\ncanonical event ledger"]
   Store --> Projection["vela-projection\nread models"]
-  Projection --> OpenAPI["OpenAPI wire contract\nsessions / backends / transcript / activity / requests / trace"]
+  Projection --> OpenAPI["OpenAPI wire contract\nsessions / backends / conversation / requests / trace"]
   OpenAPI --> Client["Clients\nweb / desktop / mobile / tests"]
 ```
 
@@ -28,7 +28,7 @@ OpenAPI 不描述 provider 原始 notification、JSON-RPC method、JSONL event �
 - `Session`：当前会话、runtime info、operations。
 - `Backend`：可用模型、thinking、mode、feature、capabilities。
 - `Input`：用户消息、图片、文件、skill、request response。
-- `Read Models`：transcript、activity/work、pending requests、diffs。
+- `Read Models`：conversation/work、pending requests、diffs。
 - `Diagnostics`：timeline、trace、logger-safe provider records。
 
 ## 能力发现
@@ -114,7 +114,7 @@ Day 1 应支持这些 input part：
 
 ## Agent Work
 
-UI 上叫 `ActivityShelfView`，领域语义上更接近 `AgentWorkItem`。它不是“工具列表”，而是 agent 正在做或已经做过的工作。
+UI 上叫 `ConversationView`，领域语义上更接近 `AgentWorkItem`。它不是“工具列表”，而是 agent 正在做或已经做过的工作。
 
 推荐的 work detail vocabulary：
 
@@ -141,7 +141,7 @@ Provider normalizer 应尽量把 Codex、ACP、Pi 的 tool/event vocabulary 吸�
 
 ## Requests
 
-`PendingRequestsView` 是所有用户确认和提问的唯一 UI contract。它不从 transcript、timeline 或 provider raw event 中推断。
+`PendingRequestsView` 是所有用户确认和提问的唯一 UI contract。它不从 conversation text、timeline 或 provider raw event 中推断。
 
 Request 应支持：
 
@@ -169,7 +169,7 @@ Request 应支持：
 - adapter logger
 
 例如 Codex app-server 的 `remoteControl/status/changed`、`mcpServer/startupStatus/updated`、`account/rateLimits/updated`
-是控制面 telemetry；它们可以帮助调试，但不应渲染成聊天内容、activity item 或 warning bubble。
+是控制面 telemetry；它们可以帮助调试，但不应渲染成聊天内容、agent work item 或 warning bubble。
 
 ## Paseo 对比
 
@@ -221,13 +221,13 @@ Client MUST 通过 `Backend.capabilities`、`Backend.models`、`Backend.features
 
 ### Requirement: Provider work 必须归一化
 
-Provider tool/work output MUST 先映射成 Vela work detail branch，再进入 `ActivityShelfView`。
+Provider tool/work output MUST 先映射成 Vela work detail branch，再进入 `ConversationView`。
 
 #### Scenario: Codex 输出 command execution item
 
 - **WHEN** Codex app-server 输出 command execution thread item
 - **THEN** normalizer 映射为 `shell` work detail
-- **AND** `ActivityShelfView` 显示稳定 title、summary、status 和 detail
+- **AND** `ConversationView` 显示稳定 title、summary、status 和 detail
 - **AND** provider raw item 只进入 diagnostics
 
 ### Requirement: Request 是唯一确认面

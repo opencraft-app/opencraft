@@ -1,7 +1,7 @@
 use super::*;
 
 #[tokio::test]
-async fn sends_user_message_through_runtime_and_projects_transcript() {
+async fn sends_user_message_through_runtime_and_projects_conversation() {
     let app = test_app().await;
     let (_, created) = json_request(
         app.clone(),
@@ -41,11 +41,23 @@ async fn sends_user_message_through_runtime_and_projects_transcript() {
     assert_eq!(events["events"][0]["type"], "session.created");
     assert_eq!(events["events"][1]["type"], "user.message.accepted");
 
-    let transcript = wait_for_transcript_rows(app, session_id, 2).await;
-    assert_eq!(transcript["rows"][0]["kind"], "user_message");
-    assert_eq!(transcript["rows"][0]["text"], "ping");
-    assert_eq!(transcript["rows"][1]["kind"], "assistant_message");
-    assert_eq!(transcript["rows"][1]["text"], "pong");
+    let events = wait_for_session_event(app.clone(), session_id, "turn.completed").await;
+    let conversation = wait_for_conversation_items(app, session_id, 4).await;
+    let items = conversation["items"].as_array().unwrap();
+    let user = items
+        .iter()
+        .find(|item| item["kind"] == "user_message")
+        .expect("user message item");
+    let assistant = items
+        .iter()
+        .find(|item| item["kind"] == "assistant_message")
+        .expect("assistant message item");
+    let turn_meta = items
+        .iter()
+        .find(|item| item["kind"] == "turn_meta")
+        .expect("turn meta item");
+    assert_eq!(user["text"], "ping");
+    assert_eq!(assistant["text"], "pong");
     let turn_id = events["events"]
         .as_array()
         .unwrap()
@@ -53,51 +65,39 @@ async fn sends_user_message_through_runtime_and_projects_transcript() {
         .find(|event| event["type"] == "turn.started")
         .and_then(|event| event["payload"]["turn_id"].as_str())
         .expect("turn.started should expose turn_id");
-    assert_eq!(transcript["rows"][0]["turn_id"], turn_id);
-    assert_eq!(transcript["rows"][1]["turn_id"], turn_id);
-    assert_eq!(transcript["turns"].as_array().unwrap().len(), 1);
-    assert_eq!(transcript["turns"][0]["turn_id"], turn_id);
-    assert_eq!(transcript["turns"][0]["status"], "completed");
-    assert_eq!(
-        transcript["turns"][0]["first_row_id"],
-        transcript["rows"][0]["id"]
-    );
-    assert_eq!(
-        transcript["turns"][0]["last_row_id"],
-        transcript["rows"][1]["id"]
-    );
+    assert_eq!(user["turn_id"], turn_id);
+    assert_eq!(assistant["turn_id"], turn_id);
+    assert_eq!(turn_meta["turn_id"], turn_id);
+    assert_eq!(turn_meta["status"], "completed");
     assert!(
-        transcript["turns"][0]["started_at"]
+        turn_meta["created_at"]
             .as_str()
             .unwrap()
             .contains('T')
     );
     assert!(
-        transcript["turns"][0]["completed_at"]
+        turn_meta["updated_at"]
             .as_str()
             .unwrap()
             .contains('T')
     );
     assert!(
-        transcript["turns"][0]["source_event_ids"]
+        turn_meta["source_event_ids"]
             .as_array()
             .unwrap()
             .len()
             >= 2
     );
-    assert_eq!(transcript["session_id"], session_id);
-    assert_eq!(transcript["window"]["has_older"], false);
-    assert_eq!(transcript["window"]["has_newer"], false);
+    assert_eq!(conversation["session_id"], session_id);
+    assert_eq!(conversation["window"]["has_older"], false);
+    assert_eq!(conversation["window"]["has_newer"], false);
+    assert_eq!(conversation["window"]["first_item_id"], items[0]["id"]);
     assert_eq!(
-        transcript["window"]["first_row_id"],
-        transcript["rows"][0]["id"]
+        conversation["window"]["last_item_id"],
+        items.last().unwrap()["id"]
     );
-    assert_eq!(
-        transcript["window"]["last_row_id"],
-        transcript["rows"][1]["id"]
-    );
-    assert!(transcript["cursor"]["event_id"].as_str().unwrap().len() > 0);
-    assert!(transcript["cursor"]["seq"].as_i64().unwrap() >= 4);
+    assert!(conversation["cursor"]["event_id"].as_str().unwrap().len() > 0);
+    assert!(conversation["cursor"]["seq"].as_i64().unwrap() >= 4);
 }
 
 #[tokio::test]
@@ -437,17 +437,23 @@ async fn acp_session_events_accept_base64_image_input_parts() {
         ]
     );
 
-    let transcript = wait_for_transcript_rows(app.clone(), session_id, 1).await;
+    let conversation = wait_for_conversation_items(app.clone(), session_id, 1).await;
+    let user = conversation["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["kind"] == "user_message")
+        .expect("user message item");
     assert_eq!(
-        transcript["rows"][0]["parts"],
+        user["parts"],
         json!([
             {
-                "id": format!("{}:part:0", transcript["rows"][0]["id"].as_str().unwrap()),
+                "id": format!("{}:part:0", user["id"].as_str().unwrap()),
                 "type": "text",
                 "text": "look at this"
             },
             {
-                "id": format!("{}:part:1", transcript["rows"][0]["id"].as_str().unwrap()),
+                "id": format!("{}:part:1", user["id"].as_str().unwrap()),
                 "type": "image",
                 "data": {
                     "kind": "inline_base64",

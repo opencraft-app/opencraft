@@ -16,9 +16,9 @@ description: velaChat 应用由哪些运行时组件组成。
 | Sequencer | `vela-runtime` / `vela-store` | 分配 `event_id + epoch + seq` | 不理解 UI projection |
 | Event Store | `vela-store` | append/query canonical events、cursor window | 不知道 Pi/Codex/Claude |
 | Backend Adapter | `vela-backends` | 启动 agent、收 raw output、回传 runtime output | 不写 store、不分配 canonical seq |
-| Projector | `vela-projection` | events -> transcript/activity/request/diff/session views | 不调用 backend |
+| Projector | `vela-projection` | events -> conversation/request/diff/session views | 不调用 backend |
 | Protocol DTO | `vela-protocol` | REST/SSE/OpenAPI 类型 | 不包含业务执行逻辑 |
-| Client | 外部 app | 渲染 read models、提交 commands | 不 append canonical transcript row |
+| Client | 外部 app | 渲染 read models、提交 commands | 不 append canonical conversation item |
 
 ## 关键数据流
 
@@ -53,5 +53,5 @@ Projection MUST 能从 canonical events 重新构建。
 
 #### Scenario: projection 表损坏
 
-- **WHEN** transcript projection 被清空
-- **THEN** 系统可以 replay event log 重建 transcript
+- **WHEN** conversation projection 被清空
+- **THEN** 系统可以 replay event log 重建 conversation

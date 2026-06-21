@@ -4,7 +4,7 @@ use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
 use thiserror::Error;
 use vela_core::{
     AcceptedCommandAck, AgentConfig, BackendKind, CanonicalEvent, CommandAck, CommandId,
-    EventCursor, EventSource, EventType, SessionId,
+    EventCursor, EventSource, EventType, QueuedCommandAck, SessionId,
 };
 
 #[derive(Debug, Error)]
@@ -348,12 +348,26 @@ impl SqliteEventStore {
         let event = self
             .append_event_tx(&mut tx, session_id, event_type, source, payload, None)
             .await?;
-        let ack = CommandAck::Accepted(AcceptedCommandAck {
-            command_id: command_id.unwrap_or_default(),
-            session_id: session_id.clone(),
-            cursor: event.cursor(),
-            turn_id: None,
-        });
+        let ack = if event_type == EventType::INPUT_QUEUED {
+            CommandAck::Queued(QueuedCommandAck {
+                command_id: command_id.unwrap_or_default(),
+                session_id: session_id.clone(),
+                queued_message_id: event
+                    .payload
+                    .get("queued_message_id")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+                    .unwrap_or_else(|| event.event_id.to_string()),
+                cursor: event.cursor(),
+            })
+        } else {
+            CommandAck::Accepted(AcceptedCommandAck {
+                command_id: command_id.unwrap_or_default(),
+                session_id: session_id.clone(),
+                cursor: event.cursor(),
+                turn_id: None,
+            })
+        };
         let ack_json = serde_json::to_string(&ack)?;
         sqlx::query(
             r#"

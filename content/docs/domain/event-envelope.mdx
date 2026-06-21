@@ -39,10 +39,10 @@ export type VelaEventEnvelope<TPayload = unknown> = {
 
 Canonical events MUST 包含足够信息重建 read models。
 
-#### Scenario: transcript projection 丢失
+#### Scenario: conversation projection 丢失
 
 - **WHEN** projection storage 被删除
-- **THEN** daemon 可以 replay events 并重建 transcript rows
+- **THEN** daemon 可以 replay events 并重建 conversation items
 
 ### Requirement: raw payload 可选
 

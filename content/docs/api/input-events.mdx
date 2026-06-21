@@ -7,7 +7,7 @@ description: 面向用户意图的统一输入事件入口。
 
 Input Event API 是 velaChat 的统一 command surface。
 
-它采用 Qoder 风格的 event-shaped input，但语义上仍然是 **用户意图**，不是 canonical runtime fact。Client 提交 input events 后，daemon 必须先校验、幂等、排队或拒绝；只有被接受的输入才会变成 canonical events，并进一步投影到 transcript、activity、requests、diffs 等 read models。
+它采用 Qoder 风格的 event-shaped input，但语义上仍然是 **用户意图**，不是 canonical runtime fact。Client 提交 input events 后，daemon 必须先校验、幂等、排队或拒绝；只有被接受的输入才会变成 canonical events，并进一步投影到 conversation、requests、diffs 等 read models。
 
 ```txt
 Client input event
@@ -53,7 +53,7 @@ Client input event
 }
 ```
 
-Daemon 接受后会产生 `user.message.accepted`，然后 projector 把它投影成 `ChatTranscriptView` 中的 user row。
+Daemon 接受后会产生 `user.message.accepted`，然后 projector 把它投影成 `ConversationView` 中的 `user_message` item。若当前 turn 正在运行，daemon 可以先返回 `queued` ack 并追加 `input.queued`，由 projector 显示排队输入。
 
 ### user.tool_confirmation
 
@@ -131,7 +131,7 @@ Codex、CloudAgent、ACP 也必须适配成同一组 input event。UI 不应该�
 
 Malformed JSON、缺少路径资源、HTTP 层冲突等仍然返回 `ErrorEnvelope`，而不是 `CommandAck.rejected`。具体 wire schema 以 OpenAPI 的 `CommandAck` `oneOf` 为准。
 
-Client 可以在 command in-flight 时显示 pending affordance，但正式 transcript row 只能来自 `ChatTranscriptView`。
+Client 可以在 command in-flight 时显示 pending affordance，但正式 conversation item 只能来自 `ConversationView`。
 
 ## Requirements
 
@@ -144,8 +144,9 @@ Input events MUST NOT be treated as canonical runtime events until daemon accept
 - **WHEN** client posts `user.message`
 - **THEN** daemon validates session state and idempotency
 - **AND** 返回 `CommandAck`
-- **AND** only accepted input produces `user.message.accepted`
-- **AND** Chat UI waits for `ChatTranscriptView` to render the formal user row
+- **AND** accepted input produces `user.message.accepted`
+- **AND** queued input produces `input.queued`
+- **AND** Chat UI waits for `ConversationView` to render the formal user or queued item
 
 ### Requirement: request response 走同一输入入口
 

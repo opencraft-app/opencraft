@@ -12,8 +12,8 @@ velaChat 的 ChatUI 不应该从某个大组件开始。它应该从一个可回
 ```mermaid
 flowchart TD
   OpenAPI["velad OpenAPI Read Models
-  /views/transcript
-  /views/activity
+  /views/conversation
+  /views/conversation
   /views/requests
   /views/diffs
   /events/stream"] --> Client["vela-chat-client
@@ -39,13 +39,13 @@ flowchart TD
 
 普通 ChatUI 主列 MUST 优先消费：
 
-- `GET /sessions/{session_id}/views/transcript`
+- `GET /sessions/{session_id}/views/conversation`
 - `GET /sessions/{session_id}/events/stream`
 - `POST /sessions/{session_id}/events`
 
 辅助区域 SHOULD 消费：
 
-- `GET /sessions/{session_id}/views/activity`
+- `GET /sessions/{session_id}/views/conversation`
 - `GET /sessions/{session_id}/views/requests`
 - `GET /sessions/{session_id}/views/diffs`，当页面存在 review lane 时
 
@@ -63,7 +63,7 @@ flowchart TD
 职责：
 
 - 构造 API URL。
-- 读取 transcript、activity、requests、diffs。
+- 读取 conversation、requests、diffs。
 - 发送 `user.message`，并生成或接收 `Idempotency-Key`。
 - 连接 session SSE stream。
 - 将 HTTP、SSE、JSON parse 失败变成结构化错误。
@@ -98,8 +98,8 @@ interface ChatSurface {
 Current implementation note: `vela-chat-client` already supports
 `DiffReviewView`, and `streamReadModelRefreshPlan` can plan `diffs` refreshes.
 The current `ChatSurface` and `/chat` example route do not yet materialize a
-review lane or `ChatSurfaceDiffs`. Do not silently merge `/views/diffs` into
-activity rows, transcript rows, or timeline-derived blocks. Add a dedicated
+  review lane or `ChatSurfaceDiffs`. Do not silently merge `/views/diffs` into
+conversation items or timeline-derived blocks. Add a dedicated
 review lane contract, surface field, render-model tests, and route refresh state
 when the UI is ready to display diffs.
 
@@ -110,20 +110,19 @@ when the UI is ready to display diffs.
 - `projection`
 - `session_id`
 - `turn_id`
-- `turns`
 - `request_id`
 - `tool_id`
 - `debug_hints`
 
 `source_event_ids` 只能来自 OpenAPI read model 明确提供的 provenance：
-`ChatTranscriptRow.source_event_ids` 或 `ActivityShelfItem.event_range`。如果
-`PendingRequestsView` 或某个 activity item 没有给出 event provenance，surface
+`ConversationItem.source_event_ids`。如果
+`PendingRequestsView` 或某个 conversation item 没有给出 event provenance，surface
 必须保留空数组，而不是用 row/item/request id 伪造 event id。
 
-`ChatTranscriptView.turns` 必须原样进入 surface transcript state。它是 turn
-lifecycle 的窗口级 metadata，不是 activity detail，也不是 assistant row 的派生字段。
-Surface 可以合并分页窗口中的 `turns`，但不能根据 assistant streaming、tool activity
-或 timeline/raw event 自己发明 turn summary。
+`turn_meta` items 必须原样进入 surface state。它们是 turn lifecycle 的窗口级
+metadata，不是 agent work detail，也不是 assistant item 的派生字段。Surface 可以合并
+分页窗口中的 `turn_meta` items，但不能根据 assistant streaming、tool activity 或
+timeline/raw event 自己发明 turn summary。
 
 禁止：
 
@@ -214,9 +213,9 @@ type ChatHostPolicy =
 | --- | --- |
 | 请求打不到 daemon | `vela-chat-client` URL、base URL、CORS、network error |
 | user message 返回 rejected | `velad` response、`CommandAck`、`Idempotency-Key` |
-| transcript 少消息 | `/views/transcript` response、`vela-chat-surface` normalizer |
-| Worked/处理中 位置或时间跳 | `/views/transcript.turns`、`vela-chat-surface` turn merge、`vela-chat-render-model` turn header placement |
-| activity/tool 没显示 | `/views/activity` response、surface activity merge |
+| transcript 少消息 | `/views/conversation` response、`vela-chat-surface` normalizer |
+| Worked/处理中 位置或时间跳 | `/views/conversation` 的 `turn_meta` item、`vela-chat-surface` turn merge、`vela-chat-render-model` turn header placement |
+| activity/tool 没显示 | `/views/conversation` response、surface activity merge |
 | 长消息卡顿 | `vela-chat-render-model` markdown block split、row memo key |
 | 移动端布局不合理 | host policy、render model，而不是 surface |
 | 视觉错位 | `vela-chat-web` component 和 CSS |
@@ -273,13 +272,13 @@ flowchart LR
 
 ### 工具和中间 narration
 
-普通 transcript 不应该被 tool noise 淹没。Chat 正文和 agent work 是两个不同 surface：正文只渲染 user/assistant message-like rows，agent work 从 `ActivityShelfView` 进入独立 work rows。
+普通 conversation 正文不应该被 tool noise 淹没。Chat 正文和 agent work 是同一个 `ConversationView` 内的不同 item kind：正文只渲染 user/assistant message items，agent work 以独立 work items 进入 flow。
 
-所有工具调用都应该进入 activity projection，无论是长运行命令还是短 search/read/list。`timeline` 保留完整事实，`activity` 保留 UI-safe 工具语义，前端可以调整密度、分组或虚拟化，但不从普通 activity model 丢工具。
+所有工具调用都应该进入 `agent_work` projection，无论是长运行命令还是短 search/read/list。`timeline` 保留完整事实，`ConversationView` 保留 UI-safe 工具语义，前端可以调整密度、分组或虚拟化，但不从普通 conversation model 丢工具。
 
-`已处理 ...` / host-localized worked label 不由 backend 写死，也不是 activity item 字段。它由 render model 基于 `ChatTranscriptView.turns` 派生：`started_at`、`completed_at` 和 `status` 来自 Rust projector 的 turn lifecycle summary。Turn header 只表达 turn 生命周期；同 turn 的 activity items 必须继续作为独立 agent work rows 进入 conversation flow，不能折进 header 或挂到某一段 assistant markdown 上。这个规则避免 provider/backend 对 turn 概念不一致时污染 UI 契约，也避免工具调用把正文结构打碎。
+`已处理 ...` / host-localized worked label 不由 backend 写死，也不是 agent work 字段。它由 render model 基于 `turn_meta` item 派生：`started_at`、`completed_at` 和 `status` 来自 Rust projector。Turn header 只表达 turn 生命周期；同 turn 的 agent work items 必须继续作为独立 rows 进入 conversation flow，不能折进 header 或挂到某一段 assistant markdown 上。这个规则避免 provider/backend 对 turn 概念不一致时污染 UI 契约，也避免工具调用把正文结构打碎。
 
-展示密度、展开策略和虚拟化属于 render model；原始 activity、tool detail 和 source event IDs 必须留在 surface diagnostics 中。
+展示密度、展开策略和虚拟化属于 render model；原始 tool detail 和 source event IDs 必须留在 surface diagnostics 中。
 
 ## 第一版落地边界
 
@@ -287,10 +286,10 @@ flowchart LR
 
 - 指定 `velad` base URL。
 - 指定或创建 session。
-- 拉取 `/views/transcript` row window。
+- 拉取 `/views/conversation` item window。
 - 发送 `user.message`。
-- 订阅 `/events/stream`，由隔离 live adapter 把相关 canonical events 转成本地 transcript row patch。
-- 展示 transcript、composer、基础 running/error 状态。
+- 订阅 `/events/stream`，由隔离 live adapter 把相关 canonical events 转成本地 conversation item patch。
+- 展示 conversation、composer、基础 running/error 状态。
 
 第一版不需要：
 
@@ -299,7 +298,7 @@ flowchart LR
 - request approval UI。
 - timeline raw replay UI。
 - native desktop host integration。
-- projected `/views/transcript/stream`。这是下一阶段把 live adapter 下沉到 Rust projector 后的 API，不是 Day 0 组件层职责。
+- projected `/views/conversation/stream`。这是下一阶段把 live adapter 下沉到 Rust projector 后的 API，不是 Day 0 组件层职责。
 
 但目录和类型必须为这些后续能力留出位置，避免后面把所有逻辑塞进页面组件。
 

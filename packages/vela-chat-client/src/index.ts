@@ -7,12 +7,11 @@ export * from "./sse";
 export * from "./stream";
 export * from "./wire";
 export {
-  parseActivityWireView,
   parseBackendProbeResultWire,
   parseBackendWireResponse,
   parseBackendsWireResponse,
-  parseChatTranscriptWireView,
   parseCommandAckWire,
+  parseConversationWireView,
   parseCreateSessionWireResponse,
   parseDiffReviewWireView,
   parsePendingRequestsWireView,

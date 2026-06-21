@@ -15,8 +15,7 @@ velaChat 不把一个巨大的 `ClientSnapshot` 当核心模型，而是提供�
 
 - `SessionListView`
 - `SessionView`
-- `ChatTranscriptView`
-- `ActivityShelfView`
+- `ConversationView`
 - `PendingRequestsView`
 - `BackendStatusView`
 - `DiffReviewView`
@@ -40,7 +39,7 @@ Daemon MUST 提供 read model history fetch endpoints。
 #### Scenario: 打开已有 session
 
 - **WHEN** client 打开没有本地缓存的 session
-- **THEN** 它先 fetch session 和 transcript/activity history
+- **THEN** 它先 fetch session 和 conversation history
 - **AND** 再从返回 cursor 订阅 live events
 
 ### Requirement: 按 projection 刷新
@@ -51,7 +50,7 @@ Client MUST 能局部刷新受影响 projection，而不是每次重载整个 wo
 
 - **WHEN** backend availability 变化
 - **THEN** client 只刷新 backend status
-- **AND** transcript 不受影响
+- **AND** conversation 不受影响
 
 ## Cursor Window
 

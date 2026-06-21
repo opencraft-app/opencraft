@@ -43,7 +43,7 @@ fn canonical_event_keeps_wire_names_snake_case() {
     assert_eq!(value["session_id"], "ses_1");
     assert_eq!(
         value["affected_views"],
-        json!(["session", "transcript", "timeline", "workbench"])
+        json!(["session", "conversation", "timeline", "workbench"])
     );
     assert_eq!(value["source"]["kind"], "runtime");
 }
@@ -176,7 +176,7 @@ fn rejected_command_ack_only_requires_code_and_message() {
 
     match ack {
         CommandAck::Rejected(rejected) => {
-            assert_eq!(rejected.code, "turn_running");
+            assert_eq!(rejected.code, "duplicate_command");
             assert!(rejected.cursor.is_none());
             assert!(rejected.command_id.is_none());
             assert!(rejected.session_id.is_none());

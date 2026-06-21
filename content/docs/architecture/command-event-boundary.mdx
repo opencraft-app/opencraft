@@ -43,8 +43,7 @@ Normalizer / Sequencer
 Projectors
   |
   +--> SessionListView
-  +--> ChatTranscriptView
-  +--> ActivityShelfView
+  +--> ConversationView
   +--> PendingRequestsView
   +--> DiffReviewView
   |
@@ -70,8 +69,8 @@ sequenceDiagram
 
   Client->>API: POST /sessions/{id}/events
   API->>API: 校验 session、idempotency、权限、运行状态
-  API->>Log: append user.message.accepted
-  API-->>Client: 202 Accepted + turn_id + cursor
+  API->>Log: append user.message.accepted or input.queued
+  API-->>Client: 202 CommandAck + cursor
   API->>Adapter: 发送 turn 给 agent runtime
   Adapter-->>API: provider runtime output
   API->>Log: append canonical runtime events
@@ -93,7 +92,7 @@ daemon 必须校验：
 - active turn 状态
 - pending permission 状态
 - backend 是否可用
-- 当前策略是 queue、reject 还是 cancel
+- 当前策略是 accept、queue、reject 还是 cancel
 
 #### Scenario: 同一个客户端重复提交
 
@@ -105,9 +104,9 @@ daemon 必须校验：
 #### Scenario: 没有 idempotency key 的重复提交
 
 - **WHEN** 客户端在第一个 turn 还没接受完成时提交两条相同 prompt
-- **THEN** daemon 按 session state policy 处理
-- **AND** 要么拒绝第二条 command，要么明确排队
-- **AND** 这个决定必须由 canonical event 表达
+- **THEN** daemon 接受第一条 command
+- **AND** 如果当前 turn 正在运行，第二条普通消息进入 queue
+- **AND** 这个决定必须由 `input.queued` 和 `CommandAck.queued` 表达
 
 ### Requirement: Event 是 canonical fact
 
@@ -126,11 +125,11 @@ Backend adapter 可以产生 provider runtime output，但必须经过 daemon no
 - **WHEN** 后端输出 shell 命令、wrapper JSON、provider-specific tool log
 - **THEN** daemon 可以在允许时记录 raw provider data 用于调试
 - **AND** 对外只产生 canonical tool / activity events
-- **AND** 客户端不能把 raw provider output 当作 chat transcript text
+- **AND** 客户端不能把 raw provider output 当作 assistant text
 
 ### Requirement: Projection 不是事实源
 
-Timeline、transcript、request、diff、session directory view 都必须从 canonical events 或 daemon 安全状态推导出来。
+Conversation、request、diff、session directory view 都必须从 canonical events 或 daemon 安全状态推导出来。
 
 客户端可以为了响应速度缓存 projection，但当 event cursor 失效时，必须从 daemon API 重新拉取或重建 projection cache。
 
@@ -138,7 +137,7 @@ Timeline、transcript、request、diff、session directory view 都必须从 can
 
 - **WHEN** 客户端离开 session A 并打开 session B
 - **THEN** 客户端使用 session B 的 daemon read model
-- **AND** session A 的 transcript row 不能被复用到 session B，除非它存在于 session B 的 canonical projection
+- **AND** session A 的 conversation item 不能被复用到 session B，除非它存在于 session B 的 canonical projection
 
 #### Scenario: Timeline projection 被清空
 
@@ -146,18 +145,18 @@ Timeline、transcript、request、diff、session directory view 都必须从 can
 - **THEN** daemon 可以 replay canonical events
 - **AND** 重建同样的 timeline read model
 
-### Requirement: Transcript 是窄投影
+### Requirement: Conversation 是窄投影
 
-Chat transcript 必须是 message-like content 的窄投影。它不能直接渲染完整 timeline model。
+Conversation 必须是 message、turn meta、agent work 和 status 的窄投影。它不能直接渲染完整 timeline model。
 
-工具调用、权限请求、diff、warning、task 可以通过明确的 structured transcript row 做摘要，但它们的主展示面应该是 activity、request、review、diagnostic projection。
+工具调用、权限请求、diff、warning、task 必须通过明确的 `agent_work` 或 `status` item 做摘要；完整细节属于 request、review、diagnostic projection。
 
 #### Scenario: Tool command 完成
 
 - **WHEN** 后端 command 执行完成
-- **THEN** activity projection 可以展示 command summary
-- **AND** transcript 不能把 raw command text 渲染成 assistant message
-- **AND** 如果 transcript 需要标记，只能使用明确的 structured row kind，例如 `activity_marker`
+- **THEN** conversation projection 可以展示 command summary as `agent_work`
+- **AND** conversation 不能把 raw command text 渲染成 assistant message
+- **AND** 如果 conversation 需要标记，只能使用明确的 item kind，例如 `agent_work` 或 `status`
 
 ### Requirement: Pulsar 是事件织物，不是 v1 command authority
 
@@ -200,7 +199,6 @@ export type CommandAck =
       code:
         | 'session_not_found'
         | 'session_closed'
-        | 'turn_running'
         | 'permission_blocked'
         | 'backend_unavailable'
         | 'duplicate_command';
@@ -234,9 +232,9 @@ Canonical event vocabulary 必须区分 command acceptance 和 backend output：
 
 ### Anti-Pattern: 客户端本地追加用户气泡
 
-客户端可以在 command in-flight 时显示 pending affordance，但它不是正式 transcript row。正式 transcript row 只能来自 daemon accepted command event 或包含 accepted user message 的 read model。
+客户端可以在 command in-flight 时显示 pending affordance，但它不是正式 conversation item。正式 conversation item 只能来自 daemon accepted/queued command event 经 projector 输出的 read model。
 
-### Anti-Pattern: Backend replay 直接追加 transcript
+### Anti-Pattern: Backend replay 直接追加 conversation
 
 Backend replay 不是 UI append 操作。它只是 normalization 和 reconciliation 的输入。Replayed user echo、assistant final message、streaming delta 都必须先对齐成 canonical message record，再进入 projection。
 
@@ -254,7 +252,7 @@ Topic 可以承载 raw events 或 canonical facts，但用户面向的 chat clie
 - 每个 command endpoint 都接受 idempotency key。
 - Backend adapter 不直接把 provider raw events 暴露给客户端。
 - Normalizer 为 message、part、tool、turn、request 生成稳定 id。
-- Projector 生成窄 read model：transcript、activity、requests、diffs、sessions、backend status。
-- Chat transcript renderer 消费 `ChatTranscriptView`，不消费 raw events，也不消费完整 `TimelineItem` 列表。
+- Projector 生成窄 read model：conversation、requests、diffs、sessions、backend status。
+- Conversation renderer 消费 `ConversationView`，不消费 raw events，也不消费完整 `TimelineItem` 列表。
 - SSE stream 使用 canonical `event_id` 作为 SSE id。
 - 过期 cursor 返回 `sync.reset`，并说明受影响的 read model。
