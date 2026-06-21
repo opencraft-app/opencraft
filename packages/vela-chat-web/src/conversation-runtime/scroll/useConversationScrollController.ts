@@ -2,15 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import {
-  type BottomAnchorRouteBlockedReason,
-  deriveBottomAnchorFollowState,
-  deriveBottomAnchorRouteReadiness,
+  type BottomAnchorBlockedReason,
+  type BottomAnchorDriver,
+  type BottomAnchorDriverSnapshot,
+  type BottomAnchorMeasurementState,
+  type BottomAnchorMode,
+  type BottomAnchorRequestReason,
+  type BottomAnchorUserIntent,
+  createBottomAnchorDriver,
+  isBottomAnchorMeasurementNearBottom,
   isOverscrolledPastBottom,
-  shouldCancelPendingStickForUserScrollIntent,
-  shouldRestickOnContentSizeChange,
-  shouldRetryBottomStickAfterSettle,
-  shouldRestickOnViewportSizeChange,
-} from "./bottomAnchor";
+} from "./bottomAnchorDriver";
 import {
   type ActiveHistoryPrependAnchor,
   deriveHistoryPrependAnchorAfterResize,
@@ -22,16 +24,23 @@ import {
   persistConversationScrollResumeState,
   readConversationScrollResumeState,
 } from "./routeResume";
+import type { ConversationBottomAnchorReason } from "./viewportHandle";
 
 const USER_SCROLL_ACTIVITY_RESET_MS = 180;
-const BOTTOM_STICK_SETTLE_RETRY_MS = 200;
 
 type ScrollableElement = Pick<
   HTMLElement,
-  "clientHeight" | "scrollHeight" | "scrollTo" | "scrollTop"
+  "clientHeight" | "clientWidth" | "scrollHeight" | "scrollTo" | "scrollTop"
 > & {
   style: Pick<CSSStyleDeclaration, "scrollBehavior">;
 };
+
+interface ScheduledFrameHandle {
+  cancelled: boolean;
+  frameId: number | null;
+  remainingFrames: number;
+  callback: () => void;
+}
 
 export interface ConversationScrollControllerOptions {
   hasOlderHistory?: boolean;
@@ -40,20 +49,30 @@ export interface ConversationScrollControllerOptions {
   onNearHistoryStart?: () => void;
 }
 
+export interface ConversationScrollControllerSignals {
+  followSignal: string;
+  layoutSignal: string;
+}
+
 export interface ConversationScrollController {
   contentRef: RefObject<HTMLDivElement | null>;
   debug: ConversationScrollControllerDebug;
   scrollRef: RefObject<HTMLElement | null>;
   followOutput: boolean;
-  forceScrollToBottom: () => void;
+  requestBottomAnchor: (reason: ConversationBottomAnchorReason) => void;
   prepareForViewportChange: () => void;
 }
 
 export interface ConversationScrollControllerDebug {
   followOutput: boolean;
-  bottomAnchorBlockedReason: BottomAnchorRouteBlockedReason | null;
+  bottomAnchorMode: BottomAnchorMode;
+  bottomAnchorBlockedReason: BottomAnchorBlockedReason | null;
+  bottomAnchorPendingReason: BottomAnchorRequestReason | null;
+  bottomAnchorLastFulfilledReason: BottomAnchorRequestReason | null;
   routeResumeStatus: ConversationScrollRouteResumeStatus;
   routeResumeScrollTop: number | null;
+  lastFollowSignal: string;
+  lastLayoutSignal: string;
 }
 
 export type ConversationScrollRouteResumeStatus =
@@ -89,61 +108,131 @@ export function scrollElementToBottom(
   return true;
 }
 
+function scheduleAnimationFrameWithDelay(input: {
+  callback: () => void;
+  delayFrames?: number;
+}): ScheduledFrameHandle {
+  const handle: ScheduledFrameHandle = {
+    cancelled: false,
+    frameId: null,
+    remainingFrames: Math.max(0, input.delayFrames ?? 0),
+    callback: input.callback,
+  };
+
+  const tick = () => {
+    if (handle.cancelled) return;
+    if (handle.remainingFrames > 0) {
+      handle.remainingFrames -= 1;
+      handle.frameId = requestAnimationFrame(tick);
+      return;
+    }
+    handle.frameId = null;
+    handle.callback();
+  };
+
+  handle.frameId = requestAnimationFrame(tick);
+  return handle;
+}
+
+function cancelScheduledFrame(handle: unknown): void {
+  const scheduled = handle as ScheduledFrameHandle | null;
+  if (!scheduled) return;
+  scheduled.cancelled = true;
+  if (scheduled.frameId !== null) {
+    cancelAnimationFrame(scheduled.frameId);
+    scheduled.frameId = null;
+  }
+}
+
+function routeKeyFrom(value: unknown): string | null {
+  return value == null ? null : String(value);
+}
+
+function emptyDriverSnapshot(): BottomAnchorDriverSnapshot {
+  return {
+    mode: "sticky_bottom",
+    pendingRequest: null,
+    pendingVerification: null,
+    blockedReason: null,
+    measurementRevision: 0,
+    lastVerifiedMeasurementRevision: 0,
+    lastFulfilledReason: null,
+    detachReason: null,
+  };
+}
+
 export function useConversationScrollController(
-  dependency: unknown,
+  signals: ConversationScrollControllerSignals,
   options: ConversationScrollControllerOptions = {},
 ): ConversationScrollController {
   const contentRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLElement | null>(null);
-  const followOutputRef = useRef(true);
   const lastKnownContentHeightRef = useRef(0);
   const lastKnownViewportHeightRef = useRef(0);
   const lastKnownViewportWidthRef = useRef(0);
   const lastKnownScrollTopRef = useRef(0);
-  const lastBottomAnchorBlockedReasonRef =
-    useRef<BottomAnchorRouteBlockedReason | null>(null);
+  const latestFollowSignalRef = useRef(signals.followSignal);
+  const latestLayoutSignalRef = useRef(signals.layoutSignal);
   const pendingScrollResumeStateRef =
     useRef<ConversationScrollResumeState | null>(null);
   const routeResumeStatusRef =
     useRef<ConversationScrollRouteResumeStatus>("idle");
   const routeResumeScrollTopRef = useRef<number | null>(null);
-  const lastTouchClientYRef = useRef<number | null>(null);
-  const pendingFrameRef = useRef<number | null>(null);
-  const pendingSettleTimeoutRef = useRef<number | null>(null);
   const pendingScrollResumePersistFrameRef = useRef<number | null>(null);
   const latestScrollResumePersistStateRef =
     useRef<ConversationScrollResumeState | null>(null);
   const pendingHistoryPrependAnchorRef =
     useRef<ActiveHistoryPrependAnchor | null>(null);
-  const pendingUserScrollUpIntentRef = useRef(false);
   const historyStartReadyRef = useRef(false);
-  const userScrollActiveRef = useRef(false);
-  const userScrollActivityTimeoutRef = useRef<number | null>(null);
+  const lastTouchClientYRef = useRef<number | null>(null);
+  const userIntentRef = useRef<BottomAnchorUserIntent>("none");
+  const userIntentResetTimeoutRef = useRef<number | null>(null);
   const optionsRef = useRef(options);
+  const localAnchorSequenceRef = useRef(0);
+  const driverRef = useRef<BottomAnchorDriver | null>(null);
+  const driverSnapshotRef = useRef<BottomAnchorDriverSnapshot>(emptyDriverSnapshot());
+
   const [followOutput, setFollowOutputState] = useState(true);
   const [debug, setDebug] = useState<ConversationScrollControllerDebug>({
     followOutput: true,
+    bottomAnchorMode: "sticky_bottom",
     bottomAnchorBlockedReason: null,
+    bottomAnchorPendingReason: null,
+    bottomAnchorLastFulfilledReason: null,
     routeResumeStatus: "idle",
     routeResumeScrollTop: null,
+    lastFollowSignal: signals.followSignal,
+    lastLayoutSignal: signals.layoutSignal,
   });
 
   optionsRef.current = options;
+  latestFollowSignalRef.current = signals.followSignal;
+  latestLayoutSignalRef.current = signals.layoutSignal;
 
   const publishScrollDebug = useCallback(
-    (override: Partial<ConversationScrollControllerDebug> = {}) => {
-      const next = {
-        followOutput: followOutputRef.current,
-        bottomAnchorBlockedReason: lastBottomAnchorBlockedReasonRef.current,
+    (snapshot = driverSnapshotRef.current) => {
+      const next: ConversationScrollControllerDebug = {
+        followOutput: snapshot.mode === "sticky_bottom",
+        bottomAnchorMode: snapshot.mode,
+        bottomAnchorBlockedReason: snapshot.blockedReason,
+        bottomAnchorPendingReason:
+          snapshot.pendingRequest?.reason ?? snapshot.pendingVerification?.reason ?? null,
+        bottomAnchorLastFulfilledReason: snapshot.lastFulfilledReason,
         routeResumeStatus: routeResumeStatusRef.current,
         routeResumeScrollTop: routeResumeScrollTopRef.current,
-        ...override,
+        lastFollowSignal: latestFollowSignalRef.current,
+        lastLayoutSignal: latestLayoutSignalRef.current,
       };
       setDebug((current) =>
         current.followOutput === next.followOutput &&
+        current.bottomAnchorMode === next.bottomAnchorMode &&
         current.bottomAnchorBlockedReason === next.bottomAnchorBlockedReason &&
+        current.bottomAnchorPendingReason === next.bottomAnchorPendingReason &&
+        current.bottomAnchorLastFulfilledReason === next.bottomAnchorLastFulfilledReason &&
         current.routeResumeStatus === next.routeResumeStatus &&
-        current.routeResumeScrollTop === next.routeResumeScrollTop
+        current.routeResumeScrollTop === next.routeResumeScrollTop &&
+        current.lastFollowSignal === next.lastFollowSignal &&
+        current.lastLayoutSignal === next.lastLayoutSignal
           ? current
           : next,
       );
@@ -151,54 +240,41 @@ export function useConversationScrollController(
     [],
   );
 
-  const setFollowOutput = useCallback((value: boolean) => {
-    if (followOutputRef.current === value) return;
-    followOutputRef.current = value;
-    setFollowOutputState(value);
-    publishScrollDebug({ followOutput: value });
-  }, [publishScrollDebug]);
-
-  const cancelUserScrollActivityReset = useCallback(() => {
-    if (userScrollActivityTimeoutRef.current === null) return;
-    clearTimeout(userScrollActivityTimeoutRef.current);
-    userScrollActivityTimeoutRef.current = null;
+  const readMeasurementState = useCallback((): BottomAnchorMeasurementState => {
+    const element = scrollRef.current;
+    const routeKey = routeKeyFrom(optionsRef.current.historyStartKey) ?? "unscoped";
+    const containerKey = `web-scroll:${routeKey}`;
+    const viewportWidth = element?.clientWidth ?? lastKnownViewportWidthRef.current;
+    const viewportHeight = element?.clientHeight ?? lastKnownViewportHeightRef.current;
+    const contentHeight =
+      contentRef.current?.scrollHeight ??
+      element?.scrollHeight ??
+      lastKnownContentHeightRef.current;
+    const scrollTop = element?.scrollTop ?? lastKnownScrollTopRef.current;
+    return {
+      containerKey,
+      viewportMeasuredForKey:
+        viewportWidth > 0 && viewportHeight > 0 ? containerKey : null,
+      contentMeasuredForKey: contentHeight > 0 ? containerKey : null,
+      viewportWidth,
+      viewportHeight,
+      contentHeight,
+      scrollTop,
+      bottomInsetPx: 0,
+    };
   }, []);
 
-  const markUserScrollActivity = useCallback(
-    (input: { scrollUpIntent?: boolean } = {}) => {
-      userScrollActiveRef.current = true;
-      if (input.scrollUpIntent) pendingUserScrollUpIntentRef.current = true;
-      cancelUserScrollActivityReset();
-      userScrollActivityTimeoutRef.current = window.setTimeout(() => {
-        userScrollActiveRef.current = false;
-        userScrollActivityTimeoutRef.current = null;
-      }, USER_SCROLL_ACTIVITY_RESET_MS);
+  const handleDriverSnapshot = useCallback(
+    (snapshot: BottomAnchorDriverSnapshot) => {
+      driverSnapshotRef.current = snapshot;
+      const nextFollowOutput = snapshot.mode === "sticky_bottom";
+      setFollowOutputState((current) =>
+        current === nextFollowOutput ? current : nextFollowOutput,
+      );
+      publishScrollDebug(snapshot);
     },
-    [cancelUserScrollActivityReset],
+    [publishScrollDebug],
   );
-
-  const cancelPendingFrame = useCallback(() => {
-    if (pendingFrameRef.current === null) return;
-    cancelAnimationFrame(pendingFrameRef.current);
-    pendingFrameRef.current = null;
-  }, []);
-
-  const cancelPendingSettleRetry = useCallback(() => {
-    if (pendingSettleTimeoutRef.current === null) return;
-    clearTimeout(pendingSettleTimeoutRef.current);
-    pendingSettleTimeoutRef.current = null;
-  }, []);
-
-  const cancelPendingScrollResumePersist = useCallback(() => {
-    if (pendingScrollResumePersistFrameRef.current === null) return;
-    cancelAnimationFrame(pendingScrollResumePersistFrameRef.current);
-    pendingScrollResumePersistFrameRef.current = null;
-  }, []);
-
-  const cancelPendingStickToBottom = useCallback(() => {
-    cancelPendingFrame();
-    cancelPendingSettleRetry();
-  }, [cancelPendingFrame, cancelPendingSettleRetry]);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     const element = scrollRef.current;
@@ -206,6 +282,52 @@ export function useConversationScrollController(
     if (scrollElementToBottom(element, behavior)) {
       lastKnownScrollTopRef.current = element.scrollTop;
     }
+  }, []);
+
+  if (!driverRef.current) {
+    driverRef.current = createBottomAnchorDriver({
+      getIsAuthoritativeHistoryReady: () => historyStartReadyRef.current,
+      getMeasurementState: () => readMeasurementState(),
+      isNearBottom: () => isBottomAnchorMeasurementNearBottom(readMeasurementState()),
+      scrollToBottom: ({ animated }) => {
+        scrollToBottom(animated ? "smooth" : "auto");
+      },
+      scheduleFrame: ({ callback, delayFrames }) =>
+        scheduleAnimationFrameWithDelay({ callback, delayFrames }),
+      cancelFrame: (handle) => cancelScheduledFrame(handle),
+      getTransportBehavior: () => ({
+        verificationDelayFrames: 0,
+        verificationRetryMode: "rescroll",
+      }),
+      onSnapshotChange: handleDriverSnapshot,
+    });
+    driverSnapshotRef.current = driverRef.current.getSnapshot();
+  }
+
+  const driver = driverRef.current;
+
+  const cancelUserIntentReset = useCallback(() => {
+    if (userIntentResetTimeoutRef.current === null) return;
+    clearTimeout(userIntentResetTimeoutRef.current);
+    userIntentResetTimeoutRef.current = null;
+  }, []);
+
+  const markUserIntent = useCallback(
+    (intent: BottomAnchorUserIntent) => {
+      if (intent !== "none") userIntentRef.current = intent;
+      cancelUserIntentReset();
+      userIntentResetTimeoutRef.current = window.setTimeout(() => {
+        userIntentRef.current = "none";
+        userIntentResetTimeoutRef.current = null;
+      }, USER_SCROLL_ACTIVITY_RESET_MS);
+    },
+    [cancelUserIntentReset],
+  );
+
+  const cancelPendingScrollResumePersist = useCallback(() => {
+    if (pendingScrollResumePersistFrameRef.current === null) return;
+    cancelAnimationFrame(pendingScrollResumePersistFrameRef.current);
+    pendingScrollResumePersistFrameRef.current = null;
   }, []);
 
   const schedulePersistScrollResume = useCallback(
@@ -230,7 +352,7 @@ export function useConversationScrollController(
     const decision = deriveConversationScrollResumeDecision({
       contentHeight: contentRef.current?.scrollHeight ?? element.scrollHeight,
       isHistoryReady: historyStartReadyRef.current,
-      pendingVerification: pendingSettleTimeoutRef.current !== null,
+      pendingVerification: driver.getSnapshot().pendingVerification !== null,
       resumeState,
       viewportHeight: element.clientHeight,
       viewportWidth: element.clientWidth,
@@ -257,95 +379,45 @@ export function useConversationScrollController(
     routeResumeScrollTopRef.current = decision.scrollTop;
     publishScrollDebug();
     return true;
-  }, [publishScrollDebug]);
-
-  const scheduleStickToBottom = useCallback(() => {
-    const element = scrollRef.current;
-    const contentHeight = contentRef.current?.scrollHeight ?? element?.scrollHeight ?? 0;
-    const requestKey = optionsRef.current.historyStartKey;
-    const { blockedReason, canAttempt } = deriveBottomAnchorRouteReadiness({
-      contentHeight,
-      isHistoryReady: historyStartReadyRef.current,
-      pendingVerification: pendingSettleTimeoutRef.current !== null,
-      requestKey: requestKey == null ? null : String(requestKey),
-      viewportHeight: element?.clientHeight ?? 0,
-      viewportWidth: element?.clientWidth ?? 0,
-    });
-    lastBottomAnchorBlockedReasonRef.current = blockedReason;
-    publishScrollDebug({ bottomAnchorBlockedReason: blockedReason });
-    if (!canAttempt) {
-      return;
-    }
-    if (
-      element &&
-      isOverscrolledPastBottom({
-        clientHeight: element.clientHeight,
-        scrollHeight: element.scrollHeight,
-        scrollTop: element.scrollTop,
-      })
-    ) {
-      return;
-    }
-
-    cancelPendingFrame();
-    pendingFrameRef.current = requestAnimationFrame(() => {
-      pendingFrameRef.current = null;
-      if (followOutputRef.current) scrollToBottom("auto");
-    });
-    if (pendingSettleTimeoutRef.current !== null) return;
-    pendingSettleTimeoutRef.current = window.setTimeout(() => {
-      pendingSettleTimeoutRef.current = null;
-      const element = scrollRef.current;
-      if (
-        element &&
-        shouldRetryBottomStickAfterSettle({
-          clientHeight: element.clientHeight,
-          followOutput: followOutputRef.current,
-          scrollHeight: element.scrollHeight,
-          scrollTop: element.scrollTop,
-        })
-      ) {
-        scrollToBottom("auto");
-      }
-    }, BOTTOM_STICK_SETTLE_RETRY_MS);
-  }, [cancelPendingFrame, publishScrollDebug, scrollToBottom]);
+  }, [driver, publishScrollDebug]);
 
   useEffect(() => {
-    cancelPendingStickToBottom();
+    const routeKey = routeKeyFrom(options.historyStartKey);
+    driver.reset();
     historyStartReadyRef.current = false;
     pendingHistoryPrependAnchorRef.current = null;
-    const routeKey =
-      options.historyStartKey == null ? null : String(options.historyStartKey);
     const resumeState =
       typeof window === "undefined"
         ? null
         : readConversationScrollResumeState(window.sessionStorage, routeKey);
     pendingScrollResumeStateRef.current =
       resumeState && !resumeState.followOutput ? resumeState : null;
+    if (pendingScrollResumeStateRef.current) {
+      driver.reset({ mode: "detached", detachReason: "route_restore" });
+    }
     routeResumeStatusRef.current = pendingScrollResumeStateRef.current
       ? "pending"
       : "idle";
     routeResumeScrollTopRef.current =
       pendingScrollResumeStateRef.current?.scrollTop ?? null;
-    followOutputRef.current = !pendingScrollResumeStateRef.current;
-    setFollowOutputState(followOutputRef.current);
     publishScrollDebug();
+
     const frame = requestAnimationFrame(() => {
       historyStartReadyRef.current = true;
       if (tryRestoreScrollResume()) return;
-      if (followOutputRef.current) scheduleStickToBottom();
+      if (routeKey) {
+        driver.applyRouteRequest({
+          reason: "route_initial_entry",
+          requestKey: `${routeKey}:route_initial_entry`,
+        });
+      }
+      driver.notifyAuthoritativeHistoryMaybeChanged();
     });
     return () => {
       cancelAnimationFrame(frame);
       historyStartReadyRef.current = false;
     };
-  }, [
-    cancelPendingStickToBottom,
-    options.historyStartKey,
-    publishScrollDebug,
-    scheduleStickToBottom,
-    tryRestoreScrollResume,
-  ]);
+  }, [driver, options.historyStartKey, publishScrollDebug, tryRestoreScrollResume]);
 
   useEffect(() => {
     const element = scrollRef.current;
@@ -354,58 +426,42 @@ export function useConversationScrollController(
     lastKnownScrollTopRef.current = element.scrollTop;
 
     const handleWheel = (event: WheelEvent) => {
-      const scrollUpIntent = event.deltaY < 0;
-      if (shouldCancelPendingStickForUserScrollIntent({ scrollUpIntent })) {
-        cancelPendingStickToBottom();
-      }
-      markUserScrollActivity({ scrollUpIntent });
+      markUserIntent(event.deltaY < 0 ? "scroll_up" : "scroll_down");
     };
 
     const handleTouchStart = (event: TouchEvent) => {
       lastTouchClientYRef.current = event.touches[0]?.clientY ?? null;
-      markUserScrollActivity();
+      markUserIntent("none");
     };
 
     const handleTouchMove = (event: TouchEvent) => {
       const nextClientY = event.touches[0]?.clientY ?? null;
       const previousClientY = lastTouchClientYRef.current;
       if (nextClientY !== null && previousClientY !== null) {
-        const scrollUpIntent = nextClientY > previousClientY + 1;
-        if (shouldCancelPendingStickForUserScrollIntent({ scrollUpIntent })) {
-          cancelPendingStickToBottom();
-        }
-        markUserScrollActivity({
-          scrollUpIntent,
-        });
-      } else {
-        markUserScrollActivity();
+        markUserIntent(nextClientY > previousClientY + 1 ? "scroll_up" : "scroll_down");
       }
       lastTouchClientYRef.current = nextClientY;
     };
 
     const handleScroll = () => {
-      const nextBottomAnchorState = deriveBottomAnchorFollowState({
-        clientHeight: element.clientHeight,
-        followOutput: followOutputRef.current,
-        pendingUserScrollUpIntent: pendingUserScrollUpIntentRef.current,
-        previousScrollTop: lastKnownScrollTopRef.current,
-        scrollHeight: element.scrollHeight,
-        scrollTop: element.scrollTop,
-        userScrollActive: userScrollActiveRef.current,
-      });
-      pendingUserScrollUpIntentRef.current =
-        nextBottomAnchorState.pendingUserScrollUpIntent;
-      setFollowOutput(nextBottomAnchorState.followOutput);
+      const previousScrollTop = lastKnownScrollTopRef.current;
+      const scrollDelta = element.scrollTop - previousScrollTop;
       lastKnownScrollTopRef.current = element.scrollTop;
-      const routeKey =
-        optionsRef.current.historyStartKey == null
-          ? null
-          : String(optionsRef.current.historyStartKey);
+      const measurement = readMeasurementState();
+      driver.handleScrollNearBottomChange({
+        nextIsNearBottom: isBottomAnchorMeasurementNearBottom(measurement),
+        scrollDelta,
+        userIntent: userIntentRef.current,
+      });
+      userIntentRef.current = "none";
+
+      const latestSnapshot = driver.getSnapshot();
+      const routeKey = routeKeyFrom(optionsRef.current.historyStartKey);
       if (routeKey && pendingScrollResumeStateRef.current === null) {
         schedulePersistScrollResume({
           routeKey,
           scrollTop: element.scrollTop,
-          followOutput: nextBottomAnchorState.followOutput,
+          followOutput: latestSnapshot.mode === "sticky_bottom",
         });
       }
 
@@ -437,16 +493,17 @@ export function useConversationScrollController(
       element.removeEventListener("touchmove", handleTouchMove);
       element.removeEventListener("scroll", handleScroll);
     };
-  }, [
-    cancelPendingStickToBottom,
-    markUserScrollActivity,
-    schedulePersistScrollResume,
-    setFollowOutput,
-  ]);
+  }, [driver, markUserIntent, readMeasurementState, schedulePersistScrollResume]);
 
   useEffect(() => {
-    if (followOutputRef.current) scheduleStickToBottom();
-  }, [dependency, scheduleStickToBottom]);
+    driver.prepareForStickyContentChange();
+    publishScrollDebug();
+  }, [driver, publishScrollDebug, signals.followSignal]);
+
+  useEffect(() => {
+    driver.prepareForStickyContentChange();
+    publishScrollDebug();
+  }, [driver, publishScrollDebug, signals.layoutSignal]);
 
   useEffect(() => {
     const scrollElement = scrollRef.current;
@@ -486,22 +543,16 @@ export function useConversationScrollController(
 
       if (tryRestoreScrollResume()) return;
 
-      if (
-        shouldRestickOnContentSizeChange({
-          contentHeight,
-          followOutput: followOutputRef.current,
-          previousContentHeight,
-        }) ||
-        shouldRestickOnViewportSizeChange({
-          followOutput: followOutputRef.current,
-          previousViewportHeight,
-          previousViewportWidth,
-          viewportHeight,
-          viewportWidth,
-        })
-      ) {
-        scheduleStickToBottom();
-      }
+      driver.handleViewportMetricsChange({
+        previousViewportHeight,
+        previousViewportWidth,
+        viewportHeight,
+        viewportWidth,
+      });
+      driver.handleContentSizeChange({
+        previousContentHeight,
+        contentHeight,
+      });
     });
 
     observer.observe(scrollElement);
@@ -513,19 +564,15 @@ export function useConversationScrollController(
     return () => {
       observer.disconnect();
     };
-  }, [scheduleStickToBottom, tryRestoreScrollResume]);
+  }, [driver, tryRestoreScrollResume]);
 
   useEffect(
     () => () => {
-      cancelPendingStickToBottom();
+      driver.destroy();
       cancelPendingScrollResumePersist();
-      cancelUserScrollActivityReset();
+      cancelUserIntentReset();
     },
-    [
-      cancelPendingScrollResumePersist,
-      cancelPendingStickToBottom,
-      cancelUserScrollActivityReset,
-    ],
+    [cancelPendingScrollResumePersist, cancelUserIntentReset, driver],
   );
 
   return {
@@ -533,12 +580,16 @@ export function useConversationScrollController(
     debug,
     scrollRef,
     followOutput,
-    forceScrollToBottom: () => {
-      setFollowOutput(true);
-      scrollToBottom("auto");
+    requestBottomAnchor: (reason) => {
+      localAnchorSequenceRef.current += 1;
+      const routeKey = routeKeyFrom(optionsRef.current.historyStartKey) ?? "unscoped";
+      driver.requestLocalAnchor({
+        reason,
+        requestKey: `${routeKey}:${reason}:${localAnchorSequenceRef.current}`,
+      });
     },
     prepareForViewportChange: () => {
-      if (followOutputRef.current) scheduleStickToBottom();
+      driver.prepareForStickyViewportChange();
     },
   };
 }

@@ -1770,7 +1770,7 @@ test("plans non-message stream events as scoped read-model refreshes", () => {
     },
   );
   assert.deepEqual(
-    streamReadModelRefreshPlan({ event_id: "evt_command", type: "command.started" }),
+    streamReadModelRefreshPlan({ event_id: "evt_tool_completed", type: "tool.completed" }),
     {
       conversation: true,
       requests: false,
@@ -2333,7 +2333,7 @@ test("subscribes to named velad SSE events as stream updates", () => {
   source.emit("request.response.accepted");
   source.emit("turn.cancelled");
   source.emit("usage.updated");
-  source.emit("command.started");
+  source.emit("tool.completed");
   source.emit("task.updated");
   source.emit("projection.invalidated");
   source.emitMessage();
@@ -2344,7 +2344,7 @@ test("subscribes to named velad SSE events as stream updates", () => {
   source.emit("session.status.changed");
   source.emit("input.queued");
   source.emit("usage.updated");
-  source.emit("command.started");
+  source.emit("tool.completed");
   assert.equal(updates, 15);
 });
 

@@ -28,9 +28,11 @@ fn codex_app_server_notifications_normalize_to_canonical_backend_outputs() {
         "codex/event/exec_command_begin",
         json!({ "msg": { "call_id": "cmd_1", "command": "cargo test", "cwd": "/repo" } }),
     );
-    assert_eq!(outputs[0].event_type, EventType::COMMAND_STARTED);
-    assert_eq!(outputs[0].payload["command_id"], "cmd_1");
-    assert_eq!(outputs[0].payload["command"], "cargo test");
+    assert_eq!(outputs[0].event_type, EventType::TOOL_STARTED);
+    assert_eq!(outputs[0].payload["tool_id"], "cmd_1");
+    assert_eq!(outputs[0].payload["name"], "shell");
+    assert_eq!(outputs[0].payload["detail"]["type"], "shell");
+    assert_eq!(outputs[0].payload["detail"]["command"], "cargo test");
 
     let outputs = normalize_codex_app_server_notification(
         "turn/completed",
@@ -153,7 +155,8 @@ fn codex_app_server_normalizer_maps_command_output_and_unknown_method_safely() {
         "codex/event/exec_command_output_delta",
         json!({ "msg": { "call_id": "cmd_1", "stream": "stderr", "chunk": "warn" } }),
     );
-    assert_eq!(outputs[0].event_type, EventType::COMMAND_OUTPUT_DELTA);
+    assert_eq!(outputs[0].event_type, EventType::TOOL_OUTPUT_DELTA);
+    assert_eq!(outputs[0].payload["tool_id"], "cmd_1");
     assert_eq!(outputs[0].payload["stream"], "stderr");
     assert_eq!(outputs[0].payload["delta"], "warn");
 
@@ -169,9 +172,11 @@ fn codex_app_server_normalizer_maps_command_output_and_unknown_method_safely() {
             }
         }),
     );
-    assert_eq!(outputs[0].event_type, EventType::COMMAND_FAILED);
-    assert_eq!(outputs[0].payload["command"], "cargo test");
-    assert_eq!(outputs[0].payload["exit_code"], 101);
+    assert_eq!(outputs[0].event_type, EventType::TOOL_FAILED);
+    assert_eq!(outputs[0].payload["tool_id"], "cmd_1");
+    assert_eq!(outputs[0].payload["detail"]["type"], "shell");
+    assert_eq!(outputs[0].payload["detail"]["command"], "cargo test");
+    assert_eq!(outputs[0].payload["detail"]["exit_code"], 101);
 
     let outputs =
         normalize_codex_app_server_notification("codex/brand_new_event", json!({ "x": 1 }));
@@ -193,7 +198,7 @@ fn codex_app_server_fixture_replays_notification_sequence_to_canonical_outputs()
         fixture.expect_event_types
     );
     assert_eq!(outputs[0].payload["delta"], "Hello");
-    assert_eq!(outputs[2].payload["command"], "cargo test");
+    assert_eq!(outputs[2].payload["detail"]["command"], "cargo test");
     assert_eq!(outputs[3].payload["stream"], "stdout");
     assert_eq!(outputs[4].payload["status"], "completed");
     assert_eq!(

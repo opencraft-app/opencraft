@@ -18,6 +18,7 @@ export function VelaComposer({
   onDraftChange,
   onAttachImages,
   onAgentConfigChange,
+  onHeightChange,
   onRemoveAttachment,
   onSubmit,
 }: {
@@ -30,6 +31,7 @@ export function VelaComposer({
   onDraftChange: (value: string) => void;
   onAttachImages?: (files: File[]) => void;
   onAgentConfigChange?: (patch: AgentConfigPatchWire) => void;
+  onHeightChange?: (height: number) => void;
   onRemoveAttachment?: (attachmentId: string) => void;
   onSubmit: () => void;
 }) {
@@ -44,6 +46,7 @@ export function VelaComposer({
       canSubmit={canSubmit}
       onChange={onDraftChange}
       onAttachImages={onAttachImages}
+      onHeightChange={onHeightChange}
       onKeyDown={handleKeyDown}
       onRemoveAttachment={onRemoveAttachment}
       onSubmit={onSubmit}

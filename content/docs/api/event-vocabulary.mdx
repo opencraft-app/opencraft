@@ -110,7 +110,7 @@ Canonical event log 是 read model 的事实来源；trace/timeline 是诊断视
 | `assistant.reasoning.delta` | `ConversationView` | reasoning 增量默认不进正式正文，可投影为 agent work / thinking item |
 | `assistant.reasoning.completed` | `ConversationView` | reasoning 结束或摘要完成 |
 
-### 活动、工具和命令
+### 活动和工具
 
 | Type | 主要投影 | 说明 |
 | --- | --- | --- |
@@ -119,13 +119,11 @@ Canonical event log 是 read model 的事实来源；trace/timeline 是诊断视
 | `tool.output.delta` | `ConversationView`, `SessionTimeline` | 工具输出增量。不得直接作为 assistant text 进入 conversation |
 | `tool.completed` | `ConversationView`, `SessionTimeline` | 工具调用完成 |
 | `tool.failed` | `ConversationView`, `SessionTimeline` | 工具调用失败 |
-| `command.started` | `ConversationView`, `SessionTimeline` | shell/command 类工具开始 |
-| `command.output.delta` | `ConversationView`, `SessionTimeline` | command stdout/stderr 增量。不得进入 assistant 正文 |
-| `command.completed` | `ConversationView`, `SessionTimeline` | command 完成 |
-| `command.failed` | `ConversationView`, `SessionTimeline` | command 失败 |
 | `task.started` | `ConversationView` | 子任务开始 |
 | `task.updated` | `ConversationView` | 子任务进度变化 |
 | `task.completed` | `ConversationView` | 子任务完成 |
+
+Shell、read、edit、search 等 provider work 都必须归一到 `tool.*`。Shell command 不是独立事件族，而是 `tool.*` payload 中的 `detail.type = "shell"`。
 
 ### 请求、审查和诊断
 
@@ -184,11 +182,11 @@ Canonical runtime event 的 `type` MUST 来自本页的 `VelaEventType`。
 
 ### Requirement: Conversation 不能把 work event 当正文
 
-Conversation MUST NOT directly render `tool.*`、`command.*`、`request.*`、`diff.updated` 的 payload text as assistant message text。
+Conversation MUST NOT directly render `tool.*`、`request.*`、`diff.updated` 的 payload text as assistant message text。
 
 #### Scenario: shell command 输出
 
-- **WHEN** daemon append `command.output.delta`
+- **WHEN** daemon append `tool.output.delta`
 - **THEN** `ConversationView` 可以更新 `agent_work` item
 - **AND** 不新增 assistant message
 

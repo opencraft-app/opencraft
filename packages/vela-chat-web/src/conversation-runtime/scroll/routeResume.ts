@@ -1,4 +1,4 @@
-import type { BottomAnchorRouteBlockedReason } from "./bottomAnchor";
+import type { BottomAnchorBlockedReason } from "./bottomAnchorDriver";
 
 export const CONVERSATION_SCROLL_RESUME_STORAGE_PREFIX =
   "vela-chat:conversation-scroll:";
@@ -19,7 +19,7 @@ export interface ConversationScrollResumeDecisionInput {
 }
 
 export interface ConversationScrollResumeDecision {
-  blockedReason: BottomAnchorRouteBlockedReason | null;
+  blockedReason: BottomAnchorBlockedReason | null;
   shouldRestore: boolean;
   scrollTop: number | null;
 }

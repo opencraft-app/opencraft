@@ -1,10 +1,10 @@
 import type { WebBlock } from "../adapters/toWebBlocks";
-import { ActivityRenderer } from "./blocks/ActivityRenderer";
+import { AgentWorkRenderer } from "./blocks/AgentWorkRenderer";
 import { AssistantMarkdownRenderer } from "./blocks/AssistantMarkdownRenderer";
 import { StatusRenderer } from "./blocks/StatusRenderer";
 import { TurnMetaRenderer } from "./blocks/TurnMetaRenderer";
 import { UserMessageRenderer } from "./blocks/UserMessageRenderer";
-import { activityVisualStatus } from "./blocks/activityLabel";
+import { agentWorkVisualStatus } from "./blocks/agentWorkLabel";
 
 export function renderWebBlock(block: WebBlock) {
   switch (block.kind) {
@@ -15,10 +15,10 @@ export function renderWebBlock(block: WebBlock) {
     case "turn_meta":
       return <TurnMetaRenderer block={block} />;
     case "agent_work":
-      return <ActivityRenderer block={block} />;
+      return <AgentWorkRenderer block={block} />;
     case "status":
-      return activityVisualStatus(block)
-        ? <ActivityRenderer block={block} />
+      return agentWorkVisualStatus(block)
+        ? <AgentWorkRenderer block={block} />
         : <StatusRenderer block={block} />;
   }
 }

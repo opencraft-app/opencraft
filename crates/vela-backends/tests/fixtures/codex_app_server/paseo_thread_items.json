@@ -97,8 +97,8 @@
     }
   ],
   "expect_event_types": [
-    "command.started",
-    "command.completed",
+    "tool.started",
+    "tool.completed",
     "tool.completed",
     "tool.completed",
     "tool.completed",

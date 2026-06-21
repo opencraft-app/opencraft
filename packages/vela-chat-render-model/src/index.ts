@@ -1,15 +1,15 @@
 import type {
   ChatSurface,
   ChatSurfaceDebug,
+  ChatSurfaceConversationItem,
   ChatSurfacePendingRequest,
-  ChatTranscriptPart,
-  ChatSurfaceTranscriptRow,
-  ChatSurfaceTranscriptTurn,
+  ChatSurfaceTurnMetaItem,
+  ConversationMessagePart,
 } from "../../vela-chat-surface/src";
 import {
   type AgentWorkRenderRow,
-  renderToolActivityRows,
-} from "./activity/tools";
+  renderAgentWorkRows,
+} from "./agent-work/tools";
 
 const USER_COLLAPSE_LIMIT = 600;
 
@@ -48,7 +48,7 @@ export interface RequestDockRenderItem {
 
 interface ChatRenderCorrelation {
   turnId?: string;
-  activityId?: string;
+  agentWorkId?: string;
 }
 
 export type UserMessageRenderRow = {
@@ -58,7 +58,7 @@ export type UserMessageRenderRow = {
   text: string;
   copy_text: string;
   collapsed: boolean;
-  parts: ChatTranscriptPart[];
+  parts: ConversationMessagePart[];
   createdAt: string;
   debug: ChatSurfaceDebug;
 } & ChatRenderCorrelation;
@@ -91,12 +91,14 @@ export type TurnMetaRenderRow = {
   id: string;
   key: string;
   label: string;
-  status: ChatSurfaceTranscriptTurn["status"];
+  status: TurnMetaStatus;
   createdAt: string;
   updatedAt?: string;
   completedAt?: string;
   debug: ChatSurfaceDebug;
 } & ChatRenderCorrelation;
+
+export type TurnMetaStatus = "running" | "completed" | "failed" | "cancelled";
 
 export type ChatRenderRow =
   | UserMessageRenderRow
@@ -112,14 +114,18 @@ export interface MarkdownBlock {
 
 export function buildChatRenderModel(surface: ChatSurface, host: ChatHostPolicy): ChatRenderModel {
   const turnById = new Map(
-    surface.transcript.turns.map((turn) => [turn.turn_id, turn]),
+    surface.conversation.items
+      .filter(isTurnMetaItem)
+      .map((turn) => [turn.turn_id, turn]),
   );
-  const transcriptRows = surface.transcript.rows
-    .filter((row) => shouldRenderTranscriptRow(row, turnById))
-    .map((row) => renderTranscriptRow(row));
-  const toolRows = renderToolActivityRows(surface.activity.items);
-  const activityRows = surface.activity.items.flatMap((item): ChatRenderRow[] => {
-    if (item.kind === "tool") return [];
+  const conversationRows = surface.conversation.items
+    .filter((item) => shouldRenderConversationItem(item, turnById))
+    .flatMap((item): ChatRenderRow[] => {
+      if (item.kind === "agent_work") return renderAgentWorkRows([item]);
+      return [renderConversationItem(item)];
+    });
+  const failedWorkRows = surface.conversation.items.flatMap((item): ChatRenderRow[] => {
+    if (item.kind !== "agent_work") return [];
     if (item.status !== "failed") return [];
     const label = item.summary || item.title;
     if (!label) return [];
@@ -127,19 +133,19 @@ export function buildChatRenderModel(surface: ChatSurface, host: ChatHostPolicy)
       {
         kind: "status",
         id: item.id,
-        key: `activity:${item.id}`,
+        key: `agent_work:${item.id}`,
         label: `处理失败：${label}`,
         status: item.status,
-        createdAt: item.updated_at ?? item.created_at,
+        createdAt: item.updated_at,
         ...(item.turn_id !== undefined ? { turnId: item.turn_id } : {}),
-        activityId: item.id,
+        agentWorkId: item.id,
         debug: item.debug,
       },
     ];
   });
   const rows = applyTurnMetaRows(
-    sortRenderRows([...transcriptRows, ...toolRows, ...activityRows]),
-    surface.transcript.turns,
+    sortRenderRows([...conversationRows, ...failedWorkRows]),
+    Array.from(turnById.values()),
   );
 
   return {
@@ -156,25 +162,26 @@ export function buildChatRenderModel(surface: ChatSurface, host: ChatHostPolicy)
   };
 }
 
-function shouldRenderTranscriptRow(
-  row: ChatSurfaceTranscriptRow,
-  turnById: ReadonlyMap<string, ChatSurfaceTranscriptTurn>,
+function shouldRenderConversationItem(
+  item: ChatSurfaceConversationItem,
+  turnById: ReadonlyMap<string, ChatSurfaceTurnMetaItem>,
 ): boolean {
-  if (row.role !== "working" && row.role !== "activity") return true;
-  if (!row.turn_id) return true;
+  if (item.kind !== "status") return true;
+  if (!item.turn_id) return true;
 
-  const turn = turnById.get(row.turn_id);
+  const turn = turnById.get(item.turn_id);
   if (!turn || turn.status === "running") return true;
 
-  return !isRunningStatusRow(row);
+  return !isRunningStatusItem(item);
 }
 
-function isRunningStatusRow(row: ChatSurfaceTranscriptRow): boolean {
+function isRunningStatusItem(item: ChatSurfaceConversationItem): boolean {
   return (
-    row.status === "pending" ||
-    row.status === "streaming" ||
-    row.text === "处理中" ||
-    row.text.startsWith("处理中 ")
+    item.kind === "status" &&
+    (item.status === "pending" ||
+      item.status === "streaming" ||
+      item.text === "处理中" ||
+      item.text.startsWith("处理中 "))
   );
 }
 
@@ -214,69 +221,70 @@ function isConfirmableRequest(request: ChatSurfacePendingRequest): boolean {
   );
 }
 
-function renderTranscriptRow(row: ChatSurfaceTranscriptRow): ChatRenderRow {
-  if (row.role === "user") {
-    const text = row.text || textFromTranscriptParts(row.parts);
+function renderConversationItem(
+  item: Exclude<ChatSurfaceConversationItem, { kind: "agent_work" }>,
+): ChatRenderRow {
+  if (item.kind === "user_message") {
+    const text = item.text || textFromMessageParts(item.parts);
     const collapsed = text.length > USER_COLLAPSE_LIMIT;
     return {
       kind: "user_message",
-      id: row.id,
-      key: `user:${row.id}`,
+      id: item.id,
+      key: `user:${item.id}`,
       text: collapsed ? `${text.slice(0, USER_COLLAPSE_LIMIT).trimEnd()}...` : text,
       copy_text: text,
       collapsed,
-      parts: row.parts,
-      createdAt: row.created_at,
-      ...(row.turn_id !== undefined ? { turnId: row.turn_id } : {}),
-      ...(row.activity_id !== undefined ? { activityId: row.activity_id } : {}),
-      debug: row.debug,
+      parts: item.parts,
+      createdAt: item.created_at,
+      ...(item.turn_id !== undefined ? { turnId: item.turn_id } : {}),
+      debug: item.debug,
     };
   }
 
-  if (row.role === "assistant") {
-    const text = row.text || textFromTranscriptParts(row.parts);
+  if (item.kind === "assistant_message") {
+    const text = item.text || textFromMessageParts(item.parts);
     return {
       kind: "assistant_message",
-      id: row.id,
-      key: `assistant:${row.id}`,
+      id: item.id,
+      key: `assistant:${item.id}`,
       blocks: splitMarkdownBlocks(text).map((text, index) => ({
-        id: `${row.id}:block:${index}`,
+        id: `${item.id}:block:${index}`,
         text,
       })),
-      status: row.status,
-      streaming: row.status === "streaming" || row.status === "pending",
-      updatedAt: row.updated_at,
-      revision: row.revision,
-      createdAt: row.created_at,
-      ...(row.turn_id !== undefined ? { turnId: row.turn_id } : {}),
-      ...(row.activity_id !== undefined ? { activityId: row.activity_id } : {}),
-      debug: row.debug,
+      status: item.status,
+      streaming: item.status === "streaming" || item.status === "pending",
+      updatedAt: item.updated_at,
+      revision: item.revision,
+      createdAt: item.created_at,
+      ...(item.turn_id !== undefined ? { turnId: item.turn_id } : {}),
+      debug: item.debug,
     };
   }
+
+  if (item.kind === "turn_meta") return buildTurnMetaRow(item);
 
   return {
     kind: "status",
-    id: row.id,
-    key: `status:${row.id}`,
-    label: row.text,
-    status: row.status,
-    createdAt: row.created_at,
-    ...(row.turn_id !== undefined ? { turnId: row.turn_id } : {}),
-    ...(row.activity_id !== undefined ? { activityId: row.activity_id } : {}),
-    debug: row.debug,
+    id: item.id,
+    key: `status:${item.id}`,
+    label: item.text,
+    status: item.status,
+    createdAt: item.created_at,
+    ...(item.turn_id !== undefined ? { turnId: item.turn_id } : {}),
+    debug: item.debug,
   };
 }
 
-function textFromTranscriptParts(parts: ChatTranscriptPart[]): string {
+function textFromMessageParts(parts: ConversationMessagePart[]): string {
   return parts
-    .filter(isTextualTranscriptPart)
+    .filter(isTextualMessagePart)
     .map((part) => part.text)
     .filter((text): text is string => Boolean(text))
     .join("\n");
 }
 
-function isTextualTranscriptPart(part: ChatTranscriptPart): boolean {
-  return part.type === "text" || part.type === "markdown" || part.type === "code";
+function isTextualMessagePart(part: ConversationMessagePart): boolean {
+  return part.type === "text";
 }
 
 function sortRenderRows(rows: ChatRenderRow[]): ChatRenderRow[] {
@@ -297,7 +305,7 @@ function rowSortPriority(row: ChatRenderRow): number {
 
 function applyTurnMetaRows(
   rows: ChatRenderRow[],
-  turns: readonly ChatSurfaceTranscriptTurn[],
+  turns: readonly ChatSurfaceTurnMetaItem[],
 ): ChatRenderRow[] {
   const output: ChatRenderRow[] = [];
   const turnById = new Map(turns.map((turn) => [turn.turn_id, turn]));
@@ -319,6 +327,14 @@ function applyTurnMetaRows(
       continue;
     }
 
+    if (row.kind === "turn_meta") {
+      if (!emittedTurnIds.has(turn.turn_id)) {
+        output.push(buildTurnMetaRow(turn));
+        emittedTurnIds.add(turn.turn_id);
+      }
+      continue;
+    }
+
     if (!emittedTurnIds.has(turn.turn_id)) {
       output.push(buildTurnMetaRow(turn));
       emittedTurnIds.add(turn.turn_id);
@@ -329,25 +345,36 @@ function applyTurnMetaRows(
   return output;
 }
 
-function buildTurnMetaRow(turn: ChatSurfaceTranscriptTurn): ChatRenderRow {
-  const updatedAt = turn.completed_at ?? turn.started_at;
+function buildTurnMetaRow(turn: ChatSurfaceTurnMetaItem): ChatRenderRow {
+  const updatedAt = turn.completed_at ?? turn.created_at;
   const label =
     turn.status === "running"
       ? "处理中"
-      : formatProcessedFor(turn.started_at, updatedAt) ?? "已处理";
+      : formatProcessedFor(turn.created_at, updatedAt) ?? "已处理";
 
   return {
     kind: "turn_meta",
     id: `turn_meta:${turn.turn_id}`,
     key: `turn_meta:${turn.turn_id}`,
     label,
-    status: turn.status,
-    createdAt: turn.started_at,
+    status: normalizeTurnMetaStatus(turn.status),
+    createdAt: turn.created_at,
     updatedAt,
     ...(turn.completed_at ? { completedAt: turn.completed_at } : {}),
     turnId: turn.turn_id,
     debug: turn.debug,
   };
+}
+
+function isTurnMetaItem(item: ChatSurfaceConversationItem): item is ChatSurfaceTurnMetaItem {
+  return item.kind === "turn_meta";
+}
+
+function normalizeTurnMetaStatus(status: ChatSurfaceTurnMetaItem["status"]): TurnMetaStatus {
+  if (status === "completed" || status === "failed" || status === "cancelled") {
+    return status;
+  }
+  return "running";
 }
 
 function formatProcessedFor(startIso: string, endIso: string): string | undefined {

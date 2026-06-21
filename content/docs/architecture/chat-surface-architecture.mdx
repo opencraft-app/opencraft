@@ -163,7 +163,7 @@ type ChatHostPolicy =
 - 认识 OpenAPI raw wire 字段。
 - import React。
 - 改变 command 行为。
-- 从 assistant row、activity row 或 timeline 猜 turn lifecycle；只能消费 surface 提供的 transcript turn summaries。
+- 从 assistant 文本、agent work 或 timeline 猜 turn lifecycle；只能消费 surface 提供的 `turn_meta` conversation items。
 
 ### `vela-chat-web`
 
@@ -172,13 +172,13 @@ type ChatHostPolicy =
 职责：
 
 - `ChatShell`
-- `TranscriptPane`
-- `TranscriptRow`
+- `ConversationPane`
+- `ConversationItem`
 - `UserMessage`
 - `AssistantMessage`
 - `MarkdownBlock`
 - `Composer`
-- `ActivityRail`
+- `AgentWorkRows`
 - `RequestPanel`
 - `DiagnosticsDrawer`
 

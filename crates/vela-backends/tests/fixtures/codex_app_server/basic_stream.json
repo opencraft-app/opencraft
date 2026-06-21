@@ -89,9 +89,9 @@
   "expect_event_types": [
     "assistant.message.delta",
     "assistant.reasoning.delta",
-    "command.started",
-    "command.output.delta",
-    "command.completed",
+    "tool.started",
+    "tool.output.delta",
+    "tool.completed",
     "diff.updated",
     "task.updated",
     "task.updated",

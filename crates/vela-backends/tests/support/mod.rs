@@ -1,6 +1,6 @@
 use serde_json::Value;
 use vela_backends::{BackendAdapter, BackendOutput, BackendSend, backend_output_channel};
-use vela_backends::{PiJsonlCodec, PiRuntimeMessage};
+use vela_backends::{PiEventNormalizer, PiJsonlCodec, PiRuntimeMessage};
 use vela_core::EventType;
 
 #[allow(dead_code)]
@@ -60,13 +60,14 @@ pub fn read_fixture(path: &str) -> &'static str {
 #[allow(dead_code)]
 pub fn normalize_pi_fixture(path: &str) -> Vec<BackendOutput> {
     let mut codec = PiJsonlCodec::default();
+    let mut normalizer = PiEventNormalizer::default();
     codec
         .push_chunk(read_fixture(path))
         .expect("fixture parses as pi jsonl")
         .into_iter()
         .flat_map(|message| match message {
             PiRuntimeMessage::Response(_) => Vec::new(),
-            PiRuntimeMessage::Event(event) => vela_backends::normalize_pi_event(event),
+            PiRuntimeMessage::Event(event) => normalizer.normalize(event),
         })
         .collect()
 }

@@ -69,25 +69,9 @@ async fn sends_user_message_through_runtime_and_projects_conversation() {
     assert_eq!(assistant["turn_id"], turn_id);
     assert_eq!(turn_meta["turn_id"], turn_id);
     assert_eq!(turn_meta["status"], "completed");
-    assert!(
-        turn_meta["created_at"]
-            .as_str()
-            .unwrap()
-            .contains('T')
-    );
-    assert!(
-        turn_meta["updated_at"]
-            .as_str()
-            .unwrap()
-            .contains('T')
-    );
-    assert!(
-        turn_meta["source_event_ids"]
-            .as_array()
-            .unwrap()
-            .len()
-            >= 2
-    );
+    assert!(turn_meta["created_at"].as_str().unwrap().contains('T'));
+    assert!(turn_meta["updated_at"].as_str().unwrap().contains('T'));
+    assert!(turn_meta["source_event_ids"].as_array().unwrap().len() >= 2);
     assert_eq!(conversation["session_id"], session_id);
     assert_eq!(conversation["window"]["has_older"], false);
     assert_eq!(conversation["window"]["has_newer"], false);

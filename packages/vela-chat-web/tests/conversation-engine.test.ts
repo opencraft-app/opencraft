@@ -7,6 +7,7 @@ import {
   buildConversationRuntimeSegments,
   buildConversationStreamItems,
   conversationRuntimePolicyForHost,
+  deriveConversationScrollSignals,
   DEFAULT_CONVERSATION_RUNTIME_POLICY,
   summarizeConversationRuntime,
 } from "../src/conversation-runtime/model";
@@ -16,14 +17,11 @@ import {
   recordMeasuredStreamItemHeight,
 } from "../src/conversation-runtime/model/estimateStreamItemHeight";
 import {
-  deriveBottomAnchorRouteReadiness,
-  deriveBottomAnchorFollowState,
-  shouldCancelPendingStickForUserScrollIntent,
-  shouldRestickOnContentSizeChange,
-  shouldRetryBottomStickAfterSettle,
-  shouldRestickOnViewportSizeChange,
-  USER_SCROLL_DELTA_EPSILON,
-} from "../src/conversation-runtime/scroll/bottomAnchor";
+  getBottomAnchorDistanceFromBottom,
+  isBottomAnchorMeasurementAtBottom,
+  isBottomAnchorMeasurementNearBottom,
+  isOverscrolledPastBottom,
+} from "../src/conversation-runtime/scroll/bottomAnchorDriver";
 import {
   deriveHistoryPrependAnchorAfterResize,
   DEFAULT_HISTORY_START_THRESHOLD_PX,
@@ -61,38 +59,44 @@ function turn(id: string, options: { live?: boolean } = {}): WebTurn {
   };
 }
 
-test("conversation stream items use transcript correlation ids from OpenAPI", () => {
+test("conversation stream items use conversation correlation ids from OpenAPI", () => {
   const surface: ChatSurface = {
     session_id: "sess_correlation",
-    transcript: {
-      turns: [],
-      rows: [
+    conversation: {
+      items: [
         {
           id: "row_assistant_1",
-          role: "assistant",
+          kind: "assistant_message",
           text: "我来查。",
+          parts: [],
           created_at: "2026-06-18T00:00:00Z",
           updated_at: "2026-06-18T00:00:01Z",
           turn_id: "turn_1",
           status: "completed",
           revision: 1,
-          debug: { projection: "transcript", source_event_ids: ["evt_assistant_1"] },
+          debug: { projection: "conversation", source_event_ids: ["evt_assistant_1"] },
         },
         {
-          id: "row_activity_1",
-          role: "activity",
-          text: "Ran command",
+          id: "row_agent_work_1",
+          kind: "agent_work",
+          title: "Ran command",
+          summary: "ls -la",
           created_at: "2026-06-18T00:00:00.500Z",
           updated_at: "2026-06-18T00:00:00.500Z",
           turn_id: "turn_1",
-          activity_id: "activity_terminal_1",
           status: "completed",
           revision: 1,
-          debug: { projection: "transcript", source_event_ids: ["evt_tool_1"] },
+          detail: { type: "shell", command: "ls -la" },
+          debug: { projection: "conversation", source_event_ids: ["evt_tool_1"] },
         },
       ],
+      window: {
+        first_item_id: "row_assistant_1",
+        last_item_id: "row_agent_work_1",
+        has_older: false,
+        has_newer: false,
+      },
     },
-    activity: { items: [] },
     pending_requests: { items: [] },
     cursors: {},
     stream: { connected: false, running: false },
@@ -103,13 +107,13 @@ test("conversation stream items use transcript correlation ids from OpenAPI", ()
   );
 
   const assistant = items.find((item) => item.kind === "assistant_markdown");
-  const activity = items.find((item) => item.id === "row_activity_1");
+  const agentWork = items.find((item) => item.id === "row_agent_work_1");
 
   assert.equal(assistant?.sourceTurnId, "turn_1");
-  assert.equal(activity?.sourceTurnId, "turn_1");
+  assert.equal(agentWork?.sourceTurnId, "turn_1");
   assert.equal(
-    (activity as { sourceActivityId?: string } | undefined)?.sourceActivityId,
-    "activity_terminal_1",
+    (agentWork as { sourceAgentWorkId?: string } | undefined)?.sourceAgentWorkId,
+    "row_agent_work_1",
   );
 });
 
@@ -152,8 +156,8 @@ test("web adapter groups turn shell blocks while preserving per-block source ids
         createdAt: "2026-06-18T00:00:01Z",
         updatedAt: "2026-06-18T00:00:02Z",
         turnId: "turn_1",
-        activityId: "tool_1",
-        debug: { projection: "activity", source_event_ids: ["evt_tool"] },
+        agentWorkId: "tool_1",
+        debug: { projection: "conversation", source_event_ids: ["evt_tool"] },
       },
       {
         kind: "assistant_message",
@@ -189,7 +193,7 @@ test("web adapter groups turn shell blocks while preserving per-block source ids
   if (header?.kind !== "turn_meta") assert.fail("expected turn meta block");
   const work = turn?.blocks[2];
   assert.equal(work?.kind, "agent_work");
-  assert.equal(work?.sourceActivityId, "tool_1");
+  assert.equal(work?.sourceAgentWorkId, "tool_1");
 
   const items = buildConversationStreamItems(webModel.turns);
   const assistant = items.find((item) => item.kind === "assistant_markdown");
@@ -210,6 +214,187 @@ test("conversation runtime keeps live items out of virtualized history", () => {
   assert.deepEqual(segments.liveHead.map((item) => item.id), ["live"]);
   assert.equal(segments.boundary.hasVirtualizedHistory, true);
   assert.equal(segments.boundary.hasLiveHead, true);
+});
+
+test("conversation scroll follow signal ignores agent work and turn meta churn", () => {
+  const base = buildConversationStreamItems([
+    {
+      id: "turn_1",
+      key: "turn:turn_1",
+      fingerprint: "base",
+      live: true,
+      sourceTurnId: "turn_1",
+      blocks: [
+        {
+          kind: "user_message",
+          id: "u1",
+          key: "user:u1",
+          text: "查一下项目",
+          copyText: "查一下项目",
+          collapsed: false,
+          parts: [{ id: "u1:part:0", type: "text", text: "查一下项目" }],
+          createdAt: "2026-06-18T00:00:00Z",
+          sourceTurnId: "turn_1",
+        },
+        {
+          kind: "turn_meta",
+          id: "turn_meta:turn_1",
+          key: "turn_meta:turn_1",
+          label: "处理中",
+          status: "running",
+          createdAt: "2026-06-18T00:00:00Z",
+          updatedAt: "2026-06-18T00:00:01Z",
+          sourceTurnId: "turn_1",
+        },
+        {
+          kind: "agent_work",
+          id: "work_1",
+          key: "tool:work_1",
+          title: "Running command",
+          summary: "rg README",
+          status: "running",
+          display: "prominent",
+          createdAt: "2026-06-18T00:00:01Z",
+          updatedAt: "2026-06-18T00:00:01Z",
+          sourceTurnId: "turn_1",
+          sourceAgentWorkId: "work_1",
+        },
+        {
+          kind: "assistant_markdown",
+          id: "a1",
+          key: "assistant:a1",
+          blocks: [{ id: "a1:block:0", text: "我先看。" }],
+          copyText: "我先看。",
+          createdAt: "2026-06-18T00:00:02Z",
+          streaming: true,
+          showCopyAction: false,
+          sourceTurnId: "turn_1",
+        },
+      ],
+    },
+  ]);
+
+  const workOnlyChanged = buildConversationStreamItems([
+    {
+      id: "turn_1",
+      key: "turn:turn_1",
+      fingerprint: "work-changed",
+      live: true,
+      sourceTurnId: "turn_1",
+      blocks: [
+        {
+          kind: "user_message",
+          id: "u1",
+          key: "user:u1",
+          text: "查一下项目",
+          copyText: "查一下项目",
+          collapsed: false,
+          parts: [{ id: "u1:part:0", type: "text", text: "查一下项目" }],
+          createdAt: "2026-06-18T00:00:00Z",
+          sourceTurnId: "turn_1",
+        },
+        {
+          kind: "turn_meta",
+          id: "turn_meta:turn_1",
+          key: "turn_meta:turn_1",
+          label: "处理中 2s",
+          status: "running",
+          createdAt: "2026-06-18T00:00:00Z",
+          updatedAt: "2026-06-18T00:00:02Z",
+          sourceTurnId: "turn_1",
+        },
+        {
+          kind: "agent_work",
+          id: "work_1",
+          key: "tool:work_1",
+          title: "Ran command",
+          summary: "rg README --files",
+          status: "completed",
+          display: "prominent",
+          createdAt: "2026-06-18T00:00:01Z",
+          updatedAt: "2026-06-18T00:00:02Z",
+          sourceTurnId: "turn_1",
+          sourceAgentWorkId: "work_1",
+        },
+        {
+          kind: "assistant_markdown",
+          id: "a1",
+          key: "assistant:a1",
+          blocks: [{ id: "a1:block:0", text: "我先看。" }],
+          copyText: "我先看。",
+          createdAt: "2026-06-18T00:00:02Z",
+          streaming: true,
+          showCopyAction: false,
+          sourceTurnId: "turn_1",
+        },
+      ],
+    },
+  ]);
+
+  const assistantChanged = buildConversationStreamItems([
+    {
+      id: "turn_1",
+      key: "turn:turn_1",
+      fingerprint: "assistant-changed",
+      live: true,
+      sourceTurnId: "turn_1",
+      blocks: [
+        {
+          kind: "user_message",
+          id: "u1",
+          key: "user:u1",
+          text: "查一下项目",
+          copyText: "查一下项目",
+          collapsed: false,
+          parts: [{ id: "u1:part:0", type: "text", text: "查一下项目" }],
+          createdAt: "2026-06-18T00:00:00Z",
+          sourceTurnId: "turn_1",
+        },
+        {
+          kind: "turn_meta",
+          id: "turn_meta:turn_1",
+          key: "turn_meta:turn_1",
+          label: "处理中 2s",
+          status: "running",
+          createdAt: "2026-06-18T00:00:00Z",
+          updatedAt: "2026-06-18T00:00:02Z",
+          sourceTurnId: "turn_1",
+        },
+        {
+          kind: "agent_work",
+          id: "work_1",
+          key: "tool:work_1",
+          title: "Ran command",
+          summary: "rg README --files",
+          status: "completed",
+          display: "prominent",
+          createdAt: "2026-06-18T00:00:01Z",
+          updatedAt: "2026-06-18T00:00:02Z",
+          sourceTurnId: "turn_1",
+          sourceAgentWorkId: "work_1",
+        },
+        {
+          kind: "assistant_markdown",
+          id: "a1",
+          key: "assistant:a1",
+          blocks: [{ id: "a1:block:0", text: "我先看。项目是" }],
+          copyText: "我先看。项目是",
+          createdAt: "2026-06-18T00:00:02Z",
+          streaming: true,
+          showCopyAction: false,
+          sourceTurnId: "turn_1",
+        },
+      ],
+    },
+  ]);
+
+  const baseSignals = deriveConversationScrollSignals(base);
+  const workSignals = deriveConversationScrollSignals(workOnlyChanged);
+  const assistantSignals = deriveConversationScrollSignals(assistantChanged);
+
+  assert.equal(workSignals.followSignal, baseSignals.followSignal);
+  assert.notEqual(workSignals.layoutSignal, baseSignals.layoutSignal);
+  assert.notEqual(assistantSignals.followSignal, baseSignals.followSignal);
 });
 
 test("conversation runtime reuses measured item heights only while the item fingerprint matches", () => {
@@ -823,7 +1008,7 @@ test("web adapter invalidates agent work cache when display intent changes", () 
         status: "completed",
         display: "compact",
         createdAt: "2026-06-18T00:00:00Z",
-        debug: { projection: "activity", source_event_ids: ["evt_1"] },
+        debug: { projection: "conversation", source_event_ids: ["evt_1"] },
       },
     ],
     composer: { placeholder: "要求后续变更", can_send: true },
@@ -849,7 +1034,7 @@ test("web adapter invalidates agent work cache when display intent changes", () 
   }
 });
 
-test("web adapter invalidates agent work cache when activity timestamps change", () => {
+test("web adapter invalidates agent work cache when agent work timestamps change", () => {
   const firstSnapshot: ChatRenderModel = {
     session_id: "sess_work_timestamp",
     host: { kind: "desktop_web" },
@@ -864,7 +1049,7 @@ test("web adapter invalidates agent work cache when activity timestamps change",
         display: "compact",
         createdAt: "2026-06-18T00:00:00Z",
         updatedAt: "2026-06-18T00:00:01Z",
-        debug: { projection: "activity", source_event_ids: ["evt_1"] },
+        debug: { projection: "conversation", source_event_ids: ["evt_1"] },
       },
     ],
     composer: { placeholder: "要求后续变更", can_send: true },
@@ -1792,190 +1977,23 @@ test("conversation scroll resume restores only detached positions after layout i
   );
 });
 
-test("bottom anchor stays sticky when streaming content growth moves the viewport away from bottom", () => {
-  const result = deriveBottomAnchorFollowState({
-    clientHeight: 400,
-    followOutput: true,
-    previousScrollTop: 800,
-    scrollHeight: 1400,
-    scrollTop: 800,
-    userScrollActive: false,
-  });
+test("bottom anchor measurement accounts for bottom inset without DOM knowledge", () => {
+  const measurement = {
+    contentHeight: 1200,
+    viewportHeight: 400,
+    scrollTop: 760,
+    bottomInsetPx: 40,
+  };
 
-  assert.equal(result.followOutput, true);
-  assert.equal(result.pendingUserScrollUpIntent, false);
-});
-
-test("bottom anchor detaches only when sticky user scrolls upward intentionally", () => {
-  const result = deriveBottomAnchorFollowState({
-    clientHeight: 400,
-    followOutput: true,
-    pendingUserScrollUpIntent: true,
-    previousScrollTop: 800,
-    scrollHeight: 1200,
-    scrollTop: 800 - USER_SCROLL_DELTA_EPSILON - 1,
-    userScrollActive: true,
-  });
-
-  assert.equal(result.followOutput, false);
-  assert.equal(result.pendingUserScrollUpIntent, false);
-});
-
-test("bottom anchor resumes sticky mode only after reaching the actual bottom", () => {
+  assert.equal(getBottomAnchorDistanceFromBottom(measurement), 80);
+  assert.equal(isBottomAnchorMeasurementNearBottom(measurement), true);
+  assert.equal(isBottomAnchorMeasurementAtBottom(measurement), false);
   assert.equal(
-    deriveBottomAnchorFollowState({
-      clientHeight: 400,
-      followOutput: false,
-      previousScrollTop: 700,
-      scrollHeight: 1200,
-      scrollTop: 799,
-      userScrollActive: true,
-    }).followOutput,
-    true,
-  );
-  assert.equal(
-    deriveBottomAnchorFollowState({
-      clientHeight: 400,
-      followOutput: false,
-      previousScrollTop: 700,
-      scrollHeight: 1200,
-      scrollTop: 760,
-      userScrollActive: true,
-    }).followOutput,
-    false,
-  );
-});
-
-test("bottom anchor route requests expose blocked reasons before attempting to scroll", () => {
-  assert.deepEqual(
-    deriveBottomAnchorRouteReadiness({
-      contentHeight: 1200,
-      isHistoryReady: false,
-      pendingVerification: false,
-      requestKey: "session:a",
-      viewportHeight: 600,
-      viewportWidth: 900,
-    }),
-    {
-      blockedReason: "waiting_for_history_readiness",
-      canAttempt: false,
-    },
-  );
-  assert.deepEqual(
-    deriveBottomAnchorRouteReadiness({
-      contentHeight: 1200,
-      isHistoryReady: true,
-      pendingVerification: false,
-      requestKey: "session:a",
-      viewportHeight: 0,
-      viewportWidth: 900,
-    }),
-    {
-      blockedReason: "waiting_for_measurable_viewport",
-      canAttempt: false,
-    },
-  );
-  assert.deepEqual(
-    deriveBottomAnchorRouteReadiness({
-      contentHeight: 0,
-      isHistoryReady: true,
-      pendingVerification: false,
-      requestKey: "session:a",
-      viewportHeight: 600,
-      viewportWidth: 900,
-    }),
-    {
-      blockedReason: "waiting_for_measurable_content",
-      canAttempt: false,
-    },
-  );
-  assert.deepEqual(
-    deriveBottomAnchorRouteReadiness({
-      contentHeight: 1200,
-      isHistoryReady: true,
-      pendingVerification: true,
-      requestKey: "session:a",
-      viewportHeight: 600,
-      viewportWidth: 900,
-    }),
-    {
-      blockedReason: "waiting_for_post_layout_verification",
-      canAttempt: false,
-    },
-  );
-  assert.deepEqual(
-    deriveBottomAnchorRouteReadiness({
-      contentHeight: 1200,
-      isHistoryReady: true,
-      pendingVerification: false,
-      requestKey: "session:a",
-      viewportHeight: 600,
-      viewportWidth: 900,
-    }),
-    {
-      blockedReason: null,
-      canAttempt: true,
-    },
-  );
-});
-
-test("bottom anchor resticks on content growth only while following output", () => {
-  assert.equal(
-    shouldRestickOnContentSizeChange({
-      followOutput: true,
-      previousContentHeight: 1200,
-      contentHeight: 1280,
+    isBottomAnchorMeasurementAtBottom({
+      ...measurement,
+      scrollTop: 840,
     }),
     true,
-  );
-  assert.equal(
-    shouldRestickOnContentSizeChange({
-      followOutput: false,
-      previousContentHeight: 1200,
-      contentHeight: 1280,
-    }),
-    false,
-  );
-  assert.equal(
-    shouldRestickOnContentSizeChange({
-      followOutput: true,
-      previousContentHeight: 1280,
-      contentHeight: 1200,
-    }),
-    false,
-  );
-});
-
-test("bottom anchor resticks on viewport resize only while following output", () => {
-  assert.equal(
-    shouldRestickOnViewportSizeChange({
-      followOutput: true,
-      previousViewportHeight: 720,
-      previousViewportWidth: 1280,
-      viewportHeight: 680,
-      viewportWidth: 1280,
-    }),
-    true,
-  );
-  assert.equal(
-    shouldRestickOnViewportSizeChange({
-      followOutput: false,
-      previousViewportHeight: 720,
-      previousViewportWidth: 1280,
-      viewportHeight: 680,
-      viewportWidth: 1280,
-    }),
-    false,
-  );
-  assert.equal(
-    shouldRestickOnViewportSizeChange({
-      followOutput: true,
-      previousViewportHeight: 720,
-      previousViewportWidth: 1280,
-      viewportHeight: 720,
-      viewportWidth: 1280,
-    }),
-    false,
   );
 });
 
@@ -2026,50 +2044,9 @@ test("streaming bottom anchor auto scroll ignores smooth CSS scroll behavior", a
   assert.equal(element.scrollTop, 1200);
 });
 
-test("bottom anchor retries after layout settle only when still following and not near bottom", () => {
-  assert.equal(
-    shouldRetryBottomStickAfterSettle({
-      clientHeight: 400,
-      followOutput: true,
-      scrollHeight: 1400,
-      scrollTop: 500,
-    }),
-    true,
-  );
-  assert.equal(
-    shouldRetryBottomStickAfterSettle({
-      clientHeight: 400,
-      followOutput: true,
-      scrollHeight: 1000,
-      scrollTop: 600,
-    }),
-    false,
-  );
-  assert.equal(
-    shouldRetryBottomStickAfterSettle({
-      clientHeight: 400,
-      followOutput: false,
-      scrollHeight: 1400,
-      scrollTop: 500,
-    }),
-    false,
-  );
-});
-
 test("bottom anchor detects browser overscroll past the visual bottom", async () => {
-  const bottomAnchor = (await import(
-    "../src/conversation-runtime/scroll/bottomAnchor"
-  )) as typeof import("../src/conversation-runtime/scroll/bottomAnchor") & {
-    isOverscrolledPastBottom?: (input: {
-      clientHeight: number;
-      scrollHeight: number;
-      scrollTop: number;
-    }) => boolean;
-  };
-
-  assert.equal(typeof bottomAnchor.isOverscrolledPastBottom, "function");
   assert.equal(
-    bottomAnchor.isOverscrolledPastBottom?.({
+    isOverscrolledPastBottom({
       clientHeight: 400,
       scrollHeight: 1000,
       scrollTop: 621,
@@ -2077,7 +2054,7 @@ test("bottom anchor detects browser overscroll past the visual bottom", async ()
     true,
   );
   assert.equal(
-    bottomAnchor.isOverscrolledPastBottom?.({
+    isOverscrolledPastBottom({
       clientHeight: 400,
       scrollHeight: 1000,
       scrollTop: 600,
@@ -2085,22 +2062,11 @@ test("bottom anchor detects browser overscroll past the visual bottom", async ()
     false,
   );
   assert.equal(
-    bottomAnchor.isOverscrolledPastBottom?.({
+    isOverscrolledPastBottom({
       clientHeight: 400,
       scrollHeight: 1000,
       scrollTop: Number.NaN,
     }),
-    false,
-  );
-});
-
-test("bottom anchor cancels pending stick when user starts scrolling upward", () => {
-  assert.equal(
-    shouldCancelPendingStickForUserScrollIntent({ scrollUpIntent: true }),
-    true,
-  );
-  assert.equal(
-    shouldCancelPendingStickForUserScrollIntent({ scrollUpIntent: false }),
     false,
   );
 });

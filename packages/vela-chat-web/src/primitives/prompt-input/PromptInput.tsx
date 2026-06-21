@@ -1,7 +1,7 @@
 "use client";
 
 import type { ChangeEvent, FormEvent, KeyboardEvent, ReactNode, RefObject } from "react";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import styles from "../../styles/desktop.module.css";
 
 export interface PromptInputAttachment {
@@ -19,6 +19,7 @@ export interface PromptInputProps {
   onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onSubmit: () => void;
   onAttachImages?: (files: File[]) => void;
+  onHeightChange?: (height: number) => void;
   onRemoveAttachment?: (attachmentId: string) => void;
   pendingAttachments?: PromptInputAttachment[];
   leftToolbarControls?: ReactNode;
@@ -34,12 +35,14 @@ export function PromptInput({
   onKeyDown,
   onSubmit,
   onAttachImages,
+  onHeightChange,
   onRemoveAttachment,
   pendingAttachments = [],
   leftToolbarControls,
   rightToolbarControls,
 }: PromptInputProps) {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const rootRef = useRef<HTMLFormElement | null>(null);
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
     if (canSubmit) onSubmit();
@@ -53,8 +56,23 @@ export function PromptInput({
     if (files.length > 0) onAttachImages?.(files);
   };
 
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root || !onHeightChange || typeof ResizeObserver === "undefined") return;
+
+    const publishHeight = () => {
+      onHeightChange(root.getBoundingClientRect().height);
+    };
+    publishHeight();
+    const observer = new ResizeObserver(publishHeight);
+    observer.observe(root);
+    return () => {
+      observer.disconnect();
+    };
+  }, [onHeightChange]);
+
   return (
-    <form className={styles.composerDock} onSubmit={handleSubmit}>
+    <form className={styles.composerDock} onSubmit={handleSubmit} ref={rootRef}>
       <div className={styles.composer}>
         <textarea
           className={styles.textarea}

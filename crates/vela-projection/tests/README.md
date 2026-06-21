@@ -1,7 +1,5 @@
 # vela-projection/tests
 
-# vela-projection/tests
-
 Projection contract tests ensure read models consume only the canonical event families they are allowed to consume.
 
 - Gate: projection tests consume canonical events only, never provider raw protocol.

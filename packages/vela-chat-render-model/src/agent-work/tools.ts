@@ -1,5 +1,5 @@
 import type {
-  ChatSurfaceActivityItem,
+  ChatSurfaceAgentWorkItem,
   ChatSurfaceDebug,
 } from "../../../vela-chat-surface/src";
 
@@ -16,13 +16,12 @@ export interface AgentWorkRenderRow {
   createdAt: string;
   updatedAt?: string;
   turnId?: string;
-  activityId?: string;
+  agentWorkId?: string;
   debug: ChatSurfaceDebug;
 }
 
-export function renderToolActivityRows(items: ChatSurfaceActivityItem[]): AgentWorkRenderRow[] {
+export function renderAgentWorkRows(items: ChatSurfaceAgentWorkItem[]): AgentWorkRenderRow[] {
   return items.flatMap((item) => {
-    if (!isToolActivity(item)) return [];
     const presentation = toolPresentation(item);
     if (!presentation) return [];
     return [
@@ -37,39 +36,25 @@ export function renderToolActivityRows(items: ChatSurfaceActivityItem[]): AgentW
         createdAt: item.created_at,
         updatedAt: item.updated_at,
         ...(item.turn_id !== undefined ? { turnId: item.turn_id } : {}),
-        activityId: item.id,
+        agentWorkId: item.id,
         debug: item.debug,
       },
     ];
   });
 }
 
-function isToolActivity(item: ChatSurfaceActivityItem): boolean {
-  return (
-    item.kind === "tool" ||
-    item.kind === "command" ||
-    item.kind === "task" ||
-    item.kind === "warning"
-  );
-}
-
 function toolPresentation(
-  item: ChatSurfaceActivityItem,
+  item: ChatSurfaceAgentWorkItem,
 ): { title: string; summary: string } | undefined {
   const detail = item.detail;
-  const rawLabel = providerLabelPresentation(item.title) ?? providerLabelPresentation(item.summary);
   const explicitTitle = isGenericToolTitle(item.title) ? "" : item.title;
   const title =
     titleFromDetail(detail, item.status) ||
-    rawLabel?.title ||
     explicitTitle ||
-    legacyToolTitle(detail) ||
-    (item.kind === "tool" ? "Tool call" : "");
+    "Tool call";
   const summary =
     summaryFromDetail(detail) ||
-    rawLabel?.summary ||
-    nonDuplicateSummary(item.summary, item.title) ||
-    legacyToolSummary(detail);
+    nonDuplicateSummary(item.summary, item.title);
 
   if (!title) {
     return undefined;
@@ -82,7 +67,7 @@ function toolPresentation(
 }
 
 function titleFromDetail(
-  detail: ChatSurfaceActivityItem["detail"],
+  detail: ChatSurfaceAgentWorkItem["detail"],
   status: string,
 ): string {
   if (!detail) return "";
@@ -114,52 +99,14 @@ function titleFromDetail(
     case "plan":
       return "Updated plan";
     case "plain_text":
-      return stringField(detail.label);
+    case "tool":
+      return stringField(detail.label) || stringField(detail.name);
     default:
       return "";
   }
 }
 
-function providerLabelPresentation(
-  value: string | undefined,
-): { title: string; summary: string } | undefined {
-  const label = (value ?? "").trim();
-  const separator = label.indexOf(":");
-  if (separator <= 0) return undefined;
-
-  const prefix = label.slice(0, separator).trim().toLowerCase();
-  const rest = label.slice(separator + 1).trim();
-  if (!rest) return undefined;
-
-  switch (prefix) {
-    case "search":
-    case "grep":
-    case "rg":
-    case "find":
-      return { title: "Searched code", summary: rest };
-    case "terminal":
-    case "shell":
-    case "bash":
-    case "command":
-      return { title: "Ran command", summary: rest };
-    case "python":
-      return { title: "Ran Python", summary: rest };
-    case "read":
-    case "cat":
-      return { title: "Read file", summary: rest };
-    case "edit":
-      return { title: "Edited file", summary: rest };
-    case "write":
-      return { title: "Wrote file", summary: rest };
-    case "fetch":
-    case "curl":
-      return { title: "Fetched URL", summary: rest };
-    default:
-      return undefined;
-  }
-}
-
-function summaryFromDetail(detail: ChatSurfaceActivityItem["detail"]): string {
+function summaryFromDetail(detail: ChatSurfaceAgentWorkItem["detail"]): string {
   if (!detail) return "";
   switch (detail.type) {
     case "shell":
@@ -181,6 +128,7 @@ function summaryFromDetail(detail: ChatSurfaceActivityItem["detail"]): string {
     case "plain_text":
       return truncateMiddle(stringField(detail.text));
     case "unknown":
+    case "tool":
       return truncateMiddle(stringField(detail.output) || stringField(detail.input));
     default: {
       const generic = detail as Record<string, unknown>;
@@ -194,36 +142,8 @@ function summaryFromDetail(detail: ChatSurfaceActivityItem["detail"]): string {
   }
 }
 
-function legacyToolTitle(detail: ChatSurfaceActivityItem["detail"]): string {
-  if (!detail || detail.type !== "tool") return "";
-  return (
-    stringField(detail.name) ||
-    stringField(detail.command) ||
-    stringField(detail.query) ||
-    stringField(detail.path) ||
-    "Tool"
-  );
-}
-
-function legacyToolSummary(detail: ChatSurfaceActivityItem["detail"]): string {
-  if (!detail || detail.type !== "tool") return "";
-  return (
-    stringField(detail.output) ||
-    stringField(detail.stdout) ||
-    stringField(detail.stderr) ||
-    stringField(detail.delta) ||
-    stringField(detail.error) ||
-    stringField(detail.command) ||
-    stringField(detail.query) ||
-    stringField(detail.path) ||
-    ""
-  );
-}
-
-function toolDisplayIntent(item: ChatSurfaceActivityItem): AgentWorkDisplay {
+function toolDisplayIntent(item: ChatSurfaceAgentWorkItem): AgentWorkDisplay {
   if (item.status === "failed") return "prominent";
-  const providerDisplay = providerLabelDisplayIntent(item.title) ?? providerLabelDisplayIntent(item.summary);
-  if (providerDisplay) return providerDisplay;
   if (!item.detail) return "compact";
 
   switch (item.detail.type) {
@@ -259,35 +179,6 @@ function toolDisplayIntent(item: ChatSurfaceActivityItem): AgentWorkDisplay {
   return "compact";
 }
 
-function providerLabelDisplayIntent(value: string | undefined): AgentWorkDisplay | undefined {
-  const label = (value ?? "").trim();
-  const separator = label.indexOf(":");
-  if (separator <= 0) return undefined;
-
-  const prefix = label.slice(0, separator).trim().toLowerCase();
-  switch (prefix) {
-    case "terminal":
-    case "shell":
-    case "bash":
-    case "command":
-    case "python":
-    case "edit":
-    case "write":
-    case "fetch":
-    case "curl":
-      return "prominent";
-    case "search":
-    case "grep":
-    case "rg":
-    case "find":
-    case "read":
-    case "cat":
-      return "compact";
-    default:
-      return undefined;
-  }
-}
-
 function stringField(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
@@ -303,13 +194,13 @@ function numberField(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-function filePathFromDetail(detail: ChatSurfaceActivityItem["detail"]): string {
+function filePathFromDetail(detail: ChatSurfaceAgentWorkItem["detail"]): string {
   if (!detail) return "";
   const generic = detail as Record<string, unknown>;
   return stringField(generic.file_path) || stringField(generic.path);
 }
 
-function outputSummary(detail: ChatSurfaceActivityItem["detail"]): string {
+function outputSummary(detail: ChatSurfaceAgentWorkItem["detail"]): string {
   if (!detail) return "";
   const generic = detail as Record<string, unknown>;
   return (

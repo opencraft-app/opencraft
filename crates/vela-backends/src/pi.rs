@@ -96,6 +96,7 @@ impl BackendAdapter for PiBackendAdapter {
             .write_all(format!("{}\n", serde_json::to_string(&request)?).as_bytes())
             .await?;
         stdin.flush().await?;
+        let mut event_normalizer = PiEventNormalizer::default();
 
         loop {
             let line = timeout(Duration::from_secs(120), lines.next_line()).await??;
@@ -115,7 +116,7 @@ impl BackendAdapter for PiBackendAdapter {
                     }
                 }
                 PiRuntimeMessage::Event(event) => {
-                    let normalized = normalize_pi_event(event.clone());
+                    let normalized = event_normalizer.normalize(event.clone());
                     let done = normalized
                         .iter()
                         .any(|output| output.event_type == EventType::TURN_COMPLETED);
@@ -181,61 +182,131 @@ fn classify_pi_message(value: Value) -> anyhow::Result<PiRuntimeMessage> {
 }
 
 pub fn normalize_pi_event(event: Value) -> Vec<BackendOutput> {
-    let Some(event_type) = event.get("type").and_then(Value::as_str) else {
-        return vec![warning("Pi event did not include a type", event)];
-    };
+    PiEventNormalizer::default().normalize(event)
+}
 
-    match event_type {
-        "agent_start" | "turn_start" | "turn_end" => Vec::new(),
-        "message_start" => normalize_message_lifecycle(event, EventType::ASSISTANT_MESSAGE_STARTED),
-        "message_end" => normalize_message_lifecycle(event, EventType::ASSISTANT_MESSAGE_COMPLETED),
-        "message_update" => normalize_message_update(event),
-        "tool_execution_start" => vec![with_raw(
-            EventType::TOOL_STARTED,
-            tool_payload(&event, "running", false),
-            event,
-        )],
-        "tool_execution_update" => vec![with_raw(
-            EventType::TOOL_UPDATED,
-            json!({
-                "tool_id": event.get("toolCallId").or_else(|| event.get("tool_call_id")),
-                "partial_result": event.get("partialResult").or_else(|| event.get("partial_result")),
-            }),
-            event,
-        )],
-        "tool_execution_end" => {
-            let is_error = event
-                .get("isError")
-                .or_else(|| event.get("is_error"))
-                .and_then(Value::as_bool)
-                .unwrap_or(false);
-            vec![with_raw(
-                if is_error {
-                    EventType::TOOL_FAILED
-                } else {
-                    EventType::TOOL_COMPLETED
-                },
-                tool_payload(
-                    &event,
-                    if is_error { "failed" } else { "completed" },
-                    is_error,
-                ),
+#[derive(Clone, Debug, Default)]
+pub struct PiEventNormalizer {
+    active_tools: HashMap<String, ActivePiTool>,
+}
+
+#[derive(Clone, Debug)]
+struct ActivePiTool {
+    tool_name: String,
+    args: Value,
+}
+
+impl PiEventNormalizer {
+    pub fn normalize(&mut self, event: Value) -> Vec<BackendOutput> {
+        self.normalize_inner(event)
+    }
+
+    fn normalize_inner(&mut self, event: Value) -> Vec<BackendOutput> {
+        let Some(event_type) = event.get("type").and_then(Value::as_str) else {
+            return vec![warning("Pi event did not include a type", event)];
+        };
+
+        match event_type {
+            "agent_start" | "turn_start" | "turn_end" => Vec::new(),
+            "message_start" => {
+                normalize_message_lifecycle(event, EventType::ASSISTANT_MESSAGE_STARTED)
+            }
+            "message_end" => {
+                normalize_message_lifecycle(event, EventType::ASSISTANT_MESSAGE_COMPLETED)
+            }
+            "message_update" => normalize_message_update(event),
+            "tool_execution_start" => {
+                self.remember_tool(&event);
+                vec![with_raw(
+                    EventType::TOOL_STARTED,
+                    tool_payload(&event, "running", false),
+                    event,
+                )]
+            }
+            "tool_execution_update" => vec![with_raw(
+                EventType::TOOL_UPDATED,
+                json!({
+                    "tool_id": event.get("toolCallId").or_else(|| event.get("tool_call_id")),
+                    "partial_result": event.get("partialResult").or_else(|| event.get("partial_result")),
+                }),
                 event,
-            )]
+            )],
+            "tool_execution_end" => {
+                let event = self.enrich_tool_event(event, true);
+                let is_error = event
+                    .get("isError")
+                    .or_else(|| event.get("is_error"))
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                vec![with_raw(
+                    if is_error {
+                        EventType::TOOL_FAILED
+                    } else {
+                        EventType::TOOL_COMPLETED
+                    },
+                    tool_payload(
+                        &event,
+                        if is_error { "failed" } else { "completed" },
+                        is_error,
+                    ),
+                    event,
+                )]
+            }
+            "agent_end" => vec![with_raw(EventType::TURN_COMPLETED, json!({}), event)],
+            "process_exit" => vec![with_raw(
+                EventType::TURN_FAILED,
+                json!({ "error": event.get("error").cloned().unwrap_or(Value::Null) }),
+                event,
+            )],
+            "extension_ui_request" => {
+                vec![warning("Pi extension UI request is not handled yet", event)]
+            }
+            _ => vec![warning(
+                format!("Unhandled Pi event type: {event_type}"),
+                event,
+            )],
         }
-        "agent_end" => vec![with_raw(EventType::TURN_COMPLETED, json!({}), event)],
-        "process_exit" => vec![with_raw(
-            EventType::TURN_FAILED,
-            json!({ "error": event.get("error").cloned().unwrap_or(Value::Null) }),
-            event,
-        )],
-        "extension_ui_request" => {
-            vec![warning("Pi extension UI request is not handled yet", event)]
+    }
+
+    fn remember_tool(&mut self, event: &Value) {
+        let Some(tool_id) = get_tool_id(event) else {
+            return;
+        };
+        self.active_tools.insert(
+            tool_id,
+            ActivePiTool {
+                tool_name: get_string(event, "toolName")
+                    .or_else(|| get_string(event, "tool_name"))
+                    .unwrap_or_default(),
+                args: event.get("args").cloned().unwrap_or(Value::Null),
+            },
+        );
+    }
+
+    fn enrich_tool_event(&mut self, event: Value, remove: bool) -> Value {
+        let Some(tool_id) = get_tool_id(&event) else {
+            return event;
+        };
+        let active = if remove {
+            self.active_tools.remove(&tool_id)
+        } else {
+            self.active_tools.get(&tool_id).cloned()
+        };
+        let Some(active) = active else {
+            return event;
+        };
+
+        let mut object = event.as_object().cloned().unwrap_or_default();
+        if !active.tool_name.is_empty()
+            && !object.contains_key("toolName")
+            && !object.contains_key("tool_name")
+        {
+            object.insert("toolName".to_string(), Value::String(active.tool_name));
         }
-        _ => vec![warning(
-            format!("Unhandled Pi event type: {event_type}"),
-            event,
-        )],
+        if !active.args.is_null() && !object.contains_key("args") {
+            object.insert("args".to_string(), active.args);
+        }
+        Value::Object(object)
     }
 }
 
@@ -268,6 +339,19 @@ fn tool_payload(event: &Value, status: &str, is_error: bool) -> Value {
 fn tool_detail(tool_name: &str, args: &Value, result: &Value) -> Value {
     match tool_name {
         "bash" => shell_detail(args, result),
+        "read" => json!({
+            "type": "read",
+            "file_path": args
+                .get("path")
+                .or_else(|| args.get("file_path"))
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+            "content": result
+                .get("content")
+                .or_else(|| result.get("text"))
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+        }),
         "edit" => json!({
             "type": "edit",
             "file_path": args.get("path").and_then(Value::as_str).unwrap_or(""),
@@ -334,6 +418,10 @@ fn normalize_tool_name(tool_name: &str, args: &Value, result: &Value) -> String 
 
 fn get_string(value: &Value, key: &str) -> Option<String> {
     value.get(key).and_then(Value::as_str).map(str::to_string)
+}
+
+fn get_tool_id(value: &Value) -> Option<String> {
+    get_string(value, "toolCallId").or_else(|| get_string(value, "tool_call_id"))
 }
 
 fn normalize_message_lifecycle(event: Value, event_type: EventType) -> Vec<BackendOutput> {

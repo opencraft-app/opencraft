@@ -111,29 +111,32 @@ test("normalizes ConversationView items into stable semantic surface lanes", () 
 
   assert.equal(surface.session_id, "sess_1");
   assert.deepEqual(
-    surface.transcript.rows.map((row) => row.role),
-    ["user", "assistant"],
+    surface.conversation.items.map((item) => item.kind),
+    ["user_message", "turn_meta", "assistant_message", "agent_work"],
   );
-  assert.equal(surface.transcript.rows[0]?.debug.projection, "conversation");
-  assert.equal(surface.transcript.rows[0]?.parts[1]?.type, "image");
-  assert.equal(surface.transcript.rows[0]?.parts[1]?.data?.mime_type, "image/png");
-  assert.equal(surface.transcript.rows[0]?.turn_id, "turn_1");
-  assert.deepEqual(surface.transcript.rows[1]?.debug.source_event_ids, [
+  assert.equal(surface.conversation.items[0]?.debug.projection, "conversation");
+  assert.equal(surface.conversation.items[0]?.kind, "user_message");
+  assert.equal(surface.conversation.items[0]?.parts[1]?.type, "image");
+  assert.equal(surface.conversation.items[0]?.parts[1]?.data?.mime_type, "image/png");
+  assert.equal(surface.conversation.items[0]?.turn_id, "turn_1");
+  assert.equal(surface.conversation.items[1]?.kind, "turn_meta");
+  assert.equal(surface.conversation.items[1]?.status, "completed");
+  assert.deepEqual(surface.conversation.items[2]?.debug.source_event_ids, [
     "evt_assistant_started",
     "evt_assistant_delta",
   ]);
-  assert.equal(surface.transcript.turns[0]?.turn_id, "turn_1");
-  assert.equal(surface.transcript.turns[0]?.status, "completed");
-  assert.equal(surface.transcript.window?.has_older, true);
-  assert.equal(surface.transcript.window?.last_row_id, "work_1");
-  assert.equal(surface.activity.items[0]?.kind, "command");
-  assert.equal(surface.activity.items[0]?.title, "Ran command");
-  assert.equal(surface.activity.items[0]?.summary, "npm test");
-  assert.deepEqual(surface.activity.items[0]?.debug.source_event_ids, [
+  assert.equal(surface.conversation.window?.has_older, true);
+  assert.equal(surface.conversation.window?.last_item_id, "work_1");
+  assert.equal(surface.conversation.items[3]?.kind, "agent_work");
+  assert.equal(surface.conversation.items[3]?.title, "Ran command");
+  assert.equal(surface.conversation.items[3]?.summary, "npm test");
+  assert.deepEqual(surface.conversation.items[3]?.debug.source_event_ids, [
     "evt_tool_started",
     "evt_tool_completed",
   ]);
   assert.equal(surface.cursors.conversation?.event_id, "evt_tool_completed");
+  assert.equal("transcript" in surface, false);
+  assert.equal("activity" in surface, false);
 });
 
 test("normalizes pending requests as a separate surface lane", () => {
@@ -193,7 +196,7 @@ test("does not invent source event ids for projected items without provenance", 
     },
   });
 
-  assert.deepEqual(surface.activity.items[0]?.debug.source_event_ids, []);
+  assert.deepEqual(surface.conversation.items[0]?.debug.source_event_ids, []);
   assert.deepEqual(surface.pending_requests.items[0]?.debug.source_event_ids, []);
 });
 
@@ -217,7 +220,7 @@ test("deduplicates single-event agent work provenance ranges", () => {
     }),
   });
 
-  assert.deepEqual(surface.activity.items[0]?.debug.source_event_ids, ["evt_tool_1"]);
+  assert.deepEqual(surface.conversation.items[0]?.debug.source_event_ids, ["evt_tool_1"]);
 });
 
 test("uses status conversation items as working surface rows", () => {
@@ -235,8 +238,8 @@ test("uses status conversation items as working surface rows", () => {
     }),
   });
 
-  assert.equal(surface.transcript.rows[0]?.role, "working");
-  assert.equal(surface.transcript.rows[0]?.text, "Searched code");
+  assert.equal(surface.conversation.items[0]?.kind, "status");
+  assert.equal(surface.conversation.items[0]?.text, "Searched code");
 });
 
 test("preserves conversation item correlation ids in surface lanes", () => {
@@ -261,8 +264,8 @@ test("preserves conversation item correlation ids in surface lanes", () => {
     }),
   });
 
-  assert.equal(surface.transcript.rows[0]?.turn_id, "turn_1");
-  assert.equal(surface.activity.items[0]?.turn_id, "turn_1");
+  assert.equal(surface.conversation.items[0]?.turn_id, "turn_1");
+  assert.equal(surface.conversation.items[1]?.turn_id, "turn_1");
 });
 
 test("keeps surface renderer-free", async () => {

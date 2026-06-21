@@ -46,7 +46,7 @@ packages/vela-chat-web/src/
       AssistantMarkdownRenderer.tsx
       UserMessageRenderer.tsx
       StatusRenderer.tsx
-      ActivityRenderer.tsx
+      AgentWorkRenderer.tsx
       ReasoningRenderer.tsx
       ToolCallRenderer.tsx
 
@@ -221,11 +221,11 @@ contract and Paseo's agent-stream shape. Do not turn these into heuristic fixes:
   the render model as `desktop_web`. Do not treat that as a renderer-layer bug:
   the missing decision is the host shell / route breakpoint policy. Add a
   tested host selector before changing `ChatWorkbench` to pass `mobile_web`.
-- User message rendering currently displays OpenAPI `TranscriptPart.type =
+- User message rendering currently displays OpenAPI `MessagePart.type =
   image` only when the projected part carries inline base64 `data` plus
-  `mime_type`. `image_ref` / `file_reference`-style transcript rendering is not
-  yet specified by the `TranscriptPart.data` shape. If remote/blob-backed media
-  needs to render in transcript, extend the OpenAPI part data contract or blob
+  `mime_type`. `image_ref` / `file_reference`-style conversation rendering is
+  not yet specified by the `MessagePart.data` shape. If remote/blob-backed media
+  needs to render in the conversation, extend the OpenAPI part data contract or blob
   API first; do not guess field names such as `url`, `uri`, or `blob_id` inside
   `UserMessageRenderer`.
 - `CursorWindow.next_event_id` still needs a sharper OpenAPI description before
@@ -374,7 +374,7 @@ Do not:
 | 新 block kind 没显示 | `renderers/blockRegistry.tsx` |
 | user bubble 样式错了 | `renderers/blocks/UserMessageRenderer.tsx` 或 `styles/` |
 | turn header、`已处理 ...` / worked label 位置错 | `components/conversation/VelaTurnGroup.tsx` |
-| activity/tool 展示错 | `renderers/blocks/ActivityRenderer.tsx` 或 `ToolCallRenderer.tsx` |
+| agent work/tool 展示错 | `renderers/blocks/AgentWorkRenderer.tsx` 或 `ToolCallRenderer.tsx` |
 | 超长历史是否虚拟化、live head 是否被挂住 | `conversation-runtime/model/virtualizationPolicy.ts`、`buildConversationRuntimeSegments.ts` |
 | 桌面/移动应该选哪种列表策略 | `conversation-runtime/strategy/strategyResolver.ts`、`strategyRegistry.ts` |
 | sticky scroll、发送后贴底、用户上滚暂停有问题 | 先看 debug snapshot 的 `conversation.scroll`，再看 `conversation-runtime/scroll/useConversationScrollController.ts` |

@@ -7,6 +7,7 @@
   --vela-border-strong: #d8d9db;
   --vela-code: #eceeef;
   --vela-accent: #ff5a1f;
+  --vela-composer-height: 154px;
   min-height: 100dvh;
   background: var(--vela-bg);
   color: var(--vela-text);
@@ -54,7 +55,7 @@
 .turnList {
   width: min(100%, 1120px);
   margin: 0 auto;
-  padding: 54px 28px 178px;
+  padding: 54px 28px calc(var(--vela-composer-height) + 28px);
 }
 
 .turnGroup {
@@ -312,7 +313,7 @@
   line-height: 1.55;
 }
 
-.activityBlock {
+.agentWorkBlock {
   display: grid;
   grid-template-columns: 18px minmax(0, auto);
   align-items: center;
@@ -327,15 +328,15 @@
   line-height: 1.38;
 }
 
-.activityBlock[data-display="prominent"] {
+.agentWorkBlock[data-display="prominent"] {
   margin-top: 0;
 }
 
-.activityBlock[data-status="failed"] {
+.agentWorkBlock[data-status="failed"] {
   color: #b44322;
 }
 
-.activityIcon {
+.agentWorkIcon {
   display: inline-grid;
   width: 15px;
   height: 15px;
@@ -346,7 +347,7 @@
   opacity: 0.92;
 }
 
-.activityIcon::before {
+.agentWorkIcon::before {
   content: "›";
   transform: translate(0.5px, -0.5px);
   font-family:
@@ -360,24 +361,24 @@
   line-height: 1;
 }
 
-.activityBlock[data-status="failed"] .activityIcon {
+.agentWorkBlock[data-status="failed"] .agentWorkIcon {
   color: #b44322;
 }
 
-.activityText {
+.agentWorkText {
   display: inline-flex;
   min-width: 0;
   align-items: baseline;
   gap: 7px;
 }
 
-.activityTitle {
+.agentWorkTitle {
   flex: 0 0 auto;
   color: #8f949b;
   font-weight: 560;
 }
 
-.activitySummary {
+.agentWorkSummary {
   min-width: 0;
   max-width: min(58vw, 520px);
   overflow: hidden;
@@ -833,7 +834,7 @@
   }
 
   .turnList {
-    padding: 38px 20px 164px;
+    padding: 38px 20px calc(var(--vela-composer-height) + 24px);
   }
 
   .userMessageStack {

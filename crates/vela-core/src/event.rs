@@ -32,10 +32,6 @@ impl EventType {
     pub const TOOL_OUTPUT_DELTA: Self = Self("tool.output.delta");
     pub const TOOL_COMPLETED: Self = Self("tool.completed");
     pub const TOOL_FAILED: Self = Self("tool.failed");
-    pub const COMMAND_STARTED: Self = Self("command.started");
-    pub const COMMAND_OUTPUT_DELTA: Self = Self("command.output.delta");
-    pub const COMMAND_COMPLETED: Self = Self("command.completed");
-    pub const COMMAND_FAILED: Self = Self("command.failed");
     pub const TASK_STARTED: Self = Self("task.started");
     pub const TASK_UPDATED: Self = Self("task.updated");
     pub const TASK_COMPLETED: Self = Self("task.completed");
@@ -186,10 +182,6 @@ fn affected_views_for(event_type: EventType) -> Vec<&'static str> {
         | EventType::TOOL_OUTPUT_DELTA
         | EventType::TOOL_COMPLETED
         | EventType::TOOL_FAILED
-        | EventType::COMMAND_STARTED
-        | EventType::COMMAND_OUTPUT_DELTA
-        | EventType::COMMAND_COMPLETED
-        | EventType::COMMAND_FAILED
         | EventType::TASK_STARTED
         | EventType::TASK_UPDATED
         | EventType::TASK_COMPLETED

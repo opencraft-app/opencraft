@@ -1,38 +1,40 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo } from "react";
 import type { WebChatModel } from "../../adapters/toWebBlocks";
 import {
   buildConversationRuntimeSegments,
   buildConversationStreamItems,
   conversationRuntimePolicyForHost,
+  deriveConversationScrollSignals,
 } from "../../conversation-runtime/model";
 import {
   useConversationScrollController,
   type ConversationScrollControllerDebug,
 } from "../../conversation-runtime/scroll/useConversationScrollController";
+import type { ConversationViewportHandle } from "../../conversation-runtime/scroll/viewportHandle";
 import { Conversation } from "../../primitives/conversation/Conversation";
 import { VelaTurnList } from "./VelaTurnList";
 
-export function VelaConversation({
-  webModel,
-  canLoadOlder = false,
-  isLoadingOlder = false,
-  onLoadOlder,
-  onScrollDebugChange,
-}: {
+export const VelaConversation = forwardRef<ConversationViewportHandle, {
   webModel: WebChatModel;
   canLoadOlder?: boolean;
   isLoadingOlder?: boolean;
   onLoadOlder?: () => void;
   onScrollDebugChange?: (debug: ConversationScrollControllerDebug) => void;
-}) {
+}>(function VelaConversation({
+  webModel,
+  canLoadOlder = false,
+  isLoadingOlder = false,
+  onLoadOlder,
+  onScrollDebugChange,
+}, ref) {
   const items = useMemo(
     () => buildConversationStreamItems(webModel.turns),
     [webModel.turns],
   );
-  const dependency = useMemo(
-    () => items.map((item) => `${item.key}:${item.live}:${item.fingerprint}`).join("|"),
+  const scrollSignals = useMemo(
+    () => deriveConversationScrollSignals(items),
     [items],
   );
   const runtimePolicy = useMemo(
@@ -43,7 +45,7 @@ export function VelaConversation({
     () => buildConversationRuntimeSegments(items, runtimePolicy),
     [items, runtimePolicy],
   );
-  const scroll = useConversationScrollController(dependency, {
+  const scroll = useConversationScrollController(scrollSignals, {
     hasOlderHistory: canLoadOlder,
     historyStartKey: webModel.sessionId,
     isLoadingOlderHistory: isLoadingOlder,
@@ -53,6 +55,15 @@ export function VelaConversation({
   useEffect(() => {
     onScrollDebugChange?.(scroll.debug);
   }, [onScrollDebugChange, scroll.debug]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      requestBottomAnchor: scroll.requestBottomAnchor,
+      prepareForViewportChange: scroll.prepareForViewportChange,
+    }),
+    [scroll.prepareForViewportChange, scroll.requestBottomAnchor],
+  );
 
   return (
     <Conversation scrollRef={scroll.scrollRef}>
@@ -65,4 +76,4 @@ export function VelaConversation({
       />
     </Conversation>
   );
-}
+});

@@ -222,7 +222,7 @@ Canonical event vocabulary 必须区分 command acceptance 和 backend output：
 | Command facts | `user.message.accepted`、`turn.cancel.accepted`、`request.response.accepted` | Daemon |
 | Runtime lifecycle | `turn.started`、`turn.completed`、`turn.failed` | Daemon sequencer |
 | Message content | `assistant.message.started`、`assistant.message.delta`、`assistant.message.completed` | Normalized backend output |
-| Activity | `tool.started`、`tool.output.delta`、`tool.completed`、`command.output.delta` | Normalized backend output |
+| Activity | `tool.started`、`tool.updated`、`tool.output.delta`、`tool.completed`、`tool.failed` | Normalized backend output |
 | Requests | `request.opened`、`request.resolved` | Daemon + backend adapter |
 | Projection hints | `projection.invalidated`、`sync.reset` | Daemon |
 

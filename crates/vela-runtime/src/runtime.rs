@@ -7,8 +7,8 @@ use vela_backends::{
     BackendSend, backend_output_channel,
 };
 use vela_core::{
-    AgentConfig, BackendKind, CanonicalEvent, CommandAck, CommandId, EventId, EventSource, EventType,
-    ResolvedAgentConfig, SessionId, TurnId, UserMessageBlock,
+    AgentConfig, BackendKind, CanonicalEvent, CommandAck, CommandId, EventId, EventSource,
+    EventType, ResolvedAgentConfig, SessionId, TurnId, UserMessageBlock,
 };
 use vela_store::{AppendResult, SqliteEventStore};
 
@@ -504,10 +504,6 @@ fn is_backend_output_allowed(event_type: EventType) -> bool {
             | EventType::TOOL_OUTPUT_DELTA
             | EventType::TOOL_COMPLETED
             | EventType::TOOL_FAILED
-            | EventType::COMMAND_STARTED
-            | EventType::COMMAND_OUTPUT_DELTA
-            | EventType::COMMAND_COMPLETED
-            | EventType::COMMAND_FAILED
             | EventType::TASK_STARTED
             | EventType::TASK_UPDATED
             | EventType::TASK_COMPLETED

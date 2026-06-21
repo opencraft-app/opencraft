@@ -23,7 +23,7 @@ export interface WebTurn {
   fingerprint: string;
   live: boolean;
   sourceTurnId?: string;
-  sourceActivityId?: string;
+  sourceAgentWorkId?: string;
   blocks: WebBlock[];
 }
 
@@ -38,7 +38,7 @@ export type WebBlock =
       parts: UserMessagePart[];
       createdAt: string;
       sourceTurnId?: string;
-      sourceActivityId?: string;
+      sourceAgentWorkId?: string;
     }
   | {
       kind: "assistant_markdown";
@@ -50,7 +50,7 @@ export type WebBlock =
       streaming: boolean;
       showCopyAction: boolean;
       sourceTurnId?: string;
-      sourceActivityId?: string;
+      sourceAgentWorkId?: string;
     }
   | {
       kind: "turn_meta";
@@ -62,7 +62,7 @@ export type WebBlock =
       updatedAt?: string;
       completedAt?: string;
       sourceTurnId?: string;
-      sourceActivityId?: string;
+      sourceAgentWorkId?: string;
     }
   | {
       kind: "agent_work";
@@ -75,7 +75,7 @@ export type WebBlock =
       createdAt: string;
       updatedAt?: string;
       sourceTurnId?: string;
-      sourceActivityId?: string;
+      sourceAgentWorkId?: string;
     }
   | {
       kind: "status";
@@ -85,7 +85,7 @@ export type WebBlock =
       status: string;
       createdAt: string;
       sourceTurnId?: string;
-      sourceActivityId?: string;
+      sourceAgentWorkId?: string;
     };
 
 const MAX_CACHED_WEB_TURNS = 5_000;
@@ -140,7 +140,7 @@ function rowsToTurn(sessionId: string, rows: ChatRenderRow[]): WebTurn {
   const fingerprint = rows.map(rowFingerprint).join("|");
   const first = rows[0]!;
   const sourceTurnId = first.turnId ?? rows.find((row) => row.turnId)?.turnId;
-  const sourceActivityId = rows.length === 1 ? first.activityId : undefined;
+  const sourceAgentWorkId = rows.length === 1 ? first.agentWorkId : undefined;
   const cacheKey = [
     sessionId,
     "turn_shell",
@@ -158,7 +158,7 @@ function rowsToTurn(sessionId: string, rows: ChatRenderRow[]): WebTurn {
     fingerprint,
     live: rows.some(isLiveRenderRow),
     sourceTurnId,
-    sourceActivityId,
+    sourceAgentWorkId,
     blocks,
   };
   webTurnCache.set(cacheKey, turn);
@@ -173,7 +173,7 @@ function rowToTurn(sessionId: string, row: ChatRenderRow): WebTurn {
     row.kind,
     row.key,
     `turn:${row.turnId ?? ""}`,
-    `activity:${row.activityId ?? ""}`,
+    `agent_work:${row.agentWorkId ?? ""}`,
     fingerprint,
   ].join(":");
   const cached = webTurnCache.get(cacheKey);
@@ -186,7 +186,7 @@ function rowToTurn(sessionId: string, row: ChatRenderRow): WebTurn {
     fingerprint,
     live: isLiveRenderRow(row),
     sourceTurnId: row.turnId,
-    sourceActivityId: row.activityId,
+    sourceAgentWorkId: row.agentWorkId,
     blocks: [block],
   };
   webTurnCache.set(cacheKey, turn);
@@ -234,7 +234,7 @@ function rowToBlock(row: ChatRenderRow): WebBlock {
       parts: row.parts,
       createdAt: row.createdAt,
       sourceTurnId: row.turnId,
-      sourceActivityId: row.activityId,
+      sourceAgentWorkId: row.agentWorkId,
     };
   }
 
@@ -250,7 +250,7 @@ function rowToBlock(row: ChatRenderRow): WebBlock {
       streaming: row.streaming,
       showCopyAction: Boolean(copyText) && !row.streaming,
       sourceTurnId: row.turnId,
-      sourceActivityId: row.activityId,
+      sourceAgentWorkId: row.agentWorkId,
     };
   }
 
@@ -265,7 +265,7 @@ function rowToBlock(row: ChatRenderRow): WebBlock {
       updatedAt: row.updatedAt,
       completedAt: row.completedAt,
       sourceTurnId: row.turnId,
-      sourceActivityId: row.activityId,
+      sourceAgentWorkId: row.agentWorkId,
     };
   }
 
@@ -281,7 +281,7 @@ function rowToBlock(row: ChatRenderRow): WebBlock {
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       sourceTurnId: row.turnId,
-      sourceActivityId: row.activityId,
+      sourceAgentWorkId: row.agentWorkId,
     };
   }
 
@@ -293,7 +293,7 @@ function rowToBlock(row: ChatRenderRow): WebBlock {
     status: row.status,
     createdAt: row.createdAt,
     sourceTurnId: row.turnId,
-    sourceActivityId: row.activityId,
+    sourceAgentWorkId: row.agentWorkId,
   };
 }
 

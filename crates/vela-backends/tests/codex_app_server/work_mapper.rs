@@ -34,9 +34,12 @@ fn codex_work_mapper_normalizes_command_lifecycle_without_ui_hack() {
     )
     .expect("command begin should map to agent work output");
 
-    assert_eq!(outputs[0].event_type, EventType::COMMAND_STARTED);
-    assert_eq!(outputs[0].payload["command_id"], "cmd_1");
-    assert_eq!(outputs[0].payload["command"], "cargo test");
+    assert_eq!(outputs[0].event_type, EventType::TOOL_STARTED);
+    assert_eq!(outputs[0].payload["tool_id"], "cmd_1");
+    assert_eq!(outputs[0].payload["name"], "shell");
+    assert_eq!(outputs[0].payload["detail"]["type"], "shell");
+    assert_eq!(outputs[0].payload["detail"]["command"], "cargo test");
+    assert_eq!(outputs[0].payload["detail"]["cwd"], "/repo");
     assert_eq!(outputs[0].payload["status"], "running");
 
     let outputs = codex::work_mapper::map_codex_work_notification(
@@ -53,9 +56,11 @@ fn codex_work_mapper_normalizes_command_lifecycle_without_ui_hack() {
     )
     .expect("command end should map to agent work output");
 
-    assert_eq!(outputs[0].event_type, EventType::COMMAND_FAILED);
-    assert_eq!(outputs[0].payload["exit_code"], 101);
-    assert_eq!(outputs[0].payload["stderr"], "failed");
+    assert_eq!(outputs[0].event_type, EventType::TOOL_FAILED);
+    assert_eq!(outputs[0].payload["tool_id"], "cmd_1");
+    assert_eq!(outputs[0].payload["detail"]["exit_code"], 101);
+    assert_eq!(outputs[0].payload["detail"]["stderr"], "failed");
+    assert_eq!(outputs[0].payload["error"], "failed");
 }
 
 #[test]
@@ -72,13 +77,16 @@ fn codex_paseo_thread_item_fixture_maps_real_tool_shapes() {
         fixture.expect_event_types
     );
 
-    assert_eq!(outputs[0].payload["command_id"], "cmd_wrapper_array");
-    assert_eq!(outputs[0].payload["command"], "echo hello");
-    assert_eq!(outputs[0].payload["cwd"], "/tmp/repo");
+    assert_eq!(outputs[0].payload["tool_id"], "cmd_wrapper_array");
+    assert_eq!(outputs[0].payload["name"], "shell");
+    assert_eq!(outputs[0].payload["detail"]["type"], "shell");
+    assert_eq!(outputs[0].payload["detail"]["command"], "echo hello");
+    assert_eq!(outputs[0].payload["detail"]["cwd"], "/tmp/repo");
 
-    assert_eq!(outputs[1].payload["command_id"], "cmd_envelope_output");
-    assert_eq!(outputs[1].payload["output"], "hello");
-    assert_eq!(outputs[1].payload["exit_code"], 0);
+    assert_eq!(outputs[1].payload["tool_id"], "cmd_envelope_output");
+    assert_eq!(outputs[1].payload["detail"]["command"], "echo hello");
+    assert_eq!(outputs[1].payload["detail"]["output"], "hello");
+    assert_eq!(outputs[1].payload["detail"]["exit_code"], 0);
 
     assert_eq!(outputs[2].payload["tool_id"], "read_array");
     assert_eq!(outputs[2].payload["name"], "read_file");
@@ -125,8 +133,11 @@ fn codex_paseo_mapper_edge_fixture_preserves_file_change_semantics() {
         fixture.expect_event_types
     );
 
-    assert_eq!(outputs[0].payload["command"], "echo hello");
-    assert_eq!(outputs[0].payload["cwd"], "C:\\repo");
+    assert_eq!(outputs[0].payload["tool_id"], "pwsh_wrapper");
+    assert_eq!(outputs[0].payload["name"], "shell");
+    assert_eq!(outputs[0].payload["detail"]["type"], "shell");
+    assert_eq!(outputs[0].payload["detail"]["command"], "echo hello");
+    assert_eq!(outputs[0].payload["detail"]["cwd"], "C:\\repo");
 
     assert_eq!(outputs[1].payload["detail"]["type"], "edit");
     assert_eq!(
@@ -170,7 +181,8 @@ fn codex_work_mapper_still_flows_through_public_normalizer() {
         }),
     );
 
-    assert_eq!(outputs[0].event_type, EventType::COMMAND_COMPLETED);
-    assert_eq!(outputs[0].payload["command"], "cargo test");
-    assert_eq!(outputs[0].payload["output"], "ok");
+    assert_eq!(outputs[0].event_type, EventType::TOOL_COMPLETED);
+    assert_eq!(outputs[0].payload["tool_id"], "cmd_public");
+    assert_eq!(outputs[0].payload["detail"]["command"], "cargo test");
+    assert_eq!(outputs[0].payload["detail"]["output"], "ok");
 }

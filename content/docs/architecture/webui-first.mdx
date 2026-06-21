@@ -90,7 +90,7 @@ flowchart TD
 - UI 只消费 projection
 - Chat conversation 只消费 `ConversationView`
 - Sidebar 只消费 `SessionListView`
-- Activity / permission / review 不进 assistant 正文
+- Agent work / permission / review 不进 assistant 正文
 
 ### Paseo 的处理方式
 
@@ -112,23 +112,23 @@ Paseo 是跨端优先：
 Synara 是 Web chat 成熟度最高的参考：
 
 - `ChatView.tsx` 是业务容器，很胖，接 store/query/mutation/provider/thread。
-- `ChatTranscriptPane.tsx` 是 memo 的 transcript shell，用来隔离 composer 和右侧 dock 的重渲染。
-- `MessagesTimeline.tsx` 是真正的 transcript list，滚动和行渲染由它拥有。
+- 它把对话列表拆成 memo shell 和 list-owned scroll，用来隔离 composer 和右侧 dock 的重渲染。
+- 列表滚动、行渲染、work log grouping 由专门的 timeline/list 层拥有。
 - `MessagesTimeline.logic.ts` 是纯函数层，负责 row derivation、turn collapse、work log grouping、structural sharing。
 - markdown 使用成熟库，ChatUI 不自研 markdown parser。
 
-它的启发是：**ChatView 可以胖，但 transcript 热路径必须薄；row derivation 必须是纯函数；list 自己拥有滚动。**
+它的启发是：**ChatView 可以胖，但 conversation 热路径必须薄；row derivation 必须是纯函数；list 自己拥有滚动。**
 
 我们不应该照搬它的业务对象，但应该学习它的层次：
 
 ```txt
 Route
   -> ChatView container
-    -> ChatTranscriptPane memo shell
-      -> MessagesTimeline list-owned scroll
-        -> MessageRow / ActivityMarker / WorkingRow
+    -> ConversationPane memo shell
+      -> ConversationList list-owned scroll
+        -> MessageRow / AgentWorkRow / TurnMetaHeader
     -> ComposerDock
-    -> RightDock / ActivityDetail
+    -> RightDock / AgentWorkDetail
 ```
 
 ## velaChat React 分层
@@ -250,10 +250,10 @@ src/workbench/VelaWorkbenchChrome.tsx
 
 ```txt
 src/sessions/SessionSidebar.tsx
-src/chat/ChatTranscriptPane.tsx
-src/chat/MessagesTimeline.tsx
+src/chat/ConversationPane.tsx
+src/chat/ConversationList.tsx
 src/chat/ComposerDock.tsx
-src/activity/ActivityShelf.tsx
+src/agent-work/AgentWorkRows.tsx
 src/permissions/PermissionDock.tsx
 ```
 
@@ -317,11 +317,11 @@ flowchart TD
   Projection --> Adapter["Projection Adapter"]
   Adapter --> Shell["Workbench Shell"]
   Shell --> SessionSidebar["SessionSidebar"]
-  Shell --> ChatPane["ChatTranscriptPane"]
+  Shell --> ChatPane["ConversationPane"]
   Shell --> Composer["ComposerDock"]
-  Shell --> Activity["ActivityShelf / PermissionDock"]
-  ChatPane --> Timeline["MessagesTimeline"]
-  Timeline --> Rows["MessageRow / WorkingRow / ActivityMarker"]
+  Shell --> Activity["AgentWorkRows / PermissionDock"]
+  ChatPane --> Timeline["ConversationList"]
+  Timeline --> Rows["MessageRow / AgentWorkRow / TurnMetaHeader"]
 ```
 
 ## v1 最小边界
@@ -332,12 +332,12 @@ flowchart TD
 
 - session list
 - active session 切换
-- transcript 渲染
+- conversation 渲染
 - composer 发送
 - command ack 后出现用户消息
 - assistant streaming
 - working indicator
-- tool/activity 不进正文，只进 activity shelf
+- tool/agent work 不进 assistant 正文，只作为 `ConversationView.items[kind=agent_work]`
 - reload / reconnect 后不重复消息
 
 暂时不做：
@@ -362,12 +362,12 @@ src/
     VelaWorkbenchShell.tsx
     VelaWorkbenchLayout.tsx
   projections/
-    chatTranscriptAdapter.ts
+    conversationAdapter.ts
     sessionListAdapter.ts
-    activityShelfAdapter.ts
+    agentWorkAdapter.ts
   chat/
-    ChatTranscriptPane.tsx
-    MessagesTimeline.tsx
+    ConversationPane.tsx
+    ConversationList.tsx
     MessageRow.tsx
     ComposerDock.tsx
     chatRows.logic.ts
@@ -375,8 +375,8 @@ src/
   sessions/
     SessionSidebar.tsx
     sessionSections.logic.ts
-  activity/
-    ActivityShelf.tsx
+  agent-work/
+    AgentWorkRows.tsx
   permissions/
     PermissionDock.tsx
   ui/
@@ -390,13 +390,13 @@ src/
 
 ## 关键约束
 
-### Transcript 不拥有 session
+### Conversation 不拥有 session
 
-`ChatTranscriptPane` 不能知道 backend 是 Codex、CloudAgent 还是 ACP。它只接受：
+`ConversationPane` 不能知道 backend 是 Codex、CloudAgent 还是 ACP。它只接受：
 
 ```ts
-type ChatTranscriptProps = {
-  rows: VelaChatRow[];
+type ConversationPaneProps = {
+  items: VelaConversationItem[];
   isFollowing: boolean;
   onScrollIntentChange: (intent: ScrollIntent) => void;
 };
@@ -416,19 +416,19 @@ type ComposerProps = {
 
 如果需要乐观反馈，只能显示 pending affordance。正式 user row 必须来自 `user.message.accepted` projection。
 
-### Activity 不伪装成 assistant text
+### Agent work 不伪装成 assistant text
 
 工具调用和状态事件必须是结构化 projection：
 
 ```ts
-type VelaChatRow =
+type VelaConversationItem =
   | { kind: 'user-message'; id: string; text: string }
   | { kind: 'assistant-message'; id: string; parts: AssistantPart[] }
-  | { kind: 'working'; id: string; label: string }
-  | { kind: 'activity-marker'; id: string; activityId: string; label: string };
+  | { kind: 'turn-meta'; id: string; status: string; startedAt: string }
+  | { kind: 'agent-work'; id: string; title: string; detail: AgentWorkDetail };
 ```
 
-`activity-marker` 可以在 transcript 里出现，但它不是 assistant message，也不能参与 markdown 渲染。
+`agent-work` 可以在 conversation 里出现，但它不是 assistant message，也不能参与 markdown 渲染。
 
 ## 测试策略
 
@@ -450,7 +450,7 @@ Daemon read models
   -> Projection Adapter
   -> Workbench Controller
   -> Workbench Shell
-  -> Transcript / Sidebar / Activity / Composer
+  -> Conversation / Sidebar / AgentWork / Composer
 ```
 
-不要让 React 组件直接接 raw event，也不要让 composer 或 timeline 自己成为事实源。Synara 的 transcript 热路径值得学，Paseo 的 daemon/client/protocol 分包值得学；velaChat 应该把两者合在一起：**Web chat engine 优先，daemon projection 为权威，多端只是不同 host shell。**
+不要让 React 组件直接接 raw event，也不要让 composer 或 timeline 自己成为事实源。Synara 的热路径隔离值得学，Paseo 的 daemon/client/protocol 分包值得学；velaChat 应该把两者合在一起：**Web chat engine 优先，daemon projection 为权威，多端只是不同 host shell。**

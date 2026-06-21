@@ -10,8 +10,8 @@ struct CanonicalEventFixture {
 
 pub fn canonical_fixture(name: &str) -> Vec<CanonicalEvent> {
     let raw = match name {
-        "transcript_with_tool_noise" => {
-            include_str!("../fixtures/canonical_events/transcript_with_tool_noise.jsonl")
+        "conversation_with_tool_noise" => {
+            include_str!("../fixtures/canonical_events/conversation_with_tool_noise.jsonl")
         }
         other => panic!("unknown projection canonical fixture: {other}"),
     };

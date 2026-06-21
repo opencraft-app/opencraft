@@ -1,9 +1,9 @@
 use chrono::{TimeZone, Utc};
 use serde_json::json;
-use vela_core::{CanonicalEvent, EventSource, EventType, SessionId};
+use vela_core::{CanonicalEvent, ConversationItemKind, EventSource, EventType, SessionId};
 use vela_projection::{
-    TranscriptWindowQuery, project_activity, project_pending_requests, project_transcript,
-    project_transcript_window,
+    ConversationWindowDirection, ConversationWindowQuery, project_conversation,
+    project_conversation_window, project_pending_requests,
 };
 
 mod support;
@@ -30,7 +30,7 @@ fn event_at(
 }
 
 #[test]
-fn transcript_only_uses_accepted_user_and_assistant_message_events() {
+fn conversation_separates_messages_agent_work_and_requests() {
     let events = vec![
         event(
             1,
@@ -59,17 +59,32 @@ fn transcript_only_uses_accepted_user_and_assistant_message_events() {
         ),
     ];
 
-    let transcript = project_transcript(&events);
+    let conversation = project_conversation(&events);
 
-    assert_eq!(transcript.rows.len(), 2);
-    assert_eq!(transcript.rows[0].role.as_str(), "user");
-    assert_eq!(transcript.rows[0].text, "hello");
-    assert_eq!(transcript.rows[1].role.as_str(), "assistant");
-    assert_eq!(transcript.rows[1].text, "hi there");
+    assert_eq!(
+        conversation
+            .items
+            .iter()
+            .map(|item| item.kind)
+            .collect::<Vec<_>>(),
+        vec![
+            ConversationItemKind::UserMessage,
+            ConversationItemKind::AgentWork,
+            ConversationItemKind::AgentWork,
+            ConversationItemKind::AssistantMessage,
+        ]
+    );
+    assert_eq!(conversation.items[0].text.as_deref(), Some("hello"));
+    assert_eq!(
+        conversation.items[1].detail["delta"],
+        "stdout should stay out"
+    );
+    assert_eq!(conversation.items[2].title.as_deref(), Some("Allow shell?"));
+    assert_eq!(conversation.items[3].text.as_deref(), Some("hi there"));
 }
 
 #[test]
-fn transcript_projects_user_image_blocks_as_parts() {
+fn conversation_projects_user_image_blocks_as_parts() {
     let events = vec![event(
         1,
         EventType::USER_MESSAGE_ACCEPTED,
@@ -91,50 +106,22 @@ fn transcript_projects_user_image_blocks_as_parts() {
         }),
     )];
 
-    let transcript = project_transcript(&events);
+    let conversation = project_conversation(&events);
 
-    assert_eq!(transcript.rows.len(), 1);
-    let row = &transcript.rows[0];
-    assert_eq!(row.text, "look at this");
-    assert_eq!(row.parts.len(), 2);
-    assert_eq!(row.parts[0].part_type, "text");
-    assert_eq!(row.parts[0].text.as_deref(), Some("look at this"));
-    assert_eq!(row.parts[1].part_type, "image");
-    assert_eq!(row.parts[1].data["mime_type"], "image/png");
-    assert_eq!(row.parts[1].data["data"], "aGVsbG8=");
-    assert_eq!(row.parts[1].data["size_bytes"], 5);
+    assert_eq!(conversation.items.len(), 1);
+    let item = &conversation.items[0];
+    assert_eq!(item.text.as_deref(), Some("look at this"));
+    assert_eq!(item.parts.len(), 2);
+    assert_eq!(item.parts[0].part_type, "text");
+    assert_eq!(item.parts[0].text.as_deref(), Some("look at this"));
+    assert_eq!(item.parts[1].part_type, "image");
+    assert_eq!(item.parts[1].data["mime_type"], "image/png");
+    assert_eq!(item.parts[1].data["data"], "aGVsbG8=");
+    assert_eq!(item.parts[1].data["size_bytes"], 5);
 }
 
 #[test]
-fn activity_tracks_tool_request_and_warnings() {
-    let events = vec![
-        event(
-            1,
-            EventType::TOOL_STARTED,
-            json!({ "tool_id": "tool_1", "name": "bash", "status": "running" }),
-        ),
-        event(
-            2,
-            EventType::TOOL_COMPLETED,
-            json!({ "tool_id": "tool_1", "name": "bash", "status": "completed" }),
-        ),
-        event(
-            3,
-            EventType::WARNING_RAISED,
-            json!({ "message": "provider emitted unknown event" }),
-        ),
-    ];
-
-    let activity = project_activity(&events);
-
-    assert_eq!(activity.items.len(), 2);
-    assert_eq!(activity.items[0].kind.as_str(), "tool");
-    assert_eq!(activity.items[0].status.as_deref(), Some("completed"));
-    assert_eq!(activity.items[1].kind.as_str(), "warning");
-}
-
-#[test]
-fn activity_coalesces_tool_lifecycle_with_time_boundaries() {
+fn conversation_coalesces_tool_lifecycle_as_agent_work() {
     let events = vec![
         event_at(
             1,
@@ -156,27 +143,74 @@ fn activity_coalesces_tool_lifecycle_with_time_boundaries() {
         ),
     ];
 
-    let activity = project_activity(&events);
+    let conversation = project_conversation(&events);
 
-    assert_eq!(activity.items.len(), 1);
-    assert_eq!(activity.items[0].kind.as_str(), "tool");
-    assert_eq!(activity.items[0].title, "Search");
-    assert_eq!(activity.items[0].status.as_deref(), Some("completed"));
+    assert_eq!(conversation.items.len(), 1);
+    let work = &conversation.items[0];
+    assert_eq!(work.kind, ConversationItemKind::AgentWork);
+    assert_eq!(work.item_id, "work:tool_1");
+    assert_eq!(work.title.as_deref(), Some("Search"));
+    assert_eq!(work.status, "completed");
     assert_eq!(
-        activity.items[0].created_at,
+        work.created_at,
         Utc.with_ymd_and_hms(2026, 6, 18, 10, 0, 1).unwrap()
     );
     assert_eq!(
-        activity.items[0].updated_at,
+        work.updated_at,
         Utc.with_ymd_and_hms(2026, 6, 18, 10, 0, 4).unwrap()
     );
-    assert_eq!(activity.items[0].payload["query"], "import");
-    assert_eq!(activity.items[0].payload["delta"], "12 matches");
-    assert_eq!(activity.items[0].payload["exit_code"], 0);
+    assert_eq!(work.detail["query"], "import");
+    assert_eq!(work.detail["delta"], "12 matches");
+    assert_eq!(work.detail["exit_code"], 0);
 }
 
 #[test]
-fn activity_non_terminal_updates_do_not_resurrect_completed_tool_items() {
+fn conversation_deep_merges_tool_detail_without_erasing_start_args() {
+    let events = vec![
+        event_at(
+            1,
+            1,
+            EventType::TOOL_STARTED,
+            json!({
+                "tool_id": "tool_1",
+                "name": "bash",
+                "status": "running",
+                "detail": {
+                    "type": "shell",
+                    "command": "cargo test"
+                }
+            }),
+        ),
+        event_at(
+            2,
+            4,
+            EventType::TOOL_COMPLETED,
+            json!({
+                "tool_id": "tool_1",
+                "name": "bash",
+                "status": "completed",
+                "detail": {
+                    "type": "shell",
+                    "command": "",
+                    "output": "ok\n",
+                    "exit_code": 0
+                }
+            }),
+        ),
+    ];
+
+    let conversation = project_conversation(&events);
+
+    assert_eq!(conversation.items.len(), 1);
+    let detail = &conversation.items[0].detail["detail"];
+    assert_eq!(detail["type"], "shell");
+    assert_eq!(detail["command"], "cargo test");
+    assert_eq!(detail["output"], "ok\n");
+    assert_eq!(detail["exit_code"], 0);
+}
+
+#[test]
+fn conversation_non_terminal_updates_do_not_resurrect_completed_work() {
     let events = vec![
         event_at(
             1,
@@ -198,31 +232,95 @@ fn activity_non_terminal_updates_do_not_resurrect_completed_tool_items() {
         ),
     ];
 
-    let activity = project_activity(&events);
+    let conversation = project_conversation(&events);
 
-    assert_eq!(activity.items.len(), 1);
-    assert_eq!(activity.items[0].status.as_deref(), Some("completed"));
-    assert_eq!(activity.items[0].payload["delta"], "late output");
+    assert_eq!(conversation.items.len(), 1);
+    assert_eq!(conversation.items[0].status, "completed");
+    assert_eq!(conversation.items[0].detail["delta"], "late output");
 }
 
 #[test]
-fn activity_preserves_turn_failure_error_payload() {
+fn conversation_tracks_turn_meta_from_runtime_lifecycle() {
     let events = vec![
-        event(1, EventType::TURN_STARTED, json!({})),
-        event(
+        event_at(
+            1,
+            1,
+            EventType::USER_MESSAGE_ACCEPTED,
+            json!({ "content": "hello" }),
+        ),
+        event_at(
             2,
-            EventType::TURN_FAILED,
-            json!({ "error": "No API key found for the selected model." }),
+            3,
+            EventType::TURN_STARTED,
+            json!({ "turn_id": "turn_1" }),
+        ),
+        event_at(
+            3,
+            4,
+            EventType::ASSISTANT_MESSAGE_DELTA,
+            json!({ "turn_id": "turn_1", "message_id": "msg_1", "delta": "done" }),
+        ),
+        event_at(
+            4,
+            6,
+            EventType::TURN_COMPLETED,
+            json!({ "turn_id": "turn_1" }),
         ),
     ];
 
-    let activity = project_activity(&events);
+    let conversation = project_conversation(&events);
 
-    assert_eq!(activity.items.len(), 1);
-    assert_eq!(activity.items[0].kind.as_str(), "turn");
-    assert_eq!(activity.items[0].status.as_deref(), Some("failed"));
     assert_eq!(
-        activity.items[0].payload["error"],
+        conversation
+            .items
+            .iter()
+            .map(|item| item.kind)
+            .collect::<Vec<_>>(),
+        vec![
+            ConversationItemKind::UserMessage,
+            ConversationItemKind::TurnMeta,
+            ConversationItemKind::AssistantMessage,
+        ]
+    );
+    assert_eq!(
+        conversation.items[0]
+            .turn_id
+            .as_ref()
+            .map(|turn| turn.as_str()),
+        Some("turn_1")
+    );
+    assert_eq!(conversation.items[1].item_id, "turn:turn_1:meta");
+    assert_eq!(conversation.items[1].status, "completed");
+    assert_eq!(
+        conversation.items[1].updated_at,
+        Utc.with_ymd_and_hms(2026, 6, 18, 10, 0, 6).unwrap()
+    );
+}
+
+#[test]
+fn conversation_preserves_turn_failure_error_payload() {
+    let events = vec![
+        event_at(
+            1,
+            1,
+            EventType::TURN_STARTED,
+            json!({ "turn_id": "turn_1" }),
+        ),
+        event_at(
+            2,
+            2,
+            EventType::TURN_FAILED,
+            json!({ "turn_id": "turn_1", "error": "No API key found for the selected model." }),
+        ),
+    ];
+
+    let conversation = project_conversation(&events);
+
+    assert_eq!(conversation.items.len(), 1);
+    assert_eq!(conversation.items[0].kind, ConversationItemKind::TurnMeta);
+    assert_eq!(conversation.items[0].status, "failed");
+    assert_eq!(
+        conversation.items[0].detail["error"],
         "No API key found for the selected model."
     );
 }
@@ -254,18 +352,29 @@ fn pending_requests_remove_resolved_requests() {
 }
 
 #[test]
-fn transcript_fixture_ignores_tool_noise_and_coalesces_assistant_deltas() {
-    let events = support::canonical_fixture("transcript_with_tool_noise");
+fn conversation_fixture_keeps_work_out_of_assistant_text() {
+    let events = support::canonical_fixture("conversation_with_tool_noise");
 
-    let transcript = project_transcript(&events);
+    let conversation = project_conversation(&events);
 
-    assert_eq!(transcript.rows.len(), 2);
-    assert_eq!(transcript.rows[0].text, "hello");
-    assert_eq!(transcript.rows[1].text, "hi there");
+    assert_eq!(
+        conversation
+            .items
+            .iter()
+            .map(|item| item.kind)
+            .collect::<Vec<_>>(),
+        vec![
+            ConversationItemKind::UserMessage,
+            ConversationItemKind::AgentWork,
+            ConversationItemKind::AssistantMessage,
+        ]
+    );
+    assert_eq!(conversation.items[0].text.as_deref(), Some("hello"));
+    assert_eq!(conversation.items[2].text.as_deref(), Some("hi there"));
 }
 
 #[test]
-fn transcript_window_returns_tail_rows_by_default() {
+fn conversation_window_returns_tail_items_by_default() {
     let events = vec![
         event(
             1,
@@ -284,25 +393,25 @@ fn transcript_window_returns_tail_rows_by_default() {
         ),
     ];
 
-    let window = project_transcript_window(
+    let window = project_conversation_window(
         &events,
-        TranscriptWindowQuery {
+        ConversationWindowQuery {
             limit: 2,
             ..Default::default()
         },
     )
     .expect("window");
 
-    assert_eq!(window.rows.len(), 2);
-    assert_eq!(window.rows[0].text, "two");
-    assert_eq!(window.rows[1].text, "three");
+    assert_eq!(window.items.len(), 2);
+    assert_eq!(window.items[0].text.as_deref(), Some("two"));
+    assert_eq!(window.items[1].text.as_deref(), Some("three"));
     assert_eq!(
-        window.window.first_row_id.as_deref(),
-        Some(window.rows[0].row_id.as_str())
+        window.window.first_item_id.as_deref(),
+        Some(window.items[0].item_id.as_str())
     );
     assert_eq!(
-        window.window.last_row_id.as_deref(),
-        Some(window.rows[1].row_id.as_str())
+        window.window.last_item_id.as_deref(),
+        Some(window.items[1].item_id.as_str())
     );
     assert_eq!(window.window.has_older, true);
     assert_eq!(window.window.has_newer, false);
@@ -310,7 +419,7 @@ fn transcript_window_returns_tail_rows_by_default() {
 }
 
 #[test]
-fn transcript_window_pages_before_after_and_around_row_ids() {
+fn conversation_window_pages_before_after_and_around_item_ids() {
     let events = vec![
         event(
             1,
@@ -333,218 +442,89 @@ fn transcript_window_pages_before_after_and_around_row_ids() {
             json!({ "content": "four" }),
         ),
     ];
-    let all = project_transcript(&events);
-    let second = all.rows[1].row_id.clone();
-    let third = all.rows[2].row_id.clone();
+    let all = project_conversation(&events);
+    let second = all.items[1].item_id.clone();
+    let third = all.items[2].item_id.clone();
 
-    let before = project_transcript_window(
+    let before = project_conversation_window(
         &events,
-        TranscriptWindowQuery {
-            before_row_id: Some(third.clone()),
+        ConversationWindowQuery {
+            anchor_item_id: Some(third.clone()),
+            direction: ConversationWindowDirection::Before,
             limit: 2,
-            ..Default::default()
         },
     )
     .expect("before window");
     assert_eq!(
         before
-            .rows
+            .items
             .iter()
-            .map(|row| row.text.as_str())
+            .map(|item| item.text.as_deref().unwrap_or(""))
             .collect::<Vec<_>>(),
         vec!["one", "two"]
     );
     assert_eq!(before.window.has_newer, true);
 
-    let after = project_transcript_window(
+    let after = project_conversation_window(
         &events,
-        TranscriptWindowQuery {
-            after_row_id: Some(second.clone()),
+        ConversationWindowQuery {
+            anchor_item_id: Some(second.clone()),
+            direction: ConversationWindowDirection::After,
             limit: 2,
-            ..Default::default()
         },
     )
     .expect("after window");
     assert_eq!(
         after
-            .rows
+            .items
             .iter()
-            .map(|row| row.text.as_str())
+            .map(|item| item.text.as_deref().unwrap_or(""))
             .collect::<Vec<_>>(),
         vec!["three", "four"]
     );
     assert_eq!(after.window.has_older, true);
 
-    let around = project_transcript_window(
+    let around = project_conversation_window(
         &events,
-        TranscriptWindowQuery {
-            around_row_id: Some(third.clone()),
+        ConversationWindowQuery {
+            anchor_item_id: Some(third.clone()),
+            direction: ConversationWindowDirection::Around,
             limit: 3,
-            ..Default::default()
         },
     )
     .expect("around window");
     assert_eq!(
         around
-            .rows
+            .items
             .iter()
-            .map(|row| row.text.as_str())
+            .map(|item| item.text.as_deref().unwrap_or(""))
             .collect::<Vec<_>>(),
         vec!["two", "three", "four"]
     );
-    assert_eq!(around.window.anchor_row_id.as_deref(), Some(third.as_str()));
+    assert_eq!(
+        around.window.anchor_item_id.as_deref(),
+        Some(third.as_str())
+    );
 }
 
 #[test]
-fn transcript_window_rejects_unknown_row_cursor() {
+fn conversation_window_rejects_unknown_item_cursor() {
     let events = vec![event(
         1,
         EventType::USER_MESSAGE_ACCEPTED,
         json!({ "content": "one" }),
     )];
 
-    let result = project_transcript_window(
+    let result = project_conversation_window(
         &events,
-        TranscriptWindowQuery {
-            before_row_id: Some("missing-row".to_string()),
+        ConversationWindowQuery {
+            anchor_item_id: Some("missing-item".to_string()),
+            direction: ConversationWindowDirection::Before,
             limit: 2,
-            ..Default::default()
         },
     );
 
     assert!(result.is_err());
-}
-
-#[test]
-fn transcript_projection_marks_latest_assistant_row_completed_on_turn_completed() {
-    let events = vec![
-        event(
-            1,
-            EventType::ASSISTANT_MESSAGE_DELTA,
-            json!({ "message_id": "msg_1", "delta": "done" }),
-        ),
-        event(2, EventType::TURN_COMPLETED, json!({})),
-    ];
-
-    let transcript = project_transcript(&events);
-
-    assert_eq!(transcript.rows[0].status, "completed");
-    assert_eq!(transcript.rows[0].revision, 2);
-}
-
-#[test]
-fn transcript_projects_turn_summaries_from_runtime_lifecycle() {
-    let events = vec![
-        event_at(
-            1,
-            1,
-            EventType::USER_MESSAGE_ACCEPTED,
-            json!({ "content": "hello" }),
-        ),
-        event_at(
-            2,
-            3,
-            EventType::TURN_STARTED,
-            json!({ "turn_id": "turn_1" }),
-        ),
-    ];
-
-    let transcript = project_transcript(&events);
-
-    assert_eq!(transcript.turns.len(), 1);
-    assert_eq!(transcript.turns[0].turn_id.as_str(), "turn_1");
-    assert_eq!(transcript.turns[0].status, "running");
-    assert_eq!(
-        transcript.turns[0].started_at,
-        Utc.with_ymd_and_hms(2026, 6, 18, 10, 0, 3).unwrap()
-    );
-    assert_eq!(transcript.turns[0].completed_at, None);
-    assert_eq!(
-        transcript.turns[0].first_row_id.as_deref(),
-        Some(transcript.rows[0].row_id.as_str())
-    );
-    assert_eq!(
-        transcript.turns[0].last_row_id.as_deref(),
-        Some(transcript.rows[0].row_id.as_str())
-    );
-}
-
-#[test]
-fn transcript_window_includes_summaries_for_visible_turn_rows() {
-    let events = vec![
-        event_at(
-            1,
-            1,
-            EventType::USER_MESSAGE_ACCEPTED,
-            json!({ "content": "one" }),
-        ),
-        event_at(
-            2,
-            2,
-            EventType::TURN_STARTED,
-            json!({ "turn_id": "turn_1" }),
-        ),
-        event_at(
-            3,
-            4,
-            EventType::ASSISTANT_MESSAGE_DELTA,
-            json!({ "turn_id": "turn_1", "message_id": "msg_1", "delta": "done" }),
-        ),
-        event_at(
-            4,
-            6,
-            EventType::TURN_COMPLETED,
-            json!({ "turn_id": "turn_1" }),
-        ),
-    ];
-
-    let window = project_transcript_window(
-        &events,
-        TranscriptWindowQuery {
-            limit: 1,
-            ..Default::default()
-        },
-    )
-    .expect("window");
-
-    assert_eq!(window.rows.len(), 1);
-    assert_eq!(window.rows[0].role.as_str(), "assistant");
-    assert_eq!(window.turns.len(), 1);
-    assert_eq!(window.turns[0].turn_id.as_str(), "turn_1");
-    assert_eq!(window.turns[0].status, "completed");
-    assert_eq!(
-        window.turns[0].completed_at,
-        Some(Utc.with_ymd_and_hms(2026, 6, 18, 10, 0, 6).unwrap())
-    );
-}
-
-#[test]
-fn transcript_window_can_exclude_live_rows() {
-    let events = vec![
-        event(
-            1,
-            EventType::USER_MESSAGE_ACCEPTED,
-            json!({ "content": "stable" }),
-        ),
-        event(
-            2,
-            EventType::ASSISTANT_MESSAGE_DELTA,
-            json!({ "message_id": "msg_live", "delta": "streaming" }),
-        ),
-    ];
-
-    let window = project_transcript_window(
-        &events,
-        TranscriptWindowQuery {
-            include_live: false,
-            limit: 10,
-            ..Default::default()
-        },
-    )
-    .expect("window");
-
-    assert_eq!(window.rows.len(), 1);
-    assert_eq!(window.rows[0].text, "stable");
 }
 
 #[test]

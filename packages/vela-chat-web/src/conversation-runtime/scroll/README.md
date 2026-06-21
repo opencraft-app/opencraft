@@ -5,10 +5,14 @@ Scroll controllers for the app-side conversation runtime.
 Change here when bottom-follow, near-top history loading, or scroll anchoring
 behavior changes.
 
-`bottomAnchor.ts` holds pure scroll-follow and route-entry readiness rules.
+`bottomAnchorDriver.ts` holds the pure bottom-anchor state machine for route
+entry, local send/jump requests, sticky/detached mode, measurement verification,
+and user scroll-away detaching.
 `historyPaging.ts` holds near-top history pagination and prepend anchoring rules.
 `routeResume.ts` holds session-scoped scroll resume storage and restore rules.
 `useConversationScrollController.ts` is the React/DOM adapter.
+`viewportHandle.ts` is the imperative contract exposed to the workbench and
+composer shell.
 
 Route bottom anchoring is intentionally gated before DOM writes: the controller
 waits for a route/session key, history-start readiness, measurable viewport and
@@ -16,11 +20,9 @@ content dimensions, and any pending post-layout verification retry. Keep those
 blocked reasons in the pure model so regressions stay easy to test without a
 browser.
 
-Paseo has a stronger bottom-anchor driver that owns container-keyed measurement
-state and rejects stale viewport/content measurements. Vela's current split is
-good enough for Day 1, but if bugs appear around session switches, strategy
-switches, virtualized-row remeasurement, or delayed content growth, add a pure
-`bottomAnchorDriver.ts` with table tests before adding more hook-local effects.
+The DOM hook must not grow a second scroll state machine. New behavior belongs in
+`bottomAnchorDriver.ts` first, with driver-level tests, then the hook should
+translate DOM events and measurements into driver requests.
 
 Route resume is also owned here, not by the page shell. The controller writes a
 small `sessionStorage` snapshot per route/session key and restores only detached

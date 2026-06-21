@@ -2147,7 +2147,6 @@ fn activity_detail_json(kind: &str, payload: &Value) -> Option<Value> {
     }
 
     match kind {
-        "command" => Some(activity_shell_detail_json(payload)),
         "tool" => Some(activity_tool_detail_json(payload)),
         _ => None,
     }

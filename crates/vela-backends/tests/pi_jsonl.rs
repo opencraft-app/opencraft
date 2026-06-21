@@ -2,7 +2,9 @@ use serde_json::json;
 use std::{fs, time::Duration};
 use tempfile::tempdir;
 use tokio::time::timeout;
-use vela_backends::{BackendSend, PiBackendAdapter, PiJsonlCodec, PiRuntimeMessage};
+use vela_backends::{
+    BackendSend, PiBackendAdapter, PiEventNormalizer, PiJsonlCodec, PiRuntimeMessage,
+};
 use vela_core::EventType;
 
 mod support;
@@ -403,6 +405,30 @@ fn pi_events_normalize_bash_tool_lifecycle_with_detail() {
             "error": null
         })
     );
+}
+
+#[test]
+fn pi_event_normalizer_preserves_tool_args_when_end_omits_args() {
+    let mut normalizer = PiEventNormalizer::default();
+    let started = normalizer.normalize(json!({
+        "type": "tool_execution_start",
+        "toolCallId": "tool-no-end-args",
+        "toolName": "bash",
+        "args": { "command": "date" }
+    }));
+    let completed = normalizer.normalize(json!({
+        "type": "tool_execution_end",
+        "toolCallId": "tool-no-end-args",
+        "toolName": "bash",
+        "result": { "output": "Mon Jun 22\n", "exitCode": 0 },
+        "isError": false
+    }));
+
+    assert_eq!(started[0].payload["detail"]["command"], "date");
+    assert_eq!(completed[0].event_type, EventType::TOOL_COMPLETED);
+    assert_eq!(completed[0].payload["detail"]["type"], "shell");
+    assert_eq!(completed[0].payload["detail"]["command"], "date");
+    assert_eq!(completed[0].payload["detail"]["output"], "Mon Jun 22\n");
 }
 
 #[test]

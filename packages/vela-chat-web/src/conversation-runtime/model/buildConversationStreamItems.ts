@@ -5,7 +5,7 @@ export interface ConversationStreamItem {
   key: string;
   kind: WebBlock["kind"];
   sourceTurnId: string;
-  sourceActivityId?: string;
+  sourceAgentWorkId?: string;
   live: boolean;
   continuation: boolean;
   fingerprint: string;
@@ -84,14 +84,14 @@ function itemFromBlock(
   },
 ): ConversationStreamItem {
   const sourceTurnId = block.sourceTurnId ?? turn.sourceTurnId ?? turn.id;
-  const sourceActivityId = block.sourceActivityId ?? turn.sourceActivityId;
+  const sourceAgentWorkId = block.sourceAgentWorkId ?? turn.sourceAgentWorkId;
   const live = isLiveBlock(block, turn.live);
   const cacheKey = [
     identity.key,
     identity.fingerprint,
     `live:${live}`,
     `turn:${sourceTurnId}`,
-    `activity:${sourceActivityId ?? ""}`,
+    `agent_work:${sourceAgentWorkId ?? ""}`,
   ].join(":");
   const cached = streamItemCache.get(cacheKey);
   if (cached) return cached;
@@ -101,7 +101,7 @@ function itemFromBlock(
     key: identity.key,
     kind: block.kind,
     sourceTurnId,
-    sourceActivityId,
+    sourceAgentWorkId,
     live,
     continuation: identity.continuation,
     fingerprint: identity.fingerprint,

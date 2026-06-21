@@ -40,10 +40,11 @@ test("desktop renderer is split into agent-friendly component folders with local
     "packages/vela-chat-web/src/conversation-runtime/model/index.ts",
     "packages/vela-chat-web/src/conversation-runtime/model/virtualizationPolicy.ts",
     "packages/vela-chat-web/src/conversation-runtime/scroll/README.md",
-    "packages/vela-chat-web/src/conversation-runtime/scroll/bottomAnchor.ts",
+    "packages/vela-chat-web/src/conversation-runtime/scroll/bottomAnchorDriver.ts",
     "packages/vela-chat-web/src/conversation-runtime/scroll/historyPaging.ts",
     "packages/vela-chat-web/src/conversation-runtime/scroll/routeResume.ts",
     "packages/vela-chat-web/src/conversation-runtime/scroll/useConversationScrollController.ts",
+    "packages/vela-chat-web/src/conversation-runtime/scroll/viewportHandle.ts",
     "packages/vela-chat-web/src/conversation-runtime/strategy/README.md",
     "packages/vela-chat-web/src/conversation-runtime/strategy/strategyRegistry.ts",
     "packages/vela-chat-web/src/conversation-runtime/strategy/strategyResolver.ts",
@@ -268,6 +269,29 @@ test("assistant markdown renderer exposes a semantic copy control", () => {
   assert.match(source, /navigator\.clipboard\.writeText/);
 });
 
+test("assistant markdown disables streamdown table copy controls", () => {
+  const source = readFileSync(
+    join(root, "packages/vela-chat-web/src/primitives/message/MessageResponse.tsx"),
+    "utf8",
+  );
+
+  assert.match(source, /controls=\{streamdownControls\}/);
+  assert.match(source, /table:\s*\{\s*copy:\s*false/s);
+});
+
+test("assistant markdown renders fenced code without streamdown block chrome", () => {
+  const source = readFileSync(
+    join(root, "packages/vela-chat-web/src/primitives/message/MessageResponse.tsx"),
+    "utf8",
+  );
+
+  assert.match(source, /components=\{streamdownComponents\}/);
+  assert.match(source, /code:\s*PlainCode/);
+  assert.match(source, /const isBlock = "data-block" in props/);
+  assert.match(source, /code:\s*\{\s*copy:\s*false,\s*download:\s*false/s);
+  assert.doesNotMatch(source, /CodeBlockHeader|CodeBlockContainer|CodeBlockCopyButton|CodeBlockDownloadButton/);
+});
+
 test("conversation scroll controller observes content size changes for post-layout bottom anchoring", () => {
   const controller = readFileSync(
     join(root, "packages/vela-chat-web/src/conversation-runtime/scroll/useConversationScrollController.ts"),
@@ -280,7 +304,9 @@ test("conversation scroll controller observes content size changes for post-layo
 
   assert.match(controller, /contentRef/);
   assert.match(controller, /ResizeObserver/);
-  assert.match(controller, /shouldRestickOnContentSizeChange/);
+  assert.match(controller, /handleContentSizeChange/);
+  assert.doesNotMatch(controller, /FOLLOW_SIGNAL_RESIZE_RESTICK_WINDOW_MS/);
+  assert.doesNotMatch(controller, /contentResizeRestickUntilRef/);
   assert.match(turnList, /contentRef/);
 });
 
@@ -290,8 +316,10 @@ test("conversation scroll controller cancels pending stick on user scroll-away i
     "utf8",
   );
 
-  assert.match(controller, /shouldCancelPendingStickForUserScrollIntent/);
-  assert.match(controller, /cancelPendingFrame\(\)/);
+  assert.match(controller, /markUserIntent\(event\.deltaY < 0 \? "scroll_up" : "scroll_down"\)/);
+  assert.match(controller, /userIntent:\s*userIntentRef\.current/);
+  assert.match(controller, /handleScrollNearBottomChange/);
+  assert.match(controller, /cancelFrame:\s*\(handle\) => cancelScheduledFrame\(handle\)/);
 });
 
 test("conversation scroll controller ignores bottom anchoring while browser overscrolls past bottom", () => {
@@ -304,15 +332,20 @@ test("conversation scroll controller ignores bottom anchoring while browser over
   assert.match(controller, /scrollToBottom/);
 });
 
-test("conversation scroll controller retries bottom stick after layout settle", () => {
+test("bottom anchor driver owns post-layout verification retries", () => {
   const controller = readFileSync(
     join(root, "packages/vela-chat-web/src/conversation-runtime/scroll/useConversationScrollController.ts"),
     "utf8",
   );
+  const driver = readFileSync(
+    join(root, "packages/vela-chat-web/src/conversation-runtime/scroll/bottomAnchorDriver.ts"),
+    "utf8",
+  );
 
-  assert.match(controller, /BOTTOM_STICK_SETTLE_RETRY_MS/);
-  assert.match(controller, /pendingSettleTimeoutRef/);
-  assert.match(controller, /shouldRetryBottomStickAfterSettle/);
+  assert.match(controller, /getTransportBehavior/);
+  assert.match(driver, /pendingVerification/);
+  assert.match(driver, /BOTTOM_ANCHOR_MAX_VERIFICATION_RETRIES/);
+  assert.doesNotMatch(controller, /pendingSettleTimeoutRef/);
 });
 
 test("conversation scroll controller gates route bottom anchoring on readiness", () => {
@@ -321,9 +354,54 @@ test("conversation scroll controller gates route bottom anchoring on readiness",
     "utf8",
   );
 
-  assert.match(controller, /deriveBottomAnchorRouteReadiness/);
+  assert.match(controller, /applyRouteRequest/);
+  assert.match(controller, /route_initial_entry/);
   assert.match(controller, /blockedReason/);
   assert.match(controller, /historyStartReadyRef/);
+});
+
+test("conversation viewport exposes explicit bottom-anchor intents to the workbench", () => {
+  const conversation = readFileSync(
+    join(root, "packages/vela-chat-web/src/components/conversation/VelaConversation.tsx"),
+    "utf8",
+  );
+  const workbenchView = readFileSync(
+    join(root, "packages/vela-chat-web/src/components/workbench/ChatWorkbenchView.tsx"),
+    "utf8",
+  );
+
+  assert.match(conversation, /forwardRef/);
+  assert.match(conversation, /useImperativeHandle/);
+  assert.match(conversation, /requestBottomAnchor/);
+  assert.match(workbenchView, /conversationRef/);
+  assert.match(workbenchView, /requestBottomAnchor\("message_sent"\)/);
+});
+
+test("composer height is measured instead of using fixed bottom padding", () => {
+  const promptInput = readFileSync(
+    join(root, "packages/vela-chat-web/src/primitives/prompt-input/PromptInput.tsx"),
+    "utf8",
+  );
+  const composer = readFileSync(
+    join(root, "packages/vela-chat-web/src/components/composer/VelaComposer.tsx"),
+    "utf8",
+  );
+  const workbenchView = readFileSync(
+    join(root, "packages/vela-chat-web/src/components/workbench/ChatWorkbenchView.tsx"),
+    "utf8",
+  );
+  const css = readFileSync(
+    join(root, "packages/vela-chat-web/src/styles/desktop.module.css"),
+    "utf8",
+  );
+
+  assert.match(promptInput, /ResizeObserver/);
+  assert.match(promptInput, /onHeightChange/);
+  assert.match(composer, /onHeightChange/);
+  assert.match(workbenchView, /--vela-composer-height/);
+  assert.match(css, /var\(--vela-composer-height/);
+  assert.doesNotMatch(css, /padding:\s*54px 28px 178px/);
+  assert.doesNotMatch(css, /padding:\s*38px 20px 164px/);
 });
 
 test("chat debug snapshot includes conversation scroll runtime state", () => {
