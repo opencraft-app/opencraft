@@ -31,6 +31,7 @@ export type ChatTranscriptRowStatusWire =
   | "completed"
   | "failed"
   | "cancelled";
+export type ChatTranscriptTurnStatusWire = "running" | "completed" | "failed" | "cancelled";
 export type ChatTranscriptPartTypeWire = "markdown" | "text" | "code" | "image" | "file_reference";
 
 export interface ChatTranscriptWireRow {
@@ -62,9 +63,20 @@ export interface ChatTranscriptPart {
   };
 }
 
+export interface ChatTranscriptTurnSummaryWire {
+  turn_id: string;
+  status: ChatTranscriptTurnStatusWire;
+  started_at: string;
+  completed_at?: string | null;
+  first_row_id?: string | null;
+  last_row_id?: string | null;
+  source_event_ids: string[];
+}
+
 export interface ChatTranscriptWireView {
   session_id: string;
   rows: ChatTranscriptWireRow[];
+  turns: ChatTranscriptTurnSummaryWire[];
   cursor: ChatSurfaceEventCursor;
   window: ChatTranscriptWindow;
 }
@@ -97,6 +109,7 @@ export type ActivitySearchModeWire = "code" | "web" | "files" | "unknown";
 
 export interface ActivityWireItem {
   id: string;
+  turn_id?: string;
   kind: ActivityItemKindWire;
   status: ActivityItemStatusWire;
   title: string;
@@ -232,8 +245,19 @@ export interface ChatSurfaceTranscriptRow {
   debug: ChatSurfaceDebug;
 }
 
+export interface ChatSurfaceTranscriptTurn {
+  turn_id: string;
+  status: ChatTranscriptTurnStatusWire;
+  started_at: string;
+  completed_at?: string | null;
+  first_row_id?: string | null;
+  last_row_id?: string | null;
+  debug: ChatSurfaceDebug;
+}
+
 export interface ChatSurfaceActivityItem {
   id: string;
+  turn_id?: string;
   kind: ActivityItemKindWire;
   status: ActivityItemStatusWire;
   title: string;
@@ -260,6 +284,7 @@ export interface ChatSurface {
   session_id: string;
   transcript: {
     rows: ChatSurfaceTranscriptRow[];
+    turns: ChatSurfaceTranscriptTurn[];
     window?: ChatTranscriptWindow;
   };
   activity: {
@@ -328,6 +353,7 @@ export function buildChatSurfaceFromReadModels(input: BuildChatSurfaceInput): Ch
     session_id: input.sessionId,
     transcript: {
       rows: input.transcript.rows.map(normalizeTranscriptRow),
+      turns: input.transcript.turns.map(normalizeTranscriptTurnSummary),
       window: input.transcript.window,
     },
     activity: {
@@ -345,6 +371,21 @@ export function buildChatSurfaceFromReadModels(input: BuildChatSurfaceInput): Ch
     stream: {
       connected: input.stream?.connected ?? false,
       running: input.stream?.running ?? false,
+    },
+  };
+}
+
+function normalizeTranscriptTurnSummary(turn: ChatTranscriptTurnSummaryWire): ChatSurfaceTranscriptTurn {
+  return {
+    turn_id: turn.turn_id,
+    status: turn.status,
+    started_at: turn.started_at,
+    ...(turn.completed_at !== undefined ? { completed_at: turn.completed_at } : {}),
+    ...(turn.first_row_id !== undefined ? { first_row_id: turn.first_row_id } : {}),
+    ...(turn.last_row_id !== undefined ? { last_row_id: turn.last_row_id } : {}),
+    debug: {
+      projection: "transcript",
+      source_event_ids: turn.source_event_ids,
     },
   };
 }
@@ -470,11 +511,13 @@ export function prependTranscriptWindow<T extends ChatTranscriptWireView>(curren
   if (isDifferentKnownSession(current.session_id, older.session_id)) return current;
 
   const rows = prependMissingItemsById(older.rows, current.rows);
+  const turns = prependMissingTurnsById(older.turns, current.turns);
 
   return {
     ...current,
     session_id: current.session_id ?? older.session_id,
     rows,
+    turns,
     window: {
       first_row_id:
         older.window?.first_row_id ?? rows[0]?.id ?? current.window?.first_row_id ?? null,
@@ -523,6 +566,7 @@ function normalizeActivityItem(item: ActivityWireItem): ChatSurfaceActivityItem 
   ].filter((id): id is string => Boolean(id)));
   return {
     id: item.id,
+    ...(item.turn_id !== undefined ? { turn_id: item.turn_id } : {}),
     kind: item.kind,
     status: item.status,
     title: item.title,
@@ -621,4 +665,18 @@ function prependMissingItemsById<T extends { id: string }>(
     return true;
   });
   return [...prepended, ...currentItems];
+}
+
+function prependMissingTurnsById<T extends { turn_id: string }>(
+  olderTurns: readonly T[],
+  currentTurns: readonly T[],
+): T[] {
+  const currentIds = new Set(currentTurns.map((turn) => turn.turn_id));
+  const seenOlderIds = new Set<string>();
+  const prepended = olderTurns.filter((turn) => {
+    if (currentIds.has(turn.turn_id) || seenOlderIds.has(turn.turn_id)) return false;
+    seenOlderIds.add(turn.turn_id);
+    return true;
+  });
+  return [...prepended, ...currentTurns];
 }

@@ -25,7 +25,7 @@ export function ActivityRenderer({
         data-status={status}
         title={label}
       >
-        <span className={styles.activityDot} aria-hidden="true" />
+        <span className={styles.activityIcon} aria-hidden="true" />
         <span className={styles.activityText}>
           <span className={styles.activityTitle}>{block.title}</span>
           {summary ? <span className={styles.activitySummary}>{summary}</span> : null}
@@ -41,8 +41,8 @@ export function ActivityRenderer({
       data-status={status}
       title={label}
     >
-      <span className={styles.activityDot} aria-hidden="true" />
-      <span>{block.label}</span>
+      <span className={styles.activityIcon} aria-hidden="true" />
+      <span className={styles.activityTitle}>{block.label}</span>
     </div>
   );
 }

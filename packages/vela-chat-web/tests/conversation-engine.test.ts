@@ -65,6 +65,7 @@ test("conversation stream items use transcript correlation ids from OpenAPI", ()
   const surface: ChatSurface = {
     session_id: "sess_correlation",
     transcript: {
+      turns: [],
       rows: [
         {
           id: "row_assistant_1",
@@ -110,6 +111,89 @@ test("conversation stream items use transcript correlation ids from OpenAPI", ()
     (activity as { sourceActivityId?: string } | undefined)?.sourceActivityId,
     "activity_terminal_1",
   );
+});
+
+test("web adapter groups turn shell blocks while preserving per-block source ids", () => {
+  const model: ChatRenderModel = {
+    session_id: "sess_turn_shell",
+    host: { kind: "desktop_web" },
+    rows: [
+      {
+        kind: "user_message",
+        id: "u1",
+        key: "user:u1",
+        text: "查一下",
+        copy_text: "查一下",
+        collapsed: false,
+        parts: [{ id: "u1:part:0", type: "text", text: "查一下" }],
+        createdAt: "2026-06-18T00:00:00Z",
+        turnId: "turn_1",
+        debug: { projection: "transcript", source_event_ids: ["evt_u1"] },
+      },
+      {
+        kind: "turn_meta",
+        id: "turn_meta:turn_1",
+        key: "turn_meta:turn_1",
+        label: "已处理 2s",
+        status: "completed",
+        createdAt: "2026-06-18T00:00:00Z",
+        updatedAt: "2026-06-18T00:00:02Z",
+        turnId: "turn_1",
+        debug: { projection: "transcript", source_event_ids: ["evt_u1"] },
+      },
+      {
+        kind: "agent_work",
+        id: "tool_1",
+        key: "tool:tool_1",
+        title: "Ran command",
+        summary: "ls -la",
+        status: "completed",
+        display: "prominent",
+        createdAt: "2026-06-18T00:00:01Z",
+        updatedAt: "2026-06-18T00:00:02Z",
+        turnId: "turn_1",
+        activityId: "tool_1",
+        debug: { projection: "activity", source_event_ids: ["evt_tool"] },
+      },
+      {
+        kind: "assistant_message",
+        id: "a1",
+        key: "assistant:a1",
+        blocks: [{ id: "a1:block:0", text: "查到了。" }],
+        status: "completed",
+        streaming: false,
+        revision: 1,
+        createdAt: "2026-06-18T00:00:02Z",
+        turnId: "turn_1",
+        debug: { projection: "transcript", source_event_ids: ["evt_a1"] },
+      },
+    ],
+    requests: { items: [] },
+    composer: { placeholder: "要求后续变更", can_send: true },
+  };
+
+  const webModel = toWebChatModel(model);
+  const [turn] = webModel.turns;
+
+  assert.equal(webModel.turns.length, 1);
+  assert.deepEqual(turn?.blocks.map((block) => block.kind), [
+    "user_message",
+    "turn_meta",
+    "agent_work",
+    "assistant_markdown",
+  ]);
+  assert.equal(turn?.sourceTurnId, "turn_1");
+
+  const header = turn?.blocks[1];
+  assert.equal(header?.kind, "turn_meta");
+  if (header?.kind !== "turn_meta") assert.fail("expected turn meta block");
+  const work = turn?.blocks[2];
+  assert.equal(work?.kind, "agent_work");
+  assert.equal(work?.sourceActivityId, "tool_1");
+
+  const items = buildConversationStreamItems(webModel.turns);
+  const assistant = items.find((item) => item.kind === "assistant_markdown");
+  assert.equal(assistant?.sourceTurnId, "turn_1");
 });
 
 test("conversation runtime keeps live items out of virtualized history", () => {
@@ -221,12 +305,23 @@ test("conversation runtime reuses measured assistant markdown heights across sta
   assert.equal(estimateStreamItemHeight(second!, { width: 640 }), 212);
 });
 
-test("conversation runtime scopes assistant markdown heights by rendered status label", () => {
+test("conversation runtime keeps assistant markdown heights independent from turn metadata labels", () => {
   clearStreamItemHeightEstimateCache();
   const firstSnapshot: ChatRenderModel = {
     session_id: "sess_assistant_height_label",
     host: { kind: "desktop_web" },
     rows: [
+      {
+        kind: "turn_meta",
+        id: "meta1",
+        key: "turn_meta:turn1",
+        label: "已处理 1s",
+        status: "completed",
+        createdAt: "2026-06-18T00:00:00Z",
+        updatedAt: "2026-06-18T00:00:01Z",
+        turnId: "turn1",
+        debug: { projection: "transcript", source_event_ids: ["evt_user"] },
+      },
       {
         kind: "assistant_message",
         id: "a1",
@@ -246,19 +341,23 @@ test("conversation runtime scopes assistant markdown heights by rendered status 
     rows: [
       {
         ...firstSnapshot.rows[0]!,
-        settledLabel: "Worked for 2s",
+        label: "已处理 2s",
+        updatedAt: "2026-06-18T00:00:02Z",
       },
+      firstSnapshot.rows[1]!,
     ],
   };
 
-  const first = buildConversationStreamItems(toWebChatModel(firstSnapshot).turns)[0]!;
-  const second = buildConversationStreamItems(toWebChatModel(secondSnapshot).turns)[0]!;
+  const firstItems = buildConversationStreamItems(toWebChatModel(firstSnapshot).turns);
+  const secondItems = buildConversationStreamItems(toWebChatModel(secondSnapshot).turns);
+  const first = firstItems.find((item) => item.kind === "assistant_markdown")!;
+  const second = secondItems.find((item) => item.kind === "assistant_markdown")!;
 
   assert.equal(first.kind, "assistant_markdown");
   assert.equal(second.kind, "assistant_markdown");
   assert.equal(estimateStreamItemHeight(second, { width: 640 }), 120);
   assert.equal(recordMeasuredStreamItemHeight(first, 211.4, { width: 640 }), 212);
-  assert.equal(estimateStreamItemHeight(second, { width: 640 }), 120);
+  assert.equal(estimateStreamItemHeight(second, { width: 640 }), 212);
 });
 
 test("conversation runtime scopes assistant markdown heights by copy footer visibility", () => {
@@ -522,11 +621,22 @@ test("streaming assistant markdown split items keep stable head fingerprints", (
   assert.notEqual(firstItems[1]?.fingerprint, secondItems[1]?.fingerprint);
 });
 
-test("assistant markdown split item fingerprints include settled labels", () => {
+test("assistant markdown split item fingerprints ignore turn metadata labels", () => {
   const firstSnapshot: ChatRenderModel = {
     session_id: "sess_split_label",
     host: { kind: "desktop_web" },
     rows: [
+      {
+        kind: "turn_meta",
+        id: "meta1",
+        key: "turn_meta:turn1",
+        label: "已处理 1s",
+        status: "completed",
+        createdAt: "2026-06-18T00:00:00Z",
+        updatedAt: "2026-06-18T00:00:01Z",
+        turnId: "turn1",
+        debug: { projection: "transcript", source_event_ids: ["evt_user"] },
+      },
       {
         kind: "assistant_message",
         id: "a1",
@@ -538,7 +648,6 @@ test("assistant markdown split item fingerprints include settled labels", () => 
         createdAt: "2026-06-18T00:00:00Z",
         status: "completed",
         streaming: false,
-        settledLabel: "Worked for 1s",
         revision: 1,
         debug: { projection: "transcript", source_event_ids: ["evt_1"] },
       },
@@ -550,8 +659,10 @@ test("assistant markdown split item fingerprints include settled labels", () => 
     rows: [
       {
         ...firstSnapshot.rows[0]!,
-        settledLabel: "Worked for 2s",
+        label: "已处理 2s",
+        updatedAt: "2026-06-18T00:00:02Z",
       },
+      firstSnapshot.rows[1]!,
     ],
   };
 
@@ -560,10 +671,7 @@ test("assistant markdown split item fingerprints include settled labels", () => 
 
   assert.notEqual(firstItems[0]?.fingerprint, secondItems[0]?.fingerprint);
   assert.equal(firstItems[1]?.fingerprint, secondItems[1]?.fingerprint);
-  assert.equal(secondItems[0]?.block.kind, "assistant_markdown");
-  if (secondItems[0]?.block.kind === "assistant_markdown") {
-    assert.equal(secondItems[0].block.settledLabel, "Worked for 2s");
-  }
+  assert.equal(firstItems[2]?.fingerprint, secondItems[2]?.fingerprint);
 });
 
 test("assistant markdown tail fingerprint includes full-turn copy text", () => {
@@ -611,7 +719,7 @@ test("assistant markdown tail fingerprint includes full-turn copy text", () => {
   }
 });
 
-test("web adapter reuses unchanged turns across fresh render model snapshots", () => {
+test("web adapter keeps unchanged block items stable across fresh render model snapshots", () => {
   const firstSnapshot: ChatRenderModel = {
     session_id: "sess_1",
     host: { kind: "desktop_web" },
@@ -655,10 +763,15 @@ test("web adapter reuses unchanged turns across fresh render model snapshots", (
 
   const first = toWebChatModel(firstSnapshot);
   const second = toWebChatModel(secondSnapshot);
+  const firstItems = buildConversationStreamItems(first.turns);
+  const secondItems = buildConversationStreamItems(second.turns);
 
-  assert.equal(second.turns[0], first.turns[0]);
-  assert.notEqual(second.turns[1], first.turns[1]);
-  assert.match(second.turns[1]?.fingerprint ?? "", /rev:2/);
+  assert.equal(first.turns.length, 1);
+  assert.equal(second.turns.length, 1);
+  assert.notEqual(second.turns[0], first.turns[0]);
+  assert.equal(secondItems[0], firstItems[0]);
+  assert.notEqual(secondItems[1], firstItems[1]);
+  assert.match(second.turns[0]?.fingerprint ?? "", /rev:2/);
 });
 
 test("web adapter reuses stable turns across current long-history snapshots", () => {
@@ -777,11 +890,22 @@ test("web adapter invalidates agent work cache when activity timestamps change",
   }
 });
 
-test("web adapter invalidates assistant cache when settled label changes", () => {
+test("web adapter invalidates turn metadata cache without invalidating assistant cache", () => {
   const firstSnapshot: ChatRenderModel = {
-    session_id: "sess_settled_label",
+    session_id: "sess_turn_meta_label",
     host: { kind: "desktop_web" },
     rows: [
+      {
+        kind: "turn_meta",
+        id: "meta1",
+        key: "turn_meta:turn1",
+        label: "已处理 1s",
+        status: "completed",
+        createdAt: "2026-06-18T00:00:00Z",
+        updatedAt: "2026-06-18T00:00:01Z",
+        turnId: "turn1",
+        debug: { projection: "transcript", source_event_ids: ["evt_user"] },
+      },
       {
         kind: "assistant_message",
         id: "a1",
@@ -790,7 +914,6 @@ test("web adapter invalidates assistant cache when settled label changes", () =>
         createdAt: "2026-06-18T00:00:00Z",
         status: "completed",
         streaming: false,
-        settledLabel: "Worked for 1s",
         revision: 1,
         debug: { projection: "transcript", source_event_ids: ["evt_1"] },
       },
@@ -802,8 +925,10 @@ test("web adapter invalidates assistant cache when settled label changes", () =>
     rows: [
       {
         ...firstSnapshot.rows[0]!,
-        settledLabel: "Worked for 2s",
+        label: "已处理 2s",
+        updatedAt: "2026-06-18T00:00:02Z",
       },
+      firstSnapshot.rows[1]!,
     ],
   };
 
@@ -812,10 +937,8 @@ test("web adapter invalidates assistant cache when settled label changes", () =>
 
   assert.notEqual(second.turns[0], first.turns[0]);
   assert.notEqual(second.turns[0]?.fingerprint, first.turns[0]?.fingerprint);
-  assert.equal(second.turns[0]?.blocks[0]?.kind, "assistant_markdown");
-  if (second.turns[0]?.blocks[0]?.kind === "assistant_markdown") {
-    assert.equal(second.turns[0].blocks[0].settledLabel, "Worked for 2s");
-  }
+  assert.equal(second.turns[1], first.turns[1]);
+  assert.equal(second.turns[1]?.fingerprint, first.turns[1]?.fingerprint);
 });
 
 test("web adapter invalidates assistant cache when timestamp changes", () => {

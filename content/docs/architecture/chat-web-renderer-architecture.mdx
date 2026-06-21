@@ -176,7 +176,7 @@ Paseo 的 app-side agent stream 已经验证了 `head/tail + bottom anchor + par
 
 - Paseo Web 在 mobile breakpoint 下不会切出 partial virtualized history；它的真正移动端由 native inverted list 承担。Vela 的 `mobile_web` 仍是 DOM/WebView renderer，所以当前继续使用 Web partial virtualization。不要在没有移动 WebView 实测前直接照搬 Paseo 的 mobile breakpoint 分支。
 - Vela 只把 assistant markdown 按空行和 fenced-code 边界拆成 item。一个超长代码块或超长单段 markdown 仍然是单个 item；本轮不在 renderer 内部再切，因为那会影响 copy、markdown 语义和 Streamdown streaming 行为。
-- Paseo 的 render model 接收显式 `tail` / `head`，而 Vela 当前从 OpenAPI read-model rows 上的 `live` 状态推导 `history` / `liveHead`。这适合 Day 1 的 `ChatTranscriptView + ActivityShelfView` 契约，但不要把 provider 专属事件直接塞进 Web runtime 来补 head/tail；如果真实 Codex / ACP / Pi cassette 证明会出现“前序 activity 仍 running，但后续 assistant 已 terminal”的交错窗口，应先提升为 provider-agnostic conversation-head 模型或 read-model 契约，再改 JS 分段算法。
+- Paseo 的 render model 接收显式 `tail` / `head`。Vela 的基础窗口来自 OpenAPI read models：`ChatTranscriptView.rows` 提供正文行，`ChatTranscriptView.turns` 提供 window-scoped turn lifecycle，`ActivityShelfView.items` 提供 work detail。Web runtime 可以据此合成 history/live head，但不能只看 assistant row 的 `streaming` 或 activity row 的状态来推导 turn lifecycle；如果真实 Codex / ACP / Pi cassette 证明需要更省流的 read-model patch stream，应先升级 OpenAPI projector contract，再改 JS 分段算法。
 - Paseo 的 pending permission 是 agent-stream 的 `liveAuxiliary`，和 running / completed turn footer 一起参与列表底部布局。Vela 当前故意不同：pending request 是 OpenAPI `PendingRequestsView`，Web 只在 workbench shell 里渲染 floating `RequestDock`，不把 request 伪装成 transcript row。这样能保持 read-model 分层清晰，但它不是 Paseo auxiliary lane 的完整等价物：如果后续真实弱网、移动 WebView 或多 request 场景证明 dock 会遮挡 live head / composer / bottom anchor，下一步应该新增明确的 `conversation-runtime/auxiliary` 布局入口，或先升级 OpenAPI conversation view，而不是让 `RequestDock` 读取 timeline/raw event。
 - Paseo 的 bottom-anchor 已经抽成带 measurement ownership 的 pure driver：container key、viewport/content measurement key、pending verification 和 retry disposition 都在一个状态机里。Vela 当前是 `bottomAnchor.ts` 纯规则 + `useConversationScrollController.ts` DOM hook，已经覆盖 route readiness、settle retry、ResizeObserver 和 prepend anchor，但还不是 Paseo 那种完整 driver。不要继续在 hook 里叠加零散 `useEffect`；如果后续出现“切 session / 切策略 / virtualizer 重测后贴底错乱”的确定 bug，应先抽 `conversation-runtime/scroll/bottomAnchorDriver.ts`，用 pure tests 对齐 Paseo 的 blocked reason 和 stale measurement cases。
 - 当前 SSE 仍是 canonical event stream，前端只做 local overlay 与 scoped read-model refresh。更省流的 read-model patch stream 可以后续进入 OpenAPI，但这不是本轮 ChatUI renderer 的 JS 小修范围。
@@ -194,8 +194,9 @@ contract and Paseo's agent-stream shape. Do not turn these into heuristic fixes:
   `warning` activity rows, and still surfaces failed runtime activity as a
   failed status row. It intentionally does not render every non-failed
   `kind: runtime` item as agent work: `turn.started` / `turn.completed` can
-  duplicate session status, transcript working rows, and the frontend-derived
-  `Worked for ...` label. If runtime lifecycle rows should become visible,
+  duplicate session status and `ChatTranscriptView.turns`. Turn headers and
+  `已处理 ...` / host-localized worked labels must come from transcript turn summaries, not from
+  runtime activity rows. If runtime lifecycle rows should become visible,
   first define a presentation rule that separates user-visible progress from
   lifecycle bookkeeping, then add tests. Do not fix this by simply adding
   `runtime` to the activity work predicate.
@@ -380,7 +381,7 @@ Do not:
 | assistant Markdown 渲染坏了 | `renderers/blocks/AssistantMarkdownRenderer.tsx`，再看 `primitives/message/MessageResponse.tsx` |
 | 新 block kind 没显示 | `renderers/blockRegistry.tsx` |
 | user bubble 样式错了 | `renderers/blocks/UserMessageRenderer.tsx` 或 `styles/` |
-| turn header、`Worked for ...`、`已处理` 位置错 | `components/conversation/VelaTurnGroup.tsx` |
+| turn header、`已处理 ...` / worked label 位置错 | `components/conversation/VelaTurnGroup.tsx` |
 | activity/tool 展示错 | `renderers/blocks/ActivityRenderer.tsx` 或 `ToolCallRenderer.tsx` |
 | 超长历史是否虚拟化、live head 是否被挂住 | `conversation-runtime/model/virtualizationPolicy.ts`、`buildConversationRuntimeSegments.ts` |
 | 桌面/移动应该选哪种列表策略 | `conversation-runtime/strategy/strategyResolver.ts`、`strategyRegistry.ts` |
@@ -468,7 +469,7 @@ AI Elements 只进入 `primitives/`。
 
 - turn 分组。
 - activity/tool/reasoning block 生成。
-- `Worked for ...` header。
+- `已处理 ...` / host-localized worked header。
 - timeline 到 transcript 的 projection。
 - sticky scroll policy。
 

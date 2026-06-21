@@ -15,6 +15,7 @@ export interface AgentWorkRenderRow {
   display: AgentWorkDisplay;
   createdAt: string;
   updatedAt?: string;
+  turnId?: string;
   activityId?: string;
   debug: ChatSurfaceDebug;
 }
@@ -35,6 +36,7 @@ export function renderToolActivityRows(items: ChatSurfaceActivityItem[]): AgentW
         display: toolDisplayIntent(item),
         createdAt: item.created_at,
         updatedAt: item.updated_at,
+        ...(item.turn_id !== undefined ? { turnId: item.turn_id } : {}),
         activityId: item.id,
         debug: item.debug,
       },

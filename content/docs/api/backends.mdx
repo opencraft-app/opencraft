@@ -7,6 +7,9 @@ description: 发现和诊断可用 agent backends。
 
 Backends API 暴露 provider availability、capabilities、models、health diagnostics。
 
+Backends API 是 [Agent 能力模型](/docs/architecture/agent-capability-model) 的能力发现面。它暴露的是 Vela 归一化后的
+capability、model、permission mode 和 feature，不暴露 Codex、ACP、Pi 等 provider 的 raw protocol。
+
 ## Endpoints
 
 | Method | Path | 用途 |
@@ -27,10 +30,16 @@ Backends API 是创建 session 和渲染 composer controls 的能力发现入口
     "display_name": "Codex",
     "capabilities": {
       "streaming": true,
+      "reasoning_stream": true,
+      "agent_work": true,
+      "multimodal_input": true,
       "cancel": true,
       "permission_requests": true,
       "structured_diff": true,
-      "session_agent_config": true
+      "session_agent_config": true,
+      "session_persistence": true,
+      "history_resume": true,
+      "mcp_servers": true
     },
     "models": [
       {
@@ -84,7 +93,7 @@ Backends API 是创建 session 和渲染 composer controls 的能力发现入口
 
 ## Agent Config Vocabulary
 
-`model`、`reasoning_effort`、`permission_mode` 是 velaChat 的统一 session config 词汇。
+`model`、`reasoning_effort`、`permission_mode` 是 velaChat 的 Day 1 统一 session config 词汇。
 
 | 字段 | 说明 | Provider 映射 |
 | --- | --- | --- |
@@ -92,6 +101,9 @@ Backends API 是创建 session 和渲染 composer controls 的能力发现入口
 | `reasoning_effort` | 思考/推理强度 | Codex `effort`；Pi `thinking` |
 | `permission_mode` | 本地权限和审批策略 | Codex sandbox/approval policy；Pi/ACP provider-specific permission mode |
 | `feature_values` | feature id 到值的 map | Codex `fast_mode`/`plan_mode`；其他 provider 的 discoverable toggles/selects |
+
+`mode_id` 先不进入 Day 1 OpenAPI。计划模式、快速模式、web search 等可以先通过 `features` discovery 和
+`agent_config.feature_values` 表达；当多个 backend 都需要互斥 mode 且客户端必须稳定理解时，再提升为一等字段。
 
 `permission_mode` 的常见值：
 
@@ -159,6 +171,8 @@ API MUST 在创建 session 前暴露 backend capabilities。
 - **WHEN** client 打开 backend picker
 - **THEN** 它能显示 streaming、cancel、permission、structured diff 是否支持
 - **AND** 它能显示可选 models、reasoning efforts、permission modes 和 features
+- **AND** 它能根据 `multimodal_input`、`session_agent_config` 等能力决定是否显示对应 controls
+- **AND** queue、guide、rewind 等动态操作优先通过 `Session.operations` 表达，而不是硬编码 backend kind
 
 ### Requirement: backend health 可观测
 

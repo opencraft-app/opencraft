@@ -1,14 +1,23 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 const openapi = readFileSync(
   new URL("../../../public/openapi/velachat.v1.yaml", import.meta.url),
   "utf8",
 );
-const clientSource = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
+const clientSource = readClientSource();
 const openapiLines = openapi.split("\n");
 const schemasStart = openapiLines.findIndex((line) => line === "  schemas:");
+
+function readClientSource() {
+  const srcDir = new URL("../src/", import.meta.url);
+  return readdirSync(srcDir)
+    .filter((file) => file.endsWith(".ts"))
+    .sort()
+    .map((file) => `// ${file}\n${readFileSync(new URL(file, srcDir), "utf8")}`)
+    .join("\n");
+}
 
 test("client enum allowlists stay aligned with the OpenAPI wire contract", () => {
   assertSetEqual(openapiSchemaEnum("BackendKind"), clientStringSet("backendKinds"));
@@ -24,6 +33,10 @@ test("client enum allowlists stay aligned with the OpenAPI wire contract", () =>
   assertSetEqual(
     openapiSchemaPropertyEnum("ChatTranscriptRow", "status"),
     clientStringSet("transcriptRowStatuses"),
+  );
+  assertSetEqual(
+    openapiSchemaPropertyEnum("ChatTurnSummary", "status"),
+    clientStringSet("transcriptTurnStatuses"),
   );
   assertSetEqual(
     openapiSchemaPropertyEnum("TranscriptPart", "type"),

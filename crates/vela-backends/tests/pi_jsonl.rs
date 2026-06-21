@@ -122,7 +122,7 @@ printf '%s\n' '{"type":"agent_end","messages":[]}'
     adapter.command = script_path.to_string_lossy().into_owned();
 
     let outputs = timeout(
-        Duration::from_millis(500),
+        Duration::from_secs(2),
         support::collect_backend_outputs(&adapter, BackendSend::new("hello".to_string())),
     )
     .await

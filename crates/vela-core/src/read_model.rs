@@ -1,4 +1,4 @@
-use crate::{EventCursor, EventId, RequestId, SessionId};
+use crate::{EventCursor, EventId, RequestId, SessionId, TurnId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -51,12 +51,14 @@ impl TranscriptRole {
 pub struct ChatTranscriptView {
     pub session_id: SessionId,
     pub rows: Vec<TranscriptRow>,
+    pub turns: Vec<TranscriptTurnSummary>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ChatTranscriptWindow {
     pub session_id: SessionId,
     pub rows: Vec<TranscriptRow>,
+    pub turns: Vec<TranscriptTurnSummary>,
     pub window: TranscriptWindow,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor: Option<EventCursor>,
@@ -78,6 +80,8 @@ pub struct TranscriptWindow {
 pub struct TranscriptRow {
     pub row_id: String,
     pub session_id: SessionId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub turn_id: Option<TurnId>,
     pub role: TranscriptRole,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -86,6 +90,20 @@ pub struct TranscriptRow {
     pub text: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub parts: Vec<TranscriptPart>,
+    pub source_event_ids: Vec<EventId>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TranscriptTurnSummary {
+    pub turn_id: TurnId,
+    pub status: String,
+    pub started_at: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_row_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_row_id: Option<String>,
     pub source_event_ids: Vec<EventId>,
 }
 
@@ -110,6 +128,8 @@ pub struct ActivityShelfView {
 pub struct ActivityItem {
     pub item_id: String,
     pub session_id: SessionId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub turn_id: Option<TurnId>,
     pub kind: ActivityKind,
     pub title: String,
     pub created_at: DateTime<Utc>,

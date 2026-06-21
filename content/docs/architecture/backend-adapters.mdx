@@ -7,6 +7,9 @@ description: 多个 coding agent runtime 如何接入 velaChat。
 
 Backend adapter 把 provider quirks 隔离在边界内。它负责启动 session、发送 input events、取消运行、回应 request，并把 provider raw output 转成 runtime output。
 
+整体 provider 能力、session operations、agent work、request 和 diagnostics 的 client-facing 抽象见
+[Agent 能力模型](/docs/architecture/agent-capability-model)。本页只描述 adapter 侧如何把 provider raw protocol 吸收到该模型里。
+
 ## Adapter Trait
 
 ```rust

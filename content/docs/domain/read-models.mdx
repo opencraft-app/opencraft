@@ -36,11 +36,14 @@ Read models MUST 从 canonical events 或安全 daemon state 派生。
 
 `ChatTranscriptView` MUST expose a row window contract for chat surfaces. The window cursor is row-based; the response cursor remains the latest canonical event cursor.
 
+The transcript response MUST also include `turns` summaries for turn ids visible in the selected row window. These summaries carry lifecycle timing (`started_at`, optional `completed_at`, `status`) and are the only supported source for turn-level UI such as `处理中` / `已处理 ...`. Host-specific wording may differ, but the lifecycle source must not.
+
 #### Scenario: 长会话首屏
 
 - **WHEN** client 打开一个长会话
 - **THEN** 它请求 `/sessions/{id}/views/transcript?direction=tail&limit=80`
 - **AND** daemon 返回尾部 transcript rows
+- **AND** daemon 返回这些 rows 涉及的 `turns` summaries
 - **AND** `window.has_older` 表示是否可以继续向上加载
 - **AND** `cursor` 用于随后订阅 live events
 

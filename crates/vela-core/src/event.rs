@@ -172,7 +172,7 @@ fn affected_views_for(event_type: EventType) -> Vec<&'static str> {
         | EventType::TURN_COMPLETED
         | EventType::TURN_FAILED
         | EventType::TURN_CANCELLED => {
-            vec!["session", "activity", "timeline", "workbench"]
+            vec!["session", "transcript", "activity", "timeline", "workbench"]
         }
         EventType::ASSISTANT_MESSAGE_STARTED
         | EventType::ASSISTANT_MESSAGE_DELTA

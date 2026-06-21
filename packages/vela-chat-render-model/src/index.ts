@@ -4,6 +4,7 @@ import type {
   ChatSurfacePendingRequest,
   ChatTranscriptPart,
   ChatSurfaceTranscriptRow,
+  ChatSurfaceTranscriptTurn,
 } from "../../vela-chat-surface/src";
 import {
   type AgentWorkRenderRow,
@@ -50,43 +51,59 @@ interface ChatRenderCorrelation {
   activityId?: string;
 }
 
-export type ChatRenderRow = (
-  | {
-      kind: "user_message";
-      id: string;
-      key: string;
-      text: string;
-      copy_text: string;
-      collapsed: boolean;
-      parts: ChatTranscriptPart[];
-      createdAt: string;
-      debug: ChatSurfaceDebug;
-    }
-  | {
-      kind: "assistant_message";
-      id: string;
-      key: string;
-      blocks: MarkdownBlock[];
-      status: string;
-      streaming: boolean;
-      updatedAt?: string;
-      settledLabel?: string;
-      revision: number;
-      createdAt: string;
-      debug: ChatSurfaceDebug;
-    }
+export type UserMessageRenderRow = {
+  kind: "user_message";
+  id: string;
+  key: string;
+  text: string;
+  copy_text: string;
+  collapsed: boolean;
+  parts: ChatTranscriptPart[];
+  createdAt: string;
+  debug: ChatSurfaceDebug;
+} & ChatRenderCorrelation;
+
+export type AssistantMessageRenderRow = {
+  kind: "assistant_message";
+  id: string;
+  key: string;
+  blocks: MarkdownBlock[];
+  status: string;
+  streaming: boolean;
+  updatedAt?: string;
+  revision: number;
+  createdAt: string;
+  debug: ChatSurfaceDebug;
+} & ChatRenderCorrelation;
+
+export type StatusRenderRow = {
+  kind: "status";
+  id: string;
+  key: string;
+  label: string;
+  status: string;
+  createdAt: string;
+  debug: ChatSurfaceDebug;
+} & ChatRenderCorrelation;
+
+export type TurnMetaRenderRow = {
+  kind: "turn_meta";
+  id: string;
+  key: string;
+  label: string;
+  status: ChatSurfaceTranscriptTurn["status"];
+  createdAt: string;
+  updatedAt?: string;
+  completedAt?: string;
+  debug: ChatSurfaceDebug;
+} & ChatRenderCorrelation;
+
+export type ChatRenderRow =
+  | UserMessageRenderRow
+  | AssistantMessageRenderRow
+  | TurnMetaRenderRow
   | AgentWorkRenderRow
-  | {
-      kind: "status";
-      id: string;
-      key: string;
-      label: string;
-      status: string;
-      createdAt: string;
-      debug: ChatSurfaceDebug;
-    }
-) &
-  ChatRenderCorrelation;
+  | StatusRenderRow;
 
 export interface MarkdownBlock {
   id: string;
@@ -94,7 +111,12 @@ export interface MarkdownBlock {
 }
 
 export function buildChatRenderModel(surface: ChatSurface, host: ChatHostPolicy): ChatRenderModel {
-  const transcriptRows = surface.transcript.rows.map((row) => renderTranscriptRow(row));
+  const turnById = new Map(
+    surface.transcript.turns.map((turn) => [turn.turn_id, turn]),
+  );
+  const transcriptRows = surface.transcript.rows
+    .filter((row) => shouldRenderTranscriptRow(row, turnById))
+    .map((row) => renderTranscriptRow(row));
   const toolRows = renderToolActivityRows(surface.activity.items);
   const activityRows = surface.activity.items.flatMap((item): ChatRenderRow[] => {
     if (item.kind === "tool") return [];
@@ -109,12 +131,16 @@ export function buildChatRenderModel(surface: ChatSurface, host: ChatHostPolicy)
         label: `处理失败：${label}`,
         status: item.status,
         createdAt: item.updated_at ?? item.created_at,
+        ...(item.turn_id !== undefined ? { turnId: item.turn_id } : {}),
         activityId: item.id,
         debug: item.debug,
       },
     ];
   });
-  const rows = applyMessageBoundaryLabels(sortRenderRows([...transcriptRows, ...toolRows, ...activityRows]));
+  const rows = applyTurnMetaRows(
+    sortRenderRows([...transcriptRows, ...toolRows, ...activityRows]),
+    surface.transcript.turns,
+  );
 
   return {
     session_id: surface.session_id,
@@ -128,6 +154,28 @@ export function buildChatRenderModel(surface: ChatSurface, host: ChatHostPolicy)
       can_send: true,
     },
   };
+}
+
+function shouldRenderTranscriptRow(
+  row: ChatSurfaceTranscriptRow,
+  turnById: ReadonlyMap<string, ChatSurfaceTranscriptTurn>,
+): boolean {
+  if (row.role !== "working" && row.role !== "activity") return true;
+  if (!row.turn_id) return true;
+
+  const turn = turnById.get(row.turn_id);
+  if (!turn || turn.status === "running") return true;
+
+  return !isRunningStatusRow(row);
+}
+
+function isRunningStatusRow(row: ChatSurfaceTranscriptRow): boolean {
+  return (
+    row.status === "pending" ||
+    row.status === "streaming" ||
+    row.text === "处理中" ||
+    row.text.startsWith("处理中 ")
+  );
 }
 
 function renderPendingRequest(request: ChatSurfacePendingRequest): RequestDockRenderItem {
@@ -241,64 +289,86 @@ function sortRenderRows(rows: ChatRenderRow[]): ChatRenderRow[] {
 
 function rowSortPriority(row: ChatRenderRow): number {
   if (row.kind === "user_message") return 0;
+  if (row.kind === "turn_meta") return 1;
   if (row.kind === "agent_work") return 1;
   if (row.kind === "assistant_message") return 2;
   return 3;
 }
 
-function applyMessageBoundaryLabels(rows: ChatRenderRow[]): ChatRenderRow[] {
-  let currentUserStartedAt: string | undefined;
-  let terminalAssistantIndex: number | undefined;
-  const labelledRows = [...rows];
+function applyTurnMetaRows(
+  rows: ChatRenderRow[],
+  turns: readonly ChatSurfaceTranscriptTurn[],
+): ChatRenderRow[] {
+  const output: ChatRenderRow[] = [];
+  const turnById = new Map(turns.map((turn) => [turn.turn_id, turn]));
+  const emittedTurnIds = new Set<string>();
 
-  const labelTerminalAssistant = () => {
-    if (terminalAssistantIndex === undefined || !currentUserStartedAt) return;
-    const row = labelledRows[terminalAssistantIndex];
-    if (!row || row.kind !== "assistant_message") return;
-
-    const durationLabel = formatWorkedFor(currentUserStartedAt, row.updatedAt ?? row.createdAt);
-    if (!durationLabel) return;
-    labelledRows[terminalAssistantIndex] = {
-      ...row,
-      settledLabel: durationLabel,
-    };
-  };
-
-  for (const [index, row] of rows.entries()) {
-    if (row.kind === "user_message") {
-      labelTerminalAssistant();
-      currentUserStartedAt = row.createdAt;
-      terminalAssistantIndex = undefined;
+  for (const row of rows) {
+    const turn = row.turnId ? turnById.get(row.turnId) : undefined;
+    if (!turn) {
+      output.push(row);
       continue;
     }
-    if (row.kind !== "assistant_message") continue;
 
-    terminalAssistantIndex = row.streaming ? undefined : index;
+    if (row.kind === "user_message") {
+      output.push(row);
+      if (!emittedTurnIds.has(turn.turn_id)) {
+        output.push(buildTurnMetaRow(turn));
+        emittedTurnIds.add(turn.turn_id);
+      }
+      continue;
+    }
+
+    if (!emittedTurnIds.has(turn.turn_id)) {
+      output.push(buildTurnMetaRow(turn));
+      emittedTurnIds.add(turn.turn_id);
+    }
+    output.push(row);
   }
-  labelTerminalAssistant();
 
-  return labelledRows;
+  return output;
 }
 
-function formatWorkedFor(startIso: string, endIso: string): string | undefined {
+function buildTurnMetaRow(turn: ChatSurfaceTranscriptTurn): ChatRenderRow {
+  const updatedAt = turn.completed_at ?? turn.started_at;
+  const label =
+    turn.status === "running"
+      ? "处理中"
+      : formatProcessedFor(turn.started_at, updatedAt) ?? "已处理";
+
+  return {
+    kind: "turn_meta",
+    id: `turn_meta:${turn.turn_id}`,
+    key: `turn_meta:${turn.turn_id}`,
+    label,
+    status: turn.status,
+    createdAt: turn.started_at,
+    updatedAt,
+    ...(turn.completed_at ? { completedAt: turn.completed_at } : {}),
+    turnId: turn.turn_id,
+    debug: turn.debug,
+  };
+}
+
+function formatProcessedFor(startIso: string, endIso: string): string | undefined {
   const start = Date.parse(startIso);
   const end = Date.parse(endIso);
   if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return undefined;
 
   const seconds = Math.max(0, Math.floor((end - start) / 1000));
-  if (seconds < 60) return `Worked for ${seconds}s`;
+  if (seconds < 60) return `已处理 ${seconds}s`;
 
   const minutes = Math.floor(seconds / 60);
   const remainder = seconds % 60;
   if (minutes < 60) {
-    return remainder === 0 ? `Worked for ${minutes}m` : `Worked for ${minutes}m ${remainder}s`;
+    return remainder === 0 ? `已处理 ${minutes}m` : `已处理 ${minutes}m ${remainder}s`;
   }
 
   const hours = Math.floor(minutes / 60);
   const minuteRemainder = minutes % 60;
   return minuteRemainder === 0
-    ? `Worked for ${hours}h`
-    : `Worked for ${hours}h ${minuteRemainder}m`;
+    ? `已处理 ${hours}h`
+    : `已处理 ${hours}h ${minuteRemainder}m`;
 }
 
 function getFenceDelimiter(line: string) {

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -19,6 +20,17 @@ import {
   streamReadModelRefreshPlanForCursors,
   subscribeVelaEventSource,
 } from "../src/index";
+
+const clientSource = readClientSource();
+
+function readClientSource() {
+  const srcDir = new URL("../src/", import.meta.url);
+  return readdirSync(srcDir)
+    .filter((file) => file.endsWith(".ts"))
+    .sort()
+    .map((file) => `// ${file}\n${readFileSync(new URL(file, srcDir), "utf8")}`)
+    .join("\n");
+}
 
 function sessionFixture(overrides: Record<string, unknown> = {}) {
   return {
@@ -324,7 +336,9 @@ test("validates transcript view envelope at the client wire boundary", async () 
       new Response(
         JSON.stringify({
           session_id: "sess_123",
+          turns: [],
           rows: [],
+          turns: [],
           cursor: { event_id: "evt_1", epoch: 1, seq: 1 },
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
@@ -347,6 +361,7 @@ test("validates transcript row shape at the client wire boundary", async () => {
       new Response(
         JSON.stringify({
           session_id: "sess_123",
+          turns: [],
           rows: [
             {
               id: "row_bad",
@@ -379,6 +394,7 @@ test("validates transcript row parts at the client wire boundary", async () => {
       new Response(
         JSON.stringify({
           session_id: "sess_123",
+          turns: [],
           rows: [
             {
               id: "row_bad_parts",
@@ -420,6 +436,7 @@ test("validates optional transcript row text at the client wire boundary", async
       new Response(
         JSON.stringify({
           session_id: "sess_123",
+          turns: [],
           rows: [
             {
               id: "row_bad_text",
@@ -455,6 +472,7 @@ test("validates optional transcript row label at the client wire boundary", asyn
       new Response(
         JSON.stringify({
           session_id: "sess_123",
+          turns: [],
           rows: [
             {
               id: "row_bad_label",
@@ -485,11 +503,13 @@ test("validates optional transcript row label at the client wire boundary", asyn
 });
 
 test("keeps OpenAPI-required transcript row fields required in the client wire model", async () => {
-  const source = await import("node:fs/promises").then((fs) =>
-    fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
-  );
+  const source = clientSource;
   const rowInterface = source.match(/export interface TranscriptWireRow \{[\s\S]*?\n\}/)?.[0] ?? "";
+  const viewInterface =
+    source.match(/export interface ChatTranscriptWireView \{[\s\S]*?\n\}/)?.[0] ?? "";
 
+  assert.match(viewInterface, /turns:\s*TranscriptTurnSummaryWire\[\]/);
+  assert.doesNotMatch(viewInterface, /turns\?:\s*TranscriptTurnSummaryWire\[\]/);
   assert.match(rowInterface, /updated_at:\s*string/);
   assert.match(rowInterface, /revision:\s*number/);
   assert.match(rowInterface, /status:\s*TranscriptRowStatusWire/);
@@ -504,9 +524,7 @@ test("keeps OpenAPI-required transcript row fields required in the client wire m
 });
 
 test("keeps OpenAPI transcript enums narrow in the client wire model", async () => {
-  const source = await import("node:fs/promises").then((fs) =>
-    fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
-  );
+  const source = clientSource;
   const rowInterface = source.match(/export interface TranscriptWireRow \{[\s\S]*?\n\}/)?.[0] ?? "";
   const partInterface =
     source.match(/export interface TranscriptWirePart \{[\s\S]*?\n\}/)?.[0] ?? "";
@@ -521,9 +539,7 @@ test("keeps OpenAPI transcript enums narrow in the client wire model", async () 
 });
 
 test("keeps OpenAPI activity enums narrow in the client wire model", async () => {
-  const source = await import("node:fs/promises").then((fs) =>
-    fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
-  );
+  const source = clientSource;
   const itemInterface = source.match(/export interface ActivityWireItem \{[\s\S]*?\n\}/)?.[0] ?? "";
   const detailInterface =
     source.match(/export interface ActivityWireDetail \{[\s\S]*?\n\}/)?.[0] ?? "";
@@ -555,9 +571,7 @@ test("keeps OpenAPI activity enums narrow in the client wire model", async () =>
 });
 
 test("keeps OpenAPI backend status enum separate from transcript status", async () => {
-  const source = await import("node:fs/promises").then((fs) =>
-    fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
-  );
+  const source = clientSource;
   const backendInterface = source.match(/export interface BackendWire \{[\s\S]*?\n\}/)?.[0] ?? "";
 
   assert.match(source, /export type BackendStatusWire\s*=/);
@@ -568,9 +582,7 @@ test("keeps OpenAPI backend status enum separate from transcript status", async 
 });
 
 test("keeps OpenAPI session backend and status enums narrow in the client wire model", async () => {
-  const source = await import("node:fs/promises").then((fs) =>
-    fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
-  );
+  const source = clientSource;
   const sessionInterface = source.match(/export interface SessionWire \{[\s\S]*?\n\}/)?.[0] ?? "";
   const createSessionInputInterface =
     source.match(/export interface CreateSessionInput \{[\s\S]*?\n\}/)?.[0] ?? "";
@@ -600,9 +612,7 @@ test("keeps OpenAPI session backend and status enums narrow in the client wire m
 });
 
 test("keeps OpenAPI-required Session fields required in the client wire model", async () => {
-  const source = await import("node:fs/promises").then((fs) =>
-    fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
-  );
+  const source = clientSource;
   const sessionInterface = source.match(/export interface SessionWire \{[\s\S]*?\n\}/)?.[0] ?? "";
 
   for (const field of ["title", "working_directory", "created_at", "updated_at"]) {
@@ -613,9 +623,7 @@ test("keeps OpenAPI-required Session fields required in the client wire model", 
 });
 
 test("keeps OpenAPI EventCursor separate from cursor windows in the client wire model", async () => {
-  const source = await import("node:fs/promises").then((fs) =>
-    fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
-  );
+  const source = clientSource;
   const eventCursorInterface = source.match(/export interface EventCursorWire \{[\s\S]*?\n\}/)?.[0] ?? "";
   const cursorWindowInterface = source.match(/export interface CursorWindow \{[\s\S]*?\n\}/)?.[0] ?? "";
 
@@ -637,9 +645,7 @@ test("keeps OpenAPI EventCursor separate from cursor windows in the client wire 
 });
 
 test("keeps OpenAPI backend feature discriminators narrow in the client wire model", async () => {
-  const source = await import("node:fs/promises").then((fs) =>
-    fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
-  );
+  const source = clientSource;
   const toggleInterface =
     source.match(/export interface BackendToggleFeatureWire(?: extends \w+)? \{[\s\S]*?\n\}/)?.[0] ??
     "";
@@ -661,9 +667,7 @@ test("keeps OpenAPI backend feature discriminators narrow in the client wire mod
 });
 
 test("keeps OpenAPI backend capabilities required booleans in the client wire model", async () => {
-  const source = await import("node:fs/promises").then((fs) =>
-    fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
-  );
+  const source = clientSource;
   const capabilitiesInterface =
     source.match(/export interface BackendCapabilitiesWire \{[\s\S]*?\n\}/)?.[0] ?? "";
   const backendInterface = source.match(/export interface BackendWire \{[\s\S]*?\n\}/)?.[0] ?? "";
@@ -686,9 +690,7 @@ test("keeps OpenAPI backend capabilities required booleans in the client wire mo
 });
 
 test("keeps OpenAPI AgentConfig fields non-null while runtime info may be nullable", async () => {
-  const source = await import("node:fs/promises").then((fs) =>
-    fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
-  );
+  const source = clientSource;
   const agentConfigInterface = source.match(/export interface AgentConfigWire \{[\s\S]*?\n\}/)?.[0] ?? "";
   const runtimeInfoInterface =
     source.match(/export interface SessionRuntimeInfoWire \{[\s\S]*?\n\}/)?.[0] ?? "";
@@ -733,9 +735,7 @@ test("keeps OpenAPI AgentConfig fields non-null while runtime info may be nullab
 });
 
 test("keeps OpenAPI agent request enums narrow in the client wire model", async () => {
-  const source = await import("node:fs/promises").then((fs) =>
-    fs.readFile(new URL("../src/index.ts", import.meta.url), "utf8"),
-  );
+  const source = clientSource;
   const requestInterface = source.match(/export interface AgentRequestWire \{[\s\S]*?\n\}/)?.[0] ?? "";
 
   assert.match(source, /export type AgentRequestTypeWire\s*=/);
@@ -755,6 +755,7 @@ test("validates optional transcript row activity_id at the client wire boundary"
       new Response(
         JSON.stringify({
           session_id: "sess_123",
+          turns: [],
           rows: [
             {
               id: "row_bad_activity_id",
@@ -791,6 +792,7 @@ test("validates optional transcript row turn_id at the client wire boundary", as
       new Response(
         JSON.stringify({
           session_id: "sess_123",
+          turns: [],
           rows: [
             {
               id: "row_bad_turn_id",
@@ -3386,6 +3388,42 @@ test("does not append duplicate assistant delta live overlays", () => {
 
   assert.equal(next.rows[0]?.text, "你好");
   assert.equal(next.rows[0]?.revision, 2);
+});
+
+test("does not resurrect completed assistant rows from late delta overlays", () => {
+  const transcript = {
+    session_id: "sess_1",
+    cursor: { event_id: "evt_completed", epoch: 1, seq: 10 },
+    rows: [
+      {
+        id: "msg_1",
+        kind: "assistant_message" as const,
+        created_at: "2026-06-19T00:00:00Z",
+        updated_at: "2026-06-19T00:00:10Z",
+        revision: 4,
+        text: "已经完成",
+        status: "completed" as const,
+        source_event_ids: ["evt_1", "evt_completed"],
+      },
+    ],
+  };
+
+  const event = {
+    event_id: "evt_late_delta",
+    epoch: 1,
+    seq: 11,
+    session_id: "sess_1",
+    type: "assistant.message.delta",
+    created_at: "2026-06-19T00:00:11Z",
+    payload: { message_id: "msg_1", delta: "迟到" },
+  };
+
+  const next = applyTranscriptLiveOverlay(transcript, event);
+
+  assert.equal(next.rows[0]?.text, "已经完成");
+  assert.equal(next.rows[0]?.status, "completed");
+  assert.equal(next.rows[0]?.revision, 4);
+  assert.equal(needsTranscriptRefreshAfterLiveOverlay(transcript, event), true);
 });
 
 test("ignores stale assistant delta live overlay events", () => {

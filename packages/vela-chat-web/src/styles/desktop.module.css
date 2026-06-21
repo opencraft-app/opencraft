@@ -69,6 +69,18 @@
   margin: 0 0 4px;
 }
 
+.turnGroup[data-turn-kind="turn_meta"] {
+  margin: 0 0 18px;
+}
+
+.turnGroup[data-turn-kind="turn_meta"] + .turnGroup[data-turn-kind="agent_work"] {
+  margin-top: 0;
+}
+
+.turnGroup[data-turn-kind="turn_meta"] + .turnGroup[data-turn-kind="assistant_markdown"] {
+  margin-top: 0;
+}
+
 .turnGroup[data-turn-kind="agent_work"] + .turnGroup[data-turn-kind="assistant_markdown"] {
   margin-top: 28px;
 }
@@ -167,6 +179,34 @@
   content: "";
   height: 1px;
   flex: 1;
+  background: var(--vela-border);
+}
+
+.turnMeta {
+  display: grid;
+  gap: 0;
+}
+
+.turnHeader {
+  display: grid;
+  gap: 8px;
+  color: #73777f;
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.turnHeaderLabel {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.turnHeaderLine {
+  height: 1px;
+  width: 100%;
   background: var(--vela-border);
 }
 
@@ -274,17 +314,17 @@
 
 .activityBlock {
   display: grid;
-  grid-template-columns: 14px minmax(0, auto);
-  align-items: baseline;
-  column-gap: 6px;
+  grid-template-columns: 18px minmax(0, auto);
+  align-items: center;
+  column-gap: 8px;
   width: fit-content;
   max-width: min(100%, 780px);
   margin: 0;
   padding: 2px 0;
-  color: #737780;
+  color: #9a9ea5;
   font-size: 14px;
-  font-weight: 560;
-  line-height: 1.42;
+  font-weight: 500;
+  line-height: 1.38;
 }
 
 .activityBlock[data-display="prominent"] {
@@ -295,12 +335,33 @@
   color: #b44322;
 }
 
-.activityDot {
-  width: 5px;
-  height: 5px;
-  border-radius: 999px;
-  background: #df7048;
-  transform: translateY(-2px);
+.activityIcon {
+  display: inline-grid;
+  width: 15px;
+  height: 15px;
+  place-items: center;
+  border: 1.4px solid currentColor;
+  border-radius: 4px;
+  color: #a8adb3;
+  opacity: 0.92;
+}
+
+.activityIcon::before {
+  content: "›";
+  transform: translate(0.5px, -0.5px);
+  font-family:
+    "SFMono-Regular",
+    ui-monospace,
+    Menlo,
+    Consolas,
+    monospace;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.activityBlock[data-status="failed"] .activityIcon {
+  color: #b44322;
 }
 
 .activityText {
@@ -312,16 +373,16 @@
 
 .activityTitle {
   flex: 0 0 auto;
-  color: #777b83;
-  font-weight: 650;
+  color: #8f949b;
+  font-weight: 560;
 }
 
 .activitySummary {
   min-width: 0;
   max-width: min(58vw, 520px);
   overflow: hidden;
-  color: #9a9fa8;
-  font-weight: 510;
+  color: #b3b7bd;
+  font-weight: 450;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

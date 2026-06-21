@@ -109,6 +109,8 @@ when the UI is ready to display diffs.
 - `cursor`
 - `projection`
 - `session_id`
+- `turn_id`
+- `turns`
 - `request_id`
 - `tool_id`
 - `debug_hints`
@@ -117,6 +119,11 @@ when the UI is ready to display diffs.
 `ChatTranscriptRow.source_event_ids` 或 `ActivityShelfItem.event_range`。如果
 `PendingRequestsView` 或某个 activity item 没有给出 event provenance，surface
 必须保留空数组，而不是用 row/item/request id 伪造 event id。
+
+`ChatTranscriptView.turns` 必须原样进入 surface transcript state。它是 turn
+lifecycle 的窗口级 metadata，不是 activity detail，也不是 assistant row 的派生字段。
+Surface 可以合并分页窗口中的 `turns`，但不能根据 assistant streaming、tool activity
+或 timeline/raw event 自己发明 turn summary。
 
 禁止：
 
@@ -135,7 +142,8 @@ when the UI is ready to display diffs.
 
 - 长 user message 折叠策略。
 - assistant markdown block 分块。
-- settled turn 的 work / narration 折叠策略。
+- turn header 的布局和计时文案。
+- agent work row 的密度、分组、虚拟化和展开策略。
 - mobile / desktop / desktop-shell host policy。
 - row stable key。
 - loading、empty、error 的展示状态。
@@ -156,6 +164,7 @@ type ChatHostPolicy =
 - 认识 OpenAPI raw wire 字段。
 - import React。
 - 改变 command 行为。
+- 从 assistant row、activity row 或 timeline 猜 turn lifecycle；只能消费 surface 提供的 transcript turn summaries。
 
 ### `vela-chat-web`
 
@@ -206,6 +215,7 @@ type ChatHostPolicy =
 | 请求打不到 daemon | `vela-chat-client` URL、base URL、CORS、network error |
 | user message 返回 rejected | `velad` response、`CommandAck`、`Idempotency-Key` |
 | transcript 少消息 | `/views/transcript` response、`vela-chat-surface` normalizer |
+| Worked/处理中 位置或时间跳 | `/views/transcript.turns`、`vela-chat-surface` turn merge、`vela-chat-render-model` turn header placement |
 | activity/tool 没显示 | `/views/activity` response、surface activity merge |
 | 长消息卡顿 | `vela-chat-render-model` markdown block split、row memo key |
 | 移动端布局不合理 | host policy、render model，而不是 surface |
@@ -265,11 +275,11 @@ flowchart LR
 
 普通 transcript 不应该被 tool noise 淹没。Chat 正文和 agent work 是两个不同 surface：正文只渲染 user/assistant message-like rows，agent work 从 `ActivityShelfView` 进入独立 work rows。
 
-所有工具调用都应该进入 activity projection，无论是长运行命令还是短 search/read/list。`timeline` 保留完整事实，`activity` 保留 UI-safe 工具语义，前端可以折叠或虚拟化，但不从普通 activity model 丢工具。
+所有工具调用都应该进入 activity projection，无论是长运行命令还是短 search/read/list。`timeline` 保留完整事实，`activity` 保留 UI-safe 工具语义，前端可以调整密度、分组或虚拟化，但不从普通 activity model 丢工具。
 
-`Worked for ...` 不由 backend 写死，也不是 activity item 字段。它由前端 render model 按消息时间边界派生：从本轮 user row 的 `created_at` 到 terminal assistant row 的 `updated_at`。这个规则避免 provider/backend 对 turn 概念不一致时污染 UI 契约。
+`已处理 ...` / host-localized worked label 不由 backend 写死，也不是 activity item 字段。它由 render model 基于 `ChatTranscriptView.turns` 派生：`started_at`、`completed_at` 和 `status` 来自 Rust projector 的 turn lifecycle summary。Turn header 只表达 turn 生命周期；同 turn 的 activity items 必须继续作为独立 agent work rows 进入 conversation flow，不能折进 header 或挂到某一段 assistant markdown 上。这个规则避免 provider/backend 对 turn 概念不一致时污染 UI 契约，也避免工具调用把正文结构打碎。
 
-折叠策略属于 render model；原始 activity、tool detail 和 source event IDs 必须留在 surface diagnostics 中。
+展示密度、展开策略和虚拟化属于 render model；原始 activity、tool detail 和 source event IDs 必须留在 surface diagnostics 中。
 
 ## 第一版落地边界
 

@@ -4,6 +4,9 @@ use vela_backends::{PiJsonlCodec, PiRuntimeMessage};
 use vela_core::EventType;
 
 #[allow(dead_code)]
+pub mod codex_app_server;
+
+#[allow(dead_code)]
 pub async fn collect_backend_outputs<B>(
     backend: &B,
     input: BackendSend,

@@ -14,6 +14,7 @@ test("normalizes transcript wire rows into stable semantic surface rows", () => 
   const surface = buildChatSurfaceFromReadModels({
     sessionId: "sess_1",
     transcript: {
+      turns: [],
       rows: [
         {
           id: "evt_user_1",
@@ -105,6 +106,7 @@ test("normalizes pending requests as a separate surface lane", () => {
   const surface = buildChatSurfaceFromReadModels({
     sessionId: "sess_requests",
     transcript: {
+      turns: [],
       rows: [],
       cursor: { event_id: "evt_transcript", epoch: 1, seq: 1 },
     },
@@ -137,6 +139,7 @@ test("does not invent source event ids for projected read models without provena
   const surface = buildChatSurfaceFromReadModels({
     sessionId: "sess_projected_provenance",
     transcript: {
+      turns: [],
       rows: [],
       cursor: { event_id: "evt_transcript", epoch: 1, seq: 1 },
     },
@@ -174,6 +177,7 @@ test("deduplicates single-event activity provenance ranges", () => {
   const surface = buildChatSurfaceFromReadModels({
     sessionId: "sess_activity_single_event",
     transcript: {
+      turns: [],
       rows: [],
       cursor: { event_id: "evt_transcript", epoch: 1, seq: 1 },
     },
@@ -202,6 +206,7 @@ test("uses transcript row label for non-message rows when wire text is absent", 
   const surface = buildChatSurfaceFromReadModels({
     sessionId: "sess_labels",
     transcript: {
+      turns: [],
       rows: [
         {
           id: "row_working_1",
@@ -234,6 +239,7 @@ test("preserves OpenAPI transcript row correlation ids in surface rows", () => {
   const surface = buildChatSurfaceFromReadModels({
     sessionId: "sess_correlation",
     transcript: {
+      turns: [],
       rows: [
         {
           id: "row_assistant_1",
@@ -348,9 +354,11 @@ test("keeps OpenAPI-required read model envelope fields required in surface wire
   assert.doesNotMatch(eventCursorInterface, /epoch\?:\s*number/);
   assert.doesNotMatch(eventCursorInterface, /seq\?:\s*number/);
   assert.match(transcriptViewInterface, /session_id:\s*string/);
+  assert.match(transcriptViewInterface, /turns:\s*ChatTranscriptTurnSummaryWire\[\]/);
   assert.match(transcriptViewInterface, /window:\s*ChatTranscriptWindow/);
   assert.match(transcriptViewInterface, /cursor:\s*ChatSurfaceEventCursor/);
   assert.doesNotMatch(transcriptViewInterface, /session_id\?:\s*string/);
+  assert.doesNotMatch(transcriptViewInterface, /turns\?:\s*ChatTranscriptTurnSummaryWire\[\]/);
   assert.doesNotMatch(transcriptViewInterface, /window\?:\s*ChatTranscriptWindow/);
   assert.doesNotMatch(transcriptViewInterface, /cursor:\s*ChatSurfaceCursor/);
   assert.match(activityViewInterface, /session_id:\s*string/);
@@ -413,6 +421,14 @@ test("keeps OpenAPI pending request enums narrow in surface wire types", async (
 test("prepends transcript windows without duplicating rows and preserves latest cursor", () => {
   const current = {
     session_id: "sess_1",
+    turns: [
+      {
+        turn_id: "turn_2",
+        status: "running" as const,
+        started_at: "2026-06-18T10:00:02Z",
+        source_event_ids: ["evt_turn_2_start"],
+      },
+    ],
     rows: [
       {
         id: "row_2",
@@ -439,6 +455,22 @@ test("prepends transcript windows without duplicating rows and preserves latest 
   };
   const older = {
     session_id: "sess_1",
+    turns: [
+      {
+        turn_id: "turn_1",
+        status: "completed" as const,
+        started_at: "2026-06-18T10:00:01Z",
+        completed_at: "2026-06-18T10:00:01Z",
+        source_event_ids: ["evt_turn_1_start", "evt_turn_1_done"],
+      },
+      {
+        turn_id: "turn_2",
+        status: "completed" as const,
+        started_at: "2026-06-18T10:00:02Z",
+        completed_at: "2026-06-18T10:00:02Z",
+        source_event_ids: ["evt_turn_2_stale"],
+      },
+    ],
     rows: [
       {
         id: "row_1",
@@ -472,6 +504,11 @@ test("prepends transcript windows without duplicating rows and preserves latest 
   assert.equal(merged.rows[1]?.text, "two current");
   assert.equal(merged.rows[1]?.status, "streaming");
   assert.equal(merged.rows[1]?.revision, 2);
+  assert.deepEqual(
+    merged.turns.map((turn) => turn.turn_id),
+    ["turn_1", "turn_2"],
+  );
+  assert.equal(merged.turns[1]?.status, "running");
   assert.equal(merged.window?.first_row_id, "row_1");
   assert.equal(merged.window?.last_row_id, "row_3");
   assert.equal(merged.window?.has_older, false);
@@ -599,9 +636,10 @@ test("prepends activity windows without duplicating items and preserves latest c
   );
 });
 
-test("legacy prepend fixtures keep working without session ids", () => {
+test("prepend fixtures can omit session ids while keeping required transcript turns", () => {
   const transcript = prependTranscriptWindow(
     {
+      turns: [],
       rows: [
         {
           id: "row_2",
@@ -625,6 +663,7 @@ test("legacy prepend fixtures keep working without session ids", () => {
       cursor: { event_id: "evt_latest", seq: 9 },
     },
     {
+      turns: [],
       rows: [
         {
           id: "row_1",
@@ -864,6 +903,7 @@ test("rejects stale conversation history prepend plans after the visible window 
 test("derives conversation window state across transcript and activity windows", () => {
   const state = deriveConversationWindowState({
     transcript: {
+      turns: [],
       rows: [],
       window: {
         first_row_id: "row_1",
@@ -894,6 +934,7 @@ test("derives conversation window state across transcript and activity windows",
 test("plans older conversation loads even when only activity has older items", () => {
   const plan = buildConversationHistoryPrependPlan({
     transcript: {
+      turns: [],
       rows: [],
       window: {
         first_row_id: "row_1",

@@ -1049,7 +1049,7 @@ where
     Json(json!({
         "session_id": view.session_id.as_str(),
         "rows": view.rows.iter().map(|row| {
-            json!({
+            let mut row_json = json!({
                 "id": row.row_id,
                 "kind": match row.role.as_str() {
                     "user" => "user_message",
@@ -1063,8 +1063,21 @@ where
                 "parts": row.parts,
                 "status": row.status,
                 "source_event_ids": row.source_event_ids.iter().map(|id| id.as_str()).collect::<Vec<_>>(),
-            })
+            });
+            if let (Value::Object(object), Some(turn_id)) = (&mut row_json, row.turn_id.as_ref()) {
+                object.insert("turn_id".to_string(), json!(turn_id.as_str()));
+            }
+            row_json
         }).collect::<Vec<_>>(),
+        "turns": view.turns.iter().map(|turn| json!({
+            "turn_id": turn.turn_id.as_str(),
+            "status": turn.status.as_str(),
+            "started_at": turn.started_at.to_rfc3339(),
+            "completed_at": turn.completed_at.as_ref().map(|completed_at| completed_at.to_rfc3339()),
+            "first_row_id": turn.first_row_id.as_deref(),
+            "last_row_id": turn.last_row_id.as_deref(),
+            "source_event_ids": turn.source_event_ids.iter().map(|id| id.as_str()).collect::<Vec<_>>(),
+        })).collect::<Vec<_>>(),
         "window": {
             "first_row_id": view.window.first_row_id,
             "last_row_id": view.window.last_row_id,
@@ -1112,7 +1125,7 @@ where
     Json(json!({
         "session_id": view.session_id.as_str(),
         "items": selected_items.iter().map(|item| {
-            json!({
+            let mut item_json = json!({
                 "id": item.item_id,
                 "kind": activity_kind_wire(item.kind.as_str()),
                 "status": activity_status_wire(item.status.as_deref().unwrap_or("running")),
@@ -1122,7 +1135,11 @@ where
                 "updated_at": item.updated_at.to_rfc3339(),
                 "detail": activity_detail_json(item.kind.as_str(), &item.payload),
                 "event_range": event_range_json(&item.source_event_ids),
-            })
+            });
+            if let (Value::Object(object), Some(turn_id)) = (&mut item_json, item.turn_id.as_ref()) {
+                object.insert("turn_id".to_string(), json!(turn_id.as_str()));
+            }
+            item_json
         }).collect::<Vec<_>>(),
         "window": {
             "first_item_id": window.first_item_id,

@@ -9,6 +9,9 @@ Session 绑定用户意图、backend runtime、工作目录、事件账本和 re
 
 Session API 管 session resource 本身。用户消息、权限响应、自定义工具结果等输入统一走 [Input Event API](/docs/api/input-events)。
 
+Session 的配置和操作面遵循 [Agent 能力模型](/docs/architecture/agent-capability-model)：`Session.operations` 描述当前 session
+能做什么，`Backend.capabilities` 描述该 backend 通常支持什么。Client 不应通过 backend kind 猜测按钮状态。
+
 ## Endpoints
 
 | Method | Path | 用途 |

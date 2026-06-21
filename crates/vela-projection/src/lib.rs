@@ -4,7 +4,8 @@ use serde_json::Value;
 use vela_core::{
     ActivityItem, ActivityKind, ActivityShelfView, CanonicalEvent, ChatTranscriptView,
     ChatTranscriptWindow, EventCursor, EventType, PendingRequest, PendingRequestsView, RequestId,
-    SessionId, TranscriptPart, TranscriptRole, TranscriptRow, TranscriptWindow,
+    SessionId, TranscriptPart, TranscriptRole, TranscriptRow, TranscriptTurnSummary,
+    TranscriptWindow, TurnId,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -36,12 +37,14 @@ pub enum TranscriptWindowError {
 pub fn project_transcript(events: &[CanonicalEvent]) -> ChatTranscriptView {
     let session_id = session_id_from_events(events);
     let mut rows = Vec::new();
+    let mut turns = Vec::new();
 
     for event in events {
         if event.event_type == EventType::USER_MESSAGE_ACCEPTED {
             rows.push(TranscriptRow {
                 row_id: event.event_id.to_string(),
                 session_id: event.session_id.clone(),
+                turn_id: turn_id_from_payload(event),
                 role: TranscriptRole::User,
                 created_at: event.created_at,
                 updated_at: event.created_at,
@@ -54,11 +57,27 @@ pub fn project_transcript(events: &[CanonicalEvent]) -> ChatTranscriptView {
             continue;
         }
 
+        if event.event_type == EventType::TURN_STARTED {
+            if let Some(turn_id) = turn_id_from_payload(event) {
+                upsert_turn_started(&mut turns, event, turn_id.clone());
+                if let Some(row) = rows
+                    .iter_mut()
+                    .rev()
+                    .find(|row| row.role == TranscriptRole::User && row.turn_id.is_none())
+                {
+                    row.turn_id = Some(turn_id);
+                    row.source_event_ids.push(event.event_id.clone());
+                }
+            }
+            continue;
+        }
+
         if event.event_type == EventType::ASSISTANT_MESSAGE_STARTED {
             let row_id = stable_message_id(event);
             rows.push(TranscriptRow {
                 row_id,
                 session_id: event.session_id.clone(),
+                turn_id: turn_id_from_payload(event),
                 role: TranscriptRole::Assistant,
                 created_at: event.created_at,
                 updated_at: event.created_at,
@@ -79,6 +98,9 @@ pub fn project_transcript(events: &[CanonicalEvent]) -> ChatTranscriptView {
                 .find(|row| row.role == TranscriptRole::Assistant && row.row_id == row_id)
             {
                 Some(row) => {
+                    if row.turn_id.is_none() {
+                        row.turn_id = turn_id_from_payload(event);
+                    }
                     row.text.push_str(delta_from_payload(&event.payload));
                     row.source_event_ids.push(event.event_id.clone());
                     row.updated_at = event.created_at;
@@ -87,6 +109,7 @@ pub fn project_transcript(events: &[CanonicalEvent]) -> ChatTranscriptView {
                 None => rows.push(TranscriptRow {
                     row_id,
                     session_id: event.session_id.clone(),
+                    turn_id: turn_id_from_payload(event),
                     role: TranscriptRole::Assistant,
                     created_at: event.created_at,
                     updated_at: event.created_at,
@@ -107,6 +130,9 @@ pub fn project_transcript(events: &[CanonicalEvent]) -> ChatTranscriptView {
                 .rev()
                 .find(|row| row.role == TranscriptRole::Assistant && row.row_id == row_id)
             {
+                if row.turn_id.is_none() {
+                    row.turn_id = turn_id_from_payload(event);
+                }
                 row.status = "completed".to_string();
                 row.updated_at = event.created_at;
                 row.revision += 1;
@@ -121,15 +147,36 @@ pub fn project_transcript(events: &[CanonicalEvent]) -> ChatTranscriptView {
                 .rev()
                 .find(|row| row.role == TranscriptRole::Assistant && row.status == "streaming")
             {
+                if row.turn_id.is_none() {
+                    row.turn_id = turn_id_from_payload(event);
+                }
                 row.status = "completed".to_string();
                 row.updated_at = event.created_at;
                 row.revision += 1;
                 row.source_event_ids.push(event.event_id.clone());
             }
+            mark_turn_terminal(&mut turns, event, "completed");
+            continue;
+        }
+
+        if event.event_type == EventType::TURN_FAILED {
+            mark_turn_terminal(&mut turns, event, "failed");
+            continue;
+        }
+
+        if event.event_type == EventType::TURN_CANCELLED {
+            mark_turn_terminal(&mut turns, event, "cancelled");
+            continue;
         }
     }
 
-    ChatTranscriptView { session_id, rows }
+    attach_row_bounds_to_turns(&mut turns, &rows);
+
+    ChatTranscriptView {
+        session_id,
+        rows,
+        turns,
+    }
 }
 
 pub fn project_transcript_window(
@@ -151,12 +198,14 @@ pub fn project_transcript_window(
         query.around_row_id.as_deref(),
     )?;
     let selected = rows[start..end].to_vec();
+    let turns = select_turn_summaries(&transcript.turns, &selected, query.include_live);
     let first_row_id = selected.first().map(|row| row.row_id.clone());
     let last_row_id = selected.last().map(|row| row.row_id.clone());
 
     Ok(ChatTranscriptWindow {
         session_id: transcript.session_id,
         rows: selected,
+        turns,
         window: TranscriptWindow {
             first_row_id,
             last_row_id,
@@ -166,6 +215,81 @@ pub fn project_transcript_window(
         },
         cursor: latest_cursor(events),
     })
+}
+
+fn upsert_turn_started(
+    turns: &mut Vec<TranscriptTurnSummary>,
+    event: &CanonicalEvent,
+    turn_id: TurnId,
+) {
+    if let Some(turn) = turns.iter_mut().find(|turn| turn.turn_id == turn_id) {
+        turn.status = "running".to_string();
+        turn.started_at = event.created_at;
+        turn.completed_at = None;
+        turn.source_event_ids.push(event.event_id.clone());
+        return;
+    }
+
+    turns.push(TranscriptTurnSummary {
+        turn_id,
+        status: "running".to_string(),
+        started_at: event.created_at,
+        completed_at: None,
+        first_row_id: None,
+        last_row_id: None,
+        source_event_ids: vec![event.event_id.clone()],
+    });
+}
+
+fn mark_turn_terminal(
+    turns: &mut Vec<TranscriptTurnSummary>,
+    event: &CanonicalEvent,
+    status: &str,
+) {
+    let index = turn_id_from_payload(event)
+        .and_then(|turn_id| turns.iter().position(|turn| turn.turn_id == turn_id))
+        .or_else(|| turns.iter().rposition(|turn| turn.status == "running"));
+    let Some(index) = index else {
+        return;
+    };
+
+    let turn = &mut turns[index];
+    turn.status = status.to_string();
+    turn.completed_at = Some(event.created_at);
+    turn.source_event_ids.push(event.event_id.clone());
+}
+
+fn attach_row_bounds_to_turns(turns: &mut [TranscriptTurnSummary], rows: &[TranscriptRow]) {
+    for turn in turns {
+        turn.first_row_id = None;
+        turn.last_row_id = None;
+        for row in rows
+            .iter()
+            .filter(|row| row.turn_id.as_ref() == Some(&turn.turn_id))
+        {
+            if turn.first_row_id.is_none() {
+                turn.first_row_id = Some(row.row_id.clone());
+            }
+            turn.last_row_id = Some(row.row_id.clone());
+        }
+    }
+}
+
+fn select_turn_summaries(
+    turns: &[TranscriptTurnSummary],
+    selected_rows: &[TranscriptRow],
+    include_live: bool,
+) -> Vec<TranscriptTurnSummary> {
+    turns
+        .iter()
+        .filter(|turn| include_live || turn.status != "running")
+        .filter(|turn| {
+            selected_rows
+                .iter()
+                .any(|row| row.turn_id.as_ref() == Some(&turn.turn_id))
+        })
+        .cloned()
+        .collect()
 }
 
 pub fn project_activity(events: &[CanonicalEvent]) -> ActivityShelfView {
@@ -178,8 +302,11 @@ pub fn project_activity(events: &[CanonicalEvent]) -> ActivityShelfView {
         };
         let status = status_from_payload(&event.payload, &event.event_type);
         if let Some(item) = items.iter_mut().find(|item| item.item_id == item_id) {
+            if item.turn_id.is_none() {
+                item.turn_id = turn_id_from_payload(event);
+            }
             item.kind = kind;
-            item.status = status;
+            item.status = merge_activity_status(item.status.as_deref(), status.as_deref());
             item.updated_at = event.created_at;
             item.payload = merge_payload(&item.payload, &event.payload);
             item.source_event_ids.push(event.event_id.clone());
@@ -187,6 +314,7 @@ pub fn project_activity(events: &[CanonicalEvent]) -> ActivityShelfView {
             items.push(ActivityItem {
                 item_id,
                 session_id: event.session_id.clone(),
+                turn_id: turn_id_from_payload(event),
                 kind,
                 title,
                 created_at: event.created_at,
@@ -400,6 +528,10 @@ fn stable_message_id(event: &CanonicalEvent) -> String {
     string_field(&event.payload, "message_id").unwrap_or_else(|| event.event_id.to_string())
 }
 
+fn turn_id_from_payload(event: &CanonicalEvent) -> Option<TurnId> {
+    string_field(&event.payload, "turn_id").map(TurnId::from)
+}
+
 fn string_field(payload: &Value, field: &str) -> Option<String> {
     payload
         .get(field)
@@ -480,6 +612,26 @@ fn status_from_payload(payload: &Value, event_type: &EventType) -> Option<String
             .rsplit_once('.')
             .map(|(_, status)| status.to_string())
     })
+}
+
+fn merge_activity_status(current: Option<&str>, incoming: Option<&str>) -> Option<String> {
+    match (current, incoming) {
+        (Some(current), Some(incoming))
+            if is_terminal_activity_status(current) && !is_terminal_activity_status(incoming) =>
+        {
+            Some(current.to_string())
+        }
+        (_, Some(incoming)) => Some(incoming.to_string()),
+        (Some(current), None) => Some(current.to_string()),
+        (None, None) => None,
+    }
+}
+
+fn is_terminal_activity_status(status: &str) -> bool {
+    matches!(
+        status,
+        "completed" | "failed" | "cancelled" | "canceled" | "resolved"
+    )
 }
 
 fn merge_payload(old: &Value, new: &Value) -> Value {

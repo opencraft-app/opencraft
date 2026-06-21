@@ -96,7 +96,7 @@ Canonical event log 是 read model 的事实来源；trace/timeline 是诊断视
 | Type | 主要投影 | 说明 |
 | --- | --- | --- |
 | `turn.started` | `SessionView`, `ActivityShelfView`, `ChatTranscriptView` | 一个 agent turn 开始 |
-| `turn.completed` | `SessionView`, `ActivityShelfView` | turn 正常完成 |
+| `turn.completed` | `SessionView`, `ActivityShelfView`, `ChatTranscriptView` | turn 正常完成 |
 | `turn.failed` | `SessionView`, `ActivityShelfView`, `ChatTranscriptView` | turn 失败 |
 | `turn.cancelled` | `SessionView`, `ActivityShelfView`, `ChatTranscriptView` | turn 被取消 |
 
@@ -149,6 +149,7 @@ Canonical event log 是 read model 的事实来源；trace/timeline 是诊断视
 | 运行时事件 | ChatTranscriptView | ActivityShelfView | PendingRequestsView | DiffReviewView | SessionTimeline |
 | --- | --- | --- | --- | --- | --- |
 | `user.message.accepted` | user row | 可选 |  |  | message item |
+| `turn.*` | `turns[]` summary | turn lifecycle item |  |  | turn item |
 | `assistant.message.*` | assistant row / delta |  |  |  | message item |
 | `assistant.reasoning.*` | 仅可投影为 `working` | thinking item |  |  | reasoning item |
 | `tool.*` | 仅可投影为 `activity_marker` | tool item |  |  | tool item |
@@ -165,7 +166,7 @@ Canonical event log 是 read model 的事实来源；trace/timeline 是诊断视
 - reasoning/status 被当成 assistant markdown；
 - 切会话后 timeline snapshot 被当成 transcript rows。
 
-`ActivityShelfView` 对工具调用采用“全量工具、结构化投影”的规则：所有 normalized `tool.*` lifecycle 都必须合并到稳定 tool activity item，短工具不因为耗时短而从 activity 消失。普通 UI 可以折叠或虚拟化这些 work rows，但不应该读取 trace/raw event 来补工具展示。`Worked for ...` 这类 turn-level 文案由前端按 user/assistant row 时间边界派生，不是 canonical event 词汇的一部分。
+`ActivityShelfView` 对工具调用采用“全量工具、结构化投影”的规则：所有 normalized `tool.*` lifecycle 都必须合并到稳定 tool activity item，短工具不因为耗时短而从 activity 消失。普通 UI 可以调整这些 work rows 的密度、分组或虚拟化策略，但不应该读取 trace/raw event 来补工具展示。`已处理 ...` / `处理中 ...` 这类 turn-level 文案不是 canonical event 词汇的一部分；render model 必须从 `ChatTranscriptView.turns` 的 `started_at`、`completed_at` 和 `status` 派生，不能从 assistant streaming row 或 activity rows 反推 turn 生命周期。
 
 ## Requirements
 

@@ -5,6 +5,21 @@ import test from "node:test";
 
 const root = process.cwd();
 
+function readChatWorkbenchSource() {
+  return [
+    "app/chat/ChatWorkbench.tsx",
+    "app/chat/workbench/attachments.ts",
+    "app/chat/workbench/constants.ts",
+    "app/chat/workbench/helpers.ts",
+    "app/chat/workbench/renderModel.ts",
+    "app/chat/workbench/setupModel.ts",
+    "app/chat/workbench/SetupPanel.tsx",
+    "app/chat/workbench/streamHandler.ts",
+  ]
+    .map((path) => `// ${path}\n${readFileSync(join(root, path), "utf8")}`)
+    .join("\n");
+}
+
 test("web renderer consumes render model and does not inspect transcript wire fields", () => {
   const source = readFileSync(join(root, "packages/vela-chat-web/src/index.tsx"), "utf8");
 
@@ -312,7 +327,7 @@ test("conversation scroll controller gates route bottom anchoring on readiness",
 });
 
 test("chat debug snapshot includes conversation scroll runtime state", () => {
-  const chatWorkbench = readFileSync(join(root, "app/chat/ChatWorkbench.tsx"), "utf8");
+  const chatWorkbench = readChatWorkbenchSource();
   const conversation = readFileSync(
     join(root, "packages/vela-chat-web/src/components/conversation/VelaConversation.tsx"),
     "utf8",
@@ -331,7 +346,7 @@ test("conversation runtime owns session scroll resume instead of the page shell"
     join(root, "packages/vela-chat-web/src/conversation-runtime/scroll/useConversationScrollController.ts"),
     "utf8",
   );
-  const chatWorkbench = readFileSync(join(root, "app/chat/ChatWorkbench.tsx"), "utf8");
+  const chatWorkbench = readChatWorkbenchSource();
 
   assert.match(controller, /readConversationScrollResumeState/);
   assert.match(controller, /persistConversationScrollResumeState/);
@@ -346,7 +361,7 @@ test("conversation runtime owns history prepend scroll anchoring", () => {
     join(root, "packages/vela-chat-web/src/conversation-runtime/scroll/useConversationScrollController.ts"),
     "utf8",
   );
-  const chatWorkbench = readFileSync(join(root, "app/chat/ChatWorkbench.tsx"), "utf8");
+  const chatWorkbench = readChatWorkbenchSource();
 
   assert.match(controller, /pendingHistoryPrependAnchorRef/);
   assert.match(controller, /deriveHistoryPrependAnchorAfterResize/);
@@ -355,7 +370,7 @@ test("conversation runtime owns history prepend scroll anchoring", () => {
 });
 
 test("chat history paging keeps transcript and activity windows in sync", () => {
-  const source = readFileSync(join(root, "app/chat/ChatWorkbench.tsx"), "utf8");
+  const source = readChatWorkbenchSource();
 
   assert.match(source, /buildConversationHistoryPrependPlan/);
   assert.match(source, /canApplyConversationHistoryPrependPlan/);
@@ -371,26 +386,26 @@ test("chat history paging keeps transcript and activity windows in sync", () => 
 });
 
 test("chat fallback read models keep OpenAPI-required envelopes", () => {
-  const source = readFileSync(join(root, "app/chat/ChatWorkbench.tsx"), "utf8");
+  const source = readChatWorkbenchSource();
 
   assert.match(source, /const surfaceSessionId = activeSessionId \|\| "unselected"/);
-  assert.match(source, /transcript: activeTranscript \?\? \{/);
-  assert.match(source, /activity: activeActivity \?\? \{/);
+  assert.match(source, /transcript: transcript \?\? \{/);
+  assert.match(source, /activity: activity \?\? \{/);
   assert.match(source, /session_id: surfaceSessionId/);
   assert.match(source, /window: \{ has_older: false, has_newer: false \}/);
   assert.match(source, /event_id: ""/);
   assert.match(source, /epoch: 0/);
   assert.match(source, /seq: 0/);
-  assert.match(source, /transcript: activeTranscript \?\? \{[\s\S]*?cursor: EMPTY_EVENT_CURSOR,[\s\S]*?\n      \},\n      activity:/);
-  assert.match(source, /activity: activeActivity \?\? \{[\s\S]*?cursor: EMPTY_EVENT_CURSOR,[\s\S]*?\n      \},\n      requests:/);
-  assert.match(source, /requests: activeRequests \?\? \{ requests: \[\], cursor: EMPTY_CURSOR_WINDOW \}/);
+  assert.match(source, /transcript: transcript \?\? \{[\s\S]*?cursor: EMPTY_EVENT_CURSOR,[\s\S]*?\n    \},\n    activity:/);
+  assert.match(source, /activity: activity \?\? \{[\s\S]*?cursor: EMPTY_EVENT_CURSOR,[\s\S]*?\n    \},\n    requests:/);
+  assert.match(source, /requests: requests \?\? \{ requests: \[\], cursor: EMPTY_CURSOR_WINDOW \}/);
   assert.doesNotMatch(source, /transcript: transcript \?\? \{ rows: \[\], cursor: \{\} \}/);
   assert.doesNotMatch(source, /activity: activity \?\? \{ items: \[\], cursor: \{\} \}/);
   assert.doesNotMatch(source, /requests: activeRequests \?\? \{ requests: \[\], cursor: \{\} \}/);
 });
 
 test("chat workbench scopes read models to the active session before stream and render", () => {
-  const source = readFileSync(join(root, "app/chat/ChatWorkbench.tsx"), "utf8");
+  const source = readChatWorkbenchSource();
 
   assert.match(source, /readModelForActiveSession\(activeSessionId,\s*transcript\)/);
   assert.match(source, /readModelForActiveSession\(activeSessionId,\s*activity\)/);
@@ -399,13 +414,13 @@ test("chat workbench scopes read models to the active session before stream and 
   assert.match(source, /activity:\s*activeActivity\?\.cursor/);
   assert.match(source, /const isTranscriptReady = activeTranscript !== null/);
   assert.match(source, /const isActivityReady = activeActivity !== null/);
-  assert.match(source, /transcript: activeTranscript \?\? \{/);
-  assert.match(source, /activity: activeActivity \?\? \{/);
-  assert.match(source, /requests: activeRequests \?\? \{ requests: \[\], cursor: EMPTY_CURSOR_WINDOW \}/);
+  assert.match(source, /buildWorkbenchRenderModel\(\{[\s\S]*?transcript: activeTranscript/);
+  assert.match(source, /buildWorkbenchRenderModel\(\{[\s\S]*?activity: activeActivity/);
+  assert.match(source, /buildWorkbenchRenderModel\(\{[\s\S]*?requests: activeRequests/);
 });
 
 test("chat workbench ignores late read-model responses from stale sessions", () => {
-  const source = readFileSync(join(root, "app/chat/ChatWorkbench.tsx"), "utf8");
+  const source = readChatWorkbenchSource();
 
   assert.match(source, /activeSessionIdRef/);
   assert.match(source, /const requestedSessionId = activeSessionId/);
@@ -481,7 +496,7 @@ test("chat velad proxy forwards PATCH for agent config updates", () => {
 });
 
 test("chat example creates sessions with backend and agent config selections", () => {
-  const source = readFileSync(join(root, "app/chat/ChatWorkbench.tsx"), "utf8");
+  const source = readChatWorkbenchSource();
 
   assert.match(source, /selectedBackend/);
   assert.match(source, /agentConfig: setupAgentConfig/);
@@ -489,7 +504,7 @@ test("chat example creates sessions with backend and agent config selections", (
 });
 
 test("chat composer preserves draft when velad returns a rejected CommandAck", () => {
-  const source = readFileSync(join(root, "app/chat/ChatWorkbench.tsx"), "utf8");
+  const source = readChatWorkbenchSource();
 
   assert.match(source, /commandAckRejectionMessage/);
   assert.match(source, /const ack = await client\.sendUserMessage/);
@@ -502,7 +517,7 @@ test("chat composer preserves draft when velad returns a rejected CommandAck", (
 });
 
 test("chat stream connection is keyed by session readiness instead of every cursor update", () => {
-  const source = readFileSync(join(root, "app/chat/ChatWorkbench.tsx"), "utf8");
+  const source = readChatWorkbenchSource();
 
   assert.match(source, /const isTranscriptReady = activeTranscript !== null/);
   assert.match(source, /const isActivityReady = activeActivity !== null/);
@@ -515,7 +530,7 @@ test("chat stream connection is keyed by session readiness instead of every curs
 });
 
 test("chat stream handler applies local overlays and scopes read-model refresh", () => {
-  const source = readFileSync(join(root, "app/chat/ChatWorkbench.tsx"), "utf8");
+  const source = readChatWorkbenchSource();
 
   assert.match(source, /readVelaStreamEvent/);
   assert.match(source, /isVelaStreamEventForSession/);
@@ -535,7 +550,7 @@ test("chat stream handler applies local overlays and scopes read-model refresh",
 });
 
 test("chat request dock uses PendingRequestsView and responds through input events", () => {
-  const chatWorkbench = readFileSync(join(root, "app/chat/ChatWorkbench.tsx"), "utf8");
+  const chatWorkbench = readChatWorkbenchSource();
   const requestResponses = readFileSync(
     join(root, "packages/vela-chat-web/src/components/requests/requestResponses.ts"),
     "utf8",
@@ -574,7 +589,7 @@ test("composer plus control is wired to image attachments instead of being decor
     join(root, "packages/vela-chat-web/src/components/composer/VelaComposer.tsx"),
     "utf8",
   );
-  const chatWorkbench = readFileSync(join(root, "app/chat/ChatWorkbench.tsx"), "utf8");
+  const chatWorkbench = readChatWorkbenchSource();
 
   assert.match(promptInput, /type="file"/);
   assert.match(promptInput, /accept="image\/\*"/);

@@ -31,6 +31,16 @@ test("turns surface rows into host-aware render rows", () => {
   const surface: ChatSurface = {
     session_id: "sess_1",
     transcript: {
+      turns: [
+        {
+          turn_id: "turn_1",
+          status: "running",
+          started_at: "2026-06-18T10:00:01Z",
+          first_row_id: "u1",
+          last_row_id: "a1",
+          debug: { projection: "transcript", source_event_ids: ["evt_turn_started"] },
+        },
+      ],
       rows: [
         {
           id: "u1",
@@ -53,6 +63,7 @@ test("turns surface rows into host-aware render rows", () => {
             },
           ],
           created_at: "2026-06-18T10:00:00Z",
+          turn_id: "turn_1",
           status: "completed",
           revision: 1,
           debug: { projection: "transcript", source_event_ids: ["u1"] },
@@ -62,6 +73,7 @@ test("turns surface rows into host-aware render rows", () => {
           role: "assistant",
           text: "第一段\n\n第二段",
           created_at: "2026-06-18T10:00:01Z",
+          turn_id: "turn_1",
           status: "streaming",
           revision: 3,
           debug: { projection: "transcript", source_event_ids: ["a1"] },
@@ -78,6 +90,7 @@ test("turns surface rows into host-aware render rows", () => {
           summary: "No API key found for the selected model.",
           created_at: "2026-06-18T10:00:02Z",
           updated_at: "2026-06-18T10:00:03Z",
+          turn_id: "turn_1",
           debug: {
             projection: "activity",
             source_event_ids: ["evt_turn_started", "evt_turn_failed"],
@@ -97,21 +110,67 @@ test("turns surface rows into host-aware render rows", () => {
   assert.equal(model.rows[0]?.copy_text.endsWith("TAIL"), true);
   assert.equal(model.rows[0]?.parts[1]?.type, "image");
   assert.equal(model.rows[0]?.parts[1]?.data?.mime_type, "image/png");
-  assert.equal(model.rows[1]?.kind, "assistant_message");
-  assert.equal(model.rows[1]?.status, "streaming");
-  assert.equal(model.rows[1]?.streaming, true);
-  assert.equal(model.rows[1]?.revision, 3);
-  assert.deepEqual(model.rows[1]?.blocks.map((block) => block.text), ["第一段", "第二段"]);
-  assert.equal(model.rows[2]?.kind, "status");
-  assert.match(model.rows[2]?.label ?? "", /No API key/);
-  assert.equal(model.rows[2]?.activityId, "current_turn");
+  assert.equal(model.rows[1]?.kind, "turn_meta");
+  assert.equal(model.rows[1]?.label, "处理中");
+  assert.equal(model.rows[2]?.kind, "assistant_message");
+  assert.equal(model.rows[2]?.status, "streaming");
+  assert.equal(model.rows[2]?.streaming, true);
+  assert.equal(model.rows[2]?.revision, 3);
+  assert.deepEqual(model.rows[2]?.blocks.map((block) => block.text), ["第一段", "第二段"]);
+  assert.equal(model.rows[3]?.kind, "status");
+  assert.match(model.rows[3]?.kind === "status" ? model.rows[3].label : "", /No API key/);
+  assert.equal(model.rows[3]?.activityId, "current_turn");
   assert.equal(model.host.kind, "desktop_web");
+});
+
+test("does not infer turn metadata from streaming assistant rows without transcript turn summaries", () => {
+  const surface = {
+    session_id: "sess_no_turn_summary",
+    transcript: {
+      turns: [],
+      rows: [
+        {
+          id: "u1",
+          role: "user",
+          text: "hello",
+          parts: [],
+          created_at: "2026-06-18T10:00:00Z",
+          updated_at: "2026-06-18T10:00:00Z",
+          status: "completed",
+          revision: 1,
+          debug: { projection: "transcript", source_event_ids: ["evt_user"] },
+        },
+        {
+          id: "a1",
+          role: "assistant",
+          text: "streaming",
+          parts: [],
+          created_at: "2026-06-18T10:00:02Z",
+          updated_at: "2026-06-18T10:00:03Z",
+          status: "streaming",
+          revision: 2,
+          debug: { projection: "transcript", source_event_ids: ["evt_delta"] },
+        },
+      ],
+    },
+    activity: { items: [] },
+    pending_requests: { items: [] },
+    cursors: {},
+    stream: { connected: true, running: true },
+  } as ChatSurface;
+
+  const model = buildChatRenderModel(surface, { kind: "desktop_web" });
+
+  assert.deepEqual(
+    model.rows.map((row) => row.kind),
+    ["user_message", "assistant_message"],
+  );
 });
 
 test("builds a request dock from pending surface requests without mixing it into transcript rows", () => {
   const surface: ChatSurface = {
     session_id: "sess_requests",
-    transcript: { rows: [] },
+    transcript: { rows: [], turns: [] },
     activity: { items: [] },
     pending_requests: {
       items: [
@@ -142,7 +201,7 @@ test("builds a request dock from pending surface requests without mixing it into
 test("marks question requests as answerable instead of confirmation-only", () => {
   const surface: ChatSurface = {
     session_id: "sess_requests",
-    transcript: { rows: [] },
+    transcript: { rows: [], turns: [] },
     activity: { items: [] },
     pending_requests: {
       items: [
@@ -170,7 +229,7 @@ test("marks question requests as answerable instead of confirmation-only", () =>
 test("marks custom input requests as answerable request prompts", () => {
   const surface: ChatSurface = {
     session_id: "sess_custom_input",
-    transcript: { rows: [] },
+    transcript: { rows: [], turns: [] },
     activity: { items: [] },
     pending_requests: {
       items: [
@@ -199,6 +258,7 @@ test("preserves transcript status on status render rows", () => {
   const surface: ChatSurface = {
     session_id: "sess_error_status",
     transcript: {
+      turns: [],
       rows: [
         {
           id: "row_error",
@@ -231,6 +291,7 @@ test("derives user message text from OpenAPI textual parts when row text is abse
   const surface: ChatSurface = {
     session_id: "sess_user_parts",
     transcript: {
+      turns: [],
       rows: [
         {
           id: "u_parts",
@@ -273,6 +334,7 @@ test("derives assistant markdown blocks from OpenAPI textual parts when row text
   const surface: ChatSurface = {
     session_id: "sess_assistant_parts",
     transcript: {
+      turns: [],
       rows: [
         {
           id: "a_parts",
@@ -309,16 +371,28 @@ test("derives assistant markdown blocks from OpenAPI textual parts when row text
   }
 });
 
-test("keeps agent work separate from transcript and derives worked label from message boundaries", () => {
+test("keeps agent work separate and renders worked label as turn-level metadata", () => {
   const surface: ChatSurface = {
     session_id: "sess_work",
     transcript: {
+      turns: [
+        {
+          turn_id: "turn_1",
+          status: "completed",
+          started_at: "2026-06-18T10:00:00Z",
+          completed_at: "2026-06-18T10:00:05Z",
+          first_row_id: "u1",
+          last_row_id: "a1",
+          debug: { projection: "transcript", source_event_ids: ["evt_turn_started", "evt_turn_completed"] },
+        },
+      ],
       rows: [
         {
           id: "u1",
           role: "user",
           text: "查一下入口",
           created_at: "2026-06-18T10:00:00Z",
+          turn_id: "turn_1",
           status: "completed",
           revision: 1,
           debug: { projection: "transcript", source_event_ids: ["evt_user"] },
@@ -329,6 +403,7 @@ test("keeps agent work separate from transcript and derives worked label from me
           text: "我看到了入口。",
           created_at: "2026-06-18T10:00:01Z",
           updated_at: "2026-06-18T10:00:05Z",
+          turn_id: "turn_1",
           status: "completed",
           revision: 2,
           debug: { projection: "transcript", source_event_ids: ["evt_assistant"] },
@@ -345,6 +420,7 @@ test("keeps agent work separate from transcript and derives worked label from me
           summary: "12 matches",
           created_at: "2026-06-18T10:00:01Z",
           updated_at: "2026-06-18T10:00:03Z",
+          turn_id: "turn_1",
           debug: { projection: "activity", source_event_ids: ["evt_tool_start", "evt_tool_done"] },
         },
       ],
@@ -358,31 +434,46 @@ test("keeps agent work separate from transcript and derives worked label from me
 
   assert.deepEqual(
     model.rows.map((row) => row.kind),
-    ["user_message", "agent_work", "assistant_message"],
+    ["user_message", "turn_meta", "agent_work", "assistant_message"],
   );
 
-  const work = model.rows[1];
+  const meta = model.rows[1];
+  assert.equal(meta.kind, "turn_meta");
+  assert.equal(meta.label, "已处理 5s");
+  assert.equal(meta.turnId, "turn_1");
+  const work = model.rows[2];
   assert.equal(work.kind, "agent_work");
   assert.equal(work.title, "Searched code");
   assert.equal(work.status, "completed");
   assert.equal(work.summary, "12 matches");
   assert.equal(work.activityId, "tool_1");
 
-  const assistant = model.rows[2];
+  const assistant = model.rows[3];
   assert.equal(assistant.kind, "assistant_message");
-  assert.equal(assistant.settledLabel, "Worked for 5s");
 });
 
 test("formats short worked labels using elapsed whole seconds", () => {
   const surface: ChatSurface = {
     session_id: "sess_short_work",
     transcript: {
+      turns: [
+        {
+          turn_id: "turn_short",
+          status: "completed",
+          started_at: "2026-06-18T10:00:00.500Z",
+          completed_at: "2026-06-18T10:00:01.900Z",
+          first_row_id: "u1",
+          last_row_id: "a1",
+          debug: { projection: "transcript", source_event_ids: ["evt_turn_started", "evt_turn_completed"] },
+        },
+      ],
       rows: [
         {
           id: "u1",
           role: "user",
           text: "快查一下",
           created_at: "2026-06-18T10:00:00.000Z",
+          turn_id: "turn_short",
           status: "completed",
           revision: 1,
           debug: { projection: "transcript", source_event_ids: ["evt_user"] },
@@ -393,6 +484,7 @@ test("formats short worked labels using elapsed whole seconds", () => {
           text: "查到了。",
           created_at: "2026-06-18T10:00:00.500Z",
           updated_at: "2026-06-18T10:00:01.900Z",
+          turn_id: "turn_short",
           status: "completed",
           revision: 2,
           debug: { projection: "transcript", source_event_ids: ["evt_assistant"] },
@@ -406,16 +498,27 @@ test("formats short worked labels using elapsed whole seconds", () => {
   };
 
   const model = buildChatRenderModel(surface, { kind: "desktop_web" });
-  const assistant = model.rows.find((row) => row.kind === "assistant_message");
+  const meta = model.rows.find((row) => row.kind === "turn_meta");
 
-  assert.equal(assistant?.kind, "assistant_message");
-  assert.equal(assistant?.settledLabel, "Worked for 1s");
+  assert.equal(meta?.kind, "turn_meta");
+  assert.equal(meta?.label, "已处理 1s");
 });
 
-test("attaches worked labels only to the terminal assistant row in a user segment", () => {
+test("renders one worked label before multi-message agent output in a user segment", () => {
   const surface: ChatSurface = {
     session_id: "sess_multi_assistant_work",
     transcript: {
+      turns: [
+        {
+          turn_id: "turn_multi",
+          status: "completed",
+          started_at: "2026-06-18T10:00:00Z",
+          completed_at: "2026-06-18T10:00:05Z",
+          first_row_id: "user_1",
+          last_row_id: "assistant_final",
+          debug: { projection: "transcript", source_event_ids: ["evt_turn_started", "evt_turn_completed"] },
+        },
+      ],
       rows: [
         {
           id: "user_1",
@@ -424,6 +527,7 @@ test("attaches worked labels only to the terminal assistant row in a user segmen
           parts: [],
           created_at: "2026-06-18T10:00:00Z",
           updated_at: "2026-06-18T10:00:00Z",
+          turn_id: "turn_multi",
           status: "completed",
           revision: 1,
           debug: { projection: "transcript", source_event_ids: ["evt_user"] },
@@ -435,6 +539,7 @@ test("attaches worked labels only to the terminal assistant row in a user segmen
           parts: [],
           created_at: "2026-06-18T10:00:01Z",
           updated_at: "2026-06-18T10:00:02Z",
+          turn_id: "turn_multi",
           status: "completed",
           revision: 1,
           debug: { projection: "transcript", source_event_ids: ["evt_assistant_progress"] },
@@ -446,6 +551,7 @@ test("attaches worked labels only to the terminal assistant row in a user segmen
           parts: [],
           created_at: "2026-06-18T10:00:03Z",
           updated_at: "2026-06-18T10:00:05Z",
+          turn_id: "turn_multi",
           status: "completed",
           revision: 1,
           debug: { projection: "transcript", source_event_ids: ["evt_assistant_final"] },
@@ -460,16 +566,187 @@ test("attaches worked labels only to the terminal assistant row in a user segmen
 
   const model = buildChatRenderModel(surface, { kind: "desktop_web" });
   const assistants = model.rows.filter((row) => row.kind === "assistant_message");
+  const meta = model.rows.filter((row) => row.kind === "turn_meta");
 
+  assert.deepEqual(
+    model.rows.map((row) => row.kind),
+    ["user_message", "turn_meta", "assistant_message", "assistant_message"],
+  );
+  assert.equal(meta.length, 1);
+  assert.equal(meta[0]?.label, "已处理 5s");
   assert.equal(assistants.length, 2);
-  assert.equal(assistants[0]?.settledLabel, undefined);
-  assert.equal(assistants[1]?.settledLabel, "Worked for 5s");
+});
+
+test("keeps assistant messages and agent work expanded outside the turn header", () => {
+  const surface: ChatSurface = {
+    session_id: "sess_turn_header",
+    transcript: {
+      turns: [
+        {
+          turn_id: "turn_header",
+          status: "completed",
+          started_at: "2026-06-18T10:00:00Z",
+          completed_at: "2026-06-18T10:00:07Z",
+          first_row_id: "user_1",
+          last_row_id: "assistant_final",
+          debug: { projection: "transcript", source_event_ids: ["evt_turn_started", "evt_turn_completed"] },
+        },
+      ],
+      rows: [
+        {
+          id: "user_1",
+          role: "user",
+          text: "look around",
+          parts: [],
+          created_at: "2026-06-18T10:00:00Z",
+          turn_id: "turn_header",
+          status: "completed",
+          revision: 1,
+          debug: { projection: "transcript", source_event_ids: ["evt_user"] },
+        },
+        {
+          id: "assistant_progress",
+          role: "assistant",
+          text: "I am checking the repo.",
+          parts: [],
+          created_at: "2026-06-18T10:00:01Z",
+          updated_at: "2026-06-18T10:00:02Z",
+          turn_id: "turn_header",
+          status: "completed",
+          revision: 1,
+          debug: { projection: "transcript", source_event_ids: ["evt_progress"] },
+        },
+        {
+          id: "assistant_final",
+          role: "assistant",
+          text: "The repo is a local agent runtime.",
+          parts: [],
+          created_at: "2026-06-18T10:00:05Z",
+          updated_at: "2026-06-18T10:00:07Z",
+          turn_id: "turn_header",
+          status: "completed",
+          revision: 1,
+          debug: { projection: "transcript", source_event_ids: ["evt_final"] },
+        },
+      ],
+    },
+    activity: {
+      items: [
+        {
+          id: "tool_search",
+          kind: "tool",
+          status: "completed",
+          title: "search: README",
+          summary: "search: README",
+          created_at: "2026-06-18T10:00:03Z",
+          updated_at: "2026-06-18T10:00:04Z",
+          turn_id: "turn_header",
+          debug: { projection: "activity", source_event_ids: ["evt_tool"] },
+        },
+      ],
+    },
+    pending_requests: { items: [] },
+    cursors: {},
+    stream: { connected: false, running: false },
+  };
+
+  const model = buildChatRenderModel(surface, { kind: "desktop_web" });
+  const meta = model.rows.find((row) => row.kind === "turn_meta");
+
+  assert.deepEqual(
+    model.rows.map((row) => row.kind),
+    ["user_message", "turn_meta", "assistant_message", "agent_work", "assistant_message"],
+  );
+  assert.equal(meta?.kind, "turn_meta");
+  if (meta?.kind !== "turn_meta") assert.fail("expected turn meta");
+  const work = model.rows.find((row) => row.kind === "agent_work");
+  assert.equal(work?.kind, "agent_work");
+  if (work?.kind !== "agent_work") assert.fail("expected agent work row");
+  assert.equal(work.activityId, "tool_search");
+  assert.deepEqual(
+    model.rows
+      .filter((row) => row.kind === "assistant_message")
+      .map((row) => row.id),
+    ["assistant_progress", "assistant_final"],
+  );
+});
+
+test("does not let stale running status rows move a completed turn back to running", () => {
+  const surface: ChatSurface = {
+    session_id: "sess_stale_status",
+    transcript: {
+      turns: [
+        {
+          turn_id: "turn_stale_status",
+          status: "completed",
+          started_at: "2026-06-18T10:00:00Z",
+          completed_at: "2026-06-18T10:00:06Z",
+          first_row_id: "user_1",
+          last_row_id: "working_status",
+          debug: { projection: "transcript", source_event_ids: ["evt_turn_started", "evt_turn_completed"] },
+        },
+      ],
+      rows: [
+        {
+          id: "user_1",
+          role: "user",
+          text: "check date",
+          parts: [],
+          created_at: "2026-06-18T10:00:00Z",
+          turn_id: "turn_stale_status",
+          status: "completed",
+          revision: 1,
+          debug: { projection: "transcript", source_event_ids: ["evt_user"] },
+        },
+        {
+          id: "assistant_final",
+          role: "assistant",
+          text: "Today is Thursday.",
+          parts: [],
+          created_at: "2026-06-18T10:00:01Z",
+          updated_at: "2026-06-18T10:00:05Z",
+          turn_id: "turn_stale_status",
+          status: "completed",
+          revision: 2,
+          debug: { projection: "transcript", source_event_ids: ["evt_assistant"] },
+        },
+        {
+          id: "working_status",
+          role: "working",
+          text: "处理中",
+          parts: [],
+          created_at: "2026-06-18T10:00:06Z",
+          turn_id: "turn_stale_status",
+          status: "running",
+          revision: 1,
+          debug: { projection: "transcript", source_event_ids: ["evt_status"] },
+        },
+      ],
+    },
+    activity: { items: [] },
+    pending_requests: { items: [] },
+    cursors: {},
+    stream: { connected: false, running: false },
+  };
+
+  const model = buildChatRenderModel(surface, { kind: "desktop_web" });
+  const meta = model.rows.find((row) => row.kind === "turn_meta");
+
+  assert.equal(meta?.kind, "turn_meta");
+  if (meta?.kind !== "turn_meta") assert.fail("expected turn meta");
+  assert.equal(meta.status, "completed");
+  assert.equal(meta.label, "已处理 6s");
+  assert.deepEqual(
+    model.rows.map((row) => row.kind),
+    ["user_message", "turn_meta", "assistant_message"],
+  );
+  assert.equal(model.rows.some((row) => row.kind === "status" && row.label === "处理中"), false);
 });
 
 test("renders canonical tool details as agent work instead of generic Tool labels", () => {
   const surface: ChatSurface = {
     session_id: "sess_tool_detail",
-    transcript: { rows: [] },
+    transcript: { rows: [], turns: [] },
     activity: {
       items: [
         {
@@ -519,7 +796,7 @@ test("renders canonical tool details as agent work instead of generic Tool label
 test("keeps low-information projected tool items as compact agent work rows", () => {
   const surface: ChatSurface = {
     session_id: "sess_minimal_tool",
-    transcript: { rows: [] },
+    transcript: { rows: [], turns: [] },
     activity: {
       items: [
         {
@@ -550,7 +827,7 @@ test("keeps low-information projected tool items as compact agent work rows", ()
 test("renders OpenAPI command and task activity items without tool detail", () => {
   const surface: ChatSurface = {
     session_id: "sess_command_task",
-    transcript: { rows: [] },
+    transcript: { rows: [], turns: [] },
     activity: {
       items: [
         {
@@ -593,7 +870,7 @@ test("renders OpenAPI command and task activity items without tool detail", () =
 test("renders OpenAPI warning activity items without tool detail", () => {
   const surface: ChatSurface = {
     session_id: "sess_warning",
-    transcript: { rows: [] },
+    transcript: { rows: [], turns: [] },
     activity: {
       items: [
         {
@@ -626,7 +903,7 @@ test("renders OpenAPI warning activity items without tool detail", () => {
 test("does not render non-failed runtime activity as agent work even when detail is present", () => {
   const surface: ChatSurface = {
     session_id: "sess_runtime_detail",
-    transcript: { rows: [] },
+    transcript: { rows: [], turns: [] },
     activity: {
       items: [
         {
@@ -657,7 +934,7 @@ test("does not render non-failed runtime activity as agent work even when detail
 test("turns provider-style activity titles into quiet action labels", () => {
   const surface: ChatSurface = {
     session_id: "sess_raw_titles",
-    transcript: { rows: [] },
+    transcript: { rows: [], turns: [] },
     activity: {
       items: [
         {

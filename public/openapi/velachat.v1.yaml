@@ -945,7 +945,7 @@ components:
           $ref: '#/components/schemas/CursorWindow'
     ChatTranscriptView:
       type: object
-      required: [session_id, rows, window, cursor]
+      required: [session_id, rows, turns, window, cursor]
       properties:
         session_id:
           type: string
@@ -953,10 +953,41 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ChatTranscriptRow'
+        turns:
+          type: array
+          description: Turn lifecycle summaries for turn ids referenced by rows in this transcript window.
+          items:
+            $ref: '#/components/schemas/ChatTurnSummary'
         window:
           $ref: '#/components/schemas/TranscriptWindow'
         cursor:
           $ref: '#/components/schemas/EventCursor'
+    ChatTurnSummary:
+      type: object
+      required: [turn_id, status, started_at, source_event_ids]
+      properties:
+        turn_id:
+          type: string
+        status:
+          type: string
+          enum: [running, completed, failed, cancelled]
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        first_row_id:
+          type: string
+          nullable: true
+        last_row_id:
+          type: string
+          nullable: true
+        source_event_ids:
+          type: array
+          items:
+            type: string
     TranscriptWindow:
       type: object
       required: [has_older, has_newer]
@@ -1063,6 +1094,9 @@ components:
       properties:
         id:
           type: string
+        turn_id:
+          type: string
+          description: Turn that produced this activity item, when the item belongs to a turn.
         kind:
           type: string
           enum: [tool, command, task, warning, runtime]
@@ -1352,6 +1386,12 @@ components:
           properties:
             streaming:
               type: boolean
+            reasoning_stream:
+              type: boolean
+            agent_work:
+              type: boolean
+            multimodal_input:
+              type: boolean
             cancel:
               type: boolean
             permission_requests:
@@ -1359,6 +1399,12 @@ components:
             structured_diff:
               type: boolean
             session_agent_config:
+              type: boolean
+            session_persistence:
+              type: boolean
+            history_resume:
+              type: boolean
+            mcp_servers:
               type: boolean
         models:
           type: array

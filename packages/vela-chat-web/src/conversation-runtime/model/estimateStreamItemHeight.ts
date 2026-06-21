@@ -23,6 +23,8 @@ export function estimateStreamItemHeight(
         readAssistantMarkdownCachedHeight(item, options) ??
         estimateAssistantMarkdownHeight(item)
       );
+    case "turn_meta":
+      return 42;
     case "agent_work":
       return item.block.kind === "agent_work" && item.block.display === "prominent"
         ? 88
@@ -93,8 +95,7 @@ function assistantMarkdownHeightCacheKey(
   if (item.block.kind !== "assistant_markdown") return null;
   const markdown = item.block.blocks.map((block) => block.text).join("\n---block---\n");
   if (!markdown) return null;
-  const settledLabel = item.block.settledLabel ?? "";
-  return `assistant:${streamItemWidthKey(options.width)}:streaming:${item.block.streaming}:copy:${item.block.showCopyAction}:settled:${hashString(settledLabel)}:${hashString(markdown)}`;
+  return `assistant:${streamItemWidthKey(options.width)}:streaming:${item.block.streaming}:copy:${item.block.showCopyAction}:${hashString(markdown)}`;
 }
 
 function touchHeightCache(cache: Map<string, number>, key: string, height: number) {

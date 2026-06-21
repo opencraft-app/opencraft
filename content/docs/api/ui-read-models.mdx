@@ -150,6 +150,7 @@ Client boots
 | Canonical event | UI 刷新 |
 | --- | --- |
 | `user.message.accepted` | `ChatTranscriptView` |
+| `turn.started` / `turn.completed` / `turn.failed` / `turn.cancelled` | `ChatTranscriptView`、`ActivityShelfView`、`SessionView` |
 | `assistant.message.delta` | `ChatTranscriptView` |
 | `request.opened` | `PendingRequestsView`、可选 `ActivityShelfView` |
 | `request.resolved` | `PendingRequestsView`、`ActivityShelfView` |
@@ -160,13 +161,20 @@ Client boots
 
 完整词表见 [事件词表](/docs/api/event-vocabulary)。UI 组件必须以 read model 为主输入，不能跳过 projector 直接解释 runtime event payload。
 
-`ActivityShelfView` MUST 保留所有 projected tool calls。长运行工具和短工具都进入 activity；差异只体现在 render model 的折叠、密度和虚拟化策略。`detail` 字段是 normalized tool detail union，例如 `shell`、`read`、`edit`、`write`、`search`、`fetch` 或通用兜底类型；它只能包含 UI-safe projected fields，不能暴露 provider raw event，也不能把所有工具粗暴包装成 `{ type: "tool" }`。完整 raw/debug 信息仍然属于 `/sessions/{session_id}/timeline` 和 `/sessions/{session_id}/trace`。
+`ActivityShelfView` MUST 保留所有 projected tool calls。长运行工具和短工具都进入 activity；差异只体现在 render model 的密度、分组、显隐和虚拟化策略。属于某个 turn 的 activity item SHOULD 携带 `turn_id`，用于 client 把 agent work 和 transcript row 归入同一个 conversation segment。`detail` 字段是 normalized tool detail union，例如 `shell`、`read`、`edit`、`write`、`search`、`fetch` 或通用兜底类型；它只能包含 UI-safe projected fields，不能暴露 provider raw event，也不能把所有工具粗暴包装成 `{ type: "tool" }`。完整 raw/debug 信息仍然属于 `/sessions/{session_id}/timeline` 和 `/sessions/{session_id}/trace`。
+
+`ChatTranscriptView.turns` 是 turn lifecycle 的 UI read-model 真相来源。`turn.started`、`turn.completed`、`turn.failed`、`turn.cancelled` 会投影为 window-scoped turn summaries；client render model 可以用它显示 `处理中` / `已处理 Xs` 这类 turn header，但不能从 assistant row 的 streaming 状态、tool activity 数量或 raw timeline 反推 turn 生命周期。
 
 如果 stream 断线，client 使用 `Last-Event-ID` 或 `after_id` 补拉；如果收到 `sync.reset`，按 `views[]` 刷新对应 read models。
 
 ### ChatTranscriptView row window
 
-`GET /sessions/{session_id}/views/transcript` 返回 transcript row window，而不是 event window。
+`GET /sessions/{session_id}/views/transcript` 返回 transcript row window，而不是 event window。响应包含 `rows` 和 `turns`：
+
+- `rows` 是 message-like transcript rows，用于 user/assistant/error/activity marker 正文渲染。
+- `turns` 是当前 window 内可见 turn 的 lifecycle summaries，用于 turn header、运行时长、完成时长和同 turn activity 的归组锚点。
+
+`turns` 是 required 字段；客户端不得把缺失的 `turns` 当成旧协议兼容处理。
 
 ```txt
 GET /sessions/{session_id}/views/transcript?direction=tail&limit=80
@@ -199,6 +207,7 @@ Client 在做上拉旧历史时 MUST 同时考虑 transcript 和 activity 两侧
 - `conversation.has_older = transcript.window.has_older || activity.window.has_older`
 - 如果 transcript 仍有旧 row，client 使用 `direction=before&anchor_row_id=<first_row_id>&include_live=false`
 - 如果 activity 仍有旧 item，client 使用 `direction=before&anchor_item_id=<first_item_id>`
+- 合并 transcript window 时必须同时合并 `turns`，否则分页后的 assistant row 会丢失 turn header 和 timing metadata
 - 两侧请求可以并行；任一侧返回 `409 stale_cursor` 时，client 丢弃本地窗口并重新拉 tail
 
 这样可以接近 Paseo-style agent stream 的使用体验，同时保留 Vela 的 provider normalization 边界：正文来自 transcript，agent work 来自 activity，普通 UI 不直接读取 timeline/trace。

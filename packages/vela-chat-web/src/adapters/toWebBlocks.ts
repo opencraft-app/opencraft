@@ -37,6 +37,8 @@ export type WebBlock =
       collapsed: boolean;
       parts: UserMessagePart[];
       createdAt: string;
+      sourceTurnId?: string;
+      sourceActivityId?: string;
     }
   | {
       kind: "assistant_markdown";
@@ -47,7 +49,20 @@ export type WebBlock =
       createdAt: string;
       streaming: boolean;
       showCopyAction: boolean;
-      settledLabel?: string;
+      sourceTurnId?: string;
+      sourceActivityId?: string;
+    }
+  | {
+      kind: "turn_meta";
+      id: string;
+      key: string;
+      label: string;
+      status: "running" | "completed" | "failed" | "cancelled";
+      createdAt: string;
+      updatedAt?: string;
+      completedAt?: string;
+      sourceTurnId?: string;
+      sourceActivityId?: string;
     }
   | {
       kind: "agent_work";
@@ -59,6 +74,8 @@ export type WebBlock =
       display: "compact" | "prominent";
       createdAt: string;
       updatedAt?: string;
+      sourceTurnId?: string;
+      sourceActivityId?: string;
     }
   | {
       kind: "status";
@@ -67,6 +84,8 @@ export type WebBlock =
       label: string;
       status: string;
       createdAt: string;
+      sourceTurnId?: string;
+      sourceActivityId?: string;
     };
 
 const MAX_CACHED_WEB_TURNS = 5_000;
@@ -76,12 +95,75 @@ export function toWebChatModel(model: ChatRenderModel): WebChatModel {
   return {
     sessionId: model.session_id,
     host: model.host,
-    turns: model.rows.map((row) => rowToTurn(model.session_id, row)),
+    turns: groupRowsIntoTurns(model.session_id, model.rows),
     composer: {
       placeholder: model.composer.placeholder,
       canSend: model.composer.can_send,
     },
   };
+}
+
+function groupRowsIntoTurns(sessionId: string, rows: ChatRenderRow[]): WebTurn[] {
+  const turns: WebTurn[] = [];
+  let currentRows: ChatRenderRow[] = [];
+
+  const flush = () => {
+    if (currentRows.length === 0) return;
+    turns.push(rowsToTurn(sessionId, currentRows));
+    currentRows = [];
+  };
+
+  for (const row of rows) {
+    if (row.kind === "user_message") {
+      flush();
+      currentRows = [row];
+      continue;
+    }
+
+    if (currentRows.length === 0) {
+      turns.push(rowsToTurn(sessionId, [row]));
+      continue;
+    }
+
+    currentRows.push(row);
+  }
+
+  flush();
+  return turns;
+}
+
+function rowsToTurn(sessionId: string, rows: ChatRenderRow[]): WebTurn {
+  if (rows.length === 1) {
+    return rowToTurn(sessionId, rows[0]!);
+  }
+
+  const fingerprint = rows.map(rowFingerprint).join("|");
+  const first = rows[0]!;
+  const sourceTurnId = first.turnId ?? rows.find((row) => row.turnId)?.turnId;
+  const sourceActivityId = rows.length === 1 ? first.activityId : undefined;
+  const cacheKey = [
+    sessionId,
+    "turn_shell",
+    rows.map((row) => row.key).join(","),
+    `turn:${sourceTurnId ?? ""}`,
+    fingerprint,
+  ].join(":");
+  const cached = webTurnCache.get(cacheKey);
+  if (cached) return cached;
+
+  const blocks = rows.map((row) => rowToBlock(row));
+  const turn = {
+    id: sourceTurnId ?? first.id,
+    key: `turn:${sourceTurnId ?? first.key}`,
+    fingerprint,
+    live: rows.some(isLiveRenderRow),
+    sourceTurnId,
+    sourceActivityId,
+    blocks,
+  };
+  webTurnCache.set(cacheKey, turn);
+  evictOldestWebTurnIfNeeded();
+  return turn;
 }
 
 function rowToTurn(sessionId: string, row: ChatRenderRow): WebTurn {
@@ -115,23 +197,27 @@ function rowToTurn(sessionId: string, row: ChatRenderRow): WebTurn {
 function isLiveRenderRow(row: ChatRenderRow): boolean {
   if (row.kind === "assistant_message") return row.streaming;
   if (row.kind === "agent_work") return row.status === "running" || row.status === "pending";
+  if (row.kind === "turn_meta") return row.status === "running";
   if (row.kind !== "status") return false;
   return row.label === "处理中" || row.label.startsWith("处理中 ");
 }
 
-function rowFingerprint(row: ChatRenderRow) {
+function rowFingerprint(row: ChatRenderRow): string {
   if (row.kind === "assistant_message") {
     const textLength = row.blocks.reduce((total, block) => total + block.text.length, 0);
     const blockHash = hashString(
       row.blocks.map((block) => `${block.id}:${block.text}`).join("\n---block---\n"),
     );
-    return `${row.key}:created:${hashString(row.createdAt)}:${row.status}:streaming:${row.streaming}:settled:${hashString(row.settledLabel ?? "")}:rev:${row.revision}:len:${textLength}:hash:${blockHash}`;
+    return `${row.key}:created:${hashString(row.createdAt)}:${row.status}:streaming:${row.streaming}:rev:${row.revision}:len:${textLength}:hash:${blockHash}`;
   }
   if (row.kind === "user_message") {
     return `${row.key}:created:${hashString(row.createdAt)}:collapsed:${row.collapsed}:len:${row.text.length}:text:${hashString(row.text)}:copy:${hashString(row.copy_text)}:parts:${partsFingerprint(row.parts)}`;
   }
   if (row.kind === "agent_work") {
     return `${row.key}:${row.status}:display:${row.display}:created:${hashString(row.createdAt)}:updated:${hashString(row.updatedAt ?? "")}:title:${hashString(row.title)}:summary:${hashString(row.summary)}`;
+  }
+  if (row.kind === "turn_meta") {
+    return `${row.key}:created:${hashString(row.createdAt)}:updated:${hashString(row.updatedAt ?? "")}:completed:${hashString(row.completedAt ?? "")}:status:${row.status}:label:${hashString(row.label)}`;
   }
   return `${row.key}:created:${hashString(row.createdAt)}:status:${row.status}:label:${hashString(row.label)}`;
 }
@@ -147,6 +233,8 @@ function rowToBlock(row: ChatRenderRow): WebBlock {
       collapsed: row.collapsed,
       parts: row.parts,
       createdAt: row.createdAt,
+      sourceTurnId: row.turnId,
+      sourceActivityId: row.activityId,
     };
   }
 
@@ -161,7 +249,23 @@ function rowToBlock(row: ChatRenderRow): WebBlock {
       createdAt: row.createdAt,
       streaming: row.streaming,
       showCopyAction: Boolean(copyText) && !row.streaming,
-      settledLabel: row.streaming ? "处理中" : row.settledLabel,
+      sourceTurnId: row.turnId,
+      sourceActivityId: row.activityId,
+    };
+  }
+
+  if (row.kind === "turn_meta") {
+    return {
+      kind: "turn_meta",
+      id: row.id,
+      key: row.key,
+      label: row.label,
+      status: row.status,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      completedAt: row.completedAt,
+      sourceTurnId: row.turnId,
+      sourceActivityId: row.activityId,
     };
   }
 
@@ -176,6 +280,8 @@ function rowToBlock(row: ChatRenderRow): WebBlock {
       display: row.display,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
+      sourceTurnId: row.turnId,
+      sourceActivityId: row.activityId,
     };
   }
 
@@ -186,10 +292,12 @@ function rowToBlock(row: ChatRenderRow): WebBlock {
     label: row.label,
     status: row.status,
     createdAt: row.createdAt,
+    sourceTurnId: row.turnId,
+    sourceActivityId: row.activityId,
   };
 }
 
-function partsFingerprint(parts: UserMessagePart[]) {
+function partsFingerprint(parts: UserMessagePart[]): string {
   return parts
     .map((part) => {
       const data = part.data;

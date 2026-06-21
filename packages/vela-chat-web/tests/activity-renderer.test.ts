@@ -63,6 +63,22 @@ test("activity renderer exposes full labels to hover and assistive technology", 
   assert.match(source, /title=\{label\}/);
 });
 
+test("activity renderer uses quiet work-log icons instead of orange bullet dots", () => {
+  const renderer = readFileSync(
+    join(root, "packages/vela-chat-web/src/renderers/blocks/ActivityRenderer.tsx"),
+    "utf8",
+  );
+  const styles = readFileSync(
+    join(root, "packages/vela-chat-web/src/styles/desktop.module.css"),
+    "utf8",
+  );
+
+  assert.match(renderer, /activityIcon/);
+  assert.doesNotMatch(renderer, /activityDot/);
+  assert.doesNotMatch(styles, /\.activityDot/);
+  assert.doesNotMatch(styles, /#df7048/);
+});
+
 test("activity visual summaries omit duplicate generic text", () => {
   assert.equal(activityVisualSummary("Read file", "Read file"), "");
   assert.equal(activityVisualSummary("README.md", "Read file"), "README.md");

@@ -2,24 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  VeladClientError,
-  applyTranscriptLiveOverlay,
   commandAckRejectionMessage,
   createVeladClient,
   createStreamRefreshScheduler,
-  imageFileToInputPart,
-  isVelaStreamEventForSession,
-  needsTranscriptRefreshAfterLiveOverlay,
   readVelaStreamEvent,
   selectSessionEventStreamAfterId,
-  streamReadModelRefreshPlanForCursors,
   subscribeVelaEventSource,
   type AgentConfigPatchWire,
-  type AgentConfigWire,
   type BackendKindWire,
   type BackendWire,
   type ClientInputPart,
-  type CursorWindow,
   type PermissionModeWire,
   type SessionWire,
 } from "../../packages/vela-chat-client/src";
@@ -30,23 +22,16 @@ import {
   type VelaChatDebugApi,
   type VelaChatDebugScrollRuntime,
 } from "../../packages/vela-chat-debug/src";
-import { buildChatRenderModel } from "../../packages/vela-chat-render-model/src";
 import {
   buildConversationHistoryPrependPlan,
   canApplyConversationHistoryPrependPlan,
   deriveConversationWindowState,
-  buildChatSurfaceFromReadModels,
   prependActivityWindow,
   prependTranscriptWindow,
-  type ChatSurfaceEventCursor,
 } from "../../packages/vela-chat-surface/src";
 import { VelaChatWeb } from "../../packages/vela-chat-web/src";
 import { toWebChatModel } from "../../packages/vela-chat-web/src/adapters/toWebBlocks";
-import {
-  DEFAULT_PERMISSION_MODE_OPTIONS,
-  DEFAULT_REASONING_EFFORT_OPTIONS,
-  buildComposerControlsModel,
-} from "../../packages/vela-chat-web/src/components/composer-controls/model";
+import { buildComposerControlsModel } from "../../packages/vela-chat-web/src/components/composer-controls/model";
 import {
   buildConversationRuntimeSegments,
   buildConversationStreamItems,
@@ -60,17 +45,13 @@ import {
   pendingRequestsForActiveSession,
   readModelForActiveSession,
 } from "./sessionScopedReadModels";
-
-const DEFAULT_BASE_URL = "/chat/api/velad/api/v1";
-const EMPTY_EVENT_CURSOR: ChatSurfaceEventCursor = { event_id: "", epoch: 0, seq: 0 };
-const EMPTY_CURSOR_WINDOW: CursorWindow = {};
-
-interface PendingImageAttachment {
-  id: string;
-  label: string;
-  mimeType: string;
-  part: Extract<ClientInputPart, { type: "image" }>;
-}
+import { buildPendingImageAttachments, type PendingImageAttachment } from "./workbench/attachments";
+import { DEFAULT_BASE_URL } from "./workbench/constants";
+import { buildWorkbenchRenderModel } from "./workbench/renderModel";
+import { SetupPanel } from "./workbench/SetupPanel";
+import { cursorEventId, isStaleCursorError } from "./workbench/helpers";
+import { buildWorkbenchSetupSelection } from "./workbench/setupModel";
+import { handleWorkbenchStreamEvent } from "./workbench/streamHandler";
 
 export function ChatWorkbench({
   initialSessionId,
@@ -192,6 +173,10 @@ export function ChatWorkbench({
       setError(null);
       const nextBackends = await client.getBackends();
       setBackends(nextBackends.backends);
+      setSelectedBackend((current) => {
+        if (nextBackends.backends.some((backend) => backend.kind === current)) return current;
+        return nextBackends.backends[0]?.kind ?? current;
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -230,28 +215,8 @@ export function ChatWorkbench({
   }, [activeSessionId]);
 
   useEffect(() => {
-    if (activeSessionId) return;
-    let cancelled = false;
-
-    client
-      .getBackends()
-      .then((nextBackends) => {
-        if (cancelled) return;
-        setBackends(nextBackends.backends);
-        setSelectedBackend((current) => {
-          if (nextBackends.backends.some((backend) => backend.kind === current)) return current;
-          return nextBackends.backends[0]?.kind ?? current;
-        });
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : String(err));
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeSessionId, client]);
+    void loadBackends();
+  }, [loadBackends]);
 
   const activeTranscript = readModelForActiveSession(activeSessionId, transcript);
   const activeActivity = readModelForActiveSession(activeSessionId, activity);
@@ -302,27 +267,22 @@ export function ChatWorkbench({
       onEvent: (event) => {
         const streamEvent = readVelaStreamEvent(event);
         if (streamEvent) {
-          if (!isVelaStreamEventForSession(activeSessionId, streamEvent)) return;
           const currentTranscript = readModelForActiveSession(activeSessionId, transcriptRef.current);
           const currentActivity = readModelForActiveSession(activeSessionId, activityRef.current);
           const currentRequests = pendingRequestsForActiveSession(activeSessionId, requestsRef.current);
-          const forceTranscriptRefresh = currentTranscript
-            ? needsTranscriptRefreshAfterLiveOverlay(currentTranscript, streamEvent)
-            : false;
-          if (currentTranscript) {
-            commitTranscript(applyTranscriptLiveOverlay(currentTranscript, streamEvent));
-          }
-          const refreshPlan = streamReadModelRefreshPlanForCursors(streamEvent, {
-            transcript: currentTranscript?.cursor,
-            activity: currentActivity?.cursor,
-            requests: currentRequests?.cursor,
+          handleWorkbenchStreamEvent({
+            activeSessionId,
+            streamEvent,
+            currentTranscript,
+            currentActivity,
+            currentRequests,
+            commitTranscript,
+            transcriptRefreshScheduler,
+            activityRefreshScheduler,
+            requestsRefreshScheduler,
+            sessionRefreshScheduler,
+            backendsRefreshScheduler,
           });
-          if (forceTranscriptRefresh) transcriptRefreshScheduler.notifyStreamEvent();
-          if (refreshPlan.transcript) transcriptRefreshScheduler.notifyStreamEvent();
-          if (refreshPlan.activity) activityRefreshScheduler.notifyStreamEvent();
-          if (refreshPlan.requests) requestsRefreshScheduler.notifyStreamEvent();
-          if (refreshPlan.session) sessionRefreshScheduler.notifyStreamEvent();
-          if (refreshPlan.backends) backendsRefreshScheduler.notifyStreamEvent();
         }
       },
     });
@@ -409,25 +369,13 @@ export function ChatWorkbench({
   ]);
 
   const model = useMemo(() => {
-    const surfaceSessionId = activeSessionId || "unselected";
-    const surface = buildChatSurfaceFromReadModels({
-      sessionId: surfaceSessionId,
-      transcript: activeTranscript ?? {
-        session_id: surfaceSessionId,
-        rows: [],
-        window: { has_older: false, has_newer: false },
-        cursor: EMPTY_EVENT_CURSOR,
-      },
-      activity: activeActivity ?? {
-        session_id: surfaceSessionId,
-        items: [],
-        window: { has_older: false, has_newer: false },
-        cursor: EMPTY_EVENT_CURSOR,
-      },
-      requests: activeRequests ?? { requests: [], cursor: EMPTY_CURSOR_WINDOW },
-      stream: { connected: streamConnected },
+    return buildWorkbenchRenderModel({
+      activeSessionId,
+      transcript: activeTranscript,
+      activity: activeActivity,
+      requests: activeRequests,
+      streamConnected,
     });
-    return buildChatRenderModel(surface, { kind: "desktop_web" });
   }, [activeActivity, activeRequests, activeSessionId, activeTranscript, streamConnected]);
 
   const conversationDebug = useMemo(() => {
@@ -484,14 +432,7 @@ export function ChatWorkbench({
   const attachImages = useCallback(async (files: File[]) => {
     try {
       setError(null);
-      const nextAttachments = await Promise.all(
-        files.map(async (file, index) => ({
-          id: `image_${Date.now()}_${index}_${file.name || "attachment"}`,
-          label: file.name || "image",
-          mimeType: file.type || "application/octet-stream",
-          part: await imageFileToInputPart(file),
-        })),
-      );
+      const nextAttachments = await buildPendingImageAttachments(files);
       setPendingAttachments((current) => [...current, ...nextAttachments]);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -504,62 +445,26 @@ export function ChatWorkbench({
     );
   }, []);
 
-  const selectedBackendDetails = useMemo(
-    () => backends.find((backend) => backend.kind === selectedBackend) ?? backends[0],
-    [backends, selectedBackend],
-  );
-  const resolvedSelectedBackend = selectedBackendDetails?.kind ?? selectedBackend;
-  const backendKinds = useMemo(() => new Set(backends.map((backend) => backend.kind)), [backends]);
-  const setupModelOptions = selectedBackendDetails?.models ?? [];
-  const setupSelectedModel = useMemo(() => {
-    if (selectedModel && setupModelOptions.some((model) => model.id === selectedModel)) {
-      return selectedModel;
-    }
-    return setupModelOptions.find((model) => model.is_default)?.id ?? setupModelOptions[0]?.id ?? selectedModel;
-  }, [selectedModel, setupModelOptions]);
-  const setupReasoningOptions = useMemo(() => {
-    const modelReasoningOptions =
-      setupModelOptions.find((model) => model.id === setupSelectedModel)?.reasoning_efforts ?? [];
-    return modelReasoningOptions.length ? modelReasoningOptions : DEFAULT_REASONING_EFFORT_OPTIONS;
-  }, [setupModelOptions, setupSelectedModel]);
-  const setupSelectedReasoningEffort = useMemo(() => {
-    if (
-      selectedReasoningEffort &&
-      setupReasoningOptions.some((option) => option.id === selectedReasoningEffort)
-    ) {
-      return selectedReasoningEffort;
-    }
-    return (
-      setupReasoningOptions.find(isDefaultOption)?.id ??
-      setupReasoningOptions.find((option) => option.id === "medium")?.id ??
-      setupReasoningOptions[0]?.id ??
-      selectedReasoningEffort
-    );
-  }, [selectedReasoningEffort, setupReasoningOptions]);
-  const setupPermissionOptions = selectedBackendDetails?.permission_modes?.length
-    ? selectedBackendDetails.permission_modes
-    : DEFAULT_PERMISSION_MODE_OPTIONS;
-  const setupSelectedPermissionMode = useMemo<PermissionModeWire | "">(() => {
-    if (
-      selectedPermissionMode &&
-      setupPermissionOptions.some((option) => option.id === selectedPermissionMode)
-    ) {
-      return selectedPermissionMode;
-    }
-    return (
-      setupPermissionOptions.find(isDefaultOption)?.id ??
-      setupPermissionOptions.find((option) => option.id === "auto")?.id ??
-      setupPermissionOptions[0]?.id ??
-      selectedPermissionMode
-    );
-  }, [selectedPermissionMode, setupPermissionOptions]);
-  const setupAgentConfig = useMemo<AgentConfigWire>(
-    () => ({
-      ...(setupSelectedModel ? { model: setupSelectedModel } : {}),
-      ...(setupSelectedReasoningEffort ? { reasoning_effort: setupSelectedReasoningEffort } : {}),
-      ...(setupSelectedPermissionMode ? { permission_mode: setupSelectedPermissionMode } : {}),
-    }),
-    [setupSelectedModel, setupSelectedPermissionMode, setupSelectedReasoningEffort],
+  const {
+    resolvedSelectedBackend,
+    backendKinds,
+    setupModelOptions,
+    setupSelectedModel,
+    setupReasoningOptions,
+    setupSelectedReasoningEffort,
+    setupPermissionOptions,
+    setupSelectedPermissionMode,
+    setupAgentConfig,
+  } = useMemo(
+    () =>
+      buildWorkbenchSetupSelection({
+        backends,
+        selectedBackend,
+        selectedModel,
+        selectedReasoningEffort,
+        selectedPermissionMode,
+      }),
+    [backends, selectedBackend, selectedModel, selectedPermissionMode, selectedReasoningEffort],
   );
 
   const createSession = useCallback(async () => {
@@ -781,137 +686,40 @@ export function ChatWorkbench({
 
   if (!activeSessionId) {
     return (
-      <main style={setupShellStyle}>
-        <section style={setupCardStyle}>
-          <h1 style={setupTitleStyle}>连接本地 velad session</h1>
-          <label style={setupLabelStyle}>
-            Base URL
-            <input
-              style={setupInputStyle}
-              value={baseUrl}
-              onChange={(event) => setBaseUrl(event.target.value)}
-            />
-          </label>
-          <label style={setupLabelStyle}>
-            Session ID
-            <input
-              style={setupInputStyle}
-              value={sessionId}
-              onChange={(event) => setSessionId(event.target.value)}
-              placeholder="输入已有 session_id"
-            />
-          </label>
-          <label style={setupLabelStyle}>
-            Working Directory
-            <input
-              style={setupInputStyle}
-              value={workingDirectory}
-              onChange={(event) => setWorkingDirectory(event.target.value)}
-              placeholder="/Users/alice/project"
-            />
-          </label>
-          <label style={setupLabelStyle}>
-            Backend
-            <select
-              style={setupInputStyle}
-              value={resolvedSelectedBackend}
-              onChange={(event) => {
-                const nextBackend = event.target.value;
-                setSelectedBackend(
-                  backendKinds.has(nextBackend as BackendKindWire)
-                    ? (nextBackend as BackendKindWire)
-                    : "",
-                );
-                setSelectedModel("");
-                setSelectedReasoningEffort("");
-                setSelectedPermissionMode("");
-              }}
-            >
-              {backends.length ? (
-                backends.map((backend) => (
-                  <option key={backend.kind} value={backend.kind}>
-                    {backend.display_name || backend.kind}
-                  </option>
-                ))
-              ) : (
-                <option value="">Loading backends...</option>
-              )}
-            </select>
-          </label>
-          <label style={setupLabelStyle}>
-            Model
-            {setupModelOptions.length ? (
-              <select
-                style={setupInputStyle}
-                value={setupSelectedModel}
-                onChange={(event) => setSelectedModel(event.target.value)}
-              >
-                {setupModelOptions.map((modelOption) => (
-                  <option key={modelOption.id} value={modelOption.id}>
-                    {modelOption.label || modelOption.id}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                style={setupInputStyle}
-                value={setupSelectedModel}
-                onChange={(event) => setSelectedModel(event.target.value)}
-                placeholder="model id"
-              />
-            )}
-          </label>
-          <label style={setupLabelStyle}>
-            Thinking
-            <select
-              style={setupInputStyle}
-              value={setupSelectedReasoningEffort}
-              onChange={(event) => setSelectedReasoningEffort(event.target.value)}
-            >
-              {setupReasoningOptions.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.label || option.id}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label style={setupLabelStyle}>
-            Permissions
-            <select
-              style={setupInputStyle}
-              value={setupSelectedPermissionMode}
-              onChange={(event) => setSelectedPermissionMode(event.target.value as PermissionModeWire)}
-            >
-              {setupPermissionOptions.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.label || option.id}
-                </option>
-              ))}
-            </select>
-          </label>
-          {error ? <p style={setupErrorStyle}>{error}</p> : null}
-          <button
-            style={setupButtonStyle}
-            type="button"
-            onClick={() => {
-              resetSessionReadModels();
-              setSession(null);
-              setActiveSessionId(sessionId.trim());
-            }}
-            disabled={!sessionId.trim()}
-          >
-            打开 ChatUI
-          </button>
-          <button
-            style={setupSecondaryButtonStyle}
-            type="button"
-            onClick={createSession}
-            disabled={!workingDirectory.trim() || !resolvedSelectedBackend || isCreatingSession}
-          >
-            {isCreatingSession ? "创建中" : "新建会话"}
-          </button>
-        </section>
-      </main>
+      <SetupPanel
+        backendKinds={backendKinds}
+        backends={backends}
+        baseUrl={baseUrl}
+        error={error}
+        isCreatingSession={isCreatingSession}
+        onBackendChange={(nextBackend) => {
+          setSelectedBackend(nextBackend);
+          setSelectedModel("");
+          setSelectedReasoningEffort("");
+          setSelectedPermissionMode("");
+        }}
+        onBaseUrlChange={setBaseUrl}
+        onCreateSession={createSession}
+        onModelChange={setSelectedModel}
+        onOpenSession={() => {
+          resetSessionReadModels();
+          setSession(null);
+          setActiveSessionId(sessionId.trim());
+        }}
+        onPermissionModeChange={setSelectedPermissionMode}
+        onReasoningEffortChange={setSelectedReasoningEffort}
+        onSessionIdChange={setSessionId}
+        onWorkingDirectoryChange={setWorkingDirectory}
+        resolvedSelectedBackend={resolvedSelectedBackend}
+        sessionId={sessionId}
+        setupModelOptions={setupModelOptions}
+        setupPermissionOptions={setupPermissionOptions}
+        setupReasoningOptions={setupReasoningOptions}
+        setupSelectedModel={setupSelectedModel}
+        setupSelectedPermissionMode={setupSelectedPermissionMode}
+        setupSelectedReasoningEffort={setupSelectedReasoningEffort}
+        workingDirectory={workingDirectory}
+      />
     );
   }
 
@@ -936,83 +744,4 @@ export function ChatWorkbench({
       pendingAttachments={pendingAttachments}
     />
   );
-}
-
-const setupShellStyle = {
-  minHeight: "100dvh",
-  display: "grid",
-  placeItems: "center",
-  background: "#fff",
-  color: "#171717",
-  fontFamily: "ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-} satisfies React.CSSProperties;
-
-const setupCardStyle = {
-  width: "min(92vw, 520px)",
-  border: "1px solid #e8e8e8",
-  borderRadius: 24,
-  padding: 28,
-  boxShadow: "0 18px 50px rgb(0 0 0 / 6%)",
-} satisfies React.CSSProperties;
-
-const setupTitleStyle = {
-  margin: "0 0 22px",
-  fontSize: 22,
-} satisfies React.CSSProperties;
-
-const setupLabelStyle = {
-  display: "grid",
-  gap: 8,
-  marginBottom: 16,
-  color: "#6f7176",
-  fontSize: 13,
-  fontWeight: 650,
-} satisfies React.CSSProperties;
-
-const setupInputStyle = {
-  border: "1px solid #dedede",
-  borderRadius: 14,
-  padding: "12px 14px",
-  color: "#171717",
-  font: "inherit",
-} satisfies React.CSSProperties;
-
-const setupButtonStyle = {
-  width: "100%",
-  border: 0,
-  borderRadius: 14,
-  padding: "13px 16px",
-  background: "#171717",
-  color: "#fff",
-  font: "inherit",
-  fontWeight: 700,
-} satisfies React.CSSProperties;
-
-const setupSecondaryButtonStyle = {
-  ...setupButtonStyle,
-  marginTop: 10,
-  border: "1px solid #dedede",
-  background: "#fff",
-  color: "#171717",
-} satisfies React.CSSProperties;
-
-const setupErrorStyle = {
-  margin: "0 0 16px",
-  color: "#b42318",
-  fontSize: 13,
-  lineHeight: 1.5,
-} satisfies React.CSSProperties;
-
-function cursorEventId(
-  cursor?: { event_id?: string; latest_event_id?: string; next_event_id?: string } | null,
-) {
-  return cursor?.event_id ?? cursor?.latest_event_id ?? cursor?.next_event_id ?? null;
-}
-
-function isStaleCursorError(err: unknown) {
-  return err instanceof VeladClientError && (err.detail as { reason?: unknown } | undefined)?.reason === "stale_cursor";
-}
-
-function isDefaultOption(option: unknown) {
-  return typeof option === "object" && option !== null && "is_default" in option && option.is_default === true;
 }

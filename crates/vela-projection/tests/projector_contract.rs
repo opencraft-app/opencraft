@@ -176,6 +176,36 @@ fn activity_coalesces_tool_lifecycle_with_time_boundaries() {
 }
 
 #[test]
+fn activity_non_terminal_updates_do_not_resurrect_completed_tool_items() {
+    let events = vec![
+        event_at(
+            1,
+            1,
+            EventType::TOOL_STARTED,
+            json!({ "tool_id": "tool_1", "name": "Search", "status": "running" }),
+        ),
+        event_at(
+            2,
+            4,
+            EventType::TOOL_COMPLETED,
+            json!({ "tool_id": "tool_1", "name": "Search", "status": "completed" }),
+        ),
+        event_at(
+            3,
+            5,
+            EventType::TOOL_OUTPUT_DELTA,
+            json!({ "tool_id": "tool_1", "delta": "late output" }),
+        ),
+    ];
+
+    let activity = project_activity(&events);
+
+    assert_eq!(activity.items.len(), 1);
+    assert_eq!(activity.items[0].status.as_deref(), Some("completed"));
+    assert_eq!(activity.items[0].payload["delta"], "late output");
+}
+
+#[test]
 fn activity_preserves_turn_failure_error_payload() {
     let events = vec![
         event(1, EventType::TURN_STARTED, json!({})),
@@ -400,6 +430,92 @@ fn transcript_projection_marks_latest_assistant_row_completed_on_turn_completed(
 
     assert_eq!(transcript.rows[0].status, "completed");
     assert_eq!(transcript.rows[0].revision, 2);
+}
+
+#[test]
+fn transcript_projects_turn_summaries_from_runtime_lifecycle() {
+    let events = vec![
+        event_at(
+            1,
+            1,
+            EventType::USER_MESSAGE_ACCEPTED,
+            json!({ "content": "hello" }),
+        ),
+        event_at(
+            2,
+            3,
+            EventType::TURN_STARTED,
+            json!({ "turn_id": "turn_1" }),
+        ),
+    ];
+
+    let transcript = project_transcript(&events);
+
+    assert_eq!(transcript.turns.len(), 1);
+    assert_eq!(transcript.turns[0].turn_id.as_str(), "turn_1");
+    assert_eq!(transcript.turns[0].status, "running");
+    assert_eq!(
+        transcript.turns[0].started_at,
+        Utc.with_ymd_and_hms(2026, 6, 18, 10, 0, 3).unwrap()
+    );
+    assert_eq!(transcript.turns[0].completed_at, None);
+    assert_eq!(
+        transcript.turns[0].first_row_id.as_deref(),
+        Some(transcript.rows[0].row_id.as_str())
+    );
+    assert_eq!(
+        transcript.turns[0].last_row_id.as_deref(),
+        Some(transcript.rows[0].row_id.as_str())
+    );
+}
+
+#[test]
+fn transcript_window_includes_summaries_for_visible_turn_rows() {
+    let events = vec![
+        event_at(
+            1,
+            1,
+            EventType::USER_MESSAGE_ACCEPTED,
+            json!({ "content": "one" }),
+        ),
+        event_at(
+            2,
+            2,
+            EventType::TURN_STARTED,
+            json!({ "turn_id": "turn_1" }),
+        ),
+        event_at(
+            3,
+            4,
+            EventType::ASSISTANT_MESSAGE_DELTA,
+            json!({ "turn_id": "turn_1", "message_id": "msg_1", "delta": "done" }),
+        ),
+        event_at(
+            4,
+            6,
+            EventType::TURN_COMPLETED,
+            json!({ "turn_id": "turn_1" }),
+        ),
+    ];
+
+    let window = project_transcript_window(
+        &events,
+        TranscriptWindowQuery {
+            limit: 1,
+            ..Default::default()
+        },
+    )
+    .expect("window");
+
+    assert_eq!(window.rows.len(), 1);
+    assert_eq!(window.rows[0].role.as_str(), "assistant");
+    assert_eq!(window.turns.len(), 1);
+    assert_eq!(window.turns[0].turn_id.as_str(), "turn_1");
+    assert_eq!(window.turns[0].status, "completed");
+    assert_eq!(
+        window.turns[0].completed_at,
+        Some(Utc.with_ymd_and_hms(2026, 6, 18, 10, 0, 6).unwrap())
+    );
 }
 
 #[test]
