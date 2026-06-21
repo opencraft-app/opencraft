@@ -16,6 +16,8 @@ const retryRealnameSync = vi.fn();
 
 let currentUser: User;
 let realnamePhoneVerificationEnabled = false;
+let sessionAuthReady = true;
+let sessionIsAuthenticated = true;
 const ACCOUNT_SAFETY_PHONE_VISIBILITY_STORAGE_KEY = "lw-account-safety-phone-visible";
 
 const createMemoryStorage = (): Storage => {
@@ -94,11 +96,11 @@ vi.mock("@/contexts/repository-context", () => ({
 vi.mock("@/contexts/session-context", () => ({
   useSession: () => ({
     session: {
-      user: currentUser,
+      user: sessionIsAuthenticated ? currentUser : null,
       currentSubscription: null,
     },
-    isAuthenticated: true,
-    authReady: true,
+    isAuthenticated: sessionIsAuthenticated,
+    authReady: sessionAuthReady,
     signInAsGuest,
     updateProfile,
     uploadAvatar,
@@ -133,6 +135,42 @@ describe("AccountPage nickname audit state", () => {
     };
     vi.stubGlobal("localStorage", createMemoryStorage());
     realnamePhoneVerificationEnabled = false;
+    sessionAuthReady = true;
+    sessionIsAuthenticated = true;
+  });
+
+  it("keeps the account chrome singular across auth states", () => {
+    sessionAuthReady = false;
+    sessionIsAuthenticated = false;
+
+    const { rerender } = render(
+      <MemoryRouter>
+        <AccountPage />
+      </MemoryRouter>,
+    );
+
+    expect(document.querySelectorAll("header")).toHaveLength(1);
+    expect(screen.getAllByText("legal footer")).toHaveLength(1);
+
+    sessionAuthReady = true;
+    rerender(
+      <MemoryRouter>
+        <AccountPage />
+      </MemoryRouter>,
+    );
+
+    expect(document.querySelectorAll("header")).toHaveLength(1);
+    expect(screen.getAllByText("legal footer")).toHaveLength(1);
+
+    sessionIsAuthenticated = true;
+    rerender(
+      <MemoryRouter>
+        <AccountPage />
+      </MemoryRouter>,
+    );
+
+    expect(document.querySelectorAll("header")).toHaveLength(1);
+    expect(screen.getAllByText("legal footer")).toHaveLength(1);
   });
 
   it("uses pure realname by default without exposing any phone concept", async () => {

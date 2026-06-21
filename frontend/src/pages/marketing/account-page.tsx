@@ -1,4 +1,3 @@
-import { LegalFooter } from "@/components/site/legal-footer";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Camera,
@@ -14,7 +13,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { useCallback, useEffect, useState, useRef, useMemo } from "react";
+import { useCallback, useEffect, useState, useRef, useMemo, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
@@ -22,10 +21,8 @@ import { useOpenClaw } from "@/contexts/openclaw-context";
 import { usePaidBillingEnabled, useRealnamePhoneVerificationEnabled } from "@/contexts/runtime-config-context";
 import { RepositoryError } from "@/repositories/http-repositories";
 import type { BundleTimeUnit, Pass, PassRenewPrice } from "@/domain/types";
-import { BrandMark } from "@/components/site/brand-mark";
-import { LanguageSwitcher } from "@/components/site/language-switcher";
 import { LoginModal } from "@/components/site/login-modal";
-import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
+import { ProductPageShell } from "@/components/site/product-chrome";
 import { useT } from "@/i18n/t";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import {
@@ -53,32 +50,6 @@ const fadeIn = {
 const staggerContainer = {
   hidden: { opacity: 0 },
   visible: { opacity: 1, transition: { staggerChildren: 0.08 } },
-};
-
-/* ─── Navbar ─── */
-
-const AccountNavbar = () => {
-  const { isAuthenticated: isLoggedIn } = useSession();
-  const t = useT();
-
-  return (
-    <header className="lw-setup-navbar">
-      <div className="mx-auto flex items-center justify-between px-6 md:px-8" style={{ maxWidth: "var(--lw-max-content)" }}>
-        <BrandMark to="/" />
-        <div className="flex items-center gap-3">
-          {/* 语言切换器：仅国际站展示 */}
-          {isGlobal && <LanguageSwitcher />}
-          <Link
-            to="/"
-            className="inline-flex items-center justify-center h-[36px] px-5 bg-[#F5F5F5] text-black/90 rounded-[100px] border border-[#E6E9EF] shadow-[0_2px_0_rgba(187,187,187,0.05)] hover:bg-black/5 transition-colors font-heading text-sm font-medium"
-          >
-            {t("返回首页")}
-          </Link>
-          {isLoggedIn && <UserAvatarMenu />}
-        </div>
-      </div>
-    </header>
-  );
 };
 
 /* ─── Info Row ─── */
@@ -2143,12 +2114,12 @@ export const AccountPage = () => {
     }
   };
 
+  let pageContent: ReactNode;
+  let pageOverlays: ReactNode = null;
+
   /* ── Unauthenticated view ── */
   if (authReady && !isAuthenticated) {
-    return (
-      <div className="landing-page lw-setup-bg relative flex min-h-screen flex-col overflow-hidden" style={{ color: "var(--lw-fg)" }}>
-        <AccountNavbar />
-
+    pageContent = (
         <main className="relative z-10 flex flex-grow items-center justify-center px-6 pb-16 pt-24 md:px-8">
           <motion.div
             initial={{ opacity: 0, y: 12 }}
@@ -2211,30 +2182,17 @@ export const AccountPage = () => {
 
           <LoginModal open={showLoginModal} onClose={() => setShowLoginModal(false)} />
         </main>
-
-        <LegalFooter />
-      </div>
     );
-  }
-
-  /* ── Loading auth ── */
-  if (!authReady) {
-    return (
-      <div className="landing-page lw-setup-bg relative flex min-h-screen flex-col overflow-hidden" style={{ color: "var(--lw-fg)" }}>
-        <AccountNavbar />
+  } else if (!authReady) {
+    /* ── Loading auth ── */
+    pageContent = (
         <main className="relative z-10 flex flex-grow items-center justify-center">
           <p className="text-sm" style={{ color: "#bbb" }}>{t("正在恢复会话...")}</p>
         </main>
-        <LegalFooter />
-      </div>
     );
-  }
-
-  /* ── Authenticated view ── */
-  return (
-    <div className="landing-page lw-setup-bg relative flex min-h-screen flex-col overflow-hidden" style={{ color: "var(--lw-fg)" }}>
-      <AccountNavbar />
-
+  } else {
+    /* ── Authenticated view ── */
+    pageContent = (
       <main className="relative z-10 flex-grow pb-8 pt-20 md:pt-24">
         <section className="mx-auto px-6 md:px-8" style={{ maxWidth: 800 }}>
           {/* Page Header */}
@@ -2435,7 +2393,7 @@ export const AccountPage = () => {
               </div>
 
               {user?.id && (
-                <div className="flex flex-col gap-12 px-8 py-8" style={{ borderBottom: (showEmailBindSection || showRealnameSection) ? "1px solid #E6E9EF" : undefined }}>
+                <div className="flex flex-col gap-12 px-8 py-8">
                   <div className="flex items-center justify-between gap-4">
                     <span className="text-sm flex-shrink-0" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>
                       {t("账号 ID")}
@@ -2634,10 +2592,9 @@ export const AccountPage = () => {
           </motion.div>
         </section>
       </main>
+    );
 
-      <LegalFooter />
-
-      {/* Modals */}
+    pageOverlays = (
       <AnimatePresence>
         {showRealnameSection && showVerifyModal && (
           <VerifyIdentityModal
@@ -2667,7 +2624,13 @@ export const AccountPage = () => {
           />
         )}
       </AnimatePresence>
-    </div>
+    );
+  }
+
+  return (
+    <ProductPageShell afterFooter={pageOverlays}>
+      {pageContent}
+    </ProductPageShell>
   );
 };
 

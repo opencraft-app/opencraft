@@ -7,7 +7,6 @@
 // 语言由 @/lib/region 的 isGlobal + localStorage('lw-locale') 决定。
 import "@/lib/i18n-env";
 
-import { LegalFooter } from "@/components/site/legal-footer";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight,
@@ -45,15 +44,13 @@ import {
 import { QRCodeSVG } from "qrcode.react";
 import { useState, useEffect, useCallback, useRef, useMemo, type ChangeEvent } from "react";
 import { createPortal } from "react-dom";
-import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
-import { BrandMark } from "@/components/site/brand-mark";
-import { LanguageSwitcher } from "@/components/site/language-switcher";
-import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
+import { ProductFooter, ProductReturnHomeHeader } from "@/components/site/product-chrome";
 import { useOpenClaw, type OpenClawBot } from "@/contexts/openclaw-context";
 import { useRepositories } from "@/contexts/repository-context";
 import type { TencentPtyClient, TencentPtyConnectionState } from "@/lib/tencent-pty-client";
@@ -355,33 +352,6 @@ const _staggerContainer = {
 void _staggerContainer;
 
 /* ─── Navbar ─── */
-
-const SettingsNavbar = () => {
-  const { isAuthenticated: isLoggedIn } = useSession();
-  const t = useT();
-  return (
-    <header
-      className="lw-fixed-top fixed inset-x-0 z-50 border-b border-black/5 bg-white/90 backdrop-blur-[20px]"
-    >
-      <div className="lw-settings-shell flex h-[60px] items-center justify-between">
-        <BrandMark to="/" />
-        <div className="flex items-center gap-3">
-          {/* 语言切换器：仅国际站展示。
-              settings 页内嵌 @tencent/tea-sdk-lightclaw（基于 tea-app i18n），
-              tea-app i18n 是 init-once 设计，切换语言后刷新页面才能让 SDK 区域同步。 */}
-          {isGlobal && <LanguageSwitcher reloadAfterSwitch />}
-          <Link
-            to="/"
-            className="inline-flex h-[36px] items-center justify-center rounded-[100px] border border-[#E6E9EF] bg-[#F5F5F5] px-5 font-heading text-sm font-medium text-black/90 shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-colors hover:bg-black/5"
-          >
-            {t("返回首页")}
-          </Link>
-          {isLoggedIn && <UserAvatarMenu />}
-        </div>
-      </div>
-    </header>
-  );
-};
 
 const SHOW_AGENTCHAT_ENTRY = true;
 const DEFAULT_AGENT_SECTION: AgentSectionId = "channel";
@@ -4099,7 +4069,7 @@ export const OpenClawSettingsPage = () => {
 
   return (
     <div className="flex min-h-screen flex-col bg-white" style={{ color: "rgba(0,0,0,0.90)" }}>
-      <SettingsNavbar />
+      <ProductReturnHomeHeader reloadLanguageAfterSwitch />
 
       {/* Delete Confirm Dialog */}
       {showDeleteConfirm && activeBot && createPortal(
@@ -4836,7 +4806,7 @@ export const OpenClawSettingsPage = () => {
         </section>
       </main>
 
-      <LegalFooter icpPlacement="right" />
+      <ProductFooter />
     </div>
   );
 };
