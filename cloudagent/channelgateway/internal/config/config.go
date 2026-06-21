@@ -12,6 +12,7 @@ import (
 type Config struct {
 	DBPath               string
 	DBDriver             string
+	EventBus             EventBusConfig
 	ACPURL               string
 	RuntimeProtocol      string
 	ACPAuthorization     string
@@ -29,42 +30,63 @@ type Config struct {
 }
 
 type WeComConfig struct {
-	Enabled          bool
-	AccountID        string
-	BotID            string
-	Secret           string
-	WebSocketURL     string
-	AgentID          string
-	TenantID         string
-	ProjectID        string
-	DMPolicy         string
-	GroupPolicy      string
-	HandlerWorkers   int
-	HandlerQueueSize int
+	Enabled      bool
+	AccountID    string
+	BotID        string
+	Secret       string
+	WebSocketURL string
+	AgentID      string
+	TenantID     string
+	ProjectID    string
+	DMPolicy     string
+	GroupPolicy  string
+}
+
+type EventBusConfig struct {
+	Driver             string
+	RedisAddr          string
+	RedisPassword      string
+	RedisDB            int
+	RedisStreamPrefix  string
+	RedisConsumerGroup string
+	RedisClaimIdle     time.Duration
+	RedisReadBlock     time.Duration
+	PollInterval       time.Duration
+	InboundWorkerCount int
 }
 
 func LoadFromEnv() Config {
 	wecom := WeComConfig{
-		Enabled:          envBool("CHANNELGATEWAY_WECOM_ENABLED", false),
-		AccountID:        env("CHANNELGATEWAY_WECOM_ACCOUNT_ID", "wecom-default"),
-		BotID:            env("WECOM_BOT_ID", ""),
-		Secret:           env("WECOM_SECRET", ""),
-		WebSocketURL:     envAny([]string{"WECOM_WEBSOCKET_URL", "CODEBUDDY_WECOM_BOT_WS_URL"}, "wss://openws.work.weixin.qq.com"),
-		AgentID:          env("CHANNELGATEWAY_AGENT_ID", "agent_default"),
-		TenantID:         env("CHANNELGATEWAY_TENANT_ID", "default"),
-		ProjectID:        env("CHANNELGATEWAY_PROJECT_ID", "default"),
-		DMPolicy:         env("CHANNELGATEWAY_WECOM_DM_POLICY", "open"),
-		GroupPolicy:      env("CHANNELGATEWAY_WECOM_GROUP_POLICY", "open"),
-		HandlerWorkers:   envInt("CHANNELGATEWAY_WECOM_HANDLER_WORKERS", 4),
-		HandlerQueueSize: envInt("CHANNELGATEWAY_WECOM_HANDLER_QUEUE_SIZE", 128),
+		Enabled:      envBool("CHANNELGATEWAY_WECOM_ENABLED", false),
+		AccountID:    env("CHANNELGATEWAY_WECOM_ACCOUNT_ID", "wecom-default"),
+		BotID:        env("WECOM_BOT_ID", ""),
+		Secret:       env("WECOM_SECRET", ""),
+		WebSocketURL: envAny([]string{"WECOM_WEBSOCKET_URL", "CODEBUDDY_WECOM_BOT_WS_URL"}, "wss://openws.work.weixin.qq.com"),
+		AgentID:      env("CHANNELGATEWAY_AGENT_ID", "agent_default"),
+		TenantID:     env("CHANNELGATEWAY_TENANT_ID", "default"),
+		ProjectID:    env("CHANNELGATEWAY_PROJECT_ID", "default"),
+		DMPolicy:     env("CHANNELGATEWAY_WECOM_DM_POLICY", "open"),
+		GroupPolicy:  env("CHANNELGATEWAY_WECOM_GROUP_POLICY", "open"),
 	}
 	accounts, parseErrs := parseWeComAccountsJSON(os.Getenv("CHANNELGATEWAY_WECOM_ACCOUNTS_JSON"), wecom)
 	if len(accounts) == 0 && wecom.Enabled {
 		accounts = []WeComConfig{wecom}
 	}
 	return Config{
-		DBPath:               env("CHANNELGATEWAY_DB_PATH", "channelgateway.db"),
-		DBDriver:             env("CHANNELGATEWAY_DB_DRIVER", ""),
+		DBPath:   env("CHANNELGATEWAY_DB_PATH", "channelgateway.db"),
+		DBDriver: env("CHANNELGATEWAY_DB_DRIVER", ""),
+		EventBus: EventBusConfig{
+			Driver:             strings.ToLower(env("CHANNELGATEWAY_EVENT_BUS_DRIVER", "")),
+			RedisAddr:          env("CHANNELGATEWAY_REDIS_ADDR", ""),
+			RedisPassword:      env("CHANNELGATEWAY_REDIS_PASSWORD", ""),
+			RedisDB:            envInt("CHANNELGATEWAY_REDIS_DB", 0),
+			RedisStreamPrefix:  env("CHANNELGATEWAY_REDIS_STREAM_PREFIX", "channelgateway"),
+			RedisConsumerGroup: env("CHANNELGATEWAY_REDIS_CONSUMER_GROUP", "channelgateway"),
+			RedisClaimIdle:     envDuration("CHANNELGATEWAY_REDIS_CLAIM_IDLE", 30*time.Second),
+			RedisReadBlock:     envDuration("CHANNELGATEWAY_REDIS_READ_BLOCK", 2*time.Second),
+			PollInterval:       envDuration("CHANNELGATEWAY_EVENT_BUS_POLL_INTERVAL", time.Second),
+			InboundWorkerCount: envInt("CHANNELGATEWAY_EVENT_BUS_INBOUND_WORKERS", 4),
+		},
 		ACPURL:               env("CHANNELGATEWAY_ACP_URL", "ws://127.0.0.1:18094/acp"),
 		RuntimeProtocol:      strings.ToLower(env("CHANNELGATEWAY_RUNTIME_PROTOCOL", "acp")),
 		ACPAuthorization:     env("CHANNELGATEWAY_ACP_AUTHORIZATION", ""),
@@ -106,18 +128,16 @@ func (c Config) EnabledWeComAccounts() []WeComConfig {
 }
 
 type weComAccountJSON struct {
-	Enabled          *bool  `json:"enabled"`
-	AccountID        string `json:"account_id"`
-	BotID            string `json:"bot_id"`
-	Secret           string `json:"secret"`
-	WebSocketURL     string `json:"websocket_url"`
-	AgentID          string `json:"agent_id"`
-	TenantID         string `json:"tenant_id"`
-	ProjectID        string `json:"project_id"`
-	DMPolicy         string `json:"dm_policy"`
-	GroupPolicy      string `json:"group_policy"`
-	HandlerWorkers   int    `json:"handler_workers"`
-	HandlerQueueSize int    `json:"handler_queue_size"`
+	Enabled      *bool  `json:"enabled"`
+	AccountID    string `json:"account_id"`
+	BotID        string `json:"bot_id"`
+	Secret       string `json:"secret"`
+	WebSocketURL string `json:"websocket_url"`
+	AgentID      string `json:"agent_id"`
+	TenantID     string `json:"tenant_id"`
+	ProjectID    string `json:"project_id"`
+	DMPolicy     string `json:"dm_policy"`
+	GroupPolicy  string `json:"group_policy"`
 }
 
 func parseWeComAccountsJSON(raw string, defaults WeComConfig) ([]WeComConfig, []string) {
@@ -164,12 +184,6 @@ func parseWeComAccountsJSON(raw string, defaults WeComConfig) ([]WeComConfig, []
 		}
 		if strings.TrimSpace(item.GroupPolicy) != "" {
 			account.GroupPolicy = strings.TrimSpace(item.GroupPolicy)
-		}
-		if item.HandlerWorkers > 0 {
-			account.HandlerWorkers = item.HandlerWorkers
-		}
-		if item.HandlerQueueSize > 0 {
-			account.HandlerQueueSize = item.HandlerQueueSize
 		}
 		if strings.TrimSpace(account.AccountID) == "" {
 			errs = append(errs, fmt.Sprintf("CHANNELGATEWAY_WECOM_ACCOUNTS_JSON[%d].account_id is required", i))

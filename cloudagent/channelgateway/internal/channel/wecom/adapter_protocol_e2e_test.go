@@ -3,8 +3,10 @@ package wecom
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -213,27 +215,29 @@ func TestAdapterPolicyCanDenyGroupMessages(t *testing.T) {
 	_ = <-startErr
 }
 
-func TestAdapterInboundQueueIsBounded(t *testing.T) {
+func TestAdapterDispatchBlocksReadLoopAtHandler(t *testing.T) {
 	ready := make(chan struct{})
+	handledFirst := make(chan struct{})
 	releaseHandler := make(chan struct{})
 	done := make(chan struct{})
 	server := newWeComProtocolServer(t, func(t *testing.T, conn *websocket.Conn) {
 		expectSubscribe(t, conn)
 		close(ready)
-		for i := 0; i < 8; i++ {
+		for i := 0; i < 2; i++ {
 			writeWeComJSON(t, conn, map[string]any{
 				"cmd":     "aibot_msg_callback",
-				"headers": map[string]any{"req_id": "callback-queue-" + string(rune('0'+i))},
+				"headers": map[string]any{"req_id": "callback-sync-" + string(rune('0'+i))},
 				"body": map[string]any{
-					"msgid":   "msg-queue-" + string(rune('0'+i)),
-					"chatid":  "chat-queue",
+					"msgid":   "msg-sync-" + string(rune('0'+i)),
+					"chatid":  "chat-sync",
 					"msgtype": "text",
-					"from":    map[string]any{"userid": "user-queue"},
-					"text":    map[string]any{"content": "queued"},
+					"from":    map[string]any{"userid": "user-sync"},
+					"text":    map[string]any{"content": "sync"},
 				},
 			})
 		}
-		time.Sleep(150 * time.Millisecond)
+		waitClosed(t, handledFirst, "first sync dispatch")
+		time.Sleep(100 * time.Millisecond)
 		close(done)
 		<-releaseHandler
 	})
@@ -243,29 +247,73 @@ func TestAdapterInboundQueueIsBounded(t *testing.T) {
 	defer cancel()
 	var handled atomic.Int64
 	adapter := NewAdapter(Config{
-		AccountID:        "account-a",
-		BotID:            "bot",
-		Secret:           "secret",
-		WebSocketURL:     "ws" + server.URL[len("http"):],
-		HandlerWorkers:   1,
-		HandlerQueueSize: 1,
+		AccountID:    "account-a",
+		BotID:        "bot",
+		Secret:       "secret",
+		WebSocketURL: "ws" + server.URL[len("http"):],
 	})
 	startErr := make(chan error, 1)
 	go func() {
 		startErr <- adapter.Start(ctx, handlerFunc(func(context.Context, channel.Message) error {
-			handled.Add(1)
-			<-releaseHandler
+			if handled.Add(1) == 1 {
+				close(handledFirst)
+				<-releaseHandler
+			}
 			return nil
 		}))
 	}()
 	waitClosed(t, ready, "subscribe")
-	waitClosed(t, done, "queue fill")
-	if got := handled.Load(); got > 2 {
-		t.Fatalf("bounded queue should not dispatch all burst messages while worker is blocked, got %d", got)
+	waitClosed(t, done, "sync blocked")
+	if got := handled.Load(); got != 1 {
+		t.Fatalf("sync dispatch should block the read loop at first handler call, got %d handled", got)
 	}
 	close(releaseHandler)
 	cancel()
 	_ = <-startErr
+}
+
+func TestAdapterSyncDispatchErrorStopsAdapter(t *testing.T) {
+	ready := make(chan struct{})
+	server := newWeComProtocolServer(t, func(t *testing.T, conn *websocket.Conn) {
+		expectSubscribe(t, conn)
+		close(ready)
+		writeWeComJSON(t, conn, map[string]any{
+			"cmd":     "aibot_msg_callback",
+			"headers": map[string]any{"req_id": "callback-sync-error"},
+			"body": map[string]any{
+				"msgid":   "msg-sync-error",
+				"chatid":  "chat-sync-error",
+				"msgtype": "text",
+				"from":    map[string]any{"userid": "user-sync-error"},
+				"text":    map[string]any{"content": "sync"},
+			},
+		})
+	})
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	adapter := NewAdapter(Config{
+		AccountID:    "account-a",
+		BotID:        "bot",
+		Secret:       "secret",
+		WebSocketURL: "ws" + server.URL[len("http"):],
+	})
+	startErr := make(chan error, 1)
+	go func() {
+		startErr <- adapter.Start(ctx, handlerFunc(func(context.Context, channel.Message) error {
+			return errors.New("publish failed")
+		}))
+	}()
+	waitClosed(t, ready, "subscribe")
+	select {
+	case err := <-startErr:
+		if err == nil || !strings.Contains(err.Error(), "publish failed") {
+			t.Fatalf("expected sync dispatch error, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("adapter should stop after sync dispatch failure")
+	}
 }
 
 func newWeComProtocolServer(t *testing.T, fn func(*testing.T, *websocket.Conn)) *httptest.Server {
