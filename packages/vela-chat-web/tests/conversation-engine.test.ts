@@ -264,10 +264,8 @@ test("conversation scroll follow signal ignores agent work and turn meta churn",
           id: "a1",
           key: "assistant:a1",
           blocks: [{ id: "a1:block:0", text: "我先看。" }],
-          copyText: "我先看。",
           createdAt: "2026-06-18T00:00:02Z",
           streaming: true,
-          showCopyAction: false,
           sourceTurnId: "turn_1",
         },
       ],
@@ -321,10 +319,8 @@ test("conversation scroll follow signal ignores agent work and turn meta churn",
           id: "a1",
           key: "assistant:a1",
           blocks: [{ id: "a1:block:0", text: "我先看。" }],
-          copyText: "我先看。",
           createdAt: "2026-06-18T00:00:02Z",
           streaming: true,
-          showCopyAction: false,
           sourceTurnId: "turn_1",
         },
       ],
@@ -378,10 +374,8 @@ test("conversation scroll follow signal ignores agent work and turn meta churn",
           id: "a1",
           key: "assistant:a1",
           blocks: [{ id: "a1:block:0", text: "我先看。项目是" }],
-          copyText: "我先看。项目是",
           createdAt: "2026-06-18T00:00:02Z",
           streaming: true,
-          showCopyAction: false,
           sourceTurnId: "turn_1",
         },
       ],
@@ -545,7 +539,7 @@ test("conversation runtime keeps assistant markdown heights independent from tur
   assert.equal(estimateStreamItemHeight(second, { width: 640 }), 212);
 });
 
-test("conversation runtime scopes assistant markdown heights by copy footer visibility", () => {
+test("conversation runtime keeps assistant markdown heights independent from copy controls", () => {
   clearStreamItemHeightEstimateCache();
   const baseItem = {
     id: "assistant_without_copy",
@@ -563,24 +557,21 @@ test("conversation runtime scopes assistant markdown heights by copy footer visi
       blocks: [{ id: "a1:block:0", text: "same paragraph" }],
       createdAt: "2026-06-18T00:00:00Z",
       streaming: false,
-      copyText: "same paragraph",
-      showCopyAction: false,
     },
   } as const;
-  const itemWithCopy = {
+  const equivalentItem = {
     ...baseItem,
-    id: "assistant_with_copy",
-    key: "assistant_with_copy",
+    id: "assistant_equivalent",
+    key: "assistant_equivalent",
     block: {
       ...baseItem.block,
       id: "a2",
       key: "assistant:a2",
-      showCopyAction: true,
     },
   } as const;
 
   assert.equal(recordMeasuredStreamItemHeight(baseItem, 211.4, { width: 640 }), 212);
-  assert.equal(estimateStreamItemHeight(itemWithCopy, { width: 640 }), 120);
+  assert.equal(estimateStreamItemHeight(equivalentItem, { width: 640 }), 212);
 });
 
 test("conversation runtime caps live head so long running turns can still virtualize older live work", () => {
@@ -650,7 +641,7 @@ test("conversation stream items split assistant markdown blocks inside one long 
   );
 });
 
-test("assistant markdown split items keep one full-turn copy action on the tail", () => {
+test("assistant markdown split items do not expose leaf copy actions", () => {
   const model: ChatRenderModel = {
     session_id: "sess_assistant_copy",
     host: { kind: "desktop_web" },
@@ -678,12 +669,8 @@ test("assistant markdown split items keep one full-turn copy action on the tail"
   const assistantBlocks = items.map((item) => item.block).filter((block) => block.kind === "assistant_markdown");
 
   assert.deepEqual(
-    assistantBlocks.map((block) => block.showCopyAction),
-    [false, false, true],
-  );
-  assert.equal(
-    assistantBlocks[2]?.copyText,
-    "first paragraph\n\nsecond paragraph\n\nthird paragraph",
+    assistantBlocks.map((block) => "showCopyAction" in block || "copyText" in block),
+    [false, false, false],
   );
 });
 
@@ -715,7 +702,6 @@ test("streaming assistant rows stay live and expose a changing fingerprint", () 
   assert.equal(webModel.turns[0]?.blocks[0]?.kind, "assistant_markdown");
   if (webModel.turns[0]?.blocks[0]?.kind === "assistant_markdown") {
     assert.equal(webModel.turns[0].blocks[0].streaming, true);
-    assert.equal(webModel.turns[0].blocks[0].showCopyAction, false);
   }
 });
 
@@ -754,12 +740,6 @@ test("streaming assistant markdown split items keep only the tail block live", (
       item.block.kind === "assistant_markdown" ? item.block.streaming : null,
     ),
     [false, false, true],
-  );
-  assert.deepEqual(
-    items.map((item) =>
-      item.block.kind === "assistant_markdown" ? item.block.showCopyAction : null,
-    ),
-    [false, false, false],
   );
 });
 
@@ -859,7 +839,7 @@ test("assistant markdown split item fingerprints ignore turn metadata labels", (
   assert.equal(firstItems[2]?.fingerprint, secondItems[2]?.fingerprint);
 });
 
-test("assistant markdown tail fingerprint includes full-turn copy text", () => {
+test("assistant markdown tail fingerprint ignores earlier split block text", () => {
   const firstSnapshot: ChatRenderModel = {
     session_id: "sess_split_copy",
     host: { kind: "desktop_web" },
@@ -897,11 +877,8 @@ test("assistant markdown tail fingerprint includes full-turn copy text", () => {
   const firstItems = buildConversationStreamItems(toWebChatModel(firstSnapshot).turns);
   const secondItems = buildConversationStreamItems(toWebChatModel(secondSnapshot).turns);
 
-  assert.notEqual(firstItems[1]?.fingerprint, secondItems[1]?.fingerprint);
+  assert.equal(firstItems[1]?.fingerprint, secondItems[1]?.fingerprint);
   assert.equal(secondItems[1]?.block.kind, "assistant_markdown");
-  if (secondItems[1]?.block.kind === "assistant_markdown") {
-    assert.equal(secondItems[1].block.copyText, "changed intro\n\nstable tail");
-  }
 });
 
 test("web adapter keeps unchanged block items stable across fresh render model snapshots", () => {

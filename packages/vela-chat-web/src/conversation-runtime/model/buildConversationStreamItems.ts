@@ -52,13 +52,12 @@ function blockToItems(turn: WebTurn, block: WebBlock): ConversationStreamItem[] 
         key: `${block.key}:${markdownBlock.id}`,
         blocks: [markdownBlock],
         streaming: block.streaming && isTailBlock,
-        showCopyAction: block.showCopyAction && isTailBlock,
       };
       return itemFromBlock(turn, splitBlock, {
         id: `${turn.id}:${markdownBlock.id}`,
         key: `${turn.key}:${markdownBlock.id}`,
         continuation: index > 0,
-        fingerprint: `md:${markdownBlock.id}:streaming:${splitBlock.streaming}:copy:${splitBlock.showCopyAction ? hashString(splitBlock.copyText) : "hidden"}:${hashString(markdownBlock.text)}`,
+        fingerprint: `md:${markdownBlock.id}:streaming:${splitBlock.streaming}:text:${hashString(markdownBlock.text)}`,
       });
     });
   }
@@ -138,7 +137,7 @@ function blockFingerprint(block: WebBlock): string {
     const blockHash = hashString(
       block.blocks.map((markdownBlock) => `${markdownBlock.id}:${markdownBlock.text}`).join("\n---block---\n"),
     );
-    return `${block.key}:created:${hashString(block.createdAt)}:streaming:${block.streaming}:copy:${block.showCopyAction}:len:${textLength}:hash:${blockHash}`;
+    return `${block.key}:created:${hashString(block.createdAt)}:streaming:${block.streaming}:len:${textLength}:hash:${blockHash}`;
   }
   if (block.kind === "turn_meta") {
     return `${block.key}:created:${hashString(block.createdAt)}:updated:${hashString(block.updatedAt ?? "")}:completed:${hashString(block.completedAt ?? "")}:status:${block.status}:label:${hashString(block.label)}`;

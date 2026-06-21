@@ -258,15 +258,15 @@ test("user message renderer uses a semantic copy control instead of a placeholde
   assert.match(source, /navigator\.clipboard\.writeText/);
 });
 
-test("assistant markdown renderer exposes a semantic copy control", () => {
+test("assistant markdown renderer does not expose leaf copy controls", () => {
   const source = readFileSync(
     join(root, "packages/vela-chat-web/src/renderers/blocks/AssistantMarkdownRenderer.tsx"),
     "utf8",
   );
 
   assert.doesNotMatch(source, />□</);
-  assert.match(source, /aria-label="Copy assistant message"/);
-  assert.match(source, /navigator\.clipboard\.writeText/);
+  assert.doesNotMatch(source, /aria-label="Copy assistant message"/);
+  assert.doesNotMatch(source, /navigator\.clipboard\.writeText/);
 });
 
 test("assistant markdown disables streamdown table copy controls", () => {
@@ -402,6 +402,29 @@ test("composer height is measured instead of using fixed bottom padding", () => 
   assert.match(css, /var\(--vela-composer-height/);
   assert.doesNotMatch(css, /padding:\s*54px 28px 178px/);
   assert.doesNotMatch(css, /padding:\s*38px 20px 164px/);
+});
+
+test("composer backdrop is an independent layer between conversation content and input", () => {
+  const workbenchView = readFileSync(
+    join(root, "packages/vela-chat-web/src/components/workbench/ChatWorkbenchView.tsx"),
+    "utf8",
+  );
+  const css = readFileSync(
+    join(root, "packages/vela-chat-web/src/styles/desktop.module.css"),
+    "utf8",
+  );
+
+  assert.match(workbenchView, /styles\.composerBackdrop/);
+  assert.match(css, /\.composerBackdrop\s*\{[^}]*position:\s*fixed;/s);
+  assert.match(css, /\.composerBackdrop\s*\{[^}]*height:\s*var\(--vela-composer-height\);/s);
+  assert.match(css, /\.composerBackdrop\s*\{[^}]*background:\s*linear-gradient/s);
+  assert.match(css, /\.composerBackdrop\s*\{[^}]*rgb\(255 255 255 \/ 0\)\s*0%/s);
+  assert.match(css, /\.composerBackdrop\s*\{[^}]*var\(--vela-bg\)\s*50%/s);
+  assert.match(css, /\.composerBackdrop\s*\{[^}]*z-index:\s*19;/s);
+  assert.match(css, /\.composerDock\s*\{[^}]*z-index:\s*20;/s);
+  assert.match(css, /\.composerDock\s*\{[^}]*padding:\s*0 24px 24px;/s);
+  assert.doesNotMatch(css, /\.composerDock\s*\{[^}]*background:/s);
+  assert.doesNotMatch(css, /\.composerDock\s*\{[^}]*height:\s*calc\(var\(--vela-composer-height\)/s);
 });
 
 test("chat debug snapshot includes conversation scroll runtime state", () => {

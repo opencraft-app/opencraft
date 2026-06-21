@@ -95,7 +95,7 @@ function assistantMarkdownHeightCacheKey(
   if (item.block.kind !== "assistant_markdown") return null;
   const markdown = item.block.blocks.map((block) => block.text).join("\n---block---\n");
   if (!markdown) return null;
-  return `assistant:${streamItemWidthKey(options.width)}:streaming:${item.block.streaming}:copy:${item.block.showCopyAction}:${hashString(markdown)}`;
+  return `assistant:${streamItemWidthKey(options.width)}:streaming:${item.block.streaming}:text:${hashString(markdown)}`;
 }
 
 function touchHeightCache(cache: Map<string, number>, key: string, height: number) {

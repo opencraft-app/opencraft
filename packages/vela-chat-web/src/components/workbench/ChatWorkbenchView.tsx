@@ -94,6 +94,7 @@ export function ChatWorkbenchView({
           onRespondToRequest={onRespondToRequest}
         />
         {error ? <div className={styles.error}>{error}</div> : null}
+        <div aria-hidden="true" className={styles.composerBackdrop} />
         <VelaComposer
           canSend={webModel.composer.canSend}
           controls={composerControls}
