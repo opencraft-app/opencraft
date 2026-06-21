@@ -2,6 +2,7 @@ package wrapper
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -377,6 +378,17 @@ func (g *ACPGateway) markPromptRuntimeUnavailable(sessionID string, generation i
 	if cause != nil {
 		detail = cause.Error()
 	}
+	if isRuntimeLeaseContentionError(cause) {
+		g.mu.Lock()
+		if session, ok := g.sessions[sessionID]; ok && session.RuntimeGeneration == generation {
+			session.LastRuntimeError = detail
+			session.UpdatedAt = time.Now().UTC()
+			g.persistSession(session)
+		}
+		g.mu.Unlock()
+		fmt.Fprintf(os.Stderr, "timeline source=server event=acp_runtime_preflight_contention session_id=%s runtime_id=%s outer_sandbox_id=%s error=%s\n", sessionID, runtime.RuntimeID, runtime.OuterSandboxID, quoteServerField(detail))
+		return cause
+	}
 	g.mu.Lock()
 	if session, ok := g.sessions[sessionID]; ok && session.RuntimeGeneration == generation {
 		session.State = acpRuntimeStateClosed
@@ -397,6 +409,10 @@ func (g *ACPGateway) markPromptRuntimeUnavailable(sessionID string, generation i
 		Reason:         acpReadOnlyRuntimeNotRecovered,
 		Detail:         detail,
 	}
+}
+
+func isRuntimeLeaseContentionError(err error) bool {
+	return errors.Is(err, ErrRuntimeOwnershipHeld) || errors.Is(err, ErrWorkspaceLeaseHeld)
 }
 func runtimeNeedsCleanup(runtime ACPSessionRuntime) bool {
 	return runtime.RuntimeID != "" || runtime.OuterSandboxID != "" || runtime.InnerSandboxID != "" || runtimeCanRecreate(runtime)

@@ -778,6 +778,52 @@ func acpJSONRPCError(err error) (int, string, any) {
 	if err == nil {
 		return -32603, "internal error", nil
 	}
+	var ownershipHeld RuntimeOwnershipHeldError
+	if errors.As(err, &ownershipHeld) || errors.Is(err, ErrRuntimeOwnershipHeld) {
+		data := map[string]any{
+			"error_code": "runtime_ownership_held",
+			"retryable":  true,
+		}
+		if ownershipHeld.SessionID != "" {
+			data["session_id"] = ownershipHeld.SessionID
+		}
+		if ownershipHeld.Generation != 0 {
+			data["generation"] = ownershipHeld.Generation
+		}
+		if ownershipHeld.RunID != "" {
+			data["run_id"] = ownershipHeld.RunID
+		}
+		if ownershipHeld.OwnerID != "" {
+			data["owner_id"] = ownershipHeld.OwnerID
+		}
+		if ownershipHeld.Operation != "" {
+			data["operation"] = ownershipHeld.Operation
+		}
+		if !ownershipHeld.ExpiresAt.IsZero() {
+			data["expires_at"] = ownershipHeld.ExpiresAt.UTC().Format(time.RFC3339Nano)
+		}
+		return -32009, "runtime ownership is held", data
+	}
+	var workspaceLeaseHeld WorkspaceLeaseHeldError
+	if errors.As(err, &workspaceLeaseHeld) || errors.Is(err, ErrWorkspaceLeaseHeld) {
+		data := map[string]any{
+			"error_code": "workspace_lease_held",
+			"retryable":  true,
+		}
+		if workspaceLeaseHeld.WorkspaceID != "" {
+			data["workspace_id"] = workspaceLeaseHeld.WorkspaceID
+		}
+		if workspaceLeaseHeld.RuntimeID != "" {
+			data["runtime_id"] = workspaceLeaseHeld.RuntimeID
+		}
+		if workspaceLeaseHeld.LeaseID != "" {
+			data["lease_id"] = workspaceLeaseHeld.LeaseID
+		}
+		if !workspaceLeaseHeld.ExpiresAt.IsZero() {
+			data["expires_at"] = workspaceLeaseHeld.ExpiresAt.UTC().Format(time.RFC3339Nano)
+		}
+		return -32009, "workspace lease is held", data
+	}
 	var readOnly acpReadOnlyError
 	if errors.As(err, &readOnly) {
 		reason := firstNonEmpty(readOnly.Reason, acpReadOnlyRuntimeNotRecovered)
@@ -806,32 +852,6 @@ func acpJSONRPCError(err error) (int, string, any) {
 			data["detail"] = runtimeUnavailable.Detail
 		}
 		return -32003, "session runtime is unavailable", data
-	}
-	var ownershipHeld RuntimeOwnershipHeldError
-	if errors.As(err, &ownershipHeld) || errors.Is(err, ErrRuntimeOwnershipHeld) {
-		data := map[string]any{
-			"error_code": "runtime_ownership_held",
-			"retryable":  true,
-		}
-		if ownershipHeld.SessionID != "" {
-			data["session_id"] = ownershipHeld.SessionID
-		}
-		if ownershipHeld.Generation != 0 {
-			data["generation"] = ownershipHeld.Generation
-		}
-		if ownershipHeld.RunID != "" {
-			data["run_id"] = ownershipHeld.RunID
-		}
-		if ownershipHeld.OwnerID != "" {
-			data["owner_id"] = ownershipHeld.OwnerID
-		}
-		if ownershipHeld.Operation != "" {
-			data["operation"] = ownershipHeld.Operation
-		}
-		if !ownershipHeld.ExpiresAt.IsZero() {
-			data["expires_at"] = ownershipHeld.ExpiresAt.UTC().Format(time.RFC3339Nano)
-		}
-		return -32009, "runtime ownership is held", data
 	}
 	var failure *workerFailure
 	if errors.As(err, &failure) {
