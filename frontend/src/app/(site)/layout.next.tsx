@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 
 import { LightVelaSearchDialog } from '@next-site/lightvela-search-dialog';
 import { PublicSiteAppProviders } from '@next-site/public-site-providers';
+import { SiteJsonLd } from '@next-site/seo';
 
 export default function SiteLayout({ children }: { children: ReactNode }) {
   return (
@@ -19,6 +20,7 @@ export default function SiteLayout({ children }: { children: ReactNode }) {
           Public pages still stream as static children, while the header auth island
           can hydrate without resetting on every client-side route transition. */}
       <PublicSiteAppProviders>{children}</PublicSiteAppProviders>
+      <SiteJsonLd />
     </RootProvider>
   );
 }
