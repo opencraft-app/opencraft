@@ -429,8 +429,11 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertNotIn('"$PNPM_BIN" install --frozen-lockfile', template_text)
 
         command_text = (REPO_ROOT / ".ci/runtime/commands/release_frontend_edgeone_artifact.sh").read_text()
-        self.assertIn("eo:cn-lightvela-prod-next|eo:cn-lightvela-prod-legacy", command_text)
-        self.assertIn("eo:global-lightvela-intl-prod-next|eo:global-lightvela-intl-prod-legacy", command_text)
+        self.assertIn("eo:cn-lightvela-prod-next)", command_text)
+        self.assertIn("eo:global-lightvela-intl-prod-next)", command_text)
+        self.assertNotIn("prod-legacy)", command_text)
+        self.assertNotIn("|eo:cn-lightvela-prod-legacy", command_text)
+        self.assertNotIn("|eo:global-lightvela-intl-prod-legacy", command_text)
         self.assertIn("/etc/lightclaw-ci/edgeone_lightvela_prod_token", command_text)
         self.assertIn("/etc/lightclaw-ci/edgeone_lightvela_intl_prod_token", command_text)
         self.assertIn("ci_load_edgeone_credentials", command_text)

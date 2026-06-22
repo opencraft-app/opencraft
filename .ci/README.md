@@ -546,7 +546,7 @@ Guard 自举策略：
 前端 Pages / EdgeOne / GitOps 镜像构建发布：
 
 - `.ci/frontend.yml`
-  - 默认先构建并归档 frontend Pages artifact 矩阵：`eo:cn-lightvela-prod-next`、`eo:global-lightvela-intl-prod-next`
+  - 默认先构建并归档 frontend Pages artifact 矩阵：`cf:cn-lightvela-staging`、`cf:global-lightvela-intl-staging`、`eo:cn-lightvela-prod-next`、`eo:global-lightvela-intl-prod-next`
   - Cloudflare 预发发布步骤默认跳过；手动显式传入 `cf:*` 矩阵时，从 TCR 拉取已归档 artifact 校验后发布，不现场 rebuild
   - artifact 构建步骤只需要 TCR/ORAS，不加载 Cloudflare/EdgeOne 发布 token
 - `.ci/frontend-edgeone-lightvela.yml`
@@ -562,7 +562,7 @@ Guard 自举策略：
 - `frontend/scripts/release-cloudflare-from-artifact.mjs`
   - CF 预发发布入口：拉取 artifact，校验 repo/tag/source/combo/baked env/content 后，用解压目录发布 Cloudflare Pages
 - `frontend/scripts/release-edgeone-from-artifact.mjs`
-  - EO 正式发布入口：拉取 artifact，校验 repo/tag/source/combo/baked env/content 后，用解压目录发布 EdgeOne
+  - EO 正式发布入口：只允许国内/国际两个 `*-prod-next` combo；拉取 artifact，校验 repo/tag/source/combo/baked env/content/Next entry 后，用解压目录发布 EdgeOne
 
 ### bootstrap
 
@@ -990,7 +990,8 @@ EdgeOne 正式发布 CI 不再现场构建源码，只发布 `构建 frontend` �
   - 传完整 OCI artifact ref，例如 `lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend-pages:<shortSha>-eo-cn-lightvela-prod-next`
   - 如果同时传 `FRONTEND_ARTIFACT_SOURCE_SHA`，两者必须解析到同一个 repo、short SHA 和目标 combo
 - 目标 combo 固定在对应 CI 文件的 `FRONTEND_RELEASE_MATRIX`，不能跨 combo 发布。
-- 发布前会校验 manifest 中的 `comboId`、`projectName`、`channel`、`region`、`outputDir`、Aegis/Vite baked env、archive sha/size 与解压内容 identity。
+- 目标 combo 只能是 `eo:cn-lightvela-prod-next` 或 `eo:global-lightvela-intl-prod-next`；legacy combo 仍可保留在矩阵中作为回滚 artifact 定义，但不能走正式发布入口。
+- 发布前会校验 manifest 中的 `comboId`、`projectName`、`channel`、`region`、`outputDir`、Aegis/Vite baked env、Next entry、archive sha/size 与解压内容 identity。
 
 ## Shared Scripts
 

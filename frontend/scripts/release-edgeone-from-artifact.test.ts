@@ -42,7 +42,8 @@ function makeCnManifest(overrides: Record<string, unknown> = {}) {
       VITE_AEGIS_HOST_URL: "https://rumt-zh.com",
     },
     assets: {
-      entryJs: "/assets/index-test.js",
+      entryKind: "next",
+      entryJs: "/_next/static/chunks/main-app-test.js",
       entryJsSha256: "c".repeat(64),
     },
     archive: {
@@ -88,6 +89,18 @@ describe("EdgeOne release from frontend artifact", () => {
       verifyArtifact: () => ({ manifest: makeCnManifest(), ref: cnRef, extractDir: "/tmp/dist" }),
       deployScript: () => {},
     })).toThrow("exactly one EdgeOne combo");
+  });
+
+  it("rejects legacy EdgeOne combos", () => {
+    expect(() => executeEdgeOneArtifactRelease({
+      env: {
+        ...baseEnv,
+        FRONTEND_RELEASE_MATRIX: "eo:cn-lightvela-prod-legacy",
+      },
+      log: () => {},
+      verifyArtifact: () => ({ manifest: makeCnManifest(), ref: cnRef, extractDir: "/tmp/dist" }),
+      deployScript: () => {},
+    })).toThrow("EdgeOne Next artifact combo");
   });
 
   it("requires a source SHA or full artifact ref", () => {
@@ -142,6 +155,29 @@ describe("EdgeOne release from frontend artifact", () => {
       verifyArtifact: ({ ref }) => ({ manifest: makeCnManifest(overrides), ref, extractDir: "/tmp/dist" }),
       deployScript: () => calls.push("deploy"),
     })).toThrow(message);
+
+    expect(calls).toEqual([]);
+  });
+
+  it("rejects Vite artifacts even when the target combo matches", () => {
+    const calls: string[] = [];
+
+    expect(() => executeEdgeOneArtifactRelease({
+      env: baseEnv,
+      log: () => {},
+      verifyArtifact: ({ ref }) => ({
+        manifest: makeCnManifest({
+          assets: {
+            entryKind: "vite",
+            entryJs: "/assets/index-test.js",
+            entryJsSha256: "c".repeat(64),
+          },
+        }),
+        ref,
+        extractDir: "/tmp/dist",
+      }),
+      deployScript: () => calls.push("deploy"),
+    })).toThrow("requires a Next artifact");
 
     expect(calls).toEqual([]);
   });
