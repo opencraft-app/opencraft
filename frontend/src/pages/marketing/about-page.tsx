@@ -555,15 +555,17 @@ function HighlightSection() {
 
 type AboutPageProps = {
   authControls?: ReactNode;
+  currentPath?: string;
   publicLocale?: PublicSiteLocale;
   publicLocalized?: boolean;
-  renderLanguageSwitcher?: (options: { reloadAfterSwitch: boolean; variant: LanguageSwitcherVariant }) => ReactNode;
+  renderLanguageSwitcher?: (options: { activeLocale: PublicSiteLocale; reloadAfterSwitch: boolean; variant: LanguageSwitcherVariant }) => ReactNode;
   renderLink?: RenderPublicSiteHeaderLink;
   renderUserMenuLink?: RenderUserMenuLink;
 };
 
 export const AboutPage = ({
   authControls,
+  currentPath,
   publicLocale,
   publicLocalized,
   renderLanguageSwitcher,
@@ -577,6 +579,7 @@ export const AboutPage = ({
     >
       <PublicSiteHeader
         authControls={authControls}
+        currentPath={currentPath}
         currentSection="about"
         locale={publicLocale}
         localized={publicLocalized}

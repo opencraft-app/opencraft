@@ -8,6 +8,8 @@ const sourceRoot = join(frontendRoot, 'src', 'content', 'docs');
 const outputRoot = join(frontendRoot, '.fumadocs-content', 'docs');
 const publicImagesRoot = join(frontendRoot, 'public', 'docs-images');
 const routeManifestPath = join(frontendRoot, 'next-site', 'docs-route-manifest.ts');
+const buildRegion = process.env.NEXT_PUBLIC_REGION || process.env.VITE_REGION || process.env.FRONTEND_RELEASE_REGION || 'cn';
+const defaultDocsOutputPrefix = buildRegion === 'global' ? 'en-us' : 'zh-cn';
 
 const cnDocs = [
   { slug: 'overview', title: 'LightVela 是什么', file: '01-overview.md', group: '开始使用', description: '云端托管 Hermes Agent，越聊越懂的智能伙伴。' },
@@ -111,7 +113,7 @@ function allDocsForLinks() {
 
 function fileToHrefFor(outputPrefix) {
   const prefix =
-    outputPrefix && outputPrefix !== 'zh-cn'
+    outputPrefix && outputPrefix !== defaultDocsOutputPrefix
       ? `/${outputPrefix}/docs`
       : '/docs';
   const entries = allDocsForLinks().flatMap((doc) => {
@@ -198,14 +200,14 @@ function copyImages() {
 
 function writeMetaForDocSet(docSet) {
   const root = join(outputRoot, docSet.outputPrefix);
-  const isDefaultLocale = docSet.outputPrefix === 'zh-cn';
+  const isCnLocale = docSet.outputPrefix === 'zh-cn';
   ensureDir(root);
   writeFileSync(
     join(root, 'meta.json'),
     `${JSON.stringify(
       {
         title: docSet.title,
-        pages: ['overview', 'quickstart', ...(isDefaultLocale ? ['account'] : []), 'core-concepts', 'configuration', 'faq'],
+        pages: ['overview', 'quickstart', ...(isCnLocale ? ['account'] : []), 'core-concepts', 'configuration', 'faq'],
       },
       null,
       2,
@@ -221,12 +223,12 @@ function writeMetaForDocSet(docSet) {
           'index',
           'model',
           'channel-wechat',
-          ...(isDefaultLocale ? [] : ['channel-telegram', 'channel-whatsapp', 'channel-discord']),
+          ...(isCnLocale ? [] : ['channel-telegram', 'channel-whatsapp', 'channel-discord']),
           'channel-feishu',
           'channel-qq',
-          ...(isDefaultLocale ? [] : ['channel-wecom']),
+          ...(isCnLocale ? [] : ['channel-wecom']),
           'skill',
-          ...(isDefaultLocale ? [] : ['automation', 'agent-chat']),
+          ...(isCnLocale ? [] : ['automation', 'agent-chat']),
         ],
       },
       null,
@@ -239,7 +241,7 @@ function writeMetaForDocSet(docSet) {
     `${JSON.stringify(
       {
         title: docSet.referenceTitle,
-        pages: isDefaultLocale ? [] : ['using-lightvela-safely'],
+        pages: isCnLocale ? [] : ['using-lightvela-safely'],
       },
       null,
       2,

@@ -2,6 +2,8 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statS
 import { join } from 'node:path';
 
 const outRoot = join(process.cwd(), 'out');
+const buildRegion = process.env.NEXT_PUBLIC_REGION || process.env.VITE_REGION || process.env.FRONTEND_RELEASE_REGION || 'cn';
+const defaultHtmlLang = buildRegion === 'global' ? 'en-US' : 'zh-CN';
 
 function walkHtml(dir) {
   const files = [];
@@ -19,8 +21,9 @@ function walkHtml(dir) {
 function langForOutputPath(path) {
   const relative = path.slice(outRoot.length + 1).replaceAll('\\', '/');
   if (relative.startsWith('en-us/')) return 'en-US';
+  if (relative.startsWith('zh-cn/')) return 'zh-CN';
   if (relative.startsWith('zh-sg/')) return 'zh-SG';
-  return 'zh-CN';
+  return defaultHtmlLang;
 }
 
 const ignoredRouteDirs = new Set(['.edgeone', '_next']);

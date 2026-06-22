@@ -49,7 +49,6 @@ import { isGlobal } from "@/lib/region";
 import { useSession } from "@/contexts/session-context";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { useAppLocation, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
-import { markAgentChatLoadedInDocument } from "@/lib/agentchat-navigation-guard";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
 import { AUTH_SERVICE_UNAVAILABLE_MESSAGE, readStoredAuthToken } from "@/repositories/http-repositories";
 import {
@@ -109,10 +108,7 @@ import { toast } from "@/lib/toast";
 
 // AgentChat carries side-effect CSS. Keep it out of the agents shell until the chat tab is actually rendered.
 const LightVelaPanel = lazy(() =>
-  import("@tencent/agentchat-lightvela-panel").then((module) => {
-    markAgentChatLoadedInDocument();
-    return { default: module.LightVelaPanel };
-  }),
+  import("@tencent/agentchat-lightvela-panel").then((module) => ({ default: module.LightVelaPanel })),
 );
 
 type TeaSdkInstanceInfo = {

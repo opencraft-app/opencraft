@@ -356,15 +356,17 @@ function ChangelogContent() {
 
 type ChangelogPageProps = {
   authControls?: ReactNode;
+  currentPath?: string;
   publicLocale?: PublicSiteLocale;
   publicLocalized?: boolean;
-  renderLanguageSwitcher?: (options: { reloadAfterSwitch: boolean; variant: LanguageSwitcherVariant }) => ReactNode;
+  renderLanguageSwitcher?: (options: { activeLocale: PublicSiteLocale; reloadAfterSwitch: boolean; variant: LanguageSwitcherVariant }) => ReactNode;
   renderLink?: RenderPublicSiteHeaderLink;
   renderUserMenuLink?: RenderUserMenuLink;
 };
 
 export const ChangelogPage = ({
   authControls,
+  currentPath,
   publicLocale,
   publicLocalized,
   renderLanguageSwitcher,
@@ -378,6 +380,7 @@ export const ChangelogPage = ({
     >
       <PublicSiteHeader
         authControls={authControls}
+        currentPath={currentPath}
         currentSection="changelog"
         locale={publicLocale}
         localized={publicLocalized}
