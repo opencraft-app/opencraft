@@ -7,6 +7,12 @@
 
 ## 页面 / 路由
 
+### Next App Router 主路径
+
+| 路由 | 组件 | 职责 |
+|------|------|------|
+| `/subscribe`           | `next-site/SubscribePage` | 套餐选择 + 支付下单（Next 静态导出 + client auth island） |
+
 ### 营销域主路径（`MarketingAuthGuard`）
 
 | 路由 | 组件 | 职责 |
@@ -14,7 +20,6 @@
 | `/`                    | `LandingPage`          | 官网首页（品牌落地） |
 | `/changelog`           | `ChangelogPage`        | 更新日志（不需登录） |
 | `/dashboard/create`    | `CreateOpenClawPage`   | 创建 OpenClaw 向导 |
-| `/subscribe`           | `SubscribePage`        | 套餐选择 + 支付下单（50KB / 1446 行） |
 | `/dashboard/setup`     | `OpenClawSetupPage`    | OpenClaw 初始化设置 |
 | `/dashboard/success`   | `OpenClawSuccessPage`  | 创建成功落地 |
 | `/agents`              | `OpenClawSettingsPage` | Agent 控制台（默认通道页，业务核心） |
@@ -119,7 +124,7 @@
 
 ### 订阅与账户
 
-- `subscribe-page.tsx` — 套餐选择卡片 + 支付流程（50KB / 1446 行，详见 `plan.md`）
+- `next-site/subscribe-page.tsx` — 套餐选择卡片 + 支付流程（50KB / 1446 行，详见 `plan.md`）
 - `account-page.tsx` — 个人资料 / 订阅 / 权益 / 安全中心 / 实名认证入口（41KB / 1084 行）。实名状态以 `user.realnameVerified` 派生，认证弹窗 `VerifyIdentityModal` 调用 `AuthRepository.verifyRealname`；弹窗关闭**仅限右上角 X**（遮罩 / 容器点击不再关闭，避免误触）
 - `account-orders-page.tsx` — 订单列表（筛选、查看支付凭证、14KB）
 - `changelog-page.tsx` — 更新日志（数据驱动列表 + Figma 配图卡片）。文案与配图按 `isGlobal` 分叉：

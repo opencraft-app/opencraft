@@ -22,7 +22,6 @@ const SettingsPage = lazyNamed(() => import("@/pages/app/settings-page"), "Setti
 const StyleLabPage = lazyNamed(() => import("@/pages/app/style-lab-page"), "StyleLabPage");
 const WorkspacePage = lazyNamed(() => import("@/pages/app/workspace-page"), "WorkspacePage");
 const CreateOpenClawPage = lazyNamed(() => import("@/pages/marketing/create-openclaw-page"), "CreateOpenClawPage");
-const SubscribePage = lazyNamed(() => import("@/pages/marketing/subscribe-page"), "SubscribePage");
 const PrivacyPolicyPage = lazyNamed(() => import("@/pages/marketing/privacy-policy-page"), "PrivacyPolicyPage");
 const CookiePolicyPage = lazyNamed(() => import("@/pages/marketing/cookie-policy-page"), "CookiePolicyPage");
 const OpenSourceLicensesPage = lazyNamed(() => import("@/pages/marketing/open-source-licenses-page"), "OpenSourceLicensesPage");
@@ -148,10 +147,6 @@ export const router = createBrowserRouter([
           {
             path: "dashboard/create",
             element: lazyRoute(CreateOpenClawPage),
-          },
-          {
-            path: "subscribe",
-            element: lazyRoute(SubscribePage),
           },
           {
             path: "dashboard/setup",

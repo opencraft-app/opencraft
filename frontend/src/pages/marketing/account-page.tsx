@@ -1414,9 +1414,11 @@ const DELETE_POLL_TIMEOUT_MS = 2 * 60 * 1_000;
 const SubscriptionSection = ({
   subscription,
   pass,
+  showHiddenAccountTools,
 }: {
   subscription: { code?: string; status?: string; currentPeriodStart?: string; currentPeriodEnd?: string } | null | undefined;
   pass: Pass | null;
+  showHiddenAccountTools: boolean;
 }) => {
   const t = useT();
   const { refreshPasses, user } = useOpenClaw();
@@ -1679,11 +1681,11 @@ const SubscriptionSection = ({
         )}
 
         {/* 续费 / 销毁按钮区：仅国内站 + 可操作 pass 时展示 */}
-        {(canRenew || canDelete) && operablePass && (
+        {((showHiddenAccountTools && canRenew) || canDelete) && operablePass && (
           <>
             <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
             <div className="flex flex-wrap items-center gap-3">
-              {canRenew && (
+              {showHiddenAccountTools && canRenew && (
                 <button
                   type="button"
                   onClick={() => setRenewModalOpen(true)}
@@ -1824,9 +1826,9 @@ export const AccountPage = () => {
         : idCardVerified
           ? t("待完成手机号认证")
           : "";
-  const [showAccountSafetyPhoneSection, setShowAccountSafetyPhoneSection] = useState(readAccountSafetyPhoneVisibility);
+  const [showHiddenAccountTools, setShowHiddenAccountTools] = useState(readAccountSafetyPhoneVisibility);
   const showRealnameSection = !isGlobal;
-  const showSafetyPhoneSection = realnamePhoneVerificationEnabled && !isGlobal && showAccountSafetyPhoneSection;
+  const showSafetyPhoneSection = realnamePhoneVerificationEnabled && !isGlobal && showHiddenAccountTools;
   const showEmailBindSection = isCN;
   const [showVerifyModal, setShowVerifyModal] = useState(false);
   const [showChangePhoneModal, setShowChangePhoneModal] = useState(false);
@@ -1850,9 +1852,9 @@ export const AccountPage = () => {
     const consoleRef = host.console;
 
     host.show = () => {
-      setShowAccountSafetyPhoneSection(true);
+      setShowHiddenAccountTools(true);
       persistAccountSafetyPhoneVisibility();
-      consoleRef.info("账号安全手机入口已显示。");
+      consoleRef.info("账号隐藏入口已显示。");
       return true;
     };
 
@@ -2578,7 +2580,7 @@ export const AccountPage = () => {
             </motion.div>
 
             {/* ── Section 2: Subscription ── */}
-            <SubscriptionSection subscription={subscription} pass={activePass} />
+            <SubscriptionSection subscription={subscription} pass={activePass} showHiddenAccountTools={showHiddenAccountTools} />
 
             {/* ── Sign out (page bottom) ── */}
             <motion.div variants={fadeIn} className="flex justify-center pt-2">
