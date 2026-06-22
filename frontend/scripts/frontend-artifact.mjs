@@ -273,17 +273,22 @@ function readIndexEntry(outputDir) {
     throw new Error(`frontend artifact output is missing index.html: ${outputDir}`);
   }
   const html = readFileSync(indexPath, "utf8");
-  const match = html.match(/<script[^>]+src=["']([^"']*\/assets\/index-[^"']+\.js)["']/);
-  if (!match) {
-    throw new Error("frontend artifact index.html does not reference an entry /assets/index-*.js file");
+  const scriptSrcs = Array.from(html.matchAll(/<script\b[^>]*\bsrc=["']([^"']+\.js(?:\?[^"']*)?)["'][^>]*>/g), (match) => match[1]);
+  const viteEntryJs = scriptSrcs.find((src) => /^\/assets\/index-[^"']+\.js(?:\?.*)?$/.test(src));
+  const nextMainEntryJs = scriptSrcs.find((src) => /^\/_next\/static\/chunks\/main-app-[^"']+\.js(?:\?.*)?$/.test(src));
+  const nextEntryJs = nextMainEntryJs ?? scriptSrcs.find((src) => /^\/_next\/static\/.+\.js(?:\?.*)?$/.test(src));
+  const entryJs = viteEntryJs ?? nextEntryJs;
+  const entryKind = viteEntryJs ? "vite" : "next";
+  if (!entryJs) {
+    throw new Error("frontend artifact index.html does not reference an entry Vite /assets/index-*.js or Next /_next/static/*.js file");
   }
-  const entryJs = match[1];
   const entryPath = join(outputDir, entryJs.replace(/^\//, ""));
   if (!existsSync(entryPath)) {
     throw new Error(`frontend artifact entry JS is missing: ${entryJs}`);
   }
   return {
     indexPath,
+    entryKind,
     entryJs,
     entryPath,
   };
@@ -543,7 +548,7 @@ export function buildArtifactManifest({ combo, projectName, comboEnv, outputDir,
   const shortSha = resolveShortSha(sourceSha);
   const fullSha = String(sourceSha).trim().toLowerCase();
   const tag = `${shortSha}-${normalizeComboIdForTag(combo.id)}`;
-  const { indexPath, entryJs, entryPath } = readIndexEntry(outputDir);
+  const { indexPath, entryKind, entryJs, entryPath } = readIndexEntry(outputDir);
   const contentIdentitySha256 = computeContentIdentity(outputDir);
   const bakedEnv = resolveBakedEnv(comboEnv);
   const stableProvenance = {
@@ -563,6 +568,7 @@ export function buildArtifactManifest({ combo, projectName, comboEnv, outputDir,
     },
     bakedEnv,
     assets: {
+      entryKind,
       entryJs,
       entryJsSha256: sha256File(entryPath),
     },
@@ -594,6 +600,7 @@ export function buildArtifactManifest({ combo, projectName, comboEnv, outputDir,
     bakedEnv,
     assets: {
       indexHtmlSha256: sha256File(indexPath),
+      entryKind,
       entryJs,
       entryJsSha256: sha256File(entryPath),
     },
