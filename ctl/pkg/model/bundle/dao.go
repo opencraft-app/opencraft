@@ -69,6 +69,7 @@ func (d *dao) Upsert(entity *Entity) error {
 		Columns: []clause.Column{{Name: ColumnBundleID}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			ColumnBundleName,
+			ColumnBundleType,
 			ColumnDescription,
 			ColumnAgentQuota,
 			ColumnCredit,
@@ -76,6 +77,7 @@ func (d *dao) Upsert(entity *Entity) error {
 			ColumnTimeUnit,
 			ColumnAiGatewayPlanID,
 			ColumnAiGatewayPlans,
+			ColumnInstanceSpecID,
 			ColumnStaticSoldOut,
 			ColumnBundleSalesAvailCount,
 			ColumnBundleSalesTotalCount,

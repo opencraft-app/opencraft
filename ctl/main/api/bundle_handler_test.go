@@ -19,7 +19,7 @@ type stubBundleLogic struct {
 	describeErr    error
 }
 
-func (s *stubBundleLogic) ImportBundle(string, string, string, int64, int64, int, string, string, string, bool, int, int) (*bundlelogic.BundleDetail, error) {
+func (s *stubBundleLogic) ImportBundle(string, string, string, string, int64, int64, int, string, string, string, bool, int, int) (*bundlelogic.BundleDetail, error) {
 	panic("stubBundleLogic.ImportBundle: not implemented")
 }
 func (s *stubBundleLogic) GetBundles() ([]*bundlelogic.BundleDetail, error) {

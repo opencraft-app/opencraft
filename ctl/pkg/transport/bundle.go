@@ -6,8 +6,10 @@ import "time"
 
 // ImportBundleRequest 导入套餐请求（不存在则创建，存在则覆盖）
 type ImportBundleRequest struct {
-	BundleID        string           `json:"bundle_id"`
-	BundleName      string           `json:"bundle_name"`
+	BundleID   string `json:"bundle_id"`
+	BundleName string `json:"bundle_name"`
+	// BundleType 套餐类型（必填）：free / general / ai。
+	BundleType      string           `json:"bundle_type"`
 	Description     []BundleDescItem `json:"description"`
 	AgentQuota      int64            `json:"agent_quota"`
 	Credit          int64            `json:"credit"`
@@ -30,15 +32,17 @@ type BundleDescItem struct {
 
 // ModifyBundlesRequest 批量修改套餐请求
 type ModifyBundlesRequest struct {
-	BundleIDs       []string `json:"bundle_ids"`
-	BundleName      *string  `json:"bundle_name,omitempty"`
-	Description     *string  `json:"description,omitempty"` // raw JSON string
-	BundleState     *string  `json:"bundle_state,omitempty"`
-	AgentQuota      *int64   `json:"agent_quota,omitempty"`
-	Credit          *int64   `json:"credit,omitempty"`
-	TimeSpan        *int     `json:"time_span,omitempty"`
-	TimeUnit        *string  `json:"time_unit,omitempty"`
-	AiGatewayPlanID *string  `json:"ai_gateway_plan_id,omitempty"`
+	BundleIDs  []string `json:"bundle_ids"`
+	BundleName *string  `json:"bundle_name,omitempty"`
+	// BundleType 套餐类型，nil = 不修改；非 nil 时必须为 free / general / ai。
+	BundleType      *string `json:"bundle_type,omitempty"`
+	Description     *string `json:"description,omitempty"` // raw JSON string
+	BundleState     *string `json:"bundle_state,omitempty"`
+	AgentQuota      *int64  `json:"agent_quota,omitempty"`
+	Credit          *int64  `json:"credit,omitempty"`
+	TimeSpan        *int    `json:"time_span,omitempty"`
+	TimeUnit        *string `json:"time_unit,omitempty"`
+	AiGatewayPlanID *string `json:"ai_gateway_plan_id,omitempty"`
 	// InstanceSpecID 实例规格 ID（设计稿 Q4=a / Q-NAMING-1=a）。
 	// nil = 不修改；非 nil 时 logic 层校验值在 instancespec.KnownSpecs 字典中。
 	InstanceSpecID        *string `json:"instance_spec_id,omitempty"`
@@ -49,8 +53,10 @@ type ModifyBundlesRequest struct {
 
 // BundleResponse 单个 Bundle 响应（后台管理端，含所有字段）
 type BundleResponse struct {
-	BundleID        string      `json:"bundle_id"`
-	BundleName      string      `json:"bundle_name"`
+	BundleID   string `json:"bundle_id"`
+	BundleName string `json:"bundle_name"`
+	// BundleType 套餐类型：free / general / ai。
+	BundleType      string      `json:"bundle_type"`
 	Description     interface{} `json:"description"`
 	BundleState     string      `json:"bundle_state"`
 	AgentQuota      int64       `json:"agent_quota"`
@@ -84,8 +90,10 @@ type ModifyBundlesResponse struct {
 
 // UserBundleResponse 面向用户的 Bundle 响应（仅暴露用户可见字段）
 type UserBundleResponse struct {
-	BundleID         string      `json:"bundle_id"`
-	BundleName       string      `json:"bundle_name"`
+	BundleID   string `json:"bundle_id"`
+	BundleName string `json:"bundle_name"`
+	// BundleType 套餐类型：free / general / ai，供前端按类型分组展示 / 选择下单入口。
+	BundleType       string      `json:"bundle_type"`
 	Description      interface{} `json:"description"`
 	BundleState      string      `json:"bundle_state"`
 	AgentQuota       int64       `json:"agent_quota"`
@@ -131,8 +139,11 @@ type BundlePrice struct {
 //   - 含 cpu / memory / system_disk_size 三个量化字段：user-facing / internal-facing / admin
 //     三处出参一律暴露这 3 字段；不含 instance_spec_id（ctl 内部抽象 ID 不外露）。
 type InternalBundleDetail struct {
-	BundleID              string `json:"bundle_id"`
-	BundleName            string `json:"bundle_name"`
+	BundleID   string `json:"bundle_id"`
+	BundleName string `json:"bundle_name"`
+	// BundleType 套餐类型：free / general / ai。trade checkCreate 阶段可据此
+	// 区分付费 / 免费 套餐走不同业务分支。
+	BundleType            string `json:"bundle_type"`
 	BundleState           string `json:"bundle_state"` // ONLINE / OFFLINE
 	AgentQuota            int64  `json:"agent_quota"`  // 设备配额
 	Credit                int64  `json:"credit"`       // 用户可见积分额度
