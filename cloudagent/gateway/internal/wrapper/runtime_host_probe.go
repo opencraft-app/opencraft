@@ -25,8 +25,26 @@ func runtimeHostProbeSandbox(ctx context.Context, host RuntimeHost, sandboxID st
 	return prober.ProbeSandbox(ctx, sandboxID)
 }
 
+func runtimeHostProbeConfirmsNotWritable(probe RuntimeHostSandboxProbe, err error) bool {
+	if err != nil {
+		return false
+	}
+	status := strings.ToLower(strings.TrimSpace(probe.Status))
+	if status == "" || status == "unsupported" || status == "host_nil" || status == "empty_id" {
+		return false
+	}
+	if !probe.Exists && status == "not_found" {
+		return true
+	}
+	return strings.Contains(status, "stopped")
+}
+
 func logRuntimeHostSandboxProbe(ctx context.Context, host RuntimeHost, runtime ACPSessionRuntime, target string, phase string, sandboxID string) {
 	probe, err := runtimeHostProbeSandbox(ctx, host, sandboxID)
+	logRuntimeHostSandboxProbeResult(probe, err, runtime, target, phase, sandboxID)
+}
+
+func logRuntimeHostSandboxProbeResult(probe RuntimeHostSandboxProbe, err error, runtime ACPSessionRuntime, target string, phase string, sandboxID string) {
 	fields := []string{
 		"timeline source=go event=acp_runtime_host_probe",
 		"phase=" + quoteTimelineField(phase),

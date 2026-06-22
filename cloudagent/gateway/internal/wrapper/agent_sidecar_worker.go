@@ -1789,17 +1789,30 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 	workspaceShutdownStartedBySidecar := false
 	outerWispStopRequired := false
 	outerWispStopped := false
-	probeSandbox := func(target string, phase string, sandboxID string) {
+	probeSandbox := func(target string, phase string, sandboxID string) (RuntimeHostSandboxProbe, error) {
 		if strings.TrimSpace(sandboxID) == "" {
-			return
+			return RuntimeHostSandboxProbe{}, nil
 		}
 		probeCtx, probeCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer probeCancel()
-		logRuntimeHostSandboxProbe(probeCtx, backend.host, runtime, target, phase, sandboxID)
+		probe, probeErr := runtimeHostProbeSandbox(probeCtx, backend.host, sandboxID)
+		logRuntimeHostSandboxProbeResult(probe, probeErr, runtime, target, phase, sandboxID)
+		return probe, probeErr
 	}
-	probeSandbox("outer", "close_start", runtime.OuterSandboxID)
-	probeSandbox("inner", "close_start", runtime.InnerSandboxID)
-	if runtime.OuterSandboxID != "" && runtime.RemoteBinary != "" && runtime.DaemonAddr != "" {
+	outerProbe, outerProbeErr := probeSandbox("outer", "close_start", runtime.OuterSandboxID)
+	innerProbe, innerProbeErr := probeSandbox("inner", "close_start", runtime.InnerSandboxID)
+	outerNotWritable := runtimeHostProbeConfirmsNotWritable(outerProbe, outerProbeErr)
+	innerNotWritable := runtimeHostProbeConfirmsNotWritable(innerProbe, innerProbeErr)
+	if innerNotWritable {
+		innerDeleteFallback = false
+		innerWorkspaceStopConfirmed = true
+		workspaceWispStopped = true
+		innerDeletedBySidecar = true
+	}
+	if outerNotWritable {
+		outerWispStopped = true
+	}
+	if runtime.OuterSandboxID != "" && runtime.RemoteBinary != "" && runtime.DaemonAddr != "" && !outerNotWritable {
 		sb := runtimeOuterSandbox(runtime)
 		shutdownCtx, shutdownCancel := context.WithTimeout(ctx, envDurationSeconds("GATEWAY_SIDECAR_SHUTDOWN_TIMEOUT_SECONDS", 45*time.Second))
 		start := time.Now()
@@ -1885,7 +1898,7 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 		}
 		stopCancel()
 	}
-	if runtime.OuterSandboxID != "" && runtime.isWispOuterRuntime() && runtime.WispName != "" {
+	if runtime.OuterSandboxID != "" && runtime.isWispOuterRuntime() && runtime.WispName != "" && !outerNotWritable {
 		outerWispStopRequired = true
 		sb := runtimeOuterSandbox(runtime)
 		stopCtx, stopCancel := context.WithTimeout(ctx, envDurationSeconds("GATEWAY_WISP_STOP_TIMEOUT_SECONDS", 60*time.Second))

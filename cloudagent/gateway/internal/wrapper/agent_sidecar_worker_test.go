@@ -912,6 +912,59 @@ func TestCloseSessionRuntimeBlocksStaleAuthWhenInnerWorkspaceStopUnconfirmed(t *
 	}
 }
 
+func TestCloseSessionRuntimeTreatsMissingInnerAndOuterAsNotWritable(t *testing.T) {
+	host := &recordingRuntimeHost{
+		runCommand: func(target RuntimeHostTarget, command string, env map[string]string, onStdout func(string) error, onStderr func(string) error) (CommandResult, error) {
+			return CommandResult{}, fmt.Errorf(`ags http 401 op=run_command sandbox_id=%s domain=ap-shanghai.tencentags.com envd_port=49983: map[code:AUTHENTICATION_FAILED message:Authentication failed]`, target.ID)
+		},
+		probeSandbox: func(id string) (RuntimeHostSandboxProbe, error) {
+			return RuntimeHostSandboxProbe{SandboxID: id, Exists: false, Status: "not_found", Domain: "ap-shanghai.tencentags.com"}, nil
+		},
+	}
+	worker, err := NewAgentSidecarWorker(AgentSidecarWorkerConfig{
+		RuntimeHost:          host,
+		OuterTemplateID:      "tmpl_outer",
+		InnerTemplateID:      "tmpl_inner",
+		SidecarURL:           "https://example.invalid/agent-sidecar",
+		TokenHubAPIKey:       "tokenhub",
+		OuterRuntime:         outerRuntimeWisp,
+		WorkspaceService:     nil,
+		WispSMHLibraryID:     "library",
+		WispSMHAccessDomain:  "https://smh.example.invalid",
+		WispSMHLibrarySecret: "secret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = worker.CloseSessionRuntime(context.Background(), ACPSessionRuntime{
+		RuntimeID:            "rt_1",
+		SandboxBackend:       "ags",
+		OuterRuntime:         outerRuntimeWisp,
+		OuterSandboxID:       "outer_1",
+		OuterSandboxDomain:   "ap-shanghai.tencentags.com",
+		OuterEnvdAccessToken: "expired_envd_token",
+		InnerSandboxID:       "inner_1",
+		InnerSandboxDomain:   "ap-shanghai.tencentags.com",
+		InnerEnvdAccessToken: "expired_inner_envd_token",
+		WorkspaceRuntimeID:   "workspace_rt_1",
+		RemoteBinary:         "/tmp/agent-sidecar",
+		DaemonAddr:           "127.0.0.1:9876",
+		WispName:             "agent-session_1",
+		WispClientPath:       "/tmp/cloudagent-wisp/bin/wispclient",
+		WorkspaceWispName:    "workspace-wisp-1",
+		WorkspaceWispClient:  "/tmp/cloudagent-workspace-wisp/bin/wispclient",
+	})
+	if err != nil {
+		t.Fatalf("CloseSessionRuntime should accept missing stale sandboxes as not writable: %v", err)
+	}
+	if got := len(host.commands); got != 0 {
+		t.Fatalf("missing sandboxes must not receive data-plane commands, got %d", got)
+	}
+	if got := strings.Join(host.deleted, ","); got != "outer_1" {
+		t.Fatalf("deleted sandboxes=%q, want only outer cleanup", got)
+	}
+}
+
 func TestStaleRuntimeCleanupCheckpointFailureStillBlocksRecreate(t *testing.T) {
 	err := errors.New(`stop wisp outer runtime agent-session_1: wispclient: http 500: {"error":"juicefs-smount meta-barrier /mnt/cloudagent-wisp: checkpoint cut failed: input/output error"}`)
 	if isNonBlockingStaleRuntimeCleanupError(err) {
