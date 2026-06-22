@@ -7,6 +7,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  fetchSkillSetDetail,
+  fetchSkillSets,
   fetchSoulDetail,
   fetchSouls,
 } from "./skillhub-api";
@@ -53,6 +55,30 @@ describe("skillhub-api", () => {
       const fetchMock = mockFetch({ slug: "a b" });
       await fetchSoulDetail("a b");
       expect(fetchMock).toHaveBeenCalledWith("/__skillhub/api/v1/souls/a%20b");
+    });
+  });
+
+  describe("fetchSkillSets", () => {
+    it("uses the SkillHub public skillsets endpoint", async () => {
+      const fetchMock = mockFetch({ skillSets: [] });
+      await fetchSkillSets();
+      expect(fetchMock).toHaveBeenCalledWith("/__skillhub/api/v1/skillsets");
+    });
+
+    it("appends scene, keyword and paging query parameters", async () => {
+      const fetchMock = mockFetch({ skillSets: [] });
+      await fetchSkillSets({ scene: "finance", keyword: " report ", page: 2, pageSize: 6 });
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/__skillhub/api/v1/skillsets?keyword=report&scene=finance&page=2&pageSize=6",
+      );
+    });
+  });
+
+  describe("fetchSkillSetDetail", () => {
+    it("URL-encodes the slug", async () => {
+      const fetchMock = mockFetch({ slug: "finance pack", skillSlugs: [] });
+      await fetchSkillSetDetail("finance pack");
+      expect(fetchMock).toHaveBeenCalledWith("/__skillhub/api/v1/skillsets/finance%20pack");
     });
   });
 

@@ -2,6 +2,7 @@ export type AgentSectionId =
   | "channel"
   | "model"
   | "skill"
+  | "expert"
   | "buddy"
   | "automations"
   | "diagnostics"
@@ -18,6 +19,7 @@ export const AGENT_SECTION_PATH_BY_ID: Record<AgentSectionId, string> = {
   channel: `${AGENTS_HOME_PATH}/channels`,
   model: `${AGENTS_HOME_PATH}/models`,
   skill: `${AGENTS_HOME_PATH}/skills`,
+  expert: `${AGENTS_HOME_PATH}/experts`,
   buddy: `${AGENTS_HOME_PATH}/persona`,
   automations: `${AGENTS_HOME_PATH}/automations`,
   diagnostics: `${AGENTS_HOME_PATH}/diagnostics`,
@@ -33,6 +35,7 @@ export const AGENT_SECTION_ID_BY_SLUG: Record<string, AgentSectionId> = {
   channels: "channel",
   models: "model",
   skills: "skill",
+  experts: "expert",
   persona: "buddy",
   automations: "automations",
   diagnostics: "diagnostics",

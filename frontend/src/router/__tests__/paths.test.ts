@@ -6,4 +6,9 @@ describe("agent route paths", () => {
     expect(AGENT_SECTION_PATH_BY_ID.browser).toBe("/agents/browser");
     expect(getAgentSectionFromSlug("browser")).toBe("browser");
   });
+
+  it("maps the experts section to /agents/experts", () => {
+    expect(AGENT_SECTION_PATH_BY_ID.expert).toBe("/agents/experts");
+    expect(getAgentSectionFromSlug("experts")).toBe("expert");
+  });
 });

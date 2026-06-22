@@ -41,6 +41,7 @@ import {
   UserRound,
   Wand2,
   Wrench,
+  UsersRound,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useState, useEffect, useCallback, useRef, useMemo, type ChangeEvent } from "react";
@@ -100,6 +101,7 @@ import {
   type HermesMemoryLimitValidation,
 } from "@/pages/marketing/openclaw-memory";
 import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
+import { ExpertsPanel } from "@/pages/marketing/openclaw-experts-panel";
 import { AchievementsPanel } from "@/pages/marketing/openclaw-achievements-panel";
 import { AutomationsPanel } from "@/pages/marketing/openclaw-automations-panel";
 import { TatFileManagerPanel } from "@/components/domain/tat-file-manager-panel";
@@ -4434,6 +4436,7 @@ export const OpenClawSettingsPage = () => {
                 { id: "channel", label: t("通道"), icon: <MessageCircle className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.channel },
                 { id: "model", label: t("模型"), icon: <BrainCircuit className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.model },
                 { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.skill },
+                { id: "expert", label: t("专家"), icon: <UsersRound className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.expert, badge: "NEW" },
                 ...(!isGlobal
                   ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.buddy }]
                   : []),
@@ -4444,7 +4447,7 @@ export const OpenClawSettingsPage = () => {
                 ...(SHOW_AGENTCHAT_ENTRY
                   ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.chat }]
                   : []),
-                { id: "diagnostics", label: t("诊断中心"), icon: <Stethoscope className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.diagnostics, badge: "NEW" },
+                { id: "diagnostics", label: t("诊断中心"), icon: <Stethoscope className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.diagnostics },
               ];
               const isRestartDisabled = resettingAcli || isActiveBotRestarting || activeBot.status !== "running";
               const restartTooltip = resettingAcli ? t("请稍后") : t("重启");
@@ -4695,6 +4698,9 @@ export const OpenClawSettingsPage = () => {
                               featureFlags={sdkFeatureFlags}
                               productConfig={sdkProductConfig}
                             />
+                          )}
+                          {activeSection === "expert" && (
+                            <ExpertsPanel botId={activeBot.id} execDebugCommand={repositories.bots.execDebugCommand} />
                           )}
                           {activeSection === "buddy" && !isGlobal && (
                             <BuddyPanel botId={activeBot.id} />
