@@ -69,7 +69,7 @@ ClawHub 是 OpenClaw 推出的技能市场：
 
 - 记录工具名称，在 Hermes / OpenClaw 对话环境中按名称安装或调用
 
-![](../images/clawhub-overview-global.png)
+![](../images/clawhub-overview-global.webp)
 
 > 💡 **先在 ClawHub 浏览，再在 LightVela 里安装或使用**
 > 
@@ -87,7 +87,7 @@ LightVela 管理台在「技能」按键中提供可视化的技能配置入口�
 
 以邮件场景为例，找到 `gmail` 这个技能，它可以让 Hermes 具备收、发、查询邮件的能力。记录技能详情页中的技能名称（此处为 `gmail`），后续将使用该名称完成安装。
 
-![](../images/clawhub-gmail-global.png)
+![](../images/clawhub-gmail-global.webp)
 
 ### 2. 进入 LightVela 管理台
 
@@ -97,11 +97,11 @@ LightVela 管理台在「技能」按键中提供可视化的技能配置入口�
 
 在搜索框输入已记录的技能名称（如 `gmail`），点击「**安装技能**」按钮。
 
-![](../images/clawhub-install-global.png)
+![](../images/clawhub-install-global.webp)
 
 稍等片刻，安装成功后，该技能会出现在「已安装技能」列表中。
 
-![](../images/clawhub-installed-global.png)
+![](../images/clawhub-installed-global.webp)
 
 
 ### 4. 在对话中确认可用

@@ -58,7 +58,7 @@ The three buttons are arranged from left to right. The recommended configuration
 
 ### 1. Channels
 
-![](./images/4-2.png)
+![](./images/4-2.webp)
 
 **Purpose**: Connect Hermes to messaging platforms and provide conversation entry points for users.
 
@@ -82,7 +82,7 @@ For details, see [Configure Channel - WeChat](./configuration/channel-wechat.md)
 
 ### 2. Models
 
-![](./images/4-1.png)
+![](./images/4-1.webp)
 
 **Purpose**: Configure a large language model for Hermes. The Launch plan includes 100 trial credits, so you can skip this step at first and configure a model after the credits run out.
 
@@ -98,7 +98,7 @@ For details, see [Configure Models](./configuration/model.md).
 
 ### 3. Skills
 
-![](./images/4-3.png)
+![](./images/4-3.webp)
 
 **Purpose**: Extend Hermes capabilities, such as organizing to-dos, generating daily reports, and searching the web.
 

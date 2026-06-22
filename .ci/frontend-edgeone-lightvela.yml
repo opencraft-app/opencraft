@@ -13,5 +13,5 @@ concurrency:
 extends:
   template: frontend-edgeone-release.yml
   parameters:
-    COMBO: eo:cn-lightvela-prod
+    COMBO: eo:cn-lightvela-prod-next
     DISPLAY_NAME: frontend EdgeOne 国内正式站

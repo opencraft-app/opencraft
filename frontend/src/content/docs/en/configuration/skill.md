@@ -69,7 +69,7 @@ Features:
 
 - Record the tool name and install or call it by name in the Hermes / OpenClaw conversation environment
 
-![](../images/clawhub-overview-global.png)
+![](../images/clawhub-overview-global.webp)
 
 > 💡 **Browse in ClawHub first, then install or use in LightVela**
 > 
@@ -87,7 +87,7 @@ Visit [https://clawhub.ai/](https://clawhub.ai/) to browse or search for the ski
 
 Using an email scenario as an example, find the `gmail` skill. It lets Hermes receive, send, and query emails. Record the skill name shown on the skill details page (in this case, `gmail`) and use it later to complete installation.
 
-![](../images/clawhub-gmail-global.png)
+![](../images/clawhub-gmail-global.webp)
 
 ### 2. Enter the LightVela console
 
@@ -97,11 +97,11 @@ Sign in to LightVela, click "My AI Partners" in the upper-right corner to enter 
 
 Enter the recorded skill name in the search box (such as `gmail`) and click the **Install Skill** button.
 
-![](../images/clawhub-install-global-en.png)
+![](../images/clawhub-install-global-en.webp)
 
 Wait a moment. After installation succeeds, the skill appears in the "Installed skills" list.
 
-![](../images/clawhub-installed-global-en.png)
+![](../images/clawhub-installed-global-en.webp)
 
 
 ### 4. Confirm availability in conversation
@@ -194,7 +194,7 @@ Use the browser to search ClawHub and find the currently most-installed email sk
 
 This task includes multiple steps such as opening a web page, waiting for it to load, entering content, and clicking buttons. It is relatively complex. Hermes completes the steps and returns the result.
 
-![](../images/clawhub-browser-example-global-en.png)
+![](../images/clawhub-browser-example-global-en.webp)
 
 ---
 

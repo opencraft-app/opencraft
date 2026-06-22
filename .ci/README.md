@@ -546,13 +546,13 @@ Guard 自举策略：
 前端 Pages / EdgeOne / GitOps 镜像构建发布：
 
 - `.ci/frontend.yml`
-  - 默认先构建并归档完整 frontend Pages artifact 矩阵：`cf:cn-lightvela-staging`、`cf:global-lightvela-intl-staging`、`eo:cn-lightvela-prod`、`eo:global-lightvela-intl-prod`
+  - 默认先构建并归档 frontend Pages artifact 矩阵：`cf:cn-lightvela-staging`、`cf:global-lightvela-intl-staging`、`eo:cn-lightvela-prod-next`、`eo:cn-lightvela-prod-legacy`、`eo:global-lightvela-intl-prod-next`
   - Cloudflare 预发发布步骤只允许 `cf:*` 矩阵，并从 TCR 拉取已归档 artifact 校验后发布；不现场 rebuild
   - artifact 构建步骤只需要 TCR/ORAS，不加载 Cloudflare/EdgeOne 发布 token
 - `.ci/frontend-edgeone-lightvela.yml`
-  - 手动发布 `eo:cn-lightvela-prod`；强制从已归档 artifact 发布
+  - 手动发布 `eo:cn-lightvela-prod-next`；强制从已归档 artifact 发布
 - `.ci/frontend-edgeone-lightvela-intl.yml`
-  - 手动发布 `eo:global-lightvela-intl-prod`；强制从已归档 artifact 发布
+  - 手动发布 `eo:global-lightvela-intl-prod-next`；强制从已归档 artifact 发布
 - `frontend/release-matrix.json`
   - Pages / EdgeOne 发布矩阵唯一事实来源；CF 组合 ID 使用站点化名称 `cf:cn-lightvela-staging`、`cf:global-lightvela-intl-staging`
 - `frontend/scripts/release-matrix.mjs`
@@ -954,9 +954,9 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
 - `CLOUDFLARE_ACCOUNT_ID`
   - Cloudflare account id，用于 frontend 北京测试静态发布
 - `EDGEONE_LIGHTVELA_PROD_TOKEN`
-  - EdgeOne Pages API token，用于 `发布 frontend eo:cn-lightvela-prod`
+  - EdgeOne Pages API token，用于 `发布 frontend eo:cn-lightvela-prod-next`
 - `EDGEONE_LIGHTVELA_INTL_PROD_TOKEN`
-  - EdgeOne Pages API token，用于 `发布 frontend eo:global-lightvela-intl-prod`
+  - EdgeOne Pages API token，用于 `发布 frontend eo:global-lightvela-intl-prod-next`
 
 另外要求：
 
@@ -977,7 +977,7 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
 - EdgeOne frontend 正式发布同样支持本地文件优先：
   - `/etc/lightclaw-ci/edgeone_lightvela_prod_token`
   - `/etc/lightclaw-ci/edgeone_lightvela_intl_prod_token`
-  `发布 frontend eo:cn-lightvela-prod` 和 `发布 frontend eo:global-lightvela-intl-prod` 会优先读取对应本地文件，缺失时再回落到 Stream settings
+  `发布 frontend eo:cn-lightvela-prod-next` 和 `发布 frontend eo:global-lightvela-intl-prod-next` 会优先读取对应本地文件，缺失时再回落到 Stream settings
 
 ### Frontend EdgeOne Artifact Release Inputs
 
@@ -987,7 +987,7 @@ EdgeOne 正式发布 CI 不再现场构建源码，只发布 `构建 frontend` �
   - 接受 12 位 short SHA 或 40 位 full SHA
   - 发布脚本按固定 EO combo 拼出 `<shortSha>-<normalizedComboId>` tag
 - 高级覆盖：`FRONTEND_ARTIFACT_REF`
-  - 传完整 OCI artifact ref，例如 `lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend-pages:<shortSha>-eo-cn-lightvela-prod`
+  - 传完整 OCI artifact ref，例如 `lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend-pages:<shortSha>-eo-cn-lightvela-prod-next`
   - 如果同时传 `FRONTEND_ARTIFACT_SOURCE_SHA`，两者必须解析到同一个 repo、short SHA 和目标 combo
 - 目标 combo 固定在对应 CI 文件的 `FRONTEND_RELEASE_MATRIX`，不能跨 combo 发布。
 - 发布前会校验 manifest 中的 `comboId`、`projectName`、`channel`、`region`、`outputDir`、Aegis/Vite baked env、archive sha/size 与解压内容 identity。

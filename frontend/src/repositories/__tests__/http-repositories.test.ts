@@ -1196,6 +1196,18 @@ describe("http repositories auth token bootstrap", () => {
     expect(parsed.searchParams.get("return_to")).toBe("https://intl-sandbox-bj-7.preview.lightclaw.tech/auth/sign-in");
   });
 
+  it("reads the OAuth relay issuer from the Next public env name", () => {
+    vi.stubEnv("VITE_OAUTH_RELAY_ISSUER_BASE_URL", "");
+    vi.stubEnv("NEXT_PUBLIC_OAUTH_RELAY_ISSUER_BASE_URL", "https://lightclaw.tech/");
+    stubHostname("intl-sandbox-bj-7.preview.lightclaw.tech");
+
+    const repositories = createHttpRepositories("https://api-sandbox-bj-7.lightclaw.tech");
+    const parsed = new URL(repositories.auth.getOAuthStartUrl("qq")!);
+
+    expect(parsed.searchParams.get("relay_mode")).toBe("issuer");
+    expect(parsed.searchParams.get("issuer_redirect_uri")).toBe("https://lightclaw.tech/auth/oauth/qq/callback");
+  });
+
   it("adds the requested WeChat OAuth mode to the start URL", () => {
     stubHostname("lightclaw.pages.dev");
 
@@ -1258,6 +1270,24 @@ describe("http repositories auth token bootstrap", () => {
       repositories.auth.getOAuthStartUrl("wechat"),
       "https://api.lightvela.com/auth/oauth/wechat/start",
       "https://lightvela.com/auth/sign-in",
+    );
+  });
+
+  it("uses the lightclaw auth backend on EdgeOne preview domains", () => {
+    vi.stubEnv("VITE_AUTH_API_BASE_URL", "");
+    stubHostname("lightvela-preview-dppuuozk080l.edgeone.cool");
+
+    const repositories = createRepositories();
+
+    expectOAuthStartURL(
+      repositories.auth.getOAuthStartUrl("qq"),
+      "https://lightclaw.tech/auth/oauth/qq/start",
+      "https://lightvela-preview-dppuuozk080l.edgeone.cool/auth/sign-in",
+    );
+    expectOAuthStartURL(
+      repositories.auth.getOAuthStartUrl("wechat"),
+      "https://lightclaw.tech/auth/oauth/wechat/start",
+      "https://lightvela-preview-dppuuozk080l.edgeone.cool/auth/sign-in",
     );
   });
 });

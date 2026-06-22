@@ -43,7 +43,31 @@
       }
     },
     {
-      "id": "eo:cn-lightvela-prod",
+      "id": "eo:cn-lightvela-prod-next",
+      "region": "cn",
+      "channel": "eo",
+      "buildCommand": "build:next",
+      "deployCommand": "deploy:eo",
+      "projectName": "lightvela",
+      "requiredSecretEnv": [
+        "EDGEONE_API_TOKEN"
+      ],
+      "authApiBaseUrl": "https://api.lightvela.com",
+      "outputDir": "out",
+      "observability": {
+        "aegis": {
+          "enabled": "true",
+          "id": "4e66EF5XoPEXx3y8lw",
+          "hostUrl": "https://rumt-zh.com"
+        }
+      },
+      "deployEnv": {
+        "EDGEONE_PAGES_AREA": "global",
+        "EDGEONE_PAGES_ENV": "production"
+      }
+    },
+    {
+      "id": "eo:cn-lightvela-prod-legacy",
       "region": "cn",
       "channel": "eo",
       "buildCommand": "build:cn",
@@ -67,7 +91,7 @@
       }
     },
     {
-      "id": "eo:global-lightvela-intl-prod",
+      "id": "eo:global-lightvela-intl-prod-legacy",
       "region": "global",
       "channel": "eo",
       "buildCommand": "build:global",
@@ -78,6 +102,30 @@
       ],
       "authApiBaseUrl": "https://api.lightvela.ai",
       "outputDir": "dist-global",
+      "observability": {
+        "aegis": {
+          "enabled": "true",
+          "id": "2ellOCK3ozed3owgOj",
+          "hostUrl": "https://rumt-sg.com"
+        }
+      },
+      "deployEnv": {
+        "EDGEONE_PAGES_AREA": "global",
+        "EDGEONE_PAGES_ENV": "production"
+      }
+    },
+    {
+      "id": "eo:global-lightvela-intl-prod-next",
+      "region": "global",
+      "channel": "eo",
+      "buildCommand": "build:next",
+      "deployCommand": "deploy:eo",
+      "projectName": "lightvela-intl",
+      "requiredSecretEnv": [
+        "EDGEONE_API_TOKEN"
+      ],
+      "authApiBaseUrl": "https://api.lightvela.ai",
+      "outputDir": "out",
       "observability": {
         "aegis": {
           "enabled": "true",

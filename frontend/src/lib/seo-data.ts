@@ -428,28 +428,42 @@ function normalizePathname(pathname: string): string {
 }
 
 /**
- * 国际站 multi-URL i18n：剥掉 `/en` 或 `/zh` 前缀，返回逻辑路径 + URL 语言。
+ * 国际站 multi-URL i18n：剥掉 locale-first 前缀，返回逻辑路径 + URL 语言。
  * 用于让 SEO 表（按裸路径建索引）能命中带前缀的实际访问路径，并让
  * `<html lang>` / `og:locale` 跟随 URL 前缀切换中英文（与 prerender 输出一致）。
  *
- * - `/en/about`        → { bare: "/about", urlLang: "en" }
- * - `/zh/docs/overview`→ { bare: "/docs/overview", urlLang: "zh" }
- * - `/en/`             → { bare: "/", urlLang: "en" }
+ * - `/en-us/about`        → { bare: "/about", urlLang: "en-us" }
+ * - `/zh-sg/docs/overview`→ { bare: "/docs/overview", urlLang: "zh-sg" }
+ * - `/en-us/`             → { bare: "/", urlLang: "en-us" }
  * - `/about` （裸）    → { bare: "/about", urlLang: null }
  */
-function stripUrlLangPrefix(pathname: string): { bare: string; urlLang: "en" | "zh" | null } {
-  const m = pathname.match(/^\/(en|zh)(?:\/(.*))?$/);
+type UrlLang = "en" | "zh" | "en-us" | "zh-cn" | "zh-sg";
+
+function stripUrlLangPrefix(pathname: string): { bare: string; urlLang: UrlLang | null } {
+  const m = pathname.match(/^\/(en-us|zh-cn|zh-sg|en|zh)(?:\/(.*))?$/);
   if (!m) return { bare: pathname, urlLang: null };
   const rest = m[2] ?? "";
   return {
     bare: rest === "" ? "/" : `/${rest}`,
-    urlLang: m[1] as "en" | "zh",
+    urlLang: m[1] as UrlLang,
   };
 }
 
 /** URL 语言前缀 → htmlLang / ogLocale 映射（仅国际站使用） */
-const URL_LANG_TO_HTML_LANG = { en: "en-US", zh: "zh-CN" } as const;
-const URL_LANG_TO_OG_LOCALE = { en: "en_US", zh: "zh_CN" } as const;
+const URL_LANG_TO_HTML_LANG: Record<UrlLang, string> = {
+  en: "en-US",
+  "en-us": "en-US",
+  zh: "zh-CN",
+  "zh-cn": "zh-CN",
+  "zh-sg": "zh-SG",
+};
+const URL_LANG_TO_OG_LOCALE: Record<UrlLang, string> = {
+  en: "en_US",
+  "en-us": "en_US",
+  zh: "zh_CN",
+  "zh-cn": "zh_CN",
+  "zh-sg": "zh_SG",
+};
 
 function safeDecodeURIComponent(value: string): string {
   try {
@@ -503,9 +517,9 @@ function getAppPageTitle(pathname: string, region: SeoRegion): string | null {
  *   cn 表里维护好了（"关于我们"、"LightVela 是什么" 等），并由 `seo-site-mirror`
  *   测试守护与 prerender 的 DOCS.cn 一致。复用避免双源漂移。
  */
-function effectiveRegionForLookup(region: SeoRegion, urlLang: "en" | "zh" | null): SeoRegion {
+function effectiveRegionForLookup(region: SeoRegion, urlLang: UrlLang | null): SeoRegion {
   if (region !== "global") return region;
-  return urlLang === "zh" ? "cn" : "global";
+  return urlLang === "zh" || urlLang === "zh-cn" || urlLang === "zh-sg" ? "cn" : "global";
 }
 
 export function getSeoMeta(pathname: string, region?: SeoRegion): SeoMeta {

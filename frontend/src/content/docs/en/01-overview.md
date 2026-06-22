@@ -18,7 +18,7 @@ We lower the configuration barrier through a visual console: no config files, no
 
 The current LightVela product is **Hermes**, an AI Agent powered by large language models. More ready-to-use products may be added in the future. This documentation focuses on Hermes.
 
-![1.00](./images/1-1.png)
+![1.00](./images/1-1.webp)
 
 ***
 
@@ -82,7 +82,7 @@ A complete conversation loop requires three configurations:
 
 3. **Skill** (optional): Additional capabilities for Hermes
 
-![1.00](./images/1-2.png)
+![1.00](./images/1-2.webp)
 
 ***
 

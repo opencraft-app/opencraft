@@ -5,6 +5,7 @@ import { LandingPage } from "@/pages/marketing/landing-page";
 
 vi.mock("@/contexts/session-context", () => ({
   useSession: () => ({
+    authReady: true,
     isAuthenticated: false,
     session: { stage: "anonymous", user: null },
   }),
@@ -22,8 +23,8 @@ vi.mock("@/components/site/login-modal", () => ({
   InviteCodeModal: () => null,
 }));
 
-vi.mock("@/imports/Frame2147230025/sections/HeaderSection", () => ({
-  default: () => <div>navbar</div>,
+vi.mock("@/components/site/public-site-header", () => ({
+  PublicSiteHeader: () => <div>navbar</div>,
 }));
 vi.mock("@/imports/Frame2147230025/sections/HeroSection", () => ({
   default: () => <div>hero</div>,

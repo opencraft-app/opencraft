@@ -20,12 +20,19 @@
 
 export type Region = "cn" | "global";
 
+const envRegion = (() => {
+  if (typeof process !== "undefined") {
+    const value = process.env.NEXT_PUBLIC_REGION;
+    if (value === "cn" || value === "global") return value;
+  }
+  return import.meta.env?.VITE_REGION as Region | undefined;
+})();
+
 /**
  * 当前站点区域。
  * 默认 `cn`，保持国内站零破坏；国际站构建时会被环境变量覆盖为 `global`。
  */
-export const REGION: Region =
-  (import.meta.env.VITE_REGION as Region | undefined) ?? "cn";
+export const REGION: Region = envRegion ?? "cn";
 
 /** 是否国内站 */
 export const isCN: boolean = REGION === "cn";

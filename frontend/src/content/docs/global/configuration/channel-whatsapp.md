@@ -36,13 +36,13 @@ WhatsApp 通道采用扫码接入方式，配置方式接近 WeChat，适合快�
 
 3. 对准电脑屏幕上的二维码扫描
 
-![](../images/whatsapp-1-global.png)
+![](../images/whatsapp-1-global.webp)
 
 4. 按手机提示完成连接
 
 ### 4. 在 WhatsApp 里查询你自己
 
-![](../images/whatsapp-2-global.jpg)
+![](../images/whatsapp-2-global.webp)
 
 与自我对话——这就是你的机器人。
 
@@ -54,7 +54,7 @@ WhatsApp 通道采用扫码接入方式，配置方式接近 WeChat，适合快�
 
 几秒内收到 Hermes 回复。
 
-![](../images/whatsapp-3-global.jpg)
+![](../images/whatsapp-3-global.webp)
 
 ---
 

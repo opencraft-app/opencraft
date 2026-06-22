@@ -7,10 +7,18 @@ import { useSession } from "@/contexts/session-context";
 import { useT } from "@/i18n/t";
 
 const GuardLoading = () => {
-  const t = useT();
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-white px-4 text-sm text-[var(--text-secondary)]">
-      {t("正在恢复会话...")}
+    <div className="flex min-h-dvh bg-white px-6 py-24" aria-hidden="true">
+      <div className="mx-auto w-full max-w-[1180px]">
+        <div className="mb-8 h-9 w-44 rounded-full bg-black/[0.06]" />
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="space-y-4">
+            <div className="h-32 rounded-lg bg-black/[0.04]" />
+            <div className="h-32 rounded-lg bg-black/[0.04]" />
+          </div>
+          <div className="h-48 rounded-lg bg-black/[0.04]" />
+        </div>
+      </div>
     </div>
   );
 };

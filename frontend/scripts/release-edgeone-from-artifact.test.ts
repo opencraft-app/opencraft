@@ -5,9 +5,9 @@ import { executeEdgeOneArtifactRelease } from "./release-edgeone-from-artifact.m
 const sourceSha = "dfde008ca43aba0cb0dcdfcc1b0c66bd204a2ea8";
 const shortSha = sourceSha.slice(0, 12);
 const repository = "registry.example.com/lightclaw/frontend-pages";
-const cnRef = `${repository}:${shortSha}-eo-cn-lightvela-prod`;
+const cnRef = `${repository}:${shortSha}-eo-cn-lightvela-prod-next`;
 const baseEnv = {
-  FRONTEND_RELEASE_MATRIX: "eo:cn-lightvela-prod",
+  FRONTEND_RELEASE_MATRIX: "eo:cn-lightvela-prod-next",
   FRONTEND_ARTIFACT_REPOSITORY: repository,
   FRONTEND_ARTIFACT_SOURCE_SHA: sourceSha,
   EDGEONE_API_TOKEN: "edgeone-token",
@@ -18,16 +18,16 @@ function makeCnManifest(overrides: Record<string, unknown> = {}) {
     schemaVersion: 1,
     sourceSha,
     shortSha,
-    comboId: "eo:cn-lightvela-prod",
+    comboId: "eo:cn-lightvela-prod-next",
     region: "cn",
     channel: "eo",
     projectName: "lightvela",
-    outputDir: "dist-cn",
-    buildCommand: "build:cn",
+    outputDir: "out",
+    buildCommand: "build:next",
     deployCommand: "deploy:eo",
     artifact: {
       repository,
-      tag: `${shortSha}-eo-cn-lightvela-prod`,
+      tag: `${shortSha}-eo-cn-lightvela-prod-next`,
       ref: cnRef,
     },
     identity: {
@@ -82,7 +82,7 @@ describe("EdgeOne release from frontend artifact", () => {
     expect(() => executeEdgeOneArtifactRelease({
       env: {
         ...baseEnv,
-        FRONTEND_RELEASE_MATRIX: "eo:cn-lightvela-prod,eo:global-lightvela-intl-prod",
+        FRONTEND_RELEASE_MATRIX: "eo:cn-lightvela-prod-next,eo:global-lightvela-intl-prod-next",
       },
       log: () => {},
       verifyArtifact: () => ({ manifest: makeCnManifest(), ref: cnRef, extractDir: "/tmp/dist" }),
@@ -93,7 +93,7 @@ describe("EdgeOne release from frontend artifact", () => {
   it("requires a source SHA or full artifact ref", () => {
     expect(() => executeEdgeOneArtifactRelease({
       env: {
-        FRONTEND_RELEASE_MATRIX: "eo:cn-lightvela-prod",
+        FRONTEND_RELEASE_MATRIX: "eo:cn-lightvela-prod-next",
         FRONTEND_ARTIFACT_REPOSITORY: repository,
         EDGEONE_API_TOKEN: "edgeone-token",
       },
@@ -108,7 +108,7 @@ describe("EdgeOne release from frontend artifact", () => {
 
     executeEdgeOneArtifactRelease({
       env: {
-        FRONTEND_RELEASE_MATRIX: "eo:cn-lightvela-prod",
+        FRONTEND_RELEASE_MATRIX: "eo:cn-lightvela-prod-next",
         FRONTEND_ARTIFACT_REPOSITORY: repository,
         FRONTEND_ARTIFACT_REF: cnRef,
         EDGEONE_API_TOKEN: "edgeone-token",
@@ -125,7 +125,7 @@ describe("EdgeOne release from frontend artifact", () => {
   });
 
   it.each([
-    ["comboId", { comboId: "eo:global-lightvela-intl-prod" }, "comboId mismatch"],
+    ["comboId", { comboId: "eo:global-lightvela-intl-prod-legacy" }, "comboId mismatch"],
     ["projectName", { projectName: "wrong" }, "projectName mismatch"],
     ["channel", { channel: "cf" }, "channel mismatch"],
     ["region", { region: "global" }, "region mismatch"],

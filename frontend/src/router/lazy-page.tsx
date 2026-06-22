@@ -1,7 +1,7 @@
 import { Suspense, lazy, type ComponentType, type ReactElement } from "react";
 import { useNavigate } from "react-router-dom";
+import { PublicSiteHeader } from "@/components/site/public-site-header";
 import { ProductPageShell } from "@/components/site/product-chrome";
-import { SiteHeader } from "@/components/site/site-header";
 
 type RouteChrome = "none" | "product" | "site";
 
@@ -14,7 +14,7 @@ function SiteRouteFallback() {
 
   return (
     <div className="min-h-dvh bg-white text-[var(--text-primary)]" aria-busy="true">
-      <SiteHeader fixed onLoginClick={() => navigate("/auth/sign-in")} />
+      <PublicSiteHeader position="fixed" onLoginClick={() => navigate("/auth/sign-in")} />
       <main className="pt-[60px]" />
     </div>
   );

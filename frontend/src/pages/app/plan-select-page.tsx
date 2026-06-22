@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import type { PlanTier } from "@/domain/types";
 import { PlanCard } from "@/components/domain/plan-card";
 import { GrammarPageIntro, GrammarPanel } from "@/components/site/homepage-grammar";
@@ -7,10 +6,11 @@ import { Badge } from "@/components/ui/badge";
 import { StatePanel } from "@/components/ui/state-panel";
 import { useRepositories } from "@/contexts/repository-context";
 import { useSession } from "@/contexts/session-context";
+import { useAppNavigate } from "@/lib/app-navigation";
 import { useAsyncResource } from "@/services/use-async-resource";
 
 export const PlanSelectPage = () => {
-  const navigate = useNavigate();
+  const navigate = useAppNavigate();
   const repositories = useRepositories();
   const { selectPlan } = useSession();
   const [confirming, setConfirming] = useState(false);

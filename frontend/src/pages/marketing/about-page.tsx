@@ -4,15 +4,16 @@
  * 设计风格：极简大气，白色 + 浅灰背景，新瑞士主义
  */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
-import { LoginModal } from "@/components/site/login-modal";
 import { LegalFooter } from "@/components/site/legal-footer";
+import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
+import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/site/public-site-header";
+import type { RenderUserMenuLink } from "@/components/site/user-avatar-menu";
 import { useT, t as rawT } from "@/i18n/t";
+import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { isGlobal } from "@/lib/region";
-
-import { LandingNavbar } from "./landing/landing-navbar";
 
 /* ═══════════════════════════════════════════════════════════════
    Hero Section — 球体只露上半圆弧 + 居中标题
@@ -48,7 +49,7 @@ function HeroSection() {
         }}
       >
         <motion.img
-          src="/assets/landing/about/ball.png"
+          src="/assets/landing/about/ball.webp"
           alt=""
           draggable={false}
           initial={{ opacity: 0, scale: 0.92 }}
@@ -376,7 +377,7 @@ function HighlightSection() {
         alignItems: "center",
         justifyContent: "center",
         gap: "28px",
-        backgroundImage: "url('/assets/landing/about/hignlight-bg.jpg')",
+        backgroundImage: "url('/assets/landing/about/hignlight-bg.webp')",
         backgroundSize: "cover",
         backgroundPosition: "top center",
         backgroundAttachment: "fixed",
@@ -552,15 +553,38 @@ function HighlightSection() {
    关于我们页面主组件
    ═══════════════════════════════════════════════════════════════ */
 
-export const AboutPage = () => {
-  const [showLogin, setShowLogin] = useState(false);
+type AboutPageProps = {
+  authControls?: ReactNode;
+  publicLocale?: PublicSiteLocale;
+  publicLocalized?: boolean;
+  renderLanguageSwitcher?: (options: { reloadAfterSwitch: boolean; variant: LanguageSwitcherVariant }) => ReactNode;
+  renderLink?: RenderPublicSiteHeaderLink;
+  renderUserMenuLink?: RenderUserMenuLink;
+};
 
+export const AboutPage = ({
+  authControls,
+  publicLocale,
+  publicLocalized,
+  renderLanguageSwitcher,
+  renderLink,
+  renderUserMenuLink,
+}: AboutPageProps = {}) => {
   return (
     <div
       className="landing-page relative flex min-h-screen flex-col"
       style={{ background: "#ffffff", color: "#1a1a1a", overflowX: "hidden" }}
     >
-      <LandingNavbar onLoginClick={() => setShowLogin(true)} />
+      <PublicSiteHeader
+        authControls={authControls}
+        currentSection="about"
+        locale={publicLocale}
+        localized={publicLocalized}
+        position="fixed"
+        renderLink={renderLink}
+        renderLanguageSwitcher={renderLanguageSwitcher}
+        renderUserMenuLink={renderUserMenuLink}
+      />
 
       <main className="z-10 flex-grow pt-[60px]">
         {/* 首屏 Hero */}
@@ -574,8 +598,6 @@ export const AboutPage = () => {
       </main>
 
       <LegalFooter />
-
-      <LoginModal open={showLogin} onClose={() => setShowLogin(false)} />
     </div>
   );
 };

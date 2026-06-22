@@ -1,7 +1,9 @@
+"use client";
+
 import type { ReactNode } from "react";
-import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { LegalFooter } from "@/components/site/legal-footer";
+import { AppLink } from "@/lib/app-navigation";
 
 type CookieTableRow = {
   cookie: string;
@@ -358,12 +360,12 @@ export const CookiePolicyPage = () => {
     <div className="min-h-dvh bg-[#F7F8FA] text-slate-950">
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur-lg">
         <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-5 sm:px-8">
-          <Link to="/" className="text-xl font-semibold tracking-[-0.04em] text-slate-950">
+          <AppLink to="/" className="text-xl font-semibold tracking-[-0.04em] text-slate-950">
             {copy.brand}
-          </Link>
-          <Link to="/" className="text-sm font-medium text-slate-500 transition-colors hover:text-slate-950">
+          </AppLink>
+          <AppLink to="/" className="text-sm font-medium text-slate-500 transition-colors hover:text-slate-950">
             {copy.backHome}
-          </Link>
+          </AppLink>
         </div>
       </header>
 

@@ -36,13 +36,13 @@ Find the WhatsApp card and click "+ Connect".
 
 3. Scan the QR code on your computer screen
 
-![](../images/whatsapp-1-global-en.png)
+![](../images/whatsapp-1-global-en.webp)
 
 4. Follow the prompts on your phone to complete the connection
 
 ### 4. Find yourself in WhatsApp
 
-![](../images/whatsapp-2-global.jpg)
+![](../images/whatsapp-2-global.webp)
 
 Chat with yourself — that's your bot.
 
@@ -54,7 +54,7 @@ Hi
 
 You should receive a Hermes reply within a few seconds.
 
-![](../images/whatsapp-3-global-en.png)
+![](../images/whatsapp-3-global-en.webp)
 
 ---
 

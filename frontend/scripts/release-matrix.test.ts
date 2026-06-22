@@ -96,6 +96,8 @@ describe("release matrix helpers", () => {
     const comboEnv = createComboEnvironment(cnCfObservedCombo, "lightclaw", env);
 
     expect(comboEnv.VITE_AUTH_API_BASE_URL).toBe("https://lightclaw.tech");
+    expect(comboEnv.NEXT_PUBLIC_REGION).toBe("cn");
+    expect(comboEnv.NEXT_PUBLIC_AUTH_API_BASE_URL).toBe("https://lightclaw.tech");
     expect(comboEnv.VITE_AEGIS_ENABLED).toBe("true");
     expect(comboEnv.VITE_AEGIS_ID).toBe("4e66EF5XoPEXx3y8lw");
     expect(comboEnv.VITE_AEGIS_HOST_URL).toBe("https://rumt-zh.com");
@@ -114,6 +116,8 @@ describe("release matrix helpers", () => {
     expect(comboEnv.CLOUDFLARE_PAGES_PROJECT_NAME).toBe("lightvela-intl");
     expect(comboEnv.CLOUDFLARE_PAGES_DIR).toBe("dist-global");
     expect(comboEnv.VITE_AUTH_API_BASE_URL).toBe("https://lightclaw.tech");
+    expect(comboEnv.NEXT_PUBLIC_REGION).toBe("global");
+    expect(comboEnv.NEXT_PUBLIC_AUTH_API_BASE_URL).toBe("https://lightclaw.tech");
     expect(comboEnv.VITE_AEGIS_ENABLED).toBe("true");
     expect(comboEnv.VITE_AEGIS_ID).toBe("2ellOCK3ozed3owgOj");
     expect(comboEnv.VITE_AEGIS_HOST_URL).toBe("https://rumt-sg.com");
@@ -268,16 +272,16 @@ describe("release matrix helpers", () => {
 
   it("includes the production China EdgeOne lightvela project in the release matrix", () => {
     const { combos } = loadReleaseMatrix();
-    const combo = combos.find((item) => item.id === "eo:cn-lightvela-prod");
+    const combo = combos.find((item) => item.id === "eo:cn-lightvela-prod-next");
 
     expect(combo).toMatchObject({
       region: "cn",
       channel: "eo",
-      buildCommand: "build:cn",
+      buildCommand: "build:next",
       deployCommand: "deploy:eo",
       projectName: "lightvela",
       authApiBaseUrl: "https://api.lightvela.com",
-      outputDir: "dist-cn",
+      outputDir: "out",
       observability: {
         aegis: {
           enabled: "true",
@@ -293,9 +297,29 @@ describe("release matrix helpers", () => {
     expect(combo?.requiredSecretEnv).toContain("EDGEONE_API_TOKEN");
   });
 
+  it("keeps the legacy production China EdgeOne lightvela project available during migration", () => {
+    const { combos } = loadReleaseMatrix();
+    const combo = combos.find((item) => item.id === "eo:cn-lightvela-prod-legacy");
+
+    expect(combo).toMatchObject({
+      region: "cn",
+      channel: "eo",
+      buildCommand: "build:cn",
+      deployCommand: "deploy:eo",
+      projectName: "lightvela",
+      authApiBaseUrl: "https://api.lightvela.com",
+      outputDir: "dist-cn",
+      deployEnv: {
+        EDGEONE_PAGES_AREA: "global",
+        EDGEONE_PAGES_ENV: "production",
+      },
+    });
+    expect(combo?.requiredSecretEnv).toContain("EDGEONE_API_TOKEN");
+  });
+
   it("includes the production global EdgeOne lightvela intl project in the release matrix", () => {
     const { combos } = loadReleaseMatrix();
-    const combo = combos.find((item) => item.id === "eo:global-lightvela-intl-prod");
+    const combo = combos.find((item) => item.id === "eo:global-lightvela-intl-prod-legacy");
 
     expect(combo).toMatchObject({
       region: "global",
@@ -312,6 +336,26 @@ describe("release matrix helpers", () => {
           hostUrl: "https://rumt-sg.com",
         },
       },
+      deployEnv: {
+        EDGEONE_PAGES_AREA: "global",
+        EDGEONE_PAGES_ENV: "production",
+      },
+    });
+    expect(combo?.requiredSecretEnv).toContain("EDGEONE_API_TOKEN");
+  });
+
+  it("keeps the Next production global EdgeOne lightvela intl project available during migration", () => {
+    const { combos } = loadReleaseMatrix();
+    const combo = combos.find((item) => item.id === "eo:global-lightvela-intl-prod-next");
+
+    expect(combo).toMatchObject({
+      region: "global",
+      channel: "eo",
+      buildCommand: "build:next",
+      deployCommand: "deploy:eo",
+      projectName: "lightvela-intl",
+      authApiBaseUrl: "https://api.lightvela.ai",
+      outputDir: "out",
       deployEnv: {
         EDGEONE_PAGES_AREA: "global",
         EDGEONE_PAGES_ENV: "production",

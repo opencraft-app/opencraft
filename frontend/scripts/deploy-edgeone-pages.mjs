@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -14,7 +14,24 @@ const env = process.env.EDGEONE_PAGES_ENV?.trim() || "production";
 // project (pages-fqdz1kdlfvp1) was created in "global".
 const area = process.env.EDGEONE_PAGES_AREA?.trim() || "global";
 
-const deployDir = process.env.EDGEONE_PAGES_DIR?.trim() || "./dist";
+function resolveDeployDir() {
+  const configured = process.env.EDGEONE_PAGES_DIR?.trim();
+  if (configured) {
+    const edgeOneOutput = join(configured, ".edgeone");
+    return existsSync(edgeOneOutput) ? edgeOneOutput : configured;
+  }
+  if (existsSync(join("out", ".edgeone"))) return join("out", ".edgeone");
+  if (existsSync("out")) return "out";
+  throw new Error("No Next.js EdgeOne deploy output found. Run pnpm build:next first, or set EDGEONE_PAGES_DIR explicitly.");
+}
+
+let deployDir;
+try {
+  deployDir = resolveDeployDir();
+} catch (error) {
+  console.error(error);
+  process.exit(1);
+}
 
 // Token resolution order:
 //   1. EDGEONE_API_TOKEN env var (preferred in CI)
@@ -37,7 +54,7 @@ const token = resolveToken();
 
 const args = [
   "edgeone",
-  "pages",
+  "makers",
   "deploy",
   deployDir,
   "--name",

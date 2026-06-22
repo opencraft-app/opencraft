@@ -81,7 +81,7 @@ Enter the console and open the "Model" button.
 5. The corresponding record appears in the "Current model" list, indicating successful configuration
     
 
-![](../images/5-1.png)
+![](../images/5-1.webp)
 
 ### Additional fields for custom models
 

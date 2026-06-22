@@ -118,14 +118,16 @@ describe("generate-static-site", () => {
 
       const appHtml = readFileSync(join(distDir, "app.html"), "utf8");
       expect(appHtml).toContain("<meta name=\"robots\" content=\"noindex,nofollow\"");
-      expect(appHtml).toContain("正在恢复会话...");
+      expect(appHtml).toContain("aria-hidden=\"true\"");
+      expect(appHtml).toContain("h-32 rounded-lg bg-black/[0.04]");
       expect(appHtml).toContain("<script type=\"module\" crossorigin src=\"/assets/index-test.js\"></script>");
       expect(appHtml).toContain("<link rel=\"icon\" type=\"image/png\" href=\"/lightvela-icon.png\">");
       expect(appHtml).not.toContain("data-static-site-critical");
       expect(appHtml).not.toContain("能帮我做什么");
 
       const agentsHtml = readFileSync(join(distDir, "agents", "index.html"), "utf8");
-      expect(agentsHtml).toContain("正在恢复会话...");
+      expect(agentsHtml).toContain("aria-hidden=\"true\"");
+      expect(agentsHtml).toContain("h-48 rounded-lg bg-black/[0.04]");
       expect(agentsHtml).toContain("<link rel=\"icon\" type=\"image/png\" href=\"/lightvela-icon.png\">");
       expect(agentsHtml).not.toContain("能帮我做什么");
 

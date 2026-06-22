@@ -2,7 +2,6 @@ import { LegalFooter } from "@/components/site/legal-footer";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, ArrowRight, Check, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, Loader2, Wifi } from "lucide-react";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { Link, useNavigate } from "react-router-dom";
 import { useOpenClaw } from "@/contexts/openclaw-context";
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
@@ -12,6 +11,7 @@ import { InviteCodeModal } from "@/components/site/login-modal";
 import { RepositoryError } from "@/repositories/http-repositories";
 import type { Bundle } from "@/domain/types";
 import { useT } from "@/i18n/t";
+import { AppLink, useAppNavigate } from "@/lib/app-navigation";
 import { isGlobal } from "@/lib/region";
 import { isPaidBillingEnabled, formatYuan, centsToYuan } from "@/lib/billing-flow";
 import {
@@ -470,7 +470,7 @@ const SubscribeNavbar = () => {
         }}
       >
         <BrandMark to="/" />
-        <Link
+        <AppLink
           to="/"
           style={{
             fontSize: 15,
@@ -483,7 +483,7 @@ const SubscribeNavbar = () => {
           onMouseLeave={(e) => { e.currentTarget.style.color = colors.warmGray500; }}
         >
           {t("返回首页")}
-        </Link>
+        </AppLink>
       </div>
     </header>
   );
@@ -1255,7 +1255,7 @@ const PAY_POLL_TIMEOUT_MS = 180_000;
 
 export const SubscribePage = () => {
   const t = useT();
-  const navigate = useNavigate();
+  const navigate = useAppNavigate();
   const { isLoggedIn, login, isSubscribed, subscribe, addBot, bots, user, refreshPasses } = useOpenClaw();
   const { session } = useSession();
   const repositories = useRepositories();
@@ -1669,7 +1669,7 @@ export const SubscribePage = () => {
             <p style={{ fontSize: 14, color: colors.warmGray300, marginBottom: 40, lineHeight: 1.6 }}>
               {t("当前 {{plan}} 套餐最多可创建 {{max}} 个 Hermes，你已达到上限。", { plan: user.plan.name, max: user.plan.maxBots })}
             </p>
-            <Link
+            <AppLink
               to="/dashboard/settings"
               style={{
                 display: "inline-flex",
@@ -1688,9 +1688,9 @@ export const SubscribePage = () => {
               onMouseLeave={(e) => { e.currentTarget.style.background = colors.primary; }}
             >
               {t("管理我的智能体伙伴")} <ArrowRight style={{ width: 16, height: 16 }} />
-            </Link>
+            </AppLink>
             <div style={{ marginTop: 24 }}>
-              <Link
+              <AppLink
                 to="/"
                 style={{
                   display: "inline-flex",
@@ -1705,7 +1705,7 @@ export const SubscribePage = () => {
                 onMouseLeave={(e) => { e.currentTarget.style.color = colors.warmGray300; }}
               >
                 <ArrowLeft style={{ width: 14, height: 14 }} /> {t("返回首页")}
-              </Link>
+              </AppLink>
             </div>
           </div>
         </main>
@@ -1792,12 +1792,12 @@ export const SubscribePage = () => {
                 {!isGlobal && error.code === "realname_required" ? (
                   <>
                     {t("请前往")}{" "}
-                    <Link
+                    <AppLink
                       to="/account"
                       style={{ color: "#cf3d4c", fontWeight: 700, textDecoration: "underline", textUnderlineOffset: 3 }}
                     >
                       {t("我的账号")}
-                    </Link>{" "}
+                    </AppLink>{" "}
                     {t("进行实名。")}
                   </>
                 ) : error.message}

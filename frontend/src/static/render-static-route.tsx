@@ -1,10 +1,9 @@
 import { renderToString } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 
+import { PublicSiteHeader } from "@/components/site/public-site-header";
 import i18n from "@/i18n";
-import { HeaderSectionContent } from "@/imports/Frame2147230025/sections/HeaderSection";
 import HeroSection from "@/imports/Frame2147230025/sections/HeroSection";
-import "@/pages/marketing/landing-page-isolation.css";
 
 type StaticRouteInput = {
   route: {
@@ -27,12 +26,14 @@ const noop = () => undefined;
 function StaticLandingPage() {
   return (
     <MemoryRouter initialEntries={["/"]}>
-      <div className="lw-landing-root w-full bg-white overflow-x-hidden">
+      <div className="w-full bg-white overflow-x-hidden">
         <div className="relative">
-          <HeaderSectionContent
+          <PublicSiteHeader
+            appearance="immersive"
             onLoginClick={noop}
             onCreateClick={noop}
             authSnapshot={{ authReady: false, isAuthenticated: false }}
+            position="absolute"
           />
           <HeroSection onCreateClick={noop} />
         </div>

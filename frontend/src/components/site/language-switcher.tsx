@@ -18,10 +18,12 @@
 import { Check, ChevronDown, Globe } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
 
 import { setLocale } from "@/i18n";
 import { switchLocaleInPath } from "@/lib/region";
+
+export type LanguageSwitcherVariant = "dropdown" | "inline";
+export type LanguageSwitcherNavigate = (targetUrl: string) => void;
 
 type Locale = "zh-CN" | "en-US";
 
@@ -61,7 +63,7 @@ function currentOption(lang: string | undefined): Option {
 function applyLocaleChange(
   value: Locale,
   reloadAfterSwitch: boolean,
-  navigate: ReturnType<typeof useNavigate>,
+  navigateTo?: LanguageSwitcherNavigate,
 ): void {
   setLocale(value);
 
@@ -83,18 +85,25 @@ function applyLocaleChange(
   }
 
   if (target !== window.location.pathname) {
-    /* 通过 react-router 切 URL，确保 useLocation / 路由 effect / ScrollRestoration
-       都能拿到新 pathname。 */
-    navigate(targetUrl, { replace: true });
+    if (navigateTo) {
+      navigateTo(targetUrl);
+      return;
+    }
+    window.location.assign(targetUrl);
   }
 }
 
 /**
  * 下拉菜单形态（桌面端用）
  */
-function DropdownSwitcher({ reloadAfterSwitch }: { reloadAfterSwitch: boolean }) {
+function DropdownSwitcher({
+  navigateTo,
+  reloadAfterSwitch,
+}: {
+  navigateTo?: LanguageSwitcherNavigate;
+  reloadAfterSwitch: boolean;
+}) {
   const { i18n } = useTranslation();
-  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const active = currentOption(i18n.language);
@@ -112,7 +121,7 @@ function DropdownSwitcher({ reloadAfterSwitch }: { reloadAfterSwitch: boolean })
 
   const handlePick = (value: Locale) => {
     setOpen(false);
-    if (value !== i18n.language) applyLocaleChange(value, reloadAfterSwitch, navigate);
+    if (value !== i18n.language) applyLocaleChange(value, reloadAfterSwitch, navigateTo);
   };
 
   return (
@@ -165,9 +174,14 @@ function DropdownSwitcher({ reloadAfterSwitch }: { reloadAfterSwitch: boolean })
 /**
  * 平铺形态（移动端菜单内用）
  */
-function InlineSwitcher({ reloadAfterSwitch }: { reloadAfterSwitch: boolean }) {
+function InlineSwitcher({
+  navigateTo,
+  reloadAfterSwitch,
+}: {
+  navigateTo?: LanguageSwitcherNavigate;
+  reloadAfterSwitch: boolean;
+}) {
   const { i18n } = useTranslation();
-  const navigate = useNavigate();
   const active = currentOption(i18n.language);
 
   return (
@@ -179,7 +193,7 @@ function InlineSwitcher({ reloadAfterSwitch }: { reloadAfterSwitch: boolean }) {
             key={opt.value}
             type="button"
             onClick={() => {
-              if (!selected) applyLocaleChange(opt.value, reloadAfterSwitch, navigate);
+              if (!selected) applyLocaleChange(opt.value, reloadAfterSwitch, navigateTo);
             }}
             className={`inline-flex items-center justify-center h-[32px] px-3 rounded-[100px] text-[13px] transition-colors ${
               selected
@@ -196,10 +210,12 @@ function InlineSwitcher({ reloadAfterSwitch }: { reloadAfterSwitch: boolean }) {
 }
 
 export function LanguageSwitcher({
+  navigateTo,
   variant = "dropdown",
   reloadAfterSwitch = false,
 }: {
-  variant?: "dropdown" | "inline";
+  navigateTo?: LanguageSwitcherNavigate;
+  variant?: LanguageSwitcherVariant;
   /**
    * 切换后是否强制刷新页面。
    * 在使用 @tencent/tea-sdk-lightclaw 的页面（目前仅 /agents）
@@ -208,6 +224,6 @@ export function LanguageSwitcher({
   reloadAfterSwitch?: boolean;
 }) {
   return variant === "inline"
-    ? <InlineSwitcher reloadAfterSwitch={reloadAfterSwitch} />
-    : <DropdownSwitcher reloadAfterSwitch={reloadAfterSwitch} />;
+    ? <InlineSwitcher navigateTo={navigateTo} reloadAfterSwitch={reloadAfterSwitch} />
+    : <DropdownSwitcher navigateTo={navigateTo} reloadAfterSwitch={reloadAfterSwitch} />;
 }

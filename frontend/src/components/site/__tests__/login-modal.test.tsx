@@ -49,6 +49,18 @@ describe("LoginModal (国内站 默认 isGlobal=false)", () => {
     cleanup();
   });
 
+  it("通过 portal 挂载到 body，避免继承 header 的定位上下文", async () => {
+    const { container } = render(
+      <header data-testid="header-shell" style={{ position: "fixed", backdropFilter: "blur(20px)" }}>
+        <LoginModal open onClose={vi.fn()} />
+      </header>,
+    );
+
+    const dialog = await screen.findByRole("dialog", { name: "登录" });
+    expect(container).not.toContainElement(dialog);
+    expect(document.body).toContainElement(dialog);
+  });
+
   it("默认展示 QQ / 微信 入口，不展示 GitHub / Google", () => {
     render(<LoginModal open onClose={vi.fn()} />);
 

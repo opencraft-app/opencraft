@@ -182,6 +182,8 @@ export function createComboEnvironment(combo, projectName, env = process.env) {
     FRONTEND_RELEASE_CHANNEL: combo.channel,
     VITE_REGION: combo.region,
     VITE_AUTH_API_BASE_URL: combo.authApiBaseUrl,
+    NEXT_PUBLIC_REGION: combo.region,
+    NEXT_PUBLIC_AUTH_API_BASE_URL: combo.authApiBaseUrl,
   };
 
   const aegis = combo.observability?.aegis;

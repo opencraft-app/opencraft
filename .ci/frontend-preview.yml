@@ -27,7 +27,7 @@ variables:
     readonly: false
     allow-modify-at-startup: true
   FRONTEND_PREVIEW_BUILD_KIND:
-    value: legacy
+    value: next
     readonly: false
     allow-modify-at-startup: true
 

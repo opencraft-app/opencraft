@@ -19,8 +19,7 @@ import { MemoryRouter } from "react-router-dom";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import * as oauthModule from "@/lib/oauth";
-import * as repositoriesModule from "@/repositories/http-repositories";
+import * as redirectModule from "@/lib/browser-redirect";
 import * as wxSignModule from "@tencent/tcb-jssdk/lib/saasSdk/wxSign";
 import type { CreatePassOrderUrlResult } from "@/domain/types";
 import { WeChatPayPage } from "@/pages/auth/wechat-pay-page";
@@ -46,8 +45,7 @@ const SAFARI_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) Mobile
 
 let redirectSpy: ReturnType<typeof vi.spyOn>;
 let wxSignSpy: ReturnType<typeof vi.spyOn>;
-let getPassOrderUrlMock: ReturnType<typeof vi.fn>;
-let getRenewOrderUrlMock: ReturnType<typeof vi.fn>;
+let fetchMock: ReturnType<typeof vi.fn>;
 
 const mockOrderUrlResult = (overrides: Partial<CreatePassOrderUrlResult> = {}): CreatePassOrderUrlResult => ({
   deal_name: "20260601000001",
@@ -61,21 +59,18 @@ const mockOrderUrlResult = (overrides: Partial<CreatePassOrderUrlResult> = {}): 
   ...overrides,
 });
 
+const jsonResponse = (payload: unknown, status = 200) =>
+  new Response(JSON.stringify(payload), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+
 beforeEach(() => {
   vi.stubEnv("VITE_AUTH_API_BASE_URL", "https://api-sandbox-bj-7.lightclaw.tech");
-  redirectSpy = vi.spyOn(oauthModule, "redirectToOAuthStart").mockImplementation(() => undefined);
+  redirectSpy = vi.spyOn(redirectModule, "redirectBrowserTo").mockImplementation(() => undefined);
   wxSignSpy = vi.spyOn(wxSignModule, "wxSign").mockImplementation(() => undefined);
-  getPassOrderUrlMock = vi.fn().mockResolvedValue(mockOrderUrlResult());
-  getRenewOrderUrlMock = vi.fn().mockResolvedValue(mockOrderUrlResult());
-  vi.spyOn(repositoriesModule, "createRepositories").mockReturnValue({
-    /* 仅 plans 用于本页；其他 repository 测试不会触达，给空对象类型断言即可 */
-    auth: {} as never,
-    bots: {} as never,
-    plans: {
-      getPassOrderUrl: getPassOrderUrlMock,
-      getRenewOrderUrl: getRenewOrderUrlMock,
-    } as never,
-  });
+  fetchMock = vi.fn().mockResolvedValue(jsonResponse({ data: mockOrderUrlResult() }));
+  vi.stubGlobal("fetch", fetchMock);
 });
 
 afterEach(() => {
@@ -116,7 +111,7 @@ describe("WeChatPayPage / 无订单 query（联调占位 / 旧行为兼容）", 
     expect(screen.getByText("当前 OpenID")).toBeInTheDocument();
     expect(screen.getByText("o-lightvela-123")).toBeInTheDocument();
     expect(redirectSpy).not.toHaveBeenCalled();
-    expect(getPassOrderUrlMock).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("兼容 hash 中带回的 openid", () => {
@@ -185,8 +180,7 @@ describe("WeChatPayPage / 完整支付链路（A 方案）", () => {
     /* 业务 effect 已识别过期并显示 expired 态 */
     expect(screen.getByRole("heading", { name: "二维码已失效" })).toBeInTheDocument();
     /* 关键：order-url 不应被调用（避免对已过期的 authCode 浪费请求） */
-    expect(getPassOrderUrlMock).not.toHaveBeenCalled();
-    expect(getRenewOrderUrlMock).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
     /* 注意：OAuth effect 跟业务态解耦（对齐跑通版 commit 82e35e22 的单一职责），
        即使过期也会照常发 OAuth；这是预期行为，不影响最终 UI */
   });
@@ -197,7 +191,7 @@ describe("WeChatPayPage / 完整支付链路（A 方案）", () => {
 
     /* 对齐跑通版：OAuth effect 依赖 inWeChat，非微信环境下 short-circuit；业务 effect 因 !openId 不会跰order-url */
     expect(redirectSpy).not.toHaveBeenCalled();
-    expect(getPassOrderUrlMock).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
     /* 页面停在 loading 态，由文案兜底 */
     expect(screen.getByText("正在准备支付...")).toBeInTheDocument();
   });
@@ -207,7 +201,7 @@ describe("WeChatPayPage / 完整支付链路（A 方案）", () => {
     renderPage(`/auth/wechat-pay?${buildOrderQuery()}`);
 
     expect(redirectSpy).toHaveBeenCalledTimes(1);
-    expect(getPassOrderUrlMock).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("微信内 + 已尝试 OAuth 仍无 openid → 保持 loading（OAuth effect short-circuit，不陷死循环）", () => {
@@ -216,19 +210,20 @@ describe("WeChatPayPage / 完整支付链路（A 方案）", () => {
 
     /* 跑通版行为：不重复跳 OAuth；业务 effect 因 !openId 也不跰 order-url；页面停在 loading */
     expect(redirectSpy).not.toHaveBeenCalled();
-    expect(getPassOrderUrlMock).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(screen.getByText("正在准备支付...")).toBeInTheDocument();
   });
 
   it("零元订单（need_charge=0）→ success 态", async () => {
     setUserAgent(WECHAT_UA);
-    getPassOrderUrlMock.mockResolvedValueOnce(mockOrderUrlResult({ need_charge: 0 }));
+    fetchMock.mockResolvedValueOnce(jsonResponse({ data: mockOrderUrlResult({ need_charge: 0 }) }));
     renderPage(`/auth/wechat-pay?${buildOrderQuery({ openid: "o-zero-charge" })}`);
 
     await waitFor(() => {
-      expect(getPassOrderUrlMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
-    expect(getPassOrderUrlMock).toHaveBeenCalledWith({
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api-sandbox-bj-7.lightclaw.tech/v1/passes/order-url");
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
       deal_names: ["20260601000001"],
       platform: "mobile",
       wx_open_id: "o-zero-charge",
@@ -264,20 +259,22 @@ describe("WeChatPayPage / 完整支付链路（A 方案）", () => {
     renderPage(`/auth/wechat-pay?${buildOrderQuery({ openid: "o-renew", pid: "pass_2024_pro_001" })}`);
 
     await waitFor(() => {
-      expect(getRenewOrderUrlMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
-    expect(getRenewOrderUrlMock).toHaveBeenCalledWith("pass_2024_pro_001", {
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api-sandbox-bj-7.lightclaw.tech/v1/passes/pass_2024_pro_001/renew/order-url",
+    );
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
       deal_names: ["20260601000001"],
       platform: "mobile",
       wx_open_id: "o-renew",
       auth_code: "AC-7f3e4b29c1d24e6a9b1f0e8d7a5c4b30",
     });
-    expect(getPassOrderUrlMock).not.toHaveBeenCalled();
   });
 
   it("order-url 接口失败 → error 态展示后端报错", async () => {
     setUserAgent(WECHAT_UA);
-    getPassOrderUrlMock.mockRejectedValueOnce(new Error("auth_code 已过期"));
+    fetchMock.mockResolvedValueOnce(jsonResponse({ message: "auth_code 已过期", code: "AUTH_CODE_INVALID" }, 400));
     /* 屏蔽 console.error 噪音 */
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     renderPage(`/auth/wechat-pay?${buildOrderQuery({ openid: "o-fail" })}`);
@@ -285,14 +282,14 @@ describe("WeChatPayPage / 完整支付链路（A 方案）", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "支付遇到问题" })).toBeInTheDocument();
     });
-    expect(screen.getByText("auth_code 已过期")).toBeInTheDocument();
+    expect(screen.getByText(/auth_code 已过期/)).toBeInTheDocument();
     expect(wxSignSpy).not.toHaveBeenCalled();
   });
 
   it("loading 态：默认渲染 spinner + bundleName 标题 + 「正在准备支付...」", async () => {
     setUserAgent(WECHAT_UA);
     /* 让 order-url 永不 resolve，状态停留在 loading */
-    getPassOrderUrlMock.mockReturnValueOnce(new Promise(() => undefined));
+    fetchMock.mockReturnValueOnce(new Promise(() => undefined));
     renderPage(`/auth/wechat-pay?${buildOrderQuery({ openid: "o-pending" })}`);
 
     expect(screen.getByRole("heading", { name: "LightVela 专业版套餐 购买" })).toBeInTheDocument();

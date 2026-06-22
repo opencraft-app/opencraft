@@ -44,8 +44,8 @@ vi.mock("@/components/site/legal-footer", () => ({
   LegalFooter: () => null,
 }));
 
-vi.mock("@/pages/marketing/landing/landing-navbar", () => ({
-  LandingNavbar: () => <div>navbar</div>,
+vi.mock("@/components/site/public-site-header", () => ({
+  PublicSiteHeader: () => <div>navbar</div>,
 }));
 
 afterEach(() => {
@@ -68,7 +68,7 @@ describe("marketing channel copy", () => {
     );
 
     expect(screen.getByText("2026 年 5 月")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "LightVela 支持企业微信聊天通道" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "LightVela 支持企业微信通道" })).toBeInTheDocument();
     expect(screen.getByText("现在可以将 Hermes Agent 接入企业微信，在企业微信会话中直接与云端智能伙伴对话。")).toBeInTheDocument();
   });
 
@@ -80,8 +80,8 @@ describe("marketing channel copy", () => {
     );
 
     expect(screen.getByText("2026 年 6 月")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "自动任务支持「最近执行」视图" })).toBeInTheDocument();
-    expect(screen.getByText("现在可以在自动任务页面查看最近执行记录，快速确认任务触发时间、执行结果。")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "LightVela 支持设置自动任务" })).toBeInTheDocument();
+    expect(screen.getByText("为 Agent 设置周期、间隔或单次自动任务，让它按计划执行提醒、总结、通知等日常工作。")).toBeInTheDocument();
   });
 
   it("describes the April launch with channels, model APIs, and Skill support", () => {

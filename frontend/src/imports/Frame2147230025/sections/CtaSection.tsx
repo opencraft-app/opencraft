@@ -70,7 +70,7 @@ function MascotGroup({ offsetX, offsetY }: MascotGroupProps) {
         >
           <img
             alt=""
-            src="/Slice 1.png"
+            src="/Slice 1.webp"
             className="pointer-events-none"
             style={{ width: 126, height: 118 }}
           />

@@ -713,7 +713,20 @@ function renderAppShell(template, site) {
     "<link rel=\"icon\" type=\"image/png\" href=\"/lightvela-icon.png\">",
     assetTags,
   ].join("");
-  const body = "<div class=\"flex min-h-dvh items-center justify-center bg-white px-4 text-sm text-[var(--text-secondary)]\">正在恢复会话...</div>";
+  const body = [
+    "<div class=\"flex min-h-dvh bg-white px-6 py-24\" aria-hidden=\"true\">",
+    "<div class=\"mx-auto w-full max-w-[1180px]\">",
+    "<div class=\"mb-8 h-9 w-44 rounded-full bg-black/[0.06]\"></div>",
+    "<div class=\"grid gap-4 md:grid-cols-[minmax(0,1fr)_320px]\">",
+    "<div class=\"space-y-4\">",
+    "<div class=\"h-32 rounded-lg bg-black/[0.04]\"></div>",
+    "<div class=\"h-32 rounded-lg bg-black/[0.04]\"></div>",
+    "</div>",
+    "<div class=\"h-48 rounded-lg bg-black/[0.04]\"></div>",
+    "</div>",
+    "</div>",
+    "</div>",
+  ].join("");
   return template
     .replace(/<html[^>]*>/i, `<html lang="${site.lang}">`)
     .replace(/<head>[\s\S]*?<\/head>/i, `<head>${head}</head>`)
