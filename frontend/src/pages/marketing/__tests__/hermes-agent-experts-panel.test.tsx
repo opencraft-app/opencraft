@@ -13,7 +13,7 @@ import {
   getUniqueSkillSlugs,
   parseInstalledSkillSlugs,
   stripMarkdownFrontmatter,
-} from "../openclaw-experts-panel";
+} from "../hermes-agent-experts-panel";
 
 vi.mock("@/lib/skillhub-api", () => ({
   fetchSkillFile: vi.fn(),
@@ -22,7 +22,7 @@ vi.mock("@/lib/skillhub-api", () => ({
   fetchSkillSetDetail: vi.fn(),
 }));
 
-describe("openclaw experts panel", () => {
+describe("hermes agent experts panel", () => {
   afterEach(() => {
     vi.clearAllMocks();
     document.body.innerHTML = "";

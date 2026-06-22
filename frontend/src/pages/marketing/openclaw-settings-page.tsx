@@ -101,7 +101,7 @@ import {
   type HermesMemoryLimitValidation,
 } from "@/pages/marketing/openclaw-memory";
 import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
-import { ExpertsPanel } from "@/pages/marketing/openclaw-experts-panel";
+import { ExpertsPanel } from "@/pages/marketing/hermes-agent-experts-panel";
 import { AchievementsPanel } from "@/pages/marketing/openclaw-achievements-panel";
 import { AutomationsPanel } from "@/pages/marketing/openclaw-automations-panel";
 import { TatFileManagerPanel } from "@/components/domain/tat-file-manager-panel";
