@@ -28,7 +28,7 @@ variables:
     readonly: false
     allow-modify-at-startup: true
   FRONTEND_RELEASE_MATRIX:
-    value: ""
+    value: cf:cn-lightvela-staging,cf:global-lightvela-intl-staging
     readonly: false
     allow-modify-at-startup: true
   FRONTEND_ARTIFACT_MATRIX:

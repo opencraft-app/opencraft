@@ -2,6 +2,7 @@
 
 > Trigger note: README-only change to retrigger frontend release pipeline after Cloudflare preview path adjustments.
 > Trigger note 2: README-only change to retrigger frontend update after release-frontend path correction.
+> Trigger note 3: README-only change to publish Cloudflare staging from Next artifacts by default.
 
 ## 部署形态
 

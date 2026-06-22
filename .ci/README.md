@@ -547,7 +547,8 @@ Guard 自举策略：
 
 - `.ci/frontend.yml`
   - 默认先构建并归档 frontend Pages artifact 矩阵：`cf:cn-lightvela-staging`、`cf:global-lightvela-intl-staging`、`eo:cn-lightvela-prod-next`、`eo:global-lightvela-intl-prod-next`
-  - Cloudflare 预发发布步骤默认跳过；手动显式传入 `cf:*` 矩阵时，从 TCR 拉取已归档 artifact 校验后发布，不现场 rebuild
+  - Cloudflare 预发发布步骤默认发布 `cf:cn-lightvela-staging`、`cf:global-lightvela-intl-staging`；也可手动显式传入 `cf:*` 矩阵覆盖发布范围
+  - Cloudflare 预发发布从 TCR 拉取已归档 artifact 校验后发布，不现场 rebuild
   - artifact 构建步骤只需要 TCR/ORAS，不加载 Cloudflare/EdgeOne 发布 token
 - `.ci/frontend-edgeone-lightvela.yml`
   - 手动发布 `eo:cn-lightvela-prod-next`；强制从已归档 artifact 发布
