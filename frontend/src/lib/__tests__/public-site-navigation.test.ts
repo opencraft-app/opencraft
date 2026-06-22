@@ -28,11 +28,12 @@ describe("publicSiteHref", () => {
     const { publicSiteHref } = await loadPublicSiteNavigation("global");
 
     expect(publicSiteHref("/", "en-US", { localized: true })).toBe("/");
-    expect(publicSiteHref("/", "zh-CN", { localized: true })).toBe("/zh-cn");
+    expect(publicSiteHref("/", "zh-CN", { localized: true })).toBe("/zh-sg");
     expect(publicSiteHref("/", "zh-SG", { localized: true })).toBe("/zh-sg");
     expect(publicSiteHref("/docs/overview", "en-US", { localized: true })).toBe("/docs/overview");
-    expect(publicSiteHref("/docs/overview", "zh-CN", { localized: true })).toBe("/zh-cn/docs/overview");
+    expect(publicSiteHref("/docs/overview", "zh-CN", { localized: true })).toBe("/zh-sg/docs/overview");
+    expect(publicSiteHref("/docs/overview", "zh-SG", { localized: true })).toBe("/zh-sg/docs/overview");
     expect(publicSiteHref("/changelog", "en-US", { localized: true })).toBe("/changelog");
-    expect(publicSiteHref("/changelog", "zh-CN", { localized: true })).toBe("/zh-cn/changelog");
+    expect(publicSiteHref("/changelog", "zh-CN", { localized: true })).toBe("/zh-sg/changelog");
   });
 });

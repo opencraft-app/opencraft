@@ -1,4 +1,4 @@
-import { DEFAULT_LOCALE } from "@/lib/region";
+import { DEFAULT_LOCALE, isGlobal } from "@/lib/region";
 import {
   defaultPublicUrlLang,
   publicUrlLangForLocale,
@@ -25,6 +25,11 @@ export const PUBLIC_SITE_NAV_ITEMS: readonly PublicSiteNavItem[] = [
 
 const DEFAULT_PUBLIC_URL_LOCALE = defaultPublicUrlLang(DEFAULT_LOCALE);
 
+function publicUrlLangForSiteLocale(locale: PublicSiteLocale): string {
+  if (isGlobal && locale.startsWith("zh")) return "zh-sg";
+  return publicUrlLangForLocale(locale);
+}
+
 export function publicSiteHref(
   href: string,
   locale: PublicSiteLocale,
@@ -36,11 +41,11 @@ export function publicSiteHref(
   const bare = stripPublicSiteLocalePrefix(href);
   if (!shouldLocalizePublicPath(bare)) return bare;
 
-  const docsLocale = publicUrlLangForLocale(locale);
+  const docsLocale = publicUrlLangForSiteLocale(locale);
   if (bare === "/docs" || bare.startsWith("/docs/")) {
     return docsLocale === DEFAULT_PUBLIC_URL_LOCALE ? bare : `/${docsLocale}${bare}`;
   }
-  const lang = publicUrlLangForLocale(locale);
+  const lang = publicUrlLangForSiteLocale(locale);
   if (lang === DEFAULT_PUBLIC_URL_LOCALE) return bare;
   if (bare === "/") return `/${lang}`;
   return `/${lang}${bare}`;
