@@ -73,6 +73,7 @@ cmd="$1"
 shift
 case "$cmd" in
   login)
+    cat >/dev/null || true
     exit 0
     ;;
   pull)
