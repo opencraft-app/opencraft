@@ -30,7 +30,17 @@ function surface(items: ChatSurfaceConversationItem[] = []): ChatSurface {
 }
 
 function debug(source_event_ids: string[] = []) {
-  return { projection: "conversation" as const, source_event_ids };
+  return {
+    projection: "conversation" as const,
+    source_event_ids,
+    source_event_ranges: source_event_ids.map((eventId, index) => ({
+      epoch: 1,
+      from_event_id: eventId,
+      to_event_id: eventId,
+      from_seq: index + 1,
+      to_seq: index + 1,
+    })),
+  };
 }
 
 function baseItem(
@@ -161,12 +171,21 @@ test("turns conversation items into host-aware render rows", () => {
   assert.equal(model.rows[1]?.kind, "turn_meta");
   assert.equal(model.rows[1]?.label, "处理中");
   assert.equal(model.rows[2]?.kind, "agent_work");
+  assert.equal(model.rows[2]?.kind === "agent_work" ? model.rows[2].status : "", "failed");
   assert.equal(model.rows[3]?.kind, "assistant_message");
   assert.equal(model.rows[3]?.status, "streaming");
   assert.equal(model.rows[3]?.streaming, true);
   assert.deepEqual(model.rows[3]?.blocks.map((block) => block.text), ["第一段", "第二段"]);
-  assert.equal(model.rows[4]?.kind, "status");
-  assert.match(model.rows[4]?.kind === "status" ? model.rows[4].label : "", /No API key/);
+  assert.equal(model.rows[4], undefined);
+});
+
+test("composer exposes running state from the session stream", () => {
+  const runningSurface = surface([]);
+  runningSurface.stream = { connected: true, running: true };
+
+  const model = buildChatRenderModel(runningSurface, { kind: "desktop_web" });
+
+  assert.equal(model.composer.is_running, true);
 });
 
 test("does not infer turn metadata without explicit turn_meta items", () => {
@@ -348,12 +367,18 @@ test("groups consecutive completed agent work as a render-model-only row", () =>
   assert.equal(group?.kind, "agent_work_group");
   if (group?.kind !== "agent_work_group") assert.fail("expected grouped agent work");
   assert.equal(group.title, "已运行 2 条命令并读取 1 个文件");
-  assert.equal(group.defaultCollapsed, true);
+  assert.equal("defaultCollapsed" in group, false);
   assert.deepEqual(group.children.map((child) => child.agentWorkId), [
     "shell_1",
     "shell_2",
     "read_1",
   ]);
+
+  const groupingSource = readFileSync(
+    join(root, "packages/vela-chat-render-model/src/agent-work/grouping.ts"),
+    "utf8",
+  );
+  assert.doesNotMatch(groupingSource, /defaultCollapsed/);
 });
 
 test("agent work grouping stays out of the OpenAPI wire contract", () => {
@@ -362,7 +387,42 @@ test("agent work grouping stays out of the OpenAPI wire contract", () => {
   assert.doesNotMatch(openapi, /agent_work_group/);
 });
 
-test("does not group running or failed agent work rows", () => {
+test("groups failed terminal work with adjacent finished work without synthetic status rows", () => {
+  const model = buildChatRenderModel(
+    surface([
+      baseItem({
+        id: "shell_done",
+        kind: "agent_work",
+        status: "completed",
+        detail: { type: "shell", command: "ls -la" },
+      }),
+      baseItem({
+        id: "read_failed",
+        kind: "agent_work",
+        status: "failed",
+        title: "read",
+        summary: "content",
+        detail: { type: "read", file_path: "content" },
+      }),
+    ]),
+    { kind: "desktop_web" },
+  );
+
+  assert.deepEqual(
+    model.rows.map((row) => row.kind),
+    ["agent_work_group"],
+  );
+  const group = model.rows[0];
+  assert.equal(group?.kind, "agent_work_group");
+  if (group?.kind !== "agent_work_group") assert.fail("expected grouped agent work");
+  assert.equal(group.title, "已运行 1 条命令并读取 1 个文件");
+  assert.deepEqual(group.children.map((child) => [child.agentWorkId, child.status]), [
+    ["shell_done", "completed"],
+    ["read_failed", "failed"],
+  ]);
+});
+
+test("keeps running agent work out of folded finished work groups", () => {
   const model = buildChatRenderModel(
     surface([
       baseItem({
@@ -372,10 +432,10 @@ test("does not group running or failed agent work rows", () => {
         detail: { type: "shell", command: "npm test" },
       }),
       baseItem({
-        id: "shell_failed",
+        id: "shell_done",
         kind: "agent_work",
-        status: "failed",
-        detail: { type: "shell", command: "npm test", stderr: "boom" },
+        status: "completed",
+        detail: { type: "shell", command: "ls -la" },
       }),
     ]),
     { kind: "desktop_web" },
@@ -383,8 +443,7 @@ test("does not group running or failed agent work rows", () => {
 
   assert.deepEqual(
     model.rows.map((row) => row.kind),
-    ["agent_work", "agent_work", "status"],
+    ["agent_work", "agent_work"],
   );
   assert.equal(model.rows[0]?.kind === "agent_work" ? model.rows[0].display : "", "prominent");
-  assert.equal(model.rows[1]?.kind === "agent_work" ? model.rows[1].display : "", "prominent");
 });

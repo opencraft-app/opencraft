@@ -153,6 +153,14 @@ export function applyConversationLiveOverlay(
   return updateConversationCursor(conversation, event);
 }
 
+export function mergeConversationSnapshot(
+  current: ConversationWireView | null,
+  snapshot: ConversationWireView,
+): ConversationWireView {
+  if (!current) return snapshot;
+  return compareCursorOrder(snapshot.cursor, current.cursor) < 0 ? current : snapshot;
+}
+
 export function needsConversationRefreshAfterLiveOverlay(
   conversation: ConversationWireView,
   event: VelaStreamEventWire,
@@ -336,6 +344,7 @@ function appendConversationAssistantDelta(
       source_event_ids: event.event_id
         ? [...item.source_event_ids, event.event_id]
         : item.source_event_ids,
+      source_event_ranges: appendSourceEventRange(item.source_event_ranges, event),
     };
   });
 
@@ -373,6 +382,39 @@ function conversationAssistantOverlayTarget(
         (item) => item.kind === "assistant_message" && item.status === "streaming",
       );
   return { itemId, fallbackIndex };
+}
+
+function appendSourceEventRange(
+  ranges: ConversationWireItem["source_event_ranges"],
+  event: VelaStreamEventWire,
+) {
+  if (
+    !event.event_id ||
+    typeof event.seq !== "number" ||
+    !Number.isFinite(event.seq)
+  ) {
+    return ranges;
+  }
+  const epoch = typeof event.epoch === "number" && Number.isFinite(event.epoch) ? event.epoch : 0;
+  const next = {
+    epoch,
+    from_event_id: event.event_id,
+    to_event_id: event.event_id,
+    from_seq: event.seq,
+    to_seq: event.seq,
+  };
+  const previous = ranges.at(-1);
+  if (previous && previous.epoch === epoch && previous.to_seq + 1 === event.seq) {
+    return [
+      ...ranges.slice(0, -1),
+      {
+        ...previous,
+        to_event_id: event.event_id,
+        to_seq: event.seq,
+      },
+    ];
+  }
+  return [...ranges, next];
 }
 
 function isLiveConversationAssistantItem(item: ConversationWireItem) {

@@ -90,6 +90,24 @@ async fn conversation_view_supports_direction_anchor_paging() {
             .any(|item| item["kind"] == "assistant_message" && item["text"] == "pong"),
         "conversation view should include assistant message items: {tail:#?}"
     );
+    for item in tail["items"].as_array().unwrap() {
+        let ranges = item["source_event_ranges"]
+            .as_array()
+            .unwrap_or_else(|| panic!("conversation item must expose source_event_ranges: {item:#?}"));
+        assert!(
+            !ranges.is_empty(),
+            "conversation item source_event_ranges must not be empty: {item:#?}"
+        );
+        for range in ranges {
+            assert!(
+                range["from_seq"].as_i64().is_some()
+                    && range["to_seq"].as_i64().is_some()
+                    && range["from_event_id"].as_str().is_some()
+                    && range["to_event_id"].as_str().is_some(),
+                "source_event_ranges must include event ids and seq bounds: {range:#?}"
+            );
+        }
+    }
 
     let first_tail_item_id = tail["window"]["first_item_id"].as_str().unwrap();
     let (status, previous) = get_json(
@@ -175,7 +193,7 @@ async fn conversation_view_rejects_invalid_direction_anchor_combinations() {
         ),
         format!("/api/v1/sessions/{session_id}/views/conversation?anchor_item_id=item_1"),
         format!(
-            "/api/v1/sessions/{session_id}/views/conversation?direction=before&anchor_row_id=row_1"
+            "/api/v1/sessions/{session_id}/views/conversation?direction=before&row_id=row_1"
         ),
         format!("/api/v1/sessions/{session_id}/views/conversation?after_id=evt_1"),
     ] {
@@ -224,6 +242,7 @@ async fn openapi_exposes_conversation_view_as_primary_chat_contract() {
     assert!(openapi.contains("    ConversationItem:"));
     assert!(openapi.contains("    ConversationWindow:"));
     assert!(openapi.contains("    AgentWorkItem:"));
+    assert!(openapi.contains("        source_event_ranges:"));
     assert!(openapi.contains("        - conversation"));
     assert!(!openapi.contains("ChatTranscriptView"));
     assert!(!openapi.contains("ActivityShelfView"));

@@ -1,6 +1,6 @@
 import type {
   ChatSurfaceAgentWorkItem,
-  ChatSurfaceDebug,
+  ChatSurfaceConversationDebug,
 } from "../../../vela-chat-surface/src";
 
 export type AgentWorkDisplay = "compact" | "prominent";
@@ -17,7 +17,7 @@ export interface AgentWorkRenderRow {
   updatedAt?: string;
   turnId?: string;
   agentWorkId?: string;
-  debug: ChatSurfaceDebug;
+  debug: ChatSurfaceConversationDebug;
 }
 
 export function renderAgentWorkRows(items: ChatSurfaceAgentWorkItem[]): AgentWorkRenderRow[] {

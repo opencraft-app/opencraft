@@ -3,20 +3,15 @@ import { useState } from "react";
 import type { WebBlock } from "../../adapters/toWebBlocks";
 import styles from "../../styles/desktop.module.css";
 import { AgentWorkRenderer } from "./AgentWorkRenderer";
-import {
-  agentWorkAccessibleLabel,
-  agentWorkVisualStatus,
-  agentWorkVisualSummary,
-} from "./agentWorkLabel";
+import { agentWorkAccessibleLabel, agentWorkVisualStatus } from "./agentWorkLabel";
 
 export function AgentWorkGroupRenderer({
   block,
 }: {
   block: Extract<WebBlock, { kind: "agent_work_group" }>;
 }) {
-  const [expanded, setExpanded] = useState(!block.defaultCollapsed);
+  const [expanded, setExpanded] = useState(false);
   const status = agentWorkVisualStatus(block);
-  const summary = agentWorkVisualSummary(block.summary, block.title);
   const label = agentWorkAccessibleLabel(block);
 
   return (
@@ -32,7 +27,6 @@ export function AgentWorkGroupRenderer({
         <span className={styles.agentWorkIcon} aria-hidden="true" />
         <span className={styles.agentWorkText}>
           <span className={styles.agentWorkTitle}>{block.title}</span>
-          {summary ? <span className={styles.agentWorkSummary}>{summary}</span> : null}
         </span>
         <span className={styles.agentWorkGroupChevron} aria-hidden="true">
           ›

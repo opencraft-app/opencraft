@@ -17,6 +17,14 @@ export interface ChatSurfaceEventCursor {
   seq: number;
 }
 
+export interface SourceEventRangeWire {
+  epoch: number;
+  from_event_id: string;
+  to_event_id: string;
+  from_seq: number;
+  to_seq: number;
+}
+
 export interface ConversationWindow {
   first_item_id?: string | null;
   last_item_id?: string | null;
@@ -42,6 +50,7 @@ export interface ConversationWireItemBase {
   revision: number;
   status: ConversationItemStatusWire;
   source_event_ids: string[];
+  source_event_ranges: SourceEventRangeWire[];
 }
 
 export type ConversationWireItem =
@@ -204,10 +213,18 @@ export interface PendingRequestsWireView {
   cursor: ChatSurfaceCursor;
 }
 
-export interface ChatSurfaceDebug {
-  projection: "conversation" | "requests" | "diffs";
+export interface ChatSurfaceConversationDebug {
+  projection: "conversation";
+  source_event_ids: string[];
+  source_event_ranges: SourceEventRangeWire[];
+}
+
+export interface ChatSurfaceAuxiliaryDebug {
+  projection: "requests" | "diffs";
   source_event_ids: string[];
 }
+
+export type ChatSurfaceDebug = ChatSurfaceConversationDebug | ChatSurfaceAuxiliaryDebug;
 
 export type ChatSurfaceConversationItem =
   | ChatSurfaceUserMessageItem
@@ -224,7 +241,7 @@ export interface ChatSurfaceConversationItemBase {
   turn_id?: string;
   status: ConversationItemStatusWire;
   revision: number;
-  debug: ChatSurfaceDebug;
+  debug: ChatSurfaceConversationDebug;
 }
 
 export interface ChatSurfaceUserMessageItem extends ChatSurfaceConversationItemBase {
@@ -472,6 +489,7 @@ function normalizeConversationItem(item: ConversationWireItem): ChatSurfaceConve
     debug: {
       projection: "conversation" as const,
       source_event_ids: sourceEventIds,
+      source_event_ranges: item.source_event_ranges,
     },
   };
 

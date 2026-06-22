@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useMemo } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from "react";
 import type { WebChatModel } from "../../adapters/toWebBlocks";
 import {
   buildConversationRuntimeSegments,
@@ -20,15 +20,18 @@ export const VelaConversation = forwardRef<ConversationViewportHandle, {
   webModel: WebChatModel;
   canLoadOlder?: boolean;
   isLoadingOlder?: boolean;
+  messageFollowToken?: number;
   onLoadOlder?: () => void;
   onScrollDebugChange?: (debug: ConversationScrollControllerDebug) => void;
 }>(function VelaConversation({
   webModel,
   canLoadOlder = false,
   isLoadingOlder = false,
+  messageFollowToken,
   onLoadOlder,
   onScrollDebugChange,
 }, ref) {
+  const previousMessageFollowTokenRef = useRef(messageFollowToken);
   const items = useMemo(
     () => buildConversationStreamItems(webModel.turns),
     [webModel.turns],
@@ -55,6 +58,13 @@ export const VelaConversation = forwardRef<ConversationViewportHandle, {
   useEffect(() => {
     onScrollDebugChange?.(scroll.debug);
   }, [onScrollDebugChange, scroll.debug]);
+
+  useEffect(() => {
+    if (messageFollowToken === undefined) return;
+    if (previousMessageFollowTokenRef.current === messageFollowToken) return;
+    previousMessageFollowTokenRef.current = messageFollowToken;
+    scroll.requestBottomAnchor("message_sent");
+  }, [messageFollowToken, scroll.requestBottomAnchor]);
 
   useImperativeHandle(
     ref,

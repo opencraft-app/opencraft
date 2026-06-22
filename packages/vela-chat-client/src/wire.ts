@@ -22,6 +22,14 @@ export interface EventCursorWire {
   seq: number;
 }
 
+export interface SourceEventRangeWire {
+  epoch: number;
+  from_event_id: string;
+  to_event_id: string;
+  from_seq: number;
+  to_seq: number;
+}
+
 export interface ConversationWindow {
   first_item_id?: string | null;
   last_item_id?: string | null;
@@ -68,6 +76,7 @@ export interface ConversationWireItemBase {
   revision: number;
   status: ConversationItemStatusWire;
   source_event_ids: string[];
+  source_event_ranges: SourceEventRangeWire[];
 }
 
 export interface UserMessageConversationWireItem extends ConversationWireItemBase {

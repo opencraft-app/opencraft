@@ -1,6 +1,7 @@
 import type { WebBlock } from "../../adapters/toWebBlocks";
 import { Message } from "../../primitives/message/Message";
-import { MessageResponse } from "../../primitives/message/MessageResponse";
+import { MarkdownRenderer } from "../markdown/MarkdownRenderer";
+import { StreamingMarkdownRenderer } from "../markdown/StreamingMarkdownRenderer";
 
 export function AssistantMarkdownRenderer({
   block,
@@ -9,11 +10,15 @@ export function AssistantMarkdownRenderer({
 }) {
   return (
     <Message from="assistant">
-      {block.blocks.map((markdownBlock) => (
-        <MessageResponse key={markdownBlock.id} streaming={block.streaming}>
-          {markdownBlock.text}
-        </MessageResponse>
-      ))}
+      {block.blocks.map((markdownBlock) =>
+        block.streaming ? (
+          <StreamingMarkdownRenderer key={markdownBlock.id}>
+            {markdownBlock.text}
+          </StreamingMarkdownRenderer>
+        ) : (
+          <MarkdownRenderer key={markdownBlock.id}>{markdownBlock.text}</MarkdownRenderer>
+        ),
+      )}
     </Message>
   );
 }

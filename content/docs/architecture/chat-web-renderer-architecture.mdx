@@ -49,13 +49,21 @@ packages/vela-chat-web/src/
       AgentWorkRenderer.tsx
       ReasoningRenderer.tsx
       ToolCallRenderer.tsx
+    markdown/
+      README.md
+      MarkdownRenderer.tsx
+      StreamingMarkdownRenderer.tsx
+      parse.ts
+      prefixTokenCache.ts
+      renderTokens.tsx
+      segmentFade.tsx
+      streamingRepair.ts
 
   primitives/
     README.md
     message/
       README.md
       Message.tsx
-      MessageResponse.tsx
     conversation/
       README.md
       Conversation.tsx
@@ -175,7 +183,7 @@ Day 1 的 route resume 是浏览器 session 级体验能力：`conversation-runt
 Paseo 的 app-side agent stream 已经验证了 `head/tail + bottom anchor + partial virtualization` 路线。Vela 当前采用同一方向，但有几个需要显式记录的差异：
 
 - Paseo Web 在 mobile breakpoint 下不会切出 partial virtualized history；它的真正移动端由 native inverted list 承担。Vela 的 `mobile_web` 仍是 DOM/WebView renderer，所以当前继续使用 Web partial virtualization。不要在没有移动 WebView 实测前直接照搬 Paseo 的 mobile breakpoint 分支。
-- Vela 只把 assistant markdown 按空行和 fenced-code 边界拆成 item。一个超长代码块或超长单段 markdown 仍然是单个 item；本轮不在 renderer 内部再切，因为那会影响 copy、markdown 语义和 Streamdown streaming 行为。
+- Vela 只把 assistant markdown 按空行和 fenced-code 边界拆成 item。一个超长代码块或超长单段 markdown 仍然是单个 item；renderer 内部只做 token parsing、streaming repair、prefix token cache 和 tail fade，不反向改变 conversation item 边界。
 - Paseo 的 render model 接收显式 `tail` / `head`。Vela 的基础窗口来自 OpenAPI `ConversationView.items`：message items 提供正文，`turn_meta` 提供 turn lifecycle，`agent_work` 提供 work detail。Web runtime 可以据此合成 history/live head，但不能只看 assistant item 的 `streaming` 或 work item 的状态来推导 turn lifecycle；如果真实 Codex / ACP / Pi cassette 证明需要更省流的 read-model patch stream，应先升级 OpenAPI projector contract，再改 JS 分段算法。
 - Paseo 的 pending permission 是 agent-stream 的 `liveAuxiliary`，和 running / completed turn footer 一起参与列表底部布局。Vela 当前故意不同：pending request 是 OpenAPI `PendingRequestsView`，Web 只在 workbench shell 里渲染 floating `RequestDock`，不把 request 伪装成 conversation item。这样能保持 read-model 分层清晰，但它不是 Paseo auxiliary lane 的完整等价物：如果后续真实弱网、移动 WebView 或多 request 场景证明 dock 会遮挡 live head / composer / bottom anchor，下一步应该新增明确的 `conversation-runtime/auxiliary` 布局入口，或先升级 OpenAPI conversation view，而不是让 `RequestDock` 读取 timeline/raw event。
 - Paseo 的 bottom-anchor 已经抽成带 measurement ownership 的 pure driver：container key、viewport/content measurement key、pending verification 和 retry disposition 都在一个状态机里。Vela 当前是 `bottomAnchor.ts` 纯规则 + `useConversationScrollController.ts` DOM hook，已经覆盖 route readiness、settle retry、ResizeObserver 和 prepend anchor，但还不是 Paseo 那种完整 driver。不要继续在 hook 里叠加零散 `useEffect`；如果后续出现“切 session / 切策略 / virtualizer 重测后贴底错乱”的确定 bug，应先抽 `conversation-runtime/scroll/bottomAnchorDriver.ts`，用 pure tests 对齐 Paseo 的 blocked reason 和 stale measurement cases。
@@ -281,13 +289,13 @@ Do not:
 
 ### `primitives/`
 
-Change here when replacing UI primitives, shadcn components, AI Elements components, or Streamdown wrappers.
+Change here when replacing UI primitives, shadcn components, or AI Elements components.
 
 职责：
 
 - 承载无 Vela 业务语义的 UI 原语。
 - 吸收或 fork AI Elements / shadcn 组件。
-- 封装 `MessageResponse(Streamdown)`、conversation scroll primitive、prompt input shell、reasoning disclosure、tool disclosure。
+- 封装 message shell、conversation scroll primitive、prompt input shell、reasoning disclosure、tool disclosure。
 
 Do not:
 
@@ -370,7 +378,7 @@ Do not:
 | 现象 | 优先看 |
 | --- | --- |
 | velad 数据字段映射错了 | `adapters/`，然后回到 `vela-chat-render-model` |
-| assistant Markdown 渲染坏了 | `renderers/blocks/AssistantMarkdownRenderer.tsx`，再看 `primitives/message/MessageResponse.tsx` |
+| assistant Markdown 渲染坏了 | `renderers/blocks/AssistantMarkdownRenderer.tsx`，再看 `renderers/markdown/README.md` 和 `renderers/markdown/renderTokens.tsx` |
 | 新 block kind 没显示 | `renderers/blockRegistry.tsx` |
 | user bubble 样式错了 | `renderers/blocks/UserMessageRenderer.tsx` 或 `styles/` |
 | turn header、`已处理 ...` / worked label 位置错 | `components/conversation/VelaTurnGroup.tsx` |
@@ -425,7 +433,6 @@ Used by:
 可以采用：
 
 - `Message` / `MessageContent` 的边界。
-- `MessageResponse` 作为 `Streamdown` leaf renderer。
 - `Conversation` 的 sticky-to-bottom primitive。
 - `Reasoning` 的流式展开 / 结束收起状态机。
 - `Tool` 的状态映射和 disclosure 设计。
@@ -446,26 +453,27 @@ OpenAPI read models -> surface -> render-model -> web adapters -> renderers
 
 AI Elements 只进入 `primitives/`。
 
-## Streamdown 边界
+## Markdown Renderer 边界
 
-`Streamdown` 只属于 Markdown leaf renderer。
+Markdown renderer 是 `renderers/markdown/`，不是 primitive，也不是 OpenAPI contract。
 
-它可以解决：
+它负责：
 
-- streaming incomplete markdown。
-- CJK markdown 细节。
-- code block rendering。
-- completed block memoization。
+- 用 `marked` 把 Markdown 解析成 token。
+- 用 `renderTokens.tsx` 渲染 Vela 自己的 React DOM。
+- 用 `streamingRepair.ts` 修补未闭合 fenced code、link、image 和 emphasis。
+- 用 `prefixTokenCache.ts` 复用稳定前缀 token，让长输出只反复解析 live tail。
+- 用 `segmentFade.tsx` 做 Codex 风格的 live tail 渐显。
 
-它不解决：
+它不负责：
 
 - turn 分组。
 - activity/tool/reasoning block 生成。
 - `已处理 ...` / host-localized worked header。
-- timeline 到 transcript 的 projection。
+- timeline 到 conversation view 的 projection。
 - sticky scroll policy。
 
-因此 `AssistantMarkdownRenderer` MAY 使用 `primitives/message/MessageResponse`，但 `components/conversation` MUST 不知道 Streamdown。
+因此 `AssistantMarkdownRenderer` 可以在 completed block 使用 `MarkdownRenderer`，在 live block 使用 `StreamingMarkdownRenderer`；`components/conversation` 只知道 block renderer，不知道 Markdown parser。
 
 ## Conversation Runtime 边界
 
@@ -512,7 +520,7 @@ UI visual 微调不应依赖巨大 snapshot。Agent 失败时应该能从测试�
 2. 把现有 `VelaChatWeb` 拆成薄入口和组件目录。
 3. 用 `blockRegistry.tsx` 替换入口内的 row switch。
 4. 把现有伪 Markdown renderer 收进 `AssistantMarkdownRenderer`。
-5. 再引入 `Streamdown` 和 `MessageResponse` primitive。
+5. 用 `renderers/markdown` 替换伪 Markdown renderer：static 和 streaming 共用 token renderer。
 6. 再引入 Tailwind/shadcn/AI Elements primitive。
 7. 最后补 `ReasoningRenderer`、`ToolCallRenderer`、更完整 scroll controller。
 

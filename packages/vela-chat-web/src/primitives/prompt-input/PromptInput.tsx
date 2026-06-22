@@ -14,10 +14,12 @@ export interface PromptInputProps {
   value: string;
   placeholder: string;
   canSubmit: boolean;
+  isRunning: boolean;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   onChange: (value: string) => void;
   onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onSubmit: () => void;
+  onStop?: () => void;
   onAttachImages?: (files: File[]) => void;
   onHeightChange?: (height: number) => void;
   onRemoveAttachment?: (attachmentId: string) => void;
@@ -30,10 +32,12 @@ export function PromptInput({
   value,
   placeholder,
   canSubmit,
+  isRunning,
   textareaRef,
   onChange,
   onKeyDown,
   onSubmit,
+  onStop,
   onAttachImages,
   onHeightChange,
   onRemoveAttachment,
@@ -43,9 +47,13 @@ export function PromptInput({
 }: PromptInputProps) {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const rootRef = useRef<HTMLFormElement | null>(null);
+  const isStopControl = isRunning && !canSubmit && Boolean(onStop);
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
     if (canSubmit) onSubmit();
+  };
+  const handleStop = () => {
+    if (isStopControl) onStop?.();
   };
   const handleAttachClick = () => {
     imageInputRef.current?.click();
@@ -138,13 +146,14 @@ export function PromptInput({
               ⌘
             </button>
             <button
-              aria-label="Send message"
-              className={styles.sendButton}
-              disabled={!canSubmit}
-              title="Send message"
-              type="submit"
+              aria-label={isStopControl ? "Stop generation" : "Send message"}
+              className={isStopControl ? styles.stopButton : styles.sendButton}
+              disabled={isStopControl ? false : !canSubmit}
+              onClick={isStopControl ? handleStop : undefined}
+              title={isStopControl ? "Stop generation" : "Send message"}
+              type={isStopControl ? "button" : "submit"}
             >
-              ↑
+              {isStopControl ? <span className={styles.stopGlyph} aria-hidden="true" /> : "↑"}
             </button>
           </div>
         </div>

@@ -15,6 +15,7 @@ export interface VelaChatWebProps {
   composerControls?: ComposerControlsModel;
   isUpdatingComposerControls?: boolean;
   isRespondingToRequest?: boolean;
+  messageFollowToken?: number;
   pendingAttachments?: PromptInputAttachment[];
   onDraftChange: (value: string) => void;
   onAttachImages?: (files: File[]) => void;
@@ -23,6 +24,7 @@ export interface VelaChatWebProps {
   onLoadOlder?: () => void;
   onRemoveAttachment?: (attachmentId: string) => void;
   onRespondToRequest?: (response: RequestDockResponse) => void;
+  onStop?: () => void;
   onSubmit: () => void;
 }
 
@@ -35,6 +37,7 @@ export function VelaChatWeb({
   composerControls,
   isUpdatingComposerControls,
   isRespondingToRequest,
+  messageFollowToken,
   pendingAttachments,
   onDraftChange,
   onAttachImages,
@@ -43,6 +46,7 @@ export function VelaChatWeb({
   onLoadOlder,
   onRemoveAttachment,
   onRespondToRequest,
+  onStop,
   onSubmit,
 }: VelaChatWebProps) {
   return (
@@ -54,6 +58,7 @@ export function VelaChatWeb({
       isLoadingOlder={isLoadingOlder}
       isUpdatingComposerControls={isUpdatingComposerControls}
       isRespondingToRequest={isRespondingToRequest}
+      messageFollowToken={messageFollowToken}
       model={model}
       onAttachImages={onAttachImages}
       onAgentConfigChange={onAgentConfigChange}
@@ -62,6 +67,7 @@ export function VelaChatWeb({
       onLoadOlder={onLoadOlder}
       onRemoveAttachment={onRemoveAttachment}
       onRespondToRequest={onRespondToRequest}
+      onStop={onStop}
       onSubmit={onSubmit}
       pendingAttachments={pendingAttachments}
     />

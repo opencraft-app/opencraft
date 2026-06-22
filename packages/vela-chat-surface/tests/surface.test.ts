@@ -299,11 +299,13 @@ test("keeps OpenAPI-required conversation item fields required in surface wire t
   assert.match(itemBaseInterface, /revision:\s*number/);
   assert.match(itemBaseInterface, /status:\s*ConversationItemStatusWire/);
   assert.match(itemBaseInterface, /source_event_ids:\s*string\[\]/);
+  assert.match(itemBaseInterface, /source_event_ranges:\s*SourceEventRangeWire\[\]/);
   assert.match(itemBaseInterface, /turn_id\?:\s*string/);
   assert.doesNotMatch(itemBaseInterface, /updated_at\?:\s*string/);
   assert.doesNotMatch(itemBaseInterface, /revision\?:\s*number/);
   assert.doesNotMatch(itemBaseInterface, /status\?:\s*string/);
   assert.doesNotMatch(itemBaseInterface, /source_event_ids\?:\s*string\[\]/);
+  assert.doesNotMatch(itemBaseInterface, /source_event_ranges\?:\s*SourceEventRangeWire\[\]/);
 });
 
 test("keeps OpenAPI conversation enums narrow in surface wire types", async () => {

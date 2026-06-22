@@ -8,7 +8,9 @@
   --vela-code: #eceeef;
   --vela-accent: #ff5a1f;
   --vela-composer-height: 154px;
+  height: 100dvh;
   min-height: 100dvh;
+  overflow: hidden;
   background: var(--vela-bg);
   color: var(--vela-text);
   font-family:
@@ -25,7 +27,8 @@
 
 .frame {
   display: grid;
-  min-height: 100dvh;
+  height: 100%;
+  min-height: 0;
   grid-template-rows: auto minmax(0, 1fr);
 }
 
@@ -49,6 +52,8 @@
 .conversation {
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   scroll-behavior: smooth;
 }
 
@@ -59,11 +64,17 @@
 }
 
 .turnGroup {
-  margin: 0 0 28px;
+  margin: 0 0 22px;
 }
 
 .turnGroup[data-continuation="true"] {
-  margin-top: -20px;
+  margin-top: 0;
+}
+
+.turnGroup[data-turn-kind="assistant_markdown"]:has(
+    + .turnGroup[data-continuation="true"][data-turn-kind="assistant_markdown"]
+  ) {
+  margin-bottom: 8px;
 }
 
 .turnGroup[data-turn-kind="agent_work"] {
@@ -83,7 +94,7 @@
 }
 
 .turnGroup[data-turn-kind="agent_work"] + .turnGroup[data-turn-kind="assistant_markdown"] {
-  margin-top: 28px;
+  margin-top: 18px;
 }
 
 .turnBlock {
@@ -116,7 +127,11 @@
 }
 
 .messageAssistant {
-  margin-top: 34px;
+  margin-top: 26px;
+}
+
+.turnGroup[data-continuation="true"][data-turn-kind="assistant_markdown"] .messageAssistant {
+  margin-top: 0;
 }
 
 .userMessageStack {
@@ -215,7 +230,7 @@
   max-width: 100%;
   font-size: 15px;
   font-weight: 400;
-  line-height: 1.68;
+  line-height: 1.56;
   letter-spacing: 0;
 }
 
@@ -228,22 +243,56 @@
 }
 
 .messageResponse p {
-  margin: 0 0 22px;
+  margin: 0 0 12px;
 }
 
-.messageResponse strong,
-.messageResponse [data-streamdown="strong"] {
+.messageResponse h1,
+.messageResponse h2,
+.messageResponse h3,
+.messageResponse h4,
+.messageResponse h5,
+.messageResponse h6 {
+  margin: 18px 0 8px;
+  font-weight: 650;
+  line-height: 1.28;
+}
+
+.messageResponse h1 {
+  font-size: 22px;
+}
+
+.messageResponse h2 {
+  font-size: 20px;
+}
+
+.messageResponse h3,
+.messageResponse h4,
+.messageResponse h5,
+.messageResponse h6 {
+  font-size: 17px;
+}
+
+.messageResponse strong {
   font-weight: 650;
 }
 
 .messageResponse ul,
 .messageResponse ol {
-  margin: 0 0 22px;
-  padding-left: 1.45em;
+  margin: 0 0 12px;
+  padding-left: 1.35em;
 }
 
 .messageResponse li {
-  margin: 4px 0;
+  margin: 0;
+  padding-left: 0.125em;
+}
+
+.messageResponse li + li {
+  margin-top: 6px;
+}
+
+.messageResponse li > p {
+  margin: 0;
 }
 
 .messageResponse code {
@@ -262,9 +311,10 @@
 
 .messageResponse pre {
   overflow-x: auto;
+  margin: 14px 0;
   border-radius: 10px;
   background: #f6f7f8;
-  padding: 14px 16px;
+  padding: 12px 14px;
 }
 
 .messageResponse pre code {
@@ -273,44 +323,101 @@
   padding: 0;
 }
 
-.markdownBlock {
-  margin: 0 0 22px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.markdownBlock:last-child {
-  margin-bottom: 0;
-}
-
-.inlineCode {
-  border-radius: 7px;
-  background: var(--vela-code);
-  padding: 1px 7px 2px;
-  font-family:
-    "SFMono-Regular",
-    ui-monospace,
-    Menlo,
-    Consolas,
-    monospace;
-  font-size: 0.92em;
-  font-weight: 400;
-}
-
-.codeBlock {
-  overflow-x: auto;
+.markdownImage {
+  display: block;
+  max-width: min(100%, 720px);
+  max-height: 520px;
+  margin: 12px 0;
+  border: 1px solid var(--vela-border);
   border-radius: 10px;
-  background: #f6f7f8;
-  padding: 14px 16px;
-  font-family:
-    "SFMono-Regular",
-    ui-monospace,
-    Menlo,
-    Consolas,
-    monospace;
+  object-fit: contain;
+}
+
+.markdownTaskListItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  list-style: none;
+}
+
+.markdownTaskCheckbox {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin: 5px 0 0 -1.15em;
+  accent-color: #7f858d;
+}
+
+.markdownFadeSegment {
+  animation: velaMarkdownFadeIn 180ms ease-out both;
+  animation-delay: var(--vela-markdown-fade-delay, 0ms);
+}
+
+@keyframes velaMarkdownFadeIn {
+  from {
+    opacity: 0.32;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.markdownTableScroller {
+  max-width: 100%;
+  margin: 14px 0;
+  overflow-x: auto;
+}
+
+.messageResponse pre,
+.markdownTableScroller {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.messageResponse pre::-webkit-scrollbar,
+.markdownTableScroller::-webkit-scrollbar {
+  display: none;
+}
+
+.markdownTable {
+  width: 100%;
+  min-width: 520px;
+  border: 1px solid var(--vela-border);
+  border-radius: 10px;
+  border-spacing: 0;
+  background: #fff;
+  overflow: hidden;
+}
+
+.markdownTableHead {
+  background: #fafafa;
+}
+
+.markdownTableHeaderCell,
+.markdownTableCell {
+  padding: 10px 14px;
   font-size: 14px;
-  font-weight: 500;
-  line-height: 1.55;
+  line-height: 1.45;
+  text-align: left;
+}
+
+.markdownTableRow {
+  vertical-align: top;
+}
+
+.markdownTableRow + .markdownTableRow .markdownTableCell,
+.markdownTableBody .markdownTableRow:first-child .markdownTableCell {
+  border-top: 1px solid var(--vela-border);
+}
+
+.markdownTableHeaderCell {
+  font-weight: 650;
+}
+
+.markdownTableHeaderCell + .markdownTableHeaderCell,
+.markdownTableCell + .markdownTableCell {
+  border-left: 1px solid var(--vela-border);
 }
 
 .agentWorkBlock {
@@ -321,11 +428,11 @@
   width: fit-content;
   max-width: min(100%, 780px);
   margin: 0;
-  padding: 2px 0;
+  padding: 1px 0;
   color: #9a9ea5;
   font-size: 14px;
   font-weight: 500;
-  line-height: 1.38;
+  line-height: 1.35;
 }
 
 .agentWorkBlock[data-display="prominent"] {
@@ -338,7 +445,7 @@
 
 .agentWorkGroup {
   display: grid;
-  gap: 7px;
+  gap: 4px;
   width: fit-content;
   max-width: min(100%, 780px);
   color: #9a9ea5;
@@ -379,7 +486,7 @@
 
 .agentWorkGroupChildren {
   display: grid;
-  gap: 5px;
+  gap: 3px;
   padding-left: 26px;
 }
 
@@ -851,7 +958,8 @@
   text-align: center;
 }
 
-.sendButton {
+.sendButton,
+.stopButton {
   display: inline-grid;
   width: 40px;
   height: 40px;
@@ -867,14 +975,30 @@
     background 140ms ease;
 }
 
+.stopButton {
+  background: #17181b;
+}
+
 .sendButton:disabled {
   cursor: default;
   opacity: 0.45;
 }
 
-.sendButton:not(:disabled):hover {
+.sendButton:not(:disabled):hover,
+.stopButton:not(:disabled):hover {
   transform: translateY(-1px);
   background: #707174;
+}
+
+.stopButton:not(:disabled):hover {
+  background: #222327;
+}
+
+.stopGlyph {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  background: currentColor;
 }
 
 .error {

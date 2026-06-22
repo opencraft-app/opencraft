@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -57,10 +57,17 @@ test("desktop renderer is split into agent-friendly component folders with local
     "packages/vela-chat-web/src/renderers/blocks/AssistantMarkdownRenderer.tsx",
     "packages/vela-chat-web/src/renderers/blocks/UserMessageRenderer.tsx",
     "packages/vela-chat-web/src/renderers/blocks/StatusRenderer.tsx",
+    "packages/vela-chat-web/src/renderers/markdown/README.md",
+    "packages/vela-chat-web/src/renderers/markdown/MarkdownRenderer.tsx",
+    "packages/vela-chat-web/src/renderers/markdown/StreamingMarkdownRenderer.tsx",
+    "packages/vela-chat-web/src/renderers/markdown/parse.ts",
+    "packages/vela-chat-web/src/renderers/markdown/prefixTokenCache.ts",
+    "packages/vela-chat-web/src/renderers/markdown/renderTokens.tsx",
+    "packages/vela-chat-web/src/renderers/markdown/segmentFade.tsx",
+    "packages/vela-chat-web/src/renderers/markdown/streamingRepair.ts",
     "packages/vela-chat-web/src/primitives/README.md",
     "packages/vela-chat-web/src/primitives/message/README.md",
     "packages/vela-chat-web/src/primitives/message/Message.tsx",
-    "packages/vela-chat-web/src/primitives/message/MessageResponse.tsx",
     "packages/vela-chat-web/src/primitives/conversation/README.md",
     "packages/vela-chat-web/src/primitives/conversation/Conversation.tsx",
     "packages/vela-chat-web/src/primitives/prompt-input/README.md",
@@ -264,32 +271,97 @@ test("assistant markdown renderer does not expose leaf copy controls", () => {
     "utf8",
   );
 
+  assert.match(source, /MarkdownRenderer/);
   assert.doesNotMatch(source, />□</);
   assert.doesNotMatch(source, /aria-label="Copy assistant message"/);
   assert.doesNotMatch(source, /navigator\.clipboard\.writeText/);
 });
 
-test("assistant markdown disables streamdown table copy controls", () => {
-  const source = readFileSync(
-    join(root, "packages/vela-chat-web/src/primitives/message/MessageResponse.tsx"),
+test("assistant markdown uses the Codex-style marked renderer stack", () => {
+  const packageJson = readFileSync(join(root, "package.json"), "utf8");
+  const markdownRenderer = readFileSync(
+    join(root, "packages/vela-chat-web/src/renderers/markdown/MarkdownRenderer.tsx"),
+    "utf8",
+  );
+  const streamingMarkdownRenderer = readFileSync(
+    join(root, "packages/vela-chat-web/src/renderers/markdown/StreamingMarkdownRenderer.tsx"),
+    "utf8",
+  );
+  const renderTokens = readFileSync(
+    join(root, "packages/vela-chat-web/src/renderers/markdown/renderTokens.tsx"),
     "utf8",
   );
 
-  assert.match(source, /controls=\{streamdownControls\}/);
-  assert.match(source, /table:\s*\{\s*copy:\s*false/s);
+  assert.match(packageJson, /"marked"/);
+  assert.doesNotMatch(packageJson, /react-markdown|remark-gfm|streamdown|@streamdown/);
+  assert.match(markdownRenderer, /parseMarkdownTokens/);
+  assert.match(streamingMarkdownRenderer, /repairStreamingMarkdown/);
+  assert.match(streamingMarkdownRenderer, /parseStreamingMarkdownTokens/);
+  assert.match(streamingMarkdownRenderer, /fadeSegmentDelayMs/);
+  assert.match(renderTokens, /MarkedToken/);
+  assert.doesNotMatch(markdownRenderer, /react-markdown|remark-gfm|Streamdown/);
+  assert.doesNotMatch(streamingMarkdownRenderer, /react-markdown|remark-gfm|Streamdown/);
+  assert.doesNotMatch(packageJson, /streamdown|@streamdown/);
+
+  const sourcePaths = listSourceFiles(join(root, "packages/vela-chat-web/src"))
+    .map((path) => path.slice(root.length + 1))
+    .filter((path) => path.endsWith(".ts") || path.endsWith(".tsx"));
+
+  for (const path of sourcePaths) {
+    const source = readFileSync(join(root, path), "utf8");
+    assert.doesNotMatch(source, /react-markdown|remark-gfm|streamdown|@streamdown|Streamdown/);
+  }
 });
 
-test("assistant markdown renders fenced code without streamdown block chrome", () => {
+test("assistant markdown renders fenced code without third-party block chrome", () => {
   const source = readFileSync(
-    join(root, "packages/vela-chat-web/src/primitives/message/MessageResponse.tsx"),
+    join(root, "packages/vela-chat-web/src/renderers/markdown/renderTokens.tsx"),
     "utf8",
   );
 
-  assert.match(source, /components=\{streamdownComponents\}/);
-  assert.match(source, /code:\s*PlainCode/);
-  assert.match(source, /const isBlock = "data-block" in props/);
-  assert.match(source, /code:\s*\{\s*copy:\s*false,\s*download:\s*false/s);
+  assert.match(source, /renderCodeToken/);
+  assert.match(source, /trimTrailingCodeNewline/);
   assert.doesNotMatch(source, /CodeBlockHeader|CodeBlockContainer|CodeBlockCopyButton|CodeBlockDownloadButton/);
+});
+
+test("assistant markdown renders tables without third-party table chrome", () => {
+  const source = readFileSync(
+    join(root, "packages/vela-chat-web/src/renderers/markdown/renderTokens.tsx"),
+    "utf8",
+  );
+
+  assert.match(source, /renderTableToken/);
+  assert.match(source, /styles\.markdownTableScroller/);
+  assert.match(source, /styles\.markdownTable/);
+  assert.doesNotMatch(source, /TableCopyDropdown|TableDownloadButton|TableDownloadDropdown/);
+});
+
+test("assistant markdown hides transient internal scrollbars like Codex", () => {
+  const css = readFileSync(
+    join(root, "packages/vela-chat-web/src/styles/desktop.module.css"),
+    "utf8",
+  );
+
+  const conversation = cssBlock(css, "conversation");
+
+  assert.match(conversation, /scrollbar-gutter:\s*stable;/);
+  assert.match(conversation, /overscroll-behavior:\s*contain;/);
+  assert.match(css, /\.messageResponse pre,\s*\.markdownTableScroller\s*\{[^}]*scrollbar-width:\s*none;/s);
+  assert.match(css, /\.messageResponse pre,\s*\.markdownTableScroller\s*\{[^}]*-ms-overflow-style:\s*none;/s);
+  assert.match(css, /\.messageResponse pre::-webkit-scrollbar,\s*\.markdownTableScroller::-webkit-scrollbar\s*\{[^}]*display:\s*none;/s);
+  assert.doesNotMatch(css, /\.messageResponse pre\s*\{[^}]*scrollbar-width:\s*thin;/s);
+  assert.doesNotMatch(css, /\.markdownTableScroller\s*\{[^}]*scrollbar-width:\s*thin;/s);
+});
+
+test("assistant markdown renderer dispatches only the live tail through streaming markdown", () => {
+  const source = readFileSync(
+    join(root, "packages/vela-chat-web/src/renderers/blocks/AssistantMarkdownRenderer.tsx"),
+    "utf8",
+  );
+
+  assert.match(source, /MarkdownRenderer/);
+  assert.match(source, /StreamingMarkdownRenderer/);
+  assert.match(source, /block\.streaming/);
 });
 
 test("conversation scroll controller observes content size changes for post-layout bottom anchoring", () => {
@@ -377,6 +449,32 @@ test("conversation viewport exposes explicit bottom-anchor intents to the workbe
   assert.match(workbenchView, /requestBottomAnchor\("message_sent"\)/);
 });
 
+test("message sends can request bottom anchoring after the committed read model update", () => {
+  const chatWeb = readFileSync(
+    join(root, "packages/vela-chat-web/src/index.tsx"),
+    "utf8",
+  );
+  const workbenchView = readFileSync(
+    join(root, "packages/vela-chat-web/src/components/workbench/ChatWorkbenchView.tsx"),
+    "utf8",
+  );
+  const conversation = readFileSync(
+    join(root, "packages/vela-chat-web/src/components/conversation/VelaConversation.tsx"),
+    "utf8",
+  );
+  const chatWorkbench = readFileSync(
+    join(root, "app/chat/ChatWorkbench.tsx"),
+    "utf8",
+  );
+
+  assert.match(chatWeb, /messageFollowToken\?:\s*number/);
+  assert.match(workbenchView, /messageFollowToken/);
+  assert.match(conversation, /messageFollowToken/);
+  assert.match(conversation, /requestBottomAnchor\("message_sent"\)/);
+  assert.match(chatWorkbench, /setMessageFollowToken/);
+  assert.match(chatWorkbench, /messageFollowToken=\{messageFollowToken\}/);
+});
+
 test("composer height is measured instead of using fixed bottom padding", () => {
   const promptInput = readFileSync(
     join(root, "packages/vela-chat-web/src/primitives/prompt-input/PromptInput.tsx"),
@@ -425,6 +523,19 @@ test("composer backdrop is an independent layer between conversation content and
   assert.match(css, /\.composerDock\s*\{[^}]*padding:\s*0 24px 24px;/s);
   assert.doesNotMatch(css, /\.composerDock\s*\{[^}]*background:/s);
   assert.doesNotMatch(css, /\.composerDock\s*\{[^}]*height:\s*calc\(var\(--vela-composer-height\)/s);
+});
+
+test("chat shell keeps document scrolling out of the conversation runtime", () => {
+  const css = readFileSync(
+    join(root, "packages/vela-chat-web/src/styles/desktop.module.css"),
+    "utf8",
+  );
+
+  assert.match(css, /\.shell\s*\{[^}]*height:\s*100dvh;/s);
+  assert.match(css, /\.shell\s*\{[^}]*overflow:\s*hidden;/s);
+  assert.match(css, /\.frame\s*\{[^}]*height:\s*100%;/s);
+  assert.match(css, /\.frame\s*\{[^}]*min-height:\s*0;/s);
+  assert.match(css, /\.conversation\s*\{[^}]*overflow-y:\s*auto;/s);
 });
 
 test("chat debug snapshot includes conversation scroll runtime state", () => {
@@ -573,6 +684,60 @@ test("chat typography follows Codex-style reading weight and size", () => {
   assert.match(strong, /font-weight:\s*650;/);
 });
 
+test("chat markdown and agent work use compact Codex-style vertical rhythm", () => {
+  const css = readFileSync(
+    join(root, "packages/vela-chat-web/src/styles/desktop.module.css"),
+    "utf8",
+  );
+
+  const assistant = cssBlock(css, "messageResponse");
+  const paragraph = cssBlockContaining(css, "messageResponse p");
+  const heading = cssBlockContaining(css, "messageResponse h1");
+  const list = cssBlockContaining(css, "messageResponse ul");
+  const listItem = cssBlockContaining(css, "messageResponse li");
+  const codeBlock = cssBlockContaining(css, "messageResponse pre");
+  const tableScroller = cssBlock(css, "markdownTableScroller");
+  const table = cssBlock(css, "markdownTable");
+  const tableCell = cssBlock(css, "markdownTableCell");
+  const agentWork = cssBlock(css, "agentWorkBlock");
+  const agentWorkGroup = cssBlock(css, "agentWorkGroup");
+  const agentWorkChildren = cssBlock(css, "agentWorkGroupChildren");
+  const continuationTurn = cssBlockContaining(css, 'turnGroup[data-continuation="true"]');
+  const assistantBeforeContinuation = cssBlockContaining(
+    css,
+    'turnGroup[data-turn-kind="assistant_markdown"]:has',
+  );
+  const continuationAssistant = cssBlockContaining(
+    css,
+    'turnGroup[data-continuation="true"][data-turn-kind="assistant_markdown"] .messageAssistant',
+  );
+  const workToAssistantGap = cssBlockContaining(
+    css,
+    'turnGroup[data-turn-kind="agent_work"] + .turnGroup[data-turn-kind="assistant_markdown"]',
+  );
+
+  assert.match(assistant, /line-height:\s*1\.56;/);
+  assert.match(paragraph, /margin:\s*0 0 12px;/);
+  assert.match(heading, /margin:\s*18px 0 8px;/);
+  assert.match(heading, /line-height:\s*1\.28;/);
+  assert.match(list, /margin:\s*0 0 12px;/);
+  assert.match(listItem, /margin:\s*0;/);
+  assert.match(codeBlock, /margin:\s*14px 0;/);
+  assert.match(tableScroller, /margin:\s*14px 0;/);
+  assert.match(tableScroller, /overflow-x:\s*auto;/);
+  assert.match(table, /border:\s*1px solid var\(--vela-border\);/);
+  assert.doesNotMatch(tableScroller, /border:/);
+  assert.match(tableCell, /padding:\s*10px 14px;/);
+  assert.match(agentWork, /line-height:\s*1\.35;/);
+  assert.match(agentWork, /padding:\s*1px 0;/);
+  assert.match(agentWorkGroup, /gap:\s*4px;/);
+  assert.match(agentWorkChildren, /gap:\s*3px;/);
+  assert.match(continuationTurn, /margin-top:\s*0;/);
+  assert.match(assistantBeforeContinuation, /margin-bottom:\s*8px;/);
+  assert.match(continuationAssistant, /margin-top:\s*0;/);
+  assert.match(workToAssistantGap, /margin-top:\s*18px;/);
+});
+
 function cssBlock(css: string, selector: string) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = css.match(new RegExp(`\\.${escaped}\\s*\\{([\\s\\S]*?)\\}`));
@@ -585,6 +750,13 @@ function cssBlockContaining(css: string, selectorFragment: string) {
   const match = css.match(new RegExp(`[^{}]*\\.${escaped}[^{}]*\\{([\\s\\S]*?)\\}`));
   assert.ok(match, `missing selector containing .${selectorFragment}`);
   return match[1] ?? "";
+}
+
+function listSourceFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    return entry.isDirectory() ? listSourceFiles(path) : [path];
+  });
 }
 
 test("chat velad proxy forwards PATCH for agent config updates", () => {
@@ -695,14 +867,45 @@ test("composer plus control is wired to image attachments instead of being decor
   assert.match(chatWorkbench, /content: messageContent/);
 });
 
-test("composer send control has a stable accessible action label", () => {
+test("composer primary control has stable accessible action labels", () => {
   const promptInput = readFileSync(
     join(root, "packages/vela-chat-web/src/primitives/prompt-input/PromptInput.tsx"),
     "utf8",
   );
 
-  assert.match(promptInput, /aria-label="Send message"/);
-  assert.match(promptInput, /title="Send message"/);
+  assert.match(promptInput, /aria-label=\{isStopControl \? "Stop generation" : "Send message"\}/);
+  assert.match(promptInput, /title=\{isStopControl \? "Stop generation" : "Send message"\}/);
+});
+
+test("composer primary control switches to stop while a turn is running", () => {
+  const promptInput = readFileSync(
+    join(root, "packages/vela-chat-web/src/primitives/prompt-input/PromptInput.tsx"),
+    "utf8",
+  );
+  const composer = readFileSync(
+    join(root, "packages/vela-chat-web/src/components/composer/VelaComposer.tsx"),
+    "utf8",
+  );
+  const workbenchView = readFileSync(
+    join(root, "packages/vela-chat-web/src/components/workbench/ChatWorkbenchView.tsx"),
+    "utf8",
+  );
+  const chatWeb = readFileSync(
+    join(root, "packages/vela-chat-web/src/index.tsx"),
+    "utf8",
+  );
+  const chatWorkbench = readChatWorkbenchSource();
+
+  assert.match(promptInput, /isRunning/);
+  assert.match(promptInput, /onStop/);
+  assert.match(promptInput, /aria-label=\{isStopControl \? "Stop generation" : "Send message"\}/);
+  assert.match(promptInput, /<span className=\{styles\.stopGlyph\} aria-hidden="true" \/>/);
+  assert.match(composer, /isRunning/);
+  assert.match(composer, /onStop/);
+  assert.match(workbenchView, /isRunning=\{webModel\.composer\.isRunning\}/);
+  assert.match(workbenchView, /onStop=\{onStop\}/);
+  assert.match(chatWeb, /onStop\?:\s*\(\) => void/);
+  assert.match(chatWorkbench, /client\.cancelSession\(\{ sessionId: requestedSessionId \}\)/);
 });
 
 test("composer does not expose dictation as an enabled mock action", () => {

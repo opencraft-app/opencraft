@@ -1,6 +1,6 @@
 # primitives/message
 
-Change here when the generic message shell or Markdown response primitive changes.
+Change here when the generic message shell changes.
 
 Do not:
 - Decide whether a Vela block should exist.

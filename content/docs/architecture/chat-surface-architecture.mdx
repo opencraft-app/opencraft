@@ -106,6 +106,7 @@ when the UI is ready to display diffs.
 这一层保留可定位信息：
 
 - `source_event_ids`
+- `source_event_ranges`
 - `cursor`
 - `projection`
 - `session_id`
@@ -114,10 +115,12 @@ when the UI is ready to display diffs.
 - `tool_id`
 - `debug_hints`
 
-`source_event_ids` 只能来自 OpenAPI read model 明确提供的 provenance：
-`ConversationItem.source_event_ids`。如果
+`source_event_ids` 和 `source_event_ranges` 只能来自 OpenAPI read model 明确提供的
+provenance：`ConversationItem.source_event_ids` /
+`ConversationItem.source_event_ranges`。`source_event_ids` 用于人工诊断和 trace 锚点；
+`source_event_ranges` 用于判断 snapshot/live 顺序、窗口恢复和分页合并。如果
 `PendingRequestsView` 或某个 conversation item 没有给出 event provenance，surface
-必须保留空数组，而不是用 row/item/request id 伪造 event id。
+必须保留空数组，而不是用 row/item/request id 伪造 event id 或 seq range。
 
 `turn_meta` items 必须原样进入 surface state。它们是 turn lifecycle 的窗口级
 metadata，不是 agent work detail，也不是 assistant item 的派生字段。Surface 可以合并

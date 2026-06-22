@@ -975,7 +975,7 @@ components:
           additionalProperties: true
     ConversationItemBase:
       type: object
-      required: [id, kind, created_at, updated_at, revision, status, source_event_ids]
+      required: [id, kind, created_at, updated_at, revision, status, source_event_ids, source_event_ranges]
       properties:
         id:
           type: string
@@ -1001,6 +1001,10 @@ components:
           type: array
           items:
             type: string
+        source_event_ranges:
+          type: array
+          items:
+            $ref: '#/components/schemas/SourceEventRange'
     UserMessageItem:
       allOf:
         - $ref: '#/components/schemas/ConversationItemBase'
@@ -1209,6 +1213,20 @@ components:
           type: string
         to_event_id:
           type: string
+    SourceEventRange:
+      type: object
+      required: [epoch, from_event_id, to_event_id, from_seq, to_seq]
+      properties:
+        epoch:
+          type: integer
+        from_event_id:
+          type: string
+        to_event_id:
+          type: string
+        from_seq:
+          type: integer
+        to_seq:
+          type: integer
     TimelineItem:
       type: object
       required: [id, kind, status, parts]

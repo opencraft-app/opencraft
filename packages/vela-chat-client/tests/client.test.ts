@@ -10,7 +10,9 @@ import {
   createStreamRefreshScheduler,
   createVeladClient,
   imageFileToInputPart,
+  mergeConversationSnapshot,
   needsConversationRefreshAfterLiveOverlay,
+  parseConversationWireView,
   parseSseJsonFrames,
   readVelaStreamEvent,
   isVelaStreamEventFreshForCursor,
@@ -70,6 +72,9 @@ function assistantConversationItem(overrides: Record<string, unknown> = {}) {
     text: "",
     status: "streaming" as const,
     source_event_ids: ["evt_1"],
+    source_event_ranges: [
+      { from_event_id: "evt_1", to_event_id: "evt_1", from_seq: 1, to_seq: 1 },
+    ],
     ...overrides,
   };
 }
@@ -310,6 +315,9 @@ test("validates conversation message parts at the client wire boundary", async (
               text: "see image",
               status: "completed",
               source_event_ids: ["evt_1"],
+              source_event_ranges: [
+                { epoch: 1, from_event_id: "evt_1", to_event_id: "evt_1", from_seq: 1, to_seq: 1 },
+              ],
               parts: [
                 {
                   id: "part_image",
@@ -353,6 +361,9 @@ test("validates conversation agent work detail at the client wire boundary", asy
               title: "Ran command",
               detail: { command: "ls -la" },
               source_event_ids: ["evt_1"],
+              source_event_ranges: [
+                { epoch: 1, from_event_id: "evt_1", to_event_id: "evt_1", from_seq: 1, to_seq: 1 },
+              ],
             },
           ],
           window: { has_older: false, has_newer: false },
@@ -383,10 +394,12 @@ test("keeps OpenAPI-required conversation item fields required in the client wir
   assert.match(baseInterface, /revision:\s*number/);
   assert.match(baseInterface, /status:\s*ConversationItemStatusWire/);
   assert.match(baseInterface, /source_event_ids:\s*string\[\]/);
+  assert.match(baseInterface, /source_event_ranges:\s*SourceEventRangeWire\[\]/);
   assert.doesNotMatch(baseInterface, /updated_at\?:\s*string/);
   assert.doesNotMatch(baseInterface, /revision\?:\s*number/);
   assert.doesNotMatch(baseInterface, /status\?:\s*string/);
   assert.doesNotMatch(baseInterface, /source_event_ids\?:\s*string\[\]/);
+  assert.doesNotMatch(baseInterface, /source_event_ranges\?:\s*SourceEventRangeWire\[\]/);
 });
 
 test("keeps OpenAPI conversation and agent work enums narrow in the client wire model", async () => {
@@ -486,6 +499,39 @@ test("keeps OpenAPI EventCursor separate from cursor windows in the client wire 
   assert.match(
     source,
     /isVelaStreamEventFreshForCursor\(\s*cursor:\s*EventCursorWire\s*\|\s*CursorWindow\s*\|\s*undefined/,
+  );
+});
+
+test("parses conversation item source event ranges as required lineage", () => {
+  const parsed = parseConversationWireView(
+    conversationFixture({
+      items: [
+        assistantConversationItem({
+          source_event_ranges: [
+            { epoch: 1, from_event_id: "evt_1", to_event_id: "evt_3", from_seq: 1, to_seq: 3 },
+          ],
+        }),
+      ],
+    }),
+  );
+
+  assert.deepEqual(parsed.items[0]?.source_event_ranges, [
+    { epoch: 1, from_event_id: "evt_1", to_event_id: "evt_3", from_seq: 1, to_seq: 3 },
+  ]);
+
+  assert.throws(
+    () =>
+      parseConversationWireView(
+        conversationFixture({
+          items: [
+            {
+              ...assistantConversationItem(),
+              source_event_ranges: undefined,
+            },
+          ],
+        }),
+      ),
+    /source_event_ranges/,
   );
 });
 
@@ -2227,6 +2273,55 @@ test("ignores stale non-delta live overlay events", () => {
   assert.equal(next, conversation);
   assert.equal(next.cursor.event_id, "evt_live");
   assert.equal(next.cursor.seq, 12);
+});
+
+test("drops stale conversation snapshots behind live cursor state", () => {
+  const current = conversationFixture({
+    cursor: { event_id: "evt_live", epoch: 1, seq: 12 },
+    items: [
+      assistantConversationItem({
+        text: "live text",
+        revision: 12,
+        source_event_ids: ["evt_live"],
+        source_event_ranges: [
+          { from_event_id: "evt_live", to_event_id: "evt_live", from_seq: 12, to_seq: 12 },
+        ],
+      }),
+    ],
+  });
+  const staleSnapshot = conversationFixture({
+    cursor: { event_id: "evt_old", epoch: 1, seq: 10 },
+    items: [
+      assistantConversationItem({
+        text: "old text",
+        revision: 10,
+        source_event_ids: ["evt_old"],
+        source_event_ranges: [
+          { from_event_id: "evt_old", to_event_id: "evt_old", from_seq: 10, to_seq: 10 },
+        ],
+      }),
+    ],
+  });
+  const freshSnapshot = conversationFixture({
+    cursor: { event_id: "evt_new", epoch: 1, seq: 13 },
+    items: [
+      assistantConversationItem({
+        text: "fresh text",
+        revision: 13,
+        source_event_ids: ["evt_new"],
+        source_event_ranges: [
+          { from_event_id: "evt_new", to_event_id: "evt_new", from_seq: 13, to_seq: 13 },
+        ],
+      }),
+    ],
+  });
+
+  assert.equal(mergeConversationSnapshot(current, staleSnapshot), current);
+  const next = mergeConversationSnapshot(current, freshSnapshot);
+  assert.notEqual(next, current);
+  assert.equal(next.items[0]?.kind, "assistant_message");
+  assert.equal(next.items[0]?.text, "fresh text");
+  assert.equal(next.cursor.seq, 13);
 });
 
 test("applies message-id-free assistant delta live overlays only to the latest streaming item", () => {

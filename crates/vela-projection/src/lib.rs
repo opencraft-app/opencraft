@@ -4,7 +4,7 @@ use serde_json::Value;
 use vela_core::{
     CanonicalEvent, ConversationItem, ConversationItemKind, ConversationPart, ConversationView,
     ConversationWindow, ConversationWindowView, EventCursor, EventType, PendingRequest,
-    PendingRequestsView, RequestId, SessionId, TurnId,
+    PendingRequestsView, RequestId, SessionId, SourceEventRange, TurnId,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -58,6 +58,7 @@ pub fn project_conversation(events: &[CanonicalEvent]) -> ConversationView {
                 summary: None,
                 detail: Value::Null,
                 source_event_ids: vec![event.event_id.clone()],
+                source_event_ranges: vec![source_event_range(event)],
             });
             continue;
         }
@@ -87,6 +88,7 @@ pub fn project_conversation(events: &[CanonicalEvent]) -> ConversationView {
                 summary: None,
                 detail: Value::Null,
                 source_event_ids: vec![event.event_id.clone()],
+                source_event_ranges: vec![source_event_range(event)],
             });
             continue;
         }
@@ -217,7 +219,7 @@ fn upsert_assistant_delta(items: &mut Vec<ConversationItem>, event: &CanonicalEv
         }
         let current = item.text.get_or_insert_with(String::new);
         current.push_str(delta_from_payload(&event.payload));
-        item.source_event_ids.push(event.event_id.clone());
+        push_source_event(item, event);
         item.updated_at = event.created_at;
         item.revision += 1;
         return;
@@ -238,6 +240,7 @@ fn upsert_assistant_delta(items: &mut Vec<ConversationItem>, event: &CanonicalEv
         summary: None,
         detail: Value::Null,
         source_event_ids: vec![event.event_id.clone()],
+        source_event_ranges: vec![source_event_range(event)],
     });
 }
 
@@ -254,7 +257,7 @@ fn mark_assistant_message_completed(items: &mut [ConversationItem], event: &Cano
         item.status = "completed".to_string();
         item.updated_at = event.created_at;
         item.revision += 1;
-        item.source_event_ids.push(event.event_id.clone());
+        push_source_event(item, event);
     }
 }
 
@@ -273,7 +276,7 @@ fn mark_latest_streaming_assistant_terminal(
         item.status = status.to_string();
         item.updated_at = event.created_at;
         item.revision += 1;
-        item.source_event_ids.push(event.event_id.clone());
+        push_source_event(item, event);
     }
 }
 
@@ -291,7 +294,7 @@ fn upsert_turn_meta(
         item.status = status.to_string();
         item.updated_at = event.created_at;
         item.revision += 1;
-        item.source_event_ids.push(event.event_id.clone());
+        push_source_event(item, event);
         return;
     }
 
@@ -310,6 +313,7 @@ fn upsert_turn_meta(
         summary: None,
         detail: Value::Null,
         source_event_ids: vec![event.event_id.clone()],
+        source_event_ranges: vec![source_event_range(event)],
     });
 }
 
@@ -337,7 +341,7 @@ fn mark_turn_meta_terminal(
     item.updated_at = event.created_at;
     item.revision += 1;
     item.detail = merge_payload(&item.detail, &event.payload);
-    item.source_event_ids.push(event.event_id.clone());
+    push_source_event(item, event);
 }
 
 fn attach_turn_to_latest_user_without_turn(
@@ -353,7 +357,7 @@ fn attach_turn_to_latest_user_without_turn(
         item.turn_id = Some(turn_id.clone());
         item.revision += 1;
         item.updated_at = event.created_at;
-        item.source_event_ids.push(event.event_id.clone());
+        push_source_event(item, event);
     }
 }
 
@@ -378,7 +382,7 @@ fn upsert_agent_work(
         item.revision += 1;
         item.summary = activity_summary_text(&event.payload).or_else(|| item.summary.clone());
         item.detail = merge_payload(&item.detail, &event.payload);
-        item.source_event_ids.push(event.event_id.clone());
+        push_source_event(item, event);
         return;
     }
 
@@ -398,7 +402,31 @@ fn upsert_agent_work(
         summary: activity_summary_text(&event.payload),
         detail: event.payload.clone(),
         source_event_ids: vec![event.event_id.clone()],
+        source_event_ranges: vec![source_event_range(event)],
     });
+}
+
+fn push_source_event(item: &mut ConversationItem, event: &CanonicalEvent) {
+    item.source_event_ids.push(event.event_id.clone());
+    let next = source_event_range(event);
+    if let Some(last) = item.source_event_ranges.last_mut() {
+        if last.epoch == next.epoch && last.to_seq + 1 == next.from_seq {
+            last.to_event_id = next.to_event_id;
+            last.to_seq = next.to_seq;
+            return;
+        }
+    }
+    item.source_event_ranges.push(next);
+}
+
+fn source_event_range(event: &CanonicalEvent) -> SourceEventRange {
+    SourceEventRange {
+        epoch: event.epoch,
+        from_event_id: event.event_id.clone(),
+        to_event_id: event.event_id.clone(),
+        from_seq: event.seq,
+        to_seq: event.seq,
+    }
 }
 
 fn conversation_window_bounds(
@@ -674,6 +702,9 @@ fn merge_payload(old: &Value, new: &Value) -> Value {
             let mut merged = old.clone();
             for (key, value) in new {
                 let next = match merged.get(key) {
+                    Some(existing) if key == "type" && is_unknown_over_known_type(existing, value) => {
+                        existing.clone()
+                    }
                     Some(existing) => merge_payload(existing, value),
                     None => value.clone(),
                 };
@@ -687,4 +718,11 @@ fn merge_payload(old: &Value, new: &Value) -> Value {
         (old, Value::Null) if !old.is_null() => old.clone(),
         (_, new) => new.clone(),
     }
+}
+
+fn is_unknown_over_known_type(existing: &Value, next: &Value) -> bool {
+    matches!(
+        (existing.as_str(), next.as_str()),
+        (Some(existing), Some("unknown")) if existing != "unknown"
+    )
 }

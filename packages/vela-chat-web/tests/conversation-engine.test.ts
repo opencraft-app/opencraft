@@ -213,7 +213,6 @@ test("web adapter preserves render-model-only agent work groups", () => {
         summary: "ls -la · git status",
         status: "completed",
         display: "compact",
-        defaultCollapsed: true,
         createdAt: "2026-06-18T00:00:01Z",
         updatedAt: "2026-06-18T00:00:02Z",
         turnId: "turn_1",
@@ -261,6 +260,7 @@ test("web adapter preserves render-model-only agent work groups", () => {
   assert.equal(block?.kind, "agent_work_group");
   if (block?.kind !== "agent_work_group") assert.fail("expected agent work group block");
   assert.equal(block.title, "已运行 2 条命令");
+  assert.equal("defaultCollapsed" in block, false);
   assert.equal(block.children.length, 2);
   assert.deepEqual(block.children.map((child) => child.summary), ["ls -la", "git status"]);
 

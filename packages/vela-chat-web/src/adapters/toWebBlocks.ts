@@ -27,6 +27,7 @@ export interface WebChatModel {
   composer: {
     placeholder: string;
     canSend: boolean;
+    isRunning: boolean;
   };
 }
 
@@ -84,7 +85,6 @@ export type WebBlock =
       summary: string;
       status: "completed";
       display: "compact";
-      defaultCollapsed: boolean;
       children: AgentWorkWebBlock[];
       createdAt: string;
       updatedAt?: string;
@@ -113,6 +113,7 @@ export function toWebChatModel(model: ChatRenderModel): WebChatModel {
     composer: {
       placeholder: model.composer.placeholder,
       canSend: model.composer.can_send,
+      isRunning: model.composer.is_running,
     },
   };
 }
@@ -232,7 +233,7 @@ function rowFingerprint(row: ChatRenderRow): string {
     return `${row.key}:${row.status}:display:${row.display}:created:${hashString(row.createdAt)}:updated:${hashString(row.updatedAt ?? "")}:title:${hashString(row.title)}:summary:${hashString(row.summary)}`;
   }
   if (row.kind === "agent_work_group") {
-    return `${row.key}:${row.status}:display:${row.display}:collapsed:${row.defaultCollapsed}:created:${hashString(row.createdAt)}:updated:${hashString(row.updatedAt ?? "")}:title:${hashString(row.title)}:summary:${hashString(row.summary)}:children:${row.children.map(rowFingerprint).join(",")}`;
+    return `${row.key}:${row.status}:display:${row.display}:created:${hashString(row.createdAt)}:updated:${hashString(row.updatedAt ?? "")}:title:${hashString(row.title)}:summary:${hashString(row.summary)}:children:${row.children.map(rowFingerprint).join(",")}`;
   }
   if (row.kind === "turn_meta") {
     return `${row.key}:created:${hashString(row.createdAt)}:updated:${hashString(row.updatedAt ?? "")}:completed:${hashString(row.completedAt ?? "")}:status:${row.status}:label:${hashString(row.label)}`;
@@ -297,7 +298,6 @@ function rowToBlock(row: ChatRenderRow): WebBlock {
       summary: row.summary,
       status: row.status,
       display: "compact",
-      defaultCollapsed: row.defaultCollapsed,
       children: row.children.map(agentWorkRowToBlock),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,

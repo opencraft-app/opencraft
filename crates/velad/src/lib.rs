@@ -22,7 +22,7 @@ use vela_core::{
     AcceptedCommandAck, AgentConfig, AgentConfigPatch, BackendFeature, BackendKind, BackendModel,
     BlobRef, CanonicalEvent, CommandAck, CommandId, EventCursor, EventId, EventSource, EventType,
     PermissionMode, PermissionModeOption, ReasoningEffortOption, RejectedCommandAck, SessionId,
-    UserMessageBlock,
+    SourceEventRange, UserMessageBlock,
 };
 use vela_projection::{
     ConversationWindowDirection, ConversationWindowError, ConversationWindowQuery,
@@ -250,17 +250,52 @@ struct InputPart {
 }
 
 #[derive(Debug, Default, Deserialize)]
-struct PageQuery {
+#[serde(deny_unknown_fields)]
+struct SessionListQuery {
+    after_id: Option<String>,
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EventWindowQuery {
     after_id: Option<String>,
     before_id: Option<String>,
-    after_row_id: Option<String>,
-    before_row_id: Option<String>,
-    around_row_id: Option<String>,
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EventStreamQuery {
+    after_id: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ConversationViewQuery {
     direction: Option<ViewWindowDirection>,
-    anchor_row_id: Option<String>,
     anchor_item_id: Option<String>,
     limit: Option<usize>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RequestsViewQuery {
     status: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TimelineQuery {
+    before_id: Option<String>,
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TraceQuery {
+    after_id: Option<String>,
+    limit: Option<usize>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
@@ -510,16 +545,16 @@ where
 
 async fn list_sessions<B>(
     State(state): State<ApiState<B>>,
-    query: Result<Query<PageQuery>, QueryRejection>,
+    query: Result<Query<SessionListQuery>, QueryRejection>,
 ) -> Response
 where
     B: BackendAdapter + 'static,
 {
-    let query = match parsed_page_query(query) {
+    let query = match parsed_query(query) {
         Ok(query) => query,
         Err(response) => return response,
     };
-    let limit = match validated_limit(&query) {
+    let limit = match validated_limit(query.limit) {
         Ok(limit) => limit,
         Err(response) => return response,
     };
@@ -905,17 +940,17 @@ where
 async fn list_session_events<B>(
     State(state): State<ApiState<B>>,
     Path(session_id): Path<String>,
-    query: Result<Query<PageQuery>, QueryRejection>,
+    query: Result<Query<EventWindowQuery>, QueryRejection>,
 ) -> Response
 where
     B: BackendAdapter + 'static,
 {
-    let query = match parsed_page_query(query) {
+    let query = match parsed_query(query) {
         Ok(query) => query,
         Err(response) => return response,
     };
     let session_id = SessionId::from(session_id);
-    let limit = match validated_limit(&query) {
+    let limit = match validated_limit(query.limit) {
         Ok(limit) => limit,
         Err(response) => return response,
     };
@@ -948,12 +983,12 @@ async fn stream_session_events<B>(
     State(state): State<ApiState<B>>,
     Path(session_id): Path<String>,
     headers: HeaderMap,
-    query: Result<Query<PageQuery>, QueryRejection>,
+    query: Result<Query<EventStreamQuery>, QueryRejection>,
 ) -> Response
 where
     B: BackendAdapter + 'static,
 {
-    let query = match parsed_page_query(query) {
+    let query = match parsed_query(query) {
         Ok(query) => query,
         Err(response) => return response,
     };
@@ -976,12 +1011,12 @@ where
 async fn stream_workbench_events<B>(
     State(state): State<ApiState<B>>,
     headers: HeaderMap,
-    query: Result<Query<PageQuery>, QueryRejection>,
+    query: Result<Query<EventStreamQuery>, QueryRejection>,
 ) -> Response
 where
     B: BackendAdapter + 'static,
 {
-    let query = match parsed_page_query(query) {
+    let query = match parsed_query(query) {
         Ok(query) => query,
         Err(response) => return response,
     };
@@ -1015,16 +1050,16 @@ where
 async fn get_conversation_view<B>(
     State(state): State<ApiState<B>>,
     Path(session_id): Path<String>,
-    query: Result<Query<PageQuery>, QueryRejection>,
+    query: Result<Query<ConversationViewQuery>, QueryRejection>,
 ) -> Response
 where
     B: BackendAdapter + 'static,
 {
-    let query = match parsed_page_query(query) {
+    let query = match parsed_query(query) {
         Ok(query) => query,
         Err(response) => return response,
     };
-    let limit = match validated_limit(&query) {
+    let limit = match validated_limit(query.limit) {
         Ok(limit) => limit,
         Err(response) => return response,
     };
@@ -1053,6 +1088,7 @@ where
                 "revision": item.revision,
                 "status": item.status,
                 "source_event_ids": item.source_event_ids.iter().map(|id| id.as_str()).collect::<Vec<_>>(),
+                "source_event_ranges": item.source_event_ranges.iter().map(source_event_range_json).collect::<Vec<_>>(),
             });
             if let Value::Object(object) = &mut item_json {
                 if let Some(turn_id) = item.turn_id.as_ref() {
@@ -1102,12 +1138,12 @@ where
 async fn get_requests_view<B>(
     State(state): State<ApiState<B>>,
     Path(session_id): Path<String>,
-    query: Result<Query<PageQuery>, QueryRejection>,
+    query: Result<Query<RequestsViewQuery>, QueryRejection>,
 ) -> Response
 where
     B: BackendAdapter + 'static,
 {
-    let query = match parsed_page_query(query) {
+    let query = match parsed_query(query) {
         Ok(query) => query,
         Err(response) => return response,
     };
@@ -1146,7 +1182,7 @@ where
 
 async fn get_session_list_view<B>(
     State(state): State<ApiState<B>>,
-    query: Result<Query<PageQuery>, QueryRejection>,
+    query: Result<Query<SessionListQuery>, QueryRejection>,
 ) -> Response
 where
     B: BackendAdapter + 'static,
@@ -1157,16 +1193,16 @@ where
 async fn get_timeline<B>(
     State(state): State<ApiState<B>>,
     Path(session_id): Path<String>,
-    query: Result<Query<PageQuery>, QueryRejection>,
+    query: Result<Query<TimelineQuery>, QueryRejection>,
 ) -> Response
 where
     B: BackendAdapter + 'static,
 {
-    let query = match parsed_page_query(query) {
+    let query = match parsed_query(query) {
         Ok(query) => query,
         Err(response) => return response,
     };
-    let limit = match validated_limit(&query) {
+    let limit = match validated_limit(query.limit) {
         Ok(limit) => limit,
         Err(response) => return response,
     };
@@ -1209,16 +1245,16 @@ where
 async fn get_trace<B>(
     State(state): State<ApiState<B>>,
     Path(session_id): Path<String>,
-    query: Result<Query<PageQuery>, QueryRejection>,
+    query: Result<Query<TraceQuery>, QueryRejection>,
 ) -> Response
 where
     B: BackendAdapter + 'static,
 {
-    let query = match parsed_page_query(query) {
+    let query = match parsed_query(query) {
         Ok(query) => query,
         Err(response) => return response,
     };
-    let limit = match validated_limit(&query) {
+    let limit = match validated_limit(query.limit) {
         Ok(limit) => limit,
         Err(response) => return response,
     };
@@ -1362,9 +1398,7 @@ fn last_event_id(headers: &HeaderMap) -> Option<&str> {
         .filter(|value| !value.is_empty())
 }
 
-fn parsed_page_query(
-    query: Result<Query<PageQuery>, QueryRejection>,
-) -> Result<PageQuery, Response> {
+fn parsed_query<T>(query: Result<Query<T>, QueryRejection>) -> Result<T, Response> {
     query
         .map(|Query(query)| query)
         .map_err(|err| invalid_parameter("query", err.to_string()))
@@ -1378,8 +1412,8 @@ fn scoped_idempotency_key(base: &str, index: usize, batch_len: usize) -> String 
     }
 }
 
-fn validated_limit(query: &PageQuery) -> Result<Option<usize>, Response> {
-    match query.limit {
+fn validated_limit(limit: Option<usize>) -> Result<Option<usize>, Response> {
+    match limit {
         Some(0) => Err(invalid_parameter("limit", "limit must be at least 1")),
         Some(value) if value > 500 => Err(invalid_parameter("limit", "limit must be at most 500")),
         value => Ok(value),
@@ -1387,25 +1421,9 @@ fn validated_limit(query: &PageQuery) -> Result<Option<usize>, Response> {
 }
 
 fn conversation_window_query(
-    query: &PageQuery,
+    query: &ConversationViewQuery,
     limit: usize,
 ) -> Result<ConversationWindowQuery, Response> {
-    if query.anchor_row_id.is_some()
-        || query.before_row_id.is_some()
-        || query.after_row_id.is_some()
-        || query.around_row_id.is_some()
-    {
-        return Err(invalid_parameter(
-            "anchor_row_id",
-            "conversation windows use anchor_item_id",
-        ));
-    }
-    if query.after_id.is_some() || query.before_id.is_some() {
-        return Err(invalid_parameter(
-            "event_cursor",
-            "conversation windows use direction and anchor_item_id, not event ids",
-        ));
-    }
     let direction = query.direction.unwrap_or(ViewWindowDirection::Tail);
     let direction = match direction {
         ViewWindowDirection::Tail => ConversationWindowDirection::Tail,
@@ -2125,6 +2143,16 @@ fn event_range_json(event_ids: &[EventId]) -> Value {
     json!({
         "from_event_id": event_ids.first().map(EventId::as_str).unwrap_or(""),
         "to_event_id": event_ids.last().map(EventId::as_str).unwrap_or(""),
+    })
+}
+
+fn source_event_range_json(range: &SourceEventRange) -> Value {
+    json!({
+        "epoch": range.epoch,
+        "from_event_id": range.from_event_id.as_str(),
+        "to_event_id": range.to_event_id.as_str(),
+        "from_seq": range.from_seq,
+        "to_seq": range.to_seq,
     })
 }
 

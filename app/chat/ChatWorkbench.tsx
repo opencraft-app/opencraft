@@ -7,6 +7,7 @@ import {
   createStreamRefreshScheduler,
   applyConversationLiveOverlay,
   readVelaStreamEvent,
+  mergeConversationSnapshot,
   needsConversationRefreshAfterLiveOverlay,
   selectSessionEventStreamAfterId,
   subscribeVelaEventSource,
@@ -83,6 +84,8 @@ export function ChatWorkbench({
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [isUpdatingAgentConfig, setIsUpdatingAgentConfig] = useState(false);
   const [isRespondingToRequest, setIsRespondingToRequest] = useState(false);
+  const [isCancellingSession, setIsCancellingSession] = useState(false);
+  const [messageFollowToken, setMessageFollowToken] = useState(0);
   const [conversationScrollDebug, setConversationScrollDebug] =
     useState<VelaChatDebugScrollRuntime | null>(null);
   const conversationRef = useRef<typeof conversation>(null);
@@ -92,8 +95,11 @@ export function ChatWorkbench({
 
   const client = useMemo(() => createVeladClient({ baseUrl }), [baseUrl]);
   const commitConversation = useCallback((nextConversation: typeof conversation) => {
-    conversationRef.current = nextConversation;
-    setConversation(nextConversation);
+    const mergedConversation = nextConversation
+      ? mergeConversationSnapshot(conversationRef.current, nextConversation)
+      : null;
+    conversationRef.current = mergedConversation;
+    setConversation(mergedConversation);
   }, []);
   const commitRequests = useCallback((nextRequests: typeof requests) => {
     requestsRef.current = nextRequests;
@@ -378,10 +384,34 @@ export function ChatWorkbench({
       setDraft("");
       setPendingAttachments([]);
       await loadReadModels();
+      setMessageFollowToken((current) => current + 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   }, [activeSessionId, client, draft, loadReadModels, pendingAttachments]);
+
+  const stopActiveSession = useCallback(async () => {
+    const requestedSessionId = activeSessionId;
+    if (!requestedSessionId || isCancellingSession) return;
+
+    try {
+      setIsCancellingSession(true);
+      setError(null);
+      const ack = await client.cancelSession({ sessionId: requestedSessionId });
+      const rejectionMessage = commandAckRejectionMessage(ack);
+      if (rejectionMessage) {
+        setError(rejectionMessage);
+        return;
+      }
+      if (isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) {
+        await loadReadModels();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsCancellingSession(false);
+    }
+  }, [activeSessionId, client, isCancellingSession, loadReadModels]);
 
   const attachImages = useCallback(async (files: File[]) => {
     try {
@@ -532,6 +562,7 @@ export function ChatWorkbench({
         }
         setDraft("");
         await loadReadModels();
+        setMessageFollowToken((current) => current + 1);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         setError(message);
@@ -685,6 +716,7 @@ export function ChatWorkbench({
       isLoadingOlder={isLoadingOlder}
       isUpdatingComposerControls={isUpdatingAgentConfig}
       isRespondingToRequest={isRespondingToRequest}
+      messageFollowToken={messageFollowToken}
       onAttachImages={attachImages}
       onAgentConfigChange={updateAgentConfig}
       onConversationScrollDebugChange={handleConversationScrollDebugChange}
@@ -692,6 +724,7 @@ export function ChatWorkbench({
       onLoadOlder={loadOlderConversation}
       onRemoveAttachment={removeAttachment}
       onRespondToRequest={respondToRequest}
+      onStop={stopActiveSession}
       onSubmit={submit}
       pendingAttachments={pendingAttachments}
     />

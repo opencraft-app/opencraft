@@ -63,6 +63,30 @@ test("agent work renderer exposes full labels to hover and assistive technology"
   assert.match(source, /title=\{label\}/);
 });
 
+test("agent work group header keeps command details out of the visible title", () => {
+  const source = readFileSync(
+    join(root, "packages/vela-chat-web/src/renderers/blocks/AgentWorkGroupRenderer.tsx"),
+    "utf8",
+  );
+
+  assert.match(source, /agentWorkAccessibleLabel/);
+  assert.match(source, /aria-label=\{label\}/);
+  assert.match(source, /title=\{label\}/);
+  assert.match(source, /<span className=\{styles\.agentWorkTitle\}>\{block\.title\}<\/span>/);
+  assert.doesNotMatch(source, /agentWorkVisualSummary/);
+  assert.doesNotMatch(source, /styles\.agentWorkSummary/);
+});
+
+test("agent work group renderer owns default collapsed state locally", () => {
+  const source = readFileSync(
+    join(root, "packages/vela-chat-web/src/renderers/blocks/AgentWorkGroupRenderer.tsx"),
+    "utf8",
+  );
+
+  assert.match(source, /useState\(false\)/);
+  assert.doesNotMatch(source, /defaultCollapsed/);
+});
+
 test("agent work renderer uses quiet work-log icons instead of orange bullet dots", () => {
   const renderer = readFileSync(
     join(root, "packages/vela-chat-web/src/renderers/blocks/AgentWorkRenderer.tsx"),
@@ -93,7 +117,7 @@ test("agent work visual summaries omit duplicate generic text", () => {
   assert.doesNotMatch(source, /block\.summary \? <span className=\{styles\.agentWorkSummary\}>\{block\.summary\}/);
 });
 
-test("failed agent work status rows expose failed visual status", () => {
+test("generic failure status rows expose failed visual status", () => {
   const agentWorkLabel = readFileSync(
     join(root, "packages/vela-chat-web/src/renderers/blocks/agentWorkLabel.ts"),
     "utf8",

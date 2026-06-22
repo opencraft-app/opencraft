@@ -149,7 +149,7 @@ function blockFingerprint(block: WebBlock): string {
     return `${block.key}:${block.status}:display:${block.display}:created:${hashString(block.createdAt)}:updated:${hashString(block.updatedAt ?? "")}:title:${hashString(block.title)}:summary:${hashString(block.summary)}`;
   }
   if (block.kind === "agent_work_group") {
-    return `${block.key}:${block.status}:display:${block.display}:collapsed:${block.defaultCollapsed}:created:${hashString(block.createdAt)}:updated:${hashString(block.updatedAt ?? "")}:title:${hashString(block.title)}:summary:${hashString(block.summary)}:children:${block.children.map(blockFingerprint).join(",")}`;
+    return `${block.key}:${block.status}:display:${block.display}:created:${hashString(block.createdAt)}:updated:${hashString(block.updatedAt ?? "")}:title:${hashString(block.title)}:summary:${hashString(block.summary)}:children:${block.children.map(blockFingerprint).join(",")}`;
   }
   return `${block.key}:created:${hashString(block.createdAt)}:status:${block.status}:label:${hashString(block.label)}`;
 }

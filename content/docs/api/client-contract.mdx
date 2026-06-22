@@ -295,7 +295,8 @@ External clients MUST generate or validate wire DTOs from `public/openapi/velach
 #### Scenario: 手写 client 校验 conversation item shape
 
 - **WHEN** client 处理 `ConversationView.items`
-- **THEN** 每个 item 必须校验 OpenAPI required `id`、`kind`、`created_at`、`updated_at`、`revision`、`status` 和 `source_event_ids`
+- **THEN** 每个 item 必须校验 OpenAPI required `id`、`kind`、`created_at`、`updated_at`、`revision`、`status`、`source_event_ids` 和 `source_event_ranges`
+- **AND** `source_event_ranges` 必须保留 event id 与 `epoch` / `seq` 边界，供 snapshot/live 竞态防护、窗口恢复和诊断使用
 - **AND** `kind` 必须是 `user_message` / `assistant_message` / `turn_meta` / `agent_work` / `status`
 - **AND** message item 的 `parts` 必须按 `MessagePart.oneOf` 校验
 - **AND** `agent_work.detail` 必须按 `AgentWorkDetail.oneOf` 校验

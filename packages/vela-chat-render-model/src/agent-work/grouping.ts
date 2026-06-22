@@ -1,4 +1,4 @@
-import type { ChatSurfaceDebug } from "../../../vela-chat-surface/src";
+import type { ChatSurfaceConversationDebug } from "../../../vela-chat-surface/src";
 import { summarizeAgentWorkGroup } from "./summary";
 import type { AgentWorkDisplay, AgentWorkRenderRow } from "./tools";
 
@@ -10,13 +10,12 @@ export interface AgentWorkGroupRenderRow {
   summary: string;
   status: "completed";
   display: AgentWorkDisplay;
-  defaultCollapsed: boolean;
   children: AgentWorkRenderRow[];
   createdAt: string;
   updatedAt?: string;
   turnId?: string;
   agentWorkId?: string;
-  debug: ChatSurfaceDebug;
+  debug: ChatSurfaceConversationDebug;
 }
 
 export type AgentWorkAnyRenderRow = AgentWorkRenderRow | AgentWorkGroupRenderRow;
@@ -42,7 +41,6 @@ export function groupAgentWorkRows(
       summary: summary.summary,
       status: "completed",
       display: "compact",
-      defaultCollapsed: true,
       children: [...rows],
       createdAt: first.createdAt,
       updatedAt: newestTimestamp(rows),
@@ -54,7 +52,7 @@ export function groupAgentWorkRows(
 }
 
 export function isGroupableAgentWork(row: AgentWorkRenderRow): boolean {
-  return row.status === "completed" && row.display === "compact";
+  return row.status !== "running" && row.status !== "pending";
 }
 
 function newestTimestamp(rows: readonly AgentWorkRenderRow[]): string | undefined {
@@ -64,10 +62,12 @@ function newestTimestamp(rows: readonly AgentWorkRenderRow[]): string | undefine
     .sort((a, b) => Date.parse(b) - Date.parse(a))[0];
 }
 
-function mergeDebug(rows: readonly AgentWorkRenderRow[]): ChatSurfaceDebug {
+function mergeDebug(rows: readonly AgentWorkRenderRow[]): ChatSurfaceConversationDebug {
   const source_event_ids = rows.flatMap((row) => row.debug.source_event_ids);
+  const source_event_ranges = rows.flatMap((row) => row.debug.source_event_ranges);
   return {
     projection: "conversation",
     source_event_ids: Array.from(new Set(source_event_ids)),
+    source_event_ranges,
   };
 }

@@ -11,6 +11,7 @@
     "webui-first",
     "chat-surface-architecture",
     "chat-web-renderer-architecture",
+    "chat-scroll-runtime",
     "event-log",
     "backend-adapters",
     "sync-protocol",

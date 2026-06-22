@@ -210,6 +210,48 @@ fn conversation_deep_merges_tool_detail_without_erasing_start_args() {
 }
 
 #[test]
+fn conversation_unknown_tool_detail_does_not_downgrade_known_detail_type() {
+    let events = vec![
+        event_at(
+            1,
+            1,
+            EventType::TOOL_STARTED,
+            json!({
+                "tool_id": "tool_1",
+                "name": "bash",
+                "status": "running",
+                "detail": {
+                    "type": "shell",
+                    "command": "cargo test"
+                }
+            }),
+        ),
+        event_at(
+            2,
+            2,
+            EventType::TOOL_OUTPUT_DELTA,
+            json!({
+                "tool_id": "tool_1",
+                "name": "bash",
+                "status": "running",
+                "detail": {
+                    "type": "unknown",
+                    "input": { "raw": true }
+                }
+            }),
+        ),
+    ];
+
+    let conversation = project_conversation(&events);
+
+    assert_eq!(conversation.items.len(), 1);
+    let detail = &conversation.items[0].detail["detail"];
+    assert_eq!(detail["type"], "shell");
+    assert_eq!(detail["command"], "cargo test");
+    assert_eq!(detail["input"]["raw"], true);
+}
+
+#[test]
 fn conversation_non_terminal_updates_do_not_resurrect_completed_work() {
     let events = vec![
         event_at(

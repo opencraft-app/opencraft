@@ -870,6 +870,7 @@ function parseConversationWireItem(data: unknown, owner: string): ConversationWi
       owner,
       invalidConversationView,
     ),
+    source_event_ranges: requiredSourceEventRanges(data, "source_event_ranges", owner),
   };
 
   if (kind === "user_message" || kind === "assistant_message") {
@@ -1191,6 +1192,33 @@ function parseAgentWorkEventRange(
     ...(data.to_event_id !== undefined
       ? { to_event_id: optionalViewString(data, "to_event_id", owner, invalidAgentWorkDetail) }
       : {}),
+  };
+}
+
+function requiredSourceEventRanges(
+  data: Record<string, unknown>,
+  field: string,
+  owner: string,
+) {
+  const value = data[field];
+  if (!Array.isArray(value)) {
+    throw invalidConversationView(`${owner}.${field} must be an array`);
+  }
+  return value.map((range, index) =>
+    parseSourceEventRange(range, `${owner}.${field}[${index}]`),
+  );
+}
+
+function parseSourceEventRange(value: unknown, owner: string) {
+  if (!isRecord(value)) {
+    throw invalidConversationView(`${owner} must be an object`);
+  }
+  return {
+    epoch: requiredViewInteger(value, "epoch", owner, invalidConversationView),
+    from_event_id: requiredViewString(value, "from_event_id", owner, invalidConversationView),
+    to_event_id: requiredViewString(value, "to_event_id", owner, invalidConversationView),
+    from_seq: requiredViewInteger(value, "from_seq", owner, invalidConversationView),
+    to_seq: requiredViewInteger(value, "to_seq", owner, invalidConversationView),
   };
 }
 

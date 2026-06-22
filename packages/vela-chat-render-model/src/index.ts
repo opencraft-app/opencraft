@@ -1,5 +1,6 @@
 import type {
   ChatSurface,
+  ChatSurfaceConversationDebug,
   ChatSurfaceDebug,
   ChatSurfaceConversationItem,
   ChatSurfacePendingRequest,
@@ -32,6 +33,7 @@ export interface ChatRenderModel {
   composer: {
     placeholder: string;
     can_send: boolean;
+    is_running: boolean;
   };
 }
 
@@ -65,7 +67,7 @@ export type UserMessageRenderRow = {
   collapsed: boolean;
   parts: ConversationMessagePart[];
   createdAt: string;
-  debug: ChatSurfaceDebug;
+  debug: ChatSurfaceConversationDebug;
 } & ChatRenderCorrelation;
 
 export type AssistantMessageRenderRow = {
@@ -78,7 +80,7 @@ export type AssistantMessageRenderRow = {
   updatedAt?: string;
   revision: number;
   createdAt: string;
-  debug: ChatSurfaceDebug;
+  debug: ChatSurfaceConversationDebug;
 } & ChatRenderCorrelation;
 
 export type StatusRenderRow = {
@@ -88,7 +90,7 @@ export type StatusRenderRow = {
   label: string;
   status: string;
   createdAt: string;
-  debug: ChatSurfaceDebug;
+  debug: ChatSurfaceConversationDebug;
 } & ChatRenderCorrelation;
 
 export type TurnMetaRenderRow = {
@@ -100,7 +102,7 @@ export type TurnMetaRenderRow = {
   createdAt: string;
   updatedAt?: string;
   completedAt?: string;
-  debug: ChatSurfaceDebug;
+  debug: ChatSurfaceConversationDebug;
 } & ChatRenderCorrelation;
 
 export type TurnMetaStatus = "running" | "completed" | "failed" | "cancelled";
@@ -130,27 +132,8 @@ export function buildChatRenderModel(surface: ChatSurface, host: ChatHostPolicy)
       if (item.kind === "agent_work") return renderAgentWorkRows([item]);
       return [renderConversationItem(item)];
     });
-  const failedWorkRows = surface.conversation.items.flatMap((item): ChatRenderRow[] => {
-    if (item.kind !== "agent_work") return [];
-    if (item.status !== "failed") return [];
-    const label = item.summary || item.title;
-    if (!label) return [];
-    return [
-      {
-        kind: "status",
-        id: item.id,
-        key: `agent_work:${item.id}`,
-        label: `处理失败：${label}`,
-        status: item.status,
-        createdAt: item.updated_at,
-        ...(item.turn_id !== undefined ? { turnId: item.turn_id } : {}),
-        agentWorkId: item.id,
-        debug: item.debug,
-      },
-    ];
-  });
   const rows = applyTurnMetaRows(
-    groupAgentWorkRuns(sortRenderRows([...conversationRows, ...failedWorkRows])),
+    groupAgentWorkRuns(sortRenderRows(conversationRows)),
     Array.from(turnById.values()),
   );
 
@@ -164,6 +147,7 @@ export function buildChatRenderModel(surface: ChatSurface, host: ChatHostPolicy)
     composer: {
       placeholder: "要求后续变更",
       can_send: true,
+      is_running: surface.stream.running,
     },
   };
 }

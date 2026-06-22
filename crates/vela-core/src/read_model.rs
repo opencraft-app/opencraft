@@ -78,6 +78,16 @@ pub struct ConversationItem {
     #[serde(default, skip_serializing_if = "Value::is_null")]
     pub detail: Value,
     pub source_event_ids: Vec<EventId>,
+    pub source_event_ranges: Vec<SourceEventRange>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceEventRange {
+    pub epoch: i64,
+    pub from_event_id: EventId,
+    pub to_event_id: EventId,
+    pub from_seq: i64,
+    pub to_seq: i64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

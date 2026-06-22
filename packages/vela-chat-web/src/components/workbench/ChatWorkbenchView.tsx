@@ -27,6 +27,7 @@ export interface ChatWorkbenchViewProps {
   composerControls?: ComposerControlsModel;
   isUpdatingComposerControls?: boolean;
   isRespondingToRequest?: boolean;
+  messageFollowToken?: number;
   pendingAttachments?: PromptInputAttachment[];
   onDraftChange: (value: string) => void;
   onAttachImages?: (files: File[]) => void;
@@ -35,6 +36,7 @@ export interface ChatWorkbenchViewProps {
   onConversationScrollDebugChange?: (debug: ConversationScrollControllerDebug) => void;
   onRemoveAttachment?: (attachmentId: string) => void;
   onRespondToRequest?: (response: RequestDockResponse) => void;
+  onStop?: () => void;
   onSubmit: () => void;
 }
 
@@ -47,6 +49,7 @@ export function ChatWorkbenchView({
   composerControls,
   isUpdatingComposerControls = false,
   isRespondingToRequest = false,
+  messageFollowToken,
   pendingAttachments,
   onDraftChange,
   onAttachImages,
@@ -55,6 +58,7 @@ export function ChatWorkbenchView({
   onLoadOlder,
   onRemoveAttachment,
   onRespondToRequest,
+  onStop,
   onSubmit,
 }: ChatWorkbenchViewProps) {
   const webModel = useMemo(() => toWebChatModel(model), [model]);
@@ -86,6 +90,7 @@ export function ChatWorkbenchView({
           onLoadOlder={onLoadOlder}
           onScrollDebugChange={onConversationScrollDebugChange}
           ref={conversationRef}
+          messageFollowToken={messageFollowToken}
           webModel={webModel}
         />
         <RequestDock
@@ -99,12 +104,14 @@ export function ChatWorkbenchView({
           canSend={webModel.composer.canSend}
           controls={composerControls}
           draft={draft}
+          isRunning={webModel.composer.isRunning}
           isUpdatingControls={isUpdatingComposerControls}
           onAttachImages={onAttachImages}
           onAgentConfigChange={onAgentConfigChange}
           onDraftChange={onDraftChange}
           onHeightChange={handleComposerHeightChange}
           onRemoveAttachment={onRemoveAttachment}
+          onStop={onStop}
           onSubmit={handleSubmit}
           pendingAttachments={pendingAttachments}
           placeholder={webModel.composer.placeholder}

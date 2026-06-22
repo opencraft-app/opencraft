@@ -13,6 +13,7 @@ export function VelaComposer({
   placeholder,
   canSend,
   controls,
+  isRunning,
   isUpdatingControls,
   pendingAttachments = [],
   onDraftChange,
@@ -20,12 +21,14 @@ export function VelaComposer({
   onAgentConfigChange,
   onHeightChange,
   onRemoveAttachment,
+  onStop,
   onSubmit,
 }: {
   draft: string;
   placeholder: string;
   canSend: boolean;
   controls?: ComposerControlsModel;
+  isRunning: boolean;
   isUpdatingControls?: boolean;
   pendingAttachments?: PromptInputAttachment[];
   onDraftChange: (value: string) => void;
@@ -33,6 +36,7 @@ export function VelaComposer({
   onAgentConfigChange?: (patch: AgentConfigPatchWire) => void;
   onHeightChange?: (height: number) => void;
   onRemoveAttachment?: (attachmentId: string) => void;
+  onStop?: () => void;
   onSubmit: () => void;
 }) {
   const textareaRef = useAutoResizeTextarea(draft);
@@ -44,11 +48,13 @@ export function VelaComposer({
   return (
     <PromptInput
       canSubmit={canSubmit}
+      isRunning={isRunning}
       onChange={onDraftChange}
       onAttachImages={onAttachImages}
       onHeightChange={onHeightChange}
       onKeyDown={handleKeyDown}
       onRemoveAttachment={onRemoveAttachment}
+      onStop={onStop}
       onSubmit={onSubmit}
       pendingAttachments={pendingAttachments}
       placeholder={placeholder}
