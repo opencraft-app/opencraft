@@ -3574,7 +3574,7 @@ export function parseEnabledHermesChannels(output: string): Set<string> {
   return new Set(
     entries
       .filter((entry) => entry.enabled)
-      .map((entry) => normalizeHermesChannelKey(entry.channel || entry.value)),
+      .map((entry) => normalizeHermesChannelKey(entry.channel ?? entry.value ?? "")),
   );
 }
 

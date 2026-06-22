@@ -162,9 +162,8 @@ type TeaSdkRuntime = {
     name: string;
     baseUrl: string;
     api: string;
-    secretId: string;
-    secretKey: string;
-    modelId: string;
+    apiKey: string;
+    models: Array<{ id: string; name: string }>;
   }) => string;
   getModelSwitchCommand: (modelFullId: string) => string;
 };
@@ -189,9 +188,9 @@ function loadTeaSdkRuntime(): Promise<TeaSdkRuntime> {
       const hermesModelCommands = hermesScripts.model;
 
       return {
-        ChannelPanel: sdk.ChannelPanel as ComponentType<TeaSdkPanelProps>,
-        ModelPanel: sdk.ModelPanel as ComponentType<TeaSdkPanelProps>,
-        SkillPanel: sdk.SkillPanel as ComponentType<TeaSdkPanelProps>,
+        ChannelPanel: sdk.ChannelPanel as unknown as ComponentType<TeaSdkPanelProps>,
+        ModelPanel: sdk.ModelPanel as unknown as ComponentType<TeaSdkPanelProps>,
+        SkillPanel: sdk.SkillPanel as unknown as ComponentType<TeaSdkPanelProps>,
         createProductConfig: ({ runCommand, getInvocationTask }) => ({
           ...sdk.createLighthouseConfig({
             agentType: "hermes",
