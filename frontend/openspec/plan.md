@@ -1,5 +1,5 @@
 # 当前执行计划
 
-> 当前需求：国际站 LightVela footer 调整。
+> 当前需求：为国际站 LightVela 增加更新日志页面与导航入口。
 
-- [x] 为国际站首页新增可复用 footer，并将现有法律 / 社区链接移动到对应分组。
+- [x] 复用国内站更新日志内容，为国际站提供中文 `/zh/changelog` 与英文 `/en/changelog` 版本，并将国际站页头导航入口放在 Overview 与 Docs 之间。
