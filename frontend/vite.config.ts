@@ -8,6 +8,8 @@ import { defineConfig } from "vitest/config";
 import { applyFullSeoToHtml } from "./src/lib/seo-html";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
+const teaThemeableResetCss = "@tencent/tea-component/dist/tea-themeable.css";
+const teaThemeableNoResetCss = "@tencent/tea-component/dist/tea-themeable-no-reset.css";
 
 // Local hot-reload development switch for tea-sdk-lightclaw.
 //
@@ -550,6 +552,13 @@ export default defineConfig(({ mode }) => {
       // Deduplicate React so the locally-linked SDK shares the host app's copy
       dedupe: ["react", "react-dom"],
       alias: [
+        {
+          // AgentChat imports Tea UI styles as a side effect. Tea's default
+          // themeable CSS includes a document-level reset; the no-reset build
+          // keeps Tea component styles without mutating the host shell.
+          find: teaThemeableResetCss,
+          replacement: teaThemeableNoResetCss,
+        },
         {
           find: /^react-syntax-highlighter$/,
           replacement: path.resolve(rootDir, "src/vendor/react-syntax-highlighter-shim.ts"),
