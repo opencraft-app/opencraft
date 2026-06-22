@@ -6,3 +6,7 @@ target
 .env.*
 !.env.example
 *.log
+.DS_Store
+app-*.css
+scroll-test.html
+content/对话.md

@@ -15,6 +15,8 @@ import type {
   PendingRequestsOptions,
   PendingRequestsWireView,
   SendSessionInputEventsInput,
+  SessionListOptions,
+  SessionListWireResponse,
   SessionWireResponse,
   UpdateAgentConfigWireResponse,
   VeladClientOptions,
@@ -32,6 +34,7 @@ import {
   readCreateSessionResponse,
   readDiffReviewViewResponse,
   readPendingRequestsViewResponse,
+  readSessionListResponse,
   readSessionResponse,
   readUpdateAgentConfigResponse,
   validateAfterId,
@@ -42,9 +45,11 @@ import {
   validateOptionalIdempotencyKey,
   validatePendingRequestsOptions,
   validateSendSessionEventsOptions,
+  validateSessionListOptions,
 } from "./wire-contract";
 
 export interface VeladClient {
+  listSessions: (options?: SessionListOptions) => Promise<SessionListWireResponse>;
   createSession: (input: CreateSessionInput) => Promise<CreateSessionWireResponse>;
   getSession: (sessionId: string) => Promise<SessionWireResponse>;
   getBackends: () => Promise<BackendsWireResponse>;
@@ -111,6 +116,14 @@ export function createVeladClient(options: VeladClientOptions): VeladClient {
   };
 
   return {
+    async listSessions(options) {
+      validateSessionListOptions(options);
+      const url = new URL("sessions", baseUrl);
+      if (options?.limit !== undefined) url.searchParams.set("limit", String(options.limit));
+      if (options?.afterId) url.searchParams.set("after_id", options.afterId);
+      const response = await doFetch(url);
+      return readSessionListResponse(response);
+    },
     async createSession(input) {
       validateCreateSessionInput(input);
       const idempotencyKey = validateOptionalIdempotencyKey(input.idempotencyKey) ?? createSessionIdempotencyKey();

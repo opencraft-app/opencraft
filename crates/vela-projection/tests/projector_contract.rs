@@ -252,6 +252,55 @@ fn conversation_unknown_tool_detail_does_not_downgrade_known_detail_type() {
 }
 
 #[test]
+fn conversation_absorbs_acp_config_negotiation_warnings_as_diagnostics() {
+    let events = vec![
+        event_at(
+            1,
+            1,
+            EventType::WARNING_RAISED,
+            json!({
+                "code": "acp_warning",
+                "message": "ACP backend did not accept session model update",
+                "turn_id": "turn_1"
+            }),
+        )
+        .with_raw(json!({
+            "error": "ACP response failed: {\"code\":-32601,\"data\":{\"method\":\"session/setModel\"},\"message\":\"Method not found\"}",
+            "model": "minimax-m2.7"
+        })),
+        event_at(
+            2,
+            2,
+            EventType::WARNING_RAISED,
+            json!({
+                "code": "acp_warning",
+                "message": "ACP backend did not accept reasoning effort update",
+                "turn_id": "turn_1"
+            }),
+        )
+        .with_raw(json!({
+            "error": "ACP response failed: {\"code\":-32601,\"data\":{\"method\":\"session/setConfigOption\"},\"message\":\"Method not found\"}",
+            "reasoning_effort": "medium"
+        })),
+        event_at(
+            3,
+            3,
+            EventType::WARNING_RAISED,
+            json!({ "code": "provider_warning", "message": "real provider warning" }),
+        ),
+    ];
+
+    let conversation = project_conversation(&events);
+
+    assert_eq!(conversation.items.len(), 1);
+    assert_eq!(conversation.items[0].kind, ConversationItemKind::AgentWork);
+    assert_eq!(
+        conversation.items[0].title.as_deref(),
+        Some("real provider warning")
+    );
+}
+
+#[test]
 fn conversation_non_terminal_updates_do_not_resurrect_completed_work() {
     let events = vec![
         event_at(

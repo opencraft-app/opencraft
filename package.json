@@ -24,6 +24,7 @@
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
+    "happy-dom": "^20.10.6",
     "tsx": "latest",
     "typescript": "latest"
   }

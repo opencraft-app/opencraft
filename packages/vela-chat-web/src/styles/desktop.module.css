@@ -16,7 +16,8 @@
   font-family:
     -apple-system,
     BlinkMacSystemFont,
-    "SF Pro Text",
+    "PingFang SC",
+    "Hiragino Sans GB",
     "Segoe UI",
     system-ui,
     ui-sans-serif,
@@ -53,8 +54,22 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  scrollbar-gutter: auto;
   scroll-behavior: smooth;
+}
+
+.conversation::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.conversation::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .turnList {
@@ -147,9 +162,9 @@
   border-radius: 18px;
   background: var(--vela-soft);
   padding: 11px 16px;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 400;
-  line-height: 1.5;
+  line-height: 1.46;
   letter-spacing: 0;
   overflow-wrap: anywhere;
 }
@@ -228,9 +243,9 @@
 
 .messageResponse {
   max-width: 100%;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 400;
-  line-height: 1.56;
+  line-height: 1.48;
   letter-spacing: 0;
 }
 
@@ -258,18 +273,18 @@
 }
 
 .messageResponse h1 {
-  font-size: 22px;
+  font-size: 16px;
 }
 
 .messageResponse h2 {
-  font-size: 20px;
+  font-size: 15px;
 }
 
 .messageResponse h3,
 .messageResponse h4,
 .messageResponse h5,
 .messageResponse h6 {
-  font-size: 17px;
+  font-size: 15px;
 }
 
 .messageResponse strong {
@@ -355,7 +370,7 @@
 
 @keyframes velaMarkdownFadeIn {
   from {
-    opacity: 0.32;
+    opacity: 0.48;
   }
 
   to {
@@ -1030,7 +1045,7 @@
   }
 
   .messageResponse {
-    font-size: 15px;
+    font-size: 14px;
   }
 
   .composerDock {

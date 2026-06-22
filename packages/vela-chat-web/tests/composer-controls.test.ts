@@ -72,7 +72,8 @@ test("composer controls keep current session values selectable when backend cata
   assert.equal(controls.disabled, false);
   assert.equal(controls.providerLabel, "codex");
   assert.equal(controls.selectedModel?.label, "gpt-5.3-codex-spark");
-  assert.equal(controls.selectedReasoningEffort?.label, "High");
+  assert.equal(controls.selectedReasoningEffort, undefined);
+  assert.deepEqual(controls.reasoningEffortOptions, []);
   assert.equal(controls.selectedPermissionMode?.label, "Auto review");
 });
 

@@ -1,3 +1,5 @@
+import { useCallback, useEffect, useState } from "react";
+
 import type { WebBlock } from "../../adapters/toWebBlocks";
 import { Message } from "../../primitives/message/Message";
 import { MarkdownRenderer } from "../markdown/MarkdownRenderer";
@@ -8,17 +10,32 @@ export function AssistantMarkdownRenderer({
 }: {
   block: Extract<WebBlock, { kind: "assistant_markdown" }>;
 }) {
+  const text = block.blocks.map((markdownBlock) => markdownBlock.text).join("\n\n");
+  const [renderLive, setRenderLive] = useState(block.streaming);
+  useEffect(() => {
+    if (block.streaming) setRenderLive(true);
+  }, [block.streaming]);
+  const handleSettled = useCallback(() => {
+    setRenderLive(false);
+  }, []);
+
+  if (block.streaming || renderLive) {
+    return (
+      <Message from="assistant">
+        <StreamingMarkdownRenderer
+          onSettled={handleSettled}
+          streamKey={block.id}
+          streaming={block.streaming}
+        >
+          {text}
+        </StreamingMarkdownRenderer>
+      </Message>
+    );
+  }
+
   return (
     <Message from="assistant">
-      {block.blocks.map((markdownBlock) =>
-        block.streaming ? (
-          <StreamingMarkdownRenderer key={markdownBlock.id}>
-            {markdownBlock.text}
-          </StreamingMarkdownRenderer>
-        ) : (
-          <MarkdownRenderer key={markdownBlock.id}>{markdownBlock.text}</MarkdownRenderer>
-        ),
-      )}
+      <MarkdownRenderer>{text}</MarkdownRenderer>
     </Message>
   );
 }

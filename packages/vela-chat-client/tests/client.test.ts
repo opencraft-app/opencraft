@@ -815,6 +815,38 @@ test("creates a local pi session with idempotency key", async () => {
   });
 });
 
+test("lists recent sessions for debug launchers", async () => {
+  const requests: Array<{ url: string; init?: RequestInit }> = [];
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async (url, init) => {
+      requests.push({ url: String(url), init });
+      return new Response(
+        JSON.stringify({
+          sessions: [
+            sessionFixture({
+              id: "ses_recent",
+              backend: "acp",
+              title: "Hermes debug",
+              working_directory: "/tmp/project",
+            }),
+          ],
+          cursor: { event_id: "evt_1", epoch: 1, seq: 1, has_older: false, has_newer: true },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    },
+  });
+
+  const response = await client.listSessions({ limit: 12 });
+
+  assert.equal(requests[0]?.url, "http://127.0.0.1:3857/api/v1/sessions?limit=12");
+  assert.equal(requests[0]?.init?.method, undefined);
+  assert.equal(response.sessions[0]?.id, "ses_recent");
+  assert.equal(response.sessions[0]?.backend, "acp");
+  assert.equal(response.cursor.event_id, "evt_1");
+});
+
 test("creates a session with selected backend and agent config", async () => {
   const requests: Array<{ url: string; init?: RequestInit }> = [];
   const client = createVeladClient({

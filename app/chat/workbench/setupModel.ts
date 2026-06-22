@@ -4,10 +4,7 @@ import type {
   BackendWire,
   PermissionModeWire,
 } from "../../../packages/vela-chat-client/src";
-import {
-  DEFAULT_PERMISSION_MODE_OPTIONS,
-  DEFAULT_REASONING_EFFORT_OPTIONS,
-} from "../../../packages/vela-chat-web/src/components/composer-controls/model";
+import { DEFAULT_PERMISSION_MODE_OPTIONS } from "../../../packages/vela-chat-web/src/components/composer-controls/model";
 
 export interface WorkbenchSetupSelectionInput {
   backends: BackendWire[];
@@ -37,17 +34,14 @@ export function buildWorkbenchSetupSelection({
         selectedModel;
   const modelReasoningOptions =
     setupModelOptions.find((model) => model.id === setupSelectedModel)?.reasoning_efforts ?? [];
-  const setupReasoningOptions = modelReasoningOptions.length
-    ? modelReasoningOptions
-    : DEFAULT_REASONING_EFFORT_OPTIONS;
+  const setupReasoningOptions = modelReasoningOptions;
   const setupSelectedReasoningEffort =
     selectedReasoningEffort &&
     setupReasoningOptions.some((option) => option.id === selectedReasoningEffort)
       ? selectedReasoningEffort
       : setupReasoningOptions.find(isDefaultOption)?.id ??
-        setupReasoningOptions.find((option) => option.id === "medium")?.id ??
         setupReasoningOptions[0]?.id ??
-        selectedReasoningEffort;
+        "";
   const setupPermissionOptions = selectedBackendDetails?.permission_modes?.length
     ? selectedBackendDetails.permission_modes
     : DEFAULT_PERMISSION_MODE_OPTIONS;

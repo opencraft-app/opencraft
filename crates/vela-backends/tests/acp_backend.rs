@@ -126,6 +126,79 @@ async fn acp_adapter_initializes_session_and_streams_prompt_updates() {
 }
 
 #[tokio::test]
+async fn acp_adapter_degrades_unsupported_config_updates_without_visible_warnings() {
+    let host = ScriptedAcpHost::new(vec![
+        AcpInbound::response(json!({
+            "protocolVersion": 1,
+            "agentCapabilities": {}
+        })),
+        AcpInbound::response(json!({ "sessionId": "acp_ses_config_degraded" })),
+        AcpInbound::notification(
+            "session/update",
+            json!({
+                "sessionId": "acp_ses_config_degraded",
+                "update": {
+                    "sessionUpdate": "agent_message_chunk",
+                    "messageId": "msg_config_degraded",
+                    "content": { "type": "text", "text": "hello with host defaults" }
+                }
+            }),
+        ),
+        AcpInbound::response(json!({ "stopReason": "end_turn" })),
+    ])
+    .rejecting_methods(["session/setModel", "session/setConfigOption"]);
+    let adapter = AcpBackendAdapter::new(Arc::new(host.clone()), "/repo");
+
+    let mut input = BackendSend::new("hello acp");
+    input.session_id = Some(SessionId::from("ses_acp_config_degraded"));
+    input.resolved_agent_config = Some(ResolvedAgentConfig {
+        backend: BackendKind::Acp,
+        config: vela_core::AgentConfig {
+            model: Some("minimax-m2.7".to_string()),
+            reasoning_effort: Some("medium".to_string()),
+            permission_mode: Some(vela_core::PermissionMode::Auto),
+            feature_values: Default::default(),
+        },
+    });
+
+    let outputs = support::collect_backend_outputs(&adapter, input)
+        .await
+        .expect("outputs");
+
+    assert!(
+        outputs
+            .iter()
+            .all(|output| output.event_type != EventType::WARNING_RAISED),
+        "unsupported config updates should not become conversation-visible warnings: {outputs:?}"
+    );
+    assert!(
+        outputs
+            .iter()
+            .any(|output| output.event_type == EventType::ASSISTANT_MESSAGE_DELTA)
+    );
+    assert!(
+        outputs
+            .iter()
+            .any(|output| output.event_type == EventType::TURN_COMPLETED)
+    );
+
+    let calls = host.calls().await;
+    assert_eq!(
+        calls
+            .iter()
+            .map(|call| call.method.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "initialize",
+            "session/new",
+            "session/setModel",
+            "session/setConfigOption",
+            "session/prompt"
+        ]
+    );
+}
+
+#[tokio::test]
 async fn acp_adapter_sends_base64_image_blocks_in_prompt() {
     let host = ScriptedAcpHost::new(vec![
         AcpInbound::response(json!({ "protocolVersion": 1, "agentCapabilities": {} })),
@@ -360,6 +433,7 @@ fn acp_stdio_host_defaults_to_hermes_command_with_cloudagents_env() {
 struct ScriptedAcpHost {
     state: Arc<Mutex<ScriptedAcpState>>,
     connects: Arc<AtomicUsize>,
+    rejected_methods: Vec<String>,
 }
 
 struct ScriptedAcpState {
@@ -389,7 +463,13 @@ impl ScriptedAcpHost {
                 responses: Vec::new(),
             })),
             connects: Arc::new(AtomicUsize::new(0)),
+            rejected_methods: Vec::new(),
         }
+    }
+
+    fn rejecting_methods(mut self, methods: impl IntoIterator<Item = &'static str>) -> Self {
+        self.rejected_methods = methods.into_iter().map(str::to_string).collect();
+        self
     }
 
     async fn calls(&self) -> Vec<RecordedAcpCall> {
@@ -407,12 +487,14 @@ impl AcpHost for ScriptedAcpHost {
         self.connects.fetch_add(1, Ordering::SeqCst);
         Ok(Box::new(ScriptedAcpConnection {
             state: self.state.clone(),
+            rejected_methods: self.rejected_methods.clone(),
         }))
     }
 }
 
 struct ScriptedAcpConnection {
     state: Arc<Mutex<ScriptedAcpState>>,
+    rejected_methods: Vec<String>,
 }
 
 #[async_trait]
@@ -422,6 +504,13 @@ impl AcpConnection for ScriptedAcpConnection {
             method: method.to_string(),
             params,
         });
+        if self
+            .rejected_methods
+            .iter()
+            .any(|rejected| rejected == method)
+        {
+            return Err(anyhow::anyhow!("unsupported ACP method {method}"));
+        }
         loop {
             let inbound = self
                 .state

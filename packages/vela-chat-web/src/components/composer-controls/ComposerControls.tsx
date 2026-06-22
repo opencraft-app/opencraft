@@ -37,15 +37,17 @@ export function ComposerControls({
             selectedId={controls.selectedModel?.id}
             onSelect={(option) => onChange({ model: option.id })}
           />
-          <ControlMenu
-            ariaLabel="Select reasoning effort"
-            disabled={disabled || controls.reasoningEffortOptions.length === 0}
-            label={controls.selectedReasoningEffort?.label ?? "Reasoning"}
-            leading="✣"
-            options={controls.reasoningEffortOptions}
-            selectedId={controls.selectedReasoningEffort?.id}
-            onSelect={(option) => onChange({ reasoning_effort: option.id })}
-          />
+          {controls.reasoningEffortOptions.length > 0 ? (
+            <ControlMenu
+              ariaLabel="Select reasoning effort"
+              disabled={disabled}
+              label={controls.selectedReasoningEffort?.label ?? "Reasoning"}
+              leading="✣"
+              options={controls.reasoningEffortOptions}
+              selectedId={controls.selectedReasoningEffort?.id}
+              onSelect={(option) => onChange({ reasoning_effort: option.id })}
+            />
+          ) : null}
         </>
       ) : null}
       {placement === "all" || placement === "primary" ? (

@@ -55,16 +55,9 @@ export function buildComposerControlsModel({
     modelOptions.find((option) => option.id === selectedModelId) ??
     modelOptions.find((option) => option.id && option.id === backend?.models.find((model) => model.is_default)?.id) ??
     modelOptions[0];
-  const reasoningEffortOptions = ensureOption(
-    selectedModel?.reasoningEfforts.length
-      ? selectedModel.reasoningEfforts
-      : DEFAULT_REASONING_EFFORT_OPTIONS,
-    selectedReasoningId ?? undefined,
-    titleFromSnakeCase,
-  );
+  const reasoningEffortOptions = selectedModel?.reasoningEfforts ?? [];
   const selectedReasoningEffort =
     reasoningEffortOptions.find((option) => option.id === selectedReasoningId) ??
-    reasoningEffortOptions.find((option) => option.id === "medium") ??
     reasoningEffortOptions[0];
   const permissionModeOptions = ensurePermissionOption(
     backend?.permission_modes?.length
@@ -126,7 +119,7 @@ function ensureModelOption(
     {
       id: selectedId,
       label: selectedId,
-      reasoningEfforts: DEFAULT_REASONING_EFFORT_OPTIONS,
+      reasoningEfforts: [],
     },
   ];
 }
@@ -155,15 +148,6 @@ function titleFromSnakeCase(value: string) {
     .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
     .join(" ");
 }
-
-export const DEFAULT_REASONING_EFFORT_OPTIONS: ComposerOption[] = [
-  { id: "off", label: "Off" },
-  { id: "minimal", label: "Minimal" },
-  { id: "low", label: "Low" },
-  { id: "medium", label: "Medium" },
-  { id: "high", label: "High" },
-  { id: "xhigh", label: "XHigh" },
-];
 
 export const DEFAULT_PERMISSION_MODE_OPTIONS: ComposerPermissionOption[] = [
   { id: "auto", label: "Default permissions" },

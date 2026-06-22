@@ -367,6 +367,16 @@ export interface SessionWireResponse {
   cursor?: CursorWindow;
 }
 
+export interface SessionListOptions {
+  limit?: number;
+  afterId?: string;
+}
+
+export interface SessionListWireResponse {
+  sessions: SessionWire[];
+  cursor: CursorWindow;
+}
+
 export interface ReasoningEffortOptionWire {
   id: string;
   label: string;

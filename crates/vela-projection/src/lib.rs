@@ -522,6 +522,9 @@ fn agent_work_identity(event: &CanonicalEvent) -> Option<(String, String)> {
         ));
     }
     if event.event_type == EventType::WARNING_RAISED {
+        if is_diagnostic_only_warning(event) {
+            return None;
+        }
         return Some((
             format!("work:{}", event.event_id.as_str()),
             string_field(&event.payload, "message").unwrap_or_else(|| "Warning".into()),
@@ -534,6 +537,21 @@ fn agent_work_identity(event: &CanonicalEvent) -> Option<(String, String)> {
         ));
     }
     None
+}
+
+fn is_diagnostic_only_warning(event: &CanonicalEvent) -> bool {
+    if string_field(&event.payload, "code").as_deref() != Some("acp_warning") {
+        return false;
+    }
+
+    let raw_error = event
+        .raw
+        .as_ref()
+        .and_then(|raw| raw.get("error"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+
+    raw_error.contains("session/setModel") || raw_error.contains("session/setConfigOption")
 }
 
 fn session_id_from_events(events: &[CanonicalEvent]) -> SessionId {

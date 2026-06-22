@@ -670,7 +670,7 @@ test("conversation runtime caps live head so long running turns can still virtua
   );
 });
 
-test("conversation stream items split assistant markdown blocks inside one long turn", () => {
+test("conversation stream items keep assistant markdown blocks inside one stable item", () => {
   const model: ChatRenderModel = {
     session_id: "sess_1",
     host: { kind: "desktop_web" },
@@ -697,20 +697,16 @@ test("conversation stream items split assistant markdown blocks inside one long 
   const webModel = toWebChatModel(model);
   const items = buildConversationStreamItems(webModel.turns);
 
-  assert.deepEqual(items.map((item) => item.kind), [
-    "assistant_markdown",
-    "assistant_markdown",
-    "assistant_markdown",
-  ]);
+  assert.deepEqual(items.map((item) => item.kind), ["assistant_markdown"]);
   assert.deepEqual(
-    items.map((item) =>
-      item.block.kind === "assistant_markdown" ? item.block.blocks[0]?.id : undefined,
-    ),
+    items[0]?.block.kind === "assistant_markdown"
+      ? items[0].block.blocks.map((block) => block.id)
+      : [],
     ["a1:block:0", "a1:block:1", "a1:block:2"],
   );
 });
 
-test("assistant markdown split items do not expose leaf copy actions", () => {
+test("assistant markdown item does not expose leaf copy actions", () => {
   const model: ChatRenderModel = {
     session_id: "sess_assistant_copy",
     host: { kind: "desktop_web" },
@@ -739,7 +735,7 @@ test("assistant markdown split items do not expose leaf copy actions", () => {
 
   assert.deepEqual(
     assistantBlocks.map((block) => "showCopyAction" in block || "copyText" in block),
-    [false, false, false],
+    [false],
   );
 });
 
@@ -774,7 +770,7 @@ test("streaming assistant rows stay live and expose a changing fingerprint", () 
   }
 });
 
-test("streaming assistant markdown split items keep only the tail block live", () => {
+test("streaming assistant markdown item stays live until the parent assistant completes", () => {
   const model: ChatRenderModel = {
     session_id: "sess_1",
     host: { kind: "desktop_web" },
@@ -802,17 +798,55 @@ test("streaming assistant markdown split items keep only the tail block live", (
 
   assert.deepEqual(
     items.map((item) => item.live),
-    [false, false, true],
+    [true],
   );
   assert.deepEqual(
     items.map((item) =>
       item.block.kind === "assistant_markdown" ? item.block.streaming : null,
     ),
-    [false, false, true],
+    [true],
   );
 });
 
-test("streaming assistant markdown split items keep stable head fingerprints", () => {
+test("completed assistant markdown item settles together", () => {
+  const model: ChatRenderModel = {
+    session_id: "sess_completed_split",
+    host: { kind: "desktop_web" },
+    rows: [
+      {
+        kind: "assistant_message",
+        id: "a1",
+        key: "assistant:a1",
+        blocks: [
+          { id: "a1:block:0", text: "completed intro" },
+          { id: "a1:block:1", text: "completed middle" },
+          { id: "a1:block:2", text: "completed tail" },
+        ],
+        createdAt: "2026-06-18T00:00:00Z",
+        status: "completed",
+        streaming: false,
+        revision: 5,
+        debug: { projection: "transcript", source_event_ids: ["evt_1"] },
+      },
+    ],
+    composer: { placeholder: "要求后续变更", can_send: true },
+  };
+
+  const items = buildConversationStreamItems(toWebChatModel(model).turns);
+
+  assert.deepEqual(
+    items.map((item) => item.live),
+    [false],
+  );
+  assert.deepEqual(
+    items.map((item) =>
+      item.block.kind === "assistant_markdown" ? item.block.streaming : null,
+    ),
+    [false],
+  );
+});
+
+test("streaming assistant markdown keeps stable item identity while content fingerprint changes", () => {
   const firstSnapshot: ChatRenderModel = {
     session_id: "sess_1",
     host: { kind: "desktop_web" },
@@ -851,11 +885,11 @@ test("streaming assistant markdown split items keep stable head fingerprints", (
   const firstItems = buildConversationStreamItems(toWebChatModel(firstSnapshot).turns);
   const secondItems = buildConversationStreamItems(toWebChatModel(secondSnapshot).turns);
 
-  assert.equal(firstItems[0]?.fingerprint, secondItems[0]?.fingerprint);
-  assert.notEqual(firstItems[1]?.fingerprint, secondItems[1]?.fingerprint);
+  assert.equal(firstItems[0]?.key, secondItems[0]?.key);
+  assert.notEqual(firstItems[0]?.fingerprint, secondItems[0]?.fingerprint);
 });
 
-test("assistant markdown split item fingerprints ignore turn metadata labels", () => {
+test("assistant markdown item fingerprints ignore turn metadata labels", () => {
   const firstSnapshot: ChatRenderModel = {
     session_id: "sess_split_label",
     host: { kind: "desktop_web" },
@@ -905,10 +939,9 @@ test("assistant markdown split item fingerprints ignore turn metadata labels", (
 
   assert.notEqual(firstItems[0]?.fingerprint, secondItems[0]?.fingerprint);
   assert.equal(firstItems[1]?.fingerprint, secondItems[1]?.fingerprint);
-  assert.equal(firstItems[2]?.fingerprint, secondItems[2]?.fingerprint);
 });
 
-test("assistant markdown tail fingerprint ignores earlier split block text", () => {
+test("assistant markdown item fingerprint changes when any markdown block changes", () => {
   const firstSnapshot: ChatRenderModel = {
     session_id: "sess_split_copy",
     host: { kind: "desktop_web" },
@@ -946,8 +979,8 @@ test("assistant markdown tail fingerprint ignores earlier split block text", () 
   const firstItems = buildConversationStreamItems(toWebChatModel(firstSnapshot).turns);
   const secondItems = buildConversationStreamItems(toWebChatModel(secondSnapshot).turns);
 
-  assert.equal(firstItems[1]?.fingerprint, secondItems[1]?.fingerprint);
-  assert.equal(secondItems[1]?.block.kind, "assistant_markdown");
+  assert.notEqual(firstItems[0]?.fingerprint, secondItems[0]?.fingerprint);
+  assert.equal(secondItems[0]?.block.kind, "assistant_markdown");
 });
 
 test("web adapter keeps unchanged block items stable across fresh render model snapshots", () => {
@@ -1780,7 +1813,7 @@ test("conversation runtime starts the mounted recent window at a user message bo
   ]);
 });
 
-test("conversation runtime can virtualize inside one long split assistant message", () => {
+test("conversation runtime keeps one long assistant message as one stable item", () => {
   const model: ChatRenderModel = {
     session_id: "sess_1",
     host: { kind: "desktop_web" },
@@ -1820,11 +1853,13 @@ test("conversation runtime can virtualize inside one long split assistant messag
     mountedRecentItemCount: 50,
   });
 
-  assert.equal(items.length, 121);
-  assert.equal(segments.historyMounted.length, 50);
-  assert.equal(segments.historyMounted[0]?.continuation, true);
-  assert.equal(segments.historyVirtualized.length, 71);
-  assert.equal(segments.historyVirtualized[0]?.kind, "user_message");
+  assert.equal(items.length, 2);
+  assert.equal(segments.historyMounted.length, 2);
+  assert.equal(segments.historyVirtualized.length, 0);
+  assert.deepEqual(
+    segments.historyMounted.map((item) => item.kind),
+    ["user_message", "assistant_markdown"],
+  );
 });
 
 test("history paging triggers near the top threshold only when older history is available", () => {

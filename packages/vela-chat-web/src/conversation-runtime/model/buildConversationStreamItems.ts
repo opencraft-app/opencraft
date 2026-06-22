@@ -43,25 +43,6 @@ function turnToItems(turn: WebTurn): ConversationStreamItem[] {
 }
 
 function blockToItems(turn: WebTurn, block: WebBlock): ConversationStreamItem[] {
-  if (block.kind === "assistant_markdown" && block.blocks.length > 1) {
-    return block.blocks.map((markdownBlock, index) => {
-      const isTailBlock = index === block.blocks.length - 1;
-      const splitBlock: WebBlock = {
-        ...block,
-        id: `${block.id}:${markdownBlock.id}`,
-        key: `${block.key}:${markdownBlock.id}`,
-        blocks: [markdownBlock],
-        streaming: block.streaming && isTailBlock,
-      };
-      return itemFromBlock(turn, splitBlock, {
-        id: `${turn.id}:${markdownBlock.id}`,
-        key: `${turn.key}:${markdownBlock.id}`,
-        continuation: index > 0,
-        fingerprint: `md:${markdownBlock.id}:streaming:${splitBlock.streaming}:text:${hashString(markdownBlock.text)}`,
-      });
-    });
-  }
-
   return [
     itemFromBlock(turn, block, {
       id: turn.blocks.length === 1 ? turn.id : `${turn.id}:${block.id}`,

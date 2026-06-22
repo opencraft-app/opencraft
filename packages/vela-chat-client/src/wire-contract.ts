@@ -43,6 +43,8 @@ import type {
   PermissionModeWire,
   ReasoningEffortOptionWire,
   RequestStatusWire,
+  SessionListOptions,
+  SessionListWireResponse,
   SessionOperationWire,
   SessionRuntimeInfoWire,
   SessionStatusWire,
@@ -74,6 +76,23 @@ export function validateAfterId(afterId: string | null | undefined) {
     throw invalidAfterId("after_id must be a string");
   }
   return afterId;
+}
+
+export function validateSessionListOptions(options: SessionListOptions | undefined) {
+  if (options === undefined) return;
+  if (!isRecord(options)) {
+    throw invalidSessionResponse("SessionListOptions must be an object");
+  }
+  const limit = options.limit;
+  if (limit !== undefined && typeof limit !== "number") {
+    throw invalidSessionResponse("SessionListOptions.limit must be a number");
+  }
+  validateViewWindowLimit(limit, "invalid_session_response");
+  const afterId = options.afterId;
+  if (afterId !== undefined && typeof afterId !== "string") {
+    throw invalidSessionResponse("SessionListOptions.afterId must be a string");
+  }
+  validateOptionalViewWindowString(afterId, "afterId", "invalid_session_response");
 }
 
 export function encodeBackendKind(backend: unknown) {
@@ -602,12 +621,34 @@ export async function readSessionResponse(response: Response): Promise<SessionWi
   return parseSessionWireResponse(await readJsonResponse<unknown>(response));
 }
 
+export async function readSessionListResponse(response: Response): Promise<SessionListWireResponse> {
+  return parseSessionListWireResponse(await readJsonResponse<unknown>(response));
+}
+
 export function parseSessionWireResponse(data: unknown): SessionWireResponse {
   if (!isRecord(data)) {
     throw invalidSessionResponse("SessionResponse must be an object");
   }
   return {
     session: requiredSessionObject(data, "SessionResponse", invalidSessionResponse),
+  };
+}
+
+export function parseSessionListWireResponse(data: unknown): SessionListWireResponse {
+  if (!isRecord(data)) {
+    throw invalidSessionResponse("SessionListResponse must be an object");
+  }
+  const sessions = requiredViewArray(
+    data,
+    "sessions",
+    "SessionListResponse",
+    invalidSessionResponse,
+  );
+  return {
+    sessions: sessions.map((session, index) =>
+      parseSessionWire(session, `SessionListResponse.sessions[${index}]`, invalidSessionResponse),
+    ),
+    cursor: requiredCursorWindow(data, "cursor", "SessionListResponse", invalidSessionResponse),
   };
 }
 

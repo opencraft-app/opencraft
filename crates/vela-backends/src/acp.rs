@@ -368,7 +368,7 @@ impl BackendAdapter for AcpBackendAdapter {
                 )
                 .await?;
             let acp_session_id = read_acp_session_id(&session_response)?;
-            apply_acp_config(connection.as_mut(), &acp_session_id, &input, &sink).await?;
+            apply_acp_config(connection.as_mut(), &acp_session_id, &input).await?;
             session = Some(AcpBackendSession {
                 session_id: acp_session_id,
                 connection,
@@ -537,7 +537,6 @@ async fn apply_acp_config(
     connection: &mut dyn AcpConnection,
     acp_session_id: &str,
     input: &BackendSend,
-    sink: &BackendOutputSink,
 ) -> anyhow::Result<()> {
     let Some(config) = input
         .resolved_agent_config
@@ -554,11 +553,11 @@ async fn apply_acp_config(
             )
             .await
         {
-            sink.send(warning(
-                "ACP backend did not accept session model update",
-                json!({ "model": model, "error": error.to_string() }),
-            ))
-            .await?;
+            tracing::warn!(
+                model = model.as_str(),
+                error = %error,
+                "ACP backend did not expose session model selection; using provider default model"
+            );
         }
     }
     if let Some(reasoning_effort) = &config.reasoning_effort {
@@ -573,11 +572,11 @@ async fn apply_acp_config(
             )
             .await
         {
-            sink.send(warning(
-                "ACP backend did not accept reasoning effort update",
-                json!({ "reasoning_effort": reasoning_effort, "error": error.to_string() }),
-            ))
-            .await?;
+            tracing::warn!(
+                reasoning_effort = reasoning_effort.as_str(),
+                error = %error,
+                "ACP backend did not expose reasoning effort selection; using provider default reasoning"
+            );
         }
     }
     Ok(())

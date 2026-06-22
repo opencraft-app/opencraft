@@ -5,6 +5,24 @@ import test from "node:test";
 
 const root = process.cwd();
 
+test("repository root stays free of local browser debug artifacts", () => {
+  const forbiddenExactPaths = [
+    ".DS_Store",
+    "scroll-test.html",
+    "content/对话.md",
+  ];
+
+  for (const path of forbiddenExactPaths) {
+    assert.equal(existsSync(join(root, path)), false, `${path} should not be checked in or kept as a workspace artifact`);
+  }
+
+  const rootFiles = readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name);
+  const generatedAppCss = rootFiles.filter((name) => /^app-[A-Za-z0-9_-]+\.css$/.test(name));
+  assert.deepEqual(generatedAppCss, []);
+});
+
 function readChatWorkbenchSource() {
   return [
     "app/chat/ChatWorkbench.tsx",
@@ -13,12 +31,39 @@ function readChatWorkbenchSource() {
     "app/chat/workbench/helpers.ts",
     "app/chat/workbench/renderModel.ts",
     "app/chat/workbench/setupModel.ts",
-    "app/chat/workbench/SetupPanel.tsx",
+    "app/chat/workbench/session-launcher/DebugSessionLauncher.tsx",
+    "app/chat/workbench/session-launcher/model.ts",
     "app/chat/workbench/streamHandler.ts",
   ]
     .map((path) => `// ${path}\n${readFileSync(join(root, path), "utf8")}`)
     .join("\n");
 }
+
+test("chat debug session launcher stays isolated from reusable ChatUI", () => {
+  const expectedPaths = [
+    "app/chat/workbench/session-launcher/README.md",
+    "app/chat/workbench/session-launcher/DebugSessionLauncher.tsx",
+    "app/chat/workbench/session-launcher/model.ts",
+  ];
+  for (const path of expectedPaths) {
+    assert.equal(existsSync(join(root, path)), true, `${path} should exist`);
+  }
+
+  const chatWorkbench = readFileSync(join(root, "app/chat/ChatWorkbench.tsx"), "utf8");
+  const webPackage = readdirSync(join(root, "packages/vela-chat-web/src"), {
+    recursive: true,
+    withFileTypes: true,
+  })
+    .filter((entry) => entry.isFile())
+    .map((entry) => readFileSync(join(entry.parentPath, entry.name), "utf8"))
+    .join("\n");
+
+  assert.match(chatWorkbench, /DebugSessionLauncher/);
+  assert.match(chatWorkbench, /client\.listSessions\(\{ limit: 12 \}\)/);
+  assert.doesNotMatch(chatWorkbench, /SetupPanel/);
+  assert.doesNotMatch(webPackage, /DebugSessionLauncher/);
+  assert.doesNotMatch(webPackage, /listSessions/);
+});
 
 test("web renderer consumes render model and does not inspect transcript wire fields", () => {
   const source = readFileSync(join(root, "packages/vela-chat-web/src/index.tsx"), "utf8");
@@ -296,6 +341,7 @@ test("assistant markdown uses the Codex-style marked renderer stack", () => {
   assert.doesNotMatch(packageJson, /react-markdown|remark-gfm|streamdown|@streamdown/);
   assert.match(markdownRenderer, /parseMarkdownTokens/);
   assert.match(streamingMarkdownRenderer, /repairStreamingMarkdown/);
+  assert.match(streamingMarkdownRenderer, /useBufferedStreamingText/);
   assert.match(streamingMarkdownRenderer, /parseStreamingMarkdownTokens/);
   assert.match(streamingMarkdownRenderer, /fadeSegmentDelayMs/);
   assert.match(renderTokens, /MarkedToken/);
@@ -336,7 +382,7 @@ test("assistant markdown renders tables without third-party table chrome", () =>
   assert.doesNotMatch(source, /TableCopyDropdown|TableDownloadButton|TableDownloadDropdown/);
 });
 
-test("assistant markdown hides transient internal scrollbars like Codex", () => {
+test("chat transcript and markdown hide native scrollbars by default like Codex", () => {
   const css = readFileSync(
     join(root, "packages/vela-chat-web/src/styles/desktop.module.css"),
     "utf8",
@@ -344,13 +390,47 @@ test("assistant markdown hides transient internal scrollbars like Codex", () => 
 
   const conversation = cssBlock(css, "conversation");
 
-  assert.match(conversation, /scrollbar-gutter:\s*stable;/);
   assert.match(conversation, /overscroll-behavior:\s*contain;/);
+  assert.match(conversation, /scrollbar-width:\s*none;/);
+  assert.match(conversation, /-ms-overflow-style:\s*none;/);
+  assert.match(conversation, /scrollbar-gutter:\s*auto;/);
+  assert.match(css, /\.conversation::-webkit-scrollbar\s*\{[^}]*display:\s*none;/s);
+  assert.match(css, /\.conversation::-webkit-scrollbar\s*\{[^}]*width:\s*0;/s);
+  assert.match(css, /\.conversation::-webkit-scrollbar\s*\{[^}]*height:\s*0;/s);
   assert.match(css, /\.messageResponse pre,\s*\.markdownTableScroller\s*\{[^}]*scrollbar-width:\s*none;/s);
   assert.match(css, /\.messageResponse pre,\s*\.markdownTableScroller\s*\{[^}]*-ms-overflow-style:\s*none;/s);
   assert.match(css, /\.messageResponse pre::-webkit-scrollbar,\s*\.markdownTableScroller::-webkit-scrollbar\s*\{[^}]*display:\s*none;/s);
+  assert.doesNotMatch(conversation, /scrollbar-gutter:\s*stable;/);
   assert.doesNotMatch(css, /\.messageResponse pre\s*\{[^}]*scrollbar-width:\s*thin;/s);
   assert.doesNotMatch(css, /\.markdownTableScroller\s*\{[^}]*scrollbar-width:\s*thin;/s);
+});
+
+test("streaming markdown never overlays live text with a blocking tail mask", () => {
+  const css = readFileSync(
+    join(root, "packages/vela-chat-web/src/styles/desktop.module.css"),
+    "utf8",
+  );
+
+  assert.doesNotMatch(css, /messageResponse\[data-live-text-pending=.*?::after/s);
+});
+
+test("streaming markdown fade keeps pending text readable", () => {
+  const css = readFileSync(
+    join(root, "packages/vela-chat-web/src/styles/desktop.module.css"),
+    "utf8",
+  );
+  const fadeStart = css.match(/@keyframes\s+velaMarkdownFadeIn\s*\{[\s\S]*?from\s*\{[\s\S]*?opacity:\s*([0-9.]+)/);
+
+  assert.ok(fadeStart, "expected markdown fade start opacity to be explicit");
+  const opacity = Number(fadeStart[1]);
+  assert.ok(
+    opacity >= 0.42,
+    "streaming markdown fade must not make pending text look missing",
+  );
+  assert.ok(
+    opacity <= 0.58,
+    "streaming markdown fade must remain visible enough to avoid chunky text pops",
+  );
 });
 
 test("assistant markdown renderer dispatches only the live tail through streaming markdown", () => {
@@ -362,6 +442,16 @@ test("assistant markdown renderer dispatches only the live tail through streamin
   assert.match(source, /MarkdownRenderer/);
   assert.match(source, /StreamingMarkdownRenderer/);
   assert.match(source, /block\.streaming/);
+  assert.match(source, /onSettled/);
+});
+
+test("streaming markdown renderer drives buffered text at animation-frame cadence", () => {
+  const source = readFileSync(
+    join(root, "packages/vela-chat-web/src/renderers/markdown/StreamingMarkdownRenderer.tsx"),
+    "utf8",
+  );
+
+  assert.match(source, /frameIntervalMs:\s*16/);
 });
 
 test("conversation scroll controller observes content size changes for post-layout bottom anchoring", () => {
@@ -673,13 +763,17 @@ test("chat typography follows Codex-style reading weight and size", () => {
     "utf8",
   );
 
+  const shell = cssBlock(css, "shell");
   const assistant = cssBlock(css, "messageResponse");
   const user = cssBlock(css, "userBubble");
   const strong = cssBlockContaining(css, "messageResponse strong");
 
-  assert.match(assistant, /font-size:\s*15px;/);
+  assert.match(shell, /"PingFang SC"/);
+  assert.match(shell, /"Hiragino Sans GB"/);
+  assert.doesNotMatch(shell, /"SF Pro Text"/);
+  assert.match(assistant, /font-size:\s*14px;/);
   assert.match(assistant, /font-weight:\s*400;/);
-  assert.match(user, /font-size:\s*15px;/);
+  assert.match(user, /font-size:\s*14px;/);
   assert.match(user, /font-weight:\s*400;/);
   assert.match(strong, /font-weight:\s*650;/);
 });
@@ -716,10 +810,13 @@ test("chat markdown and agent work use compact Codex-style vertical rhythm", () 
     'turnGroup[data-turn-kind="agent_work"] + .turnGroup[data-turn-kind="assistant_markdown"]',
   );
 
-  assert.match(assistant, /line-height:\s*1\.56;/);
+  assert.match(assistant, /line-height:\s*1\.48;/);
   assert.match(paragraph, /margin:\s*0 0 12px;/);
   assert.match(heading, /margin:\s*18px 0 8px;/);
   assert.match(heading, /line-height:\s*1\.28;/);
+  assert.match(css, /\.messageResponse h1\s*\{\s*font-size:\s*16px;\s*\}/);
+  assert.match(css, /\.messageResponse h2\s*\{\s*font-size:\s*15px;\s*\}/);
+  assert.match(css, /\.messageResponse h3,[\s\S]*?\.messageResponse h6\s*\{\s*font-size:\s*15px;\s*\}/);
   assert.match(list, /margin:\s*0 0 12px;/);
   assert.match(listItem, /margin:\s*0;/);
   assert.match(codeBlock, /margin:\s*14px 0;/);

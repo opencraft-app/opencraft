@@ -2637,6 +2637,11 @@ fn backend_json(
     permission_requests: bool,
     structured_diff: bool,
 ) -> Value {
+    let model_reasoning_efforts = if kind == "acp" {
+        Vec::new()
+    } else {
+        common_reasoning_effort_options()
+    };
     let models = default_model
         .map(|model| {
             vec![BackendModel {
@@ -2644,7 +2649,7 @@ fn backend_json(
                 label: model.to_string(),
                 description: None,
                 is_default: true,
-                reasoning_efforts: common_reasoning_effort_options(),
+                reasoning_efforts: model_reasoning_efforts,
                 metadata: Default::default(),
             }]
         })

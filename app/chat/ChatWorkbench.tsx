@@ -50,7 +50,7 @@ import {
 import { buildPendingImageAttachments, type PendingImageAttachment } from "./workbench/attachments";
 import { DEFAULT_BASE_URL } from "./workbench/constants";
 import { buildWorkbenchRenderModel } from "./workbench/renderModel";
-import { SetupPanel } from "./workbench/SetupPanel";
+import { DebugSessionLauncher } from "./workbench/session-launcher/DebugSessionLauncher";
 import { cursorEventId, isStaleCursorError } from "./workbench/helpers";
 import { buildWorkbenchSetupSelection } from "./workbench/setupModel";
 import { handleWorkbenchStreamEvent } from "./workbench/streamHandler";
@@ -71,6 +71,7 @@ export function ChatWorkbench({
   const [conversation, setConversation] = useState<Awaited<ReturnType<ReturnType<typeof createVeladClient>["getConversation"]>> | null>(null);
   const [requests, setRequests] = useState<Awaited<ReturnType<ReturnType<typeof createVeladClient>["getPendingRequests"]>> | null>(null);
   const [session, setSession] = useState<SessionWire | null>(null);
+  const [recentSessions, setRecentSessions] = useState<SessionWire[]>([]);
   const [backends, setBackends] = useState<BackendWire[]>([]);
   const [selectedBackend, setSelectedBackend] = useState<BackendKindWire | "">("");
   const [selectedModel, setSelectedModel] = useState("");
@@ -81,6 +82,7 @@ export function ChatWorkbench({
   const [error, setError] = useState<string | null>(null);
   const [streamConnected, setStreamConnected] = useState(false);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+  const [isLoadingRecentSessions, setIsLoadingRecentSessions] = useState(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [isUpdatingAgentConfig, setIsUpdatingAgentConfig] = useState(false);
   const [isRespondingToRequest, setIsRespondingToRequest] = useState(false);
@@ -168,6 +170,19 @@ export function ChatWorkbench({
     }
   }, [client]);
 
+  const loadRecentSessions = useCallback(async () => {
+    try {
+      setIsLoadingRecentSessions(true);
+      setError(null);
+      const nextSessions = await client.listSessions({ limit: 12 });
+      setRecentSessions(nextSessions.sessions);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsLoadingRecentSessions(false);
+    }
+  }, [client]);
+
   const loadReadModels = useCallback(async () => {
     const requestedSessionId = activeSessionId;
     if (!requestedSessionId) return;
@@ -201,6 +216,11 @@ export function ChatWorkbench({
   useEffect(() => {
     void loadBackends();
   }, [loadBackends]);
+
+  useEffect(() => {
+    if (activeSessionId) return;
+    void loadRecentSessions();
+  }, [activeSessionId, loadRecentSessions]);
 
   const activeConversation = readModelForActiveSession(activeSessionId, conversation);
   const activeRequests = pendingRequestsForActiveSession(activeSessionId, requests);
@@ -467,6 +487,7 @@ export function ChatWorkbench({
       setActiveSessionId(created.session.id);
       setSession(created.session);
       resetSessionReadModels();
+      updateChatSessionUrl(created.session.id);
       logVelaChatConsoleEvent("create_session", {
         agentConfig: setupAgentConfig,
         backend: resolvedSelectedBackend,
@@ -641,6 +662,7 @@ export function ChatWorkbench({
         setSession(null);
         setSessionId(resolvedSessionId);
         setActiveSessionId(resolvedSessionId);
+        updateChatSessionUrl(resolvedSessionId);
         logVelaChatConsoleEvent("open_session", { sessionId: resolvedSessionId });
       },
       createSession,
@@ -669,11 +691,12 @@ export function ChatWorkbench({
 
   if (!activeSessionId) {
     return (
-      <SetupPanel
+      <DebugSessionLauncher
         backendKinds={backendKinds}
         backends={backends}
         baseUrl={baseUrl}
         error={error}
+        isLoadingRecentSessions={isLoadingRecentSessions}
         isCreatingSession={isCreatingSession}
         onBackendChange={(nextBackend) => {
           setSelectedBackend(nextBackend);
@@ -684,15 +707,19 @@ export function ChatWorkbench({
         onBaseUrlChange={setBaseUrl}
         onCreateSession={createSession}
         onModelChange={setSelectedModel}
-        onOpenSession={() => {
+        onOpenSession={(nextSessionId) => {
+          const resolvedSessionId = (nextSessionId ?? sessionId).trim();
           resetSessionReadModels();
           setSession(null);
-          setActiveSessionId(sessionId.trim());
+          setSessionId(resolvedSessionId);
+          setActiveSessionId(resolvedSessionId);
+          updateChatSessionUrl(resolvedSessionId);
         }}
         onPermissionModeChange={setSelectedPermissionMode}
         onReasoningEffortChange={setSelectedReasoningEffort}
         onSessionIdChange={setSessionId}
         onWorkingDirectoryChange={setWorkingDirectory}
+        recentSessions={recentSessions}
         resolvedSelectedBackend={resolvedSelectedBackend}
         sessionId={sessionId}
         setupModelOptions={setupModelOptions}
@@ -729,4 +756,11 @@ export function ChatWorkbench({
       pendingAttachments={pendingAttachments}
     />
   );
+}
+
+function updateChatSessionUrl(sessionId: string) {
+  if (typeof window === "undefined" || !sessionId) return;
+  const url = new URL(window.location.href);
+  url.searchParams.set("session_id", sessionId);
+  window.history.replaceState(null, "", url);
 }

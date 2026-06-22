@@ -15,6 +15,7 @@ export {
   parseCreateSessionWireResponse,
   parseDiffReviewWireView,
   parsePendingRequestsWireView,
+  parseSessionListWireResponse,
   parseSessionWireResponse,
   parseUpdateAgentConfigWireResponse,
 } from "./wire-contract";

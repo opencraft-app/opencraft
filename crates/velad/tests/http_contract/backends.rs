@@ -70,6 +70,12 @@ async fn backend_catalog_reports_capabilities_per_backend() {
     assert_eq!(pi["capabilities"]["cancel"], true);
     assert_eq!(acp["capabilities"]["cancel"], false);
     assert_eq!(acp["capabilities"]["permission_requests"], true);
+    assert_eq!(
+        acp["models"][0]["reasoning_efforts"]
+            .as_array()
+            .expect("acp reasoning efforts"),
+        &Vec::<serde_json::Value>::new()
+    );
 }
 
 #[tokio::test]
