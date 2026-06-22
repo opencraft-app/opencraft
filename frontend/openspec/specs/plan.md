@@ -11,14 +11,14 @@
 | 路由 | 组件 | 守卫 | 职责 |
 |------|------|------|------|
 | `/plans/select` | `PlanSelectPage` | AuthenticatedGuard + PlanGuard | 首次登录时强制选套餐 |
-| `/subscribe` | `SubscribePage` | MarketingAuthGuard | 套餐升级/续费（49KB，含支付 UI） |
+| `/subscribe` | `next-site/SubscribePage` | Next App Router + client auth island | 套餐升级/续费（49KB，含支付 UI） |
 | `/account` | `AccountPage` | MarketingAuthGuard | 查看当前订阅 + 权益 |
 | `/account/orders` | `AccountOrdersPage` | MarketingAuthGuard | 订单列表与凭证 |
 
 ## 核心组件
 
 - `pages/app/plan-select-page.tsx` — 首次登录套餐选择页（3.6KB，走 PlanGuard）
-- `pages/marketing/subscribe-page.tsx` — **支付主页面**（49KB）：
+- `next-site/subscribe-page.tsx` — **支付主页面**（49KB）：
   - 套餐卡片展示（Bundle 列表）
   - 支付方式选择（微信、支付宝、企业微信"即将支持"豆腐块）
   - 订单生成与轮询
@@ -90,5 +90,5 @@ Pass           // 用户权益：bundleId / status / expiresAt
 
 ## 已知待办
 
-- `subscribe-page.tsx` 49KB 过大，未来可拆分「套餐卡片区」「支付方式区」
+- `next-site/subscribe-page.tsx` 49KB 过大，未来可拆分「套餐卡片区」「支付方式区」
   「订单轮询区」「结果页」。

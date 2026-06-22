@@ -1,9 +1,9 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { User } from "@/domain/types";
+import type { Pass, User } from "@/domain/types";
 import { AccountPage } from "@/pages/marketing/account-page";
 
 const updateProfile = vi.fn();
@@ -16,6 +16,8 @@ const retryRealnameSync = vi.fn();
 
 let currentUser: User;
 let realnamePhoneVerificationEnabled = false;
+let paidBillingEnabled = false;
+let activePass: Pass | null = null;
 let sessionAuthReady = true;
 let sessionIsAuthenticated = true;
 const ACCOUNT_SAFETY_PHONE_VISIBILITY_STORAGE_KEY = "lw-account-safety-phone-visible";
@@ -40,7 +42,7 @@ vi.mock("@/i18n/t", () => ({
 }));
 
 vi.mock("@/contexts/runtime-config-context", () => ({
-  usePaidBillingEnabled: () => false,
+  usePaidBillingEnabled: () => paidBillingEnabled,
   useRealnamePhoneVerificationEnabled: () => realnamePhoneVerificationEnabled,
 }));
 
@@ -77,7 +79,7 @@ vi.mock("@/contexts/openclaw-context", () => ({
         trialDays: 7,
       },
     },
-    activePass: null,
+    activePass,
   }),
 }));
 
@@ -118,6 +120,19 @@ const renderAccountPage = () => {
   );
 };
 
+const buildActivePass = (): Pass => ({
+  pass_id: "pass_active_renew",
+  user_id: "usr_profile_audit",
+  bundle_id: "bundle_launch",
+  bundle_name: "启航套餐",
+  created_time: "2026-06-01T00:00:00Z",
+  expired_time: "2099-06-01T00:00:00Z",
+  isolated_time: null,
+  deleted_time: null,
+  credit_total: 1000,
+  credit_available: 900,
+});
+
 describe("AccountPage nickname audit state", () => {
   afterEach(() => {
     cleanup();
@@ -135,6 +150,8 @@ describe("AccountPage nickname audit state", () => {
     };
     vi.stubGlobal("localStorage", createMemoryStorage());
     realnamePhoneVerificationEnabled = false;
+    paidBillingEnabled = false;
+    activePass = null;
     sessionAuthReady = true;
     sessionIsAuthenticated = true;
   });
@@ -261,6 +278,22 @@ describe("AccountPage nickname audit state", () => {
 
     expect(screen.getByText("安全手机")).toBeInTheDocument();
     expect(screen.getByText("实名认证")).toBeInTheDocument();
+  });
+
+  it("keeps the renew action hidden until show() reveals account hidden tools", () => {
+    paidBillingEnabled = true;
+    activePass = buildActivePass();
+
+    renderAccountPage();
+
+    expect(screen.getByText("启航套餐")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /立即续费/ })).not.toBeInTheDocument();
+
+    act(() => {
+      ((window as Window & typeof globalThis & { show?: () => boolean }).show?.());
+    });
+
+    expect(screen.getByRole("button", { name: /立即续费/ })).toBeInTheDocument();
   });
 
   it("shows the pending nickname privately while keeping the active nickname explicit", async () => {

@@ -1,12 +1,15 @@
 import { LegalFooter } from "@/components/site/legal-footer";
+import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/site/public-site-header";
+import type { RenderUserMenuLink } from "@/components/site/user-avatar-menu";
+import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
+import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, ArrowRight, Check, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, Loader2, Wifi } from "lucide-react";
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { useOpenClaw } from "@/contexts/openclaw-context";
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { usePaidBillingEnabled } from "@/contexts/runtime-config-context";
-import { BrandMark } from "@/components/site/brand-mark";
 import { InviteCodeModal } from "@/components/site/login-modal";
 import { RepositoryError } from "@/repositories/http-repositories";
 import type { Bundle } from "@/domain/types";
@@ -21,6 +24,7 @@ import {
   isPassRequiresRenewError,
 } from "@/lib/billing-error";
 import { buildPayPlan } from "@/lib/wx-pay";
+import { AGENTS_HOME_PATH } from "@/router/paths";
 import { QRCodeSVG } from "qrcode.react";
 
 /* ─── Notion DESIGN.md Tokens ─── */
@@ -440,54 +444,57 @@ const buildPlaceholderPlans = (t: (zh: string, opts?: Record<string, unknown>) =
 const resolveRealnameErrorMessage = (t: (zh: string) => string): string =>
   isGlobal ? t("创建失败，请稍后重试。") : t("请先完成实名认证后再开通套餐。");
 
-/* ─── Notion-style Navbar ─── */
+const renderAppHeaderLink: RenderPublicSiteHeaderLink = ({
+  ariaLabel,
+  children,
+  href,
+  ...props
+}) => (
+  <AppLink to={href} aria-label={ariaLabel} {...props}>
+    {children}
+  </AppLink>
+);
 
-const SubscribeNavbar = () => {
-  const t = useT();
-  return (
-    <header
-      style={{
-        position: "fixed",
-        left: 0,
-        right: 0,
-        top: 0,
-        zIndex: 50,
-        background: "rgba(255,255,255,0.96)",
-        backdropFilter: "blur(12px) saturate(180%)",
-        WebkitBackdropFilter: "blur(12px) saturate(180%)",
-        borderBottom: `1px solid ${colors.border}`,
-      }}
-    >
-      <div
-        style={{
-          maxWidth: 1200,
-          margin: "0 auto",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          height: 56,
-          padding: "0 24px",
-        }}
-      >
-        <BrandMark to="/" />
-        <AppLink
-          to="/"
-          style={{
-            fontSize: 15,
-            fontWeight: 500,
-            color: colors.warmGray500,
-            transition: "color 0.2s",
-            textDecoration: "none",
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.color = colors.primary; }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = colors.warmGray500; }}
-        >
-          {t("返回首页")}
-        </AppLink>
-      </div>
-    </header>
-  );
+const renderAppUserMenuLink: RenderUserMenuLink = ({ children, href, ...props }) => (
+  <AppLink to={href} {...props}>
+    {children}
+  </AppLink>
+);
+
+type SubscribePageHeaderProps = {
+  authControls?: ReactNode;
+  authReady: boolean;
+  isAuthenticated: boolean;
+  publicLocale?: PublicSiteLocale;
+  publicLocalized?: boolean;
+  renderLanguageSwitcher?: (options: { reloadAfterSwitch: boolean; variant: LanguageSwitcherVariant }) => ReactNode;
+  renderLink: RenderPublicSiteHeaderLink;
+  renderUserMenuLink: RenderUserMenuLink;
 };
+
+const SubscribePageHeader = ({
+  authControls,
+  authReady,
+  isAuthenticated,
+  publicLocale,
+  publicLocalized,
+  renderLanguageSwitcher,
+  renderLink,
+  renderUserMenuLink,
+}: SubscribePageHeaderProps) => (
+  <PublicSiteHeader
+    authControls={authControls}
+    authSnapshot={{ authReady, isAuthenticated }}
+    currentPath="/subscribe"
+    locale={publicLocale}
+    localized={publicLocalized}
+    position="fixed"
+    renderLanguageSwitcher={renderLanguageSwitcher}
+    renderLink={renderLink}
+    renderUserMenuLink={renderUserMenuLink}
+    showLanguageSwitcher={isGlobal}
+  />
+);
 
 /* ─── Plan Card Component ─── */
 
@@ -1249,15 +1256,31 @@ type SubscribeError = {
   message: string;
 };
 
+type SubscribePageProps = {
+  authControls?: ReactNode;
+  publicLocale?: PublicSiteLocale;
+  publicLocalized?: boolean;
+  renderLanguageSwitcher?: (options: { reloadAfterSwitch: boolean; variant: LanguageSwitcherVariant }) => ReactNode;
+  renderLink?: RenderPublicSiteHeaderLink;
+  renderUserMenuLink?: RenderUserMenuLink;
+};
+
 /** v1.7.30 后端允许轮询 listMyPasses 检测支付是否完成，间隔 / 超时控制 */
 const PAY_POLL_INTERVAL_MS = 3000;
 const PAY_POLL_TIMEOUT_MS = 180_000;
 
-export const SubscribePage = () => {
+export const SubscribePage = ({
+  authControls,
+  publicLocale,
+  publicLocalized,
+  renderLanguageSwitcher,
+  renderLink = renderAppHeaderLink,
+  renderUserMenuLink = renderAppUserMenuLink,
+}: SubscribePageProps = {}) => {
   const t = useT();
   const navigate = useAppNavigate();
   const { isLoggedIn, login, isSubscribed, subscribe, addBot, bots, user, refreshPasses } = useOpenClaw();
-  const { session } = useSession();
+  const { authReady, isAuthenticated, session } = useSession();
   const repositories = useRepositories();
   const [subscribingPlanId, setSubscribingPlanId] = useState<string | null>(null);
   const [error, setError] = useState<SubscribeError | null>(null);
@@ -1274,6 +1297,18 @@ export const SubscribePage = () => {
   const paidBillingEnabled = usePaidBillingEnabled();
   const paidBillingActive = isPaidBillingEnabled(paidBillingEnabled);
   const quotaExceeded = bots.length >= user.plan.maxBots;
+  const header = (
+    <SubscribePageHeader
+      authControls={authControls}
+      authReady={authReady}
+      isAuthenticated={isAuthenticated}
+      publicLocale={publicLocale}
+      publicLocalized={publicLocalized}
+      renderLanguageSwitcher={renderLanguageSwitcher}
+      renderLink={renderLink}
+      renderUserMenuLink={renderUserMenuLink}
+    />
+  );
 
   /* 进入订阅页即触发登录态 */
   useEffect(() => {
@@ -1352,7 +1387,7 @@ export const SubscribePage = () => {
     setModalStep("closed");
     setSelectedPlan(null);
     setPaymentContext(null);
-    navigate(`/dashboard/settings?creating=${encodeURIComponent(createdBot.id)}&plan=${encodeURIComponent(plan.id)}`);
+    navigate(`${AGENTS_HOME_PATH}?creating=${encodeURIComponent(createdBot.id)}&plan=${encodeURIComponent(plan.id)}`);
   }, [addBot, subscribe, navigate]);
 
   /**
@@ -1648,7 +1683,7 @@ export const SubscribePage = () => {
   if (quotaExceeded) {
     return (
       <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh", background: colors.white, color: colors.black }}>
-        <SubscribeNavbar />
+        {header}
         <main style={{ flexGrow: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "96px 24px 64px" }}>
           <div style={{ maxWidth: 480, textAlign: "center" }}>
             <div
@@ -1670,7 +1705,7 @@ export const SubscribePage = () => {
               {t("当前 {{plan}} 套餐最多可创建 {{max}} 个 Hermes，你已达到上限。", { plan: user.plan.name, max: user.plan.maxBots })}
             </p>
             <AppLink
-              to="/dashboard/settings"
+              to={AGENTS_HOME_PATH}
               style={{
                 display: "inline-flex",
                 alignItems: "center",
@@ -1716,7 +1751,7 @@ export const SubscribePage = () => {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh", background: colors.white, color: colors.black }}>
-      <SubscribeNavbar />
+      {header}
 
       <main style={{ flexGrow: 1, padding: "96px 24px 64px" }}>
         <section style={{ maxWidth: 1080, margin: "0 auto" }}>
