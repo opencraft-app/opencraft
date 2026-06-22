@@ -948,7 +948,7 @@ func TestPreStartRecoveryRestoresLatestCheckpointByName(t *testing.T) {
 	if err := rt.preStartRecovery(context.Background()); err != nil {
 		t.Fatalf("preStartRecovery: %v", err)
 	}
-	raw, err := os.ReadFile(activeImg)
+	raw, err := os.ReadFile(rt.cfg.ActiveImg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1025,65 +1025,42 @@ exit 0
 	}
 }
 
-func TestPromoteCheckpointToActiveReplacesStaleActiveImage(t *testing.T) {
+func TestCreateSystemCheckpointDoesNotPromoteCheckpointToActive(t *testing.T) {
 	root := t.TempDir()
-	jfsRoot := filepath.Join(root, "jfs")
-	stateRoot := filepath.Join(jfsRoot, "wisp", "default")
-	activeImg := filepath.Join(stateRoot, "active", "root-upper.img")
-	checkpointID := "system-graceful-stop-20260527T010000.000000000Z"
-	checkpointDir := filepath.Join(stateRoot, "checkpoints", checkpointID)
-	binDir := filepath.Join(root, "bin")
-	for _, dir := range []string{filepath.Dir(activeImg), checkpointDir, binDir} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.WriteFile(activeImg, []byte("stale-active"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(checkpointDir, "root-upper.img"), []byte("latest-checkpoint"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	callsPath := filepath.Join(root, "jfs-calls")
-	t.Setenv("JFS_CALL_LOG", callsPath)
-	jfsBin := filepath.Join(binDir, "juicefs")
-	if err := os.WriteFile(jfsBin, []byte(`#!/bin/sh
+	script := `#!/bin/sh
 echo "$@" >> "$JFS_CALL_LOG"
 if [ "$1" = "clone" ]; then
   cp "$2" "$3"
 fi
 exit 0
-`), 0o755); err != nil {
-		t.Fatal(err)
+`
+	rt := newCheckpointCreateTestRuntime(t, root, script)
+	t.Setenv("JFS_CALL_LOG", callsPath)
+	meta, err := rt.createSystemCheckpoint(context.Background(), checkpointTriggerGracefulStop)
+	if err != nil {
+		t.Fatalf("createSystemCheckpoint: %v", err)
 	}
-	rt := New(config.Config{
-		ActiveImg:       activeImg,
-		CheckpointsRoot: filepath.Join(stateRoot, "checkpoints"),
-		JFSBin:          jfsBin,
-		JFSRoot:         jfsRoot,
-	})
-	writeFakeJuiceFSMountInfo(t, root, jfsRoot)
-	if err := rt.promoteCheckpointToActive(context.Background(), checkpointID); err != nil {
-		t.Fatalf("promoteCheckpointToActive: %v", err)
-	}
-	raw, err := os.ReadFile(activeImg)
+	raw, err := os.ReadFile(rt.cfg.ActiveImg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(raw) != "latest-checkpoint" {
-		t.Fatalf("active image = %q, want latest checkpoint", string(raw))
+	if string(raw) != "active-image" {
+		t.Fatalf("active image should remain the current working set after checkpoint, got %q", string(raw))
 	}
 	rawCalls, err := os.ReadFile(callsPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	calls := strings.Split(strings.TrimSpace(string(rawCalls)), "\n")
-	checkpointImg := filepath.Join(checkpointDir, "root-upper.img")
-	if len(calls) != 3 ||
-		calls[0] != "clone "+checkpointImg+" "+activeImg ||
-		calls[1] != "file-barrier "+activeImg ||
-		calls[2] != "meta-barrier "+jfsRoot {
-		t.Fatalf("unexpected promote barrier order: %q", calls)
+	checkpointImg := filepath.Join(rt.cfg.CheckpointsRoot, meta.ID, "root-upper.img")
+	if len(calls) != 5 ||
+		calls[0] != "file-barrier "+rt.cfg.ActiveImg ||
+		calls[1] != "clone "+rt.cfg.ActiveImg+" "+checkpointImg ||
+		calls[2] != "file-barrier "+checkpointImg ||
+		calls[3] != "writeback-cut-barrier --timeout 120s --poll-interval 30ms "+rt.cfg.JFSRoot ||
+		calls[4] != "meta-barrier "+rt.cfg.JFSRoot {
+		t.Fatalf("unexpected checkpoint barrier order: %q", calls)
 	}
 }
 
