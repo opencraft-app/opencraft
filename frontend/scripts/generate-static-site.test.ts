@@ -81,11 +81,12 @@ describe("generate-static-site", () => {
 
     expect(cnRoutes.map((route) => route.path)).toContain("/changelog");
     expect(globalRoutes.map((route) => route.path)).not.toContain("/changelog");
-    expect(cnRoutes.map((route) => route.path)).toContain("/docs/configuration/model");
+    expect(cnRoutes.map((route) => route.path)).not.toContain("/docs/configuration/model");
+    expect(resolveStaticRoutes("cn", { includeDocs: true }).map((route) => route.path)).toContain("/docs/configuration/model");
     expect(cnRoutes.map((route) => route.path)).not.toContain("/agents");
   });
 
-  it("generates semantic docs html, sitemap, robots and EdgeOne rewrites", async () => {
+  it("keeps docs out of the legacy static bake by default", async () => {
     const { root, frontendRoot, distDir } = createFixture();
     try {
       await buildStaticSite({
@@ -94,6 +95,40 @@ describe("generate-static-site", () => {
         region: "cn",
         siteUrl: "https://lightvela.cn",
         indexable: true,
+      });
+
+      const docsShell = readFileSync(join(distDir, "docs", "index.html"), "utf8");
+      expect(docsShell).toContain("<meta name=\"robots\" content=\"noindex,nofollow\"");
+      expect(docsShell).toContain("aria-hidden=\"true\"");
+      expect(docsShell).not.toContain("<article");
+      expect(existsSync(join(distDir, "docs", "overview", "index.html"))).toBe(false);
+      expect(existsSync(join(distDir, "assets", "docs-images"))).toBe(false);
+
+      const sitemap = readFileSync(join(distDir, "sitemap.xml"), "utf8");
+      expect(sitemap).not.toContain("/docs/");
+
+      const edgeone = JSON.parse(readFileSync(join(distDir, "edgeone.json"), "utf8"));
+      expect(edgeone.rewrites).toContainEqual({ source: "/docs", destination: "/app.html" });
+      expect(edgeone.rewrites).toContainEqual({ source: "/docs/*", destination: "/app.html" });
+      expect(edgeone.rewrites).not.toContainEqual({ source: "/*", destination: "/index.html" });
+
+      const redirects = readFileSync(join(distDir, "_redirects"), "utf8");
+      expect(redirects).toContain("/docs/* /docs/ 200");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("can still generate legacy semantic docs html when explicitly enabled", async () => {
+    const { root, frontendRoot, distDir } = createFixture();
+    try {
+      await buildStaticSite({
+        frontendRoot,
+        distDir,
+        region: "cn",
+        siteUrl: "https://lightvela.cn",
+        indexable: true,
+        includeDocs: true,
       });
 
       const docsHtml = readFileSync(join(distDir, "docs", "overview", "index.html"), "utf8");
@@ -143,6 +178,8 @@ describe("generate-static-site", () => {
       expect(edgeone.rewrites).toContainEqual({ source: "/agents/*", destination: "/app.html" });
       expect(edgeone.rewrites).toContainEqual({ source: "/account", destination: "/app.html" });
       expect(edgeone.rewrites).toContainEqual({ source: "/account/*", destination: "/app.html" });
+      expect(edgeone.rewrites).not.toContainEqual({ source: "/docs", destination: "/app.html" });
+      expect(edgeone.rewrites).not.toContainEqual({ source: "/docs/*", destination: "/app.html" });
       expect(edgeone.rewrites).not.toContainEqual({ source: "/*", destination: "/index.html" });
 
       const redirects = readFileSync(join(distDir, "_redirects"), "utf8");
@@ -225,6 +262,7 @@ describe("generate-static-site", () => {
         region: "global",
         siteUrl: "https://lightvela.ai",
         indexable: true,
+        includeDocs: true,
       });
 
       /* 两套树都被生成 */
