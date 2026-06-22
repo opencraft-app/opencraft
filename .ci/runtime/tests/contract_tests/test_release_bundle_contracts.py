@@ -447,8 +447,11 @@ class ReleaseBundleContractTests(unittest.TestCase):
             frontend_variables.get("FRONTEND_ARTIFACT_MATRIX", {}).get("value"),
             "cf:cn-lightvela-staging,cf:global-lightvela-intl-staging,eo:cn-lightvela-prod-next,eo:global-lightvela-intl-prod-next",
         )
-        self.assertEqual(frontend_variables.get("FRONTEND_RELEASE_MATRIX", {}).get("value"), "")
-        self.assertIn("FRONTEND_RELEASE_MATRIX is empty; skip Cloudflare artifact release", frontend_text)
+        self.assertEqual(
+            frontend_variables.get("FRONTEND_RELEASE_MATRIX", {}).get("value"),
+            "cf:cn-lightvela-staging,cf:global-lightvela-intl-staging",
+        )
+        self.assertIn("frontend 发布决策：进入 Cloudflare 预发 artifact 发布流程", frontend_text)
         self.assertIn("SubPipelineExecStream@1.*", frontend_text)
 
         self.assertFalse((REPO_ROOT / ".ci/subpipeline-call-probe.yml").exists())
