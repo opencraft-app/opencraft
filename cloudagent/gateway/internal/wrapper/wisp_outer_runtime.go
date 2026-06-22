@@ -19,7 +19,7 @@ import (
 
 const (
 	defaultWispOuterAdminAddr = "http://127.0.0.1:8520"
-	defaultWispPackageURL     = "https://cloudagent-sidecar-shanghai-1388575217.cos.ap-shanghai.myqcloud.com/workspace/releases/wisp-linux-amd64-20260622T055540Z-def007aba10c.erofs"
+	defaultWispPackageURL     = "https://cloudagent-sidecar-shanghai-1388575217.cos.ap-shanghai.myqcloud.com/workspace/releases/wisp-linux-amd64-20260622T065610Z-6ec59c76cb2e.erofs"
 )
 
 func wispAdminAddr(ACPSessionRuntime) string {

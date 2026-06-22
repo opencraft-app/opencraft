@@ -1425,6 +1425,18 @@ func (r *Runtime) preStartRecovery(ctx context.Context) error {
 		r.log("pre_start_recovery skip active_img=%s active_fingerprint=%s reason=no_checkpoint_active_valid", r.cfg.ActiveImg, r.imageFingerprintForLog(r.cfg.ActiveImg))
 		return nil
 	}
+	if shouldDiscardInvalidActiveImage(activeReason) {
+		before := r.imageFingerprintForLog(r.cfg.ActiveImg)
+		if err := os.Remove(r.cfg.ActiveImg); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("discard invalid active image %s after no checkpoint recovery: %w", r.cfg.ActiveImg, err)
+		}
+		r.log("pre_start_recovery discard_invalid_active active_img=%s active_fingerprint=%s active_reason=%s reason=no_checkpoint_invalid_active",
+			r.cfg.ActiveImg,
+			before,
+			activeReason,
+		)
+		return nil
+	}
 	r.log("pre_start_recovery skip active_img=%s active_fingerprint=%s active_ok=%t active_reason=%s reason=no_checkpoint",
 		r.cfg.ActiveImg,
 		r.imageFingerprintForLog(r.cfg.ActiveImg),
@@ -1432,6 +1444,16 @@ func (r *Runtime) preStartRecovery(ctx context.Context) error {
 		activeReason,
 	)
 	return nil
+}
+
+func shouldDiscardInvalidActiveImage(reason string) bool {
+	reason = strings.TrimSpace(reason)
+	if reason == "" || reason == "missing" || reason == "missing_e2fsck" {
+		return false
+	}
+	return strings.HasPrefix(reason, "e2fsck_failed:") ||
+		strings.HasPrefix(reason, "stat_error:") ||
+		reason == "empty"
 }
 
 func (r *Runtime) latestCheckpoint(ctx context.Context) (CheckpointMetadata, bool, error) {

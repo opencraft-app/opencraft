@@ -1288,6 +1288,36 @@ func TestPreStartRecoveryIgnoresManifestFilesWhenNoRestoreNeeded(t *testing.T) {
 	}
 }
 
+func TestPreStartRecoveryDiscardsInvalidActiveWhenNoCheckpoint(t *testing.T) {
+	root := t.TempDir()
+	stateRoot := filepath.Join(root, "state")
+	activeImg := filepath.Join(stateRoot, "active", "root-upper.img")
+	binDir := filepath.Join(root, "bin")
+	for _, dir := range []string{filepath.Dir(activeImg), binDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(activeImg, []byte("broken-active"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "e2fsck"), []byte("#!/bin/sh\necho bad superblock >&2\nexit 8\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	rt := New(config.Config{
+		ActiveImg:       activeImg,
+		CheckpointsRoot: filepath.Join(stateRoot, "checkpoints"),
+	})
+
+	if err := rt.preStartRecovery(context.Background()); err != nil {
+		t.Fatalf("preStartRecovery: %v", err)
+	}
+	if _, err := os.Stat(activeImg); !os.IsNotExist(err) {
+		t.Fatalf("invalid active image should be discarded, err=%v", err)
+	}
+}
+
 func TestPreStartRecoveryDoesNothingWithoutUsableCheckpoint(t *testing.T) {
 	root := t.TempDir()
 	stateRoot := filepath.Join(root, "state")
