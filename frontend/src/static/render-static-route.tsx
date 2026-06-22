@@ -11,12 +11,12 @@ type StaticRouteInput = {
     path: string;
   };
   /**
-   * 当前渲染的目标 locale。国际站 prerender 会按 ["en-US", "zh-CN"] 各渲一次；
+   * 当前渲染的目标 locale。旧静态渲染曾按 ["en-US", "zh-CN"] 各渲一次；
    * 必须在每次渲染前显式切到目标 locale，否则 i18n 单例只 init 一次（默认
    * en-US），导致 dist/zh/index.html 的 React DOM 也是英文，与 <html lang="zh-CN">
    * 矛盾，hreflang 集群被搜索引擎判为低质量。
    *
-   * 国内站 prerender 只有 zh-CN，传入也无害。未传时不切换（向后兼容旧调用）。
+   * 国内站只有 zh-CN，传入也无害。未传时不切换（向后兼容旧调用）。
    */
   locale?: string;
 };

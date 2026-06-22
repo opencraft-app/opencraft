@@ -65,7 +65,7 @@ fi
 [[ "$blueprint_id" =~ ^lhbp-[A-Za-z0-9_-]+$ ]] || { echo "invalid Hermes backend blueprint id: ${blueprint_id:-<empty>}" >&2; exit 1; }
 
 printf -v blueprint_id_escaped '%q' "$blueprint_id"
-upgrade_cmd="acli backend upgrade-start --blueprint-id ${blueprint_id_escaped} --wait=true"
+upgrade_cmd="acli backend upgrade-start --blueprint-id ${blueprint_id_escaped} --wait=true --force=true"
 ensure_acli_backend
 run_as_target_user "$upgrade_cmd"
 echo "upgraded Hermes backend blueprint for $user: $blueprint_id"

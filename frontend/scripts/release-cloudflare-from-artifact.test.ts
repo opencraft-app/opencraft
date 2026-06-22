@@ -100,7 +100,6 @@ describe("Cloudflare release from frontend artifact", () => {
       `verify:${cnRef}`,
       "deploy:cf:/tmp/frontend-cf-artifact-dist:lightclaw",
     ]);
-    expect(calls).not.toContain("build:cn");
     expect(calls).not.toContain("release:matrix");
   });
 
@@ -118,7 +117,7 @@ describe("Cloudflare release from frontend artifact", () => {
         return {
           manifest: ref === globalRef ? makeGlobalManifest() : makeCfManifest(),
           ref,
-          extractDir: ref === globalRef ? "/tmp/dist-global" : "/tmp/dist-cn",
+          extractDir: ref === globalRef ? "/tmp/out-global" : "/tmp/out-cn",
         };
       },
       deployScript: (scriptName: string, env: Record<string, string>) => {
@@ -128,9 +127,9 @@ describe("Cloudflare release from frontend artifact", () => {
 
     expect(calls).toEqual([
       `verify:${cnRef}`,
-      "deploy:cf:/tmp/dist-cn:lightclaw",
+      "deploy:cf:/tmp/out-cn:lightclaw",
       `verify:${globalRef}`,
-      "deploy:cf:/tmp/dist-global:lightvela-intl",
+      "deploy:cf:/tmp/out-global:lightvela-intl",
     ]);
   });
 

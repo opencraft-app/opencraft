@@ -115,7 +115,7 @@ export function useRouteSeoMeta(): void {
   const location = useLocation();
 
   useEffect(() => {
-    // 客户端 origin 即为站点 URL，避免硬编码；SSR / prerender 走另一条管线。
+    // 客户端 origin 即为站点 URL，避免硬编码；SSR / Next 静态产物走另一条管线。
     const siteUrl =
       typeof window !== "undefined" && window.location ? window.location.origin : undefined;
     const meta = getFullSeoMeta(location.pathname, SEO_REGION, {

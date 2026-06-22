@@ -1459,7 +1459,7 @@ upgrade_hermes_backend_blueprint() {
   load_hermes_backend_blueprint_id
   printf -v blueprint_id_escaped '%q' "${HERMES_BACKEND_BLUEPRINT_ID}"
   log_info "upgrading Hermes backend blueprint as ${RUNTIME_USER}: ${HERMES_BACKEND_BLUEPRINT_ID}"
-  run_as_runtime_user "acli backend upgrade-start --blueprint-id ${blueprint_id_escaped} --wait=true"
+  run_as_runtime_user "acli backend upgrade-start --blueprint-id ${blueprint_id_escaped} --wait=true --force=true"
 }
 
 install_envd_agent() {

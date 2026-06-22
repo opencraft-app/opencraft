@@ -53,7 +53,7 @@ describe("seo meta", () => {
  * 跟随 URL 前缀切换。
  *
  * 这一组断言是 codex CR P0-B 的回归守护：之前 SPA hydration 后
- * `useRouteSeoMeta` 会把 prerender 写好的 `<html lang="zh-CN">` 覆盖回 en-US，
+ * `useRouteSeoMeta` 会把 Next 写好的 `<html lang="zh-CN">` 覆盖回 en-US，
  * title 也被覆盖成 "Page Not Found | ..."（裸路径表 miss）。
  */
 describe("seo meta — global multi-URL language prefix", () => {
@@ -96,7 +96,7 @@ describe("seo meta — global multi-URL language prefix", () => {
   });
 
   it("getFullSeoMeta canonical preserves the language prefix", () => {
-    /* canonical 必须保留 locale 前缀，与 prerender hreflang 集群对齐
+    /* canonical 必须保留 locale 前缀，与 Next hreflang 集群对齐
        （每个 URL 的 canonical 指向自己，而不是裸路径） */
     const meta = getFullSeoMeta("/zh-sg/docs/overview", "global", { siteUrl: "https://lightvela.ai" });
     expect(meta.canonical).toBe("https://lightvela.ai/zh-sg/docs/overview");

@@ -66,14 +66,8 @@ function resolveReleaseHintTitle(combo) {
   if (combo.id === "eo:cn-lightvela-prod-next") {
     return "EdgeOne 国内正式站（Next）";
   }
-  if (combo.id === "eo:cn-lightvela-prod-legacy") {
-    return "EdgeOne 国内正式站（Legacy）";
-  }
   if (combo.id === "eo:global-lightvela-intl-prod-next") {
     return "EdgeOne 国际正式站（Next）";
-  }
-  if (combo.id === "eo:global-lightvela-intl-prod-legacy") {
-    return "EdgeOne 国际正式站（Legacy）";
   }
   return `${combo.channel.toUpperCase()} ${combo.projectName}`;
 }
@@ -82,14 +76,8 @@ function resolveReleaseHintCiName(combo) {
   if (combo.id === "eo:cn-lightvela-prod-next") {
     return "发布 frontend eo:cn-lightvela-prod-next";
   }
-  if (combo.id === "eo:cn-lightvela-prod-legacy") {
-    return "发布 frontend eo:cn-lightvela-prod-legacy";
-  }
   if (combo.id === "eo:global-lightvela-intl-prod-next") {
     return "发布 frontend eo:global-lightvela-intl-prod-next";
-  }
-  if (combo.id === "eo:global-lightvela-intl-prod-legacy") {
-    return "发布 frontend eo:global-lightvela-intl-prod-legacy";
   }
   return "构建 frontend";
 }

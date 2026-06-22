@@ -169,7 +169,7 @@ let teaSdkRuntimePromise: Promise<TeaSdkRuntime> | null = null;
 function loadTeaSdkRuntime(): Promise<TeaSdkRuntime> {
   if (!teaSdkRuntimePromise) {
     teaSdkRuntimePromise = (async () => {
-      // Keep TEA SDK out of the module graph evaluated by Next static prerender.
+      // Keep TEA SDK out of the module graph evaluated during Next static generation.
       // The SDK reads browser globals at module scope, so it must be initialized
       // only inside the hydrated agents page before its panels render.
       await import("@/lib/i18n-env");

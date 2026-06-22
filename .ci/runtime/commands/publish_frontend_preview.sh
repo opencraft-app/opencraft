@@ -12,22 +12,10 @@ ci_ensure_pnpm
 
 FRONTEND_PREVIEW_BRANCH="${FRONTEND_PREVIEW_BRANCH:?FRONTEND_PREVIEW_BRANCH is required}"
 FRONTEND_PREVIEW_SHA="${FRONTEND_PREVIEW_SHA:?FRONTEND_PREVIEW_SHA is required}"
-FRONTEND_PREVIEW_BUILD_KIND="${FRONTEND_PREVIEW_BUILD_KIND:-legacy}"
 STATICPAGES_API_URL="${STATICPAGES_API_URL:?STATICPAGES_API_URL is required}"
 FRONTEND_DIR="$REPO_ROOT/frontend"
-FRONTEND_DIST_CN_DIR="$FRONTEND_DIR/dist-cn"
-FRONTEND_DIST_GLOBAL_DIR="$FRONTEND_DIR/dist-global"
 FRONTEND_NEXT_CN_DIR="$FRONTEND_DIR/out-cn"
 FRONTEND_NEXT_GLOBAL_DIR="$FRONTEND_DIR/out-global"
-
-case "$FRONTEND_PREVIEW_BUILD_KIND" in
-  legacy|next)
-    ;;
-  *)
-    echo "unsupported FRONTEND_PREVIEW_BUILD_KIND=${FRONTEND_PREVIEW_BUILD_KIND}; expected legacy or next" >&2
-    exit 1
-    ;;
-esac
 
 resolve_preview_auth_api_base_url() {
   local branch="$1"
@@ -58,7 +46,7 @@ PREVIEW_CN_AUTH_API_BASE_URL="$(resolve_preview_auth_api_base_url "$FRONTEND_PRE
 PREVIEW_INTL_AUTH_API_BASE_URL="$(resolve_preview_auth_api_base_url "$FRONTEND_PREVIEW_BRANCH" intl)"
 echo "预览 API base：cn=${PREVIEW_CN_AUTH_API_BASE_URL}"
 echo "预览 API base：intl=${PREVIEW_INTL_AUTH_API_BASE_URL}"
-echo "预览构建类型：${FRONTEND_PREVIEW_BUILD_KIND}"
+echo "预览构建类型：next"
 case "$FRONTEND_PREVIEW_BRANCH" in
   playground/sandbox-bj-*|playground/sandbox-kr-*)
     export VITE_OAUTH_RELAY_ISSUER_BASE_URL="https://lightclaw.tech"
@@ -71,33 +59,8 @@ case "$FRONTEND_PREVIEW_BRANCH" in
 esac
 
 cd "$FRONTEND_DIR"
-rm -rf node_modules "$FRONTEND_DIST_CN_DIR" "$FRONTEND_DIST_GLOBAL_DIR" "$FRONTEND_NEXT_CN_DIR" "$FRONTEND_NEXT_GLOBAL_DIR" out
+rm -rf node_modules "$FRONTEND_NEXT_CN_DIR" "$FRONTEND_NEXT_GLOBAL_DIR" out
 "$PNPM_BIN" install --frozen-lockfile
-
-build_legacy_preview() {
-  "$PNPM_BIN" exec tsc -b
-
-  echo "并发构建 frontend legacy 国内站和国际站产物"
-  echo "frontend legacy 分支预览跳过 asset optimize；生产构建链路不受影响"
-  (
-    export VITE_AUTH_API_BASE_URL="$PREVIEW_CN_AUTH_API_BASE_URL"
-    "$PNPM_BIN" exec vite build --mode cn --outDir "$FRONTEND_DIST_CN_DIR"
-  ) &
-  build_cn_pid=$!
-  (
-    export VITE_AUTH_API_BASE_URL="$PREVIEW_INTL_AUTH_API_BASE_URL"
-    "$PNPM_BIN" exec vite build --mode global --outDir "$FRONTEND_DIST_GLOBAL_DIR"
-  ) &
-  build_global_pid=$!
-
-  build_failed=0
-  wait "$build_cn_pid" || build_failed=1
-  wait "$build_global_pid" || build_failed=1
-  if [[ "$build_failed" -ne 0 ]]; then
-    echo "frontend legacy 国内站或国际站构建失败" >&2
-    exit 1
-  fi
-}
 
 build_next_preview_variant() {
   local variant="$1"
@@ -123,18 +86,9 @@ build_next_preview() {
   build_next_preview_variant intl global "$PREVIEW_INTL_AUTH_API_BASE_URL" "$FRONTEND_NEXT_GLOBAL_DIR"
 }
 
-case "$FRONTEND_PREVIEW_BUILD_KIND" in
-  legacy)
-    build_legacy_preview
-    FRONTEND_PREVIEW_CN_ARTIFACT_DIR="$FRONTEND_DIST_CN_DIR"
-    FRONTEND_PREVIEW_INTL_ARTIFACT_DIR="$FRONTEND_DIST_GLOBAL_DIR"
-    ;;
-  next)
-    build_next_preview
-    FRONTEND_PREVIEW_CN_ARTIFACT_DIR="$FRONTEND_NEXT_CN_DIR"
-    FRONTEND_PREVIEW_INTL_ARTIFACT_DIR="$FRONTEND_NEXT_GLOBAL_DIR"
-    ;;
-esac
+build_next_preview
+FRONTEND_PREVIEW_CN_ARTIFACT_DIR="$FRONTEND_NEXT_CN_DIR"
+FRONTEND_PREVIEW_INTL_ARTIFACT_DIR="$FRONTEND_NEXT_GLOBAL_DIR"
 
 cd "$REPO_ROOT"
 if [[ -z "${STATICPAGES_UPLOAD_TOKEN:-}" ]] || ci_is_unexpanded_setting "$STATICPAGES_UPLOAD_TOKEN"; then

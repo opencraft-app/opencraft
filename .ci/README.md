@@ -991,7 +991,7 @@ EdgeOne 正式发布 CI 不再现场构建源码，只发布 `构建 frontend` �
   - 传完整 OCI artifact ref，例如 `lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend-pages:<shortSha>-eo-cn-lightvela-prod-next`
   - 如果同时传 `FRONTEND_ARTIFACT_SOURCE_SHA`，两者必须解析到同一个 repo、short SHA 和目标 combo
 - 目标 combo 固定在对应 CI 文件的 `FRONTEND_RELEASE_MATRIX`，不能跨 combo 发布。
-- 目标 combo 只能是 `eo:cn-lightvela-prod-next` 或 `eo:global-lightvela-intl-prod-next`；legacy combo 仍可保留在矩阵中作为回滚 artifact 定义，但不能走正式发布入口。
+- 目标 combo 只能是 `eo:cn-lightvela-prod-next` 或 `eo:global-lightvela-intl-prod-next`。
 - 发布前会校验 manifest 中的 `comboId`、`projectName`、`channel`、`region`、`outputDir`、Aegis/Vite baked env、Next entry、archive sha/size 与解压内容 identity。
 
 ## Shared Scripts

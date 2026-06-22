@@ -104,7 +104,7 @@ python3 images/build-image.py --runtime hermes --base-image-id img-id352nof --wi
 - 为 `agentuser` 的 `~/.hermes/hermes-agent/scripts/whatsapp-bridge` 预装 `@whiskeysockets/baileys@7.0.0-rc.9`、`qrcode-terminal`、`express`、`pino`
 - 安装 `skillhub --cli-only`
 - 安装 `acli` 并以 `acli doctor` 作为 gate
-- 从 `images/hermes-backend-blueprint-id` 读取 backend blueprint 基线，并以 `agentuser` 执行 `acli backend upgrade-start --blueprint-id <id> --wait=true`
+- 从 `images/hermes-backend-blueprint-id` 读取 backend blueprint 基线，并以 `agentuser` 执行 `acli backend upgrade-start --blueprint-id <id> --wait=true --force=true`
 - 默认验证套件：`runtime-hermes`
 - 不支持 OpenClaw 的插件 / skill 安装参数
 
@@ -126,7 +126,7 @@ CI 入口：
 存量 Hermes 机器修复：
 
 - `images/helpers/config-hermes-python-mirrors.sh` 可通过 TAT/debug exec 下发到存量机器，修复 `agentuser` 的 pip/uv mirror 配置、`~/.config/systemd/user` 权限，并执行同一 backend blueprint 升级基线
-- TAT 建议用 root/default 身份执行；脚本内部通过 `LIGHTCLAW_RUNTIME_USER`（默认 `agentuser`）定位目标用户 home、修正文件属主，并通过 `sudo -u agentuser -H bash -lc` 执行 `acli backend upgrade-start`
+- TAT 建议用 root/default 身份执行；脚本内部通过 `LIGHTCLAW_RUNTIME_USER`（默认 `agentuser`）定位目标用户 home、修正文件属主，并通过 `sudo -u agentuser -H bash -lc` 执行 `acli backend upgrade-start --blueprint-id <id> --wait=true --force=true`
 - `acli backend upgrade-start` 命令本身不加 `sudo`，必须以 `agentuser` 身份运行
 
 ### Hermes Backend Blueprint Baseline
@@ -148,7 +148,7 @@ lhbp-8gsotw6u
 当前基线命令为：
 
 ```bash
-acli backend upgrade-start --blueprint-id "$(cat images/hermes-backend-blueprint-id)" --wait=true
+acli backend upgrade-start --blueprint-id "$(cat images/hermes-backend-blueprint-id)" --wait=true --force=true
 ```
 
 执行身份约束：

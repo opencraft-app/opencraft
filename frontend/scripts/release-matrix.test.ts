@@ -297,54 +297,7 @@ describe("release matrix helpers", () => {
     expect(combo?.requiredSecretEnv).toContain("EDGEONE_API_TOKEN");
   });
 
-  it("keeps the legacy production China EdgeOne lightvela project available during migration", () => {
-    const { combos } = loadReleaseMatrix();
-    const combo = combos.find((item) => item.id === "eo:cn-lightvela-prod-legacy");
-
-    expect(combo).toMatchObject({
-      region: "cn",
-      channel: "eo",
-      buildCommand: "build:cn",
-      deployCommand: "deploy:eo",
-      projectName: "lightvela",
-      authApiBaseUrl: "https://api.lightvela.com",
-      outputDir: "dist-cn",
-      deployEnv: {
-        EDGEONE_PAGES_AREA: "global",
-        EDGEONE_PAGES_ENV: "production",
-      },
-    });
-    expect(combo?.requiredSecretEnv).toContain("EDGEONE_API_TOKEN");
-  });
-
   it("includes the production global EdgeOne lightvela intl project in the release matrix", () => {
-    const { combos } = loadReleaseMatrix();
-    const combo = combos.find((item) => item.id === "eo:global-lightvela-intl-prod-legacy");
-
-    expect(combo).toMatchObject({
-      region: "global",
-      channel: "eo",
-      buildCommand: "build:global",
-      deployCommand: "deploy:eo",
-      projectName: "lightvela-intl",
-      authApiBaseUrl: "https://api.lightvela.ai",
-      outputDir: "dist-global",
-      observability: {
-        aegis: {
-          enabled: "true",
-          id: "2ellOCK3ozed3owgOj",
-          hostUrl: "https://rumt-sg.com",
-        },
-      },
-      deployEnv: {
-        EDGEONE_PAGES_AREA: "global",
-        EDGEONE_PAGES_ENV: "production",
-      },
-    });
-    expect(combo?.requiredSecretEnv).toContain("EDGEONE_API_TOKEN");
-  });
-
-  it("keeps the Next production global EdgeOne lightvela intl project available during migration", () => {
     const { combos } = loadReleaseMatrix();
     const combo = combos.find((item) => item.id === "eo:global-lightvela-intl-prod-next");
 
@@ -356,6 +309,13 @@ describe("release matrix helpers", () => {
       projectName: "lightvela-intl",
       authApiBaseUrl: "https://api.lightvela.ai",
       outputDir: "out",
+      observability: {
+        aegis: {
+          enabled: "true",
+          id: "2ellOCK3ozed3owgOj",
+          hostUrl: "https://rumt-sg.com",
+        },
+      },
       deployEnv: {
         EDGEONE_PAGES_AREA: "global",
         EDGEONE_PAGES_ENV: "production",

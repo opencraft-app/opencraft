@@ -21,13 +21,13 @@ import {
 
 const sourceSha = "dfde008ca43aba0cb0dcdfcc1b0c66bd204a2ea8";
 const combo = {
-  id: "eo:global-lightvela-intl-prod-legacy",
+  id: "eo:global-lightvela-intl-prod-next",
   region: "global",
   channel: "eo",
-  buildCommand: "build:global",
+  buildCommand: "build:next",
   deployCommand: "deploy:eo",
   projectName: "lightvela-intl",
-  outputDir: "dist-global",
+  outputDir: "out",
 };
 const comboEnv = {
   VITE_REGION: "global",
@@ -35,7 +35,7 @@ const comboEnv = {
   VITE_AEGIS_ENABLED: "true",
   VITE_AEGIS_ID: "2ellOCK3ozed3owgOj",
   VITE_AEGIS_HOST_URL: "https://rumt-sg.com",
-  EDGEONE_PAGES_DIR: "dist-global",
+  EDGEONE_PAGES_DIR: "out",
 };
 
 function createDist() {
@@ -115,8 +115,8 @@ esac
 
 describe("frontend artifact helpers", () => {
   it("normalizes combo ids into stable tag segments", () => {
-    expect(normalizeComboIdForTag("eo:global-lightvela-intl-prod-legacy")).toBe("eo-global-lightvela-intl-prod-legacy");
-    expect(resolveArtifactTag(sourceSha, "eo:global-lightvela-intl-prod-legacy")).toBe("dfde008ca43a-eo-global-lightvela-intl-prod-legacy");
+    expect(normalizeComboIdForTag("eo:global-lightvela-intl-prod-next")).toBe("eo-global-lightvela-intl-prod-next");
+    expect(resolveArtifactTag(sourceSha, "eo:global-lightvela-intl-prod-next")).toBe("dfde008ca43a-eo-global-lightvela-intl-prod-next");
   });
 
   it("validates required artifact prerequisites", () => {
@@ -147,7 +147,7 @@ describe("frontend artifact helpers", () => {
 
   it("derives release artifact refs and validates ref overrides", () => {
     const repository = "registry.example.com/lightclaw/frontend-pages";
-    const ref = `${repository}:dfde008ca43a-eo-global-lightvela-intl-prod-legacy`;
+    const ref = `${repository}:dfde008ca43a-eo-global-lightvela-intl-prod-next`;
 
     expect(resolveExpectedArtifactReleaseRef({
       repository,
@@ -155,7 +155,7 @@ describe("frontend artifact helpers", () => {
       targetComboId: combo.id,
     })).toMatchObject({
       repository,
-      tag: "dfde008ca43a-eo-global-lightvela-intl-prod-legacy",
+      tag: "dfde008ca43a-eo-global-lightvela-intl-prod-next",
       ref,
       shortSha: "dfde008ca43a",
       fullSourceSha: sourceSha,
@@ -166,7 +166,7 @@ describe("frontend artifact helpers", () => {
       targetComboId: combo.id,
     })).toMatchObject({
       repository,
-      tag: "dfde008ca43a-eo-global-lightvela-intl-prod-legacy",
+      tag: "dfde008ca43a-eo-global-lightvela-intl-prod-next",
       ref,
       shortSha: "dfde008ca43a",
     });
@@ -178,7 +178,7 @@ describe("frontend artifact helpers", () => {
     })).toThrow("does not match FRONTEND_ARTIFACT_REF");
     expect(() => resolveExpectedArtifactReleaseRef({
       repository,
-      artifactRef: `wrong.example.com/lightclaw/frontend-pages:dfde008ca43a-eo-global-lightvela-intl-prod-legacy`,
+      artifactRef: `wrong.example.com/lightclaw/frontend-pages:dfde008ca43a-eo-global-lightvela-intl-prod-next`,
       targetComboId: combo.id,
     })).toThrow("does not match expected");
     expect(() => resolveExpectedArtifactReleaseRef({
@@ -202,7 +202,7 @@ describe("frontend artifact helpers", () => {
       const first = buildArtifactManifest({ ...base, createdAt: "2026-01-01T00:00:00Z" });
       const second = buildArtifactManifest({ ...base, createdAt: "2026-01-02T00:00:00Z" });
 
-      expect(first.artifact.tag).toBe("dfde008ca43a-eo-global-lightvela-intl-prod-legacy");
+      expect(first.artifact.tag).toBe("dfde008ca43a-eo-global-lightvela-intl-prod-next");
       expect(first.assets.entryKind).toBe("vite");
       expect(first.assets.entryJs).toBe("/assets/index-test.js");
       expect(first.bakedEnv).toMatchObject({
