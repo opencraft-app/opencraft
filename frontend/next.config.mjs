@@ -1,5 +1,8 @@
 import { createMDX } from 'fumadocs-mdx/next';
 
+const teaThemeableResetCss = '@tencent/tea-component/dist/tea-themeable.css';
+const teaThemeableNoResetCss = '@tencent/tea-component/dist/tea-themeable-no-reset.css';
+
 /** @type {import('next').NextConfig} */
 const config = {
   reactStrictMode: true,
@@ -11,6 +14,11 @@ const config = {
   },
   turbopack: {
     root: new URL('.', import.meta.url).pathname,
+    resolveAlias: {
+      // AgentChat pulls Tea UI styles as a side effect. Use Tea's no-reset
+      // build so the chat page cannot globally reset host page elements.
+      [teaThemeableResetCss]: teaThemeableNoResetCss,
+    },
     rules: {
       '*.txt': {
         type: 'raw',
@@ -18,6 +26,9 @@ const config = {
     },
   },
   webpack: (webpackConfig) => {
+    webpackConfig.resolve ??= {};
+    webpackConfig.resolve.alias ??= {};
+    webpackConfig.resolve.alias[teaThemeableResetCss] = teaThemeableNoResetCss;
     webpackConfig.module.rules.push({
       resourceQuery: /raw/,
       type: 'asset/source',

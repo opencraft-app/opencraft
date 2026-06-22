@@ -20,7 +20,6 @@ let paidBillingEnabled = false;
 let activePass: Pass | null = null;
 let sessionAuthReady = true;
 let sessionIsAuthenticated = true;
-const ACCOUNT_SAFETY_PHONE_VISIBILITY_STORAGE_KEY = "lw-account-safety-phone-visible";
 
 const createMemoryStorage = (): Storage => {
   const entries = new Map<string, string>();
@@ -264,9 +263,8 @@ describe("AccountPage nickname audit state", () => {
     expect(screen.queryByText(/SaaS/)).not.toBeInTheDocument();
   });
 
-  it("keeps the safety phone row visible after show() has been persisted when the phone flag is enabled", () => {
+  it("keeps the safety phone row hidden until show() reveals account hidden tools", () => {
     realnamePhoneVerificationEnabled = true;
-    window.localStorage.setItem(ACCOUNT_SAFETY_PHONE_VISIBILITY_STORAGE_KEY, "1");
     currentUser = {
       ...currentUser,
       phone: "15625128341",
@@ -275,6 +273,12 @@ describe("AccountPage nickname audit state", () => {
     };
 
     renderAccountPage();
+
+    expect(screen.queryByText("安全手机")).not.toBeInTheDocument();
+
+    act(() => {
+      ((window as Window & typeof globalThis & { show?: () => boolean }).show?.());
+    });
 
     expect(screen.getByText("安全手机")).toBeInTheDocument();
     expect(screen.getByText("实名认证")).toBeInTheDocument();
@@ -294,6 +298,17 @@ describe("AccountPage nickname audit state", () => {
     });
 
     expect(screen.getByRole("button", { name: /立即续费/ })).toBeInTheDocument();
+  });
+
+  it("keeps the safety phone and renew actions hidden by default", () => {
+    realnamePhoneVerificationEnabled = true;
+    paidBillingEnabled = true;
+    activePass = buildActivePass();
+
+    renderAccountPage();
+
+    expect(screen.queryByText("安全手机")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /立即续费/ })).not.toBeInTheDocument();
   });
 
   it("shows the pending nickname privately while keeping the active nickname explicit", async () => {

@@ -1414,11 +1414,11 @@ const DELETE_POLL_TIMEOUT_MS = 2 * 60 * 1_000;
 const SubscriptionSection = ({
   subscription,
   pass,
-  showHiddenAccountTools,
+  showAccountRenewTools,
 }: {
   subscription: { code?: string; status?: string; currentPeriodStart?: string; currentPeriodEnd?: string } | null | undefined;
   pass: Pass | null;
-  showHiddenAccountTools: boolean;
+  showAccountRenewTools: boolean;
 }) => {
   const t = useT();
   const { refreshPasses, user } = useOpenClaw();
@@ -1681,11 +1681,11 @@ const SubscriptionSection = ({
         )}
 
         {/* 续费 / 销毁按钮区：仅国内站 + 可操作 pass 时展示 */}
-        {((showHiddenAccountTools && canRenew) || canDelete) && operablePass && (
+        {((showAccountRenewTools && canRenew) || canDelete) && operablePass && (
           <>
             <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
             <div className="flex flex-wrap items-center gap-3">
-              {showHiddenAccountTools && canRenew && (
+              {showAccountRenewTools && canRenew && (
                 <button
                   type="button"
                   onClick={() => setRenewModalOpen(true)}
@@ -1750,27 +1750,8 @@ const SubscriptionSection = ({
 /* ─── Main Account Page ─── */
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const ACCOUNT_SAFETY_PHONE_VISIBILITY_STORAGE_KEY = "lw-account-safety-phone-visible";
 type RealnameSyncStatus = "pending" | "failed" | "succeeded";
 type AccountConsoleHost = Window & { console: Console; show?: unknown };
-
-const readAccountSafetyPhoneVisibility = () => {
-  if (typeof window === "undefined") return false;
-
-  try {
-    return window.localStorage.getItem(ACCOUNT_SAFETY_PHONE_VISIBILITY_STORAGE_KEY) === "1";
-  } catch {
-    return false;
-  }
-};
-
-const persistAccountSafetyPhoneVisibility = () => {
-  try {
-    window.localStorage.setItem(ACCOUNT_SAFETY_PHONE_VISIBILITY_STORAGE_KEY, "1");
-  } catch {
-    // localStorage can be blocked in privacy modes; the current page state still reveals the section.
-  }
-};
 
 export const AccountPage = () => {
   const t = useT();
@@ -1826,9 +1807,10 @@ export const AccountPage = () => {
         : idCardVerified
           ? t("待完成手机号认证")
           : "";
-  const [showHiddenAccountTools, setShowHiddenAccountTools] = useState(readAccountSafetyPhoneVisibility);
+  const [showSafetyPhoneTools, setShowSafetyPhoneTools] = useState(false);
+  const [showAccountRenewTools, setShowAccountRenewTools] = useState(false);
   const showRealnameSection = !isGlobal;
-  const showSafetyPhoneSection = realnamePhoneVerificationEnabled && !isGlobal && showHiddenAccountTools;
+  const showSafetyPhoneSection = realnamePhoneVerificationEnabled && !isGlobal && showSafetyPhoneTools;
   const showEmailBindSection = isCN;
   const [showVerifyModal, setShowVerifyModal] = useState(false);
   const [showChangePhoneModal, setShowChangePhoneModal] = useState(false);
@@ -1852,8 +1834,8 @@ export const AccountPage = () => {
     const consoleRef = host.console;
 
     host.show = () => {
-      setShowHiddenAccountTools(true);
-      persistAccountSafetyPhoneVisibility();
+      setShowSafetyPhoneTools(true);
+      setShowAccountRenewTools(true);
       consoleRef.info("账号隐藏入口已显示。");
       return true;
     };
@@ -2580,7 +2562,7 @@ export const AccountPage = () => {
             </motion.div>
 
             {/* ── Section 2: Subscription ── */}
-            <SubscriptionSection subscription={subscription} pass={activePass} showHiddenAccountTools={showHiddenAccountTools} />
+            <SubscriptionSection subscription={subscription} pass={activePass} showAccountRenewTools={showAccountRenewTools} />
 
             {/* ── Sign out (page bottom) ── */}
             <motion.div variants={fadeIn} className="flex justify-center pt-2">
