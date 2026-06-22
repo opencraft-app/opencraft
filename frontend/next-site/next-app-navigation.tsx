@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useMemo, type MouseEvent, type ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
 
 import {
   AppNavigationProvider,
@@ -10,44 +10,12 @@ import {
   type AppLinkProps,
   type AppNavigationValue,
 } from '@/lib/app-navigation';
-import { shouldReloadForAgentChatNavigation } from '@/lib/agentchat-navigation-guard';
 
-function reloadDocument(href: string, replace = false) {
-  if (typeof window === 'undefined') return;
-  if (replace) {
-    window.location.replace(href);
-    return;
-  }
-  window.location.assign(href);
-}
-
-const NextAppLink = ({ to, children, onClick, target, ...props }: AppLinkProps) => {
-  const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
-    onClick?.(event);
-    if (
-      event.defaultPrevented ||
-      event.button !== 0 ||
-      event.metaKey ||
-      event.altKey ||
-      event.ctrlKey ||
-      event.shiftKey ||
-      target === '_blank'
-    ) {
-      return;
-    }
-
-    if (shouldReloadForAgentChatNavigation(to)) {
-      event.preventDefault();
-      reloadDocument(to);
-    }
-  };
-
-  return (
-    <Link href={to} target={target} onClick={handleClick} {...props}>
-      {children}
-    </Link>
-  );
-};
+const NextAppLink = ({ to, children, target, ...props }: AppLinkProps) => (
+  <Link href={to} target={target} {...props}>
+    {children}
+  </Link>
+);
 
 export function NextAppNavigationProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -59,10 +27,6 @@ export function NextAppNavigationProvider({ children }: { children: ReactNode })
     Link: NextAppLink,
     navigate(target, options) {
       const href = targetToHref(target);
-      if (shouldReloadForAgentChatNavigation(href)) {
-        reloadDocument(href, options?.replace);
-        return;
-      }
       if (options?.replace) {
         router.replace(href);
         return;
