@@ -19,25 +19,29 @@ This frontend can be deployed as a static site on Cloudflare Pages.
 
   ```bash
   export VITE_AUTH_API_BASE_URL="https://lightclaw.tech"
+  export NEXT_PUBLIC_AUTH_API_BASE_URL="https://lightclaw.tech"
   ```
 
   Or:
 
   ```bash
   export VITE_AUTH_API_BASE_URL="mock"
+  export NEXT_PUBLIC_AUTH_API_BASE_URL="mock"
   ```
 
 ## First Deployment
 
 ```bash
-VITE_AUTH_API_BASE_URL=https://lightclaw.tech pnpm build
+VITE_AUTH_API_BASE_URL=https://lightclaw.tech \
+NEXT_PUBLIC_AUTH_API_BASE_URL=https://lightclaw.tech \
+pnpm build:next
 CLOUDFLARE_PAGES_PROJECT_NAME=lightclaw pnpm deploy:cf
 ```
 
 ## Preview / Branch Deployment
 
 ```bash
-pnpm build
+pnpm build:next
 CLOUDFLARE_PAGES_PROJECT_NAME=lightclaw \
 CLOUDFLARE_PAGES_BRANCH=preview \
 pnpm deploy:cf
@@ -45,7 +49,7 @@ pnpm deploy:cf
 
 ## Notes
 
-- SPA fallback is handled by `public/_redirects`, so BrowserRouter deep links like `/dashboard` work on Pages.
-- The build output directory is `dist`.
+- Next static fallback is handled by the generated static output.
+- The build output directory is `out`.
 - If `VITE_AUTH_API_BASE_URL` is omitted on `localhost`, the frontend uses `http://localhost:8081`.
 - If `VITE_AUTH_API_BASE_URL` is omitted on a non-localhost domain, the frontend falls back to built-in mock auth.
