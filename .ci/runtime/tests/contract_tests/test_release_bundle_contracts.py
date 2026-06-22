@@ -429,8 +429,11 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertNotIn('"$PNPM_BIN" install --frozen-lockfile', template_text)
 
         command_text = (REPO_ROOT / ".ci/runtime/commands/release_frontend_edgeone_artifact.sh").read_text()
-        self.assertIn("eo:cn-lightvela-prod-next|eo:cn-lightvela-prod-legacy", command_text)
-        self.assertIn("eo:global-lightvela-intl-prod-next|eo:global-lightvela-intl-prod-legacy", command_text)
+        self.assertIn("eo:cn-lightvela-prod-next)", command_text)
+        self.assertIn("eo:global-lightvela-intl-prod-next)", command_text)
+        self.assertNotIn("prod-legacy)", command_text)
+        self.assertNotIn("|eo:cn-lightvela-prod-legacy", command_text)
+        self.assertNotIn("|eo:global-lightvela-intl-prod-legacy", command_text)
         self.assertIn("/etc/lightclaw-ci/edgeone_lightvela_prod_token", command_text)
         self.assertIn("/etc/lightclaw-ci/edgeone_lightvela_intl_prod_token", command_text)
         self.assertIn("ci_load_edgeone_credentials", command_text)
@@ -438,6 +441,14 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA is empty and ci.sha is unavailable", command_text)
 
         frontend_text = (REPO_ROOT / ".ci/frontend.yml").read_text()
+        frontend_workflow = yaml.safe_load(frontend_text) or {}
+        frontend_variables = frontend_workflow.get("variables") or {}
+        self.assertEqual(
+            frontend_variables.get("FRONTEND_ARTIFACT_MATRIX", {}).get("value"),
+            "cf:cn-lightvela-staging,cf:global-lightvela-intl-staging,eo:cn-lightvela-prod-next,eo:global-lightvela-intl-prod-next",
+        )
+        self.assertEqual(frontend_variables.get("FRONTEND_RELEASE_MATRIX", {}).get("value"), "")
+        self.assertIn("FRONTEND_RELEASE_MATRIX is empty; skip Cloudflare artifact release", frontend_text)
         self.assertIn("SubPipelineExecStream@1.*", frontend_text)
 
         self.assertFalse((REPO_ROOT / ".ci/subpipeline-call-probe.yml").exists())

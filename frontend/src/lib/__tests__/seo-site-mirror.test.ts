@@ -56,9 +56,16 @@ function extractStringField(source: string, blockHeader: RegExp, field: string):
 
 async function resolvePrerenderRoutes(region: "cn" | "global"): Promise<StaticRoute[]> {
   const mod = await import(pathToFileURL(SCRIPT_PATH).href) as {
-    resolveStaticRoutes: (region: "cn" | "global") => StaticRoute[];
+    resolveStaticRoutes: (region: "cn" | "global", options?: { includeDocs?: boolean }) => StaticRoute[];
   };
   return mod.resolveStaticRoutes(region);
+}
+
+async function resolveLegacyDocsPrerenderRoutes(region: "cn" | "global"): Promise<StaticRoute[]> {
+  const mod = await import(pathToFileURL(SCRIPT_PATH).href) as {
+    resolveStaticRoutes: (region: "cn" | "global", options?: { includeDocs?: boolean }) => StaticRoute[];
+  };
+  return mod.resolveStaticRoutes(region, { includeDocs: true });
 }
 
 function seoPageTitle(pathname: string, region: "cn" | "global"): string {
@@ -141,8 +148,8 @@ describe("prerender route titles mirror seo-data.ts", () => {
       }
     });
 
-    it(`${region}: docs route titles stay aligned`, async () => {
-      const routes = await resolvePrerenderRoutes(region);
+    it(`${region}: opt-in legacy docs route titles stay aligned`, async () => {
+      const routes = await resolveLegacyDocsPrerenderRoutes(region);
       const docsRoutes = routes.filter((route) => route.kind === "doc");
 
       expect(docsRoutes.length).toBeGreaterThan(0);
@@ -160,9 +167,9 @@ describe("prerender route titles mirror seo-data.ts", () => {
  * 到 /en/X"的 404，或反之。这条测试断言两份数组 byte-equal。
  */
 /**
- * codex CR P1-4 守护：`DOCS.global` 列表里每个 slug 必须在 `docs/en/` 与
- * `docs/global/` 两个目录都有对应 markdown，否则国际站 prerender 会在
- * `pnpm build:global` 阶段抛 "missing markdown" 直接挂。
+ * codex CR P1-4 守护：旧 docs prerender 已经不是默认路径，但应急打开
+ * LEGACY_DOCS_PRERENDER 时，`DOCS.global` 列表里每个 slug 仍必须在
+ * `docs/en/` 与 `docs/global/` 两个目录都有对应 markdown。
  *
  * 这个 fail-fast 检查直接读源码 + fs.exists，不需要跑完整 build，CI 几毫秒
  * 就能反馈，且与 generate-static-site.test.ts 的 fixture 写文件路径互补——

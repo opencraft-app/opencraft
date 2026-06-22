@@ -123,7 +123,14 @@ const docFieldFor = (field, locale) => {
   return "";
 };
 
-const SPA_REWRITES = [
+const LEGACY_DOCS_PRERENDER_ENV = "LEGACY_DOCS_PRERENDER";
+
+/**
+ * Next/Fumadocs is the canonical docs renderer. The legacy Vite static-site
+ * pass may still be used for old landing/legal fallbacks, but it must not bake
+ * a second `/docs/*` tree unless an emergency rollback explicitly opts in.
+ */
+const APP_SHELL_REWRITES = [
   "/agents",
   "/agents/*",
   "/account",
@@ -138,6 +145,23 @@ const SPA_REWRITES = [
   "/openclaw/*",
   "/console/*",
 ];
+
+const DOCS_APP_SHELL_REWRITES = [
+  "/docs",
+  "/docs/*",
+  "/en/docs",
+  "/en/docs/*",
+  "/zh/docs",
+  "/zh/docs/*",
+];
+
+const legacyDocsPrerenderEnabled = (env = process.env) => (
+  env[LEGACY_DOCS_PRERENDER_ENV] === "1" || env[LEGACY_DOCS_PRERENDER_ENV] === "true"
+);
+
+const spaRewritesFor = ({ includeDocs }) => (
+  includeDocs ? APP_SHELL_REWRITES : [...APP_SHELL_REWRITES, ...DOCS_APP_SHELL_REWRITES]
+);
 
 const escapeHtml = (value) => String(value)
   .replaceAll("&", "&amp;")
@@ -519,12 +543,12 @@ function baseRoutes(region) {
   ];
 }
 
-export function resolveStaticRoutes(region = "cn") {
+export function resolveStaticRoutes(region = "cn", { includeDocs = legacyDocsPrerenderEnabled() } = {}) {
   if (!["cn", "global"].includes(region)) {
     throw new Error(`unsupported static site region: ${region}`);
   }
   const isGlobal = region === "global";
-  const docsRoutes = DOCS[region].map((doc) => {
+  const docsRoutes = includeDocs ? DOCS[region].map((doc) => {
     /* doc.title 在 DOCS.global 已是 { en-US, zh-CN } 对象；DOCS.cn 是字符串。
        这里直接透传——renderRoute / jsonLdForRoute 等下游消费方会按 locale 取值。 */
     return {
@@ -534,10 +558,10 @@ export function resolveStaticRoutes(region = "cn") {
       description: "",
       doc,
     };
-  });
+  }) : [];
   return [
     ...baseRoutes(region),
-    {
+    ...(includeDocs ? [{
       kind: "docs-index",
       path: "/docs",
       title: isGlobal
@@ -549,7 +573,7 @@ export function resolveStaticRoutes(region = "cn") {
           "zh-CN": "浏览 LightVela 产品文档、快速开始与配置指南。",
         }
         : "浏览 LightVela 产品文档、快速开始与配置指南。",
-    },
+    }] : []),
     ...docsRoutes,
   ];
 }
@@ -1111,22 +1135,23 @@ function writeRobots({ distDir, siteUrl, indexable }) {
     : "User-agent: *\nDisallow: /\n");
 }
 
-function writeEdgeOneConfig(distDir) {
+function writeEdgeOneConfig(distDir, { includeDocs }) {
+  const rewrites = spaRewritesFor({ includeDocs });
   writeFileSync(join(distDir, "edgeone.json"), `${JSON.stringify({
-    rewrites: SPA_REWRITES.map((source) => ({ source, destination: "/app.html" })),
+    rewrites: rewrites.map((source) => ({ source, destination: "/app.html" })),
   }, null, 2)}\n`);
 }
 
-function writeCloudflareRedirects(distDir) {
-  const redirects = SPA_REWRITES
+function writeCloudflareRedirects(distDir, { includeDocs }) {
+  const redirects = spaRewritesFor({ includeDocs })
     .filter((source) => source.endsWith("/*"))
     .map((source) => `${source} ${source.replace(/\/\*$/, "")}/ 200`);
   writeFileSync(join(distDir, "_redirects"), `${redirects.join("\n")}\n`);
 }
 
-function writeAppShellFiles({ distDir, appHtml }) {
+function writeAppShellFiles({ distDir, appHtml, includeDocs }) {
   writeFileSync(join(distDir, "app.html"), appHtml);
-  const appShellPaths = [...new Set(SPA_REWRITES.map(appShellPathFromRewrite).filter(Boolean))];
+  const appShellPaths = [...new Set(spaRewritesFor({ includeDocs }).map(appShellPathFromRewrite).filter(Boolean))];
   for (const path of appShellPaths) {
     const target = outputPathForRoute(distDir, path);
     mkdirSync(dirname(target), { recursive: true });
@@ -1166,16 +1191,23 @@ function resolveCliOptions(argv, env) {
   };
 }
 
-export async function buildStaticSite({ frontendRoot = defaultFrontendRoot, distDir, region = "cn", siteUrl, indexable } = {}) {
+export async function buildStaticSite({
+  frontendRoot = defaultFrontendRoot,
+  distDir,
+  region = "cn",
+  siteUrl,
+  indexable,
+  includeDocs = legacyDocsPrerenderEnabled(),
+} = {}) {
   if (!distDir) throw new Error("distDir is required");
   if (!["cn", "global"].includes(region)) throw new Error(`unsupported static site region: ${region}`);
   const normalizedSiteUrl = normalizeSiteUrl(siteUrl || SITE[region].defaultUrl);
   const template = readExistingIndex(distDir);
-  const routes = resolveStaticRoutes(region);
+  const routes = resolveStaticRoutes(region, { includeDocs });
 
-  writeAppShellFiles({ distDir, appHtml: renderAppShell(template, SITE[region]) });
+  writeAppShellFiles({ distDir, appHtml: renderAppShell(template, SITE[region]), includeDocs });
 
-  const availableImages = copyDocsImages(frontendRoot, distDir);
+  const availableImages = includeDocs ? copyDocsImages(frontendRoot, distDir) : new Set();
   const staticRenderer = await createReactStaticRenderer({ frontendRoot, distDir, region });
   try {
     /**
@@ -1229,8 +1261,8 @@ export async function buildStaticSite({ frontendRoot = defaultFrontendRoot, dist
   }
   writeSitemap({ distDir, routes, region, siteUrl: normalizedSiteUrl });
   writeRobots({ distDir, siteUrl: normalizedSiteUrl, indexable });
-  writeEdgeOneConfig(distDir);
-  writeCloudflareRedirects(distDir);
+  writeEdgeOneConfig(distDir, { includeDocs });
+  writeCloudflareRedirects(distDir, { includeDocs });
   return { routes };
 }
 
