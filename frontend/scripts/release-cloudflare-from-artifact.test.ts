@@ -24,8 +24,8 @@ function makeCfManifest(overrides: Record<string, unknown> = {}) {
     region: "cn",
     channel: "cf",
     projectName: "lightclaw",
-    outputDir: "dist-cn",
-    buildCommand: "build:cn",
+    outputDir: "out",
+    buildCommand: "build:next",
     deployCommand: "deploy:cf",
     artifact: {
       repository,
@@ -44,7 +44,8 @@ function makeCfManifest(overrides: Record<string, unknown> = {}) {
       VITE_AEGIS_HOST_URL: "https://rumt-zh.com",
     },
     assets: {
-      entryJs: "/assets/index-test.js",
+      entryKind: "next",
+      entryJs: "/_next/static/chunks/main-app-test.js",
       entryJsSha256: "c".repeat(64),
     },
     archive: {
@@ -62,8 +63,8 @@ function makeGlobalManifest() {
     comboId: "cf:global-lightvela-intl-staging",
     region: "global",
     projectName: "lightvela-intl",
-    outputDir: "dist-global",
-    buildCommand: "build:global",
+    outputDir: "out",
+    buildCommand: "build:next",
     artifact: {
       repository,
       tag: `${shortSha}-cf-global-lightvela-intl-staging`,

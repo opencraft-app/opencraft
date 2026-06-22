@@ -554,7 +554,7 @@ Guard 自举策略：
 - `.ci/frontend-edgeone-lightvela-intl.yml`
   - 手动发布 `eo:global-lightvela-intl-prod-next`；强制从已归档 artifact 发布
 - `frontend/release-matrix.json`
-  - Pages / EdgeOne 发布矩阵唯一事实来源；CF 组合 ID 使用站点化名称 `cf:cn-lightvela-staging`、`cf:global-lightvela-intl-staging`
+  - Pages / EdgeOne 发布矩阵唯一事实来源；CF 组合 ID 使用站点化名称 `cf:cn-lightvela-staging`、`cf:global-lightvela-intl-staging`，默认也走 Next static artifact
 - `frontend/scripts/release-matrix.mjs`
   - 解析矩阵并执行 build/deploy；不作为 `.ci/frontend.yml` 的默认发布入口
 - `frontend/scripts/build-release-artifacts.mjs`

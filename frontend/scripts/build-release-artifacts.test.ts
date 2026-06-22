@@ -125,7 +125,7 @@ describe("build release artifacts", () => {
       },
     });
 
-    expect(calls).toEqual(["validate-artifacts", "typecheck", "build:cn", "artifact:cf:cn-lightvela-staging"]);
+    expect(calls).toEqual(["validate-artifacts", "typecheck", "build:next", "artifact:cf:cn-lightvela-staging"]);
   });
 
   it("requires artifact mode before building", async () => {
@@ -252,7 +252,7 @@ describe("build release artifacts", () => {
     });
 
     expect(buildOutputs).toEqual([
-      "build:cn:/tmp/frontend-artifact-builds/cf-cn-lightvela-staging:/tmp/frontend-artifact-builds/cf-cn-lightvela-staging",
+      "build:next:/tmp/frontend-artifact-builds/cf-cn-lightvela-staging:/tmp/frontend-artifact-builds/cf-cn-lightvela-staging",
       "build:next:/tmp/frontend-artifact-builds/eo-cn-lightvela-prod-next:/tmp/frontend-artifact-builds/eo-cn-lightvela-prod-next",
     ]);
     expect(archiveOutputs).toEqual([

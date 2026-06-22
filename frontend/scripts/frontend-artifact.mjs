@@ -58,10 +58,10 @@ export function highlightComboId(comboId, env = process.env) {
 
 function resolveReleaseHintTitle(combo) {
   if (combo.id === "cf:cn-lightvela-staging") {
-    return "Cloudflare 国内预发站";
+    return "Cloudflare 国内预发站（Next）";
   }
   if (combo.id === "cf:global-lightvela-intl-staging") {
-    return "Cloudflare 国际预发站";
+    return "Cloudflare 国际预发站（Next）";
   }
   if (combo.id === "eo:cn-lightvela-prod-next") {
     return "EdgeOne 国内正式站（Next）";

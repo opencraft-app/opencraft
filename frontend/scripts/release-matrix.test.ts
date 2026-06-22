@@ -18,7 +18,7 @@ const cnCfCombo = {
   id: "cf:cn-lightvela-staging",
   region: "cn",
   channel: "cf",
-  buildCommand: "build:cn",
+  buildCommand: "build:next",
   deployCommand: "deploy:cf",
   projectName: "lightclaw",
   requiredSecretEnv: [
@@ -26,7 +26,7 @@ const cnCfCombo = {
     "CLOUDFLARE_ACCOUNT_ID",
   ],
   authApiBaseUrl: "https://lightclaw.tech",
-  outputDir: "dist-cn",
+  outputDir: "out",
   deployEnv: {},
 };
 
@@ -45,10 +45,10 @@ const globalCfCombo = {
   ...cnCfCombo,
   id: "cf:global-lightvela-intl-staging",
   region: "global",
-  buildCommand: "build:global",
+  buildCommand: "build:next",
   projectName: "lightvela-intl",
   authApiBaseUrl: "https://lightclaw.tech",
-  outputDir: "dist-global",
+  outputDir: "out",
 };
 
 const globalCfObservedCombo = {
@@ -102,7 +102,7 @@ describe("release matrix helpers", () => {
     expect(comboEnv.VITE_AEGIS_ID).toBe("4e66EF5XoPEXx3y8lw");
     expect(comboEnv.VITE_AEGIS_HOST_URL).toBe("https://rumt-zh.com");
     expect(comboEnv.CLOUDFLARE_PAGES_PROJECT_NAME).toBe("lightclaw");
-    expect(comboEnv.CLOUDFLARE_PAGES_DIR).toBe("dist-cn");
+    expect(comboEnv.CLOUDFLARE_PAGES_DIR).toBe("out");
     expect(formatComboSummary(cnCfCombo, "lightclaw")).toContain("cf:cn-lightvela-staging");
   });
 
@@ -114,7 +114,7 @@ describe("release matrix helpers", () => {
 
     expect(comboEnv.FRONTEND_RELEASE_REGION).toBe("global");
     expect(comboEnv.CLOUDFLARE_PAGES_PROJECT_NAME).toBe("lightvela-intl");
-    expect(comboEnv.CLOUDFLARE_PAGES_DIR).toBe("dist-global");
+    expect(comboEnv.CLOUDFLARE_PAGES_DIR).toBe("out");
     expect(comboEnv.VITE_AUTH_API_BASE_URL).toBe("https://lightclaw.tech");
     expect(comboEnv.NEXT_PUBLIC_REGION).toBe("global");
     expect(comboEnv.NEXT_PUBLIC_AUTH_API_BASE_URL).toBe("https://lightclaw.tech");
@@ -215,7 +215,7 @@ describe("release matrix helpers", () => {
       deployCommand: "deploy:eo",
       projectName: "lightvela-preview",
       requiredSecretEnv: ["EDGEONE_API_TOKEN"],
-      outputDir: "dist-cn",
+      outputDir: "out",
       deployEnv: {
         EDGEONE_PAGES_AREA: "global",
         EDGEONE_PAGES_ENV: "preview",
@@ -227,7 +227,7 @@ describe("release matrix helpers", () => {
     });
 
     expect(comboEnv.EDGEONE_PAGES_PROJECT_NAME).toBe("lightvela-preview");
-    expect(comboEnv.EDGEONE_PAGES_DIR).toBe("dist-cn");
+    expect(comboEnv.EDGEONE_PAGES_DIR).toBe("out");
     expect(comboEnv.EDGEONE_PAGES_AREA).toBe("global");
     expect(comboEnv.EDGEONE_PAGES_ENV).toBe("preview");
   });
@@ -239,7 +239,7 @@ describe("release matrix helpers", () => {
     expect(combo).toMatchObject({
       region: "cn",
       channel: "cf",
-      buildCommand: "build:cn",
+      buildCommand: "build:next",
       projectName: "lightclaw",
       observability: {
         aegis: {
@@ -258,7 +258,7 @@ describe("release matrix helpers", () => {
     expect(combo).toMatchObject({
       region: "global",
       channel: "cf",
-      buildCommand: "build:global",
+      buildCommand: "build:next",
       projectName: "lightvela-intl",
       observability: {
         aegis: {
@@ -378,7 +378,7 @@ describe("release matrix helpers", () => {
       archiveAndVerifyArtifact: () => calls.push("artifact"),
     });
 
-    expect(calls).toEqual(["build:cn", "deploy:cf"]);
+    expect(calls).toEqual(["build:next", "deploy:cf"]);
   });
 
   it("rejects unsupported artifact modes before building", () => {
@@ -440,7 +440,7 @@ describe("release matrix helpers", () => {
       },
     });
 
-    expect(calls).toEqual(["validate-artifacts", "build:cn", "artifact:cf:cn-lightvela-staging", "deploy:cf"]);
+    expect(calls).toEqual(["validate-artifacts", "build:next", "artifact:cf:cn-lightvela-staging", "deploy:cf"]);
   });
 
   it("prints preview release hints for required artifact mode", () => {
@@ -494,6 +494,6 @@ describe("release matrix helpers", () => {
       },
     })).toThrow("archive failed");
 
-    expect(calls).toEqual(["validate-artifacts", "build:cn", "artifact"]);
+    expect(calls).toEqual(["validate-artifacts", "build:next", "artifact"]);
   });
 });

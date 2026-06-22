@@ -4,7 +4,7 @@
       "id": "cf:cn-lightvela-staging",
       "region": "cn",
       "channel": "cf",
-      "buildCommand": "build:cn",
+      "buildCommand": "build:next",
       "deployCommand": "deploy:cf",
       "projectName": "lightclaw",
       "requiredSecretEnv": [
@@ -12,7 +12,7 @@
         "CLOUDFLARE_ACCOUNT_ID"
       ],
       "authApiBaseUrl": "https://lightclaw.tech",
-      "outputDir": "dist-cn",
+      "outputDir": "out",
       "observability": {
         "aegis": {
           "enabled": "true",
@@ -25,7 +25,7 @@
       "id": "cf:global-lightvela-intl-staging",
       "region": "global",
       "channel": "cf",
-      "buildCommand": "build:global",
+      "buildCommand": "build:next",
       "deployCommand": "deploy:cf",
       "projectName": "lightvela-intl",
       "requiredSecretEnv": [
@@ -33,7 +33,7 @@
         "CLOUDFLARE_ACCOUNT_ID"
       ],
       "authApiBaseUrl": "https://lightclaw.tech",
-      "outputDir": "dist-global",
+      "outputDir": "out",
       "observability": {
         "aegis": {
           "enabled": "true",
