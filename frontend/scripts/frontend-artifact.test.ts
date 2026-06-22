@@ -47,6 +47,23 @@ function createDist() {
   return root;
 }
 
+function createNextDist() {
+  const root = mkdtempSync(join(tmpdir(), "frontend-artifact-next-dist-"));
+  mkdirSync(join(root, "_next", "static", "chunks"), { recursive: true });
+  writeFileSync(
+    join(root, "index.html"),
+    [
+      '<html><body><div id="root"></div>',
+      '<script defer src="/_next/static/chunks/webpack-test.js"></script>',
+      '<script defer src="/_next/static/chunks/main-app-test.js"></script>',
+      "</body></html>",
+    ].join(""),
+  );
+  writeFileSync(join(root, "_next", "static", "chunks", "webpack-test.js"), "console.log('webpack');\n");
+  writeFileSync(join(root, "_next", "static", "chunks", "main-app-test.js"), "console.log('next app');\n");
+  return root;
+}
+
 function createFakeOras(workDir) {
   const binPath = join(workDir, "fake-oras.sh");
   const pushMarker = join(workDir, "pushed");
@@ -186,6 +203,7 @@ describe("frontend artifact helpers", () => {
       const second = buildArtifactManifest({ ...base, createdAt: "2026-01-02T00:00:00Z" });
 
       expect(first.artifact.tag).toBe("dfde008ca43a-eo-global-lightvela-intl-prod-legacy");
+      expect(first.assets.entryKind).toBe("vite");
       expect(first.assets.entryJs).toBe("/assets/index-test.js");
       expect(first.bakedEnv).toMatchObject({
         VITE_REGION: "global",
@@ -195,6 +213,34 @@ describe("frontend artifact helpers", () => {
       expect(first.identity.contentIdentitySha256).toMatch(/^[0-9a-f]{64}$/);
       expect(first.identity.provenanceIdentitySha256).toBe(second.identity.provenanceIdentitySha256);
       expect(artifactIdentitiesMatch(first, second)).toBe(true);
+    } finally {
+      rmSync(dist, { recursive: true, force: true });
+    }
+  });
+
+  it("builds a manifest for Next static output without a Vite entry asset", () => {
+    const dist = createNextDist();
+    try {
+      const nextCombo = {
+        ...combo,
+        id: "eo:global-lightvela-intl-prod-next",
+        buildCommand: "build:next",
+        outputDir: "out",
+      };
+      const manifest = buildArtifactManifest({
+        combo: nextCombo,
+        projectName: "lightvela-intl",
+        comboEnv,
+        outputDir: dist,
+        repository: "registry.example.com/lightclaw/frontend-pages",
+        sourceSha,
+        createdAt: "2026-01-01T00:00:00Z",
+      });
+
+      expect(manifest.artifact.tag).toBe("dfde008ca43a-eo-global-lightvela-intl-prod-next");
+      expect(manifest.assets.entryKind).toBe("next");
+      expect(manifest.assets.entryJs).toBe("/_next/static/chunks/main-app-test.js");
+      expect(manifest.assets.entryJsSha256).toMatch(/^[0-9a-f]{64}$/);
     } finally {
       rmSync(dist, { recursive: true, force: true });
     }
