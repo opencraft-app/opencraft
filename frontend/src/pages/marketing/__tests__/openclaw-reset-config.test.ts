@@ -75,8 +75,8 @@ describe("getAcliResetClickAction", () => {
 });
 
 describe("ACLI_RESET_COMMAND", () => {
-  it("runs the requested backend upgrade command and waits for completion", () => {
-    expect(ACLI_RESET_COMMAND).toBe("acli backend upgrade-start --blueprint-id lhbp-8gsotw6u --wait=true");
+  it("runs the requested backend upgrade command, waits, and forces existing installs", () => {
+    expect(ACLI_RESET_COMMAND).toBe("acli backend upgrade-start --blueprint-id lhbp-8gsotw6u --wait=true --force=true");
   });
 });
 
