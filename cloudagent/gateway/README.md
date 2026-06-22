@@ -17,6 +17,7 @@
 - 2026-06-03: README-only no-op change to rerun cloudagent-gateway after DevCloud CSIGHUB credential fix landed.
 - 2026-06-03: README-only no-op change to rerun cloudagent-gateway through the standard Git webhook auto-pin path.
 - 2026-06-15: README-only no-op change to rerun cloudagent-gateway after durable run API landed.
+- 2026-06-22: README-only no-op change to rerun cloudagent-gateway after Wisp checkpoint-first recovery and ChannelGateway prompt-timeout fixes landed.
 
 ## ACP WebSocket
 

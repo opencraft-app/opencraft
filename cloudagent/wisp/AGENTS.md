@@ -14,3 +14,6 @@ Rules:
   combined CloudAgent artifact CI path.
 - Do not change checkpoint or writeback ordering without a live Wisp restore
   e2e that closes and restores a session.
+- 2026-06-22 release trigger: rebuild the Wisp package after
+  checkpoint-first pre-start recovery landed; verify DevCloud `/v1/selfcheck`
+  reports the new package URL before claiming rollout.
