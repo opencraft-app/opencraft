@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { fetchSkillSetDetail, fetchSkillSets } from "@/lib/skillhub-api";
 
 import {
-  buildInstallSkillPackageCommand,
+  buildInstallSkillCommand,
   ExpertsPanel,
   getSkillHubErrorMessage,
   getSkillPackageTags,
@@ -30,15 +30,8 @@ describe("openclaw experts panel", () => {
     ]);
   });
 
-  it("builds one batched acli skills install command", () => {
-    const command = buildInstallSkillPackageCommand(["finance-news", "report's-helper", "finance-news"]);
-
-    expect(command).toBe("acli skills install 'finance-news' 'report'\\''s-helper'");
-    expect(command.match(/acli skills install 'finance-news'/g)).toHaveLength(1);
-  });
-
-  it("returns a no-op command for an empty package", () => {
-    expect(buildInstallSkillPackageCommand([" ", ""])).toBe("echo 'No skills to install.'");
+  it("builds a single-skill acli install command", () => {
+    expect(buildInstallSkillCommand("report's-helper")).toBe("acli skills install 'report'\\''s-helper'");
   });
 
   it("builds compact card tags from the package name and skill count", () => {
@@ -132,7 +125,7 @@ describe("openclaw experts panel", () => {
     expect(await screen.findByRole("dialog")).toHaveTextContent("完整技能包详情");
   });
 
-  it("does not open detail when the install button is clicked", async () => {
+  it("installs package skills one by one without opening detail", async () => {
     vi.mocked(fetchSkillSets).mockImplementation(async (params) => ({
       skillSets: params?.scene === "finance"
         ? [{
@@ -165,8 +158,51 @@ describe("openclaw experts panel", () => {
     fireEvent.click(await screen.findByRole("button", { name: "安装" }));
 
     await waitFor(() => {
-      expect(execDebugCommand).toHaveBeenCalled();
+      expect(execDebugCommand).toHaveBeenCalledTimes(2);
     });
+    expect(execDebugCommand).toHaveBeenNthCalledWith(1, "bot-1", "acli skills install 'market-data'");
+    expect(execDebugCommand).toHaveBeenNthCalledWith(2, "bot-1", "acli skills install 'backtest-engine'");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("retries failed package skills once", async () => {
+    vi.mocked(fetchSkillSets).mockImplementation(async (params) => ({
+      skillSets: params?.scene === "finance"
+        ? [{
+            id: 1,
+            slug: "quant-backtest",
+            displayName: "量化回测",
+            summary: "列表摘要",
+            remark: "",
+            skillCount: 2,
+            createdAt: 0,
+            updatedAt: 0,
+          }]
+        : [],
+    }));
+    vi.mocked(fetchSkillSetDetail).mockResolvedValue({
+      id: 1,
+      slug: "quant-backtest",
+      displayName: "量化回测",
+      summary: "详情摘要",
+      remark: "",
+      skillCount: 2,
+      skillSlugs: ["market-data", "backtest-engine"],
+      createdAt: 0,
+      updatedAt: 0,
+    });
+    const execDebugCommand = vi.fn()
+      .mockResolvedValueOnce({ status: "success", exitCode: 0, output: "" })
+      .mockResolvedValueOnce({ status: "failed", exitCode: 1, output: "" })
+      .mockResolvedValueOnce({ status: "success", exitCode: 0, output: "" });
+
+    render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "安装" }));
+
+    await waitFor(() => {
+      expect(execDebugCommand).toHaveBeenCalledTimes(3);
+    });
+    expect(execDebugCommand).toHaveBeenNthCalledWith(3, "bot-1", "acli skills install 'backtest-engine'");
   });
 });
