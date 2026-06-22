@@ -6,9 +6,11 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { LegalFooter } from "@/components/site/legal-footer";
+import { LightVelaFooter, type RenderFooterLink } from "@/components/site/lightvela-footer";
 import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/site/public-site-header";
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
 import type { RenderUserMenuLink } from "@/components/site/user-avatar-menu";
+import { isGlobal } from "@/lib/region";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { AGENTS_HOME_PATH } from "@/router/paths";
 
@@ -54,6 +56,10 @@ export const LandingPageView = ({
   }, [navigateTo, oauthError]);
 
   const handleCreateClick = () => navigateTo(AGENTS_HOME_PATH);
+  const renderFooterLink: RenderFooterLink | undefined = renderLink
+    ? ({ "aria-label": ariaLabel, children, className, href, onClick }) =>
+        renderLink({ ariaLabel, children, className, href, onClick })
+    : undefined;
 
   return (
     <div className="w-full bg-white overflow-x-hidden">
@@ -77,7 +83,7 @@ export const LandingPageView = ({
       <CardsSection />
       <ProcessSection />
       <CtaSection onCreateClick={handleCreateClick} />
-      <LegalFooter icpPlacement="right" />
+      {isGlobal ? <LightVelaFooter renderLink={renderFooterLink} /> : <LegalFooter icpPlacement="right" />}
     </div>
   );
 };

@@ -1,4 +1,5 @@
 import {
+  type PublicSiteLocaleCode,
   PUBLIC_URL_LANG_TO_LOCALE,
   matchPublicLangPrefix,
   publicUrlLangForLocale,
@@ -85,7 +86,7 @@ export const readLocaleFromPath = (pathname: string): "zh-CN" | "en-US" | null =
  * @param path 绝对路径，例如 "/docs/configuration/model"
  * @param locale 目标 i18n locale；不传则使用当前 i18n.language（运行时调用方负责传入）
  */
-export const localizedPath = (path: string, locale: "zh-CN" | "en-US"): string => {
+export const localizedPath = (path: string, locale: PublicSiteLocaleCode): string => {
   if (!isGlobal) return path;
   if (!path.startsWith("/")) return path; // 防御：相对路径 / 外链不处理
 
@@ -97,7 +98,7 @@ export const localizedPath = (path: string, locale: "zh-CN" | "en-US"): string =
 
   if (locale === DEFAULT_LOCALE) return bare;
 
-  const lang = publicUrlLangForLocale(locale);
+  const lang = isGlobal && locale.startsWith("zh") ? "zh-sg" : publicUrlLangForLocale(locale);
   // 根路径特殊处理：/{lang}/  ←  /
   if (bare === "/") return `/${lang}/`;
   return `/${lang}${bare}`;
@@ -112,7 +113,7 @@ export const localizedPath = (path: string, locale: "zh-CN" | "en-US"): string =
  */
 export const switchLocaleInPath = (
   pathname: string,
-  newLocale: "zh-CN" | "en-US",
+  newLocale: PublicSiteLocaleCode,
 ): string => localizedPath(pathname, newLocale);
 
 /**

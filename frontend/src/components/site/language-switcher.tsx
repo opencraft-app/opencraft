@@ -21,15 +21,15 @@ import { useTranslation } from "react-i18next";
 
 import { setLocale } from "@/i18n";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
-import { switchLocaleInPath } from "@/lib/region";
+import { isGlobal, switchLocaleInPath } from "@/lib/region";
 
 export type LanguageSwitcherVariant = "dropdown" | "inline";
 export type LanguageSwitcherNavigate = (targetUrl: string) => void;
 
-type Locale = "zh-CN" | "en-US";
+type I18nLocale = "zh-CN" | "en-US";
 
 type Option = {
-  value: Locale;
+  value: PublicSiteLocale;
   /** 触发按钮上显示的短标（如 "EN" / "中"） */
   short: string;
   /** 下拉项 / 平铺按钮上显示的完整名称 */
@@ -37,17 +37,24 @@ type Option = {
 };
 
 const EN_OPTION: Option = { value: "en-US", short: "EN", label: "English" };
-const ZH_OPTION: Option = { value: "zh-CN", short: "中", label: "中文" };
+const ZH_CN_OPTION: Option = { value: "zh-CN", short: "中", label: "中文" };
+const ZH_SG_OPTION: Option = { value: "zh-SG", short: "中", label: "中文" };
 
-const OPTIONS: readonly Option[] = [EN_OPTION, ZH_OPTION];
+function chineseOption(): Option {
+  return isGlobal ? ZH_SG_OPTION : ZH_CN_OPTION;
+}
 
 function currentOption(lang: string | undefined): Option {
-  if (lang?.startsWith("zh")) return ZH_OPTION;
+  if (lang?.startsWith("zh")) return chineseOption();
   return EN_OPTION;
 }
 
-function languageFromPublicLocale(locale: PublicSiteLocale | undefined): Locale | undefined {
+function languageFromPublicLocale(locale: PublicSiteLocale | undefined): PublicSiteLocale | undefined {
   if (!locale) return undefined;
+  return locale;
+}
+
+function i18nLocaleForPublicLocale(locale: PublicSiteLocale): I18nLocale {
   return locale.startsWith("zh") ? "zh-CN" : "en-US";
 }
 
@@ -67,11 +74,11 @@ function languageFromPublicLocale(locale: PublicSiteLocale | undefined): Locale 
  *     直接改 history 会让 react-router 的 location 状态停在旧 pathname。
  */
 function applyLocaleChange(
-  value: Locale,
+  value: PublicSiteLocale,
   reloadAfterSwitch: boolean,
   navigateTo?: LanguageSwitcherNavigate,
 ): void {
-  setLocale(value);
+  setLocale(i18nLocaleForPublicLocale(value));
 
   if (typeof window === "undefined") return;
 
@@ -107,7 +114,7 @@ function DropdownSwitcher({
   navigateTo,
   reloadAfterSwitch,
 }: {
-  activeLocale?: Locale;
+  activeLocale?: PublicSiteLocale;
   navigateTo?: LanguageSwitcherNavigate;
   reloadAfterSwitch: boolean;
 }) {
@@ -115,6 +122,7 @@ function DropdownSwitcher({
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const active = currentOption(activeLocale ?? i18n.language);
+  const options = [EN_OPTION, chineseOption()] as const;
 
   /* 点击外部关闭下拉 */
   useEffect(() => {
@@ -127,7 +135,7 @@ function DropdownSwitcher({
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
-  const handlePick = (value: Locale) => {
+  const handlePick = (value: PublicSiteLocale) => {
     setOpen(false);
     if (value !== active.value) applyLocaleChange(value, reloadAfterSwitch, navigateTo);
   };
@@ -154,7 +162,7 @@ function DropdownSwitcher({
           role="listbox"
           className="absolute right-0 top-[calc(100%+6px)] z-50 min-w-[140px] overflow-hidden rounded-xl border border-black/5 bg-white shadow-[0_8px_24px_rgba(0,0,0,0.08)] py-1"
         >
-          {OPTIONS.map((opt) => {
+          {options.map((opt) => {
             const selected = opt.value === active.value;
             return (
               <li key={opt.value}>
@@ -187,16 +195,17 @@ function InlineSwitcher({
   navigateTo,
   reloadAfterSwitch,
 }: {
-  activeLocale?: Locale;
+  activeLocale?: PublicSiteLocale;
   navigateTo?: LanguageSwitcherNavigate;
   reloadAfterSwitch: boolean;
 }) {
   const { i18n } = useTranslation();
   const active = currentOption(activeLocale ?? i18n.language);
+  const options = [EN_OPTION, chineseOption()] as const;
 
   return (
     <div className="flex items-center gap-2">
-      {OPTIONS.map((opt) => {
+      {options.map((opt) => {
         const selected = opt.value === active.value;
         return (
           <button
