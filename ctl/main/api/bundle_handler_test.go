@@ -36,16 +36,35 @@ func (s *stubBundleLogic) GetBundleByID(string) (*bundlelogic.BundleDetail, erro
 }
 
 // stubTradeAdapter 仅实现 InquiryBatch；其它方法被调到时直接 panic（防止误用）。
+//
+// 调用观测：每次 InquiryBatch 调用都会 append 到 inquiryReqs / inquiryReqBundles，
+// 便于断言 fast path / slow path 的调用次数 + 每次传入的 bundleIds 集合。
+//
+// 响应注入：
+//   - inquiryHandler != nil 时，每次调用按 inquiryHandler(req) 动态返回（用于 per-bundle
+//     成功/失败混合的 slow path 测试）；
+//   - inquiryHandler == nil 时，回落到固定 inquiryResult / inquiryErr 路径（兼容
+//     既有 happy-path / 全失败测试用例）。
 type stubTradeAdapter struct {
-	inquiryReq    *tradeadapter.InquiryBatchRequest
-	inquiryResult *tradeadapter.InquiryBatchResult
-	inquiryErr    error
-	inquiryCalled int
+	inquiryReq        *tradeadapter.InquiryBatchRequest   // 最后一次调用的请求（兼容既有断言）
+	inquiryReqs       []*tradeadapter.InquiryBatchRequest // 所有调用历史
+	inquiryReqBundles [][]string                          // 每次调用的 bundleIds 副本
+	inquiryResult     *tradeadapter.InquiryBatchResult
+	inquiryErr        error
+	inquiryHandler    func(*tradeadapter.InquiryBatchRequest) (*tradeadapter.InquiryBatchResult, error)
+	inquiryCalled     int
 }
 
 func (s *stubTradeAdapter) InquiryBatch(_ context.Context, req *tradeadapter.InquiryBatchRequest) (*tradeadapter.InquiryBatchResult, error) {
 	s.inquiryCalled++
 	s.inquiryReq = req
+	s.inquiryReqs = append(s.inquiryReqs, req)
+	ids := make([]string, len(req.BundleIDs))
+	copy(ids, req.BundleIDs)
+	s.inquiryReqBundles = append(s.inquiryReqBundles, ids)
+	if s.inquiryHandler != nil {
+		return s.inquiryHandler(req)
+	}
 	return s.inquiryResult, s.inquiryErr
 }
 func (s *stubTradeAdapter) InquiryRenew(context.Context, *tradeadapter.InquiryRenewRequest) (*tradeadapter.InquiryRenewResult, error) {
@@ -351,4 +370,214 @@ func TestBundleQuoteToPrice(t *testing.T) {
 			t.Fatalf("got %+v", p)
 		}
 	})
+}
+
+// sampleBundleDetailsWithFreeTrial 在普通 bundle 之外追加一条 bundle_free_trial_01，
+// 用于验证 fetchBundleQuotes 必须把免费试用 bundle 从 trade 询价集合中剔除。
+func sampleBundleDetailsWithFreeTrial() []*bundlelogic.BundleDetail {
+	details := sampleBundleDetails()
+	free := &bundlelogic.BundleDetail{
+		BundleID:         "bundle_free_trial_01",
+		BundleName:       "Free Trial",
+		Description:      `[{"Key":"agent_quota","Value":"1"}]`,
+		BundleState:      "ONLINE",
+		AgentQuota:       1,
+		Credit:           100,
+		BundleSalesState: "AVAILABLE",
+	}
+	// 把 free_trial 放在中间位置，验证不依赖排序也能被识别为"免费试用"。
+	return []*bundlelogic.BundleDetail{details[0], free, details[1]}
+}
+
+// errFromStatus 构造 ctl tradeadapter.Error，模拟 trade 上游业务错（404/409/422）。
+func errFromStatus(status int, code, message string) error {
+	return &tradeadapter.Error{
+		Status:   status,
+		Code:     code,
+		Message:  message,
+		Endpoint: "http://trade.trade.svc.cluster.local/internal/trade/inquiry/batch",
+	}
+}
+
+// TestDescribeBundles_FreeTrialBundleSkippedFromInquiry 验证免费试用 bundle（bundle_id
+// 以 freeTrialBundleIDPrefix 开头）不会进入 trade InquiryBatch 询价集合——避免 trade 因
+// trade_bundle_definition 未录入返 404 BundleNotFound 拖垮整批询价。
+//
+// 期望：
+//   - InquiryBatch 仍只调 1 次（fast path 成功）；
+//   - 请求体 BundleIDs 不包含 bundle_free_trial_01；
+//   - bundle_free_trial_01 的 Price 字段保持 nil（免费试用走 CreateTrialPass 链路，无报价）；
+//   - 其它付费 bundle 的 Price 正常回填。
+func TestDescribeBundles_FreeTrialBundleSkippedFromInquiry(t *testing.T) {
+	logic := &stubBundleLogic{describeReturn: sampleBundleDetailsWithFreeTrial()}
+	trader := &stubTradeAdapter{
+		inquiryResult: &tradeadapter.InquiryBatchResult{
+			Prices: []*tradeadapter.BundleQuote{
+				{BundleID: "bundle_basic", Price: "9.90", TotalCost: "9.90", RealTotalCost: "9.90", Currency: "CNY", Discount: 1.0},
+				{BundleID: "bundle_pro", Price: "29.90", TotalCost: "29.90", RealTotalCost: "29.90", Currency: "CNY", Discount: 1.0},
+			},
+		},
+	}
+	h := &bundleHandler{logic: logic, tradeAdapter: trader}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/bundles", nil)
+	req.Header.Set("X-User-Id", "user_123")
+	rec := httptest.NewRecorder()
+
+	h.describeBundles(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if trader.inquiryCalled != 1 {
+		t.Fatalf("inquiryCalled: got %d want 1 (fast path only)", trader.inquiryCalled)
+	}
+	if got, want := len(trader.inquiryReq.BundleIDs), 2; got != want {
+		t.Fatalf("inquiryReq.BundleIDs len: got %d want %d (free_trial must be filtered)", got, want)
+	}
+	for _, bid := range trader.inquiryReq.BundleIDs {
+		if bid == "bundle_free_trial_01" {
+			t.Fatalf("bundle_free_trial_01 must NOT be sent to trade InquiryBatch; got BundleIDs=%v", trader.inquiryReq.BundleIDs)
+		}
+	}
+
+	bundles := decodeUserBundles(t, rec.Body.Bytes())
+	priceByID := make(map[string]*transport.BundlePrice, len(bundles))
+	for _, b := range bundles {
+		priceByID[b.BundleID] = b.Price
+	}
+	if priceByID["bundle_free_trial_01"] != nil {
+		t.Fatalf("bundle_free_trial_01 Price: got %+v want nil (no quote for trial bundle)", priceByID["bundle_free_trial_01"])
+	}
+	if priceByID["bundle_basic"] == nil || priceByID["bundle_basic"].Price != 9.9 {
+		t.Fatalf("bundle_basic Price: got %+v want {Price=9.9, ...}", priceByID["bundle_basic"])
+	}
+	if priceByID["bundle_pro"] == nil || priceByID["bundle_pro"].Price != 29.9 {
+		t.Fatalf("bundle_pro Price: got %+v want {Price=29.9, ...}", priceByID["bundle_pro"])
+	}
+}
+
+// TestDescribeBundles_PerBundleFallback_OnBatch404 验证 fast path 失败为 trade 4xx 业务错
+// （404 BundleNotFound / 409 BundleOffline / 422 BindingNotFound）时，自动 fallback 到
+// slow path 拆 1-by-1 询价：失败的单条降级为 nil，其它 bundle 价格正常展示（A 方案语义）。
+func TestDescribeBundles_PerBundleFallback_OnBatch404(t *testing.T) {
+	logic := &stubBundleLogic{describeReturn: sampleBundleDetails()} // bundle_basic + bundle_pro
+	// 调用计划：
+	//   call#1 (fast path, BundleIDs=[basic, pro]) → 404 BundleNotFound
+	//   call#2 (slow path, BundleIDs=[basic])     → 200 + price
+	//   call#3 (slow path, BundleIDs=[pro])       → 404 BundleNotFound（该条降级 nil）
+	callIdx := 0
+	trader := &stubTradeAdapter{
+		inquiryHandler: func(req *tradeadapter.InquiryBatchRequest) (*tradeadapter.InquiryBatchResult, error) {
+			callIdx++
+			switch callIdx {
+			case 1:
+				return nil, errFromStatus(http.StatusNotFound, "BundleNotFound", "inquiry: bundle not found: trade_bundle_definition bundleId=bundle_pro")
+			case 2:
+				// slow path: bundle_basic 单条成功
+				return &tradeadapter.InquiryBatchResult{
+					Prices: []*tradeadapter.BundleQuote{
+						{BundleID: "bundle_basic", Price: "9.90", TotalCost: "9.90", RealTotalCost: "9.90", Currency: "CNY", Discount: 1.0},
+					},
+				}, nil
+			case 3:
+				// slow path: bundle_pro 单条仍失败 → 该条降级 nil
+				return nil, errFromStatus(http.StatusNotFound, "BundleNotFound", "inquiry: bundle not found: trade_bundle_definition bundleId=bundle_pro")
+			default:
+				t.Fatalf("unexpected extra InquiryBatch call #%d req=%+v", callIdx, req)
+				return nil, nil
+			}
+		},
+	}
+	h := &bundleHandler{logic: logic, tradeAdapter: trader}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/bundles", nil)
+	req.Header.Set("X-User-Id", "user_123")
+	rec := httptest.NewRecorder()
+
+	h.describeBundles(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if trader.inquiryCalled != 3 {
+		t.Fatalf("inquiryCalled: got %d want 3 (1 fast path + 2 slow path)", trader.inquiryCalled)
+	}
+	// 验证 slow path 拆 1-by-1：第 2 次只问 basic，第 3 次只问 pro。
+	if got, want := trader.inquiryReqBundles[1], []string{"bundle_basic"}; len(got) != 1 || got[0] != want[0] {
+		t.Fatalf("slow path call#2 BundleIDs: got %v want %v", got, want)
+	}
+	if got, want := trader.inquiryReqBundles[2], []string{"bundle_pro"}; len(got) != 1 || got[0] != want[0] {
+		t.Fatalf("slow path call#3 BundleIDs: got %v want %v", got, want)
+	}
+
+	bundles := decodeUserBundles(t, rec.Body.Bytes())
+	priceByID := make(map[string]*transport.BundlePrice, len(bundles))
+	for _, b := range bundles {
+		priceByID[b.BundleID] = b.Price
+	}
+	// bundle_basic 仍应有价格（slow path 成功）
+	if priceByID["bundle_basic"] == nil || priceByID["bundle_basic"].Price != 9.9 {
+		t.Fatalf("bundle_basic Price: got %+v want {Price=9.9, ...} (slow path success)", priceByID["bundle_basic"])
+	}
+	// bundle_pro 应降级为 nil（slow path 单条仍失败）
+	if priceByID["bundle_pro"] != nil {
+		t.Fatalf("bundle_pro Price: got %+v want nil (slow path single-bundle failure must degrade)", priceByID["bundle_pro"])
+	}
+}
+
+// TestDescribeBundles_BatchInfraError_NoSlowPathRetry 验证 fast path 失败为 5xx / 超时 /
+// 非 *tradeadapter.Error 基础设施错时，直接整批降级，**不会**进入 slow path 拆 1-by-1
+// 重试（避免 N 次串行超时雪崩）。
+func TestDescribeBundles_BatchInfraError_NoSlowPathRetry(t *testing.T) {
+	logic := &stubBundleLogic{describeReturn: sampleBundleDetails()}
+	trader := &stubTradeAdapter{
+		// 502 UpstreamError 是 trade classifyInquiryError 的 default 分支，不在 4xx 业务错列表，
+		// 期望 ctl 不走 slow path。
+		inquiryErr: errFromStatus(http.StatusBadGateway, "UpstreamError", "jifei adapter non-2xx"),
+	}
+	h := &bundleHandler{logic: logic, tradeAdapter: trader}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/bundles", nil)
+	req.Header.Set("X-User-Id", "user_123")
+	rec := httptest.NewRecorder()
+
+	h.describeBundles(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d want 200", rec.Code)
+	}
+	if trader.inquiryCalled != 1 {
+		t.Fatalf("inquiryCalled: got %d want 1 (5xx infra error must NOT trigger slow path retry)", trader.inquiryCalled)
+	}
+	bundles := decodeUserBundles(t, rec.Body.Bytes())
+	for _, b := range bundles {
+		if b.Price != nil {
+			t.Fatalf("bundle %s Price: got %+v want nil (5xx infra error must fallback to no-price for all)", b.BundleID, b.Price)
+		}
+	}
+}
+
+// TestIsFreeTrialBundleID 单元测试免费试用 bundle 命名前缀判定。
+func TestIsFreeTrialBundleID(t *testing.T) {
+	cases := []struct {
+		name string
+		id   string
+		want bool
+	}{
+		{"empty", "", false},
+		{"free_trial_01", "bundle_free_trial_01", true},
+		{"free_trial_long_suffix", "bundle_free_trial_anything_goes_here", true},
+		{"paid_basic", "bundle_basic", false},
+		{"paid_launch_01", "bundle_launch_01", false},
+		{"paid_launch_ai_01", "bundle_launch_ai_01", false},
+		{"similar_but_not_prefix", "trial_bundle", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isFreeTrialBundleID(tc.id); got != tc.want {
+				t.Fatalf("isFreeTrialBundleID(%q) = %v, want %v", tc.id, got, tc.want)
+			}
+		})
+	}
 }
