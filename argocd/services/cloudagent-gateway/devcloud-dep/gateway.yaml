@@ -33,7 +33,7 @@ data:
   GATEWAY_WISP_JFS_PREFIX: "cloudagent-devcloud-dep"
   GATEWAY_WISP_ROOT_UPPER_SIZE: "10G"
   GATEWAY_WISP_WORKSPACE_LEASE_TTL_SECONDS: "180"
-  GATEWAY_RUNTIME_WARM_POOL_ENABLED: "true"
+  GATEWAY_RUNTIME_WARM_POOL_ENABLED: "false"
   GATEWAY_RUNTIME_WARM_POOL_SHARED_STORE_CONFIRMED: "true"
   GATEWAY_DB_DRIVER: "mysql"
   GATEWAY_RUNTIME_WARM_POOL_DB_DRIVER: "mysql"
@@ -164,7 +164,7 @@ metadata:
     app.kubernetes.io/name: cloudagent-runtime-pool-worker
     cloudagent.dev/environment: devcloud-dep
 spec:
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       app.kubernetes.io/name: cloudagent-runtime-pool-worker
