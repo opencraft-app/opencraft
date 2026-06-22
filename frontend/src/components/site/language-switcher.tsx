@@ -114,7 +114,7 @@ function DropdownSwitcher({
   navigateTo,
   reloadAfterSwitch,
 }: {
-  activeLocale?: Locale;
+  activeLocale?: PublicSiteLocale;
   navigateTo?: LanguageSwitcherNavigate;
   reloadAfterSwitch: boolean;
 }) {
@@ -135,7 +135,7 @@ function DropdownSwitcher({
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
-  const handlePick = (value: Locale) => {
+  const handlePick = (value: PublicSiteLocale) => {
     setOpen(false);
     if (value !== active.value) applyLocaleChange(value, reloadAfterSwitch, navigateTo);
   };
@@ -195,7 +195,7 @@ function InlineSwitcher({
   navigateTo,
   reloadAfterSwitch,
 }: {
-  activeLocale?: Locale;
+  activeLocale?: PublicSiteLocale;
   navigateTo?: LanguageSwitcherNavigate;
   reloadAfterSwitch: boolean;
 }) {
