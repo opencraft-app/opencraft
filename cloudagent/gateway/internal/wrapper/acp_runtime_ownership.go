@@ -2,6 +2,7 @@ package wrapper
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -9,6 +10,27 @@ import (
 
 func (g *ACPGateway) acquireRuntimeOwnership(ctx context.Context, sessionID string, generation int64, runID, operation string) (RuntimeOwnershipLease, error) {
 	return g.acquireRuntimeOwnershipWithOptions(ctx, sessionID, generation, runID, operation, false)
+}
+
+func (g *ACPGateway) acquirePromptRuntimeOwnership(ctx context.Context, sessionID string, generation int64, runID string) (RuntimeOwnershipLease, error) {
+	wait := envDurationSeconds("GATEWAY_ACP_PROMPT_OWNER_WAIT_SECONDS", 20*time.Second)
+	deadline := time.Now().Add(wait)
+	for {
+		lease, err := g.acquireRuntimeOwnership(ctx, sessionID, generation, runID, "prompt")
+		if err == nil {
+			return lease, nil
+		}
+		var held RuntimeOwnershipHeldError
+		if !errors.As(err, &held) || held.OwnerID != g.ownerID || wait <= 0 || time.Now().After(deadline) {
+			return RuntimeOwnershipLease{}, err
+		}
+		fmt.Fprintf(os.Stderr, "timeline source=server event=acp_runtime_owner_wait session_id=%s generation=%d run_id=%s held_run_id=%s wait_remaining_ms=%d\n", sessionID, generation, runID, held.RunID, time.Until(deadline).Milliseconds())
+		select {
+		case <-ctx.Done():
+			return RuntimeOwnershipLease{}, ctx.Err()
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
 }
 
 func (g *ACPGateway) acquireRuntimeOwnershipWithOptions(ctx context.Context, sessionID string, generation int64, runID, operation string, allowSameOwner bool) (RuntimeOwnershipLease, error) {

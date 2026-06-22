@@ -509,6 +509,25 @@ func TestACPProtocolRuntimeOwnershipHeldErrorIsStructuredRetryable(t *testing.T)
 	}
 }
 
+func TestACPProtocolWorkspaceLeaseHeldErrorIsStructuredRetryable(t *testing.T) {
+	code, message, data := acpJSONRPCError(WorkspaceLeaseHeldError{
+		WorkspaceID: "workspace_active",
+		RuntimeID:   "runtime_active",
+		LeaseID:     "lease_active",
+		ExpiresAt:   time.Date(2026, 6, 22, 8, 30, 0, 0, time.UTC),
+	})
+	if code != -32009 || message != "workspace lease is held" {
+		t.Fatalf("unexpected workspace lease error code/message: code=%d message=%q", code, message)
+	}
+	fields := data.(map[string]any)
+	if fields["error_code"] != "workspace_lease_held" || fields["retryable"] != true {
+		t.Fatalf("workspace lease error should be structured retryable data: %#v", fields)
+	}
+	if fields["workspace_id"] != "workspace_active" || fields["runtime_id"] != "runtime_active" || fields["lease_id"] != "lease_active" {
+		t.Fatalf("workspace lease error should preserve diagnostics: %#v", fields)
+	}
+}
+
 func TestACPProtocolEnsureReadyOwnershipFailureEmitsLifecycleFailed(t *testing.T) {
 	store, err := NewStore(t.TempDir())
 	if err != nil {
