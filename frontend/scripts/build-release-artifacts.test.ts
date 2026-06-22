@@ -12,23 +12,18 @@ const baseEnv = {
 };
 
 describe("build release artifacts", () => {
-  it("runs static site generation after Vite build and asset optimization", async () => {
+  it("rejects non-Next build commands", async () => {
     const calls: string[] = [];
 
-    await runFrontendArtifactBuildCommand("build:cn", {
+    await expect(runFrontendArtifactBuildCommand("build:cn", {
       FRONTEND_BUILD_OUTPUT_DIR: "/tmp/frontend-artifact-builds/cn",
       NODE_BIN: "node-bin",
       PNPM_BIN: "pnpm-bin",
     }, async (command: string, args: string[]) => {
       calls.push(`${command} ${args.join(" ")}`);
-    });
+    })).rejects.toThrow("frontend artifact builds only support build:next");
 
-    expect(calls).toEqual([
-      "node-bin scripts/subset-fonts.mjs",
-      "pnpm-bin exec vite build --mode cn --outDir /tmp/frontend-artifact-builds/cn",
-      "node-bin scripts/optimize-static-assets.mjs /tmp/frontend-artifact-builds/cn",
-      "node-bin scripts/generate-static-site.mjs --region cn --dist /tmp/frontend-artifact-builds/cn",
-    ]);
+    expect(calls).toEqual([]);
   });
 
   it("runs the Next static docs build and copies out into the artifact output dir", async () => {

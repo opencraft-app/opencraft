@@ -1,12 +1,12 @@
-@layer theme, base, legacy, components, utilities;
+@layer theme, base, app, components, utilities;
 
 @import 'tailwindcss';
 @import 'fumadocs-ui/css/neutral.css';
 @import 'fumadocs-ui/css/preset.css';
 @import './fumadocs-base.css';
-@import '../styles.css' layer(legacy);
+@import '../styles.css' layer(app);
 @import './lightvela-fumadocs-theme.css';
-@import '../motion.css' layer(legacy);
+@import '../motion.css' layer(app);
 
 @layer base {
   * {

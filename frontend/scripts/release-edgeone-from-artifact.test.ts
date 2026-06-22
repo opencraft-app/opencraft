@@ -75,7 +75,6 @@ describe("EdgeOne release from frontend artifact", () => {
       `verify:${cnRef}`,
       "deploy:eo:/tmp/frontend-artifact-dist:lightvela",
     ]);
-    expect(calls).not.toContain("build:cn");
     expect(calls).not.toContain("release:matrix");
   });
 
@@ -89,18 +88,6 @@ describe("EdgeOne release from frontend artifact", () => {
       verifyArtifact: () => ({ manifest: makeCnManifest(), ref: cnRef, extractDir: "/tmp/dist" }),
       deployScript: () => {},
     })).toThrow("exactly one EdgeOne combo");
-  });
-
-  it("rejects legacy EdgeOne combos", () => {
-    expect(() => executeEdgeOneArtifactRelease({
-      env: {
-        ...baseEnv,
-        FRONTEND_RELEASE_MATRIX: "eo:cn-lightvela-prod-legacy",
-      },
-      log: () => {},
-      verifyArtifact: () => ({ manifest: makeCnManifest(), ref: cnRef, extractDir: "/tmp/dist" }),
-      deployScript: () => {},
-    })).toThrow("EdgeOne Next artifact combo");
   });
 
   it("requires a source SHA or full artifact ref", () => {
@@ -138,11 +125,11 @@ describe("EdgeOne release from frontend artifact", () => {
   });
 
   it.each([
-    ["comboId", { comboId: "eo:global-lightvela-intl-prod-legacy" }, "comboId mismatch"],
+    ["comboId", { comboId: "eo:global-lightvela-intl-prod-next" }, "comboId mismatch"],
     ["projectName", { projectName: "wrong" }, "projectName mismatch"],
     ["channel", { channel: "cf" }, "channel mismatch"],
     ["region", { region: "global" }, "region mismatch"],
-    ["outputDir", { outputDir: "dist-global" }, "outputDir mismatch"],
+    ["outputDir", { outputDir: "wrong-output" }, "outputDir mismatch"],
     ["VITE_REGION", { bakedEnv: { ...makeCnManifest().bakedEnv, VITE_REGION: "global" } }, "baked env VITE_REGION mismatch"],
     ["VITE_AUTH_API_BASE_URL", { bakedEnv: { ...makeCnManifest().bakedEnv, VITE_AUTH_API_BASE_URL: "https://wrong.example.com" } }, "baked env VITE_AUTH_API_BASE_URL mismatch"],
     ["VITE_AEGIS_ID", { bakedEnv: { ...makeCnManifest().bakedEnv, VITE_AEGIS_ID: "wrong" } }, "baked env VITE_AEGIS_ID mismatch"],

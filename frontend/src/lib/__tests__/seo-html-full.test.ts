@@ -1,5 +1,5 @@
 /**
- * 完整 SEO 注入回归测试：dev 中间件管线必须输出与 prerender 对齐的字段集。
+ * 完整 SEO 注入回归测试：dev 中间件管线必须输出与 Next 静态产物对齐的字段集。
  *
  * 守护字段：
  *   - <html lang>（按 region 切换）
@@ -27,7 +27,7 @@ const TEMPLATE = `<!doctype html>
 </html>`;
 
 describe("applyFullSeoToHtml", () => {
-  it("keeps the SPA shell favicon aligned with prerendered public pages", () => {
+  it("keeps the SPA shell favicon aligned with static public pages", () => {
     const template = readFileSync(resolve(process.cwd(), "index.html"), "utf8");
 
     expect(template).toContain('<link rel="icon" type="image/png" href="/lightvela-icon.png" />');

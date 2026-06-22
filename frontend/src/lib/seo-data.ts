@@ -8,8 +8,7 @@ export interface SeoMeta {
 
 /**
  * 完整 SEO 元数据：覆盖 title/description/keywords 之外的全部 head 字段，
- * 与 prerender（generate-static-site.mjs）输出保持一致，使 dev 中间件、
- * 客户端运行时同步、prerender 三个消费方共用同一份数据契约。
+ * 供 Next metadata、dev 中间件与客户端运行时同步共用同一份数据契约。
  *
  * 字段含义：
  *   - htmlLang：用于 `<html lang>`，影响搜索引擎语种判定 / 屏幕阅读器朗读语言。
@@ -47,9 +46,7 @@ export interface FullSeoMetaOptions {
 
 /**
  * 站点级常量：lang / locale / siteName / titleSuffix / 默认 origin / 默认分享图。
- * 与 generate-static-site.mjs 的 `SITE` 保持一致；脚本是纯 .mjs，
- * 无法直接 import 本 TS 文件，因此那一侧维护一份镜像副本，
- * 并由 `__tests__/seo-site-mirror.test.ts` 守护两边一致性。
+ * 站点级常量：lang / locale / siteName / titleSuffix / 默认 origin / 默认分享图。
  */
 const SITE_BY_REGION = {
   cn: {
@@ -169,13 +166,6 @@ const SEO_KEYWORDS_BY_REGION: Record<SeoRegion, string> = {
  *   - 命中表中路径 → 使用页面级 description（更贴合页面主题，搜索引擎摘要更精准）
  *   - 未命中 → 回退到 SEO_DESCRIPTION_BY_REGION（全站默认）
  *   - keywords 不分页面，全站统一（SEO_KEYWORDS_BY_REGION）
- *
- * 与 prerender 的关系：
- *   - prerender (`generate-static-site.mjs`) 对 docs 页会自动从 markdown 截取
- *     description；本表则提供"运行时（dev 中间件 / 客户端 SPA 切路由）"的精炼
- *     版本。两者不要求 byte-equal，但都应保持主题一致、长度合理（~ 120-180 字）。
- *   - prerender 的 `/about` 当前用全站默认 description，本表给它一份更"关于"
- *     味道的定制文案，运行时会展示这一份。
  *
  * 字段长度约束：建议 120-180 字（中文）/ 140-180 chars（英文），太短信息量不
  * 足，太长会被搜索引擎截断。
@@ -430,7 +420,7 @@ function normalizePathname(pathname: string): string {
 /**
  * 国际站 multi-URL i18n：剥掉 locale-first 前缀，返回逻辑路径 + URL 语言。
  * 用于让 SEO 表（按裸路径建索引）能命中带前缀的实际访问路径，并让
- * `<html lang>` / `og:locale` 跟随 URL 前缀切换中英文（与 prerender 输出一致）。
+ * `<html lang>` / `og:locale` 跟随 URL 前缀切换中英文（与 Next 静态输出一致）。
  *
  * - `/en-us/about`        → { bare: "/about", urlLang: "en-us" }
  * - `/zh-sg/docs/overview`→ { bare: "/docs/overview", urlLang: "zh-sg" }
@@ -514,8 +504,7 @@ function getAppPageTitle(pathname: string, region: SeoRegion): string | null {
  *                                        维护一份中文 title / description 镜像）
  *
  * 为何复用 cn 表：所有 `/zh/...` 想看到的 title / description 文案都已经在
- *   cn 表里维护好了（"关于我们"、"LightVela 是什么" 等），并由 `seo-site-mirror`
- *   测试守护与 prerender 的 DOCS.cn 一致。复用避免双源漂移。
+ *   cn 表里维护好了（"关于我们"、"LightVela 是什么" 等）。复用避免双源漂移。
  */
 function effectiveRegionForLookup(region: SeoRegion, urlLang: UrlLang | null): SeoRegion {
   if (region !== "global") return region;
@@ -584,12 +573,10 @@ export function isPathIndexable(pathname: string): boolean {
 /**
  * 完整 SEO 元数据：包含 OG / Twitter / canonical / robots / `<html lang>`。
  *
- * 设计意图：dev 中间件、客户端运行时同步、prerender 三处共用此函数，避免字段
- * 在不同管线之间漂移。prerender 脚本是纯 .mjs，无法 import 本 TS 文件，故
- * 通过 __tests__/seo-site-mirror.test.ts 守护两边镜像数据一致。
+ * 设计意图：dev 中间件与客户端运行时同步共用此函数，避免字段在不同管线之间漂移。
  *
  * 安全：函数内部只做拼接，不做 HTML 转义。属性值的 `&` / `"` / `<` / `>` 转义
- * 由消费方（seo-html.ts、prerender renderHead）负责，避免双重转义。
+ * 由消费方（seo-html.ts、Next metadata）负责，避免双重转义。
  */
 export function getFullSeoMeta(
   pathname: string,
@@ -601,14 +588,14 @@ export function getFullSeoMeta(
   const base = getSeoMeta(pathname, r);
   const normalizedPathname = normalizePathname(pathname);
   /* 国际站从 URL 前缀解析 htmlLang / ogLocale；国内站 / 裸路径退化到 site 默认。
-     这样 prerender 写入 dist/zh/...html 的 <html lang="zh-CN"> 不会在 SPA
+     这样 Next 写入 /zh-cn/...html 的 <html lang="zh-CN"> 不会在 SPA
      hydration 时被 useRouteSeoMeta 覆盖回 en-US（P0-B 回归）。 */
   const { urlLang } = stripUrlLangPrefix(normalizedPathname);
   const htmlLang = urlLang && r === "global" ? URL_LANG_TO_HTML_LANG[urlLang] : site.htmlLang;
   const ogLocale = urlLang && r === "global" ? URL_LANG_TO_OG_LOCALE[urlLang] : site.locale;
   const siteUrl = trimTrailingSlash(options.siteUrl ?? site.defaultUrl);
   /* canonical 保留带前缀的完整 pathname：国际站 `/zh/about` canonical 就是 `/zh/about`，
-     与 prerender 的 hreflang 集群对齐（每个 URL canonical 指向自己）。 */
+     与 Next sitemap/hreflang 集群对齐（每个 URL canonical 指向自己）。 */
   const canonical = joinUrl(siteUrl, normalizedPathname);
   const indexable = options.indexable ?? isPathIndexable(normalizedPathname);
   const ogImage = joinUrl(siteUrl, options.ogImagePath ?? DEFAULT_OG_IMAGE_PATH);

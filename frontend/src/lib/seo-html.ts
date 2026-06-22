@@ -163,7 +163,7 @@ function setHtmlLang(html: string, lang: string): string {
 
 /**
  * 完整 SEO 注入：title/description/keywords + canonical + robots + OG + Twitter + `<html lang>`。
- * 用于 dev 中间件，使开发态首屏 HTML 与 prerender 产物字段对齐。
+ * 用于 dev 中间件，使开发态首屏 HTML 与 Next 静态产物字段对齐。
  */
 export function applyFullSeoToHtml(
   html: string,
