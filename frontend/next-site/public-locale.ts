@@ -1,4 +1,5 @@
 import type { PublicSiteLocale } from '@/lib/public-site-navigation';
+import { isGlobal } from '@/lib/region';
 
 export type PublicUrlLang = 'en-us' | 'zh-cn' | 'zh-sg';
 
@@ -7,8 +8,12 @@ export type PublicRouteLocale = {
   localized: boolean;
 };
 
+export const DEFAULT_PUBLIC_URL_LANG: PublicUrlLang = isGlobal ? 'en-us' : 'zh-cn';
+export const DEFAULT_PUBLIC_SITE_LOCALE: PublicSiteLocale = isGlobal ? 'en-US' : 'zh-CN';
+export const DEFAULT_PUBLIC_DOCS_LOCALE: PublicUrlLang = DEFAULT_PUBLIC_URL_LANG;
+
 export const DEFAULT_PUBLIC_ROUTE_LOCALE: PublicRouteLocale = {
-  locale: 'zh-CN',
+  locale: DEFAULT_PUBLIC_SITE_LOCALE,
   localized: false,
 };
 

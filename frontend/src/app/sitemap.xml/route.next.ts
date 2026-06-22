@@ -1,4 +1,5 @@
 import { DOCS_ROUTE_LOCALES, DOCS_ROUTE_SLUGS, type DocsRouteLocale } from '@next-site/docs-route-manifest';
+import { DEFAULT_PUBLIC_DOCS_LOCALE } from '@next-site/public-locale';
 
 export const dynamic = 'force-static';
 
@@ -30,7 +31,7 @@ export function GET() {
     '/zh-cn/about',
     '/zh-sg',
     '/zh-sg/about',
-    ...DOCS_ROUTE_SLUGS['zh-cn'].map((slug) => docsPath('default', slug)),
+    ...DOCS_ROUTE_SLUGS[DEFAULT_PUBLIC_DOCS_LOCALE].map((slug) => docsPath('default', slug)),
     ...DOCS_ROUTE_LOCALES.flatMap((locale) =>
       DOCS_ROUTE_SLUGS[locale].map((slug) => docsPath(locale, slug)),
     ),

@@ -1,3 +1,5 @@
+import { DEFAULT_LOCALE } from "@/lib/region";
+
 export type PublicSiteLocale = "zh-CN" | "zh-SG" | "en-US";
 export type PublicDocsUrlLocale = "en-us" | "zh-cn" | "zh-sg";
 export type PublicSiteSection = "overview" | "changelog" | "docs" | "about";
@@ -28,6 +30,8 @@ const LOCALE_TO_PUBLIC_ROOT_LANG: Record<PublicSiteLocale, "en-us" | "zh-cn" | "
   "zh-SG": "zh-sg",
 };
 
+const DEFAULT_PUBLIC_URL_LOCALE: PublicDocsUrlLocale = DEFAULT_LOCALE === "en-US" ? "en-us" : "zh-cn";
+
 const LOCALIZED_PUBLIC_PREFIXES = ["/docs", "/about", "/privacy-policy", "/cookie-policy", "/open-source-licenses"] as const;
 
 export function stripPublicSiteLocalePrefix(pathname: string): string {
@@ -56,10 +60,10 @@ export function publicSiteHref(
 
   const docsLocale = LOCALE_TO_DOCS_URL_LOCALE[locale];
   if (bare === "/docs" || bare.startsWith("/docs/")) {
-    if (locale === "zh-CN") return bare;
-    return `/${docsLocale}${bare}`;
+    return docsLocale === DEFAULT_PUBLIC_URL_LOCALE ? bare : `/${docsLocale}${bare}`;
   }
   const lang = LOCALE_TO_PUBLIC_ROOT_LANG[locale];
+  if (lang === DEFAULT_PUBLIC_URL_LOCALE) return bare;
   if (bare === "/") return `/${lang}`;
   return `/${lang}${bare}`;
 }

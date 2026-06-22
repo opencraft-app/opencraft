@@ -23,6 +23,7 @@ import { usePathname } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
 import { createLightVelaSearchTokenizer } from './search-tokenizer';
+import { DEFAULT_PUBLIC_DOCS_LOCALE } from './public-locale';
 
 const DOCS_SEARCH_LOCALES = new Set(['en-us', 'zh-cn', 'zh-sg']);
 
@@ -30,7 +31,7 @@ function docsSearchLocaleFromPath(pathname: string | null, contextLocale: unknow
   const firstSegment = pathname?.split('/').filter(Boolean)[0];
   if (firstSegment && DOCS_SEARCH_LOCALES.has(firstSegment)) return firstSegment;
   if (typeof contextLocale === 'string' && DOCS_SEARCH_LOCALES.has(contextLocale)) return contextLocale;
-  return 'zh-cn';
+  return DEFAULT_PUBLIC_DOCS_LOCALE;
 }
 
 function initLightVelaOrama() {

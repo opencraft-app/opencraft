@@ -61,13 +61,16 @@ export const DEFAULT_LOCALE: "zh-CN" | "en-US" = isGlobal ? "en-US" : "zh-CN";
 /** URL 路径里允许出现的语言前缀 → i18n locale 映射 */
 const URL_LANG_TO_LOCALE: Record<string, "zh-CN" | "en-US"> = {
   en: "en-US",
+  "en-us": "en-US",
   zh: "zh-CN",
+  "zh-cn": "zh-CN",
+  "zh-sg": "zh-CN",
 };
 
 /** i18n locale → URL 路径里使用的短前缀 */
-const LOCALE_TO_URL_LANG: Record<"zh-CN" | "en-US", "en" | "zh"> = {
-  "en-US": "en",
-  "zh-CN": "zh",
+const LOCALE_TO_URL_LANG: Record<"zh-CN" | "en-US", "en-us" | "zh-cn"> = {
+  "en-US": "en-us",
+  "zh-CN": "zh-cn",
 };
 
 /**
@@ -84,10 +87,10 @@ const LOCALIZED_PATH_PREFIXES = [
 ] as const;
 
 /** 判断路径首段是否合法语言前缀 */
-const matchLangPrefix = (pathname: string): { lang: "en" | "zh"; rest: string } | null => {
-  const m = pathname.match(/^\/(en|zh)(\/|$)(.*)$/);
+const matchLangPrefix = (pathname: string): { lang: "en" | "zh" | "en-us" | "zh-cn" | "zh-sg"; rest: string } | null => {
+  const m = pathname.match(/^\/(en-us|zh-cn|zh-sg|en|zh)(\/|$)(.*)$/);
   if (!m) return null;
-  const lang = m[1] as "en" | "zh";
+  const lang = m[1] as "en" | "zh" | "en-us" | "zh-cn" | "zh-sg";
   const rest = "/" + (m[3] ?? "");
   return { lang, rest: rest === "//" ? "/" : rest };
 };
@@ -130,6 +133,8 @@ export const localizedPath = (path: string, locale: "zh-CN" | "en-US"): string =
 
   if (!shouldLocalize(bare)) return bare; // 这个路径段不需要本地化（如 /agents、/auth）
 
+  if (locale === DEFAULT_LOCALE) return bare;
+
   const lang = LOCALE_TO_URL_LANG[locale];
   // 根路径特殊处理：/{lang}/  ←  /
   if (bare === "/") return `/${lang}/`;
@@ -152,7 +157,8 @@ export const switchLocaleInPath = (
  * 判断给定 unprefixed 路径在国际站当前 locale 下是否需要补前缀重定向。
  *
  * 规则（仅国际站生效）：
- *   - 已带 `/en` 或 `/zh` 前缀          → 不重定向
+ *   - 已带 `/en-us`、`/zh-cn`、`/zh-sg` 或旧 `/en`、`/zh` 前缀
+ *     → 不重定向
  *   - 不在白名单（`/agents`、`/auth`…）→ 不重定向
  *   - 根路径 `/`                          → **不**重定向（首页保持裸 URL，
  *      与 Tencent Cloud `cloud.tencent.com/` 行为一致；多语言只对子路径生效）

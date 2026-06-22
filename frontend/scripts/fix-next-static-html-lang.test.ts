@@ -63,6 +63,29 @@ describe("fix-next-static-html-lang", () => {
     }
   });
 
+  it("marks unprefixed HTML as English for global Next builds", () => {
+    const root = mkdtempSync(join(tmpdir(), "next-global-lang-output-"));
+    const out = join(root, "out");
+    const script = resolve("scripts/fix-next-static-html-lang.mjs");
+
+    try {
+      mkdirSync(join(out, "about"), { recursive: true });
+      mkdirSync(join(out, "zh-cn", "about"), { recursive: true });
+      writeFileSync(join(out, "about", "index.html"), '<html lang="zh-CN"><body></body></html>');
+      writeFileSync(join(out, "zh-cn", "about", "index.html"), '<html lang="en"><body></body></html>');
+      execFileSync(process.execPath, [script], {
+        cwd: root,
+        env: { ...process.env, NEXT_PUBLIC_REGION: "global", NEXT_WRITE_EDGEONE_BUILD_OUTPUT: "0" },
+        stdio: "pipe",
+      });
+
+      expect(readFileSync(join(out, "about", "index.html"), "utf8")).toContain('<html lang="en-US"');
+      expect(readFileSync(join(out, "zh-cn", "about", "index.html"), "utf8")).toContain('<html lang="zh-CN"');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("removes copied docs images when emitted output no longer references them", () => {
     const root = mkdtempSync(join(tmpdir(), "next-prune-docs-images-"));
     const out = join(root, "out");
