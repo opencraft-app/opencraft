@@ -67,6 +67,11 @@ func (f *fakeFlowStore) ListInProgressBefore(_ context.Context, _ time.Time, _ i
 
 type fakeCTLClient struct {
 	isolatePassFunc func(ctx context.Context, passID string, req *ctlclient.IsolatePassRequest) (*ctlclient.IsolatePassResponse, error)
+
+	// listPassesByResourceIDsFunc 用于注入 v1.7.31 前置幂等捷径的 ctl 查询结果。
+	// nil 时退化为返 errors.New(...) — 触发 handler 内部 best-effort 降级，等价于
+	// 旧测试场景（query 失败 → 继续走 §3.3 抢占式幂等）。
+	listPassesByResourceIDsFunc func(ctx context.Context, appID int64, passIDs []string) ([]*ctlclient.PassDetail, error)
 }
 
 func (f *fakeCTLClient) GetBundleByID(_ context.Context, _ string) (*ctlclient.BundleDetail, error) {
@@ -84,7 +89,10 @@ func (f *fakeCTLClient) ListPassAppIDs(_ context.Context, _ []string, _, _ int) 
 func (f *fakeCTLClient) ListPassesByAppID(_ context.Context, _ int64, _ []string, _, _ int) ([]*ctlclient.PassDetail, int64, error) {
 	return nil, 0, errors.New("ListPassesByAppID not used in isolateResource tests")
 }
-func (f *fakeCTLClient) ListPassesByResourceIDs(_ context.Context, _ int64, _ []string) ([]*ctlclient.PassDetail, error) {
+func (f *fakeCTLClient) ListPassesByResourceIDs(ctx context.Context, appID int64, passIDs []string) ([]*ctlclient.PassDetail, error) {
+	if f.listPassesByResourceIDsFunc != nil {
+		return f.listPassesByResourceIDsFunc(ctx, appID, passIDs)
+	}
 	return nil, errors.New("ListPassesByResourceIDs not used in isolateResource tests")
 }
 func (f *fakeCTLClient) IsolatePass(ctx context.Context, passID string, req *ctlclient.IsolatePassRequest) (*ctlclient.IsolatePassResponse, error) {

@@ -154,10 +154,53 @@ func makeHandler(deps Deps) jifei.Handler {
 			newDeadlinePtr = &nd
 		}
 
+		// (1b) 前置幂等查 ctl pass 状态（v1.7.31 新增；trade-pass-isolate §3.3 补丁）。
+		//
+		// 背景：jifei 永不放弃 isolateResource 重试（PDF §1.2），现网观察到对**已隔离**或
+		// **已销毁**的 pass 反复触发隔离回调（典型场景：账号到期重启、退费后再到期）。
+		// trade 原 §3.3 抢占式幂等仅识别"同一 isolate flow 仍在 in_progress"，对**已终态**
+		// 的隔离请求会再次抢锁 + 反向调 ctl IsolatePass — ctl 在 pass 已 isolated 或不存在
+		// 时会返 PASS_ISOLATED / 404，被 classifyCTLError 映射为 600302/600303，jifei 据此
+		// 持续重试，业务感知为"隔离一直失败"。
+		//
+		// 修复路径（与生命周期 / 退费两条业务分支一视同仁）：
+		//   - 调 ctl ListPassesByResourceIDs(appID, [resourceID]) 单元素反查（复用既有路径，
+		//     ctl 侧 SQL 不过滤 status，能拿到 isolated 态记录的 IsolatedTime）
+		//   - 命中"已隔离"（IsolatedTime != nil）或"已销毁/不存在"（返空数组）→ 直接幂等
+		//     返成功，**不带 flowId**（PDF isolateResource §2.2 data.flowId optional，
+		//     业务侧无 flow 反查需求），不抢 trade_flow slot、不调 ctl IsolatePass
+		//   - 查询失败（网络 / 超时 / 5xx 等）→ 不阻塞，best-effort 降级到原 §3.3 抢占式
+		//     幂等路径；新增的 ctl 查询故障不应让既有可用路径失活
+		//   - 此处不区分生命周期 / 退费分支：pass 已隔离意味着 expired_time 已到期，重写
+		//     newDeadline 无业务意义（与 §3.3 输家分支语义对齐）
+		appIDStr := fmt.Sprintf("%d", para.AppID)
+		idemCtx, idemCancel := context.WithTimeout(ctx, CTLCallTimeout)
+		passes, queryErr := deps.CTLClient.ListPassesByResourceIDs(idemCtx, para.AppID, []string{para.ResourceID})
+		idemCancel()
+		if queryErr == nil {
+			switch {
+			case len(passes) == 0:
+				// pass 不存在（已物理销毁 → INSERT history_pass + DELETE pass，或从未存在）
+				// 隔离语义已自然达成，幂等返成功不带 flowId
+				log.Printf("[isolateresource] idempotent-shortcut: pass not found (assumed destroyed); resourceID=%s appID=%d uin=%s hasDealName=%v",
+					para.ResourceID, para.AppID, para.Uin, hasDealName)
+				return deps.Builder.NewSuccess(map[string]any{}), nil
+			case passes[0].IsolatedTime != nil:
+				// pass 已处于 isolated 终态，隔离语义已达成，幂等返成功不带 flowId
+				log.Printf("[isolateresource] idempotent-shortcut: pass already isolated; resourceID=%s appID=%d uin=%s isolatedTime=%s hasDealName=%v",
+					para.ResourceID, para.AppID, para.Uin, passes[0].IsolatedTime.Format(time.RFC3339), hasDealName)
+				return deps.Builder.NewSuccess(map[string]any{}), nil
+			}
+			// pass 存在且 IsolatedTime == nil（active / isolating / renewing 等非终态）— 继续走原 §3.3 路径
+		} else {
+			// best-effort：ctl 查询故障不阻塞原路径，仅记日志降级
+			log.Printf("[isolateresource] idempotent-shortcut: ctl query failed (degrade to acquire-slot): resourceID=%s appID=%d err=%v",
+				para.ResourceID, para.AppID, queryErr)
+		}
+
 		// (2) §3.3 抢占式幂等 — TryAcquireSlotForIsolate
 		// 入参 appID 转 string（trade_flow.app_id 列是 VARCHAR(32)，与 createresource 保持一致）。
 		// dealNamePtr：退费场景会落入 trade_flow.deal_name作为审计 / 反查兑底键；生命周期场景走 NULL。
-		appIDStr := fmt.Sprintf("%d", para.AppID)
 		acquired, existing, err := deps.FlowStore.TryAcquireSlotForIsolate(
 			ctx, para.ResourceID, flowType, appIDStr, para.Uin, paraRaw, dealNamePtr,
 		)

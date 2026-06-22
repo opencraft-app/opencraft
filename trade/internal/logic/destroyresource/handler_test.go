@@ -65,10 +65,14 @@ func (f *fakeFlowStore) ListInProgressBefore(_ context.Context, _ time.Time, _ i
 	return nil, errors.New("ListInProgressBefore not used in destroyResource tests")
 }
 
-// fakeCTLClient 仅承载 destroyResource 测试需要的 DestroyPass 路径；
-// 其它 9 个方法返 unused error（避免误用）。
+// fakeCTLClient 仅承载 destroyResource 测试需要的 DestroyPass / ListPassesByResourceIDs 路径；
+// 其它方法返 unused error（避免误用）。
+//
+// listPassesByResourceIDsFunc 为 v1.7.31 destroy 前置幂等捷径新增：handler 在
+// TryAcquireSlotForIsolate 之前先查 pass 是否存在，不存在则直接幂等返成功。
 type fakeCTLClient struct {
-	destroyFunc func(ctx context.Context, passID string, req *ctlclient.DestroyPassRequest) (*ctlclient.DestroyPassResponse, error)
+	destroyFunc                 func(ctx context.Context, passID string, req *ctlclient.DestroyPassRequest) (*ctlclient.DestroyPassResponse, error)
+	listPassesByResourceIDsFunc func(ctx context.Context, appID int64, passIDs []string) ([]*ctlclient.PassDetail, error)
 }
 
 func (f *fakeCTLClient) GetBundleByID(_ context.Context, _ string) (*ctlclient.BundleDetail, error) {
@@ -86,8 +90,16 @@ func (f *fakeCTLClient) ListPassAppIDs(_ context.Context, _ []string, _, _ int) 
 func (f *fakeCTLClient) ListPassesByAppID(_ context.Context, _ int64, _ []string, _, _ int) ([]*ctlclient.PassDetail, int64, error) {
 	return nil, 0, errors.New("ListPassesByAppID not used in destroyResource tests")
 }
-func (f *fakeCTLClient) ListPassesByResourceIDs(_ context.Context, _ int64, _ []string) ([]*ctlclient.PassDetail, error) {
-	return nil, errors.New("ListPassesByResourceIDs not used in destroyResource tests")
+func (f *fakeCTLClient) ListPassesByResourceIDs(ctx context.Context, appID int64, passIDs []string) ([]*ctlclient.PassDetail, error) {
+	if f.listPassesByResourceIDsFunc != nil {
+		return f.listPassesByResourceIDsFunc(ctx, appID, passIDs)
+	}
+	// 默认返回单元素列表，表示 pass 仍存在 — 让原 handler_test.go 里那些不关心前置
+	// 幂等捷径的测试能继续走 TryAcquireSlotForIsolate 赢家/输家路径。
+	if len(passIDs) == 0 {
+		return []*ctlclient.PassDetail{}, nil
+	}
+	return []*ctlclient.PassDetail{{PassID: passIDs[0]}}, nil
 }
 func (f *fakeCTLClient) IsolatePass(_ context.Context, _ string, _ *ctlclient.IsolatePassRequest) (*ctlclient.IsolatePassResponse, error) {
 	return nil, errors.New("IsolatePass not used in destroyResource tests")

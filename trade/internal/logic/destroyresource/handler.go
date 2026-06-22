@@ -116,9 +116,45 @@ func makeHandler(deps Deps) jifei.Handler {
 		if err := validatePara(&para, expectedRegion); err != nil {
 			return deps.Builder.NewError(ReturnCodeInvalidPara, err.Error()), nil
 		}
+
+		// (1b) 前置幂等查 ctl pass 状态（参考 isolateresource v1.7.31 同构补丁）。
+		//
+		// 背景：jifei 对销毁链路同样存在重投行为（destroy ack 后 jifei 反查 queryFlow 终态，
+		// 若 trade 侧 trade_flow 已被 ctl 收尾 callback 标 completed/或被 reconcile worker 清理，
+		// jifei 在某些场景会再次下发 destroyResource）。trade 原 §3.4 抢占式幂等仅识别"同一
+		// destroy flow 仍在 in_progress"，对 pass 已被物理销毁（history_pass + DELETE pass）的
+		// 二次 destroy 请求会再次抢锁 + 反向调 ctl DestroyPass — ctl 因 pass 已不存在返
+		// PASS_NOT_FOUND/404，被 classifyCTLError 映射为 600403，业务感知为"销毁报错"。
+		//
+		// 修复路径：
+		//   - 调 ctl ListPassesByResourceIDs(appID, [resourceID]) 单元素反查（与 isolateresource
+		//     §3.3 补丁同构），命中"已销毁/不存在"（返空数组）→ 直接幂等返成功，**不带 flowId**
+		//     （PDF destroyResource §2.2 data.flowId 在销毁完成场景对业务侧无反查意义）
+		//   - 与 isolateresource 不同：pass 仍存在（无论状态是 active / isolated / deleting / terminating
+		//     等）都不能视为终态短路，必须继续走 §3.4 抢占式幂等推进销毁主链
+		//   - 查询失败（网络 / 超时 / 5xx 等）→ best-effort 降级到原 §3.4 抢占式幂等路径，
+		//     新增的 ctl 查询故障不应让既有可用路径失活
+		appIDStr := fmt.Sprintf("%d", para.AppID)
+		idemCtx, idemCancel := context.WithTimeout(ctx, CTLCallTimeout)
+		passes, queryErr := deps.CTLClient.ListPassesByResourceIDs(idemCtx, para.AppID, []string{para.ResourceID})
+		idemCancel()
+		if queryErr == nil {
+			if len(passes) == 0 {
+				// pass 不存在（已物理销毁 → INSERT history_pass + DELETE pass，或从未存在）
+				// 销毁语义已自然达成，幂等返成功不带 flowId
+				log.Printf("[destroyresource] idempotent-shortcut: pass not found (assumed destroyed); resourceID=%s appID=%d uin=%s",
+					para.ResourceID, para.AppID, para.Uin)
+				return deps.Builder.NewSuccess(map[string]any{}), nil
+			}
+			// pass 仍存在（active / isolated / deleting / terminating 等任何状态）— 继续走原 §3.4 路径
+		} else {
+			// best-effort：ctl 查询故障不阻塞原路径，仅记日志降级
+			log.Printf("[destroyresource] idempotent-shortcut: ctl query failed (degrade to acquire-slot): resourceID=%s appID=%d err=%v",
+				para.ResourceID, para.AppID, queryErr)
+		}
+
 		// (2) §3.4 抢占式幂等 — 复用 TryAcquireSlotForIsolate 范式（destroy 与 isolate 同型）。
 		// 入参 appID 转 string（trade_flow.app_id 列是 VARCHAR(32)，与 isolate / createresource 保持一致）。
-		appIDStr := fmt.Sprintf("%d", para.AppID)
 		acquired, existing, err := deps.FlowStore.TryAcquireSlotForIsolate(
 			ctx, para.ResourceID, flowType, appIDStr, para.Uin, paraRaw, nil, // destroy 链路不带 dealName，传 nil 表示生命周期场景
 		)
