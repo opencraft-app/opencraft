@@ -7,6 +7,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  fetchSkillFile,
+  fetchSkillFiles,
   fetchSkillSetDetail,
   fetchSkillSets,
   fetchSoulDetail,
@@ -21,6 +23,7 @@ function mockFetch(payload: unknown, status = 200): typeof globalThis.fetch {
     status,
     statusText: "OK",
     json: async () => payload,
+    text: async () => String(payload),
   })) as unknown as typeof globalThis.fetch;
   globalThis.fetch = fn;
   return fn;
@@ -79,6 +82,22 @@ describe("skillhub-api", () => {
       const fetchMock = mockFetch({ slug: "finance pack", skillSlugs: [] });
       await fetchSkillSetDetail("finance pack");
       expect(fetchMock).toHaveBeenCalledWith("/__skillhub/api/v1/skillsets/finance%20pack");
+    });
+  });
+
+  describe("fetchSkillFiles", () => {
+    it("uses the SkillHub public skill files endpoint", async () => {
+      const fetchMock = mockFetch({ files: [{ path: "SKILL.md", size: 1, sha256: "abc" }] });
+      await expect(fetchSkillFiles("tdd guide")).resolves.toEqual([{ path: "SKILL.md", size: 1, sha256: "abc" }]);
+      expect(fetchMock).toHaveBeenCalledWith("/__skillhub/api/v1/skills/tdd%20guide/files");
+    });
+  });
+
+  describe("fetchSkillFile", () => {
+    it("URL-encodes the slug and path", async () => {
+      const fetchMock = mockFetch("# Skill");
+      await fetchSkillFile("tdd guide", "docs/SKILL.md");
+      expect(fetchMock).toHaveBeenCalledWith("/__skillhub/api/v1/skills/tdd%20guide/file?path=docs%2FSKILL.md");
     });
   });
 

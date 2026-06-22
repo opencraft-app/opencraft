@@ -63,6 +63,8 @@ export interface SkillHubSkillSet {
   displayName: string;
   summary: string;
   remark: string;
+  scene?: SkillHubSkillSetScene;
+  subScene?: string;
   skillCount?: number;
   skillSlugs?: string[];
   createdAt: number;
@@ -78,6 +80,12 @@ export interface SkillHubSkillSetDetail extends SkillHubSkillSet {
 export interface SkillHubSkillSetListResponse {
   total?: number;
   skillSets: SkillHubSkillSet[];
+}
+
+export interface SkillHubSkillFileItem {
+  path: string;
+  size: number;
+  sha256: string;
 }
 
 // ─── 请求工具 ───────────────────────────────────────────────────────────────
@@ -135,4 +143,21 @@ export function fetchSkillSets(params?: {
 /** 查询单个 SkillHub 技能包详情 */
 export function fetchSkillSetDetail(slug: string): Promise<SkillHubSkillSetDetail> {
   return publicGet(`/api/v1/skillsets/${encodeURIComponent(slug)}`);
+}
+
+/** 获取单个 Skill 的文件列表 */
+export function fetchSkillFiles(slug: string): Promise<SkillHubSkillFileItem[]> {
+  return publicGet<{ files?: SkillHubSkillFileItem[] }>(`/api/v1/skills/${encodeURIComponent(slug)}/files`)
+    .then((response) => response.files ?? []);
+}
+
+/** 读取单个 Skill 的指定文件内容 */
+export async function fetchSkillFile(slug: string, path: string): Promise<string> {
+  const res = await fetch(
+    `${SKILLHUB_API_BASE}/api/v1/skills/${encodeURIComponent(slug)}/file?path=${encodeURIComponent(path)}`,
+  );
+  if (!res.ok) {
+    throw new Error(res.status === 404 ? "file not found" : `${res.status} ${res.statusText}`);
+  }
+  return res.text();
 }
