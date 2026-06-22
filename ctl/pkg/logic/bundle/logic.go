@@ -22,8 +22,14 @@ import (
 
 // BundleDetail 套餐详情
 type BundleDetail struct {
-	BundleID        string
-	BundleName      string
+	BundleID   string
+	BundleName string
+	// BundleType 套餐类型（必填）：
+	//   - free    : 免费试用套餐（bundle_id 以 bundle_free_trial 前缀开头）
+	//   - general : 普通付费套餐
+	//   - ai      : AI 增强付费套餐
+	// 取值由 ctl/pkg/model/bundle.BundleType* 常量统一约束。
+	BundleType      string
 	Description     string // JSON: [{"Key":"...","Value":"..."}]
 	BundleState     string
 	AgentQuota      int64
@@ -48,7 +54,9 @@ type BundleDetail struct {
 
 // ModifyBundleFields 可修改字段，指针类型
 type ModifyBundleFields struct {
-	BundleName      *string `json:"bundle_name,omitempty"`
+	BundleName *string `json:"bundle_name,omitempty"`
+	// BundleType 套餐类型，nil 表示不修改；非 nil 时必须为 free / general / ai。
+	BundleType      *string `json:"bundle_type,omitempty"`
 	Description     *string `json:"description,omitempty"`
 	BundleState     *string `json:"bundle_state,omitempty"`
 	AgentQuota      *int64  `json:"agent_quota,omitempty"`
@@ -69,12 +77,14 @@ type Logic interface {
 	// ImportBundle 导入套餐：不存在则创建，存在则覆盖性更新
 	// 执行三项强一致性校验（credit / plan / period），校验不通过直接返回错误。
 	//
+	// bundleType（必填）：free / general / ai，取值非法时返回 ErrBundleConfigInvalid。
+	//
 	// instanceSpecID（设计稿 Q4=a / Q-NAMING-1=a）：
 	//   - 空字符串 → 兼容期 fallback 到全局默认 spec-2c4g50g
 	//   - 非空 → 必须在 instancespec.KnownSpecs 字典中，否则报 ErrBundleInstanceSpecNotFound
-	ImportBundle(bundleID string, bundleName string, description string, agentQuota int64,
-		credit int64, timeSpan int, timeUnit string, aiGatewayPlanID string, instanceSpecID string,
-		staticSoldOut bool, salesAvailCount int, salesTotalCount int) (*BundleDetail, error)
+	ImportBundle(bundleID string, bundleName string, bundleType string, description string,
+		agentQuota int64, credit int64, timeSpan int, timeUnit string, aiGatewayPlanID string,
+		instanceSpecID string, staticSoldOut bool, salesAvailCount int, salesTotalCount int) (*BundleDetail, error)
 
 	// GetBundles 查询所有套餐（含 ONLINE 和 OFFLINE）
 	GetBundles() ([]*BundleDetail, error)
@@ -115,6 +125,23 @@ func mapTimeUnitToPlanPeriodUnit(timeUnit string) string {
 		return "days"
 	default:
 		return ""
+	}
+}
+
+// validateBundleType 校验 bundle_type 必填且取值 ∈ {free, general, ai}。
+//
+// 该字段是套餐分类标识，与 ai_gateway_plan_id / credit 等业务字段独立校验，
+// 不与 credit==0 / credit>0 联动（例如 free 套餐 credit 仍可为 0，ai 套餐
+// 需 ai_gateway_plan_id 由 validateCreditPlanPeriod 单独校验）。
+func validateBundleType(bundleType string) error {
+	switch bundleType {
+	case bundlemodel.BundleTypeFree, bundlemodel.BundleTypeGeneral, bundlemodel.BundleTypeAI:
+		return nil
+	default:
+		return errcode.Wrap(errcode.ErrBundleConfigInvalid,
+			"bundle_type must be one of {%q, %q, %q}, got %q",
+			bundlemodel.BundleTypeFree, bundlemodel.BundleTypeGeneral, bundlemodel.BundleTypeAI,
+			bundleType)
 	}
 }
 
@@ -176,9 +203,9 @@ func validateCreditPlanPeriod(credit int64, timeSpan int, timeUnit, aiGatewayPla
 	return nil
 }
 
-func (l *logic) ImportBundle(bundleID string, bundleName string, description string, agentQuota int64,
-	credit int64, timeSpan int, timeUnit string, aiGatewayPlanID string, instanceSpecID string,
-	staticSoldOut bool, salesAvailCount int, salesTotalCount int) (*BundleDetail, error) {
+func (l *logic) ImportBundle(bundleID string, bundleName string, bundleType string, description string,
+	agentQuota int64, credit int64, timeSpan int, timeUnit string, aiGatewayPlanID string,
+	instanceSpecID string, staticSoldOut bool, salesAvailCount int, salesTotalCount int) (*BundleDetail, error) {
 
 	if bundleID == "" {
 		return nil, errcode.ErrBundleConfigInvalid
@@ -188,6 +215,11 @@ func (l *logic) ImportBundle(bundleID string, bundleName string, description str
 	}
 	if salesAvailCount < 0 || salesTotalCount < 0 {
 		return nil, errcode.Wrap(errcode.ErrBundleConfigInvalid, "sales count must be >= 0")
+	}
+
+	// bundle_type 校验：必填且必须 ∈ {free, general, ai}
+	if err := validateBundleType(bundleType); err != nil {
+		return nil, err
 	}
 
 	// 三项一致性校验
@@ -209,6 +241,7 @@ func (l *logic) ImportBundle(bundleID string, bundleName string, description str
 	entity := &bundlemodel.Entity{
 		BundleID:              bundleID,
 		BundleName:            bundleName,
+		BundleType:            bundleType,
 		Description:           description,
 		BundleState:           bundlemodel.StateOffline, // 导入默认 OFFLINE
 		AgentQuota:            agentQuota,
@@ -256,6 +289,12 @@ func (l *logic) ModifyBundles(bundleIDs []string, req *ModifyBundleFields) (int6
 
 	if req.BundleName != nil {
 		updates[bundlemodel.ColumnBundleName] = *req.BundleName
+	}
+	if req.BundleType != nil {
+		if err := validateBundleType(*req.BundleType); err != nil {
+			return 0, err
+		}
+		updates[bundlemodel.ColumnBundleType] = *req.BundleType
 	}
 	if req.Description != nil {
 		if !json.Valid([]byte(*req.Description)) {
@@ -395,6 +434,7 @@ func entityToDetail(e *bundlemodel.Entity) *BundleDetail {
 	detail := &BundleDetail{
 		BundleID:              e.BundleID,
 		BundleName:            e.BundleName,
+		BundleType:            e.BundleType,
 		Description:           e.Description,
 		BundleState:           e.BundleState,
 		AgentQuota:            e.AgentQuota,

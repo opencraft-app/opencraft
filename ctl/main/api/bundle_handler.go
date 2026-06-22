@@ -137,6 +137,7 @@ func (h *bundleHandler) importBundle(w http.ResponseWriter, r *http.Request) {
 	detail, err := h.logic.ImportBundle(
 		req.BundleID,
 		req.BundleName,
+		req.BundleType,
 		string(descJSON),
 		req.AgentQuota,
 		req.Credit,
@@ -181,6 +182,7 @@ func (h *bundleHandler) modifyBundles(w http.ResponseWriter, r *http.Request) {
 
 	fields := &bundlelogic.ModifyBundleFields{
 		BundleName:            req.BundleName,
+		BundleType:            req.BundleType,
 		Description:           req.Description,
 		BundleState:           req.BundleState,
 		AgentQuota:            req.AgentQuota,
@@ -451,6 +453,7 @@ func detailToAdminResponse(d *bundlelogic.BundleDetail) *transport.BundleRespons
 	resp := &transport.BundleResponse{
 		BundleID:              d.BundleID,
 		BundleName:            d.BundleName,
+		BundleType:            d.BundleType,
 		Description:           parseJSONDescription(d.Description),
 		BundleState:           d.BundleState,
 		AgentQuota:            d.AgentQuota,
@@ -484,6 +487,7 @@ func detailToUserResponse(d *bundlelogic.BundleDetail, quote *tradeadapter.Bundl
 	resp := &transport.UserBundleResponse{
 		BundleID:         d.BundleID,
 		BundleName:       d.BundleName,
+		BundleType:       d.BundleType,
 		Description:      parseJSONDescription(d.Description),
 		BundleState:      d.BundleState,
 		AgentQuota:       d.AgentQuota,
@@ -536,6 +540,7 @@ func detailToInternalResponse(d *bundlelogic.BundleDetail) *transport.InternalBu
 	resp := &transport.InternalBundleDetail{
 		BundleID:              d.BundleID,
 		BundleName:            d.BundleName,
+		BundleType:            d.BundleType,
 		BundleState:           d.BundleState,
 		AgentQuota:            d.AgentQuota,
 		Credit:                d.Credit,

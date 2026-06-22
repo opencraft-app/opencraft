@@ -6,6 +6,7 @@ const (
 	TableName = "bundle"
 
 	ColumnBundleID              = "bundle_id"
+	ColumnBundleType            = "bundle_type"
 	ColumnBundleName            = "bundle_name"
 	ColumnDescription           = "description"
 	ColumnBundleState           = "bundle_state"
@@ -25,6 +26,15 @@ const (
 
 	SalesStateAvailable = "AVAILABLE"
 	SalesStateSoldOut   = "SOLD_OUT"
+
+	// 套餐分类枚举（Q-BUNDLE-TYPE 拍板）：
+	//   - BundleTypeFree    : 免费套餐（CreateTrialPass 链路，不下单不计费）
+	//   - BundleTypeGeneral : 通用付费套餐
+	//   - BundleTypeAI      : AI 套餐（前端独立展示样式）
+	// user-facing / admin / internal RPC 三处出参一律暴露该字段。
+	BundleTypeFree    = "free"
+	BundleTypeGeneral = "general"
+	BundleTypeAI      = "ai"
 
 	// 套餐周期单位
 	TimeUnitMonth = "m"
@@ -46,7 +56,10 @@ type DescriptionItem struct {
 type Entity struct {
 	model.BaseEntity
 
-	BundleID        string `gorm:"column:bundle_id;uniqueIndex:uk_bundle_id"`
+	BundleID string `gorm:"column:bundle_id;uniqueIndex:uk_bundle_id"`
+	// BundleType 套餐分类，枚举值见 BundleTypeFree / BundleTypeGeneral / BundleTypeAI。
+	// user-facing / admin / internal RPC 三处出参均会暴露该字段；前端按值切换展示样式。
+	BundleType      string `gorm:"column:bundle_type"`
 	BundleName      string `gorm:"column:bundle_name"`
 	Description     string `gorm:"column:description;type:text"` // JSON: [{"Key":"...","Value":"..."}]
 	BundleState     string `gorm:"column:bundle_state;index:idx_bundle_state"`
