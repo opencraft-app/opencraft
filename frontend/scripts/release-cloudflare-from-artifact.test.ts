@@ -137,7 +137,7 @@ describe("Cloudflare release from frontend artifact", () => {
     expect(() => executeCloudflareArtifactRelease({
       env: {
         ...baseEnv,
-        FRONTEND_RELEASE_MATRIX: "eo:cn-lightvela-prod",
+        FRONTEND_RELEASE_MATRIX: "eo:cn-lightvela-prod-next",
       },
       log: () => {},
       verifyArtifact: () => ({ manifest: makeCfManifest(), ref: cnRef, extractDir: "/tmp/dist" }),

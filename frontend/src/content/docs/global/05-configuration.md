@@ -58,7 +58,7 @@ LightVela 的所有配置集中在「我的 Hermes」管理台中，由三个配
 
 ### 1. 通道（Channels）
 
-![](./images/4-2.png)
+![](./images/4-2.webp)
 
 **用途**：将 Hermes 接入聊天平台，为用户提供对话入口。
 
@@ -82,7 +82,7 @@ LightVela 的所有配置集中在「我的 Hermes」管理台中，由三个配
 
 ### 2. 模型（Models）
 
-![](./images/4-1.png)
+![](./images/4-1.webp)
 
 **用途**：为 Hermes 配置大语言模型。启航套餐预置 100 体验积分，也可跳过此步骤直接使用，待积分耗尽后再配置。
 
@@ -98,7 +98,7 @@ LightVela 的所有配置集中在「我的 Hermes」管理台中，由三个配
 
 ### 3. 技能（Skills）
 
-![](./images/4-3.png)
+![](./images/4-3.webp)
 
 **用途**：扩展 Hermes 的能力，例如整理待办、生成日报、联网搜索等。
 

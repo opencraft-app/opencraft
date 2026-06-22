@@ -1,6 +1,5 @@
 import type { HTMLAttributes, ReactNode } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
 
@@ -51,13 +50,9 @@ describe("UserAvatarMenu", () => {
       },
     });
 
-    render(
-      <MemoryRouter>
-        <UserAvatarMenu />
-      </MemoryRouter>,
-    );
+    render(<UserAvatarMenu />);
 
-    fireEvent.mouseEnter(screen.getByRole("button"));
+    fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
 
     expect(screen.getByText("套餐：专业版套餐")).toBeInTheDocument();
     expect(screen.queryByText(/^未订阅$/)).not.toBeInTheDocument();
@@ -75,14 +70,28 @@ describe("UserAvatarMenu", () => {
       activePass: null,
     });
 
-    render(
-      <MemoryRouter>
-        <UserAvatarMenu />
-      </MemoryRouter>,
-    );
+    render(<UserAvatarMenu />);
 
-    fireEvent.mouseEnter(screen.getByRole("button"));
+    fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
 
     expect(screen.getByText(/^未订阅$/)).toBeInTheDocument();
+  });
+
+  it("renders without a React Router context", () => {
+    useSession.mockReturnValue({
+      session: {
+        user: { name: "海盐小猫", avatarUrl: "https://example.com/avatar.png" },
+        currentSubscription: { code: "launch" },
+      },
+      signOut: vi.fn(),
+    });
+    useOpenClaw.mockReturnValue({
+      activePass: null,
+    });
+
+    render(<UserAvatarMenu />);
+
+    expect(screen.getByRole("link", { name: "avatar" })).toHaveAttribute("href", "/account");
+    expect(screen.getByRole("button", { name: "打开用户菜单" })).toBeInTheDocument();
   });
 });

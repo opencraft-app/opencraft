@@ -1,12 +1,3 @@
-// ⚠️ 必须最先 import：本模块在加载时同步完成两件事：
-//   1. 设置 `window.VERSION = "en"`（tea-app i18n 模块加载时据此决定 lng）
-//   2. 同步调用 SDK 的 `initI18n({ translation })` 注入词条
-// 这两步必须在任何 SDK 组件渲染之前完成，否则 SDK 内部的模块级缓存
-// （如 `cachedI18nList`、`MODEL_PROVIDER_LIST` 首次访问）会在 i18next
-// 未 init 状态下调用 t() 得到 undefined，被 ChannelPanel 的过滤逻辑剔除。
-// 语言由 @/lib/region 的 isGlobal + localStorage('lw-locale') 决定。
-import "@/lib/i18n-env";
-
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight,
@@ -42,9 +33,8 @@ import {
   Wrench,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { useState, useEffect, useCallback, useRef, useMemo, type ChangeEvent } from "react";
+import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo, type ChangeEvent, type ComponentType } from "react";
 import { createPortal } from "react-dom";
-import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
@@ -58,6 +48,8 @@ import { useT, t as rawT } from "@/i18n/t";
 import { isGlobal } from "@/lib/region";
 import { useSession } from "@/contexts/session-context";
 import { avatarImageUrl } from "@/lib/avatar-image";
+import { useAppLocation, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
+import { markAgentChatLoadedInDocument } from "@/lib/agentchat-navigation-guard";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
 import { AUTH_SERVICE_UNAVAILABLE_MESSAGE, readStoredAuthToken } from "@/repositories/http-repositories";
 import {
@@ -67,16 +59,6 @@ import {
   type AgentSectionId,
 } from "@/router/paths";
 import type { WorkerActionStatusResult } from "@/repositories/types";
-import {
-  ModelPanel,
-  ChannelPanel,
-  SkillPanel,
-  createLighthouseConfig,
-  type IInstanceInfo,
-  type IFeatureFlags,
-  type IProductConfig,
-} from "@tencent/tea-sdk-lightclaw";
-import { createLightClawScripts } from "@tencent/tea-sdk-lightclaw/scripts";
 import {
   createMonoDebugExecAdapter,
 } from "@/pages/marketing/openclaw-tat-adapter";
@@ -124,9 +106,174 @@ import {
   RESET_BLOCK_REASON,
 } from "@/pages/marketing/openclaw-reset-config";
 import { toast } from "@/lib/toast";
-import "@tencent/tea-sdk-lightclaw/styles";
-// LightVela 对话面板（npm 包 @tencent/agentchat-lightvela-panel）
-import { LightVelaPanel } from "@tencent/agentchat-lightvela-panel";
+
+// AgentChat carries side-effect CSS. Keep it out of the agents shell until the chat tab is actually rendered.
+const LightVelaPanel = lazy(() =>
+  import("@tencent/agentchat-lightvela-panel").then((module) => {
+    markAgentChatLoadedInDocument();
+    return { default: module.LightVelaPanel };
+  }),
+);
+
+type TeaSdkInstanceInfo = {
+  InstanceId: string;
+  RegionId: number;
+};
+
+type TeaSdkFeatureFlags = {
+  gateway: boolean;
+  channel: boolean;
+  wecomChannel: boolean;
+  adpChannel: boolean;
+  wecomLongConn: boolean;
+  yuanbaoChannel: boolean;
+  weixinChannel: boolean;
+  qrConfig: boolean;
+  skills: boolean;
+  webUI: boolean;
+  memoryManagement: boolean;
+  memoryV2: boolean;
+  qqbotplugin: boolean;
+};
+
+type TeaSdkProductConfig = {
+  acliProduct: "lightvela";
+  runCommand: unknown;
+  getInvocationTask: unknown;
+  [key: string]: unknown;
+};
+
+type TeaSdkPanelProps = {
+  instance: TeaSdkInstanceInfo;
+  featureFlags: TeaSdkFeatureFlags;
+  productConfig: TeaSdkProductConfig;
+};
+
+type TeaSdkRuntime = {
+  ChannelPanel: ComponentType<TeaSdkPanelProps>;
+  ModelPanel: ComponentType<TeaSdkPanelProps>;
+  SkillPanel: ComponentType<TeaSdkPanelProps>;
+  createProductConfig: (args: {
+    runCommand: TeaSdkProductConfig["runCommand"];
+    getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
+  }) => TeaSdkProductConfig;
+  getGatewayRestartCommand: () => string;
+  getProviderSaveCommand: (config: {
+    name: string;
+    baseUrl: string;
+    api: string;
+    apiKey: string;
+    models: Array<{ id: string; name: string }>;
+  }) => string;
+  getModelSwitchCommand: (modelFullId: string) => string;
+};
+
+let teaSdkRuntimePromise: Promise<TeaSdkRuntime> | null = null;
+
+function loadTeaSdkRuntime(): Promise<TeaSdkRuntime> {
+  if (!teaSdkRuntimePromise) {
+    teaSdkRuntimePromise = (async () => {
+      // Keep TEA SDK out of the module graph evaluated by Next static prerender.
+      // The SDK reads browser globals at module scope, so it must be initialized
+      // only inside the hydrated agents page before its panels render.
+      await import("@/lib/i18n-env");
+      await import("@tencent/tea-sdk-lightclaw/styles");
+      const [sdk, scriptsModule] = await Promise.all([
+        import("@tencent/tea-sdk-lightclaw"),
+        import("@tencent/tea-sdk-lightclaw/scripts"),
+      ]);
+      const lightVelaHermesScripts = scriptsModule.createLightClawScripts();
+      const hermesScripts = lightVelaHermesScripts.hermes;
+      const hermesGatewayCommands = hermesScripts.gateway;
+      const hermesModelCommands = hermesScripts.model;
+
+      return {
+        ChannelPanel: sdk.ChannelPanel as unknown as ComponentType<TeaSdkPanelProps>,
+        ModelPanel: sdk.ModelPanel as unknown as ComponentType<TeaSdkPanelProps>,
+        SkillPanel: sdk.SkillPanel as unknown as ComponentType<TeaSdkPanelProps>,
+        createProductConfig: ({ runCommand, getInvocationTask }) => ({
+          ...sdk.createLighthouseConfig({
+            agentType: "hermes",
+            supportsTencentCloudApi: false,
+            isI18n: isGlobal,
+          }),
+          acliProduct: "lightvela",
+          runCommand,
+          getInvocationTask,
+        }),
+        getGatewayRestartCommand: () => hermesGatewayCommands.getRestartCommand(),
+        getProviderSaveCommand: (config) => hermesModelCommands.getProviderSaveCommand(config),
+        getModelSwitchCommand: (modelFullId) => hermesModelCommands.getModelSwitchCommand(modelFullId),
+      };
+    })();
+  }
+  return teaSdkRuntimePromise;
+}
+
+function TeaSdkSettingsPanel({
+  kind,
+  instance,
+  featureFlags,
+  productConfigArgs,
+}: {
+  kind: "channel" | "model" | "skill";
+  instance: TeaSdkInstanceInfo;
+  featureFlags: TeaSdkFeatureFlags;
+  productConfigArgs: {
+    runCommand: TeaSdkProductConfig["runCommand"];
+    getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
+  };
+}) {
+  const t = useT();
+  const [runtime, setRuntime] = useState<TeaSdkRuntime | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadTeaSdkRuntime()
+      .then((nextRuntime) => {
+        if (!cancelled) setRuntime(nextRuntime);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (error) {
+    return (
+      <div className="rounded-md border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+        {t("加载配置面板失败：{{message}}", { message: error })}
+      </div>
+    );
+  }
+
+  if (!runtime) {
+    return (
+      <div className="flex items-center justify-center rounded-md border border-black/[0.06] bg-white py-16 text-sm text-black/45">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        {t("加载中...")}
+      </div>
+    );
+  }
+
+  const Panel =
+    kind === "channel"
+      ? runtime.ChannelPanel
+      : kind === "model"
+        ? runtime.ModelPanel
+        : runtime.SkillPanel;
+
+  return (
+    <Panel
+      instance={instance}
+      featureFlags={featureFlags}
+      productConfig={runtime.createProductConfig(productConfigArgs)}
+    />
+  );
+}
 
 /* ─── Types ─── */
 
@@ -2859,10 +3006,6 @@ const getBotStatusLabel = (status: OpenClawBot["status"]) => {
 
 /* ─── Main Settings Page ─── */
 
-const lightVelaHermesScripts = createLightClawScripts();
-const hermesScripts = lightVelaHermesScripts.hermes;
-const hermesGatewayCommands = hermesScripts.gateway;
-const hermesModelCommands = hermesScripts.model;
 const RESCUE_EXPORT_POLL_INTERVAL_MS = 5000;
 const HERMES_WORKSPACE_EXPORT_PATH = "/home/agentuser/.hermes";
 const RESCUE_EXPORT_TERMINAL_PHASES = new Set(["completed", "failed"]);
@@ -2872,12 +3015,17 @@ const isRescueExportRunning = (status: WorkerActionStatusResult | null | undefin
   return !RESCUE_EXPORT_TERMINAL_PHASES.has(status.phase);
 };
 
-export const OpenClawSettingsPage = () => {
+export const OpenClawSettingsPage = ({
+  sectionSlug,
+  showHeader = true,
+}: {
+  sectionSlug?: string;
+  showHeader?: boolean;
+} = {}) => {
   const t = useT();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const { section: sectionSlug } = useParams<{ section?: string }>();
-  const [searchParams] = useSearchParams();
+  const navigate = useAppNavigate();
+  const location = useAppLocation();
+  const [searchParams] = useAppSearchParams();
   const creatingParam = searchParams.get("creating")?.trim() ?? "";
   const requestedCreatingBotId = creatingParam && creatingParam !== "true" ? creatingParam : "";
   const { bots, botsLoading, deleteBot, user, refreshBots, isSubscribed, addBot } = useOpenClaw();
@@ -2925,6 +3073,11 @@ export const OpenClawSettingsPage = () => {
   const sectionFromPath = getAgentSectionFromSlug(sectionSlug);
   const shouldRedirectToAgents = Boolean(sectionSlug && !isAgentSectionAvailable(sectionFromPath));
   const activeSection = shouldRedirectToAgents ? DEFAULT_AGENT_SECTION : sectionFromPath ?? DEFAULT_AGENT_SECTION;
+
+  useEffect(() => {
+    if (!shouldRedirectToAgents) return;
+    navigate({ pathname: AGENTS_HOME_PATH, search: location.search }, { replace: true });
+  }, [location.search, navigate, shouldRedirectToAgents]);
 
   /* Tab 切换 */
   const [activeTabId, setActiveTabId] = useState((visibleBots[0]?.id ?? requestedCreatingBotId) || "creating");
@@ -3154,7 +3307,8 @@ export const OpenClawSettingsPage = () => {
         );
       }
 
-      const restartResult = await repositories.bots.execDebugCommand(activeBotId, hermesGatewayCommands.getRestartCommand());
+      const teaSdkRuntime = await loadTeaSdkRuntime();
+      const restartResult = await repositories.bots.execDebugCommand(activeBotId, teaSdkRuntime.getGatewayRestartCommand());
       const restartError = buildRestartErrorMessage(restartResult);
       if (restartError) {
         await loadHermesMemory({ clearSnapshot: false });
@@ -3298,7 +3452,8 @@ export const OpenClawSettingsPage = () => {
         );
       }
 
-      const providerSaveCmd = hermesModelCommands.getProviderSaveCommand({
+      const teaSdkRuntime = await loadTeaSdkRuntime();
+      const providerSaveCmd = teaSdkRuntime.getProviderSaveCommand({
         name: result.config.providerName,
         baseUrl: result.config.baseUrl,
         api: result.config.api,
@@ -3320,7 +3475,7 @@ export const OpenClawSettingsPage = () => {
         );
       }
 
-      const switchModelCmd = hermesModelCommands.getModelSwitchCommand(
+      const switchModelCmd = teaSdkRuntime.getModelSwitchCommand(
         hermesSwitchModelFullId(result.config.providerName, result.config.modelId),
       );
       const switchModelResult = await repositories.bots.execDebugCommand(targetBotId, switchModelCmd);
@@ -3412,7 +3567,8 @@ export const OpenClawSettingsPage = () => {
     setRestartingBotIds((prev) => new Set(prev).add(targetBotId));
     setRestartErrors((prev) => clearErrorForBot(prev, targetBotId));
     try {
-      const result = await repositories.bots.execDebugCommand(targetBotId, hermesGatewayCommands.getRestartCommand());
+      const teaSdkRuntime = await loadTeaSdkRuntime();
+      const result = await repositories.bots.execDebugCommand(targetBotId, teaSdkRuntime.getGatewayRestartCommand());
       const errorMsg = buildRestartErrorMessage(result);
       if (errorMsg) {
         setRestartErrors((prev) => setErrorForBot(prev, targetBotId, errorMsg));
@@ -4064,12 +4220,12 @@ export const OpenClawSettingsPage = () => {
   ) : null;
 
   if (shouldRedirectToAgents) {
-    return <Navigate to={{ pathname: AGENTS_HOME_PATH, search: location.search }} replace />;
+    return null;
   }
 
   return (
     <div className="flex min-h-screen flex-col bg-white" style={{ color: "rgba(0,0,0,0.90)" }}>
-      <ProductReturnHomeHeader reloadLanguageAfterSwitch />
+      {showHeader && <ProductReturnHomeHeader reloadLanguageAfterSwitch />}
 
       {/* Delete Confirm Dialog */}
       {showDeleteConfirm && activeBot && createPortal(
@@ -4371,11 +4527,11 @@ export const OpenClawSettingsPage = () => {
           {/* ── 设置区域 ── */}
           {!isCreating && !botsLoading && activeBot && (
             (() => {
-              const sdkInstance: IInstanceInfo = {
+              const sdkInstance: TeaSdkInstanceInfo = {
                 InstanceId: activeBot.id,
                 RegionId: 1,
               };
-              const sdkFeatureFlags: IFeatureFlags = {
+              const sdkFeatureFlags: TeaSdkFeatureFlags = {
                 gateway: true,
                 channel: true,
                 wecomChannel: true,
@@ -4390,13 +4546,7 @@ export const OpenClawSettingsPage = () => {
                 memoryV2: false,
                 qqbotplugin: false,
               };
-              const sdkProductConfig: IProductConfig & { acliProduct: "lightvela" } = {
-                ...createLighthouseConfig({
-                  agentType: "hermes",
-                  supportsTencentCloudApi: false,
-                  isI18n: isGlobal,
-                }),
-                acliProduct: "lightvela",
+              const sdkProductConfigArgs = {
                 runCommand: commandAdapter.runCommand,
                 getInvocationTask: commandAdapter.getInvocationTask,
               };
@@ -4646,24 +4796,27 @@ export const OpenClawSettingsPage = () => {
                       >
                         <div className="_lh-claw-bot-panel__cards min-w-0">
                           {activeSection === "channel" && (
-                            <ChannelPanel
+                            <TeaSdkSettingsPanel
+                              kind="channel"
                               instance={sdkInstance}
                               featureFlags={sdkFeatureFlags}
-                              productConfig={sdkProductConfig}
+                              productConfigArgs={sdkProductConfigArgs}
                             />
                           )}
                           {activeSection === "model" && (
-                            <ModelPanel
+                            <TeaSdkSettingsPanel
+                              kind="model"
                               instance={sdkInstance}
                               featureFlags={sdkFeatureFlags}
-                              productConfig={sdkProductConfig}
+                              productConfigArgs={sdkProductConfigArgs}
                             />
                           )}
                           {activeSection === "skill" && (
-                            <SkillPanel
+                            <TeaSdkSettingsPanel
+                              kind="skill"
                               instance={sdkInstance}
                               featureFlags={sdkFeatureFlags}
-                              productConfig={sdkProductConfig}
+                              productConfigArgs={sdkProductConfigArgs}
                             />
                           )}
                           {activeSection === "buddy" && !isGlobal && (
@@ -4724,22 +4877,30 @@ export const OpenClawSettingsPage = () => {
                                 </div>
                               )}
                               {launchTokenStatus === "ready" && launchToken && accountId && (
-                                <LightVelaPanel
-                                  instanceIds={[sdkInstance.InstanceId]}
-                                  instanceId={sdkInstance.InstanceId}
-                                  region="ap-guangzhou"
-                                  userId={accountId}
-                                  product="lightvela"
-                                  lightvelaApiParams={{
-                                    businessCode: "lightvela",
-                                    token: launchToken,
-                                  }}
-                                  commandExecutor={lightvelaCommandExecutor}
-                                  features={{
-                                    autoActivate: true,
-                                    nativeWsGray: true,
-                                  }}
-                                />
+                                <Suspense
+                                  fallback={(
+                                    <div className="flex h-full items-center justify-center p-6 text-sm text-black/60">
+                                      {t("正在加载 AgentChat…")}
+                                    </div>
+                                  )}
+                                >
+                                  <LightVelaPanel
+                                    instanceIds={[sdkInstance.InstanceId]}
+                                    instanceId={sdkInstance.InstanceId}
+                                    region="ap-guangzhou"
+                                    userId={accountId}
+                                    product="lightvela"
+                                    lightvelaApiParams={{
+                                      businessCode: "lightvela",
+                                      token: launchToken,
+                                    }}
+                                    commandExecutor={lightvelaCommandExecutor}
+                                    features={{
+                                      autoActivate: true,
+                                      nativeWsGray: true,
+                                    }}
+                                  />
+                                </Suspense>
                               )}
                             </div>
                           )}

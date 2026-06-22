@@ -79,7 +79,9 @@ export const isEnglishEnv: boolean = (() => {
 // 的第一个 import）。
 if (isEnglishEnv) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (window as any).VERSION = "en";
+  if (typeof window !== "undefined") {
+    (window as any).VERSION = "en";
+  }
 }
 
 // ── 步骤 2：同步注册 SDK i18n 词条 ──

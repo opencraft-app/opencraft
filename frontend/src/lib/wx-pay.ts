@@ -158,7 +158,7 @@ function buildBridgeUrl(input: BuildPayPlanInput & { expiresAt: number }): strin
 
 function resolveBridgeBaseUrl(override?: string): string {
   if (override) return override;
-  const fromEnv = import.meta.env.VITE_WX_PAY_BRIDGE_BASE_URL;
+  const fromEnv = import.meta.env?.VITE_WX_PAY_BRIDGE_BASE_URL;
   if (typeof fromEnv === "string" && fromEnv.length > 0) return fromEnv;
   if (typeof window !== "undefined") {
     return `${window.location.origin}/auth/wechat-pay`;
@@ -168,7 +168,7 @@ function resolveBridgeBaseUrl(override?: string): string {
 }
 
 function readSandboxFromEnv(): boolean {
-  return import.meta.env.VITE_MIDAS_SANDBOX === "true";
+  return import.meta.env?.VITE_MIDAS_SANDBOX === "true";
 }
 
 /**

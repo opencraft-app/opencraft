@@ -1,16 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SiteHeader } from "@/components/site/site-header";
-
-let sessionState = {
-  authReady: true,
-  isAuthenticated: false,
-};
-
-vi.mock("@/contexts/session-context", () => ({
-  useSession: () => sessionState,
-}));
+import { PublicSiteHeader } from "@/components/site/public-site-header";
 
 vi.mock("@/components/site/user-avatar-menu", () => ({
   UserAvatarMenu: () => <button type="button">avatar menu</button>,
@@ -26,22 +16,15 @@ afterEach(() => {
   cleanup();
 });
 
-describe("SiteHeader", () => {
+describe("PublicSiteHeader", () => {
   beforeEach(() => {
-    sessionState = {
-      authReady: true,
-      isAuthenticated: false,
-    };
+    window.history.replaceState(null, "", "/");
   });
 
   it("shows unified navigation and anonymous actions", () => {
     const onLoginClick = vi.fn();
 
-    render(
-      <MemoryRouter initialEntries={["/"]}>
-        <SiteHeader onLoginClick={onLoginClick} />
-      </MemoryRouter>,
-    );
+    render(<PublicSiteHeader onLoginClick={onLoginClick} onCreateClick={onLoginClick} />);
 
     expect(screen.getByRole("link", { name: "LightVela" })).toHaveAttribute("href", "/");
     expect(screen.getByRole("link", { name: "概览" })).toHaveAttribute("href", "/");
@@ -54,17 +37,23 @@ describe("SiteHeader", () => {
     expect(onLoginClick).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps auth actions hidden while the session is hydrating", () => {
-    sessionState = {
-      authReady: false,
-      isAuthenticated: false,
-    };
-
+  it("uses the injected public link renderer for logo and navigation links", () => {
     render(
-      <MemoryRouter initialEntries={["/"]}>
-        <SiteHeader onLoginClick={vi.fn()} />
-      </MemoryRouter>,
+      <PublicSiteHeader
+        renderLink={({ ariaLabel, children, ...props }) => (
+          <a {...props} aria-label={ariaLabel} data-next-link="true">
+            {children}
+          </a>
+        )}
+      />,
     );
+
+    expect(screen.getByRole("link", { name: "LightVela" })).toHaveAttribute("data-next-link", "true");
+    expect(screen.getByRole("link", { name: "产品文档" })).toHaveAttribute("data-next-link", "true");
+  });
+
+  it("keeps auth actions hidden while the session is hydrating", () => {
+    render(<PublicSiteHeader authSnapshot={{ authReady: false, isAuthenticated: false }} onLoginClick={vi.fn()} />);
 
     expect(screen.queryByRole("button", { name: "立即创建" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "登录" })).not.toBeInTheDocument();
@@ -72,16 +61,7 @@ describe("SiteHeader", () => {
   });
 
   it("shows the avatar menu for signed-in users instead of legacy marketing actions", () => {
-    sessionState = {
-      authReady: true,
-      isAuthenticated: true,
-    };
-
-    render(
-      <MemoryRouter initialEntries={["/dashboard/settings"]}>
-        <SiteHeader onLoginClick={vi.fn()} />
-      </MemoryRouter>,
-    );
+    render(<PublicSiteHeader authSnapshot={{ authReady: true, isAuthenticated: true }} currentPath="/dashboard/settings" onLoginClick={vi.fn()} />);
 
     expect(screen.getByRole("button", { name: "avatar menu" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "退出" })).not.toBeInTheDocument();
@@ -92,11 +72,7 @@ describe("SiteHeader", () => {
   it("keeps mobile menu navigation and creation action together", () => {
     const onLoginClick = vi.fn();
 
-    render(
-      <MemoryRouter initialEntries={["/about"]}>
-        <SiteHeader onLoginClick={onLoginClick} />
-      </MemoryRouter>,
-    );
+    render(<PublicSiteHeader currentPath="/about" onLoginClick={onLoginClick} />);
 
     fireEvent.click(screen.getByRole("button", { name: "打开菜单" }));
 

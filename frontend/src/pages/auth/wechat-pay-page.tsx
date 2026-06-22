@@ -43,13 +43,14 @@
  * 联调文档：codesign/ctl-frontend-billing-api.md §2.2 / §3.3
  */
 
+"use client";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useLocation } from "react-router-dom";
 import type { WXSignOption } from "@tencent/tcb-jssdk/lib/saasSdk/wxSign";
 
-import { redirectToOAuthStart } from "@/lib/oauth";
+import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
+import { redirectBrowserTo } from "@/lib/browser-redirect";
 import { BRIDGE_QUERY_KEYS } from "@/lib/wx-pay";
-import { createRepositories } from "@/repositories/http-repositories";
 import type { CreatePassOrderUrlResult } from "@/domain/types";
 
 /* ─── 公开类型 ─── */
@@ -91,11 +92,66 @@ const DEFAULT_TITLE = "LightVela 购买";
 const OPEN_ID_PARAM_NAMES = ["openid", "open_id", "openId", "wx_openid", "wxOpenId"];
 const DEFAULT_WECHAT_PAY_AUTH_BASE_URL = "https://lightclaw.tech";
 const OPEN_ID_AUTH_ATTEMPTED_PARAM = "openid_auth_attempted";
+const AUTH_TOKEN_STORAGE_KEY = "lightclaw-auth-token-v1";
+
+interface APIEnvelope<T> {
+  code: string;
+  message: string;
+  data: T;
+  request_id?: string;
+}
+
+interface ApiErrorPayload {
+  code?: string;
+  error?: string;
+  message?: string;
+  request_id?: string;
+  requestId?: string;
+}
+
+class WeChatPayRequestError extends Error {
+  status: number;
+  code?: string;
+
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.name = "RepositoryError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+function readBrowserLocation() {
+  if (typeof window === "undefined") {
+    return { hash: "", search: "" };
+  }
+  return {
+    hash: window.location.hash,
+    search: window.location.search,
+  };
+}
+
+function useWechatPayLocation() {
+  const [location, setLocation] = useState(readBrowserLocation);
+
+  useEffect(() => {
+    const syncLocation = () => setLocation(readBrowserLocation());
+    window.addEventListener("hashchange", syncLocation);
+    window.addEventListener("popstate", syncLocation);
+    syncLocation();
+    return () => {
+      window.removeEventListener("hashchange", syncLocation);
+      window.removeEventListener("popstate", syncLocation);
+    };
+  }, []);
+
+  return location;
+}
 
 /* ─── 主组件 ─── */
 
 export const WeChatPayPage = () => {
-  const location = useLocation();
+  const location = useWechatPayLocation();
   const [stage, setStage] = useState<BridgeStage>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [paymentStarted, setPaymentStarted] = useState(false);
@@ -129,7 +185,7 @@ export const WeChatPayPage = () => {
     if (!inWeChat || openId || oauthError || openIdAuthAttempted) {
       return;
     }
-    redirectToOAuthStart(buildWeChatPayOpenIdStartUrl(window.location.href));
+    redirectBrowserTo(buildWeChatPayOpenIdStartUrl(window.location.href));
   }, [inWeChat, oauthError, openId, openIdAuthAttempted]);
 
   /**
@@ -518,7 +574,6 @@ async function fetchOrderUrl(
   order: BridgeOrder,
   openId: string,
 ): Promise<CreatePassOrderUrlResult> {
-  const repositories = createRepositories();
   const baseInput = {
     deal_names: [order.dealName],
     platform: "mobile" as const,
@@ -527,9 +582,71 @@ async function fetchOrderUrl(
   };
 
   if (order.passId) {
-    return repositories.plans.getRenewOrderUrl(order.passId, baseInput);
+    return requestWechatPayEnvelope<CreatePassOrderUrlResult>(
+      `/v1/passes/${encodeURIComponent(order.passId)}/renew/order-url`,
+      baseInput,
+    );
   }
-  return repositories.plans.getPassOrderUrl(baseInput);
+  return requestWechatPayEnvelope<CreatePassOrderUrlResult>("/v1/passes/order-url", baseInput);
+}
+
+async function requestWechatPayEnvelope<T>(path: string, body: unknown): Promise<T> {
+  const payload = await requestWechatPayJSON<APIEnvelope<T>>(path, body);
+  return payload.data;
+}
+
+async function requestWechatPayJSON<T>(path: string, body: unknown): Promise<T> {
+  const baseUrl = resolveConfiguredAuthApiBaseUrl();
+  if (baseUrl === null) {
+    throw new WeChatPayRequestError("支付服务暂时不可用，请稍后重试。", 0, "network_error");
+  }
+
+  const headers = new Headers({ "Content-Type": "application/json" });
+  const authToken = readStoredAuthToken();
+  if (authToken) {
+    headers.set("Authorization", `Bearer ${authToken}`);
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}${path}`, {
+      method: "POST",
+      credentials: "include",
+      headers,
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new WeChatPayRequestError("支付服务暂时不可用，请稍后重试。", 0, "network_error");
+  }
+
+  if (!response.ok) {
+    throw await parseWechatPayAPIError(response);
+  }
+
+  return (await response.json()) as T;
+}
+
+async function parseWechatPayAPIError(response: Response): Promise<WeChatPayRequestError> {
+  let payload: ApiErrorPayload | null = null;
+  try {
+    payload = (await response.json()) as ApiErrorPayload;
+  } catch {
+    payload = null;
+  }
+
+  const code = payload?.code?.trim() || payload?.error?.trim();
+  const requestId = payload?.request_id?.trim() || payload?.requestId?.trim();
+  const detail = [code, requestId ? `request_id=${requestId}` : ""].filter(Boolean).join(", ");
+  const message = payload?.message?.trim() || payload?.error?.trim() || `请求失败（${response.status}）`;
+  return new WeChatPayRequestError(detail ? `${message}（${detail}）` : message, response.status, code);
+}
+
+function readStoredAuthToken(): string | null {
+  if (typeof globalThis === "undefined") return null;
+  const storage = globalThis.localStorage;
+  if (!storage || typeof storage.getItem !== "function") return null;
+  const token = storage.getItem(AUTH_TOKEN_STORAGE_KEY)?.trim();
+  return token || null;
 }
 
 /** BuyHost 兜底：探测失败时按「env → 硬编码默认值」依次回落 */

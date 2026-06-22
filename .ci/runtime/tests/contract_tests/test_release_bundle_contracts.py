@@ -416,10 +416,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         self.assertEqual((cn_workflow.get(True) or cn_workflow.get("on") or {}).get("manual"), "enabled")
         self.assertEqual((intl_workflow.get(True) or intl_workflow.get("on") or {}).get("manual"), "enabled")
-        self.assertEqual((cn_workflow.get("extends") or {}).get("parameters", {}).get("COMBO"), "eo:cn-lightvela-prod")
+        self.assertEqual((cn_workflow.get("extends") or {}).get("parameters", {}).get("COMBO"), "eo:cn-lightvela-prod-next")
         self.assertEqual(
             (intl_workflow.get("extends") or {}).get("parameters", {}).get("COMBO"),
-            "eo:global-lightvela-intl-prod",
+            "eo:global-lightvela-intl-prod-next",
         )
         self.assertIn("FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA", template.get("variables") or {})
         self.assertIn("FRONTEND_EDGEONE_ARTIFACT_REF", template.get("variables") or {})
@@ -429,6 +429,8 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertNotIn('"$PNPM_BIN" install --frozen-lockfile', template_text)
 
         command_text = (REPO_ROOT / ".ci/runtime/commands/release_frontend_edgeone_artifact.sh").read_text()
+        self.assertIn("eo:cn-lightvela-prod-next|eo:cn-lightvela-prod-legacy", command_text)
+        self.assertIn("eo:global-lightvela-intl-prod-next|eo:global-lightvela-intl-prod-legacy", command_text)
         self.assertIn("/etc/lightclaw-ci/edgeone_lightvela_prod_token", command_text)
         self.assertIn("/etc/lightclaw-ci/edgeone_lightvela_intl_prod_token", command_text)
         self.assertIn("ci_load_edgeone_credentials", command_text)
@@ -589,8 +591,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         self.assertIn('PREVIEW_CN_AUTH_API_BASE_URL="$(resolve_preview_auth_api_base_url "$FRONTEND_PREVIEW_BRANCH" cn)"', workflow_text)
         self.assertIn('PREVIEW_INTL_AUTH_API_BASE_URL="$(resolve_preview_auth_api_base_url "$FRONTEND_PREVIEW_BRANCH" intl)"', workflow_text)
-        self.assertIn('printf \'https://api.lightvela.ai\'', workflow_text)
-        self.assertIn('printf \'https://lightclaw.tech\'', workflow_text)
+        self.assertEqual(workflow_text.count('printf \'https://lightclaw.tech\''), 2)
         self.assertIn('export VITE_AUTH_API_BASE_URL="$PREVIEW_CN_AUTH_API_BASE_URL"', workflow_text)
         self.assertIn('export VITE_AUTH_API_BASE_URL="$PREVIEW_INTL_AUTH_API_BASE_URL"', workflow_text)
         self.assertIn('export NEXT_PUBLIC_AUTH_API_BASE_URL="$api_base"', workflow_text)

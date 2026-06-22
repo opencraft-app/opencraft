@@ -5,15 +5,16 @@
  */
 
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { type ReactNode } from "react";
 
-import { LoginModal } from "@/components/site/login-modal";
 import { LegalFooter } from "@/components/site/legal-footer";
+import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
+import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/site/public-site-header";
+import type { RenderUserMenuLink } from "@/components/site/user-avatar-menu";
 import { useT } from "@/i18n/t";
 import { assetUrl } from "@/lib/asset-url";
+import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { isGlobal } from "@/lib/region";
-
-import { LandingNavbar } from "./landing/landing-navbar";
 
 /* ═══════════════════════════════════════════════════════════════
    Animation Variants
@@ -64,22 +65,22 @@ function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "achiev
      国内站则始终使用中文版（含 QQ/微信/飞书图标）。 */
   const imgPath =
     variant === "cloudStorage"
-      ? "/assets/changelog/lightvela-cloud-storage.png"
+      ? "/assets/changelog/lightvela-cloud-storage.webp"
       : variant === "achievements"
-      ? "/assets/changelog/lightvela-achievements.png"
+      ? "/assets/changelog/lightvela-achievements.webp"
       : variant === "wecom"
-      ? "/assets/changelog/lightvela-wecom-channel.png"
+      ? "/assets/changelog/lightvela-wecom-channel.webp"
       : variant === "chat"
-      ? "/assets/changelog/agentchat-web-chat.png"
+      ? "/assets/changelog/agentchat-web-chat.webp"
       : variant === "memory"
-      ? "/assets/changelog/hermes-memory.png"
+      ? "/assets/changelog/hermes-memory.webp"
       : variant === "schedule"
-      ? "/assets/changelog/scheduled-tasks.png"
+      ? "/assets/changelog/scheduled-tasks.webp"
       : variant === "soul"
-      ? "/assets/changelog/soul-persona.png"
+      ? "/assets/changelog/soul-persona.webp"
       : isGlobal
-        ? "/assets/changelog/lightvela-launch-en.png"
-        : "/assets/changelog/lightvela-launch.png";
+        ? "/assets/changelog/lightvela-launch-en.webp"
+        : "/assets/changelog/lightvela-launch.webp";
   const altText =
     variant === "cloudStorage"
       ? t("LightVela 支持云存储")
@@ -353,20 +354,42 @@ function ChangelogContent() {
    Changelog Page
    ═══════════════════════════════════════════════════════════════ */
 
-export const ChangelogPage = () => {
-  const [showLogin, setShowLogin] = useState(false);
+type ChangelogPageProps = {
+  authControls?: ReactNode;
+  publicLocale?: PublicSiteLocale;
+  publicLocalized?: boolean;
+  renderLanguageSwitcher?: (options: { reloadAfterSwitch: boolean; variant: LanguageSwitcherVariant }) => ReactNode;
+  renderLink?: RenderPublicSiteHeaderLink;
+  renderUserMenuLink?: RenderUserMenuLink;
+};
 
+export const ChangelogPage = ({
+  authControls,
+  publicLocale,
+  publicLocalized,
+  renderLanguageSwitcher,
+  renderLink,
+  renderUserMenuLink,
+}: ChangelogPageProps = {}) => {
   return (
     <div
       className="landing-page relative flex min-h-screen flex-col"
       style={{ background: "var(--lw-bg)", color: "var(--lw-fg)" }}
     >
-      <LandingNavbar onLoginClick={() => setShowLogin(true)} />
+      <PublicSiteHeader
+        authControls={authControls}
+        currentSection="changelog"
+        locale={publicLocale}
+        localized={publicLocalized}
+        position="fixed"
+        renderLink={renderLink}
+        renderLanguageSwitcher={renderLanguageSwitcher}
+        renderUserMenuLink={renderUserMenuLink}
+      />
       <main className="z-10 flex-grow pt-[60px]">
         <ChangelogContent />
       </main>
       <LegalFooter />
-      <LoginModal open={showLogin} onClose={() => setShowLogin(false)} />
     </div>
   );
 };

@@ -2,8 +2,8 @@ import { LegalFooter } from "@/components/site/legal-footer";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, FileText, Loader2, X } from "lucide-react";
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { SiteHeader } from "@/components/site/site-header";
+import { PublicSiteHeader } from "@/components/site/public-site-header";
+import { AppLink, useAppNavigate } from "@/lib/app-navigation";
 import { isGlobal } from "@/lib/region";
 
 /* ─── Mock Order Data ─── */
@@ -30,10 +30,10 @@ const mockOrders: OrderItem[] = [
 /* ─── Navbar ─── */
 
 const OrdersNavbar = () => {
-  const navigate = useNavigate();
+  const navigate = useAppNavigate();
 
   return (
-    <SiteHeader fixed onLoginClick={() => navigate("/auth/sign-in")} />
+    <PublicSiteHeader position="fixed" onLoginClick={() => navigate("/auth/sign-in")} />
   );
 };
 
@@ -223,13 +223,13 @@ export const AccountOrdersPage = () => {
             transition={{ duration: 0.3 }}
             className="mb-5"
           >
-            <Link
+            <AppLink
               to="/account"
               className="inline-flex items-center gap-1 text-[13px] font-medium transition-colors hover:text-[#333]"
               style={{ color: "#aaa" }}
             >
               <ArrowLeft className="h-3.5 w-3.5" /> 返回账号信息
-            </Link>
+            </AppLink>
           </motion.div>
 
           {/* Page Header */}

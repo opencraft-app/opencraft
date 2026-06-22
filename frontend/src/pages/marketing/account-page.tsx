@@ -14,7 +14,6 @@ import {
   Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useState, useRef, useMemo, type ReactNode } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { useOpenClaw } from "@/contexts/openclaw-context";
@@ -35,6 +34,7 @@ import {
   isPaidBillingEnabled,
 } from "@/lib/billing-flow";
 import { getBillingErrorCode, resolveBillingErrorMessage } from "@/lib/billing-error";
+import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
 import { isCN, isGlobal } from "@/lib/region";
 import { cn } from "@/lib/utils";
 import { buildPayPlan } from "@/lib/wx-pay";
@@ -1556,14 +1556,14 @@ const SubscriptionSection = ({
               {t("即刻创建你的专属云端 Hermes")}
             </p>
           </div>
-          <Link
+          <AppLink
             to="/subscribe"
             className="inline-flex items-center justify-center gap-2 bg-black/90 px-6 py-3 rounded-full font-semibold text-sm cursor-pointer shadow-[0_2px_0_rgba(187,187,187,0.05)] hover:-translate-y-[1px] hover:shadow-[0_4px_12px_rgba(0,0,0,0.15)] transition-all"
             style={{ color: "#fff" }}
           >
             <Zap className="h-4 w-4" style={{ color: "#fff" }} />
             <span style={{ color: "#fff" }}>{t("立即创建")}</span>
-          </Link>
+          </AppLink>
         </div>
       </motion.div>
     );
@@ -1772,8 +1772,8 @@ const persistAccountSafetyPhoneVisibility = () => {
 
 export const AccountPage = () => {
   const t = useT();
-  const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useAppNavigate();
+  const [searchParams, setSearchParams] = useAppSearchParams();
   const { auth } = useRepositories();
   const {
     session,
@@ -2171,13 +2171,13 @@ export const AccountPage = () => {
               <p className="mt-3 text-[13px]" style={{ color: "#cf3d4c" }}>{guestError}</p>
             )}
 
-            <Link
+            <AppLink
               to="/"
               className="mt-6 inline-block text-[13px] transition-colors hover:text-[#666]"
               style={{ color: "#bbb" }}
             >
               ← {t("返回首页")}
-            </Link>
+            </AppLink>
           </motion.div>
 
           <LoginModal open={showLoginModal} onClose={() => setShowLoginModal(false)} />
@@ -2186,8 +2186,15 @@ export const AccountPage = () => {
   } else if (!authReady) {
     /* ── Loading auth ── */
     pageContent = (
-        <main className="relative z-10 flex flex-grow items-center justify-center">
-          <p className="text-sm" style={{ color: "#bbb" }}>{t("正在恢复会话...")}</p>
+        <main className="relative z-10 flex-grow pb-8 pt-20 md:pt-24" aria-hidden="true">
+          <section className="mx-auto px-6 md:px-8" style={{ maxWidth: 800 }}>
+            <div className="mb-8 h-9 w-36 rounded-full bg-black/[0.06]" />
+            <div className="space-y-4">
+              <div className="h-40 rounded-lg bg-black/[0.04]" />
+              <div className="h-24 rounded-lg bg-black/[0.04]" />
+              <div className="h-24 rounded-lg bg-black/[0.04]" />
+            </div>
+          </section>
         </main>
     );
   } else {

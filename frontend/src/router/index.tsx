@@ -28,9 +28,9 @@ const CookiePolicyPage = lazyNamed(() => import("@/pages/marketing/cookie-policy
 const OpenSourceLicensesPage = lazyNamed(() => import("@/pages/marketing/open-source-licenses-page"), "OpenSourceLicensesPage");
 const OpenClawSetupPage = lazyNamed(() => import("@/pages/marketing/openclaw-setup-page"), "OpenClawSetupPage");
 const OpenClawSuccessPage = lazyNamed(() => import("@/pages/marketing/openclaw-success-page"), "OpenClawSuccessPage");
-const OpenClawSettingsPage = lazyNamed(() => import("@/pages/marketing/openclaw-settings-page"), "OpenClawSettingsPage");
 const AccountPage = lazyNamed(() => import("@/pages/marketing/account-page"), "AccountPage");
 const AccountOrdersPage = lazyNamed(() => import("@/pages/marketing/account-orders-page"), "AccountOrdersPage");
+const OpenClawSettingsRoutePage = lazyNamed(() => import("@/router/openclaw-settings-route"), "OpenClawSettingsRoutePage");
 const TATDeviceBindPage = lazyNamed(() => import("@/pages/marketing/tat-device-bind-page"), "TATDeviceBindPage");
 const AboutPage = lazyNamed(() => import("@/pages/marketing/about-page"), "AboutPage");
 const ChangelogPage = lazyNamed(() => import("@/pages/marketing/changelog-page"), "ChangelogPage");
@@ -163,11 +163,11 @@ export const router = createBrowserRouter([
           },
           {
             path: "agents",
-            element: lazyRoute(OpenClawSettingsPage, { chrome: "product" }),
+            element: lazyRoute(OpenClawSettingsRoutePage, { chrome: "product" }),
           },
           {
             path: "agents/:section",
-            element: lazyRoute(OpenClawSettingsPage, { chrome: "product" }),
+            element: lazyRoute(OpenClawSettingsRoutePage, { chrome: "product" }),
           },
           {
             path: "account",

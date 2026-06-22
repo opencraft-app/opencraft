@@ -1,5 +1,5 @@
 import { Outlet, useNavigate } from "react-router-dom";
-import { SiteHeader } from "@/components/site/site-header";
+import { PublicSiteHeader } from "@/components/site/public-site-header";
 import { useRouteSeoMeta } from "@/lib/seo";
 
 export const AppShellLayout = () => {
@@ -8,7 +8,7 @@ export const AppShellLayout = () => {
 
   return (
     <div className="flex min-h-dvh flex-col bg-white text-[var(--text-primary)]">
-      <SiteHeader onLoginClick={() => navigate("/auth/sign-in")} />
+      <PublicSiteHeader onLoginClick={() => navigate("/auth/sign-in")} />
       <main className="flex-1">
         <Outlet />
       </main>

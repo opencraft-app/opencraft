@@ -3,7 +3,7 @@
  *
  * 用 Vite 的 `import.meta.glob` 把 `@/content/docs/**` 下所有 markdown
  * 文件以纯文本形式打包进来；同目录 `images/*` 以 Vite 资源 URL 形式打包，
- * 这样 `./images/xxx.png` 会被改写成构建产物的 `/assets/xxx.hash.png`。
+ * 这样 `./images/xxx.webp` 会被改写成构建产物的 `/assets/xxx.hash.webp`。
  *
  * 本文件的渲染前处理函数（`rewriteImagePaths` / `rewriteMarkdownLinks` /
  * `fixBoldBoundary`）严格对齐 LightVela-Docs 原实现，保证 markdown 渲染

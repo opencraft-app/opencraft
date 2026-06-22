@@ -258,7 +258,10 @@ const mapSession = (payload: SessionPayload): AuthSessionSnapshot => ({
 const buildUrl = (baseUrl: string, path: string) => `${baseUrl}${path}`;
 
 const configuredOAuthRelayIssuerBaseURL = (): string | null => {
-  const configured = import.meta.env.VITE_OAUTH_RELAY_ISSUER_BASE_URL?.trim();
+  const configured = (
+    (typeof process !== "undefined" ? process.env.NEXT_PUBLIC_OAUTH_RELAY_ISSUER_BASE_URL : undefined)
+    ?? import.meta.env?.VITE_OAUTH_RELAY_ISSUER_BASE_URL
+  )?.trim();
   if (!configured) {
     return null;
   }

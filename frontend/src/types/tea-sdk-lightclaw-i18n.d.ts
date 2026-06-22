@@ -6,3 +6,8 @@ declare module "@tencent/tea-sdk-lightclaw/i18n/translation/en" {
 declare module "@tencent/tea-sdk-lightclaw/i18n/translation/zh" {
   export const translation: Record<string, string>;
 }
+
+declare module "@tencent/tea-sdk-lightclaw/styles" {
+  const stylesheet: string;
+  export default stylesheet;
+}

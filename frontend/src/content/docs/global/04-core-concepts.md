@@ -37,7 +37,7 @@ LightVela 涉及四个核心概念：Hermes、模型、通道、技能。本页�
 | 通道 | 交互入口 | 用户与 Hermes 对话的平台 |
 | 技能 | 能力扩展 | Hermes 可调用的附加能力包 |
 
-![](./images/3-1.png)
+![](./images/3-1.webp)
 
 ---
 

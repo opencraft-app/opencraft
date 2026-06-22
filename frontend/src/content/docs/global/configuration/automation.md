@@ -18,11 +18,11 @@
 
 可在 Hermes 左方「自动任务」标签查看自动任务。随后点击右上角「+ 添加」，新建自动任务。
 
-![](../images/automation-1-global.png)
+![](../images/automation-1-global.webp)
 
 打开后，可编辑你的自动任务。
 
-![](../images/automation-2-global.png)
+![](../images/automation-2-global.webp)
 
 - **名称**：自动化任务方案命名
 
@@ -43,7 +43,7 @@
 
 若不清楚需要配置什么自动化任务，可点击「模板」选用现成的自动任务方案。
 
-![](../images/automation-3-global.png)
+![](../images/automation-3-global.webp)
 
 ---
 
@@ -51,10 +51,10 @@
 
 自动化任务创建完成后，可在「自动任务」页面查看已启用任务。
 
-![](../images/automation-4-global.png)
+![](../images/automation-4-global.webp)
 
 在此页面可按需查看自动化任务详情、编辑修改、暂停运行或删除你的自动任务。
 
-![](../images/automation-5-global.png)
+![](../images/automation-5-global.webp)
 
 ---

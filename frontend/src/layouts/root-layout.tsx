@@ -21,6 +21,7 @@ import { ImpersonationBanner } from "@/components/site/impersonation-banner";
 import { MaintenanceAnnouncementBanner } from "@/components/site/maintenance-announcement-banner";
 import { useRouteSeoMeta } from "@/lib/seo";
 import { isGlobal, langPrefixRedirectTarget } from "@/lib/region";
+import { ReactRouterAppNavigationProvider } from "@/lib/react-router-app-navigation";
 
 /**
  * 国际站：mount + 路由变化时，把 unprefixed SEO 路径 replace 成带 `/en` 或 `/zh`
@@ -56,7 +57,9 @@ export function RootLayout() {
     <>
       <ImpersonationBanner />
       <MaintenanceAnnouncementBanner />
-      <Outlet />
+      <ReactRouterAppNavigationProvider>
+        <Outlet />
+      </ReactRouterAppNavigationProvider>
       <CookieConsentBanner />
       <ScrollRestoration />
     </>

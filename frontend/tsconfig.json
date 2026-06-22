@@ -8,6 +8,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
+      "@next-site/*": ["next-site/*"],
+      "collections/*": [".source/*"],
       "@tencent/tea-sdk-lightclaw": ["../../tea-sdk-lightclaw/src/index.ts"],
       "@tencent/tea-sdk-lightclaw/*": ["../../tea-sdk-lightclaw/src/*"]
       // ──────────────────────────────────────────────────────────────────

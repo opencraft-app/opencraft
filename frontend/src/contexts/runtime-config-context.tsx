@@ -7,7 +7,7 @@ import {
   useState,
   type PropsWithChildren,
 } from "react";
-import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
+import { isLightVelaEdgeOnePreviewHostname, resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
 import { isCN } from "@/lib/region";
 
 export interface RuntimeFeatureFlags {
@@ -89,7 +89,15 @@ const applyRuntimeOverrides = (config: RuntimeConfig): RuntimeConfig => {
   };
 };
 
+const shouldSkipRemoteRuntimeConfig = (): boolean => {
+  if (typeof window === "undefined") return false;
+  return isLightVelaEdgeOnePreviewHostname(window.location.hostname);
+};
+
 const fetchRuntimeConfig = async (): Promise<RuntimeConfig> => {
+  if (shouldSkipRemoteRuntimeConfig()) {
+    return applyRuntimeOverrides(DEFAULT_RUNTIME_CONFIG);
+  }
   const baseUrl = resolveConfiguredAuthApiBaseUrl();
   const response = await fetch(`${baseUrl}/v1/frontend/runtime-config`, {
     method: "GET",
@@ -159,4 +167,5 @@ export const __runtimeConfigTestHooks = {
   normalizeRuntimeConfig,
   resolvePaidBillingEnabled,
   resolveRealnamePhoneVerificationEnabled,
+  shouldSkipRemoteRuntimeConfig,
 };

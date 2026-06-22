@@ -32,7 +32,7 @@ Sign in to LightVela, click "My Hermes" in the upper-right corner to enter the c
 
 Click the dropdown and select "QQ". The QQ channel introduction appears below.
 
-![](../images/qq1.png)
+![](../images/qq1.webp)
 
 ### 3. Register on the QQ Open Platform
 
@@ -44,13 +44,13 @@ After scanning on the QQ mobile app and choosing **Agree**, registration is comp
 
 On the bots page of the QQ Open Platform, click "Create Bot" to create a new QQ bot.
 
-![](../images/qq2.png)
+![](../images/qq2.webp)
 
 ### 5. Obtain AppID and AppSecret
 
 After the bot is created, locate the **AppID** and **AppSecret** on the page. Click the "Copy" button next to each and save them into a local notes file.
 
-![](../images/qq3.png)
+![](../images/qq3.webp)
 
 > ⚠️ **AppSecret is a sensitive credential**
 >
@@ -72,7 +72,7 @@ Back in the console "Channel" card, choose "QQ" from the dropdown, and paste the
 2. **AppSecret**: paste the copied AppSecret
 
 
-![](../images/qq4.png)
+![](../images/qq4.webp)
 
 ### 7. Click "Add and Apply"
 
@@ -88,7 +88,7 @@ Hello
 
 You'll receive a Hermes reply within seconds.
 
-![](../images/qq5.png)
+![](../images/qq5.webp)
 
 > ⚠️ **Group chats are not yet recommended**
 >

@@ -20,7 +20,8 @@
     "noUncheckedIndexedAccess": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@next-site/*": ["next-site/*"]
       // ──────────────────────────────────────────────────────────────────
       // AgentChat-web 本地构建产物联调映射（已停用）
       //
@@ -46,5 +47,6 @@
       // ]
     }
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/app/**/*.next.ts", "src/app/**/*.next.tsx"]
 }
