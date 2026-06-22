@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { AboutPage } from '@/pages/marketing/about-page';
 import { ChangelogPage } from '@/pages/marketing/changelog-page';
 import { LandingPageView } from '@/pages/marketing/landing-page';
@@ -48,6 +48,7 @@ export function PublicHomePage({
 }: Partial<PublicRouteLocale> = {}) {
   const locationSearch = useNextSearch();
   const navigateTo = useNextNavigate();
+  const pathname = usePathname() || '/';
 
   return (
     <PublicSiteLocaleBridge locale={locale}>
@@ -61,6 +62,7 @@ export function PublicHomePage({
         )}
         locationSearch={locationSearch}
         navigateTo={navigateTo}
+        currentPath={pathname}
         publicLocale={locale}
         publicLocalized={localized}
         renderLink={renderNextPublicSiteHeaderLink}
@@ -75,10 +77,13 @@ export function PublicAboutPage({
   locale = DEFAULT_PUBLIC_ROUTE_LOCALE.locale,
   localized = DEFAULT_PUBLIC_ROUTE_LOCALE.localized,
 }: Partial<PublicRouteLocale> = {}) {
+  const pathname = usePathname() || '/';
+
   return (
     <PublicSiteLocaleBridge locale={locale}>
       <AboutPage
         authControls={<PublicHeaderAuthIsland locale={locale} />}
+        currentPath={pathname}
         publicLocale={locale}
         publicLocalized={localized}
         renderLink={renderNextPublicSiteHeaderLink}
@@ -89,13 +94,19 @@ export function PublicAboutPage({
   );
 }
 
-export function PublicChangelogPage() {
+export function PublicChangelogPage({
+  locale = CHANGELOG_ROUTE_LOCALE.locale,
+  localized = CHANGELOG_ROUTE_LOCALE.localized,
+}: Partial<PublicRouteLocale> = {}) {
+  const pathname = usePathname() || '/';
+
   return (
-    <PublicSiteLocaleBridge locale={CHANGELOG_ROUTE_LOCALE.locale}>
+    <PublicSiteLocaleBridge locale={locale}>
       <ChangelogPage
-        authControls={<PublicHeaderAuthIsland locale={CHANGELOG_ROUTE_LOCALE.locale} />}
-        publicLocale={CHANGELOG_ROUTE_LOCALE.locale}
-        publicLocalized={CHANGELOG_ROUTE_LOCALE.localized}
+        authControls={<PublicHeaderAuthIsland locale={locale} />}
+        currentPath={pathname}
+        publicLocale={locale}
+        publicLocalized={localized}
         renderLink={renderNextPublicSiteHeaderLink}
         renderLanguageSwitcher={renderNextLanguageSwitcher}
         renderUserMenuLink={renderNextUserMenuLink}

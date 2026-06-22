@@ -37,6 +37,7 @@ export type PublicSiteHeaderLinkProps = {
 export type RenderPublicSiteHeaderLink = (props: PublicSiteHeaderLinkProps) => ReactNode;
 
 type RenderLanguageSwitcher = (options: {
+  activeLocale: PublicSiteLocale;
   reloadAfterSwitch: boolean;
   variant: LanguageSwitcherVariant;
 }) => ReactNode;
@@ -214,8 +215,8 @@ export function PublicSiteHeader({
   const loginHref = "/agents";
   const renderLanguage = (variant: LanguageSwitcherVariant) => (
     renderLanguageSwitcher
-      ? renderLanguageSwitcher({ reloadAfterSwitch: reloadLanguageAfterSwitch, variant })
-      : <LanguageSwitcher reloadAfterSwitch={reloadLanguageAfterSwitch} variant={variant} />
+      ? renderLanguageSwitcher({ activeLocale: locale, reloadAfterSwitch: reloadLanguageAfterSwitch, variant })
+      : <LanguageSwitcher activeLocale={locale} reloadAfterSwitch={reloadLanguageAfterSwitch} variant={variant} />
   );
   const renderHeaderLink: RenderPublicSiteHeaderLink = renderLink ?? (({
     ariaLabel,

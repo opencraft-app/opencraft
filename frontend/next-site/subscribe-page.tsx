@@ -467,7 +467,7 @@ type SubscribePageHeaderProps = {
   isAuthenticated: boolean;
   publicLocale?: PublicSiteLocale;
   publicLocalized?: boolean;
-  renderLanguageSwitcher?: (options: { reloadAfterSwitch: boolean; variant: LanguageSwitcherVariant }) => ReactNode;
+  renderLanguageSwitcher?: (options: { activeLocale: PublicSiteLocale; reloadAfterSwitch: boolean; variant: LanguageSwitcherVariant }) => ReactNode;
   renderLink: RenderPublicSiteHeaderLink;
   renderUserMenuLink: RenderUserMenuLink;
 };
@@ -1260,7 +1260,7 @@ type SubscribePageProps = {
   authControls?: ReactNode;
   publicLocale?: PublicSiteLocale;
   publicLocalized?: boolean;
-  renderLanguageSwitcher?: (options: { reloadAfterSwitch: boolean; variant: LanguageSwitcherVariant }) => ReactNode;
+  renderLanguageSwitcher?: (options: { activeLocale: PublicSiteLocale; reloadAfterSwitch: boolean; variant: LanguageSwitcherVariant }) => ReactNode;
   renderLink?: RenderPublicSiteHeaderLink;
   renderUserMenuLink?: RenderUserMenuLink;
 };

@@ -1,7 +1,12 @@
 import { DEFAULT_LOCALE } from "@/lib/region";
+import {
+  defaultPublicUrlLang,
+  publicUrlLangForLocale,
+  shouldLocalizePublicPath,
+  stripPublicSiteLocalePrefix,
+} from "@/lib/public-site-routing";
 
 export type PublicSiteLocale = "zh-CN" | "zh-SG" | "en-US";
-export type PublicDocsUrlLocale = "en-us" | "zh-cn" | "zh-sg";
 export type PublicSiteSection = "overview" | "changelog" | "docs" | "about";
 
 export type PublicSiteNavItem = {
@@ -18,34 +23,7 @@ export const PUBLIC_SITE_NAV_ITEMS: readonly PublicSiteNavItem[] = [
   { section: "about", href: "/about", label: { "zh-CN": "关于我们", "zh-SG": "关于我们", "en-US": "About" } },
 ] as const;
 
-const LOCALE_TO_DOCS_URL_LOCALE: Record<PublicSiteLocale, PublicDocsUrlLocale> = {
-  "en-US": "en-us",
-  "zh-CN": "zh-cn",
-  "zh-SG": "zh-sg",
-};
-
-const LOCALE_TO_PUBLIC_ROOT_LANG: Record<PublicSiteLocale, "en-us" | "zh-cn" | "zh-sg"> = {
-  "en-US": "en-us",
-  "zh-CN": "zh-cn",
-  "zh-SG": "zh-sg",
-};
-
-const DEFAULT_PUBLIC_URL_LOCALE: PublicDocsUrlLocale = DEFAULT_LOCALE === "en-US" ? "en-us" : "zh-cn";
-
-const LOCALIZED_PUBLIC_PREFIXES = ["/docs", "/about", "/privacy-policy", "/cookie-policy", "/open-source-licenses"] as const;
-
-export function stripPublicSiteLocalePrefix(pathname: string): string {
-  const withoutLeadingLocale = pathname.replace(/^\/(en-us|zh-cn|zh-sg|en|zh)(?=\/|$)/, "") || "/";
-  const normalized = withoutLeadingLocale || "/";
-  return normalized === "//" ? "/" : normalized;
-}
-
-function shouldLocalizePublicPath(pathWithoutLang: string): boolean {
-  if (pathWithoutLang === "/") return true;
-  return LOCALIZED_PUBLIC_PREFIXES.some((prefix) => (
-    pathWithoutLang === prefix || pathWithoutLang.startsWith(`${prefix}/`)
-  ));
-}
+const DEFAULT_PUBLIC_URL_LOCALE = defaultPublicUrlLang(DEFAULT_LOCALE);
 
 export function publicSiteHref(
   href: string,
@@ -58,11 +36,11 @@ export function publicSiteHref(
   const bare = stripPublicSiteLocalePrefix(href);
   if (!shouldLocalizePublicPath(bare)) return bare;
 
-  const docsLocale = LOCALE_TO_DOCS_URL_LOCALE[locale];
+  const docsLocale = publicUrlLangForLocale(locale);
   if (bare === "/docs" || bare.startsWith("/docs/")) {
     return docsLocale === DEFAULT_PUBLIC_URL_LOCALE ? bare : `/${docsLocale}${bare}`;
   }
-  const lang = LOCALE_TO_PUBLIC_ROOT_LANG[locale];
+  const lang = publicUrlLangForLocale(locale);
   if (lang === DEFAULT_PUBLIC_URL_LOCALE) return bare;
   if (bare === "/") return `/${lang}`;
   return `/${lang}${bare}`;

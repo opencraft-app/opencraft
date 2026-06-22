@@ -94,7 +94,7 @@ function PublicHeaderAuthControls({
     return (
       <>
         <div className="hidden shrink-0 items-center gap-3 md:flex">
-          {showLanguageSwitcher && renderNextLanguageSwitcher({ reloadAfterSwitch: false, variant: 'dropdown' })}
+          {showLanguageSwitcher && renderNextLanguageSwitcher({ activeLocale: locale, reloadAfterSwitch: false, variant: 'dropdown' })}
           <UserAvatarMenu renderLink={renderNextUserMenuLink} />
         </div>
         <div className="ml-auto flex items-center gap-2 md:hidden">
@@ -124,7 +124,7 @@ function PublicHeaderAuthControls({
         >
           {copy.login}
         </button>
-        {showLanguageSwitcher && renderNextLanguageSwitcher({ reloadAfterSwitch: false, variant: 'dropdown' })}
+        {showLanguageSwitcher && renderNextLanguageSwitcher({ activeLocale: locale, reloadAfterSwitch: false, variant: 'dropdown' })}
       </div>
       <div className="ml-auto flex items-center gap-2 md:hidden">
         <button

@@ -161,10 +161,9 @@ describe("prerender route titles mirror seo-data.ts", () => {
 });
 
 /**
- * codex CR P1-1 守护：`LOCALIZED_PATH_PREFIXES` 在 `region.ts`（运行时）和
- * `generate-static-site.mjs`（prerender）维护两份。新增公开 SEO 路径时若漏改
- * 一边，会出现"prerender 没产出 /en/X、但运行时 useEnsureLangPrefix 又会重写
- * 到 /en/X"的 404，或反之。这条测试断言两份数组 byte-equal。
+ * codex CR P1-1 守护：公开 SEO 路径白名单的真源在
+ * `public-site-routing.ts`。legacy prerender 仍是 mjs，不能直接 import TS，
+ * 所以这里断言它的镜像与 shared helper byte-equal。
  */
 /**
  * codex CR P1-4 守护：旧 docs prerender 已经不是默认路径，但应急打开
@@ -202,7 +201,7 @@ describe("real docs/global markdown coverage matches DOCS.global", () => {
   });
 });
 
-describe("prerender LOCALIZED_PATH_PREFIXES mirror region.ts", () => {
+describe("prerender LOCALIZED_PATH_PREFIXES mirror public-site-routing.ts", () => {
   it("两边数组完全一致（含顺序）", () => {
     /* prerender 一份在 mjs 里写成单行字面量 */
     const mjsMatch = SCRIPT_SOURCE.match(
@@ -214,13 +213,13 @@ describe("prerender LOCALIZED_PATH_PREFIXES mirror region.ts", () => {
       .map((s) => s.trim().replace(/^["']|["']$/g, ""))
       .filter(Boolean);
 
-    /* 运行时一份在 region.ts 里写成多行字面量 */
-    const regionSource = readFileSync(
-      path.resolve(process.cwd(), "src/lib/region.ts"),
+    /* 真源在 public-site-routing.ts 里写成多行字面量 */
+    const routingSource = readFileSync(
+      path.resolve(process.cwd(), "src/lib/public-site-routing.ts"),
       "utf8",
     );
-    const tsMatch = regionSource.match(
-      /LOCALIZED_PATH_PREFIXES\s*=\s*\[([\s\S]*?)\]\s*as\s+const/,
+    const tsMatch = routingSource.match(
+      /PUBLIC_LOCALIZED_PATH_PREFIXES\s*=\s*\[([\s\S]*?)\]\s*as\s+const/,
     );
     expect(tsMatch).not.toBeNull();
     const tsList = tsMatch![1]!

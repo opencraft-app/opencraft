@@ -24,17 +24,19 @@ type LandingNavigateOptions = {
 
 type LandingPageViewProps = {
   authControls?: ReactNode;
+  currentPath?: string;
   locationSearch?: string;
   navigateTo: (to: string, options?: LandingNavigateOptions) => void;
   publicLocale?: PublicSiteLocale;
   publicLocalized?: boolean;
-  renderLanguageSwitcher?: (options: { reloadAfterSwitch: boolean; variant: LanguageSwitcherVariant }) => ReactNode;
+  renderLanguageSwitcher?: (options: { activeLocale: PublicSiteLocale; reloadAfterSwitch: boolean; variant: LanguageSwitcherVariant }) => ReactNode;
   renderLink?: RenderPublicSiteHeaderLink;
   renderUserMenuLink?: RenderUserMenuLink;
 };
 
 export const LandingPageView = ({
   authControls,
+  currentPath,
   locationSearch = "",
   navigateTo,
   publicLocale,
@@ -59,6 +61,7 @@ export const LandingPageView = ({
         <PublicSiteHeader
           appearance="immersive"
           authControls={authControls}
+          currentPath={currentPath}
           locale={publicLocale}
           localized={publicLocalized}
           onCreateClick={handleCreateClick}

@@ -20,6 +20,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { setLocale } from "@/i18n";
+import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { switchLocaleInPath } from "@/lib/region";
 
 export type LanguageSwitcherVariant = "dropdown" | "inline";
@@ -43,6 +44,11 @@ const OPTIONS: readonly Option[] = [EN_OPTION, ZH_OPTION];
 function currentOption(lang: string | undefined): Option {
   if (lang?.startsWith("zh")) return ZH_OPTION;
   return EN_OPTION;
+}
+
+function languageFromPublicLocale(locale: PublicSiteLocale | undefined): Locale | undefined {
+  if (!locale) return undefined;
+  return locale.startsWith("zh") ? "zh-CN" : "en-US";
 }
 
 /**
@@ -97,16 +103,18 @@ function applyLocaleChange(
  * 下拉菜单形态（桌面端用）
  */
 function DropdownSwitcher({
+  activeLocale,
   navigateTo,
   reloadAfterSwitch,
 }: {
+  activeLocale?: Locale;
   navigateTo?: LanguageSwitcherNavigate;
   reloadAfterSwitch: boolean;
 }) {
   const { i18n } = useTranslation();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const active = currentOption(i18n.language);
+  const active = currentOption(activeLocale ?? i18n.language);
 
   /* 点击外部关闭下拉 */
   useEffect(() => {
@@ -121,7 +129,7 @@ function DropdownSwitcher({
 
   const handlePick = (value: Locale) => {
     setOpen(false);
-    if (value !== i18n.language) applyLocaleChange(value, reloadAfterSwitch, navigateTo);
+    if (value !== active.value) applyLocaleChange(value, reloadAfterSwitch, navigateTo);
   };
 
   return (
@@ -175,14 +183,16 @@ function DropdownSwitcher({
  * 平铺形态（移动端菜单内用）
  */
 function InlineSwitcher({
+  activeLocale,
   navigateTo,
   reloadAfterSwitch,
 }: {
+  activeLocale?: Locale;
   navigateTo?: LanguageSwitcherNavigate;
   reloadAfterSwitch: boolean;
 }) {
   const { i18n } = useTranslation();
-  const active = currentOption(i18n.language);
+  const active = currentOption(activeLocale ?? i18n.language);
 
   return (
     <div className="flex items-center gap-2">
@@ -210,10 +220,12 @@ function InlineSwitcher({
 }
 
 export function LanguageSwitcher({
+  activeLocale,
   navigateTo,
   variant = "dropdown",
   reloadAfterSwitch = false,
 }: {
+  activeLocale?: PublicSiteLocale;
   navigateTo?: LanguageSwitcherNavigate;
   variant?: LanguageSwitcherVariant;
   /**
@@ -223,7 +235,9 @@ export function LanguageSwitcher({
    */
   reloadAfterSwitch?: boolean;
 }) {
+  const routeLocale = languageFromPublicLocale(activeLocale);
+
   return variant === "inline"
-    ? <InlineSwitcher navigateTo={navigateTo} reloadAfterSwitch={reloadAfterSwitch} />
-    : <DropdownSwitcher navigateTo={navigateTo} reloadAfterSwitch={reloadAfterSwitch} />;
+    ? <InlineSwitcher activeLocale={routeLocale} navigateTo={navigateTo} reloadAfterSwitch={reloadAfterSwitch} />
+    : <DropdownSwitcher activeLocale={routeLocale} navigateTo={navigateTo} reloadAfterSwitch={reloadAfterSwitch} />;
 }

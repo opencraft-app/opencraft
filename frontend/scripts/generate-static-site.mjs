@@ -198,7 +198,7 @@ const LOCALE_TO_URL_LANG = {
  * 哪些路径需要带语言前缀（必须与运行时 LOCALIZED_PATH_PREFIXES 一致）。
  * 登录后路由（/agents、/auth 等）不在静态站点产物里，本文件不需要列出。
  */
-const LOCALIZED_PATH_PREFIXES = ["/docs", "/about", "/privacy-policy", "/cookie-policy", "/open-source-licenses"];
+const LOCALIZED_PATH_PREFIXES = ["/docs", "/about", "/changelog", "/privacy-policy", "/cookie-policy", "/open-source-licenses"];
 
 const shouldLocalizePath = (path) => {
   if (path === "/") return true;

@@ -1,3 +1,10 @@
+import {
+  PUBLIC_URL_LANG_TO_LOCALE,
+  matchPublicLangPrefix,
+  publicUrlLangForLocale,
+  shouldLocalizePublicPath,
+} from "@/lib/public-site-routing";
+
 /**
  * 站点区域常量
  * ──────────────────────────────────────────────────────────────
@@ -58,60 +65,15 @@ export const DEFAULT_LOCALE: "zh-CN" | "en-US" = isGlobal ? "en-US" : "zh-CN";
  * 国内站（isGlobal=false）这些函数全是 identity，不影响行为。
  */
 
-/** URL 路径里允许出现的语言前缀 → i18n locale 映射 */
-const URL_LANG_TO_LOCALE: Record<string, "zh-CN" | "en-US"> = {
-  en: "en-US",
-  "en-us": "en-US",
-  zh: "zh-CN",
-  "zh-cn": "zh-CN",
-  "zh-sg": "zh-CN",
-};
-
-/** i18n locale → URL 路径里使用的短前缀 */
-const LOCALE_TO_URL_LANG: Record<"zh-CN" | "en-US", "en-us" | "zh-cn"> = {
-  "en-US": "en-us",
-  "zh-CN": "zh-cn",
-};
-
-/**
- * 哪些路径段需要带语言前缀（仅影响国际站）。
- * 这些是 SEO 公开页面：营销 + 文档 + 法律。
- * 登录后应用 / OAuth 回调相关路径**不**加前缀。
- */
-const LOCALIZED_PATH_PREFIXES = [
-  "/docs",
-  "/about",
-  "/privacy-policy",
-  "/cookie-policy",
-  "/open-source-licenses",
-] as const;
-
-/** 判断路径首段是否合法语言前缀 */
-const matchLangPrefix = (pathname: string): { lang: "en" | "zh" | "en-us" | "zh-cn" | "zh-sg"; rest: string } | null => {
-  const m = pathname.match(/^\/(en-us|zh-cn|zh-sg|en|zh)(\/|$)(.*)$/);
-  if (!m) return null;
-  const lang = m[1] as "en" | "zh" | "en-us" | "zh-cn" | "zh-sg";
-  const rest = "/" + (m[3] ?? "");
-  return { lang, rest: rest === "//" ? "/" : rest };
-};
-
-/** 判断给定路径（去掉语言前缀后的部分）是否属于「应当带语言前缀」的范围 */
-const shouldLocalize = (pathWithoutLang: string): boolean => {
-  if (pathWithoutLang === "/") return true; // landing 也需要 SEO
-  return LOCALIZED_PATH_PREFIXES.some(
-    (p) => pathWithoutLang === p || pathWithoutLang.startsWith(p + "/"),
-  );
-};
-
 /**
  * 从浏览器路径中读取语言（仅国际站；国内站固定返回 null）。
  * - 不在白名单的路径或没有前缀都返回 null（调用方应回退到 localStorage / DEFAULT_LOCALE）
  */
 export const readLocaleFromPath = (pathname: string): "zh-CN" | "en-US" | null => {
   if (!isGlobal) return null;
-  const m = matchLangPrefix(pathname);
+  const m = matchPublicLangPrefix(pathname);
   if (!m) return null;
-  return URL_LANG_TO_LOCALE[m.lang] ?? null;
+  return PUBLIC_URL_LANG_TO_LOCALE[m.lang] ?? null;
 };
 
 /**
@@ -128,14 +90,14 @@ export const localizedPath = (path: string, locale: "zh-CN" | "en-US"): string =
   if (!path.startsWith("/")) return path; // 防御：相对路径 / 外链不处理
 
   // 已有语言前缀 → 剥掉后再决定是否本地化
-  const existing = matchLangPrefix(path);
+  const existing = matchPublicLangPrefix(path);
   const bare = existing ? existing.rest : path;
 
-  if (!shouldLocalize(bare)) return bare; // 这个路径段不需要本地化（如 /agents、/auth）
+  if (!shouldLocalizePublicPath(bare)) return bare; // 这个路径段不需要本地化（如 /agents、/auth）
 
   if (locale === DEFAULT_LOCALE) return bare;
 
-  const lang = LOCALE_TO_URL_LANG[locale];
+  const lang = publicUrlLangForLocale(locale);
   // 根路径特殊处理：/{lang}/  ←  /
   if (bare === "/") return `/${lang}/`;
   return `/${lang}${bare}`;
@@ -174,8 +136,8 @@ export const langPrefixRedirectTarget = (
   locale: "zh-CN" | "en-US",
 ): string | null => {
   if (!isGlobal) return null;
-  if (matchLangPrefix(pathname)) return null; // 已带前缀
+  if (matchPublicLangPrefix(pathname)) return null; // 已带前缀
   if (pathname === "/") return null; // 根路径例外
-  if (!shouldLocalize(pathname)) return null; // 非 SEO 路径
+  if (!shouldLocalizePublicPath(pathname)) return null; // 非 SEO 路径
   return localizedPath(pathname, locale);
 };

@@ -20,6 +20,8 @@ describe("publicSiteHref", () => {
     expect(publicSiteHref("/", "zh-SG", { localized: true })).toBe("/zh-sg");
     expect(publicSiteHref("/docs/overview", "zh-CN", { localized: true })).toBe("/docs/overview");
     expect(publicSiteHref("/docs/overview", "en-US", { localized: true })).toBe("/en-us/docs/overview");
+    expect(publicSiteHref("/changelog", "zh-CN", { localized: true })).toBe("/changelog");
+    expect(publicSiteHref("/changelog", "en-US", { localized: true })).toBe("/en-us/changelog");
   });
 
   it("keeps English as the unprefixed default in global builds", async () => {
@@ -30,5 +32,7 @@ describe("publicSiteHref", () => {
     expect(publicSiteHref("/", "zh-SG", { localized: true })).toBe("/zh-sg");
     expect(publicSiteHref("/docs/overview", "en-US", { localized: true })).toBe("/docs/overview");
     expect(publicSiteHref("/docs/overview", "zh-CN", { localized: true })).toBe("/zh-cn/docs/overview");
+    expect(publicSiteHref("/changelog", "en-US", { localized: true })).toBe("/changelog");
+    expect(publicSiteHref("/changelog", "zh-CN", { localized: true })).toBe("/zh-cn/changelog");
   });
 });
