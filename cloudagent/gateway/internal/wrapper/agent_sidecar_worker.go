@@ -1784,6 +1784,9 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 	workspaceWispStopped := false
 	workspaceWispStopRequired := false
 	innerDeletedBySidecar := false
+	sidecarShutdownSucceeded := false
+	innerShutdownStartedBySidecar := false
+	workspaceShutdownStartedBySidecar := false
 	outerWispStopRequired := false
 	outerWispStopped := false
 	probeSandbox := func(target string, phase string, sandboxID string) {
@@ -1812,6 +1815,12 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 					runtimeHostShutdownErr = fmt.Errorf("runtime host %s sandbox_id=%s error=%s", event.Event, event.SandboxID, event.Error)
 					continue
 				}
+				if event.Event == "inner_shutdown_start" {
+					innerShutdownStartedBySidecar = true
+				}
+				if event.Event == "workspace_runtime_shutdown_start" {
+					workspaceShutdownStartedBySidecar = true
+				}
 				if event.Event == "workspace_runtime_shutdown_done" {
 					workspaceWispStopped = true
 					innerWorkspaceStopConfirmed = true
@@ -1828,6 +1837,7 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 		}, nil)
 		logRuntimeHostEvents(stdoutParser.Finish())
 		if shutdownErr == nil && runtimeHostShutdownErr == nil {
+			sidecarShutdownSucceeded = true
 			innerDeleteFallback = false
 			innerWorkspaceStopConfirmed = true
 		} else {
@@ -1849,9 +1859,24 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 		probeSandbox("inner", "workspace_wisp_stop_before", runtime.InnerSandboxID)
 		fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_workspace_wisp_stop_start target=inner runtime_id=%s workspace_runtime_id=%s inner_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d\n", runtime.RuntimeID, runtime.WorkspaceRuntimeID, runtime.InnerSandboxID, quoteServerField(runtime.WorkspaceWispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence)
 		if err := w.stopWispWorkspaceRuntime(stopCtx, backend.host, sb, runtime); err != nil {
-			gracefulStopErr = errors.Join(gracefulStopErr, fmt.Errorf("stop workspace wisp runtime %s: %w", runtime.WorkspaceWispName, err))
-			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_workspace_wisp_stop_failed target=inner runtime_id=%s workspace_runtime_id=%s inner_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d error=%s\n", runtime.RuntimeID, runtime.WorkspaceRuntimeID, runtime.InnerSandboxID, quoteServerField(runtime.WorkspaceWispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence, quoteServerField(err.Error()))
-			probeSandbox("inner", "workspace_wisp_stop_failed", runtime.InnerSandboxID)
+			stopConfirmedByMissingSandbox := false
+			if sidecarShutdownSucceeded && (innerShutdownStartedBySidecar || workspaceShutdownStartedBySidecar) && isRuntimeHostRunCommandNotFoundError(err) {
+				probeCtx, probeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				probe, probeErr := runtimeHostProbeSandbox(probeCtx, backend.host, runtime.InnerSandboxID)
+				probeCancel()
+				if probeErr == nil && !probe.Exists {
+					stopConfirmedByMissingSandbox = true
+					workspaceWispStopped = true
+					innerWorkspaceStopConfirmed = true
+					innerDeletedBySidecar = true
+					fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_workspace_wisp_stop_assumed_done target=inner runtime_id=%s workspace_runtime_id=%s inner_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d reason=sidecar_shutdown_started_sandbox_missing\n", runtime.RuntimeID, runtime.WorkspaceRuntimeID, runtime.InnerSandboxID, quoteServerField(runtime.WorkspaceWispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence)
+				}
+			}
+			if !stopConfirmedByMissingSandbox {
+				gracefulStopErr = errors.Join(gracefulStopErr, fmt.Errorf("stop workspace wisp runtime %s: %w", runtime.WorkspaceWispName, err))
+				fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_workspace_wisp_stop_failed target=inner runtime_id=%s workspace_runtime_id=%s inner_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d error=%s\n", runtime.RuntimeID, runtime.WorkspaceRuntimeID, runtime.InnerSandboxID, quoteServerField(runtime.WorkspaceWispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence, quoteServerField(err.Error()))
+				probeSandbox("inner", "workspace_wisp_stop_failed", runtime.InnerSandboxID)
+			}
 		} else {
 			workspaceWispStopped = true
 			innerWorkspaceStopConfirmed = true

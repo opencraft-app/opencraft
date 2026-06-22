@@ -594,6 +594,64 @@ func TestCloseSessionRuntimeDoesNotDoubleStopWorkspaceAfterSidecarShutdown(t *te
 	}
 }
 
+func TestCloseSessionRuntimeAcceptsMissingInnerAfterSidecarShutdownStarted(t *testing.T) {
+	host := &recordingRuntimeHost{
+		runCommand: func(target RuntimeHostTarget, command string, env map[string]string, onStdout func(string) error, onStderr func(string) error) (CommandResult, error) {
+			if strings.Contains(command, " client --addr ") && strings.Contains(command, " shutdown") {
+				if onStdout != nil {
+					events := strings.Join([]string{
+						`WRAPPER_EVENT_JSON={"type":"runtime_host","event":"inner_shutdown_start","sandbox_id":"inner_1"}`,
+						`WRAPPER_EVENT_JSON={"type":"runtime_host","event":"workspace_runtime_shutdown_start","sandbox_id":"inner_1"}`,
+						"",
+					}, "\n")
+					if err := onStdout(events); err != nil {
+						return CommandResult{}, err
+					}
+				}
+				return CommandResult{ExitCode: 0, Exited: true, Status: "exited"}, nil
+			}
+			if target.ID == "inner_1" {
+				return CommandResult{}, fmt.Errorf("ags http 404 op=run_command sandbox_id=%s domain=ap-shanghai.tencentags.com envd_port=49983: The requested resource does not exist", target.ID)
+			}
+			if strings.Contains(command, "agent-wisp-1") {
+				return CommandResult{ExitCode: 0, Exited: true, Status: "exited", Stdout: "CLOUDAGENT_WISP_STOPPED\n"}, nil
+			}
+			return CommandResult{ExitCode: 0, Exited: true, Status: "exited"}, nil
+		},
+		probeSandbox: func(id string) (RuntimeHostSandboxProbe, error) {
+			if id == "inner_1" {
+				return RuntimeHostSandboxProbe{SandboxID: id, Exists: false, Status: "not_found"}, nil
+			}
+			return RuntimeHostSandboxProbe{SandboxID: id, Exists: true, Status: "running"}, nil
+		},
+	}
+	worker := &AgentSidecarWorker{
+		backends: map[string]agentSidecarBackend{
+			"": {host: host},
+		},
+	}
+	runtime := ACPSessionRuntime{
+		RuntimeID:           "rt_1",
+		OuterRuntime:        outerRuntimeWisp,
+		OuterSandboxID:      "outer_1",
+		OuterSandboxDomain:  runtimeHostTypeLocalWisp,
+		InnerSandboxID:      "inner_1",
+		RemoteBinary:        "/tmp/gateway/sessions/session_1/hermes-sidecar",
+		DaemonAddr:          "http://127.0.0.1:37001",
+		WispName:            "agent-wisp-1",
+		WispClientPath:      "/tmp/cloudagent-wisp/install/bin/wispclient",
+		WorkspaceWispName:   "workspace-wisp-1",
+		WorkspaceWispClient: "/tmp/cloudagent-workspace-wisp/install/bin/wispclient",
+	}
+
+	if err := worker.CloseSessionRuntime(context.Background(), runtime); err != nil {
+		t.Fatalf("CloseSessionRuntime should accept missing inner after sidecar shutdown started: %v", err)
+	}
+	if got := strings.Join(host.deleted, ","); got != "outer_1" {
+		t.Fatalf("deleted sandboxes=%q, want only outer_1", got)
+	}
+}
+
 func TestStopWispWorkspaceRuntimeRetriesTransientRunCommandNotFoundWhenProbeStillRunning(t *testing.T) {
 	attempts := 0
 	host := &recordingRuntimeHost{
