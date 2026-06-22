@@ -4,6 +4,7 @@ export interface HistoryPagingState {
   hasOlderHistory: boolean;
   isHistoryStartReady?: boolean;
   isLoadingOlderHistory: boolean;
+  requestIntent?: "none" | "scroll_down" | "scroll_up";
   scrollTop: number;
   thresholdPx?: number;
 }
@@ -34,11 +35,13 @@ export function shouldRequestOlderHistory({
   hasOlderHistory,
   isHistoryStartReady = true,
   isLoadingOlderHistory,
+  requestIntent = "none",
   scrollTop,
   thresholdPx = DEFAULT_HISTORY_START_THRESHOLD_PX,
 }: HistoryPagingState): boolean {
   if (!isHistoryStartReady) return false;
   if (!hasOlderHistory || isLoadingOlderHistory) return false;
+  if (requestIntent !== "scroll_up") return false;
   if (!Number.isFinite(scrollTop)) return false;
   return scrollTop <= Math.max(0, thresholdPx);
 }

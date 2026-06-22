@@ -1868,6 +1868,7 @@ test("history paging triggers near the top threshold only when older history is 
     shouldRequestOlderHistory({
       hasOlderHistory: true,
       isLoadingOlderHistory: false,
+      requestIntent: "scroll_up",
       scrollTop: 96,
     }),
     true,
@@ -1876,6 +1877,7 @@ test("history paging triggers near the top threshold only when older history is 
     shouldRequestOlderHistory({
       hasOlderHistory: true,
       isLoadingOlderHistory: false,
+      requestIntent: "scroll_up",
       scrollTop: 97,
     }),
     false,
@@ -1884,6 +1886,7 @@ test("history paging triggers near the top threshold only when older history is 
     shouldRequestOlderHistory({
       hasOlderHistory: false,
       isLoadingOlderHistory: false,
+      requestIntent: "scroll_up",
       scrollTop: 0,
     }),
     false,
@@ -1892,6 +1895,16 @@ test("history paging triggers near the top threshold only when older history is 
     shouldRequestOlderHistory({
       hasOlderHistory: true,
       isLoadingOlderHistory: true,
+      requestIntent: "scroll_up",
+      scrollTop: 0,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldRequestOlderHistory({
+      hasOlderHistory: true,
+      isLoadingOlderHistory: false,
+      requestIntent: "none",
       scrollTop: 0,
     }),
     false,
@@ -1904,6 +1917,7 @@ test("history paging waits for the viewport to settle before the first older-his
       hasOlderHistory: true,
       isHistoryStartReady: false,
       isLoadingOlderHistory: false,
+      requestIntent: "scroll_up",
       scrollTop: 0,
     }),
     false,
@@ -1913,6 +1927,7 @@ test("history paging waits for the viewport to settle before the first older-his
       hasOlderHistory: true,
       isHistoryStartReady: true,
       isLoadingOlderHistory: false,
+      requestIntent: "scroll_up",
       scrollTop: 0,
     }),
     true,

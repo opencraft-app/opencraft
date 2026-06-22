@@ -47,6 +47,7 @@ export interface ConversationScrollControllerOptions {
   historyStartKey?: unknown;
   isLoadingOlderHistory?: boolean;
   onNearHistoryStart?: () => void;
+  transportKey?: "web-scroll" | "web-partial-virtualized";
 }
 
 export interface ConversationScrollControllerSignals {
@@ -243,7 +244,8 @@ export function useConversationScrollController(
   const readMeasurementState = useCallback((): BottomAnchorMeasurementState => {
     const element = scrollRef.current;
     const routeKey = routeKeyFrom(optionsRef.current.historyStartKey) ?? "unscoped";
-    const containerKey = `web-scroll:${routeKey}`;
+    const transportKey = optionsRef.current.transportKey ?? "web-scroll";
+    const containerKey = `${transportKey}:${routeKey}`;
     const viewportWidth = element?.clientWidth ?? lastKnownViewportWidthRef.current;
     const viewportHeight = element?.clientHeight ?? lastKnownViewportHeightRef.current;
     const contentHeight =
@@ -446,14 +448,14 @@ export function useConversationScrollController(
     const handleScroll = () => {
       const previousScrollTop = lastKnownScrollTopRef.current;
       const scrollDelta = element.scrollTop - previousScrollTop;
+      const userIntent = userIntentRef.current;
       lastKnownScrollTopRef.current = element.scrollTop;
       const measurement = readMeasurementState();
       driver.handleScrollNearBottomChange({
         nextIsNearBottom: isBottomAnchorMeasurementNearBottom(measurement),
         scrollDelta,
-        userIntent: userIntentRef.current,
+        userIntent,
       });
-      userIntentRef.current = "none";
 
       const latestSnapshot = driver.getSnapshot();
       const routeKey = routeKeyFrom(optionsRef.current.historyStartKey);
@@ -471,6 +473,7 @@ export function useConversationScrollController(
           hasOlderHistory: latest.hasOlderHistory ?? false,
           isHistoryStartReady: historyStartReadyRef.current,
           isLoadingOlderHistory: latest.isLoadingOlderHistory ?? false,
+          requestIntent: userIntent,
           scrollTop: element.scrollTop,
         })
       ) {
@@ -480,6 +483,7 @@ export function useConversationScrollController(
         };
         latest.onNearHistoryStart?.();
       }
+      userIntentRef.current = "none";
     };
 
     element.addEventListener("wheel", handleWheel, { passive: true });

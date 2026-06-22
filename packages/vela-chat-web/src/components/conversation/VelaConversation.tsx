@@ -13,7 +13,9 @@ import {
   type ConversationScrollControllerDebug,
 } from "../../conversation-runtime/scroll/useConversationScrollController";
 import type { ConversationViewportHandle } from "../../conversation-runtime/scroll/viewportHandle";
+import { useConversationScrollbarOverlay } from "../../conversation-runtime/scrollbar/useConversationScrollbarOverlay";
 import { Conversation } from "../../primitives/conversation/Conversation";
+import styles from "../../styles/desktop.module.css";
 import { VelaTurnList } from "./VelaTurnList";
 
 export const VelaConversation = forwardRef<ConversationViewportHandle, {
@@ -53,6 +55,12 @@ export const VelaConversation = forwardRef<ConversationViewportHandle, {
     historyStartKey: webModel.sessionId,
     isLoadingOlderHistory: isLoadingOlder,
     onNearHistoryStart: onLoadOlder,
+    transportKey: segments.boundary.hasVirtualizedHistory
+      ? "web-partial-virtualized"
+      : "web-scroll",
+  });
+  const scrollbarOverlay = useConversationScrollbarOverlay(scroll.scrollRef, {
+    contentRef: scroll.contentRef,
   });
 
   useEffect(() => {
@@ -76,14 +84,17 @@ export const VelaConversation = forwardRef<ConversationViewportHandle, {
   );
 
   return (
-    <Conversation scrollRef={scroll.scrollRef}>
-      <VelaTurnList
-        contentRef={scroll.contentRef}
-        hostKind={webModel.host.kind}
-        isLoadingOlderHistory={isLoadingOlder}
-        scrollRef={scroll.scrollRef}
-        segments={segments}
-      />
-    </Conversation>
+    <div className={styles.conversationShell}>
+      <Conversation scrollRef={scroll.scrollRef}>
+        <VelaTurnList
+          contentRef={scroll.contentRef}
+          hostKind={webModel.host.kind}
+          isLoadingOlderHistory={isLoadingOlder}
+          scrollRef={scroll.scrollRef}
+          segments={segments}
+        />
+      </Conversation>
+      {scrollbarOverlay}
+    </div>
   );
 });

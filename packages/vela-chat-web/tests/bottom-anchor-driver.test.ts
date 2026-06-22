@@ -151,6 +151,86 @@ test("bottom anchor driver blocks route requests on stale measurements", async (
   assert.deepEqual(harness.scrollReasons, ["route_resume"]);
 });
 
+test("partial virtualized route entry requires a post-layout measurement before fulfillment", async () => {
+  const harness = await createHarness();
+  harness.measurement.containerKey = "web-partial-virtualized";
+  harness.measurement.viewportMeasuredForKey = "web-partial-virtualized";
+  harness.measurement.contentMeasuredForKey = "web-partial-virtualized";
+
+  harness.driver.applyRouteRequest({
+    reason: "route_initial_entry",
+    requestKey: "session:1:route_initial_entry",
+  });
+
+  harness.scheduler.flushOne();
+
+  assert.deepEqual(harness.scrollReasons, ["route_initial_entry"]);
+  assert.equal(harness.driver.getSnapshot().lastFulfilledReason, null);
+  assert.equal(
+    harness.driver.getSnapshot().blockedReason,
+    "waiting_for_post_layout_verification",
+  );
+
+  harness.scheduler.flushOne();
+
+  assert.equal(
+    harness.driver.getSnapshot().lastFulfilledReason,
+    null,
+    "web-partial-virtualized must not fulfill route entry before a measurement pass after the scroll attempt",
+  );
+  assert.equal(
+    harness.driver.getSnapshot().blockedReason,
+    "waiting_for_post_layout_verification",
+  );
+});
+
+test("partial virtualized route entry waits for measurement revision after measured keys catch up", async () => {
+  const harness = await createHarness();
+  harness.measurement.containerKey = "web-partial-virtualized";
+  harness.measurement.viewportMeasuredForKey = "web-scroll";
+  harness.measurement.contentMeasuredForKey = "web-scroll";
+
+  harness.driver.applyRouteRequest({
+    reason: "route_initial_entry",
+    requestKey: "session:1:route_initial_entry",
+  });
+  harness.scheduler.flushAll();
+
+  assert.equal(harness.scrollReasons.length, 0);
+  assert.equal(
+    harness.driver.getSnapshot().blockedReason,
+    "waiting_for_measurable_viewport",
+  );
+
+  harness.measurement.viewportMeasuredForKey = "web-partial-virtualized";
+  harness.measurement.contentMeasuredForKey = "web-partial-virtualized";
+  harness.driver.reevaluate();
+  harness.scheduler.flushAll();
+
+  assert.equal(
+    harness.driver.getSnapshot().lastFulfilledReason,
+    null,
+    "route entry should not fulfill just because measured keys caught up; virtualized content needs a post-layout measurement revision",
+  );
+  assert.equal(
+    harness.driver.getSnapshot().blockedReason,
+    "waiting_for_post_layout_verification",
+  );
+
+  const previousContentHeight = harness.measurement.contentHeight;
+  harness.measurement.contentHeight = 1320;
+  harness.driver.handleContentSizeChange({
+    previousContentHeight,
+    contentHeight: harness.measurement.contentHeight,
+  });
+  harness.scheduler.flushAll();
+
+  assert.equal(
+    harness.driver.getSnapshot().lastFulfilledReason,
+    "route_initial_entry",
+  );
+});
+
 test("bottom anchor driver detaches only for explicit user scroll away", async () => {
   const harness = await createHarness();
   harness.setNearBottom(false);

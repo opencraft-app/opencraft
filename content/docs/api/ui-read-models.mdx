@@ -7,7 +7,8 @@ description: 面向 UI surface 的投影 API，与 Agent 基础 API 分层。
 
 velaChat 的 API 分成两层：
 
-- **Agent 基础 API**：事实和控制面，例如 input events、canonical events、session timeline、trace、backend capability。
+- **Agent 基础 API**：事实和控制面，例如 input events、canonical events、backend capability。
+- **Diagnostics API**：审计和调试面，例如 diagnostics timeline、trace。
 - **UI Read Model API**：由 projector 派生的展示面，例如 conversation、requests、diffs、sessions。
 
 OpenAPI 是唯一 client-facing wire contract。MDX 只解释行为边界；字段名、required 规则、枚举和 endpoint 以 `public/openapi/velachat.v1.yaml` 为准。
@@ -18,8 +19,9 @@ Canonical event log
   -> PendingRequestsView   # permission / question dock
   -> DiffReviewView        # file review lane
   -> SessionView           # current session metadata and operations
-  -> SessionTimeline       # audit/history, not normal UI input
-  -> SessionTrace          # diagnostics/debug
+Diagnostics projections
+  -> DiagnosticsTimeline   # audit/history, not normal UI input
+  -> DiagnosticsTrace      # diagnostics/debug
 ```
 
 ## ConversationView
@@ -36,7 +38,7 @@ Canonical event log
 | `agent_work` | 工具、命令、搜索、读写文件、warning 等 agent work | Synara/Codex 风格 work rows |
 | `status` | 用户可理解的状态或错误摘要 | inline status row |
 
-`agent_work.detail` 是 normalized UI-safe union，例如 `shell`、`read`、`write`、`edit`、`search`、`fetch`、`generic`。完整 provider raw payload 属于 `/timeline` 或 `/trace`，不能塞进普通 UI read model。
+`agent_work.detail` 是 normalized UI-safe union，例如 `shell`、`read`、`write`、`edit`、`search`、`fetch`、`generic`。完整 provider raw payload 属于 diagnostics timeline 或 trace，不能塞进普通 UI read model。
 
 Turn header 只来自 `turn_meta`。Client 不能从 assistant streaming 状态、tool 数量、activity summary 或 provider raw event 反推 `Worked for` / `处理中`。
 
@@ -77,7 +79,7 @@ Day 0 前端可以对 `assistant.message.delta` 做本地 overlay，以改善流
 
 ## Timeline And Trace
 
-`GET /sessions/{session_id}/timeline` 和 `GET /sessions/{session_id}/trace` 是 Agent history / diagnostics API：
+`GET /sessions/{session_id}/diagnostics/timeline` 和 `GET /sessions/{session_id}/diagnostics/trace` 是 diagnostics API：
 
 - timeline 适合 audit、replay、debug、export。
 - trace 适合 provider raw event、normalization、command/idempotency 链路排查。

@@ -192,14 +192,17 @@ where
             get(get_diffs_view::<B>),
         )
         .route(
-            "/api/v1/sessions/{session_id}/timeline",
+            "/api/v1/sessions/{session_id}/diagnostics/timeline",
             get(get_timeline::<B>),
         )
         .route(
-            "/api/v1/sessions/{session_id}/timeline/{item_id}",
+            "/api/v1/sessions/{session_id}/diagnostics/timeline/{item_id}",
             get(get_timeline_item::<B>),
         )
-        .route("/api/v1/sessions/{session_id}/trace", get(get_trace::<B>))
+        .route(
+            "/api/v1/sessions/{session_id}/diagnostics/trace",
+            get(get_trace::<B>),
+        )
         .route("/api/v1/views/sessions", get(get_session_list_view::<B>))
         .route("/api/v1/requests/{request_id}", get(get_request::<B>))
         .route("/api/v1/backends", get(list_backends::<B>))

@@ -28,6 +28,7 @@ export interface BottomAnchorRequest {
   reason: BottomAnchorRequestReason;
   requestKey: string;
   source: "route" | "local" | "maintenance";
+  measurementRevisionAtCreated: number;
 }
 
 export interface BottomAnchorVerification {
@@ -220,6 +221,24 @@ function deriveBlockedReason(input: {
   return null;
 }
 
+function isPartialVirtualizedMeasurement(
+  measurement: Pick<BottomAnchorMeasurementState, "containerKey">,
+): boolean {
+  return measurement.containerKey.includes("web-partial-virtualized");
+}
+
+function requiresPostLayoutMeasurementRevision(input: {
+  measurement: BottomAnchorMeasurementState;
+  measurementRevision: number;
+  request: BottomAnchorRequest | null;
+}): boolean {
+  return (
+    input.request?.source === "route" &&
+    isPartialVirtualizedMeasurement(input.measurement) &&
+    input.measurementRevision <= input.request.measurementRevisionAtCreated
+  );
+}
+
 function shouldRetry(input: {
   mode: BottomAnchorMode;
   retries: number;
@@ -366,6 +385,17 @@ export function createBottomAnchorDriver(
           setBlockedReason(verificationBlockedReason);
           return;
         }
+        if (
+          requiresPostLayoutMeasurementRevision({
+            measurement: input.getMeasurementState(),
+            measurementRevision,
+            request: pendingRequest,
+          })
+        ) {
+          pendingVerification = verification;
+          setBlockedReason("waiting_for_post_layout_verification");
+          return;
+        }
 
         if (input.isNearBottom()) {
           pendingVerification = null;
@@ -442,6 +472,7 @@ export function createBottomAnchorDriver(
       reason: request.reason,
       requestKey: request.requestKey,
       source,
+      measurementRevisionAtCreated: measurementRevision,
     };
     pendingVerification = null;
     setMode("sticky_bottom", null);
@@ -515,6 +546,11 @@ export function createBottomAnchorDriver(
     handleContentSizeChange(change) {
       if (change.previousContentHeight !== change.contentHeight) {
         markMeasurementChanged();
+      }
+      if (pendingRequest && pendingVerification) {
+        scheduleVerification(pendingVerification, 0);
+        setBlockedReason(currentBlockedReason());
+        return;
       }
       if (shouldRestickOnContentChange({ mode, ...change })) {
         createMaintenanceRequest("content_mutated");

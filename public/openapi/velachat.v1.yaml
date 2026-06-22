@@ -14,7 +14,6 @@ tags:
   - name: Sessions
   - name: Input Events
   - name: Events
-  - name: Session Timeline
   - name: UI Read Models
   - name: Diagnostics
   - name: Requests
@@ -350,14 +349,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DiffReviewView'
-  /sessions/{session_id}/timeline:
+  /sessions/{session_id}/diagnostics/timeline:
     get:
-      tags: [Session Timeline]
-      operationId: getSessionTimeline
-      summary: 获取 session timeline
+      tags: [Diagnostics]
+      operationId: getSessionDiagnosticsTimeline
+      summary: 获取 session diagnostics timeline
       description: |
-        CloudAgent-style session history resource，用于综合历史、audit、replay、debug、export。
-        它属于主 Agent API，不属于 UI Read Models；普通 UI surface 不应直接消费它来拼界面。
+        Diagnostics-only timeline，用于 audit、replay、debug、export。
+        普通 UI surface 必须使用 ConversationView，不能直接消费 timeline 拼界面。
       parameters:
         - $ref: '#/components/parameters/SessionId'
         - $ref: '#/components/parameters/Limit'
@@ -372,11 +371,11 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TimelineProjection'
-  /sessions/{session_id}/timeline/{item_id}:
+  /sessions/{session_id}/diagnostics/timeline/{item_id}:
     get:
-      tags: [Session Timeline]
-      operationId: getSessionTimelineItem
-      summary: 获取单个 session timeline item
+      tags: [Diagnostics]
+      operationId: getSessionDiagnosticsTimelineItem
+      summary: 获取单个 session diagnostics timeline item
       parameters:
         - $ref: '#/components/parameters/SessionId'
         - name: item_id
@@ -395,10 +394,10 @@ paths:
                 properties:
                   item:
                     $ref: '#/components/schemas/TimelineItem'
-  /sessions/{session_id}/trace:
+  /sessions/{session_id}/diagnostics/trace:
     get:
       tags: [Diagnostics]
-      operationId: getSessionTrace
+      operationId: getSessionDiagnosticsTrace
       summary: 获取 session command/runtime trace
       description: |
         调试 command acceptance、backend raw output、normalization、projection invalidation 的链路。

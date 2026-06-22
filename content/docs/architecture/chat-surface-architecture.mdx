@@ -27,7 +27,7 @@ flowchart TD
   Web --> App["app/chat
   Next Route Assembly"]
 
-  OpenAPI -. diagnostics .-> Audit["/timeline / /trace
+  OpenAPI -. diagnostics .-> Audit["diagnostics timeline / trace
   Audit and Debug"]
 ```
 
@@ -51,10 +51,10 @@ flowchart TD
 
 诊断和审计面板 MAY 消费：
 
-- `GET /sessions/{session_id}/timeline`
-- `GET /sessions/{session_id}/trace`
+- `GET /sessions/{session_id}/diagnostics/timeline`
+- `GET /sessions/{session_id}/diagnostics/trace`
 
-`timeline` 和 `trace` 是主 Agent API / audit resource，不是普通 transcript 的拼装输入。
+`timeline` 和 `trace` 是 diagnostics / audit resource，不是普通 transcript 的拼装输入。
 
 ### `vela-chat-client`
 
@@ -188,7 +188,7 @@ type ChatHostPolicy =
 禁止：
 
 - 直接调用 `fetch`。
-- 直接读取 `/timeline` 拼普通聊天。
+- 直接读取 diagnostics timeline 拼普通聊天。
 - 在组件里解析 OpenAPI DTO。
 - 在一个 `ChatView.tsx` 里隐藏 projection、transport、render policy。
 
@@ -222,7 +222,7 @@ type ChatHostPolicy =
 | 长消息卡顿 | `vela-chat-render-model` markdown block split、row memo key |
 | 移动端布局不合理 | host policy、render model，而不是 surface |
 | 视觉错位 | `vela-chat-web` component 和 CSS |
-| 需要审计 raw event | `/sessions/{session_id}/timeline` 或 `/trace` |
+| 需要审计 raw event | `/sessions/{session_id}/diagnostics/timeline` 或 `/sessions/{session_id}/diagnostics/trace` |
 
 ### 模块 README 要求
 

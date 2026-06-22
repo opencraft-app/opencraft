@@ -264,7 +264,7 @@ crates/velad/tests/
   events_contract.rs
   sse_contract.rs
   views_contract.rs
-  timeline_trace_contract.rs
+  diagnostics.rs
   backends_contract.rs
 ```
 
@@ -430,7 +430,8 @@ response.assert_json_path("$.cursor.event_id").is_non_empty();
 | `sendSessionInputEvents` | `events_contract.rs` | yes | yes | yes | n/a | closed/session running/invalid input | rejected command is HTTP 202 |
 | `listSessionEvents` | `events_contract.rs` | yes | yes | n/a | yes | n/a | stale cursor returns `409 SyncReset` |
 | `streamSessionEvents` | `sse_contract.rs` | yes | yes | n/a | yes | n/a | stale cursor emits `sync.reset` |
-| `getSessionTimeline` | `timeline_trace_contract.rs` | yes | yes | n/a | before_id | n/a | coalesces lifecycle events |
+| `getSessionDiagnosticsTimeline` | `diagnostics.rs` | yes | yes | n/a | before_id | n/a | coalesces lifecycle events; old main-session path is 404 |
+| `getSessionDiagnosticsTrace` | `diagnostics.rs` | yes | yes | n/a | n/a | n/a | exposes runtime/provider diagnostics only |
 | `probeBackend` | `backends_contract.rs` | yes | n/a | n/a | n/a | unavailable backend | delegates only configured backend |
 
 这张表比“测试覆盖率百分比”更有用，因为它告诉 agent 失败时该读哪里。

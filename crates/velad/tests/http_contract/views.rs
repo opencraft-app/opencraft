@@ -268,8 +268,8 @@ async fn openapi_query_limits_are_validated_instead_of_clamped() {
         "/api/v1/views/sessions?limit=501".to_string(),
         format!("/api/v1/sessions/{session_id}/events?limit=0"),
         format!("/api/v1/sessions/{session_id}/views/conversation?limit=501"),
-        format!("/api/v1/sessions/{session_id}/timeline?limit=501"),
-        format!("/api/v1/sessions/{session_id}/trace?limit=0"),
+        format!("/api/v1/sessions/{session_id}/diagnostics/timeline?limit=501"),
+        format!("/api/v1/sessions/{session_id}/diagnostics/trace?limit=0"),
     ] {
         let (status, body) = get_json(app.clone(), &uri).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "uri: {uri}");

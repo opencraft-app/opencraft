@@ -20,6 +20,7 @@ import type { ConversationStrategy } from "./strategy";
 
 const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 64;
 const OVERSCAN = 8;
+const INITIAL_VIRTUAL_RANGE_OVERSCAN = 4;
 
 export const webPartialVirtualizedConversationStrategy: ConversationStrategy = {
   name: "web-partial-virtualized",
@@ -58,6 +59,7 @@ function WebPartialVirtualizedItemList({
   scrollRef?: RefObject<HTMLElement | null>;
   segments: ConversationRuntimeSegments;
 }) {
+  const scrollElement = scrollRef?.current ?? null;
   const rowVirtualizer = useVirtualizer({
     count: segments.historyVirtualized.length,
     getScrollElement: () => scrollRef?.current ?? null,
@@ -70,6 +72,7 @@ function WebPartialVirtualizedItemList({
           })
         : 160;
     },
+    initialRect: readConversationInitialRect(scrollElement, contentRef?.current),
     measureElement,
     overscan: OVERSCAN,
     useAnimationFrameWithResizeObserver: true,
@@ -126,21 +129,42 @@ function WebPartialVirtualizedItemList({
     };
   }, []);
 
+  const estimateWidth = readConversationEstimateWidth(
+    scrollElement,
+    contentRef?.current,
+  );
   const virtualItems = rowVirtualizer.getVirtualItems();
+  const virtualTotalSize = rowVirtualizer.getTotalSize();
+  const renderedVirtualItems =
+    virtualItems.length > 0
+      ? virtualItems
+      : buildInitialVirtualItems({
+          items: segments.historyVirtualized,
+          viewportHeight:
+            scrollElement?.clientHeight ||
+            readConversationInitialRect(scrollElement, contentRef?.current).height,
+          width: estimateWidth,
+        });
 
   return (
     <div
       className={styles.turnList}
       data-conversation-strategy="web-partial-virtualized"
+      data-virtualized-history-count={segments.historyVirtualized.length}
+      data-virtualized-rendered-count={renderedVirtualItems.length}
+      data-virtualized-total-size={virtualTotalSize}
       ref={contentRef}
     >
       {isLoadingOlderHistory ? <div className={styles.historyLoader}>加载中</div> : null}
       {segments.historyVirtualized.length > 0 ? (
         <div
           className={styles.virtualizedHistoryBand}
-          style={{ height: rowVirtualizer.getTotalSize() }}
+          data-virtualized-history-count={segments.historyVirtualized.length}
+          data-virtualized-rendered-count={renderedVirtualItems.length}
+          data-virtualized-total-size={virtualTotalSize}
+          style={{ height: virtualTotalSize }}
         >
-          {virtualItems.map((virtualItem) => {
+          {renderedVirtualItems.map((virtualItem) => {
             const item = segments.historyVirtualized[virtualItem.index];
             if (!item) return null;
             return (
@@ -202,4 +226,39 @@ function readConversationEstimateWidth(
   contentElement: HTMLElement | null | undefined,
 ) {
   return scrollElement?.clientWidth || contentElement?.clientWidth || null;
+}
+
+function readConversationInitialRect(
+  scrollElement: HTMLElement | null | undefined,
+  contentElement: HTMLElement | null | undefined,
+) {
+  const width = scrollElement?.clientWidth || contentElement?.clientWidth || 760;
+  const height = scrollElement?.clientHeight || 600;
+  return { width, height };
+}
+
+function buildInitialVirtualItems({
+  items,
+  viewportHeight,
+  width,
+}: {
+  items: readonly ConversationStreamItem[];
+  viewportHeight: number;
+  width: number | null;
+}) {
+  if (items.length === 0 || viewportHeight <= 0) return [];
+  const rendered = [];
+  let start = 0;
+  const targetHeight = viewportHeight + INITIAL_VIRTUAL_RANGE_OVERSCAN * 160;
+  for (let index = 0; index < items.length && start < targetHeight; index += 1) {
+    const item = items[index];
+    if (!item) break;
+    rendered.push({
+      index,
+      key: item.key,
+      start,
+    });
+    start += estimateStreamItemHeight(item, { width });
+  }
+  return rendered;
 }

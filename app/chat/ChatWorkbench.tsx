@@ -49,6 +49,12 @@ import {
 } from "./sessionScopedReadModels";
 import { buildPendingImageAttachments, type PendingImageAttachment } from "./workbench/attachments";
 import { DEFAULT_BASE_URL } from "./workbench/constants";
+import { ConversationHistoryHydrationScreen } from "./workbench/conversation-history/ConversationHistoryHydrationScreen";
+import {
+  DEFAULT_DESKTOP_CONVERSATION_HISTORY_POLICY,
+  shouldAutoPreloadOlderConversation,
+  shouldShowConversationHistoryHydrationGate,
+} from "./workbench/conversation-history/policy";
 import { buildWorkbenchRenderModel } from "./workbench/renderModel";
 import { DebugSessionLauncher } from "./workbench/session-launcher/DebugSessionLauncher";
 import { cursorEventId, isStaleCursorError } from "./workbench/helpers";
@@ -88,6 +94,8 @@ export function ChatWorkbench({
   const [isRespondingToRequest, setIsRespondingToRequest] = useState(false);
   const [isCancellingSession, setIsCancellingSession] = useState(false);
   const [messageFollowToken, setMessageFollowToken] = useState(0);
+  const [completedInitialHydrationSessionId, setCompletedInitialHydrationSessionId] =
+    useState<string | null>(null);
   const [conversationScrollDebug, setConversationScrollDebug] =
     useState<VelaChatDebugScrollRuntime | null>(null);
   const conversationRef = useRef<typeof conversation>(null);
@@ -236,6 +244,9 @@ export function ChatWorkbench({
     () => buildConversationHistoryPrependPlan({ conversation: activeConversation, limit: 80 }),
     [activeConversation],
   );
+  const conversationHistoryPolicy = DEFAULT_DESKTOP_CONVERSATION_HISTORY_POLICY;
+  const hasCompletedInitialHistoryHydration =
+    activeSessionId.length > 0 && completedInitialHydrationSessionId === activeSessionId;
 
   useEffect(() => {
     if (!activeSessionId || !isConversationReady) return;
@@ -347,6 +358,49 @@ export function ChatWorkbench({
     conversationHistoryPrependPlan,
     isLoadingOlder,
     loadReadModels,
+  ]);
+
+  const shouldAutoPreloadOlder = shouldAutoPreloadOlderConversation({
+    activeSessionId,
+    error,
+    hasCompletedInitialHydration: hasCompletedInitialHistoryHydration,
+    hasOlder: conversationHistoryPrependPlan.has_older,
+    isConversationReady,
+    isLoadingOlder,
+    policy: conversationHistoryPolicy,
+  });
+  useEffect(() => {
+    if (!shouldAutoPreloadOlder) return;
+    void loadOlderConversation();
+  }, [loadOlderConversation, shouldAutoPreloadOlder]);
+
+  const isConversationHistoryHydrating = shouldShowConversationHistoryHydrationGate({
+    activeSessionId,
+    error,
+    hasCompletedInitialHydration: hasCompletedInitialHistoryHydration,
+    hasOlder: conversationHistoryPrependPlan.has_older,
+    isConversationReady,
+    isLoadingOlder,
+    policy: conversationHistoryPolicy,
+  });
+
+  useEffect(() => {
+    if (
+      !activeSessionId ||
+      hasCompletedInitialHistoryHydration ||
+      !isConversationReady ||
+      conversationHistoryPrependPlan.has_older ||
+      isLoadingOlder
+    ) {
+      return;
+    }
+    setCompletedInitialHydrationSessionId(activeSessionId);
+  }, [
+    activeSessionId,
+    conversationHistoryPrependPlan.has_older,
+    hasCompletedInitialHistoryHydration,
+    isConversationReady,
+    isLoadingOlder,
   ]);
 
   const model = useMemo(() => {
@@ -731,6 +785,10 @@ export function ChatWorkbench({
         workingDirectory={workingDirectory}
       />
     );
+  }
+
+  if (isConversationHistoryHydrating) {
+    return <ConversationHistoryHydrationScreen />;
   }
 
   return (

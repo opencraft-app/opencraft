@@ -90,6 +90,9 @@ test("desktop renderer is split into agent-friendly component folders with local
     "packages/vela-chat-web/src/conversation-runtime/scroll/routeResume.ts",
     "packages/vela-chat-web/src/conversation-runtime/scroll/useConversationScrollController.ts",
     "packages/vela-chat-web/src/conversation-runtime/scroll/viewportHandle.ts",
+    "packages/vela-chat-web/src/conversation-runtime/scrollbar/README.md",
+    "packages/vela-chat-web/src/conversation-runtime/scrollbar/geometry.ts",
+    "packages/vela-chat-web/src/conversation-runtime/scrollbar/useConversationScrollbarOverlay.tsx",
     "packages/vela-chat-web/src/conversation-runtime/strategy/README.md",
     "packages/vela-chat-web/src/conversation-runtime/strategy/strategyRegistry.ts",
     "packages/vela-chat-web/src/conversation-runtime/strategy/strategyResolver.ts",
@@ -382,21 +385,37 @@ test("assistant markdown renders tables without third-party table chrome", () =>
   assert.doesNotMatch(source, /TableCopyDropdown|TableDownloadButton|TableDownloadDropdown/);
 });
 
-test("chat transcript and markdown hide native scrollbars by default like Codex", () => {
+test("chat transcript hides native scrollbars behind a cross-platform overlay", () => {
   const css = readFileSync(
     join(root, "packages/vela-chat-web/src/styles/desktop.module.css"),
     "utf8",
   );
-
   const conversation = cssBlock(css, "conversation");
+  const conversationSource = readFileSync(
+    join(root, "packages/vela-chat-web/src/components/conversation/VelaConversation.tsx"),
+    "utf8",
+  );
+  const overlaySource = readFileSync(
+    join(root, "packages/vela-chat-web/src/conversation-runtime/scrollbar/useConversationScrollbarOverlay.tsx"),
+    "utf8",
+  );
 
+  assert.match(conversationSource, /useConversationScrollbarOverlay/);
+  assert.match(overlaySource, /ResizeObserver/);
+  assert.match(overlaySource, /scrollTop\s*=/);
+  assert.match(overlaySource, /style\.scrollBehavior\s*=\s*"auto"/);
+  assert.match(overlaySource, /computeScrollOffsetFromThumbOffset/);
   assert.match(conversation, /overscroll-behavior:\s*contain;/);
   assert.match(conversation, /scrollbar-width:\s*none;/);
   assert.match(conversation, /-ms-overflow-style:\s*none;/);
   assert.match(conversation, /scrollbar-gutter:\s*auto;/);
+  assert.doesNotMatch(conversation, /scroll-behavior:\s*smooth;/);
   assert.match(css, /\.conversation::-webkit-scrollbar\s*\{[^}]*display:\s*none;/s);
   assert.match(css, /\.conversation::-webkit-scrollbar\s*\{[^}]*width:\s*0;/s);
   assert.match(css, /\.conversation::-webkit-scrollbar\s*\{[^}]*height:\s*0;/s);
+  assert.match(css, /\.conversationScrollbarOverlay\s*\{/);
+  assert.match(css, /\.conversationScrollbarThumb\s*\{/);
+  assert.doesNotMatch(css, /\.conversationScrollbarThumbHitbox\s*\{[^}]*transition:\s*transform/s);
   assert.match(css, /\.messageResponse pre,\s*\.markdownTableScroller\s*\{[^}]*scrollbar-width:\s*none;/s);
   assert.match(css, /\.messageResponse pre,\s*\.markdownTableScroller\s*\{[^}]*-ms-overflow-style:\s*none;/s);
   assert.match(css, /\.messageResponse pre::-webkit-scrollbar,\s*\.markdownTableScroller::-webkit-scrollbar\s*\{[^}]*display:\s*none;/s);
@@ -479,7 +498,9 @@ test("conversation scroll controller cancels pending stick on user scroll-away i
   );
 
   assert.match(controller, /markUserIntent\(event\.deltaY < 0 \? "scroll_up" : "scroll_down"\)/);
-  assert.match(controller, /userIntent:\s*userIntentRef\.current/);
+  assert.match(controller, /const userIntent = userIntentRef\.current/);
+  assert.match(controller, /userIntent,\s*\}\);/);
+  assert.match(controller, /requestIntent:\s*userIntent/);
   assert.match(controller, /handleScrollNearBottomChange/);
   assert.match(controller, /cancelFrame:\s*\(handle\) => cancelScheduledFrame\(handle\)/);
 });
@@ -972,6 +993,72 @@ test("composer primary control has stable accessible action labels", () => {
 
   assert.match(promptInput, /aria-label=\{isStopControl \? "Stop generation" : "Send message"\}/);
   assert.match(promptInput, /title=\{isStopControl \? "Stop generation" : "Send message"\}/);
+});
+
+test("composer primary control keeps codex-desktop dimensions in narrow flex layouts", () => {
+  const styles = readFileSync(
+    join(root, "packages/vela-chat-web/src/styles/desktop.module.css"),
+    "utf8",
+  );
+
+  const primaryControlBlock = styles.match(/\.sendButton,\n\.stopButton\s*\{[^}]+\}/)?.[0] ?? "";
+  const stopButtonBlock = [...styles.matchAll(/\.stopButton\s*\{[^}]+\}/g)].at(-1)?.[0] ?? "";
+  const stopGlyphBlock = styles.match(/\.stopGlyph\s*\{[^}]+\}/)?.[0] ?? "";
+
+  assert.match(primaryControlBlock, /width:\s*34px;/);
+  assert.match(primaryControlBlock, /height:\s*34px;/);
+  assert.match(primaryControlBlock, /min-width:\s*34px;/);
+  assert.match(primaryControlBlock, /min-height:\s*34px;/);
+  assert.match(primaryControlBlock, /flex:\s*0 0 34px;/);
+  assert.match(primaryControlBlock, /aspect-ratio:\s*1;/);
+  assert.match(primaryControlBlock, /border-radius:\s*8px;/);
+  assert.match(stopButtonBlock, /width:\s*38px;/);
+  assert.match(stopButtonBlock, /height:\s*38px;/);
+  assert.match(stopButtonBlock, /border-radius:\s*999px;/);
+  assert.match(stopGlyphBlock, /flex:\s*0 0 auto;/);
+});
+
+test("composer input frame matches the codex-desktop visual rhythm", () => {
+  const styles = readFileSync(
+    join(root, "packages/vela-chat-web/src/styles/desktop.module.css"),
+    "utf8",
+  );
+
+  const frameBlock = cssBlock(styles, "composer");
+  const textareaBlock = cssBlock(styles, "textarea");
+  const toolbarBlock = cssBlock(styles, "composerFooter");
+  const toolbarLaneBlock = styles.match(/\.composerLeft,\n\.composerRight\s*\{[^}]+\}/)?.[0] ?? "";
+  const leftBlock = styles.match(/\.composerLeft\s*\{[^}]+\}/)?.[0] ?? "";
+  const rightBlock = [...styles.matchAll(/\.composerRight\s*\{[^}]+\}/g)].at(-1)?.[0] ?? "";
+  const iconButtonBlock = cssBlock(styles, "iconButton");
+
+  assert.match(frameBlock, /border-radius:\s*24px;/);
+  assert.match(frameBlock, /background:\s*rgb\(255 255 255 \/ 94%\);/);
+  assert.match(frameBlock, /box-shadow:\s*0 18px 48px rgb\(31 35 40 \/ 16%\)/);
+  assert.match(frameBlock, /backdrop-filter:\s*saturate\(1\.4\) blur\(22px\);/);
+  assert.doesNotMatch(frameBlock, /min-height:\s*112px;/);
+
+  assert.match(textareaBlock, /min-height:\s*24px;/);
+  assert.match(textareaBlock, /max-height:\s*200px;/);
+  assert.match(textareaBlock, /font-size:\s*14px;/);
+  assert.match(textareaBlock, /line-height:\s*1\.5;/);
+  assert.match(textareaBlock, /padding:\s*12px 16px 8px;/);
+
+  assert.match(toolbarBlock, /align-items:\s*flex-end;/);
+  assert.match(toolbarBlock, /flex-wrap:\s*wrap;/);
+  assert.match(toolbarBlock, /gap:\s*10px;/);
+  assert.match(toolbarBlock, /padding:\s*0 16px 16px;/);
+  assert.match(toolbarLaneBlock, /flex-wrap:\s*wrap;/);
+  assert.match(toolbarLaneBlock, /gap:\s*8px;/);
+  assert.match(leftBlock, /flex:\s*1 1 auto;/);
+  assert.match(rightBlock, /flex:\s*0 1 auto;/);
+  assert.match(rightBlock, /justify-content:\s*flex-end;/);
+  assert.match(rightBlock, /margin-left:\s*auto;/);
+
+  assert.match(iconButtonBlock, /width:\s*36px;/);
+  assert.match(iconButtonBlock, /height:\s*36px;/);
+  assert.match(iconButtonBlock, /border:\s*1px solid #e7e5e4;/);
+  assert.match(iconButtonBlock, /border-radius:\s*8px;/);
 });
 
 test("composer primary control switches to stop while a turn is running", () => {

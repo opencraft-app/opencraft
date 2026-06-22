@@ -28,21 +28,24 @@ async fn exposes_remaining_openapi_shell_routes() {
 
     let (status, timeline) = get_json(
         app.clone(),
-        &format!("/api/v1/sessions/{session_id}/timeline"),
+        &format!("/api/v1/sessions/{session_id}/diagnostics/timeline"),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     let item_id = timeline["items"][0]["id"].as_str().unwrap();
     let (status, item) = get_json(
         app.clone(),
-        &format!("/api/v1/sessions/{session_id}/timeline/{item_id}"),
+        &format!("/api/v1/sessions/{session_id}/diagnostics/timeline/{item_id}"),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(item["item"]["id"], item_id);
 
-    let (status, trace) =
-        get_json(app.clone(), &format!("/api/v1/sessions/{session_id}/trace")).await;
+    let (status, trace) = get_json(
+        app.clone(),
+        &format!("/api/v1/sessions/{session_id}/diagnostics/trace"),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(trace["session_id"], session_id);
 
@@ -89,12 +92,13 @@ async fn exposes_remaining_openapi_shell_routes() {
 }
 
 #[tokio::test]
-async fn openapi_and_router_keep_timeline_and_trace_on_main_session_api() {
+async fn openapi_and_router_keep_timeline_and_trace_on_diagnostics_api_only() {
     let openapi = include_str!("../../../../public/openapi/velachat.v1.yaml");
-    assert!(openapi.contains("  /sessions/{session_id}/timeline:"));
-    assert!(openapi.contains("  /sessions/{session_id}/trace:"));
-    assert!(!openapi.contains("/sessions/{session_id}/diagnostics/timeline"));
-    assert!(!openapi.contains("/sessions/{session_id}/diagnostics/trace"));
+    assert!(openapi.contains("  /sessions/{session_id}/diagnostics/timeline:"));
+    assert!(openapi.contains("  /sessions/{session_id}/diagnostics/trace:"));
+    assert!(!openapi.contains("  /sessions/{session_id}/timeline:"));
+    assert!(!openapi.contains("  /sessions/{session_id}/trace:"));
+    assert!(!openapi.contains("name: Session Timeline"));
 
     let app = test_app().await;
     let (_, created) = json_request(
@@ -109,15 +113,29 @@ async fn openapi_and_router_keep_timeline_and_trace_on_main_session_api() {
 
     let (status, timeline) = get_json(
         app.clone(),
-        &format!("/api/v1/sessions/{session_id}/timeline"),
+        &format!("/api/v1/sessions/{session_id}/diagnostics/timeline"),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     assert!(timeline["items"].is_array());
 
-    let (status, trace) = get_json(app, &format!("/api/v1/sessions/{session_id}/trace")).await;
+    let (status, trace) = get_json(
+        app.clone(),
+        &format!("/api/v1/sessions/{session_id}/diagnostics/trace"),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(trace["session_id"], session_id);
+
+    let response = get_response(
+        app.clone(),
+        &format!("/api/v1/sessions/{session_id}/timeline"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    let response = get_response(app, &format!("/api/v1/sessions/{session_id}/trace")).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
@@ -224,7 +242,7 @@ async fn projections_timeline_and_trace_are_coalesced_and_schema_complete() {
 
     let (status, timeline) = get_json(
         app.clone(),
-        &format!("/api/v1/sessions/{session_id}/timeline"),
+        &format!("/api/v1/sessions/{session_id}/diagnostics/timeline"),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -243,7 +261,11 @@ async fn projections_timeline_and_trace_are_coalesced_and_schema_complete() {
             .any(|item| item["kind"] == "request")
     );
 
-    let (status, trace) = get_json(app, &format!("/api/v1/sessions/{session_id}/trace")).await;
+    let (status, trace) = get_json(
+        app,
+        &format!("/api/v1/sessions/{session_id}/diagnostics/trace"),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert!(
         trace["spans"]
@@ -371,8 +393,11 @@ async fn timeline_coalesces_related_event_lifecycles() {
     .await;
     wait_for_session_event(app.clone(), session_id, "turn.completed").await;
 
-    let (status, timeline) =
-        get_json(app, &format!("/api/v1/sessions/{session_id}/timeline")).await;
+    let (status, timeline) = get_json(
+        app,
+        &format!("/api/v1/sessions/{session_id}/diagnostics/timeline"),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     let items = timeline["items"].as_array().unwrap();
     let assistant_items = items
