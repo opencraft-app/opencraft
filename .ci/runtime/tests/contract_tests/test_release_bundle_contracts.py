@@ -438,6 +438,14 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA is empty and ci.sha is unavailable", command_text)
 
         frontend_text = (REPO_ROOT / ".ci/frontend.yml").read_text()
+        frontend_workflow = yaml.safe_load(frontend_text) or {}
+        frontend_variables = frontend_workflow.get("variables") or {}
+        self.assertEqual(
+            frontend_variables.get("FRONTEND_ARTIFACT_MATRIX", {}).get("value"),
+            "eo:cn-lightvela-prod-next,eo:global-lightvela-intl-prod-next",
+        )
+        self.assertEqual(frontend_variables.get("FRONTEND_RELEASE_MATRIX", {}).get("value"), "")
+        self.assertIn("FRONTEND_RELEASE_MATRIX is empty; skip Cloudflare artifact release", frontend_text)
         self.assertIn("SubPipelineExecStream@1.*", frontend_text)
 
         self.assertFalse((REPO_ROOT / ".ci/subpipeline-call-probe.yml").exists())
