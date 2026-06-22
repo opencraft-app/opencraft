@@ -44,7 +44,7 @@ func TestCloudAgentClientLiveHTTPRunProtocol(t *testing.T) {
 		t.Fatalf("live cloudagent run %s output did not contain marker %q: %q", runID, marker, result.Text)
 	}
 
-	fullReplay, err := client.fetchEvents(ctx, runID, 0)
+	fullReplay, err := client.fetchRunEvents(ctx, runID, 0)
 	if err != nil {
 		t.Fatalf("live cloudagent events replay run=%s: %v", runID, err)
 	}
@@ -55,14 +55,14 @@ func TestCloudAgentClientLiveHTTPRunProtocol(t *testing.T) {
 		t.Fatalf("live cloudagent replay should include durable events for run %s", runID)
 	}
 	lastSeq := fullReplay.Events[len(fullReplay.Events)-1].Seq
-	tailReplay, err := client.fetchEvents(ctx, runID, lastSeq)
+	tailReplay, err := client.fetchRunEvents(ctx, runID, lastSeq)
 	if err != nil {
 		t.Fatalf("live cloudagent after_seq tail replay run=%s seq=%d: %v", runID, lastSeq, err)
 	}
 	if len(tailReplay.Events) != 0 {
 		t.Fatalf("live cloudagent after_seq=%d should not replay old events: %#v", lastSeq, tailReplay.Events)
 	}
-	streamReplay, err := client.fetchEventsStream(ctx, runID, 0)
+	streamReplay, err := client.fetchRunEventsStream(ctx, runID, 0)
 	if err != nil {
 		t.Fatalf("live cloudagent stream replay run=%s: %v", runID, err)
 	}
