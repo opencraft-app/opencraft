@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -44,6 +45,22 @@ const (
 	bundlesQuotePayMode  = 1 // jifei payMode：1=预付费（与 pass.lighthousePassPayMode 同源）
 	bundlesQuoteGoodsNum = 1 // jifei goodsNum：本期固定单件（与 pass.lighthousePassGoodsNum 同源）
 )
+
+// freeTrialBundleIDPrefix 免费试用 bundle 的 bundle_id 命名约定前缀。
+//
+// 设计语义：免费试用 bundle 走 ctl.CreateTrialPass 链路（不下单、不支付、不计费），
+// 因此在 trade.trade_bundle_definition 表中**不录入**对应记录，trade 询价时会返回
+// 404 BundleNotFound。describeBundles 询价回填时必须把这类 bundle 提前过滤掉，
+// 避免它们污染批量 InquiryBatch 请求或触发整批降级。
+//
+// 该前缀约定与运营 seed SQL (.tmp/sp_lighthouse_lightvela_ai_mc/seed_*.sql) 以及
+// ctl.bundle 表的真实 bundle_id 命名保持一致（如 bundle_free_trial_01）。
+const freeTrialBundleIDPrefix = "bundle_free_trial"
+
+// isFreeTrialBundleID 判断 bundle_id 是否属于免费试用类。免费试用 bundle 不参与 trade 询价。
+func isFreeTrialBundleID(bundleID string) bool {
+	return strings.HasPrefix(bundleID, freeTrialBundleIDPrefix)
+}
 
 // handleAdminBundles 处理后台管理接口 /admin/api/ctl/bundles
 func (h *bundleHandler) handleAdminBundles(w http.ResponseWriter, r *http.Request) {
@@ -234,13 +251,33 @@ func parseTimeSpanUnit(r *http.Request) (int, string) {
 	return timeSpan, timeUnit
 }
 
-// fetchBundleQuotes 串行调 trade `InquiryBatch` 拿到 bundleId → quote 的映射。
-// 任一前置条件不满足或 trade 调用失败，均降级返回空 map（Price 全部 nil，
-// 前端按"暂无报价"展示，不阻断 bundle 列表）。具体降级条件：
+// fetchBundleQuotes 调 trade `InquiryBatch` 拿到 bundleId → quote 的映射，
+// 提供"单 bundle 询价失败仅该 bundle 降级为 nil、不影响其它 bundle 价格展示"的细粒度容错。
+//
+// 前置过滤：免费试用 bundle（bundle_id 以 freeTrialBundleIDPrefix 开头）走 CreateTrialPass
+// 链路，trade.trade_bundle_definition 不录入，必须从询价集合中剔除；否则 trade 会返
+// 404 BundleNotFound（迭代 8C+ 询价回退兼容期实测样态）。
+//
+// 询价容错策略（fast path / slow path 双层）：
+//
+//	fast path：一次性 InquiryBatch(quotableIDs)。
+//	  - 成功 → 直接返回 quoteMap，仅 1 次 RPC，性能最优；
+//	  - 失败且错误是 *tradeadapter.Error 且 Status 在 4xx 业务错范围（404/409/422）→
+//	    认为是"某一条 bundle 业务错"导致整批 fail-fast（trade inquiryBatchHandler 当前
+//	    实现 = 串行 N 次 Quote，遇错立刻 return；见 trade/internal/httpapi/internalapi
+//	    /handler.go L221 注释），进入 slow path 拆 1-by-1 隔离单条故障；
+//	  - 失败且错误是 5xx / 超时 / 非 *Error 基础设施错 → 整批降级返 nil（避免拆 1-by-1
+//	    引发 N 次串行超时雪崩，Q-CGW-01 降级语义）。
+//
+//	slow path：对 quotableIDs 逐个调 InquiryBatch([id])。
+//	  - 单条成功 → 累计到 quoteMap；
+//	  - 单条失败 → 记录 warn 日志，跳过该 bundle（其 Price 字段保持 nil，前端"暂无报价"），
+//	    继续询下一个 bundle，不影响其它 bundle 价格展示。
+//
+// 其它降级前置条件（与历史行为保持一致）：
 //   - h.tradeAdapter 未注入（启动期未配置 trade）；
 //   - r.Header.Get("X-User-Id") 为空（未登录公开页，Q31 选项 b）；
-//   - details 为空（不必发起 RPC）；
-//   - trade RPC 5xx / NotFound / 超时（Q-CGW-01 降级语义）。
+//   - details 为空或 quotableIDs 过滤后为空（不必发起 RPC）。
 func (h *bundleHandler) fetchBundleQuotes(
 	r *http.Request,
 	details []*bundlelogic.BundleDetail,
@@ -256,22 +293,102 @@ func (h *bundleHandler) fetchBundleQuotes(
 		return nil
 	}
 
-	bundleIDs := make([]string, 0, len(details))
+	// 过滤：剔除空 bundleID + 免费试用 bundle（不参与 trade 询价）。
+	quotableIDs := make([]string, 0, len(details))
 	for _, d := range details {
 		if d == nil || d.BundleID == "" {
 			continue
 		}
-		bundleIDs = append(bundleIDs, d.BundleID)
+		if isFreeTrialBundleID(d.BundleID) {
+			continue
+		}
+		quotableIDs = append(quotableIDs, d.BundleID)
 	}
-	if len(bundleIDs) == 0 {
+	if len(quotableIDs) == 0 {
 		return nil
 	}
 
-	// 给 trade RPC 5s 超时上限，避免拖慢 bundle 列表响应。
+	// 给 trade RPC 5s 超时上限，避免拖慢 bundle 列表响应。fast path 与 slow path 共用同一
+	// ctx：slow path N 次串行调用累计也不会超过这个上限，保证整体响应时间可控。
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	req := &tradeadapter.InquiryBatchRequest{
+	// ===== fast path：一次性批量询价 =====
+	resp, err := h.tradeAdapter.InquiryBatch(ctx, buildInquiryBatchRequest(userID, quotableIDs, timeSpan, timeUnit))
+	if err == nil {
+		return collectBundleQuotes(resp)
+	}
+
+	// fast path 失败 — 分类决定是否进 slow path 拆 1-by-1。
+	if !isPerBundleBusinessError(err) {
+		// 基础设施错 / 5xx / 超时：整批降级。
+		if resource.ZapLogger != nil {
+			resource.ZapLogger.Warn("trade InquiryBatch batch failed, fallback to no-price bundle list",
+				zap.Int("bundle_count", len(quotableIDs)),
+				zap.Error(err),
+			)
+		}
+		return nil
+	}
+
+	// ===== slow path：拆 1-by-1，单条失败仅降级该条 =====
+	if resource.ZapLogger != nil {
+		resource.ZapLogger.Warn("trade InquiryBatch batch failed with per-bundle business error, retry per-bundle",
+			zap.Int("bundle_count", len(quotableIDs)),
+			zap.Error(err),
+		)
+	}
+	return h.fetchBundleQuotesPerBundle(ctx, userID, quotableIDs, timeSpan, timeUnit)
+}
+
+// fetchBundleQuotesPerBundle 串行对 bundleIDs 逐个调 InquiryBatch([id])，单条失败仅
+// 跳过该条记录 warn 日志，其它继续；用于 fast path 出现"某一条 bundle 业务错"导致整批
+// fail-fast 时的细粒度回退（A 方案：仅失败 bundle 降级，不影响其它 bundle 价格）。
+func (h *bundleHandler) fetchBundleQuotesPerBundle(
+	ctx context.Context,
+	userID string,
+	bundleIDs []string,
+	timeSpan int,
+	timeUnit string,
+) map[string]*tradeadapter.BundleQuote {
+	out := make(map[string]*tradeadapter.BundleQuote, len(bundleIDs))
+	for _, bid := range bundleIDs {
+		if ctx.Err() != nil {
+			// ctx 已超时 / 取消：剩余 bundle 全部降级，与历史"整批 nil"行为对齐。
+			if resource.ZapLogger != nil {
+				resource.ZapLogger.Warn("trade InquiryBatch per-bundle aborted by ctx",
+					zap.Int("remaining", len(bundleIDs)-len(out)),
+					zap.Error(ctx.Err()),
+				)
+			}
+			break
+		}
+		resp, err := h.tradeAdapter.InquiryBatch(ctx, buildInquiryBatchRequest(userID, []string{bid}, timeSpan, timeUnit))
+		if err != nil {
+			if resource.ZapLogger != nil {
+				resource.ZapLogger.Warn("trade InquiryBatch per-bundle failed, degrade single bundle to no-price",
+					zap.String("bundle_id", bid),
+					zap.Error(err),
+				)
+			}
+			continue
+		}
+		for _, q := range collectBundleQuotes(resp) {
+			out[q.BundleID] = q
+		}
+	}
+	return out
+}
+
+// buildInquiryBatchRequest 构造一次 trade InquiryBatch 请求；fast path 与 slow path 共用，
+// 保证两条路径透传给 trade 的 PayMode / GoodsNum / TimeUnit / Period 等业务参数一致。
+func buildInquiryBatchRequest(
+	userID string,
+	bundleIDs []string,
+	timeSpan int,
+	timeUnit string,
+) *tradeadapter.InquiryBatchRequest {
+	return &tradeadapter.InquiryBatchRequest{
 		ExternalUserID: userID,
 		BundleIDs:      bundleIDs,
 		Period:         timeSpan,
@@ -283,20 +400,13 @@ func (h *bundleHandler) fetchBundleQuotes(
 		PayMode:  bundlesQuotePayMode,
 		GoodsNum: bundlesQuoteGoodsNum,
 	}
-	resp, err := h.tradeAdapter.InquiryBatch(ctx, req)
-	if err != nil {
-		if resource.ZapLogger != nil {
-			resource.ZapLogger.Warn("trade InquiryBatch failed, fallback to no-price bundle list",
-				zap.Int("bundle_count", len(bundleIDs)),
-				zap.Error(err),
-			)
-		}
-		return nil
-	}
+}
+
+// collectBundleQuotes 把 trade InquiryBatch 响应中的 Prices[] 按 bundleId 收敛成 map。
+func collectBundleQuotes(resp *tradeadapter.InquiryBatchResult) map[string]*tradeadapter.BundleQuote {
 	if resp == nil || len(resp.Prices) == 0 {
 		return nil
 	}
-
 	out := make(map[string]*tradeadapter.BundleQuote, len(resp.Prices))
 	for _, q := range resp.Prices {
 		if q == nil || q.BundleID == "" {
@@ -305,6 +415,29 @@ func (h *bundleHandler) fetchBundleQuotes(
 		out[q.BundleID] = q
 	}
 	return out
+}
+
+// isPerBundleBusinessError 判断 trade InquiryBatch 错误是否属于"某一条 bundle 业务错"
+// 导致的整批 fail-fast——这类错误适合 slow path 拆 1-by-1 隔离故障 bundle。
+//
+// 命中条件：err 可 unwrap 成 *tradeadapter.Error 且 Status 为 4xx 业务错码（404/409/422）。
+// 这三个状态码来自 trade classifyInquiryError（handler.go::classifyInquiryError）：
+//   - 404 BundleNotFound（trade.trade_bundle_definition 未录入对应 bundle）
+//   - 409 BundleOffline（bundle 已下架）
+//   - 422 BindingNotFound（externalUserId 在 shadow 没绑定记录）
+//
+// 5xx / 超时 / 网络错 / 非 *Error 走"整批降级"分支（避免拆 1-by-1 引发 N 次串行雪崩）。
+func isPerBundleBusinessError(err error) bool {
+	var te *tradeadapter.Error
+	if !errors.As(err, &te) {
+		return false
+	}
+	switch te.Status {
+	case http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity:
+		return true
+	default:
+		return false
+	}
 }
 
 // detailToAdminResponse 将 BundleDetail 转换为管理端响应。
