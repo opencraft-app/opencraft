@@ -26,6 +26,10 @@ variables:
     value: https://staticpages-api.preview.lightclaw.tech/api/upload
     readonly: false
     allow-modify-at-startup: true
+  FRONTEND_PREVIEW_BUILD_KIND:
+    value: legacy
+    readonly: false
+    allow-modify-at-startup: true
 
 stages:
   - name: 发布 frontend 分支预览
@@ -51,6 +55,7 @@ stages:
               echo "ci.branch=${{ ci.branch }}"
               echo "ci.sha=${{ ci.sha }}"
               echo "STATICPAGES_API_URL=${{ variables.STATICPAGES_API_URL }}"
+              echo "FRONTEND_PREVIEW_BUILD_KIND=${{ variables.FRONTEND_PREVIEW_BUILD_KIND }}"
           - name: 构建并上传 frontend 预览站点
             shell: bash
             env:
@@ -63,7 +68,7 @@ stages:
               echo "目标规则：frontsandbox/<name> -> https://<name>.preview.lightclaw.tech 和 https://intl-<name>.preview.lightclaw.tech"
               echo "目标规则：playground/sandbox-bj-N -> https://sandbox-bj-N.preview.lightclaw.tech 和 https://intl-sandbox-bj-N.preview.lightclaw.tech"
               echo "目标规则：playground/sandbox-kr-N -> https://sandbox-kr-N.preview.lightclaw.tech 和 https://intl-sandbox-kr-N.preview.lightclaw.tech"
-              echo "发布方式：构建 frontend dist-cn + dist-global 后顺序上传到 StaticPages，不创建 GitOps MR"
+              echo "发布方式：按 FRONTEND_PREVIEW_BUILD_KIND 构建 legacy 或 next 产物后顺序上传到 StaticPages，不创建 GitOps MR"
               echo "============================================================"
               set -euo pipefail
 
@@ -81,4 +86,5 @@ stages:
 
               export FRONTEND_PREVIEW_BRANCH="${{ ci.branch }}"
               export FRONTEND_PREVIEW_SHA="${{ ci.sha }}"
+              export FRONTEND_PREVIEW_BUILD_KIND="${{ variables.FRONTEND_PREVIEW_BUILD_KIND }}"
               bash "$FRONTEND_PREVIEW_RUNTIME_CI_DIR/runtime/commands/publish_frontend_preview.sh"

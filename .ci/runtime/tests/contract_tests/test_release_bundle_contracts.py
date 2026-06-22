@@ -574,10 +574,13 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn('FRONTEND_PREVIEW_RUNTIME_REF="${FRONTEND_PREVIEW_RUNTIME_REF:-origin/master}"', workflow_text)
         self.assertIn("git fetch --no-tags --depth=1 origin +master:refs/remotes/origin/master", workflow_text)
         self.assertIn('git archive --format=tar "$FRONTEND_PREVIEW_RUNTIME_REF" .ci', workflow_text)
+        self.assertIn('export FRONTEND_PREVIEW_BUILD_KIND="${{ variables.FRONTEND_PREVIEW_BUILD_KIND }}"', workflow_text)
         self.assertIn('bash "$FRONTEND_PREVIEW_RUNTIME_CI_DIR/runtime/commands/publish_frontend_preview.sh"', workflow_text)
         self.assertNotIn('"$PNPM_BIN" exec vite build', workflow_text)
 
         command_text = (REPO_ROOT / ".ci/runtime/commands/publish_frontend_preview.sh").read_text()
+        self.assertIn('FRONTEND_PREVIEW_BUILD_KIND="${FRONTEND_PREVIEW_BUILD_KIND:-legacy}"', command_text)
+        self.assertIn('"$PNPM_BIN" run build:next', command_text)
         self.assertIn('source "$CI_DIR/init.sh"', command_text)
         self.assertIn('python3 "$CI_DIR/runtime/commands/upload_staticpages_preview.py"', command_text)
 
@@ -590,6 +593,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn('printf \'https://lightclaw.tech\'', workflow_text)
         self.assertIn('export VITE_AUTH_API_BASE_URL="$PREVIEW_CN_AUTH_API_BASE_URL"', workflow_text)
         self.assertIn('export VITE_AUTH_API_BASE_URL="$PREVIEW_INTL_AUTH_API_BASE_URL"', workflow_text)
+        self.assertIn('export NEXT_PUBLIC_AUTH_API_BASE_URL="$api_base"', workflow_text)
         self.assertLess(
             workflow_text.index('export VITE_AUTH_API_BASE_URL="$PREVIEW_CN_AUTH_API_BASE_URL"'),
             workflow_text.index('"$PNPM_BIN" exec vite build --mode cn --outDir "$FRONTEND_DIST_CN_DIR"'),
