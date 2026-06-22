@@ -5,6 +5,7 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { useT } from "@/i18n/t";
+import { shellQuote } from "@/lib/hermes-cron-client";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { useAsyncResource } from "@/services/use-async-resource";
@@ -40,6 +41,16 @@ interface ExpertSkillSetGroup {
 interface ExpertPackageCard {
   expert: ExpertDefinition;
   pkg: SkillHubSkillSet;
+}
+
+interface SkillInstallFailure {
+  slug: string;
+  output: string;
+}
+
+interface SkillInstallResult {
+  succeeded: string[];
+  failed: SkillInstallFailure[];
 }
 
 const EXPERTS: ExpertDefinition[] = [
@@ -91,10 +102,7 @@ const EXPERTS: ExpertDefinition[] = [
 ];
 
 const SKILL_PACKAGE_PAGE_SIZE = 3;
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-}
+const INSTALL_ERROR_OUTPUT_LINE_LIMIT = 3;
 
 export function getUniqueSkillSlugs(skillSlugs: string[]): string[] {
   const seen = new Set<string>();
@@ -197,7 +205,7 @@ function getExpertInitial(id: ExpertId): string {
     case "hr":
       return "H";
     case "ecommerce":
-      return "S";
+      return "E";
   }
 }
 
@@ -227,32 +235,79 @@ function isExecSucceeded(result: ExecDebugCommandResult): boolean {
   return result.exitCode === 0 && status !== "failed" && status !== "error";
 }
 
+async function executeInstallSkillCommand(
+  botId: string,
+  skillSlug: string,
+  execDebugCommand: ExpertsExecDebugCommand,
+): Promise<{ succeeded: boolean; output: string }> {
+  try {
+    const result = await execDebugCommand(botId, buildInstallSkillCommand(skillSlug));
+    return {
+      succeeded: isExecSucceeded(result),
+      output: result.output,
+    };
+  } catch (error) {
+    return {
+      succeeded: false,
+      output: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 async function installSkillSlugs(
   botId: string,
   skillSlugs: string[],
   execDebugCommand: ExpertsExecDebugCommand,
-): Promise<{ successCount: number; failedSlugs: string[] }> {
-  const failedSlugs: string[] = [];
+): Promise<SkillInstallResult> {
+  const succeeded: string[] = [];
+  const failed: SkillInstallFailure[] = [];
 
   for (const skillSlug of skillSlugs) {
-    const result = await execDebugCommand(botId, buildInstallSkillCommand(skillSlug));
-    if (!isExecSucceeded(result)) {
-      failedSlugs.push(skillSlug);
+    let result = await executeInstallSkillCommand(botId, skillSlug, execDebugCommand);
+    if (!result.succeeded) {
+      result = await executeInstallSkillCommand(botId, skillSlug, execDebugCommand);
+    }
+
+    if (result.succeeded) {
+      succeeded.push(skillSlug);
+    } else {
+      failed.push({ slug: skillSlug, output: result.output });
     }
   }
 
-  const retryFailedSlugs: string[] = [];
-  for (const skillSlug of failedSlugs) {
-    const result = await execDebugCommand(botId, buildInstallSkillCommand(skillSlug));
-    if (!isExecSucceeded(result)) {
-      retryFailedSlugs.push(skillSlug);
-    }
+  return { succeeded, failed };
+}
+
+function formatInstallFailureOutput(output: string): string {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(-INSTALL_ERROR_OUTPUT_LINE_LIMIT)
+    .join("；");
+}
+
+export function getSkillPackageInstallFailureMessage(
+  result: SkillInstallResult,
+  t: ReturnType<typeof useT>,
+): string {
+  const failedSlugs = result.failed.map((failure) => failure.slug).join(", ");
+  const output = result.failed
+    .map((failure) => formatInstallFailureOutput(failure.output))
+    .find(Boolean);
+  const summary = t("技能包安装：成功 {{ok}} 项，失败 {{fail}} 项", {
+    ok: result.succeeded.length,
+    fail: result.failed.length,
+  });
+
+  if (!output) {
+    return `${summary}。${t("失败：{{skills}}", { skills: failedSlugs })}`;
   }
 
-  return {
-    successCount: skillSlugs.length - retryFailedSlugs.length,
-    failedSlugs: retryFailedSlugs,
-  };
+  return `${summary}。${t("失败：{{skills}}；错误：{{detail}}", {
+    skills: failedSlugs,
+    detail: output,
+  })}`;
 }
 
 async function fetchExpertSkillSetGroups(): Promise<ExpertSkillSetGroup[]> {
@@ -306,11 +361,8 @@ export function ExpertsPanel({
       }
 
       const installResult = await installSkillSlugs(botId, skillSlugs, execDebugCommand);
-      if (installResult.failedSlugs.length > 0) {
-        toast.error(t("技能包安装：成功 {{ok}} 项，失败 {{fail}} 项", {
-          ok: installResult.successCount,
-          fail: installResult.failedSlugs.length,
-        }));
+      if (installResult.failed.length > 0) {
+        toast.error(getSkillPackageInstallFailureMessage(installResult, t));
         return;
       }
 
