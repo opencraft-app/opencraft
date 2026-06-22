@@ -1470,35 +1470,33 @@ func (r *Runtime) preStartRecovery(ctx context.Context) error {
 	if err := r.ensureDirs(); err != nil {
 		return err
 	}
-	activeOK, activeReason := r.activeImageValid(ctx)
-	if activeOK {
-		r.log("pre_start_recovery skip active_img=%s active_fingerprint=%s reason=active_valid", r.cfg.ActiveImg, r.imageFingerprintForLog(r.cfg.ActiveImg))
-		return nil
-	}
 	checkpoint, ok, err := r.latestCheckpoint(ctx)
 	if err != nil {
 		return err
 	}
-	if !ok {
-		r.log("pre_start_recovery skip active_img=%s active_fingerprint=%s active_ok=%t active_reason=%s reason=no_checkpoint",
+	if ok {
+		checkpointImg := filepath.Join(r.cfg.CheckpointsRoot, checkpoint.ID, "root-upper.img")
+		r.log("pre_start_recovery restore checkpoint=%s checkpoint_img=%s checkpoint_fingerprint=%s active_img=%s active_fingerprint=%s reason=checkpoint_durable_commit",
+			checkpoint.ID,
+			checkpointImg,
+			r.imageFingerprintForLog(checkpointImg),
 			r.cfg.ActiveImg,
 			r.imageFingerprintForLog(r.cfg.ActiveImg),
-			activeOK,
-			activeReason,
 		)
+		return r.RestoreCheckpoint(ctx, checkpoint.ID)
+	}
+	activeOK, activeReason := r.activeImageValid(ctx)
+	if activeOK {
+		r.log("pre_start_recovery skip active_img=%s active_fingerprint=%s reason=no_checkpoint_active_valid", r.cfg.ActiveImg, r.imageFingerprintForLog(r.cfg.ActiveImg))
 		return nil
 	}
-	checkpointImg := filepath.Join(r.cfg.CheckpointsRoot, checkpoint.ID, "root-upper.img")
-	r.log("pre_start_recovery restore checkpoint=%s checkpoint_img=%s checkpoint_fingerprint=%s active_img=%s active_fingerprint=%s active_ok=%t active_reason=%s",
-		checkpoint.ID,
-		checkpointImg,
-		r.imageFingerprintForLog(checkpointImg),
+	r.log("pre_start_recovery skip active_img=%s active_fingerprint=%s active_ok=%t active_reason=%s reason=no_checkpoint",
 		r.cfg.ActiveImg,
 		r.imageFingerprintForLog(r.cfg.ActiveImg),
 		activeOK,
 		activeReason,
 	)
-	return r.RestoreCheckpoint(ctx, checkpoint.ID)
+	return nil
 }
 
 func (r *Runtime) latestCheckpoint(ctx context.Context) (CheckpointMetadata, bool, error) {

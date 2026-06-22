@@ -1241,7 +1241,7 @@ func TestRunStopLitestreamMaintenanceCanBeDisabled(t *testing.T) {
 	}
 }
 
-func TestPreStartRecoverySkipsValidActiveImage(t *testing.T) {
+func TestPreStartRecoveryRestoresCheckpointEvenWhenActiveImageLooksValid(t *testing.T) {
 	root := t.TempDir()
 	jfsRoot := filepath.Join(root, "jfs")
 	stateRoot := filepath.Join(jfsRoot, "wisp", "default")
@@ -1266,10 +1266,11 @@ func TestPreStartRecoverySkipsValidActiveImage(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(binDir, "e2fsck"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(rt.cfg.JFSBin, []byte("#!/bin/sh\necho unexpected clone >&2\nexit 9\n"), 0o755); err != nil {
+	if err := os.WriteFile(rt.cfg.JFSBin, []byte("#!/bin/sh\nif [ \"$1\" = clone ]; then cp \"$2\" \"$3\"; exit 0; fi\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	writeFakeJuiceFSMountInfo(t, root, jfsRoot)
 
 	if err := rt.preStartRecovery(context.Background()); err != nil {
 		t.Fatalf("preStartRecovery: %v", err)
@@ -1278,8 +1279,8 @@ func TestPreStartRecoverySkipsValidActiveImage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(raw) != "valid-active" {
-		t.Fatalf("active image should have been trusted, got %q", string(raw))
+	if string(raw) != "checkpoint-image" {
+		t.Fatalf("active image should be rebuilt from latest checkpoint, got %q", string(raw))
 	}
 }
 

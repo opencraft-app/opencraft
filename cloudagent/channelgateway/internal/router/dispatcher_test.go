@@ -1465,7 +1465,7 @@ func TestDispatcherRequestTimeoutAppliesToSessionSetup(t *testing.T) {
 	}
 }
 
-func TestDispatcherRequestTimeoutReleasesLongPromptWorker(t *testing.T) {
+func TestDispatcherRequestTimeoutDoesNotAbortLongPrompt(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
 	if err != nil {
@@ -1493,14 +1493,53 @@ func TestDispatcherRequestTimeoutReleasesLongPromptWorker(t *testing.T) {
 		Raw:                    json.RawMessage(`{"ok":true}`),
 	})
 	if err != nil {
-		t.Fatalf("long prompt timeout should enqueue fallback: %v", err)
+		t.Fatalf("long prompt should complete under prompt timeout: %v", err)
+	}
+	if elapsed := time.Since(startedAt); elapsed < 200*time.Millisecond {
+		t.Fatalf("dispatcher should wait for prompt instead of request timeout: elapsed=%s", elapsed)
+	}
+	reply := claimOneReply(t, context.Background(), st, lease)
+	if reply.Text != "sleep done" {
+		t.Fatalf("expected prompt reply, got %#v", reply)
+	}
+}
+
+func TestDispatcherPromptTimeoutCanStillFailLongPrompt(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	account := store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main"}
+	lease, err := st.AcquireChannelLease(ctx, "wecom-a", "owner-a", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
+	client := &fakeACP{sessionID: "session-a", promptDelay: 250 * time.Millisecond, reply: "sleep done"}
+	dispatcher := NewDispatcherWithOptions(st, account, client, "/workspace",
+		DispatcherOptions{RequestTimeout: 50 * time.Millisecond, PromptTimeout: 50 * time.Millisecond},
+	)
+	startedAt := time.Now()
+	err = dispatcher.HandleInbound(ctx, channel.Message{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            channel.TypeWeCom,
+		ExternalMessageID:      "msg-long-prompt-timeout",
+		ExternalConversationID: "chat-a",
+		ChatType:               channel.ChatDM,
+		Kind:                   channel.MessageText,
+		Text:                   "sleep 70",
+		Raw:                    json.RawMessage(`{"ok":true}`),
+	})
+	if err != nil {
+		t.Fatalf("prompt timeout should enqueue fallback: %v", err)
 	}
 	if elapsed := time.Since(startedAt); elapsed > 200*time.Millisecond {
-		t.Fatalf("dispatcher should release worker after request timeout: elapsed=%s", elapsed)
+		t.Fatalf("dispatcher should honor prompt timeout: elapsed=%s", elapsed)
 	}
 	reply := claimOneReply(t, context.Background(), st, lease)
 	if !strings.Contains(reply.Text, runtimeRecoveryFailedReply) {
-		t.Fatalf("expected timeout fallback reply, got %#v", reply)
+		t.Fatalf("expected prompt timeout fallback reply, got %#v", reply)
 	}
 }
 

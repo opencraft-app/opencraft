@@ -217,6 +217,7 @@ func (r *accountRunner) run(ctx context.Context) error {
 		"/workspace",
 		router.DispatcherOptions{
 			RequestTimeout: r.cfg.RequestTimeout,
+			PromptTimeout:  r.cfg.PromptTimeout,
 			InboundLease:   lease,
 			InboundStale:   inboundRecoveryStaleAfter,
 		},
