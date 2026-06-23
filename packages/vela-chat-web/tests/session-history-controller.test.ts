@@ -383,6 +383,73 @@ test("stale older-page completion cannot clear the active session hydration stat
   }
 });
 
+test("full preload does not bottom-anchor the tail page before history hydration completes", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { useVelaChatSession } = await import(
+      "../../vela-chat-controller/src/useVelaChatSession"
+    );
+    const { ChatWorkbenchView } = await import(
+      "../src/components/workbench/ChatWorkbenchView"
+    );
+    const client = new DeferredOlderVeladClient();
+    const clientStateStore = createVelaClientStateStore(createMemoryKeyValueStore(), {
+      hostId: "full-preload-tail-page-must-not-route-initial-anchor",
+    });
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    function Probe({ sessionId }: { sessionId: string }) {
+      const controller = useVelaChatSession({
+        client,
+        clientStateStore,
+        fetchBackends: false,
+        historyPolicy: "full_preload",
+        sessionId,
+      });
+      return React.createElement(ChatWorkbenchView, {
+        clientStateStore,
+        draft: controller.draft,
+        historyPhase: controller.historyPhase,
+        isLoadingOlder: controller.isLoadingOlder,
+        model: controller.model,
+        onDraftChange: controller.setDraft,
+        onLoadOlder: controller.loadOlderConversation,
+        onSubmit: controller.send,
+      });
+    }
+
+    await renderSession({ React, act, root, Probe, sessionId: "sess_a" });
+    await flushHookEffects(
+      act,
+      dom,
+      () =>
+        client.hasPendingOlder("sess_a") &&
+        container.querySelector(".conversation") !== null,
+    );
+
+    const scrollElement = container.querySelector(".conversation") as HTMLElement | null;
+    assert.notEqual(scrollElement, null, "expected the tail page to mount under the hydration overlay");
+    await flushFrames(act, dom, [16, 32, 48, 64, 80]);
+
+    assert.equal(
+      scrollElement!.scrollTop,
+      0,
+      "the tail-only page must not perform route_initial_entry before full history is authoritative",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 async function renderSession({
   React,
   act,

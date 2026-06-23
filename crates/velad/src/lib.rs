@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use tokio::sync::broadcast;
+use tower_http::cors::{Any, CorsLayer};
 use vela_backends::BackendAdapter;
 use vela_core::{
     AcceptedCommandAck, AgentConfig, AgentConfigPatch, BackendFeature, BackendKind, BackendModel,
@@ -208,6 +209,7 @@ where
         .route("/api/v1/backends", get(list_backends::<B>))
         .route("/api/v1/backends/{backend}", get(get_backend::<B>))
         .route("/api/v1/backends/{backend}/probe", post(probe_backend::<B>))
+        .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any))
         .with_state(state)
 }
 

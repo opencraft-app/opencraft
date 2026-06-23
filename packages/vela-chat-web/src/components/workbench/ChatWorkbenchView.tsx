@@ -12,6 +12,7 @@ import { VelaComposer } from "../composer/VelaComposer";
 import { VelaConversation } from "../conversation/VelaConversation";
 import { RequestDock, type RequestDockResponse } from "../requests/RequestDock";
 import { ConversationHistoryHydrationView } from "./ConversationHistoryHydrationView";
+import { ConversationScrollInspector } from "./ConversationScrollInspector";
 import type { ConversationScrollControllerDebug } from "../../conversation-runtime/scroll/useConversationScrollController";
 import type { ConversationViewportHandle } from "../../conversation-runtime/scroll/viewportHandle";
 import styles from "../../styles/desktop.module.css";
@@ -26,6 +27,7 @@ export interface ChatWorkbenchViewProps {
   error?: string | null;
   canLoadOlder?: boolean;
   clientStateStore?: VelaClientStateStore | null;
+  layout?: "viewport" | "contained";
   historyPhase: "unselected" | "hydrating_history" | "ready";
   isLoadingOlder?: boolean;
   composerControls?: ComposerControlsModel;
@@ -33,6 +35,7 @@ export interface ChatWorkbenchViewProps {
   isRespondingToRequest?: boolean;
   messageFollowToken?: number;
   pendingAttachments?: PromptInputAttachment[];
+  showScrollInspector?: boolean;
   onDraftChange: (value: string) => void;
   onAttachImages?: (files: File[]) => void;
   onAgentConfigChange?: (patch: AgentConfigPatchWire) => void;
@@ -50,6 +53,7 @@ export function ChatWorkbenchView({
   error,
   canLoadOlder = false,
   clientStateStore = null,
+  layout = "viewport",
   historyPhase,
   isLoadingOlder = false,
   composerControls,
@@ -57,6 +61,7 @@ export function ChatWorkbenchView({
   isRespondingToRequest = false,
   messageFollowToken,
   pendingAttachments,
+  showScrollInspector = false,
   onDraftChange,
   onAttachImages,
   onAgentConfigChange,
@@ -70,6 +75,11 @@ export function ChatWorkbenchView({
   const webModel = useMemo(() => toWebChatModel(model), [model]);
   const conversationRef = useRef<ConversationViewportHandle | null>(null);
   const [composerHeight, setComposerHeight] = useState(154);
+  const [conversationScrollDebugState, setConversationScrollDebugState] =
+    useState<{
+      debug: ConversationScrollControllerDebug;
+      sessionId: string;
+    } | null>(null);
   const frameStyle = useMemo(
     () =>
       ({
@@ -86,36 +96,71 @@ export function ChatWorkbenchView({
     setComposerHeight((current) => (Math.abs(current - height) < 1 ? current : height));
     conversationRef.current?.prepareForViewportChange();
   }, []);
-
-  if (historyPhase === "hydrating_history") {
-    return (
-      <main className={styles.shell}>
-        <div className={styles.frame} style={frameWithoutTopbarStyle}>
-          <ConversationHistoryHydrationView />
-        </div>
-      </main>
-    );
-  }
+  const handleConversationScrollDebugChange = useCallback(
+    (debug: ConversationScrollControllerDebug) => {
+      setConversationScrollDebugState({
+        debug,
+        sessionId: webModel.sessionId,
+      });
+      onConversationScrollDebugChange?.(debug);
+    },
+    [onConversationScrollDebugChange, webModel.sessionId],
+  );
+  const isHydratingHistory = historyPhase === "hydrating_history";
+  const conversationScrollDebug =
+    conversationScrollDebugState?.sessionId === webModel.sessionId
+      ? conversationScrollDebugState.debug
+      : null;
+  const isConversationScrollSettled =
+    conversationScrollDebug !== null &&
+    conversationScrollDebug.routeResumeStatus !== "pending";
+  const conversationRevealState =
+    historyPhase === "unselected" ||
+    (historyPhase === "ready" && isConversationScrollSettled)
+      ? "revealed"
+      : "measuring";
 
   return (
-    <main className={styles.shell}>
-      <div className={styles.frame} style={frameStyle}>
-        <VelaConversation
-          canLoadOlder={canLoadOlder}
-          clientStateStore={clientStateStore}
-          isLoadingOlder={isLoadingOlder}
-          onLoadOlder={onLoadOlder}
-          onScrollDebugChange={onConversationScrollDebugChange}
-          ref={conversationRef}
-          messageFollowToken={messageFollowToken}
-          webModel={webModel}
-        />
+    <main className={styles.shell} data-layout={layout}>
+      <div className={styles.frame} data-history-phase={historyPhase} style={frameStyle}>
+        <div
+          aria-hidden={conversationRevealState === "measuring" ? "true" : undefined}
+          className={styles.conversationReveal}
+          data-conversation-reveal-state={conversationRevealState}
+          data-route-resume-status={conversationScrollDebug?.routeResumeStatus ?? "unknown"}
+          data-route-resume-scroll-top={
+            conversationScrollDebug?.routeResumeScrollTop ?? "none"
+          }
+        >
+          <VelaConversation
+            canLoadOlder={canLoadOlder}
+            clientStateStore={clientStateStore}
+            isHistoryReady={historyPhase === "ready"}
+            isLoadingOlder={isLoadingOlder}
+            onLoadOlder={onLoadOlder}
+            onScrollDebugChange={handleConversationScrollDebugChange}
+            ref={conversationRef}
+            messageFollowToken={messageFollowToken}
+            webModel={webModel}
+          />
+        </div>
+        {isHydratingHistory ? (
+          <div className={styles.historyHydrationOverlay}>
+            <ConversationHistoryHydrationView />
+          </div>
+        ) : null}
         <RequestDock
           requests={model.requests}
           isResponding={isRespondingToRequest}
           onRespondToRequest={onRespondToRequest}
         />
         {error ? <div className={styles.error}>{error}</div> : null}
+        {showScrollInspector ? (
+          <ConversationScrollInspector
+            debug={conversationScrollDebug}
+            historyPhase={historyPhase}
+          />
+        ) : null}
         <div aria-hidden="true" className={styles.composerBackdrop} />
         <VelaComposer
           canSend={webModel.composer.canSend}

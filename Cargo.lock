@@ -2300,6 +2300,7 @@ dependencies = [
  "sha2",
  "tokio",
  "tower",
+ "tower-http",
  "tracing-subscriber",
  "vela-backends",
  "vela-core",

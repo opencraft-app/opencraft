@@ -11,6 +11,8 @@ velad facts, OpenAPI contracts, agent configuration, or provider secrets.
   private user content and may disable or expire it.
 - `shell_layout`: host-owned desktop shell layout such as sidebar width and
   visibility. ChatUI should not read this namespace.
+- `session_selection`: host-owned navigation memory for the currently opened
+  session. Missing state means the host may choose its usual default session.
 
 The host injects concrete storage. Browser hosts can use Web Storage; Electron
 or native hosts can swap in their own key-value implementation without changing

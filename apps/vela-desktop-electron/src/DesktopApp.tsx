@@ -2,19 +2,27 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createVeladClient,
   type BackendKindWire,
+  type BackendWire,
   type SessionListItemWire,
 } from "../../../packages/vela-chat-client/src";
 import {
   buildVelaSessionSetupSelection,
   useVelaChatSession,
 } from "../../../packages/vela-chat-controller/src";
+import type { ChatHostPolicy } from "../../../packages/vela-chat-render-model/src";
 import { VelaChatWeb } from "../../../packages/vela-chat-web/src";
 import {
   SessionSidebar,
   VelaDesktopShell,
   type DesktopHostBridge,
 } from "../../../packages/vela-desktop-shell/src";
-import { desktopHostBridgeForInfo, readDesktopHostInfo } from "./desktopBridge";
+import {
+  desktopHostBridgeForInfo,
+  readDesktopRuntimeBootstrap,
+  retryDesktopRuntimeBootstrap,
+  type DesktopHostInfo,
+  type DesktopRuntimeBootstrap,
+} from "./desktopBridge";
 import { DesktopEmptySurface } from "./DesktopEmptySurface";
 import {
   DesktopSettingsPage,
@@ -26,40 +34,55 @@ import "./style.css";
 const DEFAULT_WORKING_DIRECTORY = "/";
 const DEFAULT_WEB_API_BASE_URL = "/api/v1";
 const DEFAULT_BACKEND_STORAGE_KEY = "vela-desktop:settings:default-backend";
+const DESKTOP_SHELL_HOST_POLICY = { kind: "desktop_shell" } satisfies ChatHostPolicy;
+
+type DesktopHostStateStores = ReturnType<typeof createDesktopHostStateStores>;
 
 export function DesktopApp() {
   const hostStateStores = useMemo(() => createDesktopHostStateStores(), []);
   const initialShellLayout = hostStateStores.shellLayoutStore?.read();
-  const [apiBaseUrl, setApiBaseUrl] = useState(DEFAULT_WEB_API_BASE_URL);
-  const [hostBridge, setHostBridge] = useState<DesktopHostBridge>(() =>
-    desktopHostBridgeForInfo({
+  const initialHostInfo = useMemo<DesktopHostInfo>(
+    () => ({
       apiBaseUrl: DEFAULT_WEB_API_BASE_URL,
-      hostKind: "web",
-      platform: "browser",
+      hostKind: window.velaDesktop ? "electron" : "web",
+      platform: window.velaDesktop ? "darwin" : "browser",
     }),
+    [],
   );
-  const [isHostReady, setIsHostReady] = useState(() => !window.velaDesktop);
-  const [sessions, setSessions] = useState<SessionListItemWire[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState("");
+  const [bootstrap, setBootstrap] = useState<DesktopRuntimeBootstrap>({
+    status: "starting",
+    message: window.velaDesktop ? "Starting local runtime..." : "Connecting to runtime...",
+  });
+  const [fallbackHostInfo, setFallbackHostInfo] = useState(initialHostInfo);
   const [isSidebarVisible, setIsSidebarVisible] = useState(
     initialShellLayout?.isSidebarVisible ?? true,
   );
   const [sidebarWidthPx, setSidebarWidthPx] = useState(
     initialShellLayout?.sidebarWidthPx ?? 300,
   );
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [selectedBackendKind, setSelectedBackendKind] = useState<BackendKindWire | "">(
-    readDefaultBackendPreference,
-  );
-  const [error, setError] = useState<string | null>(null);
+
+  const loadRuntimeBootstrap = useCallback(async (retry = false) => {
+    setBootstrap({
+      status: "starting",
+      message: window.velaDesktop ? "Starting local runtime..." : "Connecting to runtime...",
+    });
+    const nextBootstrap = retry
+      ? await retryDesktopRuntimeBootstrap()
+      : await readDesktopRuntimeBootstrap();
+    if (nextBootstrap.status === "ready") setFallbackHostInfo(nextBootstrap.info);
+    setBootstrap(nextBootstrap);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
-    void readDesktopHostInfo().then((info) => {
+    setBootstrap({
+      status: "starting",
+      message: window.velaDesktop ? "Starting local runtime..." : "Connecting to runtime...",
+    });
+    void readDesktopRuntimeBootstrap().then((nextBootstrap) => {
       if (cancelled) return;
-      setApiBaseUrl(info.apiBaseUrl);
-      setHostBridge(desktopHostBridgeForInfo(info));
-      setIsHostReady(true);
+      if (nextBootstrap.status === "ready") setFallbackHostInfo(nextBootstrap.info);
+      setBootstrap(nextBootstrap);
     });
     return () => {
       cancelled = true;
@@ -74,15 +97,79 @@ export function DesktopApp() {
     });
   }, [hostStateStores.shellLayoutStore, isSidebarVisible, sidebarWidthPx]);
 
+  if (bootstrap.status === "ready") {
+    return (
+      <DesktopReadyApp
+        hostInfo={bootstrap.info}
+        hostStateStores={hostStateStores}
+        isSidebarVisible={isSidebarVisible}
+        sidebarWidthPx={sidebarWidthPx}
+        onSidebarVisibilityChange={setIsSidebarVisible}
+        onSidebarWidthChange={setSidebarWidthPx}
+      />
+    );
+  }
+
+  return (
+    <DesktopBootstrapApp
+      bootstrap={bootstrap}
+      hostInfo={fallbackHostInfo}
+      isSidebarVisible={isSidebarVisible}
+      sidebarWidthPx={sidebarWidthPx}
+      onRetry={() => loadRuntimeBootstrap(true)}
+      onSidebarVisibilityChange={setIsSidebarVisible}
+      onSidebarWidthChange={setSidebarWidthPx}
+    />
+  );
+}
+
+interface DesktopReadyAppProps {
+  hostInfo: DesktopHostInfo;
+  hostStateStores: DesktopHostStateStores;
+  isSidebarVisible: boolean;
+  sidebarWidthPx: number;
+  onSidebarVisibilityChange: (isVisible: boolean) => void;
+  onSidebarWidthChange: (widthPx: number) => void;
+}
+
+function DesktopReadyApp({
+  hostInfo,
+  hostStateStores,
+  isSidebarVisible,
+  sidebarWidthPx,
+  onSidebarVisibilityChange,
+  onSidebarWidthChange,
+}: DesktopReadyAppProps) {
+  const [sessions, setSessions] = useState<SessionListItemWire[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState(
+    () => hostStateStores.sessionSelectionStore?.read()?.sessionId ?? "",
+  );
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [selectedBackendKind, setSelectedBackendKind] = useState<BackendKindWire | "">(
+    readDefaultBackendPreference,
+  );
+  const [error, setError] = useState<string | null>(null);
+
   useEffect(() => {
     writeDefaultBackendPreference(selectedBackendKind);
   }, [selectedBackendKind]);
 
+  useEffect(() => {
+    if (!activeSessionId) return;
+    hostStateStores.sessionSelectionStore?.write({
+      sessionId: activeSessionId,
+      updatedAt: Date.now(),
+    });
+  }, [activeSessionId, hostStateStores.sessionSelectionStore]);
+
+  const apiBaseUrl = hostInfo.apiBaseUrl;
+  const hostBridge = useMemo(() => desktopHostBridgeForInfo(hostInfo), [hostInfo]);
   const client = useMemo(() => createVeladClient({ baseUrl: apiBaseUrl }), [apiBaseUrl]);
   const controller = useVelaChatSession({
     client,
     baseUrl: apiBaseUrl,
     clientStateStore: hostStateStores.clientStateStore,
+    hostPolicy: DESKTOP_SHELL_HOST_POLICY,
     sessionId: activeSessionId,
   });
   const setup = useMemo(
@@ -115,18 +202,39 @@ export function DesktopApp() {
   }, [client]);
 
   useEffect(() => {
-    if (!isHostReady) return;
     void loadSessions();
-  }, [isHostReady, loadSessions]);
+  }, [loadSessions]);
+
+  const buildSessionSetup = useCallback(
+    (backends: BackendWire[]) =>
+      buildVelaSessionSetupSelection({
+        backends,
+        selectedBackend: selectedBackendKind,
+        selectedModel: "",
+        selectedPermissionMode: "",
+        selectedReasoningEffort: "",
+      }),
+    [selectedBackendKind],
+  );
+
+  const resolveNewSessionSetup = useCallback(async () => {
+    if (setup.resolvedSelectedBackend) return setup;
+    const nextBackends = await client.getBackends();
+    return buildSessionSetup(nextBackends.backends);
+  }, [buildSessionSetup, client, setup]);
 
   const createSession = useCallback(async () => {
-    const backend = setup.resolvedSelectedBackend;
-    if (!backend) return;
     try {
       setError(null);
+      const nextSetup = await resolveNewSessionSetup();
+      const backend = nextSetup.resolvedSelectedBackend;
+      if (!backend) {
+        setError("No backend is available yet. Please try again after velad finishes starting.");
+        return;
+      }
       const created = await client.createSession({
         backend,
-        agentConfig: setup.setupAgentConfig,
+        agentConfig: nextSetup.setupAgentConfig,
         title: "New chat",
         workingDirectory: DEFAULT_WORKING_DIRECTORY,
       });
@@ -135,7 +243,7 @@ export function DesktopApp() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [client, loadSessions, setup.resolvedSelectedBackend, setup.setupAgentConfig]);
+  }, [client, loadSessions, resolveNewSessionSetup]);
 
   const appSidebar = (
     <SessionSidebar
@@ -144,6 +252,7 @@ export function DesktopApp() {
       showTrafficLights={hostBridge.chrome.showTrafficLights}
       accountLabel={hostLabel}
       accountPlanLabel="Local desktop"
+      canCreateSession
       onCreateSession={createSession}
       onOpenSettings={() => setIsSettingsOpen(true)}
       onSelectSession={setActiveSessionId}
@@ -163,15 +272,16 @@ export function DesktopApp() {
       sidebar={isSettingsOpen ? settingsSidebar : appSidebar}
       sidebarWidthPx={sidebarWidthPx}
       onCreateSession={createSession}
-      onSidebarVisibilityChange={setIsSidebarVisible}
-      onSidebarWidthChange={setSidebarWidthPx}
-      onToggleSidebar={() => setIsSidebarVisible((visible) => !visible)}
+      onSidebarVisibilityChange={onSidebarVisibilityChange}
+      onSidebarWidthChange={onSidebarWidthChange}
+      onToggleSidebar={() => onSidebarVisibilityChange(!isSidebarVisible)}
     >
       {isSettingsOpen ? (
         <DesktopSettingsPage
           apiBaseUrl={apiBaseUrl}
           backends={controller.backends}
           hostLabel={hostLabel}
+          logPath={hostInfo.logPath}
           selectedBackend={selectedBackendKind}
           sessionsCount={sessions.length}
           onSelectedBackendChange={setSelectedBackendKind}
@@ -201,9 +311,91 @@ export function DesktopApp() {
           pendingAttachments={controller.pendingAttachments}
         />
       ) : (
+        <DesktopEmptySurface error={error} />
+      )}
+    </VelaDesktopShell>
+  );
+}
+
+interface DesktopBootstrapAppProps {
+  bootstrap: Exclude<DesktopRuntimeBootstrap, { status: "ready" }>;
+  hostInfo: DesktopHostInfo;
+  isSidebarVisible: boolean;
+  sidebarWidthPx: number;
+  onRetry: () => void;
+  onSidebarVisibilityChange: (isVisible: boolean) => void;
+  onSidebarWidthChange: (widthPx: number) => void;
+}
+
+function DesktopBootstrapApp({
+  bootstrap,
+  hostInfo,
+  isSidebarVisible,
+  sidebarWidthPx,
+  onRetry,
+  onSidebarVisibilityChange,
+  onSidebarWidthChange,
+}: DesktopBootstrapAppProps) {
+  const hostBridge = useMemo(() => desktopHostBridgeForInfo(hostInfo), [hostInfo]);
+  const hostLabel = hostBridge.platform === "macos" ? "Electron on macOS" : "Runtime host";
+  const sidebar = (
+    <SessionSidebar
+      currentSessionId={null}
+      sessions={[]}
+      showTrafficLights={hostBridge.chrome.showTrafficLights}
+      accountLabel={hostLabel}
+      accountPlanLabel="Local desktop"
+      canClearSessions={false}
+      canCreateSession={false}
+      onCreateSession={() => undefined}
+      onOpenSettings={() => undefined}
+      onSelectSession={() => undefined}
+    />
+  );
+
+  return (
+    <VelaDesktopShell
+      host={hostBridge}
+      isSidebarVisible={isSidebarVisible}
+      sidebar={sidebar}
+      sidebarWidthPx={sidebarWidthPx}
+      onCreateSession={() => undefined}
+      onSidebarVisibilityChange={onSidebarVisibilityChange}
+      onSidebarWidthChange={onSidebarWidthChange}
+      onToggleSidebar={() => onSidebarVisibilityChange(!isSidebarVisible)}
+    >
+      {bootstrap.status === "failed" ? (
+        <DesktopBootstrapSurface bootstrap={bootstrap} onRetry={onRetry} />
+      ) : (
         <DesktopEmptySurface />
       )}
     </VelaDesktopShell>
+  );
+}
+
+function DesktopBootstrapSurface({
+  bootstrap,
+  onRetry,
+}: {
+  bootstrap: Exclude<DesktopRuntimeBootstrap, { status: "ready" }>;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="vela-runtime-bootstrap" role="alert">
+      <div className="vela-runtime-bootstrap-card">
+        <div className="vela-runtime-bootstrap-orb" data-state="failed" />
+        <div>
+          <h1>Runtime could not start</h1>
+          <p>{bootstrap.error}</p>
+          {bootstrap.logPath ? (
+            <p className="vela-runtime-bootstrap-log">Log: {bootstrap.logPath}</p>
+          ) : null}
+        </div>
+        <button className="vela-runtime-bootstrap-retry" type="button" onClick={onRetry}>
+          Retry
+        </button>
+      </div>
+    </div>
   );
 }
 

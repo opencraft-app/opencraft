@@ -23,7 +23,13 @@ import type {
   BackendKindWire,
   BackendWire,
 } from "../../../packages/vela-chat-client/src";
-import { ShellSelect, ShellSwitch } from "../../../packages/vela-desktop-shell/src";
+import {
+  Sidebar,
+  SidebarContent,
+  ShellSelect,
+  ShellSwitch,
+  VelaSidebarChrome,
+} from "../../../packages/vela-desktop-shell/src";
 
 export interface DesktopSettingsSidebarProps {
   onClose: () => void;
@@ -34,6 +40,7 @@ export interface DesktopSettingsPageProps {
   apiBaseUrl: string;
   backends: BackendWire[];
   hostLabel: string;
+  logPath?: string;
   selectedBackend: BackendKindWire | "";
   sessionsCount: number;
   onSelectedBackendChange: (backend: BackendKindWire) => void;
@@ -70,33 +77,27 @@ export function DesktopSettingsSidebar({
   showTrafficLights = false,
 }: DesktopSettingsSidebarProps) {
   return (
-    <aside className="vela-settings-sidebar" aria-label="Settings navigation">
-      <div className="vela-settings-sidebar-topbar">
-        {showTrafficLights ? (
-          <div className="vela-traffic-lights" aria-hidden>
-            <span className="vela-traffic-light close" />
-            <span className="vela-traffic-light minimize" />
-            <span className="vela-traffic-light zoom" />
-          </div>
-        ) : null}
-      </div>
-      <button className="vela-settings-back" type="button" onClick={onClose}>
-        <ArrowLeft size={16} aria-hidden />
-        <span>返回应用</span>
-      </button>
-      <label className="vela-settings-search">
-        <Search size={15} aria-hidden />
-        <input placeholder="搜索设置..." />
-      </label>
+    <Sidebar className="vela-settings-sidebar" aria-label="Settings navigation">
+      <VelaSidebarChrome showTrafficLights={showTrafficLights} />
+      <SidebarContent className="vela-settings-sidebar-content">
+        <button className="vela-settings-back" type="button" onClick={onClose}>
+          <ArrowLeft size={16} aria-hidden />
+          <span>返回应用</span>
+        </button>
+        <label className="vela-settings-search">
+          <Search size={15} aria-hidden />
+          <input placeholder="搜索设置..." />
+        </label>
 
-      <SettingsNavGroup title="个人" items={personalSettings} />
-      <SettingsNavGroup title="集成" items={integrationSettings} />
-      <SettingsNavGroup title="编码" items={codingSettings} />
-      <SettingsNavGroup
-        title="已归档"
-        items={[{ icon: Archive, label: "已归档对话" }]}
-      />
-    </aside>
+        <SettingsNavGroup title="个人" items={personalSettings} />
+        <SettingsNavGroup title="集成" items={integrationSettings} />
+        <SettingsNavGroup title="编码" items={codingSettings} />
+        <SettingsNavGroup
+          title="已归档"
+          items={[{ icon: Archive, label: "已归档对话" }]}
+        />
+      </SidebarContent>
+    </Sidebar>
   );
 }
 
@@ -104,6 +105,7 @@ export function DesktopSettingsPage({
   apiBaseUrl,
   backends,
   hostLabel,
+  logPath,
   selectedBackend,
   sessionsCount,
   onSelectedBackendChange,
@@ -177,6 +179,7 @@ export function DesktopSettingsPage({
             </div>
             <SettingsInfoRow label="velad API" value={apiBaseUrl} />
             <SettingsInfoRow label="Shell host" value={hostLabel} />
+            {logPath ? <SettingsInfoRow label="Local logs" value={logPath} /> : null}
             <SettingsInfoRow label="Session cache" value={`${sessionsCount} sessions`} />
           </div>
         </section>

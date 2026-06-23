@@ -196,7 +196,7 @@ function deriveBlockedReason(input: {
   pendingVerification: BottomAnchorVerification | null;
   request: BottomAnchorRequest | null;
 }): BottomAnchorBlockedReason | null {
-  if (input.request?.source === "route" && !input.isAuthoritativeHistoryReady) {
+  if (!input.isAuthoritativeHistoryReady) {
     return "waiting_for_history_readiness";
   }
   if (
@@ -435,6 +435,12 @@ export function createBottomAnchorDriver(
   };
 
   function runAttempt(animated: boolean) {
+    const nextBlockedReason = currentBlockedReason();
+    if (nextBlockedReason) {
+      setBlockedReason(nextBlockedReason);
+      return;
+    }
+
     const request = pendingRequest;
     const reason = request?.reason ?? pendingVerification?.reason ?? "content_mutated";
     pendingVerification = {

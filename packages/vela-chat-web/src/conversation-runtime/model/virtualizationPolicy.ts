@@ -7,6 +7,21 @@ export interface ConversationRuntimePolicy {
 
 export type ConversationRuntimeHostKind = "mobile_web" | "desktop_web" | "desktop_shell";
 
+export type ConversationRuntimeProfileName =
+  | "desktop_full_preload"
+  | "web_partial_virtualized"
+  | "mobile_incremental_window";
+
+export type ConversationRuntimeScrollbarExtent =
+  | "full_content"
+  | "mounted_and_estimated_content";
+
+export interface ConversationRuntimeProfile {
+  name: ConversationRuntimeProfileName;
+  policy: ConversationRuntimePolicy;
+  scrollbarExtent: ConversationRuntimeScrollbarExtent;
+}
+
 export const DEFAULT_CONVERSATION_RUNTIME_POLICY: ConversationRuntimePolicy =
   Object.freeze({
     partialVirtualizationEnabled: true,
@@ -46,13 +61,63 @@ export function normalizeConversationRuntimePolicy(
 }
 
 export function conversationRuntimePolicyForHost(
-  _hostKind: ConversationRuntimeHostKind,
+  hostKind: ConversationRuntimeHostKind,
   policy: Partial<ConversationRuntimePolicy> = {},
 ): ConversationRuntimePolicy {
-  return normalizeConversationRuntimePolicy({
-    partialVirtualizationEnabled: true,
-    ...policy,
-  });
+  return conversationRuntimeProfileForHost(hostKind, policy).policy;
+}
+
+export function conversationRuntimeProfileForHost(
+  hostKind: ConversationRuntimeHostKind,
+  policy: Partial<ConversationRuntimePolicy> = {},
+): ConversationRuntimeProfile {
+  const profile = defaultConversationRuntimeProfileForHost(hostKind);
+  return {
+    ...profile,
+    policy: normalizeConversationRuntimePolicy({
+      ...profile.policy,
+      ...policy,
+    }),
+  };
+}
+
+function defaultConversationRuntimeProfileForHost(
+  hostKind: ConversationRuntimeHostKind,
+): ConversationRuntimeProfile {
+  const defaultPolicy = getConversationRuntimeDefaultPolicy();
+  if (hostKind === "desktop_shell") {
+    return {
+      name: "desktop_full_preload",
+      policy: {
+        ...defaultPolicy,
+        partialVirtualizationEnabled: false,
+      },
+      scrollbarExtent: "full_content",
+    };
+  }
+
+  if (hostKind === "mobile_web") {
+    return {
+      name: "mobile_incremental_window",
+      policy: {
+        ...defaultPolicy,
+        partialVirtualizationEnabled: true,
+        maxLiveHeadItemCount: Math.min(defaultPolicy.maxLiveHeadItemCount, 30),
+        mountedRecentItemCount: Math.min(defaultPolicy.mountedRecentItemCount, 30),
+        virtualizeAfterItemCount: Math.min(defaultPolicy.virtualizeAfterItemCount, 60),
+      },
+      scrollbarExtent: "mounted_and_estimated_content",
+    };
+  }
+
+  return {
+    name: "web_partial_virtualized",
+    policy: {
+      ...defaultPolicy,
+      partialVirtualizationEnabled: true,
+    },
+    scrollbarExtent: "mounted_and_estimated_content",
+  };
 }
 
 function getConversationRuntimeDefaultPolicy(): ConversationRuntimePolicy {

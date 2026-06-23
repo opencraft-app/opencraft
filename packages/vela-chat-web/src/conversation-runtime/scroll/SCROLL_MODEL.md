@@ -26,6 +26,22 @@ The self-drawn scrollbar is not a source of truth. It is a view/controller for
 the browser element. It may map pointer input to a desired `scrollTop`, but it
 must commit that position through the conversation scroll controller.
 
+### Streaming Renderer Growth
+
+Live Markdown rendering changes DOM geometry even when no new read-model row
+arrives. The renderer owns `visibleText`, but scroll owns the geometry reaction.
+
+- `visibleText` is local presentation state. It must not become a second
+  transcript/read-model truth.
+- The scroll controller observes the conversation content with `ResizeObserver`.
+  When a live renderer reveals more text and the content height changes, that
+  observer is the bridge from rendering to scroll maintenance.
+- Bottom-follow uses that geometry signal while sticky. Detached history reading
+  must not be pulled by `visibleText` growth.
+- Tests should verify both sides: renderer text growth remains prefix-monotonic,
+  and scroll geometry reacts through `ResizeObserver` rather than direct renderer
+  scroll writes.
+
 ### Semantic Truth
 
 Pixel offsets are not enough to restore a conversation after route switches,
@@ -155,6 +171,28 @@ Host-owned examples:
 The host should not directly mutate the conversation scroll element. If it
 needs a scroll action, it should use `ConversationViewportHandle`.
 
+### Workbench Presentation
+
+The workbench owns visual reveal, not scroll truth.
+
+`ChatWorkbenchView` may mount a candidate conversation before it is safe to show
+it. This is intentional: the scroll controller still needs a real DOM tree to
+measure, restore a saved route offset, and confirm layout. The candidate is
+only revealed when both conditions are true:
+
+- the read model history is authoritative (`historyPhase === "ready"`)
+- the route scroll resume is no longer pending
+
+While either condition is false, the candidate conversation remains mounted for
+measurement but is marked as `data-conversation-reveal-state="measuring"` and
+hidden from both pixels and accessibility. This prevents one-frame leaks where a
+tail-only page or an un-restored route flashes before the final scroll position
+settles.
+
+Do not solve presentation flashes by moving session data into extra
+`presentedModel` state in the controller. The controller owns data readiness;
+the workbench owns the reveal gate; the scroll controller owns route settlement.
+
 ## Write Arbitration
 
 All programmatic writes to `scrollTop` should be explainable by one of these
@@ -180,7 +218,9 @@ When they conflict, the priority is:
    content by adding the height delta to `scrollTop`.
 4. **Bottom-follow maintenance**
    While sticky, content growth and viewport changes keep the viewport at the
-   bottom. While detached, this must not steal the viewport.
+   bottom. While detached, this must not steal the viewport. Maintenance writes
+   are still automatic bottom-anchor writes, so they must also wait for
+   authoritative history readiness.
 5. **Virtualizer measurement correction**
    Virtual row measurement can adjust offsets, but should not override an active
    route resume or explicit user intent.
@@ -207,7 +247,20 @@ Route entry must wait for:
 - history readiness
 - measurable viewport
 - measurable content
-- post-layout verification for partial virtualization
+
+Route resume does **not** wait behind bottom-anchor post-layout verification.
+Route resume is the route-level restoration write; bottom-anchor verification is
+a lower-priority follow-output concern. Once history and dimensions are
+authoritative, route resume applies the stored offset, clamps impossible stale
+offsets to the current max scroll position, and then runs its own stable-frame
+confirmation before reporting `restored`.
+
+`history readiness` is supplied by the session/workbench layer, not guessed from
+the first measurable DOM frame. In `full_preload`, the tail page can mount under
+the hydration overlay before older pages finish loading; neither
+`route_initial_entry` nor sticky `content_mutated` maintenance may bottom-anchor
+that tail-only page. The scroll controller should activate route restore or
+initial bottom anchoring only after the conversation window is authoritative.
 
 ### Leaving A Route
 
@@ -364,7 +417,8 @@ Relevant tests:
 Start with hydration and measurement timing:
 
 - First page load may have stale virtual row estimates.
-- Route resume should remain pending until post-layout confirmation.
+- Route resume should remain pending only until its own stable-frame
+  confirmation, not until bottom-anchor verification drains.
 - Semantic anchor should correct the old pixel offset after measurement drift.
 - If content is not yet mounted, the route should not claim restored.
 
@@ -414,7 +468,10 @@ Bad: "fix tab switch bug".
 - All overlay pointer writes go through `commitScrollResumeNow`.
 - `scrollTop` is a coarse fallback for route resume; semantic anchor wins when
   available.
-- Route resume must not be marked restored until post-layout confirmation.
+- Route resume must not be marked restored until its own stable-frame
+  confirmation.
+- Route resume has priority over bottom-anchor verification; otherwise stale
+  local scroll state can keep a ready Web conversation hidden forever.
 - Bottom-follow must not run while detached route restore is pending.
 - History prepend anchoring and route resume anchoring are separate mechanisms.
 - Partial virtualization means scrollbar range may be estimated until

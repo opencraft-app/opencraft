@@ -14,7 +14,6 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(appRoot, "electron/main.ts"),
-        preload: resolve(appRoot, "electron/preload.ts"),
       },
       external: (id) => id === "electron" || id.startsWith("node:"),
       output: {

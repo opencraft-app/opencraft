@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { register } from "node:module";
+import { join } from "node:path";
 import test from "node:test";
 
 import { Window } from "happy-dom";
@@ -10,6 +12,12 @@ import {
 import type { ChatSurface } from "../../vela-chat-surface/src";
 
 register(new URL("./css-module-loader.mjs", import.meta.url));
+
+const root = process.cwd();
+const desktopCss = readFileSync(
+  join(root, "packages/vela-chat-web/src/styles/desktop.module.css"),
+  "utf8",
+);
 
 test("conversation persists the current detached scroll offset when switching session tabs", async () => {
   const dom = installDomRuntime();
@@ -661,6 +669,81 @@ test("conversation restores a saved detached offset on a fresh tall mount", asyn
   }
 });
 
+test("conversation history readiness does not restart the route lifecycle", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { buildChatRenderModel } = await import("../../vela-chat-render-model/src");
+    const { toWebChatModel } = await import("../src/adapters/toWebBlocks");
+    const { VelaConversation } = await import("../src/components/conversation/VelaConversation");
+
+    const baseClientStateStore = createVelaClientStateStore(createMemoryKeyValueStore(), {
+      hostId: "scroll-state-history-ready-route-lifecycle-red-test",
+    });
+    baseClientStateStore.conversationScroll.write("sess_a", {
+      followOutput: false,
+      routeKey: "sess_a",
+      scrollTop: 420,
+    });
+    const readScopes: string[] = [];
+    const clientStateStore = {
+      ...baseClientStateStore,
+      conversationScroll: {
+        ...baseClientStateStore.conversationScroll,
+        read(scope: string) {
+          readScopes.push(scope);
+          return baseClientStateStore.conversationScroll.read(scope);
+        },
+      },
+    };
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const webModel = toWebChatModel(
+      buildChatRenderModel(buildLongConversationSurface("sess_a"), {
+        kind: "desktop_web",
+      }),
+    );
+
+    await act(async () => {
+      root.render(
+        React.createElement(VelaConversation, {
+          clientStateStore,
+          isHistoryReady: false,
+          webModel,
+        }),
+      );
+    });
+    await flushFrames(act, dom, [16, 32]);
+    const readsAfterRouteMount = readScopes.length;
+
+    await act(async () => {
+      root.render(
+        React.createElement(VelaConversation, {
+          clientStateStore,
+          isHistoryReady: true,
+          webModel,
+        }),
+      );
+    });
+    await flushFrames(act, dom, [48, 64, 80]);
+
+    assert.equal(
+      readScopes.length,
+      readsAfterRouteMount,
+      "history readiness changing for the same session must not rerun route initialization or reread route resume state",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 test("workbench preserves a session scroll offset across history hydration unmounts", async () => {
   const dom = installDomRuntime();
   try {
@@ -730,6 +813,398 @@ test("workbench preserves a session scroll offset across history hydration unmou
       restoredScrollElement!.scrollTop,
       420,
       "returning after the session's own hydration screen must restore the remembered historical offset",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("workbench keeps stable chrome mounted while full history is hydrating", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { buildChatRenderModel } = await import("../../vela-chat-render-model/src");
+    const { ChatWorkbenchView } = await import(
+      "../src/components/workbench/ChatWorkbenchView"
+    );
+
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        React.createElement(ChatWorkbenchView, {
+          draft: "",
+          historyPhase: "hydrating_history",
+          model: buildChatRenderModel(buildLongConversationSurface("sess_a"), {
+            kind: "desktop_web",
+          }),
+          onDraftChange: () => {},
+          onSubmit: () => {},
+        }),
+      );
+    });
+
+    assert.notEqual(
+      container.querySelector(".conversationShell"),
+      null,
+      "full-history hydration must keep the conversation chrome mounted",
+    );
+    assert.notEqual(
+      container.querySelector(".composerDock"),
+      null,
+      "full-history hydration must keep the composer chrome mounted",
+    );
+    assert.notEqual(
+      container.querySelector('[aria-label="Loading conversation history"]'),
+      null,
+      "full-history hydration should be represented as an overlay state",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("workbench mounts conversation for measurement but hides it during full-history hydration", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { buildChatRenderModel } = await import("../../vela-chat-render-model/src");
+    const { ChatWorkbenchView } = await import(
+      "../src/components/workbench/ChatWorkbenchView"
+    );
+
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        React.createElement(ChatWorkbenchView, {
+          draft: "",
+          historyPhase: "hydrating_history",
+          model: buildChatRenderModel(buildLongConversationSurface("sess_a"), {
+            kind: "desktop_web",
+          }),
+          onDraftChange: () => {},
+          onSubmit: () => {},
+        }),
+      );
+    });
+
+    const revealGate = container.querySelector("[data-conversation-reveal-state]");
+    assert.notEqual(revealGate, null, "workbench should expose an explicit conversation reveal state");
+    assert.equal(
+      revealGate?.getAttribute("data-conversation-reveal-state"),
+      "measuring",
+      "full-history hydration should mount candidate conversation only for measurement",
+    );
+    assert.equal(
+      revealGate?.getAttribute("aria-hidden"),
+      "true",
+      "candidate conversation should not be exposed while it is only measuring",
+    );
+    assert.notEqual(
+      revealGate?.querySelector(".conversationShell"),
+      null,
+      "measuring state must still mount the real conversation so scroll and layout can settle",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("conversation reveal gate preserves the scroll container height chain", () => {
+  assert.match(
+    desktopCss,
+    /\.conversationReveal\s*\{[^}]*height:\s*100%;/s,
+    "the reveal gate wraps the scroll container, so it must fill the workbench grid row",
+  );
+  assert.match(
+    desktopCss,
+    /\.conversationShell\s*\{[^}]*height:\s*100%;/s,
+    "the conversation shell must preserve the 100% height chain down to the scroll element",
+  );
+});
+
+test("workbench reveals ready conversation only after route scroll resume has settled", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { buildChatRenderModel } = await import("../../vela-chat-render-model/src");
+    const { ChatWorkbenchView } = await import(
+      "../src/components/workbench/ChatWorkbenchView"
+    );
+
+    const clientStateStore = createVelaClientStateStore(createMemoryKeyValueStore(), {
+      hostId: "workbench-reveal-after-scroll-settled-red-test",
+    });
+    clientStateStore.conversationScroll.write("sess_a", {
+      followOutput: false,
+      routeKey: "sess_a",
+      scrollTop: 420,
+    });
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        React.createElement(ChatWorkbenchView, {
+          clientStateStore,
+          draft: "",
+          historyPhase: "ready",
+          model: buildChatRenderModel(buildLongConversationSurface("sess_a"), {
+            kind: "desktop_web",
+          }),
+          onDraftChange: () => {},
+          onSubmit: () => {},
+        }),
+      );
+    });
+
+    const revealGate = container.querySelector("[data-conversation-reveal-state]");
+    assert.notEqual(revealGate, null, "workbench should expose an explicit conversation reveal state");
+    assert.equal(
+      revealGate?.getAttribute("data-conversation-reveal-state"),
+      "measuring",
+      "a ready read model with pending route restore should remain hidden until scroll settles",
+    );
+
+    await flushFrames(act, dom, [16, 32, 48, 64, 80, 96]);
+
+    assert.equal(
+      revealGate?.getAttribute("data-conversation-reveal-state"),
+      "revealed",
+      "conversation should reveal after route resume verification settles",
+    );
+    assert.equal(
+      revealGate?.hasAttribute("aria-hidden"),
+      false,
+      "revealed conversation should be visible to assistive technology",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("workbench reveals the first selected web session without requiring a tab switch", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { buildChatRenderModel } = await import("../../vela-chat-render-model/src");
+    const { ChatWorkbenchView } = await import(
+      "../src/components/workbench/ChatWorkbenchView"
+    );
+
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        React.createElement(ChatWorkbenchView, {
+          draft: "",
+          historyPhase: "unselected",
+          model: buildChatRenderModel(buildConversationSurface("", 0), {
+            kind: "desktop_web",
+          }),
+          onDraftChange: () => {},
+          onSubmit: () => {},
+        }),
+      );
+    });
+
+    await act(async () => {
+      root.render(
+        React.createElement(ChatWorkbenchView, {
+          draft: "",
+          historyPhase: "ready",
+          model: buildChatRenderModel(buildLongConversationSurface("sess_a"), {
+            kind: "desktop_web",
+          }),
+          onDraftChange: () => {},
+          onSubmit: () => {},
+        }),
+      );
+    });
+    await flushFrames(act, dom, [16, 32, 48]);
+
+    const revealGate = container.querySelector("[data-conversation-reveal-state]");
+    assert.equal(
+      revealGate?.getAttribute("data-conversation-reveal-state"),
+      "revealed",
+      "the first selected session must not stay hidden waiting for a manual session switch",
+    );
+    assert.equal(
+      revealGate?.hasAttribute("aria-hidden"),
+      false,
+      "the first selected session should be visible to assistive technology after it settles",
+    );
+    assert.notEqual(
+      findTurnGroupByText(container, "第 0 条长会话消息"),
+      null,
+      "the first selected session should render real conversation rows without a tab switch",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("workbench clamps stale local scroll state instead of hiding the first web session", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { buildChatRenderModel } = await import("../../vela-chat-render-model/src");
+    const { ChatWorkbenchView } = await import(
+      "../src/components/workbench/ChatWorkbenchView"
+    );
+
+    const clientStateStore = createVelaClientStateStore(createMemoryKeyValueStore(), {
+      hostId: "first-web-session-stale-scroll-state-red-test",
+    });
+    clientStateStore.conversationScroll.write("sess_a", {
+      followOutput: false,
+      routeKey: "sess_a",
+      scrollTop: 999_999,
+    });
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        React.createElement(ChatWorkbenchView, {
+          clientStateStore,
+          draft: "",
+          historyPhase: "ready",
+          model: buildChatRenderModel(buildLongConversationSurface("sess_a"), {
+            kind: "desktop_web",
+          }),
+          onDraftChange: () => {},
+          onSubmit: () => {},
+        }),
+      );
+    });
+    await flushFrames(act, dom, [16, 32, 48, 64]);
+
+    const revealGate = container.querySelector("[data-conversation-reveal-state]");
+    const scrollElement = container.querySelector(".conversation") as HTMLElement | null;
+    assert.equal(
+      revealGate?.getAttribute("data-conversation-reveal-state"),
+      "revealed",
+      "a stale impossible local scroll offset must not keep a ready web session hidden",
+    );
+    assert.notEqual(scrollElement, null, "expected the conversation scroll element to mount");
+    assert.equal(
+      scrollElement!.scrollTop,
+      scrollElement!.scrollHeight - scrollElement!.clientHeight,
+      "stale saved offsets should clamp to the maximum real scroll position",
+    );
+    assert.notEqual(
+      findTurnGroupByText(container, "第 0 条长会话消息"),
+      null,
+      "the ready conversation should still render rows after clamping stale local state",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("workbench reveals after full-preload hydration clamps stale local scroll state", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { buildChatRenderModel } = await import("../../vela-chat-render-model/src");
+    const { ChatWorkbenchView } = await import(
+      "../src/components/workbench/ChatWorkbenchView"
+    );
+
+    const clientStateStore = createVelaClientStateStore(createMemoryKeyValueStore(), {
+      hostId: "first-web-session-full-preload-stale-scroll-red-test",
+    });
+    clientStateStore.conversationScroll.write("sess_a", {
+      followOutput: false,
+      routeKey: "sess_a",
+      scrollTop: 999_999,
+    });
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const model = buildChatRenderModel(buildLongConversationSurface("sess_a"), {
+      kind: "desktop_web",
+    });
+    const render = async (
+      historyPhase: "hydrating_history" | "ready",
+    ) => {
+      await act(async () => {
+        root.render(
+          React.createElement(ChatWorkbenchView, {
+            clientStateStore,
+            draft: "",
+            historyPhase,
+            model,
+            onDraftChange: () => {},
+            onSubmit: () => {},
+          }),
+        );
+      });
+    };
+
+    await render("hydrating_history");
+    await flushFrames(act, dom, [16, 32]);
+    await render("ready");
+    await flushFrames(act, dom, [48, 64, 80, 96, 112, 128]);
+
+    const revealGate = container.querySelector("[data-conversation-reveal-state]");
+    const scrollElement = container.querySelector(".conversation") as HTMLElement | null;
+    assert.equal(
+      revealGate?.getAttribute("data-conversation-reveal-state"),
+      "revealed",
+      "full-preload hydration must not leave a ready web session hidden after clamping stale local scroll state",
+    );
+    assert.notEqual(scrollElement, null, "expected the conversation scroll element to mount");
+    assert.equal(
+      scrollElement!.scrollTop,
+      scrollElement!.scrollHeight - scrollElement!.clientHeight,
+      "the stale full-preload scroll offset should clamp to the maximum real scroll position",
     );
 
     await act(async () => {

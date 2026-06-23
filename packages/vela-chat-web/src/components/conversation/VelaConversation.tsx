@@ -23,6 +23,7 @@ export const VelaConversation = forwardRef<ConversationViewportHandle, {
   webModel: WebChatModel;
   canLoadOlder?: boolean;
   clientStateStore?: VelaClientStateStore | null;
+  isHistoryReady?: boolean;
   isLoadingOlder?: boolean;
   messageFollowToken?: number;
   onLoadOlder?: () => void;
@@ -31,6 +32,7 @@ export const VelaConversation = forwardRef<ConversationViewportHandle, {
   webModel,
   canLoadOlder = false,
   clientStateStore = null,
+  isHistoryReady = true,
   isLoadingOlder = false,
   messageFollowToken,
   onLoadOlder,
@@ -57,6 +59,7 @@ export const VelaConversation = forwardRef<ConversationViewportHandle, {
     clientStateStore,
     hasOlderHistory: canLoadOlder,
     historyStartKey: webModel.sessionId,
+    isHistoryReady,
     isLoadingOlderHistory: isLoadingOlder,
     onNearHistoryStart: onLoadOlder,
     transportKey: segments.boundary.hasVirtualizedHistory

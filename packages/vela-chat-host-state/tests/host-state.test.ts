@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   createMemoryKeyValueStore,
   createVelaClientStateStore,
+  createVelaSessionSelectionStore,
   createVelaShellLayoutStore,
 } from "../src";
 
@@ -73,5 +74,24 @@ test("shell layout store is host scoped and separate from chat client state", ()
     isSidebarVisible: false,
     sidebarWidthPx: 344,
     updatedAt: 99,
+  });
+});
+
+test("session selection store is host scoped and separate from layout and chat state", () => {
+  const kv = createMemoryKeyValueStore();
+  const selection = createVelaSessionSelectionStore(kv, { hostId: "desktop-a" });
+
+  selection.write({
+    sessionId: "ses_remembered",
+    updatedAt: 123,
+  });
+
+  assert.equal(
+    kv.getItem("vela-chat:session-selection:desktop-a"),
+    '{"version":1,"session_id":"ses_remembered","updated_at":123}',
+  );
+  assert.deepEqual(selection.read(), {
+    sessionId: "ses_remembered",
+    updatedAt: 123,
   });
 });

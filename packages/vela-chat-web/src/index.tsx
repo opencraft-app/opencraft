@@ -13,6 +13,7 @@ export interface VelaChatWebProps {
   error?: string | null;
   canLoadOlder?: boolean;
   clientStateStore?: VelaClientStateStore | null;
+  layout?: "viewport" | "contained";
   historyPhase: "unselected" | "hydrating_history" | "ready";
   isLoadingOlder?: boolean;
   composerControls?: ComposerControlsModel;
@@ -20,6 +21,7 @@ export interface VelaChatWebProps {
   isRespondingToRequest?: boolean;
   messageFollowToken?: number;
   pendingAttachments?: PromptInputAttachment[];
+  showScrollInspector?: boolean;
   onDraftChange: (value: string) => void;
   onAttachImages?: (files: File[]) => void;
   onAgentConfigChange?: (patch: AgentConfigPatchWire) => void;
@@ -37,6 +39,7 @@ export function VelaChatWeb({
   error,
   canLoadOlder,
   clientStateStore,
+  layout = "viewport",
   historyPhase,
   isLoadingOlder,
   composerControls,
@@ -44,6 +47,7 @@ export function VelaChatWeb({
   isRespondingToRequest,
   messageFollowToken,
   pendingAttachments,
+  showScrollInspector,
   onDraftChange,
   onAttachImages,
   onAgentConfigChange,
@@ -62,6 +66,7 @@ export function VelaChatWeb({
       draft={draft}
       error={error}
       historyPhase={historyPhase}
+      layout={layout}
       isLoadingOlder={isLoadingOlder}
       isUpdatingComposerControls={isUpdatingComposerControls}
       isRespondingToRequest={isRespondingToRequest}
@@ -77,6 +82,7 @@ export function VelaChatWeb({
       onStop={onStop}
       onSubmit={onSubmit}
       pendingAttachments={pendingAttachments}
+      showScrollInspector={showScrollInspector}
     />
   );
 }

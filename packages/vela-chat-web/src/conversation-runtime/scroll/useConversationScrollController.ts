@@ -75,6 +75,7 @@ export interface ConversationScrollControllerOptions {
   clientStateStore?: VelaClientStateStore | null;
   hasOlderHistory?: boolean;
   historyStartKey?: unknown;
+  isHistoryReady?: boolean;
   isLoadingOlderHistory?: boolean;
   onNearHistoryStart?: () => void;
   transportKey?: "web-scroll" | "web-partial-virtualized";
@@ -276,6 +277,7 @@ export function useConversationScrollController(
   const lastScrollWriteRef =
     useRef<ConversationScrollControllerDebugWrite | null>(null);
   const historyStartReadyRef = useRef(false);
+  const historyReadyActivationFrameRef = useRef<number | null>(null);
   const lastTouchClientYRef = useRef<number | null>(null);
   const userIntentRef = useRef<BottomAnchorUserIntent>("none");
   const userIntentResetTimeoutRef = useRef<number | null>(null);
@@ -855,8 +857,43 @@ export function useConversationScrollController(
     scheduleRouteResumeConfirmation,
   ]);
 
+  const cancelHistoryReadyActivation = useCallback(() => {
+    if (historyReadyActivationFrameRef.current === null) return;
+    cancelAnimationFrame(historyReadyActivationFrameRef.current);
+    historyReadyActivationFrameRef.current = null;
+  }, []);
+
+  const scheduleHistoryReadyActivation = useCallback(
+    (routeKey: string | null) => {
+      cancelHistoryReadyActivation();
+      historyReadyActivationFrameRef.current = requestAnimationFrame(() => {
+        historyReadyActivationFrameRef.current = null;
+        if (routeKey !== routeKeyFrom(optionsRef.current.historyStartKey)) return;
+        if (optionsRef.current.isHistoryReady === false) return;
+
+        historyStartReadyRef.current = true;
+        const didRestore = tryRestoreScrollResume();
+        if (
+          routeKey &&
+          shouldRequestInitialBottomAnchorAfterResumeAttempt({
+            didRestore,
+            hasPendingResumeState: pendingScrollResumeStateRef.current !== null,
+          })
+        ) {
+          driver.applyRouteRequest({
+            reason: "route_initial_entry",
+            requestKey: `${routeKey}:route_initial_entry`,
+          });
+        }
+        driver.notifyAuthoritativeHistoryMaybeChanged();
+      });
+    },
+    [cancelHistoryReadyActivation, driver, tryRestoreScrollResume],
+  );
+
   useLayoutEffect(() => {
     const routeKey = routeKeyFrom(options.historyStartKey);
+    cancelHistoryReadyActivation();
     cancelRouteResumeVerification();
     driver.reset();
     historyStartReadyRef.current = false;
@@ -878,25 +915,11 @@ export function useConversationScrollController(
       pendingScrollResumeStateRef.current?.scrollTop ?? null;
     publishScrollDebug();
 
-    const frame = requestAnimationFrame(() => {
-      historyStartReadyRef.current = true;
-      const didRestore = tryRestoreScrollResume();
-      if (
-        routeKey &&
-        shouldRequestInitialBottomAnchorAfterResumeAttempt({
-          didRestore,
-          hasPendingResumeState: pendingScrollResumeStateRef.current !== null,
-        })
-      ) {
-        driver.applyRouteRequest({
-          reason: "route_initial_entry",
-          requestKey: `${routeKey}:route_initial_entry`,
-        });
-      }
-      driver.notifyAuthoritativeHistoryMaybeChanged();
-    });
+    if (optionsRef.current.isHistoryReady !== false) {
+      scheduleHistoryReadyActivation(routeKey);
+    }
     return () => {
-      cancelAnimationFrame(frame);
+      cancelHistoryReadyActivation();
       cancelRouteResumeVerification();
       persistRouteLeaveScrollResumeSnapshot(routeKey);
       historyStartReadyRef.current = false;
@@ -904,12 +927,27 @@ export function useConversationScrollController(
     };
   }, [
     driver,
+    cancelHistoryReadyActivation,
     cancelRouteResumeVerification,
     flushPendingScrollResumePersist,
     options.historyStartKey,
     persistRouteLeaveScrollResumeSnapshot,
     publishScrollDebug,
-    tryRestoreScrollResume,
+    scheduleHistoryReadyActivation,
+  ]);
+
+  useLayoutEffect(() => {
+    if (options.isHistoryReady === false) {
+      cancelHistoryReadyActivation();
+      return;
+    }
+    if (historyStartReadyRef.current) return;
+    scheduleHistoryReadyActivation(routeKeyFrom(options.historyStartKey));
+  }, [
+    cancelHistoryReadyActivation,
+    options.historyStartKey,
+    options.isHistoryReady,
+    scheduleHistoryReadyActivation,
   ]);
 
   useEffect(() => {
@@ -1027,7 +1065,7 @@ export function useConversationScrollController(
     lastKnownViewportHeightRef.current = readViewportHeight();
     lastKnownViewportWidthRef.current = readViewportWidth();
 
-    const observer = new ResizeObserver(() => {
+    const resizeObserver = new ResizeObserver(() => {
       const previousContentHeight = lastKnownContentHeightRef.current;
       const previousViewportHeight = lastKnownViewportHeightRef.current;
       const previousViewportWidth = lastKnownViewportWidthRef.current;
@@ -1067,14 +1105,14 @@ export function useConversationScrollController(
       });
     });
 
-    observer.observe(scrollElement);
+    resizeObserver.observe(scrollElement);
     const contentElement = contentRef.current;
     if (contentElement && contentElement !== scrollElement) {
-      observer.observe(contentElement);
+      resizeObserver.observe(contentElement);
     }
 
     return () => {
-      observer.disconnect();
+      resizeObserver.disconnect();
     };
   }, [applyScrollWrite, driver, tryRestoreScrollResume]);
 
@@ -1083,10 +1121,12 @@ export function useConversationScrollController(
       flushPendingScrollResumePersist();
       driver.destroy();
       scrollResumeWriterRef.current?.cancel();
+      cancelHistoryReadyActivation();
       cancelRouteResumeVerification();
       cancelUserIntentReset();
     },
     [
+      cancelHistoryReadyActivation,
       cancelRouteResumeVerification,
       cancelUserIntentReset,
       driver,

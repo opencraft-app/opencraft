@@ -31,7 +31,6 @@ export function shouldRequestInitialBottomAnchorAfterResumeAttempt({
 export function deriveConversationScrollResumeDecision({
   contentHeight,
   isHistoryReady,
-  pendingVerification,
   resumeState,
   viewportHeight,
   viewportWidth,
@@ -64,20 +63,12 @@ export function deriveConversationScrollResumeDecision({
       scrollTop: null,
     };
   }
-  if (pendingVerification) {
-    return {
-      blockedReason: "waiting_for_post_layout_verification",
-      shouldRestore: false,
-      scrollTop: null,
-    };
-  }
-
   const maxScrollTop = Math.max(0, contentHeight - viewportHeight);
   if (resumeState.scrollTop > maxScrollTop) {
     return {
-      blockedReason: "waiting_for_resume_extent",
-      shouldRestore: false,
-      scrollTop: null,
+      blockedReason: null,
+      shouldRestore: true,
+      scrollTop: maxScrollTop,
     };
   }
 

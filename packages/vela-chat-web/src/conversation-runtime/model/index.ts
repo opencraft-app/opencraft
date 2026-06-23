@@ -12,8 +12,12 @@ export {
   type ConversationRuntimeSummary,
 } from "./buildConversationRuntimeSegments";
 export {
+  conversationRuntimeProfileForHost,
   conversationRuntimePolicyForHost,
   normalizeConversationRuntimePolicy,
   type ConversationRuntimeHostKind,
   type ConversationRuntimePolicy,
+  type ConversationRuntimeProfile,
+  type ConversationRuntimeProfileName,
+  type ConversationRuntimeScrollbarExtent,
 } from "./virtualizationPolicy";

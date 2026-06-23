@@ -28,6 +28,11 @@ export interface ShellLayoutState {
   updatedAt: number;
 }
 
+export interface SessionSelectionState {
+  sessionId: string;
+  updatedAt: number;
+}
+
 export interface VelaStateSlot<T> {
   clear(scope: string): void;
   read(scope: string): T | null;
@@ -45,6 +50,12 @@ export interface VelaShellLayoutStore {
   write(state: ShellLayoutState): void;
 }
 
+export interface VelaSessionSelectionStore {
+  clear(): void;
+  read(): SessionSelectionState | null;
+  write(state: SessionSelectionState): void;
+}
+
 interface StoreOptions {
   hostId?: string;
 }
@@ -52,6 +63,7 @@ interface StoreOptions {
 const DEFAULT_HOST_ID = "web";
 const CLIENT_STATE_PREFIX = "vela-chat:client-state";
 const SHELL_LAYOUT_PREFIX = "vela-chat:shell-layout";
+const SESSION_SELECTION_PREFIX = "vela-chat:session-selection";
 
 export function createMemoryKeyValueStore(
   initial: Record<string, string> = {},
@@ -109,6 +121,24 @@ export function createVelaShellLayoutStore(
   };
 }
 
+export function createVelaSessionSelectionStore(
+  kv: VelaHostKeyValueStore,
+  options: StoreOptions = {},
+): VelaSessionSelectionStore {
+  const key = `${SESSION_SELECTION_PREFIX}:${normalizeScopePart(options.hostId ?? DEFAULT_HOST_ID)}`;
+  return {
+    clear() {
+      kv.removeItem(key);
+    },
+    read() {
+      return parseSessionSelectionState(kv.getItem(key));
+    },
+    write(state) {
+      kv.setItem(key, serializeSessionSelectionState(state));
+    },
+  };
+}
+
 export function webStorageKeyValueStore(
   storage: Pick<Storage, "getItem" | "removeItem" | "setItem"> | null | undefined,
 ): VelaHostKeyValueStore | null {
@@ -134,6 +164,14 @@ export function createBrowserVelaShellLayoutStore(
   if (typeof window === "undefined") return null;
   const kv = webStorageKeyValueStore(window.localStorage);
   return kv ? createVelaShellLayoutStore(kv, options) : null;
+}
+
+export function createBrowserVelaSessionSelectionStore(
+  options: StoreOptions = {},
+): VelaSessionSelectionStore | null {
+  if (typeof window === "undefined") return null;
+  const kv = webStorageKeyValueStore(window.localStorage);
+  return kv ? createVelaSessionSelectionStore(kv, options) : null;
 }
 
 function createStateSlot<T>(
@@ -309,6 +347,33 @@ function parseShellLayoutState(raw: string | null): ShellLayoutState | null {
   return {
     sidebarWidthPx: value.sidebar_width_px,
     isSidebarVisible: value.is_sidebar_visible,
+    updatedAt: value.updated_at,
+  };
+}
+
+function serializeSessionSelectionState(state: SessionSelectionState): string {
+  return JSON.stringify({
+    version: 1,
+    session_id: state.sessionId,
+    updated_at: state.updatedAt,
+  });
+}
+
+function parseSessionSelectionState(raw: string | null): SessionSelectionState | null {
+  const value = parseJsonObject(raw);
+  if (!value || value.version !== 1) return null;
+  if (typeof value.session_id !== "string" || value.session_id.length === 0) {
+    return null;
+  }
+  if (
+    typeof value.updated_at !== "number" ||
+    !Number.isFinite(value.updated_at) ||
+    value.updated_at < 0
+  ) {
+    return null;
+  }
+  return {
+    sessionId: value.session_id,
     updatedAt: value.updated_at,
   };
 }

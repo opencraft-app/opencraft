@@ -68,6 +68,56 @@ test("chat debug session launcher stays isolated from reusable ChatUI", () => {
   assert.doesNotMatch(webPackage, /listSessions/);
 });
 
+test("next adapter embeds ChatUI without debug or desktop shell concerns", () => {
+  const expectedPaths = [
+    "packages/vela-chat-next/README.md",
+    "packages/vela-chat-next/src/README.md",
+    "packages/vela-chat-next/src/VelaNextChat.tsx",
+    "packages/vela-chat-next/src/index.ts",
+    "app/next-embed-demo/README.md",
+    "app/next-embed-demo/NextEmbedDemo.tsx",
+    "app/next-embed-demo/page.module.css",
+    "app/next-embed-demo/page.tsx",
+  ];
+  for (const path of expectedPaths) {
+    assert.equal(existsSync(join(root, path)), true, `${path} should exist`);
+  }
+
+  const adapter = readFileSync(
+    join(root, "packages/vela-chat-next/src/VelaNextChat.tsx"),
+    "utf8",
+  );
+  const webEntrypoint = readFileSync(
+    join(root, "packages/vela-chat-web/src/index.tsx"),
+    "utf8",
+  );
+  const workbenchView = readFileSync(
+    join(root, "packages/vela-chat-web/src/components/workbench/ChatWorkbenchView.tsx"),
+    "utf8",
+  );
+  const desktopCss = readFileSync(
+    join(root, "packages/vela-chat-web/src/styles/desktop.module.css"),
+    "utf8",
+  );
+  const demoPage = readFileSync(join(root, "app/next-embed-demo/page.tsx"), "utf8");
+  const demoShell = readFileSync(join(root, "app/next-embed-demo/NextEmbedDemo.tsx"), "utf8");
+
+  assert.match(adapter, /^"use client";/);
+  assert.match(adapter, /useVelaChatSession/);
+  assert.match(adapter, /createVeladClient/);
+  assert.match(adapter, /createBrowserVelaClientStateStore/);
+  assert.match(adapter, /VelaChatWeb/);
+  assert.match(adapter, /layout="contained"/);
+  assert.doesNotMatch(adapter, /DebugSessionLauncher|VelaDesktopShell|vela-chat-debug/);
+
+  assert.match(webEntrypoint, /layout\?:\s*"viewport" \| "contained"/);
+  assert.match(workbenchView, /data-layout=\{layout\}/);
+  assert.match(desktopCss, /\.shell\[data-layout="contained"\]\s*\{[^}]*height:\s*100%;/s);
+  assert.match(demoPage, /NextEmbedDemo/);
+  assert.match(demoShell, /VelaNextChat/);
+  assert.doesNotMatch(demoShell, /DebugSessionLauncher|VelaDesktopShell|vela-chat-debug/);
+});
+
 test("chat history hydration is a reusable ChatUI phase instead of host-specific branching", () => {
   const webEntrypoint = readFileSync(join(root, "packages/vela-chat-web/src/index.tsx"), "utf8");
   const workbenchView = readFileSync(
@@ -169,6 +219,7 @@ test("desktop renderer is split into agent-friendly component folders with local
     "packages/vela-chat-web/src/components/workbench/README.md",
     "packages/vela-chat-web/src/components/workbench/ChatWorkbenchView.tsx",
     "packages/vela-chat-web/src/components/workbench/ConversationHistoryHydrationView.tsx",
+    "packages/vela-chat-web/src/components/workbench/ConversationScrollInspector.tsx",
     "packages/vela-chat-web/src/components/conversation/README.md",
     "packages/vela-chat-web/src/components/conversation/VelaConversation.tsx",
     "packages/vela-chat-web/src/components/conversation/VelaTurnList.tsx",
@@ -182,12 +233,72 @@ test("desktop renderer is split into agent-friendly component folders with local
     "packages/vela-chat-web/src/hooks/useAutoResizeTextarea.ts",
     "packages/vela-chat-web/src/hooks/useComposerKeyboard.ts",
     "packages/vela-chat-web/src/styles/README.md",
+    "packages/vela-chat-web/src/styles/VISUAL_CONTRACT.md",
     "packages/vela-chat-web/src/styles/desktop.module.css",
   ];
 
   for (const path of expectedPaths) {
     assert.equal(existsSync(join(root, path)), true, `${path} should exist`);
   }
+});
+
+test("scroll inspector is an explicit dev-only ChatUI diagnostic boundary", () => {
+  const webEntrypoint = readFileSync(join(root, "packages/vela-chat-web/src/index.tsx"), "utf8");
+  const workbenchView = readFileSync(
+    join(root, "packages/vela-chat-web/src/components/workbench/ChatWorkbenchView.tsx"),
+    "utf8",
+  );
+  const inspector = readFileSync(
+    join(root, "packages/vela-chat-web/src/components/workbench/ConversationScrollInspector.tsx"),
+    "utf8",
+  );
+  const css = readFileSync(join(root, "packages/vela-chat-web/src/styles/desktop.module.css"), "utf8");
+
+  assert.match(webEntrypoint, /showScrollInspector\?: boolean/);
+  assert.match(workbenchView, /ConversationScrollInspector/);
+  assert.match(workbenchView, /showScrollInspector/);
+  assert.match(inspector, /ConversationScrollControllerDebug/);
+  assert.doesNotMatch(inspector, /openapi|created_at|event_range|localStorage|sessionStorage/i);
+  assert.match(css, /\.scrollInspector\b/);
+});
+
+test("ChatUI visual contract explicitly owns markdown and scrollbar visual rules", () => {
+  const contract = readFileSync(
+    join(root, "packages/vela-chat-web/src/styles/VISUAL_CONTRACT.md"),
+    "utf8",
+  );
+  const css = readFileSync(join(root, "packages/vela-chat-web/src/styles/desktop.module.css"), "utf8");
+
+  assert.match(contract, /Markdown Visual Rules/);
+  assert.match(contract, /Horizontal rules/);
+  assert.match(contract, /Tables/);
+  assert.match(contract, /Lists/);
+  assert.match(contract, /Code/);
+  assert.match(contract, /Scrollbar Visual Rules/);
+  assert.match(css, /\.messageResponse hr\b/);
+  assert.match(css, /\.messageResponse pre\b/);
+  assert.match(css, /\.markdownTableScroller\b/);
+});
+
+test("streaming visible text growth is treated as DOM geometry, not a read-model signal only", () => {
+  const scrollModel = readFileSync(
+    join(root, "packages/vela-chat-web/src/conversation-runtime/scroll/SCROLL_MODEL.md"),
+    "utf8",
+  );
+  const scrollController = readFileSync(
+    join(root, "packages/vela-chat-web/src/conversation-runtime/scroll/useConversationScrollController.ts"),
+    "utf8",
+  );
+  const streamingRenderer = readFileSync(
+    join(root, "packages/vela-chat-web/src/renderers/markdown/StreamingMarkdownRenderer.tsx"),
+    "utf8",
+  );
+
+  assert.match(scrollModel, /Streaming Renderer Growth/);
+  assert.match(scrollModel, /visibleText/);
+  assert.match(scrollModel, /ResizeObserver/);
+  assert.match(scrollController, /resizeObserver\.observe\(contentElement\)/);
+  assert.match(streamingRenderer, /data-live-text-pending/);
 });
 
 test("package entrypoint stays thin and delegates desktop rendering details", () => {
@@ -944,6 +1055,24 @@ test("chat typography follows Codex-style reading weight and size", () => {
   assert.match(strong, /font-weight:\s*650;/);
 });
 
+test("chat visual contract documents the styling ownership boundaries", () => {
+  const visualContractPath = "packages/vela-chat-web/src/styles/VISUAL_CONTRACT.md";
+  assert.equal(existsSync(join(root, visualContractPath)), true, `${visualContractPath} should exist`);
+
+  const contract = readFileSync(join(root, visualContractPath), "utf8");
+
+  assert.match(contract, /# ChatUI Visual Contract/);
+  assert.match(contract, /desktop\.module\.css/);
+  assert.match(contract, /dependency-direction\.test\.ts/);
+  assert.match(contract, /desktop-shell-visual-contract\.test\.ts/);
+  assert.match(contract, /Markdown/);
+  assert.match(contract, /Agent work/);
+  assert.match(contract, /Composer/);
+  assert.match(contract, /Conversation/);
+  assert.match(contract, /Desktop shell/);
+  assert.match(contract, /OpenAPI/);
+});
+
 test("chat markdown and agent work use compact Codex-style vertical rhythm", () => {
   const css = readFileSync(
     join(root, "packages/vela-chat-web/src/styles/desktop.module.css"),
@@ -953,6 +1082,7 @@ test("chat markdown and agent work use compact Codex-style vertical rhythm", () 
   const assistant = cssBlock(css, "messageResponse");
   const paragraph = cssBlockContaining(css, "messageResponse p");
   const heading = cssBlockContaining(css, "messageResponse h1");
+  const horizontalRule = cssBlockContaining(css, "messageResponse hr");
   const list = cssBlockContaining(css, "messageResponse ul");
   const listItem = cssBlockContaining(css, "messageResponse li");
   const codeBlock = cssBlockContaining(css, "messageResponse pre");
@@ -980,6 +1110,10 @@ test("chat markdown and agent work use compact Codex-style vertical rhythm", () 
   assert.match(paragraph, /margin:\s*0 0 12px;/);
   assert.match(heading, /margin:\s*18px 0 8px;/);
   assert.match(heading, /line-height:\s*1\.28;/);
+  assert.match(horizontalRule, /height:\s*1px;/);
+  assert.match(horizontalRule, /margin:\s*14px 0 12px;/);
+  assert.match(horizontalRule, /border:\s*0;/);
+  assert.match(horizontalRule, /background:\s*var\(--vela-border\);/);
   assert.match(css, /\.messageResponse h1\s*\{\s*font-size:\s*16px;\s*\}/);
   assert.match(css, /\.messageResponse h2\s*\{\s*font-size:\s*15px;\s*\}/);
   assert.match(css, /\.messageResponse h3,[\s\S]*?\.messageResponse h6\s*\{\s*font-size:\s*15px;\s*\}/);
@@ -1200,6 +1334,9 @@ test("composer input frame matches the codex-desktop visual rhythm", () => {
   assert.match(rightBlock, /flex:\s*0 1 auto;/);
   assert.match(rightBlock, /justify-content:\s*flex-end;/);
   assert.match(rightBlock, /margin-left:\s*auto;/);
+  assert.match(styles, /\.composerControls\[data-composer-controls-ready="false"\]\s*\{[^}]*visibility:\s*hidden;/s);
+  assert.match(styles, /\.composerControls\[data-composer-controls-ready="false"\]\[data-placement="primary"\]\s*\{[^}]*min-width:\s*136px;/s);
+  assert.match(styles, /\.composerControls\[data-composer-controls-ready="false"\]\[data-placement="secondary"\]\s*\{[^}]*min-width:\s*260px;/s);
 
   assert.match(iconButtonBlock, /width:\s*32px;/);
   assert.match(iconButtonBlock, /height:\s*32px;/);

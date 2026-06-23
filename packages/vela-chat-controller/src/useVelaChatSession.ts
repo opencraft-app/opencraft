@@ -30,6 +30,7 @@ import type { RequestDockResponse } from "../../vela-chat-web/src/components/req
 import { buildRequestResponseInputEvent } from "../../vela-chat-web/src/components/requests/requestResponses";
 import { buildComposerControlsModel } from "../../vela-chat-web/src/components/composer-controls/model";
 import type { ConversationScrollControllerDebug } from "../../vela-chat-web/src/conversation-runtime/scroll/useConversationScrollController";
+import type { ChatHostPolicy } from "../../vela-chat-render-model/src";
 import { buildPendingImageAttachments, type PendingImageAttachment } from "./attachments";
 import { DEFAULT_VELAD_BASE_URL } from "./constants";
 import {
@@ -49,11 +50,14 @@ import {
 } from "./sessionScopedReadModels";
 import { handleVelaChatSessionStreamEvent } from "./streamHandler";
 
+const DEFAULT_CHAT_HOST_POLICY = { kind: "desktop_web" } satisfies ChatHostPolicy;
+
 export interface VelaChatSessionControllerOptions {
   sessionId: string;
   baseUrl?: string;
   clientStateStore?: VelaClientStateStore | null;
   client?: VeladClient;
+  hostPolicy?: ChatHostPolicy;
   historyPolicy?: VelaConversationHistoryPolicy;
   fetchBackends?: boolean;
 }
@@ -95,6 +99,7 @@ export function useVelaChatSession({
   baseUrl = DEFAULT_VELAD_BASE_URL,
   clientStateStore = null,
   client: providedClient,
+  hostPolicy = DEFAULT_CHAT_HOST_POLICY,
   historyPolicy = DEFAULT_DESKTOP_CONVERSATION_HISTORY_POLICY,
   fetchBackends = true,
 }: VelaChatSessionControllerOptions): VelaChatSessionController {
@@ -467,10 +472,11 @@ export function useVelaChatSession({
     return buildVelaChatControllerRenderModel({
       activeSessionId,
       conversation: activeConversation,
+      hostPolicy,
       requests: activeRequests,
       streamConnected,
     });
-  }, [activeConversation, activeRequests, activeSessionId, streamConnected]);
+  }, [activeConversation, activeRequests, activeSessionId, hostPolicy, streamConnected]);
 
   const sendMessageContent = useCallback(async (messageContent: ClientInputPart[]) => {
     if (messageContent.length === 0 || !activeSessionId) return false;

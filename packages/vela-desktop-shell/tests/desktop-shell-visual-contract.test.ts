@@ -54,7 +54,9 @@ test("desktop shell renders the codex-desktop style sidebar frame and main inset
     ),
   );
 
+  assert.match(html, /class="vela-window-chrome"/);
   assert.match(html, /class="vela-sidebar-window-controls"/);
+  assert.match(html, /class="vela-window-drag-layer"/);
   assert.match(html, /class="vela-desktop-shell app-shell vela-tri-pane-shell"/);
   assert.match(html, /data-slot="sidebar-wrapper"/);
   assert.match(html, /class="vela-sidebar-wrapper"/);
@@ -79,9 +81,12 @@ test("session sidebar renders the codex-desktop topbar before session content", 
   );
 
   assert.match(html, /class="vela-sidebar-topbar"/);
-  assert.match(html, /class="vela-sidebar-traffic-zone"/);
-  assert.match(html, /class="vela-traffic-lights"/);
+  assert.match(html, /class="vela-sidebar-toolbar-spacer"/);
+  assert.doesNotMatch(html, /class="vela-sidebar-traffic-zone"/);
+  assert.doesNotMatch(html, /class="vela-traffic-lights"/);
   assert.match(html, /class="vela-sidebar-nav"/);
+  assert.doesNotMatch(html, /aria-label="Back"/);
+  assert.doesNotMatch(html, /aria-label="Forward"/);
   assert.match(html, /class="vela-sidebar-drag-fill"/);
   assert.ok(
     html.indexOf("vela-sidebar-topbar") < html.indexOf("new-session-row"),
@@ -156,6 +161,67 @@ test("desktop host CSS makes the shell fill the browser viewport", () => {
   assert.match(css, /\.vela-sidebar-provider\s*\{[^}]*height:\s*100dvh/s);
   assert.match(css, /\.vela-sidebar-provider\s*\{[^}]*min-height:\s*0/s);
   assert.match(css, /\.vela-desktop-shell\s*\{[^}]*height:\s*100%/s);
+});
+
+test("desktop host uses unified chrome and drag-region semantics", () => {
+  const css = readFileSync(
+    join(root, "apps/vela-desktop-electron/src/style.css"),
+    "utf8",
+  );
+  const main = readFileSync(
+    join(root, "apps/vela-desktop-electron/electron/main.ts"),
+    "utf8",
+  );
+  const desktopBridge = readFileSync(
+    join(root, "apps/vela-desktop-electron/src/desktopBridge.ts"),
+    "utf8",
+  );
+  const settingsPage = readFileSync(
+    join(root, "apps/vela-desktop-electron/src/DesktopSettingsPage.tsx"),
+    "utf8",
+  );
+  const sidebarShell = readFileSync(
+    join(root, "packages/vela-desktop-shell/src/components/sidebar/VelaSidebarShell.tsx"),
+    "utf8",
+  );
+
+  assert.match(main, /trafficLightPosition:\s*\{\s*x:\s*24,\s*y:\s*22\s*\}/);
+  assert.match(sidebarShell, /interface WindowToolbarButtonModel/);
+  assert.match(sidebarShell, /function ToolbarSidebarIcon/);
+  assert.match(sidebarShell, /function ToolbarNewThreadIcon/);
+  assert.match(sidebarShell, /data-toolbar-button=\{button\.id\}/);
+  assert.match(desktopBridge, /showTrafficLights:\s*false/);
+  assert.match(settingsPage, /VelaSidebarChrome/);
+  assert.match(settingsPage, /SidebarContent/);
+  assert.doesNotMatch(settingsPage, /vela-settings-sidebar-topbar/);
+  assert.doesNotMatch(css, /\.vela-settings-sidebar-topbar/);
+  assert.match(css, /\.vela-settings-sidebar-content\s*\{[^}]*padding:\s*0 10px 18px;/s);
+  assert.match(main, /macosChromeMetrics/);
+  assert.match(css, /--vela-window-traffic-light-left:\s*24px;/);
+  assert.match(css, /--vela-window-traffic-light-top:\s*22px;/);
+  assert.match(css, /--vela-window-toolbar-center-y:/);
+  assert.match(css, /--vela-window-toolbar-top:/);
+  assert.match(css, /--vela-window-toolbar-start-x:/);
+  assert.match(css, /--vela-window-toolbar-size:\s*23px;/);
+  assert.match(css, /--vela-window-toolbar-icon-size:\s*23px;/);
+  assert.match(css, /--vela-window-toolbar-icon-scale:\s*1\.33;/);
+  assert.match(css, /--vela-window-toolbar-gap:\s*4px;/);
+  assert.match(css, /--vela-window-toolbar-item-gap:\s*0px;/);
+  assert.match(css, /\[data-window-drag-region="true"\]\s*\{[^}]*-webkit-app-region:\s*drag;/s);
+  assert.match(css, /\[data-window-drag-region="false"\]/);
+  assert.match(css, /\.vela-window-chrome\s*\{[^}]*height:\s*var\(--vela-titlebar-height\);/s);
+  assert.match(css, /\.vela-window-drag-layer\s*\{[^}]*height:\s*var\(--vela-titlebar-height\);/s);
+  assert.match(css, /\.vela-window-traffic-lights\s*\{[^}]*position:\s*absolute;/s);
+  assert.match(css, /\.vela-window-traffic-lights\s*\{[^}]*left:\s*var\(--vela-window-traffic-light-left\);/s);
+  assert.match(css, /\.vela-window-traffic-lights\s*\{[^}]*top:\s*var\(--vela-window-traffic-light-top\);/s);
+  assert.match(css, /\.vela-sidebar-window-controls\s*\{[^}]*-webkit-app-region:\s*no-drag;/s);
+  assert.match(css, /\.vela-sidebar-window-controls\s*\{[^}]*top:\s*var\(--vela-window-toolbar-top\);/s);
+  assert.match(css, /\.vela-sidebar-window-controls\s*\{[^}]*left:\s*var\(--vela-window-controls-left\);/s);
+  assert.match(css, /\.vela-sidebar-window-control-button\s*\{[^}]*width:\s*var\(--vela-window-toolbar-size\);/s);
+  assert.match(css, /\.vela-sidebar-chrome-button\s*\{[^}]*width:\s*var\(--vela-window-toolbar-size\);/s);
+  assert.match(css, /\.vela-sidebar-topbar\s*\{[^}]*padding:\s*0;/s);
+  assert.match(css, /\.vela-sidebar-toolbar-spacer\s*\{[^}]*width:\s*var\(--vela-window-toolbar-start-x\);/s);
+  assert.doesNotMatch(css, /\.vela-sidebar-traffic-zone/);
 });
 
 test("desktop session list CSS follows the codex-style compact rail layout", () => {

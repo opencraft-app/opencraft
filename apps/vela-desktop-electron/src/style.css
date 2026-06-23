@@ -28,9 +28,31 @@ body {
   --vela-sidebar-surface: #f5f6f6;
   --vela-sidebar-underlay: #f5f6f6;
   --vela-main-surface: #ffffff;
-  --vela-window-controls-left: 93px;
-  --vela-window-controls-inset: 160px;
-  --vela-titlebar-height: 50px;
+  --vela-window-chrome-height: 50px;
+  --vela-window-traffic-light-left: 24px;
+  --vela-window-traffic-light-top: 22px;
+  --vela-window-traffic-light-size: 12px;
+  --vela-window-traffic-light-gap: 8px;
+  --vela-window-traffic-light-group-width: calc(
+    var(--vela-window-traffic-light-size) * 3 + var(--vela-window-traffic-light-gap) * 2
+  );
+  --vela-window-toolbar-size: 23px;
+  --vela-window-toolbar-icon-size: 23px;
+  --vela-window-toolbar-icon-scale: 1.33;
+  --vela-window-toolbar-gap: 4px;
+  --vela-window-toolbar-item-gap: 0px;
+  --vela-window-toolbar-center-y: calc(
+    var(--vela-window-traffic-light-top) + var(--vela-window-traffic-light-size) / 2
+  );
+  --vela-window-toolbar-top: calc(
+    var(--vela-window-toolbar-center-y) - var(--vela-window-toolbar-size) / 2
+  );
+  --vela-window-toolbar-start-x: calc(
+    var(--vela-window-traffic-light-left) + var(--vela-window-traffic-light-group-width) + var(--vela-window-toolbar-gap)
+  );
+  --vela-window-controls-left: var(--vela-window-toolbar-start-x);
+  --vela-window-controls-inset: var(--vela-window-toolbar-start-x);
+  --vela-titlebar-height: var(--vela-window-chrome-height);
   --vela-main-surface-radius: 16px;
   --vela-main-edge-hairline: rgba(60, 60, 67, 0.12);
   --vela-main-edge-veil-width: 34px;
@@ -54,6 +76,27 @@ body {
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+}
+
+.vela-window-chrome {
+  position: absolute;
+  inset: 0 0 auto 0;
+  z-index: 40;
+  height: var(--vela-titlebar-height);
+  pointer-events: none;
+}
+
+.vela-window-drag-layer {
+  -webkit-app-region: drag;
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: calc(
+    var(--vela-window-controls-left) + var(--vela-window-toolbar-size) * 2 + 8px
+  );
+  z-index: 0;
+  height: var(--vela-titlebar-height);
+  pointer-events: auto;
 }
 
 .vela-sidebar-wrapper {
@@ -261,6 +304,10 @@ body {
   background: var(--skin-sidebar-hover);
 }
 
+.vela-sidebar-menu-button:disabled {
+  opacity: 0.52;
+}
+
 .search-box {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr);
@@ -293,7 +340,7 @@ body {
   padding: 0 20px 4px;
   color: #9ca1a8;
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 560;
   text-transform: none;
   letter-spacing: 0;
 }
@@ -404,26 +451,32 @@ body {
 }
 
 .vela-sidebar-window-controls {
+  -webkit-app-region: no-drag;
   position: absolute;
-  top: 8px;
+  top: var(--vela-window-toolbar-top);
   left: var(--vela-window-controls-left);
-  z-index: 50;
+  z-index: 60;
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--vela-window-toolbar-item-gap);
+  height: var(--vela-window-toolbar-size);
+  isolation: isolate;
+  pointer-events: auto;
 }
 
 .vela-sidebar-window-control-button {
+  -webkit-app-region: no-drag;
   display: inline-flex;
-  width: 28px;
-  height: 28px;
+  width: var(--vela-window-toolbar-size);
+  height: var(--vela-window-toolbar-size);
   align-items: center;
   justify-content: center;
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: #6f7680;
+  color: #858b93;
   cursor: pointer;
+  pointer-events: auto;
 }
 
 .vela-sidebar-window-control-button:hover {
@@ -437,31 +490,39 @@ body {
   align-items: center;
   gap: 8px;
   min-height: var(--vela-titlebar-height);
-  padding: 0 12px;
+  padding: 0;
   box-sizing: border-box;
 }
 
-.vela-sidebar-traffic-zone,
+.vela-sidebar-toolbar-spacer,
 .vela-sidebar-nav {
   min-width: 0;
 }
 
-.vela-sidebar-traffic-zone {
+.vela-sidebar-toolbar-spacer {
   display: inline-flex;
-  align-items: center;
-  gap: 10px;
+  align-self: stretch;
+  height: 100%;
+  width: var(--vela-window-toolbar-start-x);
 }
 
-.vela-traffic-lights {
+.vela-window-traffic-lights {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding-left: 2px;
+  position: absolute;
+  z-index: 1;
+  top: var(--vela-window-traffic-light-top);
+  left: var(--vela-window-traffic-light-left);
+  pointer-events: none;
 }
 
 .vela-traffic-light {
+  appearance: none;
   width: 12px;
   height: 12px;
+  padding: 0;
+  border: 0;
   border-radius: 999px;
   box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.13), 0 1px 1px rgba(255, 255, 255, 0.46);
 }
@@ -478,17 +539,21 @@ body {
   background: #28c840;
 }
 
+.vela-window-traffic-lights .vela-traffic-light {
+  background: rgba(60, 60, 67, 0.18);
+}
+
 .vela-sidebar-nav {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 9px;
+  gap: var(--vela-window-toolbar-item-gap);
 }
 
 .vela-sidebar-chrome-button {
   display: inline-flex;
-  width: 28px;
-  height: 28px;
+  width: var(--vela-window-toolbar-size);
+  height: var(--vela-window-toolbar-size);
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
@@ -497,6 +562,17 @@ body {
   background: transparent;
   color: #7d848d;
   opacity: 0.92;
+}
+
+.vela-sidebar-window-control-button svg,
+.vela-sidebar-chrome-button svg {
+  width: var(--vela-window-toolbar-icon-size);
+  height: var(--vela-window-toolbar-icon-size);
+  stroke-width: 2;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform: scale(var(--vela-window-toolbar-icon-scale));
 }
 
 .vela-sidebar-chrome-button:disabled {
@@ -510,6 +586,21 @@ body {
 .vela-sidebar-drag-fill {
   min-width: 18px;
   height: 100%;
+}
+
+.vela-desktop-shell[data-platform="macos"] [data-window-drag-region="true"] {
+  -webkit-app-region: drag;
+}
+
+.vela-desktop-shell[data-platform="macos"] [data-window-drag-region="false"],
+.vela-desktop-shell[data-platform="macos"] button,
+.vela-desktop-shell[data-platform="macos"] input,
+.vela-desktop-shell[data-platform="macos"] textarea,
+.vela-desktop-shell[data-platform="macos"] select,
+.vela-desktop-shell[data-platform="macos"] [role="button"],
+.vela-desktop-shell[data-platform="macos"] [role="option"],
+.vela-desktop-shell[data-platform="macos"] [role="menuitem"] {
+  -webkit-app-region: no-drag;
 }
 
 .new-session-row {
@@ -527,6 +618,11 @@ body {
 .new-session-btn:hover {
   border-color: color-mix(in srgb, var(--tw-border) 74%, var(--tw-foreground) 26%);
   background: var(--skin-sidebar-hover);
+}
+
+.new-session-btn:disabled {
+  border-color: color-mix(in srgb, var(--skin-sidebar-control-border) 78%, transparent);
+  box-shadow: none;
 }
 
 .vela-session-item {
@@ -674,7 +770,7 @@ body {
   position: relative;
   flex: 0 0 auto;
   width: 100%;
-  height: 34px;
+  height: 38px;
 }
 
 .sidebar-footer-btn {
@@ -840,23 +936,16 @@ body {
 }
 
 .vela-settings-sidebar {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
+  background: transparent;
+  color: #34383e;
+}
+
+.vela-settings-sidebar-content {
   min-height: 0;
   box-sizing: border-box;
   padding: 0 10px 18px;
   overflow: hidden auto;
-  background: transparent;
-  color: #34383e;
   user-select: none;
-}
-
-.vela-settings-sidebar-topbar {
-  display: flex;
-  min-height: var(--vela-titlebar-height);
-  align-items: center;
-  padding: 0 2px;
 }
 
 .vela-settings-back {
@@ -923,7 +1012,7 @@ body {
   padding: 0 4px 6px;
   color: #a2a7ae;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 560;
 }
 
 .vela-settings-nav-item {
@@ -938,7 +1027,7 @@ body {
   color: #3f454c;
   font: inherit;
   font-size: 14px;
-  font-weight: 590;
+  font-weight: 470;
   text-align: left;
   cursor: default;
 }
@@ -980,7 +1069,7 @@ body {
   margin: 0 0 64px;
   color: #22262b;
   font-size: 22px;
-  font-weight: 800;
+  font-weight: 680;
   letter-spacing: 0;
   line-height: 1.2;
 }
@@ -1000,7 +1089,7 @@ body {
   margin: 0;
   color: #2b2f35;
   font-size: 16px;
-  font-weight: 760;
+  font-weight: 620;
   letter-spacing: 0;
 }
 
@@ -1008,7 +1097,7 @@ body {
   margin: 0;
   color: #8b9097;
   font-size: 14px;
-  font-weight: 520;
+  font-weight: 430;
   line-height: 1.45;
 }
 
@@ -1050,7 +1139,7 @@ body {
   overflow: hidden;
   color: #292d33;
   font-size: 14px;
-  font-weight: 760;
+  font-weight: 590;
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1063,7 +1152,7 @@ body {
   overflow: hidden;
   color: #7f858d;
   font-size: 13px;
-  font-weight: 520;
+  font-weight: 430;
   line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1113,7 +1202,7 @@ body {
   background: #f4f4f5;
   color: #444a52;
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 520;
   line-height: 1;
   padding: 10px 12px;
   text-overflow: ellipsis;
@@ -1177,7 +1266,7 @@ body {
   color: #8c9299;
   font: inherit;
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 520;
   padding: 0 12px;
   cursor: default;
 }
@@ -1211,7 +1300,7 @@ body {
   color: #30343a;
   font: inherit;
   font-size: 14px;
-  font-weight: 650;
+  font-weight: 520;
   padding: 0 10px 0 12px;
   text-align: left;
   cursor: default;
@@ -1233,7 +1322,7 @@ body {
   background: transparent;
   color: #78716c;
   font-size: 14px;
-  font-weight: 650;
+  font-weight: 520;
   padding: 0 8px;
 }
 
@@ -1342,14 +1431,14 @@ body {
 .vela-shell-select-option-label {
   color: #24272d;
   font-size: 12px;
-  font-weight: 590;
+  font-weight: 470;
   line-height: 1.25;
 }
 
 .vela-shell-select-option-description {
   color: #8d9298;
   font-size: 11px;
-  font-weight: 520;
+  font-weight: 430;
   line-height: 1.2;
 }
 
@@ -1357,7 +1446,7 @@ body {
   padding: 8px 10px;
   color: #8d9298;
   font-size: 12px;
-  font-weight: 560;
+  font-weight: 470;
 }
 
 @media (max-width: 840px) {
@@ -1401,6 +1490,101 @@ body {
   height: 100%;
   gap: 10px;
   text-align: center;
+  color: color-mix(in srgb, var(--tw-foreground) 52%, transparent);
+  font-size: 13px;
+}
+
+.vela-runtime-bootstrap {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  padding: 32px;
+  background:
+    radial-gradient(circle at 50% 38%, rgb(32 118 255 / 5%), transparent 34%),
+    var(--vela-main-surface);
+}
+
+.vela-runtime-bootstrap-card {
+  width: min(420px, 100%);
+  border: 1px solid color-mix(in srgb, var(--tw-border) 72%, transparent);
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--vela-main-surface) 86%, transparent);
+  box-shadow:
+    0 28px 68px rgb(15 23 42 / 8%),
+    inset 0 1px 0 rgb(255 255 255 / 76%);
+  display: grid;
+  justify-items: center;
+  gap: 18px;
+  padding: 30px 30px 28px;
+  text-align: center;
+}
+
+.vela-runtime-bootstrap-card h1 {
+  margin: 0;
+  color: var(--tw-foreground);
+  font-size: 18px;
+  font-weight: 610;
+  letter-spacing: -0.02em;
+}
+
+.vela-runtime-bootstrap-card p {
+  margin: 7px 0 0;
+  color: color-mix(in srgb, var(--tw-foreground) 56%, transparent);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.vela-runtime-bootstrap-log {
+  overflow-wrap: anywhere;
+}
+
+.vela-runtime-bootstrap-orb {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 34% 28%, rgb(255 255 255 / 95%), transparent 28%),
+    linear-gradient(145deg, #8ec5ff, #4b9cff);
+  box-shadow:
+    0 12px 28px rgb(59 130 246 / 22%),
+    inset 0 0 0 1px rgb(255 255 255 / 62%);
+  animation: vela-runtime-pulse 1.8s ease-in-out infinite;
+}
+
+.vela-runtime-bootstrap-orb[data-state="failed"] {
+  background:
+    radial-gradient(circle at 34% 28%, rgb(255 255 255 / 92%), transparent 28%),
+    linear-gradient(145deg, #ffb8a8, #e46d57);
+  animation: none;
+}
+
+.vela-runtime-bootstrap-retry {
+  appearance: none;
+  border: 1px solid color-mix(in srgb, var(--tw-border) 72%, var(--tw-foreground) 10%);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--vela-main-surface) 88%, var(--tw-foreground) 4%);
+  color: var(--tw-foreground);
+  min-height: 32px;
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 560;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 68%);
+}
+
+.vela-runtime-bootstrap-retry:hover {
+  background: color-mix(in srgb, var(--vela-main-surface) 82%, var(--tw-foreground) 7%);
+}
+
+@keyframes vela-runtime-pulse {
+  0%,
+  100% {
+    opacity: 0.86;
+    transform: scale(0.98);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

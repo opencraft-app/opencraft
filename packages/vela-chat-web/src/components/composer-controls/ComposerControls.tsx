@@ -23,10 +23,26 @@ export function ComposerControls({
   placement = "all",
   onChange,
 }: ComposerControlsProps) {
+  if (!controls.ready) {
+    return (
+      <div
+        aria-hidden="true"
+        className={styles.composerControls}
+        data-composer-controls-ready="false"
+        data-placement={placement}
+      />
+    );
+  }
+
   const disabled = controls.disabled || isUpdating;
 
   return (
-    <div className={styles.composerControls} aria-label={`${controls.providerLabel} controls`}>
+    <div
+      className={styles.composerControls}
+      aria-label={`${controls.providerLabel} controls`}
+      data-composer-controls-ready="true"
+      data-placement={placement}
+    >
       {placement === "all" || placement === "secondary" ? (
         <>
           <ControlMenu

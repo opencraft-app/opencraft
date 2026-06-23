@@ -4,6 +4,18 @@ import test from "node:test";
 import { buildComposerControlsModel } from "../src/components/composer-controls/model";
 import type { BackendWire, SessionWire } from "../../vela-chat-client/src";
 
+test("composer controls are not ready before the session wire truth is loaded", () => {
+  const controls = buildComposerControlsModel({ session: null, backends: [] });
+
+  assert.equal(controls.ready, false);
+  assert.equal(controls.selectedModel, undefined);
+  assert.equal(controls.selectedReasoningEffort, undefined);
+  assert.equal(controls.selectedPermissionMode, undefined);
+  assert.deepEqual(controls.modelOptions, []);
+  assert.deepEqual(controls.reasoningEffortOptions, []);
+  assert.deepEqual(controls.permissionModeOptions, []);
+});
+
 test("composer controls derive selected model, reasoning effort, and permission from session capability data", () => {
   const session: SessionWire = {
     id: "ses_1",

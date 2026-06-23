@@ -78,8 +78,26 @@ test("host-local state is created only by app hosts, not reusable shell chrome",
   assert.match(desktopApp, /createDesktopHostStateStores/);
   assert.match(desktopApp, /createBrowserVelaClientStateStore/);
   assert.match(desktopApp, /createBrowserVelaShellLayoutStore/);
+  assert.match(desktopApp, /createBrowserVelaSessionSelectionStore/);
+  assert.match(desktopApp, /sessionSelectionStore/);
   assert.match(nextChatExample, /createChatExampleClientStateStore/);
   assert.match(nextChatExample, /createBrowserVelaClientStateStore/);
+});
+
+test("desktop app restores the selected session through host-local navigation state", () => {
+  const renderer = readFileSync(
+    join(root, "apps/vela-desktop-electron/src/DesktopApp.tsx"),
+    "utf8",
+  );
+  const hostState = readFileSync(
+    join(root, "apps/vela-desktop-electron/src/hostState.ts"),
+    "utf8",
+  );
+
+  assert.match(hostState, /sessionSelectionStore/);
+  assert.match(renderer, /sessionSelectionStore\?\.read\(\)\?\.sessionId/);
+  assert.match(renderer, /sessionSelectionStore\?\.write\(\{/);
+  assert.match(renderer, /setActiveSessionId\(\(current\) => current \|\| response\.sessions\[0\]\?\.id \|\| ""\)/);
 });
 
 test("chat controller is headless and stays independent from desktop and Next shells", () => {
@@ -150,11 +168,12 @@ test("electron host has a real Vite dev and build pipeline instead of loading TS
   assert.match(packageJson, /"main":\s*"dist-electron\/main\.js"/);
   assert.match(packageJson, /"dev":\s*"node scripts\/dev\.mjs"/);
   assert.match(packageJson, /"dev:web":\s*"vite --config vite\.renderer\.config\.ts --host 127\.0\.0\.1"/);
-  assert.match(packageJson, /"build":\s*"vite build --config vite\.electron\.config\.ts && vite build --config vite\.renderer\.config\.ts"/);
+  assert.match(packageJson, /"build":\s*"vite build --config vite\.electron\.config\.ts && esbuild electron\/preload\.ts/);
+  assert.match(packageJson, /--outfile=dist-electron\/preload\.cjs && vite build --config vite\.renderer\.config\.ts"/);
   assert.equal(existsSync(join(root, "apps/vela-desktop-electron/vite.electron.config.ts")), true);
   assert.equal(existsSync(join(root, "apps/vela-desktop-electron/vite.renderer.config.ts")), true);
   assert.equal(existsSync(join(root, "apps/vela-desktop-electron/scripts/dev.mjs")), true);
-  assert.match(main, /preload\.js/);
+  assert.match(main, /preload\.cjs/);
   assert.doesNotMatch(main, /preload\.ts/);
 });
 
@@ -183,7 +202,7 @@ test("desktop web host can run as a pure browser app without Electron globals", 
   assert.match(bridge, /DEFAULT_WEB_API_BASE_URL = "\/api\/v1"/);
   assert.match(viteRendererConfig, /VITE_VELA_PROXY_TARGET/);
   assert.match(viteRendererConfig, /"\/api\/v1"/);
-  assert.match(renderer, /readDesktopHostInfo/);
+  assert.match(renderer, /readDesktopRuntimeBootstrap/);
   assert.match(renderer, /DEFAULT_WEB_API_BASE_URL/);
   assert.doesNotMatch(renderer, /readElectronDesktopInfo/);
   assert.match(readme, /Pure web host mode/);

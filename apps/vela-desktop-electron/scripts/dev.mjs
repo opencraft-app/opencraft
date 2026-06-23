@@ -59,9 +59,20 @@ process.on("SIGINT", () => shutdown(130));
 process.on("SIGTERM", () => shutdown(143));
 
 spawnChild("electron-build", "vite", ["build", "--watch", "--config", "vite.electron.config.ts"]);
+spawnChild("preload-build", "esbuild", [
+  "electron/preload.ts",
+  "--bundle",
+  "--platform=node",
+  "--target=node22",
+  "--format=cjs",
+  "--external:electron",
+  "--outfile=dist-electron/preload.cjs",
+  "--watch",
+]);
 spawnChild("renderer", "vite", ["--config", "vite.renderer.config.ts", "--host", "127.0.0.1"]);
 
 await waitFor("electron bundle", () => existsSync(join(appRoot, "dist-electron/main.js")));
+await waitFor("preload bundle", () => existsSync(join(appRoot, "dist-electron/preload.cjs")));
 await waitFor("renderer dev server", async () => {
   try {
     const response = await fetch(rendererUrl, { method: "HEAD" });

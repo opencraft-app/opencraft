@@ -6,6 +6,7 @@ import { toWebChatModel } from "../src/adapters/toWebBlocks";
 import {
   buildConversationRuntimeSegments,
   buildConversationStreamItems,
+  conversationRuntimeProfileForHost,
   conversationRuntimePolicyForHost,
   deriveConversationScrollSignals,
   DEFAULT_CONVERSATION_RUNTIME_POLICY,
@@ -1674,9 +1675,29 @@ test("conversation runtime policy is host-aware before choosing a list strategy"
 
   assert.equal(desktopSegments.boundary.hasVirtualizedHistory, true);
   assert.equal(desktopSegments.historyVirtualized.length, 51);
+  assert.equal(desktopSegments.historyMounted.length, 50);
   assert.equal(mobileSegments.boundary.hasVirtualizedHistory, true);
-  assert.equal(mobileSegments.historyVirtualized.length, 51);
-  assert.equal(mobileSegments.historyMounted.length, 50);
+  assert.equal(mobileSegments.historyVirtualized.length, 71);
+  assert.equal(mobileSegments.historyMounted.length, 30);
+});
+
+test("conversation runtime profiles make host list strategy intent explicit", () => {
+  const desktopShell = conversationRuntimeProfileForHost("desktop_shell");
+  const desktopWeb = conversationRuntimeProfileForHost("desktop_web");
+  const mobileWeb = conversationRuntimeProfileForHost("mobile_web");
+
+  assert.equal(desktopShell.name, "desktop_full_preload");
+  assert.equal(desktopShell.policy.partialVirtualizationEnabled, false);
+  assert.equal(desktopShell.scrollbarExtent, "full_content");
+  assert.equal(desktopWeb.name, "web_partial_virtualized");
+  assert.equal(desktopWeb.policy.partialVirtualizationEnabled, true);
+  assert.equal(desktopWeb.scrollbarExtent, "mounted_and_estimated_content");
+  assert.equal(mobileWeb.name, "mobile_incremental_window");
+  assert.equal(mobileWeb.policy.partialVirtualizationEnabled, true);
+  assert.ok(
+    mobileWeb.policy.mountedRecentItemCount < desktopWeb.policy.mountedRecentItemCount,
+    "mobile should keep a smaller mounted recent window than desktop web",
+  );
 });
 
 test("conversation strategy resolver centralizes host-aware list strategy names", () => {
@@ -2307,7 +2328,7 @@ test("conversation scroll resume restores only detached positions after layout i
   );
 });
 
-test("conversation scroll resume waits until content can contain the saved offset", () => {
+test("conversation scroll resume clamps stale saved offsets after history is authoritative", () => {
   assert.deepEqual(
     deriveConversationScrollResumeDecision({
       contentHeight: 900,
@@ -2322,10 +2343,11 @@ test("conversation scroll resume waits until content can contain the saved offse
       viewportWidth: 900,
     }),
     {
-      blockedReason: "waiting_for_resume_extent",
-      shouldRestore: false,
-      scrollTop: null,
+      blockedReason: null,
+      shouldRestore: true,
+      scrollTop: 400,
     },
+    "once history is authoritative, an impossible saved offset should clamp instead of keeping the route hidden forever",
   );
 
   assert.deepEqual(
@@ -2346,6 +2368,29 @@ test("conversation scroll resume waits until content can contain the saved offse
       shouldRestore: true,
       scrollTop: 1200,
     },
+  );
+});
+
+test("conversation scroll resume takes priority over bottom-anchor verification", () => {
+  assert.deepEqual(
+    deriveConversationScrollResumeDecision({
+      contentHeight: 900,
+      isHistoryReady: true,
+      pendingVerification: true,
+      resumeState: {
+        routeKey: "sess_1",
+        scrollTop: 1200,
+        followOutput: false,
+      },
+      viewportHeight: 500,
+      viewportWidth: 900,
+    }),
+    {
+      blockedReason: null,
+      shouldRestore: true,
+      scrollTop: 400,
+    },
+    "route resume is a route-level restoration and must not be blocked forever by a lower-priority bottom-anchor verification",
   );
 });
 

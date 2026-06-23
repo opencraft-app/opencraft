@@ -8,6 +8,7 @@ import type {
 } from "../../../../vela-chat-client/src";
 
 export interface ComposerControlsModel {
+  ready: boolean;
   disabled: boolean;
   providerLabel: string;
   selectedModel?: ComposerModelOption;
@@ -39,6 +40,17 @@ export function buildComposerControlsModel({
   session?: SessionWire | null;
   backends: BackendWire[];
 }): ComposerControlsModel {
+  if (!session) {
+    return {
+      ready: false,
+      disabled: true,
+      providerLabel: "",
+      modelOptions: [],
+      reasoningEffortOptions: [],
+      permissionModeOptions: [],
+    };
+  }
+
   const backend = session ? backends.find((candidate) => candidate.kind === session.backend) : undefined;
   const providerLabel = backend?.display_name ?? session?.runtime_info?.provider ?? session?.backend ?? "Agent";
   const currentConfig = session?.agent_config ?? {};
@@ -73,6 +85,7 @@ export function buildComposerControlsModel({
   const backendSupportsAgentConfig = backend?.capabilities.session_agent_config !== false;
 
   return {
+    ready: true,
     disabled: updateOperation?.available === false || !backendSupportsAgentConfig,
     providerLabel,
     selectedModel,

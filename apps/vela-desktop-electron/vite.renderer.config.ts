@@ -7,6 +7,7 @@ const veladProxyTarget = resolveVeladProxyTarget();
 
 export default defineConfig({
   root: appRoot,
+  base: "./",
   plugins: [react()],
   server: {
     host: "127.0.0.1",

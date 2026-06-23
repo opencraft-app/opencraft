@@ -44,6 +44,12 @@
   backdrop-filter: saturate(1.15) blur(16px);
 }
 
+.shell[data-layout="contained"] {
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
+}
+
 .frame {
   position: relative;
   isolation: isolate;
@@ -109,8 +115,89 @@
   line-height: 1.4;
 }
 
+.historyHydrationOverlay {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: calc(var(--vela-composer-height) + var(--vela-thread-floating-content-bottom-inset));
+  left: 0;
+  z-index: 17;
+  display: grid;
+  background: var(--vela-bg);
+  pointer-events: none;
+}
+
+.scrollInspector {
+  position: absolute;
+  top: 12px;
+  right: 24px;
+  z-index: 40;
+  max-width: min(360px, calc(100% - 48px));
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.08);
+  color: #666b72;
+  font-family:
+    "SFMono-Regular",
+    ui-monospace,
+    Menlo,
+    Consolas,
+    monospace;
+  font-size: 11px;
+  line-height: 1.35;
+  overflow: hidden;
+  pointer-events: none;
+  backdrop-filter: blur(14px);
+}
+
+.scrollInspectorTitle {
+  padding: 8px 10px 6px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  color: #2f3338;
+  font-weight: 650;
+}
+
+.scrollInspectorGrid {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 6px 10px 8px;
+}
+
+.scrollInspectorRow {
+  display: grid;
+  grid-template-columns: minmax(64px, max-content) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.scrollInspectorRow dt,
+.scrollInspectorRow dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scrollInspectorRow dt {
+  color: #9499a1;
+}
+
+.conversationReveal {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.conversationReveal[data-conversation-reveal-state="measuring"] {
+  visibility: hidden;
+}
+
 .conversationShell {
   position: relative;
+  height: 100%;
   min-height: 0;
   overflow: hidden;
 }
@@ -142,7 +229,7 @@
   pointer-events: auto;
   position: absolute;
   top: 0;
-  right: 4px;
+  right: 0;
   bottom: 0;
   z-index: 30;
   width: 18px;
@@ -152,8 +239,10 @@
   pointer-events: auto;
   position: absolute;
   top: 0;
-  right: -3px;
+  right: 0;
   width: 18px;
+  display: flex;
+  justify-content: flex-end;
   cursor: grab;
   touch-action: none;
   user-select: none;
@@ -165,8 +254,9 @@
 
 .conversationScrollbarThumb {
   width: 6px;
+  margin-right: 2px;
   border-radius: 999px;
-  background: #8b8f96;
+  background: rgba(118, 118, 128, 0.22);
   opacity: 0;
   transition:
     opacity 220ms ease-out,
@@ -175,13 +265,12 @@
 }
 
 .conversationScrollbarOverlay[data-visible="true"] .conversationScrollbarThumb {
-  opacity: 0.62;
+  opacity: 1;
 }
 
 .conversationScrollbarThumbHitbox[data-active="true"] .conversationScrollbarThumb {
-  width: 9px;
-  opacity: 0.82;
-  background: #73777f;
+  opacity: 1;
+  background: rgba(118, 118, 128, 0.3);
 }
 
 .turnList {
@@ -373,6 +462,13 @@
 
 .messageResponse p {
   margin: 0 0 12px;
+}
+
+.messageResponse hr {
+  height: 1px;
+  margin: 14px 0 12px;
+  border: 0;
+  background: var(--vela-border);
 }
 
 .messageResponse h1,
@@ -1000,6 +1096,24 @@
   flex-wrap: wrap;
   gap: 6px;
   min-width: 0;
+}
+
+.composerControls[data-composer-controls-ready="false"] {
+  min-height: 32px;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.composerControls[data-composer-controls-ready="false"][data-placement="primary"] {
+  min-width: 136px;
+}
+
+.composerControls[data-composer-controls-ready="false"][data-placement="secondary"] {
+  min-width: 260px;
+}
+
+.composerControls[data-composer-controls-ready="false"][data-placement="all"] {
+  min-width: 396px;
 }
 
 .sendButton,

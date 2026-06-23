@@ -2,6 +2,7 @@
 node_modules
 dist
 dist-electron
+apps/vela-desktop-electron/release/
 target
 .env
 .env.*

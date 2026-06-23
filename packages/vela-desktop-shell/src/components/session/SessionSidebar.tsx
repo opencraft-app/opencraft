@@ -20,6 +20,7 @@ export interface SessionSidebarProps {
   accountLabel?: string;
   accountPlanLabel?: string;
   canClearSessions?: boolean;
+  canCreateSession?: boolean;
   defaultSettingsMenuOpen?: boolean;
   onCreateSession: () => void;
   onClearSessions?: () => void;
@@ -36,6 +37,7 @@ export function SessionSidebar({
   accountLabel,
   accountPlanLabel,
   canClearSessions,
+  canCreateSession = true,
   defaultSettingsMenuOpen = false,
   onCreateSession,
   onClearSessions,
@@ -53,6 +55,7 @@ export function SessionSidebar({
               <SidebarMenuItem>
                 <SidebarMenuButton
                   className="new-session-btn"
+                  disabled={!canCreateSession}
                   onClick={onCreateSession}
                   aria-label="New chat"
                   size="compact"

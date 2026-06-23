@@ -28,6 +28,7 @@ export function useFloatingLayer({
   placement = "bottom-start",
 }: FloatingLayerOptions): CSSProperties | null {
   const [style, setStyle] = useState<CSSProperties | null>(null);
+  const estimatedWidth = estimatedSize?.width;
 
   useLayoutEffect(() => {
     if (!enabled || typeof window === "undefined") {
@@ -39,7 +40,7 @@ export function useFloatingLayer({
       const anchor = anchorRef.current;
       if (!anchor) return;
       const rect = anchor.getBoundingClientRect();
-      const width = estimatedSize?.width ?? rect.width;
+      const width = estimatedWidth ?? rect.width;
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
       const minLeft = boundaryPadding;
@@ -73,7 +74,14 @@ export function useFloatingLayer({
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     };
-  }, [anchorRef, boundaryPadding, enabled, estimatedSize, offset, placement]);
+  }, [
+    anchorRef,
+    boundaryPadding,
+    enabled,
+    estimatedWidth,
+    offset,
+    placement,
+  ]);
 
   return style;
 }

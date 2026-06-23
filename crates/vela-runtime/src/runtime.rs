@@ -287,12 +287,16 @@ where
                     .await
             });
             let mut turn_failed = false;
+            let mut turn_terminal = false;
 
             while let Some(output) = receiver.recv().await {
                 match output {
                     Ok(output) => {
-                        if let Some(output) = normalize_backend_output(output)
-                            && let Err(error) = persist_backend_output(
+                        if let Some(output) = normalize_backend_output(output) {
+                            if is_backend_terminal_output(output.event_type) {
+                                turn_terminal = true;
+                            }
+                            if let Err(error) = persist_backend_output(
                                 &store,
                                 &event_observer,
                                 &session_id,
@@ -312,6 +316,7 @@ where
                             turn_failed = true;
                             break;
                         }
+                        }
                     }
                     Err(error) => {
                         append_turn_failed(
@@ -330,6 +335,16 @@ where
             drop(receiver);
 
             match backend_task.await {
+                Ok(Ok(())) if !turn_failed && !turn_terminal => {
+                    append_turn_failed(
+                        &store,
+                        &event_observer,
+                        &session_id,
+                        &turn_id,
+                        "backend completed without a terminal turn event".to_string(),
+                    )
+                    .await;
+                }
                 Ok(Ok(())) => {}
                 Ok(Err(error)) if !turn_failed => {
                     append_turn_failed(
@@ -486,6 +501,13 @@ async fn persist_backend_output(
 
 fn is_backend_lifecycle_noise(event_type: EventType) -> bool {
     event_type == EventType::TURN_STARTED
+}
+
+fn is_backend_terminal_output(event_type: EventType) -> bool {
+    matches!(
+        event_type,
+        EventType::TURN_COMPLETED | EventType::TURN_FAILED | EventType::TURN_CANCELLED
+    )
 }
 
 fn is_backend_output_allowed(event_type: EventType) -> bool {
