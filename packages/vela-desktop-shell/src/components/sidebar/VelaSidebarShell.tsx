@@ -503,7 +503,9 @@ function WindowToolbarButton({ button }: { button: WindowToolbarButtonModel }) {
       className="vela-sidebar-window-control-button"
       data-toolbar-button={button.id}
       data-tone={button.tone ?? "default"}
+      data-window-drag-region="false"
       disabled={button.disabled}
+      style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
       type="button"
       aria-label={button.label}
       onPointerDown={stopToolbarPointerEvent}
