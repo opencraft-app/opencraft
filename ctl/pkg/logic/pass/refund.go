@@ -148,16 +148,17 @@ func (l *logic) RefundPass(passID string, operatorUin int64, reason string) (*Re
 
 	// 步骤 3：同步调 trade.RefundResource
 	//
-	// DTO 4 字段最小集（与 DeleteResource 同款 Q27 拍板 + 2026-06-23 v0.5.1 OwnerUin 补丁）：
+	// DTO 3 字段最小集（与 DeleteResource 同款 Q27 拍板）：
 	//   - UIN：pass.uin（int64 转 string；jifei 协议 uin 是字符串字面量）
-	//   - OwnerUin：与 UIN 同值（ctl pass 单 uin 表，uin == owner_uin；trade 端会中转到
-	//     envelope.interface.extraPara.ownerUin，jifei 网关硬校验，与 v1.7.29 销毁链路同款）
 	//   - AppID：pass.app_id
 	//   - BundleID：pass.bundle_id（trade 内部反查 BundleDefinition.SubProductCode）
+	//
+	// **v0.6 路由切换 2026-06-23 撤回 OwnerUin 字段**：trade 端 OnlineRefund 从签名链路
+	// (resource-center 入口) 切到非签名链路 (jifei-test 入口)，OwnerUin 不再需要。详见
+	// trade/internal/jifeiclient/onlinerefund.go 头部 v0.6 注释。
 	uinStr := strconv.FormatInt(entity.Uin, 10)
 	tradeReq := &tradeadapter.RefundResourceRequest{
 		UIN:      uinStr,
-		OwnerUin: uinStr,
 		AppID:    entity.AppID,
 		BundleID: entity.BundleID,
 	}
