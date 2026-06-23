@@ -95,6 +95,7 @@ export const VelaConversation = forwardRef<ConversationViewportHandle, {
         <VelaTurnList
           contentRef={scroll.contentRef}
           hostKind={webModel.host.kind}
+          initialScrollTop={scroll.initialScrollTop}
           isLoadingOlderHistory={isLoadingOlder}
           scrollRef={scroll.scrollRef}
           segments={segments}

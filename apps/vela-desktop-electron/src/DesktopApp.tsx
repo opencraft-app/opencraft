@@ -16,12 +16,16 @@ import {
 } from "../../../packages/vela-desktop-shell/src";
 import { desktopHostBridgeForInfo, readDesktopHostInfo } from "./desktopBridge";
 import { DesktopEmptySurface } from "./DesktopEmptySurface";
-import { DesktopSettingsOverlay } from "./DesktopSettingsOverlay";
+import {
+  DesktopSettingsPage,
+  DesktopSettingsSidebar,
+} from "./DesktopSettingsPage";
 import { createDesktopHostStateStores } from "./hostState";
 import "./style.css";
 
 const DEFAULT_WORKING_DIRECTORY = "/";
 const DEFAULT_WEB_API_BASE_URL = "/api/v1";
+const DEFAULT_BACKEND_STORAGE_KEY = "vela-desktop:settings:default-backend";
 
 export function DesktopApp() {
   const hostStateStores = useMemo(() => createDesktopHostStateStores(), []);
@@ -44,6 +48,9 @@ export function DesktopApp() {
     initialShellLayout?.sidebarWidthPx ?? 300,
   );
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [selectedBackendKind, setSelectedBackendKind] = useState<BackendKindWire | "">(
+    readDefaultBackendPreference,
+  );
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -67,6 +74,10 @@ export function DesktopApp() {
     });
   }, [hostStateStores.shellLayoutStore, isSidebarVisible, sidebarWidthPx]);
 
+  useEffect(() => {
+    writeDefaultBackendPreference(selectedBackendKind);
+  }, [selectedBackendKind]);
+
   const client = useMemo(() => createVeladClient({ baseUrl: apiBaseUrl }), [apiBaseUrl]);
   const controller = useVelaChatSession({
     client,
@@ -78,12 +89,12 @@ export function DesktopApp() {
     () =>
       buildVelaSessionSetupSelection({
         backends: controller.backends,
-        selectedBackend: (controller.backends[0]?.kind ?? "") as BackendKindWire | "",
+        selectedBackend: selectedBackendKind,
         selectedModel: "",
         selectedPermissionMode: "",
         selectedReasoningEffort: "",
       }),
-    [controller.backends],
+    [controller.backends, selectedBackendKind],
   );
   const hostLabel =
     hostBridge.platform === "browser"
@@ -126,7 +137,7 @@ export function DesktopApp() {
     }
   }, [client, loadSessions, setup.resolvedSelectedBackend, setup.setupAgentConfig]);
 
-  const sidebar = (
+  const appSidebar = (
     <SessionSidebar
       currentSessionId={activeSessionId || null}
       sessions={sessions}
@@ -138,12 +149,18 @@ export function DesktopApp() {
       onSelectSession={setActiveSessionId}
     />
   );
+  const settingsSidebar = (
+    <DesktopSettingsSidebar
+      showTrafficLights={hostBridge.chrome.showTrafficLights}
+      onClose={() => setIsSettingsOpen(false)}
+    />
+  );
 
   return (
     <VelaDesktopShell
       host={hostBridge}
       isSidebarVisible={isSidebarVisible}
-      sidebar={sidebar}
+      sidebar={isSettingsOpen ? settingsSidebar : appSidebar}
       sidebarWidthPx={sidebarWidthPx}
       onCreateSession={createSession}
       onSidebarVisibilityChange={setIsSidebarVisible}
@@ -151,14 +168,15 @@ export function DesktopApp() {
       onToggleSidebar={() => setIsSidebarVisible((visible) => !visible)}
     >
       {isSettingsOpen ? (
-        <DesktopSettingsOverlay
+        <DesktopSettingsPage
           apiBaseUrl={apiBaseUrl}
+          backends={controller.backends}
           hostLabel={hostLabel}
+          selectedBackend={selectedBackendKind}
           sessionsCount={sessions.length}
-          onClose={() => setIsSettingsOpen(false)}
+          onSelectedBackendChange={setSelectedBackendKind}
         />
-      ) : null}
-      {activeSessionId ? (
+      ) : activeSessionId ? (
         <VelaChatWeb
           canLoadOlder={controller.canLoadOlder}
           clientStateStore={hostStateStores.clientStateStore}
@@ -186,5 +204,32 @@ export function DesktopApp() {
         <DesktopEmptySurface />
       )}
     </VelaDesktopShell>
+  );
+}
+
+function readDefaultBackendPreference(): BackendKindWire | "" {
+  if (typeof window === "undefined") return "";
+  const value = window.localStorage.getItem(DEFAULT_BACKEND_STORAGE_KEY);
+  return isBackendKind(value) ? value : "";
+}
+
+function writeDefaultBackendPreference(value: BackendKindWire | "") {
+  if (typeof window === "undefined") return;
+  if (!value) {
+    window.localStorage.removeItem(DEFAULT_BACKEND_STORAGE_KEY);
+    return;
+  }
+  window.localStorage.setItem(DEFAULT_BACKEND_STORAGE_KEY, value);
+}
+
+function isBackendKind(value: string | null): value is BackendKindWire {
+  return (
+    value === "codex" ||
+    value === "cloudagent" ||
+    value === "claude_code" ||
+    value === "pi" ||
+    value === "opencode" ||
+    value === "acp" ||
+    value === "qoder"
   );
 }

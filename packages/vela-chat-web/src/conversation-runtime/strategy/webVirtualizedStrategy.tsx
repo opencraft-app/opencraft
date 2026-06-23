@@ -24,7 +24,15 @@ const INITIAL_VIRTUAL_RANGE_OVERSCAN = 4;
 
 export const webPartialVirtualizedConversationStrategy: ConversationStrategy = {
   name: "web-partial-virtualized",
-  render({ contentRef, segments, scrollRef, renderItem, empty, isLoadingOlderHistory }) {
+  render({
+    contentRef,
+    initialScrollTop,
+    segments,
+    scrollRef,
+    renderItem,
+    empty,
+    isLoadingOlderHistory,
+  }) {
     if (
       segments.historyVirtualized.length === 0 &&
       segments.historyMounted.length === 0 &&
@@ -37,6 +45,7 @@ export const webPartialVirtualizedConversationStrategy: ConversationStrategy = {
     return (
       <WebPartialVirtualizedItemList
         contentRef={contentRef}
+        initialScrollTop={initialScrollTop}
         isLoadingOlderHistory={isLoadingOlderHistory}
         renderItem={renderItem}
         scrollRef={scrollRef}
@@ -48,12 +57,14 @@ export const webPartialVirtualizedConversationStrategy: ConversationStrategy = {
 
 function WebPartialVirtualizedItemList({
   contentRef,
+  initialScrollTop,
   isLoadingOlderHistory = false,
   renderItem,
   scrollRef,
   segments,
 }: {
   contentRef?: RefObject<HTMLDivElement | null>;
+  initialScrollTop?: number | null;
   isLoadingOlderHistory?: boolean;
   renderItem: (item: ConversationStreamItem) => ReactNode;
   scrollRef?: RefObject<HTMLElement | null>;
@@ -73,6 +84,10 @@ function WebPartialVirtualizedItemList({
         : 160;
     },
     initialRect: readConversationInitialRect(scrollElement, contentRef?.current),
+    initialOffset:
+      typeof initialScrollTop === "number" && Number.isFinite(initialScrollTop)
+        ? initialScrollTop
+        : 0,
     measureElement,
     overscan: OVERSCAN,
     useAnimationFrameWithResizeObserver: true,

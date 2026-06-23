@@ -31,6 +31,7 @@ export function deriveConversationScrollLeaveSnapshot({
   isHistoryReady,
   measurement,
   routeKey,
+  scrollAnchor,
 }: {
   hasPendingResumeState: boolean;
   isHistoryReady: boolean;
@@ -39,6 +40,7 @@ export function deriveConversationScrollLeaveSnapshot({
     "bottomInsetPx" | "contentHeight" | "scrollTop" | "viewportHeight"
   > | null;
   routeKey: string | null;
+  scrollAnchor?: ConversationScrollResumeState["anchor"] | null;
 }): ConversationScrollResumeState | null {
   if (
     !shouldPersistConversationScrollResumeSnapshot({
@@ -66,11 +68,34 @@ export function deriveConversationScrollLeaveSnapshot({
     0,
     contentHeight + Math.max(0, bottomInsetPx) - viewportHeight,
   );
+  const followOutput = isBottomAnchorMeasurementNearBottom(measurement);
   return {
     routeKey,
     scrollTop: Math.min(Math.max(0, scrollTop), maxScrollTop),
-    followOutput: isBottomAnchorMeasurementNearBottom(measurement),
+    followOutput,
+    ...(!followOutput && scrollAnchor ? { anchor: scrollAnchor } : {}),
   };
+}
+
+export function shouldWriteConversationScrollLeaveSnapshot({
+  existingState,
+  nextState,
+}: {
+  existingState: ConversationScrollResumeState | null;
+  nextState: ConversationScrollResumeState | null;
+}): boolean {
+  if (!nextState) return false;
+
+  if (
+    existingState &&
+    existingState.routeKey === nextState.routeKey &&
+    !existingState.followOutput &&
+    nextState.followOutput
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 export function createConversationScrollResumeWriter<FrameHandle = number>({

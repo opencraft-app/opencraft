@@ -957,8 +957,8 @@
 
 .iconButton {
   display: inline-flex;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
@@ -968,7 +968,7 @@
   background: transparent;
   color: #78716c;
   cursor: pointer;
-  font-size: 22px;
+  font-size: 19px;
   transition:
     background 140ms ease,
     border-color 140ms ease,
@@ -979,6 +979,15 @@
   border-color: #d6d3d1;
   background: #f5f5f4;
   color: #57534e;
+}
+
+.dictationActive {
+  border-color: #d2d5d8;
+  background: #f4f5f6;
+  color: #1f2328;
+  box-shadow:
+    0 0 0 3px rgba(143, 147, 152, 0.12),
+    inset 0 1px 0 rgb(255 255 255 / 52%);
 }
 
 .hiddenFileInput {
@@ -993,187 +1002,61 @@
   min-width: 0;
 }
 
-.controlMenu {
-  position: relative;
-}
-
-.controlMenu[open] {
-  z-index: 8;
-}
-
-.controlMenu summary {
-  list-style: none;
-}
-
-.controlMenu summary::-webkit-details-marker {
-  display: none;
-}
-
-.controlButton,
-.controlButtonAccent {
-  display: inline-flex;
-  align-items: center;
-  max-width: 240px;
-  min-height: 32px;
-  gap: 7px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  padding: 6px 8px;
-  color: #78716c;
-  cursor: pointer;
-  font: inherit;
-  font-size: 14px;
-  font-weight: 650;
-  white-space: nowrap;
-}
-
-.controlButton:hover,
-.controlButtonAccent:hover,
-.controlMenu[open] .controlButton,
-.controlMenu[open] .controlButtonAccent {
-  background: #f4f4f5;
-}
-
-.controlButtonAccent {
-  background: #f5f5f4;
-  color: #3f4248;
-}
-
-.controlButton[aria-disabled="true"],
-.controlButtonAccent[aria-disabled="true"] {
-  cursor: default;
-  opacity: 0.55;
-}
-
-.controlButtonLabel {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.controlPopover {
-  position: absolute;
-  bottom: calc(100% + 12px);
-  left: 0;
-  width: min(520px, calc(100vw - 48px));
-  max-height: min(420px, 60dvh);
-  overflow-y: auto;
-  border: 1px solid var(--vela-border-strong);
-  border-radius: 16px;
-  background: rgb(255 255 255 / 98%);
-  box-shadow:
-    0 20px 60px rgb(0 0 0 / 13%),
-    0 2px 10px rgb(0 0 0 / 5%);
-  padding: 8px;
-}
-
-.controlOption {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-  padding: 10px 12px;
-  color: #1d1d1f;
-  cursor: pointer;
-  font: inherit;
-  text-align: left;
-}
-
-.controlOption:hover {
-  background: #f5f5f6;
-}
-
-.controlOptionText {
-  display: flex;
-  min-width: 0;
-  align-items: baseline;
-  gap: 10px;
-}
-
-.controlOptionLabel {
-  flex: 0 0 auto;
-  font-size: 15px;
-  font-weight: 720;
-}
-
-.controlOptionDescription {
-  min-width: 0;
-  overflow: hidden;
-  color: #787b82;
-  font-size: 14px;
-  font-weight: 560;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.controlCheck {
-  width: 18px;
-  color: #60646c;
-  font-size: 16px;
-  font-weight: 760;
-  text-align: center;
-}
-
 .sendButton,
 .stopButton {
   display: inline-flex;
-  width: 34px;
-  height: 34px;
-  min-width: 34px;
-  min-height: 34px;
-  flex: 0 0 34px;
-  aspect-ratio: 1;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: 8px;
-  background: #3f4248;
-  color: white;
-  cursor: pointer;
-  font-size: 20px;
-  line-height: 1;
-  padding: 0;
-  transition:
-    transform 140ms ease,
-    background 140ms ease;
-}
-
-.stopButton {
   width: 38px;
   height: 38px;
   min-width: 38px;
   min-height: 38px;
-  flex-basis: 38px;
+  flex: 0 0 38px;
+  aspect-ratio: 1;
+  align-items: center;
+  justify-content: center;
+  border: 0;
   border-radius: 999px;
-  background: #171717;
-  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 5%);
+  background: #8f9398;
+  color: #ffffff;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+  box-shadow:
+    0 1px 1px rgba(255, 255, 255, 0.42) inset,
+    0 1px 2px rgba(20, 24, 28, 0.08);
+  transition:
+    transform 140ms ease,
+    background 140ms ease,
+    box-shadow 140ms ease,
+    opacity 140ms ease;
+}
+
+.stopButton {
+  border-radius: 999px;
+  background: #191d21;
+  box-shadow:
+    0 1px 1px rgba(255, 255, 255, 0.08) inset,
+    0 1px 3px rgba(20, 24, 28, 0.12);
 }
 
 .sendButton:disabled {
   cursor: default;
-  opacity: 0.45;
+  opacity: 0.38;
 }
 
 .sendButton:not(:disabled):hover,
 .stopButton:not(:disabled):hover {
-  background: #2f3338;
+  transform: translateY(-1px);
+  box-shadow:
+    0 1px 1px rgba(255, 255, 255, 0.44) inset,
+    0 6px 14px rgba(20, 24, 28, 0.12);
+}
+
+.sendButton:not(:disabled):hover {
+  background: #7f848a;
 }
 
 .stopButton:not(:disabled):hover {
-  background: #000000;
-}
-
-.stopGlyph {
-  width: 11px;
-  height: 11px;
-  flex: 0 0 auto;
-  border-radius: 3px;
-  background: currentColor;
+  background: #111417;
 }
 
 .error {
@@ -1236,21 +1119,4 @@
     display: none;
   }
 
-  .controlButton,
-  .controlButtonAccent {
-    max-width: 44vw;
-    font-size: 14px;
-  }
-
-  .controlPopover {
-    right: auto;
-    left: -42px;
-    width: min(420px, calc(100vw - 24px));
-  }
-}
-
-@container composer-footer (width <= 440px) {
-  .controlButtonLabel {
-    display: none;
-  }
 }

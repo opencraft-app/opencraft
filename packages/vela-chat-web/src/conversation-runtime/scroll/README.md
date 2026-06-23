@@ -2,6 +2,11 @@
 
 Scroll controllers for the app-side conversation runtime.
 
+Start with `SCROLL_MODEL.md` before changing behavior. It defines the ownership
+model, write arbitration order, route lifecycle, and debugging taxonomy for
+bottom-follow, route resume, history prepend anchoring, partial virtualization,
+and the self-drawn scrollbar.
+
 Change here when bottom-follow, near-top history loading, or scroll anchoring
 behavior changes.
 
@@ -10,6 +15,13 @@ entry, local send/jump requests, sticky/detached mode, measurement verification,
 and user scroll-away detaching.
 `historyPaging.ts` holds near-top history pagination and prepend anchoring rules.
 `routeResume.ts` holds session-scoped scroll resume restore rules.
+`scrollAnchor.ts` holds item-level semantic anchors used to keep the same
+visible stream item stable when route hydration or markdown layout changes
+content height above the viewport.
+`scrollWrite.ts` is the only DOM scroll-write gate. Bottom-follow, route
+resume, history prepend anchoring, virtualizer measurements, and the
+self-drawn scrollbar must pass through it so route resume cannot be overwritten
+by passive writes.
 `scrollResumePersistence.ts` holds the coalesced host-state writer and its
 route/unmount flush semantics.
 `useConversationScrollController.ts` is the React/DOM adapter.

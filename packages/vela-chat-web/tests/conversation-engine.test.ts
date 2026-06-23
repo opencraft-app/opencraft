@@ -30,7 +30,12 @@ import {
 } from "../src/conversation-runtime/scroll/historyPaging";
 import {
   deriveConversationScrollResumeDecision,
+  shouldRequestInitialBottomAnchorAfterResumeAttempt,
 } from "../src/conversation-runtime/scroll/routeResume";
+import {
+  deriveConversationScrollAnchorRestoreTarget,
+  deriveConversationScrollAnchorSnapshot,
+} from "../src/conversation-runtime/scroll/scrollAnchor";
 import { resolveConversationStrategyName } from "../src/conversation-runtime/strategy/strategyResolver";
 import {
   buildChatRenderModel,
@@ -1987,6 +1992,7 @@ test("history prepend anchor survives loader height changes while older history 
 
 test("conversation scroll resume reads through injected host client state", () => {
   const state = {
+    anchor: { itemId: "item-42", offsetTop: 84 },
     routeKey: "sess/with spaces",
     scrollTop: 420.5,
     followOutput: false,
@@ -2013,6 +2019,57 @@ test("conversation scroll resume reads through injected host client state", () =
       shouldRestore: true,
       scrollTop: state.scrollTop,
     },
+  );
+});
+
+test("conversation scroll anchor captures the first visible stream item", () => {
+  assert.deepEqual(
+    deriveConversationScrollAnchorSnapshot({
+      containerTop: 100,
+      viewportHeight: 400,
+      items: [
+        { itemId: "item_above", top: -80, bottom: 90 },
+        { itemId: "item_first_visible", top: 132, bottom: 220 },
+        { itemId: "item_second_visible", top: 230, bottom: 320 },
+      ],
+    }),
+    {
+      itemId: "item_first_visible",
+      offsetTop: 32,
+    },
+  );
+});
+
+test("conversation scroll anchor restore target compensates for content height drift above the viewport", () => {
+  assert.equal(
+    deriveConversationScrollAnchorRestoreTarget({
+      anchorOffsetTop: 32,
+      containerTop: 100,
+      currentAnchorTop: 180,
+      currentScrollTop: 420,
+      maxScrollTop: 1400,
+    }),
+    468,
+  );
+  assert.equal(
+    deriveConversationScrollAnchorRestoreTarget({
+      anchorOffsetTop: 32,
+      containerTop: 100,
+      currentAnchorTop: -300,
+      currentScrollTop: 40,
+      maxScrollTop: 1400,
+    }),
+    0,
+  );
+  assert.equal(
+    deriveConversationScrollAnchorRestoreTarget({
+      anchorOffsetTop: 32,
+      containerTop: 100,
+      currentAnchorTop: 2000,
+      currentScrollTop: 1380,
+      maxScrollTop: 1400,
+    }),
+    1400,
   );
 });
 
@@ -2131,6 +2188,65 @@ test("conversation scroll resume persistence rejects route-entry snapshots befor
   );
 });
 
+test("conversation scroll leave snapshots do not overwrite a saved detached position with follow output", async () => {
+  const module = (await import(
+    "../src/conversation-runtime/scroll/scrollResumePersistence"
+  )) as Record<string, unknown>;
+  const shouldWriteConversationScrollLeaveSnapshot =
+    module.shouldWriteConversationScrollLeaveSnapshot as
+      | ((input: {
+          existingState: {
+            followOutput: boolean;
+            routeKey: string;
+            scrollTop: number;
+          } | null;
+          nextState: {
+            followOutput: boolean;
+            routeKey: string;
+            scrollTop: number;
+          } | null;
+        }) => boolean)
+      | undefined;
+
+  assert.equal(typeof shouldWriteConversationScrollLeaveSnapshot, "function");
+
+  assert.equal(
+    shouldWriteConversationScrollLeaveSnapshot?.({
+      existingState: { routeKey: "ses_a", scrollTop: 1200, followOutput: false },
+      nextState: { routeKey: "ses_a", scrollTop: 0, followOutput: true },
+    }),
+    false,
+  );
+  assert.equal(
+    shouldWriteConversationScrollLeaveSnapshot?.({
+      existingState: { routeKey: "ses_a", scrollTop: 1200, followOutput: false },
+      nextState: { routeKey: "ses_a", scrollTop: 1300, followOutput: false },
+    }),
+    true,
+  );
+  assert.equal(
+    shouldWriteConversationScrollLeaveSnapshot?.({
+      existingState: { routeKey: "ses_a", scrollTop: 9000, followOutput: true },
+      nextState: { routeKey: "ses_a", scrollTop: 1300, followOutput: false },
+    }),
+    true,
+  );
+  assert.equal(
+    shouldWriteConversationScrollLeaveSnapshot?.({
+      existingState: null,
+      nextState: { routeKey: "ses_a", scrollTop: 0, followOutput: true },
+    }),
+    true,
+  );
+  assert.equal(
+    shouldWriteConversationScrollLeaveSnapshot?.({
+      existingState: { routeKey: "ses_a", scrollTop: 0, followOutput: true },
+      nextState: { routeKey: "ses_a", scrollTop: 0, followOutput: true },
+    }),
+    true,
+  );
+});
+
 test("conversation scroll resume restores only detached positions after layout is measurable", () => {
   assert.deepEqual(
     deriveConversationScrollResumeDecision({
@@ -2158,7 +2274,7 @@ test("conversation scroll resume restores only detached positions after layout i
       pendingVerification: false,
       resumeState: {
         routeKey: "sess_1",
-        scrollTop: 1200,
+        scrollTop: 800,
         followOutput: false,
       },
       viewportHeight: 500,
@@ -2167,7 +2283,7 @@ test("conversation scroll resume restores only detached positions after layout i
     {
       blockedReason: null,
       shouldRestore: true,
-      scrollTop: 900,
+      scrollTop: 800,
     },
   );
   assert.deepEqual(
@@ -2188,6 +2304,72 @@ test("conversation scroll resume restores only detached positions after layout i
       shouldRestore: false,
       scrollTop: null,
     },
+  );
+});
+
+test("conversation scroll resume waits until content can contain the saved offset", () => {
+  assert.deepEqual(
+    deriveConversationScrollResumeDecision({
+      contentHeight: 900,
+      isHistoryReady: true,
+      pendingVerification: false,
+      resumeState: {
+        routeKey: "sess_1",
+        scrollTop: 1200,
+        followOutput: false,
+      },
+      viewportHeight: 500,
+      viewportWidth: 900,
+    }),
+    {
+      blockedReason: "waiting_for_resume_extent",
+      shouldRestore: false,
+      scrollTop: null,
+    },
+  );
+
+  assert.deepEqual(
+    deriveConversationScrollResumeDecision({
+      contentHeight: 1800,
+      isHistoryReady: true,
+      pendingVerification: false,
+      resumeState: {
+        routeKey: "sess_1",
+        scrollTop: 1200,
+        followOutput: false,
+      },
+      viewportHeight: 500,
+      viewportWidth: 900,
+    }),
+    {
+      blockedReason: null,
+      shouldRestore: true,
+      scrollTop: 1200,
+    },
+  );
+});
+
+test("conversation scroll resume suppresses initial bottom anchor while resume is pending", () => {
+  assert.equal(
+    shouldRequestInitialBottomAnchorAfterResumeAttempt({
+      didRestore: false,
+      hasPendingResumeState: true,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldRequestInitialBottomAnchorAfterResumeAttempt({
+      didRestore: true,
+      hasPendingResumeState: false,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldRequestInitialBottomAnchorAfterResumeAttempt({
+      didRestore: false,
+      hasPendingResumeState: false,
+    }),
+    true,
   );
 });
 

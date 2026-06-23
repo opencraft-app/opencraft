@@ -22,16 +22,33 @@ import {
 import {
   type ConversationScrollResumeState,
   deriveConversationScrollResumeDecision,
+  shouldRequestInitialBottomAnchorAfterResumeAttempt,
 } from "./routeResume";
 import {
   type ConversationScrollResumeWriter,
   createConversationScrollResumeWriter,
   deriveConversationScrollLeaveSnapshot,
   shouldPersistConversationScrollResumeSnapshot,
+  shouldWriteConversationScrollLeaveSnapshot,
 } from "./scrollResumePersistence";
+import {
+  readConversationScrollAnchorSnapshot,
+  getConversationScrollAnchorRestoreTarget,
+} from "./scrollAnchor";
+import {
+  applyConversationScrollWrite,
+  type ConversationScrollRouteResumeStatus,
+  type ConversationScrollWrite,
+  type ConversationScrollWriteApplication,
+  type ConversationScrollWriteBlockedBy,
+  type ConversationScrollWriteSource,
+} from "./scrollWrite";
 import type { ConversationBottomAnchorReason } from "./viewportHandle";
 
 const USER_SCROLL_ACTIVITY_RESET_MS = 180;
+const ROUTE_RESUME_CONFIRMATION_MAX_ATTEMPTS = 8;
+const ROUTE_RESUME_CONFIRMATION_REQUIRED_STABLE_FRAMES = 2;
+const ROUTE_RESUME_CONFIRMATION_TOLERANCE_PX = 2;
 
 type ScrollableElement = Pick<
   HTMLElement,
@@ -45,6 +62,13 @@ interface ScheduledFrameHandle {
   frameId: number | null;
   remainingFrames: number;
   callback: () => void;
+}
+
+interface RouteResumeVerification {
+  attempts: number;
+  frameId: number | null;
+  stableFrames: number;
+  targetScrollTop: number;
 }
 
 export interface ConversationScrollControllerOptions {
@@ -64,6 +88,7 @@ export interface ConversationScrollControllerSignals {
 export interface ConversationScrollController {
   contentRef: RefObject<HTMLDivElement | null>;
   debug: ConversationScrollControllerDebug;
+  initialScrollTop: number | null;
   scrollRef: RefObject<HTMLElement | null>;
   followOutput: boolean;
   commitScrollResumeNow: (input?: {
@@ -83,14 +108,21 @@ export interface ConversationScrollControllerDebug {
   bottomAnchorLastFulfilledReason: BottomAnchorRequestReason | null;
   routeResumeStatus: ConversationScrollRouteResumeStatus;
   routeResumeScrollTop: number | null;
+  lastScrollWrite: ConversationScrollControllerDebugWrite | null;
   lastFollowSignal: string;
   lastLayoutSignal: string;
 }
 
-export type ConversationScrollRouteResumeStatus =
-  | "idle"
-  | "pending"
-  | "restored";
+export interface ConversationScrollControllerDebugWrite {
+  action: "apply" | "suppress";
+  blockedBy: ConversationScrollWriteBlockedBy | null;
+  nextScrollTop: number;
+  previousScrollTop: number;
+  reason: string;
+  source: ConversationScrollWriteSource;
+}
+
+export type { ConversationScrollRouteResumeStatus } from "./scrollWrite";
 
 export function scrollElementToBottom(
   element: ScrollableElement,
@@ -173,6 +205,45 @@ function emptyDriverSnapshot(): BottomAnchorDriverSnapshot {
   };
 }
 
+function scrollDebugWritesEqual(
+  left: ConversationScrollControllerDebugWrite | null,
+  right: ConversationScrollControllerDebugWrite | null,
+) {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return (
+    left.action === right.action &&
+    left.blockedBy === right.blockedBy &&
+    left.nextScrollTop === right.nextScrollTop &&
+    left.previousScrollTop === right.previousScrollTop &&
+    left.reason === right.reason &&
+    left.source === right.source
+  );
+}
+
+function debugWriteFromApplication(
+  application: ConversationScrollWriteApplication,
+): ConversationScrollControllerDebugWrite {
+  return {
+    action: application.decision.action,
+    blockedBy: application.decision.blockedBy,
+    nextScrollTop: application.nextScrollTop,
+    previousScrollTop: application.previousScrollTop,
+    reason: application.decision.write.reason,
+    source: application.decision.write.source,
+  };
+}
+
+function readInitialRouteScrollTop(
+  options: ConversationScrollControllerOptions,
+): number | null {
+  const routeKey = routeKeyFrom(options.historyStartKey);
+  if (!routeKey) return null;
+  const resumeState = options.clientStateStore?.conversationScroll.read(routeKey) ?? null;
+  if (!resumeState || resumeState.followOutput) return null;
+  return Number.isFinite(resumeState.scrollTop) ? resumeState.scrollTop : null;
+}
+
 export function useConversationScrollController(
   signals: ConversationScrollControllerSignals,
   options: ConversationScrollControllerOptions = {},
@@ -180,9 +251,15 @@ export function useConversationScrollController(
   const contentRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLElement | null>(null);
   const lastKnownContentHeightRef = useRef(0);
+  const lastKnownScrollAnchorRef = useRef<{
+    anchor: ConversationScrollResumeState["anchor"];
+    routeKey: string;
+    scrollTop: number;
+  } | null>(null);
   const lastKnownViewportHeightRef = useRef(0);
   const lastKnownViewportWidthRef = useRef(0);
   const lastKnownScrollTopRef = useRef(0);
+  const hasObservedScrollEventForRouteRef = useRef(false);
   const latestFollowSignalRef = useRef(signals.followSignal);
   const latestLayoutSignalRef = useRef(signals.layoutSignal);
   const pendingScrollResumeStateRef =
@@ -190,10 +267,14 @@ export function useConversationScrollController(
   const routeResumeStatusRef =
     useRef<ConversationScrollRouteResumeStatus>("idle");
   const routeResumeScrollTopRef = useRef<number | null>(null);
+  const routeResumeVerificationRef =
+    useRef<RouteResumeVerification | null>(null);
   const scrollResumeWriterRef =
     useRef<ConversationScrollResumeWriter<number> | null>(null);
   const pendingHistoryPrependAnchorRef =
     useRef<ActiveHistoryPrependAnchor | null>(null);
+  const lastScrollWriteRef =
+    useRef<ConversationScrollControllerDebugWrite | null>(null);
   const historyStartReadyRef = useRef(false);
   const lastTouchClientYRef = useRef<number | null>(null);
   const userIntentRef = useRef<BottomAnchorUserIntent>("none");
@@ -202,6 +283,13 @@ export function useConversationScrollController(
   const localAnchorSequenceRef = useRef(0);
   const driverRef = useRef<BottomAnchorDriver | null>(null);
   const driverSnapshotRef = useRef<BottomAnchorDriverSnapshot>(emptyDriverSnapshot());
+  const initialRouteScrollRef = useRef<{
+    routeKey: string | null;
+    scrollTop: number | null;
+  }>({
+    routeKey: null,
+    scrollTop: null,
+  });
 
   const [followOutput, setFollowOutputState] = useState(true);
   const [debug, setDebug] = useState<ConversationScrollControllerDebug>({
@@ -212,6 +300,7 @@ export function useConversationScrollController(
     bottomAnchorLastFulfilledReason: null,
     routeResumeStatus: "idle",
     routeResumeScrollTop: null,
+    lastScrollWrite: null,
     lastFollowSignal: signals.followSignal,
     lastLayoutSignal: signals.layoutSignal,
   });
@@ -219,6 +308,13 @@ export function useConversationScrollController(
   optionsRef.current = options;
   latestFollowSignalRef.current = signals.followSignal;
   latestLayoutSignalRef.current = signals.layoutSignal;
+  const currentRouteKey = routeKeyFrom(options.historyStartKey);
+  if (initialRouteScrollRef.current.routeKey !== currentRouteKey) {
+    initialRouteScrollRef.current = {
+      routeKey: currentRouteKey,
+      scrollTop: readInitialRouteScrollTop(options),
+    };
+  }
 
   if (!scrollResumeWriterRef.current) {
     scrollResumeWriterRef.current = createConversationScrollResumeWriter({
@@ -244,6 +340,7 @@ export function useConversationScrollController(
         bottomAnchorLastFulfilledReason: snapshot.lastFulfilledReason,
         routeResumeStatus: routeResumeStatusRef.current,
         routeResumeScrollTop: routeResumeScrollTopRef.current,
+        lastScrollWrite: lastScrollWriteRef.current,
         lastFollowSignal: latestFollowSignalRef.current,
         lastLayoutSignal: latestLayoutSignalRef.current,
       };
@@ -255,6 +352,7 @@ export function useConversationScrollController(
         current.bottomAnchorLastFulfilledReason === next.bottomAnchorLastFulfilledReason &&
         current.routeResumeStatus === next.routeResumeStatus &&
         current.routeResumeScrollTop === next.routeResumeScrollTop &&
+        scrollDebugWritesEqual(current.lastScrollWrite, next.lastScrollWrite) &&
         current.lastFollowSignal === next.lastFollowSignal &&
         current.lastLayoutSignal === next.lastLayoutSignal
           ? current
@@ -302,6 +400,43 @@ export function useConversationScrollController(
     [readMeasurementStateForRoute],
   );
 
+  const readRouteLeaveMeasurementStateForRoute = useCallback(
+    (routeKeyOverride: string | null): BottomAnchorMeasurementState => {
+      const element = scrollRef.current;
+      const routeKey =
+        routeKeyOverride ??
+        routeKeyFrom(optionsRef.current.historyStartKey) ??
+        "unscoped";
+      const transportKey = optionsRef.current.transportKey ?? "web-scroll";
+      const containerKey = `${transportKey}:${routeKey}`;
+      const viewportWidth =
+        lastKnownViewportWidthRef.current || element?.clientWidth || 0;
+      const viewportHeight =
+        lastKnownViewportHeightRef.current || element?.clientHeight || 0;
+      const contentHeight =
+        lastKnownContentHeightRef.current ||
+        contentRef.current?.scrollHeight ||
+        element?.scrollHeight ||
+        0;
+      const scrollTop = hasObservedScrollEventForRouteRef.current
+        ? lastKnownScrollTopRef.current
+        : element?.scrollTop ?? lastKnownScrollTopRef.current;
+
+      return {
+        containerKey,
+        viewportMeasuredForKey:
+          viewportWidth > 0 && viewportHeight > 0 ? containerKey : null,
+        contentMeasuredForKey: contentHeight > 0 ? containerKey : null,
+        viewportWidth,
+        viewportHeight,
+        contentHeight,
+        scrollTop,
+        bottomInsetPx: 0,
+      };
+    },
+    [],
+  );
+
   const handleDriverSnapshot = useCallback(
     (snapshot: BottomAnchorDriverSnapshot) => {
       driverSnapshotRef.current = snapshot;
@@ -314,13 +449,34 @@ export function useConversationScrollController(
     [publishScrollDebug],
   );
 
+  const applyScrollWrite = useCallback(
+    (element: ScrollableElement, write: ConversationScrollWrite) => {
+      const application = applyConversationScrollWrite({
+        element,
+        phase: { routeResumeStatus: routeResumeStatusRef.current },
+        write,
+      });
+      lastScrollWriteRef.current = debugWriteFromApplication(application);
+      if (application.applied) {
+        lastKnownScrollTopRef.current = application.nextScrollTop;
+      }
+      publishScrollDebug();
+      return application;
+    },
+    [publishScrollDebug],
+  );
+
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     const element = scrollRef.current;
     if (!element) return;
-    if (scrollElementToBottom(element, behavior)) {
-      lastKnownScrollTopRef.current = element.scrollTop;
-    }
-  }, []);
+    const application = applyScrollWrite(element, {
+      behavior,
+      reason: "bottom_follow",
+      scrollTop: element.scrollHeight,
+      source: "bottom_follow",
+    });
+    if (!application.applied) return;
+  }, [applyScrollWrite]);
 
   if (!driverRef.current) {
     driverRef.current = createBottomAnchorDriver({
@@ -366,9 +522,77 @@ export function useConversationScrollController(
     scrollResumeWriterRef.current?.flush();
   }, []);
 
+  const cancelRouteResumeVerification = useCallback(() => {
+    const verification = routeResumeVerificationRef.current;
+    if (verification?.frameId !== null && verification?.frameId !== undefined) {
+      cancelAnimationFrame(verification.frameId);
+    }
+    routeResumeVerificationRef.current = null;
+  }, []);
+
+  const cancelPendingRouteResumeForUserScroll = useCallback(
+    (input: { scrollTop: number; userIntent: BottomAnchorUserIntent }) => {
+      if (input.userIntent === "none") return false;
+      if (!pendingScrollResumeStateRef.current) return false;
+      if (routeResumeStatusRef.current !== "pending") return false;
+      const routeResumeScrollTop = routeResumeScrollTopRef.current;
+      if (
+        routeResumeScrollTop !== null &&
+        Math.abs(input.scrollTop - routeResumeScrollTop) <=
+          ROUTE_RESUME_CONFIRMATION_TOLERANCE_PX
+      ) {
+        return false;
+      }
+
+      pendingScrollResumeStateRef.current = null;
+      cancelRouteResumeVerification();
+      routeResumeStatusRef.current = "idle";
+      routeResumeScrollTopRef.current = null;
+      publishScrollDebug();
+      return true;
+    },
+    [cancelRouteResumeVerification, publishScrollDebug],
+  );
+
   const schedulePersistScrollResume = useCallback(
     (state: ConversationScrollResumeState) => {
       scrollResumeWriterRef.current?.schedule(state);
+    },
+    [],
+  );
+
+  const readCurrentScrollAnchor = useCallback(() => {
+    const element = scrollRef.current;
+    if (!element) return null;
+    return readConversationScrollAnchorSnapshot({
+      container: element,
+      content: contentRef.current,
+    });
+  }, []);
+
+  const captureScrollAnchorForRoute = useCallback(
+    (input: { routeKey: string; scrollTop: number }) => {
+      const anchor = readCurrentScrollAnchor();
+      lastKnownScrollAnchorRef.current = anchor
+        ? {
+            anchor,
+            routeKey: input.routeKey,
+            scrollTop: input.scrollTop,
+          }
+        : null;
+      return anchor;
+    },
+    [readCurrentScrollAnchor],
+  );
+
+  const readCapturedScrollAnchorForRoute = useCallback(
+    (input: { routeKey: string | null; scrollTop: number }) => {
+      const captured = lastKnownScrollAnchorRef.current;
+      if (!input.routeKey || !captured || captured.routeKey !== input.routeKey) {
+        return null;
+      }
+      if (Math.abs(captured.scrollTop - input.scrollTop) > 2) return null;
+      return captured.anchor ?? null;
     },
     [],
   );
@@ -386,15 +610,23 @@ export function useConversationScrollController(
       if (!shouldPersistScrollResume()) return;
       const routeKey = routeKeyFrom(optionsRef.current.historyStartKey);
       if (!routeKey) return;
+      const scrollAnchor = !input.followOutput
+        ? captureScrollAnchorForRoute({
+            routeKey,
+            scrollTop: input.scrollTop,
+          })
+        : null;
       schedulePersistScrollResume({
         routeKey,
         scrollTop: input.scrollTop,
         followOutput: input.followOutput,
+        ...(!input.followOutput && scrollAnchor ? { anchor: scrollAnchor } : {}),
       });
       if (input.flush) flushPendingScrollResumePersist();
     },
     [
       flushPendingScrollResumePersist,
+      captureScrollAnchorForRoute,
       schedulePersistScrollResume,
       shouldPersistScrollResume,
     ],
@@ -402,21 +634,163 @@ export function useConversationScrollController(
 
   const persistRouteLeaveScrollResumeSnapshot = useCallback(
     (routeKey: string | null) => {
+      flushPendingScrollResumePersist();
+      const measurement = readRouteLeaveMeasurementStateForRoute(routeKey);
       const state = deriveConversationScrollLeaveSnapshot({
         hasPendingResumeState: pendingScrollResumeStateRef.current !== null,
         isHistoryReady: historyStartReadyRef.current,
-        measurement: readMeasurementStateForRoute(routeKey),
+        measurement,
         routeKey,
+        scrollAnchor: readCapturedScrollAnchorForRoute({
+          routeKey,
+          scrollTop: measurement.scrollTop,
+        }),
       });
       if (!state) return;
+      const existingState = routeKey
+        ? optionsRef.current.clientStateStore?.conversationScroll.read(routeKey) ?? null
+        : null;
+      if (
+        !shouldWriteConversationScrollLeaveSnapshot({
+          existingState,
+          nextState: state,
+        })
+      ) {
+        return;
+      }
       schedulePersistScrollResume(state);
       flushPendingScrollResumePersist();
     },
     [
       flushPendingScrollResumePersist,
-      readMeasurementStateForRoute,
+      readRouteLeaveMeasurementStateForRoute,
+      readCapturedScrollAnchorForRoute,
       schedulePersistScrollResume,
     ],
+  );
+
+  const completeRouteResumeVerification = useCallback(
+    (targetScrollTop: number) => {
+      pendingScrollResumeStateRef.current = null;
+      routeResumeVerificationRef.current = null;
+      routeResumeStatusRef.current = "restored";
+      routeResumeScrollTopRef.current = targetScrollTop;
+      publishScrollDebug();
+    },
+    [publishScrollDebug],
+  );
+
+  const scheduleRouteResumeConfirmation = useCallback(
+    (targetScrollTop: number) => {
+      const scheduleNextFrame = () => {
+        const active = routeResumeVerificationRef.current;
+        if (!active || active.frameId !== null) return;
+
+        active.frameId = requestAnimationFrame(() => {
+          const verification = routeResumeVerificationRef.current;
+          if (!verification) return;
+          verification.frameId = null;
+
+          const element = scrollRef.current;
+          if (!pendingScrollResumeStateRef.current || !element) {
+            routeResumeVerificationRef.current = null;
+            return;
+          }
+
+          const target = verification.targetScrollTop;
+          const resumeState = pendingScrollResumeStateRef.current;
+          const anchorTarget =
+            resumeState && element
+              ? getConversationScrollAnchorRestoreTarget({
+                  anchor: resumeState.anchor,
+                  container: element,
+                  content: contentRef.current,
+                })
+              : null;
+          const effectiveTarget = anchorTarget ?? target;
+          if (effectiveTarget !== target) {
+            applyScrollWrite(element, {
+              reason: "route_resume_anchor_confirmation",
+              scrollTop: effectiveTarget,
+              source: "route_resume_confirmation",
+            });
+            routeResumeStatusRef.current = "pending";
+            routeResumeScrollTopRef.current = effectiveTarget;
+            routeResumeVerificationRef.current = {
+              ...verification,
+              frameId: null,
+              stableFrames: 0,
+              targetScrollTop: effectiveTarget,
+            };
+            publishScrollDebug();
+            scheduleNextFrame();
+            return;
+          }
+          if (
+            Math.abs(element.scrollTop - effectiveTarget) <=
+            ROUTE_RESUME_CONFIRMATION_TOLERANCE_PX
+          ) {
+            const stableFrames = verification.stableFrames + 1;
+            lastKnownScrollTopRef.current = element.scrollTop;
+            if (
+              stableFrames >=
+              ROUTE_RESUME_CONFIRMATION_REQUIRED_STABLE_FRAMES
+            ) {
+              completeRouteResumeVerification(effectiveTarget);
+              return;
+            }
+
+            routeResumeVerificationRef.current = {
+              ...verification,
+              stableFrames,
+            };
+            scheduleNextFrame();
+            return;
+          }
+
+          applyScrollWrite(element, {
+            reason: "route_resume_confirmation",
+            scrollTop: effectiveTarget,
+            source: "route_resume_confirmation",
+          });
+
+          const attempts = verification.attempts + 1;
+          if (attempts >= ROUTE_RESUME_CONFIRMATION_MAX_ATTEMPTS) {
+            completeRouteResumeVerification(effectiveTarget);
+            return;
+          }
+
+          routeResumeStatusRef.current = "pending";
+          routeResumeScrollTopRef.current = effectiveTarget;
+          routeResumeVerificationRef.current = {
+            attempts,
+            frameId: null,
+            stableFrames: 0,
+            targetScrollTop: effectiveTarget,
+          };
+          publishScrollDebug();
+          scheduleNextFrame();
+        });
+      };
+
+      const active = routeResumeVerificationRef.current;
+      if (
+        active &&
+        active.targetScrollTop !== targetScrollTop &&
+        active.frameId !== null
+      ) {
+        cancelAnimationFrame(active.frameId);
+      }
+      routeResumeVerificationRef.current = {
+        attempts: active?.targetScrollTop === targetScrollTop ? active.attempts : 0,
+        frameId: active?.targetScrollTop === targetScrollTop ? active.frameId : null,
+        stableFrames:
+          active?.targetScrollTop === targetScrollTop ? active.stableFrames : 0,
+        targetScrollTop,
+      };
+      scheduleNextFrame();
+    },
+    [applyScrollWrite, completeRouteResumeVerification, publishScrollDebug],
   );
 
   const tryRestoreScrollResume = useCallback(() => {
@@ -440,26 +814,54 @@ export function useConversationScrollController(
       return false;
     }
 
-    pendingScrollResumeStateRef.current = null;
     if (!decision.shouldRestore || decision.scrollTop === null) {
+      pendingScrollResumeStateRef.current = null;
+      cancelRouteResumeVerification();
       routeResumeStatusRef.current = "idle";
       routeResumeScrollTopRef.current = null;
       publishScrollDebug();
       return false;
     }
 
-    element.scrollTop = decision.scrollTop;
-    lastKnownScrollTopRef.current = decision.scrollTop;
-    routeResumeStatusRef.current = "restored";
-    routeResumeScrollTopRef.current = decision.scrollTop;
+    applyScrollWrite(element, {
+      reason: "route_resume",
+      scrollTop: decision.scrollTop,
+      source: "route_resume",
+    });
+    const anchorTarget = getConversationScrollAnchorRestoreTarget({
+      anchor: resumeState.anchor,
+      container: element,
+      content: contentRef.current,
+    });
+    if (anchorTarget !== null && Math.abs(anchorTarget - element.scrollTop) > 0.5) {
+      applyScrollWrite(element, {
+        reason: "route_resume_anchor",
+        scrollTop: anchorTarget,
+        source: "route_resume",
+      });
+    }
+    const targetScrollTop = anchorTarget ?? decision.scrollTop;
+    routeResumeStatusRef.current = "pending";
+    routeResumeScrollTopRef.current = targetScrollTop;
+    driver.reset({ mode: "detached", detachReason: "route_restore" });
+    scheduleRouteResumeConfirmation(targetScrollTop);
     publishScrollDebug();
     return true;
-  }, [driver, publishScrollDebug]);
+  }, [
+    applyScrollWrite,
+    cancelRouteResumeVerification,
+    driver,
+    publishScrollDebug,
+    scheduleRouteResumeConfirmation,
+  ]);
 
   useLayoutEffect(() => {
     const routeKey = routeKeyFrom(options.historyStartKey);
+    cancelRouteResumeVerification();
     driver.reset();
     historyStartReadyRef.current = false;
+    hasObservedScrollEventForRouteRef.current = false;
+    lastKnownScrollAnchorRef.current = null;
     pendingHistoryPrependAnchorRef.current = null;
     const resumeState = routeKey
       ? options.clientStateStore?.conversationScroll.read(routeKey) ?? null
@@ -478,8 +880,14 @@ export function useConversationScrollController(
 
     const frame = requestAnimationFrame(() => {
       historyStartReadyRef.current = true;
-      if (tryRestoreScrollResume()) return;
-      if (routeKey) {
+      const didRestore = tryRestoreScrollResume();
+      if (
+        routeKey &&
+        shouldRequestInitialBottomAnchorAfterResumeAttempt({
+          didRestore,
+          hasPendingResumeState: pendingScrollResumeStateRef.current !== null,
+        })
+      ) {
         driver.applyRouteRequest({
           reason: "route_initial_entry",
           requestKey: `${routeKey}:route_initial_entry`,
@@ -489,12 +897,14 @@ export function useConversationScrollController(
     });
     return () => {
       cancelAnimationFrame(frame);
+      cancelRouteResumeVerification();
       persistRouteLeaveScrollResumeSnapshot(routeKey);
       historyStartReadyRef.current = false;
       flushPendingScrollResumePersist();
     };
   }, [
     driver,
+    cancelRouteResumeVerification,
     flushPendingScrollResumePersist,
     options.historyStartKey,
     persistRouteLeaveScrollResumeSnapshot,
@@ -526,22 +936,30 @@ export function useConversationScrollController(
       lastTouchClientYRef.current = nextClientY;
     };
 
-    const handleScroll = () => {
+    const handleScroll = (source: "event" | "sync") => {
+      if (source === "event") {
+        hasObservedScrollEventForRouteRef.current = true;
+      }
       const previousScrollTop = lastKnownScrollTopRef.current;
       const scrollDelta = element.scrollTop - previousScrollTop;
       const userIntent = userIntentRef.current;
       lastKnownScrollTopRef.current = element.scrollTop;
       const measurement = readMeasurementState();
+      if (source === "event") {
+        cancelPendingRouteResumeForUserScroll({
+          scrollTop: element.scrollTop,
+          userIntent,
+        });
+      }
       driver.handleScrollNearBottomChange({
         nextIsNearBottom: isBottomAnchorMeasurementNearBottom(measurement),
         scrollDelta,
         userIntent,
       });
 
-      const latestSnapshot = driver.getSnapshot();
       persistScrollResumeSnapshot({
         scrollTop: element.scrollTop,
-        followOutput: latestSnapshot.mode === "sticky_bottom",
+        followOutput: isBottomAnchorMeasurementNearBottom(measurement),
       });
 
       const latest = optionsRef.current;
@@ -566,25 +984,35 @@ export function useConversationScrollController(
     element.addEventListener("wheel", handleWheel, { passive: true });
     element.addEventListener("touchstart", handleTouchStart, { passive: true });
     element.addEventListener("touchmove", handleTouchMove, { passive: true });
-    element.addEventListener("scroll", handleScroll, { passive: true });
-    handleScroll();
+    const handleScrollEvent = () => handleScroll("event");
+
+    element.addEventListener("scroll", handleScrollEvent, { passive: true });
+    handleScroll("sync");
     return () => {
       element.removeEventListener("wheel", handleWheel);
       element.removeEventListener("touchstart", handleTouchStart);
       element.removeEventListener("touchmove", handleTouchMove);
-      element.removeEventListener("scroll", handleScroll);
+      element.removeEventListener("scroll", handleScrollEvent);
     };
-  }, [driver, markUserIntent, persistScrollResumeSnapshot, readMeasurementState]);
+  }, [
+    cancelPendingRouteResumeForUserScroll,
+    driver,
+    markUserIntent,
+    persistScrollResumeSnapshot,
+    readMeasurementState,
+  ]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (tryRestoreScrollResume()) return;
     driver.prepareForStickyContentChange();
     publishScrollDebug();
-  }, [driver, publishScrollDebug, signals.followSignal]);
+  }, [driver, publishScrollDebug, signals.followSignal, tryRestoreScrollResume]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (tryRestoreScrollResume()) return;
     driver.prepareForStickyContentChange();
     publishScrollDebug();
-  }, [driver, publishScrollDebug, signals.layoutSignal]);
+  }, [driver, publishScrollDebug, signals.layoutSignal, tryRestoreScrollResume]);
 
   useEffect(() => {
     const scrollElement = scrollRef.current;
@@ -617,8 +1045,11 @@ export function useConversationScrollController(
         scrollHeight: scrollElement.scrollHeight,
       });
       if (prependAnchorUpdate.scrollTop !== null) {
-        scrollElement.scrollTop = prependAnchorUpdate.scrollTop;
-        lastKnownScrollTopRef.current = prependAnchorUpdate.scrollTop;
+        applyScrollWrite(scrollElement, {
+          reason: "history_prepend_anchor",
+          scrollTop: prependAnchorUpdate.scrollTop,
+          source: "history_prepend",
+        });
         pendingHistoryPrependAnchorRef.current = prependAnchorUpdate.nextAnchor;
       }
 
@@ -645,21 +1076,28 @@ export function useConversationScrollController(
     return () => {
       observer.disconnect();
     };
-  }, [driver, tryRestoreScrollResume]);
+  }, [applyScrollWrite, driver, tryRestoreScrollResume]);
 
   useEffect(
     () => () => {
       flushPendingScrollResumePersist();
       driver.destroy();
       scrollResumeWriterRef.current?.cancel();
+      cancelRouteResumeVerification();
       cancelUserIntentReset();
     },
-    [cancelUserIntentReset, driver, flushPendingScrollResumePersist],
+    [
+      cancelRouteResumeVerification,
+      cancelUserIntentReset,
+      driver,
+      flushPendingScrollResumePersist,
+    ],
   );
 
   return {
     contentRef,
     debug,
+    initialScrollTop: initialRouteScrollRef.current.scrollTop,
     scrollRef,
     followOutput,
     commitScrollResumeNow: (input = {}) => {

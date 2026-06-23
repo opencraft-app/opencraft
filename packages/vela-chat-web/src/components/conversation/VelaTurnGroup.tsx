@@ -13,6 +13,8 @@ export const VelaTurnGroup = memo(function VelaTurnGroup({
       className={styles.turnGroup}
       data-continuation={item.continuation ? "true" : undefined}
       data-agent-work-id={item.sourceAgentWorkId}
+      data-stream-item-id={item.id}
+      data-stream-item-key={item.key}
       data-turn-id={item.sourceTurnId}
       data-turn-kind={item.kind}
     >

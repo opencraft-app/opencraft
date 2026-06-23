@@ -5,11 +5,11 @@ import type {
   ConversationStreamItem,
 } from "../../conversation-runtime/model";
 import { resolveConversationStrategy } from "../../conversation-runtime/strategy/strategyRegistry";
-import styles from "../../styles/desktop.module.css";
 import { VelaTurnGroup } from "./VelaTurnGroup";
 
 export const VelaTurnList = memo(function VelaTurnList({
   contentRef,
+  initialScrollTop,
   isLoadingOlderHistory = false,
   scrollRef,
   segments,
@@ -17,6 +17,7 @@ export const VelaTurnList = memo(function VelaTurnList({
 }: {
   contentRef?: RefObject<HTMLDivElement | null>;
   hostKind: ConversationRuntimeHostKind;
+  initialScrollTop?: number | null;
   isLoadingOlderHistory?: boolean;
   scrollRef?: RefObject<HTMLElement | null>;
   segments: ConversationRuntimeSegments;
@@ -31,10 +32,11 @@ export const VelaTurnList = memo(function VelaTurnList({
 
   return strategy.render({
     contentRef,
+    initialScrollTop,
     isLoadingOlderHistory,
     segments,
     scrollRef,
-    empty: <div className={styles.empty}>连接本地 velad 后，这里会显示 transcript。</div>,
+    empty: <></>,
     renderItem: renderConversationItem,
   });
 });

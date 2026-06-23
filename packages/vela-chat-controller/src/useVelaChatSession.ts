@@ -121,6 +121,7 @@ export function useVelaChatSession({
   const activeSessionId = sessionId.trim();
   const activeSessionIdRef = useRef(activeSessionId);
   const conversationRef = useRef<typeof conversation>(null);
+  const conversationCacheRef = useRef(new Map<string, ConversationWireView>());
   const requestsRef = useRef<typeof requests>(null);
   activeSessionIdRef.current = activeSessionId;
 
@@ -128,9 +129,29 @@ export function useVelaChatSession({
   const client = providedClient ?? ownedClient;
 
   const commitConversation = useCallback((nextConversation: typeof conversation) => {
-    const mergedConversation = nextConversation
-      ? mergeConversationSnapshot(conversationRef.current, nextConversation)
-      : null;
+    if (!nextConversation) {
+      conversationRef.current = null;
+      setConversation(null);
+      return;
+    }
+
+    const currentForSession =
+      conversationRef.current?.session_id === nextConversation.session_id
+        ? conversationRef.current
+        : conversationCacheRef.current.get(nextConversation.session_id) ?? null;
+    const mergedConversation = mergeConversationSnapshot(
+      currentForSession,
+      nextConversation,
+    );
+    conversationCacheRef.current.set(
+      mergedConversation.session_id,
+      mergedConversation,
+    );
+
+    if (!isCurrentSessionRequest(activeSessionIdRef.current, mergedConversation.session_id)) {
+      return;
+    }
+
     conversationRef.current = mergedConversation;
     setConversation(mergedConversation);
   }, []);
@@ -158,13 +179,17 @@ export function useVelaChatSession({
   );
 
   useEffect(() => {
-    commitConversation(null);
+    const cachedConversation = activeSessionId
+      ? conversationCacheRef.current.get(activeSessionId) ?? null
+      : null;
+    conversationRef.current = cachedConversation;
+    setConversation(cachedConversation);
     commitRequests(null);
     setSession(null);
     setStreamConnected(false);
     setIsLoadingOlder(false);
     setConversationScrollDebug(null);
-  }, [activeSessionId, commitConversation, commitRequests]);
+  }, [activeSessionId, commitRequests]);
 
   useEffect(() => {
     if (!activeSessionId) {

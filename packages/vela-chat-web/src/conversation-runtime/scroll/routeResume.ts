@@ -18,6 +18,16 @@ export interface ConversationScrollResumeDecision {
   scrollTop: number | null;
 }
 
+export function shouldRequestInitialBottomAnchorAfterResumeAttempt({
+  didRestore,
+  hasPendingResumeState,
+}: {
+  didRestore: boolean;
+  hasPendingResumeState: boolean;
+}): boolean {
+  return !didRestore && !hasPendingResumeState;
+}
+
 export function deriveConversationScrollResumeDecision({
   contentHeight,
   isHistoryReady,
@@ -63,9 +73,17 @@ export function deriveConversationScrollResumeDecision({
   }
 
   const maxScrollTop = Math.max(0, contentHeight - viewportHeight);
+  if (resumeState.scrollTop > maxScrollTop) {
+    return {
+      blockedReason: "waiting_for_resume_extent",
+      shouldRestore: false,
+      scrollTop: null,
+    };
+  }
+
   return {
     blockedReason: null,
     shouldRestore: true,
-    scrollTop: Math.min(Math.max(0, resumeState.scrollTop), maxScrollTop),
+    scrollTop: Math.max(0, resumeState.scrollTop),
   };
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import type { AgentConfigPatchWire } from "../../../../vela-chat-client/src";
+import { ShellSelect } from "../../../../vela-desktop-shell/src";
 import styles from "../../styles/desktop.module.css";
 import type {
   ComposerControlsModel,
@@ -85,45 +86,27 @@ function ControlMenu<T extends ComposerModelOption | ComposerOption | ComposerPe
   tone?: "neutral" | "accent";
   onSelect: (option: T) => void;
 }) {
+  const selectedOption = options.find((option) => option.id === selectedId);
+
   return (
-    <details className={styles.controlMenu}>
-      <summary
-        aria-label={ariaLabel}
-        className={tone === "accent" ? styles.controlButtonAccent : styles.controlButton}
-        aria-disabled={disabled}
-        onClick={(event) => {
-          if (disabled) event.preventDefault();
-        }}
-      >
-        <span aria-hidden="true">{leading}</span>
-        <span className={styles.controlButtonLabel}>{label}</span>
-        <span aria-hidden="true">⌄</span>
-      </summary>
-      <div className={styles.controlPopover} role="menu">
-        {options.map((option) => (
-          <button
-            className={styles.controlOption}
-            key={option.id}
-            onClick={(event) => {
-              event.currentTarget.closest("details")?.removeAttribute("open");
-              onSelect(option);
-            }}
-            role="menuitemradio"
-            type="button"
-            aria-checked={option.id === selectedId}
-          >
-            <span className={styles.controlOptionText}>
-              <span className={styles.controlOptionLabel}>{option.label}</span>
-              {option.description ? (
-                <span className={styles.controlOptionDescription}>{option.description}</span>
-              ) : null}
-            </span>
-            <span aria-hidden="true" className={styles.controlCheck}>
-              {option.id === selectedId ? "✓" : ""}
-            </span>
-          </button>
-        ))}
-      </div>
-    </details>
+    <ShellSelect
+      ariaLabel={ariaLabel}
+      density="compact"
+      disabled={disabled}
+      leading={leading}
+      options={options.map((option) => ({
+        id: option.id,
+        label: option.label,
+        description: option.description,
+      }))}
+      placement="top-start"
+      placeholder={label}
+      tone={tone}
+      value={selectedOption?.id}
+      onValueChange={(value) => {
+        const option = options.find((candidate) => candidate.id === value);
+        if (option) onSelect(option);
+      }}
+    />
   );
 }

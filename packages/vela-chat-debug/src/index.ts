@@ -9,6 +9,7 @@ export type VelaChatDebugBottomAnchorBlockedReason =
   | "waiting_for_history_readiness"
   | "waiting_for_measurable_viewport"
   | "waiting_for_measurable_content"
+  | "waiting_for_resume_extent"
   | "waiting_for_post_layout_verification";
 
 export type VelaChatDebugRouteResumeStatus =
@@ -16,11 +17,30 @@ export type VelaChatDebugRouteResumeStatus =
   | "pending"
   | "restored";
 
+export type VelaChatDebugScrollWriteSource =
+  | "bottom_follow"
+  | "history_prepend"
+  | "route_resume"
+  | "route_resume_confirmation"
+  | "scrollbar_overlay"
+  | "user_scroll"
+  | "virtualizer_measurement";
+
+export interface VelaChatDebugScrollWrite {
+  action: "apply" | "suppress";
+  blockedBy: "route_resume_pending" | null;
+  nextScrollTop: number;
+  previousScrollTop: number;
+  reason: string;
+  source: VelaChatDebugScrollWriteSource;
+}
+
 export interface VelaChatDebugScrollRuntime {
   followOutput: boolean;
   bottomAnchorBlockedReason: VelaChatDebugBottomAnchorBlockedReason | null;
   routeResumeStatus: VelaChatDebugRouteResumeStatus;
   routeResumeScrollTop: number | null;
+  lastScrollWrite?: VelaChatDebugScrollWrite | null;
 }
 
 export interface VelaChatDebugConversationRuntime {

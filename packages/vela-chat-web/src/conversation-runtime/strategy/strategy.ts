@@ -7,6 +7,7 @@ import type {
 export interface ConversationStrategyInput {
   segments: ConversationRuntimeSegments;
   contentRef?: RefObject<HTMLDivElement | null>;
+  initialScrollTop?: number | null;
   scrollRef?: RefObject<HTMLElement | null>;
   isLoadingOlderHistory?: boolean;
   renderItem: (item: ConversationStreamItem) => ReactNode;

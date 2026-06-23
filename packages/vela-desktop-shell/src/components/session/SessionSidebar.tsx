@@ -47,46 +47,50 @@ export function SessionSidebar({
     <Sidebar>
       <VelaSidebarChrome showTrafficLights={showTrafficLights} />
       <SidebarContent>
-        <div className="new-session-row">
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                className="new-session-btn"
-                onClick={onCreateSession}
-                aria-label="New chat"
-                size="compact"
-              >
-                <Plus size={18} />
-                <span>New chat</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
+        <div className="vela-sidebar-fixed-controls">
+          <div className="new-session-row">
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  className="new-session-btn"
+                  onClick={onCreateSession}
+                  aria-label="New chat"
+                  size="compact"
+                >
+                  <Plus size={18} />
+                  <span>New chat</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </div>
+
+          <label className="search-box">
+            <Search size={16} aria-hidden />
+            <input
+              value={searchQuery}
+              onChange={(event) => onSearch?.(event.target.value)}
+              placeholder="Search sessions"
+            />
+          </label>
+        </div>
+
+        <div className="stable-session-list">
+          <div className="sidebar-section-heading vela-threads-heading">
+            <MessageSquareText size={14} aria-hidden />
+            Chats
+          </div>
+
+          <SidebarMenu className="session-list">
+            {sessions.map((session) => (
+              <SessionItem
+                key={session.id}
+                session={session}
+                isActive={session.id === currentSessionId}
+                onSelect={() => onSelectSession(session.id)}
+              />
+            ))}
           </SidebarMenu>
         </div>
-
-        <label className="search-box">
-          <Search size={16} aria-hidden />
-          <input
-            value={searchQuery}
-            onChange={(event) => onSearch?.(event.target.value)}
-            placeholder="Search sessions"
-          />
-        </label>
-
-        <div className="sidebar-section-heading vela-threads-heading">
-          <MessageSquareText size={14} aria-hidden />
-          Chats
-        </div>
-
-        <SidebarMenu className="session-list stable-session-list">
-          {sessions.map((session) => (
-            <SessionItem
-              key={session.id}
-              session={session}
-              isActive={session.id === currentSessionId}
-              onSelect={() => onSelectSession(session.id)}
-            />
-          ))}
-        </SidebarMenu>
       </SidebarContent>
       <SidebarFooter>
         <SidebarSettingsMenu

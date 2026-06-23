@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { register } from "node:module";
 import test from "node:test";
 
 import { Window } from "happy-dom";
@@ -26,6 +27,12 @@ import type {
   UpdateAgentConfigWireResponse,
   VeladClient,
 } from "../../vela-chat-client/src";
+import {
+  createMemoryKeyValueStore,
+  createVelaClientStateStore,
+} from "../../vela-chat-host-state/src";
+
+register(new URL("./css-module-loader.mjs", import.meta.url));
 
 test("full preload does not show history hydration again when switching back to a completed session", async () => {
   const dom = installDomRuntime();
@@ -132,6 +139,250 @@ test("full preload does not request older pages again when switching back to a c
   }
 });
 
+test("full preload keeps hydrated history items when switching back to a completed session", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { useVelaChatSession } = await import(
+      "../../vela-chat-controller/src/useVelaChatSession"
+    );
+    const client = new FakeVeladClient();
+    const snapshots: Array<{ itemIds: string[]; sessionId: string }> = [];
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    function Probe({ sessionId }: { sessionId: string }) {
+      const controller = useVelaChatSession({
+        client,
+        fetchBackends: false,
+        historyPolicy: "full_preload",
+        sessionId,
+      });
+      React.useEffect(() => {
+        snapshots.push({
+          itemIds: controller.conversation?.items.map((item) => item.id) ?? [],
+          sessionId: controller.activeSessionId,
+        });
+      }, [controller.activeSessionId, controller.conversation]);
+      return React.createElement("div");
+    }
+
+    await renderSession({ React, act, root, Probe, sessionId: "sess_a" });
+    await flushHookEffects(act, dom, () => client.olderLoads("sess_a") === 1);
+    assert.deepEqual(
+      latestItemIdsForSession(snapshots, "sess_a"),
+      ["sess_a:older", "sess_a:tail"],
+      "initial full preload fixture must contain the older item before the tail item",
+    );
+
+    await renderSession({ React, act, root, Probe, sessionId: "sess_b" });
+    await flushHookEffects(act, dom, () => client.olderLoads("sess_b") === 1);
+    snapshots.length = 0;
+
+    await renderSession({ React, act, root, Probe, sessionId: "sess_a" });
+    await flushHookEffects(act, dom, () => client.tailLoads("sess_a") >= 2);
+
+    assert.deepEqual(
+      latestItemIdsForSession(snapshots, "sess_a"),
+      ["sess_a:older", "sess_a:tail"],
+      "returning to a completed full-preload session must reuse its hydrated history window instead of exposing tail-only content",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("full preload workbench restores a historical DOM anchor after switching completed session tabs", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { useVelaChatSession } = await import(
+      "../../vela-chat-controller/src/useVelaChatSession"
+    );
+    const { ChatWorkbenchView } = await import(
+      "../src/components/workbench/ChatWorkbenchView"
+    );
+    const client = new LongHistoryVeladClient();
+    const clientStateStore = createVelaClientStateStore(createMemoryKeyValueStore(), {
+      hostId: "full-preload-workbench-scroll-anchor-red-test",
+    });
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    function Probe({ sessionId }: { sessionId: string }) {
+      const controller = useVelaChatSession({
+        client,
+        clientStateStore,
+        fetchBackends: false,
+        historyPolicy: "full_preload",
+        sessionId,
+      });
+      return React.createElement(ChatWorkbenchView, {
+        clientStateStore,
+        draft: controller.draft,
+        historyPhase: controller.historyPhase,
+        isLoadingOlder: controller.isLoadingOlder,
+        model: controller.model,
+        onDraftChange: controller.setDraft,
+        onLoadOlder: controller.loadOlderConversation,
+        onSubmit: controller.send,
+      });
+    }
+
+    await renderSession({ React, act, root, Probe, sessionId: "sess_a" });
+    await flushHookEffects(
+      act,
+      dom,
+      () =>
+        client.olderLoads("sess_a") === 1 &&
+        container.querySelector(".conversation") !== null,
+    );
+    await flushFrames(act, dom, [16, 32, 48, 64]);
+
+    const scrollElement = container.querySelector(".conversation") as HTMLElement | null;
+    assert.notEqual(scrollElement, null, "expected the hydrated workbench to mount");
+    await act(async () => {
+      scrollElement!.scrollTop = 720;
+      const scrollEvent = document.createEvent("Event");
+      scrollEvent.initEvent("scroll", true, false);
+      scrollElement!.dispatchEvent(scrollEvent);
+    });
+    const anchorBefore = findTurnGroupByText(container, "第 6 条历史消息 for sess_a");
+    assert.notEqual(anchorBefore, null, "expected the historical anchor to be rendered before switching away");
+    assert.equal(
+      anchorBefore!.getBoundingClientRect().top,
+      0,
+      "test fixture should pin the historical item at the viewport top before switching away",
+    );
+
+    await renderSession({ React, act, root, Probe, sessionId: "sess_b" });
+    await flushHookEffects(
+      act,
+      dom,
+      () =>
+        client.olderLoads("sess_b") === 1 &&
+        container.querySelector(".conversation") !== null,
+    );
+    await flushFrames(act, dom, [80, 96, 112, 128]);
+
+    await renderSession({ React, act, root, Probe, sessionId: "sess_a" });
+    await flushHookEffects(
+      act,
+      dom,
+      () =>
+        client.tailLoads("sess_a") >= 2 &&
+        container.querySelector(".conversation") !== null,
+    );
+    await flushFrames(act, dom, [144, 160, 176, 192, 208, 224, 240, 256]);
+
+    const restoredScrollElement = container.querySelector(".conversation") as HTMLElement | null;
+    const anchorAfter = findTurnGroupByText(container, "第 6 条历史消息 for sess_a");
+    assert.notEqual(restoredScrollElement, null, "expected workbench conversation after switching back");
+    assert.notEqual(anchorAfter, null, "switching back must keep the preloaded historical DOM anchor available");
+    assert.equal(
+      restoredScrollElement!.scrollTop,
+      720,
+      "switching back to a completed full-preload session must restore the remembered historical scroll offset",
+    );
+    assert.equal(
+      anchorAfter!.getBoundingClientRect().top,
+      0,
+      "switching back must restore the same historical anchor, not just expose some session content",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("stale older-page completion cannot clear the active session hydration state", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { useVelaChatSession } = await import(
+      "../../vela-chat-controller/src/useVelaChatSession"
+    );
+    const client = new DeferredOlderVeladClient();
+    const snapshots: Array<{
+      historyPhase: string;
+      isLoadingOlder: boolean;
+      sessionId: string;
+    }> = [];
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    function Probe({ sessionId }: { sessionId: string }) {
+      const controller = useVelaChatSession({
+        client,
+        fetchBackends: false,
+        historyPolicy: "full_preload",
+        sessionId,
+      });
+      React.useEffect(() => {
+        snapshots.push({
+          historyPhase: controller.historyPhase,
+          isLoadingOlder: controller.isLoadingOlder,
+          sessionId: controller.activeSessionId,
+        });
+      }, [
+        controller.activeSessionId,
+        controller.historyPhase,
+        controller.isLoadingOlder,
+      ]);
+      return React.createElement("div");
+    }
+
+    await renderSession({ React, act, root, Probe, sessionId: "sess_a" });
+    await flushHookEffects(act, dom, () => client.hasPendingOlder("sess_a"));
+
+    await renderSession({ React, act, root, Probe, sessionId: "sess_b" });
+    await flushHookEffects(act, dom, () => client.hasPendingOlder("sess_b"));
+    assert.equal(
+      latestHydrationSnapshot(snapshots, "sess_b")?.isLoadingOlder,
+      true,
+      "fixture must leave the active session in its own full-history hydration request",
+    );
+
+    await act(async () => {
+      client.resolveOlder("sess_a");
+      await Promise.resolve();
+    });
+    await flushHookEffects(act, dom, () =>
+      latestHydrationSnapshot(snapshots, "sess_b")?.isLoadingOlder === false,
+    );
+
+    assert.equal(
+      latestHydrationSnapshot(snapshots, "sess_b")?.isLoadingOlder,
+      true,
+      "a stale older-page finally from another session must not clear the active session loading flag",
+    );
+
+    await act(async () => {
+      client.resolveOlder("sess_b");
+      await Promise.resolve();
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 async function renderSession({
   React,
   act,
@@ -150,6 +401,24 @@ async function renderSession({
   });
 }
 
+function latestItemIdsForSession(
+  snapshots: Array<{ itemIds: string[]; sessionId: string }>,
+  sessionId: string,
+) {
+  return snapshots.findLast((snapshot) => snapshot.sessionId === sessionId)?.itemIds ?? [];
+}
+
+function latestHydrationSnapshot(
+  snapshots: Array<{
+    historyPhase: string;
+    isLoadingOlder: boolean;
+    sessionId: string;
+  }>,
+  sessionId: string,
+) {
+  return snapshots.findLast((snapshot) => snapshot.sessionId === sessionId);
+}
+
 async function flushHookEffects(
   act: typeof import("react").act,
   dom: ReturnType<typeof installDomRuntime>,
@@ -162,6 +431,26 @@ async function flushHookEffects(
     });
     dom.flushAnimationFrame(index * 16);
   }
+}
+
+async function flushFrames(
+  act: typeof import("react").act,
+  dom: ReturnType<typeof installDomRuntime>,
+  frames: number[],
+) {
+  await act(async () => {
+    for (const frame of frames) {
+      dom.flushAnimationFrame(frame);
+    }
+  });
+}
+
+function findTurnGroupByText(container: Element, text: string): HTMLElement | null {
+  return (
+    Array.from(container.querySelectorAll(".turnGroup")).find((element) =>
+      element.textContent?.includes(text),
+    ) as HTMLElement | undefined
+  ) ?? null;
 }
 
 class FakeVeladClient implements VeladClient {
@@ -294,6 +583,103 @@ class FakeVeladClient implements VeladClient {
   }
 }
 
+class LongHistoryVeladClient extends FakeVeladClient {
+  private readonly tailLoadCount = new Map<string, number>();
+  private readonly olderLoadCount = new Map<string, number>();
+
+  override tailLoads(sessionId: string) {
+    return this.tailLoadCount.get(sessionId) ?? 0;
+  }
+
+  override olderLoads(sessionId: string) {
+    return this.olderLoadCount.get(sessionId) ?? 0;
+  }
+
+  override async getConversation(
+    sessionId: string,
+    options?: ConversationWindowOptions,
+  ): Promise<ConversationWireView> {
+    if (options?.direction === "before") {
+      this.olderLoadCount.set(sessionId, this.olderLoads(sessionId) + 1);
+      return conversationRangeView({
+        count: 120,
+        hasOlder: false,
+        sessionId,
+        start: 0,
+      });
+    }
+
+    this.tailLoadCount.set(sessionId, this.tailLoads(sessionId) + 1);
+    return conversationRangeView({
+      count: 20,
+      hasOlder: true,
+      sessionId,
+      start: 120,
+    });
+  }
+}
+
+class DeferredOlderVeladClient extends FakeVeladClient {
+  private readonly pendingOlderResolvers = new Map<
+    string,
+    (value: ConversationWireView) => void
+  >();
+  private readonly pendingOlderPromises = new Map<string, Promise<ConversationWireView>>();
+  private readonly tailLoadCount = new Map<string, number>();
+  private readonly olderLoadCount = new Map<string, number>();
+
+  hasPendingOlder(sessionId: string) {
+    return this.pendingOlderResolvers.has(sessionId);
+  }
+
+  resolveOlder(sessionId: string) {
+    const resolve = this.pendingOlderResolvers.get(sessionId);
+    if (!resolve) throw new Error(`missing pending older request for ${sessionId}`);
+    this.pendingOlderResolvers.delete(sessionId);
+    this.pendingOlderPromises.delete(sessionId);
+    resolve(
+      conversationView({
+        hasOlder: false,
+        itemId: `${sessionId}:older`,
+        seq: this.tailLoads(sessionId) * 10 + this.olderLoads(sessionId) + 1,
+        sessionId,
+      }),
+    );
+  }
+
+  override tailLoads(sessionId: string) {
+    return this.tailLoadCount.get(sessionId) ?? 0;
+  }
+
+  override olderLoads(sessionId: string) {
+    return this.olderLoadCount.get(sessionId) ?? 0;
+  }
+
+  override async getConversation(
+    sessionId: string,
+    options?: ConversationWindowOptions,
+  ): Promise<ConversationWireView> {
+    if (options?.direction === "before") {
+      this.olderLoadCount.set(sessionId, this.olderLoads(sessionId) + 1);
+      const existing = this.pendingOlderPromises.get(sessionId);
+      if (existing) return existing;
+      const promise = new Promise<ConversationWireView>((resolve) => {
+        this.pendingOlderResolvers.set(sessionId, resolve);
+      });
+      this.pendingOlderPromises.set(sessionId, promise);
+      return promise;
+    }
+
+    this.tailLoadCount.set(sessionId, this.tailLoads(sessionId) + 1);
+    return conversationView({
+      hasOlder: true,
+      itemId: `${sessionId}:tail`,
+      seq: this.tailLoads(sessionId) * 10,
+      sessionId,
+    });
+  }
+}
+
 function conversationView({
   hasOlder,
   itemId,
@@ -323,21 +709,62 @@ function conversationView({
   };
 }
 
+function conversationRangeView({
+  count,
+  hasOlder,
+  sessionId,
+  start,
+}: {
+  count: number;
+  hasOlder: boolean;
+  sessionId: string;
+  start: number;
+}): ConversationWireView {
+  const items = Array.from({ length: count }, (_, index) => {
+    const itemIndex = start + index;
+    return conversationItem({
+      id: `${sessionId}:item_${itemIndex}`,
+      seq: itemIndex,
+      sessionId,
+      text: `第 ${itemIndex} 条历史消息 for ${sessionId}`,
+    });
+  });
+  const first = items[0];
+  const last = items.at(-1);
+  return {
+    cursor: {
+      epoch: 1,
+      event_id: last ? `evt_${last.id}` : `evt_${sessionId}:empty`,
+      seq: last?.source_event_ranges[0]?.to_seq ?? 0,
+    },
+    items,
+    session_id: sessionId,
+    window: {
+      first_item_id: first?.id ?? null,
+      has_newer: false,
+      has_older: hasOlder,
+      last_item_id: last?.id ?? null,
+    },
+  };
+}
+
 function conversationItem({
   id,
   sessionId,
   seq,
+  text = `message for ${sessionId}`,
 }: {
   id: string;
   sessionId: string;
   seq: number;
+  text?: string;
 }): ConversationWireItem {
   const at = new Date(Date.UTC(2026, 5, 23, 0, 0, seq)).toISOString();
   return {
     created_at: at,
     id,
     kind: "assistant_message",
-    parts: [{ id: `${id}:part:0`, text: `message for ${sessionId}`, type: "text" }],
+    parts: [{ id: `${id}:part:0`, text, type: "text" }],
     revision: 1,
     source_event_ids: [`evt_${id}`],
     source_event_ranges: [
@@ -350,7 +777,7 @@ function conversationItem({
       },
     ],
     status: "completed",
-    text: `message for ${sessionId}`,
+    text,
     turn_id: `turn_${sessionId}`,
     updated_at: at,
   };
@@ -383,7 +810,12 @@ function installDomRuntime() {
     IS_REACT_ACT_ENVIRONMENT: globalThis.IS_REACT_ACT_ENVIRONMENT,
     cancelAnimationFrame: globalThis.cancelAnimationFrame,
     document: globalThis.document,
+    Element: globalThis.Element,
+    HTMLElement: globalThis.HTMLElement,
+    navigator: globalThis.navigator,
+    Node: globalThis.Node,
     requestAnimationFrame: globalThis.requestAnimationFrame,
+    ResizeObserver: globalThis.ResizeObserver,
     window: globalThis.window,
   };
   let nextFrameId = 0;
@@ -412,8 +844,98 @@ function installDomRuntime() {
     removeEventListener() {}
   }
 
+  class TestResizeObserver {
+    private callback: ResizeObserverCallback;
+
+    constructor(callback: ResizeObserverCallback) {
+      this.callback = callback;
+    }
+
+    observe(target: Element) {
+      this.callback(
+        [
+          {
+            target,
+            contentRect: target.getBoundingClientRect(),
+          } as ResizeObserverEntry,
+        ],
+        this as unknown as ResizeObserver,
+      );
+    }
+
+    disconnect() {}
+    unobserve() {}
+  }
+
+  Object.defineProperty(window.HTMLElement.prototype, "clientWidth", {
+    configurable: true,
+    get() {
+      return String(this.className ?? "").includes("conversation") ? 900 : 760;
+    },
+  });
+  Object.defineProperty(window.HTMLElement.prototype, "clientHeight", {
+    configurable: true,
+    get() {
+      return String(this.className ?? "").includes("conversation") ? 600 : 80;
+    },
+  });
+  Object.defineProperty(window.HTMLElement.prototype, "scrollHeight", {
+    configurable: true,
+    get() {
+      const className = String(this.className ?? "");
+      if (className.includes("conversation") || className.includes("turnList")) {
+        return 2600;
+      }
+      if (className.includes("virtualizedHistoryItem")) return 80;
+      return 120;
+    },
+  });
+  window.HTMLElement.prototype.getBoundingClientRect = function getBoundingClientRect() {
+    const className = String(this.className ?? "");
+    if (className.includes("turnGroup")) {
+      const groups = Array.from(document.querySelectorAll(".turnGroup"));
+      const index = groups.indexOf(this as Element);
+      const scrollElement = document.querySelector(".conversation") as HTMLElement | null;
+      const itemHeight = 120;
+      const top = Math.max(0, index) * itemHeight - (scrollElement?.scrollTop ?? 0);
+      return {
+        bottom: top + itemHeight,
+        height: itemHeight,
+        left: 0,
+        right: 760,
+        toJSON() {
+          return {};
+        },
+        top,
+        width: 760,
+        x: 0,
+        y: top,
+      } as DOMRect;
+    }
+    const width = className.includes("conversation") ? 900 : 760;
+    const height = className.includes("conversation")
+      ? 600
+      : className.includes("virtualizedHistoryItem")
+        ? 80
+        : 120;
+    return {
+      bottom: height,
+      height,
+      left: 0,
+      right: width,
+      toJSON() {
+        return {};
+      },
+      top: 0,
+      width,
+      x: 0,
+      y: 0,
+    } as DOMRect;
+  };
+
   window.requestAnimationFrame = requestAnimationFrame;
   window.cancelAnimationFrame = cancelAnimationFrame;
+  window.ResizeObserver = TestResizeObserver as unknown as typeof ResizeObserver;
   Object.defineProperty(window, "EventSource", {
     configurable: true,
     value: TestEventSource,
@@ -423,9 +945,23 @@ function installDomRuntime() {
     configurable: true,
     value: window.document,
   });
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: window.navigator,
+  });
+  Object.defineProperty(globalThis, "Node", { configurable: true, value: window.Node });
+  Object.defineProperty(globalThis, "Element", { configurable: true, value: window.Element });
+  Object.defineProperty(globalThis, "HTMLElement", {
+    configurable: true,
+    value: window.HTMLElement,
+  });
   Object.defineProperty(globalThis, "EventSource", {
     configurable: true,
     value: TestEventSource,
+  });
+  Object.defineProperty(globalThis, "ResizeObserver", {
+    configurable: true,
+    value: TestResizeObserver,
   });
   Object.defineProperty(globalThis, "requestAnimationFrame", {
     configurable: true,
@@ -449,7 +985,12 @@ function installDomRuntime() {
     restore() {
       restoreGlobal("window", previous.window);
       restoreGlobal("document", previous.document);
+      restoreGlobal("navigator", previous.navigator);
+      restoreGlobal("Node", previous.Node);
+      restoreGlobal("Element", previous.Element);
+      restoreGlobal("HTMLElement", previous.HTMLElement);
       restoreGlobal("EventSource", previous.EventSource);
+      restoreGlobal("ResizeObserver", previous.ResizeObserver);
       restoreGlobal("requestAnimationFrame", previous.requestAnimationFrame);
       restoreGlobal("cancelAnimationFrame", previous.cancelAnimationFrame);
       restoreGlobal("IS_REACT_ACT_ENVIRONMENT", previous.IS_REACT_ACT_ENVIRONMENT);

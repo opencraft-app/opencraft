@@ -445,8 +445,9 @@ test("chat transcript hides native scrollbars behind a cross-platform overlay", 
 
   assert.match(conversationSource, /useConversationScrollbarOverlay/);
   assert.match(overlaySource, /ResizeObserver/);
-  assert.match(overlaySource, /scrollTop\s*=/);
-  assert.match(overlaySource, /style\.scrollBehavior\s*=\s*"auto"/);
+  assert.match(overlaySource, /applyConversationScrollWrite/);
+  assert.match(overlaySource, /source:\s*"scrollbar_overlay"/);
+  assert.doesNotMatch(overlaySource, /\b(?:element|scrollElement|container)\.scrollTop\s*=/);
   assert.match(overlaySource, /computeScrollOffsetFromThumbOffset/);
   assert.match(conversation, /overscroll-behavior:\s*contain;/);
   assert.match(conversation, /scrollbar-width:\s*none;/);
@@ -885,7 +886,12 @@ test("chat workbench ignores late read-model responses from stale sessions", () 
     source,
     /if \(!isCurrentSessionRequest\(activeSessionIdRef\.current,\s*requestedSessionId\)\) return;/,
   );
-  assert.match(source, /commitConversation\(null\)/);
+  assert.match(source, /conversationCacheRef/);
+  assert.match(
+    source,
+    /conversationCacheRef\.current\.get\(activeSessionId\) \?\? null/,
+  );
+  assert.match(source, /conversationCacheRef\.current\.set/);
   assert.match(source, /commitRequests\(null\)/);
   assert.match(source, /setStreamConnected\(false\)/);
   assert.match(source, /const openSession = useCallback/);
@@ -1142,19 +1148,18 @@ test("composer primary control keeps codex-desktop dimensions in narrow flex lay
 
   const primaryControlBlock = styles.match(/\.sendButton,\n\.stopButton\s*\{[^}]+\}/)?.[0] ?? "";
   const stopButtonBlock = [...styles.matchAll(/\.stopButton\s*\{[^}]+\}/g)].at(-1)?.[0] ?? "";
-  const stopGlyphBlock = styles.match(/\.stopGlyph\s*\{[^}]+\}/)?.[0] ?? "";
 
-  assert.match(primaryControlBlock, /width:\s*34px;/);
-  assert.match(primaryControlBlock, /height:\s*34px;/);
-  assert.match(primaryControlBlock, /min-width:\s*34px;/);
-  assert.match(primaryControlBlock, /min-height:\s*34px;/);
-  assert.match(primaryControlBlock, /flex:\s*0 0 34px;/);
+  assert.match(primaryControlBlock, /width:\s*38px;/);
+  assert.match(primaryControlBlock, /height:\s*38px;/);
+  assert.match(primaryControlBlock, /min-width:\s*38px;/);
+  assert.match(primaryControlBlock, /min-height:\s*38px;/);
+  assert.match(primaryControlBlock, /flex:\s*0 0 38px;/);
   assert.match(primaryControlBlock, /aspect-ratio:\s*1;/);
-  assert.match(primaryControlBlock, /border-radius:\s*8px;/);
-  assert.match(stopButtonBlock, /width:\s*38px;/);
-  assert.match(stopButtonBlock, /height:\s*38px;/);
+  assert.match(primaryControlBlock, /border-radius:\s*999px;/);
+  assert.match(primaryControlBlock, /box-shadow:/);
+  assert.match(stopButtonBlock, /background:\s*#191d21;/);
   assert.match(stopButtonBlock, /border-radius:\s*999px;/);
-  assert.match(stopGlyphBlock, /flex:\s*0 0 auto;/);
+  assert.doesNotMatch(styles, /\.stopGlyph/);
 });
 
 test("composer input frame matches the codex-desktop visual rhythm", () => {
@@ -1196,12 +1201,12 @@ test("composer input frame matches the codex-desktop visual rhythm", () => {
   assert.match(rightBlock, /justify-content:\s*flex-end;/);
   assert.match(rightBlock, /margin-left:\s*auto;/);
 
-  assert.match(iconButtonBlock, /width:\s*36px;/);
-  assert.match(iconButtonBlock, /height:\s*36px;/);
+  assert.match(iconButtonBlock, /width:\s*32px;/);
+  assert.match(iconButtonBlock, /height:\s*32px;/);
   assert.match(iconButtonBlock, /border:\s*1px solid #e7e5e4;/);
   assert.match(iconButtonBlock, /border-radius:\s*8px;/);
   assert.match(styles, /@supports \(corner-shape:\s*superellipse\(1\.5\)\)\s*\{[^}]*\.composer\s*\{[^}]*corner-shape:\s*superellipse\(1\.5\);/s);
-  assert.match(styles, /@container composer-footer \(width <= 440px\)\s*\{[^}]*\.controlButtonLabel\s*\{[^}]*display:\s*none;/s);
+  assert.doesNotMatch(styles, /\.controlButtonLabel/);
 });
 
 test("composer primary control switches to stop while a turn is running", () => {
@@ -1225,8 +1230,10 @@ test("composer primary control switches to stop while a turn is running", () => 
 
   assert.match(promptInput, /isRunning/);
   assert.match(promptInput, /onStop/);
+  assert.match(promptInput, /import \{ ArrowUp, Mic, Square \} from "lucide-react";/);
   assert.match(promptInput, /aria-label=\{isStopControl \? "Stop generation" : "Send message"\}/);
-  assert.match(promptInput, /<span className=\{styles\.stopGlyph\} aria-hidden="true" \/>/);
+  assert.match(promptInput, /<Square size=\{13\} strokeWidth=\{0\} fill="currentColor" aria-hidden="true" \/>/);
+  assert.match(promptInput, /<ArrowUp size=\{22\} strokeWidth=\{2\.4\} aria-hidden="true" \/>/);
   assert.match(composer, /isRunning/);
   assert.match(composer, /onStop/);
   assert.match(workbenchView, /isRunning=\{webModel\.composer\.isRunning\}/);
@@ -1235,19 +1242,20 @@ test("composer primary control switches to stop while a turn is running", () => 
   assert.match(chatWorkbench, /client\.cancelSession\(\{ sessionId: requestedSessionId \}\)/);
 });
 
-test("composer does not expose dictation as an enabled mock action", () => {
+test("composer gates dictation behind browser speech recognition", () => {
   const promptInput = readFileSync(
     join(root, "packages/vela-chat-web/src/primitives/prompt-input/PromptInput.tsx"),
     "utf8",
   );
 
-  assert.match(promptInput, /aria-label="Dictation unavailable"/);
-  assert.match(promptInput, /title="Dictation unavailable"/);
-  assert.match(
-    promptInput,
-    /<button[\s\S]*aria-label="Dictation unavailable"[\s\S]*disabled[\s\S]*>\s*⌘\s*<\/button>/,
-  );
-  assert.doesNotMatch(promptInput, /aria-label="Dictation"/);
+  assert.match(promptInput, /import \{ ArrowUp, Mic, Square \} from "lucide-react";/);
+  assert.match(promptInput, /window\.SpeechRecognition \|\| window\.webkitSpeechRecognition/);
+  assert.match(promptInput, /recognition\.interimResults = true;/);
+  assert.match(promptInput, /recognition\.onresult = \(event\) =>/);
+  assert.match(promptInput, /aria-label=\{isDictating \? "Stop dictation" : "Start dictation"\}/);
+  assert.match(promptInput, /disabled=\{!supportsDictation\}/);
+  assert.match(promptInput, /<Mic size=\{17\} strokeWidth=\{2\.1\} aria-hidden="true" \/>/);
+  assert.doesNotMatch(promptInput, />\s*⌘\s*</);
 });
 
 test("user message copy control is omitted when there is no text to copy", () => {
@@ -1289,4 +1297,32 @@ test("user uploaded images avoid blocking long conversation rendering", () => {
 
   assert.match(source, /loading="lazy"/);
   assert.match(source, /decoding="async"/);
+});
+
+test("conversation scroll controller does not bypass scroll write arbitration", () => {
+  const source = readFileSync(
+    join(root, "packages/vela-chat-web/src/conversation-runtime/scroll/useConversationScrollController.ts"),
+    "utf8",
+  );
+
+  assert.match(source, /applyConversationScrollWrite/);
+  assert.doesNotMatch(
+    source,
+    /\b(?:element|scrollElement|container)\.scrollTop\s*=/,
+    "programmatic scrollTop writes in the controller must go through scrollWrite.ts",
+  );
+});
+
+test("semantic scroll anchors compute restore targets but never write DOM scroll state", () => {
+  const source = readFileSync(
+    join(root, "packages/vela-chat-web/src/conversation-runtime/scroll/scrollAnchor.ts"),
+    "utf8",
+  );
+
+  assert.match(source, /getConversationScrollAnchorRestoreTarget/);
+  assert.doesNotMatch(
+    source,
+    /\b(?:element|scrollElement|container)\.scrollTop\s*=/,
+    "scrollAnchor.ts should stay pure and leave DOM writes to scrollWrite.ts",
+  );
 });

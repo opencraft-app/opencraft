@@ -83,6 +83,76 @@ test("conversation persists the current detached scroll offset when switching se
   }
 });
 
+test("conversation route leave prefers the current DOM offset over an older follow-output snapshot", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { buildChatRenderModel } = await import("../../vela-chat-render-model/src");
+    const { toWebChatModel } = await import("../src/adapters/toWebBlocks");
+    const { VelaConversation } = await import("../src/components/conversation/VelaConversation");
+
+    const clientStateStore = createVelaClientStateStore(createMemoryKeyValueStore(), {
+      hostId: "scroll-state-stale-follow-test",
+    });
+    clientStateStore.conversationScroll.write("sess_a", {
+      followOutput: true,
+      routeKey: "sess_a",
+      scrollTop: 1800,
+    });
+
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const modelFor = (sessionId: string) =>
+      toWebChatModel(
+        buildChatRenderModel(buildLongConversationSurface(sessionId), {
+          kind: "desktop_web",
+        }),
+      );
+
+    await act(async () => {
+      root.render(
+        React.createElement(VelaConversation, {
+          clientStateStore,
+          webModel: modelFor("sess_a"),
+        }),
+      );
+    });
+    await flushFrames(act, dom, [16, 32]);
+
+    const scrollElement = container.querySelector(".conversation") as HTMLElement | null;
+    assert.notEqual(scrollElement, null, "expected the conversation scroll element to mount");
+    scrollElement!.scrollTop = 620;
+
+    await act(async () => {
+      root.render(
+        React.createElement(VelaConversation, {
+          clientStateStore,
+          webModel: modelFor("sess_b"),
+        }),
+      );
+    });
+
+    assert.deepEqual(
+      clientStateStore.conversationScroll.read("sess_a"),
+      {
+        followOutput: false,
+        routeKey: "sess_a",
+        scrollTop: 620,
+      },
+      "a stale bottom-follow snapshot must not survive a route leave after the user moved the scroll container",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 test("conversation restores a middle scroll offset after switching away and back", async () => {
   const dom = installDomRuntime();
   try {
@@ -154,6 +224,261 @@ test("conversation restores a middle scroll offset after switching away and back
   }
 });
 
+test("conversation confirms route restore after post-layout scroll correction before persisting", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { buildChatRenderModel } = await import("../../vela-chat-render-model/src");
+    const { toWebChatModel } = await import("../src/adapters/toWebBlocks");
+    const { VelaConversation } = await import("../src/components/conversation/VelaConversation");
+
+    const clientStateStore = createVelaClientStateStore(createMemoryKeyValueStore(), {
+      hostId: "scroll-state-post-layout-confirmation-red-test",
+    });
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const modelFor = (sessionId: string) =>
+      toWebChatModel(
+        buildChatRenderModel(buildLongConversationSurface(sessionId), {
+          kind: "desktop_web",
+        }),
+      );
+
+    await act(async () => {
+      root.render(
+        React.createElement(VelaConversation, {
+          clientStateStore,
+          webModel: modelFor("sess_a"),
+        }),
+      );
+    });
+    await flushFrames(act, dom, [16, 32]);
+
+    const scrollElement = container.querySelector(".conversation") as HTMLElement | null;
+    assert.notEqual(scrollElement, null, "expected the conversation scroll element to mount");
+    scrollElement!.scrollTop = 420;
+
+    await act(async () => {
+      root.render(
+        React.createElement(VelaConversation, {
+          clientStateStore,
+          webModel: modelFor("sess_b"),
+        }),
+      );
+    });
+    scrollElement!.scrollTop = 0;
+
+    await act(async () => {
+      root.render(
+        React.createElement(VelaConversation, {
+          clientStateStore,
+          webModel: modelFor("sess_a"),
+        }),
+      );
+    });
+    for (const frame of [48, 64, 80]) {
+      await flushFrames(act, dom, [frame]);
+      if (scrollElement!.scrollTop === 420) break;
+    }
+    assert.equal(
+      scrollElement!.scrollTop,
+      420,
+      "route resume should restore the saved offset after switching back to the session",
+    );
+
+    await act(async () => {
+      scrollElement!.scrollTop = 83;
+      const scrollEvent = document.createEvent("Event");
+      scrollEvent.initEvent("scroll", true, false);
+      scrollElement!.dispatchEvent(scrollEvent);
+    });
+
+    await flushFrames(act, dom, [96, 112, 128]);
+
+    assert.equal(
+      scrollElement!.scrollTop,
+      420,
+      "a post-layout scroll correction must not be accepted until the saved route offset is confirmed",
+    );
+    assert.deepEqual(
+      clientStateStore.conversationScroll.read("sess_a"),
+      {
+        followOutput: false,
+        routeKey: "sess_a",
+        scrollTop: 420,
+      },
+      "post-layout correction must not overwrite the saved route offset before restore confirmation",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("conversation lets an explicit user scroll cancel a pending route restore", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { buildChatRenderModel } = await import("../../vela-chat-render-model/src");
+    const { toWebChatModel } = await import("../src/adapters/toWebBlocks");
+    const { VelaConversation } = await import("../src/components/conversation/VelaConversation");
+
+    const clientStateStore = createVelaClientStateStore(createMemoryKeyValueStore(), {
+      hostId: "scroll-state-user-cancel-route-restore-red-test",
+    });
+    clientStateStore.conversationScroll.write("sess_a", {
+      followOutput: false,
+      routeKey: "sess_a",
+      scrollTop: 780,
+    });
+
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        React.createElement(VelaConversation, {
+          clientStateStore,
+          webModel: toWebChatModel(
+            buildChatRenderModel(buildLongConversationSurface("sess_a"), {
+              kind: "desktop_web",
+            }),
+          ),
+        }),
+      );
+    });
+    await flushFrames(act, dom, [16]);
+
+    const scrollElement = container.querySelector(".conversation") as HTMLElement | null;
+    assert.notEqual(scrollElement, null, "expected the conversation scroll element to mount");
+    assert.equal(
+      scrollElement!.scrollTop,
+      780,
+      "test fixture should begin while the saved route restore is pending confirmation",
+    );
+
+    await act(async () => {
+      scrollElement!.dispatchEvent(
+        new window.WheelEvent("wheel", { bubbles: true, deltaY: -120 }),
+      );
+      scrollElement!.scrollTop = 120;
+      const scrollEvent = document.createEvent("Event");
+      scrollEvent.initEvent("scroll", true, false);
+      scrollElement!.dispatchEvent(scrollEvent);
+    });
+    await flushFrames(act, dom, [32, 48, 64, 80, 96, 112]);
+
+    assert.equal(
+      scrollElement!.scrollTop,
+      120,
+      "explicit user scroll during pending route restore must not be snapped back to the stale saved offset",
+    );
+    assertScrollStateMatches(
+      clientStateStore.conversationScroll.read("sess_a"),
+      { followOutput: false, routeKey: "sess_a", scrollTop: 120 },
+      "explicit user scroll during pending route restore must replace the stale saved route offset",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("conversation restores a just-scrolled offset when switching tabs before the pending writer frame", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { buildChatRenderModel } = await import("../../vela-chat-render-model/src");
+    const { toWebChatModel } = await import("../src/adapters/toWebBlocks");
+    const { VelaConversation } = await import("../src/components/conversation/VelaConversation");
+
+    const clientStateStore = createVelaClientStateStore(createMemoryKeyValueStore(), {
+      hostId: "scroll-state-immediate-tab-switch-test",
+    });
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const modelFor = (sessionId: string) =>
+      toWebChatModel(
+        buildChatRenderModel(buildLongConversationSurface(sessionId), {
+          kind: "desktop_web",
+        }),
+      );
+
+    await act(async () => {
+      root.render(
+        React.createElement(VelaConversation, {
+          clientStateStore,
+          webModel: modelFor("sess_a"),
+        }),
+      );
+    });
+    await flushFrames(act, dom, [16, 32]);
+
+    const scrollElement = container.querySelector(".conversation") as HTMLElement | null;
+    assert.notEqual(scrollElement, null, "expected the conversation scroll element to mount");
+
+    await act(async () => {
+      scrollElement!.scrollTop = 600;
+      const scrollEvent = document.createEvent("Event");
+      scrollEvent.initEvent("scroll", true, false);
+      scrollElement!.dispatchEvent(scrollEvent);
+    });
+
+    await act(async () => {
+      root.render(
+        React.createElement(VelaConversation, {
+          clientStateStore,
+          webModel: modelFor("sess_b"),
+        }),
+      );
+    });
+
+    assertScrollStateMatches(
+      clientStateStore.conversationScroll.read("sess_a"),
+      { followOutput: false, routeKey: "sess_a", scrollTop: 600 },
+      "route cleanup must flush the latest just-scrolled offset before the scheduled writer frame runs",
+    );
+
+    scrollElement!.scrollTop = 0;
+    await act(async () => {
+      root.render(
+        React.createElement(VelaConversation, {
+          clientStateStore,
+          webModel: modelFor("sess_a"),
+        }),
+      );
+    });
+    await flushFrames(act, dom, [48, 64, 80]);
+
+    assert.equal(
+      scrollElement!.scrollTop,
+      600,
+      "returning to the tab must restore the just-scrolled offset captured during the immediate switch",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 test("conversation records middle scroll events as detached even without wheel intent", async () => {
   const dom = installDomRuntime();
   try {
@@ -188,17 +513,395 @@ test("conversation records middle scroll events as detached even without wheel i
     const scrollElement = container.querySelector(".conversation") as HTMLElement | null;
     assert.notEqual(scrollElement, null, "expected the conversation scroll element to mount");
 
-    scrollElement!.scrollTop = 420;
-    const scrollEvent = document.createEvent("Event");
-    scrollEvent.initEvent("scroll", true, false);
-    scrollElement!.dispatchEvent(scrollEvent);
-    await flushFrames(act, dom, [48, 64]);
+    await act(async () => {
+      scrollElement!.scrollTop = 420;
+      const scrollEvent = document.createEvent("Event");
+      scrollEvent.initEvent("scroll", true, false);
+      scrollElement!.dispatchEvent(scrollEvent);
+    });
+    await flushFrames(act, dom, [48, 64, 80, 96, 112, 128]);
 
+    assertScrollStateMatches(clientStateStore.conversationScroll.read("sess_a"), {
+      followOutput: false,
+      routeKey: "sess_a",
+      scrollTop: 420,
+    });
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("conversation restores saved offset when route content becomes tall enough after mount", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { buildChatRenderModel } = await import("../../vela-chat-render-model/src");
+    const { toWebChatModel } = await import("../src/adapters/toWebBlocks");
+    const { VelaConversation } = await import("../src/components/conversation/VelaConversation");
+
+    const clientStateStore = createVelaClientStateStore(createMemoryKeyValueStore(), {
+      hostId: "scroll-state-late-content-red-test",
+    });
+    clientStateStore.conversationScroll.write("sess_a", {
+      followOutput: false,
+      routeKey: "sess_a",
+      scrollTop: 420,
+    });
+
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const modelFor = (count: number) =>
+      toWebChatModel(
+        buildChatRenderModel(buildConversationSurface("sess_a", count), {
+          kind: "desktop_web",
+        }),
+      );
+
+    dom.setConversationScrollHeight(600);
+    await act(async () => {
+      root.render(
+        React.createElement(VelaConversation, {
+          clientStateStore,
+          webModel: modelFor(2),
+        }),
+      );
+    });
+    await flushFrames(act, dom, [16, 32]);
+
+    const scrollElement = container.querySelector(".conversation") as HTMLElement | null;
+    assert.notEqual(scrollElement, null, "expected the conversation scroll element to mount");
+    scrollElement!.scrollTop = 0;
     assert.deepEqual(clientStateStore.conversationScroll.read("sess_a"), {
       followOutput: false,
       routeKey: "sess_a",
       scrollTop: 420,
     });
+
+    dom.setConversationScrollHeight(2600);
+    await act(async () => {
+      root.render(
+        React.createElement(VelaConversation, {
+          clientStateStore,
+          webModel: modelFor(140),
+        }),
+      );
+    });
+    await flushFrames(act, dom, [48, 64, 80, 96, 112, 128]);
+    assert.equal(
+      scrollElement!.scrollTop,
+      420,
+      "a pending route resume must retry when the same session receives enough content to contain the saved offset",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("conversation restores a saved detached offset on a fresh tall mount", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { buildChatRenderModel } = await import("../../vela-chat-render-model/src");
+    const { toWebChatModel } = await import("../src/adapters/toWebBlocks");
+    const { VelaConversation } = await import("../src/components/conversation/VelaConversation");
+
+    const clientStateStore = createVelaClientStateStore(createMemoryKeyValueStore(), {
+      hostId: "scroll-state-fresh-tall-mount-red-test",
+    });
+    clientStateStore.conversationScroll.write("sess_a", {
+      followOutput: false,
+      routeKey: "sess_a",
+      scrollTop: 420,
+    });
+
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    dom.setConversationScrollHeight(2600);
+    await act(async () => {
+      root.render(
+        React.createElement(VelaConversation, {
+          clientStateStore,
+          webModel: toWebChatModel(
+            buildChatRenderModel(buildLongConversationSurface("sess_a"), {
+              kind: "desktop_web",
+            }),
+          ),
+        }),
+      );
+    });
+    await flushFrames(act, dom, [16, 32, 48, 64, 80, 96, 112, 128]);
+
+    const scrollElement = container.querySelector(".conversation") as HTMLElement | null;
+    assert.notEqual(scrollElement, null, "expected conversation to mount");
+    assert.equal(
+      scrollElement!.scrollTop,
+      420,
+      "a saved detached offset must be restored on a fresh mount when the route content is already tall enough",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("workbench preserves a session scroll offset across history hydration unmounts", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { buildChatRenderModel } = await import("../../vela-chat-render-model/src");
+    const { ChatWorkbenchView } = await import(
+      "../src/components/workbench/ChatWorkbenchView"
+    );
+
+    const clientStateStore = createVelaClientStateStore(createMemoryKeyValueStore(), {
+      hostId: "workbench-hydration-scroll-red-test",
+    });
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const modelFor = (sessionId: string) =>
+      buildChatRenderModel(buildLongConversationSurface(sessionId), {
+        kind: "desktop_web",
+      });
+    const renderWorkbench = async (
+      sessionId: string,
+      historyPhase: "hydrating_history" | "ready",
+    ) => {
+      await act(async () => {
+        root.render(
+          React.createElement(ChatWorkbenchView, {
+            clientStateStore,
+            draft: "",
+            historyPhase,
+            model: modelFor(sessionId),
+            onDraftChange: () => {},
+            onSubmit: () => {},
+          }),
+        );
+      });
+    };
+
+    await renderWorkbench("sess_a", "ready");
+    await flushFrames(act, dom, [16, 32]);
+    const scrollElement = container.querySelector(".conversation") as HTMLElement | null;
+    assert.notEqual(scrollElement, null, "expected the conversation scroll element to mount");
+    scrollElement!.scrollTop = 420;
+
+    await renderWorkbench("sess_b", "hydrating_history");
+
+    assert.deepEqual(
+      clientStateStore.conversationScroll.read("sess_a"),
+      {
+        followOutput: false,
+        routeKey: "sess_a",
+        scrollTop: 420,
+      },
+      "entering another session's full-history hydration screen must persist the previous session scroll before the conversation unmounts",
+    );
+
+    await renderWorkbench("sess_b", "ready");
+    await flushFrames(act, dom, [48, 64]);
+    await renderWorkbench("sess_a", "hydrating_history");
+    await renderWorkbench("sess_a", "ready");
+    await flushFrames(act, dom, [80, 96, 112, 128, 144, 160, 176, 192]);
+
+    const restoredScrollElement = container.querySelector(".conversation") as HTMLElement | null;
+    assert.notEqual(restoredScrollElement, null, "expected conversation to remount");
+    assert.equal(
+      restoredScrollElement!.scrollTop,
+      420,
+      "returning after the session's own hydration screen must restore the remembered historical offset",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("workbench keeps hydrated history and scroll offset stable after repeated session switches", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { buildChatRenderModel } = await import("../../vela-chat-render-model/src");
+    const { ChatWorkbenchView } = await import(
+      "../src/components/workbench/ChatWorkbenchView"
+    );
+
+    const clientStateStore = createVelaClientStateStore(createMemoryKeyValueStore(), {
+      hostId: "workbench-repeated-hydration-scroll-red-test",
+    });
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const modelFor = (sessionId: string) =>
+      buildChatRenderModel(buildLongConversationSurface(sessionId), {
+        kind: "desktop_web",
+      });
+    const renderWorkbench = async (
+      sessionId: string,
+      historyPhase: "hydrating_history" | "ready",
+    ) => {
+      await act(async () => {
+        root.render(
+          React.createElement(ChatWorkbenchView, {
+            clientStateStore,
+            draft: "",
+            historyPhase,
+            model: modelFor(sessionId),
+            onDraftChange: () => {},
+            onSubmit: () => {},
+          }),
+        );
+      });
+    };
+
+    await renderWorkbench("sess_a", "ready");
+    await flushFrames(act, dom, [16, 32]);
+    const scrollElement = container.querySelector(".conversation") as HTMLElement | null;
+    assert.notEqual(scrollElement, null, "expected the conversation scroll element to mount");
+    scrollElement!.scrollTop = 780;
+
+    for (let index = 0; index < 4; index += 1) {
+      await renderWorkbench("sess_b", "hydrating_history");
+      await renderWorkbench("sess_b", "ready");
+      await flushFrames(act, dom, [48 + index * 96, 64 + index * 96]);
+      await renderWorkbench("sess_a", "hydrating_history");
+      await renderWorkbench("sess_a", "ready");
+      await flushFrames(act, dom, [80 + index * 96, 96 + index * 96, 112 + index * 96, 128 + index * 96]);
+
+      const restoredScrollElement = container.querySelector(".conversation") as HTMLElement | null;
+      assert.notEqual(restoredScrollElement, null, "expected conversation to remount");
+      assert.equal(
+        restoredScrollElement!.scrollTop,
+        780,
+        `session scroll offset drifted after switch ${index + 1}`,
+      );
+      assert.deepEqual(
+        clientStateStore.conversationScroll.read("sess_a"),
+        {
+          followOutput: false,
+          routeKey: "sess_a",
+          scrollTop: 780,
+        },
+        `persisted session scroll state drifted after switch ${index + 1}`,
+      );
+    }
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("conversation restores the same visible stream item when content above it changes height", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { buildChatRenderModel } = await import("../../vela-chat-render-model/src");
+    const { toWebChatModel } = await import("../src/adapters/toWebBlocks");
+    const { VelaConversation } = await import("../src/components/conversation/VelaConversation");
+
+    const clientStateStore = createVelaClientStateStore(createMemoryKeyValueStore(), {
+      hostId: "scroll-state-anchor-drift-red-test",
+    });
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const modelFor = (sessionId: string) =>
+      toWebChatModel(
+        buildChatRenderModel(buildLongConversationSurface(sessionId), {
+          kind: "desktop_web",
+        }),
+      );
+
+    await act(async () => {
+      root.render(
+        React.createElement(VelaConversation, {
+          clientStateStore,
+          webModel: modelFor("sess_a"),
+        }),
+      );
+    });
+    await flushFrames(act, dom, [16, 32]);
+
+    const scrollElement = container.querySelector(".conversation") as HTMLElement | null;
+    assert.notEqual(scrollElement, null, "expected the conversation scroll element to mount");
+
+    await act(async () => {
+      scrollElement!.scrollTop = 720;
+      const scrollEvent = document.createEvent("Event");
+      scrollEvent.initEvent("scroll", true, false);
+      scrollElement!.dispatchEvent(scrollEvent);
+    });
+    const anchorBefore = findTurnGroupByText(container, "第 6 条长会话消息");
+    assert.notEqual(anchorBefore, null, "expected test fixture item to exist");
+    assert.equal(
+      anchorBefore!.getBoundingClientRect().top,
+      0,
+      "test fixture should start with the chosen item pinned at the viewport top",
+    );
+
+    await act(async () => {
+      root.render(
+        React.createElement(VelaConversation, {
+          clientStateStore,
+          webModel: modelFor("sess_b"),
+        }),
+      );
+    });
+
+    dom.setTurnGroupLayoutShift({ fromIndex: 6, offsetPx: 120 });
+
+    await act(async () => {
+      root.render(
+        React.createElement(VelaConversation, {
+          clientStateStore,
+          webModel: modelFor("sess_a"),
+        }),
+      );
+    });
+    await flushFrames(act, dom, [48, 64, 80, 96, 112, 128]);
+
+    const anchorAfter = findTurnGroupByText(container, "第 6 条长会话消息");
+    assert.notEqual(anchorAfter, null, "expected chosen item after route restore");
+    assert.equal(
+      anchorAfter!.getBoundingClientRect().top,
+      0,
+      "returning to a session should preserve the visible item anchor, not only the old pixel offset",
+    );
+    assert.equal(
+      scrollElement!.scrollTop,
+      840,
+      "the restored pixel offset should compensate for new content height above the saved anchor",
+    );
 
     await act(async () => {
       root.unmount();
@@ -220,9 +923,41 @@ async function flushFrames(
   });
 }
 
+function findTurnGroupByText(container: Element, text: string): HTMLElement | null {
+  return (
+    Array.from(container.querySelectorAll(".turnGroup")).find((element) =>
+      element.textContent?.includes(text),
+    ) as HTMLElement | undefined
+  ) ?? null;
+}
+
+function assertScrollStateMatches(
+  actual: ReturnType<
+    ReturnType<typeof createVelaClientStateStore>["conversationScroll"]["read"]
+  >,
+  expected: {
+    followOutput: boolean;
+    routeKey: string;
+    scrollTop: number;
+  },
+  message?: string,
+) {
+  assert.notEqual(actual, null, message);
+  assert.equal(actual?.followOutput, expected.followOutput, message);
+  assert.equal(actual?.routeKey, expected.routeKey, message);
+  assert.equal(actual?.scrollTop, expected.scrollTop, message);
+}
+
 function buildLongConversationSurface(sessionId: string): ChatSurface {
+  return buildConversationSurface(sessionId, 140);
+}
+
+function buildConversationSurface(
+  sessionId: string,
+  itemCount: number,
+): ChatSurface {
   const items: ChatSurface["conversation"]["items"] = [];
-  for (let index = 0; index < 140; index += 1) {
+  for (let index = 0; index < itemCount; index += 1) {
     const id = `${sessionId}:assistant_${index}`;
     const at = new Date(Date.UTC(2026, 5, 23, 0, 0, index)).toISOString();
     items.push({
@@ -256,7 +991,7 @@ function buildLongConversationSurface(sessionId: string): ChatSurface {
         first_item_id: `${sessionId}:assistant_0`,
         has_newer: false,
         has_older: false,
-        last_item_id: `${sessionId}:assistant_139`,
+        last_item_id: `${sessionId}:assistant_${Math.max(0, itemCount - 1)}`,
       },
     },
     cursors: {},
@@ -281,6 +1016,11 @@ function installDomRuntime() {
     window: globalThis.window,
   };
   let nextFrameId = 0;
+  let conversationScrollHeight = 2600;
+  let turnGroupLayoutShift: { fromIndex: number; offsetPx: number } = {
+    fromIndex: Number.POSITIVE_INFINITY,
+    offsetPx: 0,
+  };
   const frames = new Map<number, FrameRequestCallback>();
   const requestAnimationFrame = (callback: FrameRequestCallback) => {
     nextFrameId += 1;
@@ -331,7 +1071,7 @@ function installDomRuntime() {
     get() {
       const className = String(this.className ?? "");
       if (className.includes("conversation") || className.includes("turnList")) {
-        return 2600;
+        return conversationScrollHeight;
       }
       if (className.includes("virtualizedHistoryItem")) return 80;
       return 120;
@@ -339,6 +1079,28 @@ function installDomRuntime() {
   });
   window.HTMLElement.prototype.getBoundingClientRect = function getBoundingClientRect() {
     const className = String(this.className ?? "");
+    if (className.includes("turnGroup")) {
+      const groups = Array.from(document.querySelectorAll(".turnGroup"));
+      const index = groups.indexOf(this as Element);
+      const scrollElement = document.querySelector(".conversation") as HTMLElement | null;
+      const itemHeight = 120;
+      const shift =
+        index >= turnGroupLayoutShift.fromIndex ? turnGroupLayoutShift.offsetPx : 0;
+      const top = Math.max(0, index) * itemHeight + shift - (scrollElement?.scrollTop ?? 0);
+      return {
+        bottom: top + itemHeight,
+        height: itemHeight,
+        left: 0,
+        right: 760,
+        toJSON() {
+          return {};
+        },
+        top,
+        width: 760,
+        x: 0,
+        y: top,
+      } as DOMRect;
+    }
     const width = className.includes("conversation") ? 900 : 760;
     const height = className.includes("conversation")
       ? 600
@@ -358,6 +1120,22 @@ function installDomRuntime() {
       x: 0,
       y: 0,
     } as DOMRect;
+  };
+  window.HTMLElement.prototype.scrollTo = function scrollTo(
+    options?: ScrollToOptions | number,
+    y?: number,
+  ) {
+    const top =
+      typeof options === "object"
+        ? options.top
+        : typeof y === "number"
+          ? y
+          : typeof options === "number"
+            ? options
+            : this.scrollTop;
+    if (!Number.isFinite(top)) return;
+    const maxScrollTop = Math.max(0, this.scrollHeight - this.clientHeight);
+    this.scrollTop = Math.min(maxScrollTop, Math.max(0, top ?? 0));
   };
 
   window.requestAnimationFrame = requestAnimationFrame;
@@ -404,6 +1182,13 @@ function installDomRuntime() {
       const callbacks = Array.from(frames.values());
       frames.clear();
       for (const callback of callbacks) callback(now);
+    },
+    setConversationScrollHeight(height: number) {
+      conversationScrollHeight = height;
+    },
+    setTurnGroupLayoutShift(shift: { fromIndex: number; offsetPx: number }) {
+      turnGroupLayoutShift = shift;
+      conversationScrollHeight += Math.max(0, shift.offsetPx);
     },
     restore() {
       restoreGlobal("window", previous.window);

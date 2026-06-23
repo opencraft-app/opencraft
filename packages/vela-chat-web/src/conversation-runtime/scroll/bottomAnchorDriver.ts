@@ -19,6 +19,7 @@ export type BottomAnchorBlockedReason =
   | "waiting_for_history_readiness"
   | "waiting_for_measurable_viewport"
   | "waiting_for_measurable_content"
+  | "waiting_for_resume_extent"
   | "waiting_for_post_layout_verification";
 
 export type BottomAnchorUserIntent = "none" | "scroll_up" | "scroll_down";

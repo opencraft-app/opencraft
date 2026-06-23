@@ -2,6 +2,10 @@
 
 Self-drawn web scrollbar overlay for the conversation surface.
 
+Read `../scroll/SCROLL_MODEL.md` before changing behavior. The overlay is only
+the visual scrollbar and pointer-input adapter; route resume, bottom-follow,
+history paging, and persistence are owned by `conversation-runtime/scroll`.
+
 The browser element still owns real scrolling. This folder mirrors its metrics
 into a cross-platform thumb and maps thumb drags back to `scrollTop`, following
 the same boundary as Paseo's web scrollbar.

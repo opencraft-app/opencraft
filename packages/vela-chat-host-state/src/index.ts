@@ -8,6 +8,12 @@ export interface ConversationScrollClientState {
   routeKey: string;
   scrollTop: number;
   followOutput: boolean;
+  anchor?: ConversationScrollAnchorClientState;
+}
+
+export interface ConversationScrollAnchorClientState {
+  itemId: string;
+  offsetTop: number;
 }
 
 export interface ComposerDraftClientState {
@@ -172,12 +178,19 @@ function parseJsonObject(raw: string | null): Record<string, unknown> | null {
 function serializeConversationScrollState(
   state: ConversationScrollClientState,
 ): string {
-  return JSON.stringify({
+  const value: Record<string, unknown> = {
     version: 1,
     route_key: state.routeKey,
     scroll_top: state.scrollTop,
     follow_output: state.followOutput,
-  });
+  };
+  if (isConversationScrollAnchorState(state.anchor)) {
+    value.anchor = {
+      item_id: state.anchor.itemId,
+      offset_top: state.anchor.offsetTop,
+    };
+  }
+  return JSON.stringify(value);
 }
 
 function parseConversationScrollState(
@@ -195,10 +208,43 @@ function parseConversationScrollState(
     return null;
   }
   if (typeof value.follow_output !== "boolean") return null;
+  const anchor = parseConversationScrollAnchorState(value.anchor);
   return {
     routeKey,
     scrollTop: value.scroll_top,
     followOutput: value.follow_output,
+    ...(anchor ? { anchor } : {}),
+  };
+}
+
+function isConversationScrollAnchorState(
+  value: ConversationScrollAnchorClientState | undefined,
+): value is ConversationScrollAnchorClientState {
+  return Boolean(
+    value &&
+      typeof value.itemId === "string" &&
+      value.itemId.length > 0 &&
+      Number.isFinite(value.offsetTop),
+  );
+}
+
+function parseConversationScrollAnchorState(
+  raw: unknown,
+): ConversationScrollAnchorClientState | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const value = raw as Record<string, unknown>;
+  if (typeof value.item_id !== "string" || value.item_id.length === 0) {
+    return null;
+  }
+  if (
+    typeof value.offset_top !== "number" ||
+    !Number.isFinite(value.offset_top)
+  ) {
+    return null;
+  }
+  return {
+    itemId: value.item_id,
+    offsetTop: value.offset_top,
   };
 }
 

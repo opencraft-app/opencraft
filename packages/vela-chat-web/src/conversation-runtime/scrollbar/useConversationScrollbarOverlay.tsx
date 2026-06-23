@@ -13,6 +13,7 @@ import {
 } from "react";
 import styles from "../../styles/desktop.module.css";
 import type { BottomAnchorUserIntent } from "../scroll/bottomAnchorDriver";
+import { applyConversationScrollWrite } from "../scroll/scrollWrite";
 import {
   computeScrollOffsetFromThumbDelta,
   computeScrollOffsetFromThumbOffset,
@@ -58,10 +59,15 @@ function readMetrics(element: HTMLElement): ScrollbarMetrics {
 }
 
 function scrollElementInstantlyTo(element: HTMLElement, top: number): void {
-  const previousScrollBehavior = element.style.scrollBehavior;
-  element.style.scrollBehavior = "auto";
-  element.scrollTop = top;
-  element.style.scrollBehavior = previousScrollBehavior;
+  applyConversationScrollWrite({
+    element,
+    phase: { routeResumeStatus: "idle" },
+    write: {
+      reason: "scrollbar_overlay",
+      scrollTop: top,
+      source: "scrollbar_overlay",
+    },
+  });
 }
 
 export function useConversationScrollbarOverlay(
