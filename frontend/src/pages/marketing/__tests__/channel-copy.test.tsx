@@ -94,7 +94,7 @@ describe("marketing channel copy", () => {
     );
 
     expect(screen.getAllByRole("heading", { name: "LightVela内测上线" }).length).toBeGreaterThan(0);
-    expect(screen.getByText("支持一键创建云端 Hermes，支持快速接入 QQ、微信、飞书通道，支持主流模型 API 接入，支持一键安装 Skill 技能。")).toBeInTheDocument();
+    expect(screen.getByText("支持一键创建云端 Hermes，支持快速接入Telegram、WhatsApp、Discord 等通道，支持主流模型 API 接入，支持一键安装 Skill 技能。")).toBeInTheDocument();
   });
 
   it("omits the Soul persona entry from the May changelog", () => {

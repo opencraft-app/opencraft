@@ -90,9 +90,7 @@ function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "achiev
         : "/assets/changelog/scheduled-tasks.webp"
       : variant === "soul"
       ? "/assets/changelog/soul-persona.webp"
-      : useEnglishAssets
-        ? "/assets/changelog/lightvela-launch-en.webp"
-        : "/assets/changelog/lightvela-launch.webp";
+      : "/assets/changelog/lightvela-launch-en.webp";
   const altText =
     variant === "cloudStorage"
       ? t("LightVela 支持云存储")
@@ -204,7 +202,7 @@ function ChangelogContent() {
         {
           id: "beta-launch",
           title: t("LightVela内测上线"),
-          desc: t("支持一键创建云端 Hermes，支持快速接入 QQ、微信、飞书通道，支持主流模型 API 接入，支持一键安装 Skill 技能。"),
+          desc: t("支持一键创建云端 Hermes，支持快速接入Telegram、WhatsApp、Discord 等通道，支持主流模型 API 接入，支持一键安装 Skill 技能。"),
           visual: "lobster",
         },
       ],
