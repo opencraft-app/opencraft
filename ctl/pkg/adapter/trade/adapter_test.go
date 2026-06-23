@@ -1081,6 +1081,7 @@ func TestRefundResource_Success(t *testing.T) {
 
 	adp := newTestAdapter(t, server.URL, "internal-token")
 	result, err := adp.RefundResource(context.Background(), "lhpass-r1", &RefundResourceRequest{
+		OwnerUin: "1234567890",
 		UIN:      "1234567890",
 		AppID:    251000001,
 		BundleID: "bundle_basic_monthly",
@@ -1102,8 +1103,9 @@ func TestRefundResource_Success(t *testing.T) {
 		t.Fatalf("expected application/json content-type, got %q", gotCT)
 	}
 	// 关键不变量（Q3=a 单条退款 + Q5=a 无 category_ids + Q27 trade 反查 SubProductCode
-	// + v0.6 路由切换 2026-06-23 撤回 OwnerUin）：DTO 3 字段全量进 HTTP body。
-	if gotReq.UIN != "1234567890" ||
+	// + v0.7 修订 2026-06-24 加回 OwnerUin）：DTO 4 字段全量进 HTTP body。
+	if gotReq.OwnerUin != "1234567890" ||
+		gotReq.UIN != "1234567890" ||
 		gotReq.AppID != 251000001 || gotReq.BundleID != "bundle_basic_monthly" {
 		t.Fatalf("unexpected request body: %+v", gotReq)
 	}

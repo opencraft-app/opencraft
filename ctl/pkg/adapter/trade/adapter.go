@@ -170,24 +170,30 @@ type DeleteResourceResult struct {
 
 // RefundResourceRequest 与 trade /internal/trade/resources/{resourceID}/refund 入参对齐。
 //
-// 设计稿：.tmp/trade-pass-refund-design.md v0.6 §3 + §4
+// 设计稿：.tmp/trade-pass-refund-design.md v0.7 §3 + §4
 //
-// 字段说明（3 字段最小集，与 DeleteResourceRequest 同款范式）：
+// 字段说明（4 字段最小集 + v0.7 加回 OwnerUin）：
+//   - OwnerUin：pass.uin 转 string（必填，v0.7 加回，传递给 trade 后走进 jifei OnlineRefund
+//     para 内平铺的 ownerUin 字段。trade pass 单 uin 模型下 OwnerUin == UIN（ctl pass 表
+//     只存单 uin，调用方同时给两字段传同值）。
 //   - UIN / AppID 必填（pass.uin / pass.app_id），由 ctl 调用方在 logic 层从 pass entity 读出后透传
 //   - BundleID：trade 端在调 jifei 前按 BundleID 反查 trade.bundle_definition 取 SubProductCode
 //     （与 DeleteResource 同款 Q26+Q27 拍板）
 //
-// **v0.6 路由切换 2026-06-23 删除 OwnerUin 字段**：trade 端 OnlineRefund 从签名链路
-// (resource-center 入口) 切到非签名链路 (jifei-test 入口，与 generateDeals 同款入口)，
-// PDF Deal 协议字面量不存在 ownerUin 字段，且 jifei-test 网关后端不做 extraPara.ownerUin
-// 硬校验，v0.5.1 引入的 OwnerUin 字段整体撤回。详见 jifeiclient/onlinerefund.go 头部
-// v0.6 注释。
+// **路由演进史（v0.5.1 → v0.6 → v0.7）**：
+//   - v0.5.1：OwnerUin 错放到 envelope.interface.extraPara（销毁链路资源中心专有路径）
+//   - v0.6（2026-06-23）：路由切到 jifei-test 非签名链路，但过度纠正地删除 OwnerUin
+//   - **v0.7（2026-06-24）**：加回 OwnerUin。trade 端 OnlineRefund 与 generateDeals 同属
+//     qcloud.Deal.* 接口族，para 内平铺 ownerUin（与 generateDeals.go:37 / generateDealsAndPay.go:31 /
+//     getPrice.go:66 同款）。jifei-test 入口仍对 ownerUin 做硬校验，缺则返
+//     returnCode=100001 "invalid ownerUin"。详见 jifeiclient/onlinerefund.go 头部 v0.7 注释。
 //
-// 拍板项对齐（v0.6）：
+// 拍板项对齐（v0.7）：
 //   - Q3=a 单条退款，本 DTO 不携带批量字段
 //   - Q5=a OnlineRefund 不传 category_ids / goodsCategoryId，本 DTO 不携带
 //   - Q41 trade 内部固定 region，ctl 不透传 RegionID
 type RefundResourceRequest struct {
+	OwnerUin string `json:"ownerUin"`
 	UIN      string `json:"uin"`
 	AppID    int64  `json:"appId"`
 	BundleID string `json:"bundleId"`

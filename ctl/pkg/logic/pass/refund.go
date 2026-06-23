@@ -148,16 +148,21 @@ func (l *logic) RefundPass(passID string, operatorUin int64, reason string) (*Re
 
 	// 步骤 3：同步调 trade.RefundResource
 	//
-	// DTO 3 字段最小集（与 DeleteResource 同款 Q27 拍板）：
+	// DTO 4 字段最小集（v0.7 加回 OwnerUin，与 DeleteResource Q27 + Deal 接口族范式对齐）：
+	//   - OwnerUin：pass.uin 转 string（v0.7 加回，trade pass 单 uin 模型下 OwnerUin == UIN
+	//     — ctl pass 表只存单 uin）
 	//   - UIN：pass.uin（int64 转 string；jifei 协议 uin 是字符串字面量）
 	//   - AppID：pass.app_id
 	//   - BundleID：pass.bundle_id（trade 内部反查 BundleDefinition.SubProductCode）
 	//
-	// **v0.6 路由切换 2026-06-23 撤回 OwnerUin 字段**：trade 端 OnlineRefund 从签名链路
-	// (resource-center 入口) 切到非签名链路 (jifei-test 入口)，OwnerUin 不再需要。详见
-	// trade/internal/jifeiclient/onlinerefund.go 头部 v0.6 注释。
+	// **路由演进史（v0.5.1 → v0.6 → v0.7）**：v0.6（2026-06-23）路由切换过度纠正地删除
+	// OwnerUin；v0.7（2026-06-24）修订加回 — trade 端 OnlineRefund 与 generateDeals 同属
+	// qcloud.Deal.* 接口族，para 内平铺 ownerUin（jifei-test 入口硬校验 ownerUin，缺则
+	// 返 returnCode=100001 "invalid ownerUin"）。详见 trade/internal/jifeiclient/onlinerefund.go
+	// 头部 v0.7 注释。
 	uinStr := strconv.FormatInt(entity.Uin, 10)
 	tradeReq := &tradeadapter.RefundResourceRequest{
+		OwnerUin: uinStr,
 		UIN:      uinStr,
 		AppID:    entity.AppID,
 		BundleID: entity.BundleID,
