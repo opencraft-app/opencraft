@@ -24,6 +24,9 @@ type SeoSiteRegion = 'cn' | 'global';
 const SITE_NAME = 'LightVela';
 const DEFAULT_OG_IMAGE_PATH = '/lightvela-logo.jpg';
 const DEFAULT_LAST_MODIFIED = '2026-06-23';
+const BAIDU_SITE_VERIFICATION = 'codeva-ip0AdXURxG';
+const WECHAT_SITE_VERIFICATION = 'pKLUCg80PuWPBYLB';
+const DEFAULT_THEME_COLOR = '#f7f4ff';
 
 const LOCALE_TO_URL_LANG: Record<SeoLocale, PublicUrlLang> = {
   'en-US': 'en-us',
@@ -306,6 +309,26 @@ export function absoluteUrlForUrlLang(lang: PublicUrlLang, path: string): string
 
 export function lastModified(): string {
   return process.env.NEXT_PUBLIC_BUILD_DATE || process.env.BUILD_DATE || DEFAULT_LAST_MODIFIED;
+}
+
+export function siteVerification() {
+  const google =
+    process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION || process.env.GOOGLE_SITE_VERIFICATION || undefined;
+  const yandex =
+    process.env.NEXT_PUBLIC_YANDEX_SITE_VERIFICATION || process.env.YANDEX_SITE_VERIFICATION || undefined;
+
+  return {
+    ...(google ? { google } : {}),
+    ...(yandex ? { yandex } : {}),
+    other: {
+      'baidu-site-verification': [BAIDU_SITE_VERIFICATION],
+      'wechat-site-verification': [WECHAT_SITE_VERIFICATION],
+    },
+  };
+}
+
+export function themeColor(): string {
+  return process.env.NEXT_PUBLIC_THEME_COLOR || DEFAULT_THEME_COLOR;
 }
 
 export function normalizePath(path: string): string {
