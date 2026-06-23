@@ -172,8 +172,13 @@ type DeleteResourceResult struct {
 //
 // 设计稿：.tmp/trade-pass-refund-design.md v0.5 §3 + §4
 //
-// 字段说明（3 字段最小集，与 DeleteResourceRequest 同款范式）：
+// 字段说明（4 字段最小集，与 DeleteResourceRequest 同款范式 + 2026-06-23 v0.5.1 OwnerUin 补丁）：
 //   - UIN / AppID 必填（pass.uin / pass.app_id），由 ctl 调用方在 logic 层从 pass entity 读出后透传
+//   - OwnerUin 必填（2026-06-23 v0.5.1 联调修复新增）：资源所有者主账号 uin，jifei 网关
+//     `envelope.interface.extraPara.ownerUin or .site` 二选一硬校验，缺则返
+//     returnCode=100000 "param error,need ownerUin or site"。ctl pass 单 uin 表
+//     （uin == owner_uin），logic 层直接传 entity.Uin 同值即可；trade 端会进一步
+//     中转到 envelope.interface.extraPara.ownerUin（与 v1.7.29 销毁链路同款）。
 //   - BundleID：trade 端在调 jifei 前按 BundleID 反查 trade.bundle_definition 取 SubProductCode
 //     （与 DeleteResource 同款 Q26+Q27 拍板）
 //
@@ -183,6 +188,7 @@ type DeleteResourceResult struct {
 //   - Q41 trade 内部固定 region，ctl 不透传 RegionID
 type RefundResourceRequest struct {
 	UIN      string `json:"uin"`
+	OwnerUin string `json:"ownerUin"`
 	AppID    int64  `json:"appId"`
 	BundleID string `json:"bundleId"`
 }
