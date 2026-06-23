@@ -1486,6 +1486,7 @@ func (w *AgentSidecarWorker) runACPSessionPrompt(ctx context.Context, job worker
 	var deltaSeq int64
 	var eventSeq int64
 	var streamedOutput strings.Builder
+	var sawReasoningDelta bool
 	stdoutParser := &sidecarStdoutParser{}
 	emitStdoutEvents := func(events []sidecarStdoutEvent) error {
 		for _, event := range events {
@@ -1499,6 +1500,9 @@ func (w *AgentSidecarWorker) runACPSessionPrompt(ctx context.Context, job worker
 			workerEvent, textDelta := workerEventFromSidecarEvent(job.JobID, atomic.AddInt64(&eventSeq, 1), event)
 			if workerEvent.Kind == "" {
 				continue
+			}
+			if workerEvent.Kind == "reasoning_delta" {
+				sawReasoningDelta = true
 			}
 			if textDelta {
 				atomic.AddInt64(&deltaSeq, 1)
@@ -1545,6 +1549,9 @@ func (w *AgentSidecarWorker) runACPSessionPrompt(ctx context.Context, job worker
 	}
 	if output == "" && streamedOutput.Len() > 0 {
 		output = cleanAgentVisibleOutput(streamedOutput.String())
+	}
+	if output == "" && sawReasoningDelta {
+		output = reasoningOnlyVisibleFallback()
 	}
 	fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=acp_runtime_result_envelope mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s job_id=%s saw_result=%t stdout_bytes=%d streamed_bytes=%d output_bytes=%d inner_sandbox_id=%s\n", time.Since(start).Seconds(), job.ACPSessionID, job.ACPSessionGeneration, runtime.OuterSandboxID, job.JobID, sawEnvelope, len(result.Stdout), streamedOutput.Len(), len(output), envelope.InnerSandboxID)
 	if output == "" && sawEnvelope {
@@ -2794,6 +2801,10 @@ func cleanAgentVisibleOutput(output string) string {
 	return stripWrapperControlLines(output)
 }
 
+func reasoningOnlyVisibleFallback() string {
+	return "The model produced reasoning but no final response."
+}
+
 func commandFailureDetail(err error, result CommandResult) string {
 	if err == nil {
 		return ""
@@ -2941,6 +2952,7 @@ func (w *AgentSidecarWorker) Run(ctx context.Context, job workerJob, emit func(w
 	var deltaSeq int64
 	var eventSeq int64
 	var streamedOutput strings.Builder
+	var sawReasoningDelta bool
 	stdoutParser := &sidecarStdoutParser{}
 	emitStdoutEvents := func(events []sidecarStdoutEvent) error {
 		for _, event := range events {
@@ -2951,6 +2963,9 @@ func (w *AgentSidecarWorker) Run(ctx context.Context, job workerJob, emit func(w
 			workerEvent, textDelta := workerEventFromSidecarEvent(job.JobID, atomic.AddInt64(&eventSeq, 1), event)
 			if workerEvent.Kind == "" {
 				continue
+			}
+			if workerEvent.Kind == "reasoning_delta" {
+				sawReasoningDelta = true
 			}
 			if textDelta {
 				atomic.AddInt64(&deltaSeq, 1)
@@ -3000,6 +3015,9 @@ func (w *AgentSidecarWorker) Run(ctx context.Context, job workerJob, emit func(w
 	}
 	if output == "" && streamedOutput.Len() > 0 {
 		output = cleanAgentVisibleOutput(streamedOutput.String())
+	}
+	if output == "" && sawReasoningDelta {
+		output = reasoningOnlyVisibleFallback()
 	}
 	timeline("sidecar_result_envelope", fmt.Sprintf("saw_result=%t", sawEnvelope), fmt.Sprintf("stdout_bytes=%d", len(result.Stdout)), fmt.Sprintf("streamed_bytes=%d", streamedOutput.Len()), fmt.Sprintf("output_bytes=%d", len(output)), "inner_sandbox_id="+quoteTimelineField(envelope.InnerSandboxID))
 	if output == "" && sawEnvelope {
