@@ -32,14 +32,12 @@ import (
 
 // refundResourceBody 是 refundResource 端点的标准入参。
 //
-// 与 deleteResourceBody 3 字段最小集同款（设计稿 §4.1：UIN/AppID/BundleID），
-// SubProductCode 由 trade 反查 BundleDefinition 取值。
-//
-// **v0.6 路由切换 2026-06-23**：撤回 v0.5.1 OwnerUin 字段（OnlineRefund 切到
-// jifei-test 非签名链路后不再需要 extraPara.ownerUin，详见 jifeiclient/onlinerefund.go
-// 头部 v0.6 注释）。
+// **v0.7 修订 2026-06-24**：加回 ownerUin 字段（v0.6 路由切换误删；jifei-test 入口对
+// Deal 接口族 ownerUin 仍做硬校验，与 generateDeals / generateDealsAndPay 同款 para 内平铺）。
+// trade pass 单 uin 模型下 ownerUin == uin（ctl pass 表只存单 uin）。
 func refundResourceBody() map[string]any {
 	return map[string]any{
+		"ownerUin": "100012345678",
 		"uin":      "100012345678",
 		"appId":    1300012345,
 		"bundleId": "bundle-test-1",
@@ -87,6 +85,9 @@ func TestRefundResource_HappyPath(t *testing.T) {
 	// 验证 jifei 入参拼装（设计稿 §4 + doc §4.1）。
 	if seenReq == nil {
 		t.Fatal("OnlineRefund not called")
+	}
+	if seenReq.OwnerUin != "100012345678" {
+		t.Errorf("ownerUin: got %q want 100012345678 (v0.7 plumb-through from refundResourceRequest)", seenReq.OwnerUin)
 	}
 	if seenReq.UIN != "100012345678" {
 		t.Errorf("uin: got %q want 100012345678", seenReq.UIN)
@@ -246,12 +247,14 @@ func TestRefundResource_JifeiHTTPError(t *testing.T) {
 }
 
 // TestRefundResource_RequiredFieldChecks 验证必填字段表驱动校验：
-// 缺 uin / appId<=0 / 缺 bundleId 全报 400 InvalidRequest（与 deleteResource 同款）。
+// 缺 ownerUin / 缺 uin / appId<=0 / 缺 bundleId 全报 400 InvalidRequest（与 deleteResource 同款，v0.7 补 ownerUin）。
 func TestRefundResource_RequiredFieldChecks(t *testing.T) {
 	cases := []struct {
 		name    string
 		mutator func(map[string]any)
 	}{
+		{name: "missing_ownerUin", mutator: func(b map[string]any) { delete(b, "ownerUin") }},
+		{name: "empty_ownerUin", mutator: func(b map[string]any) { b["ownerUin"] = "  " }},
 		{name: "missing_uin", mutator: func(b map[string]any) { delete(b, "uin") }},
 		{name: "empty_uin", mutator: func(b map[string]any) { b["uin"] = "  " }},
 		{name: "zero_appId", mutator: func(b map[string]any) { b["appId"] = 0 }},

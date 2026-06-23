@@ -1,14 +1,19 @@
-// trade pass 退款链路 OnlineRefund 单测（trade-pass-refund-design.md v0.6 §8 commit 1）。
+// trade pass 退款链路 OnlineRefund 单测（trade-pass-refund-design.md v0.7 §8 commit 1）。
 //
 // 协议依据：/root/project/mono/.tmp/线上退设备退款.doc §4.1 + §4.2 + §5 + §6.1
 //
 // 复用本包既有 envelopeForSuccess / envelopeForError / fixedEventIDProvider /
 // fixedNowProvider helper（见 client_test.go），与 generatedeals_test.go 同款非签名路径范式。
 //
-// **v0.6 路由切换（2026-06-23 用户拍板）**：撤回 v0.5.1 OwnerUin patch + 切换到
-// jifei-test CGW 非签名链路。本文件断言形态从"销毁链路签名链路同款（envelope.interface.auth
-// 4 字段必存）"改为"generateDeals 非签名链路同款（envelope.interface.auth 必不存）"，
-// 同时撤回所有 OwnerUin / extraPara 相关测试 fixture 与断言。
+// **v0.6 路由切换（2026-06-23）**：撤回 v0.5.1 OwnerUin patch + 切换到
+// jifei-test CGW 非签名链路。
+//
+// **v0.7 修订（2026-06-24）**：协议是唯一真源 — OnlineRefund 同属 qcloud.Deal.* 接口族，
+// 与 generateDeals / generateDealsAndPay / getPrice / getmidasearmarking 同款，**para 内平铺
+// ownerUin 字段**。本文件反转断言从"para wire MUST NOT contain ownerUin"改为正向
+// 断言"para wire MUST contain ownerUin"，HappyPath fixture 加回 OwnerUin，MissingRequired
+// 补 missing_OwnerUin case。路由间 v0.6 表面不变（envelope.interface.auth MUST NOT 存在
+// + envelope.interface.extraPara MUST NOT 存在）。
 package jifeiclient
 
 import (
@@ -27,7 +32,8 @@ import (
 //   - envelope 顶层 7 字段正确（version / componentName / caller / eventId / timestamp / interface.interfaceName）
 //   - request body para 字段（camelCase JSON tag）按 doc §4.1 完整发出
 //   - **request body MUST NOT 含 interface.auth**（v0.6 非签名链路反向断言，与 generateDeals 同款）
-//   - **request body MUST NOT 含 interface.extraPara**（v0.6 撤回 v0.5.1 OwnerUin patch 反向断言）
+//   - **request body MUST NOT 含 interface.extraPara**（v0.6 撤回 v0.5.1 OwnerUin extraPara 中转反向断言）
+//   - **request body para MUST contain ownerUin**（v0.7 正向断言，与 generateDeals Deal 接口族同款平铺范式）
 //   - **goodsInfo wire 形态**：map key 是 sub_product_code 字符串（"sp_lighthouse"）
 //   - 响应 data.dealNames / data.bigDealIds 反序列化正确
 func TestOnlineRefund_Success(t *testing.T) {
@@ -77,6 +83,7 @@ func TestOnlineRefund_Success(t *testing.T) {
 	})
 
 	resp, err := cli.OnlineRefund(context.Background(), &OnlineRefundRequest{
+		OwnerUin:    "100012345678",
 		UIN:         "100012345678",
 		AppID:       1300012345,
 		FromConsole: FromConsoleYes,
@@ -118,6 +125,9 @@ func TestOnlineRefund_Success(t *testing.T) {
 	}
 
 	// para 字段全量断言（doc §4.1）
+	if seenPara.OwnerUin != "100012345678" {
+		t.Errorf("para.ownerUin: got %q", seenPara.OwnerUin)
+	}
 	if seenPara.UIN != "100012345678" {
 		t.Errorf("para.uin: got %q", seenPara.UIN)
 	}
@@ -158,13 +168,15 @@ func TestOnlineRefund_Success(t *testing.T) {
 		t.Errorf("wire goodsInfo must be map-with-string-key form per doc §4.2; got body=%s", bodyStr)
 	}
 
-	// v0.6 路由切换（2026-06-23）反向断言：
-	// 1. envelope.interface.auth MUST NOT 存在（与 generateDeals 同款非签名链路）
-	// 2. envelope.interface.extraPara MUST NOT 存在（撤回 v0.5.1 OwnerUin patch）
-	// 3. para wire MUST NOT 含 ownerUin 字段（PDF Deal 协议字面量不存在该字段）
+	// v0.6 路由切换（2026-06-23） + v0.7 修订（2026-06-24）联合断言：
+	// 1. envelope.interface.auth MUST NOT 存在（与 generateDeals 同款非签名链路，v0.6 保留）
+	// 2. envelope.interface.extraPara MUST NOT 存在（撤回 v0.5.1 OwnerUin extraPara 中转，v0.6 保留）
+	// 3. **para wire MUST 含 ownerUin 字段**（v0.7 正向断言，与 generateDeals Deal 接口族范式同款。
+	//    仓库内 generatedeals.go:37 / generatedealsandpay.go:31 / getprice.go:66 / getmidasearmarking.go:33
+	//    同款使用。pass-fg77bhed e2e 实测确认 jifei-test 入口对 Deal 接口族 ownerUin 做硬校验。）
 	var reqEnv envelope
 	if err := json.Unmarshal([]byte(bodyStr), &reqEnv); err != nil {
-		t.Fatalf("reparse envelope for v0.6 reverse assertions: %v", err)
+		t.Fatalf("reparse envelope for v0.6/v0.7 reverse+forward assertions: %v", err)
 	}
 	if reqEnv.Interface == nil {
 		t.Fatalf("envelope.interface missing in non-signing route\n%s", bodyStr)
@@ -174,11 +186,11 @@ func TestOnlineRefund_Success(t *testing.T) {
 			reqEnv.Interface.Auth, bodyStr)
 	}
 	if reqEnv.Interface.ExtraPara != nil {
-		t.Errorf("v0.6 violated: envelope.interface.extraPara MUST NOT be present (v0.5.1 OwnerUin patch reverted); got extraPara=%+v\n%s",
+		t.Errorf("v0.6 violated: envelope.interface.extraPara MUST NOT be present (v0.5.1 OwnerUin extraPara 中转撤回); got extraPara=%+v\n%s",
 			reqEnv.Interface.ExtraPara, bodyStr)
 	}
-	if strings.Contains(string(reqEnv.Interface.Para), `"ownerUin"`) {
-		t.Errorf("para wire MUST NOT contain ownerUin (v0.6 撤回 v0.5.1 patch); got para=%s",
+	if !strings.Contains(string(reqEnv.Interface.Para), `"ownerUin"`) {
+		t.Errorf("v0.7 violated: para wire MUST contain ownerUin (Deal 接口族平铺范式); got para=%s",
 			string(reqEnv.Interface.Para))
 	}
 }
@@ -200,7 +212,9 @@ func TestOnlineRefund_NilRequest(t *testing.T) {
 
 // TestOnlineRefund_MissingRequired 覆盖必填字段校验。
 //
-// v0.6 路由切换（2026-06-23）：移除 missing_OwnerUin 用例（OwnerUin 字段整体撤回）。
+// **v0.7 修订（2026-06-24）**：加回 missing_OwnerUin case（OwnerUin 字段随 v0.7 加回，
+// 与 generateDeals Deal 接口族同款必填校验）。其余现有 case 同步补上 OwnerUin，避免被
+// 补加的 OwnerUin 预检拦掉。
 func TestOnlineRefund_MissingRequired(t *testing.T) {
 	cli := New("http://unused", "", Options{EventIDProvider: fixedEventIDProvider, NowProvider: fixedNowProvider})
 	cases := []struct {
@@ -209,56 +223,64 @@ func TestOnlineRefund_MissingRequired(t *testing.T) {
 		want string
 	}{
 		{
+			name: "missing_OwnerUin",
+			req: &OnlineRefundRequest{
+				UIN: "uin1", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: []string{"r1"}}},
+			},
+			want: "empty OwnerUin",
+		},
+		{
 			name: "missing_UIN",
 			req: &OnlineRefundRequest{
-				AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: []string{"r1"}}},
+				OwnerUin: "100012345678",
+				AppID:    1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: []string{"r1"}}},
 			},
 			want: "empty UIN",
 		},
 		{
 			name: "invalid_AppID",
 			req: &OnlineRefundRequest{
-				UIN: "uin1", GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: []string{"r1"}}},
+				OwnerUin: "uin1", UIN: "uin1", GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: []string{"r1"}}},
 			},
 			want: "AppID must be positive",
 		},
 		{
 			name: "empty_GoodsInfo",
-			req:  &OnlineRefundRequest{UIN: "uin1", AppID: 1, GoodsInfo: nil},
+			req:  &OnlineRefundRequest{OwnerUin: "uin1", UIN: "uin1", AppID: 1, GoodsInfo: nil},
 			want: "empty GoodsInfo",
 		},
 		{
 			name: "empty_subProductCode_key",
 			req: &OnlineRefundRequest{
-				UIN: "uin1", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"": {PayMode: 1, RegionID: 1, ResourceIDList: []string{"r1"}}},
+				OwnerUin: "uin1", UIN: "uin1", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"": {PayMode: 1, RegionID: 1, ResourceIDList: []string{"r1"}}},
 			},
 			want: "sub_product_code) is empty",
 		},
 		{
 			name: "PayMode_not_prepaid",
 			req: &OnlineRefundRequest{
-				UIN: "uin1", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 0, RegionID: 1, ResourceIDList: []string{"r1"}}},
+				OwnerUin: "uin1", UIN: "uin1", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 0, RegionID: 1, ResourceIDList: []string{"r1"}}},
 			},
 			want: "PayMode must be 1",
 		},
 		{
 			name: "invalid_RegionID",
 			req: &OnlineRefundRequest{
-				UIN: "uin1", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 0, ResourceIDList: []string{"r1"}}},
+				OwnerUin: "uin1", UIN: "uin1", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 0, ResourceIDList: []string{"r1"}}},
 			},
 			want: "RegionID must be positive",
 		},
 		{
 			name: "empty_ResourceIDList",
 			req: &OnlineRefundRequest{
-				UIN: "uin1", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: nil}},
+				OwnerUin: "uin1", UIN: "uin1", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: nil}},
 			},
 			want: "ResourceIDList is empty",
 		},
 		{
 			name: "empty_ResourceID_entry",
 			req: &OnlineRefundRequest{
-				UIN: "uin1", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: []string{""}}},
+				OwnerUin: "uin1", UIN: "uin1", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: []string{""}}},
 			},
 			want: "ResourceIDList[0] is empty",
 		},
@@ -294,8 +316,9 @@ func TestOnlineRefund_CGWBusinessError(t *testing.T) {
 	})
 
 	resp, err := cli.OnlineRefund(context.Background(), &OnlineRefundRequest{
-		UIN:   "100012345678",
-		AppID: 1300012345,
+		OwnerUin: "100012345678",
+		UIN:      "100012345678",
+		AppID:    1300012345,
 		GoodsInfo: map[string]OnlineRefundGoodsEntry{
 			"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: []string{"lhpass-abc"}},
 		},
@@ -331,8 +354,9 @@ func TestOnlineRefund_BaseURLRequired(t *testing.T) {
 		NowProvider:     fixedNowProvider,
 	})
 	resp, err := cli.OnlineRefund(context.Background(), &OnlineRefundRequest{
-		UIN:   "uin1",
-		AppID: 1,
+		OwnerUin: "uin1",
+		UIN:      "uin1",
+		AppID:    1,
 		GoodsInfo: map[string]OnlineRefundGoodsEntry{
 			"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: []string{"r1"}},
 		},

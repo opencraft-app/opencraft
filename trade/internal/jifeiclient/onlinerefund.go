@@ -7,20 +7,24 @@
 // 同属"jifei-test CGW 非签名链路"，走 c.baseURL（envelope.interface.auth 不注入，
 // 由部署侧出口 IP 鉴权 + clgateway upstream.headers.Host 重写）。
 //
-// **v0.6 路由切换背景（v0.5.1 → v0.6 修订）**：
-//   - v0.5 / v0.5.1 阶段沿用销毁链路 ModifyResourceStatus 的 doSignedWithExtra 路径（走
-//     c.billingBaseURL = "…/v1/proxy/jifei-billing-apigw-test/resource-center/interface"），
-//     是把 "Deal 接口族" 错误路由到 "资源中心 (operation 接口族)" 的 jifei 网关后端，
-//     在 sandbox-bj-7 联调实测时被 jifei 网关拒（属 v0.5.1 OwnerUin patch 之外的更深层
-//     路由错误，OwnerUin patch 是当时的二次误判 — 一并由 v0.6 撤回）。
-//   - v0.6（2026-06-23）拍板：OnlineRefund 与 generateDeals 同属 qcloud.Deal.* 族，
-//     **必须走与 generateDeals 完全相同的 jifei-test CGW 入口**（c.baseURL =
-//     "…/v1/proxy/jifei-test/interfaces/interface.php"），与之配套的协议表面：
-//     1. 不签名 — envelope.interface.auth 字段不写出（与 generateDeals 完全一致）
-//     2. 不写 envelope.interface.extraPara — Deal 接口族在 jifei-test 网关后端不做
-//        资源中心专有的 ownerUin / site 二选一硬校验，撤回 v0.5.1 OwnerUin patch
-//     3. para 字段沿 PDF doc §4.1 字段表（uin / appId / fromConsole / goodsInfo），
-//        不携带 OwnerUin（PDF Deal 协议字面量上不存在 ownerUin 字段）
+// **路由演进史（v0.5 → v0.5.1 → v0.6 → v0.7）**：
+//   - v0.5 / v0.5.1 阶段沿用销毁链路 ModifyResourceStatus 的 doSignedWithExtra 路径
+//     （走 c.billingBaseURL resource-center 入口 + 签名 + extraPara.ownerUin），是把
+//     "Deal 接口族" 错误路由到 "资源中心 (operation 接口族)" 的 jifei 网关后端，被拒。
+//   - v0.6（2026-06-23）拍板正确切到 jifei-test 非签名链路（c.baseURL，与 generateDeals
+//     同入口），但**过度纠正**：错误地把 OwnerUin 字段整体撤回。pass-fg77bhed e2e 实测
+//     被 jifei 返 returnCode=100001 "invalid ownerUin" — Deal 接口族 jifei-test 入口
+//     依然要求 para 内平铺 ownerUin（与 generateDeals / generateDealsAndPay / getPrice /
+//     getmidasearmarking 同款，PDF doc §4.1 字段表也明示 ownerUin 必填）。
+//   - **v0.7（2026-06-24）拍板（用户校正）**：协议是唯一真源。OnlineRefund 与所有
+//     qcloud.Deal.* 接口族成员一致，**para 内平铺 OwnerUin 字段**（json tag "ownerUin"，
+//     与 generatedeals.go:37 / generatedealsandpay.go:31 / getprice.go:66 /
+//     getmidasearmarking.go:33 同款）。本期协议表面：
+//     1. 不签名 — envelope.interface.auth 字段不写出（与 generateDeals 完全一致，v0.6 不变）
+//     2. 不写 envelope.interface.extraPara — Deal 接口族不做"资源中心
+//     extraPara.ownerUin or .site 二选一"硬校验（v0.6 此判断正确，保留）
+//     3. **para 字段含 ownerUin / uin / appId / fromConsole / goodsInfo**（v0.7 修订：
+//     ownerUin 在 para 内平铺，撤回 v0.6 "PDF Deal 协议无 ownerUin" 的误读）
 //
 // 业务定位（设计稿 §2 时序图 + Q8b=b 拍板，v0.6 不变）：trade 出向"无状态翻译层"——
 //   - 仅负责把入参拼成 jifei OnlineRefund 协议字段集 + 透传出向 + 翻译响应
@@ -64,20 +68,25 @@ import (
 //
 //   - PascalCase struct field + camelCase JSON tag（jifei CGW 协议层对字段名大小写不敏感，wire
 //     上接受两种；本 client 沿 PascalCase 范式保持仓库内一致）
-//   - **不持有 OwnerUin 字段**（v0.6 路由切换 2026-06-23 撤回 v0.5.1 patch）：
-//     OnlineRefund 走 jifei-test CGW 非签名链路，与 generateDeals / generateDealsAndPay
-//     同入口；jifei-test 网关后端的 Deal 接口族不做"资源中心 extraPara.ownerUin or .site
-//     二选一"硬校验，PDF Deal 协议字面量上也不存在 ownerUin 字段。
-//     （v0.5.1 OwnerUin patch 是当时把 OnlineRefund 错路由到 resource-center 入口后被
-//     该资源中心专有校验拒的二次误判，整体路由错误由 v0.6 撤回。）
+//   - **持有 OwnerUin 字段（v0.7 修订）**：与 generateDeals / generateDealsAndPay /
+//     getPrice / getmidasearmarking 同款，**para 内平铺 OwnerUin（json tag "ownerUin"）**。
+//     pass-fg77bhed e2e 实测确认 jifei-test 入口的 Deal 接口族对 OnlineRefund 校验
+//     ownerUin 必填且必须是合法 uin 字符串，缺失返 returnCode=100001 "invalid ownerUin"。
+//     注意与 ModifyResourceStatus 的差异：销毁链路 ownerUin 走 envelope.interface.extraPara
+//     （资源中心 operation 接口族专有）；Deal 接口族 ownerUin 走 para 内平铺。
 //   - FromConsole / ClientIP / Token 用 omitempty——为零值时 jifei 走默认行为（doc §4.1
 //     "1，来自控制台" 表示后台 admin 入口；trade 在调用方装配点固定传 1）
 //
 // **本期 Q8=a 拍板**：trade 不预校验退款金额，也不传 ignoreQuota / extParam / activityId 等
 // 业务扩展字段——这些字段保留协议字面量但不在 Request 结构里暴露（避免 trade 内部多余配置）。
 type OnlineRefundRequest struct {
-	UIN   string `json:"uin"`
-	AppID int64  `json:"appId"`
+	// OwnerUin 是订单 / 资源所有者主账号 uin（v0.7 修订加回，与 generateDeals 同款 para 内平铺）。
+	// jifei-test CGW Deal 接口族对此字段做硬校验（缺失或非法返 returnCode=100001
+	// "invalid ownerUin"）。trade pass 单 uin 模型下 OwnerUin == UIN（ctl pass 表只存
+	// 单 uin），调用方装配点同时给两字段传同值。
+	OwnerUin string `json:"ownerUin"`
+	UIN      string `json:"uin"`
+	AppID    int64  `json:"appId"`
 
 	FromConsole int    `json:"fromConsole,omitempty"`
 	ClientIP    string `json:"clientIp,omitempty"`
@@ -197,6 +206,9 @@ func (c *client) OnlineRefund(
 	if req == nil {
 		return nil, errInvalidArg("OnlineRefund: nil request")
 	}
+	if req.OwnerUin == "" {
+		return nil, errInvalidArg("OnlineRefund: empty OwnerUin")
+	}
 	if req.UIN == "" {
 		return nil, errInvalidArg("OnlineRefund: empty UIN")
 	}
@@ -230,10 +242,9 @@ func (c *client) OnlineRefund(
 		}
 	}
 
-	// v0.6 路由切换（2026-06-23）：从 doSignedWithExtra(c.billingBaseURL = resource-center
-	// 入口 + HMAC-SHA256 签名 + extraPara.ownerUin 中转) 改为 do(c.baseURL = jifei-test
-	// 入口 + 不签名 + 无 extraPara)，与 generateDeals / generateDealsAndPay 共用 Deal 接口
-	// 族出向通道。详见本文件头部 v0.6 路由切换背景注释。
+	// 路由链路（v0.6 切换 + v0.7 修订）：do(c.baseURL = jifei-test 入口 + 不签名 +
+	// 无 extraPara)，但 para 内平铺 ownerUin（v0.7 修订）。与 generateDeals /
+	// generateDealsAndPay 共用 Deal 接口族出向通道。详见本文件头部演进史注释。
 	out := &OnlineRefundResponse{}
 	if err := c.do(ctx, InterfaceNameOnlineRefund, ComponentNameOnlineRefund, req, out); err != nil {
 		return nil, err

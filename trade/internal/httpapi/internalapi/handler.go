@@ -1048,17 +1048,25 @@ func classifyDeleteResourceError(err error) (string, int) {
 //   - Q5=a OnlineRefund 不传 category_ids / goodsCategoryId
 //   - Q8b=b trade 端无状态翻译层，不写 trade_flow 行
 //
-// 字段（与 deleteResource 同款的 3 字段最小集）：
+// 字段（与 deleteResource 同款的最小集 + v0.7 加回 OwnerUin）：
+//   - OwnerUin：pass.uin（必填，jifei.OnlineRefund.ownerUin，para 内平铺）
 //   - UIN：pass.uin（必填，jifei.OnlineRefund.uin）
 //   - AppID：pass.app_id（int64，必填，jifei.OnlineRefund.appId）
 //   - BundleID：pass.bundle_id（必填，trade 内部反查 BundleDefinition.SubProductCode）
 //
-// **v0.6 路由切换 2026-06-23 删除 OwnerUin 字段**：OnlineRefund 从 doSignedWithExtra
-// (resource-center 入口 + 签名 + extraPara.ownerUin) 切到 do() (jifei-test 入口 + 不签名 +
-// 无 extraPara)。Deal 接口族 PDF 协议字面量不存在 ownerUin 字段，且 jifei-test 网关后端不做
-// "extraPara.ownerUin or .site 二选一" 硬校验（那是资源中心 operation 接口族专有），
-// v0.5.1 引入的 ownerUin 字段整体撤回。详见 jifeiclient/onlinerefund.go 头部 v0.6 注释。
+// **路由演进史（v0.5.1 → v0.6 → v0.7）**：
+//   - v0.5.1：OwnerUin 错放到 envelope.interface.extraPara（销毁链路 ModifyResourceStatus
+//     资源中心专有路径），路由错到 resource-center 入口被 jifei 网关拒
+//   - v0.6（2026-06-23）：路由切到 jifei-test CGW 非签名链路（与 generateDeals 同入口），
+//     但**过度纠正**地把 OwnerUin 字段整体删除。pass-fg77bhed e2e 实测 jifei 返
+//     returnCode=100001 "invalid ownerUin" — Deal 接口族在 jifei-test 入口仍要求 ownerUin。
+//   - **v0.7（2026-06-24，本次修订）**：协议是唯一真源 — 仓库内 generateDeals.go:37 /
+//     generateDealsAndPay.go:31 / getPrice.go:66 / getmidasearmarking.go:33 都明示
+//     `OwnerUin string json:"ownerUin"` para 内平铺；OnlineRefund 同属 qcloud.Deal.* 必须遵循
+//     同款范式。本字段加回 refundResourceRequest，由 ctl 端从 pass.uin 透传（ctl pass 表
+//     单 uin 模型，OwnerUin == UIN）。
 type refundResourceRequest struct {
+	OwnerUin string `json:"ownerUin"`
 	UIN      string `json:"uin"`
 	AppID    int64  `json:"appId"`
 	BundleID string `json:"bundleId"`
@@ -1153,9 +1161,11 @@ func refundResourceHandler(
 		// 拼装 jifei OnlineRefund 入参（doc §4.1）。
 		// goodsInfo 是以 sub_product_code 作 map key 的动态对象（与 ModifyResourceStatus
 		// 的 resourcesParamSet[] 数组形态有本质区别，详见 jifeiclient/onlinerefund.go 注释）。
-		// **v0.6 路由切换 2026-06-23**：不再透传 OwnerUin（jifei-test 非签名链路
-		// 不需要 extraPara.ownerUin，详见 jifeiclient/onlinerefund.go 头部 v0.6 注释）。
+		// **v0.7 修订 2026-06-24**：para 内平铺 OwnerUin（与 generateDeals 同款 Deal 接口族范式，
+		// 撤回 v0.6 误删；jifei-test 入口对 Deal 接口族 ownerUin 仍做硬校验，缺则返
+		// returnCode=100001 "invalid ownerUin"）。详见 jifeiclient/onlinerefund.go 头部 v0.7 注释。
 		jifeiReq := &jifeiclient.OnlineRefundRequest{
+			OwnerUin:    req.OwnerUin,
 			UIN:         req.UIN,
 			AppID:       req.AppID,
 			FromConsole: jifeiclient.FromConsoleYes, // 1 = 控制台（ctl admin 入口固定）
@@ -1202,8 +1212,12 @@ func refundResourceHandler(
 //
 // 返回空 string 表示校验通过；非空 string 是 4xx 错误描述。
 //
-// **v0.6 路由切换 2026-06-23**：撤回 ownerUin 必填校验（OwnerUin 字段整体删除）。
+// **v0.7 修订 2026-06-24**：加回 ownerUin 必填校验（v0.6 路由切换误删；与 generateDeals
+// 同款 Deal 接口族范式，jifei-test 入口对 ownerUin 做硬校验）。
 func validateRefundResourceRequest(req *refundResourceRequest) string {
+	if strings.TrimSpace(req.OwnerUin) == "" {
+		return "ownerUin is required"
+	}
 	if strings.TrimSpace(req.UIN) == "" {
 		return "uin is required"
 	}
