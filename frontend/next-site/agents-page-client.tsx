@@ -1,15 +1,16 @@
 'use client';
 
 import { ProductReturnHomeHeader } from '@/components/site/product-chrome';
-import { OpenClawSettingsPage } from '@/pages/marketing/openclaw-settings-page';
+import { AgentSettingsPage } from '@/pages/marketing/agent-settings-page';
+import type { AgentSectionId } from '@/router/paths';
 
 import { AgentsRouteLoading, AppRouteShell } from './app-route-shell';
 
-export function AgentsPageClient({ sectionSlug }: { sectionSlug?: string }) {
+export function AgentsPageClient({ sectionId }: { sectionId?: AgentSectionId }) {
   return (
     <AppRouteShell loadingFallback={<AgentsRouteLoading />}>
       <ProductReturnHomeHeader reloadLanguageAfterSwitch />
-      <OpenClawSettingsPage sectionSlug={sectionSlug} showHeader={false} />
+      <AgentSettingsPage sectionId={sectionId} showHeader={false} />
     </AppRouteShell>
   );
 }

@@ -29,7 +29,6 @@ const OpenClawSetupPage = lazyNamed(() => import("@/pages/marketing/openclaw-set
 const OpenClawSuccessPage = lazyNamed(() => import("@/pages/marketing/openclaw-success-page"), "OpenClawSuccessPage");
 const AccountPage = lazyNamed(() => import("@/pages/marketing/account-page"), "AccountPage");
 const AccountOrdersPage = lazyNamed(() => import("@/pages/marketing/account-orders-page"), "AccountOrdersPage");
-const OpenClawSettingsRoutePage = lazyNamed(() => import("@/router/openclaw-settings-route"), "OpenClawSettingsRoutePage");
 const TATDeviceBindPage = lazyNamed(() => import("@/pages/marketing/tat-device-bind-page"), "TATDeviceBindPage");
 const AboutPage = lazyNamed(() => import("@/pages/marketing/about-page"), "AboutPage");
 const ChangelogPage = lazyNamed(() => import("@/pages/marketing/changelog-page"), "ChangelogPage");
@@ -155,14 +154,6 @@ export const router = createBrowserRouter([
           {
             path: "dashboard/success",
             element: lazyRoute(OpenClawSuccessPage),
-          },
-          {
-            path: "agents",
-            element: lazyRoute(OpenClawSettingsRoutePage, { chrome: "product" }),
-          },
-          {
-            path: "agents/:section",
-            element: lazyRoute(OpenClawSettingsRoutePage, { chrome: "product" }),
           },
           {
             path: "account",

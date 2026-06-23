@@ -94,7 +94,7 @@ html.lw-settings-scrollbar-stable {
 }
 
 /* 诊断中心输出区原生滚动条彻底隐藏（视觉滚动条由 React 手绘，
- * 见 openclaw-agent-diagnostics-panel.tsx 的 DiagnosticOutput）。
+ * 见 agent-diagnostics-panel.tsx 的 DiagnosticOutput）。
  * Firefox 走元素 inline style scrollbarWidth:none，WebKit 走这条。 */
 .lw-diagnostic-output-native::-webkit-scrollbar {
   width: 0;

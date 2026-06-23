@@ -8,7 +8,7 @@ import {
   getAgentDiagnosticCommands,
   getDiagnosticRunStatus,
   normalizeDiagnosticOutput,
-} from "../openclaw-agent-diagnostics-panel";
+} from "../agent-diagnostics-panel";
 
 describe("agent diagnostics commands", () => {
   it("runs the expected Hermes diagnostic commands", () => {

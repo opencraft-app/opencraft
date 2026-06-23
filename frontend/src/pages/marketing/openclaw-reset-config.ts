@@ -1,7 +1,7 @@
 /**
  * 重置实例配置（轮换 API Key）相关的纯逻辑函数。
  *
- * 从 openclaw-settings-page.tsx 中提取，方便单元测试覆盖：
+ * 从 agent-settings-page.tsx 中提取，方便单元测试覆盖：
  * - 前置守卫（实例状态 / 进行中防抖）
  * - acli 命令链路用到的 model id 拼接
  * - execDebugCommand 返回值的统一成功判定
