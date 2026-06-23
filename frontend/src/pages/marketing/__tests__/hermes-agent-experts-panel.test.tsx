@@ -579,6 +579,84 @@ describe("hermes agent experts panel", () => {
     }
   });
 
+  it("keeps backing off when package skill downloads hit repeated rate limits", async () => {
+    vi.useFakeTimers();
+    try {
+      const installResults = [
+        {
+          status: "failed",
+          exitCode: 1,
+          output: "Download failed: HTTP 429 for https://lightmake.cloud/api/v1/download?slug=nexus-error-explain",
+        },
+        {
+          status: "failed",
+          exitCode: 1,
+          output: "Download failed: Too Many Requests for https://lightmake.cloud/api/v1/download?slug=nexus-error-explain",
+        },
+        { status: "success", exitCode: 0, output: "" },
+      ];
+      const execDebugCommand = vi.fn().mockImplementation(async () => (
+        installResults.shift() ?? { status: "success", exitCode: 0, output: "" }
+      ));
+
+      const installPromise = installSkillSlugs("bot-1", ["nexus-error-explain"], execDebugCommand);
+
+      expect(execDebugCommand).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(execDebugCommand).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(4_999);
+      expect(execDebugCommand).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(installPromise).resolves.toEqual({
+        succeeded: ["nexus-error-explain"],
+        failed: [],
+      });
+      expect(execDebugCommand).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reports a failed package skill after exhausting rate-limit retries", async () => {
+    vi.useFakeTimers();
+    try {
+      const installResults = [
+        {
+          status: "failed",
+          exitCode: 1,
+          output: "Download failed: HTTP 429 for https://lightmake.cloud/api/v1/download?slug=nexus-error-explain",
+        },
+        {
+          status: "failed",
+          exitCode: 1,
+          output: "Download failed: HTTP 429 for https://lightmake.cloud/api/v1/download?slug=nexus-error-explain",
+        },
+        {
+          status: "failed",
+          exitCode: 1,
+          output: "Download failed: HTTP 429 for https://lightmake.cloud/api/v1/download?slug=nexus-error-explain",
+        },
+      ];
+      const execDebugCommand = vi.fn().mockImplementation(async () => (
+        installResults.shift() ?? { status: "success", exitCode: 0, output: "" }
+      ));
+
+      const installPromise = installSkillSlugs("bot-1", ["nexus-error-explain"], execDebugCommand);
+
+      await vi.advanceTimersByTimeAsync(7_000);
+      await expect(installPromise).resolves.toEqual({
+        succeeded: [],
+        failed: [{
+          slug: "nexus-error-explain",
+          output: "Download failed: HTTP 429 for https://lightmake.cloud/api/v1/download?slug=nexus-error-explain",
+        }],
+      });
+      expect(execDebugCommand).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("self-upgrades SkillHub CLI once when install output asks for it", async () => {
     vi.mocked(fetchSkillSets).mockImplementation(async (params) => ({
       skillSets: !params?.scene || params.scene === "tech"

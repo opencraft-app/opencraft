@@ -289,7 +289,7 @@ function shouldUpgradeSkillHubCli(output: string): boolean {
 }
 
 function isSkillInstallRateLimited(output: string): boolean {
-  return /\bHTTP\s*429\b/i.test(output) || /rate[-\s]?limited/i.test(output);
+  return /\bHTTP\s*429\b/i.test(output) || /rate[-\s]?limited/i.test(output) || /too many requests/i.test(output);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
