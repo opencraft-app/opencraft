@@ -275,6 +275,16 @@ func TestCleanAgentVisibleOutputDropsWrapperAndReasoningLeak(t *testing.T) {
 	}
 }
 
+func TestReasoningOnlyVisibleFallbackDoesNotLeakReasoning(t *testing.T) {
+	if got := cleanAgentVisibleOutput(reasoningOnlyVisibleFallback()); got != "The model produced reasoning but no final response." {
+		t.Fatalf("fallback=%q", got)
+	}
+	raw := `timeline source=hermes_sidecar t=0.000s event=stream WRAPPER_EVENT_JSON={"type":"reasoning_delta","delta":"hidden chain of thought"}`
+	if got := cleanAgentVisibleOutput(raw); got != "" {
+		t.Fatalf("reasoning wrapper text leaked into visible output: %q", got)
+	}
+}
+
 func TestCommandFailureDetailIncludesRedactedOutput(t *testing.T) {
 	got := commandFailureDetail(errors.New("exit status 1"), CommandResult{
 		Stderr: `daemon /ensure-inner failed: HTTP 500: {"error":"boom","envd_access_token":"secret"}`,
