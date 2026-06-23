@@ -263,8 +263,11 @@ function readIndexEntry(outputDir) {
   const html = readFileSync(indexPath, "utf8");
   const scriptSrcs = Array.from(html.matchAll(/<script\b[^>]*\bsrc=["']([^"']+\.js(?:\?[^"']*)?)["'][^>]*>/g), (match) => match[1]);
   const viteEntryJs = scriptSrcs.find((src) => /^\/assets\/index-[^"']+\.js(?:\?.*)?$/.test(src));
-  const nextMainEntryJs = scriptSrcs.find((src) => /^\/_next\/static\/chunks\/main-app-[^"']+\.js(?:\?.*)?$/.test(src));
-  const nextEntryJs = nextMainEntryJs ?? scriptSrcs.find((src) => /^\/_next\/static\/.+\.js(?:\?.*)?$/.test(src));
+  const nextStaticPrefix = "(?:/__releases/[^/]+)?/_next/static";
+  const nextMainEntryRe = new RegExp(`^${nextStaticPrefix}/chunks/main-app-[^"']+\\.js(?:\\?.*)?$`);
+  const nextEntryRe = new RegExp(`^${nextStaticPrefix}/.+\\.js(?:\\?.*)?$`);
+  const nextMainEntryJs = scriptSrcs.find((src) => nextMainEntryRe.test(src));
+  const nextEntryJs = nextMainEntryJs ?? scriptSrcs.find((src) => nextEntryRe.test(src));
   const entryJs = viteEntryJs ?? nextEntryJs;
   const entryKind = viteEntryJs ? "vite" : "next";
   if (!entryJs) {

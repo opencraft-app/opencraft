@@ -105,7 +105,7 @@ function writeEdgeOneBuildOutput() {
   }
 
   const routes = [
-    { src: '^/_next/static/(.*)$', headers: nextStaticCacheHeaders, continue: true },
+    { src: '^/__releases/([^/]+)/_next/static/(.*)$', headers: nextStaticCacheHeaders, continue: true },
     { src: '^/(.*)\\.html$', headers: htmlCacheHeaders, continue: true },
     { src: '^/(.*)\\.txt$', headers: htmlCacheHeaders, continue: true },
     ...collectDirectoryIndexRoutes(),

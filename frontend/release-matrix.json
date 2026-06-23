@@ -63,7 +63,8 @@
       },
       "deployEnv": {
         "EDGEONE_PAGES_AREA": "global",
-        "EDGEONE_PAGES_ENV": "production"
+        "EDGEONE_PAGES_ENV": "production",
+        "NEXT_VERSION_STATIC_ASSETS": "1"
       }
     },
     {
@@ -87,7 +88,8 @@
       },
       "deployEnv": {
         "EDGEONE_PAGES_AREA": "global",
-        "EDGEONE_PAGES_ENV": "production"
+        "EDGEONE_PAGES_ENV": "production",
+        "NEXT_VERSION_STATIC_ASSETS": "1"
       }
     }
   ]

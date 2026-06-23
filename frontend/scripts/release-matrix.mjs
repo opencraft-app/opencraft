@@ -166,6 +166,37 @@ export function resolveComboProjectName(combo, env = process.env) {
   return combo.projectName;
 }
 
+function padTimestampPart(value) {
+  return String(value).padStart(2, "0");
+}
+
+function utcReleaseTimestamp(date = new Date()) {
+  return [
+    date.getUTCFullYear(),
+    padTimestampPart(date.getUTCMonth() + 1),
+    padTimestampPart(date.getUTCDate()),
+    padTimestampPart(date.getUTCHours()),
+    padTimestampPart(date.getUTCMinutes()),
+    padTimestampPart(date.getUTCSeconds()),
+  ].join("");
+}
+
+function resolveReleaseSha(env) {
+  const sha =
+    env.NEXT_PUBLIC_RELEASE_SHA ||
+    env.CI_COMMIT_SHA ||
+    env.GIT_COMMIT ||
+    env.BK_CI_GIT_REPO_HEAD_COMMIT_ID ||
+    "";
+  return sha ? sha.slice(0, 12) : "unknown";
+}
+
+function resolveStaticAssetReleaseId(combo, env) {
+  const explicit = env.NEXT_PUBLIC_RELEASE_ID || env.NEXT_STATIC_RELEASE_ID;
+  if (explicit) return explicit;
+  return `${utcReleaseTimestamp()}-${resolveReleaseSha(env)}-${combo.region}`;
+}
+
 export function validateRequiredSecrets(combo, env = process.env) {
   const missing = combo.requiredSecretEnv.filter((key) => !env[key]?.trim());
   if (missing.length > 0) {
@@ -211,6 +242,14 @@ export function createComboEnvironment(combo, projectName, env = process.env) {
   } else if (combo.channel === "eo") {
     nextEnv.EDGEONE_PAGES_PROJECT_NAME = projectName;
     nextEnv.EDGEONE_PAGES_DIR = combo.outputDir;
+  }
+
+  if (nextEnv.NEXT_VERSION_STATIC_ASSETS === "1") {
+    const releaseId = resolveStaticAssetReleaseId(combo, nextEnv);
+    nextEnv.NEXT_PUBLIC_RELEASE_ID = releaseId;
+    nextEnv.NEXT_PUBLIC_ASSET_PREFIX = `/__releases/${releaseId}`;
+  } else {
+    delete nextEnv.NEXT_PUBLIC_ASSET_PREFIX;
   }
 
   return nextEnv;
