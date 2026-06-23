@@ -533,3 +533,37 @@ type RenewPassResponse struct {
 type DeletePassUserResponse struct {
 	Deleted bool `json:"deleted"`
 }
+
+// RefundPassRequest 是后台 POST /admin/api/ctl/passes/{pass_id}/refund 入参
+// （trade-pass-refund-design.md v0.5 §3.3）。
+//
+// 字段说明（Q1=a / Q4=a 拍板）：
+//   - OperatorUin：操作人 uin，仅作 zap 日志留痕用，不写 DB（Q4=a 不建审计表）
+//   - Reason：运营记录用文本，仅日志透传（如"客户投诉 #12345"等）
+//
+// 后台路径无 user_id 字段 — 设计稿 Q1=a 拍板：admin 直接以 pass_id 为粒度操作，
+// 不强制要求传 user_id（与销毁链路 admin 入口要求 user_id 的语义不同，因为退款
+// 链路完全不动 pass.status，越权风险由 admin 路由所在的 admin 鉴权层兜底）。
+type RefundPassRequest struct {
+	OperatorUin int64  `json:"operator_uin,omitempty"`
+	Reason      string `json:"reason,omitempty"`
+}
+
+// RefundPassResponse 是后台 POST /admin/api/ctl/passes/{pass_id}/refund 响应
+// （trade-pass-refund-design.md v0.5 §3.2）。
+//
+// **语义**：jifei OnlineRefund 同步返成功后立即返回此响应；pass.status 此刻仍是 `active`
+// （v0.5 §10.2 联调 SOP step 4 关键不变量），最终状态由 jifei 异步回 isolateResource
+// 后通过 IsolatePass 路径推进到 isolated + 写 expired_time = newDeadline。
+//
+// 字段：
+//   - PassID：退款对应 pass_id（透传入参）
+//   - DealName：jifei 退款小订单号（透传给 admin 面板供审计追账）
+//   - BigDealID：jifei 退款大订单号
+//   - SubmittedAt：ctl 收 trade 成功响应的时间（UTC ISO8601 文本）
+type RefundPassResponse struct {
+	PassID      string    `json:"pass_id"`
+	DealName    string    `json:"deal_name"`
+	BigDealID   string    `json:"big_deal_id"`
+	SubmittedAt time.Time `json:"submitted_at"`
+}

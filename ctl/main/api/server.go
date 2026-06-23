@@ -379,6 +379,11 @@ func normalizePath(path string) string {
 	if strings.HasPrefix(path, "/admin/api/ctl/passes/") && strings.HasSuffix(path, "/delete") {
 		return "/admin/api/ctl/passes/{passId}/delete"
 	}
+	// 后台代退款触发入口路径归一（trade-pass-refund-design.md v0.5 Q1=a，仅 admin 路径）：
+	//   /admin/api/ctl/passes/{pass_id}/refund  → /admin/api/ctl/passes/{passId}/refund
+	if strings.HasPrefix(path, "/admin/api/ctl/passes/") && strings.HasSuffix(path, "/refund") {
+		return "/admin/api/ctl/passes/{passId}/refund"
+	}
 	// 订单状态反查入口路径归一（v1.7.32）：
 	//   /v1/orders/{deal_name}/status → /v1/orders/{dealName}/status
 	if strings.HasPrefix(path, "/v1/orders/") && strings.HasSuffix(path, "/status") {
