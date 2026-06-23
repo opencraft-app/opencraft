@@ -1,11 +1,10 @@
 import {
   ArrowLeft,
   AlertTriangle,
-  BadgeCheck,
   BookOpen,
   Clapperboard,
   Check,
-  Cpu,
+  Code2,
   GraduationCap,
   HeartPulse,
   Landmark,
@@ -28,12 +27,14 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { useT } from "@/i18n/t";
+import { loadExpertPackagesState, saveExpertPackagesState } from "@/lib/expert-package-storage";
 import { shellQuote } from "@/lib/hermes-cron-client";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { useAsyncResource } from "@/services/use-async-resource";
 import {
   fetchSkillFile,
+  fetchSkillDetail,
   fetchSkillFiles,
   fetchSkillSetDetail,
   fetchSkillSets,
@@ -73,9 +74,14 @@ interface SkillInstallResult {
   failed: SkillInstallFailure[];
 }
 
+interface SkillInstallProgress {
+  current: number;
+  total: number;
+}
+
 const EXPERT_SCENES: ExpertSceneOption[] = [
   { value: "finance", label: "金融", role: "投资分析专家", icon: Landmark },
-  { value: "tech", label: "科技", role: "高级开发工程师", icon: Cpu },
+  { value: "tech", label: "技术", role: "高级开发工程师", icon: Code2 },
   { value: "design", label: "设计", role: "产品设计专家", icon: Palette },
   { value: "marketing", label: "营销", role: "营销增长专家", icon: Megaphone },
   { value: "legal", label: "法律", role: "法律合规审查员", icon: Scale },
@@ -98,7 +104,18 @@ const INSTALL_ERROR_OUTPUT_LINE_LIMIT = 3;
 const AI_BUDDY_ASSET_BASE = "https://cloudcache.tencent-cloud.com/qcloud/tea/app/skillhub/assets/source/ai-buddy-decouple";
 const AI_BUDDY_ASSET_VERSION = "v20260616";
 const HERMES_SKILLS_LIST_COMMAND = 'cd "$HOME/.hermes/hermes-agent" && COLUMNS=10000 ./venv/bin/python -m hermes_cli.main skills list';
+const SKILLHUB_SELF_UPGRADE_COMMAND = "skillhub self-upgrade";
+const SKILLHUB_DOWNLOAD_URL_TEMPLATE = "https://lightmake.cloud/api/v1/download?slug={slug}";
+const INSTALLED_PACKAGES_STORAGE_PREFIX = "lightvela-experts-installed-packages";
 const TARGET_SKILL_DOC_NAMES = ["skill.md", "readme.md", "skills.md"];
+const PACKAGE_SKILL_SLUG_OVERRIDES: Record<string, Record<string, string>> = {
+  "tech-code-review": {
+    cody: "code-review-assistant",
+  },
+};
+const SKILL_DISPLAY_NAME_OVERRIDES: Record<string, string> = {
+  "code-review-assistant": "code-review-assistant",
+};
 
 export function getUniqueSkillSlugs(skillSlugs: string[]): string[] {
   const seen = new Set<string>();
@@ -110,6 +127,46 @@ export function getUniqueSkillSlugs(skillSlugs: string[]): string[] {
     result.push(normalized);
   }
   return result;
+}
+
+function getInstalledPackagesStorageKey(botId: string): string {
+  return `${INSTALLED_PACKAGES_STORAGE_PREFIX}:${botId}`;
+}
+
+function readStoredInstalledPackageSlugs(botId: string): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = window.localStorage.getItem(getInstalledPackagesStorageKey(botId));
+    const parsed = raw ? JSON.parse(raw) as unknown : null;
+    return Array.isArray(parsed) ? new Set(getUniqueSkillSlugs(parsed.filter((item): item is string => typeof item === "string"))) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function writeStoredInstalledPackageSlugs(botId: string, slugs: Set<string>): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(getInstalledPackagesStorageKey(botId), JSON.stringify([...slugs]));
+  } catch {
+    /* Ignore storage failures in restricted contexts. */
+  }
+}
+
+function mergeInstalledPackageSlugs(current: Set<string>, slugs: string[]): Set<string> {
+  const next = new Set(current);
+  for (const slug of getUniqueSkillSlugs(slugs)) {
+    next.add(slug);
+  }
+  return next;
+}
+
+export function getPackageSkillSlugs(packageSlug: string, skillSlugs: string[]): string[] {
+  const overrides = PACKAGE_SKILL_SLUG_OVERRIDES[packageSlug];
+  const normalizedSkillSlugs = overrides
+    ? skillSlugs.map((skillSlug) => overrides[skillSlug] ?? skillSlug)
+    : skillSlugs;
+  return getUniqueSkillSlugs(normalizedSkillSlugs);
 }
 
 function getSkillCount(pkg: Pick<SkillHubSkillSet, "skillCount" | "skillSlugs">): number {
@@ -129,17 +186,25 @@ function getPackageSummary(pkg: SkillHubSkillSet, t: ReturnType<typeof useT>): s
   return pkg.summary || pkg.remark || t("精选专家能力组合，适合直接接入完整工作流。");
 }
 
+function isSupportedExpertPackage(pkg: Pick<SkillHubSkillSet, "scene">): boolean {
+  return !!pkg.scene && EXPERT_SCENE_MAP.has(pkg.scene);
+}
+
 export function getSkillPackageTags(pkg: Pick<SkillHubSkillSet, "displayName" | "skillCount" | "skillSlugs">): string[] {
   const count = getSkillCount(pkg);
   return [pkg.displayName.trim(), count > 0 ? `${count} 个技能` : "专家"].filter(Boolean).slice(0, 3);
 }
 
 export function buildInstallSkillCommand(skillSlug: string): string {
-  return `acli skills install ${shellQuote(skillSlug)}`;
+  return `env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE=${shellQuote(SKILLHUB_DOWNLOAD_URL_TEMPLATE)} acli skills install ${shellQuote(skillSlug)}`;
 }
 
 export function buildInstalledSkillsListCommand(): string {
   return HERMES_SKILLS_LIST_COMMAND;
+}
+
+export function buildSkillHubSelfUpgradeCommand(): string {
+  return SKILLHUB_SELF_UPGRADE_COMMAND;
 }
 
 export function stripMarkdownFrontmatter(markdown: string): string {
@@ -163,7 +228,24 @@ async function fetchSkillMarkdown(skillSlug: string): Promise<string> {
   return stripMarkdownFrontmatter(await fetchSkillFile(skillSlug, docPath));
 }
 
+async function fetchSkillDisplayNames(skillSlugs: string[]): Promise<Map<string, string>> {
+  const entries = await Promise.all(
+    skillSlugs.map(async (skillSlug) => {
+      try {
+        const skill = await fetchSkillDetail(skillSlug);
+        return [skillSlug, skill.displayName || formatSkillDisplayName(skillSlug)] as const;
+      } catch {
+        return [skillSlug, formatSkillDisplayName(skillSlug)] as const;
+      }
+    }),
+  );
+  return new Map(entries);
+}
+
 function formatSkillDisplayName(slug: string): string {
+  const displayName = SKILL_DISPLAY_NAME_OVERRIDES[slug];
+  if (displayName) return displayName;
+
   return slug
     .split(/[-_]+/)
     .filter(Boolean)
@@ -179,9 +261,21 @@ export function getSkillHubErrorMessage(error: string | Error, t: ReturnType<typ
   return message;
 }
 
+export function isSkillInstallAlreadyExists(output: string): boolean {
+  return /Target exists:/i.test(output) || /use --force to overwrite/i.test(output);
+}
+
 function isExecSucceeded(result: ExecDebugCommandResult): boolean {
   const status = result.status.toLowerCase();
   return result.exitCode === 0 && status !== "failed" && status !== "error";
+}
+
+function isSkillInstallSucceeded(result: ExecDebugCommandResult): boolean {
+  return isExecSucceeded(result) || isSkillInstallAlreadyExists(result.output);
+}
+
+function shouldUpgradeSkillHubCli(output: string): boolean {
+  return /skillhub self-upgrade/i.test(output) || /发现新版本/i.test(output);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -246,7 +340,7 @@ async function executeInstallSkillCommand(
   try {
     const result = await execDebugCommand(botId, buildInstallSkillCommand(skillSlug));
     return {
-      succeeded: isExecSucceeded(result),
+      succeeded: isSkillInstallSucceeded(result),
       output: result.output,
     };
   } catch (error) {
@@ -261,12 +355,20 @@ async function installSkillSlugs(
   botId: string,
   skillSlugs: string[],
   execDebugCommand: ExpertsExecDebugCommand,
+  onProgress?: (progress: SkillInstallProgress) => void,
 ): Promise<SkillInstallResult> {
   const succeeded: string[] = [];
   const failed: SkillInstallFailure[] = [];
+  let hasTriedSkillHubUpgrade = false;
 
-  for (const skillSlug of skillSlugs) {
+  for (const [index, skillSlug] of skillSlugs.entries()) {
+    onProgress?.({ current: index + 1, total: skillSlugs.length });
     let result = await executeInstallSkillCommand(botId, skillSlug, execDebugCommand);
+    if (!result.succeeded && !hasTriedSkillHubUpgrade && shouldUpgradeSkillHubCli(result.output)) {
+      hasTriedSkillHubUpgrade = true;
+      await execDebugCommand(botId, buildSkillHubSelfUpgradeCommand()).catch(() => null);
+      result = await executeInstallSkillCommand(botId, skillSlug, execDebugCommand);
+    }
     if (!result.succeeded) {
       result = await executeInstallSkillCommand(botId, skillSlug, execDebugCommand);
     }
@@ -281,11 +383,65 @@ async function installSkillSlugs(
   return { succeeded, failed };
 }
 
-function formatInstallFailureOutput(output: string): string {
-  return output
+function tryParseJson(value: string): unknown | null {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function compactInstallErrorMessage(message: string): string {
+  const normalized = message.replace(/\\n/g, "\n").replace(/\\"/g, "\"").trim();
+  const downloadFailure = normalized.match(/Download failed:[^;}]+/i)?.[0]?.trim().replace(/["']+$/, "");
+  if (downloadFailure) return downloadFailure;
+
+  const targetExists = normalized.match(/Target exists:[^;}]+/i)?.[0]?.trim().replace(/["']+$/, "");
+  if (targetExists) return targetExists;
+
+  return normalized
+    .split(/\r?\n|；|; /)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !/^error:?\s*$/i.test(line))
+    .slice(-INSTALL_ERROR_OUTPUT_LINE_LIMIT)
+    .join("；");
+}
+
+function readInstallErrorMessage(value: unknown): string {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return "";
+    const parsed = tryParseJson(trimmed);
+    return parsed === null ? compactInstallErrorMessage(trimmed) : readInstallErrorMessage(parsed);
+  }
+  if (!isRecord(value)) return "";
+  const message = value.message;
+  if (typeof message === "string" && message.trim()) return readInstallErrorMessage(message);
+  const error = value.error;
+  if (typeof error === "string" && error.trim()) return readInstallErrorMessage(error);
+  if (isRecord(error)) return readInstallErrorMessage(error);
+  return "";
+}
+
+export function formatInstallFailureOutput(output: string): string {
+  const trimmed = output.trim();
+  if (!trimmed) return "";
+
+  try {
+    const parsed = tryParseJson(trimmed);
+    const parsedMessage = readInstallErrorMessage(parsed);
+    if (parsedMessage) return parsedMessage;
+  } catch {
+    /* Non-JSON output falls through to line trimming. */
+  }
+
+  const normalizedOutput = trimmed.replace(/\\n/g, "\n").replace(/\\"/g, "\"");
+  return normalizedOutput
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
+    .filter((line) => !/^error:?\s*$/i.test(line))
     .slice(-INSTALL_ERROR_OUTPUT_LINE_LIMIT)
     .join("；");
 }
@@ -316,16 +472,20 @@ export function getSkillPackageInstallFailureMessage(
 async function fetchExperts(params: {
   keyword: string;
   activeFilter: ExpertFilterId;
+  page: number;
 }): Promise<{ packages: SkillHubSkillSet[]; total: number }> {
   const response = await fetchSkillSets({
     keyword: params.keyword,
     scene: params.activeFilter === "all" ? undefined : params.activeFilter,
-    page: 1,
+    page: params.page,
     pageSize: EXPERT_PAGE_SIZE,
   });
+  const supportedPackages = (response.skillSets ?? []).filter(isSupportedExpertPackage);
   return {
-    packages: response.skillSets ?? [],
-    total: response.total ?? response.skillSets?.length ?? 0,
+    packages: supportedPackages,
+    total: params.activeFilter === "all"
+      ? supportedPackages.length
+      : response.total ?? supportedPackages.length,
   };
 }
 
@@ -345,16 +505,31 @@ export function ExpertsPanel({
     return window.localStorage.getItem("lightvela-experts-view") === "grid" ? "grid" : "list";
   });
   const [installingSlug, setInstallingSlug] = useState<string | null>(null);
-  const [installedSlugs, setInstalledSlugs] = useState<Set<string>>(() => new Set());
+  const [installProgress, setInstallProgress] = useState<SkillInstallProgress | null>(null);
+  const [installedSlugs, setInstalledSlugs] = useState<Set<string>>(() => readStoredInstalledPackageSlugs(botId));
+  const installedSlugsRef = useRef(installedSlugs);
   const [installedSkillSlugs, setInstalledSkillSlugs] = useState<Set<string>>(() => new Set());
   const [packageSkillSlugs, setPackageSkillSlugs] = useState<Map<string, string[]>>(() => new Map());
   const [selectedCard, setSelectedCard] = useState<ExpertPackageCard | null>(null);
-  const expertsFetcher = useCallback(() => fetchExperts({ keyword, activeFilter }), [activeFilter, keyword]);
-  const resource = useAsyncResource(expertsFetcher, [keyword, activeFilter]);
+  const [expertPackages, setExpertPackages] = useState<SkillHubSkillSet[]>([]);
+  const [expertTotal, setExpertTotal] = useState(0);
+  const [expertPage, setExpertPage] = useState(1);
+  const [expertsLoading, setExpertsLoading] = useState(true);
+  const [expertsLoadingMore, setExpertsLoadingMore] = useState(false);
+  const [expertsError, setExpertsError] = useState<Error | null>(null);
+  const [expertsRetryNonce, setExpertsRetryNonce] = useState(0);
+  const expertsRequestIdRef = useRef(0);
+  const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
 
   const visibleCards = useMemo<ExpertPackageCard[]>(() => {
-    return (resource.data?.packages ?? []).map((pkg) => ({ pkg }));
-  }, [resource.data]);
+    return expertPackages.map((pkg) => ({ pkg }));
+  }, [expertPackages]);
+
+  const hasMoreExperts = expertPackages.length < expertTotal;
+
+  useEffect(() => {
+    installedSlugsRef.current = installedSlugs;
+  }, [installedSlugs]);
 
   const handleViewChange = useCallback((nextView: ExpertView) => {
     setView(nextView);
@@ -369,13 +544,95 @@ export function ExpertsPanel({
     const nextKeyword = value.trim();
     setSearchDraft(nextKeyword);
     setKeyword(nextKeyword);
+    setExpertPage(1);
     setSelectedCard(null);
   }, []);
 
+  const reloadExperts = useCallback(() => {
+    setExpertPage(1);
+    setExpertPackages([]);
+    setExpertsRetryNonce((current) => current + 1);
+  }, []);
+
+  const loadMoreExperts = useCallback(() => {
+    if (expertsLoading || expertsLoadingMore || !hasMoreExperts) return;
+    setExpertPage((current) => current + 1);
+  }, [expertsLoading, expertsLoadingMore, hasMoreExperts]);
+
+  useEffect(() => {
+    if (!hasMoreExperts || expertsLoading || expertsLoadingMore) return;
+    if (typeof IntersectionObserver === "undefined") return;
+    const sentinel = loadMoreSentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry?.isIntersecting) {
+          loadMoreExperts();
+        }
+      },
+      { rootMargin: "240px 0px" },
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [expertsLoading, expertsLoadingMore, hasMoreExperts, loadMoreExperts]);
+
+  useEffect(() => {
+    const currentRequestId = ++expertsRequestIdRef.current;
+    const firstPage = expertPage === 1;
+
+    if (firstPage) {
+      setExpertsLoading(true);
+    } else {
+      setExpertsLoadingMore(true);
+    }
+    setExpertsError(null);
+
+    fetchExperts({ keyword, activeFilter, page: expertPage })
+      .then((result) => {
+        if (currentRequestId !== expertsRequestIdRef.current) return;
+        setExpertTotal(result.total);
+        setExpertPackages((current) => firstPage ? result.packages : [...current, ...result.packages]);
+      })
+      .catch((error) => {
+        if (currentRequestId !== expertsRequestIdRef.current) return;
+        setExpertsError(error instanceof Error ? error : new Error(String(error)));
+        if (firstPage) {
+          setExpertPackages([]);
+          setExpertTotal(0);
+        }
+      })
+      .finally(() => {
+        if (currentRequestId !== expertsRequestIdRef.current) return;
+        setExpertsLoading(false);
+        setExpertsLoadingMore(false);
+      });
+  }, [activeFilter, expertPage, expertsRetryNonce, keyword]);
+
   useEffect(() => {
     let cancelled = false;
-    setInstalledSlugs(new Set());
+    const cachedPackageSlugs = readStoredInstalledPackageSlugs(botId);
+    installedSlugsRef.current = cachedPackageSlugs;
+    setInstalledSlugs(cachedPackageSlugs);
     setInstalledSkillSlugs(new Set());
+
+    async function refreshInstalledPackages() {
+      try {
+        const state = await loadExpertPackagesState(botId);
+        if (cancelled || !state) return;
+        setInstalledSlugs((current) => {
+          const next = mergeInstalledPackageSlugs(current, state.installedPackageSlugs);
+          installedSlugsRef.current = next;
+          writeStoredInstalledPackageSlugs(botId, next);
+          return next;
+        });
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error("[experts] loadExpertPackagesState failed:", error);
+      }
+    }
 
     async function refreshInstalledSkills() {
       try {
@@ -390,6 +647,7 @@ export function ExpertsPanel({
       }
     }
 
+    void refreshInstalledPackages();
     void refreshInstalledSkills();
     return () => {
       cancelled = true;
@@ -412,7 +670,7 @@ export function ExpertsPanel({
         missingCards.map(async ({ pkg }) => {
           try {
             const detail = await fetchSkillSetDetail(pkg.slug);
-            return [pkg.slug, getUniqueSkillSlugs(detail.skillSlugs ?? [])] as const;
+            return [pkg.slug, getPackageSkillSlugs(pkg.slug, detail.skillSlugs ?? [])] as const;
           } catch {
             return null;
           }
@@ -436,7 +694,7 @@ export function ExpertsPanel({
   }, [installedSkillSlugs, packageSkillSlugs, visibleCards]);
 
   const getKnownSkillSlugs = useCallback((pkg: SkillHubSkillSet) => {
-    return getUniqueSkillSlugs(pkg.skillSlugs ?? packageSkillSlugs.get(pkg.slug) ?? []);
+    return getPackageSkillSlugs(pkg.slug, pkg.skillSlugs ?? packageSkillSlugs.get(pkg.slug) ?? []);
   }, [packageSkillSlugs]);
 
   const isPackageInstalled = useCallback((pkg: SkillHubSkillSet) => {
@@ -451,23 +709,28 @@ export function ExpertsPanel({
     setInstallingSlug(pkg.slug);
     try {
       const detail = await fetchSkillSetDetail(pkg.slug);
-      const skillSlugs = getUniqueSkillSlugs(detail.skillSlugs ?? []);
+      const skillSlugs = getPackageSkillSlugs(pkg.slug, detail.skillSlugs ?? []);
       if (skillSlugs.length === 0) {
         toast.error(t("该专家暂未包含可安装的 skills"));
         return;
       }
 
-      const installResult = await installSkillSlugs(botId, skillSlugs, execDebugCommand);
+      const installResult = await installSkillSlugs(botId, skillSlugs, execDebugCommand, setInstallProgress);
       if (installResult.failed.length > 0) {
         toast.error(getSkillPackageInstallFailureMessage(installResult, t));
         return;
       }
 
-      setInstalledSlugs((current) => {
-        const next = new Set(current);
-        next.add(pkg.slug);
-        return next;
-      });
+      const nextInstalledSlugs = new Set(installedSlugsRef.current);
+      nextInstalledSlugs.add(pkg.slug);
+      installedSlugsRef.current = nextInstalledSlugs;
+      writeStoredInstalledPackageSlugs(botId, nextInstalledSlugs);
+      setInstalledSlugs(nextInstalledSlugs);
+      saveExpertPackagesState(botId, { installedPackageSlugs: [...nextInstalledSlugs] })
+        .catch((error: unknown) => {
+          // eslint-disable-next-line no-console
+          console.error("[experts] saveExpertPackagesState failed:", error);
+        });
       setInstalledSkillSlugs((current) => {
         const next = new Set(current);
         installResult.succeeded.forEach((skillSlug) => next.add(skillSlug));
@@ -478,11 +741,12 @@ export function ExpertsPanel({
         next.set(pkg.slug, skillSlugs);
         return next;
       });
-      toast.success(t("专家安装成功"));
+      toast.success(t("专家技能包安装成功"));
     } catch (error) {
       toast.error(error instanceof Error ? getSkillHubErrorMessage(error, t) : t("专家安装失败"));
     } finally {
       setInstallingSlug(null);
+      setInstallProgress(null);
     }
   }, [botId, execDebugCommand, installingSlug, t]);
 
@@ -496,6 +760,7 @@ export function ExpertsPanel({
         card={selectedCard}
         activeFilter={activeFilter}
         installingSlug={installingSlug}
+        installProgress={installProgress}
         isInstalled={isPackageInstalled(selectedCard.pkg)}
         onBack={() => setSelectedCard(null)}
         onInstall={handleInstall}
@@ -503,7 +768,7 @@ export function ExpertsPanel({
     );
   }
 
-  if (resource.loading && !resource.data) {
+  if (expertsLoading && visibleCards.length === 0) {
     return (
       <div className="flex min-h-[360px] items-center justify-center rounded-md bg-white">
         <Loader2 className="h-5 w-5 animate-spin text-black/35" />
@@ -512,17 +777,17 @@ export function ExpertsPanel({
     );
   }
 
-  if (resource.error) {
+  if (expertsError) {
     return (
       <div className="rounded-md border border-red-500/15 bg-white p-6">
         <div className="flex items-start gap-3">
           <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-500" />
           <div className="min-w-0">
             <h2 className="text-base font-semibold text-black/90">{t("专家加载失败")}</h2>
-            <p className="mt-1 text-sm leading-6 text-black/50">{getSkillHubErrorMessage(resource.error, t)}</p>
+            <p className="mt-1 text-sm leading-6 text-black/50">{getSkillHubErrorMessage(expertsError, t)}</p>
             <button
               type="button"
-              onClick={() => void resource.reload()}
+              onClick={reloadExperts}
               className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-md bg-black px-3 text-sm font-medium text-white transition-colors hover:bg-black/85"
             >
               <RefreshCw className="h-3.5 w-3.5" />
@@ -537,11 +802,10 @@ export function ExpertsPanel({
   return (
     <div className="space-y-6">
       <div className="space-y-4">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <h2 className="text-[32px] font-semibold leading-tight text-black/95">{t("专家")}</h2>
-          <p className="text-sm font-medium text-black/50">
+        <div className="min-w-0">
+          <h2 className="text-lg font-semibold leading-tight text-black/95">{t("专家")}</h2>
+          <p className="mt-2 text-sm font-medium leading-6 text-black/50">
             {t("快速发现专家能力组合，让 AI 从单点技能走向完整工作流")}
-            <span className="text-black/30"> · {t("共 {{count}} 个专家", { count: resource.data?.total ?? visibleCards.length })}</span>
           </p>
         </div>
 
@@ -554,6 +818,7 @@ export function ExpertsPanel({
           activeFilter={activeFilter}
           onChange={(filterId) => {
             setActiveFilter(filterId);
+            setExpertPage(1);
             setSelectedCard(null);
           }}
         />
@@ -561,13 +826,14 @@ export function ExpertsPanel({
 
       {visibleCards.length > 0 ? (
         view === "grid" ? (
-          <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(380px,100%),1fr))] gap-4">
             {visibleCards.map((card) => (
               <ExpertGridCard
                 key={card.pkg.slug}
                 card={card}
                 activeFilter={activeFilter}
                 installingSlug={installingSlug}
+                installProgress={installProgress}
                 isInstalled={isPackageInstalled(card.pkg)}
                 onOpen={handleOpenDetail}
                 onInstall={handleInstall}
@@ -583,6 +849,7 @@ export function ExpertsPanel({
                   card={card}
                   activeFilter={activeFilter}
                   installingSlug={installingSlug}
+                  installProgress={installProgress}
                   isInstalled={isPackageInstalled(card.pkg)}
                   onOpen={handleOpenDetail}
                   onInstall={handleInstall}
@@ -596,6 +863,19 @@ export function ExpertsPanel({
           {t("没有找到匹配的专家")}
         </div>
       )}
+
+      {visibleCards.length > 0 && hasMoreExperts ? (
+        <div className="flex min-h-8 justify-center pt-1">
+          <div ref={loadMoreSentinelRef} className="flex h-8 items-center gap-2 text-xs text-black/32">
+            {expertsLoadingMore ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                {t("加载更多...")}
+              </>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -640,7 +920,7 @@ function ExpertViewToggle({
   onChange: (value: ExpertView) => void;
 }) {
   return (
-    <div className="flex w-max items-center gap-1 rounded-md bg-black/[0.04] p-1">
+    <div className="flex w-max items-center gap-1 rounded-md bg-black/[0.04] p-0.5">
       {EXPERT_VIEW_OPTIONS.map((item) => {
         const Icon = item.icon;
         const active = value === item.value;
@@ -650,12 +930,12 @@ function ExpertViewToggle({
             type="button"
             onClick={() => onChange(item.value)}
             className={cn(
-              "inline-flex h-8 items-center gap-1.5 rounded-[6px] px-3 text-sm font-medium transition-all",
+              "inline-flex h-7 min-w-[54px] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[6px] px-2.5 text-sm font-medium transition-all",
               active ? "bg-white text-black/85 shadow-[0_1px_4px_rgba(0,0,0,0.08)]" : "text-black/45 hover:text-black/70",
             )}
             aria-pressed={active}
           >
-            <Icon className="h-4 w-4" />
+            <Icon className="h-3.5 w-3.5" />
             {item.label}
           </button>
         );
@@ -707,51 +987,68 @@ function getExpertProfileImage(slug: string): string {
   return `${AI_BUDDY_ASSET_BASE}/expert-profiles/${slug}.${AI_BUDDY_ASSET_VERSION}.png`;
 }
 
+function getExpertInitial(displayName: string): string {
+  return Array.from(displayName.trim())[0]?.toUpperCase() ?? "专";
+}
+
 function SkillPackageProfileIcon({ pkg, className }: { pkg: SkillHubSkillSet; className?: string }) {
+  const [imageFailed, setImageFailed] = useState(false);
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [pkg.slug]);
+
   return (
     <div
       className={cn(
-        "relative flex h-[52px] w-[52px] flex-shrink-0 items-center justify-center overflow-hidden rounded-[12px] bg-black/[0.04]",
+        "relative flex h-11 w-11 flex-shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-black/[0.04] text-sm font-semibold text-black/56",
         className,
       )}
       data-testid="skill-package-profile-icon"
     >
-      <img
-        src={getExpertProfileImage(pkg.slug)}
-        alt=""
-        className="h-full w-full object-cover"
-        data-testid="skill-package-profile-image"
-      />
+      {imageFailed ? (
+        <span data-testid="skill-package-profile-fallback">{getExpertInitial(pkg.displayName)}</span>
+      ) : (
+        <img
+          src={getExpertProfileImage(pkg.slug)}
+          alt=""
+          className="h-full w-full object-cover"
+          data-testid="skill-package-profile-image"
+          onError={() => setImageFailed(true)}
+        />
+      )}
       <span className="sr-only">{pkg.displayName}</span>
     </div>
-  );
-}
-
-function ExpertBadge({ scene }: { scene: SkillHubSkillSetScene | undefined }) {
-  const t = useT();
-  return (
-    <span className="inline-flex flex-shrink-0 items-center gap-1 rounded-[6px] bg-[#F3F3F3] px-2 py-[3px] text-xs font-medium leading-none text-black/58">
-      <BadgeCheck className="h-3 w-3" strokeWidth={2.3} />
-      {getExpertRole(scene, t)}
-    </span>
   );
 }
 
 function InstallButton({
   pkg,
   installingSlug,
+  installProgress,
   isInstalled,
   onInstall,
   className,
 }: {
   pkg: SkillHubSkillSet;
   installingSlug: string | null;
+  installProgress: SkillInstallProgress | null;
   isInstalled: boolean;
   onInstall: (pkg: SkillHubSkillSet) => void;
   className?: string;
 }) {
   const t = useT();
   const isInstalling = installingSlug === pkg.slug;
+  const label = isInstalling && installProgress?.total
+    ? t("安装中 {{current}}/{{total}}", {
+        current: installProgress.current,
+        total: installProgress.total,
+      })
+    : isInstalling
+      ? t("安装中...")
+      : isInstalled
+        ? t("已安装")
+        : t("安装");
   return (
     <button
       type="button"
@@ -776,7 +1073,7 @@ function InstallButton({
       ) : (
         <PackageCheck className="h-3.5 w-3.5" />
       )}
-      {isInstalling ? t("安装中...") : isInstalled ? t("已安装") : t("安装")}
+      {label}
     </button>
   );
 }
@@ -785,6 +1082,7 @@ function ExpertGridCard({
   card,
   activeFilter,
   installingSlug,
+  installProgress,
   isInstalled,
   onOpen,
   onInstall,
@@ -792,6 +1090,7 @@ function ExpertGridCard({
   card: ExpertPackageCard;
   activeFilter: ExpertFilterId;
   installingSlug: string | null;
+  installProgress: SkillInstallProgress | null;
   isInstalled: boolean;
   onOpen: (card: ExpertPackageCard) => void;
   onInstall: (pkg: SkillHubSkillSet) => void;
@@ -799,6 +1098,7 @@ function ExpertGridCard({
   const t = useT();
   const scene = getPackageScene(card.pkg, activeFilter);
   const skillCount = getSkillCount(card.pkg);
+  const summary = getPackageSummary(card.pkg, t);
 
   return (
     <article
@@ -818,26 +1118,23 @@ function ExpertGridCard({
         <div className="min-w-0 flex-1 pt-0.5">
           <div className="flex min-w-0 items-center gap-2">
             <h3 className="truncate text-base font-semibold leading-6 text-black/90">{card.pkg.displayName}</h3>
-            <span className="inline-flex flex-shrink-0 rounded-[6px] bg-[#F3F3F3] px-1.5 py-[2px] text-[11px] font-medium leading-none text-black/56">
-              {t("专家")}
-            </span>
           </div>
-          <p className="mt-1.5 truncate text-sm font-medium text-black/48">{getExpertRole(scene, t)}</p>
+          <p className="mt-1.5 truncate text-xs font-medium leading-5 text-black/48">{getExpertRole(scene, t)}</p>
         </div>
       </div>
-      <p className="mt-4 line-clamp-2 text-sm leading-6 text-black/58">{getPackageSummary(card.pkg, t)}</p>
+      <p className="line-clamp-2 text-[13px] leading-[22px] text-black/58" style={{ marginTop: 40 }} title={summary}>{summary}</p>
       <div className="mt-auto flex items-center gap-3 pt-4">
-        <span className="inline-flex items-center gap-1.5 text-xs font-light text-black/40">
+        <span className="inline-flex items-center gap-1.5 text-xs font-normal text-black/62">
           <PackageOpen className="h-3.5 w-3.5" />
           {skillCount > 0 ? t("{{count}} 个技能", { count: skillCount }) : t("专家")}
         </span>
-        <span className="text-xs font-light text-black/36">SkillHub</span>
         <InstallButton
           pkg={card.pkg}
           installingSlug={installingSlug}
+          installProgress={installProgress}
           isInstalled={isInstalled}
           onInstall={onInstall}
-          className="ml-auto h-7 px-2.5 text-xs"
+          className="ml-auto h-6 px-2 text-xs"
         />
       </div>
     </article>
@@ -848,6 +1145,7 @@ function ExpertListItem({
   card,
   activeFilter,
   installingSlug,
+  installProgress,
   isInstalled,
   onOpen,
   onInstall,
@@ -855,6 +1153,7 @@ function ExpertListItem({
   card: ExpertPackageCard;
   activeFilter: ExpertFilterId;
   installingSlug: string | null;
+  installProgress: SkillInstallProgress | null;
   isInstalled: boolean;
   onOpen: (card: ExpertPackageCard) => void;
   onInstall: (pkg: SkillHubSkillSet) => void;
@@ -862,6 +1161,7 @@ function ExpertListItem({
   const t = useT();
   const scene = getPackageScene(card.pkg, activeFilter);
   const skillCount = getSkillCount(card.pkg);
+  const summary = getPackageSummary(card.pkg, t);
 
   return (
     <article
@@ -880,25 +1180,21 @@ function ExpertListItem({
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex items-center gap-2">
           <h3 className="truncate text-lg font-semibold leading-6 text-black/90">{card.pkg.displayName}</h3>
-          <span className="inline-flex flex-shrink-0 items-center gap-1 rounded-[6px] bg-[#F3F3F3] px-2 py-[3px] text-xs font-medium leading-none text-black/58">
-            <BadgeCheck className="h-3 w-3" strokeWidth={2.3} />
-            {t("专家")}
-          </span>
         </div>
-        <p className="mb-2 truncate text-sm font-medium text-black/48">{getExpertRole(scene, t)}</p>
-        <p className="line-clamp-2 text-sm leading-7 text-black/58">{getPackageSummary(card.pkg, t)}</p>
-      </div>
-      <div className="hidden flex-shrink-0 flex-col items-end gap-3 pt-1 md:flex">
-        <div className="flex items-center gap-6">
-          <span className="inline-flex w-24 items-center justify-end gap-1.5 text-xs font-light text-black/40">
+        <div className="mb-2 flex min-w-0 flex-wrap items-center gap-7">
+          <p className="truncate text-xs font-medium leading-5 text-black/48">{getExpertRole(scene, t)}</p>
+          <span className="inline-flex flex-shrink-0 items-center gap-1.5 text-xs font-light text-black/52">
             <PackageOpen className="h-3.5 w-3.5" />
             {skillCount > 0 ? t("{{count}} 个技能", { count: skillCount }) : t("专家")}
           </span>
-          <span className="w-16 text-right text-xs font-light text-black/36">SkillHub</span>
         </div>
+        <p className="line-clamp-2 text-[13px] leading-[24px] text-black/58" title={summary}>{summary}</p>
+      </div>
+      <div className="hidden flex-shrink-0 flex-col items-end gap-3 pt-1 md:flex">
         <InstallButton
           pkg={card.pkg}
           installingSlug={installingSlug}
+          installProgress={installProgress}
           isInstalled={isInstalled}
           onInstall={onInstall}
           className="h-7 px-2.5 text-xs"
@@ -912,6 +1208,7 @@ function SkillPackageDetailView({
   card,
   activeFilter,
   installingSlug,
+  installProgress,
   isInstalled,
   onBack,
   onInstall,
@@ -919,6 +1216,7 @@ function SkillPackageDetailView({
   card: ExpertPackageCard;
   activeFilter: ExpertFilterId;
   installingSlug: string | null;
+  installProgress: SkillInstallProgress | null;
   isInstalled: boolean;
   onBack: () => void;
   onInstall: (pkg: SkillHubSkillSet) => void;
@@ -929,7 +1227,14 @@ function SkillPackageDetailView({
   const [activeSkillIndex, setActiveSkillIndex] = useState(0);
   const detail = data ?? card.pkg;
   const scene = getPackageScene(detail, activeFilter);
-  const skillSlugs = getUniqueSkillSlugs(data?.skillSlugs ?? card.pkg.skillSlugs ?? []);
+  const skillSlugs = getPackageSkillSlugs(card.pkg.slug, data?.skillSlugs ?? card.pkg.skillSlugs ?? []);
+  const skillSlugsKey = skillSlugs.join("\u0000");
+  const skillDisplayNamesFetcher = useCallback(
+    () => fetchSkillDisplayNames(skillSlugs),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [skillSlugsKey],
+  );
+  const skillDisplayNames = useAsyncResource(skillDisplayNamesFetcher, [skillSlugsKey]);
   const activeSkillSlug = skillSlugs[activeSkillIndex] ?? skillSlugs[0];
 
   useEffect(() => {
@@ -951,11 +1256,9 @@ function SkillPackageDetailView({
         <div className="flex min-w-0 items-start gap-5">
           <SkillPackageProfileIcon pkg={detail} className="h-16 w-16 rounded-[14px]" />
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-[28px] font-semibold leading-tight text-black/95">{detail.displayName}</h2>
-              <ExpertBadge scene={scene} />
-            </div>
-            <p className="mt-3 max-w-5xl text-sm leading-7 text-black/62">
+            <h2 className="text-[28px] font-semibold leading-tight text-black/95">{detail.displayName}</h2>
+            <p className="mt-1 text-sm font-medium leading-6 text-black/48">{getExpertRole(scene, t)}</p>
+            <p className="mt-5 max-w-5xl text-sm leading-7 text-black/62">
               {getPackageSummary(detail as SkillHubSkillSet, t)}
             </p>
           </div>
@@ -963,6 +1266,7 @@ function SkillPackageDetailView({
         <InstallButton
           pkg={card.pkg}
           installingSlug={installingSlug}
+          installProgress={installProgress}
           isInstalled={isInstalled}
           onInstall={onInstall}
           className="h-9 flex-shrink-0 px-4"
@@ -970,15 +1274,6 @@ function SkillPackageDetailView({
       </div>
 
       <div>
-        <div className="mb-6 flex items-center border-b border-black/8">
-          <button
-            type="button"
-            className="-mb-px border-b-[3px] border-black/88 pb-3 text-base font-semibold tracking-tight text-black/90"
-          >
-            {t("技能模块")}
-          </button>
-        </div>
-
         {loading && !data ? (
           <div className="flex min-h-40 items-center justify-center text-sm text-black/45">
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -991,22 +1286,27 @@ function SkillPackageDetailView({
         ) : skillSlugs.length > 0 ? (
           <div className="space-y-8">
             <div className="inline-flex max-w-full items-center overflow-x-auto rounded-md bg-[#EEEEEE] p-[3px]">
-              {skillSlugs.map((skillSlug, index) => (
-                <button
-                  key={skillSlug}
-                  type="button"
-                  onClick={() => setActiveSkillIndex(index)}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 whitespace-nowrap rounded-[4px] px-4 py-2 text-sm transition-all",
-                    index === activeSkillIndex
-                      ? "bg-white font-semibold text-black/90 shadow-[0_1px_4px_rgba(0,0,0,0.05)]"
-                      : "bg-transparent font-medium text-black/62 hover:text-black/88",
-                  )}
-                >
-                  <Puzzle className="h-4 w-4" />
-                  <span className="max-w-40 overflow-hidden text-ellipsis">{formatSkillDisplayName(skillSlug)}</span>
-                </button>
-              ))}
+              {skillSlugs.map((skillSlug, index) => {
+                const skillDisplayName = skillDisplayNames.data?.get(skillSlug) ?? formatSkillDisplayName(skillSlug);
+                return (
+                  <button
+                    key={skillSlug}
+                    type="button"
+                    onClick={() => setActiveSkillIndex(index)}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 whitespace-nowrap rounded-[4px] px-4 py-2 text-sm transition-all",
+                      index === activeSkillIndex
+                        ? "bg-white font-semibold text-black/90 shadow-[0_1px_4px_rgba(0,0,0,0.05)]"
+                        : "bg-transparent font-medium text-black/62 hover:text-black/88",
+                    )}
+                  >
+                    <Puzzle className="h-4 w-4" />
+                    <span className="max-w-40 overflow-hidden text-ellipsis" title={skillDisplayName}>
+                      {skillDisplayName}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
 
             {activeSkillSlug ? <SkillContent slug={activeSkillSlug} /> : null}

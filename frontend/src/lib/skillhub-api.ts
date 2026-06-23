@@ -82,6 +82,18 @@ export interface SkillHubSkillSetListResponse {
   skillSets: SkillHubSkillSet[];
 }
 
+export interface SkillHubSkill {
+  id?: number;
+  slug: string;
+  displayName: string;
+  summary?: string;
+  summary_zh?: string;
+}
+
+export interface SkillHubSkillDetailResponse {
+  skill: SkillHubSkill;
+}
+
 export interface SkillHubSkillFileItem {
   path: string;
   size: number;
@@ -143,6 +155,12 @@ export function fetchSkillSets(params?: {
 /** 查询单个 SkillHub 技能包详情 */
 export function fetchSkillSetDetail(slug: string): Promise<SkillHubSkillSetDetail> {
   return publicGet(`/api/v1/skillsets/${encodeURIComponent(slug)}`);
+}
+
+/** 查询单个 Skill 详情，包含 SkillHub 后端维护的展示名称 */
+export function fetchSkillDetail(slug: string): Promise<SkillHubSkill> {
+  return publicGet<SkillHubSkillDetailResponse>(`/api/v1/skills/${encodeURIComponent(slug)}`)
+    .then((response) => response.skill);
 }
 
 /** 获取单个 Skill 的文件列表 */

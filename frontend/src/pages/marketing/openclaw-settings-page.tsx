@@ -38,10 +38,10 @@ import {
   Trash2,
   Trophy,
   UploadCloud,
+  UserCheck,
   UserRound,
   Wand2,
   Wrench,
-  UsersRound,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useState, useEffect, useCallback, useRef, useMemo, type ChangeEvent } from "react";
@@ -4436,7 +4436,7 @@ export const OpenClawSettingsPage = () => {
                 { id: "channel", label: t("通道"), icon: <MessageCircle className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.channel },
                 { id: "model", label: t("模型"), icon: <BrainCircuit className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.model },
                 { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.skill },
-                { id: "expert", label: t("专家"), icon: <UsersRound className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.expert, badge: "NEW" },
+                { id: "expert", label: t("专家"), icon: <UserCheck className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.expert, badge: "NEW" },
                 ...(!isGlobal
                   ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.buddy }]
                   : []),

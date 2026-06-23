@@ -8,6 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fetchSkillFile,
+  fetchSkillDetail,
   fetchSkillFiles,
   fetchSkillSetDetail,
   fetchSkillSets,
@@ -82,6 +83,17 @@ describe("skillhub-api", () => {
       const fetchMock = mockFetch({ slug: "finance pack", skillSlugs: [] });
       await fetchSkillSetDetail("finance pack");
       expect(fetchMock).toHaveBeenCalledWith("/__skillhub/api/v1/skillsets/finance%20pack");
+    });
+  });
+
+  describe("fetchSkillDetail", () => {
+    it("URL-encodes the slug and unwraps the skill payload", async () => {
+      const fetchMock = mockFetch({ skill: { slug: "qa plan", displayName: "QA Test Plan Generator" } });
+      await expect(fetchSkillDetail("qa plan")).resolves.toEqual({
+        slug: "qa plan",
+        displayName: "QA Test Plan Generator",
+      });
+      expect(fetchMock).toHaveBeenCalledWith("/__skillhub/api/v1/skills/qa%20plan");
     });
   });
 
