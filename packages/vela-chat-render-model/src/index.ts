@@ -366,7 +366,7 @@ function buildTurnMetaRow(turn: ChatSurfaceTurnMetaItem): ChatRenderRow {
   const label =
     turn.status === "running"
       ? "处理中"
-      : formatProcessedFor(turn.created_at, updatedAt) ?? "已处理";
+      : formatTerminalTurnLabel(turn.status, turn.created_at, updatedAt);
 
   return {
     kind: "turn_meta",
@@ -382,6 +382,17 @@ function buildTurnMetaRow(turn: ChatSurfaceTurnMetaItem): ChatRenderRow {
   };
 }
 
+function formatTerminalTurnLabel(
+  status: ChatSurfaceTurnMetaItem["status"],
+  startIso: string,
+  endIso: string,
+): string {
+  const duration = formatTurnDuration(startIso, endIso);
+  if (status === "failed") return duration ? `处理失败 ${duration}` : "处理失败";
+  if (status === "cancelled") return duration ? `已取消 ${duration}` : "已取消";
+  return duration ? `已处理 ${duration}` : "已处理";
+}
+
 function isTurnMetaItem(item: ChatSurfaceConversationItem): item is ChatSurfaceTurnMetaItem {
   return item.kind === "turn_meta";
 }
@@ -393,26 +404,24 @@ function normalizeTurnMetaStatus(status: ChatSurfaceTurnMetaItem["status"]): Tur
   return "running";
 }
 
-function formatProcessedFor(startIso: string, endIso: string): string | undefined {
+function formatTurnDuration(startIso: string, endIso: string): string | undefined {
   const start = Date.parse(startIso);
   const end = Date.parse(endIso);
   if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return undefined;
 
   const seconds = Math.max(0, Math.floor((end - start) / 1000));
-  if (seconds === 0) return "已处理 <1s";
-  if (seconds < 60) return `已处理 ${seconds}s`;
+  if (seconds === 0) return "<1s";
+  if (seconds < 60) return `${seconds}s`;
 
   const minutes = Math.floor(seconds / 60);
   const remainder = seconds % 60;
   if (minutes < 60) {
-    return remainder === 0 ? `已处理 ${minutes}m` : `已处理 ${minutes}m ${remainder}s`;
+    return remainder === 0 ? `${minutes}m` : `${minutes}m ${remainder}s`;
   }
 
   const hours = Math.floor(minutes / 60);
   const minuteRemainder = minutes % 60;
-  return minuteRemainder === 0
-    ? `已处理 ${hours}h`
-    : `已处理 ${hours}h ${minuteRemainder}m`;
+  return minuteRemainder === 0 ? `${hours}h` : `${hours}h ${minuteRemainder}m`;
 }
 
 function getFenceDelimiter(line: string) {

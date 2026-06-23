@@ -2,8 +2,11 @@ import { app, BrowserWindow, ipcMain } from "electron";
 import { fileURLToPath } from "node:url";
 import { appendFileSync, existsSync, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { createServer } from "node:net";
 
 let mainWindow: BrowserWindow | null = null;
+let veladProcess: ChildProcessWithoutNullStreams | null = null;
 let logWriter: RotatingLogWriter | null = null;
 
 const __filename = fileURLToPath(import.meta.url);
@@ -14,8 +17,8 @@ function runtimeEnv(name: string) {
 }
 
 const configuredVeladListenAddr = runtimeEnv("VELA_DESKTOP_VELAD_LISTEN_ADDR") ?? "";
-const externalVeladListenAddr = configuredVeladListenAddr || "127.0.0.1:3857";
-const veladListenAddr = externalVeladListenAddr;
+const externalVeladListenAddr = "127.0.0.1:3857";
+let veladListenAddr = configuredVeladListenAddr;
 let veladReadyPromise: Promise<void> | null = null;
 const maxLogBytes = Number(runtimeEnv("VELA_DESKTOP_LOG_MAX_BYTES") ?? 5 * 1024 * 1024);
 const maxLogFiles = Number(runtimeEnv("VELA_DESKTOP_LOG_MAX_FILES") ?? 5);
@@ -77,7 +80,99 @@ function logLine(source: string, message: string) {
   getLogWriter().write(source, message);
 }
 
+function bundledVeladPath() {
+  const packagedPath = join(process.resourcesPath, "bin", "velad");
+  if (existsSync(packagedPath)) return packagedPath;
+  return null;
+}
+
+function desktopRuntimeEnv() {
+  const home = process.env.HOME ?? app.getPath("home");
+  const pathEntries = [
+    join(home, ".local", "bin"),
+    join(home, ".bun", "bin"),
+    "/opt/homebrew/bin",
+    "/opt/homebrew/sbin",
+    "/usr/local/bin",
+    "/usr/bin",
+    "/bin",
+    "/usr/sbin",
+    "/sbin",
+    process.env.PATH ?? "",
+  ].filter(Boolean);
+  return {
+    ...process.env,
+    PATH: Array.from(new Set(pathEntries.flatMap((entry) => entry.split(":")).filter(Boolean))).join(":"),
+  };
+}
+
+function reserveLoopbackListenAddr() {
+  return new Promise<string>((resolve, reject) => {
+    const server = createServer();
+    server.on("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        server.close(() => reject(new Error("Unable to reserve a velad port")));
+        return;
+      }
+      const listenAddr = `127.0.0.1:${address.port}`;
+      server.close((err) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve(listenAddr);
+      });
+    });
+  });
+}
+
+async function ensureVeladListenAddr() {
+  if (veladListenAddr) return veladListenAddr;
+  veladListenAddr = bundledVeladPath() ? await reserveLoopbackListenAddr() : externalVeladListenAddr;
+  return veladListenAddr;
+}
+
+async function startBundledVelad() {
+  const listenAddr = await ensureVeladListenAddr();
+  const binaryPath = bundledVeladPath();
+  if (!binaryPath) {
+    console.log(`[velad] using external velad at http://${listenAddr}/api/v1`);
+    logLine("[host]", `using external velad at http://${listenAddr}/api/v1`);
+    return;
+  }
+  if (veladProcess) return;
+
+  console.log(`[velad] starting bundled velad at ${binaryPath} on ${listenAddr}`);
+  logLine("[host]", `starting bundled velad at ${binaryPath} on ${listenAddr}`);
+  veladProcess = spawn(binaryPath, {
+    env: {
+      ...desktopRuntimeEnv(),
+      VELAD_LISTEN_ADDR: listenAddr,
+      RUST_LOG: process.env.RUST_LOG ?? "warn",
+    },
+    stdio: "pipe",
+  });
+  veladProcess.stdout.on("data", (chunk) => {
+    const message = String(chunk).trimEnd();
+    console.log(`[velad] ${message}`);
+    logLine("[velad:stdout]", message);
+  });
+  veladProcess.stderr.on("data", (chunk) => {
+    const message = String(chunk).trimEnd();
+    console.error(`[velad] ${message}`);
+    logLine("[velad:stderr]", message);
+  });
+  veladProcess.on("exit", (code, signal) => {
+    console.log(`[velad] exited code=${code ?? "null"} signal=${signal ?? "null"}`);
+    logLine("[host]", `velad exited code=${code ?? "null"} signal=${signal ?? "null"}`);
+    veladProcess = null;
+  });
+}
+
 async function waitForVeladReady() {
+  await ensureVeladListenAddr();
   const startedAt = Date.now();
   const url = `http://${veladListenAddr}/api/v1/backends`;
   let lastError: unknown = null;
@@ -105,11 +200,16 @@ async function waitForVeladReady() {
 
 async function ensureVeladReady() {
   if (!veladReadyPromise) {
-    console.log(`[velad] using external velad at http://${veladListenAddr}/api/v1`);
-    logLine("[host]", `using external velad at http://${veladListenAddr}/api/v1`);
-    veladReadyPromise = waitForVeladReady();
+    veladReadyPromise = startBundledVelad().then(waitForVeladReady);
   }
   return veladReadyPromise;
+}
+
+function stopBundledVelad() {
+  const child = veladProcess;
+  if (!child) return;
+  veladProcess = null;
+  child.kill("SIGTERM");
 }
 
 async function createWindow() {
@@ -125,7 +225,7 @@ async function createWindow() {
     minWidth: 860,
     minHeight: 560,
     frame: false,
-    titleBarStyle: "hiddenInset",
+    titleBarStyle: "hidden",
     trafficLightPosition: macosChromeMetrics.trafficLightPosition,
     webPreferences: {
       preload: join(__dirname, "preload.cjs"),
@@ -192,5 +292,6 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  stopBundledVelad();
   mainWindow = null;
 });

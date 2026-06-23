@@ -122,7 +122,7 @@ function readWebApiBaseUrl() {
   if (fromQuery) return fromQuery;
 
   const fromEnv = import.meta.env.VITE_VELA_API_BASE_URL;
-  if (fromEnv?.startsWith("/")) return fromEnv;
+  if (fromEnv) return fromEnv;
 
   return DEFAULT_WEB_API_BASE_URL;
 }

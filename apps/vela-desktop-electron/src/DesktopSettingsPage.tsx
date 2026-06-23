@@ -25,6 +25,9 @@ import type {
 } from "../../../packages/vela-chat-client/src";
 import {
   Sidebar,
+  SidebarBody,
+  SidebarBodyFixed,
+  SidebarBodyScroll,
   SidebarContent,
   ShellSelect,
   ShellSwitch,
@@ -80,22 +83,28 @@ export function DesktopSettingsSidebar({
     <Sidebar className="vela-settings-sidebar" aria-label="Settings navigation">
       <VelaSidebarChrome showTrafficLights={showTrafficLights} />
       <SidebarContent className="vela-settings-sidebar-content">
-        <button className="vela-settings-back" type="button" onClick={onClose}>
-          <ArrowLeft size={16} aria-hidden />
-          <span>返回应用</span>
-        </button>
-        <label className="vela-settings-search">
-          <Search size={15} aria-hidden />
-          <input placeholder="搜索设置..." />
-        </label>
+        <SidebarBody className="vela-settings-sidebar-body">
+        <SidebarBodyFixed className="vela-settings-fixed-controls">
+          <button className="vela-settings-back" type="button" onClick={onClose}>
+            <ArrowLeft size={16} aria-hidden />
+            <span>返回应用</span>
+          </button>
+          <label className="vela-settings-search">
+            <Search size={15} aria-hidden />
+            <input placeholder="搜索设置..." />
+          </label>
+        </SidebarBodyFixed>
 
-        <SettingsNavGroup title="个人" items={personalSettings} />
-        <SettingsNavGroup title="集成" items={integrationSettings} />
-        <SettingsNavGroup title="编码" items={codingSettings} />
-        <SettingsNavGroup
-          title="已归档"
-          items={[{ icon: Archive, label: "已归档对话" }]}
-        />
+        <SidebarBodyScroll className="vela-settings-nav-scroll">
+          <SettingsNavGroup title="个人" items={personalSettings} />
+          <SettingsNavGroup title="集成" items={integrationSettings} />
+          <SettingsNavGroup title="编码" items={codingSettings} />
+          <SettingsNavGroup
+            title="已归档"
+            items={[{ icon: Archive, label: "已归档对话" }]}
+          />
+        </SidebarBodyScroll>
+        </SidebarBody>
       </SidebarContent>
     </Sidebar>
   );

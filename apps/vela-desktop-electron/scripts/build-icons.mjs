@@ -25,7 +25,7 @@ await rm(iconsetDir, { recursive: true, force: true });
 await mkdir(iconsetDir, { recursive: true });
 
 const smallSource = sharp(sourcePng)
-  .extract({ left: 36, top: 36, width: 664, height: 664 })
+  .extract({ left: 120, top: 120, width: 496, height: 496 })
   .modulate({ saturation: 0.98, brightness: 1.01 });
 
 for (const [size, filename, small] of entries) {

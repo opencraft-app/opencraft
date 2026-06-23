@@ -8,6 +8,7 @@ export interface VelaDesktopShellProps {
   children: ReactNode;
   host?: DesktopHostBridge;
   isSidebarVisible: boolean;
+  sidebarPresentation?: "docked" | "overlay";
   sidebarWidthPx?: number;
   onCreateSession?: () => void;
   onToggleSidebar?: () => void;
@@ -22,6 +23,7 @@ export function VelaDesktopShell({
   children,
   host = browserDesktopHostBridge,
   isSidebarVisible,
+  sidebarPresentation = "docked",
   sidebarWidthPx,
   onCreateSession,
   onToggleSidebar,
@@ -34,6 +36,7 @@ export function VelaDesktopShell({
     <VelaSidebarShell
       host={host}
       isSidebarVisible={isSidebarVisible}
+      sidebarPresentation={sidebarPresentation}
       sidebar={sidebar}
       sidebarWidthPx={sidebarWidthPx}
       onCreateSession={onCreateSession}

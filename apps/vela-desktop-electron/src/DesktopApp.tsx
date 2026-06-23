@@ -10,7 +10,7 @@ import {
   useVelaChatSession,
 } from "../../../packages/vela-chat-controller/src";
 import type { ChatHostPolicy } from "../../../packages/vela-chat-render-model/src";
-import { VelaChatWeb } from "../../../packages/vela-chat-web/src";
+import { ChatSurface } from "../../../packages/vela-chat-web/src";
 import {
   SessionSidebar,
   VelaDesktopShell,
@@ -34,6 +34,7 @@ import "./style.css";
 const DEFAULT_WORKING_DIRECTORY = "/";
 const DEFAULT_WEB_API_BASE_URL = "/api/v1";
 const DEFAULT_BACKEND_STORAGE_KEY = "vela-desktop:settings:default-backend";
+const DESKTOP_BACKEND_PREFERENCE = ["codex", "acp", "pi"] satisfies BackendKindWire[];
 const DESKTOP_SHELL_HOST_POLICY = { kind: "desktop_shell" } satisfies ChatHostPolicy;
 
 type DesktopHostStateStores = ReturnType<typeof createDesktopHostStateStores>;
@@ -177,6 +178,7 @@ function DesktopReadyApp({
       buildVelaSessionSetupSelection({
         backends: controller.backends,
         selectedBackend: selectedBackendKind,
+        preferredBackends: DESKTOP_BACKEND_PREFERENCE,
         selectedModel: "",
         selectedPermissionMode: "",
         selectedReasoningEffort: "",
@@ -195,7 +197,11 @@ function DesktopReadyApp({
       setError(null);
       const response = await client.getSessionListView({ limit: 80 });
       setSessions(response.sessions);
-      setActiveSessionId((current) => current || response.sessions[0]?.id || "");
+      setActiveSessionId((current) =>
+        current && response.sessions.some((session) => session.id === current)
+          ? current
+          : response.sessions[0]?.id || "",
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -210,6 +216,7 @@ function DesktopReadyApp({
       buildVelaSessionSetupSelection({
         backends,
         selectedBackend: selectedBackendKind,
+        preferredBackends: DESKTOP_BACKEND_PREFERENCE,
         selectedModel: "",
         selectedPermissionMode: "",
         selectedReasoningEffort: "",
@@ -270,6 +277,7 @@ function DesktopReadyApp({
       host={hostBridge}
       isSidebarVisible={isSidebarVisible}
       sidebar={isSettingsOpen ? settingsSidebar : appSidebar}
+      sidebarPresentation="overlay"
       sidebarWidthPx={sidebarWidthPx}
       onCreateSession={createSession}
       onSidebarVisibilityChange={onSidebarVisibilityChange}
@@ -287,7 +295,7 @@ function DesktopReadyApp({
           onSelectedBackendChange={setSelectedBackendKind}
         />
       ) : activeSessionId ? (
-        <VelaChatWeb
+        <ChatSurface
           canLoadOlder={controller.canLoadOlder}
           clientStateStore={hostStateStores.clientStateStore}
           composerControls={controller.composerControls}

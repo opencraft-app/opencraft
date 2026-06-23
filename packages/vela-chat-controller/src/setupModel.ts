@@ -9,6 +9,7 @@ import { DEFAULT_PERMISSION_MODE_OPTIONS } from "../../vela-chat-web/src/compone
 export interface VelaSessionSetupSelectionInput {
   backends: BackendWire[];
   selectedBackend: BackendKindWire | "";
+  preferredBackends?: BackendKindWire[];
   selectedModel: string;
   selectedReasoningEffort: string;
   selectedPermissionMode: PermissionModeWire | "";
@@ -17,12 +18,14 @@ export interface VelaSessionSetupSelectionInput {
 export function buildVelaSessionSetupSelection({
   backends,
   selectedBackend,
+  preferredBackends = [],
   selectedModel,
   selectedReasoningEffort,
   selectedPermissionMode,
 }: VelaSessionSetupSelectionInput) {
   const selectedBackendDetails =
-    backends.find((backend) => backend.kind === selectedBackend) ?? backends[0];
+    backends.find((backend) => backend.kind === selectedBackend) ??
+    resolvePreferredBackend(backends, preferredBackends);
   const resolvedSelectedBackend = selectedBackendDetails?.kind ?? selectedBackend;
   const backendKinds = new Set(backends.map((backend) => backend.kind));
   const setupModelOptions = selectedBackendDetails?.models ?? [];
@@ -73,6 +76,16 @@ export function buildVelaSessionSetupSelection({
   };
 }
 
+function resolvePreferredBackend(backends: BackendWire[], preferredBackends: BackendKindWire[]) {
+  const availableBackends = backends.filter((backend) => backend.status === "available");
+  const candidateBackends = availableBackends.length ? availableBackends : backends;
+  for (const preferredBackend of preferredBackends) {
+    const backend = candidateBackends.find((candidate) => candidate.kind === preferredBackend);
+    if (backend) return backend;
+  }
+  return candidateBackends[0];
+}
+
 function isDefaultOption(option: unknown) {
   return (
     typeof option === "object" &&
@@ -81,4 +94,3 @@ function isDefaultOption(option: unknown) {
     option.is_default === true
   );
 }
-

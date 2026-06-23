@@ -123,7 +123,14 @@ impl AcpHost for AcpStdioHost {
         for (key, value) in &self.env {
             command.env(key, value);
         }
-        let mut child = command.spawn()?;
+        let mut child = command.spawn().map_err(|err| {
+            anyhow::anyhow!(
+                "failed to spawn ACP command `{}` with args {:?}: {}",
+                self.command,
+                self.args,
+                err
+            )
+        })?;
         let stdin = child
             .stdin
             .take()

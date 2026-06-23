@@ -31,6 +31,7 @@ interface VelaSidebarShellProps {
   host?: DesktopHostBridge;
   className?: string;
   isSidebarVisible: boolean;
+  sidebarPresentation?: "docked" | "overlay";
   sidebarWidthPx?: number;
   onToggleSidebar?: () => void;
   onSidebarVisibilityChange?: (isVisible: boolean) => void;
@@ -49,6 +50,10 @@ interface SidebarProviderProps extends HTMLAttributes<HTMLDivElement> {
 }
 
 interface SidebarProps extends HTMLAttributes<HTMLElement> {
+  children: ReactNode;
+}
+
+interface SidebarBodyProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
 }
 
@@ -127,6 +132,7 @@ export function VelaSidebarShell({
   host = browserDesktopHostBridge,
   className = "app-shell vela-tri-pane-shell",
   isSidebarVisible,
+  sidebarPresentation = "docked",
   sidebarWidthPx = 300,
   onToggleSidebar,
   onSidebarVisibilityChange,
@@ -146,6 +152,7 @@ export function VelaSidebarShell({
       <div
         className={["vela-desktop-shell", className].filter(Boolean).join(" ")}
         data-platform={host.platform}
+        data-sidebar-presentation={sidebarPresentation}
         data-slot="sidebar-shell"
         data-state={sidebarState}
       >
@@ -164,7 +171,7 @@ export function VelaSidebarShell({
             {sidebar}
           </div>
         </div>
-        {isSidebarVisible && onSidebarWidthChange ? (
+        {isSidebarVisible && sidebarPresentation === "docked" && onSidebarWidthChange ? (
           <SidebarResizeHandle
             sidebarWidthPx={sidebarWidthPx}
             onSidebarResizeStart={onSidebarResizeStart}
@@ -248,6 +255,39 @@ export function SidebarContent({ className, ...props }: HTMLAttributes<HTMLDivEl
       className={["vela-sidebar-content", className].filter(Boolean).join(" ")}
       data-sidebar="content"
       data-slot="sidebar-content"
+      {...props}
+    />
+  );
+}
+
+export function SidebarBody({ className, ...props }: SidebarBodyProps) {
+  return (
+    <div
+      className={["vela-sidebar-body", className].filter(Boolean).join(" ")}
+      data-sidebar="body"
+      data-slot="sidebar-body"
+      {...props}
+    />
+  );
+}
+
+export function SidebarBodyFixed({ className, ...props }: SidebarBodyProps) {
+  return (
+    <div
+      className={["vela-sidebar-body-fixed", className].filter(Boolean).join(" ")}
+      data-sidebar="body-fixed"
+      data-slot="sidebar-body-fixed"
+      {...props}
+    />
+  );
+}
+
+export function SidebarBodyScroll({ className, ...props }: SidebarBodyProps) {
+  return (
+    <div
+      className={["vela-sidebar-body-scroll", className].filter(Boolean).join(" ")}
+      data-sidebar="body-scroll"
+      data-slot="sidebar-body-scroll"
       {...props}
     />
   );

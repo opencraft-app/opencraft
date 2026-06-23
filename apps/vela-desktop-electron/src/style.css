@@ -36,10 +36,10 @@ body {
   --vela-window-traffic-light-group-width: calc(
     var(--vela-window-traffic-light-size) * 3 + var(--vela-window-traffic-light-gap) * 2
   );
-  --vela-window-toolbar-size: 23px;
-  --vela-window-toolbar-icon-size: 23px;
-  --vela-window-toolbar-icon-scale: 1.33;
-  --vela-window-toolbar-gap: 4px;
+  --vela-window-toolbar-size: 20px;
+  --vela-window-toolbar-icon-size: 20px;
+  --vela-window-toolbar-icon-scale: 1.12;
+  --vela-window-toolbar-gap: 8px;
   --vela-window-toolbar-item-gap: 0px;
   --vela-window-toolbar-center-y: calc(
     var(--vela-window-traffic-light-top) + var(--vela-window-traffic-light-size) / 2
@@ -116,6 +116,27 @@ body {
   pointer-events: none;
 }
 
+.vela-desktop-shell[data-sidebar-presentation="overlay"] .vela-sidebar-wrapper {
+  z-index: 55;
+  overflow: hidden;
+  border-right: 1px solid rgba(60, 60, 67, 0.12);
+  border-top-right-radius: 18px;
+  border-bottom-right-radius: 18px;
+  background: color-mix(in srgb, var(--vela-sidebar-surface) 94%, #ffffff);
+  box-shadow:
+    22px 0 44px rgba(31, 35, 40, 0.08),
+    4px 0 12px rgba(31, 35, 40, 0.04);
+  transform: translateX(0);
+  transition:
+    opacity var(--vela-sidebar-toggle-duration) var(--vela-sidebar-toggle-ease),
+    transform var(--vela-sidebar-toggle-duration) var(--vela-sidebar-toggle-ease);
+}
+
+.vela-desktop-shell[data-sidebar-presentation="overlay"] .vela-sidebar-wrapper[data-state="collapsed"] {
+  opacity: 0;
+  transform: translateX(calc((var(--vela-sidebar-width, 300px) + 24px) * -1));
+}
+
 .vela-sidebar-panel {
   width: var(--vela-sidebar-width, 300px);
   max-width: 100%;
@@ -150,12 +171,22 @@ body {
   box-sizing: border-box;
 }
 
+.vela-sidebar-body {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.vela-sidebar-body-fixed,
 .vela-sidebar-fixed-controls {
   position: relative;
   z-index: 4;
   flex: 0 0 auto;
 }
 
+.vela-sidebar-body-fixed::after,
 .vela-sidebar-fixed-controls::after {
   content: "";
   position: absolute;
@@ -176,6 +207,7 @@ body {
   pointer-events: none;
 }
 
+.vela-sidebar-body-scroll,
 .stable-session-list {
   min-height: 0;
   flex: 1 1 auto;
@@ -185,15 +217,18 @@ body {
   scrollbar-width: thin;
 }
 
+.vela-sidebar-body-scroll::-webkit-scrollbar,
 .stable-session-list::-webkit-scrollbar {
   width: 7px;
   height: 7px;
 }
 
+.vela-sidebar-body-scroll::-webkit-scrollbar-track,
 .stable-session-list::-webkit-scrollbar-track {
   background: transparent;
 }
 
+.vela-sidebar-body-scroll::-webkit-scrollbar-thumb,
 .stable-session-list::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: 999px;
@@ -226,6 +261,16 @@ body {
 .vela-desktop-shell[data-state="collapsed"] .vela-main-inset {
   left: 0;
   border-left-color: transparent;
+}
+
+.vela-desktop-shell[data-sidebar-presentation="overlay"] .vela-main-inset {
+  left: 0;
+  border-left-color: transparent;
+  border-top-left-radius: 0;
+}
+
+.vela-desktop-shell[data-sidebar-presentation="overlay"] .vela-sidebar-inset::after {
+  opacity: 0;
 }
 
 .vela-desktop-shell[data-sidebar-dragging="true"] .vela-main-inset {
@@ -941,11 +986,21 @@ body {
 }
 
 .vela-settings-sidebar-content {
+  display: flex;
+  flex-direction: column;
   min-height: 0;
   box-sizing: border-box;
-  padding: 0 10px 18px;
-  overflow: hidden auto;
+  padding: 0 0 18px;
+  overflow: hidden;
   user-select: none;
+}
+
+.vela-settings-fixed-controls {
+  padding: 0 10px;
+}
+
+.vela-settings-nav-scroll {
+  padding: 4px 10px 8px;
 }
 
 .vela-settings-back {
