@@ -1048,17 +1048,18 @@ func classifyDeleteResourceError(err error) (string, int) {
 //   - Q5=a OnlineRefund 不传 category_ids / goodsCategoryId
 //   - Q8b=b trade 端无状态翻译层，不写 trade_flow 行
 //
-// 字段（与 deleteResource 同款的最小集加 OwnerUin）：
+// 字段（与 deleteResource 同款的 3 字段最小集）：
 //   - UIN：pass.uin（必填，jifei.OnlineRefund.uin）
-//   - OwnerUin：资源所有者主账号 uin（必填，2026-06-23 v0.5.1 联调修复增加）。
-//     jifei 网关 envelope.interface.extraPara.ownerUin 硬校验，缺则返 returnCode=100000
-//     "param error,need ownerUin or site"，与 v1.7.29 销毁链路同款踩坑。ctl pass 表
-//     只存 owner uin（uin == owner_uin），所以 ctl 调用方固定传 entity.Uin。
 //   - AppID：pass.app_id（int64，必填，jifei.OnlineRefund.appId）
 //   - BundleID：pass.bundle_id（必填，trade 内部反查 BundleDefinition.SubProductCode）
+//
+// **v0.6 路由切换 2026-06-23 删除 OwnerUin 字段**：OnlineRefund 从 doSignedWithExtra
+// (resource-center 入口 + 签名 + extraPara.ownerUin) 切到 do() (jifei-test 入口 + 不签名 +
+// 无 extraPara)。Deal 接口族 PDF 协议字面量不存在 ownerUin 字段，且 jifei-test 网关后端不做
+// "extraPara.ownerUin or .site 二选一" 硬校验（那是资源中心 operation 接口族专有），
+// v0.5.1 引入的 ownerUin 字段整体撤回。详见 jifeiclient/onlinerefund.go 头部 v0.6 注释。
 type refundResourceRequest struct {
 	UIN      string `json:"uin"`
-	OwnerUin string `json:"ownerUin"`
 	AppID    int64  `json:"appId"`
 	BundleID string `json:"bundleId"`
 }
@@ -1152,11 +1153,10 @@ func refundResourceHandler(
 		// 拼装 jifei OnlineRefund 入参（doc §4.1）。
 		// goodsInfo 是以 sub_product_code 作 map key 的动态对象（与 ModifyResourceStatus
 		// 的 resourcesParamSet[] 数组形态有本质区别，详见 jifeiclient/onlinerefund.go 注释）。
-		// 2026-06-23 v0.5.1 联调修复：额外透传 OwnerUin → jifeiclient 中转到
-		// envelope.interface.extraPara.ownerUin（jifei 网关硬校验）。
+		// **v0.6 路由切换 2026-06-23**：不再透传 OwnerUin（jifei-test 非签名链路
+		// 不需要 extraPara.ownerUin，详见 jifeiclient/onlinerefund.go 头部 v0.6 注释）。
 		jifeiReq := &jifeiclient.OnlineRefundRequest{
 			UIN:         req.UIN,
-			OwnerUin:    req.OwnerUin,
 			AppID:       req.AppID,
 			FromConsole: jifeiclient.FromConsoleYes, // 1 = 控制台（ctl admin 入口固定）
 			GoodsInfo: map[string]jifeiclient.OnlineRefundGoodsEntry{
@@ -1201,14 +1201,11 @@ func refundResourceHandler(
 // validateRefundResourceRequest 校验 refundResourceRequest 必填字段（与 deleteResource 同款）。
 //
 // 返回空 string 表示校验通过；非空 string 是 4xx 错误描述。
+//
+// **v0.6 路由切换 2026-06-23**：撤回 ownerUin 必填校验（OwnerUin 字段整体删除）。
 func validateRefundResourceRequest(req *refundResourceRequest) string {
 	if strings.TrimSpace(req.UIN) == "" {
 		return "uin is required"
-	}
-	if strings.TrimSpace(req.OwnerUin) == "" {
-		// 2026-06-23 v0.5.1 联调修复：ownerUin 必填（jifei 网关 extraPara.ownerUin 硬校验，
-		// 与 v1.7.29 销毁链路同款）。
-		return "ownerUin is required"
 	}
 	if req.AppID <= 0 {
 		return "appId must be positive"

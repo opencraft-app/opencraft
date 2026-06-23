@@ -1,9 +1,14 @@
-// trade pass 退款链路 OnlineRefund 单测（trade-pass-refund-design.md v0.5 §8 commit 1）。
+// trade pass 退款链路 OnlineRefund 单测（trade-pass-refund-design.md v0.6 §8 commit 1）。
 //
 // 协议依据：/root/project/mono/.tmp/线上退设备退款.doc §4.1 + §4.2 + §5 + §6.1
 //
 // 复用本包既有 envelopeForSuccess / envelopeForError / fixedEventIDProvider /
-// fixedNowProvider helper（见 client_test.go），与 modifyresourcestatus_test.go 同款范式。
+// fixedNowProvider helper（见 client_test.go），与 generatedeals_test.go 同款非签名路径范式。
+//
+// **v0.6 路由切换（2026-06-23 用户拍板）**：撤回 v0.5.1 OwnerUin patch + 切换到
+// jifei-test CGW 非签名链路。本文件断言形态从"销毁链路签名链路同款（envelope.interface.auth
+// 4 字段必存）"改为"generateDeals 非签名链路同款（envelope.interface.auth 必不存）"，
+// 同时撤回所有 OwnerUin / extraPara 相关测试 fixture 与断言。
 package jifeiclient
 
 import (
@@ -13,7 +18,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"testing"
 )
@@ -22,8 +26,8 @@ import (
 //   - HTTP request method / x-qcloud-user-id 正确
 //   - envelope 顶层 7 字段正确（version / componentName / caller / eventId / timestamp / interface.interfaceName）
 //   - request body para 字段（camelCase JSON tag）按 doc §4.1 完整发出
-//   - request body 含 interface.auth 4 字段（与 ModifyResourceStatus 同款 Q-D-SIG-1~6 签名链路）
-//   - signature 本地重算与客户端一致（验证算法对齐）
+//   - **request body MUST NOT 含 interface.auth**（v0.6 非签名链路反向断言，与 generateDeals 同款）
+//   - **request body MUST NOT 含 interface.extraPara**（v0.6 撤回 v0.5.1 OwnerUin patch 反向断言）
 //   - **goodsInfo wire 形态**：map key 是 sub_product_code 字符串（"sp_lighthouse"）
 //   - 响应 data.dealNames / data.bigDealIds 反序列化正确
 func TestOnlineRefund_Success(t *testing.T) {
@@ -64,18 +68,16 @@ func TestOnlineRefund_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
+	// v0.6 路由切换（2026-06-23）：OnlineRefund 走 jifei-test CGW 非签名链路
+	// （baseURL=server.URL），与 generateDeals / generateDealsAndPay 同入口；
+	// Options 不再注入 Billing* 三件套（撤回 v0.5.1 签名链路装配）。
 	cli := New(server.URL, "trade-service-uin", Options{
-		EventIDProvider:      fixedEventIDProvider,
-		NowProvider:          fixedNowProvider,
-		BillingAPIGWBaseURL:  server.URL,
-		BillingAppID:         "test_v0",
-		BillingAppSecret:     "66666666666666666666",
-		BillingNonceProvider: func() string { return "test-nonce-001" },
+		EventIDProvider: fixedEventIDProvider,
+		NowProvider:     fixedNowProvider,
 	})
 
 	resp, err := cli.OnlineRefund(context.Background(), &OnlineRefundRequest{
 		UIN:         "100012345678",
-		OwnerUin:    "100012345678",
 		AppID:       1300012345,
 		FromConsole: FromConsoleYes,
 		GoodsInfo: map[string]OnlineRefundGoodsEntry{
@@ -156,65 +158,28 @@ func TestOnlineRefund_Success(t *testing.T) {
 		t.Errorf("wire goodsInfo must be map-with-string-key form per doc §4.2; got body=%s", bodyStr)
 	}
 
-	// Q-D-SIG-1~6 销毁链路签名严格要求（与 ModifyResourceStatus 同款）：
-	//   1. envelope.interface.auth 必须存在，4 字段都非空
-	//   2. signature 为 HMAC-SHA256 hex 大写 (64 字符、全部 [0-9A-F])
-	//   3. 本地重算 signature 与客户端发出的完全一致（验证算法实现与 PDF §签名算法对齐）
+	// v0.6 路由切换（2026-06-23）反向断言：
+	// 1. envelope.interface.auth MUST NOT 存在（与 generateDeals 同款非签名链路）
+	// 2. envelope.interface.extraPara MUST NOT 存在（撤回 v0.5.1 OwnerUin patch）
+	// 3. para wire MUST NOT 含 ownerUin 字段（PDF Deal 协议字面量不存在该字段）
 	var reqEnv envelope
 	if err := json.Unmarshal([]byte(bodyStr), &reqEnv); err != nil {
-		t.Fatalf("reparse envelope for auth assertion: %v", err)
+		t.Fatalf("reparse envelope for v0.6 reverse assertions: %v", err)
 	}
-	if reqEnv.Interface == nil || reqEnv.Interface.Auth == nil {
-		t.Fatalf("Q-D-SIG-1~6 violated: envelope.interface.auth missing\n%s", bodyStr)
+	if reqEnv.Interface == nil {
+		t.Fatalf("envelope.interface missing in non-signing route\n%s", bodyStr)
 	}
-	auth := reqEnv.Interface.Auth
-	if auth.AppID != "test_v0" {
-		t.Errorf("auth.appid: got %q want %q", auth.AppID, "test_v0")
+	if reqEnv.Interface.Auth != nil {
+		t.Errorf("v0.6 violated: envelope.interface.auth MUST NOT be present in jifei-test non-signing route; got auth=%+v\n%s",
+			reqEnv.Interface.Auth, bodyStr)
 	}
-	if auth.Nonce != "test-nonce-001" {
-		t.Errorf("auth.nonce: got %q want %q", auth.Nonce, "test-nonce-001")
+	if reqEnv.Interface.ExtraPara != nil {
+		t.Errorf("v0.6 violated: envelope.interface.extraPara MUST NOT be present (v0.5.1 OwnerUin patch reverted); got extraPara=%+v\n%s",
+			reqEnv.Interface.ExtraPara, bodyStr)
 	}
-	if auth.Timestamp == "" {
-		t.Errorf("auth.timestamp: empty")
-	}
-	if len(auth.Signature) != 64 {
-		t.Errorf("auth.signature length: got %d want 64 (HMAC-SHA256 hex)", len(auth.Signature))
-	}
-	for _, ch := range auth.Signature {
-		if !((ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'F')) {
-			t.Errorf("auth.signature contains non-uppercase-hex char %q in %s", ch, auth.Signature)
-			break
-		}
-	}
-	tsParsed, _ := strconv.ParseInt(auth.Timestamp, 10, 64)
-	recalcIface := &interfaceBlock{
-		InterfaceName: reqEnv.Interface.InterfaceName,
-		ExtraPara:     reqEnv.Interface.ExtraPara,
-		Para:          reqEnv.Interface.Para,
-	}
-	recalcAuth, err := signBillingEnvelope("test_v0", "66666666666666666666", tsParsed, "test-nonce-001", recalcIface)
-	if err != nil {
-		t.Fatalf("recompute signBillingEnvelope: %v", err)
-	}
-	if recalcAuth.Signature != auth.Signature {
-		t.Errorf("auth.signature mismatch: client=%s recalc=%s", auth.Signature, recalcAuth.Signature)
-	}
-
-	// **反向断言**：OwnerUin 字段 `json:"-"` 跳过 para wire 序列化，不应出现在 para 子对象里。
 	if strings.Contains(string(reqEnv.Interface.Para), `"ownerUin"`) {
-		t.Errorf("para wire MUST NOT contain ownerUin (json:\"-\" expected); got para=%s", string(reqEnv.Interface.Para))
-	}
-
-	// **正向断言**（2026-06-23 v0.5.1 联调修复添加）：OnlineRefund **必须** 携带
-	// envelope.interface.extraPara.ownerUin，jifei 网关硬校验该字段与 .site 二选一非空，
-	// 缺则返 returnCode=100000 "param error,need ownerUin or site"（与 ModifyResourceStatus
-	// v1.7.29 同款踩坑）。本断言取代原 "OnlineRefund MUST NOT carry extraPara" 反向断言——
-	// 后者是设计稿 v0.5 初版的协议理解错误，sandbox-bj-7 现网实测后修正。
-	if reqEnv.Interface.ExtraPara == nil {
-		t.Fatalf("OnlineRefund MUST carry envelope.interface.extraPara.ownerUin (jifei gateway hard check)\n%s", bodyStr)
-	}
-	if got := reqEnv.Interface.ExtraPara.OwnerUin; got != "100012345678" {
-		t.Errorf("extraPara.ownerUin: got %q want %q", got, "100012345678")
+		t.Errorf("para wire MUST NOT contain ownerUin (v0.6 撤回 v0.5.1 patch); got para=%s",
+			string(reqEnv.Interface.Para))
 	}
 }
 
@@ -234,6 +199,8 @@ func TestOnlineRefund_NilRequest(t *testing.T) {
 }
 
 // TestOnlineRefund_MissingRequired 覆盖必填字段校验。
+//
+// v0.6 路由切换（2026-06-23）：移除 missing_OwnerUin 用例（OwnerUin 字段整体撤回）。
 func TestOnlineRefund_MissingRequired(t *testing.T) {
 	cli := New("http://unused", "", Options{EventIDProvider: fixedEventIDProvider, NowProvider: fixedNowProvider})
 	cases := []struct {
@@ -244,62 +211,54 @@ func TestOnlineRefund_MissingRequired(t *testing.T) {
 		{
 			name: "missing_UIN",
 			req: &OnlineRefundRequest{
-				AppID: 1, OwnerUin: "100012345678", GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: []string{"r1"}}},
+				AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: []string{"r1"}}},
 			},
 			want: "empty UIN",
 		},
 		{
 			name: "invalid_AppID",
 			req: &OnlineRefundRequest{
-				UIN: "uin1", OwnerUin: "100012345678", GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: []string{"r1"}}},
+				UIN: "uin1", GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: []string{"r1"}}},
 			},
 			want: "AppID must be positive",
 		},
 		{
-			// 2026-06-23 v0.5.1 新增用例：OwnerUin 必填校验
-			name: "missing_OwnerUin",
-			req: &OnlineRefundRequest{
-				UIN: "uin1", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: []string{"r1"}}},
-			},
-			want: "empty OwnerUin",
-		},
-		{
 			name: "empty_GoodsInfo",
-			req:  &OnlineRefundRequest{UIN: "uin1", OwnerUin: "100012345678", AppID: 1, GoodsInfo: nil},
+			req:  &OnlineRefundRequest{UIN: "uin1", AppID: 1, GoodsInfo: nil},
 			want: "empty GoodsInfo",
 		},
 		{
 			name: "empty_subProductCode_key",
 			req: &OnlineRefundRequest{
-				UIN: "uin1", OwnerUin: "100012345678", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"": {PayMode: 1, RegionID: 1, ResourceIDList: []string{"r1"}}},
+				UIN: "uin1", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"": {PayMode: 1, RegionID: 1, ResourceIDList: []string{"r1"}}},
 			},
 			want: "sub_product_code) is empty",
 		},
 		{
 			name: "PayMode_not_prepaid",
 			req: &OnlineRefundRequest{
-				UIN: "uin1", OwnerUin: "100012345678", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 0, RegionID: 1, ResourceIDList: []string{"r1"}}},
+				UIN: "uin1", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 0, RegionID: 1, ResourceIDList: []string{"r1"}}},
 			},
 			want: "PayMode must be 1",
 		},
 		{
 			name: "invalid_RegionID",
 			req: &OnlineRefundRequest{
-				UIN: "uin1", OwnerUin: "100012345678", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 0, ResourceIDList: []string{"r1"}}},
+				UIN: "uin1", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 0, ResourceIDList: []string{"r1"}}},
 			},
 			want: "RegionID must be positive",
 		},
 		{
 			name: "empty_ResourceIDList",
 			req: &OnlineRefundRequest{
-				UIN: "uin1", OwnerUin: "100012345678", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: nil}},
+				UIN: "uin1", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: nil}},
 			},
 			want: "ResourceIDList is empty",
 		},
 		{
 			name: "empty_ResourceID_entry",
 			req: &OnlineRefundRequest{
-				UIN: "uin1", OwnerUin: "100012345678", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: []string{""}}},
+				UIN: "uin1", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: []string{""}}},
 			},
 			want: "ResourceIDList[0] is empty",
 		},
@@ -328,19 +287,15 @@ func TestOnlineRefund_CGWBusinessError(t *testing.T) {
 	}))
 	defer server.Close()
 
+	// v0.6：非签名链路装配，与 happy-path 同款。
 	cli := New(server.URL, "", Options{
-		EventIDProvider:      fixedEventIDProvider,
-		NowProvider:          fixedNowProvider,
-		BillingAPIGWBaseURL:  server.URL,
-		BillingAppID:         "test_v0",
-		BillingAppSecret:     "66666666666666666666",
-		BillingNonceProvider: func() string { return "test-nonce-001" },
+		EventIDProvider: fixedEventIDProvider,
+		NowProvider:     fixedNowProvider,
 	})
 
 	resp, err := cli.OnlineRefund(context.Background(), &OnlineRefundRequest{
-		UIN:      "100012345678",
-		OwnerUin: "100012345678",
-		AppID:    1300012345,
+		UIN:   "100012345678",
+		AppID: 1300012345,
 		GoodsInfo: map[string]OnlineRefundGoodsEntry{
 			"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: []string{"lhpass-abc"}},
 		},
@@ -366,31 +321,29 @@ func TestOnlineRefund_CGWBusinessError(t *testing.T) {
 	}
 }
 
-// TestOnlineRefund_MissingBillingConfig 覆盖签名链路装配点防御：
-// 调用方未在 Options 注入 BillingAPIGWBaseURL / BillingAppID / BillingAppSecret 时，
-// OnlineRefund 必须 client-side 报错，不出请求（避免给 jifei 发未签名请求被网关拒）。
-func TestOnlineRefund_MissingBillingConfig(t *testing.T) {
-	// BillingAPIGWBaseURL 空字符串场景
-	cli := New("http://unused", "", Options{
+// TestOnlineRefund_BaseURLRequired 覆盖非签名链路装配点防御（v0.6 新增，取代旧
+// TestOnlineRefund_MissingBillingConfig）：
+// 调用方未注入 baseURL（New() 第一参数空字符串）时，OnlineRefund 必须 client-side 报错，
+// 不出请求（与 GenerateDeals / GetPrice 等其他非签名出向接口同款防御）。
+func TestOnlineRefund_BaseURLRequired(t *testing.T) {
+	cli := New("", "", Options{
 		EventIDProvider: fixedEventIDProvider,
 		NowProvider:     fixedNowProvider,
-		// 不传 BillingAPIGWBaseURL / BillingAppID / BillingAppSecret
 	})
 	resp, err := cli.OnlineRefund(context.Background(), &OnlineRefundRequest{
-		UIN:      "uin1",
-		OwnerUin: "uin1",
-		AppID:    1,
+		UIN:   "uin1",
+		AppID: 1,
 		GoodsInfo: map[string]OnlineRefundGoodsEntry{
 			"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: []string{"r1"}},
 		},
 	})
 	if err == nil {
-		t.Fatalf("OnlineRefund without BillingAPIGWBaseURL: err = nil, want non-nil")
+		t.Fatalf("OnlineRefund without baseURL: err = nil, want non-nil")
 	}
 	if resp != nil {
 		t.Errorf("resp on err: got %+v want nil", resp)
 	}
-	if !strings.Contains(err.Error(), "BillingAPIGWBaseURL is required") {
-		t.Errorf("err message: got %q want substring 'BillingAPIGWBaseURL is required'", err.Error())
+	if !strings.Contains(err.Error(), "baseURL is required") {
+		t.Errorf("err message: got %q want substring 'baseURL is required'", err.Error())
 	}
 }
