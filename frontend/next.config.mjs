@@ -7,6 +7,7 @@ const teaThemeableNoResetCss = '@tencent/tea-component/dist/tea-themeable-no-res
 const config = {
   reactStrictMode: true,
   output: 'export',
+  assetPrefix: process.env.NEXT_PUBLIC_ASSET_PREFIX || undefined,
   trailingSlash: true,
   pageExtensions: ['next.tsx', 'next.ts'],
   images: {

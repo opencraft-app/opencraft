@@ -22,7 +22,7 @@ describe("fix-next-static-html-lang", () => {
 
       const config = JSON.parse(readFileSync(join(out, ".edgeone", "cloud-functions", "ssr-node", "config.json"), "utf8"));
       expect(config.routes).toEqual(expect.arrayContaining([
-        { src: "^/_next/static/(.*)$", headers: { "cache-control": "public, max-age=31536000, immutable" }, continue: true },
+        { src: "^/__releases/([^/]+)/_next/static/(.*)$", headers: { "cache-control": "public, max-age=31536000, immutable" }, continue: true },
         { src: "^/(.*)\\.html$", headers: { "cache-control": "no-cache" }, continue: true },
         { src: "^/(.*)\\.txt$", headers: { "cache-control": "no-cache" }, continue: true },
         { src: "^/$", dest: "/index.html", headers: { "cache-control": "no-cache" } },
@@ -35,7 +35,7 @@ describe("fix-next-static-html-lang", () => {
         { src: "^/agents/diagnostics\\.txt$", dest: "/agents/diagnostics/index.txt", headers: { "cache-control": "no-cache" } },
       ]));
       expect(config.routes.indexOf(config.routes.find((route) => route.handle === "filesystem")))
-        .toBeGreaterThan(config.routes.findIndex((route) => route.src === "^/_next/static/(.*)$"));
+        .toBeGreaterThan(config.routes.findIndex((route) => route.src === "^/__releases/([^/]+)/_next/static/(.*)$"));
       expect(existsSync(join(out, ".edgeone", "assets", "docs", "overview", "index.txt"))).toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });

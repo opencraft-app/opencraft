@@ -232,6 +232,57 @@ describe("release matrix helpers", () => {
     expect(comboEnv.EDGEONE_PAGES_ENV).toBe("preview");
   });
 
+  it("keeps preview static assets unversioned unless the combo opts in", () => {
+    const eoPreviewCombo = {
+      ...cnCfCombo,
+      id: "cn-eo-preview",
+      channel: "eo",
+      deployCommand: "deploy:eo",
+      projectName: "lightvela-preview",
+      requiredSecretEnv: ["EDGEONE_API_TOKEN"],
+      outputDir: "out",
+      deployEnv: {
+        EDGEONE_PAGES_AREA: "global",
+        EDGEONE_PAGES_ENV: "preview",
+      },
+    };
+
+    const comboEnv = createComboEnvironment(eoPreviewCombo, "lightvela-preview", {
+      EDGEONE_API_TOKEN: "token",
+      NEXT_PUBLIC_ASSET_PREFIX: "/ambient",
+    });
+
+    expect(comboEnv.NEXT_VERSION_STATIC_ASSETS).toBeUndefined();
+    expect(comboEnv.NEXT_PUBLIC_RELEASE_ID).toBeUndefined();
+    expect(comboEnv.NEXT_PUBLIC_ASSET_PREFIX).toBeUndefined();
+  });
+
+  it("generates a versioned static asset prefix for opted-in EdgeOne production combos", () => {
+    const eoProdCombo = {
+      ...cnCfCombo,
+      id: "cn-eo-prod",
+      channel: "eo",
+      deployCommand: "deploy:eo",
+      projectName: "lightvela",
+      requiredSecretEnv: ["EDGEONE_API_TOKEN"],
+      outputDir: "out",
+      deployEnv: {
+        EDGEONE_PAGES_AREA: "global",
+        EDGEONE_PAGES_ENV: "production",
+        NEXT_VERSION_STATIC_ASSETS: "1",
+      },
+    };
+
+    const comboEnv = createComboEnvironment(eoProdCombo, "lightvela", {
+      EDGEONE_API_TOKEN: "token",
+      CI_COMMIT_SHA: "1234567890abcdef",
+    });
+
+    expect(comboEnv.NEXT_VERSION_STATIC_ASSETS).toBe("1");
+    expect(comboEnv.NEXT_PUBLIC_RELEASE_ID).toMatch(/^\d{14}-1234567890ab-cn$/);
+    expect(comboEnv.NEXT_PUBLIC_ASSET_PREFIX).toBe(`/__releases/${comboEnv.NEXT_PUBLIC_RELEASE_ID}`);
+  });
+
   it("includes China Cloudflare Aegis config in the release matrix", () => {
     const { combos } = loadReleaseMatrix();
     const combo = combos.find((item) => item.id === "cf:cn-lightvela-staging");
