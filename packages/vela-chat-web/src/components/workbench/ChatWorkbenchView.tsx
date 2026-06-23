@@ -2,6 +2,7 @@
 
 import type { CSSProperties } from "react";
 import { useCallback, useMemo, useRef, useState } from "react";
+import type { VelaClientStateStore } from "../../../../vela-chat-host-state/src";
 import type { AgentConfigPatchWire } from "../../../../vela-chat-client/src";
 import type { ChatRenderModel } from "../../../../vela-chat-render-model/src";
 import { toWebChatModel } from "../../adapters/toWebBlocks";
@@ -10,6 +11,7 @@ import type { PromptInputAttachment } from "../../primitives/prompt-input/Prompt
 import { VelaComposer } from "../composer/VelaComposer";
 import { VelaConversation } from "../conversation/VelaConversation";
 import { RequestDock, type RequestDockResponse } from "../requests/RequestDock";
+import { ConversationHistoryHydrationView } from "./ConversationHistoryHydrationView";
 import type { ConversationScrollControllerDebug } from "../../conversation-runtime/scroll/useConversationScrollController";
 import type { ConversationViewportHandle } from "../../conversation-runtime/scroll/viewportHandle";
 import styles from "../../styles/desktop.module.css";
@@ -23,6 +25,8 @@ export interface ChatWorkbenchViewProps {
   draft: string;
   error?: string | null;
   canLoadOlder?: boolean;
+  clientStateStore?: VelaClientStateStore | null;
+  historyPhase: "unselected" | "hydrating_history" | "ready";
   isLoadingOlder?: boolean;
   composerControls?: ComposerControlsModel;
   isUpdatingComposerControls?: boolean;
@@ -45,6 +49,8 @@ export function ChatWorkbenchView({
   draft,
   error,
   canLoadOlder = false,
+  clientStateStore = null,
+  historyPhase,
   isLoadingOlder = false,
   composerControls,
   isUpdatingComposerControls = false,
@@ -81,11 +87,22 @@ export function ChatWorkbenchView({
     conversationRef.current?.prepareForViewportChange();
   }, []);
 
+  if (historyPhase === "hydrating_history") {
+    return (
+      <main className={styles.shell}>
+        <div className={styles.frame} style={frameWithoutTopbarStyle}>
+          <ConversationHistoryHydrationView />
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className={styles.shell}>
       <div className={styles.frame} style={frameStyle}>
         <VelaConversation
           canLoadOlder={canLoadOlder}
+          clientStateStore={clientStateStore}
           isLoadingOlder={isLoadingOlder}
           onLoadOlder={onLoadOlder}
           onScrollDebugChange={onConversationScrollDebugChange}

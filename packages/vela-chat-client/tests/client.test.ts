@@ -50,14 +50,16 @@ function sessionFixture(overrides: Record<string, unknown> = {}) {
 function conversationFixture({
   items = [],
   cursor = { event_id: "evt_1", epoch: 1, seq: 1 },
+  window = { has_older: false, has_newer: false },
 }: {
   items?: Array<Record<string, unknown>>;
   cursor?: Record<string, unknown>;
+  window?: Record<string, unknown>;
 } = {}) {
   return {
     session_id: "sess_1",
     cursor,
-    window: { has_older: false, has_newer: false },
+    window,
     items,
   };
 }
@@ -845,6 +847,55 @@ test("lists recent sessions for debug launchers", async () => {
   assert.equal(response.sessions[0]?.id, "ses_recent");
   assert.equal(response.sessions[0]?.backend, "acp");
   assert.equal(response.cursor.event_id, "evt_1");
+});
+
+test("reads SessionListView from UI read-model endpoint", async () => {
+  const requests: Array<{ url: string; init?: RequestInit }> = [];
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async (url, init) => {
+      requests.push({ url: String(url), init });
+      return new Response(
+        JSON.stringify({
+          sessions: [
+            {
+              id: "ses_recent",
+              backend: "acp",
+              status: "running",
+              title: "Hermes debug",
+              working_directory: "/tmp/project",
+              created_at: "2026-06-19T00:00:00Z",
+              updated_at: "2026-06-19T00:10:00Z",
+              last_activity_at: "2026-06-19T00:10:00Z",
+              preview: "Inspecting the repo",
+              pending_request_count: 2,
+              running: true,
+              agent_config: {
+                model: "minimax-m2.7",
+                reasoning_effort: "medium",
+              },
+            },
+          ],
+          cursor: { event_id: "evt_9", epoch: 1, seq: 9, has_older: false, has_newer: true },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    },
+  });
+
+  const response = await client.getSessionListView({ limit: 20, afterId: "ses_anchor" });
+
+  assert.equal(
+    requests[0]?.url,
+    "http://127.0.0.1:3857/api/v1/views/sessions?limit=20&after_id=ses_anchor",
+  );
+  assert.equal(requests[0]?.init?.method, undefined);
+  assert.equal(response.sessions[0]?.id, "ses_recent");
+  assert.equal(response.sessions[0]?.working_directory, "/tmp/project");
+  assert.equal(response.sessions[0]?.preview, "Inspecting the repo");
+  assert.equal(response.sessions[0]?.pending_request_count, 2);
+  assert.equal(response.sessions[0]?.running, true);
+  assert.equal(response.sessions[0]?.agent_config?.model, "minimax-m2.7");
 });
 
 test("creates a session with selected backend and agent config", async () => {
@@ -2354,6 +2405,79 @@ test("drops stale conversation snapshots behind live cursor state", () => {
   assert.equal(next.items[0]?.kind, "assistant_message");
   assert.equal(next.items[0]?.text, "fresh text");
   assert.equal(next.cursor.seq, 13);
+});
+
+test("merges tail snapshots without discarding a wider preloaded conversation window", () => {
+  const current = conversationFixture({
+    cursor: { event_id: "evt_10", epoch: 1, seq: 10 },
+    window: {
+      first_item_id: "older_user",
+      last_item_id: "tail_assistant",
+      has_older: false,
+      has_newer: false,
+    },
+    items: [
+      assistantConversationItem({
+        id: "older_user",
+        kind: "user_message",
+        text: "old question",
+        status: "completed",
+        source_event_ids: ["evt_1"],
+        source_event_ranges: [
+          { from_event_id: "evt_1", to_event_id: "evt_1", from_seq: 1, to_seq: 1 },
+        ],
+      }),
+      assistantConversationItem({
+        id: "tail_assistant",
+        text: "tail answer",
+        status: "completed",
+        source_event_ids: ["evt_10"],
+        source_event_ranges: [
+          { from_event_id: "evt_10", to_event_id: "evt_10", from_seq: 10, to_seq: 10 },
+        ],
+      }),
+    ],
+  });
+  const tailSnapshot = conversationFixture({
+    cursor: { event_id: "evt_11", epoch: 1, seq: 11 },
+    window: {
+      first_item_id: "tail_assistant",
+      last_item_id: "new_tail",
+      has_older: true,
+      has_newer: false,
+    },
+    items: [
+      assistantConversationItem({
+        id: "tail_assistant",
+        text: "tail answer",
+        status: "completed",
+        source_event_ids: ["evt_10"],
+        source_event_ranges: [
+          { from_event_id: "evt_10", to_event_id: "evt_10", from_seq: 10, to_seq: 10 },
+        ],
+      }),
+      assistantConversationItem({
+        id: "new_tail",
+        text: "new answer",
+        status: "completed",
+        source_event_ids: ["evt_11"],
+        source_event_ranges: [
+          { from_event_id: "evt_11", to_event_id: "evt_11", from_seq: 11, to_seq: 11 },
+        ],
+      }),
+    ],
+  });
+
+  const merged = mergeConversationSnapshot(current, tailSnapshot);
+
+  assert.deepEqual(
+    merged.items.map((item) => item.id),
+    ["older_user", "tail_assistant", "new_tail"],
+  );
+  assert.equal(merged.window.first_item_id, "older_user");
+  assert.equal(merged.window.last_item_id, "new_tail");
+  assert.equal(merged.window.has_older, false);
+  assert.equal(merged.cursor.seq, 11);
 });
 
 test("applies message-id-free assistant delta live overlays only to the latest streaming item", () => {

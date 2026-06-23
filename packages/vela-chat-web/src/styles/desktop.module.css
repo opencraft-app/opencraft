@@ -1,5 +1,7 @@
 .shell {
-  --vela-bg: #ffffff;
+  --vela-spacing: 0.25rem;
+  --vela-toolbar-height: 46px;
+  --vela-bg: rgb(255 255 255 / 90%);
   --vela-text: #18191b;
   --vela-muted: #8c9096;
   --vela-soft: #f4f4f5;
@@ -8,10 +10,24 @@
   --vela-code: #eceeef;
   --vela-accent: #ff5a1f;
   --vela-composer-height: 154px;
+  --vela-shell-radius: 16px;
+  --vela-composer-radius: 20px;
+  --vela-composer-bg: rgb(255 255 255 / 90%);
+  --vela-composer-blur: 16px;
+  --vela-composer-shadow: 0 4px 16px 0 rgb(0 0 0 / 5%);
+  --vela-thread-content-max-width: 1120px;
+  --vela-thread-content-top-inset: calc(var(--vela-spacing) * 8);
+  --vela-thread-floating-content-top-inset: calc(var(--vela-spacing) * 3);
+  --vela-thread-floating-content-bottom-inset: calc(var(--vela-spacing) * 3);
+  position: relative;
+  width: 100%;
+  min-width: 0;
   height: 100dvh;
   min-height: 100dvh;
   overflow: hidden;
+  border-top-left-radius: var(--vela-shell-radius);
   background: var(--vela-bg);
+  background-clip: padding-box;
   color: var(--vela-text);
   font-family:
     -apple-system,
@@ -24,13 +40,31 @@
     sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  -webkit-backdrop-filter: saturate(1.15) blur(16px);
+  backdrop-filter: saturate(1.15) blur(16px);
 }
 
 .frame {
+  position: relative;
+  isolation: isolate;
   display: grid;
   height: 100%;
   min-height: 0;
   grid-template-rows: auto minmax(0, 1fr);
+  border-top: 1px solid var(--vela-border);
+}
+
+.frame::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 18;
+  height: 16px;
+  background: linear-gradient(to bottom, var(--vela-bg), rgb(255 255 255 / 0));
+  opacity: 1;
+  pointer-events: none;
 }
 
 .topbar {
@@ -50,6 +84,31 @@
   padding: 12px 24px 0;
 }
 
+.historyHydration {
+  display: flex;
+  min-height: 100%;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 14px;
+  color: #6f737a;
+  font-size: 14px;
+  font-weight: 620;
+}
+
+.historyHydrationSpinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid #ececef;
+  border-top-color: #8c9096;
+  border-radius: 999px;
+  animation: velaHistoryHydrationSpin 900ms linear infinite;
+}
+
+.historyHydrationLabel {
+  line-height: 1.4;
+}
+
 .conversationShell {
   position: relative;
   min-height: 0;
@@ -60,6 +119,7 @@
   height: 100%;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   overscroll-behavior: contain;
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -125,9 +185,11 @@
 }
 
 .turnList {
-  width: min(100%, 1120px);
+  box-sizing: border-box;
+  width: min(100%, var(--vela-thread-content-max-width));
   margin: 0 auto;
-  padding: 54px 28px calc(var(--vela-composer-height) + 28px);
+  padding: var(--vela-thread-content-top-inset) 28px
+    calc(var(--vela-composer-height) + var(--vela-thread-floating-content-bottom-inset));
 }
 
 .turnGroup {
@@ -610,9 +672,9 @@
 }
 
 .requestDock {
-  position: fixed;
+  position: absolute;
   right: 0;
-  bottom: 156px;
+  bottom: calc(var(--vela-composer-height) + var(--vela-thread-floating-content-top-inset));
   left: 0;
   z-index: 6;
   display: grid;
@@ -624,7 +686,7 @@
 
 .requestCard {
   display: flex;
-  width: min(100%, 1120px);
+  width: min(100%, var(--vela-thread-content-max-width));
   align-items: center;
   justify-content: space-between;
   gap: 18px;
@@ -743,45 +805,49 @@
 }
 
 .composerBackdrop {
-  position: fixed;
+  position: absolute;
   right: 0;
   bottom: 0;
   left: 0;
   z-index: 19;
-  height: var(--vela-composer-height);
+  height: calc(var(--vela-composer-height) + 64px);
   background: linear-gradient(
     to bottom,
     rgb(255 255 255 / 0) 0%,
-    var(--vela-bg) 50%,
+    var(--vela-bg) 54%,
     var(--vela-bg) 100%
   );
   pointer-events: none;
 }
 
 .composerDock {
-  position: fixed;
+  position: absolute;
   right: 0;
   bottom: 0;
   left: 0;
   z-index: 20;
   display: flex;
   justify-content: center;
-  padding: 0 24px 24px;
+  padding: 0 24px var(--vela-thread-floating-content-bottom-inset);
   pointer-events: none;
 }
 
 .composer {
-  width: min(100%, 1120px);
-  border: 1px solid rgba(90, 84, 74, 0.18);
-  border-radius: 24px;
-  background: rgb(255 255 255 / 94%);
-  box-shadow:
-    0 18px 48px rgb(31 35 40 / 16%),
-    0 2px 8px rgb(31 35 40 / 8%),
-    inset 0 1px 0 rgb(255 255 255 / 58%);
+  width: min(100%, var(--vela-thread-content-max-width));
+  overflow: hidden auto;
+  border: 1px solid rgb(13 13 13 / 10%);
+  border-radius: var(--vela-composer-radius);
+  background: var(--vela-composer-bg);
+  box-shadow: var(--vela-composer-shadow);
   pointer-events: auto;
-  -webkit-backdrop-filter: saturate(1.4) blur(22px);
-  backdrop-filter: saturate(1.4) blur(22px);
+  -webkit-backdrop-filter: saturate(1.2) blur(var(--vela-composer-blur));
+  backdrop-filter: saturate(1.2) blur(var(--vela-composer-blur));
+}
+
+@supports (corner-shape: superellipse(1.5)) {
+  .composer {
+    corner-shape: superellipse(1.5);
+  }
 }
 
 .textarea {
@@ -809,7 +875,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 0 18px 4px;
+  padding: 8px 8px 6px;
 }
 
 .attachmentPill {
@@ -861,6 +927,7 @@
 }
 
 .composerFooter {
+  container: composer-footer / inline-size;
   display: flex;
   align-items: flex-end;
   flex-wrap: wrap;
@@ -1110,9 +1177,9 @@
 }
 
 .error {
-  position: fixed;
+  position: absolute;
   right: 32px;
-  bottom: 156px;
+  bottom: calc(var(--vela-composer-height) + var(--vela-thread-floating-content-top-inset));
   max-width: 520px;
   border: 1px solid #ffd7ca;
   border-radius: 14px;
@@ -1124,13 +1191,23 @@
   box-shadow: 0 12px 28px rgb(0 0 0 / 8%);
 }
 
+@keyframes velaHistoryHydrationSpin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (max-width: 720px) {
   .topbar {
     padding: 0 20px;
   }
 
   .turnList {
-    padding: 38px 20px calc(var(--vela-composer-height) + 24px);
+    padding: 38px 20px calc(var(--vela-composer-height) + 12px);
   }
 
   .userMessageStack {
@@ -1169,5 +1246,11 @@
     right: auto;
     left: -42px;
     width: min(420px, calc(100vw - 24px));
+  }
+}
+
+@container composer-footer (width <= 440px) {
+  .controlButtonLabel {
+    display: none;
   }
 }

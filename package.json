@@ -2,6 +2,9 @@
   "name": "velachat",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "apps/vela-desktop-electron"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",

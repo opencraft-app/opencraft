@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 
 import {
@@ -6,6 +8,8 @@ import {
   computeScrollOffsetFromThumbOffset,
   computeVerticalScrollbarGeometry,
 } from "../src/conversation-runtime/scrollbar/geometry";
+
+const root = process.cwd();
 
 test("vertical scrollbar geometry mirrors native scroll range", () => {
   const geometry = computeVerticalScrollbarGeometry({
@@ -86,4 +90,25 @@ test("clicking the overlay track maps directly to an absolute scrollTop", () => 
   });
 
   assert.equal(offset, 900);
+});
+
+test("overlay thumb drag exposes committed scroll offsets to the conversation scroll runtime", () => {
+  const source = readFileSync(
+    join(
+      root,
+      "packages/vela-chat-web/src/conversation-runtime/scrollbar/useConversationScrollbarOverlay.tsx",
+    ),
+    "utf8",
+  );
+
+  assert.match(
+    source,
+    /onScrollCommit/,
+    "self-drawn scrollbar must not only mutate element.scrollTop; it must synchronously commit the drag position to the scroll runtime before a route switch can unmount it",
+  );
+  assert.match(
+    source,
+    /onUserScrollIntent/,
+    "thumb dragging is user scroll intent and must be reported to bottom-anchor ownership, not inferred later from an async DOM scroll event",
+  );
 });

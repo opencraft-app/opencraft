@@ -10,7 +10,9 @@ The scroll sublayer keeps bottom-anchor decisions testable before touching the
 DOM: route/session readiness, measurable dimensions, and post-layout settle
 retries are pure model inputs rather than ad hoc component effects.
 Session scroll resume is also kept in this layer so the page shell does not
-need to know about `sessionStorage` or DOM `scrollTop` details.
+need to know about DOM `scrollTop` details. Persistence is supplied by the host
+through `VelaClientStateStore`; this runtime consumes the injected store and does
+not choose browser storage directly.
 
 Host-specific list policy lives here. Web hosts use the Paseo-style partial
 virtualized history path for both desktop and mobile Web. A future true native

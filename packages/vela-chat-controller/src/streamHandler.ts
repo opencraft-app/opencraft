@@ -5,9 +5,9 @@ import {
   type PendingRequestsWireView,
   type StreamRefreshScheduler,
   type VelaStreamEventWire,
-} from "../../../packages/vela-chat-client/src";
+} from "../../vela-chat-client/src";
 
-export function handleWorkbenchStreamEvent({
+export function handleVelaChatSessionStreamEvent({
   activeSessionId,
   streamEvent,
   currentConversation,
@@ -40,3 +40,4 @@ export function handleWorkbenchStreamEvent({
   if (refreshPlan.session) sessionRefreshScheduler.notifyStreamEvent();
   if (refreshPlan.backends) backendsRefreshScheduler.notifyStreamEvent();
 }
+

@@ -29,16 +29,17 @@ import {
   shouldRequestOlderHistory,
 } from "../src/conversation-runtime/scroll/historyPaging";
 import {
-  buildConversationScrollResumeStorageKey,
   deriveConversationScrollResumeDecision,
-  parseConversationScrollResumeState,
-  serializeConversationScrollResumeState,
 } from "../src/conversation-runtime/scroll/routeResume";
 import { resolveConversationStrategyName } from "../src/conversation-runtime/strategy/strategyResolver";
 import {
   buildChatRenderModel,
   type ChatRenderModel,
 } from "../../vela-chat-render-model/src";
+import {
+  createMemoryKeyValueStore,
+  createVelaClientStateStore,
+} from "../../vela-chat-host-state/src";
 import type { ChatSurface } from "../../vela-chat-surface/src";
 
 function turn(id: string, options: { live?: boolean } = {}): WebTurn {
@@ -1984,32 +1985,149 @@ test("history prepend anchor survives loader height changes while older history 
   );
 });
 
-test("conversation scroll resume keeps storage session-scoped and validates payloads", () => {
+test("conversation scroll resume reads through injected host client state", () => {
   const state = {
     routeKey: "sess/with spaces",
     scrollTop: 420.5,
     followOutput: false,
   };
-  const serialized = serializeConversationScrollResumeState(state);
+  const store = createVelaClientStateStore(createMemoryKeyValueStore(), {
+    hostId: "test-web",
+  });
+
+  store.conversationScroll.write(state.routeKey, state);
+
+  assert.deepEqual(store.conversationScroll.read(state.routeKey), state);
+  assert.equal(store.conversationScroll.read("other-session"), null);
+  assert.deepEqual(
+    deriveConversationScrollResumeDecision({
+      contentHeight: 1400,
+      isHistoryReady: true,
+      pendingVerification: false,
+      resumeState: store.conversationScroll.read(state.routeKey),
+      viewportHeight: 500,
+      viewportWidth: 900,
+    }),
+    {
+      blockedReason: null,
+      shouldRestore: true,
+      scrollTop: state.scrollTop,
+    },
+  );
+});
+
+test("conversation scroll resume writer flushes latest pending position before route switch", async () => {
+  const module = (await import(
+    "../src/conversation-runtime/scroll/scrollResumePersistence"
+  )) as Record<string, unknown>;
+  const createConversationScrollResumeWriter =
+    module.createConversationScrollResumeWriter as
+      | ((input: {
+          cancelFrame: (handle: number) => void;
+          scheduleFrame: (callback: () => void) => number;
+          write: (state: {
+            followOutput: boolean;
+            routeKey: string;
+            scrollTop: number;
+          }) => void;
+        }) => {
+          cancel: () => void;
+          flush: () => void;
+          schedule: (state: {
+            followOutput: boolean;
+            routeKey: string;
+            scrollTop: number;
+          }) => void;
+        })
+      | undefined;
+
+  assert.equal(typeof createConversationScrollResumeWriter, "function");
+
+  const writes: Array<{
+    followOutput: boolean;
+    routeKey: string;
+    scrollTop: number;
+  }> = [];
+  let scheduledCallback: (() => void) | null = null;
+  let cancelCount = 0;
+  const writer = createConversationScrollResumeWriter({
+    cancelFrame: (_handle) => {
+      cancelCount += 1;
+      scheduledCallback = null;
+    },
+    scheduleFrame: (callback) => {
+      scheduledCallback = callback;
+      return 7;
+    },
+    write: (state) => writes.push(state),
+  });
+
+  writer.schedule({ routeKey: "ses_a", scrollTop: 160, followOutput: false });
+  writer.schedule({ routeKey: "ses_a", scrollTop: 240, followOutput: false });
+  assert.deepEqual(writes, []);
+
+  writer.flush();
+
+  assert.deepEqual(writes, [
+    { routeKey: "ses_a", scrollTop: 240, followOutput: false },
+  ]);
+  assert.equal(cancelCount, 1);
+  scheduledCallback?.();
+  assert.deepEqual(writes, [
+    { routeKey: "ses_a", scrollTop: 240, followOutput: false },
+  ]);
+});
+
+test("conversation scroll resume persistence rejects route-entry snapshots before history readiness", async () => {
+  const module = (await import(
+    "../src/conversation-runtime/scroll/scrollResumePersistence"
+  )) as Record<string, unknown>;
+  const shouldPersistConversationScrollResumeSnapshot =
+    module.shouldPersistConversationScrollResumeSnapshot as
+      | ((input: {
+          hasPendingResumeState: boolean;
+          isHistoryReady: boolean;
+          routeKey: string | null;
+        }) => boolean)
+      | undefined;
 
   assert.equal(
-    buildConversationScrollResumeStorageKey(state.routeKey),
-    "vela-chat:conversation-scroll:sess%2Fwith%20spaces",
+    typeof shouldPersistConversationScrollResumeSnapshot,
+    "function",
+    "scroll persistence needs a pure gate so synthetic route-entry scroll snapshots cannot overwrite a saved detached position",
   );
-  assert.deepEqual(parseConversationScrollResumeState(serialized, state.routeKey), state);
-  assert.equal(parseConversationScrollResumeState(serialized, "other-session"), null);
-  assert.equal(parseConversationScrollResumeState("not-json", state.routeKey), null);
+
   assert.equal(
-    parseConversationScrollResumeState(
-      JSON.stringify({
-        version: 1,
-        route_key: state.routeKey,
-        scroll_top: -1,
-        follow_output: false,
-      }),
-      state.routeKey,
-    ),
-    null,
+    shouldPersistConversationScrollResumeSnapshot?.({
+      hasPendingResumeState: true,
+      isHistoryReady: false,
+      routeKey: "ses_a",
+    }),
+    false,
+  );
+  assert.equal(
+    shouldPersistConversationScrollResumeSnapshot?.({
+      hasPendingResumeState: false,
+      isHistoryReady: false,
+      routeKey: "ses_a",
+    }),
+    false,
+  );
+  assert.equal(
+    shouldPersistConversationScrollResumeSnapshot?.({
+      hasPendingResumeState: false,
+      isHistoryReady: true,
+      routeKey: "ses_a",
+    }),
+    true,
+  );
+  assert.equal(
+    shouldPersistConversationScrollResumeSnapshot?.({
+      hasPendingResumeState: false,
+      isHistoryReady: true,
+      routeKey: null,
+    }),
+    false,
   );
 });
 

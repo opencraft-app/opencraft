@@ -15,6 +15,7 @@ export {
   parseCreateSessionWireResponse,
   parseDiffReviewWireView,
   parsePendingRequestsWireView,
+  parseSessionListViewWireResponse,
   parseSessionListWireResponse,
   parseSessionWireResponse,
   parseUpdateAgentConfigWireResponse,

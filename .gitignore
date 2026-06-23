@@ -1,6 +1,7 @@
 .next
 node_modules
 dist
+dist-electron
 target
 .env
 .env.*

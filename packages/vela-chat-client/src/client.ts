@@ -16,6 +16,7 @@ import type {
   PendingRequestsWireView,
   SendSessionInputEventsInput,
   SessionListOptions,
+  SessionListViewWireResponse,
   SessionListWireResponse,
   SessionWireResponse,
   UpdateAgentConfigWireResponse,
@@ -34,6 +35,7 @@ import {
   readCreateSessionResponse,
   readDiffReviewViewResponse,
   readPendingRequestsViewResponse,
+  readSessionListViewResponse,
   readSessionListResponse,
   readSessionResponse,
   readUpdateAgentConfigResponse,
@@ -50,6 +52,7 @@ import {
 
 export interface VeladClient {
   listSessions: (options?: SessionListOptions) => Promise<SessionListWireResponse>;
+  getSessionListView: (options?: SessionListOptions) => Promise<SessionListViewWireResponse>;
   createSession: (input: CreateSessionInput) => Promise<CreateSessionWireResponse>;
   getSession: (sessionId: string) => Promise<SessionWireResponse>;
   getBackends: () => Promise<BackendsWireResponse>;
@@ -123,6 +126,14 @@ export function createVeladClient(options: VeladClientOptions): VeladClient {
       if (options?.afterId) url.searchParams.set("after_id", options.afterId);
       const response = await doFetch(url);
       return readSessionListResponse(response);
+    },
+    async getSessionListView(options) {
+      validateSessionListOptions(options);
+      const url = new URL("views/sessions", baseUrl);
+      if (options?.limit !== undefined) url.searchParams.set("limit", String(options.limit));
+      if (options?.afterId) url.searchParams.set("after_id", options.afterId);
+      const response = await doFetch(url);
+      return readSessionListViewResponse(response);
     },
     async createSession(input) {
       validateCreateSessionInput(input);

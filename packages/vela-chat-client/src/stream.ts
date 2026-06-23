@@ -158,7 +158,9 @@ export function mergeConversationSnapshot(
   snapshot: ConversationWireView,
 ): ConversationWireView {
   if (!current) return snapshot;
-  return compareCursorOrder(snapshot.cursor, current.cursor) < 0 ? current : snapshot;
+  if (current.session_id !== snapshot.session_id) return snapshot;
+  if (compareCursorOrder(snapshot.cursor, current.cursor) < 0) return current;
+  return mergeFreshConversationSnapshot(current, snapshot);
 }
 
 export function needsConversationRefreshAfterLiveOverlay(
@@ -322,6 +324,60 @@ export function createStreamRefreshScheduler({
 
 function isPromiseLike(value: void | Promise<void>): value is Promise<void> {
   return typeof value === "object" && value !== null && "then" in value;
+}
+
+function mergeFreshConversationSnapshot(
+  current: ConversationWireView,
+  snapshot: ConversationWireView,
+): ConversationWireView {
+  const items = mergeConversationItemsAtOverlap(current.items, snapshot.items);
+  if (items === snapshot.items) return snapshot;
+
+  const firstItemId =
+    items[0]?.id ?? snapshot.window.first_item_id ?? current.window.first_item_id ?? null;
+  const lastItemId =
+    items[items.length - 1]?.id ??
+    snapshot.window.last_item_id ??
+    current.window.last_item_id ??
+    null;
+  const keptCurrentPrefix =
+    Boolean(current.window.first_item_id) &&
+    current.window.first_item_id === firstItemId &&
+    current.window.first_item_id !== snapshot.window.first_item_id;
+
+  return {
+    ...snapshot,
+    items,
+    window: {
+      ...snapshot.window,
+      first_item_id: firstItemId,
+      last_item_id: lastItemId,
+      anchor_item_id: snapshot.window.anchor_item_id ?? current.window.anchor_item_id ?? null,
+      has_older: keptCurrentPrefix ? current.window.has_older : snapshot.window.has_older,
+    },
+  };
+}
+
+function mergeConversationItemsAtOverlap(
+  currentItems: ConversationWireItem[],
+  snapshotItems: ConversationWireItem[],
+): ConversationWireItem[] {
+  if (currentItems.length === 0 || snapshotItems.length === 0) return snapshotItems;
+
+  const currentIndexById = new Map(currentItems.map((item, index) => [item.id, index]));
+  const firstSnapshotOverlapIndex = snapshotItems.findIndex((item) =>
+    currentIndexById.has(item.id),
+  );
+  if (firstSnapshotOverlapIndex < 0) return snapshotItems;
+
+  const firstCurrentOverlapIndex = currentIndexById.get(
+    snapshotItems[firstSnapshotOverlapIndex]?.id ?? "",
+  );
+  if (firstCurrentOverlapIndex === undefined) return snapshotItems;
+
+  const prefix = currentItems.slice(0, firstCurrentOverlapIndex);
+  if (prefix.length === 0) return snapshotItems;
+  return [...prefix, ...snapshotItems.slice(firstSnapshotOverlapIndex)];
 }
 
 function appendConversationAssistantDelta(

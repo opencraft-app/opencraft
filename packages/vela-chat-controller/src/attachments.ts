@@ -1,7 +1,7 @@
 import {
   imageFileToInputPart,
   type ClientInputPart,
-} from "../../../packages/vela-chat-client/src";
+} from "../../vela-chat-client/src";
 
 export interface PendingImageAttachment {
   id: string;
@@ -21,3 +21,4 @@ export async function buildPendingImageAttachments(files: File[]) {
     })),
   );
 }
+

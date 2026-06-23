@@ -1,13 +1,7 @@
+import type { ConversationScrollClientState } from "../../../../vela-chat-host-state/src";
 import type { BottomAnchorBlockedReason } from "./bottomAnchorDriver";
 
-export const CONVERSATION_SCROLL_RESUME_STORAGE_PREFIX =
-  "vela-chat:conversation-scroll:";
-
-export interface ConversationScrollResumeState {
-  routeKey: string;
-  scrollTop: number;
-  followOutput: boolean;
-}
+export type ConversationScrollResumeState = ConversationScrollClientState;
 
 export interface ConversationScrollResumeDecisionInput {
   contentHeight: number;
@@ -22,96 +16,6 @@ export interface ConversationScrollResumeDecision {
   blockedReason: BottomAnchorBlockedReason | null;
   shouldRestore: boolean;
   scrollTop: number | null;
-}
-
-interface SerializedConversationScrollResumeState {
-  version: 1;
-  route_key: string;
-  scroll_top: number;
-  follow_output: boolean;
-}
-
-export function buildConversationScrollResumeStorageKey(
-  routeKey: string | null | undefined,
-): string | null {
-  if (!routeKey) return null;
-  return `${CONVERSATION_SCROLL_RESUME_STORAGE_PREFIX}${encodeURIComponent(routeKey)}`;
-}
-
-export function serializeConversationScrollResumeState(
-  state: ConversationScrollResumeState,
-): string {
-  const payload: SerializedConversationScrollResumeState = {
-    version: 1,
-    route_key: state.routeKey,
-    scroll_top: state.scrollTop,
-    follow_output: state.followOutput,
-  };
-  return JSON.stringify(payload);
-}
-
-export function parseConversationScrollResumeState(
-  raw: string | null,
-  expectedRouteKey: string,
-): ConversationScrollResumeState | null {
-  if (!raw) return null;
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-
-  if (!parsed || typeof parsed !== "object") return null;
-  const value = parsed as Partial<SerializedConversationScrollResumeState>;
-  if (value.version !== 1) return null;
-  if (value.route_key !== expectedRouteKey) return null;
-  if (
-    typeof value.scroll_top !== "number" ||
-    !Number.isFinite(value.scroll_top) ||
-    value.scroll_top < 0
-  ) {
-    return null;
-  }
-  if (typeof value.follow_output !== "boolean") return null;
-
-  return {
-    routeKey: value.route_key,
-    scrollTop: value.scroll_top,
-    followOutput: value.follow_output,
-  };
-}
-
-export function readConversationScrollResumeState(
-  storage: Pick<Storage, "getItem"> | null | undefined,
-  routeKey: string | null | undefined,
-): ConversationScrollResumeState | null {
-  const storageKey = buildConversationScrollResumeStorageKey(routeKey);
-  if (!storage || !storageKey || !routeKey) return null;
-
-  try {
-    return parseConversationScrollResumeState(
-      storage.getItem(storageKey),
-      routeKey,
-    );
-  } catch {
-    return null;
-  }
-}
-
-export function persistConversationScrollResumeState(
-  storage: Pick<Storage, "setItem"> | null | undefined,
-  state: ConversationScrollResumeState,
-): void {
-  const storageKey = buildConversationScrollResumeStorageKey(state.routeKey);
-  if (!storage || !storageKey) return;
-
-  try {
-    storage.setItem(storageKey, serializeConversationScrollResumeState(state));
-  } catch {
-    // Storage may be disabled or full; scroll resume is a best-effort comfort.
-  }
 }
 
 export function deriveConversationScrollResumeDecision({

@@ -2,7 +2,7 @@ import type {
   BackendKindWire,
   BackendWire,
   PermissionModeWire,
-  SessionWire,
+  SessionListItemWire,
 } from "../../../../packages/vela-chat-client/src";
 import { buildRecentSessionRows } from "./model";
 
@@ -36,7 +36,7 @@ export function DebugSessionLauncher({
   baseUrl: string;
   sessionId: string;
   workingDirectory: string;
-  recentSessions: SessionWire[];
+  recentSessions: SessionListItemWire[];
   isLoadingRecentSessions: boolean;
   backends: BackendWire[];
   backendKinds: Set<string>;

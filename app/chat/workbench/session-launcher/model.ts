@@ -1,4 +1,4 @@
-import type { SessionWire } from "../../../../packages/vela-chat-client/src";
+import type { SessionListItemWire } from "../../../../packages/vela-chat-client/src";
 
 export interface RecentSessionRow {
   id: string;
@@ -9,7 +9,7 @@ export interface RecentSessionRow {
   status: string;
 }
 
-export function buildRecentSessionRows(sessions: readonly SessionWire[]): RecentSessionRow[] {
+export function buildRecentSessionRows(sessions: readonly SessionListItemWire[]): RecentSessionRow[] {
   return sessions.map((session) => ({
     id: session.id,
     title: session.title || session.id,
@@ -20,7 +20,7 @@ export function buildRecentSessionRows(sessions: readonly SessionWire[]): Recent
   }));
 }
 
-function sessionSubtitle(session: SessionWire): string {
+function sessionSubtitle(session: SessionListItemWire): string {
   const parts = [
     session.backend,
     session.agent_config?.model ?? session.model,

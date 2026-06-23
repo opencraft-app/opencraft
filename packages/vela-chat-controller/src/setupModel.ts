@@ -3,10 +3,10 @@ import type {
   BackendKindWire,
   BackendWire,
   PermissionModeWire,
-} from "../../../packages/vela-chat-client/src";
-import { DEFAULT_PERMISSION_MODE_OPTIONS } from "../../../packages/vela-chat-web/src/components/composer-controls/model";
+} from "../../vela-chat-client/src";
+import { DEFAULT_PERMISSION_MODE_OPTIONS } from "../../vela-chat-web/src/components/composer-controls/model";
 
-export interface WorkbenchSetupSelectionInput {
+export interface VelaSessionSetupSelectionInput {
   backends: BackendWire[];
   selectedBackend: BackendKindWire | "";
   selectedModel: string;
@@ -14,13 +14,13 @@ export interface WorkbenchSetupSelectionInput {
   selectedPermissionMode: PermissionModeWire | "";
 }
 
-export function buildWorkbenchSetupSelection({
+export function buildVelaSessionSetupSelection({
   backends,
   selectedBackend,
   selectedModel,
   selectedReasoningEffort,
   selectedPermissionMode,
-}: WorkbenchSetupSelectionInput) {
+}: VelaSessionSetupSelectionInput) {
   const selectedBackendDetails =
     backends.find((backend) => backend.kind === selectedBackend) ?? backends[0];
   const resolvedSelectedBackend = selectedBackendDetails?.kind ?? selectedBackend;
@@ -81,3 +81,4 @@ function isDefaultOption(option: unknown) {
     option.is_default === true
   );
 }
+

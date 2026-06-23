@@ -12,6 +12,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import styles from "../../styles/desktop.module.css";
+import type { BottomAnchorUserIntent } from "../scroll/bottomAnchorDriver";
 import {
   computeScrollOffsetFromThumbDelta,
   computeScrollOffsetFromThumbOffset,
@@ -27,6 +28,11 @@ interface ScrollbarMetrics {
   offset: number;
   viewportSize: number;
   contentSize: number;
+}
+
+interface ScrollbarCommitInput {
+  scrollTop: number;
+  userIntent: BottomAnchorUserIntent;
 }
 
 const EMPTY_METRICS: ScrollbarMetrics = {
@@ -63,10 +69,14 @@ export function useConversationScrollbarOverlay(
   options?: {
     contentRef?: RefObject<HTMLElement | null>;
     enabled?: boolean;
+    onScrollCommit?: (input: ScrollbarCommitInput) => void;
+    onUserScrollIntent?: (intent: BottomAnchorUserIntent) => void;
   },
 ): ReactNode {
   const enabled = options?.enabled ?? true;
   const contentRef = options?.contentRef;
+  const onScrollCommit = options?.onScrollCommit;
+  const onUserScrollIntent = options?.onUserScrollIntent;
   const [metrics, setMetrics] = useState<ScrollbarMetrics>(EMPTY_METRICS);
   const [hovered, setHovered] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -117,6 +127,20 @@ export function useConversationScrollbarOverlay(
       setScrollActive(false);
     }, SCROLLBAR_ACTIVE_MS);
   }, [clearActiveTimeout]);
+
+  const commitOverlayScroll = useCallback(
+    (input: { previousOffset: number; scrollTop: number }) => {
+      const userIntent =
+        input.scrollTop < input.previousOffset - METRICS_EPSILON
+          ? "scroll_up"
+          : input.scrollTop > input.previousOffset + METRICS_EPSILON
+            ? "scroll_down"
+            : "none";
+      onUserScrollIntent?.(userIntent);
+      onScrollCommit?.({ scrollTop: input.scrollTop, userIntent });
+    },
+    [onScrollCommit, onUserScrollIntent],
+  );
 
   useLayoutEffect(() => {
     if (!enabled) return;
@@ -217,12 +241,15 @@ export function useConversationScrollbarOverlay(
         maxThumbOffset: geometry.maxThumbOffset,
         thumbOffset,
       });
+      const previousOffset = element.scrollTop;
       scrollElementInstantlyTo(element, nextOffset);
       updateMetrics();
+      commitOverlayScroll({ previousOffset, scrollTop: nextOffset });
       setScrollVisible(true);
       markScrollActive();
     },
     [
+      commitOverlayScroll,
       elementRef,
       geometry.maxScrollOffset,
       geometry.maxThumbOffset,
@@ -245,7 +272,10 @@ export function useConversationScrollbarOverlay(
       });
       const element = elementRef.current;
       if (!element) return;
+      const previousOffset = element.scrollTop;
       scrollElementInstantlyTo(element, nextOffset);
+      updateMetrics();
+      commitOverlayScroll({ previousOffset, scrollTop: nextOffset });
     };
 
     const stopDragging = () => {
@@ -261,7 +291,7 @@ export function useConversationScrollbarOverlay(
       window.removeEventListener("pointerup", stopDragging);
       window.removeEventListener("pointercancel", stopDragging);
     };
-  }, [dragging, elementRef]);
+  }, [commitOverlayScroll, dragging, elementRef, updateMetrics]);
 
   if (!enabled || !geometry.visible) {
     return null;

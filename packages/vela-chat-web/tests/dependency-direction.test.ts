@@ -26,14 +26,17 @@ test("repository root stays free of local browser debug artifacts", () => {
 function readChatWorkbenchSource() {
   return [
     "app/chat/ChatWorkbench.tsx",
-    "app/chat/workbench/attachments.ts",
-    "app/chat/workbench/constants.ts",
     "app/chat/workbench/helpers.ts",
-    "app/chat/workbench/renderModel.ts",
-    "app/chat/workbench/setupModel.ts",
     "app/chat/workbench/session-launcher/DebugSessionLauncher.tsx",
     "app/chat/workbench/session-launcher/model.ts",
-    "app/chat/workbench/streamHandler.ts",
+    "packages/vela-chat-controller/src/attachments.ts",
+    "packages/vela-chat-controller/src/constants.ts",
+    "packages/vela-chat-controller/src/historyPolicy.ts",
+    "packages/vela-chat-controller/src/renderModel.ts",
+    "packages/vela-chat-controller/src/sessionScopedReadModels.ts",
+    "packages/vela-chat-controller/src/setupModel.ts",
+    "packages/vela-chat-controller/src/streamHandler.ts",
+    "packages/vela-chat-controller/src/useVelaChatSession.ts",
   ]
     .map((path) => `// ${path}\n${readFileSync(join(root, path), "utf8")}`)
     .join("\n");
@@ -59,10 +62,48 @@ test("chat debug session launcher stays isolated from reusable ChatUI", () => {
     .join("\n");
 
   assert.match(chatWorkbench, /DebugSessionLauncher/);
-  assert.match(chatWorkbench, /client\.listSessions\(\{ limit: 12 \}\)/);
+  assert.match(chatWorkbench, /client\.getSessionListView\(\{ limit: 12 \}\)/);
   assert.doesNotMatch(chatWorkbench, /SetupPanel/);
   assert.doesNotMatch(webPackage, /DebugSessionLauncher/);
   assert.doesNotMatch(webPackage, /listSessions/);
+});
+
+test("chat history hydration is a reusable ChatUI phase instead of host-specific branching", () => {
+  const webEntrypoint = readFileSync(join(root, "packages/vela-chat-web/src/index.tsx"), "utf8");
+  const workbenchView = readFileSync(
+    join(root, "packages/vela-chat-web/src/components/workbench/ChatWorkbenchView.tsx"),
+    "utf8",
+  );
+  const desktopApp = readFileSync(
+    join(root, "apps/vela-desktop-electron/src/DesktopApp.tsx"),
+    "utf8",
+  );
+  const nextWorkbench = readFileSync(join(root, "app/chat/ChatWorkbench.tsx"), "utf8");
+  const controller = readFileSync(
+    join(root, "packages/vela-chat-controller/src/useVelaChatSession.ts"),
+    "utf8",
+  );
+
+  assert.match(controller, /historyPhase/);
+  assert.doesNotMatch(controller, /isHistoryHydrating/);
+  assert.match(webEntrypoint, /historyPhase/);
+  assert.match(workbenchView, /historyPhase === "hydrating_history"/);
+  assert.match(workbenchView, /ConversationHistoryHydrationView/);
+  assert.doesNotMatch(nextWorkbench, /ConversationHistoryHydrationScreen/);
+  assert.doesNotMatch(nextWorkbench, /isHistoryHydrating/);
+  assert.match(nextWorkbench, /historyPhase=\{controller\.historyPhase\}/);
+  assert.match(desktopApp, /historyPhase=\{controller\.historyPhase\}/);
+});
+
+test("chat controller initial refresh is not coupled to backend state", () => {
+  const source = readFileSync(
+    join(root, "packages/vela-chat-controller/src/useVelaChatSession.ts"),
+    "utf8",
+  );
+
+  assert.doesNotMatch(source, /Promise\.resolve\(\{\s*backends\s*\}\)/);
+  assert.doesNotMatch(source, /}, \[activeSessionId, backends,/);
+  assert.match(source, /fetchBackends \? client\.getBackends\(\) : Promise\.resolve\(null\)/);
 });
 
 test("web renderer consumes render model and does not inspect transcript wire fields", () => {
@@ -88,6 +129,7 @@ test("desktop renderer is split into agent-friendly component folders with local
     "packages/vela-chat-web/src/conversation-runtime/scroll/bottomAnchorDriver.ts",
     "packages/vela-chat-web/src/conversation-runtime/scroll/historyPaging.ts",
     "packages/vela-chat-web/src/conversation-runtime/scroll/routeResume.ts",
+    "packages/vela-chat-web/src/conversation-runtime/scroll/scrollResumePersistence.ts",
     "packages/vela-chat-web/src/conversation-runtime/scroll/useConversationScrollController.ts",
     "packages/vela-chat-web/src/conversation-runtime/scroll/viewportHandle.ts",
     "packages/vela-chat-web/src/conversation-runtime/scrollbar/README.md",
@@ -126,6 +168,7 @@ test("desktop renderer is split into agent-friendly component folders with local
     "packages/vela-chat-web/src/components/requests/requestResponses.ts",
     "packages/vela-chat-web/src/components/workbench/README.md",
     "packages/vela-chat-web/src/components/workbench/ChatWorkbenchView.tsx",
+    "packages/vela-chat-web/src/components/workbench/ConversationHistoryHydrationView.tsx",
     "packages/vela-chat-web/src/components/conversation/README.md",
     "packages/vela-chat-web/src/components/conversation/VelaConversation.tsx",
     "packages/vela-chat-web/src/components/conversation/VelaTurnList.tsx",
@@ -424,6 +467,20 @@ test("chat transcript hides native scrollbars behind a cross-platform overlay", 
   assert.doesNotMatch(css, /\.markdownTableScroller\s*\{[^}]*scrollbar-width:\s*thin;/s);
 });
 
+test("chat viewport prevents horizontal panning while markdown leaves keep local scrollers", () => {
+  const css = readFileSync(
+    join(root, "packages/vela-chat-web/src/styles/desktop.module.css"),
+    "utf8",
+  );
+  const conversation = cssBlock(css, "conversation");
+  const turnList = cssBlock(css, "turnList");
+  const tableScroller = cssBlock(css, "markdownTableScroller");
+
+  assert.match(conversation, /overflow-x:\s*hidden;/);
+  assert.match(turnList, /box-sizing:\s*border-box;/);
+  assert.match(tableScroller, /overflow-x:\s*auto;/);
+});
+
 test("streaming markdown never overlays live text with a blocking tail mask", () => {
   const css = readFileSync(
     join(root, "packages/vela-chat-web/src/styles/desktop.module.css"),
@@ -577,13 +634,17 @@ test("message sends can request bottom anchoring after the committed read model 
     join(root, "app/chat/ChatWorkbench.tsx"),
     "utf8",
   );
+  const controller = readFileSync(
+    join(root, "packages/vela-chat-controller/src/useVelaChatSession.ts"),
+    "utf8",
+  );
 
   assert.match(chatWeb, /messageFollowToken\?:\s*number/);
   assert.match(workbenchView, /messageFollowToken/);
   assert.match(conversation, /messageFollowToken/);
   assert.match(conversation, /requestBottomAnchor\("message_sent"\)/);
-  assert.match(chatWorkbench, /setMessageFollowToken/);
-  assert.match(chatWorkbench, /messageFollowToken=\{messageFollowToken\}/);
+  assert.match(controller, /setMessageFollowToken/);
+  assert.match(chatWorkbench, /messageFollowToken=\{controller\.messageFollowToken\}/);
 });
 
 test("composer height is measured instead of using fixed bottom padding", () => {
@@ -624,14 +685,43 @@ test("composer backdrop is an independent layer between conversation content and
   );
 
   assert.match(workbenchView, /styles\.composerBackdrop/);
-  assert.match(css, /\.composerBackdrop\s*\{[^}]*position:\s*fixed;/s);
-  assert.match(css, /\.composerBackdrop\s*\{[^}]*height:\s*var\(--vela-composer-height\);/s);
+  assert.match(css, /--vela-bg:\s*rgb\(255 255 255 \/ [0-9.]+%\);/);
+  assert.match(css, /\.shell\s*\{[^}]*position:\s*relative;/s);
+  assert.match(css, /\.shell\s*\{[^}]*width:\s*100%;/s);
+  assert.match(css, /\.shell\s*\{[^}]*min-width:\s*0;/s);
+  assert.match(css, /\.shell\s*\{[^}]*--vela-spacing:\s*0\.25rem;/s);
+  assert.match(css, /\.shell\s*\{[^}]*--vela-toolbar-height:\s*46px;/s);
+  assert.match(css, /\.shell\s*\{[^}]*--vela-shell-radius:\s*16px;/s);
+  assert.match(css, /\.shell\s*\{[^}]*--vela-composer-radius:\s*20px;/s);
+  assert.match(css, /\.shell\s*\{[^}]*--vela-composer-blur:\s*16px;/s);
+  assert.match(css, /\.shell\s*\{[^}]*--vela-composer-shadow:\s*0 4px 16px 0 rgb\(0 0 0 \/ 5%\);/s);
+  assert.match(css, /\.shell\s*\{[^}]*border-top-left-radius:\s*var\(--vela-shell-radius\);/s);
+  assert.match(css, /\.shell\s*\{[^}]*background:\s*var\(--vela-bg\);/s);
+  assert.match(css, /\.shell\s*\{[^}]*-webkit-backdrop-filter:\s*saturate/s);
+  assert.match(css, /\.shell\s*\{[^}]*backdrop-filter:\s*saturate/s);
+  assert.doesNotMatch(css, /\.shell\s*\{[^}]*background:\s*transparent;/s);
+  assert.match(css, /\.frame\s*\{[^}]*position:\s*relative;/s);
+  assert.match(css, /\.frame\s*\{[^}]*isolation:\s*isolate;/s);
+  assert.match(css, /\.frame\s*\{[^}]*border-top:\s*1px solid var\(--vela-border\);/s);
+  assert.match(css, /\.frame::before\s*\{[^}]*height:\s*16px;/s);
+  assert.match(css, /\.frame::before\s*\{[^}]*background:\s*linear-gradient\(to bottom, var\(--vela-bg\), rgb\(255 255 255 \/ 0\)\);/s);
+  assert.match(css, /\.composerBackdrop\s*\{[^}]*position:\s*absolute;/s);
+  assert.match(css, /\.composerBackdrop\s*\{[^}]*height:\s*calc\(var\(--vela-composer-height\) \+ 64px\);/s);
   assert.match(css, /\.composerBackdrop\s*\{[^}]*background:\s*linear-gradient/s);
   assert.match(css, /\.composerBackdrop\s*\{[^}]*rgb\(255 255 255 \/ 0\)\s*0%/s);
-  assert.match(css, /\.composerBackdrop\s*\{[^}]*var\(--vela-bg\)\s*50%/s);
+  assert.match(css, /\.composerBackdrop\s*\{[^}]*var\(--vela-bg\)\s*54%/s);
   assert.match(css, /\.composerBackdrop\s*\{[^}]*z-index:\s*19;/s);
+  assert.match(css, /\.composerDock\s*\{[^}]*position:\s*absolute;/s);
   assert.match(css, /\.composerDock\s*\{[^}]*z-index:\s*20;/s);
-  assert.match(css, /\.composerDock\s*\{[^}]*padding:\s*0 24px 24px;/s);
+  assert.match(css, /\.composerDock\s*\{[^}]*padding:\s*0 24px var\(--vela-thread-floating-content-bottom-inset\);/s);
+  assert.match(css, /\.requestDock\s*\{[^}]*position:\s*absolute;/s);
+  assert.match(css, /\.requestDock\s*\{[^}]*bottom:\s*calc\(var\(--vela-composer-height\) \+ var\(--vela-thread-floating-content-top-inset\)\);/s);
+  assert.match(css, /\.error\s*\{[^}]*position:\s*absolute;/s);
+  assert.match(css, /\.error\s*\{[^}]*bottom:\s*calc\(var\(--vela-composer-height\) \+ var\(--vela-thread-floating-content-top-inset\)\);/s);
+  assert.doesNotMatch(css, /\.composerBackdrop\s*\{[^}]*position:\s*fixed;/s);
+  assert.doesNotMatch(css, /\.composerDock\s*\{[^}]*position:\s*fixed;/s);
+  assert.doesNotMatch(css, /\.requestDock\s*\{[^}]*position:\s*fixed;/s);
+  assert.doesNotMatch(css, /\.error\s*\{[^}]*position:\s*fixed;/s);
   assert.doesNotMatch(css, /\.composerDock\s*\{[^}]*background:/s);
   assert.doesNotMatch(css, /\.composerDock\s*\{[^}]*height:\s*calc\(var\(--vela-composer-height\)/s);
 });
@@ -655,13 +745,17 @@ test("chat debug snapshot includes conversation scroll runtime state", () => {
     join(root, "packages/vela-chat-web/src/components/conversation/VelaConversation.tsx"),
     "utf8",
   );
+  const scrollController = readFileSync(
+    join(root, "packages/vela-chat-web/src/conversation-runtime/scroll/useConversationScrollController.ts"),
+    "utf8",
+  );
 
   assert.match(conversation, /onScrollDebugChange/);
   assert.match(conversation, /scroll\.debug/);
   assert.match(chatWorkbench, /conversationScrollDebug/);
-  assert.match(chatWorkbench, /scroll:\s*conversationScrollDebug/);
-  assert.match(chatWorkbench, /routeResumeStatus/);
-  assert.match(chatWorkbench, /routeResumeScrollTop/);
+  assert.match(chatWorkbench, /scroll:\s*controller\.conversationScrollDebug/);
+  assert.match(scrollController, /routeResumeStatus/);
+  assert.match(scrollController, /routeResumeScrollTop/);
 });
 
 test("conversation runtime owns session scroll resume instead of the page shell", () => {
@@ -669,14 +763,57 @@ test("conversation runtime owns session scroll resume instead of the page shell"
     join(root, "packages/vela-chat-web/src/conversation-runtime/scroll/useConversationScrollController.ts"),
     "utf8",
   );
+  const routeResume = readFileSync(
+    join(root, "packages/vela-chat-web/src/conversation-runtime/scroll/routeResume.ts"),
+    "utf8",
+  );
+  const scrollResumePersistence = readFileSync(
+    join(root, "packages/vela-chat-web/src/conversation-runtime/scroll/scrollResumePersistence.ts"),
+    "utf8",
+  );
   const chatWorkbench = readChatWorkbenchSource();
 
-  assert.match(controller, /readConversationScrollResumeState/);
-  assert.match(controller, /persistConversationScrollResumeState/);
-  assert.match(controller, /deriveConversationScrollResumeDecision/);
+  assert.match(controller, /clientStateStore/);
+  assert.match(controller, /conversationScroll\.read/);
+  assert.match(controller, /conversationScroll\.write/);
+  assert.match(routeResume, /deriveConversationScrollResumeDecision/);
+  assert.match(scrollResumePersistence, /flush\(\)/);
+  assert.match(controller, /flushPendingScrollResumePersist/);
   assert.match(controller, /routeResumeStatus/);
+  assert.doesNotMatch(controller, /sessionStorage/);
   assert.doesNotMatch(chatWorkbench, /sessionStorage/);
   assert.doesNotMatch(chatWorkbench, /scrollTop/);
+});
+
+test("self-drawn scrollbar commits user positions through the conversation scroll runtime", () => {
+  const conversation = readFileSync(
+    join(root, "packages/vela-chat-web/src/components/conversation/VelaConversation.tsx"),
+    "utf8",
+  );
+  const controller = readFileSync(
+    join(root, "packages/vela-chat-web/src/conversation-runtime/scroll/useConversationScrollController.ts"),
+    "utf8",
+  );
+  const overlay = readFileSync(
+    join(root, "packages/vela-chat-web/src/conversation-runtime/scrollbar/useConversationScrollbarOverlay.tsx"),
+    "utf8",
+  );
+
+  assert.match(
+    controller,
+    /commitScrollResumeNow/,
+    "scroll runtime needs an explicit synchronous commit entrypoint for pointer-driven scrollbar updates",
+  );
+  assert.match(
+    conversation,
+    /onScrollCommit:\s*scroll\.commitScrollResumeNow/,
+    "VelaConversation should wire the overlay commit callback into the scroll controller",
+  );
+  assert.match(
+    overlay,
+    /onScrollCommit/,
+    "the overlay may own thumb geometry, but route-safe scroll persistence belongs to the conversation scroll runtime",
+  );
 });
 
 test("conversation runtime owns history prepend scroll anchoring", () => {
@@ -735,8 +872,8 @@ test("chat workbench scopes read models to the active session before stream and 
   assert.match(source, /pendingRequestsForActiveSession\(activeSessionId,\s*requests\)/);
   assert.match(source, /conversation:\s*activeConversation\?\.cursor/);
   assert.match(source, /const isConversationReady = activeConversation !== null/);
-  assert.match(source, /buildWorkbenchRenderModel\(\{[\s\S]*?conversation: activeConversation/);
-  assert.match(source, /buildWorkbenchRenderModel\(\{[\s\S]*?requests: activeRequests/);
+  assert.match(source, /buildVelaChatControllerRenderModel\(\{[\s\S]*?conversation: activeConversation/);
+  assert.match(source, /buildVelaChatControllerRenderModel\(\{[\s\S]*?requests: activeRequests/);
 });
 
 test("chat workbench ignores late read-model responses from stale sessions", () => {
@@ -748,8 +885,10 @@ test("chat workbench ignores late read-model responses from stale sessions", () 
     source,
     /if \(!isCurrentSessionRequest\(activeSessionIdRef\.current,\s*requestedSessionId\)\) return;/,
   );
-  assert.match(source, /resetSessionReadModels/);
-  assert.match(source, /openSession:[\s\S]*?resetSessionReadModels\(\);/);
+  assert.match(source, /commitConversation\(null\)/);
+  assert.match(source, /commitRequests\(null\)/);
+  assert.match(source, /setStreamConnected\(false\)/);
+  assert.match(source, /const openSession = useCallback/);
 });
 
 test("workbench memoizes the web render model adapter output", () => {
@@ -1032,10 +1171,12 @@ test("composer input frame matches the codex-desktop visual rhythm", () => {
   const rightBlock = [...styles.matchAll(/\.composerRight\s*\{[^}]+\}/g)].at(-1)?.[0] ?? "";
   const iconButtonBlock = cssBlock(styles, "iconButton");
 
-  assert.match(frameBlock, /border-radius:\s*24px;/);
-  assert.match(frameBlock, /background:\s*rgb\(255 255 255 \/ 94%\);/);
-  assert.match(frameBlock, /box-shadow:\s*0 18px 48px rgb\(31 35 40 \/ 16%\)/);
-  assert.match(frameBlock, /backdrop-filter:\s*saturate\(1\.4\) blur\(22px\);/);
+  assert.match(frameBlock, /overflow:\s*hidden auto;/);
+  assert.match(frameBlock, /border:\s*1px solid rgb\(13 13 13 \/ 10%\);/);
+  assert.match(frameBlock, /border-radius:\s*var\(--vela-composer-radius\);/);
+  assert.match(frameBlock, /background:\s*var\(--vela-composer-bg\);/);
+  assert.match(frameBlock, /box-shadow:\s*var\(--vela-composer-shadow\);/);
+  assert.match(frameBlock, /backdrop-filter:\s*saturate\(1\.2\) blur\(var\(--vela-composer-blur\)\);/);
   assert.doesNotMatch(frameBlock, /min-height:\s*112px;/);
 
   assert.match(textareaBlock, /min-height:\s*24px;/);
@@ -1059,6 +1200,8 @@ test("composer input frame matches the codex-desktop visual rhythm", () => {
   assert.match(iconButtonBlock, /height:\s*36px;/);
   assert.match(iconButtonBlock, /border:\s*1px solid #e7e5e4;/);
   assert.match(iconButtonBlock, /border-radius:\s*8px;/);
+  assert.match(styles, /@supports \(corner-shape:\s*superellipse\(1\.5\)\)\s*\{[^}]*\.composer\s*\{[^}]*corner-shape:\s*superellipse\(1\.5\);/s);
+  assert.match(styles, /@container composer-footer \(width <= 440px\)\s*\{[^}]*\.controlButtonLabel\s*\{[^}]*display:\s*none;/s);
 });
 
 test("composer primary control switches to stop while a turn is running", () => {

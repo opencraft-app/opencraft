@@ -333,6 +333,25 @@ export interface SessionWire {
   metadata?: Record<string, unknown>;
 }
 
+export interface SessionSummaryWire {
+  id: string;
+  backend: BackendKindWire;
+  status: SessionStatusWire;
+  title: string;
+  updated_at: string;
+  agent_config?: AgentConfigWire;
+}
+
+export interface SessionListItemWire extends SessionSummaryWire {
+  working_directory: string;
+  created_at: string;
+  last_activity_at: string;
+  preview: string;
+  pending_request_count: number;
+  running: boolean;
+  model?: string | null;
+}
+
 export type SessionStatusWire =
   | "starting"
   | "idle"
@@ -373,7 +392,12 @@ export interface SessionListOptions {
 }
 
 export interface SessionListWireResponse {
-  sessions: SessionWire[];
+  sessions: SessionSummaryWire[];
+  cursor: CursorWindow;
+}
+
+export interface SessionListViewWireResponse {
+  sessions: SessionListItemWire[];
   cursor: CursorWindow;
 }
 

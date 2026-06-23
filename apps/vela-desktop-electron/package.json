@@ -1,0 +1,21 @@
+{
+  "private": true,
+  "name": "@vela/desktop-electron",
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "vite --config vite.renderer.config.ts --host 127.0.0.1",
+    "build": "vite build --config vite.electron.config.ts && vite build --config vite.renderer.config.ts",
+    "build:electron": "vite build --config vite.electron.config.ts",
+    "build:renderer": "vite build --config vite.renderer.config.ts"
+  },
+  "main": "dist-electron/main.js",
+  "dependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.4.11",
+    "react": "latest",
+    "react-dom": "latest",
+    "vite": "^5.4.19"
+  }
+}

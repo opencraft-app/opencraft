@@ -1,65 +1,35 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  commandAckRejectionMessage,
   createVeladClient,
-  createStreamRefreshScheduler,
-  applyConversationLiveOverlay,
-  readVelaStreamEvent,
-  mergeConversationSnapshot,
-  needsConversationRefreshAfterLiveOverlay,
-  selectSessionEventStreamAfterId,
-  subscribeVelaEventSource,
-  type AgentConfigPatchWire,
   type BackendKindWire,
   type BackendWire,
-  type ClientInputPart,
   type PermissionModeWire,
-  type SessionWire,
+  type SessionListItemWire,
 } from "../../packages/vela-chat-client/src";
+import {
+  DEFAULT_VELAD_BASE_URL,
+  buildVelaSessionSetupSelection,
+  useVelaChatSession,
+} from "../../packages/vela-chat-controller/src";
 import {
   buildVelaChatDebugSnapshot,
   installVelaChatDebugApi,
   logVelaChatConsoleEvent,
   type VelaChatDebugApi,
-  type VelaChatDebugScrollRuntime,
 } from "../../packages/vela-chat-debug/src";
-import {
-  buildConversationHistoryPrependPlan,
-  canApplyConversationHistoryPrependPlan,
-  deriveConversationWindowState,
-  prependConversationWindow,
-} from "../../packages/vela-chat-surface/src";
 import { VelaChatWeb } from "../../packages/vela-chat-web/src";
 import { toWebChatModel } from "../../packages/vela-chat-web/src/adapters/toWebBlocks";
-import { buildComposerControlsModel } from "../../packages/vela-chat-web/src/components/composer-controls/model";
 import {
   buildConversationRuntimeSegments,
   buildConversationStreamItems,
   conversationRuntimePolicyForHost,
   summarizeConversationRuntime,
 } from "../../packages/vela-chat-web/src/conversation-runtime/model";
-import type { RequestDockResponse } from "../../packages/vela-chat-web/src/components/requests/RequestDock";
-import { buildRequestResponseInputEvent } from "../../packages/vela-chat-web/src/components/requests/requestResponses";
-import {
-  isCurrentSessionRequest,
-  pendingRequestsForActiveSession,
-  readModelForActiveSession,
-} from "./sessionScopedReadModels";
-import { buildPendingImageAttachments, type PendingImageAttachment } from "./workbench/attachments";
-import { DEFAULT_BASE_URL } from "./workbench/constants";
-import { ConversationHistoryHydrationScreen } from "./workbench/conversation-history/ConversationHistoryHydrationScreen";
-import {
-  DEFAULT_DESKTOP_CONVERSATION_HISTORY_POLICY,
-  shouldAutoPreloadOlderConversation,
-  shouldShowConversationHistoryHydrationGate,
-} from "./workbench/conversation-history/policy";
-import { buildWorkbenchRenderModel } from "./workbench/renderModel";
 import { DebugSessionLauncher } from "./workbench/session-launcher/DebugSessionLauncher";
-import { cursorEventId, isStaleCursorError } from "./workbench/helpers";
-import { buildWorkbenchSetupSelection } from "./workbench/setupModel";
-import { handleWorkbenchStreamEvent } from "./workbench/streamHandler";
+import { cursorEventId } from "./workbench/helpers";
+import { createChatExampleClientStateStore } from "./workbench/hostState";
 
 export function ChatWorkbench({
   initialSessionId,
@@ -72,436 +42,64 @@ export function ChatWorkbench({
 }) {
   const [sessionId, setSessionId] = useState(initialSessionId ?? "");
   const [activeSessionId, setActiveSessionId] = useState(initialSessionId ?? "");
-  const [baseUrl, setBaseUrl] = useState(initialBaseUrl ?? DEFAULT_BASE_URL);
+  const [baseUrl, setBaseUrl] = useState(initialBaseUrl ?? DEFAULT_VELAD_BASE_URL);
   const [workingDirectory, setWorkingDirectory] = useState(initialWorkingDirectory ?? "");
-  const [conversation, setConversation] = useState<Awaited<ReturnType<ReturnType<typeof createVeladClient>["getConversation"]>> | null>(null);
-  const [requests, setRequests] = useState<Awaited<ReturnType<ReturnType<typeof createVeladClient>["getPendingRequests"]>> | null>(null);
-  const [session, setSession] = useState<SessionWire | null>(null);
-  const [recentSessions, setRecentSessions] = useState<SessionWire[]>([]);
-  const [backends, setBackends] = useState<BackendWire[]>([]);
+  const [recentSessions, setRecentSessions] = useState<SessionListItemWire[]>([]);
+  const [launcherBackends, setLauncherBackends] = useState<BackendWire[]>([]);
   const [selectedBackend, setSelectedBackend] = useState<BackendKindWire | "">("");
   const [selectedModel, setSelectedModel] = useState("");
   const [selectedReasoningEffort, setSelectedReasoningEffort] = useState("");
   const [selectedPermissionMode, setSelectedPermissionMode] = useState<PermissionModeWire | "">("");
-  const [draft, setDraft] = useState("");
-  const [pendingAttachments, setPendingAttachments] = useState<PendingImageAttachment[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [streamConnected, setStreamConnected] = useState(false);
-  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+  const [launcherError, setLauncherError] = useState<string | null>(null);
   const [isLoadingRecentSessions, setIsLoadingRecentSessions] = useState(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
-  const [isUpdatingAgentConfig, setIsUpdatingAgentConfig] = useState(false);
-  const [isRespondingToRequest, setIsRespondingToRequest] = useState(false);
-  const [isCancellingSession, setIsCancellingSession] = useState(false);
-  const [messageFollowToken, setMessageFollowToken] = useState(0);
-  const [completedInitialHydrationSessionId, setCompletedInitialHydrationSessionId] =
-    useState<string | null>(null);
-  const [conversationScrollDebug, setConversationScrollDebug] =
-    useState<VelaChatDebugScrollRuntime | null>(null);
-  const conversationRef = useRef<typeof conversation>(null);
-  const requestsRef = useRef<typeof requests>(null);
-  const activeSessionIdRef = useRef(activeSessionId);
-  activeSessionIdRef.current = activeSessionId;
 
   const client = useMemo(() => createVeladClient({ baseUrl }), [baseUrl]);
-  const commitConversation = useCallback((nextConversation: typeof conversation) => {
-    const mergedConversation = nextConversation
-      ? mergeConversationSnapshot(conversationRef.current, nextConversation)
-      : null;
-    conversationRef.current = mergedConversation;
-    setConversation(mergedConversation);
-  }, []);
-  const commitRequests = useCallback((nextRequests: typeof requests) => {
-    requestsRef.current = nextRequests;
-    setRequests(nextRequests);
-  }, []);
-  const resetSessionReadModels = useCallback(() => {
-    commitConversation(null);
-    commitRequests(null);
-    setStreamConnected(false);
-    setIsLoadingOlder(false);
-  }, [commitConversation, commitRequests]);
+  const clientStateStore = useMemo(() => createChatExampleClientStateStore(), []);
+  const controller = useVelaChatSession({
+    baseUrl,
+    client,
+    clientStateStore,
+    sessionId: activeSessionId,
+  });
+  const activeBackends = activeSessionId ? controller.backends : launcherBackends;
+  const error = controller.error ?? launcherError;
 
-  const loadConversation = useCallback(async () => {
-    const requestedSessionId = activeSessionId;
-    if (!requestedSessionId) return;
+  const loadLauncherBackends = useCallback(async () => {
     try {
-      setError(null);
-      const nextConversation = await client.getConversation(requestedSessionId);
-      if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
-      commitConversation(nextConversation);
-    } catch (err) {
-      if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }, [activeSessionId, client, commitConversation]);
-
-  const loadRequests = useCallback(async () => {
-    const requestedSessionId = activeSessionId;
-    if (!requestedSessionId) return;
-    try {
-      setError(null);
-      const nextRequests = await client.getPendingRequests(requestedSessionId, { status: "pending" });
-      if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
-      commitRequests(nextRequests);
-    } catch (err) {
-      if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }, [activeSessionId, client, commitRequests]);
-
-  const loadSession = useCallback(async () => {
-    const requestedSessionId = activeSessionId;
-    if (!requestedSessionId) return;
-    try {
-      setError(null);
-      const nextSession = await client.getSession(requestedSessionId);
-      if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
-      setSession(nextSession.session);
-    } catch (err) {
-      if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }, [activeSessionId, client]);
-
-  const loadBackends = useCallback(async () => {
-    try {
-      setError(null);
+      setLauncherError(null);
       const nextBackends = await client.getBackends();
-      setBackends(nextBackends.backends);
+      setLauncherBackends(nextBackends.backends);
       setSelectedBackend((current) => {
         if (nextBackends.backends.some((backend) => backend.kind === current)) return current;
         return nextBackends.backends[0]?.kind ?? current;
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setLauncherError(err instanceof Error ? err.message : String(err));
     }
   }, [client]);
 
   const loadRecentSessions = useCallback(async () => {
     try {
       setIsLoadingRecentSessions(true);
-      setError(null);
-      const nextSessions = await client.listSessions({ limit: 12 });
+      setLauncherError(null);
+      const nextSessions = await client.getSessionListView({ limit: 12 });
       setRecentSessions(nextSessions.sessions);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setLauncherError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsLoadingRecentSessions(false);
     }
   }, [client]);
 
-  const loadReadModels = useCallback(async () => {
-    const requestedSessionId = activeSessionId;
-    if (!requestedSessionId) return;
-    try {
-      setError(null);
-      const [nextConversation, nextRequests, nextSession, nextBackends] = await Promise.all([
-        client.getConversation(requestedSessionId),
-        client.getPendingRequests(requestedSessionId, { status: "pending" }),
-        client.getSession(requestedSessionId),
-        client.getBackends(),
-      ]);
-      if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
-      commitConversation(nextConversation);
-      commitRequests(nextRequests);
-      setSession(nextSession.session);
-      setBackends(nextBackends.backends);
-    } catch (err) {
-      if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }, [activeSessionId, client, commitConversation, commitRequests]);
-
   useEffect(() => {
-    void loadReadModels();
-  }, [loadReadModels]);
-
-  useEffect(() => {
-    setConversationScrollDebug(null);
-  }, [activeSessionId]);
-
-  useEffect(() => {
-    void loadBackends();
-  }, [loadBackends]);
+    void loadLauncherBackends();
+  }, [loadLauncherBackends]);
 
   useEffect(() => {
     if (activeSessionId) return;
     void loadRecentSessions();
   }, [activeSessionId, loadRecentSessions]);
-
-  const activeConversation = readModelForActiveSession(activeSessionId, conversation);
-  const activeRequests = pendingRequestsForActiveSession(activeSessionId, requests);
-  const sessionEventStreamAfterId = selectSessionEventStreamAfterId({
-    conversation: activeConversation?.cursor,
-  });
-  const isConversationReady = activeConversation !== null;
-  const conversationWindow = useMemo(
-    () => deriveConversationWindowState({ conversation: activeConversation }),
-    [activeConversation],
-  );
-  const conversationHistoryPrependPlan = useMemo(
-    () => buildConversationHistoryPrependPlan({ conversation: activeConversation, limit: 80 }),
-    [activeConversation],
-  );
-  const conversationHistoryPolicy = DEFAULT_DESKTOP_CONVERSATION_HISTORY_POLICY;
-  const hasCompletedInitialHistoryHydration =
-    activeSessionId.length > 0 && completedInitialHydrationSessionId === activeSessionId;
-
-  useEffect(() => {
-    if (!activeSessionId || !isConversationReady) return;
-    const url = client.sessionEventStreamUrl(activeSessionId, sessionEventStreamAfterId);
-    const source = new EventSource(url);
-    const conversationRefreshScheduler = createStreamRefreshScheduler({
-      refresh: loadConversation,
-      minIntervalMs: 240,
-    });
-    const requestsRefreshScheduler = createStreamRefreshScheduler({
-      refresh: loadRequests,
-      minIntervalMs: 240,
-    });
-    const sessionRefreshScheduler = createStreamRefreshScheduler({
-      refresh: loadSession,
-      minIntervalMs: 320,
-    });
-    const backendsRefreshScheduler = createStreamRefreshScheduler({
-      refresh: loadBackends,
-      minIntervalMs: 2000,
-    });
-
-    const unsubscribe = subscribeVelaEventSource(source, {
-      onOpen: () => setStreamConnected(true),
-      onError: () => setStreamConnected(false),
-      onEvent: (event) => {
-        const streamEvent = readVelaStreamEvent(event);
-        if (streamEvent) {
-          const currentConversation = readModelForActiveSession(activeSessionId, conversationRef.current);
-          const currentRequests = pendingRequestsForActiveSession(activeSessionId, requestsRef.current);
-          if (currentConversation) {
-            const forceConversationRefresh =
-              needsConversationRefreshAfterLiveOverlay(currentConversation, streamEvent);
-            commitConversation(applyConversationLiveOverlay(currentConversation, streamEvent));
-            handleWorkbenchStreamEvent({
-              activeSessionId,
-              streamEvent,
-              currentConversation,
-              currentRequests,
-              conversationRefreshScheduler,
-              forceConversationRefresh,
-              requestsRefreshScheduler,
-              sessionRefreshScheduler,
-              backendsRefreshScheduler,
-            });
-          }
-        }
-      },
-    });
-
-    return () => {
-      unsubscribe();
-      conversationRefreshScheduler.dispose();
-      requestsRefreshScheduler.dispose();
-      sessionRefreshScheduler.dispose();
-      backendsRefreshScheduler.dispose();
-      source.close();
-      setStreamConnected(false);
-    };
-  }, [
-    activeSessionId,
-    client,
-    isConversationReady,
-    loadBackends,
-    commitConversation,
-    loadConversation,
-    loadRequests,
-    loadSession,
-  ]);
-
-  const loadOlderConversation = useCallback(async () => {
-    if (!activeSessionId || !conversationHistoryPrependPlan.has_older || isLoadingOlder) return;
-    const requestedSessionId = activeSessionId;
-    const requestedPrependPlan = conversationHistoryPrependPlan;
-    try {
-      setIsLoadingOlder(true);
-      setError(null);
-      const older = requestedPrependPlan.conversation
-        ? await client.getConversation(requestedSessionId, requestedPrependPlan.conversation)
-        : null;
-      if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
-      const currentConversation = readModelForActiveSession(requestedSessionId, conversationRef.current);
-      if (
-        !canApplyConversationHistoryPrependPlan(requestedPrependPlan, {
-          conversation: currentConversation,
-        })
-      ) {
-        return;
-      }
-      if (older) {
-        commitConversation(
-          currentConversation ? prependConversationWindow(currentConversation, older) : older,
-        );
-      }
-    } catch (err) {
-      if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
-      if (isStaleCursorError(err)) {
-        await loadReadModels();
-        return;
-      }
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setIsLoadingOlder(false);
-    }
-  }, [
-    activeSessionId,
-    client,
-    commitConversation,
-    conversationHistoryPrependPlan,
-    isLoadingOlder,
-    loadReadModels,
-  ]);
-
-  const shouldAutoPreloadOlder = shouldAutoPreloadOlderConversation({
-    activeSessionId,
-    error,
-    hasCompletedInitialHydration: hasCompletedInitialHistoryHydration,
-    hasOlder: conversationHistoryPrependPlan.has_older,
-    isConversationReady,
-    isLoadingOlder,
-    policy: conversationHistoryPolicy,
-  });
-  useEffect(() => {
-    if (!shouldAutoPreloadOlder) return;
-    void loadOlderConversation();
-  }, [loadOlderConversation, shouldAutoPreloadOlder]);
-
-  const isConversationHistoryHydrating = shouldShowConversationHistoryHydrationGate({
-    activeSessionId,
-    error,
-    hasCompletedInitialHydration: hasCompletedInitialHistoryHydration,
-    hasOlder: conversationHistoryPrependPlan.has_older,
-    isConversationReady,
-    isLoadingOlder,
-    policy: conversationHistoryPolicy,
-  });
-
-  useEffect(() => {
-    if (
-      !activeSessionId ||
-      hasCompletedInitialHistoryHydration ||
-      !isConversationReady ||
-      conversationHistoryPrependPlan.has_older ||
-      isLoadingOlder
-    ) {
-      return;
-    }
-    setCompletedInitialHydrationSessionId(activeSessionId);
-  }, [
-    activeSessionId,
-    conversationHistoryPrependPlan.has_older,
-    hasCompletedInitialHistoryHydration,
-    isConversationReady,
-    isLoadingOlder,
-  ]);
-
-  const model = useMemo(() => {
-    return buildWorkbenchRenderModel({
-      activeSessionId,
-      conversation: activeConversation,
-      requests: activeRequests,
-      streamConnected,
-    });
-  }, [activeConversation, activeRequests, activeSessionId, streamConnected]);
-
-  const conversationDebug = useMemo(() => {
-    const webModel = toWebChatModel(model);
-    const items = buildConversationStreamItems(webModel.turns);
-    const segments = buildConversationRuntimeSegments(
-      items,
-      conversationRuntimePolicyForHost(model.host.kind),
-    );
-    return {
-      ...summarizeConversationRuntime(items, segments),
-      scroll: conversationScrollDebug,
-    };
-  }, [conversationScrollDebug, model]);
-
-  const handleConversationScrollDebugChange = useCallback(
-    (nextDebug: VelaChatDebugScrollRuntime) => {
-      setConversationScrollDebug((current) =>
-        current?.followOutput === nextDebug.followOutput &&
-        current?.bottomAnchorBlockedReason === nextDebug.bottomAnchorBlockedReason &&
-        current?.routeResumeStatus === nextDebug.routeResumeStatus &&
-        current?.routeResumeScrollTop === nextDebug.routeResumeScrollTop
-          ? current
-          : { ...nextDebug },
-      );
-    },
-    [],
-  );
-
-  const submit = useCallback(async () => {
-    const text = draft.trim();
-    const imageParts = pendingAttachments.map((attachment) => attachment.part);
-    if ((!text && imageParts.length === 0) || !activeSessionId) return;
-    const messageContent: ClientInputPart[] = [
-      ...(text ? [{ type: "text", text } satisfies ClientInputPart] : []),
-      ...imageParts,
-    ];
-    try {
-      setError(null);
-      const ack = await client.sendUserMessage({ sessionId: activeSessionId, content: messageContent });
-      const rejectionMessage = commandAckRejectionMessage(ack);
-      if (rejectionMessage) {
-        setError(rejectionMessage);
-        return;
-      }
-      setDraft("");
-      setPendingAttachments([]);
-      await loadReadModels();
-      setMessageFollowToken((current) => current + 1);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }, [activeSessionId, client, draft, loadReadModels, pendingAttachments]);
-
-  const stopActiveSession = useCallback(async () => {
-    const requestedSessionId = activeSessionId;
-    if (!requestedSessionId || isCancellingSession) return;
-
-    try {
-      setIsCancellingSession(true);
-      setError(null);
-      const ack = await client.cancelSession({ sessionId: requestedSessionId });
-      const rejectionMessage = commandAckRejectionMessage(ack);
-      if (rejectionMessage) {
-        setError(rejectionMessage);
-        return;
-      }
-      if (isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) {
-        await loadReadModels();
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setIsCancellingSession(false);
-    }
-  }, [activeSessionId, client, isCancellingSession, loadReadModels]);
-
-  const attachImages = useCallback(async (files: File[]) => {
-    try {
-      setError(null);
-      const nextAttachments = await buildPendingImageAttachments(files);
-      setPendingAttachments((current) => [...current, ...nextAttachments]);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }, []);
-
-  const removeAttachment = useCallback((attachmentId: string) => {
-    setPendingAttachments((current) =>
-      current.filter((attachment) => attachment.id !== attachmentId),
-    );
-  }, []);
 
   const {
     resolvedSelectedBackend,
@@ -515,22 +113,30 @@ export function ChatWorkbench({
     setupAgentConfig,
   } = useMemo(
     () =>
-      buildWorkbenchSetupSelection({
-        backends,
+      buildVelaSessionSetupSelection({
+        backends: activeBackends,
         selectedBackend,
         selectedModel,
         selectedReasoningEffort,
         selectedPermissionMode,
       }),
-    [backends, selectedBackend, selectedModel, selectedPermissionMode, selectedReasoningEffort],
+    [activeBackends, selectedBackend, selectedModel, selectedPermissionMode, selectedReasoningEffort],
   );
+
+  const openSession = useCallback((nextSessionId?: string) => {
+    const resolvedSessionId = (nextSessionId ?? sessionId).trim();
+    setSessionId(resolvedSessionId);
+    setActiveSessionId(resolvedSessionId);
+    updateChatSessionUrl(resolvedSessionId);
+    logVelaChatConsoleEvent("open_session", { sessionId: resolvedSessionId });
+  }, [sessionId]);
 
   const createSession = useCallback(async () => {
     const trimmedWorkingDirectory = workingDirectory.trim();
     if (!trimmedWorkingDirectory || !resolvedSelectedBackend || isCreatingSession) return;
     try {
       setIsCreatingSession(true);
-      setError(null);
+      setLauncherError(null);
       const created = await client.createSession({
         backend: resolvedSelectedBackend,
         agentConfig: setupAgentConfig,
@@ -539,8 +145,6 @@ export function ChatWorkbench({
       });
       setSessionId(created.session.id);
       setActiveSessionId(created.session.id);
-      setSession(created.session);
-      resetSessionReadModels();
       updateChatSessionUrl(created.session.id);
       logVelaChatConsoleEvent("create_session", {
         agentConfig: setupAgentConfig,
@@ -550,7 +154,7 @@ export function ChatWorkbench({
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      setError(message);
+      setLauncherError(message);
       logVelaChatConsoleEvent("create_session_error", { message });
     } finally {
       setIsCreatingSession(false);
@@ -559,93 +163,22 @@ export function ChatWorkbench({
     client,
     isCreatingSession,
     resolvedSelectedBackend,
-    resetSessionReadModels,
     setupAgentConfig,
     workingDirectory,
   ]);
 
-  const updateAgentConfig = useCallback(
-    async (patch: AgentConfigPatchWire) => {
-      if (!activeSessionId || isUpdatingAgentConfig) return;
-      try {
-        setIsUpdatingAgentConfig(true);
-        setError(null);
-        const updated = await client.updateAgentConfig({
-          sessionId: activeSessionId,
-          patch,
-        });
-        setSession(updated.session);
-        logVelaChatConsoleEvent("update_agent_config", {
-          sessionId: activeSessionId,
-          patch,
-          effectiveAfter: updated.effective_after,
-        });
-        await loadReadModels();
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        setError(message);
-        logVelaChatConsoleEvent("update_agent_config_error", { message });
-      } finally {
-        setIsUpdatingAgentConfig(false);
-      }
-    },
-    [activeSessionId, client, isUpdatingAgentConfig, loadReadModels],
-  );
-
-  const respondToRequest = useCallback(
-    async (response: RequestDockResponse) => {
-      if (!activeSessionId || isRespondingToRequest) return;
-      try {
-        setIsRespondingToRequest(true);
-        setError(null);
-        const ack = await client.sendSessionInputEvents({
-          sessionId: activeSessionId,
-          events: [buildRequestResponseInputEvent(response)],
-        });
-        const rejectionMessage = commandAckRejectionMessage(ack);
-        if (rejectionMessage) {
-          setError(rejectionMessage);
-          return;
-        }
-        await Promise.all([loadRequests(), loadConversation()]);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setIsRespondingToRequest(false);
-      }
-    },
-    [activeSessionId, client, isRespondingToRequest, loadConversation, loadRequests],
-  );
-
-  const sendDebugMessage = useCallback(
-    async (text?: string) => {
-      const nextDraft = text ?? draft;
-      const trimmed = nextDraft.trim();
-      if (!trimmed || !activeSessionId) return;
-      try {
-        setError(null);
-        logVelaChatConsoleEvent("send_message", {
-          sessionId: activeSessionId,
-          textLength: trimmed.length,
-        });
-        const ack = await client.sendUserMessage({ sessionId: activeSessionId, text: trimmed });
-        const rejectionMessage = commandAckRejectionMessage(ack);
-        if (rejectionMessage) {
-          setError(rejectionMessage);
-          logVelaChatConsoleEvent("send_message_rejected", { message: rejectionMessage });
-          return;
-        }
-        setDraft("");
-        await loadReadModels();
-        setMessageFollowToken((current) => current + 1);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        setError(message);
-        logVelaChatConsoleEvent("send_message_error", { message });
-      }
-    },
-    [activeSessionId, client, draft, loadReadModels],
-  );
+  const conversationDebug = useMemo(() => {
+    const webModel = toWebChatModel(controller.model);
+    const items = buildConversationStreamItems(webModel.turns);
+    const segments = buildConversationRuntimeSegments(
+      items,
+      conversationRuntimePolicyForHost(controller.model.host.kind),
+    );
+    return {
+      ...summarizeConversationRuntime(items, segments),
+      scroll: controller.conversationScrollDebug,
+    };
+  }, [controller.conversationScrollDebug, controller.model]);
 
   const snapshot = useMemo(
     () =>
@@ -654,38 +187,38 @@ export function ChatWorkbench({
         sessionIdInput: sessionId,
         activeSessionId,
         workingDirectoryInput: workingDirectory,
-        draft,
+        draft: controller.draft,
         error,
-        streamConnected,
+        streamConnected: controller.isStreamConnected,
         isCreatingSession,
-        isUpdatingAgentConfig,
-        agentConfig: session?.agent_config,
-        backendCount: backends.length,
+        isUpdatingAgentConfig: controller.isUpdatingAgentConfig,
+        agentConfig: controller.session?.agent_config,
+        backendCount: activeBackends.length,
         conversation: conversationDebug,
-        rows: model.rows.map((row) => ({
+        rows: controller.model.rows.map((row) => ({
           id: row.id,
           kind: row.kind,
           key: row.key,
         })),
         latestEventId:
-          cursorEventId(activeRequests?.cursor) ??
-          cursorEventId(activeConversation?.cursor),
+          cursorEventId(controller.requests?.cursor) ??
+          cursorEventId(controller.conversation?.cursor),
       }),
     [
+      activeBackends.length,
       activeSessionId,
-      activeRequests,
-      activeConversation,
       baseUrl,
+      controller.conversation?.cursor,
+      controller.draft,
+      controller.isStreamConnected,
+      controller.isUpdatingAgentConfig,
+      controller.model.rows,
+      controller.requests?.cursor,
+      controller.session?.agent_config,
       conversationDebug,
-      draft,
       error,
       isCreatingSession,
-      isUpdatingAgentConfig,
-      model.rows,
       sessionId,
-      session,
-      backends,
-      streamConnected,
       workingDirectory,
     ],
   );
@@ -710,27 +243,26 @@ export function ChatWorkbench({
           workingDirectory: nextWorkingDirectory,
         });
       },
-      openSession: (nextSessionId) => {
-        const resolvedSessionId = (nextSessionId ?? sessionId).trim();
-        resetSessionReadModels();
-        setSession(null);
-        setSessionId(resolvedSessionId);
-        setActiveSessionId(resolvedSessionId);
-        updateChatSessionUrl(resolvedSessionId);
-        logVelaChatConsoleEvent("open_session", { sessionId: resolvedSessionId });
-      },
+      openSession,
       createSession,
       setDraft: (nextDraft) => {
-        setDraft(nextDraft);
+        controller.setDraft(nextDraft);
         logVelaChatConsoleEvent("set_draft", { draftLength: nextDraft.length });
       },
-      sendMessage: sendDebugMessage,
+      sendMessage: async (text?: string) => {
+        const nextText = text ?? controller.draft;
+        logVelaChatConsoleEvent("send_message", {
+          sessionId: activeSessionId,
+          textLength: nextText.trim().length,
+        });
+        await controller.sendText(nextText);
+      },
       reloadTranscript: async () => {
         logVelaChatConsoleEvent("reload_conversation", { sessionId: activeSessionId });
-        await loadReadModels();
+        await controller.refreshAll();
       },
       clearError: () => {
-        setError(null);
+        setLauncherError(null);
         logVelaChatConsoleEvent("clear_error");
       },
       logSnapshot: () => {
@@ -741,13 +273,13 @@ export function ChatWorkbench({
 
     installVelaChatDebugApi({ api, snapshot });
     logVelaChatConsoleEvent("debug_api_ready", snapshot);
-  }, [activeSessionId, createSession, loadReadModels, resetSessionReadModels, sendDebugMessage, sessionId, snapshot]);
+  }, [activeSessionId, controller, createSession, openSession, snapshot]);
 
   if (!activeSessionId) {
     return (
       <DebugSessionLauncher
         backendKinds={backendKinds}
-        backends={backends}
+        backends={launcherBackends}
         baseUrl={baseUrl}
         error={error}
         isLoadingRecentSessions={isLoadingRecentSessions}
@@ -761,14 +293,7 @@ export function ChatWorkbench({
         onBaseUrlChange={setBaseUrl}
         onCreateSession={createSession}
         onModelChange={setSelectedModel}
-        onOpenSession={(nextSessionId) => {
-          const resolvedSessionId = (nextSessionId ?? sessionId).trim();
-          resetSessionReadModels();
-          setSession(null);
-          setSessionId(resolvedSessionId);
-          setActiveSessionId(resolvedSessionId);
-          updateChatSessionUrl(resolvedSessionId);
-        }}
+        onOpenSession={openSession}
         onPermissionModeChange={setSelectedPermissionMode}
         onReasoningEffortChange={setSelectedReasoningEffort}
         onSessionIdChange={setSessionId}
@@ -787,31 +312,29 @@ export function ChatWorkbench({
     );
   }
 
-  if (isConversationHistoryHydrating) {
-    return <ConversationHistoryHydrationScreen />;
-  }
-
   return (
     <VelaChatWeb
-      canLoadOlder={conversationWindow.has_older && conversationHistoryPrependPlan.has_older}
-      composerControls={buildComposerControlsModel({ session, backends })}
-      model={model}
-      draft={draft}
+      canLoadOlder={controller.canLoadOlder}
+      clientStateStore={clientStateStore}
+      composerControls={controller.composerControls}
+      model={controller.model}
+      draft={controller.draft}
       error={error}
-      isLoadingOlder={isLoadingOlder}
-      isUpdatingComposerControls={isUpdatingAgentConfig}
-      isRespondingToRequest={isRespondingToRequest}
-      messageFollowToken={messageFollowToken}
-      onAttachImages={attachImages}
-      onAgentConfigChange={updateAgentConfig}
-      onConversationScrollDebugChange={handleConversationScrollDebugChange}
-      onDraftChange={setDraft}
-      onLoadOlder={loadOlderConversation}
-      onRemoveAttachment={removeAttachment}
-      onRespondToRequest={respondToRequest}
-      onStop={stopActiveSession}
-      onSubmit={submit}
-      pendingAttachments={pendingAttachments}
+      historyPhase={controller.historyPhase}
+      isLoadingOlder={controller.isLoadingOlder}
+      isUpdatingComposerControls={controller.isUpdatingAgentConfig}
+      isRespondingToRequest={controller.isRespondingToRequest}
+      messageFollowToken={controller.messageFollowToken}
+      onAttachImages={controller.attachImages}
+      onAgentConfigChange={controller.updateAgentConfig}
+      onConversationScrollDebugChange={controller.setConversationScrollDebug}
+      onDraftChange={controller.setDraft}
+      onLoadOlder={controller.loadOlderConversation}
+      onRemoveAttachment={controller.removeAttachment}
+      onRespondToRequest={controller.respondToRequest}
+      onStop={controller.stop}
+      onSubmit={controller.send}
+      pendingAttachments={controller.pendingAttachments}
     />
   );
 }

@@ -9,7 +9,9 @@ behavior changes.
 entry, local send/jump requests, sticky/detached mode, measurement verification,
 and user scroll-away detaching.
 `historyPaging.ts` holds near-top history pagination and prepend anchoring rules.
-`routeResume.ts` holds session-scoped scroll resume storage and restore rules.
+`routeResume.ts` holds session-scoped scroll resume restore rules.
+`scrollResumePersistence.ts` holds the coalesced host-state writer and its
+route/unmount flush semantics.
 `useConversationScrollController.ts` is the React/DOM adapter.
 `viewportHandle.ts` is the imperative contract exposed to the workbench and
 composer shell.
@@ -25,9 +27,10 @@ The DOM hook must not grow a second scroll state machine. New behavior belongs i
 translate DOM events and measurements into driver requests.
 
 Route resume is also owned here, not by the page shell. The controller writes a
-small `sessionStorage` snapshot per route/session key and restores only detached
-positions. If the user was following output, the normal bottom-anchor behavior
-wins instead.
+small `conversationScroll` record through the injected `VelaClientStateStore`
+and restores only detached positions. If the user was following output, the
+normal bottom-anchor behavior wins instead. Browser storage choice is a host
+concern; this package should only consume the store interface.
 
 Do not:
 - Build stream items here.

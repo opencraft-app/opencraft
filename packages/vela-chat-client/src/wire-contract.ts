@@ -44,7 +44,10 @@ import type {
   ReasoningEffortOptionWire,
   RequestStatusWire,
   SessionListOptions,
+  SessionListItemWire,
+  SessionListViewWireResponse,
   SessionListWireResponse,
+  SessionSummaryWire,
   SessionOperationWire,
   SessionRuntimeInfoWire,
   SessionStatusWire,
@@ -625,6 +628,10 @@ export async function readSessionListResponse(response: Response): Promise<Sessi
   return parseSessionListWireResponse(await readJsonResponse<unknown>(response));
 }
 
+export async function readSessionListViewResponse(response: Response): Promise<SessionListViewWireResponse> {
+  return parseSessionListViewWireResponse(await readJsonResponse<unknown>(response));
+}
+
 export function parseSessionWireResponse(data: unknown): SessionWireResponse {
   if (!isRecord(data)) {
     throw invalidSessionResponse("SessionResponse must be an object");
@@ -646,9 +653,27 @@ export function parseSessionListWireResponse(data: unknown): SessionListWireResp
   );
   return {
     sessions: sessions.map((session, index) =>
-      parseSessionWire(session, `SessionListResponse.sessions[${index}]`, invalidSessionResponse),
+      parseSessionSummaryWire(session, `SessionListResponse.sessions[${index}]`, invalidSessionResponse),
     ),
     cursor: requiredCursorWindow(data, "cursor", "SessionListResponse", invalidSessionResponse),
+  };
+}
+
+export function parseSessionListViewWireResponse(data: unknown): SessionListViewWireResponse {
+  if (!isRecord(data)) {
+    throw invalidSessionResponse("SessionListView must be an object");
+  }
+  const sessions = requiredViewArray(
+    data,
+    "sessions",
+    "SessionListView",
+    invalidSessionResponse,
+  );
+  return {
+    sessions: sessions.map((session, index) =>
+      parseSessionListItemWire(session, `SessionListView.sessions[${index}]`, invalidSessionResponse),
+    ),
+    cursor: requiredCursorWindow(data, "cursor", "SessionListView", invalidSessionResponse),
   };
 }
 
@@ -1377,6 +1402,75 @@ function requiredSessionObject(
   return parseSessionWire(session, `${owner}.session`, invalid);
 }
 
+function parseSessionSummaryWire(
+  data: unknown,
+  owner: string,
+  invalid: ViewContractErrorFactory,
+): SessionSummaryWire {
+  if (!isRecord(data)) {
+    throw invalid(`${owner} must be an object`);
+  }
+  const id = data.id;
+  if (typeof id !== "string") {
+    throw invalid(`${owner}.id must be a string`);
+  }
+  const backend = data.backend;
+  if (typeof backend !== "string" || !backendKinds.has(backend)) {
+    throw invalid(`${owner}.backend must be a known BackendKind`);
+  }
+  const status = data.status;
+  if (typeof status !== "string" || !sessionStatuses.has(status)) {
+    throw invalid(`${owner}.status must be a known SessionStatus`);
+  }
+  const title = requiredViewString(data, "title", owner, invalid);
+  const updatedAt = requiredViewString(data, "updated_at", owner, invalid);
+  const agentConfig = data.agent_config;
+  if (agentConfig !== undefined) {
+    validateAgentConfigShape(agentConfig, invalid, `${owner}.agent_config`);
+  }
+  return {
+    ...(data as unknown as SessionSummaryWire),
+    id,
+    backend: backend as BackendKindWire,
+    status: status as SessionStatusWire,
+    title,
+    updated_at: updatedAt,
+    ...(agentConfig !== undefined ? { agent_config: agentConfig } : {}),
+  };
+}
+
+function parseSessionListItemWire(
+  data: unknown,
+  owner: string,
+  invalid: ViewContractErrorFactory,
+): SessionListItemWire {
+  if (!isRecord(data)) {
+    throw invalid(`${owner} must be an object`);
+  }
+  const summary = parseSessionSummaryWire(data, owner, invalid);
+  const workingDirectory = requiredViewString(data, "working_directory", owner, invalid);
+  const createdAt = requiredViewString(data, "created_at", owner, invalid);
+  const lastActivityAt = requiredViewString(data, "last_activity_at", owner, invalid);
+  const preview = requiredViewString(data, "preview", owner, invalid);
+  const pendingRequestCount = requiredViewInteger(data, "pending_request_count", owner, invalid);
+  const running = requiredViewBoolean(data, "running", owner, invalid);
+  const model = data.model;
+  if (model !== undefined && model !== null && typeof model !== "string") {
+    throw invalid(`${owner}.model must be a string or null`);
+  }
+  return {
+    ...(data as unknown as SessionListItemWire),
+    ...summary,
+    working_directory: workingDirectory,
+    created_at: createdAt,
+    last_activity_at: lastActivityAt,
+    preview,
+    pending_request_count: pendingRequestCount,
+    running,
+    ...(model !== undefined ? { model: model as string | null } : {}),
+  };
+}
+
 function parseSessionWire(
   data: Record<string, unknown>,
   owner: string,
@@ -1593,6 +1687,19 @@ function requiredViewInteger(
   }
   if (options?.minimum !== undefined && value < options.minimum) {
     throw invalid(`${owner}.${field} must be at least ${options.minimum}`);
+  }
+  return value;
+}
+
+function requiredViewBoolean(
+  data: Record<string, unknown>,
+  field: string,
+  owner: string,
+  invalid: ViewContractErrorFactory,
+) {
+  const value = data[field];
+  if (typeof value !== "boolean") {
+    throw invalid(`${owner} requires boolean ${field}`);
   }
   return value;
 }

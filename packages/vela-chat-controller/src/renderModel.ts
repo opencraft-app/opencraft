@@ -1,12 +1,12 @@
 import type {
   ConversationWireView,
   PendingRequestsWireView,
-} from "../../../packages/vela-chat-client/src";
-import { buildChatRenderModel } from "../../../packages/vela-chat-render-model/src";
-import { buildChatSurfaceFromReadModels } from "../../../packages/vela-chat-surface/src";
+} from "../../vela-chat-client/src";
+import { buildChatRenderModel } from "../../vela-chat-render-model/src";
+import { buildChatSurfaceFromReadModels } from "../../vela-chat-surface/src";
 import { EMPTY_CURSOR_WINDOW, EMPTY_EVENT_CURSOR } from "./constants";
 
-export function buildWorkbenchRenderModel({
+export function buildVelaChatControllerRenderModel({
   activeSessionId,
   conversation,
   requests,
@@ -31,3 +31,4 @@ export function buildWorkbenchRenderModel({
   });
   return buildChatRenderModel(surface, { kind: "desktop_web" });
 }
+

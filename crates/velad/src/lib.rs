@@ -21,12 +21,12 @@ use vela_backends::BackendAdapter;
 use vela_core::{
     AcceptedCommandAck, AgentConfig, AgentConfigPatch, BackendFeature, BackendKind, BackendModel,
     BlobRef, CanonicalEvent, CommandAck, CommandId, EventCursor, EventId, EventSource, EventType,
-    PermissionMode, PermissionModeOption, ReasoningEffortOption, RejectedCommandAck, SessionId,
-    SourceEventRange, UserMessageBlock,
+    ConversationItemKind, PermissionMode, PermissionModeOption, ReasoningEffortOption,
+    RejectedCommandAck, SessionId, SourceEventRange, UserMessageBlock,
 };
 use vela_projection::{
     ConversationWindowDirection, ConversationWindowError, ConversationWindowQuery,
-    project_conversation_window,
+    project_conversation, project_conversation_window, project_pending_requests,
 };
 use vela_runtime::{Runtime, SendUserMessage};
 use vela_store::{SqliteEventStore, StoredSession};
@@ -1190,7 +1190,46 @@ async fn get_session_list_view<B>(
 where
     B: BackendAdapter + 'static,
 {
-    list_sessions(State(state), query).await
+    let query = match parsed_query(query) {
+        Ok(query) => query,
+        Err(response) => return response,
+    };
+    let limit = match validated_limit(query.limit) {
+        Ok(limit) => limit,
+        Err(response) => return response,
+    };
+    let sessions = match state.store.list_sessions().await {
+        Ok(sessions) => sessions,
+        Err(err) => {
+            return error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "store_error",
+                err.to_string(),
+            );
+        }
+    };
+
+    let mut values = Vec::with_capacity(sessions.len());
+    for session in &sessions {
+        let events = match state.store.list_events(&session.session_id).await {
+            Ok(events) => events,
+            Err(err) => {
+                return error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "store_error",
+                    err.to_string(),
+                );
+            }
+        };
+        values.push(session_list_item_json(session, &events));
+    }
+
+    let page = page_values(values, query.after_id.as_deref(), None, limit);
+    Json(json!({
+        "sessions": page.items,
+        "cursor": page.cursor,
+    }))
+    .into_response()
 }
 
 async fn get_timeline<B>(
@@ -2571,6 +2610,61 @@ fn session_summary_json(session: &StoredSession) -> Value {
         "agent_config": session.agent_config,
         "updated_at": session.updated_at.to_rfc3339(),
     })
+}
+
+fn session_list_item_json(session: &StoredSession, events: &[CanonicalEvent]) -> Value {
+    let last_activity_at = events
+        .last()
+        .map(|event| event.created_at)
+        .unwrap_or(session.updated_at);
+    json!({
+        "id": session.session_id.as_str(),
+        "backend": session.backend.as_str(),
+        "status": session.status,
+        "title": session.title,
+        "agent_config": session.agent_config,
+        "updated_at": session.updated_at.to_rfc3339(),
+        "working_directory": session.working_directory,
+        "created_at": session.created_at.to_rfc3339(),
+        "last_activity_at": last_activity_at.to_rfc3339(),
+        "preview": session_preview(events),
+        "pending_request_count": project_pending_requests(events).requests.len(),
+        "running": session_is_running(&session.status),
+        "model": session.agent_config.model.as_ref().or(session.model.as_ref()),
+    })
+}
+
+fn session_preview(events: &[CanonicalEvent]) -> String {
+    let conversation = project_conversation(events);
+    let preview = conversation
+        .items
+        .iter()
+        .rev()
+        .find_map(|item| match item.kind {
+            ConversationItemKind::UserMessage | ConversationItemKind::AssistantMessage => item
+                .text
+                .as_deref()
+                .map(str::trim)
+                .filter(|text| !text.is_empty())
+                .map(str::to_string),
+            _ => None,
+        })
+        .unwrap_or_default();
+    truncate_preview(&preview, 180)
+}
+
+fn truncate_preview(value: &str, max_chars: usize) -> String {
+    let mut iter = value.chars();
+    let preview = iter.by_ref().take(max_chars).collect::<String>();
+    if iter.next().is_some() {
+        format!("{preview}...")
+    } else {
+        preview
+    }
+}
+
+fn session_is_running(status: &str) -> bool {
+    matches!(status, "starting" | "running" | "waiting_for_input" | "canceling")
 }
 
 fn timeline_item_json(event: &CanonicalEvent) -> Value {

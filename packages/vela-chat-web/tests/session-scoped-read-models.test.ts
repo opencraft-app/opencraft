@@ -5,7 +5,7 @@ import {
   isCurrentSessionRequest,
   pendingRequestsForActiveSession,
   readModelForActiveSession,
-} from "../../../app/chat/sessionScopedReadModels";
+} from "../../vela-chat-controller/src/sessionScopedReadModels";
 
 test("read model envelopes are only usable for the active session", () => {
   const transcript = {

@@ -1,6 +1,7 @@
 "use client";
 
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from "react";
+import type { VelaClientStateStore } from "../../../../vela-chat-host-state/src";
 import type { WebChatModel } from "../../adapters/toWebBlocks";
 import {
   buildConversationRuntimeSegments,
@@ -21,6 +22,7 @@ import { VelaTurnList } from "./VelaTurnList";
 export const VelaConversation = forwardRef<ConversationViewportHandle, {
   webModel: WebChatModel;
   canLoadOlder?: boolean;
+  clientStateStore?: VelaClientStateStore | null;
   isLoadingOlder?: boolean;
   messageFollowToken?: number;
   onLoadOlder?: () => void;
@@ -28,6 +30,7 @@ export const VelaConversation = forwardRef<ConversationViewportHandle, {
 }>(function VelaConversation({
   webModel,
   canLoadOlder = false,
+  clientStateStore = null,
   isLoadingOlder = false,
   messageFollowToken,
   onLoadOlder,
@@ -51,6 +54,7 @@ export const VelaConversation = forwardRef<ConversationViewportHandle, {
     [items, runtimePolicy],
   );
   const scroll = useConversationScrollController(scrollSignals, {
+    clientStateStore,
     hasOlderHistory: canLoadOlder,
     historyStartKey: webModel.sessionId,
     isLoadingOlderHistory: isLoadingOlder,
@@ -61,6 +65,8 @@ export const VelaConversation = forwardRef<ConversationViewportHandle, {
   });
   const scrollbarOverlay = useConversationScrollbarOverlay(scroll.scrollRef, {
     contentRef: scroll.contentRef,
+    onScrollCommit: scroll.commitScrollResumeNow,
+    onUserScrollIntent: scroll.markUserScrollIntent,
   });
 
   useEffect(() => {

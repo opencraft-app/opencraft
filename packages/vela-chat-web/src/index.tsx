@@ -1,4 +1,5 @@
 import type { AgentConfigPatchWire } from "../../vela-chat-client/src";
+import type { VelaClientStateStore } from "../../vela-chat-host-state/src";
 import type { ChatRenderModel } from "../../vela-chat-render-model/src";
 import type { ComposerControlsModel } from "./components/composer-controls/model";
 import type { RequestDockResponse } from "./components/requests/RequestDock";
@@ -11,6 +12,8 @@ export interface VelaChatWebProps {
   draft: string;
   error?: string | null;
   canLoadOlder?: boolean;
+  clientStateStore?: VelaClientStateStore | null;
+  historyPhase: "unselected" | "hydrating_history" | "ready";
   isLoadingOlder?: boolean;
   composerControls?: ComposerControlsModel;
   isUpdatingComposerControls?: boolean;
@@ -33,6 +36,8 @@ export function VelaChatWeb({
   draft,
   error,
   canLoadOlder,
+  clientStateStore,
+  historyPhase,
   isLoadingOlder,
   composerControls,
   isUpdatingComposerControls,
@@ -52,9 +57,11 @@ export function VelaChatWeb({
   return (
     <ChatWorkbenchView
       canLoadOlder={canLoadOlder}
+      clientStateStore={clientStateStore}
       composerControls={composerControls}
       draft={draft}
       error={error}
+      historyPhase={historyPhase}
       isLoadingOlder={isLoadingOlder}
       isUpdatingComposerControls={isUpdatingComposerControls}
       isRespondingToRequest={isRespondingToRequest}

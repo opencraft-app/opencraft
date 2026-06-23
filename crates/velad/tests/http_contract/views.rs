@@ -278,6 +278,46 @@ async fn openapi_query_limits_are_validated_instead_of_clamped() {
 }
 
 #[tokio::test]
+async fn session_list_view_returns_sidebar_ready_items() {
+    let app = test_app().await;
+    let (_, created) = json_request(
+        app.clone(),
+        Method::POST,
+        "/api/v1/sessions",
+        json!({
+            "backend": "pi",
+            "working_directory": "/tmp/project",
+            "title": "Debug session",
+            "agent_config": { "model": "minimax-m2.7" }
+        }),
+        Some("ses-sidebar-ready"),
+    )
+    .await;
+    let session_id = created["session"]["id"].as_str().unwrap();
+
+    let (status, body) = get_json(app.clone(), "/api/v1/views/sessions?limit=20").await;
+
+    assert_eq!(status, StatusCode::OK);
+    let item = body["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["id"] == session_id)
+        .expect("created session should appear in SessionListView");
+    assert_eq!(item["title"], "Debug session");
+    assert_eq!(item["backend"], "pi");
+    assert_eq!(item["status"], "idle");
+    assert_eq!(item["working_directory"], "/tmp/project");
+    assert_eq!(item["agent_config"]["model"], "minimax-m2.7");
+    assert_eq!(item["pending_request_count"], 0);
+    assert_eq!(item["running"], false);
+    assert!(item.get("created_at").and_then(|value| value.as_str()).is_some());
+    assert!(item.get("updated_at").and_then(|value| value.as_str()).is_some());
+    assert!(item.get("last_activity_at").and_then(|value| value.as_str()).is_some());
+    assert!(item.get("preview").is_some());
+}
+
+#[tokio::test]
 async fn request_status_query_is_validated_against_openapi_enum() {
     let app = test_app().await;
     let (_, created) = json_request(

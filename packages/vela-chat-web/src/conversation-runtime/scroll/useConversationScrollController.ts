@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import type { VelaClientStateStore } from "../../../../vela-chat-host-state/src";
 import {
   type BottomAnchorBlockedReason,
   type BottomAnchorDriver,
@@ -21,9 +22,13 @@ import {
 import {
   type ConversationScrollResumeState,
   deriveConversationScrollResumeDecision,
-  persistConversationScrollResumeState,
-  readConversationScrollResumeState,
 } from "./routeResume";
+import {
+  type ConversationScrollResumeWriter,
+  createConversationScrollResumeWriter,
+  deriveConversationScrollLeaveSnapshot,
+  shouldPersistConversationScrollResumeSnapshot,
+} from "./scrollResumePersistence";
 import type { ConversationBottomAnchorReason } from "./viewportHandle";
 
 const USER_SCROLL_ACTIVITY_RESET_MS = 180;
@@ -43,6 +48,7 @@ interface ScheduledFrameHandle {
 }
 
 export interface ConversationScrollControllerOptions {
+  clientStateStore?: VelaClientStateStore | null;
   hasOlderHistory?: boolean;
   historyStartKey?: unknown;
   isLoadingOlderHistory?: boolean;
@@ -60,6 +66,11 @@ export interface ConversationScrollController {
   debug: ConversationScrollControllerDebug;
   scrollRef: RefObject<HTMLElement | null>;
   followOutput: boolean;
+  commitScrollResumeNow: (input?: {
+    scrollTop?: number;
+    userIntent?: BottomAnchorUserIntent;
+  }) => void;
+  markUserScrollIntent: (intent: BottomAnchorUserIntent) => void;
   requestBottomAnchor: (reason: ConversationBottomAnchorReason) => void;
   prepareForViewportChange: () => void;
 }
@@ -179,9 +190,8 @@ export function useConversationScrollController(
   const routeResumeStatusRef =
     useRef<ConversationScrollRouteResumeStatus>("idle");
   const routeResumeScrollTopRef = useRef<number | null>(null);
-  const pendingScrollResumePersistFrameRef = useRef<number | null>(null);
-  const latestScrollResumePersistStateRef =
-    useRef<ConversationScrollResumeState | null>(null);
+  const scrollResumeWriterRef =
+    useRef<ConversationScrollResumeWriter<number> | null>(null);
   const pendingHistoryPrependAnchorRef =
     useRef<ActiveHistoryPrependAnchor | null>(null);
   const historyStartReadyRef = useRef(false);
@@ -209,6 +219,19 @@ export function useConversationScrollController(
   optionsRef.current = options;
   latestFollowSignalRef.current = signals.followSignal;
   latestLayoutSignalRef.current = signals.layoutSignal;
+
+  if (!scrollResumeWriterRef.current) {
+    scrollResumeWriterRef.current = createConversationScrollResumeWriter({
+      cancelFrame: (frameId) => cancelAnimationFrame(frameId),
+      scheduleFrame: (callback) => requestAnimationFrame(callback),
+      write: (state) => {
+        optionsRef.current.clientStateStore?.conversationScroll.write(
+          state.routeKey,
+          state,
+        );
+      },
+    });
+  }
 
   const publishScrollDebug = useCallback(
     (snapshot = driverSnapshotRef.current) => {
@@ -241,30 +264,43 @@ export function useConversationScrollController(
     [],
   );
 
-  const readMeasurementState = useCallback((): BottomAnchorMeasurementState => {
-    const element = scrollRef.current;
-    const routeKey = routeKeyFrom(optionsRef.current.historyStartKey) ?? "unscoped";
-    const transportKey = optionsRef.current.transportKey ?? "web-scroll";
-    const containerKey = `${transportKey}:${routeKey}`;
-    const viewportWidth = element?.clientWidth ?? lastKnownViewportWidthRef.current;
-    const viewportHeight = element?.clientHeight ?? lastKnownViewportHeightRef.current;
-    const contentHeight =
-      contentRef.current?.scrollHeight ??
-      element?.scrollHeight ??
-      lastKnownContentHeightRef.current;
-    const scrollTop = element?.scrollTop ?? lastKnownScrollTopRef.current;
-    return {
-      containerKey,
-      viewportMeasuredForKey:
-        viewportWidth > 0 && viewportHeight > 0 ? containerKey : null,
-      contentMeasuredForKey: contentHeight > 0 ? containerKey : null,
-      viewportWidth,
-      viewportHeight,
-      contentHeight,
-      scrollTop,
-      bottomInsetPx: 0,
-    };
-  }, []);
+  const readMeasurementStateForRoute = useCallback(
+    (routeKeyOverride?: string | null): BottomAnchorMeasurementState => {
+      const element = scrollRef.current;
+      const routeKey =
+        routeKeyOverride ??
+        routeKeyFrom(optionsRef.current.historyStartKey) ??
+        "unscoped";
+      const transportKey = optionsRef.current.transportKey ?? "web-scroll";
+      const containerKey = `${transportKey}:${routeKey}`;
+      const viewportWidth =
+        element?.clientWidth ?? lastKnownViewportWidthRef.current;
+      const viewportHeight =
+        element?.clientHeight ?? lastKnownViewportHeightRef.current;
+      const contentHeight =
+        contentRef.current?.scrollHeight ??
+        element?.scrollHeight ??
+        lastKnownContentHeightRef.current;
+      const scrollTop = element?.scrollTop ?? lastKnownScrollTopRef.current;
+      return {
+        containerKey,
+        viewportMeasuredForKey:
+          viewportWidth > 0 && viewportHeight > 0 ? containerKey : null,
+        contentMeasuredForKey: contentHeight > 0 ? containerKey : null,
+        viewportWidth,
+        viewportHeight,
+        contentHeight,
+        scrollTop,
+        bottomInsetPx: 0,
+      };
+    },
+    [],
+  );
+
+  const readMeasurementState = useCallback(
+    (): BottomAnchorMeasurementState => readMeasurementStateForRoute(),
+    [readMeasurementStateForRoute],
+  );
 
   const handleDriverSnapshot = useCallback(
     (snapshot: BottomAnchorDriverSnapshot) => {
@@ -326,24 +362,61 @@ export function useConversationScrollController(
     [cancelUserIntentReset],
   );
 
-  const cancelPendingScrollResumePersist = useCallback(() => {
-    if (pendingScrollResumePersistFrameRef.current === null) return;
-    cancelAnimationFrame(pendingScrollResumePersistFrameRef.current);
-    pendingScrollResumePersistFrameRef.current = null;
+  const flushPendingScrollResumePersist = useCallback(() => {
+    scrollResumeWriterRef.current?.flush();
   }, []);
 
   const schedulePersistScrollResume = useCallback(
     (state: ConversationScrollResumeState) => {
-      latestScrollResumePersistStateRef.current = state;
-      if (pendingScrollResumePersistFrameRef.current !== null) return;
-      pendingScrollResumePersistFrameRef.current = requestAnimationFrame(() => {
-        pendingScrollResumePersistFrameRef.current = null;
-        const latestState = latestScrollResumePersistStateRef.current;
-        if (!latestState || typeof window === "undefined") return;
-        persistConversationScrollResumeState(window.sessionStorage, latestState);
-      });
+      scrollResumeWriterRef.current?.schedule(state);
     },
     [],
+  );
+
+  const shouldPersistScrollResume = useCallback(() => {
+    return shouldPersistConversationScrollResumeSnapshot({
+      hasPendingResumeState: pendingScrollResumeStateRef.current !== null,
+      isHistoryReady: historyStartReadyRef.current,
+      routeKey: routeKeyFrom(optionsRef.current.historyStartKey),
+    });
+  }, []);
+
+  const persistScrollResumeSnapshot = useCallback(
+    (input: { followOutput: boolean; flush?: boolean; scrollTop: number }) => {
+      if (!shouldPersistScrollResume()) return;
+      const routeKey = routeKeyFrom(optionsRef.current.historyStartKey);
+      if (!routeKey) return;
+      schedulePersistScrollResume({
+        routeKey,
+        scrollTop: input.scrollTop,
+        followOutput: input.followOutput,
+      });
+      if (input.flush) flushPendingScrollResumePersist();
+    },
+    [
+      flushPendingScrollResumePersist,
+      schedulePersistScrollResume,
+      shouldPersistScrollResume,
+    ],
+  );
+
+  const persistRouteLeaveScrollResumeSnapshot = useCallback(
+    (routeKey: string | null) => {
+      const state = deriveConversationScrollLeaveSnapshot({
+        hasPendingResumeState: pendingScrollResumeStateRef.current !== null,
+        isHistoryReady: historyStartReadyRef.current,
+        measurement: readMeasurementStateForRoute(routeKey),
+        routeKey,
+      });
+      if (!state) return;
+      schedulePersistScrollResume(state);
+      flushPendingScrollResumePersist();
+    },
+    [
+      flushPendingScrollResumePersist,
+      readMeasurementStateForRoute,
+      schedulePersistScrollResume,
+    ],
   );
 
   const tryRestoreScrollResume = useCallback(() => {
@@ -383,15 +456,14 @@ export function useConversationScrollController(
     return true;
   }, [driver, publishScrollDebug]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const routeKey = routeKeyFrom(options.historyStartKey);
     driver.reset();
     historyStartReadyRef.current = false;
     pendingHistoryPrependAnchorRef.current = null;
-    const resumeState =
-      typeof window === "undefined"
-        ? null
-        : readConversationScrollResumeState(window.sessionStorage, routeKey);
+    const resumeState = routeKey
+      ? options.clientStateStore?.conversationScroll.read(routeKey) ?? null
+      : null;
     pendingScrollResumeStateRef.current =
       resumeState && !resumeState.followOutput ? resumeState : null;
     if (pendingScrollResumeStateRef.current) {
@@ -417,9 +489,18 @@ export function useConversationScrollController(
     });
     return () => {
       cancelAnimationFrame(frame);
+      persistRouteLeaveScrollResumeSnapshot(routeKey);
       historyStartReadyRef.current = false;
+      flushPendingScrollResumePersist();
     };
-  }, [driver, options.historyStartKey, publishScrollDebug, tryRestoreScrollResume]);
+  }, [
+    driver,
+    flushPendingScrollResumePersist,
+    options.historyStartKey,
+    persistRouteLeaveScrollResumeSnapshot,
+    publishScrollDebug,
+    tryRestoreScrollResume,
+  ]);
 
   useEffect(() => {
     const element = scrollRef.current;
@@ -458,14 +539,10 @@ export function useConversationScrollController(
       });
 
       const latestSnapshot = driver.getSnapshot();
-      const routeKey = routeKeyFrom(optionsRef.current.historyStartKey);
-      if (routeKey && pendingScrollResumeStateRef.current === null) {
-        schedulePersistScrollResume({
-          routeKey,
-          scrollTop: element.scrollTop,
-          followOutput: latestSnapshot.mode === "sticky_bottom",
-        });
-      }
+      persistScrollResumeSnapshot({
+        scrollTop: element.scrollTop,
+        followOutput: latestSnapshot.mode === "sticky_bottom",
+      });
 
       const latest = optionsRef.current;
       if (
@@ -497,7 +574,7 @@ export function useConversationScrollController(
       element.removeEventListener("touchmove", handleTouchMove);
       element.removeEventListener("scroll", handleScroll);
     };
-  }, [driver, markUserIntent, readMeasurementState, schedulePersistScrollResume]);
+  }, [driver, markUserIntent, persistScrollResumeSnapshot, readMeasurementState]);
 
   useEffect(() => {
     driver.prepareForStickyContentChange();
@@ -572,11 +649,12 @@ export function useConversationScrollController(
 
   useEffect(
     () => () => {
+      flushPendingScrollResumePersist();
       driver.destroy();
-      cancelPendingScrollResumePersist();
+      scrollResumeWriterRef.current?.cancel();
       cancelUserIntentReset();
     },
-    [cancelPendingScrollResumePersist, cancelUserIntentReset, driver],
+    [cancelUserIntentReset, driver, flushPendingScrollResumePersist],
   );
 
   return {
@@ -584,6 +662,26 @@ export function useConversationScrollController(
     debug,
     scrollRef,
     followOutput,
+    commitScrollResumeNow: (input = {}) => {
+      const element = scrollRef.current;
+      if (!element) return;
+      const nextScrollTop = input.scrollTop ?? element.scrollTop;
+      const previousScrollTop = lastKnownScrollTopRef.current;
+      const userIntent = input.userIntent ?? userIntentRef.current;
+      lastKnownScrollTopRef.current = nextScrollTop;
+      driver.handleScrollNearBottomChange({
+        nextIsNearBottom: isBottomAnchorMeasurementNearBottom(readMeasurementState()),
+        scrollDelta: nextScrollTop - previousScrollTop,
+        userIntent,
+      });
+      persistScrollResumeSnapshot({
+        scrollTop: nextScrollTop,
+        followOutput: driver.getSnapshot().mode === "sticky_bottom",
+        flush: true,
+      });
+      userIntentRef.current = "none";
+    },
+    markUserScrollIntent: markUserIntent,
     requestBottomAnchor: (reason) => {
       localAnchorSequenceRef.current += 1;
       const routeKey = routeKeyFrom(optionsRef.current.historyStartKey) ?? "unscoped";

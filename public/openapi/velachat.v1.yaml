@@ -703,6 +703,38 @@ components:
         updated_at:
           type: string
           format: date-time
+    SessionListItem:
+      allOf:
+        - $ref: '#/components/schemas/SessionSummary'
+        - type: object
+          required:
+            - working_directory
+            - created_at
+            - last_activity_at
+            - preview
+            - pending_request_count
+            - running
+          properties:
+            working_directory:
+              type: string
+            created_at:
+              type: string
+              format: date-time
+            last_activity_at:
+              type: string
+              format: date-time
+            preview:
+              type: string
+            pending_request_count:
+              type: integer
+              minimum: 0
+            running:
+              type: boolean
+            model:
+              deprecated: true
+              description: Deprecated compatibility alias for agent_config.model.
+              type: string
+              nullable: true
     Session:
       allOf:
         - $ref: '#/components/schemas/SessionSummary'
@@ -909,7 +941,7 @@ components:
         sessions:
           type: array
           items:
-            $ref: '#/components/schemas/SessionSummary'
+            $ref: '#/components/schemas/SessionListItem'
         cursor:
           $ref: '#/components/schemas/CursorWindow'
     ConversationView:

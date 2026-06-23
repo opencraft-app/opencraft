@@ -1,0 +1,905 @@
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+}
+
+body {
+  background: #f7f7f6;
+  color: #1f2328;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  overflow: hidden;
+}
+
+.vela-sidebar-provider {
+  height: 100dvh;
+  min-height: 0;
+  width: 100vw;
+  min-width: 0;
+}
+
+.vela-desktop-shell {
+  --tw-background: #fafaf9;
+  --tw-foreground: #1c1917;
+  --tw-muted-foreground: #78716c;
+  --tw-border: #e7e5e4;
+  --vela-sidebar-surface: #f5f6f6;
+  --vela-sidebar-underlay: #f5f6f6;
+  --vela-main-surface: #ffffff;
+  --vela-window-controls-left: 93px;
+  --vela-window-controls-inset: 160px;
+  --vela-titlebar-height: 50px;
+  --vela-main-surface-radius: 16px;
+  --vela-main-edge-hairline: rgba(60, 60, 67, 0.12);
+  --vela-main-edge-veil-width: 34px;
+  --vela-sidebar-toggle-duration: 270ms;
+  --vela-sidebar-toggle-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --skin-sidebar-control: color-mix(in srgb, #ffffff 78%, #f5f6f6);
+  --skin-sidebar-control-border: rgba(60, 60, 67, 0.1);
+  --skin-sidebar-hover: rgba(0, 0, 0, 0.055);
+  --skin-sidebar-selection: rgba(0, 0, 0, 0.07);
+  --skin-sidebar-border: rgba(60, 60, 67, 0.16);
+  --skin-shadow-soft: 0 1px 2px rgba(28, 25, 23, 0.04);
+  position: relative;
+  display: block;
+  height: 100%;
+  min-height: 0;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--vela-sidebar-underlay);
+  color: var(--tw-foreground);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+.vela-sidebar-wrapper {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 0;
+  width: var(--vela-sidebar-width, 300px);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--vela-sidebar-surface);
+  contain: layout paint;
+  pointer-events: auto;
+}
+
+.vela-sidebar-wrapper[data-state="collapsed"] {
+  pointer-events: none;
+}
+
+.vela-sidebar-panel {
+  width: var(--vela-sidebar-width, 300px);
+  max-width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.vela-session-sidebar {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: visible;
+  border-right: 0;
+  background: transparent;
+  padding: 0 0 58px;
+  box-sizing: border-box;
+  user-select: none;
+}
+
+.vela-sidebar-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden auto;
+  padding: 0 0 6px;
+  box-sizing: border-box;
+  scrollbar-color: rgba(60, 60, 67, 0.24) transparent;
+  scrollbar-width: thin;
+}
+
+.vela-sidebar-content::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.vela-sidebar-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.vela-sidebar-content::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(60, 60, 67, 0.26);
+  background-clip: padding-box;
+}
+
+.vela-main-inset {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: var(--vela-sidebar-width, 300px);
+  z-index: 1;
+  box-sizing: border-box;
+  display: flex;
+  border-top-left-radius: var(--vela-main-surface-radius);
+  border-left: 1px solid var(--vela-main-edge-hairline);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--vela-sidebar-underlay);
+}
+
+.vela-desktop-shell:not([data-sidebar-dragging="true"]) .vela-main-inset {
+  transition: left var(--vela-sidebar-toggle-duration) var(--vela-sidebar-toggle-ease);
+}
+
+.vela-desktop-shell[data-state="collapsed"] .vela-main-inset {
+  left: 0;
+  border-left-color: transparent;
+}
+
+.vela-desktop-shell[data-sidebar-dragging="true"] .vela-main-inset {
+  transition: none;
+}
+
+.vela-sidebar-inset::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-top-left-radius: inherit;
+  background: var(--vela-main-surface);
+  background-clip: padding-box;
+  pointer-events: none;
+}
+
+.vela-sidebar-inset::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--vela-main-edge-veil-width) * -1);
+  z-index: 0;
+  width: var(--vela-main-edge-veil-width);
+  background: linear-gradient(90deg, rgba(245, 246, 246, 0), rgba(255, 255, 255, 0.72) 68%, var(--vela-main-surface));
+  -webkit-backdrop-filter: blur(16px) saturate(1.1);
+  backdrop-filter: blur(16px) saturate(1.1);
+  opacity: 1;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.vela-desktop-shell[data-state="collapsed"] .vela-sidebar-inset::after {
+  opacity: 0;
+}
+
+.vela-sidebar-inset > * {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.new-session-btn,
+.vela-sidebar-menu-button {
+  appearance: none;
+  width: 100%;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 8px;
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.2;
+  cursor: default;
+  user-select: none;
+  transition:
+    background 140ms ease,
+    color 140ms ease,
+    opacity 140ms ease;
+}
+
+.vela-sidebar-menu-button[data-active="true"] {
+  background: var(--skin-sidebar-selection);
+  font-weight: 650;
+}
+
+.vela-sidebar-menu-button:hover:not(:disabled) {
+  background: var(--skin-sidebar-hover);
+}
+
+.search-box {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  border: 1px solid var(--skin-sidebar-control-border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--skin-sidebar-control) 88%, transparent);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 42%);
+  padding: 0 9px;
+  margin: 0 12px 12px;
+  color: var(--tw-muted-foreground);
+}
+
+.search-box input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  user-select: text;
+}
+
+.sidebar-section-heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 20px 4px;
+  color: #9ca1a8;
+  font-size: 12px;
+  font-weight: 650;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.vela-sidebar-menu {
+  display: grid;
+  align-content: start;
+  min-width: 0;
+  gap: 1px;
+  list-style: none;
+  margin: 0;
+  padding: 4px 10px 12px;
+}
+
+.vela-session-copy {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.vela-session-title-row,
+.vela-session-preview,
+.vela-session-meta,
+.vela-session-rail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vela-session-title-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.vela-session-title {
+  min-width: 0;
+  overflow: hidden;
+  color: #3e4248;
+  font-size: 13px;
+  font-weight: 560;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vela-session-preview {
+  color: #8b9098;
+  font-size: 12px;
+  font-weight: 430;
+  line-height: 1.25;
+}
+
+.vela-session-meta {
+  color: #a2a7ae;
+  font-size: 11px;
+  font-weight: 430;
+  line-height: 1.2;
+}
+
+.vela-session-badge {
+  margin-left: 6px;
+  max-width: 72px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, #0b6bcb 10%, transparent);
+  color: #0b6bcb;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 3px 5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vela-sidebar-resize-handle {
+  position: absolute;
+  z-index: 48;
+  top: 0;
+  bottom: 0;
+  left: var(--vela-sidebar-width, 300px);
+  width: 16px;
+  cursor: col-resize;
+  background: transparent;
+  transform: translateX(-50%);
+  touch-action: none;
+}
+
+.vela-sidebar-resize-handle::after {
+  position: absolute;
+  top: calc(var(--vela-titlebar-height) + 4px);
+  bottom: 10px;
+  left: 50%;
+  width: 1px;
+  background: transparent;
+  content: "";
+  opacity: 0;
+  transform: translateX(-50%);
+}
+
+.vela-sidebar-resize-handle:hover::after,
+.vela-sidebar-resize-handle:focus-visible::after,
+.vela-sidebar-resize-handle[data-dragging="true"]::after {
+  width: 2px;
+  background: linear-gradient(180deg, transparent, rgba(60, 60, 67, 0.25) 18%, rgba(60, 60, 67, 0.25) 82%, transparent);
+  opacity: 1;
+}
+
+.vela-sidebar-window-controls {
+  position: absolute;
+  top: 8px;
+  left: var(--vela-window-controls-left);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.vela-sidebar-window-control-button {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #6f7680;
+  cursor: pointer;
+}
+
+.vela-sidebar-window-control-button:hover {
+  background: var(--skin-sidebar-hover);
+  color: #202326;
+}
+
+.vela-sidebar-topbar {
+  display: grid;
+  grid-template-columns: var(--vela-window-controls-inset) auto minmax(18px, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: var(--vela-titlebar-height);
+  padding: 0 12px;
+  box-sizing: border-box;
+}
+
+.vela-sidebar-traffic-zone,
+.vela-sidebar-nav {
+  min-width: 0;
+}
+
+.vela-sidebar-traffic-zone {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.vela-traffic-lights {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 2px;
+}
+
+.vela-traffic-light {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.13), 0 1px 1px rgba(255, 255, 255, 0.46);
+}
+
+.vela-traffic-light.close {
+  background: #ff5f57;
+}
+
+.vela-traffic-light.minimize {
+  background: #ffbd2e;
+}
+
+.vela-traffic-light.zoom {
+  background: #28c840;
+}
+
+.vela-sidebar-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+}
+
+.vela-sidebar-chrome-button {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #7d848d;
+  opacity: 0.92;
+}
+
+.vela-sidebar-chrome-button:disabled {
+  cursor: default;
+}
+
+.vela-sidebar-chrome-button.sync {
+  display: none;
+}
+
+.vela-sidebar-drag-fill {
+  min-width: 18px;
+  height: 100%;
+}
+
+.new-session-row {
+  padding: 0 12px 12px;
+}
+
+.new-session-btn {
+  justify-content: center;
+  border: 1px solid var(--skin-sidebar-control-border);
+  background: var(--skin-sidebar-control);
+  box-shadow: var(--skin-shadow-soft);
+  font-weight: 650;
+}
+
+.new-session-btn:hover {
+  border-color: color-mix(in srgb, var(--tw-border) 74%, var(--tw-foreground) 26%);
+  background: var(--skin-sidebar-hover);
+}
+
+.vela-session-item {
+  --vela-session-rail-width: 44px;
+  position: relative;
+  display: block;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: #57534e;
+  background: transparent;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
+}
+
+.vela-session-item:hover,
+.vela-session-item.active {
+  background: var(--skin-sidebar-hover);
+}
+
+.vela-session-item.active {
+  background: var(--skin-sidebar-selection);
+  color: #282b30;
+}
+
+.vela-session-main {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) var(--vela-session-rail-width);
+  align-items: center;
+  min-height: 50px;
+  gap: 8px;
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: transparent;
+}
+
+.vela-session-item .vela-session-main:hover:not(:disabled),
+.vela-session-item .vela-session-main[data-active="true"] {
+  background: transparent;
+}
+
+.vela-session-icon {
+  position: relative;
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  color: #9aa0a7;
+}
+
+.vela-session-status-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 6px;
+  height: 6px;
+  border: 1.5px solid var(--vela-sidebar-surface);
+  border-radius: 999px;
+  background: transparent;
+  opacity: 0;
+}
+
+.vela-session-item[data-running="true"] .vela-session-status-dot {
+  background: #0b6bcb;
+  opacity: 1;
+}
+
+.vela-session-item[data-waiting="true"] .vela-session-status-dot {
+  background: #ff8a00;
+  opacity: 1;
+}
+
+.vela-session-item[data-failed="true"] .vela-session-status-dot {
+  background: #c2410c;
+  opacity: 1;
+}
+
+.vela-session-item.active .vela-session-icon {
+  color: #666b73;
+}
+
+.vela-session-item.active .vela-session-title {
+  color: #25282d;
+  font-weight: 650;
+}
+
+.vela-session-item:hover .vela-session-preview,
+.vela-session-item.active .vela-session-preview {
+  color: #777d86;
+}
+
+.vela-session-rail {
+  align-self: start;
+  justify-self: end;
+  max-width: var(--vela-session-rail-width);
+  padding-top: 1px;
+  color: #a9aeb5;
+  font-size: 11px;
+  font-weight: 520;
+  line-height: 1.2;
+  text-align: right;
+}
+
+.vela-session-item:hover .vela-session-rail,
+.vela-session-item.active .vela-session-rail {
+  color: #8d939b;
+}
+
+.vela-sidebar-footer {
+  position: absolute;
+  z-index: 8;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: block;
+  min-height: 44px;
+  border-top: 0;
+  padding: 8px 14px 10px;
+  background: transparent;
+  color: var(--tw-muted-foreground);
+  font-size: 12px;
+}
+
+.vela-settings-menu-root {
+  position: relative;
+  flex: 0 0 auto;
+  width: 100%;
+  height: 38px;
+}
+
+.sidebar-footer-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  min-height: 30px;
+  border: 0;
+  border-radius: 7px;
+  padding: 0 8px;
+  background: transparent;
+  color: #6a7078;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: default;
+  transition:
+    background 140ms ease,
+    color 140ms ease,
+    opacity 140ms ease;
+}
+
+.sidebar-footer-btn:hover:not(:disabled) {
+  background: rgba(120, 113, 108, 0.12);
+  color: #57534e;
+}
+
+.sidebar-footer-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.vela-settings-menu-trigger {
+  width: 100%;
+  height: 38px;
+  box-sizing: border-box;
+  border-radius: 12px;
+  padding: 0 14px;
+  background: transparent;
+  color: #1f2429;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.vela-settings-menu-trigger:hover:not(:disabled),
+.vela-settings-menu-trigger[aria-expanded="true"] {
+  background: rgba(120, 113, 108, 0.1);
+  color: #1f2429;
+}
+
+.vela-desktop-shell[data-sidebar-dragging="true"] .vela-sidebar-footer,
+.vela-desktop-shell[data-sidebar-dragging="true"] .vela-settings-menu-trigger {
+  transition: none !important;
+}
+
+.vela-settings-popover {
+  --vela-codex-menu-enter-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --vela-settings-popover-inset: 2px;
+  --vela-settings-popover-start-transform: translateY(var(--vela-settings-popover-inset)) scale(0.98);
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 80;
+  width: min(224px, calc(100vw - 24px));
+  padding: 4px;
+  border: 1px solid rgba(60, 60, 67, 0.14);
+  border-radius: 14px;
+  corner-shape: superellipse(1.5);
+  background: rgba(255, 255, 255, 0.94);
+  background: color-mix(in oklab, #ffffff 94%, transparent);
+  box-shadow:
+    0 12px 32px rgba(15, 23, 42, 0.10),
+    0 2px 4px rgba(15, 23, 42, 0.06);
+  -webkit-backdrop-filter: blur(12px) saturate(1.12);
+  backdrop-filter: blur(12px) saturate(1.12);
+  will-change: transform, opacity;
+}
+
+.macos-popover-surface {
+  border-color: rgba(118, 122, 128, 0.18);
+  border-radius: 16px;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.82),
+      rgba(255, 255, 255, 0.64)
+    ),
+    rgba(246, 247, 248, 0.62);
+  -webkit-backdrop-filter: blur(22px) saturate(1.35);
+  backdrop-filter: blur(22px) saturate(1.35);
+  box-shadow:
+    0 18px 42px rgba(25, 28, 34, 0.12),
+    0 2px 8px rgba(25, 28, 34, 0.06),
+    inset 0 1px rgba(255, 255, 255, 0.72);
+}
+
+.vela-motion-popover[data-state="open"] {
+  animation: vela-popover-in 120ms var(--vela-codex-menu-enter-ease);
+  transform-origin: bottom left;
+}
+
+.vela-settings-menu {
+  display: grid;
+  gap: 1px;
+}
+
+.vela-settings-menu-item {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 28px;
+  border: 0;
+  border-radius: 7px;
+  padding: 0 7px;
+  background: transparent;
+  color: #24272d;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.25;
+  text-align: left;
+  cursor: default;
+  transition:
+    background 90ms ease,
+    color 90ms ease;
+}
+
+.vela-settings-menu-item span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vela-settings-menu-item svg {
+  color: #5f656b;
+  stroke-width: 1.8;
+}
+
+.vela-settings-menu-item kbd {
+  color: #8d9298;
+  font: inherit;
+  font-weight: 450;
+}
+
+.vela-settings-menu-item:hover:not(:disabled) {
+  background: rgba(123, 127, 133, 0.1);
+}
+
+.vela-settings-menu-item:disabled {
+  opacity: 0.36;
+}
+
+.vela-settings-menu-item.is-muted {
+  color: rgba(37, 41, 47, 0.34);
+}
+
+.vela-settings-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: rgba(112, 118, 126, 0.13);
+}
+
+.vela-desktop-settings-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(255, 255, 255, 0.36);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+.settings-panel {
+  width: min(520px, calc(100vw - 48px));
+  box-sizing: border-box;
+  padding: 18px;
+}
+
+.settings-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.settings-title {
+  color: #202326;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.settings-subtitle {
+  margin-top: 3px;
+  color: #8a9098;
+  font-size: 12px;
+  font-weight: 520;
+}
+
+.settings-close-button {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #727982;
+  cursor: default;
+}
+
+.settings-close-button:hover {
+  background: rgba(123, 127, 133, 0.1);
+  color: #202326;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.settings-diagnostic {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  border: 1px solid rgba(118, 122, 128, 0.13);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.42);
+  padding: 10px;
+}
+
+.settings-diagnostic span {
+  color: #8a9098;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.settings-diagnostic strong {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  color: #24272d;
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes vela-popover-in {
+  from {
+    opacity: 0;
+    transform: var(--vela-settings-popover-start-transform);
+  }
+  to {
+    opacity: 1;
+    transform: translate(0) translateY(0) scale(1);
+  }
+}
+
+.vela-desktop-empty {
+  display: grid;
+  place-content: center;
+  height: 100%;
+  gap: 10px;
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vela-desktop-shell:not([data-sidebar-dragging="true"]) .vela-main-inset,
+  .vela-desktop-shell:not([data-sidebar-dragging="true"]) .vela-sidebar-inset::after {
+    transition-duration: 0.01ms;
+  }
+}

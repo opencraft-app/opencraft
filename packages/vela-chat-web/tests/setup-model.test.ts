@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildWorkbenchSetupSelection } from "../../../app/chat/workbench/setupModel";
+import { buildVelaSessionSetupSelection } from "../../vela-chat-controller/src/setupModel";
 import type { BackendWire } from "../../vela-chat-client/src";
 
 test("workbench setup does not invent reasoning options for ACP backends", () => {
@@ -23,7 +23,7 @@ test("workbench setup does not invent reasoning options for ACP backends", () =>
     },
   ];
 
-  const selection = buildWorkbenchSetupSelection({
+  const selection = buildVelaSessionSetupSelection({
     backends,
     selectedBackend: "acp",
     selectedModel: "",
