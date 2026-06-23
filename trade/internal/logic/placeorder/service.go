@@ -32,14 +32,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	neturl "net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"git.woa.com/wisp/mono/trade/internal/ctlclient"
+	"git.woa.com/wisp/mono/trade/internal/dianshiclient"
 	"git.woa.com/wisp/mono/trade/internal/jifei"
 	"git.woa.com/wisp/mono/trade/internal/jifeiclient"
+	"git.woa.com/wisp/mono/trade/internal/logic/activity"
 	"git.woa.com/wisp/mono/trade/internal/region"
 	"git.woa.com/wisp/mono/trade/internal/shadowclient"
 	"git.woa.com/wisp/mono/trade/internal/store"
@@ -150,6 +153,18 @@ type Deps struct {
 	// RegionOverride 是腾讯云 region 字面量 override（北京 2 预发布接入新增）。
 	// 合法性已由 config.Load 在启动期 fail-fast 校验；本处只负责透透到 region.Resolve。
 	RegionOverride string
+
+	// ActivityResolver 是点石活动通道判定 helper（设计稿
+	// .tmp/dianshi-activity-bundle-design.md §5.2 / §5.4）。可选注入：
+	//   - 非 nil：PlaceOrder / PlaceOrderAndPay 在反查 trade_bundle_definition 之后
+	//     插入分叉点判定；命中点石走 placeOrderDianshi 出向
+	//   - nil（默认）：完全不感知点石，走 jifei 原路径
+	// PlaceRenewOrder / PlaceRenewOrderAndPay 不读取本字段（设计稿 §5.5 续费写死走 jifei）。
+	ActivityResolver activity.Resolver
+
+	// DianshiClient 是点石出向客户端（设计稿 §5.1）。仅在 ActivityResolver 也注入时
+	// 被 placeOrderDianshi 调用；启动期 main.go 应保证两者同进同退。
+	DianshiClient dianshiclient.Client
 }
 
 // Service 实现"业务层下单"能力。
@@ -235,6 +250,22 @@ func (s *Service) PlaceOrder(ctx context.Context, req PlaceOrderRequest) (*Place
 				ErrBundleNotFound, req.BundleID)
 		}
 		return nil, fmt.Errorf("placeorder: get bundle definition: %w", err)
+	}
+
+	// 3.5. 活动分叉判定（设计稿 §5.4）。仅当 ActivityResolver 注入时生效。
+	// 与询价侧不同：placeOrder 的 Resolver DB 错必须 5xx（不做 graceful-degrade），
+	// 否则会让用户绕过点石下单走 jifei 拿原价单 + 留下 participation 缺失的脏数据。
+	if s.deps.ActivityResolver != nil {
+		mapping, useDianshi, resolveErr := s.deps.ActivityResolver.ResolveForPlaceOrder(ctx, req.BundleID, req.Uin)
+		if resolveErr != nil {
+			return nil, fmt.Errorf("placeorder: activity resolve bundleId=%s uin=%s: %w",
+				req.BundleID, req.Uin, resolveErr)
+		}
+		if useDianshi {
+			log.Printf("[activity-resolver] placeorder useDianshi=true bundleId=%s uin=%s activityId=%d actId=%d",
+				req.BundleID, req.Uin, mapping.ActivityID, mapping.ActID)
+			return s.placeOrderDianshi(ctx, req, def, mapping)
+		}
 	}
 
 	categoryID := def.CategoryIDForScene("purchase")
@@ -659,6 +690,22 @@ func (s *Service) PlaceOrderAndPay(ctx context.Context, req PlaceOrderRequest) (
 				ErrBundleNotFound, req.BundleID)
 		}
 		return nil, fmt.Errorf("placeorder: get bundle definition: %w", err)
+	}
+
+	// 3.5. 活动分叉判定（设计稿 §5.4）。PlaceOrderAndPay 与 PlaceOrder 共用同一段
+	// placeOrderDianshi 私有方法（jifei generateDealsAndPay 与 generateDeals 在点石路径下
+	// 都收敛到同一个点石 do_goods 出向调用，区别仅在 jifei 路径上的 SDK 拆分）。
+	if s.deps.ActivityResolver != nil {
+		mapping, useDianshi, resolveErr := s.deps.ActivityResolver.ResolveForPlaceOrder(ctx, req.BundleID, req.Uin)
+		if resolveErr != nil {
+			return nil, fmt.Errorf("placeorder: activity resolve bundleId=%s uin=%s: %w",
+				req.BundleID, req.Uin, resolveErr)
+		}
+		if useDianshi {
+			log.Printf("[activity-resolver] placeorder-and-pay useDianshi=true bundleId=%s uin=%s activityId=%d actId=%d",
+				req.BundleID, req.Uin, mapping.ActivityID, mapping.ActID)
+			return s.placeOrderDianshi(ctx, req, def, mapping)
+		}
 	}
 
 	// Q71 2026-05-13：CategoryIDForScene 返回 int64（jifei 协议层 goodsCategoryId 是 int，
@@ -1400,4 +1447,120 @@ func optsWxAppID(opts *GeneratePayURLOptions) string {
 		return ""
 	}
 	return opts.WxAppID
+}
+
+// placeOrderDianshi 是点石活动下单分支（设计稿 §5.4 / v0.5 修订）。
+//
+// v0.5 拍板：点石下单底层就是 jifei 下单——点石把活动单透传给 jifei 计费体系，jifei
+// 仍按现网形态做反向回调 lightvela.pass.checkCreate / lightvela.pass.createResource
+// 到 trade，与普通 jifei 新购**完全同链路**。trade 端没有点石专用的同步发货分支，
+// createResourceHandler 仅有 jifei 反向回调一条入口。
+//
+// 本方法只做 4 件事：
+//  1. 计算 check_sum（mapping.SecretKey != "" 时；secret_key 空则不出现 check_sum 字段）
+//  2. 拼装 dianshiclient.DoGoodsRequest 调点石 do_goods
+//  3. 拿到 deal_names[0] / big_deal_no
+//  4. 落 trade_order(status='paid_pending_provision', source='dianshi')
+//
+// 失败语义：
+//   - 点石下单失败 → 直接返业务错给 ctl，不留任何 trade 端落地（与 jifei generateDealsAndPay 失败同款）
+//   - DB 写 trade_order 失败 → 5xx 返 ctl
+//
+// pass 落地 / participation INSERT 全部在 jifei 反向回调驱动的 createResourceHandler 路径里完成
+// （commit 6 落地）。
+//
+// 复用：PlaceOrder 双步链路 与 PlaceOrderAndPay 一体化链路在点石路径上完全合并——点石协议
+// 不区分双步 / 一体化，本方法对两者出参签名一致（都返 *PlaceOrderResult）。
+func (s *Service) placeOrderDianshi(
+	ctx context.Context,
+	req PlaceOrderRequest,
+	def *store.BundleDefinition,
+	mapping *activity.Mapping,
+) (*PlaceOrderResult, error) {
+	if s.deps.DianshiClient == nil {
+		return nil, fmt.Errorf("placeorder: dianshi client not configured (ActivityResolver injected without DianshiClient)")
+	}
+
+	// 1. check_sum：mapping.SecretKey 为空 → 不发字段（dianshiclient.CalcCheckSum 返空字符串触发 omitempty）
+	checkSum := dianshiclient.CalcCheckSum(req.Uin, mapping.ActivityID, mapping.SecretKey)
+
+	// 2. 拼 do_goods envelope.para
+	doGoodsReq := &dianshiclient.DoGoodsRequest{
+		Uin:        req.Uin,
+		ActivityID: mapping.ActivityID,
+		Originate:  dianshiclient.OriginateLightvelaTrade,
+		CheckSum:   checkSum,
+		Goods: []dianshiclient.DoGoodsItem{
+			{
+				ActID: mapping.ActID,
+				PreferenceParam: map[string]interface{}{
+					// 用户拍板：下单 preference_param 仅含 externalUserId
+					"externalUserId": req.ExternalUserID,
+				},
+			},
+		},
+	}
+
+	// 3. 调点石 do_goods（失败直接返业务错，不写任何 trade 端记录）
+	doGoodsResp, err := s.deps.DianshiClient.DoGoods(ctx, doGoodsReq)
+	if err != nil {
+		return nil, fmt.Errorf("placeorder: dianshi DoGoods bundleId=%s activityId=%d actId=%d: %w",
+			req.BundleID, mapping.ActivityID, mapping.ActID, err)
+	}
+	if doGoodsResp == nil || len(doGoodsResp.DealNames) == 0 || doGoodsResp.DealNames[0] == "" {
+		return nil, fmt.Errorf("%w: dianshi do_goods returned empty deal_names (bundleId=%s activityId=%d big_deal_no=%q)",
+			ErrJifeiResponseInvalid, req.BundleID, mapping.ActivityID,
+			func() string {
+				if doGoodsResp == nil {
+					return ""
+				}
+				return doGoodsResp.BigDealNo
+			}(),
+		)
+	}
+
+	dealName := doGoodsResp.DealNames[0]
+	bigDealNo := doGoodsResp.BigDealNo
+
+	// 4. 落 trade_order（source='dianshi'，status='paid_pending_provision' 与 PlaceOrderAndPay 同款——
+	// 点石下单同步链路与 jifei generateDealsAndPay 一体化语义对齐：拿到 deal_name 即视为"已下单已扣款待发货"，
+	// 等 jifei 反向回调 createResource 把 status 推进到 'provisioned'）。
+	goodsDetail := buildGoodsDetail(def, req)
+	// 把活动元信息塞入 goodsDetail，便于 createResource handler 反查 / 排障日志
+	goodsDetail["dianshi_activity_id"] = mapping.ActivityID
+	goodsDetail["dianshi_act_id"] = mapping.ActID
+	goodsDetail["dianshi_big_deal_no"] = bigDealNo
+
+	in := store.CreateOrderInput{
+		BigOrderID:     bigDealNo, // 点石 big_deal_no = jifei big_order_id 同位
+		DealName:       dealName,
+		ExternalUserID: req.ExternalUserID,
+		Uin:            req.Uin,
+		AppID:          req.AppID,
+		SubProductCode: def.SubProductCode,
+		BundleID:       req.BundleID,
+		Period:         req.Period,
+		TimeUnit:       req.TimeUnit,
+		GoodsNum:       req.GoodsNum,
+		RegionID:       s.region.RegionID,
+		PayMode:        req.PayMode,
+		GoodsDetail:    goodsDetail,
+		Status:         store.OrderStatusPaidPendingProvision,
+		ResourceType:   "pass",
+		Source:         store.OrderSourceDianshi,
+	}
+	if err := s.deps.OrderWriter.CreateOrder(ctx, in); err != nil {
+		if errors.Is(err, store.ErrTradeOrderDuplicate) {
+			return nil, fmt.Errorf("%w: dealName=%s", ErrDealNameDuplicate, dealName)
+		}
+		return nil, fmt.Errorf("placeorder: persist trade_order (dianshi) dealName=%s: %w", dealName, err)
+	}
+
+	log.Printf("[trade-order] source=dianshi dealName=%s bigDealNo=%s uin=%s appId=%s bundleId=%s activityId=%d actId=%d",
+		dealName, bigDealNo, req.Uin, req.AppID, req.BundleID, mapping.ActivityID, mapping.ActID)
+
+	return &PlaceOrderResult{
+		DealName:   dealName,
+		BigOrderID: bigDealNo,
+	}, nil
 }

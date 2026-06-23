@@ -31,6 +31,19 @@ const (
 	OrderTypeRenew  = "renew"
 )
 
+// OrderSource 枚举（migration 000006 新增列；订单来源）：
+//
+//   - OrderSourceJifei   = "jifei"    jifei 计费链路（默认；与 DB DEFAULT 'jifei' 双层一致）
+//   - OrderSourceDianshi = "dianshi"  点石活动链路（设计稿 .tmp/dianshi-activity-bundle-design.md §3.3）
+//
+// 由 trade.placeorder.Service.placeOrderDianshi 在落 trade_order 时显式写 'dianshi'；
+// 其他写入路径（PlaceOrder / PlaceOrderAndPay / PlaceRenewOrder*）默认走 'jifei' 不传值，
+// DAO 层在 in.Source=="" 时回填 OrderSourceJifei。
+const (
+	OrderSourceJifei   = "jifei"
+	OrderSourceDianshi = "dianshi"
+)
+
 // trade_order.status 状态机常量（与 migration 0001 / 0005 注释对齐）。
 //
 // 状态机概览：
@@ -118,6 +131,9 @@ type TradeOrder struct {
 	Status       string
 	ResourceType string
 	ResourceID   string
+	// Source（migration 000006 新增列）：订单来源枚举，取值 "jifei" / "dianshi"。
+	// createResource handler 按本字段判定是否需要 INSERT trade_user_activity_participation（设计稿 §5.6.1 step 4）。
+	Source string
 	// v1.7.28 BUG-12 修复 (2026-05-21)：删除 ExpireTime 字段（trade 业务层从未拥有
 	// "订单何时失效"的真源，列从 schema 删了，见 migration 0004）。
 	CreatedTime time.Time
@@ -171,7 +187,7 @@ func (s *MySQLStore) GetOrderByDealName(ctx context.Context, dealName string) (*
 		SELECT id, big_order_id, deal_name, external_user_id, uin, app_id,
 		       sub_product_code, bundle_id, order_type, period, time_unit, goods_num,
 		       region_id, pay_mode, goods_detail, pay_url, status,
-		       resource_type, resource_id, created_time, updated_time
+		       resource_type, resource_id, source, created_time, updated_time
 		  FROM trade_order
 		 WHERE deal_name = ?
 	`
@@ -195,6 +211,7 @@ func (s *MySQLStore) GetOrderByDealName(ctx context.Context, dealName string) (*
 		status      string
 		resType     string
 		resID       sql.NullString
+		source      string
 		createdTime time.Time
 		updatedTime time.Time
 	)
@@ -202,7 +219,7 @@ func (s *MySQLStore) GetOrderByDealName(ctx context.Context, dealName string) (*
 		&id, &bigOrderID, &dn, &extUID, &uin, &appID,
 		&subProd, &bundleID, &orderType, &period, &timeUnit, &goodsNum,
 		&regionID, &payMode, &goodsRaw, &payURL, &status,
-		&resType, &resID, &createdTime, &updatedTime,
+		&resType, &resID, &source, &createdTime, &updatedTime,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrTradeOrderNotFound
@@ -231,6 +248,7 @@ func (s *MySQLStore) GetOrderByDealName(ctx context.Context, dealName string) (*
 		Status:         status,
 		ResourceType:   resType,
 		ResourceID:     resID,
+		Source:         source,
 		CreatedTime:    createdTime,
 		UpdatedTime:    updatedTime,
 	})
@@ -256,6 +274,7 @@ type decodeArgs struct {
 	PayURL                                           sql.NullString
 	Status, ResourceType                             string
 	ResourceID                                       sql.NullString
+	Source                                           string
 	CreatedTime, UpdatedTime                         time.Time
 }
 
@@ -278,6 +297,7 @@ func decodeTradeOrder(a decodeArgs) (*TradeOrder, error) {
 		PayMode:        a.PayMode,
 		Status:         a.Status,
 		ResourceType:   a.ResourceType,
+		Source:         a.Source,
 		CreatedTime:    a.CreatedTime,
 		UpdatedTime:    a.UpdatedTime,
 	}

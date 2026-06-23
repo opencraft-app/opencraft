@@ -51,6 +51,10 @@ type CreateOrderInput struct {
 	PayURL         string
 	Status         string // 通常为 "created" 或 "pending_pay"
 	ResourceType   string // 默认 "pass"
+	// Source（设计稿 §3.3）：订单来源。取值集 "jifei" / "dianshi"；空字符串 → DAO 默认
+	// 填 "jifei"，与 migration 000006 DB DEFAULT 双层一致。在 PlaceOrder / PlaceOrderAndPay 走
+	// jifei 路径时不需显式传值；placeOrderDianshi 须显式传 "dianshi"。
+	Source string
 	// ResourceID（R-C-5 续费场景必填；新购 INSERT 时留空，由 createResource 收尾 MarkOrderProvisioned 反向回填）：
 	//   - OrderType='create'：留空字符串 → INSERT 落 NULL（与 trade_order.resource_id DEFAULT NULL 一致）
 	//   - OrderType='renew'：必填 = pass_id；renewresource handler 的 trade_order 维度交叉校验依赖此字段
@@ -179,6 +183,10 @@ func (s *MySQLStore) CreateOrder(ctx context.Context, in CreateOrderInput) error
 		// PlaceRenewOrder 必须显式传 OrderTypeRenew 才能写入续费订单。
 		in.OrderType = OrderTypeCreate
 	}
+	if in.Source == "" {
+		// 设计稿 §3.3：source 默认 'jifei'，与 migration 000006 DB DEFAULT 双层一致。
+		in.Source = OrderSourceJifei
+	}
 	if in.GoodsNum == 0 {
 		in.GoodsNum = 1
 	}
@@ -202,8 +210,8 @@ func (s *MySQLStore) CreateOrder(ctx context.Context, in CreateOrderInput) error
 			big_order_id, deal_name, external_user_id, uin, app_id,
 			sub_product_code, bundle_id, order_type, period, time_unit, goods_num,
 			region_id, pay_mode, goods_detail, pay_url, status,
-			resource_type, resource_id, created_time, updated_time
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+			resource_type, resource_id, source, created_time, updated_time
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
 	`
 	var payURLArg interface{}
 	if in.PayURL != "" {
@@ -220,7 +228,7 @@ func (s *MySQLStore) CreateOrder(ctx context.Context, in CreateOrderInput) error
 		in.BigOrderID, in.DealName, in.ExternalUserID, in.Uin, in.AppID,
 		in.SubProductCode, in.BundleID, in.OrderType, in.Period, in.TimeUnit, in.GoodsNum,
 		in.RegionID, in.PayMode, goodsDetailArg, payURLArg, in.Status,
-		in.ResourceType, resourceIDArg,
+		in.ResourceType, resourceIDArg, in.Source,
 	); err != nil {
 		// MySQL UNIQUE 冲突 errno=1062；驱动层不暴露常量，按 message 子串匹配兜底
 		if isMySQLDuplicateError(err) {
