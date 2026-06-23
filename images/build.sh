@@ -1192,6 +1192,7 @@ finalize_hermes_runtime_pin() {
   verify_hermes_source_tree_version "${hermes_dir}" "after Hermes post-install steps"
   install_hermes_whatsapp_bridge_deps
   force_reinstall_hermes_local_package "${hermes_dir}"
+  install_hermes_python_deps
   verify_hermes_runtime_version
   ensure_hermes_acli_identity
 }
