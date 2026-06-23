@@ -277,7 +277,7 @@ function DesktopReadyApp({
       host={hostBridge}
       isSidebarVisible={isSidebarVisible}
       sidebar={isSettingsOpen ? settingsSidebar : appSidebar}
-      sidebarPresentation="overlay"
+      sidebarPresentation="auto"
       sidebarWidthPx={sidebarWidthPx}
       onCreateSession={createSession}
       onSidebarVisibilityChange={onSidebarVisibilityChange}

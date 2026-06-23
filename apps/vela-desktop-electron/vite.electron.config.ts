@@ -8,7 +8,7 @@ export default defineConfig({
   build: {
     target: "node22",
     outDir: "dist-electron",
-    emptyOutDir: true,
+    emptyOutDir: process.env.VELA_ELECTRON_EMPTY_OUT_DIR !== "false",
     minify: false,
     sourcemap: true,
     rollupOptions: {

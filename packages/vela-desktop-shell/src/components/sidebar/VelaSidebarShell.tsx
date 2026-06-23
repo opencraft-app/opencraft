@@ -11,7 +11,9 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import type { DesktopHostBridge } from "../../host";
@@ -31,7 +33,7 @@ interface VelaSidebarShellProps {
   host?: DesktopHostBridge;
   className?: string;
   isSidebarVisible: boolean;
-  sidebarPresentation?: "docked" | "overlay";
+  sidebarPresentation?: "auto" | "docked" | "overlay";
   sidebarWidthPx?: number;
   onToggleSidebar?: () => void;
   onSidebarVisibilityChange?: (isVisible: boolean) => void;
@@ -141,37 +143,137 @@ export function VelaSidebarShell({
   onSidebarWidthChange,
   onCreateSession,
 }: VelaSidebarShellProps) {
+  const [autoOverlayMode, setAutoOverlayMode] = useState(false);
+  const sidebarWrapperRef = useRef<HTMLDivElement | null>(null);
+  const overlayCloseTimerRef = useRef<number | null>(null);
   const sidebarState = isSidebarVisible ? "expanded" : "collapsed";
+  const effectiveSidebarPresentation =
+    sidebarPresentation === "auto"
+      ? autoOverlayMode
+        ? "overlay"
+        : "docked"
+      : sidebarPresentation;
+  const isTransientOverlayOpen =
+    sidebarPresentation === "auto" && autoOverlayMode && isSidebarVisible;
+  const cancelOverlayClose = useCallback(() => {
+    if (overlayCloseTimerRef.current === null) return;
+    window.clearTimeout(overlayCloseTimerRef.current);
+    overlayCloseTimerRef.current = null;
+  }, []);
+  const closeOverlaySidebar = useCallback(() => {
+    cancelOverlayClose();
+    if (isTransientOverlayOpen) {
+      onToggleSidebar?.();
+    }
+  }, [cancelOverlayClose, isTransientOverlayOpen, onToggleSidebar]);
+  const scheduleOverlayClose = useCallback(() => {
+    if (!isTransientOverlayOpen) return;
+    cancelOverlayClose();
+    overlayCloseTimerRef.current = window.setTimeout(() => {
+      overlayCloseTimerRef.current = null;
+      const wrapper = sidebarWrapperRef.current;
+      if (wrapper?.matches(":hover") || wrapper?.contains(document.activeElement)) return;
+      closeOverlaySidebar();
+    }, 180);
+  }, [cancelOverlayClose, closeOverlaySidebar, isTransientOverlayOpen]);
+  const handleToggleSidebar = useCallback(() => {
+    if (sidebarPresentation === "auto") {
+      setAutoOverlayMode(false);
+      cancelOverlayClose();
+    }
+    onToggleSidebar?.();
+  }, [cancelOverlayClose, onToggleSidebar, sidebarPresentation]);
+  const openOverlaySidebar = useCallback(() => {
+    if (sidebarPresentation === "auto" && !isSidebarVisible) {
+      cancelOverlayClose();
+      setAutoOverlayMode(true);
+      onToggleSidebar?.();
+    }
+  }, [cancelOverlayClose, isSidebarVisible, onToggleSidebar, sidebarPresentation]);
+  const handleOverlayTriggerPointerEnter = useCallback(
+    (event: PointerEvent<HTMLButtonElement>) => {
+      if (event.pointerType === "mouse" || event.pointerType === "pen") {
+        openOverlaySidebar();
+      }
+    },
+    [openOverlaySidebar],
+  );
+  const handleSidebarActionClick = useCallback(
+    (event: MouseEvent<HTMLDivElement>) => {
+      if (!isTransientOverlayOpen) return;
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (!target.closest("button,a,[role='button']")) return;
+      window.setTimeout(closeOverlaySidebar, 0);
+    },
+    [closeOverlaySidebar, isTransientOverlayOpen],
+  );
+  const shouldShowOverlayTrigger =
+    sidebarPresentation === "auto" && !isSidebarVisible;
+
+  useEffect(() => {
+    if (!isTransientOverlayOpen) return undefined;
+    const handlePointerDown = (event: globalThis.PointerEvent) => {
+      const wrapper = sidebarWrapperRef.current;
+      if (event.target instanceof Node && wrapper?.contains(event.target)) return;
+      scheduleOverlayClose();
+    };
+    const handleFocusIn = (event: FocusEvent) => {
+      const wrapper = sidebarWrapperRef.current;
+      if (event.target instanceof Node && wrapper?.contains(event.target)) return;
+      scheduleOverlayClose();
+    };
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("focusin", handleFocusIn, true);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener("focusin", handleFocusIn, true);
+      cancelOverlayClose();
+    };
+  }, [cancelOverlayClose, isTransientOverlayOpen, scheduleOverlayClose]);
 
   return (
     <SidebarProvider
       open={isSidebarVisible}
-      onOpenChange={() => onToggleSidebar?.()}
+      onOpenChange={handleToggleSidebar}
       sidebarWidthPx={sidebarWidthPx}
     >
       <div
         className={["vela-desktop-shell", className].filter(Boolean).join(" ")}
         data-platform={host.platform}
-        data-sidebar-presentation={sidebarPresentation}
+        data-sidebar-presentation={effectiveSidebarPresentation}
         data-slot="sidebar-shell"
         data-state={sidebarState}
       >
         <VelaWindowChrome host={host} />
         <VelaSidebarWindowControls
           onCreateSession={onCreateSession}
-          onToggleSidebar={onToggleSidebar}
+          onToggleSidebar={handleToggleSidebar}
         />
+        {shouldShowOverlayTrigger ? (
+          <button
+            type="button"
+            className="vela-sidebar-overlay-trigger"
+            aria-label="Show sidebar"
+            onClick={openOverlaySidebar}
+            onPointerEnter={handleOverlayTriggerPointerEnter}
+          />
+        ) : null}
         <div
+          ref={sidebarWrapperRef}
           className="vela-sidebar-wrapper"
           data-slot="sidebar-wrapper"
           data-state={sidebarState}
           aria-hidden={isSidebarVisible ? undefined : "true"}
+          onClickCapture={handleSidebarActionClick}
+          onPointerEnter={cancelOverlayClose}
+          onPointerLeave={scheduleOverlayClose}
         >
           <div className="vela-sidebar-panel" data-slot="sidebar-panel">
             {sidebar}
           </div>
         </div>
-        {isSidebarVisible && sidebarPresentation === "docked" && onSidebarWidthChange ? (
+        {isSidebarVisible && effectiveSidebarPresentation === "docked" && onSidebarWidthChange ? (
           <SidebarResizeHandle
             sidebarWidthPx={sidebarWidthPx}
             onSidebarResizeStart={onSidebarResizeStart}

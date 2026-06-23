@@ -8,7 +8,7 @@ export interface VelaDesktopShellProps {
   children: ReactNode;
   host?: DesktopHostBridge;
   isSidebarVisible: boolean;
-  sidebarPresentation?: "docked" | "overlay";
+  sidebarPresentation?: "auto" | "docked" | "overlay";
   sidebarWidthPx?: number;
   onCreateSession?: () => void;
   onToggleSidebar?: () => void;

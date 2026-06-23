@@ -15,7 +15,7 @@
   --vela-composer-bg: rgb(255 255 255 / 90%);
   --vela-composer-blur: 16px;
   --vela-composer-shadow: 0 4px 16px 0 rgb(0 0 0 / 5%);
-  --vela-thread-content-max-width: 1120px;
+  --vela-thread-content-max-width: 920px;
   --vela-thread-content-top-inset: calc(var(--vela-spacing) * 8);
   --vela-thread-floating-content-top-inset: calc(var(--vela-spacing) * 3);
   --vela-thread-floating-content-bottom-inset: calc(var(--vela-spacing) * 3);

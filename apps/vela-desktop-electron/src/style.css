@@ -116,6 +116,19 @@ body {
   pointer-events: none;
 }
 
+.vela-sidebar-overlay-trigger {
+  position: absolute;
+  top: var(--vela-titlebar-height);
+  bottom: 0;
+  left: 0;
+  z-index: 50;
+  width: 14px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: default;
+}
+
 .vela-desktop-shell[data-sidebar-presentation="overlay"] .vela-sidebar-wrapper {
   z-index: 55;
   overflow: hidden;
@@ -126,15 +139,22 @@ body {
   box-shadow:
     22px 0 44px rgba(31, 35, 40, 0.08),
     4px 0 12px rgba(31, 35, 40, 0.04);
+  opacity: 1;
   transform: translateX(0);
   transition:
-    opacity var(--vela-sidebar-toggle-duration) var(--vela-sidebar-toggle-ease),
-    transform var(--vela-sidebar-toggle-duration) var(--vela-sidebar-toggle-ease);
+    opacity 140ms ease-out,
+    visibility 0ms linear 0ms;
+  visibility: visible;
+  will-change: opacity;
 }
 
 .vela-desktop-shell[data-sidebar-presentation="overlay"] .vela-sidebar-wrapper[data-state="collapsed"] {
   opacity: 0;
-  transform: translateX(calc((var(--vela-sidebar-width, 300px) + 24px) * -1));
+  transform: translateX(0);
+  transition:
+    opacity 110ms ease-in,
+    visibility 0ms linear 110ms;
+  visibility: hidden;
 }
 
 .vela-sidebar-panel {

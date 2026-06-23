@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -60,8 +60,12 @@ async function waitFor(label, probe) {
 process.on("SIGINT", () => shutdown(130));
 process.on("SIGTERM", () => shutdown(143));
 
-spawnChild("electron-build", "vite", ["build", "--watch", "--config", "vite.electron.config.ts"]);
-spawnChild("preload-build", "esbuild", [
+rmSync(join(appRoot, "dist-electron"), { recursive: true, force: true });
+
+spawnChild("electron-build", "npm", ["exec", "--", "vite", "build", "--watch", "--config", "vite.electron.config.ts"], {
+  VELA_ELECTRON_EMPTY_OUT_DIR: "false",
+});
+spawnChild("preload-build", "npm", ["exec", "--", "esbuild",
   "electron/preload.ts",
   "--bundle",
   "--platform=node",
@@ -71,7 +75,7 @@ spawnChild("preload-build", "esbuild", [
   "--outfile=dist-electron/preload.cjs",
   "--watch=forever",
 ]);
-spawnChild("renderer", "vite", ["--config", "vite.renderer.config.ts", "--host", "127.0.0.1"], {
+spawnChild("renderer", "npm", ["exec", "--", "vite", "--config", "vite.renderer.config.ts", "--host", "127.0.0.1"], {
   VITE_VELA_API_BASE_URL: veladApiBaseUrl,
 });
 
@@ -86,6 +90,8 @@ await waitFor("renderer dev server", async () => {
   }
 });
 
-spawnChild("electron", "electron", ["."], {
+spawnChild("electron", "npm", ["exec", "--", "electron", "."], {
   VITE_DEV_SERVER_URL: rendererUrl,
+  VITE_VELA_API_BASE_URL: veladApiBaseUrl,
+  VELA_DESKTOP_VELAD_LISTEN_ADDR: veladListenAddr,
 });

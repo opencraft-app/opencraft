@@ -13,7 +13,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 function runtimeEnv(name: string) {
-  return globalThis.process?.env?.[name];
+  return process.env[name];
 }
 
 const configuredVeladListenAddr = runtimeEnv("VELA_DESKTOP_VELAD_LISTEN_ADDR") ?? "";
@@ -234,7 +234,7 @@ async function createWindow() {
     },
   });
 
-  const devServerUrl = runtimeEnv("VITE_DEV_SERVER_URL");
+  const devServerUrl = runtimeEnv("VITE_DEV_SERVER_URL") ?? (!app.isPackaged ? "http://127.0.0.1:5173" : "");
   if (devServerUrl) {
     await mainWindow.loadURL(devServerUrl);
   } else {
