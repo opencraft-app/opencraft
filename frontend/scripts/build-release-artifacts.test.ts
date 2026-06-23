@@ -59,7 +59,6 @@ describe("build release artifacts", () => {
         "node-bin scripts/version-next-static-assets.mjs",
         "node-bin scripts/fix-next-static-html-lang.mjs",
         "node-bin scripts/format-next-static-html.mjs",
-        "node-bin scripts/check-next-seo.mjs",
         "node-bin scripts/check-versioned-next-static-assets.mjs",
       ]);
       expect(existsSync(join(outputDir, "index.html"))).toBe(true);
