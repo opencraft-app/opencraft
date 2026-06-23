@@ -17,11 +17,6 @@ export const DEFAULT_PUBLIC_ROUTE_LOCALE: PublicRouteLocale = {
   localized: false,
 };
 
-export const CHANGELOG_ROUTE_LOCALE: PublicRouteLocale = {
-  locale: 'zh-CN',
-  localized: false,
-};
-
 export const PUBLIC_URL_LANGS = ['en-us', 'zh-cn', 'zh-sg'] as const satisfies readonly PublicUrlLang[];
 
 const LANG_TO_LOCALE: Record<PublicUrlLang, PublicSiteLocale> = {

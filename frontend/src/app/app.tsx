@@ -6,6 +6,7 @@ import { OpenClawProvider } from "@/contexts/openclaw-context";
 import { router } from "@/router";
 import { ThemeStyleInjector } from "@/theme/theme-style";
 import { RumUserBridge } from "@/observability/rum-user-bridge";
+import { ProductAnalyticsBridge } from "@/observability/product-analytics-bridge";
 
 export const App = () => {
   return (
@@ -13,6 +14,7 @@ export const App = () => {
       <RuntimeConfigProvider>
         <SessionProvider>
           <RumUserBridge />
+          <ProductAnalyticsBridge />
           <OpenClawProvider>
             <ThemeStyleInjector />
             <RouterProvider router={router} />

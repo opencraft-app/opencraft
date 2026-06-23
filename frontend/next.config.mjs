@@ -8,6 +8,7 @@ const config = {
   reactStrictMode: true,
   output: 'export',
   trailingSlash: true,
+  allowedDevOrigins: ['lightvela.ai', 'www.lightvela.ai'],
   pageExtensions: ['next.tsx', 'next.ts'],
   images: {
     unoptimized: true,

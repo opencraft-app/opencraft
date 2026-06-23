@@ -39,6 +39,9 @@
           "enabled": "true",
           "id": "2ellOCK3ozed3owgOj",
           "hostUrl": "https://rumt-sg.com"
+        },
+        "posthog": {
+          "enabled": "false"
         }
       }
     },
@@ -83,6 +86,12 @@
           "enabled": "true",
           "id": "2ellOCK3ozed3owgOj",
           "hostUrl": "https://rumt-sg.com"
+        },
+        "posthog": {
+          "enabled": "true",
+          "projectToken": "phc_ogtAa2thuMdzyGzWcQqzC99LqzMsZbzwPGzFuaRRq9Cb",
+          "host": "https://eu.i.posthog.com",
+          "uiHost": "https://eu.posthog.com"
         }
       },
       "deployEnv": {

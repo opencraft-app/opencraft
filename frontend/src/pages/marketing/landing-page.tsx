@@ -11,6 +11,7 @@ import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
 import type { RenderUserMenuLink } from "@/components/site/user-avatar-menu";
 import { isGlobal } from "@/lib/region";
+import { captureProductEvent } from "@/observability/posthog";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { AGENTS_HOME_PATH } from "@/router/paths";
 
@@ -55,7 +56,12 @@ export const LandingPageView = ({
     // The header auth island reads the same query during hydration and owns the login modal.
   }, [navigateTo, oauthError]);
 
-  const handleCreateClick = () => navigateTo(AGENTS_HOME_PATH);
+  const handleCreateClick = useCallback(() => {
+    captureProductEvent("landing_cta_clicked", {
+      location: "public_landing",
+    });
+    navigateTo(AGENTS_HOME_PATH);
+  }, [navigateTo]);
   const renderFooterLink: RenderFooterLink | undefined = renderLink
     ? ({ "aria-label": ariaLabel, children, className, href, onClick }) =>
         renderLink({ ariaLabel, children, className, href, onClick })

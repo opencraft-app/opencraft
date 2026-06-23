@@ -7,7 +7,6 @@ import { ChangelogPage } from '@/pages/marketing/changelog-page';
 import { LandingPageView } from '@/pages/marketing/landing-page';
 
 import {
-  CHANGELOG_ROUTE_LOCALE,
   DEFAULT_PUBLIC_ROUTE_LOCALE,
   type PublicRouteLocale,
 } from './public-locale';
@@ -95,8 +94,8 @@ export function PublicAboutPage({
 }
 
 export function PublicChangelogPage({
-  locale = CHANGELOG_ROUTE_LOCALE.locale,
-  localized = CHANGELOG_ROUTE_LOCALE.localized,
+  locale = DEFAULT_PUBLIC_ROUTE_LOCALE.locale,
+  localized = DEFAULT_PUBLIC_ROUTE_LOCALE.localized,
 }: Partial<PublicRouteLocale> = {}) {
   const pathname = usePathname() || '/';
 

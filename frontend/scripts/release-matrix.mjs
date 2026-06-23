@@ -65,31 +65,57 @@ function ensureObservabilityConfig(value, comboId) {
     throw new Error(`release matrix combo ${comboId} must define observability as an object`);
   }
 
+  const result = {};
+
   const aegis = value.aegis;
-  if (aegis == null) {
-    return {};
-  }
-  if (typeof aegis !== "object" || Array.isArray(aegis)) {
-    throw new Error(`release matrix combo ${comboId} must define observability.aegis as an object`);
-  }
+  if (aegis != null) {
+    if (typeof aegis !== "object" || Array.isArray(aegis)) {
+      throw new Error(`release matrix combo ${comboId} must define observability.aegis as an object`);
+    }
 
-  const enabled = ensureOptionalString(aegis.enabled, "observability.aegis.enabled", comboId);
-  if (enabled && !["true", "false", "auto"].includes(enabled)) {
-    throw new Error(`release matrix combo ${comboId} has unsupported observability.aegis.enabled ${enabled}`);
-  }
-  const id = ensureOptionalString(aegis.id, "observability.aegis.id", comboId);
-  const hostUrl = ensureOptionalString(aegis.hostUrl, "observability.aegis.hostUrl", comboId);
-  if (enabled === "true" && (!id || !hostUrl)) {
-    throw new Error(`release matrix combo ${comboId} must define observability.aegis.id and hostUrl when enabled=true`);
-  }
+    const enabled = ensureOptionalString(aegis.enabled, "observability.aegis.enabled", comboId);
+    if (enabled && !["true", "false", "auto"].includes(enabled)) {
+      throw new Error(`release matrix combo ${comboId} has unsupported observability.aegis.enabled ${enabled}`);
+    }
+    const id = ensureOptionalString(aegis.id, "observability.aegis.id", comboId);
+    const hostUrl = ensureOptionalString(aegis.hostUrl, "observability.aegis.hostUrl", comboId);
+    if (enabled === "true" && (!id || !hostUrl)) {
+      throw new Error(`release matrix combo ${comboId} must define observability.aegis.id and hostUrl when enabled=true`);
+    }
 
-  return {
-    aegis: {
+    result.aegis = {
       enabled: enabled ?? "auto",
       id,
       hostUrl,
-    },
-  };
+    };
+  }
+
+  const posthog = value.posthog;
+  if (posthog != null) {
+    if (typeof posthog !== "object" || Array.isArray(posthog)) {
+      throw new Error(`release matrix combo ${comboId} must define observability.posthog as an object`);
+    }
+
+    const enabled = ensureOptionalString(posthog.enabled, "observability.posthog.enabled", comboId);
+    if (enabled && !["true", "false"].includes(enabled)) {
+      throw new Error(`release matrix combo ${comboId} has unsupported observability.posthog.enabled ${enabled}`);
+    }
+    const projectToken = ensureOptionalString(posthog.projectToken, "observability.posthog.projectToken", comboId);
+    const host = ensureOptionalString(posthog.host, "observability.posthog.host", comboId);
+    const uiHost = ensureOptionalString(posthog.uiHost, "observability.posthog.uiHost", comboId);
+    if (enabled === "true" && (!projectToken || !host)) {
+      throw new Error(`release matrix combo ${comboId} must define observability.posthog.projectToken and host when enabled=true`);
+    }
+
+    result.posthog = {
+      enabled: enabled ?? "false",
+      projectToken,
+      host,
+      uiHost,
+    };
+  }
+
+  return result;
 }
 
 export function loadReleaseMatrix(matrixPath = process.env.FRONTEND_RELEASE_MATRIX_FILE?.trim() || DEFAULT_MATRIX_PATH) {
@@ -203,6 +229,42 @@ export function createComboEnvironment(combo, projectName, env = process.env) {
     nextEnv.VITE_AEGIS_ENABLED = "false";
     delete nextEnv.VITE_AEGIS_ID;
     delete nextEnv.VITE_AEGIS_HOST_URL;
+  }
+
+  const posthog = combo.observability?.posthog;
+  if (posthog) {
+    nextEnv.VITE_POSTHOG_ENABLED = posthog.enabled ?? "false";
+    nextEnv.NEXT_PUBLIC_POSTHOG_ENABLED = posthog.enabled ?? "false";
+    if (posthog.projectToken) {
+      nextEnv.VITE_POSTHOG_PROJECT_TOKEN = posthog.projectToken;
+      nextEnv.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN = posthog.projectToken;
+    } else {
+      delete nextEnv.VITE_POSTHOG_PROJECT_TOKEN;
+      delete nextEnv.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN;
+    }
+    if (posthog.host) {
+      nextEnv.VITE_POSTHOG_HOST = posthog.host;
+      nextEnv.NEXT_PUBLIC_POSTHOG_HOST = posthog.host;
+    } else {
+      delete nextEnv.VITE_POSTHOG_HOST;
+      delete nextEnv.NEXT_PUBLIC_POSTHOG_HOST;
+    }
+    if (posthog.uiHost) {
+      nextEnv.VITE_POSTHOG_UI_HOST = posthog.uiHost;
+      nextEnv.NEXT_PUBLIC_POSTHOG_UI_HOST = posthog.uiHost;
+    } else {
+      delete nextEnv.VITE_POSTHOG_UI_HOST;
+      delete nextEnv.NEXT_PUBLIC_POSTHOG_UI_HOST;
+    }
+  } else {
+    nextEnv.VITE_POSTHOG_ENABLED = "false";
+    nextEnv.NEXT_PUBLIC_POSTHOG_ENABLED = "false";
+    delete nextEnv.VITE_POSTHOG_PROJECT_TOKEN;
+    delete nextEnv.VITE_POSTHOG_HOST;
+    delete nextEnv.VITE_POSTHOG_UI_HOST;
+    delete nextEnv.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN;
+    delete nextEnv.NEXT_PUBLIC_POSTHOG_HOST;
+    delete nextEnv.NEXT_PUBLIC_POSTHOG_UI_HOST;
   }
 
   if (combo.channel === "cf") {
