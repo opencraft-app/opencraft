@@ -18,7 +18,7 @@ export type PublicSiteNavItem = {
 
 export const PUBLIC_SITE_NAV_ITEMS: readonly PublicSiteNavItem[] = [
   { section: "overview", href: "/", label: { "zh-CN": "概览", "zh-SG": "概览", "en-US": "Overview" } },
-  { section: "changelog", href: "/changelog", label: { "zh-CN": "更新日志", "zh-SG": "更新日志", "en-US": "Changelog" }, cnOnly: true },
+  { section: "changelog", href: "/changelog", label: { "zh-CN": "更新日志", "zh-SG": "更新日志", "en-US": "Changelog" } },
   { section: "docs", href: "/docs/overview", label: { "zh-CN": "产品文档", "zh-SG": "产品文档", "en-US": "Docs" } },
   { section: "about", href: "/about", label: { "zh-CN": "关于我们", "zh-SG": "关于我们", "en-US": "About" } },
 ] as const;

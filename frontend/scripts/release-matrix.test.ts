@@ -59,6 +59,9 @@ const globalCfObservedCombo = {
       id: "2ellOCK3ozed3owgOj",
       hostUrl: "https://rumt-sg.com",
     },
+    posthog: {
+      enabled: "false",
+    },
   },
 };
 
@@ -121,6 +124,9 @@ describe("release matrix helpers", () => {
     expect(comboEnv.VITE_AEGIS_ENABLED).toBe("true");
     expect(comboEnv.VITE_AEGIS_ID).toBe("2ellOCK3ozed3owgOj");
     expect(comboEnv.VITE_AEGIS_HOST_URL).toBe("https://rumt-sg.com");
+    expect(comboEnv.VITE_POSTHOG_ENABLED).toBe("false");
+    expect(comboEnv.VITE_POSTHOG_PROJECT_TOKEN).toBeUndefined();
+    expect(comboEnv.VITE_POSTHOG_HOST).toBeUndefined();
   });
 
   it("injects Aegis environment from combo observability config", () => {
@@ -185,6 +191,83 @@ describe("release matrix helpers", () => {
     expect(comboEnv.VITE_AEGIS_HOST_URL).toBeUndefined();
   });
 
+  it("injects global PostHog environment from explicit combo config", () => {
+    const comboEnv = createComboEnvironment({
+      ...globalCfCombo,
+      observability: {
+        posthog: {
+          enabled: "true",
+          projectToken: "ph_test",
+          host: "https://us.i.posthog.com",
+          uiHost: "https://us.posthog.com",
+        },
+      },
+    }, "lightvela-intl", {
+      CLOUDFLARE_API_TOKEN: "token",
+      CLOUDFLARE_ACCOUNT_ID: "account",
+      VITE_POSTHOG_PROJECT_TOKEN: "ambient-token",
+      VITE_POSTHOG_HOST: "https://ambient.example.com",
+    });
+
+    expect(comboEnv.VITE_POSTHOG_ENABLED).toBe("true");
+    expect(comboEnv.VITE_POSTHOG_PROJECT_TOKEN).toBe("ph_test");
+    expect(comboEnv.VITE_POSTHOG_HOST).toBe("https://us.i.posthog.com");
+    expect(comboEnv.VITE_POSTHOG_UI_HOST).toBe("https://us.posthog.com");
+    expect(comboEnv.NEXT_PUBLIC_POSTHOG_ENABLED).toBe("true");
+    expect(comboEnv.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN).toBe("ph_test");
+    expect(comboEnv.NEXT_PUBLIC_POSTHOG_HOST).toBe("https://us.i.posthog.com");
+    expect(comboEnv.NEXT_PUBLIC_POSTHOG_UI_HOST).toBe("https://us.posthog.com");
+  });
+
+  it("injects global PostHog project token from CI secret env", () => {
+    const comboEnv = createComboEnvironment({
+      ...globalCfCombo,
+      observability: {
+        posthog: {
+          enabled: "true",
+          host: "https://eu.i.posthog.com",
+          uiHost: "https://eu.posthog.com",
+        },
+      },
+    }, "lightvela-intl", {
+      CLOUDFLARE_API_TOKEN: "token",
+      CLOUDFLARE_ACCOUNT_ID: "account",
+      POSTHOG_PROJECT_TOKEN: "ph_ci_secret",
+    });
+
+    expect(comboEnv.VITE_POSTHOG_ENABLED).toBe("true");
+    expect(comboEnv.VITE_POSTHOG_PROJECT_TOKEN).toBe("ph_ci_secret");
+    expect(comboEnv.NEXT_PUBLIC_POSTHOG_ENABLED).toBe("true");
+    expect(comboEnv.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN).toBe("ph_ci_secret");
+    expect(comboEnv.NEXT_PUBLIC_POSTHOG_HOST).toBe("https://eu.i.posthog.com");
+  });
+
+  it("does not leak ambient PostHog values when combo omits them", () => {
+    const comboEnv = createComboEnvironment({
+      ...globalCfCombo,
+      observability: {
+        aegis: {
+          enabled: "auto",
+        },
+      },
+    }, "lightvela-intl", {
+      CLOUDFLARE_API_TOKEN: "token",
+      CLOUDFLARE_ACCOUNT_ID: "account",
+      VITE_POSTHOG_PROJECT_TOKEN: "ambient-token",
+      VITE_POSTHOG_HOST: "https://ambient.example.com",
+      VITE_POSTHOG_UI_HOST: "https://ambient-ui.example.com",
+    });
+
+    expect(comboEnv.VITE_POSTHOG_ENABLED).toBe("false");
+    expect(comboEnv.VITE_POSTHOG_PROJECT_TOKEN).toBeUndefined();
+    expect(comboEnv.VITE_POSTHOG_HOST).toBeUndefined();
+    expect(comboEnv.VITE_POSTHOG_UI_HOST).toBeUndefined();
+    expect(comboEnv.NEXT_PUBLIC_POSTHOG_ENABLED).toBe("false");
+    expect(comboEnv.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN).toBeUndefined();
+    expect(comboEnv.NEXT_PUBLIC_POSTHOG_HOST).toBeUndefined();
+    expect(comboEnv.NEXT_PUBLIC_POSTHOG_UI_HOST).toBeUndefined();
+  });
+
   it("rejects enabled Aegis config without id or hostUrl", () => {
     const dir = mkdtempSync(join(tmpdir(), "release-matrix-"));
     const matrixPath = join(dir, "release-matrix.json");
@@ -202,6 +285,27 @@ describe("release matrix helpers", () => {
       }));
 
       expect(() => loadReleaseMatrix(matrixPath)).toThrow("must define observability.aegis.id and hostUrl when enabled=true");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects enabled PostHog config without host", () => {
+    const dir = mkdtempSync(join(tmpdir(), "release-matrix-"));
+    const matrixPath = join(dir, "release-matrix.json");
+    try {
+      writeFileSync(matrixPath, JSON.stringify({
+        combos: [{
+          ...globalCfCombo,
+          observability: {
+            posthog: {
+              enabled: "true",
+            },
+          },
+        }],
+      }));
+
+      expect(() => loadReleaseMatrix(matrixPath)).toThrow("must define observability.posthog.host when enabled=true");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -317,6 +421,9 @@ describe("release matrix helpers", () => {
           id: "2ellOCK3ozed3owgOj",
           hostUrl: "https://rumt-sg.com",
         },
+        posthog: {
+          enabled: "false",
+        },
       },
     });
   });
@@ -366,6 +473,12 @@ describe("release matrix helpers", () => {
           id: "2ellOCK3ozed3owgOj",
           hostUrl: "https://rumt-sg.com",
         },
+        posthog: {
+          enabled: "true",
+          projectToken: undefined,
+          host: "https://eu.i.posthog.com",
+          uiHost: "https://eu.posthog.com",
+        },
       },
       deployEnv: {
         EDGEONE_PAGES_AREA: "global",
@@ -373,6 +486,7 @@ describe("release matrix helpers", () => {
       },
     });
     expect(combo?.requiredSecretEnv).toContain("EDGEONE_API_TOKEN");
+    expect(combo?.requiredSecretEnv).toContain("POSTHOG_PROJECT_TOKEN");
   });
 
   it("keeps release execution unchanged when artifact mode is unset", () => {

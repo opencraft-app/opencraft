@@ -8,17 +8,14 @@ export type PublicRouteLocale = {
   localized: boolean;
 };
 
+export const EN_US_LOCALE: PublicSiteLocale = 'en-US';
+export const ZH_CN_LOCALE: PublicSiteLocale = 'zh-CN';
 export const DEFAULT_PUBLIC_URL_LANG: PublicUrlLang = isGlobal ? 'en-us' : 'zh-cn';
-export const DEFAULT_PUBLIC_SITE_LOCALE: PublicSiteLocale = isGlobal ? 'en-US' : 'zh-CN';
+export const DEFAULT_PUBLIC_SITE_LOCALE: PublicSiteLocale = isGlobal ? EN_US_LOCALE : ZH_CN_LOCALE;
 export const DEFAULT_PUBLIC_DOCS_LOCALE: PublicUrlLang = DEFAULT_PUBLIC_URL_LANG;
 
 export const DEFAULT_PUBLIC_ROUTE_LOCALE: PublicRouteLocale = {
   locale: DEFAULT_PUBLIC_SITE_LOCALE,
-  localized: false,
-};
-
-export const CHANGELOG_ROUTE_LOCALE: PublicRouteLocale = {
-  locale: 'zh-CN',
   localized: false,
 };
 

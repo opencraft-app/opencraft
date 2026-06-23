@@ -7,6 +7,7 @@ import { RepositoryProvider } from '@/contexts/repository-context';
 import { RuntimeConfigProvider } from '@/contexts/runtime-config-context';
 import { SessionProvider } from '@/contexts/session-context';
 import i18n from '@/i18n';
+import { ProductAnalyticsBridge } from '@/observability/product-analytics-bridge';
 
 import type { PublicRouteLocale } from './public-locale';
 
@@ -31,6 +32,7 @@ export function PublicSiteAppProviders({ children }: { children: ReactNode }) {
     <RepositoryProvider>
       <RuntimeConfigProvider>
         <SessionProvider>
+          <ProductAnalyticsBridge />
           <OpenClawProvider>{children}</OpenClawProvider>
         </SessionProvider>
       </RuntimeConfigProvider>

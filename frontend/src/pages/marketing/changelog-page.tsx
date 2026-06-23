@@ -6,6 +6,7 @@
 
 import { motion } from "framer-motion";
 import { type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 import { LegalFooter } from "@/components/site/legal-footer";
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
@@ -43,13 +44,15 @@ const viewportConfig = { once: true, margin: "-40px" as const };
    ═══════════════════════════════════════════════════════════════ */
 
 type ChangelogEntry = {
+  id: string;
   title: string;
   desc?: string;
-  /** 卡片视觉样式：lobster=上线图 / cloudStorage=云存储图 / achievements=成就图 / wecom=企业微信图 / soul=人设能力图 / schedule=自动任务图 / chat=网页对话图 / memory=记忆页图 / none=无图 */
+  /** 卡片视觉样式：lobster=上线图 / cloudStorage=云存储图 / achievements=成就图 / schedule=自动任务图 / chat=网页对话图 / memory=记忆页图 / none=无图 */
   visual: "lobster" | "cloudStorage" | "achievements" | "wecom" | "soul" | "schedule" | "chat" | "memory" | "none";
 };
 
 type ChangelogMonthGroup = {
+  id: string;
   month: string;
   entries: ChangelogEntry[];
 };
@@ -60,25 +63,35 @@ type ChangelogMonthGroup = {
 
 function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "achievements" | "wecom" | "soul" | "schedule" | "chat" | "memory" }) {
   const t = useT();
-  /* 国际站（lightvela.com）始终使用英文版截图（含 Telegram/WhatsApp/Discord/Slack 图标），
-     即使用户切换为中文，该配图仍保留英文版——避免同一站点出现国内渠道图标的信息错位；
-     国内站则始终使用中文版（含 QQ/微信/飞书图标）。 */
+  const { i18n } = useTranslation();
+  const useGlobalAssets = isGlobal || !i18n.language.startsWith("zh");
+  /* 国际站中英文 changelog 均使用国际版截图；国内站继续使用中文截图。 */
   const imgPath =
     variant === "cloudStorage"
-      ? "/assets/changelog/lightvela-cloud-storage.webp"
+      ? useGlobalAssets
+        ? "/assets/changelog/lightvela-cloud-storage-en.png"
+        : "/assets/changelog/lightvela-cloud-storage.webp"
       : variant === "achievements"
-      ? "/assets/changelog/lightvela-achievements.webp"
+      ? useGlobalAssets
+        ? "/assets/changelog/lightvela-achievements-en.png"
+        : "/assets/changelog/lightvela-achievements.webp"
       : variant === "wecom"
       ? "/assets/changelog/lightvela-wecom-channel.webp"
       : variant === "chat"
-      ? "/assets/changelog/agentchat-web-chat.webp"
+      ? useGlobalAssets
+        ? "/assets/changelog/agentchat-web-chat-en.png"
+        : "/assets/changelog/agentchat-web-chat.webp"
       : variant === "memory"
-      ? "/assets/changelog/hermes-memory.webp"
+      ? useGlobalAssets
+        ? "/assets/changelog/hermes-memory-en.png"
+        : "/assets/changelog/hermes-memory.webp"
       : variant === "schedule"
-      ? "/assets/changelog/scheduled-tasks.webp"
+      ? useGlobalAssets
+        ? "/assets/changelog/scheduled-tasks-en.png"
+        : "/assets/changelog/scheduled-tasks.webp"
       : variant === "soul"
       ? "/assets/changelog/soul-persona.webp"
-      : isGlobal
+      : useGlobalAssets
         ? "/assets/changelog/lightvela-launch-en.webp"
         : "/assets/changelog/lightvela-launch.webp";
   const altText =
@@ -99,21 +112,21 @@ function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "achiev
         : t("LightVela内测上线");
   const aspectRatio =
     variant === "cloudStorage"
-      ? "2140 / 1532"
+      ? useGlobalAssets ? "1280 / 935" : "2140 / 1532"
       : variant === "achievements"
-      ? "2140 / 1198"
+      ? useGlobalAssets ? "1275 / 663" : "2140 / 1198"
       : variant === "wecom"
       ? "2160 / 844"
       : variant === "chat"
-      ? "1742 / 903"
+      ? useGlobalAssets ? "1677 / 938" : "1742 / 903"
       : variant === "memory"
-      ? "2326 / 1322"
+      ? useGlobalAssets ? "1637 / 961" : "2326 / 1322"
       : variant === "schedule"
-        ? "1952 / 806"
+        ? useGlobalAssets ? "1784 / 882" : "1952 / 806"
         : variant === "soul"
           ? "2044 / 748"
           : "710 / 360";
-  /* LightVela 正式上线卡片 — 直接使用 Figma 导出的合成图 */
+  /* LightVela 正式上线卡片 — 直接使用设计稿/截图资产 */
   return (
     <div
       className="relative overflow-hidden rounded-2xl"
@@ -141,69 +154,80 @@ function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "achiev
 function ChangelogContent() {
   const t = useT();
   /* 数据驱动；每条文案直接通过翻译函数调用字面量，以便被 i18n-extract 扫描。
-     国际站与国内站的「接入通道」差异通过两条独立字面量承载——
-       · 国际站：Telegram / WhatsApp / Discord / Slack（中英文均展示国际渠道）
-       · 国内站：QQ / 微信 / 飞书（中文展示国内渠道）
-     isGlobal 是 Vite 编译期常量，未命中的分支会被 tree-shake 掉，
-     不会污染另一侧站点的 bundle。 */
+     国内站与国际站的渠道事实不同，使用 isGlobal 编译期分支分别维护。 */
   const launchDesc = isGlobal
-    ? t("支持一键创建云端 Hermes，支持接入 WeChat、Telegram、WhatsApp、Discord 通道")
+    ? t("支持一键创建云端 Hermes，支持快速接入Telegram、WhatsApp、Discord 等通道，支持主流模型 API 接入，支持一键安装 Skill 技能。")
     : t("支持一键创建云端 Hermes，支持快速接入 QQ、微信、飞书通道，支持主流模型 API 接入，支持一键安装 Skill 技能。");
-
-  const mayChangelogGroup: ChangelogMonthGroup | null = isGlobal
-    ? null
-    : {
-        month: t("2026 年 5 月"),
-        entries: [
-          {
-            title: t("LightVela 支持网页内对话"),
-            desc: t("无需切换到外部通道，现在可以在 LightVela 网页内基于 AgentChat 直接与 Hermes Agent 对话。"),
-            visual: "chat",
-          },
-          {
-            title: t("LightVela支持查看Hermes Agent记忆"),
-            desc: t("在控制台查看 Hermes Agent 的记忆、用户画像和字符占用，帮助你了解 Agent 当前掌握的上下文。"),
-            visual: "memory",
-          },
-          {
-            title: t("LightVela 支持设置自动任务"),
-            desc: t("为 Agent 设置周期、间隔或单次自动任务，让它按计划执行提醒、总结、通知等日常工作。"),
-            visual: "schedule",
-          },
-          {
-            title: t("Soul 人设能力上线"),
-            desc: t("为 Hermes Agent 抽取并保存专属 Soul 人设，一键注入后通过 /new 开启带有新人设的新会话。"),
-            visual: "soul",
-          },
-        ],
-      };
 
   const changelogGroups: ChangelogMonthGroup[] = [
     {
+      id: "2026-06",
       month: t("2026 年 6 月"),
       entries: [
         {
+          id: "cloud-storage",
           title: t("LightVela 支持云存储"),
           desc: t("现在可以在 LightVela 中查看和管理 Hermes Agent 的云存储文件，上传、下载、整理工作资料更方便。"),
           visual: "cloudStorage",
         },
         {
+          id: "achievements",
           title: t("LightVela 支持成就模块"),
           desc: t("不断深入使用 Hermes Agent，将会解锁更多新鲜成就，记录你的探索进度。"),
           visual: "achievements",
         },
-        {
-          title: t("LightVela 支持企业微信通道"),
-          desc: t("现在可以将 Hermes Agent 接入企业微信，在企业微信会话中直接与云端智能伙伴对话。"),
-          visual: "wecom",
-        },
+        ...(!isGlobal
+          ? [
+              {
+                id: "wecom",
+                title: t("LightVela 支持企业微信通道"),
+                desc: t("现在可以将 Hermes Agent 接入企业微信，在企业微信会话中直接与云端智能伙伴对话。"),
+                visual: "wecom" as const,
+              },
+            ]
+          : []),
       ],
     },
-    ...(mayChangelogGroup ? [mayChangelogGroup] : []),
     {
+      id: "2026-05",
+      month: t("2026 年 5 月"),
+      entries: [
+        {
+          id: "web-chat",
+          title: t("LightVela 支持网页内对话"),
+          desc: t("无需切换到外部通道，现在可以在 LightVela 网页内基于 AgentChat 直接与 Hermes Agent 对话。"),
+          visual: "chat",
+        },
+        {
+          id: "memory",
+          title: t("LightVela支持查看Hermes Agent记忆"),
+          desc: t("在控制台查看 Hermes Agent 的记忆、用户画像和字符占用，帮助你了解 Agent 当前掌握的上下文。"),
+          visual: "memory",
+        },
+        {
+          id: "scheduled-tasks",
+          title: t("LightVela 支持设置自动任务"),
+          desc: t("为 Agent 设置周期、间隔或单次自动任务，让它按计划执行提醒、总结、通知等日常工作。"),
+          visual: "schedule",
+        },
+        ...(!isGlobal
+          ? [
+              {
+                id: "soul",
+                title: t("Soul 人设能力上线"),
+                desc: t("为 Hermes Agent 抽取并保存专属 Soul 人设，一键注入后通过 /new 开启带有新人设的新会话。"),
+                visual: "soul" as const,
+              },
+            ]
+          : []),
+      ],
+    },
+    {
+      id: "2026-04",
       month: t("2026 年 4 月"),
       entries: [
         {
+          id: "beta-launch",
           title: t("LightVela内测上线"),
           desc: launchDesc,
           visual: "lobster",
@@ -265,7 +289,7 @@ function ChangelogContent() {
 
             return (
               <motion.section
-                key={group.month}
+                key={group.id}
                 variants={fadeInUp}
                 className="grid grid-cols-1 gap-6 md:grid-cols-[140px_1fr] md:gap-16"
               >
@@ -288,7 +312,7 @@ function ChangelogContent() {
                 <div>
                   {group.entries.map((entry, index) => (
                     <article
-                      key={`${group.month}-${entry.title}`}
+                      key={entry.id}
                       className={showTimeline ? "grid grid-cols-[28px_1fr] gap-4 pb-16 last:pb-0" : ""}
                     >
                       {showTimeline && (

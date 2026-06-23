@@ -17,6 +17,7 @@ import {
 } from "@/lib/oauth";
 import { assetUrl } from "@/lib/asset-url";
 import { isGlobal } from "@/lib/region";
+import { captureProductEvent, PRODUCT_ANALYTICS_EVENTS, PRODUCT_ANALYTICS_LOCATIONS } from "@/observability/posthog";
 
 const qqLogo = assetUrl("/login/qq-logo.png");
 const wechatLogo = assetUrl("/login/wechat-logo.png");
@@ -166,6 +167,11 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
     setError(initialError);
   }, [initialError, open]);
 
+  useEffect(() => {
+    if (!open) return;
+    captureProductEvent(PRODUCT_ANALYTICS_EVENTS.LOGIN_MODAL_OPENED, { source: PRODUCT_ANALYTICS_LOCATIONS.LOGIN_MODAL });
+  }, [open]);
+
   const checkAgreed = () => {
     if (!agreed) {
       setShowAgreeHint(true);
@@ -195,6 +201,7 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
     const loginUrl = getOAuthStartUrlForProvider(provider);
     if (!loginUrl) return;
     setError(null);
+    captureProductEvent(PRODUCT_ANALYTICS_EVENTS.OAUTH_PROVIDER_CLICKED, { provider });
     redirectToOAuthStart(loginUrl);
   };
 

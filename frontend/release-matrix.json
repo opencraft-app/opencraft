@@ -39,6 +39,9 @@
           "enabled": "true",
           "id": "2ellOCK3ozed3owgOj",
           "hostUrl": "https://rumt-sg.com"
+        },
+        "posthog": {
+          "enabled": "false"
         }
       }
     },
@@ -75,7 +78,8 @@
       "deployCommand": "deploy:eo",
       "projectName": "lightvela-intl",
       "requiredSecretEnv": [
-        "EDGEONE_API_TOKEN"
+        "EDGEONE_API_TOKEN",
+        "POSTHOG_PROJECT_TOKEN"
       ],
       "authApiBaseUrl": "https://api.lightvela.ai",
       "outputDir": "out",
@@ -84,6 +88,11 @@
           "enabled": "true",
           "id": "2ellOCK3ozed3owgOj",
           "hostUrl": "https://rumt-sg.com"
+        },
+        "posthog": {
+          "enabled": "true",
+          "host": "https://eu.i.posthog.com",
+          "uiHost": "https://eu.posthog.com"
         }
       },
       "deployEnv": {

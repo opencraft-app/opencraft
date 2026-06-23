@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { isGlobal } from "@/lib/region";
-
-const COOKIE_CONSENT_STORAGE_KEY = "lightvela-cookie-consent-v1";
-
-type CookieConsentValue = "accepted" | "necessary";
+import {
+  readStoredCookieConsent,
+  storeCookieConsent,
+  type CookieConsentValue,
+} from "@/lib/cookie-consent";
 
 const copy = {
   "en-US": {
@@ -26,31 +27,13 @@ const copy = {
   },
 };
 
-const readStoredConsent = (): CookieConsentValue | null => {
-  if (typeof window === "undefined") return null;
-  try {
-    const value = window.localStorage.getItem(COOKIE_CONSENT_STORAGE_KEY);
-    return value === "accepted" || value === "necessary" ? value : null;
-  } catch {
-    return null;
-  }
-};
-
-const storeConsent = (value: CookieConsentValue): void => {
-  try {
-    window.localStorage.setItem(COOKIE_CONSENT_STORAGE_KEY, value);
-  } catch {
-    /* localStorage may be unavailable in private mode; ignore and hide banner for this session. */
-  }
-};
-
 export const CookieConsentBanner = () => {
   const { i18n } = useTranslation();
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
     if (!isGlobal) return;
-    setVisible(readStoredConsent() === null);
+    setVisible(readStoredCookieConsent() === null);
   }, []);
 
   if (!isGlobal || !visible) return null;
@@ -58,7 +41,7 @@ export const CookieConsentBanner = () => {
   const locale = i18n.language === "zh-CN" ? "zh-CN" : "en-US";
   const text = copy[locale];
   const handleChoice = (value: CookieConsentValue) => {
-    storeConsent(value);
+    storeCookieConsent(value);
     setVisible(false);
   };
 

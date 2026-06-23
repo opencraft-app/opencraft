@@ -28,6 +28,7 @@ describe("PublicSiteHeader", () => {
 
     expect(screen.getByRole("link", { name: "LightVela" })).toHaveAttribute("href", "/");
     expect(screen.getByRole("link", { name: "概览" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "更新日志" })).toHaveAttribute("href", "/changelog");
     expect(screen.getByRole("link", { name: "产品文档" })).toHaveAttribute("href", "/docs/overview");
     expect(screen.getByRole("link", { name: "关于我们" })).toHaveAttribute("href", "/about");
 

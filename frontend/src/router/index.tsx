@@ -64,14 +64,10 @@ const seoSiteRouteChildren = [
     index: true,
     element: lazyRoute(LandingPage),
   },
-  ...(!isGlobal
-    ? [
-        {
-          path: "changelog",
-          element: lazyRoute(ChangelogPage, { chrome: "site" }),
-        },
-      ]
-    : []),
+  {
+    path: "changelog",
+    element: lazyRoute(ChangelogPage, { chrome: "site" }),
+  },
   {
     path: "about",
     element: lazyRoute(AboutPage, { chrome: "site" }),

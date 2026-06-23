@@ -84,6 +84,11 @@ describe("seo meta — global multi-URL language prefix", () => {
     expect(getFullSeoMeta("/zh-sg/docs/overview", "global").ogLocale).toBe("zh_SG");
   });
 
+  it("/en/changelog and /zh/changelog return localized changelog titles", () => {
+    expect(getSeoMeta("/en/changelog", "global").title).toBe(`Changelog | ${globalSuffix}`);
+    expect(getSeoMeta("/zh/changelog", "global").title).toBe(`更新日志 | ${cnSuffix}`);
+  });
+
   it("getFullSeoMeta htmlLang follows URL prefix", () => {
     expect(getFullSeoMeta("/en-us/about", "global").htmlLang).toBe("en-US");
     expect(getFullSeoMeta("/zh-cn/about", "global").htmlLang).toBe("zh-CN");

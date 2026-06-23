@@ -590,7 +590,7 @@
   "搭子状态加载失败，抽卡和注入暂不可用，但仍可先做人格测试": "k_ec793721",
   "搭子状态未加载成功，暂时无法保存推荐人设，请先重试加载状态": "k_1ce0f055",
   "支持一键创建云端 Hermes，支持快速接入 QQ、微信、飞书通道，支持主流模型 API 接入，支持一键安装 Skill 技能。": "k_84c0dce5",
-  "支持一键创建云端 Hermes，支持接入 WeChat、Telegram、WhatsApp、Discord 通道": "k_23e3afc2",
+  "支持一键创建云端 Hermes，支持快速接入Telegram、WhatsApp、Discord 等通道，支持主流模型 API 接入，支持一键安装 Skill 技能。": "k_cc9f0dae",
   "支持通过默认的 home 对话或指定 Chat ID 发送通知": "k_cfe381df",
   "收起 Soul 详情": "k_7f2e03b2",
   "数据 100% 归属": "k_544307b7",

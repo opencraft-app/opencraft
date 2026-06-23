@@ -174,6 +174,8 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
   cn: {
     "/about":
       "LightVela 由腾讯轻量云团队打造，源于对「AI 该长成什么样」的反复思考——我们相信 AI 不应只是冷冰冰的工具，而应是认识你、记得你、越聊越懂你的长期伙伴。",
+    "/changelog":
+      "记录 LightVela 的产品更新、能力上线与体验改进，了解云存储、成就模块、网页对话、记忆查看与自动任务等最新迭代。",
 
     // 文档首页与综述页
     "/docs":
@@ -204,6 +206,8 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
   global: {
     "/about":
       "Built by the Tencent Lighthouse team, LightVela was born from a question: what should AI become? We believe AI should not be just a cold tool, but a long-term presence that knows you, remembers you, and grows with you.",
+    "/changelog":
+      "Track LightVela product updates, new capabilities, and experience improvements, including cloud storage, achievements, web chat, memory views, and automations.",
 
     // Docs index & overview
     "/docs":
