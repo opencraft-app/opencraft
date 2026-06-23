@@ -56,7 +56,11 @@ describe("build release artifacts", () => {
         "node-bin scripts/sync-fumadocs-content.mjs",
         "pnpm-bin exec fumadocs-mdx",
         "pnpm-bin exec next build --webpack",
+        "node-bin scripts/version-next-static-assets.mjs",
         "node-bin scripts/fix-next-static-html-lang.mjs",
+        "node-bin scripts/format-next-static-html.mjs",
+        "node-bin scripts/check-next-seo.mjs",
+        "node-bin scripts/check-versioned-next-static-assets.mjs",
       ]);
       expect(existsSync(join(outputDir, "index.html"))).toBe(true);
       expect(existsSync(join(outputDir, "api", "search"))).toBe(true);
