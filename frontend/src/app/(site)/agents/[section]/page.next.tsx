@@ -18,6 +18,7 @@ export function generateStaticParams(): Array<{ section: string }> {
 
 export default async function AgentsSectionPage({ params }: { params: Promise<{ section: string }> }) {
   const { section } = await params;
-  if (!AGENT_SECTION_ID_BY_SLUG[section]) notFound();
-  return <AgentsPageClient sectionSlug={section} />;
+  const sectionId = AGENT_SECTION_ID_BY_SLUG[section];
+  if (!sectionId) notFound();
+  return <AgentsPageClient sectionId={sectionId} />;
 }

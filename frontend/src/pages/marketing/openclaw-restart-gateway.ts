@@ -3,7 +3,7 @@ import { isExecCommandSucceeded } from "@/pages/marketing/openclaw-reset-config"
 /**
  * 重启 Gateway 相关的纯逻辑函数。
  *
- * 从 openclaw-settings-page.tsx 中提取，方便单元测试覆盖
+ * 从 agent-settings-page.tsx 中提取，方便单元测试覆盖
  * 前置条件、错误归属、多 bot 并行等行为。
  */
 

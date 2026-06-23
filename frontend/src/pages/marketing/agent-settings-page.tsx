@@ -35,26 +35,21 @@ import {
 import { QRCodeSVG } from "qrcode.react";
 import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo, type ChangeEvent, type ComponentType } from "react";
 import { createPortal } from "react-dom";
-import { FitAddon } from "@xterm/addon-fit";
-import { Terminal } from "@xterm/xterm";
-import "@xterm/xterm/css/xterm.css";
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
 import { ProductFooter, ProductReturnHomeHeader } from "@/components/site/product-chrome";
 import { useOpenClaw, type OpenClawBot } from "@/contexts/openclaw-context";
 import { useRepositories } from "@/contexts/repository-context";
-import type { TencentPtyClient, TencentPtyConnectionState } from "@/lib/tencent-pty-client";
 import { useT, t as rawT } from "@/i18n/t";
 import { isGlobal } from "@/lib/region";
 import { useSession } from "@/contexts/session-context";
 import { avatarImageUrl } from "@/lib/avatar-image";
-import { useAppLocation, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
+import { AppLink, useAppLocation, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
 import { AUTH_SERVICE_UNAVAILABLE_MESSAGE, readStoredAuthToken } from "@/repositories/http-repositories";
 import {
   AGENTS_HOME_PATH,
   AGENT_SECTION_PATH_BY_ID,
-  getAgentSectionFromSlug,
   type AgentSectionId,
 } from "@/router/paths";
 import type { WorkerActionStatusResult } from "@/repositories/types";
@@ -80,9 +75,6 @@ import {
 import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
 import { AchievementsPanel } from "@/pages/marketing/openclaw-achievements-panel";
 import { AutomationsPanel } from "@/pages/marketing/openclaw-automations-panel";
-import { TatFileManagerPanel } from "@/components/domain/tat-file-manager-panel";
-import { TatHermesWebPanel } from "@/components/domain/tat-hermes-web-panel";
-import { AgentDiagnosticsPanel } from "@/pages/marketing/openclaw-agent-diagnostics-panel";
 import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
 import {
   getRestartBlockReason,
@@ -106,9 +98,20 @@ import {
 } from "@/pages/marketing/openclaw-reset-config";
 import { toast } from "@/lib/toast";
 
-// AgentChat carries side-effect CSS. Keep it out of the agents shell until the chat tab is actually rendered.
-const LightVelaPanel = lazy(() =>
-  import("@tencent/agentchat-lightvela-panel").then((module) => ({ default: module.LightVelaPanel })),
+const AgentChatPanel = lazy(() =>
+  import("@/pages/marketing/agent-chat-panel").then((module) => ({ default: module.AgentChatPanel })),
+);
+const AgentDiagnosticsPanel = lazy(() =>
+  import("@/pages/marketing/agent-diagnostics-panel").then((module) => ({ default: module.AgentDiagnosticsPanel })),
+);
+const TatFileManagerPanel = lazy(() =>
+  import("@/components/domain/tat-file-manager-panel").then((module) => ({ default: module.TatFileManagerPanel })),
+);
+const TatHermesWebPanel = lazy(() =>
+  import("@/components/domain/tat-hermes-web-panel").then((module) => ({ default: module.TatHermesWebPanel })),
+);
+const TerminalPanel = lazy(() =>
+  import("@/pages/marketing/agent-terminal-panel").then((module) => ({ default: module.TerminalPanel })),
 );
 
 type TeaSdkInstanceInfo = {
@@ -498,12 +501,6 @@ void _staggerContainer;
 
 const SHOW_AGENTCHAT_ENTRY = true;
 const DEFAULT_AGENT_SECTION: AgentSectionId = "channel";
-
-const isAgentSectionAvailable = (section: AgentSectionId | null): section is AgentSectionId => {
-  if (!section) return false;
-  if (isGlobal && section === "buddy") return false;
-  return true;
-};
 
 /* ─── Section Card Wrapper ─── */
 
@@ -1639,238 +1636,6 @@ const SkillSection = () => {
 };
 
 void SkillSection;
-
-/* ─── Terminal Utilities ─── */
-
-type ConnectionState = "loading" | "bootstrapping" | "authenticating" | "connected" | "closed" | "error";
-
-const mapPtyState = (state: TencentPtyConnectionState): ConnectionState => {
-  switch (state) {
-    case "idle":
-    case "connecting":
-      return "bootstrapping";
-    case "authenticating":
-    case "starting":
-      return "authenticating";
-    case "ready":
-      return "connected";
-    case "closed":
-      return "closed";
-    case "error":
-      return "error";
-  }
-};
-
-/* ─── Terminal Panel ─── */
-
-const TerminalPanel = ({ botId, botName }: { botId: string; botName: string }) => {
-  const t = useT();
-  const repositories = useRepositories();
-  const terminalContainerRef = useRef<HTMLDivElement | null>(null);
-  const terminalRef = useRef<Terminal | null>(null);
-  const fitAddonRef = useRef<FitAddon | null>(null);
-  const ptyClientRef = useRef<TencentPtyClient | null>(null);
-
-  const [connectionState, setConnectionState] = useState<ConnectionState>("loading");
-  const [error, setError] = useState<string | null>(null);
-
-  /* Initialize xterm */
-  useEffect(() => {
-    if (!terminalContainerRef.current || terminalRef.current) {
-      return;
-    }
-
-    const terminal = new Terminal({
-      cursorBlink: true,
-      scrollback: 5000,
-      fontSize: 14,
-      letterSpacing: 0,
-      lineHeight: 1.2,
-      allowProposedApi: true,
-      theme: {
-        background: "#16110d",
-        foreground: "#f8e6d8",
-        cursor: "#ffd7a8",
-        black: "#221914",
-        red: "#ff7f50",
-        green: "#9ad76d",
-        yellow: "#f2cd65",
-        blue: "#72b6ff",
-        magenta: "#f6a5c0",
-        cyan: "#7be0d4",
-        white: "#f8e6d8",
-        brightBlack: "#786454",
-        brightRed: "#ff9770",
-        brightGreen: "#b7ef83",
-        brightYellow: "#ffe288",
-        brightBlue: "#8ac5ff",
-        brightMagenta: "#ffc0d5",
-        brightCyan: "#8ef0e0",
-        brightWhite: "#fff4ea",
-      },
-    });
-    const fitAddon = new FitAddon();
-    terminal.loadAddon(fitAddon);
-    terminal.open(terminalContainerRef.current);
-    /* 延迟 fit，确保字体已加载并渲染完毕，避免字符间距异常 */
-    requestAnimationFrame(() => {
-      fitAddon.fit();
-    });
-    terminal.onData((data) => {
-      ptyClientRef.current?.sendInput(data);
-    });
-
-    const handleResize = () => {
-      fitAddon.fit();
-      ptyClientRef.current?.resize(terminal.cols, terminal.rows);
-    };
-
-    window.addEventListener("resize", handleResize);
-    terminalRef.current = terminal;
-    fitAddonRef.current = fitAddon;
-
-    return () => {
-      window.removeEventListener("resize", handleResize);
-      terminal.dispose();
-      terminalRef.current = null;
-      fitAddonRef.current = null;
-    };
-  }, []);
-
-  /* Connect to TAT WebSocket */
-  useEffect(() => {
-    let cancelled = false;
-
-    const closeSocket = () => {
-      ptyClientRef.current?.close();
-      ptyClientRef.current = null;
-    };
-
-    const connect = async () => {
-      try {
-        setConnectionState("bootstrapping");
-        setError(null);
-        const bootstrap = await repositories.bots.getTerminalSession(botId);
-        if (cancelled) {
-          return;
-        }
-
-        terminalRef.current?.reset();
-        fitAddonRef.current?.fit();
-
-        const { TencentPtyClient } = await import("@/lib/tencent-pty-client");
-        if (cancelled) {
-          return;
-        }
-        const ptyClient = new TencentPtyClient(bootstrap, {
-          getDimensions: () => ({
-            cols: terminalRef.current?.cols ?? bootstrap.cols,
-            rows: terminalRef.current?.rows ?? bootstrap.rows,
-          }),
-          onStateChange: (state) => {
-            if (!cancelled) {
-              setConnectionState(mapPtyState(state));
-            }
-          },
-          onReady: () => {
-            terminalRef.current?.focus();
-          },
-          onOutput: (output) => {
-            terminalRef.current?.write(output);
-          },
-          onError: (message) => {
-            if (!cancelled) {
-              setError(message);
-              terminalRef.current?.writeln(`\r\n[error] ${message}`);
-            }
-          },
-          onDecodeError: (decodeError) => {
-            terminalRef.current?.writeln(`\r\n[decode-error] ${String(decodeError)}`);
-          },
-          onClose: (event) => {
-            if (!cancelled) {
-              terminalRef.current?.writeln(`\r\n[closed] code=${event.code}`);
-            }
-          },
-        });
-        ptyClientRef.current = ptyClient;
-        ptyClient.connect();
-      } catch (connectError) {
-        if (cancelled) {
-          return;
-        }
-        setConnectionState("error");
-        setError(connectError instanceof Error ? connectError.message : t("终端连接失败"));
-      }
-    };
-
-    void connect();
-
-    return () => {
-      cancelled = true;
-      closeSocket();
-    };
-  }, [botId, botName, repositories.bots]);
-
-  const stateLabel: Record<ConnectionState, string> = {
-    loading: t("初始化..."),
-    bootstrapping: t("获取会话..."),
-    authenticating: t("认证中..."),
-    connected: t("已连接"),
-    closed: t("已断开"),
-    error: t("连接失败"),
-  };
-
-  const stateColor: Record<ConnectionState, string> = {
-    loading: "#999",
-    bootstrapping: "#C67B1E",
-    authenticating: "#C67B1E",
-    connected: "#147A56",
-    closed: "#999",
-    error: "#cf3d4c",
-  };
-
-  return (
-    <div
-      className="flex min-h-[clamp(520px,calc(100vh-220px),860px)] w-full flex-col overflow-hidden rounded-lg border shadow-[0_8px_28px_rgba(15,23,42,0.06)]"
-      style={{ background: "#0f0b09", borderColor: "rgba(255,255,255,0.1)" }}
-    >
-      {/* Header */}
-      <div
-        className="flex items-center justify-between border-b px-5 py-3"
-        style={{ borderColor: "rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)" }}
-      >
-        <div className="flex items-center gap-3">
-          <TerminalSquare className="h-4 w-4" style={{ color: "#f8e6d8" }} />
-          <span className="text-sm font-semibold" style={{ color: "#f8e6d8" }}>
-            {botName}
-          </span>
-          <span
-            className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-bold"
-            style={{ background: `${stateColor[connectionState]}18`, color: stateColor[connectionState] }}
-          >
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: stateColor[connectionState] }} />
-            {stateLabel[connectionState]}
-          </span>
-        </div>
-      </div>
-
-      {/* Terminal */}
-      <div className="flex-1 overflow-hidden p-3">
-        {error && connectionState === "error" && (
-          <p className="mb-2 rounded-full px-3 py-1.5 text-xs font-medium" style={{ background: "rgba(207,61,76,0.15)", color: "#ff7f50" }}>
-            {error}
-          </p>
-        )}
-        <div
-          ref={terminalContainerRef}
-          className="rounded-xl border p-2"
-          style={{ borderColor: "rgba(255,255,255,0.08)", background: "#16110d", minHeight: "30rem", height: "calc(100vh - 300px)" }}
-        />
-      </div>
-    </div>
-  );
-};
 
 /* ─── Bot Card for multi-bot display ─── */
 
@@ -3011,11 +2776,11 @@ const isRescueExportRunning = (status: WorkerActionStatusResult | null | undefin
   return !RESCUE_EXPORT_TERMINAL_PHASES.has(status.phase);
 };
 
-export const OpenClawSettingsPage = ({
-  sectionSlug,
+export const AgentSettingsPage = ({
+  sectionId,
   showHeader = true,
 }: {
-  sectionSlug?: string;
+  sectionId?: AgentSectionId;
   showHeader?: boolean;
 } = {}) => {
   const t = useT();
@@ -3065,15 +2830,8 @@ export const OpenClawSettingsPage = ({
   );
 
 
-  /* 实例内部的子页面切换：由 /agents/<section> URL 驱动，/agents 默认进入通道。 */
-  const sectionFromPath = getAgentSectionFromSlug(sectionSlug);
-  const shouldRedirectToAgents = Boolean(sectionSlug && !isAgentSectionAvailable(sectionFromPath));
-  const activeSection = shouldRedirectToAgents ? DEFAULT_AGENT_SECTION : sectionFromPath ?? DEFAULT_AGENT_SECTION;
-
-  useEffect(() => {
-    if (!shouldRedirectToAgents) return;
-    navigate({ pathname: AGENTS_HOME_PATH, search: location.search }, { replace: true });
-  }, [location.search, navigate, shouldRedirectToAgents]);
+  /* 实例内部的子页面切换：由 Next /agents/<section> 路由在服务端校验，client 只接收已归一化 sectionId。 */
+  const activeSection = sectionId ?? DEFAULT_AGENT_SECTION;
 
   /* Tab 切换 */
   const [activeTabId, setActiveTabId] = useState((visibleBots[0]?.id ?? requestedCreatingBotId) || "creating");
@@ -4215,10 +3973,6 @@ export const OpenClawSettingsPage = ({
     </section>
   ) : null;
 
-  if (shouldRedirectToAgents) {
-    return null;
-  }
-
   return (
     <div className="flex min-h-screen flex-col bg-white" style={{ color: "rgba(0,0,0,0.90)" }}>
       {showHeader && <ProductReturnHomeHeader reloadLanguageAfterSwitch />}
@@ -4722,9 +4476,8 @@ export const OpenClawSettingsPage = ({
                     >
                       {showHiddenAgentTools ? (
                         <>
-                          <button
-                            type="button"
-                            onClick={() => navigate({ pathname: AGENT_SECTION_PATH_BY_ID.terminal, search: location.search })}
+                          <AppLink
+                            to={`${AGENT_SECTION_PATH_BY_ID.terminal}${location.search}`}
                             aria-current={activeSection === "terminal" ? "page" : undefined}
                             className={cn(
                               "lw-settings-nav-item flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 font-medium transition-colors",
@@ -4735,10 +4488,9 @@ export const OpenClawSettingsPage = ({
                           >
                             <span className="flex h-5 w-5 items-center justify-center"><TerminalSquare className="h-4 w-4" /></span>
                             <span className="flex-1 text-left text-[15px]">{t("终端")}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => navigate({ pathname: AGENT_SECTION_PATH_BY_ID.browser, search: location.search })}
+                          </AppLink>
+                          <AppLink
+                            to={`${AGENT_SECTION_PATH_BY_ID.browser}${location.search}`}
                             aria-current={activeSection === "browser" ? "page" : undefined}
                             className={cn(
                               "lw-settings-nav-item flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 font-medium transition-colors",
@@ -4749,16 +4501,15 @@ export const OpenClawSettingsPage = ({
                           >
                             <span className="flex h-5 w-5 items-center justify-center"><Globe2 className="h-4 w-4" /></span>
                             <span className="flex-1 text-left text-[15px]">{t("浏览器")}</span>
-                          </button>
+                          </AppLink>
                         </>
                       ) : null}
                       {settingsSections.map((section) => {
                         const isActive = section.id === activeSection;
                         return (
-                          <button
+                          <AppLink
                             key={section.id}
-                            type="button"
-                            onClick={() => navigate({ pathname: section.path, search: location.search })}
+                            to={`${section.path}${location.search}`}
                             aria-current={isActive ? "page" : undefined}
                             className={cn(
                               "lw-settings-nav-item flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 font-medium transition-colors",
@@ -4774,21 +4525,21 @@ export const OpenClawSettingsPage = ({
                                 {section.badge}
                               </span>
                             )}
-                          </button>
+                          </AppLink>
                         );
                       })}
                     </nav>
                   </aside>
 
                   <section className="min-w-0">
-                    <AnimatePresence mode="wait">
-                      <motion.div
-                        key={`${activeBot.id}-${activeSection}`}
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -8 }}
-                        transition={{ duration: 0.22 }}
-                        className="_lh-claw-bot-panel"
+                    <div key={`${activeBot.id}-${activeSection}`} className="_lh-claw-bot-panel">
+                      <Suspense
+                        fallback={(
+                          <div className="flex min-h-[320px] items-center justify-center rounded-lg border border-black/[0.06] bg-white text-sm text-black/45">
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            {t("加载中...")}
+                          </div>
+                        )}
                       >
                         <div className="_lh-claw-bot-panel__cards min-w-0">
                           {activeSection === "channel" && (
@@ -4852,53 +4603,15 @@ export const OpenClawSettingsPage = ({
                             />
                           )}
                           {activeSection === "chat" && (
-                            <div className="h-[clamp(516px,calc(100vh-220px),960px)] overflow-hidden rounded-lg border border-black/[0.08] bg-white [&>*]:h-full">
-                              {(launchTokenStatus === "idle" || launchTokenStatus === "loading") && (
-                                <div className="flex h-full items-center justify-center p-6 text-sm text-black/60">
-                                  {t("正在获取 AgentChat 启动 token…")}
-                                </div>
-                              )}
-                              {launchTokenStatus === "error" && (
-                                <div className="flex h-full flex-col items-center justify-center p-6 text-center text-sm">
-                                  <p className="text-red-500">
-                                    {t("获取 AgentChat 启动 token 失败：{{message}}", { message: launchTokenError || t("未知错误") })}
-                                  </p>
-                                  <button
-                                    type="button"
-                                    onClick={retryLaunchToken}
-                                    className="mt-3 inline-flex items-center rounded-md border border-black/[0.12] bg-white px-3 py-1.5 text-xs font-medium text-black/80 hover:bg-black/[0.04]"
-                                  >
-                                    {t("重试")}
-                                  </button>
-                                </div>
-                              )}
-                              {launchTokenStatus === "ready" && launchToken && accountId && (
-                                <Suspense
-                                  fallback={(
-                                    <div className="flex h-full items-center justify-center p-6 text-sm text-black/60">
-                                      {t("正在加载 AgentChat…")}
-                                    </div>
-                                  )}
-                                >
-                                  <LightVelaPanel
-                                    instanceIds={[sdkInstance.InstanceId]}
-                                    instanceId={sdkInstance.InstanceId}
-                                    region="ap-guangzhou"
-                                    userId={accountId}
-                                    product="lightvela"
-                                    lightvelaApiParams={{
-                                      businessCode: "lightvela",
-                                      token: launchToken,
-                                    }}
-                                    commandExecutor={lightvelaCommandExecutor}
-                                    features={{
-                                      autoActivate: true,
-                                      nativeWsGray: true,
-                                    }}
-                                  />
-                                </Suspense>
-                              )}
-                            </div>
+                            <AgentChatPanel
+                              accountId={accountId}
+                              commandExecutor={lightvelaCommandExecutor}
+                              instanceId={sdkInstance.InstanceId}
+                              launchToken={launchToken}
+                              launchTokenError={launchTokenError}
+                              launchTokenStatus={launchTokenStatus}
+                              onRetryLaunchToken={retryLaunchToken}
+                            />
                           )}
                           {activeSection === "memory" && (
                             <MemoryPanel
@@ -4925,8 +4638,8 @@ export const OpenClawSettingsPage = ({
                             <TerminalPanel botId={activeBot.id} botName={activeBot.name} />
                           )}
                         </div>
-                      </motion.div>
-                    </AnimatePresence>
+                      </Suspense>
+                    </div>
                   </section>
                 </div>
               );

@@ -1282,7 +1282,7 @@ function UnauthorizedState() {
 }
 
 // ─── 删除确认弹窗 ─────────────────────────────────────────────────────────────
-// 视觉对齐 `openclaw-settings-page.tsx` 的 `_DeleteConfirmDialog`：
+// 视觉对齐 `agent-settings-page.tsx` 的 `_DeleteConfirmDialog`：
 //   - 半透明遮罩 + 8px 模糊
 //   - 圆角白色卡片 + AlertTriangle 红色图标 + 标题 + 说明 + 取消/确认按钮
 // 通过 `createPortal` 挂到 document.body，避免 panel 内嵌套定位影响
