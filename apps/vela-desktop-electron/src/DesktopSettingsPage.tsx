@@ -25,10 +25,11 @@ import type {
 } from "../../../packages/vela-chat-client/src";
 import {
   Sidebar,
-  SidebarBody,
-  SidebarBodyFixed,
-  SidebarBodyScroll,
+  SidebarChromeArea,
   SidebarContent,
+  SidebarContentFade,
+  SidebarMaterialFrame,
+  SidebarScrollRegion,
   ShellSelect,
   ShellSwitch,
   VelaSidebarChrome,
@@ -81,10 +82,10 @@ export function DesktopSettingsSidebar({
 }: DesktopSettingsSidebarProps) {
   return (
     <Sidebar className="vela-settings-sidebar" aria-label="Settings navigation">
-      <VelaSidebarChrome showTrafficLights={showTrafficLights} />
-      <SidebarContent className="vela-settings-sidebar-content">
-        <SidebarBody className="vela-settings-sidebar-body">
-        <SidebarBodyFixed className="vela-settings-fixed-controls">
+      <SidebarMaterialFrame>
+        <VelaSidebarChrome showTrafficLights={showTrafficLights} />
+        <SidebarContent className="vela-settings-sidebar-content">
+          <SidebarChromeArea className="vela-settings-fixed-controls">
           <button className="vela-settings-back" type="button" onClick={onClose}>
             <ArrowLeft size={16} aria-hidden />
             <span>返回应用</span>
@@ -93,9 +94,10 @@ export function DesktopSettingsSidebar({
             <Search size={15} aria-hidden />
             <input placeholder="搜索设置..." />
           </label>
-        </SidebarBodyFixed>
+          </SidebarChromeArea>
+          <SidebarContentFade edge="bottom" />
 
-        <SidebarBodyScroll className="vela-settings-nav-scroll">
+          <SidebarScrollRegion className="vela-settings-nav-scroll">
           <SettingsNavGroup title="个人" items={personalSettings} />
           <SettingsNavGroup title="集成" items={integrationSettings} />
           <SettingsNavGroup title="编码" items={codingSettings} />
@@ -103,9 +105,9 @@ export function DesktopSettingsSidebar({
             title="已归档"
             items={[{ icon: Archive, label: "已归档对话" }]}
           />
-        </SidebarBodyScroll>
-        </SidebarBody>
-      </SidebarContent>
+          </SidebarScrollRegion>
+        </SidebarContent>
+      </SidebarMaterialFrame>
     </Sidebar>
   );
 }

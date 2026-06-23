@@ -7,7 +7,7 @@ body,
 }
 
 body {
-  background: #f7f7f6;
+  background: transparent;
   color: #1f2328;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   overflow: hidden;
@@ -25,8 +25,13 @@ body {
   --tw-foreground: #1c1917;
   --tw-muted-foreground: #78716c;
   --tw-border: #e7e5e4;
-  --vela-sidebar-surface: #f5f6f6;
-  --vela-sidebar-underlay: #f5f6f6;
+  --vela-sidebar-material-bg: rgb(248 249 249 / 44%);
+  --vela-sidebar-content-fade-strong: rgb(248 249 249 / 74%);
+  --vela-sidebar-content-fade-soft: rgb(248 249 249 / 34%);
+  --vela-sidebar-content-fade-clear: rgb(248 249 249 / 0%);
+  --vela-sidebar-material-edge: rgba(60, 60, 67, 0.1);
+  --vela-sidebar-surface: var(--vela-sidebar-material-bg);
+  --vela-sidebar-underlay: var(--vela-sidebar-material-bg);
   --vela-main-surface: #ffffff;
   --vela-window-chrome-height: 50px;
   --vela-window-traffic-light-left: 24px;
@@ -50,12 +55,11 @@ body {
   --vela-window-toolbar-start-x: calc(
     var(--vela-window-traffic-light-left) + var(--vela-window-traffic-light-group-width) + var(--vela-window-toolbar-gap)
   );
-  --vela-window-controls-left: var(--vela-window-toolbar-start-x);
-  --vela-window-controls-inset: var(--vela-window-toolbar-start-x);
+  --vela-window-controls-left: var(--host-leading-toolbar-inset, var(--vela-window-toolbar-start-x));
+  --vela-window-controls-inset: var(--host-leading-toolbar-inset, var(--vela-window-toolbar-start-x));
   --vela-titlebar-height: var(--vela-window-chrome-height);
   --vela-main-surface-radius: 16px;
-  --vela-main-edge-hairline: rgba(60, 60, 67, 0.12);
-  --vela-main-edge-veil-width: 34px;
+  --vela-main-edge-hairline: var(--vela-sidebar-material-edge);
   --vela-sidebar-toggle-duration: 270ms;
   --vela-sidebar-toggle-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --skin-sidebar-control: color-mix(in srgb, #ffffff 78%, #f5f6f6);
@@ -72,6 +76,8 @@ body {
   min-width: 0;
   overflow: hidden;
   background: var(--vela-sidebar-underlay);
+  -webkit-backdrop-filter: blur(36px) saturate(1.14);
+  backdrop-filter: blur(36px) saturate(1.14);
   color: var(--tw-foreground);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -91,9 +97,7 @@ body {
   position: absolute;
   top: 0;
   right: 0;
-  left: calc(
-    var(--vela-window-controls-left) + var(--vela-window-toolbar-size) * 2 + 8px
-  );
+  left: 0;
   z-index: 0;
   height: var(--vela-titlebar-height);
   pointer-events: auto;
@@ -107,7 +111,7 @@ body {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background: var(--vela-sidebar-surface);
+  background: transparent;
   contain: layout paint;
   pointer-events: auto;
 }
@@ -142,7 +146,7 @@ body {
   opacity: 1;
   transform: translateX(0);
   transition:
-    opacity 140ms ease-out,
+    opacity 100ms ease-out,
     visibility 0ms linear 0ms;
   visibility: visible;
   will-change: opacity;
@@ -152,8 +156,8 @@ body {
   opacity: 0;
   transform: translateX(0);
   transition:
-    opacity 110ms ease-in,
-    visibility 0ms linear 110ms;
+    opacity 70ms ease-in,
+    visibility 0ms linear 70ms;
   visibility: hidden;
 }
 
@@ -176,9 +180,21 @@ body {
   overflow: visible;
   border-right: 0;
   background: transparent;
-  padding: 0 0 40px;
+  padding: 0;
   box-sizing: border-box;
   user-select: none;
+}
+
+.vela-sidebar-material-frame {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: transparent;
 }
 
 .vela-sidebar-content {
@@ -187,8 +203,14 @@ body {
   min-height: 0;
   flex: 1 1 auto;
   overflow: hidden;
-  padding: 0 0 6px;
+  padding: 0;
   box-sizing: border-box;
+}
+
+.vela-sidebar-chrome-area {
+  position: relative;
+  z-index: 4;
+  flex: 0 0 auto;
 }
 
 .vela-sidebar-body {
@@ -208,23 +230,62 @@ body {
 
 .vela-sidebar-body-fixed::after,
 .vela-sidebar-fixed-controls::after {
-  content: "";
-  position: absolute;
-  right: 0;
-  bottom: -10px;
-  left: 0;
+  content: none;
+}
+
+.vela-sidebar-scroll-region {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden auto;
+  padding: 4px 0 0;
+  scrollbar-color: rgba(60, 60, 67, 0.24) transparent;
+  scrollbar-width: thin;
+}
+
+.vela-sidebar-scroll-region::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.vela-sidebar-scroll-region::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.vela-sidebar-scroll-region::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(60, 60, 67, 0.26);
+  background-clip: padding-box;
+}
+
+.vela-sidebar-content-fade {
+  position: relative;
+  z-index: 5;
+  flex: 0 0 10px;
   height: 10px;
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(6px) saturate(1.02);
+  backdrop-filter: blur(6px) saturate(1.02);
+}
+
+.vela-sidebar-content-fade[data-edge="bottom"] {
   background: linear-gradient(
     180deg,
-    rgba(245, 246, 246, 0.92),
-    rgba(245, 246, 246, 0.38) 44%,
-    rgba(245, 246, 246, 0)
+    rgb(248 249 249 / 34%),
+    rgb(248 249 249 / 14%) 52%,
+    var(--vela-sidebar-content-fade-clear)
   );
-  -webkit-backdrop-filter: blur(1px);
-  backdrop-filter: blur(1px);
-  box-shadow: inset 0 1px rgba(255, 255, 255, 0.42);
-  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.46), rgba(0, 0, 0, 0.12) 72%, transparent);
-  pointer-events: none;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.22), rgba(0, 0, 0, 0.08) 70%, transparent);
+}
+
+.vela-sidebar-content-fade[data-edge="top"] {
+  background: linear-gradient(
+    180deg,
+    var(--vela-sidebar-content-fade-clear),
+    rgb(248 249 249 / 14%) 48%,
+    rgb(248 249 249 / 34%)
+  );
+  mask-image: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.08) 30%, rgba(0, 0, 0, 0.22));
 }
 
 .vela-sidebar-body-scroll,
@@ -235,6 +296,11 @@ body {
   padding: 4px 0 8px;
   scrollbar-color: rgba(60, 60, 67, 0.24) transparent;
   scrollbar-width: thin;
+}
+
+.vela-sidebar-scroll-region > .stable-session-list {
+  padding-top: 0;
+  padding-bottom: 12px;
 }
 
 .vela-sidebar-body-scroll::-webkit-scrollbar,
@@ -266,12 +332,12 @@ body {
   box-sizing: border-box;
   display: flex;
   border-top-left-radius: var(--vela-main-surface-radius);
-  border-left: 1px solid var(--vela-main-edge-hairline);
+  border-left: 0;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
   isolation: isolate;
-  background: var(--vela-sidebar-underlay);
+  background: transparent;
 }
 
 .vela-desktop-shell:not([data-sidebar-dragging="true"]) .vela-main-inset {
@@ -289,14 +355,6 @@ body {
   border-top-left-radius: 0;
 }
 
-.vela-desktop-shell[data-sidebar-presentation="overlay"] .vela-sidebar-inset::after {
-  opacity: 0;
-}
-
-.vela-desktop-shell[data-sidebar-dragging="true"] .vela-main-inset {
-  transition: none;
-}
-
 .vela-sidebar-inset::before {
   content: "";
   position: absolute;
@@ -305,27 +363,12 @@ body {
   border-top-left-radius: inherit;
   background: var(--vela-main-surface);
   background-clip: padding-box;
+  box-shadow: inset 1px 0 0 var(--vela-main-edge-hairline);
   pointer-events: none;
 }
 
-.vela-sidebar-inset::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: calc(var(--vela-main-edge-veil-width) * -1);
-  z-index: 0;
-  width: var(--vela-main-edge-veil-width);
-  background: linear-gradient(90deg, rgba(245, 246, 246, 0), rgba(255, 255, 255, 0.72) 68%, var(--vela-main-surface));
-  -webkit-backdrop-filter: blur(16px) saturate(1.1);
-  backdrop-filter: blur(16px) saturate(1.1);
-  opacity: 1;
-  pointer-events: none;
-  transition: opacity 120ms ease;
-}
-
-.vela-desktop-shell[data-state="collapsed"] .vela-sidebar-inset::after {
-  opacity: 0;
+.vela-desktop-shell[data-sidebar-dragging="true"] .vela-main-inset {
+  transition: none;
 }
 
 .vela-sidebar-inset > * {
@@ -657,8 +700,13 @@ body {
   -webkit-app-region: drag;
 }
 
+.vela-desktop-shell[data-platform="macos"] .vela-sidebar-chrome-area {
+  -webkit-app-region: drag;
+}
+
 .vela-desktop-shell[data-platform="macos"] [data-window-drag-region="false"],
 .vela-desktop-shell[data-platform="macos"] button,
+.vela-desktop-shell[data-platform="macos"] .search-box,
 .vela-desktop-shell[data-platform="macos"] input,
 .vela-desktop-shell[data-platform="macos"] textarea,
 .vela-desktop-shell[data-platform="macos"] select,
@@ -812,23 +860,19 @@ body {
 }
 
 .vela-sidebar-footer::before {
-  content: "";
-  position: absolute;
-  right: 0;
-  bottom: 100%;
-  left: 0;
-  height: 10px;
-  background: linear-gradient(
-    180deg,
-    rgba(245, 246, 246, 0),
-    rgba(245, 246, 246, 0.28) 54%,
-    rgba(245, 246, 246, 0.88)
-  );
-  -webkit-backdrop-filter: blur(1px);
-  backdrop-filter: blur(1px);
-  box-shadow: inset 0 -1px rgba(255, 255, 255, 0.46);
-  mask-image: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.12) 34%, rgba(0, 0, 0, 0.46));
-  pointer-events: none;
+  content: none;
+}
+
+.vela-sidebar-fixed-footer {
+  position: relative;
+  z-index: 8;
+  flex: 0 0 auto;
+  display: block;
+  min-height: 38px;
+  padding: 4px 14px;
+  background: transparent;
+  color: var(--tw-muted-foreground);
+  font-size: 12px;
 }
 
 .vela-settings-menu-root {
@@ -1663,8 +1707,7 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .vela-desktop-shell:not([data-sidebar-dragging="true"]) .vela-main-inset,
-  .vela-desktop-shell:not([data-sidebar-dragging="true"]) .vela-sidebar-inset::after {
+  .vela-desktop-shell:not([data-sidebar-dragging="true"]) .vela-main-inset {
     transition-duration: 0.01ms;
   }
 }

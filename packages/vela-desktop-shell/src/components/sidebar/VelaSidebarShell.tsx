@@ -59,6 +59,10 @@ interface SidebarBodyProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
 }
 
+interface SidebarContentFadeProps extends HTMLAttributes<HTMLDivElement> {
+  edge: "top" | "bottom" | "main";
+}
+
 interface SidebarMenuButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   isActive?: boolean;
@@ -244,12 +248,21 @@ export function VelaSidebarShell({
         data-sidebar-presentation={effectiveSidebarPresentation}
         data-slot="sidebar-shell"
         data-state={sidebarState}
+        data-window-fullscreen={host.chrome.safeArea.isFullscreen ? "true" : "false"}
+        data-reserve-traffic-light-gutter={
+          host.chrome.safeArea.reserveTrafficLightGutter ? "true" : "false"
+        }
+        style={
+          {
+            "--vela-window-controls-left": `${host.chrome.safeArea.leadingToolbarInset}px`,
+            "--vela-window-controls-inset": `${host.chrome.safeArea.leadingToolbarInset}px`,
+            "--vela-window-toolbar-center-y": `${host.chrome.safeArea.toolbarCenterY}px`,
+            "--vela-window-toolbar-icon-size": `${host.chrome.safeArea.toolbarIconSize}px`,
+            "--vela-window-toolbar-size": `${host.chrome.safeArea.toolbarSize}px`,
+          } as CSSProperties
+        }
       >
         <VelaWindowChrome host={host} />
-        <VelaSidebarWindowControls
-          onCreateSession={onCreateSession}
-          onToggleSidebar={handleToggleSidebar}
-        />
         {shouldShowOverlayTrigger ? (
           <button
             type="button"
@@ -285,6 +298,11 @@ export function VelaSidebarShell({
         <main className="vela-sidebar-inset vela-main-inset" data-sidebar-inset="main">
           {children}
         </main>
+        <VelaSidebarWindowControls
+          host={host}
+          onCreateSession={onCreateSession}
+          onToggleSidebar={handleToggleSidebar}
+        />
       </div>
     </SidebarProvider>
   );
@@ -357,6 +375,63 @@ export function SidebarContent({ className, ...props }: HTMLAttributes<HTMLDivEl
       className={["vela-sidebar-content", className].filter(Boolean).join(" ")}
       data-sidebar="content"
       data-slot="sidebar-content"
+      {...props}
+    />
+  );
+}
+
+export function SidebarMaterialFrame({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      className={["vela-sidebar-material-frame", className].filter(Boolean).join(" ")}
+      data-sidebar="material-frame"
+      data-slot="sidebar-material-frame"
+      {...props}
+    />
+  );
+}
+
+export function SidebarChromeArea({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      className={["vela-sidebar-chrome-area", className].filter(Boolean).join(" ")}
+      data-sidebar="chrome-area"
+      data-slot="sidebar-chrome-area"
+      {...props}
+    />
+  );
+}
+
+export function SidebarScrollRegion({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      className={["vela-sidebar-scroll-region", className].filter(Boolean).join(" ")}
+      data-sidebar="scroll-region"
+      data-slot="sidebar-scroll-region"
+      {...props}
+    />
+  );
+}
+
+export function SidebarFixedFooter({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      className={["vela-sidebar-fixed-footer", className].filter(Boolean).join(" ")}
+      data-sidebar="fixed-footer"
+      data-slot="sidebar-fixed-footer"
+      {...props}
+    />
+  );
+}
+
+export function SidebarContentFade({ edge, className, ...props }: SidebarContentFadeProps) {
+  return (
+    <div
+      className={["vela-sidebar-content-fade", className].filter(Boolean).join(" ")}
+      data-edge={edge}
+      data-sidebar="content-fade"
+      data-slot="sidebar-content-fade"
+      aria-hidden="true"
       {...props}
     />
   );
@@ -451,13 +526,23 @@ export function SidebarMenuButton({
 }
 
 function VelaSidebarWindowControls({
+  host,
   onToggleSidebar,
   onCreateSession,
 }: {
+  host: DesktopHostBridge;
   onToggleSidebar?: () => void;
   onCreateSession?: () => void;
 }) {
   const buttons: WindowToolbarButtonModel[] = [
+    host.platform === "macos" && host.chrome.safeArea.isFullscreen
+      ? {
+          id: "leave-fullscreen",
+          icon: ToolbarLeaveFullscreenIcon,
+          label: "Exit full screen",
+          onClick: host.windowControls?.leaveFullscreen,
+        }
+      : null,
     {
       id: "toggle-sidebar",
       icon: ToolbarSidebarIcon,
@@ -470,7 +555,7 @@ function VelaSidebarWindowControls({
       label: "New thread",
       onClick: onCreateSession,
     },
-  ].filter((button) => button.onClick);
+  ].filter((button): button is WindowToolbarButtonModel => Boolean(button?.onClick));
   if (buttons.length === 0) return null;
   return (
     <div
@@ -505,7 +590,6 @@ function WindowToolbarButton({ button }: { button: WindowToolbarButtonModel }) {
       data-tone={button.tone ?? "default"}
       data-window-drag-region="false"
       disabled={button.disabled}
-      style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
       type="button"
       aria-label={button.label}
       onPointerDown={stopToolbarPointerEvent}
@@ -514,6 +598,21 @@ function WindowToolbarButton({ button }: { button: WindowToolbarButtonModel }) {
     >
       <Icon aria-hidden="true" />
     </button>
+  );
+}
+
+function ToolbarLeaveFullscreenIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" {...props}>
+      <path d="M8.2 4.8v3.4H4.8" />
+      <path d="M4.8 4.8l4.4 4.4" />
+      <path d="M15.8 4.8v3.4h3.4" />
+      <path d="M19.2 4.8l-4.4 4.4" />
+      <path d="M8.2 19.2v-3.4H4.8" />
+      <path d="M4.8 19.2l4.4-4.4" />
+      <path d="M15.8 19.2v-3.4h3.4" />
+      <path d="M19.2 19.2l-4.4-4.4" />
+    </svg>
   );
 }
 

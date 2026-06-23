@@ -19,7 +19,10 @@ import {
 import {
   desktopHostBridgeForInfo,
   readDesktopRuntimeBootstrap,
+  readDesktopChromeState,
   retryDesktopRuntimeBootstrap,
+  subscribeDesktopChromeState,
+  type DesktopChromeStateResponse,
   type DesktopHostInfo,
   type DesktopRuntimeBootstrap,
 } from "./desktopBridge";
@@ -45,6 +48,16 @@ export function DesktopApp() {
   const initialHostInfo = useMemo<DesktopHostInfo>(
     () => ({
       apiBaseUrl: DEFAULT_WEB_API_BASE_URL,
+      chromeState: {
+        platform: "darwin",
+        isFullscreen: false,
+        isMaximized: false,
+        reserveTrafficLightGutter: true,
+        toolbarCenterY: 28,
+        toolbarIconSize: 24,
+        leadingToolbarInset: 84,
+        toolbarSize: 28,
+      },
       hostKind: window.velaDesktop ? "electron" : "web",
       platform: window.velaDesktop ? "darwin" : "browser",
     }),
@@ -150,6 +163,9 @@ function DesktopReadyApp({
     readDefaultBackendPreference,
   );
   const [error, setError] = useState<string | null>(null);
+  const [chromeState, setChromeState] = useState<DesktopChromeStateResponse | undefined>(
+    hostInfo.chromeState,
+  );
 
   useEffect(() => {
     writeDefaultBackendPreference(selectedBackendKind);
@@ -164,7 +180,22 @@ function DesktopReadyApp({
   }, [activeSessionId, hostStateStores.sessionSelectionStore]);
 
   const apiBaseUrl = hostInfo.apiBaseUrl;
-  const hostBridge = useMemo(() => desktopHostBridgeForInfo(hostInfo), [hostInfo]);
+  useEffect(() => {
+    let cancelled = false;
+    void readDesktopChromeState(hostInfo.chromeState).then((nextChromeState) => {
+      if (!cancelled) setChromeState(nextChromeState);
+    });
+    const unsubscribe = subscribeDesktopChromeState(setChromeState);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [hostInfo.chromeState]);
+
+  const hostBridge = useMemo(
+    () => desktopHostBridgeForInfo(hostInfo, chromeState),
+    [chromeState, hostInfo],
+  );
   const client = useMemo(() => createVeladClient({ baseUrl: apiBaseUrl }), [apiBaseUrl]);
   const controller = useVelaChatSession({
     client,

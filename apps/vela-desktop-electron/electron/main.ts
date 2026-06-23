@@ -25,7 +25,26 @@ const maxLogFiles = Number(runtimeEnv("VELA_DESKTOP_LOG_MAX_FILES") ?? 5);
 const veladReadyTimeoutMs = Number(runtimeEnv("VELA_DESKTOP_VELAD_READY_TIMEOUT_MS") ?? 15_000);
 const macosChromeMetrics = {
   trafficLightPosition: { x: 24, y: 22 },
+  normalLeadingToolbarInset: 84,
+  fullscreenLeadingToolbarInset: 54,
+  normalToolbarCenterY: 28,
+  normalToolbarIconSize: 24,
+  normalToolbarSize: 28,
+  fullscreenToolbarCenterY: 28,
+  fullscreenToolbarIconSize: 24,
+  fullscreenToolbarSize: 28,
 };
+
+interface DesktopChromeState {
+  platform: NodeJS.Platform;
+  isFullscreen: boolean;
+  isMaximized: boolean;
+  reserveTrafficLightGutter: boolean;
+  toolbarCenterY: number;
+  toolbarIconSize: number;
+  leadingToolbarInset: number;
+  toolbarSize: number;
+}
 
 class RotatingLogWriter {
   private readonly path: string;
@@ -212,6 +231,46 @@ function stopBundledVelad() {
   child.kill("SIGTERM");
 }
 
+function getDesktopChromeState(window = mainWindow): DesktopChromeState {
+  const isFullscreen = window?.isFullScreen() ?? false;
+  const isMaximized = window?.isMaximized() ?? false;
+  const isMacos = process.platform === "darwin";
+  const reserveTrafficLightGutter = isMacos && !isFullscreen;
+  return {
+    platform: process.platform,
+    isFullscreen,
+    isMaximized,
+    reserveTrafficLightGutter,
+    toolbarCenterY: isFullscreen
+      ? macosChromeMetrics.fullscreenToolbarCenterY
+      : macosChromeMetrics.normalToolbarCenterY,
+    toolbarIconSize: isFullscreen
+      ? macosChromeMetrics.fullscreenToolbarIconSize
+      : macosChromeMetrics.normalToolbarIconSize,
+    leadingToolbarInset: reserveTrafficLightGutter
+      ? macosChromeMetrics.normalLeadingToolbarInset
+      : macosChromeMetrics.fullscreenLeadingToolbarInset,
+    toolbarSize: isFullscreen
+      ? macosChromeMetrics.fullscreenToolbarSize
+      : macosChromeMetrics.normalToolbarSize,
+  };
+}
+
+function emitDesktopChromeState(window = mainWindow) {
+  if (!window || window.isDestroyed()) return;
+  window.webContents.send("vela:desktop-chrome-state", getDesktopChromeState(window));
+}
+
+function attachDesktopChromeStateEvents(window: BrowserWindow) {
+  const emit = () => emitDesktopChromeState(window);
+  window.on("enter-full-screen", emit);
+  window.on("leave-full-screen", emit);
+  window.on("maximize", emit);
+  window.on("unmaximize", emit);
+  window.on("restore", emit);
+  window.webContents.on("did-finish-load", emit);
+}
+
 async function createWindow() {
   logLine("[host]", `log file ${join(app.getPath("userData"), "logs", "vela-desktop.log")}`);
   void ensureVeladReady().catch((err) => {
@@ -224,15 +283,23 @@ async function createWindow() {
     height: 820,
     minWidth: 860,
     minHeight: 560,
-    frame: false,
-    titleBarStyle: "hidden",
+    frame: process.platform === "darwin",
+    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
     trafficLightPosition: macosChromeMetrics.trafficLightPosition,
+    ...(process.platform === "darwin"
+      ? {
+          backgroundColor: "#00000000",
+          vibrancy: "under-window" as const,
+          visualEffectState: "followWindow" as const,
+        }
+      : {}),
     webPreferences: {
       preload: join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+  attachDesktopChromeStateEvents(mainWindow);
 
   const devServerUrl = runtimeEnv("VITE_DEV_SERVER_URL") ?? (!app.isPackaged ? "http://127.0.0.1:5173" : "");
   if (devServerUrl) {
@@ -249,6 +316,7 @@ ipcMain.handle("vela:desktop-info", async () => {
     return {
       status: "ready",
       apiBaseUrl: `http://${veladListenAddr}/api/v1`,
+      chromeState: getDesktopChromeState(),
       logPath,
       platform: process.platform,
     };
@@ -271,6 +339,7 @@ ipcMain.handle("vela:desktop-bootstrap-retry", async () => {
     return {
       status: "ready",
       apiBaseUrl: `http://${veladListenAddr}/api/v1`,
+      chromeState: getDesktopChromeState(),
       logPath,
       platform: process.platform,
     };
@@ -283,6 +352,16 @@ ipcMain.handle("vela:desktop-bootstrap-retry", async () => {
       platform: process.platform,
     };
   }
+});
+
+ipcMain.handle("vela:desktop-chrome-state", async () => getDesktopChromeState());
+
+ipcMain.handle("vela:desktop-leave-fullscreen", async () => {
+  const window = BrowserWindow.getFocusedWindow() ?? mainWindow;
+  if (window?.isFullScreen()) {
+    window.setFullScreen(false);
+  }
+  return getDesktopChromeState(window ?? mainWindow);
 });
 
 app.whenReady().then(createWindow);

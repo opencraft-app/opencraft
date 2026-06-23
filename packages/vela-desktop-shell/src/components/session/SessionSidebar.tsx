@@ -3,14 +3,15 @@ import type { SessionListItemWire } from "../../../../vela-chat-client/src";
 import { SessionListSurface } from "../../../../vela-chat-web/src";
 import {
   Sidebar,
-  SidebarBody,
-  SidebarBodyFixed,
-  SidebarBodyScroll,
+  SidebarChromeArea,
   SidebarContent,
-  SidebarFooter,
+  SidebarContentFade,
+  SidebarFixedFooter,
+  SidebarMaterialFrame,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarScrollRegion,
   SidebarSettingsMenu,
   VelaSidebarChrome,
 } from "../sidebar";
@@ -50,10 +51,10 @@ export function SessionSidebar({
 }: SessionSidebarProps) {
   return (
     <Sidebar>
-      <VelaSidebarChrome showTrafficLights={showTrafficLights} />
-      <SidebarContent>
-        <SidebarBody>
-          <SidebarBodyFixed>
+      <SidebarMaterialFrame>
+        <VelaSidebarChrome showTrafficLights={showTrafficLights} />
+        <SidebarContent>
+          <SidebarChromeArea>
             <div className="new-session-row">
               <SidebarMenu>
                 <SidebarMenuItem>
@@ -79,9 +80,8 @@ export function SessionSidebar({
                 placeholder="Search sessions"
               />
             </label>
-          </SidebarBodyFixed>
-
-          <SidebarBodyScroll>
+          </SidebarChromeArea>
+          <SidebarScrollRegion>
             <div className="sidebar-section-heading vela-threads-heading">
               <MessageSquareText size={14} aria-hidden />
               Chats
@@ -92,19 +92,19 @@ export function SessionSidebar({
               sessions={sessions}
               onSelectSession={onSelectSession}
             />
-          </SidebarBodyScroll>
-        </SidebarBody>
-      </SidebarContent>
-      <SidebarFooter>
-        <SidebarSettingsMenu
-          accountLabel={accountLabel}
-          accountPlanLabel={accountPlanLabel}
-          canClearSessions={canClearSessions ?? sessions.length > 0}
-          defaultOpen={defaultSettingsMenuOpen}
-          onClearSessions={onClearSessions}
-          onOpenSettings={onOpenSettings}
-        />
-      </SidebarFooter>
+          </SidebarScrollRegion>
+        </SidebarContent>
+        <SidebarFixedFooter>
+          <SidebarSettingsMenu
+            accountLabel={accountLabel}
+            accountPlanLabel={accountPlanLabel}
+            canClearSessions={canClearSessions ?? sessions.length > 0}
+            defaultOpen={defaultSettingsMenuOpen}
+            onClearSessions={onClearSessions}
+            onOpenSettings={onOpenSettings}
+          />
+        </SidebarFixedFooter>
+      </SidebarMaterialFrame>
     </Sidebar>
   );
 }
