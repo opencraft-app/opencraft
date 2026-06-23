@@ -1048,18 +1048,17 @@ func classifyDeleteResourceError(err error) (string, int) {
 //   - Q5=a OnlineRefund 不传 category_ids / goodsCategoryId
 //   - Q8b=b trade 端无状态翻译层，不写 trade_flow 行
 //
-// 字段（与 deleteResource 3 字段最小集同款）：
+// 字段（与 deleteResource 同款的最小集加 OwnerUin）：
 //   - UIN：pass.uin（必填，jifei.OnlineRefund.uin）
+//   - OwnerUin：资源所有者主账号 uin（必填，2026-06-23 v0.5.1 联调修复增加）。
+//     jifei 网关 envelope.interface.extraPara.ownerUin 硬校验，缺则返 returnCode=100000
+//     "param error,need ownerUin or site"，与 v1.7.29 销毁链路同款踩坑。ctl pass 表
+//     只存 owner uin（uin == owner_uin），所以 ctl 调用方固定传 entity.Uin。
 //   - AppID：pass.app_id（int64，必填，jifei.OnlineRefund.appId）
 //   - BundleID：pass.bundle_id（必填，trade 内部反查 BundleDefinition.SubProductCode）
-//
-// 注：
-//   - SubProductCode 由 trade 端反查 BundleDefinition 取值（与 deleteResource Q27 同款）
-//   - Region 不入参，trade 内部固定 region.LighthouseRegionID（与 deleteResource Q41 同款）
-//   - 不带 ProductCode 字段（OnlineRefund 协议中 productCode 是 goodsInfo 内可选字段，
-//     本期 trade 不传，避免协议字段冗余）
 type refundResourceRequest struct {
 	UIN      string `json:"uin"`
+	OwnerUin string `json:"ownerUin"`
 	AppID    int64  `json:"appId"`
 	BundleID string `json:"bundleId"`
 }
@@ -1153,8 +1152,11 @@ func refundResourceHandler(
 		// 拼装 jifei OnlineRefund 入参（doc §4.1）。
 		// goodsInfo 是以 sub_product_code 作 map key 的动态对象（与 ModifyResourceStatus
 		// 的 resourcesParamSet[] 数组形态有本质区别，详见 jifeiclient/onlinerefund.go 注释）。
+		// 2026-06-23 v0.5.1 联调修复：额外透传 OwnerUin → jifeiclient 中转到
+		// envelope.interface.extraPara.ownerUin（jifei 网关硬校验）。
 		jifeiReq := &jifeiclient.OnlineRefundRequest{
 			UIN:         req.UIN,
+			OwnerUin:    req.OwnerUin,
 			AppID:       req.AppID,
 			FromConsole: jifeiclient.FromConsoleYes, // 1 = 控制台（ctl admin 入口固定）
 			GoodsInfo: map[string]jifeiclient.OnlineRefundGoodsEntry{
@@ -1202,6 +1204,11 @@ func refundResourceHandler(
 func validateRefundResourceRequest(req *refundResourceRequest) string {
 	if strings.TrimSpace(req.UIN) == "" {
 		return "uin is required"
+	}
+	if strings.TrimSpace(req.OwnerUin) == "" {
+		// 2026-06-23 v0.5.1 联调修复：ownerUin 必填（jifei 网关 extraPara.ownerUin 硬校验，
+		// 与 v1.7.29 销毁链路同款）。
+		return "ownerUin is required"
 	}
 	if req.AppID <= 0 {
 		return "appId must be positive"

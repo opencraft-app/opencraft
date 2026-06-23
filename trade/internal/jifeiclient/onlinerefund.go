@@ -48,18 +48,32 @@ import (
 //
 //   - PascalCase struct field + camelCase JSON tag（jifei CGW 协议层对字段名大小写不敏感，wire
 //     上接受两种；本 client 沿 PascalCase 范式保持仓库内一致）
-//   - 不持有 `extraPara.ownerUin` 字段：OnlineRefund 属于 `qcloud.Deal.*` Deal 接口族
-//     （与 generateDeals / generateDealsAndPay / getMidasEarmarking 同族），uin 直接落在
-//     para.uin 平铺路径；**与 `qcloud.operation.ModifyResourceStatus` 资源中心接口族不同**——
-//     后者把 ownerUin 强制放在 envelope.interface.extraPara.ownerUin（doc 协议示例）。
+//   - **持有 `OwnerUin` 字段并中转到 envelope.interface.extraPara.ownerUin**
+//     （2026-06-23 v0.5.1 联调修复 — 与 v1.7.29 销毁链路同款的 jifei 网关硬校验）：
+//     设计稿 v0.5 初版判断"Deal 接口族不需要 extraPara"是**协议理解错误**——sandbox-bj-7
+//     现网实测 jifei 网关返 `returnCode=100000, returnMessage="param error,need ownerUin
+//     or site"`，与 ModifyResourceStatus 当初 v1.7.29 踩过的坑（client.go:434-439 注释）
+//     完全同款。jifei CGW 网关层做的 `extraPara.ownerUin or extraPara.site` 二选一校验
+//     是**跨接口族通用**的，不分 `qcloud.Deal.*` / `qcloud.operation.*` 接口族。
+//     OwnerUin 字段 `json:"-"` 跳过 para wire 序列化，由 OnlineRefund() 提取后中转到
+//     envelope.interface.extraPara 路径（与 ModifyResourceStatus 一比一同款）。
 //   - FromConsole / ClientIP / Token 用 omitempty——为零值时 jifei 走默认行为（doc §4.1
 //     "1，来自控制台" 表示后台 admin 入口；trade 在调用方装配点固定传 1）
 //
 // **本期 Q8=a 拍板**：trade 不预校验退款金额，也不传 ignoreQuota / extParam / activityId 等
 // 业务扩展字段——这些字段保留协议字面量但不在 Request 结构里暴露（避免 trade 内部多余配置）。
 type OnlineRefundRequest struct {
-	UIN         string `json:"uin"`
-	AppID       int64  `json:"appId"`
+	UIN   string `json:"uin"`
+	AppID int64  `json:"appId"`
+
+	// OwnerUin 是资源所有者主账号 uin，jifei 网关侧硬校验
+	// `envelope.interface.extraPara.ownerUin or .site` 二选一非空（与 ModifyResourceStatus
+	// v1.7.29 修复同款）。本字段不序列化进 para wire（`json:"-"`），由 OnlineRefund()
+	// 提取后中转到 envelope.interface.extraPara 路径。trade pass 退款链路调用方
+	// （ctl.RefundPass → trade.RefundResource handler）固定传 entity.Uin（ctl pass 单 uin
+	// 表，uin == owner_uin）。
+	OwnerUin string `json:"-"`
+
 	FromConsole int    `json:"fromConsole,omitempty"`
 	ClientIP    string `json:"clientIp,omitempty"`
 	Token       string `json:"token,omitempty"`
@@ -184,6 +198,12 @@ func (c *client) OnlineRefund(
 	if req.AppID <= 0 {
 		return nil, errInvalidArg("OnlineRefund: AppID must be positive")
 	}
+	if req.OwnerUin == "" {
+		// 2026-06-23 v0.5.1 联调修复：jifei 网关硬校验 extraPara.ownerUin 非空，
+		// 缺则返 returnCode=100000 "param error,need ownerUin or site"。本字段必填，
+		// 与 ModifyResourceStatus.OwnerUIN（v1.7.29 同款）保持一致。
+		return nil, errInvalidArg("OnlineRefund: empty OwnerUin")
+	}
 	if len(req.GoodsInfo) == 0 {
 		return nil, errInvalidArg("OnlineRefund: empty GoodsInfo")
 	}
@@ -211,12 +231,15 @@ func (c *client) OnlineRefund(
 		}
 	}
 
-	// OnlineRefund 属于 Deal 接口族，envelope.interface 不带 extraPara——直接走 doSigned
-	// （与 ModifyResourceStatus 的 doSignedWithExtra 区分；后者是资源中心 CGW 三族特有）。
+	// 2026-06-23 v0.5.1 联调修复：与 ModifyResourceStatus 同款走 doSignedWithExtra，
+	// 把 OwnerUin 中转到 envelope.interface.extraPara.ownerUin（jifei 网关硬校验，缺则
+	// returnCode=100000 "param error,need ownerUin or site"）。para wire 不受影响
+	// （OwnerUin 字段 `json:"-"` 跳过序列化），与 v1.7.29 销毁链路修复路径一比一对齐。
+	extraPara := &extraParaBlock{OwnerUin: req.OwnerUin}
 	out := &OnlineRefundResponse{}
-	if err := c.doSigned(
+	if err := c.doSignedWithExtra(
 		ctx, InterfaceNameOnlineRefund, ComponentNameOnlineRefund,
-		req, out,
+		extraPara, req, out,
 	); err != nil {
 		return nil, err
 	}

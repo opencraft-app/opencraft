@@ -32,11 +32,13 @@ import (
 
 // refundResourceBody 是 refundResource 端点的标准入参。
 //
-// 与 deleteResourceBody 3 字段同款（设计稿 §4.1：UIN/AppID/BundleID），
-// SubProductCode 由 trade 反查 BundleDefinition 取值。
+// 与 deleteResourceBody 4 字段最小集同款（设计稿 §4.1：UIN/OwnerUin/AppID/BundleID），
+// SubProductCode 由 trade 反查 BundleDefinition 取值。OwnerUin 为 2026-06-23 v0.5.1 联调修复
+// 新增字段（jifei 网关 extraPara.ownerUin 硬校验，与 v1.7.29 销毁链路同款）。
 func refundResourceBody() map[string]any {
 	return map[string]any{
 		"uin":      "100012345678",
+		"ownerUin": "100012345678",
 		"appId":    1300012345,
 		"bundleId": "bundle-test-1",
 	}
@@ -86,6 +88,11 @@ func TestRefundResource_HappyPath(t *testing.T) {
 	}
 	if seenReq.UIN != "100012345678" {
 		t.Errorf("uin: got %q want 100012345678", seenReq.UIN)
+	}
+	// 2026-06-23 v0.5.1 联调修复：OwnerUin 必须从 refundResourceRequest 透传到 jifeiReq，
+	// 后续由 jifeiclient.OnlineRefund() 提取后中转到 envelope.interface.extraPara.ownerUin。
+	if seenReq.OwnerUin != "100012345678" {
+		t.Errorf("ownerUin: got %q want 100012345678", seenReq.OwnerUin)
 	}
 	if seenReq.AppID != 1300012345 {
 		t.Errorf("appId: got %d want 1300012345", seenReq.AppID)
@@ -250,6 +257,9 @@ func TestRefundResource_RequiredFieldChecks(t *testing.T) {
 	}{
 		{name: "missing_uin", mutator: func(b map[string]any) { delete(b, "uin") }},
 		{name: "empty_uin", mutator: func(b map[string]any) { b["uin"] = "  " }},
+		// 2026-06-23 v0.5.1 联调修复：ownerUin 必填校验用例
+		{name: "missing_ownerUin", mutator: func(b map[string]any) { delete(b, "ownerUin") }},
+		{name: "empty_ownerUin", mutator: func(b map[string]any) { b["ownerUin"] = "  " }},
 		{name: "zero_appId", mutator: func(b map[string]any) { b["appId"] = 0 }},
 		{name: "negative_appId", mutator: func(b map[string]any) { b["appId"] = -1 }},
 		{name: "missing_bundleId", mutator: func(b map[string]any) { delete(b, "bundleId") }},

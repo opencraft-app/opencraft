@@ -75,6 +75,7 @@ func TestOnlineRefund_Success(t *testing.T) {
 
 	resp, err := cli.OnlineRefund(context.Background(), &OnlineRefundRequest{
 		UIN:         "100012345678",
+		OwnerUin:    "100012345678",
 		AppID:       1300012345,
 		FromConsole: FromConsoleYes,
 		GoodsInfo: map[string]OnlineRefundGoodsEntry{
@@ -199,11 +200,21 @@ func TestOnlineRefund_Success(t *testing.T) {
 		t.Errorf("auth.signature mismatch: client=%s recalc=%s", auth.Signature, recalcAuth.Signature)
 	}
 
-	// **反向断言**：OnlineRefund 属于 Deal 接口族，envelope.interface 不应该有 extraPara
-	// （与 ModifyResourceStatus 资源中心接口族不同；doc 协议示例里也无 extraPara）。
-	if reqEnv.Interface.ExtraPara != nil {
-		t.Errorf("OnlineRefund MUST NOT carry envelope.interface.extraPara (Deal interface family); got %+v",
-			reqEnv.Interface.ExtraPara)
+	// **反向断言**：OwnerUin 字段 `json:"-"` 跳过 para wire 序列化，不应出现在 para 子对象里。
+	if strings.Contains(string(reqEnv.Interface.Para), `"ownerUin"`) {
+		t.Errorf("para wire MUST NOT contain ownerUin (json:\"-\" expected); got para=%s", string(reqEnv.Interface.Para))
+	}
+
+	// **正向断言**（2026-06-23 v0.5.1 联调修复添加）：OnlineRefund **必须** 携带
+	// envelope.interface.extraPara.ownerUin，jifei 网关硬校验该字段与 .site 二选一非空，
+	// 缺则返 returnCode=100000 "param error,need ownerUin or site"（与 ModifyResourceStatus
+	// v1.7.29 同款踩坑）。本断言取代原 "OnlineRefund MUST NOT carry extraPara" 反向断言——
+	// 后者是设计稿 v0.5 初版的协议理解错误，sandbox-bj-7 现网实测后修正。
+	if reqEnv.Interface.ExtraPara == nil {
+		t.Fatalf("OnlineRefund MUST carry envelope.interface.extraPara.ownerUin (jifei gateway hard check)\n%s", bodyStr)
+	}
+	if got := reqEnv.Interface.ExtraPara.OwnerUin; got != "100012345678" {
+		t.Errorf("extraPara.ownerUin: got %q want %q", got, "100012345678")
 	}
 }
 
@@ -233,54 +244,62 @@ func TestOnlineRefund_MissingRequired(t *testing.T) {
 		{
 			name: "missing_UIN",
 			req: &OnlineRefundRequest{
-				AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: []string{"r1"}}},
+				AppID: 1, OwnerUin: "100012345678", GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: []string{"r1"}}},
 			},
 			want: "empty UIN",
 		},
 		{
 			name: "invalid_AppID",
 			req: &OnlineRefundRequest{
-				UIN: "uin1", GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: []string{"r1"}}},
+				UIN: "uin1", OwnerUin: "100012345678", GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: []string{"r1"}}},
 			},
 			want: "AppID must be positive",
 		},
 		{
+			// 2026-06-23 v0.5.1 新增用例：OwnerUin 必填校验
+			name: "missing_OwnerUin",
+			req: &OnlineRefundRequest{
+				UIN: "uin1", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: []string{"r1"}}},
+			},
+			want: "empty OwnerUin",
+		},
+		{
 			name: "empty_GoodsInfo",
-			req:  &OnlineRefundRequest{UIN: "uin1", AppID: 1, GoodsInfo: nil},
+			req:  &OnlineRefundRequest{UIN: "uin1", OwnerUin: "100012345678", AppID: 1, GoodsInfo: nil},
 			want: "empty GoodsInfo",
 		},
 		{
 			name: "empty_subProductCode_key",
 			req: &OnlineRefundRequest{
-				UIN: "uin1", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"": {PayMode: 1, RegionID: 1, ResourceIDList: []string{"r1"}}},
+				UIN: "uin1", OwnerUin: "100012345678", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"": {PayMode: 1, RegionID: 1, ResourceIDList: []string{"r1"}}},
 			},
 			want: "sub_product_code) is empty",
 		},
 		{
 			name: "PayMode_not_prepaid",
 			req: &OnlineRefundRequest{
-				UIN: "uin1", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 0, RegionID: 1, ResourceIDList: []string{"r1"}}},
+				UIN: "uin1", OwnerUin: "100012345678", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 0, RegionID: 1, ResourceIDList: []string{"r1"}}},
 			},
 			want: "PayMode must be 1",
 		},
 		{
 			name: "invalid_RegionID",
 			req: &OnlineRefundRequest{
-				UIN: "uin1", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 0, ResourceIDList: []string{"r1"}}},
+				UIN: "uin1", OwnerUin: "100012345678", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 0, ResourceIDList: []string{"r1"}}},
 			},
 			want: "RegionID must be positive",
 		},
 		{
 			name: "empty_ResourceIDList",
 			req: &OnlineRefundRequest{
-				UIN: "uin1", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: nil}},
+				UIN: "uin1", OwnerUin: "100012345678", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: nil}},
 			},
 			want: "ResourceIDList is empty",
 		},
 		{
 			name: "empty_ResourceID_entry",
 			req: &OnlineRefundRequest{
-				UIN: "uin1", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: []string{""}}},
+				UIN: "uin1", OwnerUin: "100012345678", AppID: 1, GoodsInfo: map[string]OnlineRefundGoodsEntry{"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: []string{""}}},
 			},
 			want: "ResourceIDList[0] is empty",
 		},
@@ -319,8 +338,9 @@ func TestOnlineRefund_CGWBusinessError(t *testing.T) {
 	})
 
 	resp, err := cli.OnlineRefund(context.Background(), &OnlineRefundRequest{
-		UIN:   "100012345678",
-		AppID: 1300012345,
+		UIN:      "100012345678",
+		OwnerUin: "100012345678",
+		AppID:    1300012345,
 		GoodsInfo: map[string]OnlineRefundGoodsEntry{
 			"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: []string{"lhpass-abc"}},
 		},
@@ -357,8 +377,9 @@ func TestOnlineRefund_MissingBillingConfig(t *testing.T) {
 		// 不传 BillingAPIGWBaseURL / BillingAppID / BillingAppSecret
 	})
 	resp, err := cli.OnlineRefund(context.Background(), &OnlineRefundRequest{
-		UIN:   "uin1",
-		AppID: 1,
+		UIN:      "uin1",
+		OwnerUin: "uin1",
+		AppID:    1,
 		GoodsInfo: map[string]OnlineRefundGoodsEntry{
 			"sp_lighthouse": {PayMode: 1, RegionID: 1, ResourceIDList: []string{"r1"}},
 		},
