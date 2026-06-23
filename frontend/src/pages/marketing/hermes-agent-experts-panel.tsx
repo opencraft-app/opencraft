@@ -80,17 +80,17 @@ interface SkillInstallProgress {
 }
 
 const EXPERT_SCENES: ExpertSceneOption[] = [
-  { value: "finance", label: "金融", role: "投资分析专家", icon: Landmark },
-  { value: "tech", label: "技术", role: "高级开发工程师", icon: Code2 },
-  { value: "design", label: "设计", role: "产品设计专家", icon: Palette },
-  { value: "marketing", label: "营销", role: "营销增长专家", icon: Megaphone },
-  { value: "legal", label: "法律", role: "法律合规审查员", icon: Scale },
-  { value: "academic", label: "学术", role: "学术研究顾问", icon: GraduationCap },
-  { value: "education", label: "教育", role: "教育学习顾问", icon: BookOpen },
-  { value: "hr", label: "人力", role: "组织人才顾问", icon: Users },
-  { value: "ecommerce", label: "电商", role: "电商运营专家", icon: ShoppingCart },
-  { value: "media", label: "媒体", role: "内容创作专家", icon: Clapperboard },
-  { value: "healthcare", label: "医疗", role: "医疗健康顾问", icon: HeartPulse },
+  { value: "finance", label: "金融", role: "金融分析技能包", icon: Landmark },
+  { value: "tech", label: "技术", role: "开发工程技能包", icon: Code2 },
+  { value: "design", label: "设计", role: "产品设计技能包", icon: Palette },
+  { value: "marketing", label: "营销", role: "营销增长技能包", icon: Megaphone },
+  { value: "legal", label: "法律", role: "法律合规技能包", icon: Scale },
+  { value: "academic", label: "学术", role: "学术研究技能包", icon: GraduationCap },
+  { value: "education", label: "教育", role: "教育学习技能包", icon: BookOpen },
+  { value: "hr", label: "人力", role: "组织人才技能包", icon: Users },
+  { value: "ecommerce", label: "电商", role: "电商运营技能包", icon: ShoppingCart },
+  { value: "media", label: "媒体", role: "内容创作技能包", icon: Clapperboard },
+  { value: "healthcare", label: "医疗", role: "医疗健康技能包", icon: HeartPulse },
 ];
 
 const EXPERT_SCENE_MAP = new Map(EXPERT_SCENES.map((scene) => [scene.value, scene] as const));
@@ -179,11 +179,11 @@ function getPackageScene(pkg: Pick<SkillHubSkillSet, "scene">, fallback: ExpertF
 }
 
 function getExpertRole(scene: SkillHubSkillSetScene | undefined, t: ReturnType<typeof useT>): string {
-  return scene ? EXPERT_SCENE_MAP.get(scene)?.role ?? t("任务执行专家") : t("任务执行专家");
+  return scene ? EXPERT_SCENE_MAP.get(scene)?.role ?? t("技能包") : t("技能包");
 }
 
 function getPackageSummary(pkg: SkillHubSkillSet, t: ReturnType<typeof useT>): string {
-  return pkg.summary || pkg.remark || t("精选专家能力组合，适合直接接入完整工作流。");
+  return pkg.summary || pkg.remark || t("精选技能包组合，适合直接接入完整工作流。");
 }
 
 function isSupportedExpertPackage(pkg: Pick<SkillHubSkillSet, "scene">): boolean {
@@ -192,7 +192,7 @@ function isSupportedExpertPackage(pkg: Pick<SkillHubSkillSet, "scene">): boolean
 
 export function getSkillPackageTags(pkg: Pick<SkillHubSkillSet, "displayName" | "skillCount" | "skillSlugs">): string[] {
   const count = getSkillCount(pkg);
-  return [pkg.displayName.trim(), count > 0 ? `${count} 个技能` : "专家"].filter(Boolean).slice(0, 3);
+  return [pkg.displayName.trim(), count > 0 ? `${count} 个技能` : "技能包"].filter(Boolean).slice(0, 3);
 }
 
 export function buildInstallSkillCommand(skillSlug: string): string {
@@ -270,8 +270,16 @@ function isExecSucceeded(result: ExecDebugCommandResult): boolean {
   return result.exitCode === 0 && status !== "failed" && status !== "error";
 }
 
+function isSkillHubInstallSuccessOutput(output: string): boolean {
+  const parsed = tryParseJson(output.trim());
+  if (isRecord(parsed) && parsed.success === true) return true;
+  return false;
+}
+
 function isSkillInstallSucceeded(result: ExecDebugCommandResult): boolean {
-  return isExecSucceeded(result) || isSkillInstallAlreadyExists(result.output);
+  return isExecSucceeded(result)
+    || isSkillInstallAlreadyExists(result.output)
+    || isSkillHubInstallSuccessOutput(result.output);
 }
 
 function shouldUpgradeSkillHubCli(output: string): boolean {
@@ -454,7 +462,7 @@ export function getSkillPackageInstallFailureMessage(
   const output = result.failed
     .map((failure) => formatInstallFailureOutput(failure.output))
     .find(Boolean);
-  const summary = t("专家安装：成功 {{ok}} 项，失败 {{fail}} 项", {
+  const summary = t("技能包安装：成功 {{ok}} 项，失败 {{fail}} 项", {
     ok: result.succeeded.length,
     fail: result.failed.length,
   });
@@ -711,7 +719,7 @@ export function ExpertsPanel({
       const detail = await fetchSkillSetDetail(pkg.slug);
       const skillSlugs = getPackageSkillSlugs(pkg.slug, detail.skillSlugs ?? []);
       if (skillSlugs.length === 0) {
-        toast.error(t("该专家暂未包含可安装的 skills"));
+        toast.error(t("该技能包暂未包含可安装的 skills"));
         return;
       }
 
@@ -741,9 +749,9 @@ export function ExpertsPanel({
         next.set(pkg.slug, skillSlugs);
         return next;
       });
-      toast.success(t("专家技能包安装成功"));
+      toast.success(t("技能包安装成功"));
     } catch (error) {
-      toast.error(error instanceof Error ? getSkillHubErrorMessage(error, t) : t("专家安装失败"));
+      toast.error(error instanceof Error ? getSkillHubErrorMessage(error, t) : t("技能包安装失败"));
     } finally {
       setInstallingSlug(null);
       setInstallProgress(null);
@@ -768,44 +776,12 @@ export function ExpertsPanel({
     );
   }
 
-  if (expertsLoading && visibleCards.length === 0) {
-    return (
-      <div className="flex min-h-[360px] items-center justify-center rounded-md bg-white">
-        <Loader2 className="h-5 w-5 animate-spin text-black/35" />
-        <span className="ml-2 text-sm text-black/45">{t("正在加载专家...")}</span>
-      </div>
-    );
-  }
-
-  if (expertsError) {
-    return (
-      <div className="rounded-md border border-red-500/15 bg-white p-6">
-        <div className="flex items-start gap-3">
-          <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-500" />
-          <div className="min-w-0">
-            <h2 className="text-base font-semibold text-black/90">{t("专家加载失败")}</h2>
-            <p className="mt-1 text-sm leading-6 text-black/50">{getSkillHubErrorMessage(expertsError, t)}</p>
-            <button
-              type="button"
-              onClick={reloadExperts}
-              className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-md bg-black px-3 text-sm font-medium text-white transition-colors hover:bg-black/85"
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              {t("重试")}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
       <div className="space-y-4">
         <div className="min-w-0">
-          <h2 className="text-lg font-semibold leading-tight text-black/95">{t("专家")}</h2>
-          <p className="mt-2 text-sm font-medium leading-6 text-black/50">
-            {t("快速发现专家能力组合，让 AI 从单点技能走向完整工作流")}
+          <p className="text-sm font-medium leading-6 text-black/50">
+            {t("快速安装技能组合，让 Agent 从单点技能走向完整工作流")}
           </p>
         </div>
 
@@ -824,9 +800,32 @@ export function ExpertsPanel({
         />
       </div>
 
-      {visibleCards.length > 0 ? (
+      {expertsLoading && visibleCards.length === 0 ? (
+        <div className="flex min-h-[240px] items-center justify-center rounded-md bg-white">
+          <Loader2 className="h-5 w-5 animate-spin text-black/35" />
+          <span className="ml-2 text-sm text-black/45">{t("正在加载技能包")}</span>
+        </div>
+      ) : expertsError ? (
+        <div className="rounded-md border border-red-500/15 bg-white p-6">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-500" />
+            <div className="min-w-0">
+              <h2 className="text-base font-semibold text-black/90">{t("技能包加载失败")}</h2>
+              <p className="mt-1 text-sm leading-6 text-black/50">{getSkillHubErrorMessage(expertsError, t)}</p>
+              <button
+                type="button"
+                onClick={reloadExperts}
+                className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-md bg-black px-3 text-sm font-medium text-white transition-colors hover:bg-black/85"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                {t("重试")}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : visibleCards.length > 0 ? (
         view === "grid" ? (
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(380px,100%),1fr))] gap-4">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(380px,100%),1fr))] items-start gap-4">
             {visibleCards.map((card) => (
               <ExpertGridCard
                 key={card.pkg.slug}
@@ -860,7 +859,7 @@ export function ExpertsPanel({
         )
       ) : (
         <div className="rounded-md bg-white px-5 py-10 text-center text-sm text-black/40">
-          {t("没有找到匹配的专家")}
+          {t("没有找到匹配的技能包")}
         </div>
       )}
 
@@ -892,8 +891,8 @@ function ExpertSearchBox({
   const inputRef = useRef<HTMLInputElement>(null);
 
   return (
-    <div className="group relative w-full">
-      <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-black/30 transition-colors group-focus-within:text-black/55" />
+    <div className="lv-agent-search-box">
+      <Search className="lv-agent-search-box-icon" />
       <input
         ref={inputRef}
         value={value}
@@ -905,8 +904,8 @@ function ExpertSearchBox({
             inputRef.current?.blur();
           }
         }}
-        placeholder="搜索专家"
-        className="h-11 w-full rounded-md border border-black/10 bg-white pl-10 pr-4 text-sm text-black/88 outline-none transition-colors placeholder:text-black/32 focus:border-black/20"
+        placeholder="搜索技能包"
+        className="lv-agent-search-box-input"
       />
     </div>
   );
@@ -924,20 +923,32 @@ function ExpertViewToggle({
       {EXPERT_VIEW_OPTIONS.map((item) => {
         const Icon = item.icon;
         const active = value === item.value;
+        const tooltipId = `skill-package-view-${item.value}-tooltip`;
         return (
-          <button
-            key={item.value}
-            type="button"
-            onClick={() => onChange(item.value)}
-            className={cn(
-              "inline-flex h-7 min-w-[54px] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[6px] px-2.5 text-sm font-medium transition-all",
-              active ? "bg-white text-black/85 shadow-[0_1px_4px_rgba(0,0,0,0.08)]" : "text-black/45 hover:text-black/70",
-            )}
-            aria-pressed={active}
-          >
-            <Icon className="h-3.5 w-3.5" />
-            {item.label}
-          </button>
+          <span key={item.value} className="group relative inline-flex">
+            <button
+              type="button"
+              onClick={() => onChange(item.value)}
+              aria-label={item.label}
+              aria-describedby={tooltipId}
+              className={cn(
+                "lv-agent-view-toggle-btn inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[6px] transition-all",
+                active ? "bg-white text-black/85 shadow-[0_1px_4px_rgba(0,0,0,0.08)]" : "text-black/45 hover:text-black/70",
+              )}
+              data-tooltip={item.label}
+              aria-pressed={active}
+            >
+              <Icon className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <span
+              id={tooltipId}
+              role="tooltip"
+              className="pointer-events-auto absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 select-text whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium leading-relaxed text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100"
+            >
+              {item.label}
+              <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white" />
+            </span>
+          </span>
         );
       })}
     </div>
@@ -958,7 +969,7 @@ function ExpertSceneFilters({
   ];
 
   return (
-    <div className="-mx-0.5 flex min-w-0 gap-2 overflow-x-auto px-0.5 pb-1">
+    <div className="-mx-0.5 flex min-w-0 flex-wrap gap-2 overflow-visible px-0.5 pb-1">
       {filters.map((filter) => {
         const Icon = filter.icon;
         const active = activeFilter === filter.value;
@@ -970,7 +981,7 @@ function ExpertSceneFilters({
             className={cn(
               "inline-flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full border px-3 text-sm font-medium transition-colors",
               active
-                ? "border-black/16 bg-white text-black/85 shadow-[0_2px_8px_rgba(15,23,42,0.06)]"
+                ? "border-black/32 bg-black/[0.055] text-black/90 shadow-[0_3px_10px_rgba(15,23,42,0.08)]"
                 : "border-black/8 bg-white text-black/60 hover:border-black/18 hover:text-black/82",
             )}
           >
@@ -1060,9 +1071,10 @@ function InstallButton({
       className={cn(
         "inline-flex h-8 items-center justify-center gap-1.5 rounded-md px-3 text-sm font-semibold leading-none transition-colors",
         isInstalled
-          ? "bg-emerald-50 text-emerald-700"
+          ? "bg-[#F4FCF9] text-[#82BDAE]"
           : "bg-black text-white hover:bg-black/85 active:bg-black/95",
-        (installingSlug && !isInstalling) || isInstalled ? "cursor-not-allowed opacity-55" : "",
+        isInstalled ? "cursor-not-allowed" : "",
+        installingSlug && !isInstalling ? "cursor-not-allowed opacity-55" : "",
         className,
       )}
     >
@@ -1111,7 +1123,7 @@ function ExpertGridCard({
           onOpen(card);
         }
       }}
-      className="group flex min-h-[188px] cursor-pointer flex-col rounded-md border border-black/6 bg-white p-5 transition-all hover:border-black/12 hover:shadow-[0_10px_28px_rgba(15,23,42,0.055)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/40"
+      className="group flex min-h-[164px] cursor-pointer flex-col rounded-md border border-black/6 bg-white px-4 pb-2.5 pt-4 transition-all hover:border-black/12 hover:shadow-[0_10px_28px_rgba(15,23,42,0.055)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/40"
     >
       <div className="flex items-start gap-3">
         <SkillPackageProfileIcon pkg={card.pkg} />
@@ -1122,11 +1134,11 @@ function ExpertGridCard({
           <p className="mt-1.5 truncate text-xs font-medium leading-5 text-black/48">{getExpertRole(scene, t)}</p>
         </div>
       </div>
-      <p className="line-clamp-2 text-[13px] leading-[22px] text-black/58" style={{ marginTop: 40 }} title={summary}>{summary}</p>
-      <div className="mt-auto flex items-center gap-3 pt-4">
+      <p className="line-clamp-3 text-[13px] leading-5 text-black/58" style={{ marginTop: 16 }} title={summary}>{summary}</p>
+      <div className="mt-3.5 flex items-center gap-3">
         <span className="inline-flex items-center gap-1.5 text-xs font-normal text-black/62">
           <PackageOpen className="h-3.5 w-3.5" />
-          {skillCount > 0 ? t("{{count}} 个技能", { count: skillCount }) : t("专家")}
+          {skillCount > 0 ? t("{{count}} 个技能", { count: skillCount }) : t("技能包")}
         </span>
         <InstallButton
           pkg={card.pkg}
@@ -1185,7 +1197,7 @@ function ExpertListItem({
           <p className="truncate text-xs font-medium leading-5 text-black/48">{getExpertRole(scene, t)}</p>
           <span className="inline-flex flex-shrink-0 items-center gap-1.5 text-xs font-light text-black/52">
             <PackageOpen className="h-3.5 w-3.5" />
-            {skillCount > 0 ? t("{{count}} 个技能", { count: skillCount }) : t("专家")}
+            {skillCount > 0 ? t("{{count}} 个技能", { count: skillCount }) : t("技能包")}
           </span>
         </div>
         <p className="line-clamp-2 text-[13px] leading-[24px] text-black/58" title={summary}>{summary}</p>
@@ -1246,10 +1258,10 @@ function SkillPackageDetailView({
       <button
         type="button"
         onClick={onBack}
-        className="inline-flex items-center gap-2 text-sm font-semibold text-black/42 transition-colors hover:text-black/78"
+        className="inline-flex min-h-8 items-center gap-2 text-sm font-semibold leading-8 text-black/42 transition-colors hover:text-black/78"
       >
         <ArrowLeft className="h-4 w-4" />
-        <span>{t("专家")} / {detail.displayName}</span>
+        <span>{t("技能包")} / {detail.displayName}</span>
       </button>
 
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
@@ -1277,7 +1289,7 @@ function SkillPackageDetailView({
         {loading && !data ? (
           <div className="flex min-h-40 items-center justify-center text-sm text-black/45">
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            {t("正在加载专家详情...")}
+            {t("正在加载技能包详情...")}
           </div>
         ) : error ? (
           <div className="rounded-md border border-red-500/15 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700">

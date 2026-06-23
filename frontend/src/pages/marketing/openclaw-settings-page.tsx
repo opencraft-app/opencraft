@@ -38,7 +38,6 @@ import {
   Trash2,
   Trophy,
   UploadCloud,
-  UserCheck,
   UserRound,
   Wand2,
   Wrench,
@@ -74,7 +73,6 @@ import type { WorkerActionStatusResult } from "@/repositories/types";
 import {
   ModelPanel,
   ChannelPanel,
-  SkillPanel,
   createLighthouseConfig,
   type IInstanceInfo,
   type IFeatureFlags,
@@ -101,7 +99,7 @@ import {
   type HermesMemoryLimitValidation,
 } from "@/pages/marketing/openclaw-memory";
 import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
-import { ExpertsPanel } from "@/pages/marketing/hermes-agent-experts-panel";
+import { HermesAgentSkillsPanel } from "@/pages/marketing/hermes-agent-skills-panel";
 import { AchievementsPanel } from "@/pages/marketing/openclaw-achievements-panel";
 import { AutomationsPanel } from "@/pages/marketing/openclaw-automations-panel";
 import { TatFileManagerPanel } from "@/components/domain/tat-file-manager-panel";
@@ -1438,7 +1436,7 @@ const SkillSection = () => {
             onClick={() => { setInstalled(false); setSelectedPersona(null); setProgress(0); }}
             className="lw-back-link mt-3"
           >
-            {t("重新选择技能专家")}
+            {t("重新选择技能包")}
           </button>
         </div>
       ) : installing && selectedPersona ? (
@@ -1465,7 +1463,7 @@ const SkillSection = () => {
       ) : (
         /* Selection state */
         <>
-          <p className="text-sm text-[var(--text-secondary)]">{t("选择一个技能专家，让你的龙虾技能增强")}</p>
+          <p className="text-sm text-[var(--text-secondary)]">{t("选择一个技能包，让你的龙虾技能增强")}</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             {personas.map((persona) => (
               <button
@@ -4436,7 +4434,6 @@ export const OpenClawSettingsPage = () => {
                 { id: "channel", label: t("通道"), icon: <MessageCircle className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.channel },
                 { id: "model", label: t("模型"), icon: <BrainCircuit className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.model },
                 { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.skill },
-                { id: "expert", label: t("专家"), icon: <UserCheck className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.expert, badge: "NEW" },
                 ...(!isGlobal
                   ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.buddy }]
                   : []),
@@ -4693,14 +4690,14 @@ export const OpenClawSettingsPage = () => {
                             />
                           )}
                           {activeSection === "skill" && (
-                            <SkillPanel
+                            <HermesAgentSkillsPanel
+                              botId={activeBot.id}
+                              execDebugCommand={repositories.bots.execDebugCommand}
                               instance={sdkInstance}
                               featureFlags={sdkFeatureFlags}
+                              initialSectionSlug={sectionSlug}
                               productConfig={sdkProductConfig}
                             />
-                          )}
-                          {activeSection === "expert" && (
-                            <ExpertsPanel botId={activeBot.id} execDebugCommand={repositories.bots.execDebugCommand} />
                           )}
                           {activeSection === "buddy" && !isGlobal && (
                             <BuddyPanel botId={activeBot.id} />

@@ -1,9 +1,9 @@
 /**
- * 专家技能包安装状态的持久化（Vibebase 版）。
+ * 技能包安装状态的持久化（Vibebase 版）。
  *
  * 对齐 AI 搭子人设的“已注入”状态：
  * - 服务端真源：状态写到 Vibebase（用户级 KV），刷新 / 换浏览器也能恢复。
- * - 按 bot 隔离：不同 botId 各存一份，避免专家安装状态串号。
+ * - 按 bot 隔离：不同 botId 各存一份，避免技能包安装状态串号。
  * - UI 层可保留 localStorage 兜底，但这里不做静默降级。
  *
  * Vibebase namespace / key：

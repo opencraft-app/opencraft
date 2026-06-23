@@ -100,7 +100,7 @@ describe("hermes agent experts panel", () => {
     expect(getSkillPackageInstallFailureMessage({
       succeeded: ["market-data"],
       failed: [{ slug: "backtest-engine", output: "line1\nline2\nline3\nline4" }],
-    }, t)).toBe("专家安装：成功 1 项，失败 1 项。失败：backtest-engine；错误：line2；line3；line4");
+    }, t)).toBe("技能包安装：成功 1 项，失败 1 项。失败：backtest-engine；错误：line2；line3；line4");
   });
 
   it("treats existing skill targets as already installed and compacts json install errors", () => {
@@ -213,7 +213,7 @@ describe("hermes agent experts panel", () => {
         ? [{
             id: 1,
             slug: "finance-missing-icon",
-            displayName: "缺图专家",
+            displayName: "缺图技能包",
             summary: "列表摘要",
             remark: "",
             scene: "finance",
@@ -251,10 +251,47 @@ describe("hermes agent experts panel", () => {
     render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
 
     expect(await screen.findByRole("button", { name: /量化回测/ })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "卡片" }));
-    expect(screen.getByRole("button", { name: "卡片" })).toHaveAttribute("aria-pressed", "true");
-    fireEvent.click(screen.getByRole("button", { name: "列表" }));
-    expect(screen.getByRole("button", { name: "列表" })).toHaveAttribute("aria-pressed", "true");
+    const cardViewButton = screen.getByRole("button", { name: "卡片" });
+    const listViewButton = screen.getByRole("button", { name: "列表" });
+    expect(cardViewButton).toHaveAttribute("data-tooltip", "卡片");
+    expect(cardViewButton).toHaveTextContent("");
+    expect(screen.getByRole("tooltip", { name: "卡片" })).toBeInTheDocument();
+    expect(listViewButton).toHaveAttribute("data-tooltip", "列表");
+    expect(listViewButton).toHaveTextContent("");
+    expect(screen.getByRole("tooltip", { name: "列表" })).toBeInTheDocument();
+
+    fireEvent.click(cardViewButton);
+    expect(cardViewButton).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(listViewButton);
+    expect(listViewButton).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("uses the parent skills tab as the package title instead of rendering a duplicate package heading", async () => {
+    vi.mocked(fetchSkillSets).mockResolvedValue({
+      skillSets: [],
+    });
+
+    render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
+
+    expect(await screen.findByText("快速安装技能组合，让 Agent 从单点技能走向完整工作流")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("搜索技能包")).toHaveClass("lv-agent-search-box-input");
+    expect(screen.queryByRole("heading", { name: "技能包" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the package intro visible while the catalog is loading", async () => {
+    let resolveSkillSets: (value: Awaited<ReturnType<typeof fetchSkillSets>>) => void = () => {};
+    vi.mocked(fetchSkillSets).mockReturnValue(new Promise((resolve) => {
+      resolveSkillSets = resolve;
+    }));
+
+    render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
+
+    expect(screen.getByText("快速安装技能组合，让 Agent 从单点技能走向完整工作流")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("搜索技能包")).toBeInTheDocument();
+    expect(screen.getByText("正在加载技能包")).toBeInTheDocument();
+
+    resolveSkillSets({ skillSets: [] });
+    await waitFor(() => expect(screen.queryByText("正在加载技能包")).not.toBeInTheDocument());
   });
 
   it("loads the SkillHub scene expert catalog and hides scene-less generic packages", async () => {
@@ -352,6 +389,56 @@ describe("hermes agent experts panel", () => {
       installedPackageSlugs: ["quant-backtest"],
     });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("keeps the package installed when SkillHub output reports success even if debug status is not normalized", async () => {
+    vi.mocked(fetchSkillSets).mockImplementation(async (params) => ({
+      skillSets: !params?.scene || params.scene === "legal"
+        ? [{
+            id: 1,
+            slug: "legal-contract-drafting",
+            displayName: "合同起草",
+            summary: "列表摘要",
+            remark: "",
+            scene: "legal",
+            skillCount: 1,
+            createdAt: 0,
+            updatedAt: 0,
+          }]
+        : [],
+    }));
+    vi.mocked(fetchSkillSetDetail).mockResolvedValue({
+      id: 1,
+      slug: "legal-contract-drafting",
+      displayName: "合同起草",
+      summary: "详情摘要",
+      remark: "",
+      skillCount: 1,
+      skillSlugs: ["contract-drafting"],
+      createdAt: 0,
+      updatedAt: 0,
+    });
+    const execDebugCommand = vi.fn().mockImplementation(async (_botId: string, command: string) => {
+      if (command === buildInstalledSkillsListCommand()) {
+        return { status: "success", exitCode: 0, output: "" };
+      }
+      return {
+        status: "",
+        exitCode: -1,
+        output: JSON.stringify({ success: true, slug: "contract-drafting" }),
+      };
+    });
+
+    render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "安装" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "已安装" })).toBeDisabled();
+    });
+    expect(saveExpertPackagesState).toHaveBeenCalledWith("bot-1", {
+      installedPackageSlugs: ["legal-contract-drafting"],
+    });
   });
 
   it("shows per-skill package install progress on the install button", async () => {
