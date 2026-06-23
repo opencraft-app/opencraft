@@ -25,7 +25,7 @@ import {
 } from "@/lib/billing-error";
 import { buildPayPlan } from "@/lib/wx-pay";
 import { AGENTS_HOME_PATH } from "@/router/paths";
-import { captureProductEvent } from "@/observability/posthog";
+import { captureProductEvent, PRODUCT_ANALYTICS_EVENTS } from "@/observability/posthog";
 import { QRCodeSVG } from "qrcode.react";
 
 /* ─── Notion DESIGN.md Tokens ─── */
@@ -1384,7 +1384,7 @@ export const SubscribePage = ({
       soulTemplateId: undefined,
       status: "running",
     });
-    captureProductEvent("agent_create_succeeded", {
+    captureProductEvent(PRODUCT_ANALYTICS_EVENTS.AGENT_CREATE_SUCCEEDED, {
       plan_id: plan.id,
       plan_name: plan.name,
       bot_status: createdBot.status,
@@ -1521,7 +1521,7 @@ export const SubscribePage = ({
   const executeCreateBot = useCallback(async (plan: PlanInfo) => {
     setSubscribingPlanId(plan.id);
     setError(null);
-    captureProductEvent("agent_create_started", {
+    captureProductEvent(PRODUCT_ANALYTICS_EVENTS.AGENT_CREATE_STARTED, {
       plan_id: plan.id,
       plan_name: plan.name,
       skip_payment: plan.skipPayment === true,
@@ -1545,7 +1545,7 @@ export const SubscribePage = ({
       console.error("[subscribe] create bot failed", err instanceof RepositoryError
         ? { status: err.status, code: err.code, message: err.message }
         : err);
-      captureProductEvent("agent_create_failed", {
+      captureProductEvent(PRODUCT_ANALYTICS_EVENTS.AGENT_CREATE_FAILED, {
         plan_id: plan.id,
         plan_name: plan.name,
         code,

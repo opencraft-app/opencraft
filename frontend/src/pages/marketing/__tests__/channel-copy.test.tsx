@@ -62,7 +62,7 @@ describe("marketing channel copy", () => {
     expect(screen.queryByText("企业微信（即将支持）")).not.toBeInTheDocument();
   });
 
-  it("omits WeCom channel support from the June changelog", () => {
+  it("shows WeCom channel support in the domestic June changelog", () => {
     render(
       <MemoryRouter>
         <ChangelogPage />
@@ -70,8 +70,8 @@ describe("marketing channel copy", () => {
     );
 
     expect(screen.getByText("2026 年 6 月")).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "LightVela 支持企业微信通道" })).not.toBeInTheDocument();
-    expect(screen.queryByText("现在可以将 Hermes Agent 接入企业微信，在企业微信会话中直接与云端智能伙伴对话。")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "LightVela 支持企业微信通道" })).toBeInTheDocument();
+    expect(screen.getByText("现在可以将 Hermes Agent 接入企业微信，在企业微信会话中直接与云端智能伙伴对话。")).toBeInTheDocument();
   });
 
   it("mentions automations in the May changelog", () => {
@@ -94,10 +94,10 @@ describe("marketing channel copy", () => {
     );
 
     expect(screen.getAllByRole("heading", { name: "LightVela内测上线" }).length).toBeGreaterThan(0);
-    expect(screen.getByText("支持一键创建云端 Hermes，支持快速接入Telegram、WhatsApp、Discord 等通道，支持主流模型 API 接入，支持一键安装 Skill 技能。")).toBeInTheDocument();
+    expect(screen.getByText("支持一键创建云端 Hermes，支持快速接入 QQ、微信、飞书通道，支持主流模型 API 接入，支持一键安装 Skill 技能。")).toBeInTheDocument();
   });
 
-  it("omits the Soul persona entry from the May changelog", () => {
+  it("shows the Soul persona entry in the domestic May changelog", () => {
     render(
       <MemoryRouter>
         <ChangelogPage />
@@ -105,8 +105,8 @@ describe("marketing channel copy", () => {
     );
 
     expect(screen.getByText("2026 年 5 月")).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Soul 人设能力上线" })).not.toBeInTheDocument();
-    expect(screen.queryByText("为 Hermes Agent 抽取并保存专属 Soul 人设，一键注入后通过 /new 开启带有新人设的新会话。")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Soul 人设能力上线" })).toBeInTheDocument();
+    expect(screen.getByText("为 Hermes Agent 抽取并保存专属 Soul 人设，一键注入后通过 /new 开启带有新人设的新会话。")).toBeInTheDocument();
   });
 
   it("uses dedicated English screenshots in the English changelog", async () => {

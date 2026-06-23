@@ -11,7 +11,7 @@ import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
 import type { RenderUserMenuLink } from "@/components/site/user-avatar-menu";
 import { isGlobal } from "@/lib/region";
-import { captureProductEvent } from "@/observability/posthog";
+import { captureProductEvent, PRODUCT_ANALYTICS_EVENTS, PRODUCT_ANALYTICS_LOCATIONS } from "@/observability/posthog";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { AGENTS_HOME_PATH } from "@/router/paths";
 
@@ -57,8 +57,8 @@ export const LandingPageView = ({
   }, [navigateTo, oauthError]);
 
   const handleCreateClick = useCallback(() => {
-    captureProductEvent("landing_cta_clicked", {
-      location: "public_landing",
+    captureProductEvent(PRODUCT_ANALYTICS_EVENTS.LANDING_CTA_CLICKED, {
+      location: PRODUCT_ANALYTICS_LOCATIONS.PUBLIC_LANDING,
     });
     navigateTo(AGENTS_HOME_PATH);
   }, [navigateTo]);

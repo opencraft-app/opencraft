@@ -77,7 +77,8 @@
       "deployCommand": "deploy:eo",
       "projectName": "lightvela-intl",
       "requiredSecretEnv": [
-        "EDGEONE_API_TOKEN"
+        "EDGEONE_API_TOKEN",
+        "POSTHOG_PROJECT_TOKEN"
       ],
       "authApiBaseUrl": "https://api.lightvela.ai",
       "outputDir": "out",
@@ -89,7 +90,6 @@
         },
         "posthog": {
           "enabled": "true",
-          "projectToken": "phc_ogtAa2thuMdzyGzWcQqzC99LqzMsZbzwPGzFuaRRq9Cb",
           "host": "https://eu.i.posthog.com",
           "uiHost": "https://eu.posthog.com"
         }

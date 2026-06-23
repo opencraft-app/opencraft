@@ -219,6 +219,29 @@ describe("release matrix helpers", () => {
     expect(comboEnv.NEXT_PUBLIC_POSTHOG_UI_HOST).toBe("https://us.posthog.com");
   });
 
+  it("injects global PostHog project token from CI secret env", () => {
+    const comboEnv = createComboEnvironment({
+      ...globalCfCombo,
+      observability: {
+        posthog: {
+          enabled: "true",
+          host: "https://eu.i.posthog.com",
+          uiHost: "https://eu.posthog.com",
+        },
+      },
+    }, "lightvela-intl", {
+      CLOUDFLARE_API_TOKEN: "token",
+      CLOUDFLARE_ACCOUNT_ID: "account",
+      POSTHOG_PROJECT_TOKEN: "ph_ci_secret",
+    });
+
+    expect(comboEnv.VITE_POSTHOG_ENABLED).toBe("true");
+    expect(comboEnv.VITE_POSTHOG_PROJECT_TOKEN).toBe("ph_ci_secret");
+    expect(comboEnv.NEXT_PUBLIC_POSTHOG_ENABLED).toBe("true");
+    expect(comboEnv.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN).toBe("ph_ci_secret");
+    expect(comboEnv.NEXT_PUBLIC_POSTHOG_HOST).toBe("https://eu.i.posthog.com");
+  });
+
   it("does not leak ambient PostHog values when combo omits them", () => {
     const comboEnv = createComboEnvironment({
       ...globalCfCombo,
@@ -267,7 +290,7 @@ describe("release matrix helpers", () => {
     }
   });
 
-  it("rejects enabled PostHog config without token or host", () => {
+  it("rejects enabled PostHog config without host", () => {
     const dir = mkdtempSync(join(tmpdir(), "release-matrix-"));
     const matrixPath = join(dir, "release-matrix.json");
     try {
@@ -277,13 +300,12 @@ describe("release matrix helpers", () => {
           observability: {
             posthog: {
               enabled: "true",
-              projectToken: "ph_test",
             },
           },
         }],
       }));
 
-      expect(() => loadReleaseMatrix(matrixPath)).toThrow("must define observability.posthog.projectToken and host when enabled=true");
+      expect(() => loadReleaseMatrix(matrixPath)).toThrow("must define observability.posthog.host when enabled=true");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -402,7 +424,7 @@ describe("release matrix helpers", () => {
         },
         posthog: {
           enabled: "true",
-          projectToken: "phc_ogtAa2thuMdzyGzWcQqzC99LqzMsZbzwPGzFuaRRq9Cb",
+          projectToken: undefined,
           host: "https://eu.i.posthog.com",
           uiHost: "https://eu.posthog.com",
         },
@@ -413,6 +435,7 @@ describe("release matrix helpers", () => {
       },
     });
     expect(combo?.requiredSecretEnv).toContain("EDGEONE_API_TOKEN");
+    expect(combo?.requiredSecretEnv).toContain("POSTHOG_PROJECT_TOKEN");
   });
 
   it("keeps release execution unchanged when artifact mode is unset", () => {

@@ -15,6 +15,7 @@ import type { RenderUserMenuLink } from "@/components/site/user-avatar-menu";
 import { useT } from "@/i18n/t";
 import { assetUrl } from "@/lib/asset-url";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
+import { isGlobal } from "@/lib/region";
 
 /* ═══════════════════════════════════════════════════════════════
    Animation Variants
@@ -63,34 +64,36 @@ type ChangelogMonthGroup = {
 function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "achievements" | "wecom" | "soul" | "schedule" | "chat" | "memory" }) {
   const t = useT();
   const { i18n } = useTranslation();
-  const useEnglishAssets = !i18n.language.startsWith("zh");
-  /* 国际站英文 changelog 使用英文截图；中文与国内站继续复用中文截图。 */
+  const useGlobalAssets = isGlobal || !i18n.language.startsWith("zh");
+  /* 国际站中英文 changelog 均使用国际版截图；国内站继续使用中文截图。 */
   const imgPath =
     variant === "cloudStorage"
-      ? useEnglishAssets
+      ? useGlobalAssets
         ? "/assets/changelog/lightvela-cloud-storage-en.png"
         : "/assets/changelog/lightvela-cloud-storage.webp"
       : variant === "achievements"
-      ? useEnglishAssets
+      ? useGlobalAssets
         ? "/assets/changelog/lightvela-achievements-en.png"
         : "/assets/changelog/lightvela-achievements.webp"
       : variant === "wecom"
       ? "/assets/changelog/lightvela-wecom-channel.webp"
       : variant === "chat"
-      ? useEnglishAssets
+      ? useGlobalAssets
         ? "/assets/changelog/agentchat-web-chat-en.png"
         : "/assets/changelog/agentchat-web-chat.webp"
       : variant === "memory"
-      ? useEnglishAssets
+      ? useGlobalAssets
         ? "/assets/changelog/hermes-memory-en.png"
         : "/assets/changelog/hermes-memory.webp"
       : variant === "schedule"
-      ? useEnglishAssets
+      ? useGlobalAssets
         ? "/assets/changelog/scheduled-tasks-en.png"
         : "/assets/changelog/scheduled-tasks.webp"
       : variant === "soul"
       ? "/assets/changelog/soul-persona.webp"
-      : "/assets/changelog/lightvela-launch-en.webp";
+      : useGlobalAssets
+        ? "/assets/changelog/lightvela-launch-en.webp"
+        : "/assets/changelog/lightvela-launch.webp";
   const altText =
     variant === "cloudStorage"
       ? t("LightVela 支持云存储")
@@ -109,17 +112,17 @@ function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "achiev
         : t("LightVela内测上线");
   const aspectRatio =
     variant === "cloudStorage"
-      ? useEnglishAssets ? "1280 / 935" : "2140 / 1532"
+      ? useGlobalAssets ? "1280 / 935" : "2140 / 1532"
       : variant === "achievements"
-      ? useEnglishAssets ? "1275 / 663" : "2140 / 1198"
+      ? useGlobalAssets ? "1275 / 663" : "2140 / 1198"
       : variant === "wecom"
       ? "2160 / 844"
       : variant === "chat"
-      ? useEnglishAssets ? "1677 / 938" : "1742 / 903"
+      ? useGlobalAssets ? "1677 / 938" : "1742 / 903"
       : variant === "memory"
-      ? useEnglishAssets ? "1637 / 961" : "2326 / 1322"
+      ? useGlobalAssets ? "1637 / 961" : "2326 / 1322"
       : variant === "schedule"
-        ? useEnglishAssets ? "1784 / 882" : "1952 / 806"
+        ? useGlobalAssets ? "1784 / 882" : "1952 / 806"
         : variant === "soul"
           ? "2044 / 748"
           : "710 / 360";
@@ -151,7 +154,11 @@ function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "achiev
 function ChangelogContent() {
   const t = useT();
   /* 数据驱动；每条文案直接通过翻译函数调用字面量，以便被 i18n-extract 扫描。
-     国内站与国际站复用同一份中文 changelog，国际站英文 URL 由 i18n 展示翻译。 */
+     国内站与国际站的渠道事实不同，使用 isGlobal 编译期分支分别维护。 */
+  const launchDesc = isGlobal
+    ? t("支持一键创建云端 Hermes，支持快速接入Telegram、WhatsApp、Discord 等通道，支持主流模型 API 接入，支持一键安装 Skill 技能。")
+    : t("支持一键创建云端 Hermes，支持快速接入 QQ、微信、飞书通道，支持主流模型 API 接入，支持一键安装 Skill 技能。");
+
   const changelogGroups: ChangelogMonthGroup[] = [
     {
       id: "2026-06",
@@ -169,6 +176,16 @@ function ChangelogContent() {
           desc: t("不断深入使用 Hermes Agent，将会解锁更多新鲜成就，记录你的探索进度。"),
           visual: "achievements",
         },
+        ...(!isGlobal
+          ? [
+              {
+                id: "wecom",
+                title: t("LightVela 支持企业微信通道"),
+                desc: t("现在可以将 Hermes Agent 接入企业微信，在企业微信会话中直接与云端智能伙伴对话。"),
+                visual: "wecom" as const,
+              },
+            ]
+          : []),
       ],
     },
     {
@@ -193,6 +210,16 @@ function ChangelogContent() {
           desc: t("为 Agent 设置周期、间隔或单次自动任务，让它按计划执行提醒、总结、通知等日常工作。"),
           visual: "schedule",
         },
+        ...(!isGlobal
+          ? [
+              {
+                id: "soul",
+                title: t("Soul 人设能力上线"),
+                desc: t("为 Hermes Agent 抽取并保存专属 Soul 人设，一键注入后通过 /new 开启带有新人设的新会话。"),
+                visual: "soul" as const,
+              },
+            ]
+          : []),
       ],
     },
     {
@@ -202,7 +229,7 @@ function ChangelogContent() {
         {
           id: "beta-launch",
           title: t("LightVela内测上线"),
-          desc: t("支持一键创建云端 Hermes，支持快速接入Telegram、WhatsApp、Discord 等通道，支持主流模型 API 接入，支持一键安装 Skill 技能。"),
+          desc: launchDesc,
           visual: "lobster",
         },
       ],

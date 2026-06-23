@@ -1,8 +1,8 @@
-import { readStoredCookieConsent, type CookieConsentValue } from "@/lib/cookie-consent";
+import { COOKIE_CONSENT_ACCEPTED, readStoredCookieConsent, type CookieConsentValue } from "@/lib/cookie-consent";
 import { REGION, type Region } from "@/lib/region";
 
 type PostHogEnv = {
-  readonly PROD?: boolean;
+  readonly PROD?: boolean | string;
   readonly NODE_ENV?: string;
   readonly NEXT_PUBLIC_POSTHOG_ENABLED?: string;
   readonly NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN?: string;
@@ -28,14 +28,22 @@ export type PostHogConfig = {
   region: Region;
 };
 
-export type ProductAnalyticsEvent =
-  | "landing_cta_clicked"
-  | "login_modal_opened"
-  | "oauth_provider_clicked"
-  | "subscribe_cta_clicked"
-  | "agent_create_started"
-  | "agent_create_succeeded"
-  | "agent_create_failed";
+export const PRODUCT_ANALYTICS_EVENTS = {
+  LANDING_CTA_CLICKED: "landing_cta_clicked",
+  LOGIN_MODAL_OPENED: "login_modal_opened",
+  OAUTH_PROVIDER_CLICKED: "oauth_provider_clicked",
+  SUBSCRIBE_CTA_CLICKED: "subscribe_cta_clicked",
+  AGENT_CREATE_STARTED: "agent_create_started",
+  AGENT_CREATE_SUCCEEDED: "agent_create_succeeded",
+  AGENT_CREATE_FAILED: "agent_create_failed",
+} as const;
+
+export const PRODUCT_ANALYTICS_LOCATIONS = {
+  PUBLIC_LANDING: "public_landing",
+  LOGIN_MODAL: "login_modal",
+} as const;
+
+export type ProductAnalyticsEvent = (typeof PRODUCT_ANALYTICS_EVENTS)[keyof typeof PRODUCT_ANALYTICS_EVENTS];
 
 export type ProductAnalyticsProperties = Record<string, string | number | boolean | null | undefined>;
 
@@ -45,7 +53,29 @@ let pendingUserId: string | undefined;
 let identifiedUserId: string | undefined;
 let activeRegion: Region | undefined;
 
-const isTruthy = (value: string | undefined): boolean => {
+const PII_PROPERTY_KEYS = new Set([
+  "address",
+  "authorization",
+  "birthday",
+  "email",
+  "full_name",
+  "invite_code",
+  "invitecode",
+  "ip",
+  "ip_address",
+  "mobile",
+  "name",
+  "password",
+  "phone",
+  "phone_number",
+  "real_name",
+  "token",
+  "user_email",
+  "user_name",
+]);
+
+const isTruthy = (value: boolean | string | undefined): boolean => {
+  if (typeof value === "boolean") return value;
   const normalized = value?.trim().toLowerCase();
   return normalized === "true" || normalized === "1" || normalized === "yes";
 };
@@ -131,8 +161,8 @@ export function resolvePostHogConfig(
   region: Region = REGION,
   consent: CookieConsentValue | null = readStoredCookieConsent(),
 ): PostHogConfig | null {
-  const isProduction = env.PROD === true || env.NODE_ENV === "production";
-  if (!isProduction || region !== "global" || consent !== "accepted") {
+  const isProduction = isTruthy(env.PROD) || env.NODE_ENV === "production";
+  if (!isProduction || region !== "global" || consent !== COOKIE_CONSENT_ACCEPTED) {
     return null;
   }
 
@@ -258,6 +288,32 @@ export function disablePostHog(): void {
   posthog?.reset();
 }
 
+export function getPostHog(): PostHogClient | null {
+  return posthog;
+}
+
+function sanitizeProductAnalyticsProperties(
+  properties: ProductAnalyticsProperties | undefined,
+): ProductAnalyticsProperties | undefined {
+  if (!properties) return undefined;
+  const safeProperties: ProductAnalyticsProperties = {};
+  let droppedUnsafeKey = false;
+
+  for (const [key, value] of Object.entries(properties)) {
+    const normalizedKey = key.replace(/[-\s]/g, "_").toLowerCase();
+    if (PII_PROPERTY_KEYS.has(normalizedKey) || normalizedKey.endsWith("_token")) {
+      droppedUnsafeKey = true;
+      continue;
+    }
+    safeProperties[key] = value;
+  }
+
+  if (droppedUnsafeKey) {
+    console.warn("Dropped unsafe PostHog analytics property key");
+  }
+  return safeProperties;
+}
+
 /**
  * Explicit product event capture.
  *
@@ -270,8 +326,9 @@ export function captureProductEvent(
   eventName: ProductAnalyticsEvent,
   properties?: ProductAnalyticsProperties,
 ): void {
+  const safeProperties = sanitizeProductAnalyticsProperties(properties);
   posthog?.capture(eventName, {
-    ...properties,
+    ...safeProperties,
     app_region: activeRegion ?? REGION,
     app_surface: "lightvela-web",
   });

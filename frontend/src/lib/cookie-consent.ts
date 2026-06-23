@@ -1,7 +1,9 @@
 export const COOKIE_CONSENT_STORAGE_KEY = "lightvela-cookie-consent-v1";
 export const COOKIE_CONSENT_CHANGED_EVENT = "lightvela-cookie-consent-changed";
+export const COOKIE_CONSENT_ACCEPTED = "accepted";
+export const COOKIE_CONSENT_NECESSARY = "necessary";
 
-export type CookieConsentValue = "accepted" | "necessary";
+export type CookieConsentValue = typeof COOKIE_CONSENT_ACCEPTED | typeof COOKIE_CONSENT_NECESSARY;
 
 export type CookieConsentChangedDetail = {
   value: CookieConsentValue;
@@ -11,7 +13,7 @@ export const readStoredCookieConsent = (): CookieConsentValue | null => {
   if (typeof window === "undefined") return null;
   try {
     const value = window.localStorage.getItem(COOKIE_CONSENT_STORAGE_KEY);
-    return value === "accepted" || value === "necessary" ? value : null;
+    return value === COOKIE_CONSENT_ACCEPTED || value === COOKIE_CONSENT_NECESSARY ? value : null;
   } catch {
     return null;
   }

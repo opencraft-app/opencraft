@@ -14,6 +14,10 @@ import type { PublicRouteLocale } from './public-locale';
 type Locale = PublicRouteLocale['locale'];
 
 export function PublicSiteLocaleBridge({ locale, children }: { locale: Locale; children: ReactNode }) {
+  if (i18n.language !== locale) {
+    void i18n.changeLanguage(locale);
+  }
+
   useEffect(() => {
     if (i18n.language !== locale) {
       void i18n.changeLanguage(locale);

@@ -3,6 +3,7 @@ import {
   captureProductEvent,
   disablePostHog,
   initPostHog,
+  PRODUCT_ANALYTICS_EVENTS,
   resolvePostHogClient,
   resetPostHogForTest,
   resolvePostHogConfig,
@@ -89,7 +90,7 @@ describe("resolvePostHogConfig", () => {
 
   it("resolves global PostHog release config", () => {
     expect(resolvePostHogConfig({
-      PROD: true,
+      PROD: "true",
       VITE_POSTHOG_ENABLED: "true",
       VITE_POSTHOG_PROJECT_TOKEN: "ph_test",
       VITE_POSTHOG_HOST: "https://us.i.posthog.com",
@@ -182,12 +183,33 @@ describe("initPostHog", () => {
       VITE_POSTHOG_HOST: "https://us.i.posthog.com",
     }, "global", "accepted");
 
-    captureProductEvent("subscribe_cta_clicked", {
+    captureProductEvent(PRODUCT_ANALYTICS_EVENTS.SUBSCRIBE_CTA_CLICKED, {
       plan: "pro",
     });
 
-    expect(posthogMock.capture).toHaveBeenCalledWith("subscribe_cta_clicked", {
+    expect(posthogMock.capture).toHaveBeenCalledWith(PRODUCT_ANALYTICS_EVENTS.SUBSCRIBE_CTA_CLICKED, {
       plan: "pro",
+      app_region: "global",
+      app_surface: "lightvela-web",
+    });
+  });
+
+  it("drops analytics properties with unsafe PII-like keys", async () => {
+    await initPostHog({
+      PROD: true,
+      VITE_POSTHOG_ENABLED: "true",
+      VITE_POSTHOG_PROJECT_TOKEN: "ph_test",
+      VITE_POSTHOG_HOST: "https://us.i.posthog.com",
+    }, "global", "accepted");
+
+    captureProductEvent(PRODUCT_ANALYTICS_EVENTS.LOGIN_MODAL_OPENED, {
+      source: "header",
+      email: "user@example.com",
+      phone_number: "123",
+    });
+
+    expect(posthogMock.capture).toHaveBeenCalledWith(PRODUCT_ANALYTICS_EVENTS.LOGIN_MODAL_OPENED, {
+      source: "header",
       app_region: "global",
       app_surface: "lightvela-web",
     });
@@ -225,7 +247,7 @@ describe("initPostHog", () => {
     expect(posthogMock.identify).toHaveBeenLastCalledWith("usr_123", { app_region: "global" });
 
     // Captures now flow again.
-    captureProductEvent("subscribe_cta_clicked");
+    captureProductEvent(PRODUCT_ANALYTICS_EVENTS.SUBSCRIBE_CTA_CLICKED);
     expect(posthogMock.capture).toHaveBeenCalled();
   });
 });

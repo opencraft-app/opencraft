@@ -103,8 +103,8 @@ function ensureObservabilityConfig(value, comboId) {
     const projectToken = ensureOptionalString(posthog.projectToken, "observability.posthog.projectToken", comboId);
     const host = ensureOptionalString(posthog.host, "observability.posthog.host", comboId);
     const uiHost = ensureOptionalString(posthog.uiHost, "observability.posthog.uiHost", comboId);
-    if (enabled === "true" && (!projectToken || !host)) {
-      throw new Error(`release matrix combo ${comboId} must define observability.posthog.projectToken and host when enabled=true`);
+    if (enabled === "true" && !host) {
+      throw new Error(`release matrix combo ${comboId} must define observability.posthog.host when enabled=true`);
     }
 
     result.posthog = {
@@ -235,9 +235,10 @@ export function createComboEnvironment(combo, projectName, env = process.env) {
   if (posthog) {
     nextEnv.VITE_POSTHOG_ENABLED = posthog.enabled ?? "false";
     nextEnv.NEXT_PUBLIC_POSTHOG_ENABLED = posthog.enabled ?? "false";
-    if (posthog.projectToken) {
-      nextEnv.VITE_POSTHOG_PROJECT_TOKEN = posthog.projectToken;
-      nextEnv.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN = posthog.projectToken;
+    const posthogProjectToken = posthog.projectToken ?? env.POSTHOG_PROJECT_TOKEN?.trim();
+    if (posthogProjectToken) {
+      nextEnv.VITE_POSTHOG_PROJECT_TOKEN = posthogProjectToken;
+      nextEnv.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN = posthogProjectToken;
     } else {
       delete nextEnv.VITE_POSTHOG_PROJECT_TOKEN;
       delete nextEnv.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN;
