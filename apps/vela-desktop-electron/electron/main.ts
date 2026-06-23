@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain } from "electron";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { appendFileSync, existsSync, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
@@ -105,6 +105,15 @@ function bundledVeladPath() {
   return null;
 }
 
+function bundledVeladDatabaseUrl() {
+  const configuredDatabaseUrl = runtimeEnv("VELAD_DATABASE_URL");
+  if (configuredDatabaseUrl) return configuredDatabaseUrl;
+
+  const dataDir = join(app.getPath("userData"), "runtime", "velad");
+  mkdirSync(dataDir, { recursive: true });
+  return `${pathToFileURL(join(dataDir, "vela.sqlite")).href.replace(/^file:/, "sqlite:")}?mode=rwc`;
+}
+
 function desktopRuntimeEnv() {
   const home = process.env.HOME ?? app.getPath("home");
   const pathEntries = [
@@ -162,13 +171,16 @@ async function startBundledVelad() {
     return;
   }
   if (veladProcess) return;
+  const databaseUrl = bundledVeladDatabaseUrl();
 
   console.log(`[velad] starting bundled velad at ${binaryPath} on ${listenAddr}`);
   logLine("[host]", `starting bundled velad at ${binaryPath} on ${listenAddr}`);
+  logLine("[host]", `using bundled velad database ${databaseUrl}`);
   veladProcess = spawn(binaryPath, {
     env: {
       ...desktopRuntimeEnv(),
       VELAD_LISTEN_ADDR: listenAddr,
+      VELAD_DATABASE_URL: databaseUrl,
       RUST_LOG: process.env.RUST_LOG ?? "warn",
     },
     stdio: "pipe",
