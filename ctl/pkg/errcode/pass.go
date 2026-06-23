@@ -84,4 +84,22 @@ var (
 	// （或 600305 NewDeadlineInvalid，由 trade handler 自行决定），不开新错误码段。
 	// 调用方排障：jifei 与 ctl 的 expired_time 视图不一致，需要对账 jifei 大订单时间线。
 	ErrPassNewDeadlineInvalid = Register(New("PASS_NEW_DEADLINE_INVALID", 400, "newDeadline must be strictly earlier than current pass expired_time"))
+
+	// === trade-pass-refund 设计稿落地（ctl 主动发起 OnlineRefund 链路前置校验）===
+	// 设计稿：.tmp/trade-pass-refund-design.md v0.5 §3 + §11 Q1=a/Q2=a/Q5=a 拍板
+
+	// ErrPassNotActive RefundPass 入口要求 pass.status='active' 才能发起退款（Q2=a 拍板）；
+	// 当 status 处于 isolating/isolated/deleting/terminating/renewing 等其它态时返此码。
+	//
+	// 与 ErrPassNotIsolated（销毁链路要求 status=isolated）对偶 — 退款是"在保资源退费"语义，
+	// 协议要求 pass 仍处于可用态；已隔离 / 已退款 / 销毁中的 pass 不允许二次退款。
+	ErrPassNotActive = Register(New("PASS_NOT_ACTIVE", 400, "pass is not in active status, cannot refund"))
+
+	// ErrPassTrialNotRefundable 免费试用 pass（uin=0 或 app_id=0）不允许走 jifei OnlineRefund 退款。
+	//
+	// 触发场景：bundle_free_trial_* 系列试用套餐用户在控制台后台被误触发退款；jifei 协议本身
+	// 不接受 payMode=0/2，本期试用 pass 在 ctl.pass 表里 uin/app_id 均为 0，不具备 jifei 协议
+	// 退款所需的"用户实名 + 资源归属"前提。在 ctl 入口处统一拦截，避免请求穿透到 trade/jifei
+	// 后被业务码 100151 等模糊错误拒绝。
+	ErrPassTrialNotRefundable = Register(New("PASS_TRIAL_NOT_REFUNDABLE", 400, "free trial pass is not refundable via jifei OnlineRefund"))
 )
