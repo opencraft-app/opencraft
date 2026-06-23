@@ -14,24 +14,24 @@ import { ChatSurface } from "../../../packages/vela-chat-web/src";
 import {
   SessionSidebar,
   VelaDesktopShell,
-  type DesktopHostBridge,
+  type RuntimeHostBridge,
 } from "../../../packages/vela-desktop-shell/src";
 import {
-  desktopHostBridgeForInfo,
-  readDesktopRuntimeBootstrap,
-  readDesktopChromeState,
-  retryDesktopRuntimeBootstrap,
-  subscribeDesktopChromeState,
-  type DesktopChromeStateResponse,
-  type DesktopHostInfo,
-  type DesktopRuntimeBootstrap,
+  runtimeHostBridgeForInfo,
+  readRuntimeBootstrap,
+  readRuntimeChromeState,
+  retryRuntimeBootstrap,
+  subscribeRuntimeChromeState,
+  type RuntimeChromeStateResponse,
+  type RuntimeHostInfo,
+  type RuntimeBootstrap,
 } from "./desktopBridge";
 import { DesktopEmptySurface } from "./DesktopEmptySurface";
 import {
   DesktopSettingsPage,
   DesktopSettingsSidebar,
 } from "./DesktopSettingsPage";
-import { createDesktopHostStateStores } from "./hostState";
+import { createRuntimeHostStateStores } from "./hostState";
 import "./style.css";
 
 const DEFAULT_WORKING_DIRECTORY = "/";
@@ -40,12 +40,12 @@ const DEFAULT_BACKEND_STORAGE_KEY = "vela-desktop:settings:default-backend";
 const DESKTOP_BACKEND_PREFERENCE = ["codex", "acp", "pi"] satisfies BackendKindWire[];
 const DESKTOP_SHELL_HOST_POLICY = { kind: "desktop_shell" } satisfies ChatHostPolicy;
 
-type DesktopHostStateStores = ReturnType<typeof createDesktopHostStateStores>;
+type RuntimeHostStateStores = ReturnType<typeof createRuntimeHostStateStores>;
 
 export function DesktopApp() {
-  const hostStateStores = useMemo(() => createDesktopHostStateStores(), []);
+  const hostStateStores = useMemo(() => createRuntimeHostStateStores(), []);
   const initialShellLayout = hostStateStores.shellLayoutStore?.read();
-  const initialHostInfo = useMemo<DesktopHostInfo>(
+  const initialHostInfo = useMemo<RuntimeHostInfo>(
     () => ({
       apiBaseUrl: DEFAULT_WEB_API_BASE_URL,
       chromeState: {
@@ -59,11 +59,11 @@ export function DesktopApp() {
         toolbarSize: 28,
       },
       hostKind: window.velaDesktop ? "electron" : "web",
-      platform: window.velaDesktop ? "darwin" : "browser",
+      platform: window.velaDesktop ? "darwin" : "web",
     }),
     [],
   );
-  const [bootstrap, setBootstrap] = useState<DesktopRuntimeBootstrap>({
+  const [bootstrap, setBootstrap] = useState<RuntimeBootstrap>({
     status: "starting",
     message: window.velaDesktop ? "Starting local runtime..." : "Connecting to runtime...",
   });
@@ -81,8 +81,8 @@ export function DesktopApp() {
       message: window.velaDesktop ? "Starting local runtime..." : "Connecting to runtime...",
     });
     const nextBootstrap = retry
-      ? await retryDesktopRuntimeBootstrap()
-      : await readDesktopRuntimeBootstrap();
+      ? await retryRuntimeBootstrap()
+      : await readRuntimeBootstrap();
     if (nextBootstrap.status === "ready") setFallbackHostInfo(nextBootstrap.info);
     setBootstrap(nextBootstrap);
   }, []);
@@ -93,7 +93,7 @@ export function DesktopApp() {
       status: "starting",
       message: window.velaDesktop ? "Starting local runtime..." : "Connecting to runtime...",
     });
-    void readDesktopRuntimeBootstrap().then((nextBootstrap) => {
+    void readRuntimeBootstrap().then((nextBootstrap) => {
       if (cancelled) return;
       if (nextBootstrap.status === "ready") setFallbackHostInfo(nextBootstrap.info);
       setBootstrap(nextBootstrap);
@@ -138,8 +138,8 @@ export function DesktopApp() {
 }
 
 interface DesktopReadyAppProps {
-  hostInfo: DesktopHostInfo;
-  hostStateStores: DesktopHostStateStores;
+  hostInfo: RuntimeHostInfo;
+  hostStateStores: RuntimeHostStateStores;
   isSidebarVisible: boolean;
   sidebarWidthPx: number;
   onSidebarVisibilityChange: (isVisible: boolean) => void;
@@ -163,7 +163,7 @@ function DesktopReadyApp({
     readDefaultBackendPreference,
   );
   const [error, setError] = useState<string | null>(null);
-  const [chromeState, setChromeState] = useState<DesktopChromeStateResponse | undefined>(
+  const [chromeState, setChromeState] = useState<RuntimeChromeStateResponse | undefined>(
     hostInfo.chromeState,
   );
 
@@ -182,10 +182,10 @@ function DesktopReadyApp({
   const apiBaseUrl = hostInfo.apiBaseUrl;
   useEffect(() => {
     let cancelled = false;
-    void readDesktopChromeState(hostInfo.chromeState).then((nextChromeState) => {
+    void readRuntimeChromeState(hostInfo.chromeState).then((nextChromeState) => {
       if (!cancelled) setChromeState(nextChromeState);
     });
-    const unsubscribe = subscribeDesktopChromeState(setChromeState);
+    const unsubscribe = subscribeRuntimeChromeState(setChromeState);
     return () => {
       cancelled = true;
       unsubscribe();
@@ -193,7 +193,7 @@ function DesktopReadyApp({
   }, [hostInfo.chromeState]);
 
   const hostBridge = useMemo(
-    () => desktopHostBridgeForInfo(hostInfo, chromeState),
+    () => runtimeHostBridgeForInfo(hostInfo, chromeState),
     [chromeState, hostInfo],
   );
   const client = useMemo(() => createVeladClient({ baseUrl: apiBaseUrl }), [apiBaseUrl]);
@@ -217,7 +217,7 @@ function DesktopReadyApp({
     [controller.backends, selectedBackendKind],
   );
   const hostLabel =
-    hostBridge.platform === "browser"
+    hostBridge.platform === "web"
       ? "Browser preview"
       : hostBridge.platform === "macos"
         ? "Electron on macOS"
@@ -357,8 +357,8 @@ function DesktopReadyApp({
 }
 
 interface DesktopBootstrapAppProps {
-  bootstrap: Exclude<DesktopRuntimeBootstrap, { status: "ready" }>;
-  hostInfo: DesktopHostInfo;
+  bootstrap: Exclude<RuntimeBootstrap, { status: "ready" }>;
+  hostInfo: RuntimeHostInfo;
   isSidebarVisible: boolean;
   sidebarWidthPx: number;
   onRetry: () => void;
@@ -375,7 +375,7 @@ function DesktopBootstrapApp({
   onSidebarVisibilityChange,
   onSidebarWidthChange,
 }: DesktopBootstrapAppProps) {
-  const hostBridge = useMemo(() => desktopHostBridgeForInfo(hostInfo), [hostInfo]);
+  const hostBridge = useMemo(() => runtimeHostBridgeForInfo(hostInfo), [hostInfo]);
   const hostLabel = hostBridge.platform === "macos" ? "Electron on macOS" : "Runtime host";
   const sidebar = (
     <SessionSidebar
@@ -416,7 +416,7 @@ function DesktopBootstrapSurface({
   bootstrap,
   onRetry,
 }: {
-  bootstrap: Exclude<DesktopRuntimeBootstrap, { status: "ready" }>;
+  bootstrap: Exclude<RuntimeBootstrap, { status: "ready" }>;
   onRetry: () => void;
 }) {
   return (

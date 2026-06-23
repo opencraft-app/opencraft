@@ -7,24 +7,24 @@ import {
   type VelaShellLayoutStore,
 } from "../../../packages/vela-chat-host-state/src";
 
-export interface DesktopHostStateStores {
+export interface RuntimeHostStateStores {
   clientStateStore: VelaClientStateStore | null;
   sessionSelectionStore: VelaSessionSelectionStore | null;
   shellLayoutStore: VelaShellLayoutStore | null;
 }
 
-const DESKTOP_HOST_STATE_ID = "vela-desktop";
+const RUNTIME_HOST_STATE_ID = "vela-desktop";
 
-export function createDesktopHostStateStores(): DesktopHostStateStores {
+export function createRuntimeHostStateStores(): RuntimeHostStateStores {
   return {
     clientStateStore: createBrowserVelaClientStateStore({
-      hostId: DESKTOP_HOST_STATE_ID,
+      hostId: RUNTIME_HOST_STATE_ID,
     }),
     sessionSelectionStore: createBrowserVelaSessionSelectionStore({
-      hostId: DESKTOP_HOST_STATE_ID,
+      hostId: RUNTIME_HOST_STATE_ID,
     }),
     shellLayoutStore: createBrowserVelaShellLayoutStore({
-      hostId: DESKTOP_HOST_STATE_ID,
+      hostId: RUNTIME_HOST_STATE_ID,
     }),
   };
 }

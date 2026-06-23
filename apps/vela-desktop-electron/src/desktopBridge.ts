@@ -1,24 +1,24 @@
 import {
-  browserDesktopHostBridge,
-  type DesktopHostBridge,
-  type HostChromeSafeArea,
+  browserRuntimeHostBridge,
+  type RuntimeHostBridge,
+  type RuntimeChromeSafeArea,
 } from "../../../packages/vela-desktop-shell/src";
 
 declare global {
   interface Window {
     velaDesktop?: {
-      getDesktopInfo: () => Promise<DesktopInfoResponse>;
-      retryDesktopBootstrap?: () => Promise<DesktopInfoResponse>;
-      getDesktopChromeState?: () => Promise<DesktopChromeStateResponse>;
-      leaveFullscreen?: () => Promise<DesktopChromeStateResponse>;
+      getDesktopInfo: () => Promise<RuntimeInfoResponse>;
+      retryDesktopBootstrap?: () => Promise<RuntimeInfoResponse>;
+      getDesktopChromeState?: () => Promise<RuntimeChromeStateResponse>;
+      leaveFullscreen?: () => Promise<RuntimeChromeStateResponse>;
       onDesktopChromeStateChange?: (
-        listener: (state: DesktopChromeStateResponse) => void,
+        listener: (state: RuntimeChromeStateResponse) => void,
       ) => () => void;
     };
   }
 }
 
-export interface DesktopChromeStateResponse {
+export interface RuntimeChromeStateResponse {
   platform: NodeJS.Platform;
   isFullscreen: boolean;
   isMaximized: boolean;
@@ -29,11 +29,11 @@ export interface DesktopChromeStateResponse {
   toolbarSize: number;
 }
 
-export type DesktopInfoResponse =
+export type RuntimeInfoResponse =
   | {
       status: "ready";
       apiBaseUrl: string;
-      chromeState?: DesktopChromeStateResponse;
+      chromeState?: RuntimeChromeStateResponse;
       logPath?: string;
       platform: NodeJS.Platform;
     }
@@ -44,33 +44,36 @@ export type DesktopInfoResponse =
       platform: NodeJS.Platform;
     };
 
-export interface DesktopHostInfo {
+/** @deprecated Use RuntimeInfoResponse. */
+export type DesktopInfoResponse = RuntimeInfoResponse;
+
+export interface RuntimeHostInfo {
   apiBaseUrl: string;
-  chromeState?: DesktopChromeStateResponse;
+  chromeState?: RuntimeChromeStateResponse;
   hostKind: "electron" | "web";
   logPath?: string;
-  platform: NodeJS.Platform | "browser";
+  platform: NodeJS.Platform | "web";
 }
 
-export type DesktopRuntimeBootstrap =
+export type RuntimeBootstrap =
   | { status: "starting"; message: string }
-  | { status: "ready"; info: DesktopHostInfo }
+  | { status: "ready"; info: RuntimeHostInfo }
   | {
       status: "failed";
       error: string;
       logPath?: string;
-      platform: NodeJS.Platform | "browser";
+      platform: NodeJS.Platform | "web";
     };
 
 const DEFAULT_WEB_API_BASE_URL = "/api/v1";
 
-export async function readDesktopHostInfo(): Promise<DesktopHostInfo> {
-  const bootstrap = await readDesktopRuntimeBootstrap();
+export async function readRuntimeHostInfo(): Promise<RuntimeHostInfo> {
+  const bootstrap = await readRuntimeBootstrap();
   if (bootstrap.status === "ready") return bootstrap.info;
   throw new Error(bootstrap.error);
 }
 
-export async function readDesktopRuntimeBootstrap(): Promise<DesktopRuntimeBootstrap> {
+export async function readRuntimeBootstrap(): Promise<RuntimeBootstrap> {
   if (window.velaDesktop) {
     const info = await window.velaDesktop.getDesktopInfo();
     if (info.status === "failed") {
@@ -99,14 +102,14 @@ export async function readDesktopRuntimeBootstrap(): Promise<DesktopRuntimeBoots
       apiBaseUrl: readWebApiBaseUrl(),
       chromeState: browserChromeState(),
       hostKind: "web",
-      platform: "browser",
+      platform: "web",
     },
   };
 }
 
-export async function retryDesktopRuntimeBootstrap(): Promise<DesktopRuntimeBootstrap> {
+export async function retryRuntimeBootstrap(): Promise<RuntimeBootstrap> {
   if (!window.velaDesktop?.retryDesktopBootstrap) {
-    return readDesktopRuntimeBootstrap();
+    return readRuntimeBootstrap();
   }
 
   const info = await window.velaDesktop.retryDesktopBootstrap();
@@ -131,34 +134,34 @@ export async function retryDesktopRuntimeBootstrap(): Promise<DesktopRuntimeBoot
   };
 }
 
-export function desktopHostBridgeForInfo(
-  info: DesktopHostInfo,
+export function runtimeHostBridgeForInfo(
+  info: RuntimeHostInfo,
   chromeState = info.chromeState,
-): DesktopHostBridge {
+): RuntimeHostBridge {
   if (info.hostKind === "web") {
     return {
-      ...browserDesktopHostBridge,
+      ...browserRuntimeHostBridge,
       chrome: {
-        ...browserDesktopHostBridge.chrome,
-        safeArea: desktopChromeSafeArea(chromeState ?? browserChromeState()),
+        ...browserRuntimeHostBridge.chrome,
+        safeArea: runtimeChromeSafeArea(chromeState ?? browserChromeState()),
       },
     };
   }
 
-  return electronDesktopHostBridge(info.platform as NodeJS.Platform, chromeState);
+  return electronRuntimeHostBridge(info.platform as NodeJS.Platform, chromeState);
 }
 
-export async function readDesktopChromeState(
-  fallback?: DesktopChromeStateResponse,
-): Promise<DesktopChromeStateResponse> {
+export async function readRuntimeChromeState(
+  fallback?: RuntimeChromeStateResponse,
+): Promise<RuntimeChromeStateResponse> {
   if (window.velaDesktop?.getDesktopChromeState) {
     return window.velaDesktop.getDesktopChromeState();
   }
   return fallback ?? browserChromeState();
 }
 
-export function subscribeDesktopChromeState(
-  listener: (state: DesktopChromeStateResponse) => void,
+export function subscribeRuntimeChromeState(
+  listener: (state: RuntimeChromeStateResponse) => void,
 ) {
   return window.velaDesktop?.onDesktopChromeStateChange?.(listener) ?? (() => undefined);
 }
@@ -173,10 +176,10 @@ function readWebApiBaseUrl() {
   return DEFAULT_WEB_API_BASE_URL;
 }
 
-function electronDesktopHostBridge(
+function electronRuntimeHostBridge(
   platform: NodeJS.Platform,
-  chromeState?: DesktopChromeStateResponse,
-): DesktopHostBridge {
+  chromeState?: RuntimeChromeStateResponse,
+): RuntimeHostBridge {
   return {
     platform:
       platform === "darwin"
@@ -185,21 +188,27 @@ function electronDesktopHostBridge(
           ? "windows"
           : platform === "linux"
             ? "linux"
-            : "browser",
+            : "web",
     chrome: {
       showTrafficLights: false,
       canStartWindowDrag: false,
-      safeArea: desktopChromeSafeArea(chromeState ?? fallbackChromeState(platform)),
+      safeArea: runtimeChromeSafeArea(chromeState ?? fallbackChromeState(platform)),
     },
     shouldStartDrag: () => false,
     startWindowDrag: () => undefined,
-    windowControls: {
-      leaveFullscreen: window.velaDesktop?.leaveFullscreen,
-    },
+    ...(window.velaDesktop?.leaveFullscreen
+      ? {
+          windowControls: {
+            leaveFullscreen: async () => {
+              await window.velaDesktop?.leaveFullscreen?.();
+            },
+          },
+        }
+      : {}),
   };
 }
 
-function desktopChromeSafeArea(state: DesktopChromeStateResponse): HostChromeSafeArea {
+function runtimeChromeSafeArea(state: RuntimeChromeStateResponse): RuntimeChromeSafeArea {
   return {
     isFullscreen: state.isFullscreen,
     isMaximized: state.isMaximized,
@@ -211,7 +220,7 @@ function desktopChromeSafeArea(state: DesktopChromeStateResponse): HostChromeSaf
   };
 }
 
-function fallbackChromeState(platform: NodeJS.Platform): DesktopChromeStateResponse {
+function fallbackChromeState(platform: NodeJS.Platform): RuntimeChromeStateResponse {
   const isMacos = platform === "darwin";
   return {
     platform,
@@ -225,7 +234,7 @@ function fallbackChromeState(platform: NodeJS.Platform): DesktopChromeStateRespo
   };
 }
 
-function browserChromeState(): DesktopChromeStateResponse {
+function browserChromeState(): RuntimeChromeStateResponse {
   return {
     platform: "darwin",
     isFullscreen: false,

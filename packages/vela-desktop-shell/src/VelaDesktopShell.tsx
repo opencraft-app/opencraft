@@ -1,12 +1,12 @@
 import type { ReactNode } from "react";
-import type { DesktopHostBridge } from "./host";
-import { browserDesktopHostBridge } from "./host";
+import type { RuntimeHostBridge } from "./host";
+import { browserRuntimeHostBridge } from "./host";
 import { VelaSidebarShell } from "./components/sidebar";
 
 export interface VelaDesktopShellProps {
   sidebar: ReactNode;
   children: ReactNode;
-  host?: DesktopHostBridge;
+  host?: RuntimeHostBridge;
   isSidebarVisible: boolean;
   sidebarPresentation?: "auto" | "docked" | "overlay";
   sidebarWidthPx?: number;
@@ -21,7 +21,7 @@ export interface VelaDesktopShellProps {
 export function VelaDesktopShell({
   sidebar,
   children,
-  host = browserDesktopHostBridge,
+  host = browserRuntimeHostBridge,
   isSidebarVisible,
   sidebarPresentation = "docked",
   sidebarWidthPx,

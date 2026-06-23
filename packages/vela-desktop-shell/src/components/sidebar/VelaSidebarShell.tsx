@@ -16,8 +16,8 @@ import {
   useRef,
   useState,
 } from "react";
-import type { DesktopHostBridge } from "../../host";
-import { browserDesktopHostBridge } from "../../host";
+import type { RuntimeHostBridge } from "../../host";
+import { browserRuntimeHostBridge } from "../../host";
 import { SidebarResizeHandle } from "./resize/SidebarResizeHandle";
 
 interface SidebarContextValue {
@@ -30,7 +30,7 @@ interface SidebarContextValue {
 interface VelaSidebarShellProps {
   children: ReactNode;
   sidebar: ReactNode;
-  host?: DesktopHostBridge;
+  host?: RuntimeHostBridge;
   className?: string;
   isSidebarVisible: boolean;
   sidebarPresentation?: "auto" | "docked" | "overlay";
@@ -135,7 +135,7 @@ export function SidebarProvider({
 export function VelaSidebarShell({
   children,
   sidebar,
-  host = browserDesktopHostBridge,
+  host = browserRuntimeHostBridge,
   className = "app-shell vela-tri-pane-shell",
   isSidebarVisible,
   sidebarPresentation = "docked",
@@ -309,9 +309,9 @@ export function VelaSidebarShell({
 }
 
 export function VelaWindowChrome({
-  host = browserDesktopHostBridge,
+  host = browserRuntimeHostBridge,
 }: {
-  host?: DesktopHostBridge;
+  host?: RuntimeHostBridge;
 }) {
   return (
     <div className="vela-window-chrome" data-slot="window-chrome">
@@ -530,7 +530,7 @@ function VelaSidebarWindowControls({
   onToggleSidebar,
   onCreateSession,
 }: {
-  host: DesktopHostBridge;
+  host: RuntimeHostBridge;
   onToggleSidebar?: () => void;
   onCreateSession?: () => void;
 }) {
