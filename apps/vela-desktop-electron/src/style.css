@@ -34,8 +34,8 @@ body {
   --vela-sidebar-underlay: var(--vela-sidebar-material-bg);
   --vela-main-surface: #ffffff;
   --vela-window-chrome-height: 50px;
-  --vela-window-traffic-light-left: 24px;
-  --vela-window-traffic-light-top: 22px;
+  --vela-window-traffic-light-left: 18px;
+  --vela-window-traffic-light-top: 18px;
   --vela-window-traffic-light-size: 12px;
   --vela-window-traffic-light-gap: 8px;
   --vela-window-traffic-light-group-width: calc(

@@ -24,13 +24,13 @@ const maxLogBytes = Number(runtimeEnv("VELA_DESKTOP_LOG_MAX_BYTES") ?? 5 * 1024 
 const maxLogFiles = Number(runtimeEnv("VELA_DESKTOP_LOG_MAX_FILES") ?? 5);
 const veladReadyTimeoutMs = Number(runtimeEnv("VELA_DESKTOP_VELAD_READY_TIMEOUT_MS") ?? 15_000);
 const macosChromeMetrics = {
-  trafficLightPosition: { x: 24, y: 22 },
-  normalLeadingToolbarInset: 84,
+  trafficLightPosition: { x: 18, y: 18 },
+  normalLeadingToolbarInset: 78,
   fullscreenLeadingToolbarInset: 54,
-  normalToolbarCenterY: 28,
+  normalToolbarCenterY: 24,
   normalToolbarIconSize: 24,
   normalToolbarSize: 28,
-  fullscreenToolbarCenterY: 28,
+  fullscreenToolbarCenterY: 24,
   fullscreenToolbarIconSize: 24,
   fullscreenToolbarSize: 28,
 };
