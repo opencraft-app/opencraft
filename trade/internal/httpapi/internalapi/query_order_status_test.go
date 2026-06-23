@@ -108,6 +108,10 @@ func (f *fakeJifeiOSP) GetDealsByKeyIndex(ctx context.Context, req *jifeiclient.
 	return nil, errors.New("unused")
 }
 
+func (f *fakeJifeiOSP) OnlineRefund(_ context.Context, _ *jifeiclient.OnlineRefundRequest) (*jifeiclient.OnlineRefundResponse, error) {
+	return nil, errors.New("unused")
+}
+
 // newOrderStatusTestEnv 装配 orderstatus.Service + internalapi.Install 后返回 router。
 //
 // 与 handler_test.go::newTestEnv 不同的是：

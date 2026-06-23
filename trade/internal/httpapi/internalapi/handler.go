@@ -13,6 +13,7 @@
 //   - POST /internal/trade/orders/:dealName/query-status 订单状态反查（v1.7.32 引入，详见 .tmp/ctl-order-status-query-design.md）
 //   - POST /internal/trade/flows/:flowID/complete     trade_flow.status 推进到 completed（Sub-4）
 //   - POST /internal/trade/resources/:resourceID/delete  ctl→trade 销毁链路用户主动入口（D-2）
+//   - POST /internal/trade/resources/:resourceID/refund  ctl→trade 退款链路用户主动入口（trade-pass-refund-design.md v0.5）
 //
 // 鉴权（§3.6 + 设计稿 §4.2.1）：
 //   - HTTP header `Authorization: Bearer <InternalServiceToken>` 校验
@@ -146,6 +147,13 @@ func Install(router *gin.Engine, deps Deps) {
 		lhRegion := region.Resolve(deps.SiteKind, deps.RegionOverride)
 		group.POST("/resources/:resourceID/delete",
 			deleteResourceHandler(deps.JifeiClient, deps.BundleStore, lhRegion))
+
+		// ctl→trade 退款链路用户主动入口（设计稿 .tmp/trade-pass-refund-design.md v0.5）：
+		//   POST /internal/trade/resources/:resourceID/refund
+		// 与 delete 共享 BundleStore + JifeiClient + region 装配；同生同灭。
+		// Q8b=b 拍板：无状态翻译层，不写 trade_flow，jifei OnlineRefund 同步翻译给 ctl。
+		group.POST("/resources/:resourceID/refund",
+			refundResourceHandler(deps.JifeiClient, deps.BundleStore, lhRegion))
 	}
 
 	// v1.7.32 ctl→trade 订单状态反查（设计稿 .tmp/ctl-order-status-query-design.md §5.4）：
@@ -1015,6 +1023,208 @@ func validateDeleteResourceRequest(req *deleteResourceRequest) string {
 //   - ErrCGWInvalidEnvelope（响应 envelope 解码失败）→ 502 UpstreamInvalidResponse
 //   - 其他 → 500 InternalError
 func classifyDeleteResourceError(err error) (string, int) {
+	var cgwErr *jifeiclient.CGWError
+	if errors.As(err, &cgwErr) {
+		return "UpstreamBusinessError", http.StatusBadGateway
+	}
+	switch {
+	case errors.Is(err, jifeiclient.ErrCGWHTTPNon200):
+		return "UpstreamHTTPError", http.StatusBadGateway
+	case errors.Is(err, jifeiclient.ErrCGWInvalidEnvelope):
+		return "UpstreamInvalidResponse", http.StatusBadGateway
+	default:
+		return "InternalError", http.StatusInternalServerError
+	}
+}
+
+// ============================================================================
+// refund resource (ctl→trade 退款链路用户主动入口；设计稿 .tmp/trade-pass-refund-design.md v0.5)
+// ============================================================================
+
+// refundResourceRequest 是 POST /internal/trade/resources/:resourceID/refund 入参。
+//
+// 设计稿对齐：.tmp/trade-pass-refund-design.md v0.5 §4 + §11 拍板项汇总：
+//   - Q3=a 单条退款（resourceIdList 固定长度 1）
+//   - Q5=a OnlineRefund 不传 category_ids / goodsCategoryId
+//   - Q8b=b trade 端无状态翻译层，不写 trade_flow 行
+//
+// 字段（与 deleteResource 3 字段最小集同款）：
+//   - UIN：pass.uin（必填，jifei.OnlineRefund.uin）
+//   - AppID：pass.app_id（int64，必填，jifei.OnlineRefund.appId）
+//   - BundleID：pass.bundle_id（必填，trade 内部反查 BundleDefinition.SubProductCode）
+//
+// 注：
+//   - SubProductCode 由 trade 端反查 BundleDefinition 取值（与 deleteResource Q27 同款）
+//   - Region 不入参，trade 内部固定 region.LighthouseRegionID（与 deleteResource Q41 同款）
+//   - 不带 ProductCode 字段（OnlineRefund 协议中 productCode 是 goodsInfo 内可选字段，
+//     本期 trade 不传，避免协议字段冗余）
+type refundResourceRequest struct {
+	UIN      string `json:"uin"`
+	AppID    int64  `json:"appId"`
+	BundleID string `json:"bundleId"`
+}
+
+// refundResourceResponse 是 POST /internal/trade/resources/:resourceID/refund 出参。
+//
+// 设计稿 §3 / §4 出参：trade 透传 jifei OnlineRefund 同步返的 dealNames[0] / bigDealIds[0]
+// 给 ctl，ctl 再透传给前端 / 客服面板用于审计追账。本期 Q3=a 单条退款，dealNames /
+// bigDealIds 数组长度固定为 1，取第一个元素即可。
+type refundResourceResponse struct {
+	DealName  string `json:"dealName"`
+	BigDealID string `json:"bigDealId"`
+}
+
+// refundResourceHandler 处理 ctl→trade 退款链路用户主动入口。
+//
+// 设计稿：.tmp/trade-pass-refund-design.md v0.5 §3 + §4 + §11 全部拍板项
+//
+// 行为（**无状态翻译层**，Q8b=b 拍板）：
+//   - 入参：path param resourceID（= passID）+ body UIN/AppID/BundleID
+//   - 反查 BundleStore.GetBundleDefinitionByID(req.BundleID) 取 SubProductCode（doc §4.1）
+//   - 拼装 jifeiclient.OnlineRefundRequest（GoodsInfo 是以 SubProductCode 作 map key）
+//   - 调 JifeiClient.OnlineRefund（同步接口） → 成功 200 + 返 dealName/bigDealId；失败按错误类型分类
+//
+// 不做的事情（**Q8b=b 拍板核心**）：
+//   - 不抢占 trade_flow slot — jifei OnlineRefund 是同步接口，业务成功 / 失败都立即返响应
+//     （不存在"中间 in_progress"中态需要持久化），并发抑制完全交由 jifei 协议层 + 后续
+//     jifei 异步回 isolateResource 的退费分支 v1.7.30 BUG-35 抢占式幂等兜底
+//     （`flow_type='isolate_resource' + dealName=<本次 jifei 返回的单号>`）
+//   - 不维护 pass 状态 — 状态由 jifei 异步回 isolateResource 后通过 IsolatePass 路径推进
+//     （active → isolating → isolated + 写 expired_time = newDeadline）
+//   - 不写 trade_order / trade_flow / 其他 DB 行
+//
+// 错误响应：
+//   - 400 InvalidRequest：body decode / 必填字段校验失败
+//   - 404 BundleDefinitionNotFound：req.BundleID 在 trade_bundle_definition 不存在
+//   - 502 UpstreamBusinessError：jifei CGW 业务错（returnCode != 0；包括 101103 订单未发货、
+//     allowReturn!=1 业务侧拒退、pid not found 价格表缺失等）
+//   - 502 UpstreamHTTPError：jifei CGW HTTP 非 2xx / 网络错
+//   - 502 UpstreamInvalidResponse：jifei CGW 响应 envelope 解码失败
+//   - 500 InternalError：其他基础设施错（DB / 反序列化等）
+func refundResourceHandler(
+	jifeiClient jifeiclient.Client,
+	bundleStore store.BundleDefinitionStore,
+	lighthouseRegion region.LighthouseRegion,
+) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		resourceID := strings.TrimSpace(c.Param("resourceID"))
+		if resourceID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    "InvalidRequest",
+				"message": "resourceID path param is required",
+			})
+			return
+		}
+
+		var req refundResourceRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    "InvalidRequest",
+				"message": "decode JSON: " + err.Error(),
+			})
+			return
+		}
+		if msg := validateRefundResourceRequest(&req); msg != "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    "InvalidRequest",
+				"message": msg,
+			})
+			return
+		}
+
+		// 反查 BundleDefinition 取 SubProductCode（jifei OnlineRefund.goodsInfo 的 map key）。
+		// 与 deleteResource / placeorder / inquiry / resourcequery 链路同款的 SubProductCode 取值路径。
+		bundleDef, err := bundleStore.GetBundleDefinitionByID(c.Request.Context(), req.BundleID)
+		if err != nil {
+			if errors.Is(err, store.ErrBundleDefinitionNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{
+					"code":    "BundleDefinitionNotFound",
+					"message": "bundle definition not found: " + req.BundleID,
+				})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    "InternalError",
+				"message": "lookup bundle definition: " + err.Error(),
+			})
+			return
+		}
+
+		// 拼装 jifei OnlineRefund 入参（doc §4.1）。
+		// goodsInfo 是以 sub_product_code 作 map key 的动态对象（与 ModifyResourceStatus
+		// 的 resourcesParamSet[] 数组形态有本质区别，详见 jifeiclient/onlinerefund.go 注释）。
+		jifeiReq := &jifeiclient.OnlineRefundRequest{
+			UIN:         req.UIN,
+			AppID:       req.AppID,
+			FromConsole: jifeiclient.FromConsoleYes, // 1 = 控制台（ctl admin 入口固定）
+			GoodsInfo: map[string]jifeiclient.OnlineRefundGoodsEntry{
+				bundleDef.SubProductCode: {
+					PayMode:        jifeiclient.PayModePrepaid, // 1 = 预付费
+					RegionID:       lighthouseRegion.RegionID,  // 同 deleteResource 装配期解析
+					ResourceIDList: []string{resourceID},       // Q3=a 单条退款 → 数组长度 1
+				},
+			},
+		}
+
+		resp, err := jifeiClient.OnlineRefund(c.Request.Context(), jifeiReq)
+		if err != nil {
+			code, status := classifyRefundResourceError(err)
+			c.JSON(status, gin.H{
+				"code":    code,
+				"message": err.Error(),
+			})
+			return
+		}
+
+		// jifei 同步返成功：透传 dealNames[0] / bigDealIds[0] 给 ctl。
+		// 防御性校验：协议正本 doc §5 / §6.1 明确返 dealNames + bigDealIds 数组，
+		// 长度为 1（本期 Q3=a 单条退款）。若 jifei 返空数组属上游协议违约，按 502 透出。
+		if len(resp.DealNames) == 0 || len(resp.BigDealIDs) == 0 {
+			c.JSON(http.StatusBadGateway, gin.H{
+				"code": "UpstreamInvalidResponse",
+				"message": fmt.Sprintf(
+					"jifei returnCode=0 but dealNames/bigDealIds is empty: dealNames=%v bigDealIds=%v",
+					resp.DealNames, resp.BigDealIDs),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, refundResourceResponse{
+			DealName:  resp.DealNames[0],
+			BigDealID: resp.BigDealIDs[0],
+		})
+	}
+}
+
+// validateRefundResourceRequest 校验 refundResourceRequest 必填字段（与 deleteResource 同款）。
+//
+// 返回空 string 表示校验通过；非空 string 是 4xx 错误描述。
+func validateRefundResourceRequest(req *refundResourceRequest) string {
+	if strings.TrimSpace(req.UIN) == "" {
+		return "uin is required"
+	}
+	if req.AppID <= 0 {
+		return "appId must be positive"
+	}
+	if strings.TrimSpace(req.BundleID) == "" {
+		return "bundleId is required"
+	}
+	return ""
+}
+
+// classifyRefundResourceError 把 OnlineRefund 调用错误映射为 (errorCode, httpStatus)。
+//
+// 错误模型对齐 jifeiclient 现有 Q68 + deleteResource handler 同款分类：
+//   - *CGWError（业务错 returnCode != 0）→ 502 UpstreamBusinessError
+//     （含 101103 订单未发货 / allowReturn!=1 业务侧拒退 / pid not found 等所有 jifei 业务码）
+//   - ErrCGWHTTPNon200（HTTP 非 2xx / 网络错）→ 502 UpstreamHTTPError
+//   - ErrCGWInvalidEnvelope（响应 envelope 解码失败）→ 502 UpstreamInvalidResponse
+//   - 其他 → 500 InternalError
+//
+// 注：本期 trade 不为 jifei 业务码做细粒度路由（设计稿 §6 错误处理表对齐）；
+// ctl admin 调用方按 message 文本 / 后台运维判断"是否值得重试"。未来如需把
+// 101103 单独提示用户"订单刚下完未发货完成"等，可在 ctl 层做映射。
+func classifyRefundResourceError(err error) (string, int) {
 	var cgwErr *jifeiclient.CGWError
 	if errors.As(err, &cgwErr) {
 		return "UpstreamBusinessError", http.StatusBadGateway
