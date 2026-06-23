@@ -26,6 +26,8 @@
 | `POST /internal/trade/orders/place-and-pay` | jifei 下单+支付一体化（**迭代 8B-1.5 联调测试用**） | 同上 | 同上（`pay_url` / `expire_at` 永空） | Bearer |
 | `POST /internal/trade/orders/{dealName}/pay-url` | 生成支付 url | path: `dealName` | `pay_url` + `expire_at` | Bearer |
 | `POST /internal/trade/orders/{dealName}/query-status` | 订单状态反查（v1.7.32 引入：B1 本地终态短路 + B2/B3 jifei.getDealsByKeyIndex 反查，详见 .tmp/ctl-order-status-query-design.md） | path: `dealName` + body: `external_user_id` + `skip_jifei` | `status` + `source` + `local_status` + `order_type` + `big_order_id` + `upstream_err` | Bearer |
+| `POST /internal/trade/resources/{resourceID}/delete` | ctl→trade 销毁链路用户主动入口（D-2，trade-pass-destroy §3.5）：trade 反查 BundleDefinition 后调 jifei `ModifyResourceStatus(operateName=PRE_DESTROY)` | path: `resourceID` + body: `uin` + `appId` + `bundleId` | `referenceId` (`<resourceID>_<UnixNano>`) | Bearer |
+| `POST /internal/trade/resources/{resourceID}/refund` | ctl→trade 退款链路用户主动入口（trade-pass-refund-design.md v0.5）：**无状态翻译层**，trade 反查 BundleDefinition.SubProductCode 后调 jifei `Deal.OnlineRefund` 同步退款；**不写 trade_flow**（Q8b=b 拍板，并发抑制 / 幂等完全交给 jifei 协议层 + 后续 isolateResource(refund) 入向回调上 `flow_type='isolate_resource' + dealName` 抢占式幂等兜底） | path: `resourceID` + body: `uin` + `appId` + `bundleId` | `dealName` + `bigDealId` | Bearer |
 
 ### jifei 入向回调路由（被 jifei 调用）
 
