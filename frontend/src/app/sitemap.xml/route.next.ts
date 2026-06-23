@@ -6,6 +6,7 @@ import {
   lastModified,
   localizedDocsPath,
   localizedPublicPath,
+  SEO_ALL_DOCS_ROUTE_LOCALES,
   SEO_DOCS_ROUTE_LOCALES,
   SEO_PUBLIC_URL_LANGS,
   siteUrl,
@@ -35,14 +36,14 @@ function sitemapUrl(entry: SitemapEntry): string {
     `    <loc>${escapeXml(`${origin}${entry.path === '/' ? '' : entry.path}`)}</loc>`,
     `    <lastmod>${escapeXml(lastModified())}</lastmod>`,
     ...Object.entries(alternates).map(([hreflang, path]) =>
-      `    <xhtml:link rel="alternate" hreflang="${escapeXml(hreflang)}" href="${escapeXml(`${origin}${path === '/' ? '' : path}`)}" />`,
+      `    <xhtml:link rel="alternate" hreflang="${escapeXml(hreflang)}" href="${escapeXml(path)}" />`,
     ),
     '  </url>',
   ].join('\n');
 }
 
 function docsAvailableLocales(slug: readonly string[]): DocsRouteLocale[] {
-  return SEO_DOCS_ROUTE_LOCALES.filter((locale) =>
+  return SEO_ALL_DOCS_ROUTE_LOCALES.filter((locale) =>
     DOCS_ROUTE_SLUGS[locale].some((candidate) => sameSlug(candidate, slug)),
   );
 }

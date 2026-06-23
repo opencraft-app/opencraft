@@ -7,7 +7,7 @@ import {
   buildDocsAlternates,
   createPublicMetadata,
   localizedDocsPath,
-  SEO_DOCS_ROUTE_LOCALES,
+  SEO_ALL_DOCS_ROUTE_LOCALES,
   type SeoLocale,
 } from './seo';
 import { source } from './source';
@@ -77,7 +77,7 @@ function docsSeoLocale(prefix: DocsLocalePrefix): SeoLocale {
 }
 
 function docsAvailableLocales(slug: readonly string[]): DocsRouteLocale[] {
-  return SEO_DOCS_ROUTE_LOCALES.filter((locale) =>
+  return SEO_ALL_DOCS_ROUTE_LOCALES.filter((locale) =>
     DOCS_ROUTE_SLUGS[locale].some((candidate) => sameSlug(candidate, slug)),
   );
 }

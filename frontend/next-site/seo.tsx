@@ -19,6 +19,8 @@ type SeoPage = {
   keywords?: readonly string[];
 };
 
+type SeoSiteRegion = 'cn' | 'global';
+
 const SITE_NAME = 'LightVela';
 const DEFAULT_OG_IMAGE_PATH = '/lightvela-logo.jpg';
 const DEFAULT_LAST_MODIFIED = '2026-06-23';
@@ -80,10 +82,26 @@ const DEFAULT_KEYWORDS: Record<SeoLocale, readonly string[]> = {
 
 export const SEO_PUBLIC_URL_LANGS = (isGlobal ? ['en-us', 'zh-sg'] : ['zh-cn']) as readonly PublicUrlLang[];
 export const SEO_DOCS_ROUTE_LOCALES = (isGlobal ? ['en-us', 'zh-sg'] : ['zh-cn']) as readonly DocsRouteLocale[];
+export const SEO_ALL_PUBLIC_URL_LANGS = ['zh-cn', 'en-us', 'zh-sg'] as const satisfies readonly PublicUrlLang[];
+export const SEO_ALL_DOCS_ROUTE_LOCALES = ['zh-cn', 'en-us', 'zh-sg'] as const satisfies readonly DocsRouteLocale[];
 
 export function siteUrl(): string {
   const envUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL;
   return trimTrailingSlash(envUrl || 'https://lightvela.com');
+}
+
+export function siteUrlForSeoRegion(region: SeoSiteRegion): string {
+  if (region === 'cn') {
+    return trimTrailingSlash(process.env.NEXT_PUBLIC_CN_SITE_URL || process.env.CN_SITE_URL || 'https://lightvela.com');
+  }
+
+  return trimTrailingSlash(
+    process.env.NEXT_PUBLIC_GLOBAL_SITE_URL ||
+      process.env.NEXT_PUBLIC_INTL_SITE_URL ||
+      process.env.GLOBAL_SITE_URL ||
+      process.env.INTL_SITE_URL ||
+      'https://lightvela.ai',
+  );
 }
 
 export function seoRegion(): Region {
@@ -114,12 +132,12 @@ export function localizedDocsPath(locale: DocsRouteLocale | 'default', slug: rea
 
 export function buildPublicAlternates(path: string): Record<string, string> {
   const alternates: Record<string, string> = {
-    'x-default': normalizePath(path),
+    'x-default': absoluteUrlForSeoRegion('global', localizedPublicPath(path, 'default')),
   };
 
-  for (const lang of SEO_PUBLIC_URL_LANGS) {
+  for (const lang of SEO_ALL_PUBLIC_URL_LANGS) {
     const locale = localeFromUrlLang(lang);
-    alternates[locale] = localizedPublicPath(path, lang);
+    alternates[locale] = absoluteUrlForUrlLang(lang, localizedPublicPath(path, lang));
   }
 
   return alternates;
@@ -130,11 +148,11 @@ export function buildDocsAlternates(
   availableLocales: readonly DocsRouteLocale[],
 ): Record<string, string> {
   const alternates: Record<string, string> = {
-    'x-default': localizedDocsPath('default', slug),
+    'x-default': absoluteUrlForSeoRegion('global', localizedDocsPath('default', slug)),
   };
 
   for (const locale of availableLocales) {
-    alternates[localeFromUrlLang(locale)] = localizedDocsPath(locale, slug);
+    alternates[localeFromUrlLang(locale)] = absoluteUrlForUrlLang(locale, localizedDocsPath(locale, slug));
   }
 
   return alternates;
@@ -275,6 +293,15 @@ function JsonLd({ id, data }: { id: string; data: unknown }): ReactNode {
 
 export function absoluteUrl(path: string): string {
   return `${siteUrl()}${normalizePath(path) === '/' ? '' : normalizePath(path)}`;
+}
+
+export function absoluteUrlForSeoRegion(region: SeoSiteRegion, path: string): string {
+  const normalizedPath = normalizePath(path);
+  return `${siteUrlForSeoRegion(region)}${normalizedPath === '/' ? '' : normalizedPath}`;
+}
+
+export function absoluteUrlForUrlLang(lang: PublicUrlLang, path: string): string {
+  return absoluteUrlForSeoRegion(lang === 'zh-cn' ? 'cn' : 'global', path);
 }
 
 export function lastModified(): string {
