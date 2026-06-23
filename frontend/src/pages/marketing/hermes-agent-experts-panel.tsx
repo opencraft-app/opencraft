@@ -101,6 +101,8 @@ const EXPERT_VIEW_OPTIONS: Array<{ value: ExpertView; label: string; icon: Eleme
 
 const EXPERT_PAGE_SIZE = 60;
 const INSTALL_ERROR_OUTPUT_LINE_LIMIT = 3;
+const SKILL_INSTALL_DEFAULT_RETRY_DELAYS_MS = [0] as const;
+const SKILL_INSTALL_RATE_LIMIT_RETRY_DELAYS_MS = [2_000, 5_000] as const;
 const AI_BUDDY_ASSET_BASE = "https://cloudcache.tencent-cloud.com/qcloud/tea/app/skillhub/assets/source/ai-buddy-decouple";
 const AI_BUDDY_ASSET_VERSION = "v20260616";
 const HERMES_SKILLS_LIST_COMMAND = 'cd "$HOME/.hermes/hermes-agent" && COLUMNS=10000 ./venv/bin/python -m hermes_cli.main skills list';
@@ -286,6 +288,10 @@ function shouldUpgradeSkillHubCli(output: string): boolean {
   return /skillhub self-upgrade/i.test(output) || /发现新版本/i.test(output);
 }
 
+function isSkillInstallRateLimited(output: string): boolean {
+  return /\bHTTP\s*429\b/i.test(output) || /rate[-\s]?limited/i.test(output);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -359,7 +365,34 @@ async function executeInstallSkillCommand(
   }
 }
 
-async function installSkillSlugs(
+function waitForSkillInstallRetry(delayMs: number): Promise<void> {
+  if (delayMs <= 0) return Promise.resolve();
+  return new Promise((resolve) => {
+    globalThis.setTimeout(resolve, delayMs);
+  });
+}
+
+async function retryFailedSkillInstall(
+  botId: string,
+  skillSlug: string,
+  execDebugCommand: ExpertsExecDebugCommand,
+  failedResult: { succeeded: boolean; output: string },
+): Promise<{ succeeded: boolean; output: string }> {
+  let result = failedResult;
+  const retryDelays = isSkillInstallRateLimited(result.output)
+    ? SKILL_INSTALL_RATE_LIMIT_RETRY_DELAYS_MS
+    : SKILL_INSTALL_DEFAULT_RETRY_DELAYS_MS;
+
+  for (const retryDelay of retryDelays) {
+    await waitForSkillInstallRetry(retryDelay);
+    result = await executeInstallSkillCommand(botId, skillSlug, execDebugCommand);
+    if (result.succeeded || !isSkillInstallRateLimited(result.output)) return result;
+  }
+
+  return result;
+}
+
+export async function installSkillSlugs(
   botId: string,
   skillSlugs: string[],
   execDebugCommand: ExpertsExecDebugCommand,
@@ -378,7 +411,7 @@ async function installSkillSlugs(
       result = await executeInstallSkillCommand(botId, skillSlug, execDebugCommand);
     }
     if (!result.succeeded) {
-      result = await executeInstallSkillCommand(botId, skillSlug, execDebugCommand);
+      result = await retryFailedSkillInstall(botId, skillSlug, execDebugCommand, result);
     }
 
     if (result.succeeded) {

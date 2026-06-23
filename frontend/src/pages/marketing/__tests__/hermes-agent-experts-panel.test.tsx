@@ -16,6 +16,7 @@ import {
   getSkillPackageTags,
   isSkillInstallAlreadyExists,
   getUniqueSkillSlugs,
+  installSkillSlugs,
   parseInstalledSkillSlugs,
   stripMarkdownFrontmatter,
 } from "../hermes-agent-experts-panel";
@@ -545,6 +546,37 @@ describe("hermes agent experts panel", () => {
       "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://lightmake.cloud/api/v1/download?slug={slug}' acli skills install 'backtest-engine'",
       "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://lightmake.cloud/api/v1/download?slug={slug}' acli skills install 'backtest-engine'",
     ]);
+  });
+
+  it("backs off before retrying rate-limited package skill downloads", async () => {
+    vi.useFakeTimers();
+    try {
+      const installResults = [
+        {
+          status: "failed",
+          exitCode: 1,
+          output: "Download failed: HTTP 429 (rate limited) for https://lightmake.cloud/api/v1/download?slug=nexus-error-explain",
+        },
+        { status: "success", exitCode: 0, output: "" },
+      ];
+      const execDebugCommand = vi.fn().mockImplementation(async () => (
+        installResults.shift() ?? { status: "success", exitCode: 0, output: "" }
+      ));
+
+      const installPromise = installSkillSlugs("bot-1", ["nexus-error-explain"], execDebugCommand);
+
+      expect(execDebugCommand).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(execDebugCommand).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(installPromise).resolves.toEqual({
+        succeeded: ["nexus-error-explain"],
+        failed: [],
+      });
+      expect(execDebugCommand).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("self-upgrades SkillHub CLI once when install output asks for it", async () => {
