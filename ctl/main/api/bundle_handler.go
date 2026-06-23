@@ -322,8 +322,8 @@ func (h *bundleHandler) fetchBundleQuotes(
 	}
 
 	// fast path 失败 — 分类决定是否进 slow path 拆 1-by-1。
-	if !isPerBundleBusinessError(err) {
-		// 基础设施错 / 5xx / 超时：整批降级。
+	if !isPerBundleRetryableError(err) {
+		// 不可拆单重试类（ctx 超时 / 400 InvalidRequest / 非 *Error 基础设施错）：整批降级。
 		if resource.ZapLogger != nil {
 			resource.ZapLogger.Warn("trade InquiryBatch batch failed, fallback to no-price bundle list",
 				zap.Int("bundle_count", len(quotableIDs)),
@@ -335,7 +335,7 @@ func (h *bundleHandler) fetchBundleQuotes(
 
 	// ===== slow path：拆 1-by-1，单条失败仅降级该条 =====
 	if resource.ZapLogger != nil {
-		resource.ZapLogger.Warn("trade InquiryBatch batch failed with per-bundle business error, retry per-bundle",
+		resource.ZapLogger.Warn("trade InquiryBatch batch failed with per-bundle retryable error, retry per-bundle",
 			zap.Int("bundle_count", len(quotableIDs)),
 			zap.Error(err),
 		)
@@ -419,23 +419,46 @@ func collectBundleQuotes(resp *tradeadapter.InquiryBatchResult) map[string]*trad
 	return out
 }
 
-// isPerBundleBusinessError 判断 trade InquiryBatch 错误是否属于"某一条 bundle 业务错"
-// 导致的整批 fail-fast——这类错误适合 slow path 拆 1-by-1 隔离故障 bundle。
+// isPerBundleRetryableError 判断 trade InquiryBatch 错误是否适合拆 1-by-1 重试
+// 隔离故障 bundle。trade inquiryBatchHandler 是串行 fail-fast（1 个 bundle 报错即整
+// 批返错），以下错码都可能是"某一条 bundle 的特定错"拖垮整批，拆开后
+// 其它 bundle 可能仍能拿到价。
 //
-// 命中条件：err 可 unwrap 成 *tradeadapter.Error 且 Status 为 4xx 业务错码（404/409/422）。
-// 这三个状态码来自 trade classifyInquiryError（handler.go::classifyInquiryError）：
-//   - 404 BundleNotFound（trade.trade_bundle_definition 未录入对应 bundle）
-//   - 409 BundleOffline（bundle 已下架）
-//   - 422 BindingNotFound（externalUserId 在 shadow 没绑定记录）
+// 命中条件：err 可 unwrap 成 *tradeadapter.Error 且 Status 在认同集合：
 //
-// 5xx / 超时 / 网络错 / 非 *Error 走"整批降级"分支（避免拆 1-by-1 引发 N 次串行雪崩）。
-func isPerBundleBusinessError(err error) bool {
+//   - 4xx 业务错（40[1] trade classifyInquiryError）：
+//     404 BundleNotFound        —— trade.trade_bundle_definition 未录入某 bundle
+//     409 BundleOffline         —— 某 bundle 已下架
+//     422 BindingNotFound       —— externalUserId 在 shadow 没绑定记录
+//
+//   - 5xx 上游错（可能只累及某一条 bundle，例如 jifei 询价某个 sv 缺价表）：
+//     502 UpstreamError         —— trade -> jifei GetPrice cgw business error，包含典型
+//     jifei returnCode=371009 "no price found" / 100001 "param error"
+//     等；这些错会在某一条 bundle 上发生，拆单能插隔离出哪条
+//     503 ServiceUnavailable    —— 历史上 trade pay url 不可用路径（8B-1.5 后理论不出现）
+//     504 GatewayTimeout        —— trade -> jifei 单条 bundle 超时
+//
+// 拆单重试的代价：最多 N 次串行 jifei 调用（N = quotableIDs 长度），有 ctx 5s 总
+// 超时公平果兹。实测场景下（bundle 总数 ≤ 10）代价可接受，可换取“部分 bundle
+// 仍能拿到价”的用户体验。
+//
+// 仅下列错走“整批降级”不重试（拆单遇同样错仅浪费 jifei 调用）：
+//   - context.DeadlineExceeded / context.Canceled（ctx 级错不是 *tradeadapter.Error）
+//   - 5xx 以外的未知 *tradeadapter.Error.Status（如 400 InvalidRequest——调用方参数错，
+//     拆单同样会错，不重试避免 N 倍放大）
+//   - 非 *tradeadapter.Error（例如 base_url 未配置 / JSON 解析错 / 网络拨号错等）
+func isPerBundleRetryableError(err error) bool {
 	var te *tradeadapter.Error
 	if !errors.As(err, &te) {
 		return false
 	}
 	switch te.Status {
 	case http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity:
+		// 4xx 业务错：某 bundle 的独立状态问题
+		return true
+	case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		// 5xx 上游错：jifei GetPrice 业务错会被 trade 包装为 502 UpstreamError，
+		// 实际上仅某一条 bundle 的 sv 出错。
 		return true
 	default:
 		return false
