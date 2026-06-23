@@ -20,7 +20,7 @@
     "build": "pnpm run build:next",
     "build:cn": "NEXT_PUBLIC_REGION=cn VITE_REGION=cn pnpm run build:next",
     "build:global": "NEXT_PUBLIC_REGION=global VITE_REGION=global pnpm run build:next",
-    "build:next": "node scripts/subset-fonts.mjs && node scripts/sync-fumadocs-content.mjs && fumadocs-mdx && next build --webpack && node scripts/fix-next-static-html-lang.mjs && node scripts/check-next-seo.mjs",
+    "build:next": "node scripts/subset-fonts.mjs && node scripts/sync-fumadocs-content.mjs && fumadocs-mdx && next build --webpack && node scripts/fix-next-static-html-lang.mjs && node scripts/format-next-static-html.mjs && node scripts/check-next-seo.mjs",
     "preview": "vite preview",
     "check": "tsc -b",
     "check:next": "node scripts/sync-fumadocs-content.mjs && fumadocs-mdx && tsc --noEmit",
