@@ -11,6 +11,7 @@
 //   - POST /internal/trade/orders/{dealName}/pay-url     生成 / 反查支付页 URL（GeneratePayURL）
 //   - POST /internal/trade/flows/{flowID}/complete      推进 trade_flow 终态（CompleteFlow，trade-pass-isolate §10 Q22-I-E）
 //   - POST /internal/trade/resources/{resourceID}/delete 触发 jifei 销毁前置（DeleteResource，trade-pass-destroy §3.5 / §4.5.3）
+//   - POST /internal/trade/resources/{resourceID}/refund 触发 jifei 同步退款（RefundResource，trade-pass-refund-design.md v0.5）
 //
 // 鉴权：HTTP header `Authorization: Bearer <Token>`，Token 与 trade 配置的
 // `LIGHTCLAW_INTERNAL_SERVICE_TOKEN` 保持一致；ctl ↔ shadow ↔ ai-gateway
@@ -165,6 +166,34 @@ type DeleteResourceRequest struct {
 // 设计稿 §3.5 / §11-A Q20）；调用方透传给前端做审计/排障。
 type DeleteResourceResult struct {
 	ReferenceID string `json:"referenceId"`
+}
+
+// RefundResourceRequest 与 trade /internal/trade/resources/{resourceID}/refund 入参对齐。
+//
+// 设计稿：.tmp/trade-pass-refund-design.md v0.5 §3 + §4
+//
+// 字段说明（3 字段最小集，与 DeleteResourceRequest 同款范式）：
+//   - UIN / AppID 必填（pass.uin / pass.app_id），由 ctl 调用方在 logic 层从 pass entity 读出后透传
+//   - BundleID：trade 端在调 jifei 前按 BundleID 反查 trade.bundle_definition 取 SubProductCode
+//     （与 DeleteResource 同款 Q26+Q27 拍板）
+//
+// 拍板项对齐（v0.5）：
+//   - Q3=a 单条退款，本 DTO 不携带批量字段
+//   - Q5=a OnlineRefund 不传 category_ids / goodsCategoryId，本 DTO 不携带
+//   - Q41 trade 内部固定 region，ctl 不透传 RegionID
+type RefundResourceRequest struct {
+	UIN      string `json:"uin"`
+	AppID    int64  `json:"appId"`
+	BundleID string `json:"bundleId"`
+}
+
+// RefundResourceResult 与 trade /internal/trade/resources/{resourceID}/refund 出参对齐。
+//
+// trade 同步透传 jifei OnlineRefund 返回的退款单号（doc §5）。本期 Q3=a 单条退款，
+// dealNames[0] / bigDealIds[0] 均为单个字符串。调用方可透传给前端 / 客服面板供审计追账。
+type RefundResourceResult struct {
+	DealName  string `json:"dealName"`
+	BigDealID string `json:"bigDealId"`
 }
 
 // InquiryBatchRequest 与 trade /internal/trade/inquiry/batch 入参 inquiryBatchRequest 字段集对齐。
@@ -403,6 +432,47 @@ type Adapter interface {
 	//   - trade 调用失败时，pass.status 已是 deleting（CAS 在 trade 调用前完成），
 	//     **不回滚** deleting 状态；监控兜底告警，由人工或后续 reconcile worker 处理
 	DeleteResource(ctx context.Context, resourceID string, req *DeleteResourceRequest) (*DeleteResourceResult, error)
+
+	// RefundResource 调 trade POST /internal/trade/resources/{resourceID}/refund
+	// 触发 trade 端调 jifei.OnlineRefund 同步退款。
+	//
+	// 设计稿：.tmp/trade-pass-refund-design.md v0.5 §3 + §4 + §11 拍板项汇总
+	//
+	// 用途（admin 入口：后台 / 客服为指定 pass 发起退款）：
+	//   - ctl.RefundPass logic 校验 pass.status='active' && 未过期 后调本接口；
+	//     **不动 pass.status**（Q3=b 拍板），全程靠 jifei 同步业务码拒重调
+	//   - trade 端作为**无状态翻译层**同步调 jifei OnlineRefund；
+	//     jifei 同步返 dealNames[0] / bigDealIds[0] 后透传给 ctl 、ctl 透传给调用方
+	//   - **后续**：jifei 异步回 isolateResource(billingIsolateType=refund) 触发现有
+	//     v1.7.30 BUG-35 退费分支 → ctl IsolatePass 路径推进 pass 状态机到 isolated
+	//
+	// 入参：
+	//   - resourceID：pass.pass_id（path 段，trade 端用作 jifei goodsInfo[sp_xxx].resourceIdList[0]）
+	//   - req：UIN / AppID / BundleID 3 字段必填（与 DeleteResource 同款，SubProductCode
+	//     由 trade 反查 BundleDefinition 取值，ctl 不透传）
+	//
+	// 返回：
+	//   - RefundResourceResult.DealName：jifei 退款小订单号，调用方透传给前端做审计追账
+	//   - RefundResourceResult.BigDealID：jifei 退款大订单号
+	//
+	// 错误语义（HTTP status → 调用方分类）：
+	//   - 200 OK                       trade 同步调 jifei 成功，dealName / bigDealId 已返
+	//   - 400 InvalidRequest           入参非法（UIN/AppID/BundleID 缺失）
+	//   - 401 Unauthorized             token 错误
+	//   - 404 BundleDefinitionNotFound BundleID 不存在 trade.bundle_definition
+	//   - 502 UpstreamBusinessError    jifei 业务错（returnCode != 0），含：
+	//     - 101103 订单未发货完成 → 调用方可提示“请稍后重试”
+	//     - allowReturn != 1 → sp_xxx 业务侧拒绝退款（如免费试用 bundle）
+	//     - pid not found → jifei 价格表缺失
+	//   - 502 UpstreamHTTPError        jifei HTTP 非 200 / 网络错
+	//   - 502 UpstreamInvalidResponse  jifei 响应解码失败 或 returnCode=0 但 dealNames/bigDealIds 为空
+	//   - 500 InternalError            trade 端基础设施错（DB / panic / 反序列化等）
+	//
+	// 调用方重试策略（设计稿 Q7=a 拍板）：
+	//   - 本期不做自动重试，任何失败透传错误码 + message 给 admin 面板
+	//   - 双击 / 重试场景代价（Q8b=b 拍板）：jifei 会拒 101103 / allowReturn!=1，调用方
+	//     看到“已退款”提示；不会产生多笔退款资金损失
+	RefundResource(ctx context.Context, resourceID string, req *RefundResourceRequest) (*RefundResourceResult, error)
 
 	// QueryOrderStatus 调 trade POST /internal/trade/orders/{dealName}/query-status
 	// 订单状态反查（v1.7.32 引入，详见 .tmp/ctl-order-status-query-design.md §5.5）。
@@ -677,6 +747,31 @@ func (a *adapter) DeleteResource(ctx context.Context, resourceID string, req *De
 		"/internal/trade/resources/" + url.PathEscape(resourceID) + "/delete"
 
 	var result DeleteResourceResult
+	if err := a.doJSON(ctx, http.MethodPost, endpoint, req, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// RefundResource 详见 Adapter.RefundResource 接口注释（trade-pass-refund-design.md v0.5）。
+//
+// HTTP 调用骨架与 DeleteResource 完全对偶： path escape 同范式 / doJSON 同错误模型。
+func (a *adapter) RefundResource(ctx context.Context, resourceID string, req *RefundResourceRequest) (*RefundResourceResult, error) {
+	if a.config.BaseURL == "" {
+		return nil, fmt.Errorf("trade adapter: base_url not configured")
+	}
+	resourceID = strings.TrimSpace(resourceID)
+	if resourceID == "" {
+		return nil, fmt.Errorf("trade adapter: RefundResource: resourceID is required")
+	}
+	if req == nil {
+		return nil, fmt.Errorf("trade adapter: RefundResource: request is nil")
+	}
+
+	endpoint := strings.TrimRight(a.config.BaseURL, "/") +
+		"/internal/trade/resources/" + url.PathEscape(resourceID) + "/refund"
+
+	var result RefundResourceResult
 	if err := a.doJSON(ctx, http.MethodPost, endpoint, req, &result); err != nil {
 		return nil, err
 	}
