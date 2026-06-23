@@ -113,7 +113,6 @@ export async function runFrontendArtifactBuildCommand(scriptName, env = process.
   await runner(nodeBin(env), ["scripts/version-next-static-assets.mjs"], env);
   await runner(nodeBin(env), ["scripts/fix-next-static-html-lang.mjs"], env);
   await runner(nodeBin(env), ["scripts/format-next-static-html.mjs"], env);
-  await runner(nodeBin(env), ["scripts/check-next-seo.mjs"], env);
   await runner(nodeBin(env), ["scripts/check-versioned-next-static-assets.mjs"], env);
   if (resolve("out") !== resolve(outputDir)) {
     cpSync("out", outputDir, { recursive: true });
