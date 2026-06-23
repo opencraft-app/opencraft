@@ -1,10 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
-import {
-  SkillPanel,
-  type IFeatureFlags,
-  type IInstanceInfo,
-  type IProductConfig,
-} from "@tencent/tea-sdk-lightclaw";
+import { useEffect, useRef, useState, type CSSProperties, type ComponentType } from "react";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useT } from "@/i18n/t";
@@ -32,13 +26,22 @@ function syncInstalledSkillSearchPlaceholder(root: HTMLElement | null, placehold
   }
 }
 
-export interface HermesAgentSkillsPanelProps {
+export interface HermesAgentSkillsPanelProps<
+  TInstance = unknown,
+  TFeatureFlags = unknown,
+  TProductConfig = unknown,
+> {
   botId: string;
   execDebugCommand: ExpertsExecDebugCommand;
-  featureFlags: IFeatureFlags;
+  featureFlags: TFeatureFlags;
   initialSectionSlug?: string;
-  instance: IInstanceInfo;
-  productConfig: IProductConfig & { acliProduct: "lightvela" };
+  instance: TInstance;
+  productConfig: TProductConfig;
+  SkillPanel: ComponentType<{
+    instance: TInstance;
+    featureFlags: TFeatureFlags;
+    productConfig: TProductConfig;
+  }>;
 }
 
 export function getInitialAgentSkillsTab(sectionSlug?: string | null): AgentSkillsTab {
@@ -46,14 +49,19 @@ export function getInitialAgentSkillsTab(sectionSlug?: string | null): AgentSkil
   return "skills";
 }
 
-export function HermesAgentSkillsPanel({
+export function HermesAgentSkillsPanel<
+  TInstance,
+  TFeatureFlags,
+  TProductConfig,
+>({
   botId,
   execDebugCommand,
   featureFlags,
   initialSectionSlug,
   instance,
   productConfig,
-}: HermesAgentSkillsPanelProps) {
+  SkillPanel,
+}: HermesAgentSkillsPanelProps<TInstance, TFeatureFlags, TProductConfig>) {
   const t = useT();
   const initialTab = getInitialAgentSkillsTab(initialSectionSlug);
   const [activeTab, setActiveTab] = useState<AgentSkillsTab>(initialTab);

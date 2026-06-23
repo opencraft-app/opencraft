@@ -1,6 +1,9 @@
 import { Suspense, lazy, type ComponentType, type ReactElement } from "react";
 import { useNavigate } from "react-router-dom";
-import { SiteHeader } from "@/components/site/site-header";
+import { PublicSiteHeader } from "@/components/site/public-site-header";
+import { ProductPageShell } from "@/components/site/product-chrome";
+
+type RouteChrome = "none" | "product" | "site";
 
 function RouteFallback() {
   return null;
@@ -11,10 +14,31 @@ function SiteRouteFallback() {
 
   return (
     <div className="min-h-dvh bg-white text-[var(--text-primary)]" aria-busy="true">
-      <SiteHeader fixed onLoginClick={() => navigate("/auth/sign-in")} />
+      <PublicSiteHeader position="fixed" onLoginClick={() => navigate("/auth/sign-in")} />
       <main className="pt-[60px]" />
     </div>
   );
+}
+
+function ProductRouteFallback() {
+  return (
+    <ProductPageShell>
+      <main className="relative z-10 flex flex-grow items-center justify-center pt-[60px]" />
+    </ProductPageShell>
+  );
+}
+
+function fallbackForChrome(chrome: RouteChrome): ReactElement {
+  switch (chrome) {
+    case "product":
+      return <ProductRouteFallback />;
+    case "site":
+      return <SiteRouteFallback />;
+    case "none":
+      return <RouteFallback />;
+    default:
+      return <RouteFallback />;
+  }
 }
 
 export function lazyNamed<T extends string>(
@@ -29,15 +53,11 @@ export function lazyNamed<T extends string>(
 
 export function lazyRoute(
   Component: ComponentType,
-  { fallback = <RouteFallback /> }: { fallback?: ReactElement } = {},
+  { chrome = "none", fallback }: { chrome?: RouteChrome; fallback?: ReactElement } = {},
 ): ReactElement {
   return (
-    <Suspense fallback={fallback}>
+    <Suspense fallback={fallback ?? fallbackForChrome(chrome)}>
       <Component />
     </Suspense>
   );
-}
-
-export function lazySiteRoute(Component: ComponentType): ReactElement {
-  return lazyRoute(Component, { fallback: <SiteRouteFallback /> });
 }

@@ -26,7 +26,6 @@ variables:
     value: https://staticpages-api.preview.lightclaw.tech/api/upload
     readonly: false
     allow-modify-at-startup: true
-
 stages:
   - name: 发布 frontend 分支预览
     jobs:
@@ -63,7 +62,7 @@ stages:
               echo "目标规则：frontsandbox/<name> -> https://<name>.preview.lightclaw.tech 和 https://intl-<name>.preview.lightclaw.tech"
               echo "目标规则：playground/sandbox-bj-N -> https://sandbox-bj-N.preview.lightclaw.tech 和 https://intl-sandbox-bj-N.preview.lightclaw.tech"
               echo "目标规则：playground/sandbox-kr-N -> https://sandbox-kr-N.preview.lightclaw.tech 和 https://intl-sandbox-kr-N.preview.lightclaw.tech"
-              echo "发布方式：构建 frontend dist-cn + dist-global 后顺序上传到 StaticPages，不创建 GitOps MR"
+              echo "发布方式：构建 Next 产物后顺序上传到 StaticPages，不创建 GitOps MR"
               echo "============================================================"
               set -euo pipefail
 

@@ -1,17 +1,30 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Bot, User, LogOut, ChevronDown } from "lucide-react";
-import { useState, useRef, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useState, useRef, useEffect, type ReactNode } from "react";
 import { useOpenClaw } from "@/contexts/openclaw-context";
 import { useSession } from "@/contexts/session-context";
 import { useT } from "@/i18n/t";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { AGENTS_HOME_PATH } from "@/router/paths";
 
-export const UserAvatarMenu = () => {
+export type UserMenuLinkProps = {
+  children: ReactNode;
+  className?: string;
+  href: string;
+  onClick?: () => void;
+};
+
+export type RenderUserMenuLink = (props: UserMenuLinkProps) => ReactNode;
+
+type UserAvatarMenuProps = {
+  renderLink?: RenderUserMenuLink;
+};
+
+const defaultRenderLink: RenderUserMenuLink = ({ children, ...props }) => <a {...props}>{children}</a>;
+
+export const UserAvatarMenu = ({ renderLink = defaultRenderLink }: UserAvatarMenuProps = {}) => {
   const { session, signOut } = useSession();
   const { activePass } = useOpenClaw();
-  const navigate = useNavigate();
   const t = useT();
   const user = session.user;
   const [open, setOpen] = useState(false);
@@ -35,23 +48,35 @@ export const UserAvatarMenu = () => {
   return (
     <div ref={containerRef} className="relative">
       {/* Avatar trigger */}
-      <button
-        onClick={() => setOpen((v) => !v)}
+      <div
         onMouseEnter={() => setOpen(true)}
         className="flex items-center gap-2 rounded-full transition-all duration-200 hover:opacity-90"
       >
-        <img
-          src={avatarSrc}
-          alt="avatar"
-          className="h-9 w-9 cursor-pointer object-cover"
-          style={{ border: "1.5px solid rgba(0,0,0,0.06)", borderRadius: "50%" }}
-          onClick={(e) => { e.stopPropagation(); navigate("/account"); }}
-        />
-        <ChevronDown
-          className="h-3.5 w-3.5 transition-transform duration-200"
-          style={{ color: "#aaa", transform: open ? "rotate(180deg)" : "rotate(0deg)" }}
-        />
-      </button>
+        {renderLink({
+          href: "/account",
+          onClick: () => setOpen(false),
+          className: "inline-flex shrink-0",
+          children: (
+            <img
+              src={avatarSrc}
+              alt="avatar"
+              className="h-9 w-9 cursor-pointer object-cover"
+              style={{ border: "1.5px solid rgba(0,0,0,0.06)", borderRadius: "50%" }}
+            />
+          ),
+        })}
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="inline-flex h-7 w-5 items-center justify-center"
+          aria-label={t("打开用户菜单")}
+        >
+          <ChevronDown
+            className="h-3.5 w-3.5 transition-transform duration-200"
+            style={{ color: "#aaa", transform: open ? "rotate(180deg)" : "rotate(0deg)" }}
+          />
+        </button>
+      </div>
 
       {/* Dropdown */}
       <AnimatePresence>
@@ -92,22 +117,28 @@ export const UserAvatarMenu = () => {
 
             {/* Menu items */}
             <div className="py-1.5">
-              <Link
-                to={AGENTS_HOME_PATH}
-                onClick={() => setOpen(false)}
-                className="flex items-center gap-2.5 px-4 py-2.5 text-sm font-normal text-[var(--text-secondary)] transition-all duration-250 hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)]"
-              >
-                <Bot className="h-4 w-4 text-[var(--text-tertiary)]" />
-                {t("我的智能体伙伴")}
-              </Link>
-              <Link
-                to="/account"
-                onClick={() => setOpen(false)}
-                className="flex items-center gap-2.5 px-4 py-2.5 text-sm font-normal text-[var(--text-secondary)] transition-all duration-250 hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)]"
-              >
-                <User className="h-4 w-4 text-[var(--text-tertiary)]" />
-                {t("账号管理")}
-              </Link>
+              {renderLink({
+                href: AGENTS_HOME_PATH,
+                onClick: () => setOpen(false),
+                className: "flex items-center gap-2.5 px-4 py-2.5 text-sm font-normal text-[var(--text-secondary)] transition-all duration-250 hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)]",
+                children: (
+                  <>
+                    <Bot className="h-4 w-4 text-[var(--text-tertiary)]" />
+                    {t("我的智能体伙伴")}
+                  </>
+                ),
+              })}
+              {renderLink({
+                href: "/account",
+                onClick: () => setOpen(false),
+                className: "flex items-center gap-2.5 px-4 py-2.5 text-sm font-normal text-[var(--text-secondary)] transition-all duration-250 hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)]",
+                children: (
+                  <>
+                    <User className="h-4 w-4 text-[var(--text-tertiary)]" />
+                    {t("账号管理")}
+                  </>
+                ),
+              })}
             </div>
 
             {/* Logout */}

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,6 +44,7 @@ function resolvePositiveInteger(value, fallback, name) {
 }
 
 function resolveBuildConcurrency(env, selectedCombos) {
+  if (selectedCombos.some((combo) => combo.buildCommand === "build:next")) return 1;
   return Math.min(
     selectedCombos.length,
     resolvePositiveInteger(
@@ -90,12 +91,6 @@ function runCommand(command, args, env) {
   });
 }
 
-function modeForBuildCommand(scriptName) {
-  if (scriptName === "build:cn") return "cn";
-  if (scriptName === "build:global") return "global";
-  throw new Error(`frontend artifact parallel build only supports build:cn/build:global, got ${scriptName}`);
-}
-
 export async function runFrontendArtifactTypecheck(env = process.env) {
   await runCommand(pnpmBin(env), ["run", "check"], env);
 }
@@ -105,10 +100,23 @@ export async function runFrontendArtifactBuildCommand(scriptName, env = process.
   if (!outputDir) {
     throw new Error("FRONTEND_BUILD_OUTPUT_DIR is required for frontend artifact builds");
   }
-  const mode = modeForBuildCommand(scriptName);
-  await runner(pnpmBin(env), ["exec", "vite", "build", "--mode", mode, "--outDir", outputDir], env);
-  await runner(nodeBin(env), ["scripts/optimize-static-assets.mjs", outputDir], env);
-  await runner(nodeBin(env), ["scripts/generate-static-site.mjs", "--region", mode, "--dist", outputDir], env);
+  if (scriptName !== "build:next") {
+    throw new Error(`frontend artifact builds only support build:next, got ${scriptName}`);
+  }
+
+  rmSync(outputDir, { recursive: true, force: true });
+  rmSync("out", { recursive: true, force: true });
+  await runner(nodeBin(env), ["scripts/subset-fonts.mjs"], env);
+  await runner(nodeBin(env), ["scripts/sync-fumadocs-content.mjs"], env);
+  await runner(pnpmBin(env), ["exec", "fumadocs-mdx"], env);
+  await runner(pnpmBin(env), ["exec", "next", "build", "--webpack"], env);
+  await runner(nodeBin(env), ["scripts/version-next-static-assets.mjs"], env);
+  await runner(nodeBin(env), ["scripts/fix-next-static-html-lang.mjs"], env);
+  await runner(nodeBin(env), ["scripts/format-next-static-html.mjs"], env);
+  await runner(nodeBin(env), ["scripts/check-versioned-next-static-assets.mjs"], env);
+  if (resolve("out") !== resolve(outputDir)) {
+    cpSync("out", outputDir, { recursive: true });
+  }
 }
 
 async function runWithConcurrency(items, concurrency, task) {

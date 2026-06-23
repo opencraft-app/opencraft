@@ -1,4 +1,3 @@
-import { MemoryRouter } from "react-router-dom";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -13,11 +12,11 @@ const repositories = {
   },
 };
 
-vi.mock("react-router-dom", async () => {
-  const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
+vi.mock("@/lib/app-navigation", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/app-navigation")>("@/lib/app-navigation");
   return {
     ...actual,
-    useNavigate: () => mockNavigate,
+    useAppNavigate: () => mockNavigate,
   };
 });
 
@@ -60,17 +59,13 @@ describe("PlanSelectPage", () => {
   it("selects the free plan through the new subscription action", async () => {
     const user = userEvent.setup();
 
-    render(
-      <MemoryRouter>
-        <PlanSelectPage />
-      </MemoryRouter>,
-    );
+    render(<PlanSelectPage />);
 
     await user.click(await screen.findByRole("button", { name: "选择免费体验" }));
 
     await waitFor(() => {
       expect(mockSelectPlan).toHaveBeenCalledWith("free");
     });
-    expect(mockNavigate).toHaveBeenCalledWith("/dashboard/settings", { replace: true });
+    expect(mockNavigate).toHaveBeenCalledWith("/subscribe", { replace: true });
   });
 });

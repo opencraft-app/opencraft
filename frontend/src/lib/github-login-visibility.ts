@@ -7,32 +7,41 @@ type GitHubLoginVisibilityHost = Window & typeof globalThis & {
   __LIGHTVELA_SHOW_GITHUB_LOGIN__?: boolean;
 };
 
-export const isGitHubLoginVisible = (host: GitHubLoginVisibilityHost = window) => host.__LIGHTVELA_SHOW_GITHUB_LOGIN__ === true;
+const resolveHost = (host?: GitHubLoginVisibilityHost): GitHubLoginVisibilityHost | null => {
+  if (host) return host;
+  return typeof window === "undefined" ? null : window;
+};
 
-export const setGitHubLoginVisible = (visible: boolean, host: GitHubLoginVisibilityHost = window) => {
-  host.__LIGHTVELA_SHOW_GITHUB_LOGIN__ = visible;
-  host.dispatchEvent(new CustomEvent<boolean>(GITHUB_LOGIN_VISIBILITY_EVENT, { detail: visible }));
+export const isGitHubLoginVisible = (host?: GitHubLoginVisibilityHost) => resolveHost(host)?.__LIGHTVELA_SHOW_GITHUB_LOGIN__ === true;
+
+export const setGitHubLoginVisible = (visible: boolean, host?: GitHubLoginVisibilityHost) => {
+  const target = resolveHost(host);
+  if (!target) return false;
+  target.__LIGHTVELA_SHOW_GITHUB_LOGIN__ = visible;
+  target.dispatchEvent(new CustomEvent<boolean>(GITHUB_LOGIN_VISIBILITY_EVENT, { detail: visible }));
   return visible;
 };
 
-export const installShowGitHubLoginHelper = (host: GitHubLoginVisibilityHost = window) => {
-  const originalShowGitHubLogin = host.show_github_login;
+export const installShowGitHubLoginHelper = (host?: GitHubLoginVisibilityHost) => {
+  const target = resolveHost(host);
+  if (!target) return () => undefined;
+  const originalShowGitHubLogin = target.show_github_login;
 
   const showGitHubLogin = () => {
-    setGitHubLoginVisible(true, host);
-    host.console.info("GitHub login button is now visible.");
+    setGitHubLoginVisible(true, target);
+    target.console.info("GitHub login button is now visible.");
     return true;
   };
 
-  host.show_github_login = showGitHubLogin;
+  target.show_github_login = showGitHubLogin;
 
   return () => {
     if (originalShowGitHubLogin === undefined) {
-      delete host.show_github_login;
+      delete target.show_github_login;
       return;
     }
 
-    host.show_github_login = originalShowGitHubLogin;
+    target.show_github_login = originalShowGitHubLogin;
   };
 };
 

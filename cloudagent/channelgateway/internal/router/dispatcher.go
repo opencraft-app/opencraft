@@ -17,25 +17,28 @@ import (
 )
 
 type Dispatcher struct {
-	store        SessionStore
-	account      store.ChannelAccount
-	acp          ACPClient
-	cwd          string
-	callbacks    ChannelCallbacks
-	timeout      time.Duration
-	inboundLease store.ChannelLease
-	inboundStale time.Duration
-	sessionLocks sync.Map
+	store         SessionStore
+	account       store.ChannelAccount
+	acp           ACPClient
+	cwd           string
+	callbacks     ChannelCallbacks
+	timeout       time.Duration
+	promptTimeout time.Duration
+	inboundLease  store.ChannelLease
+	inboundStale  time.Duration
+	sessionLocks  sync.Map
 }
 
 type DispatcherOptions struct {
 	Callbacks      ChannelCallbacks
 	RequestTimeout time.Duration
+	PromptTimeout  time.Duration
 	InboundLease   store.ChannelLease
 	InboundStale   time.Duration
 }
 
 const runtimeOwnershipRetryAttempts = 8
+const defaultPromptTimeout = 30 * time.Minute
 
 var runtimeOwnershipRetryBaseDelay = 250 * time.Millisecond
 
@@ -82,15 +85,20 @@ func NewDispatcherWithOptions(st SessionStore, account store.ChannelAccount, cli
 	if callbacks == nil {
 		callbacks = DefaultChannelCallbacks{}
 	}
+	promptTimeout := opts.PromptTimeout
+	if promptTimeout <= 0 {
+		promptTimeout = defaultPromptTimeout
+	}
 	return &Dispatcher{
-		store:        st,
-		account:      account,
-		acp:          client,
-		cwd:          cwd,
-		callbacks:    callbacks,
-		timeout:      opts.RequestTimeout,
-		inboundLease: normalizedInboundLease(account.ChannelAccountID, opts.InboundLease),
-		inboundStale: opts.InboundStale,
+		store:         st,
+		account:       account,
+		acp:           client,
+		cwd:           cwd,
+		callbacks:     callbacks,
+		timeout:       opts.RequestTimeout,
+		promptTimeout: promptTimeout,
+		inboundLease:  normalizedInboundLease(account.ChannelAccountID, opts.InboundLease),
+		inboundStale:  opts.InboundStale,
 	}
 }
 
@@ -368,13 +376,15 @@ func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) (re
 	log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=acp_prompt_start text_bytes=%d",
 		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID),
 		logValue(conversation.ConversationID), logValue(conversation.SessionKey), logValue(sessionID), len([]byte(msg.Text)))
-	result, sessionID, err := d.promptWithRuntimeRecovery(ctx, conversation, msg, sessionID)
+	promptCtx, promptCancel := d.promptContext(ctx)
+	defer promptCancel()
+	result, sessionID, err := d.promptWithRuntimeRecovery(promptCtx, conversation, msg, sessionID)
 	if err != nil {
 		log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=acp_prompt_failed duration_ms=%d error=%s",
 			logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID),
 			logValue(conversation.ConversationID), logValue(conversation.SessionKey), logValue(sessionID),
 			time.Since(promptStartedAt).Milliseconds(), logValue(err.Error()))
-		return d.handleACPError(ctx, msg, conversation, sessionID, CallbackStagePrompt, err)
+		return d.handleACPError(promptCtx, msg, conversation, sessionID, CallbackStagePrompt, err)
 	}
 	log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=acp_prompt_done duration_ms=%d stop_reason=%s output_bytes=%d",
 		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID),
@@ -405,6 +415,13 @@ func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) (re
 func (d *Dispatcher) requestContext(parent context.Context) (context.Context, context.CancelFunc) {
 	if d != nil && d.timeout > 0 {
 		return context.WithTimeout(parent, d.timeout)
+	}
+	return parent, func() {}
+}
+
+func (d *Dispatcher) promptContext(parent context.Context) (context.Context, context.CancelFunc) {
+	if d != nil && d.promptTimeout > 0 {
+		return context.WithTimeout(parent, d.promptTimeout)
 	}
 	return parent, func() {}
 }

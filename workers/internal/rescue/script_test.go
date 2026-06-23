@@ -76,7 +76,7 @@ func TestBuildUploaderRunScript(t *testing.T) {
 
 func TestBuildHermesImportScriptForcesNonInteractiveImport(t *testing.T) {
 	script := BuildHermesImportScript("https://example.com/hermes.zip")
-	for _, want := range []string{"curl -fL", "unzip -t", "hermes import --force \"$archive\"", hermesImportResultMarker} {
+	for _, want := range []string{"curl -fL", "unzip -t", "printf 'y\\n' | hermes import --force \"$archive\"", hermesImportResultMarker} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("script missing %q:\n%s", want, script)
 		}

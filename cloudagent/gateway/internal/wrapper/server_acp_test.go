@@ -1132,6 +1132,71 @@ func TestACPPromptPreflightRuntimeUnavailableReturnsACPError(t *testing.T) {
 	}
 }
 
+func TestACPPromptPreflightWorkspaceLeaseHeldIsRetryableAndDoesNotPoisonSession(t *testing.T) {
+	manager := &recordingACPRuntimeManager{
+		reattachErr: WorkspaceLeaseHeldError{
+			WorkspaceID: "workspace_busy",
+			RuntimeID:   "runtime_busy",
+			LeaseID:     "lease_busy",
+			ExpiresAt:   time.Date(2026, 6, 22, 8, 30, 0, 0, time.UTC),
+		},
+	}
+	srv := newACPTestServerWithRuntime(t, manager)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", map[string]string{"Authorization": "Bearer test-key"})
+	defer client.close()
+
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})
+	waitForRPCID(t, client, float64(1))
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      2,
+		"method":  "session/new",
+		"params": map[string]any{
+			"cwd":   "/workspace",
+			"_meta": map[string]any{"cloudagent": map[string]any{"outer_runtime": "ags"}},
+		},
+	})
+	sessionID := waitForRPCID(t, client, float64(2))["result"].(map[string]any)["sessionId"].(string)
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      3,
+		"method":  "session/prompt",
+		"params":  map[string]any{"sessionId": sessionID, "prompt": []any{map[string]any{"type": "text", "text": "hello while busy"}}},
+	})
+	resp := waitForRPCID(t, client, float64(3))
+	errorObject := resp["error"].(map[string]any)
+	if errorObject["code"] != float64(-32009) || errorObject["message"] != "workspace lease is held" {
+		t.Fatalf("unexpected workspace lease response: %#v", resp)
+	}
+	data := errorObject["data"].(map[string]any)
+	if data["error_code"] != "workspace_lease_held" || data["retryable"] != true {
+		t.Fatalf("workspace lease error should be retryable: %#v", data)
+	}
+	if data["workspace_id"] != "workspace_busy" || data["runtime_id"] != "runtime_busy" || data["lease_id"] != "lease_busy" {
+		t.Fatalf("workspace lease diagnostics missing: %#v", data)
+	}
+	if got := len(manager.promptTexts()); got != 0 {
+		t.Fatalf("preflight lease contention must not invoke prompt runtime, got %d prompts", got)
+	}
+
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      4,
+		"method":  "_cloudagent.session.status",
+		"params":  map[string]any{"session_id": sessionID},
+	})
+	status := waitForRPCID(t, client, float64(4))["result"].(map[string]any)
+	if status["read_only"] == true || status["read_only_reason"] != "" || status["closed"] == true {
+		t.Fatalf("retryable lease contention must not poison session as read-only: %#v", status)
+	}
+	if !strings.Contains(status["last_runtime_error"].(string), "workspace_busy") {
+		t.Fatalf("status should retain diagnostics for operators: %#v", status)
+	}
+}
+
 func TestACPPromptRecoversRunCommandAuthFailure(t *testing.T) {
 	manager := &recordingACPRuntimeManager{
 		promptErrs: []error{
@@ -3009,6 +3074,92 @@ func TestACPPromptOwnershipRejectsSecondGateway(t *testing.T) {
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("first prompt ownership was not released")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestACPPromptWaitsForSameGatewayOwnershipRelease(t *testing.T) {
+	t.Setenv("GATEWAY_ACP_PROMPT_OWNER_WAIT_SECONDS", "2")
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := Scope{TenantID: "tenant-owner-wait", ProjectID: "project-owner-wait"}
+	session := &acpSession{
+		SessionID:         "session_prompt_owner_wait",
+		Scope:             scope,
+		Model:             defaultACPModel(),
+		CWD:               "/workspace",
+		State:             acpRuntimeStateReady,
+		RuntimeGeneration: 1,
+		Runtime: ACPSessionRuntime{
+			RuntimeID:  "runtime_prompt_owner_wait",
+			DaemonAddr: "http://127.0.0.1:39001",
+		},
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+	if err := store.SaveACPSession(session); err != nil {
+		t.Fatal(err)
+	}
+	manager := newBlockingACPRuntimeManager()
+	gateway := NewACPGateway(store, nil)
+	gateway.runtimeManager = manager
+	gateway.worker = manager
+	gateway.ownerID = "gateway_same_owner"
+	gateway.sessions[session.SessionID] = cloneSession(session)
+
+	req := acpPromptRequest{Prompt: []acpPromptBlock{{Type: "text", Text: "hold owner"}}}
+	if err := gateway.startPrompt(nil, nil, cloneSession(session), req, false); err != nil {
+		t.Fatalf("first prompt should start: %v", err)
+	}
+	manager.waitStarted(t)
+
+	secondDone := make(chan error, 1)
+	go func() {
+		secondDone <- gateway.startPrompt(nil, nil, cloneSession(session), req, false)
+	}()
+	time.Sleep(100 * time.Millisecond)
+	if err := gateway.cancelSessionPrompt(scope, session.SessionID); err != nil {
+		t.Fatalf("cancel first prompt: %v", err)
+	}
+	select {
+	case err := <-secondDone:
+		if err != nil {
+			t.Fatalf("second prompt should wait for same owner release, got %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("second prompt did not start after first ownership release")
+	}
+	manager.waitWorkerJobCount(t, 2)
+	if err := gateway.cancelSessionPrompt(scope, session.SessionID); err != nil {
+		t.Fatalf("cancel second prompt: %v", err)
+	}
+	waitRuntimeOwnershipReleasedForTest(t, store, session.SessionID, session.RuntimeGeneration, "gateway_same_owner")
+}
+
+func waitRuntimeOwnershipReleasedForTest(t *testing.T, store *Store, sessionID string, generation int64, ownerID string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		lease, err := store.AcquireRuntimeOwnership(context.Background(), RuntimeOwnershipRequest{
+			SessionID:  sessionID,
+			Generation: generation,
+			RunID:      "job_wait_release_" + randomHex(4),
+			OwnerID:    ownerID,
+			Operation:  "test",
+			TTL:        time.Minute,
+		})
+		if err == nil {
+			_ = store.ReleaseRuntimeOwnership(context.Background(), lease)
+			return
+		}
+		if !errors.Is(err, ErrRuntimeOwnershipHeld) {
+			t.Fatalf("unexpected ownership acquire error: %v", err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("runtime ownership for %s was not released", sessionID)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}

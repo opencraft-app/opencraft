@@ -51,7 +51,10 @@ const interpolate = (zh: string, options?: Record<string, unknown>): string => {
 /** 开发期对未收录中文的告警（同一条只告警一次，避免刷屏） */
 const warnedMissing = new Set<string>();
 const warnMissing = (zh: string): void => {
-  if (!import.meta.env.DEV) return;
+  const isDev = typeof process !== "undefined"
+    ? process.env.NODE_ENV !== "production"
+    : import.meta.env?.DEV;
+  if (!isDev) return;
   if (warnedMissing.has(zh)) return;
   warnedMissing.add(zh);
   // eslint-disable-next-line no-console

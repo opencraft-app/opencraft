@@ -18,15 +18,18 @@
 import { Check, ChevronDown, Globe } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
 
 import { setLocale } from "@/i18n";
-import { switchLocaleInPath } from "@/lib/region";
+import type { PublicSiteLocale } from "@/lib/public-site-navigation";
+import { isGlobal, switchLocaleInPath } from "@/lib/region";
 
-type Locale = "zh-CN" | "en-US";
+export type LanguageSwitcherVariant = "dropdown" | "inline";
+export type LanguageSwitcherNavigate = (targetUrl: string) => void;
+
+type I18nLocale = "zh-CN" | "en-US";
 
 type Option = {
-  value: Locale;
+  value: PublicSiteLocale;
   /** 触发按钮上显示的短标（如 "EN" / "中"） */
   short: string;
   /** 下拉项 / 平铺按钮上显示的完整名称 */
@@ -34,13 +37,25 @@ type Option = {
 };
 
 const EN_OPTION: Option = { value: "en-US", short: "EN", label: "English" };
-const ZH_OPTION: Option = { value: "zh-CN", short: "中", label: "中文" };
+const ZH_CN_OPTION: Option = { value: "zh-CN", short: "中", label: "中文" };
+const ZH_SG_OPTION: Option = { value: "zh-SG", short: "中", label: "中文" };
 
-const OPTIONS: readonly Option[] = [EN_OPTION, ZH_OPTION];
+function chineseOption(): Option {
+  return isGlobal ? ZH_SG_OPTION : ZH_CN_OPTION;
+}
 
 function currentOption(lang: string | undefined): Option {
-  if (lang?.startsWith("zh")) return ZH_OPTION;
+  if (lang?.startsWith("zh")) return chineseOption();
   return EN_OPTION;
+}
+
+function languageFromPublicLocale(locale: PublicSiteLocale | undefined): PublicSiteLocale | undefined {
+  if (!locale) return undefined;
+  return locale;
+}
+
+function i18nLocaleForPublicLocale(locale: PublicSiteLocale): I18nLocale {
+  return locale.startsWith("zh") ? "zh-CN" : "en-US";
 }
 
 /**
@@ -59,11 +74,11 @@ function currentOption(lang: string | undefined): Option {
  *     直接改 history 会让 react-router 的 location 状态停在旧 pathname。
  */
 function applyLocaleChange(
-  value: Locale,
+  value: PublicSiteLocale,
   reloadAfterSwitch: boolean,
-  navigate: ReturnType<typeof useNavigate>,
+  navigateTo?: LanguageSwitcherNavigate,
 ): void {
-  setLocale(value);
+  setLocale(i18nLocaleForPublicLocale(value));
 
   if (typeof window === "undefined") return;
 
@@ -83,21 +98,31 @@ function applyLocaleChange(
   }
 
   if (target !== window.location.pathname) {
-    /* 通过 react-router 切 URL，确保 useLocation / 路由 effect / ScrollRestoration
-       都能拿到新 pathname。 */
-    navigate(targetUrl, { replace: true });
+    if (navigateTo) {
+      navigateTo(targetUrl);
+      return;
+    }
+    window.location.assign(targetUrl);
   }
 }
 
 /**
  * 下拉菜单形态（桌面端用）
  */
-function DropdownSwitcher({ reloadAfterSwitch }: { reloadAfterSwitch: boolean }) {
+function DropdownSwitcher({
+  activeLocale,
+  navigateTo,
+  reloadAfterSwitch,
+}: {
+  activeLocale?: PublicSiteLocale;
+  navigateTo?: LanguageSwitcherNavigate;
+  reloadAfterSwitch: boolean;
+}) {
   const { i18n } = useTranslation();
-  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const active = currentOption(i18n.language);
+  const active = currentOption(activeLocale ?? i18n.language);
+  const options = [EN_OPTION, chineseOption()] as const;
 
   /* 点击外部关闭下拉 */
   useEffect(() => {
@@ -110,9 +135,9 @@ function DropdownSwitcher({ reloadAfterSwitch }: { reloadAfterSwitch: boolean })
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
-  const handlePick = (value: Locale) => {
+  const handlePick = (value: PublicSiteLocale) => {
     setOpen(false);
-    if (value !== i18n.language) applyLocaleChange(value, reloadAfterSwitch, navigate);
+    if (value !== active.value) applyLocaleChange(value, reloadAfterSwitch, navigateTo);
   };
 
   return (
@@ -137,7 +162,7 @@ function DropdownSwitcher({ reloadAfterSwitch }: { reloadAfterSwitch: boolean })
           role="listbox"
           className="absolute right-0 top-[calc(100%+6px)] z-50 min-w-[140px] overflow-hidden rounded-xl border border-black/5 bg-white shadow-[0_8px_24px_rgba(0,0,0,0.08)] py-1"
         >
-          {OPTIONS.map((opt) => {
+          {options.map((opt) => {
             const selected = opt.value === active.value;
             return (
               <li key={opt.value}>
@@ -165,21 +190,29 @@ function DropdownSwitcher({ reloadAfterSwitch }: { reloadAfterSwitch: boolean })
 /**
  * 平铺形态（移动端菜单内用）
  */
-function InlineSwitcher({ reloadAfterSwitch }: { reloadAfterSwitch: boolean }) {
+function InlineSwitcher({
+  activeLocale,
+  navigateTo,
+  reloadAfterSwitch,
+}: {
+  activeLocale?: PublicSiteLocale;
+  navigateTo?: LanguageSwitcherNavigate;
+  reloadAfterSwitch: boolean;
+}) {
   const { i18n } = useTranslation();
-  const navigate = useNavigate();
-  const active = currentOption(i18n.language);
+  const active = currentOption(activeLocale ?? i18n.language);
+  const options = [EN_OPTION, chineseOption()] as const;
 
   return (
     <div className="flex items-center gap-2">
-      {OPTIONS.map((opt) => {
+      {options.map((opt) => {
         const selected = opt.value === active.value;
         return (
           <button
             key={opt.value}
             type="button"
             onClick={() => {
-              if (!selected) applyLocaleChange(opt.value, reloadAfterSwitch, navigate);
+              if (!selected) applyLocaleChange(opt.value, reloadAfterSwitch, navigateTo);
             }}
             className={`inline-flex items-center justify-center h-[32px] px-3 rounded-[100px] text-[13px] transition-colors ${
               selected
@@ -196,10 +229,14 @@ function InlineSwitcher({ reloadAfterSwitch }: { reloadAfterSwitch: boolean }) {
 }
 
 export function LanguageSwitcher({
+  activeLocale,
+  navigateTo,
   variant = "dropdown",
   reloadAfterSwitch = false,
 }: {
-  variant?: "dropdown" | "inline";
+  activeLocale?: PublicSiteLocale;
+  navigateTo?: LanguageSwitcherNavigate;
+  variant?: LanguageSwitcherVariant;
   /**
    * 切换后是否强制刷新页面。
    * 在使用 @tencent/tea-sdk-lightclaw 的页面（目前仅 /agents）
@@ -207,7 +244,9 @@ export function LanguageSwitcher({
    */
   reloadAfterSwitch?: boolean;
 }) {
+  const routeLocale = languageFromPublicLocale(activeLocale);
+
   return variant === "inline"
-    ? <InlineSwitcher reloadAfterSwitch={reloadAfterSwitch} />
-    : <DropdownSwitcher reloadAfterSwitch={reloadAfterSwitch} />;
+    ? <InlineSwitcher activeLocale={routeLocale} navigateTo={navigateTo} reloadAfterSwitch={reloadAfterSwitch} />
+    : <DropdownSwitcher activeLocale={routeLocale} navigateTo={navigateTo} reloadAfterSwitch={reloadAfterSwitch} />;
 }

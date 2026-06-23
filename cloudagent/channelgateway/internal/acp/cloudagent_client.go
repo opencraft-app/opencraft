@@ -264,21 +264,24 @@ func (c *CloudAgentClient) PromptWithRunID(ctx context.Context, sessionID, text,
 	} else {
 		runID = firstNonEmpty(submitted.RunID, idempotencyKey)
 	}
-	var afterSeq int64
+	var observed strings.Builder
 	for _, event := range submitEvents {
 		if event.RunID != "" && runID != "" && event.RunID != runID {
 			continue
 		}
-		if event.Seq > afterSeq {
-			afterSeq = event.Seq
+		if text := cloudAgentEventText(event); text != "" {
+			observed.WriteString(text)
 		}
 	}
-	var observed strings.Builder
+	if cloudAgentTerminal(submitted.Run.Status) && (submitted.Run.RunID == "" || runID == "" || submitted.Run.RunID == runID) {
+		return promptResultFromCloudAgentRun(submitted.Run, observed.String())
+	}
+	var afterSeq int64
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	var followFailures int
 	for {
-		eventBatch, err := c.followEvents(ctx, sessionID, afterSeq)
+		eventBatch, err := c.followRunEvents(ctx, runID, afterSeq)
 		if err != nil {
 			followFailures++
 			if err := waitCloudAgentRetry(ctx, followFailures); err != nil {
@@ -303,15 +306,7 @@ func (c *CloudAgentClient) PromptWithRunID(ctx context.Context, sessionID, text,
 			}
 		}
 		if cloudAgentTerminal(eventBatch.Run.Status) && (eventBatch.Run.RunID == "" || runID == "" || eventBatch.Run.RunID == runID) {
-			result := eventBatch.Run
-			if result.Status == "failed" {
-				return PromptResult{}, errors.New(firstNonEmpty(result.Error, "cloudagent run failed"))
-			}
-			output := result.OutputText
-			if output == "" {
-				output = observed.String()
-			}
-			return PromptResult{StopReason: cloudAgentStopReason(result), Text: output}, nil
+			return promptResultFromCloudAgentRun(eventBatch.Run, observed.String())
 		}
 		select {
 		case <-ctx.Done():
@@ -321,6 +316,17 @@ func (c *CloudAgentClient) PromptWithRunID(ctx context.Context, sessionID, text,
 	}
 }
 
+func promptResultFromCloudAgentRun(result cloudAgentRunResponse, observed string) (PromptResult, error) {
+	if result.Status == "failed" {
+		return PromptResult{}, errors.New(firstNonEmpty(result.Error, "cloudagent run failed"))
+	}
+	output := result.OutputText
+	if output == "" {
+		output = observed
+	}
+	return PromptResult{StopReason: cloudAgentStopReason(result), Text: output}, nil
+}
+
 func (r cloudAgentEventsResponse) normalizedEvents() []cloudAgentEventEnvelope {
 	if len(r.Events) > 0 {
 		return r.Events
@@ -328,25 +334,25 @@ func (r cloudAgentEventsResponse) normalizedEvents() []cloudAgentEventEnvelope {
 	return r.Data
 }
 
-func (c *CloudAgentClient) followEvents(ctx context.Context, sessionID string, afterSeq int64) (cloudAgentEventsResponse, error) {
-	result, err := c.fetchEventsStream(ctx, sessionID, afterSeq)
+func (c *CloudAgentClient) followRunEvents(ctx context.Context, runID string, afterSeq int64) (cloudAgentEventsResponse, error) {
+	result, err := c.fetchRunEventsStream(ctx, runID, afterSeq)
 	if err == nil {
 		return result, nil
 	}
-	return c.fetchEvents(ctx, sessionID, afterSeq)
+	return c.fetchRunEvents(ctx, runID, afterSeq)
 }
 
-func (c *CloudAgentClient) fetchEvents(ctx context.Context, sessionID string, afterSeq int64) (cloudAgentEventsResponse, error) {
+func (c *CloudAgentClient) fetchRunEvents(ctx context.Context, runID string, afterSeq int64) (cloudAgentEventsResponse, error) {
 	var result cloudAgentEventsResponse
-	path := fmt.Sprintf("/v1/cloudagent/sessions/%s/events?after_seq=%d", url.PathEscape(sessionID), afterSeq)
+	path := fmt.Sprintf("/v1/cloudagent/runs/%s/events?after_seq=%d", url.PathEscape(runID), afterSeq)
 	if err := c.doJSON(ctx, http.MethodGet, path, nil, &result); err != nil {
 		return cloudAgentEventsResponse{}, err
 	}
 	return result, nil
 }
 
-func (c *CloudAgentClient) fetchEventsStream(ctx context.Context, sessionID string, afterSeq int64) (cloudAgentEventsResponse, error) {
-	path := fmt.Sprintf("/v1/cloudagent/sessions/%s/events/stream?after_seq=%d", url.PathEscape(sessionID), afterSeq)
+func (c *CloudAgentClient) fetchRunEventsStream(ctx context.Context, runID string, afterSeq int64) (cloudAgentEventsResponse, error) {
+	path := fmt.Sprintf("/v1/cloudagent/runs/%s/events?after_seq=%d&stream=true", url.PathEscape(runID), afterSeq)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
 		return cloudAgentEventsResponse{}, err
@@ -453,6 +459,7 @@ func accumulateCloudAgentStreamPayload(result *cloudAgentEventsResponse, eventTy
 	case "heartbeat":
 		return true, nil
 	case "session.status_idle":
+		result.Events = append(result.Events, event)
 		result.Run = cloudAgentRunResponse{
 			RunID:      eventRunID(raw),
 			SessionID:  eventSessionID(raw),
@@ -461,6 +468,7 @@ func accumulateCloudAgentStreamPayload(result *cloudAgentEventsResponse, eventTy
 		}
 		return true, nil
 	case "session.error":
+		result.Events = append(result.Events, event)
 		result.Run = cloudAgentRunResponse{
 			RunID:     eventRunID(raw),
 			SessionID: eventSessionID(raw),

@@ -25,12 +25,12 @@ trade 上线之前的最后一道闸门。
 ## 现网链路拓扑
 
 ```
-trade Pod (beijing-sandbox / ns=trade / region=ap-beijing)
+trade Pod (beijing-sandbox / ns=trade / region=ap-guangzhou)
    │  JIFEI_CGW_GATEWAY_URL    = http://81.71.196.13/v1/proxy/jifei-prod/...
    │  JIFEI_BILLING_APIGW_URL  = http://81.71.196.13/v1/proxy/jifei-billing-apigw-prod/...
    │  JIFEI_CGW_X_QCLOUD_USER_ID = ""        # 现网形态不注入测试 uin header
    │  TRADE_SHADOW_MOCK_ENABLED  = ""        # 连真实 lightclaw-auth shadow_bindings
-   │  LIGHTVELA_TRADE_REGION     = ap-beijing # 出向 envelope.resInfo.region=8/800001
+   │  LIGHTVELA_TRADE_REGION     = ap-guangzhou # 出向 envelope.resInfo.region=1/100001
    │  TRADE_SITE_KIND            = cn        # 国内站身份
    ↓
 lightvela-proxy prod (tkexgz, CLB 81.71.196.13)
@@ -197,7 +197,7 @@ kubectl --kubeconfig=$KCFG -n trade exec deploy/trade -- \
 | X_QCLOUD_USER_ID | 330500000003（mock 测试 uin） | **""**（envelope 真实影子账号 uin） | ""（同左） |
 | TRADE_SHADOW_MOCK_ENABLED | true（注入固定 700000164995） | **""**（连真实 shadow） | ""（同左） |
 | TRADE_SITE_KIND | cn | cn | cn |
-| LIGHTVELA_TRADE_REGION | "" | **ap-beijing** | ap-guangzhou |
+| LIGHTVELA_TRADE_REGION | "" | **ap-guangzhou** | ap-guangzhou |
 
 ## 常见排错
 

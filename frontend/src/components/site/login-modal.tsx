@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Loader2, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { useRepositories } from "@/contexts/repository-context";
 import { useSession } from "@/contexts/session-context";
@@ -17,6 +17,7 @@ import {
 } from "@/lib/oauth";
 import { assetUrl } from "@/lib/asset-url";
 import { isGlobal } from "@/lib/region";
+import { captureProductEvent, PRODUCT_ANALYTICS_EVENTS, PRODUCT_ANALYTICS_LOCATIONS } from "@/observability/posthog";
 
 const qqLogo = assetUrl("/login/qq-logo.png");
 const wechatLogo = assetUrl("/login/wechat-logo.png");
@@ -144,10 +145,12 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
   const t = useT();
   const showGitHubLogin = useGitHubLoginVisibility();
 
+  const [mounted, setMounted] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [showAgreeHint, setShowAgreeHint] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => setMounted(true), []);
   useEffect(() => installShowGitHubLoginHelper(), []);
 
   // 当用户已登录时自动关闭弹窗并触发 onSuccess
@@ -163,6 +166,11 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
     if (!open) return;
     setError(initialError);
   }, [initialError, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    captureProductEvent(PRODUCT_ANALYTICS_EVENTS.LOGIN_MODAL_OPENED, { source: PRODUCT_ANALYTICS_LOCATIONS.LOGIN_MODAL });
+  }, [open]);
 
   const checkAgreed = () => {
     if (!agreed) {
@@ -193,11 +201,11 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
     const loginUrl = getOAuthStartUrlForProvider(provider);
     if (!loginUrl) return;
     setError(null);
+    captureProductEvent(PRODUCT_ANALYTICS_EVENTS.OAUTH_PROVIDER_CLICKED, { provider });
     redirectToOAuthStart(loginUrl);
   };
 
-  return (
-    <>
+  const modal = (
     <AnimatePresence>
       {open && (
         <motion.div
@@ -213,6 +221,9 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 24, scale: 0.96 }}
             transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("登录")}
             className="relative mx-4 flex w-full max-w-[412px] flex-col overflow-hidden shadow-2xl"
             style={{
               background: "#fff",
@@ -318,13 +329,13 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
                   </a>{" "}
                   {t("与")}{" "}
                   {isGlobal ? (
-                    <Link
-                      to="/privacy-policy"
+                    <a
+                      href="/privacy-policy"
                       className="font-medium hover:underline"
                       style={{ color: "var(--lw-accent)" }}
                     >
                       {t("《隐私保护协议》")}
-                    </Link>
+                    </a>
                   ) : (
                     <a
                       href={CN_PRIVACY_POLICY_URL}
@@ -340,13 +351,13 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
                     <>
                       {" "}
                       {t("与")}{" "}
-                      <Link
-                        to="/open-source-licenses"
+                      <a
+                        href="/open-source-licenses"
                         className="font-medium hover:underline"
                         style={{ color: "var(--lw-accent)" }}
                       >
                         {t("《开源声明》")}
-                      </Link>
+                      </a>
                     </>
                   ) : null}
                 </span>
@@ -386,8 +397,10 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
         </motion.div>
       )}
     </AnimatePresence>
-    </>
   );
+
+  if (!mounted) return null;
+  return createPortal(modal, document.body);
 };
 
 /* ═══════════════════════════════════════════════════════════════
@@ -404,9 +417,12 @@ export const InviteCodeModal = ({ open, onClose, onSuccess }: InviteCodeModalPro
   const repositories = useRepositories();
   const { session, activateInviteCode } = useSession();
   const t = useT();
+  const [mounted, setMounted] = useState(false);
   const [inviteCode, setInviteCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => setMounted(true), []);
 
   const handleSubmit = async () => {
     const code = inviteCode.trim().toUpperCase();
@@ -430,7 +446,7 @@ export const InviteCodeModal = ({ open, onClose, onSuccess }: InviteCodeModalPro
     }
   };
 
-  return (
+  const modal = (
     <AnimatePresence>
       {open && (
         <motion.div
@@ -446,6 +462,9 @@ export const InviteCodeModal = ({ open, onClose, onSuccess }: InviteCodeModalPro
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 24, scale: 0.96 }}
             transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("输入邀请码")}
             className="relative mx-4 flex w-full max-w-sm flex-col items-center overflow-hidden rounded-2xl border shadow-2xl"
             style={{
               background: "#fff",
@@ -525,4 +544,7 @@ export const InviteCodeModal = ({ open, onClose, onSuccess }: InviteCodeModalPro
       )}
     </AnimatePresence>
   );
+
+  if (!mounted) return null;
+  return createPortal(modal, document.body);
 };

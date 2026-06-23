@@ -1,9 +1,9 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { User } from "@/domain/types";
+import type { Pass, User } from "@/domain/types";
 import { AccountPage } from "@/pages/marketing/account-page";
 
 const updateProfile = vi.fn();
@@ -16,7 +16,10 @@ const retryRealnameSync = vi.fn();
 
 let currentUser: User;
 let realnamePhoneVerificationEnabled = false;
-const ACCOUNT_SAFETY_PHONE_VISIBILITY_STORAGE_KEY = "lw-account-safety-phone-visible";
+let paidBillingEnabled = false;
+let activePass: Pass | null = null;
+let sessionAuthReady = true;
+let sessionIsAuthenticated = true;
 
 const createMemoryStorage = (): Storage => {
   const entries = new Map<string, string>();
@@ -38,7 +41,7 @@ vi.mock("@/i18n/t", () => ({
 }));
 
 vi.mock("@/contexts/runtime-config-context", () => ({
-  usePaidBillingEnabled: () => false,
+  usePaidBillingEnabled: () => paidBillingEnabled,
   useRealnamePhoneVerificationEnabled: () => realnamePhoneVerificationEnabled,
 }));
 
@@ -75,7 +78,7 @@ vi.mock("@/contexts/openclaw-context", () => ({
         trialDays: 7,
       },
     },
-    activePass: null,
+    activePass,
   }),
 }));
 
@@ -94,11 +97,11 @@ vi.mock("@/contexts/repository-context", () => ({
 vi.mock("@/contexts/session-context", () => ({
   useSession: () => ({
     session: {
-      user: currentUser,
+      user: sessionIsAuthenticated ? currentUser : null,
       currentSubscription: null,
     },
-    isAuthenticated: true,
-    authReady: true,
+    isAuthenticated: sessionIsAuthenticated,
+    authReady: sessionAuthReady,
     signInAsGuest,
     updateProfile,
     uploadAvatar,
@@ -115,6 +118,19 @@ const renderAccountPage = () => {
     </MemoryRouter>,
   );
 };
+
+const buildActivePass = (): Pass => ({
+  pass_id: "pass_active_renew",
+  user_id: "usr_profile_audit",
+  bundle_id: "bundle_launch",
+  bundle_name: "启航套餐",
+  created_time: "2026-06-01T00:00:00Z",
+  expired_time: "2099-06-01T00:00:00Z",
+  isolated_time: null,
+  deleted_time: null,
+  credit_total: 1000,
+  credit_available: 900,
+});
 
 describe("AccountPage nickname audit state", () => {
   afterEach(() => {
@@ -133,6 +149,44 @@ describe("AccountPage nickname audit state", () => {
     };
     vi.stubGlobal("localStorage", createMemoryStorage());
     realnamePhoneVerificationEnabled = false;
+    paidBillingEnabled = false;
+    activePass = null;
+    sessionAuthReady = true;
+    sessionIsAuthenticated = true;
+  });
+
+  it("keeps the account chrome singular across auth states", () => {
+    sessionAuthReady = false;
+    sessionIsAuthenticated = false;
+
+    const { rerender } = render(
+      <MemoryRouter>
+        <AccountPage />
+      </MemoryRouter>,
+    );
+
+    expect(document.querySelectorAll("header")).toHaveLength(1);
+    expect(screen.getAllByText("legal footer")).toHaveLength(1);
+
+    sessionAuthReady = true;
+    rerender(
+      <MemoryRouter>
+        <AccountPage />
+      </MemoryRouter>,
+    );
+
+    expect(document.querySelectorAll("header")).toHaveLength(1);
+    expect(screen.getAllByText("legal footer")).toHaveLength(1);
+
+    sessionIsAuthenticated = true;
+    rerender(
+      <MemoryRouter>
+        <AccountPage />
+      </MemoryRouter>,
+    );
+
+    expect(document.querySelectorAll("header")).toHaveLength(1);
+    expect(screen.getAllByText("legal footer")).toHaveLength(1);
   });
 
   it("uses pure realname by default without exposing any phone concept", async () => {
@@ -157,16 +211,40 @@ describe("AccountPage nickname audit state", () => {
     expect(screen.queryByText(/验证码/)).not.toBeInTheDocument();
   });
 
-  it("does not expose the internal account id on the account page", () => {
+  it("shows the account id and lets users copy it", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
     currentUser = {
       ...currentUser,
-      id: "shadow_user_internal_id",
+      id: "usr_visible_account_id",
     };
 
     renderAccountPage();
 
-    expect(screen.queryByText("账号 ID")).not.toBeInTheDocument();
-    expect(screen.queryByText("shadow_user_internal_id")).not.toBeInTheDocument();
+    expect(screen.getByText("账号 ID")).toBeInTheDocument();
+    expect(screen.getByText("usr_visible_account_id")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "复制" }));
+
+    expect(writeText).toHaveBeenCalledWith("usr_visible_account_id");
+  });
+
+  it("keeps verified email row compact without the explanatory helper text", () => {
+    currentUser = {
+      ...currentUser,
+      email: "user@example.com",
+      emailVerified: true,
+    };
+
+    renderAccountPage();
+
+    expect(screen.getByText("绑定邮箱")).toBeInTheDocument();
+    expect(screen.getByText("user@example.com")).toBeInTheDocument();
+    expect(screen.getByText("已验证")).toBeInTheDocument();
+    expect(screen.queryByText("该邮箱已验证，可用于接收导出完成通知等重要消息。")).not.toBeInTheDocument();
   });
 
   it("does not mention shadow account internals in the pure realname modal", async () => {
@@ -185,9 +263,8 @@ describe("AccountPage nickname audit state", () => {
     expect(screen.queryByText(/SaaS/)).not.toBeInTheDocument();
   });
 
-  it("keeps the safety phone row visible after show() has been persisted when the phone flag is enabled", () => {
+  it("keeps the safety phone row hidden until show() reveals account hidden tools", () => {
     realnamePhoneVerificationEnabled = true;
-    window.localStorage.setItem(ACCOUNT_SAFETY_PHONE_VISIBILITY_STORAGE_KEY, "1");
     currentUser = {
       ...currentUser,
       phone: "15625128341",
@@ -197,8 +274,41 @@ describe("AccountPage nickname audit state", () => {
 
     renderAccountPage();
 
+    expect(screen.queryByText("安全手机")).not.toBeInTheDocument();
+
+    act(() => {
+      ((window as Window & typeof globalThis & { show?: () => boolean }).show?.());
+    });
+
     expect(screen.getByText("安全手机")).toBeInTheDocument();
     expect(screen.getByText("实名认证")).toBeInTheDocument();
+  });
+
+  it("keeps the renew action hidden until show() reveals account hidden tools", () => {
+    paidBillingEnabled = true;
+    activePass = buildActivePass();
+
+    renderAccountPage();
+
+    expect(screen.getByText("启航套餐")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /立即续费/ })).not.toBeInTheDocument();
+
+    act(() => {
+      ((window as Window & typeof globalThis & { show?: () => boolean }).show?.());
+    });
+
+    expect(screen.getByRole("button", { name: /立即续费/ })).toBeInTheDocument();
+  });
+
+  it("keeps the safety phone and renew actions hidden by default", () => {
+    realnamePhoneVerificationEnabled = true;
+    paidBillingEnabled = true;
+    activePass = buildActivePass();
+
+    renderAccountPage();
+
+    expect(screen.queryByText("安全手机")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /立即续费/ })).not.toBeInTheDocument();
   });
 
   it("shows the pending nickname privately while keeping the active nickname explicit", async () => {

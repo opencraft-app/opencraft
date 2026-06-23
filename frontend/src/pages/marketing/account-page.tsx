@@ -1,9 +1,9 @@
-import { LegalFooter } from "@/components/site/legal-footer";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Camera,
   Check,
   ChevronRight,
+  Copy,
   CreditCard,
   Loader2,
   Pencil,
@@ -13,18 +13,15 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { useCallback, useEffect, useState, useRef, useMemo } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useCallback, useEffect, useState, useRef, useMemo, type ReactNode } from "react";
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { useOpenClaw } from "@/contexts/openclaw-context";
 import { usePaidBillingEnabled, useRealnamePhoneVerificationEnabled } from "@/contexts/runtime-config-context";
 import { RepositoryError } from "@/repositories/http-repositories";
 import type { BundleTimeUnit, Pass, PassRenewPrice } from "@/domain/types";
-import { BrandMark } from "@/components/site/brand-mark";
-import { LanguageSwitcher } from "@/components/site/language-switcher";
 import { LoginModal } from "@/components/site/login-modal";
-import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
+import { ProductPageShell } from "@/components/site/product-chrome";
 import { useT } from "@/i18n/t";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import {
@@ -37,6 +34,7 @@ import {
   isPaidBillingEnabled,
 } from "@/lib/billing-flow";
 import { getBillingErrorCode, resolveBillingErrorMessage } from "@/lib/billing-error";
+import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
 import { isCN, isGlobal } from "@/lib/region";
 import { cn } from "@/lib/utils";
 import { buildPayPlan } from "@/lib/wx-pay";
@@ -52,32 +50,6 @@ const fadeIn = {
 const staggerContainer = {
   hidden: { opacity: 0 },
   visible: { opacity: 1, transition: { staggerChildren: 0.08 } },
-};
-
-/* ─── Navbar ─── */
-
-const AccountNavbar = () => {
-  const { isAuthenticated: isLoggedIn } = useSession();
-  const t = useT();
-
-  return (
-    <header className="lw-setup-navbar">
-      <div className="mx-auto flex items-center justify-between px-6 md:px-8" style={{ maxWidth: "var(--lw-max-content)" }}>
-        <BrandMark to="/" />
-        <div className="flex items-center gap-3">
-          {/* 语言切换器：仅国际站展示 */}
-          {isGlobal && <LanguageSwitcher />}
-          <Link
-            to="/"
-            className="inline-flex items-center justify-center h-[36px] px-5 bg-[#F5F5F5] text-black/90 rounded-[100px] border border-[#E6E9EF] shadow-[0_2px_0_rgba(187,187,187,0.05)] hover:bg-black/5 transition-colors font-heading text-sm font-medium"
-          >
-            {t("返回首页")}
-          </Link>
-          {isLoggedIn && <UserAvatarMenu />}
-        </div>
-      </div>
-    </header>
-  );
 };
 
 /* ─── Info Row ─── */
@@ -1442,9 +1414,11 @@ const DELETE_POLL_TIMEOUT_MS = 2 * 60 * 1_000;
 const SubscriptionSection = ({
   subscription,
   pass,
+  showAccountRenewTools,
 }: {
   subscription: { code?: string; status?: string; currentPeriodStart?: string; currentPeriodEnd?: string } | null | undefined;
   pass: Pass | null;
+  showAccountRenewTools: boolean;
 }) => {
   const t = useT();
   const { refreshPasses, user } = useOpenClaw();
@@ -1584,14 +1558,14 @@ const SubscriptionSection = ({
               {t("即刻创建你的专属云端 Hermes")}
             </p>
           </div>
-          <Link
+          <AppLink
             to="/subscribe"
             className="inline-flex items-center justify-center gap-2 bg-black/90 px-6 py-3 rounded-full font-semibold text-sm cursor-pointer shadow-[0_2px_0_rgba(187,187,187,0.05)] hover:-translate-y-[1px] hover:shadow-[0_4px_12px_rgba(0,0,0,0.15)] transition-all"
             style={{ color: "#fff" }}
           >
             <Zap className="h-4 w-4" style={{ color: "#fff" }} />
             <span style={{ color: "#fff" }}>{t("立即创建")}</span>
-          </Link>
+          </AppLink>
         </div>
       </motion.div>
     );
@@ -1707,11 +1681,11 @@ const SubscriptionSection = ({
         )}
 
         {/* 续费 / 销毁按钮区：仅国内站 + 可操作 pass 时展示 */}
-        {(canRenew || canDelete) && operablePass && (
+        {((showAccountRenewTools && canRenew) || canDelete) && operablePass && (
           <>
             <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
             <div className="flex flex-wrap items-center gap-3">
-              {canRenew && (
+              {showAccountRenewTools && canRenew && (
                 <button
                   type="button"
                   onClick={() => setRenewModalOpen(true)}
@@ -1776,32 +1750,13 @@ const SubscriptionSection = ({
 /* ─── Main Account Page ─── */
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const ACCOUNT_SAFETY_PHONE_VISIBILITY_STORAGE_KEY = "lw-account-safety-phone-visible";
 type RealnameSyncStatus = "pending" | "failed" | "succeeded";
 type AccountConsoleHost = Window & { console: Console; show?: unknown };
 
-const readAccountSafetyPhoneVisibility = () => {
-  if (typeof window === "undefined") return false;
-
-  try {
-    return window.localStorage.getItem(ACCOUNT_SAFETY_PHONE_VISIBILITY_STORAGE_KEY) === "1";
-  } catch {
-    return false;
-  }
-};
-
-const persistAccountSafetyPhoneVisibility = () => {
-  try {
-    window.localStorage.setItem(ACCOUNT_SAFETY_PHONE_VISIBILITY_STORAGE_KEY, "1");
-  } catch {
-    // localStorage can be blocked in privacy modes; the current page state still reveals the section.
-  }
-};
-
 export const AccountPage = () => {
   const t = useT();
-  const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useAppNavigate();
+  const [searchParams, setSearchParams] = useAppSearchParams();
   const { auth } = useRepositories();
   const {
     session,
@@ -1852,9 +1807,10 @@ export const AccountPage = () => {
         : idCardVerified
           ? t("待完成手机号认证")
           : "";
-  const [showAccountSafetyPhoneSection, setShowAccountSafetyPhoneSection] = useState(readAccountSafetyPhoneVisibility);
+  const [showSafetyPhoneTools, setShowSafetyPhoneTools] = useState(false);
+  const [showAccountRenewTools, setShowAccountRenewTools] = useState(false);
   const showRealnameSection = !isGlobal;
-  const showSafetyPhoneSection = realnamePhoneVerificationEnabled && !isGlobal && showAccountSafetyPhoneSection;
+  const showSafetyPhoneSection = realnamePhoneVerificationEnabled && !isGlobal && showSafetyPhoneTools;
   const showEmailBindSection = isCN;
   const [showVerifyModal, setShowVerifyModal] = useState(false);
   const [showChangePhoneModal, setShowChangePhoneModal] = useState(false);
@@ -1867,6 +1823,8 @@ export const AccountPage = () => {
   const [emailBindError, setEmailBindError] = useState<string | null>(null);
   const [emailBindSuccess, setEmailBindSuccess] = useState<string | null>(null);
   const [emailBindCooldown, setEmailBindCooldown] = useState(0);
+  const [copiedUserId, setCopiedUserId] = useState(false);
+  const copyResetTimer = useRef<number | null>(null);
 
   useEffect(() => {
     if (isGlobal || typeof window === "undefined") return undefined;
@@ -1876,9 +1834,9 @@ export const AccountPage = () => {
     const consoleRef = host.console;
 
     host.show = () => {
-      setShowAccountSafetyPhoneSection(true);
-      persistAccountSafetyPhoneVisibility();
-      consoleRef.info("账号安全手机入口已显示。");
+      setShowSafetyPhoneTools(true);
+      setShowAccountRenewTools(true);
+      consoleRef.info("账号隐藏入口已显示。");
       return true;
     };
 
@@ -2104,6 +2062,20 @@ export const AccountPage = () => {
     }
   };
 
+  const handleCopyUserId = async () => {
+    if (!user?.id) return;
+    try {
+      await navigator.clipboard.writeText(user.id);
+      setCopiedUserId(true);
+      if (copyResetTimer.current) {
+        window.clearTimeout(copyResetTimer.current);
+      }
+      copyResetTimer.current = window.setTimeout(() => setCopiedUserId(false), 1500);
+    } catch {
+      // Users can still select the visible ID manually when clipboard permission is unavailable.
+    }
+  };
+
   const handleSignOut = async () => {
     try {
       await signOut();
@@ -2126,12 +2098,12 @@ export const AccountPage = () => {
     }
   };
 
+  let pageContent: ReactNode;
+  let pageOverlays: ReactNode = null;
+
   /* ── Unauthenticated view ── */
   if (authReady && !isAuthenticated) {
-    return (
-      <div className="landing-page lw-setup-bg relative flex min-h-screen flex-col overflow-hidden" style={{ color: "var(--lw-fg)" }}>
-        <AccountNavbar />
-
+    pageContent = (
         <main className="relative z-10 flex flex-grow items-center justify-center px-6 pb-16 pt-24 md:px-8">
           <motion.div
             initial={{ opacity: 0, y: 12 }}
@@ -2183,41 +2155,35 @@ export const AccountPage = () => {
               <p className="mt-3 text-[13px]" style={{ color: "#cf3d4c" }}>{guestError}</p>
             )}
 
-            <Link
+            <AppLink
               to="/"
               className="mt-6 inline-block text-[13px] transition-colors hover:text-[#666]"
               style={{ color: "#bbb" }}
             >
               ← {t("返回首页")}
-            </Link>
+            </AppLink>
           </motion.div>
 
           <LoginModal open={showLoginModal} onClose={() => setShowLoginModal(false)} />
         </main>
-
-        <LegalFooter />
-      </div>
     );
-  }
-
-  /* ── Loading auth ── */
-  if (!authReady) {
-    return (
-      <div className="landing-page lw-setup-bg relative flex min-h-screen flex-col overflow-hidden" style={{ color: "var(--lw-fg)" }}>
-        <AccountNavbar />
-        <main className="relative z-10 flex flex-grow items-center justify-center">
-          <p className="text-sm" style={{ color: "#bbb" }}>{t("正在恢复会话...")}</p>
+  } else if (!authReady) {
+    /* ── Loading auth ── */
+    pageContent = (
+        <main className="relative z-10 flex-grow pb-8 pt-20 md:pt-24" aria-hidden="true">
+          <section className="mx-auto px-6 md:px-8" style={{ maxWidth: 800 }}>
+            <div className="mb-8 h-9 w-36 rounded-full bg-black/[0.06]" />
+            <div className="space-y-4">
+              <div className="h-40 rounded-lg bg-black/[0.04]" />
+              <div className="h-24 rounded-lg bg-black/[0.04]" />
+              <div className="h-24 rounded-lg bg-black/[0.04]" />
+            </div>
+          </section>
         </main>
-        <LegalFooter />
-      </div>
     );
-  }
-
-  /* ── Authenticated view ── */
-  return (
-    <div className="landing-page lw-setup-bg relative flex min-h-screen flex-col overflow-hidden" style={{ color: "var(--lw-fg)" }}>
-      <AccountNavbar />
-
+  } else {
+    /* ── Authenticated view ── */
+    pageContent = (
       <main className="relative z-10 flex-grow pb-8 pt-20 md:pt-24">
         <section className="mx-auto px-6 md:px-8" style={{ maxWidth: 800 }}>
           {/* Page Header */}
@@ -2417,6 +2383,35 @@ export const AccountPage = () => {
                 </div>
               </div>
 
+              {user?.id && (
+                <div className="flex flex-col gap-12 px-8 py-8">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-sm flex-shrink-0" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>
+                      {t("账号 ID")}
+                    </span>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span
+                        className="truncate text-sm"
+                        style={{ color: "rgba(0,0,0,0.9)", fontFamily: "JetBrains Mono, monospace", maxWidth: 260 }}
+                        title={user.id}
+                      >
+                        {user.id}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void handleCopyUserId()}
+                        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-[rgba(0,0,0,0.04)]"
+                        aria-label={t("复制")}
+                        title={copiedUserId ? t("已复制") : t("复制")}
+                        style={{ color: copiedUserId ? "var(--color-success)" : "var(--text-tertiary)" }}
+                      >
+                        {copiedUserId ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {(showEmailBindSection || showRealnameSection) && (
                 /* Bottom: info rows —— 安全手机 / 实名认证 / 绑定邮箱 */
                 <div className="flex flex-col gap-12 px-8 pb-8">
@@ -2466,11 +2461,11 @@ export const AccountPage = () => {
                           </div>
                         )}
                       </div>
-                      <p className="m-0 text-xs" style={{ color: "rgba(0,0,0,0.45)", lineHeight: 1.5 }}>
-                        {user?.emailVerified
-                          ? t("该邮箱已验证，可用于接收导出完成通知等重要消息。")
-                          : t("绑定邮箱后可用于接收导出完成通知等重要消息。")}
-                      </p>
+                      {!user?.emailVerified && (
+                        <p className="m-0 text-xs" style={{ color: "rgba(0,0,0,0.45)", lineHeight: 1.5 }}>
+                          {t("绑定邮箱后可用于接收导出完成通知等重要消息。")}
+                        </p>
+                      )}
                       {emailBindSuccess && (
                         <p className="m-0 text-xs" style={{ color: "var(--color-success)", lineHeight: 1.5 }}>
                           {emailBindSuccess}
@@ -2567,7 +2562,7 @@ export const AccountPage = () => {
             </motion.div>
 
             {/* ── Section 2: Subscription ── */}
-            <SubscriptionSection subscription={subscription} pass={activePass} />
+            <SubscriptionSection subscription={subscription} pass={activePass} showAccountRenewTools={showAccountRenewTools} />
 
             {/* ── Sign out (page bottom) ── */}
             <motion.div variants={fadeIn} className="flex justify-center pt-2">
@@ -2588,10 +2583,9 @@ export const AccountPage = () => {
           </motion.div>
         </section>
       </main>
+    );
 
-      <LegalFooter />
-
-      {/* Modals */}
+    pageOverlays = (
       <AnimatePresence>
         {showRealnameSection && showVerifyModal && (
           <VerifyIdentityModal
@@ -2621,7 +2615,13 @@ export const AccountPage = () => {
           />
         )}
       </AnimatePresence>
-    </div>
+    );
+  }
+
+  return (
+    <ProductPageShell afterFooter={pageOverlays}>
+      {pageContent}
+    </ProductPageShell>
   );
 };
 

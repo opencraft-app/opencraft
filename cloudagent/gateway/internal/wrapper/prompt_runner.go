@@ -32,7 +32,7 @@ func (g *ACPGateway) startPromptRun(ws *WSConn, id json.RawMessage, session *acp
 	}
 	jobID := "job_" + randomHex(12)
 	responseID := "resp_" + randomHex(18)
-	ownership, err := g.acquireRuntimeOwnership(context.Background(), session.SessionID, session.RuntimeGeneration, jobID, "prompt")
+	ownership, err := g.acquirePromptRuntimeOwnership(context.Background(), session.SessionID, session.RuntimeGeneration, jobID)
 	if err != nil {
 		return "", err
 	}

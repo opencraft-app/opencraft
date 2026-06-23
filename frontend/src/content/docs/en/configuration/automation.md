@@ -18,11 +18,11 @@ Every task supports flexible scheduling and run rules, keeping your AI assistant
 
 Open the "Automations" tab on the left side of Hermes to view existing tasks, then click "+ Add" at the top right to create a new one.
 
-![](../images/automation-1-global-en.png)
+![](../images/automation-1-global-en.webp)
 
 Once opened, you can edit your automation.
 
-![](../images/automation-2-global-en.png)
+![](../images/automation-2-global-en.webp)
 
 - **Name**: A name for the automation plan.
 
@@ -43,7 +43,7 @@ Once opened, you can edit your automation.
 
 If you are not sure what to automate, click "Templates" to choose from ready-made automation plans.
 
-![](../images/automation-3-global-en.png)
+![](../images/automation-3-global-en.webp)
 
 ---
 
@@ -51,10 +51,10 @@ If you are not sure what to automate, click "Templates" to choose from ready-mad
 
 Once a task is created, the "Automations" page lists all the tasks you've enabled.
 
-![](../images/automation-4-global-en.png)
+![](../images/automation-4-global-en.webp)
 
 From this page you can inspect a task's details, edit it, pause it, or delete it as needed.
 
-![](../images/automation-5-global-en.png)
+![](../images/automation-5-global-en.webp)
 
 ---

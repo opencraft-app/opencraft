@@ -12,18 +12,18 @@ vi.mock("@/i18n/t", () => ({
   useT: () => (text: string) => text,
 }));
 
-vi.mock("@tencent/tea-sdk-lightclaw", () => ({
-  SkillPanel: () => (
+vi.mock("../hermes-agent-experts-panel", () => ({
+  ExpertsPanel: () => <div>技能包列表</div>,
+}));
+
+function TestSkillPanel() {
+  return (
     <div data-testid="sdk-skill-panel">
       单技能安装面板
       <input className="lh-std-skill-panel__installed-search-input" placeholder="搜索技能名称" />
     </div>
-  ),
-}));
-
-vi.mock("../hermes-agent-experts-panel", () => ({
-  ExpertsPanel: () => <div>技能包列表</div>,
-}));
+  );
+}
 
 const renderPanel = (initialSectionSlug?: string) => {
   const execDebugCommand: ExpertsExecDebugCommand = vi.fn();
@@ -35,6 +35,7 @@ const renderPanel = (initialSectionSlug?: string) => {
       initialSectionSlug={initialSectionSlug}
       instance={{ InstanceId: "bot-1", RegionId: 1 }}
       productConfig={{} as never}
+      SkillPanel={TestSkillPanel}
     />,
   );
 };

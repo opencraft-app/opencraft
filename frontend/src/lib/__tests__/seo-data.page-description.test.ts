@@ -3,13 +3,13 @@
  *
  * 背景：原始实现 description 全站统一一份（SEO_DESCRIPTION_BY_REGION），
  * 现在 /about 与所有 docs 页面都改为单独定制 description，以便搜索引擎和
- * 社交分享卡的摘要更贴合页面主题。其他页面（changelog / privacy 等）仍
- * 沿用全站默认 description。keywords 不分页面，全站统一。
+ * 社交分享卡的摘要更贴合页面主题。其他页面（privacy 等）仍沿用全站默认
+ * description。keywords 不分页面，全站统一。
  *
  * 该文件锁定四件事：
  *   1. /about 在 cn / global 都使用了页面级 description（不等于全站默认）
  *   2. 关键 docs 页（/docs/overview, /docs/quickstart 等）有页面级 description
- *   3. 不在覆盖表中的页面（/changelog, /privacy-policy）回退到全站默认
+ *   3. 不在覆盖表中的页面（/privacy-policy）回退到全站默认
  *   4. keywords 始终全站统一（/about、/docs/overview 与 / 完全相同）
  */
 import { describe, expect, it } from "vitest";
@@ -33,6 +33,21 @@ describe("getSeoMeta — page-level description override", () => {
         expect(aboutMeta.description.length).toBeGreaterThan(40);
       });
     }
+  });
+
+  describe("/changelog has its own description in both regions", () => {
+    for (const region of REGIONS) {
+      it(`${region}: /changelog description differs from site default`, () => {
+        const changelogMeta = getSeoMeta("/changelog", region);
+        const homeMeta = getSeoMeta("/", region);
+        expect(changelogMeta.description).not.toBe(homeMeta.description);
+        expect(changelogMeta.description.length).toBeGreaterThan(40);
+      });
+    }
+
+    it("global zh changelog reuses the Chinese description", () => {
+      expect(getSeoMeta("/zh/changelog", "global").description).toBe(getSeoMeta("/changelog", "cn").description);
+    });
   });
 
   describe("docs pages have their own descriptions", () => {
@@ -91,7 +106,6 @@ describe("getSeoMeta — page-level description override", () => {
 
   describe("non-listed pages fall back to site default description", () => {
     const fallbackPaths = [
-      "/changelog",
       "/privacy-policy",
       "/cookie-policy",
       "/open-source-licenses",

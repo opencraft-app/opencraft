@@ -54,6 +54,8 @@ dist-global/
 build/
 .next/
 out/
+frontend/.fumadocs-content/
+frontend/.source/
 _research-output
 *.zip
 

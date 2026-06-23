@@ -8,6 +8,8 @@ import { defineConfig } from "vitest/config";
 import { applyFullSeoToHtml } from "./src/lib/seo-html";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
+const teaThemeableResetCss = "@tencent/tea-component/dist/tea-themeable.css";
+const teaThemeableNoResetCss = "@tencent/tea-component/dist/tea-themeable-no-reset.css";
 
 // Local hot-reload development switch for tea-sdk-lightclaw.
 //
@@ -385,13 +387,10 @@ function manualChunks(id: string) {
   }
   if (id.includes("framer-motion")) return "vendor-motion";
   if (id.includes("@xterm/")) return "vendor-terminal";
-  if (
-    id.includes("@tencent/tcb-jssdk")
-    || id.includes("@tencent+i18n")
-    || id.includes("@tencent/i18n")
-  ) {
-    return "vendor-wxpay";
-  }
+  // Do not manually chunk Tencent TEA / TCB packages globally. Rollup can place
+  // Vite's preload helper inside a manual vendor chunk, which makes every route
+  // load that chunk; these packages have Tencent Cloud buy-domain side effects
+  // and must stay behind the pages that actually use them.
   if (
     id.includes("react-markdown")
     || id.includes("react-syntax-highlighter")
@@ -403,14 +402,6 @@ function manualChunks(id: string) {
     || id.includes("unified")
   ) {
     return "vendor-docs";
-  }
-  if (
-    id.includes("@tencent/tea-sdk-lightclaw")
-    || id.includes("tea-component")
-    || id.includes("tea-style")
-    || id.includes("tea-app")
-  ) {
-    return "vendor-tea";
   }
   if (id.includes("html2canvas")) return "vendor-capture";
   // 注意：曾经把 @radix-ui / lucide-react / clsx / tailwind-merge / cva
@@ -561,6 +552,13 @@ export default defineConfig(({ mode }) => {
       // Deduplicate React so the locally-linked SDK shares the host app's copy
       dedupe: ["react", "react-dom"],
       alias: [
+        {
+          // AgentChat imports Tea UI styles as a side effect. Tea's default
+          // themeable CSS includes a document-level reset; the no-reset build
+          // keeps Tea component styles without mutating the host shell.
+          find: teaThemeableResetCss,
+          replacement: teaThemeableNoResetCss,
+        },
         {
           find: /^react-syntax-highlighter$/,
           replacement: path.resolve(rootDir, "src/vendor/react-syntax-highlighter-shim.ts"),

@@ -30,12 +30,12 @@ PIPELINES = {
     ),
     "cn": EdgeOneReleasePipeline(
         name="frontend EdgeOne 国内正式站",
-        combo="eo:cn-lightvela-prod",
+        combo="eo:cn-lightvela-prod-next",
         pipeline_id="p-14693956c7f44dadb83d00c523de0dd7",
     ),
     "intl": EdgeOneReleasePipeline(
         name="frontend EdgeOne 国际正式站",
-        combo="eo:global-lightvela-intl-prod",
+        combo="eo:global-lightvela-intl-prod-next",
         pipeline_id="p-1538e39f666f4be48ddf7cfea2acb589",
     ),
 }

@@ -34,7 +34,7 @@ Find the Telegram card and click "+ Connect".
 
 2. Search for @BotFather and open the chat
 
-<img src="../images/telegram-botfather-2-global.jpg" alt="" width="360" />
+<img src="../images/telegram-botfather-2-global.webp" alt="" width="360" />
 
 3. Send `/start`
 
@@ -44,13 +44,13 @@ Find the Telegram card and click "+ Connect".
 
 6. Copy the HTTP API token:
 
-![](../images/telegram-botfather-3-global.jpg)
+![](../images/telegram-botfather-3-global.webp)
 
 ### 4. Paste the HTTP API token into Telegram
 
 Paste the HTTP API token into the token field.
 
-<img src="../images/telegram-botfather-4-global.png" alt="" width="360" />
+<img src="../images/telegram-botfather-4-global.webp" alt="" width="360" />
 
 > ⚠️ **Keep your token safe**
 >
@@ -60,7 +60,7 @@ Paste the HTTP API token into the token field.
 
 Click the link provided by BotFather and start interacting with the bot.
 
-![](../images/telegram-botfather-5-global.jpg)
+![](../images/telegram-botfather-5-global.webp)
 
 Open the chat with the bot and send a test message:
 
@@ -70,7 +70,7 @@ Hi
 
 You should receive a Hermes reply within a few seconds.
 
-<img src="../images/telegram-botfather-6-global-en.png" alt="" width="360" />
+<img src="../images/telegram-botfather-6-global-en.webp" alt="" width="360" />
 
 ---
 

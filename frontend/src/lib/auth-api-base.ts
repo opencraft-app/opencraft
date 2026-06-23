@@ -1,5 +1,11 @@
+export const isLightVelaEdgeOnePreviewHostname = (hostname: string): boolean =>
+  hostname.startsWith("lightvela-preview-") && hostname.endsWith(".edgeone.cool");
+
 export const resolveConfiguredAuthApiBaseUrl = () => {
-  const configured = import.meta.env.VITE_AUTH_API_BASE_URL?.trim();
+  const configured = (
+    (typeof process !== "undefined" ? process.env.NEXT_PUBLIC_AUTH_API_BASE_URL : undefined)
+    ?? import.meta.env?.VITE_AUTH_API_BASE_URL
+  )?.trim();
 
   if (configured && configured.length > 0) {
     if (configured.toLowerCase() === "mock") {
@@ -22,6 +28,7 @@ export const resolveConfiguredAuthApiBaseUrl = () => {
       || hostname === "www.lightclaw.tech"
       || hostname === "lightclaw.pages.dev"
       || hostname.endsWith(".lightclaw.pages.dev")
+      || isLightVelaEdgeOnePreviewHostname(hostname)
     ) {
       return "https://lightclaw.tech";
     }

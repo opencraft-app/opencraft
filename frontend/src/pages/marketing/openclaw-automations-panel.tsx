@@ -17,7 +17,6 @@
 import { AlertTriangle, Activity, BellRing, BriefcaseBusiness, CalendarRange, CheckCircle2, ChevronDown, CircleHelp, Clock, Droplets, Eraser, Eye, FolderKanban, LayoutTemplate, Loader2, Newspaper, Pause, Pencil, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, X } from "lucide-react";
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { parseHermesChannelList } from "@tencent/tea-sdk-lightclaw/scripts";
 import { useT } from "@/i18n/t";
 import { isGlobal } from "@/lib/region";
 import {
@@ -3501,12 +3500,81 @@ export function buildHermesSendTestCommand(platform: string, chatId: string, mes
   ].join(" ");
 }
 
+type HermesChannelStatusEntry = {
+  channel?: string;
+  enabled: boolean;
+  value?: string;
+};
+
+function parseJsonObjectFromCommandOutput(output: string): unknown {
+  const trimmed = output.trim();
+  if (!trimmed) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    const start = trimmed.indexOf("{");
+    const end = trimmed.lastIndexOf("}");
+    if (start < 0 || end <= start) return null;
+    try {
+      return JSON.parse(trimmed.slice(start, end + 1));
+    } catch {
+      return null;
+    }
+  }
+}
+
+function parseHermesChannelStatusEntries(output: string): HermesChannelStatusEntry[] {
+  const payload = parseJsonObjectFromCommandOutput(output);
+  if (!payload || typeof payload !== "object") return [];
+
+  const root = payload as {
+    channels?: unknown;
+    data?: {
+      channels?: unknown;
+      platforms?: unknown;
+    };
+    platforms?: unknown;
+  };
+  const rawEntries = Array.isArray(root.data?.platforms)
+    ? root.data.platforms
+    : Array.isArray(root.data?.channels)
+      ? root.data.channels
+      : Array.isArray(root.platforms)
+        ? root.platforms
+        : Array.isArray(root.channels)
+          ? root.channels
+          : [];
+
+  return rawEntries.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const item = entry as {
+      channel?: unknown;
+      enabled?: unknown;
+      name?: unknown;
+      status?: unknown;
+      value?: unknown;
+    };
+    const channel = typeof item.channel === "string"
+      ? item.channel
+      : typeof item.name === "string"
+        ? item.name
+        : typeof item.value === "string"
+          ? item.value
+          : "";
+    if (!channel) return [];
+
+    const status = typeof item.status === "string" ? item.status.toLowerCase() : "";
+    const enabled = item.enabled === true || ["connected", "enabled", "running", "ready"].includes(status);
+    return [{ channel, enabled, value: typeof item.value === "string" ? item.value : channel }];
+  });
+}
+
 export function parseEnabledHermesChannels(output: string): Set<string> {
-  const entries = parseHermesChannelList(output);
+  const entries = parseHermesChannelStatusEntries(output);
   return new Set(
     entries
       .filter((entry) => entry.enabled)
-      .map((entry) => normalizeHermesChannelKey(entry.channel || entry.value)),
+      .map((entry) => normalizeHermesChannelKey(entry.channel ?? entry.value ?? "")),
   );
 }
 

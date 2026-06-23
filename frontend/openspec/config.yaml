@@ -72,13 +72,15 @@ context: |
   - /                     → LandingPage          官网首页
   - /changelog            → ChangelogPage        更新日志（不需登录）
 
-  营销域路由（MarketingAuthGuard 已登录校验；挂在 /dashboard/* 与 /agents 命名空间）:
-  - /dashboard/create     → CreateOpenClawPage   创建 OpenClaw 向导
-  - /subscribe            → SubscribePage        套餐订阅/支付
+  Next App Router 路由:
+  - /subscribe            → next-site/SubscribePage 套餐订阅/支付
                                                   国内 / 国际站差异通过 isGlobal 分支在同一组件内实现：
                                                   · 价格（¥49 / $7.5）、文案、布局微调（间距 / 字号 / 内边距）
                                                   · 仅国内站走实名认证拦截（realname_required → /account?modal=realname）
                                                   · 国际站当前走伪支付直创建路径（不弹实名）
+
+  营销域路由（MarketingAuthGuard 已登录校验；挂在 /dashboard/* 与 /agents 命名空间）:
+  - /dashboard/create     → CreateOpenClawPage   创建 OpenClaw 向导
   - /dashboard/setup      → OpenClawSetupPage    创建后初始化设置
   - /dashboard/success    → OpenClawSuccessPage  创建成功落地页
   - /agents               → OpenClawSettingsPage Agent 控制台（默认通道页，业务核心）

@@ -346,7 +346,7 @@ func (r *Runtime) StopWithOptions(ctx context.Context, opts StopOptions) error {
 	ctx, span := r.startSpan(ctx, "runtime.stop")
 	defer span.End()
 	startedAt := time.Now()
-	var stopContainerDur, checkpointDur, maintenanceDur, resetDur, promoteDur time.Duration
+	var stopContainerDur, checkpointDur, maintenanceDur, resetDur time.Duration
 	var checkpoint CheckpointMetadata
 	checkpointCreated := false
 	if err := requireRoot(); err != nil {
@@ -398,26 +398,14 @@ func (r *Runtime) StopWithOptions(ctx context.Context, opts StopOptions) error {
 	}
 	resetDur = time.Since(stepStarted)
 	r.logStopState(ctx, "after_reset_runtime", checkpoint.ID)
-	if checkpointCreated {
-		stepStarted = time.Now()
-		if err := r.traceStep(ctx, "runtime.promote_stop_checkpoint", func(ctx context.Context) error {
-			return r.promoteCheckpointToActive(ctx, checkpoint.ID)
-		}); err != nil {
-			recordSpanErr(span, err)
-			return err
-		}
-		promoteDur = time.Since(stepStarted)
-		r.logStopState(ctx, "after_promote_checkpoint", checkpoint.ID)
-	}
 	r.log("Runtime stopped.")
-	r.log("SUMMARY stop container=%s total=%s force=%t stop_container=%s checkpoint=%s litestream_maintenance=%s reset_runtime=%s promote_checkpoint=%s checkpoint_id=%s",
-		r.cfg.WispName, humanDuration(time.Since(startedAt)), opts.Force, humanDuration(stopContainerDur), humanDuration(checkpointDur), humanDuration(maintenanceDur), humanDuration(resetDur), humanDuration(promoteDur), checkpoint.ID)
+	r.log("SUMMARY stop container=%s total=%s force=%t checkpoint_created=%t stop_container=%s checkpoint=%s litestream_maintenance=%s reset_runtime=%s checkpoint_id=%s active_contract=ephemeral_rebuilt_from_checkpoint",
+		r.cfg.WispName, humanDuration(time.Since(startedAt)), opts.Force, checkpointCreated, humanDuration(stopContainerDur), humanDuration(checkpointDur), humanDuration(maintenanceDur), humanDuration(resetDur), checkpoint.ID)
 	r.log("%s", humanOpSummary("stop", r.cfg.WispName, time.Since(startedAt),
 		timedStep{name: "stop_container", dur: stopContainerDur},
 		timedStep{name: "checkpoint", dur: checkpointDur},
 		timedStep{name: "litestream_maintenance", dur: maintenanceDur},
 		timedStep{name: "reset_runtime", dur: resetDur},
-		timedStep{name: "promote_checkpoint", dur: promoteDur},
 	))
 	return nil
 }
@@ -1040,59 +1028,6 @@ func (r *Runtime) RestoreCheckpoint(ctx context.Context, checkpointID string) er
 	return nil
 }
 
-func (r *Runtime) promoteCheckpointToActive(ctx context.Context, checkpointID string) error {
-	checkpointID = strings.TrimSpace(checkpointID)
-	if checkpointID == "" {
-		return errors.New("checkpoint id is required")
-	}
-	if strings.Contains(checkpointID, "/") || checkpointID == "." || checkpointID == ".." {
-		return fmt.Errorf("invalid checkpoint id: %q", checkpointID)
-	}
-	checkpointImg := filepath.Join(r.cfg.CheckpointsRoot, checkpointID, "root-upper.img")
-	if _, err := os.Stat(checkpointImg); err != nil {
-		return fmt.Errorf("checkpoint image not found: %s: %w", checkpointImg, err)
-	}
-	if err := r.ensureJuiceFSCloneSupported(checkpointImg); err != nil {
-		return err
-	}
-	r.log("stop_checkpoint_promote start checkpoint=%s checkpoint_img=%s active_img=%s active_before=%s checkpoint_fingerprint=%s",
-		checkpointID,
-		checkpointImg,
-		r.cfg.ActiveImg,
-		r.imageFingerprintForLog(r.cfg.ActiveImg),
-		r.imageFingerprintForLog(checkpointImg),
-	)
-	if err := os.Remove(r.cfg.ActiveImg); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("remove active image before checkpoint promote: %w", err)
-	}
-	if err := r.run(ctx, r.cfg.JFSBin, "clone", checkpointImg, r.cfg.ActiveImg); err != nil {
-		return fmt.Errorf("clone checkpoint to active image: %w", err)
-	}
-	// Stop creates the checkpoint as the durable commit point and already
-	// fences the cloned checkpoint image. Promoting it back to active only
-	// refreshes the next-boot cache, so avoid a second writeback cut barrier
-	// on the same mounted JuiceFS tree.
-	if r.remoteBackendRequiresMount() {
-		if strings.TrimSpace(r.cfg.JFSBin) == "" {
-			return errors.New("stop checkpoint promote fence requires JFS_BIN")
-		}
-		started := time.Now()
-		r.log("stop_checkpoint_promote active_file_barrier_start image=%s", r.cfg.ActiveImg)
-		if err := r.run(ctx, r.cfg.JFSBin, "file-barrier", r.cfg.ActiveImg); err != nil {
-			return fmt.Errorf("stop checkpoint promote juicefs file-barrier %s: %w", r.cfg.ActiveImg, err)
-		}
-		r.log("stop_checkpoint_promote active_file_barrier_done image=%s duration=%s", r.cfg.ActiveImg, humanDuration(time.Since(started)))
-		started = time.Now()
-		r.log("stop_checkpoint_promote meta_barrier_start jfs_root=%s", r.cfg.JFSRoot)
-		if err := r.runMetaBarrier(ctx); err != nil {
-			return fmt.Errorf("stop checkpoint promote meta barrier: %w", err)
-		}
-		r.log("stop_checkpoint_promote meta_barrier_done jfs_root=%s duration=%s", r.cfg.JFSRoot, humanDuration(time.Since(started)))
-	}
-	r.log("stop_checkpoint_promote done checkpoint=%s active_img=%s active_after=%s", checkpointID, r.cfg.ActiveImg, r.imageFingerprintForLog(r.cfg.ActiveImg))
-	return nil
-}
-
 func (r *Runtime) imageStatForLog(path string) string {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -1470,35 +1405,55 @@ func (r *Runtime) preStartRecovery(ctx context.Context) error {
 	if err := r.ensureDirs(); err != nil {
 		return err
 	}
-	activeOK, activeReason := r.activeImageValid(ctx)
-	if activeOK {
-		r.log("pre_start_recovery skip active_img=%s active_fingerprint=%s reason=active_valid", r.cfg.ActiveImg, r.imageFingerprintForLog(r.cfg.ActiveImg))
-		return nil
-	}
 	checkpoint, ok, err := r.latestCheckpoint(ctx)
 	if err != nil {
 		return err
 	}
-	if !ok {
-		r.log("pre_start_recovery skip active_img=%s active_fingerprint=%s active_ok=%t active_reason=%s reason=no_checkpoint",
+	if ok {
+		checkpointImg := filepath.Join(r.cfg.CheckpointsRoot, checkpoint.ID, "root-upper.img")
+		r.log("pre_start_recovery restore checkpoint=%s checkpoint_img=%s checkpoint_fingerprint=%s active_img=%s active_fingerprint=%s reason=checkpoint_durable_commit",
+			checkpoint.ID,
+			checkpointImg,
+			r.imageFingerprintForLog(checkpointImg),
 			r.cfg.ActiveImg,
 			r.imageFingerprintForLog(r.cfg.ActiveImg),
-			activeOK,
+		)
+		return r.RestoreCheckpoint(ctx, checkpoint.ID)
+	}
+	activeOK, activeReason := r.activeImageValid(ctx)
+	if activeOK {
+		r.log("pre_start_recovery skip active_img=%s active_fingerprint=%s reason=no_checkpoint_active_valid", r.cfg.ActiveImg, r.imageFingerprintForLog(r.cfg.ActiveImg))
+		return nil
+	}
+	if shouldDiscardInvalidActiveImage(activeReason) {
+		before := r.imageFingerprintForLog(r.cfg.ActiveImg)
+		if err := os.Remove(r.cfg.ActiveImg); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("discard invalid active image %s after no checkpoint recovery: %w", r.cfg.ActiveImg, err)
+		}
+		r.log("pre_start_recovery discard_invalid_active active_img=%s active_fingerprint=%s active_reason=%s reason=no_checkpoint_invalid_active",
+			r.cfg.ActiveImg,
+			before,
 			activeReason,
 		)
 		return nil
 	}
-	checkpointImg := filepath.Join(r.cfg.CheckpointsRoot, checkpoint.ID, "root-upper.img")
-	r.log("pre_start_recovery restore checkpoint=%s checkpoint_img=%s checkpoint_fingerprint=%s active_img=%s active_fingerprint=%s active_ok=%t active_reason=%s",
-		checkpoint.ID,
-		checkpointImg,
-		r.imageFingerprintForLog(checkpointImg),
+	r.log("pre_start_recovery skip active_img=%s active_fingerprint=%s active_ok=%t active_reason=%s reason=no_checkpoint",
 		r.cfg.ActiveImg,
 		r.imageFingerprintForLog(r.cfg.ActiveImg),
 		activeOK,
 		activeReason,
 	)
-	return r.RestoreCheckpoint(ctx, checkpoint.ID)
+	return nil
+}
+
+func shouldDiscardInvalidActiveImage(reason string) bool {
+	reason = strings.TrimSpace(reason)
+	if reason == "" || reason == "missing" || reason == "missing_e2fsck" {
+		return false
+	}
+	return strings.HasPrefix(reason, "e2fsck_failed:") ||
+		strings.HasPrefix(reason, "stat_error:") ||
+		reason == "empty"
 }
 
 func (r *Runtime) latestCheckpoint(ctx context.Context) (CheckpointMetadata, bool, error) {

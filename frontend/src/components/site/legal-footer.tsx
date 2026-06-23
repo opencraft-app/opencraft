@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { BEIAN_URL, CN_PRIVACY_POLICY_URL, ICP_LICENSE, shouldShowICP } from "@/constants/legal";
 import { useT } from "@/i18n/t";
@@ -43,9 +42,9 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
           </span>
           <span>
             {isGlobal ? (
-              <Link to="/privacy-policy" className={footerLinkClass}>
+              <a href="/privacy-policy" className={footerLinkClass}>
                 {t("隐私政策")}
-              </Link>
+              </a>
             ) : (
               <a
                 href={CN_PRIVACY_POLICY_URL}
@@ -68,9 +67,9 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
             {isGlobal ? (
               <>
                 ·
-                <Link to="/open-source-licenses" className={footerLinkClass}>
+                <a href="/open-source-licenses" className={footerLinkClass}>
                   {t("开源声明")}
-                </Link>
+                </a>
               </>
             ) : null}
           </span>

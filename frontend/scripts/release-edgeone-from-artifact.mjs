@@ -20,6 +20,11 @@ import {
   validateRequiredSecrets,
 } from "./release-matrix.mjs";
 
+const ALLOWED_EDGEONE_NEXT_COMBOS = new Set([
+  "eo:cn-lightvela-prod-next",
+  "eo:global-lightvela-intl-prod-next",
+]);
+
 function selectSingleEdgeOneCombo(env) {
   const { matrixPath, combos } = loadReleaseMatrix();
   const selectedIds = resolveSelectedComboIds(env.FRONTEND_RELEASE_MATRIX);
@@ -29,6 +34,9 @@ function selectSingleEdgeOneCombo(env) {
   const [combo] = selectReleaseCombos(combos, selectedIds);
   if (combo.channel !== "eo") {
     throw new Error(`FRONTEND_RELEASE_MATRIX must select an EdgeOne combo, got ${combo.id}`);
+  }
+  if (!ALLOWED_EDGEONE_NEXT_COMBOS.has(combo.id)) {
+    throw new Error(`FRONTEND_RELEASE_MATRIX must select an EdgeOne Next artifact combo, got ${combo.id}`);
   }
   return { matrixPath, combo };
 }
@@ -69,6 +77,9 @@ export function executeEdgeOneArtifactRelease({
     shortSha: artifact.shortSha,
     fullSourceSha: artifact.fullSourceSha,
   });
+  if (verified.manifest?.assets?.entryKind !== "next") {
+    throw new Error(`frontend EdgeOne release requires a Next artifact, got ${verified.manifest?.assets?.entryKind ?? "unknown"}`);
+  }
 
   if (!verified.extractDir) {
     throw new Error("frontend artifact verification did not return an extracted dist directory");

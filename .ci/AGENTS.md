@@ -216,8 +216,8 @@ CI runtime 会优先读取构建机本地文件，再回退到 Stream settings�
 - `/etc/lightclaw-ci/tencentcloud_secret_id`
 - `/etc/lightclaw-ci/tencentcloud_secret_key`
 
-`edgeone_lightvela_prod_token` 用于 `发布 frontend eo:cn-lightvela-prod`，应是 `lightvela` 正式项目可用的 EdgeOne Pages API token，不要复用 `lightvela-preview` 的预览 token。
-`edgeone_lightvela_intl_prod_token` 用于 `发布 frontend eo:global-lightvela-intl-prod`，应是 `lightvela-intl` 正式项目可用的 EdgeOne Pages API token，发布产物来自国际版 `build:global` / `dist-global`。
+`edgeone_lightvela_prod_token` 用于 `发布 frontend eo:cn-lightvela-prod-next`，应是 `lightvela` 正式项目可用的 EdgeOne Pages API token，不要复用 `lightvela-preview` 的预览 token。
+`edgeone_lightvela_intl_prod_token` 用于 `发布 frontend eo:global-lightvela-intl-prod-next`，应是 `lightvela-intl` 正式项目可用的 EdgeOne Pages API token，发布产物来自国际版 Next 静态产物。
 `kubeconfig_*` 文件用于 DB-aware release gate 创建一次性 DB readiness / migration Job，文件权限必须是 `0600`，不要提交到 Git。
 
 ## Playground 环境创建提示词（P0）

@@ -48,52 +48,63 @@ describe("seo meta", () => {
 });
 
 /**
- * 国际站 multi-URL i18n：访问 `/en/...` 应返回英文 meta；访问 `/zh/...`
+ * 国际站 multi-URL i18n：访问 `/en-us/...` 应返回英文 meta；访问 `/zh-cn/...`
  * 应返回中文 meta（复用 cn 表，避免双源），且 `<html lang>` / `og:locale`
  * 跟随 URL 前缀切换。
  *
  * 这一组断言是 codex CR P0-B 的回归守护：之前 SPA hydration 后
- * `useRouteSeoMeta` 会把 prerender 写好的 `<html lang="zh-CN">` 覆盖回 en-US，
+ * `useRouteSeoMeta` 会把 Next 写好的 `<html lang="zh-CN">` 覆盖回 en-US，
  * title 也被覆盖成 "Page Not Found | ..."（裸路径表 miss）。
  */
 describe("seo meta — global multi-URL language prefix", () => {
   const cnSuffix = "LightVela 云端专属个人 Agent";
   const globalSuffix = "LightVela · Your Personal Cloud AI Agent";
 
-  it("/en/about returns English title (default global) without 'Page Not Found'", () => {
-    expect(getSeoMeta("/en/about", "global").title).toBe(`About LightVela | ${globalSuffix}`);
-    expect(getSeoMeta("/en/about", "global").title).not.toContain("Page Not Found");
+  it("/en-us/about returns English title (default global) without 'Page Not Found'", () => {
+    expect(getSeoMeta("/en-us/about", "global").title).toBe(`About LightVela | ${globalSuffix}`);
+    expect(getSeoMeta("/en-us/about", "global").title).not.toContain("Page Not Found");
   });
 
-  it("/zh/about returns Chinese title (reuses cn table)", () => {
-    expect(getSeoMeta("/zh/about", "global").title).toBe(`关于我们 | ${cnSuffix}`);
-    expect(getSeoMeta("/zh/about", "global").title).not.toContain("Page Not Found");
+  it("/zh-cn/about returns Chinese title (reuses cn table)", () => {
+    expect(getSeoMeta("/zh-cn/about", "global").title).toBe(`关于我们 | ${cnSuffix}`);
+    expect(getSeoMeta("/zh-cn/about", "global").title).not.toContain("Page Not Found");
   });
 
-  it("/en/docs/overview returns English doc title", () => {
-    expect(getSeoMeta("/en/docs/overview", "global").title).toBe(`What is LightVela | ${globalSuffix}`);
+  it("/en-us/docs/overview returns English doc title", () => {
+    expect(getSeoMeta("/en-us/docs/overview", "global").title).toBe(`What is LightVela | ${globalSuffix}`);
   });
 
-  it("/zh/docs/overview returns Chinese doc title", () => {
-    expect(getSeoMeta("/zh/docs/overview", "global").title).toBe(`LightVela 是什么 | ${cnSuffix}`);
+  it("/zh-cn/docs/overview returns Chinese doc title", () => {
+    expect(getSeoMeta("/zh-cn/docs/overview", "global").title).toBe(`LightVela 是什么 | ${cnSuffix}`);
+  });
+
+  it("/zh-sg/docs/overview returns Chinese doc title with zh-SG locale", () => {
+    expect(getSeoMeta("/zh-sg/docs/overview", "global").title).toBe(`LightVela 是什么 | ${cnSuffix}`);
+    expect(getFullSeoMeta("/zh-sg/docs/overview", "global").htmlLang).toBe("zh-SG");
+    expect(getFullSeoMeta("/zh-sg/docs/overview", "global").ogLocale).toBe("zh_SG");
+  });
+
+  it("/en/changelog and /zh/changelog return localized changelog titles", () => {
+    expect(getSeoMeta("/en/changelog", "global").title).toBe(`Changelog | ${globalSuffix}`);
+    expect(getSeoMeta("/zh/changelog", "global").title).toBe(`更新日志 | ${cnSuffix}`);
   });
 
   it("getFullSeoMeta htmlLang follows URL prefix", () => {
-    expect(getFullSeoMeta("/en/about", "global").htmlLang).toBe("en-US");
-    expect(getFullSeoMeta("/zh/about", "global").htmlLang).toBe("zh-CN");
+    expect(getFullSeoMeta("/en-us/about", "global").htmlLang).toBe("en-US");
+    expect(getFullSeoMeta("/zh-cn/about", "global").htmlLang).toBe("zh-CN");
     expect(getFullSeoMeta("/about", "global").htmlLang).toBe("en-US"); // 裸路径走 site 默认
   });
 
   it("getFullSeoMeta ogLocale follows URL prefix", () => {
-    expect(getFullSeoMeta("/en/docs/overview", "global").ogLocale).toBe("en_US");
-    expect(getFullSeoMeta("/zh/docs/overview", "global").ogLocale).toBe("zh_CN");
+    expect(getFullSeoMeta("/en-us/docs/overview", "global").ogLocale).toBe("en_US");
+    expect(getFullSeoMeta("/zh-cn/docs/overview", "global").ogLocale).toBe("zh_CN");
   });
 
   it("getFullSeoMeta canonical preserves the language prefix", () => {
-    /* canonical 必须保留 /en /zh 前缀，与 prerender hreflang 集群对齐
+    /* canonical 必须保留 locale 前缀，与 Next hreflang 集群对齐
        （每个 URL 的 canonical 指向自己，而不是裸路径） */
-    const meta = getFullSeoMeta("/zh/docs/overview", "global", { siteUrl: "https://lightvela.ai" });
-    expect(meta.canonical).toBe("https://lightvela.ai/zh/docs/overview");
+    const meta = getFullSeoMeta("/zh-sg/docs/overview", "global", { siteUrl: "https://lightvela.ai" });
+    expect(meta.canonical).toBe("https://lightvela.ai/zh-sg/docs/overview");
   });
 
   it("cn region is unaffected (no /en /zh prefix concept)", () => {

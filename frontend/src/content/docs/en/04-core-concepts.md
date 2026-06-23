@@ -37,7 +37,7 @@ LightVela involves four core concepts: Hermes, models, channels, and skills. Thi
 | Channel | Interaction entry point | The platform where users chat with Hermes |
 | Skill | Capability extension | Additional capability packages callable by Hermes |
 
-![](./images/3-1.png)
+![](./images/3-1.webp)
 
 ---
 

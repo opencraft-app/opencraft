@@ -34,7 +34,7 @@ Telegram 通道采用 Bot Token 接入方式，适合快速将 Hermes 接入 Tel
 
 2. 搜索 @BotFather 并打开聊天窗
 
-<img src="../images/telegram-botfather-2-global.jpg" alt="" width="360" />
+<img src="../images/telegram-botfather-2-global.webp" alt="" width="360" />
 
 3. 输入 `/start`
 
@@ -44,13 +44,13 @@ Telegram 通道采用 Bot Token 接入方式，适合快速将 Hermes 接入 Tel
 
 6. 拷贝 HTTP API：
 
-![](../images/telegram-botfather-3-global.jpg)
+![](../images/telegram-botfather-3-global.webp)
 
 ### 4. 复制 HTTP API 进「Telegram」
 
 将 HTTP API Token 粘贴到 token 栏位中。
 
-<img src="../images/telegram-botfather-4-global.png" alt="" width="360" />
+<img src="../images/telegram-botfather-4-global.webp" alt="" width="360" />
 
 > ⚠️ **请妥善保管你的 token**
 >
@@ -60,7 +60,7 @@ Telegram 通道采用 Bot Token 接入方式，适合快速将 Hermes 接入 Tel
 
 点击 BotFather 提供的链接，现在你就可以开始与它互动了。
 
-![](../images/telegram-botfather-5-global.jpg)
+![](../images/telegram-botfather-5-global.webp)
 
 进入该机器人的聊天界面，发送测试消息：
 
@@ -70,7 +70,7 @@ Telegram 通道采用 Bot Token 接入方式，适合快速将 Hermes 接入 Tel
 
 几秒内收到 Hermes 回复。
 
-<img src="../images/telegram-botfather-6-global.jpg" alt="" width="360" />
+<img src="../images/telegram-botfather-6-global.webp" alt="" width="360" />
 
 ---
 

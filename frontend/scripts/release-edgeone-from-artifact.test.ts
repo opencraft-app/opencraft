@@ -5,9 +5,9 @@ import { executeEdgeOneArtifactRelease } from "./release-edgeone-from-artifact.m
 const sourceSha = "dfde008ca43aba0cb0dcdfcc1b0c66bd204a2ea8";
 const shortSha = sourceSha.slice(0, 12);
 const repository = "registry.example.com/lightclaw/frontend-pages";
-const cnRef = `${repository}:${shortSha}-eo-cn-lightvela-prod`;
+const cnRef = `${repository}:${shortSha}-eo-cn-lightvela-prod-next`;
 const baseEnv = {
-  FRONTEND_RELEASE_MATRIX: "eo:cn-lightvela-prod",
+  FRONTEND_RELEASE_MATRIX: "eo:cn-lightvela-prod-next",
   FRONTEND_ARTIFACT_REPOSITORY: repository,
   FRONTEND_ARTIFACT_SOURCE_SHA: sourceSha,
   EDGEONE_API_TOKEN: "edgeone-token",
@@ -18,16 +18,16 @@ function makeCnManifest(overrides: Record<string, unknown> = {}) {
     schemaVersion: 1,
     sourceSha,
     shortSha,
-    comboId: "eo:cn-lightvela-prod",
+    comboId: "eo:cn-lightvela-prod-next",
     region: "cn",
     channel: "eo",
     projectName: "lightvela",
-    outputDir: "dist-cn",
-    buildCommand: "build:cn",
+    outputDir: "out",
+    buildCommand: "build:next",
     deployCommand: "deploy:eo",
     artifact: {
       repository,
-      tag: `${shortSha}-eo-cn-lightvela-prod`,
+      tag: `${shortSha}-eo-cn-lightvela-prod-next`,
       ref: cnRef,
     },
     identity: {
@@ -42,7 +42,8 @@ function makeCnManifest(overrides: Record<string, unknown> = {}) {
       VITE_AEGIS_HOST_URL: "https://rumt-zh.com",
     },
     assets: {
-      entryJs: "/assets/index-test.js",
+      entryKind: "next",
+      entryJs: "/_next/static/chunks/main-app-test.js",
       entryJsSha256: "c".repeat(64),
     },
     archive: {
@@ -74,7 +75,6 @@ describe("EdgeOne release from frontend artifact", () => {
       `verify:${cnRef}`,
       "deploy:eo:/tmp/frontend-artifact-dist:lightvela",
     ]);
-    expect(calls).not.toContain("build:cn");
     expect(calls).not.toContain("release:matrix");
   });
 
@@ -82,7 +82,7 @@ describe("EdgeOne release from frontend artifact", () => {
     expect(() => executeEdgeOneArtifactRelease({
       env: {
         ...baseEnv,
-        FRONTEND_RELEASE_MATRIX: "eo:cn-lightvela-prod,eo:global-lightvela-intl-prod",
+        FRONTEND_RELEASE_MATRIX: "eo:cn-lightvela-prod-next,eo:global-lightvela-intl-prod-next",
       },
       log: () => {},
       verifyArtifact: () => ({ manifest: makeCnManifest(), ref: cnRef, extractDir: "/tmp/dist" }),
@@ -93,7 +93,7 @@ describe("EdgeOne release from frontend artifact", () => {
   it("requires a source SHA or full artifact ref", () => {
     expect(() => executeEdgeOneArtifactRelease({
       env: {
-        FRONTEND_RELEASE_MATRIX: "eo:cn-lightvela-prod",
+        FRONTEND_RELEASE_MATRIX: "eo:cn-lightvela-prod-next",
         FRONTEND_ARTIFACT_REPOSITORY: repository,
         EDGEONE_API_TOKEN: "edgeone-token",
       },
@@ -108,7 +108,7 @@ describe("EdgeOne release from frontend artifact", () => {
 
     executeEdgeOneArtifactRelease({
       env: {
-        FRONTEND_RELEASE_MATRIX: "eo:cn-lightvela-prod",
+        FRONTEND_RELEASE_MATRIX: "eo:cn-lightvela-prod-next",
         FRONTEND_ARTIFACT_REPOSITORY: repository,
         FRONTEND_ARTIFACT_REF: cnRef,
         EDGEONE_API_TOKEN: "edgeone-token",
@@ -125,11 +125,11 @@ describe("EdgeOne release from frontend artifact", () => {
   });
 
   it.each([
-    ["comboId", { comboId: "eo:global-lightvela-intl-prod" }, "comboId mismatch"],
+    ["comboId", { comboId: "eo:global-lightvela-intl-prod-next" }, "comboId mismatch"],
     ["projectName", { projectName: "wrong" }, "projectName mismatch"],
     ["channel", { channel: "cf" }, "channel mismatch"],
     ["region", { region: "global" }, "region mismatch"],
-    ["outputDir", { outputDir: "dist-global" }, "outputDir mismatch"],
+    ["outputDir", { outputDir: "wrong-output" }, "outputDir mismatch"],
     ["VITE_REGION", { bakedEnv: { ...makeCnManifest().bakedEnv, VITE_REGION: "global" } }, "baked env VITE_REGION mismatch"],
     ["VITE_AUTH_API_BASE_URL", { bakedEnv: { ...makeCnManifest().bakedEnv, VITE_AUTH_API_BASE_URL: "https://wrong.example.com" } }, "baked env VITE_AUTH_API_BASE_URL mismatch"],
     ["VITE_AEGIS_ID", { bakedEnv: { ...makeCnManifest().bakedEnv, VITE_AEGIS_ID: "wrong" } }, "baked env VITE_AEGIS_ID mismatch"],
@@ -142,6 +142,29 @@ describe("EdgeOne release from frontend artifact", () => {
       verifyArtifact: ({ ref }) => ({ manifest: makeCnManifest(overrides), ref, extractDir: "/tmp/dist" }),
       deployScript: () => calls.push("deploy"),
     })).toThrow(message);
+
+    expect(calls).toEqual([]);
+  });
+
+  it("rejects Vite artifacts even when the target combo matches", () => {
+    const calls: string[] = [];
+
+    expect(() => executeEdgeOneArtifactRelease({
+      env: baseEnv,
+      log: () => {},
+      verifyArtifact: ({ ref }) => ({
+        manifest: makeCnManifest({
+          assets: {
+            entryKind: "vite",
+            entryJs: "/assets/index-test.js",
+            entryJsSha256: "c".repeat(64),
+          },
+        }),
+        ref,
+        extractDir: "/tmp/dist",
+      }),
+      deployScript: () => calls.push("deploy"),
+    })).toThrow("requires a Next artifact");
 
     expect(calls).toEqual([]);
   });

@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	defaultLiveWispFastPackageURL    = "https://cloudagent-sidecar-shanghai-1388575217.cos.ap-shanghai.myqcloud.com/workspace/releases/wisp-linux-amd64-20260612T025943Z-3f949bac72a5.erofs"
-	defaultLiveWispFastPackageSHA256 = "8ceda87c563b684037ff390977e18e47f13bf215af0f262c82ea99316b73b67c"
+	defaultLiveWispFastPackageURL    = "https://cloudagent-sidecar-shanghai-1388575217.cos.ap-shanghai.myqcloud.com/workspace/releases/wisp-linux-amd64-20260622T065610Z-6ec59c76cb2e.erofs"
+	defaultLiveWispFastPackageSHA256 = "6ec59c76cb2e65609f531d18c8d43d3d9c48a69fb357b690247b55042cc7275b"
 )
 
 func TestLiveAGSSMHMountSmoke(t *testing.T) {

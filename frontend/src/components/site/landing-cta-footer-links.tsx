@@ -11,7 +11,6 @@
  *
  * 二维码弹层挂在触发文本下，使用 group-hover 让它固定在文字上方居中。
  */
-import { Link } from "react-router-dom";
 import { CN_PRIVACY_POLICY_URL } from "@/constants/legal";
 import { isGlobal } from "@/lib/region";
 import { useT } from "@/i18n/t";
@@ -31,9 +30,9 @@ export function LandingCtaFooterLinks() {
       style={{ height: "44px", paddingTop: "12px", paddingBottom: "12px", color: "#00000080" }}
     >
       {isGlobal ? (
-        <Link to="/privacy-policy" className={linkClassName}>
+        <a href="/privacy-policy" className={linkClassName}>
           {t("隐私政策")}
-        </Link>
+        </a>
       ) : (
         <a
           href={CN_PRIVACY_POLICY_URL}
@@ -57,9 +56,9 @@ export function LandingCtaFooterLinks() {
       {isGlobal && (
         <>
           <span aria-hidden="true">·</span>
-          <Link to="/open-source-licenses" className={linkClassName}>
+          <a href="/open-source-licenses" className={linkClassName}>
             {t("开源声明")}
-          </Link>
+          </a>
         </>
       )}
       {/* 加入用户交流群：hover 显示二维码（国内微信群 / 国际 Discord）。

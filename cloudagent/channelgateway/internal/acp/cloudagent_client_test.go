@@ -359,7 +359,7 @@ func TestCloudAgentClientPromptUsesRunReplayAndResult(t *testing.T) {
 				t.Errorf("run submit should include Idempotency-Key and text, got key=%q req=%#v", idempotencyKey, req)
 			}
 			writeTestJSON(t, w, map[string]any{"run_id": "job-http", "session_id": "session-http", "status": "running"})
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/cloudagent/sessions/session-http/events/stream":
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/cloudagent/runs/") && strings.HasSuffix(r.URL.Path, "/events"):
 			afterSeq, _ := strconv.ParseInt(r.URL.Query().Get("after_seq"), 10, 64)
 			if afterSeq > 0 {
 				sawAfterSeq = true
@@ -406,8 +406,9 @@ func TestCloudAgentClientPromptUsesRunReplayAndResult(t *testing.T) {
 	}
 }
 
-func TestCloudAgentClientStartsSessionStreamAfterSubmittedEventSeq(t *testing.T) {
+func TestCloudAgentClientStartsRunStreamAtZeroAfterSubmittedSessionSeq(t *testing.T) {
 	var afterSeqs []int64
+	var sessionStreamCalls atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/cloudagent/sessions/session-http/events":
@@ -425,22 +426,25 @@ func TestCloudAgentClientStartsSessionStreamAfterSubmittedEventSeq(t *testing.T)
 				}},
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/cloudagent/sessions/session-http/events/stream":
+			sessionStreamCalls.Add(1)
+			writeCloudAgentTestSSE(t, w, "session.status_idle", map[string]any{
+				"id": "evt_session-http_3", "seq": 3, "type": "session.status_idle", "run_id": "job-old", "session_id": "session-http",
+				"status": "idle", "stop_reason": map[string]any{"type": "end_turn"},
+			})
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/cloudagent/runs/") && strings.HasSuffix(r.URL.Path, "/events"):
 			afterSeq, _ := strconv.ParseInt(r.URL.Query().Get("after_seq"), 10, 64)
 			afterSeqs = append(afterSeqs, afterSeq)
-			if afterSeq < 4 {
-				writeCloudAgentTestSSE(t, w, "agent.message", cloudAgentTestMessageEvent("job-old", "session-http", 2, "old reply"))
-				writeCloudAgentTestSSE(t, w, "session.status_idle", map[string]any{
-					"id": "evt_session-http_3", "seq": 3, "type": "session.status_idle", "run_id": "job-old", "session_id": "session-http",
-					"status": "idle", "stop_reason": map[string]any{"type": "end_turn"},
-				})
+			if afterSeq != 0 {
+				t.Errorf("run events must start from run-local after_seq=0, got %d", afterSeq)
+				http.Error(w, "bad after_seq", http.StatusBadRequest)
 				return
 			}
 			writeCloudAgentTestSSE(t, w, "agent.message", map[string]any{
-				"id": "evt_session-http_5", "seq": 5, "type": "agent.message", "run_id": "job-new", "session_id": "session-http",
+				"id": "evt_job-new_1", "seq": 1, "type": "agent.message", "run_id": "job-new", "session_id": "session-http",
 				"content": []any{map[string]any{"type": "text", "text": "new reply"}},
 			})
 			writeCloudAgentTestSSE(t, w, "session.status_idle", map[string]any{
-				"id": "evt_session-http_6", "seq": 6, "type": "session.status_idle", "run_id": "job-new", "session_id": "session-http",
+				"id": "evt_job-new_2", "seq": 2, "type": "session.status_idle", "run_id": "job-new", "session_id": "session-http",
 				"status": "idle", "stop_reason": map[string]any{"type": "end_turn"},
 			})
 		default:
@@ -457,13 +461,17 @@ func TestCloudAgentClientStartsSessionStreamAfterSubmittedEventSeq(t *testing.T)
 	if result.Text != "new reply" {
 		t.Fatalf("client must not replay old session messages, got %#v", result)
 	}
-	if len(afterSeqs) == 0 || afterSeqs[0] != 4 {
-		t.Fatalf("client should start session stream after submitted user event seq, got %v", afterSeqs)
+	if len(afterSeqs) != 1 || afterSeqs[0] != 0 {
+		t.Fatalf("client should follow run-local events from zero, got %v", afterSeqs)
+	}
+	if sessionStreamCalls.Load() != 0 {
+		t.Fatalf("client must not observe a single run through session stream, calls=%d", sessionStreamCalls.Load())
 	}
 }
 
 func TestCloudAgentClientIgnoresTerminalEventsFromOtherRuns(t *testing.T) {
 	var streamCalls int
+	var afterSeqs []int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/cloudagent/sessions/session-http/events":
@@ -475,8 +483,10 @@ func TestCloudAgentClientIgnoresTerminalEventsFromOtherRuns(t *testing.T) {
 					"id": "evt_session-http_1", "seq": 1, "type": "user.message", "run_id": "job-new", "session_id": "session-http",
 				}},
 			})
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/cloudagent/sessions/session-http/events/stream":
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/cloudagent/runs/") && strings.HasSuffix(r.URL.Path, "/events"):
 			streamCalls++
+			afterSeq, _ := strconv.ParseInt(r.URL.Query().Get("after_seq"), 10, 64)
+			afterSeqs = append(afterSeqs, afterSeq)
 			if streamCalls == 1 {
 				writeCloudAgentTestSSE(t, w, "session.status_idle", map[string]any{
 					"id": "evt_session-http_2", "seq": 2, "type": "session.status_idle", "run_id": "job-old", "session_id": "session-http",
@@ -509,6 +519,9 @@ func TestCloudAgentClientIgnoresTerminalEventsFromOtherRuns(t *testing.T) {
 	if streamCalls < 2 {
 		t.Fatalf("client should continue after unrelated terminal event, stream_calls=%d", streamCalls)
 	}
+	if len(afterSeqs) < 2 || afterSeqs[0] != 0 || afterSeqs[1] != 2 {
+		t.Fatalf("unrelated terminal event should still advance replay cursor, got %v", afterSeqs)
+	}
 }
 
 func TestCloudAgentClientFallbackOutputIgnoresUserReplayChunks(t *testing.T) {
@@ -516,7 +529,7 @@ func TestCloudAgentClientFallbackOutputIgnoresUserReplayChunks(t *testing.T) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/cloudagent/sessions/session-http/events":
 			writeTestJSON(t, w, map[string]any{"run_id": "job-http", "session_id": "session-http", "status": "running"})
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/cloudagent/sessions/session-http/events/stream":
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/cloudagent/runs/") && strings.HasSuffix(r.URL.Path, "/events"):
 			writeCloudAgentTestSSE(t, w, "user.message", map[string]any{
 				"id": "evt_job-http_1", "seq": 1, "type": "user.message", "run_id": "job-http", "session_id": "session-http", "content": "user text",
 			})
@@ -551,7 +564,7 @@ func TestCloudAgentClientPreservesSubmittedRunWhenContextEnds(t *testing.T) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/cloudagent/sessions/session-http/events":
 			writeTestJSON(t, w, map[string]any{"run_id": "job-cancel-me", "session_id": "session-http", "status": "running"})
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/cloudagent/sessions/session-http/events/stream":
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/cloudagent/runs/") && strings.HasSuffix(r.URL.Path, "/events"):
 			if completed.Load() {
 				writeCloudAgentTestSSE(t, w, "agent.message", cloudAgentTestMessageEvent("job-cancel-me", "session-http", 1, "still running after observer timeout"))
 				writeCloudAgentTestSSE(t, w, "session.status_idle", map[string]any{
@@ -617,7 +630,7 @@ func TestCloudAgentClientTreatsSubmitTimeoutAsReplayable(t *testing.T) {
 				return
 			}
 			writeTestJSON(t, w, map[string]any{"run_id": "job-submit-timeout", "session_id": "session-http", "status": "running"})
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/cloudagent/sessions/session-http/events/stream":
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/cloudagent/runs/") && strings.HasSuffix(r.URL.Path, "/events"):
 			writeCloudAgentTestSSE(t, w, "agent.message", cloudAgentTestMessageEvent("job-submit-timeout", "session-http", 1, "submit recovered"))
 			writeCloudAgentTestSSE(t, w, "session.status_idle", map[string]any{
 				"id": "evt_job-submit-timeout_2", "seq": 2, "type": "session.status_idle", "run_id": "job-submit-timeout", "session_id": "session-http",
@@ -665,7 +678,7 @@ func TestCloudAgentClientRegeneratesRunIDOnCrossSessionConflict(t *testing.T) {
 				t.Fatalf("cross-session conflict retry must use a fresh idempotency key, got %q", idempotencyKey)
 			}
 			writeTestJSON(t, w, map[string]any{"run_id": "run-server-retry", "session_id": "session-http", "status": "running"})
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/cloudagent/sessions/session-http/events/stream":
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/cloudagent/runs/") && strings.HasSuffix(r.URL.Path, "/events"):
 			runID := "run-server-retry"
 			writeCloudAgentTestSSE(t, w, "agent.message", cloudAgentTestMessageEvent(runID, "session-http", 1, "recovered"))
 			writeCloudAgentTestSSE(t, w, "session.status_idle", map[string]any{
@@ -719,7 +732,7 @@ func TestCloudAgentClientPreservesCancelledStopReason(t *testing.T) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/cloudagent/sessions/session-http/events":
 			writeTestJSON(t, w, map[string]any{"run_id": "job-cancelled", "session_id": "session-http", "status": "running"})
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/cloudagent/sessions/session-http/events/stream":
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/cloudagent/runs/") && strings.HasSuffix(r.URL.Path, "/events"):
 			writeCloudAgentTestSSE(t, w, "session.status_idle", map[string]any{
 				"id": "evt_job-cancelled_1", "seq": 1, "type": "session.status_idle", "run_id": "job-cancelled", "session_id": "session-http",
 				"status": "idle", "stop_reason": map[string]any{"type": "cancelled"},
@@ -748,7 +761,7 @@ func TestCloudAgentClientRetriesFollowFailuresAndDedupesReplay(t *testing.T) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/cloudagent/sessions/session-http/events":
 			writeTestJSON(t, w, map[string]any{"run_id": "job-http", "session_id": "session-http", "status": "running"})
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/cloudagent/sessions/session-http/events/stream":
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/cloudagent/runs/") && strings.HasSuffix(r.URL.Path, "/events"):
 			eventCalls++
 			afterSeq, _ := strconv.ParseInt(r.URL.Query().Get("after_seq"), 10, 64)
 			afterSeqs = append(afterSeqs, afterSeq)
@@ -805,7 +818,7 @@ func TestCloudAgentClientStreamDropsThenReplaysFromLastSeq(t *testing.T) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/cloudagent/sessions/session-http/events":
 			writeTestJSON(t, w, map[string]any{"run_id": "job-stream", "session_id": "session-http", "status": "running"})
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/cloudagent/sessions/session-http/events/stream":
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/cloudagent/runs/") && strings.HasSuffix(r.URL.Path, "/events"):
 			eventCalls++
 			afterSeq, _ := strconv.ParseInt(r.URL.Query().Get("after_seq"), 10, 64)
 			afterSeqs = append(afterSeqs, afterSeq)
@@ -857,7 +870,7 @@ func TestCloudAgentClientStreamMalformedAfterEventCommitsSeqBeforeReplay(t *test
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/cloudagent/sessions/session-http/events":
 			writeTestJSON(t, w, map[string]any{"run_id": "job-malformed-stream", "session_id": "session-http", "status": "running"})
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/cloudagent/sessions/session-http/events/stream":
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/cloudagent/runs/") && strings.HasSuffix(r.URL.Path, "/events"):
 			streamCalls++
 			afterSeq, _ := strconv.ParseInt(r.URL.Query().Get("after_seq"), 10, 64)
 			afterSeqs = append(afterSeqs, afterSeq)
@@ -901,7 +914,7 @@ func TestCloudAgentClientStreamSessionErrorReturnsRunFailure(t *testing.T) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/cloudagent/sessions/session-http/events":
 			writeTestJSON(t, w, map[string]any{"run_id": "job-stream-error", "session_id": "session-http", "status": "running"})
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/cloudagent/sessions/session-http/events/stream":
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/cloudagent/runs/") && strings.HasSuffix(r.URL.Path, "/events"):
 			writeCloudAgentTestSSE(t, w, "session.error", map[string]any{
 				"id":         "evt_job-stream-error_error",
 				"type":       "session.error",

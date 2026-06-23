@@ -416,10 +416,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         self.assertEqual((cn_workflow.get(True) or cn_workflow.get("on") or {}).get("manual"), "enabled")
         self.assertEqual((intl_workflow.get(True) or intl_workflow.get("on") or {}).get("manual"), "enabled")
-        self.assertEqual((cn_workflow.get("extends") or {}).get("parameters", {}).get("COMBO"), "eo:cn-lightvela-prod")
+        self.assertEqual((cn_workflow.get("extends") or {}).get("parameters", {}).get("COMBO"), "eo:cn-lightvela-prod-next")
         self.assertEqual(
             (intl_workflow.get("extends") or {}).get("parameters", {}).get("COMBO"),
-            "eo:global-lightvela-intl-prod",
+            "eo:global-lightvela-intl-prod-next",
         )
         self.assertIn("FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA", template.get("variables") or {})
         self.assertIn("FRONTEND_EDGEONE_ARTIFACT_REF", template.get("variables") or {})
@@ -429,6 +429,8 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertNotIn('"$PNPM_BIN" install --frozen-lockfile', template_text)
 
         command_text = (REPO_ROOT / ".ci/runtime/commands/release_frontend_edgeone_artifact.sh").read_text()
+        self.assertIn("eo:cn-lightvela-prod-next)", command_text)
+        self.assertIn("eo:global-lightvela-intl-prod-next)", command_text)
         self.assertIn("/etc/lightclaw-ci/edgeone_lightvela_prod_token", command_text)
         self.assertIn("/etc/lightclaw-ci/edgeone_lightvela_intl_prod_token", command_text)
         self.assertIn("ci_load_edgeone_credentials", command_text)
@@ -436,6 +438,17 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA is empty and ci.sha is unavailable", command_text)
 
         frontend_text = (REPO_ROOT / ".ci/frontend.yml").read_text()
+        frontend_workflow = yaml.safe_load(frontend_text) or {}
+        frontend_variables = frontend_workflow.get("variables") or {}
+        self.assertEqual(
+            frontend_variables.get("FRONTEND_ARTIFACT_MATRIX", {}).get("value"),
+            "cf:cn-lightvela-staging,cf:global-lightvela-intl-staging,eo:cn-lightvela-prod-next,eo:global-lightvela-intl-prod-next",
+        )
+        self.assertEqual(
+            frontend_variables.get("FRONTEND_RELEASE_MATRIX", {}).get("value"),
+            "cf:cn-lightvela-staging,cf:global-lightvela-intl-staging",
+        )
+        self.assertIn("frontend 发布决策：进入 Cloudflare 预发 artifact 发布流程", frontend_text)
         self.assertIn("SubPipelineExecStream@1.*", frontend_text)
 
         self.assertFalse((REPO_ROOT / ".ci/subpipeline-call-probe.yml").exists())
@@ -578,6 +591,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertNotIn('"$PNPM_BIN" exec vite build', workflow_text)
 
         command_text = (REPO_ROOT / ".ci/runtime/commands/publish_frontend_preview.sh").read_text()
+        self.assertIn('"$PNPM_BIN" run build:next', command_text)
         self.assertIn('source "$CI_DIR/init.sh"', command_text)
         self.assertIn('python3 "$CI_DIR/runtime/commands/upload_staticpages_preview.py"', command_text)
 
@@ -586,20 +600,15 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         self.assertIn('PREVIEW_CN_AUTH_API_BASE_URL="$(resolve_preview_auth_api_base_url "$FRONTEND_PREVIEW_BRANCH" cn)"', workflow_text)
         self.assertIn('PREVIEW_INTL_AUTH_API_BASE_URL="$(resolve_preview_auth_api_base_url "$FRONTEND_PREVIEW_BRANCH" intl)"', workflow_text)
-        self.assertIn('printf \'https://api.lightvela.ai\'', workflow_text)
-        self.assertIn('printf \'https://lightclaw.tech\'', workflow_text)
-        self.assertIn('export VITE_AUTH_API_BASE_URL="$PREVIEW_CN_AUTH_API_BASE_URL"', workflow_text)
-        self.assertIn('export VITE_AUTH_API_BASE_URL="$PREVIEW_INTL_AUTH_API_BASE_URL"', workflow_text)
-        self.assertLess(
-            workflow_text.index('export VITE_AUTH_API_BASE_URL="$PREVIEW_CN_AUTH_API_BASE_URL"'),
-            workflow_text.index('"$PNPM_BIN" exec vite build --mode cn --outDir "$FRONTEND_DIST_CN_DIR"'),
-        )
-        self.assertLess(
-            workflow_text.index('export VITE_AUTH_API_BASE_URL="$PREVIEW_INTL_AUTH_API_BASE_URL"'),
-            workflow_text.index('"$PNPM_BIN" exec vite build --mode global --outDir "$FRONTEND_DIST_GLOBAL_DIR"'),
-        )
+        self.assertEqual(workflow_text.count('printf \'https://lightclaw.tech\''), 2)
+        self.assertIn('build_next_preview_variant cn cn "$PREVIEW_CN_AUTH_API_BASE_URL" "$FRONTEND_NEXT_CN_DIR"', workflow_text)
+        self.assertIn('build_next_preview_variant intl global "$PREVIEW_INTL_AUTH_API_BASE_URL" "$FRONTEND_NEXT_GLOBAL_DIR"', workflow_text)
+        self.assertIn('export VITE_AUTH_API_BASE_URL="$api_base"', workflow_text)
+        self.assertIn('export NEXT_PUBLIC_AUTH_API_BASE_URL="$api_base"', workflow_text)
+        self.assertIn('"$PNPM_BIN" run build:next', workflow_text)
+        self.assertNotIn('"$PNPM_BIN" exec vite build', workflow_text)
 
-    def test_frontend_mr_guard_runs_typecheck_and_vite_builds(self) -> None:
+    def test_frontend_mr_guard_runs_typecheck_and_frontend_builds(self) -> None:
         package_json = json.loads((REPO_ROOT / "frontend/package.json").read_text())
         guard_text = (REPO_ROOT / "frontend/checks/guard.sh").read_text()
 

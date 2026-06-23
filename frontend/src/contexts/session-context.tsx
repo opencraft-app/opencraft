@@ -10,7 +10,7 @@ import {
 } from "react";
 import type { AuthSessionSnapshot, CurrentSubscription, InviteCodeValidation, PlanTier, User } from "@/domain/types";
 import { useRepositories } from "@/contexts/repository-context";
-import { AUTH_UNAUTHORIZED_EVENT } from "@/repositories/http-repositories";
+import { AUTH_UNAUTHORIZED_EVENT, bootstrapStoredAuthTokenFromLocation } from "@/repositories/http-repositories";
 import { compressAvatarFile } from "@/lib/avatar-image";
 
 type AuthStage = "anonymous" | "authenticated";
@@ -101,8 +101,11 @@ const sessionReducer = (state: SessionState, action: SessionAction): SessionStat
 };
 
 const parseStoredLocalSession = (): LocalSessionState => {
+  if (typeof window === "undefined") {
+    return defaultLocalSessionState;
+  }
   try {
-    const raw = localStorage.getItem(UI_SESSION_STORAGE_KEY);
+    const raw = window.localStorage.getItem(UI_SESSION_STORAGE_KEY);
     if (!raw) {
       return defaultLocalSessionState;
     }
@@ -170,6 +173,7 @@ export const SessionProvider = ({ children }: PropsWithChildren) => {
 
     const hydrateSession = async () => {
       try {
+        bootstrapStoredAuthTokenFromLocation();
         const currentSession = await repositories.auth.getSession();
         if (!cancelled && requestVersion === authRequestVersion.current) {
           dispatch({ type: "SET_AUTH_STATE", payload: currentSession });

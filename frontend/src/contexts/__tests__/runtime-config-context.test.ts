@@ -8,6 +8,7 @@ const {
   normalizeRuntimeConfig,
   resolvePaidBillingEnabled,
   resolveRealnamePhoneVerificationEnabled,
+  shouldSkipRemoteRuntimeConfig,
 } = __runtimeConfigTestHooks;
 
 describe("runtime config normalization", () => {
@@ -100,5 +101,17 @@ describe("runtime config normalization", () => {
         .features
         .paidBillingEnabled,
     ).toBe(false);
+  });
+
+  it("skips remote runtime config on EdgeOne preview domains", () => {
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: {
+        ...window.location,
+        hostname: "lightvela-preview-dpgf2fi2t9cu.edgeone.cool",
+      },
+    });
+
+    expect(shouldSkipRemoteRuntimeConfig()).toBe(true);
   });
 });

@@ -26,7 +26,7 @@ This tutorial walks through the full process from signing in to receiving a Herm
 
 Visit [lightvela.com](https://lightvela.com) and click "Log in" in the upper-right corner. In the login dialog, choose Google or GitHub, accept the agreements, and complete authorization.
 
-![](./images/2-1.png)
+![](./images/2-1.webp)
 
 ---
 
@@ -34,7 +34,7 @@ Visit [lightvela.com](https://lightvela.com) and click "Log in" in the upper-rig
 
 Return to the homepage, click "Create Now" to enter the plan page, select "Launch", and click "Activate Now".
 
-![](./images/2-2.png)
+![](./images/2-2.webp)
 
 > ⚠️ **The Launch plan is currently free for a limited time**
 >
@@ -48,15 +48,15 @@ After activation succeeds, the top navigation shows "My Hermes" and the page aut
 
 When you enter the console, the page shows an empty state because no Hermes has been created yet.
 
-![](./images/20260424-113103-70fi.png)
+![](./images/20260424-113103-70fi.webp)
 
 Click "Create Now". The page shows the creation transition animation "Preparing coffee for Hermes and waking up its brain...". Wait for about a dozen seconds.
 
-![](./images/20260424-113120-qvlx.png)
+![](./images/20260424-113120-qvlx.webp)
 
 After creation completes, the top of the console shows the Hermes basic information card, the status is ● Running, and the three configuration buttons for models, channels, and skills appear below.
 
-![](./images/2-5.png)
+![](./images/2-5.webp)
 
 > 💡 **Rename Hermes**
 >
@@ -68,7 +68,7 @@ After creation completes, the top of the console shows the Hermes basic informat
 
 Enter the "Channel" button, select "WeChat" from the dropdown, click "Authorize Access", and a QR code appears.
 
-![](./images/2-6.png)
+![](./images/2-6.webp)
 
 Use "Scan" in WeChat on your phone to scan the QR code, then follow the prompts on your phone to complete authorization. After authorization succeeds, the dialog closes automatically, a "WeChat" record appears in the "Connected channels" area, and a bot account is automatically added to your WeChat contacts.
 
@@ -88,7 +88,7 @@ Find the added bot account in WeChat and send a test message:
 Hi
 ```
 
-![](./images/2-7.png)
+![](./images/2-7.webp)
 
 You should receive a reply from Hermes within a few seconds. Hermes can now chat through WeChat.
 

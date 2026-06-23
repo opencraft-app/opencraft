@@ -6,7 +6,7 @@ Open the "Chat" page to interact with your Hermes agent through a chat window.
 >
 > AgentChat's interface guide is currently primarily in Chinese; full localization is on the way.
 
-![](../images/agentchat-1-global-en.png)
+![](../images/agentchat-1-global-en.webp)
 
 ---
 
@@ -14,7 +14,7 @@ Open the "Chat" page to interact with your Hermes agent through a chat window.
 
 The Hermes agent can iterate and evolve on its own as conversations continue. Learn more about your memory by visiting the "Memory" page.
 
-![](../images/agentchat-2-global-en.png)
+![](../images/agentchat-2-global-en.webp)
 
 ### How memory works
 

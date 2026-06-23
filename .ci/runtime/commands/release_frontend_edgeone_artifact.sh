@@ -16,16 +16,16 @@ if [[ "$FRONTEND_EDGEONE_CI_BRANCH" != "master" ]]; then
 fi
 
 case "$FRONTEND_EDGEONE_COMBO" in
-  eo:cn-lightvela-prod)
+  eo:cn-lightvela-prod-next)
     export EDGEONE_API_TOKEN_FILE=/etc/lightclaw-ci/edgeone_lightvela_prod_token
     export EDGEONE_API_TOKEN="${EDGEONE_LIGHTVELA_PROD_TOKEN:-}"
     ;;
-  eo:global-lightvela-intl-prod)
+  eo:global-lightvela-intl-prod-next)
     export EDGEONE_API_TOKEN_FILE=/etc/lightclaw-ci/edgeone_lightvela_intl_prod_token
     export EDGEONE_API_TOKEN="${EDGEONE_LIGHTVELA_INTL_PROD_TOKEN:-}"
     ;;
   *)
-    echo "unsupported EdgeOne combo: ${FRONTEND_EDGEONE_COMBO}" >&2
+    echo "unsupported EdgeOne Next artifact combo: ${FRONTEND_EDGEONE_COMBO}" >&2
     exit 1
     ;;
 esac

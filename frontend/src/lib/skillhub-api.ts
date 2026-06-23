@@ -16,7 +16,7 @@
  * 参考：skillhub-git/shared/api/openclaw.ts、skillhub-git/api.md
  */
 
-const SKILLHUB_API_BASE = import.meta.env.DEV ? "/__skillhub" : "https://lightmake.cloud";
+const SKILLHUB_API_BASE = import.meta.env?.DEV ? "/__skillhub" : "https://lightmake.cloud";
 
 // ─── 类型 ───────────────────────────────────────────────────────────────────
 

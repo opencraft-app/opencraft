@@ -2,7 +2,7 @@ import { Navigate, createBrowserRouter, useLocation } from "react-router-dom";
 import { AppShellLayout } from "@/layouts/app-shell-layout";
 import { MarketingLayout } from "@/layouts/marketing-layout";
 import { RootLayout } from "@/layouts/root-layout";
-import { lazyNamed, lazyRoute, lazySiteRoute } from "@/router/lazy-page";
+import { lazyNamed, lazyRoute } from "@/router/lazy-page";
 import { AGENTS_HOME_PATH } from "@/router/paths";
 import { AppAccessGuard, AuthenticatedGuard, AuthRouteGuard, MarketingAuthGuard, PlanGuard } from "@/router/guards";
 import { isGlobal } from "@/lib/region";
@@ -22,13 +22,11 @@ const SettingsPage = lazyNamed(() => import("@/pages/app/settings-page"), "Setti
 const StyleLabPage = lazyNamed(() => import("@/pages/app/style-lab-page"), "StyleLabPage");
 const WorkspacePage = lazyNamed(() => import("@/pages/app/workspace-page"), "WorkspacePage");
 const CreateOpenClawPage = lazyNamed(() => import("@/pages/marketing/create-openclaw-page"), "CreateOpenClawPage");
-const SubscribePage = lazyNamed(() => import("@/pages/marketing/subscribe-page"), "SubscribePage");
 const PrivacyPolicyPage = lazyNamed(() => import("@/pages/marketing/privacy-policy-page"), "PrivacyPolicyPage");
 const CookiePolicyPage = lazyNamed(() => import("@/pages/marketing/cookie-policy-page"), "CookiePolicyPage");
 const OpenSourceLicensesPage = lazyNamed(() => import("@/pages/marketing/open-source-licenses-page"), "OpenSourceLicensesPage");
 const OpenClawSetupPage = lazyNamed(() => import("@/pages/marketing/openclaw-setup-page"), "OpenClawSetupPage");
 const OpenClawSuccessPage = lazyNamed(() => import("@/pages/marketing/openclaw-success-page"), "OpenClawSuccessPage");
-const OpenClawSettingsPage = lazyNamed(() => import("@/pages/marketing/openclaw-settings-page"), "OpenClawSettingsPage");
 const AccountPage = lazyNamed(() => import("@/pages/marketing/account-page"), "AccountPage");
 const AccountOrdersPage = lazyNamed(() => import("@/pages/marketing/account-orders-page"), "AccountOrdersPage");
 const TATDeviceBindPage = lazyNamed(() => import("@/pages/marketing/tat-device-bind-page"), "TATDeviceBindPage");
@@ -66,24 +64,20 @@ const seoSiteRouteChildren = [
     index: true,
     element: lazyRoute(LandingPage),
   },
-  ...(!isGlobal
-    ? [
-        {
-          path: "changelog",
-          element: lazySiteRoute(ChangelogPage),
-        },
-      ]
-    : []),
+  {
+    path: "changelog",
+    element: lazyRoute(ChangelogPage, { chrome: "site" }),
+  },
   {
     path: "about",
-    element: lazySiteRoute(AboutPage),
+    element: lazyRoute(AboutPage, { chrome: "site" }),
   },
   /* ── 产品文档（LightVela Docs） ──
      /docs             → 重定向到 /docs/overview
      /docs/:slug       → 一级文档，例如 /docs/overview、/docs/faq
      /docs/:cat/:slug  → 二级文档，例如 /docs/configuration/model */
   {
-    element: lazySiteRoute(DocsLayout),
+    element: lazyRoute(DocsLayout, { chrome: "site" }),
     children: [
       {
         path: "docs",
@@ -150,10 +144,6 @@ export const router = createBrowserRouter([
             element: lazyRoute(CreateOpenClawPage),
           },
           {
-            path: "subscribe",
-            element: lazyRoute(SubscribePage),
-          },
-          {
             path: "dashboard/setup",
             element: lazyRoute(OpenClawSetupPage),
           },
@@ -162,20 +152,12 @@ export const router = createBrowserRouter([
             element: lazyRoute(OpenClawSuccessPage),
           },
           {
-            path: "agents",
-            element: lazySiteRoute(OpenClawSettingsPage),
-          },
-          {
-            path: "agents/:section",
-            element: lazySiteRoute(OpenClawSettingsPage),
-          },
-          {
             path: "account",
-            element: lazySiteRoute(AccountPage),
+            element: lazyRoute(AccountPage, { chrome: "product" }),
           },
           {
             path: "account/orders",
-            element: lazySiteRoute(AccountOrdersPage),
+            element: lazyRoute(AccountOrdersPage, { chrome: "site" }),
           },
           {
             path: "tat/device-bind",

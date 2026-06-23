@@ -65,31 +65,57 @@ function ensureObservabilityConfig(value, comboId) {
     throw new Error(`release matrix combo ${comboId} must define observability as an object`);
   }
 
+  const result = {};
+
   const aegis = value.aegis;
-  if (aegis == null) {
-    return {};
-  }
-  if (typeof aegis !== "object" || Array.isArray(aegis)) {
-    throw new Error(`release matrix combo ${comboId} must define observability.aegis as an object`);
-  }
+  if (aegis != null) {
+    if (typeof aegis !== "object" || Array.isArray(aegis)) {
+      throw new Error(`release matrix combo ${comboId} must define observability.aegis as an object`);
+    }
 
-  const enabled = ensureOptionalString(aegis.enabled, "observability.aegis.enabled", comboId);
-  if (enabled && !["true", "false", "auto"].includes(enabled)) {
-    throw new Error(`release matrix combo ${comboId} has unsupported observability.aegis.enabled ${enabled}`);
-  }
-  const id = ensureOptionalString(aegis.id, "observability.aegis.id", comboId);
-  const hostUrl = ensureOptionalString(aegis.hostUrl, "observability.aegis.hostUrl", comboId);
-  if (enabled === "true" && (!id || !hostUrl)) {
-    throw new Error(`release matrix combo ${comboId} must define observability.aegis.id and hostUrl when enabled=true`);
-  }
+    const enabled = ensureOptionalString(aegis.enabled, "observability.aegis.enabled", comboId);
+    if (enabled && !["true", "false", "auto"].includes(enabled)) {
+      throw new Error(`release matrix combo ${comboId} has unsupported observability.aegis.enabled ${enabled}`);
+    }
+    const id = ensureOptionalString(aegis.id, "observability.aegis.id", comboId);
+    const hostUrl = ensureOptionalString(aegis.hostUrl, "observability.aegis.hostUrl", comboId);
+    if (enabled === "true" && (!id || !hostUrl)) {
+      throw new Error(`release matrix combo ${comboId} must define observability.aegis.id and hostUrl when enabled=true`);
+    }
 
-  return {
-    aegis: {
+    result.aegis = {
       enabled: enabled ?? "auto",
       id,
       hostUrl,
-    },
-  };
+    };
+  }
+
+  const posthog = value.posthog;
+  if (posthog != null) {
+    if (typeof posthog !== "object" || Array.isArray(posthog)) {
+      throw new Error(`release matrix combo ${comboId} must define observability.posthog as an object`);
+    }
+
+    const enabled = ensureOptionalString(posthog.enabled, "observability.posthog.enabled", comboId);
+    if (enabled && !["true", "false"].includes(enabled)) {
+      throw new Error(`release matrix combo ${comboId} has unsupported observability.posthog.enabled ${enabled}`);
+    }
+    const projectToken = ensureOptionalString(posthog.projectToken, "observability.posthog.projectToken", comboId);
+    const host = ensureOptionalString(posthog.host, "observability.posthog.host", comboId);
+    const uiHost = ensureOptionalString(posthog.uiHost, "observability.posthog.uiHost", comboId);
+    if (enabled === "true" && !host) {
+      throw new Error(`release matrix combo ${comboId} must define observability.posthog.host when enabled=true`);
+    }
+
+    result.posthog = {
+      enabled: enabled ?? "false",
+      projectToken,
+      host,
+      uiHost,
+    };
+  }
+
+  return result;
 }
 
 export function loadReleaseMatrix(matrixPath = process.env.FRONTEND_RELEASE_MATRIX_FILE?.trim() || DEFAULT_MATRIX_PATH) {
@@ -166,6 +192,37 @@ export function resolveComboProjectName(combo, env = process.env) {
   return combo.projectName;
 }
 
+function padTimestampPart(value) {
+  return String(value).padStart(2, "0");
+}
+
+function utcReleaseTimestamp(date = new Date()) {
+  return [
+    date.getUTCFullYear(),
+    padTimestampPart(date.getUTCMonth() + 1),
+    padTimestampPart(date.getUTCDate()),
+    padTimestampPart(date.getUTCHours()),
+    padTimestampPart(date.getUTCMinutes()),
+    padTimestampPart(date.getUTCSeconds()),
+  ].join("");
+}
+
+function resolveReleaseSha(env) {
+  const sha =
+    env.NEXT_PUBLIC_RELEASE_SHA ||
+    env.CI_COMMIT_SHA ||
+    env.GIT_COMMIT ||
+    env.BK_CI_GIT_REPO_HEAD_COMMIT_ID ||
+    "";
+  return sha ? sha.slice(0, 12) : "unknown";
+}
+
+function resolveStaticAssetReleaseId(combo, env) {
+  const explicit = env.NEXT_PUBLIC_RELEASE_ID || env.NEXT_STATIC_RELEASE_ID;
+  if (explicit) return explicit;
+  return `${utcReleaseTimestamp()}-${resolveReleaseSha(env)}-${combo.region}`;
+}
+
 export function validateRequiredSecrets(combo, env = process.env) {
   const missing = combo.requiredSecretEnv.filter((key) => !env[key]?.trim());
   if (missing.length > 0) {
@@ -182,6 +239,8 @@ export function createComboEnvironment(combo, projectName, env = process.env) {
     FRONTEND_RELEASE_CHANNEL: combo.channel,
     VITE_REGION: combo.region,
     VITE_AUTH_API_BASE_URL: combo.authApiBaseUrl,
+    NEXT_PUBLIC_REGION: combo.region,
+    NEXT_PUBLIC_AUTH_API_BASE_URL: combo.authApiBaseUrl,
   };
 
   const aegis = combo.observability?.aegis;
@@ -203,12 +262,57 @@ export function createComboEnvironment(combo, projectName, env = process.env) {
     delete nextEnv.VITE_AEGIS_HOST_URL;
   }
 
+  const posthog = combo.observability?.posthog;
+  if (posthog) {
+    nextEnv.VITE_POSTHOG_ENABLED = posthog.enabled ?? "false";
+    nextEnv.NEXT_PUBLIC_POSTHOG_ENABLED = posthog.enabled ?? "false";
+    const posthogProjectToken = posthog.projectToken ?? env.POSTHOG_PROJECT_TOKEN?.trim();
+    if (posthogProjectToken) {
+      nextEnv.VITE_POSTHOG_PROJECT_TOKEN = posthogProjectToken;
+      nextEnv.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN = posthogProjectToken;
+    } else {
+      delete nextEnv.VITE_POSTHOG_PROJECT_TOKEN;
+      delete nextEnv.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN;
+    }
+    if (posthog.host) {
+      nextEnv.VITE_POSTHOG_HOST = posthog.host;
+      nextEnv.NEXT_PUBLIC_POSTHOG_HOST = posthog.host;
+    } else {
+      delete nextEnv.VITE_POSTHOG_HOST;
+      delete nextEnv.NEXT_PUBLIC_POSTHOG_HOST;
+    }
+    if (posthog.uiHost) {
+      nextEnv.VITE_POSTHOG_UI_HOST = posthog.uiHost;
+      nextEnv.NEXT_PUBLIC_POSTHOG_UI_HOST = posthog.uiHost;
+    } else {
+      delete nextEnv.VITE_POSTHOG_UI_HOST;
+      delete nextEnv.NEXT_PUBLIC_POSTHOG_UI_HOST;
+    }
+  } else {
+    nextEnv.VITE_POSTHOG_ENABLED = "false";
+    nextEnv.NEXT_PUBLIC_POSTHOG_ENABLED = "false";
+    delete nextEnv.VITE_POSTHOG_PROJECT_TOKEN;
+    delete nextEnv.VITE_POSTHOG_HOST;
+    delete nextEnv.VITE_POSTHOG_UI_HOST;
+    delete nextEnv.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN;
+    delete nextEnv.NEXT_PUBLIC_POSTHOG_HOST;
+    delete nextEnv.NEXT_PUBLIC_POSTHOG_UI_HOST;
+  }
+
   if (combo.channel === "cf") {
     nextEnv.CLOUDFLARE_PAGES_PROJECT_NAME = projectName;
     nextEnv.CLOUDFLARE_PAGES_DIR = combo.outputDir;
   } else if (combo.channel === "eo") {
     nextEnv.EDGEONE_PAGES_PROJECT_NAME = projectName;
     nextEnv.EDGEONE_PAGES_DIR = combo.outputDir;
+  }
+
+  if (nextEnv.NEXT_VERSION_STATIC_ASSETS === "1") {
+    const releaseId = resolveStaticAssetReleaseId(combo, nextEnv);
+    nextEnv.NEXT_PUBLIC_RELEASE_ID = releaseId;
+    nextEnv.NEXT_PUBLIC_ASSET_PREFIX = `/__releases/${releaseId}`;
+  } else {
+    delete nextEnv.NEXT_PUBLIC_ASSET_PREFIX;
   }
 
   return nextEnv;

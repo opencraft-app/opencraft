@@ -5,6 +5,7 @@ import { LandingPage } from "@/pages/marketing/landing-page";
 
 vi.mock("@/contexts/session-context", () => ({
   useSession: () => ({
+    authReady: true,
     isAuthenticated: false,
     session: { stage: "anonymous", user: null },
   }),
@@ -22,26 +23,27 @@ vi.mock("@/components/site/login-modal", () => ({
   InviteCodeModal: () => null,
 }));
 
-vi.mock("@/pages/marketing/landing/landing-navbar", () => ({
-  LandingNavbar: () => <div>navbar</div>,
+vi.mock("@/components/site/public-site-header", () => ({
+  PublicSiteHeader: () => <div>navbar</div>,
 }));
-vi.mock("@/pages/marketing/landing/hero-section", () => ({
-  HeroSection: () => <div>hero</div>,
+vi.mock("@/imports/Frame2147230025/sections/HeroSection", () => ({
+  default: () => <div>hero</div>,
 }));
-vi.mock("@/pages/marketing/landing/what-it-does-section", () => ({
-  WhatItDoesSection: () => <div>what</div>,
+vi.mock("@/imports/Frame2147230025/sections/BrandIconsSection", () => ({
+  default: () => <div>brand icons</div>,
 }));
-vi.mock("@/pages/marketing/landing/where-to-use-section", () => ({
-  WhereToUseSection: () => <div>where</div>,
+vi.mock("@/imports/Frame2147230025/sections/FeatureSection", () => ({
+  default: () => <div>features</div>,
+  CardsSection: () => <div>cards</div>,
 }));
-vi.mock("@/pages/marketing/landing/how-easy-section", () => ({
-  HowEasySection: () => <div>easy</div>,
+vi.mock("@/imports/Frame2147230025/sections/ProcessSection", () => ({
+  default: () => <div>process</div>,
 }));
-vi.mock("@/pages/marketing/landing/why-trust-section", () => ({
-  WhyTrustSection: () => <div>trust</div>,
+vi.mock("@/imports/Frame2147230025/sections/CtaSection", () => ({
+  default: () => <div>cta</div>,
 }));
-vi.mock("@/pages/marketing/landing/cta-footer-section", () => ({
-  CTAFooterSection: () => <div>cta</div>,
+vi.mock("@/components/site/product-chrome", () => ({
+  ProductFooter: () => <div>footer</div>,
 }));
 
 describe("LandingPage", () => {

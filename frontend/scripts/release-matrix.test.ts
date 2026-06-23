@@ -18,7 +18,7 @@ const cnCfCombo = {
   id: "cf:cn-lightvela-staging",
   region: "cn",
   channel: "cf",
-  buildCommand: "build:cn",
+  buildCommand: "build:next",
   deployCommand: "deploy:cf",
   projectName: "lightclaw",
   requiredSecretEnv: [
@@ -26,7 +26,7 @@ const cnCfCombo = {
     "CLOUDFLARE_ACCOUNT_ID",
   ],
   authApiBaseUrl: "https://lightclaw.tech",
-  outputDir: "dist-cn",
+  outputDir: "out",
   deployEnv: {},
 };
 
@@ -45,10 +45,10 @@ const globalCfCombo = {
   ...cnCfCombo,
   id: "cf:global-lightvela-intl-staging",
   region: "global",
-  buildCommand: "build:global",
+  buildCommand: "build:next",
   projectName: "lightvela-intl",
   authApiBaseUrl: "https://lightclaw.tech",
-  outputDir: "dist-global",
+  outputDir: "out",
 };
 
 const globalCfObservedCombo = {
@@ -58,6 +58,9 @@ const globalCfObservedCombo = {
       enabled: "true",
       id: "2ellOCK3ozed3owgOj",
       hostUrl: "https://rumt-sg.com",
+    },
+    posthog: {
+      enabled: "false",
     },
   },
 };
@@ -96,11 +99,13 @@ describe("release matrix helpers", () => {
     const comboEnv = createComboEnvironment(cnCfObservedCombo, "lightclaw", env);
 
     expect(comboEnv.VITE_AUTH_API_BASE_URL).toBe("https://lightclaw.tech");
+    expect(comboEnv.NEXT_PUBLIC_REGION).toBe("cn");
+    expect(comboEnv.NEXT_PUBLIC_AUTH_API_BASE_URL).toBe("https://lightclaw.tech");
     expect(comboEnv.VITE_AEGIS_ENABLED).toBe("true");
     expect(comboEnv.VITE_AEGIS_ID).toBe("4e66EF5XoPEXx3y8lw");
     expect(comboEnv.VITE_AEGIS_HOST_URL).toBe("https://rumt-zh.com");
     expect(comboEnv.CLOUDFLARE_PAGES_PROJECT_NAME).toBe("lightclaw");
-    expect(comboEnv.CLOUDFLARE_PAGES_DIR).toBe("dist-cn");
+    expect(comboEnv.CLOUDFLARE_PAGES_DIR).toBe("out");
     expect(formatComboSummary(cnCfCombo, "lightclaw")).toContain("cf:cn-lightvela-staging");
   });
 
@@ -112,11 +117,16 @@ describe("release matrix helpers", () => {
 
     expect(comboEnv.FRONTEND_RELEASE_REGION).toBe("global");
     expect(comboEnv.CLOUDFLARE_PAGES_PROJECT_NAME).toBe("lightvela-intl");
-    expect(comboEnv.CLOUDFLARE_PAGES_DIR).toBe("dist-global");
+    expect(comboEnv.CLOUDFLARE_PAGES_DIR).toBe("out");
     expect(comboEnv.VITE_AUTH_API_BASE_URL).toBe("https://lightclaw.tech");
+    expect(comboEnv.NEXT_PUBLIC_REGION).toBe("global");
+    expect(comboEnv.NEXT_PUBLIC_AUTH_API_BASE_URL).toBe("https://lightclaw.tech");
     expect(comboEnv.VITE_AEGIS_ENABLED).toBe("true");
     expect(comboEnv.VITE_AEGIS_ID).toBe("2ellOCK3ozed3owgOj");
     expect(comboEnv.VITE_AEGIS_HOST_URL).toBe("https://rumt-sg.com");
+    expect(comboEnv.VITE_POSTHOG_ENABLED).toBe("false");
+    expect(comboEnv.VITE_POSTHOG_PROJECT_TOKEN).toBeUndefined();
+    expect(comboEnv.VITE_POSTHOG_HOST).toBeUndefined();
   });
 
   it("injects Aegis environment from combo observability config", () => {
@@ -181,6 +191,83 @@ describe("release matrix helpers", () => {
     expect(comboEnv.VITE_AEGIS_HOST_URL).toBeUndefined();
   });
 
+  it("injects global PostHog environment from explicit combo config", () => {
+    const comboEnv = createComboEnvironment({
+      ...globalCfCombo,
+      observability: {
+        posthog: {
+          enabled: "true",
+          projectToken: "ph_test",
+          host: "https://us.i.posthog.com",
+          uiHost: "https://us.posthog.com",
+        },
+      },
+    }, "lightvela-intl", {
+      CLOUDFLARE_API_TOKEN: "token",
+      CLOUDFLARE_ACCOUNT_ID: "account",
+      VITE_POSTHOG_PROJECT_TOKEN: "ambient-token",
+      VITE_POSTHOG_HOST: "https://ambient.example.com",
+    });
+
+    expect(comboEnv.VITE_POSTHOG_ENABLED).toBe("true");
+    expect(comboEnv.VITE_POSTHOG_PROJECT_TOKEN).toBe("ph_test");
+    expect(comboEnv.VITE_POSTHOG_HOST).toBe("https://us.i.posthog.com");
+    expect(comboEnv.VITE_POSTHOG_UI_HOST).toBe("https://us.posthog.com");
+    expect(comboEnv.NEXT_PUBLIC_POSTHOG_ENABLED).toBe("true");
+    expect(comboEnv.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN).toBe("ph_test");
+    expect(comboEnv.NEXT_PUBLIC_POSTHOG_HOST).toBe("https://us.i.posthog.com");
+    expect(comboEnv.NEXT_PUBLIC_POSTHOG_UI_HOST).toBe("https://us.posthog.com");
+  });
+
+  it("injects global PostHog project token from CI secret env", () => {
+    const comboEnv = createComboEnvironment({
+      ...globalCfCombo,
+      observability: {
+        posthog: {
+          enabled: "true",
+          host: "https://eu.i.posthog.com",
+          uiHost: "https://eu.posthog.com",
+        },
+      },
+    }, "lightvela-intl", {
+      CLOUDFLARE_API_TOKEN: "token",
+      CLOUDFLARE_ACCOUNT_ID: "account",
+      POSTHOG_PROJECT_TOKEN: "ph_ci_secret",
+    });
+
+    expect(comboEnv.VITE_POSTHOG_ENABLED).toBe("true");
+    expect(comboEnv.VITE_POSTHOG_PROJECT_TOKEN).toBe("ph_ci_secret");
+    expect(comboEnv.NEXT_PUBLIC_POSTHOG_ENABLED).toBe("true");
+    expect(comboEnv.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN).toBe("ph_ci_secret");
+    expect(comboEnv.NEXT_PUBLIC_POSTHOG_HOST).toBe("https://eu.i.posthog.com");
+  });
+
+  it("does not leak ambient PostHog values when combo omits them", () => {
+    const comboEnv = createComboEnvironment({
+      ...globalCfCombo,
+      observability: {
+        aegis: {
+          enabled: "auto",
+        },
+      },
+    }, "lightvela-intl", {
+      CLOUDFLARE_API_TOKEN: "token",
+      CLOUDFLARE_ACCOUNT_ID: "account",
+      VITE_POSTHOG_PROJECT_TOKEN: "ambient-token",
+      VITE_POSTHOG_HOST: "https://ambient.example.com",
+      VITE_POSTHOG_UI_HOST: "https://ambient-ui.example.com",
+    });
+
+    expect(comboEnv.VITE_POSTHOG_ENABLED).toBe("false");
+    expect(comboEnv.VITE_POSTHOG_PROJECT_TOKEN).toBeUndefined();
+    expect(comboEnv.VITE_POSTHOG_HOST).toBeUndefined();
+    expect(comboEnv.VITE_POSTHOG_UI_HOST).toBeUndefined();
+    expect(comboEnv.NEXT_PUBLIC_POSTHOG_ENABLED).toBe("false");
+    expect(comboEnv.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN).toBeUndefined();
+    expect(comboEnv.NEXT_PUBLIC_POSTHOG_HOST).toBeUndefined();
+    expect(comboEnv.NEXT_PUBLIC_POSTHOG_UI_HOST).toBeUndefined();
+  });
+
   it("rejects enabled Aegis config without id or hostUrl", () => {
     const dir = mkdtempSync(join(tmpdir(), "release-matrix-"));
     const matrixPath = join(dir, "release-matrix.json");
@@ -203,6 +290,27 @@ describe("release matrix helpers", () => {
     }
   });
 
+  it("rejects enabled PostHog config without host", () => {
+    const dir = mkdtempSync(join(tmpdir(), "release-matrix-"));
+    const matrixPath = join(dir, "release-matrix.json");
+    try {
+      writeFileSync(matrixPath, JSON.stringify({
+        combos: [{
+          ...globalCfCombo,
+          observability: {
+            posthog: {
+              enabled: "true",
+            },
+          },
+        }],
+      }));
+
+      expect(() => loadReleaseMatrix(matrixPath)).toThrow("must define observability.posthog.host when enabled=true");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("carries optional deploy env values for edgeone combos", () => {
     const eoCombo = {
       ...cnCfCombo,
@@ -211,7 +319,7 @@ describe("release matrix helpers", () => {
       deployCommand: "deploy:eo",
       projectName: "lightvela-preview",
       requiredSecretEnv: ["EDGEONE_API_TOKEN"],
-      outputDir: "dist-cn",
+      outputDir: "out",
       deployEnv: {
         EDGEONE_PAGES_AREA: "global",
         EDGEONE_PAGES_ENV: "preview",
@@ -223,9 +331,60 @@ describe("release matrix helpers", () => {
     });
 
     expect(comboEnv.EDGEONE_PAGES_PROJECT_NAME).toBe("lightvela-preview");
-    expect(comboEnv.EDGEONE_PAGES_DIR).toBe("dist-cn");
+    expect(comboEnv.EDGEONE_PAGES_DIR).toBe("out");
     expect(comboEnv.EDGEONE_PAGES_AREA).toBe("global");
     expect(comboEnv.EDGEONE_PAGES_ENV).toBe("preview");
+  });
+
+  it("keeps preview static assets unversioned unless the combo opts in", () => {
+    const eoPreviewCombo = {
+      ...cnCfCombo,
+      id: "cn-eo-preview",
+      channel: "eo",
+      deployCommand: "deploy:eo",
+      projectName: "lightvela-preview",
+      requiredSecretEnv: ["EDGEONE_API_TOKEN"],
+      outputDir: "out",
+      deployEnv: {
+        EDGEONE_PAGES_AREA: "global",
+        EDGEONE_PAGES_ENV: "preview",
+      },
+    };
+
+    const comboEnv = createComboEnvironment(eoPreviewCombo, "lightvela-preview", {
+      EDGEONE_API_TOKEN: "token",
+      NEXT_PUBLIC_ASSET_PREFIX: "/ambient",
+    });
+
+    expect(comboEnv.NEXT_VERSION_STATIC_ASSETS).toBeUndefined();
+    expect(comboEnv.NEXT_PUBLIC_RELEASE_ID).toBeUndefined();
+    expect(comboEnv.NEXT_PUBLIC_ASSET_PREFIX).toBeUndefined();
+  });
+
+  it("generates a versioned static asset prefix for opted-in EdgeOne production combos", () => {
+    const eoProdCombo = {
+      ...cnCfCombo,
+      id: "cn-eo-prod",
+      channel: "eo",
+      deployCommand: "deploy:eo",
+      projectName: "lightvela",
+      requiredSecretEnv: ["EDGEONE_API_TOKEN"],
+      outputDir: "out",
+      deployEnv: {
+        EDGEONE_PAGES_AREA: "global",
+        EDGEONE_PAGES_ENV: "production",
+        NEXT_VERSION_STATIC_ASSETS: "1",
+      },
+    };
+
+    const comboEnv = createComboEnvironment(eoProdCombo, "lightvela", {
+      EDGEONE_API_TOKEN: "token",
+      CI_COMMIT_SHA: "1234567890abcdef",
+    });
+
+    expect(comboEnv.NEXT_VERSION_STATIC_ASSETS).toBe("1");
+    expect(comboEnv.NEXT_PUBLIC_RELEASE_ID).toMatch(/^\d{14}-1234567890ab-cn$/);
+    expect(comboEnv.NEXT_PUBLIC_ASSET_PREFIX).toBe(`/__releases/${comboEnv.NEXT_PUBLIC_RELEASE_ID}`);
   });
 
   it("includes China Cloudflare Aegis config in the release matrix", () => {
@@ -235,7 +394,7 @@ describe("release matrix helpers", () => {
     expect(combo).toMatchObject({
       region: "cn",
       channel: "cf",
-      buildCommand: "build:cn",
+      buildCommand: "build:next",
       projectName: "lightclaw",
       observability: {
         aegis: {
@@ -254,7 +413,7 @@ describe("release matrix helpers", () => {
     expect(combo).toMatchObject({
       region: "global",
       channel: "cf",
-      buildCommand: "build:global",
+      buildCommand: "build:next",
       projectName: "lightvela-intl",
       observability: {
         aegis: {
@@ -262,22 +421,25 @@ describe("release matrix helpers", () => {
           id: "2ellOCK3ozed3owgOj",
           hostUrl: "https://rumt-sg.com",
         },
+        posthog: {
+          enabled: "false",
+        },
       },
     });
   });
 
   it("includes the production China EdgeOne lightvela project in the release matrix", () => {
     const { combos } = loadReleaseMatrix();
-    const combo = combos.find((item) => item.id === "eo:cn-lightvela-prod");
+    const combo = combos.find((item) => item.id === "eo:cn-lightvela-prod-next");
 
     expect(combo).toMatchObject({
       region: "cn",
       channel: "eo",
-      buildCommand: "build:cn",
+      buildCommand: "build:next",
       deployCommand: "deploy:eo",
       projectName: "lightvela",
       authApiBaseUrl: "https://api.lightvela.com",
-      outputDir: "dist-cn",
+      outputDir: "out",
       observability: {
         aegis: {
           enabled: "true",
@@ -295,21 +457,27 @@ describe("release matrix helpers", () => {
 
   it("includes the production global EdgeOne lightvela intl project in the release matrix", () => {
     const { combos } = loadReleaseMatrix();
-    const combo = combos.find((item) => item.id === "eo:global-lightvela-intl-prod");
+    const combo = combos.find((item) => item.id === "eo:global-lightvela-intl-prod-next");
 
     expect(combo).toMatchObject({
       region: "global",
       channel: "eo",
-      buildCommand: "build:global",
+      buildCommand: "build:next",
       deployCommand: "deploy:eo",
       projectName: "lightvela-intl",
       authApiBaseUrl: "https://api.lightvela.ai",
-      outputDir: "dist-global",
+      outputDir: "out",
       observability: {
         aegis: {
           enabled: "true",
           id: "2ellOCK3ozed3owgOj",
           hostUrl: "https://rumt-sg.com",
+        },
+        posthog: {
+          enabled: "true",
+          projectToken: undefined,
+          host: "https://eu.i.posthog.com",
+          uiHost: "https://eu.posthog.com",
         },
       },
       deployEnv: {
@@ -318,6 +486,7 @@ describe("release matrix helpers", () => {
       },
     });
     expect(combo?.requiredSecretEnv).toContain("EDGEONE_API_TOKEN");
+    expect(combo?.requiredSecretEnv).toContain("POSTHOG_PROJECT_TOKEN");
   });
 
   it("keeps release execution unchanged when artifact mode is unset", () => {
@@ -334,7 +503,7 @@ describe("release matrix helpers", () => {
       archiveAndVerifyArtifact: () => calls.push("artifact"),
     });
 
-    expect(calls).toEqual(["build:cn", "deploy:cf"]);
+    expect(calls).toEqual(["build:next", "deploy:cf"]);
   });
 
   it("rejects unsupported artifact modes before building", () => {
@@ -396,7 +565,7 @@ describe("release matrix helpers", () => {
       },
     });
 
-    expect(calls).toEqual(["validate-artifacts", "build:cn", "artifact:cf:cn-lightvela-staging", "deploy:cf"]);
+    expect(calls).toEqual(["validate-artifacts", "build:next", "artifact:cf:cn-lightvela-staging", "deploy:cf"]);
   });
 
   it("prints preview release hints for required artifact mode", () => {
@@ -450,6 +619,6 @@ describe("release matrix helpers", () => {
       },
     })).toThrow("archive failed");
 
-    expect(calls).toEqual(["validate-artifacts", "build:cn", "artifact"]);
+    expect(calls).toEqual(["validate-artifacts", "build:next", "artifact"]);
   });
 });

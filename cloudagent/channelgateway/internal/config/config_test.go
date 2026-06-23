@@ -83,6 +83,16 @@ func TestACPInitializeTimeoutFromEnv(t *testing.T) {
 	}
 }
 
+func TestPromptTimeoutFromEnv(t *testing.T) {
+	if got := LoadFromEnv().PromptTimeout; got != 30*time.Minute {
+		t.Fatalf("default prompt timeout = %s", got)
+	}
+	t.Setenv("CHANNELGATEWAY_PROMPT_TIMEOUT", "90s")
+	if got := LoadFromEnv().PromptTimeout; got != 90*time.Second {
+		t.Fatalf("env prompt timeout = %s", got)
+	}
+}
+
 func TestSessionIdleCloseFromEnv(t *testing.T) {
 	if got := LoadFromEnv().SessionIdleClose; got != time.Minute {
 		t.Fatalf("default session idle close = %s", got)

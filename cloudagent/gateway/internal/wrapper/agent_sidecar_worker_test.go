@@ -275,6 +275,16 @@ func TestCleanAgentVisibleOutputDropsWrapperAndReasoningLeak(t *testing.T) {
 	}
 }
 
+func TestReasoningOnlyVisibleFallbackDoesNotLeakReasoning(t *testing.T) {
+	if got := cleanAgentVisibleOutput(reasoningOnlyVisibleFallback()); got != "The model produced reasoning but no final response." {
+		t.Fatalf("fallback=%q", got)
+	}
+	raw := `timeline source=hermes_sidecar t=0.000s event=stream WRAPPER_EVENT_JSON={"type":"reasoning_delta","delta":"hidden chain of thought"}`
+	if got := cleanAgentVisibleOutput(raw); got != "" {
+		t.Fatalf("reasoning wrapper text leaked into visible output: %q", got)
+	}
+}
+
 func TestCommandFailureDetailIncludesRedactedOutput(t *testing.T) {
 	got := commandFailureDetail(errors.New("exit status 1"), CommandResult{
 		Stderr: `daemon /ensure-inner failed: HTTP 500: {"error":"boom","envd_access_token":"secret"}`,
@@ -594,6 +604,64 @@ func TestCloseSessionRuntimeDoesNotDoubleStopWorkspaceAfterSidecarShutdown(t *te
 	}
 }
 
+func TestCloseSessionRuntimeAcceptsMissingInnerAfterSidecarShutdownStarted(t *testing.T) {
+	host := &recordingRuntimeHost{
+		runCommand: func(target RuntimeHostTarget, command string, env map[string]string, onStdout func(string) error, onStderr func(string) error) (CommandResult, error) {
+			if strings.Contains(command, " client --addr ") && strings.Contains(command, " shutdown") {
+				if onStdout != nil {
+					events := strings.Join([]string{
+						`WRAPPER_EVENT_JSON={"type":"runtime_host","event":"inner_shutdown_start","sandbox_id":"inner_1"}`,
+						`WRAPPER_EVENT_JSON={"type":"runtime_host","event":"workspace_runtime_shutdown_start","sandbox_id":"inner_1"}`,
+						"",
+					}, "\n")
+					if err := onStdout(events); err != nil {
+						return CommandResult{}, err
+					}
+				}
+				return CommandResult{ExitCode: 0, Exited: true, Status: "exited"}, nil
+			}
+			if target.ID == "inner_1" {
+				return CommandResult{}, fmt.Errorf("ags http 404 op=run_command sandbox_id=%s domain=ap-shanghai.tencentags.com envd_port=49983: The requested resource does not exist", target.ID)
+			}
+			if strings.Contains(command, "agent-wisp-1") {
+				return CommandResult{ExitCode: 0, Exited: true, Status: "exited", Stdout: "CLOUDAGENT_WISP_STOPPED\n"}, nil
+			}
+			return CommandResult{ExitCode: 0, Exited: true, Status: "exited"}, nil
+		},
+		probeSandbox: func(id string) (RuntimeHostSandboxProbe, error) {
+			if id == "inner_1" {
+				return RuntimeHostSandboxProbe{SandboxID: id, Exists: false, Status: "not_found"}, nil
+			}
+			return RuntimeHostSandboxProbe{SandboxID: id, Exists: true, Status: "running"}, nil
+		},
+	}
+	worker := &AgentSidecarWorker{
+		backends: map[string]agentSidecarBackend{
+			"": {host: host},
+		},
+	}
+	runtime := ACPSessionRuntime{
+		RuntimeID:           "rt_1",
+		OuterRuntime:        outerRuntimeWisp,
+		OuterSandboxID:      "outer_1",
+		OuterSandboxDomain:  runtimeHostTypeLocalWisp,
+		InnerSandboxID:      "inner_1",
+		RemoteBinary:        "/tmp/gateway/sessions/session_1/hermes-sidecar",
+		DaemonAddr:          "http://127.0.0.1:37001",
+		WispName:            "agent-wisp-1",
+		WispClientPath:      "/tmp/cloudagent-wisp/install/bin/wispclient",
+		WorkspaceWispName:   "workspace-wisp-1",
+		WorkspaceWispClient: "/tmp/cloudagent-workspace-wisp/install/bin/wispclient",
+	}
+
+	if err := worker.CloseSessionRuntime(context.Background(), runtime); err != nil {
+		t.Fatalf("CloseSessionRuntime should accept missing inner after sidecar shutdown started: %v", err)
+	}
+	if got := strings.Join(host.deleted, ","); got != "outer_1" {
+		t.Fatalf("deleted sandboxes=%q, want only outer_1", got)
+	}
+}
+
 func TestStopWispWorkspaceRuntimeRetriesTransientRunCommandNotFoundWhenProbeStillRunning(t *testing.T) {
 	attempts := 0
 	host := &recordingRuntimeHost{
@@ -851,6 +919,59 @@ func TestCloseSessionRuntimeBlocksStaleAuthWhenInnerWorkspaceStopUnconfirmed(t *
 	}
 	if got := strings.Join(host.deleted, ","); got != "outer_1" {
 		t.Fatalf("deleted sandboxes=%q, want only outer_1; inner must not be deleted without workspace stop confirmation", got)
+	}
+}
+
+func TestCloseSessionRuntimeTreatsMissingInnerAndOuterAsNotWritable(t *testing.T) {
+	host := &recordingRuntimeHost{
+		runCommand: func(target RuntimeHostTarget, command string, env map[string]string, onStdout func(string) error, onStderr func(string) error) (CommandResult, error) {
+			return CommandResult{}, fmt.Errorf(`ags http 401 op=run_command sandbox_id=%s domain=ap-shanghai.tencentags.com envd_port=49983: map[code:AUTHENTICATION_FAILED message:Authentication failed]`, target.ID)
+		},
+		probeSandbox: func(id string) (RuntimeHostSandboxProbe, error) {
+			return RuntimeHostSandboxProbe{SandboxID: id, Exists: false, Status: "not_found", Domain: "ap-shanghai.tencentags.com"}, nil
+		},
+	}
+	worker, err := NewAgentSidecarWorker(AgentSidecarWorkerConfig{
+		RuntimeHost:          host,
+		OuterTemplateID:      "tmpl_outer",
+		InnerTemplateID:      "tmpl_inner",
+		SidecarURL:           "https://example.invalid/agent-sidecar",
+		TokenHubAPIKey:       "tokenhub",
+		OuterRuntime:         outerRuntimeWisp,
+		WorkspaceService:     nil,
+		WispSMHLibraryID:     "library",
+		WispSMHAccessDomain:  "https://smh.example.invalid",
+		WispSMHLibrarySecret: "secret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = worker.CloseSessionRuntime(context.Background(), ACPSessionRuntime{
+		RuntimeID:            "rt_1",
+		SandboxBackend:       "ags",
+		OuterRuntime:         outerRuntimeWisp,
+		OuterSandboxID:       "outer_1",
+		OuterSandboxDomain:   "ap-shanghai.tencentags.com",
+		OuterEnvdAccessToken: "expired_envd_token",
+		InnerSandboxID:       "inner_1",
+		InnerSandboxDomain:   "ap-shanghai.tencentags.com",
+		InnerEnvdAccessToken: "expired_inner_envd_token",
+		WorkspaceRuntimeID:   "workspace_rt_1",
+		RemoteBinary:         "/tmp/agent-sidecar",
+		DaemonAddr:           "127.0.0.1:9876",
+		WispName:             "agent-session_1",
+		WispClientPath:       "/tmp/cloudagent-wisp/bin/wispclient",
+		WorkspaceWispName:    "workspace-wisp-1",
+		WorkspaceWispClient:  "/tmp/cloudagent-workspace-wisp/bin/wispclient",
+	})
+	if err != nil {
+		t.Fatalf("CloseSessionRuntime should accept missing stale sandboxes as not writable: %v", err)
+	}
+	if got := len(host.commands); got != 0 {
+		t.Fatalf("missing sandboxes must not receive data-plane commands, got %d", got)
+	}
+	if got := strings.Join(host.deleted, ","); got != "outer_1" {
+		t.Fatalf("deleted sandboxes=%q, want only outer cleanup", got)
 	}
 }
 

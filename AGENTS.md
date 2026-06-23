@@ -44,6 +44,7 @@
 | `service-gateway/` | Go | 后端服务 | [service-gateway/AGENTS.md](service-gateway/AGENTS.md) |
 | `admin-gateway/` | Go | 后端服务 | [admin-gateway/AGENTS.md](admin-gateway/AGENTS.md) |
 | `ctl/` | Go | 命令行/控制 | [ctl/AGENTS.md](ctl/AGENTS.md) |
+| `cloudagent/` | Go + Rust + React | CloudAgent runtime / gateway / channel integrations | [cloudagent/AGENTS.md](cloudagent/AGENTS.md) |
 | `user/auth/` | Go | 用户认证 | [user/auth/AGENTS.md](user/auth/AGENTS.md) |
 | `subscription/` | Go | 订阅服务 | [subscription/AGENTS.md](subscription/AGENTS.md) |
 | `payment/` | Go | 支付服务 | [payment/AGENTS.md](payment/AGENTS.md) |
