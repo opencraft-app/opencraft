@@ -51,6 +51,10 @@ type WorkbenchDesktopHostStateStores = ReturnType<
   typeof createWorkbenchDesktopHostStateStores
 >;
 
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export function VelaWorkbenchDesktopHost({
   bot,
   botError,
@@ -290,7 +294,7 @@ function WorkbenchEmbeddedReadyApp({
           : response.sessions[0]?.id || "",
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorMessage(err));
     } finally {
       setIsLoadingSessions(false);
     }
@@ -337,7 +341,7 @@ function WorkbenchEmbeddedReadyApp({
       setActiveSessionId(created.session.id);
       await loadSessions();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorMessage(err));
     }
   }, [client, loadSessions, resolveNewSessionSetup]);
 
@@ -358,14 +362,11 @@ function WorkbenchEmbeddedReadyApp({
   return (
     <WorkbenchHostSurface
       activeSessionId={activeSessionId || null}
-      backendOptions={controller.backends}
       error={controller.error ?? error}
       isLoading={isLoadingSessions || !activeSessionId}
-      onBackendChange={setSelectedBackendKind}
       onCreateSession={createSession}
       onRetry={loadSessions}
       onSelectSession={setActiveSessionId}
-      selectedBackendKind={setup.resolvedSelectedBackend || selectedBackendKind}
       sessions={sessions}
     >
       {activeSessionId ? (
@@ -400,30 +401,23 @@ function WorkbenchEmbeddedReadyApp({
 
 function WorkbenchHostSurface({
   activeSessionId,
-  backendOptions,
   children,
   error,
   isLoading,
-  onBackendChange,
   onCreateSession,
   onRetry,
   onSelectSession,
-  selectedBackendKind,
   sessions,
 }: {
   activeSessionId?: string | null;
-  backendOptions?: BackendWire[];
   children?: ReactNode;
   error: string | null;
   isLoading: boolean;
-  onBackendChange?: (backend: BackendKindWire | "") => void;
   onCreateSession?: () => void;
   onRetry: () => void;
   onSelectSession?: (sessionId: string) => void;
-  selectedBackendKind?: BackendKindWire | "";
   sessions?: SessionListItemWire[];
 }) {
-  const visibleBackendOptions = backendOptions ?? [];
   const visibleSessions = sessions ?? [];
 
   return (
@@ -456,23 +450,6 @@ function WorkbenchHostSurface({
           <span aria-hidden>+</span>
           <span>New chat</span>
         </button>
-
-        <label className={styles.backendField}>
-          <span>Backend</span>
-          <select
-            value={selectedBackendKind ?? ""}
-            onChange={(event) =>
-              onBackendChange?.(event.currentTarget.value as BackendKindWire | "")
-            }
-          >
-            <option value="">Auto</option>
-            {visibleBackendOptions.map((backend) => (
-              <option key={backend.kind} value={backend.kind}>
-                {backend.display_name || backend.kind}
-              </option>
-            ))}
-          </select>
-        </label>
 
         <div className={styles.sessionListRegion}>
           {visibleSessions.length > 0 && onSelectSession ? (

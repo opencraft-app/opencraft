@@ -1,10 +1,12 @@
 import { Binary, serialize } from "bson";
 import type { BotTerminalSession } from "@/domain/types";
+import { TatTransportError, normalizeTatTransportError } from "@/lib/tat-transport-error";
 import { decodeTencentPtyFrame, extractTencentPtyError } from "@/lib/tencent-pty-client";
 
 const DEFAULT_PROXY_CONNECT_DELAY_MS = 200;
 const DEFAULT_PROXY_REQUEST_TIMEOUT_MS = 30_000;
 const DEFAULT_TAT_PROXY_TIMEOUT_SECONDS = 3600;
+const TAT_PROXY_LOG_PREFIX = "[tat-proxy]";
 
 export type TsshProxyClientState = "idle" | "connecting" | "authenticating" | "ready" | "closed" | "error";
 export type TsshProxyConnectionState = "connecting" | "ready" | "closed" | "error";
@@ -70,6 +72,56 @@ const getPayload = (message: unknown) => {
 };
 
 const makeProxyId = () => `proxy_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
+
+const websocketReadyStateName = (readyState: number | undefined) => {
+  switch (readyState) {
+    case WebSocket.CONNECTING:
+      return "CONNECTING";
+    case WebSocket.OPEN:
+      return "OPEN";
+    case WebSocket.CLOSING:
+      return "CLOSING";
+    case WebSocket.CLOSED:
+      return "CLOSED";
+    default:
+      return readyState === undefined ? "none" : `unknown:${readyState}`;
+  }
+};
+
+const redactedUrlSummary = (urlText: string) => {
+  try {
+    const url = new URL(urlText);
+    return {
+      hash: url.hash ? "<redacted>" : "",
+      host: url.host,
+      pathname: url.pathname,
+      protocol: url.protocol,
+      search: url.search ? "<redacted>" : "",
+    };
+  } catch {
+    return "<invalid-url>";
+  }
+};
+
+const errorForLog = (error: unknown) =>
+  error instanceof Error
+    ? {
+        cause: error.cause,
+        message: error.message,
+        name: error.name,
+        stack: error.stack,
+      }
+    : { message: String(error) };
+
+const stringifyLogPayload = (payload: unknown) => {
+  try {
+    return JSON.stringify(payload);
+  } catch (error) {
+    return JSON.stringify({
+      stringify_error: error instanceof Error ? error.message : String(error),
+    });
+  }
+};
 
 export class TencentTsshProxyConnection {
   private controller: ReadableStreamDefaultController<Uint8Array> | null = null;
@@ -181,6 +233,28 @@ export class TencentTsshProxyClient {
     this.WebSocketImpl = options.WebSocketImpl ?? WebSocket;
   }
 
+  private debugContext(extra: Record<string, unknown> = {}) {
+    return {
+      appId: this.bootstrap.appId,
+      connectionIds: [...this.connections.keys()],
+      instanceId: this.bootstrap.instanceId,
+      pendingProxyIds: [...this.pending.keys()],
+      sessionId: this.bootstrap.sessionId,
+      socketReadyState: websocketReadyStateName(this.socket?.readyState),
+      state: this.state,
+      timeoutSeconds: this.bootstrap.timeoutSeconds ?? DEFAULT_TAT_PROXY_TIMEOUT_SECONDS,
+      wsUrl: redactedUrlSummary(this.bootstrap.wsUrl),
+      ...extra,
+    };
+  }
+
+  private logDebug(event: string, context: Record<string, unknown> = {}, error?: unknown) {
+    console.log(`${TAT_PROXY_LOG_PREFIX} ${event}`, stringifyLogPayload({
+      context: this.debugContext(context),
+      error: error === undefined ? null : errorForLog(error),
+    }));
+  }
+
   connect() {
     if (this.readyPromise) {
       if (this.socket?.readyState === WebSocket.OPEN || this.socket?.readyState === WebSocket.CONNECTING) {
@@ -213,6 +287,7 @@ export class TencentTsshProxyClient {
         }
         settled = true;
         clearReadyTimer();
+        this.logDebug("connect rejected", {}, error);
         reject(error);
       };
 
@@ -236,7 +311,16 @@ export class TencentTsshProxyClient {
 
         readyTimer = window.setTimeout(() => {
           if (this.socket !== socket || socket.readyState !== WebSocket.OPEN) {
-            rejectReady(new Error("TAT proxy websocket is not open"));
+            const error = new TatTransportError(
+              "connection_lost",
+              "TAT proxy websocket is not open",
+              { phase: "connect" },
+            );
+            this.logDebug("connect ready timer found websocket not open", {
+              actualSocketReadyState: websocketReadyStateName(socket.readyState),
+              currentSocketMatches: this.socket === socket,
+            }, error);
+            rejectReady(error);
             return;
           }
           this.setState("ready");
@@ -249,13 +333,31 @@ export class TencentTsshProxyClient {
       };
 
       socket.onerror = () => {
-        const error = new Error("websocket error");
+        const error = new TatTransportError("connection_lost", "websocket error", {
+          phase: "websocket",
+        });
+        this.logDebug("websocket error", {
+          socketReadyStateAtError: websocketReadyStateName(socket.readyState),
+        }, error);
         this.fail(error);
         rejectReady(error);
       };
 
       socket.onclose = (event) => {
-        rejectReady(new Error("TAT proxy websocket closed"));
+        const error = new TatTransportError(
+          "connection_lost",
+          "TAT proxy websocket closed",
+          { phase: "websocket" },
+        );
+        this.logDebug("websocket closed", {
+          close: {
+            code: event.code,
+            reason: event.reason,
+            wasClean: event.wasClean,
+          },
+          socketReadyStateAtClose: websocketReadyStateName(socket.readyState),
+        }, error);
+        rejectReady(error);
         if (this.socket === socket) {
           this.socket = null;
           this.readyPromise = null;
@@ -263,7 +365,6 @@ export class TencentTsshProxyClient {
         if (this.state !== "error") {
           this.setState("closed");
         }
-        const error = new Error("TAT proxy websocket closed");
         const failedConnections = new Set<TencentTsshProxyConnection>();
         for (const pending of this.pending.values()) {
           window.clearTimeout(pending.timer);
@@ -291,13 +392,28 @@ export class TencentTsshProxyClient {
     const proxyId = target.proxyId ?? makeProxyId();
     const channelId = target.channelId ?? proxyId;
     const connection = new TencentTsshProxyConnection(proxyId, channelId, this, handlers);
+    this.logDebug("open proxy requested", {
+      channelId,
+      proxyId,
+      target,
+    });
 
     return new Promise<TencentTsshProxyConnection>((resolve, reject) => {
       const timer = window.setTimeout(() => {
         this.pending.delete(proxyId);
         this.connections.delete(proxyId);
-        connection.fail(new Error("TAT proxy request timed out"));
-        reject(new Error("TAT proxy request timed out"));
+        const error = new TatTransportError(
+          "request_timeout",
+          "TAT proxy request timed out",
+          { phase: "open_proxy" },
+        );
+        this.logDebug("open proxy timed out", {
+          channelId,
+          proxyId,
+          target,
+        }, error);
+        connection.fail(error);
+        reject(error);
       }, this.requestTimeoutMs);
 
       this.pending.set(proxyId, { proxyId, resolve, reject, timer, connection });
@@ -311,7 +427,16 @@ export class TencentTsshProxyClient {
         window.clearTimeout(timer);
         this.pending.delete(proxyId);
         this.connections.delete(proxyId);
-        const error = new Error("TAT proxy websocket is not open");
+        const error = new TatTransportError(
+          "connection_lost",
+          "TAT proxy websocket is not open",
+          { phase: "open_proxy" },
+        );
+        this.logDebug("open proxy send failed because websocket is not open", {
+          channelId,
+          proxyId,
+          target,
+        }, error);
         connection.fail(error);
         reject(error);
       }
@@ -348,12 +473,25 @@ export class TencentTsshProxyClient {
       const payload = getPayload(message);
 
       if (type === "PtyError" || type === "Error") {
-        this.fail(new Error(extractTencentPtyError(message)));
+        const error = normalizeTatTransportError(
+          new Error(extractTencentPtyError(message)),
+          "websocket",
+        );
+        this.logDebug("received TAT error frame", { frameType: type }, error);
+        this.fail(error);
         return;
       }
 
       if (payload?.Error && typeof payload.Error === "string") {
-        this.rejectProxyFromPayload(payload.ProxyId, new Error(payload.Error));
+        const error = normalizeTatTransportError(
+          new Error(payload.Error),
+          "open_proxy",
+        );
+        this.logDebug("received proxy payload error", {
+          frameType: type,
+          proxyId: asString(payload.ProxyId),
+        }, error);
+        this.rejectProxyFromPayload(payload.ProxyId, error);
         return;
       }
 
@@ -366,6 +504,7 @@ export class TencentTsshProxyClient {
         window.clearTimeout(pending.timer);
         this.pending.delete(proxyId);
         pending.connection.markReady();
+        this.logDebug("proxy ready", { proxyId });
         pending.resolve(pending.connection);
         return;
       }
@@ -384,7 +523,9 @@ export class TencentTsshProxyClient {
         connection?.markClosed();
       }
     } catch (error) {
-      this.fail(error instanceof Error ? error : new Error(String(error)));
+      const normalizedError = normalizeTatTransportError(error, "websocket");
+      this.logDebug("failed to handle websocket frame", {}, normalizedError);
+      this.fail(normalizedError);
     }
   }
 
@@ -402,6 +543,7 @@ export class TencentTsshProxyClient {
   }
 
   private fail(error: Error) {
+    this.logDebug("client failed", {}, error);
     this.setState("error");
     this.readyPromise = null;
     this.socket = null;
@@ -419,6 +561,11 @@ export class TencentTsshProxyClient {
 
   private sendBson(type: string, channelId: string, data: Record<string, unknown>) {
     if (this.socket?.readyState !== WebSocket.OPEN) {
+      this.logDebug("sendBson skipped because websocket is not open", {
+        channelId,
+        frameType: type,
+        socketReadyStateAtSend: websocketReadyStateName(this.socket?.readyState),
+      });
       return false;
     }
     this.socket.send(
@@ -437,6 +584,10 @@ export class TencentTsshProxyClient {
 
   private sendJson(frame: unknown) {
     if (this.socket?.readyState !== WebSocket.OPEN) {
+      this.logDebug("sendJson skipped because websocket is not open", {
+        frame,
+        socketReadyStateAtSend: websocketReadyStateName(this.socket?.readyState),
+      });
       return false;
     }
     this.socket.send(JSON.stringify(frame));

@@ -7,6 +7,7 @@ import {
   applyConversationLiveOverlay,
   commandAckRejectionMessage,
   createIdempotencyKey,
+  createFetchVelaEventStreamTransport,
   createStreamRefreshScheduler,
   createVeladClient,
   imageFileToInputPart,
@@ -32,6 +33,12 @@ function readClientSource() {
     .sort()
     .map((file) => `// ${file}\n${readFileSync(new URL(file, srcDir), "utf8")}`)
     .join("\n");
+}
+
+async function flushMicrotasks(times = 5) {
+  for (let index = 0; index < times; index += 1) {
+    await Promise.resolve();
+  }
 }
 
 function sessionFixture(overrides: Record<string, unknown> = {}) {
@@ -92,6 +99,32 @@ test("builds conversation and event URLs for local velad", () => {
     client.sessionEventStreamUrl("sess_123", "evt_9").toString(),
     "http://127.0.0.1:3857/api/v1/sessions/sess_123/events/stream?after_id=evt_9",
   );
+});
+
+test("fetch event stream transport reports stream close after reading frames", async () => {
+  const events: string[] = [];
+  const transport = createFetchVelaEventStreamTransport(async () =>
+    new Response(
+      [
+        "event: session.updated",
+        'data: {"type":"session.updated","session_id":"sess_1","event_id":"evt_1","epoch":1,"seq":1,"payload":{}}',
+        "",
+        "",
+      ].join("\n"),
+      {
+        headers: { "Content-Type": "text/event-stream" },
+      },
+    ),
+  );
+
+  transport.subscribe(new URL("http://127.0.0.1:3857/api/v1/sessions/sess_1/events/stream"), {
+    onClose: () => events.push("close"),
+    onEvent: (event) => events.push(event.event_id ?? ""),
+  });
+
+  await flushMicrotasks();
+
+  assert.deepEqual(events, ["evt_1", "close"]);
 });
 
 test("rejects invalid session path and event cursor parameter types", async () => {

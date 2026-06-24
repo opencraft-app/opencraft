@@ -68,8 +68,10 @@ describe("agents workbench embedded shell boundary", () => {
 
     expect(host).toMatch(/const WORKBENCH_BACKEND_PREFERENCE = \["acp", "codex", "pi"\]/);
     expect(host).toMatch(/preferredBackends: WORKBENCH_BACKEND_PREFERENCE/);
-    expect(host).toMatch(/backendOptions=\{controller\.backends\}/);
-    expect(host).toMatch(/visibleBackendOptions\.map/);
+    expect(host).not.toMatch(/backendOptions=\{controller\.backends\}/);
+    expect(host).not.toMatch(/visibleBackendOptions\.map/);
+    expect(host).not.toMatch(/styles\.backendField/);
+    expect(host).not.toMatch(/<span>Backend<\/span>/);
     expect(host).not.toMatch(/filter\(\(backend\) => backend\.kind === "acp"\)/);
     expect(host).not.toMatch(/allowedBackends/);
   });

@@ -1,6 +1,7 @@
 import { Binary, deserialize, serialize } from "bson";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTatHermesFetch, createTatHermesWebFetch, createTatPortFetch, TatHttpVirtualClient } from "@/lib/tat-http-virtual-client";
+import { TatTransportError } from "@/lib/tat-transport-error";
 import { TencentTsshProxyClient } from "@/lib/tencent-tssh-proxy-client";
 
 const bootstrap = {
@@ -356,6 +357,22 @@ describe("TatHttpVirtualClient", () => {
       Data: encodeAscii("HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\ntwo"),
     }));
     await expect((await secondPromise).text()).resolves.toBe("two");
+    client.close();
+  });
+
+  it("classifies a response-header hang as a request timeout", async () => {
+    const { client, responsePromise } = await startHttpFetch("/hang-before-headers", {}, {
+      responseHeaderTimeoutMs: 25,
+    });
+
+    await flushPromises();
+    vi.advanceTimersByTime(25);
+
+    await expect(responsePromise).rejects.toMatchObject({
+      kind: "request_timeout",
+      phase: "response_head",
+      retryable: true,
+    } satisfies Partial<TatTransportError>);
     client.close();
   });
 

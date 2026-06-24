@@ -63,6 +63,8 @@
 - 可以直接在 `mono2/velalink/` 下修改 velalink 代码，保持改动可被 mono2 的 MR 直接 review。
 - 需要长期共享给 velalink 上游的改动，必须用 `git subtree split --prefix=velalink` 切出分支，再推到 `wisp/velalink.git`。
 - `frontend` 消费 velalink 时，依赖 `velachat` 必须 pin 到 `wisp/velalink.git` 的真实上游 commit，不要 pin 到 mono2 内部提交。
+- `frontend` 本地构建实际读取的是 `frontend/node_modules/velachat` 中的 git pin 依赖，不是 `mono2/velalink/` 目录；只改 subtree 代码不代表预览或构建已经生效。
+- 为了临时验证可以把改动同步到 `frontend/node_modules/velachat`，但这只是调试手段；最终必须推 velalink 上游、更新 `frontend/package.json` / `frontend/pnpm-lock.yaml` 的 pin、重新安装依赖并重建。
 - 当拉取 velalink 上游更新时，先 `git fetch velalink master`，再用 `git merge -s recursive -Xsubtree=velalink --no-commit velalink/master` 合入。
 - 每次更新 velalink 上游基线后，同步更新 `velalink/.mono2-subtree` 和必要的 `frontend/package.json` / `frontend/pnpm-lock.yaml`。
 - 不要用前端 deep import workaround 绕开 velalink 包导出问题；正确做法是在 `velalink` 上游修复 public/barrel export，再更新 `frontend` 的 pin。
