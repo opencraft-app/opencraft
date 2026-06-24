@@ -1488,6 +1488,7 @@ func (s *Service) placeOrderDianshi(
 	doGoodsReq := &dianshiclient.DoGoodsRequest{
 		Uin:        req.Uin,
 		ActivityID: mapping.ActivityID,
+		Preview:    1, // 联调期固定走点石预览模式：不真实创建商品 / 不真实扣费 / 仅返 mock deal_names
 		Originate:  dianshiclient.OriginateLightvelaTrade,
 		CheckSum:   checkSum,
 		Goods: []dianshiclient.DoGoodsItem{
