@@ -85,13 +85,23 @@ type Config struct {
 	//   - "ap-beijing"   → 8 / 800001 / "北京"
 	//   - "ap-singapore" → 9 / 900001 / "Singapore"
 	//
-	// 取值优先级：override 非空且命中 region.regionTable 时优先于 SiteKind 兜底；空字符串
+	// 取值优先级：override 非空且命中 region.regionTable 时优先于 SiteKind 兑底；空字符串
 	// 时按 SiteKind 走（cn → 广州 / intl → 新加坡）。注册表唯一来源在 trade/internal/region
 	// 包，新增地域只需在 region.regionTable 加一行，调用方零感知。
 	//
 	// 由环境变量 `LIGHTVELA_TRADE_REGION` 注入，未注册字面量在 Load() 期 fail-fast。
 	// 该值贯穿与 SiteKind 同样的 7 处下游 Deps 注入点。
 	RegionOverride string
+
+	// 点石活动接入（设计稿 .tmp/dianshi-activity-bundle-design.md §5.1 / §8）：
+	//   - DianshiPriceBaseURL：clgateway dianshi-price route 入口（env DIANSHI_PRICE_BASE_URL）
+	//   - DianshiOrderBaseURL：clgateway dianshi-order route 入口（env DIANSHI_ORDER_BASE_URL）
+	//
+	// 两者同进同退：都为空时 main.go 不装配 ActivityResolver / DianshiClient，
+	// inquiry / placeorder / createresource 完全退化到 v1.7.x 历史行为（jifei 单路径）。
+	// 两者部分缺失（只配一个）会被 Load 期列为配置错误（避免只能询价却不能下单的跳脚状态）。
+	DianshiPriceBaseURL string
+	DianshiOrderBaseURL string
 }
 
 // Load 从环境变量构建 Config，未设必填项时返回 error。
@@ -134,8 +144,11 @@ func Load() (Config, error) {
 
 		// 北京 2 预发布接入（2026-06-12）：region 字段 override，未配则按 SiteKind 兜底
 		RegionOverride: strings.TrimSpace(os.Getenv("LIGHTVELA_TRADE_REGION")),
-	}
 
+		// 点石活动接入（设计稿 §8）：两个 env 同进同退；都为空时 main.go 不装配 Resolver/DianshiClient。
+		DianshiPriceBaseURL: strings.TrimSpace(os.Getenv("DIANSHI_PRICE_BASE_URL")),
+		DianshiOrderBaseURL: strings.TrimSpace(os.Getenv("DIANSHI_ORDER_BASE_URL")),
+	}
 	if cfg.MySQLDSN == "" {
 		return Config{}, fmt.Errorf("TRADE_MYSQL_DSN is required")
 	}
@@ -159,6 +172,16 @@ func Load() (Config, error) {
 					"supported: ap-guangzhou / ap-beijing / ap-singapore",
 				cfg.RegionOverride)
 		}
+	}
+	// 点石活动接入（设计稿 §5.8）：DIANSHI_PRICE_BASE_URL 与 DIANSHI_ORDER_BASE_URL
+	// 必须同进同退——任一只配置一边都会让"能询价但下不了单 / 能下单却没询过价"的跛脚状态
+	// 进入运行期，反而比两个都不配更危险（两者都为空 = main.go 不装配 ActivityResolver/
+	// DianshiClient，inquiry / placeorder 完全退化到 v1.7.x 历史行为）。
+	if (cfg.DianshiPriceBaseURL == "") != (cfg.DianshiOrderBaseURL == "") {
+		return Config{}, fmt.Errorf(
+			"DIANSHI_PRICE_BASE_URL and DIANSHI_ORDER_BASE_URL must be configured together "+
+				"(price=%q, order=%q)",
+			cfg.DianshiPriceBaseURL, cfg.DianshiOrderBaseURL)
 	}
 	// JifeiCGWGatewayURL / JifeiCGWHostHeader / JifeiCallbackSignatureKey 在迭代 3 / 5 真正接入
 	// jifei CGW 适配层时再做强校验；当前迭代 1 骨架阶段允许为空，避免本地起服失败。

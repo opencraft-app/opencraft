@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"log"
 	"net/http"
 	"os"
@@ -11,8 +12,10 @@ import (
 
 	"git.woa.com/wisp/mono/trade/internal/config"
 	"git.woa.com/wisp/mono/trade/internal/ctlclient"
+	"git.woa.com/wisp/mono/trade/internal/dianshiclient"
 	"git.woa.com/wisp/mono/trade/internal/httpapi"
 	"git.woa.com/wisp/mono/trade/internal/jifeiclient"
+	"git.woa.com/wisp/mono/trade/internal/logic/activity"
 	"git.woa.com/wisp/mono/trade/internal/logic/inquiry"
 	"git.woa.com/wisp/mono/trade/internal/logic/orderstatus"
 	"git.woa.com/wisp/mono/trade/internal/logic/placeorder"
@@ -75,6 +78,25 @@ func main() {
 		},
 	)
 
+	// 点石出向客户端 + 活动 Resolver（设计稿 .tmp/dianshi-activity-bundle-design.md §5.1 / §5.2）。
+	//
+	// 同进同退语义：仅在 cfg.DianshiPriceBaseURL + cfg.DianshiOrderBaseURL 同时非空时构造
+	// dianshiClient + activityResolver；部分缺失已在 config.Load fail-fast 拦住，此处只看
+	// 全部非空 / 都为空两种合法状态。为 nil 时 inquiry / placeorder / createresource 都走
+	// jifei 单路径，与 v1.7.x 历史行为完全一致。
+	var (
+		dianshiClient    dianshiclient.Client
+		activityResolver activity.Resolver
+	)
+	if cfg.DianshiPriceBaseURL != "" && cfg.DianshiOrderBaseURL != "" {
+		dianshiClient = dianshiclient.New(cfg.DianshiPriceBaseURL, cfg.DianshiOrderBaseURL)
+		activityResolver = activity.NewResolver(mysqlStore)
+		log.Printf("[dianshi] activated: priceBaseURL=%s orderBaseURL=%s",
+			cfg.DianshiPriceBaseURL, cfg.DianshiOrderBaseURL)
+	} else {
+		log.Printf("[dianshi] disabled: DIANSHI_PRICE_BASE_URL / DIANSHI_ORDER_BASE_URL not set; activity branch will not be activated")
+	}
+
 	// 业务 service 装配（迭代 8A，8B-1 起注入 shadowClient）：
 	//   - inquiry：批量询价
 	//   - placeorder：下单 + pay-url
@@ -87,6 +109,9 @@ func main() {
 		SiteKind: cfg.SiteKind,
 		// 北京 2 预发布接入 2026-06-12：region 字段 override（LIGHTVELA_TRADE_REGION env）。
 		RegionOverride: cfg.RegionOverride,
+		// 点石活动接入（设计稿 §5.3）：同进同退，都为 nil 时 inquiry 走 jifei 单路径。
+		ActivityResolver: activityResolver,
+		DianshiClient:    dianshiClient,
 	})
 	placeOrderSvc := placeorder.New(placeorder.Deps{
 		CTLClient:    ctlClient,
@@ -100,6 +125,9 @@ func main() {
 		SiteKind: cfg.SiteKind,
 		// 北京 2 预发布接入 2026-06-12：region 字段 override（LIGHTVELA_TRADE_REGION env）。
 		RegionOverride: cfg.RegionOverride,
+		// 点石活动接入（设计稿 §5.4）：同进同退，都为 nil 时 placeorder 走 jifei 单路径。
+		ActivityResolver: activityResolver,
+		DianshiClient:    dianshiClient,
 	})
 
 	// v1.7.32：订单状态反查业务 service（设计稿 .tmp/ctl-order-status-query-design.md §5.2）。
@@ -123,6 +151,21 @@ func main() {
 		// 迭代 8A 起：trade_order 写端 DAO 已实现，注入 mysqlStore；
 		// createResource handler 在收尾阶段反向回填 resource_id + status='provisioned'。
 		OrderUpdater: mysqlStore,
+		// 点石活动接入（设计稿 §5.6）：createResource handler 在 trade_order.source='dianshi'
+		// 时 INSERT participation。两者同进同退；activityResolver==nil 时一并传 nil，
+		// createResource handler 自动跳过 participation 分支。
+		ActivityStore: func() store.ActivityStore {
+			if activityResolver != nil {
+				return mysqlStore
+			}
+			return nil
+		}(),
+		ActivityDB: func() *sql.DB {
+			if activityResolver != nil {
+				return mysqlStore.DB()
+			}
+			return nil
+		}(),
 		// 迭代 8A 起：内部 RPC 业务 service。
 		InquiryService:    inquirySvc,
 		PlaceOrderService: placeOrderSvc,
