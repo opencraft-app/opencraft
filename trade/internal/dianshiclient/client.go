@@ -101,8 +101,16 @@ func (e *CGWError) Error() string {
 }
 
 // GetPriceRequest 是询价 envelope.interface.para 内层（设计稿 §5.1）。
+//
+// Preview：与 DoGoodsRequest.Preview 同语义——0=正式询价 / 1=预览询价。点石原始
+// 协议样例（.tmp/点石询价）interface.para 字段集只列了 activity_id / client_info /
+// goods[]，但实际接入时点石侧确认询价同样接受 preview 字段，且联调期需要询价 + 下单
+// 两端 preview 取值一致以拿到一致的定价口径（preview=0 与 preview=1 在某些活动下
+// 因校验规则 / 库存折扣分支不同会得到不同价格）。omitempty 让 0 值不出现在出向
+// JSON，保留正式形态默认行为；联调期由 inquiry.Service.quoteDianshi 显式赋 1。
 type GetPriceRequest struct {
 	ActivityID int64                  `json:"activity_id"`
+	Preview    int                    `json:"preview,omitempty"`
 	ClientInfo map[string]interface{} `json:"client_info,omitempty"`
 	Goods      []GetPriceGoodsItem    `json:"goods"`
 }

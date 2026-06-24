@@ -646,6 +646,7 @@ func (s *Service) quoteDianshi(
 
 	priceReq := &dianshiclient.GetPriceRequest{
 		ActivityID: mapping.ActivityID,
+		Preview:    1, // 联调期固定走点石预览模式：与 placeOrderDianshi 下单端 Preview=1 同步，避免询价/下单两端定价口径不一致
 		Goods: []dianshiclient.GetPriceGoodsItem{
 			{
 				ActID:           mapping.ActID,
