@@ -9,8 +9,8 @@
  * 抽卡数据策略：**前端从公共 souls 池 Math.random**，且自动剔除已抽到的 slug，
  * 每次抽出新一张。不调 SkillHub 的 draw 接口（鉴权方案待落地）。
  *
- * 数据来源：`@/lib/skillhub-api`，跨域直连 https://lightmake.cloud 的
- * 公共接口（lightclaw.tech 与 EO Pages 预览域名都在其 CORS 白名单内）。
+ * 数据来源：`@/lib/skillhub-api`，跨域直连 https://api.skillhub.cn 的
+ * 公共接口。
  *
  * 注：AI 搭子当前仅保留 Soul（人设）浏览与抽卡能力。
  */

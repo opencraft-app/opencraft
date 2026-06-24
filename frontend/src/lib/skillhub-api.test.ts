@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fetchSoulDetail,
   fetchSouls,
+  resolveSkillHubApiBase,
 } from "./skillhub-api";
 
 const ORIGINAL_FETCH = globalThis.fetch;
@@ -27,6 +28,18 @@ function mockFetch(payload: unknown, status = 200): typeof globalThis.fetch {
 describe("skillhub-api", () => {
   afterEach(() => {
     globalThis.fetch = ORIGINAL_FETCH;
+  });
+
+  describe("resolveSkillHubApiBase", () => {
+    it("uses the local proxy in dev", () => {
+      expect(resolveSkillHubApiBase({ DEV: true })).toBe("/__skillhub");
+    });
+
+    it("uses the SkillHub production API outside dev", () => {
+      expect(resolveSkillHubApiBase({ DEV: false })).toBe(
+        "https://api.skillhub.cn",
+      );
+    });
   });
 
   describe("fetchSouls", () => {

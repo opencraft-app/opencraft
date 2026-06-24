@@ -696,7 +696,7 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
         },
         "/__skillhub": {
-          target: "https://lightmake.cloud",
+          target: "https://api.skillhub.cn",
           changeOrigin: true,
           rewrite: (url) => url.replace(/^\/__skillhub/, ""),
         },
