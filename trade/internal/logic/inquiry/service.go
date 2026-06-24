@@ -649,8 +649,19 @@ func (s *Service) quoteDianshi(
 		Preview:    1, // 联调期固定走点石预览模式：与 placeOrderDianshi 下单端 Preview=1 同步，避免询价/下单两端定价口径不一致
 		Goods: []dianshiclient.GetPriceGoodsItem{
 			{
-				ActID:           mapping.ActID,
-				PreferenceParam: map[string]interface{}{}, // 设计稿 §5.1：询价 preference_param 固定 {}
+				ActID: mapping.ActID,
+				// preference_param 4 字段拼装来源（联调期实测推翻设计稿 §5.1 "固定 {}"）：
+				//   - regionId       int  ：trade 端 region.Resolve() 映射的 RegionID（s.region 已缓存）
+				//   - timeSpanUnit   str  ：mapping.TimeSpanUnit（trade_bundle_activity.time_span_unit）
+				//   - subProductCode str  ：trade_bundle_definition.sub_product_code（同 jifei 路径同源）
+				//   - bundleId       str  ：mapping.BundleID（与 trade_bundle_activity.bundle_id 同源）
+				// 缺任一字段点石返 returnCode=1100109 缺少参数 / 1100105 商品ID不存在。
+				PreferenceParam: map[string]interface{}{
+					"regionId":       s.region.RegionID,
+					"timeSpanUnit":   mapping.TimeSpanUnit,
+					"subProductCode": def.SubProductCode,
+					"bundleId":       mapping.BundleID,
+				},
 			},
 		},
 	}

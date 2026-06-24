@@ -78,7 +78,7 @@ func TestQuote_DianshiBranch_NotParticipated(t *testing.T) {
 	jc := &fakeJifei{}
 	dc := newFakeDianshiSuccess()
 	r := &fakeResolver{
-		mapping:    &activity.Mapping{BundleID: "bundle_launch_01", ActivityID: 164273735574009, ActID: 1862147936410255, Active: true},
+		mapping:    &activity.Mapping{BundleID: "bundle_launch_01", ActivityID: 164273735574009, ActID: 1862147936410255, Active: true, TimeSpanUnit: "7d"},
 		useDianshi: true,
 	}
 	svc := New(Deps{
@@ -110,6 +110,24 @@ func TestQuote_DianshiBranch_NotParticipated(t *testing.T) {
 	}
 	if len(dc.lastPriceReq.Goods) != 1 || dc.lastPriceReq.Goods[0].ActID != 1862147936410255 {
 		t.Errorf("dianshi req goods=%+v", dc.lastPriceReq.Goods)
+	}
+	// preference_param 4 字段拼装断言（联调期实测推翻设计稿 §5.1 "固定 {}" 后的新套路）。
+	//   - regionId       = s.region.RegionID（SiteKind="" + RegionOverride="" 藦 cn 兜底 = 1）
+	//   - timeSpanUnit   = mapping.TimeSpanUnit
+	//   - subProductCode = def.SubProductCode（stdDef 里是 sp_linux_small）
+	//   - bundleId       = mapping.BundleID
+	prefParam := dc.lastPriceReq.Goods[0].PreferenceParam
+	if got, _ := prefParam["regionId"].(int); got != 1 {
+		t.Errorf("preference_param.regionId=%v want 1", prefParam["regionId"])
+	}
+	if got, _ := prefParam["timeSpanUnit"].(string); got != "7d" {
+		t.Errorf("preference_param.timeSpanUnit=%v want 7d", prefParam["timeSpanUnit"])
+	}
+	if got, _ := prefParam["subProductCode"].(string); got != "sp_linux_small" {
+		t.Errorf("preference_param.subProductCode=%v want sp_linux_small", prefParam["subProductCode"])
+	}
+	if got, _ := prefParam["bundleId"].(string); got != "bundle_launch_01" {
+		t.Errorf("preference_param.bundleId=%v want bundle_launch_01", prefParam["bundleId"])
 	}
 	if res.RealTotalCost != "0" || res.TotalCost != "990" {
 		t.Errorf("RealTotalCost=%s TotalCost=%s want 0/990", res.RealTotalCost, res.TotalCost)

@@ -72,11 +72,12 @@ func newFakeDianshiSuccess() *fakeDianshi {
 // stdActivityMapping 给点石分叉单测一份默认 mapping（启航 01 / 已开鉴权）。
 func stdActivityMapping() *activity.Mapping {
 	return &activity.Mapping{
-		BundleID:   "bundle_launch_01",
-		ActivityID: 164273735574009,
-		ActID:      1862147936410255,
-		SecretKey:  "demo_secret",
-		Active:     true,
+		BundleID:     "bundle_launch_01",
+		ActivityID:   164273735574009,
+		ActID:        1862147936410255,
+		SecretKey:    "demo_secret",
+		Active:       true,
+		TimeSpanUnit: "7d",
 	}
 }
 
@@ -147,9 +148,22 @@ func TestPlaceOrder_DianshiBranch_HappyPath(t *testing.T) {
 	if dc.lastDoGoodsReq.CheckSum == "" {
 		t.Errorf("check_sum should be non-empty when mapping.SecretKey set")
 	}
-	// preference_param 仅含 externalUserId
-	if dc.lastDoGoodsReq.Goods[0].PreferenceParam["externalUserId"] != stdPlaceOrderReq().ExternalUserID {
-		t.Errorf("preference_param missing externalUserId: %+v", dc.lastDoGoodsReq.Goods[0].PreferenceParam)
+	// preference_param 5 字段断言（询价 4 字段 + 下单专属 externalUserId）
+	prefParam := dc.lastDoGoodsReq.Goods[0].PreferenceParam
+	if got, _ := prefParam["regionId"].(int); got != 1 {
+		t.Errorf("preference_param.regionId=%v want 1", prefParam["regionId"])
+	}
+	if got, _ := prefParam["timeSpanUnit"].(string); got != "7d" {
+		t.Errorf("preference_param.timeSpanUnit=%v want 7d", prefParam["timeSpanUnit"])
+	}
+	if got, _ := prefParam["subProductCode"].(string); got != "sp_linux_small" {
+		t.Errorf("preference_param.subProductCode=%v want sp_linux_small", prefParam["subProductCode"])
+	}
+	if got, _ := prefParam["bundleId"].(string); got != "bundle_launch_01" {
+		t.Errorf("preference_param.bundleId=%v want bundle_launch_01", prefParam["bundleId"])
+	}
+	if prefParam["externalUserId"] != stdPlaceOrderReq().ExternalUserID {
+		t.Errorf("preference_param.externalUserId=%v want %s", prefParam["externalUserId"], stdPlaceOrderReq().ExternalUserID)
 	}
 }
 

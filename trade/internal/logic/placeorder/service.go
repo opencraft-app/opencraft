@@ -1494,8 +1494,15 @@ func (s *Service) placeOrderDianshi(
 		Goods: []dianshiclient.DoGoodsItem{
 			{
 				ActID: mapping.ActID,
+				// preference_param 5 字段（询价 4 字段 + 下单专属的 externalUserId）。
+				// 询价 4 字段（regionId / timeSpanUnit / subProductCode / bundleId）拼装来源
+				// 与 inquiry.quoteDianshi 同源；externalUserId 是下单专属，让点石把"哪个业务用户
+				// 下了哪个商品"记到点石侧履约链路里。
 				PreferenceParam: map[string]interface{}{
-					// 用户拍板：下单 preference_param 仅含 externalUserId
+					"regionId":       s.region.RegionID,
+					"timeSpanUnit":   mapping.TimeSpanUnit,
+					"subProductCode": def.SubProductCode,
+					"bundleId":       mapping.BundleID,
 					"externalUserId": req.ExternalUserID,
 				},
 			},

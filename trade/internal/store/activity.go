@@ -23,6 +23,10 @@ type BundleActivity struct {
 	SecretKey string
 	// Active 为 false 表示活动已下线（运营按需切换），Resolver 视为非活动 bundle。
 	Active bool
+	// TimeSpanUnit 是点石询价 / 下单 preference_param.timeSpanUnit 字面值（如 "7d"）。
+	// 由运营在点石后台的实际配置决定，部署后手工 INSERT trade_bundle_activity 时填入。
+	// 空字符串表示该 bundle 在点石侧未要求 timeSpanUnit（联调期 fallback；不同环境取值不同）。
+	TimeSpanUnit string
 }
 
 // UserActivityParticipation 是 trade_user_activity_participation 表的领域对象（设计稿 §3.2）。
@@ -78,7 +82,7 @@ var _ ActivityStore = (*MySQLStore)(nil)
 //
 // SQL：
 //
-//	SELECT id, bundle_id, activity_id, act_id, secret_key, active
+//	SELECT id, bundle_id, activity_id, act_id, secret_key, active, time_span_unit
 //	  FROM trade_bundle_activity
 //	 WHERE bundle_id = ?
 func (s *MySQLStore) GetBundleActivityByBundleID(ctx context.Context, bundleID string) (*BundleActivity, error) {
@@ -86,7 +90,7 @@ func (s *MySQLStore) GetBundleActivityByBundleID(ctx context.Context, bundleID s
 		return nil, fmt.Errorf("trade_bundle_activity: store is nil")
 	}
 	const q = `
-		SELECT id, bundle_id, activity_id, act_id, secret_key, active
+		SELECT id, bundle_id, activity_id, act_id, secret_key, active, time_span_unit
 		  FROM trade_bundle_activity
 		 WHERE bundle_id = ?
 	`
@@ -97,7 +101,7 @@ func (s *MySQLStore) GetBundleActivityByBundleID(ctx context.Context, bundleID s
 	)
 	err := s.db.QueryRowContext(ctx, q, bundleID).Scan(
 		&row.ID, &row.BundleID, &row.ActivityID, &row.ActID,
-		&secretKey, &active,
+		&secretKey, &active, &row.TimeSpanUnit,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrBundleActivityNotFound

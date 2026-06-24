@@ -36,6 +36,9 @@ type Mapping struct {
 	ActID      int64
 	SecretKey  string
 	Active     bool
+	// TimeSpanUnit 是点石 preference_param.timeSpanUnit 字面值（如 "7d"）。
+	// 从 store.BundleActivity 透传过来，询价 / 下单两端作为 goods[].preference_param.timeSpanUnit 出向。
+	TimeSpanUnit string
 }
 
 // Resolver 决定某一次询价 / 下单是否走点石活动通道。
@@ -104,11 +107,12 @@ func (r *resolver) resolve(ctx context.Context, bundleID, uin string) (*Mapping,
 	}
 
 	mapping := &Mapping{
-		BundleID:   ba.BundleID,
-		ActivityID: ba.ActivityID,
-		ActID:      ba.ActID,
-		SecretKey:  ba.SecretKey,
-		Active:     ba.Active,
+		BundleID:     ba.BundleID,
+		ActivityID:   ba.ActivityID,
+		ActID:        ba.ActID,
+		SecretKey:    ba.SecretKey,
+		Active:       ba.Active,
+		TimeSpanUnit: ba.TimeSpanUnit,
 	}
 
 	if !mapping.Active {
