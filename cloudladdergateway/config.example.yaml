@@ -154,7 +154,8 @@ backends:
   # ===========================================================================
   - alias: dianshi-order
     upstream:
-      base_url: "http://opc-dianshi-activity.production.polaris:10006"
+      # 端口 80：点石下单接口（do_goods）实际监听端口与询价（10006）不同
+      base_url: "http://opc-dianshi-activity.production.polaris:80"
       timeout: 10s
       allowed_methods: ["POST"]
 
