@@ -467,6 +467,7 @@ export interface BackendCapabilitiesWire {
 export interface BackendWire {
   kind: BackendKindWire;
   status: BackendStatusWire;
+  status_message?: string;
   display_name: string;
   capabilities: BackendCapabilitiesWire;
   models: BackendModelWire[];
@@ -475,7 +476,7 @@ export interface BackendWire {
   diagnostics?: Record<string, unknown>;
 }
 
-export type BackendStatusWire = "available" | "unavailable" | "degraded";
+export type BackendStatusWire = "available" | "unavailable" | "degraded" | "error";
 
 export interface BackendsWireResponse {
   backends: BackendWire[];
@@ -487,7 +488,7 @@ export interface BackendWireResponse {
 
 export interface BackendProbeResultWire {
   backend: BackendKindWire;
-  status: "available" | "unavailable" | "degraded";
+  status: BackendStatusWire;
   message?: string;
 }
 

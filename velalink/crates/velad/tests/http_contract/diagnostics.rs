@@ -262,7 +262,7 @@ async fn projections_timeline_and_trace_are_coalesced_and_schema_complete() {
     );
 
     let (status, trace) = get_json(
-        app,
+        app.clone(),
         &format!("/api/v1/sessions/{session_id}/diagnostics/trace"),
     )
     .await;
@@ -412,6 +412,80 @@ async fn timeline_coalesces_related_event_lifecycles() {
     assert_eq!(assistant_items, 1);
     assert_eq!(request_items, 1);
     assert_eq!(diff_items, 1);
+}
+
+#[tokio::test]
+async fn timeline_and_trace_expose_turn_failure_errors() {
+    let (app, _) = test_app_with_backend_outputs(vec![BackendOutput::event(
+        EventType::TURN_FAILED,
+        json!({ "error": "Codex configuration is invalid" }),
+    )])
+    .await;
+    let (_, created) = json_request(
+        app.clone(),
+        Method::POST,
+        "/api/v1/sessions",
+        json!({ "backend": "pi", "working_directory": "/tmp/project" }),
+        Some("ses-turn-failed-visible"),
+    )
+    .await;
+    let session_id = created["session"]["id"].as_str().unwrap();
+    let (_, _) = json_request(
+        app.clone(),
+        Method::POST,
+        &format!("/api/v1/sessions/{session_id}/events"),
+        json!({ "events": [{ "type": "user.message", "content": [{ "type": "text", "text": "fail visibly" }] }] }),
+        Some("cmd-turn-failed-visible"),
+    )
+    .await;
+    wait_for_session_event(app.clone(), session_id, "turn.failed").await;
+
+    let (status, timeline) = get_json(
+        app.clone(),
+        &format!("/api/v1/sessions/{session_id}/diagnostics/timeline"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        timeline["items"].as_array().unwrap().iter().any(|item| {
+            item["kind"] == "error"
+                && item["status"] == "failed"
+                && item["parts"][0]["text"] == "Codex configuration is invalid"
+        }),
+        "{timeline:#}"
+    );
+
+    let (status, trace) = get_json(
+        app.clone(),
+        &format!("/api/v1/sessions/{session_id}/diagnostics/trace"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        trace["spans"].as_array().unwrap().iter().any(|span| {
+            span["title"] == "turn.failed" && span["summary"] == "Codex configuration is invalid"
+        }),
+        "{trace:#}"
+    );
+
+    let (status, conversation) = get_json(
+        app,
+        &format!("/api/v1/sessions/{session_id}/views/conversation"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        conversation["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| {
+                item["kind"] == "status"
+                    && item["status"] == "failed"
+                    && item["text"] == "Codex configuration is invalid"
+            }),
+        "{conversation:#}"
+    );
 }
 
 #[tokio::test]

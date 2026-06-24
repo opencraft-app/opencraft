@@ -1401,7 +1401,9 @@ components:
           $ref: '#/components/schemas/BackendKind'
         status:
           type: string
-          enum: [available, unavailable, degraded]
+          enum: [available, unavailable, degraded, error]
+        status_message:
+          type: string
         display_name:
           type: string
         capabilities:
@@ -1550,7 +1552,7 @@ components:
           $ref: '#/components/schemas/BackendKind'
         status:
           type: string
-          enum: [available, unavailable, degraded]
+          enum: [available, unavailable, degraded, error]
         message:
           type: string
     CommandAck:

@@ -112,12 +112,24 @@ pub fn project_conversation(events: &[CanonicalEvent]) -> ConversationView {
         if event.event_type == EventType::TURN_FAILED {
             mark_latest_streaming_assistant_terminal(&mut items, event, "failed");
             mark_turn_meta_terminal(&mut items, event, "failed");
+            push_turn_status(
+                &mut items,
+                event,
+                "failed",
+                turn_status_text(event, "Turn failed"),
+            );
             continue;
         }
 
         if event.event_type == EventType::TURN_CANCELLED {
             mark_latest_streaming_assistant_terminal(&mut items, event, "cancelled");
             mark_turn_meta_terminal(&mut items, event, "cancelled");
+            push_turn_status(
+                &mut items,
+                event,
+                "cancelled",
+                turn_status_text(event, "Turn cancelled"),
+            );
             continue;
         }
 
@@ -342,6 +354,38 @@ fn mark_turn_meta_terminal(
     item.revision += 1;
     item.detail = merge_payload(&item.detail, &event.payload);
     push_source_event(item, event);
+}
+
+fn push_turn_status(
+    items: &mut Vec<ConversationItem>,
+    event: &CanonicalEvent,
+    status: &str,
+    text: String,
+) {
+    let item_id = format!(
+        "turn:{}:status:{}",
+        turn_id_from_payload(event)
+            .map(|turn_id| turn_id.to_string())
+            .unwrap_or_else(|| event.event_id.to_string()),
+        event.event_type.0
+    );
+    items.push(ConversationItem {
+        item_id,
+        session_id: event.session_id.clone(),
+        kind: ConversationItemKind::Status,
+        turn_id: turn_id_from_payload(event),
+        created_at: event.created_at,
+        updated_at: event.created_at,
+        revision: 1,
+        status: status.to_string(),
+        text: Some(text),
+        parts: Vec::new(),
+        title: None,
+        summary: None,
+        detail: merge_payload(&Value::Null, &event.payload),
+        source_event_ids: vec![event.event_id.clone()],
+        source_event_ranges: vec![source_event_range(event)],
+    });
 }
 
 fn attach_turn_to_latest_user_without_turn(
@@ -714,13 +758,19 @@ fn activity_summary_text(payload: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
+fn turn_status_text(event: &CanonicalEvent, fallback: &str) -> String {
+    activity_summary_text(&event.payload).unwrap_or_else(|| fallback.to_string())
+}
+
 fn merge_payload(old: &Value, new: &Value) -> Value {
     match (old, new) {
         (Value::Object(old), Value::Object(new)) => {
             let mut merged = old.clone();
             for (key, value) in new {
                 let next = match merged.get(key) {
-                    Some(existing) if key == "type" && is_unknown_over_known_type(existing, value) => {
+                    Some(existing)
+                        if key == "type" && is_unknown_over_known_type(existing, value) =>
+                    {
                         existing.clone()
                     }
                     Some(existing) => merge_payload(existing, value),

@@ -70,7 +70,7 @@
     "rehype-slug": "^6.0.0",
     "remark-gfm": "^4.0.0",
     "tailwind-merge": "^3.3.1",
-    "velachat": "git+ssh://git@git.woa.com/wisp/velalink.git#7010bb74692f30072db95c98d7cf6bd41e15bc2a",
+    "velachat": "git+ssh://git@git.woa.com/wisp/velalink.git#5431b8be20dc0428d039838662db004fdd56a192",
     "zod": "^4.4.3"
   },
   "devDependencies": {
