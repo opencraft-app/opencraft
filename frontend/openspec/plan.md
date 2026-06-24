@@ -1,6 +1,14 @@
 # 当前执行计划
 
-> 当前需求：LightVela Agent 控制台新增“专家/技能包”安装功能，并合并到技能页面。
+> 当前需求：为国际站 LightVela 启用人设功能，并补齐英文模式的人设测试、卡片、详情与 SOUL.md 内容。
+
+- [x] 打开国际站 `/agents/persona` 人设入口，并在国际站控制台顺序上放在自动任务之前。
+- [x] 为国际站英文模式新增独立英文 soul 测试数据、16 张 soul 卡片摘要、详情解读与 SOUL.md 内容；国际站中文模式复用国内站中文体验。
+- [x] 让人设抽卡、答题推荐、详情预览、注入 SOUL.md 在中英文模式下选择对应数据源。
+- [x] 补充针对性测试并运行 i18n、单测、类型检查。
+- [x] 修复频繁切换中英文时的人设状态重复保存 / soul 列表重复请求，并修复 Next Header 首屏 hydration href 不一致。
+
+> 近期 master 已合入需求：LightVela Agent 控制台新增“专家/技能包”安装功能，并合并到技能页面。
 
 - [x] 参考 SkillHub AI 搭子的 SkillSet/技能包模型，补齐 LightVela 读取 SkillSet 列表与详情的公共 API。
 - [x] 在 `/agents` 左侧导航新增“专家”入口，展示金融、科技、设计、营销等专家场景和对应技能包。
@@ -10,7 +18,3 @@
 - [x] 将专家技能包页面合并到技能页面，在技能页顶部提供“技能 / 技能包”两个 tab，移除独立专家入口。
 
 > 近期 master 已合入需求：为国际站 LightVela 安全接入 PostHog 产品分析。
-
-- [x] 在前端 observability 层新增 consent-gated PostHog 初始化、用户识别桥和基础事件 API。
-- [x] 将 PostHog 配置接入 release matrix / Vite env，并保持默认关闭直到配置项目 token。
-- [x] 增加依赖供应链防护配置与测试验证，避免新 npm 包静默执行安装脚本或泄漏环境配置。

@@ -19,6 +19,7 @@ import { createPortal } from "react-dom";
 import { useT } from "@/i18n/t";
 import { fetchSoulDetail, type SkillHubSoul } from "@/lib/skillhub-api";
 import { getSoulSpec } from "@/lib/soul-interpretations";
+import { getEnglishSoulDetail, getEnglishSoulSpec } from "@/lib/soul-english-data";
 import { SoulSpecPanel } from "@/components/soul-spec-panel";
 import { useAsyncResource } from "@/services/use-async-resource";
 import {
@@ -70,12 +71,20 @@ interface DrawSoulModalProps {
   souls: SkillHubSoul[];
   /** 已抽到过的 slug 集合，会从抽卡池里剔除，避免重复抽到同一张人设 */
   drawnSlugs?: string[];
+  useEnglishSoulData?: boolean;
   onClose: () => void;
   /** 抽中并点击 "使用此人设" 时回调 */
   onPick: (soul: SkillHubSoul) => void;
 }
 
-export function DrawSoulModal({ open, souls, drawnSlugs, onClose, onPick }: DrawSoulModalProps) {
+export function DrawSoulModal({
+  open,
+  souls,
+  drawnSlugs,
+  useEnglishSoulData = false,
+  onClose,
+  onPick,
+}: DrawSoulModalProps) {
   const t = useT();
   const [phase, setPhase] = useState<Phase>("idle");
   /** 跑灯当前高亮卡片索引（0-5） */
@@ -252,6 +261,7 @@ export function DrawSoulModal({ open, souls, drawnSlugs, onClose, onPick }: Draw
             <RevealPanel
               soul={winnerSoul!}
               onConfirm={handleConfirm}
+              useEnglishSoulData={useEnglishSoulData}
             />
           )}
         </AnimatePresence>
@@ -405,9 +415,11 @@ function FlipCard({ isActive, soul }: { isActive: boolean; soul: SkillHubSoul | 
 function RevealPanel({
   soul,
   onConfirm,
+  useEnglishSoulData,
 }: {
   soul: SkillHubSoul;
   onConfirm: () => void;
+  useEnglishSoulData: boolean;
 }) {
   const t = useT();
   const [interpretOpen, setInterpretOpen] = useState(false);
@@ -461,17 +473,36 @@ function RevealPanel({
 
       <AnimatePresence>
         {interpretOpen && (
-          <SoulInterpretModal soul={soul} onClose={() => setInterpretOpen(false)} />
+          <SoulInterpretModal
+            soul={soul}
+            useEnglishSoulData={useEnglishSoulData}
+            onClose={() => setInterpretOpen(false)}
+          />
         )}
       </AnimatePresence>
     </motion.div>
   );
 }
 
-function SoulInterpretModal({ soul, onClose }: { soul: SkillHubSoul; onClose: () => void }) {
+function SoulInterpretModal({
+  soul,
+  useEnglishSoulData,
+  onClose,
+}: {
+  soul: SkillHubSoul;
+  useEnglishSoulData: boolean;
+  onClose: () => void;
+}) {
   const t = useT();
-  const fetcher = useCallback(() => fetchSoulDetail(soul.slug), [soul.slug]);
-  const { data, loading, error } = useAsyncResource(fetcher, [soul.slug]);
+  const fetcher = useCallback(() => {
+    if (useEnglishSoulData) {
+      const detail = getEnglishSoulDetail(soul.slug);
+      if (!detail) throw new Error("Soul detail not found");
+      return Promise.resolve(detail);
+    }
+    return fetchSoulDetail(soul.slug);
+  }, [soul.slug, useEnglishSoulData]);
+  const { data, loading, error } = useAsyncResource(fetcher, [soul.slug, useEnglishSoulData]);
 
   // 用 Portal 挂到 body，避开 reveal panel 的 padding/高度裁切，
   // 同时 fixed 相对视口居中，不被祖先 transform/filter 影响。
@@ -518,7 +549,7 @@ function SoulInterpretModal({ soul, onClose }: { soul: SkillHubSoul; onClose: ()
           )}
           {data && (() => {
             // 优先使用本地 SkillHub 同款"人设解读 + 5 维度"；缺失时回退到 OpenSpec
-            const spec = getSoulSpec(soul.slug);
+            const spec = useEnglishSoulData ? getEnglishSoulSpec(soul.slug) : getSoulSpec(soul.slug);
             if (spec) {
               return <SoulSpecPanel spec={spec} />;
             }

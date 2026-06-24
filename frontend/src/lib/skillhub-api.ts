@@ -22,6 +22,7 @@ export function resolveSkillHubApiBase(
 }
 
 const SKILLHUB_API_BASE = resolveSkillHubApiBase();
+const soulsListCache = new Map<string, Promise<SkillHubSoulListResponse>>();
 
 // ─── 类型 ───────────────────────────────────────────────────────────────────
 
@@ -133,7 +134,15 @@ export function fetchSouls(params?: {
   if (params?.page) qs.set("page", String(params.page));
   if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
   const suffix = qs.toString();
-  return publicGet(`/api/v1/souls${suffix ? `?${suffix}` : ""}`);
+  const path = `/api/v1/souls${suffix ? `?${suffix}` : ""}`;
+  const cached = soulsListCache.get(path);
+  if (cached) return cached;
+  const request = publicGet<SkillHubSoulListResponse>(path).catch((error) => {
+    soulsListCache.delete(path);
+    throw error;
+  });
+  soulsListCache.set(path, request);
+  return request;
 }
 
 /** 查询单个 Soul 详情（公共接口） */

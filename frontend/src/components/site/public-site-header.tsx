@@ -14,7 +14,7 @@ import {
   type PublicSiteLocale,
   type PublicSiteSection,
 } from "@/lib/public-site-navigation";
-import { isGlobal } from "@/lib/region";
+import { DEFAULT_LOCALE, isGlobal } from "@/lib/region";
 import { cn } from "@/lib/utils";
 
 type HeaderPosition = "fixed" | "absolute" | "sticky";
@@ -125,6 +125,16 @@ const headerCopy: Record<PublicSiteLocale, {
   },
 };
 
+function defaultHeaderLocale(): PublicSiteLocale {
+  if (DEFAULT_LOCALE === "en-US") return "en-US";
+  return isGlobal ? "zh-SG" : "zh-CN";
+}
+
+function headerLocaleFromLanguage(language: string | undefined): PublicSiteLocale {
+  if (language?.startsWith("zh")) return isGlobal ? "zh-SG" : "zh-CN";
+  return "en-US";
+}
+
 function useCurrentPath(explicitPath?: string): string {
   const [path, setPath] = useState(explicitPath ?? "/");
 
@@ -181,10 +191,11 @@ export function PublicSiteHeader({
   showUnauthenticatedActions = true,
 }: PublicSiteHeaderProps) {
   const { i18n } = useTranslation();
+  const [hydrated, setHydrated] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const path = useCurrentPath(currentPath);
   const isDesktop = useIsDesktop();
-  const locale: PublicSiteLocale = explicitLocale ?? (i18n.language?.startsWith("en") ? "en-US" : "zh-CN");
+  const locale: PublicSiteLocale = explicitLocale ?? (hydrated ? headerLocaleFromLanguage(i18n.language) : defaultHeaderLocale());
   const copy = headerCopy[locale];
   const { authReady, isAuthenticated } = authSnapshot;
   const authLoading = !authReady;
@@ -193,6 +204,10 @@ export function PublicSiteHeader({
   useEffect(() => {
     setMenuOpen(false);
   }, [path]);
+
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
 
   const navLinks = useMemo(() => (
     PUBLIC_SITE_NAV_ITEMS
