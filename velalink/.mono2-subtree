@@ -1,6 +1,6 @@
 upstream_repo=git@git.woa.com:wisp/velalink.git
 upstream_branch=master
-upstream_original_commit=10b9738d21cccbc13433c9fe4c59eca8ff482c60
-upstream_rewritten_commit=0c70dc8fe2208a585ac6c407cca2a6a48f50921f
+upstream_commit=4677f183fe0ed6f73c5b06462f516b2837d60efc
+rewritten_from=5431b8be20dc0428d039838662db004fdd56a192
 prefix=velalink
-mode=full-history-subtree-rewritten
+mode=full-history-subtree

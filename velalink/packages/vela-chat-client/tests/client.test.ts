@@ -1457,6 +1457,45 @@ test("validates backend catalog nested option shapes at the client wire boundary
   );
 });
 
+test("parses backend error snapshots with status message", async () => {
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async () =>
+      new Response(
+        JSON.stringify({
+          backends: [
+            {
+              kind: "codex",
+              display_name: "Codex",
+              status: "error",
+              status_message: "model discovery failed: invalid config",
+              capabilities: {
+                streaming: true,
+                cancel: true,
+                permission_requests: true,
+                structured_diff: true,
+                session_agent_config: true,
+              },
+              models: [],
+              permission_modes: [{ id: "auto", label: "Default permissions" }],
+              features: [],
+              diagnostics: {
+                model_discovery_error: "invalid config",
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+  });
+
+  const response = await client.getBackends();
+
+  assert.equal(response.backends[0]?.status, "error");
+  assert.equal(response.backends[0]?.status_message, "model discovery failed: invalid config");
+  assert.deepEqual(response.backends[0]?.models, []);
+});
+
 test("fetches one backend detail and validates backend path kind before fetch", async () => {
   const requests: Array<{ url: string; init?: RequestInit }> = [];
   const client = createVeladClient({

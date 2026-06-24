@@ -60,6 +60,12 @@ struct ConfiguredBackend {
     default_model: Option<String>,
 }
 
+impl ConfiguredBackend {
+    fn default_model(&self) -> Option<String> {
+        self.default_model.clone()
+    }
+}
+
 impl<B> ApiState<B>
 where
     B: BackendAdapter + 'static,
@@ -142,6 +148,22 @@ where
             .iter()
             .find(|entry| entry.kind == kind)
             .map(|entry| entry.engine_kind)
+    }
+
+    fn configured_backend(&self, backend: BackendKindWire) -> Option<&ConfiguredBackend> {
+        let kind = backend.as_str();
+        self.configured_backends
+            .iter()
+            .find(|entry| entry.kind == kind)
+    }
+
+    fn configured_backend_for_engine(
+        &self,
+        engine_kind: BackendKind,
+    ) -> Option<&ConfiguredBackend> {
+        self.configured_backends
+            .iter()
+            .find(|entry| entry.engine_kind == engine_kind)
     }
 }
 
@@ -395,7 +417,10 @@ where
             format!("backend {} is not configured", request.backend.as_str()),
         );
     };
-    let agent_config = create_session_agent_config(&state, &request);
+    let agent_config = match create_session_agent_config(&state, &request).await {
+        Ok(agent_config) => agent_config,
+        Err(response) => return response,
+    };
     request.model = agent_config.model.clone();
     request.agent_config = Some(agent_config.clone());
     let session_id = SessionId::from(idempotency_key);
@@ -508,6 +533,11 @@ where
         }
     };
     let next_config = session.agent_config.merge_patch(patch);
+    if let Err(response) =
+        validate_session_agent_config(&state, session.backend, &next_config).await
+    {
+        return response;
+    }
     if let Err(err) = state
         .store
         .update_session_agent_config(&session_id, &next_config)
@@ -1381,7 +1411,7 @@ async fn list_backends<B>(State(state): State<ApiState<B>>) -> Response
 where
     B: BackendAdapter + 'static,
 {
-    Json(json!({ "backends": backend_catalog(&state) })).into_response()
+    Json(json!({ "backends": backend_catalog(&state).await })).into_response()
 }
 
 async fn get_backend<B>(State(state): State<ApiState<B>>, Path(backend): Path<String>) -> Response
@@ -1389,6 +1419,7 @@ where
     B: BackendAdapter + 'static,
 {
     match backend_catalog(&state)
+        .await
         .into_iter()
         .find(|item| item["kind"] == backend)
     {
@@ -1405,9 +1436,10 @@ async fn probe_backend<B>(State(state): State<ApiState<B>>, Path(backend): Path<
 where
     B: BackendAdapter + 'static,
 {
-    if !backend_catalog(&state)
+    if !state
+        .configured_backends
         .iter()
-        .any(|item| item["kind"] == backend)
+        .any(|item| item.kind == backend)
     {
         return Json(json!({
             "backend": backend,
@@ -1783,18 +1815,204 @@ fn same_create_request(
         && existing.metadata == request.metadata.clone().unwrap_or_else(|| json!({}))
 }
 
-fn create_session_agent_config<B>(
+async fn create_session_agent_config<B>(
     state: &ApiState<B>,
     request: &CreateSessionRequest,
-) -> AgentConfig {
+) -> Result<AgentConfig, Response>
+where
+    B: BackendAdapter + 'static,
+{
+    let Some(configured_backend) = state.configured_backend(request.backend) else {
+        return Err(error(
+            StatusCode::CONFLICT,
+            "backend_unavailable",
+            format!("backend {} is not configured", request.backend.as_str()),
+        ));
+    };
     let mut agent_config = request.agent_config.clone().unwrap_or_default();
     if agent_config.model.is_none() {
         agent_config.model = request
             .model
             .clone()
-            .or_else(|| state.default_session_model.clone());
+            .or_else(|| configured_backend.default_model());
     }
-    agent_config
+    apply_backend_agent_config_defaults(state, configured_backend, &mut agent_config).await;
+    validate_agent_config_for_backend(state, configured_backend, &agent_config).await?;
+    Ok(agent_config)
+}
+
+async fn validate_session_agent_config<B>(
+    state: &ApiState<B>,
+    backend: BackendKind,
+    agent_config: &AgentConfig,
+) -> Result<(), Response>
+where
+    B: BackendAdapter + 'static,
+{
+    let Some(configured_backend) = state.configured_backend_for_engine(backend) else {
+        return Err(error(
+            StatusCode::CONFLICT,
+            "backend_unavailable",
+            format!("backend {} is not configured", backend.as_str()),
+        ));
+    };
+    validate_agent_config_for_backend(state, configured_backend, agent_config).await
+}
+
+async fn apply_backend_agent_config_defaults<B>(
+    state: &ApiState<B>,
+    backend: &ConfiguredBackend,
+    agent_config: &mut AgentConfig,
+) where
+    B: BackendAdapter + 'static,
+{
+    let models = effective_backend_models(state, backend).await;
+    if agent_config.model.is_none() {
+        agent_config.model =
+            default_model_from_catalog(&models).or_else(|| backend.default_model());
+    }
+    if agent_config.permission_mode.is_none() && backend.kind == "codex" {
+        agent_config.permission_mode = Some(PermissionMode::Auto);
+    }
+    if agent_config.reasoning_effort.is_none()
+        && let Some(model) = agent_config.model.as_deref()
+        && let Some(default_reasoning) = default_reasoning_for_model(&models, model)
+    {
+        agent_config.reasoning_effort = Some(default_reasoning);
+    }
+}
+
+async fn validate_agent_config_for_backend<B>(
+    state: &ApiState<B>,
+    backend: &ConfiguredBackend,
+    agent_config: &AgentConfig,
+) -> Result<(), Response>
+where
+    B: BackendAdapter + 'static,
+{
+    if backend.kind != "codex" {
+        return Ok(());
+    }
+    let discovered = state
+        .runtime
+        .list_backend_models(Some(backend.engine_kind))
+        .await
+        .map_err(|err| {
+            error(
+                StatusCode::CONFLICT,
+                "backend_unavailable",
+                format!("backend {} model discovery failed: {err}", backend.kind),
+            )
+        })?;
+    let models = catalog_models(backend.kind, backend.default_model.as_deref(), discovered);
+    if let Some(model) = agent_config.model.as_deref()
+        && !models.is_empty()
+        && !models.iter().any(|candidate| candidate.id == model)
+    {
+        return Err(invalid_agent_config(format!(
+            "model {model} is not available for backend codex"
+        )));
+    }
+    if let Some(reasoning_effort) = agent_config.reasoning_effort.as_deref() {
+        let Some(model) = agent_config.model.as_deref() else {
+            return Err(invalid_agent_config(
+                "reasoning_effort requires a selected model",
+            ));
+        };
+        let reasoning_options = reasoning_options_for_model(&models, model);
+        if !reasoning_options.is_empty()
+            && !reasoning_options
+                .iter()
+                .any(|option| option.id == reasoning_effort)
+        {
+            return Err(invalid_agent_config(format!(
+                "reasoning_effort {reasoning_effort} is not available for model {model}"
+            )));
+        }
+    }
+    if let Some(permission_mode) = agent_config.permission_mode
+        && !backend_permission_modes(backend.kind)
+            .iter()
+            .any(|mode| mode.id == permission_mode)
+    {
+        return Err(invalid_agent_config(
+            "permission_mode is not available for backend codex",
+        ));
+    }
+    validate_codex_feature_values(agent_config)?;
+    Ok(())
+}
+
+async fn effective_backend_models<B>(
+    state: &ApiState<B>,
+    backend: &ConfiguredBackend,
+) -> Vec<BackendModel>
+where
+    B: BackendAdapter + 'static,
+{
+    let discovered = state
+        .runtime
+        .list_backend_models(Some(backend.engine_kind))
+        .await
+        .unwrap_or_default();
+    catalog_models(backend.kind, backend.default_model.as_deref(), discovered)
+}
+
+fn default_model_from_catalog(models: &[BackendModel]) -> Option<String> {
+    models
+        .iter()
+        .find(|model| model.is_default)
+        .or_else(|| models.first())
+        .map(|model| model.id.clone())
+}
+
+fn default_reasoning_for_model(models: &[BackendModel], model: &str) -> Option<String> {
+    let model = models.iter().find(|candidate| candidate.id == model)?;
+    model
+        .reasoning_efforts
+        .iter()
+        .find(|option| option.is_default)
+        .or_else(|| model.reasoning_efforts.first())
+        .map(|option| option.id.clone())
+}
+
+fn reasoning_options_for_model(models: &[BackendModel], model: &str) -> Vec<ReasoningEffortOption> {
+    models
+        .iter()
+        .find(|candidate| candidate.id == model)
+        .map(|model| model.reasoning_efforts.clone())
+        .unwrap_or_default()
+}
+
+fn validate_codex_feature_values(agent_config: &AgentConfig) -> Result<(), Response> {
+    for (feature_id, value) in &agent_config.feature_values {
+        match feature_id.as_str() {
+            "fast_mode" => {
+                let Some(enabled) = value.as_bool() else {
+                    return Err(invalid_agent_config("fast_mode must be a boolean"));
+                };
+                if enabled
+                    && !vela_backends::codex::capabilities::codex_model_supports_fast_mode(
+                        agent_config.model.as_deref(),
+                    )
+                {
+                    return Err(invalid_agent_config(
+                        "fast_mode is not available for the selected Codex model",
+                    ));
+                }
+            }
+            _ => {
+                return Err(invalid_agent_config(format!(
+                    "feature {feature_id} is not available for backend codex"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn invalid_agent_config(message: impl Into<String>) -> Response {
+    error(StatusCode::BAD_REQUEST, "invalid_agent_config", message)
 }
 
 fn command_ack_json(ack: &CommandAck, events: &[CanonicalEvent]) -> Value {
@@ -2054,7 +2272,7 @@ fn trace_spans_from_events(events: &[CanonicalEvent]) -> Vec<Value> {
             "created_at": event.created_at.to_rfc3339(),
             "event_id": event.event_id.as_str(),
             "title": event.event_type.0,
-            "summary": event.payload.get("message").and_then(Value::as_str).unwrap_or(event.event_type.0),
+            "summary": payload_summary_text(&event.payload).unwrap_or(event.event_type.0),
             "data": { "payload": event.payload, "raw": event.raw },
         }));
         spans.push(json!({
@@ -2135,7 +2353,10 @@ fn coalesced_timeline_items(events: &[CanonicalEvent]) -> Vec<Value> {
                 );
                 upsert_keyed_timeline(&mut keyed, key, event, "tool");
             }
-            EventType::WARNING_RAISED | EventType::ERROR_RAISED => {
+            EventType::TURN_FAILED
+            | EventType::TURN_CANCELLED
+            | EventType::WARNING_RAISED
+            | EventType::ERROR_RAISED => {
                 items.push(timeline_item_json(event));
             }
             _ => {}
@@ -2206,15 +2427,18 @@ fn timeline_status(event: &CanonicalEvent) -> &'static str {
 }
 
 fn timeline_text(event: &CanonicalEvent) -> &str {
-    event
-        .payload
+    payload_summary_text(&event.payload).unwrap_or(event.event_type.0)
+}
+
+fn payload_summary_text(payload: &Value) -> Option<&str> {
+    payload
         .get("content")
-        .or_else(|| event.payload.get("delta"))
-        .or_else(|| event.payload.get("title"))
-        .or_else(|| event.payload.get("file_path"))
-        .or_else(|| event.payload.get("message"))
+        .or_else(|| payload.get("delta"))
+        .or_else(|| payload.get("title"))
+        .or_else(|| payload.get("file_path"))
+        .or_else(|| payload.get("message"))
+        .or_else(|| payload.get("error"))
         .and_then(Value::as_str)
-        .unwrap_or(event.event_type.0)
 }
 
 fn event_range_json(event_ids: &[EventId]) -> Value {
@@ -2721,7 +2945,8 @@ fn timeline_item_json(event: &CanonicalEvent) -> Value {
             "request"
         }
         EventType::DIFF_UPDATED => "diff",
-        EventType::WARNING_RAISED | EventType::ERROR_RAISED => "warning",
+        EventType::TURN_FAILED | EventType::ERROR_RAISED => "error",
+        EventType::WARNING_RAISED | EventType::TURN_CANCELLED => "warning",
         _ => "task",
     };
     json!({
@@ -2731,7 +2956,7 @@ fn timeline_item_json(event: &CanonicalEvent) -> Value {
         "parts": [{
             "id": event.event_id.as_str(),
             "type": "text",
-            "text": event.payload.get("content").or_else(|| event.payload.get("delta")).and_then(Value::as_str).unwrap_or(event.event_type.0),
+            "text": timeline_text(event),
         }],
         "event_range": {
             "from_event_id": event.event_id.as_str(),
@@ -2740,71 +2965,116 @@ fn timeline_item_json(event: &CanonicalEvent) -> Value {
     })
 }
 
-fn backend_catalog<B>(state: &ApiState<B>) -> Vec<Value>
+async fn backend_catalog<B>(state: &ApiState<B>) -> Vec<Value>
 where
     B: BackendAdapter + 'static,
 {
-    state
-        .configured_backends
-        .iter()
-        .map(|backend| {
-            let capabilities = state
-                .runtime
-                .backend_capabilities_for(Some(backend.engine_kind));
-            backend_json(
-                backend.kind,
-                backend.display_name,
-                backend.default_model.as_deref(),
-                capabilities.streaming,
-                capabilities.cancel,
-                capabilities.permission_requests,
-                capabilities.structured_diff,
-                capabilities.session_agent_config,
-            )
-        })
-        .collect()
+    let mut backends = Vec::new();
+    for backend in &state.configured_backends {
+        let capabilities = state
+            .runtime
+            .backend_capabilities_for(Some(backend.engine_kind));
+        let model_result = state
+            .runtime
+            .list_backend_models(Some(backend.engine_kind))
+            .await;
+        let (discovered_models, status, status_message, diagnostics) = match model_result {
+            Ok(models) => (models, "available", None, json!({})),
+            Err(error) => {
+                let message = format!("model discovery failed: {error}");
+                (
+                    Vec::new(),
+                    "error",
+                    Some(message),
+                    json!({ "model_discovery_error": error.to_string() }),
+                )
+            }
+        };
+        backends.push(backend_json(
+            backend.kind,
+            backend.display_name,
+            backend.default_model.as_deref(),
+            discovered_models,
+            status,
+            status_message.as_deref(),
+            diagnostics,
+            capabilities.streaming,
+            capabilities.cancel,
+            capabilities.permission_requests,
+            capabilities.structured_diff,
+            capabilities.session_agent_config,
+        ));
+    }
+    backends
 }
 
-fn backend_json(
+fn catalog_models(
     kind: &str,
-    display_name: &str,
     default_model: Option<&str>,
-    streaming: bool,
-    cancel: bool,
-    permission_requests: bool,
-    structured_diff: bool,
-    session_agent_config: bool,
-) -> Value {
-    let model_reasoning_efforts = if kind == "acp" {
-        Vec::new()
-    } else {
-        common_reasoning_effort_options()
-    };
-    let models = default_model
+    discovered_models: Vec<BackendModel>,
+) -> Vec<BackendModel> {
+    if !discovered_models.is_empty() {
+        return discovered_models;
+    }
+    default_model
         .map(|model| {
             vec![BackendModel {
                 id: model.to_string(),
                 label: model.to_string(),
                 description: None,
                 is_default: true,
-                reasoning_efforts: model_reasoning_efforts,
+                reasoning_efforts: if kind == "acp" {
+                    Vec::new()
+                } else if kind == "codex" {
+                    vela_backends::codex::capabilities::codex_reasoning_effort_options(None)
+                } else {
+                    common_reasoning_effort_options()
+                },
                 metadata: Default::default(),
             }]
         })
-        .unwrap_or_default();
-    json!({
-        "kind": kind,
-        "status": "available",
-        "display_name": display_name,
-        "capabilities": {
-            "streaming": streaming,
-            "cancel": cancel,
-            "permission_requests": permission_requests,
-            "structured_diff": structured_diff,
-            "session_agent_config": session_agent_config,
-        },
-        "models": models,
-        "permission_modes": [
+        .unwrap_or_default()
+}
+
+fn backend_permission_modes(kind: &str) -> Vec<PermissionModeOption> {
+    let mut modes = if kind == "codex" {
+        vec![
+            PermissionModeOption {
+                id: PermissionMode::ReadOnly,
+                label: "Read only".to_string(),
+                description: Some("Inspect files and ask before writes or commands.".to_string()),
+                is_default: false,
+                metadata: Default::default(),
+            },
+            PermissionModeOption {
+                id: PermissionMode::Auto,
+                label: "Default permissions".to_string(),
+                description: Some("Workspace-write with Codex's normal approval flow.".to_string()),
+                is_default: true,
+                metadata: Default::default(),
+            },
+            PermissionModeOption {
+                id: PermissionMode::AutoReview,
+                label: "Auto-review".to_string(),
+                description: Some(
+                    "Workspace-write with eligible approvals routed through auto-review."
+                        .to_string(),
+                ),
+                is_default: false,
+                metadata: Default::default(),
+            },
+            PermissionModeOption {
+                id: PermissionMode::FullAccess,
+                label: "Full access".to_string(),
+                description: Some(
+                    "Allow local full access without additional prompts.".to_string(),
+                ),
+                is_default: false,
+                metadata: Default::default(),
+            },
+        ]
+    } else {
+        vec![
             PermissionModeOption {
                 id: PermissionMode::Auto,
                 label: "Auto".to_string(),
@@ -2815,29 +3085,83 @@ fn backend_json(
             PermissionModeOption {
                 id: PermissionMode::FullAccess,
                 label: "Full access".to_string(),
-                description: Some("Allow elevated local access when the backend supports it.".to_string()),
+                description: Some(
+                    "Allow elevated local access when the backend supports it.".to_string(),
+                ),
                 is_default: false,
                 metadata: Default::default(),
             },
-        ],
-        "features": [
-            BackendFeature::Toggle {
-                id: "fast_mode".to_string(),
-                label: "Fast".to_string(),
-                description: Some("Lower latency when supported by the backend.".to_string()),
-                default_value: false,
-                metadata: Default::default(),
-            },
-            BackendFeature::Toggle {
-                id: "plan_mode".to_string(),
-                label: "Plan".to_string(),
-                description: Some("Plan before implementation when supported by the backend.".to_string()),
-                default_value: false,
-                metadata: Default::default(),
-            },
-        ],
-        "diagnostics": {},
-    })
+        ]
+    };
+    if !modes.iter().any(|mode| mode.is_default)
+        && let Some(first) = modes.first_mut()
+    {
+        first.is_default = true;
+    }
+    modes
+}
+
+fn backend_features(kind: &str) -> Vec<BackendFeature> {
+    let mut features = vec![BackendFeature::Toggle {
+        id: "fast_mode".to_string(),
+        label: "Fast".to_string(),
+        description: Some("Lower latency when supported by the backend.".to_string()),
+        default_value: false,
+        metadata: Default::default(),
+    }];
+    if kind != "codex" {
+        features.push(BackendFeature::Toggle {
+            id: "plan_mode".to_string(),
+            label: "Plan".to_string(),
+            description: Some(
+                "Plan before implementation when supported by the backend.".to_string(),
+            ),
+            default_value: false,
+            metadata: Default::default(),
+        });
+    }
+    features
+}
+
+fn backend_json(
+    kind: &str,
+    display_name: &str,
+    default_model: Option<&str>,
+    discovered_models: Vec<BackendModel>,
+    status: &str,
+    status_message: Option<&str>,
+    diagnostics: Value,
+    streaming: bool,
+    cancel: bool,
+    permission_requests: bool,
+    structured_diff: bool,
+    session_agent_config: bool,
+) -> Value {
+    let models = if status == "error" {
+        Vec::new()
+    } else {
+        catalog_models(kind, default_model, discovered_models)
+    };
+    let mut payload = json!({
+        "kind": kind,
+        "status": status,
+        "display_name": display_name,
+        "capabilities": {
+            "streaming": streaming,
+            "cancel": cancel,
+            "permission_requests": permission_requests,
+            "structured_diff": structured_diff,
+            "session_agent_config": session_agent_config,
+        },
+        "models": models,
+        "permission_modes": backend_permission_modes(kind),
+        "features": backend_features(kind),
+        "diagnostics": diagnostics,
+    });
+    if let Some(status_message) = status_message {
+        payload["status_message"] = json!(status_message);
+    }
+    payload
 }
 
 fn common_reasoning_effort_options() -> Vec<ReasoningEffortOption> {

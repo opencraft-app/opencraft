@@ -127,7 +127,15 @@ async fn codex_app_server_adapter_starts_thread_once_and_reuses_it_for_session_t
     second.session_id = Some(SessionId::from("ses_codex"));
     second.resolved_agent_config = Some(ResolvedAgentConfig {
         backend: BackendKind::Codex,
-        config: Default::default(),
+        config: vela_core::AgentConfig {
+            model: Some("gpt-5.3-codex-spark".to_string()),
+            reasoning_effort: Some("low".to_string()),
+            permission_mode: Some(vela_core::PermissionMode::AutoReview),
+            feature_values: std::collections::BTreeMap::from([(
+                "fast_mode".to_string(),
+                serde_json::Value::Bool(true),
+            )]),
+        },
     });
     let outputs = support::collect_backend_outputs(&adapter, second)
         .await
@@ -149,8 +157,18 @@ async fn codex_app_server_adapter_starts_thread_once_and_reuses_it_for_session_t
     assert_eq!(calls[1].params["reasoningEffort"], "high");
     assert_eq!(calls[2].params["threadId"], "thr_1");
     assert_eq!(calls[2].params["input"][0]["text"], "hello");
+    assert_eq!(calls[2].params["model"], "gpt-5.4");
+    assert_eq!(calls[2].params["effort"], "high");
+    assert_eq!(calls[2].params["approvalPolicy"], "never");
+    assert_eq!(calls[2].params["sandboxPolicy"]["type"], "dangerFullAccess");
     assert_eq!(calls[3].params["threadId"], "thr_1");
     assert_eq!(calls[3].params["input"][0]["text"], "again");
+    assert_eq!(calls[3].params["model"], "gpt-5.3-codex-spark");
+    assert_eq!(calls[3].params["effort"], "low");
+    assert_eq!(calls[3].params["approvalPolicy"], "on-request");
+    assert_eq!(calls[3].params["sandboxPolicy"]["type"], "workspaceWrite");
+    assert_eq!(calls[3].params["approvalsReviewer"], "auto_review");
+    assert_eq!(calls[3].params["serviceTier"], "fast");
 }
 
 #[tokio::test]

@@ -52,12 +52,26 @@ async fn json_request(
     body: Value,
     idempotency_key: Option<&str>,
 ) -> (StatusCode, Value) {
+    json_request_with_headers(app, method, uri, body, idempotency_key, &[]).await
+}
+
+async fn json_request_with_headers(
+    app: axum::Router,
+    method: Method,
+    uri: &str,
+    body: Value,
+    idempotency_key: Option<&str>,
+    headers: &[(&str, &str)],
+) -> (StatusCode, Value) {
     let mut builder = Request::builder()
         .method(method)
         .uri(uri)
         .header("content-type", "application/json");
     if let Some(key) = idempotency_key {
         builder = builder.header("Idempotency-Key", key);
+    }
+    for (name, value) in headers {
+        builder = builder.header(*name, *value);
     }
     let response = app
         .oneshot(builder.body(Body::from(body.to_string())).unwrap())

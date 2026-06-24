@@ -92,7 +92,37 @@ git push origin master
 
 不要默认把“push 到 WOA”当成“发布已经完成”。
 
-### 2. Frontend 发布到 Cloudflare Pages
+### 2. Velalink subtree 协作模型
+
+`velalink/` 是 `git@git.woa.com:wisp/velalink.git` 的完整 subtree。它的目标是让
+AI 和开发者可以在 mono2 里直接读、改、测、review velalink 代码，同时仍保留向
+velalink 上游贡献的标准路径。
+
+长期协作规则：
+
+- 在 mono2 内开发时，可以直接修改 `velalink/` 目录。
+- 需要贡献回 velalink 上游时，用 `git subtree split --prefix=velalink` 切出上游分支，再推到 `wisp/velalink.git`。
+- `frontend` 的 `velachat` 依赖必须 pin 到 `wisp/velalink.git` 的真实上游 commit。
+- 不要通过前端 deep import 绕过 velalink 包导出问题；应在 `velalink` 上游修复 public export，再更新前端 pin。
+- 拉取 velalink 上游更新时，按 `velalink/MONO2_SUBTREE.md` 执行 subtree merge，并同步 `velalink/.mono2-subtree`。
+
+常用命令：
+
+```bash
+# 拉取 velalink 上游到 mono2 subtree
+git remote add velalink git@git.woa.com:wisp/velalink.git
+git fetch velalink master
+git merge -s recursive -Xsubtree=velalink --no-commit velalink/master
+
+# 从 mono2/velalink 切出可推给 velalink 上游的分支
+git subtree split --prefix=velalink -b velalink/from-mono2-topic
+git push git@git.woa.com:wisp/velalink.git \
+  velalink/from-mono2-topic:codex/from-mono2-topic
+```
+
+详细说明见 [`velalink/MONO2_SUBTREE.md`](velalink/MONO2_SUBTREE.md)。
+
+### 3. Frontend 发布到 Cloudflare Pages
 
 当前 `frontend` 的 Cloudflare Pages 实战发布方式是：
 
@@ -113,7 +143,7 @@ CLOUDFLARE_PAGES_PROJECT_NAME=lightclaw pnpm deploy:cf
 - Pages 项目名当前用：
   - `lightclaw`
 
-### 3. Frontend 分支自动预览
+### 4. Frontend 分支自动预览
 
 当前已经支持基于 StaticPages 的 frontend 自动预览。
 
@@ -157,7 +187,7 @@ https://intl-codex-staticpages-smoke.preview.lightclaw.tech/
 - 这条链路只用于分支预览，不创建 GitOps MR，也不代表正式发布
 - 如果预览站短时间返回 `502`，通常是 CI 仍在构建或上传，等待流水线完成后再刷新
 
-### 4. 当前正式环境发布方式
+### 5. 当前正式环境发布方式
 
 当前北京 / 上海正式链路统一按 GitOps 发布：
 
@@ -202,7 +232,7 @@ git push origin HEAD:gitops
 - 迁移阶段排障
 - 尚未完全纳入 Argo 的场景
 
-### 4. 北京集群公网 Endpoint 操作
+### 6. 北京集群公网 Endpoint 操作
 
 关闭北京 TKE 集群公网访问时，当前实战约定是：
 
