@@ -4,7 +4,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use std::{collections::HashMap, sync::Arc};
-use vela_core::BackendKind;
+use vela_core::{BackendKind, BackendModel};
 
 #[derive(Clone, Default)]
 pub struct BackendRouter {
@@ -88,6 +88,10 @@ impl BackendAdapter for BackendRouter {
                 message: Some(error.to_string()),
             }),
         }
+    }
+
+    async fn list_models(&self, kind: Option<BackendKind>) -> anyhow::Result<Vec<BackendModel>> {
+        self.adapter_for_kind(kind)?.list_models(None).await
     }
 
     async fn cancel(&self, input: BackendCancel) -> anyhow::Result<()> {

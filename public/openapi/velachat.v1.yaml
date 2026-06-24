@@ -18,6 +18,7 @@ tags:
   - name: Diagnostics
   - name: Requests
   - name: Backends
+  - name: Runtime
 paths:
   /sessions:
     get:
@@ -481,6 +482,40 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BackendProbeResult'
+  /runtime-info:
+    get:
+      tags: [Runtime]
+      operationId: getRuntimeInfo
+      summary: 获取 local runtime contract 信息
+      responses:
+        '200':
+          description: velad local runtime info。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocalRuntimeInfo'
+  /runtime/shutdown:
+    post:
+      tags: [Runtime]
+      operationId: shutdownRuntime
+      summary: 请求 local runtime 优雅退出
+      description: |
+        仅在 velad 配置 management token 时可用。调用方必须传入
+        `Authorization: Bearer <token>`。该 endpoint 只服务本地 host-daemon
+        生命周期，不是业务 API 鉴权模型。
+      responses:
+        '200':
+          description: Shutdown accepted。
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accepted]
+                properties:
+                  accepted:
+                    type: boolean
+        '403':
+          $ref: '#/components/responses/Forbidden'
 components:
   parameters:
     SessionId:
@@ -536,7 +571,34 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
+    Forbidden:
+      description: 没有权限执行该 runtime 操作。
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
   schemas:
+    LocalRuntimeInfo:
+      type: object
+      required: [type, runtime_protocol, api_protocol, pid, listen_addr, api_base_url, version]
+      properties:
+        type:
+          type: string
+          const: velad.ready
+        runtime_protocol:
+          type: string
+          const: velad.local.v1
+        api_protocol:
+          type: string
+          const: velachat.v1
+        pid:
+          type: integer
+        listen_addr:
+          type: string
+        api_base_url:
+          type: string
+        version:
+          type: string
     BackendKind:
       type: string
       enum: [codex, cloudagent, claude_code, pi, opencode, acp, qoder]
@@ -1377,7 +1439,9 @@ components:
           $ref: '#/components/schemas/BackendKind'
         status:
           type: string
-          enum: [available, unavailable, degraded]
+          enum: [available, unavailable, degraded, error]
+        status_message:
+          type: string
         display_name:
           type: string
         capabilities:
@@ -1525,7 +1589,7 @@ components:
           $ref: '#/components/schemas/BackendKind'
         status:
           type: string
-          enum: [available, unavailable, degraded]
+          enum: [available, unavailable, degraded, error]
         message:
           type: string
     CommandAck:

@@ -268,7 +268,8 @@ External clients MUST generate or validate wire DTOs from `public/openapi/velach
 
 - **WHEN** client 处理 `GET /backends` 或 `GET /backends/{backend}` response
 - **THEN** 每个 backend item 必须校验 OpenAPI required `kind`、`status`、`display_name` 和 `capabilities`
-- **AND** `kind` 必须是 OpenAPI `BackendKind`，`status` 必须是 `available` / `unavailable` / `degraded`
+- **AND** `kind` 必须是 OpenAPI `BackendKind`，`status` 必须是 `available` / `unavailable` / `degraded` / `error`
+- **AND** optional `status_message` 存在时必须是 string；`error` backend 不应依赖 fallback models 伪装为可创建 session
 - **AND** `capabilities.streaming`、`cancel`、`permission_requests`、`structured_diff`、`session_agent_config` 必须是 boolean
 - **AND** OpenAPI optional 的 `models`、`permission_modes`、`features` 缺省时可规范化为空数组；存在时必须是 array
 - **AND** `models` item 必须校验 required `id` / `label`，嵌套 `reasoning_efforts` item 也必须校验 required `id` / `label`
@@ -281,7 +282,7 @@ External clients MUST generate or validate wire DTOs from `public/openapi/velach
 - **WHEN** client 发送 `POST /backends/{backend}/probe`
 - **THEN** `backend` path 参数必须按 OpenAPI `BackendKind` enum 在发出 HTTP 请求前校验
 - **AND** response 必须按 OpenAPI `BackendProbeResult` 校验 required `backend` 和 `status`
-- **AND** `status` 必须是 `available` / `unavailable` / `degraded`
+- **AND** `status` 必须是 `available` / `unavailable` / `degraded` / `error`
 - **AND** malformed probe result 视为 wire contract violation，而不是交给 UI 猜测 backend health
 
 #### Scenario: 手写 client 校验 read-model envelope

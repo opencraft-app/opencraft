@@ -3,11 +3,14 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { appendFileSync, existsSync, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { createServer } from "node:net";
+import { randomBytes } from "node:crypto";
 
 let mainWindow: BrowserWindow | null = null;
 let veladProcess: ChildProcessWithoutNullStreams | null = null;
 let logWriter: RotatingLogWriter | null = null;
+let veladApiBaseUrl = "";
+let veladManagementToken = "";
+let quitAfterVeladStop = false;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -45,6 +48,18 @@ interface DesktopChromeState {
   leadingToolbarInset: number;
   toolbarSize: number;
 }
+
+interface VeladReadyEvent {
+  type: "velad.ready";
+  runtime_protocol: "velad.local.v1";
+  api_protocol: "velachat.v1";
+  pid: number;
+  listen_addr: string;
+  api_base_url: string;
+  version: string;
+}
+
+type VeladRuntimeInfo = VeladReadyEvent;
 
 class RotatingLogWriter {
   private readonly path: string;
@@ -134,31 +149,9 @@ function desktopRuntimeEnv() {
   };
 }
 
-function reserveLoopbackListenAddr() {
-  return new Promise<string>((resolve, reject) => {
-    const server = createServer();
-    server.on("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      if (!address || typeof address === "string") {
-        server.close(() => reject(new Error("Unable to reserve a velad port")));
-        return;
-      }
-      const listenAddr = `127.0.0.1:${address.port}`;
-      server.close((err) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-        resolve(listenAddr);
-      });
-    });
-  });
-}
-
 async function ensureVeladListenAddr() {
   if (veladListenAddr) return veladListenAddr;
-  veladListenAddr = bundledVeladPath() ? await reserveLoopbackListenAddr() : externalVeladListenAddr;
+  veladListenAddr = bundledVeladPath() ? "127.0.0.1:0" : externalVeladListenAddr;
   return veladListenAddr;
 }
 
@@ -168,79 +161,208 @@ async function startBundledVelad() {
   if (!binaryPath) {
     console.log(`[velad] using external velad at http://${listenAddr}/api/v1`);
     logLine("[host]", `using external velad at http://${listenAddr}/api/v1`);
+    await waitForExternalVeladReady();
     return;
   }
   if (veladProcess) return;
   const databaseUrl = bundledVeladDatabaseUrl();
+  veladManagementToken = randomBytes(32).toString("hex");
 
   console.log(`[velad] starting bundled velad at ${binaryPath} on ${listenAddr}`);
   logLine("[host]", `starting bundled velad at ${binaryPath} on ${listenAddr}`);
   logLine("[host]", `using bundled velad database ${databaseUrl}`);
-  veladProcess = spawn(binaryPath, {
+  veladProcess = spawn(binaryPath, [
+    "--listen",
+    listenAddr,
+    "--database-url",
+    databaseUrl,
+    "--management-token",
+    veladManagementToken,
+  ], {
     env: {
       ...desktopRuntimeEnv(),
-      VELAD_LISTEN_ADDR: listenAddr,
-      VELAD_DATABASE_URL: databaseUrl,
       RUST_LOG: process.env.RUST_LOG ?? "warn",
     },
     stdio: "pipe",
   });
-  veladProcess.stdout.on("data", (chunk) => {
-    const message = String(chunk).trimEnd();
-    console.log(`[velad] ${message}`);
-    logLine("[velad:stdout]", message);
-  });
-  veladProcess.stderr.on("data", (chunk) => {
-    const message = String(chunk).trimEnd();
-    console.error(`[velad] ${message}`);
-    logLine("[velad:stderr]", message);
-  });
-  veladProcess.on("exit", (code, signal) => {
-    console.log(`[velad] exited code=${code ?? "null"} signal=${signal ?? "null"}`);
-    logLine("[host]", `velad exited code=${code ?? "null"} signal=${signal ?? "null"}`);
-    veladProcess = null;
+  await waitForBundledVeladReady(veladProcess);
+}
+
+async function waitForExternalVeladReady() {
+  const url = `http://${veladListenAddr}/api/v1/runtime-info`;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`runtime-info returned ${response.status}`);
+    }
+    const runtimeInfo = parseVeladRuntimeInfo(await response.json());
+    veladListenAddr = runtimeInfo.listen_addr;
+    veladApiBaseUrl = runtimeInfo.api_base_url;
+    logLine("[host]", `external velad ready at ${veladApiBaseUrl}`);
+  } catch (err) {
+    throw new Error(
+      `external velad did not expose ${url}: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
+}
+
+function waitForBundledVeladReady(child: ChildProcessWithoutNullStreams) {
+  return new Promise<void>((resolve, reject) => {
+    let stdoutBuffer = "";
+    let stderrTail = "";
+    let settled = false;
+    const timeout = setTimeout(() => {
+      fail(new Error(`timed out waiting for velad.ready; stderr: ${stderrTail}`));
+    }, veladReadyTimeoutMs);
+
+    const cleanup = () => {
+      clearTimeout(timeout);
+      child.stdout.off("data", onStdout);
+      child.stderr.off("data", onStderr);
+      child.off("error", fail);
+      child.off("exit", onExit);
+    };
+    const fail = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (!child.killed) child.kill("SIGTERM");
+      reject(err);
+    };
+    const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
+      logLine("[host]", `velad exited code=${code ?? "null"} signal=${signal ?? "null"}`);
+      veladProcess = null;
+      if (!settled) {
+        fail(new Error(`velad exited before ready: code=${code ?? "null"} signal=${signal ?? "null"}`));
+      }
+    };
+    const onStderr = (chunk: Buffer) => {
+      const message = String(chunk);
+      stderrTail = (stderrTail + message).slice(-4_000);
+      const trimmed = message.trimEnd();
+      if (trimmed) {
+        console.error(`[velad] ${trimmed}`);
+        logLine("[velad:stderr]", trimmed);
+      }
+    };
+    const onStdout = (chunk: Buffer) => {
+      const message = String(chunk);
+      stdoutBuffer += message;
+      const lines = stdoutBuffer.split(/\r?\n/);
+      stdoutBuffer = lines.pop() ?? "";
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        console.log(`[velad] ${trimmed}`);
+        logLine("[velad:stdout]", trimmed);
+        const ready = parseVeladReadyLine(trimmed);
+        if (!ready) continue;
+        veladListenAddr = ready.listen_addr;
+        veladApiBaseUrl = ready.api_base_url;
+        logLine("[host]", `velad ready at ${ready.api_base_url}`);
+        if (settled) continue;
+        settled = true;
+        cleanup();
+        child.on("exit", (code, signal) => {
+          console.log(`[velad] exited code=${code ?? "null"} signal=${signal ?? "null"}`);
+          logLine("[host]", `velad exited code=${code ?? "null"} signal=${signal ?? "null"}`);
+          veladProcess = null;
+        });
+        resolve();
+      }
+    };
+
+    child.stdout.on("data", onStdout);
+    child.stderr.on("data", onStderr);
+    child.on("error", fail);
+    child.on("exit", onExit);
   });
 }
 
-async function waitForVeladReady() {
-  await ensureVeladListenAddr();
-  const startedAt = Date.now();
-  const url = `http://${veladListenAddr}/api/v1/backends`;
-  let lastError: unknown = null;
-
-  while (Date.now() - startedAt < veladReadyTimeoutMs) {
-    try {
-      const response = await fetch(url);
-      if (response.ok) {
-        logLine("[host]", `velad ready at ${url}`);
-        return;
-      }
-      lastError = new Error(`velad readiness returned ${response.status}`);
-    } catch (err) {
-      lastError = err;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 120));
+function parseVeladReadyLine(line: string): VeladReadyEvent | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(line);
+    return parseVeladRuntimeInfo(parsed);
+  } catch {
+    return null;
   }
+}
 
-  throw new Error(
-    `velad did not become ready at ${url}: ${
-      lastError instanceof Error ? lastError.message : String(lastError)
-    }`,
-  );
+function parseVeladRuntimeInfo(parsed: unknown): VeladRuntimeInfo {
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("invalid velad.local.v1 runtime-info");
+  }
+  const event = parsed as Partial<VeladReadyEvent>;
+  if (
+    event.type !== "velad.ready" ||
+    event.runtime_protocol !== "velad.local.v1" ||
+    event.api_protocol !== "velachat.v1" ||
+    typeof event.pid !== "number" ||
+    typeof event.listen_addr !== "string" ||
+    typeof event.api_base_url !== "string" ||
+    typeof event.version !== "string"
+  ) {
+    throw new Error("invalid velad.local.v1 runtime-info");
+  }
+  return event as VeladReadyEvent;
 }
 
 async function ensureVeladReady() {
   if (!veladReadyPromise) {
-    veladReadyPromise = startBundledVelad().then(waitForVeladReady);
+    veladReadyPromise = startBundledVelad();
   }
   return veladReadyPromise;
 }
 
-function stopBundledVelad() {
+async function stopBundledVelad() {
   const child = veladProcess;
   if (!child) return;
-  veladProcess = null;
-  child.kill("SIGTERM");
+  try {
+    if (veladApiBaseUrl && veladManagementToken) {
+      const response = await fetch(`${veladApiBaseUrl}/runtime/shutdown`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${veladManagementToken}`,
+        },
+      });
+      if (!response.ok) {
+        throw new Error(`runtime shutdown returned ${response.status}`);
+      }
+    }
+    await waitForChildExit(child, 5_000);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logLine("[host]", `graceful velad shutdown failed: ${message}`);
+    if (!child.killed) child.kill("SIGTERM");
+    try {
+      await waitForChildExit(child, 3_000);
+    } catch (fallbackErr) {
+      const fallbackMessage =
+        fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+      logLine("[host]", `failed_to_stop velad: ${fallbackMessage}`);
+    }
+  } finally {
+    if (veladProcess === child) veladProcess = null;
+    veladManagementToken = "";
+  }
+}
+
+function waitForChildExit(child: ChildProcessWithoutNullStreams, timeoutMs: number) {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+  return new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      child.off("exit", onExit);
+      reject(new Error(`timed out waiting ${timeoutMs}ms for velad exit`));
+    }, timeoutMs);
+    const onExit = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
+    child.once("exit", onExit);
+  });
 }
 
 function getDesktopChromeState(window = mainWindow): DesktopChromeState {
@@ -327,7 +449,7 @@ ipcMain.handle("vela:desktop-info", async () => {
     await ensureVeladReady();
     return {
       status: "ready",
-      apiBaseUrl: `http://${veladListenAddr}/api/v1`,
+      apiBaseUrl: veladApiBaseUrl || `http://${veladListenAddr}/api/v1`,
       chromeState: getDesktopChromeState(),
       logPath,
       platform: process.platform,
@@ -350,7 +472,7 @@ ipcMain.handle("vela:desktop-bootstrap-retry", async () => {
     await ensureVeladReady();
     return {
       status: "ready",
-      apiBaseUrl: `http://${veladListenAddr}/api/v1`,
+      apiBaseUrl: veladApiBaseUrl || `http://${veladListenAddr}/api/v1`,
       chromeState: getDesktopChromeState(),
       logPath,
       platform: process.platform,
@@ -382,7 +504,12 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-app.on("before-quit", () => {
-  stopBundledVelad();
+app.on("before-quit", (event) => {
+  if (veladProcess && !quitAfterVeladStop) {
+    event.preventDefault();
+    quitAfterVeladStop = true;
+    void stopBundledVelad().finally(() => app.quit());
+    return;
+  }
   mainWindow = null;
 });

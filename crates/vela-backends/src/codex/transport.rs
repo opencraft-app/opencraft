@@ -1,11 +1,15 @@
 use super::events::CodexRawRequest;
+use anyhow::Context;
 use async_trait::async_trait;
 use serde_json::{Value, json};
-use std::{collections::VecDeque, process::Stdio};
+use std::{collections::VecDeque, process::Stdio, sync::Arc};
 use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     process::{Child, ChildStdin, Command},
+    sync::Mutex,
 };
+
+const STDERR_TAIL_LIMIT_BYTES: usize = 8192;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum AppServerInbound {
@@ -60,7 +64,7 @@ impl CodexStdioAppServerHost {
     pub fn new(cwd: impl Into<String>) -> Self {
         Self {
             command: "codex".to_string(),
-            args: vec!["app-server".to_string(), "--stdio".to_string()],
+            args: vec!["app-server".to_string()],
             cwd: cwd.into(),
         }
     }
@@ -75,7 +79,13 @@ impl CodexAppServerHost for CodexStdioAppServerHost {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .spawn()?;
+            .spawn()
+            .with_context(|| {
+                format!(
+                    "failed to spawn Codex app-server command `{}` with args {:?}",
+                    self.command, self.args
+                )
+            })?;
         let stdin = child
             .stdin
             .take()
@@ -84,14 +94,40 @@ impl CodexAppServerHost for CodexStdioAppServerHost {
             .stdout
             .take()
             .ok_or_else(|| anyhow::anyhow!("Codex app-server stdout was not available"))?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("Codex app-server stderr was not available"))?;
+        let stderr_tail = Arc::new(Mutex::new(Vec::new()));
+        capture_stderr_tail(stderr, Arc::clone(&stderr_tail));
         Ok(Box::new(StdioAppServerConnection {
             child,
             stdin,
             lines: BufReader::new(stdout).lines(),
             next_id: 1,
             buffered: VecDeque::new(),
+            launch: format!("{} {}", self.command, self.args.join(" ")),
+            stderr_tail,
         }))
     }
+}
+
+fn capture_stderr_tail(mut stderr: tokio::process::ChildStderr, tail: Arc<Mutex<Vec<u8>>>) {
+    tokio::spawn(async move {
+        let mut buffer = [0; 1024];
+        loop {
+            let bytes_read = match stderr.read(&mut buffer).await {
+                Ok(0) | Err(_) => break,
+                Ok(bytes_read) => bytes_read,
+            };
+            let mut tail = tail.lock().await;
+            tail.extend_from_slice(&buffer[..bytes_read]);
+            if tail.len() > STDERR_TAIL_LIMIT_BYTES {
+                let keep_from = tail.len() - STDERR_TAIL_LIMIT_BYTES;
+                tail.drain(..keep_from);
+            }
+        }
+    });
 }
 
 struct StdioAppServerConnection {
@@ -100,6 +136,8 @@ struct StdioAppServerConnection {
     lines: tokio::io::Lines<BufReader<tokio::process::ChildStdout>>,
     next_id: i64,
     buffered: VecDeque<AppServerInbound>,
+    launch: String,
+    stderr_tail: Arc<Mutex<Vec<u8>>>,
 }
 
 #[async_trait]
@@ -110,9 +148,10 @@ impl CodexAppServerConnection for StdioAppServerConnection {
         self.write(json!({ "id": id, "method": method, "params": params }))
             .await?;
         loop {
-            let inbound = self.read_one().await?.ok_or_else(|| {
-                anyhow::anyhow!("Codex app-server closed while waiting for {method}")
-            })?;
+            let inbound = match self.read_one().await? {
+                Some(inbound) => inbound,
+                None => return Err(self.closed_while_waiting_error(method).await),
+            };
             match inbound {
                 AppServerInbound::Response(value)
                     if value.get("id").and_then(Value::as_i64) == Some(id) =>
@@ -194,5 +233,26 @@ impl StdioAppServerConnection {
                 value.get("params").cloned().unwrap_or(Value::Null),
             )));
         }
+    }
+
+    async fn closed_while_waiting_error(&self, method: &str) -> anyhow::Error {
+        let stderr = self.stderr_tail().await;
+        if stderr.trim().is_empty() {
+            anyhow::anyhow!(
+                "Codex app-server closed while waiting for {method}; launch: {}",
+                self.launch
+            )
+        } else {
+            anyhow::anyhow!(
+                "Codex app-server closed while waiting for {method}; launch: {}; stderr: {}",
+                self.launch,
+                stderr.trim()
+            )
+        }
+    }
+
+    async fn stderr_tail(&self) -> String {
+        let tail = self.stderr_tail.lock().await;
+        String::from_utf8_lossy(&tail).to_string()
     }
 }

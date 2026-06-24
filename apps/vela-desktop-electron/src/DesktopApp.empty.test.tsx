@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { DesktopEmptySurface } from "./DesktopEmptySurface";
 
-test("desktop empty surface stays visually silent", () => {
+test("desktop empty surface stays a neutral runtime placeholder", () => {
   const html = renderToStaticMarkup(<DesktopEmptySurface />);
 
   assert.match(html, /class="vela-desktop-empty"/);

@@ -2,8 +2,8 @@ use async_trait::async_trait;
 use serde_json::Value;
 use tokio::sync::mpsc;
 use vela_core::{
-    BackendKind, EventDraft, EventSource, EventType, ResolvedAgentConfig, SessionId, TurnId,
-    UserMessageBlock,
+    BackendKind, BackendModel, EventDraft, EventSource, EventType, ResolvedAgentConfig, SessionId,
+    TurnId, UserMessageBlock,
 };
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -165,6 +165,13 @@ pub trait BackendAdapter: Send + Sync {
 
     async fn probe_backend(&self, _backend: Option<BackendKind>) -> anyhow::Result<BackendProbe> {
         self.probe().await
+    }
+
+    async fn list_models(
+        &self,
+        _backend: Option<BackendKind>,
+    ) -> anyhow::Result<Vec<BackendModel>> {
+        Ok(Vec::new())
     }
 
     async fn cancel(&self, _input: BackendCancel) -> anyhow::Result<()> {

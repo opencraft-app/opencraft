@@ -1188,6 +1188,196 @@
   box-shadow: 0 12px 28px rgb(0 0 0 / 8%);
 }
 
+.newSessionShell {
+  display: grid;
+  min-height: 100%;
+  place-items: center;
+  padding: clamp(56px, 9vh, 112px) 24px 48px;
+  background: var(--vela-bg, #ffffff);
+  color: #1c1917;
+}
+
+.newSessionContent {
+  display: grid;
+  width: min(100%, 920px);
+  gap: 24px;
+}
+
+.newSessionHeader {
+  display: grid;
+  width: min(100%, 620px);
+  gap: 8px;
+}
+
+.newSessionHeader h1 {
+  margin: 0;
+  color: #1c1917;
+  font-size: 28px;
+  font-weight: 620;
+  letter-spacing: 0;
+  line-height: 1.14;
+}
+
+.newSessionHeader p {
+  margin: 0;
+  color: #78716c;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.newSessionDirectory {
+  display: grid;
+  width: min(100%, 720px);
+  gap: 8px;
+}
+
+.newSessionDirectory label,
+.newSessionSelect span {
+  color: #78716c;
+  font-size: 12px;
+  font-weight: 560;
+  line-height: 1.2;
+}
+
+.newSessionDirectory input {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  box-sizing: border-box;
+  border: 1px solid #e7e5e4;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 86%);
+  color: #1c1917;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.3;
+  outline: none;
+  padding: 0 12px;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.newSessionDirectory input:focus,
+.newSessionComposer textarea:focus,
+.newSessionSelect select:focus {
+  border-color: #b7babf;
+  box-shadow: 0 0 0 3px rgb(120 113 108 / 12%);
+}
+
+.newSessionComposer {
+  overflow: hidden;
+  border: 1px solid rgb(13 13 13 / 10%);
+  border-radius: var(--vela-composer-radius, 20px);
+  background: var(--vela-composer-bg, rgb(255 255 255 / 90%));
+  box-shadow: var(--vela-composer-shadow, 0 4px 16px 0 rgb(0 0 0 / 5%));
+  -webkit-backdrop-filter: saturate(1.2) blur(var(--vela-composer-blur, 16px));
+  backdrop-filter: saturate(1.2) blur(var(--vela-composer-blur, 16px));
+}
+
+.newSessionComposer textarea {
+  display: block;
+  width: 100%;
+  min-height: 132px;
+  box-sizing: border-box;
+  resize: vertical;
+  border: 0;
+  border-bottom: 1px solid rgb(13 13 13 / 8%);
+  outline: 0;
+  background: transparent;
+  color: #1c1917;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.5;
+  padding: 16px;
+}
+
+.newSessionComposer textarea::placeholder,
+.newSessionDirectory input::placeholder {
+  color: #a8a29e;
+}
+
+.newSessionControls {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px 16px;
+}
+
+.newSessionSelectGroup {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+}
+
+.newSessionSelect {
+  display: grid;
+  gap: 6px;
+  min-width: 126px;
+}
+
+.newSessionSelect select {
+  height: 34px;
+  min-width: 0;
+  max-width: 220px;
+  border: 1px solid #e7e5e4;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #57534e;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 520;
+  line-height: 1.2;
+  outline: none;
+  padding: 0 10px;
+}
+
+.newSessionSubmit {
+  display: inline-flex;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 1px solid #1f7a4d;
+  border-radius: 999px;
+  background: #218653;
+  color: #ffffff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 620;
+  line-height: 1;
+  padding: 0 16px;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    opacity 140ms ease;
+}
+
+.newSessionSubmit:hover:not(:disabled) {
+  border-color: #176b40;
+  background: #176b40;
+}
+
+.newSessionSubmit:disabled {
+  cursor: default;
+  opacity: 0.48;
+}
+
+.newSessionError {
+  width: min(100%, 720px);
+  border: 1px solid #f1c6c6;
+  border-radius: 8px;
+  background: #fff7f7;
+  color: #9f1d1d;
+  font-size: 13px;
+  line-height: 1.45;
+  padding: 10px 12px;
+}
+
 @keyframes velaHistoryHydrationSpin {
   from {
     transform: rotate(0deg);
@@ -1233,4 +1423,28 @@
     display: none;
   }
 
+  .newSessionShell {
+    align-items: start;
+    place-items: start stretch;
+    padding: 60px 16px 24px;
+  }
+
+  .newSessionControls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .newSessionSelectGroup {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .newSessionSelect select {
+    max-width: none;
+    width: 100%;
+  }
+
+  .newSessionSubmit {
+    width: 100%;
+  }
 }

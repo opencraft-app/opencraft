@@ -1,5 +1,7 @@
 use super::{
-    capabilities::{initialize_params, thread_start_params},
+    capabilities::{
+        codex_reasoning_effort_options, initialize_params, thread_start_params, turn_start_params,
+    },
     events::warning,
     normalizer::normalize_codex_app_server_notification,
     permissions::{
@@ -18,7 +20,7 @@ use async_trait::async_trait;
 use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{Mutex, oneshot};
-use vela_core::EventType;
+use vela_core::{BackendModel, EventType};
 
 #[derive(Clone)]
 pub struct CodexAppServerBackendAdapter {
@@ -62,6 +64,17 @@ impl CodexAppServerBackendAdapter {
 
 #[async_trait]
 impl BackendAdapter for CodexAppServerBackendAdapter {
+    async fn list_models(
+        &self,
+        _backend: Option<vela_core::BackendKind>,
+    ) -> anyhow::Result<Vec<BackendModel>> {
+        let mut connection = self.host.connect().await?;
+        initialize_connection(connection.as_mut()).await?;
+        let response = connection.request("model/list", json!({})).await?;
+        connection.close().await?;
+        Ok(parse_model_list_response(&response))
+    }
+
     async fn cancel(&self, input: BackendCancel) -> anyhow::Result<()> {
         if let Some(cancel) = self.active_turns.lock().await.remove(&input.session_id) {
             let _ = cancel.send(());
@@ -119,13 +132,7 @@ impl BackendAdapter for CodexAppServerBackendAdapter {
         }
 
         let mut session = session.expect("session initialized");
-        let turn_params = json!({
-            "threadId": session.thread_id,
-            "input": [{
-                "type": "text",
-                "text": input.content,
-            }],
-        });
+        let turn_params = turn_start_params(&input, &session.thread_id);
         session
             .connection
             .request("turn/start", turn_params)
@@ -292,6 +299,99 @@ async fn initialize_connection(
         .request("initialize", initialize_params())
         .await?;
     connection.notify("initialized", json!({})).await
+}
+
+fn parse_model_list_response(response: &Value) -> Vec<BackendModel> {
+    response
+        .get("data")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(parse_model_entry)
+        .collect()
+}
+
+fn parse_model_entry(entry: &Value) -> Option<BackendModel> {
+    let id = entry.get("id").and_then(Value::as_str)?.trim();
+    if id.is_empty() {
+        return None;
+    }
+    let default_reasoning_effort = entry
+        .get("defaultReasoningEffort")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty());
+    let reasoning_efforts = parse_supported_reasoning_efforts(entry, default_reasoning_effort);
+    let label = entry
+        .get("displayName")
+        .or_else(|| entry.get("label"))
+        .or_else(|| entry.get("name"))
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or(id)
+        .to_string();
+    let description = entry
+        .get("description")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let is_default = entry
+        .get("isDefault")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    Some(BackendModel {
+        id: id.to_string(),
+        label,
+        description,
+        is_default,
+        reasoning_efforts,
+        metadata: serde_json::from_value(entry.clone()).unwrap_or_default(),
+    })
+}
+
+fn parse_supported_reasoning_efforts(
+    entry: &Value,
+    default_id: Option<&str>,
+) -> Vec<vela_core::ReasoningEffortOption> {
+    let Some(values) = entry
+        .get("supportedReasoningEfforts")
+        .and_then(Value::as_array)
+    else {
+        return codex_reasoning_effort_options(default_id);
+    };
+    let parsed = values
+        .iter()
+        .filter_map(|value| {
+            let id = value
+                .get("reasoningEffort")
+                .or_else(|| value.get("id"))
+                .and_then(Value::as_str)?
+                .trim();
+            if id.is_empty() {
+                return None;
+            }
+            let label = value
+                .get("label")
+                .and_then(Value::as_str)
+                .filter(|label| !label.trim().is_empty())
+                .map(str::to_string)
+                .unwrap_or_else(|| id.to_string());
+            let description = value
+                .get("description")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            Some(vela_core::ReasoningEffortOption {
+                id: id.to_string(),
+                label,
+                description,
+                is_default: default_id == Some(id),
+                metadata: serde_json::from_value(value.clone()).unwrap_or_default(),
+            })
+        })
+        .collect::<Vec<_>>();
+    if parsed.is_empty() {
+        codex_reasoning_effort_options(default_id)
+    } else {
+        parsed
+    }
 }
 
 fn read_thread_id(response: &Value) -> anyhow::Result<String> {

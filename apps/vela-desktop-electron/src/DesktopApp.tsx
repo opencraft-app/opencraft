@@ -3,6 +3,7 @@ import {
   createVeladClient,
   type BackendKindWire,
   type BackendWire,
+  type PermissionModeWire,
   type SessionListItemWire,
 } from "../../../packages/vela-chat-client/src";
 import {
@@ -10,7 +11,13 @@ import {
   useVelaChatSession,
 } from "../../../packages/vela-chat-controller/src";
 import type { ChatHostPolicy } from "../../../packages/vela-chat-render-model/src";
-import { ChatSurface } from "../../../packages/vela-chat-web/src";
+import {
+  ChatSurface,
+  NewSessionSurface,
+  buildNewSessionTitle,
+  type NewSessionOption,
+  type NewSessionSubmitInput,
+} from "../../../packages/vela-chat-web/src";
 import {
   SessionSidebar,
   VelaDesktopShell,
@@ -34,9 +41,9 @@ import {
 import { createRuntimeHostStateStores } from "./hostState";
 import "./style.css";
 
-const DEFAULT_WORKING_DIRECTORY = "/";
 const DEFAULT_WEB_API_BASE_URL = "/api/v1";
 const DEFAULT_BACKEND_STORAGE_KEY = "vela-desktop:settings:default-backend";
+const LAST_WORKING_DIRECTORY_STORAGE_KEY = "vela-desktop:new-session:last-working-directory";
 const DESKTOP_BACKEND_PREFERENCE = ["codex", "acp", "pi"] satisfies BackendKindWire[];
 const DESKTOP_SHELL_HOST_POLICY = { kind: "desktop_shell" } satisfies ChatHostPolicy;
 
@@ -162,6 +169,12 @@ function DesktopReadyApp({
   const [selectedBackendKind, setSelectedBackendKind] = useState<BackendKindWire | "">(
     readDefaultBackendPreference,
   );
+  const [selectedModel, setSelectedModel] = useState("");
+  const [selectedReasoningEffort, setSelectedReasoningEffort] = useState("");
+  const [selectedPermissionMode, setSelectedPermissionMode] = useState<PermissionModeWire | "">("");
+  const [workingDirectory, setWorkingDirectory] = useState(readLastWorkingDirectory);
+  const [initialPrompt, setInitialPrompt] = useState("");
+  const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [chromeState, setChromeState] = useState<RuntimeChromeStateResponse | undefined>(
     hostInfo.chromeState,
@@ -210,11 +223,53 @@ function DesktopReadyApp({
         backends: controller.backends,
         selectedBackend: selectedBackendKind,
         preferredBackends: DESKTOP_BACKEND_PREFERENCE,
-        selectedModel: "",
-        selectedPermissionMode: "",
-        selectedReasoningEffort: "",
+        selectedModel,
+        selectedPermissionMode,
+        selectedReasoningEffort,
       }),
-    [controller.backends, selectedBackendKind],
+    [
+      controller.backends,
+      selectedBackendKind,
+      selectedModel,
+      selectedPermissionMode,
+      selectedReasoningEffort,
+    ],
+  );
+  const backendOptions = useMemo(
+    () => controller.backends.map(toBackendOption),
+    [controller.backends],
+  );
+  const modelOptions = useMemo(
+    () => setup.setupModelOptions.map(toModelOption),
+    [setup.setupModelOptions],
+  );
+  const reasoningEffortOptions = useMemo(
+    () => setup.setupReasoningOptions.map(toReasoningEffortOption),
+    [setup.setupReasoningOptions],
+  );
+  const permissionModeOptions = useMemo(
+    () => setup.setupPermissionOptions.map(toPermissionModeOption),
+    [setup.setupPermissionOptions],
+  );
+  const selectedBackendForNewSession = backendOptions.some(
+    (option) => option.id === setup.resolvedSelectedBackend && !option.disabled,
+  )
+    ? setup.resolvedSelectedBackend
+    : "";
+  const newSessionBackendStatusMessage = useMemo(
+    () => {
+      const selectedBackend = selectedBackendKind
+        ? controller.backends.find((backend) => backend.kind === selectedBackendKind)
+        : null;
+      if (selectedBackend && selectedBackend.status !== "available") {
+        return backendStatusMessage(selectedBackend);
+      }
+      if (selectedBackendForNewSession) return null;
+      return backendStatusMessage(
+        controller.backends.find((backend) => backend.status !== "available") ?? null,
+      );
+    },
+    [controller.backends, selectedBackendForNewSession, selectedBackendKind],
   );
   const hostLabel =
     hostBridge.platform === "web"
@@ -223,16 +278,17 @@ function DesktopReadyApp({
         ? "Electron on macOS"
         : `Electron on ${hostBridge.platform}`;
 
-  const loadSessions = useCallback(async () => {
+  const loadSessions = useCallback(async (preferredSessionId?: string) => {
     try {
       setError(null);
       const response = await client.getSessionListView({ limit: 80 });
       setSessions(response.sessions);
-      setActiveSessionId((current) =>
-        current && response.sessions.some((session) => session.id === current)
-          ? current
-          : response.sessions[0]?.id || "",
-      );
+      setActiveSessionId((current) => {
+        const candidate = preferredSessionId ?? current;
+        return candidate && response.sessions.some((session) => session.id === candidate)
+          ? candidate
+          : "";
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -242,17 +298,26 @@ function DesktopReadyApp({
     void loadSessions();
   }, [loadSessions]);
 
+  useEffect(() => {
+    if (workingDirectory.trim()) return;
+    const currentSessionDirectory =
+      sessions.find((session) => session.id === activeSessionId)?.working_directory ??
+      sessions[0]?.working_directory ??
+      "";
+    if (currentSessionDirectory) setWorkingDirectory(currentSessionDirectory);
+  }, [activeSessionId, sessions, workingDirectory]);
+
   const buildSessionSetup = useCallback(
     (backends: BackendWire[]) =>
       buildVelaSessionSetupSelection({
         backends,
         selectedBackend: selectedBackendKind,
         preferredBackends: DESKTOP_BACKEND_PREFERENCE,
-        selectedModel: "",
-        selectedPermissionMode: "",
-        selectedReasoningEffort: "",
+        selectedModel,
+        selectedPermissionMode,
+        selectedReasoningEffort,
       }),
-    [selectedBackendKind],
+    [selectedBackendKind, selectedModel, selectedPermissionMode, selectedReasoningEffort],
   );
 
   const resolveNewSessionSetup = useCallback(async () => {
@@ -261,25 +326,44 @@ function DesktopReadyApp({
     return buildSessionSetup(nextBackends.backends);
   }, [buildSessionSetup, client, setup]);
 
-  const createSession = useCallback(async () => {
+  const openNewSessionPage = useCallback(() => {
+    setError(null);
+    setIsSettingsOpen(false);
+    setActiveSessionId("");
+  }, []);
+
+  const createSession = useCallback(async (input: NewSessionSubmitInput) => {
     try {
+      setIsCreatingSession(true);
       setError(null);
       const nextSetup = await resolveNewSessionSetup();
-      const backend = nextSetup.resolvedSelectedBackend;
+      const backend = input.backend || nextSetup.resolvedSelectedBackend;
       if (!backend) {
         setError("No backend is available yet. Please try again after velad finishes starting.");
         return;
       }
       const created = await client.createSession({
         backend,
-        agentConfig: nextSetup.setupAgentConfig,
-        title: "New chat",
-        workingDirectory: DEFAULT_WORKING_DIRECTORY,
+        agentConfig: input.agentConfig,
+        title: buildNewSessionTitle(input.initialPrompt),
+        workingDirectory: input.workingDirectory,
       });
+      if (input.initialPrompt) {
+        await client.sendUserMessage({
+          sessionId: created.session.id,
+          text: input.initialPrompt,
+        });
+      }
+      setSelectedBackendKind(backend);
+      writeLastWorkingDirectory(input.workingDirectory);
+      setWorkingDirectory(input.workingDirectory);
+      setInitialPrompt("");
       setActiveSessionId(created.session.id);
-      await loadSessions();
+      await loadSessions(created.session.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsCreatingSession(false);
     }
   }, [client, loadSessions, resolveNewSessionSetup]);
 
@@ -291,9 +375,13 @@ function DesktopReadyApp({
       accountLabel={hostLabel}
       accountPlanLabel="Local desktop"
       canCreateSession
-      onCreateSession={createSession}
+      onCreateSession={openNewSessionPage}
       onOpenSettings={() => setIsSettingsOpen(true)}
-      onSelectSession={setActiveSessionId}
+      onSelectSession={(sessionId) => {
+        setError(null);
+        setIsSettingsOpen(false);
+        setActiveSessionId(sessionId);
+      }}
     />
   );
   const settingsSidebar = (
@@ -310,7 +398,7 @@ function DesktopReadyApp({
       sidebar={isSettingsOpen ? settingsSidebar : appSidebar}
       sidebarPresentation="auto"
       sidebarWidthPx={sidebarWidthPx}
-      onCreateSession={createSession}
+      onCreateSession={openNewSessionPage}
       onSidebarVisibilityChange={onSidebarVisibilityChange}
       onSidebarWidthChange={onSidebarWidthChange}
       onToggleSidebar={() => onSidebarVisibilityChange(!isSidebarVisible)}
@@ -350,7 +438,29 @@ function DesktopReadyApp({
           pendingAttachments={controller.pendingAttachments}
         />
       ) : (
-        <DesktopEmptySurface error={error} />
+        <NewSessionSurface
+          agentConfig={setup.setupAgentConfig}
+          backendStatusMessage={newSessionBackendStatusMessage}
+          backendOptions={backendOptions}
+          error={error}
+          initialPrompt={initialPrompt}
+          isSubmitting={isCreatingSession}
+          modelOptions={modelOptions}
+          permissionModeOptions={permissionModeOptions}
+          reasoningEffortOptions={reasoningEffortOptions}
+          selectedBackend={selectedBackendForNewSession}
+          selectedModel={setup.setupSelectedModel}
+          selectedPermissionMode={setup.setupSelectedPermissionMode}
+          selectedReasoningEffort={setup.setupSelectedReasoningEffort}
+          workingDirectory={workingDirectory}
+          onBackendChange={setSelectedBackendKind}
+          onInitialPromptChange={setInitialPrompt}
+          onModelChange={setSelectedModel}
+          onPermissionModeChange={setSelectedPermissionMode}
+          onReasoningEffortChange={setSelectedReasoningEffort}
+          onSubmit={createSession}
+          onWorkingDirectoryChange={setWorkingDirectory}
+        />
       )}
     </VelaDesktopShell>
   );
@@ -451,6 +561,78 @@ function writeDefaultBackendPreference(value: BackendKindWire | "") {
     return;
   }
   window.localStorage.setItem(DEFAULT_BACKEND_STORAGE_KEY, value);
+}
+
+function readLastWorkingDirectory() {
+  if (typeof window === "undefined") return "";
+  return window.localStorage.getItem(LAST_WORKING_DIRECTORY_STORAGE_KEY)?.trim() ?? "";
+}
+
+function writeLastWorkingDirectory(value: string) {
+  if (typeof window === "undefined") return;
+  const trimmed = value.trim();
+  if (!trimmed) {
+    window.localStorage.removeItem(LAST_WORKING_DIRECTORY_STORAGE_KEY);
+    return;
+  }
+  window.localStorage.setItem(LAST_WORKING_DIRECTORY_STORAGE_KEY, trimmed);
+}
+
+function toBackendOption(backend: BackendWire): NewSessionOption<BackendKindWire> {
+  const isAvailable = backend.status === "available";
+  const message = backendStatusMessage(backend);
+  return {
+    id: backend.kind,
+    label: `${backend.display_name || titleFromSnakeCase(backend.kind)}${isAvailable ? "" : ` (${backend.status})`}`,
+    description: message ?? undefined,
+    disabled: !isAvailable,
+  };
+}
+
+function backendStatusMessage(backend: BackendWire | null) {
+  if (!backend || backend.status === "available") return null;
+  if (backend.status_message) return backend.status_message;
+  const discoveryError = backend.diagnostics?.model_discovery_error;
+  if (typeof discoveryError === "string" && discoveryError.trim()) {
+    return `Backend ${backend.display_name || backend.kind} model discovery failed: ${discoveryError}`;
+  }
+  return `Backend ${backend.display_name || backend.kind} is ${backend.status}.`;
+}
+
+function toModelOption(model: BackendWire["models"][number]): NewSessionOption {
+  return {
+    id: model.id,
+    label: model.label || model.id,
+    description: model.description,
+  };
+}
+
+function toReasoningEffortOption(
+  option: BackendWire["models"][number]["reasoning_efforts"][number],
+): NewSessionOption {
+  return {
+    id: option.id,
+    label: option.label || titleFromSnakeCase(option.id),
+    description: option.description,
+  };
+}
+
+function toPermissionModeOption(
+  option: BackendWire["permission_modes"][number],
+): NewSessionOption<PermissionModeWire> {
+  return {
+    id: option.id,
+    label: option.label || titleFromSnakeCase(option.id),
+    description: option.description,
+  };
+}
+
+function titleFromSnakeCase(value: string) {
+  return value
+    .split("_")
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
 }
 
 function isBackendKind(value: string | null): value is BackendKindWire {

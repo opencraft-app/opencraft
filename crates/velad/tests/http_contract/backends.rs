@@ -167,6 +167,133 @@ async fn codex_backend_exposes_default_model_when_env_model_is_absent() {
 }
 
 #[tokio::test]
+async fn codex_backend_model_discovery_failure_is_an_error_snapshot() {
+    let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
+    let backend = Arc::new(
+        MockBackendAdapter::new(support::default_backend_outputs())
+            .with_model_discovery_error("codex config invalid: service_tier default unsupported"),
+    );
+    let runtime = Runtime::new(store.clone(), backend);
+    let app = velad::build_app(
+        velad::ApiState::new(store, runtime).with_codex_backend(Some("gpt-5.4".to_string())),
+    );
+
+    let (status, body) = get_json(app.clone(), "/api/v1/backends/codex").await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["backend"]["kind"], "codex");
+    assert_eq!(body["backend"]["status"], "error");
+    assert!(body["backend"]["models"].as_array().unwrap().is_empty());
+    assert!(
+        body["backend"]["status_message"]
+            .as_str()
+            .unwrap()
+            .contains("service_tier default unsupported")
+    );
+    assert!(
+        body["backend"]["diagnostics"]["model_discovery_error"]
+            .as_str()
+            .unwrap()
+            .contains("service_tier default unsupported")
+    );
+
+    let (status, body) = json_request(
+        app,
+        Method::POST,
+        "/api/v1/sessions",
+        json!({
+            "backend": "codex",
+            "working_directory": "/tmp/codex-project",
+            "agent_config": {
+                "model": "gpt-5.4"
+            }
+        }),
+        Some("ses-codex-model-discovery-failed"),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body["error"]["code"], "backend_unavailable");
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("service_tier default unsupported")
+    );
+}
+
+#[tokio::test]
+async fn codex_create_session_rejects_unknown_model() {
+    let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
+    let backend = Arc::new(MockBackendAdapter::new(support::default_backend_outputs()));
+    let runtime = Runtime::new(store.clone(), backend);
+    let app = velad::build_app(
+        velad::ApiState::new(store, runtime).with_codex_backend(Some("gpt-5.4".to_string())),
+    );
+
+    let (status, body) = json_request(
+        app,
+        Method::POST,
+        "/api/v1/sessions",
+        json!({
+            "backend": "codex",
+            "working_directory": "/tmp/codex-project",
+            "agent_config": {
+                "model": "not-a-codex-model"
+            }
+        }),
+        Some("ses-codex-bad-model"),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"]["code"], "invalid_agent_config");
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("not-a-codex-model")
+    );
+}
+
+#[tokio::test]
+async fn codex_create_session_rejects_unsupported_feature_values() {
+    let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
+    let backend = Arc::new(MockBackendAdapter::new(support::default_backend_outputs()));
+    let runtime = Runtime::new(store.clone(), backend);
+    let app = velad::build_app(
+        velad::ApiState::new(store, runtime).with_codex_backend(Some("legacy-model".to_string())),
+    );
+
+    let (status, body) = json_request(
+        app,
+        Method::POST,
+        "/api/v1/sessions",
+        json!({
+            "backend": "codex",
+            "working_directory": "/tmp/codex-project",
+            "agent_config": {
+                "model": "legacy-model",
+                "feature_values": {
+                    "fast_mode": true
+                }
+            }
+        }),
+        Some("ses-codex-bad-feature"),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"]["code"], "invalid_agent_config");
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("fast_mode")
+    );
+}
+
+#[tokio::test]
 async fn acp_backend_can_be_configured_and_used_for_sessions() {
     let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
     let backend = Arc::new(MockBackendAdapter::new(support::default_backend_outputs()));

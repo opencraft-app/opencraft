@@ -24,17 +24,18 @@ export function buildVelaSessionSetupSelection({
   selectedPermissionMode,
 }: VelaSessionSetupSelectionInput) {
   const selectedBackendDetails =
-    backends.find((backend) => backend.kind === selectedBackend) ??
+    backends.find((backend) => backend.kind === selectedBackend && isBackendSelectable(backend)) ??
     resolvePreferredBackend(backends, preferredBackends);
-  const resolvedSelectedBackend = selectedBackendDetails?.kind ?? selectedBackend;
+  const resolvedSelectedBackend = selectedBackendDetails?.kind ?? "";
   const backendKinds = new Set(backends.map((backend) => backend.kind));
   const setupModelOptions = selectedBackendDetails?.models ?? [];
-  const setupSelectedModel =
-    selectedModel && setupModelOptions.some((model) => model.id === selectedModel)
-      ? selectedModel
-      : setupModelOptions.find(isDefaultOption)?.id ??
-        setupModelOptions[0]?.id ??
-        selectedModel;
+  let setupSelectedModel = "";
+  if (selectedBackendDetails) {
+    setupSelectedModel =
+      selectedModel && setupModelOptions.some((model) => model.id === selectedModel)
+        ? selectedModel
+        : setupModelOptions.find(isDefaultOption)?.id ?? setupModelOptions[0]?.id ?? "";
+  }
   const modelReasoningOptions =
     setupModelOptions.find((model) => model.id === setupSelectedModel)?.reasoning_efforts ?? [];
   const setupReasoningOptions = modelReasoningOptions;
@@ -45,17 +46,22 @@ export function buildVelaSessionSetupSelection({
       : setupReasoningOptions.find(isDefaultOption)?.id ??
         setupReasoningOptions[0]?.id ??
         "";
-  const setupPermissionOptions = selectedBackendDetails?.permission_modes?.length
-    ? selectedBackendDetails.permission_modes
-    : DEFAULT_PERMISSION_MODE_OPTIONS;
-  const setupSelectedPermissionMode =
-    selectedPermissionMode &&
-    setupPermissionOptions.some((option) => option.id === selectedPermissionMode)
-      ? selectedPermissionMode
-      : setupPermissionOptions.find(isDefaultOption)?.id ??
-        setupPermissionOptions.find((option) => option.id === "auto")?.id ??
-        setupPermissionOptions[0]?.id ??
-        selectedPermissionMode;
+  const setupPermissionOptions = selectedBackendDetails
+    ? selectedBackendDetails.permission_modes?.length
+      ? selectedBackendDetails.permission_modes
+      : DEFAULT_PERMISSION_MODE_OPTIONS
+    : [];
+  let setupSelectedPermissionMode: PermissionModeWire | "" = "";
+  if (selectedBackendDetails) {
+    setupSelectedPermissionMode =
+      selectedPermissionMode &&
+      setupPermissionOptions.some((option) => option.id === selectedPermissionMode)
+        ? selectedPermissionMode
+        : setupPermissionOptions.find(isDefaultOption)?.id ??
+          setupPermissionOptions.find((option) => option.id === "auto")?.id ??
+          setupPermissionOptions[0]?.id ??
+          "";
+  }
   const setupAgentConfig: AgentConfigWire = {
     ...(setupSelectedModel ? { model: setupSelectedModel } : {}),
     ...(setupSelectedReasoningEffort ? { reasoning_effort: setupSelectedReasoningEffort } : {}),
@@ -77,13 +83,16 @@ export function buildVelaSessionSetupSelection({
 }
 
 function resolvePreferredBackend(backends: BackendWire[], preferredBackends: BackendKindWire[]) {
-  const availableBackends = backends.filter((backend) => backend.status === "available");
-  const candidateBackends = availableBackends.length ? availableBackends : backends;
+  const candidateBackends = backends.filter(isBackendSelectable);
   for (const preferredBackend of preferredBackends) {
     const backend = candidateBackends.find((candidate) => candidate.kind === preferredBackend);
     if (backend) return backend;
   }
   return candidateBackends[0];
+}
+
+function isBackendSelectable(backend: BackendWire) {
+  return backend.status === "available";
 }
 
 function isDefaultOption(option: unknown) {

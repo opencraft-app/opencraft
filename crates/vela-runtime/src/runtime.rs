@@ -304,18 +304,18 @@ where
                                 with_turn_id(output, &turn_id),
                             )
                             .await
-                        {
-                            append_turn_failed(
-                                &store,
-                                &event_observer,
-                                &session_id,
-                                &turn_id,
-                                format!("failed to append backend output: {error}"),
-                            )
-                            .await;
-                            turn_failed = true;
-                            break;
-                        }
+                            {
+                                append_turn_failed(
+                                    &store,
+                                    &event_observer,
+                                    &session_id,
+                                    &turn_id,
+                                    format!("failed to append backend output: {error}"),
+                                )
+                                .await;
+                                turn_failed = true;
+                                break;
+                            }
                         }
                     }
                     Err(error) => {
@@ -389,6 +389,13 @@ where
         backend: Option<BackendKind>,
     ) -> anyhow::Result<BackendProbe> {
         self.backend.probe_backend(backend).await
+    }
+
+    pub async fn list_backend_models(
+        &self,
+        backend: Option<BackendKind>,
+    ) -> anyhow::Result<Vec<vela_core::BackendModel>> {
+        self.backend.list_models(backend).await
     }
 
     pub async fn cancel_backend(&self, session_id: &SessionId) -> anyhow::Result<()> {

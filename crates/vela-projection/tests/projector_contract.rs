@@ -407,12 +407,18 @@ fn conversation_preserves_turn_failure_error_payload() {
 
     let conversation = project_conversation(&events);
 
-    assert_eq!(conversation.items.len(), 1);
+    assert_eq!(conversation.items.len(), 2);
     assert_eq!(conversation.items[0].kind, ConversationItemKind::TurnMeta);
     assert_eq!(conversation.items[0].status, "failed");
     assert_eq!(
         conversation.items[0].detail["error"],
         "No API key found for the selected model."
+    );
+    assert_eq!(conversation.items[1].kind, ConversationItemKind::Status);
+    assert_eq!(conversation.items[1].status, "failed");
+    assert_eq!(
+        conversation.items[1].text.as_deref(),
+        Some("No API key found for the selected model.")
     );
 }
 

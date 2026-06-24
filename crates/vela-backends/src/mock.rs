@@ -5,7 +5,7 @@ use crate::{
 use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use vela_core::ResolvedAgentConfig;
+use vela_core::{BackendModel, ResolvedAgentConfig};
 
 #[derive(Clone, Debug)]
 pub struct MockBackendAdapter {
@@ -15,6 +15,7 @@ pub struct MockBackendAdapter {
     resolved_agent_configs: Arc<Mutex<Vec<Option<ResolvedAgentConfig>>>>,
     cancels: Arc<Mutex<Vec<String>>>,
     probes: Arc<Mutex<usize>>,
+    model_discovery_error: Option<String>,
 }
 
 impl MockBackendAdapter {
@@ -26,7 +27,13 @@ impl MockBackendAdapter {
             resolved_agent_configs: Arc::new(Mutex::new(Vec::new())),
             cancels: Arc::new(Mutex::new(Vec::new())),
             probes: Arc::new(Mutex::new(0)),
+            model_discovery_error: None,
         }
+    }
+
+    pub fn with_model_discovery_error(mut self, message: impl Into<String>) -> Self {
+        self.model_discovery_error = Some(message.into());
+        self
     }
 
     pub async fn prompt_count(&self) -> usize {
@@ -63,6 +70,16 @@ impl BackendAdapter for MockBackendAdapter {
     async fn cancel(&self, input: BackendCancel) -> anyhow::Result<()> {
         self.cancels.lock().await.push(input.session_id);
         Ok(())
+    }
+
+    async fn list_models(
+        &self,
+        _backend: Option<vela_core::BackendKind>,
+    ) -> anyhow::Result<Vec<BackendModel>> {
+        if let Some(message) = &self.model_discovery_error {
+            anyhow::bail!("{}", message);
+        }
+        Ok(Vec::new())
     }
 
     async fn stream_user_message(

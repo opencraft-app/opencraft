@@ -159,7 +159,7 @@ const agentConfigPatchKeys = new Set([
 
 const permissionModes = new Set(["read_only", "auto", "auto_review", "full_access"]);
 const viewWindowDirections = new Set(["tail", "before", "after", "around"]);
-const backendStatuses = new Set(["available", "unavailable", "degraded"]);
+const backendStatuses = new Set(["available", "unavailable", "degraded", "error"]);
 const sessionStatuses = new Set<string>(
   [
     "starting",
@@ -725,11 +725,18 @@ function parseBackendWire(data: unknown, owner: string): BackendWire {
   }
   const status = requiredViewString(data, "status", owner, invalidBackendsResponse);
   if (!backendStatuses.has(status)) {
-    throw invalidBackendsResponse(`${owner}.status must be available, unavailable, or degraded`);
+    throw invalidBackendsResponse(
+      `${owner}.status must be available, unavailable, degraded, or error`,
+    );
   }
   return {
     kind: kind as BackendKindWire,
     status: status as BackendStatusWire,
+    ...(data.status_message !== undefined
+      ? {
+          status_message: optionalBackendString(data, "status_message", owner),
+        }
+      : {}),
     display_name: requiredViewString(data, "display_name", owner, invalidBackendsResponse),
     capabilities: requiredBackendCapabilities(data, owner),
     models: optionalBackendArray(data, "models", owner).map((model, index) =>
@@ -872,7 +879,7 @@ export function parseBackendProbeResultWire(data: unknown): BackendProbeResultWi
   const status = data.status;
   if (typeof status !== "string" || !backendStatuses.has(status)) {
     throw invalidBackendProbeResponse(
-      "BackendProbeResult.status must be available, unavailable, or degraded",
+      "BackendProbeResult.status must be available, unavailable, degraded, or error",
     );
   }
   const message = data.message;
