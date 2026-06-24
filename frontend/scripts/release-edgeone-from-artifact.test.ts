@@ -146,26 +146,4 @@ describe("EdgeOne release from frontend artifact", () => {
     expect(calls).toEqual([]);
   });
 
-  it("rejects Vite artifacts even when the target combo matches", () => {
-    const calls: string[] = [];
-
-    expect(() => executeEdgeOneArtifactRelease({
-      env: baseEnv,
-      log: () => {},
-      verifyArtifact: ({ ref }) => ({
-        manifest: makeCnManifest({
-          assets: {
-            entryKind: "vite",
-            entryJs: "/assets/index-test.js",
-            entryJsSha256: "c".repeat(64),
-          },
-        }),
-        ref,
-        extractDir: "/tmp/dist",
-      }),
-      deployScript: () => calls.push("deploy"),
-    })).toThrow("requires a Next artifact");
-
-    expect(calls).toEqual([]);
-  });
 });

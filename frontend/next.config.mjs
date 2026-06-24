@@ -1,11 +1,13 @@
 import { createMDX } from 'fumadocs-mdx/next';
 
 const teaThemeableResetCss = '@tencent/tea-component/dist/tea-themeable.css';
-const teaThemeableNoResetCss = '@tencent/tea-component/dist/tea-themeable-no-reset.css';
+const teaThemeableNoResetCss = '@tencent/tea-component/dist/tea-no-reset.css';
 
 /** @type {import('next').NextConfig} */
 const config = {
   reactStrictMode: true,
+  devIndicators: false,
+  transpilePackages: ['velachat'],
   output: 'export',
   assetPrefix: process.env.NEXT_PUBLIC_ASSET_PREFIX || undefined,
   trailingSlash: true,

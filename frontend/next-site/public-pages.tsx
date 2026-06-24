@@ -13,7 +13,7 @@ import {
 import { PublicHeaderAuthIsland } from './public-header-auth-island';
 import { renderNextLanguageSwitcher } from './language-switcher';
 import { PublicSiteLocaleBridge } from './public-site-providers';
-import { renderNextPublicSiteHeaderLink, renderNextUserMenuLink } from './user-menu-link';
+import { renderNextPublicSiteHeaderLink } from './user-menu-link';
 
 type NavigateOptions = {
   replace?: boolean;
@@ -66,7 +66,6 @@ export function PublicHomePage({
         publicLocalized={localized}
         renderLink={renderNextPublicSiteHeaderLink}
         renderLanguageSwitcher={renderNextLanguageSwitcher}
-        renderUserMenuLink={renderNextUserMenuLink}
       />
     </PublicSiteLocaleBridge>
   );
@@ -87,7 +86,6 @@ export function PublicAboutPage({
         publicLocalized={localized}
         renderLink={renderNextPublicSiteHeaderLink}
         renderLanguageSwitcher={renderNextLanguageSwitcher}
-        renderUserMenuLink={renderNextUserMenuLink}
       />
     </PublicSiteLocaleBridge>
   );
@@ -108,7 +106,6 @@ export function PublicChangelogPage({
         publicLocalized={localized}
         renderLink={renderNextPublicSiteHeaderLink}
         renderLanguageSwitcher={renderNextLanguageSwitcher}
-        renderUserMenuLink={renderNextUserMenuLink}
       />
     </PublicSiteLocaleBridge>
   );

@@ -6,7 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { useT } from "@/i18n/t";
 
 import { assetUrl } from "@/lib/asset-url";
-import { AGENTS_HOME_PATH, getAgentCreatingPath } from "@/router/paths";
+import { AGENTS_HOME_PATH, getAgentCreatingPath } from "@/lib/agent-routes";
 import { fadeInUp, staggerContainer, wordStagger, wordReveal, heroFloatStagger, heroFloatUp, HERO_FLOAT_LOOP_DELAY } from "./constants";
 
 /* 社交证明头像（Figma 导出 104x104 PNG，显示尺寸 40x40，Retina 清晰，总计 ~50KB） */

@@ -1158,7 +1158,7 @@ describe("http repositories auth token bootstrap", () => {
     );
   });
 
-  it("uses the same-origin auth proxy on localhost even without an explicit env var", () => {
+  it("starts localhost OAuth on the callback host so the state cookie survives QQ redirect", () => {
     vi.stubEnv("VITE_AUTH_API_BASE_URL", "");
     Object.defineProperty(window, "location", {
       configurable: true,
@@ -1178,7 +1178,7 @@ describe("http repositories auth token bootstrap", () => {
 
     expectOAuthStartURL(
       repositories.auth.getOAuthStartUrl("qq"),
-      "http://127.0.0.1:5173/auth/oauth/qq/start",
+      "https://lightclaw.tech/auth/oauth/qq/start",
       "http://127.0.0.1:5173/auth/sign-in",
     );
   });

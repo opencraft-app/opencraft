@@ -1,0 +1,172 @@
+---
+title: Input Event API
+description: 面向用户意图的统一输入事件入口。
+---
+
+# Input Event API
+
+Input Event API 是 velaChat 的统一 command surface。
+
+它采用 Qoder 风格的 event-shaped input，但语义上仍然是 **用户意图**，不是 canonical runtime fact。Client 提交 input events 后，daemon 必须先校验、幂等、排队或拒绝；只有被接受的输入才会变成 canonical events，并进一步投影到 conversation、requests、diffs 等 read models。
+
+```txt
+Client input event
+  -> daemon validate / dedupe / authorize
+  -> CommandAck
+  -> canonical runtime events
+  -> projectors
+  -> UI read models
+```
+
+## Endpoints
+
+| Method | Path | 用途 |
+| --- | --- | --- |
+| `POST` | `/sessions/{session_id}/events` | 向 session 投递用户输入事件 |
+| `POST` | `/sessions/{session_id}/cancel` | 取消当前运行中的 turn |
+
+`GET /sessions/{session_id}/events` 仍然是 canonical event history。也就是说，同一个 path 上：
+
+- `POST /sessions/{id}/events`：提交 **client input events**
+- `GET /sessions/{id}/events`：读取 **canonical runtime events**
+
+这两个方向必须严格区分。
+
+## 输入事件类型
+
+完整的输入事件和运行时事件词表见 [事件词表](/docs/api/event-vocabulary)。
+
+### user.message
+
+用户发送一条消息。
+
+```json
+{
+  "events": [
+    {
+      "type": "user.message",
+      "content": [
+        { "type": "text", "text": "看一下这个项目" }
+      ]
+    }
+  ]
+}
+```
+
+Daemon 接受后会产生 `user.message.accepted`，然后 projector 把它投影成 `ConversationView` 中的 `user_message` item。若当前 turn 正在运行，daemon 可以先返回 `queued` ack 并追加 `input.queued`，由 projector 显示排队输入。
+
+### user.tool_confirmation
+
+用户响应一个工具或权限确认请求。
+
+```json
+{
+  "events": [
+    {
+      "type": "user.tool_confirmation",
+      "request_id": "req_123",
+      "result": "allow",
+      "scope": "once"
+    }
+  ]
+}
+```
+
+`request_id` 是 velaChat request id。Adapter 可以使用 `AgentRequest.backend_ref` 把它映射回 Qoder pending action event id、Codex approval id、ACP request id 等后端引用。
+
+### user.custom_tool_result
+
+用户或客户端返回自定义工具结果。
+
+```json
+{
+  "events": [
+    {
+      "type": "user.custom_tool_result",
+      "request_id": "req_456",
+      "content": [
+        { "type": "text", "text": "查询结果是 ..." }
+      ]
+    }
+  ]
+}
+```
+
+### user.request_answer
+
+用户回答 agent-to-user 的普通问题。
+
+```json
+{
+  "events": [
+    {
+      "type": "user.request_answer",
+      "request_id": "req_789",
+      "answer": "选择方案 B"
+    }
+  ]
+}
+```
+
+## 与后端协议的关系
+
+Input Event API 是 velaChat 对 UI 暴露的稳定输入协议；backend adapter 再翻译到具体后端。
+
+| velaChat input | Qoder 风格映射 | 说明 |
+| --- | --- | --- |
+| `user.message` | `POST /v1/sessions/{id}/events` with `user.message` | 用户消息 |
+| `user.tool_confirmation` | `POST /v1/sessions/{id}/events` with `user.tool_confirmation` | 工具确认 |
+| `user.custom_tool_result` | `POST /v1/sessions/{id}/events` with `user.custom_tool_result` | 自定义工具结果 |
+| `POST /sessions/{id}/cancel` | `POST /v1/sessions/{id}/cancel` | 取消当前 processing turn |
+
+Codex、CloudAgent、ACP 也必须适配成同一组 input event。UI 不应该知道后端原始 endpoint、request id 或 pending action 格式。
+
+## CommandAck
+
+`POST /sessions/{id}/events` 返回 `CommandAck`：
+
+- `accepted`：daemon 已接受输入，并会产生 canonical events。Wire response 必须包含 `status`、`command_id`、`session_id`、`cursor`，可选 `turn_id`。
+- `queued`：daemon 接受但暂不交给 backend，例如当前 turn 正在运行。Wire response 必须包含 `status`、`command_id`、`session_id`、`queued_message_id`、`cursor`。
+- `rejected`：daemon 理解 command 但拒绝执行，例如 session 已关闭、权限阻塞、重复 idempotency key、后端不可用。Wire response 必须包含 `status`、`code`、`message`，可选 `command_id`、`session_id`、`cursor`。
+
+Malformed JSON、缺少路径资源、HTTP 层冲突等仍然返回 `ErrorEnvelope`，而不是 `CommandAck.rejected`。具体 wire schema 以 OpenAPI 的 `CommandAck` `oneOf` 为准。
+
+Client 可以在 command in-flight 时显示 pending affordance，但正式 conversation item 只能来自 `ConversationView`。
+
+## Requirements
+
+### Requirement: input events 是用户意图
+
+Input events MUST NOT be treated as canonical runtime events until daemon accepts them.
+
+#### Scenario: 用户发送消息
+
+- **WHEN** client posts `user.message`
+- **THEN** daemon validates session state and idempotency
+- **AND** 返回 `CommandAck`
+- **AND** accepted input produces `user.message.accepted`
+- **AND** queued input produces `input.queued`
+- **AND** Chat UI waits for `ConversationView` to render the formal user or queued item
+
+### Requirement: request response 走同一输入入口
+
+Permission, confirmation, and custom tool responses MUST be submitted through `POST /sessions/{session_id}/events`.
+
+#### Scenario: 用户 approve 权限请求
+
+- **WHEN** client posts `user.tool_confirmation`
+- **THEN** daemon resolves the matching `AgentRequest`
+- **AND** adapter translates the response to backend-specific protocol
+- **AND** daemon emits `request.resolved`
+- **AND** UI refreshes `PendingRequestsView`
+
+### Requirement: cancel 是独立控制命令
+
+Cancel MUST use `/sessions/{session_id}/cancel` instead of an input event.
+
+#### Scenario: 用户点击 stop
+
+- **WHEN** client calls `/sessions/{session_id}/cancel`
+- **THEN** daemon validates current session state
+- **AND** backend adapter 把它映射到后端自己的 cancel 行为
+- **AND** event stream later reports the resulting session or turn state

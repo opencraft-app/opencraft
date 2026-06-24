@@ -1,0 +1,35 @@
+{
+  "name": "velachat",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/vela-desktop-electron"
+  ],
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "test": "node --test --import tsx \"packages/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@scalar/nextjs-api-reference": "latest",
+    "@tanstack/react-query": "^5.90.12",
+    "@tanstack/react-virtual": "^3.14.3",
+    "fumadocs-core": "latest",
+    "fumadocs-mdx": "latest",
+    "fumadocs-ui": "latest",
+    "marked": "^18.0.5",
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "@types/mdx": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "happy-dom": "^20.10.6",
+    "tsx": "latest",
+    "typescript": "latest"
+  }
+}

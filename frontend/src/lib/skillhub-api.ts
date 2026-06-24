@@ -1,9 +1,13 @@
 /**
  * SkillHub 公共数据接口客户端。
  *
- * SkillHub 正式环境是 `https://api.skillhub.cn`，浏览器直连读取公共目录数据：
- * 人设（Soul）。本地开发环境通过 Vite proxy 转发，避免 localhost 不在 CORS
- * 白名单内。
+ * 正式环境使用 SkillHub API (`https://api.skillhub.cn`) 读取公共目录数据：
+ * 人设（Soul）。本地开发使用 `https://lightmake.cloud` 直连，避免依赖旧 Vite
+ * proxy，同时绕开 localhost 不在正式域 CORS 白名单内的问题。
+ *
+ * 注：`lightmake.cloud` 已为 lightclaw.tech 和 EO Pages 预览域名（如
+ * *.edgeone.cool）做好 CORS 反射（`Access-Control-Allow-Origin` 反射 +
+ * `Allow-Credentials: true`）。
  *
  * 鉴权类接口（活动抽卡 / 我的组合 / 一键安装）需要 SkillHub 的 JWT Cookie，
  * 跨产品场景下要走"mono2 后端代理 + service token"的方案，**不在本模块范围**。
@@ -18,7 +22,7 @@ interface SkillHubRuntimeEnv {
 export function resolveSkillHubApiBase(
   env: SkillHubRuntimeEnv | undefined = import.meta.env,
 ): string {
-  return env?.DEV ? "/__skillhub" : "https://api.skillhub.cn";
+  return env?.DEV ? "https://lightmake.cloud" : "https://api.skillhub.cn";
 }
 
 const SKILLHUB_API_BASE = resolveSkillHubApiBase();

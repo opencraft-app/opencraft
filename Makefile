@@ -1,4 +1,6 @@
-.PHONY: dev stop backend dashboard install setup precommit-check test-regression test-ctl-regression test-ctl-integration test-ai-gateway-regression help
+.PHONY: dev stop backend dashboard install setup precommit-check test-regression test-ctl-regression test-ctl-integration test-ai-gateway-regression \
+	velalink-server-release-linux-amd64 velalink-server-upload-cos velalink-server-vm-install-command velalink-server-vm-install-debug-exec \
+	help
 
 ROOT_DIR := $(shell pwd)
 PID_DIR  := $(ROOT_DIR)/.pids
@@ -130,6 +132,18 @@ test-ai-gateway-regression:
 test-regression: test-ai-gateway-regression test-ctl-regression
 	@echo "✅ 核心回归已通过"
 
+velalink-server-release-linux-amd64:
+	@$(MAKE) -C velalink server-release-linux-amd64
+
+velalink-server-upload-cos:
+	@$(MAKE) -C velalink server-upload-cos
+
+velalink-server-vm-install-command:
+	@$(MAKE) -C velalink server-vm-install-command
+
+velalink-server-vm-install-debug-exec:
+	@$(MAKE) -C velalink server-vm-install-debug-exec
+
 # 帮助信息
 help:
 	@echo "📖 Mono 项目 - Makefile 命令列表"
@@ -151,3 +165,9 @@ help:
 	@echo "  make test-ai-gateway-regression - 运行 ai-gateway 数据面回归"
 	@echo "  make test-ctl-regression - 运行 ctl OpenClaw/频道回归"
 	@echo "  make test-ctl-integration - 运行 ctl integration suites"
+	@echo ""
+	@echo "Velalink:"
+	@echo "  make velalink-server-release-linux-amd64  - 构建 Linux amd64 velad"
+	@echo "  make velalink-server-upload-cos           - 上传 velad 到 COS"
+	@echo "  make velalink-server-vm-install-command   - 生成 VM 安装命令"
+	@echo "  make velalink-server-vm-install-debug-exec - 通过 mono debug/exec 注入 VM"

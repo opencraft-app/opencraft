@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
 import { AgentsPageClient } from '@next-site/agents-page-client';
-import { AGENT_SECTION_ID_BY_SLUG } from '@/router/paths';
+import { AGENT_SECTION_ID_BY_SLUG } from '@/lib/agent-routes';
 
 export const metadata: Metadata = {
   title: '我的智能体伙伴',

@@ -39,8 +39,15 @@ tar \
   --exclude="frontend/dist" \
   --exclude="frontend/dist-*" \
   --exclude="frontend/dist-ci-*" \
+  --exclude="frontend/.next" \
+  --exclude="frontend/out" \
+  --exclude="velalink/node_modules" \
+  --exclude="velalink/.next" \
+  --exclude="velalink/out" \
+  --exclude="velalink/target" \
+  --exclude="velalink/crates/*/target" \
   -C "$REPO_ROOT" \
-  -cf - frontend | tar -C "$FRONTEND_GUARD_ROOT" -xf -
+  -cf - frontend velalink | tar -C "$FRONTEND_GUARD_ROOT" -xf -
 
 cd "$FRONTEND_GUARD_DIR"
 if [[ ! -f pnpm-lock.yaml ]]; then
@@ -68,39 +75,32 @@ echo "============================================================"
 "$PNPM_BIN" i18n:check
 
 echo "============================================================"
-echo "frontend 约束：检查静态目录与 BrowserRouter 路由冲突"
-echo "目的：防止 EdgeOne Pages 将同名静态目录优先于 SPA fallback，导致深链刷新 404"
-echo "============================================================"
-"$NODE_BIN" scripts/check-static-route-conflicts.mjs
-
-echo "============================================================"
 echo "frontend 约束：运行 release matrix / static route guard 单测"
-echo "目的：防止 Pages / EdgeOne 发布矩阵与 SPA fallback 约束回归"
+echo "目的：防止 Pages / EdgeOne 发布矩阵与 Next static export 约束回归"
 echo "============================================================"
 "$PNPM_BIN" test \
   scripts/release-matrix.test.ts \
   scripts/frontend-artifact.test.ts \
   scripts/build-release-artifacts.test.ts \
   scripts/release-cloudflare-from-artifact.test.ts \
-  scripts/release-edgeone-from-artifact.test.ts \
-  scripts/check-static-route-conflicts.test.ts
+  scripts/release-edgeone-from-artifact.test.ts
 
 echo "============================================================"
-echo "frontend 约束：运行国内/国际 Vite 打包"
+echo "frontend 约束：运行国内/国际 Next static export 打包"
 echo "目的：MR 阶段真实验证 bundler、动态 import 与区域化编译；跳过图片优化以控制 checker 成本"
 echo "============================================================"
-rm -rf dist-ci-cn dist-ci-global
-VITE_BIN="$FRONTEND_GUARD_DIR/node_modules/.bin/vite"
-if [[ ! -x "$VITE_BIN" ]]; then
-  echo "frontend 约束：隔离工作目录缺少本地 vite 可执行文件：${VITE_BIN}" >&2
+rm -rf out
+if [[ ! -x "$FRONTEND_GUARD_DIR/node_modules/.bin/next" ]]; then
+  echo "frontend 约束：隔离工作目录缺少本地 next 可执行文件" >&2
   echo "处理：重新执行 frozen install 后再次检查，避免共享 runner 并发清理 node_modules 导致误报" >&2
   "$PNPM_BIN" install --frozen-lockfile
 fi
-if [[ ! -x "$VITE_BIN" ]]; then
-  echo "frontend 约束：本地 vite 仍不可用：${VITE_BIN}" >&2
+if [[ ! -x "$FRONTEND_GUARD_DIR/node_modules/.bin/next" ]]; then
+  echo "frontend 约束：本地 next 仍不可用" >&2
   exit 1
 fi
-VITE_AUTH_API_BASE_URL=https://api.lightvela.ai "$VITE_BIN" build --mode cn --outDir dist-ci-cn
-VITE_AUTH_API_BASE_URL=https://lightclaw.tech "$VITE_BIN" build --mode global --outDir dist-ci-global
+NEXT_PUBLIC_AUTH_API_BASE_URL=https://api.lightvela.ai VITE_AUTH_API_BASE_URL=https://api.lightvela.ai "$PNPM_BIN" build:cn
+rm -rf out
+NEXT_PUBLIC_AUTH_API_BASE_URL=https://lightclaw.tech VITE_AUTH_API_BASE_URL=https://lightclaw.tech "$PNPM_BIN" build:global
 
 echo "frontend 约束：全部通过"

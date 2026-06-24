@@ -1,0 +1,32 @@
+---
+title: Agent 定义
+description: 与 provider 无关的 agent 配置。
+---
+
+# Agent Definition
+
+`AgentDefinition` 描述“可以启动什么”；`Session` 描述一次运行或历史执行。
+
+```ts
+export type AgentDefinition = {
+  id: string;
+  backend: BackendKind;
+  displayName: string;
+  defaultModel?: string;
+  defaultWorkingDirectory?: string;
+  capabilities: BackendCapabilities;
+  launch: AgentLaunchPolicy;
+};
+```
+
+## Requirements
+
+### Requirement: AgentDefinition 与 provider internals 解耦
+
+Agent definitions MUST 描述用户可见配置，不把 provider 内部协议暴露给 client contract。
+
+#### Scenario: 同一个 UI 创建不同 backend session
+
+- **WHEN** 用户创建 Codex 或 Pi session
+- **THEN** client 发送同一种 session creation shape
+- **AND** provider-specific launch details 留在 backend adapter

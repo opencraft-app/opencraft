@@ -1,0 +1,69 @@
+---
+title: API 约定
+description: HTTP、JSON、cursor、error 的统一规则。
+---
+
+# API 约定
+
+velaChat API 使用资源式 HTTP + 可恢复 SSE event stream。
+
+## Base URL
+
+```txt
+http://127.0.0.1:{port}/api/v1
+```
+
+## 通用规则
+
+- 请求和响应默认使用 JSON。
+- JSON wire 字段名使用 `snake_case`，例如 `session_id`、`event_id`、`created_at`。
+- SSE endpoint 使用 `text/event-stream`。
+- ID 是 opaque string，client MUST NOT 解析。
+- 时间使用 RFC 3339 UTC string。
+- `event_id` 是公共 cursor。
+- 内部排序使用 `epoch + seq`。
+- 修改类请求 SHOULD 支持 `Idempotency-Key`。
+
+TypeScript、Rust 或其他内部类型可以使用自己的命名风格，但序列化到 wire 时必须遵守 OpenAPI 中的 `snake_case` 字段名。字段是否必填也以 OpenAPI schema 为准。
+
+## Error Envelope
+
+```json
+{
+  "error": {
+    "code": "request_not_pending",
+    "message": "The request is no longer pending.",
+    "details": { "request_id": "req_123" }
+  }
+}
+```
+
+## Requirements
+
+### Requirement: 稳定错误结构
+
+API MUST 使用统一 `error.code`、`error.message`、`error.details` 返回错误。
+
+#### Scenario: 重复批准 request
+
+- **WHEN** client 批准已经 resolved 的 request
+- **THEN** server 返回稳定错误码
+- **AND** client 可以渲染非 provider-specific 的错误提示
+
+### Requirement: Cursor opaque
+
+Client MUST 把 `event_id` 当 opaque cursor 处理。
+
+#### Scenario: cursor 格式变化
+
+- **WHEN** server 改变 `event_id` 到 `epoch + seq` 的映射方式
+- **THEN** client 仍然只原样传回 cursor
+
+### Requirement: OpenAPI 决定 wire 字段
+
+Client-facing JSON field names and required properties MUST match `public/openapi/velachat.v1.yaml`.
+
+#### Scenario: 内部类型使用本地命名风格
+
+- **WHEN** TypeScript client 内部使用自己的 property naming
+- **THEN** 它在 HTTP JSON 中仍然发送或读取 `event_id`

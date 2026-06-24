@@ -1,33 +1,26 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Bot, User, LogOut, ChevronDown } from "lucide-react";
-import { useState, useRef, useEffect, type ReactNode } from "react";
+import { Bot, LayoutDashboard, User, LogOut, ChevronDown } from "lucide-react";
+import Link from "next/link";
+import type { CSSProperties } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useOpenClaw } from "@/contexts/openclaw-context";
 import { useSession } from "@/contexts/session-context";
 import { useT } from "@/i18n/t";
 import { avatarImageUrl } from "@/lib/avatar-image";
-import { AGENTS_HOME_PATH } from "@/router/paths";
+import { AGENTS_HOME_PATH, AGENT_SECTION_PATH_BY_ID, shouldShowWorkbenchEntry } from "@/lib/agent-routes";
 
-export type UserMenuLinkProps = {
-  children: ReactNode;
-  className?: string;
-  href: string;
-  onClick?: () => void;
+type RevealWorkbenchHost = Window & {
+  show?: (...args: unknown[]) => unknown;
 };
 
-export type RenderUserMenuLink = (props: UserMenuLinkProps) => ReactNode;
-
-type UserAvatarMenuProps = {
-  renderLink?: RenderUserMenuLink;
-};
-
-const defaultRenderLink: RenderUserMenuLink = ({ children, ...props }) => <a {...props}>{children}</a>;
-
-export const UserAvatarMenu = ({ renderLink = defaultRenderLink }: UserAvatarMenuProps = {}) => {
+export const UserAvatarMenu = () => {
   const { session, signOut } = useSession();
   const { activePass } = useOpenClaw();
   const t = useT();
   const user = session.user;
   const [open, setOpen] = useState(false);
+  const [workbenchRevealed, setWorkbenchRevealed] = useState(false);
+  const [workbenchHostname, setWorkbenchHostname] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   /* close on outside click */
@@ -41,9 +34,58 @@ export const UserAvatarMenu = ({ renderLink = defaultRenderLink }: UserAvatarMen
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  useEffect(() => {
+    setWorkbenchHostname(window.location.hostname);
+  }, []);
+
+  useEffect(() => {
+    const host = window as RevealWorkbenchHost;
+    const originalShow = host.show;
+    let mounted = true;
+    const revealWorkbench = (...args: unknown[]) => {
+      if (mounted) {
+        setWorkbenchRevealed(true);
+      }
+      if (typeof originalShow === "function") {
+        const originalResult = originalShow.apply(host, args);
+        return originalResult === undefined ? true : originalResult;
+      }
+      return true;
+    };
+
+    host.show = revealWorkbench;
+
+    return () => {
+      mounted = false;
+      if (host.show !== revealWorkbench) return;
+      if (originalShow === undefined) {
+        delete host.show;
+      } else {
+        host.show = originalShow;
+      }
+    };
+  }, []);
+
   const avatarSrc = avatarImageUrl(user?.avatarUrl ?? null);
   const subscriptionName = activePass?.bundle_name ?? session.currentSubscription?.code ?? null;
   const subscriptionLabel = subscriptionName ? `${t("套餐")}：${subscriptionName}` : t("未订阅");
+  const menuItemClass =
+    "flex items-center gap-2.5 px-4 py-2.5 text-sm font-normal text-[var(--lw-user-menu-text)] transition-colors duration-200 hover:bg-[var(--lw-user-menu-hover-bg)] hover:text-[var(--lw-user-menu-text-hover)]";
+  const menuIconClass = "h-4 w-4 text-[var(--lw-user-menu-icon)]";
+  const menuStyle = {
+    "--lw-user-menu-text": "rgb(0 0 0 / 0.62)",
+    "--lw-user-menu-text-hover": "rgb(0 0 0 / 0.88)",
+    "--lw-user-menu-icon": "rgb(0 0 0 / 0.38)",
+    "--lw-user-menu-hover-bg": "rgb(0 0 0 / 0.045)",
+    borderRadius: "10px",
+    boxShadow: "0 8px 24px rgba(0,0,0,0.10)",
+    backdropFilter: "blur(20px) saturate(160%)",
+    WebkitBackdropFilter: "blur(20px) saturate(160%)",
+  } as CSSProperties;
+  const showWorkbenchEntry = shouldShowWorkbenchEntry({
+    hostname: workbenchHostname,
+    revealed: workbenchRevealed,
+  });
 
   return (
     <div ref={containerRef} className="relative">
@@ -52,19 +94,14 @@ export const UserAvatarMenu = ({ renderLink = defaultRenderLink }: UserAvatarMen
         onMouseEnter={() => setOpen(true)}
         className="flex items-center gap-2 rounded-full transition-all duration-200 hover:opacity-90"
       >
-        {renderLink({
-          href: "/account",
-          onClick: () => setOpen(false),
-          className: "inline-flex shrink-0",
-          children: (
-            <img
-              src={avatarSrc}
-              alt="avatar"
-              className="h-9 w-9 cursor-pointer object-cover"
-              style={{ border: "1.5px solid rgba(0,0,0,0.06)", borderRadius: "50%" }}
-            />
-          ),
-        })}
+        <Link href="/account" onClick={() => setOpen(false)} className="inline-flex shrink-0">
+          <img
+            src={avatarSrc}
+            alt="avatar"
+            className="h-9 w-9 cursor-pointer object-cover"
+            style={{ border: "1.5px solid rgba(0,0,0,0.06)", borderRadius: "50%" }}
+          />
+        </Link>
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
@@ -86,13 +123,8 @@ export const UserAvatarMenu = ({ renderLink = defaultRenderLink }: UserAvatarMen
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 6, scale: 0.97 }}
             transition={{ duration: 0.18, ease: [0.25, 0.1, 0.25, 1] }}
-            className="lw-user-avatar-menu absolute right-0 top-full z-50 mt-2 w-52 overflow-hidden border border-[var(--border-subtle)] bg-[color-mix(in_oklab,var(--surface-base)_96%,white)]"
-            style={{
-              borderRadius: "10px",
-              boxShadow: "0 8px 24px rgba(0,0,0,0.10)",
-              backdropFilter: "blur(20px) saturate(160%)",
-              WebkitBackdropFilter: "blur(20px) saturate(160%)",
-            }}
+            className="lw-user-avatar-menu absolute right-0 top-full z-50 mt-2 w-52 overflow-hidden border border-black/[0.05] bg-white/95"
+            style={menuStyle}
             onMouseLeave={() => setOpen(false)}
           >
             {/* User info */}
@@ -117,28 +149,32 @@ export const UserAvatarMenu = ({ renderLink = defaultRenderLink }: UserAvatarMen
 
             {/* Menu items */}
             <div className="py-1.5">
-              {renderLink({
-                href: AGENTS_HOME_PATH,
-                onClick: () => setOpen(false),
-                className: "flex items-center gap-2.5 px-4 py-2.5 text-sm font-normal text-[var(--text-secondary)] transition-all duration-250 hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)]",
-                children: (
-                  <>
-                    <Bot className="h-4 w-4 text-[var(--text-tertiary)]" />
-                    {t("我的智能体伙伴")}
-                  </>
-                ),
-              })}
-              {renderLink({
-                href: "/account",
-                onClick: () => setOpen(false),
-                className: "flex items-center gap-2.5 px-4 py-2.5 text-sm font-normal text-[var(--text-secondary)] transition-all duration-250 hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)]",
-                children: (
-                  <>
-                    <User className="h-4 w-4 text-[var(--text-tertiary)]" />
-                    {t("账号管理")}
-                  </>
-                ),
-              })}
+              <Link
+                href={AGENTS_HOME_PATH}
+                onClick={() => setOpen(false)}
+                className={menuItemClass}
+              >
+                <Bot className={menuIconClass} />
+                {t("我的智能体伙伴")}
+              </Link>
+              {showWorkbenchEntry ? (
+                <Link
+                  href={AGENT_SECTION_PATH_BY_ID.workbench}
+                  onClick={() => setOpen(false)}
+                  className={menuItemClass}
+                >
+                  <LayoutDashboard className={menuIconClass} />
+                  {t("工作台")}
+                </Link>
+              ) : null}
+              <Link
+                href="/account"
+                onClick={() => setOpen(false)}
+                className={menuItemClass}
+              >
+                <User className={menuIconClass} />
+                {t("账号管理")}
+              </Link>
             </div>
 
             {/* Logout */}
@@ -148,10 +184,10 @@ export const UserAvatarMenu = ({ renderLink = defaultRenderLink }: UserAvatarMen
                   void signOut();
                   setOpen(false);
                 }}
-                className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm font-normal text-[var(--text-secondary)] transition-all duration-250 hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)]"
+                className={`w-full ${menuItemClass}`}
                 style={{ fontSize: "14px" }}
               >
-                <LogOut className="h-4 w-4 text-[var(--text-tertiary)]" />
+                <LogOut className={menuIconClass} />
                 {t("退出登录")}
               </button>
             </div>

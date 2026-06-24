@@ -1,5 +1,5 @@
 /**
- * 完整 SEO 注入回归测试：dev 中间件管线必须输出与 Next 静态产物对齐的字段集。
+ * 完整 SEO 注入回归测试：Node SEO 工具必须输出与 Next 静态产物对齐的字段集。
  *
  * 守护字段：
  *   - <html lang>（按 region 切换）
@@ -9,8 +9,6 @@
  *   - Open Graph：og:locale / og:type / og:site_name / og:title / og:description / og:url / og:image
  *   - Twitter Card：twitter:card / twitter:title / twitter:description / twitter:image
  */
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { applyFullSeoToHtml } from "@/lib/seo-html";
 
@@ -27,13 +25,6 @@ const TEMPLATE = `<!doctype html>
 </html>`;
 
 describe("applyFullSeoToHtml", () => {
-  it("keeps the SPA shell favicon aligned with static public pages", () => {
-    const template = readFileSync(resolve(process.cwd(), "index.html"), "utf8");
-
-    expect(template).toContain('<link rel="icon" type="image/png" href="/lightvela-icon.png" />');
-    expect(template).not.toContain('<link rel="icon" type="image/jpeg" href="/lightvela-logo.jpg" />');
-  });
-
   it("injects all required SEO fields for cn region", () => {
     const html = applyFullSeoToHtml(TEMPLATE, "/about", "cn");
 

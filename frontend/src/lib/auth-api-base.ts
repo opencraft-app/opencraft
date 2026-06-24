@@ -21,7 +21,7 @@ export const resolveConfiguredAuthApiBaseUrl = () => {
   if (typeof window !== "undefined") {
     const hostname = window.location.hostname;
     if (hostname === "localhost" || hostname === "127.0.0.1") {
-      return "";
+      return "https://lightclaw.tech";
     }
     if (
       hostname === "lightclaw.tech"

@@ -18,6 +18,7 @@ export interface TatHttpVirtualClientOptions extends TsshProxyClientOptions {
   headerLimitBytes?: number;
   keepAlive?: boolean;
   maxIdleProxyConnections?: number;
+  proxyClient?: TencentTsshProxyClient;
   responseHeaderTimeoutMs?: number;
   closeDelimitedBodyIdleTimeoutMs?: number;
 }
@@ -422,6 +423,7 @@ const makeChunkedBodyStream = (
 
 export class TatHttpVirtualClient {
   private readonly proxyClient: TencentTsshProxyClient;
+  private readonly ownsProxyClient: boolean;
   private readonly headerLimitBytes: number;
   private readonly keepAlive: boolean;
   private readonly maxIdleProxyConnections: number;
@@ -433,7 +435,8 @@ export class TatHttpVirtualClient {
     bootstrap: BotTerminalSession,
     private readonly options: TatHttpVirtualClientOptions = {},
   ) {
-    this.proxyClient = new TencentTsshProxyClient(bootstrap, options);
+    this.proxyClient = options.proxyClient ?? new TencentTsshProxyClient(bootstrap, options);
+    this.ownsProxyClient = !options.proxyClient;
     this.headerLimitBytes = options.headerLimitBytes ?? DEFAULT_HEADER_LIMIT_BYTES;
     this.keepAlive = options.keepAlive ?? true;
     this.maxIdleProxyConnections = options.maxIdleProxyConnections ?? DEFAULT_MAX_IDLE_PROXY_CONNECTIONS;
@@ -561,7 +564,9 @@ export class TatHttpVirtualClient {
       }
     }
     this.idleConnections.clear();
-    this.proxyClient.close();
+    if (this.ownsProxyClient) {
+      this.proxyClient.close();
+    }
   }
 
   private async acquireConnection(

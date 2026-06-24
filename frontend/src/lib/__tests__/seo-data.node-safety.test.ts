@@ -1,10 +1,10 @@
 /**
- * 守护测试：保证 `vite.config.ts` 顶层 import 链路（seo-data.ts / seo-html.ts）
- * 始终在 node 加载阶段安全可解析。
+ * 守护测试：保证 Node 侧构建/校验脚本复用的 SEO 模块
+ * （seo-data.ts / seo-html.ts）始终可在 Node 加载阶段安全解析。
  *
- * 背景：vite.config.ts 在 node/esbuild 上下文被加载，此时既没有 `@/` 路径
- * alias，也没有 `import.meta.env`。如果这些被 vite.config 顶层 import 的模块
- * 引入了这两类依赖，dev server 会直接启动失败（ERR_MODULE_NOT_FOUND）。
+ * 背景：这些模块会被 release/check 脚本直接 import，此时既没有 `@/` 路径
+ * alias，也没有浏览器侧 `import.meta.env`。如果这些模块引入了这两类依赖，
+ * 脚本会直接启动失败（ERR_MODULE_NOT_FOUND）。
  * 该测试把这一约束固化进 CI，任何破坏性改动都会让测试失败，避免未来迭代踩坑。
  */
 import { readFileSync } from "node:fs";
@@ -33,19 +33,19 @@ function loadSource(relPath: string): string {
   return stripComments(readFileSync(abs, "utf8"));
 }
 
-describe("vite.config top-level imports must stay node-loadable", () => {
+describe("SEO modules consumed by node scripts must stay node-loadable", () => {
   for (const { name, relPath } of FILES_UNDER_GUARD) {
     describe(name, () => {
       const source = loadSource(relPath);
 
       it("does not import via the `@/` path alias", () => {
-        // `@/` alias 仅在 vite/tsconfig paths 解析时生效，node 加载 vite.config 时不可用。
+        // `@/` alias 仅在 bundler/tsconfig paths 解析时生效，Node 直接加载脚本时不可用。
         const aliasImport = /\bfrom\s+["']@\//;
         expect(aliasImport.test(source)).toBe(false);
       });
 
       it("does not rely on import.meta in executable code", () => {
-        // import.meta.env 在 vite.config 加载阶段为 undefined，region 必须由参数显式传入。
+        // Node 侧没有浏览器构建环境，region 必须由参数显式传入。
         expect(source.includes("import.meta")).toBe(false);
       });
 
@@ -80,7 +80,7 @@ describe("vite.config top-level imports must stay node-loadable", () => {
   });
 
   it("exposes applySeoToHtml importable without vite alias", async () => {
-    // seo-html.ts 也是 vite.config 顶层 import，必须在 node 上下文可加载。
+    // seo-html.ts 也被 Node 脚本直接复用，必须在 node 上下文可加载。
     const mod = await import("../seo-html");
     expect(typeof mod.applySeoToHtml).toBe("function");
     const html = '<html><head><title>OLD</title></head><body></body></html>';

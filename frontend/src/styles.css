@@ -161,19 +161,27 @@ a {
   --lw-site-link-hover-color: rgb(0 0 0 / 0.9);
 }
 
+.lw-user-avatar-menu {
+  --lw-user-menu-text: rgb(0 0 0 / 0.62);
+  --lw-user-menu-text-hover: rgb(0 0 0 / 0.88);
+  --lw-user-menu-icon: rgb(0 0 0 / 0.38);
+  --lw-user-menu-hover-bg: rgb(0 0 0 / 0.045);
+}
+
 .lw-user-avatar-menu a,
 .lw-user-avatar-menu button {
-  color: var(--text-secondary) !important;
+  color: var(--lw-user-menu-text) !important;
   text-decoration: none !important;
 }
 
 .lw-user-avatar-menu a:hover,
 .lw-user-avatar-menu button:hover {
-  color: var(--text-primary) !important;
+  color: var(--lw-user-menu-text-hover) !important;
+  background-color: var(--lw-user-menu-hover-bg) !important;
 }
 
 .lw-user-avatar-menu svg {
-  color: var(--text-tertiary) !important;
+  color: var(--lw-user-menu-icon) !important;
 }
 
 .lw-landing-navbar {

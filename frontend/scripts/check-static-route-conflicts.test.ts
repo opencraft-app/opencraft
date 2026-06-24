@@ -1,7 +1,7 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const scriptPath = join(process.cwd(), "scripts", "check-static-route-conflicts.mjs");
@@ -19,9 +19,10 @@ const createFixture = (publicDirs: string[], routerSource: string) => {
   return root;
 };
 
-const runCheck = (fixtureRoot: string) => spawnSync(process.execPath, [scriptPath, fixtureRoot], {
-  encoding: "utf8",
-});
+const runCheck = (fixtureRoot: string) =>
+  spawnSync(process.execPath, [scriptPath, fixtureRoot], {
+    encoding: "utf8",
+  });
 
 describe("check-static-route-conflicts", () => {
   it("passes when public directories do not overlap BrowserRouter routes", () => {
@@ -34,6 +35,20 @@ describe("check-static-route-conflicts", () => {
       const result = runCheck(root);
       expect(result.status).toBe(0);
       expect(result.stdout).toContain("passed");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("skips Next-only projects without a BrowserRouter entry", () => {
+    const root = mkdtempSync(join(tmpdir(), "static-route-conflicts-next-"));
+    try {
+      mkdirSync(join(root, "public", "agents"), { recursive: true });
+      mkdirSync(join(root, "src", "app"), { recursive: true });
+
+      const result = runCheck(root);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("skipped");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

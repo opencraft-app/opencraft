@@ -11,7 +11,6 @@ import { useTranslation } from "react-i18next";
 import { LegalFooter } from "@/components/site/legal-footer";
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
 import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/site/public-site-header";
-import type { RenderUserMenuLink } from "@/components/site/user-avatar-menu";
 import { useT } from "@/i18n/t";
 import { assetUrl } from "@/lib/asset-url";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
@@ -385,7 +384,6 @@ type ChangelogPageProps = {
   publicLocalized?: boolean;
   renderLanguageSwitcher?: (options: { activeLocale: PublicSiteLocale; reloadAfterSwitch: boolean; variant: LanguageSwitcherVariant }) => ReactNode;
   renderLink?: RenderPublicSiteHeaderLink;
-  renderUserMenuLink?: RenderUserMenuLink;
 };
 
 export const ChangelogPage = ({
@@ -395,7 +393,6 @@ export const ChangelogPage = ({
   publicLocalized,
   renderLanguageSwitcher,
   renderLink,
-  renderUserMenuLink,
 }: ChangelogPageProps = {}) => {
   return (
     <div
@@ -411,7 +408,6 @@ export const ChangelogPage = ({
         position="fixed"
         renderLink={renderLink}
         renderLanguageSwitcher={renderLanguageSwitcher}
-        renderUserMenuLink={renderUserMenuLink}
       />
       <main className="z-10 flex-grow pt-[60px]">
         <ChangelogContent />

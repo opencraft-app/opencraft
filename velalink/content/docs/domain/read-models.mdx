@@ -1,0 +1,62 @@
+---
+title: 读模型
+description: 从事件派生的客户端投影视图。
+---
+
+# Read Models
+
+Read models 是 server-owned projections，为客户端渲染优化。它们可以缓存，也必须可重建。Canonical event log 才是事实源。
+
+## 初始 Read Models
+
+| Read Model | 用途 |
+| --- | --- |
+| `SessionListView` | session rail / recent sessions |
+| `SessionView` | 当前 session metadata/status/operations |
+| `ConversationView` | chat 主列表：user/assistant message、turn meta、agent work、status |
+| `PendingRequestsView` | permission / confirmation dock |
+| `DiffReviewView` | 文件 diff 和 review panel |
+| `BackendStatusView` | backend picker 和 health |
+| `WorkbenchStateView` | active session、selected thread、global warnings |
+
+## Requirements
+
+### Requirement: read models 从事实派生
+
+Read models MUST 从 canonical events 或安全 daemon state 派生。
+
+#### Scenario: client cache 为空
+
+- **WHEN** client 第一次打开 app
+- **THEN** 它从 daemon fetch read models
+- **AND** 从返回 cursor 开始订阅 events
+
+### Requirement: ConversationView 支持 item window
+
+`ConversationView` MUST expose an item window contract for chat surfaces. The window cursor is item-based; the response cursor remains the latest canonical event cursor.
+
+Conversation items include `user_message`、`assistant_message`、`turn_meta`、`agent_work` 和 `status`。Turn lifecycle metadata is represented as explicit `turn_meta` items; clients must not infer it from assistant streaming state or tool rows.
+
+#### Scenario: 长会话首屏
+
+- **WHEN** client 打开一个长会话
+- **THEN** 它请求 `/sessions/{id}/views/conversation?direction=tail&limit=80`
+- **AND** daemon 返回尾部 conversation items
+- **AND** `window.has_older` 表示是否可以继续向上加载
+- **AND** `cursor` 用于随后订阅 live events
+
+#### Scenario: 向上加载旧 conversation items
+
+- **WHEN** client 使用 `/sessions/{id}/views/conversation?direction=before&anchor_item_id=item_x&limit=80`
+- **THEN** daemon 返回 anchor item 之前的 projected conversation items
+- **AND** 不要求 client 用 canonical event cursor 拼 UI window
+
+### Requirement: read models 必须窄
+
+API SHOULD 提供多个窄 read models，而不是一个 monolithic snapshot。
+
+#### Scenario: 只有 request dock 变化
+
+- **WHEN** 新 request opened
+- **THEN** client 更新 request view 和必要的 conversation status/agent work items
+- **AND** 不需要刷新 backend status

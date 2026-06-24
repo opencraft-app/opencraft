@@ -5,7 +5,7 @@ import { renderNextLanguageSwitcher } from './language-switcher';
 import { PublicHeaderAuthIsland } from './public-header-auth-island';
 import { DEFAULT_PUBLIC_ROUTE_LOCALE } from './public-locale';
 import { SubscribePage } from './subscribe-page';
-import { renderNextPublicSiteHeaderLink, renderNextUserMenuLink } from './user-menu-link';
+import { renderNextPublicSiteHeaderLink } from './user-menu-link';
 
 export function SubscribePageClient() {
   const locale = DEFAULT_PUBLIC_ROUTE_LOCALE.locale;
@@ -18,7 +18,6 @@ export function SubscribePageClient() {
         publicLocalized={DEFAULT_PUBLIC_ROUTE_LOCALE.localized}
         renderLanguageSwitcher={renderNextLanguageSwitcher}
         renderLink={renderNextPublicSiteHeaderLink}
-        renderUserMenuLink={renderNextUserMenuLink}
       />
     </AppRouteShell>
   );

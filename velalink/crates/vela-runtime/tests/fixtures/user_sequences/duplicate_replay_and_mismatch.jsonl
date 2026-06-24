@@ -1,0 +1,3 @@
+{"idempotency_key":"idem-1","content":"hello","expect_status":"accepted","expect_replay":false}
+{"idempotency_key":"idem-1","content":"hello","expect_status":"accepted","expect_replay":true}
+{"idempotency_key":"idem-1","content":"different","expect_status":"rejected","expect_code":"duplicate_command"}

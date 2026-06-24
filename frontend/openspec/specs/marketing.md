@@ -176,8 +176,8 @@
    - Landing 灯泡入场做旋转上升，**到位后改为纯浮动**（不再使用雪碧图帧动画）
    - 粒子/星空背景 Canvas 组件按需启用，注意性能（低端设备降级）
 4. **i18n 与文案抽取**：业务文案不再硬编码，统一通过 `useT()`（`src/i18n/t.ts`）以中文原文作为 key 调用，由 `pnpm i18n:extract` 扫描生成 `src/i18n/generated/*.json` 字典；运行时反查 hash → 目标语言。`pnpm i18n:check` 作为 CI 门禁拦截缺失翻译。`landing/constants.ts` 只承载非文案常量（配色 / 时长 / 动效参数），文案出现在组件内 `t("…中文…")` 字面量调用处，便于 extract 脚本扫描。
-5. **SEO**：Landing 使用 BrowserRouter 而非 Hash，需要配合后端/Cloudflare 返回
-   index.html 做 SPA 兜底。SEO 元数据由 `src/lib/seo-data.ts` 统一维护，按
+5. **SEO**：公开站点使用 Next App Router + static export，深链刷新由静态托管规则
+   指向对应目录的 `index.html`。SEO 元数据由 `src/lib/seo-data.ts` 统一维护，按
    `cn/global` region 输出不同 title suffix、description、keywords、OG/Twitter/
    canonical/robots 字段；`src/lib/seo-html.ts` 负责 dev/prerender HTML 注入。
    由于 `generate-static-site.mjs` 暂时维护了一份镜像数据，必须通过
@@ -209,9 +209,9 @@
    - 随前端发布的静态资源必须进入站点构建产物，跟随 `pnpm build*` 的压缩与 WebP 后处理
    - 绝对 URL（`http(s)://` / `//`）与 `data:` URI 直接 passthrough，不二次拼接
 10. **区域化（国内 / 国际站）编译期分支**：
-    - `src/lib/region.ts` 暴露 `REGION` / `isCN` / `isGlobal` / `DEFAULT_LOCALE` 编译期常量，由 `VITE_REGION` 在 Vite 构建期注入；未命中分支会被 Tree-shake，不会进入对侧站点 bundle。
+    - `src/lib/region.ts` 暴露 `REGION` / `isCN` / `isGlobal` / `DEFAULT_LOCALE` 编译期常量，由 `NEXT_PUBLIC_REGION`（兼容读取 `VITE_REGION`）在 Next 构建期注入；未命中分支会被 Tree-shake，不会进入对侧站点 bundle。
     - 业务侧的「国内 vs 国际」差异**必须**走 `isCN` / `isGlobal` 编译期分支（如 OAuth 渠道、首页平台卡片、changelog 接入通道文案、法律页脚），**不得**通过运行时语言（locale）判断——否则会出现"国际站切回中文却显示国内渠道"的信息错位。
-    - 双产物：`pnpm build:cn` → `dist-cn/`（国内站，shprod 部署），`pnpm build:global` → `dist-global/`（国际站，Cloudflare Pages，`pnpm deploy:cf`）。两份产物入口 HTML / JS / CSS 内容均不同，**不可共用**。
+    - 双产物：`pnpm build:cn` / `pnpm build:global` 都生成 Next static export `out/`；发布脚本负责按 region 归档和发布。两份产物入口 HTML / JS / CSS 内容均不同，**不可共用**。
 11. **语言切换器（`<LanguageSwitcher>`，`src/components/site/language-switcher.tsx`）**：
     - **仅国际站**（`isGlobal === true`）在 `LandingNavbar` 中挂载；国内站不渲染（编译期消除）。
     - 桌面端：右上角 `dropdown` 形态；移动端：汉堡面板底部 `inline` 形态。两种形态由 `useIsDesktop()` 按断点二选一挂载，避免重复事件监听。

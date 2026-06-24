@@ -1,0 +1,10 @@
+{
+  "status": "accepted",
+  "command_id": "cmd_1",
+  "session_id": "ses_1",
+  "cursor": {
+    "event_id": "evt_1",
+    "epoch": 1,
+    "seq": 2
+  }
+}

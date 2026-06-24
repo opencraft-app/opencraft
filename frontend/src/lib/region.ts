@@ -9,12 +9,12 @@ import {
 /**
  * 站点区域常量
  * ──────────────────────────────────────────────────────────────
- * 通过 Vite 编译期环境变量 `VITE_REGION` 区分国内 / 国际站点：
+ * 通过 NEXT_PUBLIC_REGION / VITE_REGION 兼容环境变量区分国内 / 国际站点：
  *   - `cn`     ：国内站（lightvela.cn，默认）
  *   - `global` ：国际站（lightvela.com）
  *
  * 使用场景：
- *   1. 条件渲染（编译期会被 Vite 的 defineConfig 常量替换 + terser 做死代码消除）：
+ *   1. 条件渲染（编译期常量在构建时会被折叠）：
  *      ```tsx
  *      {isCN && <WechatLogin />}
  *      {isGlobal && <GoogleLogin />}

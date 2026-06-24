@@ -91,7 +91,7 @@ const DEFAULT_OG_IMAGE_PATH = "/lightvela-logo.jpg";
  *
  * 说明：本模块同时被两类上下文使用——
  *   1. 浏览器运行时（src/lib/seo.ts，编译期已知 region）
- *   2. vite.config.ts 的 dev SEO 中间件（按 mode 显式传入 region）
+ *   2. Node 侧 SEO 校验/修正脚本（按参数显式传入 region）
  * 因此不在模块顶层依赖 `import.meta.env`，region 一律以参数显式传入，
  * 缺省回退到 "cn"，避免 config 加载阶段解析 `@/` alias / import.meta 失败。
  */
@@ -302,6 +302,7 @@ const STATIC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = 
 
 const AGENT_SECTION_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = {
   cn: {
+    workbench: "工作台",
     channels: "通道配置",
     models: "模型配置",
     skills: "技能配置",
@@ -313,6 +314,7 @@ const AGENT_SECTION_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> 
     chat: "对话",
   },
   global: {
+    workbench: "Workbench",
     channels: "Channels",
     models: "Models",
     skills: "Skills",
@@ -348,7 +350,7 @@ const NOT_FOUND_TITLE_BY_REGION: Record<SeoRegion, string> = {
  *   - 国内站（cn）：中文 title
  *   - 国际站（global）：英文标题
  * 与 docs-sidebar.ts 保持一致；此处独立维护一份，避免该模块被
- * vite.config.ts（node 加载上下文）引入时触发 `@/` alias 解析失败。
+ * Node 脚本直接引入时触发 `@/` alias 解析失败。
  */
 const DOC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = {
   cn: {

@@ -59,6 +59,10 @@ class FakeWebSocket {
     this.readyState = WebSocket.CLOSED;
     this.onclose?.call(this as unknown as WebSocket, new CloseEvent("close", { code: 1000 }));
   }
+
+  markClosedWithoutEvent() {
+    this.readyState = WebSocket.CLOSED;
+  }
 }
 
 const WebSocketImpl = FakeWebSocket as unknown as new (url: string | URL, protocols?: string | string[]) => WebSocket;
@@ -84,6 +88,14 @@ const bytesOf = (value: unknown) => {
   if (value instanceof ArrayBuffer) return new Uint8Array(value);
   if (value instanceof Binary) return value.buffer;
   throw new Error("value is not binary data");
+};
+
+const makePrng = (seed: number) => {
+  let state = seed >>> 0;
+  return () => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 0x100000000;
+  };
 };
 
 const flushPromises = async (times = 5) => {
@@ -115,6 +127,7 @@ describe("TencentTsshProxyClient", () => {
         AppId: 1250000000,
         InstanceId: "rins-proxy001",
         SessionId: "session-1",
+        MaxIdleTime: 3600,
       },
     });
 
@@ -137,6 +150,26 @@ describe("TencentTsshProxyClient", () => {
 
     socket.receive(bsonResponse("PtyProxyReady", "proxy-1", { ProxyId: "proxy-1" }));
     await expect(openPromise).resolves.toMatchObject({ proxyId: "proxy-1", channelId: "proxy-1" });
+  });
+
+  it("passes a configurable proxy websocket idle timeout to TAT auth", async () => {
+    const client = new TencentTsshProxyClient({ ...bootstrap, timeoutSeconds: 5 }, { WebSocketImpl, connectDelayMs: 0 });
+    const openPromise = client.openProxy({ ip: "127.0.0.1", port: 8080, proxyId: "proxy-short-idle" });
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+
+    expect(parseJsonFrame(socket, 0)).toMatchObject({
+      Type: "SessionAuth",
+      Data: {
+        MaxIdleTime: 5,
+      },
+    });
+
+    vi.advanceTimersByTime(0);
+    await flushPromises();
+    socket.receive(bsonResponse("PtyProxyReady", "proxy-short-idle", { ProxyId: "proxy-short-idle" }));
+    await expect(openPromise).resolves.toMatchObject({ proxyId: "proxy-short-idle" });
+    client.close();
   });
 
   it("sends and receives proxy bytes", async () => {
@@ -189,5 +222,224 @@ describe("TencentTsshProxyClient", () => {
     socket.receive(bsonResponse("PtyProxyClose", "proxy-3", { ProxyId: "proxy-3" }));
     await expect(connection.waitClosed()).resolves.toBeUndefined();
     await expect(reader.read()).resolves.toEqual({ done: true, value: undefined });
+  });
+
+  it("routes concurrent proxy bytes only to their matching channel", async () => {
+    const client = new TencentTsshProxyClient(bootstrap, { WebSocketImpl, connectDelayMs: 0 });
+    const firstPromise = client.openProxy({ port: 9001, proxyId: "proxy-a" });
+    const secondPromise = client.openProxy({ port: 9002, proxyId: "proxy-b" });
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+    vi.advanceTimersByTime(0);
+    await flushPromises();
+
+    expect(parseBsonFrames(socket).filter((frame) => frame.Type === "PtyProxyNew")).toHaveLength(2);
+    socket.receive(bsonResponse("PtyProxyReady", "proxy-a", { ProxyId: "proxy-a" }));
+    socket.receive(bsonResponse("PtyProxyReady", "proxy-b", { ProxyId: "proxy-b" }));
+
+    const first = await firstPromise;
+    const second = await secondPromise;
+    const firstReader = first.readable.getReader();
+    const secondReader = second.readable.getReader();
+    let firstSettled = false;
+    const firstRead = firstReader.read().then((result) => {
+      firstSettled = true;
+      return result;
+    });
+    const secondRead = secondReader.read();
+
+    socket.receive(bsonResponse("PtyProxyData", "proxy-b", {
+      ProxyId: "proxy-b",
+      Data: new TextEncoder().encode("second-only"),
+    }));
+    const secondResult = await secondRead;
+    expect(secondResult.done).toBe(false);
+    expect(new TextDecoder().decode(secondResult.value)).toBe("second-only");
+    await flushPromises();
+    expect(firstSettled).toBe(false);
+
+    socket.receive(bsonResponse("PtyProxyData", "proxy-a", {
+      ProxyId: "proxy-a",
+      Data: new TextEncoder().encode("first-only"),
+    }));
+    const firstResult = await firstRead;
+    expect(firstResult.done).toBe(false);
+    expect(new TextDecoder().decode(firstResult.value)).toBe("first-only");
+    client.close();
+  });
+
+  it("preserves per-channel byte order under deterministic interleaved proxy frames", async () => {
+    const client = new TencentTsshProxyClient(bootstrap, { WebSocketImpl, connectDelayMs: 0 });
+    const proxyIds = ["mux-a", "mux-b", "mux-c", "mux-d"];
+    const received = new Map<string, string[]>();
+    const openPromises = proxyIds.map((proxyId, index) =>
+      client.openProxy({ port: 9100 + index, proxyId }, {
+        onData: (data) => {
+          received.set(proxyId, [...(received.get(proxyId) ?? []), new TextDecoder().decode(data)]);
+        },
+      }),
+    );
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+    vi.advanceTimersByTime(0);
+    await flushPromises();
+    for (const proxyId of proxyIds) {
+      socket.receive(bsonResponse("PtyProxyReady", proxyId, { ProxyId: proxyId }));
+    }
+    await Promise.all(openPromises);
+
+    const nextRandom = makePrng(0xace0ff);
+    const queues = new Map(
+      proxyIds.map((proxyId) => [
+        proxyId,
+        Array.from({ length: 9 }, (_, index) => ({
+          proxyId,
+          text: `${proxyId}:${index};`,
+        })),
+      ]),
+    );
+    const frames: Array<{ proxyId: string; text: string }> = [];
+    while ([...queues.values()].some((queue) => queue.length > 0)) {
+      const available = proxyIds.filter((proxyId) => (queues.get(proxyId)?.length ?? 0) > 0);
+      const proxyId = available[Math.floor(nextRandom() * available.length)]!;
+      frames.push(queues.get(proxyId)!.shift()!);
+    }
+
+    for (const frame of frames) {
+      socket.receive(bsonResponse("PtyProxyData", frame.proxyId, {
+        ProxyId: frame.proxyId,
+        Data: new TextEncoder().encode(frame.text),
+      }));
+    }
+    await flushPromises();
+
+    for (const proxyId of proxyIds) {
+      expect(received.get(proxyId)?.join("")).toBe(Array.from({ length: 9 }, (_, index) => `${proxyId}:${index};`).join(""));
+    }
+    client.close();
+  });
+
+  it("closing one proxy channel does not close sibling channels on the same socket", async () => {
+    const client = new TencentTsshProxyClient(bootstrap, { WebSocketImpl, connectDelayMs: 0 });
+    const firstPromise = client.openProxy({ port: 9001, proxyId: "proxy-close-a" });
+    const secondPromise = client.openProxy({ port: 9002, proxyId: "proxy-close-b" });
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+    vi.advanceTimersByTime(0);
+    await flushPromises();
+
+    socket.receive(bsonResponse("PtyProxyReady", "proxy-close-a", { ProxyId: "proxy-close-a" }));
+    socket.receive(bsonResponse("PtyProxyReady", "proxy-close-b", { ProxyId: "proxy-close-b" }));
+
+    const first = await firstPromise;
+    const second = await secondPromise;
+    const secondReader = second.readable.getReader();
+    first.close();
+
+    const closeFrame = parseBsonFrames(socket).at(-1)!;
+    expect(closeFrame).toMatchObject({
+      Type: "PtyProxyClose",
+      Data: {
+        ChannelId: "proxy-close-a",
+        Data: {
+          ProxyId: "proxy-close-a",
+        },
+      },
+    });
+
+    socket.receive(bsonResponse("PtyProxyData", "proxy-close-b", {
+      ProxyId: "proxy-close-b",
+      Data: new TextEncoder().encode("still-alive"),
+    }));
+    const secondResult = await secondReader.read();
+    expect(secondResult.done).toBe(false);
+    expect(new TextDecoder().decode(secondResult.value)).toBe("still-alive");
+    client.close();
+  });
+
+  it("ignores late ready frames after a proxy request timeout and keeps the client reusable", async () => {
+    const client = new TencentTsshProxyClient(bootstrap, {
+      WebSocketImpl,
+      connectDelayMs: 0,
+      requestTimeoutMs: 25,
+    });
+    const timedOutPromise = client.openProxy({ port: 9001, proxyId: "proxy-timeout" });
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+    vi.advanceTimersByTime(0);
+    await flushPromises();
+
+    vi.advanceTimersByTime(25);
+    await expect(timedOutPromise).rejects.toThrow("TAT proxy request timed out");
+
+    socket.receive(bsonResponse("PtyProxyReady", "proxy-timeout", { ProxyId: "proxy-timeout" }));
+    await flushPromises();
+
+    const recoveredPromise = client.openProxy({ port: 9002, proxyId: "proxy-recovered" });
+    await flushPromises();
+    socket.receive(bsonResponse("PtyProxyReady", "proxy-recovered", { ProxyId: "proxy-recovered" }));
+    await expect(recoveredPromise).resolves.toMatchObject({ proxyId: "proxy-recovered" });
+    client.close();
+  });
+
+  it("reconnects after the TAT server closes an idle proxy websocket", async () => {
+    const client = new TencentTsshProxyClient(bootstrap, {
+      WebSocketImpl,
+      connectDelayMs: 0,
+      requestTimeoutMs: 25,
+    });
+    const firstPromise = client.openProxy({ port: 9001, proxyId: "proxy-before-idle" });
+    const firstSocket = FakeWebSocket.instances[0]!;
+    firstSocket.open();
+    vi.advanceTimersByTime(0);
+    await flushPromises();
+    firstSocket.receive(bsonResponse("PtyProxyReady", "proxy-before-idle", { ProxyId: "proxy-before-idle" }));
+    await expect(firstPromise).resolves.toMatchObject({ proxyId: "proxy-before-idle" });
+
+    firstSocket.close();
+    await flushPromises();
+
+    const secondPromise = client.openProxy({ port: 9002, proxyId: "proxy-after-idle" });
+    await flushPromises();
+
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    const secondSocket = FakeWebSocket.instances[1]!;
+    secondSocket.open();
+    vi.advanceTimersByTime(0);
+    await flushPromises();
+    secondSocket.receive(bsonResponse("PtyProxyReady", "proxy-after-idle", { ProxyId: "proxy-after-idle" }));
+
+    await expect(secondPromise).resolves.toMatchObject({ proxyId: "proxy-after-idle" });
+    client.close();
+  });
+
+  it("does not reuse a resolved websocket promise when the browser socket is already closed", async () => {
+    const client = new TencentTsshProxyClient(bootstrap, {
+      WebSocketImpl,
+      connectDelayMs: 0,
+      requestTimeoutMs: 25,
+    });
+    const firstPromise = client.openProxy({ port: 9001, proxyId: "proxy-before-stale" });
+    const firstSocket = FakeWebSocket.instances[0]!;
+    firstSocket.open();
+    vi.advanceTimersByTime(0);
+    await flushPromises();
+    firstSocket.receive(bsonResponse("PtyProxyReady", "proxy-before-stale", { ProxyId: "proxy-before-stale" }));
+    await expect(firstPromise).resolves.toMatchObject({ proxyId: "proxy-before-stale" });
+
+    firstSocket.markClosedWithoutEvent();
+
+    const secondPromise = client.openProxy({ port: 9002, proxyId: "proxy-after-stale" });
+    await flushPromises();
+
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    const secondSocket = FakeWebSocket.instances[1]!;
+    secondSocket.open();
+    vi.advanceTimersByTime(0);
+    await flushPromises();
+    secondSocket.receive(bsonResponse("PtyProxyReady", "proxy-after-stale", { ProxyId: "proxy-after-stale" }));
+
+    await expect(secondPromise).resolves.toMatchObject({ proxyId: "proxy-after-stale" });
+    client.close();
   });
 });

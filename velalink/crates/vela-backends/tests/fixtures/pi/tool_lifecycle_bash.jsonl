@@ -1,0 +1,6 @@
+{"type":"turn_start"}
+{"type":"tool_execution_start","toolCallId":"tool-1","toolName":"bash","args":{"command":"echo integration"}}
+{"type":"tool_execution_update","toolCallId":"tool-1","partialResult":"integration"}
+{"type":"tool_execution_end","toolCallId":"tool-1","toolName":"bash","args":{"command":"echo integration"},"result":{"output":"integration\n","exitCode":0},"isError":false}
+{"type":"message_update","message":{"role":"assistant","content":[]},"assistantMessageEvent":{"type":"text_delta","delta":"Applied the requested edit.\n"}}
+{"type":"agent_end","messages":[]}

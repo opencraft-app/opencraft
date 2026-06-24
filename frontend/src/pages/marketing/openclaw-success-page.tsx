@@ -10,7 +10,7 @@ import { BrandMark } from "@/components/site/brand-mark";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { assetUrl } from "@/lib/asset-url";
-import { AGENTS_HOME_PATH } from "@/router/paths";
+import { AGENTS_HOME_PATH } from "@/lib/agent-routes";
 
 /* ─── Navbar ─── */
 

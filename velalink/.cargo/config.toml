@@ -1,0 +1,9 @@
+[alias]
+cw = "check --workspace --all-targets"
+tw = "test --workspace"
+tc = "test -p vela-core"
+ts = "test -p vela-store"
+tb = "test -p vela-backends"
+tr = "test -p vela-runtime"
+tp = "test -p vela-projection"
+td = "test -p velad"

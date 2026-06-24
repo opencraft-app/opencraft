@@ -4,12 +4,13 @@ WORKDIR /frontend
 
 COPY package.json pnpm-lock.yaml .npmrc ./
 
-COPY index.html ./
-COPY tsconfig.json tsconfig.app.json tsconfig.node.json vite.config.ts ./
+COPY tsconfig.json tsconfig.app.json next-env.d.ts next.config.mjs postcss.config.mjs source.config.ts mdx-components.tsx ./
 COPY public ./public
 COPY scripts ./scripts
 COPY src ./src
+COPY next-site ./next-site
 COPY vendor ./vendor
+COPY assets ./assets
 
 ARG VITE_AUTH_API_BASE_URL
 ENV VITE_AUTH_API_BASE_URL="${VITE_AUTH_API_BASE_URL}"
@@ -41,6 +42,6 @@ RUN corepack enable && corepack prepare pnpm@10.23.0 --activate && cd /frontend 
 FROM nginx:1.27-alpine
 
 COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=build /frontend/dist /usr/share/nginx/html
+COPY --from=build /frontend/out /usr/share/nginx/html
 
 EXPOSE 8080

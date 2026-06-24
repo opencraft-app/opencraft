@@ -79,7 +79,7 @@ export function DocsPage() {
     }
   }, [rawContent, slug, navigate, i18n.language]);
 
-  // 浏览器页签标题统一沿用 index.html 中的默认值，不在文档页内改写。
+  // 浏览器页签标题统一交给 Next metadata / 静态 HTML，不在文档页内直接改写。
   // 历史上此处会把 title 改成 `${某文档标题} · LightVela 文档`，但缺少卸载时的还原逻辑，
   // 离开文档页后 title 卡在文档标题不变；统一不改即可。
 

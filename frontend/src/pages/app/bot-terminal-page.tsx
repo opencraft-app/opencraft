@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { useRepositories } from "@/contexts/repository-context";
 import type { BotTerminalSession } from "@/domain/types";
 import type { TencentPtyClient, TencentPtyConnectionState } from "@/lib/tencent-pty-client";
-import { AGENTS_HOME_PATH } from "@/router/paths";
+import { AGENTS_HOME_PATH } from "@/lib/agent-routes";
 
 type ConnectionState = "loading" | "bootstrapping" | "authenticating" | "connected" | "closed" | "error";
 

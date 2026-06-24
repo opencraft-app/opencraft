@@ -1,8 +1,8 @@
 /**
  * 文档内容加载与预处理。
  *
- * 用 Vite 的 `import.meta.glob` 把 `@/content/docs/**` 下所有 markdown
- * 文件以纯文本形式打包进来；同目录 `images/*` 以 Vite 资源 URL 形式打包，
+ * 用 bundler 的 `import.meta.glob` 把 `@/content/docs/**` 下所有 markdown
+ * 文件以纯文本形式打包进来；同目录 `images/*` 以资源 URL 形式打包，
  * 这样 `./images/xxx.webp` 会被改写成构建产物的 `/assets/xxx.hash.webp`。
  *
  * 本文件的渲染前处理函数（`rewriteImagePaths` / `rewriteMarkdownLinks` /
@@ -58,7 +58,7 @@ export function getDocBySlug(slug: string, locale?: string): string | null {
 }
 
 /**
- * 把 markdown 里的本地图片路径改写为 Vite 构建后的 URL。
+ * 把 markdown 里的本地图片路径改写为 bundler 生成后的 URL。
  * 识别 `![](./images/xxx)`、`![](../images/xxx)`、`![](images/xxx)` 三种写法，
  * 以及内联 HTML `<img src="../images/xxx" ...>`（用于需要 width 等属性的场景）。
  * 英文环境下若存在同名 `-en` 图片，则只替换英文版图片，中文版仍使用原图。

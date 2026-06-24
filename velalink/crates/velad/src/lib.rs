@@ -1,0 +1,2894 @@
+use std::{convert::Infallible, sync::Arc};
+
+use axum::{
+    Json, Router,
+    body::Bytes,
+    extract::rejection::JsonRejection,
+    extract::rejection::QueryRejection,
+    extract::{Path, Query, State},
+    http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
+    routing::{get, patch, post},
+};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
+use chrono::Utc;
+use futures::{StreamExt, stream};
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value, json};
+use sha2::{Digest, Sha256};
+use tokio::sync::broadcast;
+use tower_http::cors::{Any, CorsLayer};
+use vela_backends::BackendAdapter;
+use vela_core::{
+    AcceptedCommandAck, AgentConfig, AgentConfigPatch, BackendFeature, BackendKind, BackendModel,
+    BlobRef, CanonicalEvent, CommandAck, CommandId, ConversationItemKind, EventCursor, EventId,
+    EventSource, EventType, PermissionMode, PermissionModeOption, ReasoningEffortOption,
+    RejectedCommandAck, SessionId, SourceEventRange, UserMessageBlock,
+};
+use vela_projection::{
+    ConversationWindowDirection, ConversationWindowError, ConversationWindowQuery,
+    project_conversation, project_conversation_window, project_pending_requests,
+};
+use vela_runtime::{Runtime, SendUserMessage};
+use vela_store::{SqliteEventStore, StoredSession};
+
+pub struct ApiState<B> {
+    store: Arc<SqliteEventStore>,
+    runtime: Runtime<B>,
+    events: broadcast::Sender<CanonicalEvent>,
+    default_session_model: Option<String>,
+    configured_backends: Vec<ConfiguredBackend>,
+}
+
+impl<B> Clone for ApiState<B> {
+    fn clone(&self) -> Self {
+        Self {
+            store: self.store.clone(),
+            runtime: self.runtime.clone(),
+            events: self.events.clone(),
+            default_session_model: self.default_session_model.clone(),
+            configured_backends: self.configured_backends.clone(),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct ConfiguredBackend {
+    kind: &'static str,
+    engine_kind: BackendKind,
+    display_name: &'static str,
+    default_model: Option<String>,
+}
+
+impl<B> ApiState<B>
+where
+    B: BackendAdapter + 'static,
+{
+    pub fn new(store: Arc<SqliteEventStore>, runtime: Runtime<B>) -> Self {
+        let (events, _) = broadcast::channel(1024);
+        let runtime = runtime.with_event_observer(Arc::new({
+            let events = events.clone();
+            move |event| {
+                let _ = events.send(event);
+            }
+        }));
+        Self {
+            store,
+            runtime,
+            events,
+            default_session_model: None,
+            configured_backends: vec![ConfiguredBackend {
+                kind: "pi",
+                engine_kind: BackendKind::Pi,
+                display_name: "PiCoding Agent",
+                default_model: None,
+            }],
+        }
+    }
+
+    pub fn with_default_session_model(mut self, model: Option<String>) -> Self {
+        self.default_session_model = model;
+        let default_session_model = self.default_session_model.clone();
+        if let Some(backend) = self
+            .configured_backends
+            .iter_mut()
+            .find(|backend| backend.kind == "pi")
+        {
+            backend.default_model = default_session_model;
+        }
+        self
+    }
+
+    pub fn with_codex_backend(mut self, default_model: Option<String>) -> Self {
+        let default_model = default_model.or_else(|| Some("gpt-5.3-codex-spark".to_string()));
+        if let Some(backend) = self
+            .configured_backends
+            .iter_mut()
+            .find(|backend| backend.kind == "codex")
+        {
+            backend.default_model = default_model;
+            return self;
+        }
+        self.configured_backends.push(ConfiguredBackend {
+            kind: "codex",
+            engine_kind: BackendKind::Codex,
+            display_name: "Codex",
+            default_model,
+        });
+        self
+    }
+
+    pub fn with_acp_backend(mut self, default_model: Option<String>) -> Self {
+        if let Some(backend) = self
+            .configured_backends
+            .iter_mut()
+            .find(|backend| backend.kind == "acp")
+        {
+            backend.default_model = default_model;
+            return self;
+        }
+        self.configured_backends.push(ConfiguredBackend {
+            kind: "acp",
+            engine_kind: BackendKind::Acp,
+            display_name: "Hermes ACP",
+            default_model,
+        });
+        self
+    }
+
+    fn configured_engine_kind(&self, backend: BackendKindWire) -> Option<BackendKind> {
+        let kind = backend.as_str();
+        self.configured_backends
+            .iter()
+            .find(|entry| entry.kind == kind)
+            .map(|entry| entry.engine_kind)
+    }
+}
+
+pub fn build_app<B>(state: ApiState<B>) -> Router
+where
+    B: BackendAdapter + 'static,
+{
+    Router::new()
+        .route(
+            "/api/v1/sessions",
+            get(list_sessions::<B>).post(create_session::<B>),
+        )
+        .route("/api/v1/sessions/{session_id}", get(get_session::<B>))
+        .route(
+            "/api/v1/sessions/{session_id}/agent-config",
+            patch(update_session_agent_config::<B>),
+        )
+        .route(
+            "/api/v1/sessions/{session_id}/cancel",
+            post(cancel_session::<B>),
+        )
+        .route(
+            "/api/v1/sessions/{session_id}/close",
+            post(close_session::<B>),
+        )
+        .route(
+            "/api/v1/sessions/{session_id}/archive",
+            post(archive_session::<B>),
+        )
+        .route(
+            "/api/v1/sessions/{session_id}/events",
+            get(list_session_events::<B>).post(send_session_events::<B>),
+        )
+        .route(
+            "/api/v1/sessions/{session_id}/events/stream",
+            get(stream_session_events::<B>),
+        )
+        .route("/api/v1/events/stream", get(stream_workbench_events::<B>))
+        .route(
+            "/api/v1/sessions/{session_id}/views/session",
+            get(get_session_view::<B>),
+        )
+        .route(
+            "/api/v1/sessions/{session_id}/views/conversation",
+            get(get_conversation_view::<B>),
+        )
+        .route(
+            "/api/v1/sessions/{session_id}/views/requests",
+            get(get_requests_view::<B>),
+        )
+        .route(
+            "/api/v1/sessions/{session_id}/views/diffs",
+            get(get_diffs_view::<B>),
+        )
+        .route(
+            "/api/v1/sessions/{session_id}/diagnostics/timeline",
+            get(get_timeline::<B>),
+        )
+        .route(
+            "/api/v1/sessions/{session_id}/diagnostics/timeline/{item_id}",
+            get(get_timeline_item::<B>),
+        )
+        .route(
+            "/api/v1/sessions/{session_id}/diagnostics/trace",
+            get(get_trace::<B>),
+        )
+        .route("/api/v1/views/sessions", get(get_session_list_view::<B>))
+        .route("/api/v1/requests/{request_id}", get(get_request::<B>))
+        .route("/api/v1/backends", get(list_backends::<B>))
+        .route("/api/v1/backends/{backend}", get(get_backend::<B>))
+        .route("/api/v1/backends/{backend}/probe", post(probe_backend::<B>))
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods(Any)
+                .allow_headers(Any),
+        )
+        .with_state(state)
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateSessionRequest {
+    backend: BackendKindWire,
+    working_directory: String,
+    #[serde(default)]
+    agent_config: Option<AgentConfig>,
+    title: Option<String>,
+    model: Option<String>,
+    metadata: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SendSessionEventsRequest {
+    events: Vec<ClientInputEvent>,
+    #[serde(default)]
+    options: Option<Value>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct ClientInputEvent {
+    #[serde(rename = "type")]
+    event_type: String,
+    content: Option<Vec<InputPart>>,
+    request_id: Option<String>,
+    result: Option<String>,
+    scope: Option<String>,
+    answer: Option<String>,
+    options: Option<Value>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct InputPart {
+    #[serde(rename = "type")]
+    part_type: String,
+    text: Option<String>,
+    uri: Option<String>,
+    data: Option<String>,
+    #[serde(alias = "mimeType")]
+    mime_type: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SessionListQuery {
+    after_id: Option<String>,
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EventWindowQuery {
+    after_id: Option<String>,
+    before_id: Option<String>,
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EventStreamQuery {
+    after_id: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ConversationViewQuery {
+    direction: Option<ViewWindowDirection>,
+    anchor_item_id: Option<String>,
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RequestsViewQuery {
+    status: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TimelineQuery {
+    before_id: Option<String>,
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TraceQuery {
+    after_id: Option<String>,
+    limit: Option<usize>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum ViewWindowDirection {
+    Tail,
+    Before,
+    After,
+    Around,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum BackendKindWire {
+    Codex,
+    Cloudagent,
+    ClaudeCode,
+    Pi,
+    Opencode,
+    Acp,
+    Qoder,
+}
+
+impl BackendKindWire {
+    fn from_str(value: &str) -> Option<Self> {
+        match value {
+            "codex" => Some(Self::Codex),
+            "cloudagent" => Some(Self::Cloudagent),
+            "claude_code" => Some(Self::ClaudeCode),
+            "pi" => Some(Self::Pi),
+            "opencode" => Some(Self::Opencode),
+            "acp" => Some(Self::Acp),
+            "qoder" => Some(Self::Qoder),
+            _ => None,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Codex => "codex",
+            Self::Cloudagent => "cloudagent",
+            Self::ClaudeCode => "claude_code",
+            Self::Pi => "pi",
+            Self::Opencode => "opencode",
+            Self::Acp => "acp",
+            Self::Qoder => "qoder",
+        }
+    }
+
+    fn engine_kind(self) -> Option<BackendKind> {
+        match self {
+            Self::Pi => Some(BackendKind::Pi),
+            Self::Codex => Some(BackendKind::Codex),
+            Self::Acp => Some(BackendKind::Acp),
+            Self::Cloudagent | Self::ClaudeCode | Self::Opencode | Self::Qoder => None,
+        }
+    }
+}
+
+async fn create_session<B>(
+    State(state): State<ApiState<B>>,
+    headers: HeaderMap,
+    request: Result<Json<CreateSessionRequest>, JsonRejection>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let Some(idempotency_key) = idempotency_key(&headers) else {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "missing_idempotency_key",
+            "Idempotency-Key header is required",
+        );
+    };
+    let mut request = match request {
+        Ok(Json(request)) => request,
+        Err(rejection) => return invalid_request(rejection.to_string()),
+    };
+    let Some(engine_backend) = state.configured_engine_kind(request.backend) else {
+        return error(
+            StatusCode::CONFLICT,
+            "backend_unavailable",
+            format!("backend {} is not configured", request.backend.as_str()),
+        );
+    };
+    let agent_config = create_session_agent_config(&state, &request);
+    request.model = agent_config.model.clone();
+    request.agent_config = Some(agent_config.clone());
+    let session_id = SessionId::from(idempotency_key);
+    match state
+        .runtime
+        .create_session_with_agent_config(
+            session_id.clone(),
+            engine_backend,
+            &request.working_directory,
+            request.title.as_deref(),
+            agent_config.clone(),
+            request.metadata.clone(),
+        )
+        .await
+    {
+        Ok(append) => {
+            let _ = state.events.send(append.event.clone());
+            let session = session_json(
+                &session_id,
+                request.backend.as_str(),
+                "idle",
+                &request.working_directory,
+                request.title.as_deref(),
+                &agent_config,
+                request.metadata,
+                Some(&append.event),
+            );
+            (
+                StatusCode::CREATED,
+                Json(json!({
+                    "session": session,
+                    "cursor": event_cursor_json(&append.event),
+                })),
+            )
+                .into_response()
+        }
+        Err(err) => match state.store.get_session(&session_id).await {
+            Ok(Some(existing)) => {
+                if same_create_request(&existing, request.backend, &request) {
+                    let events = state
+                        .store
+                        .list_events(&session_id)
+                        .await
+                        .unwrap_or_default();
+                    let last = events.last();
+                    (
+                        StatusCode::CREATED,
+                        Json(json!({
+                            "session": stored_session_json(&existing, last),
+                            "cursor": last.map(event_cursor_json).unwrap_or_else(empty_cursor_json),
+                        })),
+                    )
+                        .into_response()
+                } else {
+                    error(
+                        StatusCode::CONFLICT,
+                        "duplicate_command",
+                        "idempotency key was already used for a different create session command",
+                    )
+                }
+            }
+            _ => error(StatusCode::CONFLICT, "session_conflict", err.to_string()),
+        },
+    }
+}
+
+async fn update_session_agent_config<B>(
+    State(state): State<ApiState<B>>,
+    Path(session_id): Path<String>,
+    headers: HeaderMap,
+    request: Result<Json<AgentConfigPatch>, JsonRejection>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    if idempotency_key(&headers).is_none() {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "missing_idempotency_key",
+            "Idempotency-Key header is required",
+        );
+    }
+    let patch = match request {
+        Ok(Json(patch)) => patch,
+        Err(rejection) => return invalid_request(rejection.to_string()),
+    };
+    if patch.is_empty() {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "empty_agent_config",
+            "agent config patch must not be empty",
+        );
+    }
+    let session_id = SessionId::from(session_id);
+    let session = match state.store.get_session(&session_id).await {
+        Ok(Some(session)) => session,
+        Ok(None) => {
+            return error(
+                StatusCode::NOT_FOUND,
+                "session_not_found",
+                "session does not exist",
+            );
+        }
+        Err(err) => {
+            return error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "store_error",
+                err.to_string(),
+            );
+        }
+    };
+    let next_config = session.agent_config.merge_patch(patch);
+    if let Err(err) = state
+        .store
+        .update_session_agent_config(&session_id, &next_config)
+        .await
+    {
+        return error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "store_error",
+            err.to_string(),
+        );
+    }
+    let append = match state
+        .store
+        .append_event(
+            &session_id,
+            EventType::SESSION_CONFIG_UPDATED,
+            EventSource::runtime("velad"),
+            json!({ "agent_config": next_config }),
+            None,
+        )
+        .await
+    {
+        Ok(append) => append,
+        Err(err) => {
+            return error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "store_error",
+                err.to_string(),
+            );
+        }
+    };
+    let _ = state.events.send(append.event.clone());
+    let updated = match state.store.get_session(&session_id).await {
+        Ok(Some(session)) => session,
+        _ => session,
+    };
+    let effective_after = if state.runtime.is_session_running(&session_id).await {
+        "next_turn"
+    } else {
+        "current_session"
+    };
+    Json(json!({
+        "session": stored_session_json(&updated, Some(&append.event)),
+        "effective_after": effective_after,
+        "cursor": event_cursor_json(&append.event),
+    }))
+    .into_response()
+}
+
+async fn archive_session<B>(
+    State(state): State<ApiState<B>>,
+    Path(session_id): Path<String>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let session_id = SessionId::from(session_id);
+    if let Err(err) = state.store.archive_session(&session_id).await {
+        return match err {
+            vela_store::StoreError::SessionNotFound(_) => error(
+                StatusCode::NOT_FOUND,
+                "session_not_found",
+                "session does not exist",
+            ),
+            _ => error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "store_error",
+                err.to_string(),
+            ),
+        };
+    }
+    session_response(&state, &session_id, false).await
+}
+
+async fn list_sessions<B>(
+    State(state): State<ApiState<B>>,
+    query: Result<Query<SessionListQuery>, QueryRejection>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let query = match parsed_query(query) {
+        Ok(query) => query,
+        Err(response) => return response,
+    };
+    let limit = match validated_limit(query.limit) {
+        Ok(limit) => limit,
+        Err(response) => return response,
+    };
+    match state.store.list_sessions().await {
+        Ok(sessions) => {
+            let values = sessions
+                .iter()
+                .map(session_summary_json)
+                .collect::<Vec<_>>();
+            let page = page_values(values, query.after_id.as_deref(), None, limit);
+            Json(json!({
+                "sessions": page.items,
+                "cursor": page.cursor,
+            }))
+            .into_response()
+        }
+        Err(err) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "store_error",
+            err.to_string(),
+        ),
+    }
+}
+
+async fn get_session<B>(
+    State(state): State<ApiState<B>>,
+    Path(session_id): Path<String>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    session_response(&state, &SessionId::from(session_id), false).await
+}
+
+async fn get_session_view<B>(
+    State(state): State<ApiState<B>>,
+    Path(session_id): Path<String>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    session_response(&state, &SessionId::from(session_id), true).await
+}
+
+async fn session_response<B>(
+    state: &ApiState<B>,
+    session_id: &SessionId,
+    include_cursor: bool,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    match state.store.get_session(session_id).await {
+        Ok(Some(session)) => {
+            let events = state
+                .store
+                .list_events(session_id)
+                .await
+                .unwrap_or_default();
+            let last = events.last();
+            let value = stored_session_json(&session, last);
+            if include_cursor {
+                Json(json!({
+                    "session": value,
+                    "cursor": last.map(event_cursor_json).unwrap_or_else(empty_cursor_json),
+                }))
+                .into_response()
+            } else {
+                Json(json!({ "session": value })).into_response()
+            }
+        }
+        Ok(None) => error(
+            StatusCode::NOT_FOUND,
+            "session_not_found",
+            "session does not exist",
+        ),
+        Err(err) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "store_error",
+            err.to_string(),
+        ),
+    }
+}
+
+async fn send_session_events<B>(
+    State(state): State<ApiState<B>>,
+    Path(session_id): Path<String>,
+    headers: HeaderMap,
+    request: Result<Json<SendSessionEventsRequest>, JsonRejection>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let Some(idempotency_key) = idempotency_key(&headers) else {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "missing_idempotency_key",
+            "Idempotency-Key header is required",
+        );
+    };
+    let request = match request {
+        Ok(Json(request)) => request,
+        Err(rejection) => return invalid_request(rejection.to_string()),
+    };
+    if request.events.is_empty() {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "empty_events",
+            "events must not be empty",
+        );
+    };
+    let session_id = SessionId::from(session_id);
+    match state.store.get_session(&session_id).await {
+        Ok(Some(session)) if session.status == "closed" => {
+            let events = state
+                .store
+                .list_events(&session_id)
+                .await
+                .unwrap_or_default();
+            let ack = rejected_command_ack(
+                "session_closed",
+                "session is closed",
+                Some(CommandId::from(idempotency_key)),
+                Some(session_id.clone()),
+                events.last().map(CanonicalEvent::cursor),
+            );
+            return (StatusCode::ACCEPTED, Json(command_ack_json(&ack, &events))).into_response();
+        }
+        Ok(Some(_)) => {}
+        Ok(None) => {
+            return error(
+                StatusCode::NOT_FOUND,
+                "session_not_found",
+                "session does not exist",
+            );
+        }
+        Err(err) => {
+            return error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "store_error",
+                err.to_string(),
+            );
+        }
+    }
+    let before_len = state
+        .store
+        .list_events(&session_id)
+        .await
+        .map(|events| events.len())
+        .unwrap_or(0);
+    let mut ack_result = Ok(rejected_command_ack(
+        "invalid_input_event",
+        "events must not be empty",
+        Some(CommandId::from(idempotency_key)),
+        Some(session_id.clone()),
+        None,
+    ));
+    let batch_len = request.events.len();
+    let request_options = request.options.clone();
+    for (index, input) in request.events.iter().enumerate() {
+        let event_idempotency_key = scoped_idempotency_key(idempotency_key, index, batch_len);
+        ack_result = if input.event_type == "user.message" {
+            let content = input_content(input);
+            match input_message_blocks(input) {
+                Ok(blocks) if contains_image_block(&blocks) => {
+                    state
+                        .runtime
+                        .send_user_message_with_blocks(
+                            SendUserMessage {
+                                session_id: session_id.clone(),
+                                idempotency_key: event_idempotency_key,
+                                content,
+                                command_id: None,
+                            },
+                            blocks,
+                        )
+                        .await
+                }
+                Ok(_) => {
+                    state
+                        .runtime
+                        .send_user_message(SendUserMessage {
+                            session_id: session_id.clone(),
+                            idempotency_key: event_idempotency_key,
+                            content,
+                            command_id: None,
+                        })
+                        .await
+                }
+                Err(error) => Ok(rejected_command_ack(
+                    "invalid_input_part",
+                    error.to_string(),
+                    Some(CommandId::from(event_idempotency_key)),
+                    Some(session_id.clone()),
+                    None,
+                )),
+            }
+        } else {
+            accept_non_message_input(
+                &state,
+                &session_id,
+                &event_idempotency_key,
+                input,
+                request_options.clone(),
+            )
+            .await
+        };
+        if matches!(ack_result, Ok(CommandAck::Rejected(_)) | Err(_)) {
+            break;
+        }
+    }
+
+    match ack_result {
+        Ok(ack) => {
+            let events = state
+                .store
+                .list_events(&session_id)
+                .await
+                .unwrap_or_default();
+            publish_new_events(&state, &events, before_len);
+            (StatusCode::ACCEPTED, Json(command_ack_json(&ack, &events))).into_response()
+        }
+        Err(err) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "runtime_error",
+            err.to_string(),
+        ),
+    }
+}
+
+async fn cancel_session<B>(
+    State(state): State<ApiState<B>>,
+    Path(session_id): Path<String>,
+    headers: HeaderMap,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    control_command(
+        &state,
+        &SessionId::from(session_id),
+        &headers,
+        EventType::TURN_CANCEL_ACCEPTED,
+        json!({}),
+    )
+    .await
+}
+
+async fn close_session<B>(
+    State(state): State<ApiState<B>>,
+    Path(session_id): Path<String>,
+    headers: HeaderMap,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    control_command(
+        &state,
+        &SessionId::from(session_id),
+        &headers,
+        EventType::SESSION_CLOSED,
+        json!({ "status": "closed" }),
+    )
+    .await
+}
+
+async fn control_command<B>(
+    state: &ApiState<B>,
+    session_id: &SessionId,
+    headers: &HeaderMap,
+    event_type: EventType,
+    payload: Value,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let Some(idempotency_key) = idempotency_key(headers) else {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "missing_idempotency_key",
+            "Idempotency-Key header is required",
+        );
+    };
+    match state.store.get_session(session_id).await {
+        Ok(None) => {
+            return error(
+                StatusCode::NOT_FOUND,
+                "session_not_found",
+                "session does not exist",
+            );
+        }
+        Ok(Some(session))
+            if session.status == "closed" && event_type != EventType::SESSION_CLOSED =>
+        {
+            let events = state
+                .store
+                .list_events(session_id)
+                .await
+                .unwrap_or_default();
+            let ack = rejected_command_ack(
+                "session_closed",
+                "session is closed",
+                Some(CommandId::from(idempotency_key)),
+                Some(session_id.clone()),
+                events.last().map(CanonicalEvent::cursor),
+            );
+            return (StatusCode::ACCEPTED, Json(command_ack_json(&ack, &events))).into_response();
+        }
+        Ok(Some(_)) => {}
+        Err(err) => {
+            return error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "store_error",
+                err.to_string(),
+            );
+        }
+    }
+
+    match state
+        .store
+        .record_idempotency_acceptance(
+            session_id,
+            idempotency_key,
+            &hash_value(&json!({
+                "session_id": session_id.as_str(),
+                "event_type": event_type.0,
+                "payload": payload.clone(),
+            })),
+            Some(CommandId::from(idempotency_key)),
+            event_type,
+            EventSource::runtime("velad"),
+            payload,
+        )
+        .await
+    {
+        Ok(acceptance) => {
+            if acceptance.is_fresh() {
+                if event_type == EventType::TURN_CANCEL_ACCEPTED {
+                    if let Err(err) = state.runtime.cancel_backend(session_id).await {
+                        return error(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "backend_cancel_failed",
+                            err.to_string(),
+                        );
+                    }
+                }
+                if event_type == EventType::SESSION_CLOSED {
+                    if let Err(err) = state
+                        .store
+                        .update_session_status(session_id, "closed")
+                        .await
+                    {
+                        return error(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "store_error",
+                            err.to_string(),
+                        );
+                    }
+                }
+            }
+            let events = state
+                .store
+                .list_events(session_id)
+                .await
+                .unwrap_or_default();
+            if acceptance.is_fresh() {
+                publish_new_events(&state, &events, events.len().saturating_sub(1));
+            }
+            (
+                StatusCode::ACCEPTED,
+                Json(command_ack_json(&acceptance.ack(), &events)),
+            )
+                .into_response()
+        }
+        Err(err) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "store_error",
+            err.to_string(),
+        ),
+    }
+}
+
+async fn list_session_events<B>(
+    State(state): State<ApiState<B>>,
+    Path(session_id): Path<String>,
+    query: Result<Query<EventWindowQuery>, QueryRejection>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let query = match parsed_query(query) {
+        Ok(query) => query,
+        Err(response) => return response,
+    };
+    let session_id = SessionId::from(session_id);
+    let limit = match validated_limit(query.limit) {
+        Ok(limit) => limit,
+        Err(response) => return response,
+    };
+    match state.store.list_events(&session_id).await {
+        Ok(events) => {
+            if cursor_is_stale(
+                &events,
+                query.after_id.as_deref(),
+                query.before_id.as_deref(),
+            ) {
+                return (StatusCode::CONFLICT, Json(sync_reset_json(&events))).into_response();
+            }
+            let page = page_events(
+                &events,
+                query.after_id.as_deref(),
+                query.before_id.as_deref(),
+                limit,
+            );
+            Json(json!({
+                "events": page.events.iter().map(event_json).collect::<Vec<_>>(),
+                "cursor": page.cursor,
+            }))
+            .into_response()
+        }
+        Err(err) => error(StatusCode::NOT_FOUND, "session_not_found", err.to_string()),
+    }
+}
+
+async fn stream_session_events<B>(
+    State(state): State<ApiState<B>>,
+    Path(session_id): Path<String>,
+    headers: HeaderMap,
+    query: Result<Query<EventStreamQuery>, QueryRejection>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let query = match parsed_query(query) {
+        Ok(query) => query,
+        Err(response) => return response,
+    };
+    let session_id = SessionId::from(session_id);
+    let after_id = query
+        .after_id
+        .as_deref()
+        .or_else(|| last_event_id(&headers));
+    let events = match events_or_404(&state, &session_id).await {
+        Ok(events) => events,
+        Err(response) => return response,
+    };
+    if cursor_is_stale(&events, after_id, None) {
+        return sse_reset_response(&events, state.events.subscribe(), Some(session_id));
+    }
+    let page = page_events(&events, after_id, None, None);
+    sse_live_response(page.events, state.events.subscribe(), Some(session_id))
+}
+
+async fn stream_workbench_events<B>(
+    State(state): State<ApiState<B>>,
+    headers: HeaderMap,
+    query: Result<Query<EventStreamQuery>, QueryRejection>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let query = match parsed_query(query) {
+        Ok(query) => query,
+        Err(response) => return response,
+    };
+    let after_id = query
+        .after_id
+        .as_deref()
+        .or_else(|| last_event_id(&headers));
+    let mut events = Vec::new();
+    for session in state.store.list_sessions().await.unwrap_or_default() {
+        events.extend(
+            state
+                .store
+                .list_events(&session.session_id)
+                .await
+                .unwrap_or_default(),
+        );
+    }
+    events.sort_by(|left, right| {
+        left.created_at
+            .cmp(&right.created_at)
+            .then(left.session_id.as_str().cmp(right.session_id.as_str()))
+            .then(left.seq.cmp(&right.seq))
+    });
+    if cursor_is_stale(&events, after_id, None) {
+        return sse_reset_response(&events, state.events.subscribe(), None);
+    }
+    let page = page_events(&events, after_id, None, None);
+    sse_live_response(page.events, state.events.subscribe(), None)
+}
+
+async fn get_conversation_view<B>(
+    State(state): State<ApiState<B>>,
+    Path(session_id): Path<String>,
+    query: Result<Query<ConversationViewQuery>, QueryRejection>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let query = match parsed_query(query) {
+        Ok(query) => query,
+        Err(response) => return response,
+    };
+    let limit = match validated_limit(query.limit) {
+        Ok(limit) => limit,
+        Err(response) => return response,
+    };
+    let window_query = match conversation_window_query(&query, limit.unwrap_or(80)) {
+        Ok(query) => query,
+        Err(response) => return response,
+    };
+    let events = match events_or_404(&state, &SessionId::from(session_id)).await {
+        Ok(events) => events,
+        Err(response) => return response,
+    };
+    let view = match project_conversation_window(&events, window_query) {
+        Ok(view) => view,
+        Err(ConversationWindowError::UnknownItemId(_)) => {
+            return (StatusCode::CONFLICT, Json(sync_reset_json(&events))).into_response();
+        }
+    };
+    Json(json!({
+        "session_id": view.session_id.as_str(),
+        "items": view.items.iter().map(|item| {
+            let mut item_json = json!({
+                "id": item.item_id,
+                "kind": item.kind.as_str(),
+                "created_at": item.created_at.to_rfc3339(),
+                "updated_at": item.updated_at.to_rfc3339(),
+                "revision": item.revision,
+                "status": item.status,
+                "source_event_ids": item.source_event_ids.iter().map(|id| id.as_str()).collect::<Vec<_>>(),
+                "source_event_ranges": item.source_event_ranges.iter().map(source_event_range_json).collect::<Vec<_>>(),
+            });
+            if let Value::Object(object) = &mut item_json {
+                if let Some(turn_id) = item.turn_id.as_ref() {
+                    object.insert("turn_id".to_string(), json!(turn_id.as_str()));
+                }
+                if let Some(text) = item.text.as_ref() {
+                    object.insert("text".to_string(), json!(text));
+                }
+                if !item.parts.is_empty() {
+                    object.insert("parts".to_string(), json!(item.parts));
+                }
+                if let Some(title) = item.title.as_ref() {
+                    object.insert("title".to_string(), json!(title));
+                }
+                if let Some(summary) = item.summary.as_ref() {
+                    object.insert("summary".to_string(), json!(summary));
+                }
+                if item.kind.as_str() == "agent_work" {
+                    object.insert(
+                        "status".to_string(),
+                        json!(activity_status_wire(item.status.as_str())),
+                    );
+                    object.insert(
+                        "detail".to_string(),
+                        activity_detail_json("tool", &item.detail).unwrap_or(Value::Null),
+                    );
+                    object.insert(
+                        "event_range".to_string(),
+                        event_range_json(&item.source_event_ids),
+                    );
+                }
+            }
+            item_json
+        }).collect::<Vec<_>>(),
+        "window": {
+            "first_item_id": view.window.first_item_id,
+            "last_item_id": view.window.last_item_id,
+            "anchor_item_id": view.window.anchor_item_id,
+            "has_older": view.window.has_older,
+            "has_newer": view.window.has_newer,
+        },
+        "cursor": view.cursor.as_ref().map(event_cursor_value).unwrap_or_else(empty_cursor_json),
+    }))
+    .into_response()
+}
+
+async fn get_requests_view<B>(
+    State(state): State<ApiState<B>>,
+    Path(session_id): Path<String>,
+    query: Result<Query<RequestsViewQuery>, QueryRejection>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let query = match parsed_query(query) {
+        Ok(query) => query,
+        Err(response) => return response,
+    };
+    if let Err(response) = validate_request_status(query.status.as_deref()) {
+        return response;
+    }
+    let events = match events_or_404(&state, &SessionId::from(session_id)).await {
+        Ok(events) => events,
+        Err(response) => return response,
+    };
+    let requests = requests_from_events(&events, query.status.as_deref());
+    Json(json!({
+        "requests": requests,
+        "cursor": cursor_window_json(&events),
+    }))
+    .into_response()
+}
+
+async fn get_diffs_view<B>(
+    State(state): State<ApiState<B>>,
+    Path(session_id): Path<String>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let events = match events_or_404(&state, &SessionId::from(session_id)).await {
+        Ok(events) => events,
+        Err(response) => return response,
+    };
+    Json(json!({
+        "diffs": diffs_from_events(&events),
+        "cursor": cursor_window_json(&events),
+    }))
+    .into_response()
+}
+
+async fn get_session_list_view<B>(
+    State(state): State<ApiState<B>>,
+    query: Result<Query<SessionListQuery>, QueryRejection>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let query = match parsed_query(query) {
+        Ok(query) => query,
+        Err(response) => return response,
+    };
+    let limit = match validated_limit(query.limit) {
+        Ok(limit) => limit,
+        Err(response) => return response,
+    };
+    let sessions = match state.store.list_sessions().await {
+        Ok(sessions) => sessions,
+        Err(err) => {
+            return error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "store_error",
+                err.to_string(),
+            );
+        }
+    };
+
+    let mut values = Vec::with_capacity(sessions.len());
+    for session in &sessions {
+        let events = match state.store.list_events(&session.session_id).await {
+            Ok(events) => events,
+            Err(err) => {
+                return error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "store_error",
+                    err.to_string(),
+                );
+            }
+        };
+        values.push(session_list_item_json(session, &events));
+    }
+
+    let page = page_values(values, query.after_id.as_deref(), None, limit);
+    Json(json!({
+        "sessions": page.items,
+        "cursor": page.cursor,
+    }))
+    .into_response()
+}
+
+async fn get_timeline<B>(
+    State(state): State<ApiState<B>>,
+    Path(session_id): Path<String>,
+    query: Result<Query<TimelineQuery>, QueryRejection>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let query = match parsed_query(query) {
+        Ok(query) => query,
+        Err(response) => return response,
+    };
+    let limit = match validated_limit(query.limit) {
+        Ok(limit) => limit,
+        Err(response) => return response,
+    };
+    let events = match events_or_404(&state, &SessionId::from(session_id)).await {
+        Ok(events) => events,
+        Err(response) => return response,
+    };
+    let page = page_events(&events, None, query.before_id.as_deref(), limit);
+    Json(json!({
+        "items": coalesced_timeline_items(&page.events),
+        "cursor": page.cursor,
+    }))
+    .into_response()
+}
+
+async fn get_timeline_item<B>(
+    State(state): State<ApiState<B>>,
+    Path((session_id, item_id)): Path<(String, String)>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let events = match events_or_404(&state, &SessionId::from(session_id)).await {
+        Ok(events) => events,
+        Err(response) => return response,
+    };
+    match events
+        .iter()
+        .find(|event| event.event_id.as_str() == item_id)
+    {
+        Some(event) => Json(json!({ "item": timeline_item_json(event) })).into_response(),
+        None => error(
+            StatusCode::NOT_FOUND,
+            "timeline_item_not_found",
+            "timeline item does not exist",
+        ),
+    }
+}
+
+async fn get_trace<B>(
+    State(state): State<ApiState<B>>,
+    Path(session_id): Path<String>,
+    query: Result<Query<TraceQuery>, QueryRejection>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let query = match parsed_query(query) {
+        Ok(query) => query,
+        Err(response) => return response,
+    };
+    let limit = match validated_limit(query.limit) {
+        Ok(limit) => limit,
+        Err(response) => return response,
+    };
+    let session_id = SessionId::from(session_id);
+    let events = match events_or_404(&state, &session_id).await {
+        Ok(events) => events,
+        Err(response) => return response,
+    };
+    let page = page_events(&events, query.after_id.as_deref(), None, limit);
+    Json(json!({
+        "session_id": session_id.as_str(),
+        "spans": trace_spans_from_events(&page.events),
+        "cursor": page.cursor,
+    }))
+    .into_response()
+}
+
+async fn get_request<B>(
+    State(state): State<ApiState<B>>,
+    Path(request_id): Path<String>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    for session in state.store.list_sessions().await.unwrap_or_default() {
+        let events = state
+            .store
+            .list_events(&session.session_id)
+            .await
+            .unwrap_or_default();
+        if let Some(request) = requests_from_events(&events, None)
+            .into_iter()
+            .find(|request| request["id"] == request_id)
+        {
+            return Json(json!({ "request": request })).into_response();
+        }
+    }
+    error(
+        StatusCode::NOT_FOUND,
+        "request_not_found",
+        "request does not exist",
+    )
+}
+
+async fn list_backends<B>(State(state): State<ApiState<B>>) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    Json(json!({ "backends": backend_catalog(&state) })).into_response()
+}
+
+async fn get_backend<B>(State(state): State<ApiState<B>>, Path(backend): Path<String>) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    match backend_catalog(&state)
+        .into_iter()
+        .find(|item| item["kind"] == backend)
+    {
+        Some(backend) => Json(json!({ "backend": backend })).into_response(),
+        None => error(
+            StatusCode::NOT_FOUND,
+            "backend_not_found",
+            "backend is not configured",
+        ),
+    }
+}
+
+async fn probe_backend<B>(State(state): State<ApiState<B>>, Path(backend): Path<String>) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    if !backend_catalog(&state)
+        .iter()
+        .any(|item| item["kind"] == backend)
+    {
+        return Json(json!({
+            "backend": backend,
+            "status": "unavailable",
+            "message": "backend is not configured",
+        }))
+        .into_response();
+    }
+    let backend_kind = BackendKindWire::from_str(&backend)
+        .and_then(|backend| state.configured_engine_kind(backend));
+    match state.runtime.probe_backend(backend_kind).await {
+        Ok(probe) => Json(json!({
+            "backend": backend,
+            "status": probe.status.as_str(),
+            "message": probe.message,
+        }))
+        .into_response(),
+        Err(err) => Json(json!({
+            "backend": backend,
+            "status": "unavailable",
+            "message": err.to_string(),
+        }))
+        .into_response(),
+    }
+}
+
+async fn events_or_404<B>(
+    state: &ApiState<B>,
+    session_id: &SessionId,
+) -> Result<Vec<CanonicalEvent>, Response>
+where
+    B: BackendAdapter + 'static,
+{
+    match state.store.session_exists(session_id).await {
+        Ok(true) => state.store.list_events(session_id).await.map_err(|err| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "store_error",
+                err.to_string(),
+            )
+        }),
+        Ok(false) => Err(error(
+            StatusCode::NOT_FOUND,
+            "session_not_found",
+            "session does not exist",
+        )),
+        Err(err) => Err(error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "store_error",
+            err.to_string(),
+        )),
+    }
+}
+
+fn idempotency_key(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get("Idempotency-Key")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| !value.is_empty())
+}
+
+fn last_event_id(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get("Last-Event-ID")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| !value.is_empty())
+}
+
+fn parsed_query<T>(query: Result<Query<T>, QueryRejection>) -> Result<T, Response> {
+    query
+        .map(|Query(query)| query)
+        .map_err(|err| invalid_parameter("query", err.to_string()))
+}
+
+fn scoped_idempotency_key(base: &str, index: usize, batch_len: usize) -> String {
+    if batch_len == 1 {
+        base.to_string()
+    } else {
+        format!("{base}#{index}")
+    }
+}
+
+fn validated_limit(limit: Option<usize>) -> Result<Option<usize>, Response> {
+    match limit {
+        Some(0) => Err(invalid_parameter("limit", "limit must be at least 1")),
+        Some(value) if value > 500 => Err(invalid_parameter("limit", "limit must be at most 500")),
+        value => Ok(value),
+    }
+}
+
+fn conversation_window_query(
+    query: &ConversationViewQuery,
+    limit: usize,
+) -> Result<ConversationWindowQuery, Response> {
+    let direction = query.direction.unwrap_or(ViewWindowDirection::Tail);
+    let direction = match direction {
+        ViewWindowDirection::Tail => ConversationWindowDirection::Tail,
+        ViewWindowDirection::Before => ConversationWindowDirection::Before,
+        ViewWindowDirection::After => ConversationWindowDirection::After,
+        ViewWindowDirection::Around => ConversationWindowDirection::Around,
+    };
+    match direction {
+        ConversationWindowDirection::Tail => {
+            if query.anchor_item_id.is_some() {
+                Err(invalid_parameter(
+                    "anchor_item_id",
+                    "direction=tail cannot include anchor_item_id",
+                ))
+            } else {
+                Ok(ConversationWindowQuery {
+                    anchor_item_id: None,
+                    direction,
+                    limit,
+                })
+            }
+        }
+        ConversationWindowDirection::Before
+        | ConversationWindowDirection::After
+        | ConversationWindowDirection::Around => match query.anchor_item_id.clone() {
+            Some(anchor) => Ok(ConversationWindowQuery {
+                anchor_item_id: Some(anchor),
+                direction,
+                limit,
+            }),
+            None => Err(invalid_parameter(
+                "anchor_item_id",
+                "anchor_item_id is required for anchored conversation windows",
+            )),
+        },
+    }
+}
+
+fn validate_request_status(status: Option<&str>) -> Result<(), Response> {
+    match status {
+        None | Some("pending") | Some("approved") | Some("denied") | Some("answered")
+        | Some("expired") | Some("cancelled") => Ok(()),
+        Some(_) => Err(invalid_parameter(
+            "status",
+            "status must be one of pending, approved, denied, answered, expired, cancelled",
+        )),
+    }
+}
+
+async fn accept_non_message_input<B>(
+    state: &ApiState<B>,
+    session_id: &SessionId,
+    idempotency_key: &str,
+    input: &ClientInputEvent,
+    request_options: Option<Value>,
+) -> anyhow::Result<CommandAck>
+where
+    B: BackendAdapter + 'static,
+{
+    if !matches!(
+        input.event_type.as_str(),
+        "user.tool_confirmation" | "user.custom_tool_result" | "user.request_answer"
+    ) {
+        return Ok(rejected_command_ack(
+            "invalid_input_event",
+            format!("unsupported input event type: {}", input.event_type),
+            Some(CommandId::from(idempotency_key)),
+            Some(session_id.clone()),
+            state
+                .store
+                .list_events(session_id)
+                .await
+                .ok()
+                .and_then(|events| events.last().map(CanonicalEvent::cursor)),
+        ));
+    }
+    let request_id = input.request_id.clone().unwrap_or_default();
+    let accepted = state
+        .store
+        .record_idempotency_acceptance(
+            session_id,
+            idempotency_key,
+            &hash_value(&json!({
+                "session_id": session_id.as_str(),
+                "input": input,
+            })),
+            Some(CommandId::from(idempotency_key)),
+            EventType::REQUEST_RESPONSE_ACCEPTED,
+            EventSource::runtime("velad"),
+            json!({
+                "request_id": request_id,
+                "input_type": input.event_type,
+                "result": input.result,
+                "scope": input.scope,
+                "answer": input.answer,
+                "content": input.content,
+                "options": input.options,
+                "request_options": request_options,
+            }),
+        )
+        .await?;
+    if accepted.is_hash_mismatch() || accepted.is_replay() {
+        return Ok(accepted.ack());
+    }
+
+    let cursor = match accepted.ack() {
+        CommandAck::Accepted(ack) => ack.cursor.clone(),
+        CommandAck::Queued(ack) => ack.cursor.clone(),
+        CommandAck::Rejected(_) => unreachable!("fresh idempotency acceptance cannot reject"),
+    };
+
+    match input.event_type.as_str() {
+        "user.tool_confirmation" => {
+            state
+                .store
+                .append_event(
+                    session_id,
+                    EventType::REQUEST_RESOLVED,
+                    EventSource::runtime("velad"),
+                    json!({
+                        "request_id": request_id,
+                        "status": if input.result.as_deref() == Some("deny") { "denied" } else { "approved" },
+                        "result": input.result,
+                        "scope": input.scope,
+                    }),
+                    None,
+                )
+                .await?;
+        }
+        "user.custom_tool_result" => {
+            state
+                .store
+                .append_event(
+                    session_id,
+                    EventType::TOOL_COMPLETED,
+                    EventSource::runtime("velad"),
+                    json!({
+                        "tool_id": request_id,
+                        "name": "custom_tool_result",
+                        "status": "completed",
+                        "detail": { "content": input.content },
+                    }),
+                    None,
+                )
+                .await?;
+        }
+        "user.request_answer" => {
+            state
+                .store
+                .append_event(
+                    session_id,
+                    EventType::REQUEST_RESOLVED,
+                    EventSource::runtime("velad"),
+                    json!({
+                        "request_id": request_id,
+                        "status": "answered",
+                        "answer": input.answer,
+                    }),
+                    None,
+                )
+                .await?;
+        }
+        _ => anyhow::bail!("unsupported input event type: {}", input.event_type),
+    }
+
+    if matches!(
+        input.event_type.as_str(),
+        "user.tool_confirmation" | "user.custom_tool_result" | "user.request_answer"
+    ) {
+        state
+            .runtime
+            .respond_to_request(
+                session_id,
+                request_id.clone(),
+                input.result.clone(),
+                input.scope.clone(),
+                input.answer.clone(),
+                input.content.as_ref().map(|content| json!(content)),
+                input.options.clone(),
+            )
+            .await?;
+    }
+
+    Ok(CommandAck::Accepted(AcceptedCommandAck {
+        command_id: CommandId::from(idempotency_key),
+        session_id: session_id.clone(),
+        cursor,
+        turn_id: None,
+    }))
+}
+
+fn input_content(input: &ClientInputEvent) -> String {
+    input
+        .content
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .map(|part| match part.part_type.as_str() {
+            "text" => part.text.clone().unwrap_or_default(),
+            "file_ref" | "image_ref" => part.uri.clone().unwrap_or_default(),
+            _ => String::new(),
+        })
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn input_message_blocks(input: &ClientInputEvent) -> anyhow::Result<Vec<UserMessageBlock>> {
+    input
+        .content
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|part| match part.part_type.as_str() {
+            "text" => part
+                .text
+                .as_ref()
+                .filter(|text| !text.is_empty())
+                .map(|text| Ok(UserMessageBlock::text(text.clone()))),
+            "image" => Some(image_block_from_part(part)),
+            _ => None,
+        })
+        .collect()
+}
+
+fn image_block_from_part(part: &InputPart) -> anyhow::Result<UserMessageBlock> {
+    let data = part
+        .data
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("image input part requires data"))?;
+    let mime_type = part
+        .mime_type
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("image input part requires mime_type"))?;
+    let bytes = BASE64_STANDARD
+        .decode(&data)
+        .map_err(|error| anyhow::anyhow!("image input part data is not valid base64: {error}"))?;
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    Ok(UserMessageBlock::Image {
+        blob: BlobRef::InlineBase64 {
+            data,
+            mime_type,
+            sha256: Some(format!("{:x}", hasher.finalize())),
+            size_bytes: Some(bytes.len() as u64),
+        },
+    })
+}
+
+fn contains_image_block(blocks: &[UserMessageBlock]) -> bool {
+    blocks
+        .iter()
+        .any(|block| matches!(block, UserMessageBlock::Image { .. }))
+}
+
+fn hash_value(value: &Value) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(value.to_string().as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+fn same_create_request(
+    existing: &StoredSession,
+    backend: BackendKindWire,
+    request: &CreateSessionRequest,
+) -> bool {
+    existing.backend == backend.engine_kind().unwrap_or(BackendKind::Pi)
+        && existing.working_directory == request.working_directory
+        && existing.title
+            == request
+                .title
+                .clone()
+                .unwrap_or_else(|| existing.session_id.to_string())
+        && existing.agent_config
+            == request
+                .agent_config
+                .clone()
+                .unwrap_or_else(|| AgentConfig::with_model(request.model.as_deref()))
+        && existing.metadata == request.metadata.clone().unwrap_or_else(|| json!({}))
+}
+
+fn create_session_agent_config<B>(
+    state: &ApiState<B>,
+    request: &CreateSessionRequest,
+) -> AgentConfig {
+    let mut agent_config = request.agent_config.clone().unwrap_or_default();
+    if agent_config.model.is_none() {
+        agent_config.model = request
+            .model
+            .clone()
+            .or_else(|| state.default_session_model.clone());
+    }
+    agent_config
+}
+
+fn command_ack_json(ack: &CommandAck, events: &[CanonicalEvent]) -> Value {
+    let mut value = serde_json::to_value(ack).unwrap_or_else(|_| json!({ "status": "rejected", "code": "serialization_error", "message": "failed to serialize ack" }));
+    if let Some(cursor) = ack_cursor(ack) {
+        if let Some(event) = events
+            .iter()
+            .find(|event| event.epoch == cursor.epoch && event.seq == cursor.seq)
+        {
+            value["cursor"] = event_cursor_json(event);
+        }
+    }
+    value
+}
+
+fn ack_cursor(ack: &CommandAck) -> Option<EventCursor> {
+    match ack {
+        CommandAck::Accepted(ack) => Some(ack.cursor.clone()),
+        CommandAck::Queued(ack) => Some(ack.cursor.clone()),
+        CommandAck::Rejected(ack) => ack.cursor.clone(),
+    }
+}
+
+fn rejected_command_ack(
+    code: impl Into<String>,
+    message: impl Into<String>,
+    command_id: Option<CommandId>,
+    session_id: Option<SessionId>,
+    cursor: Option<EventCursor>,
+) -> CommandAck {
+    CommandAck::Rejected(RejectedCommandAck {
+        code: code.into(),
+        message: message.into(),
+        cursor,
+        command_id,
+        session_id,
+    })
+}
+
+fn event_json(event: &CanonicalEvent) -> Value {
+    json!({
+        "event_id": event.event_id.as_str(),
+        "epoch": event.epoch,
+        "seq": event.seq,
+        "session_id": event.session_id.as_str(),
+        "thread_id": event.thread_id.as_str(),
+        "type": event.event_type.0,
+        "created_at": event.created_at.to_rfc3339(),
+        "affected_views": event.affected_views,
+        "source": event.source,
+        "payload": event.payload,
+        "raw": event.raw,
+    })
+}
+
+struct EventPage {
+    events: Vec<CanonicalEvent>,
+    cursor: Value,
+}
+
+struct ValuePage {
+    items: Vec<Value>,
+    cursor: Value,
+}
+
+fn page_events(
+    events: &[CanonicalEvent],
+    after_id: Option<&str>,
+    before_id: Option<&str>,
+    limit: Option<usize>,
+) -> EventPage {
+    let mut start = 0;
+    let mut end = events.len();
+    if let Some(after_id) = after_id {
+        if let Some(index) = events
+            .iter()
+            .position(|event| event.event_id.as_str() == after_id)
+        {
+            start = index + 1;
+        }
+    }
+    if let Some(before_id) = before_id {
+        if let Some(index) = events
+            .iter()
+            .position(|event| event.event_id.as_str() == before_id)
+        {
+            end = index;
+        }
+    }
+    let requested_end = end;
+    let limit = limit.unwrap_or(100).clamp(1, 500);
+    end = end.min(start.saturating_add(limit));
+    let page = events[start..end].to_vec();
+    EventPage {
+        cursor: cursor_window_json_with_flags(&page, start > 0, end < requested_end),
+        events: page,
+    }
+}
+
+fn cursor_is_stale(
+    events: &[CanonicalEvent],
+    after_id: Option<&str>,
+    before_id: Option<&str>,
+) -> bool {
+    after_id
+        .filter(|id| !id.is_empty())
+        .map(|id| !events.iter().any(|event| event.event_id.as_str() == id))
+        .unwrap_or(false)
+        || before_id
+            .filter(|id| !id.is_empty())
+            .map(|id| !events.iter().any(|event| event.event_id.as_str() == id))
+            .unwrap_or(false)
+}
+
+fn sync_reset_json(events: &[CanonicalEvent]) -> Value {
+    json!({
+        "reason": "stale_cursor",
+        "views": ["session", "conversation", "requests", "diffs", "timeline", "workbench"],
+        "latest_event_id": events.last().map(|event| event.event_id.as_str()).unwrap_or(""),
+    })
+}
+
+fn page_values(
+    values: Vec<Value>,
+    after_id: Option<&str>,
+    before_id: Option<&str>,
+    limit: Option<usize>,
+) -> ValuePage {
+    let mut start = 0;
+    let mut end = values.len();
+    if let Some(after_id) = after_id {
+        if let Some(index) = values
+            .iter()
+            .position(|value| value.get("id").and_then(Value::as_str) == Some(after_id))
+        {
+            start = index + 1;
+        }
+    }
+    if let Some(before_id) = before_id {
+        if let Some(index) = values
+            .iter()
+            .position(|value| value.get("id").and_then(Value::as_str) == Some(before_id))
+        {
+            end = index;
+        }
+    }
+    let requested_end = end;
+    let limit = limit.unwrap_or(100).clamp(1, 500);
+    end = end.min(start.saturating_add(limit));
+    let items = values[start..end].to_vec();
+    ValuePage {
+        items,
+        cursor: json!({
+            "epoch": 0,
+            "has_older": start > 0,
+            "has_newer": end < requested_end,
+        }),
+    }
+}
+
+fn diffs_from_events(events: &[CanonicalEvent]) -> Vec<Value> {
+    events
+        .iter()
+        .filter(|event| event.event_type == EventType::DIFF_UPDATED)
+        .map(|event| {
+            json!({
+                "file_path": event.payload.get("file_path").and_then(Value::as_str).unwrap_or(""),
+                "status": event.payload.get("status").and_then(Value::as_str).unwrap_or("modified"),
+                "additions": event.payload.get("additions").and_then(Value::as_i64).unwrap_or(0),
+                "deletions": event.payload.get("deletions").and_then(Value::as_i64).unwrap_or(0),
+            })
+        })
+        .collect()
+}
+
+fn requests_from_events(events: &[CanonicalEvent], status_filter: Option<&str>) -> Vec<Value> {
+    let mut requests: Map<String, Value> = Map::new();
+    for event in events {
+        match event.event_type {
+            EventType::REQUEST_OPENED | EventType::REQUEST_UPDATED => {
+                let request_id = event
+                    .payload
+                    .get("request_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or(event.event_id.as_str());
+                let status = event
+                    .payload
+                    .get("status")
+                    .and_then(Value::as_str)
+                    .unwrap_or("pending");
+                requests.insert(
+                    request_id.to_string(),
+                    json!({
+                        "id": request_id,
+                        "session_id": event.session_id.as_str(),
+                        "type": request_type_wire(event.payload.get("request_type").and_then(Value::as_str).unwrap_or("custom_input")),
+                        "status": status,
+                        "title": event.payload.get("title").and_then(Value::as_str).unwrap_or("Request"),
+                        "description": event.payload.get("description").and_then(Value::as_str).unwrap_or(""),
+                        "payload": event.payload,
+                        "backend_ref": {},
+                        "created_at": event.created_at.to_rfc3339(),
+                    }),
+                );
+            }
+            EventType::REQUEST_RESOLVED => {
+                if let Some(request_id) = event.payload.get("request_id").and_then(Value::as_str) {
+                    let status = event
+                        .payload
+                        .get("status")
+                        .and_then(Value::as_str)
+                        .unwrap_or("answered");
+                    let entry = requests.entry(request_id.to_string()).or_insert_with(|| {
+                        json!({
+                            "id": request_id,
+                            "session_id": event.session_id.as_str(),
+                            "type": "custom_input",
+                            "status": status,
+                            "title": "Request",
+                            "description": "",
+                            "payload": {},
+                            "backend_ref": {},
+                            "created_at": event.created_at.to_rfc3339(),
+                        })
+                    });
+                    entry["status"] = json!(status);
+                    entry["resolved_at"] = json!(event.created_at.to_rfc3339());
+                }
+            }
+            _ => {}
+        }
+    }
+    requests
+        .into_values()
+        .filter(|request| {
+            status_filter
+                .map(|status| request.get("status").and_then(Value::as_str) == Some(status))
+                .unwrap_or(true)
+        })
+        .collect()
+}
+
+fn request_type_wire(value: &str) -> &str {
+    match value {
+        "permission" => "permission",
+        "tool_confirmation" => "tool_confirmation",
+        _ => "custom_input",
+    }
+}
+
+fn trace_spans_from_events(events: &[CanonicalEvent]) -> Vec<Value> {
+    let mut spans = Vec::new();
+    for event in events {
+        spans.push(json!({
+            "id": event.event_id.as_str(),
+            "kind": if event.raw.is_some() { "backend_raw" } else if event.event_type == EventType::WARNING_RAISED { "warning" } else if event.event_type == EventType::ERROR_RAISED { "error" } else { "command" },
+            "created_at": event.created_at.to_rfc3339(),
+            "event_id": event.event_id.as_str(),
+            "title": event.event_type.0,
+            "summary": event.payload.get("message").and_then(Value::as_str).unwrap_or(event.event_type.0),
+            "data": { "payload": event.payload, "raw": event.raw },
+        }));
+        spans.push(json!({
+            "id": format!("projection:{}", event.event_id.as_str()),
+            "kind": "projection",
+            "created_at": event.created_at.to_rfc3339(),
+            "event_id": event.event_id.as_str(),
+            "title": "projection",
+            "summary": "projected canonical event into affected read models",
+            "data": { "affected_views": event.affected_views },
+        }));
+    }
+    spans
+}
+
+fn coalesced_timeline_items(events: &[CanonicalEvent]) -> Vec<Value> {
+    let mut items: Vec<Value> = Vec::new();
+    let mut assistant_index: Option<usize> = None;
+    let mut keyed: Map<String, Value> = Map::new();
+
+    for event in events {
+        match event.event_type {
+            EventType::USER_MESSAGE_ACCEPTED => items.push(timeline_message_item(event, "user")),
+            EventType::ASSISTANT_MESSAGE_STARTED
+            | EventType::ASSISTANT_MESSAGE_DELTA
+            | EventType::ASSISTANT_MESSAGE_COMPLETED => {
+                let text = event
+                    .payload
+                    .get("delta")
+                    .or_else(|| event.payload.get("content"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                if let Some(index) = assistant_index {
+                    append_timeline_text(&mut items[index], text, event);
+                } else {
+                    let mut item = timeline_message_item(event, "assistant");
+                    item["parts"][0]["text"] = json!(text);
+                    assistant_index = Some(items.len());
+                    items.push(item);
+                }
+            }
+            EventType::REQUEST_OPENED
+            | EventType::REQUEST_UPDATED
+            | EventType::REQUEST_RESOLVED => {
+                let key = format!(
+                    "request:{}",
+                    event
+                        .payload
+                        .get("request_id")
+                        .and_then(Value::as_str)
+                        .unwrap_or(event.event_id.as_str())
+                );
+                upsert_keyed_timeline(&mut keyed, key, event, "request");
+            }
+            EventType::DIFF_UPDATED => {
+                let key = format!(
+                    "diff:{}",
+                    event
+                        .payload
+                        .get("file_path")
+                        .and_then(Value::as_str)
+                        .unwrap_or(event.event_id.as_str())
+                );
+                upsert_keyed_timeline(&mut keyed, key, event, "diff");
+            }
+            EventType::TOOL_STARTED
+            | EventType::TOOL_UPDATED
+            | EventType::TOOL_OUTPUT_DELTA
+            | EventType::TOOL_COMPLETED
+            | EventType::TOOL_FAILED => {
+                let key = format!(
+                    "tool:{}",
+                    event
+                        .payload
+                        .get("tool_id")
+                        .and_then(Value::as_str)
+                        .unwrap_or(event.event_id.as_str())
+                );
+                upsert_keyed_timeline(&mut keyed, key, event, "tool");
+            }
+            EventType::WARNING_RAISED | EventType::ERROR_RAISED => {
+                items.push(timeline_item_json(event));
+            }
+            _ => {}
+        }
+    }
+
+    items.extend(keyed.into_values());
+    items
+}
+
+fn timeline_message_item(event: &CanonicalEvent, role: &str) -> Value {
+    let text = event
+        .payload
+        .get("content")
+        .or_else(|| event.payload.get("delta"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    json!({
+        "id": event.event_id.as_str(),
+        "kind": "message",
+        "role": role,
+        "status": "completed",
+        "parts": [{
+            "id": event.event_id.as_str(),
+            "type": "text",
+            "text": text,
+        }],
+        "event_range": {
+            "from_event_id": event.event_id.as_str(),
+            "to_event_id": event.event_id.as_str(),
+        }
+    })
+}
+
+fn append_timeline_text(item: &mut Value, text: &str, event: &CanonicalEvent) {
+    let existing = item["parts"][0]["text"].as_str().unwrap_or("").to_string();
+    item["parts"][0]["text"] = json!(format!("{existing}{text}"));
+    item["event_range"]["to_event_id"] = json!(event.event_id.as_str());
+}
+
+fn upsert_keyed_timeline(
+    keyed: &mut Map<String, Value>,
+    key: String,
+    event: &CanonicalEvent,
+    kind: &str,
+) {
+    keyed
+        .entry(key)
+        .and_modify(|item| {
+            item["status"] = json!(timeline_status(event));
+            item["event_range"]["to_event_id"] = json!(event.event_id.as_str());
+            item["parts"][0]["text"] = json!(timeline_text(event));
+        })
+        .or_insert_with(|| {
+            let mut item = timeline_item_json(event);
+            item["kind"] = json!(kind);
+            item
+        });
+}
+
+fn timeline_status(event: &CanonicalEvent) -> &'static str {
+    match event.event_type {
+        EventType::REQUEST_OPENED | EventType::TOOL_STARTED => "pending",
+        EventType::TOOL_FAILED | EventType::TURN_FAILED | EventType::ERROR_RAISED => "failed",
+        EventType::TURN_CANCELLED => "cancelled",
+        _ => "completed",
+    }
+}
+
+fn timeline_text(event: &CanonicalEvent) -> &str {
+    event
+        .payload
+        .get("content")
+        .or_else(|| event.payload.get("delta"))
+        .or_else(|| event.payload.get("title"))
+        .or_else(|| event.payload.get("file_path"))
+        .or_else(|| event.payload.get("message"))
+        .and_then(Value::as_str)
+        .unwrap_or(event.event_type.0)
+}
+
+fn event_range_json(event_ids: &[EventId]) -> Value {
+    json!({
+        "from_event_id": event_ids.first().map(EventId::as_str).unwrap_or(""),
+        "to_event_id": event_ids.last().map(EventId::as_str).unwrap_or(""),
+    })
+}
+
+fn source_event_range_json(range: &SourceEventRange) -> Value {
+    json!({
+        "epoch": range.epoch,
+        "from_event_id": range.from_event_id.as_str(),
+        "to_event_id": range.to_event_id.as_str(),
+        "from_seq": range.from_seq,
+        "to_seq": range.to_seq,
+    })
+}
+
+fn activity_status_wire(status: &str) -> &str {
+    match status {
+        "pending" => "pending",
+        "running" => "running",
+        "completed" | "resolved" | "updated" | "accepted" => "completed",
+        "failed" => "failed",
+        "cancelled" | "canceled" => "cancelled",
+        _ => "running",
+    }
+}
+
+fn activity_detail_json(kind: &str, payload: &Value) -> Option<Value> {
+    if let Some(detail) = payload.get("detail").and_then(Value::as_object) {
+        if detail.get("type").and_then(Value::as_str).is_some() {
+            return Some(Value::Object(detail.clone()));
+        }
+    }
+
+    match kind {
+        "tool" => Some(activity_tool_detail_json(payload)),
+        _ => None,
+    }
+}
+
+fn activity_tool_detail_json(payload: &Value) -> Value {
+    match inferred_activity_tool_detail_type(payload) {
+        "shell" => activity_shell_detail_json(payload),
+        "read" | "edit" | "write" => {
+            activity_file_detail_json(inferred_activity_tool_detail_type(payload), payload)
+        }
+        "search" => activity_search_detail_json(payload),
+        "fetch" => activity_fetch_detail_json(payload),
+        _ => activity_generic_tool_detail_json(payload),
+    }
+}
+
+fn inferred_activity_tool_detail_type(payload: &Value) -> &'static str {
+    let name = payload
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_lowercase();
+
+    if payload.get("command").is_some() {
+        return "shell";
+    }
+    if payload.get("query").is_some() {
+        return "search";
+    }
+    if payload.get("url").is_some() {
+        return "fetch";
+    }
+    if name.contains("edit") || name.contains("patch") || payload.get("unified_diff").is_some() {
+        return "edit";
+    }
+    if name.contains("write") {
+        return "write";
+    }
+    if name.contains("read") || name == "cat" || payload.get("file_path").is_some() {
+        return "read";
+    }
+
+    "tool"
+}
+
+fn activity_shell_detail_json(payload: &Value) -> Value {
+    detail_json(
+        "shell",
+        payload,
+        &[
+            "command",
+            "cwd",
+            "output",
+            "stdout",
+            "stderr",
+            "exit_code",
+            "error",
+        ],
+    )
+}
+
+fn activity_file_detail_json(detail_type: &str, payload: &Value) -> Value {
+    let mut detail = detail_json(
+        detail_type,
+        payload,
+        &[
+            "content",
+            "old_string",
+            "new_string",
+            "unified_diff",
+            "error",
+        ],
+    );
+    let Some(object) = detail.as_object_mut() else {
+        return detail;
+    };
+    if let Some(path) = payload
+        .get("file_path")
+        .or_else(|| payload.get("path"))
+        .cloned()
+    {
+        object.insert("file_path".to_string(), path);
+    }
+    detail
+}
+
+fn activity_search_detail_json(payload: &Value) -> Value {
+    detail_json(
+        "search",
+        payload,
+        &[
+            "query",
+            "mode",
+            "content",
+            "num_files",
+            "num_matches",
+            "duration_ms",
+            "truncated",
+        ],
+    )
+}
+
+fn activity_fetch_detail_json(payload: &Value) -> Value {
+    detail_json(
+        "fetch",
+        payload,
+        &[
+            "url",
+            "prompt",
+            "result",
+            "code",
+            "code_text",
+            "bytes",
+            "duration_ms",
+        ],
+    )
+}
+
+fn activity_generic_tool_detail_json(payload: &Value) -> Value {
+    detail_json(
+        "tool",
+        payload,
+        &[
+            "tool_id",
+            "call_id",
+            "name",
+            "command",
+            "cwd",
+            "query",
+            "file_path",
+            "path",
+            "url",
+            "summary",
+            "delta",
+            "output",
+            "stdout",
+            "stderr",
+            "exit_code",
+            "error",
+        ],
+    )
+}
+
+fn detail_json(detail_type: &str, payload: &Value, fields: &[&str]) -> Value {
+    let mut detail = serde_json::Map::new();
+    detail.insert("type".to_string(), Value::String(detail_type.to_string()));
+    for field in fields {
+        if let Some(value) = payload.get(field) {
+            detail.insert((*field).to_string(), value.clone());
+        }
+    }
+    Value::Object(detail)
+}
+
+fn publish_new_events<B>(state: &ApiState<B>, events: &[CanonicalEvent], before_len: usize) {
+    for event in events.iter().skip(before_len) {
+        let _ = state.events.send(event.clone());
+    }
+}
+
+fn sse_live_response(
+    backlog: Vec<CanonicalEvent>,
+    rx: broadcast::Receiver<CanonicalEvent>,
+    session_id: Option<SessionId>,
+) -> Response {
+    let initial = stream::iter(
+        backlog
+            .into_iter()
+            .map(|event| Ok::<Bytes, Infallible>(Bytes::from(sse_event_text(&event)))),
+    );
+    let live = stream::unfold((rx, session_id), |(mut rx, session_id)| async move {
+        loop {
+            match rx.recv().await {
+                Ok(event)
+                    if session_id
+                        .as_ref()
+                        .map(|session_id| &event.session_id == session_id)
+                        .unwrap_or(true) =>
+                {
+                    return Some((
+                        Ok::<Bytes, Infallible>(Bytes::from(sse_event_text(&event))),
+                        (rx, session_id),
+                    ));
+                }
+                Ok(_) => continue,
+                Err(broadcast::error::RecvError::Lagged(_)) => {
+                    return Some((
+                        Ok::<Bytes, Infallible>(Bytes::from(
+                            "event: sync.reset\ndata: {\"reason\":\"stale_cursor\",\"views\":[\"workbench\"],\"latest_event_id\":\"\"}\n\n",
+                        )),
+                        (rx, session_id),
+                    ));
+                }
+                Err(broadcast::error::RecvError::Closed) => return None,
+            }
+        }
+    });
+    (
+        [("content-type", "text/event-stream")],
+        axum::body::Body::from_stream(initial.chain(live)),
+    )
+        .into_response()
+}
+
+fn sse_reset_response(
+    events: &[CanonicalEvent],
+    rx: broadcast::Receiver<CanonicalEvent>,
+    session_id: Option<SessionId>,
+) -> Response {
+    let reset = format!("event: sync.reset\ndata: {}\n\n", sync_reset_json(events));
+    let initial = stream::iter(vec![Ok::<Bytes, Infallible>(Bytes::from(reset))]);
+    let live = stream::unfold((rx, session_id), |(mut rx, session_id)| async move {
+        loop {
+            match rx.recv().await {
+                Ok(event)
+                    if session_id
+                        .as_ref()
+                        .map(|session_id| &event.session_id == session_id)
+                        .unwrap_or(true) =>
+                {
+                    return Some((
+                        Ok::<Bytes, Infallible>(Bytes::from(sse_event_text(&event))),
+                        (rx, session_id),
+                    ));
+                }
+                Ok(_) => continue,
+                Err(_) => return None,
+            }
+        }
+    });
+    (
+        [("content-type", "text/event-stream")],
+        axum::body::Body::from_stream(initial.chain(live)),
+    )
+        .into_response()
+}
+
+fn sse_event_text(event: &CanonicalEvent) -> String {
+    format!(
+        "id: {}\nevent: {}\ndata: {}\n\n",
+        event.event_id.as_str(),
+        event.event_type.0,
+        event_json(event)
+    )
+}
+
+fn event_cursor_json(event: &CanonicalEvent) -> Value {
+    event_cursor_value(&event.cursor())
+}
+
+fn event_cursor_value(cursor: &EventCursor) -> Value {
+    json!({
+        "event_id": cursor.event_id.as_str(),
+        "epoch": cursor.epoch,
+        "seq": cursor.seq,
+    })
+}
+
+fn empty_cursor_json() -> Value {
+    json!({ "event_id": "", "epoch": 0, "seq": 0 })
+}
+
+fn cursor_window_json(events: &[CanonicalEvent]) -> Value {
+    cursor_window_json_with_flags(events, false, false)
+}
+
+fn cursor_window_json_with_flags(
+    events: &[CanonicalEvent],
+    has_older: bool,
+    has_newer: bool,
+) -> Value {
+    match (events.first(), events.last()) {
+        (Some(first), Some(last)) => json!({
+            "epoch": last.epoch,
+            "from_seq": first.seq,
+            "to_seq": last.seq,
+            "next_event_id": last.event_id.as_str(),
+            "has_older": has_older,
+            "has_newer": has_newer,
+        }),
+        _ => json!({
+            "epoch": 0,
+            "has_older": has_older,
+            "has_newer": has_newer,
+        }),
+    }
+}
+
+fn session_json(
+    session_id: &SessionId,
+    backend: &str,
+    status: &str,
+    working_directory: &str,
+    title: Option<&str>,
+    agent_config: &AgentConfig,
+    metadata: Option<Value>,
+    last_event: Option<&CanonicalEvent>,
+) -> Value {
+    let now = Utc::now().to_rfc3339();
+    json!({
+        "id": session_id.as_str(),
+        "backend": backend,
+        "status": status,
+        "title": title.unwrap_or(session_id.as_str()),
+        "updated_at": now,
+        "working_directory": working_directory,
+        "model": agent_config.model,
+        "agent_config": agent_config,
+        "created_at": now,
+        "metadata": metadata.unwrap_or_else(|| json!({})),
+        "runtime_info": session_runtime_info_json(backend, agent_config),
+        "operations": session_operations_json(status),
+        "last_event_id": last_event.map(|event| event.event_id.as_str()).unwrap_or(""),
+    })
+}
+
+fn session_runtime_info_json(backend: &str, agent_config: &AgentConfig) -> Value {
+    json!({
+        "provider": backend,
+        "native_session_id": Value::Null,
+        "model": agent_config.model,
+        "reasoning_effort": agent_config.reasoning_effort,
+        "permission_mode": agent_config.permission_mode,
+        "feature_values": agent_config.feature_values,
+    })
+}
+
+fn session_operations_json(status: &str) -> Value {
+    let closed = status == "closed";
+    let running = matches!(status, "running" | "canceling" | "waiting_for_input");
+    json!({
+        "send_message": {
+            "available": !closed,
+            "reason": if closed {
+                Value::String("session_closed".to_string())
+            } else {
+                Value::Null
+            },
+        },
+        "cancel": {
+            "available": running,
+            "reason": if closed {
+                Value::String("session_closed".to_string())
+            } else if running {
+                Value::Null
+            } else {
+                Value::String("no_running_turn".to_string())
+            },
+        },
+        "update_agent_config": {
+            "available": !closed,
+            "effective_after": "next_turn",
+            "reason": if closed { Value::String("session_closed".to_string()) } else { Value::Null },
+        },
+        "respond_to_request": {
+            "available": !closed,
+            "reason": if closed { Value::String("session_closed".to_string()) } else { Value::Null },
+        },
+        "rewind_conversation": {
+            "available": false,
+            "reason": "unsupported_by_backend",
+        },
+        "rewind_files": {
+            "available": false,
+            "reason": "unsupported_by_backend",
+        },
+    })
+}
+
+fn stored_session_json(session: &StoredSession, last_event: Option<&CanonicalEvent>) -> Value {
+    session_json(
+        &session.session_id,
+        session.backend.as_str(),
+        &session.status,
+        &session.working_directory,
+        Some(&session.title),
+        &session.agent_config,
+        Some(session.metadata.clone()),
+        last_event,
+    )
+}
+
+fn session_summary_json(session: &StoredSession) -> Value {
+    json!({
+        "id": session.session_id.as_str(),
+        "backend": session.backend.as_str(),
+        "status": session.status,
+        "title": session.title,
+        "agent_config": session.agent_config,
+        "updated_at": session.updated_at.to_rfc3339(),
+    })
+}
+
+fn session_list_item_json(session: &StoredSession, events: &[CanonicalEvent]) -> Value {
+    let last_activity_at = events
+        .last()
+        .map(|event| event.created_at)
+        .unwrap_or(session.updated_at);
+    json!({
+        "id": session.session_id.as_str(),
+        "backend": session.backend.as_str(),
+        "status": session.status,
+        "title": session.title,
+        "agent_config": session.agent_config,
+        "updated_at": session.updated_at.to_rfc3339(),
+        "working_directory": session.working_directory,
+        "created_at": session.created_at.to_rfc3339(),
+        "last_activity_at": last_activity_at.to_rfc3339(),
+        "preview": session_preview(events),
+        "pending_request_count": project_pending_requests(events).requests.len(),
+        "running": session_is_running(&session.status),
+        "model": session.agent_config.model.as_ref().or(session.model.as_ref()),
+    })
+}
+
+fn session_preview(events: &[CanonicalEvent]) -> String {
+    let conversation = project_conversation(events);
+    let preview = conversation
+        .items
+        .iter()
+        .rev()
+        .find_map(|item| match item.kind {
+            ConversationItemKind::UserMessage | ConversationItemKind::AssistantMessage => item
+                .text
+                .as_deref()
+                .map(str::trim)
+                .filter(|text| !text.is_empty())
+                .map(str::to_string),
+            _ => None,
+        })
+        .unwrap_or_default();
+    truncate_preview(&preview, 180)
+}
+
+fn truncate_preview(value: &str, max_chars: usize) -> String {
+    let mut iter = value.chars();
+    let preview = iter.by_ref().take(max_chars).collect::<String>();
+    if iter.next().is_some() {
+        format!("{preview}...")
+    } else {
+        preview
+    }
+}
+
+fn session_is_running(status: &str) -> bool {
+    matches!(
+        status,
+        "starting" | "running" | "waiting_for_input" | "canceling"
+    )
+}
+
+fn timeline_item_json(event: &CanonicalEvent) -> Value {
+    let kind = match event.event_type {
+        EventType::USER_MESSAGE_ACCEPTED
+        | EventType::ASSISTANT_MESSAGE_STARTED
+        | EventType::ASSISTANT_MESSAGE_DELTA
+        | EventType::ASSISTANT_MESSAGE_COMPLETED => "message",
+        EventType::TOOL_STARTED
+        | EventType::TOOL_UPDATED
+        | EventType::TOOL_OUTPUT_DELTA
+        | EventType::TOOL_COMPLETED
+        | EventType::TOOL_FAILED => "tool",
+        EventType::REQUEST_OPENED | EventType::REQUEST_UPDATED | EventType::REQUEST_RESOLVED => {
+            "request"
+        }
+        EventType::DIFF_UPDATED => "diff",
+        EventType::WARNING_RAISED | EventType::ERROR_RAISED => "warning",
+        _ => "task",
+    };
+    json!({
+        "id": event.event_id.as_str(),
+        "kind": kind,
+        "status": if event.event_type == EventType::TURN_FAILED || event.event_type == EventType::TOOL_FAILED { "failed" } else { "completed" },
+        "parts": [{
+            "id": event.event_id.as_str(),
+            "type": "text",
+            "text": event.payload.get("content").or_else(|| event.payload.get("delta")).and_then(Value::as_str).unwrap_or(event.event_type.0),
+        }],
+        "event_range": {
+            "from_event_id": event.event_id.as_str(),
+            "to_event_id": event.event_id.as_str(),
+        }
+    })
+}
+
+fn backend_catalog<B>(state: &ApiState<B>) -> Vec<Value>
+where
+    B: BackendAdapter + 'static,
+{
+    state
+        .configured_backends
+        .iter()
+        .map(|backend| {
+            let capabilities = state
+                .runtime
+                .backend_capabilities_for(Some(backend.engine_kind));
+            backend_json(
+                backend.kind,
+                backend.display_name,
+                backend.default_model.as_deref(),
+                capabilities.streaming,
+                capabilities.cancel,
+                capabilities.permission_requests,
+                capabilities.structured_diff,
+                capabilities.session_agent_config,
+            )
+        })
+        .collect()
+}
+
+fn backend_json(
+    kind: &str,
+    display_name: &str,
+    default_model: Option<&str>,
+    streaming: bool,
+    cancel: bool,
+    permission_requests: bool,
+    structured_diff: bool,
+    session_agent_config: bool,
+) -> Value {
+    let model_reasoning_efforts = if kind == "acp" {
+        Vec::new()
+    } else {
+        common_reasoning_effort_options()
+    };
+    let models = default_model
+        .map(|model| {
+            vec![BackendModel {
+                id: model.to_string(),
+                label: model.to_string(),
+                description: None,
+                is_default: true,
+                reasoning_efforts: model_reasoning_efforts,
+                metadata: Default::default(),
+            }]
+        })
+        .unwrap_or_default();
+    json!({
+        "kind": kind,
+        "status": "available",
+        "display_name": display_name,
+        "capabilities": {
+            "streaming": streaming,
+            "cancel": cancel,
+            "permission_requests": permission_requests,
+            "structured_diff": structured_diff,
+            "session_agent_config": session_agent_config,
+        },
+        "models": models,
+        "permission_modes": [
+            PermissionModeOption {
+                id: PermissionMode::Auto,
+                label: "Auto".to_string(),
+                description: Some("Default local coding permission flow.".to_string()),
+                is_default: true,
+                metadata: Default::default(),
+            },
+            PermissionModeOption {
+                id: PermissionMode::FullAccess,
+                label: "Full access".to_string(),
+                description: Some("Allow elevated local access when the backend supports it.".to_string()),
+                is_default: false,
+                metadata: Default::default(),
+            },
+        ],
+        "features": [
+            BackendFeature::Toggle {
+                id: "fast_mode".to_string(),
+                label: "Fast".to_string(),
+                description: Some("Lower latency when supported by the backend.".to_string()),
+                default_value: false,
+                metadata: Default::default(),
+            },
+            BackendFeature::Toggle {
+                id: "plan_mode".to_string(),
+                label: "Plan".to_string(),
+                description: Some("Plan before implementation when supported by the backend.".to_string()),
+                default_value: false,
+                metadata: Default::default(),
+            },
+        ],
+        "diagnostics": {},
+    })
+}
+
+fn common_reasoning_effort_options() -> Vec<ReasoningEffortOption> {
+    [
+        ("off", "Off"),
+        ("minimal", "Minimal"),
+        ("low", "Low"),
+        ("medium", "Medium"),
+        ("high", "High"),
+        ("xhigh", "XHigh"),
+    ]
+    .into_iter()
+    .map(|(id, label)| ReasoningEffortOption {
+        id: id.to_string(),
+        label: label.to_string(),
+        description: None,
+        is_default: id == "medium",
+        metadata: Default::default(),
+    })
+    .collect()
+}
+
+fn error(status: StatusCode, code: impl Into<String>, message: impl Into<String>) -> Response {
+    (
+        status,
+        Json(json!({
+            "error": {
+                "code": code.into(),
+                "message": message.into(),
+            }
+        })),
+    )
+        .into_response()
+}
+
+fn invalid_request(message: impl Into<String>) -> Response {
+    error(StatusCode::BAD_REQUEST, "invalid_request", message)
+}
+
+fn invalid_parameter(name: &str, message: impl Into<String>) -> Response {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(json!({
+            "error": {
+                "code": "invalid_parameter",
+                "message": message.into(),
+                "details": {
+                    "parameter": name,
+                },
+            }
+        })),
+    )
+        .into_response()
+}

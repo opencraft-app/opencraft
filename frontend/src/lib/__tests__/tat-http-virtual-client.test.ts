@@ -1,6 +1,7 @@
 import { Binary, deserialize, serialize } from "bson";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTatHermesFetch, createTatHermesWebFetch, createTatPortFetch, TatHttpVirtualClient } from "@/lib/tat-http-virtual-client";
+import { TencentTsshProxyClient } from "@/lib/tencent-tssh-proxy-client";
 
 const bootstrap = {
   sandboxId: "sb-1",
@@ -176,6 +177,12 @@ const openSocketAndReadProxyId = async (socket: FakeWebSocket) => {
   vi.advanceTimersByTime(0);
   await flushPromises();
   return (((parseBsonFrames(socket)[0]!.Data as Record<string, unknown>).Data as Record<string, unknown>).ProxyId as string) ?? "";
+};
+
+const readTextChunk = async (reader: ReadableStreamDefaultReader<Uint8Array>) => {
+  const result = await reader.read();
+  expect(result.done).toBe(false);
+  return new TextDecoder().decode(result.value);
 };
 
 beforeEach(() => {
@@ -405,6 +412,43 @@ describe("TatHttpVirtualClient", () => {
     client.close();
   });
 
+  it("releases close-delimited body bytes incrementally before the idle completion timer", async () => {
+    const { client, socket, proxyId, responsePromise } = await startHttpFetch("/api/v1/sessions/ses/events?stream=1", {}, {
+      closeDelimitedBodyIdleTimeoutMs: 30_000,
+    });
+
+    sendProxyData(
+      socket,
+      proxyId,
+      encodeAscii("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: keep-alive\r\n\r\ndata: first\n\n"),
+    );
+
+    const response = await responsePromise;
+    const reader = response.body!.getReader();
+    await expect(readTextChunk(reader)).resolves.toBe("data: first\n\n");
+
+    sendProxyData(socket, proxyId, encodeAscii("data: second\n\n"));
+    await expect(readTextChunk(reader)).resolves.toBe("data: second\n\n");
+    client.close();
+  });
+
+  it("releases chunked response chunks incrementally before the terminal zero chunk", async () => {
+    const { client, socket, proxyId, responsePromise } = await startHttpFetch("/chunked-live");
+
+    sendProxyData(socket, proxyId, encodeAscii("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n"));
+
+    const response = await responsePromise;
+    const reader = response.body!.getReader();
+    await expect(readTextChunk(reader)).resolves.toBe("hello");
+
+    sendProxyData(socket, proxyId, encodeAscii("6\r\n world\r\n"));
+    await expect(readTextChunk(reader)).resolves.toBe(" world");
+
+    sendProxyData(socket, proxyId, encodeAscii("0\r\n\r\n"));
+    await expect(reader.read()).resolves.toEqual({ done: true, value: undefined });
+    client.close();
+  });
+
   it("offers a fetchJson helper that throws on non-2xx responses", async () => {
     const client = new TatHttpVirtualClient(bootstrap, {
       WebSocketImpl,
@@ -509,6 +553,99 @@ describe("TatHttpVirtualClient", () => {
     }));
     expect((await responsePromise).status).toBe(204);
     tatFetch.close();
+  });
+
+  it("lets independent virtual HTTP clients share one TSSH proxy websocket", async () => {
+    const proxyClient = new TencentTsshProxyClient(bootstrap, {
+      WebSocketImpl,
+      connectDelayMs: 0,
+    });
+    const apiClient = new TatHttpVirtualClient(bootstrap, {
+      keepAlive: false,
+      proxyClient,
+      target: { port: 3857 },
+    });
+    const streamClient = new TatHttpVirtualClient(bootstrap, {
+      closeDelimitedBodyIdleTimeoutMs: 300_000,
+      proxyClient,
+      target: { port: 3857 },
+    });
+
+    const firstPromise = apiClient.fetch("/api/v1/views/sessions");
+    const socket = FakeWebSocket.instances[0]!;
+    const firstProxyId = await openSocketAndReadProxyId(socket);
+    socket.receive(bsonResponse("PtyProxyReady", firstProxyId, { ProxyId: firstProxyId }));
+    await flushPromises();
+    sendProxyData(socket, firstProxyId, encodeAscii("HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\none"));
+    await expect((await firstPromise).text()).resolves.toBe("one");
+
+    const secondPromise = streamClient.fetch("/api/v1/sessions/ses/events?stream=1");
+    await flushPromises();
+    expect(FakeWebSocket.instances).toHaveLength(1);
+
+    const proxyNewFrames = parseBsonFrames(socket).filter((frame) => frame.Type === "PtyProxyNew");
+    expect(proxyNewFrames).toHaveLength(2);
+    const secondProxyId = ((proxyNewFrames.at(-1)!.Data as Record<string, unknown>).Data as Record<string, unknown>).ProxyId as string;
+    expect(secondProxyId).not.toBe(firstProxyId);
+
+    socket.receive(bsonResponse("PtyProxyReady", secondProxyId, { ProxyId: secondProxyId }));
+    await flushPromises();
+    sendProxyData(socket, secondProxyId, encodeAscii("HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\ntwo"));
+    await expect((await secondPromise).text()).resolves.toBe("two");
+
+    apiClient.close();
+    streamClient.close();
+    proxyClient.close();
+  });
+
+  it("keeps short JSON requests responsive while a shared close-delimited stream is open", async () => {
+    const proxyClient = new TencentTsshProxyClient(bootstrap, {
+      WebSocketImpl,
+      connectDelayMs: 0,
+    });
+    const streamClient = new TatHttpVirtualClient(bootstrap, {
+      closeDelimitedBodyIdleTimeoutMs: 300_000,
+      proxyClient,
+      target: { port: 3857 },
+    });
+    const apiClient = new TatHttpVirtualClient(bootstrap, {
+      keepAlive: false,
+      proxyClient,
+      target: { port: 3857 },
+    });
+
+    const streamPromise = streamClient.fetch("/api/v1/sessions/ses/events?stream=1");
+    const socket = FakeWebSocket.instances[0]!;
+    const streamProxyId = await openSocketAndReadProxyId(socket);
+    socket.receive(bsonResponse("PtyProxyReady", streamProxyId, { ProxyId: streamProxyId }));
+    await flushPromises();
+    sendProxyData(socket, streamProxyId, encodeAscii("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: keep-alive\r\n\r\ndata: open\n\n"));
+
+    const streamResponse = await streamPromise;
+    const streamReader = streamResponse.body!.getReader();
+    await expect(readTextChunk(streamReader)).resolves.toBe("data: open\n\n");
+
+    const apiPromise = apiClient.fetch("/api/v1/views/sessions");
+    await flushPromises();
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    const proxyNewFrames = parseBsonFrames(socket).filter((frame) => frame.Type === "PtyProxyNew");
+    expect(proxyNewFrames).toHaveLength(2);
+    const apiProxyId = ((proxyNewFrames.at(-1)!.Data as Record<string, unknown>).Data as Record<string, unknown>).ProxyId as string;
+    expect(apiProxyId).not.toBe(streamProxyId);
+
+    socket.receive(bsonResponse("PtyProxyReady", apiProxyId, { ProxyId: apiProxyId }));
+    await flushPromises();
+    sendProxyData(socket, apiProxyId, encodeAscii("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\n\r\n{\"ok\":true}"));
+
+    const apiResponse = await apiPromise;
+    expect(apiResponse.status).toBe(200);
+    await expect(apiResponse.json()).resolves.toEqual({ ok: true });
+
+    sendProxyData(socket, streamProxyId, encodeAscii("data: still-open\n\n"));
+    await expect(readTextChunk(streamReader)).resolves.toBe("data: still-open\n\n");
+    apiClient.close();
+    streamClient.close();
+    proxyClient.close();
   });
 
   it("parses Content-Length responses when headers and binary body are randomly split", async () => {

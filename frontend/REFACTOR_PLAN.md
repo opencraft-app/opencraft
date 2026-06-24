@@ -1,6 +1,6 @@
 # LightClaw 首页样式重构计划
 
-本项目旨在基于最新的 Figma 设计稿，重构 LightClaw 首页的样式。当前使用技术栈为 **Vite + React + TypeScript + Tailwind CSS v4 + Framer Motion**。
+本项目旨在基于最新的 Figma 设计稿，重构 LightClaw 首页的样式。当前使用技术栈为 **Next.js App Router + React + TypeScript + Tailwind CSS v4 + Framer Motion**。
 
 ## 重构原则
 1. **清理历史包袱**：彻底移除旧版“新瑞士主义”遗留的全局 CSS 变量（如 `--lw-*`）和写死的内联 `style` 属性。

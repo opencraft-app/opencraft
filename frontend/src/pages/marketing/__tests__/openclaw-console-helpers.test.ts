@@ -108,4 +108,25 @@ describe("installOpenClawConsoleHelpers", () => {
 
     expect("show" in host).toBe(false);
   });
+
+  it("chains an existing show() helper instead of replacing its behavior", () => {
+    const { host } = makeHost();
+    const originalShow = vi.fn();
+    const onShowHiddenTools = vi.fn();
+    host.show = originalShow;
+
+    const cleanup = installOpenClawConsoleHelpers({
+      host,
+      getTerminalPath: () => "/bots/bot_export/terminal",
+      onShowHiddenTools,
+    });
+
+    expect((host.show as (() => boolean))()).toBe(true);
+    expect(originalShow).toHaveBeenCalledTimes(1);
+    expect(onShowHiddenTools).toHaveBeenCalledTimes(1);
+
+    cleanup();
+
+    expect(host.show).toBe(originalShow);
+  });
 });

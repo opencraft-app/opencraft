@@ -3,7 +3,6 @@ import type { ReactNode } from "react";
 import { LanguageSwitcher } from "@/components/site/language-switcher";
 import { LegalFooter } from "@/components/site/legal-footer";
 import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/site/public-site-header";
-import type { RenderUserMenuLink } from "@/components/site/user-avatar-menu";
 import { useSession } from "@/contexts/session-context";
 import { AppLink } from "@/lib/app-navigation";
 import { isGlobal } from "@/lib/region";
@@ -12,7 +11,6 @@ import { cn } from "@/lib/utils";
 interface ProductReturnHomeHeaderProps {
   reloadLanguageAfterSwitch?: boolean;
   renderLink?: RenderPublicSiteHeaderLink;
-  renderUserMenuLink?: RenderUserMenuLink;
 }
 
 const renderAppHeaderLink: RenderPublicSiteHeaderLink = ({
@@ -26,16 +24,9 @@ const renderAppHeaderLink: RenderPublicSiteHeaderLink = ({
   </AppLink>
 );
 
-const renderAppUserMenuLink: RenderUserMenuLink = ({ children, href, ...props }) => (
-  <AppLink to={href} {...props}>
-    {children}
-  </AppLink>
-);
-
 export function ProductReturnHomeHeader({
   reloadLanguageAfterSwitch = false,
   renderLink = renderAppHeaderLink,
-  renderUserMenuLink = renderAppUserMenuLink,
 }: ProductReturnHomeHeaderProps) {
   const { isAuthenticated: isLoggedIn } = useSession();
 
@@ -48,7 +39,6 @@ export function ProductReturnHomeHeader({
       renderLanguageSwitcher={({ activeLocale, reloadAfterSwitch, variant }) => (
         <LanguageSwitcher activeLocale={activeLocale} reloadAfterSwitch={reloadAfterSwitch} variant={variant} />
       )}
-      renderUserMenuLink={renderUserMenuLink}
       showLanguageSwitcher={isGlobal}
       showNav={false}
       showUnauthenticatedActions={false}

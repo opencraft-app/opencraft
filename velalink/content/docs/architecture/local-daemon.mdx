@@ -1,0 +1,53 @@
+---
+title: 本地 Daemon
+description: localhost-first 的权威服务器模型。
+---
+
+# 本地 Daemon
+
+v1 的 velaChat server 跑在用户自己的电脑上。桌面、网页、手机通过 localhost、LAN、tunnel 或未来 relay 连接它。
+
+本地 daemon 负责：
+
+- backend process 生命周期
+- session identity 和运行状态
+- event ordering
+- permission / input request
+- durable history
+- read model projections
+- client catch-up / reset 决策
+
+## Requirements
+
+### Requirement: Daemon 是权威写入方
+
+v1 中 daemon MUST 是 canonical session events 的权威写入方。
+
+#### Scenario: 桌面发送 prompt
+
+- **WHEN** 桌面客户端发送用户 prompt
+- **THEN** daemon 记录 user command fact
+- **AND** 把命令转发给对应 backend adapter
+- **AND** 把后续 canonical events stream 给所有订阅客户端
+
+### Requirement: 客户端是 peer client
+
+Desktop、Mobile、Web MUST 被视为同一套 local server API 的 peer client。
+
+#### Scenario: 手机批准权限请求
+
+- **WHEN** 手机批准一个 pending request
+- **THEN** daemon 校验 request 仍然 pending
+- **AND** 记录 approval event
+- **AND** 把 response 转发给 backend adapter
+- **AND** 广播状态变化
+
+### Requirement: Relay 只是传输层
+
+Relay 或 tunnel MUST 只转发 client/server 流量，不能成为 canonical session authority。
+
+#### Scenario: 手机通过 relay 连接
+
+- **WHEN** 手机不在同一个 LAN
+- **THEN** relay MAY 转发加密流量
+- **BUT** daemon 仍然负责事件排序和 session 状态

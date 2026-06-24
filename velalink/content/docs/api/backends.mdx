@@ -1,0 +1,195 @@
+---
+title: Backend API
+description: 发现和诊断可用 agent backends。
+---
+
+# Backends API
+
+Backends API 暴露 provider availability、capabilities、models、health diagnostics。
+
+Backends API 是 [Agent 能力模型](/docs/architecture/agent-capability-model) 的能力发现面。它暴露的是 Vela 归一化后的
+capability、model、permission mode 和 feature，不暴露 Codex、ACP、Pi 等 provider 的 raw protocol。
+
+## Endpoints
+
+| Method | Path | 用途 |
+| --- | --- | --- |
+| `GET` | `/backends` | 列出 backends |
+| `GET` | `/backends/{backend}` | 获取 backend details |
+| `POST` | `/backends/{backend}/probe` | 探测 backend health |
+
+## Backend Details
+
+Backends API 是创建 session 和渲染 composer controls 的能力发现入口。UI 不应该硬编码 Codex、Pi、ACP 或其他 provider 的 model/thinking/permission 词汇。
+
+```json
+{
+  "backend": {
+    "kind": "codex",
+    "status": "available",
+    "display_name": "Codex",
+    "capabilities": {
+      "streaming": true,
+      "reasoning_stream": true,
+      "agent_work": true,
+      "multimodal_input": true,
+      "cancel": true,
+      "permission_requests": true,
+      "structured_diff": true,
+      "session_agent_config": true,
+      "session_persistence": true,
+      "history_resume": true,
+      "mcp_servers": true
+    },
+    "models": [
+      {
+        "id": "gpt-5.4",
+        "label": "GPT-5.4",
+        "is_default": true,
+        "reasoning_efforts": [
+          { "id": "minimal", "label": "Minimal" },
+          { "id": "medium", "label": "Medium", "is_default": true },
+          { "id": "high", "label": "High" }
+        ]
+      }
+    ],
+    "permission_modes": [
+      {
+        "id": "read_only",
+        "label": "Read only",
+        "description": "Read files and ask before changing state."
+      },
+      {
+        "id": "auto",
+        "label": "Auto",
+        "description": "Edit workspace files with normal approval flow.",
+        "is_default": true
+      },
+      {
+        "id": "full_access",
+        "label": "Full access",
+        "description": "Run with elevated local permissions and no routine prompts."
+      }
+    ],
+    "features": [
+      {
+        "type": "toggle",
+        "id": "fast_mode",
+        "label": "Fast",
+        "description": "Lower latency at higher usage cost.",
+        "default_value": false
+      },
+      {
+        "type": "toggle",
+        "id": "plan_mode",
+        "label": "Plan",
+        "description": "Plan before implementation.",
+        "default_value": false
+      }
+    ]
+  }
+}
+```
+
+## Agent Config Vocabulary
+
+`model`、`reasoning_effort`、`permission_mode` 是 velaChat 的 Day 1 统一 session config 词汇。
+
+| 字段 | 说明 | Provider 映射 |
+| --- | --- | --- |
+| `model` | 后端模型 id | Codex `turn/start.model`；Pi provider/model selection |
+| `reasoning_effort` | 思考/推理强度 | Codex `effort`；Pi `thinking` |
+| `permission_mode` | 本地权限和审批策略 | Codex sandbox/approval policy；Pi/ACP provider-specific permission mode |
+| `feature_values` | feature id 到值的 map | Codex `fast_mode`/`plan_mode`；其他 provider 的 discoverable toggles/selects |
+
+`mode_id` 先不进入 Day 1 OpenAPI。计划模式、快速模式、web search 等可以先通过 `features` discovery 和
+`agent_config.feature_values` 表达；当多个 backend 都需要互斥 mode 且客户端必须稳定理解时，再提升为一等字段。
+
+`permission_mode` 的常见值：
+
+| Mode | 语义 |
+| --- | --- |
+| `read_only` | 只读或尽量只读；需要写入/命令时走 request |
+| `auto` | 默认 coding 模式；允许工作区内常规编辑，危险操作仍需 request |
+| `auto_review` | 类似 `auto`，但审批可以交给 reviewer/auto-review 机制 |
+| `full_access` | 本地完全访问模式；后端可映射到 danger/full access/no approval |
+
+Backend MAY 只暴露其中一部分 modes。Client MUST 以 `/backends/{backend}` 返回的 `permission_modes` 为准，不得假设每个 backend 都支持 `full_access`。
+
+## Generic ACP Backend
+
+`acp` 是通用 backend kind，不是 Hermes-specific API。当前本地 daemon 默认把 `acp` 连接到 Hermes ACP server，但 client 只通过统一的
+`Backend`、`Session.agent_config`、input events 和 read models 交互。
+
+ACP provider 的模型和 thinking control 仍通过通用字段表达：
+
+```json
+{
+  "backend": "acp",
+  "agent_config": {
+    "model": "minimax-m2.7",
+    "reasoning_effort": "medium",
+    "permission_mode": "auto"
+  }
+}
+```
+
+如果某个 ACP agent 不支持 `session/setModel` 或 `session/setConfigOption`，adapter 可以保留 host-level 默认值并在 diagnostics 中记录降级；wire contract 不增加 provider-specific 字段。
+
+## Feature Discovery
+
+`features` 是 `model`、`reasoning_effort`、`permission_mode` 之外的扩展槽。它用于表达 provider-specific 但可发现、可验证的开关，例如 Codex/Paseo 风格的 `fast_mode` 和 `plan_mode`。
+
+Feature 不得成为绕过 OpenAPI 的 raw config tunnel。Backend 必须声明 feature 的 `id`、`type`、label、默认值和可选项；client 只能提交 discovery 中出现过的 feature id。
+
+```json
+{
+  "feature_values": {
+    "fast_mode": true,
+    "plan_mode": false
+  }
+}
+```
+
+支持的 feature type：
+
+| Type | Value | 用途 |
+| --- | --- | --- |
+| `toggle` | boolean | fast mode、plan mode、web search 等开关 |
+| `select` | string 或 null | provider-defined finite option |
+
+当 feature availability 依赖 model 时，Backend SHOULD 在选中 model 的 details 中返回已过滤后的 feature 列表，或者在 feature metadata 中声明 model constraints。Client 不能自己猜测 “某个模型支持 fast mode”。
+
+## Requirements
+
+### Requirement: capabilities 必须显式
+
+API MUST 在创建 session 前暴露 backend capabilities。
+
+#### Scenario: client 渲染 backend picker
+
+- **WHEN** client 打开 backend picker
+- **THEN** 它能显示 streaming、cancel、permission、structured diff 是否支持
+- **AND** 它能显示可选 models、reasoning efforts、permission modes 和 features
+- **AND** 它能根据 `multimodal_input`、`session_agent_config` 等能力决定是否显示对应 controls
+- **AND** queue、guide、rewind 等动态操作优先通过 `Session.operations` 表达，而不是硬编码 backend kind
+
+### Requirement: backend health 可观测
+
+API SHOULD 暴露不泄露 secret 的 health diagnostics。
+
+#### Scenario: Pi binary 缺失
+
+- **WHEN** 本地 `pi` 不存在
+- **THEN** backend status 是 unavailable
+- **AND** diagnostics 给出安全修复提示
+
+### Requirement: 权限模式必须抽象
+
+Client-facing API MUST 使用 `permission_mode`，不能把 provider 内部 sandbox/approval 字段泄露为通用 UI contract。
+
+#### Scenario: Codex full access
+
+- **WHEN** client 选择 `permission_mode: "full_access"`
+- **THEN** Codex adapter 可以映射到 `danger-full-access` + `approvalPolicy: "never"`
+- **AND** session/turn wire payload 仍只暴露 `permission_mode: "full_access"`

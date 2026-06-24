@@ -1,0 +1,28 @@
+---
+title: 移动客户端
+description: 手机端如何重连、观看和审批本地 sessions。
+---
+
+# 移动客户端
+
+移动端主要负责观看、审批、轻量 steering 和输入。它必须假设断线很常见。
+
+## 重连流程
+
+1. 保存每个 stream 最新 `event_id`。
+2. 重连时传 `after_id` 或 `Last-Event-ID`。
+3. 如果可恢复，apply streamed canonical events。
+4. 如果收到 `sync.reset`，刷新指定 read models。
+5. 永远不要认为本地 cache 是权威状态。
+
+## Requirements
+
+### Requirement: Mobile cursor-driven
+
+Mobile clients MUST 使用 server cursor 做断线恢复。
+
+#### Scenario: 手机睡眠后恢复
+
+- **WHEN** 手机在长 run 中睡眠后重连
+- **THEN** 它从最后 `event_id` 继续
+- **AND** daemon 要求 reset 时刷新 read models

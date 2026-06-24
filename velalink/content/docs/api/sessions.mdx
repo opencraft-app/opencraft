@@ -1,0 +1,176 @@
+---
+title: Session API
+description: 创建、读取、控制 agent sessions。
+---
+
+# Sessions API
+
+Session 绑定用户意图、backend runtime、工作目录、事件账本和 read model projections。
+
+Session API 管 session resource 本身。用户消息、权限响应、自定义工具结果等输入统一走 [Input Event API](/docs/api/input-events)。
+
+Session 的配置和操作面遵循 [Agent 能力模型](/docs/architecture/agent-capability-model)：`Session.operations` 描述当前 session
+能做什么，`Backend.capabilities` 描述该 backend 通常支持什么。Client 不应通过 backend kind 猜测按钮状态。
+
+## Endpoints
+
+| Method | Path | 用途 |
+| --- | --- | --- |
+| `GET` | `/sessions` | 列出 sessions |
+| `POST` | `/sessions` | 创建 session |
+| `GET` | `/sessions/{session_id}` | 获取 session view |
+| `PATCH` | `/sessions/{session_id}/agent-config` | 更新 session 当前 agent 配置 |
+| `POST` | `/sessions/{session_id}/events` | 投递用户输入事件 |
+| `POST` | `/sessions/{session_id}/cancel` | 取消当前运行中的 turn |
+| `POST` | `/sessions/{session_id}/close` | 关闭 session |
+
+## Create Session
+
+```json
+{
+  "backend": "codex",
+  "working_directory": "/Users/alice/project",
+  "agent_config": {
+    "model": "gpt-5.4",
+    "reasoning_effort": "medium",
+    "permission_mode": "auto",
+    "feature_values": {
+      "fast_mode": false
+    }
+  },
+  "title": "修复登录 bug"
+}
+```
+
+`agent_config` 是 session 当前偏好，不是某个 turn 的事后描述。它会被后续 turn 读取；每个 turn 实际使用的配置快照写入 `turn.started.payload.resolved_agent_config`。
+
+兼容规则：
+
+- `agent_config.model` 是 backend model id，必须来自 Backends API 暴露的 models，或者是 backend 明确允许的自定义 model id。
+- `agent_config.reasoning_effort` 是 velaChat 统一抽象，adapter 再映射到 Codex `effort`、Pi `thinking` 等 provider 字段。
+- `agent_config.permission_mode` 是 velaChat 统一权限抽象，adapter 再映射到 provider sandbox / approval policy。
+- `agent_config.feature_values` 是 provider feature 的 typed value map。可用 feature 和 value 类型必须来自 Backends API 的 `features` discovery，不得硬编码 provider 私有开关。
+- 已经 running 的 turn 不会 retroactively 改配置；用户切换后的配置从下一次 input command 开始生效。
+
+## Update Agent Config
+
+```json
+{
+  "model": "gpt-5.4",
+  "reasoning_effort": "high",
+  "permission_mode": "full_access",
+  "feature_values": {
+    "fast_mode": true,
+    "plan_mode": false
+  }
+}
+```
+
+更新 agent config SHOULD 立即更新 session view，并 append `session.config.updated` canonical event。它不应取消或修改正在运行的 turn。
+
+返回值需要同时表达当前 session 偏好和生效边界：
+
+```json
+{
+  "session": {
+    "id": "ses_123",
+    "backend": "codex",
+    "status": "running",
+    "agent_config": {
+      "model": "gpt-5.4",
+      "reasoning_effort": "high",
+      "permission_mode": "full_access",
+      "feature_values": {
+        "fast_mode": true,
+        "plan_mode": false
+      }
+    }
+  },
+  "effective_after": "next_turn",
+  "cursor": { "event_id": "evt_42", "epoch": 1, "seq": 42 }
+}
+```
+
+`effective_after` 有两个值：
+
+- `current_session`：当前没有 running turn，下一次发送会使用新配置。
+- `next_turn`：当前有 running turn；当前 turn 继续使用它的 `resolved_agent_config`，下一次发送使用新配置。
+
+## Send Input Event
+
+```json
+{
+  "events": [
+    {
+      "type": "user.message",
+      "content": [{ "type": "text", "text": "跑一下相关测试并修复失败断言。" }]
+    }
+  ]
+}
+```
+
+图片输入 Day0 使用 inline base64 `image` part；字段名仍按 OpenAPI 使用 `snake_case`。
+`image_ref` 预留给后续 blob/upload 引用，不用于直接传 base64。
+
+```json
+{
+  "events": [
+    {
+      "type": "user.message",
+      "content": [
+        { "type": "text", "text": "看一下这张图。" },
+        { "type": "image", "data": "iVBORw0KGgo...", "mime_type": "image/png" }
+      ]
+    }
+  ]
+}
+```
+
+Input event 不等于“直接把 UI bubble 写进 conversation”。Daemon 接受 `user.message` 后先产生 `user.message.accepted` 或 `input.queued`，projector 再把它投影到 `ConversationView`。Running turn 下的普通发送应该进入 queue；真正 malformed request、session closed、duplicate idempotency 等才会失败或 rejected。
+
+## Backend 映射
+
+不同后端的输入形状不同，Session API 不随后端变化：
+
+| velaChat | Qoder 风格 | 说明 |
+| --- | --- | --- |
+| `POST /sessions/{id}/events` with `user.message` | `POST /v1/sessions/{id}/events` | 发送用户消息 |
+| `POST /sessions/{id}/events` with `user.tool_confirmation` | `POST /v1/sessions/{id}/events` | 响应工具确认 |
+| `POST /sessions/{id}/events` with `user.custom_tool_result` | `POST /v1/sessions/{id}/events` | 返回自定义工具结果 |
+| `POST /sessions/{id}/cancel` | `POST /v1/sessions/{id}/cancel` | 取消当前 processing turn |
+
+## Requirements
+
+### Requirement: 创建 session 必须记录事件
+
+创建 session MUST append `session.created` canonical event。
+
+#### Scenario: 新 session 创建成功
+
+- **WHEN** client 创建 session
+- **THEN** server 返回 session view 和 cursor
+- **AND** event stream 中包含 `session.created`
+
+### Requirement: 用户输入必须先被 daemon 接受
+
+发送用户输入 MUST 先通过 Input Event API 进入 daemon，再由 daemon 创建 accepted command fact。
+
+#### Scenario: 用户发送 prompt
+
+- **WHEN** 用户提交 prompt
+- **THEN** client posts `user.message` to `/sessions/{session_id}/events`
+- **AND** daemon 记录 `user.message.accepted`
+- **AND** 再把 turn 交给 backend adapter
+
+### Requirement: 配置切换不改写当前 turn
+
+Session-level `agent_config` MUST 表示用户当前偏好；turn-level `resolved_agent_config` MUST 表示该 turn 实际使用的快照。
+
+#### Scenario: running turn 中切换模型
+
+- **GIVEN** session 当前正在运行一个 turn
+- **WHEN** client PATCHes `/sessions/{session_id}/agent-config`
+- **THEN** session view 立即显示新的 `agent_config`
+- **AND** server 返回 `effective_after: "next_turn"`
+- **AND** 当前 running turn 的 `resolved_agent_config` 不改变
+- **AND** 下一次 `user.message` 使用新的 session `agent_config`

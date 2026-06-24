@@ -1,0 +1,343 @@
+.hostSurface {
+  position: relative;
+  display: grid;
+  grid-template-columns: 304px minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #f4f5f6;
+}
+
+.sessionRail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid rgb(0 0 0 / 8%);
+  background: rgb(246 247 248 / 92%);
+  color: #1f2328;
+  padding: 34px 14px 18px;
+}
+
+.sessionRailTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 4px 18px;
+}
+
+.eyebrow {
+  color: #9aa1aa;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.railTitle {
+  margin: 7px 0 0;
+  color: #1f2328;
+  font-size: 22px;
+  font-weight: 750;
+  letter-spacing: 0;
+  line-height: 1.1;
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border: 1px solid rgb(0 0 0 / 6%);
+  border-radius: 16px;
+  background: rgb(255 255 255 / 82%);
+  color: #7b828c;
+  cursor: pointer;
+  font: inherit;
+  font-size: 20px;
+  line-height: 1;
+  box-shadow: 0 10px 24px rgb(19 24 32 / 6%);
+}
+
+.iconButton:hover {
+  background: #fff;
+  color: #343941;
+}
+
+.newChatButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 52px;
+  width: 100%;
+  border: 1px solid rgb(0 0 0 / 7%);
+  border-radius: 12px;
+  background: #fff;
+  color: #1f2328;
+  cursor: pointer;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 750;
+  line-height: 1;
+  box-shadow: 0 8px 18px rgb(27 31 36 / 5%);
+}
+
+.newChatButton:hover {
+  background: #fbfbfc;
+}
+
+.newChatButton span:first-child {
+  font-size: 22px;
+  font-weight: 650;
+  line-height: 0.8;
+}
+
+.backendField {
+  display: grid;
+  gap: 10px;
+  margin: 24px 0 16px;
+}
+
+.backendField span {
+  color: #9aa1aa;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.backendField select {
+  width: 100%;
+  height: 44px;
+  border: 1px solid rgb(0 0 0 / 8%);
+  border-radius: 13px;
+  background: rgb(255 255 255 / 88%);
+  color: #4c535d;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0 14px;
+}
+
+.sessionListRegion {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.emptySessions {
+  color: #b2b7bf;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 18px 6px;
+  text-align: center;
+}
+
+.chatPanel {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #fff;
+}
+
+.errorBanner {
+  position: absolute;
+  top: 18px;
+  right: 28px;
+  left: 28px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid rgb(255 90 31 / 22%);
+  border-radius: 14px;
+  background: rgb(255 248 245 / 94%);
+  color: #b33a13;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.4;
+  padding: 12px 14px;
+  box-shadow: 0 16px 40px rgb(179 58 19 / 9%);
+}
+
+.errorBanner button {
+  flex: none;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(179 58 19 / 10%);
+  color: #b33a13;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 7px 12px;
+}
+
+.errorBanner button:hover {
+  background: rgb(179 58 19 / 15%);
+}
+
+.sessionRail :global(.session-list) {
+  display: grid;
+  gap: 4px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sessionRail :global(.vela-session-item) {
+  --vela-session-rail-width: 42px;
+  position: relative;
+  min-width: 0;
+}
+
+.sessionRail :global(.vela-session-main) {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) var(--vela-session-rail-width);
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 58px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: #7f8791;
+  cursor: pointer;
+  font: inherit;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.sessionRail :global(.vela-session-main:hover),
+.sessionRail :global(.vela-session-main[data-active="true"]) {
+  background: rgb(0 0 0 / 5%);
+  color: #1f2328;
+}
+
+.sessionRail :global(.vela-session-icon) {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #a1a8b1;
+}
+
+.sessionRail :global(.vela-session-status-dot) {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.sessionRail :global(.vela-session-item[data-running="true"] .vela-session-status-dot),
+.sessionRail :global(.vela-session-item[data-waiting="true"] .vela-session-status-dot) {
+  background: #25c05a;
+}
+
+.sessionRail :global(.vela-session-copy) {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.sessionRail :global(.vela-session-title-row) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sessionRail :global(.vela-session-title),
+.sessionRail :global(.vela-session-preview),
+.sessionRail :global(.vela-session-meta),
+.sessionRail :global(.vela-session-rail) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sessionRail :global(.vela-session-title) {
+  min-width: 0;
+  color: inherit;
+  font-size: 13px;
+  font-weight: 760;
+  line-height: 1.15;
+}
+
+.sessionRail :global(.vela-session-preview) {
+  color: #8f97a1;
+  font-size: 12px;
+  font-weight: 620;
+  line-height: 1.15;
+}
+
+.sessionRail :global(.vela-session-meta) {
+  color: #bcc1c8;
+  font-size: 11px;
+  font-weight: 620;
+  line-height: 1.1;
+}
+
+.sessionRail :global(.vela-session-rail) {
+  justify-self: end;
+  color: #aab0b8;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.sessionRail :global(.vela-session-badge) {
+  flex: none;
+  border-radius: 999px;
+  background: rgb(37 192 90 / 10%);
+  color: #1c9a4d;
+  font-size: 10px;
+  font-weight: 760;
+  line-height: 1;
+  padding: 3px 6px;
+}
+
+.sessionRail :global(.vela-session-actions-trigger) {
+  position: absolute;
+  top: 10px;
+  right: 8px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 9px;
+  background: rgb(255 255 255 / 86%);
+  color: #8c939d;
+  cursor: pointer;
+}
+
+.sessionRail :global(.vela-session-item:hover .vela-session-actions-trigger),
+.sessionRail :global(.vela-session-actions-trigger[aria-expanded="true"]) {
+  display: inline-flex;
+}
+
+@media (max-width: 860px) {
+  .hostSurface {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sessionRail {
+    display: none;
+  }
+}
