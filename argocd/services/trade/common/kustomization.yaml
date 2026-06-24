@@ -185,5 +185,40 @@ replacements:
           name: trade-config
         fieldPaths:
           - data.LIGHTVELA_TRADE_REGION
+  # ===========================================================================
+  # DIANSHI_PRICE_BASE_URL / DIANSHI_ORDER_BASE_URL（点石活动接入 v1.7.x，
+  # 2026-06-24 新增）：trade → clgateway 点石询价 / 下单出向地址。
+  #
+  # 同进同退（trade Load 期 fail-fast）：
+  #   - 都非空 → main.go 装配 ActivityResolver + DianshiClient + ActivityStore，
+  #     inquiry / placeorder / createresource 在启航 01 / 启航 AI 01 等活动 bundle
+  #     上分叉走点石协议；
+  #   - 都为空 → main.go 不装配，三处 logic 完全退化到 jifei 单路径（v1.7.x 行为）；
+  #   - 只配一边 → trade Load 期直接 panic，避免询价 / 下单跛脚。
+  #
+  # 各引用本 component 的环境必须在 trade-platform.env 里声明这两个 key（即使是
+  # 空字符串 ""），否则 kustomize build 会因找不到 replacement source 字段而失败。
+  # 设计稿：.tmp/dianshi-activity-bundle-design.md §5.7 / §5.8
+  # ===========================================================================
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.DIANSHI_PRICE_BASE_URL
+    targets:
+      - select:
+          kind: ConfigMap
+          name: trade-config
+        fieldPaths:
+          - data.DIANSHI_PRICE_BASE_URL
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.DIANSHI_ORDER_BASE_URL
+    targets:
+      - select:
+          kind: ConfigMap
+          name: trade-config
+        fieldPaths:
+          - data.DIANSHI_ORDER_BASE_URL
 resources:
   - ../../../../trade/k8s/base

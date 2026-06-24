@@ -98,6 +98,18 @@ data:
   # configmap (trade-platform.env) 注入：overlay 未配时保持空字符串。
   LIGHTVELA_TRADE_REGION: ""
 
+  # DIANSHI_PRICE_BASE_URL / DIANSHI_ORDER_BASE_URL（点石活动接入 v1.7.x）：
+  # trade → clgateway 的点石询价 / 下单出向地址。两者同进同退，trade Load 期会
+  # fail-fast 拦只配一边的跛脚状态；都为空 = main.go 不装配 ActivityResolver +
+  # DianshiClient + ActivityStore，inquiry / placeorder / createresource 退化到
+  # v1.7.x 历史行为（jifei 单路径），与 LIGHTVELA_TRADE_REGION 同款"空字符串
+  # 即 disable"语义。真实取值由 deploy-facing common Component 通过 replacements
+  # 从 trade-platform-values configmap (trade-platform.env) 注入；overlay 未配
+  # 时保持空字符串，common/kustomization.yaml replacements 强引用本字段不能删除。
+  # 设计稿：.tmp/dianshi-activity-bundle-design.md §5.7 / §5.8
+  DIANSHI_PRICE_BASE_URL: ""
+  DIANSHI_ORDER_BASE_URL: ""
+
   # --- DB ---
   # MYSQL_HOST / MYSQL_PORT 由 deploy-facing common Component 用 replacements
   # 从 trade-platform-values configmap 注入；TRADE_DB_PASSWORD 走 secret。
