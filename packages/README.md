@@ -9,6 +9,7 @@ Each package owns one layer of the Chat Surface pipeline. Keep dependencies one-
 Host adapters sit outside that core pipeline:
 
 - `vela-chat-controller` wires read models, streams, drafts, and commands for a single active session.
+- `vela-chat-query` adapts cache-backed React read models and command writeback without owning transport or streaming runtime.
 - `vela-chat-next` adapts the controller and ChatUI to a normal Next.js host page.
 - `vela-desktop-shell` adapts the same ChatUI to the desktop app shell.
 - `app/chat` remains the debug workbench, not the embedding contract.

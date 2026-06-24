@@ -887,6 +887,11 @@ body {
 }
 
 .vela-session-actions-popover {
+  bottom: auto;
+  left: auto;
+  display: block;
+  overflow: visible;
+  min-height: 0;
   width: 164px;
   transform-origin: top right;
 }
@@ -988,15 +993,12 @@ body {
   transition: none !important;
 }
 
+.vela-popover-surface,
 .vela-settings-popover {
   --vela-codex-menu-enter-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --vela-settings-popover-inset: 2px;
   --vela-settings-popover-start-transform: translateY(var(--vela-settings-popover-inset)) scale(0.98);
-  position: absolute;
-  left: 0;
-  bottom: calc(100% + 8px);
   z-index: 80;
-  width: min(224px, calc(100vw - 24px));
   padding: 4px;
   border: 1px solid rgba(60, 60, 67, 0.14);
   border-radius: 14px;
@@ -1009,6 +1011,13 @@ body {
   -webkit-backdrop-filter: blur(12px) saturate(1.12);
   backdrop-filter: blur(12px) saturate(1.12);
   will-change: transform, opacity;
+}
+
+.vela-settings-popover {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  width: min(224px, calc(100vw - 24px));
 }
 
 .macos-popover-surface {
@@ -1034,11 +1043,13 @@ body {
   transform-origin: bottom left;
 }
 
+.vela-popover-menu,
 .vela-settings-menu {
   display: grid;
   gap: 1px;
 }
 
+.vela-popover-menu-item,
 .vela-settings-menu-item {
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr) auto;
@@ -1060,6 +1071,7 @@ body {
     color 90ms ease;
 }
 
+.vela-popover-menu-item span,
 .vela-settings-menu-item span {
   min-width: 0;
   overflow: hidden;
@@ -1067,29 +1079,35 @@ body {
   white-space: nowrap;
 }
 
+.vela-popover-menu-item svg,
 .vela-settings-menu-item svg {
   color: #5f656b;
   stroke-width: 1.8;
 }
 
+.vela-popover-menu-item kbd,
 .vela-settings-menu-item kbd {
   color: #8d9298;
   font: inherit;
   font-weight: 450;
 }
 
+.vela-popover-menu-item:hover:not(:disabled),
 .vela-settings-menu-item:hover:not(:disabled) {
   background: rgba(123, 127, 133, 0.1);
 }
 
+.vela-popover-menu-item:disabled,
 .vela-settings-menu-item:disabled {
   opacity: 0.36;
 }
 
+.vela-popover-menu-item.is-muted,
 .vela-settings-menu-item.is-muted {
   color: rgba(37, 41, 47, 0.34);
 }
 
+.vela-popover-menu-separator,
 .vela-settings-menu-separator {
   height: 1px;
   margin: 4px 6px;

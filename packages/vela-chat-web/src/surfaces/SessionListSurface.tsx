@@ -113,7 +113,7 @@ function SessionListSurfaceItem({
 
   const menu = isMenuOpen ? (
     <div
-      className="vela-settings-popover vela-motion-popover vela-session-actions-popover"
+      className="vela-popover-surface vela-session-actions-popover vela-motion-popover"
       role="menu"
       aria-label="Session actions"
       data-layer={canUseDocument() ? "portal" : "inline"}
@@ -121,9 +121,9 @@ function SessionListSurfaceItem({
       ref={menuRef}
       style={menuStyle ?? undefined}
     >
-      <div className="vela-settings-menu">
+      <div className="vela-popover-menu">
         <button
-          className="vela-settings-menu-item"
+          className="vela-popover-menu-item"
           type="button"
           role="menuitem"
           data-action="archive-session"

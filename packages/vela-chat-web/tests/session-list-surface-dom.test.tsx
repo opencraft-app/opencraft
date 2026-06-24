@@ -80,6 +80,52 @@ test("session list item menu archives the selected session", async () => {
   }
 });
 
+test("session action menu uses a portal layer outside the session item", async () => {
+  const dom = installDomRuntime();
+  try {
+    const { SessionListSurface } = await import("../src");
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <SessionListSurface
+          sessions={[session]}
+          currentSessionId={session.id}
+          onSelectSession={() => {}}
+          onArchiveSession={() => {}}
+        />,
+      );
+    });
+
+    const menuTrigger = document.querySelector<HTMLButtonElement>(
+      '[aria-label="Session actions for Archive from menu"]',
+    );
+    assert.ok(menuTrigger);
+
+    await act(async () => {
+      menuTrigger.click();
+    });
+
+    const menu = document.querySelector<HTMLElement>('[role="menu"][aria-label="Session actions"]');
+    const item = document.querySelector<HTMLElement>('[data-slot="session-list-surface-item"]');
+    assert.ok(menu);
+    assert.ok(item);
+    assert.equal(menu.parentElement, document.body);
+    assert.equal(item.contains(menu), false);
+    assert.equal(menu.classList.contains("vela-popover-surface"), true);
+    assert.equal(menu.classList.contains("vela-session-actions-popover"), true);
+    assert.equal(menu.classList.contains("vela-settings-popover"), false);
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 function installDomRuntime() {
   const win = new Window();
   const previous = {

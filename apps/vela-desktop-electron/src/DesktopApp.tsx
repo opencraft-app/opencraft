@@ -3,12 +3,16 @@ import {
   createVeladClient,
   type BackendKindWire,
   type BackendWire,
-  type SessionListItemWire,
 } from "../../../packages/vela-chat-client/src";
 import {
   buildVelaSessionSetupSelection,
   useVelaChatSession,
 } from "../../../packages/vela-chat-controller/src";
+import {
+  VelaQueryProvider,
+  useArchiveSessionMutation,
+  useSessionListViewQuery,
+} from "../../../packages/vela-chat-query/src";
 import type { ChatHostPolicy } from "../../../packages/vela-chat-render-model/src";
 import { ChatSurface } from "../../../packages/vela-chat-web/src";
 import {
@@ -39,6 +43,7 @@ const DEFAULT_WEB_API_BASE_URL = "/api/v1";
 const DEFAULT_BACKEND_STORAGE_KEY = "vela-desktop:settings:default-backend";
 const DESKTOP_BACKEND_PREFERENCE = ["codex", "acp", "pi"] satisfies BackendKindWire[];
 const DESKTOP_SHELL_HOST_POLICY = { kind: "desktop_shell" } satisfies ChatHostPolicy;
+const DESKTOP_SESSION_LIST_OPTIONS = { limit: 80 };
 
 type RuntimeHostStateStores = ReturnType<typeof createRuntimeHostStateStores>;
 
@@ -113,14 +118,16 @@ export function DesktopApp() {
 
   if (bootstrap.status === "ready") {
     return (
-      <DesktopReadyApp
-        hostInfo={bootstrap.info}
-        hostStateStores={hostStateStores}
-        isSidebarVisible={isSidebarVisible}
-        sidebarWidthPx={sidebarWidthPx}
-        onSidebarVisibilityChange={setIsSidebarVisible}
-        onSidebarWidthChange={setSidebarWidthPx}
-      />
+      <VelaQueryProvider>
+        <DesktopReadyApp
+          hostInfo={bootstrap.info}
+          hostStateStores={hostStateStores}
+          isSidebarVisible={isSidebarVisible}
+          sidebarWidthPx={sidebarWidthPx}
+          onSidebarVisibilityChange={setIsSidebarVisible}
+          onSidebarWidthChange={setSidebarWidthPx}
+        />
+      </VelaQueryProvider>
     );
   }
 
@@ -154,7 +161,6 @@ function DesktopReadyApp({
   onSidebarVisibilityChange,
   onSidebarWidthChange,
 }: DesktopReadyAppProps) {
-  const [sessions, setSessions] = useState<SessionListItemWire[]>([]);
   const [activeSessionId, setActiveSessionId] = useState(
     () => hostStateStores.sessionSelectionStore?.read()?.sessionId ?? "",
   );
@@ -197,6 +203,11 @@ function DesktopReadyApp({
     [chromeState, hostInfo],
   );
   const client = useMemo(() => createVeladClient({ baseUrl: apiBaseUrl }), [apiBaseUrl]);
+  const sessionList = useSessionListViewQuery({
+    client,
+    options: DESKTOP_SESSION_LIST_OPTIONS,
+  });
+  const sessions = sessionList.data?.sessions ?? [];
   const controller = useVelaChatSession({
     client,
     baseUrl: apiBaseUrl,
@@ -223,24 +234,54 @@ function DesktopReadyApp({
         ? "Electron on macOS"
         : `Electron on ${hostBridge.platform}`;
 
-  const loadSessions = useCallback(async () => {
+  useEffect(() => {
+    if (!sessionList.data) return;
+    setError(null);
+    setActiveSessionId((current) =>
+      current && sessionList.data.sessions.some((session) => session.id === current)
+        ? current
+        : sessionList.data.sessions[0]?.id || "",
+    );
+  }, [sessionList.data]);
+
+  useEffect(() => {
+    if (!sessionList.error) return;
+    setError(sessionList.error instanceof Error ? sessionList.error.message : String(sessionList.error));
+  }, [sessionList.error]);
+
+  const archiveSessionMutation = useArchiveSessionMutation({
+    client,
+    currentSessionId: activeSessionId || null,
+    sessionListOptions: DESKTOP_SESSION_LIST_OPTIONS,
+    onSelectSession: setActiveSessionId,
+  });
+
+  const archiveSession = useCallback(
+    async (sessionId: string) => {
+      try {
+        setError(null);
+        await archiveSessionMutation.mutateAsync({ sessionId });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [archiveSessionMutation],
+  );
+
+  const refreshSessions = useCallback(async () => {
     try {
       setError(null);
-      const response = await client.getSessionListView({ limit: 80 });
-      setSessions(response.sessions);
+      const response = await sessionList.refetch();
+      if (!response.data) return;
       setActiveSessionId((current) =>
-        current && response.sessions.some((session) => session.id === current)
+        current && response.data.sessions.some((session) => session.id === current)
           ? current
-          : response.sessions[0]?.id || "",
+          : response.data.sessions[0]?.id || "",
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [client]);
-
-  useEffect(() => {
-    void loadSessions();
-  }, [loadSessions]);
+  }, [sessionList]);
 
   const buildSessionSetup = useCallback(
     (backends: BackendWire[]) =>
@@ -277,24 +318,11 @@ function DesktopReadyApp({
         workingDirectory: DEFAULT_WORKING_DIRECTORY,
       });
       setActiveSessionId(created.session.id);
-      await loadSessions();
+      await refreshSessions();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [client, loadSessions, resolveNewSessionSetup]);
-
-  const archiveSession = useCallback(
-    async (sessionId: string) => {
-      try {
-        setError(null);
-        await client.archiveSession({ sessionId });
-        await loadSessions();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      }
-    },
-    [client, loadSessions],
-  );
+  }, [client, refreshSessions, resolveNewSessionSetup]);
 
   const appSidebar = (
     <SessionSidebar

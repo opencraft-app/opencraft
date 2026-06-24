@@ -103,7 +103,7 @@ export function SidebarSettingsMenu({
   const menu = useMemo(
     () => (
       <div
-        className="vela-settings-popover vela-motion-popover"
+        className="vela-popover-surface vela-settings-popover vela-motion-popover"
         role="menu"
         aria-label="Settings menu"
         data-layer={canPortal ? "portal" : "inline"}
@@ -111,9 +111,9 @@ export function SidebarSettingsMenu({
         ref={popoverRef}
         style={popoverStyle ?? undefined}
       >
-        <div className="vela-settings-menu">
+        <div className="vela-popover-menu vela-settings-menu">
           <button
-            className="vela-settings-menu-item is-muted"
+            className="vela-popover-menu-item vela-settings-menu-item is-muted"
             type="button"
             role="menuitem"
             onClick={openSettings}
@@ -122,7 +122,7 @@ export function SidebarSettingsMenu({
             <span>{accountLabel}</span>
           </button>
           <button
-            className="vela-settings-menu-item is-muted"
+            className="vela-popover-menu-item vela-settings-menu-item is-muted"
             type="button"
             role="menuitem"
             onClick={openSettings}
@@ -131,10 +131,10 @@ export function SidebarSettingsMenu({
             <span>{accountPlanLabel}</span>
           </button>
 
-          <div className="vela-settings-menu-separator" role="none" />
+          <div className="vela-popover-menu-separator vela-settings-menu-separator" role="none" />
 
           <button
-            className="vela-settings-menu-item"
+            className="vela-popover-menu-item vela-settings-menu-item"
             type="button"
             role="menuitem"
             onClick={openSettings}
@@ -143,7 +143,7 @@ export function SidebarSettingsMenu({
             <span>Personal profile</span>
           </button>
           <button
-            className="vela-settings-menu-item"
+            className="vela-popover-menu-item vela-settings-menu-item"
             type="button"
             role="menuitem"
             onClick={openSettings}
@@ -153,10 +153,10 @@ export function SidebarSettingsMenu({
             <kbd>⌘,</kbd>
           </button>
 
-          <div className="vela-settings-menu-separator" role="none" />
+          <div className="vela-popover-menu-separator vela-settings-menu-separator" role="none" />
 
           <button
-            className="vela-settings-menu-item"
+            className="vela-popover-menu-item vela-settings-menu-item"
             type="button"
             role="menuitem"
             disabled
@@ -166,7 +166,7 @@ export function SidebarSettingsMenu({
             <ChevronRight size={14} aria-hidden />
           </button>
           <button
-            className="vela-settings-menu-item"
+            className="vela-popover-menu-item vela-settings-menu-item"
             type="button"
             role="menuitem"
             disabled
@@ -175,7 +175,7 @@ export function SidebarSettingsMenu({
             <span>Invite friends</span>
           </button>
           <button
-            className="vela-settings-menu-item"
+            className="vela-popover-menu-item vela-settings-menu-item"
             type="button"
             role="menuitem"
             disabled={!canClear}
@@ -185,7 +185,7 @@ export function SidebarSettingsMenu({
             <span>Clear chats</span>
           </button>
           <button
-            className="vela-settings-menu-item"
+            className="vela-popover-menu-item vela-settings-menu-item"
             type="button"
             role="menuitem"
             disabled
