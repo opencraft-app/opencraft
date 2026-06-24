@@ -26,23 +26,176 @@ const cnDocs = [
 ];
 
 const globalDocs = [
-  { slug: 'overview', title: { 'en-US': 'What is LightVela', 'zh-CN': 'LightVela 是什么' }, file: '01-overview.md', group: { 'en-US': 'Getting Started', 'zh-CN': '开始使用' } },
-  { slug: 'quickstart', title: { 'en-US': 'Quickstart', 'zh-CN': '快速开始' }, file: '02-quickstart.md', group: { 'en-US': 'Getting Started', 'zh-CN': '开始使用' } },
-  { slug: 'core-concepts', title: { 'en-US': 'Core Concepts', 'zh-CN': '核心概念' }, file: '04-core-concepts.md', group: { 'en-US': 'Getting Started', 'zh-CN': '开始使用' } },
-  { slug: 'configuration/index', title: { 'en-US': 'Configuration Overview', 'zh-CN': '配置总览' }, file: '05-configuration.md', group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' } },
-  { slug: 'configuration/model', title: { 'en-US': 'Configure Models', 'zh-CN': '配置模型' }, file: 'configuration/model.md', group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' } },
-  { slug: 'configuration/channel-wechat', title: { 'en-US': 'WeChat', 'zh-CN': 'WeChat' }, file: 'configuration/channel-wechat.md', group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' } },
-  { slug: 'configuration/channel-telegram', title: { 'en-US': 'Telegram', 'zh-CN': 'Telegram' }, file: 'configuration/channel-telegram.md', group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' } },
-  { slug: 'configuration/channel-whatsapp', title: { 'en-US': 'WhatsApp', 'zh-CN': 'WhatsApp' }, file: 'configuration/channel-whatsapp.md', group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' } },
-  { slug: 'configuration/channel-discord', title: { 'en-US': 'Discord', 'zh-CN': 'Discord' }, file: 'configuration/channel-discord.md', group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' } },
-  { slug: 'configuration/channel-qq', title: { 'en-US': 'QQ', 'zh-CN': 'QQ' }, file: 'configuration/channel-qq.md', group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' } },
-  { slug: 'configuration/channel-wecom', title: { 'en-US': 'WeCom', 'zh-CN': '企业微信' }, file: 'configuration/channel-wecom.md', group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' } },
-  { slug: 'configuration/channel-feishu', title: { 'en-US': 'Lark', 'zh-CN': '飞书' }, file: 'configuration/channel-feishu.md', group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' } },
-  { slug: 'configuration/skill', title: { 'en-US': 'Configure Skills', 'zh-CN': '配置技能' }, file: 'configuration/skill.md', group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' } },
-  { slug: 'configuration/automation', title: { 'en-US': 'Automations', 'zh-CN': '自动任务' }, file: 'configuration/automation.md', group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' } },
-  { slug: 'configuration/agent-chat', title: { 'en-US': 'Chat', 'zh-CN': '对话' }, file: 'configuration/agent-chat.md', group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' } },
-  { slug: 'faq', title: { 'en-US': 'FAQ', 'zh-CN': '常见问题 FAQ' }, file: '07-faq.md', group: { 'en-US': 'Reference', 'zh-CN': '参考' } },
-  { slug: 'faq/using-lightvela-safely', title: { 'en-US': 'Using LightVela Safely', 'zh-CN': '安全使用 LightVela' }, file: 'faq/using-lightvela-safely.md', group: { 'en-US': 'Reference', 'zh-CN': '参考' } },
+  {
+    slug: 'overview',
+    title: { 'en-US': 'What is LightVela', 'zh-CN': 'LightVela 是什么' },
+    file: '01-overview.md',
+    group: { 'en-US': 'Getting Started', 'zh-CN': '开始使用' },
+    description: {
+      'en-US': 'LightVela is a hosted Hermes Agent companion that keeps conversations and automations running in the cloud.',
+      'zh-CN': '云端托管 Hermes Agent，越聊越懂的智能伙伴。',
+    },
+  },
+  {
+    slug: 'quickstart',
+    title: { 'en-US': 'Quickstart', 'zh-CN': '快速开始' },
+    file: '02-quickstart.md',
+    group: { 'en-US': 'Getting Started', 'zh-CN': '开始使用' },
+    description: {
+      'en-US': 'Set up your first LightVela conversation in a few minutes.',
+      'zh-CN': '几分钟跑通第一个 LightVela 对话。',
+    },
+  },
+  {
+    slug: 'core-concepts',
+    title: { 'en-US': 'Core Concepts', 'zh-CN': '核心概念' },
+    file: '04-core-concepts.md',
+    group: { 'en-US': 'Getting Started', 'zh-CN': '开始使用' },
+    description: {
+      'en-US': 'Understand Hermes, models, channels, skills, and automations in LightVela.',
+      'zh-CN': '理解 Hermes、模型、通道、技能和自动任务。',
+    },
+  },
+  {
+    slug: 'configuration/index',
+    title: { 'en-US': 'Configuration Overview', 'zh-CN': '配置总览' },
+    file: '05-configuration.md',
+    group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' },
+    description: {
+      'en-US': 'Review the LightVela console configuration flow.',
+      'zh-CN': 'LightVela 管理台配置流程。',
+    },
+  },
+  {
+    slug: 'configuration/model',
+    title: { 'en-US': 'Configure Models', 'zh-CN': '配置模型' },
+    file: 'configuration/model.md',
+    group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' },
+    description: {
+      'en-US': 'Connect and manage the language models used by Hermes.',
+      'zh-CN': '接入和管理 Hermes 使用的大语言模型。',
+    },
+  },
+  {
+    slug: 'configuration/channel-wechat',
+    title: { 'en-US': 'WeChat', 'zh-CN': 'WeChat' },
+    file: 'configuration/channel-wechat.md',
+    group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' },
+    description: {
+      'en-US': 'Connect WeChat to your Hermes Agent.',
+      'zh-CN': '通过微信与 Hermes Agent 对话。',
+    },
+  },
+  {
+    slug: 'configuration/channel-telegram',
+    title: { 'en-US': 'Telegram', 'zh-CN': 'Telegram' },
+    file: 'configuration/channel-telegram.md',
+    group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' },
+    description: {
+      'en-US': 'Connect Telegram to your Hermes Agent.',
+      'zh-CN': '通过 Telegram 与 Hermes Agent 对话。',
+    },
+  },
+  {
+    slug: 'configuration/channel-whatsapp',
+    title: { 'en-US': 'WhatsApp', 'zh-CN': 'WhatsApp' },
+    file: 'configuration/channel-whatsapp.md',
+    group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' },
+    description: {
+      'en-US': 'Connect WhatsApp to your Hermes Agent.',
+      'zh-CN': '通过 WhatsApp 与 Hermes Agent 对话。',
+    },
+  },
+  {
+    slug: 'configuration/channel-discord',
+    title: { 'en-US': 'Discord', 'zh-CN': 'Discord' },
+    file: 'configuration/channel-discord.md',
+    group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' },
+    description: {
+      'en-US': 'Connect Discord to your Hermes Agent.',
+      'zh-CN': '通过 Discord 与 Hermes Agent 对话。',
+    },
+  },
+  {
+    slug: 'configuration/channel-qq',
+    title: { 'en-US': 'QQ', 'zh-CN': 'QQ' },
+    file: 'configuration/channel-qq.md',
+    group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' },
+    description: {
+      'en-US': 'Connect QQ to your Hermes Agent.',
+      'zh-CN': '通过 QQ 与 Hermes Agent 对话。',
+    },
+  },
+  {
+    slug: 'configuration/channel-wecom',
+    title: { 'en-US': 'WeCom', 'zh-CN': '企业微信' },
+    file: 'configuration/channel-wecom.md',
+    group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' },
+    description: {
+      'en-US': 'Connect WeCom to your Hermes Agent.',
+      'zh-CN': '通过企业微信与 Hermes Agent 对话。',
+    },
+  },
+  {
+    slug: 'configuration/channel-feishu',
+    title: { 'en-US': 'Lark', 'zh-CN': '飞书' },
+    file: 'configuration/channel-feishu.md',
+    group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' },
+    description: {
+      'en-US': 'Connect Lark to your Hermes Agent.',
+      'zh-CN': '通过飞书与 Hermes Agent 对话。',
+    },
+  },
+  {
+    slug: 'configuration/skill',
+    title: { 'en-US': 'Configure Skills', 'zh-CN': '配置技能' },
+    file: 'configuration/skill.md',
+    group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' },
+    description: {
+      'en-US': 'Install skills to extend Hermes capabilities.',
+      'zh-CN': '安装技能包，扩展 Hermes 能力。',
+    },
+  },
+  {
+    slug: 'configuration/automation',
+    title: { 'en-US': 'Automations', 'zh-CN': '自动任务' },
+    file: 'configuration/automation.md',
+    group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' },
+    description: {
+      'en-US': 'Create scheduled automations for your Hermes Agent.',
+      'zh-CN': '为 Hermes Agent 创建定时自动任务。',
+    },
+  },
+  {
+    slug: 'configuration/agent-chat',
+    title: { 'en-US': 'Chat', 'zh-CN': '对话' },
+    file: 'configuration/agent-chat.md',
+    group: { 'en-US': 'Configuration Guide', 'zh-CN': '配置指南' },
+    description: {
+      'en-US': 'Chat with Hermes and inspect conversation behavior.',
+      'zh-CN': '与 Hermes 对话并查看会话行为。',
+    },
+  },
+  {
+    slug: 'faq',
+    title: { 'en-US': 'FAQ', 'zh-CN': '常见问题 FAQ' },
+    file: '07-faq.md',
+    group: { 'en-US': 'Reference', 'zh-CN': '参考' },
+    description: {
+      'en-US': 'Answers to common LightVela questions.',
+      'zh-CN': 'LightVela 常见问题。',
+    },
+  },
+  {
+    slug: 'faq/using-lightvela-safely',
+    title: { 'en-US': 'Using LightVela Safely', 'zh-CN': '安全使用 LightVela' },
+    file: 'faq/using-lightvela-safely.md',
+    group: { 'en-US': 'Reference', 'zh-CN': '参考' },
+    description: {
+      'en-US': 'Guidance for using LightVela safely and responsibly.',
+      'zh-CN': '安全、负责任地使用 LightVela 的建议。',
+    },
+  },
 ];
 
 const docSets = [
@@ -159,6 +312,7 @@ function sourcePathFor(docSet, file) {
 
 function writeDoc(docSet, doc) {
   const title = textFor(doc.title, docSet.locale);
+  const description = textFor(doc.description, docSet.locale);
   const inputPath = sourcePathFor(docSet, doc.file);
   if (!existsSync(inputPath)) {
     throw new Error(`missing LightVela doc source: ${inputPath}`);
@@ -173,7 +327,7 @@ function writeDoc(docSet, doc) {
     [
       '---',
       `title: ${JSON.stringify(title)}`,
-      `description: ${JSON.stringify(doc.description ?? '')}`,
+      `description: ${JSON.stringify(description)}`,
       `source_path: ${JSON.stringify(relative(frontendRoot, inputPath))}`,
       '---',
       '',
