@@ -262,6 +262,29 @@ describe("TencentTsshProxyClient", () => {
     } satisfies Partial<TatTransportError>);
   });
 
+  it("preserves lease expiry when TAT rejects session auth before websocket close", async () => {
+    const client = new TencentTsshProxyClient(bootstrap, { WebSocketImpl, connectDelayMs: 10 });
+    const openPromise = client.openProxy({ port: 9001, proxyId: "proxy-auth-expired" });
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+    await flushPromises();
+
+    socket.receive(JSON.stringify({
+      Type: "Error",
+      Data: {
+        Message: "session not valid",
+      },
+    }));
+    await flushPromises();
+    socket.close();
+
+    await expect(openPromise).rejects.toMatchObject({
+      kind: "lease_expired",
+      phase: "websocket",
+      retryable: true,
+    } satisfies Partial<TatTransportError>);
+  });
+
   it("routes concurrent proxy bytes only to their matching channel", async () => {
     const client = new TencentTsshProxyClient(bootstrap, { WebSocketImpl, connectDelayMs: 0 });
     const firstPromise = client.openProxy({ port: 9001, proxyId: "proxy-a" });

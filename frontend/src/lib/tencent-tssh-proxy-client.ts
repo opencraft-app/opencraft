@@ -217,6 +217,7 @@ export class TencentTsshProxyClient {
   private socket: WebSocket | null = null;
   private state: TsshProxyClientState = "idle";
   private readyPromise: Promise<void> | null = null;
+  private rejectReady: ((error: Error) => void) | null = null;
   private pending = new Map<string, PendingProxy>();
   private connections = new Map<string, TencentTsshProxyConnection>();
 
@@ -278,6 +279,7 @@ export class TencentTsshProxyClient {
           return;
         }
         settled = true;
+        this.rejectReady = null;
         clearReadyTimer();
         resolve();
       };
@@ -286,12 +288,14 @@ export class TencentTsshProxyClient {
           return;
         }
         settled = true;
+        this.rejectReady = null;
         clearReadyTimer();
         this.logDebug("connect rejected", {}, error);
         reject(error);
       };
 
       this.setState("connecting");
+      this.rejectReady = rejectReady;
       const socket = new this.WebSocketImpl(this.bootstrap.wsUrl);
       socket.binaryType = "arraybuffer";
       this.socket = socket;
@@ -546,6 +550,8 @@ export class TencentTsshProxyClient {
     this.logDebug("client failed", {}, error);
     this.setState("error");
     this.readyPromise = null;
+    this.rejectReady?.(error);
+    this.rejectReady = null;
     this.socket = null;
     this.options.onError?.(error.message);
     for (const pending of this.pending.values()) {
