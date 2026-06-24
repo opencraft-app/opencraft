@@ -34,6 +34,7 @@ import { DesktopEmptySurface } from "./DesktopEmptySurface";
 import {
   DesktopSettingsPage,
   DesktopSettingsSidebar,
+  type DesktopSettingsPanelId,
 } from "./DesktopSettingsPage";
 import { createRuntimeHostStateStores } from "./hostState";
 import "./style.css";
@@ -41,6 +42,7 @@ import "./style.css";
 const DEFAULT_WORKING_DIRECTORY = "/";
 const DEFAULT_WEB_API_BASE_URL = "/api/v1";
 const DEFAULT_BACKEND_STORAGE_KEY = "vela-desktop:settings:default-backend";
+const DESKTOP_APP_VERSION = "0.0.1";
 const DESKTOP_BACKEND_PREFERENCE = ["codex", "acp", "pi"] satisfies BackendKindWire[];
 const DESKTOP_SHELL_HOST_POLICY = { kind: "desktop_shell" } satisfies ChatHostPolicy;
 const DESKTOP_SESSION_LIST_OPTIONS = { limit: 80 };
@@ -49,6 +51,8 @@ type RuntimeHostStateStores = ReturnType<typeof createRuntimeHostStateStores>;
 
 export function DesktopApp() {
   const hostStateStores = useMemo(() => createRuntimeHostStateStores(), []);
+  const [settingsPanel, setSettingsPanel] =
+    useState<DesktopSettingsPanelId>("general");
   const initialShellLayout = hostStateStores.shellLayoutStore?.read();
   const initialHostInfo = useMemo<RuntimeHostInfo>(
     () => ({
@@ -340,8 +344,10 @@ function DesktopReadyApp({
   );
   const settingsSidebar = (
     <DesktopSettingsSidebar
+      activePanel={settingsPanel}
       showTrafficLights={hostBridge.chrome.showTrafficLights}
       onClose={() => setIsSettingsOpen(false)}
+      onPanelChange={setSettingsPanel}
     />
   );
 
@@ -359,7 +365,9 @@ function DesktopReadyApp({
     >
       {isSettingsOpen ? (
         <DesktopSettingsPage
+          activePanel={settingsPanel}
           apiBaseUrl={apiBaseUrl}
+          appVersion={DESKTOP_APP_VERSION}
           backends={controller.backends}
           hostLabel={hostLabel}
           logPath={hostInfo.logPath}
