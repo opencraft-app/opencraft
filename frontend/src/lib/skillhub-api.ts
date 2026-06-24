@@ -72,6 +72,7 @@ export interface SkillHubSkillSet {
   subScene?: string;
   skillCount?: number;
   skillSlugs?: string[];
+  missing?: string[];
   createdAt: number;
   updatedAt: number;
 }

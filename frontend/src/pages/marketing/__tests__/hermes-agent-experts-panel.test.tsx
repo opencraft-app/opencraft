@@ -18,6 +18,7 @@ import {
   getUniqueSkillSlugs,
   installSkillSlugs,
   parseInstalledSkillSlugs,
+  resolveAvailablePackageSkillSlugs,
   stripMarkdownFrontmatter,
 } from "../hermes-agent-experts-panel";
 
@@ -63,8 +64,27 @@ describe("hermes agent experts panel", () => {
     ])).toEqual(["pr-reviewer", "code-review-assistant"]);
   });
 
+  it("filters missing package skill slugs before display or install", () => {
+    expect(getPackageSkillSlugs("tech-test-automation", [
+      "tdd-guide",
+      "test-case-generator",
+    ], ["tdd-guide"])).toEqual(["test-case-generator"]);
+  });
+
+  it("filters package skill slugs whose SkillHub detail is missing", async () => {
+    vi.mocked(fetchSkillDetail).mockImplementation(async (slug) => {
+      if (slug === "tdd-guide") throw new Error("Skill not found");
+      return { slug, displayName: slug };
+    });
+
+    await expect(resolveAvailablePackageSkillSlugs("tech-test-automation", [
+      "tdd-guide",
+      "test-case-generator",
+    ])).resolves.toEqual(["test-case-generator"]);
+  });
+
   it("builds a single-skill acli install command", () => {
-    expect(buildInstallSkillCommand("report's-helper")).toBe("env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://lightmake.cloud/api/v1/download?slug={slug}' acli skills install 'report'\\''s-helper'");
+    expect(buildInstallSkillCommand("report's-helper")).toBe("env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install 'report'\\''s-helper'");
   });
 
   it("parses installed skill slugs from acli json and Hermes table output", () => {
@@ -179,6 +199,52 @@ describe("hermes agent experts panel", () => {
     });
     expect(await screen.findByText("完整技能详情")).toBeInTheDocument();
     expect(await screen.findByText("Backend Market Data")).toBeInTheDocument();
+  });
+
+  it("hides missing package skills from expert detail modules", async () => {
+    vi.mocked(fetchSkillSets).mockImplementation(async (params) => ({
+      skillSets: !params?.scene || params.scene === "tech"
+        ? [{
+            id: 1,
+            slug: "tech-test-automation",
+            displayName: "自动化测试",
+            summary: "列表摘要",
+            remark: "",
+            scene: "tech",
+            skillCount: 2,
+            createdAt: 0,
+            updatedAt: 0,
+          }]
+        : [],
+    }));
+    vi.mocked(fetchSkillSetDetail).mockResolvedValue({
+      id: 1,
+      slug: "tech-test-automation",
+      displayName: "自动化测试",
+      summary: "详情摘要",
+      remark: "",
+      skillCount: 2,
+      skillSlugs: ["tdd-guide", "test-case-generator"],
+      missing: ["tdd-guide"],
+      createdAt: 0,
+      updatedAt: 0,
+    });
+    vi.mocked(fetchSkillDetail).mockResolvedValue({
+      slug: "test-case-generator",
+      displayName: "Test Case Generator",
+    });
+    vi.mocked(fetchSkillFiles).mockResolvedValue([{ path: "SKILL.md", size: 1, sha256: "abc" }]);
+    vi.mocked(fetchSkillFile).mockResolvedValue("# Test Case Generator\n\n测试生成详情");
+
+    render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /自动化测试/ }));
+
+    expect(await screen.findByText("Test Case Generator")).toBeInTheDocument();
+    expect(await screen.findByText("测试生成详情")).toBeInTheDocument();
+    expect(screen.queryByText("Tdd Guide")).not.toBeInTheDocument();
+    expect(fetchSkillFiles).toHaveBeenCalledWith("test-case-generator");
+    expect(fetchSkillFiles).not.toHaveBeenCalledWith("tdd-guide");
   });
 
   it("renders the SkillHub expert profile image on package cards", async () => {
@@ -382,10 +448,10 @@ describe("hermes agent experts panel", () => {
     fireEvent.click(await screen.findByRole("button", { name: "安装" }));
 
     await waitFor(() => {
-      expect(execDebugCommand).toHaveBeenCalledWith("bot-1", "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://lightmake.cloud/api/v1/download?slug={slug}' acli skills install 'backtest-engine'");
+      expect(execDebugCommand).toHaveBeenCalledWith("bot-1", "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install 'backtest-engine'");
     });
-    const installCommands = execDebugCommand.mock.calls.map((call) => call[1]).filter((command) => command.startsWith("env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://lightmake.cloud/api/v1/download?slug={slug}' acli skills install"));
-    expect(installCommands).toEqual(["env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://lightmake.cloud/api/v1/download?slug={slug}' acli skills install 'market-data'", "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://lightmake.cloud/api/v1/download?slug={slug}' acli skills install 'backtest-engine'"]);
+    const installCommands = execDebugCommand.mock.calls.map((call) => call[1]).filter((command) => command.startsWith("env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install"));
+    expect(installCommands).toEqual(["env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install 'market-data'", "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install 'backtest-engine'"]);
     expect(saveExpertPackagesState).toHaveBeenCalledWith("bot-1", {
       installedPackageSlugs: ["quant-backtest"],
     });
@@ -538,13 +604,13 @@ describe("hermes agent experts panel", () => {
     fireEvent.click(await screen.findByRole("button", { name: "安装" }));
 
     await waitFor(() => {
-      expect(execDebugCommand).toHaveBeenCalledWith("bot-1", "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://lightmake.cloud/api/v1/download?slug={slug}' acli skills install 'backtest-engine'");
+      expect(execDebugCommand).toHaveBeenCalledWith("bot-1", "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install 'backtest-engine'");
     });
-    const installCommands = execDebugCommand.mock.calls.map((call) => call[1]).filter((command) => command.startsWith("env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://lightmake.cloud/api/v1/download?slug={slug}' acli skills install"));
+    const installCommands = execDebugCommand.mock.calls.map((call) => call[1]).filter((command) => command.startsWith("env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install"));
     expect(installCommands).toEqual([
-      "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://lightmake.cloud/api/v1/download?slug={slug}' acli skills install 'market-data'",
-      "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://lightmake.cloud/api/v1/download?slug={slug}' acli skills install 'backtest-engine'",
-      "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://lightmake.cloud/api/v1/download?slug={slug}' acli skills install 'backtest-engine'",
+      "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install 'market-data'",
+      "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install 'backtest-engine'",
+      "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install 'backtest-engine'",
     ]);
   });
 
@@ -555,7 +621,7 @@ describe("hermes agent experts panel", () => {
         {
           status: "failed",
           exitCode: 1,
-          output: "Download failed: HTTP 429 (rate limited) for https://lightmake.cloud/api/v1/download?slug=nexus-error-explain",
+          output: "Download failed: HTTP 429 (rate limited) for https://api.skillhub.cn/api/v1/download?slug=nexus-error-explain",
         },
         { status: "success", exitCode: 0, output: "" },
       ];
@@ -586,12 +652,12 @@ describe("hermes agent experts panel", () => {
         {
           status: "failed",
           exitCode: 1,
-          output: "Download failed: HTTP 429 for https://lightmake.cloud/api/v1/download?slug=nexus-error-explain",
+          output: "Download failed: HTTP 429 for https://api.skillhub.cn/api/v1/download?slug=nexus-error-explain",
         },
         {
           status: "failed",
           exitCode: 1,
-          output: "Download failed: Too Many Requests for https://lightmake.cloud/api/v1/download?slug=nexus-error-explain",
+          output: "Download failed: Too Many Requests for https://api.skillhub.cn/api/v1/download?slug=nexus-error-explain",
         },
         { status: "success", exitCode: 0, output: "" },
       ];
@@ -624,17 +690,17 @@ describe("hermes agent experts panel", () => {
         {
           status: "failed",
           exitCode: 1,
-          output: "Download failed: HTTP 429 for https://lightmake.cloud/api/v1/download?slug=nexus-error-explain",
+          output: "Download failed: HTTP 429 for https://api.skillhub.cn/api/v1/download?slug=nexus-error-explain",
         },
         {
           status: "failed",
           exitCode: 1,
-          output: "Download failed: HTTP 429 for https://lightmake.cloud/api/v1/download?slug=nexus-error-explain",
+          output: "Download failed: HTTP 429 for https://api.skillhub.cn/api/v1/download?slug=nexus-error-explain",
         },
         {
           status: "failed",
           exitCode: 1,
-          output: "Download failed: HTTP 429 for https://lightmake.cloud/api/v1/download?slug=nexus-error-explain",
+          output: "Download failed: HTTP 429 for https://api.skillhub.cn/api/v1/download?slug=nexus-error-explain",
         },
       ];
       const execDebugCommand = vi.fn().mockImplementation(async () => (
@@ -648,7 +714,7 @@ describe("hermes agent experts panel", () => {
         succeeded: [],
         failed: [{
           slug: "nexus-error-explain",
-          output: "Download failed: HTTP 429 for https://lightmake.cloud/api/v1/download?slug=nexus-error-explain",
+          output: "Download failed: HTTP 429 for https://api.skillhub.cn/api/v1/download?slug=nexus-error-explain",
         }],
       });
       expect(execDebugCommand).toHaveBeenCalledTimes(3);
@@ -679,8 +745,9 @@ describe("hermes agent experts panel", () => {
       displayName: "自动化测试",
       summary: "详情摘要",
       remark: "",
-      skillCount: 1,
-      skillSlugs: ["tdd-guide"],
+      skillCount: 2,
+      skillSlugs: ["tdd-guide", "test-case-generator"],
+      missing: ["tdd-guide"],
       createdAt: 0,
       updatedAt: 0,
     });
@@ -691,8 +758,8 @@ describe("hermes agent experts panel", () => {
       if (command === buildSkillHubSelfUpgradeCommand()) {
         return { status: "success", exitCode: 0, output: "upgraded" };
       }
-      if (command === buildInstallSkillCommand("tdd-guide") && execDebugCommand.mock.calls
-        .filter((call) => call[1] === buildInstallSkillCommand("tdd-guide")).length === 1) {
+      if (command === buildInstallSkillCommand("test-case-generator") && execDebugCommand.mock.calls
+        .filter((call) => call[1] === buildInstallSkillCommand("test-case-generator")).length === 1) {
         return {
           status: "failed",
           exitCode: 1,
@@ -715,9 +782,9 @@ describe("hermes agent experts panel", () => {
     expect(execDebugCommand).toHaveBeenCalledWith("bot-1", buildSkillHubSelfUpgradeCommand());
     expect(execDebugCommand.mock.calls.map((call) => call[1])).toEqual([
       buildInstalledSkillsListCommand(),
-      buildInstallSkillCommand("tdd-guide"),
+      buildInstallSkillCommand("test-case-generator"),
       buildSkillHubSelfUpgradeCommand(),
-      buildInstallSkillCommand("tdd-guide"),
+      buildInstallSkillCommand("test-case-generator"),
     ]);
   });
 

@@ -698,7 +698,7 @@ export default defineConfig(({ mode }) => {
         "/__skillhub": {
           target: "https://api.skillhub.cn",
           changeOrigin: true,
-          // Vite dev proxy only; production calls lightmake.cloud directly via skillhub-api.ts.
+          // Vite dev proxy only; production calls api.skillhub.cn directly via skillhub-api.ts.
           // Keep local certificate tolerance here until the dev egress path is verified.
           secure: false,
           rewrite: (url) => url.replace(/^\/__skillhub/, ""),

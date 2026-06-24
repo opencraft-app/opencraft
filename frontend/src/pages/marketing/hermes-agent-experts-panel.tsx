@@ -107,7 +107,7 @@ const AI_BUDDY_ASSET_BASE = "https://cloudcache.tencent-cloud.com/qcloud/tea/app
 const AI_BUDDY_ASSET_VERSION = "v20260616";
 const HERMES_SKILLS_LIST_COMMAND = 'cd "$HOME/.hermes/hermes-agent" && COLUMNS=10000 ./venv/bin/python -m hermes_cli.main skills list';
 const SKILLHUB_SELF_UPGRADE_COMMAND = "skillhub self-upgrade";
-const SKILLHUB_DOWNLOAD_URL_TEMPLATE = "https://lightmake.cloud/api/v1/download?slug={slug}";
+const SKILLHUB_DOWNLOAD_URL_TEMPLATE = "https://api.skillhub.cn/api/v1/download?slug={slug}";
 const INSTALLED_PACKAGES_STORAGE_PREFIX = "lightvela-experts-installed-packages";
 const TARGET_SKILL_DOC_NAMES = ["skill.md", "readme.md", "skills.md"];
 const PACKAGE_SKILL_SLUG_OVERRIDES: Record<string, Record<string, string>> = {
@@ -163,12 +163,40 @@ function mergeInstalledPackageSlugs(current: Set<string>, slugs: string[]): Set<
   return next;
 }
 
-export function getPackageSkillSlugs(packageSlug: string, skillSlugs: string[]): string[] {
+export function getPackageSkillSlugs(packageSlug: string, skillSlugs: string[], missingSkillSlugs: string[] = []): string[] {
   const overrides = PACKAGE_SKILL_SLUG_OVERRIDES[packageSlug];
+  const missingSlugs = new Set(getUniqueSkillSlugs(missingSkillSlugs));
   const normalizedSkillSlugs = overrides
-    ? skillSlugs.map((skillSlug) => overrides[skillSlug] ?? skillSlug)
-    : skillSlugs;
+    ? skillSlugs
+        .filter((skillSlug) => !missingSlugs.has(skillSlug.trim()))
+        .map((skillSlug) => overrides[skillSlug] ?? skillSlug)
+        .filter((skillSlug) => !missingSlugs.has(skillSlug.trim()))
+    : skillSlugs.filter((skillSlug) => !missingSlugs.has(skillSlug.trim()));
   return getUniqueSkillSlugs(normalizedSkillSlugs);
+}
+
+function isMissingSkillDetailError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /(?:^|\b)(?:404|not found|skill not found)(?:\b|$)/i.test(message);
+}
+
+export async function resolveAvailablePackageSkillSlugs(
+  packageSlug: string,
+  skillSlugs: string[],
+  missingSkillSlugs: string[] = [],
+): Promise<string[]> {
+  const normalizedSkillSlugs = getPackageSkillSlugs(packageSlug, skillSlugs, missingSkillSlugs);
+  const checkedSkillSlugs = await Promise.all(
+    normalizedSkillSlugs.map(async (skillSlug) => {
+      try {
+        await fetchSkillDetail(skillSlug);
+        return skillSlug;
+      } catch (error) {
+        return isMissingSkillDetailError(error) ? null : skillSlug;
+      }
+    }),
+  );
+  return getUniqueSkillSlugs(checkedSkillSlugs.filter((skillSlug): skillSlug is string => !!skillSlug));
 }
 
 function getSkillCount(pkg: Pick<SkillHubSkillSet, "skillCount" | "skillSlugs">): number {
@@ -699,7 +727,6 @@ export function ExpertsPanel({
     if (installedSkillSlugs.size === 0 || visibleCards.length === 0) return;
 
     const missingCards = visibleCards.filter(({ pkg }) => {
-      if (pkg.skillSlugs && pkg.skillSlugs.length > 0) return false;
       return !packageSkillSlugs.has(pkg.slug);
     });
     if (missingCards.length === 0) return;
@@ -711,7 +738,7 @@ export function ExpertsPanel({
         missingCards.map(async ({ pkg }) => {
           try {
             const detail = await fetchSkillSetDetail(pkg.slug);
-            return [pkg.slug, getPackageSkillSlugs(pkg.slug, detail.skillSlugs ?? [])] as const;
+            return [pkg.slug, await resolveAvailablePackageSkillSlugs(pkg.slug, detail.skillSlugs ?? [], detail.missing ?? [])] as const;
           } catch {
             return null;
           }
@@ -735,7 +762,7 @@ export function ExpertsPanel({
   }, [installedSkillSlugs, packageSkillSlugs, visibleCards]);
 
   const getKnownSkillSlugs = useCallback((pkg: SkillHubSkillSet) => {
-    return getPackageSkillSlugs(pkg.slug, pkg.skillSlugs ?? packageSkillSlugs.get(pkg.slug) ?? []);
+    return getPackageSkillSlugs(pkg.slug, packageSkillSlugs.get(pkg.slug) ?? pkg.skillSlugs ?? [], pkg.missing ?? []);
   }, [packageSkillSlugs]);
 
   const isPackageInstalled = useCallback((pkg: SkillHubSkillSet) => {
@@ -750,7 +777,7 @@ export function ExpertsPanel({
     setInstallingSlug(pkg.slug);
     try {
       const detail = await fetchSkillSetDetail(pkg.slug);
-      const skillSlugs = getPackageSkillSlugs(pkg.slug, detail.skillSlugs ?? []);
+      const skillSlugs = await resolveAvailablePackageSkillSlugs(pkg.slug, detail.skillSlugs ?? [], detail.missing ?? []);
       if (skillSlugs.length === 0) {
         toast.error(t("该技能包暂未包含可安装的 skills"));
         return;
@@ -1272,7 +1299,19 @@ function SkillPackageDetailView({
   const [activeSkillIndex, setActiveSkillIndex] = useState(0);
   const detail = data ?? card.pkg;
   const scene = getPackageScene(detail, activeFilter);
-  const skillSlugs = getPackageSkillSlugs(card.pkg.slug, data?.skillSlugs ?? card.pkg.skillSlugs ?? []);
+  const candidateSkillSlugs = getPackageSkillSlugs(
+    card.pkg.slug,
+    data?.skillSlugs ?? card.pkg.skillSlugs ?? [],
+    data?.missing ?? card.pkg.missing ?? [],
+  );
+  const candidateSkillSlugsKey = candidateSkillSlugs.join("\u0000");
+  const availableSkillSlugsFetcher = useCallback(
+    () => resolveAvailablePackageSkillSlugs(card.pkg.slug, candidateSkillSlugs),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [card.pkg.slug, candidateSkillSlugsKey],
+  );
+  const availableSkillSlugs = useAsyncResource(availableSkillSlugsFetcher, [card.pkg.slug, candidateSkillSlugsKey]);
+  const skillSlugs = availableSkillSlugs.data ?? [];
   const skillSlugsKey = skillSlugs.join("\u0000");
   const skillDisplayNamesFetcher = useCallback(
     () => fetchSkillDisplayNames(skillSlugs),
@@ -1285,6 +1324,10 @@ function SkillPackageDetailView({
   useEffect(() => {
     setActiveSkillIndex(0);
   }, [card.pkg.slug]);
+
+  useEffect(() => {
+    if (skillSlugs.length > 0 && activeSkillIndex >= skillSlugs.length) setActiveSkillIndex(0);
+  }, [activeSkillIndex, skillSlugs.length]);
 
   return (
     <div className="space-y-10">
@@ -1327,6 +1370,11 @@ function SkillPackageDetailView({
         ) : error ? (
           <div className="rounded-md border border-red-500/15 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700">
             {getSkillHubErrorMessage(error, t)}
+          </div>
+        ) : availableSkillSlugs.loading ? (
+          <div className="flex min-h-40 items-center justify-center text-sm text-black/45">
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            {t("正在加载技能包详情...")}
           </div>
         ) : skillSlugs.length > 0 ? (
           <div className="space-y-8">
