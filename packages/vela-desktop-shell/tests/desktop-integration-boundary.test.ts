@@ -18,6 +18,14 @@ function listSourceFiles(directory: string): string[] {
   });
 }
 
+function sourceBetween(source: string, start: string, end: string) {
+  const startIndex = source.indexOf(start);
+  const endIndex = source.indexOf(end, startIndex + start.length);
+  assert.notEqual(startIndex, -1, `${start} should exist`);
+  assert.notEqual(endIndex, -1, `${end} should exist after ${start}`);
+  return source.slice(startIndex, endIndex);
+}
+
 test("desktop integration is split into host, shell, controller, and chat renderer packages", () => {
   const expectedPaths = [
     "apps/vela-desktop-electron/README.md",
@@ -132,6 +140,20 @@ test("desktop app restores the selected session through host-local navigation st
   assert.match(renderer, /sessionList\.data\.sessions\[0\]\?\.id \|\| ""/);
 });
 
+test("desktop settings panel state lives with the ready app that renders settings", () => {
+  const renderer = readFileSync(
+    join(root, "apps/vela-desktop-electron/src/DesktopApp.tsx"),
+    "utf8",
+  );
+  const outerApp = sourceBetween(renderer, "export function DesktopApp()", "interface DesktopReadyAppProps");
+  const readyApp = sourceBetween(renderer, "function DesktopReadyApp(", "interface DesktopBootstrapAppProps");
+
+  assert.doesNotMatch(outerApp, /const \[settingsPanel, setSettingsPanel\]/);
+  assert.match(readyApp, /const \[settingsPanel, setSettingsPanel\]/);
+  assert.match(readyApp, /activePanel=\{settingsPanel\}/);
+  assert.match(readyApp, /onPanelChange=\{setSettingsPanel\}/);
+});
+
 test("chat controller is headless and stays independent from desktop and Next shells", () => {
   const controllerSource = readFiles(
     listSourceFiles(join(root, "packages/vela-chat-controller/src"))
@@ -157,6 +179,11 @@ test("electron desktop app is the only layer that composes velad runtime, shell,
     join(root, "apps/vela-desktop-electron/electron/main.ts"),
     "utf8",
   );
+  const runtimeSource = readFiles(
+    listSourceFiles(join(root, "apps/vela-desktop-electron/electron/runtime"))
+      .filter((path) => /\.(ts|tsx|md)$/.test(path))
+      .map((path) => path.slice(root.length + 1)),
+  );
   const preload = readFileSync(
     join(root, "apps/vela-desktop-electron/electron/preload.ts"),
     "utf8",
@@ -171,14 +198,19 @@ test("electron desktop app is the only layer that composes velad runtime, shell,
   assert.match(renderer, /DESKTOP_SESSION_LIST_OPTIONS/);
   assert.doesNotMatch(renderer, /client\.listSessions\(\{ limit: 80 \}\)/);
 
-  assert.match(main, /external velad/);
   assert.match(main, /BrowserWindow/);
-  assert.match(main, /VELA_DESKTOP_VELAD_LISTEN_ADDR/);
   assert.match(main, /runtimeEnv/);
-  assert.match(main, /spawn\(/);
+  assert.match(main, /VeladRuntimeManager/);
   assert.match(main, /vela:desktop-info/);
   assert.doesNotMatch(main, /ChatSurface/);
   assert.doesNotMatch(main, /useVelaChatSession/);
+  assert.match(runtimeSource, /VELA_DESKTOP_VELAD_LISTEN_ADDR/);
+  assert.match(runtimeSource, /external velad/);
+  assert.match(runtimeSource, /spawnImpl/);
+  assert.match(runtimeSource, /velad\.local\.v1/);
+  assert.match(runtimeSource, /runtime-info/);
+  assert.doesNotMatch(runtimeSource, /ChatSurface/);
+  assert.doesNotMatch(runtimeSource, /useVelaChatSession/);
   assert.match(preload, /vela:desktop-info/);
 });
 

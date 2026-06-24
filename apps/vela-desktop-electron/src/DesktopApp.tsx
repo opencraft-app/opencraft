@@ -51,8 +51,6 @@ type RuntimeHostStateStores = ReturnType<typeof createRuntimeHostStateStores>;
 
 export function DesktopApp() {
   const hostStateStores = useMemo(() => createRuntimeHostStateStores(), []);
-  const [settingsPanel, setSettingsPanel] =
-    useState<DesktopSettingsPanelId>("general");
   const initialShellLayout = hostStateStores.shellLayoutStore?.read();
   const initialHostInfo = useMemo<RuntimeHostInfo>(
     () => ({
@@ -168,7 +166,11 @@ function DesktopReadyApp({
   const [activeSessionId, setActiveSessionId] = useState(
     () => hostStateStores.sessionSelectionStore?.read()?.sessionId ?? "",
   );
+  const [settingsPanel, setSettingsPanel] =
+    useState<DesktopSettingsPanelId>("general");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [homeDraft, setHomeDraft] = useState("");
+  const [isCreatingHomeSession, setIsCreatingHomeSession] = useState(false);
   const [selectedBackendKind, setSelectedBackendKind] = useState<BackendKindWire | "">(
     readDefaultBackendPreference,
   );
@@ -230,6 +232,27 @@ function DesktopReadyApp({
         selectedReasoningEffort: "",
       }),
     [controller.backends, selectedBackendKind],
+  );
+  const homeContext = useMemo(
+    () => ({
+      locationLabel: "本地",
+      modelLabel:
+        setup.setupModelOptions.find((model) => model.id === setup.setupSelectedModel)
+          ?.label ??
+        setup.setupSelectedModel ??
+        setup.selectedBackendDetails?.display_name ??
+        "Agent",
+      permissionLabel:
+        setup.setupPermissionOptions.find(
+          (option) => option.id === setup.setupSelectedPermissionMode,
+        )?.label ?? "Default permissions",
+      reasoningLabel:
+        setup.setupReasoningOptions.find(
+          (option) => option.id === setup.setupSelectedReasoningEffort,
+        )?.label ?? "High",
+      sourceLabel: setup.selectedBackendDetails?.display_name ?? "Vela/local",
+    }),
+    [setup],
   );
   const hostLabel =
     hostBridge.platform === "web"
@@ -306,8 +329,10 @@ function DesktopReadyApp({
     return buildSessionSetup(nextBackends.backends);
   }, [buildSessionSetup, client, setup]);
 
-  const createSession = useCallback(async () => {
+  const createSession = useCallback(async (initialMessage = "") => {
+    if (isCreatingHomeSession) return;
     try {
+      setIsCreatingHomeSession(true);
       setError(null);
       const nextSetup = await resolveNewSessionSetup();
       const backend = nextSetup.resolvedSelectedBackend;
@@ -322,11 +347,21 @@ function DesktopReadyApp({
         workingDirectory: DEFAULT_WORKING_DIRECTORY,
       });
       setActiveSessionId(created.session.id);
+      const trimmedInitialMessage = initialMessage.trim();
+      if (trimmedInitialMessage) {
+        setHomeDraft("");
+        await client.sendUserMessage({
+          sessionId: created.session.id,
+          text: trimmedInitialMessage,
+        });
+      }
       await refreshSessions();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsCreatingHomeSession(false);
     }
-  }, [client, refreshSessions, resolveNewSessionSetup]);
+  }, [client, isCreatingHomeSession, refreshSessions, resolveNewSessionSetup]);
 
   const appSidebar = (
     <SessionSidebar
@@ -400,7 +435,19 @@ function DesktopReadyApp({
           pendingAttachments={controller.pendingAttachments}
         />
       ) : (
-        <DesktopEmptySurface error={error} />
+        <DesktopEmptySurface
+          canCreateSession={Boolean(setup.resolvedSelectedBackend)}
+          draft={homeDraft}
+          error={error}
+          isCreatingSession={isCreatingHomeSession}
+          locationLabel={homeContext.locationLabel}
+          modelLabel={homeContext.modelLabel}
+          permissionLabel={homeContext.permissionLabel}
+          reasoningLabel={homeContext.reasoningLabel}
+          sourceLabel={homeContext.sourceLabel}
+          onDraftChange={setHomeDraft}
+          onSubmit={() => createSession(homeDraft)}
+        />
       )}
     </VelaDesktopShell>
   );

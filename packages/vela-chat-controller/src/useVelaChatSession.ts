@@ -48,6 +48,7 @@ import {
   pendingRequestsForActiveSession,
   readModelForActiveSession,
 } from "./sessionScopedReadModels";
+import { subscribeRecoveringSessionEventStream } from "./sessionEventStream";
 import { handleVelaChatSessionStreamEvent } from "./streamHandler";
 
 const DEFAULT_CHAT_HOST_POLICY = { kind: "desktop_web" } satisfies ChatHostPolicy;
@@ -316,8 +317,6 @@ export function useVelaChatSession({
 
   useEffect(() => {
     if (!activeSessionId || !isConversationReady) return;
-    const initialAfterId = sessionEventStreamAfterId;
-    const url = client.sessionEventStreamUrl(activeSessionId, initialAfterId);
     const conversationRefreshScheduler = createStreamRefreshScheduler({
       refresh: loadConversation,
       minIntervalMs: 240,
@@ -335,9 +334,19 @@ export function useVelaChatSession({
       minIntervalMs: 2000,
     });
 
-    const subscription = eventStreamTransport.subscribe(url, {
-      onOpen: () => setStreamConnected(true),
-      onError: () => setStreamConnected(false),
+    const currentAfterId = () =>
+      selectSessionEventStreamAfterId({
+        conversation: readModelForActiveSession(
+          activeSessionId,
+          conversationRef.current,
+        )?.cursor,
+      });
+
+    const subscription = subscribeRecoveringSessionEventStream({
+      client,
+      eventStreamTransport,
+      getAfterId: currentAfterId,
+      onConnectedChange: setStreamConnected,
       onEvent: (streamEvent) => {
         const currentConversation = readModelForActiveSession(
           activeSessionId,
@@ -363,6 +372,7 @@ export function useVelaChatSession({
           backendsRefreshScheduler,
         });
       },
+      sessionId: activeSessionId,
     });
 
     return () => {
@@ -371,7 +381,6 @@ export function useVelaChatSession({
       requestsRefreshScheduler.dispose();
       sessionRefreshScheduler.dispose();
       backendsRefreshScheduler.dispose();
-      setStreamConnected(false);
     };
   }, [
     activeSessionId,

@@ -95,6 +95,18 @@ test("full preload does not show history hydration again when switching back to 
   }
 });
 
+test("event stream reconnect delay recovers immediately once and then backs off", async () => {
+  const { eventStreamReconnectDelayMs } = await import(
+    "../../vela-chat-controller/src/sessionEventStream"
+  );
+
+  assert.equal(eventStreamReconnectDelayMs(0), 0);
+  assert.equal(eventStreamReconnectDelayMs(1), 250);
+  assert.equal(eventStreamReconnectDelayMs(2), 500);
+  assert.equal(eventStreamReconnectDelayMs(3), 1000);
+  assert.equal(eventStreamReconnectDelayMs(20), 5000);
+});
+
 test("controller uses injected event stream transport for live session updates", async () => {
   const dom = installDomRuntime();
   try {
@@ -171,9 +183,70 @@ test("controller uses injected event stream transport for live session updates",
     );
 
     await act(async () => {
+      transport.emitError(new Error("stream dropped"));
+    });
+    await flushHookEffects(act, dom, () => transport.subscribeCount === 2);
+    assert.equal(
+      transport.urls.at(-1)?.toString(),
+      "http://127.0.0.1:3857/api/v1/sessions/sess_a/events?after_id=evt_live_11",
+      "stream recovery must resume from the newest applied cursor instead of the initial snapshot cursor",
+    );
+
+    await act(async () => {
       root.unmount();
     });
     assert.equal(transport.closeCount, transport.subscribeCount);
+  } finally {
+    dom.restore();
+  }
+});
+
+test("controller treats sync reset as a full read-model resync", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { useVelaChatSession } = await import(
+      "../../vela-chat-controller/src/useVelaChatSession"
+    );
+    const client = new FakeVeladClient();
+    const transport = new FakeEventStreamTransport();
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    function Probe({ sessionId }: { sessionId: string }) {
+      useVelaChatSession({
+        client,
+        eventStreamTransport: transport,
+        fetchBackends: false,
+        historyPolicy: "tail_only",
+        sessionId,
+      });
+      return React.createElement("div");
+    }
+
+    await renderSession({ React, act, root, Probe, sessionId: "sess_a" });
+    await flushHookEffects(act, dom, () => transport.subscribeCount === 1);
+    assert.equal(client.tailLoads("sess_a"), 1);
+
+    await act(async () => {
+      transport.emit({
+        event_id: "evt_reset_11",
+        epoch: 1,
+        seq: 11,
+        session_id: "sess_a",
+        type: "sync.reset",
+        views: ["workbench"],
+      });
+    });
+    await flushHookEffects(act, dom, () => client.tailLoads("sess_a") >= 2);
+    assert.equal(client.tailLoads("sess_a"), 2);
+
+    await act(async () => {
+      root.unmount();
+    });
   } finally {
     dom.restore();
   }
@@ -627,6 +700,10 @@ class FakeEventStreamTransport implements VelaEventStreamTransport {
 
   emit(event: VelaStreamEventWire) {
     this.handlers?.onEvent(event);
+  }
+
+  emitError(error: unknown) {
+    this.handlers?.onError?.(error);
   }
 }
 

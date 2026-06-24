@@ -32,12 +32,16 @@ use vela_projection::{
 use vela_runtime::{Runtime, SendUserMessage};
 use vela_store::{SqliteEventStore, StoredSession};
 
+pub mod local_runtime;
+
 pub struct ApiState<B> {
     store: Arc<SqliteEventStore>,
     runtime: Runtime<B>,
     events: broadcast::Sender<CanonicalEvent>,
     default_session_model: Option<String>,
     configured_backends: Vec<ConfiguredBackend>,
+    local_runtime: Option<local_runtime::LocalRuntimeState>,
+    shutdown_tx: Option<tokio::sync::watch::Sender<bool>>,
 }
 
 impl<B> Clone for ApiState<B> {
@@ -48,6 +52,8 @@ impl<B> Clone for ApiState<B> {
             events: self.events.clone(),
             default_session_model: self.default_session_model.clone(),
             configured_backends: self.configured_backends.clone(),
+            local_runtime: self.local_runtime.clone(),
+            shutdown_tx: self.shutdown_tx.clone(),
         }
     }
 }
@@ -83,6 +89,8 @@ where
                 display_name: "PiCoding Agent",
                 default_model: None,
             }],
+            local_runtime: None,
+            shutdown_tx: None,
         }
     }
 
@@ -133,6 +141,16 @@ where
             display_name: "Hermes ACP",
             default_model,
         });
+        self
+    }
+
+    pub fn with_local_runtime(
+        mut self,
+        local_runtime: local_runtime::LocalRuntimeState,
+        shutdown_tx: tokio::sync::watch::Sender<bool>,
+    ) -> Self {
+        self.local_runtime = Some(local_runtime);
+        self.shutdown_tx = Some(shutdown_tx);
         self
     }
 
@@ -213,6 +231,8 @@ where
         .route("/api/v1/backends", get(list_backends::<B>))
         .route("/api/v1/backends/{backend}", get(get_backend::<B>))
         .route("/api/v1/backends/{backend}/probe", post(probe_backend::<B>))
+        .route("/api/v1/runtime-info", get(get_runtime_info::<B>))
+        .route("/api/v1/runtime/shutdown", post(shutdown_runtime::<B>))
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
@@ -238,6 +258,64 @@ struct SendSessionEventsRequest {
     events: Vec<ClientInputEvent>,
     #[serde(default)]
     options: Option<Value>,
+}
+
+async fn get_runtime_info<B>(State(state): State<ApiState<B>>) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    match state.local_runtime {
+        Some(runtime) => Json(runtime.info).into_response(),
+        None => error(
+            StatusCode::NOT_FOUND,
+            "runtime_info_unavailable",
+            "local runtime information is not configured",
+        ),
+    }
+}
+
+async fn shutdown_runtime<B>(State(state): State<ApiState<B>>, headers: HeaderMap) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let Some(runtime) = state.local_runtime else {
+        return error(
+            StatusCode::FORBIDDEN,
+            "runtime_shutdown_unavailable",
+            "runtime shutdown requires a management token",
+        );
+    };
+    let Some(expected_token) = runtime.management_token.as_deref() else {
+        return error(
+            StatusCode::FORBIDDEN,
+            "runtime_shutdown_unavailable",
+            "runtime shutdown requires a management token",
+        );
+    };
+    if bearer_token(&headers) != Some(expected_token) {
+        return error(
+            StatusCode::FORBIDDEN,
+            "runtime_shutdown_forbidden",
+            "invalid runtime management token",
+        );
+    }
+    let Some(shutdown_tx) = state.shutdown_tx else {
+        return error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "runtime_shutdown_unavailable",
+            "runtime shutdown trigger is not configured",
+        );
+    };
+    let _ = shutdown_tx.send(true);
+    Json(json!({ "accepted": true })).into_response()
+}
+
+fn bearer_token(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get("authorization")?
+        .to_str()
+        .ok()?
+        .strip_prefix("Bearer ")
 }
 
 #[derive(Debug, Deserialize, Serialize)]

@@ -5,11 +5,26 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { DesktopEmptySurface } from "./DesktopEmptySurface";
 
-test("desktop empty surface stays visually silent", () => {
-  const html = renderToStaticMarkup(<DesktopEmptySurface />);
+test("desktop empty surface renders workspace home composer", () => {
+  const html = renderToStaticMarkup(
+    <DesktopEmptySurface
+      draft=""
+      locationLabel="本地"
+      modelLabel="GPT-5.3-Codex-Spark"
+      permissionLabel="Default permissions"
+      reasoningLabel="High"
+      sourceLabel="QuantumNous/new-api"
+      onDraftChange={() => {}}
+      onSubmit={() => {}}
+    />,
+  );
 
   assert.match(html, /class="vela-desktop-empty"/);
-  assert.doesNotMatch(html, />Vela</);
-  assert.doesNotMatch(html, /Create or select a session/);
-  assert.doesNotMatch(html, /New Chat/);
+  assert.match(html, />新建 workspace</);
+  assert.match(html, /QuantumNous\/new-api/);
+  assert.match(html, />本地</);
+  assert.match(html, /给 Agent 发消息/);
+  assert.match(html, /GPT-5\.3-Codex-Spark/);
+  assert.match(html, />High</);
+  assert.match(html, /Default permissions/);
 });

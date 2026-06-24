@@ -9,9 +9,12 @@ This app is intentionally thin:
   `vela-chat-web`.
 - Chat state and wire contracts stay in shared packages and Rust crates.
 
-Packaged macOS builds embed the `velad` daemon and start it from the Electron
-main process. Development mode can still point at an external daemon at
-`127.0.0.1:3857` by default, or at `VELA_DESKTOP_VELAD_LISTEN_ADDR` when set.
+Packaged macOS builds embed the local `velad` daemon and start it through the
+Electron runtime manager. The bundled daemon binds `127.0.0.1:0` and reports its
+real address with a `velad.ready` stdout event. Development mode can still point
+at an external daemon at `127.0.0.1:3857` by default, or at
+`VELA_DESKTOP_VELAD_LISTEN_ADDR` when set; the Electron host validates that
+daemon through `/api/v1/runtime-info`.
 
 From the repository root:
 
@@ -72,6 +75,16 @@ server-run + desktop-dev
 `velad`, copy it into the app resources, and the packaged app starts that daemon
 automatically. Dev targets still use `VELA_DESKTOP_VELAD_LISTEN_ADDR` /
 `VELAD_LISTEN_ADDR`, defaulting to `127.0.0.1:3857`.
+
+## Local runtime
+
+Electron host lifecycle code lives under `electron/runtime/`. It owns local
+`velad` process startup, ready parsing, diagnostics, graceful shutdown, and
+rotating logs. It does not import React renderer code or
+`packages/vela-desktop-shell`.
+
+The local runtime contract is `velad.local.v1`; the business API contract
+remains `velachat.v1` under `/api/v1`.
 
 ## Local logs
 

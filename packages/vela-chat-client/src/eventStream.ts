@@ -8,6 +8,7 @@ import type { VelaStreamEventWire } from "./wire";
 
 export interface VelaEventStreamHandlers {
   onEvent: (event: VelaStreamEventWire) => void;
+  onClose?: () => void;
   onOpen?: () => void;
   onError?: (error?: unknown) => void;
 }
@@ -108,6 +109,7 @@ async function readFetchEventStream({
     if (!response.body) {
       emitFrames(parser.push(await response.text()), handlers);
       emitFrames(parser.finish(), handlers);
+      if (!isClosed()) handlers.onClose?.();
       return;
     }
 
@@ -124,6 +126,7 @@ async function readFetchEventStream({
     const tail = decoder.decode();
     if (tail) emitFrames(parser.push(tail), handlers);
     emitFrames(parser.finish(), handlers);
+    if (!isClosed()) handlers.onClose?.();
   } catch (error) {
     if (!isClosed() && !isAbortError(error)) {
       handlers.onError?.(error);

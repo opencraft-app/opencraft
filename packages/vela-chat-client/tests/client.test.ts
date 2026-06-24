@@ -7,6 +7,7 @@ import {
   applyConversationLiveOverlay,
   commandAckRejectionMessage,
   createIdempotencyKey,
+  createFetchVelaEventStreamTransport,
   createStreamRefreshScheduler,
   createVeladClient,
   imageFileToInputPart,
@@ -32,6 +33,14 @@ function readClientSource() {
     .sort()
     .map((file) => `// ${file}\n${readFileSync(new URL(file, srcDir), "utf8")}`)
     .join("\n");
+}
+
+async function waitUntil(done: () => boolean) {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    if (done()) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  assert.equal(done(), true);
 }
 
 function sessionFixture(overrides: Record<string, unknown> = {}) {
@@ -195,6 +204,29 @@ test("builds pending requests view URLs with status filters", () => {
     client.requestsUrl("sess_123", { status: "pending" }).toString(),
     "http://127.0.0.1:3857/api/v1/sessions/sess_123/views/requests?status=pending",
   );
+});
+
+test("fetch event stream transport reports normal stream completion", async () => {
+  const events: string[] = [];
+  let closeCount = 0;
+  const transport = createFetchVelaEventStreamTransport(async () => {
+    return new Response(
+      'event: turn.completed\ndata: {"type":"turn.completed","event_id":"evt_1","epoch":1,"seq":1}\n\n',
+      { status: 200, headers: { "Content-Type": "text/event-stream" } },
+    );
+  });
+
+  transport.subscribe(new URL("http://127.0.0.1:3857/api/v1/sessions/sess_1/events/stream"), {
+    onClose: () => {
+      closeCount += 1;
+    },
+    onEvent: (event) => {
+      events.push(event.type);
+    },
+  });
+
+  await waitUntil(() => closeCount === 1);
+  assert.deepEqual(events, ["turn.completed"]);
 });
 
 test("builds diff review view URLs", () => {
