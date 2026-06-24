@@ -817,6 +817,33 @@ test("creates a local pi session with idempotency key", async () => {
   });
 });
 
+test("archives a session with explicit archive action endpoint", async () => {
+  const requests: Array<{ url: string; init?: RequestInit }> = [];
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async (url, init) => {
+      requests.push({ url: String(url), init });
+      return new Response(
+        JSON.stringify({
+          session: sessionFixture({
+            id: "ses_archive",
+            status: "archived",
+          }),
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    },
+  });
+
+  const response = await client.archiveSession({ sessionId: "ses_archive" });
+
+  assert.equal(response.session.id, "ses_archive");
+  assert.equal(response.session.status, "archived");
+  assert.equal(requests[0]?.url, "http://127.0.0.1:3857/api/v1/sessions/ses_archive/archive");
+  assert.equal(requests[0]?.init?.method, "POST");
+  assert.equal(requests[0]?.init?.body, undefined);
+});
+
 test("lists recent sessions for debug launchers", async () => {
   const requests: Array<{ url: string; init?: RequestInit }> = [];
   const client = createVeladClient({

@@ -283,6 +283,19 @@ function DesktopReadyApp({
     }
   }, [client, loadSessions, resolveNewSessionSetup]);
 
+  const archiveSession = useCallback(
+    async (sessionId: string) => {
+      try {
+        setError(null);
+        await client.archiveSession({ sessionId });
+        await loadSessions();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [client, loadSessions],
+  );
+
   const appSidebar = (
     <SessionSidebar
       currentSessionId={activeSessionId || null}
@@ -292,6 +305,7 @@ function DesktopReadyApp({
       accountPlanLabel="Local desktop"
       canCreateSession
       onCreateSession={createSession}
+      onArchiveSession={archiveSession}
       onOpenSettings={() => setIsSettingsOpen(true)}
       onSelectSession={setActiveSessionId}
     />

@@ -25,6 +25,9 @@ import type {
   SessionWire,
   SessionWireResponse,
   UpdateAgentConfigWireResponse,
+  VelaEventStreamHandlers,
+  VelaEventStreamTransport,
+  VelaStreamEventWire,
   VeladClient,
 } from "../../vela-chat-client/src";
 import {
@@ -87,6 +90,83 @@ test("full preload does not show history hydration again when switching back to 
     await act(async () => {
       root.unmount();
     });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("controller uses injected event stream transport for live session updates", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { useVelaChatSession } = await import(
+      "../../vela-chat-controller/src/useVelaChatSession"
+    );
+    const client = new FakeVeladClient();
+    client.replaceTailConversation(
+      "sess_a",
+      conversationView({
+        hasOlder: false,
+        itemId: "sess_a:tail",
+        seq: 10,
+        sessionId: "sess_a",
+        status: "streaming",
+      }),
+    );
+    const transport = new FakeEventStreamTransport();
+    const snapshots: string[] = [];
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    function Probe({ sessionId }: { sessionId: string }) {
+      const controller = useVelaChatSession({
+        client,
+        eventStreamTransport: transport,
+        fetchBackends: false,
+        historyPolicy: "tail_only",
+        sessionId,
+      });
+      React.useEffect(() => {
+        snapshots.push(controller.conversation?.items.at(-1)?.text ?? "");
+      }, [controller.conversation]);
+      return React.createElement("div");
+    }
+
+    await renderSession({ React, act, root, Probe, sessionId: "sess_a" });
+    await flushHookEffects(act, dom, () => transport.subscribeCount === 1);
+
+    assert.equal(
+      transport.urls[0]?.toString(),
+      "http://127.0.0.1:3857/api/v1/sessions/sess_a/events?after_id=evt_sess_a%3Atail",
+    );
+
+    await act(async () => {
+      transport.emit({
+        event_id: "evt_live_11",
+        epoch: 1,
+        payload: {
+          delta: " live",
+          message_id: "sess_a:tail",
+        },
+        seq: 11,
+        session_id: "sess_a",
+        type: "assistant.message.delta",
+      });
+    });
+
+    assert.equal(
+      snapshots.at(-1),
+      "message for sess_a live",
+      "live deltas from the injected transport must update the active conversation without a snapshot/tab refresh",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+    assert.equal(transport.closeCount, transport.subscribeCount);
   } finally {
     dom.restore();
   }
@@ -520,7 +600,31 @@ function findTurnGroupByText(container: Element, text: string): HTMLElement | nu
   ) ?? null;
 }
 
+class FakeEventStreamTransport implements VelaEventStreamTransport {
+  closeCount = 0;
+  handlers: VelaEventStreamHandlers | null = null;
+  subscribeCount = 0;
+  urls: URL[] = [];
+
+  subscribe(url: URL, handlers: VelaEventStreamHandlers) {
+    this.subscribeCount += 1;
+    this.urls.push(url);
+    this.handlers = handlers;
+    handlers.onOpen?.();
+    return {
+      close: () => {
+        this.closeCount += 1;
+      },
+    };
+  }
+
+  emit(event: VelaStreamEventWire) {
+    this.handlers?.onEvent(event);
+  }
+}
+
 class FakeVeladClient implements VeladClient {
+  private conversationOverrides = new Map<string, ConversationWireView>();
   private readonly tailLoadCount = new Map<string, number>();
   private readonly olderLoadCount = new Map<string, number>();
 
@@ -530,6 +634,10 @@ class FakeVeladClient implements VeladClient {
 
   olderLoads(sessionId: string) {
     return this.olderLoadCount.get(sessionId) ?? 0;
+  }
+
+  replaceTailConversation(sessionId: string, conversation: ConversationWireView) {
+    this.conversationOverrides.set(sessionId, conversation);
   }
 
   async getConversation(
@@ -547,6 +655,8 @@ class FakeVeladClient implements VeladClient {
     }
 
     this.tailLoadCount.set(sessionId, this.tailLoads(sessionId) + 1);
+    const override = this.conversationOverrides.get(sessionId);
+    if (override) return override;
     return conversationView({
       hasOlder: true,
       itemId: `${sessionId}:tail`,
@@ -752,13 +862,15 @@ function conversationView({
   itemId,
   seq,
   sessionId,
+  status = "completed",
 }: {
   hasOlder: boolean;
   itemId: string;
   seq: number;
   sessionId: string;
+  status?: "completed" | "streaming";
 }): ConversationWireView {
-  const item = conversationItem({ id: itemId, sessionId, seq });
+  const item = conversationItem({ id: itemId, sessionId, seq, status });
   return {
     cursor: {
       epoch: 1,
@@ -819,11 +931,13 @@ function conversationItem({
   id,
   sessionId,
   seq,
+  status = "completed",
   text = `message for ${sessionId}`,
 }: {
   id: string;
   sessionId: string;
   seq: number;
+  status?: "completed" | "streaming";
   text?: string;
 }): ConversationWireItem {
   const at = new Date(Date.UTC(2026, 5, 23, 0, 0, seq)).toISOString();
@@ -843,7 +957,7 @@ function conversationItem({
         to_seq: seq,
       },
     ],
-    status: "completed",
+    status,
     text,
     turn_id: `turn_${sessionId}`,
     updated_at: at,

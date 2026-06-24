@@ -59,6 +59,37 @@ async fn session_backend_kind_round_trips_acp() {
 }
 
 #[tokio::test]
+async fn archive_session_hides_it_from_default_session_list() {
+    let store = SqliteEventStore::in_memory().await.expect("store");
+    let archived_id = SessionId::from("ses_store_archived");
+    let active_id = SessionId::from("ses_store_active");
+    store
+        .create_session(&archived_id, BackendKind::Pi, "/tmp/archived")
+        .await
+        .expect("create archived session");
+    store
+        .create_session(&active_id, BackendKind::Pi, "/tmp/active")
+        .await
+        .expect("create active session");
+
+    store
+        .archive_session(&archived_id)
+        .await
+        .expect("archive session");
+
+    let archived = store
+        .get_session(&archived_id)
+        .await
+        .expect("get archived")
+        .expect("archived session exists");
+    assert_eq!(archived.status, "archived");
+
+    let listed = store.list_sessions().await.expect("list sessions");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].session_id, active_id);
+}
+
+#[tokio::test]
 async fn idempotency_replays_same_ack_and_rejects_hash_mismatch() {
     let store = SqliteEventStore::in_memory().await.expect("store");
     let session_id = SessionId::from("ses_store_2");

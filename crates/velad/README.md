@@ -20,7 +20,7 @@ Environment:
 - `VELAD_CODEX_MODEL`: optional default model shown for the configured Codex backend. Codex sessions can still override `agent_config.model`.
 - `VELAD_ACP_COMMAND`: ACP agent command, default `hermes`.
 - `VELAD_ACP_ARGS`: whitespace-separated ACP agent args, default `acp`.
-- `VELAD_ACP_MODEL`: optional default model shown for the configured ACP backend. ACP sessions can still override `agent_config.model`.
+- `VELAD_ACP_MODEL`: optional default model shown for the configured ACP backend. ACP model selection is startup/process configuration; current ACP sessions do not accept runtime `agent_config.model` or `agent_config.reasoning_effort` updates.
 - `VELAD_ACP_API_KEY`: optional ACP/OpenAI-compatible API key. `VELA_CLOUDAGENTS_API_KEY` is also accepted.
 - `VELAD_ACP_ENV_*`: extra environment variables passed to the ACP process after stripping the prefix. For example `VELAD_ACP_ENV_FOO=bar` becomes `FOO=bar`.
 - `VELAD_PI_COMMAND`: Pi CLI command, default `pi`.

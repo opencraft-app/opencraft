@@ -5,13 +5,12 @@ import type { VelaClientStateStore } from "../../vela-chat-host-state/src";
 import {
   applyConversationLiveOverlay,
   commandAckRejectionMessage,
+  createBrowserVelaEventStreamTransport,
   createStreamRefreshScheduler,
   createVeladClient,
   mergeConversationSnapshot,
   needsConversationRefreshAfterLiveOverlay,
-  readVelaStreamEvent,
   selectSessionEventStreamAfterId,
-  subscribeVelaEventSource,
   type AgentConfigPatchWire,
   type BackendWire,
   type ClientInputPart,
@@ -19,6 +18,7 @@ import {
   type PendingRequestsWireView,
   type SessionWire,
   type VeladClient,
+  type VelaEventStreamTransport,
 } from "../../vela-chat-client/src";
 import {
   buildConversationHistoryPrependPlan,
@@ -59,6 +59,7 @@ export interface VelaChatSessionControllerOptions {
   client?: VeladClient;
   hostPolicy?: ChatHostPolicy;
   historyPolicy?: VelaConversationHistoryPolicy;
+  eventStreamTransport?: VelaEventStreamTransport;
   fetchBackends?: boolean;
 }
 
@@ -101,6 +102,7 @@ export function useVelaChatSession({
   client: providedClient,
   hostPolicy = DEFAULT_CHAT_HOST_POLICY,
   historyPolicy = DEFAULT_DESKTOP_CONVERSATION_HISTORY_POLICY,
+  eventStreamTransport: providedEventStreamTransport,
   fetchBackends = true,
 }: VelaChatSessionControllerOptions): VelaChatSessionController {
   const [conversation, setConversation] = useState<ConversationWireView | null>(null);
@@ -132,6 +134,11 @@ export function useVelaChatSession({
 
   const ownedClient = useMemo(() => createVeladClient({ baseUrl }), [baseUrl]);
   const client = providedClient ?? ownedClient;
+  const browserEventStreamTransport = useMemo(
+    () => createBrowserVelaEventStreamTransport(),
+    [],
+  );
+  const eventStreamTransport = providedEventStreamTransport ?? browserEventStreamTransport;
 
   const commitConversation = useCallback((nextConversation: typeof conversation) => {
     if (!nextConversation) {
@@ -310,7 +317,6 @@ export function useVelaChatSession({
   useEffect(() => {
     if (!activeSessionId || !isConversationReady) return;
     const url = client.sessionEventStreamUrl(activeSessionId, sessionEventStreamAfterId);
-    const source = new EventSource(url);
     const conversationRefreshScheduler = createStreamRefreshScheduler({
       refresh: loadConversation,
       minIntervalMs: 240,
@@ -328,12 +334,10 @@ export function useVelaChatSession({
       minIntervalMs: 2000,
     });
 
-    const unsubscribe = subscribeVelaEventSource(source, {
+    const subscription = eventStreamTransport.subscribe(url, {
       onOpen: () => setStreamConnected(true),
       onError: () => setStreamConnected(false),
-      onEvent: (event) => {
-        const streamEvent = readVelaStreamEvent(event);
-        if (!streamEvent) return;
+      onEvent: (streamEvent) => {
         const currentConversation = readModelForActiveSession(
           activeSessionId,
           conversationRef.current,
@@ -361,18 +365,18 @@ export function useVelaChatSession({
     });
 
     return () => {
-      unsubscribe();
+      subscription.close();
       conversationRefreshScheduler.dispose();
       requestsRefreshScheduler.dispose();
       sessionRefreshScheduler.dispose();
       backendsRefreshScheduler.dispose();
-      source.close();
       setStreamConnected(false);
     };
   }, [
     activeSessionId,
     client,
     commitConversation,
+    eventStreamTransport,
     isConversationReady,
     loadBackends,
     loadConversation,

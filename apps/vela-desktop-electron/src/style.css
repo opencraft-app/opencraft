@@ -751,6 +751,10 @@ body {
     color 140ms ease;
 }
 
+.vela-session-item:focus-within {
+  background: var(--skin-sidebar-hover);
+}
+
 .vela-session-item:hover,
 .vela-session-item.active {
   background: var(--skin-sidebar-hover);
@@ -842,6 +846,54 @@ body {
 .vela-session-item:hover .vela-session-rail,
 .vela-session-item.active .vela-session-rail {
   color: #8d939b;
+}
+
+.vela-session-actions-trigger {
+  position: absolute;
+  top: 9px;
+  right: 6px;
+  z-index: 2;
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #858b93;
+  opacity: 0;
+  cursor: default;
+  transition:
+    background 90ms ease,
+    color 90ms ease,
+    opacity 90ms ease;
+}
+
+.vela-session-actions-trigger:hover,
+.vela-session-actions-trigger[aria-expanded="true"] {
+  background: rgba(123, 127, 133, 0.12);
+  color: #5f656b;
+}
+
+.vela-session-item[data-has-actions="true"]:hover .vela-session-actions-trigger,
+.vela-session-item[data-has-actions="true"]:focus-within .vela-session-actions-trigger,
+.vela-session-actions-trigger[aria-expanded="true"] {
+  opacity: 1;
+}
+
+.vela-session-item[data-has-actions="true"]:hover .vela-session-rail,
+.vela-session-item[data-has-actions="true"]:focus-within .vela-session-rail {
+  opacity: 0;
+}
+
+.vela-session-actions-popover {
+  width: 164px;
+  transform-origin: top right;
+}
+
+.vela-session-actions-popover.vela-motion-popover[data-state="open"] {
+  animation-duration: 95ms;
+  transform-origin: top right;
 }
 
 .vela-sidebar-footer {

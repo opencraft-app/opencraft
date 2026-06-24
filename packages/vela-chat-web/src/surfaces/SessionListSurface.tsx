@@ -1,14 +1,18 @@
+import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { SessionListItemWire } from "../../../vela-chat-client/src";
 
 export interface SessionListSurfaceProps {
   sessions: SessionListItemWire[];
   currentSessionId: string | null;
+  onArchiveSession?: (sessionId: string) => void | Promise<void>;
   onSelectSession: (sessionId: string) => void;
 }
 
 export function SessionListSurface({
   sessions,
   currentSessionId,
+  onArchiveSession,
   onSelectSession,
 }: SessionListSurfaceProps) {
   return (
@@ -18,6 +22,7 @@ export function SessionListSurface({
           key={session.id}
           session={session}
           isActive={session.id === currentSessionId}
+          onArchiveSession={onArchiveSession ? () => onArchiveSession(session.id) : undefined}
           onSelect={() => onSelectSession(session.id)}
         />
       ))}
@@ -28,12 +33,19 @@ export function SessionListSurface({
 function SessionListSurfaceItem({
   session,
   isActive,
+  onArchiveSession,
   onSelect,
 }: {
   session: SessionListItemWire;
   isActive: boolean;
+  onArchiveSession?: () => void | Promise<void>;
   onSelect: () => void;
 }) {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [menuStyle, setMenuStyle] = useState<CSSProperties | null>(null);
+  const rootRef = useRef<HTMLLIElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const isRunning = session.running || session.status === "running";
   const isWaiting = session.status === "waiting_for_input" || session.pending_request_count > 0;
   const isFailed = session.status === "failed";
@@ -45,14 +57,98 @@ function SessionListSurfaceItem({
       ? "Running"
       : null;
 
+  useEffect(() => {
+    if (!isMenuOpen) return;
+
+    const onPointerDown = (event: PointerEvent) => {
+      const root = rootRef.current;
+      const menu = menuRef.current;
+      const target = event.target;
+      if (root && target instanceof Node && root.contains(target)) return;
+      if (menu && target instanceof Node && menu.contains(target)) return;
+      setIsMenuOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsMenuOpen(false);
+    };
+
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [isMenuOpen]);
+
+  useLayoutEffect(() => {
+    if (!isMenuOpen || !canUseDocument()) {
+      setMenuStyle(null);
+      return;
+    }
+
+    const updatePosition = () => {
+      const trigger = triggerRef.current;
+      if (!trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      setMenuStyle({
+        position: "fixed",
+        top: `${rect.bottom + 6}px`,
+        left: `${Math.max(8, Math.min(rect.right - 164, window.innerWidth - 172))}px`,
+      });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [isMenuOpen]);
+
+  const archiveSession = async () => {
+    setIsMenuOpen(false);
+    await onArchiveSession?.();
+  };
+
+  const menu = isMenuOpen ? (
+    <div
+      className="vela-settings-popover vela-motion-popover vela-session-actions-popover"
+      role="menu"
+      aria-label="Session actions"
+      data-layer={canUseDocument() ? "portal" : "inline"}
+      data-state="open"
+      ref={menuRef}
+      style={menuStyle ?? undefined}
+    >
+      <div className="vela-settings-menu">
+        <button
+          className="vela-settings-menu-item"
+          type="button"
+          role="menuitem"
+          data-action="archive-session"
+          onClick={(event) => {
+            event.stopPropagation();
+            void archiveSession();
+          }}
+        >
+          <ArchiveGlyph />
+          <span>Archive chat</span>
+        </button>
+      </div>
+    </div>
+  ) : null;
+
   return (
     <li
+      ref={rootRef}
       className={["vela-sidebar-menu-item vela-session-item", isActive ? "active" : ""]
         .filter(Boolean)
         .join(" ")}
       data-sidebar="menu-item"
       data-slot="session-list-surface-item"
       data-status={session.status}
+      data-has-actions={onArchiveSession ? "true" : undefined}
       data-running={isRunning ? "true" : undefined}
       data-waiting={isWaiting ? "true" : undefined}
       data-failed={isFailed ? "true" : undefined}
@@ -82,7 +178,62 @@ function SessionListSurfaceItem({
           {sessionRailLabel(session)}
         </span>
       </button>
+      {onArchiveSession ? (
+        <>
+          <button
+            ref={triggerRef}
+            className="vela-session-actions-trigger"
+            type="button"
+            aria-label={`Session actions for ${session.title || session.id}`}
+            aria-haspopup="menu"
+            aria-expanded={isMenuOpen ? "true" : "false"}
+            onClick={(event) => {
+              event.stopPropagation();
+              setIsMenuOpen((current) => !current);
+            }}
+          >
+            <MoreGlyph />
+          </button>
+          {menu ? renderMenu(menu) : null}
+        </>
+      ) : null}
     </li>
+  );
+}
+
+function renderMenu(menu: JSX.Element) {
+  if (!canUseDocument()) return menu;
+  return createPortal(menu, document.body);
+}
+
+function canUseDocument() {
+  return typeof document !== "undefined" && typeof window !== "undefined";
+}
+
+function MoreGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M6.5 12h.01M12 12h.01M17.5 12h.01"
+        stroke="currentColor"
+        strokeWidth="3"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function ArchiveGlyph() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M5 7.5h14M8 7.5V5.75C8 4.78 8.78 4 9.75 4h4.5C15.22 4 16 4.78 16 5.75V7.5M7 10v7.25C7 18.77 8.23 20 9.75 20h4.5C15.77 20 17 18.77 17 17.25V10M10 13h4"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 

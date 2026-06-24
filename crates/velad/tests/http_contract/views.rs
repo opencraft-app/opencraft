@@ -91,9 +91,9 @@ async fn conversation_view_supports_direction_anchor_paging() {
         "conversation view should include assistant message items: {tail:#?}"
     );
     for item in tail["items"].as_array().unwrap() {
-        let ranges = item["source_event_ranges"]
-            .as_array()
-            .unwrap_or_else(|| panic!("conversation item must expose source_event_ranges: {item:#?}"));
+        let ranges = item["source_event_ranges"].as_array().unwrap_or_else(|| {
+            panic!("conversation item must expose source_event_ranges: {item:#?}")
+        });
         assert!(
             !ranges.is_empty(),
             "conversation item source_event_ranges must not be empty: {item:#?}"
@@ -192,9 +192,7 @@ async fn conversation_view_rejects_invalid_direction_anchor_combinations() {
             "/api/v1/sessions/{session_id}/views/conversation?direction=tail&anchor_item_id=item_1"
         ),
         format!("/api/v1/sessions/{session_id}/views/conversation?anchor_item_id=item_1"),
-        format!(
-            "/api/v1/sessions/{session_id}/views/conversation?direction=before&row_id=row_1"
-        ),
+        format!("/api/v1/sessions/{session_id}/views/conversation?direction=before&row_id=row_1"),
         format!("/api/v1/sessions/{session_id}/views/conversation?after_id=evt_1"),
     ] {
         let (status, body) = get_json(app.clone(), &uri).await;
@@ -311,9 +309,21 @@ async fn session_list_view_returns_sidebar_ready_items() {
     assert_eq!(item["agent_config"]["model"], "minimax-m2.7");
     assert_eq!(item["pending_request_count"], 0);
     assert_eq!(item["running"], false);
-    assert!(item.get("created_at").and_then(|value| value.as_str()).is_some());
-    assert!(item.get("updated_at").and_then(|value| value.as_str()).is_some());
-    assert!(item.get("last_activity_at").and_then(|value| value.as_str()).is_some());
+    assert!(
+        item.get("created_at")
+            .and_then(|value| value.as_str())
+            .is_some()
+    );
+    assert!(
+        item.get("updated_at")
+            .and_then(|value| value.as_str())
+            .is_some()
+    );
+    assert!(
+        item.get("last_activity_at")
+            .and_then(|value| value.as_str())
+            .is_some()
+    );
     assert!(item.get("preview").is_some());
 }
 

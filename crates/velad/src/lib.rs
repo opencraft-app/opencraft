@@ -21,8 +21,8 @@ use tower_http::cors::{Any, CorsLayer};
 use vela_backends::BackendAdapter;
 use vela_core::{
     AcceptedCommandAck, AgentConfig, AgentConfigPatch, BackendFeature, BackendKind, BackendModel,
-    BlobRef, CanonicalEvent, CommandAck, CommandId, EventCursor, EventId, EventSource, EventType,
-    ConversationItemKind, PermissionMode, PermissionModeOption, ReasoningEffortOption,
+    BlobRef, CanonicalEvent, CommandAck, CommandId, ConversationItemKind, EventCursor, EventId,
+    EventSource, EventType, PermissionMode, PermissionModeOption, ReasoningEffortOption,
     RejectedCommandAck, SessionId, SourceEventRange, UserMessageBlock,
 };
 use vela_projection::{
@@ -168,6 +168,10 @@ where
             post(close_session::<B>),
         )
         .route(
+            "/api/v1/sessions/{session_id}/archive",
+            post(archive_session::<B>),
+        )
+        .route(
             "/api/v1/sessions/{session_id}/events",
             get(list_session_events::<B>).post(send_session_events::<B>),
         )
@@ -209,7 +213,12 @@ where
         .route("/api/v1/backends", get(list_backends::<B>))
         .route("/api/v1/backends/{backend}", get(get_backend::<B>))
         .route("/api/v1/backends/{backend}/probe", post(probe_backend::<B>))
-        .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any))
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods(Any)
+                .allow_headers(Any),
+        )
         .with_state(state)
 }
 
@@ -546,6 +555,31 @@ where
         "cursor": event_cursor_json(&append.event),
     }))
     .into_response()
+}
+
+async fn archive_session<B>(
+    State(state): State<ApiState<B>>,
+    Path(session_id): Path<String>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let session_id = SessionId::from(session_id);
+    if let Err(err) = state.store.archive_session(&session_id).await {
+        return match err {
+            vela_store::StoreError::SessionNotFound(_) => error(
+                StatusCode::NOT_FOUND,
+                "session_not_found",
+                "session does not exist",
+            ),
+            _ => error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "store_error",
+                err.to_string(),
+            ),
+        };
+    }
+    session_response(&state, &session_id, false).await
 }
 
 async fn list_sessions<B>(
@@ -2666,7 +2700,10 @@ fn truncate_preview(value: &str, max_chars: usize) -> String {
 }
 
 fn session_is_running(status: &str) -> bool {
-    matches!(status, "starting" | "running" | "waiting_for_input" | "canceling")
+    matches!(
+        status,
+        "starting" | "running" | "waiting_for_input" | "canceling"
+    )
 }
 
 fn timeline_item_json(event: &CanonicalEvent) -> Value {
@@ -2722,6 +2759,7 @@ where
                 capabilities.cancel,
                 capabilities.permission_requests,
                 capabilities.structured_diff,
+                capabilities.session_agent_config,
             )
         })
         .collect()
@@ -2735,6 +2773,7 @@ fn backend_json(
     cancel: bool,
     permission_requests: bool,
     structured_diff: bool,
+    session_agent_config: bool,
 ) -> Value {
     let model_reasoning_efforts = if kind == "acp" {
         Vec::new()
@@ -2762,7 +2801,7 @@ fn backend_json(
             "cancel": cancel,
             "permission_requests": permission_requests,
             "structured_diff": structured_diff,
-            "session_agent_config": true,
+            "session_agent_config": session_agent_config,
         },
         "models": models,
         "permission_modes": [

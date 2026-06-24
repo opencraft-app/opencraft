@@ -1,6 +1,6 @@
 import { MessageSquareText, Plus, Search } from "lucide-react";
 import type { SessionListItemWire } from "../../../../vela-chat-client/src";
-import { SessionListSurface } from "../../../../vela-chat-web/src";
+import { SessionListSurface } from "../../../../vela-chat-web/src/surfaces/SessionListSurface";
 import {
   Sidebar,
   SidebarChromeArea,
@@ -27,6 +27,7 @@ export interface SessionSidebarProps {
   canCreateSession?: boolean;
   defaultSettingsMenuOpen?: boolean;
   onCreateSession: () => void;
+  onArchiveSession?: (sessionId: string) => void | Promise<void>;
   onClearSessions?: () => void;
   onOpenSettings?: () => void;
   onSearch?: (query: string) => void;
@@ -44,6 +45,7 @@ export function SessionSidebar({
   canCreateSession = true,
   defaultSettingsMenuOpen = false,
   onCreateSession,
+  onArchiveSession,
   onClearSessions,
   onOpenSettings,
   onSearch,
@@ -90,6 +92,7 @@ export function SessionSidebar({
             <SessionListSurface
               currentSessionId={currentSessionId}
               sessions={sessions}
+              onArchiveSession={onArchiveSession}
               onSelectSession={onSelectSession}
             />
           </SidebarScrollRegion>
