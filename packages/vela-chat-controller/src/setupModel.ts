@@ -56,9 +56,13 @@ export function buildVelaSessionSetupSelection({
         setupPermissionOptions.find((option) => option.id === "auto")?.id ??
         setupPermissionOptions[0]?.id ??
         selectedPermissionMode;
+  const usesRuntimeModelConfig =
+    selectedBackendDetails?.capabilities.session_agent_config !== false;
   const setupAgentConfig: AgentConfigWire = {
-    ...(setupSelectedModel ? { model: setupSelectedModel } : {}),
-    ...(setupSelectedReasoningEffort ? { reasoning_effort: setupSelectedReasoningEffort } : {}),
+    ...(usesRuntimeModelConfig && setupSelectedModel ? { model: setupSelectedModel } : {}),
+    ...(usesRuntimeModelConfig && setupSelectedReasoningEffort
+      ? { reasoning_effort: setupSelectedReasoningEffort }
+      : {}),
     ...(setupSelectedPermissionMode ? { permission_mode: setupSelectedPermissionMode } : {}),
   };
 

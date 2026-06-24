@@ -66,8 +66,6 @@ async fn acp_adapter_initializes_session_and_streams_prompt_updates() {
             "agentCapabilities": {}
         })),
         AcpInbound::response(json!({ "sessionId": "acp_ses_1" })),
-        AcpInbound::response(json!({ "modelId": "minimax-m2.7" })),
-        AcpInbound::response(json!({ "optionId": "reasoning_effort", "value": "medium" })),
         AcpInbound::notification(
             "session/update",
             json!({
@@ -110,23 +108,14 @@ async fn acp_adapter_initializes_session_and_streams_prompt_updates() {
             .iter()
             .map(|call| call.method.as_str())
             .collect::<Vec<_>>(),
-        vec![
-            "initialize",
-            "session/new",
-            "session/setModel",
-            "session/setConfigOption",
-            "session/prompt"
-        ]
+        vec!["initialize", "session/new", "session/prompt"]
     );
     assert_eq!(calls[1].params["cwd"], "/repo");
-    assert_eq!(calls[2].params["modelId"], "minimax-m2.7");
-    assert_eq!(calls[3].params["optionId"], "reasoning_effort");
-    assert_eq!(calls[3].params["value"], "medium");
-    assert_eq!(calls[4].params["prompt"][0]["text"], "hello acp");
+    assert_eq!(calls[2].params["prompt"][0]["text"], "hello acp");
 }
 
 #[tokio::test]
-async fn acp_adapter_degrades_unsupported_config_updates_without_visible_warnings() {
+async fn acp_adapter_does_not_call_runtime_model_config_methods() {
     let host = ScriptedAcpHost::new(vec![
         AcpInbound::response(json!({
             "protocolVersion": 1,
@@ -188,13 +177,7 @@ async fn acp_adapter_degrades_unsupported_config_updates_without_visible_warning
             .iter()
             .map(|call| call.method.as_str())
             .collect::<Vec<_>>(),
-        vec![
-            "initialize",
-            "session/new",
-            "session/setModel",
-            "session/setConfigOption",
-            "session/prompt"
-        ]
+        vec!["initialize", "session/new", "session/prompt"]
     );
 }
 

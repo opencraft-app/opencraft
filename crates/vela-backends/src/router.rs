@@ -62,6 +62,7 @@ impl BackendAdapter for BackendRouter {
                 cancel: false,
                 permission_requests: false,
                 structured_diff: false,
+                session_agent_config: false,
             })
     }
 
@@ -73,6 +74,7 @@ impl BackendAdapter for BackendRouter {
                 cancel: false,
                 permission_requests: false,
                 structured_diff: false,
+                session_agent_config: false,
             })
     }
 

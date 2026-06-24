@@ -93,32 +93,37 @@ export function readVelaStreamEvent(event: MessageEvent | Event): VelaStreamEven
   if (typeof data !== "string" || data.length === 0) return null;
   try {
     const parsed = JSON.parse(data) as unknown;
-    if (!isRecord(parsed)) return null;
-    const eventType =
-      typeof parsed.type === "string"
-        ? parsed.type
-        : event.type && event.type !== "message"
-          ? event.type
-          : "";
-    if (!eventType) return null;
-    return {
-      event_id: typeof parsed.event_id === "string" ? parsed.event_id : undefined,
-      epoch: typeof parsed.epoch === "number" ? parsed.epoch : undefined,
-      seq: typeof parsed.seq === "number" ? parsed.seq : undefined,
-      session_id: typeof parsed.session_id === "string" ? parsed.session_id : undefined,
-      type: eventType,
-      created_at: typeof parsed.created_at === "string" ? parsed.created_at : undefined,
-      payload: isRecord(parsed.payload) ? parsed.payload : undefined,
-      affected_views: Array.isArray(parsed.affected_views)
-        ? parsed.affected_views.filter((view): view is string => typeof view === "string")
-        : undefined,
-      views: Array.isArray(parsed.views)
-        ? parsed.views.filter((view): view is string => typeof view === "string")
-        : undefined,
-    };
+    return readVelaStreamEventData(
+      parsed,
+      event.type && event.type !== "message" ? event.type : undefined,
+    );
   } catch {
     return null;
   }
+}
+
+export function readVelaStreamEventData(
+  data: unknown,
+  fallbackEventType?: string,
+): VelaStreamEventWire | null {
+  if (!isRecord(data)) return null;
+  const eventType = typeof data.type === "string" ? data.type : (fallbackEventType ?? "");
+  if (!eventType) return null;
+  return {
+    event_id: typeof data.event_id === "string" ? data.event_id : undefined,
+    epoch: typeof data.epoch === "number" ? data.epoch : undefined,
+    seq: typeof data.seq === "number" ? data.seq : undefined,
+    session_id: typeof data.session_id === "string" ? data.session_id : undefined,
+    type: eventType,
+    created_at: typeof data.created_at === "string" ? data.created_at : undefined,
+    payload: isRecord(data.payload) ? data.payload : undefined,
+    affected_views: Array.isArray(data.affected_views)
+      ? data.affected_views.filter((view): view is string => typeof view === "string")
+      : undefined,
+    views: Array.isArray(data.views)
+      ? data.views.filter((view): view is string => typeof view === "string")
+      : undefined,
+  };
 }
 
 export function isVelaStreamEventForSession(

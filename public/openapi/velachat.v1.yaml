@@ -11,6 +11,7 @@ servers:
   - url: http://127.0.0.1:3857/api/v1
     description: 本地 daemon
 tags:
+  - name: Runtime
   - name: Sessions
   - name: Input Events
   - name: Events
@@ -160,6 +161,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AcceptedCommand'
+  /sessions/{session_id}/archive:
+    post:
+      tags: [Sessions]
+      operationId: archiveSession
+      summary: 归档 session
+      description: |
+        Archives a session so it disappears from default active session lists.
+        The session data remains available for future restore or permanent
+        deletion flows.
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: Session archived.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session]
+                properties:
+                  session:
+                    $ref: '#/components/schemas/Session'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /sessions/{session_id}/events:
     post:
       tags: [Input Events]
@@ -481,6 +506,42 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BackendProbeResult'
+  /runtime-info:
+    get:
+      tags: [Runtime]
+      operationId: getRuntimeInfo
+      summary: 获取 local velad runtime 信息
+      description: |
+        Returns the same local runtime contract shape emitted as the bundled
+        daemon's `velad.ready` stdout event.
+      responses:
+        '200':
+          description: Local runtime info。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocalRuntimeInfo'
+  /runtime/shutdown:
+    post:
+      tags: [Runtime]
+      operationId: shutdownRuntime
+      summary: 请求 local velad 优雅退出
+      description: |
+        Requires `Authorization: Bearer <management-token>`. The token protects
+        local runtime process control only; it does not change business API auth.
+      responses:
+        '200':
+          description: Shutdown accepted。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeShutdownAccepted'
+        '403':
+          description: Missing or invalid management token。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
 components:
   parameters:
     SessionId:
@@ -537,6 +598,34 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
   schemas:
+    LocalRuntimeInfo:
+      type: object
+      required: [type, runtime_protocol, api_protocol, pid, listen_addr, api_base_url, version]
+      properties:
+        type:
+          type: string
+          enum: [velad.ready]
+        runtime_protocol:
+          type: string
+          enum: [velad.local.v1]
+        api_protocol:
+          type: string
+          enum: [velachat.v1]
+        pid:
+          type: integer
+          minimum: 1
+        listen_addr:
+          type: string
+        api_base_url:
+          type: string
+        version:
+          type: string
+    RuntimeShutdownAccepted:
+      type: object
+      required: [accepted]
+      properties:
+        accepted:
+          type: boolean
     BackendKind:
       type: string
       enum: [codex, cloudagent, claude_code, pi, opencode, acp, qoder]
@@ -545,7 +634,7 @@ components:
       enum: [tail, before, after, around]
     SessionStatus:
       type: string
-      enum: [starting, idle, running, waiting_for_input, canceling, failed, closed]
+      enum: [starting, idle, running, waiting_for_input, canceling, failed, closed, archived]
     RequestStatus:
       type: string
       enum: [pending, approved, denied, answered, expired, cancelled]
@@ -1400,6 +1489,7 @@ components:
               type: boolean
             session_agent_config:
               type: boolean
+              description: Whether clients may send session-level agent_config updates such as model, reasoning_effort, or permission_mode for this backend.
             session_persistence:
               type: boolean
             history_resume:

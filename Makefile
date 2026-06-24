@@ -1,10 +1,12 @@
 ELECTRON_APP_DIR := apps/vela-desktop-electron
 ELECTRON_BUILDER := npm exec -- electron-builder
 VELAD_LISTEN_ADDR ?= 127.0.0.1:3857
+VELAD_LINUX_AMD64_IMAGE ?= rust:1-bookworm
+VELAD_LINUX_AMD64_OUT := dist/velad/linux-amd64/velad
 
 .PHONY: \
 	install \
-	server-build server-release server-run server-test server-clean \
+	server-build server-release server-release-linux-amd64 server-run server-test server-clean \
 	desktop-dev desktop-dev-web desktop-build \
 	desktop-preview \
 	desktop-pack desktop-pack-dev desktop-install desktop-install-dev desktop-dist desktop-clean \
@@ -19,6 +21,14 @@ server-build:
 
 server-release:
 	cargo build --release -p velad
+
+server-release-linux-amd64:
+	mkdir -p $(dir $(VELAD_LINUX_AMD64_OUT))
+	docker run --rm --platform linux/amd64 \
+		-v "$(CURDIR)":/workspace \
+		-w /workspace \
+		$(VELAD_LINUX_AMD64_IMAGE) \
+		bash -lc 'cargo build --release -p velad && cp target/release/velad $(VELAD_LINUX_AMD64_OUT)'
 
 server-run:
 	VELAD_LISTEN_ADDR=$(VELAD_LISTEN_ADDR) cargo run -p velad

@@ -1,6 +1,5 @@
 use std::{
     env, fs,
-    net::SocketAddr,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -17,16 +16,12 @@ async fn main() -> anyhow::Result<()> {
     load_local_env_files();
     init_logging();
 
-    let listen_addr = env::var("VELAD_LISTEN_ADDR")
-        .unwrap_or_else(|_| "127.0.0.1:3857".to_string())
-        .parse::<SocketAddr>()?;
-    let database_url =
-        env::var("VELAD_DATABASE_URL").unwrap_or_else(|_| "sqlite::memory:".to_string());
+    let config = velad::local_runtime::LocalRuntimeConfig::from_env_args()?;
     let backend_cwd = env::var("VELAD_BACKEND_CWD")
         .or_else(|_| env::current_dir().map(|path| path.to_string_lossy().to_string()))
         .unwrap_or_else(|_| ".".to_string());
 
-    let store = Arc::new(SqliteEventStore::connect(&database_url).await?);
+    let store = Arc::new(SqliteEventStore::connect(&config.database_url).await?);
     let pi_backend = pi_backend_from_env(backend_cwd.clone())?;
     let default_session_model = pi_backend.model.clone();
     let pi_backend = Arc::new(pi_backend);
@@ -41,17 +36,57 @@ async fn main() -> anyhow::Result<()> {
             .with_backend(BackendKind::Acp, acp_backend),
     );
     let runtime = Runtime::new(store.clone(), backend);
+    let listener = tokio::net::TcpListener::bind(config.listen_addr).await?;
+    let bound_addr = listener.local_addr()?;
+    let ready = velad::local_runtime::ReadyEvent::new(bound_addr);
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     let app = velad::build_app(
         velad::ApiState::new(store, runtime)
             .with_default_session_model(default_session_model)
             .with_codex_backend(env::var("VELAD_CODEX_MODEL").ok())
-            .with_acp_backend(acp_default_model),
+            .with_acp_backend(acp_default_model)
+            .with_local_runtime(
+                velad::local_runtime::LocalRuntimeState::new(
+                    ready.clone(),
+                    config.management_token,
+                ),
+                shutdown_tx,
+            ),
     );
-    let listener = tokio::net::TcpListener::bind(listen_addr).await?;
 
-    eprintln!("velad listening on http://{listen_addr}/api/v1");
-    axum::serve(listener, app).await?;
+    println!("{}", serde_json::to_string(&ready)?);
+    axum::serve(listener, app)
+        .with_graceful_shutdown(wait_for_shutdown(shutdown_rx))
+        .await?;
     Ok(())
+}
+
+async fn wait_for_shutdown(mut shutdown_rx: tokio::sync::watch::Receiver<bool>) {
+    tokio::select! {
+        _ = async {
+            while shutdown_rx.changed().await.is_ok() {
+                if *shutdown_rx.borrow() {
+                    break;
+                }
+            }
+        } => {}
+        _ = tokio::signal::ctrl_c() => {}
+        _ = terminate_signal() => {}
+    }
+}
+
+#[cfg(unix)]
+async fn terminate_signal() {
+    use tokio::signal::unix::{SignalKind, signal};
+
+    if let Ok(mut signal) = signal(SignalKind::terminate()) {
+        let _ = signal.recv().await;
+    }
+}
+
+#[cfg(not(unix))]
+async fn terminate_signal() {
+    std::future::pending::<()>().await;
 }
 
 fn init_logging() {

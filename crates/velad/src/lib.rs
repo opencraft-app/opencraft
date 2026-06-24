@@ -21,8 +21,8 @@ use tower_http::cors::{Any, CorsLayer};
 use vela_backends::BackendAdapter;
 use vela_core::{
     AcceptedCommandAck, AgentConfig, AgentConfigPatch, BackendFeature, BackendKind, BackendModel,
-    BlobRef, CanonicalEvent, CommandAck, CommandId, EventCursor, EventId, EventSource, EventType,
-    ConversationItemKind, PermissionMode, PermissionModeOption, ReasoningEffortOption,
+    BlobRef, CanonicalEvent, CommandAck, CommandId, ConversationItemKind, EventCursor, EventId,
+    EventSource, EventType, PermissionMode, PermissionModeOption, ReasoningEffortOption,
     RejectedCommandAck, SessionId, SourceEventRange, UserMessageBlock,
 };
 use vela_projection::{
@@ -32,12 +32,16 @@ use vela_projection::{
 use vela_runtime::{Runtime, SendUserMessage};
 use vela_store::{SqliteEventStore, StoredSession};
 
+pub mod local_runtime;
+
 pub struct ApiState<B> {
     store: Arc<SqliteEventStore>,
     runtime: Runtime<B>,
     events: broadcast::Sender<CanonicalEvent>,
     default_session_model: Option<String>,
     configured_backends: Vec<ConfiguredBackend>,
+    local_runtime: Option<local_runtime::LocalRuntimeState>,
+    shutdown_tx: Option<tokio::sync::watch::Sender<bool>>,
 }
 
 impl<B> Clone for ApiState<B> {
@@ -48,6 +52,8 @@ impl<B> Clone for ApiState<B> {
             events: self.events.clone(),
             default_session_model: self.default_session_model.clone(),
             configured_backends: self.configured_backends.clone(),
+            local_runtime: self.local_runtime.clone(),
+            shutdown_tx: self.shutdown_tx.clone(),
         }
     }
 }
@@ -83,6 +89,8 @@ where
                 display_name: "PiCoding Agent",
                 default_model: None,
             }],
+            local_runtime: None,
+            shutdown_tx: None,
         }
     }
 
@@ -136,6 +144,16 @@ where
         self
     }
 
+    pub fn with_local_runtime(
+        mut self,
+        local_runtime: local_runtime::LocalRuntimeState,
+        shutdown_tx: tokio::sync::watch::Sender<bool>,
+    ) -> Self {
+        self.local_runtime = Some(local_runtime);
+        self.shutdown_tx = Some(shutdown_tx);
+        self
+    }
+
     fn configured_engine_kind(&self, backend: BackendKindWire) -> Option<BackendKind> {
         let kind = backend.as_str();
         self.configured_backends
@@ -166,6 +184,10 @@ where
         .route(
             "/api/v1/sessions/{session_id}/close",
             post(close_session::<B>),
+        )
+        .route(
+            "/api/v1/sessions/{session_id}/archive",
+            post(archive_session::<B>),
         )
         .route(
             "/api/v1/sessions/{session_id}/events",
@@ -209,7 +231,14 @@ where
         .route("/api/v1/backends", get(list_backends::<B>))
         .route("/api/v1/backends/{backend}", get(get_backend::<B>))
         .route("/api/v1/backends/{backend}/probe", post(probe_backend::<B>))
-        .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any))
+        .route("/api/v1/runtime-info", get(get_runtime_info::<B>))
+        .route("/api/v1/runtime/shutdown", post(shutdown_runtime::<B>))
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods(Any)
+                .allow_headers(Any),
+        )
         .with_state(state)
 }
 
@@ -229,6 +258,64 @@ struct SendSessionEventsRequest {
     events: Vec<ClientInputEvent>,
     #[serde(default)]
     options: Option<Value>,
+}
+
+async fn get_runtime_info<B>(State(state): State<ApiState<B>>) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    match state.local_runtime {
+        Some(runtime) => Json(runtime.info).into_response(),
+        None => error(
+            StatusCode::NOT_FOUND,
+            "runtime_info_unavailable",
+            "local runtime information is not configured",
+        ),
+    }
+}
+
+async fn shutdown_runtime<B>(State(state): State<ApiState<B>>, headers: HeaderMap) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let Some(runtime) = state.local_runtime else {
+        return error(
+            StatusCode::FORBIDDEN,
+            "runtime_shutdown_unavailable",
+            "runtime shutdown requires a management token",
+        );
+    };
+    let Some(expected_token) = runtime.management_token.as_deref() else {
+        return error(
+            StatusCode::FORBIDDEN,
+            "runtime_shutdown_unavailable",
+            "runtime shutdown requires a management token",
+        );
+    };
+    if bearer_token(&headers) != Some(expected_token) {
+        return error(
+            StatusCode::FORBIDDEN,
+            "runtime_shutdown_forbidden",
+            "invalid runtime management token",
+        );
+    }
+    let Some(shutdown_tx) = state.shutdown_tx else {
+        return error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "runtime_shutdown_unavailable",
+            "runtime shutdown trigger is not configured",
+        );
+    };
+    let _ = shutdown_tx.send(true);
+    Json(json!({ "accepted": true })).into_response()
+}
+
+fn bearer_token(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get("authorization")?
+        .to_str()
+        .ok()?
+        .strip_prefix("Bearer ")
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -546,6 +633,31 @@ where
         "cursor": event_cursor_json(&append.event),
     }))
     .into_response()
+}
+
+async fn archive_session<B>(
+    State(state): State<ApiState<B>>,
+    Path(session_id): Path<String>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let session_id = SessionId::from(session_id);
+    if let Err(err) = state.store.archive_session(&session_id).await {
+        return match err {
+            vela_store::StoreError::SessionNotFound(_) => error(
+                StatusCode::NOT_FOUND,
+                "session_not_found",
+                "session does not exist",
+            ),
+            _ => error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "store_error",
+                err.to_string(),
+            ),
+        };
+    }
+    session_response(&state, &session_id, false).await
 }
 
 async fn list_sessions<B>(
@@ -2666,7 +2778,10 @@ fn truncate_preview(value: &str, max_chars: usize) -> String {
 }
 
 fn session_is_running(status: &str) -> bool {
-    matches!(status, "starting" | "running" | "waiting_for_input" | "canceling")
+    matches!(
+        status,
+        "starting" | "running" | "waiting_for_input" | "canceling"
+    )
 }
 
 fn timeline_item_json(event: &CanonicalEvent) -> Value {
@@ -2722,6 +2837,7 @@ where
                 capabilities.cancel,
                 capabilities.permission_requests,
                 capabilities.structured_diff,
+                capabilities.session_agent_config,
             )
         })
         .collect()
@@ -2735,6 +2851,7 @@ fn backend_json(
     cancel: bool,
     permission_requests: bool,
     structured_diff: bool,
+    session_agent_config: bool,
 ) -> Value {
     let model_reasoning_efforts = if kind == "acp" {
         Vec::new()
@@ -2762,7 +2879,7 @@ fn backend_json(
             "cancel": cancel,
             "permission_requests": permission_requests,
             "structured_diff": structured_diff,
-            "session_agent_config": true,
+            "session_agent_config": session_agent_config,
         },
         "models": models,
         "permission_modes": [
