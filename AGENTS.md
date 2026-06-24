@@ -51,6 +51,23 @@
 | `shadow/` | Go | 影子账号服务 | [shadow/AGENTS.md](shadow/AGENTS.md) |
 | `sandbox/` | Go / 沙箱 | 云主机 Mock | [sandbox/AGENTS.md](sandbox/AGENTS.md) |
 | `infra_pulumi/` | Pulumi / IaC | 基础设施 | [infra_pulumi/AGENTS.md](infra_pulumi/AGENTS.md) |
+| `velalink/` | TS + Rust | AI chat/runtime upstream subtree | [velalink/MONO2_SUBTREE.md](velalink/MONO2_SUBTREE.md) |
+
+### Velalink subtree 协作模型（P0）
+
+`velalink/` 不是 submodule，也不是一次性复制目录；它是 `git@git.woa.com:wisp/velalink.git`
+的完整 subtree，供 mono2 内直接阅读、修改、测试和 review。
+
+执行约束：
+
+- 可以直接在 `mono2/velalink/` 下修改 velalink 代码，保持改动可被 mono2 的 MR 直接 review。
+- 需要长期共享给 velalink 上游的改动，必须用 `git subtree split --prefix=velalink` 切出分支，再推到 `wisp/velalink.git`。
+- `frontend` 消费 velalink 时，依赖 `velachat` 必须 pin 到 `wisp/velalink.git` 的真实上游 commit，不要 pin 到 mono2 内部提交。
+- 当拉取 velalink 上游更新时，先 `git fetch velalink master`，再用 `git merge -s recursive -Xsubtree=velalink --no-commit velalink/master` 合入。
+- 每次更新 velalink 上游基线后，同步更新 `velalink/.mono2-subtree` 和必要的 `frontend/package.json` / `frontend/pnpm-lock.yaml`。
+- 不要用前端 deep import workaround 绕开 velalink 包导出问题；正确做法是在 `velalink` 上游修复 public/barrel export，再更新 `frontend` 的 pin。
+
+标准流程详见 [velalink/MONO2_SUBTREE.md](velalink/MONO2_SUBTREE.md)。
 
 ### 统一发布模型
 
