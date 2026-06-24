@@ -39,8 +39,18 @@ func (s *Scheduler) Start() {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
 
-	// Expire overdue subscriptions every 5 minutes
-	s.runPeriodic(ctx, "expire-subscriptions", 5*time.Minute, s.expireOverdueSubscriptions)
+	// expire-subscriptions 周期任务已停用（2026-06-24）：
+	//   1. middleware/billing.go 已用 time.Now().After(sub.PeriodEnd) 兜底拦截
+	//      到期订阅的 AI 调用，sub.Status='expired' 在拦截路径上是冗余信号；
+	//   2. 翻成 expired 后 SubscriptionRepo.ExtendActivePeriodEnd 的
+	//      WHERE status='active' 会失配，导致 ctl 续费/退费对齐 ai-gateway
+	//      时拿不到目标行——典型故障：到期超过本 job 周期再续费的用户，
+	//      ai-gateway sub 仍停在 expired，AI 服务无法恢复；
+	//   3. 同步导致 token_balance 被清零，用户失去"看到最后剩余配额"的能力。
+	// 保留 expireOverdueSubscriptions / service.ExpireOverdue / repo.ExpireOverdue
+	// 等底层实现不动，方便未来按需恢复或重构（例如改成只翻 cancelled 不翻 expired）。
+	// 上线前置条件：上海正式环境上线前确保没有 active 订阅自然到期未续。
+	// s.runPeriodic(ctx, "expire-subscriptions", 5*time.Minute, s.expireOverdueSubscriptions)
 
 	// Refresh monthly token balances every 1 hour (b3 same-day-of-month anchor;
 	// see .tmp/aigateway-monthly-token-refresh-design.md §3.4 / §3.2).

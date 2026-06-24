@@ -61,7 +61,11 @@ func (m *mockPlanRepo) List(onlyActive bool) ([]model.Plan, error) { return nil,
 func (m *mockPlanRepo) Update(plan *model.Plan) error              { return nil }
 func (m *mockPlanRepo) DB() *gorm.DB                               { return nil }
 
-func TestScheduler_ExpireOverdueRunsOnStart(t *testing.T) {
+func TestScheduler_ExpireSubscriptionsJobIsDisabled(t *testing.T) {
+	// expire-subscriptions 周期任务已在 scheduler.Start 中被注释停用
+	// （详见 scheduler.go 注释，2026-06-24）。本测试守护这一行为：
+	// Start() 之后等待一段足以触发"立即执行"分支的时间，subRepo.ExpireOverdue
+	// 不应被调用任何一次。
 	subRepo := &mockSubRepo{}
 	planRepo := &mockPlanRepo{}
 	subSvc := service.NewSubscriptionService(subRepo, planRepo, nil)
@@ -69,11 +73,11 @@ func TestScheduler_ExpireOverdueRunsOnStart(t *testing.T) {
 	sched := New(subSvc, nil, nil, nil)
 	sched.Start()
 
-	// Wait for the immediate run to complete
+	// Wait long enough for any scheduled "run on start" goroutine to fire.
 	time.Sleep(100 * time.Millisecond)
 
-	if called := subRepo.expireCalled.Load(); called < 1 {
-		t.Errorf("expected ExpireOverdue to be called at least once, got %d", called)
+	if called := subRepo.expireCalled.Load(); called != 0 {
+		t.Errorf("expected ExpireOverdue NOT to be called (job disabled), got %d", called)
 	}
 
 	sched.Stop()
