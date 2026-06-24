@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"database/sql"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -58,6 +59,17 @@ type ServerConfig struct {
 	OrderUpdater      createresource.OrderProvisionUpdater
 	InquiryService    *inquiry.Service
 	PlaceOrderService *placeorder.Service
+
+	// ActivityStore 是点石活动写端（设计稿 .tmp/dianshi-activity-bundle-design.md §5.6.1 / §3.2）。
+	// 允许 nil；nil 时 createResource handler 跳过 INSERT participation 分支，
+	// 与 v1.7.x 历史行为完全一致（jifei 单路径）。main.go 在 cfg.DianshiPriceBaseURL +
+	// cfg.DianshiOrderBaseURL 同时非空时才注入 mysqlStore；两者同进同退。
+	ActivityStore store.ActivityStore
+
+	// ActivityDB 是 trade 主库 *sql.DB，createResource handler 在 source=='dianshi' 分支下
+	// 开事务 INSERT trade_user_activity_participation 需要。与 ActivityStore 同进同退；
+	// ActivityStore 为 nil 时 ActivityDB 也可为 nil（不使用）。
+	ActivityDB *sql.DB
 
 	// JifeiClient 是 trade → jifei CGW 出向客户端（D-2 销毁链路用户主动入口用）。
 	//
@@ -153,11 +165,13 @@ func NewRouter(cfg ServerConfig) *gin.Engine {
 
 	// 2. 注册 createResource 真 handler（迭代 6）。
 	createresource.Install(dispatcher, createresource.Deps{
-		OrderStore:   cfg.OrderStore,
-		OrderUpdater: cfg.OrderUpdater, // 迭代 8A 起 main.go 注入 mysqlStore；旧调用方仍允许 nil
-		FlowStore:    cfg.FlowStore,
-		CTLClient:    cfg.CTLClient,
-		Builder:      builder,
+		OrderStore:    cfg.OrderStore,
+		OrderUpdater:  cfg.OrderUpdater, // 迭代 8A 起 main.go 注入 mysqlStore；旧调用方仍允许 nil
+		FlowStore:     cfg.FlowStore,
+		CTLClient:     cfg.CTLClient,
+		Builder:       builder,
+		ActivityStore: cfg.ActivityStore, // 点石活动接入（设计稿 §5.6.1）；nil 时跳过 INSERT participation 分支
+		DB:            cfg.ActivityDB,
 	})
 
 	// 3. 注册资源反查三件套真 handler（迭代 11B）。

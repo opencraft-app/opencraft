@@ -116,6 +116,48 @@ backends:
         # 现网域名 = apigateway.billing.tencentyun.com。
         Host: "apigateway.billing.tencentyun.com"
 
+  # ===========================================================================
+  # dianshi-price backend：lightvela trade → 点石活动询价（v1.7.x 点石活动接入；
+  # 2026-06-24 新增）
+  #
+  # 协议参考：.tmp/点石询价（activity_price.activity.get_price）
+  # 设计稿：.tmp/dianshi-activity-bundle-design.md §5.7
+  #
+  # **解析形态**（与 jifei-prod 域名 + Host 不同）：直接走 polaris-mesh DNS
+  # 反查 opc-activity-price 服务，无需 polaris-sidecar——跳板机 2026-06-23 实测
+  # 9.208.245.238:36000 标准 DNS 9.208.232.145 即可解析
+  # opc-activity-price.production.polaris → 30.188.120.72 / 21.1.105.235 等多 IP，
+  # tkexgz / tkexsg 黑石 TKE 集群 Pod 与 IDC 同张内网，无需额外 igate。
+  #
+  # **v0.5 拍板**（设计稿 §11 Q3=a）：不写 Host header，由 polaris 服务名直接路由。
+  # 联调期若点石侧网关报告 Host 校验失败再切到「写对外域名 Host」形态。
+  # ===========================================================================
+  - alias: dianshi-price
+    upstream:
+      base_url: "http://opc-activity-price.production.polaris:10006"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  # ===========================================================================
+  # dianshi-order backend：lightvela trade → 点石活动下单（v1.7.x 点石活动接入；
+  # 2026-06-24 新增）
+  #
+  # 协议参考：.tmp/点石下单（HTTP POST /activity_web/activity/do_goods）
+  # 设计稿：.tmp/dianshi-activity-bundle-design.md §5.7
+  #
+  # 与 dianshi-price 同款 polaris-mesh DNS 形态；trade 端在
+  # DIANSHI_ORDER_BASE_URL 里把 /activity_web/activity/do_goods path 写满，
+  # clgateway 仅按 *path 拼到 base_url 后部即可（与 jifei-billing-apigw-prod
+  # 把 /resource-center/interface 写到 trade 侧 env 同款思路）。
+  # 鉴权（check_sum = md5(uin + "_" + activity_id + "_" + secret_key)）由
+  # trade dianshiclient 注入 envelope.para.check_sum，clgateway 透明转发不感知。
+  # ===========================================================================
+  - alias: dianshi-order
+    upstream:
+      base_url: "http://opc-dianshi-activity.production.polaris:10006"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
   - alias: billing-trade-cn-pre
     upstream:
       scheme: http
@@ -450,6 +492,32 @@ routes:
     condition: 'request.method == "POST"'
     upstream:
       backend: jifei-billing-apigw-prod
+
+  # ===========================================================================
+  # lightvela trade → 点石活动询价路由（v1.7.x 点石活动接入；2026-06-24 新增）
+  # 设计稿：.tmp/dianshi-activity-bundle-design.md §5.7
+  # 协议：activity_price.activity.get_price（无签名）
+  # callers 字段在 auth.enabled=false 时无实际效果，与 jifei-prod 路由同款；
+  # 切换 HMAC 后由 auth.callers 注册的 lightvela-trade 自动生效。
+  # ===========================================================================
+  - id: dianshi-price
+    description: "lightvela trade → 点石活动询价（opc-activity-price），polaris-mesh DNS 形态，无签名；详见设计稿 §5.7 / §5.8"
+    callers: ["lightvela-trade"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: dianshi-price
+
+  # ===========================================================================
+  # lightvela trade → 点石活动下单路由（v1.7.x 点石活动接入；2026-06-24 新增）
+  # 设计稿：.tmp/dianshi-activity-bundle-design.md §5.7
+  # 协议：HTTP POST /activity_web/activity/do_goods（check_sum 由 trade 注入）
+  # ===========================================================================
+  - id: dianshi-order
+    description: "lightvela trade → 点石活动下单（opc-dianshi-activity），polaris-mesh DNS 形态，check_sum 由 trade 注入；详见设计稿 §5.7 / §7.1"
+    callers: ["lightvela-trade"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: dianshi-order
 
   - id: billing-trade-cn-pre
     description: "Proxy Tencent billing trade domestic pre-release environment."

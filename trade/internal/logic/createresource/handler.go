@@ -29,10 +29,13 @@ package createresource
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strconv"
+	"strings"
 	"time"
 
 	"git.woa.com/wisp/mono/trade/internal/ctlclient"
@@ -87,6 +90,17 @@ type Deps struct {
 	FlowStore    store.FlowStore         // §6.2 T1/T5 抢占式幂等
 	CTLClient    ctlclient.Client        // §6.2 T3 反向调 ctl/pass
 	Builder      *jifei.FrameworkBuilder // 构造 jifei framework 双层出参
+
+	// ActivityStore 是点石活动写端（设计稿 .tmp/dianshi-activity-bundle-design.md
+	// §5.6.1 step 4 / §3.2）。可选注入：
+	//   - 非 nil：runMainFlow 在 ctl.CompletePass 成功后、若 trade_order.source=='dianshi'
+	//     则反查 trade_bundle_activity 拿 activity_id / act_id、INSERT trade_user_activity_participation
+	//   - nil：完全不感知点石，与 v1.7.x 历史行为完全一致（便于灰度接入的单测与回滚）
+	ActivityStore store.ActivityStore
+
+	// DB 是 trade 主库 *sql.DB，ActivityStore.InsertUserParticipation 需要 *sql.Tx 参数，
+	// 本 handler 包 BeginTx 后传入。ActivityStore 为 nil 时 DB 也可为 nil（不使用）。
+	DB *sql.DB
 }
 
 // OrderProvisionUpdater 是 trade_order 写端反向回填接口（§6.2 Step T4）。
@@ -288,10 +302,13 @@ func runMainFlow(
 	// Step T2：可选反查 trade_order（仅用作幂等回放 - 已发货时直接返历史 resource_id）。
 	//
 	// 不强依赖：找不到 / 错误都不阻塞主链路（trade_order 落库可能晚于 jifei 回调）。
-	if order, err := deps.OrderStore.GetOrderByDealName(ctx, para.DealName); err == nil &&
-		order != nil && order.ResourceID != "" {
+	//
+	// v0.5（点石接入设计稿 §5.6.1 step 1）：保留 order 引用供 T5 检查 source。反查失败 / 为 nil
+	// 不报错，T5 在 order==nil 时跳过 INSERT participation（与原 T2 同款宽容）。
+	order, _ := deps.OrderStore.GetOrderByDealName(ctx, para.DealName)
+	if order != nil && order.ResourceID != "" {
 		// 已发货幂等回放（Q56 b 场景）：trade_order.resource_id 已回填即视作幂等成功。
-		// PDF 协议：resourceIds 是 string[] 数组（不是 string），单资源场景包成单元素数组。
+		// 点石路径下重复回调也在本处返，避免重复 INSERT participation（由 (uin, activity_id) 唯一键也能兼底）。
 		return deps.Builder.NewSuccess(map[string]any{
 			"resourceIds": []string{order.ResourceID},
 		})
@@ -379,6 +396,29 @@ func runMainFlow(
 				// （未来扩展：可加 metric / structured log，本期日志由 caller 在 handler 层补）
 				_ = err
 			}
+		}
+	}
+
+	// Step T5：source=='dianshi' 时 INSERT trade_user_activity_participation（设计稿 §5.6.1 step 4）。
+	//
+	// 触发条件（全部满足才走 INSERT）：
+	//   - deps.ActivityStore != nil（启动期注入了点石依赖）
+	//   - order != nil（T2 反查命中 trade_order；jifei 回调在 trade_order 落库之后到达的正常时序）
+	//   - order.Source == "dianshi"（jifei 路径 trade_order 这里不会命中）
+	//
+	// 失败语义：INSERT 失败 / 唯一键冲突 / 反查 trade_bundle_activity 失败均**不阻塞 jifei 响应**
+	// （与 T4 MarkOrderProvisioned 同款风格）—ctl pass 已落地、点石 deal 已发出，错误仅日志告警供运维补充。
+	// 唯一键 (uin, activity_id) 冲突 = jifei 重复回调 / 跨会话重复领取，本身就是幂等体现，
+	// 同样不报错。
+	if deps.ActivityStore != nil && order != nil && order.Source == store.OrderSourceDianshi {
+		insertErr := insertDianshiParticipation(ctx, deps, order, pass.PassID)
+		if insertErr != nil {
+			// 不阻塞 jifei 响应；记日志供运维补充。
+			log.Printf("[dianshi-cb] insert participation failed (non-blocking) dealName=%s uin=%s bundleId=%s err=%v",
+				order.DealName, order.Uin, order.BundleID, insertErr)
+		} else {
+			log.Printf("[dianshi-cb] insert participation ok dealName=%s uin=%s bundleId=%s",
+				order.DealName, order.Uin, order.BundleID)
 		}
 	}
 
@@ -594,4 +634,98 @@ func parseInt64(s string) (int64, error) {
 		n = n*10 + int64(c-'0')
 	}
 	return n, nil
+}
+
+// insertDianshiParticipation 把点石下单成功事实写入 trade_user_activity_participation
+// （设计稿 §5.6.1 step 4）。
+//
+// 触发条件由调用方保证：trade_order.source == 'dianshi' && order != nil。
+//
+// 步骤：
+//  1. 反查 trade_bundle_activity（按 order.bundle_id）拿 activity_id / act_id
+//  2. BEGIN TX → INSERT trade_user_activity_participation → COMMIT
+//  3. 唯一键 (uin, activity_id) 冲突 = jifei 重复回调 / 跨会话重复领取，视为幂等成功（不报错）
+//
+// 失败语义：上层调用点把 err 当告警日志处理、不阻塞 jifei 响应。
+func insertDianshiParticipation(
+	ctx context.Context,
+	deps Deps,
+	order *store.TradeOrder,
+	passID string,
+) error {
+	if deps.ActivityStore == nil {
+		return fmt.Errorf("ActivityStore is nil")
+	}
+	if deps.DB == nil {
+		return fmt.Errorf("DB is nil (required for participation INSERT tx)")
+	}
+
+	// Step 1: 反查 trade_bundle_activity 拿 activity_id / act_id
+	mapping, err := deps.ActivityStore.GetBundleActivityByBundleID(ctx, order.BundleID)
+	if err != nil {
+		return fmt.Errorf("get bundle_activity bundleID=%s: %w", order.BundleID, err)
+	}
+
+	// Step 2: 开事务 INSERT
+	tx, err := deps.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() {
+		// COMMIT 成功后 Rollback() 返 sql.ErrTxDone 是预期；其它路径需要回滚。
+		_ = tx.Rollback()
+	}()
+
+	// big_deal_no：优先从 goods_detail 取（placeOrderDianshi 写入时塞进去），
+	// 兜底用 trade_order.big_order_id（点石路径下二者同源）。
+	bigDealNo := extractStringFromGoodsDetail(order.GoodsDetail, "dianshi_big_deal_no")
+	if bigDealNo == "" {
+		bigDealNo = order.BigOrderID
+	}
+
+	row := &store.UserActivityParticipation{
+		Uin:            order.Uin,
+		AppID:          order.AppID,
+		ExternalUserID: order.ExternalUserID,
+		ActivityID:     mapping.ActivityID,
+		BundleID:       order.BundleID,
+		ActID:          mapping.ActID,
+		DealName:       order.DealName,
+		BigDealNo:      bigDealNo,
+	}
+
+	if _, err := deps.ActivityStore.InsertUserParticipation(ctx, tx, row); err != nil {
+		// 唯一键冲突视为幂等成功——重复回调 / 跨会话重复领取场景下 (uin, activity_id) 已存在
+		if isMySQLDuplicateError(err) {
+			// 提交事务保持空操作语义一致
+			if commitErr := tx.Commit(); commitErr != nil {
+				return fmt.Errorf("commit empty tx after duplicate: %w", commitErr)
+			}
+			log.Printf("[dianshi-cb] participation already exists (idempotent) uin=%s activityId=%d dealName=%s passID=%s",
+				order.Uin, mapping.ActivityID, order.DealName, passID)
+			return nil
+		}
+		return fmt.Errorf("insert participation uin=%s activityID=%d: %w",
+			order.Uin, mapping.ActivityID, err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+	return nil
+}
+
+// isMySQLDuplicateError 判定底层错误是否是 MySQL UNIQUE 约束冲突（errno=1062）。
+//
+// 与 trade/internal/store/order_write.go 的同名 helper 同款思路：驱动层不暴露
+// 常量，按 message 子串匹配兜底。本包不能直接 import store 的非导出函数，所以
+// 在本包内复制一份等价实现。
+func isMySQLDuplicateError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	// MySQL 1062 错误消息固定形态："Error 1062: Duplicate entry '...' for key '...'"
+	return strings.Contains(msg, "Error 1062") ||
+		strings.Contains(msg, "Duplicate entry")
 }

@@ -23,10 +23,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 
 	"git.woa.com/wisp/mono/trade/internal/ctlclient"
+	"git.woa.com/wisp/mono/trade/internal/dianshiclient"
 	"git.woa.com/wisp/mono/trade/internal/jifeiclient"
+	"git.woa.com/wisp/mono/trade/internal/logic/activity"
 	"git.woa.com/wisp/mono/trade/internal/region"
 	"git.woa.com/wisp/mono/trade/internal/shadowclient"
 	"git.woa.com/wisp/mono/trade/internal/store"
@@ -120,6 +123,19 @@ type Deps struct {
 	// RegionOverride 是腾讯云 region 字面量 override（北京 2 预发布接入新增）。
 	// 合法性已由 config.Load 在启动期 fail-fast 校验；本处只负责透透到 region.Resolve。
 	RegionOverride string
+
+	// ActivityResolver 是点石活动通道判定 helper（设计稿 .tmp/dianshi-activity-bundle-design.md
+	// §5.2）。可选注入：
+	//   - 非 nil：Quote 在反查 trade_bundle_definition 之后插入分叉点判定；命中点石走
+	//     quoteDianshi 出向，否则走 jifei 原路径
+	//   - nil（默认）：完全不感知点石，Quote 行为与历史链路完全一致（确保 v1.7.x 既有
+	//     测试不受影响、便于灰度回滚）
+	ActivityResolver activity.Resolver
+
+	// DianshiClient 是点石出向客户端（dianshiclient.Client）。仅在 ActivityResolver 也注入
+	// 时被 quoteDianshi 调用；若 ActivityResolver 非 nil 但 DianshiClient 为 nil，
+	// quoteDianshi 调用时返业务错（启动期 main.go 应保证两者同进同退）。
+	DianshiClient dianshiclient.Client
 }
 
 // Service 实现"业务层询价"能力。
@@ -225,6 +241,22 @@ func (s *Service) Quote(ctx context.Context, req QuoteRequest) (*QuoteResult, er
 				ErrBundleNotFound, req.BundleID)
 		}
 		return nil, fmt.Errorf("inquiry: get bundle definition: %w", err)
+	}
+
+	// 3.5. 活动分叉判定（设计稿 §5.3）。仅当 ActivityResolver 注入时生效。
+	// 决策真值表见 activity.Resolver 注释；此处仅做 graceful-degrade：
+	//   - DB 错 → 落 warn 日志后回落 jifei，不让单次询价 5xx
+	//   - useDianshi=true → 走 quoteDianshi，绕过下方 jifei 路径
+	if s.deps.ActivityResolver != nil {
+		mapping, useDianshi, resolveErr := s.deps.ActivityResolver.ResolveForInquiry(ctx, req.BundleID, req.Uin)
+		if resolveErr != nil {
+			log.Printf("[activity-resolver] inquiry resolve failed bundleId=%s uin=%s err=%v (fallback jifei)",
+				req.BundleID, req.Uin, resolveErr)
+		} else if useDianshi {
+			log.Printf("[activity-resolver] inquiry useDianshi=true bundleId=%s uin=%s activityId=%d actId=%d",
+				req.BundleID, req.Uin, mapping.ActivityID, mapping.ActID)
+			return s.quoteDianshi(ctx, req, bundle, def, mapping)
+		}
 	}
 
 	// Q71 2026-05-13：CategoryIDForScene 返回 int64，未命中场景返 0
@@ -585,4 +617,136 @@ func buildGoodsDetail(def *store.BundleDefinition, req QuoteRequest) map[string]
 		goodsDetail["productInfo"] = def.ProductInfo
 	}
 	return goodsDetail
+}
+
+// quoteDianshi 是点石活动询价分支（设计稿 §5.3）。
+//
+// 输入：上游 Quote 已完成 shadow 反查 / ctl bundle 校验 / trade_bundle_definition 反查；
+// 本方法只负责拼点石询价 envelope + 调 dianshiclient.GetActivityPrice + 把响应拍平为
+// QuoteResult（与 jifei 路径同一出参 schema，外部观察不到差异；trade 内部日志带
+// source=dianshi 便于排障）。
+//
+// 错误处理：
+//   - DianshiClient 未注入 → 业务错（main.go 应保证 ActivityResolver 与 DianshiClient 同进同退）
+//   - 点石 returnCode != 0 / HTTP 错 / envelope 错 → 直接透传，由上层 inquiryBatch handler
+//     按现有 graceful-degrade 策略丢掉本条 bundle 的报价（询价不阻塞前端列表渲染）
+//
+// 不做"询价失败回落 jifei"——若点石本身报错，回落 jifei 拿到的是原价，会让前端显示成"无折扣"
+// 误导用户，业务上不可接受；询价路径上的失败应让前端"不展示该 bundle 报价"而不是"展示原价"。
+func (s *Service) quoteDianshi(
+	ctx context.Context,
+	req QuoteRequest,
+	bundle *ctlclient.BundleDetail,
+	def *store.BundleDefinition,
+	mapping *activity.Mapping,
+) (*QuoteResult, error) {
+	if s.deps.DianshiClient == nil {
+		return nil, fmt.Errorf("inquiry: dianshi client not configured (ActivityResolver injected without DianshiClient)")
+	}
+
+	priceReq := &dianshiclient.GetPriceRequest{
+		ActivityID: mapping.ActivityID,
+		Preview:    1, // 联调期固定走点石预览模式：与 placeOrderDianshi 下单端 Preview=1 同步，避免询价/下单两端定价口径不一致
+		Goods: []dianshiclient.GetPriceGoodsItem{
+			{
+				ActID:           mapping.ActID,
+				PreferenceParam: map[string]interface{}{}, // 设计稿 §5.1：询价 preference_param 固定 {}
+			},
+		},
+	}
+
+	resp, err := s.deps.DianshiClient.GetActivityPrice(ctx, priceReq)
+	if err != nil {
+		return nil, fmt.Errorf("inquiry: dianshi GetActivityPrice bundleId=%s activityId=%d actId=%d: %w",
+			req.BundleID, mapping.ActivityID, mapping.ActID, err)
+	}
+	if resp == nil || len(resp.PriceItems) == 0 {
+		return nil, fmt.Errorf("inquiry: dianshi GetActivityPrice returned empty data bundleId=%s activityId=%d",
+			req.BundleID, mapping.ActivityID)
+	}
+
+	d := resp.PriceItems[0]
+
+	// 拍平为 QuoteResult（外部观察不到与 jifei 路径的差异，Q5 拍板：不暴露 source 字段）。
+	//
+	// 字段映射（点石 .tmp/点石询价 协议样例 → jifei QuoteResult）：
+	//   - data[].price       → Price（单价，pent=分*1，与 jifei 同单位）
+	//   - data[].total_cost  → TotalCost（折扣前总价）
+	//   - data[].real_cost   → RealTotalCost（实付总价；点石 real_cost 已是折扣后金额）
+	//   - data[].currency    → Currency（点石协议样例 "CNY"）
+	//   - data[].time_span   → TimeSpan
+	//   - data[].time_unit   → TimeUnit
+	//   - data[].product_code / sub_product_code → 同名字段
+	//   - data[].pid         → Pid（jifei 体系 pid，点石内部已与 jifei 联通；BundleDefinition 兜底）
+	//
+	// Discount：点石 policy_detail 字段集与 jifei 不完全对齐，trade 不再尝试解析；保留 0 让前端按
+	// (TotalCost - RealTotalCost) 自行计算更稳。
+	result := &QuoteResult{
+		BundleID:       req.BundleID,
+		BundleName:     bundle.BundleName,
+		Price:          formatAmount(d.Price),
+		TotalCost:      formatAmount(d.TotalCost),
+		RealTotalCost:  formatAmount(d.RealCost),
+		Currency:       d.Currency,
+		TimeSpan:       d.TimeSpan,
+		TimeUnit:       d.TimeUnit,
+		GoodsNum:       req.GoodsNum,
+		ProductCode:    d.ProductCode,
+		SubProductCode: d.SubProductCode,
+		Pid:            d.Pid,
+	}
+	// 与 jifei 路径同款兜底：jifei / 点石返空字段时回填 BundleDefinition / req 值
+	if result.ProductCode == "" {
+		result.ProductCode = def.ProductCode
+	}
+	if result.SubProductCode == "" {
+		result.SubProductCode = def.SubProductCode
+	}
+	if result.Pid == 0 {
+		result.Pid = def.Pid
+	}
+	if result.TimeSpan == 0 {
+		result.TimeSpan = req.TimeSpan
+	}
+	if result.TimeUnit == "" {
+		result.TimeUnit = req.TimeUnit
+	}
+	if result.Currency == "" {
+		result.Currency = s.currency
+	}
+
+	log.Printf("[dianshi-quote] bundleId=%s uin=%s activityId=%d actId=%d price=%s totalCost=%s realCost=%s",
+		req.BundleID, req.Uin, mapping.ActivityID, mapping.ActID,
+		result.Price, result.TotalCost, result.RealTotalCost)
+	return result, nil
+}
+
+// formatAmount 把点石返的整数金额（pent=分）转字符串保持与 jifei Price/TotalCost 同源
+// 表现（jifei 这两个字段是 json.Number，trade 透传为字符串）。
+func formatAmount(v int64) string {
+	return strconvFormatInt(v)
+}
+
+// strconvFormatInt 是不引入 strconv import 的简易实现（避免污染 service.go 顶部 import 集；
+// jifei 路径里 Price 透传时本身就是 json.Number 字符串，没用过 strconv）。
+func strconvFormatInt(v int64) string {
+	if v == 0 {
+		return "0"
+	}
+	negative := v < 0
+	if negative {
+		v = -v
+	}
+	var buf [20]byte
+	i := len(buf)
+	for v > 0 {
+		i--
+		buf[i] = byte('0' + v%10)
+		v /= 10
+	}
+	if negative {
+		i--
+		buf[i] = '-'
+	}
+	return string(buf[i:])
 }
