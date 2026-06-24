@@ -15,3 +15,15 @@ Host adapters sit outside that core pipeline:
 - `app/chat` remains the debug workbench, not the embedding contract.
 
 Do not hide transport, projection, render policy, and React UI in one component.
+
+## Cross-host UI boundary
+
+Reusable UI is split by altitude:
+
+- **Surface** packages are feature renderers that can be embedded by different hosts. Examples: `SessionListSurface` and `ChatSurface` from `vela-chat-web`.
+- **Shell** packages own host chrome and platform layout. Example: `vela-desktop-shell` owns Electron-style sidebar chrome, traffic-light safe areas, drag regions, resize behavior, and desktop-only sidebar composition.
+- **App hosts** own page layout, navigation, auth, runtime endpoints, and platform capabilities.
+
+Web, cloud, or mobile hosts should compose their own sidebar or page layout and embed `SessionListSurface` / `ChatSurface` directly. They must not import `VelaDesktopShell`, `SessionSidebar`, desktop Electron CSS, traffic lights, or drag-region components.
+
+If a component lives in `vela-desktop-shell`, treat it as desktop-only unless its docs explicitly say otherwise.

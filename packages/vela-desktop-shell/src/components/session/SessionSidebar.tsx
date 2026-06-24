@@ -34,6 +34,14 @@ export interface SessionSidebarProps {
   onSelectSession: (sessionId: string) => void;
 }
 
+/**
+ * Desktop-only sidebar composition.
+ *
+ * This component includes desktop shell chrome, material framing, fixed footer
+ * behavior, and desktop sidebar CSS contracts. Web/cloud/mobile hosts should
+ * compose their own host sidebar and embed `SessionListSurface` directly
+ * instead of importing `SessionSidebar`.
+ */
 export function SessionSidebar({
   sessions,
   currentSessionId,

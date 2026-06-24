@@ -49,11 +49,42 @@ test("desktop shell owns only reusable chrome and does not talk to velad or chat
   assert.match(shellSource, /VelaSidebarShell/);
   assert.doesNotMatch(shellSource, /createVeladClient/);
   assert.doesNotMatch(shellSource, /useVelaChatSession/);
-  assert.doesNotMatch(shellSource, /VelaChatWeb/);
+  assert.doesNotMatch(shellSource, /ChatSurface/);
   assert.doesNotMatch(shellSource, /EventSource/);
   assert.doesNotMatch(shellSource, /\/api\/v1/);
   assert.doesNotMatch(shellSource, /electron/);
   assert.doesNotMatch(shellSource, /tauri/i);
+});
+
+test("cross-host embedding reuses chat-web surfaces instead of desktop shell panels", () => {
+  const packagesReadme = readFileSync(join(root, "packages/README.md"), "utf8");
+  const desktopShellReadme = readFileSync(
+    join(root, "packages/vela-desktop-shell/README.md"),
+    "utf8",
+  );
+  const chatWebReadme = readFileSync(
+    join(root, "packages/vela-chat-web/README.md"),
+    "utf8",
+  );
+  const desktopShellIndex = readFileSync(
+    join(root, "packages/vela-desktop-shell/src/index.ts"),
+    "utf8",
+  );
+  const chatWebSurface = readFileSync(
+    join(root, "packages/vela-chat-web/src/surfaces/SessionListSurface.tsx"),
+    "utf8",
+  );
+
+  assert.match(packagesReadme, /SessionListSurface/);
+  assert.match(packagesReadme, /ChatSurface/);
+  assert.match(packagesReadme, /must not import `VelaDesktopShell`/);
+  assert.match(desktopShellReadme, /Desktop-only shell components/);
+  assert.match(desktopShellReadme, /not the cross-host workbench API/);
+  assert.match(desktopShellReadme, /Avoid adding generic names such as\s*`SessionPanel`/);
+  assert.match(chatWebReadme, /Embeddable surfaces/);
+  assert.match(chatWebReadme, /Host apps own layout around these surfaces/);
+  assert.match(chatWebSurface, /export function SessionListSurface/);
+  assert.doesNotMatch(desktopShellIndex, /SessionPanel/);
 });
 
 test("host-local state is created only by app hosts, not reusable shell chrome", () => {
@@ -75,7 +106,7 @@ test("host-local state is created only by app hosts, not reusable shell chrome",
   assert.equal(existsSync(join(root, "packages/vela-chat-host-state/src/README.md")), true);
   assert.doesNotMatch(shellSource, /vela-chat-host-state/);
   assert.doesNotMatch(shellSource, /localStorage|sessionStorage/);
-  assert.match(desktopApp, /createDesktopHostStateStores/);
+  assert.match(desktopApp, /createRuntimeHostStateStores/);
   assert.match(desktopApp, /createBrowserVelaClientStateStore/);
   assert.match(desktopApp, /createBrowserVelaShellLayoutStore/);
   assert.match(desktopApp, /createBrowserVelaSessionSelectionStore/);
@@ -97,7 +128,8 @@ test("desktop app restores the selected session through host-local navigation st
   assert.match(hostState, /sessionSelectionStore/);
   assert.match(renderer, /sessionSelectionStore\?\.read\(\)\?\.sessionId/);
   assert.match(renderer, /sessionSelectionStore\?\.write\(\{/);
-  assert.match(renderer, /setActiveSessionId\(\(current\) => current \|\| response\.sessions\[0\]\?\.id \|\| ""\)/);
+  assert.match(renderer, /current && sessionList\.data\.sessions\.some/);
+  assert.match(renderer, /sessionList\.data\.sessions\[0\]\?\.id \|\| ""/);
 });
 
 test("chat controller is headless and stays independent from desktop and Next shells", () => {
@@ -109,14 +141,14 @@ test("chat controller is headless and stays independent from desktop and Next sh
 
   assert.match(controllerSource, /useVelaChatSession/);
   assert.match(controllerSource, /createVeladClient/);
-  assert.match(controllerSource, /subscribeVelaEventSource/);
+  assert.match(controllerSource, /eventStreamTransport\.subscribe/);
   assert.doesNotMatch(controllerSource, /VelaDesktopShell/);
   assert.doesNotMatch(controllerSource, /SessionSidebar/);
   assert.doesNotMatch(controllerSource, /BrowserWindow/);
   assert.doesNotMatch(controllerSource, /next\/navigation/);
 });
 
-test("electron desktop app is the only layer that composes external velad, shell, controller, and ChatUI", () => {
+test("electron desktop app is the only layer that composes velad runtime, shell, controller, and ChatUI", () => {
   const renderer = readFileSync(
     join(root, "apps/vela-desktop-electron/src/DesktopApp.tsx"),
     "utf8",
@@ -132,19 +164,20 @@ test("electron desktop app is the only layer that composes external velad, shell
 
   assert.match(renderer, /createVeladClient/);
   assert.match(renderer, /useVelaChatSession/);
-  assert.match(renderer, /VelaChatWeb/);
+  assert.match(renderer, /ChatSurface/);
   assert.match(renderer, /VelaDesktopShell/);
   assert.match(renderer, /SessionSidebar/);
-  assert.match(renderer, /client\.getSessionListView\(\{ limit: 80 \}\)/);
+  assert.match(renderer, /useSessionListViewQuery/);
+  assert.match(renderer, /DESKTOP_SESSION_LIST_OPTIONS/);
   assert.doesNotMatch(renderer, /client\.listSessions\(\{ limit: 80 \}\)/);
 
   assert.match(main, /external velad/);
   assert.match(main, /BrowserWindow/);
   assert.match(main, /VELA_DESKTOP_VELAD_LISTEN_ADDR/);
   assert.match(main, /runtimeEnv/);
-  assert.doesNotMatch(main, /spawn\(/);
+  assert.match(main, /spawn\(/);
   assert.match(main, /vela:desktop-info/);
-  assert.doesNotMatch(main, /VelaChatWeb/);
+  assert.doesNotMatch(main, /ChatSurface/);
   assert.doesNotMatch(main, /useVelaChatSession/);
   assert.match(preload, /vela:desktop-info/);
 });
@@ -196,13 +229,13 @@ test("desktop web host can run as a pure browser app without Electron globals", 
   );
 
   assert.match(bridge, /hostKind: "web"/);
-  assert.match(bridge, /browserDesktopHostBridge/);
+  assert.match(bridge, /browserRuntimeHostBridge/);
   assert.match(bridge, /api_base_url/);
   assert.match(bridge, /VITE_VELA_API_BASE_URL/);
   assert.match(bridge, /DEFAULT_WEB_API_BASE_URL = "\/api\/v1"/);
   assert.match(viteRendererConfig, /VITE_VELA_PROXY_TARGET/);
   assert.match(viteRendererConfig, /"\/api\/v1"/);
-  assert.match(renderer, /readDesktopRuntimeBootstrap/);
+  assert.match(renderer, /readRuntimeBootstrap/);
   assert.match(renderer, /DEFAULT_WEB_API_BASE_URL/);
   assert.doesNotMatch(renderer, /readElectronDesktopInfo/);
   assert.match(readme, /Pure web host mode/);
