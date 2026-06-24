@@ -316,7 +316,8 @@ export function useVelaChatSession({
 
   useEffect(() => {
     if (!activeSessionId || !isConversationReady) return;
-    const url = client.sessionEventStreamUrl(activeSessionId, sessionEventStreamAfterId);
+    const initialAfterId = sessionEventStreamAfterId;
+    const url = client.sessionEventStreamUrl(activeSessionId, initialAfterId);
     const conversationRefreshScheduler = createStreamRefreshScheduler({
       refresh: loadConversation,
       minIntervalMs: 240,
@@ -382,7 +383,6 @@ export function useVelaChatSession({
     loadConversation,
     loadRequests,
     loadSession,
-    sessionEventStreamAfterId,
   ]);
 
   const loadOlderConversation = useCallback(async () => {

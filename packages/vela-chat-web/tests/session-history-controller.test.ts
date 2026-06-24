@@ -163,6 +163,13 @@ test("controller uses injected event stream transport for live session updates",
       "live deltas from the injected transport must update the active conversation without a snapshot/tab refresh",
     );
 
+    await flushHookEffects(act, dom, () => false);
+    assert.equal(
+      transport.subscribeCount,
+      1,
+      "a live cursor update must not churn the long-lived event stream subscription",
+    );
+
     await act(async () => {
       root.unmount();
     });
