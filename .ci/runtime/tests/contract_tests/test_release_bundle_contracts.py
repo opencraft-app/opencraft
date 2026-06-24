@@ -613,13 +613,29 @@ class ReleaseBundleContractTests(unittest.TestCase):
         package_json = json.loads((REPO_ROOT / "frontend/package.json").read_text())
         guard_text = (REPO_ROOT / "frontend/checks/guard.sh").read_text()
 
-        self.assertEqual(package_json["scripts"]["check"], "tsc -b")
+        frontend_scripts = package_json["scripts"]
+        self.assertEqual(frontend_scripts["check"], frontend_scripts["check:next"])
+        recursive_pnpm_scripts = {
+            name: script
+            for name, script in frontend_scripts.items()
+            if re.search(r"(^|[;&|()]\s*)pnpm\s+(run\s+)?", script)
+        }
+        self.assertEqual(
+            recursive_pnpm_scripts,
+            {},
+            "frontend package scripts must not recursively call pnpm; CI invokes the pinned PNPM_BIN already",
+        )
         self.assertIn('"$PNPM_BIN" check', guard_text)
         self.assertIn('FRONTEND_GUARD_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/lightclaw-frontend-guard.XXXXXX")"', guard_text)
-        self.assertIn('VITE_BIN="$FRONTEND_GUARD_DIR/node_modules/.bin/vite"', guard_text)
-        self.assertIn('VITE_AUTH_API_BASE_URL=https://api.lightvela.ai "$VITE_BIN" build --mode cn --outDir dist-ci-cn', guard_text)
-        self.assertIn('VITE_AUTH_API_BASE_URL=https://lightclaw.tech "$VITE_BIN" build --mode global --outDir dist-ci-global', guard_text)
-        self.assertIn("rm -rf dist-ci-cn dist-ci-global", guard_text)
+        self.assertIn('-cf - frontend velalink | tar -C "$FRONTEND_GUARD_ROOT" -xf -', guard_text)
+        self.assertIn('--exclude="velalink/node_modules"', guard_text)
+        self.assertIn('--exclude="velalink/target"', guard_text)
+        self.assertIn('"$PNPM_BIN" build:cn', guard_text)
+        self.assertIn('"$PNPM_BIN" build:global', guard_text)
+        self.assertIn("NEXT_PUBLIC_AUTH_API_BASE_URL=https://api.lightvela.ai", guard_text)
+        self.assertIn("NEXT_PUBLIC_AUTH_API_BASE_URL=https://lightclaw.tech", guard_text)
+        self.assertIn("rm -rf out", guard_text)
+        self.assertNotIn('VITE_BIN="$FRONTEND_GUARD_DIR/node_modules/.bin/vite"', guard_text)
 
     def test_prod_db_migration_workflow_is_manual_dry_run_then_check_in_then_apply(self) -> None:
         workflow_path = REPO_ROOT / ".ci/db-migration.yml"

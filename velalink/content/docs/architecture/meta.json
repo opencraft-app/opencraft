@@ -1,0 +1,20 @@
+{
+  "title": "架构",
+  "pages": [
+    "overview",
+    "components",
+    "crate-boundaries",
+    "testing-harness",
+    "local-daemon",
+    "command-event-boundary",
+    "agent-capability-model",
+    "webui-first",
+    "chat-surface-architecture",
+    "chat-web-renderer-architecture",
+    "chat-scroll-runtime",
+    "event-log",
+    "backend-adapters",
+    "sync-protocol",
+    "pulsar-integration"
+  ]
+}

@@ -19,14 +19,14 @@
 
 ### 本地预览后端选择
 
-本地 `localhost` / `127.0.0.1` 预览默认会解析到真实国际站后端 `https://lightclaw.tech`，无需默认切到 mock。涉及真实实例能力的页面（例如自动任务、用量统计、`debug/exec`、Hermes channel / cron 调试）应优先用真实后端启动；为了避免旧 Vite 进程或本地 env 覆盖，建议显式指定：
+本地 `localhost` / `127.0.0.1` 预览默认会解析到真实国际站后端 `https://lightclaw.tech`，无需默认切到 mock。涉及真实实例能力的页面（例如自动任务、用量统计、`debug/exec`、Hermes channel / cron 调试）应优先用真实后端启动；为了避免旧本地进程或 env 覆盖，建议显式指定：
 
 ```bash
 cd frontend
-VITE_AUTH_API_BASE_URL=https://lightclaw.tech pnpm exec vite --mode cn --host 127.0.0.1 --port 5174
+NEXT_PUBLIC_AUTH_API_BASE_URL=https://lightclaw.tech VITE_AUTH_API_BASE_URL=https://lightclaw.tech pnpm dev -- -H 127.0.0.1 -p 5174
 ```
 
-只有在做纯静态展示、无需真实登录态 / 实例 / debug 执行能力时，才考虑 `VITE_AUTH_API_BASE_URL=mock`。如果页面出现 `[hermes-cron] auth API base URL not configured`，优先检查当前 Vite 进程是否仍以 mock 环境启动，重启为上面的真实后端命令后再刷新页面验证。
+只有在做纯静态展示、无需真实登录态 / 实例 / debug 执行能力时，才考虑 `VITE_AUTH_API_BASE_URL=mock`。如果页面出现 `[hermes-cron] auth API base URL not configured`，优先检查当前 Next dev 进程是否仍以 mock 环境启动，重启为上面的真实后端命令后再刷新页面验证。
 
 ### 前端分支命名
 

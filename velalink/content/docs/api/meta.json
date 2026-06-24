@@ -1,0 +1,16 @@
+{
+  "title": "API",
+  "pages": [
+    "conventions",
+    "openapi",
+    "client-contract",
+    "sessions",
+    "input-events",
+    "event-vocabulary",
+    "events",
+    "ui-read-models",
+    "session-history",
+    "requests",
+    "backends"
+  ]
+}

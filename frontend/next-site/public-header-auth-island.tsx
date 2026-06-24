@@ -12,10 +12,9 @@ import { oauthErrorMessage } from '@/lib/oauth';
 import type { PublicSiteLocale } from '@/lib/public-site-navigation';
 import { isGlobal } from '@/lib/region';
 import { cn } from '@/lib/utils';
-import { AGENTS_HOME_PATH, getAgentCreatingPath } from '@/router/paths';
+import { AGENTS_HOME_PATH, getAgentCreatingPath } from '@/lib/agent-routes';
 
 import { renderNextLanguageSwitcher } from './language-switcher';
-import { renderNextUserMenuLink } from './user-menu-link';
 
 const secondaryButtonClass: Record<HeaderAppearance, string> = {
   immersive: 'border border-[#E6E9EF] bg-[#F5F5F5] text-black/90 hover:bg-black/5',
@@ -95,10 +94,10 @@ function PublicHeaderAuthControls({
       <>
         <div className="hidden shrink-0 items-center gap-3 md:flex">
           {showLanguageSwitcher && renderNextLanguageSwitcher({ activeLocale: locale, reloadAfterSwitch: false, variant: 'dropdown' })}
-          <UserAvatarMenu renderLink={renderNextUserMenuLink} />
+          <UserAvatarMenu />
         </div>
         <div className="ml-auto flex items-center gap-2 md:hidden">
-          <UserAvatarMenu renderLink={renderNextUserMenuLink} />
+          <UserAvatarMenu />
         </div>
       </>
     );

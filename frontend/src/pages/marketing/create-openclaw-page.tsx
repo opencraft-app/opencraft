@@ -11,7 +11,7 @@ import { useT } from "@/i18n/t";
 import type { SoulTemplate } from "@/repositories/types";
 import { BrandMark } from "@/components/site/brand-mark";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
-import { AGENTS_HOME_PATH } from "@/router/paths";
+import { AGENTS_HOME_PATH } from "@/lib/agent-routes";
 
 /* ─── Constants ─── */
 

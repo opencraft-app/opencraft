@@ -4,6 +4,7 @@ import { decodeTencentPtyFrame, extractTencentPtyError } from "@/lib/tencent-pty
 
 const DEFAULT_PROXY_CONNECT_DELAY_MS = 200;
 const DEFAULT_PROXY_REQUEST_TIMEOUT_MS = 30_000;
+const DEFAULT_TAT_PROXY_TIMEOUT_SECONDS = 3600;
 
 export type TsshProxyClientState = "idle" | "connecting" | "authenticating" | "ready" | "closed" | "error";
 export type TsshProxyConnectionState = "connecting" | "ready" | "closed" | "error";
@@ -97,6 +98,10 @@ export class TencentTsshProxyConnection {
       this.resolveClosed = resolve;
       this.rejectClosed = reject;
     });
+    this.closedPromise.catch(() => {
+      // waitClosed() is optional for callers; a proxy-level failure must not
+      // become an unhandled rejection when the caller only awaited openProxy().
+    });
   }
 
   write(data: Uint8Array | ArrayBuffer | string) {
@@ -131,7 +136,7 @@ export class TencentTsshProxyConnection {
   }
 
   fail(error: Error) {
-    if (this.state === "closed") {
+    if (this.state === "closed" || this.state === "error") {
       return;
     }
     this.setState("error");
@@ -178,10 +183,39 @@ export class TencentTsshProxyClient {
 
   connect() {
     if (this.readyPromise) {
-      return this.readyPromise;
+      if (this.socket?.readyState === WebSocket.OPEN || this.socket?.readyState === WebSocket.CONNECTING) {
+        return this.readyPromise;
+      }
+      this.socket = null;
+      this.readyPromise = null;
     }
 
     this.readyPromise = new Promise<void>((resolve, reject) => {
+      let settled = false;
+      let readyTimer: ReturnType<typeof window.setTimeout> | null = null;
+      const clearReadyTimer = () => {
+        if (readyTimer !== null) {
+          window.clearTimeout(readyTimer);
+          readyTimer = null;
+        }
+      };
+      const resolveReady = () => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearReadyTimer();
+        resolve();
+      };
+      const rejectReady = (error: Error) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearReadyTimer();
+        reject(error);
+      };
+
       this.setState("connecting");
       const socket = new this.WebSocketImpl(this.bootstrap.wsUrl);
       socket.binaryType = "arraybuffer";
@@ -196,12 +230,17 @@ export class TencentTsshProxyClient {
             AppId: this.bootstrap.appId,
             InstanceId: this.bootstrap.instanceId,
             SessionId: this.bootstrap.sessionId,
+            MaxIdleTime: this.bootstrap.timeoutSeconds ?? DEFAULT_TAT_PROXY_TIMEOUT_SECONDS,
           },
         });
 
-        window.setTimeout(() => {
+        readyTimer = window.setTimeout(() => {
+          if (this.socket !== socket || socket.readyState !== WebSocket.OPEN) {
+            rejectReady(new Error("TAT proxy websocket is not open"));
+            return;
+          }
           this.setState("ready");
-          resolve();
+          resolveReady();
         }, this.connectDelayMs);
       };
 
@@ -212,15 +251,31 @@ export class TencentTsshProxyClient {
       socket.onerror = () => {
         const error = new Error("websocket error");
         this.fail(error);
-        reject(error);
+        rejectReady(error);
       };
 
       socket.onclose = (event) => {
-        this.socket = null;
+        rejectReady(new Error("TAT proxy websocket closed"));
+        if (this.socket === socket) {
+          this.socket = null;
+          this.readyPromise = null;
+        }
         if (this.state !== "error") {
           this.setState("closed");
         }
+        const error = new Error("TAT proxy websocket closed");
+        const failedConnections = new Set<TencentTsshProxyConnection>();
+        for (const pending of this.pending.values()) {
+          window.clearTimeout(pending.timer);
+          failedConnections.add(pending.connection);
+          pending.connection.fail(error);
+          pending.reject(error);
+        }
+        this.pending.clear();
         for (const connection of this.connections.values()) {
+          if (failedConnections.has(connection)) {
+            continue;
+          }
           connection.markClosed();
         }
         this.connections.clear();
@@ -247,11 +302,19 @@ export class TencentTsshProxyClient {
 
       this.pending.set(proxyId, { proxyId, resolve, reject, timer, connection });
       this.connections.set(proxyId, connection);
-      this.sendBson("PtyProxyNew", channelId, {
+      const sent = this.sendBson("PtyProxyNew", channelId, {
         ProxyId: proxyId,
         Ip: target.ip ?? "127.0.0.1",
         Port: String(target.port),
       });
+      if (!sent) {
+        window.clearTimeout(timer);
+        this.pending.delete(proxyId);
+        this.connections.delete(proxyId);
+        const error = new Error("TAT proxy websocket is not open");
+        connection.fail(error);
+        reject(error);
+      }
     });
   }
 
@@ -340,6 +403,8 @@ export class TencentTsshProxyClient {
 
   private fail(error: Error) {
     this.setState("error");
+    this.readyPromise = null;
+    this.socket = null;
     this.options.onError?.(error.message);
     for (const pending of this.pending.values()) {
       window.clearTimeout(pending.timer);

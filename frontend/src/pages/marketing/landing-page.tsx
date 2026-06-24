@@ -4,16 +4,19 @@
  */
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useLocation } from "react-router-dom";
 
 import { LegalFooter } from "@/components/site/legal-footer";
 import { LightVelaFooter, type RenderFooterLink } from "@/components/site/lightvela-footer";
+import { LoginModal } from "@/components/site/login-modal";
 import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/site/public-site-header";
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
-import type { RenderUserMenuLink } from "@/components/site/user-avatar-menu";
+import { useSession } from "@/contexts/session-context";
 import { isGlobal } from "@/lib/region";
+import { oauthErrorMessage } from "@/lib/oauth";
 import { captureProductEvent, PRODUCT_ANALYTICS_EVENTS, PRODUCT_ANALYTICS_LOCATIONS } from "@/observability/posthog";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
-import { AGENTS_HOME_PATH } from "@/router/paths";
+import { AGENTS_HOME_PATH } from "@/lib/agent-routes";
 
 import HeroSection from "@/imports/Frame2147230025/sections/HeroSection";
 import BrandIconsSection from "@/imports/Frame2147230025/sections/BrandIconsSection";
@@ -27,6 +30,10 @@ type LandingNavigateOptions = {
 
 type LandingPageViewProps = {
   authControls?: ReactNode;
+  authSnapshot?: {
+    authReady: boolean;
+    isAuthenticated: boolean;
+  };
   currentPath?: string;
   locationSearch?: string;
   navigateTo: (to: string, options?: LandingNavigateOptions) => void;
@@ -34,11 +41,11 @@ type LandingPageViewProps = {
   publicLocalized?: boolean;
   renderLanguageSwitcher?: (options: { activeLocale: PublicSiteLocale; reloadAfterSwitch: boolean; variant: LanguageSwitcherVariant }) => ReactNode;
   renderLink?: RenderPublicSiteHeaderLink;
-  renderUserMenuLink?: RenderUserMenuLink;
 };
 
 export const LandingPageView = ({
   authControls,
+  authSnapshot,
   currentPath,
   locationSearch = "",
   navigateTo,
@@ -46,15 +53,18 @@ export const LandingPageView = ({
   publicLocalized,
   renderLanguageSwitcher,
   renderLink,
-  renderUserMenuLink,
 }: LandingPageViewProps) => {
   const oauthError = useMemo(() => new URLSearchParams(locationSearch).get("oauth_error"), [locationSearch]);
+  const oauthInitialError = useMemo(() => oauthErrorMessage(oauthError), [oauthError]);
+  const [showLogin, setShowLogin] = useState(false);
 
   useEffect(() => {
     if (!oauthError) return;
+    if (!authControls) {
+      setShowLogin(true);
+    }
     navigateTo("/", { replace: true });
-    // The header auth island reads the same query during hydration and owns the login modal.
-  }, [navigateTo, oauthError]);
+  }, [authControls, navigateTo, oauthError]);
 
   const handleCreateClick = useCallback(() => {
     captureProductEvent(PRODUCT_ANALYTICS_EVENTS.LANDING_CTA_CLICKED, {
@@ -73,14 +83,15 @@ export const LandingPageView = ({
         <PublicSiteHeader
           appearance="immersive"
           authControls={authControls}
+          authSnapshot={authSnapshot}
           currentPath={currentPath}
           locale={publicLocale}
           localized={publicLocalized}
           onCreateClick={handleCreateClick}
+          onLoginClick={authControls ? undefined : () => setShowLogin(true)}
           position="absolute"
           renderLink={renderLink}
           renderLanguageSwitcher={renderLanguageSwitcher}
-          renderUserMenuLink={renderUserMenuLink}
         />
         <HeroSection onCreateClick={handleCreateClick} />
       </div>
@@ -90,22 +101,25 @@ export const LandingPageView = ({
       <ProcessSection />
       <CtaSection onCreateClick={handleCreateClick} />
       {isGlobal ? <LightVelaFooter renderLink={renderFooterLink} /> : <LegalFooter icpPlacement="right" />}
+      {!authControls ? (
+        <LoginModal
+          open={showLogin}
+          onClose={() => setShowLogin(false)}
+          initialError={oauthInitialError}
+        />
+      ) : null}
     </div>
   );
 };
 
 export const LandingPage = () => {
-  const [locationSearch, setLocationSearch] = useState("");
-
-  useEffect(() => {
-    setLocationSearch(window.location.search);
-  }, []);
+  const location = useLocation();
+  const { authReady, isAuthenticated } = useSession();
 
   const navigateTo = useCallback(
     (to: string, options?: LandingNavigateOptions) => {
       if (options?.replace) {
         window.history.replaceState(null, "", to);
-        setLocationSearch(window.location.search);
         return;
       }
       window.location.assign(to);
@@ -113,5 +127,11 @@ export const LandingPage = () => {
     [],
   );
 
-  return <LandingPageView locationSearch={locationSearch} navigateTo={navigateTo} />;
+  return (
+    <LandingPageView
+      authSnapshot={{ authReady, isAuthenticated }}
+      locationSearch={location.search}
+      navigateTo={navigateTo}
+    />
+  );
 };

@@ -1,0 +1,41 @@
+---
+title: 运行环境
+description: 文件系统、shell、模型和 host capabilities。
+---
+
+# Runtime Environment
+
+Runtime environment 描述 agent 在哪里运行，以及它可以使用哪些 host capabilities。
+
+```ts
+export type RuntimeEnvironment = {
+  id: string;
+  kind: 'local';
+  workingDirectory: string;
+  shell?: string;
+  env?: Record<string, string>;
+  model?: string;
+  hostCapabilities: HostCapabilities;
+};
+```
+
+## Requirements
+
+### Requirement: environment 必须显式
+
+Session MUST 引用明确的 runtime environment。
+
+#### Scenario: 从桌面项目目录启动
+
+- **WHEN** desktop 在项目目录创建 session
+- **THEN** daemon 记录 working directory 和 host capabilities
+
+### Requirement: secret 不进入 projection
+
+Read models MUST NOT 默认暴露 environment secrets。
+
+#### Scenario: 手机读取 session
+
+- **WHEN** mobile fetch session view
+- **THEN** 它只收到安全环境元数据
+- **AND** 不收到 raw env vars

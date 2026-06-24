@@ -38,11 +38,11 @@ python3 scripts/build-release-image.py --service frontend --env shprod --tag <ta
 技术栈：
 
 - React
-- Vite
+- Next.js App Router
 - TypeScript
 - Tailwind CSS v4
 - shadcn/ui + Radix primitives
-- React Router
+- Next static export
 
 当前定位不是完整生产系统，而是一个高保真、可交互、可静态托管的前端原型。重点验证的是：
 
@@ -151,17 +151,19 @@ frontend/
 ├─ backend/
 │  └─ auth/
 │     └─ Go 认证服务原型（可选，不是静态部署必需）
-├─ dist/
-│  └─ 构建产物
+├─ out/
+│  └─ Next 静态导出产物
 ├─ public/
-│  └─ 静态资源与 SPA fallback（例如 _redirects）
+│  └─ 静态资源与静态托管路由规则（例如 _redirects）
 ├─ scripts/
 │  └─ 部署脚本，例如 Cloudflare Pages 发布脚本
 ├─ skills/
 │  └─ 当前项目内记录的 agent skills
+├─ next-site/
+│  └─ Next App Router 页面壳与 client islands
 ├─ src/
 │  ├─ app/
-│  │  └─ 应用入口拼装
+│  │  └─ Next App Router 页面与全局样式
 │  ├─ assets/
 │  │  └─ 本地字体等静态资源
 │  ├─ components/
@@ -175,8 +177,6 @@ frontend/
 │  │  └─ RepositoryContext / SessionContext
 │  ├─ domain/
 │  │  └─ 核心类型与计划目录等纯领域定义
-│  ├─ layouts/
-│  │  └─ MarketingLayout / AppShellLayout
 │  ├─ lib/
 │  │  └─ 通用工具函数
 │  ├─ pages/
@@ -188,20 +188,18 @@ frontend/
 │  │     └─ Landing 与首页 hero 相关页面
 │  ├─ repositories/
 │  │  └─ fake / http repository 与统一接口定义
-│  ├─ router/
-│  │  └─ 路由表和守卫
 │  ├─ services/
 │  │  └─ 页面级异步资源辅助逻辑
 │  ├─ test/
 │  │  └─ 测试初始化
 │  ├─ theme/
 │  │  └─ 全局主题 preset
-│  ├─ styles.css
-│  └─ vite-env.d.ts
+│  └─ app-env.d.ts
 ├─ .env.example
 ├─ DEPLOY_CLOUDFLARE.md
 ├─ package.json
-└─ vite.config.ts
+├─ next.config.mjs
+└─ vitest.config.ts
 ```
 
 ## 4. 整个前端的逻辑是怎么组织的
@@ -336,7 +334,7 @@ pnpm build
 
 构建完成后会自动执行 `scripts/optimize-static-assets.mjs`：
 
-- 只处理构建产物目录（`dist` / `dist-cn` / `dist-global`），不改源码图片
+- 只处理 Next 静态导出产物目录（`out`），不改源码图片
 - 压缩产物里的 `.png` / `.jpg` / `.jpeg` 原图，并保留原文件
 - 为每张原图生成同目录、同 basename 的 `.webp`
 - 只把构建产物里的 `.html` / `.css` / `.js` / `.mjs` 本地引用改成 `.webp`
@@ -414,9 +412,9 @@ npx wrangler pages deploy dist --project-name lightclaw
 - `CLOUDFLARE_PAGES_BRANCH`
 - `CLOUDFLARE_PAGES_COMMIT_HASH`
 
-### 7.5 SPA 路由为什么能工作
+### 7.5 静态路由为什么能工作
 
-前端使用 `BrowserRouter`，Cloudflare 上的深链刷新依赖：
+前端使用 Next App Router + static export，Cloudflare 上的深链刷新依赖：
 
 - `public/_redirects`
 

@@ -2,15 +2,23 @@
 
 import { ProductReturnHomeHeader } from '@/components/site/product-chrome';
 import { AgentSettingsPage } from '@/pages/marketing/agent-settings-page';
-import type { AgentSectionId } from '@/router/paths';
+import { AgentsWorkbenchPage } from '@/pages/marketing/agents-workbench/AgentsWorkbenchPage';
+import type { AgentSectionId, AgentSettingsSectionId } from '@/lib/agent-routes';
 
 import { AgentsRouteLoading, AppRouteShell } from './app-route-shell';
 
 export function AgentsPageClient({ sectionId }: { sectionId?: AgentSectionId }) {
+  const isWorkbench = sectionId === 'workbench';
+  const loadingFallback = isWorkbench ? null : <AgentsRouteLoading />;
+
   return (
-    <AppRouteShell loadingFallback={<AgentsRouteLoading />}>
+    <AppRouteShell loadingFallback={loadingFallback}>
       <ProductReturnHomeHeader reloadLanguageAfterSwitch />
-      <AgentSettingsPage sectionId={sectionId} showHeader={false} />
+      {isWorkbench ? (
+        <AgentsWorkbenchPage />
+      ) : (
+        <AgentSettingsPage sectionId={sectionId as AgentSettingsSectionId | undefined} showHeader={false} />
+      )}
     </AppRouteShell>
   );
 }

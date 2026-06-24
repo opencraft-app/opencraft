@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -10,6 +10,11 @@ const routerFile = join(frontendRoot, "src", "router", "index.tsx");
 const ignoredRouteSegments = new Set(["", "*"]);
 
 const firstSegment = (path) => path.replace(/^\/+/, "").split("/")[0] ?? "";
+
+if (!existsSync(routerFile)) {
+  console.log("frontend static route conflict check skipped: no BrowserRouter entry found");
+  process.exit(0);
+}
 
 const publicTopLevelDirs = new Set(
   readdirSync(publicDir, { withFileTypes: true })

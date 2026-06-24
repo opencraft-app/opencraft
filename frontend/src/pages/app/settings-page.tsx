@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { StatePanel } from "@/components/ui/state-panel";
 import { GrammarCanvas, GrammarPageIntro, GrammarSectionCard } from "@/components/site/homepage-grammar";
 import { useRepositories } from "@/contexts/repository-context";
-import { AGENTS_HOME_PATH } from "@/router/paths";
+import { AGENTS_HOME_PATH } from "@/lib/agent-routes";
 import { useAsyncResource } from "@/services/use-async-resource";
 
 export const SettingsPage = () => {

@@ -1,0 +1,1425 @@
+.shell {
+  --vela-spacing: 0.25rem;
+  --vela-toolbar-height: 46px;
+  --vela-bg: rgb(255 255 255 / 90%);
+  --vela-text: #18191b;
+  --vela-muted: #8c9096;
+  --vela-soft: #f4f4f5;
+  --vela-border: #e6e6e7;
+  --vela-border-strong: #d8d9db;
+  --vela-code: #eceeef;
+  --vela-accent: #ff5a1f;
+  --vela-composer-height: 154px;
+  --vela-shell-radius: 16px;
+  --vela-composer-radius: 20px;
+  --vela-composer-bg: rgb(255 255 255 / 90%);
+  --vela-composer-blur: 16px;
+  --vela-composer-shadow: 0 4px 16px 0 rgb(0 0 0 / 5%);
+  --vela-thread-content-max-width: 920px;
+  --vela-thread-content-top-inset: calc(var(--vela-spacing) * 8);
+  --vela-thread-floating-content-top-inset: calc(var(--vela-spacing) * 3);
+  --vela-thread-floating-content-bottom-inset: calc(var(--vela-spacing) * 3);
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  height: 100dvh;
+  min-height: 100dvh;
+  overflow: hidden;
+  border-top-left-radius: var(--vela-shell-radius);
+  background: var(--vela-bg);
+  background-clip: padding-box;
+  color: var(--vela-text);
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "PingFang SC",
+    "Hiragino Sans GB",
+    "Segoe UI",
+    system-ui,
+    ui-sans-serif,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  -webkit-backdrop-filter: saturate(1.15) blur(16px);
+  backdrop-filter: saturate(1.15) blur(16px);
+}
+
+.shell[data-layout="contained"] {
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
+}
+
+.shell[data-layout="contained"] .frame {
+  border-top: 0;
+}
+
+.frame {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  border-top: 1px solid var(--vela-border);
+}
+
+.frame::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 18;
+  height: 16px;
+  background: linear-gradient(to bottom, var(--vela-bg), rgb(255 255 255 / 0));
+  opacity: 1;
+  pointer-events: none;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 max(24px, calc((100vw - 1120px) / 2 + 28px));
+  border-bottom: 1px solid #eeeeef;
+  color: #6f737a;
+  font-size: 15px;
+}
+
+.historyLoader {
+  display: flex;
+  justify-content: center;
+  padding: 12px 24px 0;
+}
+
+.historyHydration {
+  display: flex;
+  min-height: 100%;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 14px;
+  color: #6f737a;
+  font-size: 14px;
+  font-weight: 620;
+}
+
+.historyHydrationSpinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid #ececef;
+  border-top-color: #8c9096;
+  border-radius: 999px;
+  animation: velaHistoryHydrationSpin 900ms linear infinite;
+}
+
+.historyHydrationLabel {
+  line-height: 1.4;
+}
+
+.historyHydrationOverlay {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: calc(var(--vela-composer-height) + var(--vela-thread-floating-content-bottom-inset));
+  left: 0;
+  z-index: 17;
+  display: grid;
+  background: var(--vela-bg);
+  pointer-events: none;
+}
+
+.scrollInspector {
+  position: absolute;
+  top: 12px;
+  right: 24px;
+  z-index: 40;
+  max-width: min(360px, calc(100% - 48px));
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.08);
+  color: #666b72;
+  font-family:
+    "SFMono-Regular",
+    ui-monospace,
+    Menlo,
+    Consolas,
+    monospace;
+  font-size: 11px;
+  line-height: 1.35;
+  overflow: hidden;
+  pointer-events: none;
+  backdrop-filter: blur(14px);
+}
+
+.scrollInspectorTitle {
+  padding: 8px 10px 6px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  color: #2f3338;
+  font-weight: 650;
+}
+
+.scrollInspectorGrid {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 6px 10px 8px;
+}
+
+.scrollInspectorRow {
+  display: grid;
+  grid-template-columns: minmax(64px, max-content) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.scrollInspectorRow dt,
+.scrollInspectorRow dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scrollInspectorRow dt {
+  color: #9499a1;
+}
+
+.conversationReveal {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.conversationReveal[data-conversation-reveal-state="measuring"] {
+  visibility: hidden;
+}
+
+.conversationShell {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.conversation {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  scrollbar-gutter: auto;
+}
+
+.conversation::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.conversation::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.conversationScrollbarOverlay {
+  pointer-events: auto;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  width: 18px;
+}
+
+.conversationScrollbarThumbHitbox {
+  pointer-events: auto;
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 18px;
+  display: flex;
+  justify-content: flex-end;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.conversationScrollbarThumbHitbox:active {
+  cursor: grabbing;
+}
+
+.conversationScrollbarThumb {
+  width: 6px;
+  margin-right: 2px;
+  border-radius: 999px;
+  background: rgba(118, 118, 128, 0.22);
+  opacity: 0;
+  transition:
+    opacity 220ms ease-out,
+    width 240ms cubic-bezier(0.22, 0.75, 0.2, 1),
+    background-color 220ms ease-out;
+}
+
+.conversationScrollbarOverlay[data-visible="true"] .conversationScrollbarThumb {
+  opacity: 1;
+}
+
+.conversationScrollbarThumbHitbox[data-active="true"] .conversationScrollbarThumb {
+  opacity: 1;
+  background: rgba(118, 118, 128, 0.3);
+}
+
+.turnList {
+  box-sizing: border-box;
+  width: min(100%, var(--vela-thread-content-max-width));
+  margin: 0 auto;
+  padding: var(--vela-thread-content-top-inset) 28px
+    calc(var(--vela-composer-height) + var(--vela-thread-floating-content-bottom-inset));
+}
+
+.turnGroup {
+  margin: 0 0 22px;
+}
+
+.turnGroup[data-continuation="true"] {
+  margin-top: 0;
+}
+
+.turnGroup[data-turn-kind="assistant_markdown"]:has(
+    + .turnGroup[data-continuation="true"][data-turn-kind="assistant_markdown"]
+  ) {
+  margin-bottom: 8px;
+}
+
+.turnGroup[data-turn-kind="agent_work"] {
+  margin: 0 0 4px;
+}
+
+.turnGroup[data-turn-kind="turn_meta"] {
+  margin: 0 0 18px;
+}
+
+.turnGroup[data-turn-kind="turn_meta"] + .turnGroup[data-turn-kind="agent_work"] {
+  margin-top: 0;
+}
+
+.turnGroup[data-turn-kind="turn_meta"] + .turnGroup[data-turn-kind="assistant_markdown"] {
+  margin-top: 0;
+}
+
+.turnGroup[data-turn-kind="agent_work"] + .turnGroup[data-turn-kind="assistant_markdown"] {
+  margin-top: 18px;
+}
+
+.turnBlock {
+  min-width: 0;
+}
+
+.virtualizedHistoryBand {
+  position: relative;
+  width: 100%;
+}
+
+.virtualizedHistoryItem {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+}
+
+.empty {
+  display: grid;
+  min-height: 48dvh;
+  place-items: center;
+  color: var(--vela-muted);
+  font-size: 15px;
+}
+
+.messageUser {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.messageAssistant {
+  margin-top: 26px;
+}
+
+.turnGroup[data-continuation="true"][data-turn-kind="assistant_markdown"] .messageAssistant {
+  margin-top: 0;
+}
+
+.userMessageStack {
+  display: flex;
+  max-width: min(76%, 640px);
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.userBubble {
+  max-width: 100%;
+  border-radius: 18px;
+  background: var(--vela-soft);
+  padding: 11px 16px;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.46;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+.userImageGrid {
+  display: flex;
+  max-width: 100%;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.userImage {
+  display: block;
+  width: min(240px, 62vw);
+  max-height: 260px;
+  border: 1px solid var(--vela-border);
+  border-radius: 14px;
+  background: #f7f7f8;
+  object-fit: cover;
+}
+
+.userMeta {
+  display: flex;
+  justify-content: flex-end;
+  gap: 13px;
+  padding: 1px 14px 0 0;
+  color: #8c8f94;
+  font-size: 13px;
+}
+
+.statusDivider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 22px;
+  color: #73777f;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.statusDivider::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: var(--vela-border);
+}
+
+.turnMeta {
+  display: grid;
+  gap: 0;
+}
+
+.turnHeader {
+  display: grid;
+  gap: 8px;
+  color: #73777f;
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.turnHeaderLabel {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.turnHeaderLine {
+  height: 1px;
+  width: 100%;
+  background: var(--vela-border);
+}
+
+.messageResponse {
+  max-width: 100%;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.48;
+  letter-spacing: 0;
+}
+
+.messageResponse > *:first-child {
+  margin-top: 0;
+}
+
+.messageResponse > *:last-child {
+  margin-bottom: 0;
+}
+
+.messageResponse p {
+  margin: 0 0 12px;
+}
+
+.messageResponse hr {
+  height: 1px;
+  margin: 14px 0 12px;
+  border: 0;
+  background: var(--vela-border);
+}
+
+.messageResponse h1,
+.messageResponse h2,
+.messageResponse h3,
+.messageResponse h4,
+.messageResponse h5,
+.messageResponse h6 {
+  margin: 18px 0 8px;
+  font-weight: 650;
+  line-height: 1.28;
+}
+
+.messageResponse h1 {
+  font-size: 16px;
+}
+
+.messageResponse h2 {
+  font-size: 15px;
+}
+
+.messageResponse h3,
+.messageResponse h4,
+.messageResponse h5,
+.messageResponse h6 {
+  font-size: 15px;
+}
+
+.messageResponse strong {
+  font-weight: 650;
+}
+
+.messageResponse ul,
+.messageResponse ol {
+  margin: 0 0 12px;
+  padding-left: 1.35em;
+}
+
+.messageResponse li {
+  margin: 0;
+  padding-left: 0.125em;
+}
+
+.messageResponse li + li {
+  margin-top: 6px;
+}
+
+.messageResponse li > p {
+  margin: 0;
+}
+
+.messageResponse code {
+  border-radius: 7px;
+  background: var(--vela-code);
+  padding: 1px 7px 2px;
+  font-family:
+    "SFMono-Regular",
+    ui-monospace,
+    Menlo,
+    Consolas,
+    monospace;
+  font-size: 0.92em;
+  font-weight: 400;
+}
+
+.messageResponse pre {
+  overflow-x: auto;
+  margin: 14px 0;
+  border-radius: 10px;
+  background: #f6f7f8;
+  padding: 12px 14px;
+}
+
+.messageResponse pre code {
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.markdownImage {
+  display: block;
+  max-width: min(100%, 720px);
+  max-height: 520px;
+  margin: 12px 0;
+  border: 1px solid var(--vela-border);
+  border-radius: 10px;
+  object-fit: contain;
+}
+
+.markdownTaskListItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  list-style: none;
+}
+
+.markdownTaskCheckbox {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin: 5px 0 0 -1.15em;
+  accent-color: #7f858d;
+}
+
+.markdownFadeSegment {
+  animation: velaMarkdownFadeIn 180ms ease-out both;
+  animation-delay: var(--vela-markdown-fade-delay, 0ms);
+}
+
+@keyframes velaMarkdownFadeIn {
+  from {
+    opacity: 0.48;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.markdownTableScroller {
+  max-width: 100%;
+  margin: 14px 0;
+  overflow-x: auto;
+}
+
+.messageResponse pre,
+.markdownTableScroller {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.messageResponse pre::-webkit-scrollbar,
+.markdownTableScroller::-webkit-scrollbar {
+  display: none;
+}
+
+.markdownTable {
+  width: 100%;
+  min-width: 520px;
+  border: 1px solid var(--vela-border);
+  border-radius: 10px;
+  border-spacing: 0;
+  background: #fff;
+  overflow: hidden;
+}
+
+.markdownTableHead {
+  background: #fafafa;
+}
+
+.markdownTableHeaderCell,
+.markdownTableCell {
+  padding: 10px 14px;
+  font-size: 14px;
+  line-height: 1.45;
+  text-align: left;
+}
+
+.markdownTableRow {
+  vertical-align: top;
+}
+
+.markdownTableRow + .markdownTableRow .markdownTableCell,
+.markdownTableBody .markdownTableRow:first-child .markdownTableCell {
+  border-top: 1px solid var(--vela-border);
+}
+
+.markdownTableHeaderCell {
+  font-weight: 650;
+}
+
+.markdownTableHeaderCell + .markdownTableHeaderCell,
+.markdownTableCell + .markdownTableCell {
+  border-left: 1px solid var(--vela-border);
+}
+
+.agentWorkBlock {
+  display: grid;
+  grid-template-columns: 18px minmax(0, auto);
+  align-items: center;
+  column-gap: 8px;
+  width: fit-content;
+  max-width: min(100%, 780px);
+  margin: 0;
+  padding: 1px 0;
+  color: #9a9ea5;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.agentWorkBlock[data-display="prominent"] {
+  margin-top: 0;
+}
+
+.agentWorkBlock[data-status="failed"] {
+  color: #b44322;
+}
+
+.agentWorkGroup {
+  display: grid;
+  gap: 4px;
+  width: fit-content;
+  max-width: min(100%, 780px);
+  color: #9a9ea5;
+}
+
+.agentWorkGroupButton {
+  display: grid;
+  grid-template-columns: 18px minmax(0, auto) 14px;
+  align-items: center;
+  column-gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 2px 0;
+  text-align: left;
+}
+
+.agentWorkGroupButton:hover .agentWorkTitle,
+.agentWorkGroupButton:hover .agentWorkSummary {
+  color: #7e848c;
+}
+
+.agentWorkGroupChevron {
+  color: #a9adb3;
+  font-size: 17px;
+  line-height: 1;
+  transition: transform 120ms ease;
+}
+
+.agentWorkGroupButton[aria-expanded="true"] .agentWorkGroupChevron {
+  transform: rotate(90deg);
+}
+
+.agentWorkGroupChildren {
+  display: grid;
+  gap: 3px;
+  padding-left: 26px;
+}
+
+.agentWorkIcon {
+  display: inline-grid;
+  width: 15px;
+  height: 15px;
+  place-items: center;
+  border: 1.4px solid currentColor;
+  border-radius: 4px;
+  color: #a8adb3;
+  opacity: 0.92;
+}
+
+.agentWorkIcon::before {
+  content: "›";
+  transform: translate(0.5px, -0.5px);
+  font-family:
+    "SFMono-Regular",
+    ui-monospace,
+    Menlo,
+    Consolas,
+    monospace;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.agentWorkBlock[data-status="failed"] .agentWorkIcon {
+  color: #b44322;
+}
+
+.agentWorkText {
+  display: inline-flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.agentWorkTitle {
+  flex: 0 0 auto;
+  color: #8f949b;
+  font-weight: 560;
+}
+
+.agentWorkSummary {
+  min-width: 0;
+  max-width: min(58vw, 520px);
+  overflow: hidden;
+  color: #b3b7bd;
+  font-weight: 450;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.requestDock {
+  position: absolute;
+  right: 0;
+  bottom: calc(var(--vela-composer-height) + var(--vela-thread-floating-content-top-inset));
+  left: 0;
+  z-index: 6;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 0 24px;
+  pointer-events: none;
+}
+
+.requestCard {
+  display: flex;
+  width: min(100%, var(--vela-thread-content-max-width));
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border: 1px solid var(--vela-border-strong);
+  border-radius: 18px;
+  background: rgb(255 255 255 / 97%);
+  box-shadow:
+    0 14px 42px rgb(0 0 0 / 8%),
+    0 2px 8px rgb(0 0 0 / 4%);
+  padding: 13px 14px 13px 16px;
+  pointer-events: auto;
+  backdrop-filter: blur(18px);
+}
+
+.requestContent {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.requestKicker {
+  color: var(--vela-accent);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.requestTitle {
+  overflow: hidden;
+  color: #26272a;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.requestDescription {
+  overflow: hidden;
+  color: #777b83;
+  font-size: 13px;
+  font-weight: 440;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.requestActions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.requestAnswerForm {
+  display: grid;
+  flex: 0 1 360px;
+  grid-template-columns: minmax(160px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.requestAnswerInput {
+  min-height: 32px;
+  resize: none;
+  border: 1px solid var(--vela-border-strong);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #26272a;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 440;
+  line-height: 1.35;
+  outline: none;
+  padding: 6px 12px;
+}
+
+.requestAnswerInput:focus {
+  border-color: #b8bcc5;
+}
+
+.requestPrimaryButton,
+.requestSecondaryButton {
+  min-height: 32px;
+  border-radius: 999px;
+  padding: 6px 13px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.requestPrimaryButton {
+  border: 0;
+  background: #171717;
+  color: #ffffff;
+}
+
+.requestSecondaryButton {
+  border: 1px solid var(--vela-border-strong);
+  background: #ffffff;
+  color: #666a72;
+}
+
+.requestPrimaryButton:disabled,
+.requestSecondaryButton:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.requestWaitingLabel {
+  flex: 0 0 auto;
+  color: #8b9098;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.composerBackdrop {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 19;
+  height: calc(var(--vela-composer-height) + 64px);
+  background: linear-gradient(
+    to bottom,
+    rgb(255 255 255 / 0) 0%,
+    var(--vela-bg) 54%,
+    var(--vela-bg) 100%
+  );
+  pointer-events: none;
+}
+
+.composerDock {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 20;
+  display: flex;
+  justify-content: center;
+  padding: 0 24px var(--vela-thread-floating-content-bottom-inset);
+  pointer-events: none;
+}
+
+.composer {
+  width: min(100%, var(--vela-thread-content-max-width));
+  overflow: hidden auto;
+  border: 1px solid rgb(13 13 13 / 10%);
+  border-radius: var(--vela-composer-radius);
+  background: var(--vela-composer-bg);
+  box-shadow: var(--vela-composer-shadow);
+  pointer-events: auto;
+  -webkit-backdrop-filter: saturate(1.2) blur(var(--vela-composer-blur));
+  backdrop-filter: saturate(1.2) blur(var(--vela-composer-blur));
+}
+
+@supports (corner-shape: superellipse(1.5)) {
+  .composer {
+    corner-shape: superellipse(1.5);
+  }
+}
+
+.textarea {
+  display: block;
+  width: 100%;
+  min-height: 24px;
+  max-height: 200px;
+  resize: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  padding: 12px 16px 8px;
+  color: #1c1917;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.textarea::placeholder {
+  color: #a8a29e;
+  font-weight: 400;
+}
+
+.attachmentTray {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 8px 6px;
+}
+
+.attachmentPill {
+  display: inline-flex;
+  max-width: min(280px, 80vw);
+  height: 32px;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #e4e5e8;
+  border-radius: 16px;
+  background: #f8f8f9;
+  color: #74777d;
+  font-size: 13px;
+  font-weight: 560;
+  line-height: 1;
+  padding: 0 8px 0 10px;
+}
+
+.attachmentIcon {
+  color: #9b9fa5;
+  font-size: 13px;
+}
+
+.attachmentLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachmentRemove {
+  display: inline-grid;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #9b9fa5;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.attachmentRemove:hover {
+  background: #e9eaed;
+  color: #5f6369;
+}
+
+.composerFooter {
+  container: composer-footer / inline-size;
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 16px 16px;
+}
+
+.composerLeft,
+.composerRight {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.composerLeft {
+  flex: 1 1 auto;
+}
+
+.composerRight {
+  flex: 0 1 auto;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+.iconButton {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid #e7e5e4;
+  border-radius: 8px;
+  background: transparent;
+  color: #78716c;
+  cursor: pointer;
+  font-size: 19px;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
+}
+
+.iconButton:hover:not(:disabled) {
+  border-color: #d6d3d1;
+  background: #f5f5f4;
+  color: #57534e;
+}
+
+.dictationActive {
+  border-color: #d2d5d8;
+  background: #f4f5f6;
+  color: #1f2328;
+  box-shadow:
+    0 0 0 3px rgba(143, 147, 152, 0.12),
+    inset 0 1px 0 rgb(255 255 255 / 52%);
+}
+
+.hiddenFileInput {
+  display: none;
+}
+
+.composerControls {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.composerControlIcon {
+  display: block;
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+
+.composerControls[data-composer-controls-ready="false"] {
+  min-height: 32px;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.composerControls[data-composer-controls-ready="false"][data-placement="primary"] {
+  min-width: 136px;
+}
+
+.composerControls[data-composer-controls-ready="false"][data-placement="secondary"] {
+  min-width: 260px;
+}
+
+.composerControls[data-composer-controls-ready="false"][data-placement="all"] {
+  min-width: 396px;
+}
+
+.composerControls :global(.vela-shell-select) {
+  min-width: 0;
+  max-width: 240px;
+}
+
+.composerControls :global(.vela-shell-select[data-density="compact"]) {
+  flex: 0 1 auto;
+  max-width: 240px;
+}
+
+.composerControls :global(.vela-shell-select-trigger) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 34px;
+  border: 0;
+  border-radius: 10px;
+  background: #f4f4f5;
+  color: #30343a;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 520;
+  padding: 0 10px 0 12px;
+  text-align: left;
+  cursor: default;
+}
+
+.composerControls :global(.vela-shell-select[data-density="compact"] .vela-shell-select-trigger) {
+  display: inline-grid;
+  grid-template-columns: auto minmax(0, 1fr) 15px;
+  width: auto;
+  max-width: 240px;
+  height: 32px;
+  border-radius: 999px;
+  background: transparent;
+  color: #78716c;
+  font-size: 14px;
+  font-weight: 520;
+  padding: 0 8px;
+}
+
+.composerControls
+  :global(.vela-shell-select[data-density="compact"][data-tone="accent"] .vela-shell-select-trigger) {
+  background: #f5f5f4;
+  color: #3f4248;
+}
+
+.composerControls :global(.vela-shell-select-trigger:hover:not(:disabled)),
+.composerControls :global(.vela-shell-select-trigger[aria-expanded="true"]) {
+  background: #eceeef;
+}
+
+.composerControls
+  :global(.vela-shell-select[data-density="compact"] .vela-shell-select-trigger:hover:not(:disabled)),
+.composerControls
+  :global(.vela-shell-select[data-density="compact"] .vela-shell-select-trigger[aria-expanded="true"]) {
+  background: #f4f4f5;
+}
+
+.composerControls :global(.vela-shell-select-trigger:disabled) {
+  color: #a0a6ad;
+  opacity: 0.72;
+}
+
+.composerControls :global(.vela-shell-select-trigger-leading) {
+  display: inline-grid;
+  place-items: center;
+  color: currentColor;
+  line-height: 1;
+}
+
+.composerControls :global(.vela-shell-select-trigger-label) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global(.vela-shell-select-popover) {
+  --vela-codex-menu-enter-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --vela-settings-popover-inset: 2px;
+  --vela-settings-popover-start-transform: translateY(var(--vela-settings-popover-inset))
+    scale(0.98);
+  z-index: 130;
+  width: min(280px, calc(100vw - 24px));
+  overflow: hidden auto;
+  padding: 4px;
+  border: 1px solid rgba(60, 60, 67, 0.14);
+  border-radius: 14px;
+  corner-shape: superellipse(1.5);
+  background: rgba(255, 255, 255, 0.94);
+  background: color-mix(in oklab, #ffffff 94%, transparent);
+  box-shadow:
+    0 12px 32px rgba(15, 23, 42, 0.1),
+    0 2px 4px rgba(15, 23, 42, 0.06);
+  backdrop-filter: blur(12px) saturate(1.12);
+  -webkit-backdrop-filter: blur(12px) saturate(1.12);
+  will-change: transform, opacity;
+}
+
+:global(.vela-shell-select-popover[data-density="compact"]) {
+  width: min(360px, calc(100vw - 24px));
+}
+
+:global(.vela-shell-select-list) {
+  display: grid;
+  gap: 1px;
+}
+
+:global(.vela-shell-select-option) {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 18px;
+  align-items: center;
+  min-height: 34px;
+  border: 0;
+  border-radius: 8px;
+  padding: 4px 7px;
+  background: transparent;
+  color: #24272d;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+:global(.vela-shell-select-option:hover:not(:disabled)),
+:global(.vela-shell-select-option[data-active="true"]) {
+  background: rgba(123, 127, 133, 0.1);
+}
+
+:global(.vela-shell-select-option:disabled) {
+  opacity: 0.4;
+}
+
+:global(.vela-shell-select-option-leading),
+:global(.vela-shell-select-check) {
+  display: inline-grid;
+  place-items: center;
+  color: #5f656b;
+}
+
+:global(.vela-shell-select-option-text) {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+:global(.vela-shell-select-option-label),
+:global(.vela-shell-select-option-description) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global(.vela-shell-select-option-label) {
+  color: #24272d;
+  font-size: 12px;
+  font-weight: 470;
+  line-height: 1.25;
+}
+
+:global(.vela-shell-select-option-description) {
+  color: #8d9298;
+  font-size: 11px;
+  font-weight: 430;
+  line-height: 1.2;
+}
+
+:global(.vela-shell-select-empty) {
+  padding: 8px 10px;
+  color: #8d9298;
+  font-size: 12px;
+  font-weight: 470;
+}
+
+.sendButton,
+.stopButton {
+  display: inline-flex;
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  min-height: 38px;
+  flex: 0 0 38px;
+  aspect-ratio: 1;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  background: #8f9398;
+  color: #ffffff;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+  box-shadow:
+    0 1px 1px rgba(255, 255, 255, 0.42) inset,
+    0 1px 2px rgba(20, 24, 28, 0.08);
+  transition:
+    transform 140ms ease,
+    background 140ms ease,
+    box-shadow 140ms ease,
+    opacity 140ms ease;
+}
+
+.stopButton {
+  border-radius: 999px;
+  background: #191d21;
+  box-shadow:
+    0 1px 1px rgba(255, 255, 255, 0.08) inset,
+    0 1px 3px rgba(20, 24, 28, 0.12);
+}
+
+.sendButton:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
+.sendButton:not(:disabled):hover,
+.stopButton:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 1px 1px rgba(255, 255, 255, 0.44) inset,
+    0 6px 14px rgba(20, 24, 28, 0.12);
+}
+
+.sendButton:not(:disabled):hover {
+  background: #7f848a;
+}
+
+.stopButton:not(:disabled):hover {
+  background: #111417;
+}
+
+.error {
+  position: absolute;
+  right: 32px;
+  bottom: calc(var(--vela-composer-height) + var(--vela-thread-floating-content-top-inset));
+  max-width: 520px;
+  border: 1px solid #ffd7ca;
+  border-radius: 14px;
+  background: #fff7f4;
+  padding: 11px 14px;
+  color: #ad3d18;
+  font-size: 13px;
+  font-weight: 650;
+  box-shadow: 0 12px 28px rgb(0 0 0 / 8%);
+}
+
+@keyframes velaHistoryHydrationSpin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 720px) {
+  .topbar {
+    padding: 0 20px;
+  }
+
+  .turnList {
+    padding: 38px 20px calc(var(--vela-composer-height) + 12px);
+  }
+
+  .userMessageStack {
+    max-width: 86%;
+  }
+
+  .messageResponse {
+    font-size: 14px;
+  }
+
+  .composerDock {
+    padding: 0 12px 12px;
+  }
+
+  .composerFooter {
+    align-items: flex-end;
+  }
+
+  .composerControls {
+    gap: 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .composerControls::-webkit-scrollbar {
+    display: none;
+  }
+
+}

@@ -32,9 +32,7 @@
  */
 import { isGlobal } from "@/lib/region";
 import { initI18n } from "@tencent/tea-sdk-lightclaw";
-// 静态 import 英文词条：vite.config 已通过 sdkI18nPlugin 把 CJS 转成
-// ESM，并在 alias 里把 `@tencent/tea-sdk-lightclaw/i18n/translation/en`
-// 指向具体文件。这一行**必须**保留为静态 import——异步 `await import(...)`
+// 静态 import 英文词条。这一行**必须**保留为静态 import——异步 `await import(...)`
 // 会被 React 渲染抢跑，导致 SDK 模块缓存里的 t() 求值出 undefined。
 import { translation as enTranslation } from "@tencent/tea-sdk-lightclaw/i18n/translation/en";
 

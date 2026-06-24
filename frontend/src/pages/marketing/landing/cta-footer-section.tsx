@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 
 import { LegalFooter } from "@/components/site/legal-footer";
 import { useT } from "@/i18n/t";
-import { AGENTS_HOME_PATH, getAgentCreatingPath } from "@/router/paths";
+import { AGENTS_HOME_PATH, getAgentCreatingPath } from "@/lib/agent-routes";
 import { fadeInUp, staggerContainer, titleReveal, viewportConfig } from "./constants";
 
 export function CTAFooterSection({

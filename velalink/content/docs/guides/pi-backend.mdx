@@ -1,0 +1,136 @@
+---
+title: Pi 后端
+description: Pi Coding Agent 的本地安装和 TokenHub 适配经验。
+---
+
+# Pi Backend
+
+Paseo 的经验非常明确：**适配 Pi 时，适配的是 agent harness，不是 MiniMax/TokenHub 模型 API。**
+
+也就是说，velaChat 应该启动 `pi --mode rpc`，消费 Pi RPC events，再转换为 vela canonical events。MiniMax、TokenHub、OpenRouter 等模型网关留在 Pi provider/extension 配置里。
+
+## 本地安装
+
+```bash
+brew install pi-coding-agent
+pi --version
+```
+
+Pi CLI 支持：
+
+- interactive mode：`pi`
+- non-interactive mode：`pi -p "prompt"`
+- RPC mode：`pi --mode rpc`
+- session control：`--session`、`--session-id`、`--continue`、`--resume`
+- provider/model：`--provider`、`--model`
+- package system：`pi install npm:<package>`
+
+## MiniMax Provider Extension
+
+```bash
+pi install npm:@sinamtz/pi-minimax-provider
+```
+
+这个扩展注册 `minimax` provider 和模型：
+
+- `MiniMax-M2.7`
+- `MiniMax-M2.7-highspeed`
+- `MiniMax-M3`
+
+它走 MiniMax Anthropic Messages-compatible streaming API，不是 OpenAI Chat Completions。
+
+## TokenHub 适配
+
+TokenHub 同时有 OpenAI-compatible 和 Anthropic-compatible 协议。社区 Pi MiniMax provider 期待 Anthropic `/v1/messages` 风格，因此更适合这样配置：
+
+```bash
+export MINIMAX_API_HOST=https://tokenhub.tencentmaas.com/plan
+export MINIMAX_API_KEY=YOUR_TOKENHUB_API_KEY
+pi --provider minimax --model MiniMax-M2.7 -p "你好"
+```
+
+风险点：TokenHub 文档常用小写 model id，例如 `minimax-m2.7`；社区扩展发送 `MiniMax-M2.7`。如果网关不兼容大小写，需要 fork provider 或写 velaChat-owned tokenhub provider。
+
+## 对 velaChat 的设计结论
+
+- `PiBackendAdapter` 启动 `pi --mode rpc`。
+- Adapter 不直接 call TokenHub。
+- Adapter 不写 store。
+- Adapter 消费 Pi stdout JSONL，并输出 normalized runtime output。
+- Runtime 负责 append `user.message.accepted` 和 `turn.started`，再触发 Pi side effect。
+- Runtime 负责给 normalized backend output 分配 `event_id`、`epoch`、`seq` 并写入 canonical event log。
+
+## Pi JSONL Event Mapping
+
+Pi RPC 不是 JSON-RPC 2.0。Vela 通过 stdin 写入 prompt request：
+
+```json
+{"id":"req_1","type":"prompt","message":"..."}
+```
+
+stdout 中 `type: "response"` 且 `id` 匹配 request 的消息用于确认 prompt preflight success/error；其它 JSONL 都按 provider event 进入 normalizer。
+
+| Pi event | Vela behavior | Notes |
+| --- | --- | --- |
+| `agent_start` | absorb | 正常 lifecycle，不写 canonical event，不产生 warning |
+| `turn_start` | absorb | `turn.started` 由 runtime 在调用 Pi 前写入 |
+| `message_start` | `assistant.message.started` 或 absorb | 仅当 `message.role === "assistant"` 且能提取稳定 `message_id` 时映射 |
+| `message_update` + `assistantMessageEvent.type === "text_delta"` | `assistant.message.delta` | payload 使用 `delta`，可选 `message_id` |
+| `message_update` + `assistantMessageEvent.type === "thinking_delta"` | `assistant.reasoning.delta` | reasoning 进入 activity/working surface，不进入正式 assistant markdown 正文 |
+| `message_end` | `assistant.message.completed` 或 absorb | 仅当 assistant role 且有稳定 `message_id` 时映射，可带 `stop_reason` |
+| `tool_execution_start` | `tool.started` | 尽量保留 `tool_id`、tool name 和结构化 detail |
+| `tool_execution_update` | `tool.updated` | 用于进度、partial result 或参数变化 |
+| `tool_execution_end` | `tool.completed` / `tool.failed` | `isError` / `is_error` 决定成功或失败 |
+| `turn_end` | absorb | 避免和 `agent_end` / runtime completion 重复 |
+| `agent_end` | `turn.completed` | 表示 Pi agent turn 正常结束 |
+| `process_exit` | `turn.failed` | provider process/error exit 映射为失败 |
+| `extension_ui_request` | `warning.raised` | v1 尚未实现 Pi extension UI request 的交互请求模型 |
+| unknown / malformed event | `warning.raised` | 仅异常或未实现 provider 信号才产生 warning |
+
+稳定 `message_id` 的提取顺序包括 `message.id`、`message.messageId`、`message.responseId`，以及 `assistantMessageEvent.partial` 中对应字段。没有稳定 id 的 start/end lifecycle 会被吸收，避免 UI 收到不可合并的空 row；delta 仍可显示，但这是降级路径。
+
+## Warning Policy
+
+Pi 的普通生命周期事件不是 warning。Warning 只表示 Vela 还不能安全吸收或映射的 provider 信号，例如未知 event type、缺失必要结构的 `message_update`、尚未支持的 `extension_ui_request`。
+
+这让红测可以非常直接：正常 Pi 对话 cassette 不应该包含 lifecycle warning；如果 warning 出现，要么是 Pi vocabulary 新增了事件，要么是 adapter normalizer 需要升级。
+
+## Requirements
+
+### Requirement: Pi 作为 subprocess 运行
+
+Daemon MUST 以受控 subprocess 启动 Pi。
+
+#### Scenario: 创建 Pi session
+
+- **WHEN** 用户选择 Pi backend
+- **THEN** daemon 启动 `pi --mode rpc`
+- **AND** 通过 stdin/stdout JSONL RPC 与 Pi 通信
+
+### Requirement: TokenHub secret 不进入文档和日志
+
+TokenHub API key MUST 从环境变量或平台 secret store 注入。
+
+#### Scenario: 用户配置 TokenHub
+
+- **WHEN** 用户输入 API key
+- **THEN** velaChat 不把 raw key 写入 docs、logs、session transcript
+
+### Requirement: Pi output 必须归一
+
+Pi output MUST 在进入 client 前转换成 canonical runtime events。
+
+#### Scenario: Pi streaming text 和 tool call
+
+- **WHEN** Pi 输出 text delta 和 tool execution event
+- **THEN** daemon append `assistant.message.delta`、`tool.started` 等 canonical events
+
+### Requirement: Pi 正常 lifecycle 被吸收
+
+Pi normal lifecycle MUST NOT 变成 `warning.raised`。
+
+#### Scenario: Pi 输出 agent_start 和 turn_start
+
+- **WHEN** Pi 输出 `agent_start` 和 `turn_start`
+- **THEN** adapter 不输出 canonical event
+- **AND** runtime 自己维护 session/turn lifecycle

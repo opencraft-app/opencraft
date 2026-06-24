@@ -1,12 +1,12 @@
 /**
- * SEO HTML 注入工具（dev server SSR 用）。
+ * SEO HTML 注入工具（静态产物校验/修正脚本复用）。
  *
- * 该模块被 `vite.config.ts` 在 node/esbuild 上下文直接 import，因此：
+ * 该模块会被 Node 脚本直接 import，因此：
  *   - 只能 import 同样 node-safe 的相对模块（如 ./seo-data）；
  *   - 不得依赖 `@/` alias 或 `import.meta.env`。
  *
  * 抽离到独立模块的好处：逻辑可被单元测试覆盖（转义 / `$` 元字符注入回归），
- * 不再内联在 vite.config 中无人守护。
+ * 不再散落在脚本里无人守护。
  */
 import {
   getFullSeoMeta,

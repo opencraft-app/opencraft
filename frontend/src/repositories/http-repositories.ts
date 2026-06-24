@@ -256,6 +256,14 @@ const mapSession = (payload: SessionPayload): AuthSessionSnapshot => ({
 });
 
 const buildUrl = (baseUrl: string, path: string) => `${baseUrl}${path}`;
+const DEFAULT_OAUTH_START_BASE_URL = "https://lightclaw.tech";
+
+const resolveOAuthStartBaseURL = (baseUrl: string) => {
+  // API calls may use a local dev proxy, but OAuth is a browser redirect flow.
+  // The start URL must live on the same host as the configured callback so the
+  // state cookie is available when QQ/WeChat redirects back to the auth service.
+  return baseUrl === "" ? DEFAULT_OAUTH_START_BASE_URL : baseUrl;
+};
 
 const configuredOAuthRelayIssuerBaseURL = (): string | null => {
   const configured = (
@@ -1309,11 +1317,9 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
     };
   },
   getOAuthStartUrl(provider, options) {
-    // local-proxy 模式 baseUrl 是空字符串，buildUrl 拼出来是相对路径 `/auth/...`。
-    // URL 构造器不接受相对路径，所以传 window.location.origin 当 base；
-    // 当 baseUrl 是绝对 URL（如 https://lightclaw.tech）时，第二个参数会被忽略。
     const base = typeof window !== "undefined" ? window.location.origin : "https://lightclaw.tech";
-    const startURL = new URL(buildUrl(baseUrl, `/auth/oauth/${provider}/start`), base);
+    const oauthStartBaseURL = resolveOAuthStartBaseURL(baseUrl);
+    const startURL = new URL(buildUrl(oauthStartBaseURL, `/auth/oauth/${provider}/start`), base);
     if (provider === "wechat" && options?.wechatMode) {
       startURL.searchParams.set("mode", options.wechatMode);
     }

@@ -39,15 +39,6 @@ const comboEnv = {
 };
 
 function createDist() {
-  const root = mkdtempSync(join(tmpdir(), "frontend-artifact-dist-"));
-  mkdirSync(join(root, "assets"), { recursive: true });
-  writeFileSync(join(root, "index.html"), '<div id="root"></div><script type="module" src="/assets/index-test.js"></script>');
-  writeFileSync(join(root, "assets", "index-test.js"), "console.log('hello artifact');\n");
-  writeFileSync(join(root, "assets", "index-test.css"), "body{color:#111}\n");
-  return root;
-}
-
-function createNextDist() {
   const root = mkdtempSync(join(tmpdir(), "frontend-artifact-next-dist-"));
   mkdirSync(join(root, "_next", "static", "chunks"), { recursive: true });
   writeFileSync(
@@ -204,8 +195,8 @@ describe("frontend artifact helpers", () => {
       const second = buildArtifactManifest({ ...base, createdAt: "2026-01-02T00:00:00Z" });
 
       expect(first.artifact.tag).toBe("dfde008ca43a-eo-global-lightvela-intl-prod-next");
-      expect(first.assets.entryKind).toBe("vite");
-      expect(first.assets.entryJs).toBe("/assets/index-test.js");
+      expect(first.assets.entryKind).toBe("next");
+      expect(first.assets.entryJs).toBe("/_next/static/chunks/main-app-test.js");
       expect(first.bakedEnv).toMatchObject({
         VITE_REGION: "global",
         VITE_AUTH_API_BASE_URL: "https://api.lightvela.ai",
@@ -219,8 +210,8 @@ describe("frontend artifact helpers", () => {
     }
   });
 
-  it("builds a manifest for Next static output without a Vite entry asset", () => {
-    const dist = createNextDist();
+  it("builds a manifest for Next static output", () => {
+    const dist = createDist();
     try {
       const nextCombo = {
         ...combo,
@@ -251,7 +242,7 @@ describe("frontend artifact helpers", () => {
     const firstDist = createDist();
     const secondDist = createDist();
     try {
-      writeFileSync(join(secondDist, "assets", "index-test.js"), "console.log('changed');\n");
+      writeFileSync(join(secondDist, "_next", "static", "chunks", "main-app-test.js"), "console.log('changed');\n");
       const common = {
         combo,
         projectName: "lightvela-intl",
@@ -353,7 +344,7 @@ describe("frontend artifact helpers", () => {
     const existingWorkDir = mkdtempSync(join(tmpdir(), "frontend-artifact-existing-"));
     const publishWorkDir = mkdtempSync(join(tmpdir(), "frontend-artifact-publish-"));
     try {
-      writeFileSync(join(secondDist, "assets", "index-test.js"), "console.log('changed identity');\n");
+      writeFileSync(join(secondDist, "_next", "static", "chunks", "main-app-test.js"), "console.log('changed identity');\n");
       const existing = archiveFrontendArtifact({
         combo,
         projectName: "lightvela-intl",
@@ -485,7 +476,7 @@ describe("frontend artifact helpers", () => {
   it("fails if text assets contain explicit secret-like env values", () => {
     const dist = createDist();
     try {
-      writeFileSync(join(dist, "assets", "index-test.js"), "const token='super-secret-token-value';\n");
+      writeFileSync(join(dist, "_next", "static", "chunks", "main-app-test.js"), "const token='super-secret-token-value';\n");
       expect(() => archiveFrontendArtifact({
         combo,
         projectName: "lightvela-intl",
@@ -506,7 +497,7 @@ describe("frontend artifact helpers", () => {
   it("scans large text assets for explicit secret-like env values", () => {
     const dist = createDist();
     try {
-      writeFileSync(join(dist, "assets", "index-test.js"), `${"a".repeat(2_100_000)}super-secret-token-value\n`);
+      writeFileSync(join(dist, "_next", "static", "chunks", "main-app-test.js"), `${"a".repeat(2_100_000)}super-secret-token-value\n`);
       expect(() => archiveFrontendArtifact({
         combo,
         projectName: "lightvela-intl",
@@ -535,7 +526,7 @@ describe("frontend artifact helpers", () => {
         outputDir: root,
         repository: "registry.example.com/lightclaw/frontend-pages",
         sourceSha,
-      })).toThrow("does not reference an entry");
+      })).toThrow("does not reference a Next");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

@@ -1,0 +1,57 @@
+---
+title: 组件模型
+description: velaChat 应用由哪些运行时组件组成。
+---
+
+# 组件模型
+
+这里的“组件”不是 UI 组件，而是 runtime 组件。每个组件都应该有清晰输入、输出和禁止事项。
+
+## 组件一览
+
+| 组件 | 所属 crate | 职责 | 禁止事项 |
+| --- | --- | --- | --- |
+| HTTP Shell | `velad` | 路由、鉴权、本地监听、SSE 输出 | 不直接改业务状态 |
+| Command Authority | `vela-runtime` | 校验 command、幂等、状态机、触发副作用 | 不持久化 provider raw 文件格式 |
+| Sequencer | `vela-runtime` / `vela-store` | 分配 `event_id + epoch + seq` | 不理解 UI projection |
+| Event Store | `vela-store` | append/query canonical events、cursor window | 不知道 Pi/Codex/Claude |
+| Backend Adapter | `vela-backends` | 启动 agent、收 raw output、回传 runtime output | 不写 store、不分配 canonical seq |
+| Projector | `vela-projection` | events -> conversation/request/diff/session views | 不调用 backend |
+| Protocol DTO | `vela-protocol` | REST/SSE/OpenAPI 类型 | 不包含业务执行逻辑 |
+| Client | 外部 app | 渲染 read models、提交 commands | 不 append canonical conversation item |
+
+## 关键数据流
+
+```txt
+Client Command
+  -> velad route
+  -> vela-runtime command handler
+  -> vela-store append command fact
+  -> vela-backends side effect
+  -> vela-runtime normalize backend output
+  -> vela-store append runtime facts
+  -> vela-projection update read models
+  -> velad SSE / REST response
+```
+
+## Requirements
+
+### Requirement: 组件只能通过相邻边界通信
+
+组件之间 MUST 通过显式 trait / DTO 通信，不能跨层访问内部状态。
+
+#### Scenario: Backend 想记录 tool output
+
+- **WHEN** backend adapter 收到 tool output
+- **THEN** 它返回 runtime output 给 runtime
+- **AND** runtime 归一后调用 store append
+- **AND** backend 不直接写 SQLite
+
+### Requirement: projection 是可重建缓存
+
+Projection MUST 能从 canonical events 重新构建。
+
+#### Scenario: projection 表损坏
+
+- **WHEN** conversation projection 被清空
+- **THEN** 系统可以 replay event log 重建 conversation

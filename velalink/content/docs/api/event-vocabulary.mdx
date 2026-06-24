@@ -1,0 +1,201 @@
+---
+title: 事件词表
+description: velaChat v1 的输入事件、运行时事件和投影归属。
+---
+
+# 事件词表
+
+这一页定义 velaChat v1 的事件词表。它是 backend adapter、daemon、projector、Desktop/Web/Mobile/Embed UI 之间的共同语言。
+
+## 参考证据
+
+我们参考的是“分层原则”，不是照搬字段：
+
+| 项目 | 证据 | 我们吸收的原则 |
+| --- | --- | --- |
+| Synara provider runtime | `/Users/skipzhang/synara/packages/contracts/src/providerRuntime.ts:20` 定义 raw source，`:156` 起定义 provider runtime event family，`:129` 起区分 canonical item type，`:143` 起区分 request type | raw provider event 和 canonical runtime event 分开；message、reasoning、tool lifecycle、request lifecycle 不是同一类东西 |
+| Synara orchestration | `/Users/skipzhang/synara/packages/contracts/src/orchestration.ts:462` 定义 activity，`:701` 起定义 shell stream，`:1323` 起定义 command/requested 类事件 | read model / shell stream 可以只推送 upsert/remove；用户请求类事件和运行时输出类事件分开 |
+| Paseo stream coalescer | `/Users/skipzhang/code/paseo/packages/server/src/server/agent/agent-stream-coalescer.ts:56` 只 coalesce `assistant_message`、`reasoning`、`tool_call`，`:160` 用 `callId` 覆盖 tool lifecycle | 流式增量先进入稳定 item 身份，再 flush；tool lifecycle 按 call id 合并 |
+| Paseo timeline projection | `/Users/skipzhang/code/paseo/packages/server/src/server/agent/timeline-projection.ts:4` 区分 canonical/projected，`:121` 起 collapse tool lifecycle，`:163` 起 merge reasoning chunks | canonical log 可以细，UI projection 必须合并；普通 UI 不直接吃 raw timeline |
+
+## 三层事件
+
+```txt
+Client Input Event        # 用户意图，POST /sessions/{id}/events
+  -> daemon validate / dedupe / authorize
+Canonical Runtime Event   # daemon 排序后的事实，GET/stream /sessions/{id}/events
+  -> projectors
+UI Read Models            # conversation/requests/diffs/sessions
+```
+
+Client input event 不是事实。它只有被 daemon 接受后，才会产生 canonical runtime event。
+
+## 客户端输入事件
+
+这些事件只能出现在 `POST /sessions/{session_id}/events` 的 request body 里。
+
+| 类型 | 必填字段 | 说明 | 接受后常见 canonical event |
+| --- | --- | --- | --- |
+| `user.message` | `content[]` | 用户发送消息。`content` 可以包含文本、文件引用、图片引用 | `user.message.accepted` |
+| `user.tool_confirmation` | `request_id`, `result` | 用户响应工具/权限确认。`result` 为 `allow` 或 `deny` | `request.response.accepted`、`request.resolved` |
+| `user.custom_tool_result` | `request_id`, `content[]` | 客户端或用户返回自定义工具结果 | `request.response.accepted`、`tool.completed` |
+| `user.request_answer` | `request_id`, `answer` | 用户回答 agent-to-user 普通问题 | `request.response.accepted`、`request.resolved` |
+
+`POST /sessions/{session_id}/cancel` 不是 input event。它是独立 control command，用来取消当前运行中的 turn。
+
+## 运行时事实事件
+
+这些事件只能由 daemon/sequencer 写入 canonical event log。Backend adapter 可以提供 raw output，但不能直接决定 canonical `event_id`、`epoch`、`seq`。
+
+## 生命周期归属
+
+Vela 的生命周期以 canonical event 为准，不以 provider 原始事件名为准。Provider 可以有自己的
+`agent_start`、`turn_start`、`message_start`、`message_update`、`turn_end`、`agent_end` 等事件，但这些只是
+adapter 的输入。
+
+| Lifecycle | Canonical owner | 规则 |
+| --- | --- | --- |
+| command accepted / queued / rejected | daemon command handler | 先做 idempotency、session 状态和 backend availability 判断，再写入 command fact 或返回 `CommandAck.rejected` |
+| `turn.started` | runtime sequencer | runtime 在调用 backend side effect 前追加，provider 的 `turn_start` 不再重复生成 canonical `turn.started` |
+| assistant message lifecycle | backend normalizer | 只有 provider 给出 assistant role 和稳定 message id 时才生成 `assistant.message.started` / `assistant.message.completed`；否则吸收 lifecycle 噪音，避免制造不稳定 row |
+| assistant text / reasoning delta | backend normalizer | `message_update` 类增量映射为 `assistant.message.delta` 或 `assistant.reasoning.delta` |
+| tool lifecycle | backend normalizer | provider tool start/update/end 映射为 `tool.started`、`tool.updated`、`tool.completed` 或 `tool.failed`，并尽量保留稳定 `tool_id` |
+| turn completion | backend normalizer + runtime | provider 明确完成信号映射为 `turn.completed`；provider process/error 信号映射为 `turn.failed` |
+| diagnostics | adapter / runtime | 只有异常、未知、未实现、需要人工关注的 provider 信号才进入 `warning.raised` 或 `error.raised` |
+| provider control-plane telemetry | adapter logger | 例如 Codex remote-control、MCP startup、thread status、rate-limit 更新；记录为 trace/debug，不进入 canonical event log |
+
+这条边界很重要：正常 provider 生命周期事件应该被“吸收”或映射成稳定 canonical event，不能因为我们还没有 UI 呈现需求就降级成 warning。`warning.raised` 表示需要关注的异常信号，不是普通 lifecycle trace。
+
+### Canonical vs Trace
+
+Canonical event log 是 read model 的事实来源；trace/timeline 是诊断视角。普通 UI 应消费 conversation/requests 等 read model，而不是 provider raw timeline。Provider raw payload 可以被保留在 canonical event 的 `raw` 字段或诊断 trace 中，但客户端兼容性只能依赖 OpenAPI 定义的 canonical event 和 read model 字段。
+
+### Session / Backend
+
+| Type | 主要投影 | 说明 |
+| --- | --- | --- |
+| `session.created` | `SessionListView`, `SessionView` | session 被创建 |
+| `session.updated` | `SessionListView`, `SessionView` | title、working directory、model、metadata 等发生变化 |
+| `session.config.updated` | `SessionListView`, `SessionView` | session-level `agent_config` 默认值改变；running turn 仍使用自己的 `resolved_agent_config` |
+| `session.status.changed` | `SessionListView`, `SessionView`, `ConversationView` | `idle`、`running`、`waiting_for_input`、`canceling`、`failed`、`closed` 等状态变化 |
+| `session.closed` | `SessionListView`, `SessionView` | session 被关闭 |
+| `backend.status.changed` | `BackendStatusView`, `SessionListView` | backend 可用性、健康状态、capability 变化 |
+
+### 命令接收结果
+
+| Type | 主要投影 | 说明 |
+| --- | --- | --- |
+| `user.message.accepted` | `ConversationView`, `SessionListView` | daemon 接受用户消息。正式 `user_message` item 只能来自这个事件或它派生的 conversation view |
+| `input.queued` | `ConversationView` | 输入被接受但暂时排队，例如当前 turn 正在运行 |
+| `input.rejected` | `ConversationView`, diagnostics | 输入被拒绝，例如 session closed、permission blocked、duplicate command |
+| `turn.cancel.accepted` | `SessionView`, `ConversationView` | cancel command 被接受 |
+| `request.response.accepted` | `PendingRequestsView`, `ConversationView` | request response 被 daemon 接受，后续才交给 adapter |
+
+### 回合生命周期
+
+| Type | 主要投影 | 说明 |
+| --- | --- | --- |
+| `turn.started` | `SessionView`, `ConversationView` | 一个 agent turn 开始，投影为 `turn_meta` |
+| `turn.completed` | `SessionView`, `ConversationView` | turn 正常完成，更新 `turn_meta` |
+| `turn.failed` | `SessionView`, `ConversationView` | turn 失败，更新 `turn_meta` 并可生成 `status` |
+| `turn.cancelled` | `SessionView`, `ConversationView` | turn 被取消，更新 `turn_meta` |
+
+### 消息和思考
+
+| Type | 主要投影 | 说明 |
+| --- | --- | --- |
+| `assistant.message.started` | `ConversationView` | assistant message 开始，建立稳定 message id |
+| `assistant.message.delta` | `ConversationView` | assistant 正文增量 |
+| `assistant.message.completed` | `ConversationView` | assistant message 完成 |
+| `assistant.reasoning.delta` | `ConversationView` | reasoning 增量默认不进正式正文，可投影为 agent work / thinking item |
+| `assistant.reasoning.completed` | `ConversationView` | reasoning 结束或摘要完成 |
+
+### 活动和工具
+
+| Type | 主要投影 | 说明 |
+| --- | --- | --- |
+| `tool.started` | `ConversationView`, `SessionTimeline` | 工具调用开始，必须带稳定 `tool_id` 或 backend refs |
+| `tool.updated` | `ConversationView`, `SessionTimeline` | 工具参数、进度、摘要变化 |
+| `tool.output.delta` | `ConversationView`, `SessionTimeline` | 工具输出增量。不得直接作为 assistant text 进入 conversation |
+| `tool.completed` | `ConversationView`, `SessionTimeline` | 工具调用完成 |
+| `tool.failed` | `ConversationView`, `SessionTimeline` | 工具调用失败 |
+| `task.started` | `ConversationView` | 子任务开始 |
+| `task.updated` | `ConversationView` | 子任务进度变化 |
+| `task.completed` | `ConversationView` | 子任务完成 |
+
+Shell、read、edit、search 等 provider work 都必须归一到 `tool.*`。Shell command 不是独立事件族，而是 `tool.*` payload 中的 `detail.type = "shell"`。
+
+### 请求、审查和诊断
+
+| Type | 主要投影 | 说明 |
+| --- | --- | --- |
+| `request.opened` | `PendingRequestsView`, `ConversationView` | 权限、工具确认、用户输入请求打开 |
+| `request.updated` | `PendingRequestsView`, `ConversationView` | request 文案、选项或状态变化 |
+| `request.resolved` | `PendingRequestsView`, `ConversationView` | request 被 approve、deny、answer、expire 或 cancel |
+| `diff.updated` | `DiffReviewView`, `ConversationView` | 文件变更摘要或 diff 更新 |
+| `usage.updated` | `SessionView`, `BackendStatusView` | token、费用、线程占用等 usage 变化 |
+| `warning.raised` | `ConversationView`, diagnostics | 可恢复 warning |
+| `error.raised` | `ConversationView`, diagnostics | 运行时错误。只有用户可理解的错误摘要可进入 conversation |
+| `projection.invalidated` | affected read models | daemon 明确通知某些 read model 需要刷新 |
+
+### 流控制消息
+
+`sync.reset` 是 stream control message，不是普通 `VelaEvent`。它用于 cursor stale、epoch 改变、compaction 后的恢复。
+
+## 投影规则
+
+| 运行时事件 | ConversationView item | PendingRequestsView | DiffReviewView | SessionTimeline |
+| --- | --- | --- | --- | --- |
+| `user.message.accepted` | `user_message` |  |  | message item |
+| `input.queued` | `user_message` with queued status or `status` |  |  | input item |
+| `turn.*` | `turn_meta` |  |  | turn item |
+| `assistant.message.*` | `assistant_message` |  |  | message item |
+| `assistant.reasoning.*` | optional `agent_work` |  |  | reasoning item |
+| `tool.*` | `agent_work` |  |  | tool item |
+| `command.*` | `agent_work` |  |  | command item |
+| `request.*` | optional `agent_work` / `status` | request item |  | request item |
+| `diff.updated` | optional `agent_work` |  | diff item | diff item |
+| `warning.raised` | `agent_work` / `status` |  |  | warning item |
+| `error.raised` | `status` |  |  | error item |
+
+这条规则是为了防止：
+
+- raw tool text 混进 assistant 正文；
+- backend replay 的用户输入变成第二个 user bubble；
+- reasoning/status 被当成 assistant markdown；
+- 切会话后 timeline snapshot 被当成 conversation items。
+
+`ConversationView` 对工具调用采用“全量工具、结构化投影”的规则：所有 normalized `tool.*` lifecycle 都必须合并到稳定 `agent_work` item，短工具不因为耗时短而从 conversation 消失。普通 UI 可以调整这些 work rows 的密度、分组、显隐和虚拟化策略，但不应该读取 trace/raw event 来补工具展示。`已处理 ...` / `处理中 ...` 这类 turn-level 文案不是 canonical event 词汇的一部分；render model 必须从 `turn_meta` item 的 `started_at`、`completed_at` 和 `status` 派生，不能从 assistant streaming row 或 agent work rows 反推 turn 生命周期。
+
+## Requirements
+
+### Requirement: Event type 必须来自词表
+
+Canonical runtime event 的 `type` MUST 来自本页的 `VelaEventType`。
+
+#### Scenario: Backend 输出未知事件
+
+- **WHEN** backend adapter 收到未知 provider event
+- **THEN** daemon 可以把 raw event 存入 diagnostics 或 adapter logger
+- **AND** 如果它是控制面 telemetry，普通 UI 不应看到 canonical event
+- **AND** 如果它是未知业务/异常信号，对 UI 暴露时必须映射成 `warning.raised`、`error.raised` 或已知 canonical event
+
+### Requirement: Conversation 不能把 work event 当正文
+
+Conversation MUST NOT directly render `tool.*`、`request.*`、`diff.updated` 的 payload text as assistant message text。
+
+#### Scenario: shell command 输出
+
+- **WHEN** daemon append `tool.output.delta`
+- **THEN** `ConversationView` 可以更新 `agent_work` item
+- **AND** 不新增 assistant message
+
+### Requirement: 正式 user item 只能来自 projected fact
+
+Chat UI MUST NOT convert pending input event into formal user item.
+
+#### Scenario: 用户消息被排队
+
+- **WHEN** client submits `user.message` and daemon returns `queued`
+- **THEN** UI 可以显示 pending/queue affordance
+- **AND** 正式 user item 必须等待 `input.queued` / `user.message.accepted` 经 `ConversationView` 投影后出现

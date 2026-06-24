@@ -1,0 +1,41 @@
+---
+title: 添加 Backend
+description: 如何接入 Codex、Claude Code、Pi、OpenCode 或 ACP providers。
+---
+
+# 添加 Backend
+
+新 backend 必须通过 adapter 接入。不要在 client 里加 provider-specific 分支。
+
+## Checklist
+
+1. 定义 backend kind 和 display metadata。
+2. 实现 `BackendAdapter` trait。
+3. 把 provider raw output 映射为 `BackendRuntimeOutput`。
+4. 在 runtime 中归一成 canonical events。
+5. 保留 raw payload 以便调试。
+6. 声明 capabilities。
+7. 添加 health probe。
+8. 添加 adapter fixtures。
+9. 更新 OpenAPI enum 和 docs。
+
+## Requirements
+
+### Requirement: Backend 必须有 canonical fixtures
+
+每个 backend MUST 提供 fixtures，证明 provider output 能映射到 vela runtime events。
+
+#### Scenario: provider 输出 streaming text
+
+- **WHEN** fixture replay
+- **THEN** adapter 输出 item start、content delta、completion events
+- **AND** runtime 能 append canonical events
+
+### Requirement: Client 不感知 provider raw protocol
+
+Client MUST 只消费 protocol DTO/read model，不消费 provider raw event。
+
+#### Scenario: Pi 和 Claude 都产生 tool call
+
+- **WHEN** 两个 backend 都执行 tool
+- **THEN** client 看到同一种 activity/request projection

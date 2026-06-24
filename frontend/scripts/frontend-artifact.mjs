@@ -262,16 +262,14 @@ function readIndexEntry(outputDir) {
   }
   const html = readFileSync(indexPath, "utf8");
   const scriptSrcs = Array.from(html.matchAll(/<script\b[^>]*\bsrc=["']([^"']+\.js(?:\?[^"']*)?)["'][^>]*>/g), (match) => match[1]);
-  const viteEntryJs = scriptSrcs.find((src) => /^\/assets\/index-[^"']+\.js(?:\?.*)?$/.test(src));
   const nextStaticPrefix = "(?:/__releases/[^/]+)?/_next/static";
   const nextMainEntryRe = new RegExp(`^${nextStaticPrefix}/chunks/main-app-[^"']+\\.js(?:\\?.*)?$`);
   const nextEntryRe = new RegExp(`^${nextStaticPrefix}/.+\\.js(?:\\?.*)?$`);
   const nextMainEntryJs = scriptSrcs.find((src) => nextMainEntryRe.test(src));
-  const nextEntryJs = nextMainEntryJs ?? scriptSrcs.find((src) => nextEntryRe.test(src));
-  const entryJs = viteEntryJs ?? nextEntryJs;
-  const entryKind = viteEntryJs ? "vite" : "next";
+  const entryJs = nextMainEntryJs ?? scriptSrcs.find((src) => nextEntryRe.test(src));
+  const entryKind = "next";
   if (!entryJs) {
-    throw new Error("frontend artifact index.html does not reference an entry Vite /assets/index-*.js or Next /_next/static/*.js file");
+    throw new Error("frontend artifact index.html does not reference a Next /_next/static/*.js entry file");
   }
   const entryPath = join(outputDir, entryJs.replace(/^\//, ""));
   if (!existsSync(entryPath)) {

@@ -1,0 +1,12 @@
+.workbenchHost {
+  --workbench-product-header-height: 61px;
+
+  position: fixed;
+  inset: var(--workbench-product-header-height) 0 0;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  background: #f4f5f6;
+}

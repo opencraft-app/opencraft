@@ -50,8 +50,8 @@ import { AUTH_SERVICE_UNAVAILABLE_MESSAGE, readStoredAuthToken } from "@/reposit
 import {
   AGENTS_HOME_PATH,
   AGENT_SECTION_PATH_BY_ID,
-  type AgentSectionId,
-} from "@/router/paths";
+  type AgentSettingsSectionId,
+} from "@/lib/agent-routes";
 import type { WorkerActionStatusResult } from "@/repositories/types";
 import {
   createMonoDebugExecAdapter,
@@ -76,6 +76,8 @@ import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
 import { HermesAgentSkillsPanel, type HermesAgentSkillsPanelProps } from "@/pages/marketing/hermes-agent-skills-panel";
 import { AchievementsPanel } from "@/pages/marketing/openclaw-achievements-panel";
 import { AutomationsPanel } from "@/pages/marketing/openclaw-automations-panel";
+import { shouldShowAgentSettingsDataLoading } from "@/pages/marketing/agent-settings-loading";
+import { StableTeaSdkPanelHost } from "@/pages/marketing/agent-settings-sdk-stable-host";
 import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
 import {
   getRestartBlockReason,
@@ -169,8 +171,13 @@ type TeaSdkRuntime = {
 };
 
 let teaSdkRuntimePromise: Promise<TeaSdkRuntime> | null = null;
+let teaSdkRuntimeCache: TeaSdkRuntime | null = null;
+let teaSdkRuntimeError: Error | null = null;
 
 function loadTeaSdkRuntime(): Promise<TeaSdkRuntime> {
+  if (teaSdkRuntimeCache) {
+    return Promise.resolve(teaSdkRuntimeCache);
+  }
   if (!teaSdkRuntimePromise) {
     teaSdkRuntimePromise = (async () => {
       // Keep TEA SDK out of the module graph evaluated during Next static generation.
@@ -187,7 +194,7 @@ function loadTeaSdkRuntime(): Promise<TeaSdkRuntime> {
       const hermesGatewayCommands = hermesScripts.gateway;
       const hermesModelCommands = hermesScripts.model;
 
-      return {
+      const runtime: TeaSdkRuntime = {
         ChannelPanel: sdk.ChannelPanel as unknown as ComponentType<TeaSdkPanelProps>,
         ModelPanel: sdk.ModelPanel as unknown as ComponentType<TeaSdkPanelProps>,
         SkillPanel: sdk.SkillPanel as unknown as ComponentType<TeaSdkPanelProps>,
@@ -205,9 +212,28 @@ function loadTeaSdkRuntime(): Promise<TeaSdkRuntime> {
         getProviderSaveCommand: (config) => hermesModelCommands.getProviderSaveCommand(config),
         getModelSwitchCommand: (modelFullId) => hermesModelCommands.getModelSwitchCommand(modelFullId),
       };
-    })();
+      teaSdkRuntimeCache = runtime;
+      teaSdkRuntimeError = null;
+      return runtime;
+    })().catch((error: unknown) => {
+      const normalizedError = error instanceof Error ? error : new Error(String(error));
+      teaSdkRuntimeError = normalizedError;
+      teaSdkRuntimePromise = null;
+      throw normalizedError;
+    });
   }
   return teaSdkRuntimePromise;
+}
+
+function TeaSdkRuntimeLoading() {
+  const t = useT();
+
+  return (
+    <div className="flex items-center justify-center rounded-md border border-black/[0.06] bg-white py-16 text-sm text-black/45">
+      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+      {t("正在加载配置面板…")}
+    </div>
+  );
 }
 
 function TeaSdkSettingsPanel({
@@ -225,10 +251,19 @@ function TeaSdkSettingsPanel({
   };
 }) {
   const t = useT();
-  const [runtime, setRuntime] = useState<TeaSdkRuntime | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [runtime, setRuntime] = useState<TeaSdkRuntime | null>(() => teaSdkRuntimeCache);
+  const [error, setError] = useState<string | null>(() => teaSdkRuntimeError?.message ?? null);
+  const productConfig = useMemo(
+    () => runtime ? runtime.createProductConfig(productConfigArgs) : null,
+    [runtime, productConfigArgs],
+  );
 
   useEffect(() => {
+    if (teaSdkRuntimeCache) {
+      setRuntime(teaSdkRuntimeCache);
+      setError(null);
+      return;
+    }
     let cancelled = false;
     void loadTeaSdkRuntime()
       .then((nextRuntime) => {
@@ -250,13 +285,8 @@ function TeaSdkSettingsPanel({
     );
   }
 
-  if (!runtime) {
-    return (
-      <div className="flex items-center justify-center rounded-md border border-black/[0.06] bg-white py-16 text-sm text-black/45">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        {t("加载中...")}
-      </div>
-    );
+  if (!runtime || !productConfig) {
+    return <TeaSdkRuntimeLoading />;
   }
 
   const Panel =
@@ -267,11 +297,13 @@ function TeaSdkSettingsPanel({
         : runtime.SkillPanel;
 
   return (
-    <Panel
-      instance={instance}
-      featureFlags={featureFlags}
-      productConfig={runtime.createProductConfig(productConfigArgs)}
-    />
+    <StableTeaSdkPanelHost>
+      <Panel
+        instance={instance}
+        featureFlags={featureFlags}
+        productConfig={productConfig}
+      />
+    </StableTeaSdkPanelHost>
   );
 }
 
@@ -294,10 +326,19 @@ function HermesAgentSkillsRuntimePanel({
   };
 }) {
   const t = useT();
-  const [runtime, setRuntime] = useState<TeaSdkRuntime | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [runtime, setRuntime] = useState<TeaSdkRuntime | null>(() => teaSdkRuntimeCache);
+  const [error, setError] = useState<string | null>(() => teaSdkRuntimeError?.message ?? null);
+  const productConfig = useMemo(
+    () => runtime ? runtime.createProductConfig(productConfigArgs) : null,
+    [runtime, productConfigArgs],
+  );
 
   useEffect(() => {
+    if (teaSdkRuntimeCache) {
+      setRuntime(teaSdkRuntimeCache);
+      setError(null);
+      return;
+    }
     let cancelled = false;
     void loadTeaSdkRuntime()
       .then((nextRuntime) => {
@@ -319,25 +360,22 @@ function HermesAgentSkillsRuntimePanel({
     );
   }
 
-  if (!runtime) {
-    return (
-      <div className="flex items-center justify-center rounded-md border border-black/[0.06] bg-white py-16 text-sm text-black/45">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        {t("加载中...")}
-      </div>
-    );
+  if (!runtime || !productConfig) {
+    return <TeaSdkRuntimeLoading />;
   }
 
   return (
-    <HermesAgentSkillsPanel
-      botId={botId}
-      execDebugCommand={execDebugCommand}
-      featureFlags={featureFlags}
-      initialSectionSlug={initialSectionSlug}
-      instance={instance}
-      productConfig={runtime.createProductConfig(productConfigArgs)}
-      SkillPanel={runtime.SkillPanel}
-    />
+    <StableTeaSdkPanelHost>
+      <HermesAgentSkillsPanel
+        botId={botId}
+        execDebugCommand={execDebugCommand}
+        featureFlags={featureFlags}
+        initialSectionSlug={initialSectionSlug}
+        instance={instance}
+        productConfig={productConfig}
+        SkillPanel={runtime.SkillPanel}
+      />
+    </StableTeaSdkPanelHost>
   );
 }
 
@@ -567,7 +605,7 @@ void _staggerContainer;
 /* ─── Navbar ─── */
 
 const SHOW_AGENTCHAT_ENTRY = true;
-const DEFAULT_AGENT_SECTION: AgentSectionId = "channel";
+const DEFAULT_AGENT_SECTION: AgentSettingsSectionId = "channel";
 
 /* ─── Section Card Wrapper ─── */
 
@@ -2837,6 +2875,41 @@ const getBotStatusLabel = (status: OpenClawBot["status"]) => {
 const RESCUE_EXPORT_POLL_INTERVAL_MS = 5000;
 const HERMES_WORKSPACE_EXPORT_PATH = "/home/agentuser/.hermes";
 const RESCUE_EXPORT_TERMINAL_PHASES = new Set(["completed", "failed"]);
+const TEA_SDK_SECTIONS = new Set<AgentSettingsSectionId>(["channel", "model", "skill"]);
+
+function AgentSettingsDataLoading() {
+  return (
+    <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]" aria-hidden="true">
+      <aside className="lg:sticky lg:top-[84px]">
+        <div className="rounded-md border border-black/[0.06] bg-white p-3 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
+          <div className="flex items-center gap-3 rounded-md px-2.5 py-2.5">
+            <span className="h-10 w-10 flex-shrink-0 animate-pulse rounded-md bg-black/[0.045]" />
+            <span className="min-w-0 flex-1 space-y-2">
+              <span className="block h-4 w-28 animate-pulse rounded bg-black/[0.045]" />
+              <span className="block h-3 w-16 animate-pulse rounded bg-black/[0.035]" />
+            </span>
+          </div>
+          <span className="mt-3 block h-9 w-full animate-pulse rounded-md bg-black/[0.035]" />
+        </div>
+        <nav className="mt-4 rounded-md border border-black/[0.06] bg-white p-2 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
+          {Array.from({ length: 8 }).map((_, index) => (
+            <span key={index} className="flex items-center gap-2.5 rounded-md px-3 py-2.5">
+              <span className="h-5 w-5 animate-pulse rounded bg-black/[0.035]" />
+              <span className="h-4 w-16 animate-pulse rounded bg-black/[0.035]" />
+            </span>
+          ))}
+        </nav>
+      </aside>
+      <section className="min-w-0">
+        <div className="rounded-md border border-black/[0.06] bg-white p-5 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
+          <span className="block h-5 w-36 animate-pulse rounded bg-black/[0.045]" />
+          <span className="mt-3 block h-4 w-64 max-w-full animate-pulse rounded bg-black/[0.035]" />
+          <span className="mt-8 block h-40 w-full animate-pulse rounded-md bg-black/[0.025]" />
+        </div>
+      </section>
+    </div>
+  );
+}
 
 const isRescueExportRunning = (status: WorkerActionStatusResult | null | undefined) => {
   if (!status) return false;
@@ -2847,7 +2920,7 @@ export const AgentSettingsPage = ({
   sectionId,
   showHeader = true,
 }: {
-  sectionId?: AgentSectionId;
+  sectionId?: AgentSettingsSectionId;
   showHeader?: boolean;
 } = {}) => {
   const t = useT();
@@ -2900,6 +2973,13 @@ export const AgentSettingsPage = ({
   /* 实例内部的子页面切换：由 Next /agents/<section> 路由在服务端校验，client 只接收已归一化 sectionId。 */
   const activeSection = sectionId ?? DEFAULT_AGENT_SECTION;
 
+  useEffect(() => {
+    if (!TEA_SDK_SECTIONS.has(activeSection)) return;
+    void loadTeaSdkRuntime().catch(() => {
+      // The visible settings panel reports the concrete loading error.
+    });
+  }, [activeSection]);
+
   /* Tab 切换 */
   const [activeTabId, setActiveTabId] = useState((visibleBots[0]?.id ?? requestedCreatingBotId) || "creating");
   const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
@@ -2912,6 +2992,11 @@ export const AgentSettingsPage = ({
   }, [visibleBots, activeTabId, isCreating]);
   const activeBot = visibleBots.find((b) => b.id === activeTabId) ?? visibleBots[0];
   const activeBotStatus = activeBot?.status;
+  const isInitialBotsLoading = shouldShowAgentSettingsDataLoading({
+    botsLoading,
+    isCreating,
+    visibleBotCount: visibleBots.length,
+  });
 
   /**
    * AgentChat（LightVela）启动 token：
@@ -3578,6 +3663,32 @@ export const AgentSettingsPage = ({
   const activeImportStatusError = activeBot ? importStatusErrors[activeBot.id] ?? null : null;
   // 当前 tab 是否展示错误
   const activeBotRestartError = getActiveBotRestartError(activeBot, restartErrors);
+  const sdkInstance = useMemo<TeaSdkInstanceInfo | null>(() => {
+    if (!activeBot) return null;
+    return {
+      InstanceId: activeBot.id,
+      RegionId: 1,
+    };
+  }, [activeBot?.id]);
+  const sdkFeatureFlags = useMemo<TeaSdkFeatureFlags>(() => ({
+    gateway: true,
+    channel: true,
+    wecomChannel: true,
+    adpChannel: false,
+    wecomLongConn: true,
+    yuanbaoChannel: false,
+    weixinChannel: true,
+    qrConfig: true,
+    skills: true,
+    webUI: false,
+    memoryManagement: false,
+    memoryV2: false,
+    qqbotplugin: false,
+  }), []);
+  const sdkProductConfigArgs = useMemo(() => ({
+    runCommand: commandAdapter.runCommand,
+    getInvocationTask: commandAdapter.getInvocationTask,
+  }), [commandAdapter]);
 
   useEffect(() => {
     if (!showHiddenAgentTools || activeSection !== "diagnostics" || !activeBot?.id) return;
@@ -4329,11 +4440,8 @@ export const AgentSettingsPage = ({
       <main className="lw-app-top-pad flex-grow bg-[#F7F8FA] pb-12">
         <section className="lw-settings-shell">
           {/* ── Loading 状态 ── */}
-          {botsLoading && !isCreating && (
-            <div className="flex items-center justify-center py-20">
-              <Loader2 className="h-6 w-6 animate-spin" style={{ color: "rgba(55,53,47,0.2)" }} />
-              <span className="ml-3 text-sm" style={{ color: "rgba(0,0,0,0.40)" }}>{t("加载中...")}</span>
-            </div>
+          {isInitialBotsLoading && (
+            <AgentSettingsDataLoading />
           )}
 
           {/* ── 创建 Loading 动画 ── */}
@@ -4342,32 +4450,9 @@ export const AgentSettingsPage = ({
           )}
 
           {/* ── 设置区域 ── */}
-          {!isCreating && !botsLoading && activeBot && (
+          {!isCreating && activeBot && sdkInstance && (
             (() => {
-              const sdkInstance: TeaSdkInstanceInfo = {
-                InstanceId: activeBot.id,
-                RegionId: 1,
-              };
-              const sdkFeatureFlags: TeaSdkFeatureFlags = {
-                gateway: true,
-                channel: true,
-                wecomChannel: true,
-                adpChannel: false,
-                wecomLongConn: true,
-                yuanbaoChannel: false,
-                weixinChannel: true,
-                qrConfig: true,
-                skills: true,
-                webUI: false,
-                memoryManagement: false,
-                memoryV2: false,
-                qqbotplugin: false,
-              };
-              const sdkProductConfigArgs = {
-                runCommand: commandAdapter.runCommand,
-                getInvocationTask: commandAdapter.getInvocationTask,
-              };
-              const settingsSections: { id: AgentSectionId; label: string; icon: React.ReactNode; path: string; badge?: string }[] = [
+              const settingsSections: { id: AgentSettingsSectionId; label: string; icon: React.ReactNode; path: string; badge?: string }[] = [
                 { id: "channel", label: t("通道"), icon: <MessageCircle className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.channel },
                 { id: "model", label: t("模型"), icon: <BrainCircuit className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.model },
                 { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.skill },
@@ -4397,6 +4482,14 @@ export const AgentSettingsPage = ({
                   : t("重装 Agent（保留数据）");
               const deleteDisabled = resettingAcli;
               const deleteTooltip = deleteDisabled ? t("请稍后") : t("删除");
+              const sectionFallback = TEA_SDK_SECTIONS.has(activeSection)
+                ? null
+                : (
+                    <div className="flex min-h-[320px] items-center justify-center rounded-lg border border-black/[0.06] bg-white text-sm text-black/45">
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      {t("正在加载页面…")}
+                    </div>
+                  );
 
               return (
                 <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
@@ -4599,12 +4692,7 @@ export const AgentSettingsPage = ({
                   <section className="min-w-0">
                     <div key={`${activeBot.id}-${activeSection}`} className="_lh-claw-bot-panel">
                       <Suspense
-                        fallback={(
-                          <div className="flex min-h-[320px] items-center justify-center rounded-lg border border-black/[0.06] bg-white text-sm text-black/45">
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            {t("加载中...")}
-                          </div>
-                        )}
+                        fallback={sectionFallback}
                       >
                         <div className="_lh-claw-bot-panel__cards min-w-0">
                           {activeSection === "channel" && (

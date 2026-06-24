@@ -1,0 +1,100 @@
+---
+title: Request API
+description: 权限、确认和 agent-to-user 请求。
+---
+
+# Requests API
+
+Requests 表示需要用户响应的 agent-to-user 交互：shell 权限、文件写入审批、tool confirmation、自定义输入等。
+
+读取 pending/recent requests 属于 UI Read Model API；响应 request 统一通过 [Input Event API](/docs/api/input-events) 投递 `user.tool_confirmation`、`user.custom_tool_result` 或 `user.request_answer`。
+
+Request 的出现不是靠轮询发现。Client 应该订阅 `/sessions/{session_id}/events/stream` 或 `/events/stream`，看到 `request.opened`、`request.updated`、`request.resolved` 后刷新 `PendingRequestsView`。
+
+## Endpoints
+
+| Method | Path | 用途 |
+| --- | --- | --- |
+| `GET` | `/sessions/{session_id}/views/requests` | 获取 PendingRequestsView |
+| `GET` | `/requests/{request_id}` | 获取 request |
+| `POST` | `/sessions/{session_id}/events` | 投递 request response input event |
+
+## UI 感知链路
+
+```txt
+Backend raw permission event
+  -> Normalizer
+  -> canonical request.opened
+  -> Event stream notifies clients
+  -> Projector updates PendingRequestsView
+  -> UI renders permission dock / mobile approval
+  -> POST /sessions/{session_id}/events
+  -> daemon validates state
+  -> backend-specific response event
+  -> canonical request.resolved
+```
+
+UI 只读 `PendingRequestsView` 来展示权限面板。它不能从 raw backend event、timeline item 或 transcript text 里猜权限状态。
+
+## 与 Qoder Pending Action 的关系
+
+Qoder 公开 API 也是通过 `POST /sessions/{id}/events` 响应 pending action。它的 pending action 模型是：
+
+- SSE stream 发出 `agent.tool_use` 或 `agent.custom_tool_use`。
+- 随后发出 `session.status_idle`，其中 `stop_reason.type = "requires_action"`，并带 `stop_reason.event_ids`。
+- Client 再向 `POST /v1/sessions/{session_id}/events` 发送 `user.tool_confirmation` 或 `user.custom_tool_result`。
+
+velaChat 不直接暴露 Qoder 的 raw shape 给 UI。Qoder adapter 应该把它映射成：
+
+| Qoder | velaChat |
+| --- | --- |
+| `agent.tool_use` + `requires_action` | `request.opened` |
+| `stop_reason.event_ids[]` | `AgentRequest.backend_ref` / `payload.tool_use_event_id` |
+| `user.tool_confirmation` | `POST /sessions/{session_id}/events` with `user.tool_confirmation` |
+| 后续 session event | `request.resolved` / `turn.resumed` |
+
+也就是说，`POST /sessions/{session_id}/events` 是 velaChat 的统一 input command surface；Qoder adapter 会把 `user.tool_confirmation` / `user.custom_tool_result` 近乎直连映射到 Qoder 的 `POST /sessions/{id}/events`。
+
+## Requirements
+
+### Requirement: request 状态由 server 校验
+
+Daemon MUST 在把 input event response 交给 backend 前校验 request state。
+
+#### Scenario: 两个 client 同时响应
+
+- **WHEN** desktop approve 且 mobile deny 同一个 request
+- **THEN** 只有第一个 response 被 accepted
+- **AND** 第二个 response 收到 conflict error
+
+### Requirement: request 生命周期必须事件化
+
+Request lifecycle changes MUST 表示为 canonical events。
+
+#### Scenario: request 打开并 resolved
+
+- **WHEN** backend 请求权限
+- **THEN** daemon append `request.opened`
+- **AND** client 通过 `POST /sessions/{session_id}/events` 响应后 append `request.resolved`
+
+### Requirement: request 订阅和 read model 必须分离
+
+Event stream MUST only notify that request state changed; UI rendering MUST use `PendingRequestsView`.
+
+#### Scenario: 手机收到权限请求
+
+- **WHEN** mobile client receives `request.opened`
+- **THEN** it fetches `/sessions/{session_id}/views/requests`
+- **AND** renders approval UI from `PendingRequestsView`
+- **AND** does not parse timeline or transcript text to discover the request
+
+### Requirement: backend-specific pending actions 必须适配为统一 request
+
+Backend adapters MUST convert backend-specific pending-action protocols into velaChat request events and input events.
+
+#### Scenario: Qoder requires action
+
+- **WHEN** Qoder emits `session.status_idle` with `stop_reason.type = "requires_action"`
+- **THEN** Qoder adapter creates or updates a canonical `AgentRequest`
+- **AND** daemon emits `request.opened`
+- **AND** responding through `/sessions/{session_id}/events` sends the appropriate Qoder `user.tool_confirmation` or `user.custom_tool_result`

@@ -22,29 +22,6 @@
     "paths": {
       "@/*": ["src/*"],
       "@next-site/*": ["next-site/*"]
-      // ──────────────────────────────────────────────────────────────────
-      // AgentChat-web 本地构建产物联调映射（已停用）
-      //
-      // 现已通过 npm 包 @tencent/agentchat-lightvela-panel 引入，
-      // 类型由 node_modules 自动解析。
-      //
-      // 如需切换回本地构建产物联调，需同步打开：
-      //   1. 下方 4 个 paths 映射
-      //   2. tsconfig.json 中对应的 paths
-      //   3. vite.config.ts 中的 alias 和 optimizeDeps.exclude
-      // ──────────────────────────────────────────────────────────────────
-      // "@tencent/agentchat-lightvela-panel": [
-      //   "../../AgentChat-web/packages/lightvela-panel/dist/types/index.d.ts"
-      // ],
-      // "@tencent/agentchat-claw-panel": [
-      //   "../../AgentChat-web/packages/claw-panel/dist/types/index.d.ts"
-      // ],
-      // "@tencent/agentchat-claw-hooks": [
-      //   "../../AgentChat-web/packages/claw-hooks/dist/types/index.d.ts"
-      // ],
-      // "@tencent/agentchat-claw-components": [
-      //   "../../AgentChat-web/packages/claw-components/dist/types/index.d.ts"
-      // ]
     }
   },
   "include": ["src"],

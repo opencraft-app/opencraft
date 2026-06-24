@@ -1,0 +1,543 @@
+---
+title: Testing Harness
+description: 红测、fixtures、golden 和 harness 的分层策略。
+---
+
+# Testing Harness
+
+velaChat 的测试目标不是“文件越多越安全”，而是让后续 agent 能用很少上下文定位失败、补充红测、修复行为。测试体系必须像 runtime 一样分层：外部协议样本、wire contract、command 状态机、event log、projection、HTTP shell 各测各的。
+
+## 参考经验
+
+我们吸收 Paseo 和 Synara 的测试经验，但不照搬实现语言或目录。
+
+| 来源 | 观察 | 我们采用的原则 |
+| --- | --- | --- |
+| Paseo fake runtime | `/Users/skipzhang/code/paseo/packages/server/src/server/agent/providers/pi/test-utils/fake-pi.ts` 用可脚本化 fake Pi 记录 launch、prompt、abort，并主动 emit runtime event | Provider adapter 和 runtime 测试优先用可脚本化 fake，而不是只返回固定数组 |
+| Paseo stream coalescing | `/Users/skipzhang/code/paseo/packages/server/src/server/agent/agent-manager-stream-coalescing.test.ts` 用 harness push event、fake timer、检查 seq 和 live stream | 流式/coalescing 测行为，不靠巨大 snapshot |
+| Paseo parser mapper | `/Users/skipzhang/code/paseo/packages/server/src/server/agent/providers/pi/tool-call-mapper.test.ts` 直接测 parser/mapper 小函数 | provider raw protocol 归一化要有密集 table tests |
+| Synara contracts | `/Users/skipzhang/synara/packages/contracts/src/providerRuntime.test.ts` 对 schema decode/encode 做 accept/reject 测试 | wire 边界必须有“坏形状拒绝”红测 |
+| Synara orchestration | `/Users/skipzhang/synara/apps/server/src/orchestration/Layers/OrchestrationEngine.test.ts` 测 append-only event、read model determinism、stream order | runtime/store/projection 要有事件重放和确定性测试 |
+| Synara typed fixtures | `/Users/skipzhang/synara/apps/server/integration/fixtures/providerRuntime.ts` 用 typed runtime event arrays 表达 turn fixture | 内部 canonical 场景用 typed builders，不优先堆裸 JSON |
+| WorkBuddyApp replay | `/Users/skipzhang/WorkBuddyApp/WorkBuddyApp/test/fixtures/event_log_replays/guardiola_history_replay.jsonl` 用生产 EventLog JSONL 回放守住 reducer bug | 真实用户行为序列可以抽取成 runtime command fixtures，但不要把 UI reducer 逻辑搬进 engine |
+
+## 本机真实 JSONL 样本池
+
+真实 JSONL 不等于可以直接提交进 repo。迁移前先做结构统计、脱敏和最小窗口抽取。
+
+| 来源 | 观察到的 shape | 迁移价值 | 迁移策略 |
+| --- | --- | --- | --- |
+| WorkBuddyApp EventLog replay | `schemaVersion`、`conversationId`、`type`、`payload`；包含 `user_message_chunk`、`agent_message_chunk`、`agent_thought_chunk`、`tool_call`、`tool_call_update` | 最高。真实生产多轮对话、thought-first、tool lifecycle | 可抽取为 runtime 用户行为序列；未来可加 WorkBuddy-style event replay parser fixture |
+| `.omx/logs/turns-*.jsonl` | `agent-turn-complete`，含 `thread_id`、`turn_id`、`input_preview`、`output_preview` | 高。大量真实 CLI turn 摘要，适合覆盖多轮用户输入、长输出、重复 turn | 只抽 `input_preview`，必要时保留输出长度/是否为空，不直接固化完整输出 |
+| Codex sessions | `timestamp`、`type`、`payload`；常见 `response_item`、`event_msg`、`turn_context`、`session_meta` | 高，但敏感。适合 diagnostics/trace shape 和 event-order 测试 | 只迁移结构窗口：event type、role、tool kind、terminal 状态；不迁移原文和路径 |
+| Claude JSONL sessions | `user`、`assistant`、`permission-mode`、`attachment`、`file-history-snapshot` | 中高。适合 import/history 和 permission/request fixtures | 抽小窗口并脱敏；不要提交文件路径、代码片段、用户原文 |
+| Pi / OpenClaw / QClaw sessions | `session`、`message`、`model_change`、`thinking_level_change`、`custom` | 中。适合 provider session-history import，不适合作为 streaming backend event | 等 import 层出现后迁移；当前只可抽用户行为序列 |
+| `tmux-hook` / `notify-hook` JSONL | hook telemetry / notification logs | 低。更像 diagnostics，不是对话 contract | 不进 runtime fixtures；未来 diagnostics trace 可以少量使用 |
+
+迁移规则：
+
+- 原始私有 session JSONL 不直接复制进 repo；
+- fixtures 只保留 contract 必需字段；
+- 用户原文默认改成语义等价的短文本，除非该文本本身就是回归条件；
+- 路径、token、URL、文件内容、栈 trace 默认 redacted；
+- 每个 fixture 要保留 `source` 字段，指向来源类别和原始文件相对描述；
+- 大文件只抽最小连续窗口，不做全量 golden。
+
+## 总原则
+
+```txt
+外部协议用 raw fixtures
+内部契约用 typed builders
+系统行为用 harness
+wire 边界用 serde/schema reject tests
+大响应少 snapshot，关键字段多断言
+```
+
+红测应该先证明“当前实现会失败”，然后再改实现。新增测试时必须回答两个问题：
+
+- 这个测试保护的是哪个 contract？
+- 失败时后续 agent 应该读哪个最小文件？
+
+如果答案需要读半个仓库，测试结构就不合格。
+
+## 推荐落地路径
+
+测试体系不要一次性抽成“大框架”。第一阶段目标是让测试写法收口，让后续 agent 很难绕过 harness。
+
+推荐顺序：
+
+1. 在 `crates/velad/tests/support/` 建立 `ApiHarness`、HTTP helpers、semantic assertions，但先不拆光现有 `http_contract.rs`。
+2. 用 harness 迁移 2-3 个代表性测试：happy path、command rejection、idempotency replay。
+3. 在 runtime 测试侧建立 `ScriptedBackend`，覆盖 blocking、fail-once、queued outputs、recorded prompts/cancels。
+4. 当 `ScriptedBackend`、fixture loader、assertions 至少被两个 crates 复制第二次时，再抽 `crates/vela-testkit`。不要提前创建 testkit crate。
+5. 再把 `velad` tests 按 OpenAPI surface 拆分，并保留少量跨接口 flow tests。
+6. 最后扩大 raw provider fixtures 和 golden 覆盖。
+
+默认测试必须快、确定、无网络。真实 provider 测试通过环境变量显式开启：
+
+```bash
+VELA_RUN_REAL_PROVIDERS=1 \
+VELA_CLOUDAGENTS_API_KEY=... \
+cargo test --workspace --features real-providers
+```
+
+真实 provider 测试只验证协议和事件落库，不验证模型智能。断言范围包括：preflight success、stream/event parser、terminal event、canonical `turn.completed` 或 `turn.failed`。
+
+## Record / Replay Cassettes
+
+真实 provider 只应该用于“录制”和少量 smoke test，不应该成为红测主路径。我们的默认路径是：
+
+```txt
+real provider + token -> RecordingAgentClient -> sanitized cassette
+sanitized cassette -> ScriptedAgentClient -> runtime/store/projection tests
+```
+
+约定：
+
+- 第一次录制 cassette 需要 provider token，例如 `VELA_CLOUDAGENTS_API_KEY`；
+- 后续 replay cassette 不需要 token、不访问网络、不依赖模型输出稳定性；
+- cassette/golden 只录成功完成并被接受的序列；
+- live run 失败不直接沉淀为 golden；错误路径用手写或脱敏整理后的 error fixture 表达；
+- 录制必须显式开启 `VELA_RUN_REAL_PROVIDERS=1`，不能在普通 `cargo test --workspace` 中隐式调用真实 provider；
+- cassette 只保存 prompt、归一化后的 `BackendOutput`、必要 raw shape；
+- cassette 不能保存 API key、request headers、私有路径、完整私有 transcript、未脱敏 provider response；
+- fixture 失败时可以人工更新 `expected_*.json` 或让 agent 更新，但更新必须保持脱敏规则。
+
+`vela-backends` 提供两类测试客户端：
+
+- `ScriptedAgentClient`：离线回放 fixture/cassette，默认红测使用它；
+- `RecordingAgentClient`：包住真实 adapter，把 prompt/output 收集成 cassette，用于显式录制。
+
+## 测试金字塔
+
+### `vela-core`
+
+`vela-core` 负责不可变的领域和 wire-sensitive 基础类型。
+
+推荐测试：
+
+- `CommandAck` 三分支 serde roundtrip；
+- required/optional 字段缺失时 deserialize 失败；
+- legacy event name 被拒绝或不会出现在词表；
+- `EventCursor` 包含 `event_id`、`epoch`、`seq`；
+- `affected_views` 默认规则覆盖每类 canonical event；
+- event vocabulary 与 OpenAPI `VelaEventType` 保持一致。
+
+不推荐：
+
+- 启动 SQLite；
+- 调 backend；
+- 测 HTTP status code。
+
+### `vela-store`
+
+`vela-store` 负责事实存储和幂等记录。
+
+推荐测试：
+
+- migration 可执行；
+- `epoch + seq` 单调；
+- append 在事务中失败时不推进 cursor；
+- same idempotency key + same hash replay ack；
+- same idempotency key + different hash rejected；
+- raw backend payload 原样保存；
+- 按 `after_id`、`before_id`、limit 的 cursor window 规则。
+
+不推荐：
+
+- 断言 transcript/timeline UI shape；
+- mock provider 行为。
+
+### `vela-backends`
+
+`vela-backends` 负责外部 provider raw protocol 到 backend output 的归一化。
+
+推荐测试：
+
+- Pi JSONL partial line；
+- response matching；
+- stdout side event 不误认为 command response；
+- stderr / process exit error；
+- tool lifecycle mapper；
+- unknown event 降级为 warning；
+- graceful terminate + timeout kill；
+- OpenAI-compatible / CloudAgents-compatible HTTP adapter 的 success/error normalization。
+
+Fixtures 只在这里大量使用。Raw provider protocol 是外部事实，适合落盘。
+
+```txt
+crates/vela-backends/tests/fixtures/
+  pi/
+    assistant_delta.jsonl
+    tool_lifecycle_bash.jsonl
+    unknown_event.jsonl
+    process_exit_error.jsonl
+  openai_compat/
+    chat_completion_ok.json
+    chat_completion_error.json
+```
+
+### `vela-runtime`
+
+`vela-runtime` 是 command authority。它的测试应该脱离 HTTP。
+
+推荐测试：
+
+- unknown session -> `CommandAck.rejected(session_not_found)`；
+- closed session -> `CommandAck.rejected(session_closed)`；
+- accepted command 先 append `user.message.accepted` 再调用 backend；
+- duplicate idempotency 不调用 backend、不追加 event；
+- running turn 拒绝；
+- backend failure append `turn.failed`，并释放 running turn；
+- cancel 调用 backend cancel；
+- event replay 后 session state/read model determinism。
+
+Runtime 测试需要 `ScriptedBackend`，而不是只用固定输出 mock。
+
+```rust
+let backend = ScriptedBackend::new()
+    .queue_outputs([assistant_delta("hello"), turn_completed()])
+    .record_prompts();
+
+let h = RuntimeHarness::new(backend).await;
+let ack = h.send_user_message("ses_1", "cmd_1", "hello").await;
+
+ack.assert_accepted();
+h.backend().assert_prompt_count(1).await;
+h.events("ses_1").assert_order([
+    "session.created",
+    "user.message.accepted",
+    "turn.started",
+    "assistant.message.delta",
+    "turn.completed",
+]);
+```
+
+### `vela-projection`
+
+Projection tests consume canonical events only.
+
+推荐测试：
+
+- transcript 只吃 `user.message.accepted` 和 `assistant.message.*`；
+- activity 吃 tool/request/warning/error；
+- request lifecycle 按 `request_id` 合并；
+- diff lifecycle 按 `file_path` 合并；
+- replay 同一 event log 得到相同 projection；
+- raw provider event 不直接影响 projection。
+
+不推荐：
+
+- 构造 HTTP request；
+- 读取 provider raw JSONL。
+
+### `vela-protocol`
+
+`vela-protocol` 只表达 wire DTO，不能拥有业务规则。
+
+推荐测试：
+
+- OpenAPI examples roundtrip；
+- snake_case fields；
+- `CommandAck` oneOf shape；
+- `ErrorEnvelope` shape；
+- SSE envelope shape；
+- `SyncReset` shape。
+
+### `velad`
+
+`velad` 是薄 HTTP shell。它只测 OpenAPI operation 行为和 wire response。
+
+推荐拆分：
+
+```txt
+crates/velad/tests/
+  README.md
+  support/
+    mod.rs
+    app.rs
+    http.rs
+    assertions.rs
+    scenario.rs
+    sse.rs
+  sessions_contract.rs
+  events_contract.rs
+  sse_contract.rs
+  views_contract.rs
+  diagnostics.rs
+  backends_contract.rs
+```
+
+HTTP contract 测试必须短。测试正文应该像这样：
+
+```rust
+let mut h = ApiHarness::new().await;
+let session = h.create_pi_session("ses_1").await;
+
+h.close_session(&session.id, "close_1").await.assert_accepted();
+
+h.send_user_message(&session.id, "cmd_after_close", "late")
+    .await
+    .assert_rejected("session_closed");
+
+h.events(&session.id)
+    .await
+    .assert_no_event_type("user.message.accepted");
+```
+
+测试正文不应该手写 Axum request builder、body collect、mock backend plumbing。这些都放进 `support`。
+
+## Harness 设计
+
+### `ApiHarness`
+
+职责：
+
+- 创建 in-memory store；
+- 创建 runtime + scripted backend；
+- build `velad` router；
+- 提供 HTTP helpers；
+- 提供 scenario helpers；
+- 提供 semantic assertions；
+- 提供 SSE frame collector。
+
+接口形状建议：
+
+```rust
+struct ApiHarness {
+    app: axum::Router,
+    backend: Arc<ScriptedBackend>,
+}
+
+impl ApiHarness {
+    async fn new() -> Self;
+    async fn with_backend(backend: ScriptedBackend) -> Self;
+    async fn create_pi_session(&self, key: &str) -> SessionFixture;
+    async fn send_user_message(&self, session_id: &str, key: &str, text: &str) -> JsonResponse;
+    async fn close_session(&self, session_id: &str, key: &str) -> JsonResponse;
+    async fn list_events(&self, session_id: &str) -> EventListResponse;
+    async fn stream_session_events(&self, session_id: &str, after_id: Option<&str>) -> SseHarness;
+}
+```
+
+### `RuntimeHarness`
+
+职责：
+
+- 创建 store；
+- 创建 runtime；
+- seed session；
+- expose event log；
+- expose backend recordings。
+
+Runtime harness 不知道 HTTP。
+
+### `ScriptedBackend`
+
+`MockBackendAdapter` 可以保留，但新增红测应优先使用更强的 `ScriptedBackend`。
+
+能力：
+
+- `queue_outputs(Vec<BackendOutput>)`
+- `queue_error(anyhow::Error)`
+- `block_until_cancelled()`
+- `recorded_prompts()`
+- `recorded_cancels()`
+- `probe_count()`
+- 后续 streaming：`emit(output)`、`finish_turn()`、`fail_turn()`
+
+它对应 Paseo 的 fake Pi 思路，但用 Rust trait 和 async primitive 实现。
+
+## Fixtures 策略
+
+### 什么时候用 fixture 文件
+
+使用 fixture 文件的条件：
+
+- 输入来自外部 provider 或外部 CLI；
+- 原始格式对兼容性重要；
+- 文件内容比 typed builder 更能表达 bug；
+- 需要保留真实回归样本。
+
+适合：
+
+- Pi JSONL；
+- OpenAI-compatible HTTP response；
+- ACP JSON-RPC transcript；
+- malformed provider output；
+- process stderr samples。
+- 从 WorkBuddyApp 这类生产回放中抽取出的用户行为序列。
+
+不适合：
+
+- canonical event list；
+- HTTP response body；
+- read model output；
+- 单个 command input。
+
+内部数据优先用 typed builders，这样重构字段时编译器能帮忙。跨多步用户行为序列是例外：当它来自 Synara/Paseo/WorkBuddyApp 这类真实或成熟 harness 样本，并且要验证 idempotency、replay、turn order 时，可以落成 runtime JSONL fixture。
+
+### Golden 什么时候用
+
+Golden test 只用于稳定的、外部输入到规范输出的纯转换。
+
+适合：
+
+- `pi raw JSONL -> BackendOutput[]`；
+- `openai chat completion response -> BackendOutput[]`；
+- `provider tool call raw -> canonical tool detail`。
+
+不适合：
+
+- 完整 HTTP JSON response；
+- event log 含动态 id/timestamp；
+- projection 全量快照；
+- SSE 长流。
+
+HTTP/API 层用 semantic assertions：
+
+```rust
+response.assert_status(StatusCode::ACCEPTED);
+response.assert_ack_rejected("session_closed");
+response.assert_json_path("$.cursor.event_id").is_non_empty();
+```
+
+这样字段顺序、动态时间、无关 metadata 不会制造维护噪音。
+
+### Golden 更新规则
+
+第一阶段不提供无条件的一键更新 golden。`expected_*.json` 是 contract artifact，不是测试运行缓存。
+
+允许 agent 在冷启动阶段创建或修正 `expected_*.json`，但必须满足：
+
+- 对应 fixture input 已经存在，或本次变更同时新增；
+- final response 说明为什么 expected 变化代表正确 contract；
+- summary 中列出关键 diff：新增/删除的 event type、字段名、错误 code、terminal 状态；
+- 不把动态值固化进 golden，例如 `event_id`、timestamp、request id、随机模型文本；
+- 不用真实模型输出直接生成 golden，真实 provider 测试只做 smoke/protocol assertions。
+
+后续如果需要自动更新，可以再引入显式 gate，例如 `VELA_UPDATE_GOLDENS=1`。没有这个 gate 时，golden 失败应当失败。
+
+## Contract Matrix
+
+`crates/velad/tests/README.md` 是后续 agent 的入口，不是装饰文档。每加一个 operation 或关键场景，都要更新矩阵。不要把矩阵拆成孤立的 markdown 文件，避免测试目录里的说明和真实测试布局漂移。
+
+建议格式：
+
+| operationId | test file | happy | not_found | idempotency | stale_cursor | rejection | notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `createSession` | `sessions_contract.rs` | yes | n/a | yes | n/a | backend unavailable | unsupported backend must not map to Pi |
+| `sendSessionInputEvents` | `events_contract.rs` | yes | yes | yes | n/a | closed/session running/invalid input | rejected command is HTTP 202 |
+| `listSessionEvents` | `events_contract.rs` | yes | yes | n/a | yes | n/a | stale cursor returns `409 SyncReset` |
+| `streamSessionEvents` | `sse_contract.rs` | yes | yes | n/a | yes | n/a | stale cursor emits `sync.reset` |
+| `getSessionDiagnosticsTimeline` | `diagnostics.rs` | yes | yes | n/a | before_id | n/a | coalesces lifecycle events; old main-session path is 404 |
+| `getSessionDiagnosticsTrace` | `diagnostics.rs` | yes | yes | n/a | n/a | n/a | exposes runtime/provider diagnostics only |
+| `probeBackend` | `backends_contract.rs` | yes | n/a | n/a | n/a | unavailable backend | delegates only configured backend |
+
+这张表比“测试覆盖率百分比”更有用，因为它告诉 agent 失败时该读哪里。
+
+## 红测清单
+
+优先补这些红测：
+
+- every mutating endpoint without `Idempotency-Key` returns `ErrorEnvelope`；
+- every session-scoped GET on missing session returns `404 ErrorEnvelope`；
+- malformed JSON returns `400 ErrorEnvelope`；
+- parsed but rejected command returns `202 CommandAck.rejected`；
+- closed session rejects all input/control command and appends no event；
+- duplicate idempotency does not call backend and appends no event；
+- stale event cursor returns `SyncReset` or SSE `sync.reset`；
+- unsupported backend is not silently mapped to Pi；
+- backend raw unknown event becomes warning, not panic；
+- replaying event log rebuilds the same read model；
+- transcript never renders tool/request/diff raw text as assistant markdown；
+- timeline coalesces assistant/request/tool/diff lifecycle by stable identity。
+
+## Failure 输出规则
+
+测试失败信息要带 operation 或 contract 名。
+
+推荐：
+
+```rust
+assert_error_envelope(
+    response,
+    StatusCode::BAD_REQUEST,
+    "missing_idempotency_key",
+    "createSession requires Idempotency-Key",
+);
+```
+
+不推荐：
+
+```rust
+assert_eq!(body["error"]["code"], "missing_idempotency_key");
+```
+
+后者失败时只会说 left/right，不告诉维护者哪个契约坏了。
+
+## CI 分层
+
+默认本地和 CI 都应该跑：
+
+```bash
+cargo fmt --all --check
+cargo test --workspace
+npm run build
+```
+
+后续如果真实 provider 测试变慢，可以分层：
+
+- `cargo test --workspace`：快速、确定性、无网络；
+- `cargo test --workspace --features real-providers`：真实 Pi/CloudAgents smoke；
+- nightly 或 pre-release 才跑长 E2E。
+
+真实模型红测必须满足：
+
+- prompt harmless；
+- 不断言具体模型文本；
+- 只断言 preflight success、收到 terminal event、写入 canonical completion/failure；
+- 失败信息说明缺 credentials / binary / network 还是 contract regression。
+
+## Requirements
+
+### Requirement: 测试必须按 crate 边界分层
+
+测试 SHOULD 放在最靠近 contract owner 的 crate。
+
+#### Scenario: `CommandAck` required 字段变化
+
+- **WHEN** OpenAPI 修改 `CommandAck`
+- **THEN** `vela-core` / `vela-protocol` serde tests 先失败
+- **AND** `velad` HTTP tests 只验证外层 response shape
+
+### Requirement: 外部协议 fixture 不进入 projection 测试
+
+Projection tests MUST consume canonical events, not provider raw protocol fixtures。
+
+#### Scenario: Pi raw tool event 变化
+
+- **WHEN** Pi JSONL shape 改变
+- **THEN** `vela-backends` adapter tests 失败
+- **AND** `vela-projection` tests 不需要理解 Pi raw shape
+
+### Requirement: HTTP contract 测试必须通过 harness 表达
+
+HTTP contract tests SHOULD use `ApiHarness` and semantic assertions。
+
+#### Scenario: closed session input
+
+- **WHEN** test submits `user.message` after close
+- **THEN** test asserts `CommandAck.rejected(session_closed)`
+- **AND** asserts event log did not append `user.message.accepted`
+- **AND** test body does not manually build Axum request plumbing
+
+### Requirement: Golden 只覆盖稳定转换
+
+Golden snapshots MUST NOT be used for full dynamic HTTP responses。
+
+#### Scenario: event timestamp changes
+
+- **WHEN** response includes dynamic `created_at`
+- **THEN** test uses semantic assertion for existence/format
+- **AND** does not update a large snapshot for unrelated timestamp churn

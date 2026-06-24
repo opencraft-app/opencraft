@@ -1,0 +1,17 @@
+appId: com.vela.desktop
+productName: Vela
+directories:
+  output: release
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - package.json
+extraResources:
+  - from: ../../target/release/velad
+    to: bin/velad
+mac:
+  icon: build/icon.icns
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+    - zip

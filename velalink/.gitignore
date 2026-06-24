@@ -1,0 +1,16 @@
+.next
+node_modules
+dist
+dist-electron
+apps/vela-desktop-electron/release/
+target
+target-linux-amd64
+.build-cache
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+app-*.css
+scroll-test.html
+content/对话.md

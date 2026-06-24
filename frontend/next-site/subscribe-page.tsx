@@ -1,6 +1,5 @@
 import { LegalFooter } from "@/components/site/legal-footer";
 import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/site/public-site-header";
-import type { RenderUserMenuLink } from "@/components/site/user-avatar-menu";
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -24,7 +23,7 @@ import {
   isPassRequiresRenewError,
 } from "@/lib/billing-error";
 import { buildPayPlan } from "@/lib/wx-pay";
-import { AGENTS_HOME_PATH } from "@/router/paths";
+import { AGENTS_HOME_PATH } from "@/lib/agent-routes";
 import { captureProductEvent, PRODUCT_ANALYTICS_EVENTS } from "@/observability/posthog";
 import { QRCodeSVG } from "qrcode.react";
 
@@ -456,12 +455,6 @@ const renderAppHeaderLink: RenderPublicSiteHeaderLink = ({
   </AppLink>
 );
 
-const renderAppUserMenuLink: RenderUserMenuLink = ({ children, href, ...props }) => (
-  <AppLink to={href} {...props}>
-    {children}
-  </AppLink>
-);
-
 type SubscribePageHeaderProps = {
   authControls?: ReactNode;
   authReady: boolean;
@@ -470,7 +463,6 @@ type SubscribePageHeaderProps = {
   publicLocalized?: boolean;
   renderLanguageSwitcher?: (options: { activeLocale: PublicSiteLocale; reloadAfterSwitch: boolean; variant: LanguageSwitcherVariant }) => ReactNode;
   renderLink: RenderPublicSiteHeaderLink;
-  renderUserMenuLink: RenderUserMenuLink;
 };
 
 const SubscribePageHeader = ({
@@ -481,7 +473,6 @@ const SubscribePageHeader = ({
   publicLocalized,
   renderLanguageSwitcher,
   renderLink,
-  renderUserMenuLink,
 }: SubscribePageHeaderProps) => (
   <PublicSiteHeader
     authControls={authControls}
@@ -492,7 +483,6 @@ const SubscribePageHeader = ({
     position="fixed"
     renderLanguageSwitcher={renderLanguageSwitcher}
     renderLink={renderLink}
-    renderUserMenuLink={renderUserMenuLink}
     showLanguageSwitcher={isGlobal}
   />
 );
@@ -1263,7 +1253,6 @@ type SubscribePageProps = {
   publicLocalized?: boolean;
   renderLanguageSwitcher?: (options: { activeLocale: PublicSiteLocale; reloadAfterSwitch: boolean; variant: LanguageSwitcherVariant }) => ReactNode;
   renderLink?: RenderPublicSiteHeaderLink;
-  renderUserMenuLink?: RenderUserMenuLink;
 };
 
 /** v1.7.30 后端允许轮询 listMyPasses 检测支付是否完成，间隔 / 超时控制 */
@@ -1276,7 +1265,6 @@ export const SubscribePage = ({
   publicLocalized,
   renderLanguageSwitcher,
   renderLink = renderAppHeaderLink,
-  renderUserMenuLink = renderAppUserMenuLink,
 }: SubscribePageProps = {}) => {
   const t = useT();
   const navigate = useAppNavigate();
@@ -1307,7 +1295,6 @@ export const SubscribePage = ({
       publicLocalized={publicLocalized}
       renderLanguageSwitcher={renderLanguageSwitcher}
       renderLink={renderLink}
-      renderUserMenuLink={renderUserMenuLink}
     />
   );
 

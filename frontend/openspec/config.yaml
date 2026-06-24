@@ -19,7 +19,7 @@ context: |
   (`frontend/`)。本文件的 context 聚焦于前端子目录 `frontend/`，这是日常迭代主阵地。
 
   # 技术栈
-  - 框架: React 19（严格模式 + createRoot）
+  - 框架: Next.js 16 App Router + React 19
   - UI 组件库: @radix-ui/*（Dialog/Label/Select/Tabs/ScrollArea/Slot）+ shadcn/ui 风格自封装；
                 部分页面使用 @tencent/tea-sdk-lightclaw（本地 monorepo 旁路调试）
   - 样式方案: Tailwind CSS v4 + 设计 token + class-variance-authority + tailwind-merge
@@ -27,7 +27,9 @@ context: |
               · SessionProvider（会话 / 用户 / 订阅）
               · OpenClawProvider（OpenClaw 配置态）
               · RepositoryProvider（依赖注入 Repositories，可在 fake / http 间切换）
-  - 路由: react-router-dom v7（createBrowserRouter + 嵌套布局 + Guard 组件）
+  - 路由: Next App Router（`src/app/**/*.next.tsx`），共享页面组件通过 `next-site/`
+          的 client shell 接入；部分页面组件内部仍复用 react-router-dom 的 Link/Hook
+          API，由 Next 侧适配层提供导航能力。
   - 语言: TypeScript 5.9（strict + noUncheckedIndexedAccess + noUnusedLocals/Parameters）
   - HTTP 请求: 基于 `repositories/` 封装的 Repository 模式（自定义 fetch 封装，未用 axios）
               请求入口: `frontend/src/repositories/http-repositories.ts`
@@ -37,38 +39,35 @@ context: |
                 反查 hash key，再向 i18next 查询 hash → 目标语言
               · 字典文件由 `pnpm i18n:extract` 扫描生成（src/i18n/generated/zh-CN.json /
                 en-US.json / zh-to-key.json）；`pnpm i18n:check` 作为 CI 门禁
-              · 默认语言由 `src/lib/region.ts::DEFAULT_LOCALE` 根据 VITE_REGION 编译期决定
+              · 默认语言由 `src/lib/region.ts::DEFAULT_LOCALE` 根据 NEXT_PUBLIC_REGION /
+                VITE_REGION 兼容环境变量决定
                 （cn→zh-CN，global→en-US）；用户可通过 `<LanguageSwitcher>` 手动切换
                 并持久化到 localStorage `lw-locale`
   - 区域化: `src/lib/region.ts` 暴露 `REGION` / `isCN` / `isGlobal` / `DEFAULT_LOCALE`
-              编译期常量（由 `VITE_REGION` 注入，Vite 构建时做常量替换 + Tree-shake）
+              编译期常量（优先由 `NEXT_PUBLIC_REGION` 注入，保留 `VITE_REGION` 作为发布脚本兼容 env）
               用于国内 / 国际站差异化：OAuth 渠道、首页平台卡片、法律页脚、默认语言等
   - 测试: Vitest 4 + @testing-library/react + @testing-library/user-event + jsdom
-  - 构建: Vite 7（含 React 19 兼容 polyfill 注入逻辑，适配 tea-component）
-              双产物：`pnpm build:cn` → `dist-cn/`，`pnpm build:global` → `dist-global/`
+  - 构建: Next 静态导出（`next build --webpack` + Fumadocs MDX + 后处理脚本）
+              区域化：`pnpm build:cn` / `pnpm build:global`
   - 包管理: pnpm（workspace 形式，与 `tea-sdk-lightclaw` monorepo 联动）
   - 部署: Cloudflare Pages（静态托管，`pnpm deploy:cf`）+ shprod（Kubernetes Pod）双形态
               国内站走 shprod，国际站走 Cloudflare Pages
 
   # 入口与初始化流程
-  入口文件: frontend/src/main.tsx
+  入口文件: frontend/src/app/layout.next.tsx
 
   启动流程:
-    1. 首行 import `@/polyfills/react-dom-compat`（必须最早执行，为 tea-component
-       打补丁 findDOMNode / render / unmountComponentAtNode，兼容 React 19）
-    2. import `@/app/app`、`@/i18n`（触发 i18next 初始化：加载 zh-CN / en-US 资源，
-       按 region.DEFAULT_LOCALE 与 localStorage.lw-locale 解析初始语言）、`@/styles.css`
-    3. createRoot(document.getElementById("root")).render(<StrictMode><App/></StrictMode>)
-    4. <App/> 组合 Providers:
-         RepositoryProvider → SessionProvider → OpenClawProvider → ThemeStyleInjector → RouterProvider
-    5. RouterProvider 接管路由，根据 `router/index.tsx` 渲染对应页面
+    1. Next 根据 `pageExtensions: ['next.tsx', 'next.ts']` 只消费 `.next.tsx/.next.ts` 路由文件。
+    2. `src/app/layout.next.tsx` 提供 HTML shell 与全站 metadata。
+    3. `src/app/(site)/layout.next.tsx` 装配站点级样式、SessionProvider、RepositoryProvider、
+       ThemeStyleInjector、RUM bridge 等运行时上下文。
+    4. 复杂业务页面通过 `next-site/*` client islands 接入，复用 `src/pages/*` 页面组件。
+    5. URL 常量放在 `src/lib/agent-routes.ts`，不得再新增 `src/router/*` 作为应用入口。
 
   # 路由结构
-  路由方案: createBrowserRouter（BrowserHistory，非 Hash）
-  路由表文件: frontend/src/router/index.tsx
-  守卫文件: frontend/src/router/guards.tsx
+  路由方案: Next App Router（静态导出友好）
 
-  一级路由（根域，不套 MarketingLayout）:
+  公开路由:
   - /                     → LandingPage          官网首页
   - /changelog            → ChangelogPage        更新日志（不需登录）
 
@@ -250,7 +249,7 @@ context: |
                            isGlobal 区分（国内 QQ/微信，国际 Google/GitHub）
   - avatar-image.ts        头像图片客户端压缩（压到 200KB 内）
   - region.ts              站点区域常量（`REGION` / `isCN` / `isGlobal` / `DEFAULT_LOCALE`），
-                           由 VITE_REGION 编译期注入，未命中分支会被 Tree-shake
+                           由 NEXT_PUBLIC_REGION 编译期注入（兼容读取 VITE_REGION），未命中分支会被 Tree-shake
 
   # i18n (src/i18n/)
   - index.ts               i18next 初始化入口，读取 localStorage.lw-locale 覆盖或 region
@@ -260,8 +259,8 @@ context: |
                            · zh-CN.json / en-US.json / zh-to-key.json
 
   # 构建与部署脚本（package.json scripts）
-  - dev / dev:cn / dev:global / dev:local          开发
-  - build:cn / build:global                        区域化产物构建（dist-cn / dist-global）
+  - dev / dev:cn / dev:global                      Next 本地开发
+  - build:cn / build:global                        区域化 Next static export（out）
   - i18n:extract / i18n:check                      文案抽取 / 翻译完整性 CI 门禁
   - deploy:cf                                      Cloudflare Pages 发布（国际站）
 

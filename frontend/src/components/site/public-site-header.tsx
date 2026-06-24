@@ -6,7 +6,7 @@ import { Fragment, useEffect, useMemo, useState, type CSSProperties, type ReactN
 import { useTranslation } from "react-i18next";
 
 import { LanguageSwitcher, type LanguageSwitcherVariant } from "@/components/site/language-switcher";
-import { UserAvatarMenu, type RenderUserMenuLink } from "@/components/site/user-avatar-menu";
+import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
 import {
   isPublicSiteNavActive,
   PUBLIC_SITE_NAV_ITEMS,
@@ -56,7 +56,6 @@ type PublicSiteHeaderProps = {
   position?: HeaderPosition;
   renderLink?: RenderPublicSiteHeaderLink;
   renderLanguageSwitcher?: RenderLanguageSwitcher;
-  renderUserMenuLink?: RenderUserMenuLink;
   reloadLanguageAfterSwitch?: boolean;
   showNav?: boolean;
   showLanguageSwitcher?: boolean;
@@ -184,7 +183,6 @@ export function PublicSiteHeader({
   position = "sticky",
   renderLink,
   renderLanguageSwitcher,
-  renderUserMenuLink,
   reloadLanguageAfterSwitch = false,
   showNav = true,
   showLanguageSwitcher = isGlobal && Boolean(onLoginClick),
@@ -351,7 +349,7 @@ export function PublicSiteHeader({
         {!usesAuthControlsSlot && !authLoading && isAuthenticated && (
           <div className={cn("flex shrink-0 items-center gap-3", isDesktop ? "ml-0" : "ml-auto")}>
             {showLanguageSwitcher && isDesktop && renderLanguage("dropdown")}
-            <UserAvatarMenu renderLink={renderUserMenuLink} />
+            <UserAvatarMenu />
           </div>
         )}
 

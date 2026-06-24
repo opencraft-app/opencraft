@@ -1,0 +1,107 @@
+{
+  "notifications": [
+    {
+      "method": "item/started",
+      "params": {
+        "threadId": "thr_1",
+        "item": {
+          "type": "commandExecution",
+          "id": "cmd_wrapper_array",
+          "status": "running",
+          "command": ["/bin/zsh", "-lc", "echo hello"],
+          "cwd": "/tmp/repo"
+        }
+      }
+    },
+    {
+      "method": "item/completed",
+      "params": {
+        "threadId": "thr_1",
+        "cwd": "/tmp/repo",
+        "item": {
+          "type": "commandExecution",
+          "id": "cmd_envelope_output",
+          "status": "completed",
+          "command": "echo hello",
+          "cwd": "/tmp/repo",
+          "aggregatedOutput": "Chunk ID: e87d40\nWall time: 0.0521 seconds\nProcess exited with code 0\nOriginal token count: 2\nOutput:\nhello",
+          "exitCode": 0
+        }
+      }
+    },
+    {
+      "method": "item/completed",
+      "params": {
+        "threadId": "thr_1",
+        "cwd": "/tmp/repo",
+        "item": {
+          "type": "mcpToolCall",
+          "id": "read_array",
+          "status": "completed",
+          "tool": "read_file",
+          "arguments": { "path": "/tmp/repo/README.md" },
+          "result": {
+            "content": [
+              { "type": "text", "text": "line one" },
+              { "type": "text", "text": "line two" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "method": "item/completed",
+      "params": {
+        "threadId": "thr_1",
+        "cwd": "/tmp/repo",
+        "item": {
+          "type": "fileChange",
+          "id": "object_style_file_change",
+          "status": "completed",
+          "changes": {
+            "/tmp/repo/src/object-map.ts": {
+              "type": "modify",
+              "unified_diff": "@@\n-old\n+new\n"
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "item/completed",
+      "params": {
+        "threadId": "thr_1",
+        "cwd": "/tmp/repo",
+        "item": {
+          "type": "fileChange",
+          "id": "path_only_file_change",
+          "status": "completed",
+          "changes": [
+            { "path": "/tmp/repo/src/path-only.ts", "kind": "modify" }
+          ]
+        }
+      }
+    },
+    {
+      "method": "item/completed",
+      "params": {
+        "threadId": "thr_1",
+        "item": {
+          "type": "webSearch",
+          "id": "web_search",
+          "status": "completed",
+          "query": "codex timeline",
+          "action": { "results": [] }
+        }
+      }
+    }
+  ],
+  "expect_event_types": [
+    "tool.started",
+    "tool.completed",
+    "tool.completed",
+    "tool.completed",
+    "tool.completed",
+    "tool.completed"
+  ]
+}

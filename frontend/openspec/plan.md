@@ -18,3 +18,7 @@
 - [x] 将专家技能包页面合并到技能页面，在技能页顶部提供“技能 / 技能包”两个 tab，移除独立专家入口。
 
 > 近期 master 已合入需求：为国际站 LightVela 安全接入 PostHog 产品分析。
+
+- [x] 在前端 observability 层新增 consent-gated PostHog 初始化、用户识别桥和基础事件 API。
+- [x] 将 PostHog 配置接入 release matrix / Next public env，并保持默认关闭直到配置项目 token。
+- [x] 增加依赖供应链防护配置与测试验证，避免新 npm 包静默执行安装脚本或泄漏环境配置。

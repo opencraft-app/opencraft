@@ -1,7 +1,7 @@
 import { Link, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { GrammarCanvas, GrammarPageIntro, GrammarSectionCard } from "@/components/site/homepage-grammar";
-import { AGENTS_HOME_PATH } from "@/router/paths";
+import { AGENTS_HOME_PATH } from "@/lib/agent-routes";
 
 export const WorkspacePage = () => {
   const { id } = useParams<{ id: string }>();

@@ -1,0 +1,5 @@
+{"type":"response","id":"req_1","command":"prompt","success":true}
+{"type":"turn_start"}
+{"type":"message_update","message":{"role":"assistant","content":[]},"assistantMessageEvent":{"type":"text_delta","delta":"I will make a small update.\n"}}
+{"type":"message_update","message":{"role":"assistant","content":[]},"assistantMessageEvent":{"type":"text_delta","delta":"Done.\n"}}
+{"type":"agent_end","messages":[{"role":"assistant","content":[{"type":"text","text":"I will make a small update.\nDone.\n"}]}]}

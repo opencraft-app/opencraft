@@ -46,6 +46,7 @@ vi.mock("@/contexts/runtime-config-context", () => ({
 }));
 
 vi.mock("@/lib/region", () => ({
+  DEFAULT_LOCALE: "zh-CN",
   isCN: true,
   isGlobal: false,
 }));

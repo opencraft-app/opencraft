@@ -63,6 +63,9 @@ export const installOpenClawConsoleHelpers = ({
   };
 
   const showFn = () => {
+    if (typeof originalShow === "function") {
+      originalShow();
+    }
     onShowHiddenTools?.();
     originalConsole.info("隐藏工具入口已显示。");
     return true;

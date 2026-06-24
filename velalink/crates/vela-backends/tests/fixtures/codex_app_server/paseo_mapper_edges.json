@@ -1,0 +1,77 @@
+{
+  "notifications": [
+    {
+      "method": "item/completed",
+      "params": {
+        "threadId": "thr_1",
+        "item": {
+          "type": "commandExecution",
+          "id": "pwsh_wrapper",
+          "status": "completed",
+          "command": "\"C:\\Users\\example\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe\" -NoLogo -NoProfile -Command \"echo hello\"",
+          "cwd": "C:\\repo",
+          "exitCode": 0
+        }
+      }
+    },
+    {
+      "method": "item/completed",
+      "params": {
+        "threadId": "thr_1",
+        "cwd": "/tmp/repo",
+        "item": {
+          "type": "fileChange",
+          "id": "delete_no_content",
+          "status": "completed",
+          "changes": [
+            { "path": "/tmp/repo/src/dead-module.ts", "kind": "delete" }
+          ]
+        }
+      }
+    },
+    {
+      "method": "item/completed",
+      "params": {
+        "threadId": "thr_1",
+        "cwd": "/tmp/repo",
+        "item": {
+          "type": "fileChange",
+          "id": "delete_with_content",
+          "status": "completed",
+          "changes": [
+            {
+              "path": "/tmp/repo/src/old.ts",
+              "kind": "delete",
+              "content": "export const old = true;\nexport function gone() {}\n"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "method": "item/completed",
+      "params": {
+        "threadId": "thr_1",
+        "cwd": "/tmp/repo",
+        "item": {
+          "type": "fileChange",
+          "id": "patch_envelope_content",
+          "status": "completed",
+          "changes": [
+            {
+              "path": "/tmp/repo/src/from-file-change.ts",
+              "kind": "modify",
+              "content": "*** Begin Patch\n*** Update File: /tmp/repo/src/from-file-change.ts\n@@\n-alpha\n+beta\n*** End Patch"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect_event_types": [
+    "tool.completed",
+    "tool.completed",
+    "tool.completed",
+    "tool.completed"
+  ]
+}

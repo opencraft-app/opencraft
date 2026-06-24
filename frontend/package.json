@@ -4,28 +4,21 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "dev:cn": "vite --mode cn",
-    "dev:global": "vite --mode global",
-    "dev:local": "VITE_LOCAL_SDK=1 vite --mode cn",
-    "dev:local:global": "VITE_LOCAL_SDK=1 vite --mode global",
-    "dev:local-agentchat": "VITE_LOCAL_AGENTCHAT=1 vite --mode cn",
-    "dev:local-all": "VITE_LOCAL_SDK=1 VITE_LOCAL_AGENTCHAT=1 vite --mode cn",
-    "dev:next": "node scripts/sync-fumadocs-content.mjs && fumadocs-mdx && next dev",
-    "dev:next:global": "NEXT_PUBLIC_REGION=global VITE_REGION=global NEXT_PUBLIC_AUTH_API_BASE_URL=https://api.lightvela.ai pnpm run dev:next",
+    "dev": "node scripts/sync-fumadocs-content.mjs && fumadocs-mdx && next dev",
+    "dev:cn": "NEXT_PUBLIC_REGION=cn VITE_REGION=cn sh -c \"node scripts/sync-fumadocs-content.mjs && fumadocs-mdx && next dev\"",
+    "dev:global": "NEXT_PUBLIC_REGION=global VITE_REGION=global NEXT_PUBLIC_AUTH_API_BASE_URL=https://api.lightvela.ai sh -c \"node scripts/sync-fumadocs-content.mjs && fumadocs-mdx && next dev\"",
     "i18n:extract": "node scripts/i18n-extract.mjs",
     "i18n:check": "node scripts/i18n-extract.mjs --check",
     "assets:optimize": "node scripts/optimize-static-assets.mjs",
     "fonts:subset": "node scripts/subset-fonts.mjs",
     "docs:sync": "node scripts/sync-fumadocs-content.mjs",
-    "build": "pnpm run build:next",
-    "build:cn": "NEXT_PUBLIC_REGION=cn VITE_REGION=cn pnpm run build:next",
-    "build:global": "NEXT_PUBLIC_REGION=global VITE_REGION=global pnpm run build:next",
+    "build": "node scripts/subset-fonts.mjs && node scripts/sync-fumadocs-content.mjs && fumadocs-mdx && next build --webpack && node scripts/version-next-static-assets.mjs && node scripts/fix-next-static-html-lang.mjs && node scripts/format-next-static-html.mjs && node scripts/check-next-seo.mjs && node scripts/check-versioned-next-static-assets.mjs",
+    "build:cn": "NEXT_PUBLIC_REGION=cn VITE_REGION=cn sh -c \"node scripts/subset-fonts.mjs && node scripts/sync-fumadocs-content.mjs && fumadocs-mdx && next build --webpack && node scripts/version-next-static-assets.mjs && node scripts/fix-next-static-html-lang.mjs && node scripts/format-next-static-html.mjs && node scripts/check-next-seo.mjs && node scripts/check-versioned-next-static-assets.mjs\"",
+    "build:global": "NEXT_PUBLIC_REGION=global VITE_REGION=global sh -c \"node scripts/subset-fonts.mjs && node scripts/sync-fumadocs-content.mjs && fumadocs-mdx && next build --webpack && node scripts/version-next-static-assets.mjs && node scripts/fix-next-static-html-lang.mjs && node scripts/format-next-static-html.mjs && node scripts/check-next-seo.mjs && node scripts/check-versioned-next-static-assets.mjs\"",
     "build:next": "node scripts/subset-fonts.mjs && node scripts/sync-fumadocs-content.mjs && fumadocs-mdx && next build --webpack && node scripts/version-next-static-assets.mjs && node scripts/fix-next-static-html-lang.mjs && node scripts/format-next-static-html.mjs && node scripts/check-next-seo.mjs && node scripts/check-versioned-next-static-assets.mjs",
-    "preview": "vite preview",
-    "check": "tsc -b",
+    "check": "node scripts/sync-fumadocs-content.mjs && fumadocs-mdx && tsc --noEmit",
     "check:next": "node scripts/sync-fumadocs-content.mjs && fumadocs-mdx && tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --config vitest.config.ts",
     "deploy:cf": "node scripts/deploy-cloudflare-pages.mjs",
     "deploy:eo": "node scripts/deploy-edgeone-pages.mjs",
     "release:matrix": "node scripts/release-matrix.mjs",
@@ -45,6 +38,7 @@
     "@radix-ui/react-slot": "^1.2.3",
     "@radix-ui/react-tabs": "^1.1.13",
     "@rollup/rollup-darwin-arm64": "^4.60.0",
+    "@tanstack/react-virtual": "^3.14.3",
     "@tencent/agentchat-lightvela-panel": "0.3.1",
     "@tencent/i18n": "^2.0.30",
     "@tencent/tcb-jssdk": "2.0.27",
@@ -76,12 +70,12 @@
     "rehype-slug": "^6.0.0",
     "remark-gfm": "^4.0.0",
     "tailwind-merge": "^3.3.1",
+    "velachat": "git+ssh://git@git.woa.com/wisp/velalink.git#7010bb74692f30072db95c98d7cf6bd41e15bc2a",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@rollup/rollup-darwin-x64": "^4.60.0",
     "@tailwindcss/postcss": "^4.3.1",
-    "@tailwindcss/vite": "^4.1.12",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
@@ -89,7 +83,6 @@
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",
     "@types/react-syntax-highlighter": "^15.5.13",
-    "@vitejs/plugin-react": "^5.0.2",
     "jsdom": "^28.1.0",
     "sharp": "^0.33.5",
     "subset-font": "2.5.0",
@@ -109,6 +102,9 @@
       "@tencent/tcb-jssdk",
       "core-js-pure"
     ],
-    "overrides": {}
+    "overrides": {},
+    "patchedDependencies": {
+      "@tencent/agentchat-claw-components@0.3.1": "patches/@tencent__agentchat-claw-components@0.3.1.patch"
+    }
   }
 }
