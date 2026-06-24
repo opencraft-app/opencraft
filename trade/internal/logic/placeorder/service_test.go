@@ -140,6 +140,12 @@ func (f *fakeJifei) GetDealsByKeyIndex(ctx context.Context, req *jifeiclient.Get
 	return nil, errors.New("fakeJifei: GetDealsByKeyIndex not implemented (placeorder service shouldn't call it)")
 }
 
+// OnlineRefund（trade-pass-refund-design.md v0.5 引入）：placeorder service 不调 OnlineRefund（该接口
+// 由 internalapi.refundResourceHandler 直调 jifeiclient.Client）。本方法仅为满足 interface 实现。
+func (f *fakeJifei) OnlineRefund(ctx context.Context, req *jifeiclient.OnlineRefundRequest) (*jifeiclient.OnlineRefundResponse, error) {
+	return nil, errors.New("fakeJifei: OnlineRefund not implemented (placeorder service shouldn't call it)")
+}
+
 type fakeOrderWriter struct {
 	createOrderFn        func(ctx context.Context, in store.CreateOrderInput) error
 	createOrderCalls     atomic.Int32

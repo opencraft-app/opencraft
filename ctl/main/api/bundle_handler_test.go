@@ -91,6 +91,9 @@ func (s *stubTradeAdapter) CompleteFlow(context.Context, int64, string, string) 
 func (s *stubTradeAdapter) DeleteResource(context.Context, string, *tradeadapter.DeleteResourceRequest) (*tradeadapter.DeleteResourceResult, error) {
 	panic("stubTradeAdapter.DeleteResource: not implemented")
 }
+func (s *stubTradeAdapter) RefundResource(context.Context, string, *tradeadapter.RefundResourceRequest) (*tradeadapter.RefundResourceResult, error) {
+	panic("stubTradeAdapter.RefundResource: not implemented")
+}
 
 func (s *stubTradeAdapter) QueryOrderStatus(context.Context, string, string) (*tradeadapter.OrderStatusResult, error) {
 	panic("stubTradeAdapter.QueryOrderStatus: not implemented")

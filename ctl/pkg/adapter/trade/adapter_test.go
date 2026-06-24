@@ -1046,3 +1046,167 @@ func TestDeleteResource_5xxFallbackToHTTPCode(t *testing.T) {
 		t.Fatalf("unexpected status: %d", tradeErr.Status)
 	}
 }
+
+// ============================================================================
+// RefundResource 测试（trade-pass-refund-design.md v0.5 §8 commit 3）
+//
+// 对应 ctl → trade 出向调用：POST /internal/trade/resources/{resourceID}/refund
+// 入参 DTO 仅 3 字段（UIN/AppID/BundleID），SubProductCode 由 trade 反查（与 DeleteResource Q27 同款）
+// 与 DeleteResource 5 个测试对偶
+// ============================================================================
+
+func TestRefundResource_Success(t *testing.T) {
+	var (
+		gotMethod string
+		gotPath   string
+		gotAuth   string
+		gotCT     string
+		gotReq    RefundResourceRequest
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		gotCT = r.Header.Get("Content-Type")
+		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(RefundResourceResult{
+			DealName:  "deal-refund-001",
+			BigDealID: "big-deal-refund-001",
+		})
+	}))
+	defer server.Close()
+
+	adp := newTestAdapter(t, server.URL, "internal-token")
+	result, err := adp.RefundResource(context.Background(), "lhpass-r1", &RefundResourceRequest{
+		OwnerUin: "1234567890",
+		UIN:      "1234567890",
+		AppID:    251000001,
+		BundleID: "bundle_basic_monthly",
+	})
+	if err != nil {
+		t.Fatalf("RefundResource: %v", err)
+	}
+
+	if gotMethod != http.MethodPost {
+		t.Fatalf("expected POST, got %s", gotMethod)
+	}
+	if gotPath != "/internal/trade/resources/lhpass-r1/refund" {
+		t.Fatalf("unexpected path: %s", gotPath)
+	}
+	if gotAuth != "Bearer internal-token" {
+		t.Fatalf("expected bearer header, got %q", gotAuth)
+	}
+	if gotCT != "application/json" {
+		t.Fatalf("expected application/json content-type, got %q", gotCT)
+	}
+	// 关键不变量（Q3=a 单条退款 + Q5=a 无 category_ids + Q27 trade 反查 SubProductCode
+	// + v0.7 修订 2026-06-24 加回 OwnerUin）：DTO 4 字段全量进 HTTP body。
+	if gotReq.OwnerUin != "1234567890" ||
+		gotReq.UIN != "1234567890" ||
+		gotReq.AppID != 251000001 || gotReq.BundleID != "bundle_basic_monthly" {
+		t.Fatalf("unexpected request body: %+v", gotReq)
+	}
+	if result == nil || result.DealName != "deal-refund-001" || result.BigDealID != "big-deal-refund-001" {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+}
+
+func TestRefundResource_ResourceIDPathEscaped(t *testing.T) {
+	// resourceID 含 "/" 等特殊字符时必须 PathEscape，与 DeleteResource 同范式
+	var gotRawPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotRawPath = r.URL.EscapedPath()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(RefundResourceResult{DealName: "d", BigDealID: "b"})
+	}))
+	defer server.Close()
+	adp := newTestAdapter(t, server.URL, "tok")
+	_, err := adp.RefundResource(context.Background(), "lh/pass r1", &RefundResourceRequest{
+		UIN: "1", AppID: 1, BundleID: "b",
+	})
+	if err != nil {
+		t.Fatalf("RefundResource: %v", err)
+	}
+	if !strings.Contains(gotRawPath, "lh%2Fpass%20r1") {
+		t.Fatalf("expected path-escaped resourceID in %q", gotRawPath)
+	}
+}
+
+func TestRefundResource_BaseURLMissing(t *testing.T) {
+	adp := NewTradeAdapter(&Config{}, nil)
+	_, err := adp.RefundResource(context.Background(), "lhpass-r1", &RefundResourceRequest{UIN: "1"})
+	if err == nil || !strings.Contains(err.Error(), "base_url not configured") {
+		t.Fatalf("expected base_url error, got %v", err)
+	}
+}
+
+func TestRefundResource_RejectsInvalidArgs(t *testing.T) {
+	adp := newTestAdapter(t, "http://unused", "tok")
+	// resourceID 必填
+	if _, err := adp.RefundResource(context.Background(), "", &RefundResourceRequest{UIN: "1"}); err == nil ||
+		!strings.Contains(err.Error(), "resourceID is required") {
+		t.Fatalf("expected resourceID required error, got %v", err)
+	}
+	if _, err := adp.RefundResource(context.Background(), "   ", &RefundResourceRequest{UIN: "1"}); err == nil ||
+		!strings.Contains(err.Error(), "resourceID is required") {
+		t.Fatalf("expected resourceID required error (whitespace), got %v", err)
+	}
+	// req 必填
+	if _, err := adp.RefundResource(context.Background(), "lhpass-r1", nil); err == nil ||
+		!strings.Contains(err.Error(), "request is nil") {
+		t.Fatalf("expected nil request error, got %v", err)
+	}
+}
+
+func TestRefundResource_4xxDecodedAsError(t *testing.T) {
+	// trade 端可能返 502 UpstreamBusinessError / 404 BundleDefinitionNotFound 等业务错误
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"code":    "UpstreamBusinessError",
+			"message": "jifei OnlineRefund: returnCode=101103 deal not yet delivered",
+		})
+	}))
+	defer server.Close()
+	adp := newTestAdapter(t, server.URL, "tok")
+	_, err := adp.RefundResource(context.Background(), "lhpass-r1", &RefundResourceRequest{
+		UIN: "1", AppID: 1, BundleID: "b",
+	})
+	if err == nil {
+		t.Fatalf("expected non-nil error")
+	}
+	var tradeErr *Error
+	if !errors.As(err, &tradeErr) {
+		t.Fatalf("expected *trade.Error, got %T: %v", err, err)
+	}
+	if tradeErr.Status != http.StatusBadGateway || tradeErr.Code != "UpstreamBusinessError" {
+		t.Fatalf("unexpected error: %+v", tradeErr)
+	}
+}
+
+func TestRefundResource_5xxFallbackToHTTPCode(t *testing.T) {
+	// 5xx 且无 JSON body：Code 应回退为 HTTP500（与 PlaceOrder/DeleteResource 同范式）
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("upstream service unavailable"))
+	}))
+	defer server.Close()
+	adp := newTestAdapter(t, server.URL, "tok")
+	_, err := adp.RefundResource(context.Background(), "lhpass-r1", &RefundResourceRequest{
+		UIN: "1", AppID: 1, BundleID: "b",
+	})
+	if err == nil {
+		t.Fatalf("expected non-nil error")
+	}
+	var tradeErr *Error
+	if !errors.As(err, &tradeErr) {
+		t.Fatalf("expected *trade.Error, got %T: %v", err, err)
+	}
+	if tradeErr.Status != http.StatusInternalServerError {
+		t.Fatalf("unexpected status: %d", tradeErr.Status)
+	}
+}

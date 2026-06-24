@@ -113,6 +113,11 @@ func (f *fakeJifei) GetDealsByKeyIndex(ctx context.Context, req *jifeiclient.Get
 	return nil, errors.New("fakeJifei: GetDealsByKeyIndex not used by inquiry")
 }
 
+func (f *fakeJifei) OnlineRefund(ctx context.Context, req *jifeiclient.OnlineRefundRequest) (*jifeiclient.OnlineRefundResponse, error) {
+	// inquiry service 不调 OnlineRefund，本方法仅为满足 interface 实现（trade-pass-refund-design.md v0.5 引入）
+	return nil, errors.New("fakeJifei: OnlineRefund not used by inquiry")
+}
+
 // ============================================================================
 // helpers
 // ============================================================================

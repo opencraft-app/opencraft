@@ -55,6 +55,7 @@
 | `GET /internal/ctl/passes/app-ids` | trade.getAllAppIds 反查 | 按 `bundle_ids`（可空）+ 分页 (`page_no`,`page_size≤20000`) 返回去重 app_id 列表 + total | CTL_INTERNAL_TOKEN |
 | `GET /internal/ctl/passes/by-app` | trade.getUserResources 反查 | 按 `app_id` + 可选 `bundle_ids` + 分页 (`page_no`,`page_size≤1000`) 返回 pass 实体列表 + total | CTL_INTERNAL_TOKEN |
 | `POST /internal/ctl/passes/by-resource-ids` | trade.queryResource 反查 | body: `{app_id, pass_ids[]}` (pass_ids 1~100，POST 因 GET URL 长度限制，Q12) → pass 实体列表（命中数即数量） | CTL_INTERNAL_TOKEN |
+| `POST /admin/api/ctl/passes/{passID}/refund` | 后台 / 客服 | **代退款**（ctl→trade→jifei OnlineRefund 同步退款链路；trade-pass-refund-design.md v0.5）——仅 admin（Q1=a），同步返 dealName/bigDealId | admin |
 
 ### 关键设计要点
 
@@ -91,6 +92,11 @@
 | `ctl/pkg/logic/pass/logic.go` | trade 反查三件套 Logic：`ListPassAppIDs` / `ListPassesByAppID` / `ListPassesByResourceIDs` |
 | `ctl/pkg/transport/pass.go` | trade 反查三件套 DTO：`ListPassAppIDsResponse` / `ListPassesByResourceIDsRequest` 等 + `Entity.RenewFlag` 字段 |
 | `ctl/main/api/integration_test.go` | trade 反查三件套集成测试（设计稿 §4.1 对齐） |
+| `ctl/pkg/logic/pass/refund.go` | `Logic.RefundPass`（ctl admin 退款入口）：不动 pass.status + 同步调 trade.RefundResource；trade-pass-refund-design.md v0.5 |
+| `ctl/main/api/pass_handler.go::adminRefundPass` | POST /admin/api/ctl/passes/{passID}/refund handler（Q1=a admin-only / Q4=a body 可选 operator_uin+reason） |
+| `ctl/pkg/transport/pass.go::RefundPassRequest/RefundPassResponse` | refund 接口 DTO |
+| `ctl/pkg/errcode/pass.go::ErrPassNotActive / ErrPassTrialNotRefundable` | refund 业务错码（v0.5 新增 2 个） |
+| `ctl/main/api/refund_route_test.go` | refund 路由级单测（8 个子测试覆盖 405/404/normalizePath/InvalidJSONBody/v1 不挂载） |
 
 ## CI 触发说明
 

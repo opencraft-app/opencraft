@@ -979,6 +979,7 @@ func (h *passHandler) handleUserPassesByID(w http.ResponseWriter, r *http.Reques
 //   - R-D-5b 续费支付 URL：{pass_id}/renew/order-url
 //   - R-D-7c 续费一体化下单+支付（测试用）：{pass_id}/renew/order-and-pay
 //   - D-2.3 后台代销毁触发：{pass_id}/delete（trade-pass-destroy §4.5.1）
+//   - trade-pass-refund v0.5 后台代退款触发：{pass_id}/refund
 func (h *passHandler) handleAdminPassesByID(w http.ResponseWriter, r *http.Request) {
 	subPath := strings.Trim(strings.TrimPrefix(r.URL.Path, "/admin/api/ctl/passes"), "/")
 	if subPath == "" {
@@ -986,10 +987,16 @@ func (h *passHandler) handleAdminPassesByID(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	parts := strings.Split(subPath, "/")
-	// 2 段路径：{pass_id}/delete（trade-pass-destroy §4.5.1）
-	if len(parts) == 2 && parts[1] == "delete" {
-		h.adminDeletePass(w, r, parts[0])
-		return
+	// 2 段路径：{pass_id}/delete（trade-pass-destroy §4.5.1）、{pass_id}/refund（trade-pass-refund v0.5）
+	if len(parts) == 2 {
+		switch parts[1] {
+		case "delete":
+			h.adminDeletePass(w, r, parts[0])
+			return
+		case "refund":
+			h.adminRefundPass(w, r, parts[0])
+			return
+		}
 	}
 	// 3 段路径：{pass_id}/renew/{order | order-url | order-and-pay | price}
 	if len(parts) == 3 && parts[1] == "renew" {
@@ -1438,4 +1445,55 @@ func (h *passHandler) adminDeletePass(w http.ResponseWriter, r *http.Request, pa
 	}
 	// 与 userDeletePass 对偶: 仅返回同步调用成功信号, pass 实体异步销毁需轮询查询.
 	writeSuccess(w, r, http.StatusOK, &transport.DeletePassUserResponse{Deleted: true})
+}
+
+// adminRefundPass POST /admin/api/ctl/passes/{pass_id}/refund — 后台代退款触发
+// （trade-pass-refund-design.md v0.5 §3.3 + §11 拍板项汇总）
+//
+// 用途（Q1=a 仅 admin 后台暴露，不对外开用户面）：
+//   - 运营 / 客服为指定 pass 发起 jifei OnlineRefund 同步退款
+//   - body 可选 operator_uin / reason（仅日志留痕用，Q4=a 不建审计表）
+//   - 后台路径**不要求** user_id 透传：Q1=a 拍板 admin 直接以 pass_id 为粒度操作，
+//     越权风险由 admin 路由所在的 admin 鉴权层兜底，不在 handler 层做 user_id 校验
+//
+// 关键不变量（Q3=b 拍板）：本接口同步返成功后 pass.status **仍是 `active`**；
+// 最终状态由 jifei 异步回 isolateResource(billingIsolateType=refund) 推进到 isolated。
+// 详见 logic/pass/refund.go::RefundPass 注释。
+//
+// 错误响应（与 logic.RefundPass 错误码 1:1 对偶）：
+//   - 400 PASS_INVALID_PARAM         缺 pass_id（path 段为空）
+//   - 400 PASS_NOT_ACTIVE            pass.status ≠ active
+//   - 400 PASS_TRIAL_NOT_REFUNDABLE  试用 pass（uin/app_id=0）
+//   - 403 PASS_EXPIRED               pass.expired_time <= NOW()
+//   - 404 PASS_NOT_FOUND             pass_id 不存在
+//   - 5xx：trade 调用异常 / jifei 业务错（透传 trade adapter *Error）
+//
+// 鉴权：复用 admin 路由所在的 admin 鉴权（与 handleAdminPasses 一致）。
+func (h *passHandler) adminRefundPass(w http.ResponseWriter, r *http.Request, passID string) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+
+	// body 可选 — Q4=a 拍板：仅 operator_uin / reason 两个透传字段。ContentLength == 0 时跳过 decode。
+	var req transport.RefundPassRequest
+	if r.ContentLength > 0 {
+		if err := decodeJSONBody(r, &req); err != nil {
+			writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))
+			return
+		}
+	}
+
+	result, err := h.logic.RefundPass(passID, req.OperatorUin, req.Reason)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, &transport.RefundPassResponse{
+		PassID:      result.PassID,
+		DealName:    result.DealName,
+		BigDealID:   result.BigDealID,
+		SubmittedAt: result.SubmittedAt,
+	})
 }

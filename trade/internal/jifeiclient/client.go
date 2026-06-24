@@ -227,6 +227,19 @@ type Client interface {
 	// 本期仅用 cond.dealName 单订单查询；未来扩展批量查询仅需填 cond.dealNameList 。
 	// trade orderstatus logic 在本地中态订单才会调用本接口；B7 不可达降级交由调用方处理。
 	GetDealsByKeyIndex(ctx context.Context, req *GetDealsByKeyIndexRequest) (*GetDealsByKeyIndexResponse, error)
+
+	// OnlineRefund 调用 jifei CGW `qcloud.Deal.OnlineRefund` 线上退款接口
+	// （trade-pass-refund-design.md v0.5 引入 — ctl→trade→jifei 主动退款链路）。
+	//
+	// 入参 req 已经是 CGW para 内层业务字段（UIN / AppID / FromConsole / GoodsInfo[]）；
+	// 出参 PascalCase（与 doc §5 dealNames[] / bigDealIds[] 对齐）。
+	//
+	// 协议参考：`/root/project/mono/.tmp/线上退设备退款.doc`。
+	//
+	// 同步语义：业务成功 / 失败都立即返响应（returnCode + dealNames），不存在"中间 in_progress"
+	// 中态；后续真实退款资金流转 + pass 隔离生效由 jifei 异步回 isolateResource 推动。
+	// trade 出向 handler 定位为"无状态翻译层"，不写 trade_flow 行（设计稿 Q8b=b 拍板）。
+	OnlineRefund(ctx context.Context, req *OnlineRefundRequest) (*OnlineRefundResponse, error)
 }
 
 // Options 是 Client 可选构造参数。

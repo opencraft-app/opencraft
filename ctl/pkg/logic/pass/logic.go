@@ -295,6 +295,31 @@ type Logic interface {
 	// 鉴权：transport 层校验用户是 pass 当前持有人（与 RenewPassOrderUrl 一致）。
 	DeletePass(userID, passID string) (*PassDetail, error)
 
+	// RefundPass 为指定 pass 发起退款（trade-pass-refund-design.md v0.5 §3 + §11 拍板项汇总）。
+	//
+	// 链路：admin → ctl.RefundPass → trade.RefundResource → jifei.OnlineRefund → 同步返 dealName/bigDealId。
+	//
+	// 前置校验（Q1=a/Q2=a 拍板）：
+	//   - passID 必填
+	//   - pass 必须存在且 status='active'
+	//   - pass.expired_time > NOW()（未过期，jifei 仅退在保资源）
+	//   - pass.uin > 0 && pass.app_id > 0（付费 pass；试用 pass 不走 jifei OnlineRefund）
+	//
+	// 关键不变量（Q3=b 拍板）：本接口**不写** pass.status / expired_time / isolated_time；
+	// 最终落地由 jifei 异步回 isolateResource(billingIsolateType=refund) 触发现有
+	// v1.7.30 BUG-35 退费分支 → IsolatePass 路径 → active→isolating→isolated + 写 expired_time。
+	//
+	// 错误码：
+	//   - ErrPassInvalidParam：passID 缺失
+	//   - ErrPassNotFound：pass 不存在
+	//   - ErrPassNotActive：status ≠ active（含 isolated/deleting/terminating/renewing 等）
+	//   - ErrPassExpired：pass.expired_time <= NOW()
+	//   - ErrPassTrialNotRefundable：试用 pass（uin/app_id=0）
+	//   - 5xx：trade adapter 异常（含 jifei 业务错 / 上游 502 等）
+	//
+	// 鉴权：仅 admin 后台入口暴露（Q1=a 拍板，用户面不开）；transport 层走 admin 鉴权而非 user 校验。
+	RefundPass(passID string, operatorUin int64, reason string) (*RefundResult, error)
+
 	// DestroyPass 销毁主链入口（trade.destroyResource handler 反向调）— 入口 A 与入口 B 共享
 	//
 	// 设计稿：.tmp/trade-pass-destroy-design.md §3.5 / §4.5.2 / §4.5.3 / §11-A Q1 / Q2 / Q24

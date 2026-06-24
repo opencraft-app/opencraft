@@ -106,6 +106,8 @@ type fakeJifei struct {
 	getMidasEarmarkingFn  func(ctx context.Context, req *jifeiclient.GetMidasEarmarkingRequest) (*jifeiclient.GetMidasEarmarkingResponse, error)
 	// D-2.1: ModifyResourceStatus 钩子（jifei `qcloud.operation.ModifyResourceStatus` 销毁/隔离）
 	modifyResourceStatusFn func(ctx context.Context, req *jifeiclient.ModifyResourceStatusRequest) (*jifeiclient.ModifyResourceStatusResponse, error)
+	// trade-pass-refund-design.md v0.5: OnlineRefund 钩子（jifei `qcloud.Deal.OnlineRefund` 线上退款）
+	onlineRefundFn func(ctx context.Context, req *jifeiclient.OnlineRefundRequest) (*jifeiclient.OnlineRefundResponse, error)
 }
 
 func (f *fakeJifei) GetPrice(ctx context.Context, req *jifeiclient.GetPriceRequest) (*jifeiclient.GetPriceResponse, error) {
@@ -172,6 +174,18 @@ func (f *fakeJifei) GetDealsByKeyIndex(ctx context.Context, req *jifeiclient.Get
 	// internalapi handler 本期不会调 GetDealsByKeyIndex（该接口由 orderstatus handler 直调
 	// jifeiclient.Client）。本方法仅为满足 jifeiclient.Client interface 实现。
 	return &jifeiclient.GetDealsByKeyIndexResponse{}, nil
+}
+
+// OnlineRefund（trade-pass-refund-design.md v0.5 引入）：refund handler 测试可注入
+// onlineRefundFn 自定义返回；默认返单条 dealName/bigDealId 模拟 jifei 同步成功。
+func (f *fakeJifei) OnlineRefund(ctx context.Context, req *jifeiclient.OnlineRefundRequest) (*jifeiclient.OnlineRefundResponse, error) {
+	if f.onlineRefundFn != nil {
+		return f.onlineRefundFn(ctx, req)
+	}
+	return &jifeiclient.OnlineRefundResponse{
+		DealNames:  []string{"deal-refund-default"},
+		BigDealIDs: []string{"big-deal-refund-default"},
+	}, nil
 }
 
 type fakeOrderWriter struct {
