@@ -33,6 +33,7 @@ export const AGENT_SECTION_ID_BY_SLUG: Record<string, AgentSectionId> = {
   channels: "channel",
   models: "model",
   skills: "skill",
+  experts: "skill",
   persona: "buddy",
   automations: "automations",
   diagnostics: "diagnostics",

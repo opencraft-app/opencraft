@@ -413,7 +413,7 @@ const PersonaSelectView = ({
         配置技能
       </div>
       <h2 style={{ fontSize: "clamp(1.375rem, 3vw, 1.75rem)" }}>
-        选择一个技能专家，让你的龙虾技能增强
+        选择一个技能包，让你的龙虾技能增强
       </h2>
     </div>
 
@@ -468,7 +468,7 @@ const PersonaConfirmView = ({
         {persona.name} {persona.nameEn}
       </h2>
       <p className="mt-1.5 text-sm leading-relaxed text-[var(--text-secondary)]">
-        该专家已为你预装以下 Agent Skills，开箱即用。
+        该技能包已为你预装以下 Agent Skills，开箱即用。
       </p>
     </div>
 
@@ -514,7 +514,7 @@ const InstallProgressView = ({ persona, onComplete }: { persona: Persona; onComp
   const personaLabel = `${persona.name}${persona.nameEn}`;
 
   const progressSteps = [
-    `配置技能专家·${personaLabel}`,
+    `配置技能包·${personaLabel}`,
     "安装 Agent Skills（3个）",
     "验证并启动服务",
   ];

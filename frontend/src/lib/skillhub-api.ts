@@ -43,6 +43,63 @@ export interface SkillHubSoulListResponse {
   souls: SkillHubSoul[];
 }
 
+export type SkillHubSkillSetScene =
+  | "academic"
+  | "design"
+  | "ecommerce"
+  | "education"
+  | "finance"
+  | "healthcare"
+  | "hr"
+  | "legal"
+  | "marketing"
+  | "media"
+  | "tech";
+
+/** SkillHub 技能包列表项（SkillSet） */
+export interface SkillHubSkillSet {
+  id: number;
+  slug: string;
+  displayName: string;
+  summary: string;
+  remark: string;
+  scene?: SkillHubSkillSetScene;
+  subScene?: string;
+  skillCount?: number;
+  skillSlugs?: string[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** SkillHub 技能包详情，包含待安装的 skill slug 列表 */
+export interface SkillHubSkillSetDetail extends SkillHubSkillSet {
+  skillSlugs: string[];
+  content?: string;
+}
+
+export interface SkillHubSkillSetListResponse {
+  total?: number;
+  skillSets: SkillHubSkillSet[];
+}
+
+export interface SkillHubSkill {
+  id?: number;
+  slug: string;
+  displayName: string;
+  summary?: string;
+  summary_zh?: string;
+}
+
+export interface SkillHubSkillDetailResponse {
+  skill: SkillHubSkill;
+}
+
+export interface SkillHubSkillFileItem {
+  path: string;
+  size: number;
+  sha256: string;
+}
+
 // ─── 请求工具 ───────────────────────────────────────────────────────────────
 
 async function publicGet<T>(path: string): Promise<T> {
@@ -77,4 +134,48 @@ export function fetchSouls(params?: {
 /** 查询单个 Soul 详情（公共接口） */
 export function fetchSoulDetail(slug: string): Promise<SkillHubSoulDetail> {
   return publicGet(`/api/v1/souls/${encodeURIComponent(slug)}`);
+}
+
+/** 分页查询 SkillHub 技能包（SkillSet）列表 */
+export function fetchSkillSets(params?: {
+  keyword?: string;
+  scene?: SkillHubSkillSetScene;
+  page?: number;
+  pageSize?: number;
+}): Promise<SkillHubSkillSetListResponse> {
+  const qs = new URLSearchParams();
+  if (params?.keyword?.trim()) qs.set("keyword", params.keyword.trim());
+  if (params?.scene) qs.set("scene", params.scene);
+  if (params?.page) qs.set("page", String(params.page));
+  if (params?.pageSize) qs.set("pageSize", String(params.pageSize));
+  const suffix = qs.toString();
+  return publicGet(`/api/v1/skillsets${suffix ? `?${suffix}` : ""}`);
+}
+
+/** 查询单个 SkillHub 技能包详情 */
+export function fetchSkillSetDetail(slug: string): Promise<SkillHubSkillSetDetail> {
+  return publicGet(`/api/v1/skillsets/${encodeURIComponent(slug)}`);
+}
+
+/** 查询单个 Skill 详情，包含 SkillHub 后端维护的展示名称 */
+export function fetchSkillDetail(slug: string): Promise<SkillHubSkill> {
+  return publicGet<SkillHubSkillDetailResponse>(`/api/v1/skills/${encodeURIComponent(slug)}`)
+    .then((response) => response.skill);
+}
+
+/** 获取单个 Skill 的文件列表 */
+export function fetchSkillFiles(slug: string): Promise<SkillHubSkillFileItem[]> {
+  return publicGet<{ files?: SkillHubSkillFileItem[] }>(`/api/v1/skills/${encodeURIComponent(slug)}/files`)
+    .then((response) => response.files ?? []);
+}
+
+/** 读取单个 Skill 的指定文件内容 */
+export async function fetchSkillFile(slug: string, path: string): Promise<string> {
+  const res = await fetch(
+    `${SKILLHUB_API_BASE}/api/v1/skills/${encodeURIComponent(slug)}/file?path=${encodeURIComponent(path)}`,
+  );
+  if (!res.ok) {
+    throw new Error(res.status === 404 ? "file not found" : `${res.status} ${res.statusText}`);
+  }
+  return res.text();
 }

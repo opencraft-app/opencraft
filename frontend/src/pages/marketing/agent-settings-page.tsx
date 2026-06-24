@@ -73,6 +73,7 @@ import {
   type HermesMemoryLimitValidation,
 } from "@/pages/marketing/openclaw-memory";
 import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
+import { HermesAgentSkillsPanel, type HermesAgentSkillsPanelProps } from "@/pages/marketing/hermes-agent-skills-panel";
 import { AchievementsPanel } from "@/pages/marketing/openclaw-achievements-panel";
 import { AutomationsPanel } from "@/pages/marketing/openclaw-automations-panel";
 import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
@@ -270,6 +271,72 @@ function TeaSdkSettingsPanel({
       instance={instance}
       featureFlags={featureFlags}
       productConfig={runtime.createProductConfig(productConfigArgs)}
+    />
+  );
+}
+
+function HermesAgentSkillsRuntimePanel({
+  botId,
+  execDebugCommand,
+  featureFlags,
+  initialSectionSlug,
+  instance,
+  productConfigArgs,
+}: {
+  botId: string;
+  execDebugCommand: HermesAgentSkillsPanelProps["execDebugCommand"];
+  featureFlags: TeaSdkFeatureFlags;
+  initialSectionSlug?: string;
+  instance: TeaSdkInstanceInfo;
+  productConfigArgs: {
+    runCommand: TeaSdkProductConfig["runCommand"];
+    getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
+  };
+}) {
+  const t = useT();
+  const [runtime, setRuntime] = useState<TeaSdkRuntime | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadTeaSdkRuntime()
+      .then((nextRuntime) => {
+        if (!cancelled) setRuntime(nextRuntime);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (error) {
+    return (
+      <div className="rounded-md border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+        {t("加载配置面板失败：{{message}}", { message: error })}
+      </div>
+    );
+  }
+
+  if (!runtime) {
+    return (
+      <div className="flex items-center justify-center rounded-md border border-black/[0.06] bg-white py-16 text-sm text-black/45">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        {t("加载中...")}
+      </div>
+    );
+  }
+
+  return (
+    <HermesAgentSkillsPanel
+      botId={botId}
+      execDebugCommand={execDebugCommand}
+      featureFlags={featureFlags}
+      initialSectionSlug={initialSectionSlug}
+      instance={instance}
+      productConfig={runtime.createProductConfig(productConfigArgs)}
+      SkillPanel={runtime.SkillPanel}
     />
   );
 }
@@ -1546,7 +1613,7 @@ const SkillSection = () => {
             onClick={() => { setInstalled(false); setSelectedPersona(null); setProgress(0); }}
             className="lw-back-link mt-3"
           >
-            {t("重新选择技能专家")}
+            {t("重新选择技能包")}
           </button>
         </div>
       ) : installing && selectedPersona ? (
@@ -1573,7 +1640,7 @@ const SkillSection = () => {
       ) : (
         /* Selection state */
         <>
-          <p className="text-sm text-[var(--text-secondary)]">{t("选择一个技能专家，让你的龙虾技能增强")}</p>
+          <p className="text-sm text-[var(--text-secondary)]">{t("选择一个技能包，让你的龙虾技能增强")}</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             {personas.map((persona) => (
               <button
@@ -4314,7 +4381,7 @@ export const AgentSettingsPage = ({
                 ...(SHOW_AGENTCHAT_ENTRY
                   ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.chat }]
                   : []),
-                { id: "diagnostics", label: t("诊断中心"), icon: <Stethoscope className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.diagnostics, badge: "NEW" },
+                { id: "diagnostics", label: t("诊断中心"), icon: <Stethoscope className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.diagnostics },
               ];
               const isRestartDisabled = resettingAcli || isActiveBotRestarting || activeBot.status !== "running";
               const restartTooltip = resettingAcli ? t("请稍后") : t("重启");
@@ -4559,8 +4626,9 @@ export const AgentSettingsPage = ({
                             />
                           )}
                           {activeSection === "skill" && (
-                            <TeaSdkSettingsPanel
-                              kind="skill"
+                            <HermesAgentSkillsRuntimePanel
+                              botId={activeBot.id}
+                              execDebugCommand={repositories.bots.execDebugCommand}
                               instance={sdkInstance}
                               featureFlags={sdkFeatureFlags}
                               productConfigArgs={sdkProductConfigArgs}

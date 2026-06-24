@@ -7,6 +7,11 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  fetchSkillFile,
+  fetchSkillDetail,
+  fetchSkillFiles,
+  fetchSkillSetDetail,
+  fetchSkillSets,
   fetchSoulDetail,
   fetchSouls,
 } from "./skillhub-api";
@@ -19,6 +24,7 @@ function mockFetch(payload: unknown, status = 200): typeof globalThis.fetch {
     status,
     statusText: "OK",
     json: async () => payload,
+    text: async () => String(payload),
   })) as unknown as typeof globalThis.fetch;
   globalThis.fetch = fn;
   return fn;
@@ -53,6 +59,57 @@ describe("skillhub-api", () => {
       const fetchMock = mockFetch({ slug: "a b" });
       await fetchSoulDetail("a b");
       expect(fetchMock).toHaveBeenCalledWith("/__skillhub/api/v1/souls/a%20b");
+    });
+  });
+
+  describe("fetchSkillSets", () => {
+    it("uses the SkillHub public skillsets endpoint", async () => {
+      const fetchMock = mockFetch({ skillSets: [] });
+      await fetchSkillSets();
+      expect(fetchMock).toHaveBeenCalledWith("/__skillhub/api/v1/skillsets");
+    });
+
+    it("appends scene, keyword and paging query parameters", async () => {
+      const fetchMock = mockFetch({ skillSets: [] });
+      await fetchSkillSets({ scene: "finance", keyword: " report ", page: 2, pageSize: 6 });
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/__skillhub/api/v1/skillsets?keyword=report&scene=finance&page=2&pageSize=6",
+      );
+    });
+  });
+
+  describe("fetchSkillSetDetail", () => {
+    it("URL-encodes the slug", async () => {
+      const fetchMock = mockFetch({ slug: "finance pack", skillSlugs: [] });
+      await fetchSkillSetDetail("finance pack");
+      expect(fetchMock).toHaveBeenCalledWith("/__skillhub/api/v1/skillsets/finance%20pack");
+    });
+  });
+
+  describe("fetchSkillDetail", () => {
+    it("URL-encodes the slug and unwraps the skill payload", async () => {
+      const fetchMock = mockFetch({ skill: { slug: "qa plan", displayName: "QA Test Plan Generator" } });
+      await expect(fetchSkillDetail("qa plan")).resolves.toEqual({
+        slug: "qa plan",
+        displayName: "QA Test Plan Generator",
+      });
+      expect(fetchMock).toHaveBeenCalledWith("/__skillhub/api/v1/skills/qa%20plan");
+    });
+  });
+
+  describe("fetchSkillFiles", () => {
+    it("uses the SkillHub public skill files endpoint", async () => {
+      const fetchMock = mockFetch({ files: [{ path: "SKILL.md", size: 1, sha256: "abc" }] });
+      await expect(fetchSkillFiles("tdd guide")).resolves.toEqual([{ path: "SKILL.md", size: 1, sha256: "abc" }]);
+      expect(fetchMock).toHaveBeenCalledWith("/__skillhub/api/v1/skills/tdd%20guide/files");
+    });
+  });
+
+  describe("fetchSkillFile", () => {
+    it("URL-encodes the slug and path", async () => {
+      const fetchMock = mockFetch("# Skill");
+      await fetchSkillFile("tdd guide", "docs/SKILL.md");
+      expect(fetchMock).toHaveBeenCalledWith("/__skillhub/api/v1/skills/tdd%20guide/file?path=docs%2FSKILL.md");
     });
   });
 

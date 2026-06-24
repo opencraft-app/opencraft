@@ -6,4 +6,9 @@ describe("agent route paths", () => {
     expect(AGENT_SECTION_PATH_BY_ID.browser).toBe("/agents/browser");
     expect(getAgentSectionFromSlug("browser")).toBe("browser");
   });
+
+  it("aliases the legacy experts section to the skills page", () => {
+    expect(AGENT_SECTION_PATH_BY_ID.skill).toBe("/agents/skills");
+    expect(getAgentSectionFromSlug("experts")).toBe("skill");
+  });
 });
