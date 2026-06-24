@@ -426,6 +426,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("check-in", stages[0])
         self.assertNotIn("if:", template_text)
         self.assertIn("release_frontend_edgeone_artifact.sh", template_text)
+        self.assertIn("POSTHOG_PROJECT_TOKEN: ${{ settings.POSTHOG_PROJECT_TOKEN }}", template_text)
         self.assertNotIn('"$PNPM_BIN" install --frozen-lockfile', template_text)
 
         command_text = (REPO_ROOT / ".ci/runtime/commands/release_frontend_edgeone_artifact.sh").read_text()

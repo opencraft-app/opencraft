@@ -56,6 +56,7 @@ stages:
           EDGEONE_API_TOKEN_REQUIRED: "1"
           EDGEONE_LIGHTVELA_PROD_TOKEN: ${{ settings.EDGEONE_LIGHTVELA_PROD_TOKEN }}
           EDGEONE_LIGHTVELA_INTL_PROD_TOKEN: ${{ settings.EDGEONE_LIGHTVELA_INTL_PROD_TOKEN }}
+          POSTHOG_PROJECT_TOKEN: ${{ settings.POSTHOG_PROJECT_TOKEN }}
           TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
           FRONTEND_ARTIFACT_REPOSITORY: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend-pages
         steps:
