@@ -958,6 +958,8 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
   - EdgeOne Pages API token，用于 `发布 frontend eo:cn-lightvela-prod-next`
 - `EDGEONE_LIGHTVELA_INTL_PROD_TOKEN`
   - EdgeOne Pages API token，用于 `发布 frontend eo:global-lightvela-intl-prod-next`
+- `POSTHOG_PROJECT_TOKEN`
+  - PostHog project token，用于 `eo:global-lightvela-intl-prod-next` 国际站构建/发布时启用 PostHog
 
 另外要求：
 
