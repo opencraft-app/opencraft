@@ -108,6 +108,9 @@ func TestQuote_DianshiBranch_NotParticipated(t *testing.T) {
 	if dc.lastPriceReq.ActivityID != 164273735574009 {
 		t.Errorf("dianshi req activity_id=%d", dc.lastPriceReq.ActivityID)
 	}
+	if dc.lastPriceReq.Uin != "815836472" {
+		t.Errorf("dianshi req uin=%q want 815836472 (preview=1 顶层 uin 必填，见 GetPriceRequest.Uin 字段注释)", dc.lastPriceReq.Uin)
+	}
 	if len(dc.lastPriceReq.Goods) != 1 || dc.lastPriceReq.Goods[0].ActID != 1862147936410255 {
 		t.Errorf("dianshi req goods=%+v", dc.lastPriceReq.Goods)
 	}
