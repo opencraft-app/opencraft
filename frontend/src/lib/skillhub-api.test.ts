@@ -65,6 +65,13 @@ describe("skillhub-api", () => {
         "/__skillhub/api/v1/souls?page=2&pageSize=30",
       );
     });
+
+    it("reuses the same successful list request", async () => {
+      await fetchSouls({ page: 3, pageSize: 30 });
+      await fetchSouls({ page: 3, pageSize: 30 });
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("fetchSoulDetail", () => {
@@ -141,7 +148,7 @@ describe("skillhub-api", () => {
           throw new Error("not json");
         },
       })) as unknown as typeof globalThis.fetch;
-      await expect(fetchSouls()).rejects.toThrow("500 Internal Server Error");
+      await expect(fetchSoulDetail("broken-json")).rejects.toThrow("500 Internal Server Error");
     });
   });
 });

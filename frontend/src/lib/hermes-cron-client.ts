@@ -107,6 +107,15 @@ interface ApiEnvelope<T> {
   data: T;
   message?: string;
 }
+interface DebugExecErrorPayload {
+  message?: string;
+  error?: string;
+  details?: Partial<DebugExecPayload> & {
+    stdout?: string;
+    stderr?: string;
+    detail?: string;
+  };
+}
 interface CronRunFileRow {
   job_id?: unknown;
   run_at?: unknown;
@@ -194,10 +203,26 @@ export async function execCommand(botId: string, command: string): Promise<Debug
       });
     }
     let detail = "";
+    let details: DebugExecErrorPayload["details"] | undefined;
     try {
-      const errBody = (await resp.json()) as { message?: string; error?: string };
+      const errBody = (await resp.json()) as DebugExecErrorPayload;
+      details = errBody?.details;
       detail = errBody?.message ?? errBody?.error ?? "";
     } catch { /* ignore */ }
+    if (details && (
+      typeof details.output === "string"
+      || typeof details.stdout === "string"
+      || typeof details.stderr === "string"
+      || typeof details.detail === "string"
+      || typeof details.exit_code === "number"
+    )) {
+      throw new CronCommandError({
+        command,
+        output: buildDebugExecDetailsOutput(details),
+        status: details.status || `HTTP ${resp.status}`,
+        exitCode: details.exit_code ?? -1,
+      });
+    }
     throw new CronCommandError({
       command,
       output: detail || `HTTP ${resp.status}`,
@@ -220,6 +245,19 @@ export async function execCommand(botId: string, command: string): Promise<Debug
     });
   }
   return payload;
+}
+
+function buildDebugExecDetailsOutput(details: DebugExecErrorPayload["details"]): string {
+  if (!details) return "";
+  const outputs = [
+    details.output,
+    details.stderr,
+    details.stdout,
+    details.detail,
+  ]
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .filter(Boolean);
+  return outputs[0] ?? "";
 }
 
 /** 读 cron jobs 列表

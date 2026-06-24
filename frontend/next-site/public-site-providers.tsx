@@ -1,6 +1,6 @@
 'use client';
 
-import { type ReactNode, useEffect } from 'react';
+import { type ReactNode, useEffect, useLayoutEffect } from 'react';
 
 import { OpenClawProvider } from '@/contexts/openclaw-context';
 import { RepositoryProvider } from '@/contexts/repository-context';
@@ -14,9 +14,11 @@ import type { PublicRouteLocale } from './public-locale';
 type Locale = PublicRouteLocale['locale'];
 
 export function PublicSiteLocaleBridge({ locale, children }: { locale: Locale; children: ReactNode }) {
-  if (i18n.language !== locale) {
-    void i18n.changeLanguage(locale);
-  }
+  useLayoutEffect(() => {
+    if (i18n.language !== locale) {
+      void i18n.changeLanguage(locale);
+    }
+  }, [locale]);
 
   useEffect(() => {
     if (i18n.language !== locale) {

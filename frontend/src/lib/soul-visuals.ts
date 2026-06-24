@@ -158,6 +158,23 @@ export const SOUL_VISUALS: Record<string, SoulVisual> = {
   },
 };
 
+// ── EN (international) slug aliases ──────────────────────────────────────
+// Westernized EN personas reuse the same character art as their canonical
+// archetype (by row order). Purely ADDITIVE: CN paths still resolve via the
+// original slugs above and are completely unaffected.
+Object.assign(SOUL_VISUALS, {
+  ["GOAT"]: SOUL_VISUALS["YYDS"],
+  ["LOL"]: SOUL_VISUALS["HHHH"],
+  ["MEOW"]: SOUL_VISUALS["MIAO"],
+  ["NO-FILTER"]: SOUL_VISUALS["GRASS"],
+  ["MOMMY"]: SOUL_VISUALS["MUM"],
+  ["STEADY"]: SOUL_VISUALS["GOOD"],
+  ["LIVEWIRE"]: SOUL_VISUALS["MALO"],
+  ["CHAMELEON"]: SOUL_VISUALS["FAKE"],
+  ["GRINDER"]: SOUL_VISUALS["WORK-er"],
+  ["GO-MODE"]: SOUL_VISUALS["GOGO"],
+});
+
 /** Fallback：未知 slug 时返回中性视觉（避免运行时 undefined 崩溃） */
 const FALLBACK_VISUAL: SoulVisual = {
   avatar: "",

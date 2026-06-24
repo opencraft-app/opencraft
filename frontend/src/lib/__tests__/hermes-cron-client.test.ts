@@ -5,6 +5,7 @@ import {
   buildCreateCommand,
   createCronJob,
   createCronJobWithScriptRollback,
+  execCommand,
   listCronJobs,
   listRecentCronRuns,
   parseCronRunFilesOutput,
@@ -347,6 +348,26 @@ describe("effective window script", () => {
 });
 
 describe("createCronJob auth handling", () => {
+  it("surfaces debug exec failure details from HTTP error bodies", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      json: async () => ({
+        code: "DEBUG_EXEC_FAILED",
+        message: "command execution failed",
+        details: {
+          status: "FAILED",
+          exit_code: 1,
+          stderr: "Unknown platform: telegram",
+          detail: "status=FAILED exit_code=1 stderr=Unknown platform: telegram",
+        },
+      }),
+    }));
+
+    await expect(execCommand("bot-1", "hermes send --to 'telegram' 'hello'"))
+      .rejects.toThrow("Unknown platform: telegram");
+  });
+
   it("loads recent cron output files through debug exec", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(okExec(JSON.stringify([{
       job_id: "job-1",

@@ -291,6 +291,41 @@ describe("parseEnabledHermesChannels", () => {
 
     expect(parseEnabledHermesChannels(output)).toEqual(new Set(["weixin"]));
   });
+
+  it("normalizes international channel aliases to notification keys", () => {
+    const output = JSON.stringify({
+      success: true,
+      data: {
+        platforms: [
+          { name: "openclaw-telegram", status: "connected" },
+          { name: "whatsapp-business", status: "ready" },
+          { name: "openclaw-discord", status: "enabled" },
+          { name: "openclaw-wecom", status: "connected" },
+          { name: "openclaw-lark", status: "running" },
+          { name: "openclaw-qq", status: "connected" },
+        ],
+      },
+      error: null,
+    });
+
+    expect(parseEnabledHermesChannels(output)).toEqual(new Set(["telegram", "whatsapp", "discord", "wecom", "feishu", "qqbot"]));
+  });
+
+  it("parses object-shaped channel status payloads", () => {
+    const output = JSON.stringify({
+      success: true,
+      data: {
+        channels: {
+          "openclaw-telegram": { enabled: true },
+          "openclaw-whatsapp": "connected",
+          "openclaw-discord": false,
+        },
+      },
+      error: null,
+    });
+
+    expect(parseEnabledHermesChannels(output)).toEqual(new Set(["telegram", "whatsapp"]));
+  });
 });
 
 describe("isHermesNotificationChannelConfigured", () => {
@@ -321,6 +356,32 @@ describe("formatTestSendError", () => {
       .toBe("发送失败，请检查通道配置或稍后重试：命令执行超时");
     expect(formatTestSendError(new Error("Unknown platform: wechat"), "发送失败，请检查通道配置或稍后重试"))
       .toBe("发送失败，请检查通道配置或稍后重试：未知通知通道：wechat");
+  });
+
+  it("extracts the real stderr from debug exec failure summaries", () => {
+    expect(formatTestSendError(
+      new Error("status=FAILED exit_code=1 stderr=Unknown platform: telegram"),
+      "发送失败，请检查通道配置或稍后重试",
+    )).toBe("发送失败，请检查通道配置或稍后重试：未知通知通道：telegram");
+  });
+
+  it("formats common command errors in English when an English translator is provided", () => {
+    const t = ((text: string, vars?: Record<string, unknown>) => {
+      const translations: Record<string, string> = {
+        "命令执行超时": "Command timed out",
+        "未知通知通道：{{platform}}": "Unknown notification channel: {{platform}}",
+        "实例内命令执行权限不足": "Insufficient permission to run commands in the instance",
+      };
+      const template = translations[text] ?? text;
+      if (!vars) return template;
+      return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key) => String(vars[key] ?? ""));
+    });
+
+    expect(formatTestSendError(
+      new Error("Unknown platform: telegram"),
+      "Failed to send. Please check the channel configuration or try again later.",
+      t,
+    )).toBe("Failed to send. Please check the channel configuration or try again later: Unknown notification channel: telegram");
   });
 
   it("hides low-level missing-command details from users", () => {

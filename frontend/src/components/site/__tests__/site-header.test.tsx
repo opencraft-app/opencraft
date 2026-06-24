@@ -24,7 +24,7 @@ describe("PublicSiteHeader", () => {
   it("shows unified navigation and anonymous actions", () => {
     const onLoginClick = vi.fn();
 
-    render(<PublicSiteHeader onLoginClick={onLoginClick} onCreateClick={onLoginClick} />);
+    render(<PublicSiteHeader locale="zh-CN" onLoginClick={onLoginClick} onCreateClick={onLoginClick} />);
 
     expect(screen.getByRole("link", { name: "LightVela" })).toHaveAttribute("href", "/");
     expect(screen.getByRole("link", { name: "概览" })).toHaveAttribute("href", "/");
@@ -41,6 +41,7 @@ describe("PublicSiteHeader", () => {
   it("uses the injected public link renderer for logo and navigation links", () => {
     render(
       <PublicSiteHeader
+        locale="zh-CN"
         renderLink={({ ariaLabel, children, ...props }) => (
           <a {...props} aria-label={ariaLabel} data-next-link="true">
             {children}
@@ -73,7 +74,7 @@ describe("PublicSiteHeader", () => {
   it("keeps mobile menu navigation and creation action together", () => {
     const onLoginClick = vi.fn();
 
-    render(<PublicSiteHeader currentPath="/about" onLoginClick={onLoginClick} />);
+    render(<PublicSiteHeader locale="zh-CN" currentPath="/about" onLoginClick={onLoginClick} />);
 
     fireEvent.click(screen.getByRole("button", { name: "打开菜单" }));
 

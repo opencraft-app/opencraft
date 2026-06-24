@@ -16,12 +16,15 @@
  */
 
 import { AlertCircle, AlertTriangle, Check, ClipboardCheck, Dice5, Download, ExternalLink, Loader2, RotateCcw, Sparkles, Trash2, X, Zap } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
+import { useTranslation } from "react-i18next";
 import { useT } from "@/i18n/t";
 import { useRepositories } from "@/contexts/repository-context";
 import { useAsyncResource } from "@/services/use-async-resource";
+import { isGlobal } from "@/lib/region";
+import { toCanonicalSlug, toEnglishSlug } from "@/lib/soul-slug-mapping";
 import { DrawSoulModal } from "@/pages/marketing/openclaw-buddy-draw-modal";
 import { SoulTestModal } from "@/pages/marketing/openclaw-buddy-soul-test-modal";
 import {
@@ -35,6 +38,7 @@ import {
   type SkillHubSoul,
 } from "@/lib/skillhub-api";
 import { getSoulSpec, buildSoulMd } from "@/lib/soul-interpretations";
+import { ENGLISH_SOULS, getEnglishSoulDetail, getEnglishSoulSpec } from "@/lib/soul-english-data";
 import { SoulSpecPanel } from "@/components/soul-spec-panel";
 import {
   loadBuddyState,
@@ -56,6 +60,40 @@ const UNAPPLIED_TOOLTIP_CLASS = "pointer-events-auto select-text absolute bottom
 
 /** 抽卡槽位数上限（4 列 × 2 行 = 8 张） */
 const MAX_DRAWS = 8;
+
+// Drawn cards are persisted by slug, but EN and CN use different slugs for the
+// same archetype (GOAT vs YYDS, …). When the active language changes, we
+// translate each persisted slug into the active namespace so the card deck
+// reflects the current language — otherwise a card drawn under EN would stay
+// English forever, and its preview would 404 under CN (and vice-versa).
+function localizeDrawnSouls(
+  drawnSouls: SkillHubSoul[],
+  availableSouls: SkillHubSoul[],
+  useEnglishSoulData: boolean,
+): SkillHubSoul[] {
+  if (useEnglishSoulData) {
+    // Persisted slug (EN or canonical) → EN slug, resolved against ENGLISH_SOULS.
+    return drawnSouls.map((soul) => {
+      const enSlug = toEnglishSlug(soul.slug);
+      return ENGLISH_SOULS.find((item) => item.slug === enSlug) ?? soul;
+    });
+  }
+  if (availableSouls.length === 0) return drawnSouls;
+  // Persisted slug (EN or canonical) → canonical slug, resolved against the CN pool.
+  return drawnSouls.map((soul) => {
+    const canonicalSlug = toCanonicalSlug(soul.slug);
+    return availableSouls.find((item) => item.slug === canonicalSlug) ?? soul;
+  });
+}
+
+// Normalize a persisted/UI soul slug into the canonical (CN / SkillHub) namespace.
+// All internal slug state (drawnSouls, selectedSlug, appliedSlug, …) is kept
+// canonical so it stays stable across language toggles; localization to the
+// active namespace happens only at display/child-prop boundaries.
+function canonicalizeSoulSlug(soul: SkillHubSoul): SkillHubSoul {
+  const canonical = toCanonicalSlug(soul.slug);
+  return canonical === soul.slug ? soul : { ...soul, slug: canonical };
+}
 
 function UnappliedSoulIcon({ className = "h-3 w-3" }: { className?: string }) {
   return (
@@ -90,8 +128,10 @@ export function BuddyPanel({
   botId?: string | null;
 } = {}) {
   const t = useT();
+  const { i18n } = useTranslation();
   const repositories = useRepositories();
   const [previewSoulSlug, setPreviewSoulSlug] = useState<string | null>(null);
+  const useEnglishSoulData = isGlobal && !i18n.language.startsWith("zh");
 
   // 持久化：状态走 Vibebase（用户级 KV，跨设备一致）。
   // 加载流程：mount / 切 botId → 异步拉取 → 期间显示 loading 占位（空抽卡盘 + 转圈）。
@@ -138,9 +178,18 @@ export function BuddyPanel({
 
   // souls 列表是抽卡 modal 的候选池数据源 —— 提到这一层统一拉取，
   // 避免 SoulSlotGrid 内部 fetch 一次、DrawModal 再单独 fetch 一次。
-  const soulsFetcher = useCallback(() => fetchSouls({ page: 1, pageSize: 30 }), []);
-  const soulsResource = useAsyncResource(soulsFetcher, []);
+  const soulsFetcher = useCallback(() => {
+    if (useEnglishSoulData) {
+      return Promise.resolve({ total: ENGLISH_SOULS.length, souls: ENGLISH_SOULS });
+    }
+    return fetchSouls({ page: 1, pageSize: 30 });
+  }, [useEnglishSoulData]);
+  const soulsResource = useAsyncResource(soulsFetcher, [useEnglishSoulData]);
   const souls = soulsResource.data?.souls ?? [];
+  const localizedDrawnSouls = useMemo(
+    () => localizeDrawnSouls(drawnSouls, souls, useEnglishSoulData),
+    [drawnSouls, souls, useEnglishSoulData],
+  );
 
   const drawnSlugs = drawnSouls.map((s) => s.slug);
   const isAtMax = drawnSouls.length >= MAX_DRAWS;
@@ -150,20 +199,21 @@ export function BuddyPanel({
 
   const handlePickFromDraw = useCallback(
     (soul: SkillHubSoul) => {
+      const canonicalSoul = canonicalizeSoulSlug(soul);
       setDrawnSouls((prev) => {
         // 重抽：替换原位置；防御性 dedupe（同一张再次抽到则保持原状即可）
         if (rerollingSlug) {
           const idx = prev.findIndex((s) => s.slug === rerollingSlug);
           if (idx === -1) return prev;
-          if (prev.some((s, i) => i !== idx && s.slug === soul.slug)) return prev;
+          if (prev.some((s, i) => i !== idx && s.slug === canonicalSoul.slug)) return prev;
           const copy = prev.slice();
-          copy[idx] = soul;
+          copy[idx] = canonicalSoul;
           return copy;
         }
         // 新抽：追加到末尾
-        if (prev.some((s) => s.slug === soul.slug)) return prev; // dedupe（防御）
+        if (prev.some((s) => s.slug === canonicalSoul.slug)) return prev; // dedupe（防御）
         if (prev.length >= MAX_DRAWS) return prev; // 上限保护
-        return [...prev, soul];
+        return [...prev, canonicalSoul];
       });
       setRerollingSlug(null);
       setDrawOpen(false);
@@ -187,7 +237,8 @@ export function BuddyPanel({
         return false;
       }
 
-      const alreadyDrawn = drawnSouls.some((item) => item.slug === soul.slug);
+      const canonicalSoul = canonicalizeSoulSlug(soul);
+      const alreadyDrawn = drawnSouls.some((item) => item.slug === canonicalSoul.slug);
       if (!alreadyDrawn && drawnSouls.length >= MAX_DRAWS) {
         showToast({ kind: "error", message: t("卡槽已满，请先删除一张人设，再使用测试推荐") });
         return false;
@@ -195,12 +246,12 @@ export function BuddyPanel({
 
       if (!alreadyDrawn) {
         setDrawnSouls((prev) => {
-          if (prev.some((item) => item.slug === soul.slug)) return prev;
+          if (prev.some((item) => item.slug === canonicalSoul.slug)) return prev;
           if (prev.length >= MAX_DRAWS) return prev;
-          return [...prev, soul];
+          return [...prev, canonicalSoul];
         });
       }
-      setSelectedSlug(soul.slug);
+      setSelectedSlug(canonicalSoul.slug);
       return true;
     },
     [drawnSouls, loadStatus, showToast, t],
@@ -208,7 +259,7 @@ export function BuddyPanel({
 
   /** 重抽某张已抽到的卡：复用抽卡 modal 流程（翻牌动画 → reveal → 替换原位） */
   const handleReroll = useCallback((slug: string) => {
-    setRerollingSlug(slug);
+    setRerollingSlug(toCanonicalSlug(slug));
     setDrawOpen(true);
   }, []);
 
@@ -221,6 +272,20 @@ export function BuddyPanel({
   /** 上一次成功应用到 Agent 的 slug —— 用于按钮上展示「已应用」反馈 */
   const [appliedSlug, setAppliedSlug] = useState<string | null>(null);
 
+  /**
+   * 实际写入 Bot 沙箱 `${HOME}/.hermes/SOUL.md` 的人设（从文件本身读取，
+   * 而非 Vibebase 里的 appliedSlug —— 后者可能与真实文件不一致，比如文件被
+   * 手动改过、或在别处注入过）。canonical slug；null = 未注入 / 读取失败。
+   * 这是 "Equipped" 指示器的唯一事实来源。
+   */
+  const [equippedSoulSlug, setEquippedSoulSlug] = useState<string | null>(null);
+  /** SOUL.md 里原始的 Name 行（用于展示 "." 前的短名）。 */
+  const [equippedSoulRawName, setEquippedSoulRawName] = useState<string | null>(null);
+  /** 自增计数器：apply / clear 成功后 +1，驱动重新读取真实 SOUL.md。 */
+  const [equippedRefreshTick, setEquippedRefreshTick] = useState(0);
+  // 防止切 bot 时旧 debug/exec 结果覆盖新 bot 的 equipped 状态（同 loadReqIdRef 模式）。
+  const equippedReqIdRef = useRef(0);
+
   // 切 botId：清空当前 UI → 异步从 Vibebase 拉取该 bot 的状态。
   // 用 reqId 防止快速切换时的回调竞态（旧 promise 后到不能覆盖新 bot 的数据）。
   const loadReqIdRef = useRef(0);
@@ -228,6 +293,28 @@ export function BuddyPanel({
   // 与该快照相同则跳过，避免 load 完成后的"自我同步"PUT。
   // 比 ref 旗子更稳：StrictMode 双 mount / 切 bot 重入都不会漏判 / 多判。
   const syncedSnapshotRef = useRef<{ botId: string | null | undefined; data: string } | null>(null);
+
+  /**
+   * 把从 Vibebase 拉到的 buddy 状态规范化（slug 统一为 canonical）并落到 UI/
+   * 同步快照。主 load 路径和错误重试路径共用，避免重试时跳过 canonical 化
+   * 把 EN slug 重新灌回内部状态、或漏掉 syncedSnapshot 更新触发多余 save。
+   */
+  const applyLoadedBuddyState = useCallback(
+    (state: { drawnSouls?: SkillHubSoul[]; appliedSlug?: string | null } | null | undefined) => {
+      const drawnSouls = (state?.drawnSouls ?? []).map(canonicalizeSoulSlug);
+      const appliedSlugRaw = state?.appliedSlug ?? null;
+      const appliedSlug = appliedSlugRaw ? toCanonicalSlug(appliedSlugRaw) : null;
+      // 同步快照：与 setState 同一批，确保 save effect 看到的快照已是最新
+      syncedSnapshotRef.current = {
+        botId,
+        data: JSON.stringify({ drawnSouls, appliedSlug }),
+      };
+      setDrawnSouls(drawnSouls);
+      setAppliedSlug(appliedSlug);
+      setLoadStatus("loaded");
+    },
+    [botId],
+  );
   useEffect(() => {
     const reqId = ++loadReqIdRef.current;
     setLoadStatus("loading");
@@ -238,16 +325,7 @@ export function BuddyPanel({
     loadBuddyState(botId)
       .then((state) => {
         if (loadReqIdRef.current !== reqId) return; // 已被新请求超车
-        const drawnSouls = state?.drawnSouls ?? [];
-        const appliedSlug = state?.appliedSlug ?? null;
-        // 同步快照：与 setState 同一批，确保 save effect 看到的快照已是最新
-        syncedSnapshotRef.current = {
-          botId,
-          data: JSON.stringify({ drawnSouls, appliedSlug }),
-        };
-        setDrawnSouls(drawnSouls);
-        setAppliedSlug(appliedSlug);
-        setLoadStatus("loaded");
+        applyLoadedBuddyState(state);
       })
       .catch((err: unknown) => {
         if (loadReqIdRef.current !== reqId) return;
@@ -343,7 +421,8 @@ export function BuddyPanel({
 
   /** 切换选中：再点一次取消选中 */
   const handleToggleSelect = useCallback((slug: string) => {
-    setSelectedSlug((prev) => (prev === slug ? null : slug));
+    const canonical = toCanonicalSlug(slug);
+    setSelectedSlug((prev) => (prev === canonical ? null : canonical));
   }, []);
 
   // 当选中卡被重抽掉了，自动清空选中态
@@ -373,7 +452,8 @@ export function BuddyPanel({
   const handleApply = useCallback(async () => {
     if (!selectedSlug) return; // 按钮已 disabled，理论上点不到
     if (toast.kind === "applying") return; // 防重复点击
-    const soul = drawnSouls.find((s) => s.slug === selectedSlug);
+    const canonical = toCanonicalSlug(selectedSlug);
+    const soul = localizedDrawnSouls.find((s) => toCanonicalSlug(s.slug) === canonical);
     if (!soul) return;
 
     showToast({ kind: "applying" }, 0);
@@ -392,11 +472,12 @@ export function BuddyPanel({
 
     let md: string;
     try {
-      const detail = await fetchSoulDetail(soul.slug);
+      const detail = useEnglishSoulData ? getEnglishSoulDetail(soul.slug) : await fetchSoulDetail(soul.slug);
+      if (!detail) throw new Error(`Soul detail not found: ${soul.slug}`);
       md = buildSoulMd({
         slug: soul.slug,
-        displayName: soul.displayName,
-        summary: soul.summary,
+        displayName: detail.displayName,
+        summary: detail.summary,
         content: detail.content ?? "",
       });
     } catch (err) {
@@ -448,6 +529,8 @@ export function BuddyPanel({
         }
         await ensureMinSpin();
         setAppliedSlug(selectedSlug);
+        // 文件已写入 → 触发重新读取真实 SOUL.md，同步 Equipped 指示器。
+        setEquippedRefreshTick((n) => n + 1);
         // hermes-agent 在 session 启动时一次性快照 SOUL.md，已存在 session 不感知
         // 文件变化，弹一个确认对话框提示用户在 Hermes 里输入 /new 并 /approve 确认后让新人设生效。
         setToast({ kind: "idle" });
@@ -479,7 +562,7 @@ export function BuddyPanel({
         ? t("无法写入 Agent 沙箱，已下载 soul.md 到本地")
         : t("当前未选中 Agent，已下载 soul.md 到本地"),
     });
-  }, [selectedSlug, drawnSouls, botId, repositories, toast.kind, showToast, t]);
+  }, [selectedSlug, localizedDrawnSouls, botId, repositories, toast.kind, showToast, t, useEnglishSoulData]);
 
   /**
    * 清除 Bot 沙箱里当前的 SOUL.md（让 hermes-agent 回到无人设状态）。
@@ -520,6 +603,64 @@ export function BuddyPanel({
   }, [botId, repositories]);
 
   /**
+   * 从 Bot 沙箱读取实际生效的 SOUL.md，解析出 Slug / Name，同步到
+   * equippedSoulSlug / equippedSoulRawName。同时把 appliedSlug 收敛到真实值，
+   * 让抽卡盘上的「已注入」徽章与事实保持一致。
+   *
+   * 读取失败 / 文件不存在 → 视为未注入（null）。
+   */
+  const refreshEquippedSoul = useCallback(async () => {
+    const reqId = ++equippedReqIdRef.current;
+    const activeBotId = botId;
+    if (!activeBotId) {
+      if (equippedReqIdRef.current !== reqId) return;
+      setEquippedSoulSlug(null);
+      setEquippedSoulRawName(null);
+      setAppliedSlug(null);
+      return;
+    }
+    // 只 cat 出 Slug/Name 两行，避免把整份 markdown（可能合中文）扛到前端。
+    const bash = [
+      'set +e',
+      'TARGET="${HOME}/.hermes/SOUL.md"',
+      'if [ -s "$TARGET" ]; then',
+      '  grep -m1 "^Slug:" "$TARGET" 2>/dev/null || true',
+      '  grep -m1 "^Name:" "$TARGET" 2>/dev/null || true',
+      'fi',
+    ].join('\n');
+    try {
+      const result = await repositories.bots.execDebugCommand(activeBotId, bash);
+      // 切 bot 超车：丢弃旧结果，不覆盖新 bot 的状态。
+      if (equippedReqIdRef.current !== reqId) return;
+      const out = result?.output ?? '';
+      const slugLine = out.split('\n').find((l) => l.startsWith('Slug:'));
+      const nameLine = out.split('\n').find((l) => l.startsWith('Name:'));
+      const rawSlug = slugLine ? slugLine.replace(/^Slug:\s*/, '').trim() : '';
+      const rawName = nameLine ? nameLine.replace(/^Name:\s*/, '').trim() : '';
+      if (rawSlug) {
+        const canonical = toCanonicalSlug(rawSlug);
+        setEquippedSoulSlug(canonical);
+        setEquippedSoulRawName(rawName || null);
+        setAppliedSlug(canonical);
+      } else {
+        // 没有 Slug 行（可能是手写的自定义 SOUL.md）——仅当有 Name 时也算「已注入」。
+        setEquippedSoulSlug(rawName ? '__custom__' : null);
+        setEquippedSoulRawName(rawName || null);
+        setAppliedSlug(null);
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[buddy] refreshEquippedSoul failed:', err);
+      // 读取失败时不清空已有状态，避免网络抖动导致指示器闪烁成「无」。
+    }
+  }, [botId, repositories]);
+
+  // mount / 切 botId / apply / clear 后读取真实 SOUL.md，让 "Equipped" 指示器与文件事实一致。
+  useEffect(() => {
+    void refreshEquippedSoul();
+  }, [refreshEquippedSoul, equippedRefreshTick]);
+
+  /**
    * 弹窗状态机：
    * - idle：无弹窗
    * - deleteOne：删除单张卡（带 slug，记是否已注入用于显示文案差异）
@@ -538,16 +679,17 @@ export function BuddyPanel({
    */
   const handleDeleteOne = useCallback(
     (slug: string) => {
-      const soul = drawnSouls.find((s) => s.slug === slug);
+      const canonical = toCanonicalSlug(slug);
+      const soul = localizedDrawnSouls.find((s) => toCanonicalSlug(s.slug) === canonical);
       if (!soul) return;
       setConfirmState({
         kind: "deleteOne",
-        slug,
+        slug: canonical,
         soulName: soul.displayName,
-        isApplied: slug === appliedSlug,
+        isApplied: canonical === appliedSlug,
       });
     },
-    [drawnSouls, appliedSlug],
+    [localizedDrawnSouls, appliedSlug],
   );
 
   /** confirm 回调：真正执行单张删除。 */
@@ -558,6 +700,8 @@ export function BuddyPanel({
       // applied/selected 的清理由 useEffect 自动处理（drawnSouls 变化触发）
       if (isAppliedTarget) {
         await clearSandboxSoul();
+        // SOUL.md 已删除 → 触发重新读取，让 Equipped 指示器回到「无」。
+        setEquippedRefreshTick((n) => n + 1);
       }
     },
     [clearSandboxSoul],
@@ -565,6 +709,14 @@ export function BuddyPanel({
 
   const isApplied = selectedSlug !== null && selectedSlug === appliedSlug;
   const isApplyDisabled = !selectedSlug || toast.kind === "applying" || loadStatus !== "loaded";
+
+  // Equipped 指示器：展示真实 SOUL.md 里人设名「.」前的短名（如 GOAT / YYDS）。
+  // 分隔符兼容 EN 的 `·`（U+00B7）与 CN 的 `・`（U+30FB）。
+  const equippedShortName = useMemo(() => {
+    if (!equippedSoulSlug || !equippedSoulRawName) return null;
+    const sep = equippedSoulRawName.search(/[·・]/);
+    return sep > 0 ? equippedSoulRawName.slice(0, sep).trim() : equippedSoulRawName.trim();
+  }, [equippedSoulSlug, equippedSoulRawName]);
 
   return (
     <div className="lv-buddy-panel relative overflow-hidden rounded-2xl" style={PANEL_CARD_STYLE}>
@@ -609,17 +761,16 @@ export function BuddyPanel({
           <ErrorState
             message={t("搭子状态加载失败，抽卡和注入暂不可用，但仍可先做人格测试")}
             onRetry={() => {
-              // 触发 useEffect 重跑：直接 ++reqId 不行（不会触发 effect），用 botId-tick
-              // 兜底：直接刷一次页面对应的 effect 依赖
-              loadReqIdRef.current++;
+              // 触发重试：递增 reqId 既能驱动 effect 重跑，也能让旧 promise 自动作废
+              const reqId = ++loadReqIdRef.current;
               setLoadStatus("loading");
               loadBuddyState(botId)
                 .then((state) => {
-                  setDrawnSouls(state?.drawnSouls ?? []);
-                  setAppliedSlug(state?.appliedSlug ?? null);
-                  setLoadStatus("loaded");
+                  if (loadReqIdRef.current !== reqId) return; // 已被新请求超车
+                  applyLoadedBuddyState(state);
                 })
                 .catch((err: unknown) => {
+                  if (loadReqIdRef.current !== reqId) return;
                   if (err instanceof VibebaseError && err.isUnauthorized) {
                     setLoadStatus("unauthorized");
                     return;
@@ -630,7 +781,7 @@ export function BuddyPanel({
           />
         ) : (
           <SoulSlotGrid
-            drawnSouls={drawnSouls}
+            drawnSouls={localizedDrawnSouls}
             // souls 池在拉取 + 自身 buddy state 在加载，任一未完成都给 loading
             loading={
               loadStatus === "loading"
@@ -643,8 +794,8 @@ export function BuddyPanel({
             onReroll={handleReroll}
             onDelete={handleDeleteOne}
             canReroll={canReroll}
-            selectedSlug={selectedSlug}
-            appliedSlug={appliedSlug}
+            selectedSlug={selectedSlug ? (useEnglishSoulData ? toEnglishSlug(selectedSlug) : selectedSlug) : null}
+            appliedSlug={appliedSlug ? (useEnglishSoulData ? toEnglishSlug(appliedSlug) : appliedSlug) : null}
             onPreview={(slug) => setPreviewSoulSlug(slug)}
           />
         )}
@@ -762,25 +913,33 @@ export function BuddyPanel({
             <ProgressChip drawn={drawnSouls.length} max={MAX_DRAWS} />
           </div>
         )}
+        <EquippedChip
+          name={equippedShortName}
+          loading={loadStatus === "loading"}
+        />
       </div>
 
       <DrawSoulModal
         open={drawOpen}
         souls={souls}
         // 重抽时把"被重抽的卡"从已抽列表里移除，让其他池里的 soul 可以替补它的位置
-        drawnSlugs={rerollingSlug ? drawnSlugs.filter((s) => s !== rerollingSlug) : drawnSlugs}
+        drawnSlugs={
+          (rerollingSlug ? drawnSlugs.filter((s) => s !== rerollingSlug) : drawnSlugs)
+            .map((s) => useEnglishSoulData ? toEnglishSlug(s) : s)
+        }
         onClose={() => {
           setDrawOpen(false);
           setRerollingSlug(null);
         }}
         onPick={handlePickFromDraw}
+        useEnglishSoulData={useEnglishSoulData}
       />
 
       <SoulTestModal
         open={soulTestOpen}
         souls={souls}
         maxDrawsReached={isAtMax}
-        drawnSlugs={drawnSlugs}
+        drawnSlugs={drawnSlugs.map((s) => useEnglishSoulData ? toEnglishSlug(s) : s)}
         saveDisabledReason={
           loadStatus === "loaded"
             ? null
@@ -788,10 +947,15 @@ export function BuddyPanel({
         }
         onClose={() => setSoulTestOpen(false)}
         onUseSoul={handleUseTestSoul}
+        useEnglishSoulData={useEnglishSoulData}
       />
 
       {previewSoulSlug && (
-        <SoulPreviewModal slug={previewSoulSlug} onClose={() => setPreviewSoulSlug(null)} />
+        <SoulPreviewModal
+          slug={previewSoulSlug}
+          useEnglishSoulData={useEnglishSoulData}
+          onClose={() => setPreviewSoulSlug(null)}
+        />
       )}
 
       {/* 删除确认弹窗（视觉对齐 settings 页 _DeleteConfirmDialog） */}
@@ -905,6 +1069,28 @@ function ProgressChip({ drawn, max }: { drawn: number; max: number }) {
       <span>
         {drawn}/{max}
       </span>
+    </div>
+  );
+}
+
+/**
+ * Equipped 指示器（动作行左侧，与右侧「已抽 N/8」对称）：展示当前真实写入
+ * Bot 沙箱 SOUL.md 的人设短名。name 为 null → 显示「无 / None」。
+ */
+function EquippedChip({ name, loading }: { name: string | null; loading: boolean }) {
+  const t = useT();
+  return (
+    <div
+      className="lv-buddy-panel__equipped absolute left-0 top-1/2 inline-flex -translate-y-1/2 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium"
+      style={{ background: "rgba(0,0,0,0.05)", color: "rgba(0,0,0,0.65)" }}
+      aria-live="polite"
+    >
+      <span style={{ color: "rgba(0,0,0,0.45)" }}>{t("已选人设：")}</span>
+      {loading ? (
+        <Loader2 className="h-3 w-3 animate-spin" style={{ color: "rgba(0,0,0,0.45)" }} />
+      ) : (
+        <span>{name ?? t("无")}</span>
+      )}
     </div>
   );
 }
@@ -1160,10 +1346,27 @@ function EmptySlot({ onClick }: { onClick: () => void }) {
 
 // ─── 详情弹窗 ───────────────────────────────────────────────────────────────
 
-function SoulPreviewModal({ slug, onClose }: { slug: string; onClose: () => void }) {
-  const fetcher = useCallback(() => fetchSoulDetail(slug), [slug]);
-  const { data, loading, error } = useAsyncResource(fetcher, [slug]);
-  const spec = getSoulSpec(slug);
+function SoulPreviewModal({
+  slug,
+  useEnglishSoulData,
+  onClose,
+}: {
+  slug: string;
+  useEnglishSoulData: boolean;
+  onClose: () => void;
+}) {
+  const fetcher = useCallback(() => {
+    if (useEnglishSoulData) {
+      const detail = getEnglishSoulDetail(toEnglishSlug(slug));
+      if (!detail) throw new Error("Soul detail not found");
+      return Promise.resolve(detail);
+    }
+    return fetchSoulDetail(toCanonicalSlug(slug));
+  }, [slug, useEnglishSoulData]);
+  const { data, loading, error } = useAsyncResource(fetcher, [slug, useEnglishSoulData]);
+  const spec = useEnglishSoulData
+    ? getEnglishSoulSpec(toEnglishSlug(slug))
+    : getSoulSpec(toCanonicalSlug(slug));
   return (
     <PreviewModal title={data?.displayName ?? ""} onClose={onClose}>
       {loading && <CenterLoader />}

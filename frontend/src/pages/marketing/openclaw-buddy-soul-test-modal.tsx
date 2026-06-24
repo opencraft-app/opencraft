@@ -7,7 +7,16 @@ import { SoulSpecPanel } from "@/components/soul-spec-panel";
 import { cn } from "@/lib/utils";
 import type { SkillHubSoul } from "@/lib/skillhub-api";
 import { getSoulSpec, type SoulSpec } from "@/lib/soul-interpretations";
+import { getEnglishSoulSpec } from "@/lib/soul-english-data";
 import { SoulFaceCard } from "@/pages/marketing/openclaw-buddy-cards";
+import {
+  ENGLISH_PREF_TAG_LABELS,
+  buildEnglishQuestions,
+  calculateEnglishMatchedSoul,
+  calculateEnglishPrefScores,
+  categorizeEnglishPrefScores,
+  generateEnglishPersonalityProfile,
+} from "@/pages/marketing/openclaw-buddy-soul-test-data.en";
 import {
   PREF_TAGS,
   calculateMatchedSoul,
@@ -30,6 +39,7 @@ interface SoulTestModalProps {
   maxDrawsReached: boolean;
   drawnSlugs: string[];
   saveDisabledReason?: string | null;
+  useEnglishSoulData?: boolean;
   onClose: () => void;
   onUseSoul: (soul: SkillHubSoul) => boolean;
 }
@@ -40,6 +50,7 @@ export function SoulTestModal({
   maxDrawsReached,
   drawnSlugs,
   saveDisabledReason,
+  useEnglishSoulData = false,
   onClose,
   onUseSoul,
 }: SoulTestModalProps) {
@@ -50,7 +61,7 @@ export function SoulTestModal({
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [matchedSoulId, setMatchedSoulId] = useState<string | null>(null);
   const [useError, setUseError] = useState<string | null>(null);
-  const [questions, setQuestions] = useState<SoulTestQuestion[]>(() => buildQuestions());
+  const [questions, setQuestions] = useState<SoulTestQuestion[]>(() => buildQuestions(useEnglishSoulData));
 
   useEffect(() => {
     if (!open) return;
@@ -59,8 +70,8 @@ export function SoulTestModal({
     setAnswers({});
     setMatchedSoulId(null);
     setUseError(null);
-    setQuestions(buildQuestions());
-  }, [open]);
+    setQuestions(buildQuestions(useEnglishSoulData));
+  }, [open, useEnglishSoulData]);
 
   useEffect(() => {
     if (!open) return;
@@ -78,10 +89,19 @@ export function SoulTestModal({
     () => souls.find((soul) => soul.slug === matchedSoulId) ?? null,
     [matchedSoulId, souls],
   );
-  const spec = matchedSoulId ? getSoulSpec(matchedSoulId) : null;
-  const prefScores = useMemo(() => calculatePrefScores(answers), [answers]);
-  const prefCategories = useMemo(() => categorizePrefScores(prefScores), [prefScores]);
-  const profileText = useMemo(() => generatePersonalityProfile(answers), [answers]);
+  const spec = matchedSoulId ? getLocalizedSoulSpec(matchedSoulId, useEnglishSoulData) : null;
+  const prefScores = useMemo(
+    () => useEnglishSoulData ? calculateEnglishPrefScores(answers) : calculatePrefScores(answers),
+    [answers, useEnglishSoulData],
+  );
+  const prefCategories = useMemo(
+    () => useEnglishSoulData ? categorizeEnglishPrefScores(prefScores) : categorizePrefScores(prefScores),
+    [prefScores, useEnglishSoulData],
+  );
+  const profileText = useMemo(
+    () => useEnglishSoulData ? generateEnglishPersonalityProfile(answers) : generatePersonalityProfile(answers),
+    [answers, useEnglishSoulData],
+  );
 
   const handleSelect = useCallback(
     (key: string) => {
@@ -99,11 +119,11 @@ export function SoulTestModal({
           setCurrentIndex((prev) => prev + 1);
           return;
         }
-        setMatchedSoulId(calculateMatchedSoul(nextAnswers));
+        setMatchedSoulId(useEnglishSoulData ? calculateEnglishMatchedSoul(nextAnswers) : calculateMatchedSoul(nextAnswers));
         setPhase("result");
       }, 300);
     },
-    [answers, currentIndex, currentQuestion, totalQuestions],
+    [answers, currentIndex, currentQuestion, totalQuestions, useEnglishSoulData],
   );
 
   const handlePrev = useCallback(() => {
@@ -124,8 +144,8 @@ export function SoulTestModal({
     setAnswers({});
     setMatchedSoulId(null);
     setUseError(null);
-    setQuestions(buildQuestions());
-  }, []);
+    setQuestions(buildQuestions(useEnglishSoulData));
+  }, [useEnglishSoulData]);
 
   const handleUseSoul = useCallback(() => {
     if (!recommendedSoul) return;
@@ -189,6 +209,7 @@ export function SoulTestModal({
               onSelect={handleSelect}
               onPrev={handlePrev}
               canGoPrev={currentIndex > 0}
+              useEnglishSoulData={useEnglishSoulData}
             />
           ) : (
             <ResultStep
@@ -200,6 +221,7 @@ export function SoulTestModal({
               useError={useError}
               onUseSoul={handleUseSoul}
               onRetry={handleRetry}
+              useEnglishSoulData={useEnglishSoulData}
             />
           )}
         </motion.div>
@@ -217,6 +239,7 @@ function QuestionStep({
   onSelect,
   onPrev,
   canGoPrev,
+  useEnglishSoulData,
 }: {
   question: SoulTestQuestion;
   index: number;
@@ -225,6 +248,7 @@ function QuestionStep({
   onSelect: (key: string) => void;
   onPrev: () => void;
   canGoPrev: boolean;
+  useEnglishSoulData: boolean;
 }) {
   const t = useT();
   const isPersonality = isPersonalityQuestion(question);
@@ -275,7 +299,7 @@ function QuestionStep({
 
         <div className="flex flex-col gap-4 rounded-2xl border border-black/8 bg-white p-6 shadow-[0_16px_40px_rgba(0,0,0,0.04)] sm:p-8">
           <h4 className="text-lg font-medium leading-relaxed text-black/90">
-            {t(question.text)}
+            {formatSoulTestText(question.text, t, useEnglishSoulData)}
           </h4>
           <div className="flex flex-col gap-3">
             {question.options.map((option) => {
@@ -294,7 +318,7 @@ function QuestionStep({
                   )}
                 >
                   <span className="mr-2 font-semibold">{option.key}.</span>
-                  {t(option.text)}
+                  {formatSoulTestText(option.text, t, useEnglishSoulData)}
                 </button>
               );
             })}
@@ -314,6 +338,7 @@ function ResultStep({
   useError,
   onUseSoul,
   onRetry,
+  useEnglishSoulData,
 }: {
   matchedSoulId: string | null;
   soul: SkillHubSoul | null;
@@ -323,6 +348,7 @@ function ResultStep({
   useError: string | null;
   onUseSoul: () => void;
   onRetry: () => void;
+  useEnglishSoulData: boolean;
 }) {
   const t = useT();
   const [soulInfoOpen, setSoulInfoOpen] = useState(false);
@@ -352,7 +378,7 @@ function ResultStep({
                 {soulInfoOpen ? (
                   <SoulSpecPanel spec={spec} />
                 ) : (
-                  <SoulInterpretationSummary interpretation={spec.interpretation} />
+                  <SoulInterpretationSummary interpretation={spec.interpretation} useEnglishSoulData={useEnglishSoulData} />
                 )}
                 <button
                   type="button"
@@ -373,7 +399,7 @@ function ResultStep({
                   <h5 className="text-base font-semibold text-black/85">{t("你的灵魂画像")}</h5>
                   <div aria-hidden="true" style={{ height: "12px" }} />
                   <p className="rounded-2xl bg-black/[0.03] px-5 py-4 text-sm leading-relaxed text-black/62">
-                    {t(profileText)}
+                    {formatSoulTestText(profileText, t, useEnglishSoulData)}
                   </p>
                 </div>
               )}
@@ -388,7 +414,7 @@ function ResultStep({
                         key={tag}
                         className="inline-flex items-center gap-2 rounded-full border border-black/8 bg-white px-3 py-1.5 text-sm font-medium text-black/68 shadow-[0_1px_2px_rgba(0,0,0,0.03)]"
                       >
-                        {t(tag)}
+                        {getPrefTagLabel(tag, t, useEnglishSoulData)}
                         <span
                           className={cn(
                             "inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-semibold",
@@ -397,7 +423,7 @@ function ResultStep({
                             category === "low" && "bg-black/[0.05] text-black/45",
                           )}
                         >
-                          {t(categoryLabel(category))}
+                          {categoryLabel(category, useEnglishSoulData)}
                         </span>
                       </span>
                     );
@@ -447,11 +473,18 @@ function ResultStep({
   );
 }
 
-function buildQuestions(): SoulTestQuestion[] {
+function buildQuestions(useEnglishSoulData: boolean): SoulTestQuestion[] {
+  if (useEnglishSoulData) return buildEnglishQuestions();
   return [...shuffleArray(personalityQuestions), ...shuffleArray(prefQuestions)];
 }
 
-function SoulInterpretationSummary({ interpretation }: { interpretation: string }) {
+function SoulInterpretationSummary({
+  interpretation,
+  useEnglishSoulData,
+}: {
+  interpretation: string;
+  useEnglishSoulData: boolean;
+}) {
   const t = useT();
   const lastNewline = interpretation.lastIndexOf("\n");
   const body = lastNewline === -1 ? interpretation : interpretation.slice(0, lastNewline);
@@ -459,15 +492,44 @@ function SoulInterpretationSummary({ interpretation }: { interpretation: string 
 
   return (
     <p className="whitespace-pre-wrap text-sm leading-relaxed text-black/62">
-      {t(body)}
+      {formatSoulTestText(body, t, useEnglishSoulData)}
       {cta ? "\n" : ""}
-      {cta && <span className="font-semibold text-black/70">{t(cta)}</span>}
+      {cta && (
+        <span className="font-semibold text-black/70">
+          {formatSoulTestText(cta, t, useEnglishSoulData)}
+        </span>
+      )}
     </p>
   );
 }
 
-function categoryLabel(category: "high" | "mid" | "low"): string {
+function categoryLabel(category: "high" | "mid" | "low", useEnglishSoulData: boolean): string {
+  if (useEnglishSoulData) {
+    if (category === "high") return "High";
+    if (category === "mid") return "Mid";
+    return "Low";
+  }
   if (category === "high") return "高";
   if (category === "mid") return "中";
   return "低";
+}
+
+function getLocalizedSoulSpec(slug: string, useEnglishSoulData: boolean): SoulSpec | null {
+  return useEnglishSoulData ? getEnglishSoulSpec(slug) : getSoulSpec(slug);
+}
+
+function formatSoulTestText(
+  text: string,
+  t: (zh: string, options?: Record<string, unknown>) => string,
+  useEnglishSoulData: boolean,
+): string {
+  return useEnglishSoulData ? text : t(text);
+}
+
+function getPrefTagLabel(
+  tag: PrefTag,
+  t: (zh: string, options?: Record<string, unknown>) => string,
+  useEnglishSoulData: boolean,
+): string {
+  return useEnglishSoulData ? ENGLISH_PREF_TAG_LABELS[tag] : t(tag);
 }

@@ -1203,6 +1203,7 @@ function formatDeliverFallback(deliver: string, t: ReturnType<typeof useT>): str
 
 function getDeliverPlatformLabel(platform: string, t: ReturnType<typeof useT>): string {
   if (platform === "qqbot") return "QQ";
+  if (platform === "wecom") return t("企业微信");
   if (platform === "feishu") return t("飞书");
   if (platform === "weixin") return isGlobal ? "WeChat" : t("微信");
   if (platform === "telegram") return "Telegram";
@@ -1210,6 +1211,11 @@ function getDeliverPlatformLabel(platform: string, t: ReturnType<typeof useT>): 
   if (platform === "discord") return "Discord";
   if (platform === "origin") return t("原对话（创建任务的聊天通道）");
   return platform;
+}
+
+function getNotificationRateLimitWarning(platform: string, label: string, t: ReturnType<typeof useT>): string {
+  if (platform === "weixin") return t("微信不建议频繁通知，否则可能会被限流");
+  return t("{{channel}}不建议频繁通知，否则可能会被限流", { channel: label });
 }
 
 function NameIdDetailRow({ name, id }: { name: string; id: string }) {
@@ -1630,6 +1636,15 @@ const MONTHDAY_VALUES = Array.from({ length: 31 }, (_, i) => i + 1);
 const MAX_DAILY_TIME_POINTS = 12;
 const CLOCK_HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
 const CLOCK_MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
+const GLOBAL_NOTIFICATION_CHANNELS = [
+  { key: "telegram", label: "Telegram", comingSoon: false },
+  { key: "whatsapp", label: "WhatsApp", comingSoon: false },
+  { key: "discord", label: "Discord", comingSoon: false },
+  { key: "weixin", label: "WeChat", comingSoon: false },
+  { key: "qqbot", label: "QQ", comingSoon: false },
+  { key: "wecom", labelKey: "企业微信", comingSoon: false },
+  { key: "feishu", labelKey: "飞书", comingSoon: false },
+] as const;
 
 function getWeekdayLabels(t: ReturnType<typeof useT>): Record<number, string> {
   return {
@@ -2106,7 +2121,7 @@ function AutomationFormModal({
         channel,
         t("发送失败，请检查通道配置或稍后重试"),
         t("发送失败，请先在微信中向 Hermes Agent 发送任意消息，或稍后重试"),
-      )));
+      ), t));
     }
   }, [botId, chatIdErrors, deliverChatIds, showTestSendToast, t]);
 
@@ -2404,10 +2419,7 @@ function AutomationFormModal({
          *
          * 区域可见性：
          *   - 国内站（isCN）：weixin / qqbot / feishu
-         *   - 国际站（isGlobal）：weixin / telegram / whatsapp / discord(coming soon)
-         *
-         * Discord 在 Hermes runtime 还没有可用的 deliver 通路，先以「即将推出 /
-         * To be released」灰显占位，不允许勾选；后续 runtime 支持后改为可选即可。
+         *   - 国际站（isGlobal）：telegram / whatsapp / discord / weixin / qqbot / wecom / feishu
          */}
         <div className="mt-4">
           <label className="block text-sm font-medium text-black/80">
@@ -2422,12 +2434,11 @@ function AutomationFormModal({
             <div className="mt-2 space-y-1">
               {(
               isGlobal
-                ? ([
-                  { key: "telegram", label: "Telegram", comingSoon: false },
-                  { key: "whatsapp", label: "WhatsApp", comingSoon: false },
-                  { key: "discord", label: "Discord", comingSoon: false },
-                  { key: "weixin", label: "WeChat", comingSoon: false },
-                ] as const)
+                ? GLOBAL_NOTIFICATION_CHANNELS.map((channel) => ({
+                  key: channel.key,
+                  label: "label" in channel ? channel.label : t(channel.labelKey),
+                  comingSoon: channel.comingSoon,
+                }))
                 : ([
                   { key: "weixin", label: t("微信"), comingSoon: false },
                   { key: "qqbot", label: "QQ", comingSoon: false },
@@ -2438,6 +2449,7 @@ function AutomationFormModal({
               const configured = isHermesNotificationChannelConfigured(enabledChannels, key, comingSoon);
               const blockedByFrequency = key === "weixin" && weixinBlockedByFrequency;
               const selected = deliverPlatforms.includes(key);
+              const showRateLimitWarning = blockedByFrequency || (selected && ["weixin", "qqbot", "wecom", "feishu"].includes(key));
               const checkboxDisabled = !configured || blockedByFrequency;
               return (
                 <div key={key}>
@@ -2481,9 +2493,9 @@ function AutomationFormModal({
                         )}
                       </span>
                     </label>
-                    {(blockedByFrequency || (selected && key === "weixin")) && (
+                    {showRateLimitWarning && (
                       <span className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
-                        {t("微信不建议频繁通知，否则可能会被限流")}
+                        {getNotificationRateLimitWarning(key, label, t)}
                       </span>
                     )}
                     {selected && key === "qqbot" && (
@@ -3535,15 +3547,9 @@ function parseHermesChannelStatusEntries(output: string): HermesChannelStatusEnt
     };
     platforms?: unknown;
   };
-  const rawEntries = Array.isArray(root.data?.platforms)
-    ? root.data.platforms
-    : Array.isArray(root.data?.channels)
-      ? root.data.channels
-      : Array.isArray(root.platforms)
-        ? root.platforms
-        : Array.isArray(root.channels)
-          ? root.channels
-          : [];
+  const rawEntries = normalizeHermesChannelStatusCollection(
+    root.data?.platforms ?? root.data?.channels ?? root.platforms ?? root.channels,
+  );
 
   return rawEntries.flatMap((entry) => {
     if (!entry || typeof entry !== "object") return [];
@@ -3569,6 +3575,22 @@ function parseHermesChannelStatusEntries(output: string): HermesChannelStatusEnt
   });
 }
 
+function normalizeHermesChannelStatusCollection(collection: unknown): unknown[] {
+  if (Array.isArray(collection)) return collection;
+  if (!collection || typeof collection !== "object") return [];
+  return Object.entries(collection as Record<string, unknown>).map(([name, value]) => {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      return { name, ...(value as Record<string, unknown>) };
+    }
+    return {
+      name,
+      enabled: value === true,
+      status: typeof value === "string" ? value : undefined,
+      value: typeof value === "string" ? value : name,
+    };
+  });
+}
+
 export function parseEnabledHermesChannels(output: string): Set<string> {
   const entries = parseHermesChannelStatusEntries(output);
   return new Set(
@@ -3587,7 +3609,11 @@ export function isHermesNotificationChannelConfigured(
   return enabledChannels === null || enabledChannels.has(key);
 }
 
-export function formatTestSendError(error: unknown, fallback: string): string {
+export function formatTestSendError(
+  error: unknown,
+  fallback: string,
+  t?: (s: string, vars?: Record<string, unknown>) => string,
+): string {
   const raw = error instanceof CronCommandError
     ? error.output || error.message
     : error instanceof Error
@@ -3600,25 +3626,55 @@ export function formatTestSendError(error: unknown, fallback: string): string {
     .slice(-3)
     .join("；");
   if (!message) return fallback;
-  const formatted = formatKnownTestSendError(message);
-  return formatted ? `${fallback}：${formatted}` : fallback;
+  const formatted = formatKnownTestSendError(message, t);
+  return formatted ? joinTestSendError(fallback, formatted) : fallback;
 }
 
 export function getTestSendFailureFallback(platform: string, fallback: string, weixinFallback: string): string {
   return normalizeHermesChannelKey(platform) === "weixin" ? weixinFallback : fallback;
 }
 
-function formatKnownTestSendError(message: string): string {
-  if (/command\s+timed\s+out/i.test(message)) return "命令执行超时";
+function formatKnownTestSendError(message: string, t?: (s: string, vars?: Record<string, unknown>) => string): string {
+  const stderr = extractCommandFailureField(message, "stderr");
+  if (stderr) return formatKnownTestSendError(stderr, t);
+  const error = extractCommandFailureField(message, "error");
+  if (error) return formatKnownTestSendError(error, t);
+  const stdout = extractCommandFailureField(message, "stdout");
+  if (stdout) return formatKnownTestSendError(stdout, t);
+  if (/command\s+timed\s+out/i.test(message)) return t ? t("命令执行超时") : "命令执行超时";
   const unknownPlatform = message.match(/unknown platform:?\s*(.+)$/i);
-  if (unknownPlatform?.[1]) return `未知通知通道：${unknownPlatform[1].trim()}`;
+  if (unknownPlatform?.[1]) {
+    const platform = unknownPlatform[1].trim();
+    return t ? t("未知通知通道：{{platform}}", { platform }) : `未知通知通道：${platform}`;
+  }
   if (/command\s+not\s+found|not found/i.test(message)) return "";
-  if (/permission denied/i.test(message)) return "实例内命令执行权限不足";
+  if (/permission denied/i.test(message)) return t ? t("实例内命令执行权限不足") : "实例内命令执行权限不足";
   return message;
 }
 
+function extractCommandFailureField(message: string, field: "stderr" | "stdout" | "error"): string {
+  const match = new RegExp(`${field}=([\\s\\S]+?)(?=\\s+(?:stdout|stderr|error)=|$)`, "i").exec(message);
+  return match?.[1]?.trim() ?? "";
+}
+
+function joinTestSendError(fallback: string, detail: string): string {
+  const separator = getTestSendErrorSeparator(fallback, detail);
+  const normalizedFallback = separator === ": " ? fallback.replace(/[.。]\s*$/, "") : fallback;
+  return `${normalizedFallback}${separator}${detail}`;
+}
+
+function getTestSendErrorSeparator(fallback: string, detail: string): string {
+  return CHINESE_TEXT_RE.test(fallback) || CHINESE_TEXT_RE.test(detail) ? "：" : ": ";
+}
+
 function normalizeHermesChannelKey(channel: string): string {
-  const normalized = channel.trim();
-  if (normalized === "wechat" || normalized === "openclaw-weixin") return "weixin";
+  const normalized = channel.trim().toLowerCase();
+  if (["wechat", "weixin", "openclaw-weixin", "openclaw-wechat"].includes(normalized)) return "weixin";
+  if (["qq", "qqbot", "qq-bot", "qqbotplugin", "openclaw-qqbot", "openclaw-qq"].includes(normalized)) return "qqbot";
+  if (["wecom", "wework", "work-weixin", "work-wechat", "openclaw-wecom"].includes(normalized)) return "wecom";
+  if (["feishu", "lark", "larksuite", "openclaw-feishu", "openclaw-lark"].includes(normalized)) return "feishu";
+  if (["telegram", "tg", "openclaw-telegram", "openclaw-tg"].includes(normalized)) return "telegram";
+  if (["whatsapp", "whats-app", "whatsapp-business", "whatsapp_business", "openclaw-whatsapp"].includes(normalized)) return "whatsapp";
+  if (["discord", "openclaw-discord"].includes(normalized)) return "discord";
   return normalized;
 }

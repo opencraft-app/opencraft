@@ -45,8 +45,8 @@ export function ProductReturnHomeHeader({
       position="fixed"
       reloadLanguageAfterSwitch={reloadLanguageAfterSwitch}
       renderLink={renderLink}
-      renderLanguageSwitcher={({ reloadAfterSwitch, variant }) => (
-        <LanguageSwitcher reloadAfterSwitch={reloadAfterSwitch} variant={variant} />
+      renderLanguageSwitcher={({ activeLocale, reloadAfterSwitch, variant }) => (
+        <LanguageSwitcher activeLocale={activeLocale} reloadAfterSwitch={reloadAfterSwitch} variant={variant} />
       )}
       renderUserMenuLink={renderUserMenuLink}
       showLanguageSwitcher={isGlobal}
