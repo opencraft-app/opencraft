@@ -108,9 +108,19 @@ func (e *CGWError) Error() string {
 // 两端 preview 取值一致以拿到一致的定价口径（preview=0 与 preview=1 在某些活动下
 // 因校验规则 / 库存折扣分支不同会得到不同价格）。omitempty 让 0 值不出现在出向
 // JSON，保留正式形态默认行为；联调期由 inquiry.Service.quoteDianshi 显式赋 1。
+//
+// Uin：preview=1 时点石侧需要顶层 uin 用于商品可见性 / 实名校验路由。设计稿 §5.1
+// envelope 样例没列 uin，但联调实测：preview=1 + 缺 uin → 点石返 returnCode=1100105
+// "商品ID不存在"（实质是缺 uin 上下文导致活动 actID 找不到对应商品归属）；补上 uin
+// 后同 envelope 立即拿到 returnCode=0 价格。trade 端 uin 来源与下单链路 (DoGoodsRequest.Uin)
+// 同源——经 lightclaw-auth shadow_bindings 反查 external_user_id → uin 后由
+// inquiry.Service.quoteDianshi 从 QuoteRequest.Uin 直接透传。
+// omitempty：保留正式形态默认行为（preview=0 / 老协议样例不带 uin）；现网联调期
+// req.Uin 必非空，会实际出现在出向 JSON。
 type GetPriceRequest struct {
 	ActivityID int64                  `json:"activity_id"`
 	Preview    int                    `json:"preview,omitempty"`
+	Uin        string                 `json:"uin,omitempty"`
 	ClientInfo map[string]interface{} `json:"client_info,omitempty"`
 	Goods      []GetPriceGoodsItem    `json:"goods"`
 }
