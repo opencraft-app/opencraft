@@ -359,7 +359,8 @@ export type SessionStatusWire =
   | "waiting_for_input"
   | "canceling"
   | "failed"
-  | "closed";
+  | "closed"
+  | "archived";
 
 export interface CreateSessionInput {
   workingDirectory: string;
@@ -374,6 +375,14 @@ export interface CreateSessionInput {
 export interface CreateSessionWireResponse {
   session: SessionWire;
   cursor: EventCursorWire;
+}
+
+export interface ArchiveSessionInput {
+  sessionId: string;
+}
+
+export interface ArchiveSessionWireResponse {
+  session: SessionWire;
 }
 
 export interface CancelSessionInput {

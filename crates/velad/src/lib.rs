@@ -32,15 +32,16 @@ use vela_projection::{
 use vela_runtime::{Runtime, SendUserMessage};
 use vela_store::{SqliteEventStore, StoredSession};
 
+pub mod local_runtime;
+
 pub struct ApiState<B> {
     store: Arc<SqliteEventStore>,
     runtime: Runtime<B>,
     events: broadcast::Sender<CanonicalEvent>,
-    runtime_info: LocalRuntimeInfo,
-    management_token: Option<String>,
-    shutdown: Option<broadcast::Sender<()>>,
     default_session_model: Option<String>,
     configured_backends: Vec<ConfiguredBackend>,
+    local_runtime: Option<local_runtime::LocalRuntimeState>,
+    shutdown_tx: Option<tokio::sync::watch::Sender<bool>>,
 }
 
 impl<B> Clone for ApiState<B> {
@@ -49,38 +50,10 @@ impl<B> Clone for ApiState<B> {
             store: self.store.clone(),
             runtime: self.runtime.clone(),
             events: self.events.clone(),
-            runtime_info: self.runtime_info.clone(),
-            management_token: self.management_token.clone(),
-            shutdown: self.shutdown.clone(),
             default_session_model: self.default_session_model.clone(),
             configured_backends: self.configured_backends.clone(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct LocalRuntimeInfo {
-    #[serde(rename = "type")]
-    event_type: &'static str,
-    runtime_protocol: &'static str,
-    api_protocol: &'static str,
-    pid: u32,
-    listen_addr: String,
-    api_base_url: String,
-    version: &'static str,
-}
-
-impl LocalRuntimeInfo {
-    pub fn new(listen_addr: impl Into<String>) -> Self {
-        let listen_addr = listen_addr.into();
-        Self {
-            event_type: "velad.ready",
-            runtime_protocol: "velad.local.v1",
-            api_protocol: "velachat.v1",
-            pid: std::process::id(),
-            api_base_url: format!("http://{listen_addr}/api/v1"),
-            listen_addr,
-            version: env!("CARGO_PKG_VERSION"),
+            local_runtime: self.local_runtime.clone(),
+            shutdown_tx: self.shutdown_tx.clone(),
         }
     }
 }
@@ -115,9 +88,6 @@ where
             store,
             runtime,
             events,
-            runtime_info: LocalRuntimeInfo::new("127.0.0.1:0"),
-            management_token: None,
-            shutdown: None,
             default_session_model: None,
             configured_backends: vec![ConfiguredBackend {
                 kind: "pi",
@@ -125,22 +95,9 @@ where
                 display_name: "PiCoding Agent",
                 default_model: None,
             }],
+            local_runtime: None,
+            shutdown_tx: None,
         }
-    }
-
-    pub fn with_runtime_info(mut self, runtime_info: LocalRuntimeInfo) -> Self {
-        self.runtime_info = runtime_info;
-        self
-    }
-
-    pub fn with_management_token(mut self, token: Option<String>) -> Self {
-        self.management_token = token.filter(|token| !token.is_empty());
-        self
-    }
-
-    pub fn with_shutdown_signal(mut self, shutdown: broadcast::Sender<()>) -> Self {
-        self.shutdown = Some(shutdown);
-        self
     }
 
     pub fn with_default_session_model(mut self, model: Option<String>) -> Self {
@@ -193,6 +150,16 @@ where
         self
     }
 
+    pub fn with_local_runtime(
+        mut self,
+        local_runtime: local_runtime::LocalRuntimeState,
+        shutdown_tx: tokio::sync::watch::Sender<bool>,
+    ) -> Self {
+        self.local_runtime = Some(local_runtime);
+        self.shutdown_tx = Some(shutdown_tx);
+        self
+    }
+
     fn configured_engine_kind(&self, backend: BackendKindWire) -> Option<BackendKind> {
         let kind = backend.as_str();
         self.configured_backends
@@ -239,6 +206,10 @@ where
         .route(
             "/api/v1/sessions/{session_id}/close",
             post(close_session::<B>),
+        )
+        .route(
+            "/api/v1/sessions/{session_id}/archive",
+            post(archive_session::<B>),
         )
         .route(
             "/api/v1/sessions/{session_id}/events",
@@ -309,6 +280,64 @@ struct SendSessionEventsRequest {
     events: Vec<ClientInputEvent>,
     #[serde(default)]
     options: Option<Value>,
+}
+
+async fn get_runtime_info<B>(State(state): State<ApiState<B>>) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    match state.local_runtime {
+        Some(runtime) => Json(runtime.info).into_response(),
+        None => error(
+            StatusCode::NOT_FOUND,
+            "runtime_info_unavailable",
+            "local runtime information is not configured",
+        ),
+    }
+}
+
+async fn shutdown_runtime<B>(State(state): State<ApiState<B>>, headers: HeaderMap) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let Some(runtime) = state.local_runtime else {
+        return error(
+            StatusCode::FORBIDDEN,
+            "runtime_shutdown_unavailable",
+            "runtime shutdown requires a management token",
+        );
+    };
+    let Some(expected_token) = runtime.management_token.as_deref() else {
+        return error(
+            StatusCode::FORBIDDEN,
+            "runtime_shutdown_unavailable",
+            "runtime shutdown requires a management token",
+        );
+    };
+    if bearer_token(&headers) != Some(expected_token) {
+        return error(
+            StatusCode::FORBIDDEN,
+            "runtime_shutdown_forbidden",
+            "invalid runtime management token",
+        );
+    }
+    let Some(shutdown_tx) = state.shutdown_tx else {
+        return error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "runtime_shutdown_unavailable",
+            "runtime shutdown trigger is not configured",
+        );
+    };
+    let _ = shutdown_tx.send(true);
+    Json(json!({ "accepted": true })).into_response()
+}
+
+fn bearer_token(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get("authorization")?
+        .to_str()
+        .ok()?
+        .strip_prefix("Bearer ")
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -634,6 +663,31 @@ where
         "cursor": event_cursor_json(&append.event),
     }))
     .into_response()
+}
+
+async fn archive_session<B>(
+    State(state): State<ApiState<B>>,
+    Path(session_id): Path<String>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let session_id = SessionId::from(session_id);
+    if let Err(err) = state.store.archive_session(&session_id).await {
+        return match err {
+            vela_store::StoreError::SessionNotFound(_) => error(
+                StatusCode::NOT_FOUND,
+                "session_not_found",
+                "session does not exist",
+            ),
+            _ => error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "store_error",
+                err.to_string(),
+            ),
+        };
+    }
+    session_response(&state, &session_id, false).await
 }
 
 async fn list_sessions<B>(
@@ -1429,44 +1483,6 @@ where
         "request_not_found",
         "request does not exist",
     )
-}
-
-async fn get_runtime_info<B>(State(state): State<ApiState<B>>) -> Response
-where
-    B: BackendAdapter + 'static,
-{
-    Json(state.runtime_info).into_response()
-}
-
-async fn shutdown_runtime<B>(State(state): State<ApiState<B>>, headers: HeaderMap) -> Response
-where
-    B: BackendAdapter + 'static,
-{
-    let Some(expected_token) = state.management_token.as_deref() else {
-        return error(
-            StatusCode::FORBIDDEN,
-            "management_token_required",
-            "runtime shutdown requires a configured management token",
-        );
-    };
-    if bearer_token(&headers) != Some(expected_token) {
-        return error(
-            StatusCode::FORBIDDEN,
-            "forbidden",
-            "runtime shutdown requires a valid management token",
-        );
-    }
-    if let Some(shutdown) = state.shutdown {
-        let _ = shutdown.send(());
-    }
-    Json(json!({ "accepted": true })).into_response()
-}
-
-fn bearer_token(headers: &HeaderMap) -> Option<&str> {
-    headers
-        .get("authorization")
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
 }
 
 async fn list_backends<B>(State(state): State<ApiState<B>>) -> Response
@@ -3064,6 +3080,7 @@ where
             capabilities.cancel,
             capabilities.permission_requests,
             capabilities.structured_diff,
+            capabilities.session_agent_config,
         ));
     }
     backends
@@ -3196,6 +3213,7 @@ fn backend_json(
     cancel: bool,
     permission_requests: bool,
     structured_diff: bool,
+    session_agent_config: bool,
 ) -> Value {
     let models = if status == "error" {
         Vec::new()
@@ -3211,7 +3229,7 @@ fn backend_json(
             "cancel": cancel,
             "permission_requests": permission_requests,
             "structured_diff": structured_diff,
-            "session_agent_config": true,
+            "session_agent_config": session_agent_config,
         },
         "models": models,
         "permission_modes": backend_permission_modes(kind),

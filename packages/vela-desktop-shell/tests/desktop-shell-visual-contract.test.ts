@@ -9,7 +9,7 @@ import type { SessionListItemWire } from "../../vela-chat-client/src";
 import {
   SessionSidebar,
   VelaDesktopShell,
-  browserDesktopHostBridge,
+  browserRuntimeHostBridge,
 } from "../src";
 
 const root = process.cwd();
@@ -39,7 +39,7 @@ test("desktop shell renders the codex-desktop style sidebar frame and main inset
     React.createElement(
       VelaDesktopShell,
       {
-        host: browserDesktopHostBridge,
+        host: browserRuntimeHostBridge,
         isSidebarVisible: true,
         sidebar: React.createElement(SessionSidebar, {
           sessions: [session],
@@ -63,9 +63,8 @@ test("desktop shell renders the codex-desktop style sidebar frame and main inset
   assert.match(html, /class="vela-sidebar-panel"/);
   assert.match(html, /class="vela-sidebar-inset vela-main-inset"/);
   assert.ok(
-    html.indexOf("vela-sidebar-window-controls") <
-      html.indexOf("vela-sidebar-wrapper"),
-    "window controls should live in the shell safe area before the sidebar wrapper",
+    html.indexOf("vela-window-chrome") < html.indexOf("vela-sidebar-window-controls"),
+    "window controls should live inside the shell chrome safe area",
   );
 });
 
@@ -108,7 +107,7 @@ test("session sidebar renders the codex-desktop settings menu in the footer", ()
     }),
   );
 
-  assert.match(html, /class="vela-sidebar-footer"/);
+  assert.match(html, /class="vela-sidebar-fixed-footer"/);
   assert.match(html, /class="vela-settings-menu-root"/);
   assert.match(html, /class="[^"]*vela-settings-menu-trigger/);
   assert.match(html, /aria-label="Settings"/);
@@ -117,7 +116,7 @@ test("session sidebar renders the codex-desktop settings menu in the footer", ()
   assert.match(html, />Settings</);
   assert.match(html, />Clear chats</);
   assert.ok(
-    html.indexOf("stable-session-list") < html.indexOf("vela-settings-menu-root"),
+    html.indexOf("session-list-surface") < html.indexOf("vela-settings-menu-root"),
     "settings menu should live in the sidebar footer after the session list",
   );
 });
@@ -185,7 +184,7 @@ test("desktop host uses unified chrome and drag-region semantics", () => {
     "utf8",
   );
 
-  assert.match(main, /trafficLightPosition:\s*\{\s*x:\s*24,\s*y:\s*22\s*\}/);
+  assert.match(main, /trafficLightPosition:\s*\{\s*x:\s*18,\s*y:\s*18\s*\}/);
   assert.match(sidebarShell, /interface WindowToolbarButtonModel/);
   assert.match(sidebarShell, /function ToolbarSidebarIcon/);
   assert.match(sidebarShell, /function ToolbarNewThreadIcon/);
@@ -195,17 +194,19 @@ test("desktop host uses unified chrome and drag-region semantics", () => {
   assert.match(settingsPage, /SidebarContent/);
   assert.doesNotMatch(settingsPage, /vela-settings-sidebar-topbar/);
   assert.doesNotMatch(css, /\.vela-settings-sidebar-topbar/);
-  assert.match(css, /\.vela-settings-sidebar-content\s*\{[^}]*padding:\s*0 10px 18px;/s);
+  assert.match(css, /\.vela-settings-sidebar-content\s*\{[^}]*padding:\s*0 0 18px;/s);
+  assert.match(css, /\.vela-settings-fixed-controls\s*\{[^}]*padding:\s*0 10px;/s);
+  assert.match(css, /\.vela-settings-nav-scroll\s*\{[^}]*padding:\s*4px 10px 8px;/s);
   assert.match(main, /macosChromeMetrics/);
-  assert.match(css, /--vela-window-traffic-light-left:\s*24px;/);
-  assert.match(css, /--vela-window-traffic-light-top:\s*22px;/);
+  assert.match(css, /--vela-window-traffic-light-left:\s*18px;/);
+  assert.match(css, /--vela-window-traffic-light-top:\s*18px;/);
   assert.match(css, /--vela-window-toolbar-center-y:/);
   assert.match(css, /--vela-window-toolbar-top:/);
   assert.match(css, /--vela-window-toolbar-start-x:/);
-  assert.match(css, /--vela-window-toolbar-size:\s*23px;/);
-  assert.match(css, /--vela-window-toolbar-icon-size:\s*23px;/);
-  assert.match(css, /--vela-window-toolbar-icon-scale:\s*1\.33;/);
-  assert.match(css, /--vela-window-toolbar-gap:\s*4px;/);
+  assert.match(css, /--vela-window-toolbar-size:\s*20px;/);
+  assert.match(css, /--vela-window-toolbar-icon-size:\s*20px;/);
+  assert.match(css, /--vela-window-toolbar-icon-scale:\s*1\.12;/);
+  assert.match(css, /--vela-window-toolbar-gap:\s*8px;/);
   assert.match(css, /--vela-window-toolbar-item-gap:\s*0px;/);
   assert.match(css, /\[data-window-drag-region="true"\]\s*\{[^}]*-webkit-app-region:\s*drag;/s);
   assert.match(css, /\[data-window-drag-region="false"\]/);
@@ -280,16 +281,15 @@ test("desktop main frame stays a neutral host surface while ChatUI owns material
 
   assert.match(css, /--vela-main-surface:\s*#ffffff;/);
   assert.match(css, /--vela-main-surface-radius:\s*16px;/);
-  assert.match(css, /--vela-main-edge-hairline:\s*rgba\(60,\s*60,\s*67,\s*0\.12\);/);
+  assert.match(css, /--vela-main-edge-hairline:\s*var\(--vela-sidebar-material-edge\);/);
   assert.match(css, /\.vela-main-inset\s*\{[^}]*box-sizing:\s*border-box;/s);
   assert.match(css, /\.vela-main-inset\s*\{[^}]*border-top-left-radius:\s*var\(--vela-main-surface-radius\);/s);
-  assert.match(css, /\.vela-main-inset\s*\{[^}]*border-left:\s*1px solid var\(--vela-main-edge-hairline\);/s);
+  assert.match(css, /\.vela-main-inset\s*\{[^}]*border-left:\s*0;/s);
   assert.match(css, /\.vela-desktop-shell\[data-state="collapsed"\] \.vela-main-inset\s*\{[^}]*border-left-color:\s*transparent;/s);
   assert.match(css, /\.vela-sidebar-inset::before\s*\{[^}]*background:\s*var\(--vela-main-surface\);/s);
-  assert.match(css, /\.vela-sidebar-inset::before\s*\{[^}]*border-top-left-radius:\s*inherit;/s);
-  assert.doesNotMatch(css, /\.vela-sidebar-inset::before\s*\{[^}]*border-left:/s);
-  assert.doesNotMatch(css, /\.vela-sidebar-inset::before\s*\{[^}]*-webkit-backdrop-filter:/s);
-  assert.doesNotMatch(css, /\.vela-sidebar-inset::before\s*\{[^}]*backdrop-filter:/s);
+  assert.match(css, /\.vela-sidebar-inset::before\s*\{[^}]*box-shadow:\s*inset 1px 0 0 var\(--vela-main-edge-hairline\);/s);
+  assert.doesNotMatch(css, /\.vela-main-inset\s*\{[^}]*-webkit-backdrop-filter:/s);
+  assert.doesNotMatch(css, /\.vela-main-inset\s*\{[^}]*backdrop-filter:/s);
 });
 
 test("collapsed desktop sidebar keeps content mounted for exit motion without a resize handle", () => {
@@ -297,7 +297,7 @@ test("collapsed desktop sidebar keeps content mounted for exit motion without a 
     React.createElement(
       VelaDesktopShell,
       {
-        host: browserDesktopHostBridge,
+        host: browserRuntimeHostBridge,
         isSidebarVisible: false,
         sidebar: React.createElement("aside", null, "Sidebar content stays mounted"),
         onSidebarWidthChange: () => {},
@@ -338,12 +338,9 @@ test("desktop main surface renders a codex-style blur veil while covering the si
     "utf8",
   );
 
-  assert.match(css, /--vela-main-edge-veil-width:\s*34px;/);
+  assert.doesNotMatch(css, /--vela-main-edge-veil-width:/);
   assert.doesNotMatch(css, /\.vela-main-inset\s*\{[^}]*box-shadow:/s);
   assert.doesNotMatch(css, /\.vela-desktop-shell\[data-state="collapsed"\] \.vela-main-inset\s*\{[^}]*box-shadow:/s);
   assert.doesNotMatch(css, /box-shadow var\(--vela-sidebar-toggle-duration\)/);
-  assert.match(css, /\.vela-sidebar-inset::after\s*\{[^}]*left:\s*calc\(var\(--vela-main-edge-veil-width\) \* -1\);/s);
-  assert.match(css, /\.vela-sidebar-inset::after\s*\{[^}]*background:\s*linear-gradient\(90deg,/s);
-  assert.match(css, /\.vela-sidebar-inset::after\s*\{[^}]*backdrop-filter:\s*blur\(16px\) saturate\(1\.1\);/s);
-  assert.match(css, /\.vela-desktop-shell\[data-state="collapsed"\] \.vela-sidebar-inset::after\s*\{[^}]*opacity:\s*0;/s);
+  assert.doesNotMatch(css, /\.vela-sidebar-inset::after\s*\{/);
 });

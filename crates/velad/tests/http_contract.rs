@@ -83,6 +83,31 @@ async fn json_request_with_headers(
     (status, value)
 }
 
+async fn json_request_with_authorization(
+    app: axum::Router,
+    method: Method,
+    uri: &str,
+    body: Value,
+    authorization: &str,
+) -> (StatusCode, Value) {
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(method)
+                .uri(uri)
+                .header("content-type", "application/json")
+                .header("authorization", authorization)
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .expect("response");
+    let status = response.status();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let value = serde_json::from_slice(&bytes).unwrap_or_else(|_| json!(null));
+    (status, value)
+}
+
 async fn get_json(app: axum::Router, uri: &str) -> (StatusCode, Value) {
     let response = app
         .oneshot(Request::get(uri).body(Body::empty()).unwrap())

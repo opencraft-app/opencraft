@@ -5,6 +5,7 @@ import type {
   AgentWorkSearchModeWire,
   AgentWorkDetailWire,
   AgentConfigPatchWire,
+  ArchiveSessionWireResponse,
   AgentConfigWire,
   AgentRequestTypeWire,
   AgentRequestWire,
@@ -169,6 +170,7 @@ const sessionStatuses = new Set<string>(
     "canceling",
     "failed",
     "closed",
+    "archived",
   ] satisfies SessionStatusWire[],
 );
 const conversationItemKinds = new Set<string>(
@@ -621,6 +623,12 @@ export function parseUpdateAgentConfigWireResponse(
 }
 
 export async function readSessionResponse(response: Response): Promise<SessionWireResponse> {
+  return parseSessionWireResponse(await readJsonResponse<unknown>(response));
+}
+
+export async function readArchiveSessionResponse(
+  response: Response,
+): Promise<ArchiveSessionWireResponse> {
   return parseSessionWireResponse(await readJsonResponse<unknown>(response));
 }
 

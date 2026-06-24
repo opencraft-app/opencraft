@@ -1,30 +1,22 @@
 use std::{
     env, fs,
-    net::SocketAddr,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
 use vela_backends::{
-    AcpBackendAdapter, AcpStdioHost, BackendRouter, CodexAppServerBackendAdapter,
-    CodexStdioAppServerHost, PiBackendAdapter,
+    AcpBackendAdapter, AcpStdioHost, BackendRouter, CodexAppServerBackendAdapter, PiBackendAdapter,
 };
 use vela_core::BackendKind;
 use vela_runtime::Runtime;
 use vela_store::SqliteEventStore;
-
-struct VeladConfig {
-    listen_addr: SocketAddr,
-    database_url: String,
-    management_token: Option<String>,
-}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     load_local_env_files();
     init_logging();
 
-    let config = VeladConfig::from_env_and_args()?;
+    let config = velad::local_runtime::LocalRuntimeConfig::from_env_args()?;
     let backend_cwd = env::var("VELAD_BACKEND_CWD")
         .or_else(|_| env::current_dir().map(|path| path.to_string_lossy().to_string()))
         .unwrap_or_else(|_| ".".to_string());
@@ -33,7 +25,7 @@ async fn main() -> anyhow::Result<()> {
     let pi_backend = pi_backend_from_env(backend_cwd.clone())?;
     let default_session_model = pi_backend.model.clone();
     let pi_backend = Arc::new(pi_backend);
-    let codex_backend = Arc::new(codex_backend_from_env(backend_cwd.clone()));
+    let codex_backend = Arc::new(CodexAppServerBackendAdapter::stdio(backend_cwd.clone()));
     let acp_backend = acp_backend_from_env(backend_cwd.clone());
     let acp_default_model = acp_default_model();
     let acp_backend = Arc::new(acp_backend);
@@ -43,61 +35,58 @@ async fn main() -> anyhow::Result<()> {
             .with_backend(BackendKind::Codex, codex_backend)
             .with_backend(BackendKind::Acp, acp_backend),
     );
-    let listener = tokio::net::TcpListener::bind(config.listen_addr).await?;
-    let actual_listen_addr = listener.local_addr()?;
-    let runtime_info = velad::LocalRuntimeInfo::new(actual_listen_addr.to_string());
-    let (shutdown_tx, mut shutdown_rx) = tokio::sync::broadcast::channel::<()>(1);
-
     let runtime = Runtime::new(store.clone(), backend);
-    let state = velad::ApiState::new(store, runtime)
-        .with_default_session_model(default_session_model)
-        .with_codex_backend(env::var("VELAD_CODEX_MODEL").ok())
-        .with_acp_backend(acp_default_model)
-        .with_runtime_info(runtime_info.clone())
-        .with_management_token(config.management_token)
-        .with_shutdown_signal(shutdown_tx);
-    let app = velad::build_app(state);
+    let listener = tokio::net::TcpListener::bind(config.listen_addr).await?;
+    let bound_addr = listener.local_addr()?;
+    let ready = velad::local_runtime::ReadyEvent::new(bound_addr);
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    let app = velad::build_app(
+        velad::ApiState::new(store, runtime)
+            .with_default_session_model(default_session_model)
+            .with_codex_backend(env::var("VELAD_CODEX_MODEL").ok())
+            .with_acp_backend(acp_default_model)
+            .with_local_runtime(
+                velad::local_runtime::LocalRuntimeState::new(
+                    ready.clone(),
+                    config.management_token,
+                ),
+                shutdown_tx,
+            ),
+    );
 
-    println!("{}", serde_json::to_string(&runtime_info)?);
-    eprintln!("velad listening on http://{actual_listen_addr}/api/v1");
+    println!("{}", serde_json::to_string(&ready)?);
     axum::serve(listener, app)
-        .with_graceful_shutdown(async move {
-            let _ = shutdown_rx.recv().await;
-        })
+        .with_graceful_shutdown(wait_for_shutdown(shutdown_rx))
         .await?;
     Ok(())
 }
 
-impl VeladConfig {
-    fn from_env_and_args() -> anyhow::Result<Self> {
-        let listen_addr = cli_arg_value("--listen")
-            .or_else(|| env::var("VELAD_LISTEN_ADDR").ok())
-            .unwrap_or_else(|| "127.0.0.1:3857".to_string())
-            .parse::<SocketAddr>()?;
-        let database_url = cli_arg_value("--database-url")
-            .or_else(|| env::var("VELAD_DATABASE_URL").ok())
-            .unwrap_or_else(|| "sqlite::memory:".to_string());
-        let management_token =
-            cli_arg_value("--management-token").or_else(|| env::var("VELAD_MANAGEMENT_TOKEN").ok());
-        Ok(Self {
-            listen_addr,
-            database_url,
-            management_token,
-        })
+async fn wait_for_shutdown(mut shutdown_rx: tokio::sync::watch::Receiver<bool>) {
+    tokio::select! {
+        _ = async {
+            while shutdown_rx.changed().await.is_ok() {
+                if *shutdown_rx.borrow() {
+                    break;
+                }
+            }
+        } => {}
+        _ = tokio::signal::ctrl_c() => {}
+        _ = terminate_signal() => {}
     }
 }
 
-fn cli_arg_value(name: &str) -> Option<String> {
-    let mut args = env::args().skip(1);
-    while let Some(arg) = args.next() {
-        if arg == name {
-            return args.next();
-        }
-        if let Some(value) = arg.strip_prefix(&format!("{name}=")) {
-            return Some(value.to_string());
-        }
+#[cfg(unix)]
+async fn terminate_signal() {
+    use tokio::signal::unix::{SignalKind, signal};
+
+    if let Ok(mut signal) = signal(SignalKind::terminate()) {
+        let _ = signal.recv().await;
     }
-    None
+}
+
+#[cfg(not(unix))]
+async fn terminate_signal() {
+    std::future::pending::<()>().await;
 }
 
 fn init_logging() {
@@ -141,33 +130,6 @@ fn acp_backend_from_env(cwd: String) -> AcpBackendAdapter {
         }
     }
     AcpBackendAdapter::hermes(cwd, host)
-}
-
-fn codex_backend_from_env(cwd: String) -> CodexAppServerBackendAdapter {
-    let command = env::var("VELAD_CODEX_COMMAND").ok();
-    let args = env::var("VELAD_CODEX_ARGS")
-        .ok()
-        .map(|value| {
-            value
-                .split_whitespace()
-                .map(str::to_string)
-                .collect::<Vec<_>>()
-        })
-        .filter(|args| !args.is_empty());
-    match (command, args) {
-        (None, None) => CodexAppServerBackendAdapter::stdio(cwd),
-        (command, args) => {
-            let default_host = CodexStdioAppServerHost::new(&cwd);
-            CodexAppServerBackendAdapter::new(
-                Arc::new(CodexStdioAppServerHost {
-                    command: command.unwrap_or(default_host.command),
-                    args: args.unwrap_or(default_host.args),
-                    cwd,
-                }),
-                default_host.cwd,
-            )
-        }
-    }
 }
 
 fn acp_default_model() -> Option<String> {

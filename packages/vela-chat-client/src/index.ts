@@ -2,6 +2,7 @@ export * from "./attachments";
 export * from "./client";
 export * from "./commands";
 export * from "./errors";
+export * from "./eventStream";
 export * from "./idempotency";
 export * from "./sse";
 export * from "./stream";

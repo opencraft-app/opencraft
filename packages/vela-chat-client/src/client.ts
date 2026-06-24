@@ -1,5 +1,7 @@
 import type {
   AgentConfigPatchWire,
+  ArchiveSessionInput,
+  ArchiveSessionWireResponse,
   BackendKindWire,
   BackendProbeResultWire,
   BackendWireResponse,
@@ -38,6 +40,7 @@ import {
   readSessionListViewResponse,
   readSessionListResponse,
   readSessionResponse,
+  readArchiveSessionResponse,
   readUpdateAgentConfigResponse,
   validateAfterId,
   validateAgentConfigPatch,
@@ -54,6 +57,7 @@ export interface VeladClient {
   listSessions: (options?: SessionListOptions) => Promise<SessionListWireResponse>;
   getSessionListView: (options?: SessionListOptions) => Promise<SessionListViewWireResponse>;
   createSession: (input: CreateSessionInput) => Promise<CreateSessionWireResponse>;
+  archiveSession: (input: ArchiveSessionInput) => Promise<ArchiveSessionWireResponse>;
   getSession: (sessionId: string) => Promise<SessionWireResponse>;
   getBackends: () => Promise<BackendsWireResponse>;
   getBackend: (backend: BackendKindWire) => Promise<BackendWireResponse>;
@@ -162,6 +166,11 @@ export function createVeladClient(options: VeladClientOptions): VeladClient {
       const url = new URL(`sessions/${encodeSessionId(sessionId)}`, baseUrl);
       const response = await doFetch(url);
       return readSessionResponse(response);
+    },
+    async archiveSession({ sessionId }) {
+      const url = new URL(`sessions/${encodeSessionId(sessionId)}/archive`, baseUrl);
+      const response = await doFetch(url, { method: "POST" });
+      return readArchiveSessionResponse(response);
     },
     async getBackends() {
       const url = new URL("backends", baseUrl);

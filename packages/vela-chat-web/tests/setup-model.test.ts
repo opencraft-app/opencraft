@@ -4,13 +4,19 @@ import test from "node:test";
 import { buildVelaSessionSetupSelection } from "../../vela-chat-controller/src/setupModel";
 import type { BackendWire } from "../../vela-chat-client/src";
 
-test("workbench setup does not invent reasoning options for ACP backends", () => {
+test("workbench setup does not send runtime model config when backend capability is disabled", () => {
   const backends: BackendWire[] = [
     {
       kind: "acp",
       status: "available",
       display_name: "Hermes ACP",
-      capabilities: { session_agent_config: true },
+      capabilities: {
+        streaming: true,
+        cancel: false,
+        permission_requests: true,
+        structured_diff: true,
+        session_agent_config: false,
+      },
       models: [
         {
           id: "minimax-m2.7",
@@ -34,7 +40,6 @@ test("workbench setup does not invent reasoning options for ACP backends", () =>
   assert.deepEqual(selection.setupReasoningOptions, []);
   assert.equal(selection.setupSelectedReasoningEffort, "");
   assert.deepEqual(selection.setupAgentConfig, {
-    model: "minimax-m2.7",
     permission_mode: "auto",
   });
 });

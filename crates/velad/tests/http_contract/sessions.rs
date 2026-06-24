@@ -207,6 +207,52 @@ async fn update_agent_config_changes_session_default_and_emits_config_event() {
 }
 
 #[tokio::test]
+async fn archives_session_and_hides_it_from_default_lists() {
+    let app = test_app().await;
+    let (_, archived) = json_request(
+        app.clone(),
+        Method::POST,
+        "/api/v1/sessions",
+        json!({ "backend": "pi", "working_directory": "/tmp/archive-me" }),
+        Some("archive-me"),
+    )
+    .await;
+    let (_, active) = json_request(
+        app.clone(),
+        Method::POST,
+        "/api/v1/sessions",
+        json!({ "backend": "pi", "working_directory": "/tmp/keep-me" }),
+        Some("keep-me"),
+    )
+    .await;
+    let archived_id = archived["session"]["id"].as_str().unwrap();
+    let active_id = active["session"]["id"].as_str().unwrap();
+
+    let (status, body) = json_request(
+        app.clone(),
+        Method::POST,
+        &format!("/api/v1/sessions/{archived_id}/archive"),
+        json!({}),
+        None,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["session"]["id"], archived_id);
+    assert_eq!(body["session"]["status"], "archived");
+
+    let (status, sessions) = get_json(app.clone(), "/api/v1/sessions?limit=20").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(sessions["sessions"].as_array().unwrap().len(), 1);
+    assert_eq!(sessions["sessions"][0]["id"], active_id);
+
+    let (status, view) = get_json(app, "/api/v1/views/sessions?limit=20").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(view["sessions"].as_array().unwrap().len(), 1);
+    assert_eq!(view["sessions"][0]["id"], active_id);
+}
+
+#[tokio::test]
 async fn create_session_is_idempotent_and_conflicts_on_different_body() {
     let app = test_app().await;
     let body = json!({

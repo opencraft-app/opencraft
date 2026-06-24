@@ -7,6 +7,7 @@ import {
   applyConversationLiveOverlay,
   commandAckRejectionMessage,
   createIdempotencyKey,
+  createFetchVelaEventStreamTransport,
   createStreamRefreshScheduler,
   createVeladClient,
   imageFileToInputPart,
@@ -32,6 +33,14 @@ function readClientSource() {
     .sort()
     .map((file) => `// ${file}\n${readFileSync(new URL(file, srcDir), "utf8")}`)
     .join("\n");
+}
+
+async function waitUntil(done: () => boolean) {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    if (done()) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  assert.equal(done(), true);
 }
 
 function sessionFixture(overrides: Record<string, unknown> = {}) {
@@ -195,6 +204,29 @@ test("builds pending requests view URLs with status filters", () => {
     client.requestsUrl("sess_123", { status: "pending" }).toString(),
     "http://127.0.0.1:3857/api/v1/sessions/sess_123/views/requests?status=pending",
   );
+});
+
+test("fetch event stream transport reports normal stream completion", async () => {
+  const events: string[] = [];
+  let closeCount = 0;
+  const transport = createFetchVelaEventStreamTransport(async () => {
+    return new Response(
+      'event: turn.completed\ndata: {"type":"turn.completed","event_id":"evt_1","epoch":1,"seq":1}\n\n',
+      { status: 200, headers: { "Content-Type": "text/event-stream" } },
+    );
+  });
+
+  transport.subscribe(new URL("http://127.0.0.1:3857/api/v1/sessions/sess_1/events/stream"), {
+    onClose: () => {
+      closeCount += 1;
+    },
+    onEvent: (event) => {
+      events.push(event.type);
+    },
+  });
+
+  await waitUntil(() => closeCount === 1);
+  assert.deepEqual(events, ["turn.completed"]);
 });
 
 test("builds diff review view URLs", () => {
@@ -815,6 +847,33 @@ test("creates a local pi session with idempotency key", async () => {
     working_directory: "/tmp/project",
     title: "New chat",
   });
+});
+
+test("archives a session with explicit archive action endpoint", async () => {
+  const requests: Array<{ url: string; init?: RequestInit }> = [];
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async (url, init) => {
+      requests.push({ url: String(url), init });
+      return new Response(
+        JSON.stringify({
+          session: sessionFixture({
+            id: "ses_archive",
+            status: "archived",
+          }),
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    },
+  });
+
+  const response = await client.archiveSession({ sessionId: "ses_archive" });
+
+  assert.equal(response.session.id, "ses_archive");
+  assert.equal(response.session.status, "archived");
+  assert.equal(requests[0]?.url, "http://127.0.0.1:3857/api/v1/sessions/ses_archive/archive");
+  assert.equal(requests[0]?.init?.method, "POST");
+  assert.equal(requests[0]?.init?.body, undefined);
 });
 
 test("lists recent sessions for debug launchers", async () => {

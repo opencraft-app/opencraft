@@ -3,22 +3,14 @@ import {
   ArrowLeft,
   Bot,
   Check,
-  CircleUserRound,
-  Code2,
-  FolderTree,
-  Gauge,
-  GitBranch,
-  Keyboard,
-  MonitorCog,
-  Palette,
-  PlugZap,
+  ExternalLink,
+  Info,
   Search,
-  ServerCog,
   Settings,
-  SlidersHorizontal,
   Sparkles,
   TerminalSquare,
 } from "lucide-react";
+import React from "react";
 import type {
   BackendKindWire,
   BackendWire,
@@ -34,14 +26,23 @@ import {
   ShellSwitch,
   VelaSidebarChrome,
 } from "../../../packages/vela-desktop-shell/src";
+import {
+  useVelaSetting,
+  type VelaSetting,
+} from "../../../packages/vela-settings/src";
+import { createDesktopSettings } from "./settings/desktopSettings";
 
 export interface DesktopSettingsSidebarProps {
+  activePanel: DesktopSettingsPanelId;
   onClose: () => void;
+  onPanelChange: (panel: DesktopSettingsPanelId) => void;
   showTrafficLights?: boolean;
 }
 
 export interface DesktopSettingsPageProps {
+  activePanel: DesktopSettingsPanelId;
   apiBaseUrl: string;
+  appVersion: string;
   backends: BackendWire[];
   hostLabel: string;
   logPath?: string;
@@ -50,34 +51,28 @@ export interface DesktopSettingsPageProps {
   onSelectedBackendChange: (backend: BackendKindWire) => void;
 }
 
-const personalSettings = [
-  { icon: Settings, label: "常规", active: true },
-  { icon: CircleUserRound, label: "个人资料" },
-  { icon: Palette, label: "外观" },
-  { icon: SlidersHorizontal, label: "配置" },
-  { icon: Sparkles, label: "个性化" },
-  { icon: Bot, label: "Pets" },
-  { icon: Keyboard, label: "键盘快捷键" },
-  { icon: Gauge, label: "使用情况和计费" },
-];
+export type DesktopSettingsPanelId = "general" | "archive" | "about";
 
-const integrationSettings = [
-  { icon: MonitorCog, label: "应用快照" },
-  { icon: PlugZap, label: "MCP 服务器" },
-  { icon: ServerCog, label: "浏览器" },
-  { icon: Bot, label: "电脑操控" },
-];
+const settingsPanels = [
+  { icon: Settings, id: "general", label: "常规" },
+  { icon: Archive, id: "archive", label: "已归档对话" },
+  { icon: Info, id: "about", label: "关于 LightVela" },
+] satisfies Array<{
+  icon: typeof Settings;
+  id: DesktopSettingsPanelId;
+  label: string;
+}>;
 
-const codingSettings = [
-  { icon: TerminalSquare, label: "钩子" },
-  { icon: PlugZap, label: "连接" },
-  { icon: GitBranch, label: "Git" },
-  { icon: Code2, label: "环境" },
-  { icon: FolderTree, label: "工作树" },
+const aboutLinks = [
+  { href: "https://lightvela.com", label: "官网" },
+  { href: "https://lightvela.com/docs", label: "产品文档" },
+  { href: "https://lightvela.com/changelog", label: "更新日志" },
 ];
 
 export function DesktopSettingsSidebar({
+  activePanel,
   onClose,
+  onPanelChange,
   showTrafficLights = false,
 }: DesktopSettingsSidebarProps) {
   return (
@@ -98,12 +93,11 @@ export function DesktopSettingsSidebar({
           <SidebarContentFade edge="bottom" />
 
           <SidebarScrollRegion className="vela-settings-nav-scroll">
-          <SettingsNavGroup title="个人" items={personalSettings} />
-          <SettingsNavGroup title="集成" items={integrationSettings} />
-          <SettingsNavGroup title="编码" items={codingSettings} />
           <SettingsNavGroup
-            title="已归档"
-            items={[{ icon: Archive, label: "已归档对话" }]}
+            activePanel={activePanel}
+            title="设置"
+            items={settingsPanels}
+            onPanelChange={onPanelChange}
           />
           </SidebarScrollRegion>
         </SidebarContent>
@@ -113,7 +107,9 @@ export function DesktopSettingsSidebar({
 }
 
 export function DesktopSettingsPage({
+  activePanel,
   apiBaseUrl,
+  appVersion,
   backends,
   hostLabel,
   logPath,
@@ -121,8 +117,23 @@ export function DesktopSettingsPage({
   sessionsCount,
   onSelectedBackendChange,
 }: DesktopSettingsPageProps) {
-  const resolvedBackend =
-    backends.find((backend) => backend.kind === selectedBackend) ?? backends[0] ?? null;
+  const settings = React.useMemo(
+    () =>
+      createDesktopSettings({
+        backends,
+        onSelectedBackendChange,
+        selectedBackend,
+      }),
+    [backends, onSelectedBackendChange, selectedBackend],
+  );
+
+  if (activePanel === "about") {
+    return <DesktopSettingsAboutPanel appVersion={appVersion} hostLabel={hostLabel} />;
+  }
+
+  if (activePanel === "archive") {
+    return <DesktopSettingsArchivePanel />;
+  }
 
   return (
     <main className="vela-settings-page" aria-label="Settings">
@@ -160,34 +171,9 @@ export function DesktopSettingsPage({
             <p>选择新建会话默认连接的 agent backend</p>
           </div>
           <div className="vela-settings-card">
-            <div className="vela-settings-row">
-              <span>
-                <strong>默认 backend</strong>
-                <small>
-                  当前可用：{resolvedBackend?.display_name ?? "等待 velad 返回 backends"}
-                </small>
-              </span>
-              <ShellSelect
-                ariaLabel="Select default backend"
-                disabled={backends.length === 0}
-                emptyLabel="未连接"
-                options={backends.map((backend) => ({
-                  id: backend.kind,
-                  label: backend.display_name,
-                  description:
-                    backend.status === "available"
-                      ? "Available"
-                      : backend.status === "degraded"
-                        ? "Degraded"
-                        : "Unavailable",
-                }))}
-                placeholder="未连接"
-                value={resolvedBackend?.kind ?? ""}
-                onValueChange={(backend) =>
-                  onSelectedBackendChange(backend as BackendKindWire)
-                }
-              />
-            </div>
+            {settings.map((setting) => (
+              <SettingsSettingRow key={setting.id} setting={setting} />
+            ))}
             <SettingsInfoRow label="velad API" value={apiBaseUrl} />
             <SettingsInfoRow label="Shell host" value={hostLabel} />
             {logPath ? <SettingsInfoRow label="Local logs" value={logPath} /> : null}
@@ -243,10 +229,14 @@ export function DesktopSettingsPage({
 }
 
 function SettingsNavGroup({
+  activePanel,
   items,
+  onPanelChange,
   title,
 }: {
-  items: Array<{ active?: boolean; icon: typeof Settings; label: string }>;
+  activePanel: DesktopSettingsPanelId;
+  items: Array<{ icon: typeof Settings; id: DesktopSettingsPanelId; label: string }>;
+  onPanelChange: (panel: DesktopSettingsPanelId) => void;
   title: string;
 }) {
   return (
@@ -257,8 +247,9 @@ function SettingsNavGroup({
         return (
           <button
             className="vela-settings-nav-item"
-            data-active={item.active ? "true" : undefined}
+            data-active={item.id === activePanel ? "true" : undefined}
             key={item.label}
+            onClick={() => onPanelChange(item.id)}
             type="button"
           >
             <Icon size={16} aria-hidden />
@@ -267,6 +258,106 @@ function SettingsNavGroup({
         );
       })}
     </div>
+  );
+}
+
+function DesktopSettingsArchivePanel() {
+  return (
+    <main className="vela-settings-page" aria-label="Archived chats settings">
+      <div className="vela-settings-content">
+        <h1>已归档对话</h1>
+        <section className="vela-settings-section" aria-labelledby="archive-title">
+          <div className="vela-settings-section-heading">
+            <h2 id="archive-title">归档对话</h2>
+            <p>这里将用于管理从会话列表中归档的对话。</p>
+          </div>
+          <div className="vela-settings-card">
+            <SettingsInfoRow label="状态" value="即将支持" />
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function DesktopSettingsAboutPanel({
+  appVersion,
+  hostLabel,
+}: {
+  appVersion: string;
+  hostLabel: string;
+}) {
+  return (
+    <main className="vela-settings-page" aria-label="About LightVela">
+      <div className="vela-settings-content">
+        <section className="vela-settings-about-hero" aria-labelledby="about-title">
+          <div className="vela-settings-about-mark" aria-hidden>
+            <Sparkles size={28} />
+          </div>
+          <div>
+            <h1 id="about-title">关于 LightVela</h1>
+            <p>云端专属个人 Agent，随时唤醒，数据由你掌控。</p>
+          </div>
+        </section>
+
+        <section className="vela-settings-section" aria-labelledby="about-version-title">
+          <div className="vela-settings-card">
+            <SettingsInfoRow label="当前版本" value={appVersion} />
+            <SettingsInfoRow label="运行环境" value={hostLabel} />
+          </div>
+        </section>
+
+        <section className="vela-settings-section" aria-labelledby="about-lightvela-title">
+          <div className="vela-settings-section-heading">
+            <h2 id="about-lightvela-title">LightVela</h2>
+            <p>参考 LightVela 云端原生体验：轻量、在线、可掌控。</p>
+          </div>
+          <div className="vela-settings-about-grid">
+            <AboutFeatureCard
+              title="7×24H 在线"
+              description="智能伙伴在云端保持可用，电脑和手机都可以随时继续。"
+            />
+            <AboutFeatureCard
+              title="数据归属"
+              description="会话和运行数据保存在你的专属空间，后续可管理、可迁移。"
+            />
+            <AboutFeatureCard
+              title="本地运行时"
+              description="桌面版内置运行时能力，尽量减少对本机外部服务的依赖。"
+            />
+          </div>
+        </section>
+
+        <section className="vela-settings-section" aria-labelledby="about-links-title">
+          <div className="vela-settings-section-heading">
+            <h2 id="about-links-title">探索 LightVela</h2>
+          </div>
+          <div className="vela-settings-about-links">
+            {aboutLinks.map((link) => (
+              <a href={link.href} key={link.href} rel="noreferrer" target="_blank">
+                {link.label}
+                <ExternalLink size={13} aria-hidden />
+              </a>
+            ))}
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function AboutFeatureCard({
+  description,
+  title,
+}: {
+  description: string;
+  title: string;
+}) {
+  return (
+    <article className="vela-settings-about-card">
+      <strong>{title}</strong>
+      <p>{description}</p>
+    </article>
   );
 }
 
@@ -294,6 +385,77 @@ function SettingsToggleRow({
       />
     </div>
   );
+}
+
+function SettingsSettingRow<T extends string | boolean>({
+  setting,
+}: {
+  setting: VelaSetting<T>;
+}) {
+  const state = useVelaSetting(setting);
+  const errorDescription = state.error ? `保存失败：${state.error.message}` : null;
+  const description = errorDescription ?? setting.description;
+
+  return (
+    <div className="vela-settings-row" data-setting-id={setting.id}>
+      <span>
+        <strong>{setting.title}</strong>
+        {description ? <small>{description}</small> : null}
+      </span>
+      <SettingsSettingControl setting={setting} state={state} />
+    </div>
+  );
+}
+
+function SettingsSettingControl<T extends string | boolean>({
+  setting,
+  state,
+}: {
+  setting: VelaSetting<T>;
+  state: ReturnType<typeof useVelaSetting<T>>;
+}) {
+  if (setting.control === "readonly") {
+    return <output>{state.isLoading ? "加载中" : String(state.value ?? "")}</output>;
+  }
+
+  if (setting.control === "select") {
+    const options = setting.options ?? [];
+    return (
+      <ShellSelect
+        ariaLabel={setting.title}
+        disabled={!state.canSave || state.isLoading || state.isSaving || options.length === 0}
+        emptyLabel="未连接"
+        options={options.map((option) => ({
+          id: String(option.value),
+          label: option.label,
+          description: option.description,
+        }))}
+        placeholder="未连接"
+        value={state.value === undefined ? "" : String(state.value)}
+        onValueChange={(value) => {
+          const optionValue =
+            options.find((option) => String(option.value) === value)?.value ??
+            (value as T);
+          void state.setValue(optionValue);
+        }}
+      />
+    );
+  }
+
+  if (setting.control === "switch") {
+    return (
+      <ShellSwitch
+        ariaLabel={setting.title}
+        defaultChecked={Boolean(state.value)}
+        key={`${setting.id}:${String(state.value)}`}
+        onCheckedChange={(checked) => {
+          void state.setValue(checked as T);
+        }}
+      />
+    );
+  }
+
+  return <output>{state.isLoading ? "加载中" : String(state.value ?? "")}</output>;
 }
 
 function SettingsInfoRow({ label, value }: { label: string; value: string }) {

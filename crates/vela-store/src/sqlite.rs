@@ -245,6 +245,7 @@ impl SqliteEventStore {
             r#"
             SELECT session_id, backend, status, working_directory, title, model, agent_config_json, metadata_json, epoch, next_seq, created_at, updated_at
             FROM sessions
+            WHERE status != 'archived'
             ORDER BY updated_at DESC, session_id ASC
             "#,
         )
@@ -252,6 +253,19 @@ impl SqliteEventStore {
         .await?;
 
         rows.into_iter().map(row_to_session).collect()
+    }
+
+    pub async fn archive_session(&self, session_id: &SessionId) -> Result<()> {
+        let result = sqlx::query(
+            "UPDATE sessions SET status = 'archived', updated_at = CURRENT_TIMESTAMP WHERE session_id = ?1",
+        )
+        .bind(session_id.as_str())
+        .execute(&self.pool)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(StoreError::SessionNotFound(session_id.to_string()));
+        }
+        Ok(())
     }
 
     pub async fn session_exists(&self, session_id: &SessionId) -> Result<bool> {

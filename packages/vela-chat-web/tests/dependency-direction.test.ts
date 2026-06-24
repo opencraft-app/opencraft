@@ -29,11 +29,13 @@ function readChatWorkbenchSource() {
     "app/chat/workbench/helpers.ts",
     "app/chat/workbench/session-launcher/DebugSessionLauncher.tsx",
     "app/chat/workbench/session-launcher/model.ts",
+    "packages/vela-chat-client/src/eventStream.ts",
     "packages/vela-chat-controller/src/attachments.ts",
     "packages/vela-chat-controller/src/constants.ts",
     "packages/vela-chat-controller/src/historyPolicy.ts",
     "packages/vela-chat-controller/src/renderModel.ts",
     "packages/vela-chat-controller/src/sessionScopedReadModels.ts",
+    "packages/vela-chat-controller/src/sessionEventStream.ts",
     "packages/vela-chat-controller/src/setupModel.ts",
     "packages/vela-chat-controller/src/streamHandler.ts",
     "packages/vela-chat-controller/src/useVelaChatSession.ts",
@@ -91,6 +93,10 @@ test("next adapter embeds ChatUI without debug or desktop shell concerns", () =>
     join(root, "packages/vela-chat-web/src/index.tsx"),
     "utf8",
   );
+  const chatSurface = readFileSync(
+    join(root, "packages/vela-chat-web/src/surfaces/ChatSurface.tsx"),
+    "utf8",
+  );
   const workbenchView = readFileSync(
     join(root, "packages/vela-chat-web/src/components/workbench/ChatWorkbenchView.tsx"),
     "utf8",
@@ -110,7 +116,8 @@ test("next adapter embeds ChatUI without debug or desktop shell concerns", () =>
   assert.match(adapter, /layout="contained"/);
   assert.doesNotMatch(adapter, /DebugSessionLauncher|VelaDesktopShell|vela-chat-debug/);
 
-  assert.match(webEntrypoint, /layout\?:\s*"viewport" \| "contained"/);
+  assert.match(webEntrypoint, /type VelaChatWebProps = ChatSurfaceProps/);
+  assert.match(chatSurface, /layout\?:\s*"viewport" \| "contained"/);
   assert.match(workbenchView, /data-layout=\{layout\}/);
   assert.match(desktopCss, /\.shell\[data-layout="contained"\]\s*\{[^}]*height:\s*100%;/s);
   assert.match(demoPage, /NextEmbedDemo/);
@@ -119,7 +126,10 @@ test("next adapter embeds ChatUI without debug or desktop shell concerns", () =>
 });
 
 test("chat history hydration is a reusable ChatUI phase instead of host-specific branching", () => {
-  const webEntrypoint = readFileSync(join(root, "packages/vela-chat-web/src/index.tsx"), "utf8");
+  const chatSurface = readFileSync(
+    join(root, "packages/vela-chat-web/src/surfaces/ChatSurface.tsx"),
+    "utf8",
+  );
   const workbenchView = readFileSync(
     join(root, "packages/vela-chat-web/src/components/workbench/ChatWorkbenchView.tsx"),
     "utf8",
@@ -136,7 +146,7 @@ test("chat history hydration is a reusable ChatUI phase instead of host-specific
 
   assert.match(controller, /historyPhase/);
   assert.doesNotMatch(controller, /isHistoryHydrating/);
-  assert.match(webEntrypoint, /historyPhase/);
+  assert.match(chatSurface, /historyPhase/);
   assert.match(workbenchView, /historyPhase === "hydrating_history"/);
   assert.match(workbenchView, /ConversationHistoryHydrationView/);
   assert.doesNotMatch(nextWorkbench, /ConversationHistoryHydrationScreen/);
@@ -157,7 +167,10 @@ test("chat controller initial refresh is not coupled to backend state", () => {
 });
 
 test("web renderer consumes render model and does not inspect transcript wire fields", () => {
-  const source = readFileSync(join(root, "packages/vela-chat-web/src/index.tsx"), "utf8");
+  const source = readFileSync(
+    join(root, "packages/vela-chat-web/src/components/workbench/ChatWorkbenchView.tsx"),
+    "utf8",
+  );
 
   assert.match(source, /vela-chat-render-model/);
   assert.equal(source.includes("created_at"), false);
@@ -247,7 +260,10 @@ test("desktop renderer is split into agent-friendly component folders with local
 });
 
 test("scroll inspector is an explicit dev-only ChatUI diagnostic boundary", () => {
-  const webEntrypoint = readFileSync(join(root, "packages/vela-chat-web/src/index.tsx"), "utf8");
+  const chatSurface = readFileSync(
+    join(root, "packages/vela-chat-web/src/surfaces/ChatSurface.tsx"),
+    "utf8",
+  );
   const workbenchView = readFileSync(
     join(root, "packages/vela-chat-web/src/components/workbench/ChatWorkbenchView.tsx"),
     "utf8",
@@ -258,7 +274,7 @@ test("scroll inspector is an explicit dev-only ChatUI diagnostic boundary", () =
   );
   const css = readFileSync(join(root, "packages/vela-chat-web/src/styles/desktop.module.css"), "utf8");
 
-  assert.match(webEntrypoint, /showScrollInspector\?: boolean/);
+  assert.match(chatSurface, /showScrollInspector\?: boolean/);
   assert.match(workbenchView, /ConversationScrollInspector/);
   assert.match(workbenchView, /showScrollInspector/);
   assert.match(inspector, /ConversationScrollControllerDebug/);
@@ -308,7 +324,7 @@ test("streaming visible text growth is treated as DOM geometry, not a read-model
 test("package entrypoint stays thin and delegates desktop rendering details", () => {
   const source = readFileSync(join(root, "packages/vela-chat-web/src/index.tsx"), "utf8");
 
-  assert.match(source, /ChatWorkbenchView/);
+  assert.match(source, /ChatSurface/);
   assert.equal(source.includes("function MarkdownBlock"), false);
   assert.equal(source.includes("function renderInlineCode"), false);
   assert.equal(source.includes("<textarea"), false);
@@ -734,8 +750,8 @@ test("conversation viewport exposes explicit bottom-anchor intents to the workbe
 });
 
 test("message sends can request bottom anchoring after the committed read model update", () => {
-  const chatWeb = readFileSync(
-    join(root, "packages/vela-chat-web/src/index.tsx"),
+  const chatSurface = readFileSync(
+    join(root, "packages/vela-chat-web/src/surfaces/ChatSurface.tsx"),
     "utf8",
   );
   const workbenchView = readFileSync(
@@ -755,7 +771,7 @@ test("message sends can request bottom anchoring after the committed read model 
     "utf8",
   );
 
-  assert.match(chatWeb, /messageFollowToken\?:\s*number/);
+  assert.match(chatSurface, /messageFollowToken\?:\s*number/);
   assert.match(workbenchView, /messageFollowToken/);
   assert.match(conversation, /messageFollowToken/);
   assert.match(conversation, /requestBottomAnchor\("message_sent"\)/);
@@ -1363,8 +1379,8 @@ test("composer primary control switches to stop while a turn is running", () => 
     join(root, "packages/vela-chat-web/src/components/workbench/ChatWorkbenchView.tsx"),
     "utf8",
   );
-  const chatWeb = readFileSync(
-    join(root, "packages/vela-chat-web/src/index.tsx"),
+  const chatSurface = readFileSync(
+    join(root, "packages/vela-chat-web/src/surfaces/ChatSurface.tsx"),
     "utf8",
   );
   const chatWorkbench = readChatWorkbenchSource();
@@ -1379,7 +1395,7 @@ test("composer primary control switches to stop while a turn is running", () => 
   assert.match(composer, /onStop/);
   assert.match(workbenchView, /isRunning=\{webModel\.composer\.isRunning\}/);
   assert.match(workbenchView, /onStop=\{onStop\}/);
-  assert.match(chatWeb, /onStop\?:\s*\(\) => void/);
+  assert.match(chatSurface, /onStop\?:\s*\(\) => void/);
   assert.match(chatWorkbench, /client\.cancelSession\(\{ sessionId: requestedSessionId \}\)/);
 });
 

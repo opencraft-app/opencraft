@@ -315,6 +315,7 @@ impl BackendAdapter for AcpBackendAdapter {
             cancel: false,
             permission_requests: true,
             structured_diff: true,
+            session_agent_config: false,
         }
     }
 
@@ -375,7 +376,6 @@ impl BackendAdapter for AcpBackendAdapter {
                 )
                 .await?;
             let acp_session_id = read_acp_session_id(&session_response)?;
-            apply_acp_config(connection.as_mut(), &acp_session_id, &input).await?;
             session = Some(AcpBackendSession {
                 session_id: acp_session_id,
                 connection,
@@ -538,55 +538,6 @@ fn acp_prompt_blocks(input: &BackendSend) -> Vec<Value> {
             } => None,
         })
         .collect()
-}
-
-async fn apply_acp_config(
-    connection: &mut dyn AcpConnection,
-    acp_session_id: &str,
-    input: &BackendSend,
-) -> anyhow::Result<()> {
-    let Some(config) = input
-        .resolved_agent_config
-        .as_ref()
-        .map(|resolved| &resolved.config)
-    else {
-        return Ok(());
-    };
-    if let Some(model) = &config.model {
-        if let Err(error) = connection
-            .request(
-                "session/setModel",
-                json!({ "sessionId": acp_session_id, "modelId": model }),
-            )
-            .await
-        {
-            tracing::warn!(
-                model = model.as_str(),
-                error = %error,
-                "ACP backend did not expose session model selection; using provider default model"
-            );
-        }
-    }
-    if let Some(reasoning_effort) = &config.reasoning_effort {
-        if let Err(error) = connection
-            .request(
-                "session/setConfigOption",
-                json!({
-                    "sessionId": acp_session_id,
-                    "optionId": "reasoning_effort",
-                    "value": reasoning_effort,
-                }),
-            )
-            .await
-        {
-            tracing::warn!(
-                reasoning_effort = reasoning_effort.as_str(),
-                error = %error,
-                "ACP backend did not expose reasoning effort selection; using provider default reasoning"
-            );
-        }
-    }
-    Ok(())
 }
 
 fn read_acp_session_id(response: &Value) -> anyhow::Result<String> {

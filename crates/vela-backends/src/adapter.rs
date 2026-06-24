@@ -92,6 +92,7 @@ pub struct BackendCapabilities {
     pub cancel: bool,
     pub permission_requests: bool,
     pub structured_diff: bool,
+    pub session_agent_config: bool,
 }
 
 impl BackendCapabilities {
@@ -101,6 +102,7 @@ impl BackendCapabilities {
             cancel: true,
             permission_requests: true,
             structured_diff: true,
+            session_agent_config: true,
         }
     }
 }
