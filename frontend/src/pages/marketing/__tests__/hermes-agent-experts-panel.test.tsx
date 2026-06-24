@@ -64,7 +64,7 @@ describe("hermes agent experts panel", () => {
   });
 
   it("builds a single-skill acli install command", () => {
-    expect(buildInstallSkillCommand("report's-helper")).toBe("env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://lightmake.cloud/api/v1/download?slug={slug}' acli skills install 'report'\\''s-helper'");
+    expect(buildInstallSkillCommand("report's-helper")).toBe("env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install 'report'\\''s-helper'");
   });
 
   it("parses installed skill slugs from acli json and Hermes table output", () => {
@@ -382,10 +382,10 @@ describe("hermes agent experts panel", () => {
     fireEvent.click(await screen.findByRole("button", { name: "安装" }));
 
     await waitFor(() => {
-      expect(execDebugCommand).toHaveBeenCalledWith("bot-1", "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://lightmake.cloud/api/v1/download?slug={slug}' acli skills install 'backtest-engine'");
+      expect(execDebugCommand).toHaveBeenCalledWith("bot-1", "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install 'backtest-engine'");
     });
-    const installCommands = execDebugCommand.mock.calls.map((call) => call[1]).filter((command) => command.startsWith("env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://lightmake.cloud/api/v1/download?slug={slug}' acli skills install"));
-    expect(installCommands).toEqual(["env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://lightmake.cloud/api/v1/download?slug={slug}' acli skills install 'market-data'", "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://lightmake.cloud/api/v1/download?slug={slug}' acli skills install 'backtest-engine'"]);
+    const installCommands = execDebugCommand.mock.calls.map((call) => call[1]).filter((command) => command.startsWith("env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install"));
+    expect(installCommands).toEqual(["env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install 'market-data'", "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install 'backtest-engine'"]);
     expect(saveExpertPackagesState).toHaveBeenCalledWith("bot-1", {
       installedPackageSlugs: ["quant-backtest"],
     });
@@ -538,13 +538,13 @@ describe("hermes agent experts panel", () => {
     fireEvent.click(await screen.findByRole("button", { name: "安装" }));
 
     await waitFor(() => {
-      expect(execDebugCommand).toHaveBeenCalledWith("bot-1", "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://lightmake.cloud/api/v1/download?slug={slug}' acli skills install 'backtest-engine'");
+      expect(execDebugCommand).toHaveBeenCalledWith("bot-1", "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install 'backtest-engine'");
     });
-    const installCommands = execDebugCommand.mock.calls.map((call) => call[1]).filter((command) => command.startsWith("env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://lightmake.cloud/api/v1/download?slug={slug}' acli skills install"));
+    const installCommands = execDebugCommand.mock.calls.map((call) => call[1]).filter((command) => command.startsWith("env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install"));
     expect(installCommands).toEqual([
-      "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://lightmake.cloud/api/v1/download?slug={slug}' acli skills install 'market-data'",
-      "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://lightmake.cloud/api/v1/download?slug={slug}' acli skills install 'backtest-engine'",
-      "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://lightmake.cloud/api/v1/download?slug={slug}' acli skills install 'backtest-engine'",
+      "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install 'market-data'",
+      "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install 'backtest-engine'",
+      "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install 'backtest-engine'",
     ]);
   });
 
@@ -555,7 +555,7 @@ describe("hermes agent experts panel", () => {
         {
           status: "failed",
           exitCode: 1,
-          output: "Download failed: HTTP 429 (rate limited) for https://lightmake.cloud/api/v1/download?slug=nexus-error-explain",
+          output: "Download failed: HTTP 429 (rate limited) for https://api.skillhub.cn/api/v1/download?slug=nexus-error-explain",
         },
         { status: "success", exitCode: 0, output: "" },
       ];
@@ -586,12 +586,12 @@ describe("hermes agent experts panel", () => {
         {
           status: "failed",
           exitCode: 1,
-          output: "Download failed: HTTP 429 for https://lightmake.cloud/api/v1/download?slug=nexus-error-explain",
+          output: "Download failed: HTTP 429 for https://api.skillhub.cn/api/v1/download?slug=nexus-error-explain",
         },
         {
           status: "failed",
           exitCode: 1,
-          output: "Download failed: Too Many Requests for https://lightmake.cloud/api/v1/download?slug=nexus-error-explain",
+          output: "Download failed: Too Many Requests for https://api.skillhub.cn/api/v1/download?slug=nexus-error-explain",
         },
         { status: "success", exitCode: 0, output: "" },
       ];
@@ -624,17 +624,17 @@ describe("hermes agent experts panel", () => {
         {
           status: "failed",
           exitCode: 1,
-          output: "Download failed: HTTP 429 for https://lightmake.cloud/api/v1/download?slug=nexus-error-explain",
+          output: "Download failed: HTTP 429 for https://api.skillhub.cn/api/v1/download?slug=nexus-error-explain",
         },
         {
           status: "failed",
           exitCode: 1,
-          output: "Download failed: HTTP 429 for https://lightmake.cloud/api/v1/download?slug=nexus-error-explain",
+          output: "Download failed: HTTP 429 for https://api.skillhub.cn/api/v1/download?slug=nexus-error-explain",
         },
         {
           status: "failed",
           exitCode: 1,
-          output: "Download failed: HTTP 429 for https://lightmake.cloud/api/v1/download?slug=nexus-error-explain",
+          output: "Download failed: HTTP 429 for https://api.skillhub.cn/api/v1/download?slug=nexus-error-explain",
         },
       ];
       const execDebugCommand = vi.fn().mockImplementation(async () => (
@@ -648,7 +648,7 @@ describe("hermes agent experts panel", () => {
         succeeded: [],
         failed: [{
           slug: "nexus-error-explain",
-          output: "Download failed: HTTP 429 for https://lightmake.cloud/api/v1/download?slug=nexus-error-explain",
+          output: "Download failed: HTTP 429 for https://api.skillhub.cn/api/v1/download?slug=nexus-error-explain",
         }],
       });
       expect(execDebugCommand).toHaveBeenCalledTimes(3);

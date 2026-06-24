@@ -107,7 +107,7 @@ const AI_BUDDY_ASSET_BASE = "https://cloudcache.tencent-cloud.com/qcloud/tea/app
 const AI_BUDDY_ASSET_VERSION = "v20260616";
 const HERMES_SKILLS_LIST_COMMAND = 'cd "$HOME/.hermes/hermes-agent" && COLUMNS=10000 ./venv/bin/python -m hermes_cli.main skills list';
 const SKILLHUB_SELF_UPGRADE_COMMAND = "skillhub self-upgrade";
-const SKILLHUB_DOWNLOAD_URL_TEMPLATE = "https://lightmake.cloud/api/v1/download?slug={slug}";
+const SKILLHUB_DOWNLOAD_URL_TEMPLATE = "https://api.skillhub.cn/api/v1/download?slug={slug}";
 const INSTALLED_PACKAGES_STORAGE_PREFIX = "lightvela-experts-installed-packages";
 const TARGET_SKILL_DOC_NAMES = ["skill.md", "readme.md", "skills.md"];
 const PACKAGE_SKILL_SLUG_OVERRIDES: Record<string, Record<string, string>> = {
