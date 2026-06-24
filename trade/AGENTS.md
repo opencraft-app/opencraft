@@ -110,6 +110,43 @@ trade-migrate  # 读 TRADE_MYSQL_DSN 环境变量
 
 ---
 
+## 点石活动通道（v1.7.x dianshi-activity-bundle，2026-06-24 落地）
+
+**设计稿真源**：[`/root/project/mono/.tmp/dianshi-activity-bundle-design.md`](/root/project/mono/.tmp/dianshi-activity-bundle-design.md)（v0.5）。
+
+**业务边界**：仅启航 01（`bundle_launch_01`）+ 启航 AI 01（`bundle_launch_ai_01`）两个 bundle 共享 `activity_id=164273735574009` 走点石活动通道；其它 bundle 完全不变（继续走 jifei 现网链路）。每用户每活动至多一次；二次新购回落 jifei 拿原价。**续费链路完全不动**（活动只面向新购）。
+
+**ctl 零改动**：活动信息全部归 trade 持有，ctl ↔ trade 协议层契约 0 变化。dependency_gate 闸门不会被触发（[[memory:nvhrnk4c]]）。
+
+**新增 / 变更面**：
+
+| 项目 | 落点 | 说明 |
+|---|---|---|
+| dianshiclient | [trade/internal/dianshiclient/](trade/internal/dianshiclient/) | 封装 `GetActivityPrice` + `DoGoods`；与 jifeiclient 错误模型对偶（`ErrCGWHTTPNon200` / `ErrCGWInvalidEnvelope` / `*CGWError`） |
+| activity Resolver | [trade/internal/logic/activity/resolver.go](trade/internal/logic/activity/resolver.go) | 询价 / 下单分叉判定共用 helper |
+| ActivityStore | [trade/internal/store/activity.go](trade/internal/store/activity.go) | `trade_bundle_activity` + `trade_user_activity_participation` 两张表 DAO |
+| migration 000006 | [trade/migrations/000006_dianshi_activity_bundle.up.sql](trade/migrations/000006_dianshi_activity_bundle.up.sql) | 建两张表 + `trade_order ADD COLUMN source` + seed 启航 01 / 启航 AI 01 |
+| inquiry 分叉 | [trade/internal/logic/inquiry/service.go](trade/internal/logic/inquiry/service.go) | `Quote` step 3.5 分叉到 `quoteDianshi`；`QuoteRenew` 不感知 |
+| placeorder 分叉 | [trade/internal/logic/placeorder/service.go](trade/internal/logic/placeorder/service.go) | `PlaceOrder` / `PlaceOrderAndPay` step 3.5 分叉到 `placeOrderDianshi`；`PlaceRenewOrder*` 不感知 |
+| createResource 分支 | [trade/internal/logic/createresource/handler.go](trade/internal/logic/createresource/handler.go) | T4 后插入 T5：`order.Source == "dianshi"` 时反查 `trade_bundle_activity` + INSERT `trade_user_activity_participation`，唯一键 `(uin, activity_id)` 冲突视幂等成功 |
+| trade_order.source | [trade/internal/store/order.go](trade/internal/store/order.go) | 默认 `'jifei'`；DAO 层与 migration DB DEFAULT 双层一致 |
+| env | [argocd/services/trade/beijing-sandbox/trade-platform.env](argocd/services/trade/beijing-sandbox/trade-platform.env) + [sandbox-bj-7/trade-platform.env](argocd/services/trade/sandbox-bj-7/trade-platform.env) | `DIANSHI_PRICE_BASE_URL` + `DIANSHI_ORDER_BASE_URL` 同进同退；config.Load fail-fast 拦只配一边 |
+| clgateway | [cloudladdergateway/config.example.yaml](cloudladdergateway/config.example.yaml) | 新增 `dianshi-price` + `dianshi-order` 2 个 backend / 2 条 route，polaris-mesh DNS 形态 |
+
+**关键不变量**：
+- v0.5 拍板（用户原话："点石下单底层实际也是下计费单, 计费会正常进行回调. 区别只在于价格"）：点石下单底层就是 jifei 下单，jifei 仍按现网形态做反向回调 `lightvela.pass.checkCreate` / `lightvela.pass.createResource`，与普通 jifei 新购完全同链路。
+- `placeOrderDianshi` 同步段返回时机与 jifei 路径完全一致（拿到 deal_name 即返 ctl，落 `trade_order(status='paid_pending_provision', source='dianshi')` + 不写 participation）；participation 由 jifei 反向回调驱动的 `createResourceHandler` 在 ctl.CompletePass 后写入。
+- 防重复领取多层兜底：① ctl `pass` 唯一键（pass-pre-check 主防线）→ ② trade ActivityResolver 反查 participation 命中即回落 jifei → ③ 点石协议层 `(uin, activity_id)` 拒单 → ④ trade `(uin, activity_id)` 唯一约束兜底。
+- 退款 / 隔离 / 销毁完全复用 jifei 三件套（`OnlineRefund` / `isolateResource` / `destroyResource`），本设计稿不动（§11 Q10=a）。
+
+**装配开关**：`DIANSHI_PRICE_BASE_URL` + `DIANSHI_ORDER_BASE_URL` 同进同退；都为空时 main.go 不装配 ActivityResolver / DianshiClient / ActivityStore，`inquiry` / `placeorder` / `createresource` 完全退化到 v1.7.x 历史行为。启动期日志 `[dianshi] activated` / `[dianshi] disabled` 标识装配状态。
+
+**联调 SOP**：见设计稿 §10.2（beijing-sandbox 环境 12 步 e2e + 2 步 clgateway 实证）。
+
+**已知未拍板待运营提供**：启航活动 `activity_id=164273735574009` 在点石后台是否已开启鉴权 + 若开启，对应 `secret_key` 字符串值——配齐后 UPDATE `trade_bundle_activity.secret_key` 列即可（migration 000006 seed 默认 NULL = 未开鉴权）。
+
+---
+
 ## 联调期镜像构建标记
 
 - **2026-05-20 v1.7.25**：trade build 37 (`commit c7de012b` v1.7.21) 因同时改了 trade + ctl 两个目录，触发 `.ci/runtime/contracts/release_plan.py` 同批依赖门禁（db.py L60 `release_dependency_changed=True` → raise），promote MR 未创建 → sandbox-bj-7 trade pod 仍卡在 v1.7.18 时段镜像。本 commit 仅改 trade/AGENTS.md（trade-only），让 release gate `release_dependency_changed=False` 放行，触发 build 38 重新 push 镜像 + 自动 promote 到 gitops 分支 → Argo CD selfHeal 拉新镜像滚 trade pod。代码语义零变化。
