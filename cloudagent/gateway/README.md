@@ -18,6 +18,7 @@
 - 2026-06-03: README-only no-op change to rerun cloudagent-gateway through the standard Git webhook auto-pin path.
 - 2026-06-15: README-only no-op change to rerun cloudagent-gateway after durable run API landed.
 - 2026-06-22: README-only no-op change to rerun cloudagent-gateway after Wisp checkpoint-first recovery and ChannelGateway prompt-timeout fixes landed.
+- 2026-06-25: README-only no-op change to rerun cloudagent-gateway for the shprod image publish path.
 
 ## ACP WebSocket
 
