@@ -36,10 +36,6 @@ import {
   VelaDesktopShell,
   type RuntimeHostBridge,
 } from "../../../packages/vela-desktop-shell/src";
-import {
-  buildSessionLocationInfo,
-  type SessionLocationInfo,
-} from "../../../packages/vela-chat-web/src/session-location/sessionLocation";
 import { VelaLocalTracer } from "../../../packages/vela-observability-client/src";
 import {
   hideWorkMonitor,
