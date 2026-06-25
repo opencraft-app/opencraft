@@ -141,8 +141,8 @@ async function readFetchEventStream({
     handlers.onOpen?.();
 
     if (!response.body) {
-      emitFrames(parser.push(await response.text()), handlers);
-      emitFrames(parser.finish(), handlers);
+      emitFrames(parser.push(await response.text()), handlers, observability, span, url);
+      emitFrames(parser.finish(), handlers, observability, span, url);
       if (!isClosed()) {
         span?.setStatus({ code: 1 });
         span?.end();
@@ -158,12 +158,12 @@ async function readFetchEventStream({
       const { done, value } = await reader.read();
       if (isClosed()) return;
       if (done) break;
-      emitFrames(parser.push(decoder.decode(value, { stream: true })), handlers);
+      emitFrames(parser.push(decoder.decode(value, { stream: true })), handlers, observability, span, url);
     }
 
     const tail = decoder.decode();
-    if (tail) emitFrames(parser.push(tail), handlers);
-    emitFrames(parser.finish(), handlers);
+    if (tail) emitFrames(parser.push(tail), handlers, observability, span, url);
+    emitFrames(parser.finish(), handlers, observability, span, url);
     if (!isClosed()) {
       span?.setStatus({ code: 1 });
       span?.end();
@@ -194,11 +194,50 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-function emitFrames(frames: SseJsonFrame[], handlers: VelaEventStreamHandlers) {
+function emitFrames(
+  frames: SseJsonFrame[],
+  handlers: VelaEventStreamHandlers,
+  observability: VelaEventStreamObservability | undefined,
+  span: VeladObservedSpan | undefined,
+  url: URL,
+) {
   for (const frame of frames) {
     const streamEvent = readVelaStreamEventData(frame.data, frame.event);
-    if (streamEvent) handlers.onEvent(streamEvent);
+    if (!streamEvent) continue;
+    observeStreamEvent(streamEvent, observability, span, url);
+    handlers.onEvent(streamEvent);
   }
+}
+
+function observeStreamEvent(
+  event: VelaStreamEventWire,
+  observability: VelaEventStreamObservability | undefined,
+  span: VeladObservedSpan | undefined,
+  url: URL,
+) {
+  span?.setAttribute("velad.stream.last_event_type", event.type);
+  if (event.event_id) span?.setAttribute("velad.stream.last_event_id", event.event_id);
+  if (typeof event.seq === "number") span?.setAttribute("velad.stream.last_seq", event.seq);
+  if (!isTurnTerminalEvent(event.type)) return;
+
+  void observability?.emitLog?.({
+    severityText: event.type === "turn.failed" ? "ERROR" : "INFO",
+    body: `renderer received ${event.type}`,
+    span,
+    attributes: {
+      "vela.operation": "velad.session.events.stream",
+      "http.url": url.toString(),
+      "velad.stream.event_type": event.type,
+      ...(event.event_id ? { "velad.event_id": event.event_id } : {}),
+      ...(typeof event.seq === "number" ? { "velad.event_seq": event.seq } : {}),
+      ...(event.session_id ? { "velad.session_id": event.session_id } : {}),
+      ...(typeof event.payload?.turn_id === "string" ? { "velad.turn_id": event.payload.turn_id } : {}),
+    },
+  });
+}
+
+function isTurnTerminalEvent(type: string) {
+  return type === "turn.completed" || type === "turn.failed" || type === "turn.cancelled";
 }
 
 function isAbortError(error: unknown) {
