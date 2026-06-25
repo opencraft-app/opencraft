@@ -32,31 +32,39 @@ async fn main() -> anyhow::Result<()> {
     let acp_backend = acp_backend_from_env(backend_cwd.clone());
     let acp_default_model = acp_default_model();
     let acp_backend = Arc::new(acp_backend);
-    let backend = Arc::new(
-        BackendRouter::new()
-            .with_backend(BackendKind::Pi, pi_backend)
-            .with_backend(BackendKind::Codex, codex_backend)
-            .with_backend(BackendKind::Acp, acp_backend),
-    );
+    let backend = BackendRouter::new()
+        .with_backend(BackendKind::Pi, pi_backend)
+        .with_backend(BackendKind::Codex, codex_backend)
+        .with_backend(BackendKind::Acp, acp_backend);
+    #[cfg(feature = "embedded-vela-engine")]
+    let (backend, vela_engine_default_model) = {
+        let vela_engine = vela_engine_from_env(backend_cwd.clone());
+        let default_model = vela_engine
+            .config()
+            .is_configured()
+            .then(|| vela_engine.config().model.clone());
+        (
+            backend.with_backend(BackendKind::VelaEngine, Arc::new(vela_engine)),
+            default_model,
+        )
+    };
+    let backend = Arc::new(backend);
     let runtime = Runtime::new(store.clone(), backend).with_observability(observability.clone());
     let listener = tokio::net::TcpListener::bind(config.listen_addr).await?;
     let bound_addr = listener.local_addr()?;
     let ready = velad::local_runtime::ReadyEvent::new(bound_addr);
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
-    let app = velad::build_app(
-        velad::ApiState::new(store, runtime)
-            .with_default_session_model(default_session_model)
-            .with_codex_backend(env::var("VELAD_CODEX_MODEL").ok())
-            .with_acp_backend(acp_default_model)
-            .with_observability(observability)
-            .with_local_runtime(
-                velad::local_runtime::LocalRuntimeState::new(
-                    ready.clone(),
-                    config.management_token,
-                ),
-                shutdown_tx,
-            ),
-    );
+    let state = velad::ApiState::new(store, runtime)
+        .with_default_session_model(default_session_model)
+        .with_codex_backend(env::var("VELAD_CODEX_MODEL").ok())
+        .with_acp_backend(acp_default_model)
+        .with_observability(observability);
+    #[cfg(feature = "embedded-vela-engine")]
+    let state = state.with_vela_engine_backend(vela_engine_default_model);
+    let app = velad::build_app(state.with_local_runtime(
+        velad::local_runtime::LocalRuntimeState::new(ready.clone(), config.management_token),
+        shutdown_tx,
+    ));
 
     println!("{}", serde_json::to_string(&ready)?);
     axum::serve(listener, app)
@@ -146,6 +154,22 @@ fn acp_default_model() -> Option<String> {
                 .ok()
                 .map(|_| "minimax-m2.7".to_string())
         })
+}
+
+#[cfg(feature = "embedded-vela-engine")]
+fn vela_engine_from_env(cwd: String) -> vela_engine::VelaEngineBackendAdapter {
+    let endpoint = env::var("VELAD_VELA_ENGINE_ENDPOINT")
+        .or_else(|_| env::var("VELA_ENGINE_ENDPOINT"))
+        .unwrap_or_default();
+    let api_key = env::var("VELAD_VELA_ENGINE_API_KEY")
+        .or_else(|_| env::var("VELA_ENGINE_API_KEY"))
+        .unwrap_or_default();
+    let model = env::var("VELAD_VELA_ENGINE_MODEL")
+        .or_else(|_| env::var("VELA_ENGINE_MODEL"))
+        .unwrap_or_default();
+    vela_engine::VelaEngineBackendAdapter::new(vela_engine::VelaEngineConfig::new(
+        endpoint, api_key, model, cwd,
+    ))
 }
 
 fn load_local_env_files() {

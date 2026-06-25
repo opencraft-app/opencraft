@@ -1422,6 +1422,27 @@ body {
   white-space: nowrap;
 }
 
+.vela-settings-text-input {
+  width: min(360px, 42vw);
+  min-width: 220px;
+  height: 36px;
+  border: 1px solid #dfe2e6;
+  border-radius: 9px;
+  background: #ffffff;
+  color: #292d33;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  outline: none;
+  padding: 0 11px;
+  box-sizing: border-box;
+}
+
+.vela-settings-text-input:focus {
+  border-color: #9ecbff;
+  box-shadow: 0 0 0 2px rgba(54, 162, 255, 0.14);
+}
+
 .vela-shell-switch {
   position: relative;
   width: 38px;
@@ -1770,6 +1791,7 @@ body {
   }
 
   .vela-settings-row output,
+  .vela-settings-text-input,
   .vela-shell-select,
   .vela-settings-segment,
   .vela-shell-switch {

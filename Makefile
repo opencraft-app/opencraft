@@ -6,7 +6,7 @@ VELAD_LINUX_AMD64_OUT := dist/velad/linux-amd64/velad
 
 .PHONY: \
 	install \
-	server-build server-release server-release-linux-amd64 server-run server-test server-clean \
+	server-build server-build-desktop server-release server-release-desktop server-release-linux-amd64 server-run server-test server-clean \
 	desktop-dev desktop-dev-web desktop-build \
 	desktop-preview desktop-preview-fast desktop-open-installed desktop-pids \
 	desktop-pack desktop-pack-dev desktop-install desktop-install-dev desktop-dist desktop-clean \
@@ -19,8 +19,14 @@ install:
 server-build:
 	cargo build -p velad
 
+server-build-desktop:
+	cargo build -p velad --features embedded-vela-engine
+
 server-release:
 	cargo build --release -p velad
+
+server-release-desktop:
+	cargo build --release -p velad --features embedded-vela-engine
 
 server-release-linux-amd64:
 	mkdir -p $(dir $(VELAD_LINUX_AMD64_OUT))
@@ -55,13 +61,13 @@ desktop-open-installed:
 desktop-pids:
 	@pgrep -fl '/Applications/Vela.app|Vela.app|Contents/Resources/bin/velad' || true
 
-desktop-build: server-build
+desktop-build: server-build-desktop
 	npm --prefix $(ELECTRON_APP_DIR) run build
 
-desktop-pack: server-release desktop-build
+desktop-pack: server-release-desktop desktop-build
 	cd $(ELECTRON_APP_DIR) && $(ELECTRON_BUILDER) --dir --mac --arm64 --config electron-builder.yml
 
-desktop-pack-dev: server-release desktop-build
+desktop-pack-dev: server-release-desktop desktop-build
 	cd $(ELECTRON_APP_DIR) && CSC_IDENTITY_AUTO_DISCOVERY=false $(ELECTRON_BUILDER) --dir --mac --arm64 --config electron-builder.yml
 
 desktop-install: desktop-pack
@@ -80,7 +86,7 @@ desktop-install-dev: desktop-pack-dev
 	touch /Applications/Vela.app
 	open -a /Applications/Vela.app
 
-desktop-dist: server-release desktop-build
+desktop-dist: server-release-desktop desktop-build
 	cd $(ELECTRON_APP_DIR) && $(ELECTRON_BUILDER) --mac --arm64 --config electron-builder.yml
 
 desktop-clean:

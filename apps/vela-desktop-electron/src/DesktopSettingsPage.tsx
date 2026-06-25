@@ -455,6 +455,22 @@ function SettingsSettingControl<T extends string | boolean>({
     );
   }
 
+  if (setting.control === "text") {
+    return (
+      <input
+        aria-label={setting.title}
+        className="vela-settings-text-input"
+        disabled={!state.canSave || state.isLoading || state.isSaving}
+        spellCheck={false}
+        type={setting.inputType ?? "text"}
+        value={state.value === undefined ? "" : String(state.value)}
+        onChange={(event) => {
+          void state.setValue(event.currentTarget.value as T);
+        }}
+      />
+    );
+  }
+
   return <output>{state.isLoading ? "加载中" : String(state.value ?? "")}</output>;
 }
 

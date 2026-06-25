@@ -51,7 +51,12 @@ const DEFAULT_WORKING_DIRECTORY = "/";
 const DEFAULT_WEB_API_BASE_URL = "/api/v1";
 const DEFAULT_BACKEND_STORAGE_KEY = "vela-desktop:settings:default-backend";
 const DESKTOP_APP_VERSION = "0.0.1";
-const DESKTOP_BACKEND_PREFERENCE = ["codex", "acp", "pi"] satisfies BackendKindWire[];
+const DESKTOP_BACKEND_PREFERENCE = [
+  "vela_engine",
+  "codex",
+  "acp",
+  "pi",
+] satisfies BackendKindWire[];
 const DESKTOP_SHELL_HOST_POLICY = { kind: "desktop_shell" } satisfies ChatHostPolicy;
 const DESKTOP_SESSION_LIST_OPTIONS = { limit: 80 };
 
@@ -646,6 +651,7 @@ function isBackendKind(value: string | null): value is BackendKindWire {
     value === "cloudagent" ||
     value === "claude_code" ||
     value === "pi" ||
+    value === "vela_engine" ||
     value === "opencode" ||
     value === "acp" ||
     value === "qoder"
