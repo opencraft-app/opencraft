@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { SpanStatusCode } from "@opentelemetry/api";
 import {
   ChevronDown,
   Code2,
@@ -201,6 +202,8 @@ function DesktopReadyApp({
   const [chromeState, setChromeState] = useState<RuntimeChromeStateResponse | undefined>(
     hostInfo.chromeState,
   );
+  const optimisticCreatedSessionIdRef = useRef<string | null>(null);
+  const loggedOptimisticMissingSessionIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -307,14 +310,18 @@ function DesktopReadyApp({
     return { [activeSessionId]: controller.model };
   }, [activeSessionId, controller.model]);
 
+  const selectChatSession = useCallback((sessionId: string) => {
+    setError(null);
+    setActiveSessionId(sessionId);
+    setIsSettingsOpen(false);
+    setMainView("chat");
+  }, []);
+
   useEffect(() => {
     return subscribeOpenDesktopSession((sessionId) => {
-      setError(null);
-      setActiveSessionId(sessionId);
-      setIsSettingsOpen(false);
-      setMainView("chat");
+      selectChatSession(sessionId);
     });
-  }, []);
+  }, [selectChatSession]);
 
   useEffect(() => {
     if (hostInfo.hostKind !== "electron") return;
@@ -334,14 +341,47 @@ function DesktopReadyApp({
   useEffect(() => {
     if (!sessionList.data) return;
     setError(null);
-    if (
-      activeSessionId &&
-      !sessionList.data.sessions.some((session) => session.id === activeSessionId)
-    ) {
+    const hasActiveSession = sessionList.data.sessions.some(
+      (session) => session.id === activeSessionId,
+    );
+    if (hasActiveSession) {
+      if (optimisticCreatedSessionIdRef.current === activeSessionId) {
+        optimisticCreatedSessionIdRef.current = null;
+        loggedOptimisticMissingSessionIdRef.current = null;
+        void observability.emitLog({
+          severityText: "INFO",
+          body: "Created desktop session appeared in refreshed session list",
+          attributes: {
+            "vela.operation": "vela.desktop.session.selection_reconcile",
+            "vela.session_id": activeSessionId,
+            "vela.session_list.count": sessionList.data.sessions.length,
+            "vela.reconcile.result": "created_session_visible",
+          },
+        });
+      }
+      return;
+    }
+    if (activeSessionId && optimisticCreatedSessionIdRef.current === activeSessionId) {
+      if (loggedOptimisticMissingSessionIdRef.current !== activeSessionId) {
+        loggedOptimisticMissingSessionIdRef.current = activeSessionId;
+        void observability.emitLog({
+          severityText: "INFO",
+          body: "Keeping newly created desktop session selected while list refresh catches up",
+          attributes: {
+            "vela.operation": "vela.desktop.session.selection_reconcile",
+            "vela.session_id": activeSessionId,
+            "vela.session_list.count": sessionList.data.sessions.length,
+            "vela.reconcile.result": "optimistic_created_session",
+          },
+        });
+      }
+      return;
+    }
+    if (activeSessionId) {
       setActiveSessionId("");
       setMainView("new-session");
     }
-  }, [activeSessionId, sessionList.data]);
+  }, [activeSessionId, observability, sessionList.data]);
 
   useEffect(() => {
     if (!sessionList.error) return;
@@ -356,10 +396,7 @@ function DesktopReadyApp({
     client,
     currentSessionId: activeSessionId || null,
     sessionListOptions: DESKTOP_SESSION_LIST_OPTIONS,
-    onSelectSession: (sessionId) => {
-      setActiveSessionId(sessionId);
-      setMainView("chat");
-    },
+    onSelectSession: selectChatSession,
   });
 
   const archiveSession = useCallback(
@@ -374,12 +411,15 @@ function DesktopReadyApp({
     [archiveSessionMutation],
   );
 
-  const refreshSessions = useCallback(async () => {
+  const refreshSessions = useCallback(async (options?: {
+    skipMissingActiveSessionCheck?: boolean;
+  }) => {
     try {
       setError(null);
       const response = await sessionList.refetch();
       if (!response.data) return;
       if (
+        !options?.skipMissingActiveSessionCheck &&
         activeSessionId &&
         !response.data.sessions.some((session) => session.id === activeSessionId)
       ) {
@@ -394,6 +434,14 @@ function DesktopReadyApp({
   const createSession = useCallback(
     async (input: DesktopNewSessionSubmitInput) => {
       if (isCreatingSession) return;
+      const trimmedInitialMessage = normalizeInitialSessionMessage(input.initialPrompt);
+      const span = observability.startSpan("vela.desktop.session.create_and_select", {
+        attributes: {
+          "vela.backend": input.backend,
+          "vela.session.has_initial_prompt": trimmedInitialMessage.length > 0,
+          "vela.session.title_length": input.title.length,
+        },
+      });
       try {
         setIsCreatingSession(true);
         setError(null);
@@ -403,9 +451,10 @@ function DesktopReadyApp({
           title: input.title,
           workingDirectory: input.workingDirectory,
         });
-        setActiveSessionId(created.session.id);
-        setMainView("chat");
-        const trimmedInitialMessage = normalizeInitialSessionMessage(input.initialPrompt);
+        optimisticCreatedSessionIdRef.current = created.session.id;
+        selectChatSession(created.session.id);
+        span.setAttribute("vela.session_id", created.session.id);
+        span.setAttribute("vela.desktop.main_view", "chat");
         if (trimmedInitialMessage) {
           if (hostInfo.hostKind === "electron") {
             void openWorkMonitor(created.session.id);
@@ -415,14 +464,25 @@ function DesktopReadyApp({
             text: trimmedInitialMessage,
           });
         }
-        await refreshSessions();
+        await refreshSessions({ skipMissingActiveSessionCheck: true });
+        selectChatSession(created.session.id);
+        observability.endSpan(span, { code: SpanStatusCode.OK });
       } catch (err) {
+        observability.recordError(span, err);
+        observability.endSpan(span);
         setError(err instanceof Error ? err.message : String(err));
       } finally {
         setIsCreatingSession(false);
       }
     },
-    [client, hostInfo.hostKind, isCreatingSession, refreshSessions],
+    [
+      client,
+      hostInfo.hostKind,
+      isCreatingSession,
+      observability,
+      refreshSessions,
+      selectChatSession,
+    ],
   );
 
   const submitChatMessage = useCallback(async () => {
@@ -457,13 +517,6 @@ function DesktopReadyApp({
     setMainView("new-session");
   }, []);
 
-  const selectSession = useCallback((sessionId: string) => {
-    setError(null);
-    setActiveSessionId(sessionId);
-    setIsSettingsOpen(false);
-    setMainView("chat");
-  }, []);
-
   const appSidebar = (
     <SessionSidebar
       currentSessionId={mainView === "chat" ? activeSessionId || null : null}
@@ -474,7 +527,7 @@ function DesktopReadyApp({
       onCreateSession={openNewSessionPage}
       onArchiveSession={archiveSession}
       onOpenSettings={() => setIsSettingsOpen(true)}
-      onSelectSession={selectSession}
+      onSelectSession={selectChatSession}
     />
   );
   const settingsSidebar = (

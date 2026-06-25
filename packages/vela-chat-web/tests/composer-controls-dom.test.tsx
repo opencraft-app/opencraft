@@ -52,7 +52,7 @@ test("composer controls reserve invisible toolbar space while session truth is l
   }
 });
 
-test("composer controls render shared icon components for model reasoning and permission", async () => {
+test("composer controls render icons and expose responsive collapse priorities", async () => {
   const dom = installDomRuntime();
   try {
     const React = await import("react");
@@ -95,6 +95,15 @@ test("composer controls render shared icon components for model reasoning and pe
     assert.equal(container.textContent?.includes("◎"), false);
     assert.equal(container.textContent?.includes("▣"), false);
     assert.equal(container.textContent?.includes("✣"), false);
+    assert.notEqual(
+      container.querySelector('[data-composer-control="permission"]'),
+      null,
+    );
+    assert.notEqual(container.querySelector('[data-composer-control="model"]'), null);
+    assert.notEqual(
+      container.querySelector('[data-composer-control="reasoning"]'),
+      null,
+    );
 
     await act(async () => {
       root.unmount();
