@@ -1,5 +1,6 @@
 import {
   type CSSProperties,
+  type FocusEvent as ReactFocusEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   useCallback,
@@ -8,7 +9,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { Folder } from "lucide-react";
+import { Bot, Folder, MessageSquareText } from "lucide-react";
 import type { SessionListItemWire } from "../../../vela-chat-client/src";
 import type { ChatRenderModel } from "../../../vela-chat-render-model/src";
 import { useDismissableLayer } from "../../../vela-ui/src";
@@ -85,8 +86,10 @@ function SessionListSurfaceItem({
   onSelect: () => void;
 }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isHoverCardOpen, setIsHoverCardOpen] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null);
   const [menuStyle, setMenuStyle] = useState<CSSProperties | null>(null);
+  const [hoverCardStyle, setHoverCardStyle] = useState<CSSProperties | null>(null);
   const rootRef = useRef<HTMLLIElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const row = buildSessionListRowModel(session, previewModel);
@@ -121,6 +124,33 @@ function SessionListSurfaceItem({
     };
   }, [isMenuOpen, menuAnchor]);
 
+  useLayoutEffect(() => {
+    if (!isHoverCardOpen || !canUseDocument()) {
+      setHoverCardStyle(null);
+      return;
+    }
+
+    const updatePosition = () => {
+      const rect = rootRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const width = Math.min(360, Math.max(280, window.innerWidth - rect.right - 18));
+      setHoverCardStyle({
+        position: "fixed",
+        top: `${Math.max(8, Math.min(rect.top + rect.height / 2 - 74, window.innerHeight - 164))}px`,
+        left: `${Math.max(8, Math.min(rect.right + 8, window.innerWidth - width - 8))}px`,
+        width: `${width}px`,
+      });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [isHoverCardOpen]);
+
   const archiveSession = async () => {
     closeMenu();
     await onArchiveSession?.();
@@ -151,6 +181,11 @@ function SessionListSurfaceItem({
     event.stopPropagation();
     openMenuAt(event.clientX, event.clientY);
   };
+  const closeHoverCardFromBlur = (event: ReactFocusEvent<HTMLLIElement>) => {
+    const nextTarget = event.relatedTarget;
+    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
+    setIsHoverCardOpen(false);
+  };
 
   const menu = isMenuOpen ? (
     <div
@@ -179,6 +214,36 @@ function SessionListSurfaceItem({
       </div>
     </div>
   ) : null;
+  const hoverCard = isHoverCardOpen ? (
+    <div
+      className="vela-session-hover-card vela-motion-popover"
+      role="tooltip"
+      data-slot="session-hover-card"
+      data-state="open"
+      style={hoverCardStyle ?? undefined}
+    >
+      <div className="vela-session-hover-card-title-row">
+        <span className="vela-session-hover-card-title">{row.title}</span>
+        {row.rail ? (
+          <span className="vela-session-hover-card-recency">{row.rail.label}</span>
+        ) : null}
+      </div>
+      <div className="vela-session-hover-card-detail">
+        <Folder size={15} strokeWidth={2} aria-hidden="true" />
+        <span>{row.locationInfo?.label ?? session.working_directory}</span>
+      </div>
+      <div className="vela-session-hover-card-detail">
+        <Bot size={15} strokeWidth={2} aria-hidden="true" />
+        <span>{row.metaLabel}</span>
+      </div>
+      {row.previewLabel ? (
+        <div className="vela-session-hover-card-detail">
+          <MessageSquareText size={15} strokeWidth={2} aria-hidden="true" />
+          <span>{row.previewLabel}</span>
+        </div>
+      ) : null}
+    </div>
+  ) : null;
 
   return (
     <li
@@ -196,6 +261,10 @@ function SessionListSurfaceItem({
       data-failed={row.status.isFailed ? "true" : undefined}
       data-has-thumbnail={row.status.hasThumbnail ? "true" : undefined}
       onContextMenu={openMenuFromContext}
+      onBlur={closeHoverCardFromBlur}
+      onFocus={() => setIsHoverCardOpen(true)}
+      onPointerEnter={() => setIsHoverCardOpen(true)}
+      onPointerLeave={() => setIsHoverCardOpen(false)}
     >
       <div
         className="vela-sidebar-menu-button vela-session-main"
@@ -268,6 +337,7 @@ function SessionListSurfaceItem({
           {menu ? renderMenu(menu) : null}
         </>
       ) : null}
+      {hoverCard ? renderHoverCard(hoverCard) : null}
     </li>
   );
 }
@@ -275,6 +345,11 @@ function SessionListSurfaceItem({
 function renderMenu(menu: JSX.Element) {
   if (!canUseDocument()) return menu;
   return createPortal(menu, document.body);
+}
+
+function renderHoverCard(card: JSX.Element) {
+  if (!canUseDocument()) return card;
+  return createPortal(card, document.body);
 }
 
 function canUseDocument() {

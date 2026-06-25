@@ -270,6 +270,56 @@ test("session list rows show the folder location text", async () => {
   }
 });
 
+test("session list row focus shows a floating hover card in a portal layer", async () => {
+  const dom = installDomRuntime();
+  try {
+    const { SessionListSurface } = await import("../src");
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <SessionListSurface
+          sessions={[{ ...session, title: "读取会话线程", working_directory: "/Users/skipzhang/velalink" }]}
+          currentSessionId={session.id}
+          onSelectSession={() => {}}
+          onArchiveSession={() => {}}
+        />,
+      );
+    });
+
+    const rowButton = document.querySelector<HTMLElement>(
+      '[data-slot="session-list-surface-button"]',
+    );
+    assert.ok(rowButton);
+
+    await act(async () => {
+      rowButton.focus();
+    });
+
+    const hoverCard = document.querySelector<HTMLElement>('[data-slot="session-hover-card"]');
+    assert.ok(hoverCard);
+    assert.equal(hoverCard.parentElement, document.body);
+    assert.equal(hoverCard.getAttribute("role"), "tooltip");
+    assert.match(hoverCard.textContent ?? "", /读取会话线程/);
+    assert.match(hoverCard.textContent ?? "", /velalink/);
+    assert.match(hoverCard.textContent ?? "", /codex · gpt-5\.3/);
+
+    await act(async () => {
+      rowButton.blur();
+    });
+
+    assert.equal(document.querySelector('[data-slot="session-hover-card"]'), null);
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 test("running session rows keep the compact text layout", async () => {
   const dom = installDomRuntime();
   try {

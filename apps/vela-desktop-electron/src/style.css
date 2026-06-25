@@ -977,6 +977,88 @@ body {
   transform-origin: top right;
 }
 
+.vela-session-hover-card {
+  z-index: 30;
+  box-sizing: border-box;
+  max-width: min(360px, calc(100vw - 24px));
+  min-height: 132px;
+  border: 1px solid rgba(60, 60, 67, 0.14);
+  border-radius: 14px;
+  padding: 16px 18px 15px;
+  background: rgb(255 255 255 / 94%);
+  box-shadow:
+    0 16px 36px rgb(15 23 42 / 10%),
+    0 1px 2px rgb(15 23 42 / 8%),
+    inset 0 1px 0 rgb(255 255 255 / 76%);
+  color: #24282e;
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(20px) saturate(1.08);
+  backdrop-filter: blur(20px) saturate(1.08);
+}
+
+.vela-session-hover-card.vela-motion-popover[data-state="open"] {
+  animation-duration: 105ms;
+  transform-origin: left center;
+}
+
+.vela-session-hover-card-title-row {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 13px;
+}
+
+.vela-session-hover-card-title {
+  min-width: 0;
+  overflow: hidden;
+  color: #20242a;
+  font-size: 17px;
+  font-weight: 720;
+  letter-spacing: 0;
+  line-height: 1.18;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vela-session-hover-card-recency {
+  flex: 0 0 auto;
+  color: #9aa0a8;
+  font-size: 13px;
+  font-weight: 540;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.vela-session-hover-card-detail {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+  color: #343941;
+  font-size: 15px;
+  font-weight: 520;
+  letter-spacing: 0;
+  line-height: 1.24;
+}
+
+.vela-session-hover-card-detail + .vela-session-hover-card-detail {
+  margin-top: 4px;
+}
+
+.vela-session-hover-card-detail svg {
+  color: #8e949d;
+}
+
+.vela-session-hover-card-detail span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .vela-sidebar-footer {
   position: absolute;
   z-index: 8;
