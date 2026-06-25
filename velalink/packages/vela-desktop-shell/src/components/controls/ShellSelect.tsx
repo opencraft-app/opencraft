@@ -26,6 +26,7 @@ export interface ShellSelectProps {
   leading?: ReactNode;
   options: ShellSelectOption[];
   placement?: FloatingLayerPlacement;
+  popoverClassName?: string;
   placeholder?: string;
   tone?: "neutral" | "accent";
   value?: string;
@@ -40,6 +41,7 @@ export function ShellSelect({
   leading,
   options,
   placement = "bottom-end",
+  popoverClassName,
   placeholder = "Select",
   tone = "neutral",
   value,
@@ -95,7 +97,12 @@ export function ShellSelect({
   const popover = useMemo(
     () => (
       <div
-        className="vela-shell-select-popover vela-motion-popover"
+        className={[
+          "vela-shell-select-popover vela-motion-popover",
+          popoverClassName ?? "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
         data-density={density}
         data-layer={canUsePortal ? "portal" : "inline"}
         data-state="open"
@@ -152,6 +159,7 @@ export function ShellSelect({
       emptyLabel,
       listboxId,
       options,
+      popoverClassName,
       popoverStyle,
       selectIndex,
       setActiveIndex,

@@ -48,9 +48,43 @@ import {
   pendingRequestsForActiveSession,
   readModelForActiveSession,
 } from "./sessionScopedReadModels";
+import { subscribeRecoveringSessionEventStream } from "./sessionEventStream";
 import { handleVelaChatSessionStreamEvent } from "./streamHandler";
 
 const DEFAULT_CHAT_HOST_POLICY = { kind: "desktop_web" } satisfies ChatHostPolicy;
+const VELA_SESSION_LOG_PREFIX = "[vela-session-controller]";
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function logControllerError(
+  action: string,
+  context: Record<string, unknown>,
+  error: unknown,
+) {
+  let payload: string;
+  try {
+    payload = JSON.stringify({
+      context,
+      error:
+        error instanceof Error
+          ? {
+              cause: error.cause,
+              message: error.message,
+              name: error.name,
+              stack: error.stack,
+            }
+          : { message: String(error) },
+    });
+  } catch (stringifyError) {
+    payload = JSON.stringify({
+      stringify_error:
+        stringifyError instanceof Error ? stringifyError.message : String(stringifyError),
+    });
+  }
+  console.log(`${VELA_SESSION_LOG_PREFIX} ${action} failed`, payload);
+}
 
 export interface VelaChatSessionControllerOptions {
   sessionId: string;
@@ -221,7 +255,8 @@ export function useVelaChatSession({
       commitConversation(nextConversation);
     } catch (err) {
       if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
-      setError(err instanceof Error ? err.message : String(err));
+      logControllerError("loadConversation", { requestedSessionId }, err);
+      setError(errorMessage(err));
     }
   }, [activeSessionId, client, commitConversation]);
 
@@ -235,7 +270,8 @@ export function useVelaChatSession({
       commitRequests(nextRequests);
     } catch (err) {
       if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
-      setError(err instanceof Error ? err.message : String(err));
+      logControllerError("loadRequests", { requestedSessionId }, err);
+      setError(errorMessage(err));
     }
   }, [activeSessionId, client, commitRequests]);
 
@@ -249,7 +285,8 @@ export function useVelaChatSession({
       setSession(nextSession.session);
     } catch (err) {
       if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
-      setError(err instanceof Error ? err.message : String(err));
+      logControllerError("loadSession", { requestedSessionId }, err);
+      setError(errorMessage(err));
     }
   }, [activeSessionId, client]);
 
@@ -260,9 +297,10 @@ export function useVelaChatSession({
       const nextBackends = await client.getBackends();
       setBackends(nextBackends.backends);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      logControllerError("loadBackends", { activeSessionId }, err);
+      setError(errorMessage(err));
     }
-  }, [client, fetchBackends]);
+  }, [activeSessionId, client, fetchBackends]);
 
   const refreshAll = useCallback(async () => {
     const requestedSessionId = activeSessionId;
@@ -282,7 +320,8 @@ export function useVelaChatSession({
       if (nextBackends) setBackends(nextBackends.backends);
     } catch (err) {
       if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
-      setError(err instanceof Error ? err.message : String(err));
+      logControllerError("refreshAll", { requestedSessionId }, err);
+      setError(errorMessage(err));
     }
   }, [activeSessionId, client, commitConversation, commitRequests, fetchBackends]);
 
@@ -296,9 +335,6 @@ export function useVelaChatSession({
 
   const activeConversation = readModelForActiveSession(activeSessionId, conversation);
   const activeRequests = pendingRequestsForActiveSession(activeSessionId, requests);
-  const sessionEventStreamAfterId = selectSessionEventStreamAfterId({
-    conversation: activeConversation?.cursor,
-  });
   const isConversationReady = activeConversation !== null;
   const conversationWindow = useMemo(
     () => deriveConversationWindowState({ conversation: activeConversation }),
@@ -316,8 +352,6 @@ export function useVelaChatSession({
 
   useEffect(() => {
     if (!activeSessionId || !isConversationReady) return;
-    const initialAfterId = sessionEventStreamAfterId;
-    const url = client.sessionEventStreamUrl(activeSessionId, initialAfterId);
     const conversationRefreshScheduler = createStreamRefreshScheduler({
       refresh: loadConversation,
       minIntervalMs: 240,
@@ -335,9 +369,17 @@ export function useVelaChatSession({
       minIntervalMs: 2000,
     });
 
-    const subscription = eventStreamTransport.subscribe(url, {
-      onOpen: () => setStreamConnected(true),
-      onError: () => setStreamConnected(false),
+    const subscription = subscribeRecoveringSessionEventStream({
+      client,
+      eventStreamTransport,
+      getAfterId: () =>
+        selectSessionEventStreamAfterId({
+          conversation: readModelForActiveSession(
+            activeSessionId,
+            conversationRef.current,
+          )?.cursor,
+        }),
+      onConnectedChange: setStreamConnected,
       onEvent: (streamEvent) => {
         const currentConversation = readModelForActiveSession(
           activeSessionId,
@@ -363,6 +405,7 @@ export function useVelaChatSession({
           backendsRefreshScheduler,
         });
       },
+      sessionId: activeSessionId,
     });
 
     return () => {
@@ -415,9 +458,17 @@ export function useVelaChatSession({
     } catch (err) {
       if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
       if (surface === "manual") {
-        setError(err instanceof Error ? err.message : String(err));
+        logControllerError("loadOlderConversation", {
+          requestedSessionId,
+          surface,
+        }, err);
+        setError(errorMessage(err));
         return;
       }
+      logControllerError("loadOlderConversation background", {
+        requestedSessionId,
+        surface,
+      }, err);
       setCompletedInitialHydrationSessionIds((current) =>
         rememberCompletedConversationHistoryHydration(current, requestedSessionId),
       );
@@ -506,7 +557,14 @@ export function useVelaChatSession({
       setMessageFollowToken((current) => current + 1);
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      logControllerError("sendUserMessage", {
+        contentPartTypes: messageContent.map((part) => part.type),
+        contentTextLengths: messageContent.map((part) =>
+          part.type === "text" ? part.text.length : null,
+        ),
+        sessionId: activeSessionId,
+      }, err);
+      setError(errorMessage(err));
       return false;
     }
   }, [activeSessionId, client, refreshAll]);
@@ -551,7 +609,8 @@ export function useVelaChatSession({
         await refreshAll();
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      logControllerError("cancelSession", { requestedSessionId }, err);
+      setError(errorMessage(err));
     } finally {
       setIsCancellingSession(false);
     }
@@ -563,7 +622,11 @@ export function useVelaChatSession({
       const nextAttachments = await buildPendingImageAttachments(files);
       setPendingAttachments((current) => [...current, ...nextAttachments]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      logControllerError("attachImages", {
+        fileCount: files.length,
+        fileNames: files.map((file) => file.name),
+      }, err);
+      setError(errorMessage(err));
     }
   }, []);
 
@@ -586,7 +649,11 @@ export function useVelaChatSession({
         setSession(updated.session);
         await refreshAll();
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        logControllerError("updateAgentConfig", {
+          patchKeys: Object.keys(patch),
+          sessionId: activeSessionId,
+        }, err);
+        setError(errorMessage(err));
       } finally {
         setIsUpdatingAgentConfig(false);
       }
@@ -611,7 +678,11 @@ export function useVelaChatSession({
         }
         await Promise.all([loadRequests(), loadConversation()]);
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        logControllerError("respondToRequest", {
+          responseKind: response.kind,
+          sessionId: activeSessionId,
+        }, err);
+        setError(errorMessage(err));
       } finally {
         setIsRespondingToRequest(false);
       }

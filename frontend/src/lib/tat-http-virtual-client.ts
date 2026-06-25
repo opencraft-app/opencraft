@@ -1,11 +1,15 @@
 import type { BotTerminalSession } from "@/domain/types";
+import { TatTransportError, normalizeTatTransportError } from "@/lib/tat-transport-error";
 import { TencentTsshProxyClient, type TsshProxyClientOptions, type TsshProxyTarget } from "@/lib/tencent-tssh-proxy-client";
 
 const DEFAULT_HTTP_PROXY_HOST = "127.0.0.1";
 const DEFAULT_HEADER_LIMIT_BYTES = 64 * 1024;
 const DEFAULT_MAX_IDLE_PROXY_CONNECTIONS = 4;
 const DEFAULT_RESPONSE_HEADER_TIMEOUT_MS = 20_000;
+const DEFAULT_RESPONSE_BODY_CHUNK_TIMEOUT_MS = 300_000;
 const DEFAULT_CLOSE_DELIMITED_BODY_IDLE_TIMEOUT_MS = 1_500;
+const TAT_HTTP_LOG_PREFIX = "[tat-http]";
+let tatHttpRequestSeq = 0;
 
 export interface TatHttpVirtualTarget {
   ip?: string;
@@ -19,6 +23,7 @@ export interface TatHttpVirtualClientOptions extends TsshProxyClientOptions {
   keepAlive?: boolean;
   maxIdleProxyConnections?: number;
   proxyClient?: TencentTsshProxyClient;
+  responseBodyChunkTimeoutMs?: number;
   responseHeaderTimeoutMs?: number;
   closeDelimitedBodyIdleTimeoutMs?: number;
 }
@@ -153,6 +158,42 @@ const isNullBodyResponse = (method: string, status: number) =>
 
 const proxyTargetKey = (target: Required<TatHttpVirtualTarget>) => `${target.ip}:${target.port}`;
 
+const nextTatHttpRequestId = () => {
+  tatHttpRequestSeq += 1;
+  return `tat_http_${Date.now().toString(36)}_${tatHttpRequestSeq}`;
+};
+
+const errorForLog = (error: unknown) =>
+  error instanceof Error
+    ? {
+        cause: error.cause,
+        message: error.message,
+        name: error.name,
+        stack: error.stack,
+      }
+    : { message: String(error) };
+
+const stringifyLogPayload = (payload: unknown) => {
+  try {
+    return JSON.stringify(payload);
+  } catch (error) {
+    return JSON.stringify({
+      stringify_error: error instanceof Error ? error.message : String(error),
+    });
+  }
+};
+
+const logTatHttp = (
+  event: string,
+  context: Record<string, unknown>,
+  error?: unknown,
+) => {
+  console.log(`${TAT_HTTP_LOG_PREFIX} ${event}`, stringifyLogPayload({
+    context,
+    error: error === undefined ? null : errorForLog(error),
+  }));
+};
+
 const buildRequestBytes = (resolved: ResolvedRequest, init: TatHttpVirtualFetchInit, keepAlive: boolean) => {
   const method = getRequestMethod(init);
   const body = encodeBody(init);
@@ -209,6 +250,7 @@ const readStreamChunk = (
   reader: ReadableStreamDefaultReader<Uint8Array>,
   timeoutMs: number,
   timeoutMessage: string,
+  timeoutPhase: "response_body" | "response_head",
   signal?: AbortSignal,
 ) =>
   new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
@@ -236,7 +278,9 @@ const readStreamChunk = (
       finish(() => reject(new DOMException("The operation was aborted.", "AbortError")));
     };
     timeout = setTimeout(() => {
-      finish(() => reject(new Error(timeoutMessage)));
+      finish(() => reject(new TatTransportError("request_timeout", timeoutMessage, {
+        phase: timeoutPhase,
+      })));
     }, timeoutMs);
     signal?.addEventListener("abort", handleAbort, { once: true });
     reader.read().then(
@@ -254,14 +298,28 @@ const readResponseHead = async (
   const chunks: Uint8Array[] = [];
   let total = 0;
   while (true) {
-    const result = await readStreamChunk(reader, timeoutMs, "timed out waiting for HTTP response headers", signal);
+    const result = await readStreamChunk(
+      reader,
+      timeoutMs,
+      "timed out waiting for HTTP response headers",
+      "response_head",
+      signal,
+    );
     if (result.done) {
-      throw new Error("connection closed before HTTP response headers were received");
+      throw new TatTransportError(
+        "proxy_unavailable",
+        "connection closed before HTTP response headers were received",
+        { phase: "response_head" },
+      );
     }
     chunks.push(result.value);
     total += result.value.byteLength;
     if (total > headerLimitBytes) {
-      throw new Error("HTTP response headers exceeded the configured limit");
+      throw new TatTransportError(
+        "fatal",
+        "HTTP response headers exceeded the configured limit",
+        { phase: "response_head", retryable: false },
+      );
     }
     const combined = concatBytes(chunks);
     const headerEnd = indexOfHeaderEnd(combined);
@@ -290,7 +348,13 @@ const makeCloseBodyStream = (
         while (true) {
           let result: ReadableStreamReadResult<Uint8Array>;
           try {
-            result = await readStreamChunk(reader, idleTimeoutMs, "timed out waiting for more close-delimited HTTP response body bytes", signal);
+            result = await readStreamChunk(
+              reader,
+              idleTimeoutMs,
+              "timed out waiting for more close-delimited HTTP response body bytes",
+              "response_body",
+              signal,
+            );
           } catch (error) {
             if (error instanceof Error && error.message.includes("close-delimited HTTP response body")) {
               controller.close();
@@ -320,6 +384,7 @@ const makeFixedBodyStream = (
   reader: ReadableStreamDefaultReader<Uint8Array>,
   bodyPrefix: Uint8Array,
   contentLength: number,
+  bodyChunkTimeoutMs: number,
   onDone: (completed: boolean) => void,
   signal?: AbortSignal,
 ) =>
@@ -340,9 +405,19 @@ const makeFixedBodyStream = (
           if (signal?.aborted) {
             throw new DOMException("The operation was aborted.", "AbortError");
           }
-          const result = await reader.read();
+          const result = await readStreamChunk(
+            reader,
+            bodyChunkTimeoutMs,
+            "timed out waiting for the declared HTTP response body bytes",
+            "response_body",
+            signal,
+          );
           if (result.done) {
-            throw new Error("connection closed before the declared HTTP response body was complete");
+            throw new TatTransportError(
+              "proxy_unavailable",
+              "connection closed before the declared HTTP response body was complete",
+              { phase: "response_body" },
+            );
           }
           emit(result.value);
         }
@@ -361,6 +436,7 @@ const makeFixedBodyStream = (
 const makeChunkedBodyStream = (
   reader: ReadableStreamDefaultReader<Uint8Array>,
   bodyPrefix: Uint8Array,
+  bodyChunkTimeoutMs: number,
   onDone: (completed: boolean) => void,
   signal?: AbortSignal,
 ) =>
@@ -372,9 +448,19 @@ const makeChunkedBodyStream = (
           if (signal?.aborted) {
             throw new DOMException("The operation was aborted.", "AbortError");
           }
-          const result = await reader.read();
+          const result = await readStreamChunk(
+            reader,
+            bodyChunkTimeoutMs,
+            "timed out waiting for HTTP chunk bytes",
+            "response_body",
+            signal,
+          );
           if (result.done) {
-            throw new Error("connection closed before the chunked HTTP response body was complete");
+            throw new TatTransportError(
+              "proxy_unavailable",
+              "connection closed before the chunked HTTP response body was complete",
+              { phase: "response_body" },
+            );
           }
           buffer = concatBytes([buffer, result.value]);
         }
@@ -384,9 +470,19 @@ const makeChunkedBodyStream = (
           if (signal?.aborted) {
             throw new DOMException("The operation was aborted.", "AbortError");
           }
-          const result = await reader.read();
+          const result = await readStreamChunk(
+            reader,
+            bodyChunkTimeoutMs,
+            "timed out waiting for HTTP chunk line",
+            "response_body",
+            signal,
+          );
           if (result.done) {
-            throw new Error("connection closed before the chunked HTTP response body was complete");
+            throw new TatTransportError(
+              "proxy_unavailable",
+              "connection closed before the chunked HTTP response body was complete",
+              { phase: "response_body" },
+            );
           }
           buffer = concatBytes([buffer, result.value]);
         }
@@ -427,6 +523,7 @@ export class TatHttpVirtualClient {
   private readonly headerLimitBytes: number;
   private readonly keepAlive: boolean;
   private readonly maxIdleProxyConnections: number;
+  private readonly responseBodyChunkTimeoutMs: number;
   private readonly responseHeaderTimeoutMs: number;
   private readonly closeDelimitedBodyIdleTimeoutMs: number;
   private readonly idleConnections = new Map<string, LeasedProxyConnection["connection"][]>();
@@ -440,33 +537,72 @@ export class TatHttpVirtualClient {
     this.headerLimitBytes = options.headerLimitBytes ?? DEFAULT_HEADER_LIMIT_BYTES;
     this.keepAlive = options.keepAlive ?? true;
     this.maxIdleProxyConnections = options.maxIdleProxyConnections ?? DEFAULT_MAX_IDLE_PROXY_CONNECTIONS;
+    this.responseBodyChunkTimeoutMs = options.responseBodyChunkTimeoutMs ?? DEFAULT_RESPONSE_BODY_CHUNK_TIMEOUT_MS;
     this.responseHeaderTimeoutMs = options.responseHeaderTimeoutMs ?? DEFAULT_RESPONSE_HEADER_TIMEOUT_MS;
     this.closeDelimitedBodyIdleTimeoutMs = options.closeDelimitedBodyIdleTimeoutMs ?? DEFAULT_CLOSE_DELIMITED_BODY_IDLE_TIMEOUT_MS;
   }
 
   async fetch(input: string | URL, init: TatHttpVirtualFetchInit = {}) {
     const resolved = resolveRequest(input, init.target, this.options.target);
+    const requestId = nextTatHttpRequestId();
+    const method = getRequestMethod(init);
     const signal = init.signal ?? undefined;
     const proxyTarget: TsshProxyTarget = {
       ip: resolved.target.ip,
       port: resolved.target.port,
     };
-    let leased = await this.acquireConnection(resolved.target, proxyTarget);
-    let connection = leased.connection;
-    const abort = () => connection.close();
-    signal?.addEventListener("abort", abort, { once: true });
+    const requestContext = {
+      input: String(input),
+      keepAlive: this.keepAlive,
+      method,
+      path: resolved.path,
+      requestId,
+      target: resolved.target,
+    };
+    logTatHttp("request start", requestContext);
+    let leased: LeasedProxyConnection | null = null;
+    let connection: LeasedProxyConnection["connection"] | null = null;
+    const abort = () => {
+      logTatHttp("request aborted by signal", {
+        ...requestContext,
+        proxyId: connection?.proxyId,
+      });
+      connection?.close();
+    };
 
     try {
+      leased = await this.acquireConnection(resolved.target, proxyTarget);
+      connection = leased.connection;
+      logTatHttp("connection acquired", {
+        ...requestContext,
+        proxyId: connection.proxyId,
+        reused: leased.reused,
+      });
+      signal?.addEventListener("abort", abort, { once: true });
       if (signal?.aborted) {
         throw new DOMException("The operation was aborted.", "AbortError");
       }
       const requestBytes = buildRequestBytes(resolved, init, this.keepAlive);
       if (!connection.write(requestBytes)) {
+        logTatHttp("connection not writable; retrying with fresh proxy", {
+          ...requestContext,
+          proxyId: connection.proxyId,
+          reused: leased.reused,
+        });
         connection.close();
         leased = await this.acquireConnection(resolved.target, proxyTarget, { forceNew: true });
         connection = leased.connection;
+        logTatHttp("fresh connection acquired after write failure", {
+          ...requestContext,
+          proxyId: connection.proxyId,
+          reused: leased.reused,
+        });
         if (!connection.write(requestBytes)) {
-          throw new Error("TAT proxy connection is not writable");
+          throw new TatTransportError(
+            "proxy_unavailable",
+            "TAT proxy connection is not writable",
+            { phase: "request" },
+          );
         }
       }
       let reader = connection.readable.getReader();
@@ -474,6 +610,11 @@ export class TatHttpVirtualClient {
       try {
         headAndPrefix = await readResponseHead(reader, this.headerLimitBytes, this.responseHeaderTimeoutMs, signal);
       } catch (error) {
+        logTatHttp("read response head failed", {
+          ...requestContext,
+          proxyId: connection.proxyId,
+          reused: leased.reused,
+        }, error);
         try {
           reader.releaseLock();
         } catch {
@@ -481,19 +622,27 @@ export class TatHttpVirtualClient {
         }
         connection.close();
         if (!leased.reused) {
-          throw error;
+          throw normalizeTatTransportError(error, "response_head");
         }
         leased = await this.acquireConnection(resolved.target, proxyTarget, { forceNew: true });
         connection = leased.connection;
+        logTatHttp("fresh connection acquired after response-head failure", {
+          ...requestContext,
+          proxyId: connection.proxyId,
+          reused: leased.reused,
+        });
         if (!connection.write(requestBytes)) {
-          throw new Error("TAT proxy connection is not writable");
+          throw new TatTransportError(
+            "proxy_unavailable",
+            "TAT proxy connection is not writable",
+            { phase: "request" },
+          );
         }
         reader = connection.readable.getReader();
         headAndPrefix = await readResponseHead(reader, this.headerLimitBytes, this.responseHeaderTimeoutMs, signal);
       }
       const { head, bodyPrefix } = headAndPrefix;
       const responseHead = parseResponseHead(head);
-      const method = getRequestMethod(init);
       const transferEncoding = getHeader(responseHead.headers, "transfer-encoding").toLowerCase();
       const contentLengthText = getHeader(responseHead.headers, "content-length");
       const responseConnection = getHeader(responseHead.headers, "connection").toLowerCase();
@@ -509,6 +658,12 @@ export class TatHttpVirtualClient {
           return;
         }
         finalized = true;
+        logTatHttp("response body finalized", {
+          ...requestContext,
+          completed,
+          proxyId: connection?.proxyId,
+          status: responseHead.status,
+        });
         signal?.removeEventListener("abort", abort);
         try {
           reader.releaseLock();
@@ -526,20 +681,37 @@ export class TatHttpVirtualClient {
         signal?.removeEventListener("abort", abort);
         reader.releaseLock();
         connection.close();
+        logTatHttp("response returned without body", {
+          ...requestContext,
+          proxyId: connection.proxyId,
+          status: responseHead.status,
+        });
         return new Response(null, responseHead);
       }
       const body =
         transferEncoding.includes("chunked")
-          ? makeChunkedBodyStream(reader, bodyPrefix, onDone, signal)
+          ? makeChunkedBodyStream(reader, bodyPrefix, this.responseBodyChunkTimeoutMs, onDone, signal)
           : contentLengthText
-            ? makeFixedBodyStream(reader, bodyPrefix, Number(contentLengthText), onDone, signal)
+            ? makeFixedBodyStream(reader, bodyPrefix, Number(contentLengthText), this.responseBodyChunkTimeoutMs, onDone, signal)
             : makeCloseBodyStream(reader, bodyPrefix, this.closeDelimitedBodyIdleTimeoutMs, onDone, signal);
 
+      logTatHttp("response head received", {
+        ...requestContext,
+        contentLength: contentLengthText || null,
+        proxyId: connection.proxyId,
+        status: responseHead.status,
+        transferEncoding: transferEncoding || null,
+      });
       return new Response(body, responseHead);
     } catch (error) {
       signal?.removeEventListener("abort", abort);
-      connection.close();
-      throw error;
+      logTatHttp("request failed", {
+        ...requestContext,
+        proxyId: connection?.proxyId,
+        reused: leased?.reused,
+      }, error);
+      connection?.close();
+      throw normalizeTatTransportError(error, "request");
     }
   }
 

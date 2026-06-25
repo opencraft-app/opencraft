@@ -5,6 +5,18 @@ import type {
   VelaStreamEventWire,
 } from "../../vela-chat-client/src";
 
+const VELA_SESSION_STREAM_LOG_PREFIX = "[vela-session-stream]";
+
+const stringifyLogPayload = (payload: unknown) => {
+  try {
+    return JSON.stringify(payload);
+  } catch (error) {
+    return JSON.stringify({
+      stringify_error: error instanceof Error ? error.message : String(error),
+    });
+  }
+};
+
 export interface RecoveringSessionEventStreamOptions {
   client: VeladClient;
   eventStreamTransport: VelaEventStreamTransport;
@@ -31,6 +43,27 @@ export function subscribeRecoveringSessionEventStream({
   let reconnectTimer: ReturnType<typeof setTimeout> | "microtask" | null = null;
   let subscription: VelaEventStreamSubscription | null = null;
 
+  const log = (event: string, context: Record<string, unknown> = {}, error?: unknown) => {
+    console.log(`${VELA_SESSION_STREAM_LOG_PREFIX} ${event}`, stringifyLogPayload({
+      context: {
+        reconnectAttempt,
+        sessionId,
+        ...context,
+      },
+      error:
+        error instanceof Error
+          ? {
+              cause: error.cause,
+              message: error.message,
+              name: error.name,
+              stack: error.stack,
+            }
+          : error === undefined
+            ? null
+            : { message: String(error) },
+    }));
+  };
+
   const closeCurrentSubscription = () => {
     subscription?.close();
     subscription = null;
@@ -41,6 +74,10 @@ export function subscribeRecoveringSessionEventStream({
     onConnectedChange(false);
     closeCurrentSubscription();
     const delayMs = eventStreamReconnectDelayMs(reconnectAttempt);
+    log("reconnect scheduled", {
+      afterId: getAfterId(),
+      delayMs,
+    });
     reconnectAttempt += 1;
     const reconnect = () => {
       reconnectTimer = null;
@@ -64,13 +101,33 @@ export function subscribeRecoveringSessionEventStream({
     closeCurrentSubscription();
     const url = client.sessionEventStreamUrl(sessionId, getAfterId());
     try {
+      log("subscribing", {
+        afterId: url.searchParams.get("after_id"),
+        pathname: url.pathname,
+      });
       subscription = eventStreamTransport.subscribe(url, {
         onClose: scheduleReconnect,
-        onError: scheduleReconnect,
+        onError: (error) => {
+          log("stream error", {
+            afterId: url.searchParams.get("after_id"),
+            pathname: url.pathname,
+          }, error);
+          scheduleReconnect();
+        },
         onEvent: handleEvent,
-        onOpen: () => onConnectedChange(true),
+        onOpen: () => {
+          log("stream open", {
+            afterId: url.searchParams.get("after_id"),
+            pathname: url.pathname,
+          });
+          onConnectedChange(true);
+        },
       });
-    } catch {
+    } catch (error) {
+      log("subscribe threw", {
+        afterId: url.searchParams.get("after_id"),
+        pathname: url.pathname,
+      }, error);
       scheduleReconnect();
     }
   };

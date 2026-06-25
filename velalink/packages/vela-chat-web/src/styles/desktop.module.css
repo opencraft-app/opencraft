@@ -1208,7 +1208,7 @@
   white-space: nowrap;
 }
 
-:global(.vela-shell-select-popover) {
+.shellSelectPopover:global(.vela-shell-select-popover) {
   --vela-codex-menu-enter-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --vela-settings-popover-inset: 2px;
   --vela-settings-popover-start-transform: translateY(var(--vela-settings-popover-inset))
@@ -1230,16 +1230,16 @@
   will-change: transform, opacity;
 }
 
-:global(.vela-shell-select-popover[data-density="compact"]) {
+.shellSelectPopover:global(.vela-shell-select-popover[data-density="compact"]) {
   width: min(360px, calc(100vw - 24px));
 }
 
-:global(.vela-shell-select-list) {
+.shellSelectPopover :global(.vela-shell-select-list) {
   display: grid;
   gap: 1px;
 }
 
-:global(.vela-shell-select-option) {
+.shellSelectPopover :global(.vela-shell-select-option) {
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr) 18px;
   align-items: center;
@@ -1254,51 +1254,51 @@
   cursor: default;
 }
 
-:global(.vela-shell-select-option:hover:not(:disabled)),
-:global(.vela-shell-select-option[data-active="true"]) {
+.shellSelectPopover :global(.vela-shell-select-option:hover:not(:disabled)),
+.shellSelectPopover :global(.vela-shell-select-option[data-active="true"]) {
   background: rgba(123, 127, 133, 0.1);
 }
 
-:global(.vela-shell-select-option:disabled) {
+.shellSelectPopover :global(.vela-shell-select-option:disabled) {
   opacity: 0.4;
 }
 
-:global(.vela-shell-select-option-leading),
-:global(.vela-shell-select-check) {
+.shellSelectPopover :global(.vela-shell-select-option-leading),
+.shellSelectPopover :global(.vela-shell-select-check) {
   display: inline-grid;
   place-items: center;
   color: #5f656b;
 }
 
-:global(.vela-shell-select-option-text) {
+.shellSelectPopover :global(.vela-shell-select-option-text) {
   display: grid;
   min-width: 0;
   gap: 1px;
 }
 
-:global(.vela-shell-select-option-label),
-:global(.vela-shell-select-option-description) {
+.shellSelectPopover :global(.vela-shell-select-option-label),
+.shellSelectPopover :global(.vela-shell-select-option-description) {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-:global(.vela-shell-select-option-label) {
+.shellSelectPopover :global(.vela-shell-select-option-label) {
   color: #24272d;
   font-size: 12px;
   font-weight: 470;
   line-height: 1.25;
 }
 
-:global(.vela-shell-select-option-description) {
+.shellSelectPopover :global(.vela-shell-select-option-description) {
   color: #8d9298;
   font-size: 11px;
   font-weight: 430;
   line-height: 1.2;
 }
 
-:global(.vela-shell-select-empty) {
+.shellSelectPopover :global(.vela-shell-select-empty) {
   padding: 8px 10px;
   color: #8d9298;
   font-size: 12px;

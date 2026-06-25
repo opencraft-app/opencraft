@@ -2,6 +2,26 @@
 
 Localhost-first, multi-client, multi-backend agent runtime.
 
+## Mono2 integration caveat
+
+When velaChat is edited through the `mono2/velalink` subtree, remember that
+`mono2/frontend` does not import that directory directly. The frontend imports
+`velachat` from `frontend/node_modules/velachat`, and that dependency is pinned
+by `frontend/package.json` plus `frontend/pnpm-lock.yaml`.
+
+So a source edit under `mono2/velalink/` is not enough to make the local
+`mono2/frontend` preview pick it up. A local node_modules sync can unblock a
+debug session, but the durable path is:
+
+1. Commit and push the velaChat change upstream.
+2. Update mono2 frontend's `velachat` git commit pin.
+3. Reinstall frontend dependencies.
+4. Rebuild and verify the affected frontend preview.
+
+This matters for workbench event-stream issues such as `TAT proxy websocket
+closed`: verify that the built frontend is using a `velachat` pin that contains
+the reconnect/error-handling fix, not only that the subtree source was edited.
+
 ## Quick start
 
 Install JavaScript and Rust dependencies once:
