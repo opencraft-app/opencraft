@@ -38,7 +38,9 @@ async fn main() -> anyhow::Result<()> {
         .with_backend(BackendKind::Acp, acp_backend);
     #[cfg(feature = "embedded-vela-engine")]
     let (backend, vela_engine_default_model, vela_engine_updater) = {
-        let vela_engine = vela_engine_from_env(backend_cwd.clone());
+        let vela_engine = vela_engine::VelaEngineBackendAdapter::new(
+            vela_engine::VelaEngineConfig::new("", "", "", backend_cwd.clone()),
+        );
         if let Some(settings) = load_stored_vela_engine_settings(&store).await? {
             vela_engine.update_config(vela_engine_config_from_settings(
                 settings,
@@ -168,22 +170,6 @@ fn acp_default_model() -> Option<String> {
                 .ok()
                 .map(|_| "minimax-m2.7".to_string())
         })
-}
-
-#[cfg(feature = "embedded-vela-engine")]
-fn vela_engine_from_env(cwd: String) -> vela_engine::VelaEngineBackendAdapter {
-    let endpoint = env::var("VELAD_VELA_ENGINE_ENDPOINT")
-        .or_else(|_| env::var("VELA_ENGINE_ENDPOINT"))
-        .unwrap_or_default();
-    let api_key = env::var("VELAD_VELA_ENGINE_API_KEY")
-        .or_else(|_| env::var("VELA_ENGINE_API_KEY"))
-        .unwrap_or_default();
-    let model = env::var("VELAD_VELA_ENGINE_MODEL")
-        .or_else(|_| env::var("VELA_ENGINE_MODEL"))
-        .unwrap_or_default();
-    vela_engine::VelaEngineBackendAdapter::new(vela_engine::VelaEngineConfig::new(
-        endpoint, api_key, model, cwd,
-    ))
 }
 
 #[cfg(feature = "embedded-vela-engine")]

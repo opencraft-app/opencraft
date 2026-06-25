@@ -86,7 +86,6 @@ export type RuntimeBootstrap =
     };
 
 const DEFAULT_WEB_API_BASE_URL = "/api/v1";
-const DEFAULT_BACKEND_STORAGE_KEY = "vela-desktop:settings:default-backend";
 
 export async function readRuntimeHostInfo(): Promise<RuntimeHostInfo> {
   const bootstrap = await readRuntimeBootstrap();
@@ -209,49 +208,16 @@ export async function focusDesktopSession(sessionId: string) {
 export async function readDesktopSettings(): Promise<DesktopSettings> {
   return (
     (await window.velaDesktop?.getDesktopSettings?.()) ?? {
-      defaultBackend: readDefaultBackendPreference(),
+      defaultBackend: "",
     }
   );
 }
 
 export async function saveDesktopSettings(patch: Partial<DesktopSettings>) {
   if (!window.velaDesktop?.setDesktopSettings) {
-    const next = {
-      ...(await readDesktopSettings()),
-      ...patch,
-    };
-    writeDefaultBackendPreference(next.defaultBackend);
-    return next;
+    return { defaultBackend: patch.defaultBackend ?? "" };
   }
   return window.velaDesktop.setDesktopSettings(patch);
-}
-
-function readDefaultBackendPreference(): BackendKindWire | "" {
-  if (typeof window === "undefined") return "";
-  const value = window.localStorage.getItem(DEFAULT_BACKEND_STORAGE_KEY);
-  return isBackendKind(value) ? value : "";
-}
-
-function writeDefaultBackendPreference(value: BackendKindWire | "") {
-  if (typeof window === "undefined") return;
-  if (!value) {
-    window.localStorage.removeItem(DEFAULT_BACKEND_STORAGE_KEY);
-    return;
-  }
-  window.localStorage.setItem(DEFAULT_BACKEND_STORAGE_KEY, value);
-}
-
-function isBackendKind(value: string | null): value is BackendKindWire {
-  return (
-    value === "codex" ||
-    value === "cloudagent" ||
-    value === "claude_code" ||
-    value === "pi" ||
-    value === "vela_engine" ||
-    value === "opencode" ||
-    value === "acp" ||
-    value === "qoder"
-  );
 }
 
 export function subscribeOpenDesktopSession(listener: (sessionId: string) => void) {
