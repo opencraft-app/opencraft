@@ -9,6 +9,10 @@ declare global {
     velaDesktop?: {
       getDesktopInfo: () => Promise<RuntimeInfoResponse>;
       retryDesktopBootstrap?: () => Promise<RuntimeInfoResponse>;
+      getVelaEngineSettings?: () => Promise<VelaEngineSettings>;
+      setVelaEngineSettings?: (
+        patch: Partial<VelaEngineSettings>,
+      ) => Promise<VelaEngineSettings>;
       getDesktopChromeState?: () => Promise<RuntimeChromeStateResponse>;
       leaveFullscreen?: () => Promise<RuntimeChromeStateResponse>;
       openWorkMonitor?: (sessionId: string) => Promise<WorkMonitorActionResponse>;
@@ -66,6 +70,12 @@ export interface RuntimeHostInfo {
 
 export interface WorkMonitorActionResponse {
   accepted: boolean;
+}
+
+export interface VelaEngineSettings {
+  endpoint: string;
+  apiKey: string;
+  model: string;
 }
 
 export type RuntimeBootstrap =
@@ -196,6 +206,26 @@ export async function moveWorkMonitorBy(deltaX: number, deltaY: number) {
 
 export async function focusDesktopSession(sessionId: string) {
   return window.velaDesktop?.focusDesktopSession?.(sessionId) ?? { accepted: false };
+}
+
+export async function readVelaEngineSettings(): Promise<VelaEngineSettings> {
+  return (
+    (await window.velaDesktop?.getVelaEngineSettings?.()) ?? {
+      endpoint: "",
+      apiKey: "",
+      model: "",
+    }
+  );
+}
+
+export async function saveVelaEngineSettings(patch: Partial<VelaEngineSettings>) {
+  if (!window.velaDesktop?.setVelaEngineSettings) {
+    return {
+      ...(await readVelaEngineSettings()),
+      ...patch,
+    };
+  }
+  return window.velaDesktop.setVelaEngineSettings(patch);
 }
 
 export function subscribeOpenDesktopSession(listener: (sessionId: string) => void) {

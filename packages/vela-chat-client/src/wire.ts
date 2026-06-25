@@ -301,6 +301,7 @@ export interface AgentWorkGenericDetailWire {
 }
 
 export type BackendKindWire =
+  | "vela_engine"
   | "codex"
   | "cloudagent"
   | "claude_code"

@@ -222,13 +222,13 @@ where
         .await;
     match model_result {
         Ok(models) if !models.is_empty() => discovered_models(backend, models),
-        Ok(_) if backend.kind == "codex" => model_error(
+        Ok(_) if backend.kind == "codex" || backend.kind == "vela_engine" => model_error(
             "no_models_discovered",
             "model_discovery",
-            "no models discovered for backend codex",
+            format!("no models discovered for backend {}", backend.kind),
         ),
         Ok(_) => configured_or_empty_models(backend, None),
-        Err(error) if backend.kind == "codex" => model_error(
+        Err(error) if backend.kind == "codex" || backend.kind == "vela_engine" => model_error(
             "model_discovery_failed",
             "model_discovery",
             format!("model discovery failed: {error}"),
@@ -346,7 +346,7 @@ fn apply_configured_default(backend: &ConfiguredBackend, models: &mut [BackendMo
 }
 
 pub(crate) fn permission_modes(kind: &str) -> Vec<PermissionModeOption> {
-    let mut modes = if kind == "codex" {
+    let mut modes = if kind == "codex" || kind == "vela_engine" {
         vec![
             PermissionModeOption {
                 id: PermissionMode::ReadOnly,
@@ -418,7 +418,7 @@ pub(crate) fn features(kind: &str) -> Vec<BackendFeature> {
         default_value: false,
         metadata: Default::default(),
     }];
-    if kind != "codex" {
+    if kind != "codex" && kind != "vela_engine" {
         features.push(BackendFeature::Toggle {
             id: "plan_mode".to_string(),
             label: "Plan".to_string(),

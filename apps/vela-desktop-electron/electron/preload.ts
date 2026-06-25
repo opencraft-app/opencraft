@@ -3,6 +3,9 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 contextBridge.exposeInMainWorld("velaDesktop", {
   getDesktopInfo: () => ipcRenderer.invoke("vela:desktop-info"),
   retryDesktopBootstrap: () => ipcRenderer.invoke("vela:desktop-bootstrap-retry"),
+  getVelaEngineSettings: () => ipcRenderer.invoke("vela:engine-settings-get"),
+  setVelaEngineSettings: (patch: unknown) =>
+    ipcRenderer.invoke("vela:engine-settings-set", patch),
   getDesktopChromeState: () => ipcRenderer.invoke("vela:desktop-chrome-state"),
   leaveFullscreen: () => ipcRenderer.invoke("vela:desktop-leave-fullscreen"),
   openWorkMonitor: (sessionId: string) =>

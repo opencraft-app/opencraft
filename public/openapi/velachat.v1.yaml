@@ -838,7 +838,7 @@ components:
           format: date-time
     BackendKind:
       type: string
-      enum: [codex, cloudagent, claude_code, pi, opencode, acp, qoder]
+      enum: [codex, cloudagent, claude_code, pi, opencode, acp, qoder, vela_engine]
     ViewWindowDirection:
       type: string
       enum: [tail, before, after, around]

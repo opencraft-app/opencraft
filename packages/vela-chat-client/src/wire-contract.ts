@@ -108,6 +108,7 @@ export function encodeBackendKind(backend: unknown) {
 
 const backendKinds = new Set<string>(
   [
+    "vela_engine",
     "codex",
     "cloudagent",
     "claude_code",

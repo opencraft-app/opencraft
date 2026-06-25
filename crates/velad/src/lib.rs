@@ -135,6 +135,24 @@ where
         self
     }
 
+    pub fn with_vela_engine_backend(mut self, default_model: Option<String>) -> Self {
+        if let Some(backend) = self
+            .configured_backends
+            .iter_mut()
+            .find(|backend| backend.kind == "vela_engine")
+        {
+            backend.default_model = default_model;
+            return self;
+        }
+        self.configured_backends.push(ConfiguredBackend {
+            kind: "vela_engine",
+            engine_kind: BackendKind::VelaEngine,
+            display_name: "Vela 内置引擎",
+            default_model,
+        });
+        self
+    }
+
     pub fn with_acp_backend(mut self, default_model: Option<String>) -> Self {
         if let Some(backend) = self
             .configured_backends
@@ -626,6 +644,7 @@ enum ViewWindowDirection {
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum BackendKindWire {
+    VelaEngine,
     Codex,
     Cloudagent,
     ClaudeCode,
@@ -638,6 +657,7 @@ enum BackendKindWire {
 impl BackendKindWire {
     fn from_str(value: &str) -> Option<Self> {
         match value {
+            "vela_engine" => Some(Self::VelaEngine),
             "codex" => Some(Self::Codex),
             "cloudagent" => Some(Self::Cloudagent),
             "claude_code" => Some(Self::ClaudeCode),
@@ -651,6 +671,7 @@ impl BackendKindWire {
 
     fn as_str(self) -> &'static str {
         match self {
+            Self::VelaEngine => "vela_engine",
             Self::Codex => "codex",
             Self::Cloudagent => "cloudagent",
             Self::ClaudeCode => "claude_code",
@@ -664,6 +685,7 @@ impl BackendKindWire {
     fn engine_kind(self) -> Option<BackendKind> {
         match self {
             Self::Pi => Some(BackendKind::Pi),
+            Self::VelaEngine => Some(BackendKind::VelaEngine),
             Self::Codex => Some(BackendKind::Codex),
             Self::Acp => Some(BackendKind::Acp),
             Self::Cloudagent | Self::ClaudeCode | Self::Opencode | Self::Qoder => None,
@@ -2235,41 +2257,45 @@ fn validate_agent_config_for_backend(
     snapshot: &backend_snapshot::BackendSnapshot,
     agent_config: &AgentConfig,
 ) -> Result<(), Response> {
-    if backend.kind != "codex" {
-        return Ok(());
-    }
-    if let Some(model) = agent_config.model.as_deref()
-        && !snapshot.has_model(model)
-    {
-        return Err(invalid_agent_config(format!(
-            "model {model} is not available for backend codex"
-        )));
-    }
-    if let Some(reasoning_effort) = agent_config.reasoning_effort.as_deref() {
-        let Some(model) = agent_config.model.as_deref() else {
-            return Err(invalid_agent_config(
-                "reasoning_effort requires a selected model",
-            ));
-        };
-        let reasoning_options = snapshot.reasoning_options_for_model(model);
-        if !reasoning_options.is_empty()
-            && !reasoning_options
-                .iter()
-                .any(|option| option.id == reasoning_effort)
+    let validates_against_snapshot = backend.kind == "codex" || backend.kind == "vela_engine";
+    if validates_against_snapshot {
+        if let Some(model) = agent_config.model.as_deref()
+            && !snapshot.has_model(model)
         {
             return Err(invalid_agent_config(format!(
-                "reasoning_effort {reasoning_effort} is not available for model {model}"
+                "model {model} is not available for backend {}",
+                backend.kind
+            )));
+        }
+        if let Some(reasoning_effort) = agent_config.reasoning_effort.as_deref() {
+            let Some(model) = agent_config.model.as_deref() else {
+                return Err(invalid_agent_config(
+                    "reasoning_effort requires a selected model",
+                ));
+            };
+            let reasoning_options = snapshot.reasoning_options_for_model(model);
+            if !reasoning_options.is_empty()
+                && !reasoning_options
+                    .iter()
+                    .any(|option| option.id == reasoning_effort)
+            {
+                return Err(invalid_agent_config(format!(
+                    "reasoning_effort {reasoning_effort} is not available for model {model}"
+                )));
+            }
+        }
+        if let Some(permission_mode) = agent_config.permission_mode
+            && !snapshot.has_permission_mode(permission_mode)
+        {
+            return Err(invalid_agent_config(format!(
+                "permission_mode is not available for backend {}",
+                backend.kind
             )));
         }
     }
-    if let Some(permission_mode) = agent_config.permission_mode
-        && !snapshot.has_permission_mode(permission_mode)
-    {
-        return Err(invalid_agent_config(
-            "permission_mode is not available for backend codex",
-        ));
+    if backend.kind == "codex" {
+        validate_codex_feature_values(agent_config)?;
     }
-    validate_codex_feature_values(agent_config)?;
     Ok(())
 }
 
