@@ -1,25 +1,29 @@
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
+    time::Duration,
 };
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
-use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
+use sqlx::{Row, Sqlite, SqlitePool, Transaction};
 use thiserror::Error;
 use tokio::{
     fs::{self, OpenOptions},
     io::AsyncWriteExt,
-    sync::Mutex,
+    sync::{Mutex, mpsc, oneshot},
 };
 use tracing::{
     Event, Level, Subscriber,
     field::{Field, Visit},
 };
 use tracing_subscriber::{Layer, layer::Context, registry::LookupSpan};
+use vela_sqlite::connect_local_sqlite_pool;
 
 const RAW_JSONL_MAX_BYTES: u64 = 16 * 1024 * 1024;
+const FLUSH_INTERVAL: Duration = Duration::from_millis(20);
+const MAX_BATCH_SIZE: usize = 512;
 
 #[derive(Debug, Error)]
 pub enum ObservabilityError {
@@ -29,6 +33,10 @@ pub enum ObservabilityError {
     Json(#[from] serde_json::Error),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("writer stopped")]
+    WriterStopped,
+    #[error("writer error: {0}")]
+    Writer(String),
 }
 
 pub type Result<T> = std::result::Result<T, ObservabilityError>;
@@ -71,7 +79,20 @@ pub struct ManualLog {
 #[derive(Clone)]
 pub struct ObservabilityStore {
     pool: SqlitePool,
+    writer: ObservabilityBatchWriter,
     raw: Option<RawJsonlStore>,
+}
+
+#[derive(Clone)]
+struct ObservabilityBatchWriter {
+    tx: mpsc::Sender<QueuedWrite>,
+}
+
+type WriteAck = std::result::Result<(), String>;
+
+enum QueuedWrite {
+    Span(SpanRecordForInsert, oneshot::Sender<WriteAck>),
+    Log(LogRecord, oneshot::Sender<WriteAck>),
 }
 
 #[derive(Clone)]
@@ -151,11 +172,9 @@ impl ObservabilityStore {
     }
 
     pub async fn connect(database_url: &str, raw_dir: Option<&Path>) -> Result<Self> {
-        let pool = SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect(database_url)
-            .await?;
+        let pool = connect_local_sqlite_pool(database_url).await?;
         let store = Self {
+            writer: ObservabilityBatchWriter::spawn(pool.clone()),
             pool,
             raw: raw_dir.map(|dir| RawJsonlStore {
                 dir: Arc::new(dir.to_path_buf()),
@@ -225,13 +244,12 @@ impl ObservabilityStore {
         }
 
         let spans = extract_spans(&payload);
-        for span in &spans {
-            self.insert_span(span).await?;
-        }
+        let count = spans.len();
+        self.insert_spans(spans).await?;
 
         Ok(IngestSummary {
             accepted: true,
-            spans: spans.len(),
+            spans: count,
             logs: 0,
         })
     }
@@ -242,14 +260,13 @@ impl ObservabilityStore {
         }
 
         let logs = extract_logs(&payload);
-        for log in &logs {
-            self.insert_log(log).await?;
-        }
+        let count = logs.len();
+        self.insert_logs(logs).await?;
 
         Ok(IngestSummary {
             accepted: true,
             spans: 0,
-            logs: logs.len(),
+            logs: count,
         })
     }
 
@@ -259,7 +276,7 @@ impl ObservabilityStore {
         let duration_ms = start
             .zip(end)
             .map(|(start, end)| ((end - start).max(0) as f64) / 1_000_000.0);
-        self.insert_span(&SpanRecordForInsert {
+        self.insert_span(SpanRecordForInsert {
             trace_id: span.trace.trace_id,
             span_id: new_span_id(),
             parent_span_id: span.parent_span_id.or(Some(span.trace.span_id)),
@@ -286,7 +303,7 @@ impl ObservabilityStore {
         if let Some(raw) = &self.raw {
             raw.append("logs.jsonl", &log.raw).await?;
         }
-        self.insert_log(&LogRecord {
+        self.insert_log(LogRecord {
             trace_id: log.trace_id,
             span_id: log.span_id,
             severity: log.severity,
@@ -363,9 +380,140 @@ impl ObservabilityStore {
         rows.into_iter().map(error_from_row).collect()
     }
 
-    async fn insert_span(&self, span: &SpanRecordForInsert) -> Result<()> {
-        sqlx::query(
-            r#"
+    async fn insert_span(&self, span: SpanRecordForInsert) -> Result<()> {
+        self.writer.enqueue_span(span).await
+    }
+
+    async fn insert_spans(&self, spans: Vec<SpanRecordForInsert>) -> Result<()> {
+        self.writer.enqueue_spans(spans).await
+    }
+
+    async fn insert_log(&self, log: LogRecord) -> Result<()> {
+        self.writer.enqueue_log(log).await
+    }
+
+    async fn insert_logs(&self, logs: Vec<LogRecord>) -> Result<()> {
+        self.writer.enqueue_logs(logs).await
+    }
+}
+
+impl ObservabilityBatchWriter {
+    fn spawn(pool: SqlitePool) -> Self {
+        let (tx, rx) = mpsc::channel(MAX_BATCH_SIZE * 2);
+        tokio::spawn(run_observability_writer(pool, rx));
+        Self { tx }
+    }
+
+    async fn enqueue_span(&self, span: SpanRecordForInsert) -> Result<()> {
+        await_write_ack(self.queue_span(span).await?).await
+    }
+
+    async fn enqueue_spans(&self, spans: Vec<SpanRecordForInsert>) -> Result<()> {
+        let mut acks = Vec::with_capacity(spans.len());
+        for span in spans {
+            acks.push(self.queue_span(span).await?);
+        }
+        await_write_acks(acks).await
+    }
+
+    async fn enqueue_log(&self, log: LogRecord) -> Result<()> {
+        await_write_ack(self.queue_log(log).await?).await
+    }
+
+    async fn enqueue_logs(&self, logs: Vec<LogRecord>) -> Result<()> {
+        let mut acks = Vec::with_capacity(logs.len());
+        for log in logs {
+            acks.push(self.queue_log(log).await?);
+        }
+        await_write_acks(acks).await
+    }
+
+    async fn queue_span(&self, span: SpanRecordForInsert) -> Result<oneshot::Receiver<WriteAck>> {
+        let (ack_tx, ack_rx) = oneshot::channel();
+        self.tx
+            .send(QueuedWrite::Span(span, ack_tx))
+            .await
+            .map_err(|_| ObservabilityError::WriterStopped)?;
+        Ok(ack_rx)
+    }
+
+    async fn queue_log(&self, log: LogRecord) -> Result<oneshot::Receiver<WriteAck>> {
+        let (ack_tx, ack_rx) = oneshot::channel();
+        self.tx
+            .send(QueuedWrite::Log(log, ack_tx))
+            .await
+            .map_err(|_| ObservabilityError::WriterStopped)?;
+        Ok(ack_rx)
+    }
+}
+
+async fn await_write_acks(acks: Vec<oneshot::Receiver<WriteAck>>) -> Result<()> {
+    for ack in acks {
+        await_write_ack(ack).await?;
+    }
+    Ok(())
+}
+
+async fn await_write_ack(ack: oneshot::Receiver<WriteAck>) -> Result<()> {
+    ack.await
+        .map_err(|_| ObservabilityError::WriterStopped)?
+        .map_err(ObservabilityError::Writer)
+}
+
+async fn run_observability_writer(pool: SqlitePool, mut rx: mpsc::Receiver<QueuedWrite>) {
+    while let Some(first) = rx.recv().await {
+        let mut batch = vec![first];
+        let flush_delay = tokio::time::sleep(FLUSH_INTERVAL);
+        tokio::pin!(flush_delay);
+
+        loop {
+            if batch.len() >= MAX_BATCH_SIZE {
+                break;
+            }
+            tokio::select! {
+                next = rx.recv() => {
+                    match next {
+                        Some(item) => batch.push(item),
+                        None => break,
+                    }
+                }
+                _ = &mut flush_delay => break,
+            }
+        }
+
+        flush_observability_batch(&pool, batch).await;
+    }
+}
+
+async fn flush_observability_batch(pool: &SqlitePool, batch: Vec<QueuedWrite>) {
+    let result = async {
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        for item in &batch {
+            match item {
+                QueuedWrite::Span(span, _) => insert_span_tx(&mut tx, span).await?,
+                QueuedWrite::Log(log, _) => insert_log_tx(&mut tx, log).await?,
+            }
+        }
+        tx.commit().await?;
+        Ok::<(), ObservabilityError>(())
+    }
+    .await
+    .map_err(|error| error.to_string());
+
+    for item in batch {
+        let ack = match item {
+            QueuedWrite::Span(_, ack) | QueuedWrite::Log(_, ack) => ack,
+        };
+        let _ = ack.send(result.clone());
+    }
+}
+
+async fn insert_span_tx(
+    tx: &mut Transaction<'_, Sqlite>,
+    span: &SpanRecordForInsert,
+) -> Result<()> {
+    sqlx::query(
+        r#"
             INSERT INTO observability_spans (
                 trace_id, span_id, parent_span_id, name, start_time_unix_nano,
                 end_time_unix_nano, duration_ms, status_code, status_message,
@@ -387,52 +535,51 @@ impl ObservabilityStore {
                 raw_json = excluded.raw_json,
                 observed_at = excluded.observed_at
             "#,
-        )
-        .bind(&span.trace_id)
-        .bind(&span.span_id)
-        .bind(&span.parent_span_id)
-        .bind(&span.name)
-        .bind(span.start_time_unix_nano)
-        .bind(span.end_time_unix_nano)
-        .bind(span.duration_ms)
-        .bind(&span.status_code)
-        .bind(&span.status_message)
-        .bind(&span.session_id)
-        .bind(&span.backend)
-        .bind(&span.error_message)
-        .bind(serde_json::to_string(&span.attributes)?)
-        .bind(serde_json::to_string(&span.raw)?)
-        .bind(span.observed_at.to_rfc3339())
-        .execute(&self.pool)
-        .await?;
-        Ok(())
-    }
+    )
+    .bind(&span.trace_id)
+    .bind(&span.span_id)
+    .bind(&span.parent_span_id)
+    .bind(&span.name)
+    .bind(span.start_time_unix_nano)
+    .bind(span.end_time_unix_nano)
+    .bind(span.duration_ms)
+    .bind(&span.status_code)
+    .bind(&span.status_message)
+    .bind(&span.session_id)
+    .bind(&span.backend)
+    .bind(&span.error_message)
+    .bind(serde_json::to_string(&span.attributes)?)
+    .bind(serde_json::to_string(&span.raw)?)
+    .bind(span.observed_at.to_rfc3339())
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
 
-    async fn insert_log(&self, log: &LogRecord) -> Result<()> {
-        sqlx::query(
-            r#"
+async fn insert_log_tx(tx: &mut Transaction<'_, Sqlite>, log: &LogRecord) -> Result<()> {
+    sqlx::query(
+        r#"
             INSERT INTO observability_logs (
                 id, trace_id, span_id, severity, body, session_id, backend,
                 error_message, attributes_json, raw_json, observed_at
             )
             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
             "#,
-        )
-        .bind(uuid::Uuid::new_v4().to_string())
-        .bind(&log.trace_id)
-        .bind(&log.span_id)
-        .bind(&log.severity)
-        .bind(&log.body)
-        .bind(&log.session_id)
-        .bind(&log.backend)
-        .bind(&log.error_message)
-        .bind(serde_json::to_string(&log.attributes)?)
-        .bind(serde_json::to_string(&log.raw)?)
-        .bind(Utc::now().to_rfc3339())
-        .execute(&self.pool)
-        .await?;
-        Ok(())
-    }
+    )
+    .bind(uuid::Uuid::new_v4().to_string())
+    .bind(&log.trace_id)
+    .bind(&log.span_id)
+    .bind(&log.severity)
+    .bind(&log.body)
+    .bind(&log.session_id)
+    .bind(&log.backend)
+    .bind(&log.error_message)
+    .bind(serde_json::to_string(&log.attributes)?)
+    .bind(serde_json::to_string(&log.raw)?)
+    .bind(Utc::now().to_rfc3339())
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }
 
 #[derive(Clone)]
@@ -1070,6 +1217,45 @@ mod tests {
         let errors = store.recent_errors(10).await.expect("errors");
         assert_eq!(errors[0].source, "log");
         assert_eq!(errors[0].message, "Codex app-server thread/start failed");
+    }
+
+    #[tokio::test]
+    async fn manual_spans_flush_through_single_batch_writer() {
+        let store = ObservabilityStore::connect("sqlite::memory:", None)
+            .await
+            .expect("store");
+        let mut tasks = Vec::new();
+
+        for index in 0..64 {
+            let store = store.clone();
+            tasks.push(tokio::spawn(async move {
+                store
+                    .record_span(ManualSpan {
+                        trace: TraceContext {
+                            trace_id: format!("4bf92f3577b34da6a3ce929d0e0e{:04x}", index),
+                            span_id: format!("00f067aa0ba9{:04x}", index),
+                            trace_flags: "01".to_string(),
+                        },
+                        parent_span_id: None,
+                        name: "test.manual_batch".to_string(),
+                        start_time: Utc::now(),
+                        end_time: Utc::now(),
+                        status_code: None,
+                        status_message: None,
+                        session_id: Some("ses_batch".to_string()),
+                        backend: Some("codex".to_string()),
+                        error_message: None,
+                        attributes: json!({ "index": index }),
+                    })
+                    .await
+            }));
+        }
+
+        for task in tasks {
+            task.await.expect("task").expect("record span");
+        }
+
+        assert_eq!(store.status().await.expect("status").spans, 64);
     }
 
     #[tokio::test]

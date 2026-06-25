@@ -20,6 +20,9 @@ import {
 import {
   buildSessionLocationInfo,
   ChatSurface,
+  type ConversationRevealStateEvent,
+  type ConversationScrollControllerDebug,
+  type ConversationScrollLifecycleEvent,
   type SessionDragPreviewInput,
   type SessionLocationInfo,
 } from "../../../packages/vela-chat-web/src";
@@ -75,6 +78,139 @@ const DESKTOP_SESSION_LIST_OPTIONS = { limit: 80 };
 
 type RuntimeHostStateStores = ReturnType<typeof createRuntimeHostStateStores>;
 type DesktopMainView = "new-session" | "chat";
+
+function conversationScrollLifecycleSeverity(event: ConversationScrollLifecycleEvent) {
+  if (conversationScrollLifecycleErrorMessage(event)) return "ERROR";
+  return "INFO";
+}
+
+function conversationScrollLifecycleErrorMessage(event: ConversationScrollLifecycleEvent) {
+  if (event.type === "route_restore_mismatch") {
+    return `scroll restore mismatch: delta ${event.deltaPx ?? "unknown"}px`;
+  }
+  if (
+    event.type === "route_leave_skipped" &&
+    event.reason === "no_snapshot" &&
+    Math.abs(event.measurementScrollTop ?? 0) > 2
+  ) {
+    return `scroll snapshot missing at ${event.measurementScrollTop}px`;
+  }
+  return "";
+}
+
+function conversationScrollLifecycleAttributes(
+  event: ConversationScrollLifecycleEvent,
+  fallbackSessionId: string,
+) {
+  return {
+    "vela.operation": "vela.chat.scroll_resume",
+    "vela.chat.scroll_resume.event": event.type,
+    "vela.chat.scroll_resume.reason": event.reason ?? "",
+    "vela.chat.scroll_resume.route_key": event.routeKey ?? "",
+    "vela.chat.scroll_resume.transport": event.transportKey,
+    "vela.chat.scroll_resume.blocked_reason": event.blockedReason ?? "",
+    "vela.chat.scroll_resume.scroll_top": event.scrollTop ?? -1,
+    "vela.chat.scroll_resume.measurement_scroll_top": event.measurementScrollTop ?? -1,
+    "vela.chat.scroll_resume.target_scroll_top": event.targetScrollTop ?? -1,
+    "vela.chat.scroll_resume.actual_scroll_top": event.actualScrollTop ?? -1,
+    "vela.chat.scroll_resume.anchor_target_scroll_top": event.anchorTargetScrollTop ?? -1,
+    "vela.chat.scroll_resume.delta_px": event.deltaPx ?? -1,
+    "vela.chat.scroll_resume.existing_scroll_top": event.existingScrollTop ?? -1,
+    "vela.chat.scroll_resume.viewport_height": event.viewportHeight ?? -1,
+    "vela.chat.scroll_resume.viewport_width": event.viewportWidth ?? -1,
+    "vela.chat.scroll_resume.content_height": event.contentHeight ?? -1,
+    "vela.chat.scroll_resume.follow_output": event.followOutput ?? false,
+    "vela.chat.scroll_resume.has_anchor": event.hasAnchor ?? false,
+    "vela.chat.scroll_resume.has_pending_resume_state": event.hasPendingResumeState ?? false,
+    "vela.chat.scroll_resume.has_resume_state": event.hasResumeState ?? false,
+    "vela.chat.scroll_resume.history_ready": event.isHistoryReady ?? false,
+    "vela.chat.scroll_resume.stable_frames": event.stableFrames ?? -1,
+    "vela.chat.scroll_resume.user_intent": event.userIntent ?? "",
+    "vela.session_id": event.routeKey ?? fallbackSessionId,
+  };
+}
+
+function conversationScrollDebugAttributes(
+  debug: ConversationScrollControllerDebug,
+  sessionId: string,
+) {
+  return {
+    "vela.operation": "vela.chat.scroll_resume.debug",
+    "vela.chat.scroll_resume.debug.route_initialized": debug.routeInitialized,
+    "vela.chat.scroll_resume.debug.route_key": debug.routeKey ?? "",
+    "vela.chat.scroll_resume.debug.route_resume_status": debug.routeResumeStatus,
+    "vela.chat.scroll_resume.debug.route_resume_scroll_top":
+      debug.routeResumeScrollTop ?? -1,
+    "vela.chat.scroll_resume.debug.follow_output": debug.followOutput,
+    "vela.chat.scroll_resume.debug.bottom_anchor_mode": debug.bottomAnchorMode,
+    "vela.chat.scroll_resume.debug.bottom_anchor_blocked_reason":
+      debug.bottomAnchorBlockedReason ?? "",
+    "vela.chat.scroll_resume.debug.bottom_anchor_pending_work":
+      debug.bottomAnchorPendingWork,
+    "vela.chat.scroll_resume.debug.bottom_anchor_pending_reason":
+      debug.bottomAnchorPendingReason ?? "",
+    "vela.chat.scroll_resume.debug.bottom_anchor_last_fulfilled_reason":
+      debug.bottomAnchorLastFulfilledReason ?? "",
+    "vela.chat.scroll_resume.debug.last_scroll_write_source":
+      debug.lastScrollWrite?.source ?? "",
+    "vela.chat.scroll_resume.debug.last_scroll_write_next_top":
+      debug.lastScrollWrite?.nextScrollTop ?? -1,
+    "vela.chat.scroll_resume.debug.last_scroll_write_previous_top":
+      debug.lastScrollWrite?.previousScrollTop ?? -1,
+    "vela.chat.scroll_resume.debug.last_scroll_write_reason":
+      debug.lastScrollWrite?.reason ?? "",
+    "vela.chat.scroll_resume.debug.last_follow_signal": debug.lastFollowSignal,
+    "vela.chat.scroll_resume.debug.last_layout_signal": debug.lastLayoutSignal,
+    "vela.session_id": sessionId,
+  };
+}
+
+function conversationRevealStateAttributes(
+  event: ConversationRevealStateEvent,
+  fallbackSessionId: string,
+) {
+  return {
+    "vela.operation": "vela.chat.conversation.reveal_state",
+    "vela.chat.conversation.bottom_anchor_blocked_reason":
+      event.bottomAnchorBlockedReason ?? "",
+    "vela.chat.conversation.bottom_anchor_last_fulfilled_reason":
+      event.bottomAnchorLastFulfilledReason ?? "",
+    "vela.chat.conversation.bottom_anchor_mode": event.bottomAnchorMode,
+    "vela.chat.conversation.bottom_anchor_pending_work":
+      event.bottomAnchorPendingWork,
+    "vela.chat.conversation.bottom_anchor_pending_reason":
+      event.bottomAnchorPendingReason ?? "",
+    "vela.chat.conversation.history_phase": event.historyPhase,
+    "vela.chat.conversation.reveal_state": event.revealState,
+    "vela.chat.conversation.route_initialized": event.routeInitialized,
+    "vela.chat.conversation.route_key": event.routeKey ?? "",
+    "vela.chat.conversation.route_resume_scroll_top": event.routeResumeScrollTop ?? -1,
+    "vela.chat.conversation.route_resume_status": event.routeResumeStatus,
+    "vela.session_id": event.sessionId || fallbackSessionId,
+  };
+}
+
+function chatViewStateAttributes(input: {
+  activeSessionId: string;
+  activeSessionStatus: string;
+  controllerActiveSessionId: string;
+  historyPhase: string;
+  mainView: DesktopMainView;
+  rowCount: number;
+  sessionTitle: string;
+}) {
+  return {
+    "vela.operation": "vela.chat.view_state",
+    "vela.chat.view_state.active_session_id": input.activeSessionId,
+    "vela.chat.view_state.active_session_status": input.activeSessionStatus,
+    "vela.chat.view_state.controller_active_session_id": input.controllerActiveSessionId,
+    "vela.chat.view_state.history_phase": input.historyPhase,
+    "vela.chat.view_state.main_view": input.mainView,
+    "vela.chat.view_state.row_count": input.rowCount,
+    "vela.chat.view_state.session_title": input.sessionTitle,
+    "vela.session_id": input.activeSessionId,
+  };
+}
 
 export function DesktopApp() {
   const hostStateStores = useMemo(() => createRuntimeHostStateStores(), []);
@@ -205,6 +341,9 @@ function DesktopReadyApp({
   );
   const optimisticCreatedSessionIdRef = useRef<string | null>(null);
   const loggedOptimisticMissingSessionIdRef = useRef<string | null>(null);
+  const lastChatViewStateSignatureRef = useRef("");
+  const lastConversationRevealStateSignatureRef = useRef("");
+  const lastConversationScrollDebugSignatureRef = useRef("");
 
   useEffect(() => {
     let cancelled = false;
@@ -244,11 +383,28 @@ function DesktopReadyApp({
     () =>
       new VelaLocalTracer({
         endpoint: hostInfo.otelBaseUrl,
+        onExportError: (error, context) => {
+          console.warn(
+            `Failed to export ${context.kind} observability payload to ${context.endpoint}`,
+            error,
+          );
+        },
         serviceName: hostInfo.hostKind === "electron" ? "vela-desktop-renderer" : "vela-web",
         tracerName: "vela.chat.client",
       }),
     [hostInfo.hostKind, hostInfo.otelBaseUrl],
   );
+  useEffect(() => {
+    const span = observability.startSpan("vela.desktop.renderer.ready", {
+      attributes: {
+        "vela.operation": "vela.desktop.renderer.ready",
+        "vela.api_base_url": hostInfo.apiBaseUrl,
+        "vela.host_kind": hostInfo.hostKind,
+        "vela.otel_base_url": hostInfo.otelBaseUrl,
+      },
+    });
+    observability.endSpan(span, { code: SpanStatusCode.OK });
+  }, [hostInfo.apiBaseUrl, hostInfo.hostKind, hostInfo.otelBaseUrl, observability]);
   useEffect(() => {
     let cancelled = false;
     void readRuntimeChromeState(hostInfo.chromeState).then((nextChromeState) => {
@@ -287,6 +443,57 @@ function DesktopReadyApp({
     const title = activeSession?.title?.trim();
     return title || "New chat";
   }, [activeSession]);
+  const observeConversationScrollLifecycle = useCallback(
+    (event: ConversationScrollLifecycleEvent) => {
+      const attributes = conversationScrollLifecycleAttributes(event, activeSessionId);
+      const errorMessage = conversationScrollLifecycleErrorMessage(event);
+      const span = observability.startSpan("vela.chat.scroll_resume.lifecycle", {
+        attributes,
+      });
+      if (errorMessage) {
+        observability.recordError(span, new Error(errorMessage));
+      }
+      void observability.emitLog({
+        severityText: conversationScrollLifecycleSeverity(event),
+        body: `conversation scroll lifecycle: ${event.type}`,
+        attributes,
+        span,
+      });
+      observability.endSpan(span, {
+        code: errorMessage ? SpanStatusCode.ERROR : SpanStatusCode.OK,
+        message: errorMessage || undefined,
+      });
+    },
+    [activeSessionId, observability],
+  );
+  const observeConversationRevealState = useCallback(
+    (event: ConversationRevealStateEvent) => {
+      const attributes = conversationRevealStateAttributes(event, activeSessionId);
+      const signature = JSON.stringify(attributes);
+      if (lastConversationRevealStateSignatureRef.current === signature) return;
+      lastConversationRevealStateSignatureRef.current = signature;
+      const span = observability.startSpan("vela.chat.conversation.reveal_state", {
+        attributes,
+      });
+      const invalidReveal =
+        event.historyPhase === "ready" &&
+        event.revealState === "revealed" &&
+        !event.routeInitialized;
+      if (invalidReveal) {
+        observability.recordError(
+          span,
+          new Error("conversation revealed before route scroll initialized"),
+        );
+      }
+      observability.endSpan(span, {
+        code: invalidReveal ? SpanStatusCode.ERROR : SpanStatusCode.OK,
+        message: invalidReveal
+          ? "conversation revealed before route scroll initialized"
+          : undefined,
+      });
+    },
+    [activeSessionId, observability],
+  );
   const activeSessionLocationInfo = useMemo(
     () => buildSessionLocationInfo(activeSession?.working_directory),
     [activeSession?.working_directory],
@@ -318,6 +525,47 @@ function DesktopReadyApp({
     if (hostInfo.hostKind !== "electron") return;
     void endSessionDragPreview();
   }, [hostInfo.hostKind]);
+  useEffect(() => {
+    const attributes = chatViewStateAttributes({
+      activeSessionId,
+      activeSessionStatus: activeSession?.status ?? "",
+      controllerActiveSessionId: controller.activeSessionId,
+      historyPhase: controller.historyPhase,
+      mainView,
+      rowCount: controller.model.rows.length,
+      sessionTitle: activeSessionTitle,
+    });
+    const signature = JSON.stringify(attributes);
+    if (lastChatViewStateSignatureRef.current === signature) return;
+    lastChatViewStateSignatureRef.current = signature;
+    const span = observability.startSpan("vela.chat.view_state.snapshot", {
+      attributes,
+    });
+    observability.endSpan(span, { code: SpanStatusCode.OK });
+  }, [
+    activeSession?.status,
+    activeSessionId,
+    activeSessionTitle,
+    controller.activeSessionId,
+    controller.historyPhase,
+    controller.model.rows.length,
+    mainView,
+    observability,
+  ]);
+  const observeConversationScrollDebug = useCallback(
+    (debug: ConversationScrollControllerDebug) => {
+      controller.setConversationScrollDebug(debug);
+      const attributes = conversationScrollDebugAttributes(debug, activeSessionId);
+      const signature = JSON.stringify(attributes);
+      if (lastConversationScrollDebugSignatureRef.current === signature) return;
+      lastConversationScrollDebugSignatureRef.current = signature;
+      const span = observability.startSpan("vela.chat.scroll_resume.debug_snapshot", {
+        attributes,
+      });
+      observability.endSpan(span, { code: SpanStatusCode.OK });
+    },
+    [activeSessionId, controller.setConversationScrollDebug, observability],
+  );
   const hostLabel =
     hostBridge.platform === "web"
       ? "Browser preview"
@@ -605,7 +853,9 @@ function DesktopReadyApp({
             model={controller.model}
             onAgentConfigChange={controller.updateAgentConfig}
             onAttachImages={controller.attachImages}
-            onConversationScrollDebugChange={controller.setConversationScrollDebug}
+            onConversationRevealStateChange={observeConversationRevealState}
+            onConversationScrollDebugChange={observeConversationScrollDebug}
+            onConversationScrollLifecycleEvent={observeConversationScrollLifecycle}
             onDraftChange={controller.setDraft}
             onLoadOlder={controller.loadOlderConversation}
             onRemoveAttachment={controller.removeAttachment}

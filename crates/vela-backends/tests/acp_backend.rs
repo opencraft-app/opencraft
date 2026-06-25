@@ -451,7 +451,12 @@ async fn acp_adapter_cancel_sends_session_cancel_and_cancels_pending_permission(
             .iter()
             .map(|call| call.method.as_str())
             .collect::<Vec<_>>(),
-        vec!["initialize", "session/new", "session/prompt", "session/cancel"]
+        vec![
+            "initialize",
+            "session/new",
+            "session/prompt",
+            "session/cancel"
+        ]
     );
     assert_eq!(calls[3].params["sessionId"], "acp_ses_cancel");
 

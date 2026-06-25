@@ -12,6 +12,7 @@ import {
 import {
   useConversationScrollController,
   type ConversationScrollControllerDebug,
+  type ConversationScrollLifecycleEvent,
 } from "../../conversation-runtime/scroll/useConversationScrollController";
 import type { ConversationViewportHandle } from "../../conversation-runtime/scroll/viewportHandle";
 import { useConversationScrollbarOverlay } from "../../conversation-runtime/scrollbar/useConversationScrollbarOverlay";
@@ -27,6 +28,7 @@ export const VelaConversation = forwardRef<ConversationViewportHandle, {
   isHistoryReady?: boolean;
   isLoadingOlder?: boolean;
   onLoadOlder?: () => void;
+  onScrollLifecycleEvent?: (event: ConversationScrollLifecycleEvent) => void;
   onScrollDebugChange?: (debug: ConversationScrollControllerDebug) => void;
 }>(function VelaConversation({
   webModel,
@@ -36,6 +38,7 @@ export const VelaConversation = forwardRef<ConversationViewportHandle, {
   isHistoryReady = true,
   isLoadingOlder = false,
   onLoadOlder,
+  onScrollLifecycleEvent,
   onScrollDebugChange,
 }, ref) {
   const previousFollowOutputTokenRef = useRef(followOutputToken);
@@ -61,6 +64,7 @@ export const VelaConversation = forwardRef<ConversationViewportHandle, {
     historyStartKey: webModel.sessionId,
     isHistoryReady,
     isLoadingOlderHistory: isLoadingOlder,
+    onLifecycleEvent: onScrollLifecycleEvent,
     onNearHistoryStart: onLoadOlder,
     transportKey: segments.boundary.hasVirtualizedHistory
       ? "web-partial-virtualized"

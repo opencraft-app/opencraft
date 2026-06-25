@@ -10794,6 +10794,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "vela-sqlite",
 ]
 
 [[package]]
@@ -10835,6 +10836,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "vela-sqlite"
+version = "0.1.0"
+dependencies = [
+ "sqlx",
+]
+
+[[package]]
 name = "vela-store"
 version = "0.1.0"
 dependencies = [
@@ -10845,6 +10853,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "vela-core",
+ "vela-sqlite",
 ]
 
 [[package]]
@@ -10861,6 +10870,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "tempfile",
  "tokio",
  "tower",
  "tower-http",

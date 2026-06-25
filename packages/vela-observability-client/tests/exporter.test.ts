@@ -66,6 +66,64 @@ test("local tracer queues spans until velad endpoint is known", async () => {
   assert.equal(requests[0].url, "http://127.0.0.1:49321/v1/traces");
 });
 
+test("local tracer reports trace export failures to the host", async () => {
+  const errors: Array<{ message: string; kind: string; endpoint: string }> = [];
+  const tracer = new VelaLocalTracer({
+    endpoint: "http://127.0.0.1:49321",
+    serviceName: "vela-test",
+    tracerName: "vela.test",
+    fetchImpl: (async () => Response.json({ error: "blocked" }, { status: 500 })) as typeof fetch,
+    onExportError: (error, context) => {
+      errors.push({
+        message: error.message,
+        kind: context.kind,
+        endpoint: context.endpoint,
+      });
+    },
+  });
+
+  const span = tracer.startSpan("vela.desktop.renderer.ready");
+  tracer.endSpan(span, { code: SpanStatusCode.OK });
+  await tracer.forceFlush();
+
+  assert.deepEqual(errors, [
+    {
+      message: "velad OTLP trace export returned 500",
+      kind: "trace",
+      endpoint: "http://127.0.0.1:49321",
+    },
+  ]);
+});
+
+test("local tracer keeps the default browser fetch bound to globalThis", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls: Array<{ thisIsGlobal: boolean; url: string }> = [];
+  try {
+    globalThis.fetch = function (this: unknown, url: RequestInfo | URL) {
+      calls.push({ thisIsGlobal: this === globalThis, url: String(url) });
+      return Promise.resolve(Response.json({ accepted: true, spans: 1, logs: 0 }));
+    } as typeof fetch;
+
+    const tracer = new VelaLocalTracer({
+      endpoint: "http://127.0.0.1:49321",
+      serviceName: "vela-test",
+      tracerName: "vela.test",
+    });
+    const span = tracer.startSpan("vela.desktop.renderer.ready");
+    tracer.endSpan(span, { code: SpanStatusCode.OK });
+    await tracer.forceFlush();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.deepEqual(calls, [
+    {
+      thisIsGlobal: true,
+      url: "http://127.0.0.1:49321/v1/traces",
+    },
+  ]);
+});
+
 test("local tracer exports logs to velad OTLP HTTP JSON", async () => {
   const requests: Array<{ url: string; body: any }> = [];
   const tracer = new VelaLocalTracer({
@@ -101,4 +159,38 @@ test("local tracer exports logs to velad OTLP HTTP JSON", async () => {
     log.attributes.find((attribute: any) => attribute.key === "vela.operation"),
     { key: "vela.operation", value: { stringValue: "velad.session.create" } },
   );
+});
+
+test("local tracer reports log export failures to the host", async () => {
+  const errors: Array<{ message: string; kind: string; endpoint: string }> = [];
+  const tracer = new VelaLocalTracer({
+    endpoint: "http://127.0.0.1:49321",
+    serviceName: "vela-test",
+    loggerName: "vela.test.logs",
+    fetchImpl: (async () => Response.json({ error: "blocked" }, { status: 403 })) as typeof fetch,
+    onExportError: (error, context) => {
+      errors.push({
+        message: error.message,
+        kind: context.kind,
+        endpoint: context.endpoint,
+      });
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      tracer.emitLog({
+        severityText: "ERROR",
+        body: "renderer export failed",
+      }),
+    /log export returned 403/,
+  );
+
+  assert.deepEqual(errors, [
+    {
+      message: "velad OTLP log export returned 403",
+      kind: "log",
+      endpoint: "http://127.0.0.1:49321",
+    },
+  ]);
 });

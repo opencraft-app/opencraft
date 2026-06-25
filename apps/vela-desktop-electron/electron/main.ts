@@ -184,7 +184,22 @@ function attachRendererDiagnostics(window: BrowserWindow, label: string) {
     logLine(`[${label}:renderer]`, `did-finish-load url=${window.webContents.getURL()}`);
   });
   if (runtimeEnv("VELA_DESKTOP_RENDERER_CONSOLE_LOGS") === "1") {
-    window.webContents.on("console-message", (_event, details) => {
+    window.webContents.on("console-message", (_event, ...args: unknown[]) => {
+      const first = args[0];
+      const details =
+        first && typeof first === "object"
+          ? (first as {
+              level?: string | number;
+              lineNumber?: number;
+              message?: string;
+              sourceId?: string;
+            })
+          : {
+              level: args[0] as string | number | undefined,
+              message: args[1] as string | undefined,
+              lineNumber: args[2] as number | undefined,
+              sourceId: args[3] as string | undefined,
+            };
       logLine(
         `[${label}:renderer]`,
         `console level=${details.level} ${details.message} (${details.sourceId}:${details.lineNumber})`,

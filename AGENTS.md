@@ -63,6 +63,11 @@ Important span names:
   `codex.app_server.initialize`, `codex.app_server.thread_start`,
   `codex.app_server.turn_start`, `codex.app_server.turn_interrupt`, and
   `codex.app_server.permission_request`.
+- Desktop renderer health: `vela.desktop.renderer.ready`.
+- Desktop chat scroll/reveal: `vela.chat.view_state.snapshot`,
+  `vela.chat.conversation.reveal_state`,
+  `vela.chat.scroll_resume.debug_snapshot`, and
+  `vela.chat.scroll_resume.lifecycle`.
 
 Important local log signals:
 
@@ -77,6 +82,14 @@ Important local log signals:
 - `vela.conversation.projection_invariant`: conversation projection still has
   live work while the session activity is idle. This is an error-level signal
   and should appear in `/api/v1/observability/recent-errors`.
+- `vela.chat.scroll_resume`: desktop renderer conversation scroll lifecycle.
+  Use this when a chat tab does not return to the previous position after
+  switching away and back. Key events are `route_leave_persisted`,
+  `route_enter`, `route_restore_applied`, `route_restore_confirmed`, and
+  `route_restore_mismatch`. `route_restore_mismatch` is error-level and appears
+  in `/api/v1/observability/recent-errors`; normal lifecycle events are stored
+  in `observability_logs` and mirrored as `vela.chat.scroll_resume.lifecycle`
+  spans so the tab-switch path remains diagnosable when log export is missing.
 
 For packaged macOS builds, the default database is:
 
@@ -116,6 +129,85 @@ fails in less than one second, or a session enters an unexpected failed state:
 
 ```bash
 curl -sS "http://$addr/api/v1/observability/recent-errors?limit=20" | jq .
+```
+
+Inspect tab-switch scroll lifecycle logs:
+
+```bash
+sqlite3 -json "$db" "
+select observed_at, severity, body, attributes_json
+from observability_logs
+where attributes_json like '%vela.chat.scroll_resume%'
+order by observed_at desc
+limit 50;
+" | jq .
+```
+
+Inspect tab-switch scroll lifecycle spans. Prefer this when `observability_logs`
+is empty but trace export is working:
+
+```bash
+sqlite3 -json "$db" "
+select observed_at, status_code, error_message, attributes_json
+from observability_spans
+where name = 'vela.chat.scroll_resume.lifecycle'
+order by observed_at desc
+limit 50;
+" | jq .
+```
+
+Inspect scroll controller debug snapshots. Use this first when lifecycle spans
+are missing after reproducing a tab switch:
+
+```bash
+sqlite3 -json "$db" "
+select observed_at, attributes_json
+from observability_spans
+where name = 'vela.chat.scroll_resume.debug_snapshot'
+order by observed_at desc
+limit 50;
+" | jq .
+```
+
+Inspect the full renderer-side chat reveal chain after reproducing tab-switch
+scroll flicker:
+
+```bash
+sqlite3 -json "$db" "
+select observed_at, name, status_code, error_message, attributes_json
+from observability_spans
+where name in (
+  'vela.desktop.renderer.ready',
+  'vela.chat.view_state.snapshot',
+  'vela.chat.conversation.reveal_state',
+  'vela.chat.scroll_resume.debug_snapshot',
+  'vela.chat.scroll_resume.lifecycle'
+)
+order by observed_at desc
+limit 120;
+" | jq .
+```
+
+If this query only returns `electron.velad.start` or server-side spans, the
+renderer did not export its local spans. Restart `make desktop-preview` so the
+renderer loads the current bundle, then check the Electron renderer console for
+`Failed to export trace observability payload` or
+`Failed to export log observability payload`. Those warnings come from the
+local OTEL exporter and usually mean the renderer cannot POST to
+`hostInfo.otelBaseUrl`.
+
+Inspect desktop chat view-state snapshots. Use this when renderer-side scroll
+spans are missing entirely; it proves whether the desktop host entered `chat`
+view and which session/controller/history state was active:
+
+```bash
+sqlite3 -json "$db" "
+select observed_at, attributes_json
+from observability_spans
+where name = 'vela.chat.view_state.snapshot'
+order by observed_at desc
+limit 50;
+" | jq .
 ```
 
 List recent spans directly from SQLite when the API result is too high level:

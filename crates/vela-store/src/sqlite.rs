@@ -1,11 +1,12 @@
 use chrono::{DateTime, NaiveDateTime, Utc};
 use serde_json::Value;
-use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
+use sqlx::{Row, SqlitePool};
 use thiserror::Error;
 use vela_core::{
     AcceptedCommandAck, AgentConfig, BackendKind, CanonicalEvent, CommandAck, CommandId,
     EventCursor, EventSource, EventType, QueuedCommandAck, SessionId,
 };
+use vela_sqlite::connect_local_sqlite_pool;
 
 #[derive(Debug, Error)]
 pub enum StoreError {
@@ -92,10 +93,7 @@ impl SqliteEventStore {
     }
 
     pub async fn connect(database_url: &str) -> Result<Self> {
-        let pool = SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect(database_url)
-            .await?;
+        let pool = connect_local_sqlite_pool(database_url).await?;
         let store = Self { pool };
         store.migrate().await?;
         Ok(store)
@@ -375,7 +373,7 @@ impl SqliteEventStore {
         payload: Value,
         raw: Option<Value>,
     ) -> Result<AppendResult> {
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         let event = self
             .append_event_tx(&mut tx, session_id, event_type, source, payload, raw)
             .await?;
@@ -396,7 +394,7 @@ impl SqliteEventStore {
         source: EventSource,
         payload: Value,
     ) -> Result<IdempotencyAcceptance> {
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
 
         if let Some(row) =
             sqlx::query("SELECT command_hash, command_ack_json FROM idempotency_keys WHERE session_id = ?1 AND key = ?2")
@@ -642,6 +640,16 @@ fn parse_sqlite_datetime(value: String) -> DateTime<Utc> {
 mod tests {
     use super::*;
     use chrono::TimeZone;
+    use serde_json::json;
+    use sqlx::sqlite::SqlitePoolOptions;
+    use std::{
+        env,
+        path::PathBuf,
+        sync::atomic::{AtomicUsize, Ordering},
+        time::Duration,
+    };
+
+    static TEST_DB_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
     #[test]
     fn parses_sqlite_current_timestamp_as_utc() {
@@ -658,5 +666,67 @@ mod tests {
             .with_timezone(&Utc);
 
         assert_eq!(parsed, expected);
+    }
+
+    #[tokio::test]
+    async fn file_store_waits_for_transient_sqlite_writer_lock() {
+        let (db_url, db_path) = temp_sqlite_url("vela-store-lock");
+        let store = SqliteEventStore::connect(&db_url).await.expect("store");
+        let session_id = SessionId::from("ses_store_lock");
+        store
+            .create_session(&session_id, BackendKind::Pi, "/tmp/vela")
+            .await
+            .expect("create session");
+
+        let lock_pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect(&db_url)
+            .await
+            .expect("lock pool");
+        let mut lock = lock_pool.acquire().await.expect("lock connection");
+        sqlx::query("BEGIN IMMEDIATE")
+            .execute(&mut *lock)
+            .await
+            .expect("hold sqlite writer lock");
+
+        let append = {
+            let store = store.clone();
+            let session_id = session_id.clone();
+            tokio::spawn(async move {
+                store
+                    .append_event(
+                        &session_id,
+                        EventType::USER_MESSAGE_ACCEPTED,
+                        EventSource::runtime("test"),
+                        json!({ "content": "hello" }),
+                        None,
+                    )
+                    .await
+            })
+        };
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        sqlx::query("COMMIT")
+            .execute(&mut *lock)
+            .await
+            .expect("release sqlite writer lock");
+
+        let result = tokio::time::timeout(Duration::from_secs(2), append)
+            .await
+            .expect("append did not wait forever")
+            .expect("append task");
+        result.expect("append should wait for sqlite writer lock");
+
+        let _ = std::fs::remove_file(db_path);
+    }
+
+    fn temp_sqlite_url(prefix: &str) -> (String, PathBuf) {
+        let path = env::temp_dir().join(format!(
+            "{prefix}-{}-{}.sqlite",
+            std::process::id(),
+            TEST_DB_COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = std::fs::remove_file(&path);
+        (format!("sqlite://{}?mode=rwc", path.display()), path)
     }
 }

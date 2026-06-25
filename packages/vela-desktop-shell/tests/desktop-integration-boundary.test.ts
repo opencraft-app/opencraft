@@ -147,6 +147,21 @@ test("desktop app opens new-session by default while persisting explicit chat se
   assert.match(renderer, /vela\.desktop\.session\.create_and_select/);
   assert.match(renderer, /vela\.desktop\.session\.selection_reconcile/);
   assert.match(renderer, /observability\.recordError\(span,\s*err\)/);
+  assert.match(renderer, /vela\.desktop\.renderer\.ready/);
+  assert.match(renderer, /vela\.chat\.view_state\.snapshot/);
+  assert.match(renderer, /chatViewStateAttributes/);
+  assert.match(renderer, /vela\.chat\.conversation\.reveal_state/);
+  assert.match(renderer, /conversationRevealStateAttributes/);
+  assert.match(renderer, /onConversationRevealStateChange=\{observeConversationRevealState\}/);
+  assert.match(renderer, /onConversationScrollLifecycleEvent=\{observeConversationScrollLifecycle\}/);
+  assert.match(renderer, /vela\.chat\.scroll_resume/);
+  assert.match(renderer, /vela\.chat\.scroll_resume\.lifecycle/);
+  assert.match(renderer, /vela\.chat\.scroll_resume\.debug_snapshot/);
+  assert.match(renderer, /conversationScrollDebugAttributes/);
+  assert.match(renderer, /conversationScrollLifecycleErrorMessage/);
+  assert.match(renderer, /observability\.recordError\(span,\s*new Error\(errorMessage\)\)/);
+  assert.match(renderer, /observability\.endSpan\(span,\s*\{/);
+  assert.match(renderer, /route_restore_mismatch/);
   assert.match(renderer, /setMainView\("new-session"\)/);
   assert.match(renderer, /setMainView\("chat"\)/);
 });
@@ -360,7 +375,6 @@ test("clicking the work monitor focuses the desktop session without hiding the m
   assert.match(preload, /vela:work-monitor-move-by/);
   assert.match(bridge, /moveWorkMonitorBy/);
 });
-
 
 test("session drag preview is a transient native Electron window, not a sidebar DOM layer", () => {
   const electronMain = readFileSync(

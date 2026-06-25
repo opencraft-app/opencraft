@@ -341,7 +341,9 @@ export function useVelaChatSession({
     void loadBackends();
   }, [loadBackends]);
 
-  const activeConversation = readModelForActiveSession(activeSessionId, conversation);
+  const activeConversation =
+    readModelForActiveSession(activeSessionId, conversation) ??
+    (activeSessionId ? conversationCacheRef.current.get(activeSessionId) ?? null : null);
   const activeRequests = pendingRequestsForActiveSession(activeSessionId, requests);
   const sessionEventStreamAfterId = selectSessionEventStreamAfterId({
     conversation: activeConversation?.cursor,

@@ -6,6 +6,7 @@ members = [
   "crates/vela-runtime",
   "crates/vela-projection",
   "crates/vela-protocol",
+  "crates/vela-sqlite",
   "crates/vela-observability",
   "crates/vela-engine",
   "crates/velad",
@@ -45,6 +46,7 @@ vela-store = { path = "crates/vela-store" }
 vela-backends = { path = "crates/vela-backends" }
 vela-projection = { path = "crates/vela-projection" }
 vela-protocol = { path = "crates/vela-protocol" }
+vela-sqlite = { path = "crates/vela-sqlite" }
 vela-runtime = { path = "crates/vela-runtime" }
 vela-observability = { path = "crates/vela-observability" }
 vela-engine = { path = "crates/vela-engine" }

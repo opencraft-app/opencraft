@@ -53,6 +53,83 @@ async fn otlp_trace_ingest_is_queryable_locally() {
 }
 
 #[tokio::test]
+async fn event_store_and_observability_share_local_sqlite_without_busy_errors() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db = format!(
+        "sqlite://{}?mode=rwc",
+        dir.path().join("vela.sqlite").display()
+    );
+    let event_store = Arc::new(SqliteEventStore::connect(&db).await.expect("event store"));
+    let observability = ObservabilityStore::connect(&db, None)
+        .await
+        .expect("observability store");
+    let session_id = SessionId::from("ses_shared_sqlite");
+    event_store
+        .create_session(&session_id, BackendKind::Pi, "/tmp/project")
+        .await
+        .expect("create session");
+
+    let mut tasks = Vec::new();
+    for index in 0..25 {
+        let event_store = event_store.clone();
+        let event_session_id = session_id.clone();
+        tasks.push(tokio::spawn(async move {
+            event_store
+                .append_event(
+                    &event_session_id,
+                    vela_core::EventType::USER_MESSAGE_ACCEPTED,
+                    EventSource::runtime("test"),
+                    json!({ "content": format!("message {index}") }),
+                    None,
+                )
+                .await
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        }));
+
+        let observability = observability.clone();
+        let span_session_id = session_id.clone();
+        tasks.push(tokio::spawn(async move {
+            observability
+                .record_span(vela_observability::ManualSpan {
+                    trace: vela_observability::TraceContext {
+                        trace_id: format!("4bf92f3577b34da6a3ce929d0e0e{:04x}", index),
+                        span_id: format!("00f067aa0ba9{:04x}", index),
+                        trace_flags: "01".to_string(),
+                    },
+                    parent_span_id: None,
+                    name: "test.concurrent_write".to_string(),
+                    start_time: chrono::Utc::now(),
+                    end_time: chrono::Utc::now(),
+                    status_code: None,
+                    status_message: None,
+                    session_id: Some(span_session_id.to_string()),
+                    backend: Some("pi".to_string()),
+                    error_message: None,
+                    attributes: json!({ "index": index }),
+                })
+                .await
+                .map_err(|error| error.to_string())
+        }));
+    }
+
+    for task in tasks {
+        task.await.expect("task").expect("shared sqlite write");
+    }
+
+    assert_eq!(
+        event_store
+            .list_events(&session_id)
+            .await
+            .expect("events")
+            .len(),
+        25
+    );
+    let status = observability.status().await.expect("observability status");
+    assert_eq!(status.spans, 25);
+}
+
+#[tokio::test]
 async fn otlp_log_ingest_is_queryable_as_recent_error() {
     let app = test_app_with_observability().await;
 

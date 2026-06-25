@@ -585,6 +585,60 @@ test("full preload keeps hydrated history items when switching back to a complet
   }
 });
 
+test("full preload renders cached conversation synchronously when switching tabs", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { useVelaChatSession } = await import(
+      "../../vela-chat-controller/src/useVelaChatSession"
+    );
+    const client = new FakeVeladClient();
+    const renderSnapshots: Array<{ itemIds: string[]; sessionId: string }> = [];
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    function Probe({ sessionId }: { sessionId: string }) {
+      const controller = useVelaChatSession({
+        client,
+        fetchBackends: false,
+        historyPolicy: "full_preload",
+        sessionId,
+      });
+      renderSnapshots.push({
+        itemIds: controller.model.rows
+          .map((row) => row.id)
+          .filter((id) => id.includes(":older") || id.includes(":tail")),
+        sessionId: controller.activeSessionId,
+      });
+      return React.createElement("div");
+    }
+
+    await renderSession({ React, act, root, Probe, sessionId: "sess_a" });
+    await flushHookEffects(act, dom, () => client.olderLoads("sess_a") === 1);
+    await renderSession({ React, act, root, Probe, sessionId: "sess_b" });
+    await flushHookEffects(act, dom, () => client.olderLoads("sess_b") === 1);
+
+    renderSnapshots.length = 0;
+    await renderSession({ React, act, root, Probe, sessionId: "sess_a" });
+
+    assert.equal(renderSnapshots[0]?.sessionId, "sess_a");
+    assert.deepEqual(
+      new Set(renderSnapshots[0]?.itemIds),
+      new Set(["sess_a:older", "sess_a:tail"]),
+      "switching back to a cached session must not render an empty intermediate model",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 test("full preload workbench restores a historical DOM anchor after switching completed session tabs", async () => {
   const dom = installDomRuntime();
   try {

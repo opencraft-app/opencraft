@@ -7,9 +7,17 @@ import type { ChatRenderModel } from "../../../vela-chat-render-model/src";
 import type { VoiceInputHost } from "../../../vela-desktop-shell/src";
 import type { ComposerControlsModel } from "../components/composer-controls/model";
 import type { RequestDockResponse } from "../components/requests/RequestDock";
-import { ChatWorkbenchView } from "../components/workbench/ChatWorkbenchView";
+import {
+  ChatWorkbenchView,
+  type ConversationRevealStateEvent,
+} from "../components/workbench/ChatWorkbenchView";
 import type { ConversationScrollControllerDebug } from "../conversation-runtime/scroll/useConversationScrollController";
+import type { ConversationScrollLifecycleEvent } from "../conversation-runtime/scroll/useConversationScrollController";
 import type { PromptInputAttachment } from "../primitives/prompt-input/PromptInput";
+
+export type { ConversationScrollLifecycleEvent } from "../conversation-runtime/scroll/useConversationScrollController";
+export type { ConversationScrollControllerDebug } from "../conversation-runtime/scroll/useConversationScrollController";
+export type { ConversationRevealStateEvent } from "../components/workbench/ChatWorkbenchView";
 
 export interface ChatSurfaceProps {
   model: ChatRenderModel;
@@ -31,7 +39,9 @@ export interface ChatSurfaceProps {
   onDraftChange: (value: string) => void;
   onAttachImages?: (files: File[]) => void;
   onAgentConfigChange?: (patch: AgentConfigPatchWire) => void;
+  onConversationRevealStateChange?: (event: ConversationRevealStateEvent) => void;
   onConversationScrollDebugChange?: (debug: ConversationScrollControllerDebug) => void;
+  onConversationScrollLifecycleEvent?: (event: ConversationScrollLifecycleEvent) => void;
   onLoadOlder?: () => void;
   onRemoveAttachment?: (attachmentId: string) => void;
   onRemoveQueuedInput?: (queuedInputId: string) => void;
@@ -60,7 +70,9 @@ export function ChatSurface({
   onDraftChange,
   onAttachImages,
   onAgentConfigChange,
+  onConversationRevealStateChange,
   onConversationScrollDebugChange,
+  onConversationScrollLifecycleEvent,
   onLoadOlder,
   onRemoveAttachment,
   onRemoveQueuedInput,
@@ -84,7 +96,9 @@ export function ChatSurface({
       model={model}
       onAttachImages={onAttachImages}
       onAgentConfigChange={onAgentConfigChange}
+      onConversationRevealStateChange={onConversationRevealStateChange}
       onConversationScrollDebugChange={onConversationScrollDebugChange}
+      onConversationScrollLifecycleEvent={onConversationScrollLifecycleEvent}
       onDraftChange={onDraftChange}
       onLoadOlder={onLoadOlder}
       onRemoveAttachment={onRemoveAttachment}

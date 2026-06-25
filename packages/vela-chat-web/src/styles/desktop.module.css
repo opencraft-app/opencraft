@@ -123,7 +123,12 @@
   left: 0;
   z-index: 17;
   display: grid;
-  background: var(--vela-bg);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--vela-bg) 82%, transparent),
+      color-mix(in srgb, var(--vela-bg) 36%, transparent)
+    );
   pointer-events: none;
 }
 
@@ -1544,6 +1549,7 @@
 }
 
 .newSessionFrame {
+  container-type: inline-size;
   display: grid;
   width: 100%;
 }
@@ -1555,9 +1561,14 @@
 .newSessionContextBar {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 14px;
   min-height: 32px;
+}
+
+.newSessionContextBar :global(.vela-shell-select) {
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .newSessionContextBar :global(.vela-shell-select[data-density="compact"] .vela-shell-select-trigger) {
@@ -1566,9 +1577,17 @@
   color: #817d78;
 }
 
+.newSessionContextBar :global(.vela-shell-select-trigger-label) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .newSessionWorkspaceField {
   display: inline-grid;
-  min-width: min(100%, 280px);
+  flex: 1 1 280px;
+  min-width: min(100%, 240px);
   max-width: min(100%, 360px);
   height: 30px;
   align-items: center;
@@ -1615,6 +1634,54 @@
 
 .newSessionWorkspaceField:focus-within input {
   color: #57534e;
+}
+
+@container (max-width: 720px) {
+  .newSessionContextBar {
+    gap: 8px;
+  }
+
+  .newSessionWorkspaceField {
+    flex: 0 0 30px;
+    width: 30px;
+    max-width: 30px;
+    min-width: 0;
+  }
+
+  .newSessionContextBar :global(.vela-shell-select) {
+    flex: 0 0 30px;
+  }
+
+  .newSessionContextBar :global(.vela-shell-select[data-density="compact"] .vela-shell-select-trigger) {
+    width: 30px;
+    max-width: 30px;
+    grid-template-columns: 1fr;
+    place-items: center;
+    border-radius: 7px;
+    padding: 0;
+  }
+
+  .newSessionContextBar :global(.vela-shell-select-trigger-label),
+  .newSessionContextBar :global(.vela-shell-select-trigger > svg) {
+    display: none;
+  }
+
+  .newSessionWorkspaceField {
+    height: 30px;
+    justify-items: center;
+    grid-template-columns: 1fr;
+    border-radius: 7px;
+    padding: 0;
+  }
+
+  .newSessionWorkspaceField input {
+    display: none;
+  }
+
+  .newSessionWorkspacePicker {
+    width: 30px;
+    height: 30px;
+  }
 }
 
 .newSessionError {

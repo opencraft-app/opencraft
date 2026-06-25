@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   QueuedComposerInputClientState,
   VelaClientStateStore,
@@ -18,12 +18,30 @@ import { RequestDock, type RequestDockResponse } from "../requests/RequestDock";
 import { ConversationHistoryHydrationView } from "./ConversationHistoryHydrationView";
 import { ConversationScrollInspector } from "./ConversationScrollInspector";
 import type { ConversationScrollControllerDebug } from "../../conversation-runtime/scroll/useConversationScrollController";
+import type { ConversationScrollLifecycleEvent } from "../../conversation-runtime/scroll/useConversationScrollController";
 import type { ConversationViewportHandle } from "../../conversation-runtime/scroll/viewportHandle";
 import styles from "../../styles/desktop.module.css";
 
 const frameWithoutTopbarStyle = {
   gridTemplateRows: "minmax(0, 1fr)",
 } satisfies CSSProperties;
+
+export type ConversationRevealState = "measuring" | "revealed";
+
+export interface ConversationRevealStateEvent {
+  sessionId: string;
+  historyPhase: ChatWorkbenchViewProps["historyPhase"];
+  revealState: ConversationRevealState;
+  bottomAnchorBlockedReason: ConversationScrollControllerDebug["bottomAnchorBlockedReason"];
+  bottomAnchorLastFulfilledReason: ConversationScrollControllerDebug["bottomAnchorLastFulfilledReason"];
+  bottomAnchorMode: ConversationScrollControllerDebug["bottomAnchorMode"] | "unknown";
+  bottomAnchorPendingWork: boolean;
+  bottomAnchorPendingReason: ConversationScrollControllerDebug["bottomAnchorPendingReason"];
+  routeInitialized: boolean;
+  routeKey: string | null;
+  routeResumeScrollTop: number | null;
+  routeResumeStatus: ConversationScrollControllerDebug["routeResumeStatus"] | "unknown";
+}
 
 export interface ChatWorkbenchViewProps {
   model: ChatRenderModel;
@@ -46,6 +64,8 @@ export interface ChatWorkbenchViewProps {
   onAttachImages?: (files: File[]) => void;
   onAgentConfigChange?: (patch: AgentConfigPatchWire) => void;
   onLoadOlder?: () => void;
+  onConversationRevealStateChange?: (event: ConversationRevealStateEvent) => void;
+  onConversationScrollLifecycleEvent?: (event: ConversationScrollLifecycleEvent) => void;
   onConversationScrollDebugChange?: (debug: ConversationScrollControllerDebug) => void;
   onRemoveAttachment?: (attachmentId: string) => void;
   onRemoveQueuedInput?: (queuedInputId: string) => void;
@@ -74,6 +94,8 @@ export function ChatWorkbenchView({
   onDraftChange,
   onAttachImages,
   onAgentConfigChange,
+  onConversationRevealStateChange,
+  onConversationScrollLifecycleEvent,
   onConversationScrollDebugChange,
   onLoadOlder,
   onRemoveAttachment,
@@ -84,6 +106,7 @@ export function ChatWorkbenchView({
 }: ChatWorkbenchViewProps) {
   const webModel = useMemo(() => toWebChatModel(model), [model]);
   const conversationRef = useRef<ConversationViewportHandle | null>(null);
+  const lastConversationRevealStateSignatureRef = useRef("");
   const [composerHeight, setComposerHeight] = useState(154);
   const [conversationScrollDebugState, setConversationScrollDebugState] =
     useState<{
@@ -118,25 +141,77 @@ export function ChatWorkbenchView({
   );
   const isHydratingHistory = historyPhase === "hydrating_history";
   const conversationScrollDebug =
-    conversationScrollDebugState?.sessionId === webModel.sessionId
+    conversationScrollDebugState?.sessionId === webModel.sessionId &&
+    conversationScrollDebugState.debug.routeKey === webModel.sessionId
       ? conversationScrollDebugState.debug
       : null;
   const isConversationScrollSettled =
     conversationScrollDebug !== null &&
-    conversationScrollDebug.routeResumeStatus !== "pending";
+    conversationScrollDebug.routeInitialized &&
+    conversationScrollDebug.routeResumeStatus !== "pending" &&
+    !conversationScrollDebug.bottomAnchorPendingWork;
+  const isMeasuringReadyConversation =
+    historyPhase === "ready" && !isConversationScrollSettled;
   const conversationRevealState =
-    historyPhase === "unselected" ||
-    (historyPhase === "ready" && isConversationScrollSettled)
-      ? "revealed"
-      : "measuring";
+    isMeasuringReadyConversation ? "measuring" : "revealed";
+  useEffect(() => {
+    const event: ConversationRevealStateEvent = {
+      sessionId: webModel.sessionId,
+      historyPhase,
+      revealState: conversationRevealState,
+      bottomAnchorBlockedReason:
+        conversationScrollDebug?.bottomAnchorBlockedReason ?? null,
+      bottomAnchorLastFulfilledReason:
+        conversationScrollDebug?.bottomAnchorLastFulfilledReason ?? null,
+      bottomAnchorMode: conversationScrollDebug?.bottomAnchorMode ?? "unknown",
+      bottomAnchorPendingWork:
+        conversationScrollDebug?.bottomAnchorPendingWork ?? false,
+      bottomAnchorPendingReason:
+        conversationScrollDebug?.bottomAnchorPendingReason ?? null,
+      routeInitialized: conversationScrollDebug?.routeInitialized ?? false,
+      routeKey: conversationScrollDebug?.routeKey ?? null,
+      routeResumeScrollTop: conversationScrollDebug?.routeResumeScrollTop ?? null,
+      routeResumeStatus: conversationScrollDebug?.routeResumeStatus ?? "unknown",
+    };
+    const signature = JSON.stringify(event);
+    if (lastConversationRevealStateSignatureRef.current === signature) return;
+    lastConversationRevealStateSignatureRef.current = signature;
+    onConversationRevealStateChange?.(event);
+  }, [
+    conversationRevealState,
+    conversationScrollDebug?.bottomAnchorBlockedReason,
+    conversationScrollDebug?.bottomAnchorLastFulfilledReason,
+    conversationScrollDebug?.bottomAnchorMode,
+    conversationScrollDebug?.bottomAnchorPendingWork,
+    conversationScrollDebug?.bottomAnchorPendingReason,
+    conversationScrollDebug?.routeInitialized,
+    conversationScrollDebug?.routeKey,
+    conversationScrollDebug?.routeResumeScrollTop,
+    conversationScrollDebug?.routeResumeStatus,
+    historyPhase,
+    onConversationRevealStateChange,
+    webModel.sessionId,
+  ]);
 
   return (
     <main className={styles.shell} data-layout={layout}>
       <div className={styles.frame} data-history-phase={historyPhase} style={frameStyle}>
         <div
-          aria-hidden={conversationRevealState === "measuring" ? "true" : undefined}
+          aria-hidden={isMeasuringReadyConversation ? "true" : undefined}
           className={styles.conversationReveal}
+          data-bottom-anchor-blocked-reason={
+            conversationScrollDebug?.bottomAnchorBlockedReason ?? "none"
+          }
+          data-bottom-anchor-mode={conversationScrollDebug?.bottomAnchorMode ?? "unknown"}
+          data-bottom-anchor-pending-work={
+            conversationScrollDebug?.bottomAnchorPendingWork ?? "false"
+          }
+          data-bottom-anchor-pending-reason={
+            conversationScrollDebug?.bottomAnchorPendingReason ?? "none"
+          }
           data-conversation-reveal-state={conversationRevealState}
+          data-route-initialized={conversationScrollDebug?.routeInitialized ?? "false"}
+          data-route-key={conversationScrollDebug?.routeKey ?? "none"}
           data-route-resume-status={conversationScrollDebug?.routeResumeStatus ?? "unknown"}
           data-route-resume-scroll-top={
             conversationScrollDebug?.routeResumeScrollTop ?? "none"
@@ -149,6 +224,7 @@ export function ChatWorkbenchView({
             isLoadingOlder={isLoadingOlder}
             followOutputToken={followOutputToken}
             onLoadOlder={onLoadOlder}
+            onScrollLifecycleEvent={onConversationScrollLifecycleEvent}
             onScrollDebugChange={handleConversationScrollDebugChange}
             ref={conversationRef}
             webModel={webModel}

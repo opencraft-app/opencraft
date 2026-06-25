@@ -9,9 +9,12 @@ import {
 type FetchLike = typeof fetch;
 type ExportCallback = Parameters<SpanExporter["export"]>[1];
 
+const defaultFetch: FetchLike = (input, init) => globalThis.fetch(input, init);
+
 export interface VeladOtlpJsonSpanExporterOptions {
   fetchImpl?: FetchLike;
   endpoint?: string;
+  onExportError?: (error: Error, context: { kind: "trace" | "log"; endpoint: string }) => void;
   timeoutMs?: number;
   serviceName?: string;
   maxPendingPayloads?: number;
@@ -51,16 +54,18 @@ export class VeladOtlpJsonSpanExporter implements SpanExporter {
   private readonly timeoutMs: number;
   private readonly serviceName: string;
   private readonly maxPendingPayloads: number;
+  private readonly onExportError?: VeladOtlpJsonSpanExporterOptions["onExportError"];
   private endpoint: string | null;
   private pendingPayloads: unknown[] = [];
   private isShutdown = false;
 
   constructor(options: VeladOtlpJsonSpanExporterOptions = {}) {
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = options.fetchImpl ?? defaultFetch;
     this.endpoint = options.endpoint ?? null;
     this.timeoutMs = options.timeoutMs ?? 2_000;
     this.serviceName = options.serviceName ?? "vela";
     this.maxPendingPayloads = options.maxPendingPayloads ?? 100;
+    this.onExportError = options.onExportError;
   }
 
   setEndpoint(endpoint: string | null) {
@@ -88,7 +93,10 @@ export class VeladOtlpJsonSpanExporter implements SpanExporter {
 
     void this.postPayload(payload).then(
       () => resultCallback({ code: 0 }),
-      (error) => resultCallback({ code: 1, error: error instanceof Error ? error : new Error(String(error)) }),
+      (error) => {
+        const exportError = error instanceof Error ? error : new Error(String(error));
+        resultCallback({ code: 1, error: exportError });
+      },
     );
   }
 
@@ -112,10 +120,11 @@ export class VeladOtlpJsonSpanExporter implements SpanExporter {
 
   private async postPayload(payload: unknown) {
     if (!this.endpoint) return;
+    const endpoint = this.endpoint;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      const response = await this.fetchImpl(`${this.endpoint.replace(/\/$/, "")}/v1/traces`, {
+      const response = await this.fetchImpl(`${endpoint.replace(/\/$/, "")}/v1/traces`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
@@ -124,6 +133,10 @@ export class VeladOtlpJsonSpanExporter implements SpanExporter {
       if (!response.ok) {
         throw new Error(`velad OTLP trace export returned ${response.status}`);
       }
+    } catch (error) {
+      const exportError = error instanceof Error ? error : new Error(String(error));
+      this.onExportError?.(exportError, { kind: "trace", endpoint });
+      throw exportError;
     } finally {
       clearTimeout(timeout);
     }
@@ -136,17 +149,19 @@ export class VeladOtlpJsonLogExporter {
   private readonly serviceName: string;
   private readonly loggerName: string;
   private readonly maxPendingPayloads: number;
+  private readonly onExportError?: VeladOtlpJsonSpanExporterOptions["onExportError"];
   private endpoint: string | null;
   private pendingPayloads: unknown[] = [];
   private isShutdown = false;
 
   constructor(options: VelaLocalTracerOptions = {}) {
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = options.fetchImpl ?? defaultFetch;
     this.endpoint = options.endpoint ?? null;
     this.timeoutMs = options.timeoutMs ?? 2_000;
     this.serviceName = options.serviceName ?? "vela";
     this.loggerName = options.loggerName ?? options.tracerName ?? "vela.local";
     this.maxPendingPayloads = options.maxPendingPayloads ?? 100;
+    this.onExportError = options.onExportError;
   }
 
   setEndpoint(endpoint: string | null) {
@@ -189,10 +204,11 @@ export class VeladOtlpJsonLogExporter {
 
   private async postPayload(payload: unknown) {
     if (!this.endpoint) return;
+    const endpoint = this.endpoint;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      const response = await this.fetchImpl(`${this.endpoint.replace(/\/$/, "")}/v1/logs`, {
+      const response = await this.fetchImpl(`${endpoint.replace(/\/$/, "")}/v1/logs`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
@@ -201,6 +217,10 @@ export class VeladOtlpJsonLogExporter {
       if (!response.ok) {
         throw new Error(`velad OTLP log export returned ${response.status}`);
       }
+    } catch (error) {
+      const exportError = error instanceof Error ? error : new Error(String(error));
+      this.onExportError?.(exportError, { kind: "log", endpoint });
+      throw exportError;
     } finally {
       clearTimeout(timeout);
     }
