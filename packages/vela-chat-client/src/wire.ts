@@ -261,8 +261,19 @@ export interface AgentWorkShellDetailWire {
   output?: string;
   stdout?: string;
   stderr?: string;
+  streams?: AgentWorkShellStreamWire[];
   exit_code?: number;
   error?: string;
+}
+
+export interface AgentWorkShellStreamWire {
+  stream_id: string;
+  stream?: string;
+  text?: string;
+  last_delta?: string;
+  chunk_count?: number;
+  last_sequence?: number;
+  last_chunk_id?: string;
 }
 
 export interface AgentWorkFileDetailWire {

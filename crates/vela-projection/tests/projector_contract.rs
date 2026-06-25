@@ -395,6 +395,61 @@ fn conversation_non_terminal_updates_do_not_resurrect_completed_work() {
 }
 
 #[test]
+fn conversation_accumulates_tool_output_delta_streams() {
+    let events = vec![
+        event_at(
+            1,
+            1,
+            EventType::TOOL_STARTED,
+            json!({
+                "tool_id": "tool_1",
+                "name": "shell",
+                "status": "running",
+                "detail": {
+                    "type": "shell",
+                    "command": "cargo test"
+                }
+            }),
+        ),
+        event_at(
+            2,
+            2,
+            EventType::TOOL_OUTPUT_DELTA,
+            json!({
+                "tool_id": "tool_1",
+                "stream_id": "stdout",
+                "delta": "running ",
+                "sequence": 1
+            }),
+        ),
+        event_at(
+            3,
+            3,
+            EventType::TOOL_OUTPUT_DELTA,
+            json!({
+                "tool_id": "tool_1",
+                "stream_id": "stdout",
+                "delta": "tests\n",
+                "sequence": 2
+            }),
+        ),
+    ];
+
+    let conversation = project_conversation(&events);
+
+    assert_eq!(conversation.items.len(), 1);
+    let detail = &conversation.items[0].detail["detail"];
+    assert_eq!(detail["type"], "shell");
+    assert_eq!(detail["stdout"], "running tests\n");
+    assert_eq!(detail["output"], "running tests\n");
+    assert_eq!(detail["streams"][0]["stream_id"], "stdout");
+    assert_eq!(detail["streams"][0]["text"], "running tests\n");
+    assert_eq!(detail["streams"][0]["chunk_count"], 2);
+    assert_eq!(detail["streams"][0]["last_sequence"], 2);
+    assert_eq!(conversation.items[0].detail["delta"], "tests\n");
+}
+
+#[test]
 fn conversation_tracks_turn_meta_from_runtime_lifecycle() {
     let events = vec![
         event_at(

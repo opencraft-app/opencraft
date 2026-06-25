@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use serde_json::Value;
+use serde_json::{Map, Value};
 use vela_core::{
     CanonicalEvent, ConversationItem, ConversationItemKind, ConversationPart, ConversationView,
     ConversationWindow, ConversationWindowView, EventCursor, EventType, PendingRequest,
@@ -461,7 +461,7 @@ fn upsert_agent_work(
         item.updated_at = event.created_at;
         item.revision += 1;
         item.summary = activity_summary_text(&event.payload).or_else(|| item.summary.clone());
-        item.detail = merge_payload(&item.detail, &event.payload);
+        item.detail = merge_agent_work_detail(&item.detail, event);
         push_source_event(item, event);
         return;
     }
@@ -480,7 +480,7 @@ fn upsert_agent_work(
         parts: Vec::new(),
         title: Some(title),
         summary: activity_summary_text(&event.payload),
-        detail: event.payload.clone(),
+        detail: merge_agent_work_detail(&Value::Null, event),
         source_event_ids: vec![event.event_id.clone()],
         source_event_ranges: vec![source_event_range(event)],
     });
@@ -812,6 +812,147 @@ fn activity_summary_text(payload: &Value) -> Option<String> {
 
 fn turn_status_text(event: &CanonicalEvent, fallback: &str) -> String {
     activity_summary_text(&event.payload).unwrap_or_else(|| fallback.to_string())
+}
+
+fn merge_agent_work_detail(old: &Value, event: &CanonicalEvent) -> Value {
+    let merged = merge_payload(old, &event.payload);
+    if event.event_type != EventType::TOOL_OUTPUT_DELTA {
+        return merged;
+    }
+    append_tool_output_delta(merged, &event.payload)
+}
+
+fn append_tool_output_delta(detail: Value, payload: &Value) -> Value {
+    let delta = delta_from_payload(payload);
+    if delta.is_empty() {
+        return detail;
+    }
+
+    let stream_id = string_field(payload, "stream_id")
+        .or_else(|| string_field(payload, "stream"))
+        .unwrap_or_else(|| "stdout".to_string());
+    let sequence = payload
+        .get("sequence")
+        .or_else(|| payload.get("seq"))
+        .and_then(Value::as_i64);
+    let chunk_id = string_field(payload, "chunk_id").or_else(|| string_field(payload, "chunkId"));
+
+    let mut object = match detail {
+        Value::Object(object) => object,
+        Value::Null => Map::new(),
+        other => {
+            let mut object = Map::new();
+            object.insert("value".to_string(), other);
+            object
+        }
+    };
+
+    append_stream_summary(
+        &mut object,
+        &stream_id,
+        delta,
+        sequence,
+        chunk_id.as_deref(),
+    );
+    if let Some(Value::Object(shell_detail)) = object.get_mut("detail") {
+        append_stream_summary(
+            shell_detail,
+            &stream_id,
+            delta,
+            sequence,
+            chunk_id.as_deref(),
+        );
+        append_shell_output_aliases(shell_detail, &stream_id, delta);
+    } else {
+        append_shell_output_aliases(&mut object, &stream_id, delta);
+    }
+
+    Value::Object(object)
+}
+
+fn append_stream_summary(
+    object: &mut Map<String, Value>,
+    stream_id: &str,
+    delta: &str,
+    sequence: Option<i64>,
+    chunk_id: Option<&str>,
+) {
+    let streams = object
+        .entry("streams".to_string())
+        .or_insert_with(|| Value::Array(Vec::new()));
+    if !streams.is_array() {
+        *streams = Value::Array(Vec::new());
+    }
+    let streams = streams
+        .as_array_mut()
+        .expect("streams value was normalized to an array");
+
+    let stream_index = streams.iter().position(|stream| {
+        stream
+            .get("stream_id")
+            .or_else(|| stream.get("stream"))
+            .and_then(Value::as_str)
+            == Some(stream_id)
+    });
+
+    let stream = if let Some(index) = stream_index {
+        if !streams[index].is_object() {
+            streams[index] = Value::Object(Map::new());
+        }
+        streams[index]
+            .as_object_mut()
+            .expect("stream summary was normalized to an object")
+    } else {
+        streams.push(Value::Object(Map::new()));
+        streams
+            .last_mut()
+            .and_then(Value::as_object_mut)
+            .expect("pushed stream summary object")
+    };
+
+    stream.insert(
+        "stream_id".to_string(),
+        Value::String(stream_id.to_string()),
+    );
+    stream.insert("stream".to_string(), Value::String(stream_id.to_string()));
+    append_string_field(stream, "text", delta);
+    stream.insert("last_delta".to_string(), Value::String(delta.to_string()));
+    let chunk_count = stream
+        .get("chunk_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+        + 1;
+    stream.insert("chunk_count".to_string(), Value::from(chunk_count));
+    if let Some(sequence) = sequence {
+        stream.insert("last_sequence".to_string(), Value::from(sequence));
+    }
+    if let Some(chunk_id) = chunk_id {
+        stream.insert(
+            "last_chunk_id".to_string(),
+            Value::String(chunk_id.to_string()),
+        );
+    }
+}
+
+fn append_shell_output_aliases(object: &mut Map<String, Value>, stream_id: &str, delta: &str) {
+    match stream_id {
+        "stderr" => append_string_field(object, "stderr", delta),
+        "stdout" => {
+            append_string_field(object, "stdout", delta);
+            append_string_field(object, "output", delta);
+        }
+        _ => {}
+    }
+}
+
+fn append_string_field(object: &mut Map<String, Value>, field: &str, delta: &str) {
+    let mut text = object
+        .get(field)
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    text.push_str(delta);
+    object.insert(field.to_string(), Value::String(text));
 }
 
 fn merge_payload(old: &Value, new: &Value) -> Value {

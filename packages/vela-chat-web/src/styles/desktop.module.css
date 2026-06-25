@@ -698,6 +698,87 @@
   margin-top: 0;
 }
 
+.agentWorkShell {
+  display: grid;
+  gap: 6px;
+  width: fit-content;
+  max-width: min(100%, 780px);
+}
+
+.agentWorkShellToggle {
+  grid-template-columns: 18px minmax(0, auto) 14px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.agentWorkShellToggle:hover .agentWorkTitle,
+.agentWorkShellToggle:hover .agentWorkSummary {
+  color: #7e848c;
+}
+
+.agentWorkShellChevron {
+  color: #a9adb3;
+  font-size: 17px;
+  line-height: 1;
+  transition: transform 120ms ease;
+}
+
+.agentWorkShellToggle[aria-expanded="true"] .agentWorkShellChevron {
+  transform: rotate(90deg);
+}
+
+.agentWorkTerminal {
+  display: grid;
+  gap: 5px;
+  max-width: min(100%, 760px);
+  margin-left: 26px;
+  border: 1px solid rgb(0 0 0 / 6%);
+  border-radius: 10px;
+  background: rgb(250 250 250 / 72%);
+  padding: 8px 10px;
+}
+
+.agentWorkTerminalStream {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.agentWorkTerminalHeader {
+  color: #a0a5ac;
+  font-family:
+    "SFMono-Regular",
+    ui-monospace,
+    Menlo,
+    Consolas,
+    monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.agentWorkTerminalPre {
+  max-width: min(68vw, 720px);
+  max-height: 220px;
+  margin: 0;
+  overflow: auto;
+  color: #6f747c;
+  font-family:
+    "SFMono-Regular",
+    ui-monospace,
+    Menlo,
+    Consolas,
+    monospace;
+  font-size: 12px;
+  font-weight: 450;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .agentWorkBlock[data-status="failed"] {
   color: #b44322;
 }
