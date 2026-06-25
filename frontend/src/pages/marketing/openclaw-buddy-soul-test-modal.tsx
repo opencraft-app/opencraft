@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils";
 import type { SkillHubSoul } from "@/lib/skillhub-api";
 import { getSoulSpec, type SoulSpec } from "@/lib/soul-interpretations";
 import { getEnglishSoulSpec } from "@/lib/soul-english-data";
+import { getGlobalChineseSoulSpec } from "@/lib/soul-global-chinese-data";
+import { toEnglishSlug, toCanonicalSlug } from "@/lib/soul-slug-mapping";
 import { SoulFaceCard } from "@/pages/marketing/openclaw-buddy-cards";
 import {
   ENGLISH_PREF_TAG_LABELS,
@@ -40,6 +42,7 @@ interface SoulTestModalProps {
   drawnSlugs: string[];
   saveDisabledReason?: string | null;
   useEnglishSoulData?: boolean;
+  useGlobalChineseSoulData?: boolean;
   onClose: () => void;
   onUseSoul: (soul: SkillHubSoul) => boolean;
 }
@@ -51,6 +54,7 @@ export function SoulTestModal({
   drawnSlugs,
   saveDisabledReason,
   useEnglishSoulData = false,
+  useGlobalChineseSoulData = false,
   onClose,
   onUseSoul,
 }: SoulTestModalProps) {
@@ -61,7 +65,7 @@ export function SoulTestModal({
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [matchedSoulId, setMatchedSoulId] = useState<string | null>(null);
   const [useError, setUseError] = useState<string | null>(null);
-  const [questions, setQuestions] = useState<SoulTestQuestion[]>(() => buildQuestions(useEnglishSoulData));
+  const [questions, setQuestions] = useState<SoulTestQuestion[]>(() => buildQuestions(useEnglishSoulData, useGlobalChineseSoulData));
 
   useEffect(() => {
     if (!open) return;
@@ -70,8 +74,8 @@ export function SoulTestModal({
     setAnswers({});
     setMatchedSoulId(null);
     setUseError(null);
-    setQuestions(buildQuestions(useEnglishSoulData));
-  }, [open, useEnglishSoulData]);
+    setQuestions(buildQuestions(useEnglishSoulData, useGlobalChineseSoulData));
+  }, [open, useEnglishSoulData, useGlobalChineseSoulData]);
 
   useEffect(() => {
     if (!open) return;
@@ -89,7 +93,9 @@ export function SoulTestModal({
     () => souls.find((soul) => soul.slug === matchedSoulId) ?? null,
     [matchedSoulId, souls],
   );
-  const spec = matchedSoulId ? getLocalizedSoulSpec(matchedSoulId, useEnglishSoulData) : null;
+  const spec = matchedSoulId
+    ? getLocalizedSoulSpec(matchedSoulId, useEnglishSoulData, useGlobalChineseSoulData)
+    : null;
   const prefScores = useMemo(
     () => useEnglishSoulData ? calculateEnglishPrefScores(answers) : calculatePrefScores(answers),
     [answers, useEnglishSoulData],
@@ -119,11 +125,15 @@ export function SoulTestModal({
           setCurrentIndex((prev) => prev + 1);
           return;
         }
-        setMatchedSoulId(useEnglishSoulData ? calculateEnglishMatchedSoul(nextAnswers) : calculateMatchedSoul(nextAnswers));
+        // 国际站 EN → 英文计算器；国际站 ZH → 中文计算器 + canonical→westernized slug 翻译（与 global-CN 池对齐）；国内站 → 中文计算器（canonical slug）。
+        const matched = useEnglishSoulData
+          ? calculateEnglishMatchedSoul(nextAnswers)
+          : calculateMatchedSoul(nextAnswers);
+        setMatchedSoulId(useGlobalChineseSoulData ? toEnglishSlug(matched) : matched);
         setPhase("result");
       }, 300);
     },
-    [answers, currentIndex, currentQuestion, totalQuestions, useEnglishSoulData],
+    [answers, currentIndex, currentQuestion, totalQuestions, useEnglishSoulData, useGlobalChineseSoulData],
   );
 
   const handlePrev = useCallback(() => {
@@ -144,8 +154,8 @@ export function SoulTestModal({
     setAnswers({});
     setMatchedSoulId(null);
     setUseError(null);
-    setQuestions(buildQuestions(useEnglishSoulData));
-  }, [useEnglishSoulData]);
+    setQuestions(buildQuestions(useEnglishSoulData, useGlobalChineseSoulData));
+  }, [useEnglishSoulData, useGlobalChineseSoulData]);
 
   const handleUseSoul = useCallback(() => {
     if (!recommendedSoul) return;
@@ -473,7 +483,8 @@ function ResultStep({
   );
 }
 
-function buildQuestions(useEnglishSoulData: boolean): SoulTestQuestion[] {
+function buildQuestions(useEnglishSoulData: boolean, useGlobalChineseSoulData: boolean): SoulTestQuestion[] {
+  // 国际站 EN → 英文题目；国际站 ZH 与国内站共用中文题目（中文文案）。
   if (useEnglishSoulData) return buildEnglishQuestions();
   return [...shuffleArray(personalityQuestions), ...shuffleArray(prefQuestions)];
 }
@@ -514,8 +525,10 @@ function categoryLabel(category: "high" | "mid" | "low", useEnglishSoulData: boo
   return "低";
 }
 
-function getLocalizedSoulSpec(slug: string, useEnglishSoulData: boolean): SoulSpec | null {
-  return useEnglishSoulData ? getEnglishSoulSpec(slug) : getSoulSpec(slug);
+function getLocalizedSoulSpec(slug: string, useEnglishSoulData: boolean, useGlobalChineseSoulData: boolean): SoulSpec | null {
+  if (useEnglishSoulData) return getEnglishSoulSpec(slug);
+  if (useGlobalChineseSoulData) return getGlobalChineseSoulSpec(slug);
+  return getSoulSpec(toCanonicalSlug(slug));
 }
 
 function formatSoulTestText(
