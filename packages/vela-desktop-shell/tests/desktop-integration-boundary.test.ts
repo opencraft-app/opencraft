@@ -141,6 +141,12 @@ test("desktop app opens new-session by default while persisting explicit chat se
   assert.doesNotMatch(renderer, /sessionSelectionStore\?\.read\(\)\?\.sessionId/);
   assert.match(renderer, /sessionSelectionStore\?\.write\(\{/);
   assert.doesNotMatch(renderer, /sessionList\.data\.sessions\[0\]\?\.id \|\| ""/);
+  assert.match(renderer, /optimisticCreatedSessionIdRef/);
+  assert.match(renderer, /skipMissingActiveSessionCheck/);
+  assert.match(renderer, /selectChatSession\(created\.session\.id\)/);
+  assert.match(renderer, /vela\.desktop\.session\.create_and_select/);
+  assert.match(renderer, /vela\.desktop\.session\.selection_reconcile/);
+  assert.match(renderer, /observability\.recordError\(span,\s*err\)/);
   assert.match(renderer, /setMainView\("new-session"\)/);
   assert.match(renderer, /setMainView\("chat"\)/);
 });

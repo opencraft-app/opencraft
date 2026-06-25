@@ -1092,7 +1092,7 @@
   container: composer-footer / inline-size;
   display: flex;
   align-items: flex-end;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: space-between;
   gap: 10px;
   padding: 0 16px 16px;
@@ -1106,7 +1106,7 @@
 .composerRight {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
   min-width: 0;
 }
@@ -1163,9 +1163,37 @@
 .composerControls {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
   min-width: 0;
+  overflow: hidden;
+}
+
+.composerControl {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.composerControl[data-composer-control="model"] {
+  flex-shrink: 1;
+}
+
+.composerControl[data-composer-control="permission"] {
+  flex-shrink: 1.8;
+}
+
+.composerControl[data-composer-control="reasoning"] {
+  flex-shrink: 0;
+}
+
+.composerControl :global(.vela-shell-select) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.composerControl :global(.vela-shell-select[data-density="compact"] .vela-shell-select-trigger) {
+  max-width: 100%;
 }
 
 .composerControls[data-composer-controls-ready="false"] {
@@ -1184,6 +1212,40 @@
 
 .composerControls[data-composer-controls-ready="false"][data-placement="all"] {
   min-width: 396px;
+}
+
+@container composer-footer (max-width: 620px) {
+  .composerControl[data-composer-control="permission"] :global(.vela-shell-select-trigger-label) {
+    display: none;
+  }
+
+  .composerControl[data-composer-control="permission"] :global(.vela-shell-select[data-density="compact"] .vela-shell-select-trigger) {
+    width: 32px;
+    grid-template-columns: 16px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .composerControl[data-composer-control="permission"] :global(.vela-shell-select-trigger > svg) {
+    display: none;
+  }
+}
+
+@container composer-footer (max-width: 520px) {
+  .composerControl[data-composer-control="model"] :global(.vela-shell-select-trigger-label) {
+    display: none;
+  }
+
+  .composerControl[data-composer-control="model"] :global(.vela-shell-select[data-density="compact"] .vela-shell-select-trigger) {
+    width: 32px;
+    grid-template-columns: 16px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .composerControl[data-composer-control="model"] :global(.vela-shell-select-trigger > svg) {
+    display: none;
+  }
 }
 
 .sendButton,
@@ -1267,7 +1329,7 @@
 
 .newSessionContent {
   display: grid;
-  width: min(100%, 980px);
+  width: min(100%, 760px);
   gap: 14px;
 }
 
@@ -1375,7 +1437,7 @@
 
   .composerControls {
     gap: 4px;
-    overflow-x: auto;
+    overflow: hidden;
     scrollbar-width: none;
   }
 

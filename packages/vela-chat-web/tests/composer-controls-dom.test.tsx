@@ -52,6 +52,62 @@ test("composer controls reserve invisible toolbar space while session truth is l
   }
 });
 
+test("composer controls expose stable responsive collapse priorities", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { ComposerControls } = await import(
+      "../src/components/composer-controls/ComposerControls"
+    );
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        React.createElement(ComposerControls, {
+          controls: {
+            ready: true,
+            disabled: false,
+            providerLabel: "Vela Engine",
+            modelOptions: [{ id: "minimax-m2.7", label: "minimax-m2.7" }],
+            reasoningEffortOptions: [{ id: "medium", label: "Medium" }],
+            permissionModeOptions: [
+              { id: "default", label: "Default permissions" },
+            ],
+            selectedModel: { id: "minimax-m2.7", label: "minimax-m2.7" },
+            selectedReasoningEffort: { id: "medium", label: "Medium" },
+            selectedPermissionMode: {
+              id: "default",
+              label: "Default permissions",
+            },
+          },
+          placement: "all",
+          onChange: () => {},
+        }),
+      );
+    });
+
+    assert.notEqual(
+      container.querySelector('[data-composer-control="permission"]'),
+      null,
+    );
+    assert.notEqual(container.querySelector('[data-composer-control="model"]'), null);
+    assert.notEqual(
+      container.querySelector('[data-composer-control="reasoning"]'),
+      null,
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 function installDomRuntime() {
   const window = new Window({ url: "http://127.0.0.1:3000/chat" });
   const previous = {

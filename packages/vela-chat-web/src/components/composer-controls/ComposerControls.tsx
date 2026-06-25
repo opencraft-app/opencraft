@@ -47,6 +47,7 @@ export function ComposerControls({
         <>
           <ControlMenu
             ariaLabel="Select model"
+            control="model"
             disabled={disabled || controls.modelOptions.length === 0}
             label={controls.selectedModel?.label ?? controls.providerLabel}
             leading="◎"
@@ -57,6 +58,7 @@ export function ComposerControls({
           {controls.reasoningEffortOptions.length > 0 ? (
             <ControlMenu
               ariaLabel="Select reasoning effort"
+              control="reasoning"
               disabled={disabled}
               label={controls.selectedReasoningEffort?.label ?? "Reasoning"}
               leading="✣"
@@ -70,6 +72,7 @@ export function ComposerControls({
       {placement === "all" || placement === "primary" ? (
         <ControlMenu
           ariaLabel="Select permission mode"
+          control="permission"
           disabled={disabled || controls.permissionModeOptions.length === 0}
           label={controls.selectedPermissionMode?.label ?? "Permissions"}
           leading="▣"
@@ -85,6 +88,7 @@ export function ComposerControls({
 
 function ControlMenu<T extends ComposerModelOption | ComposerOption | ComposerPermissionOption>({
   ariaLabel,
+  control,
   disabled,
   label,
   leading,
@@ -94,6 +98,7 @@ function ControlMenu<T extends ComposerModelOption | ComposerOption | ComposerPe
   onSelect,
 }: {
   ariaLabel: string;
+  control: "model" | "permission" | "reasoning";
   disabled: boolean;
   label: string;
   leading: string;
@@ -105,24 +110,26 @@ function ControlMenu<T extends ComposerModelOption | ComposerOption | ComposerPe
   const selectedOption = options.find((option) => option.id === selectedId);
 
   return (
-    <ShellSelect
-      ariaLabel={ariaLabel}
-      density="compact"
-      disabled={disabled}
-      leading={leading}
-      options={options.map((option) => ({
-        id: option.id,
-        label: option.label,
-        description: option.description,
-      }))}
-      placement="top-start"
-      placeholder={label}
-      tone={tone}
-      value={selectedOption?.id}
-      onValueChange={(value) => {
-        const option = options.find((candidate) => candidate.id === value);
-        if (option) onSelect(option);
-      }}
-    />
+    <span className={styles.composerControl} data-composer-control={control}>
+      <ShellSelect
+        ariaLabel={ariaLabel}
+        density="compact"
+        disabled={disabled}
+        leading={leading}
+        options={options.map((option) => ({
+          id: option.id,
+          label: option.label,
+          description: option.description,
+        }))}
+        placement="top-start"
+        placeholder={label}
+        tone={tone}
+        value={selectedOption?.id}
+        onValueChange={(value) => {
+          const option = options.find((candidate) => candidate.id === value);
+          if (option) onSelect(option);
+        }}
+      />
+    </span>
   );
 }
