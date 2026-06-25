@@ -13,7 +13,6 @@ import {
   getSkillHubErrorMessage,
   getPackageSkillSlugs,
   getSkillPackageInstallFailureMessage,
-  getSkillPackageTags,
   isSkillInstallAlreadyExists,
   getUniqueSkillSlugs,
   installSkillSlugs,
@@ -96,15 +95,6 @@ describe("hermes agent experts panel", () => {
     expect(parseInstalledSkillSlugs("│ Name │ Category │ Source │ Trust │ Status │\n│ cody │ dev │ local │ yes │ installed │")).toEqual([
       "cody",
     ]);
-  });
-
-  it("builds compact card tags from the package name and non-missing skill count", () => {
-    expect(getSkillPackageTags({
-      slug: "tech-test-automation",
-      displayName: " 自动化测试 ",
-      skillCount: 6,
-      missing: ["tdd-guide"],
-    })).toEqual(["自动化测试", "5 个技能"]);
   });
 
   it("strips yaml frontmatter before rendering package markdown", () => {
@@ -206,7 +196,15 @@ describe("hermes agent experts panel", () => {
     expect(await screen.findByText("Backend Market Data")).toBeInTheDocument();
   });
 
-  it("hides missing package skills from expert detail modules", async () => {
+  it("shows detail skill count from filtered available package skills", async () => {
+    const detailSkillSlugs = [
+      "tdd-guide",
+      "test-case-generator",
+      "test-patterns",
+      "e2e-test-orchestrator",
+      "api-test-automation",
+      "afrexai-qa-test-plan",
+    ];
     vi.mocked(fetchSkillSets).mockImplementation(async (params) => ({
       skillSets: !params?.scene || params.scene === "tech"
         ? [{
@@ -228,17 +226,16 @@ describe("hermes agent experts panel", () => {
       displayName: "自动化测试",
       summary: "详情摘要",
       remark: "",
-      skillCount: 2,
-      skillSlugs: ["tdd-guide", "test-case-generator"],
-      missing: ["tdd-guide"],
+      skillCount: 6,
+      skillSlugs: detailSkillSlugs,
       createdAt: 0,
       updatedAt: 0,
     });
     vi.mocked(fetchSkillDetail).mockImplementation(async (slug) => {
-      if (slug === "tdd-guide") throw new Error("Skill not found");
+      if (slug === "tdd-guide") throw new TypeError("Failed to fetch");
       return {
         slug,
-        displayName: "Test Case Generator",
+        displayName: slug === "test-case-generator" ? "Test Case Generator" : slug,
       };
     });
     vi.mocked(fetchSkillFiles).mockResolvedValue([{ path: "SKILL.md", size: 1, sha256: "abc" }]);
@@ -249,14 +246,16 @@ describe("hermes agent experts panel", () => {
     fireEvent.click(await screen.findByRole("button", { name: /自动化测试/ }));
 
     expect(await screen.findByText("Test Case Generator")).toBeInTheDocument();
+    expect(await screen.findByText("5 个技能")).toBeInTheDocument();
     expect(await screen.findByText("测试生成详情")).toBeInTheDocument();
     expect(screen.queryByText("Tdd Guide")).not.toBeInTheDocument();
     expect(screen.queryByText("Missing")).not.toBeInTheDocument();
+    expect(fetchSkillDetail).not.toHaveBeenCalledWith("tdd-guide");
     expect(fetchSkillFiles).toHaveBeenCalledWith("test-case-generator");
     expect(fetchSkillFiles).not.toHaveBeenCalledWith("tdd-guide");
   });
 
-  it("shows non-missing skill count on package list items", async () => {
+  it("hides package skill counts on package list items", async () => {
     const detailSkillSlugs = [
       "tdd-guide",
       "test-case-generator",
@@ -300,11 +299,11 @@ describe("hermes agent experts panel", () => {
 
     expect(await screen.findByRole("button", { name: /自动化测试/ })).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getByText("5 个技能")).toBeInTheDocument();
+      expect(fetchSkillSetDetail).toHaveBeenCalledWith("tech-test-automation");
+      expect(fetchSkillDetail).toHaveBeenCalledWith("test-case-generator");
     });
-    expect(fetchSkillSetDetail).toHaveBeenCalledWith("tech-test-automation");
-    expect(fetchSkillDetail).toHaveBeenCalledWith("tdd-guide");
-    expect(fetchSkillDetail).toHaveBeenCalledWith("test-case-generator");
+    expect(fetchSkillDetail).not.toHaveBeenCalledWith("tdd-guide");
+    expect(screen.queryByText(/个技能/)).not.toBeInTheDocument();
   });
 
   it("renders the SkillHub expert profile image on package cards", async () => {

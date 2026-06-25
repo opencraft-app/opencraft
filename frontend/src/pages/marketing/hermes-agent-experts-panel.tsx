@@ -115,6 +115,9 @@ const PACKAGE_SKILL_SLUG_OVERRIDES: Record<string, Record<string, string>> = {
     cody: "code-review-assistant",
   },
 };
+const PACKAGE_MISSING_SKILL_SLUGS: Record<string, string[]> = {
+  "tech-test-automation": ["tdd-guide"],
+};
 const SKILL_DISPLAY_NAME_OVERRIDES: Record<string, string> = {
   "code-review-assistant": "code-review-assistant",
 };
@@ -165,7 +168,10 @@ function mergeInstalledPackageSlugs(current: Set<string>, slugs: string[]): Set<
 
 export function getPackageSkillSlugs(packageSlug: string, skillSlugs: string[], missingSkillSlugs: string[] = []): string[] {
   const overrides = PACKAGE_SKILL_SLUG_OVERRIDES[packageSlug];
-  const missingSlugs = new Set(getUniqueSkillSlugs(missingSkillSlugs));
+  const missingSlugs = new Set(getUniqueSkillSlugs([
+    ...missingSkillSlugs,
+    ...(PACKAGE_MISSING_SKILL_SLUGS[packageSlug] ?? []),
+  ]));
   const seen = new Set<string>();
   const result: string[] = [];
 
@@ -205,16 +211,6 @@ export async function resolveAvailablePackageSkillSlugs(
   return getUniqueSkillSlugs(checkedSkillSlugs.filter((skillSlug): skillSlug is string => !!skillSlug));
 }
 
-function getSkillCount(pkg: Pick<SkillHubSkillSet, "slug" | "skillCount" | "skillSlugs" | "missing">): number {
-  if (pkg.skillSlugs && pkg.skillSlugs.length > 0) {
-    return getPackageSkillSlugs(pkg.slug, pkg.skillSlugs, pkg.missing ?? []).length;
-  }
-
-  const count = pkg.skillCount ?? 0;
-  const missingCount = getUniqueSkillSlugs(pkg.missing ?? []).length;
-  return Math.max(count - missingCount, 0);
-}
-
 function getPackageScene(pkg: Pick<SkillHubSkillSet, "scene">, fallback: ExpertFilterId): SkillHubSkillSetScene | undefined {
   if (pkg.scene && EXPERT_SCENE_MAP.has(pkg.scene)) return pkg.scene;
   return fallback === "all" ? undefined : fallback;
@@ -230,11 +226,6 @@ function getPackageSummary(pkg: SkillHubSkillSet, t: ReturnType<typeof useT>): s
 
 function isSupportedExpertPackage(pkg: Pick<SkillHubSkillSet, "scene">): boolean {
   return !!pkg.scene && EXPERT_SCENE_MAP.has(pkg.scene);
-}
-
-export function getSkillPackageTags(pkg: Pick<SkillHubSkillSet, "slug" | "displayName" | "skillCount" | "skillSlugs" | "missing">): string[] {
-  const count = getSkillCount(pkg);
-  return [pkg.displayName.trim(), count > 0 ? `${count} 个技能` : "技能包"].filter(Boolean).slice(0, 3);
 }
 
 export function buildInstallSkillCommand(skillSlug: string): string {
@@ -780,11 +771,6 @@ export function ExpertsPanel({
     };
   }, [packageSkillSlugs, visibleCards]);
 
-  const getDisplaySkillCount = useCallback((pkg: SkillHubSkillSet) => {
-    const knownSkillSlugs = packageSkillSlugs.get(pkg.slug);
-    return knownSkillSlugs ? knownSkillSlugs.length : getSkillCount(pkg);
-  }, [packageSkillSlugs]);
-
   const getKnownSkillSlugs = useCallback((pkg: SkillHubSkillSet) => {
     return getPackageSkillSlugs(pkg.slug, packageSkillSlugs.get(pkg.slug) ?? pkg.skillSlugs ?? [], pkg.missing ?? []);
   }, [packageSkillSlugs]);
@@ -915,7 +901,6 @@ export function ExpertsPanel({
                 key={card.pkg.slug}
                 card={card}
                 activeFilter={activeFilter}
-                skillCount={getDisplaySkillCount(card.pkg)}
                 installingSlug={installingSlug}
                 installProgress={installProgress}
                 isInstalled={isPackageInstalled(card.pkg)}
@@ -932,7 +917,6 @@ export function ExpertsPanel({
                 <ExpertListItem
                   card={card}
                   activeFilter={activeFilter}
-                  skillCount={getDisplaySkillCount(card.pkg)}
                   installingSlug={installingSlug}
                   installProgress={installProgress}
                   isInstalled={isPackageInstalled(card.pkg)}
@@ -1018,7 +1002,7 @@ function ExpertViewToggle({
               aria-label={item.label}
               aria-describedby={tooltipId}
               className={cn(
-                "lv-agent-view-toggle-btn inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[6px] transition-all",
+                "peer lv-agent-view-toggle-btn inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[6px] transition-all",
                 active ? "bg-white text-black/85 shadow-[0_1px_4px_rgba(0,0,0,0.08)]" : "text-black/45 hover:text-black/70",
               )}
               data-tooltip={item.label}
@@ -1029,7 +1013,7 @@ function ExpertViewToggle({
             <span
               id={tooltipId}
               role="tooltip"
-              className="pointer-events-auto absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 select-text whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium leading-relaxed text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100"
+              className="pointer-events-auto absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 select-text whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium leading-relaxed text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-hover:opacity-100 peer-focus-visible:opacity-100"
             >
               {item.label}
               <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white" />
@@ -1090,11 +1074,8 @@ function getExpertInitial(displayName: string): string {
 }
 
 function SkillPackageProfileIcon({ pkg, className }: { pkg: SkillHubSkillSet; className?: string }) {
-  const [imageFailed, setImageFailed] = useState(false);
-
-  useEffect(() => {
-    setImageFailed(false);
-  }, [pkg.slug]);
+  const [failedImageSlug, setFailedImageSlug] = useState<string | null>(null);
+  const imageFailed = failedImageSlug === pkg.slug;
 
   return (
     <div
@@ -1112,7 +1093,7 @@ function SkillPackageProfileIcon({ pkg, className }: { pkg: SkillHubSkillSet; cl
           alt=""
           className="h-full w-full object-cover"
           data-testid="skill-package-profile-image"
-          onError={() => setImageFailed(true)}
+          onError={() => setFailedImageSlug(pkg.slug)}
         />
       )}
       <span className="sr-only">{pkg.displayName}</span>
@@ -1180,7 +1161,6 @@ function InstallButton({
 function ExpertGridCard({
   card,
   activeFilter,
-  skillCount,
   installingSlug,
   installProgress,
   isInstalled,
@@ -1189,7 +1169,6 @@ function ExpertGridCard({
 }: {
   card: ExpertPackageCard;
   activeFilter: ExpertFilterId;
-  skillCount: number;
   installingSlug: string | null;
   installProgress: SkillInstallProgress | null;
   isInstalled: boolean;
@@ -1223,18 +1202,14 @@ function ExpertGridCard({
         </div>
       </div>
       <p className="line-clamp-3 text-[13px] leading-5 text-black/58" style={{ marginTop: 16 }} title={summary}>{summary}</p>
-      <div className="mt-3.5 flex items-center gap-3">
-        <span className="inline-flex items-center gap-1.5 text-xs font-normal text-black/62">
-          <PackageOpen className="h-3.5 w-3.5" />
-          {skillCount > 0 ? t("{{count}} 个技能", { count: skillCount }) : t("技能包")}
-        </span>
+      <div className="mt-3.5 flex items-center justify-end">
         <InstallButton
           pkg={card.pkg}
           installingSlug={installingSlug}
           installProgress={installProgress}
           isInstalled={isInstalled}
           onInstall={onInstall}
-          className="ml-auto h-6 px-2 text-xs"
+          className="h-6 px-2 text-xs"
         />
       </div>
     </article>
@@ -1244,7 +1219,6 @@ function ExpertGridCard({
 function ExpertListItem({
   card,
   activeFilter,
-  skillCount,
   installingSlug,
   installProgress,
   isInstalled,
@@ -1253,7 +1227,6 @@ function ExpertListItem({
 }: {
   card: ExpertPackageCard;
   activeFilter: ExpertFilterId;
-  skillCount: number;
   installingSlug: string | null;
   installProgress: SkillInstallProgress | null;
   isInstalled: boolean;
@@ -1282,12 +1255,8 @@ function ExpertListItem({
         <div className="mb-1 flex items-center gap-2">
           <h3 className="truncate text-lg font-semibold leading-6 text-black/90">{card.pkg.displayName}</h3>
         </div>
-        <div className="mb-2 flex min-w-0 flex-wrap items-center gap-7">
+        <div className="mb-2 flex min-w-0 flex-wrap items-center">
           <p className="truncate text-xs font-medium leading-5 text-black/48">{getExpertRole(scene, t)}</p>
-          <span className="inline-flex flex-shrink-0 items-center gap-1.5 text-xs font-light text-black/52">
-            <PackageOpen className="h-3.5 w-3.5" />
-            {skillCount > 0 ? t("{{count}} 个技能", { count: skillCount }) : t("技能包")}
-          </span>
         </div>
         <p className="line-clamp-2 text-[13px] leading-[24px] text-black/58" title={summary}>{summary}</p>
       </div>
@@ -1374,7 +1343,15 @@ function SkillPackageDetailView({
           <SkillPackageProfileIcon pkg={detail} className="h-16 w-16 rounded-[14px]" />
           <div className="min-w-0">
             <h2 className="text-[28px] font-semibold leading-tight text-black/95">{detail.displayName}</h2>
-            <p className="mt-1 text-sm font-medium leading-6 text-black/48">{getExpertRole(scene, t)}</p>
+            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-7 gap-y-1 text-sm font-medium leading-6 text-black/48">
+              <span>{getExpertRole(scene, t)}</span>
+              {skillSlugs.length > 0 ? (
+                <span className="inline-flex flex-shrink-0 items-center gap-1.5 text-xs font-light text-black/52">
+                  <PackageOpen className="h-3.5 w-3.5" />
+                  {t("{{count}} 个技能", { count: skillSlugs.length })}
+                </span>
+              ) : null}
+            </div>
             <p className="mt-5 max-w-5xl text-sm leading-7 text-black/62">
               {getPackageSummary(detail as SkillHubSkillSet, t)}
             </p>
