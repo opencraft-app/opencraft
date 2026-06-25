@@ -13,6 +13,8 @@ import type {
   BackendFeatureBaseWire,
   BackendFeatureWire,
   BackendKindWire,
+  BackendLocationKindWire,
+  BackendLocationWire,
   BackendModelWire,
   BackendProbeResultWire,
   BackendSettingsPatchWire,
@@ -167,6 +169,7 @@ const agentConfigPatchKeys = new Set([
 const permissionModes = new Set(["read_only", "auto", "auto_review", "full_access"]);
 const viewWindowDirections = new Set(["tail", "before", "after", "around"]);
 const backendStatuses = new Set(["loading", "available", "unavailable", "degraded", "error"]);
+const backendLocationKinds = new Set(["local", "remote"]);
 const sessionActivityPhases = new Set<string>(
   ["idle", "starting", "running", "canceling"] satisfies SessionActivityPhaseWire[],
 );
@@ -758,6 +761,7 @@ function parseBackendWire(data: unknown, owner: string): BackendWire {
         }
       : {}),
     display_name: requiredViewString(data, "display_name", owner, invalidBackendsResponse),
+    location: parseBackendLocationWire(data.location, `${owner}.location`),
     capabilities: requiredBackendCapabilities(data, owner),
     models: optionalBackendArray(data, "models", owner).map((model, index) =>
       parseBackendModelWire(model, `${owner}.models[${index}]`),
@@ -779,6 +783,20 @@ function parseBackendWire(data: unknown, owner: string): BackendWire {
     ...(data.fetched_at !== undefined
       ? { fetched_at: optionalBackendString(data, "fetched_at", owner) }
       : {}),
+  };
+}
+
+function parseBackendLocationWire(data: unknown, owner: string): BackendLocationWire {
+  if (!isRecord(data)) {
+    throw invalidBackendsResponse(`${owner} must be an object`);
+  }
+  const kind = requiredViewString(data, "kind", owner, invalidBackendsResponse);
+  if (!backendLocationKinds.has(kind)) {
+    throw invalidBackendsResponse(`${owner}.kind must be local or remote`);
+  }
+  return {
+    kind: kind as BackendLocationKindWire,
+    label: requiredViewString(data, "label", owner, invalidBackendsResponse),
   };
 }
 

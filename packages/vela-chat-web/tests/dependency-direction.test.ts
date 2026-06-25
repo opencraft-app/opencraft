@@ -1422,6 +1422,7 @@ test("new session setup uses the same composer controls boundary as active chat"
   assert.match(newSessionSurface, /<ComposerControls/);
   assert.match(newSessionSurface, /buildComposerSetupControlsModel/);
   assert.match(newSessionSurface, /applyAgentConfigPatch/);
+  assert.match(styles, /\.newSessionContent\s*\{[^}]*width:\s*min\(100%,\s*760px\);/s);
   assert.doesNotMatch(newSessionSurface, /Brain|Shield/);
   assert.match(composerControls, /import \{ Brain, Shield, Sparkles \} from "lucide-react";/);
   assert.match(composerControls, /<Brain size=\{16\}/);
@@ -1546,10 +1547,11 @@ test("composer input frame matches the codex-desktop visual rhythm", () => {
   assert.match(rightBlock, /flex:\s*0 1 auto;/);
   assert.match(rightBlock, /justify-content:\s*flex-end;/);
   assert.match(rightBlock, /margin-left:\s*auto;/);
-  assert.match(styles, /\.composerControls\s*\{[^}]*overflow:\s*hidden;/s);
+  assert.match(styles, /\.composerControls\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*overflow:\s*hidden;/s);
+  assert.match(styles, /\.composerControl\s*\{[^}]*min-width:\s*0;[^}]*flex:\s*0 1 auto;/s);
   assert.match(styles, /\.composerControl\[data-composer-control="permission"\]\s*\{[^}]*flex-shrink:\s*1\.8;/s);
-  assert.match(styles, /@container composer-footer \(max-width:\s*620px\)\s*\{[^}]*data-composer-control="permission"[^}]*display:\s*none;/s);
-  assert.match(styles, /@container composer-footer \(max-width:\s*520px\)\s*\{[^}]*data-composer-control="model"[^}]*display:\s*none;/s);
+  assert.match(styles, /@container composer-footer \(max-width:\s*620px\)\s*\{[^}]*\.composerControl\[data-composer-control="permission"\] :global\(\.vela-shell-select-trigger-label\)\s*\{[^}]*display:\s*none;/s);
+  assert.match(styles, /@container composer-footer \(max-width:\s*520px\)\s*\{[^}]*\.composerControl\[data-composer-control="model"\] :global\(\.vela-shell-select-trigger-label\)\s*\{[^}]*display:\s*none;/s);
   assert.match(styles, /\.composerControls\[data-composer-controls-ready="false"\]\s*\{[^}]*visibility:\s*hidden;/s);
   assert.match(styles, /\.composerControls\[data-composer-controls-ready="false"\]\[data-placement="primary"\]\s*\{[^}]*min-width:\s*136px;/s);
   assert.match(styles, /\.composerControls\[data-composer-controls-ready="false"\]\[data-placement="secondary"\]\s*\{[^}]*min-width:\s*260px;/s);

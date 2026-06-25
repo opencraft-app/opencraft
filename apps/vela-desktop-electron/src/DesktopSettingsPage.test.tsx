@@ -19,6 +19,7 @@ function codexBackend() {
     kind: "codex" as const,
     status: "available" as const,
     display_name: "Codex",
+    location: { kind: "local" as const, label: "Local" },
     capabilities: {
       streaming: true,
       cancel: true,

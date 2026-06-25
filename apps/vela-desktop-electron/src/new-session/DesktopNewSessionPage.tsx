@@ -29,10 +29,15 @@ export interface DesktopNewSessionPageProps {
   error?: string | null;
   isSubmitting?: boolean;
   preferredBackends: BackendKindWire[];
+  runtimeHostKind?: "electron" | "web";
   voiceInput?: VoiceInputHost;
   onDefaultBackendChange: (backend: BackendKindWire | "") => void;
+  onSelectWorkingDirectory?: () => Promise<string | null> | string | null;
   onSubmit: (input: DesktopNewSessionSubmitInput) => Promise<void> | void;
 }
+
+const LOCAL_ENVIRONMENT_ID = "local";
+const ENVIRONMENT_OPTIONS: NewSessionOption[] = [{ id: LOCAL_ENVIRONMENT_ID, label: "Local" }];
 
 export function DesktopNewSessionPage({
   backends,
@@ -41,10 +46,13 @@ export function DesktopNewSessionPage({
   error,
   isSubmitting,
   preferredBackends,
+  runtimeHostKind = "web",
   voiceInput,
   onDefaultBackendChange,
+  onSelectWorkingDirectory,
   onSubmit,
 }: DesktopNewSessionPageProps) {
+  const [selectedEnvironment, setSelectedEnvironment] = useState(LOCAL_ENVIRONMENT_ID);
   const [selectedBackend, setSelectedBackend] = useState<BackendKindWire | "">(
     defaultBackend,
   );
@@ -83,18 +91,24 @@ export function DesktopNewSessionPage({
     ],
   );
   const surfaceBackend = selectedBackend || setup.resolvedSelectedBackend;
+  const surfaceBackendDetails =
+    backends.find((backend) => backend.kind === surfaceBackend) ?? null;
   const backendStatus = backendStatusMessage(
-    backends.find((backend) => backend.kind === surfaceBackend) ??
+    surfaceBackendDetails ??
       backends.find((backend) => backend.status !== "available") ??
       null,
     Boolean(setup.resolvedSelectedBackend),
   );
+  const canSelectWorkingDirectory =
+    selectedEnvironment === LOCAL_ENVIRONMENT_ID &&
+    canUseNativeWorkingDirectoryPicker(runtimeHostKind, surfaceBackendDetails);
 
   return (
     <NewSessionSurface
       agentConfig={setup.setupAgentConfig}
       backendOptions={backendOptions(backends)}
       backendStatusMessage={backendStatus}
+      environmentOptions={ENVIRONMENT_OPTIONS}
       error={error}
       initialPrompt={initialPrompt}
       isSubmitting={isSubmitting}
@@ -102,6 +116,7 @@ export function DesktopNewSessionPage({
       permissionModeOptions={optionList(setup.setupPermissionOptions)}
       reasoningEffortOptions={optionList(setup.setupReasoningOptions)}
       selectedBackend={surfaceBackend}
+      selectedEnvironment={selectedEnvironment}
       selectedModel={setup.setupSelectedModel}
       selectedPermissionMode={setup.setupSelectedPermissionMode}
       selectedReasoningEffort={setup.setupSelectedReasoningEffort}
@@ -114,6 +129,7 @@ export function DesktopNewSessionPage({
         setSelectedPermissionMode("");
         onDefaultBackendChange(backend);
       }}
+      onEnvironmentChange={setSelectedEnvironment}
       onInitialPromptChange={setInitialPrompt}
       onModelChange={(model) => {
         setSelectedModel(model);
@@ -124,9 +140,17 @@ export function DesktopNewSessionPage({
       onSubmit={(input) => {
         void submitNewSession(input, onSubmit);
       }}
+      onSelectWorkingDirectory={canSelectWorkingDirectory ? onSelectWorkingDirectory : undefined}
       onWorkingDirectoryChange={setWorkingDirectory}
     />
   );
+}
+
+export function canUseNativeWorkingDirectoryPicker(
+  runtimeHostKind: "electron" | "web",
+  backend: BackendWire | null | undefined,
+) {
+  return runtimeHostKind === "electron" && backend?.location.kind === "local";
 }
 
 async function submitNewSession(

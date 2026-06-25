@@ -20,6 +20,7 @@ declare global {
       setDesktopSettings?: (patch: Partial<DesktopSettings>) => Promise<DesktopSettings>;
       getDesktopChromeState?: () => Promise<RuntimeChromeStateResponse>;
       leaveFullscreen?: () => Promise<RuntimeChromeStateResponse>;
+      selectWorkingDirectory?: () => Promise<unknown>;
       openWorkMonitor?: (sessionId: string) => Promise<WorkMonitorActionResponse>;
       hideWorkMonitor?: () => Promise<WorkMonitorActionResponse>;
       moveWorkMonitorBy?: (deltaX: number, deltaY: number) => Promise<WorkMonitorActionResponse>;
@@ -229,6 +230,13 @@ export async function saveDesktopSettings(patch: Partial<DesktopSettings>) {
     return { defaultBackend: patch.defaultBackend ?? "" };
   }
   return window.velaDesktop.setDesktopSettings(patch);
+}
+
+export async function selectDesktopWorkingDirectory(): Promise<string | null> {
+  const selected = await window.velaDesktop?.selectWorkingDirectory?.();
+  if (typeof selected !== "string") return null;
+  const trimmed = selected.trim();
+  return trimmed ? trimmed : null;
 }
 
 export function subscribeOpenDesktopSession(listener: (sessionId: string) => void) {

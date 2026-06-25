@@ -4,8 +4,8 @@ import type {
   PermissionModeWire,
 } from "../../../vela-chat-client/src";
 import { ShellSelect, type VoiceInputHost } from "../../../vela-desktop-shell/src";
-import { FolderGit2, Laptop } from "lucide-react";
-import type { ReactNode } from "react";
+import { FolderGit2, HardDrive, Laptop } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import styles from "../styles/desktop.module.css";
 import { PromptInput } from "../primitives/prompt-input/PromptInput";
 import { ComposerControls } from "../components/composer-controls/ComposerControls";
@@ -21,6 +21,8 @@ export interface NewSessionSurfaceProps {
   modelOptions: NewSessionOption[];
   reasoningEffortOptions: NewSessionOption[];
   permissionModeOptions: NewSessionOption<PermissionModeWire>[];
+  environmentOptions?: NewSessionOption[];
+  selectedEnvironment?: string;
   selectedBackend: BackendKindWire | "";
   selectedModel: string;
   selectedReasoningEffort: string;
@@ -33,10 +35,12 @@ export interface NewSessionSurfaceProps {
   isSubmitting?: boolean;
   voiceInput?: VoiceInputHost;
   onBackendChange: (backend: BackendKindWire | "") => void;
+  onEnvironmentChange?: (environment: string) => void;
   onModelChange: (model: string) => void;
   onReasoningEffortChange: (reasoningEffort: string) => void;
   onPermissionModeChange: (permissionMode: PermissionModeWire | "") => void;
   onWorkingDirectoryChange: (workingDirectory: string) => void;
+  onSelectWorkingDirectory?: () => Promise<string | null> | string | null;
   onInitialPromptChange: (initialPrompt: string) => void;
   onSubmit: (input: NewSessionSubmitInput) => void;
 }
@@ -46,6 +50,8 @@ export function NewSessionSurface({
   modelOptions,
   reasoningEffortOptions,
   permissionModeOptions,
+  environmentOptions = [],
+  selectedEnvironment = "",
   selectedBackend,
   selectedModel,
   selectedReasoningEffort,
@@ -58,19 +64,24 @@ export function NewSessionSurface({
   isSubmitting,
   voiceInput,
   onBackendChange,
+  onEnvironmentChange,
   onModelChange,
   onReasoningEffortChange,
   onPermissionModeChange,
   onWorkingDirectoryChange,
   onInitialPromptChange,
   onSubmit,
+  onSelectWorkingDirectory,
 }: NewSessionSurfaceProps) {
+  const [workingDirectorySelectionError, setWorkingDirectorySelectionError] = useState<string | null>(
+    null,
+  );
   const canSubmit = canSubmitNewSession({
     backend: selectedBackend,
     workingDirectory,
     isSubmitting,
   });
-  const surfaceError = error ?? backendStatusMessage;
+  const surfaceError = error ?? backendStatusMessage ?? workingDirectorySelectionError;
   const selectedBackendLabel =
     backendOptions.find((option) => option.id === selectedBackend)?.label ?? "Agent";
   const composerControls = buildComposerSetupControlsModel({
@@ -99,6 +110,20 @@ export function NewSessionSurface({
       agentConfig,
     });
   };
+  const selectWorkingDirectory = async () => {
+    if (!onSelectWorkingDirectory) return;
+    setWorkingDirectorySelectionError(null);
+    try {
+      const nextWorkingDirectory = await onSelectWorkingDirectory();
+      if (typeof nextWorkingDirectory === "string" && nextWorkingDirectory.trim()) {
+        onWorkingDirectoryChange(nextWorkingDirectory);
+      }
+    } catch (err) {
+      setWorkingDirectorySelectionError(
+        err instanceof Error ? err.message : "Failed to select workspace folder.",
+      );
+    }
+  };
 
   return (
     <main className={styles.newSessionShell} aria-label="New session">
@@ -107,8 +132,31 @@ export function NewSessionSurface({
           <PromptInput
             attachedSurface={
               <div className={styles.newSessionContextBar} aria-label="Session context">
-                <label className={styles.newSessionWorkspaceField}>
-                  <FolderGit2 size={17} aria-hidden />
+                {environmentOptions.length ? (
+                  <SelectControl
+                    ariaLabel="Select runtime environment"
+                    icon={<HardDrive size={17} />}
+                    value={selectedEnvironment}
+                    options={environmentOptions}
+                    placeholder="Environment"
+                    onChange={(value) => onEnvironmentChange?.(value)}
+                  />
+                ) : null}
+                <div className={styles.newSessionWorkspaceField}>
+                  {onSelectWorkingDirectory ? (
+                    <button
+                      type="button"
+                      className={styles.newSessionWorkspacePicker}
+                      aria-label="Choose workspace folder"
+                      onClick={() => {
+                        void selectWorkingDirectory();
+                      }}
+                    >
+                      <FolderGit2 size={17} aria-hidden />
+                    </button>
+                  ) : (
+                    <FolderGit2 size={17} aria-hidden />
+                  )}
                   <input
                     id="new-session-working-directory"
                     aria-label="Workspace path"
@@ -117,7 +165,7 @@ export function NewSessionSurface({
                     placeholder="Workspace path"
                     spellCheck={false}
                   />
-                </label>
+                </div>
                 <SelectControl
                   ariaLabel="Select agent backend"
                   icon={<Laptop size={17} />}

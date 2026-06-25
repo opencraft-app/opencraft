@@ -16,6 +16,7 @@ pub(crate) struct BackendSnapshot {
     pub display_name: &'static str,
     pub status: BackendSnapshotStatus,
     pub status_message: Option<String>,
+    pub location: BackendSnapshotLocation,
     pub capabilities: BackendSnapshotCapabilities,
     pub models: Vec<BackendModel>,
     pub permission_modes: Vec<PermissionModeOption>,
@@ -72,6 +73,12 @@ pub(crate) struct BackendSnapshotCapabilities {
     pub session_agent_config: bool,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct BackendSnapshotLocation {
+    pub kind: &'static str,
+    pub label: &'static str,
+}
+
 impl BackendSnapshot {
     pub(crate) fn default_model(&self) -> Option<String> {
         self.models
@@ -114,6 +121,10 @@ impl BackendSnapshot {
             "kind": self.kind,
             "status": self.status.as_str(),
             "display_name": self.display_name,
+            "location": {
+                "kind": self.location.kind,
+                "label": self.location.label,
+            },
             "capabilities": {
                 "streaming": self.capabilities.streaming,
                 "cancel": self.capabilities.cancel,
@@ -195,6 +206,10 @@ where
         status: discovery.status,
         status_message: discovery.status_message,
         capabilities,
+        location: BackendSnapshotLocation {
+            kind: "local",
+            label: "Local",
+        },
         models: discovery.models,
         permission_modes: permission_modes(backend.kind),
         features: features(backend.kind),
