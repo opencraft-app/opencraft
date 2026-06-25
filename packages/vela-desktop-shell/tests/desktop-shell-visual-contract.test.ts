@@ -227,7 +227,7 @@ test("desktop host uses unified chrome and drag-region semantics", () => {
   assert.match(css, /--vela-window-toolbar-size:\s*20px;/);
   assert.match(css, /--vela-window-toolbar-icon-size:\s*20px;/);
   assert.match(css, /--vela-window-toolbar-icon-scale:\s*1\.12;/);
-  assert.match(css, /--vela-window-toolbar-gap:\s*8px;/);
+  assert.match(css, /--vela-window-toolbar-gap:\s*16px;/);
   assert.match(css, /--vela-window-toolbar-item-gap:\s*0px;/);
   assert.match(css, /\[data-window-drag-region="true"\]\s*\{[^}]*-webkit-app-region:\s*drag;/s);
   assert.match(css, /\[data-window-drag-region="false"\]/);
@@ -306,8 +306,9 @@ test("desktop session list CSS follows the codex-style compact rail layout", () 
   assert.match(css, /\.vela-session-sidebar\s*\{[^}]*user-select:\s*none;/s);
   assert.match(css, /\.search-box\s*\{[^}]*min-height:\s*34px;/s);
   assert.match(css, /\.sidebar-section-heading\s*\{[^}]*text-transform:\s*none;/s);
-  assert.match(css, /\.vela-session-item\s*\{[^}]*--vela-session-rail-width:\s*42px;/s);
-  assert.match(css, /\.vela-session-main\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) var\(--vela-session-rail-width\);/s);
+  assert.match(css, /\.vela-session-item\s*\{[^}]*position:\s*relative;/s);
+  assert.match(css, /\.vela-session-main\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/s);
+  assert.match(css, /\.vela-session-main\s*\{[^}]*padding:\s*6px 58px 6px 8px;/s);
   assert.match(css, /\.vela-session-main\s*\{[^}]*min-height:\s*50px;/s);
   assert.match(css, /\.vela-session-thumbnail-preview\s*\{[^}]*position:\s*absolute;/s);
   assert.match(css, /\.vela-session-thumbnail-preview\s*\{[^}]*width:\s*76px;/s);
@@ -315,9 +316,12 @@ test("desktop session list CSS follows the codex-style compact rail layout", () 
   assert.match(css, /\.vela-session-item\[data-has-thumbnail="true"\]\s+\.vela-session-main\s*\{[^}]*min-height:\s*50px;/s);
   assert.doesNotMatch(css, /\.vela-session-item\[data-has-thumbnail="true"\]\s+\.vela-session-main\s*\{[^}]*min-height:\s*112px;/s);
   assert.match(css, /\.vela-session-preview\s*\{[^}]*font-size:\s*12px;/s);
-  assert.match(css, /\.vela-session-rail\s*\{[^}]*justify-self:\s*end;/s);
+  assert.match(css, /\.vela-session-rail\s*\{[^}]*position:\s*absolute;/s);
+  assert.match(css, /\.vela-session-rail\s*\{[^}]*right:\s*22px;/s);
+  assert.match(css, /\.vela-session-rail\s*\{[^}]*max-width:\s*38px;/s);
   assert.match(css, /\.vela-session-rail\s*\{[^}]*font-size:\s*10px;/s);
-  assert.match(css, /\.vela-session-rail\s*\{[^}]*font-weight:\s*430;/s);
+  assert.match(css, /\.vela-session-rail\s*\{[^}]*font-weight:\s*420;/s);
+  assert.match(css, /\.vela-session-rail\s*\{[^}]*text-align:\s*right;/s);
   assert.doesNotMatch(css, /\.vela-session-status-dot/);
   assert.doesNotMatch(css, /\.vela-session-icon/);
   assert.doesNotMatch(css, /\.vela-session-badge/);

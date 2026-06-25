@@ -44,7 +44,7 @@ body {
   --vela-window-toolbar-size: 20px;
   --vela-window-toolbar-icon-size: 20px;
   --vela-window-toolbar-icon-scale: 1.12;
-  --vela-window-toolbar-gap: 8px;
+  --vela-window-toolbar-gap: 16px;
   --vela-window-toolbar-item-gap: 0px;
   --vela-window-toolbar-center-y: calc(
     var(--vela-window-traffic-light-top) + var(--vela-window-traffic-light-size) / 2
@@ -418,18 +418,48 @@ body {
 }
 
 .vela-chat-topbar-title-group {
-  gap: 12px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.vela-chat-topbar-location,
+.vela-chat-topbar-title-line {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+}
+
+.vela-chat-topbar-location {
+  gap: 7px;
+  color: rgba(31, 35, 40, 0.66);
+  font-size: 13px;
+  font-weight: 560;
+  letter-spacing: 0;
+  line-height: 1.18;
+}
+
+.vela-chat-topbar-location span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vela-chat-topbar-title-line {
+  gap: 10px;
 }
 
 .vela-chat-topbar-title {
   min-width: 0;
   overflow: hidden;
   margin: 0;
-  color: #1f2328;
-  font-size: 21px;
-  font-weight: 730;
+  color: rgba(31, 35, 40, 0.86);
+  font-size: 18px;
+  font-weight: 620;
   letter-spacing: 0;
-  line-height: 1.18;
+  line-height: 1.24;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

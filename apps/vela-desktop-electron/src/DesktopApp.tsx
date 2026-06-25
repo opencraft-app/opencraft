@@ -4,6 +4,7 @@ import {
   ChevronDown,
   Code2,
   Columns2,
+  Folder,
   ListChecks,
   MoreHorizontal,
   PanelRight,
@@ -31,6 +32,10 @@ import {
   VelaDesktopShell,
   type RuntimeHostBridge,
 } from "../../../packages/vela-desktop-shell/src";
+import {
+  buildSessionLocationInfo,
+  type SessionLocationInfo,
+} from "../../../packages/vela-chat-web/src/session-location/sessionLocation";
 import { VelaLocalTracer } from "../../../packages/vela-observability-client/src";
 import {
   hideWorkMonitor,
@@ -90,7 +95,7 @@ export function DesktopApp() {
         reserveTrafficLightGutter: true,
         toolbarCenterY: 28,
         toolbarIconSize: 24,
-        leadingToolbarInset: 84,
+        leadingToolbarInset: 86,
         toolbarSize: 28,
       },
       hostKind: window.velaDesktop ? "electron" : "web",
@@ -279,10 +284,18 @@ function DesktopReadyApp({
     options: DESKTOP_SESSION_LIST_OPTIONS,
   });
   const sessions = sessionList.data?.sessions ?? [];
+  const activeSession = useMemo(
+    () => sessions.find((session) => session.id === activeSessionId),
+    [activeSessionId, sessions],
+  );
   const activeSessionTitle = useMemo(() => {
-    const title = sessions.find((session) => session.id === activeSessionId)?.title?.trim();
+    const title = activeSession?.title?.trim();
     return title || "New chat";
-  }, [activeSessionId, sessions]);
+  }, [activeSession]);
+  const activeSessionLocationInfo = useMemo(
+    () => buildSessionLocationInfo(activeSession?.working_directory),
+    [activeSession?.working_directory],
+  );
   const controller = useVelaChatSession({
     client,
     baseUrl: apiBaseUrl,
@@ -568,6 +581,7 @@ function DesktopReadyApp({
         <div className="vela-chat-page">
           <DesktopChatTopbar
             isSidebarVisible={isSidebarVisible}
+            locationInfo={activeSessionLocationInfo}
             title={activeSessionTitle}
             onOpenSettings={() => setIsSettingsOpen(true)}
             onToggleSidebar={() => onSidebarVisibilityChange(!isSidebarVisible)}
@@ -620,6 +634,7 @@ function DesktopReadyApp({
 
 interface DesktopChatTopbarProps {
   title: string;
+  locationInfo: SessionLocationInfo | null;
   isSidebarVisible: boolean;
   onOpenSettings: () => void;
   onToggleSidebar: () => void;
@@ -627,6 +642,7 @@ interface DesktopChatTopbarProps {
 
 function DesktopChatTopbar({
   title,
+  locationInfo,
   isSidebarVisible,
   onOpenSettings,
   onToggleSidebar,
@@ -634,15 +650,27 @@ function DesktopChatTopbar({
   return (
     <header className="vela-chat-topbar" data-window-drag-region="true">
       <div className="vela-chat-topbar-title-group">
-        <h1 className="vela-chat-topbar-title">{title}</h1>
-        <button
-          type="button"
-          className="vela-chat-topbar-icon-button vela-chat-topbar-more"
-          aria-label="More chat actions"
-          title="More"
-        >
-          <MoreHorizontal size={22} strokeWidth={2.5} />
-        </button>
+        {locationInfo ? (
+          <div
+            className="vela-chat-topbar-location"
+            aria-label={locationInfo.ariaLabel}
+            title={locationInfo.path}
+          >
+            <Folder size={15} strokeWidth={2.1} />
+            <span>{locationInfo.label}</span>
+          </div>
+        ) : null}
+        <div className="vela-chat-topbar-title-line">
+          <h1 className="vela-chat-topbar-title">{title}</h1>
+          <button
+            type="button"
+            className="vela-chat-topbar-icon-button vela-chat-topbar-more"
+            aria-label="More chat actions"
+            title="More"
+          >
+            <MoreHorizontal size={22} strokeWidth={2.5} />
+          </button>
+        </div>
       </div>
       <div className="vela-chat-topbar-actions" role="toolbar" aria-label="Chat view controls">
         <button

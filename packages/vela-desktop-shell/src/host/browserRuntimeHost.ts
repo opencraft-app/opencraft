@@ -12,7 +12,7 @@ export const browserRuntimeHostBridge: RuntimeHostBridge = {
       reserveTrafficLightGutter: true,
       toolbarCenterY: 28,
       toolbarIconSize: 24,
-      leadingToolbarInset: 84,
+      leadingToolbarInset: 86,
       toolbarSize: 28,
     },
   },
