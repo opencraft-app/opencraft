@@ -363,9 +363,8 @@ test("desktop app opens the work monitor from thumbnail activity and local send 
   );
 
   assert.match(renderer, /hasWorkMonitorActivity\(controller\.model\)/);
-  assert.match(renderer, /const sidebarSessionPreviews = useMemo/);
-  assert.match(renderer, /\[activeSessionId\]: controller\.model/);
-  assert.match(renderer, /sessionPreviews=\{sidebarSessionPreviews\}/);
+  assert.doesNotMatch(renderer, /const sidebarSessionPreviews = useMemo/);
+  assert.doesNotMatch(renderer, /sessionPreviews=\{/);
   assert.doesNotMatch(renderer, /hasPendingRequests/);
   assert.doesNotMatch(renderer, /buildChatThumbnailModel/);
   assert.match(renderer, /void openWorkMonitor\(created\.session\.id\)/);

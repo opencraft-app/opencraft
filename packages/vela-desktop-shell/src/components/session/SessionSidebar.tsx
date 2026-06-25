@@ -1,6 +1,5 @@
 import { MessageSquareText, Plus, Search } from "lucide-react";
 import type { SessionListItemWire } from "../../../../vela-chat-client/src";
-import type { ChatRenderModel } from "../../../../vela-chat-render-model/src";
 import { SessionListSurface } from "../../../../vela-chat-web/src/surfaces/SessionListSurface";
 import {
   Sidebar,
@@ -20,7 +19,6 @@ import {
 export interface SessionSidebarProps {
   sessions: SessionListItemWire[];
   currentSessionId: string | null;
-  sessionPreviews?: Record<string, ChatRenderModel | undefined>;
   searchQuery?: string;
   showTrafficLights?: boolean;
   canClearSessions?: boolean;
@@ -45,7 +43,6 @@ export interface SessionSidebarProps {
 export function SessionSidebar({
   sessions,
   currentSessionId,
-  sessionPreviews,
   searchQuery = "",
   showTrafficLights = false,
   canClearSessions,
@@ -98,7 +95,6 @@ export function SessionSidebar({
 
             <SessionListSurface
               currentSessionId={currentSessionId}
-              sessionPreviews={sessionPreviews}
               sessions={sessions}
               onArchiveSession={onArchiveSession}
               onSelectSession={onSelectSession}

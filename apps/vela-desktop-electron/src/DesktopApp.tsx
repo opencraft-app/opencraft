@@ -315,14 +315,6 @@ function DesktopReadyApp({
     mainView === "chat" &&
     Boolean(activeSessionId) &&
     hasWorkMonitorActivity(controller.model);
-  const sidebarSessionPreviews = useMemo<
-    Record<string, ChatRenderModel | undefined>
-  >(() => {
-    if (!activeSessionId || !hasWorkMonitorActivity(controller.model)) {
-      return {};
-    }
-    return { [activeSessionId]: controller.model };
-  }, [activeSessionId, controller.model]);
 
   const selectChatSession = useCallback((sessionId: string) => {
     setError(null);
@@ -534,7 +526,6 @@ function DesktopReadyApp({
   const appSidebar = (
     <SessionSidebar
       currentSessionId={mainView === "chat" ? activeSessionId || null : null}
-      sessionPreviews={sidebarSessionPreviews}
       sessions={sessions}
       showTrafficLights={hostBridge.chrome.showTrafficLights}
       canCreateSession

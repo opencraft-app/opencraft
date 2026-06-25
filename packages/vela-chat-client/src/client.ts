@@ -57,6 +57,7 @@ import {
   validateSendSessionEventsOptions,
   validateSessionListOptions,
 } from "./wire-contract";
+import { VeladClientError } from "./errors";
 
 export interface VeladClient {
   listSessions: (options?: SessionListOptions) => Promise<SessionListWireResponse>;
@@ -109,11 +110,12 @@ export function createVeladClient(options: VeladClientOptions): VeladClient {
   const doFetch = resolveVeladFetch(options.fetch);
   const observability = options.observability;
 
-  const observedFetch = async (
+  const observedRequest = async <T>(
     name: string,
     url: URL,
     init: RequestInit = {},
     attributes: Record<string, string | number | boolean> = {},
+    readResponse: (response: Response) => Promise<T>,
   ) => {
     const span = observability?.startSpan(name, {
       attributes: {
@@ -138,12 +140,17 @@ export function createVeladClient(options: VeladClientOptions): VeladClient {
           code: 2,
           message: `HTTP ${response.status}`,
         });
-      } else {
+      }
+      const result = await readResponse(response);
+      if (response.ok) {
         span?.setStatus({ code: 1 });
       }
-      return response;
+      return result;
     } catch (err) {
       if (span && observability) {
+        for (const [key, value] of errorAttributes(err)) {
+          span.setAttribute(key, value);
+        }
         observability.recordError(span, err);
         void observability.emitLog?.({
           severityText: "ERROR",
@@ -153,6 +160,7 @@ export function createVeladClient(options: VeladClientOptions): VeladClient {
             "http.method": init.method ?? "GET",
             "http.url": url.toString(),
             "vela.operation": name,
+            ...Object.fromEntries(errorAttributes(err)),
             ...attributes,
           },
         });
@@ -162,6 +170,13 @@ export function createVeladClient(options: VeladClientOptions): VeladClient {
       span?.end();
     }
   };
+
+  const observedFetch = (
+    name: string,
+    url: URL,
+    init: RequestInit = {},
+    attributes: Record<string, string | number | boolean> = {},
+  ) => observedRequest(name, url, init, attributes, async (response) => response);
 
   const headersRecord = (headers: HeadersInit | undefined): Record<string, string> => {
     if (!headers) return {};
@@ -252,13 +267,17 @@ export function createVeladClient(options: VeladClientOptions): VeladClient {
     },
     async getBackends() {
       const url = new URL("backends", baseUrl);
-      const response = await observedFetch("velad.backends.list", url);
-      return readBackendsResponse(response);
+      return observedRequest("velad.backends.list", url, {}, {}, readBackendsResponse);
     },
     async getBackend(backend) {
       const url = new URL(`backends/${encodeBackendKind(backend)}`, baseUrl);
-      const response = await observedFetch("velad.backend.get", url, {}, { "velad.backend": backend });
-      return readBackendResponse(response);
+      return observedRequest(
+        "velad.backend.get",
+        url,
+        {},
+        { "velad.backend": backend },
+        readBackendResponse,
+      );
     },
     async probeBackend(backend) {
       const url = new URL(`backends/${encodeBackendKind(backend)}/probe`, baseUrl);
@@ -370,4 +389,19 @@ export function createVeladClient(options: VeladClientOptions): VeladClient {
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function errorAttributes(error: unknown): Array<[string, string | number | boolean]> {
+  const attributes: Array<[string, string | number | boolean]> = [];
+  if (error instanceof VeladClientError) {
+    attributes.push(["velad.error_code", error.code]);
+    const owner = responseContractOwner(error.message);
+    if (owner) attributes.push(["velad.response_contract_owner", owner]);
+  }
+  return attributes;
+}
+
+function responseContractOwner(message: string) {
+  const match = message.match(/^([A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z0-9_]+|\[[0-9]+\])*)\s/);
+  return match?.[1];
 }

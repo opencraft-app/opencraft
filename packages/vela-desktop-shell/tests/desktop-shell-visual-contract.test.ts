@@ -7,7 +7,6 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import type { SessionListItemWire } from "../../vela-chat-client/src";
-import type { ChatRenderModel } from "../../vela-chat-render-model/src";
 
 register(new URL("../../vela-chat-web/tests/css-module-loader.mjs", import.meta.url));
 
@@ -129,7 +128,7 @@ test("session sidebar renders the codex-desktop settings menu in the footer", ()
   );
 });
 
-test("running session rows use a compact scaled thumbnail preview", () => {
+test("running session rows stay in the compact text layout", () => {
   const runningSession: SessionListItemWire = {
     ...session,
     id: "ses_running_visual_contract",
@@ -139,34 +138,28 @@ test("running session rows use a compact scaled thumbnail preview", () => {
     running: true,
     pending_request_count: 0,
   };
-  const preview = chatPreviewModel(runningSession.id);
-
   const html = renderToStaticMarkup(
     React.createElement(SessionSidebar, {
       sessions: [runningSession],
       currentSessionId: runningSession.id,
-      sessionPreviews: { [runningSession.id]: preview },
       onCreateSession: () => {},
       onSelectSession: () => {},
     }),
   );
 
-  assert.match(html, /data-slot="session-thumbnail-preview"/);
-  assert.match(html, /data-conversation-preview="true"/);
-  assert.match(html, /transform:scale\(0\.09\)/);
-  assert.match(html, /width:75\.6px/);
-  assert.match(html, /height:46\.8px/);
-  assert.doesNotMatch(html, /class="vela-session-preview"/);
-  assert.doesNotMatch(html, /Renderer keeps a small release buffer/);
-  assert.match(html, /Please investigate the markdown stream/);
-  assert.match(html, /Checking[\s\S]*release[\s\S]*buffer/);
+  assert.doesNotMatch(html, /data-slot="session-thumbnail-preview"/);
+  assert.doesNotMatch(html, /data-conversation-preview="true"/);
+  assert.match(html, /class="vela-session-preview"/);
+  assert.match(html, /Renderer keeps a small release buffer/);
+  assert.match(html, /class="vela-session-location"/);
+  assert.match(html, />velaChat</);
   assert.match(html, /class="vela-session-rail"/);
   assert.doesNotMatch(html, /class="vela-session-status-dot"/);
   assert.doesNotMatch(html, /class="vela-session-icon"/);
   assert.doesNotMatch(html, /class="vela-session-badge"/);
   assert.match(html, /data-activity="running"/);
   assert.match(html, /data-running="true"/);
-  assert.match(html, /data-has-thumbnail="true"/);
+  assert.doesNotMatch(html, /data-has-thumbnail/);
   assert.doesNotMatch(html, /运行中/);
   assert.doesNotMatch(html, /class="[^"]*card/);
 });
@@ -246,57 +239,6 @@ test("desktop host uses unified chrome and drag-region semantics", () => {
   assert.doesNotMatch(css, /\.vela-sidebar-traffic-zone/);
 });
 
-function chatPreviewModel(sessionId: string): ChatRenderModel {
-  return {
-    session_id: sessionId,
-    host: { kind: "desktop_shell" },
-    requests: { items: [] },
-    composer: {
-      placeholder: "要求后续变更",
-      can_send: true,
-      is_running: true,
-    },
-    rows: [
-      {
-        kind: "user_message",
-        id: `${sessionId}:user`,
-        key: `${sessionId}:user`,
-        text: "Please investigate the markdown stream",
-        copy_text: "Please investigate the markdown stream",
-        collapsed: false,
-        parts: [
-          {
-            id: `${sessionId}:user:text`,
-            type: "text",
-            text: "Please investigate the markdown stream",
-          },
-        ],
-        createdAt: "2026-06-23T00:00:01.000Z",
-        debug: debug(`${sessionId}:user`),
-      },
-      {
-        kind: "assistant_message",
-        id: `${sessionId}:assistant`,
-        key: `${sessionId}:assistant`,
-        blocks: [{ id: `${sessionId}:assistant:block`, text: "Checking the release buffer" }],
-        status: "streaming",
-        streaming: true,
-        revision: 1,
-        createdAt: "2026-06-23T00:00:02.000Z",
-        debug: debug(`${sessionId}:assistant`),
-      },
-    ],
-  };
-}
-
-function debug(id: string) {
-  return {
-    projection: "conversation" as const,
-    source_event_ids: [`evt_${id}`],
-    source_event_ranges: [],
-  };
-}
-
 test("desktop session list CSS follows the codex-style compact rail layout", () => {
   const css = readFileSync(
     join(root, "apps/vela-desktop-electron/src/style.css"),
@@ -307,20 +249,19 @@ test("desktop session list CSS follows the codex-style compact rail layout", () 
   assert.match(css, /\.search-box\s*\{[^}]*min-height:\s*34px;/s);
   assert.match(css, /\.sidebar-section-heading\s*\{[^}]*text-transform:\s*none;/s);
   assert.doesNotMatch(css, /--vela-session-rail-width/);
+  assert.match(css, /\.vela-session-item\s*\{[^}]*position:\s*relative;/s);
   assert.match(css, /\.vela-session-main\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/s);
   assert.match(css, /\.vela-session-main\s*\{[^}]*padding:\s*6px 58px 6px 8px;/s);
   assert.match(css, /\.vela-session-main\s*\{[^}]*min-height:\s*50px;/s);
-  assert.match(css, /\.vela-session-thumbnail-preview\s*\{[^}]*position:\s*absolute;/s);
-  assert.match(css, /\.vela-session-thumbnail-preview\s*\{[^}]*width:\s*76px;/s);
-  assert.match(css, /\.vela-session-thumbnail-preview\s*\{[^}]*height:\s*47px;/s);
-  assert.match(css, /\.vela-session-item\[data-has-thumbnail="true"\]\s+\.vela-session-main\s*\{[^}]*min-height:\s*50px;/s);
-  assert.doesNotMatch(css, /\.vela-session-item\[data-has-thumbnail="true"\]\s+\.vela-session-main\s*\{[^}]*min-height:\s*112px;/s);
+  assert.doesNotMatch(css, /\.vela-session-thumbnail-preview/);
+  assert.doesNotMatch(css, /data-has-thumbnail/);
   assert.match(css, /\.vela-session-preview\s*\{[^}]*font-size:\s*12px;/s);
   assert.match(css, /\.vela-session-rail\s*\{[^}]*position:\s*absolute;/s);
   assert.match(css, /\.vela-session-rail\s*\{[^}]*right:\s*22px;/s);
   assert.match(css, /\.vela-session-rail\s*\{[^}]*max-width:\s*38px;/s);
   assert.match(css, /\.vela-session-rail\s*\{[^}]*font-size:\s*10px;/s);
   assert.match(css, /\.vela-session-rail\s*\{[^}]*font-weight:\s*420;/s);
+  assert.match(css, /\.vela-session-rail\s*\{[^}]*text-align:\s*right;/s);
   assert.doesNotMatch(css, /\.vela-session-status-dot/);
   assert.doesNotMatch(css, /\.vela-session-icon/);
   assert.doesNotMatch(css, /\.vela-session-badge/);

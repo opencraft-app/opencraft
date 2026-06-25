@@ -8,7 +8,6 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 
 import type { SessionListItemWire } from "../../vela-chat-client/src";
-import type { ChatRenderModel } from "../../vela-chat-render-model/src";
 
 register(new URL("./css-module-loader.mjs", import.meta.url));
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -159,7 +158,7 @@ test("session list rows show the folder location text", async () => {
   }
 });
 
-test("running session rows render a scaled thumbnail preview", async () => {
+test("running session rows keep the compact text layout", async () => {
   const dom = installDomRuntime();
   try {
     const { SessionListSurface } = await import("../src");
@@ -171,7 +170,6 @@ test("running session rows render a scaled thumbnail preview", async () => {
       status: "running",
       running: true,
     };
-    const preview = chatPreviewModel(runningSession.id);
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
@@ -181,26 +179,19 @@ test("running session rows render a scaled thumbnail preview", async () => {
         <SessionListSurface
           sessions={[runningSession]}
           currentSessionId={runningSession.id}
-          sessionPreviews={{ [runningSession.id]: preview }}
           onSelectSession={() => {}}
         />,
       );
     });
 
     const item = document.querySelector<HTMLElement>('[data-slot="session-list-surface-item"]');
-    const previewElement = document.querySelector<HTMLElement>(
-      '[data-slot="session-thumbnail-preview"]',
-    );
     assert.ok(item);
-    assert.ok(previewElement);
-    assert.equal(item.dataset.hasThumbnail, "true");
-    assert.equal(document.querySelector(".vela-session-preview"), null);
+    assert.equal(item.dataset.hasThumbnail, undefined);
+    assert.equal(document.querySelector('[data-slot="session-thumbnail-preview"]'), null);
+    assert.equal(document.querySelector(".vela-session-preview")?.textContent, runningSession.preview);
     assert.equal(document.querySelector(".vela-session-meta"), null);
     assert.equal(document.querySelector(".vela-session-location")?.textContent, "velaChat");
     assert.ok(document.querySelector(".vela-session-location svg"));
-    assert.match(container.innerHTML, /transform:\s*scale\(0\.09\)/);
-    assert.match(container.innerHTML, /width:\s*75\.6px/);
-    assert.match(container.innerHTML, /height:\s*46\.8px/);
 
     await act(async () => {
       root.unmount();
@@ -301,50 +292,5 @@ function installDomRuntime() {
     restore() {
       Object.assign(globalThis, previous);
     },
-  };
-}
-
-function chatPreviewModel(sessionId: string): ChatRenderModel {
-  return {
-    session_id: sessionId,
-    host: { kind: "desktop_shell" },
-    requests: { items: [] },
-    composer: {
-      placeholder: "要求后续变更",
-      can_send: true,
-      is_running: true,
-    },
-    rows: [
-      {
-        kind: "user_message",
-        id: `${sessionId}:user`,
-        key: `${sessionId}:user`,
-        text: "Summarize the current work",
-        copy_text: "Summarize the current work",
-        collapsed: false,
-        parts: [{ id: `${sessionId}:user:text`, type: "text", text: "Summarize the current work" }],
-        createdAt: "2026-06-23T00:00:01.000Z",
-        debug: debug(`${sessionId}:user`),
-      },
-      {
-        kind: "assistant_message",
-        id: `${sessionId}:assistant`,
-        key: `${sessionId}:assistant`,
-        blocks: [{ id: `${sessionId}:assistant:block`, text: "Working through the session" }],
-        status: "streaming",
-        streaming: true,
-        revision: 1,
-        createdAt: "2026-06-23T00:00:02.000Z",
-        debug: debug(`${sessionId}:assistant`),
-      },
-    ],
-  };
-}
-
-function debug(id: string) {
-  return {
-    projection: "conversation" as const,
-    source_event_ids: [`evt_${id}`],
-    source_event_ranges: [],
   };
 }

@@ -643,19 +643,6 @@ body {
   gap: 1px;
 }
 
-.vela-session-thumbnail-preview {
-  position: absolute;
-  top: 50%;
-  right: 0;
-  display: block;
-  width: 76px;
-  height: 47px;
-  overflow: hidden;
-  border-radius: 9px;
-  pointer-events: none;
-  transform: translateY(-50%);
-}
-
 .vela-session-title-row,
 .vela-session-preview,
 .vela-session-location,
@@ -966,18 +953,6 @@ body {
   border-radius: 8px;
   padding: 6px 58px 6px 8px;
   background: transparent;
-}
-
-.vela-session-item[data-has-thumbnail="true"] .vela-session-main {
-  align-items: center;
-  min-height: 50px;
-}
-
-.vela-session-item[data-has-thumbnail="true"] .vela-session-copy {
-  box-sizing: border-box;
-  min-height: 38px;
-  align-content: center;
-  padding-right: 84px;
 }
 
 .vela-session-item .vela-session-main:hover:not(:disabled),

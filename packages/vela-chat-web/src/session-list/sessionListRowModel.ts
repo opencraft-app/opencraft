@@ -1,5 +1,4 @@
 import type { SessionListItemWire } from "../../../vela-chat-client/src";
-import type { ChatRenderModel } from "../../../vela-chat-render-model/src";
 import {
   buildSessionLocationInfo,
   type SessionLocationInfo,
@@ -38,13 +37,11 @@ export interface SessionListRowModel {
   rail: SessionListRailModel | null;
   archiveActionLabel: string;
   archiveMenuLabel: string;
-  compactPreview: ChatRenderModel | null;
   status: {
     activity: SessionListActivity;
     isRunning: boolean;
     isWaiting: boolean;
     isFailed: boolean;
-    hasThumbnail: boolean;
   };
 }
 
@@ -57,31 +54,25 @@ const sessionListRailFreshSuppressionMs = 10 * 60_000;
 
 export function buildSessionListRowModel(
   session: SessionListItemWire,
-  previewModel?: ChatRenderModel,
   options: BuildSessionListRowModelOptions = {},
 ): SessionListRowModel {
   const text = options.text ?? defaultSessionListText;
   const projectedAttention = session.activity?.attention;
   const projectedPhase = session.activity?.phase;
   const isWaiting = session.activity
-    ? projectedAttention === "waiting_for_user" || hasPendingPreviewRequest(previewModel)
-    : session.status === "waiting_for_input" ||
-      session.pending_request_count > 0 ||
-      hasPendingPreviewRequest(previewModel);
+    ? projectedAttention === "waiting_for_user"
+    : session.status === "waiting_for_input" || session.pending_request_count > 0;
   const isRunning =
     !isWaiting &&
     (session.activity
       ? projectedPhase === "starting" ||
         projectedPhase === "running" ||
-        projectedPhase === "canceling" ||
-        hasRunningPreview(previewModel)
+        projectedPhase === "canceling"
       : session.running ||
         session.status === "starting" ||
         session.status === "running" ||
-        session.status === "canceling" ||
-        hasRunningPreview(previewModel));
+        session.status === "canceling");
   const isFailed = session.activity ? projectedAttention === "error" : session.status === "failed";
-  const compactPreview = isRunning || isWaiting ? (previewModel ?? null) : null;
   const title = session.title || session.id;
   const locationInfo = buildSessionLocationInfo(session.working_directory);
 
@@ -98,13 +89,11 @@ export function buildSessionListRowModel(
     ),
     archiveActionLabel: text.archiveChatForTitle(title),
     archiveMenuLabel: text.archiveChat,
-    compactPreview,
     status: {
       activity: sessionListActivity({ isFailed, isRunning, isWaiting }),
       isRunning,
       isWaiting,
       isFailed,
-      hasThumbnail: Boolean(compactPreview),
     },
   };
 }
@@ -170,25 +159,4 @@ function sessionRailModel(
     label: text.dayRecency(days),
     recency: "days",
   };
-}
-
-function hasPendingPreviewRequest(model: ChatRenderModel | undefined) {
-  return Boolean(model?.requests.items.some((request) => request.status === "pending"));
-}
-
-function hasRunningPreview(model: ChatRenderModel | undefined) {
-  if (!model) return false;
-  if (model.composer.is_running) return true;
-  return model.rows.some((row) => {
-    if (row.kind === "assistant_message") return row.streaming;
-    if (row.kind === "agent_work") return row.status === "running" || row.status === "pending";
-    if (row.kind === "agent_work_group") {
-      return row.children.some(
-        (child) => child.status === "running" || child.status === "pending",
-      );
-    }
-    if (row.kind === "turn_meta") return row.status === "running";
-    if (row.kind === "status") return row.status === "pending" || row.status === "streaming";
-    return false;
-  });
 }
