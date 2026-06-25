@@ -20,5 +20,5 @@ export default async function AgentsSectionPage({ params }: { params: Promise<{ 
   const { section } = await params;
   const sectionId = AGENT_SECTION_ID_BY_SLUG[section];
   if (!sectionId) notFound();
-  return <AgentsPageClient sectionId={sectionId} />;
+  return <AgentsPageClient initialSectionSlug={section} sectionId={sectionId} />;
 }

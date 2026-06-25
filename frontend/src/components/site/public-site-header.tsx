@@ -225,7 +225,7 @@ export function PublicSiteHeader({
   const textColorClass = textClass[appearance];
   const handleCreateClick = onCreateClick ?? onLoginClick;
   const createHref = "/agents";
-  const loginHref = "/agents";
+  const loginHref = "/auth/sign-in";
   const renderLanguage = (variant: LanguageSwitcherVariant) => (
     renderLanguageSwitcher
       ? renderLanguageSwitcher({ activeLocale: locale, reloadAfterSwitch: reloadLanguageAfterSwitch, variant })

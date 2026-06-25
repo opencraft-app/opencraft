@@ -54,6 +54,12 @@ describe("PublicSiteHeader", () => {
     expect(screen.getByRole("link", { name: "产品文档" })).toHaveAttribute("data-next-link", "true");
   });
 
+  it("links anonymous login actions to the sign-in page by default", () => {
+    render(<PublicSiteHeader locale="zh-CN" />);
+
+    expect(screen.getAllByRole("link", { name: "登录" })[0]).toHaveAttribute("href", "/auth/sign-in");
+  });
+
   it("keeps auth actions hidden while the session is hydrating", () => {
     render(<PublicSiteHeader authSnapshot={{ authReady: false, isAuthenticated: false }} onLoginClick={vi.fn()} />);
 

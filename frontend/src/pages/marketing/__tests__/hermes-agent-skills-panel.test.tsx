@@ -65,12 +65,13 @@ describe("HermesAgentSkillsPanel", () => {
     expect(screen.getByText("技能包列表")).toBeInTheDocument();
   });
 
-  it("defaults to the skill tab for the legacy experts route", () => {
-    expect(getInitialAgentSkillsTab("experts")).toBe("skills");
+  it("defaults to the package tab for package routes", () => {
+    expect(getInitialAgentSkillsTab("experts")).toBe("packages");
+    expect(getInitialAgentSkillsTab("packages")).toBe("packages");
 
     renderPanel("experts");
 
-    expect(screen.getByRole("tab", { name: "技能" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByText("单技能安装面板")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "技能包" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("技能包列表")).toBeInTheDocument();
   });
 });

@@ -166,13 +166,19 @@ function mergeInstalledPackageSlugs(current: Set<string>, slugs: string[]): Set<
 export function getPackageSkillSlugs(packageSlug: string, skillSlugs: string[], missingSkillSlugs: string[] = []): string[] {
   const overrides = PACKAGE_SKILL_SLUG_OVERRIDES[packageSlug];
   const missingSlugs = new Set(getUniqueSkillSlugs(missingSkillSlugs));
-  const normalizedSkillSlugs = overrides
-    ? skillSlugs
-        .filter((skillSlug) => !missingSlugs.has(skillSlug.trim()))
-        .map((skillSlug) => overrides[skillSlug] ?? skillSlug)
-        .filter((skillSlug) => !missingSlugs.has(skillSlug.trim()))
-    : skillSlugs.filter((skillSlug) => !missingSlugs.has(skillSlug.trim()));
-  return getUniqueSkillSlugs(normalizedSkillSlugs);
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const skillSlug of skillSlugs) {
+    const normalizedSkillSlug = skillSlug.trim();
+    if (!normalizedSkillSlug || missingSlugs.has(normalizedSkillSlug)) continue;
+    const displaySlug = (overrides?.[normalizedSkillSlug] ?? normalizedSkillSlug).trim();
+    if (!displaySlug || missingSlugs.has(displaySlug) || seen.has(displaySlug)) continue;
+    seen.add(displaySlug);
+    result.push(displaySlug);
+  }
+
+  return result;
 }
 
 function isMissingSkillDetailError(error: unknown): boolean {
@@ -199,8 +205,14 @@ export async function resolveAvailablePackageSkillSlugs(
   return getUniqueSkillSlugs(checkedSkillSlugs.filter((skillSlug): skillSlug is string => !!skillSlug));
 }
 
-function getSkillCount(pkg: Pick<SkillHubSkillSet, "skillCount" | "skillSlugs">): number {
-  return pkg.skillCount ?? pkg.skillSlugs?.length ?? 0;
+function getSkillCount(pkg: Pick<SkillHubSkillSet, "slug" | "skillCount" | "skillSlugs" | "missing">): number {
+  if (pkg.skillSlugs && pkg.skillSlugs.length > 0) {
+    return getPackageSkillSlugs(pkg.slug, pkg.skillSlugs, pkg.missing ?? []).length;
+  }
+
+  const count = pkg.skillCount ?? 0;
+  const missingCount = getUniqueSkillSlugs(pkg.missing ?? []).length;
+  return Math.max(count - missingCount, 0);
 }
 
 function getPackageScene(pkg: Pick<SkillHubSkillSet, "scene">, fallback: ExpertFilterId): SkillHubSkillSetScene | undefined {
@@ -220,7 +232,7 @@ function isSupportedExpertPackage(pkg: Pick<SkillHubSkillSet, "scene">): boolean
   return !!pkg.scene && EXPERT_SCENE_MAP.has(pkg.scene);
 }
 
-export function getSkillPackageTags(pkg: Pick<SkillHubSkillSet, "displayName" | "skillCount" | "skillSlugs">): string[] {
+export function getSkillPackageTags(pkg: Pick<SkillHubSkillSet, "slug" | "displayName" | "skillCount" | "skillSlugs" | "missing">): string[] {
   const count = getSkillCount(pkg);
   return [pkg.displayName.trim(), count > 0 ? `${count} 个技能` : "技能包"].filter(Boolean).slice(0, 3);
 }
@@ -724,7 +736,7 @@ export function ExpertsPanel({
   }, [botId, execDebugCommand]);
 
   useEffect(() => {
-    if (installedSkillSlugs.size === 0 || visibleCards.length === 0) return;
+    if (visibleCards.length === 0) return;
 
     const missingCards = visibleCards.filter(({ pkg }) => {
       return !packageSkillSlugs.has(pkg.slug);
@@ -734,32 +746,44 @@ export function ExpertsPanel({
     let cancelled = false;
 
     async function fetchVisiblePackageDetails() {
-      const entries = await Promise.all(
-        missingCards.map(async ({ pkg }) => {
-          try {
-            const detail = await fetchSkillSetDetail(pkg.slug);
-            return [pkg.slug, await resolveAvailablePackageSkillSlugs(pkg.slug, detail.skillSlugs ?? [], detail.missing ?? [])] as const;
-          } catch {
-            return null;
-          }
-        }),
-      );
-
-      if (cancelled) return;
-      setPackageSkillSlugs((current) => {
-        const next = new Map(current);
-        for (const entry of entries) {
-          if (entry) next.set(entry[0], entry[1]);
+      await Promise.all(missingCards.map(async ({ pkg }) => {
+        try {
+          const detail = await fetchSkillSetDetail(pkg.slug);
+          const skillSlugs = await resolveAvailablePackageSkillSlugs(
+            pkg.slug,
+            detail.skillSlugs ?? pkg.skillSlugs ?? [],
+            detail.missing ?? pkg.missing ?? [],
+          );
+          if (cancelled) return;
+          setPackageSkillSlugs((current) => {
+            if (current.has(pkg.slug)) return current;
+            const next = new Map(current);
+            next.set(pkg.slug, skillSlugs);
+            return next;
+          });
+        } catch {
+          if (cancelled) return;
+          setPackageSkillSlugs((current) => {
+            if (current.has(pkg.slug)) return current;
+            const fallbackSkillSlugs = getPackageSkillSlugs(pkg.slug, pkg.skillSlugs ?? [], pkg.missing ?? []);
+            const next = new Map(current);
+            next.set(pkg.slug, fallbackSkillSlugs);
+            return next;
+          });
         }
-        return next;
-      });
+      }));
     }
 
     void fetchVisiblePackageDetails();
     return () => {
       cancelled = true;
     };
-  }, [installedSkillSlugs, packageSkillSlugs, visibleCards]);
+  }, [packageSkillSlugs, visibleCards]);
+
+  const getDisplaySkillCount = useCallback((pkg: SkillHubSkillSet) => {
+    const knownSkillSlugs = packageSkillSlugs.get(pkg.slug);
+    return knownSkillSlugs ? knownSkillSlugs.length : getSkillCount(pkg);
+  }, [packageSkillSlugs]);
 
   const getKnownSkillSlugs = useCallback((pkg: SkillHubSkillSet) => {
     return getPackageSkillSlugs(pkg.slug, packageSkillSlugs.get(pkg.slug) ?? pkg.skillSlugs ?? [], pkg.missing ?? []);
@@ -891,6 +915,7 @@ export function ExpertsPanel({
                 key={card.pkg.slug}
                 card={card}
                 activeFilter={activeFilter}
+                skillCount={getDisplaySkillCount(card.pkg)}
                 installingSlug={installingSlug}
                 installProgress={installProgress}
                 isInstalled={isPackageInstalled(card.pkg)}
@@ -907,6 +932,7 @@ export function ExpertsPanel({
                 <ExpertListItem
                   card={card}
                   activeFilter={activeFilter}
+                  skillCount={getDisplaySkillCount(card.pkg)}
                   installingSlug={installingSlug}
                   installProgress={installProgress}
                   isInstalled={isPackageInstalled(card.pkg)}
@@ -1029,7 +1055,7 @@ function ExpertSceneFilters({
   ];
 
   return (
-    <div className="-mx-0.5 flex min-w-0 flex-wrap gap-2 overflow-visible px-0.5 pb-1">
+    <div className="-mx-0.5 flex min-w-0 flex-wrap gap-1.5 overflow-visible px-0.5 pb-1">
       {filters.map((filter) => {
         const Icon = filter.icon;
         const active = activeFilter === filter.value;
@@ -1038,14 +1064,15 @@ function ExpertSceneFilters({
             key={filter.value}
             type="button"
             onClick={() => onChange(filter.value)}
+            style={{ fontSize: 13, lineHeight: "18px" }}
             className={cn(
-              "inline-flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full border px-3 text-sm font-medium transition-colors",
+              "inline-flex h-8 flex-shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-[13px] font-medium transition-colors",
               active
-                ? "border-black/32 bg-black/[0.055] text-black/90 shadow-[0_3px_10px_rgba(15,23,42,0.08)]"
+                ? "border-black/32 bg-black/[0.055] text-black/90 shadow-[0_2px_8px_rgba(15,23,42,0.07)]"
                 : "border-black/8 bg-white text-black/60 hover:border-black/18 hover:text-black/82",
             )}
           >
-            <Icon className="h-4 w-4" />
+            <Icon className="h-3.5 w-3.5" />
             {filter.label}
           </button>
         );
@@ -1153,6 +1180,7 @@ function InstallButton({
 function ExpertGridCard({
   card,
   activeFilter,
+  skillCount,
   installingSlug,
   installProgress,
   isInstalled,
@@ -1161,6 +1189,7 @@ function ExpertGridCard({
 }: {
   card: ExpertPackageCard;
   activeFilter: ExpertFilterId;
+  skillCount: number;
   installingSlug: string | null;
   installProgress: SkillInstallProgress | null;
   isInstalled: boolean;
@@ -1169,7 +1198,6 @@ function ExpertGridCard({
 }) {
   const t = useT();
   const scene = getPackageScene(card.pkg, activeFilter);
-  const skillCount = getSkillCount(card.pkg);
   const summary = getPackageSummary(card.pkg, t);
 
   return (
@@ -1216,6 +1244,7 @@ function ExpertGridCard({
 function ExpertListItem({
   card,
   activeFilter,
+  skillCount,
   installingSlug,
   installProgress,
   isInstalled,
@@ -1224,6 +1253,7 @@ function ExpertListItem({
 }: {
   card: ExpertPackageCard;
   activeFilter: ExpertFilterId;
+  skillCount: number;
   installingSlug: string | null;
   installProgress: SkillInstallProgress | null;
   isInstalled: boolean;
@@ -1232,7 +1262,6 @@ function ExpertListItem({
 }) {
   const t = useT();
   const scene = getPackageScene(card.pkg, activeFilter);
-  const skillCount = getSkillCount(card.pkg);
   const summary = getPackageSummary(card.pkg, t);
 
   return (
@@ -1371,7 +1400,7 @@ function SkillPackageDetailView({
           <div className="rounded-md border border-red-500/15 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700">
             {getSkillHubErrorMessage(error, t)}
           </div>
-        ) : availableSkillSlugs.loading ? (
+        ) : availableSkillSlugs.loading && candidateSkillSlugs.length > 0 ? (
           <div className="flex min-h-40 items-center justify-center text-sm text-black/45">
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             {t("正在加载技能包详情...")}

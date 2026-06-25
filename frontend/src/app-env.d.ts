@@ -3,6 +3,7 @@ interface ImportMetaEnv {
   readonly PROD?: boolean;
   readonly VITE_REGION?: "cn" | "global";
   readonly VITE_AUTH_API_BASE_URL?: string;
+  readonly VITE_LOCAL_PREVIEW_AUTH?: string;
   readonly VITE_OAUTH_RELAY_ISSUER_BASE_URL?: string;
   readonly VITE_AEGIS_ENABLED?: string;
   readonly VITE_AEGIS_ID?: string;

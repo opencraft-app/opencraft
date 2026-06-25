@@ -2918,9 +2918,11 @@ const isRescueExportRunning = (status: WorkerActionStatusResult | null | undefin
 };
 
 export const AgentSettingsPage = ({
+  initialSectionSlug,
   sectionId,
   showHeader = true,
 }: {
+  initialSectionSlug?: string;
   sectionId?: AgentSettingsSectionId;
   showHeader?: boolean;
 } = {}) => {
@@ -4718,6 +4720,7 @@ export const AgentSettingsPage = ({
                               execDebugCommand={repositories.bots.execDebugCommand}
                               instance={sdkInstance}
                               featureFlags={sdkFeatureFlags}
+                              initialSectionSlug={initialSectionSlug}
                               productConfigArgs={sdkProductConfigArgs}
                             />
                           )}

@@ -98,8 +98,13 @@ describe("hermes agent experts panel", () => {
     ]);
   });
 
-  it("builds compact card tags from the package name and skill count", () => {
-    expect(getSkillPackageTags({ displayName: " 量化回测 ", skillCount: 6 })).toEqual(["量化回测", "6 个技能"]);
+  it("builds compact card tags from the package name and non-missing skill count", () => {
+    expect(getSkillPackageTags({
+      slug: "tech-test-automation",
+      displayName: " 自动化测试 ",
+      skillCount: 6,
+      missing: ["tdd-guide"],
+    })).toEqual(["自动化测试", "5 个技能"]);
   });
 
   it("strips yaml frontmatter before rendering package markdown", () => {
@@ -229,9 +234,12 @@ describe("hermes agent experts panel", () => {
       createdAt: 0,
       updatedAt: 0,
     });
-    vi.mocked(fetchSkillDetail).mockResolvedValue({
-      slug: "test-case-generator",
-      displayName: "Test Case Generator",
+    vi.mocked(fetchSkillDetail).mockImplementation(async (slug) => {
+      if (slug === "tdd-guide") throw new Error("Skill not found");
+      return {
+        slug,
+        displayName: "Test Case Generator",
+      };
     });
     vi.mocked(fetchSkillFiles).mockResolvedValue([{ path: "SKILL.md", size: 1, sha256: "abc" }]);
     vi.mocked(fetchSkillFile).mockResolvedValue("# Test Case Generator\n\n测试生成详情");
@@ -243,8 +251,60 @@ describe("hermes agent experts panel", () => {
     expect(await screen.findByText("Test Case Generator")).toBeInTheDocument();
     expect(await screen.findByText("测试生成详情")).toBeInTheDocument();
     expect(screen.queryByText("Tdd Guide")).not.toBeInTheDocument();
+    expect(screen.queryByText("Missing")).not.toBeInTheDocument();
     expect(fetchSkillFiles).toHaveBeenCalledWith("test-case-generator");
     expect(fetchSkillFiles).not.toHaveBeenCalledWith("tdd-guide");
+  });
+
+  it("shows non-missing skill count on package list items", async () => {
+    const detailSkillSlugs = [
+      "tdd-guide",
+      "test-case-generator",
+      "playwright-e2e",
+      "api-test",
+      "coverage-plan",
+      "pytest-unit",
+    ];
+    vi.mocked(fetchSkillSets).mockImplementation(async (params) => ({
+      skillSets: !params?.scene || params.scene === "tech"
+        ? [{
+            id: 1,
+            slug: "tech-test-automation",
+            displayName: "自动化测试",
+            summary: "列表摘要",
+            remark: "",
+            scene: "tech",
+            skillCount: 6,
+            createdAt: 0,
+            updatedAt: 0,
+          }]
+        : [],
+    }));
+    vi.mocked(fetchSkillSetDetail).mockResolvedValue({
+      id: 1,
+      slug: "tech-test-automation",
+      displayName: "自动化测试",
+      summary: "详情摘要",
+      remark: "",
+      skillCount: 6,
+      skillSlugs: detailSkillSlugs,
+      createdAt: 0,
+      updatedAt: 0,
+    });
+    vi.mocked(fetchSkillDetail).mockImplementation(async (slug) => {
+      if (slug === "tdd-guide") throw new Error("Skill not found");
+      return { slug, displayName: slug };
+    });
+
+    render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
+
+    expect(await screen.findByRole("button", { name: /自动化测试/ })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("5 个技能")).toBeInTheDocument();
+    });
+    expect(fetchSkillSetDetail).toHaveBeenCalledWith("tech-test-automation");
+    expect(fetchSkillDetail).toHaveBeenCalledWith("tdd-guide");
+    expect(fetchSkillDetail).toHaveBeenCalledWith("test-case-generator");
   });
 
   it("renders the SkillHub expert profile image on package cards", async () => {

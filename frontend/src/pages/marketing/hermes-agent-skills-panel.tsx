@@ -45,7 +45,7 @@ export interface HermesAgentSkillsPanelProps<
 }
 
 export function getInitialAgentSkillsTab(sectionSlug?: string | null): AgentSkillsTab {
-  void sectionSlug;
+  if (sectionSlug === "experts" || sectionSlug === "packages") return "packages";
   return "skills";
 }
 
