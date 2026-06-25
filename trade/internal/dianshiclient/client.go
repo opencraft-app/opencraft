@@ -102,25 +102,13 @@ func (e *CGWError) Error() string {
 
 // GetPriceRequest 是询价 envelope.interface.para 内层（设计稿 §5.1）。
 //
-// Preview：与 DoGoodsRequest.Preview 同语义——0=正式询价 / 1=预览询价。点石原始
-// 协议样例（.tmp/点石询价）interface.para 字段集只列了 activity_id / client_info /
-// goods[]，但实际接入时点石侧确认询价同样接受 preview 字段，且联调期需要询价 + 下单
-// 两端 preview 取值一致以拿到一致的定价口径（preview=0 与 preview=1 在某些活动下
-// 因校验规则 / 库存折扣分支不同会得到不同价格）。omitempty 让 0 值不出现在出向
-// JSON，保留正式形态默认行为；联调期由 inquiry.Service.quoteDianshi 显式赋 1。
-//
-// Uin：preview=1 时点石侧需要顶层 uin 用于商品可见性 / 实名校验路由。设计稿 §5.1
-// envelope 样例没列 uin，但联调实测：preview=1 + 缺 uin → 点石返 returnCode=1100105
-// "商品ID不存在"（实质是缺 uin 上下文导致活动 actID 找不到对应商品归属）；补上 uin
-// 后同 envelope 立即拿到 returnCode=0 价格。trade 端 uin 来源与下单链路 (DoGoodsRequest.Uin)
-// 同源——经 lightclaw-auth shadow_bindings 反查 external_user_id → uin 后由
-// inquiry.Service.quoteDianshi 从 QuoteRequest.Uin 直接透传。
-// omitempty：保留正式形态默认行为（preview=0 / 老协议样例不带 uin）；现网联调期
-// req.Uin 必非空，会实际出现在出向 JSON。
+// 历史变更（2026-06-25 用户拍板）：原本字段集含 Preview / Uin 两个联调期补丁字段——
+// Preview 用于让询价/下单两端在 preview=1 时拿到统一定价口径，Uin 是 preview=1 时
+// 点石侧顶层强校验。点石活动 1881819452816580 切换到正式形态后，preview 模式不再需要，
+// 顶层 Uin 也随之去掉（询价不计算 check_sum，无需 uin），回到设计稿 §5.1 envelope 样例
+// 形态。下单端的 DoGoodsRequest.Uin 仍保留供 check_sum 与 jifei 站点路由使用。
 type GetPriceRequest struct {
 	ActivityID int64                  `json:"activity_id"`
-	Preview    int                    `json:"preview,omitempty"`
-	Uin        string                 `json:"uin,omitempty"`
 	ClientInfo map[string]interface{} `json:"client_info,omitempty"`
 	Goods      []GetPriceGoodsItem    `json:"goods"`
 }
@@ -180,11 +168,15 @@ type PriceItem struct {
 }
 
 // DoGoodsRequest 是下单 envelope.interface.para 内层（设计稿 §5.1）。
+//
+// 历史变更（2026-06-25 用户拍板）：移除 Preview 字段——联调期临时用 preview=1 走点石
+// 预览模式（不真实扣费 / 仅返 mock deal_names）的需求结束，现网形态 envelope 不再带
+// preview 字段（缺省 = 正式下单）。Uin 必须保留：① CalcCheckSum(uin, activity_id, secret_key)
+// 签名输入；② jifei 计费侧按 uin 注册区分国内站 / 国际站、并把 deal 归属到真实账号。
 type DoGoodsRequest struct {
 	Uin        string                 `json:"uin"`
 	ActivityID int64                  `json:"activity_id"`
 	FlashSale  int                    `json:"flash_sale,omitempty"`
-	Preview    int                    `json:"preview,omitempty"`
 	Originate  string                 `json:"originate,omitempty"`
 	UserIP     string                 `json:"user_ip,omitempty"`
 	Refer      string                 `json:"refer,omitempty"`
