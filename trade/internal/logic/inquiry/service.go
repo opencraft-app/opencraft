@@ -644,13 +644,11 @@ func (s *Service) quoteDianshi(
 		return nil, fmt.Errorf("inquiry: dianshi client not configured (ActivityResolver injected without DianshiClient)")
 	}
 
+	// 2026-06-25 用户拍板：点石活动切到正式形态，不再带 preview / 顶层 uin
+	// （详见 dianshiclient.GetPriceRequest 字段说明）。req.Uin 仍保留在
+	// QuoteRequest 中用于 placeOrderDianshi 端 DoGoodsRequest.Uin 与 check_sum 计算。
 	priceReq := &dianshiclient.GetPriceRequest{
 		ActivityID: mapping.ActivityID,
-		Preview:    1, // 联调期固定走点石预览模式：与 placeOrderDianshi 下单端 Preview=1 同步，避免询价/下单两端定价口径不一致
-		// Uin：preview=1 时点石侧顶层 uin 必填（详见 dianshiclient.GetPriceRequest.Uin
-		// 字段注释）。req.Uin 来自 inquiry 入口 shadow 反查，与同 QuoteRequest 后续
-		// placeOrderDianshi 走 DoGoodsRequest.Uin 同源，保证询价/下单两端 uin 口径一致。
-		Uin: req.Uin,
 		Goods: []dianshiclient.GetPriceGoodsItem{
 			{
 				ActID: mapping.ActID,

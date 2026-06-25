@@ -1485,10 +1485,13 @@ func (s *Service) placeOrderDianshi(
 	checkSum := dianshiclient.CalcCheckSum(req.Uin, mapping.ActivityID, mapping.SecretKey)
 
 	// 2. 拼 do_goods envelope.para
+	//
+	// 2026-06-25 用户拍板：点石活动切到正式形态，envelope 不再带 preview 字段
+	// （详见 dianshiclient.DoGoodsRequest 注释）。Uin 必须保留：CalcCheckSum 输入 +
+	// jifei 计费侧按 uin 区分国内站 / 国际站、把 deal 归属到真实账号。
 	doGoodsReq := &dianshiclient.DoGoodsRequest{
 		Uin:        req.Uin,
 		ActivityID: mapping.ActivityID,
-		Preview:    1, // 联调期固定走点石预览模式：不真实创建商品 / 不真实扣费 / 仅返 mock deal_names
 		Originate:  dianshiclient.OriginateLightvelaTrade,
 		CheckSum:   checkSum,
 		Goods: []dianshiclient.DoGoodsItem{
