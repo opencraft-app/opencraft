@@ -17,6 +17,7 @@
 import { AlertTriangle, Activity, BellRing, BriefcaseBusiness, CalendarRange, CheckCircle2, ChevronDown, CircleHelp, Clock, Droplets, Eraser, Eye, FolderKanban, LayoutTemplate, Loader2, Newspaper, Pause, Pencil, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, X } from "lucide-react";
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { useT } from "@/i18n/t";
 import { isGlobal } from "@/lib/region";
 import {
@@ -423,32 +424,30 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
     <div className="space-y-4">
       {errorMessage && <ErrorToast message={errorMessage} onClose={() => setErrorMessage(null)} />}
 
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-base font-semibold text-black/90">{t("自动任务")}</h3>
-          <p className="mt-0.5 text-xs text-black/50">
-            {t("让你的智能体伙伴按计划自动执行任务")}
-          </p>
-        </div>
-        <div className="inline-flex items-center gap-2.5">
-          <button
-            type="button"
-            onClick={() => requestCreate("template")}
-            className="inline-flex min-w-[96px] items-center justify-center gap-2 rounded-lg border border-black/10 bg-white px-4 py-2 text-black/75 transition hover:bg-black/[0.04]"
-          >
-            <LayoutTemplate className="h-5 w-5" />
-            <span className="text-base font-semibold leading-none">{t("模板")}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => requestCreate("blank")}
-            className="inline-flex min-w-[88px] items-center justify-center gap-2 rounded-lg bg-black px-4 py-2 text-white transition hover:bg-black/85"
-          >
-            <Plus className="h-5 w-5" />
-            <span className="text-base font-semibold leading-none">{t("添加")}</span>
-          </button>
-        </div>
-      </div>
+      <AgentSectionHeader
+        title={t("自动任务")}
+        description={t("让你的智能体伙伴按计划自动执行任务")}
+        actions={(
+          <div className="inline-flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => requestCreate("template")}
+              className="inline-flex min-w-[96px] items-center justify-center gap-2 rounded-lg border border-black/10 bg-white px-4 py-2 text-black/75 transition hover:bg-black/[0.04]"
+            >
+              <LayoutTemplate className="h-5 w-5" />
+              <span className="text-base font-semibold leading-none">{t("模板")}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => requestCreate("blank")}
+              className="inline-flex min-w-[88px] items-center justify-center gap-2 rounded-lg bg-black px-4 py-2 text-white transition hover:bg-black/85"
+            >
+              <Plus className="h-5 w-5" />
+              <span className="text-base font-semibold leading-none">{t("添加")}</span>
+            </button>
+          </div>
+        )}
+      />
 
       <div className="flex items-center justify-between gap-3">
         <div className="inline-flex rounded-lg bg-black/[0.04] p-1">

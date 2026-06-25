@@ -57,6 +57,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { cn } from "@/lib/utils";
 import { useRepositories } from "@/contexts/repository-context";
 import { useT } from "@/i18n/t";
@@ -785,14 +786,10 @@ export const AchievementsPanel = ({ botId, botName }: AchievementsPanelProps) =>
 
   return (
     <div className="space-y-5">
-      <section className="rounded-lg border border-black/[0.06] bg-white p-5 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
-            <h2 className="text-2xl font-semibold tracking-normal text-black/90">{t("{{name}} 的成就", { name: botName })}</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-black/52">
-              {t("和你的 Hermes Agent 一起，解锁更多成就吧！")}
-            </p>
-          </div>
+      <AgentSectionHeader
+        title={t("{{name}} 的成就", { name: botName })}
+        description={t("和你的 Hermes Agent 一起，解锁更多成就吧！")}
+        actions={(
           <button
             type="button"
             onClick={() => void load(true)}
@@ -802,9 +799,11 @@ export const AchievementsPanel = ({ botId, botName }: AchievementsPanelProps) =>
             <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
             {refreshing ? t("扫描中") : t("重新扫描")}
           </button>
-        </div>
+        )}
+      />
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="rounded-lg border border-black/[0.06] bg-white p-5 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <StatTile label={t("已解锁")} value={`${snapshot?.unlocked_count ?? 0} / ${snapshot?.total_count ?? 0}`} hint={t("获得的成就")} />
           <StatTile label={t("已发现")} value={snapshot?.discovered_count ?? 0} hint={t("已有进度但未解锁")} />
           <StatTile label={t("隐藏成就")} value={snapshot?.secret_count ?? 0} hint={t("等待相关行为揭示")} />

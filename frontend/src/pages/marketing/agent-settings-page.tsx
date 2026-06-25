@@ -38,6 +38,7 @@ import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
 import { ProductFooter, ProductReturnHomeHeader } from "@/components/site/product-chrome";
+import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { useOpenClaw, type OpenClawBot } from "@/contexts/openclaw-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { useT, t as rawT } from "@/i18n/t";
@@ -871,24 +872,24 @@ const MemoryPanel = ({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold text-black/90">{t("记忆")}</h2>
-          <p className="mt-1 text-sm text-black/45">{t("查看当前 Hermes Agent 的记忆和用户画像文件。")}</p>
-        </div>
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={isLoading}
-          className={cn(
-            "inline-flex h-9 items-center gap-2 rounded-md border border-black/[0.08] bg-white px-3 text-sm font-medium text-black/70 transition-colors hover:bg-black/[0.035] hover:text-black/90",
-            isLoading && "cursor-not-allowed opacity-60",
-          )}
-        >
-          {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-          {t("刷新")}
-        </button>
-      </div>
+      <AgentSectionHeader
+        title={t("记忆")}
+        description={t("查看当前 Hermes Agent 的记忆和用户画像文件")}
+        actions={(
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={isLoading}
+            className={cn(
+              "inline-flex h-9 items-center gap-2 rounded-md border border-black/[0.08] bg-white px-3 text-sm font-medium text-black/70 transition-colors hover:bg-black/[0.035] hover:text-black/90",
+              isLoading && "cursor-not-allowed opacity-60",
+            )}
+          >
+            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            {t("刷新")}
+          </button>
+        )}
+      />
 
       {status === "error" && (
         <div className="rounded-lg border border-red-500/15 bg-red-500/[0.04] px-4 py-3 text-sm leading-relaxed text-red-600">

@@ -1,6 +1,7 @@
 import { ChevronDown, ClipboardList, Download, FileText, Loader2, RotateCcw, Wrench } from "lucide-react";
 import { type ReactNode, type RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
+import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { useT } from "@/i18n/t";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
@@ -216,10 +217,10 @@ export function AgentDiagnosticsPanel({
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-xl font-semibold text-black/90">{t("诊断中心")}</h2>
-        <p className="mt-1 text-sm leading-6 text-black/50">{t("查看 Hermes Agent 日志，并集中执行相关维护操作")}</p>
-      </div>
+      <AgentSectionHeader
+        title={t("诊断中心")}
+        description={t("查看 Hermes Agent 日志，并集中执行相关维护操作")}
+      />
 
       <div className="grid gap-4">
         <div className="grid gap-3 md:grid-cols-2">

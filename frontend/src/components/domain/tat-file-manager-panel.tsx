@@ -1,5 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle, Download, Eye, EyeOff, File, FileArchive, FileCode2, FileText, Folder, FolderPlus, Loader2, PencilLine, RefreshCw, Trash2, Undo2, Upload, XCircle } from "lucide-react";
+import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useRepositories } from "@/contexts/repository-context";
@@ -890,14 +891,10 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div className="min-w-0 space-y-1">
-          <div className="text-[16px] font-semibold text-[var(--text-primary)]">{t("云存储")}</div>
-          <p className="text-sm" style={{ color: "var(--lw-fg-secondary)" }}>
-            {t("查看、管理云存储中的文件")}
-          </p>
-        </div>
-      </div>
+      <AgentSectionHeader
+        title={t("云存储")}
+        description={t("查看、管理云存储中的文件")}
+      />
 
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-start gap-2">
