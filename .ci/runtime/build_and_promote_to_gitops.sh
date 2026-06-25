@@ -109,12 +109,17 @@ prepare_pin_runtime_snapshot() {
 if [[ "$AUTO_PIN_ONLY" != "true" ]]; then
   for ENV_NAME in "${ENVS[@]}"; do
     ci_set_registry_credentials "$ENV_NAME"
+    build_image_args=()
+    if [[ "${REUSE_EXISTING_RELEASE_IMAGE:-true}" == "true" ]]; then
+      build_image_args+=(--reuse-existing)
+    fi
     image_output_file="$(mktemp)"
     python3 "$REPO_ROOT/.ci/runtime/commands/build_release_image.py" \
       --service "$BUNDLE_SERVICE" \
       --env "$ENV_NAME" \
       --tag "$TAG" \
       --push \
+      "${build_image_args[@]}" \
       --image-output-file "$image_output_file"
     IMAGE="$(<"$image_output_file")"
     rm -f "$image_output_file"

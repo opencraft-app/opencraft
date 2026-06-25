@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 from contracts.bundles import ImageTarget, is_playground_env, load_bundle, load_manifest, require_build_metadata
+from contracts.image_existence import ImageCheckResult, verify_images
 
 
 RUNTIME_DIR = Path(__file__).resolve().parents[1]
@@ -31,6 +32,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tag", required=True, help="Image tag to build")
     parser.add_argument("--platform", default="linux/amd64", help="Docker build platform")
     parser.add_argument("--push", action="store_true", help="Push after successful build")
+    parser.add_argument(
+        "--reuse-existing",
+        action="store_true",
+        help="Skip docker build when the exact target image tag already exists in the remote registry",
+    )
     parser.add_argument("--image-output-file", help="Optional file path to receive the built image ref")
     return parser.parse_args()
 
@@ -82,6 +88,26 @@ def single_target_from_bundle(service: str, dockerfile: str, build_context: str,
         build_context=build_context,
         image_repo=image_repo,
     )
+
+
+def image_key(service: str, target: ImageTarget) -> str:
+    return target.image_key or f"{service.upper().replace('-', '_')}_IMAGE"
+
+
+def image_for_target(target: ImageTarget, tag: str) -> str:
+    return f"{target.image_repo}:{tag}"
+
+
+def encode_built_output(built: dict[str, str], has_explicit_targets: bool) -> str:
+    if len(built) == 1 and not has_explicit_targets:
+        return next(iter(built.values()))
+    return encode_image_payload(built)
+
+
+def all_target_images_exist(targets: list[ImageTarget], tag: str) -> tuple[bool, list[ImageCheckResult]]:
+    images = [image_for_target(target, tag) for target in targets]
+    results = verify_images(images)
+    return all(result.exists for result in results), results
 
 
 def resolve_docker_build_args(service: str, env: str) -> dict[str, str]:
@@ -146,7 +172,7 @@ def docker_daemon_available() -> bool:
 
 
 def build_target(target: ImageTarget, tag: str, platform: str, push: bool, build_args: dict[str, str]) -> str:
-    image = f"{target.image_repo}:{tag}"
+    image = image_for_target(target, tag)
     cmd = docker_build_command(target, image, platform, build_args)
     if build_args:
         rendered_args = " ".join(f"{key}={value}" for key, value in sorted(build_args.items()))
@@ -180,18 +206,36 @@ def main() -> int:
     targets = bundle.image_targets or [
         single_target_from_bundle(args.service, bundle.dockerfile or "", bundle.build_context or "", bundle.image_repo or "")
     ]
+    has_explicit_targets = bool(bundle.image_targets)
 
     build_args = resolve_docker_build_args(args.service, args.env)
     built: dict[str, str] = {}
     try:
+        if args.reuse_existing:
+            all_exist, image_results = all_target_images_exist(targets, args.tag)
+            if all_exist:
+                for target in targets:
+                    key = image_key(args.service, target)
+                    built[key] = image_for_target(target, args.tag)
+                print("remote release image already exists; skip docker build")
+                for result in image_results:
+                    digest_suffix = f" digest={result.digest}" if result.digest else ""
+                    print(f"reuse existing image: {result.image}{digest_suffix}")
+                output = encode_built_output(built, has_explicit_targets)
+                if args.image_output_file:
+                    Path(args.image_output_file).write_text(f"{output}\n")
+                else:
+                    print(output)
+                return 0
+            print("remote release image missing; continue with docker build")
         for target in targets:
             image = build_target(target, args.tag, args.platform, args.push, build_args)
-            built[target.image_key or f"{args.service.upper().replace('-', '_')}_IMAGE"] = image
+            built[image_key(args.service, target)] = image
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 1
 
-    output = next(iter(built.values())) if len(built) == 1 and not bundle.image_targets else encode_image_payload(built)
+    output = encode_built_output(built, has_explicit_targets)
     if args.image_output_file:
         Path(args.image_output_file).write_text(f"{output}\n")
     else:
