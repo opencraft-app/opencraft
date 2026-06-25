@@ -25,7 +25,6 @@ test("session list rail suppresses fresh recency labels", () => {
       ...baseSession,
       last_activity_at: "2026-06-25T00:08:00.000Z",
     },
-    undefined,
     { nowMs: Date.parse("2026-06-25T00:10:00.000Z") },
   );
 
@@ -56,7 +55,6 @@ test("session list rail uses compact recency after the fresh window", () => {
   assert.deepEqual(
     buildSessionListRowModel(
       { ...baseSession, last_activity_at: "2026-06-25T11:48:00.000Z" },
-      undefined,
       { nowMs },
     ).rail,
     { label: "12分", recency: "minutes" },
@@ -64,7 +62,6 @@ test("session list rail uses compact recency after the fresh window", () => {
   assert.deepEqual(
     buildSessionListRowModel(
       { ...baseSession, last_activity_at: "2026-06-25T09:00:00.000Z" },
-      undefined,
       { nowMs },
     ).rail,
     { label: "3时", recency: "hours" },
@@ -72,7 +69,6 @@ test("session list rail uses compact recency after the fresh window", () => {
   assert.deepEqual(
     buildSessionListRowModel(
       { ...baseSession, last_activity_at: "2026-06-23T12:00:00.000Z" },
-      undefined,
       { nowMs },
     ).rail,
     { label: "2天", recency: "days" },
