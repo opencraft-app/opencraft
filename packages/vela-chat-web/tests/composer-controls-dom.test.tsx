@@ -52,6 +52,58 @@ test("composer controls reserve invisible toolbar space while session truth is l
   }
 });
 
+test("composer controls render shared icon components for model reasoning and permission", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { ComposerControls } = await import(
+      "../src/components/composer-controls/ComposerControls"
+    );
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        React.createElement(ComposerControls, {
+          controls: {
+            ready: true,
+            disabled: false,
+            providerLabel: "Codex",
+            selectedModel: { id: "gpt-5.5", label: "GPT-5.5", reasoningEfforts: [] },
+            selectedReasoningEffort: { id: "high", label: "High" },
+            selectedPermissionMode: { id: "auto", label: "Default permissions" },
+            modelOptions: [
+              { id: "gpt-5.5", label: "GPT-5.5", reasoningEfforts: [] },
+            ],
+            reasoningEffortOptions: [{ id: "high", label: "High" }],
+            permissionModeOptions: [{ id: "auto", label: "Default permissions" }],
+          },
+          placement: "all",
+          onChange: () => {},
+        }),
+      );
+    });
+
+    const leadingNodes = Array.from(
+      container.querySelectorAll<HTMLElement>(".vela-shell-select-trigger-leading"),
+    );
+    assert.equal(leadingNodes.length, 3);
+    assert.equal(leadingNodes.every((node) => node.querySelector("svg")), true);
+    assert.equal(container.textContent?.includes("◎"), false);
+    assert.equal(container.textContent?.includes("▣"), false);
+    assert.equal(container.textContent?.includes("✣"), false);
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 function installDomRuntime() {
   const window = new Window({ url: "http://127.0.0.1:3000/chat" });
   const previous = {

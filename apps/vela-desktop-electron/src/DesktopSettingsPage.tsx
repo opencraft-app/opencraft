@@ -504,22 +504,57 @@ function SettingsSettingControl<T extends string | boolean>({
   }
 
   if (setting.control === "text") {
-    return (
-      <input
-        aria-label={setting.title}
-        className="vela-settings-text-input"
-        disabled={!state.canSave || state.isLoading || state.isSaving}
-        spellCheck={false}
-        type={setting.inputType ?? "text"}
-        value={state.value === undefined ? "" : String(state.value)}
-        onChange={(event) => {
-          void state.setValue(event.currentTarget.value as T);
-        }}
-      />
-    );
+    return <SettingsTextInput setting={setting} state={state} />;
   }
 
   return <output>{state.isLoading ? "加载中" : String(state.value ?? "")}</output>;
+}
+
+function SettingsTextInput<T extends string | boolean>({
+  setting,
+  state,
+}: {
+  setting: VelaSetting<T>;
+  state: ReturnType<typeof useVelaSetting<T>>;
+}) {
+  const [draft, setDraft] = React.useState("");
+  const isFocusedRef = React.useRef(false);
+  const loadedValue = state.value === undefined ? "" : String(state.value);
+
+  React.useEffect(() => {
+    if (!isFocusedRef.current) setDraft(loadedValue);
+  }, [loadedValue]);
+
+  const commitDraft = React.useCallback(async () => {
+    if (!state.canSave || draft === loadedValue) return;
+    await state.setValue(draft as T);
+  }, [draft, loadedValue, state]);
+
+  return (
+    <input
+      aria-label={setting.title}
+      className="vela-settings-text-input"
+      disabled={!state.canSave || (state.isLoading && state.value === undefined)}
+      spellCheck={false}
+      type={setting.inputType ?? "text"}
+      value={draft}
+      onBlur={() => {
+        isFocusedRef.current = false;
+        void commitDraft();
+      }}
+      onInput={(event) => {
+        setDraft(event.currentTarget.value);
+      }}
+      onFocus={() => {
+        isFocusedRef.current = true;
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.currentTarget.blur();
+        }
+      }}
+    />
+  );
 }
 
 function SettingsInfoRow({ label, value }: { label: string; value: string }) {

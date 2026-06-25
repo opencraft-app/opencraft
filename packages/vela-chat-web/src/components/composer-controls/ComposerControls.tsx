@@ -2,6 +2,8 @@
 
 import type { AgentConfigPatchWire } from "../../../../vela-chat-client/src";
 import { ShellSelect } from "../../../../vela-desktop-shell/src";
+import { Brain, Shield, Sparkles } from "lucide-react";
+import type { ReactNode } from "react";
 import styles from "../../styles/desktop.module.css";
 import type {
   ComposerControlsModel,
@@ -49,7 +51,7 @@ export function ComposerControls({
             ariaLabel="Select model"
             disabled={disabled || controls.modelOptions.length === 0}
             label={controls.selectedModel?.label ?? controls.providerLabel}
-            leading="◎"
+            leading={<Brain size={16} strokeWidth={2} />}
             options={controls.modelOptions}
             selectedId={controls.selectedModel?.id}
             onSelect={(option) => onChange({ model: option.id })}
@@ -59,7 +61,7 @@ export function ComposerControls({
               ariaLabel="Select reasoning effort"
               disabled={disabled}
               label={controls.selectedReasoningEffort?.label ?? "Reasoning"}
-              leading="✣"
+              leading={<Sparkles size={15} strokeWidth={2.1} />}
               options={controls.reasoningEffortOptions}
               selectedId={controls.selectedReasoningEffort?.id}
               onSelect={(option) => onChange({ reasoning_effort: option.id })}
@@ -72,7 +74,7 @@ export function ComposerControls({
           ariaLabel="Select permission mode"
           disabled={disabled || controls.permissionModeOptions.length === 0}
           label={controls.selectedPermissionMode?.label ?? "Permissions"}
-          leading="▣"
+          leading={<Shield size={16} strokeWidth={2} />}
           options={controls.permissionModeOptions}
           selectedId={controls.selectedPermissionMode?.id}
           tone={controls.selectedPermissionMode?.id === "full_access" ? "accent" : "neutral"}
@@ -96,7 +98,7 @@ function ControlMenu<T extends ComposerModelOption | ComposerOption | ComposerPe
   ariaLabel: string;
   disabled: boolean;
   label: string;
-  leading: string;
+  leading: ReactNode;
   options: T[];
   selectedId?: string;
   tone?: "neutral" | "accent";

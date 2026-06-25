@@ -1341,6 +1341,10 @@ test("new session setup uses the same composer controls boundary as active chat"
     join(root, "packages/vela-chat-web/src/new-session/NewSessionSurface.tsx"),
     "utf8",
   );
+  const composerControls = readFileSync(
+    join(root, "packages/vela-chat-web/src/components/composer-controls/ComposerControls.tsx"),
+    "utf8",
+  );
   const styles = readFileSync(
     join(root, "packages/vela-chat-web/src/styles/desktop.module.css"),
     "utf8",
@@ -1351,6 +1355,11 @@ test("new session setup uses the same composer controls boundary as active chat"
   assert.match(newSessionSurface, /buildComposerSetupControlsModel/);
   assert.match(newSessionSurface, /applyAgentConfigPatch/);
   assert.doesNotMatch(newSessionSurface, /Brain|Shield/);
+  assert.match(composerControls, /import \{ Brain, Shield, Sparkles \} from "lucide-react";/);
+  assert.match(composerControls, /<Brain size=\{16\}/);
+  assert.match(composerControls, /<Shield size=\{16\}/);
+  assert.match(composerControls, /<Sparkles size=\{15\}/);
+  assert.doesNotMatch(composerControls, /leading="◎"|leading="▣"|leading="✣"/);
   assert.doesNotMatch(newSessionSurface, /newSessionControlCluster/);
   assert.doesNotMatch(styles, /\.newSessionControlCluster\b/);
 });
