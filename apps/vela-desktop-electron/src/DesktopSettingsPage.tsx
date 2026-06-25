@@ -51,10 +51,11 @@ export interface DesktopSettingsPageProps {
   onSelectedBackendChange: (backend: BackendKindWire) => void;
 }
 
-export type DesktopSettingsPanelId = "general" | "archive" | "about";
+export type DesktopSettingsPanelId = "general" | "engine" | "archive" | "about";
 
 const settingsPanels = [
   { icon: Settings, id: "general", label: "常规" },
+  { icon: Bot, id: "engine", label: "引擎" },
   { icon: Archive, id: "archive", label: "已归档对话" },
   { icon: Info, id: "about", label: "关于 LightVela" },
 ] satisfies Array<{
@@ -81,24 +82,24 @@ export function DesktopSettingsSidebar({
         <VelaSidebarChrome showTrafficLights={showTrafficLights} />
         <SidebarContent className="vela-settings-sidebar-content">
           <SidebarChromeArea className="vela-settings-fixed-controls">
-          <button className="vela-settings-back" type="button" onClick={onClose}>
-            <ArrowLeft size={16} aria-hidden />
-            <span>返回应用</span>
-          </button>
-          <label className="vela-settings-search">
-            <Search size={15} aria-hidden />
-            <input placeholder="搜索设置..." />
-          </label>
+            <button className="vela-settings-back" type="button" onClick={onClose}>
+              <ArrowLeft size={16} aria-hidden />
+              <span>返回应用</span>
+            </button>
+            <label className="vela-settings-search">
+              <Search size={15} aria-hidden />
+              <input placeholder="搜索设置..." />
+            </label>
           </SidebarChromeArea>
           <SidebarContentFade edge="bottom" />
 
           <SidebarScrollRegion className="vela-settings-nav-scroll">
-          <SettingsNavGroup
-            activePanel={activePanel}
-            title="设置"
-            items={settingsPanels}
-            onPanelChange={onPanelChange}
-          />
+            <SettingsNavGroup
+              activePanel={activePanel}
+              title="设置"
+              items={settingsPanels}
+              onPanelChange={onPanelChange}
+            />
           </SidebarScrollRegion>
         </SidebarContent>
       </SidebarMaterialFrame>
@@ -135,6 +136,10 @@ export function DesktopSettingsPage({
     return <DesktopSettingsArchivePanel />;
   }
 
+  if (activePanel === "engine") {
+    return <DesktopSettingsEnginePanel apiBaseUrl={apiBaseUrl} settings={settings} />;
+  }
+
   return (
     <main className="vela-settings-page" aria-label="Settings">
       <div className="vela-settings-content">
@@ -165,22 +170,6 @@ export function DesktopSettingsPage({
           </div>
         </section>
 
-        <section className="vela-settings-section" aria-labelledby="backend-title">
-          <div className="vela-settings-section-heading">
-            <h2 id="backend-title">Backend</h2>
-            <p>选择新建会话默认连接的 agent backend</p>
-          </div>
-          <div className="vela-settings-card">
-            {settings.map((setting) => (
-              <SettingsSettingRow key={setting.id} setting={setting} />
-            ))}
-            <SettingsInfoRow label="velad API" value={apiBaseUrl} />
-            <SettingsInfoRow label="Shell host" value={hostLabel} />
-            {logPath ? <SettingsInfoRow label="Local logs" value={logPath} /> : null}
-            <SettingsInfoRow label="Session cache" value={`${sessionsCount} sessions`} />
-          </div>
-        </section>
-
         <section className="vela-settings-section" aria-labelledby="permission-title">
           <div className="vela-settings-section-heading">
             <h2 id="permission-title">权限</h2>
@@ -198,6 +187,17 @@ export function DesktopSettingsPage({
               title="完全访问权限"
               description="以完全访问权限运行时，无需你批准即可编辑文件并运行联网命令。"
             />
+          </div>
+        </section>
+
+        <section className="vela-settings-section" aria-labelledby="local-title">
+          <div className="vela-settings-section-heading">
+            <h2 id="local-title">本地状态</h2>
+          </div>
+          <div className="vela-settings-card">
+            <SettingsInfoRow label="Shell host" value={hostLabel} />
+            {logPath ? <SettingsInfoRow label="Local logs" value={logPath} /> : null}
+            <SettingsInfoRow label="Session cache" value={`${sessionsCount} sessions`} />
           </div>
         </section>
 
@@ -221,6 +221,47 @@ export function DesktopSettingsPage({
               title="运行时防止休眠"
               description="在 Vela 运行对话时，让电脑保持唤醒状态"
             />
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function DesktopSettingsEnginePanel({
+  apiBaseUrl,
+  settings,
+}: {
+  apiBaseUrl: string;
+  settings: ReturnType<typeof createDesktopSettings>;
+}) {
+  return (
+    <main className="vela-settings-page" aria-label="Engine settings">
+      <div className="vela-settings-content">
+        <h1>引擎</h1>
+
+        <section className="vela-settings-section" aria-labelledby="engine-default-title">
+          <div className="vela-settings-section-heading">
+            <h2 id="engine-default-title">默认 backend</h2>
+            <p>选择新建会话默认连接的 agent backend</p>
+          </div>
+          <div className="vela-settings-card">
+            {settings.engine.backend.map((setting) => (
+              <SettingsSettingRow key={setting.id} setting={setting} />
+            ))}
+            <SettingsInfoRow label="velad API" value={apiBaseUrl} />
+          </div>
+        </section>
+
+        <section className="vela-settings-section" aria-labelledby="vela-engine-title">
+          <div className="vela-settings-section-heading">
+            <h2 id="vela-engine-title">Vela 内置引擎</h2>
+            <p>配置本机 runtime 启动时注入的 Chat Completions 兼容引擎</p>
+          </div>
+          <div className="vela-settings-card">
+            {settings.engine.velaEngine.map((setting) => (
+              <SettingsSettingRow key={setting.id} setting={setting} />
+            ))}
           </div>
         </section>
       </div>

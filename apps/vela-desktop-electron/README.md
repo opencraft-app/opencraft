@@ -37,6 +37,9 @@ Renderer, thumbnail, and work-monitor CSS/React changes update through Vite.
 The preview server prefers port `5173`, but if that port is already in use the
 dev script uses Vite's assigned fallback port and passes that exact URL to
 Electron.
+`make desktop-preview` first clears older dev preview processes from this repo;
+use `make desktop-preview-stop` when you only want to stop the running dev
+preview without starting it again.
 Restart `make desktop-preview` after changing Electron main/preload code or
 window-manager values such as work-monitor width, height, shadow, or
 always-on-top behavior.
@@ -96,9 +99,9 @@ automatically. The Electron dev target builds `velad` in debug mode and passes
 an externally managed daemon.
 
 Use `make desktop-install-dev` only when you need to validate the packaged app
-under `/Applications/Vela.app`. After installing, `make desktop-pids` shows the
-running packaged `Vela` and bundled `velad` processes so you can tell whether
-macOS kept an older instance alive.
+under `/Applications/Vela.app`. `make desktop-pids` shows both dev preview and
+packaged `Vela`/bundled `velad` processes so you can tell which runtime is still
+alive.
 
 ## Local runtime
 

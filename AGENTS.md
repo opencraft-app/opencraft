@@ -18,12 +18,15 @@ Expected feedback behavior:
 - Renderer, thumbnail, and work-monitor React/CSS changes update through Vite.
 - The renderer dev server prefers port `5173`; if it is busy, the dev script
   uses the Vite-assigned fallback port and passes that URL to Electron.
+- `make desktop-preview` first clears older dev preview processes from this
+  repo. Use `make desktop-preview-stop` to stop the running dev preview without
+  starting it again.
 - Electron main, preload, and `electron/work-monitor/*` window-manager changes
   require restarting `make desktop-preview`.
 - Use `make desktop-install-dev` only after the fast preview looks right and
   the packaged `/Applications/Vela.app` behavior must be checked.
-- After installing, run `make desktop-pids` if the UI looks stale; macOS can
-  keep an older packaged `Vela` process alive.
+- Run `make desktop-pids` if the UI looks stale; it reports both dev preview
+  processes and packaged `Vela`/bundled `velad` processes.
 
 For work-monitor UI iteration, create/open a Codex session and send a message.
 The mini window should open from local send intent and then follow the

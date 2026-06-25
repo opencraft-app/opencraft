@@ -288,6 +288,9 @@ test("session work monitor keeps host windowing separate from thumbnail renderin
   assert.match(workMonitorCss, /padding:\s*2px/);
   assert.match(workMonitorCss, /border-radius:\s*14px/);
   assert.match(workMonitorCss, /0 1px 2px rgb\(15 23 42 \/ 18%\)/);
+  assert.match(workMonitorCss, /\.workMonitorTitle/);
+  assert.match(workMonitorCss, /text-overflow:\s*ellipsis/);
+  assert.match(workMonitorCss, /pointer-events:\s*none/);
   assert.doesNotMatch(workMonitorCss, /0 28px 90px/);
   assert.match(workMonitorReadme, /local session work-monitor window lifecycle/);
   assert.match(workMonitorReadme, /same display as the main desktop window/);
@@ -299,6 +302,9 @@ test("session work monitor keeps host windowing separate from thumbnail renderin
   assert.match(rendererWorkMonitor, /useVelaChatSession/);
   assert.match(rendererWorkMonitor, /ConversationPreviewSurface/);
   assert.match(rendererWorkMonitor, /controller\.model/);
+  assert.match(rendererWorkMonitor, /client\.getSession\(sessionId\)/);
+  assert.match(rendererWorkMonitor, /session\.title\.trim\(\)/);
+  assert.match(rendererWorkMonitor, /workMonitorTitle/);
   assert.match(rendererWorkMonitor, /moveWorkMonitorBy/);
   assert.match(rendererWorkMonitor, /onPointerDown/);
   assert.match(rendererWorkMonitor, /WORK_MONITOR_DRAG_THRESHOLD_PX/);
@@ -410,13 +416,16 @@ test("desktop preview docs prefer the managed local runtime fast-feedback loop",
   const agents = readFileSync(join(root, "AGENTS.md"), "utf8");
   const desktopDevTarget = sourceBetween(makefile, "desktop-dev:", "desktop-dev-web:");
 
-  assert.match(makefile, /desktop-preview:\s*desktop-dev/);
+  assert.match(makefile, /desktop-preview:\s*desktop-preview-stop desktop-dev/);
   assert.match(makefile, /desktop-preview-fast:\s*desktop-preview/);
   assert.match(makefile, /stack-dev:\s*desktop-preview/);
+  assert.match(makefile, /desktop-preview-stop:/);
   assert.match(makefile, /desktop-pids:/);
+  assert.match(makefile, /\[s\]cripts\/dev\.mjs/);
   assert.doesNotMatch(desktopDevTarget, /VELA_DESKTOP_VELAD_LISTEN_ADDR/);
 
   assert.match(rootReadme, /make desktop-preview/);
+  assert.match(rootReadme, /make desktop-preview-stop/);
   assert.match(rootReadme, /target\/debug\/velad/);
   assert.match(rootReadme, /Electron spawns that local `velad` child/);
   assert.match(rootReadme, /Renderer\/CSS changes update through Vite/);
@@ -425,11 +434,13 @@ test("desktop preview docs prefer the managed local runtime fast-feedback loop",
 
   assert.match(electronReadme, /work-monitor iteration/);
   assert.match(electronReadme, /fallback port/);
+  assert.match(electronReadme, /make desktop-preview-stop/);
   assert.match(electronReadme, /Restart `make desktop-preview` after changing Electron main\/preload/);
   assert.match(electronReadme, /make desktop-pids/);
 
   assert.match(agents, /Fast desktop preview/);
   assert.match(agents, /fallback port/);
+  assert.match(agents, /make desktop-preview-stop/);
   assert.match(agents, /Do not start a separate external `velad` for desktop preview/);
 });
 

@@ -1,4 +1,5 @@
-.shell {
+.shell,
+.newSessionShell {
   --vela-spacing: 0.25rem;
   --vela-toolbar-height: 46px;
   --vela-bg: rgb(255 255 255 / 90%);
@@ -11,23 +12,11 @@
   --vela-accent: #ff5a1f;
   --vela-composer-height: 154px;
   --vela-shell-radius: 16px;
-  --vela-composer-radius: 20px;
-  --vela-composer-bg: rgb(255 255 255 / 90%);
-  --vela-composer-blur: 16px;
-  --vela-composer-shadow: 0 4px 16px 0 rgb(0 0 0 / 5%);
   --vela-thread-content-max-width: 920px;
   --vela-thread-content-top-inset: calc(var(--vela-spacing) * 8);
   --vela-thread-floating-content-top-inset: calc(var(--vela-spacing) * 3);
   --vela-thread-floating-content-bottom-inset: calc(var(--vela-spacing) * 3);
-  position: relative;
-  width: 100%;
-  min-width: 0;
-  height: 100dvh;
-  min-height: 100dvh;
-  overflow: hidden;
-  border-top-left-radius: var(--vela-shell-radius);
   background: var(--vela-bg);
-  background-clip: padding-box;
   color: var(--vela-text);
   font-family:
     -apple-system,
@@ -40,6 +29,17 @@
     sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+.shell {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  height: 100dvh;
+  min-height: 100dvh;
+  overflow: hidden;
+  border-top-left-radius: var(--vela-shell-radius);
+  background-clip: padding-box;
   -webkit-backdrop-filter: saturate(1.15) blur(16px);
   backdrop-filter: saturate(1.15) blur(16px);
 }
@@ -916,6 +916,14 @@
   pointer-events: none;
 }
 
+.composerRoot {
+  --vela-composer-radius: 20px;
+  --vela-composer-bg: rgb(255 255 255 / 90%);
+  --vela-composer-blur: 16px;
+  --vela-composer-shadow: 0 4px 16px 0 rgb(0 0 0 / 5%);
+  --vela-composer-max-width: var(--vela-thread-content-max-width, 920px);
+}
+
 .composerDock {
   position: absolute;
   right: 0;
@@ -924,13 +932,11 @@
   z-index: 20;
   display: flex;
   justify-content: center;
-  padding: 0 24px var(--vela-thread-floating-content-bottom-inset);
+  padding: 0 24px var(--vela-thread-floating-content-bottom-inset, 12px);
   pointer-events: none;
 }
 
 .composerDockInline {
-  --vela-composer-input-min-height: 126px;
-
   position: relative;
   inset: auto;
   z-index: auto;
@@ -944,7 +950,7 @@
 
 .composer {
   position: relative;
-  width: min(100%, var(--vela-thread-content-max-width));
+  width: min(100%, var(--vela-composer-max-width));
   overflow: hidden auto;
   border: 1px solid rgb(13 13 13 / 10%);
   border-radius: var(--vela-composer-radius);
@@ -960,12 +966,6 @@
 
 .composerDockInline .composer {
   width: 100%;
-}
-
-@supports (corner-shape: superellipse(1.5)) {
-  .composer {
-    corner-shape: superellipse(1.5);
-  }
 }
 
 .composerEditor {
@@ -988,11 +988,6 @@
   user-select: text;
 }
 
-.composerDockInline .composerEditor {
-  padding: 18px 20px 10px;
-  font-size: 16px;
-}
-
 .composerEditor:focus {
   box-shadow: inset 0 0 0 1px rgb(120 113 108 / 18%);
 }
@@ -1008,14 +1003,34 @@
   pointer-events: none;
 }
 
-.composerDockInline .composerEditorPlaceholder {
-  top: 18px;
-  left: 20px;
-  font-size: 16px;
-}
-
 .composerEditor [data-lexical-text="true"] {
   white-space: pre-wrap;
+}
+
+.composerAttachedSurface {
+  display: grid;
+  width: min(100%, var(--vela-composer-max-width));
+  box-sizing: border-box;
+  margin: -1px auto 0;
+  border: 1px solid rgb(13 13 13 / 7%);
+  border-top: 0;
+  border-radius: 0 0 var(--vela-composer-radius) var(--vela-composer-radius);
+  background: #f4f4f5;
+  color: #78716c;
+  padding: 13px 18px 12px;
+  pointer-events: auto;
+  user-select: none;
+}
+
+.composerDockInline .composerAttachedSurface {
+  width: 100%;
+}
+
+@supports (corner-shape: superellipse(1.5)) {
+  .composer,
+  .composerAttachedSurface {
+    corner-shape: superellipse(1.5);
+  }
 }
 
 .attachmentTray {
@@ -1248,8 +1263,6 @@
   min-height: 100%;
   place-items: center;
   padding: clamp(56px, 12vh, 132px) 24px 48px;
-  background: var(--vela-bg, #ffffff);
-  color: #1c1917;
 }
 
 .newSessionContent {
@@ -1287,19 +1300,10 @@
 
 .newSessionContextBar {
   display: flex;
-  min-height: 66px;
-  box-sizing: border-box;
   align-items: center;
   flex-wrap: wrap;
   gap: 18px;
-  margin: -1px 14px 0;
-  border: 1px solid rgb(13 13 13 / 7%);
-  border-top: 0;
-  border-radius: 0 0 20px 20px;
-  background: #f4f4f5;
-  color: #78716c;
-  padding: 13px 18px 12px;
-  user-select: none;
+  min-height: 40px;
 }
 
 .newSessionContextBar :global(.vela-shell-select[data-density="compact"] .vela-shell-select-trigger) {

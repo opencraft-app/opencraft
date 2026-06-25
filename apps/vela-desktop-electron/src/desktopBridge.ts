@@ -3,12 +3,15 @@ import {
   type RuntimeHostBridge,
   type RuntimeChromeSafeArea,
 } from "../../../packages/vela-desktop-shell/src";
+import type { BackendKindWire } from "../../../packages/vela-chat-client/src";
 
 declare global {
   interface Window {
     velaDesktop?: {
       getDesktopInfo: () => Promise<RuntimeInfoResponse>;
       retryDesktopBootstrap?: () => Promise<RuntimeInfoResponse>;
+      getDesktopSettings?: () => Promise<DesktopSettings>;
+      setDesktopSettings?: (patch: Partial<DesktopSettings>) => Promise<DesktopSettings>;
       getVelaEngineSettings?: () => Promise<VelaEngineSettings>;
       setVelaEngineSettings?: (
         patch: Partial<VelaEngineSettings>,
@@ -78,6 +81,10 @@ export interface VelaEngineSettings {
   model: string;
 }
 
+export interface DesktopSettings {
+  defaultBackend: BackendKindWire | "";
+}
+
 export type RuntimeBootstrap =
   | { status: "starting"; message: string }
   | { status: "ready"; info: RuntimeHostInfo }
@@ -89,6 +96,7 @@ export type RuntimeBootstrap =
     };
 
 const DEFAULT_WEB_API_BASE_URL = "/api/v1";
+const DEFAULT_BACKEND_STORAGE_KEY = "vela-desktop:settings:default-backend";
 
 export async function readRuntimeHostInfo(): Promise<RuntimeHostInfo> {
   const bootstrap = await readRuntimeBootstrap();
@@ -218,6 +226,26 @@ export async function readVelaEngineSettings(): Promise<VelaEngineSettings> {
   );
 }
 
+export async function readDesktopSettings(): Promise<DesktopSettings> {
+  return (
+    (await window.velaDesktop?.getDesktopSettings?.()) ?? {
+      defaultBackend: readDefaultBackendPreference(),
+    }
+  );
+}
+
+export async function saveDesktopSettings(patch: Partial<DesktopSettings>) {
+  if (!window.velaDesktop?.setDesktopSettings) {
+    const next = {
+      ...(await readDesktopSettings()),
+      ...patch,
+    };
+    writeDefaultBackendPreference(next.defaultBackend);
+    return next;
+  }
+  return window.velaDesktop.setDesktopSettings(patch);
+}
+
 export async function saveVelaEngineSettings(patch: Partial<VelaEngineSettings>) {
   if (!window.velaDesktop?.setVelaEngineSettings) {
     return {
@@ -226,6 +254,34 @@ export async function saveVelaEngineSettings(patch: Partial<VelaEngineSettings>)
     };
   }
   return window.velaDesktop.setVelaEngineSettings(patch);
+}
+
+function readDefaultBackendPreference(): BackendKindWire | "" {
+  if (typeof window === "undefined") return "";
+  const value = window.localStorage.getItem(DEFAULT_BACKEND_STORAGE_KEY);
+  return isBackendKind(value) ? value : "";
+}
+
+function writeDefaultBackendPreference(value: BackendKindWire | "") {
+  if (typeof window === "undefined") return;
+  if (!value) {
+    window.localStorage.removeItem(DEFAULT_BACKEND_STORAGE_KEY);
+    return;
+  }
+  window.localStorage.setItem(DEFAULT_BACKEND_STORAGE_KEY, value);
+}
+
+function isBackendKind(value: string | null): value is BackendKindWire {
+  return (
+    value === "codex" ||
+    value === "cloudagent" ||
+    value === "claude_code" ||
+    value === "pi" ||
+    value === "vela_engine" ||
+    value === "opencode" ||
+    value === "acp" ||
+    value === "qoder"
+  );
 }
 
 export function subscribeOpenDesktopSession(listener: (sessionId: string) => void) {

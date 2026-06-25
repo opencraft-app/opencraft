@@ -3,6 +3,9 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 contextBridge.exposeInMainWorld("velaDesktop", {
   getDesktopInfo: () => ipcRenderer.invoke("vela:desktop-info"),
   retryDesktopBootstrap: () => ipcRenderer.invoke("vela:desktop-bootstrap-retry"),
+  getDesktopSettings: () => ipcRenderer.invoke("vela:desktop-settings-get"),
+  setDesktopSettings: (patch: unknown) =>
+    ipcRenderer.invoke("vela:desktop-settings-set", patch),
   getVelaEngineSettings: () => ipcRenderer.invoke("vela:engine-settings-get"),
   setVelaEngineSettings: (patch: unknown) =>
     ipcRenderer.invoke("vela:engine-settings-set", patch),

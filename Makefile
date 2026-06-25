@@ -8,7 +8,7 @@ VELAD_LINUX_AMD64_OUT := dist/velad/linux-amd64/velad
 	install \
 	server-build server-build-desktop server-release server-release-desktop server-release-linux-amd64 server-run server-test server-clean \
 	desktop-dev desktop-dev-web desktop-build \
-	desktop-preview desktop-preview-fast desktop-open-installed desktop-pids \
+	desktop-preview desktop-preview-fast desktop-preview-stop desktop-open-installed desktop-pids \
 	desktop-pack desktop-pack-dev desktop-install desktop-install-dev desktop-dist desktop-clean \
 	stack-dev
 
@@ -51,15 +51,36 @@ desktop-dev:
 desktop-dev-web:
 	npm --prefix $(ELECTRON_APP_DIR) run dev:web
 
-desktop-preview: desktop-dev
+desktop-preview: desktop-preview-stop desktop-dev
 
 desktop-preview-fast: desktop-preview
+
+desktop-preview-stop:
+	@for pattern in \
+		'[s]cripts/dev.mjs' \
+		'$(CURDIR)/node_modules/.*[v]ite build --watch --config vite.electron.config.ts' \
+		'[e]sbuild electron/preload.ts .*--watch=forever' \
+		'$(CURDIR)/node_modules/[e]lectron/cli.js .' \
+		'$(CURDIR)/target/debug/[v]elad --listen 127.0.0.1:0'; do \
+		pids=$$(pgrep -f "$$pattern" || true); \
+		if [ -n "$$pids" ]; then kill -TERM $$pids 2>/dev/null || true; fi; \
+	done
+	@sleep 1
+	@for pattern in \
+		'[s]cripts/dev.mjs' \
+		'$(CURDIR)/node_modules/.*[v]ite build --watch --config vite.electron.config.ts' \
+		'[e]sbuild electron/preload.ts .*--watch=forever' \
+		'$(CURDIR)/node_modules/[e]lectron/cli.js .' \
+		'$(CURDIR)/target/debug/[v]elad --listen 127.0.0.1:0'; do \
+		pids=$$(pgrep -f "$$pattern" || true); \
+		if [ -n "$$pids" ]; then kill -KILL $$pids 2>/dev/null || true; fi; \
+	done
 
 desktop-open-installed:
 	open /Applications/Vela.app
 
 desktop-pids:
-	@pgrep -fl '/Applications/Vela.app|Vela.app|Contents/Resources/bin/velad' || true
+	@pgrep -fl '/Applications/Vela.app|Vela.app|Contents/Resources/bin/velad|[s]cripts/dev.mjs|$(CURDIR)/node_modules/.*[v]ite build --watch --config vite.electron.config.ts|[e]sbuild electron/preload.ts .*--watch=forever|$(CURDIR)/node_modules/[e]lectron/cli.js .|$(CURDIR)/target/debug/[v]elad --listen 127.0.0.1:0' || true
 
 desktop-build: server-build-desktop
 	npm --prefix $(ELECTRON_APP_DIR) run build

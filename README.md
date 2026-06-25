@@ -30,6 +30,9 @@ This is the fast feedback loop. It does not package or copy anything to
 - Electron opens the desktop shell against the Vite renderer.
 - Renderer/CSS changes update through Vite. Electron main/preload/window-manager
   changes require restarting `make desktop-preview`.
+- `make desktop-preview` first clears older dev preview processes from this
+  repo. Use `make desktop-preview-stop` when you only want to stop the running
+  dev preview without starting it again.
 
 For work-monitor visual iteration:
 
@@ -47,11 +50,11 @@ If the preview window shows `Failed to fetch`, check DevTools Network first:
 - Bad: requests go to `file:///api/v1/...`.
 - `file:///api/v1/...` means the renderer is not using the dev server or the preload bridge did not load.
 
-Before restarting a stuck preview, clear the usual Electron process. You should
-not need to kill port `5173` just because it is already occupied:
+Before restarting a stuck preview, use the Makefile stop target. You should not
+need to kill port `5173` just because it is already occupied:
 
 ```bash
-pkill -f 'node_modules/electron/dist/Electron.app' || true
+make desktop-preview-stop
 make desktop-preview
 ```
 

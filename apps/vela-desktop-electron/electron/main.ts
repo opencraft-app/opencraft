@@ -5,11 +5,13 @@ import { env as nodeEnv } from "node:process";
 import { VelaLocalTracer } from "../../../packages/vela-observability-client/src";
 import {
   buildRuntimeProcessEnv,
+  readDesktopSettings,
   readVelaEngineSettings,
   RotatingLogWriter,
   runtimeLogPath,
   velaEngineSettingsEnv,
   VeladRuntimeManager,
+  writeDesktopSettings,
   writeVelaEngineSettings,
 } from "./runtime";
 import { WorkMonitorWindowManager } from "./work-monitor";
@@ -290,6 +292,22 @@ ipcMain.handle("vela:engine-settings-set", async (_event, patch: unknown) => {
   delete runtimeProcessEnv.env.VELAD_VELA_ENGINE_MODEL;
   Object.assign(runtimeProcessEnv.env, velaEngineSettingsEnv(next));
   return next;
+});
+
+ipcMain.handle("vela:desktop-settings-get", async () =>
+  readDesktopSettings(app.getPath("userData")),
+);
+
+ipcMain.handle("vela:desktop-settings-set", async (_event, patch: unknown) => {
+  if (!isRecord(patch)) {
+    throw new Error("Desktop settings patch must be an object");
+  }
+  const nextPatch: Parameters<typeof writeDesktopSettings>[1] = {};
+  if (typeof patch.defaultBackend === "string") {
+    nextPatch.defaultBackend =
+      patch.defaultBackend as Parameters<typeof writeDesktopSettings>[1]["defaultBackend"];
+  }
+  return writeDesktopSettings(app.getPath("userData"), nextPatch);
 });
 
 function isRecord(value: unknown): value is Record<string, unknown> {

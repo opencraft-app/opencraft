@@ -1,4 +1,4 @@
-import { useMemo, useRef, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import {
   createFetchVelaEventStreamTransport,
   createVeladClient,
@@ -33,6 +33,7 @@ export interface WorkMonitorAppProps {
 export function WorkMonitorApp({ hostInfo, sessionId }: WorkMonitorAppProps) {
   const dragStateRef = useRef<DragState | null>(null);
   const suppressNextOpenRef = useRef(false);
+  const [sessionTitle, setSessionTitle] = useState(sessionId);
   const observability = useMemo(
     () =>
       new VelaLocalTracer({
@@ -50,6 +51,21 @@ export function WorkMonitorApp({ hostInfo, sessionId }: WorkMonitorAppProps) {
     () => createFetchVelaEventStreamTransport(fetch, { observability }),
     [observability],
   );
+  useEffect(() => {
+    let cancelled = false;
+    setSessionTitle(sessionId);
+    void client.getSession(sessionId).then(
+      ({ session }) => {
+        if (!cancelled) setSessionTitle(session.title.trim() || sessionId);
+      },
+      () => {
+        if (!cancelled) setSessionTitle(sessionId);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [client, sessionId]);
   const controller = useVelaChatSession({
     client,
     baseUrl: hostInfo.apiBaseUrl,
@@ -130,15 +146,20 @@ export function WorkMonitorApp({ hostInfo, sessionId }: WorkMonitorAppProps) {
           <strong>{controller.error}</strong>
         </button>
       ) : (
-        <ConversationPreviewSurface
-          model={controller.model}
-          scale={0.25}
-          onOpenSession={handleOpenClick}
-          onPointerCancel={handlePointerEnd}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerEnd}
-        />
+        <div className={styles.workMonitorPreview}>
+          <ConversationPreviewSurface
+            model={controller.model}
+            scale={0.25}
+            onOpenSession={handleOpenClick}
+            onPointerCancel={handlePointerEnd}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerEnd}
+          />
+          <div className={styles.workMonitorTitle} title={sessionTitle}>
+            {sessionTitle}
+          </div>
+        </div>
       )}
     </main>
   );

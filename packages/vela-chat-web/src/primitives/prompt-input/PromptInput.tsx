@@ -189,7 +189,11 @@ export function PromptInput({
 
   return (
     <form
-      className={[styles.composerDock, layout === "inline" ? styles.composerDockInline : ""]
+      className={[
+        styles.composerRoot,
+        styles.composerDock,
+        layout === "inline" ? styles.composerDockInline : "",
+      ]
         .filter(Boolean)
         .join(" ")}
       onSubmit={handleSubmit}
@@ -280,7 +284,9 @@ export function PromptInput({
           </div>
         </div>
       </div>
-      {attachedSurface}
+      {attachedSurface ? (
+        <div className={styles.composerAttachedSurface}>{attachedSurface}</div>
+      ) : null}
     </form>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import type {
   AgentConfigWire,
   BackendKindWire,
@@ -52,6 +52,12 @@ export function DesktopNewSessionPage({
   );
   const [workingDirectory, setWorkingDirectory] = useState(defaultWorkingDirectory);
   const [initialPrompt, setInitialPrompt] = useState("");
+
+  useEffect(() => {
+    if (!selectedBackend && defaultBackend) {
+      setSelectedBackend(defaultBackend);
+    }
+  }, [defaultBackend, selectedBackend]);
 
   const setup = useMemo(
     () =>

@@ -25,9 +25,11 @@ import {
   hideWorkMonitor,
   openWorkMonitor,
   runtimeHostBridgeForInfo,
+  readDesktopSettings,
   readRuntimeBootstrap,
   readRuntimeChromeState,
   retryRuntimeBootstrap,
+  saveDesktopSettings,
   subscribeOpenDesktopSession,
   subscribeRuntimeChromeState,
   type RuntimeChromeStateResponse,
@@ -49,7 +51,6 @@ import "./style.css";
 
 const DEFAULT_WORKING_DIRECTORY = "/";
 const DEFAULT_WEB_API_BASE_URL = "/api/v1";
-const DEFAULT_BACKEND_STORAGE_KEY = "vela-desktop:settings:default-backend";
 const DESKTOP_APP_VERSION = "0.0.1";
 const DESKTOP_BACKEND_PREFERENCE = [
   "vela_engine",
@@ -184,17 +185,37 @@ function DesktopReadyApp({
     useState<DesktopSettingsPanelId>("general");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
-  const [selectedBackendKind, setSelectedBackendKind] = useState<BackendKindWire | "">(
-    readDefaultBackendPreference,
-  );
+  const [selectedBackendKind, setSelectedBackendKind] = useState<BackendKindWire | "">("");
+  const [hasLoadedDesktopSettings, setHasLoadedDesktopSettings] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [chromeState, setChromeState] = useState<RuntimeChromeStateResponse | undefined>(
     hostInfo.chromeState,
   );
 
   useEffect(() => {
-    writeDefaultBackendPreference(selectedBackendKind);
-  }, [selectedBackendKind]);
+    let cancelled = false;
+    void readDesktopSettings()
+      .then((settings) => {
+        if (cancelled) return;
+        setSelectedBackendKind(settings.defaultBackend);
+      })
+      .catch((err) => {
+        console.warn("Failed to load desktop settings", err);
+      })
+      .finally(() => {
+        if (!cancelled) setHasLoadedDesktopSettings(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedDesktopSettings) return;
+    void saveDesktopSettings({ defaultBackend: selectedBackendKind }).catch((err) => {
+      console.warn("Failed to save desktop settings", err);
+    });
+  }, [hasLoadedDesktopSettings, selectedBackendKind]);
 
   useEffect(() => {
     if (!activeSessionId) return;
@@ -627,33 +648,5 @@ function DesktopBootstrapSurface({
         </button>
       </div>
     </div>
-  );
-}
-
-function readDefaultBackendPreference(): BackendKindWire | "" {
-  if (typeof window === "undefined") return "";
-  const value = window.localStorage.getItem(DEFAULT_BACKEND_STORAGE_KEY);
-  return isBackendKind(value) ? value : "";
-}
-
-function writeDefaultBackendPreference(value: BackendKindWire | "") {
-  if (typeof window === "undefined") return;
-  if (!value) {
-    window.localStorage.removeItem(DEFAULT_BACKEND_STORAGE_KEY);
-    return;
-  }
-  window.localStorage.setItem(DEFAULT_BACKEND_STORAGE_KEY, value);
-}
-
-function isBackendKind(value: string | null): value is BackendKindWire {
-  return (
-    value === "codex" ||
-    value === "cloudagent" ||
-    value === "claude_code" ||
-    value === "pi" ||
-    value === "vela_engine" ||
-    value === "opencode" ||
-    value === "acp" ||
-    value === "qoder"
   );
 }

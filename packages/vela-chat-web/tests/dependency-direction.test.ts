@@ -19,8 +19,8 @@ test("repository root stays free of local browser debug artifacts", () => {
   const rootFiles = readdirSync(root, { withFileTypes: true })
     .filter((entry) => entry.isFile())
     .map((entry) => entry.name);
-  const generatedAppCss = rootFiles.filter((name) => /^app-[A-Za-z0-9_-]+\.css$/.test(name));
-  assert.deepEqual(generatedAppCss, []);
+  const generatedAppAssets = rootFiles.filter((name) => /^(app|index)-[A-Za-z0-9_-]+\.(css|js)$/.test(name));
+  assert.deepEqual(generatedAppAssets, []);
 });
 
 function readChatWorkbenchSource() {
@@ -850,20 +850,24 @@ test("composer backdrop is an independent layer between conversation content and
     join(root, "packages/vela-chat-web/src/styles/desktop.module.css"),
     "utf8",
   );
+  const sharedShellTokenBlock =
+    stylesBlock(css, /\.shell,\s*\.newSessionShell\s*\{([\s\S]*?)\}/);
 
   assert.match(workbenchView, /styles\.composerBackdrop/);
   assert.match(css, /--vela-bg:\s*rgb\(255 255 255 \/ [0-9.]+%\);/);
   assert.match(css, /\.shell\s*\{[^}]*position:\s*relative;/s);
   assert.match(css, /\.shell\s*\{[^}]*width:\s*100%;/s);
   assert.match(css, /\.shell\s*\{[^}]*min-width:\s*0;/s);
-  assert.match(css, /\.shell\s*\{[^}]*--vela-spacing:\s*0\.25rem;/s);
-  assert.match(css, /\.shell\s*\{[^}]*--vela-toolbar-height:\s*46px;/s);
-  assert.match(css, /\.shell\s*\{[^}]*--vela-shell-radius:\s*16px;/s);
-  assert.match(css, /\.shell\s*\{[^}]*--vela-composer-radius:\s*20px;/s);
-  assert.match(css, /\.shell\s*\{[^}]*--vela-composer-blur:\s*16px;/s);
-  assert.match(css, /\.shell\s*\{[^}]*--vela-composer-shadow:\s*0 4px 16px 0 rgb\(0 0 0 \/ 5%\);/s);
+  assert.match(sharedShellTokenBlock, /--vela-spacing:\s*0\.25rem;/);
+  assert.match(sharedShellTokenBlock, /--vela-toolbar-height:\s*46px;/);
+  assert.match(sharedShellTokenBlock, /--vela-shell-radius:\s*16px;/);
+  assert.doesNotMatch(sharedShellTokenBlock, /--vela-composer-radius:/);
+  assert.doesNotMatch(sharedShellTokenBlock, /--vela-composer-bg:/);
+  assert.doesNotMatch(sharedShellTokenBlock, /--vela-composer-blur:/);
+  assert.doesNotMatch(sharedShellTokenBlock, /--vela-composer-shadow:/);
+  assert.match(sharedShellTokenBlock, /background:\s*var\(--vela-bg\);/);
+  assert.match(sharedShellTokenBlock, /color:\s*var\(--vela-text\);/);
   assert.match(css, /\.shell\s*\{[^}]*border-top-left-radius:\s*var\(--vela-shell-radius\);/s);
-  assert.match(css, /\.shell\s*\{[^}]*background:\s*var\(--vela-bg\);/s);
   assert.match(css, /\.shell\s*\{[^}]*-webkit-backdrop-filter:\s*saturate/s);
   assert.match(css, /\.shell\s*\{[^}]*backdrop-filter:\s*saturate/s);
   assert.doesNotMatch(css, /\.shell\s*\{[^}]*background:\s*transparent;/s);
@@ -880,7 +884,10 @@ test("composer backdrop is an independent layer between conversation content and
   assert.match(css, /\.composerBackdrop\s*\{[^}]*z-index:\s*19;/s);
   assert.match(css, /\.composerDock\s*\{[^}]*position:\s*absolute;/s);
   assert.match(css, /\.composerDock\s*\{[^}]*z-index:\s*20;/s);
-  assert.match(css, /\.composerDock\s*\{[^}]*padding:\s*0 24px var\(--vela-thread-floating-content-bottom-inset\);/s);
+  assert.match(
+    css,
+    /\.composerDock\s*\{[^}]*padding:\s*0 24px var\(--vela-thread-floating-content-bottom-inset,\s*12px\);/s,
+  );
   assert.match(css, /\.requestDock\s*\{[^}]*position:\s*absolute;/s);
   assert.match(css, /\.requestDock\s*\{[^}]*bottom:\s*calc\(var\(--vela-composer-height\) \+ var\(--vela-thread-floating-content-top-inset\)\);/s);
   assert.match(css, /\.error\s*\{[^}]*position:\s*absolute;/s);
@@ -1095,14 +1102,14 @@ test("chat typography follows Codex-style reading weight and size", () => {
     "utf8",
   );
 
-  const shell = cssBlock(css, "shell");
+  const shellTokens = stylesBlock(css, /\.shell,\s*\.newSessionShell\s*\{([\s\S]*?)\}/);
   const assistant = cssBlock(css, "messageResponse");
   const user = cssBlock(css, "userBubble");
   const strong = cssBlockContaining(css, "messageResponse strong");
 
-  assert.match(shell, /"PingFang SC"/);
-  assert.match(shell, /"Hiragino Sans GB"/);
-  assert.doesNotMatch(shell, /"SF Pro Text"/);
+  assert.match(shellTokens, /"PingFang SC"/);
+  assert.match(shellTokens, /"Hiragino Sans GB"/);
+  assert.doesNotMatch(shellTokens, /"SF Pro Text"/);
   assert.match(assistant, /font-size:\s*14px;/);
   assert.match(assistant, /font-weight:\s*400;/);
   assert.match(user, /font-size:\s*14px;/);
@@ -1193,6 +1200,12 @@ test("chat markdown and agent work use compact Codex-style vertical rhythm", () 
 function cssBlock(css: string, selector: string) {
   const match = css.match(new RegExp(`\\.${escapeRegex(selector)}\\s*\\{([\\s\\S]*?)\\}`));
   assert.ok(match, `missing .${selector} block`);
+  return match[1] ?? "";
+}
+
+function stylesBlock(css: string, pattern: RegExp) {
+  const match = css.match(pattern);
+  assert.ok(match, `missing css block matching ${pattern}`);
   return match[1] ?? "";
 }
 
@@ -1362,8 +1375,12 @@ test("composer input frame matches the codex-desktop visual rhythm", () => {
     "utf8",
   );
 
+  const rootBlock = cssBlock(styles, "composerRoot");
+  const dockBlock = cssBlock(styles, "composerDock");
   const frameBlock = cssBlock(styles, "composer");
   const editorBlock = cssBlock(styles, "composerEditor");
+  const attachedSurfaceBlock = cssBlock(styles, "composerAttachedSurface");
+  const newSessionContextBlock = cssBlock(styles, "newSessionContextBar");
   const toolbarBlock = cssBlock(styles, "composerFooter");
   const toolbarLaneBlock = styles.match(/\.composerLeft,\n\.composerRight\s*\{[^}]+\}/)?.[0] ?? "";
   const leftBlock = styles.match(/\.composerLeft\s*\{[^}]+\}/)?.[0] ?? "";
@@ -1373,8 +1390,15 @@ test("composer input frame matches the codex-desktop visual rhythm", () => {
     )?.[0] ?? "";
   const iconButtonBlock = cssBlock(styles, "iconButton");
 
+  assert.match(rootBlock, /--vela-composer-radius:\s*20px;/);
+  assert.match(rootBlock, /--vela-composer-bg:\s*rgb\(255 255 255 \/ 90%\);/);
+  assert.match(rootBlock, /--vela-composer-blur:\s*16px;/);
+  assert.match(rootBlock, /--vela-composer-shadow:\s*0 4px 16px 0 rgb\(0 0 0 \/ 5%\);/);
+  assert.match(rootBlock, /--vela-composer-max-width:\s*var\(--vela-thread-content-max-width,\s*920px\);/);
+  assert.match(dockBlock, /padding:\s*0 24px var\(--vela-thread-floating-content-bottom-inset,\s*12px\);/);
   assert.match(frameBlock, /overflow:\s*hidden auto;/);
   assert.match(frameBlock, /border:\s*1px solid rgb\(13 13 13 \/ 10%\);/);
+  assert.match(frameBlock, /width:\s*min\(100%, var\(--vela-composer-max-width\)\);/);
   assert.match(frameBlock, /border-radius:\s*var\(--vela-composer-radius\);/);
   assert.match(frameBlock, /background:\s*var\(--vela-composer-bg\);/);
   assert.match(frameBlock, /0 18px 46px rgb\(15 23 42 \/ 9%\)/);
@@ -1387,8 +1411,15 @@ test("composer input frame matches the codex-desktop visual rhythm", () => {
   assert.match(editorBlock, /font-size:\s*14px;/);
   assert.match(editorBlock, /line-height:\s*1\.5;/);
   assert.match(editorBlock, /padding:\s*12px 16px 8px;/);
-  assert.match(styles, /\.composerDockInline\s*\{[^}]*--vela-composer-input-min-height:\s*126px;/s);
-  assert.match(styles, /\.composerDockInline \.composerEditor\s*\{[^}]*font-size:\s*16px;/s);
+  assert.doesNotMatch(styles, /\.composerDockInline\s*\{[^}]*--vela-composer-input-min-height:/s);
+  assert.doesNotMatch(styles, /\.composerDockInline \.composerEditor\s*\{/);
+
+  assert.match(attachedSurfaceBlock, /width:\s*min\(100%, var\(--vela-composer-max-width\)\);/);
+  assert.match(attachedSurfaceBlock, /border-radius:\s*0 0 var\(--vela-composer-radius\) var\(--vela-composer-radius\);/);
+  assert.match(attachedSurfaceBlock, /background:\s*#f4f4f5;/);
+  assert.doesNotMatch(newSessionContextBlock, /border:/);
+  assert.doesNotMatch(newSessionContextBlock, /border-radius:/);
+  assert.doesNotMatch(newSessionContextBlock, /background:/);
 
   assert.match(toolbarBlock, /align-items:\s*flex-end;/);
   assert.match(toolbarBlock, /flex-wrap:\s*wrap;/);
@@ -1408,7 +1439,7 @@ test("composer input frame matches the codex-desktop visual rhythm", () => {
   assert.match(iconButtonBlock, /height:\s*32px;/);
   assert.match(iconButtonBlock, /border:\s*1px solid #e7e5e4;/);
   assert.match(iconButtonBlock, /border-radius:\s*8px;/);
-  assert.match(styles, /@supports \(corner-shape:\s*superellipse\(1\.5\)\)\s*\{[^}]*\.composer\s*\{[^}]*corner-shape:\s*superellipse\(1\.5\);/s);
+  assert.match(styles, /@supports \(corner-shape:\s*superellipse\(1\.5\)\)\s*\{[^}]*\.composer,\s*\.composerAttachedSurface\s*\{[^}]*corner-shape:\s*superellipse\(1\.5\);/s);
   assert.doesNotMatch(styles, /\.controlButtonLabel/);
 });
 
@@ -1426,6 +1457,10 @@ test("composer frames disable selection outside editable user input", () => {
   const chatEditorBlock = cssBlock(styles, "composerEditor");
   const chatAttachmentLabelBlock = cssBlock(styles, "attachmentLabel");
   const chatControlsBlock = cssBlock(styles, "composerControls");
+  const promptInput = readFileSync(
+    join(root, "packages/vela-chat-web/src/primitives/prompt-input/PromptInput.tsx"),
+    "utf8",
+  );
 
   assert.match(chatFrameBlock, /user-select:\s*none;/);
   assert.match(chatEditorBlock, /user-select:\s*text;/);
@@ -1433,6 +1468,8 @@ test("composer frames disable selection outside editable user input", () => {
   assert.doesNotMatch(chatControlsBlock, /user-select:\s*(text|all);/);
   assert.match(newSessionSurface, /<PromptInput/);
   assert.match(newSessionSurface, /layout="inline"/);
+  assert.match(promptInput, /styles\.composerRoot/);
+  assert.match(promptInput, /composerAttachedSurface/);
   assert.doesNotMatch(styles, /newSessionComposer/);
 });
 

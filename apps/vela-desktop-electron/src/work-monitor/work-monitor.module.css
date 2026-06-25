@@ -11,8 +11,40 @@
   user-select: none;
 }
 
-.workMonitorApp button {
+.workMonitorApp button,
+.workMonitorApp [role="button"],
+.workMonitorPreview {
   -webkit-app-region: no-drag;
+}
+
+.workMonitorPreview {
+  position: relative;
+}
+
+.workMonitorTitle {
+  position: absolute;
+  top: 8px;
+  left: 46px;
+  right: 46px;
+  z-index: 3;
+  overflow: hidden;
+  color: rgb(24 25 27 / 82%);
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  font-size: 8px;
+  font-weight: 720;
+  letter-spacing: 0;
+  line-height: 1.2;
+  pointer-events: none;
+  text-align: center;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 0 rgb(255 255 255 / 68%);
+  white-space: nowrap;
 }
 
 .workMonitorLoading,
