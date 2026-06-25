@@ -19,7 +19,7 @@ Environment:
       Required env spec: <env>:<region>:<kubeconfig-key-or-path>.
   HERMES_IMAGE_NAME
       Current image name. Used only if HERMES_IMAGE_ID_<REGION> is missing.
-  HERMES_IMAGE_ID_AP_BEIJING / HERMES_IMAGE_ID_AP_SHANGHAI
+  HERMES_IMAGE_ID_AP_BEIJING / HERMES_IMAGE_ID_AP_SHANGHAI / HERMES_IMAGE_ID_AP_SINGAPORE
       Region image ids produced by the current Hermes image build.
 EOF
 }
