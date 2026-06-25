@@ -62,6 +62,7 @@ test("desktop shell renders the codex-desktop style sidebar frame and main inset
   assert.match(html, /class="vela-sidebar-window-controls"/);
   assert.match(html, /class="vela-window-drag-layer"/);
   assert.match(html, /class="vela-desktop-shell app-shell vela-tri-pane-shell"/);
+  assert.match(html, /--vela-window-leading-content-inset:158px/);
   assert.match(html, /data-slot="sidebar-wrapper"/);
   assert.match(html, /class="vela-sidebar-wrapper"/);
   assert.match(html, /class="vela-sidebar-panel"/);
@@ -202,6 +203,8 @@ test("desktop host uses unified chrome and drag-region semantics", () => {
   assert.match(sidebarShell, /interface WindowToolbarButtonModel/);
   assert.match(sidebarShell, /function ToolbarSidebarIcon/);
   assert.match(sidebarShell, /function ToolbarNewThreadIcon/);
+  assert.match(sidebarShell, /function windowToolbarButtonModels/);
+  assert.match(sidebarShell, /function windowLeadingContentInsetPx/);
   assert.match(sidebarShell, /data-toolbar-button=\{button\.id\}/);
   assert.match(desktopBridge, /showTrafficLights:\s*false/);
   assert.match(settingsPage, /VelaSidebarChrome/);
@@ -222,6 +225,10 @@ test("desktop host uses unified chrome and drag-region semantics", () => {
   assert.match(css, /--vela-window-toolbar-icon-scale:\s*1\.12;/);
   assert.match(css, /--vela-window-toolbar-gap:\s*16px;/);
   assert.match(css, /--vela-window-toolbar-item-gap:\s*0px;/);
+  assert.match(css, /\.vela-chat-topbar\s*\{[^}]*--vela-chat-topbar-leading-padding:\s*var\(--vela-chat-topbar-base-padding-left\);/s);
+  assert.match(css, /\.vela-chat-topbar\s*\{[^}]*padding:\s*18px var\(--vela-chat-topbar-base-padding-right\) 18px var\(--vela-chat-topbar-leading-padding\);/s);
+  assert.match(css, /\.vela-desktop-shell\[data-state="collapsed"\] \.vela-chat-topbar,\s*\.vela-desktop-shell\[data-sidebar-presentation="overlay"\] \.vela-chat-topbar\s*\{[^}]*--vela-chat-topbar-leading-padding:\s*max\(/s);
+  assert.match(css, /\.vela-desktop-shell\[data-state="collapsed"\] \.vela-chat-topbar,\s*\.vela-desktop-shell\[data-sidebar-presentation="overlay"\] \.vela-chat-topbar\s*\{[^}]*var\(--vela-window-leading-content-inset\)/s);
   assert.match(css, /\[data-window-drag-region="true"\]\s*\{[^}]*-webkit-app-region:\s*drag;/s);
   assert.match(css, /\[data-window-drag-region="false"\]/);
   assert.match(css, /\.vela-window-chrome\s*\{[^}]*height:\s*var\(--vela-titlebar-height\);/s);
@@ -248,8 +255,8 @@ test("desktop session list CSS follows the codex-style compact rail layout", () 
   assert.match(css, /\.vela-session-sidebar\s*\{[^}]*user-select:\s*none;/s);
   assert.match(css, /\.search-box\s*\{[^}]*min-height:\s*34px;/s);
   assert.match(css, /\.sidebar-section-heading\s*\{[^}]*text-transform:\s*none;/s);
-  assert.doesNotMatch(css, /--vela-session-rail-width/);
   assert.match(css, /\.vela-session-item\s*\{[^}]*position:\s*relative;/s);
+  assert.doesNotMatch(css, /--vela-session-rail-width/);
   assert.match(css, /\.vela-session-main\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/s);
   assert.match(css, /\.vela-session-main\s*\{[^}]*padding:\s*6px 58px 6px 8px;/s);
   assert.match(css, /\.vela-session-main\s*\{[^}]*min-height:\s*50px;/s);
