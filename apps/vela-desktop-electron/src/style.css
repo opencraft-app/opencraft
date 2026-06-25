@@ -1081,6 +1081,10 @@ body {
   -webkit-line-clamp: 2;
 }
 
+.vela-session-item[data-dragging-preview="true"] {
+  cursor: grabbing;
+}
+
 .vela-sidebar-footer {
   position: absolute;
   z-index: 8;

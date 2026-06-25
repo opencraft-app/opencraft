@@ -12,27 +12,35 @@ import {
 import { createPortal } from "react-dom";
 import { Folder } from "lucide-react";
 import type { SessionListItemWire } from "../../../vela-chat-client/src";
-import type { ChatRenderModel } from "../../../vela-chat-render-model/src";
 import { useDismissableLayer } from "../../../vela-ui/src";
 import { useVerticalScrollbarOverlay } from "../conversation-runtime/scrollbar/useVerticalScrollbarOverlay";
+import { useSessionDragPreview, type SessionDragPreviewPoint } from "../session-list/drag-preview";
 import { buildSessionListRowModel } from "../session-list/sessionListRowModel";
 import styles from "../styles/desktop.module.css";
-import { ConversationPreviewSurface } from "../thumbnail/ConversationPreviewSurface";
 
 const sessionHoverCardOpenDelayMs = 800;
 
 export interface SessionListSurfaceProps {
   sessions: SessionListItemWire[];
   currentSessionId: string | null;
-  sessionPreviews?: Record<string, ChatRenderModel | undefined>;
+  onSessionDragPreviewEnd?: () => void;
+  onSessionDragPreviewMove?: (input: SessionDragPreviewInput) => void;
+  onSessionDragPreviewStart?: (input: SessionDragPreviewInput) => void;
   onArchiveSession?: (sessionId: string) => void | Promise<void>;
   onSelectSession: (sessionId: string) => void;
+}
+
+export interface SessionDragPreviewInput {
+  point: SessionDragPreviewPoint;
+  sessionId: string;
 }
 
 export function SessionListSurface({
   sessions,
   currentSessionId,
-  sessionPreviews,
+  onSessionDragPreviewEnd,
+  onSessionDragPreviewMove,
+  onSessionDragPreviewStart,
   onArchiveSession,
   onSelectSession,
 }: SessionListSurfaceProps) {
@@ -63,7 +71,9 @@ export function SessionListSurface({
               key={session.id}
               session={session}
               isActive={session.id === currentSessionId}
-              previewModel={sessionPreviews?.[session.id]}
+              onDragPreviewEnd={onSessionDragPreviewEnd}
+              onDragPreviewMove={onSessionDragPreviewMove}
+              onDragPreviewStart={onSessionDragPreviewStart}
               onArchiveSession={onArchiveSession ? () => onArchiveSession(session.id) : undefined}
               onSelect={() => onSelectSession(session.id)}
             />
@@ -78,13 +88,17 @@ export function SessionListSurface({
 function SessionListSurfaceItem({
   session,
   isActive,
-  previewModel,
+  onDragPreviewEnd,
+  onDragPreviewMove,
+  onDragPreviewStart,
   onArchiveSession,
   onSelect,
 }: {
   session: SessionListItemWire;
   isActive: boolean;
-  previewModel?: ChatRenderModel;
+  onDragPreviewEnd?: () => void;
+  onDragPreviewMove?: (input: SessionDragPreviewInput) => void;
+  onDragPreviewStart?: (input: SessionDragPreviewInput) => void;
   onArchiveSession?: () => void | Promise<void>;
   onSelect: () => void;
 }) {
@@ -96,7 +110,7 @@ function SessionListSurfaceItem({
   const rootRef = useRef<HTMLLIElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const hoverOpenTimerRef = useRef<number | null>(null);
-  const row = buildSessionListRowModel(session, previewModel);
+  const row = buildSessionListRowModel(session);
   const closeMenu = useCallback(() => setIsMenuOpen(false), []);
   const cancelHoverCardOpen = useCallback(() => {
     if (!canUseDocument() || hoverOpenTimerRef.current === null) return;
@@ -118,6 +132,15 @@ function SessionListSurfaceItem({
     cancelHoverCardOpen();
     setIsHoverCardOpen(false);
   }, [cancelHoverCardOpen]);
+  const dragPreview = useSessionDragPreview({
+    canPreview: Boolean(onDragPreviewStart),
+    onDragPreviewEnd,
+    onDragPreviewMove: (point) => onDragPreviewMove?.({ point, sessionId: session.id }),
+    onDragPreviewStart: (point) => {
+      closeHoverCard();
+      onDragPreviewStart?.({ point, sessionId: session.id });
+    },
+  });
 
   useDismissableLayer({
     enabled: isMenuOpen,
@@ -212,6 +235,14 @@ function SessionListSurfaceItem({
     if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
     closeHoverCard();
   };
+  const selectSessionFromClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (dragPreview.consumeSuppressedClick()) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    onSelect();
+  };
 
   const menu = isMenuOpen ? (
     <div
@@ -265,7 +296,6 @@ function SessionListSurfaceItem({
       ) : null}
     </div>
   ) : null;
-
   return (
     <li
       ref={rootRef}
@@ -280,10 +310,10 @@ function SessionListSurfaceItem({
       data-running={row.status.isRunning ? "true" : undefined}
       data-waiting={row.status.isWaiting ? "true" : undefined}
       data-failed={row.status.isFailed ? "true" : undefined}
-      data-has-thumbnail={row.status.hasThumbnail ? "true" : undefined}
+      data-dragging-preview={dragPreview.isDragging ? "true" : undefined}
       onContextMenu={openMenuFromContext}
       onBlur={closeHoverCardFromBlur}
-      onFocus={() => setIsHoverCardOpen(true)}
+      onFocus={openHoverCardAfterDelay}
       onPointerEnter={openHoverCardAfterDelay}
       onPointerLeave={closeHoverCard}
     >
@@ -295,45 +325,25 @@ function SessionListSurfaceItem({
         data-slot="session-list-surface-button"
         role="button"
         tabIndex={0}
-        onClick={onSelect}
+        onClick={selectSessionFromClick}
         onKeyDown={selectSessionFromKeyboard}
+        onPointerCancel={dragPreview.onPointerCancel}
+        onPointerDown={dragPreview.onPointerDown}
+        onPointerMove={dragPreview.onPointerMove}
+        onPointerUp={dragPreview.onPointerUp}
       >
         <span className="vela-session-copy">
           <span className="vela-session-title-row">
             <span className="vela-session-title">{row.title}</span>
           </span>
-          {row.compactPreview ? (
-            <>
-              {row.locationInfo ? (
-                <span className="vela-session-location" title={row.locationInfo.path}>
-                  <Folder size={12} strokeWidth={2.1} aria-hidden="true" />
-                  <span>{row.locationInfo.label}</span>
-                </span>
-              ) : null}
-              <span
-                className="vela-session-thumbnail-preview"
-                data-slot="session-thumbnail-preview"
-                aria-hidden="true"
-                inert
-              >
-                <ConversationPreviewSurface
-                  model={row.compactPreview}
-                  scale={0.09}
-                />
-              </span>
-            </>
+          <span className="vela-session-preview">{row.previewLabel}</span>
+          {row.locationInfo ? (
+            <span className="vela-session-location" title={row.locationInfo.path}>
+              <Folder size={12} strokeWidth={2.1} aria-hidden="true" />
+              <span>{row.locationInfo.label}</span>
+            </span>
           ) : (
-            <>
-              <span className="vela-session-preview">{row.previewLabel}</span>
-              {row.locationInfo ? (
-                <span className="vela-session-location" title={row.locationInfo.path}>
-                  <Folder size={12} strokeWidth={2.1} aria-hidden="true" />
-                  <span>{row.locationInfo.label}</span>
-                </span>
-              ) : (
-                <span className="vela-session-meta">{row.metaLabel}</span>
-              )}
-            </>
+            <span className="vela-session-meta">{row.metaLabel}</span>
           )}
         </span>
         {row.rail ? (

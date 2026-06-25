@@ -24,6 +24,16 @@ declare global {
       openWorkMonitor?: (sessionId: string) => Promise<WorkMonitorActionResponse>;
       hideWorkMonitor?: () => Promise<WorkMonitorActionResponse>;
       moveWorkMonitorBy?: (deltaX: number, deltaY: number) => Promise<WorkMonitorActionResponse>;
+      startSessionDragPreview?: (
+        sessionId: string,
+        screenX: number,
+        screenY: number,
+      ) => Promise<WorkMonitorActionResponse>;
+      moveSessionDragPreview?: (
+        screenX: number,
+        screenY: number,
+      ) => Promise<WorkMonitorActionResponse>;
+      endSessionDragPreview?: () => Promise<WorkMonitorActionResponse>;
       focusDesktopSession?: (sessionId: string) => Promise<WorkMonitorActionResponse>;
       isMacosSpeechAvailable?: () => Promise<boolean>;
       startMacosSpeech?: (options?: VoiceInputOptions) => Promise<WorkMonitorActionResponse>;
@@ -211,6 +221,28 @@ export async function hideWorkMonitor() {
 
 export async function moveWorkMonitorBy(deltaX: number, deltaY: number) {
   return window.velaDesktop?.moveWorkMonitorBy?.(deltaX, deltaY) ?? { accepted: false };
+}
+
+export async function startSessionDragPreview(
+  sessionId: string,
+  screenX: number,
+  screenY: number,
+) {
+  return (
+    window.velaDesktop?.startSessionDragPreview?.(sessionId, screenX, screenY) ?? {
+      accepted: false,
+    }
+  );
+}
+
+export async function moveSessionDragPreview(screenX: number, screenY: number) {
+  return (
+    window.velaDesktop?.moveSessionDragPreview?.(screenX, screenY) ?? { accepted: false }
+  );
+}
+
+export async function endSessionDragPreview() {
+  return window.velaDesktop?.endSessionDragPreview?.() ?? { accepted: false };
 }
 
 export async function focusDesktopSession(sessionId: string) {

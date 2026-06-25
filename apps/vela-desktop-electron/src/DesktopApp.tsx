@@ -20,6 +20,7 @@ import {
 import {
   buildSessionLocationInfo,
   ChatSurface,
+  type SessionDragPreviewInput,
   type SessionLocationInfo,
 } from "../../../packages/vela-chat-web/src";
 import {
@@ -29,7 +30,9 @@ import {
 } from "../../../packages/vela-desktop-shell/src";
 import { VelaLocalTracer } from "../../../packages/vela-observability-client/src";
 import {
+  endSessionDragPreview,
   hideWorkMonitor,
+  moveSessionDragPreview,
   openWorkMonitor,
   runtimeHostBridgeForInfo,
   readDesktopSettings,
@@ -38,6 +41,7 @@ import {
   retryRuntimeBootstrap,
   saveDesktopSettings,
   selectDesktopWorkingDirectory,
+  startSessionDragPreview,
   subscribeOpenDesktopSession,
   subscribeRuntimeChromeState,
   type RuntimeChromeStateResponse,
@@ -296,6 +300,24 @@ function DesktopReadyApp({
     observability,
     sessionId: activeSessionId,
   });
+  const startSidebarSessionDragPreview = useCallback(
+    (input: SessionDragPreviewInput) => {
+      if (hostInfo.hostKind !== "electron") return;
+      void startSessionDragPreview(input.sessionId, input.point.screenX, input.point.screenY);
+    },
+    [hostInfo.hostKind],
+  );
+  const moveSidebarSessionDragPreview = useCallback(
+    (input: SessionDragPreviewInput) => {
+      if (hostInfo.hostKind !== "electron") return;
+      void moveSessionDragPreview(input.point.screenX, input.point.screenY);
+    },
+    [hostInfo.hostKind],
+  );
+  const endSidebarSessionDragPreview = useCallback(() => {
+    if (hostInfo.hostKind !== "electron") return;
+    void endSessionDragPreview();
+  }, [hostInfo.hostKind]);
   const hostLabel =
     hostBridge.platform === "web"
       ? "Browser preview"
@@ -524,6 +546,9 @@ function DesktopReadyApp({
       onCreateSession={openNewSessionPage}
       onArchiveSession={archiveSession}
       onOpenSettings={() => setIsSettingsOpen(true)}
+      onSessionDragPreviewEnd={endSidebarSessionDragPreview}
+      onSessionDragPreviewMove={moveSidebarSessionDragPreview}
+      onSessionDragPreviewStart={startSidebarSessionDragPreview}
       onSelectSession={selectChatSession}
     />
   );

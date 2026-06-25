@@ -270,7 +270,7 @@ test("session list rows show the folder location text", async () => {
   }
 });
 
-test("session list row focus shows a floating hover card in a portal layer", async () => {
+test("session list row focus opens the floating hover card only after the delay", async () => {
   const dom = installDomRuntime();
   try {
     const { SessionListSurface } = await import("../src");
@@ -293,9 +293,16 @@ test("session list row focus shows a floating hover card in a portal layer", asy
       '[data-slot="session-list-surface-button"]',
     );
     assert.ok(rowButton);
+    assert.equal(document.querySelector('[data-slot="session-thumbnail-preview"]'), null);
 
     await act(async () => {
       rowButton.focus();
+    });
+
+    assert.equal(document.querySelector('[data-slot="session-hover-card"]'), null);
+
+    await act(async () => {
+      await waitForHoverCardDelay();
     });
 
     const hoverCard = document.querySelector<HTMLElement>('[data-slot="session-hover-card"]');
@@ -408,6 +415,122 @@ test("session list activity treats waiting for user as distinct from legacy runn
     dom.restore();
   }
 });
+
+test("dragging a session row emits host preview events without selecting", async () => {
+  const dom = installDomRuntime();
+  try {
+    const { SessionListSurface } = await import("../src");
+    const selectedSessionIds: string[] = [];
+    const previewEvents: string[] = [];
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <SessionListSurface
+          sessions={[session]}
+          currentSessionId={session.id}
+          onSessionDragPreviewEnd={() => previewEvents.push("end")}
+          onSessionDragPreviewMove={(input) =>
+            previewEvents.push(`move:${input.sessionId}:${input.point.screenX},${input.point.screenY}`)
+          }
+          onSessionDragPreviewStart={(input) =>
+            previewEvents.push(`start:${input.sessionId}:${input.point.screenX},${input.point.screenY}`)
+          }
+          onSelectSession={(sessionId) => selectedSessionIds.push(sessionId)}
+        />,
+      );
+    });
+
+    const rowButton = document.querySelector<HTMLElement>(
+      '[data-slot="session-list-surface-button"]',
+    );
+    assert.ok(rowButton);
+
+    await act(async () => {
+      rowButton.dispatchEvent(
+        new MouseEvent("pointerdown", {
+          bubbles: true,
+          button: 0,
+          cancelable: true,
+          clientX: 20,
+          clientY: 20,
+          screenX: 220,
+          screenY: 320,
+        }),
+      );
+      rowButton.dispatchEvent(
+        new MouseEvent("pointermove", {
+          bubbles: true,
+          button: 0,
+          cancelable: true,
+          clientX: 24,
+          clientY: 24,
+          screenX: 224,
+          screenY: 324,
+        }),
+      );
+    });
+
+    assert.deepEqual(previewEvents, []);
+
+    await act(async () => {
+      rowButton.dispatchEvent(
+        new MouseEvent("pointermove", {
+          bubbles: true,
+          button: 0,
+          cancelable: true,
+          clientX: 80,
+          clientY: 90,
+          screenX: 280,
+          screenY: 390,
+        }),
+      );
+    });
+
+    assert.deepEqual(previewEvents, [
+      `start:${session.id}:280,390`,
+      `move:${session.id}:280,390`,
+    ]);
+    assert.equal(document.querySelector('[data-slot="session-drag-preview"]'), null);
+
+    await act(async () => {
+      rowButton.dispatchEvent(
+        new MouseEvent("pointerup", {
+          bubbles: true,
+          button: 0,
+          cancelable: true,
+          clientX: 80,
+          clientY: 90,
+          screenX: 280,
+          screenY: 390,
+        }),
+      );
+      rowButton.click();
+    });
+
+    assert.equal(document.querySelector('[data-slot="session-drag-preview"]'), null);
+    assert.deepEqual(previewEvents, [
+      `start:${session.id}:280,390`,
+      `move:${session.id}:280,390`,
+      "end",
+    ]);
+    assert.deepEqual(selectedSessionIds, []);
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+function waitForHoverCardDelay() {
+  return new Promise<void>((resolve) => {
+    window.setTimeout(resolve, 820);
+  });
+}
 
 function installDomRuntime() {
   const win = new Window();

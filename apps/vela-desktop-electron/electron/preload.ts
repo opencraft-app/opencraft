@@ -15,6 +15,11 @@ contextBridge.exposeInMainWorld("velaDesktop", {
   hideWorkMonitor: () => ipcRenderer.invoke("vela:work-monitor-hide"),
   moveWorkMonitorBy: (deltaX: number, deltaY: number) =>
     ipcRenderer.invoke("vela:work-monitor-move-by", deltaX, deltaY),
+  startSessionDragPreview: (sessionId: string, screenX: number, screenY: number) =>
+    ipcRenderer.invoke("vela:session-drag-preview-start", sessionId, screenX, screenY),
+  moveSessionDragPreview: (screenX: number, screenY: number) =>
+    ipcRenderer.invoke("vela:session-drag-preview-move", screenX, screenY),
+  endSessionDragPreview: () => ipcRenderer.invoke("vela:session-drag-preview-end"),
   focusDesktopSession: (sessionId: string) =>
     ipcRenderer.invoke("vela:desktop-focus-session", sessionId),
   isMacosSpeechAvailable: () => ipcRenderer.invoke("vela:voice-macos-available"),

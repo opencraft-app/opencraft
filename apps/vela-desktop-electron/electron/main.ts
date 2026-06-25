@@ -12,6 +12,7 @@ import {
   writeDesktopSettings,
 } from "./runtime";
 import { MacosSpeechManager } from "./voice/macos-speech-manager";
+import { SessionDragPreviewWindowManager } from "./session-drag-preview";
 import { WorkMonitorWindowManager } from "./work-monitor";
 
 let mainWindow: BrowserWindow | null = null;
@@ -92,6 +93,10 @@ const veladRuntime = new VeladRuntimeManager({
 const workMonitor = new WorkMonitorWindowManager({
   preloadPath: join(__dirname, "preload.cjs"),
   getAnchorWindow: () => mainWindow,
+  loadRenderer: loadRendererWindow,
+});
+const sessionDragPreview = new SessionDragPreviewWindowManager({
+  preloadPath: join(__dirname, "preload.cjs"),
   loadRenderer: loadRendererWindow,
 });
 const macosSpeech = new MacosSpeechManager({
@@ -368,6 +373,29 @@ ipcMain.handle("vela:work-monitor-move-by", async (event, deltaX: unknown, delta
     typeof deltaY === "number" &&
     workMonitor.moveBySender(event.sender, deltaX, deltaY),
 }));
+
+ipcMain.handle(
+  "vela:session-drag-preview-start",
+  async (_event, sessionId: unknown, screenX: unknown, screenY: unknown) => ({
+    accepted:
+      typeof sessionId === "string" &&
+      typeof screenX === "number" &&
+      typeof screenY === "number" &&
+      await sessionDragPreview.start(sessionId, { screenX, screenY }),
+  }),
+);
+
+ipcMain.handle("vela:session-drag-preview-move", async (_event, screenX: unknown, screenY: unknown) => ({
+  accepted:
+    typeof screenX === "number" &&
+    typeof screenY === "number" &&
+    sessionDragPreview.move({ screenX, screenY }),
+}));
+
+ipcMain.handle("vela:session-drag-preview-end", async () => {
+  sessionDragPreview.end();
+  return { accepted: true };
+});
 
 ipcMain.handle("vela:desktop-focus-session", async (_event, sessionId: unknown) => {
   if (typeof sessionId !== "string" || !sessionId.trim()) {

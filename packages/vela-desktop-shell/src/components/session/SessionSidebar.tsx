@@ -1,6 +1,9 @@
 import { MessageSquareText, Plus, Search } from "lucide-react";
 import type { SessionListItemWire } from "../../../../vela-chat-client/src";
-import { SessionListSurface } from "../../../../vela-chat-web/src/surfaces/SessionListSurface";
+import {
+  SessionListSurface,
+  type SessionDragPreviewInput,
+} from "../../../../vela-chat-web/src/surfaces/SessionListSurface";
 import {
   Sidebar,
   SidebarChromeArea,
@@ -27,6 +30,9 @@ export interface SessionSidebarProps {
   onCreateSession: () => void;
   onArchiveSession?: (sessionId: string) => void | Promise<void>;
   onClearSessions?: () => void;
+  onSessionDragPreviewEnd?: () => void;
+  onSessionDragPreviewMove?: (input: SessionDragPreviewInput) => void;
+  onSessionDragPreviewStart?: (input: SessionDragPreviewInput) => void;
   onOpenSettings?: () => void;
   onSearch?: (query: string) => void;
   onSelectSession: (sessionId: string) => void;
@@ -51,6 +57,9 @@ export function SessionSidebar({
   onCreateSession,
   onArchiveSession,
   onClearSessions,
+  onSessionDragPreviewEnd,
+  onSessionDragPreviewMove,
+  onSessionDragPreviewStart,
   onOpenSettings,
   onSearch,
   onSelectSession,
@@ -97,6 +106,9 @@ export function SessionSidebar({
               currentSessionId={currentSessionId}
               sessions={sessions}
               onArchiveSession={onArchiveSession}
+              onSessionDragPreviewEnd={onSessionDragPreviewEnd}
+              onSessionDragPreviewMove={onSessionDragPreviewMove}
+              onSessionDragPreviewStart={onSessionDragPreviewStart}
               onSelectSession={onSelectSession}
             />
           </SidebarScrollRegion>

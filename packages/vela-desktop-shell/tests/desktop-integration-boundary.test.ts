@@ -361,6 +361,73 @@ test("clicking the work monitor focuses the desktop session without hiding the m
   assert.match(bridge, /moveWorkMonitorBy/);
 });
 
+
+test("session drag preview is a transient native Electron window, not a sidebar DOM layer", () => {
+  const electronMain = readFileSync(
+    join(root, "apps/vela-desktop-electron/electron/main.ts"),
+    "utf8",
+  );
+  const preload = readFileSync(
+    join(root, "apps/vela-desktop-electron/electron/preload.ts"),
+    "utf8",
+  );
+  const bridge = readFileSync(
+    join(root, "apps/vela-desktop-electron/src/desktopBridge.ts"),
+    "utf8",
+  );
+  const rendererMain = readFileSync(
+    join(root, "apps/vela-desktop-electron/src/main.tsx"),
+    "utf8",
+  );
+  const dragPreviewMain = readFiles(
+    listSourceFiles(join(root, "apps/vela-desktop-electron/electron/session-drag-preview"))
+      .filter((path) => /\.(ts|tsx)$/.test(path))
+      .map((path) => path.slice(root.length + 1)),
+  );
+  const dragPreviewRenderer = readFiles(
+    listSourceFiles(join(root, "apps/vela-desktop-electron/src/session-drag-preview"))
+      .filter((path) => /\.(ts|tsx)$/.test(path))
+      .map((path) => path.slice(root.length + 1)),
+  );
+  const sessionListSurface = readFileSync(
+    join(root, "packages/vela-chat-web/src/surfaces/SessionListSurface.tsx"),
+    "utf8",
+  );
+  const desktopCss = readFileSync(
+    join(root, "apps/vela-desktop-electron/src/style.css"),
+    "utf8",
+  );
+
+  assert.match(dragPreviewMain, /BrowserWindow/);
+  assert.match(dragPreviewMain, /setIgnoreMouseEvents\(true\)/);
+  assert.match(dragPreviewMain, /window: "session-drag-preview"/);
+  assert.match(dragPreviewMain, /showInactive\(\)/);
+  assert.match(dragPreviewMain, /screen\.getDisplayNearestPoint/);
+  assert.match(dragPreviewMain, /setBounds\(/);
+  assert.doesNotMatch(dragPreviewMain, /React|useVelaChatSession|ConversationPreviewSurface/);
+  assert.match(electronMain, /SessionDragPreviewWindowManager/);
+  assert.match(electronMain, /vela:session-drag-preview-start/);
+  assert.match(electronMain, /vela:session-drag-preview-move/);
+  assert.match(electronMain, /vela:session-drag-preview-end/);
+  assert.match(preload, /startSessionDragPreview/);
+  assert.match(preload, /moveSessionDragPreview/);
+  assert.match(preload, /endSessionDragPreview/);
+  assert.match(bridge, /startSessionDragPreview/);
+  assert.match(bridge, /moveSessionDragPreview/);
+  assert.match(bridge, /endSessionDragPreview/);
+  assert.match(rendererMain, /windowKind === "session-drag-preview"/);
+  assert.match(rendererMain, /SessionDragPreviewRoot/);
+  assert.match(dragPreviewRenderer, /useVelaChatSession/);
+  assert.match(dragPreviewRenderer, /ConversationPreviewSurface/);
+  assert.match(dragPreviewRenderer, /historyPolicy: "tail_only"/);
+  assert.match(dragPreviewRenderer, /scale=\{0\.34\}/);
+  assert.doesNotMatch(dragPreviewRenderer, /BrowserWindow|ipcRenderer/);
+  assert.match(sessionListSurface, /onSessionDragPreviewStart/);
+  assert.doesNotMatch(sessionListSurface, /data-slot="session-drag-preview"/);
+  assert.doesNotMatch(sessionListSurface, /ConversationPreviewSurface/);
+  assert.doesNotMatch(desktopCss, /\.vela-session-drag-preview/);
+});
+
 test("desktop app opens the work monitor from thumbnail activity and local send intent", () => {
   const renderer = readFileSync(
     join(root, "apps/vela-desktop-electron/src/DesktopApp.tsx"),
@@ -368,7 +435,9 @@ test("desktop app opens the work monitor from thumbnail activity and local send 
   );
 
   assert.match(renderer, /hasWorkMonitorActivity\(controller\.model\)/);
-  assert.doesNotMatch(renderer, /const sidebarSessionPreviews = useMemo/);
+  assert.match(renderer, /startSidebarSessionDragPreview/);
+  assert.match(renderer, /startSessionDragPreview\(input\.sessionId,\s*input\.point\.screenX,\s*input\.point\.screenY\)/);
+  assert.match(renderer, /onSessionDragPreviewStart=\{startSidebarSessionDragPreview\}/);
   assert.doesNotMatch(renderer, /sessionPreviews=\{/);
   assert.doesNotMatch(renderer, /hasPendingRequests/);
   assert.doesNotMatch(renderer, /buildChatThumbnailModel/);
