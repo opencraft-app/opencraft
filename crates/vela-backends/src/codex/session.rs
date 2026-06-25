@@ -218,19 +218,38 @@ impl BackendAdapter for CodexAppServerBackendAdapter {
         let mut session = session.expect("session initialized");
         let turn_params = turn_start_params(&input, &session.thread_id);
         let turn_start = Instant::now();
-        if let Err(error) = session.connection.request("turn/start", turn_params).await {
-            emit_timed_trace_span(
-                &sink,
-                input.emit_diagnostics,
-                "codex.app_server.turn_start",
-                Some("turn/start"),
-                turn_start,
-                Err(error.to_string()),
-                json!({ "codex.thread_id": session.thread_id.clone() }),
-            )
-            .await;
-            return Err(error);
-        }
+        let turn = match session.connection.request("turn/start", turn_params).await {
+            Ok(turn) => turn,
+            Err(error) => {
+                emit_timed_trace_span(
+                    &sink,
+                    input.emit_diagnostics,
+                    "codex.app_server.turn_start",
+                    Some("turn/start"),
+                    turn_start,
+                    Err(error.to_string()),
+                    json!({ "codex.thread_id": session.thread_id.clone() }),
+                )
+                .await;
+                return Err(error);
+            }
+        };
+        let turn_id = match read_turn_id(&turn) {
+            Ok(turn_id) => turn_id,
+            Err(error) => {
+                emit_timed_trace_span(
+                    &sink,
+                    input.emit_diagnostics,
+                    "codex.app_server.turn_start",
+                    Some("turn/start"),
+                    turn_start,
+                    Err(error.to_string()),
+                    json!({ "codex.thread_id": session.thread_id.clone() }),
+                )
+                .await;
+                return Err(error);
+            }
+        };
         emit_timed_trace_span(
             &sink,
             input.emit_diagnostics,
@@ -238,7 +257,10 @@ impl BackendAdapter for CodexAppServerBackendAdapter {
             Some("turn/start"),
             turn_start,
             Ok(()),
-            json!({ "codex.thread_id": session.thread_id.clone() }),
+            json!({
+                "codex.thread_id": session.thread_id.clone(),
+                "codex.turn_id": turn_id.clone(),
+            }),
         )
         .await;
 
@@ -258,7 +280,7 @@ impl BackendAdapter for CodexAppServerBackendAdapter {
                     let interrupt_start = Instant::now();
                     if let Err(error) = session
                         .connection
-                        .request("turn/interrupt", json!({ "threadId": session.thread_id.clone() }))
+                        .request("turn/interrupt", turn_interrupt_params(&session.thread_id, &turn_id))
                         .await
                     {
                         emit_timed_trace_span(
@@ -268,7 +290,10 @@ impl BackendAdapter for CodexAppServerBackendAdapter {
                             Some("turn/interrupt"),
                             interrupt_start,
                             Err(error.to_string()),
-                            json!({ "codex.thread_id": session.thread_id.clone() }),
+                            json!({
+                                "codex.thread_id": session.thread_id.clone(),
+                                "codex.turn_id": turn_id.clone(),
+                            }),
                         )
                         .await;
                         return Err(error);
@@ -280,7 +305,10 @@ impl BackendAdapter for CodexAppServerBackendAdapter {
                         Some("turn/interrupt"),
                         interrupt_start,
                         Ok(()),
-                        json!({ "codex.thread_id": session.thread_id.clone() }),
+                        json!({
+                            "codex.thread_id": session.thread_id.clone(),
+                            "codex.turn_id": turn_id.clone(),
+                        }),
                     )
                     .await;
                     sink.send(BackendOutput::event(
@@ -318,6 +346,7 @@ impl BackendAdapter for CodexAppServerBackendAdapter {
                                 &sink,
                                 &mut cancel_rx,
                                 session.thread_id.clone(),
+                                turn_id.clone(),
                                 input.emit_diagnostics,
                             )
                             .await?;
@@ -355,6 +384,7 @@ impl CodexAppServerBackendAdapter {
         sink: &BackendOutputSink,
         cancel_rx: &mut oneshot::Receiver<()>,
         thread_id: String,
+        turn_id: String,
         emit_diagnostics: bool,
     ) -> anyhow::Result<CodexRequestOutcome> {
         let request_start = Instant::now();
@@ -369,7 +399,10 @@ impl CodexAppServerBackendAdapter {
                 Some(method),
                 request_start,
                 Err(format!("unsupported Codex app-server request {method}")),
-                json!({ "codex.thread_id": thread_id }),
+                json!({
+                    "codex.thread_id": thread_id,
+                    "codex.turn_id": turn_id,
+                }),
             )
             .await;
             sink.send(warning(
@@ -413,7 +446,7 @@ impl CodexAppServerBackendAdapter {
                     .await?;
                 let interrupt_start = Instant::now();
                 if let Err(error) = connection
-                    .request("turn/interrupt", json!({ "threadId": thread_id.clone() }))
+                    .request("turn/interrupt", turn_interrupt_params(&thread_id, &turn_id))
                     .await
                 {
                     emit_timed_trace_span(
@@ -423,7 +456,10 @@ impl CodexAppServerBackendAdapter {
                         Some("turn/interrupt"),
                         interrupt_start,
                         Err(error.to_string()),
-                        json!({ "codex.thread_id": thread_id.clone() }),
+                        json!({
+                            "codex.thread_id": thread_id.clone(),
+                            "codex.turn_id": turn_id.clone(),
+                        }),
                     )
                     .await;
                     return Err(error);
@@ -435,7 +471,10 @@ impl CodexAppServerBackendAdapter {
                     Some("turn/interrupt"),
                     interrupt_start,
                     Ok(()),
-                    json!({ "codex.thread_id": thread_id.clone() }),
+                    json!({
+                        "codex.thread_id": thread_id.clone(),
+                        "codex.turn_id": turn_id.clone(),
+                    }),
                 )
                 .await;
                 sink.send(BackendOutput::event(
@@ -460,7 +499,10 @@ impl CodexAppServerBackendAdapter {
             Some(method),
             request_start,
             Ok(()),
-            json!({ "codex.thread_id": thread_id.clone() }),
+            json!({
+                "codex.thread_id": thread_id.clone(),
+                "codex.turn_id": turn_id.clone(),
+            }),
         )
         .await;
         Ok(CodexRequestOutcome::Continue)
@@ -605,4 +647,20 @@ fn read_thread_id(response: &Value) -> anyhow::Result<String> {
         .and_then(Value::as_str)
         .map(str::to_string)
         .ok_or_else(|| anyhow::anyhow!("Codex app-server thread/start did not return thread.id"))
+}
+
+fn read_turn_id(response: &Value) -> anyhow::Result<String> {
+    response
+        .get("turn")
+        .and_then(|turn| turn.get("id"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .ok_or_else(|| anyhow::anyhow!("Codex app-server turn/start did not return turn.id"))
+}
+
+fn turn_interrupt_params(thread_id: &str, turn_id: &str) -> Value {
+    json!({
+        "threadId": thread_id,
+        "turnId": turn_id,
+    })
 }

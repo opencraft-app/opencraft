@@ -28,6 +28,9 @@ This is the fast feedback loop. It does not package or copy anything to
 - Vite renderer prefers `http://127.0.0.1:5173/`; if that port is busy,
   the dev script uses Vite's assigned fallback port and prints the actual URL.
 - Electron opens the desktop shell against the Vite renderer.
+- The preview Electron host uses repo-local `.tmp/desktop-preview-user-data`
+  through `VELA_DESKTOP_USER_DATA_DIR`, so its `velad` SQLite database is
+  isolated from `/Applications/Vela.app`.
 - Renderer/CSS changes update through Vite. Electron main/preload/window-manager
   changes require restarting `make desktop-preview`.
 - `make desktop-preview` first clears older dev preview processes from this
@@ -95,7 +98,7 @@ make desktop-pids
 The desktop app is designed to work in two modes:
 
 - Dev preview: `make desktop-preview` lets Electron spawn and manage a local
-  debug `velad`.
+  debug `velad` with isolated repo-local user data.
 - Packaged app: the app should use the bundled `velad` from the Electron resources when present.
 
 The desktop host passes the resolved API base URL into the renderer through the preload bridge. The renderer should not hard-code `file:///api/v1` or assume the app is always served from HTTP.

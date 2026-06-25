@@ -219,6 +219,100 @@ async fn backend_diagnostics_are_recorded_as_trace_spans_without_persisting_chat
     );
 }
 
+#[tokio::test]
+async fn backend_diagnostic_errors_are_queryable_with_turn_context() {
+    let app = test_app_with_observability_outputs(vec![
+        BackendOutput::event(
+            EventType::WARNING_RAISED,
+            json!({
+                "code": "codex_app_server_trace",
+                "name": "codex.app_server.turn_interrupt",
+                "method": "turn/interrupt",
+                "duration_ms": 3.5,
+                "status_code": "ERROR",
+                "error_message": "Codex app-server turn/interrupt failed: {\"code\":-32600,\"message\":\"Invalid request: missing field `turnId`\"}",
+                "attributes": {
+                    "codex.thread_id": "thr_interrupt",
+                    "codex.turn_id": "turn_interrupt"
+                }
+            }),
+        ),
+        BackendOutput::event(
+            EventType::TURN_FAILED,
+            json!({
+                "turn_id": "turn_interrupt",
+                "error": "Codex app-server turn/interrupt failed: {\"code\":-32600,\"message\":\"Invalid request: missing field `turnId`\"}"
+            }),
+        ),
+    ])
+    .await;
+    let traceparent = "00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01";
+
+    let (status, created) = json_request_with_headers(
+        app.clone(),
+        Method::POST,
+        "/api/v1/sessions",
+        json!({
+            "backend": "pi",
+            "working_directory": "/tmp/project"
+        }),
+        Some("diagnostic-error-session"),
+        &[("traceparent", traceparent)],
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let session_id = created["session"]["id"].as_str().unwrap();
+
+    let (status, _) = json_request_with_headers(
+        app.clone(),
+        Method::POST,
+        &format!("/api/v1/sessions/{session_id}/events"),
+        json!({
+            "events": [{
+                "type": "user.message",
+                "content": [{ "type": "text", "text": "stop" }]
+            }]
+        }),
+        Some("diagnostic-error-message"),
+        &[("traceparent", traceparent)],
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    wait_for_session_event(app.clone(), session_id, "turn.failed").await;
+
+    let (status, errors) =
+        get_json(app.clone(), "/api/v1/observability/recent-errors?limit=10").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        errors["errors"].as_array().unwrap().iter().any(|error| {
+            error["name"] == "codex.app_server.turn_interrupt"
+                && error["message"]
+                    .as_str()
+                    .is_some_and(|message| message.contains("missing field `turnId`"))
+        }),
+        "recent-errors should expose the raw Codex app-server interrupt error: {errors:#}"
+    );
+
+    let (status, trace) = get_json(
+        app,
+        "/api/v1/observability/traces/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        trace["spans"].as_array().unwrap().iter().any(|span| {
+            span["name"] == "codex.app_server.turn_interrupt"
+                && span["attributes"]["codex.method"] == "turn/interrupt"
+                && span["attributes"]["codex.thread_id"] == "thr_interrupt"
+                && span["attributes"]["codex.turn_id"] == "turn_interrupt"
+                && span["error_message"]
+                    .as_str()
+                    .is_some_and(|message| message.contains("missing field `turnId`"))
+        }),
+        "trace detail should keep method, thread, turn and raw error: {trace:#}"
+    );
+}
+
 fn sample_trace_payload() -> Value {
     json!({
         "resourceSpans": [{

@@ -400,11 +400,16 @@ test("electron host has a real Vite dev and build pipeline instead of loading TS
   assert.match(devScript, /createServer as createViteServer/);
   assert.match(devScript, /resolvedUrls/);
   assert.match(devScript, /strictPort:\s*false/);
+  assert.match(devScript, /desktopPreviewUserDataDir/);
+  assert.match(devScript, /VELA_DESKTOP_USER_DATA_DIR:\s*desktopPreviewUserDataDir/);
   assert.doesNotMatch(devScript, /spawnChild\("renderer"/);
   assert.match(main, /preload\.cjs/);
   assert.doesNotMatch(main, /preload\.ts/);
   assert.match(main, /env as nodeEnv/);
   assert.match(main, /return nodeEnv\[name\]/);
+  assert.match(main, /function applyUserDataOverride/);
+  assert.match(main, /app\.setPath\("userData", resolve\(userDataDir\)\)/);
+  assert.match(main, /applyUserDataOverride\(\);/);
 });
 
 test("desktop preview docs prefer the managed local runtime fast-feedback loop", () => {

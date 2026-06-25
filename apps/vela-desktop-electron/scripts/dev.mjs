@@ -13,6 +13,9 @@ const electronCliPath = require.resolve("electron/cli.js");
 const veladBinaryPath =
   process.env.VELA_DESKTOP_VELAD_PATH?.trim() ||
   join(repoRoot, "target", "debug", process.platform === "win32" ? "velad.exe" : "velad");
+const desktopPreviewUserDataDir =
+  process.env.VELA_DESKTOP_USER_DATA_DIR?.trim() ||
+  join(repoRoot, ".tmp", "desktop-preview-user-data");
 const children = new Set();
 let shuttingDown = false;
 let rendererServer = null;
@@ -151,6 +154,7 @@ if (remoteDebuggingPort) {
 spawnChild("electron", process.execPath, electronArgs, {
   VITE_DEV_SERVER_URL: rendererUrl,
   VELA_DESKTOP_VELAD_PATH: veladBinaryPath,
+  VELA_DESKTOP_USER_DATA_DIR: desktopPreviewUserDataDir,
 });
 
 function resolveRendererUrl(server, preferredUrl) {

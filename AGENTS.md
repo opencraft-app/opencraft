@@ -18,6 +18,9 @@ Expected feedback behavior:
 - Renderer, thumbnail, and work-monitor React/CSS changes update through Vite.
 - The renderer dev server prefers port `5173`; if it is busy, the dev script
   uses the Vite-assigned fallback port and passes that URL to Electron.
+- The preview host sets `VELA_DESKTOP_USER_DATA_DIR` to repo-local
+  `.tmp/desktop-preview-user-data`; preview `velad` must not share the packaged
+  `/Applications/Vela.app` SQLite database.
 - `make desktop-preview` first clears older dev preview processes from this
   repo. Use `make desktop-preview-stop` to stop the running dev preview without
   starting it again.

@@ -358,14 +358,16 @@ where
                             )
                             .await
                             {
+                                let error = format!("failed to append backend output: {error}");
                                 append_turn_failed(
                                     &store,
                                     &event_observer,
                                     &session_id,
                                     &turn_id,
-                                    format!("failed to append backend output: {error}"),
+                                    error.clone(),
                                 )
                                 .await;
+                                turn_failure_message = Some(error);
                                 turn_failed = true;
                                 break;
                             }
@@ -376,14 +378,16 @@ where
                         }
                     }
                     Err(error) => {
+                        let error = error.to_string();
                         append_turn_failed(
                             &store,
                             &event_observer,
                             &session_id,
                             &turn_id,
-                            error.to_string(),
+                            error.clone(),
                         )
                         .await;
+                        turn_failure_message = Some(error);
                         turn_failed = true;
                         break;
                     }

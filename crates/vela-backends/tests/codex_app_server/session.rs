@@ -278,4 +278,59 @@ async fn codex_app_server_adapter_interrupts_active_turn_by_session() {
     let calls = host.calls().await;
     assert_eq!(calls[3].method, "turn/interrupt");
     assert_eq!(calls[3].params["threadId"], "thr_interrupt");
+    assert_eq!(calls[3].params["turnId"], "turn_1");
+}
+
+#[tokio::test]
+async fn codex_app_server_adapter_observes_interrupted_turn_id() {
+    let host = ScriptedHost::new(vec![
+        AppServerInbound::response(json!({ "ok": true })),
+        AppServerInbound::response(json!({ "thread": { "id": "thr_interrupt_diag" } })),
+        AppServerInbound::response(json!({ "turn": { "id": "turn_diag" } })),
+        AppServerInbound::response(json!({ "interrupted": true })),
+    ]);
+    let adapter = Arc::new(CodexAppServerBackendAdapter::new(
+        Arc::new(host.clone()),
+        "/repo",
+    ));
+    let (sink, mut receiver) = backend_output_channel(16);
+    let mut input = BackendSend::new("long diagnostic task");
+    input.session_id = Some(SessionId::from("ses_interrupt_diag"));
+    input.emit_diagnostics = true;
+    input.resolved_agent_config = Some(ResolvedAgentConfig {
+        backend: BackendKind::Codex,
+        config: Default::default(),
+    });
+
+    let stream_adapter = adapter.clone();
+    let stream = tokio::spawn(async move { stream_adapter.stream_user_message(input, sink).await });
+    wait_for_call_count(&host, 3).await;
+
+    adapter
+        .cancel(BackendCancel {
+            session_id: "ses_interrupt_diag".to_string(),
+            backend: Some(BackendKind::Codex),
+        })
+        .await
+        .expect("cancel codex turn");
+
+    let mut interrupt_trace = None;
+    loop {
+        let output = receiver
+            .recv()
+            .await
+            .expect("backend output")
+            .expect("backend output ok");
+        if output.payload["name"] == "codex.app_server.turn_interrupt" {
+            interrupt_trace = Some(output.payload.clone());
+        }
+        if output.event_type == EventType::TURN_CANCELLED {
+            break;
+        }
+    }
+    stream.await.expect("stream task").expect("stream ok");
+
+    let trace = interrupt_trace.expect("turn interrupt trace");
+    assert_eq!(trace["attributes"]["codex.thread_id"], "thr_interrupt_diag");
+    assert_eq!(trace["attributes"]["codex.turn_id"], "turn_diag");
 }

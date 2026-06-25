@@ -37,6 +37,9 @@ Renderer, thumbnail, and work-monitor CSS/React changes update through Vite.
 The preview server prefers port `5173`, but if that port is already in use the
 dev script uses Vite's assigned fallback port and passes that exact URL to
 Electron.
+The preview host also sets `VELA_DESKTOP_USER_DATA_DIR` to
+`.tmp/desktop-preview-user-data` under the repo so its runtime SQLite database
+does not share writes with the packaged `/Applications/Vela.app`.
 `make desktop-preview` first clears older dev preview processes from this repo;
 use `make desktop-preview-stop` when you only want to stop the running dev
 preview without starting it again.
@@ -95,8 +98,8 @@ desktop-dev
 `desktop-pack` and `desktop-dist` are macOS arm64 targets. They build release
 `velad`, copy it into the app resources, and the packaged app starts that daemon
 automatically. The Electron dev target builds `velad` in debug mode and passes
-`VELA_DESKTOP_VELAD_PATH=target/debug/velad` to the host; it does not connect to
-an externally managed daemon.
+`VELA_DESKTOP_VELAD_PATH=target/debug/velad` plus isolated preview user data to
+the host; it does not connect to an externally managed daemon.
 
 Use `make desktop-install-dev` only when you need to validate the packaged app
 under `/Applications/Vela.app`. `make desktop-pids` shows both dev preview and

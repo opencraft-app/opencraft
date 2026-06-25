@@ -15,6 +15,7 @@ use vela_core::{
     AgentConfig, BackendKind, BlobRef, CanonicalEvent, CommandAck, CommandId, EventType,
     PermissionMode, SessionId, UserMessageBlock,
 };
+use vela_observability::{ObservabilityStore, TraceContext};
 use vela_runtime::{Runtime, SendUserMessage};
 use vela_store::SqliteEventStore;
 
@@ -780,6 +781,85 @@ async fn backend_output_append_failure_marks_turn_failed() {
 }
 
 #[tokio::test]
+async fn backend_output_append_failure_records_observable_error_detail() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let database_path = dir.path().join("runtime-observable-append-failure.sqlite");
+    let database_url = format!("sqlite://{}?mode=rwc", database_path.display());
+    let store = Arc::new(
+        SqliteEventStore::connect(&database_url)
+            .await
+            .expect("store"),
+    );
+    let trigger_pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect(&database_url)
+        .await
+        .expect("trigger pool");
+    sqlx::query(
+        r#"
+        CREATE TRIGGER fail_backend_delta_insert
+        BEFORE INSERT ON events
+        WHEN NEW.event_type = 'assistant.message.delta'
+        BEGIN
+            SELECT RAISE(FAIL, 'forced backend append failure');
+        END;
+        "#,
+    )
+    .execute(&trigger_pool)
+    .await
+    .expect("create trigger");
+
+    let observability = ObservabilityStore::connect("sqlite::memory:", None)
+        .await
+        .expect("observability");
+    let backend = Arc::new(MockBackendAdapter::new(vec![
+        BackendOutput::event(
+            EventType::ASSISTANT_MESSAGE_DELTA,
+            json!({ "delta": "this append will fail" }),
+        ),
+        BackendOutput::event(EventType::TURN_COMPLETED, json!({})),
+    ]));
+    let runtime = Runtime::new(store.clone(), backend).with_observability(observability.clone());
+    let session_id = SessionId::from("ses_runtime_observable_backend_append_failure");
+    runtime
+        .create_session(session_id.clone(), BackendKind::Pi, "/tmp/vela")
+        .await
+        .expect("create session");
+
+    let trace = TraceContext {
+        trace_id: "11111111111111111111111111111111".to_string(),
+        span_id: "2222222222222222".to_string(),
+        trace_flags: "01".to_string(),
+    };
+    let ack = runtime
+        .send_user_message_with_trace(
+            SendUserMessage {
+                session_id: session_id.clone(),
+                idempotency_key: "idem-observable-append-failure".to_string(),
+                content: "hello".to_string(),
+                command_id: None,
+            },
+            Some(trace.clone()),
+        )
+        .await
+        .expect("send");
+
+    eventually_contains_event(&store, &session_id, EventType::TURN_FAILED).await;
+    let errors = eventually_observes_error(&observability).await;
+
+    assert!(matches!(ack, CommandAck::Accepted(_)));
+    assert!(
+        errors.iter().any(|error| {
+            error.trace_id.as_deref() == Some(trace.trace_id.as_str())
+                && error.name == "velad.backend.send"
+                && error.message.contains("failed to append backend output")
+                && error.message.contains("forced backend append failure")
+        }),
+        "backend append persistence failures must preserve the database error in observability, got {errors:#?}"
+    );
+}
+
+#[tokio::test]
 async fn user_sequence_fixture_replays_duplicate_and_rejects_mismatch() {
     let steps = support::read_user_sequence_fixture("duplicate_replay_and_mismatch.jsonl");
     let harness = support::RuntimeHarness::new().await;
@@ -1181,4 +1261,20 @@ async fn eventually_contains_event(
     })
     .await
     .unwrap_or_else(|_| panic!("event {event_type:?} should be persisted"))
+}
+
+async fn eventually_observes_error(
+    store: &ObservabilityStore,
+) -> Vec<vela_observability::ErrorRecord> {
+    timeout(Duration::from_millis(500), async {
+        loop {
+            let errors = store.recent_errors(10).await.expect("errors");
+            if !errors.is_empty() {
+                return errors;
+            }
+            sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("observability error should be persisted"))
 }

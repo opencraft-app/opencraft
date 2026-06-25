@@ -6,7 +6,7 @@ use vela_backends::{
 };
 use vela_core::EventType;
 
-const CONTRACTED_VELAD_BACKENDS: &[&str] = &["Pi", "Codex", "Acp"];
+const CONTRACTED_VELAD_BACKENDS: &[&str] = &["Pi", "Codex", "Acp", "VelaEngine"];
 
 #[test]
 fn velad_registered_backends_are_covered_by_backend_contract_cases() {
@@ -154,6 +154,27 @@ fn openai_compatible_single_shot_outputs_satisfy_backend_contract() {
     ];
 
     support::assert_backend_output_contract("openai-compatible", &outputs);
+}
+
+#[test]
+fn vela_engine_outputs_satisfy_backend_contract() {
+    let outputs = vec![
+        BackendOutput::event(
+            EventType::ASSISTANT_MESSAGE_DELTA,
+            json!({ "message_id": "vela_engine_message", "delta": "hel" }),
+        ),
+        BackendOutput::event(
+            EventType::ASSISTANT_MESSAGE_DELTA,
+            json!({ "message_id": "vela_engine_message", "delta": "lo" }),
+        ),
+        BackendOutput::event(
+            EventType::ASSISTANT_REASONING_DELTA,
+            json!({ "reasoning_id": "vela_engine_reasoning", "delta": "thinking" }),
+        ),
+        BackendOutput::event(EventType::TURN_COMPLETED, json!({ "turn_id": "turn_1" })),
+    ];
+
+    support::assert_backend_output_contract("vela-engine", &outputs);
 }
 
 fn registered_velad_backends() -> Vec<String> {

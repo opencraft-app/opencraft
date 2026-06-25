@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, session } from "electron";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { env as nodeEnv } from "node:process";
 import { VelaLocalTracer } from "../../../packages/vela-observability-client/src";
 import {
@@ -22,6 +22,14 @@ const __dirname = dirname(__filename);
 function runtimeEnv(name: string) {
   return nodeEnv[name];
 }
+
+function applyUserDataOverride() {
+  const userDataDir = runtimeEnv("VELA_DESKTOP_USER_DATA_DIR")?.trim();
+  if (!userDataDir) return;
+  app.setPath("userData", resolve(userDataDir));
+}
+
+applyUserDataOverride();
 
 const remoteDebuggingPort = runtimeEnv("VELA_DESKTOP_REMOTE_DEBUGGING_PORT")?.trim();
 if (!app.isPackaged && remoteDebuggingPort) {
