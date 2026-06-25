@@ -322,6 +322,7 @@ test("desktop main frame stays a neutral host surface while ChatUI owns material
   assert.match(css, /\.vela-main-inset\s*\{[^}]*border-top-left-radius:\s*var\(--vela-main-surface-radius\);/s);
   assert.match(css, /\.vela-main-inset\s*\{[^}]*border-left:\s*0;/s);
   assert.match(css, /\.vela-desktop-shell\[data-state="collapsed"\] \.vela-main-inset\s*\{[^}]*border-left-color:\s*transparent;/s);
+  assert.doesNotMatch(css, /\.vela-desktop-shell\[data-sidebar-presentation="overlay"\] \.vela-main-inset\s*\{[^}]*border-top-left-radius:\s*0;/s);
   assert.match(css, /\.vela-sidebar-inset::before\s*\{[^}]*linear-gradient\(180deg,\s*rgb\(255 255 255 \/ 98%\) 0%,\s*var\(--vela-main-surface\) 54%\)/s);
   assert.match(css, /\.vela-sidebar-inset::before\s*\{[^}]*inset 2px 0 0 var\(--vela-main-edge-hairline\)/s);
   assert.match(css, /\.vela-sidebar-inset::before\s*\{[^}]*backdrop-filter:\s*blur\(18px\) saturate\(1\.08\);/s);

@@ -336,7 +336,6 @@ body {
 .vela-desktop-shell[data-sidebar-presentation="overlay"] .vela-main-inset {
   left: 0;
   border-left-color: transparent;
-  border-top-left-radius: 0;
 }
 
 .vela-sidebar-inset::before {
