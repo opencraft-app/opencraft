@@ -18,6 +18,9 @@ export type AgentSectionId = AgentSettingsSectionId | AgentWorkbenchSectionId;
 
 export const AGENTS_HOME_PATH = "/agents";
 
+/** 订阅套餐页路由（避免魔法字符串，统一引用） */
+export const SUBSCRIBE_PATH = "/subscribe";
+
 export type WorkbenchEntryVisibilityContext = {
   hostname?: string | null;
   revealed?: boolean;

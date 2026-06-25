@@ -6,13 +6,14 @@ import { useScrollReveal } from '../useScrollReveal';
 import { LandingCtaFooterLinks } from '@/components/site/landing-cta-footer-links';
 import { useT } from '@/i18n/t';
 
-function CreateButton({ onClick }: { onClick?: () => void }) {
+function CreateButton({ onClick, label }: { onClick?: () => void; label?: string }) {
   const t = useT();
+  const buttonLabel = label ?? t("立即创建");
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-label={t("立即创建")}
+      aria-label={buttonLabel}
       className="relative flex items-center justify-center cursor-pointer shrink-0 lv-btn-arrow lv-btn-cta border-0 outline-none"
       style={{
         minWidth: '200px',
@@ -32,7 +33,7 @@ function CreateButton({ onClick }: { onClick?: () => void }) {
           color: '#fff',
           whiteSpace: 'nowrap' }}
       >
-        {t("立即创建")}
+        {buttonLabel}
       </span>
       <svg
         width="36"
@@ -105,9 +106,11 @@ function TitleBlock({ offsetX, offsetY }: { offsetX: number; offsetY: number }) 
 
 interface CtaSectionProps {
   onCreateClick?: () => void;
+  /** 主按钮文案；未登录默认「立即创建」，已登录由上层传入「我的智能体伙伴」 */
+  ctaLabel?: string;
 }
 
-export default function CtaSection({ onCreateClick }: CtaSectionProps = {}) {
+export default function CtaSection({ onCreateClick, ctaLabel }: CtaSectionProps = {}) {
   const ref = useScrollReveal();
   const t = useT();
   const sectionRef = useRef<HTMLElement>(null);
@@ -172,7 +175,7 @@ export default function CtaSection({ onCreateClick }: CtaSectionProps = {}) {
             <p className="text-[14px] font-['PingFang_SC:Regular',sans-serif] text-[#1a1a1a] leading-6 lg:text-right" style={{ maxWidth: '260px' }}>
               {t("你的 AI 在云端等你，随时随地伴你同行")}
             </p>
-            <CreateButton onClick={onCreateClick} />
+            <CreateButton onClick={onCreateClick} label={ctaLabel} />
           </div>
         </div>
       </div>

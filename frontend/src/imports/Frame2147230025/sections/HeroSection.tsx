@@ -8,10 +8,13 @@ import { useT } from '@/i18n/t';
 interface HeroSectionProps {
   /** 「立即创建」按钮点击回调；不传时按钮仍可点击但无业务行为 */
   onCreateClick?: () => void;
+  /** 主按钮文案；未登录默认「立即创建」，已登录由上层传入「我的智能体伙伴」 */
+  ctaLabel?: string;
 }
 
-export default function HeroSection({ onCreateClick }: HeroSectionProps = {}) {
+export default function HeroSection({ onCreateClick, ctaLabel }: HeroSectionProps = {}) {
   const t = useT();
+  const buttonLabel = ctaLabel ?? t("立即创建");
   const sectionRef = useRef<HTMLElement>(null);
   const [spotlight, setSpotlight] = useState<{ x: number; y: number; visible: boolean }>({ x: 0, y: 0, visible: false });
   const [mouse, setMouse] = useState<{ nx: number; ny: number }>({ nx: 0, ny: 0 });
@@ -181,7 +184,7 @@ export default function HeroSection({ onCreateClick }: HeroSectionProps = {}) {
         <button
           type="button"
           onClick={onCreateClick}
-          aria-label={t("立即创建")}
+          aria-label={buttonLabel}
           className="pointer-events-auto relative flex items-center justify-center cursor-pointer lv-load-reveal lv-load-d400 lv-btn-arrow lv-btn-cta border-0 outline-none"
           style={{
             minWidth: '200px',
@@ -203,7 +206,7 @@ export default function HeroSection({ onCreateClick }: HeroSectionProps = {}) {
               whiteSpace: 'nowrap',
             }}
           >
-            {t("立即创建")}
+            {buttonLabel}
           </span>
           <svg
             width="36"
