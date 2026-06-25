@@ -1024,7 +1024,7 @@ body {
   color: #bcc1c8;
 }
 
-.vela-session-actions-trigger {
+.vela-session-archive-action {
   position: absolute;
   top: 9px;
   right: 6px;
@@ -1045,15 +1045,14 @@ body {
     opacity 90ms ease;
 }
 
-.vela-session-actions-trigger:hover,
-.vela-session-actions-trigger[aria-expanded="true"] {
+.vela-session-archive-action:hover,
+.vela-session-archive-action:focus-visible {
   background: rgba(123, 127, 133, 0.12);
   color: #5f656b;
 }
 
-.vela-session-item[data-has-actions="true"]:hover .vela-session-actions-trigger,
-.vela-session-item[data-has-actions="true"]:focus-within .vela-session-actions-trigger,
-.vela-session-actions-trigger[aria-expanded="true"] {
+.vela-session-item[data-has-actions="true"]:hover .vela-session-archive-action,
+.vela-session-item[data-has-actions="true"]:focus-within .vela-session-archive-action {
   opacity: 1;
 }
 

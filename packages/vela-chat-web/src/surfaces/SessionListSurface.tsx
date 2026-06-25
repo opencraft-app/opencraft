@@ -1,6 +1,7 @@
 import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -83,9 +84,9 @@ function SessionListSurfaceItem({
   onSelect: () => void;
 }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null);
   const [menuStyle, setMenuStyle] = useState<CSSProperties | null>(null);
   const rootRef = useRef<HTMLLIElement | null>(null);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const row = buildSessionListRowModel(session, previewModel);
 
@@ -113,19 +114,16 @@ function SessionListSurfaceItem({
   }, [isMenuOpen]);
 
   useLayoutEffect(() => {
-    if (!isMenuOpen || !canUseDocument()) {
+    if (!isMenuOpen || !menuAnchor || !canUseDocument()) {
       setMenuStyle(null);
       return;
     }
 
     const updatePosition = () => {
-      const trigger = triggerRef.current;
-      if (!trigger) return;
-      const rect = trigger.getBoundingClientRect();
       setMenuStyle({
         position: "fixed",
-        top: `${rect.bottom + 6}px`,
-        left: `${Math.max(8, Math.min(rect.right - 164, window.innerWidth - 172))}px`,
+        top: `${Math.max(8, Math.min(menuAnchor.y + 6, window.innerHeight - 64))}px`,
+        left: `${Math.max(8, Math.min(menuAnchor.x, window.innerWidth - 172))}px`,
       });
     };
 
@@ -136,16 +134,37 @@ function SessionListSurfaceItem({
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     };
-  }, [isMenuOpen]);
+  }, [isMenuOpen, menuAnchor]);
 
   const archiveSession = async () => {
     setIsMenuOpen(false);
     await onArchiveSession?.();
   };
   const selectSessionFromKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== "Enter" && event.key !== " ") return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onSelect();
+      return;
+    }
+    if (event.key !== "ContextMenu" && !(event.key === "F10" && event.shiftKey)) return;
     event.preventDefault();
-    onSelect();
+    openMenuFromKeyboard();
+  };
+  const openMenuAt = (x: number, y: number) => {
+    if (!onArchiveSession) return;
+    setMenuAnchor({ x, y });
+    setIsMenuOpen(true);
+  };
+  const openMenuFromKeyboard = () => {
+    const rect = rootRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    openMenuAt(rect.right - 164, rect.top + 8);
+  };
+  const openMenuFromContext = (event: ReactMouseEvent<HTMLElement>) => {
+    if (!onArchiveSession) return;
+    event.preventDefault();
+    event.stopPropagation();
+    openMenuAt(event.clientX, event.clientY);
   };
 
   const menu = isMenuOpen ? (
@@ -191,6 +210,7 @@ function SessionListSurfaceItem({
       data-waiting={row.status.isWaiting ? "true" : undefined}
       data-failed={row.status.isFailed ? "true" : undefined}
       data-has-thumbnail={row.status.hasThumbnail ? "true" : undefined}
+      onContextMenu={openMenuFromContext}
     >
       <div
         className="vela-sidebar-menu-button vela-session-main"
@@ -250,18 +270,15 @@ function SessionListSurfaceItem({
       {onArchiveSession ? (
         <>
           <button
-            ref={triggerRef}
-            className="vela-session-actions-trigger"
+            className="vela-session-archive-action"
             type="button"
             aria-label={row.archiveActionLabel}
-            aria-haspopup="menu"
-            aria-expanded={isMenuOpen ? "true" : "false"}
             onClick={(event) => {
               event.stopPropagation();
-              setIsMenuOpen((current) => !current);
+              void archiveSession();
             }}
           >
-            <MoreGlyph />
+            <ArchiveGlyph />
           </button>
           {menu ? renderMenu(menu) : null}
         </>
@@ -277,19 +294,6 @@ function renderMenu(menu: JSX.Element) {
 
 function canUseDocument() {
   return typeof document !== "undefined" && typeof window !== "undefined";
-}
-
-function MoreGlyph() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M6.5 12h.01M12 12h.01M17.5 12h.01"
-        stroke="currentColor"
-        strokeWidth="3"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
 }
 
 function ArchiveGlyph() {
