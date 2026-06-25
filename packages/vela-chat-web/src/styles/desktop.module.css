@@ -1496,6 +1496,24 @@
   color: #817d78;
 }
 
+.newSessionWorkspacePicker {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.newSessionWorkspacePicker:hover {
+  background: rgb(0 0 0 / 4%);
+  color: #57534e;
+}
+
 .newSessionWorkspaceField input {
   min-width: 0;
   width: 100%;

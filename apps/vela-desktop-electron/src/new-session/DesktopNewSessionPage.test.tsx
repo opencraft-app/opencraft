@@ -36,11 +36,56 @@ test("desktop new session page renders setup controls by default", async () => {
   assert.match(html, /Create session/);
 });
 
+test("desktop new session exposes native folder picker only for local electron backends", async () => {
+  const { DesktopNewSessionPage, canUseNativeWorkingDirectoryPicker } = await import(
+    "./DesktopNewSessionPage"
+  );
+
+  assert.equal(canUseNativeWorkingDirectoryPicker("electron", codexBackend()), true);
+  assert.equal(canUseNativeWorkingDirectoryPicker("web", codexBackend()), false);
+  assert.equal(
+    canUseNativeWorkingDirectoryPicker("electron", {
+      ...codexBackend(),
+      location: { kind: "remote", label: "Remote VM" },
+    }),
+    false,
+  );
+
+  const html = renderToStaticMarkup(
+    <DesktopNewSessionPage
+      backends={[codexBackend()]}
+      defaultBackend="codex"
+      defaultWorkingDirectory="/Users/example/project"
+      preferredBackends={["codex"]}
+      runtimeHostKind="electron"
+      onDefaultBackendChange={() => undefined}
+      onSelectWorkingDirectory={async () => "/Users/example/next"}
+      onSubmit={() => undefined}
+    />,
+  );
+  assert.match(html, /Choose workspace folder/);
+
+  const webHtml = renderToStaticMarkup(
+    <DesktopNewSessionPage
+      backends={[codexBackend()]}
+      defaultBackend="codex"
+      defaultWorkingDirectory="/Users/example/project"
+      preferredBackends={["codex"]}
+      runtimeHostKind="web"
+      onDefaultBackendChange={() => undefined}
+      onSelectWorkingDirectory={async () => "/Users/example/next"}
+      onSubmit={() => undefined}
+    />,
+  );
+  assert.doesNotMatch(webHtml, /Choose workspace folder/);
+});
+
 function codexBackend(): BackendWire {
   return {
     kind: "codex",
     status: "available",
     display_name: "Codex",
+    location: { kind: "local", label: "Local" },
     capabilities: {
       streaming: true,
       cancel: true,

@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld("velaDesktop", {
     ipcRenderer.invoke("vela:desktop-settings-set", patch),
   getDesktopChromeState: () => ipcRenderer.invoke("vela:desktop-chrome-state"),
   leaveFullscreen: () => ipcRenderer.invoke("vela:desktop-leave-fullscreen"),
+  selectWorkingDirectory: () =>
+    ipcRenderer.invoke("vela:desktop-select-working-directory"),
   openWorkMonitor: (sessionId: string) =>
     ipcRenderer.invoke("vela:work-monitor-open", sessionId),
   hideWorkMonitor: () => ipcRenderer.invoke("vela:work-monitor-hide"),

@@ -501,11 +501,19 @@ export interface BackendCapabilitiesWire {
   [key: string]: unknown;
 }
 
+export type BackendLocationKindWire = "local" | "remote";
+
+export interface BackendLocationWire {
+  kind: BackendLocationKindWire;
+  label: string;
+}
+
 export interface BackendWire {
   kind: BackendKindWire;
   status: BackendStatusWire;
   status_message?: string;
   display_name: string;
+  location: BackendLocationWire;
   capabilities: BackendCapabilitiesWire;
   models: BackendModelWire[];
   permission_modes: PermissionModeOptionWire[];

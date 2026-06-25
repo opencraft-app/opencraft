@@ -44,10 +44,14 @@ async fn lists_backends_without_calling_runtime_business_logic() {
     assert!(body["backends"].as_array().unwrap().iter().any(|backend| {
         backend["kind"] == "pi" && backend["capabilities"]["streaming"] == true
     }));
+    assert!(body["backends"].as_array().unwrap().iter().all(|backend| {
+        backend["location"]["kind"] == "local" && backend["location"]["label"] == "Local"
+    }));
 
     let (status, body) = get_json(app, "/api/v1/backends/pi").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["backend"]["kind"], "pi");
+    assert_eq!(body["backend"]["location"]["kind"], "local");
 }
 
 #[tokio::test]

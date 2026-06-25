@@ -554,7 +554,10 @@ test("keeps OpenAPI backend status enum separate from conversation item status",
   const backendInterface = source.match(/export interface BackendWire \{[\s\S]*?\n\}/)?.[0] ?? "";
 
   assert.match(source, /export type BackendStatusWire\s*=/);
+  assert.match(source, /export type BackendLocationKindWire\s*=/);
   assert.match(backendInterface, /status:\s*BackendStatusWire/);
+  assert.match(backendInterface, /location:\s*BackendLocationWire/);
+  assert.match(source, /kind:\s*kind as BackendLocationKindWire/);
   assert.doesNotMatch(backendInterface, /status:\s*string/);
   assert.match(source, /status:\s*status as BackendStatusWire/);
   assert.doesNotMatch(source, /status:\s*status as ConversationItemStatusWire,\n\s*display_name/);
@@ -1595,6 +1598,7 @@ test("validates backend catalog nested option shapes at the client wire boundary
     kind: "pi",
     display_name: "Pi Coding",
     status: "available",
+    location: { kind: "local", label: "Local" },
     capabilities: {
       streaming: true,
       cancel: true,
@@ -1676,6 +1680,7 @@ test("parses backend error snapshots with status message", async () => {
               display_name: "Codex",
               status: "error",
               status_message: "model discovery failed: invalid config",
+              location: { kind: "local", label: "Local" },
               capabilities: {
                 streaming: true,
                 cancel: true,
@@ -1724,6 +1729,7 @@ test("fetches one backend detail and validates backend path kind before fetch", 
             kind: "pi",
             display_name: "Pi Coding",
             status: "available",
+            location: { kind: "local", label: "Local" },
             capabilities: {
               streaming: true,
               cancel: true,
@@ -1822,6 +1828,7 @@ test("fetches session, backend catalog, and patches agent config", async () => {
                 kind: "pi",
                 display_name: "Pi Coding",
                 status: "available",
+                location: { kind: "local", label: "Local" },
                 capabilities: {
                   streaming: true,
                   cancel: true,
