@@ -3,8 +3,6 @@
 import type { AgentConfigPatchWire } from "../../../../vela-chat-client/src";
 import { ComposerControls } from "../composer-controls/ComposerControls";
 import type { ComposerControlsModel } from "../composer-controls/model";
-import { useAutoResizeTextarea } from "../../hooks/useAutoResizeTextarea";
-import { useComposerKeyboard } from "../../hooks/useComposerKeyboard";
 import { PromptInput } from "../../primitives/prompt-input/PromptInput";
 import type { PromptInputAttachment } from "../../primitives/prompt-input/PromptInput";
 
@@ -39,11 +37,7 @@ export function VelaComposer({
   onStop?: () => void;
   onSubmit: () => void;
 }) {
-  const textareaRef = useAutoResizeTextarea(draft);
   const canSubmit = canSend && (draft.trim().length > 0 || pendingAttachments.length > 0);
-  const handleKeyDown = useComposerKeyboard(() => {
-    if (canSubmit) onSubmit();
-  });
 
   return (
     <PromptInput
@@ -52,13 +46,11 @@ export function VelaComposer({
       onChange={onDraftChange}
       onAttachImages={onAttachImages}
       onHeightChange={onHeightChange}
-      onKeyDown={handleKeyDown}
       onRemoveAttachment={onRemoveAttachment}
       onStop={onStop}
       onSubmit={onSubmit}
       pendingAttachments={pendingAttachments}
       placeholder={placeholder}
-      textareaRef={textareaRef}
       leftToolbarControls={
         controls && onAgentConfigChange ? (
           <ComposerControls

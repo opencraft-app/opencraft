@@ -225,6 +225,11 @@ test("desktop renderer is split into agent-friendly component folders with local
     "packages/vela-chat-web/src/primitives/conversation/Conversation.tsx",
     "packages/vela-chat-web/src/primitives/prompt-input/README.md",
     "packages/vela-chat-web/src/primitives/prompt-input/PromptInput.tsx",
+    "packages/vela-chat-web/src/composer-editor/README.md",
+    "packages/vela-chat-web/src/composer-editor/LexicalComposerEditor.tsx",
+    "packages/vela-chat-web/src/composer-editor/index.ts",
+    "packages/vela-chat-web/src/composer-editor/model.ts",
+    "packages/vela-chat-web/src/composer-editor/types.ts",
     "packages/vela-chat-web/src/components/README.md",
     "packages/vela-chat-web/src/components/requests/README.md",
     "packages/vela-chat-web/src/components/requests/RequestDock.tsx",
@@ -243,8 +248,6 @@ test("desktop renderer is split into agent-friendly component folders with local
     "packages/vela-chat-web/src/components/composer-controls/ComposerControls.tsx",
     "packages/vela-chat-web/src/components/composer-controls/model.ts",
     "packages/vela-chat-web/src/hooks/README.md",
-    "packages/vela-chat-web/src/hooks/useAutoResizeTextarea.ts",
-    "packages/vela-chat-web/src/hooks/useComposerKeyboard.ts",
     "packages/vela-chat-web/src/new-session/README.md",
     "packages/vela-chat-web/src/new-session/NewSessionSurface.tsx",
     "packages/vela-chat-web/src/new-session/index.ts",
@@ -328,6 +331,38 @@ test("package entrypoint stays thin and delegates desktop rendering details", ()
   assert.equal(source.includes("function MarkdownBlock"), false);
   assert.equal(source.includes("function renderInlineCode"), false);
   assert.equal(source.includes("<textarea"), false);
+});
+
+test("composer editor boundary hides Lexical behind a stable model", () => {
+  const promptInput = readFileSync(
+    join(root, "packages/vela-chat-web/src/primitives/prompt-input/PromptInput.tsx"),
+    "utf8",
+  );
+  const editorIndex = readFileSync(
+    join(root, "packages/vela-chat-web/src/composer-editor/index.ts"),
+    "utf8",
+  );
+  const editorTypes = readFileSync(
+    join(root, "packages/vela-chat-web/src/composer-editor/types.ts"),
+    "utf8",
+  );
+  const editorModel = readFileSync(
+    join(root, "packages/vela-chat-web/src/composer-editor/model.ts"),
+    "utf8",
+  );
+  const lexicalEditor = readFileSync(
+    join(root, "packages/vela-chat-web/src/composer-editor/LexicalComposerEditor.tsx"),
+    "utf8",
+  );
+
+  assert.match(promptInput, /LexicalComposerEditor/);
+  assert.equal(promptInput.includes("<textarea"), false);
+  assert.match(editorIndex, /ComposerEditorHandle/);
+  assert.match(editorTypes, /interface ComposerEditorSnapshot/);
+  assert.match(editorTypes, /interface ComposerEditorHandle/);
+  assert.match(editorModel, /createComposerEditorSnapshot/);
+  assert.match(lexicalEditor, /@lexical\/react\/LexicalComposer/);
+  assert.doesNotMatch(promptInput, /@lexical\/react|from "lexical"/);
 });
 
 test("web partial virtualization uses item-level tanstack virtualizer instead of mounting every history item", () => {
@@ -1328,7 +1363,7 @@ test("composer input frame matches the codex-desktop visual rhythm", () => {
   );
 
   const frameBlock = cssBlock(styles, "composer");
-  const textareaBlock = cssBlock(styles, "textarea");
+  const editorBlock = cssBlock(styles, "composerEditor");
   const toolbarBlock = cssBlock(styles, "composerFooter");
   const toolbarLaneBlock = styles.match(/\.composerLeft,\n\.composerRight\s*\{[^}]+\}/)?.[0] ?? "";
   const leftBlock = styles.match(/\.composerLeft\s*\{[^}]+\}/)?.[0] ?? "";
@@ -1347,13 +1382,13 @@ test("composer input frame matches the codex-desktop visual rhythm", () => {
   assert.match(frameBlock, /backdrop-filter:\s*saturate\(1\.2\) blur\(var\(--vela-composer-blur\)\);/);
   assert.doesNotMatch(frameBlock, /min-height:\s*112px;/);
 
-  assert.match(textareaBlock, /min-height:\s*var\(--vela-composer-input-min-height,\s*24px\);/);
-  assert.match(textareaBlock, /max-height:\s*var\(--vela-composer-input-max-height,\s*200px\);/);
-  assert.match(textareaBlock, /font-size:\s*14px;/);
-  assert.match(textareaBlock, /line-height:\s*1\.5;/);
-  assert.match(textareaBlock, /padding:\s*12px 16px 8px;/);
+  assert.match(editorBlock, /min-height:\s*var\(--vela-composer-input-min-height,\s*24px\);/);
+  assert.match(editorBlock, /max-height:\s*var\(--vela-composer-input-max-height,\s*200px\);/);
+  assert.match(editorBlock, /font-size:\s*14px;/);
+  assert.match(editorBlock, /line-height:\s*1\.5;/);
+  assert.match(editorBlock, /padding:\s*12px 16px 8px;/);
   assert.match(styles, /\.composerDockInline\s*\{[^}]*--vela-composer-input-min-height:\s*126px;/s);
-  assert.match(styles, /\.composerDockInline \.textarea\s*\{[^}]*font-size:\s*16px;/s);
+  assert.match(styles, /\.composerDockInline \.composerEditor\s*\{[^}]*font-size:\s*16px;/s);
 
   assert.match(toolbarBlock, /align-items:\s*flex-end;/);
   assert.match(toolbarBlock, /flex-wrap:\s*wrap;/);
@@ -1388,12 +1423,12 @@ test("composer frames disable selection outside editable user input", () => {
   );
 
   const chatFrameBlock = cssBlock(styles, "composer");
-  const chatTextareaBlock = cssBlock(styles, "textarea");
+  const chatEditorBlock = cssBlock(styles, "composerEditor");
   const chatAttachmentLabelBlock = cssBlock(styles, "attachmentLabel");
   const chatControlsBlock = cssBlock(styles, "composerControls");
 
   assert.match(chatFrameBlock, /user-select:\s*none;/);
-  assert.match(chatTextareaBlock, /user-select:\s*text;/);
+  assert.match(chatEditorBlock, /user-select:\s*text;/);
   assert.doesNotMatch(chatAttachmentLabelBlock, /user-select:\s*(text|all);/);
   assert.doesNotMatch(chatControlsBlock, /user-select:\s*(text|all);/);
   assert.match(newSessionSurface, /<PromptInput/);

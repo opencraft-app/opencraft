@@ -3,8 +3,6 @@ import { ShellSelect } from "../../../vela-desktop-shell/src";
 import { Brain, FolderGit2, Laptop, Shield } from "lucide-react";
 import type { ReactNode } from "react";
 import styles from "../styles/desktop.module.css";
-import { useAutoResizeTextarea } from "../hooks/useAutoResizeTextarea";
-import { useComposerKeyboard } from "../hooks/useComposerKeyboard";
 import { PromptInput } from "../primitives/prompt-input/PromptInput";
 import {
   canSubmitNewSession,
@@ -66,7 +64,6 @@ export function NewSessionSurface({
   });
   const surfaceError = error ?? backendStatusMessage;
   const permissionTone = selectedPermissionMode === "full_access" ? "accent" : "neutral";
-  const textareaRef = useAutoResizeTextarea(initialPrompt);
   const submitSession = () => {
     if (!canSubmit || !selectedBackend) return;
     onSubmit({
@@ -76,7 +73,6 @@ export function NewSessionSurface({
       agentConfig,
     });
   };
-  const handleKeyDown = useComposerKeyboard(submitSession);
 
   return (
     <main className={styles.newSessionShell} aria-label="New session">
@@ -110,11 +106,9 @@ export function NewSessionSurface({
             isRunning={false}
             layout="inline"
             onChange={onInitialPromptChange}
-            onKeyDown={handleKeyDown}
             onSubmit={submitSession}
             placeholder="随心输入"
             submitLabel={isSubmitting ? "Creating session" : "Create session"}
-            textareaRef={textareaRef}
             value={initialPrompt}
             leftToolbarControls={
               <div className={styles.newSessionControlCluster}>

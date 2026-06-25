@@ -9,6 +9,7 @@ Do not:
 
 Depends on:
 - React
+- `composer-editor`
 - `styles`
 
 Used by:

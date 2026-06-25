@@ -1,8 +1,9 @@
 "use client";
 
-import type { ChangeEvent, FormEvent, KeyboardEvent, ReactNode, RefObject } from "react";
+import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { ArrowUp, Mic, Square } from "lucide-react";
+import { LexicalComposerEditor, type ComposerEditorHandle } from "../../composer-editor";
 import styles from "../../styles/desktop.module.css";
 
 interface BrowserSpeechRecognitionEvent extends Event {
@@ -51,12 +52,10 @@ export interface PromptInputProps {
   placeholder: string;
   canSubmit: boolean;
   isRunning: boolean;
-  textareaRef: RefObject<HTMLTextAreaElement | null>;
   layout?: "dock" | "inline";
   submitLabel?: string;
   stopLabel?: string;
   onChange: (value: string) => void;
-  onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onSubmit: () => void;
   onStop?: () => void;
   onAttachImages?: (files: File[]) => void;
@@ -73,12 +72,10 @@ export function PromptInput({
   placeholder,
   canSubmit,
   isRunning,
-  textareaRef,
   layout = "dock",
   submitLabel = "Send message",
   stopLabel = "Stop generation",
   onChange,
-  onKeyDown,
   onSubmit,
   onStop,
   onAttachImages,
@@ -90,6 +87,7 @@ export function PromptInput({
   attachedSurface,
 }: PromptInputProps) {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const editorRef = useRef<ComposerEditorHandle | null>(null);
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const rootRef = useRef<HTMLFormElement | null>(null);
   const valueRef = useRef(value);
@@ -102,6 +100,9 @@ export function PromptInput({
   const primaryControlLabel = isStopControl ? stopLabel : submitLabel;
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
+    if (canSubmit) onSubmit();
+  };
+  const handleEditorSubmit = () => {
     if (canSubmit) onSubmit();
   };
   const handleStop = () => {
@@ -195,14 +196,15 @@ export function PromptInput({
       ref={rootRef}
     >
       <div className={styles.composer}>
-        <textarea
-          className={styles.textarea}
+        <LexicalComposerEditor
+          ariaLabel="Message"
+          className={styles.composerEditor}
+          placeholderClassName={styles.composerEditorPlaceholder}
           value={value}
-          onChange={(event) => onChange(event.target.value)}
-          onKeyDown={onKeyDown}
+          onChange={onChange}
+          onSubmit={handleEditorSubmit}
           placeholder={placeholder}
-          rows={1}
-          ref={textareaRef}
+          ref={editorRef}
         />
         {pendingAttachments.length > 0 ? (
           <div className={styles.attachmentTray} aria-label="Pending attachments">
