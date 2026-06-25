@@ -2,7 +2,7 @@
 
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, Mic, Square } from "lucide-react";
+import { ArrowUp, ImagePlus, Mic, Square } from "lucide-react";
 import { LexicalComposerEditor, type ComposerEditorHandle } from "../../composer-editor";
 import styles from "../../styles/desktop.module.css";
 
@@ -249,7 +249,7 @@ export function PromptInput({
               type="button"
               aria-label="Attach image"
             >
-              +
+              <ImagePlus size={17} strokeWidth={2.1} aria-hidden="true" />
             </button>
             {leftToolbarControls}
           </div>

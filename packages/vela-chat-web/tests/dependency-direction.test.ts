@@ -1315,7 +1315,7 @@ test("chat request dock uses PendingRequestsView and responds through input even
   assert.equal(existsSync(join(root, "app/chat/requestResponses.ts")), false);
 });
 
-test("composer plus control is wired to image attachments instead of being decorative", () => {
+test("composer image attach control is owned by the shared prompt input", () => {
   const promptInput = readFileSync(
     join(root, "packages/vela-chat-web/src/primitives/prompt-input/PromptInput.tsx"),
     "utf8",
@@ -1329,9 +1329,30 @@ test("composer plus control is wired to image attachments instead of being decor
   assert.match(promptInput, /type="file"/);
   assert.match(promptInput, /accept="image\/\*"/);
   assert.match(promptInput, /onAttachImages/);
+  assert.match(promptInput, /ImagePlus/);
+  assert.doesNotMatch(promptInput, />\s*\+\s*</);
   assert.match(composer, /pendingAttachments/);
   assert.match(chatWorkbench, /imageFileToInputPart/);
   assert.match(chatWorkbench, /content: messageContent/);
+});
+
+test("new session setup uses the same composer controls boundary as active chat", () => {
+  const newSessionSurface = readFileSync(
+    join(root, "packages/vela-chat-web/src/new-session/NewSessionSurface.tsx"),
+    "utf8",
+  );
+  const styles = readFileSync(
+    join(root, "packages/vela-chat-web/src/styles/desktop.module.css"),
+    "utf8",
+  );
+
+  assert.match(newSessionSurface, /<PromptInput/);
+  assert.match(newSessionSurface, /<ComposerControls/);
+  assert.match(newSessionSurface, /buildComposerSetupControlsModel/);
+  assert.match(newSessionSurface, /applyAgentConfigPatch/);
+  assert.doesNotMatch(newSessionSurface, /Brain|Shield/);
+  assert.doesNotMatch(newSessionSurface, /newSessionControlCluster/);
+  assert.doesNotMatch(styles, /\.newSessionControlCluster\b/);
 });
 
 test("composer primary control has stable accessible action labels", () => {
@@ -1494,7 +1515,7 @@ test("composer primary control switches to stop while a turn is running", () => 
 
   assert.match(promptInput, /isRunning/);
   assert.match(promptInput, /onStop/);
-  assert.match(promptInput, /import \{ ArrowUp, Mic, Square \} from "lucide-react";/);
+  assert.match(promptInput, /import \{ ArrowUp, ImagePlus, Mic, Square \} from "lucide-react";/);
   assert.match(promptInput, /aria-label=\{primaryControlLabel\}/);
   assert.match(promptInput, /<Square size=\{13\} strokeWidth=\{0\} fill="currentColor" aria-hidden="true" \/>/);
   assert.match(promptInput, /<ArrowUp size=\{22\} strokeWidth=\{2\.4\} aria-hidden="true" \/>/);
@@ -1512,7 +1533,7 @@ test("composer gates dictation behind browser speech recognition", () => {
     "utf8",
   );
 
-  assert.match(promptInput, /import \{ ArrowUp, Mic, Square \} from "lucide-react";/);
+  assert.match(promptInput, /import \{ ArrowUp, ImagePlus, Mic, Square \} from "lucide-react";/);
   assert.match(promptInput, /window\.SpeechRecognition \|\| window\.webkitSpeechRecognition/);
   assert.match(promptInput, /recognition\.interimResults = true;/);
   assert.match(promptInput, /recognition\.onresult = \(event\) =>/);

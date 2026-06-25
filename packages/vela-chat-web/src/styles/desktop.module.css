@@ -1280,24 +1280,6 @@
   color: #a8a29e;
 }
 
-.newSessionControlCluster {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.newSessionControlCluster:last-child {
-  justify-content: flex-end;
-  margin-left: auto;
-}
-
-.newSessionControlCluster :global(.vela-shell-select[data-tone="accent"] .vela-shell-select-trigger) {
-  background: transparent;
-  color: #ea580c;
-}
-
 .newSessionContextBar {
   display: flex;
   align-items: center;
@@ -1414,13 +1396,6 @@
 
   .composerDockInline .composerLeft,
   .composerDockInline .composerRight {
-    width: 100%;
-    justify-content: space-between;
-    margin-left: 0;
-  }
-
-  .newSessionControlCluster,
-  .newSessionControlCluster:last-child {
     width: 100%;
     justify-content: space-between;
     margin-left: 0;

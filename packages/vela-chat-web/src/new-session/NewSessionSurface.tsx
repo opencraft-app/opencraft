@@ -1,9 +1,15 @@
-import type { BackendKindWire, PermissionModeWire } from "../../../vela-chat-client/src";
+import type {
+  AgentConfigPatchWire,
+  BackendKindWire,
+  PermissionModeWire,
+} from "../../../vela-chat-client/src";
 import { ShellSelect } from "../../../vela-desktop-shell/src";
-import { Brain, FolderGit2, Laptop, Shield } from "lucide-react";
+import { FolderGit2, Laptop } from "lucide-react";
 import type { ReactNode } from "react";
 import styles from "../styles/desktop.module.css";
 import { PromptInput } from "../primitives/prompt-input/PromptInput";
+import { ComposerControls } from "../components/composer-controls/ComposerControls";
+import { buildComposerSetupControlsModel } from "../components/composer-controls/model";
 import {
   canSubmitNewSession,
   type NewSessionOption,
@@ -63,7 +69,25 @@ export function NewSessionSurface({
     isSubmitting,
   });
   const surfaceError = error ?? backendStatusMessage;
-  const permissionTone = selectedPermissionMode === "full_access" ? "accent" : "neutral";
+  const selectedBackendLabel =
+    backendOptions.find((option) => option.id === selectedBackend)?.label ?? "Agent";
+  const composerControls = buildComposerSetupControlsModel({
+    disabled: Boolean(isSubmitting),
+    providerLabel: selectedBackendLabel,
+    selectedModel,
+    selectedReasoningEffort,
+    selectedPermissionMode,
+    modelOptions,
+    reasoningEffortOptions,
+    permissionModeOptions,
+  });
+  const applyAgentConfigPatch = (patch: AgentConfigPatchWire) => {
+    if (typeof patch.model === "string") onModelChange(patch.model);
+    if (typeof patch.reasoning_effort === "string") {
+      onReasoningEffortChange(patch.reasoning_effort);
+    }
+    if (patch.permission_mode) onPermissionModeChange(patch.permission_mode);
+  };
   const submitSession = () => {
     if (!canSubmit || !selectedBackend) return;
     onSubmit({
@@ -111,37 +135,18 @@ export function NewSessionSurface({
             submitLabel={isSubmitting ? "Creating session" : "Create session"}
             value={initialPrompt}
             leftToolbarControls={
-              <div className={styles.newSessionControlCluster}>
-                <SelectControl
-                  ariaLabel="Select permission mode"
-                  icon={<Shield size={16} />}
-                  value={selectedPermissionMode}
-                  options={permissionModeOptions}
-                  placeholder="Permissions"
-                  tone={permissionTone}
-                  onChange={(value) => onPermissionModeChange(value as PermissionModeWire | "")}
-                />
-              </div>
+              <ComposerControls
+                controls={composerControls}
+                placement="primary"
+                onChange={applyAgentConfigPatch}
+              />
             }
             rightToolbarControls={
-              <div className={styles.newSessionControlCluster}>
-                <SelectControl
-                  ariaLabel="Select model"
-                  icon={<Brain size={16} />}
-                  value={selectedModel}
-                  options={modelOptions}
-                  placeholder="Default model"
-                  onChange={onModelChange}
-                />
-                <SelectControl
-                  ariaLabel="Select reasoning effort"
-                  icon={null}
-                  value={selectedReasoningEffort}
-                  options={reasoningEffortOptions}
-                  placeholder="Reasoning"
-                  onChange={onReasoningEffortChange}
-                />
-              </div>
+              <ComposerControls
+                controls={composerControls}
+                placement="secondary"
+                onChange={applyAgentConfigPatch}
+              />
             }
           />
         </section>
