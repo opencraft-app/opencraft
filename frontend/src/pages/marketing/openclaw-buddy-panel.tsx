@@ -39,6 +39,11 @@ import {
 } from "@/lib/skillhub-api";
 import { getSoulSpec, buildSoulMd } from "@/lib/soul-interpretations";
 import { ENGLISH_SOULS, getEnglishSoulDetail, getEnglishSoulSpec } from "@/lib/soul-english-data";
+import {
+  GLOBAL_CHINESE_SOULS,
+  getGlobalChineseSoulDetail,
+  getGlobalChineseSoulSpec,
+} from "@/lib/soul-global-chinese-data";
 import { SoulSpecPanel } from "@/components/soul-spec-panel";
 import {
   loadBuddyState,
@@ -66,20 +71,32 @@ const MAX_DRAWS = 8;
 // translate each persisted slug into the active namespace so the card deck
 // reflects the current language — otherwise a card drawn under EN would stay
 // English forever, and its preview would 404 under CN (and vice-versa).
+// 国际站两个语言都用 westernized slug 命名空间（GOAT/LOL/…），只是文案不同：
+//   - EN  → ENGLISH_SOULS
+//   - ZH  → GLOBAL_CHINESE_SOULS（与国内站的 YYDS·神人 体系完全独立）
+// 国内站仍用 canonical slug（YYDS/…）走 SkillHub 池。
 function localizeDrawnSouls(
   drawnSouls: SkillHubSoul[],
   availableSouls: SkillHubSoul[],
   useEnglishSoulData: boolean,
+  useGlobalChineseSoulData: boolean,
 ): SkillHubSoul[] {
+  // 国际站 EN：持久化 slug → westernized slug，在 ENGLISH_SOULS 里解析。
   if (useEnglishSoulData) {
-    // Persisted slug (EN or canonical) → EN slug, resolved against ENGLISH_SOULS.
     return drawnSouls.map((soul) => {
       const enSlug = toEnglishSlug(soul.slug);
       return ENGLISH_SOULS.find((item) => item.slug === enSlug) ?? soul;
     });
   }
+  // 国际站 ZH：持久化 slug → westernized slug，在 GLOBAL_CHINESE_SOULS 里解析。
+  if (useGlobalChineseSoulData) {
+    return drawnSouls.map((soul) => {
+      const enSlug = toEnglishSlug(soul.slug);
+      return GLOBAL_CHINESE_SOULS.find((item) => item.slug === enSlug) ?? soul;
+    });
+  }
+  // 国内站：持久化 slug → canonical slug，在 SkillHub 池里解析。
   if (availableSouls.length === 0) return drawnSouls;
-  // Persisted slug (EN or canonical) → canonical slug, resolved against the CN pool.
   return drawnSouls.map((soul) => {
     const canonicalSlug = toCanonicalSlug(soul.slug);
     return availableSouls.find((item) => item.slug === canonicalSlug) ?? soul;
@@ -132,6 +149,8 @@ export function BuddyPanel({
   const repositories = useRepositories();
   const [previewSoulSlug, setPreviewSoulSlug] = useState<string | null>(null);
   const useEnglishSoulData = isGlobal && !i18n.language.startsWith("zh");
+  // 国际站中文：用独立的 global-CN 人设体系（GOAT·大神…），与国内站（YYDS·神人…）分开。
+  const useGlobalChineseSoulData = isGlobal && i18n.language.startsWith("zh");
 
   // 持久化：状态走 Vibebase（用户级 KV，跨设备一致）。
   // 加载流程：mount / 切 botId → 异步拉取 → 期间显示 loading 占位（空抽卡盘 + 转圈）。
@@ -182,13 +201,16 @@ export function BuddyPanel({
     if (useEnglishSoulData) {
       return Promise.resolve({ total: ENGLISH_SOULS.length, souls: ENGLISH_SOULS });
     }
+    if (useGlobalChineseSoulData) {
+      return Promise.resolve({ total: GLOBAL_CHINESE_SOULS.length, souls: GLOBAL_CHINESE_SOULS });
+    }
     return fetchSouls({ page: 1, pageSize: 30 });
-  }, [useEnglishSoulData]);
-  const soulsResource = useAsyncResource(soulsFetcher, [useEnglishSoulData]);
+  }, [useEnglishSoulData, useGlobalChineseSoulData]);
+  const soulsResource = useAsyncResource(soulsFetcher, [useEnglishSoulData, useGlobalChineseSoulData]);
   const souls = soulsResource.data?.souls ?? [];
   const localizedDrawnSouls = useMemo(
-    () => localizeDrawnSouls(drawnSouls, souls, useEnglishSoulData),
-    [drawnSouls, souls, useEnglishSoulData],
+    () => localizeDrawnSouls(drawnSouls, souls, useEnglishSoulData, useGlobalChineseSoulData),
+    [drawnSouls, souls, useEnglishSoulData, useGlobalChineseSoulData],
   );
 
   const drawnSlugs = drawnSouls.map((s) => s.slug);
@@ -472,7 +494,11 @@ export function BuddyPanel({
 
     let md: string;
     try {
-      const detail = useEnglishSoulData ? getEnglishSoulDetail(soul.slug) : await fetchSoulDetail(soul.slug);
+      const detail = useEnglishSoulData
+        ? getEnglishSoulDetail(soul.slug)
+        : useGlobalChineseSoulData
+          ? getGlobalChineseSoulDetail(soul.slug)
+          : await fetchSoulDetail(soul.slug);
       if (!detail) throw new Error(`Soul detail not found: ${soul.slug}`);
       md = buildSoulMd({
         slug: soul.slug,
@@ -562,7 +588,7 @@ export function BuddyPanel({
         ? t("无法写入 Agent 沙箱，已下载 soul.md 到本地")
         : t("当前未选中 Agent，已下载 soul.md 到本地"),
     });
-  }, [selectedSlug, localizedDrawnSouls, botId, repositories, toast.kind, showToast, t, useEnglishSoulData]);
+  }, [selectedSlug, localizedDrawnSouls, botId, repositories, toast.kind, showToast, t, useEnglishSoulData, useGlobalChineseSoulData]);
 
   /**
    * 清除 Bot 沙箱里当前的 SOUL.md（让 hermes-agent 回到无人设状态）。
@@ -794,8 +820,8 @@ export function BuddyPanel({
             onReroll={handleReroll}
             onDelete={handleDeleteOne}
             canReroll={canReroll}
-            selectedSlug={selectedSlug ? (useEnglishSoulData ? toEnglishSlug(selectedSlug) : selectedSlug) : null}
-            appliedSlug={appliedSlug ? (useEnglishSoulData ? toEnglishSlug(appliedSlug) : appliedSlug) : null}
+            selectedSlug={selectedSlug ? (isGlobal ? toEnglishSlug(selectedSlug) : selectedSlug) : null}
+            appliedSlug={appliedSlug ? (isGlobal ? toEnglishSlug(appliedSlug) : appliedSlug) : null}
             onPreview={(slug) => setPreviewSoulSlug(slug)}
           />
         )}
@@ -925,7 +951,7 @@ export function BuddyPanel({
         // 重抽时把"被重抽的卡"从已抽列表里移除，让其他池里的 soul 可以替补它的位置
         drawnSlugs={
           (rerollingSlug ? drawnSlugs.filter((s) => s !== rerollingSlug) : drawnSlugs)
-            .map((s) => useEnglishSoulData ? toEnglishSlug(s) : s)
+            .map((s) => isGlobal ? toEnglishSlug(s) : s)
         }
         onClose={() => {
           setDrawOpen(false);
@@ -933,13 +959,14 @@ export function BuddyPanel({
         }}
         onPick={handlePickFromDraw}
         useEnglishSoulData={useEnglishSoulData}
+        useGlobalChineseSoulData={useGlobalChineseSoulData}
       />
 
       <SoulTestModal
         open={soulTestOpen}
         souls={souls}
         maxDrawsReached={isAtMax}
-        drawnSlugs={drawnSlugs.map((s) => useEnglishSoulData ? toEnglishSlug(s) : s)}
+        drawnSlugs={drawnSlugs.map((s) => isGlobal ? toEnglishSlug(s) : s)}
         saveDisabledReason={
           loadStatus === "loaded"
             ? null
@@ -948,12 +975,14 @@ export function BuddyPanel({
         onClose={() => setSoulTestOpen(false)}
         onUseSoul={handleUseTestSoul}
         useEnglishSoulData={useEnglishSoulData}
+        useGlobalChineseSoulData={useGlobalChineseSoulData}
       />
 
       {previewSoulSlug && (
         <SoulPreviewModal
           slug={previewSoulSlug}
           useEnglishSoulData={useEnglishSoulData}
+          useGlobalChineseSoulData={useGlobalChineseSoulData}
           onClose={() => setPreviewSoulSlug(null)}
         />
       )}
@@ -1349,10 +1378,12 @@ function EmptySlot({ onClick }: { onClick: () => void }) {
 function SoulPreviewModal({
   slug,
   useEnglishSoulData,
+  useGlobalChineseSoulData,
   onClose,
 }: {
   slug: string;
   useEnglishSoulData: boolean;
+  useGlobalChineseSoulData: boolean;
   onClose: () => void;
 }) {
   const fetcher = useCallback(() => {
@@ -1361,12 +1392,19 @@ function SoulPreviewModal({
       if (!detail) throw new Error("Soul detail not found");
       return Promise.resolve(detail);
     }
+    if (useGlobalChineseSoulData) {
+      const detail = getGlobalChineseSoulDetail(toEnglishSlug(slug));
+      if (!detail) throw new Error("Soul detail not found");
+      return Promise.resolve(detail);
+    }
     return fetchSoulDetail(toCanonicalSlug(slug));
-  }, [slug, useEnglishSoulData]);
-  const { data, loading, error } = useAsyncResource(fetcher, [slug, useEnglishSoulData]);
+  }, [slug, useEnglishSoulData, useGlobalChineseSoulData]);
+  const { data, loading, error } = useAsyncResource(fetcher, [slug, useEnglishSoulData, useGlobalChineseSoulData]);
   const spec = useEnglishSoulData
     ? getEnglishSoulSpec(toEnglishSlug(slug))
-    : getSoulSpec(toCanonicalSlug(slug));
+    : useGlobalChineseSoulData
+      ? getGlobalChineseSoulSpec(toEnglishSlug(slug))
+      : getSoulSpec(toCanonicalSlug(slug));
   return (
     <PreviewModal title={data?.displayName ?? ""} onClose={onClose}>
       {loading && <CenterLoader />}
