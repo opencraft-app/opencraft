@@ -149,6 +149,7 @@ test("session list rows show the folder location text", async () => {
     assert.ok(location);
     assert.equal(location.textContent, "velalink");
     assert.equal(location.title, "/Users/skipzhang/velalink");
+    assert.ok(location.querySelector("svg"));
 
     await act(async () => {
       root.unmount();
@@ -196,6 +197,7 @@ test("running session rows render a scaled thumbnail preview", async () => {
     assert.equal(document.querySelector(".vela-session-preview"), null);
     assert.equal(document.querySelector(".vela-session-meta"), null);
     assert.equal(document.querySelector(".vela-session-location")?.textContent, "velaChat");
+    assert.ok(document.querySelector(".vela-session-location svg"));
     assert.match(container.innerHTML, /transform:\s*scale\(0\.09\)/);
     assert.match(container.innerHTML, /width:\s*75\.6px/);
     assert.match(container.innerHTML, /height:\s*46\.8px/);

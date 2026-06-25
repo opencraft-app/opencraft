@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { Folder } from "lucide-react";
 import type { SessionListItemWire } from "../../../vela-chat-client/src";
 import type { ChatRenderModel } from "../../../vela-chat-render-model/src";
 import { useVerticalScrollbarOverlay } from "../conversation-runtime/scrollbar/useVerticalScrollbarOverlay";
@@ -210,7 +211,8 @@ function SessionListSurfaceItem({
             <>
               {row.locationInfo ? (
                 <span className="vela-session-location" title={row.locationInfo.path}>
-                  {row.locationInfo.label}
+                  <Folder size={12} strokeWidth={2.1} aria-hidden="true" />
+                  <span>{row.locationInfo.label}</span>
                 </span>
               ) : null}
               <span
@@ -230,7 +232,8 @@ function SessionListSurfaceItem({
               <span className="vela-session-preview">{row.previewLabel}</span>
               {row.locationInfo ? (
                 <span className="vela-session-location" title={row.locationInfo.path}>
-                  {row.locationInfo.label}
+                  <Folder size={12} strokeWidth={2.1} aria-hidden="true" />
+                  <span>{row.locationInfo.label}</span>
                 </span>
               ) : (
                 <span className="vela-session-meta">{row.metaLabel}</span>
