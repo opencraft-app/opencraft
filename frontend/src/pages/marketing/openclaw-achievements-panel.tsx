@@ -787,7 +787,7 @@ export const AchievementsPanel = ({ botId, botName }: AchievementsPanelProps) =>
   return (
     <div className="space-y-5">
       <AgentSectionHeader
-        title={t("{{name}} 的成就", { name: botName })}
+        title={t("成就")}
         description={t("和你的 Hermes Agent 一起，解锁更多成就吧！")}
         actions={(
           <button
