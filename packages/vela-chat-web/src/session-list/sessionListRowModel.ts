@@ -4,17 +4,17 @@ import type { ChatRenderModel } from "../../../vela-chat-render-model/src";
 export interface SessionListText {
   archiveChat: string;
   archiveChatForTitle: (title: string) => string;
-  minuteRail: (minutes: number) => string;
-  hourRail: (hours: number) => string;
-  dayRail: (days: number) => string;
+  minuteRecency: (minutes: number) => string;
+  hourRecency: (hours: number) => string;
+  dayRecency: (days: number) => string;
 }
 
 export const defaultSessionListText: SessionListText = {
   archiveChat: "归档对话",
   archiveChatForTitle: (title) => `归档对话: ${title}`,
-  minuteRail: (minutes) => `${minutes}分`,
-  hourRail: (hours) => `${hours}时`,
-  dayRail: (days) => `${days}天`,
+  minuteRecency: (minutes) => `${minutes}分`,
+  hourRecency: (hours) => `${hours}时`,
+  dayRecency: (days) => `${days}天`,
 };
 
 export type SessionListActivity = "idle" | "running" | "waiting_for_input" | "failed";
@@ -145,20 +145,20 @@ function sessionRailModel(
   const minutes = Math.floor(diffMs / 60_000);
   if (minutes < 60) {
     return {
-      label: text.minuteRail(minutes),
+      label: text.minuteRecency(minutes),
       recency: "minutes",
     };
   }
   const hours = Math.floor(minutes / 60);
   if (hours < 24) {
     return {
-      label: text.hourRail(hours),
+      label: text.hourRecency(hours),
       recency: "hours",
     };
   }
   const days = Math.floor(hours / 24);
   return {
-    label: text.dayRail(days),
+    label: text.dayRecency(days),
     recency: "days",
   };
 }

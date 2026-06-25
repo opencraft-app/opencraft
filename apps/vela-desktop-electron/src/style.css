@@ -234,28 +234,12 @@ body {
 }
 
 .vela-sidebar-scroll-region {
+  display: flex;
+  flex-direction: column;
   min-height: 0;
   flex: 1 1 auto;
-  overflow: hidden auto;
+  overflow: hidden;
   padding: 4px 0 0;
-  scrollbar-color: rgba(60, 60, 67, 0.24) transparent;
-  scrollbar-width: thin;
-}
-
-.vela-sidebar-scroll-region::-webkit-scrollbar {
-  width: 7px;
-  height: 7px;
-}
-
-.vela-sidebar-scroll-region::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.vela-sidebar-scroll-region::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
-  border-radius: 999px;
-  background: rgba(60, 60, 67, 0.26);
-  background-clip: padding-box;
 }
 
 .vela-sidebar-content-fade {
@@ -744,7 +728,6 @@ body {
 }
 
 .vela-session-item {
-  --vela-session-rail-width: 42px;
   position: relative;
   display: block;
   border: 1px solid transparent;
@@ -771,13 +754,14 @@ body {
 }
 
 .vela-session-main {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--vela-session-rail-width);
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   min-height: 50px;
   gap: 8px;
   border-radius: 8px;
-  padding: 6px 10px 6px 8px;
+  padding: 6px 58px 6px 8px;
   background: transparent;
 }
 
@@ -809,22 +793,21 @@ body {
 }
 
 .vela-session-rail {
-  align-self: start;
-  box-sizing: border-box;
-  justify-self: end;
-  max-width: var(--vela-session-rail-width);
-  padding-right: 2px;
-  padding-top: 1px;
-  color: #b9bec5;
+  position: absolute;
+  top: 8px;
+  right: 22px;
+  max-width: 38px;
+  color: #c1c6cd;
   font-size: 10px;
-  font-weight: 430;
+  font-weight: 420;
   line-height: 1.2;
+  pointer-events: none;
   text-align: right;
 }
 
 .vela-session-item:hover .vela-session-rail,
 .vela-session-item.active .vela-session-rail {
-  color: #b3b8bf;
+  color: #bcc1c8;
 }
 
 .vela-session-actions-trigger {

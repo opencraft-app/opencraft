@@ -19,7 +19,7 @@ const baseSession: SessionListItemWire = {
   model: "gpt-5.3",
 };
 
-test("session list rail suppresses fresh minute-level time", () => {
+test("session list rail suppresses fresh recency labels", () => {
   const row = buildSessionListRowModel(
     {
       ...baseSession,
@@ -29,10 +29,11 @@ test("session list rail suppresses fresh minute-level time", () => {
     { nowMs: Date.parse("2026-06-25T00:10:00.000Z") },
   );
 
+  assert.equal(row.metaLabel, "codex · gpt-5.3");
   assert.equal(row.rail, null);
 });
 
-test("session list rail uses compact coarse labels after the fresh window", () => {
+test("session list rail uses compact recency after the fresh window", () => {
   const nowMs = Date.parse("2026-06-25T12:00:00.000Z");
 
   assert.deepEqual(

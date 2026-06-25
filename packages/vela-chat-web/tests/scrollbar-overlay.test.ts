@@ -96,7 +96,7 @@ test("overlay thumb drag exposes committed scroll offsets to the conversation sc
   const source = readFileSync(
     join(
       root,
-      "packages/vela-chat-web/src/conversation-runtime/scrollbar/useConversationScrollbarOverlay.tsx",
+      "packages/vela-chat-web/src/conversation-runtime/scrollbar/useVerticalScrollbarOverlay.tsx",
     ),
     "utf8",
   );
@@ -117,7 +117,7 @@ test("layout resize updates scrollbar geometry without revealing the overlay", (
   const source = readFileSync(
     join(
       root,
-      "packages/vela-chat-web/src/conversation-runtime/scrollbar/useConversationScrollbarOverlay.tsx",
+      "packages/vela-chat-web/src/conversation-runtime/scrollbar/useVerticalScrollbarOverlay.tsx",
     ),
     "utf8",
   );

@@ -608,14 +608,18 @@ test("chat transcript hides native scrollbars behind a cross-platform overlay", 
     join(root, "packages/vela-chat-web/src/conversation-runtime/scrollbar/useConversationScrollbarOverlay.tsx"),
     "utf8",
   );
+  const verticalOverlaySource = readFileSync(
+    join(root, "packages/vela-chat-web/src/conversation-runtime/scrollbar/useVerticalScrollbarOverlay.tsx"),
+    "utf8",
+  );
 
   assert.match(conversationSource, /useConversationScrollbarOverlay/);
-  assert.match(overlaySource, /ResizeObserver/);
   assert.match(overlaySource, /applyConversationScrollWrite/);
   assert.match(overlaySource, /source:\s*"scrollbar_overlay"/);
-  assert.doesNotMatch(overlaySource, /setHovered|onMouseEnter|onMouseLeave|onPointerEnter|onPointerLeave/);
   assert.doesNotMatch(overlaySource, /\b(?:element|scrollElement|container)\.scrollTop\s*=/);
-  assert.match(overlaySource, /computeScrollOffsetFromThumbOffset/);
+  assert.match(verticalOverlaySource, /ResizeObserver/);
+  assert.match(verticalOverlaySource, /computeScrollOffsetFromThumbOffset/);
+  assert.doesNotMatch(verticalOverlaySource, /setHovered|onMouseEnter|onMouseLeave|onPointerEnter|onPointerLeave/);
   assert.match(conversation, /overscroll-behavior:\s*contain;/);
   assert.match(conversation, /scrollbar-width:\s*none;/);
   assert.match(conversation, /-ms-overflow-style:\s*none;/);
@@ -633,6 +637,69 @@ test("chat transcript hides native scrollbars behind a cross-platform overlay", 
   assert.doesNotMatch(conversation, /scrollbar-gutter:\s*stable;/);
   assert.doesNotMatch(css, /\.messageResponse pre\s*\{[^}]*scrollbar-width:\s*thin;/s);
   assert.doesNotMatch(css, /\.markdownTableScroller\s*\{[^}]*scrollbar-width:\s*thin;/s);
+});
+
+test("session list reuses the self-drawn scrollbar overlay", () => {
+  const css = readFileSync(
+    join(root, "packages/vela-chat-web/src/styles/desktop.module.css"),
+    "utf8",
+  );
+  const desktopCss = readFileSync(
+    join(root, "apps/vela-desktop-electron/src/style.css"),
+    "utf8",
+  );
+  const sessionListSurface = readFileSync(
+    join(root, "packages/vela-chat-web/src/surfaces/SessionListSurface.tsx"),
+    "utf8",
+  );
+  const sessionListShell = cssBlock(css, "sessionListScrollShell");
+  const sessionListViewport = cssBlock(css, "sessionListScrollViewport");
+  const desktopScrollRegion =
+    desktopCss.match(/\.vela-sidebar-scroll-region\s*\{[^}]+\}/)?.[0] ?? "";
+
+  assert.match(sessionListSurface, /useVerticalScrollbarOverlay/);
+  assert.match(sessionListSurface, /data-slot="session-list-scroll-shell"/);
+  assert.match(sessionListSurface, /data-slot="session-list-scroll-viewport"/);
+  assert.match(sessionListShell, /position:\s*relative;/);
+  assert.match(sessionListShell, /overflow:\s*hidden;/);
+  assert.match(sessionListViewport, /overflow-y:\s*auto;/);
+  assert.match(sessionListViewport, /scrollbar-width:\s*none;/);
+  assert.match(sessionListViewport, /-ms-overflow-style:\s*none;/);
+  assert.match(css, /\.sessionListScrollViewport::-webkit-scrollbar\s*\{[^}]*display:\s*none;/s);
+  assert.match(css, /\.conversationScrollbarOverlay\s*\{[^}]*pointer-events:\s*none;/s);
+  assert.match(css, /\.conversationScrollbarOverlay\[data-visible="true"\]\s*\{[^}]*pointer-events:\s*auto;/s);
+  assert.match(desktopScrollRegion, /display:\s*flex;/);
+  assert.match(desktopScrollRegion, /overflow:\s*hidden;/);
+  assert.doesNotMatch(desktopScrollRegion, /scrollbar-width:\s*thin;/);
+});
+
+test("session recency rail floats inside the row instead of defining the sidebar edge", () => {
+  const desktopCss = readFileSync(
+    join(root, "apps/vela-desktop-electron/src/style.css"),
+    "utf8",
+  );
+  const sessionListSurface = readFileSync(
+    join(root, "packages/vela-chat-web/src/surfaces/SessionListSurface.tsx"),
+    "utf8",
+  );
+  const rowModel = readFileSync(
+    join(root, "packages/vela-chat-web/src/session-list/sessionListRowModel.ts"),
+    "utf8",
+  );
+  const sessionMain = desktopCss.match(/\.vela-session-main\s*\{[^}]+\}/)?.[0] ?? "";
+  const sessionRail =
+    [...desktopCss.matchAll(/\.vela-session-rail\s*\{[^}]+\}/g)].find((match) =>
+      match[0].includes("position: absolute;"),
+    )?.[0] ?? "";
+
+  assert.match(rowModel, /rail:\s*SessionListRailModel \| null/);
+  assert.match(sessionListSurface, /className="vela-session-rail"/);
+  assert.match(sessionMain, /position:\s*relative;/);
+  assert.match(sessionMain, /grid-template-columns:\s*minmax\(0, 1fr\);/);
+  assert.doesNotMatch(sessionMain, /var\(--vela-session-rail-width\)/);
+  assert.match(sessionRail, /position:\s*absolute;/);
+  assert.match(sessionRail, /right:\s*22px;/);
+  assert.match(sessionRail, /color:\s*#c1c6cd;/);
 });
 
 test("chat viewport prevents horizontal panning while markdown leaves keep local scrollers", () => {
@@ -1452,13 +1519,17 @@ test("composer input frame matches the codex-desktop visual rhythm", () => {
   assert.doesNotMatch(styles, /\.composerDockInline \.composerEditor\s*\{/);
 
   assert.match(attachedSurfaceBlock, /width:\s*min\(100%, var\(--vela-composer-max-width\)\);/);
-  assert.match(attachedSurfaceBlock, /border-radius:\s*0 0 var\(--vela-composer-radius\) var\(--vela-composer-radius\);/);
-  assert.match(attachedSurfaceBlock, /background:\s*#f4f4f5;/);
+  assert.match(attachedSurfaceBlock, /border:\s*1px solid rgb\(13 13 13 \/ 5%\);/);
+  assert.match(attachedSurfaceBlock, /border-radius:\s*0 0 15px 15px;/);
+  assert.match(attachedSurfaceBlock, /background:\s*rgb\(247 247 248 \/ 72%\);/);
   assert.match(dockAttachedSurfaceBlock, /order:\s*-1;/);
   assert.match(dockAttachedSurfaceBlock, /width:\s*min\(calc\(100% - 72px\), calc\(var\(--vela-composer-max-width\) - 72px\)\);/);
   assert.match(dockAttachedSurfaceBlock, /border-radius:\s*18px 18px 0 0;/);
   assert.match(dockAttachedSurfaceBlock, /background:\s*rgb\(241 242 243 \/ 90%\);/);
   assert.match(dockAttachedSurfaceBlock, /backdrop-filter:\s*saturate\(1\.02\) blur\(3px\);/);
+  assert.match(styles, /\.composerDockInline \.composerAttachedSurface\s*\{[^}]*width:\s*min\(calc\(100% - 44px\), calc\(var\(--vela-composer-max-width\) - 44px\)\);/s);
+  assert.match(newSessionContextBlock, /gap:\s*14px;/);
+  assert.match(newSessionContextBlock, /min-height:\s*32px;/);
   assert.match(localQueueRowBlock, /grid-template-columns:\s*72px minmax\(0, 1fr\) 32px;/);
   assert.match(localQueueRowBlock, /background:\s*transparent;/);
   assert.doesNotMatch(newSessionContextBlock, /border:/);
@@ -1466,15 +1537,19 @@ test("composer input frame matches the codex-desktop visual rhythm", () => {
   assert.doesNotMatch(newSessionContextBlock, /background:/);
 
   assert.match(toolbarBlock, /align-items:\s*flex-end;/);
-  assert.match(toolbarBlock, /flex-wrap:\s*wrap;/);
+  assert.match(toolbarBlock, /flex-wrap:\s*nowrap;/);
   assert.match(toolbarBlock, /gap:\s*10px;/);
   assert.match(toolbarBlock, /padding:\s*0 16px 16px;/);
-  assert.match(toolbarLaneBlock, /flex-wrap:\s*wrap;/);
+  assert.match(toolbarLaneBlock, /flex-wrap:\s*nowrap;/);
   assert.match(toolbarLaneBlock, /gap:\s*8px;/);
   assert.match(leftBlock, /flex:\s*1 1 auto;/);
   assert.match(rightBlock, /flex:\s*0 1 auto;/);
   assert.match(rightBlock, /justify-content:\s*flex-end;/);
   assert.match(rightBlock, /margin-left:\s*auto;/);
+  assert.match(styles, /\.composerControls\s*\{[^}]*overflow:\s*hidden;/s);
+  assert.match(styles, /\.composerControl\[data-composer-control="permission"\]\s*\{[^}]*flex-shrink:\s*1\.8;/s);
+  assert.match(styles, /@container composer-footer \(max-width:\s*620px\)\s*\{[^}]*data-composer-control="permission"[^}]*display:\s*none;/s);
+  assert.match(styles, /@container composer-footer \(max-width:\s*520px\)\s*\{[^}]*data-composer-control="model"[^}]*display:\s*none;/s);
   assert.match(styles, /\.composerControls\[data-composer-controls-ready="false"\]\s*\{[^}]*visibility:\s*hidden;/s);
   assert.match(styles, /\.composerControls\[data-composer-controls-ready="false"\]\[data-placement="primary"\]\s*\{[^}]*min-width:\s*136px;/s);
   assert.match(styles, /\.composerControls\[data-composer-controls-ready="false"\]\[data-placement="secondary"\]\s*\{[^}]*min-width:\s*260px;/s);

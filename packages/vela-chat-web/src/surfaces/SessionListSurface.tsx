@@ -9,7 +9,9 @@ import {
 import { createPortal } from "react-dom";
 import type { SessionListItemWire } from "../../../vela-chat-client/src";
 import type { ChatRenderModel } from "../../../vela-chat-render-model/src";
+import { useVerticalScrollbarOverlay } from "../conversation-runtime/scrollbar/useVerticalScrollbarOverlay";
 import { buildSessionListRowModel } from "../session-list/sessionListRowModel";
+import styles from "../styles/desktop.module.css";
 import { ConversationPreviewSurface } from "../thumbnail/ConversationPreviewSurface";
 
 export interface SessionListSurfaceProps {
@@ -27,19 +29,42 @@ export function SessionListSurface({
   onArchiveSession,
   onSelectSession,
 }: SessionListSurfaceProps) {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLUListElement | null>(null);
+  const scrollbarOverlay = useVerticalScrollbarOverlay(scrollRef, {
+    contentRef,
+  });
+
   return (
-    <ul className="vela-sidebar-menu session-list" data-sidebar="menu" data-slot="session-list-surface">
-      {sessions.map((session) => (
-        <SessionListSurfaceItem
-          key={session.id}
-          session={session}
-          isActive={session.id === currentSessionId}
-          previewModel={sessionPreviews?.[session.id]}
-          onArchiveSession={onArchiveSession ? () => onArchiveSession(session.id) : undefined}
-          onSelect={() => onSelectSession(session.id)}
-        />
-      ))}
-    </ul>
+    <div
+      className={styles.sessionListScrollShell}
+      data-slot="session-list-scroll-shell"
+    >
+      <div
+        className={styles.sessionListScrollViewport}
+        data-slot="session-list-scroll-viewport"
+        ref={scrollRef}
+      >
+        <ul
+          className="vela-sidebar-menu session-list"
+          data-sidebar="menu"
+          data-slot="session-list-surface"
+          ref={contentRef}
+        >
+          {sessions.map((session) => (
+            <SessionListSurfaceItem
+              key={session.id}
+              session={session}
+              isActive={session.id === currentSessionId}
+              previewModel={sessionPreviews?.[session.id]}
+              onArchiveSession={onArchiveSession ? () => onArchiveSession(session.id) : undefined}
+              onSelect={() => onSelectSession(session.id)}
+            />
+          ))}
+        </ul>
+      </div>
+      {scrollbarOverlay}
+    </div>
   );
 }
 
