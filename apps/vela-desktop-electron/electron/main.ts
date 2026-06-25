@@ -43,7 +43,7 @@ const veladShutdownTimeoutMs = Number(runtimeEnv("VELA_DESKTOP_VELAD_SHUTDOWN_TI
 const veladRequestTimeoutMs = Number(runtimeEnv("VELA_DESKTOP_VELAD_REQUEST_TIMEOUT_MS") ?? 2_000);
 const macosChromeMetrics = {
   trafficLightPosition: { x: 18, y: 18 },
-  normalLeadingToolbarInset: 78,
+  normalLeadingToolbarInset: 86,
   fullscreenLeadingToolbarInset: 54,
   normalToolbarCenterY: 24,
   normalToolbarIconSize: 24,

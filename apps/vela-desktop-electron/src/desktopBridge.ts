@@ -455,7 +455,7 @@ function fallbackChromeState(platform: NodeJS.Platform): RuntimeChromeStateRespo
     reserveTrafficLightGutter: isMacos,
     toolbarCenterY: 28,
     toolbarIconSize: 24,
-    leadingToolbarInset: isMacos ? 84 : 16,
+    leadingToolbarInset: isMacos ? 86 : 16,
     toolbarSize: 28,
   };
 }
@@ -468,7 +468,7 @@ function browserChromeState(): RuntimeChromeStateResponse {
     reserveTrafficLightGutter: true,
     toolbarCenterY: 28,
     toolbarIconSize: 24,
-    leadingToolbarInset: 84,
+    leadingToolbarInset: 86,
     toolbarSize: 28,
   };
 }

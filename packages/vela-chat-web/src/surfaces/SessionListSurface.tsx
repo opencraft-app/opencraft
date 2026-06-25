@@ -207,21 +207,34 @@ function SessionListSurfaceItem({
             <span className="vela-session-title">{row.title}</span>
           </span>
           {row.compactPreview ? (
-            <span
-              className="vela-session-thumbnail-preview"
-              data-slot="session-thumbnail-preview"
-              aria-hidden="true"
-              inert
-            >
-              <ConversationPreviewSurface
-                model={row.compactPreview}
-                scale={0.09}
-              />
-            </span>
+            <>
+              {row.locationInfo ? (
+                <span className="vela-session-location" title={row.locationInfo.path}>
+                  {row.locationInfo.label}
+                </span>
+              ) : null}
+              <span
+                className="vela-session-thumbnail-preview"
+                data-slot="session-thumbnail-preview"
+                aria-hidden="true"
+                inert
+              >
+                <ConversationPreviewSurface
+                  model={row.compactPreview}
+                  scale={0.09}
+                />
+              </span>
+            </>
           ) : (
             <>
               <span className="vela-session-preview">{row.previewLabel}</span>
-              <span className="vela-session-meta">{row.metaLabel}</span>
+              {row.locationInfo ? (
+                <span className="vela-session-location" title={row.locationInfo.path}>
+                  {row.locationInfo.label}
+                </span>
+              ) : (
+                <span className="vela-session-meta">{row.metaLabel}</span>
+              )}
             </>
           )}
         </span>
