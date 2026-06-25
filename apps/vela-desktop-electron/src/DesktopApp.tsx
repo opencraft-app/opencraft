@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ChevronDown,
+  Code2,
+  Columns2,
+  ListChecks,
+  MoreHorizontal,
+  PanelRight,
+  RectangleHorizontal,
+} from "lucide-react";
+import {
   createFetchVelaEventStreamTransport,
   createVeladClient,
   resolveVeladFetch,
@@ -266,6 +275,10 @@ function DesktopReadyApp({
     options: DESKTOP_SESSION_LIST_OPTIONS,
   });
   const sessions = sessionList.data?.sessions ?? [];
+  const activeSessionTitle = useMemo(() => {
+    const title = sessions.find((session) => session.id === activeSessionId)?.title?.trim();
+    return title || "New chat";
+  }, [activeSessionId, sessions]);
   const controller = useVelaChatSession({
     client,
     baseUrl: apiBaseUrl,
@@ -498,32 +511,40 @@ function DesktopReadyApp({
           onSelectedBackendChange={setSelectedBackendKind}
         />
       ) : mainView === "chat" && activeSessionId ? (
-        <ChatSurface
-          canLoadOlder={controller.canLoadOlder}
-          clientStateStore={hostStateStores.clientStateStore}
-          composerControls={controller.composerControls}
-          draft={controller.draft}
-          error={controller.error ?? error}
-          historyPhase={controller.historyPhase}
-          isLoadingOlder={controller.isLoadingOlder}
-          isRespondingToRequest={controller.isRespondingToRequest}
-          isUpdatingComposerControls={controller.isUpdatingAgentConfig}
-          messageFollowToken={controller.messageFollowToken}
-          model={controller.model}
-          onAgentConfigChange={controller.updateAgentConfig}
-          onAttachImages={controller.attachImages}
-          onConversationScrollDebugChange={controller.setConversationScrollDebug}
-          onDraftChange={controller.setDraft}
-          onLoadOlder={controller.loadOlderConversation}
-          onRemoveAttachment={controller.removeAttachment}
-          onRemoveQueuedInput={controller.removeQueuedInput}
-          onRespondToRequest={respondToRequest}
-          onStop={controller.stop}
-          onSubmit={submitChatMessage}
-          pendingAttachments={controller.pendingAttachments}
-          queuedInputs={controller.queuedInputs}
-          voiceInput={hostBridge.voiceInput}
-        />
+        <div className="vela-chat-page">
+          <DesktopChatTopbar
+            isSidebarVisible={isSidebarVisible}
+            title={activeSessionTitle}
+            onOpenSettings={() => setIsSettingsOpen(true)}
+            onToggleSidebar={() => onSidebarVisibilityChange(!isSidebarVisible)}
+          />
+          <ChatSurface
+            canLoadOlder={controller.canLoadOlder}
+            clientStateStore={hostStateStores.clientStateStore}
+            composerControls={controller.composerControls}
+            draft={controller.draft}
+            error={controller.error ?? error}
+            historyPhase={controller.historyPhase}
+            isLoadingOlder={controller.isLoadingOlder}
+            isRespondingToRequest={controller.isRespondingToRequest}
+            isUpdatingComposerControls={controller.isUpdatingAgentConfig}
+            messageFollowToken={controller.messageFollowToken}
+            model={controller.model}
+            onAgentConfigChange={controller.updateAgentConfig}
+            onAttachImages={controller.attachImages}
+            onConversationScrollDebugChange={controller.setConversationScrollDebug}
+            onDraftChange={controller.setDraft}
+            onLoadOlder={controller.loadOlderConversation}
+            onRemoveAttachment={controller.removeAttachment}
+            onRemoveQueuedInput={controller.removeQueuedInput}
+            onRespondToRequest={respondToRequest}
+            onStop={controller.stop}
+            onSubmit={submitChatMessage}
+            pendingAttachments={controller.pendingAttachments}
+            queuedInputs={controller.queuedInputs}
+            voiceInput={hostBridge.voiceInput}
+          />
+        </div>
       ) : (
         <DesktopNewSessionPage
           backends={controller.backends}
@@ -538,6 +559,81 @@ function DesktopReadyApp({
         />
       )}
     </VelaDesktopShell>
+  );
+}
+
+interface DesktopChatTopbarProps {
+  title: string;
+  isSidebarVisible: boolean;
+  onOpenSettings: () => void;
+  onToggleSidebar: () => void;
+}
+
+function DesktopChatTopbar({
+  title,
+  isSidebarVisible,
+  onOpenSettings,
+  onToggleSidebar,
+}: DesktopChatTopbarProps) {
+  return (
+    <header className="vela-chat-topbar" data-window-drag-region="true">
+      <div className="vela-chat-topbar-title-group">
+        <h1 className="vela-chat-topbar-title">{title}</h1>
+        <button
+          type="button"
+          className="vela-chat-topbar-icon-button vela-chat-topbar-more"
+          aria-label="More chat actions"
+          title="More"
+        >
+          <MoreHorizontal size={22} strokeWidth={2.5} />
+        </button>
+      </div>
+      <div className="vela-chat-topbar-actions" role="toolbar" aria-label="Chat view controls">
+        <button
+          type="button"
+          className="vela-chat-topbar-backend-button"
+          aria-label="Agent backend"
+          title="Agent backend"
+          onClick={onOpenSettings}
+        >
+          <Code2 size={22} strokeWidth={2.45} />
+          <ChevronDown size={17} strokeWidth={2.4} />
+        </button>
+        <button
+          type="button"
+          className="vela-chat-topbar-icon-button"
+          aria-label="Queue"
+          title="Queue"
+        >
+          <ListChecks size={23} strokeWidth={2.25} />
+        </button>
+        <button
+          type="button"
+          className="vela-chat-topbar-icon-button"
+          aria-label={isSidebarVisible ? "Hide sidebar" : "Show sidebar"}
+          title={isSidebarVisible ? "Hide sidebar" : "Show sidebar"}
+          onClick={onToggleSidebar}
+        >
+          <PanelRight size={23} strokeWidth={2.25} />
+        </button>
+        <button
+          type="button"
+          className="vela-chat-topbar-icon-button"
+          aria-label="Compact view"
+          title="Compact view"
+        >
+          <RectangleHorizontal size={23} strokeWidth={2.2} />
+        </button>
+        <button
+          type="button"
+          className="vela-chat-topbar-icon-button"
+          aria-label="Split view"
+          title="Split view"
+        >
+          <Columns2 size={23} strokeWidth={2.2} />
+        </button>
+      </div>
+    </header>
   );
 }
 

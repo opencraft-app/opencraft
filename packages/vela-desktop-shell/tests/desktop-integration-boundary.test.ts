@@ -369,6 +369,32 @@ test("desktop app opens the work monitor from thumbnail activity and local send 
   assert.match(renderer, /onRespondToRequest=\{respondToRequest\}/);
 });
 
+test("desktop chat topbar stays in the electron host instead of reusable ChatUI", () => {
+  const renderer = readFileSync(
+    join(root, "apps/vela-desktop-electron/src/DesktopApp.tsx"),
+    "utf8",
+  );
+  const desktopCss = readFileSync(
+    join(root, "apps/vela-desktop-electron/src/style.css"),
+    "utf8",
+  );
+  const chatSurface = readFileSync(
+    join(root, "packages/vela-chat-web/src/surfaces/ChatSurface.tsx"),
+    "utf8",
+  );
+  const chatStyles = readFileSync(
+    join(root, "packages/vela-chat-web/src/styles/desktop.module.css"),
+    "utf8",
+  );
+
+  assert.match(renderer, /function DesktopChatTopbar/);
+  assert.match(renderer, /<DesktopChatTopbar/);
+  assert.match(renderer, /title=\{activeSessionTitle\}/);
+  assert.match(desktopCss, /\.vela-chat-topbar/);
+  assert.doesNotMatch(chatSurface, /DesktopChatTopbar|vela-chat-topbar/);
+  assert.doesNotMatch(chatStyles, /vela-chat-topbar/);
+});
+
 test("next web build excludes the standalone electron host from root type checking", () => {
   const tsconfig = readFileSync(join(root, "tsconfig.json"), "utf8");
 
