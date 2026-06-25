@@ -22,6 +22,17 @@ import {
 const METRICS_EPSILON = 0.5;
 const SCROLLBAR_VISIBLE_MS = 1200;
 const SCROLLBAR_ACTIVE_MS = 110;
+const USER_SCROLL_INTENT_MS = 300;
+const SCROLL_KEYS = new Set([
+  "ArrowDown",
+  "ArrowUp",
+  "End",
+  "Home",
+  "PageDown",
+  "PageUp",
+  " ",
+  "Spacebar",
+]);
 
 export type VerticalScrollbarUserIntent = "scroll_up" | "scroll_down" | "none";
 
@@ -80,6 +91,14 @@ function scrollIntentForOffsets(
   return "none";
 }
 
+function nowMs(): number {
+  return window.performance?.now?.() ?? Date.now();
+}
+
+function isScrollKey(event: KeyboardEvent): boolean {
+  return SCROLL_KEYS.has(event.key);
+}
+
 export function useVerticalScrollbarOverlay(
   elementRef: RefObject<HTMLElement | null>,
   options?: UseVerticalScrollbarOverlayOptions,
@@ -98,6 +117,7 @@ export function useVerticalScrollbarOverlay(
   const metricsRef = useRef<ScrollbarMetrics>(EMPTY_METRICS);
   const resizeSuppressFrameRef = useRef<number | null>(null);
   const suppressScrollRevealForResizeRef = useRef(false);
+  const userScrollIntentUntilRef = useRef(0);
   const dragStartClientYRef = useRef(0);
   const dragStartOffsetRef = useRef(0);
   const geometryRef = useRef<VerticalScrollbarGeometry>(
@@ -146,6 +166,14 @@ export function useVerticalScrollbarOverlay(
     }, SCROLLBAR_ACTIVE_MS);
   }, [clearActiveTimeout]);
 
+  const markUserScrollIntent = useCallback(() => {
+    userScrollIntentUntilRef.current = nowMs() + USER_SCROLL_INTENT_MS;
+  }, []);
+
+  const hasRecentUserScrollIntent = useCallback(() => {
+    return userScrollIntentUntilRef.current >= nowMs();
+  }, []);
+
   const commitOverlayScroll = useCallback(
     (input: { previousOffset: number; scrollTop: number }) => {
       const userIntent = scrollIntentForOffsets(input.previousOffset, input.scrollTop);
@@ -163,8 +191,15 @@ export function useVerticalScrollbarOverlay(
     const handleScroll = () => {
       updateMetrics();
       if (suppressScrollRevealForResizeRef.current) return;
+      if (!hasRecentUserScrollIntent()) return;
       revealFromScroll();
       markScrollActive();
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isScrollKey(event)) {
+        markUserScrollIntent();
+      }
     };
 
     const handleResize = () => {
@@ -180,6 +215,10 @@ export function useVerticalScrollbarOverlay(
     };
 
     element.addEventListener("scroll", handleScroll, { passive: true });
+    element.addEventListener("wheel", markUserScrollIntent, { passive: true });
+    element.addEventListener("touchstart", markUserScrollIntent, { passive: true });
+    element.addEventListener("touchmove", markUserScrollIntent, { passive: true });
+    element.addEventListener("keydown", handleKeyDown);
     const resizeObserver = new ResizeObserver(handleResize);
     resizeObserver.observe(element);
     if (contentRef?.current) {
@@ -189,6 +228,10 @@ export function useVerticalScrollbarOverlay(
 
     return () => {
       element.removeEventListener("scroll", handleScroll);
+      element.removeEventListener("wheel", markUserScrollIntent);
+      element.removeEventListener("touchstart", markUserScrollIntent);
+      element.removeEventListener("touchmove", markUserScrollIntent);
+      element.removeEventListener("keydown", handleKeyDown);
       resizeObserver.disconnect();
       if (resizeSuppressFrameRef.current !== null) {
         window.cancelAnimationFrame(resizeSuppressFrameRef.current);
@@ -200,6 +243,8 @@ export function useVerticalScrollbarOverlay(
     contentRef,
     elementRef,
     enabled,
+    hasRecentUserScrollIntent,
+    markUserScrollIntent,
     markScrollActive,
     revealFromScroll,
     updateMetrics,
