@@ -8,5 +8,6 @@ export function VelaChatWeb(props: VelaChatWebProps) {
 
 export * from "./surfaces";
 export * from "./session-list";
+export * from "./session-location/sessionLocation";
 export * from "./new-session";
 export * from "./thumbnail";

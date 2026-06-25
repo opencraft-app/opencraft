@@ -307,6 +307,7 @@ test("desktop session list CSS follows the codex-style compact rail layout", () 
   assert.match(css, /\.search-box\s*\{[^}]*min-height:\s*34px;/s);
   assert.match(css, /\.sidebar-section-heading\s*\{[^}]*text-transform:\s*none;/s);
   assert.match(css, /\.vela-session-item\s*\{[^}]*position:\s*relative;/s);
+  assert.doesNotMatch(css, /--vela-session-rail-width/);
   assert.match(css, /\.vela-session-main\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/s);
   assert.match(css, /\.vela-session-main\s*\{[^}]*padding:\s*6px 58px 6px 8px;/s);
   assert.match(css, /\.vela-session-main\s*\{[^}]*min-height:\s*50px;/s);

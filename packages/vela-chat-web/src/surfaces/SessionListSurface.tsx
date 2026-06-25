@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { Folder } from "lucide-react";
 import type { SessionListItemWire } from "../../../vela-chat-client/src";
 import type { ChatRenderModel } from "../../../vela-chat-render-model/src";
 import { useVerticalScrollbarOverlay } from "../conversation-runtime/scrollbar/useVerticalScrollbarOverlay";
@@ -207,21 +208,36 @@ function SessionListSurfaceItem({
             <span className="vela-session-title">{row.title}</span>
           </span>
           {row.compactPreview ? (
-            <span
-              className="vela-session-thumbnail-preview"
-              data-slot="session-thumbnail-preview"
-              aria-hidden="true"
-              inert
-            >
-              <ConversationPreviewSurface
-                model={row.compactPreview}
-                scale={0.09}
-              />
-            </span>
+            <>
+              {row.locationInfo ? (
+                <span className="vela-session-location" title={row.locationInfo.path}>
+                  <Folder size={12} strokeWidth={2.1} aria-hidden="true" />
+                  <span>{row.locationInfo.label}</span>
+                </span>
+              ) : null}
+              <span
+                className="vela-session-thumbnail-preview"
+                data-slot="session-thumbnail-preview"
+                aria-hidden="true"
+                inert
+              >
+                <ConversationPreviewSurface
+                  model={row.compactPreview}
+                  scale={0.09}
+                />
+              </span>
+            </>
           ) : (
             <>
               <span className="vela-session-preview">{row.previewLabel}</span>
-              <span className="vela-session-meta">{row.metaLabel}</span>
+              {row.locationInfo ? (
+                <span className="vela-session-location" title={row.locationInfo.path}>
+                  <Folder size={12} strokeWidth={2.1} aria-hidden="true" />
+                  <span>{row.locationInfo.label}</span>
+                </span>
+              ) : (
+                <span className="vela-session-meta">{row.metaLabel}</span>
+              )}
             </>
           )}
         </span>

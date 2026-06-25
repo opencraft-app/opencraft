@@ -26,7 +26,11 @@ import {
   type ChatRenderModel,
   type ChatHostPolicy,
 } from "../../../packages/vela-chat-render-model/src";
-import { ChatSurface } from "../../../packages/vela-chat-web/src";
+import {
+  buildSessionLocationInfo,
+  ChatSurface,
+  type SessionLocationInfo,
+} from "../../../packages/vela-chat-web/src";
 import {
   SessionSidebar,
   VelaDesktopShell,

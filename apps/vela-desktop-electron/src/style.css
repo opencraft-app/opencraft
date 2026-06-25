@@ -658,6 +658,7 @@ body {
 
 .vela-session-title-row,
 .vela-session-preview,
+.vela-session-location,
 .vela-session-meta,
 .vela-session-rail {
   min-width: 0;
@@ -690,11 +691,30 @@ body {
   line-height: 1.25;
 }
 
+.vela-session-location,
 .vela-session-meta {
   color: #a2a7ae;
   font-size: 11px;
   font-weight: 430;
   line-height: 1.2;
+}
+
+.vela-session-location {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.vela-session-location svg {
+  flex: 0 0 auto;
+  stroke: currentColor;
+}
+
+.vela-session-location span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .vela-sidebar-resize-handle {

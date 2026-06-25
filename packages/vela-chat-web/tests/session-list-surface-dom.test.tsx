@@ -127,6 +127,38 @@ test("session action menu uses a portal layer outside the session item", async (
   }
 });
 
+test("session list rows show the folder location text", async () => {
+  const dom = installDomRuntime();
+  try {
+    const { SessionListSurface } = await import("../src");
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <SessionListSurface
+          sessions={[{ ...session, working_directory: "/Users/skipzhang/velalink" }]}
+          currentSessionId={session.id}
+          onSelectSession={() => {}}
+        />,
+      );
+    });
+
+    const location = document.querySelector<HTMLElement>(".vela-session-location");
+    assert.ok(location);
+    assert.equal(location.textContent, "velalink");
+    assert.equal(location.title, "/Users/skipzhang/velalink");
+    assert.ok(location.querySelector("svg"));
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 test("running session rows render a scaled thumbnail preview", async () => {
   const dom = installDomRuntime();
   try {
@@ -164,6 +196,8 @@ test("running session rows render a scaled thumbnail preview", async () => {
     assert.equal(item.dataset.hasThumbnail, "true");
     assert.equal(document.querySelector(".vela-session-preview"), null);
     assert.equal(document.querySelector(".vela-session-meta"), null);
+    assert.equal(document.querySelector(".vela-session-location")?.textContent, "velaChat");
+    assert.ok(document.querySelector(".vela-session-location svg"));
     assert.match(container.innerHTML, /transform:\s*scale\(0\.09\)/);
     assert.match(container.innerHTML, /width:\s*75\.6px/);
     assert.match(container.innerHTML, /height:\s*46\.8px/);

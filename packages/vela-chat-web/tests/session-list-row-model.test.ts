@@ -30,7 +30,24 @@ test("session list rail suppresses fresh recency labels", () => {
   );
 
   assert.equal(row.metaLabel, "codex · gpt-5.3");
+  assert.equal(row.locationInfo?.label, "velaChat");
   assert.equal(row.rail, null);
+});
+
+test("session list row model exposes folder location text", () => {
+  const row = buildSessionListRowModel({
+    ...baseSession,
+    preview: "",
+    working_directory: "/Users/skipzhang/velalink",
+  });
+
+  assert.equal(row.previewLabel, "velalink");
+  assert.deepEqual(row.locationInfo, {
+    ariaLabel: "位置：velalink",
+    kind: "local_folder",
+    label: "velalink",
+    path: "/Users/skipzhang/velalink",
+  });
 });
 
 test("session list rail uses compact recency after the fresh window", () => {

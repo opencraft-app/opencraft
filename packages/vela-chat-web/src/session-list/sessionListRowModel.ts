@@ -1,5 +1,9 @@
 import type { SessionListItemWire } from "../../../vela-chat-client/src";
 import type { ChatRenderModel } from "../../../vela-chat-render-model/src";
+import {
+  buildSessionLocationInfo,
+  type SessionLocationInfo,
+} from "../session-location/sessionLocation";
 
 export interface SessionListText {
   archiveChat: string;
@@ -30,6 +34,7 @@ export interface SessionListRowModel {
   title: string;
   previewLabel: string;
   metaLabel: string;
+  locationInfo: SessionLocationInfo | null;
   rail: SessionListRailModel | null;
   archiveActionLabel: string;
   archiveMenuLabel: string;
@@ -78,12 +83,14 @@ export function buildSessionListRowModel(
   const isFailed = session.activity ? projectedAttention === "error" : session.status === "failed";
   const compactPreview = isRunning || isWaiting ? (previewModel ?? null) : null;
   const title = session.title || session.id;
+  const locationInfo = buildSessionLocationInfo(session.working_directory);
 
   return {
     id: session.id,
     title,
-    previewLabel: sessionPreviewLabel(session),
+    previewLabel: sessionPreviewLabel(session, locationInfo),
     metaLabel: sessionMetaLabel(session),
+    locationInfo,
     rail: sessionRailModel(
       session.last_activity_at || session.updated_at,
       options.nowMs,
@@ -123,12 +130,14 @@ function sessionMetaLabel(session: SessionListItemWire) {
   return [backend, model].filter(Boolean).join(" · ");
 }
 
-function sessionPreviewLabel(session: SessionListItemWire) {
+function sessionPreviewLabel(
+  session: SessionListItemWire,
+  locationInfo: SessionLocationInfo | null,
+) {
   const preview = session.preview.trim();
   if (preview) return preview;
 
-  const cwd = session.working_directory.trim();
-  if (cwd) return cwd.split("/").filter(Boolean).at(-1) ?? cwd;
+  if (locationInfo) return locationInfo.label;
 
   return sessionMetaLabel(session);
 }
