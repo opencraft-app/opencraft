@@ -904,6 +904,27 @@ class ReleaseBundleContractTests(unittest.TestCase):
             "https://lightclaw.tech/auth/oauth/wechat/callback",
         )
 
+    def test_prod_lightclaw_auth_maps_github_platform_values(self) -> None:
+        expected_pairs = {
+            ("data.AUTH_GITHUB_CLIENT_ID", "data.LIGHTCLAW_GITHUB_CLIENT_ID"),
+            ("data.AUTH_GITHUB_REDIRECT_URI", "data.LIGHTCLAW_GITHUB_REDIRECT_URI"),
+        }
+        for env in ("shprod", "sgprod"):
+            with self.subTest(env=env):
+                kustomization_path = REPO_ROOT / f"argocd/services/lightclaw-auth/{env}/kustomization.yaml"
+                kustomization = yaml.safe_load(kustomization_path.read_text()) or {}
+                pairs = set()
+                for replacement in kustomization.get("replacements") or []:
+                    source = replacement.get("source") or {}
+                    for target in replacement.get("targets") or []:
+                        for field_path in target.get("fieldPaths") or []:
+                            pairs.add((source.get("fieldPath"), field_path))
+
+                self.assertTrue(
+                    expected_pairs.issubset(pairs),
+                    f"{env} must map GitHub platform values into lightclaw-auth-config",
+                )
+
     def test_local_templates_do_not_use_unsupported_top_level_concurrency(self) -> None:
         for template_path in sorted((REPO_ROOT / ".ci/templates").glob("*.yml")):
             with self.subTest(template=template_path.name):
