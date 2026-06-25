@@ -1,6 +1,8 @@
 import sys
+import tempfile
 import unittest
 from unittest import mock
+from types import SimpleNamespace
 from pathlib import Path
 
 
@@ -13,10 +15,13 @@ from contracts.build_release_image import (  # noqa: E402
     build_target,
     docker_daemon_available,
     docker_build_command,
+    image_for_target,
+    main,
     playground_frontend_auth_api_base_url,
     resolve_docker_build_args,
 )
 from contracts.bundles import ImageTarget  # noqa: E402
+from contracts.image_existence import ImageCheckResult  # noqa: E402
 
 
 class BuildReleaseImageTests(unittest.TestCase):
@@ -62,6 +67,21 @@ class BuildReleaseImageTests(unittest.TestCase):
         self.assertIn("VITE_AUTH_API_BASE_URL=https://api-sandbox-bj-7.lightclaw.tech", command)
         self.assertEqual(command[-1], "frontend")
 
+    def test_image_for_target_matches_docker_build_image_ref(self) -> None:
+        target = ImageTarget(
+            name="lightclaw-auth",
+            image_key=None,
+            dockerfile="user/auth/Dockerfile",
+            build_context=".",
+            image_repo="registry.example.com/lightclaw/lightclaw-auth",
+        )
+
+        image = image_for_target(target, "user-auth-abc123")
+        command = docker_build_command(target, image, "linux/amd64", {})
+
+        self.assertEqual(image, "registry.example.com/lightclaw/lightclaw-auth:user-auth-abc123")
+        self.assertIn(image, command)
+
     def test_docker_daemon_unavailable_when_binary_missing(self) -> None:
         with mock.patch("contracts.build_release_image.shutil.which", return_value=None):
             self.assertFalse(docker_daemon_available())
@@ -82,6 +102,99 @@ class BuildReleaseImageTests(unittest.TestCase):
                 build_target(target, "workers-test", "linux/amd64", True, {})
 
         run.assert_not_called()
+
+    def test_main_reuses_existing_remote_image_without_building(self) -> None:
+        target = ImageTarget(
+            name="lightclaw-auth",
+            image_key=None,
+            dockerfile="user/auth/Dockerfile",
+            build_context=".",
+            image_repo="registry.example.com/lightclaw/lightclaw-auth",
+        )
+        bundle = SimpleNamespace(
+            service="user-auth",
+            env="shprod",
+            image_targets=None,
+            dockerfile=target.dockerfile,
+            build_context=target.build_context,
+            image_repo=target.image_repo,
+        )
+        expected_image = "registry.example.com/lightclaw/lightclaw-auth:user-auth-abc123"
+
+        with tempfile.TemporaryDirectory() as tmp, \
+            mock.patch.object(sys, "argv", [
+                "build_release_image.py",
+                "--service", "user-auth",
+                "--env", "shprod",
+                "--tag", "user-auth-abc123",
+                "--push",
+                "--reuse-existing",
+                "--image-output-file", str(Path(tmp) / "image.txt"),
+            ]), \
+            mock.patch("contracts.build_release_image.load_manifest", return_value={}), \
+            mock.patch("contracts.build_release_image.load_bundle", return_value=bundle), \
+            mock.patch("contracts.build_release_image.require_build_metadata", return_value=bundle), \
+            mock.patch("contracts.build_release_image.verify_images", return_value=[
+                ImageCheckResult(expected_image, True, "sha256:auth"),
+            ]) as verify, \
+            mock.patch("contracts.build_release_image.build_target") as build:
+            self.assertEqual(main(), 0)
+
+            verify.assert_called_once_with([expected_image])
+            build.assert_not_called()
+            self.assertEqual((Path(tmp) / "image.txt").read_text().strip(), expected_image)
+
+    def test_main_builds_when_expected_remote_image_is_missing(self) -> None:
+        target = ImageTarget(
+            name="lightclaw-auth",
+            image_key=None,
+            dockerfile="user/auth/Dockerfile",
+            build_context=".",
+            image_repo="registry.example.com/lightclaw/lightclaw-auth",
+        )
+        bundle = SimpleNamespace(
+            service="user-auth",
+            env="shprod",
+            image_targets=None,
+            dockerfile=target.dockerfile,
+            build_context=target.build_context,
+            image_repo=target.image_repo,
+        )
+        expected_image = "registry.example.com/lightclaw/lightclaw-auth:user-auth-abc123"
+
+        with tempfile.TemporaryDirectory() as tmp, \
+            mock.patch.object(sys, "argv", [
+                "build_release_image.py",
+                "--service", "user-auth",
+                "--env", "shprod",
+                "--tag", "user-auth-abc123",
+                "--push",
+                "--reuse-existing",
+                "--image-output-file", str(Path(tmp) / "image.txt"),
+            ]), \
+            mock.patch("contracts.build_release_image.load_manifest", return_value={}), \
+            mock.patch("contracts.build_release_image.load_bundle", return_value=bundle), \
+            mock.patch("contracts.build_release_image.require_build_metadata", return_value=bundle), \
+            mock.patch("contracts.build_release_image.verify_images", return_value=[
+                ImageCheckResult(expected_image, False),
+            ]), \
+            mock.patch("contracts.build_release_image.build_target", return_value=expected_image) as build:
+            self.assertEqual(main(), 0)
+
+            build.assert_called_once_with(
+                ImageTarget(
+                    name="user-auth",
+                    image_key=None,
+                    dockerfile=target.dockerfile,
+                    build_context=target.build_context,
+                    image_repo=target.image_repo,
+                ),
+                "user-auth-abc123",
+                "linux/amd64",
+                True,
+                {},
+            )
+            self.assertEqual((Path(tmp) / "image.txt").read_text().strip(), expected_image)
 
 if __name__ == "__main__":
     unittest.main()
