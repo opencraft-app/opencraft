@@ -907,11 +907,7 @@ mod local {
                     }
                     "custom" => catalog.add_custom(tool)?,
                     "tool_search" => catalog.add_tool_search(tool)?,
-                    "web_search" | "image_generation" => {
-                        return Err(format!(
-                            "responses tool type {kind} cannot be represented by Chat Completions"
-                        ));
-                    }
+                    "web_search" | "image_generation" => {}
                     _ => return Err(format!("unsupported responses tool type {kind}")),
                 }
             }
@@ -1874,6 +1870,14 @@ stream_idle_timeout_ms = 300000
             })
         }
 
+        fn web_search_tool() -> Value {
+            json!({
+                "type": "web_search",
+                "external_web_access": false,
+                "search_context_size": "low",
+            })
+        }
+
         fn sse_values(body: &str) -> Vec<Value> {
             body.split("\n\n")
                 .filter_map(|frame| {
@@ -2086,6 +2090,38 @@ stream_idle_timeout_ms = 300000
                 ],
             );
             assert!(!body.contains("event: response.failed"));
+        }
+
+        #[test]
+        fn bridge_omits_optional_web_search_tool_for_chat_completions() {
+            let upstream = spawn_upstream(200, vec![chat_delta_finished_frame("done")]);
+            let bridge = ChatCompletionsBridge::start(ChatCompletionsBridgeConfig {
+                endpoint: format!("http://{}", upstream.addr),
+                api_key: "test-key".to_string(),
+                model: "default-model".to_string(),
+            })
+            .expect("start bridge");
+
+            let response = post_responses(
+                bridge.server.addr,
+                json!({
+                    "model": "requested-model",
+                    "input": "can you answer without browsing?",
+                    "tools": [web_search_tool()],
+                }),
+            );
+            let (_, body) = split_response(&response);
+            assert!(
+                !body.contains("event: response.failed"),
+                "optional web_search must not fail the bridge before the provider sees the request: {body}"
+            );
+            assert!(body.contains("event: response.completed"));
+
+            let upstream_body = upstream.received_json();
+            assert!(
+                upstream_body.get("tools").is_none(),
+                "web_search is a Responses built-in without a Chat Completions tool equivalent"
+            );
         }
 
         #[test]
@@ -2400,7 +2436,7 @@ stream_idle_timeout_ms = 300000
         }
 
         #[test]
-        fn bridge_rejects_responses_tools_without_chat_equivalent() {
+        fn bridge_rejects_unknown_responses_tool_types() {
             let bridge = ChatCompletionsBridge::start(ChatCompletionsBridgeConfig {
                 endpoint: "http://127.0.0.1:9".to_string(),
                 api_key: "test-key".to_string(),
@@ -2413,14 +2449,12 @@ stream_idle_timeout_ms = 300000
                 json!({
                     "model": "requested-model",
                     "input": "search",
-                    "tools": [{"type": "web_search"}],
+                    "tools": [{"type": "unsupported_test_tool"}],
                 }),
             );
             let (_, body) = split_response(&response);
             assert!(body.contains("event: response.failed"));
-            assert!(body.contains(
-                "responses tool type web_search cannot be represented by Chat Completions"
-            ));
+            assert!(body.contains("unsupported responses tool type unsupported_test_tool"));
         }
 
         #[test]
