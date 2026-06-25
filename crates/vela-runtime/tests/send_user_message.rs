@@ -790,6 +790,9 @@ async fn backend_output_append_failure_records_observable_error_detail() {
             .await
             .expect("store"),
     );
+    let observability = ObservabilityStore::connect(&database_url, None)
+        .await
+        .expect("observability");
     let trigger_pool = SqlitePoolOptions::new()
         .max_connections(1)
         .connect(&database_url)
@@ -809,9 +812,6 @@ async fn backend_output_append_failure_records_observable_error_detail() {
     .await
     .expect("create trigger");
 
-    let observability = ObservabilityStore::connect("sqlite::memory:", None)
-        .await
-        .expect("observability");
     let backend = Arc::new(MockBackendAdapter::new(vec![
         BackendOutput::event(
             EventType::ASSISTANT_MESSAGE_DELTA,
@@ -826,11 +826,7 @@ async fn backend_output_append_failure_records_observable_error_detail() {
         .await
         .expect("create session");
 
-    let trace = TraceContext {
-        trace_id: "11111111111111111111111111111111".to_string(),
-        span_id: "2222222222222222".to_string(),
-        trace_flags: "01".to_string(),
-    };
+    let trace = trace_context();
     let ack = runtime
         .send_user_message_with_trace(
             SendUserMessage {
@@ -844,18 +840,71 @@ async fn backend_output_append_failure_records_observable_error_detail() {
         .await
         .expect("send");
 
-    eventually_contains_event(&store, &session_id, EventType::TURN_FAILED).await;
-    let errors = eventually_observes_error(&observability).await;
-
-    assert!(matches!(ack, CommandAck::Accepted(_)));
+    let events = eventually_contains_event(&store, &session_id, EventType::TURN_FAILED).await;
+    let turn_failed = events
+        .iter()
+        .find(|event| event.event_type == EventType::TURN_FAILED)
+        .expect("turn.failed");
     assert!(
-        errors.iter().any(|error| {
-            error.trace_id.as_deref() == Some(trace.trace_id.as_str())
-                && error.name == "velad.backend.send"
-                && error.message.contains("failed to append backend output")
-                && error.message.contains("forced backend append failure")
-        }),
-        "backend append persistence failures must preserve the database error in observability, got {errors:#?}"
+        turn_failed.payload["error"]
+            .as_str()
+            .unwrap()
+            .contains("forced backend append failure")
+    );
+
+    let errors = eventually_contains_recent_error(&observability).await;
+    let backend_error = errors
+        .iter()
+        .find(|error| error.name == "velad.backend.send")
+        .expect("backend send error");
+    assert!(matches!(ack, CommandAck::Accepted(_)));
+    assert_eq!(backend_error.trace_id.as_deref(), Some(trace.trace_id.as_str()));
+    assert_eq!(backend_error.session_id.as_deref(), Some(session_id.as_str()));
+    assert_eq!(backend_error.backend.as_deref(), Some("pi"));
+    assert!(
+        backend_error
+            .message
+            .contains("forced backend append failure"),
+        "expected concrete append failure in recent errors, got {backend_error:?}"
+    );
+}
+
+#[tokio::test]
+async fn backend_completion_without_terminal_event_is_failed_and_observable() {
+    let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
+    let observability = ObservabilityStore::connect("sqlite::memory:", None)
+        .await
+        .expect("observability");
+    let backend = Arc::new(MockBackendAdapter::new(Vec::new()));
+    let runtime = Runtime::new(store.clone(), backend).with_observability(observability.clone());
+    let session_id = SessionId::from("ses_runtime_backend_missing_terminal");
+
+    runtime
+        .create_session(session_id.clone(), BackendKind::Pi, "/tmp/vela")
+        .await
+        .expect("create session");
+    runtime
+        .send_user_message_with_trace(
+            SendUserMessage {
+                session_id: session_id.clone(),
+                idempotency_key: "idem-missing-terminal".to_string(),
+                content: "hello".to_string(),
+                command_id: None,
+            },
+            Some(trace_context()),
+        )
+        .await
+        .expect("send");
+
+    eventually_contains_event(&store, &session_id, EventType::TURN_FAILED).await;
+    let errors = eventually_contains_recent_error(&observability).await;
+    let backend_error = errors
+        .iter()
+        .find(|error| error.name == "velad.backend.send")
+        .expect("backend send error");
+    assert_eq!(
+        backend_error.message,
+        "backend completed without a terminal turn event"
     );
 }
 
@@ -1263,12 +1312,12 @@ async fn eventually_contains_event(
     .unwrap_or_else(|_| panic!("event {event_type:?} should be persisted"))
 }
 
-async fn eventually_observes_error(
-    store: &ObservabilityStore,
+async fn eventually_contains_recent_error(
+    observability: &ObservabilityStore,
 ) -> Vec<vela_observability::ErrorRecord> {
     timeout(Duration::from_millis(500), async {
         loop {
-            let errors = store.recent_errors(10).await.expect("errors");
+            let errors = observability.recent_errors(10).await.expect("errors");
             if !errors.is_empty() {
                 return errors;
             }
@@ -1276,5 +1325,13 @@ async fn eventually_observes_error(
         }
     })
     .await
-    .unwrap_or_else(|_| panic!("observability error should be persisted"))
+    .expect("recent observability error should be persisted")
+}
+
+fn trace_context() -> TraceContext {
+    TraceContext {
+        trace_id: "4bf92f3577b34da6a3ce929d0e0e4736".to_string(),
+        span_id: "00f067aa0ba902b7".to_string(),
+        trace_flags: "01".to_string(),
+    }
 }

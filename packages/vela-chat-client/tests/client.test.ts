@@ -268,11 +268,19 @@ test("fetch event stream transport reports normal stream completion", async () =
   const events: string[] = [];
   let closeCount = 0;
   const requests: RequestInit[] = [];
-  const spans: Array<{ ended?: boolean; status?: { code: number; message?: string } }> = [];
+  const spans: Array<{
+    attributes: Record<string, string | number | boolean>;
+    ended?: boolean;
+    status?: { code: number; message?: string };
+  }> = [];
+  const logs: Array<{ body: string; severityText?: string; attributes?: Record<string, unknown> }> = [];
   const observability = {
     startSpan() {
       const span = {
-        setAttribute() {},
+        attributes: {} as Record<string, string | number | boolean>,
+        setAttribute(key: string, value: string | number | boolean) {
+          this.attributes[key] = value;
+        },
         setStatus(status: { code: number; message?: string }) {
           this.status = status;
         },
@@ -287,11 +295,14 @@ test("fetch event stream transport reports normal stream completion", async () =
     traceparent() {
       return "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
     },
+    emitLog(record: { body: string; severityText?: string; attributes?: Record<string, unknown> }) {
+      logs.push(record);
+    },
   };
   const transport = createFetchVelaEventStreamTransport(async (_url, init) => {
     requests.push(init ?? {});
     return new Response(
-      'event: turn.completed\ndata: {"type":"turn.completed","event_id":"evt_1","epoch":1,"seq":1}\n\n',
+      'event: turn.completed\ndata: {"type":"turn.completed","event_id":"evt_1","epoch":1,"seq":1,"session_id":"sess_1","payload":{"turn_id":"turn_1"}}\n\n',
       { status: 200, headers: { "Content-Type": "text/event-stream" } },
     );
   }, {
@@ -314,6 +325,11 @@ test("fetch event stream transport reports normal stream completion", async () =
     "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
   );
   assert.equal(spans[0].ended, true);
+  assert.equal(spans[0].attributes["velad.stream.last_event_type"], "turn.completed");
+  assert.equal(spans[0].attributes["velad.stream.last_event_id"], "evt_1");
+  assert.equal(logs[0]?.body, "renderer received turn.completed");
+  assert.equal(logs[0]?.attributes?.["velad.session_id"], "sess_1");
+  assert.equal(logs[0]?.attributes?.["velad.turn_id"], "turn_1");
 });
 
 test("builds diff review view URLs", () => {
