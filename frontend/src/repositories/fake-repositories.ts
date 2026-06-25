@@ -30,6 +30,11 @@ import type {
 
 const NETWORK_DELAY_MS = 320;
 const FAKE_AUTH_STORAGE_KEY = "lightclaw-fake-auth-v1";
+const LOCAL_PREVIEW_AUTH_ENABLED =
+  (typeof process !== "undefined" && process.env.NEXT_PUBLIC_LOCAL_PREVIEW_AUTH === "1")
+  || (typeof process !== "undefined" && process.env.VITE_LOCAL_PREVIEW_AUTH === "1")
+  || import.meta.env?.VITE_LOCAL_PREVIEW_AUTH === "1";
+const LOCAL_PREVIEW_BOT_ID = "bot_local_preview";
 
 // 重置配置相关的假数据常量
 const FAKE_RESET_PROVIDER_NAME = "custom";
@@ -178,6 +183,26 @@ const seedMessagesFor = (botId: string) => {
       createdAt: nowIso(),
     },
   ]);
+};
+
+const ensureLocalPreviewBot = (): Bot | null => {
+  if (!LOCAL_PREVIEW_AUTH_ENABLED) return null;
+  const existing = botStore.get(LOCAL_PREVIEW_BOT_ID) ?? [...botStore.values()][0];
+  if (existing) return existing;
+
+  const bot: Bot = {
+    id: LOCAL_PREVIEW_BOT_ID,
+    name: "我的Hermes",
+    type: "support",
+    template: "通用对话模板",
+    mission: "本地预览 Agent 控制台",
+    scenario: "本地预览",
+    createdAt: nowIso(),
+    status: "active",
+  };
+  botStore.set(bot.id, bot);
+  seedMessagesFor(bot.id);
+  return bot;
 };
 
 const versionsFor = (botId: string): BotVersion[] => [
@@ -343,7 +368,13 @@ export const createFakeRepositories = (): Repositories => {
       },
       async getSession() {
         await wait(NETWORK_DELAY_MS);
-        return readStoredAuthSession();
+        const session = readStoredAuthSession();
+        if (session) return session;
+        if (!LOCAL_PREVIEW_AUTH_ENABLED) return null;
+
+        const previewSession = toSessionSnapshot(mockUser({ name: "本地预览用户", phone: "13800138000" }));
+        writeStoredAuthSession(previewSession);
+        return previewSession;
       },
       async getProfile() {
         await wait(NETWORK_DELAY_MS);
@@ -799,6 +830,7 @@ const createBotRepository = (): BotRepository => {
   return {
     async getDashboardSnapshot(mode = "live") {
       await assertMode(mode);
+      ensureLocalPreviewBot();
 
       if (mode === "empty") {
         return {
@@ -973,7 +1005,7 @@ const createBotRepository = (): BotRepository => {
 
     async getSettingsSnapshot(botId, mode = "live") {
       await assertMode(mode);
-      const bot = botStore.get(botId);
+      const bot = botStore.get(botId) ?? (botId === LOCAL_PREVIEW_BOT_ID ? ensureLocalPreviewBot() : null);
 
       if (!bot) {
         throw new Error("请先在仪表盘创建 Bot，再进入设置中心。");

@@ -28,11 +28,11 @@ export function ProductReturnHomeHeader({
   reloadLanguageAfterSwitch = false,
   renderLink = renderAppHeaderLink,
 }: ProductReturnHomeHeaderProps) {
-  const { isAuthenticated: isLoggedIn } = useSession();
+  const { authReady, isAuthenticated: isLoggedIn } = useSession();
 
   return (
     <PublicSiteHeader
-      authSnapshot={{ authReady: true, isAuthenticated: isLoggedIn }}
+      authSnapshot={{ authReady, isAuthenticated: isLoggedIn }}
       position="fixed"
       reloadLanguageAfterSwitch={reloadLanguageAfterSwitch}
       renderLink={renderLink}

@@ -75,6 +75,8 @@ const appearanceClass: Record<HeaderAppearance, string> = {
   solid: "border-b border-black/5 bg-white/90 backdrop-blur-[20px]",
 };
 
+const headerContentClass = "relative mx-auto flex h-[60px] max-w-[1600px] items-center justify-between px-6 md:px-[80px]";
+
 const textClass: Record<HeaderAppearance, string> = {
   immersive: "text-black/90",
   solid: "text-black/90",
@@ -225,7 +227,7 @@ export function PublicSiteHeader({
   const textColorClass = textClass[appearance];
   const handleCreateClick = onCreateClick ?? onLoginClick;
   const createHref = "/agents";
-  const loginHref = "/agents";
+  const loginHref = "/auth/sign-in";
   const renderLanguage = (variant: LanguageSwitcherVariant) => (
     renderLanguageSwitcher
       ? renderLanguageSwitcher({ activeLocale: locale, reloadAfterSwitch: reloadLanguageAfterSwitch, variant })
@@ -272,7 +274,7 @@ export function PublicSiteHeader({
     <header
       className={cn("lw-public-site-header", positionClass[position], appearanceClass[appearance], className)}
     >
-      <div className="relative mx-auto flex h-[60px] max-w-[1440px] items-center justify-between px-6 md:px-10 lg:px-[80px]">
+      <div className={headerContentClass}>
         {renderHeaderLink({
           href: logoHref,
           className: "flex shrink-0 items-center",

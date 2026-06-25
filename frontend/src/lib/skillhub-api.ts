@@ -22,7 +22,8 @@ interface SkillHubRuntimeEnv {
 export function resolveSkillHubApiBase(
   env: SkillHubRuntimeEnv | undefined = import.meta.env,
 ): string {
-  return env?.DEV ? "https://lightmake.cloud" : "https://api.skillhub.cn";
+  const isDev = env?.DEV ?? (typeof process !== "undefined" && process.env.NODE_ENV === "development");
+  return isDev ? "https://lightmake.cloud" : "https://api.skillhub.cn";
 }
 
 const SKILLHUB_API_BASE = resolveSkillHubApiBase();

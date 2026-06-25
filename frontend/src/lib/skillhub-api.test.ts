@@ -34,6 +34,7 @@ function mockFetch(payload: unknown, status = 200): typeof globalThis.fetch {
 describe("skillhub-api", () => {
   afterEach(() => {
     globalThis.fetch = ORIGINAL_FETCH;
+    vi.unstubAllEnvs();
   });
 
   describe("resolveSkillHubApiBase", () => {
@@ -43,6 +44,11 @@ describe("skillhub-api", () => {
 
     it("uses the official SkillHub API outside dev", () => {
       expect(resolveSkillHubApiBase({ DEV: false })).toBe("https://api.skillhub.cn");
+    });
+
+    it("treats Next development mode as local dev when Vite env is unavailable", () => {
+      vi.stubEnv("NODE_ENV", "development");
+      expect(resolveSkillHubApiBase(undefined)).toBe("https://lightmake.cloud");
     });
   });
 

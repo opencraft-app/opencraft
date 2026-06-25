@@ -7,7 +7,13 @@ import type { AgentSectionId, AgentSettingsSectionId } from '@/lib/agent-routes'
 
 import { AgentsRouteLoading, AppRouteShell } from './app-route-shell';
 
-export function AgentsPageClient({ sectionId }: { sectionId?: AgentSectionId }) {
+export function AgentsPageClient({
+  initialSectionSlug,
+  sectionId,
+}: {
+  initialSectionSlug?: string;
+  sectionId?: AgentSectionId;
+}) {
   const isWorkbench = sectionId === 'workbench';
   const loadingFallback = isWorkbench ? null : <AgentsRouteLoading />;
 
@@ -17,7 +23,11 @@ export function AgentsPageClient({ sectionId }: { sectionId?: AgentSectionId }) 
       {isWorkbench ? (
         <AgentsWorkbenchPage />
       ) : (
-        <AgentSettingsPage sectionId={sectionId as AgentSettingsSectionId | undefined} showHeader={false} />
+        <AgentSettingsPage
+          initialSectionSlug={initialSectionSlug}
+          sectionId={sectionId as AgentSettingsSectionId | undefined}
+          showHeader={false}
+        />
       )}
     </AppRouteShell>
   );
