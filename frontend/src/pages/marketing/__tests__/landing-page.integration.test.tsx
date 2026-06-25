@@ -16,6 +16,7 @@ vi.mock("@/contexts/session-context", () => ({
 vi.mock("@/contexts/openclaw-context", () => ({
   useOpenClaw: () => ({
     bots: [],
+    isSubscribed: false,
   }),
 }));
 
