@@ -132,6 +132,7 @@ function ControlMenu<T extends ComposerModelOption | ComposerOption | ComposerPe
         description: option.description,
       }))}
       placement="top-start"
+      popoverClassName={styles.shellSelectPopover}
       placeholder={label}
       tone={tone}
       value={selectedOption?.id}
