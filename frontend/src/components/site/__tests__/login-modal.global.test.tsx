@@ -65,15 +65,29 @@ describe("LoginModal (国际站 isGlobal=true)", () => {
     cleanup();
   });
 
-  it("仅展示 GitHub 入口，隐藏 Google / QQ / 微信", () => {
+  it("展示 Google / GitHub 入口，隐藏 QQ / 微信", () => {
     renderLoginModal();
 
     /* 国际站 i18n locale = en-US，按钮文案转为英文 */
+    expect(screen.getByRole("button", { name: "Sign in with Google" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sign in with GitHub" })).toBeInTheDocument();
-    /* Google 入口暂时下线（VISIBLE_OAUTH_PROVIDERS 不再包含 google） */
-    expect(screen.queryByRole("button", { name: "Sign in with Google" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Sign in with QQ/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Sign in with WeChat/ })).not.toBeInTheDocument();
+  });
+
+  it("勾选协议后点击 Google 跳转后端下发的 start URL", () => {
+    const redirectSpy = vi.spyOn(oauthModule, "redirectToOAuthStart").mockImplementation(() => undefined);
+
+    renderLoginModal();
+
+    const [agreeCheckbox] = screen.getAllByRole("checkbox");
+    expect(agreeCheckbox).toBeDefined();
+    fireEvent.click(agreeCheckbox as HTMLElement);
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign in with Google" }));
+
+    expect(redirectSpy).toHaveBeenNthCalledWith(1, "https://lightvela.com/auth/oauth/google/start");
+    redirectSpy.mockRestore();
   });
 
   it("勾选协议后点击 GitHub 跳转后端下发的 start URL", () => {
