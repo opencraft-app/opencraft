@@ -84,7 +84,6 @@ export function useConversationScrollbarOverlay(
   const onScrollCommit = options?.onScrollCommit;
   const onUserScrollIntent = options?.onUserScrollIntent;
   const [metrics, setMetrics] = useState<ScrollbarMetrics>(EMPTY_METRICS);
-  const [hovered, setHovered] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [scrollVisible, setScrollVisible] = useState(false);
   const [scrollActive, setScrollActive] = useState(false);
@@ -303,8 +302,8 @@ export function useConversationScrollbarOverlay(
     return null;
   }
 
-  const visible = dragging || hovered || scrollVisible;
-  const active = dragging || hovered || scrollActive;
+  const visible = dragging || scrollVisible;
+  const active = dragging || scrollActive;
 
   return (
     <div
@@ -316,8 +315,6 @@ export function useConversationScrollbarOverlay(
       <div
         className={styles.conversationScrollbarThumbHitbox}
         data-active={active ? "true" : "false"}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
         onPointerDown={startDrag}
         style={{
           height: `${geometry.thumbSize + 16}px`,

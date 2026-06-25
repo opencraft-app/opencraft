@@ -613,6 +613,7 @@ test("chat transcript hides native scrollbars behind a cross-platform overlay", 
   assert.match(overlaySource, /ResizeObserver/);
   assert.match(overlaySource, /applyConversationScrollWrite/);
   assert.match(overlaySource, /source:\s*"scrollbar_overlay"/);
+  assert.doesNotMatch(overlaySource, /setHovered|onMouseEnter|onMouseLeave|onPointerEnter|onPointerLeave/);
   assert.doesNotMatch(overlaySource, /\b(?:element|scrollElement|container)\.scrollTop\s*=/);
   assert.match(overlaySource, /computeScrollOffsetFromThumbOffset/);
   assert.match(conversation, /overscroll-behavior:\s*contain;/);
@@ -1424,7 +1425,7 @@ test("composer input frame matches the codex-desktop visual rhythm", () => {
   assert.match(rootBlock, /--vela-composer-bg:\s*rgb\(255 255 255 \/ 90%\);/);
   assert.match(rootBlock, /--vela-composer-blur:\s*16px;/);
   assert.match(rootBlock, /--vela-composer-shadow:\s*0 4px 16px 0 rgb\(0 0 0 \/ 5%\);/);
-  assert.match(rootBlock, /--vela-composer-max-width:\s*var\(--vela-thread-content-max-width,\s*920px\);/);
+  assert.match(rootBlock, /--vela-composer-max-width:\s*var\(--vela-thread-content-max-width,\s*860px\);/);
   assert.match(dockBlock, /padding:\s*0 24px var\(--vela-thread-floating-content-bottom-inset,\s*12px\);/);
   assert.match(frameBlock, /overflow:\s*hidden auto;/);
   assert.match(frameBlock, /border:\s*1px solid rgb\(13 13 13 \/ 10%\);/);
