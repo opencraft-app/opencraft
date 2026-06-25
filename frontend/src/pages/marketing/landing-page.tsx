@@ -18,7 +18,7 @@ import { isGlobal } from "@/lib/region";
 import { oauthErrorMessage } from "@/lib/oauth";
 import { captureProductEvent, PRODUCT_ANALYTICS_EVENTS, PRODUCT_ANALYTICS_LOCATIONS } from "@/observability/posthog";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
-import { AGENTS_HOME_PATH, getAgentCreatingPath } from "@/lib/agent-routes";
+import { AGENTS_HOME_PATH, SUBSCRIBE_PATH, getAgentCreatingPath } from "@/lib/agent-routes";
 
 import HeroSection from "@/imports/Frame2147230025/sections/HeroSection";
 import BrandIconsSection from "@/imports/Frame2147230025/sections/BrandIconsSection";
@@ -82,7 +82,7 @@ export const LandingPageView = ({
     }
     // 已登录但未订阅：先去订阅页
     if (!isSubscribed) {
-      navigateTo("/subscribe");
+      navigateTo(SUBSCRIBE_PATH);
       return;
     }
     // 已登录且已订阅：有智能体则进 agent 默认页（/agents），

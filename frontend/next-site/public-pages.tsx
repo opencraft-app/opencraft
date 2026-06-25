@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { AboutPage } from '@/pages/marketing/about-page';
 import { ChangelogPage } from '@/pages/marketing/changelog-page';
 import { LandingPageView } from '@/pages/marketing/landing-page';
+import { SUBSCRIBE_PATH } from '@/lib/agent-routes';
 
 import {
   DEFAULT_PUBLIC_ROUTE_LOCALE,
@@ -33,7 +34,7 @@ function useNextSearch() {
 // 在 Next `output: 'export'`（静态导出）下，App Router 对动态段路由
 // （如 /agents/[section]）的客户端软导航（router.push）会静默失败，
 // 表现为「点击无反应、URL 不变」。因此跳入产品壳一律使用整页硬跳转。
-const APP_SHELL_ROUTE_PREFIXES = ['/agents', '/account', '/subscribe', '/plan-select'];
+const APP_SHELL_ROUTE_PREFIXES = ['/agents', '/account', SUBSCRIBE_PATH, '/plan-select'];
 
 function isAppShellRoute(to: string): boolean {
   const path = to.split('?')[0].split('#')[0];
