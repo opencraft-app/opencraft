@@ -15,6 +15,8 @@ pub enum StoreError {
     Json(#[from] serde_json::Error),
     #[error("session not found: {0}")]
     SessionNotFound(String),
+    #[error("backend settings not found: {0}")]
+    BackendSettingsNotFound(String),
 }
 
 pub type Result<T> = std::result::Result<T, StoreError>;
@@ -43,6 +45,13 @@ pub struct StoredSession {
     pub epoch: i64,
     pub next_seq: i64,
     pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct StoredBackendSettings {
+    pub backend: String,
+    pub settings: Value,
     pub updated_at: DateTime<Utc>,
 }
 
@@ -134,6 +143,12 @@ impl SqliteEventStore {
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY(session_id, key)
             );
+
+            CREATE TABLE IF NOT EXISTS backend_settings (
+                backend TEXT PRIMARY KEY,
+                settings_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
             "#,
         )
         .execute(&self.pool)
@@ -145,6 +160,48 @@ impl SqliteEventStore {
         )
         .await?;
         Ok(())
+    }
+
+    pub async fn get_backend_settings(
+        &self,
+        backend: &str,
+    ) -> Result<Option<StoredBackendSettings>> {
+        let row = sqlx::query(
+            r#"
+            SELECT backend, settings_json, updated_at
+            FROM backend_settings
+            WHERE backend = ?1
+            "#,
+        )
+        .bind(backend)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        row.map(row_to_backend_settings).transpose()
+    }
+
+    pub async fn upsert_backend_settings(
+        &self,
+        backend: &str,
+        settings: Value,
+    ) -> Result<StoredBackendSettings> {
+        sqlx::query(
+            r#"
+            INSERT INTO backend_settings (backend, settings_json, updated_at)
+            VALUES (?1, ?2, CURRENT_TIMESTAMP)
+            ON CONFLICT(backend) DO UPDATE SET
+                settings_json = excluded.settings_json,
+                updated_at = CURRENT_TIMESTAMP
+            "#,
+        )
+        .bind(backend)
+        .bind(serde_json::to_string(&settings)?)
+        .execute(&self.pool)
+        .await?;
+
+        self.get_backend_settings(backend)
+            .await?
+            .ok_or_else(|| StoreError::BackendSettingsNotFound(backend.to_string()))
     }
 
     async fn ensure_column(&self, table: &str, column: &str, definition: &str) -> Result<()> {
@@ -528,6 +585,7 @@ fn row_to_event(row: sqlx::sqlite::SqliteRow) -> Result<CanonicalEvent> {
 fn row_to_session(row: sqlx::sqlite::SqliteRow) -> Result<StoredSession> {
     let backend = match row.try_get::<String, _>("backend")?.as_str() {
         "pi" => BackendKind::Pi,
+        "vela_engine" => BackendKind::VelaEngine,
         "codex" => BackendKind::Codex,
         "claude" => BackendKind::Claude,
         "acp" => BackendKind::Acp,
@@ -549,6 +607,14 @@ fn row_to_session(row: sqlx::sqlite::SqliteRow) -> Result<StoredSession> {
         next_seq: row.try_get("next_seq")?,
         created_at,
         updated_at,
+    })
+}
+
+fn row_to_backend_settings(row: sqlx::sqlite::SqliteRow) -> Result<StoredBackendSettings> {
+    Ok(StoredBackendSettings {
+        backend: row.try_get("backend")?,
+        settings: serde_json::from_str(&row.try_get::<String, _>("settings_json")?)?,
+        updated_at: parse_sqlite_datetime(row.try_get("updated_at")?),
     })
 }
 

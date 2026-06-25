@@ -4,6 +4,8 @@ import type {
   ArchiveSessionWireResponse,
   BackendKindWire,
   BackendProbeResultWire,
+  BackendSettingsPatchWire,
+  BackendSettingsWireResponse,
   BackendWireResponse,
   BackendsWireResponse,
   ClientInputPart,
@@ -30,6 +32,7 @@ import {
   encodeSessionId,
   normalizeBaseUrl,
   readBackendProbeResponse,
+  readBackendSettingsResponse,
   readBackendResponse,
   readBackendsResponse,
   readCommandAckResponse,
@@ -44,6 +47,7 @@ import {
   readUpdateAgentConfigResponse,
   validateAfterId,
   validateAgentConfigPatch,
+  validateBackendSettingsPatch,
   validateClientInputEvents,
   validateConversationWindowOptions,
   validateCreateSessionInput,
@@ -62,6 +66,11 @@ export interface VeladClient {
   getBackends: () => Promise<BackendsWireResponse>;
   getBackend: (backend: BackendKindWire) => Promise<BackendWireResponse>;
   probeBackend: (backend: BackendKindWire) => Promise<BackendProbeResultWire>;
+  getBackendSettings: (backend: BackendKindWire) => Promise<BackendSettingsWireResponse>;
+  updateBackendSettings: (
+    backend: BackendKindWire,
+    patch: BackendSettingsPatchWire,
+  ) => Promise<BackendSettingsWireResponse>;
   updateAgentConfig: (input: {
     sessionId: string;
     patch: AgentConfigPatchWire;
@@ -254,6 +263,23 @@ export function createVeladClient(options: VeladClientOptions): VeladClient {
       const url = new URL(`backends/${encodeBackendKind(backend)}/probe`, baseUrl);
       const response = await observedFetch("velad.backend.probe", url, { method: "POST" }, { "velad.backend": backend });
       return readBackendProbeResponse(response);
+    },
+    async getBackendSettings(backend) {
+      const url = new URL(`backends/${encodeBackendKind(backend)}/settings`, baseUrl);
+      const response = await observedFetch("velad.backend.settings.get", url, {}, { "velad.backend": backend });
+      return readBackendSettingsResponse(response);
+    },
+    async updateBackendSettings(backend, patch) {
+      validateBackendSettingsPatch(patch);
+      const url = new URL(`backends/${encodeBackendKind(backend)}/settings`, baseUrl);
+      const response = await observedFetch("velad.backend.settings.update", url, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(patch),
+      }, { "velad.backend": backend });
+      return readBackendSettingsResponse(response);
     },
     async updateAgentConfig({ sessionId, patch, idempotencyKey }) {
       validateAgentConfigPatch(patch);

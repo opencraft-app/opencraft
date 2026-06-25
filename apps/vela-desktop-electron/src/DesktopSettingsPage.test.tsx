@@ -29,11 +29,33 @@ function codexBackend() {
   };
 }
 
+function testClient() {
+  return {
+    getBackendSettings: async () => ({
+      schema: "velad.backend_settings.v1",
+      backend: "vela_engine",
+      settings: { endpoint: "", api_key_set: false, model: "" },
+      status: "unconfigured",
+      missing_fields: ["endpoint", "api_key", "model"],
+      updated_at: null,
+    }),
+    updateBackendSettings: async () => ({
+      schema: "velad.backend_settings.v1",
+      backend: "vela_engine",
+      settings: { endpoint: "", api_key_set: false, model: "" },
+      status: "unconfigured",
+      missing_fields: ["endpoint", "api_key", "model"],
+      updated_at: null,
+    }),
+  } as any;
+}
+
 test("desktop general settings stay separate from engine configuration", () => {
   const html = renderToStaticMarkup(
     <DesktopSettingsPage
       apiBaseUrl="/api/v1"
       backends={[codexBackend()]}
+      client={testClient()}
       hostLabel="Browser preview"
       appVersion="0.0.1"
       activePanel="general"
@@ -64,6 +86,7 @@ test("desktop engine settings render in their own sidebar tab", () => {
     <DesktopSettingsPage
       apiBaseUrl="/api/v1"
       backends={[codexBackend()]}
+      client={testClient()}
       hostLabel="Browser preview"
       appVersion="0.0.1"
       activePanel="engine"
@@ -116,6 +139,7 @@ test("desktop settings renders about panel with current version", () => {
       appVersion="0.0.7"
       activePanel="about"
       backends={[]}
+      client={testClient()}
       hostLabel="Browser preview"
       selectedBackend=""
       sessionsCount={0}

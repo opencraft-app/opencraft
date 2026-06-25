@@ -6,13 +6,10 @@ import { VelaLocalTracer } from "../../../packages/vela-observability-client/src
 import {
   buildRuntimeProcessEnv,
   readDesktopSettings,
-  readVelaEngineSettings,
   RotatingLogWriter,
   runtimeLogPath,
-  velaEngineSettingsEnv,
   VeladRuntimeManager,
   writeDesktopSettings,
-  writeVelaEngineSettings,
 } from "./runtime";
 import { WorkMonitorWindowManager } from "./work-monitor";
 
@@ -69,10 +66,6 @@ const observability = new VelaLocalTracer({
   timeoutMs: veladRequestTimeoutMs,
 });
 const runtimeProcessEnv = buildRuntimeProcessEnv();
-Object.assign(
-  runtimeProcessEnv.env,
-  velaEngineSettingsEnv(readVelaEngineSettings(app.getPath("userData"))),
-);
 const veladRuntime = new VeladRuntimeManager({
   host: app,
   resourcesPath: process.resourcesPath,
@@ -272,26 +265,6 @@ ipcMain.handle("vela:desktop-bootstrap-retry", async () => {
       platform: process.platform,
     };
   }
-});
-
-ipcMain.handle("vela:engine-settings-get", async () =>
-  readVelaEngineSettings(app.getPath("userData")),
-);
-
-ipcMain.handle("vela:engine-settings-set", async (_event, patch: unknown) => {
-  if (!isRecord(patch)) {
-    throw new Error("Vela engine settings patch must be an object");
-  }
-  const nextPatch: Record<string, string> = {};
-  if (typeof patch.endpoint === "string") nextPatch.endpoint = patch.endpoint;
-  if (typeof patch.apiKey === "string") nextPatch.apiKey = patch.apiKey;
-  if (typeof patch.model === "string") nextPatch.model = patch.model;
-  const next = writeVelaEngineSettings(app.getPath("userData"), nextPatch);
-  delete runtimeProcessEnv.env.VELAD_VELA_ENGINE_ENDPOINT;
-  delete runtimeProcessEnv.env.VELAD_VELA_ENGINE_API_KEY;
-  delete runtimeProcessEnv.env.VELAD_VELA_ENGINE_MODEL;
-  Object.assign(runtimeProcessEnv.env, velaEngineSettingsEnv(next));
-  return next;
 });
 
 ipcMain.handle("vela:desktop-settings-get", async () =>

@@ -37,15 +37,27 @@ async fn main() -> anyhow::Result<()> {
         .with_backend(BackendKind::Codex, codex_backend)
         .with_backend(BackendKind::Acp, acp_backend);
     #[cfg(feature = "embedded-vela-engine")]
-    let (backend, vela_engine_default_model) = {
+    let (backend, vela_engine_default_model, vela_engine_updater) = {
         let vela_engine = vela_engine_from_env(backend_cwd.clone());
-        let default_model = vela_engine
-            .config()
+        if let Some(settings) = load_stored_vela_engine_settings(&store).await? {
+            vela_engine.update_config(vela_engine_config_from_settings(
+                settings,
+                backend_cwd.clone(),
+            ));
+        }
+        let vela_engine_config = vela_engine.config();
+        let default_model = vela_engine_config
             .is_configured()
-            .then(|| vela_engine.config().model.clone());
+            .then(|| vela_engine_config.model.clone());
+        let vela_engine = Arc::new(vela_engine);
+        let updater = Arc::new(VelaEngineSettingsUpdater {
+            adapter: Arc::clone(&vela_engine),
+            cwd: backend_cwd.clone(),
+        });
         (
-            backend.with_backend(BackendKind::VelaEngine, Arc::new(vela_engine)),
+            backend.with_backend(BackendKind::VelaEngine, vela_engine),
             default_model,
+            updater,
         )
     };
     let backend = Arc::new(backend);
@@ -61,6 +73,8 @@ async fn main() -> anyhow::Result<()> {
         .with_observability(observability);
     #[cfg(feature = "embedded-vela-engine")]
     let state = state.with_vela_engine_backend(vela_engine_default_model);
+    #[cfg(feature = "embedded-vela-engine")]
+    let state = state.with_backend_settings_updater(vela_engine_updater);
     let app = velad::build_app(state.with_local_runtime(
         velad::local_runtime::LocalRuntimeState::new(ready.clone(), config.management_token),
         shutdown_tx,
@@ -170,6 +184,60 @@ fn vela_engine_from_env(cwd: String) -> vela_engine::VelaEngineBackendAdapter {
     vela_engine::VelaEngineBackendAdapter::new(vela_engine::VelaEngineConfig::new(
         endpoint, api_key, model, cwd,
     ))
+}
+
+#[cfg(feature = "embedded-vela-engine")]
+struct VelaEngineSettingsUpdater {
+    adapter: Arc<vela_engine::VelaEngineBackendAdapter>,
+    cwd: String,
+}
+
+#[cfg(feature = "embedded-vela-engine")]
+impl velad::BackendSettingsUpdater for VelaEngineSettingsUpdater {
+    fn update_vela_engine(&self, settings: velad::VelaEngineBackendSettings) {
+        self.adapter
+            .update_config(vela_engine_config_from_settings(settings, self.cwd.clone()));
+    }
+}
+
+#[cfg(feature = "embedded-vela-engine")]
+async fn load_stored_vela_engine_settings(
+    store: &SqliteEventStore,
+) -> anyhow::Result<Option<velad::VelaEngineBackendSettings>> {
+    Ok(store
+        .get_backend_settings("vela_engine")
+        .await?
+        .map(|stored| vela_engine_settings_from_json(stored.settings)))
+}
+
+#[cfg(feature = "embedded-vela-engine")]
+fn vela_engine_settings_from_json(value: serde_json::Value) -> velad::VelaEngineBackendSettings {
+    let object = value.as_object();
+    velad::VelaEngineBackendSettings {
+        endpoint: object
+            .and_then(|object| object.get("endpoint"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        api_key: object
+            .and_then(|object| object.get("api_key"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        model: object
+            .and_then(|object| object.get("model"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+    }
+}
+
+#[cfg(feature = "embedded-vela-engine")]
+fn vela_engine_config_from_settings(
+    settings: velad::VelaEngineBackendSettings,
+    cwd: String,
+) -> vela_engine::VelaEngineConfig {
+    vela_engine::VelaEngineConfig::new(settings.endpoint, settings.api_key, settings.model, cwd)
 }
 
 fn load_local_env_files() {

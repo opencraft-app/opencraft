@@ -9,6 +9,7 @@ export * from "./stream";
 export * from "./wire";
 export {
   parseBackendProbeResultWire,
+  parseBackendSettingsWireResponse,
   parseBackendWireResponse,
   parseBackendsWireResponse,
   parseCommandAckWire,

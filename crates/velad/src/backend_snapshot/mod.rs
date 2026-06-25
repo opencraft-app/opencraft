@@ -222,13 +222,19 @@ where
         .await;
     match model_result {
         Ok(models) if !models.is_empty() => discovered_models(backend, models),
-        Ok(_) if backend.kind == "codex" || backend.kind == "vela_engine" => model_error(
+        Ok(_) if backend.kind == "vela_engine" => {
+            model_unconfigured("Vela Engine endpoint, key, and model are not configured")
+        }
+        Ok(_) if backend.kind == "codex" => model_error(
             "no_models_discovered",
             "model_discovery",
             format!("no models discovered for backend {}", backend.kind),
         ),
         Ok(_) => configured_or_empty_models(backend, None),
-        Err(error) if backend.kind == "codex" || backend.kind == "vela_engine" => model_error(
+        Err(error) if backend.kind == "vela_engine" => {
+            model_unconfigured(format!("Vela Engine model discovery failed: {error}"))
+        }
+        Err(error) if backend.kind == "codex" => model_error(
             "model_discovery_failed",
             "model_discovery",
             format!("model discovery failed: {error}"),
@@ -236,6 +242,22 @@ where
         Err(error) => {
             configured_or_empty_models(backend, Some(format!("model discovery failed: {error}")))
         }
+    }
+}
+
+fn model_unconfigured(message: impl Into<String>) -> ModelDiscovery {
+    let message = message.into();
+    ModelDiscovery {
+        models: Vec::new(),
+        model_source: ModelSource::None,
+        status: BackendSnapshotStatus::Degraded,
+        status_message: Some(message.clone()),
+        error: Some(json!({
+            "code": "backend_unconfigured",
+            "stage": "backend_settings",
+            "message": message,
+        })),
+        configured_default_missing: false,
     }
 }
 

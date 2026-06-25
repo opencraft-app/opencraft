@@ -41,9 +41,14 @@ pub struct ApiState<B> {
     events: broadcast::Sender<CanonicalEvent>,
     default_session_model: Option<String>,
     configured_backends: Vec<ConfiguredBackend>,
+    backend_settings_updater: Option<Arc<dyn BackendSettingsUpdater>>,
     local_runtime: Option<local_runtime::LocalRuntimeState>,
     shutdown_tx: Option<tokio::sync::watch::Sender<bool>>,
     observability: Option<ObservabilityStore>,
+}
+
+pub trait BackendSettingsUpdater: Send + Sync {
+    fn update_vela_engine(&self, settings: VelaEngineBackendSettings);
 }
 
 impl<B> Clone for ApiState<B> {
@@ -54,6 +59,7 @@ impl<B> Clone for ApiState<B> {
             events: self.events.clone(),
             default_session_model: self.default_session_model.clone(),
             configured_backends: self.configured_backends.clone(),
+            backend_settings_updater: self.backend_settings_updater.clone(),
             local_runtime: self.local_runtime.clone(),
             shutdown_tx: self.shutdown_tx.clone(),
             observability: self.observability.clone(),
@@ -67,6 +73,13 @@ struct ConfiguredBackend {
     engine_kind: BackendKind,
     display_name: &'static str,
     default_model: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct VelaEngineBackendSettings {
+    pub endpoint: String,
+    pub api_key: String,
+    pub model: String,
 }
 
 impl ConfiguredBackend {
@@ -98,6 +111,7 @@ where
                 display_name: "PiCoding Agent",
                 default_model: None,
             }],
+            backend_settings_updater: None,
             local_runtime: None,
             shutdown_tx: None,
             observability: None,
@@ -168,6 +182,14 @@ where
             display_name: "Hermes ACP",
             default_model,
         });
+        self
+    }
+
+    pub fn with_backend_settings_updater(
+        mut self,
+        updater: Arc<dyn BackendSettingsUpdater>,
+    ) -> Self {
+        self.backend_settings_updater = Some(updater);
         self
     }
 
@@ -279,6 +301,10 @@ where
         .route("/api/v1/backends", get(list_backends::<B>))
         .route("/api/v1/backends/{backend}", get(get_backend::<B>))
         .route("/api/v1/backends/{backend}/probe", post(probe_backend::<B>))
+        .route(
+            "/api/v1/backends/{backend}/settings",
+            get(get_backend_settings::<B>).patch(patch_backend_settings::<B>),
+        )
         .route("/api/v1/runtime-info", get(get_runtime_info::<B>))
         .route("/api/v1/runtime/shutdown", post(shutdown_runtime::<B>))
         .route("/v1/traces", post(post_otlp_traces::<B>))
@@ -1820,6 +1846,206 @@ where
         }))
         .into_response(),
     }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VelaEngineBackendSettingsPatch {
+    endpoint: Option<String>,
+    api_key: Option<String>,
+    model: Option<String>,
+}
+
+async fn get_backend_settings<B>(
+    State(state): State<ApiState<B>>,
+    Path(backend): Path<String>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    if let Err(response) = ensure_backend_settings_supported(&state, &backend) {
+        return response;
+    }
+    let (settings, updated_at) = match state.store.get_backend_settings("vela_engine").await {
+        Ok(Some(stored)) => (
+            vela_engine_backend_settings_from_json(stored.settings),
+            Some(stored.updated_at.to_rfc3339()),
+        ),
+        Ok(None) => (VelaEngineBackendSettings::default(), None),
+        Err(err) => {
+            return error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "backend_settings_read_failed",
+                err.to_string(),
+            );
+        }
+    };
+    Json(vela_engine_backend_settings_json(
+        &backend, &settings, updated_at,
+    ))
+    .into_response()
+}
+
+async fn patch_backend_settings<B>(
+    State(state): State<ApiState<B>>,
+    Path(backend): Path<String>,
+    request: Result<Json<VelaEngineBackendSettingsPatch>, JsonRejection>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    if let Err(response) = ensure_backend_settings_supported(&state, &backend) {
+        return response;
+    }
+    let patch = match request {
+        Ok(Json(patch)) => patch,
+        Err(rejection) => return invalid_request(rejection.to_string()),
+    };
+    let mut settings = match load_vela_engine_backend_settings(&state).await {
+        Ok(settings) => settings,
+        Err(response) => return response,
+    };
+    if let Some(endpoint) = patch.endpoint {
+        settings.endpoint = endpoint.trim().to_string();
+    }
+    if let Some(api_key) = patch.api_key {
+        settings.api_key = api_key.trim().to_string();
+    }
+    if let Some(model) = patch.model {
+        settings.model = model.trim().to_string();
+    }
+
+    if let Some(updater) = &state.backend_settings_updater {
+        updater.update_vela_engine(settings.clone());
+    }
+    let stored = match state
+        .store
+        .upsert_backend_settings(
+            &backend,
+            vela_engine_backend_settings_storage_json(&settings),
+        )
+        .await
+    {
+        Ok(stored) => stored,
+        Err(err) => {
+            return error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "backend_settings_write_failed",
+                err.to_string(),
+            );
+        }
+    };
+    Json(vela_engine_backend_settings_json(
+        &backend,
+        &settings,
+        Some(stored.updated_at.to_rfc3339()),
+    ))
+    .into_response()
+}
+
+fn ensure_backend_settings_supported<B>(state: &ApiState<B>, backend: &str) -> Result<(), Response>
+where
+    B: BackendAdapter + 'static,
+{
+    let Some(configured) = state
+        .configured_backends
+        .iter()
+        .find(|item| item.kind == backend)
+    else {
+        return Err(error(
+            StatusCode::NOT_FOUND,
+            "backend_not_found",
+            "backend is not configured",
+        ));
+    };
+    if configured.kind != "vela_engine" {
+        return Err(error(
+            StatusCode::NOT_FOUND,
+            "backend_settings_not_supported",
+            "backend settings are not supported for this backend",
+        ));
+    }
+    Ok(())
+}
+
+async fn load_vela_engine_backend_settings<B>(
+    state: &ApiState<B>,
+) -> Result<VelaEngineBackendSettings, Response>
+where
+    B: BackendAdapter + 'static,
+{
+    match state.store.get_backend_settings("vela_engine").await {
+        Ok(Some(stored)) => Ok(vela_engine_backend_settings_from_json(stored.settings)),
+        Ok(None) => Ok(VelaEngineBackendSettings::default()),
+        Err(err) => Err(error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "backend_settings_read_failed",
+            err.to_string(),
+        )),
+    }
+}
+
+fn vela_engine_backend_settings_from_json(value: Value) -> VelaEngineBackendSettings {
+    let object = value.as_object();
+    VelaEngineBackendSettings {
+        endpoint: object
+            .and_then(|object| object.get("endpoint"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        api_key: object
+            .and_then(|object| object.get("api_key"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        model: object
+            .and_then(|object| object.get("model"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+    }
+}
+
+fn vela_engine_backend_settings_storage_json(settings: &VelaEngineBackendSettings) -> Value {
+    json!({
+        "endpoint": settings.endpoint,
+        "api_key": settings.api_key,
+        "model": settings.model,
+    })
+}
+
+fn vela_engine_backend_settings_json(
+    backend: &str,
+    settings: &VelaEngineBackendSettings,
+    updated_at: Option<String>,
+) -> Value {
+    let missing_fields = vela_engine_missing_settings(settings);
+    json!({
+        "schema": "velad.backend_settings.v1",
+        "backend": backend,
+        "settings": {
+            "endpoint": settings.endpoint,
+            "api_key_set": !settings.api_key.is_empty(),
+            "model": settings.model,
+        },
+        "status": if missing_fields.is_empty() { "configured" } else { "unconfigured" },
+        "missing_fields": missing_fields,
+        "updated_at": updated_at,
+    })
+}
+
+fn vela_engine_missing_settings(settings: &VelaEngineBackendSettings) -> Vec<&'static str> {
+    let mut missing = Vec::new();
+    if settings.endpoint.trim().is_empty() {
+        missing.push("endpoint");
+    }
+    if settings.api_key.trim().is_empty() {
+        missing.push("api_key");
+    }
+    if settings.model.trim().is_empty() {
+        missing.push("model");
+    }
+    missing
 }
 
 async fn events_or_404<B>(

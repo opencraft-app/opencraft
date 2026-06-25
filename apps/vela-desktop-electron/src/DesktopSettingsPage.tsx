@@ -14,6 +14,7 @@ import React from "react";
 import type {
   BackendKindWire,
   BackendWire,
+  VeladClient,
 } from "../../../packages/vela-chat-client/src";
 import {
   Sidebar,
@@ -46,8 +47,10 @@ export interface DesktopSettingsPageProps {
   backends: BackendWire[];
   hostLabel: string;
   logPath?: string;
+  client: VeladClient;
   selectedBackend: BackendKindWire | "";
   sessionsCount: number;
+  onBackendSettingsChange?: () => Promise<void> | void;
   onSelectedBackendChange: (backend: BackendKindWire) => void;
 }
 
@@ -114,18 +117,22 @@ export function DesktopSettingsPage({
   backends,
   hostLabel,
   logPath,
+  client,
   selectedBackend,
   sessionsCount,
+  onBackendSettingsChange,
   onSelectedBackendChange,
 }: DesktopSettingsPageProps) {
   const settings = React.useMemo(
     () =>
       createDesktopSettings({
         backends,
+        client,
+        onBackendSettingsChange,
         onSelectedBackendChange,
         selectedBackend,
       }),
-    [backends, onSelectedBackendChange, selectedBackend],
+    [backends, client, onBackendSettingsChange, onSelectedBackendChange, selectedBackend],
   );
 
   if (activePanel === "about") {

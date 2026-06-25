@@ -193,6 +193,48 @@ async fn codex_backend_without_discovered_models_is_an_error_snapshot() {
 }
 
 #[tokio::test]
+async fn vela_engine_backend_settings_are_stored_without_echoing_secret() {
+    let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
+    let backend = Arc::new(
+        MockBackendAdapter::new(support::default_backend_outputs())
+            .with_models(vec![codex_model("gpt-local", Some("medium"))]),
+    );
+    let runtime = Runtime::new(store.clone(), backend);
+    let app = velad::build_app(velad::ApiState::new(store, runtime).with_vela_engine_backend(None));
+
+    let (status, body) = json_request(
+        app.clone(),
+        Method::PATCH,
+        "/api/v1/backends/vela_engine/settings",
+        json!({
+            "endpoint": " https://example.test/v1 ",
+            "api_key": " secret ",
+            "model": " gpt-local "
+        }),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["backend"], "vela_engine");
+    assert_eq!(body["settings"]["endpoint"], "https://example.test/v1");
+    assert_eq!(body["settings"]["model"], "gpt-local");
+    assert_eq!(body["settings"]["api_key_set"], true);
+    assert!(body["settings"].get("api_key").is_none());
+    assert_eq!(body["status"], "configured");
+
+    let (status, body) = get_json(app.clone(), "/api/v1/backends/vela_engine/settings").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["settings"]["api_key_set"], true);
+    assert!(body["settings"].get("api_key").is_none());
+
+    let (status, body) = get_json(app, "/api/v1/backends/vela_engine").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["backend"]["kind"], "vela_engine");
+    assert_eq!(body["backend"]["status"], "available");
+    assert_eq!(body["backend"]["models"][0]["id"], "gpt-local");
+}
+
+#[tokio::test]
 async fn codex_backend_snapshot_uses_discovered_models_and_reasoning_options() {
     let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
     let backend = Arc::new(

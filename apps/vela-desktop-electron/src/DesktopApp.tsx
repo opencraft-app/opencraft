@@ -489,10 +489,12 @@ function DesktopReadyApp({
           apiBaseUrl={apiBaseUrl}
           appVersion={DESKTOP_APP_VERSION}
           backends={controller.backends}
+          client={client}
           hostLabel={hostLabel}
           logPath={hostInfo.logPath}
           selectedBackend={selectedBackendKind}
           sessionsCount={sessions.length}
+          onBackendSettingsChange={controller.refreshBackends}
           onSelectedBackendChange={setSelectedBackendKind}
         />
       ) : mainView === "chat" && activeSessionId ? (

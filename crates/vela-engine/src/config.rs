@@ -7,6 +7,10 @@ pub struct VelaEngineConfig {
 }
 
 impl VelaEngineConfig {
+    pub fn empty() -> Self {
+        Self::new("", "", "", "")
+    }
+
     pub fn new(
         endpoint: impl Into<String>,
         api_key: impl Into<String>,

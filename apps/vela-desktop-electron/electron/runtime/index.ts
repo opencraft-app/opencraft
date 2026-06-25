@@ -7,11 +7,4 @@ export {
   writeDesktopSettings,
   type DesktopSettings,
 } from "./desktop-settings";
-export {
-  readVelaEngineSettings,
-  velaEngineSettingsEnv,
-  velaEngineSettingsPath,
-  writeVelaEngineSettings,
-  type VelaEngineSettings,
-} from "./vela-engine-settings";
 export type { VeladRuntimeInfo, VeladRuntimeSnapshot } from "./velad-runtime-state";

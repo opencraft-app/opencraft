@@ -86,6 +86,7 @@ export interface VelaChatSessionController {
   attachImages: (files: File[]) => Promise<void>;
   loadOlderConversation: () => Promise<void>;
   refreshAll: () => Promise<void>;
+  refreshBackends: () => Promise<void>;
   removeAttachment: (attachmentId: string) => void;
   respondToRequest: (response: RequestDockResponse) => Promise<void>;
   send: () => Promise<void>;
@@ -640,6 +641,7 @@ export function useVelaChatSession({
     attachImages,
     loadOlderConversation,
     refreshAll,
+    refreshBackends: loadBackends,
     removeAttachment,
     respondToRequest,
     send,

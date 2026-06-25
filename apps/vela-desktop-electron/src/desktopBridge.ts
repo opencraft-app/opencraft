@@ -12,10 +12,6 @@ declare global {
       retryDesktopBootstrap?: () => Promise<RuntimeInfoResponse>;
       getDesktopSettings?: () => Promise<DesktopSettings>;
       setDesktopSettings?: (patch: Partial<DesktopSettings>) => Promise<DesktopSettings>;
-      getVelaEngineSettings?: () => Promise<VelaEngineSettings>;
-      setVelaEngineSettings?: (
-        patch: Partial<VelaEngineSettings>,
-      ) => Promise<VelaEngineSettings>;
       getDesktopChromeState?: () => Promise<RuntimeChromeStateResponse>;
       leaveFullscreen?: () => Promise<RuntimeChromeStateResponse>;
       openWorkMonitor?: (sessionId: string) => Promise<WorkMonitorActionResponse>;
@@ -73,12 +69,6 @@ export interface RuntimeHostInfo {
 
 export interface WorkMonitorActionResponse {
   accepted: boolean;
-}
-
-export interface VelaEngineSettings {
-  endpoint: string;
-  apiKey: string;
-  model: string;
 }
 
 export interface DesktopSettings {
@@ -216,16 +206,6 @@ export async function focusDesktopSession(sessionId: string) {
   return window.velaDesktop?.focusDesktopSession?.(sessionId) ?? { accepted: false };
 }
 
-export async function readVelaEngineSettings(): Promise<VelaEngineSettings> {
-  return (
-    (await window.velaDesktop?.getVelaEngineSettings?.()) ?? {
-      endpoint: "",
-      apiKey: "",
-      model: "",
-    }
-  );
-}
-
 export async function readDesktopSettings(): Promise<DesktopSettings> {
   return (
     (await window.velaDesktop?.getDesktopSettings?.()) ?? {
@@ -244,16 +224,6 @@ export async function saveDesktopSettings(patch: Partial<DesktopSettings>) {
     return next;
   }
   return window.velaDesktop.setDesktopSettings(patch);
-}
-
-export async function saveVelaEngineSettings(patch: Partial<VelaEngineSettings>) {
-  if (!window.velaDesktop?.setVelaEngineSettings) {
-    return {
-      ...(await readVelaEngineSettings()),
-      ...patch,
-    };
-  }
-  return window.velaDesktop.setVelaEngineSettings(patch);
 }
 
 function readDefaultBackendPreference(): BackendKindWire | "" {

@@ -522,6 +522,28 @@ export interface BackendProbeResultWire {
   message?: string;
 }
 
+export interface BackendSettingsWire {
+  schema: "velad.backend_settings.v1";
+  backend: BackendKindWire;
+  settings: {
+    endpoint?: string;
+    api_key_set?: boolean;
+    model?: string;
+    [key: string]: unknown;
+  };
+  status: "configured" | "unconfigured";
+  missing_fields: string[];
+  updated_at?: string | null;
+}
+
+export interface BackendSettingsWireResponse extends BackendSettingsWire {}
+
+export interface BackendSettingsPatchWire {
+  endpoint?: string;
+  api_key?: string;
+  model?: string;
+}
+
 export interface UpdateAgentConfigWireResponse {
   session: SessionWire;
   effective_after: "current_session" | "next_turn";

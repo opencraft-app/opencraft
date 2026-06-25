@@ -15,6 +15,8 @@ import type {
   BackendKindWire,
   BackendModelWire,
   BackendProbeResultWire,
+  BackendSettingsPatchWire,
+  BackendSettingsWireResponse,
   BackendStatusWire,
   BackendWire,
   BackendWireResponse,
@@ -908,6 +910,85 @@ export function parseBackendProbeResultWire(data: unknown): BackendProbeResultWi
     status: status as BackendProbeResultWire["status"],
     ...(message !== undefined ? { message } : {}),
   };
+}
+
+export async function readBackendSettingsResponse(
+  response: Response,
+): Promise<BackendSettingsWireResponse> {
+  return parseBackendSettingsWireResponse(await readJsonResponse<unknown>(response));
+}
+
+export function parseBackendSettingsWireResponse(data: unknown): BackendSettingsWireResponse {
+  if (!isRecord(data)) {
+    throw invalidBackendSettingsResponse("BackendSettingsResponse must be an object");
+  }
+  const schema = data.schema;
+  if (schema !== "velad.backend_settings.v1") {
+    throw invalidBackendSettingsResponse(
+      "BackendSettingsResponse.schema must be velad.backend_settings.v1",
+    );
+  }
+  const backend = data.backend;
+  if (typeof backend !== "string" || !backendKinds.has(backend)) {
+    throw invalidBackendSettingsResponse(
+      "BackendSettingsResponse.backend must be a known BackendKind",
+    );
+  }
+  const settings = data.settings;
+  if (!isRecord(settings)) {
+    throw invalidBackendSettingsResponse("BackendSettingsResponse.settings must be an object");
+  }
+  const status = data.status;
+  if (status !== "configured" && status !== "unconfigured") {
+    throw invalidBackendSettingsResponse(
+      "BackendSettingsResponse.status must be configured or unconfigured",
+    );
+  }
+  const missingFields = data.missing_fields;
+  if (!Array.isArray(missingFields) || missingFields.some((field) => typeof field !== "string")) {
+    throw invalidBackendSettingsResponse(
+      "BackendSettingsResponse.missing_fields must be a string array",
+    );
+  }
+  const updatedAt = data.updated_at;
+  if (updatedAt !== undefined && updatedAt !== null && typeof updatedAt !== "string") {
+    throw invalidBackendSettingsResponse(
+      "BackendSettingsResponse.updated_at must be a string or null",
+    );
+  }
+  return {
+    schema,
+    backend: backend as BackendKindWire,
+    settings: {
+      ...settings,
+      ...(typeof settings.endpoint === "string" ? { endpoint: settings.endpoint } : {}),
+      ...(typeof settings.api_key_set === "boolean"
+        ? { api_key_set: settings.api_key_set }
+        : {}),
+      ...(typeof settings.model === "string" ? { model: settings.model } : {}),
+    },
+    status,
+    missing_fields: missingFields,
+    ...(updatedAt !== undefined ? { updated_at: updatedAt } : {}),
+  };
+}
+
+export function validateBackendSettingsPatch(patch: unknown): asserts patch is BackendSettingsPatchWire {
+  if (!isRecord(patch)) {
+    throw invalidBackendSettingsRequest("Backend settings patch must be an object");
+  }
+  validateOptionalBackendSettingsString(patch, "endpoint");
+  validateOptionalBackendSettingsString(patch, "api_key");
+  validateOptionalBackendSettingsString(patch, "model");
+}
+
+function validateOptionalBackendSettingsString(
+  patch: Record<string, unknown>,
+  field: string,
+) {
+  if (patch[field] !== undefined && typeof patch[field] !== "string") {
+    throw invalidBackendSettingsRequest(`Backend settings ${field} must be a string`);
+  }
 }
 
 export async function readConversationViewResponse(response: Response): Promise<ConversationWireView> {
@@ -1960,6 +2041,14 @@ function invalidBackendsResponse(message: string) {
 
 function invalidBackendProbeResponse(message: string) {
   return new VeladClientError("invalid_backend_probe_response", message);
+}
+
+function invalidBackendSettingsRequest(message: string) {
+  return new VeladClientError("invalid_backend_settings_request", message);
+}
+
+function invalidBackendSettingsResponse(message: string) {
+  return new VeladClientError("invalid_backend_settings_response", message);
 }
 
 function invalidConversationView(message: string) {

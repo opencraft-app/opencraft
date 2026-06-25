@@ -1,15 +1,14 @@
 import type {
   BackendKindWire,
   BackendWire,
+  VeladClient,
 } from "../../../../packages/vela-chat-client/src";
 import type { VelaSetting } from "../../../../packages/vela-settings/src";
-import {
-  readVelaEngineSettings,
-  saveVelaEngineSettings,
-} from "../desktopBridge";
 
 export interface CreateDesktopSettingsInput {
   backends: BackendWire[];
+  client: VeladClient;
+  onBackendSettingsChange?: () => Promise<void> | void;
   onSelectedBackendChange: (backend: BackendKindWire) => void;
   selectedBackend: BackendKindWire | "";
 }
@@ -23,6 +22,8 @@ export interface DesktopSettingsModel {
 
 export function createDesktopSettings({
   backends,
+  client,
+  onBackendSettingsChange,
   onSelectedBackendChange,
   selectedBackend,
 }: CreateDesktopSettingsInput): DesktopSettingsModel {
@@ -61,23 +62,26 @@ export function createDesktopSettings({
         {
           id: "velaEngine.endpoint",
           title: "Vela 内置引擎 Endpoint",
-          description: "Chat Completions endpoint，保存后重启本地 runtime 生效",
+          description: "Chat Completions endpoint，保存后立即更新本机 runtime",
           control: "text",
           inputType: "url",
-          load: async () => (await readVelaEngineSettings()).endpoint,
+          load: async () =>
+            (await client.getBackendSettings("vela_engine")).settings.endpoint ?? "",
           save: async (endpoint) => {
-            await saveVelaEngineSettings({ endpoint });
+            await client.updateBackendSettings("vela_engine", { endpoint });
+            await onBackendSettingsChange?.();
           },
         },
         {
           id: "velaEngine.apiKey",
           title: "Vela 内置引擎 Key",
-          description: "仅保存在本机 Electron userData，保存后重启本地 runtime 生效",
+          description: "由本机 velad 存储；保存后立即更新本机 runtime，值不会回显",
           control: "text",
           inputType: "password",
-          load: async () => (await readVelaEngineSettings()).apiKey,
+          load: async () => "",
           save: async (apiKey) => {
-            await saveVelaEngineSettings({ apiKey });
+            await client.updateBackendSettings("vela_engine", { api_key: apiKey });
+            await onBackendSettingsChange?.();
           },
         },
         {
@@ -85,9 +89,11 @@ export function createDesktopSettings({
           title: "Vela 内置引擎 Model",
           description: "用于 Vela Engine 的默认 model name",
           control: "text",
-          load: async () => (await readVelaEngineSettings()).model,
+          load: async () =>
+            (await client.getBackendSettings("vela_engine")).settings.model ?? "",
           save: async (model) => {
-            await saveVelaEngineSettings({ model });
+            await client.updateBackendSettings("vela_engine", { model });
+            await onBackendSettingsChange?.();
           },
         },
       ],

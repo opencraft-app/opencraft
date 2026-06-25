@@ -1,3 +1,5 @@
+use std::sync::{Arc, RwLock};
+
 use async_trait::async_trait;
 use serde_json::json;
 use vela_core::{BackendModel, EventType, ReasoningEffortOption};
@@ -5,16 +7,27 @@ use vela_core::{BackendModel, EventType, ReasoningEffortOption};
 use crate::{VelaEngineConfig, runner::run_turn};
 
 pub struct VelaEngineBackendAdapter {
-    config: VelaEngineConfig,
+    config: Arc<RwLock<VelaEngineConfig>>,
 }
 
 impl VelaEngineBackendAdapter {
     pub fn new(config: VelaEngineConfig) -> Self {
-        Self { config }
+        Self {
+            config: Arc::new(RwLock::new(config)),
+        }
     }
 
-    pub fn config(&self) -> &VelaEngineConfig {
-        &self.config
+    pub fn config(&self) -> VelaEngineConfig {
+        self.config
+            .read()
+            .map(|config| config.clone())
+            .unwrap_or_else(|_| VelaEngineConfig::empty())
+    }
+
+    pub fn update_config(&self, config: VelaEngineConfig) {
+        if let Ok(mut current) = self.config.write() {
+            *current = config;
+        }
     }
 }
 
@@ -31,7 +44,8 @@ impl vela_backends::BackendAdapter for VelaEngineBackendAdapter {
     }
 
     async fn probe(&self) -> anyhow::Result<vela_backends::BackendProbe> {
-        if !self.config.is_configured() {
+        let config = self.config();
+        if !config.is_configured() {
             return Ok(vela_backends::BackendProbe {
                 status: vela_backends::BackendStatus::Unavailable,
                 message: Some(
@@ -57,12 +71,13 @@ impl vela_backends::BackendAdapter for VelaEngineBackendAdapter {
         &self,
         _backend: Option<vela_core::BackendKind>,
     ) -> anyhow::Result<Vec<BackendModel>> {
-        if !self.config.is_configured() {
+        let config = self.config();
+        if !config.is_configured() {
             return Ok(Vec::new());
         }
         Ok(vec![BackendModel {
-            id: self.config.model.clone(),
-            label: self.config.model.clone(),
+            id: config.model.clone(),
+            label: config.model.clone(),
             description: Some("Configured Vela built-in engine model".to_string()),
             is_default: true,
             reasoning_efforts: common_reasoning_effort_options(),
@@ -75,7 +90,8 @@ impl vela_backends::BackendAdapter for VelaEngineBackendAdapter {
         input: vela_backends::BackendSend,
         sink: vela_backends::BackendOutputSink,
     ) -> anyhow::Result<()> {
-        self.config.validate()?;
+        let config = self.config();
+        config.validate()?;
         let turn_id = input
             .turn_id
             .as_ref()
@@ -86,12 +102,12 @@ impl vela_backends::BackendAdapter for VelaEngineBackendAdapter {
             json!({
                 "turn_id": turn_id,
                 "provider": "vela_engine",
-                "model": self.config.model,
+                "model": config.model,
             }),
         ))
         .await?;
 
-        match run_turn(&self.config, input).await {
+        match run_turn(&config, input).await {
             Ok(outputs) => {
                 for output in outputs {
                     sink.send(output).await?;
