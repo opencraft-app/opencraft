@@ -3,7 +3,7 @@ import type {
   BackendKindWire,
   PermissionModeWire,
 } from "../../../vela-chat-client/src";
-import { ShellSelect } from "../../../vela-desktop-shell/src";
+import { ShellSelect, type VoiceInputHost } from "../../../vela-desktop-shell/src";
 import { FolderGit2, Laptop } from "lucide-react";
 import type { ReactNode } from "react";
 import styles from "../styles/desktop.module.css";
@@ -31,6 +31,7 @@ export interface NewSessionSurfaceProps {
   error?: string | null;
   backendStatusMessage?: string | null;
   isSubmitting?: boolean;
+  voiceInput?: VoiceInputHost;
   onBackendChange: (backend: BackendKindWire | "") => void;
   onModelChange: (model: string) => void;
   onReasoningEffortChange: (reasoningEffort: string) => void;
@@ -55,6 +56,7 @@ export function NewSessionSurface({
   error,
   backendStatusMessage,
   isSubmitting,
+  voiceInput,
   onBackendChange,
   onModelChange,
   onReasoningEffortChange,
@@ -134,6 +136,7 @@ export function NewSessionSurface({
             placeholder="随心输入"
             submitLabel={isSubmitting ? "Creating session" : "Create session"}
             value={initialPrompt}
+            voiceInput={voiceInput}
             leftToolbarControls={
               <ComposerControls
                 controls={composerControls}

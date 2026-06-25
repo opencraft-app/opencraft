@@ -6,6 +6,7 @@ import type {
   PermissionModeWire,
 } from "../../../../packages/vela-chat-client/src";
 import { buildVelaSessionSetupSelection } from "../../../../packages/vela-chat-controller/src";
+import type { VoiceInputHost } from "../../../../packages/vela-desktop-shell/src";
 import {
   buildNewSessionTitle,
   NewSessionSurface,
@@ -28,6 +29,7 @@ export interface DesktopNewSessionPageProps {
   error?: string | null;
   isSubmitting?: boolean;
   preferredBackends: BackendKindWire[];
+  voiceInput?: VoiceInputHost;
   onDefaultBackendChange: (backend: BackendKindWire | "") => void;
   onSubmit: (input: DesktopNewSessionSubmitInput) => Promise<void> | void;
 }
@@ -39,6 +41,7 @@ export function DesktopNewSessionPage({
   error,
   isSubmitting,
   preferredBackends,
+  voiceInput,
   onDefaultBackendChange,
   onSubmit,
 }: DesktopNewSessionPageProps) {
@@ -102,6 +105,7 @@ export function DesktopNewSessionPage({
       selectedModel={setup.setupSelectedModel}
       selectedPermissionMode={setup.setupSelectedPermissionMode}
       selectedReasoningEffort={setup.setupSelectedReasoningEffort}
+      voiceInput={voiceInput}
       workingDirectory={workingDirectory}
       onBackendChange={(backend) => {
         setSelectedBackend(backend);

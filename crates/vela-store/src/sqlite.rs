@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use serde_json::Value;
 use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
 use thiserror::Error;
@@ -629,7 +629,34 @@ fn row_to_agent_config(row: &sqlx::sqlite::SqliteRow) -> Result<AgentConfig> {
 }
 
 fn parse_sqlite_datetime(value: String) -> DateTime<Utc> {
-    DateTime::parse_from_rfc3339(&value)
-        .map(|dt| dt.with_timezone(&Utc))
-        .unwrap_or_else(|_| Utc::now())
+    if let Ok(dt) = DateTime::parse_from_rfc3339(&value) {
+        return dt.with_timezone(&Utc);
+    }
+    if let Ok(dt) = NaiveDateTime::parse_from_str(&value, "%Y-%m-%d %H:%M:%S") {
+        return DateTime::from_naive_utc_and_offset(dt, Utc);
+    }
+    Utc::now()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    #[test]
+    fn parses_sqlite_current_timestamp_as_utc() {
+        let parsed = parse_sqlite_datetime("2026-06-18 10:00:06".to_string());
+
+        assert_eq!(parsed, Utc.with_ymd_and_hms(2026, 6, 18, 10, 0, 6).unwrap());
+    }
+
+    #[test]
+    fn parses_rfc3339_timestamp_as_utc() {
+        let parsed = parse_sqlite_datetime("2026-06-18T10:00:06.123456+00:00".to_string());
+        let expected = DateTime::parse_from_rfc3339("2026-06-18T10:00:06.123456+00:00")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        assert_eq!(parsed, expected);
+    }
 }

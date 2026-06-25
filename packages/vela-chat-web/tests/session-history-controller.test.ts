@@ -107,6 +107,59 @@ test("event stream reconnect delay recovers immediately once and then backs off"
   assert.equal(eventStreamReconnectDelayMs(20), 5000);
 });
 
+test("controller can stream through host-injected remote transport without EventSource", async () => {
+  const dom = installDomRuntime();
+  Reflect.deleteProperty(globalThis, "EventSource");
+  Reflect.deleteProperty(window, "EventSource");
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { useVelaChatSession } = await import(
+      "../../vela-chat-controller/src/useVelaChatSession"
+    );
+    class RemoteVeladClient extends FakeVeladClient {
+      override sessionEventStreamUrl(sessionId: string, afterId?: string | null): URL {
+        const url = new URL(
+          `https://workbench.example.test/velad/sessions/${sessionId}/events/stream`,
+        );
+        if (afterId) url.searchParams.set("after_id", afterId);
+        return url;
+      }
+    }
+    const client = new RemoteVeladClient();
+    const transport = new FakeEventStreamTransport();
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    function Probe({ sessionId }: { sessionId: string }) {
+      useVelaChatSession({
+        client,
+        eventStreamTransport: transport,
+        fetchBackends: false,
+        historyPolicy: "tail_only",
+        sessionId,
+      });
+      return React.createElement("div");
+    }
+
+    await renderSession({ React, act, root, Probe, sessionId: "sess_remote" });
+    await flushHookEffects(act, dom, () => transport.subscribeCount === 1);
+
+    assert.equal(
+      transport.urls[0]?.toString(),
+      "https://workbench.example.test/velad/sessions/sess_remote/events/stream?after_id=evt_sess_remote%3Atail",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 test("controller uses injected event stream transport for live session updates", async () => {
   const dom = installDomRuntime();
   try {

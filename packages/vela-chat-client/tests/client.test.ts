@@ -103,6 +103,64 @@ test("builds conversation and event URLs for local velad", () => {
   );
 });
 
+test("uses injected fetch instead of assuming browser network reachability", async () => {
+  const previousFetch = globalThis.fetch;
+  const requests: string[] = [];
+  Object.defineProperty(globalThis, "fetch", {
+    configurable: true,
+    value: async () => {
+      throw new Error("global fetch must not be used");
+    },
+  });
+
+  try {
+    const client = createVeladClient({
+      baseUrl: "http://127.0.0.1:3857/api/v1/",
+      fetch: async (url) => {
+        requests.push(String(url));
+        return new Response(JSON.stringify({ session: sessionFixture({ id: "ses_remote" }) }), {
+          headers: { "Content-Type": "application/json" },
+          status: 200,
+        });
+      },
+    });
+
+    const response = await client.getSession("ses_remote");
+
+    assert.equal(response.session.id, "ses_remote");
+    assert.deepEqual(requests, [
+      "http://127.0.0.1:3857/api/v1/sessions/ses_remote",
+    ]);
+  } finally {
+    Object.defineProperty(globalThis, "fetch", {
+      configurable: true,
+      value: previousFetch,
+    });
+  }
+});
+
+test("reports a clear SDK error when no fetch transport is available", async () => {
+  const previousFetch = globalThis.fetch;
+  Object.defineProperty(globalThis, "fetch", {
+    configurable: true,
+    value: undefined,
+  });
+
+  try {
+    const client = createVeladClient({ baseUrl: "http://127.0.0.1:3857/api/v1/" });
+
+    await assert.rejects(
+      () => client.getSession("ses_missing_fetch"),
+      /pass a VeladFetch to createVeladClient\(\{ baseUrl, fetch \}\)/,
+    );
+  } finally {
+    Object.defineProperty(globalThis, "fetch", {
+      configurable: true,
+      value: previousFetch,
+    });
+  }
+});
+
 test("rejects invalid session path and event cursor parameter types", async () => {
   const requests: Array<{ url: string; init?: RequestInit }> = [];
   const client = createVeladClient({

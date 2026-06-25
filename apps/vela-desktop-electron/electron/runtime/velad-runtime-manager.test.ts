@@ -50,7 +50,7 @@ function createManager(options: {
     resourcesPath: "/tmp/resources",
     env: options.env,
     logger,
-    fetchImpl: options.fetchImpl ?? fetch,
+    fetchImpl: options.fetchImpl,
     observability: options.observability,
     readyTimeoutMs: options.readyTimeoutMs ?? 100,
     shutdownTimeoutMs: options.shutdownTimeoutMs ?? 100,

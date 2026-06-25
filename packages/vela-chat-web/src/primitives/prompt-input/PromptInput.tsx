@@ -3,43 +3,9 @@
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { ArrowUp, ImagePlus, Mic, Square } from "lucide-react";
+import type { VoiceInputHost, VoiceInputState } from "../../../../vela-desktop-shell/src";
 import { LexicalComposerEditor, type ComposerEditorHandle } from "../../composer-editor";
 import styles from "../../styles/desktop.module.css";
-
-interface BrowserSpeechRecognitionEvent extends Event {
-  resultIndex: number;
-  results: {
-    length: number;
-    [index: number]: {
-      isFinal: boolean;
-      [index: number]: {
-        transcript: string;
-      };
-    };
-  };
-}
-
-interface BrowserSpeechRecognition extends EventTarget {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  onend: (() => void) | null;
-  onerror: (() => void) | null;
-  onresult: ((event: BrowserSpeechRecognitionEvent) => void) | null;
-  start: () => void;
-  stop: () => void;
-}
-
-interface BrowserSpeechRecognitionConstructor {
-  new (): BrowserSpeechRecognition;
-}
-
-declare global {
-  interface Window {
-    SpeechRecognition?: BrowserSpeechRecognitionConstructor;
-    webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor;
-  }
-}
 
 export interface PromptInputAttachment {
   id: string;
@@ -62,6 +28,7 @@ export interface PromptInputProps {
   onHeightChange?: (height: number) => void;
   onRemoveAttachment?: (attachmentId: string) => void;
   pendingAttachments?: PromptInputAttachment[];
+  voiceInput?: VoiceInputHost;
   leftToolbarControls?: ReactNode;
   rightToolbarControls?: ReactNode;
   attachedSurface?: ReactNode;
@@ -82,20 +49,19 @@ export function PromptInput({
   onHeightChange,
   onRemoveAttachment,
   pendingAttachments = [],
+  voiceInput,
   leftToolbarControls,
   rightToolbarControls,
   attachedSurface,
 }: PromptInputProps) {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const editorRef = useRef<ComposerEditorHandle | null>(null);
-  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const rootRef = useRef<HTMLFormElement | null>(null);
   const valueRef = useRef(value);
   const onChangeRef = useRef(onChange);
+  const voiceInputRef = useRef<VoiceInputHost | undefined>(voiceInput);
   const [isDictating, setIsDictating] = useState(false);
-  const supportsDictation =
-    typeof window !== "undefined" &&
-    Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
+  const [supportsDictation, setSupportsDictation] = useState(Boolean(voiceInput));
   const isStopControl = isRunning && !canSubmit && Boolean(onStop);
   const primaryControlLabel = isStopControl ? stopLabel : submitLabel;
   const handleSubmit = (event: FormEvent) => {
@@ -117,53 +83,58 @@ export function PromptInput({
     if (files.length > 0) onAttachImages?.(files);
   };
   const handleDictationClick = () => {
-    if (!supportsDictation) return;
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
+    const host = voiceInputRef.current;
+    if (!host || !supportsDictation) return;
+    if (isDictating) {
+      void host.stop();
       return;
     }
-
-    const SpeechRecognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
-    const recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = navigator.language || "en-US";
-    recognition.onresult = (event) => {
-      let finalText = "";
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const result = event.results[index];
-        if (result?.isFinal) finalText += result[0]?.transcript ?? "";
-      }
-      const trimmedText = finalText.trim();
-      if (!trimmedText) return;
-      const prefix = valueRef.current.trim().length > 0 ? `${valueRef.current} ` : "";
-      const nextValue = `${prefix}${trimmedText}`;
-      valueRef.current = nextValue;
-      onChangeRef.current(nextValue);
-    };
-    recognition.onerror = () => {
-      recognitionRef.current = null;
-      setIsDictating(false);
-    };
-    recognition.onend = () => {
-      recognitionRef.current = null;
-      setIsDictating(false);
-    };
-    recognitionRef.current = recognition;
-    setIsDictating(true);
-    try {
-      recognition.start();
-    } catch {
-      recognitionRef.current = null;
-      setIsDictating(false);
-    }
+    void host.start({ interimResults: true });
   };
 
   useEffect(() => {
     valueRef.current = value;
     onChangeRef.current = onChange;
   }, [onChange, value]);
+
+  useEffect(() => {
+    voiceInputRef.current = voiceInput;
+    if (!voiceInput) {
+      setSupportsDictation(false);
+      setIsDictating(false);
+      return;
+    }
+
+    let disposed = false;
+    void Promise.resolve(voiceInput.isAvailable()).then((available) => {
+      if (!disposed) setSupportsDictation(available);
+    });
+
+    const appendFinalTranscript = (text: string) => {
+      const trimmedText = text.trim();
+      if (!trimmedText) return;
+      const prefix = valueRef.current.trim().length > 0 ? `${valueRef.current} ` : "";
+      const nextValue = `${prefix}${trimmedText}`;
+      valueRef.current = nextValue;
+      onChangeRef.current(nextValue);
+    };
+    const updateState = (state: VoiceInputState) => {
+      setIsDictating(state === "listening" || state === "requesting-permission");
+    };
+    const unsubscribeFinal = voiceInput.onFinalTranscript(appendFinalTranscript);
+    const unsubscribeState = voiceInput.onStateChange(updateState);
+    const unsubscribeError = voiceInput.onError((error) => {
+      console.warn("[PromptInput] voice input failed", error);
+      setIsDictating(false);
+    });
+
+    return () => {
+      disposed = true;
+      unsubscribeFinal();
+      unsubscribeState();
+      unsubscribeError();
+    };
+  }, [voiceInput]);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -182,7 +153,7 @@ export function PromptInput({
 
   useEffect(
     () => () => {
-      recognitionRef.current?.stop();
+      void voiceInputRef.current?.stop();
     },
     [],
   );

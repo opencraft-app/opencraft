@@ -6,6 +6,7 @@ export * from "./eventStream";
 export * from "./idempotency";
 export * from "./sse";
 export * from "./stream";
+export * from "./veladFetch";
 export * from "./wire";
 export {
   parseBackendProbeResultWire,

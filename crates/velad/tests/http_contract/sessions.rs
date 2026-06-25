@@ -21,12 +21,16 @@ async fn creates_session_and_exposes_session_view() {
     assert_eq!(body["session"]["id"], "create-1");
     assert_eq!(body["session"]["working_directory"], "/tmp/project");
     assert_eq!(body["cursor"]["event_id"], body["session"]["last_event_id"]);
+    let created_at = body["session"]["created_at"].clone();
+    let updated_at = body["session"]["updated_at"].clone();
 
     let session_id = body["session"]["id"].as_str().unwrap();
     let (status, view) = get_json(app, &format!("/api/v1/sessions/{session_id}")).await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(view["session"]["id"], session_id);
+    assert_eq!(view["session"]["created_at"], created_at);
+    assert_eq!(view["session"]["updated_at"], updated_at);
 }
 
 #[tokio::test]

@@ -106,12 +106,14 @@ pub fn project_conversation(events: &[CanonicalEvent]) -> ConversationView {
         if event.event_type == EventType::TURN_COMPLETED {
             mark_latest_streaming_assistant_terminal(&mut items, event, "completed");
             mark_turn_meta_terminal(&mut items, event, "completed");
+            mark_agent_work_terminal_for_turn(&mut items, event, "completed");
             continue;
         }
 
         if event.event_type == EventType::TURN_FAILED {
             mark_latest_streaming_assistant_terminal(&mut items, event, "failed");
             mark_turn_meta_terminal(&mut items, event, "failed");
+            mark_agent_work_terminal_for_turn(&mut items, event, "failed");
             push_turn_status(
                 &mut items,
                 event,
@@ -124,6 +126,7 @@ pub fn project_conversation(events: &[CanonicalEvent]) -> ConversationView {
         if event.event_type == EventType::TURN_CANCELLED {
             mark_latest_streaming_assistant_terminal(&mut items, event, "cancelled");
             mark_turn_meta_terminal(&mut items, event, "cancelled");
+            mark_agent_work_terminal_for_turn(&mut items, event, "cancelled");
             push_turn_status(
                 &mut items,
                 event,
@@ -356,6 +359,27 @@ fn mark_turn_meta_terminal(
     push_source_event(item, event);
 }
 
+fn mark_agent_work_terminal_for_turn(
+    items: &mut [ConversationItem],
+    event: &CanonicalEvent,
+    status: &str,
+) {
+    let Some(turn_id) = turn_id_from_payload(event) else {
+        return;
+    };
+
+    for item in items.iter_mut().filter(|item| {
+        item.kind == ConversationItemKind::AgentWork
+            && item.turn_id.as_ref() == Some(&turn_id)
+            && is_live_status(item.status.as_str())
+    }) {
+        item.status = status.to_string();
+        item.updated_at = event.created_at;
+        item.revision += 1;
+        push_source_event(item, event);
+    }
+}
+
 fn push_turn_status(
     items: &mut Vec<ConversationItem>,
     event: &CanonicalEvent,
@@ -448,6 +472,16 @@ fn upsert_agent_work(
         source_event_ids: vec![event.event_id.clone()],
         source_event_ranges: vec![source_event_range(event)],
     });
+}
+
+fn default_status_for_event_type(event_type: &EventType) -> Option<&'static str> {
+    if *event_type == EventType::WARNING_RAISED {
+        return Some("completed");
+    }
+    if *event_type == EventType::ERROR_RAISED {
+        return Some("failed");
+    }
+    None
 }
 
 fn push_source_event(item: &mut ConversationItem, event: &CanonicalEvent) {
@@ -723,12 +757,14 @@ fn matches_event(event: &CanonicalEvent, prefix: &str) -> bool {
 }
 
 fn status_from_payload(payload: &Value, event_type: &EventType) -> Option<String> {
-    string_field(payload, "status").or_else(|| {
-        event_type
-            .0
-            .rsplit_once('.')
-            .map(|(_, status)| status.to_string())
-    })
+    string_field(payload, "status")
+        .or_else(|| default_status_for_event_type(event_type).map(str::to_string))
+        .or_else(|| {
+            event_type
+                .0
+                .rsplit_once('.')
+                .map(|(_, status)| status.to_string())
+        })
 }
 
 fn merge_terminal_status(current: &str, incoming: Option<&str>) -> String {
@@ -746,6 +782,10 @@ fn is_terminal_status(status: &str) -> bool {
         status,
         "completed" | "failed" | "cancelled" | "canceled" | "resolved"
     )
+}
+
+fn is_live_status(status: &str) -> bool {
+    matches!(status, "running" | "pending" | "streaming")
 }
 
 fn activity_summary_text(payload: &Value) -> Option<String> {

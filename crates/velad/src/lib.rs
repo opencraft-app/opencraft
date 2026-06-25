@@ -11,7 +11,7 @@ use axum::{
     routing::{get, patch, post},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use futures::{StreamExt, stream};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -784,16 +784,21 @@ where
                 }),
             )
             .await;
-            let session = session_json(
-                &session_id,
-                request.backend.as_str(),
-                "idle",
-                &request.working_directory,
-                request.title.as_deref(),
-                &agent_config,
-                request.metadata,
-                Some(&append.event),
-            );
+            let session = match state.store.get_session(&session_id).await {
+                Ok(Some(stored)) => stored_session_json(&stored, Some(&append.event)),
+                _ => session_json(
+                    &session_id,
+                    request.backend.as_str(),
+                    "idle",
+                    &request.working_directory,
+                    request.title.as_deref(),
+                    &agent_config,
+                    request.metadata,
+                    append.event.created_at,
+                    append.event.created_at,
+                    Some(&append.event),
+                ),
+            };
             (
                 StatusCode::CREATED,
                 Json(json!({
@@ -3316,19 +3321,20 @@ fn session_json(
     title: Option<&str>,
     agent_config: &AgentConfig,
     metadata: Option<Value>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
     last_event: Option<&CanonicalEvent>,
 ) -> Value {
-    let now = Utc::now().to_rfc3339();
     json!({
         "id": session_id.as_str(),
         "backend": backend,
         "status": status,
         "title": title.unwrap_or(session_id.as_str()),
-        "updated_at": now,
+        "updated_at": updated_at.to_rfc3339(),
         "working_directory": working_directory,
         "model": agent_config.model,
         "agent_config": agent_config,
-        "created_at": now,
+        "created_at": created_at.to_rfc3339(),
         "metadata": metadata.unwrap_or_else(|| json!({})),
         "runtime_info": session_runtime_info_json(backend, agent_config),
         "operations": session_operations_json(status),
@@ -3398,6 +3404,8 @@ fn stored_session_json(session: &StoredSession, last_event: Option<&CanonicalEve
         Some(&session.title),
         &session.agent_config,
         Some(session.metadata.clone()),
+        session.created_at,
+        session.updated_at,
         last_event,
     )
 }

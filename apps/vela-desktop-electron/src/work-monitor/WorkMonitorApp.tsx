@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import {
   createFetchVelaEventStreamTransport,
   createVeladClient,
+  resolveVeladFetch,
 } from "../../../../packages/vela-chat-client/src";
 import { useVelaChatSession } from "../../../../packages/vela-chat-controller/src";
 import { type ChatHostPolicy } from "../../../../packages/vela-chat-render-model/src";
@@ -43,13 +44,14 @@ export function WorkMonitorApp({ hostInfo, sessionId }: WorkMonitorAppProps) {
       }),
     [hostInfo.otelBaseUrl],
   );
+  const veladFetch = useMemo(() => resolveVeladFetch(), []);
   const client = useMemo(
-    () => createVeladClient({ baseUrl: hostInfo.apiBaseUrl, observability }),
-    [hostInfo.apiBaseUrl, observability],
+    () => createVeladClient({ baseUrl: hostInfo.apiBaseUrl, fetch: veladFetch, observability }),
+    [hostInfo.apiBaseUrl, observability, veladFetch],
   );
   const eventStreamTransport = useMemo(
-    () => createFetchVelaEventStreamTransport(fetch, { observability }),
-    [observability],
+    () => createFetchVelaEventStreamTransport(veladFetch, { observability }),
+    [observability, veladFetch],
   );
   useEffect(() => {
     let cancelled = false;

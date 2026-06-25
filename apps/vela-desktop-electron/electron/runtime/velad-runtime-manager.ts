@@ -46,7 +46,7 @@ export class VeladRuntimeManager {
   constructor(options: VeladRuntimeManagerOptions) {
     this.options = {
       env: options.env ?? process.env,
-      fetchImpl: options.fetchImpl ?? fetch,
+      fetchImpl: resolveRuntimeFetch(options.fetchImpl),
       spawnImpl: options.spawnImpl ?? spawn,
       resolveBundledVeladPath: options.resolveBundledVeladPath ?? bundledVeladPath,
       readyTimeoutMs: options.readyTimeoutMs ?? 15_000,
@@ -294,6 +294,16 @@ export class VeladRuntimeManager {
       this.log("[host]", `velad observability flush failed: ${errorMessage(err)}`);
     }
   }
+}
+
+function resolveRuntimeFetch(fetchImpl?: typeof fetch): typeof fetch {
+  if (fetchImpl) return fetchImpl;
+  if (typeof globalThis.fetch === "function") {
+    return globalThis.fetch.bind(globalThis) as typeof fetch;
+  }
+  return (async () => {
+    throw new Error("No Electron runtime fetch implementation is available");
+  }) as typeof fetch;
 }
 
 function waitForChildExit(child: SpawnedVeladProcess, timeoutMs: number) {

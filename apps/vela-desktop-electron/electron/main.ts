@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, session } from "electron";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { env as nodeEnv } from "node:process";
@@ -55,6 +55,10 @@ interface DesktopChromeState {
   toolbarSize: number;
 }
 
+interface MediaPermissionDetails {
+  mediaTypes?: string[];
+}
+
 const logWriter = new RotatingLogWriter(
   runtimeLogPath(app.getPath("userData")),
   maxLogBytes,
@@ -84,6 +88,24 @@ const workMonitor = new WorkMonitorWindowManager({
 
 function logLine(source: string, message: string) {
   logWriter.write(source, message);
+}
+
+function isAudioCapturePermission(permission: string, details?: MediaPermissionDetails) {
+  if (permission !== "media") return false;
+  const mediaTypes = details?.mediaTypes;
+  return !mediaTypes || mediaTypes.length === 0 || mediaTypes.includes("audio");
+}
+
+function attachMediaPermissionHandlers() {
+  session.defaultSession.setPermissionRequestHandler(
+    (_webContents, permission, callback, details) => {
+      callback(isAudioCapturePermission(permission, details as MediaPermissionDetails));
+    },
+  );
+  session.defaultSession.setPermissionCheckHandler(
+    (_webContents, permission, _origin, details) =>
+      isAudioCapturePermission(permission, details as MediaPermissionDetails),
+  );
 }
 
 function getDesktopChromeState(window = mainWindow): DesktopChromeState {
@@ -327,7 +349,10 @@ ipcMain.handle("vela:desktop-focus-session", async (_event, sessionId: unknown) 
   return { accepted: true };
 });
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  attachMediaPermissionHandlers();
+  return createWindow();
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

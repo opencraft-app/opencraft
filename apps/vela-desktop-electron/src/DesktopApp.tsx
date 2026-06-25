@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createFetchVelaEventStreamTransport,
   createVeladClient,
+  resolveVeladFetch,
   type BackendKindWire,
 } from "../../../packages/vela-chat-client/src";
 import { useVelaChatSession } from "../../../packages/vela-chat-controller/src";
@@ -251,13 +252,14 @@ function DesktopReadyApp({
     () => runtimeHostBridgeForInfo(hostInfo, chromeState),
     [chromeState, hostInfo],
   );
+  const veladFetch = useMemo(() => resolveVeladFetch(), []);
   const client = useMemo(
-    () => createVeladClient({ baseUrl: apiBaseUrl, observability }),
-    [apiBaseUrl, observability],
+    () => createVeladClient({ baseUrl: apiBaseUrl, fetch: veladFetch, observability }),
+    [apiBaseUrl, observability, veladFetch],
   );
   const eventStreamTransport = useMemo(
-    () => createFetchVelaEventStreamTransport(fetch, { observability }),
-    [observability],
+    () => createFetchVelaEventStreamTransport(veladFetch, { observability }),
+    [observability, veladFetch],
   );
   const sessionList = useSessionListViewQuery({
     client,
@@ -520,6 +522,7 @@ function DesktopReadyApp({
           onStop={controller.stop}
           onSubmit={submitChatMessage}
           pendingAttachments={controller.pendingAttachments}
+          voiceInput={hostBridge.voiceInput}
         />
       ) : (
         <DesktopNewSessionPage
@@ -529,6 +532,7 @@ function DesktopReadyApp({
           error={error}
           isSubmitting={isCreatingSession}
           preferredBackends={DESKTOP_BACKEND_PREFERENCE}
+          voiceInput={hostBridge.voiceInput}
           onDefaultBackendChange={setSelectedBackendKind}
           onSubmit={createSession}
         />

@@ -1,4 +1,5 @@
 import type { RuntimeHostBridge } from "./runtimeHost";
+import { createWebSpeechVoiceInputHost } from "./capabilities/webSpeechVoiceInput";
 
 export const browserRuntimeHostBridge: RuntimeHostBridge = {
   platform: "web",
@@ -15,6 +16,7 @@ export const browserRuntimeHostBridge: RuntimeHostBridge = {
       toolbarSize: 28,
     },
   },
+  voiceInput: createWebSpeechVoiceInputHost(),
   shouldStartDrag: () => false,
   startWindowDrag: () => undefined,
 };

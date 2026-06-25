@@ -4,8 +4,10 @@ import {
   readVelaStreamEventData,
   subscribeVelaEventSource,
 } from "./stream";
+import { resolveVeladFetch } from "./veladFetch";
 import type {
   VelaStreamEventWire,
+  VeladFetch,
   VeladClientObservability,
   VeladObservedSpan,
 } from "./wire";
@@ -63,9 +65,10 @@ export function createBrowserVelaEventStreamTransport(): VelaEventStreamTranspor
 }
 
 export function createFetchVelaEventStreamTransport(
-  doFetch: typeof fetch,
+  doFetch: VeladFetch,
   options: VelaEventStreamTransportOptions = {},
 ): VelaEventStreamTransport {
+  const resolvedFetch = resolveVeladFetch(doFetch);
   return {
     subscribe(url, handlers) {
       const controller = new AbortController();
@@ -78,7 +81,7 @@ export function createFetchVelaEventStreamTransport(
       });
 
       void readFetchEventStream({
-        doFetch,
+        doFetch: resolvedFetch,
         handlers,
         isClosed: () => closed,
         observability: options.observability,
@@ -101,7 +104,7 @@ export function createFetchVelaEventStreamTransport(
 }
 
 interface ReadFetchEventStreamInput {
-  doFetch: typeof fetch;
+  doFetch: VeladFetch;
   handlers: VelaEventStreamHandlers;
   isClosed: () => boolean;
   observability?: VelaEventStreamObservability;

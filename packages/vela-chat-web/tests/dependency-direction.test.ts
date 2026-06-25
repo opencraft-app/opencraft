@@ -1536,19 +1536,31 @@ test("composer primary control switches to stop while a turn is running", () => 
   assert.match(chatWorkbench, /client\.cancelSession\(\{ sessionId: requestedSessionId \}\)/);
 });
 
-test("composer gates dictation behind browser speech recognition", () => {
+test("composer gates dictation behind the runtime voice input host", () => {
   const promptInput = readFileSync(
     join(root, "packages/vela-chat-web/src/primitives/prompt-input/PromptInput.tsx"),
     "utf8",
   );
+  const browserRuntimeHost = readFileSync(
+    join(root, "packages/vela-desktop-shell/src/host/browserRuntimeHost.ts"),
+    "utf8",
+  );
+  const voiceInputHost = readFileSync(
+    join(root, "packages/vela-desktop-shell/src/host/capabilities/webSpeechVoiceInput.ts"),
+    "utf8",
+  );
 
   assert.match(promptInput, /import \{ ArrowUp, ImagePlus, Mic, Square \} from "lucide-react";/);
-  assert.match(promptInput, /window\.SpeechRecognition \|\| window\.webkitSpeechRecognition/);
-  assert.match(promptInput, /recognition\.interimResults = true;/);
-  assert.match(promptInput, /recognition\.onresult = \(event\) =>/);
+  assert.match(promptInput, /voiceInput\?: VoiceInputHost/);
+  assert.match(promptInput, /voiceInput\.onFinalTranscript/);
+  assert.match(promptInput, /host\.start\(\{ interimResults: true \}\)/);
   assert.match(promptInput, /aria-label=\{isDictating \? "Stop dictation" : "Start dictation"\}/);
   assert.match(promptInput, /disabled=\{!supportsDictation\}/);
   assert.match(promptInput, /<Mic size=\{17\} strokeWidth=\{2\.1\} aria-hidden="true" \/>/);
+  assert.match(browserRuntimeHost, /voiceInput: createWebSpeechVoiceInputHost\(\)/);
+  assert.match(voiceInputHost, /navigator\.mediaDevices\.getUserMedia\(\{ audio: true \}\)/);
+  assert.match(voiceInputHost, /SpeechRecognition \?\? speechWindow\.webkitSpeechRecognition/);
+  assert.doesNotMatch(promptInput, /window\.SpeechRecognition \|\| window\.webkitSpeechRecognition/);
   assert.doesNotMatch(promptInput, />\s*⌘\s*</);
 });
 

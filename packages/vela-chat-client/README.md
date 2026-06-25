@@ -1,8 +1,18 @@
 # vela-chat-client
 
-HTTP/SSE client for local `velad`.
+HTTP/SSE client for `velad`.
 
 Owns URL construction, fetch calls, SSE frame parsing, command submission, and structured client errors.
+
+This package is host-agnostic. It must not assume that the JavaScript runtime
+and `velad` run on the same machine. Desktop hosts can use the default
+`baseUrl + fetch` path for local `velad`; remote hosts such as Workbench should
+inject their own `VeladFetch` into `createVeladClient({ baseUrl, fetch })` so
+TAT/TSSH leases, remote forwarding, authentication, and network failure
+classification stay outside the SDK.
+
+Runtime code should resolve fetch through `resolveVeladFetch()` or receive an
+injected `VeladFetch`; do not call bare global `fetch` from the client path.
 
 Command submission validates both sides of the OpenAPI boundary:
 
@@ -42,3 +52,5 @@ Command submission validates both sides of the OpenAPI boundary:
 Do not widen these contracts back into loose optional-field objects.
 
 Does not own React state, UI projection, markdown rendering, or layout policy.
+Does not own host networking, auth leases, SSH/TAT tunnels, remote port
+forwarding, or provider-specific transport failure classification.

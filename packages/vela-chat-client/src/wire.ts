@@ -1,6 +1,8 @@
+export type VeladFetch = (input: URL | RequestInfo, init?: RequestInit) => Promise<Response>;
+
 export interface VeladClientOptions {
   baseUrl: string;
-  fetch?: typeof fetch;
+  fetch?: VeladFetch;
   observability?: VeladClientObservability;
 }
 

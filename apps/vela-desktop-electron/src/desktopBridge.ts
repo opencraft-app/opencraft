@@ -1,5 +1,6 @@
 import {
   browserRuntimeHostBridge,
+  createWebSpeechVoiceInputHost,
   type RuntimeHostBridge,
   type RuntimeChromeSafeArea,
 } from "../../../packages/vela-desktop-shell/src";
@@ -86,6 +87,7 @@ export type RuntimeBootstrap =
     };
 
 const DEFAULT_WEB_API_BASE_URL = "/api/v1";
+const electronVoiceInput = createWebSpeechVoiceInputHost();
 
 export async function readRuntimeHostInfo(): Promise<RuntimeHostInfo> {
   const bootstrap = await readRuntimeBootstrap();
@@ -268,6 +270,7 @@ function electronRuntimeHostBridge(
       canStartWindowDrag: false,
       safeArea: runtimeChromeSafeArea(chromeState ?? fallbackChromeState(platform)),
     },
+    voiceInput: electronVoiceInput,
     shouldStartDrag: () => false,
     startWindowDrag: () => undefined,
     ...(window.velaDesktop?.leaveFullscreen

@@ -27,6 +27,7 @@ import type {
   VeladClientOptions,
 } from "./wire";
 import { createConfigIdempotencyKey, createIdempotencyKey, createSessionIdempotencyKey } from "./idempotency";
+import { resolveVeladFetch } from "./veladFetch";
 import {
   encodeBackendKind,
   encodeSessionId,
@@ -105,7 +106,7 @@ export interface VeladClient {
 
 export function createVeladClient(options: VeladClientOptions): VeladClient {
   const baseUrl = normalizeBaseUrl(options.baseUrl);
-  const doFetch = options.fetch ?? fetch;
+  const doFetch = resolveVeladFetch(options.fetch);
   const observability = options.observability;
 
   const observedFetch = async (

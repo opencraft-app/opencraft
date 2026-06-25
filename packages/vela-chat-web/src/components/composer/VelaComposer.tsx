@@ -1,6 +1,7 @@
 "use client";
 
 import type { AgentConfigPatchWire } from "../../../../vela-chat-client/src";
+import type { VoiceInputHost } from "../../../../vela-desktop-shell/src";
 import { ComposerControls } from "../composer-controls/ComposerControls";
 import type { ComposerControlsModel } from "../composer-controls/model";
 import { PromptInput } from "../../primitives/prompt-input/PromptInput";
@@ -14,6 +15,7 @@ export function VelaComposer({
   isRunning,
   isUpdatingControls,
   pendingAttachments = [],
+  voiceInput,
   onDraftChange,
   onAttachImages,
   onAgentConfigChange,
@@ -29,6 +31,7 @@ export function VelaComposer({
   isRunning: boolean;
   isUpdatingControls?: boolean;
   pendingAttachments?: PromptInputAttachment[];
+  voiceInput?: VoiceInputHost;
   onDraftChange: (value: string) => void;
   onAttachImages?: (files: File[]) => void;
   onAgentConfigChange?: (patch: AgentConfigPatchWire) => void;
@@ -51,6 +54,7 @@ export function VelaComposer({
       onSubmit={onSubmit}
       pendingAttachments={pendingAttachments}
       placeholder={placeholder}
+      voiceInput={voiceInput}
       leftToolbarControls={
         controls && onAgentConfigChange ? (
           <ComposerControls

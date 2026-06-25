@@ -1,6 +1,7 @@
 import type { AgentConfigPatchWire } from "../../../vela-chat-client/src";
 import type { VelaClientStateStore } from "../../../vela-chat-host-state/src";
 import type { ChatRenderModel } from "../../../vela-chat-render-model/src";
+import type { VoiceInputHost } from "../../../vela-desktop-shell/src";
 import type { ComposerControlsModel } from "../components/composer-controls/model";
 import type { RequestDockResponse } from "../components/requests/RequestDock";
 import { ChatWorkbenchView } from "../components/workbench/ChatWorkbenchView";
@@ -22,6 +23,7 @@ export interface ChatSurfaceProps {
   messageFollowToken?: number;
   pendingAttachments?: PromptInputAttachment[];
   showScrollInspector?: boolean;
+  voiceInput?: VoiceInputHost;
   onDraftChange: (value: string) => void;
   onAttachImages?: (files: File[]) => void;
   onAgentConfigChange?: (patch: AgentConfigPatchWire) => void;
@@ -48,6 +50,7 @@ export function ChatSurface({
   messageFollowToken,
   pendingAttachments,
   showScrollInspector,
+  voiceInput,
   onDraftChange,
   onAttachImages,
   onAgentConfigChange,
@@ -83,6 +86,7 @@ export function ChatSurface({
       onSubmit={onSubmit}
       pendingAttachments={pendingAttachments}
       showScrollInspector={showScrollInspector}
+      voiceInput={voiceInput}
     />
   );
 }

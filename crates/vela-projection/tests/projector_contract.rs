@@ -298,6 +298,70 @@ fn conversation_absorbs_acp_config_negotiation_warnings_as_diagnostics() {
         conversation.items[0].title.as_deref(),
         Some("real provider warning")
     );
+    assert_eq!(conversation.items[0].status, "completed");
+}
+
+#[test]
+fn conversation_treats_warning_and_error_as_terminal_work() {
+    let events = vec![
+        event_at(
+            1,
+            1,
+            EventType::WARNING_RAISED,
+            json!({ "message": "metadata is missing", "turn_id": "turn_1" }),
+        ),
+        event_at(
+            2,
+            2,
+            EventType::ERROR_RAISED,
+            json!({ "message": "provider failed", "turn_id": "turn_1" }),
+        ),
+    ];
+
+    let conversation = project_conversation(&events);
+
+    assert_eq!(conversation.items.len(), 2);
+    assert_eq!(conversation.items[0].kind, ConversationItemKind::AgentWork);
+    assert_eq!(conversation.items[0].status, "completed");
+    assert_eq!(conversation.items[1].kind, ConversationItemKind::AgentWork);
+    assert_eq!(conversation.items[1].status, "failed");
+}
+
+#[test]
+fn conversation_terminal_turn_closes_live_agent_work() {
+    let events = vec![
+        event_at(
+            1,
+            1,
+            EventType::TURN_STARTED,
+            json!({ "turn_id": "turn_1" }),
+        ),
+        event_at(
+            2,
+            2,
+            EventType::TOOL_STARTED,
+            json!({ "tool_id": "tool_1", "name": "Search", "status": "running", "turn_id": "turn_1" }),
+        ),
+        event_at(
+            3,
+            6,
+            EventType::TURN_COMPLETED,
+            json!({ "turn_id": "turn_1" }),
+        ),
+    ];
+
+    let conversation = project_conversation(&events);
+    let work = conversation
+        .items
+        .iter()
+        .find(|item| item.kind == ConversationItemKind::AgentWork)
+        .expect("agent work");
+
+    assert_eq!(work.status, "completed");
+    assert_eq!(
+        work.updated_at,
+        Utc.with_ymd_and_hms(2026, 6, 18, 10, 0, 6).unwrap()
+    );
 }
 
 #[test]

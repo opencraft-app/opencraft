@@ -5,6 +5,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import type { VelaClientStateStore } from "../../../../vela-chat-host-state/src";
 import type { AgentConfigPatchWire } from "../../../../vela-chat-client/src";
 import type { ChatRenderModel } from "../../../../vela-chat-render-model/src";
+import type { VoiceInputHost } from "../../../../vela-desktop-shell/src";
 import { toWebChatModel } from "../../adapters/toWebBlocks";
 import type { ComposerControlsModel } from "../composer-controls/model";
 import type { PromptInputAttachment } from "../../primitives/prompt-input/PromptInput";
@@ -36,6 +37,7 @@ export interface ChatWorkbenchViewProps {
   messageFollowToken?: number;
   pendingAttachments?: PromptInputAttachment[];
   showScrollInspector?: boolean;
+  voiceInput?: VoiceInputHost;
   onDraftChange: (value: string) => void;
   onAttachImages?: (files: File[]) => void;
   onAgentConfigChange?: (patch: AgentConfigPatchWire) => void;
@@ -62,6 +64,7 @@ export function ChatWorkbenchView({
   messageFollowToken,
   pendingAttachments,
   showScrollInspector = false,
+  voiceInput,
   onDraftChange,
   onAttachImages,
   onAgentConfigChange,
@@ -177,6 +180,7 @@ export function ChatWorkbenchView({
           onSubmit={handleSubmit}
           pendingAttachments={pendingAttachments}
           placeholder={webModel.composer.placeholder}
+          voiceInput={voiceInput}
         />
       </div>
     </main>
