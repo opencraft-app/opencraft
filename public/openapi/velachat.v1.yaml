@@ -1450,9 +1450,38 @@ components:
           type: string
         stderr:
           type: string
+        streams:
+          type: array
+          description: Accumulated stream chunks for live shell output. UI may use this for expandable command logs.
+          items:
+            $ref: '#/components/schemas/AgentWorkShellStream'
         exit_code:
           type: integer
         error:
+          type: string
+    AgentWorkShellStream:
+      type: object
+      required: [stream_id]
+      properties:
+        stream_id:
+          type: string
+          description: Stable logical stream identifier, usually stdout or stderr.
+        stream:
+          type: string
+          deprecated: true
+          description: Legacy alias for stream_id.
+        text:
+          type: string
+          description: Accumulated text for this stream.
+        last_delta:
+          type: string
+          description: Last observed chunk for this stream.
+        chunk_count:
+          type: integer
+          minimum: 0
+        last_sequence:
+          type: integer
+        last_chunk_id:
           type: string
     AgentWorkFileDetail:
       type: object

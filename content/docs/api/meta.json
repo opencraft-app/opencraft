@@ -3,10 +3,12 @@
   "pages": [
     "conventions",
     "openapi",
+    "openapi-design",
     "client-contract",
     "sessions",
     "input-events",
     "event-vocabulary",
+    "tool-streams",
     "events",
     "ui-read-models",
     "session-history",
