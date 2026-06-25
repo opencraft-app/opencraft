@@ -41,6 +41,7 @@ import {
   readRuntimeChromeState,
   retryRuntimeBootstrap,
   saveDesktopSettings,
+  selectDesktopWorkingDirectory,
   subscribeOpenDesktopSession,
   subscribeRuntimeChromeState,
   type RuntimeChromeStateResponse,
@@ -606,8 +607,10 @@ function DesktopReadyApp({
           error={error}
           isSubmitting={isCreatingSession}
           preferredBackends={DESKTOP_BACKEND_PREFERENCE}
+          runtimeHostKind={hostInfo.hostKind}
           voiceInput={hostBridge.voiceInput}
           onDefaultBackendChange={setSelectedBackendKind}
+          onSelectWorkingDirectory={selectDesktopWorkingDirectory}
           onSubmit={createSession}
         />
       )}

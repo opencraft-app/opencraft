@@ -35,6 +35,7 @@ test("composer controls derive selected model, reasoning effort, and permission 
       kind: "pi",
       status: "available",
       display_name: "Pi Coding",
+      location: { kind: "local", label: "Local" },
       capabilities: { session_agent_config: true },
       models: [
         {
@@ -111,6 +112,7 @@ test("composer controls disable agent config changes when backend capability is 
       kind: "acp",
       status: "available",
       display_name: "Hermes ACP",
+      location: { kind: "local", label: "Local" },
       capabilities: {
         streaming: true,
         cancel: true,

@@ -10,6 +10,7 @@ test("workbench setup does not send runtime model config when backend capability
       kind: "acp",
       status: "available",
       display_name: "Hermes ACP",
+      location: { kind: "local", label: "Local" },
       capabilities: {
         streaming: true,
         cancel: false,
@@ -51,6 +52,7 @@ test("workbench setup does not select errored backends", () => {
       status: "error",
       status_message: "model discovery failed",
       display_name: "Codex",
+      location: { kind: "local", label: "Local" },
       capabilities: { session_agent_config: true },
       models: [],
       permission_modes: [{ id: "auto", label: "Auto" }],
@@ -81,6 +83,7 @@ test("workbench setup can select degraded backends with discovered models", () =
       status: "degraded",
       status_message: "configured default model was not discovered",
       display_name: "Codex",
+      location: { kind: "local", label: "Local" },
       capabilities: { session_agent_config: true },
       models: [
         {

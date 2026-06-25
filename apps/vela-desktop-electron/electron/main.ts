@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, session } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, session } from "electron";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { env as nodeEnv } from "node:process";
@@ -337,6 +337,18 @@ ipcMain.handle("vela:desktop-leave-fullscreen", async () => {
     window.setFullScreen(false);
   }
   return getDesktopChromeState(window ?? mainWindow);
+});
+
+ipcMain.handle("vela:desktop-select-working-directory", async () => {
+  const options = {
+    properties: ["openDirectory", "createDirectory"] as const,
+    title: "Choose workspace folder",
+  };
+  const result = mainWindow
+    ? await dialog.showOpenDialog(mainWindow, options)
+    : await dialog.showOpenDialog(options);
+  if (result.canceled) return null;
+  return result.filePaths[0] ?? null;
 });
 
 ipcMain.handle("vela:work-monitor-open", async (_event, sessionId: unknown) => {
