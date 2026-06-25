@@ -133,10 +133,10 @@ function SessionListSurfaceItem({
     const updatePosition = () => {
       const rect = rootRef.current?.getBoundingClientRect();
       if (!rect) return;
-      const width = Math.min(360, Math.max(280, window.innerWidth - rect.right - 18));
+      const width = Math.min(304, Math.max(236, window.innerWidth - rect.right - 18));
       setHoverCardStyle({
         position: "fixed",
-        top: `${Math.max(8, Math.min(rect.top + rect.height / 2 - 74, window.innerHeight - 164))}px`,
+        top: `${Math.max(8, Math.min(rect.top + rect.height / 2 - 52, window.innerHeight - 116))}px`,
         left: `${Math.max(8, Math.min(rect.right + 8, window.innerWidth - width - 8))}px`,
         width: `${width}px`,
       });
@@ -216,7 +216,7 @@ function SessionListSurfaceItem({
   ) : null;
   const hoverCard = isHoverCardOpen ? (
     <div
-      className="vela-session-hover-card vela-motion-popover"
+      className="vela-popover-surface vela-session-hover-card vela-motion-popover"
       role="tooltip"
       data-slot="session-hover-card"
       data-state="open"
