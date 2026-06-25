@@ -89,7 +89,9 @@ export function useConversationScrollbarOverlay(
   const [scrollActive, setScrollActive] = useState(false);
   const visibleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastObservedOffsetRef = useRef<number | null>(null);
+  const metricsRef = useRef<ScrollbarMetrics>(EMPTY_METRICS);
+  const resizeSuppressFrameRef = useRef<number | null>(null);
+  const suppressScrollRevealForResizeRef = useRef(false);
   const dragStartClientYRef = useRef(0);
   const dragStartOffsetRef = useRef(0);
   const geometryRef = useRef<VerticalScrollbarGeometry>(
@@ -110,9 +112,14 @@ export function useConversationScrollbarOverlay(
 
   const updateMetrics = useCallback(() => {
     const element = elementRef.current;
-    if (!element) return;
+    if (!element) return EMPTY_METRICS;
     const next = readMetrics(element);
-    setMetrics((previous) => (metricsChanged(previous, next) ? next : previous));
+    const previous = metricsRef.current;
+    if (metricsChanged(previous, next)) {
+      metricsRef.current = next;
+      setMetrics(next);
+    }
+    return next;
   }, [elementRef]);
 
   const revealFromScroll = useCallback(() => {
@@ -154,10 +161,25 @@ export function useConversationScrollbarOverlay(
 
     const handleScroll = () => {
       updateMetrics();
+      if (suppressScrollRevealForResizeRef.current) return;
+      revealFromScroll();
+      markScrollActive();
+    };
+
+    const handleResize = () => {
+      updateMetrics();
+      suppressScrollRevealForResizeRef.current = true;
+      if (resizeSuppressFrameRef.current !== null) {
+        window.cancelAnimationFrame(resizeSuppressFrameRef.current);
+      }
+      resizeSuppressFrameRef.current = window.requestAnimationFrame(() => {
+        resizeSuppressFrameRef.current = null;
+        suppressScrollRevealForResizeRef.current = false;
+      });
     };
 
     element.addEventListener("scroll", handleScroll, { passive: true });
-    const resizeObserver = new ResizeObserver(updateMetrics);
+    const resizeObserver = new ResizeObserver(handleResize);
     resizeObserver.observe(element);
     if (contentRef?.current) {
       resizeObserver.observe(contentRef.current);
@@ -167,8 +189,13 @@ export function useConversationScrollbarOverlay(
     return () => {
       element.removeEventListener("scroll", handleScroll);
       resizeObserver.disconnect();
+      if (resizeSuppressFrameRef.current !== null) {
+        window.cancelAnimationFrame(resizeSuppressFrameRef.current);
+        resizeSuppressFrameRef.current = null;
+      }
+      suppressScrollRevealForResizeRef.current = false;
     };
-  }, [contentRef, elementRef, enabled, updateMetrics]);
+  }, [contentRef, elementRef, enabled, markScrollActive, revealFromScroll, updateMetrics]);
 
   const geometry = useMemo(
     () =>
@@ -190,24 +217,13 @@ export function useConversationScrollbarOverlay(
       setScrollActive(false);
       clearVisibleTimeout();
       clearActiveTimeout();
-      lastObservedOffsetRef.current = null;
       return;
     }
-
-    const previousOffset = lastObservedOffsetRef.current;
-    lastObservedOffsetRef.current = metrics.offset;
-    if (previousOffset === null) return;
-    if (Math.abs(metrics.offset - previousOffset) <= METRICS_EPSILON) return;
-    revealFromScroll();
-    markScrollActive();
   }, [
     clearActiveTimeout,
     clearVisibleTimeout,
     enabled,
     geometry.visible,
-    markScrollActive,
-    metrics.offset,
-    revealFromScroll,
   ]);
 
   useEffect(

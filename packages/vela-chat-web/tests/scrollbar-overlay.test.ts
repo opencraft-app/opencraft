@@ -112,3 +112,25 @@ test("overlay thumb drag exposes committed scroll offsets to the conversation sc
     "thumb dragging is user scroll intent and must be reported to bottom-anchor ownership, not inferred later from an async DOM scroll event",
   );
 });
+
+test("layout resize updates scrollbar geometry without revealing the overlay", () => {
+  const source = readFileSync(
+    join(
+      root,
+      "packages/vela-chat-web/src/conversation-runtime/scrollbar/useConversationScrollbarOverlay.tsx",
+    ),
+    "utf8",
+  );
+  const scrollHandler = source.match(/const handleScroll = \(\) => \{[\s\S]*?\n    \};/);
+  const resizeHandler = source.match(/const handleResize = \(\) => \{[\s\S]*?\n    \};/);
+
+  assert.ok(scrollHandler, "scroll events must own scrollbar reveal behavior");
+  assert.match(scrollHandler[0], /revealFromScroll\(\)/);
+  assert.match(scrollHandler[0], /markScrollActive\(\)/);
+  assert.match(scrollHandler[0], /suppressScrollRevealForResizeRef\.current/);
+  assert.ok(resizeHandler, "resize observer must be present for geometry updates");
+  assert.match(resizeHandler[0], /updateMetrics\(\)/);
+  assert.match(resizeHandler[0], /requestAnimationFrame/);
+  assert.doesNotMatch(resizeHandler[0], /revealFromScroll|markScrollActive/);
+  assert.match(source, /new ResizeObserver\(handleResize\)/);
+});
