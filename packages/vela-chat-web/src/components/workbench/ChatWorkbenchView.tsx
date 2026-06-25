@@ -2,7 +2,10 @@
 
 import type { CSSProperties } from "react";
 import { useCallback, useMemo, useRef, useState } from "react";
-import type { VelaClientStateStore } from "../../../../vela-chat-host-state/src";
+import type {
+  QueuedComposerInputClientState,
+  VelaClientStateStore,
+} from "../../../../vela-chat-host-state/src";
 import type { AgentConfigPatchWire } from "../../../../vela-chat-client/src";
 import type { ChatRenderModel } from "../../../../vela-chat-render-model/src";
 import type { VoiceInputHost } from "../../../../vela-desktop-shell/src";
@@ -36,6 +39,7 @@ export interface ChatWorkbenchViewProps {
   isRespondingToRequest?: boolean;
   messageFollowToken?: number;
   pendingAttachments?: PromptInputAttachment[];
+  queuedInputs?: QueuedComposerInputClientState[];
   showScrollInspector?: boolean;
   voiceInput?: VoiceInputHost;
   onDraftChange: (value: string) => void;
@@ -44,6 +48,7 @@ export interface ChatWorkbenchViewProps {
   onLoadOlder?: () => void;
   onConversationScrollDebugChange?: (debug: ConversationScrollControllerDebug) => void;
   onRemoveAttachment?: (attachmentId: string) => void;
+  onRemoveQueuedInput?: (queuedInputId: string) => void;
   onRespondToRequest?: (response: RequestDockResponse) => void;
   onStop?: () => void;
   onSubmit: () => void;
@@ -63,6 +68,7 @@ export function ChatWorkbenchView({
   isRespondingToRequest = false,
   messageFollowToken,
   pendingAttachments,
+  queuedInputs,
   showScrollInspector = false,
   voiceInput,
   onDraftChange,
@@ -71,6 +77,7 @@ export function ChatWorkbenchView({
   onConversationScrollDebugChange,
   onLoadOlder,
   onRemoveAttachment,
+  onRemoveQueuedInput,
   onRespondToRequest,
   onStop,
   onSubmit,
@@ -176,10 +183,12 @@ export function ChatWorkbenchView({
           onDraftChange={onDraftChange}
           onHeightChange={handleComposerHeightChange}
           onRemoveAttachment={onRemoveAttachment}
+          onRemoveQueuedInput={onRemoveQueuedInput}
           onStop={onStop}
           onSubmit={handleSubmit}
           pendingAttachments={pendingAttachments}
           placeholder={webModel.composer.placeholder}
+          queuedInputs={queuedInputs}
           voiceInput={voiceInput}
         />
       </div>

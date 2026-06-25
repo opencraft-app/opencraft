@@ -53,37 +53,6 @@ function testClient() {
   } as any;
 }
 
-test("desktop general settings stay separate from engine configuration", () => {
-  const html = renderToStaticMarkup(
-    <DesktopSettingsPage
-      apiBaseUrl="/api/v1"
-      backends={[codexBackend()]}
-      client={testClient()}
-      hostLabel="Browser preview"
-      appVersion="0.0.1"
-      activePanel="general"
-      selectedBackend="codex"
-      sessionsCount={3}
-      onSelectedBackendChange={() => {}}
-    />,
-  );
-
-  assert.match(html, /class="vela-settings-page"/);
-  assert.match(html, />常规</);
-  assert.match(html, /role="switch"/);
-  assert.match(html, /class="vela-shell-switch"/);
-  assert.match(html, />Shell host</);
-  assert.match(html, />Browser preview</);
-  assert.match(html, />Session cache</);
-  assert.match(html, />3 sessions</);
-  assert.doesNotMatch(html, />Backend</);
-  assert.doesNotMatch(html, />默认 backend</);
-  assert.doesNotMatch(html, />Vela 内置引擎 Endpoint</);
-  assert.doesNotMatch(html, />velad API</);
-  assert.doesNotMatch(html, /Desktop settings/);
-  assert.doesNotMatch(html, /vela-desktop-settings-overlay/);
-});
-
 test("desktop engine settings render in their own sidebar tab", () => {
   const html = renderToStaticMarkup(
     <DesktopSettingsPage
@@ -94,7 +63,6 @@ test("desktop engine settings render in their own sidebar tab", () => {
       appVersion="0.0.1"
       activePanel="engine"
       selectedBackend="codex"
-      sessionsCount={3}
       onSelectedBackendChange={() => {}}
     />,
   );
@@ -116,7 +84,7 @@ test("desktop engine settings render in their own sidebar tab", () => {
 test("desktop settings sidebar exposes return and navigation inside shell chrome", () => {
   const html = renderToStaticMarkup(
     <DesktopSettingsSidebar
-      activePanel="general"
+      activePanel="engine"
       showTrafficLights
       onClose={() => {}}
       onPanelChange={() => {}}
@@ -126,7 +94,7 @@ test("desktop settings sidebar exposes return and navigation inside shell chrome
   assert.match(html, /class="[^"]*vela-settings-sidebar/);
   assert.match(html, />返回应用</);
   assert.match(html, /placeholder="搜索设置\.\.\."/);
-  assert.match(html, />常规</);
+  assert.doesNotMatch(html, />常规</);
   assert.match(html, />引擎</);
   assert.match(html, />关于 LightVela</);
   assert.match(html, />已归档对话</);
@@ -145,7 +113,6 @@ test("desktop settings renders about panel with current version", () => {
       client={testClient()}
       hostLabel="Browser preview"
       selectedBackend=""
-      sessionsCount={0}
       onSelectedBackendChange={() => {}}
     />,
   );
@@ -198,7 +165,6 @@ test("desktop engine text settings keep focus and save on blur", async () => {
           client={client}
           hostLabel="Browser preview"
           selectedBackend="codex"
-          sessionsCount={0}
           onBackendSettingsChange={() => {
             refreshCount += 1;
           }}

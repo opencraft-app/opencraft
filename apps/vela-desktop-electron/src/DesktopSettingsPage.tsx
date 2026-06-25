@@ -2,13 +2,10 @@ import {
   Archive,
   ArrowLeft,
   Bot,
-  Check,
   ExternalLink,
   Info,
   Search,
-  Settings,
   Sparkles,
-  TerminalSquare,
 } from "lucide-react";
 import React from "react";
 import type {
@@ -46,23 +43,20 @@ export interface DesktopSettingsPageProps {
   appVersion: string;
   backends: BackendWire[];
   hostLabel: string;
-  logPath?: string;
   client: VeladClient;
   selectedBackend: BackendKindWire | "";
-  sessionsCount: number;
   onBackendSettingsChange?: () => Promise<void> | void;
   onSelectedBackendChange: (backend: BackendKindWire) => void;
 }
 
-export type DesktopSettingsPanelId = "general" | "engine" | "archive" | "about";
+export type DesktopSettingsPanelId = "engine" | "archive" | "about";
 
 const settingsPanels = [
-  { icon: Settings, id: "general", label: "常规" },
   { icon: Bot, id: "engine", label: "引擎" },
   { icon: Archive, id: "archive", label: "已归档对话" },
   { icon: Info, id: "about", label: "关于 LightVela" },
 ] satisfies Array<{
-  icon: typeof Settings;
+  icon: typeof Bot;
   id: DesktopSettingsPanelId;
   label: string;
 }>;
@@ -116,10 +110,8 @@ export function DesktopSettingsPage({
   appVersion,
   backends,
   hostLabel,
-  logPath,
   client,
   selectedBackend,
-  sessionsCount,
   onBackendSettingsChange,
   onSelectedBackendChange,
 }: DesktopSettingsPageProps) {
@@ -135,104 +127,14 @@ export function DesktopSettingsPage({
     [backends, client, onBackendSettingsChange, onSelectedBackendChange, selectedBackend],
   );
 
-  if (activePanel === "about") {
-    return <DesktopSettingsAboutPanel appVersion={appVersion} hostLabel={hostLabel} />;
+  switch (activePanel) {
+    case "about":
+      return <DesktopSettingsAboutPanel appVersion={appVersion} hostLabel={hostLabel} />;
+    case "archive":
+      return <DesktopSettingsArchivePanel />;
+    case "engine":
+      return <DesktopSettingsEnginePanel apiBaseUrl={apiBaseUrl} settings={settings} />;
   }
-
-  if (activePanel === "archive") {
-    return <DesktopSettingsArchivePanel />;
-  }
-
-  if (activePanel === "engine") {
-    return <DesktopSettingsEnginePanel apiBaseUrl={apiBaseUrl} settings={settings} />;
-  }
-
-  return (
-    <main className="vela-settings-page" aria-label="Settings">
-      <div className="vela-settings-content">
-        <h1>常规</h1>
-
-        <section className="vela-settings-section" aria-labelledby="work-mode-title">
-          <div className="vela-settings-section-heading">
-            <h2 id="work-mode-title">工作模式</h2>
-            <p>选择 Vela 显示多少技术细节</p>
-          </div>
-          <div className="vela-settings-choice-grid">
-            <button className="vela-settings-choice is-selected" type="button">
-              <TerminalSquare size={18} aria-hidden />
-              <span>
-                <strong>适用于编程</strong>
-                <small>更具技术性的回复和控制</small>
-              </span>
-              <span className="vela-settings-radio" aria-hidden />
-            </button>
-            <button className="vela-settings-choice" type="button">
-              <Bot size={18} aria-hidden />
-              <span>
-                <strong>适用于日常工作</strong>
-                <small>同样强大，技术细节更少</small>
-              </span>
-              <span className="vela-settings-radio" aria-hidden />
-            </button>
-          </div>
-        </section>
-
-        <section className="vela-settings-section" aria-labelledby="permission-title">
-          <div className="vela-settings-section-heading">
-            <h2 id="permission-title">权限</h2>
-          </div>
-          <div className="vela-settings-card">
-            <SettingsToggleRow
-              title="默认权限"
-              description="默认情况下，Vela 可以读取并编辑其工作区中的文件。"
-            />
-            <SettingsToggleRow
-              title="自动审核"
-              description="Vela 会自动审核额外访问权限请求。自动审核可能会出错。"
-            />
-            <SettingsToggleRow
-              title="完全访问权限"
-              description="以完全访问权限运行时，无需你批准即可编辑文件并运行联网命令。"
-            />
-          </div>
-        </section>
-
-        <section className="vela-settings-section" aria-labelledby="local-title">
-          <div className="vela-settings-section-heading">
-            <h2 id="local-title">本地状态</h2>
-          </div>
-          <div className="vela-settings-card">
-            <SettingsInfoRow label="Shell host" value={hostLabel} />
-            {logPath ? <SettingsInfoRow label="Local logs" value={logPath} /> : null}
-            <SettingsInfoRow label="Session cache" value={`${sessionsCount} sessions`} />
-          </div>
-        </section>
-
-        <section className="vela-settings-section" aria-labelledby="general-title">
-          <div className="vela-settings-section-heading">
-            <h2 id="general-title">常规</h2>
-          </div>
-          <div className="vela-settings-card">
-            <SettingsInfoRow label="默认打开目标" value="VS Code" />
-            <SettingsInfoRow label="语言" value="自动检测" />
-            <SettingsToggleRow
-              title="在菜单栏中显示"
-              description="关闭主窗口后，仍在 macOS 菜单栏中保留 Vela"
-            />
-            <SettingsToggleRow
-              title="底部面板"
-              description="在应用标题栏中显示底部面板控件"
-            />
-            <SettingsSegmentRow label="默认终端位置" values={["底部", "右侧"]} />
-            <SettingsToggleRow
-              title="运行时防止休眠"
-              description="在 Vela 运行对话时，让电脑保持唤醒状态"
-            />
-          </div>
-        </section>
-      </div>
-    </main>
-  );
 }
 
 function DesktopSettingsEnginePanel({
@@ -409,32 +311,6 @@ function AboutFeatureCard({
   );
 }
 
-function SettingsToggleRow({
-  description,
-  defaultChecked = true,
-  onCheckedChange,
-  title,
-}: {
-  defaultChecked?: boolean;
-  description: string;
-  onCheckedChange?: (checked: boolean) => void;
-  title: string;
-}) {
-  return (
-    <div className="vela-settings-row">
-      <span>
-        <strong>{title}</strong>
-        <small>{description}</small>
-      </span>
-      <ShellSwitch
-        ariaLabel={title}
-        defaultChecked={defaultChecked}
-        onCheckedChange={onCheckedChange}
-      />
-    </div>
-  );
-}
-
 function SettingsSettingRow<T extends string | boolean>({
   setting,
 }: {
@@ -564,35 +440,6 @@ function SettingsInfoRow({ label, value }: { label: string; value: string }) {
         <strong>{label}</strong>
       </span>
       <output>{value}</output>
-    </div>
-  );
-}
-
-function SettingsSegmentRow({
-  label,
-  values,
-}: {
-  label: string;
-  values: string[];
-}) {
-  return (
-    <div className="vela-settings-row">
-      <span>
-        <strong>{label}</strong>
-        <small>选择终端快捷键和环境操作在何处打开终端标签页</small>
-      </span>
-      <div className="vela-settings-segment" role="group" aria-label={label}>
-        {values.map((value, index) => (
-          <button
-            className={index === 0 ? "is-selected" : undefined}
-            key={value}
-            type="button"
-          >
-            {index === 0 ? <Check size={13} aria-hidden /> : null}
-            {value}
-          </button>
-        ))}
-      </div>
     </div>
   );
 }

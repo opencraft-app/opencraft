@@ -1,5 +1,8 @@
 import type { AgentConfigPatchWire } from "../../../vela-chat-client/src";
-import type { VelaClientStateStore } from "../../../vela-chat-host-state/src";
+import type {
+  QueuedComposerInputClientState,
+  VelaClientStateStore,
+} from "../../../vela-chat-host-state/src";
 import type { ChatRenderModel } from "../../../vela-chat-render-model/src";
 import type { VoiceInputHost } from "../../../vela-desktop-shell/src";
 import type { ComposerControlsModel } from "../components/composer-controls/model";
@@ -22,6 +25,7 @@ export interface ChatSurfaceProps {
   isRespondingToRequest?: boolean;
   messageFollowToken?: number;
   pendingAttachments?: PromptInputAttachment[];
+  queuedInputs?: QueuedComposerInputClientState[];
   showScrollInspector?: boolean;
   voiceInput?: VoiceInputHost;
   onDraftChange: (value: string) => void;
@@ -30,6 +34,7 @@ export interface ChatSurfaceProps {
   onConversationScrollDebugChange?: (debug: ConversationScrollControllerDebug) => void;
   onLoadOlder?: () => void;
   onRemoveAttachment?: (attachmentId: string) => void;
+  onRemoveQueuedInput?: (queuedInputId: string) => void;
   onRespondToRequest?: (response: RequestDockResponse) => void;
   onStop?: () => void;
   onSubmit: () => void;
@@ -49,6 +54,7 @@ export function ChatSurface({
   isRespondingToRequest,
   messageFollowToken,
   pendingAttachments,
+  queuedInputs,
   showScrollInspector,
   voiceInput,
   onDraftChange,
@@ -57,6 +63,7 @@ export function ChatSurface({
   onConversationScrollDebugChange,
   onLoadOlder,
   onRemoveAttachment,
+  onRemoveQueuedInput,
   onRespondToRequest,
   onStop,
   onSubmit,
@@ -81,10 +88,12 @@ export function ChatSurface({
       onDraftChange={onDraftChange}
       onLoadOlder={onLoadOlder}
       onRemoveAttachment={onRemoveAttachment}
+      onRemoveQueuedInput={onRemoveQueuedInput}
       onRespondToRequest={onRespondToRequest}
       onStop={onStop}
       onSubmit={onSubmit}
       pendingAttachments={pendingAttachments}
+      queuedInputs={queuedInputs}
       showScrollInspector={showScrollInspector}
       voiceInput={voiceInput}
     />

@@ -54,7 +54,7 @@ test("session list item menu archives the selected session", async () => {
     });
 
     const menuTrigger = document.querySelector<HTMLButtonElement>(
-      '[aria-label="Session actions for Archive from menu"]',
+      '[aria-label="归档对话: Archive from menu"]',
     );
     assert.ok(menuTrigger);
 
@@ -101,7 +101,7 @@ test("session action menu uses a portal layer outside the session item", async (
     });
 
     const menuTrigger = document.querySelector<HTMLButtonElement>(
-      '[aria-label="Session actions for Archive from menu"]',
+      '[aria-label="归档对话: Archive from menu"]',
     );
     assert.ok(menuTrigger);
 
@@ -164,9 +164,55 @@ test("running session rows render a scaled thumbnail preview", async () => {
     assert.equal(item.dataset.hasThumbnail, "true");
     assert.equal(document.querySelector(".vela-session-preview"), null);
     assert.equal(document.querySelector(".vela-session-meta"), null);
-    assert.match(container.innerHTML, /transform:\s*scale\(0\.15\)/);
-    assert.match(container.innerHTML, /width:\s*126px/);
-    assert.match(container.innerHTML, /height:\s*78px/);
+    assert.match(container.innerHTML, /transform:\s*scale\(0\.09\)/);
+    assert.match(container.innerHTML, /width:\s*75\.6px/);
+    assert.match(container.innerHTML, /height:\s*46\.8px/);
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("session list activity treats waiting for user as distinct from legacy running", async () => {
+  const dom = installDomRuntime();
+  try {
+    const { SessionListSurface } = await import("../src");
+    const waitingSession: SessionListItemWire = {
+      ...session,
+      id: "ses_waiting_activity",
+      status: "waiting_for_input",
+      pending_request_count: 1,
+      running: true,
+      activity: {
+        phase: "idle",
+        attention: "waiting_for_user",
+        pending_request_count: 1,
+      },
+    };
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <SessionListSurface
+          sessions={[waitingSession]}
+          currentSessionId={waitingSession.id}
+          onSelectSession={() => {}}
+        />,
+      );
+    });
+
+    const item = document.querySelector<HTMLElement>('[data-slot="session-list-surface-item"]');
+    assert.ok(item);
+    assert.equal(item.dataset.activity, "waiting_for_input");
+    assert.equal(item.dataset.waiting, "true");
+    assert.equal(item.dataset.running, undefined);
+    assert.doesNotMatch(container.innerHTML, /1 个请求/);
+    assert.equal(document.querySelector(".vela-session-badge"), null);
 
     await act(async () => {
       root.unmount();

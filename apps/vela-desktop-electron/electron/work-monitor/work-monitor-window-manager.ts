@@ -131,7 +131,9 @@ export class WorkMonitorWindowManager {
   }
 
   private showWindow(window: BrowserWindow) {
-    this.repositionNearAnchorWindow(window);
+    if (!window.isVisible()) {
+      this.repositionNearAnchorWindow(window);
+    }
     window.showInactive();
   }
 

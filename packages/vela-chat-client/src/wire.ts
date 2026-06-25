@@ -343,6 +343,16 @@ export interface SessionOperationWire {
   effective_after?: "current_session" | "next_turn";
 }
 
+export type SessionActivityPhaseWire = "idle" | "starting" | "running" | "canceling";
+
+export type SessionActivityAttentionWire = "none" | "waiting_for_user" | "error";
+
+export interface SessionActivityWire {
+  phase: SessionActivityPhaseWire;
+  attention: SessionActivityAttentionWire;
+  pending_request_count: number;
+}
+
 export interface SessionWire {
   id: string;
   backend: BackendKindWire;
@@ -354,6 +364,7 @@ export interface SessionWire {
   model?: string | null;
   agent_config?: AgentConfigWire;
   runtime_info?: SessionRuntimeInfoWire;
+  activity?: SessionActivityWire;
   operations?: Record<string, SessionOperationWire | undefined>;
   metadata?: Record<string, unknown>;
 }
@@ -373,6 +384,7 @@ export interface SessionListItemWire extends SessionSummaryWire {
   last_activity_at: string;
   preview: string;
   pending_request_count: number;
+  activity?: SessionActivityWire;
   running: boolean;
   model?: string | null;
 }

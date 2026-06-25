@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { VelaClientStateStore } from "../../vela-chat-host-state/src";
+import type {
+  ComposerQueueInputPart,
+  QueuedComposerInputClientState,
+  VelaClientStateStore,
+} from "../../vela-chat-host-state/src";
 import {
   applyConversationLiveOverlay,
   commandAckRejectionMessage,
@@ -81,12 +85,14 @@ export interface VelaChatSessionController {
   messageFollowToken: number;
   model: ReturnType<typeof buildVelaChatControllerRenderModel>;
   pendingAttachments: PendingImageAttachment[];
+  queuedInputs: QueuedComposerInputClientState[];
   requests: PendingRequestsWireView | null;
   session: SessionWire | null;
   attachImages: (files: File[]) => Promise<void>;
   loadOlderConversation: () => Promise<void>;
   refreshAll: () => Promise<void>;
   refreshBackends: () => Promise<void>;
+  removeQueuedInput: (id: string) => void;
   removeAttachment: (attachmentId: string) => void;
   respondToRequest: (response: RequestDockResponse) => Promise<void>;
   send: () => Promise<void>;
@@ -113,6 +119,7 @@ export function useVelaChatSession({
   const [backends, setBackends] = useState<BackendWire[]>([]);
   const [draft, setDraftState] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<PendingImageAttachment[]>([]);
+  const [queuedInputs, setQueuedInputsState] = useState<QueuedComposerInputClientState[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [streamConnected, setStreamConnected] = useState(false);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
@@ -132,6 +139,9 @@ export function useVelaChatSession({
   const conversationRef = useRef<typeof conversation>(null);
   const conversationCacheRef = useRef(new Map<string, ConversationWireView>());
   const requestsRef = useRef<typeof requests>(null);
+  const queuedInputsRef = useRef<QueuedComposerInputClientState[]>([]);
+  const queueDrainInFlightRef = useRef(false);
+  const previousRunningRef = useRef<{ sessionId: string; running: boolean } | null>(null);
   activeSessionIdRef.current = activeSessionId;
 
   const ownedClient = useMemo(() => createVeladClient({ baseUrl }), [baseUrl]);
@@ -192,6 +202,24 @@ export function useVelaChatSession({
     [activeSessionId, clientStateStore],
   );
 
+  const commitQueuedInputs = useCallback(
+    (nextQueuedInputs: QueuedComposerInputClientState[]) => {
+      queuedInputsRef.current = nextQueuedInputs;
+      setQueuedInputsState(nextQueuedInputs);
+      if (!activeSessionId) return;
+      if (nextQueuedInputs.length === 0) {
+        clientStateStore?.composerQueue.clear(activeSessionId);
+        return;
+      }
+      clientStateStore?.composerQueue.write(activeSessionId, {
+        sessionId: activeSessionId,
+        items: nextQueuedInputs,
+        updatedAt: Date.now(),
+      });
+    },
+    [activeSessionId, clientStateStore],
+  );
+
   useEffect(() => {
     const cachedConversation = activeSessionId
       ? conversationCacheRef.current.get(activeSessionId) ?? null
@@ -208,9 +236,14 @@ export function useVelaChatSession({
   useEffect(() => {
     if (!activeSessionId) {
       setDraftState("");
+      queuedInputsRef.current = [];
+      setQueuedInputsState([]);
       return;
     }
     setDraftState(clientStateStore?.composerDraft.read(activeSessionId)?.text ?? "");
+    const queued = clientStateStore?.composerQueue.read(activeSessionId)?.items ?? [];
+    queuedInputsRef.current = queued;
+    setQueuedInputsState(queued);
   }, [activeSessionId, clientStateStore]);
 
   const loadConversation = useCallback(async () => {
@@ -511,6 +544,21 @@ export function useVelaChatSession({
     }
   }, [activeSessionId, client, refreshAll]);
 
+  const enqueueMessageContent = useCallback(
+    (messageContent: ClientInputPart[]) => {
+      if (!activeSessionId || messageContent.length === 0) return;
+      const now = Date.now();
+      const queuedInput: QueuedComposerInputClientState = {
+        id: `queued_${now}_${Math.random().toString(36).slice(2, 10)}`,
+        content: messageContent.map(cloneQueueInputPart),
+        previewText: queuedInputPreview(messageContent),
+        createdAt: now,
+      };
+      commitQueuedInputs([...queuedInputsRef.current, queuedInput]);
+    },
+    [activeSessionId, commitQueuedInputs],
+  );
+
   const send = useCallback(async () => {
     const text = draft.trim();
     const imageParts = pendingAttachments.map((attachment) => attachment.part);
@@ -519,20 +567,82 @@ export function useVelaChatSession({
       ...(text ? [{ type: "text", text } satisfies ClientInputPart] : []),
       ...imageParts,
     ];
+    if (model.composer.is_running) {
+      enqueueMessageContent(messageContent);
+      commitDraft("");
+      setPendingAttachments([]);
+      return;
+    }
     const accepted = await sendMessageContent(messageContent);
     if (!accepted) return;
     commitDraft("");
     setPendingAttachments([]);
-  }, [commitDraft, draft, pendingAttachments, sendMessageContent]);
+  }, [
+    commitDraft,
+    draft,
+    enqueueMessageContent,
+    model.composer.is_running,
+    pendingAttachments,
+    sendMessageContent,
+  ]);
 
   const sendText = useCallback(async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
-    const accepted = await sendMessageContent([{ type: "text", text: trimmed }]);
+    const messageContent: ClientInputPart[] = [{ type: "text", text: trimmed }];
+    if (model.composer.is_running) {
+      enqueueMessageContent(messageContent);
+      commitDraft("");
+      setPendingAttachments([]);
+      return;
+    }
+    const accepted = await sendMessageContent(messageContent);
     if (!accepted) return;
     commitDraft("");
     setPendingAttachments([]);
-  }, [commitDraft, sendMessageContent]);
+  }, [commitDraft, enqueueMessageContent, model.composer.is_running, sendMessageContent]);
+
+  const removeQueuedInput = useCallback(
+    (id: string) => {
+      commitQueuedInputs(queuedInputsRef.current.filter((item) => item.id !== id));
+    },
+    [commitQueuedInputs],
+  );
+
+  const drainNextQueuedInput = useCallback(async () => {
+    if (!activeSessionId || model.composer.is_running || queueDrainInFlightRef.current) return;
+    const requestedSessionId = activeSessionId;
+    const next = queuedInputsRef.current[0];
+    if (!next) return;
+    queueDrainInFlightRef.current = true;
+    try {
+      const accepted = await sendMessageContent(next.content);
+      if (accepted && isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) {
+        commitQueuedInputs(queuedInputsRef.current.filter((item) => item.id !== next.id));
+      }
+    } finally {
+      queueDrainInFlightRef.current = false;
+    }
+  }, [activeSessionId, commitQueuedInputs, model.composer.is_running, sendMessageContent]);
+
+  useEffect(() => {
+    const previous = previousRunningRef.current;
+    const sessionChanged = previous?.sessionId !== activeSessionId;
+    const wasRunning = !sessionChanged && previous?.running === true;
+    previousRunningRef.current = {
+      sessionId: activeSessionId,
+      running: model.composer.is_running,
+    };
+    if (!activeConversation || model.composer.is_running) return;
+    if (sessionChanged || wasRunning) {
+      void drainNextQueuedInput();
+    }
+  }, [
+    activeConversation,
+    activeSessionId,
+    drainNextQueuedInput,
+    model.composer.is_running,
+  ]);
 
   const stop = useCallback(async () => {
     const requestedSessionId = activeSessionId;
@@ -636,12 +746,14 @@ export function useVelaChatSession({
     messageFollowToken,
     model,
     pendingAttachments,
+    queuedInputs,
     requests: activeRequests,
     session,
     attachImages,
     loadOlderConversation,
     refreshAll,
     refreshBackends: loadBackends,
+    removeQueuedInput,
     removeAttachment,
     respondToRequest,
     send,
@@ -651,4 +763,30 @@ export function useVelaChatSession({
     stop,
     updateAgentConfig,
   };
+}
+
+function cloneQueueInputPart(part: ClientInputPart): ComposerQueueInputPart {
+  switch (part.type) {
+    case "text":
+      return { type: "text", text: part.text };
+    case "file_ref":
+      return { type: "file_ref", uri: part.uri };
+    case "image_ref":
+      return { type: "image_ref", uri: part.uri };
+    case "image":
+      return { type: "image", data: part.data, mime_type: part.mime_type };
+  }
+}
+
+function queuedInputPreview(content: readonly ClientInputPart[]) {
+  const text = content.find((part): part is Extract<ClientInputPart, { type: "text" }> =>
+    part.type === "text"
+  )?.text.trim();
+  if (text) return text;
+  const imageCount = content.filter((part) => part.type === "image" || part.type === "image_ref")
+    .length;
+  if (imageCount > 0) return `${imageCount} image${imageCount === 1 ? "" : "s"}`;
+  const fileCount = content.filter((part) => part.type === "file_ref").length;
+  if (fileCount > 0) return `${fileCount} file${fileCount === 1 ? "" : "s"}`;
+  return "Queued message";
 }

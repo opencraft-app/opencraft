@@ -70,10 +70,12 @@ export function VelaNextChat({
       onDraftChange={controller.setDraft}
       onLoadOlder={controller.loadOlderConversation}
       onRemoveAttachment={controller.removeAttachment}
+      onRemoveQueuedInput={controller.removeQueuedInput}
       onRespondToRequest={controller.respondToRequest}
       onStop={controller.stop}
       onSubmit={controller.send}
       pendingAttachments={controller.pendingAttachments}
+      queuedInputs={controller.queuedInputs}
     />
   );
 }

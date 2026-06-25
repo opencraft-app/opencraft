@@ -183,7 +183,7 @@ function DesktopReadyApp({
   const [activeSessionId, setActiveSessionId] = useState("");
   const [mainView, setMainView] = useState<DesktopMainView>("new-session");
   const [settingsPanel, setSettingsPanel] =
-    useState<DesktopSettingsPanelId>("general");
+    useState<DesktopSettingsPanelId>("engine");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [selectedBackendKind, setSelectedBackendKind] = useState<BackendKindWire | "">("");
@@ -493,9 +493,7 @@ function DesktopReadyApp({
           backends={controller.backends}
           client={client}
           hostLabel={hostLabel}
-          logPath={hostInfo.logPath}
           selectedBackend={selectedBackendKind}
-          sessionsCount={sessions.length}
           onBackendSettingsChange={controller.refreshBackends}
           onSelectedBackendChange={setSelectedBackendKind}
         />
@@ -518,10 +516,12 @@ function DesktopReadyApp({
           onDraftChange={controller.setDraft}
           onLoadOlder={controller.loadOlderConversation}
           onRemoveAttachment={controller.removeAttachment}
+          onRemoveQueuedInput={controller.removeQueuedInput}
           onRespondToRequest={respondToRequest}
           onStop={controller.stop}
           onSubmit={submitChatMessage}
           pendingAttachments={controller.pendingAttachments}
+          queuedInputs={controller.queuedInputs}
           voiceInput={hostBridge.voiceInput}
         />
       ) : (

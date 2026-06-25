@@ -273,6 +273,7 @@ test("session work monitor keeps host windowing separate from thumbnail renderin
   assert.match(workMonitorMain, /getDisplayMatching\(anchorBounds\)/);
   assert.match(workMonitorMain, /getPrimaryDisplay\(\)/);
   assert.match(workMonitorMain, /setBounds\(/);
+  assert.match(workMonitorMain, /if \(!window\.isVisible\(\)\)/);
   assert.match(workMonitorMain, /moveBySender/);
   assert.match(workMonitorMain, /window\.webContents !== sender/);
   assert.match(workMonitorMain, /setPosition\(/);

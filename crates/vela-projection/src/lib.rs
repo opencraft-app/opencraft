@@ -393,6 +393,18 @@ fn push_turn_status(
             .unwrap_or_else(|| event.event_id.to_string()),
         event.event_type.0
     );
+    if let Some(item) = items
+        .iter_mut()
+        .find(|item| item.kind == ConversationItemKind::Status && item.item_id == item_id)
+    {
+        item.status = status.to_string();
+        item.text = Some(text);
+        item.updated_at = event.created_at;
+        item.revision += 1;
+        item.detail = merge_payload(&item.detail, &event.payload);
+        push_source_event(item, event);
+        return;
+    }
     items.push(ConversationItem {
         item_id,
         session_id: event.session_id.clone(),

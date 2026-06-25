@@ -82,7 +82,7 @@ async fn backend_catalog_reports_capabilities_per_backend() {
 
     assert_eq!(pi["capabilities"]["cancel"], true);
     assert_eq!(pi["capabilities"]["session_agent_config"], true);
-    assert_eq!(acp["capabilities"]["cancel"], false);
+    assert_eq!(acp["capabilities"]["cancel"], true);
     assert_eq!(acp["capabilities"]["permission_requests"], true);
     assert_eq!(acp["capabilities"]["session_agent_config"], false);
     assert_eq!(

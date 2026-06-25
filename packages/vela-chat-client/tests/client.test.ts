@@ -572,14 +572,19 @@ test("keeps OpenAPI session backend and status enums narrow in the client wire m
 
   assert.match(source, /export type BackendKindWire\s*=/);
   assert.match(source, /export type SessionStatusWire\s*=/);
+  assert.match(source, /export type SessionActivityPhaseWire\s*=/);
+  assert.match(source, /export type SessionActivityAttentionWire\s*=/);
   assert.match(sessionInterface, /backend:\s*BackendKindWire/);
   assert.match(createSessionInputInterface, /backend:\s*BackendKindWire/);
   assert.match(veladClientInterface, /getBackend:\s*\(backend:\s*BackendKindWire\)/);
   assert.match(veladClientInterface, /probeBackend:\s*\(backend:\s*BackendKindWire\)/);
   assert.match(sessionInterface, /status:\s*SessionStatusWire/);
+  assert.match(sessionInterface, /activity\?:\s*SessionActivityWire/);
   assert.match(runtimeInfoInterface, /provider:\s*BackendKindWire/);
   assert.match(source, /backend:\s*backend as BackendKindWire/);
   assert.match(source, /status:\s*status as SessionStatusWire/);
+  assert.match(source, /phase:\s*phase as SessionActivityPhaseWire/);
+  assert.match(source, /attention:\s*attention as SessionActivityAttentionWire/);
   assert.match(source, /provider:\s*provider as BackendKindWire/);
   assert.doesNotMatch(sessionInterface, /backend:\s*"pi"\s*\|\s*string/);
   assert.doesNotMatch(createSessionInputInterface, /backend\?:/);
@@ -1090,6 +1095,11 @@ test("reads SessionListView from UI read-model endpoint", async () => {
               last_activity_at: "2026-06-19T00:10:00Z",
               preview: "Inspecting the repo",
               pending_request_count: 2,
+              activity: {
+                phase: "idle",
+                attention: "waiting_for_user",
+                pending_request_count: 2,
+              },
               running: true,
               agent_config: {
                 model: "minimax-m2.7",
@@ -1115,6 +1125,9 @@ test("reads SessionListView from UI read-model endpoint", async () => {
   assert.equal(response.sessions[0]?.working_directory, "/tmp/project");
   assert.equal(response.sessions[0]?.preview, "Inspecting the repo");
   assert.equal(response.sessions[0]?.pending_request_count, 2);
+  assert.equal(response.sessions[0]?.activity?.phase, "idle");
+  assert.equal(response.sessions[0]?.activity?.attention, "waiting_for_user");
+  assert.equal(response.sessions[0]?.activity?.pending_request_count, 2);
   assert.equal(response.sessions[0]?.running, true);
   assert.equal(response.sessions[0]?.agent_config?.model, "minimax-m2.7");
 });

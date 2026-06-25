@@ -3,11 +3,13 @@ ELECTRON_BUILDER := npm exec -- electron-builder
 VELAD_LISTEN_ADDR ?= 127.0.0.1:3857
 VELAD_LINUX_AMD64_IMAGE ?= rust:1-bookworm
 VELAD_LINUX_AMD64_OUT := dist/velad/linux-amd64/velad
+MACOS_SPEECH_DIR := $(ELECTRON_APP_DIR)/native/macos-speech
+MACOS_SPEECH_HELPER := $(MACOS_SPEECH_DIR)/build/vela-speech-macos
 
 .PHONY: \
 	install \
 	server-build server-build-desktop server-release server-release-desktop server-release-linux-amd64 server-run server-test server-clean \
-	desktop-dev desktop-dev-web desktop-build \
+	desktop-dev desktop-dev-web desktop-build desktop-build-macos-speech \
 	desktop-preview desktop-preview-fast desktop-preview-stop desktop-open-installed desktop-pids \
 	desktop-pack desktop-pack-dev desktop-install desktop-install-dev desktop-dist desktop-clean \
 	stack-dev
@@ -80,15 +82,31 @@ desktop-open-installed:
 	open /Applications/Vela.app
 
 desktop-pids:
-	@pgrep -fl '/Applications/Vela.app|Vela.app|Contents/Resources/bin/velad|[s]cripts/dev.mjs|$(CURDIR)/node_modules/.*[v]ite build --watch --config vite.electron.config.ts|[e]sbuild electron/preload.ts .*--watch=forever|$(CURDIR)/node_modules/[e]lectron/cli.js .|$(CURDIR)/target/debug/[v]elad --listen 127.0.0.1:0' || true
+	@pgrep -fl '/Applications/Vela.app|Vela.app|Contents/Resources/bin/velad|[v]ela-speech-macos|[s]cripts/dev.mjs|$(CURDIR)/node_modules/.*[v]ite build --watch --config vite.electron.config.ts|[e]sbuild electron/preload.ts .*--watch=forever|$(CURDIR)/node_modules/[e]lectron/cli.js .|$(CURDIR)/target/debug/[v]elad --listen 127.0.0.1:0' || true
+
+desktop-build-macos-speech:
+	@if [ "$$(uname -s)" = "Darwin" ]; then \
+		mkdir -p "$(MACOS_SPEECH_DIR)/build"; \
+		swiftc -O \
+			-framework Speech \
+			-framework AVFoundation \
+			-Xlinker -sectcreate \
+			-Xlinker __TEXT \
+			-Xlinker __info_plist \
+			-Xlinker "$(MACOS_SPEECH_DIR)/Info.plist" \
+			"$(MACOS_SPEECH_DIR)/VelaSpeechHelper.swift" \
+			-o "$(MACOS_SPEECH_HELPER)"; \
+	else \
+		echo "Skipping macOS Speech helper build on non-Darwin host"; \
+	fi
 
 desktop-build: server-build-desktop
 	npm --prefix $(ELECTRON_APP_DIR) run build
 
-desktop-pack: server-release-desktop desktop-build
+desktop-pack: server-release-desktop desktop-build-macos-speech desktop-build
 	cd $(ELECTRON_APP_DIR) && $(ELECTRON_BUILDER) --dir --mac --arm64 --config electron-builder.yml
 
-desktop-pack-dev: server-release-desktop desktop-build
+desktop-pack-dev: server-release-desktop desktop-build-macos-speech desktop-build
 	cd $(ELECTRON_APP_DIR) && CSC_IDENTITY_AUTO_DISCOVERY=false $(ELECTRON_BUILDER) --dir --mac --arm64 --config electron-builder.yml
 
 desktop-install: desktop-pack
@@ -107,10 +125,10 @@ desktop-install-dev: desktop-pack-dev
 	touch /Applications/Vela.app
 	open -a /Applications/Vela.app
 
-desktop-dist: server-release-desktop desktop-build
+desktop-dist: server-release-desktop desktop-build-macos-speech desktop-build
 	cd $(ELECTRON_APP_DIR) && $(ELECTRON_BUILDER) --mac --arm64 --config electron-builder.yml
 
 desktop-clean:
-	rm -rf $(ELECTRON_APP_DIR)/dist $(ELECTRON_APP_DIR)/dist-electron $(ELECTRON_APP_DIR)/release
+	rm -rf $(ELECTRON_APP_DIR)/dist $(ELECTRON_APP_DIR)/dist-electron $(ELECTRON_APP_DIR)/release $(MACOS_SPEECH_DIR)/build
 
 stack-dev: desktop-preview

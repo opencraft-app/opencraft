@@ -9,6 +9,7 @@ import {
 import { createPortal } from "react-dom";
 import type { SessionListItemWire } from "../../../vela-chat-client/src";
 import type { ChatRenderModel } from "../../../vela-chat-render-model/src";
+import { buildSessionListRowModel } from "../session-list/sessionListRowModel";
 import { ConversationPreviewSurface } from "../thumbnail/ConversationPreviewSurface";
 
 export interface SessionListSurfaceProps {
@@ -60,21 +61,7 @@ function SessionListSurfaceItem({
   const rootRef = useRef<HTMLLIElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const isRunning =
-    session.running || session.status === "running" || hasRunningPreview(previewModel);
-  const isWaiting =
-    session.status === "waiting_for_input" ||
-    session.pending_request_count > 0 ||
-    hasPendingPreviewRequest(previewModel);
-  const isFailed = session.status === "failed";
-  const compactPreview = isRunning || isWaiting ? previewModel : null;
-  const badgeLabel = isWaiting
-    ? session.pending_request_count > 0
-      ? `${session.pending_request_count} request`
-      : "Waiting"
-    : isRunning
-      ? "Running"
-      : null;
+  const row = buildSessionListRowModel(session, previewModel);
 
   useEffect(() => {
     if (!isMenuOpen) return;
@@ -157,7 +144,7 @@ function SessionListSurfaceItem({
           }}
         >
           <ArchiveGlyph />
-          <span>Archive chat</span>
+          <span>{row.archiveMenuLabel}</span>
         </button>
       </div>
     </div>
@@ -172,11 +159,12 @@ function SessionListSurfaceItem({
       data-sidebar="menu-item"
       data-slot="session-list-surface-item"
       data-status={session.status}
+      data-activity={row.status.activity}
       data-has-actions={onArchiveSession ? "true" : undefined}
-      data-running={isRunning ? "true" : undefined}
-      data-waiting={isWaiting ? "true" : undefined}
-      data-failed={isFailed ? "true" : undefined}
-      data-has-thumbnail={compactPreview ? "true" : undefined}
+      data-running={row.status.isRunning ? "true" : undefined}
+      data-waiting={row.status.isWaiting ? "true" : undefined}
+      data-failed={row.status.isFailed ? "true" : undefined}
+      data-has-thumbnail={row.status.hasThumbnail ? "true" : undefined}
     >
       <div
         className="vela-sidebar-menu-button vela-session-main"
@@ -189,16 +177,11 @@ function SessionListSurfaceItem({
         onClick={onSelect}
         onKeyDown={selectSessionFromKeyboard}
       >
-        <span className="vela-session-icon" aria-hidden>
-          <MessageGlyph />
-          <span className="vela-session-status-dot" />
-        </span>
         <span className="vela-session-copy">
           <span className="vela-session-title-row">
-            <span className="vela-session-title">{session.title || session.id}</span>
-            {badgeLabel ? <span className="vela-session-badge">{badgeLabel}</span> : null}
+            <span className="vela-session-title">{row.title}</span>
           </span>
-          {compactPreview ? (
+          {row.compactPreview ? (
             <span
               className="vela-session-thumbnail-preview"
               data-slot="session-thumbnail-preview"
@@ -206,20 +189,22 @@ function SessionListSurfaceItem({
               inert
             >
               <ConversationPreviewSurface
-                model={compactPreview}
-                scale={0.15}
+                model={row.compactPreview}
+                scale={0.09}
               />
             </span>
           ) : (
             <>
-              <span className="vela-session-preview">{sessionPreviewLabel(session)}</span>
-              <span className="vela-session-meta">{sessionMetaLabel(session)}</span>
+              <span className="vela-session-preview">{row.previewLabel}</span>
+              <span className="vela-session-meta">{row.metaLabel}</span>
             </>
           )}
         </span>
-        <span className="vela-session-rail" aria-hidden>
-          {sessionRailLabel(session)}
-        </span>
+        {row.rail ? (
+          <span className="vela-session-rail" data-recency={row.rail.recency} aria-hidden>
+            {row.rail.label}
+          </span>
+        ) : null}
       </div>
       {onArchiveSession ? (
         <>
@@ -227,7 +212,7 @@ function SessionListSurfaceItem({
             ref={triggerRef}
             className="vela-session-actions-trigger"
             type="button"
-            aria-label={`Session actions for ${session.title || session.id}`}
+            aria-label={row.archiveActionLabel}
             aria-haspopup="menu"
             aria-expanded={isMenuOpen ? "true" : "false"}
             onClick={(event) => {
@@ -278,73 +263,4 @@ function ArchiveGlyph() {
       />
     </svg>
   );
-}
-
-function MessageGlyph() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M5 6.5C5 5.12 6.12 4 7.5 4h9C17.88 4 19 5.12 19 6.5v6c0 1.38-1.12 2.5-2.5 2.5H10l-4.2 3.2c-.33.25-.8.02-.8-.4V6.5Z"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path d="M8.5 8.5h7M8.5 11.5h4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function sessionMetaLabel(session: SessionListItemWire) {
-  const backend = session.backend;
-  const model = session.agent_config?.model ?? session.model;
-  return [backend, model].filter(Boolean).join(" · ");
-}
-
-function sessionPreviewLabel(session: SessionListItemWire) {
-  const preview = session.preview.trim();
-  if (preview) return preview;
-
-  const cwd = session.working_directory.trim();
-  if (cwd) return cwd.split("/").filter(Boolean).at(-1) ?? cwd;
-
-  return sessionMetaLabel(session);
-}
-
-function hasPendingPreviewRequest(model: ChatRenderModel | undefined) {
-  return Boolean(model?.requests.items.some((request) => request.status === "pending"));
-}
-
-function hasRunningPreview(model: ChatRenderModel | undefined) {
-  if (!model) return false;
-  if (model.composer.is_running) return true;
-  return model.rows.some((row) => {
-    if (row.kind === "assistant_message") return row.streaming;
-    if (row.kind === "agent_work") return row.status === "running" || row.status === "pending";
-    if (row.kind === "agent_work_group") {
-      return row.children.some(
-        (child) => child.status === "running" || child.status === "pending",
-      );
-    }
-    if (row.kind === "turn_meta") return row.status === "running";
-    if (row.kind === "status") return row.status === "pending" || row.status === "streaming";
-    return false;
-  });
-}
-
-function sessionRailLabel(session: SessionListItemWire) {
-  return relativeSessionTime(session.last_activity_at || session.updated_at);
-}
-
-function relativeSessionTime(value: string) {
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return "";
-  const diffMs = Date.now() - timestamp;
-  if (diffMs < 60_000) return "now";
-  const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  const days = Math.floor(hours / 24);
-  return `${days}d`;
 }

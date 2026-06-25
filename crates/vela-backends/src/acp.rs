@@ -1,6 +1,6 @@
 use crate::{
-    BackendAdapter, BackendCapabilities, BackendOutput, BackendOutputSink, BackendRequestResponse,
-    BackendSend, BackendStatus,
+    BackendAdapter, BackendCancel, BackendCapabilities, BackendOutput, BackendOutputSink,
+    BackendRequestResponse, BackendSend, BackendStatus,
 };
 use async_trait::async_trait;
 use serde_json::{Map, Value, json};
@@ -58,6 +58,7 @@ pub trait AcpHost: Send + Sync {
 pub trait AcpConnection: Send {
     async fn request(&mut self, method: &str, params: Value) -> anyhow::Result<Value>;
     async fn start_request(&mut self, method: &str, params: Value) -> anyhow::Result<i64>;
+    async fn notify(&mut self, method: &str, params: Value) -> anyhow::Result<()>;
     async fn respond(&mut self, id: i64, result: Value) -> anyhow::Result<()>;
     async fn next(&mut self) -> anyhow::Result<Option<AcpInbound>>;
     async fn close(&mut self) -> anyhow::Result<()>;
@@ -186,6 +187,15 @@ impl AcpConnection for AcpStdioConnection {
         Ok(id)
     }
 
+    async fn notify(&mut self, method: &str, params: Value) -> anyhow::Result<()> {
+        self.write(json!({
+            "jsonrpc": "2.0",
+            "method": method,
+            "params": params,
+        }))
+        .await
+    }
+
     async fn respond(&mut self, id: i64, result: Value) -> anyhow::Result<()> {
         self.write(json!({
             "jsonrpc": "2.0",
@@ -258,6 +268,7 @@ pub struct AcpBackendAdapter {
     host: Arc<dyn AcpHost>,
     default_cwd: String,
     sessions: Arc<Mutex<HashMap<String, AcpBackendSession>>>,
+    active_prompts: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
     pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<AcpPermissionResponse>>>>,
 }
 
@@ -297,6 +308,7 @@ impl AcpBackendAdapter {
             host,
             default_cwd: default_cwd.into(),
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            active_prompts: Arc::new(Mutex::new(HashMap::new())),
             pending_permissions: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -312,7 +324,7 @@ impl BackendAdapter for AcpBackendAdapter {
     fn capabilities(&self) -> BackendCapabilities {
         BackendCapabilities {
             streaming: true,
-            cancel: false,
+            cancel: true,
             permission_requests: true,
             structured_diff: true,
             session_agent_config: false,
@@ -349,6 +361,13 @@ impl BackendAdapter for AcpBackendAdapter {
                 options: input.options,
             })
             .map_err(|_| anyhow::anyhow!("ACP request receiver was dropped"))
+    }
+
+    async fn cancel(&self, input: BackendCancel) -> anyhow::Result<()> {
+        if let Some(cancel) = self.active_prompts.lock().await.remove(&input.session_id) {
+            let _ = cancel.send(());
+        }
+        Ok(())
     }
 
     async fn stream_user_message(
@@ -394,82 +413,110 @@ impl BackendAdapter for AcpBackendAdapter {
             )
             .await?;
         let prompt_scope = AcpPromptScope::new(&input, prompt_id);
-
-        loop {
-            let Some(inbound) = session.connection.next().await? else {
-                break;
-            };
-            match inbound {
-                AcpInbound::Notification { method, params } => {
-                    if method == "session/update" {
-                        for output in
-                            outputs_from_acp_session_update_notification(params, &prompt_scope)
-                        {
-                            sink.send(output).await?;
-                        }
-                    } else {
-                        sink.send(warning(
-                            "unsupported ACP notification",
-                            json!({ "method": method, "params": params }),
-                        ))
-                        .await?;
-                    }
-                }
-                AcpInbound::Request { id, method, params } => {
-                    self.handle_acp_request(
-                        session.connection.as_mut(),
-                        id,
-                        &method,
-                        params,
-                        &sink,
-                    )
-                    .await?;
-                }
-                AcpInbound::Response(value) => {
-                    let stop_reason = value
-                        .get("stopReason")
-                        .or_else(|| value.get("stop_reason"))
-                        .and_then(Value::as_str)
-                        .unwrap_or("completed");
-                    match stop_reason {
-                        "end_turn" | "completed" => {
-                            sink.send(with_raw(
-                                EventType::TURN_COMPLETED,
-                                json!({ "stop_reason": stop_reason }),
-                                value,
-                            ))
-                            .await?;
-                        }
-                        "cancelled" | "canceled" => {
-                            sink.send(with_raw(
-                                EventType::TURN_CANCELLED,
-                                json!({ "reason": stop_reason }),
-                                value,
-                            ))
-                            .await?;
-                        }
-                        _ => {
-                            sink.send(warning(
-                                "ACP prompt ended with non-completed stop reason",
-                                value.clone(),
-                            ))
-                            .await?;
-                            sink.send(with_raw(
-                                EventType::TURN_FAILED,
-                                json!({
-                                    "error": format!("ACP prompt stopped with {stop_reason}"),
-                                    "stop_reason": stop_reason,
-                                }),
-                                value,
-                            ))
-                            .await?;
-                        }
-                    }
-                    break;
-                }
-            }
+        let acp_session_id = session.session_id.clone();
+        let (cancel_tx, mut cancel_rx) = oneshot::channel();
+        let mut cancel_requested = false;
+        if session_key != "__ephemeral__" {
+            self.active_prompts
+                .lock()
+                .await
+                .insert(session_key.clone(), cancel_tx);
         }
 
+        let stream_result: anyhow::Result<()> = async {
+            loop {
+                let inbound = tokio::select! {
+                    _ = &mut cancel_rx, if !cancel_requested => {
+                        cancel_requested = true;
+                        session
+                            .connection
+                            .notify("session/cancel", json!({ "sessionId": acp_session_id }))
+                            .await?;
+                        continue;
+                    }
+                    inbound = session.connection.next() => inbound?,
+                };
+                let Some(inbound) = inbound else {
+                    break;
+                };
+                match inbound {
+                    AcpInbound::Notification { method, params } => {
+                        if method == "session/update" {
+                            for output in
+                                outputs_from_acp_session_update_notification(params, &prompt_scope)
+                            {
+                                sink.send(output).await?;
+                            }
+                        } else {
+                            sink.send(warning(
+                                "unsupported ACP notification",
+                                json!({ "method": method, "params": params }),
+                            ))
+                            .await?;
+                        }
+                    }
+                    AcpInbound::Request { id, method, params } => {
+                        self.handle_acp_request(
+                            session.connection.as_mut(),
+                            id,
+                            &method,
+                            params,
+                            &acp_session_id,
+                            &mut cancel_rx,
+                            &mut cancel_requested,
+                            &sink,
+                        )
+                        .await?;
+                    }
+                    AcpInbound::Response(value) => {
+                        let stop_reason = value
+                            .get("stopReason")
+                            .or_else(|| value.get("stop_reason"))
+                            .and_then(Value::as_str)
+                            .unwrap_or("completed");
+                        match stop_reason {
+                            "end_turn" | "completed" => {
+                                sink.send(with_raw(
+                                    EventType::TURN_COMPLETED,
+                                    json!({ "stop_reason": stop_reason }),
+                                    value,
+                                ))
+                                .await?;
+                            }
+                            "cancelled" | "canceled" => {
+                                sink.send(with_raw(
+                                    EventType::TURN_CANCELLED,
+                                    json!({ "reason": stop_reason }),
+                                    value,
+                                ))
+                                .await?;
+                            }
+                            _ => {
+                                sink.send(warning(
+                                    "ACP prompt ended with non-completed stop reason",
+                                    value.clone(),
+                                ))
+                                .await?;
+                                sink.send(with_raw(
+                                    EventType::TURN_FAILED,
+                                    json!({
+                                        "error": format!("ACP prompt stopped with {stop_reason}"),
+                                        "stop_reason": stop_reason,
+                                    }),
+                                    value,
+                                ))
+                                .await?;
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+            Ok(())
+        }
+        .await;
+        self.active_prompts.lock().await.remove(&session_key);
+        stream_result?;
         if session_key != "__ephemeral__" {
             self.sessions.lock().await.insert(session_key, session);
         } else {
@@ -670,6 +717,9 @@ impl AcpBackendAdapter {
         id: i64,
         method: &str,
         params: Value,
+        acp_session_id: &str,
+        cancel_rx: &mut oneshot::Receiver<()>,
+        cancel_requested: &mut bool,
         sink: &BackendOutputSink,
     ) -> anyhow::Result<()> {
         match method {
@@ -701,10 +751,22 @@ impl AcpBackendAdapter {
                 ))
                 .await?;
 
-                let response = response_rx.await.unwrap_or(AcpPermissionResponse {
-                    result: Some("cancel".to_string()),
-                    options: None,
-                });
+                let response = tokio::select! {
+                    response = response_rx => response.unwrap_or(AcpPermissionResponse {
+                        result: Some("cancel".to_string()),
+                        options: None,
+                    }),
+                    _ = cancel_rx, if !*cancel_requested => {
+                        *cancel_requested = true;
+                        connection
+                            .notify("session/cancel", json!({ "sessionId": acp_session_id }))
+                            .await?;
+                        AcpPermissionResponse {
+                            result: Some("cancel".to_string()),
+                            options: None,
+                        }
+                    }
+                };
                 self.pending_permissions.lock().await.remove(&request_id);
                 connection
                     .respond(id, acp_permission_response_payload(&params, response))

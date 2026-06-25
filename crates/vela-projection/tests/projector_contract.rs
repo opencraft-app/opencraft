@@ -487,6 +487,48 @@ fn conversation_preserves_turn_failure_error_payload() {
 }
 
 #[test]
+fn conversation_coalesces_duplicate_turn_failure_status_items() {
+    let events = vec![
+        event_at(
+            1,
+            1,
+            EventType::TURN_STARTED,
+            json!({ "turn_id": "turn_1" }),
+        ),
+        event_at(
+            2,
+            2,
+            EventType::TURN_FAILED,
+            json!({ "turn_id": "turn_1", "error": "provider stream disconnected" }),
+        ),
+        event_at(
+            3,
+            3,
+            EventType::TURN_FAILED,
+            json!({ "turn_id": "turn_1", "error": "provider stream disconnected" }),
+        ),
+    ];
+
+    let conversation = project_conversation(&events);
+    let status_items = conversation
+        .items
+        .iter()
+        .filter(|item| item.kind == ConversationItemKind::Status)
+        .collect::<Vec<_>>();
+
+    assert_eq!(conversation.items.len(), 2);
+    assert_eq!(status_items.len(), 1);
+    assert_eq!(status_items[0].status, "failed");
+    assert_eq!(
+        status_items[0].text.as_deref(),
+        Some("provider stream disconnected")
+    );
+    assert_eq!(status_items[0].source_event_ids.len(), 2);
+    assert_eq!(status_items[0].source_event_ranges[0].from_seq, 2);
+    assert_eq!(status_items[0].source_event_ranges[0].to_seq, 3);
+}
+
+#[test]
 fn pending_requests_remove_resolved_requests() {
     let events = vec![
         event(

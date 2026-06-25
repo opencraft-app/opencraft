@@ -50,6 +50,9 @@ import type {
   SessionListItemWire,
   SessionListViewWireResponse,
   SessionListWireResponse,
+  SessionActivityAttentionWire,
+  SessionActivityPhaseWire,
+  SessionActivityWire,
   SessionSummaryWire,
   SessionOperationWire,
   SessionRuntimeInfoWire,
@@ -164,6 +167,12 @@ const agentConfigPatchKeys = new Set([
 const permissionModes = new Set(["read_only", "auto", "auto_review", "full_access"]);
 const viewWindowDirections = new Set(["tail", "before", "after", "around"]);
 const backendStatuses = new Set(["loading", "available", "unavailable", "degraded", "error"]);
+const sessionActivityPhases = new Set<string>(
+  ["idle", "starting", "running", "canceling"] satisfies SessionActivityPhaseWire[],
+);
+const sessionActivityAttentions = new Set<string>(
+  ["none", "waiting_for_user", "error"] satisfies SessionActivityAttentionWire[],
+);
 const sessionStatuses = new Set<string>(
   [
     "starting",
@@ -1558,6 +1567,11 @@ function parseSessionListItemWire(
   const lastActivityAt = requiredViewString(data, "last_activity_at", owner, invalid);
   const preview = requiredViewString(data, "preview", owner, invalid);
   const pendingRequestCount = requiredViewInteger(data, "pending_request_count", owner, invalid);
+  const activity = data.activity;
+  const parsedActivity =
+    activity !== undefined
+      ? parseSessionActivityWire(activity, invalid, `${owner}.activity`)
+      : undefined;
   const running = requiredViewBoolean(data, "running", owner, invalid);
   const model = data.model;
   if (model !== undefined && model !== null && typeof model !== "string") {
@@ -1571,8 +1585,34 @@ function parseSessionListItemWire(
     last_activity_at: lastActivityAt,
     preview,
     pending_request_count: pendingRequestCount,
+    ...(parsedActivity !== undefined ? { activity: parsedActivity } : {}),
     running,
     ...(model !== undefined ? { model: model as string | null } : {}),
+  };
+}
+
+function parseSessionActivityWire(
+  data: unknown,
+  invalid: ViewContractErrorFactory,
+  owner: string,
+): SessionActivityWire {
+  if (!isRecord(data)) {
+    throw invalid(`${owner} must be an object`);
+  }
+  const phase = data.phase;
+  if (typeof phase !== "string" || !sessionActivityPhases.has(phase)) {
+    throw invalid(`${owner}.phase must be a known SessionActivityPhase`);
+  }
+  const attention = data.attention;
+  if (typeof attention !== "string" || !sessionActivityAttentions.has(attention)) {
+    throw invalid(`${owner}.attention must be a known SessionActivityAttention`);
+  }
+  const pendingRequestCount = requiredViewInteger(data, "pending_request_count", owner, invalid);
+  return {
+    ...(data as unknown as SessionActivityWire),
+    phase: phase as SessionActivityPhaseWire,
+    attention: attention as SessionActivityAttentionWire,
+    pending_request_count: pendingRequestCount,
   };
 }
 
@@ -1610,6 +1650,11 @@ function parseSessionWire(
   if (operations !== undefined) {
     validateSessionOperationsShape(operations, invalid, `${owner}.operations`);
   }
+  const activity = data.activity;
+  const parsedActivity =
+    activity !== undefined
+      ? parseSessionActivityWire(activity, invalid, `${owner}.activity`)
+      : undefined;
   return {
     ...(data as unknown as SessionWire),
     id,
@@ -1621,6 +1666,7 @@ function parseSessionWire(
     updated_at: updatedAt,
     ...(agentConfig !== undefined ? { agent_config: agentConfig } : {}),
     ...(parsedRuntimeInfo !== undefined ? { runtime_info: parsedRuntimeInfo } : {}),
+    ...(parsedActivity !== undefined ? { activity: parsedActivity } : {}),
     ...(operations !== undefined ? { operations } : {}),
   };
 }

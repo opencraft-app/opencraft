@@ -785,7 +785,7 @@ where
             )
             .await;
             let session = match state.store.get_session(&session_id).await {
-                Ok(Some(stored)) => stored_session_json(&stored, Some(&append.event)),
+                Ok(Some(stored)) => stored_session_json(&stored, &[], Some(&append.event)),
                 _ => session_json(
                     &session_id,
                     request.backend.as_str(),
@@ -796,6 +796,7 @@ where
                     request.metadata,
                     append.event.created_at,
                     append.event.created_at,
+                    0,
                     Some(&append.event),
                 ),
             };
@@ -820,7 +821,7 @@ where
                     (
                         StatusCode::CREATED,
                         Json(json!({
-                            "session": stored_session_json(&existing, last),
+                            "session": stored_session_json(&existing, &events, last),
                             "cursor": last.map(event_cursor_json).unwrap_or_else(empty_cursor_json),
                         })),
                     )
@@ -930,8 +931,13 @@ where
     } else {
         "current_session"
     };
+    let events = state
+        .store
+        .list_events(&session_id)
+        .await
+        .unwrap_or_default();
     Json(json!({
-        "session": stored_session_json(&updated, Some(&append.event)),
+        "session": stored_session_json(&updated, &events, Some(&append.event)),
         "effective_after": effective_after,
         "cursor": event_cursor_json(&append.event),
     }))
@@ -1035,7 +1041,7 @@ where
                 .await
                 .unwrap_or_default();
             let last = events.last();
-            let value = stored_session_json(&session, last);
+            let value = stored_session_json(&session, &events, last);
             if include_cursor {
                 Json(json!({
                     "session": value,
@@ -3323,6 +3329,7 @@ fn session_json(
     metadata: Option<Value>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
+    pending_request_count: usize,
     last_event: Option<&CanonicalEvent>,
 ) -> Value {
     json!({
@@ -3337,7 +3344,8 @@ fn session_json(
         "created_at": created_at.to_rfc3339(),
         "metadata": metadata.unwrap_or_else(|| json!({})),
         "runtime_info": session_runtime_info_json(backend, agent_config),
-        "operations": session_operations_json(status),
+        "activity": session_activity_json(status, pending_request_count),
+        "operations": session_operations_json(status, pending_request_count),
         "last_event_id": last_event.map(|event| event.event_id.as_str()).unwrap_or(""),
     })
 }
@@ -3353,9 +3361,41 @@ fn session_runtime_info_json(backend: &str, agent_config: &AgentConfig) -> Value
     })
 }
 
-fn session_operations_json(status: &str) -> Value {
+fn session_activity_json(status: &str, pending_request_count: usize) -> Value {
+    let phase = session_activity_phase(status);
+    let attention = session_activity_attention(status, pending_request_count);
+    json!({
+        "phase": phase,
+        "attention": attention,
+        "pending_request_count": pending_request_count,
+    })
+}
+
+fn session_activity_phase(status: &str) -> &str {
+    match status {
+        "starting" => "starting",
+        "running" => "running",
+        "canceling" => "canceling",
+        _ => "idle",
+    }
+}
+
+fn session_activity_attention(status: &str, pending_request_count: usize) -> &str {
+    if status == "failed" {
+        "error"
+    } else if status == "waiting_for_input" || pending_request_count > 0 {
+        "waiting_for_user"
+    } else {
+        "none"
+    }
+}
+
+fn session_operations_json(status: &str, pending_request_count: usize) -> Value {
     let closed = status == "closed";
-    let running = matches!(status, "running" | "canceling" | "waiting_for_input");
+    let running = session_is_running(status);
+    let waiting_for_user =
+        session_activity_attention(status, pending_request_count) == "waiting_for_user";
+    let has_pending_request = pending_request_count > 0;
     json!({
         "send_message": {
             "available": !closed,
@@ -3369,6 +3409,8 @@ fn session_operations_json(status: &str) -> Value {
             "available": running,
             "reason": if closed {
                 Value::String("session_closed".to_string())
+            } else if waiting_for_user {
+                Value::String("waiting_for_user".to_string())
             } else if running {
                 Value::Null
             } else {
@@ -3381,8 +3423,14 @@ fn session_operations_json(status: &str) -> Value {
             "reason": if closed { Value::String("session_closed".to_string()) } else { Value::Null },
         },
         "respond_to_request": {
-            "available": !closed,
-            "reason": if closed { Value::String("session_closed".to_string()) } else { Value::Null },
+            "available": !closed && has_pending_request,
+            "reason": if closed {
+                Value::String("session_closed".to_string())
+            } else if has_pending_request {
+                Value::Null
+            } else {
+                Value::String("no_pending_request".to_string())
+            },
         },
         "rewind_conversation": {
             "available": false,
@@ -3395,7 +3443,11 @@ fn session_operations_json(status: &str) -> Value {
     })
 }
 
-fn stored_session_json(session: &StoredSession, last_event: Option<&CanonicalEvent>) -> Value {
+fn stored_session_json(
+    session: &StoredSession,
+    events: &[CanonicalEvent],
+    last_event: Option<&CanonicalEvent>,
+) -> Value {
     session_json(
         &session.session_id,
         session.backend.as_str(),
@@ -3406,6 +3458,7 @@ fn stored_session_json(session: &StoredSession, last_event: Option<&CanonicalEve
         Some(session.metadata.clone()),
         session.created_at,
         session.updated_at,
+        project_pending_requests(events).requests.len(),
         last_event,
     )
 }
@@ -3426,6 +3479,7 @@ fn session_list_item_json(session: &StoredSession, events: &[CanonicalEvent]) ->
         .last()
         .map(|event| event.created_at)
         .unwrap_or(session.updated_at);
+    let pending_request_count = project_pending_requests(events).requests.len();
     json!({
         "id": session.session_id.as_str(),
         "backend": session.backend.as_str(),
@@ -3437,7 +3491,8 @@ fn session_list_item_json(session: &StoredSession, events: &[CanonicalEvent]) ->
         "created_at": session.created_at.to_rfc3339(),
         "last_activity_at": last_activity_at.to_rfc3339(),
         "preview": session_preview(events),
-        "pending_request_count": project_pending_requests(events).requests.len(),
+        "pending_request_count": pending_request_count,
+        "activity": session_activity_json(&session.status, pending_request_count),
         "running": session_is_running(&session.status),
         "model": session.agent_config.model.as_ref().or(session.model.as_ref()),
     })
@@ -3473,10 +3528,7 @@ fn truncate_preview(value: &str, max_chars: usize) -> String {
 }
 
 fn session_is_running(status: &str) -> bool {
-    matches!(
-        status,
-        "starting" | "running" | "waiting_for_input" | "canceling"
-    )
+    matches!(status, "starting" | "running" | "canceling")
 }
 
 fn timeline_item_json(event: &CanonicalEvent) -> Value {

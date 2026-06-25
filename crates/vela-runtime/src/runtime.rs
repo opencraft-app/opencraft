@@ -326,6 +326,7 @@ where
             });
             let mut turn_failed = false;
             let mut turn_terminal = false;
+            let mut turn_failure_message: Option<String> = None;
 
             while let Some(output) = receiver.recv().await {
                 match output {
@@ -343,7 +344,9 @@ where
                             continue;
                         }
                         if let Some(output) = normalize_backend_output(output) {
-                            if is_backend_terminal_output(output.event_type) {
+                            let output_event_type = output.event_type;
+                            let output_failure_message = backend_output_failure_message(&output);
+                            if is_backend_terminal_output(output_event_type) {
                                 turn_terminal = true;
                             }
                             if let Err(error) = persist_backend_output(
@@ -366,6 +369,10 @@ where
                                 turn_failed = true;
                                 break;
                             }
+                            if output_event_type == EventType::TURN_FAILED {
+                                turn_failed = true;
+                                turn_failure_message = output_failure_message;
+                            }
                         }
                     }
                     Err(error) => {
@@ -386,6 +393,7 @@ where
 
             match backend_task.await {
                 Ok(Ok(())) if !turn_failed && !turn_terminal => {
+                    let error = "backend completed without a terminal turn event".to_string();
                     record_backend_span(
                         observability.as_ref(),
                         trace_context.as_ref(),
@@ -394,17 +402,10 @@ where
                         &turn_id,
                         backend_span_start,
                         false,
-                        Some("backend completed without a terminal turn event".to_string()),
+                        Some(error.clone()),
                     )
                     .await;
-                    append_turn_failed(
-                        &store,
-                        &event_observer,
-                        &session_id,
-                        &turn_id,
-                        "backend completed without a terminal turn event".to_string(),
-                    )
-                    .await;
+                    append_turn_failed(&store, &event_observer, &session_id, &turn_id, error).await;
                 }
                 Ok(Ok(())) => {
                     record_backend_span(
@@ -414,12 +415,12 @@ where
                         backend_kind.as_str(),
                         &turn_id,
                         backend_span_start,
-                        true,
-                        None,
+                        !turn_failed,
+                        turn_failure_message.clone(),
                     )
                     .await;
                 }
-                Ok(Err(error)) if !turn_failed => {
+                Ok(Err(error)) => {
                     let error = error.to_string();
                     record_backend_span(
                         observability.as_ref(),
@@ -432,9 +433,12 @@ where
                         Some(error.clone()),
                     )
                     .await;
-                    append_turn_failed(&store, &event_observer, &session_id, &turn_id, error).await;
+                    if !turn_failed {
+                        append_turn_failed(&store, &event_observer, &session_id, &turn_id, error)
+                            .await;
+                    }
                 }
-                Err(error) if !turn_failed => {
+                Err(error) => {
                     let error = error.to_string();
                     record_backend_span(
                         observability.as_ref(),
@@ -447,9 +451,11 @@ where
                         Some(error.clone()),
                     )
                     .await;
-                    append_turn_failed(&store, &event_observer, &session_id, &turn_id, error).await;
+                    if !turn_failed {
+                        append_turn_failed(&store, &event_observer, &session_id, &turn_id, error)
+                            .await;
+                    }
                 }
-                Ok(Err(_)) | Err(_) => {}
             }
             running.lock().await.remove(&session_id);
         });
@@ -598,6 +604,18 @@ fn is_backend_terminal_output(event_type: EventType) -> bool {
         event_type,
         EventType::TURN_COMPLETED | EventType::TURN_FAILED | EventType::TURN_CANCELLED
     )
+}
+
+fn backend_output_failure_message(output: &vela_backends::BackendOutput) -> Option<String> {
+    if output.event_type != EventType::TURN_FAILED {
+        return None;
+    }
+    output
+        .payload
+        .get("error")
+        .and_then(Value::as_str)
+        .or_else(|| output.payload.get("message").and_then(Value::as_str))
+        .map(str::to_string)
 }
 
 fn is_backend_output_allowed(event_type: EventType) -> bool {

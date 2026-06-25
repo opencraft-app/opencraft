@@ -308,6 +308,9 @@ async fn session_list_view_returns_sidebar_ready_items() {
     assert_eq!(item["working_directory"], "/tmp/project");
     assert_eq!(item["agent_config"]["model"], "minimax-m2.7");
     assert_eq!(item["pending_request_count"], 0);
+    assert_eq!(item["activity"]["phase"], "idle");
+    assert_eq!(item["activity"]["attention"], "none");
+    assert_eq!(item["activity"]["pending_request_count"], 0);
     assert_eq!(item["running"], false);
     assert!(
         item.get("created_at")

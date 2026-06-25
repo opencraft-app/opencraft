@@ -407,6 +407,40 @@ async fn send_user_message_appends_turn_failed_and_allows_next_turn_after_backen
 }
 
 #[tokio::test]
+async fn send_user_message_does_not_duplicate_backend_emitted_turn_failed() {
+    let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
+    let backend = Arc::new(FailingAfterTurnFailedBackend);
+    let runtime = Runtime::new(store.clone(), backend);
+    let session_id = SessionId::from("ses_runtime_backend_emitted_failure");
+    runtime
+        .create_session(session_id.clone(), BackendKind::Pi, "/tmp/vela")
+        .await
+        .expect("create session");
+
+    runtime
+        .send_user_message(SendUserMessage {
+            session_id: session_id.clone(),
+            idempotency_key: "idem-backend-emitted-failure".to_string(),
+            content: "fail once".to_string(),
+            command_id: None,
+        })
+        .await
+        .expect("send");
+    eventually_contains_event(&store, &session_id, EventType::TURN_FAILED).await;
+    let events = store.list_events(&session_id).await.expect("events");
+    let turn_failed_events = events
+        .iter()
+        .filter(|event| event.event_type == EventType::TURN_FAILED)
+        .collect::<Vec<_>>();
+
+    assert_eq!(turn_failed_events.len(), 1);
+    assert_eq!(
+        turn_failed_events[0].payload["error"].as_str(),
+        Some("provider stream disconnected")
+    );
+}
+
+#[tokio::test]
 async fn send_user_message_queues_distinct_command_while_turn_is_running() {
     let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
     let backend = Arc::new(BlockingBackend::default());
@@ -948,6 +982,8 @@ struct FailingOnceBackend {
     calls: Mutex<usize>,
 }
 
+struct FailingAfterTurnFailedBackend;
+
 #[derive(Default)]
 struct RecordingSendBackend {
     inputs: Mutex<Vec<BackendSend>>,
@@ -991,6 +1027,22 @@ impl BackendAdapter for FailingOnceBackend {
             vec![BackendOutput::event(EventType::TURN_COMPLETED, json!({}))],
         )
         .await
+    }
+}
+
+#[async_trait]
+impl BackendAdapter for FailingAfterTurnFailedBackend {
+    async fn stream_user_message(
+        &self,
+        _input: BackendSend,
+        sink: BackendOutputSink,
+    ) -> anyhow::Result<()> {
+        sink.send(BackendOutput::event(
+            EventType::TURN_FAILED,
+            json!({ "error": "provider stream disconnected" }),
+        ))
+        .await?;
+        anyhow::bail!("provider stream disconnected")
     }
 }
 

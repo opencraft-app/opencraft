@@ -22,6 +22,18 @@ test("client state store separates conversation scroll and composer draft namesp
     text: "private draft",
     updatedAt: 42,
   });
+  store.composerQueue.write("ses_1", {
+    sessionId: "ses_1",
+    items: [
+      {
+        id: "queued_1",
+        content: [{ type: "text", text: "queued turn" }],
+        previewText: "queued turn",
+        createdAt: 43,
+      },
+    ],
+    updatedAt: 44,
+  });
 
   assert.equal(
     kv.getItem("vela-chat:client-state:desktop-a:conversation_scroll:ses_1"),
@@ -30,6 +42,10 @@ test("client state store separates conversation scroll and composer draft namesp
   assert.equal(
     kv.getItem("vela-chat:client-state:desktop-a:composer_draft:ses_1"),
     '{"version":1,"session_id":"ses_1","text":"private draft","updated_at":42}',
+  );
+  assert.equal(
+    kv.getItem("vela-chat:client-state:desktop-a:composer_queue:ses_1"),
+    '{"version":1,"session_id":"ses_1","items":[{"id":"queued_1","content":[{"type":"text","text":"queued turn"}],"preview_text":"queued turn","created_at":43}],"updated_at":44}',
   );
   assert.deepEqual(store.conversationScroll.read("ses_1"), {
     routeKey: "ses_1",
@@ -41,6 +57,18 @@ test("client state store separates conversation scroll and composer draft namesp
     text: "private draft",
     updatedAt: 42,
   });
+  assert.deepEqual(store.composerQueue.read("ses_1"), {
+    sessionId: "ses_1",
+    items: [
+      {
+        id: "queued_1",
+        content: [{ type: "text", text: "queued turn" }],
+        previewText: "queued turn",
+        createdAt: 43,
+      },
+    ],
+    updatedAt: 44,
+  });
 });
 
 test("client state store drops invalid or mismatched scoped records", () => {
@@ -49,11 +77,14 @@ test("client state store drops invalid or mismatched scoped records", () => {
       '{"version":1,"route_key":"other","scroll_top":128,"follow_output":false}',
     "vela-chat:client-state:web:composer_draft:ses_1":
       '{"version":1,"session_id":"ses_1","text":7,"updated_at":42}',
+    "vela-chat:client-state:web:composer_queue:ses_1":
+      '{"version":1,"session_id":"other","items":[],"updated_at":42}',
   });
   const store = createVelaClientStateStore(kv);
 
   assert.equal(store.conversationScroll.read("ses_1"), null);
   assert.equal(store.composerDraft.read("ses_1"), null);
+  assert.equal(store.composerQueue.read("ses_1"), null);
 });
 
 test("shell layout store is host scoped and separate from chat client state", () => {

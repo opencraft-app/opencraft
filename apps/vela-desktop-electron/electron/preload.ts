@@ -15,6 +15,15 @@ contextBridge.exposeInMainWorld("velaDesktop", {
     ipcRenderer.invoke("vela:work-monitor-move-by", deltaX, deltaY),
   focusDesktopSession: (sessionId: string) =>
     ipcRenderer.invoke("vela:desktop-focus-session", sessionId),
+  isMacosSpeechAvailable: () => ipcRenderer.invoke("vela:voice-macos-available"),
+  startMacosSpeech: (options: unknown) =>
+    ipcRenderer.invoke("vela:voice-macos-start", options),
+  stopMacosSpeech: () => ipcRenderer.invoke("vela:voice-macos-stop"),
+  onMacosSpeechEvent: (listener: (event: unknown) => void) => {
+    const handler = (_event: IpcRendererEvent, payload: unknown) => listener(payload);
+    ipcRenderer.on("vela:voice-macos-event", handler);
+    return () => ipcRenderer.removeListener("vela:voice-macos-event", handler);
+  },
   onDesktopChromeStateChange: (listener: (state: unknown) => void) => {
     const handler = (_event: IpcRendererEvent, state: unknown) => listener(state);
     ipcRenderer.on("vela:desktop-chrome-state", handler);

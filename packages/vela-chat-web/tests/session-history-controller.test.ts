@@ -305,6 +305,81 @@ test("controller treats sync reset as a full read-model resync", async () => {
   }
 });
 
+test("controller queues composer submits locally while running and drains after idle", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { useVelaChatSession } = await import(
+      "../../vela-chat-controller/src/useVelaChatSession"
+    );
+    const client = new QueueAwareVeladClient();
+    client.setConversationStatus("sess_queue", "streaming");
+    const clientStateStore = createVelaClientStateStore(createMemoryKeyValueStore(), {
+      hostId: "queue-controller-test",
+    });
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    let latestController: ReturnType<typeof useVelaChatSession> | null = null;
+
+    function Probe({ sessionId }: { sessionId: string }) {
+      const controller = useVelaChatSession({
+        client,
+        clientStateStore,
+        fetchBackends: false,
+        historyPolicy: "tail_only",
+        sessionId,
+      });
+      React.useEffect(() => {
+        latestController = controller;
+      });
+      return React.createElement("div");
+    }
+
+    await renderSession({ React, act, root, Probe, sessionId: "sess_queue" });
+    await flushHookEffects(act, dom, () => latestController?.model.composer.is_running === true);
+
+    await act(async () => {
+      latestController?.setDraft("queued while running");
+    });
+    await flushHookEffects(act, dom, () => latestController?.draft === "queued while running");
+    await act(async () => {
+      await latestController?.send();
+    });
+    await flushHookEffects(act, dom, () => latestController?.queuedInputs.length === 1);
+
+    assert.equal(client.sentMessages.length, 0, "running submit must not hit velad immediately");
+    assert.equal(latestController?.draft, "");
+    assert.deepEqual(
+      clientStateStore.composerQueue.read("sess_queue")?.items.map((item) => item.previewText),
+      ["queued while running"],
+    );
+
+    client.setConversationStatus("sess_queue", "completed");
+    await act(async () => {
+      await latestController?.refreshAll();
+    });
+    await flushHookEffects(act, dom, () => client.sentMessages.length === 1);
+
+    assert.deepEqual(client.sentMessages[0]?.content, [
+      { type: "text", text: "queued while running" },
+    ]);
+    assert.equal(
+      clientStateStore.composerQueue.read("sess_queue"),
+      null,
+      "accepted queued input must be removed from local queue state",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 test("full preload does not request older pages again when switching back to a completed session", async () => {
   const dom = installDomRuntime();
   try {
@@ -894,6 +969,51 @@ class FakeVeladClient implements VeladClient {
     idempotencyKey?: string;
   }): Promise<CommandAckWire> {
     throw new Error("sendUserMessage is outside this controller test");
+  }
+}
+
+class QueueAwareVeladClient extends FakeVeladClient {
+  readonly sentMessages: Array<{
+    sessionId: string;
+    text?: string;
+    content?: ClientInputPart[];
+  }> = [];
+
+  setConversationStatus(sessionId: string, status: "completed" | "streaming") {
+    this.replaceTailConversation(
+      sessionId,
+      conversationView({
+        hasOlder: false,
+        itemId: `${sessionId}:tail`,
+        seq: this.sentMessages.length + 10,
+        sessionId,
+        status,
+      }),
+    );
+  }
+
+  override async sendUserMessage(input: {
+    sessionId: string;
+    text?: string;
+    content?: ClientInputPart[];
+    idempotencyKey?: string;
+  }): Promise<CommandAckWire> {
+    this.sentMessages.push({
+      sessionId: input.sessionId,
+      ...(input.text ? { text: input.text } : {}),
+      ...(input.content ? { content: input.content } : {}),
+    });
+    this.setConversationStatus(input.sessionId, "streaming");
+    return {
+      status: "accepted",
+      command_id: input.idempotencyKey ?? `cmd_${this.sentMessages.length}`,
+      session_id: input.sessionId,
+      cursor: {
+        event_id: `evt_sent_${this.sentMessages.length}`,
+        epoch: 1,
+        seq: 100 + this.sentMessages.length,
+      },
+    };
   }
 }
 

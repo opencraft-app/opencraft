@@ -1411,6 +1411,9 @@ test("composer input frame matches the codex-desktop visual rhythm", () => {
   const frameBlock = cssBlock(styles, "composer");
   const editorBlock = cssBlock(styles, "composerEditor");
   const attachedSurfaceBlock = cssBlock(styles, "composerAttachedSurface");
+  const dockAttachedSurfaceBlock =
+    styles.match(/\.composerDock:not\(\.composerDockInline\) \.composerAttachedSurface\s*\{[^}]+\}/)?.[0] ?? "";
+  const localQueueRowBlock = cssBlock(styles, "localQueueRow");
   const newSessionContextBlock = cssBlock(styles, "newSessionContextBar");
   const toolbarBlock = cssBlock(styles, "composerFooter");
   const toolbarLaneBlock = styles.match(/\.composerLeft,\n\.composerRight\s*\{[^}]+\}/)?.[0] ?? "";
@@ -1426,6 +1429,9 @@ test("composer input frame matches the codex-desktop visual rhythm", () => {
   assert.match(rootBlock, /--vela-composer-blur:\s*16px;/);
   assert.match(rootBlock, /--vela-composer-shadow:\s*0 4px 16px 0 rgb\(0 0 0 \/ 5%\);/);
   assert.match(rootBlock, /--vela-composer-max-width:\s*var\(--vela-thread-content-max-width,\s*860px\);/);
+  assert.match(dockBlock, /display:\s*grid;/);
+  assert.match(dockBlock, /align-content:\s*end;/);
+  assert.match(dockBlock, /justify-items:\s*center;/);
   assert.match(dockBlock, /padding:\s*0 24px var\(--vela-thread-floating-content-bottom-inset,\s*12px\);/);
   assert.match(frameBlock, /overflow:\s*hidden auto;/);
   assert.match(frameBlock, /border:\s*1px solid rgb\(13 13 13 \/ 10%\);/);
@@ -1448,6 +1454,13 @@ test("composer input frame matches the codex-desktop visual rhythm", () => {
   assert.match(attachedSurfaceBlock, /width:\s*min\(100%, var\(--vela-composer-max-width\)\);/);
   assert.match(attachedSurfaceBlock, /border-radius:\s*0 0 var\(--vela-composer-radius\) var\(--vela-composer-radius\);/);
   assert.match(attachedSurfaceBlock, /background:\s*#f4f4f5;/);
+  assert.match(dockAttachedSurfaceBlock, /order:\s*-1;/);
+  assert.match(dockAttachedSurfaceBlock, /width:\s*min\(calc\(100% - 72px\), calc\(var\(--vela-composer-max-width\) - 72px\)\);/);
+  assert.match(dockAttachedSurfaceBlock, /border-radius:\s*18px 18px 0 0;/);
+  assert.match(dockAttachedSurfaceBlock, /background:\s*rgb\(241 242 243 \/ 90%\);/);
+  assert.match(dockAttachedSurfaceBlock, /backdrop-filter:\s*saturate\(1\.02\) blur\(3px\);/);
+  assert.match(localQueueRowBlock, /grid-template-columns:\s*72px minmax\(0, 1fr\) 32px;/);
+  assert.match(localQueueRowBlock, /background:\s*transparent;/);
   assert.doesNotMatch(newSessionContextBlock, /border:/);
   assert.doesNotMatch(newSessionContextBlock, /border-radius:/);
   assert.doesNotMatch(newSessionContextBlock, /background:/);

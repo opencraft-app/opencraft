@@ -3,6 +3,11 @@ import {
   createWebSpeechVoiceInputHost,
   type RuntimeHostBridge,
   type RuntimeChromeSafeArea,
+  type VoiceInputError,
+  type VoiceInputHost,
+  type VoiceInputOptions,
+  type VoiceInputPermissionState,
+  type VoiceInputState,
 } from "../../../packages/vela-desktop-shell/src";
 import type { BackendKindWire } from "../../../packages/vela-chat-client/src";
 
@@ -19,6 +24,10 @@ declare global {
       hideWorkMonitor?: () => Promise<WorkMonitorActionResponse>;
       moveWorkMonitorBy?: (deltaX: number, deltaY: number) => Promise<WorkMonitorActionResponse>;
       focusDesktopSession?: (sessionId: string) => Promise<WorkMonitorActionResponse>;
+      isMacosSpeechAvailable?: () => Promise<boolean>;
+      startMacosSpeech?: (options?: VoiceInputOptions) => Promise<WorkMonitorActionResponse>;
+      stopMacosSpeech?: () => Promise<WorkMonitorActionResponse>;
+      onMacosSpeechEvent?: (listener: (event: unknown) => void) => () => void;
       onDesktopChromeStateChange?: (
         listener: (state: RuntimeChromeStateResponse) => void,
       ) => () => void;
@@ -87,7 +96,7 @@ export type RuntimeBootstrap =
     };
 
 const DEFAULT_WEB_API_BASE_URL = "/api/v1";
-const electronVoiceInput = createWebSpeechVoiceInputHost();
+const electronVoiceInput = createElectronVoiceInputHost();
 
 export async function readRuntimeHostInfo(): Promise<RuntimeHostInfo> {
   const bootstrap = await readRuntimeBootstrap();
@@ -283,6 +292,138 @@ function electronRuntimeHostBridge(
         }
       : {}),
   };
+}
+
+function createElectronVoiceInputHost(): VoiceInputHost {
+  const fallback = createWebSpeechVoiceInputHost();
+  const partialListeners = new Set<(text: string) => void>();
+  const finalListeners = new Set<(text: string) => void>();
+  const stateListeners = new Set<(state: VoiceInputState) => void>();
+  const errorListeners = new Set<(error: VoiceInputError) => void>();
+  let activeProvider: "macos" | "fallback" | null = null;
+  let state: VoiceInputState = "idle";
+  let nativeUnsubscribe: (() => void) | null = null;
+
+  const publishState = (nextState: VoiceInputState) => {
+    state = nextState;
+    stateListeners.forEach((listener) => listener(nextState));
+  };
+  const publishError = (error: VoiceInputError) => {
+    errorListeners.forEach((listener) => listener(error));
+  };
+  const ensureNativeSubscription = () => {
+    if (nativeUnsubscribe || !window.velaDesktop?.onMacosSpeechEvent) return;
+    nativeUnsubscribe = window.velaDesktop.onMacosSpeechEvent((event) => {
+      const parsed = parseMacosSpeechEvent(event);
+      if (!parsed) return;
+      if (parsed.type === "state") {
+        publishState(parsed.state);
+        if (parsed.state === "idle" || parsed.state === "error") activeProvider = null;
+      } else if (parsed.type === "partial_transcript") {
+        partialListeners.forEach((listener) => listener(parsed.text));
+      } else if (parsed.type === "final_transcript") {
+        finalListeners.forEach((listener) => listener(parsed.text));
+      } else {
+        publishError({ code: parsed.code, message: parsed.message });
+      }
+    });
+  };
+  const isNativeAvailable = async () =>
+    Boolean(window.velaDesktop?.isMacosSpeechAvailable && (await window.velaDesktop.isMacosSpeechAvailable()));
+
+  fallback.onPartialTranscript((text) => {
+    if (activeProvider === "fallback") partialListeners.forEach((listener) => listener(text));
+  });
+  fallback.onFinalTranscript((text) => {
+    if (activeProvider === "fallback") finalListeners.forEach((listener) => listener(text));
+  });
+  fallback.onStateChange((nextState) => {
+    if (activeProvider === "fallback") publishState(nextState);
+  });
+  fallback.onError((error) => {
+    if (activeProvider === "fallback") publishError(error);
+  });
+
+  return {
+    async isAvailable() {
+      return (await isNativeAvailable()) || Boolean(await fallback.isAvailable());
+    },
+    async requestPermission(): Promise<VoiceInputPermissionState> {
+      if (await isNativeAvailable()) return "prompt";
+      return fallback.requestPermission();
+    },
+    async start(options?: VoiceInputOptions) {
+      if (await isNativeAvailable()) {
+        ensureNativeSubscription();
+        const response = await window.velaDesktop?.startMacosSpeech?.(options);
+        if (response?.accepted) {
+          activeProvider = "macos";
+          return;
+        }
+      }
+      activeProvider = "fallback";
+      await fallback.start(options);
+    },
+    async stop() {
+      if (activeProvider === "macos") {
+        await window.velaDesktop?.stopMacosSpeech?.();
+        return;
+      }
+      await fallback.stop();
+    },
+    onPartialTranscript(listener: (text: string) => void) {
+      partialListeners.add(listener);
+      return () => partialListeners.delete(listener);
+    },
+    onFinalTranscript(listener: (text: string) => void) {
+      finalListeners.add(listener);
+      return () => finalListeners.delete(listener);
+    },
+    onStateChange(listener: (nextState: VoiceInputState) => void) {
+      listener(state);
+      stateListeners.add(listener);
+      return () => stateListeners.delete(listener);
+    },
+    onError(listener: (error: VoiceInputError) => void) {
+      errorListeners.add(listener);
+      return () => errorListeners.delete(listener);
+    },
+  };
+}
+
+type MacosSpeechRendererEvent =
+  | { type: "state"; state: VoiceInputState }
+  | { type: "partial_transcript"; text: string }
+  | { type: "final_transcript"; text: string }
+  | { type: "error"; code: string; message: string };
+
+function parseMacosSpeechEvent(value: unknown): MacosSpeechRendererEvent | null {
+  if (!value || typeof value !== "object") return null;
+  const event = value as Record<string, unknown>;
+  if (
+    event.type === "state" &&
+    (event.state === "idle" ||
+      event.state === "requesting-permission" ||
+      event.state === "listening" ||
+      event.state === "stopping" ||
+      event.state === "error")
+  ) {
+    return { type: "state", state: event.state };
+  }
+  if (
+    (event.type === "partial_transcript" || event.type === "final_transcript") &&
+    typeof event.text === "string"
+  ) {
+    return { type: event.type, text: event.text };
+  }
+  if (event.type === "error") {
+    return {
+      type: "error",
+      code: typeof event.code === "string" ? event.code : "macos_speech_error",
+      message: typeof event.message === "string" ? event.message : "macOS speech failed.",
+    };
+  }
+  return null;
 }
 
 function runtimeChromeSafeArea(state: RuntimeChromeStateResponse): RuntimeChromeSafeArea {

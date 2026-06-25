@@ -22,6 +22,25 @@ export interface ComposerDraftClientState {
   updatedAt: number;
 }
 
+export type ComposerQueueInputPart =
+  | { type: "text"; text: string }
+  | { type: "file_ref"; uri: string }
+  | { type: "image_ref"; uri: string }
+  | { type: "image"; data: string; mime_type: string };
+
+export interface QueuedComposerInputClientState {
+  id: string;
+  content: ComposerQueueInputPart[];
+  previewText: string;
+  createdAt: number;
+}
+
+export interface ComposerQueueClientState {
+  sessionId: string;
+  items: QueuedComposerInputClientState[];
+  updatedAt: number;
+}
+
 export interface ShellLayoutState {
   sidebarWidthPx: number;
   isSidebarVisible: boolean;
@@ -42,6 +61,7 @@ export interface VelaStateSlot<T> {
 export interface VelaClientStateStore {
   conversationScroll: VelaStateSlot<ConversationScrollClientState>;
   composerDraft: VelaStateSlot<ComposerDraftClientState>;
+  composerQueue: VelaStateSlot<ComposerQueueClientState>;
 }
 
 export interface VelaShellLayoutStore {
@@ -99,6 +119,12 @@ export function createVelaClientStateStore(
       `${CLIENT_STATE_PREFIX}:${hostId}:composer_draft`,
       parseComposerDraftState,
       serializeComposerDraftState,
+    ),
+    composerQueue: createStateSlot(
+      kv,
+      `${CLIENT_STATE_PREFIX}:${hostId}:composer_queue`,
+      parseComposerQueueState,
+      serializeComposerQueueState,
     ),
   };
 }
@@ -315,6 +341,89 @@ function parseComposerDraftState(
     text: value.text,
     updatedAt: value.updated_at,
   };
+}
+
+function serializeComposerQueueState(state: ComposerQueueClientState): string {
+  return JSON.stringify({
+    version: 1,
+    session_id: state.sessionId,
+    items: state.items.map((item) => ({
+      id: item.id,
+      content: item.content,
+      preview_text: item.previewText,
+      created_at: item.createdAt,
+    })),
+    updated_at: state.updatedAt,
+  });
+}
+
+function parseComposerQueueState(
+  raw: string | null,
+  sessionId: string,
+): ComposerQueueClientState | null {
+  const value = parseJsonObject(raw);
+  if (!value || value.version !== 1) return null;
+  if (value.session_id !== sessionId) return null;
+  if (!Array.isArray(value.items)) return null;
+  if (
+    typeof value.updated_at !== "number" ||
+    !Number.isFinite(value.updated_at) ||
+    value.updated_at < 0
+  ) {
+    return null;
+  }
+  const items = value.items
+    .map(parseQueuedComposerInput)
+    .filter((item): item is QueuedComposerInputClientState => item !== null);
+  return {
+    sessionId,
+    items,
+    updatedAt: value.updated_at,
+  };
+}
+
+function parseQueuedComposerInput(value: unknown): QueuedComposerInputClientState | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record.id !== "string" || record.id.length === 0) return null;
+  if (typeof record.preview_text !== "string") return null;
+  if (
+    typeof record.created_at !== "number" ||
+    !Number.isFinite(record.created_at) ||
+    record.created_at < 0
+  ) {
+    return null;
+  }
+  if (!Array.isArray(record.content)) return null;
+  const content = record.content
+    .map(parseComposerQueueInputPart)
+    .filter((part): part is ComposerQueueInputPart => part !== null);
+  if (content.length === 0) return null;
+  return {
+    id: record.id,
+    content,
+    previewText: record.preview_text,
+    createdAt: record.created_at,
+  };
+}
+
+function parseComposerQueueInputPart(value: unknown): ComposerQueueInputPart | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  switch (record.type) {
+    case "text":
+      return typeof record.text === "string" ? { type: "text", text: record.text } : null;
+    case "file_ref":
+      return typeof record.uri === "string" ? { type: "file_ref", uri: record.uri } : null;
+    case "image_ref":
+      return typeof record.uri === "string" ? { type: "image_ref", uri: record.uri } : null;
+    case "image":
+      return typeof record.data === "string" && typeof record.mime_type === "string"
+        ? { type: "image", data: record.data, mime_type: record.mime_type }
+        : null;
+    default:
+      return null;
+  }
 }
 
 function serializeShellLayoutState(state: ShellLayoutState): string {

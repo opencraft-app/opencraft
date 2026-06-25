@@ -11,6 +11,7 @@ import {
   VeladRuntimeManager,
   writeDesktopSettings,
 } from "./runtime";
+import { MacosSpeechManager } from "./voice/macos-speech-manager";
 import { WorkMonitorWindowManager } from "./work-monitor";
 
 let mainWindow: BrowserWindow | null = null;
@@ -84,6 +85,17 @@ const workMonitor = new WorkMonitorWindowManager({
   preloadPath: join(__dirname, "preload.cjs"),
   getAnchorWindow: () => mainWindow,
   loadRenderer: loadRendererWindow,
+});
+const macosSpeech = new MacosSpeechManager({
+  appPath: app.getAppPath(),
+  resourcesPath: process.resourcesPath,
+  platform: process.platform,
+  isPackaged: app.isPackaged,
+  logger: logWriter,
+  env: nodeEnv,
+});
+macosSpeech.onEvent((event) => {
+  mainWindow?.webContents.send("vela:voice-macos-event", event);
 });
 
 function logLine(source: string, message: string) {
@@ -348,6 +360,20 @@ ipcMain.handle("vela:desktop-focus-session", async (_event, sessionId: unknown) 
   }
   return { accepted: true };
 });
+
+ipcMain.handle("vela:voice-macos-available", async () => macosSpeech.isAvailable());
+
+ipcMain.handle("vela:voice-macos-start", async (_event, options: unknown) => {
+  const language =
+    isRecord(options) && typeof options.language === "string" ? options.language : undefined;
+  const interimResults =
+    isRecord(options) && typeof options.interimResults === "boolean"
+      ? options.interimResults
+      : undefined;
+  return macosSpeech.start({ language, interimResults });
+});
+
+ipcMain.handle("vela:voice-macos-stop", async () => macosSpeech.stop());
 
 app.whenReady().then(() => {
   attachMediaPermissionHandlers();

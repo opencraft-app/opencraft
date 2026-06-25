@@ -23,6 +23,14 @@ test("client enum allowlists stay aligned with the OpenAPI wire contract", () =>
   assertSetEqual(openapiSchemaEnum("BackendKind"), clientStringSet("backendKinds"));
   assertSetEqual(openapiSchemaEnum("ViewWindowDirection"), clientStringSet("viewWindowDirections"));
   assertSetEqual(openapiSchemaEnum("SessionStatus"), clientStringSet("sessionStatuses"));
+  assertSetEqual(
+    openapiSchemaPropertyEnum("SessionActivity", "phase"),
+    clientStringSet("sessionActivityPhases"),
+  );
+  assertSetEqual(
+    openapiSchemaPropertyEnum("SessionActivity", "attention"),
+    clientStringSet("sessionActivityAttentions"),
+  );
   assertSetEqual(openapiSchemaEnum("RequestStatus"), clientStringSet("requestStatuses"));
   assertSetEqual(openapiSchemaEnum("PermissionMode"), clientStringSet("permissionModes"));
 

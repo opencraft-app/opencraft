@@ -34,6 +34,9 @@ test("macOS package declares microphone entitlement and usage text", () => {
   assert.match(builderConfig, /entitlements: build\/entitlements\.mac\.plist/);
   assert.match(builderConfig, /entitlementsInherit: build\/entitlements\.mac\.inherit\.plist/);
   assert.match(builderConfig, /NSMicrophoneUsageDescription:/);
+  assert.match(builderConfig, /NSSpeechRecognitionUsageDescription:/);
+  assert.match(builderConfig, /native\/macos-speech\/build\/vela-speech-macos/);
+  assert.match(builderConfig, /to: bin\/vela-speech-macos/);
   assert.match(entitlements, /com\.apple\.security\.device\.audio-input/);
   assert.match(inheritedEntitlements, /com\.apple\.security\.device\.audio-input/);
 });

@@ -390,6 +390,77 @@ async fn acp_adapter_opens_permission_request_and_resumes_after_response() {
     assert_eq!(responses[0].result["outcome"]["optionId"], "allow_once");
 }
 
+#[tokio::test]
+async fn acp_adapter_cancel_sends_session_cancel_and_cancels_pending_permission() {
+    let host = ScriptedAcpHost::new(vec![
+        AcpInbound::response(json!({ "protocolVersion": 1, "agentCapabilities": {} })),
+        AcpInbound::response(json!({ "sessionId": "acp_ses_cancel" })),
+        AcpInbound::request(
+            7,
+            "session/request_permission",
+            json!({
+                "sessionId": "acp_ses_cancel",
+                "options": [
+                    { "optionId": "allow_once", "name": "Allow once", "kind": "allow" },
+                    { "optionId": "deny", "name": "Deny", "kind": "deny" }
+                ],
+                "toolCall": { "toolCallId": "tool_cancel", "rawInput": { "cmd": "sleep 30" } }
+            }),
+        ),
+        AcpInbound::response(json!({ "stopReason": "cancelled" })),
+    ]);
+    let adapter = Arc::new(AcpBackendAdapter::new(Arc::new(host.clone()), "/repo"));
+    let (sink, mut receiver) = backend_output_channel(16);
+    let mut input = BackendSend::new("needs permission then cancel");
+    input.session_id = Some(SessionId::from("ses_acp_cancel"));
+    input.resolved_agent_config = Some(ResolvedAgentConfig {
+        backend: BackendKind::Acp,
+        config: Default::default(),
+    });
+
+    let stream_adapter = adapter.clone();
+    let stream = tokio::spawn(async move { stream_adapter.stream_user_message(input, sink).await });
+
+    let opened = receiver
+        .recv()
+        .await
+        .expect("request.opened output")
+        .expect("request.opened ok");
+    assert_eq!(opened.event_type, EventType::REQUEST_OPENED);
+
+    adapter
+        .cancel(vela_backends::BackendCancel {
+            session_id: "ses_acp_cancel".to_string(),
+            backend: Some(BackendKind::Acp),
+        })
+        .await
+        .expect("cancel acp turn");
+
+    let cancelled = receiver
+        .recv()
+        .await
+        .expect("turn cancelled output")
+        .expect("turn cancelled ok");
+    assert_eq!(cancelled.event_type, EventType::TURN_CANCELLED);
+    assert_eq!(cancelled.payload["reason"], "cancelled");
+    stream.await.expect("stream task").expect("stream ok");
+
+    let calls = host.calls().await;
+    assert_eq!(
+        calls
+            .iter()
+            .map(|call| call.method.as_str())
+            .collect::<Vec<_>>(),
+        vec!["initialize", "session/new", "session/prompt", "session/cancel"]
+    );
+    assert_eq!(calls[3].params["sessionId"], "acp_ses_cancel");
+
+    let responses = host.responses().await;
+    assert_eq!(responses.len(), 1);
+    assert_eq!(responses[0].id, 7);
+    assert_eq!(responses[0].result["outcome"]["outcome"], "cancelled");
+}
+
 #[test]
 fn acp_stdio_host_defaults_to_hermes_command_with_cloudagents_env() {
     let host = AcpStdioHost::hermes("/repo")
@@ -515,6 +586,14 @@ impl AcpConnection for ScriptedAcpConnection {
             params,
         });
         Ok(99)
+    }
+
+    async fn notify(&mut self, method: &str, params: Value) -> anyhow::Result<()> {
+        self.state.lock().await.calls.push(RecordedAcpCall {
+            method: method.to_string(),
+            params,
+        });
+        Ok(())
     }
 
     async fn respond(&mut self, id: i64, result: Value) -> anyhow::Result<()> {

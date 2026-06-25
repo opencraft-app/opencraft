@@ -930,8 +930,9 @@
   bottom: 0;
   left: 0;
   z-index: 20;
-  display: flex;
-  justify-content: center;
+  display: grid;
+  align-content: end;
+  justify-items: center;
   padding: 0 24px var(--vela-thread-floating-content-bottom-inset, 12px);
   pointer-events: none;
 }
@@ -988,10 +989,6 @@
   user-select: text;
 }
 
-.composerEditor:focus {
-  box-shadow: inset 0 0 0 1px rgb(120 113 108 / 18%);
-}
-
 .composerEditorPlaceholder {
   position: absolute;
   top: 12px;
@@ -1005,6 +1002,10 @@
 
 .composerEditor [data-lexical-text="true"] {
   white-space: pre-wrap;
+}
+
+.composerEditor p {
+  margin: 0;
 }
 
 .composerAttachedSurface {
@@ -1022,8 +1023,98 @@
   user-select: none;
 }
 
+.composerDock:not(.composerDockInline) .composerAttachedSurface {
+  order: -1;
+  width: min(calc(100% - 72px), calc(var(--vela-composer-max-width) - 72px));
+  max-height: min(34dvh, 240px);
+  overflow: hidden auto;
+  margin: 0 auto -4px;
+  border: 1px solid rgb(13 13 13 / 4%);
+  border-bottom: 0;
+  border-radius: 18px 18px 0 0;
+  background: rgb(241 242 243 / 90%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 48%);
+  padding: 8px 10px 12px;
+  -webkit-backdrop-filter: saturate(1.02) blur(3px);
+  backdrop-filter: saturate(1.02) blur(3px);
+}
+
 .composerDockInline .composerAttachedSurface {
   width: 100%;
+}
+
+.localQueueTrack {
+  display: grid;
+  gap: 1px;
+}
+
+.localQueueRow {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) 32px;
+  min-height: 32px;
+  align-items: center;
+  gap: 8px;
+  border-radius: 9px;
+  background: transparent;
+  color: #737373;
+  padding: 0 4px 0 8px;
+  transition:
+    background 110ms ease,
+    color 110ms ease;
+}
+
+.localQueueRow:hover,
+.localQueueRow:focus-within {
+  background: rgb(232 233 235 / 72%);
+}
+
+.localQueueIndex {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #969aa0;
+  font-size: 14px;
+  font-weight: 560;
+  line-height: 1;
+}
+
+.localQueueText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #74787f;
+  font-size: 13px;
+  font-weight: 520;
+  line-height: 1.2;
+}
+
+.localQueueRemove {
+  display: inline-grid;
+  width: 30px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #94989f;
+  cursor: pointer;
+  line-height: 1;
+  opacity: 0.58;
+  transition:
+    background 110ms ease,
+    color 110ms ease,
+    opacity 110ms ease;
+}
+
+.localQueueRow:hover .localQueueRemove,
+.localQueueRemove:focus-visible {
+  opacity: 1;
+}
+
+.localQueueRemove:hover {
+  background: rgb(13 13 13 / 6%);
+  color: #5f6369;
 }
 
 @supports (corner-shape: superellipse(1.5)) {

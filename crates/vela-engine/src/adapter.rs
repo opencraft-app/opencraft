@@ -4,16 +4,18 @@ use async_trait::async_trait;
 use serde_json::json;
 use vela_core::{BackendModel, EventType, ReasoningEffortOption};
 
-use crate::{VelaEngineConfig, runner::run_turn};
+use crate::{VelaEngineConfig, runner::VelaEngineRunner};
 
 pub struct VelaEngineBackendAdapter {
     config: Arc<RwLock<VelaEngineConfig>>,
+    runner: VelaEngineRunner,
 }
 
 impl VelaEngineBackendAdapter {
     pub fn new(config: VelaEngineConfig) -> Self {
         Self {
             config: Arc::new(RwLock::new(config)),
+            runner: VelaEngineRunner::new(),
         }
     }
 
@@ -26,6 +28,9 @@ impl VelaEngineBackendAdapter {
 
     pub fn update_config(&self, config: VelaEngineConfig) {
         if let Ok(mut current) = self.config.write() {
+            if *current != config {
+                self.runner.clear();
+            }
             *current = config;
         }
     }
@@ -36,7 +41,7 @@ impl vela_backends::BackendAdapter for VelaEngineBackendAdapter {
     fn capabilities(&self) -> vela_backends::BackendCapabilities {
         vela_backends::BackendCapabilities {
             streaming: true,
-            cancel: false,
+            cancel: cfg!(feature = "codex-core-local"),
             permission_requests: false,
             structured_diff: true,
             session_agent_config: true,
@@ -85,6 +90,10 @@ impl vela_backends::BackendAdapter for VelaEngineBackendAdapter {
         }])
     }
 
+    async fn cancel(&self, input: vela_backends::BackendCancel) -> anyhow::Result<()> {
+        self.runner.cancel_turn(&input.session_id).await
+    }
+
     async fn stream_user_message(
         &self,
         input: vela_backends::BackendSend,
@@ -107,19 +116,22 @@ impl vela_backends::BackendAdapter for VelaEngineBackendAdapter {
         ))
         .await?;
 
-        match run_turn(&config, input).await {
+        match self.runner.run_turn(&config, input).await {
             Ok(outputs) => {
+                let has_terminal_output = outputs.iter().any(is_terminal_turn_output);
                 for output in outputs {
                     sink.send(output).await?;
                 }
-                sink.send(vela_backends::BackendOutput::event(
-                    EventType::TURN_COMPLETED,
-                    json!({
-                        "turn_id": turn_id,
-                        "last_agent_message": null,
-                    }),
-                ))
-                .await?;
+                if !has_terminal_output {
+                    sink.send(vela_backends::BackendOutput::event(
+                        EventType::TURN_COMPLETED,
+                        json!({
+                            "turn_id": turn_id,
+                            "last_agent_message": null,
+                        }),
+                    ))
+                    .await?;
+                }
             }
             Err(error) => {
                 sink.send(vela_backends::BackendOutput::event(
@@ -156,4 +168,57 @@ fn common_reasoning_effort_options() -> Vec<ReasoningEffortOption> {
         metadata: Default::default(),
     })
     .collect()
+}
+
+fn is_terminal_turn_output(output: &vela_backends::BackendOutput) -> bool {
+    matches!(
+        output.event_type,
+        EventType::TURN_COMPLETED | EventType::TURN_FAILED | EventType::TURN_CANCELLED
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use vela_backends::BackendAdapter;
+
+    use super::*;
+
+    #[test]
+    fn capabilities_expose_embedded_cancel_support() {
+        let adapter = VelaEngineBackendAdapter::new(VelaEngineConfig::empty());
+
+        assert_eq!(
+            adapter.capabilities().cancel,
+            cfg!(feature = "codex-core-local")
+        );
+    }
+
+    #[tokio::test]
+    async fn cancel_is_adapter_owned_and_idempotent() {
+        let adapter = VelaEngineBackendAdapter::new(VelaEngineConfig::empty());
+
+        adapter
+            .cancel(vela_backends::BackendCancel {
+                session_id: "missing-session".to_string(),
+                backend: Some(vela_core::BackendKind::VelaEngine),
+            })
+            .await
+            .expect("missing sessions should be an idempotent cancel");
+    }
+
+    #[test]
+    fn terminal_turn_outputs_suppress_synthetic_completion() {
+        assert!(is_terminal_turn_output(
+            &vela_backends::BackendOutput::event(EventType::TURN_CANCELLED, json!({}))
+        ));
+        assert!(is_terminal_turn_output(
+            &vela_backends::BackendOutput::event(EventType::TURN_FAILED, json!({}))
+        ));
+        assert!(is_terminal_turn_output(
+            &vela_backends::BackendOutput::event(EventType::TURN_COMPLETED, json!({}))
+        ));
+        assert!(!is_terminal_turn_output(
+            &vela_backends::BackendOutput::event(EventType::ASSISTANT_MESSAGE_DELTA, json!({}))
+        ));
+    }
 }

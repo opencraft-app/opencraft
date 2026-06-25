@@ -98,6 +98,9 @@ rmSync(join(appRoot, "dist-electron"), { recursive: true, force: true });
 
 await runCommand("velad-build", "cargo", ["build", "-p", "velad", "--features", "embedded-vela-engine"], repoRoot);
 console.log(`[dev] using local velad binary ${veladBinaryPath}`);
+if (process.platform === "darwin") {
+  await runCommand("macos-speech-build", "make", ["desktop-build-macos-speech"], repoRoot);
+}
 
 const rendererUrlPreference = process.env.VITE_DEV_SERVER_URL?.trim() || "http://127.0.0.1:5173";
 const rendererUrlConfig = new URL(rendererUrlPreference);

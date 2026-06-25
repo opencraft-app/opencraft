@@ -1027,6 +1027,8 @@ components:
             pending_request_count:
               type: integer
               minimum: 0
+            activity:
+              $ref: '#/components/schemas/SessionActivity'
             running:
               type: boolean
             model:
@@ -1050,6 +1052,8 @@ components:
               $ref: '#/components/schemas/AgentConfig'
             runtime_info:
               $ref: '#/components/schemas/SessionRuntimeInfo'
+            activity:
+              $ref: '#/components/schemas/SessionActivity'
             operations:
               $ref: '#/components/schemas/SessionOperations'
             created_at:
@@ -1058,6 +1062,21 @@ components:
             metadata:
               type: object
               additionalProperties: true
+    SessionActivity:
+      type: object
+      required: [phase, attention, pending_request_count]
+      properties:
+        phase:
+          type: string
+          enum: [idle, starting, running, canceling]
+          description: Current server-side turn execution phase. Waiting for user input is not running.
+        attention:
+          type: string
+          enum: [none, waiting_for_user, error]
+          description: Whether the session currently needs user or error attention.
+        pending_request_count:
+          type: integer
+          minimum: 0
     SessionRuntimeInfo:
       type: object
       required: [provider]
