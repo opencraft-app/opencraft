@@ -1156,17 +1156,19 @@ test("chat markdown and agent work use compact Codex-style vertical rhythm", () 
 });
 
 function cssBlock(css: string, selector: string) {
-  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = css.match(new RegExp(`\\.${escaped}\\s*\\{([\\s\\S]*?)\\}`));
+  const match = css.match(new RegExp(`\\.${escapeRegex(selector)}\\s*\\{([\\s\\S]*?)\\}`));
   assert.ok(match, `missing .${selector} block`);
   return match[1] ?? "";
 }
 
 function cssBlockContaining(css: string, selectorFragment: string) {
-  const escaped = selectorFragment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = css.match(new RegExp(`[^{}]*\\.${escaped}[^{}]*\\{([\\s\\S]*?)\\}`));
+  const match = css.match(new RegExp(`[^{}]*\\.${escapeRegex(selectorFragment)}[^{}]*\\{([\\s\\S]*?)\\}`));
   assert.ok(match, `missing selector containing .${selectorFragment}`);
   return match[1] ?? "";
+}
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function listSourceFiles(directory: string): string[] {
@@ -1290,8 +1292,11 @@ test("composer primary control has stable accessible action labels", () => {
     "utf8",
   );
 
-  assert.match(promptInput, /aria-label=\{isStopControl \? "Stop generation" : "Send message"\}/);
-  assert.match(promptInput, /title=\{isStopControl \? "Stop generation" : "Send message"\}/);
+  assert.match(promptInput, /submitLabel = "Send message"/);
+  assert.match(promptInput, /stopLabel = "Stop generation"/);
+  assert.match(promptInput, /const primaryControlLabel = isStopControl \? stopLabel : submitLabel;/);
+  assert.match(promptInput, /aria-label=\{primaryControlLabel\}/);
+  assert.match(promptInput, /title=\{primaryControlLabel\}/);
 });
 
 test("composer primary control keeps codex-desktop dimensions in narrow flex layouts", () => {
@@ -1327,22 +1332,28 @@ test("composer input frame matches the codex-desktop visual rhythm", () => {
   const toolbarBlock = cssBlock(styles, "composerFooter");
   const toolbarLaneBlock = styles.match(/\.composerLeft,\n\.composerRight\s*\{[^}]+\}/)?.[0] ?? "";
   const leftBlock = styles.match(/\.composerLeft\s*\{[^}]+\}/)?.[0] ?? "";
-  const rightBlock = [...styles.matchAll(/\.composerRight\s*\{[^}]+\}/g)].at(-1)?.[0] ?? "";
+  const rightBlock =
+    [...styles.matchAll(/\.composerRight\s*\{[^}]+\}/g)].find((match) =>
+      match[0].includes("flex: 0 1 auto;"),
+    )?.[0] ?? "";
   const iconButtonBlock = cssBlock(styles, "iconButton");
 
   assert.match(frameBlock, /overflow:\s*hidden auto;/);
   assert.match(frameBlock, /border:\s*1px solid rgb\(13 13 13 \/ 10%\);/);
   assert.match(frameBlock, /border-radius:\s*var\(--vela-composer-radius\);/);
   assert.match(frameBlock, /background:\s*var\(--vela-composer-bg\);/);
-  assert.match(frameBlock, /box-shadow:\s*var\(--vela-composer-shadow\);/);
+  assert.match(frameBlock, /0 18px 46px rgb\(15 23 42 \/ 9%\)/);
+  assert.match(frameBlock, /var\(--vela-composer-shadow\);/);
   assert.match(frameBlock, /backdrop-filter:\s*saturate\(1\.2\) blur\(var\(--vela-composer-blur\)\);/);
   assert.doesNotMatch(frameBlock, /min-height:\s*112px;/);
 
-  assert.match(textareaBlock, /min-height:\s*24px;/);
-  assert.match(textareaBlock, /max-height:\s*200px;/);
+  assert.match(textareaBlock, /min-height:\s*var\(--vela-composer-input-min-height,\s*24px\);/);
+  assert.match(textareaBlock, /max-height:\s*var\(--vela-composer-input-max-height,\s*200px\);/);
   assert.match(textareaBlock, /font-size:\s*14px;/);
   assert.match(textareaBlock, /line-height:\s*1\.5;/);
   assert.match(textareaBlock, /padding:\s*12px 16px 8px;/);
+  assert.match(styles, /\.composerDockInline\s*\{[^}]*--vela-composer-input-min-height:\s*126px;/s);
+  assert.match(styles, /\.composerDockInline \.textarea\s*\{[^}]*font-size:\s*16px;/s);
 
   assert.match(toolbarBlock, /align-items:\s*flex-end;/);
   assert.match(toolbarBlock, /flex-wrap:\s*wrap;/);
@@ -1364,6 +1375,30 @@ test("composer input frame matches the codex-desktop visual rhythm", () => {
   assert.match(iconButtonBlock, /border-radius:\s*8px;/);
   assert.match(styles, /@supports \(corner-shape:\s*superellipse\(1\.5\)\)\s*\{[^}]*\.composer\s*\{[^}]*corner-shape:\s*superellipse\(1\.5\);/s);
   assert.doesNotMatch(styles, /\.controlButtonLabel/);
+});
+
+test("composer frames disable selection outside editable user input", () => {
+  const styles = readFileSync(
+    join(root, "packages/vela-chat-web/src/styles/desktop.module.css"),
+    "utf8",
+  );
+  const newSessionSurface = readFileSync(
+    join(root, "packages/vela-chat-web/src/new-session/NewSessionSurface.tsx"),
+    "utf8",
+  );
+
+  const chatFrameBlock = cssBlock(styles, "composer");
+  const chatTextareaBlock = cssBlock(styles, "textarea");
+  const chatAttachmentLabelBlock = cssBlock(styles, "attachmentLabel");
+  const chatControlsBlock = cssBlock(styles, "composerControls");
+
+  assert.match(chatFrameBlock, /user-select:\s*none;/);
+  assert.match(chatTextareaBlock, /user-select:\s*text;/);
+  assert.doesNotMatch(chatAttachmentLabelBlock, /user-select:\s*(text|all);/);
+  assert.doesNotMatch(chatControlsBlock, /user-select:\s*(text|all);/);
+  assert.match(newSessionSurface, /<PromptInput/);
+  assert.match(newSessionSurface, /layout="inline"/);
+  assert.doesNotMatch(styles, /newSessionComposer/);
 });
 
 test("composer primary control switches to stop while a turn is running", () => {
@@ -1388,7 +1423,7 @@ test("composer primary control switches to stop while a turn is running", () => 
   assert.match(promptInput, /isRunning/);
   assert.match(promptInput, /onStop/);
   assert.match(promptInput, /import \{ ArrowUp, Mic, Square \} from "lucide-react";/);
-  assert.match(promptInput, /aria-label=\{isStopControl \? "Stop generation" : "Send message"\}/);
+  assert.match(promptInput, /aria-label=\{primaryControlLabel\}/);
   assert.match(promptInput, /<Square size=\{13\} strokeWidth=\{0\} fill="currentColor" aria-hidden="true" \/>/);
   assert.match(promptInput, /<ArrowUp size=\{22\} strokeWidth=\{2\.4\} aria-hidden="true" \/>/);
   assert.match(composer, /isRunning/);

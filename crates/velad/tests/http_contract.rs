@@ -45,6 +45,20 @@ async fn test_app_with_backend_outputs_and_default_model(
     )
 }
 
+async fn test_app_with_observability() -> axum::Router {
+    test_app_with_observability_outputs(support::default_backend_outputs()).await
+}
+
+async fn test_app_with_observability_outputs(outputs: Vec<BackendOutput>) -> axum::Router {
+    let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
+    let backend = Arc::new(MockBackendAdapter::new(outputs));
+    let observability = vela_observability::ObservabilityStore::connect("sqlite::memory:", None)
+        .await
+        .expect("observability");
+    let runtime = Runtime::new(store.clone(), backend).with_observability(observability.clone());
+    velad::build_app(velad::ApiState::new(store, runtime).with_observability(observability))
+}
+
 async fn json_request(
     app: axum::Router,
     method: Method,
@@ -227,3 +241,6 @@ mod backends;
 
 #[path = "http_contract/runtime.rs"]
 mod runtime;
+
+#[path = "http_contract/observability.rs"]
+mod observability;

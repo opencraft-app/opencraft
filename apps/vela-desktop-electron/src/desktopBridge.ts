@@ -11,8 +11,15 @@ declare global {
       retryDesktopBootstrap?: () => Promise<RuntimeInfoResponse>;
       getDesktopChromeState?: () => Promise<RuntimeChromeStateResponse>;
       leaveFullscreen?: () => Promise<RuntimeChromeStateResponse>;
+      openWorkMonitor?: (sessionId: string) => Promise<WorkMonitorActionResponse>;
+      hideWorkMonitor?: () => Promise<WorkMonitorActionResponse>;
+      moveWorkMonitorBy?: (deltaX: number, deltaY: number) => Promise<WorkMonitorActionResponse>;
+      focusDesktopSession?: (sessionId: string) => Promise<WorkMonitorActionResponse>;
       onDesktopChromeStateChange?: (
         listener: (state: RuntimeChromeStateResponse) => void,
+      ) => () => void;
+      onOpenDesktopSession?: (
+        listener: (sessionId: unknown) => void,
       ) => () => void;
     };
   }
@@ -33,6 +40,7 @@ export type RuntimeInfoResponse =
   | {
       status: "ready";
       apiBaseUrl: string;
+      otelBaseUrl?: string;
       chromeState?: RuntimeChromeStateResponse;
       logPath?: string;
       platform: NodeJS.Platform;
@@ -49,10 +57,15 @@ export type DesktopInfoResponse = RuntimeInfoResponse;
 
 export interface RuntimeHostInfo {
   apiBaseUrl: string;
+  otelBaseUrl?: string;
   chromeState?: RuntimeChromeStateResponse;
   hostKind: "electron" | "web";
   logPath?: string;
   platform: NodeJS.Platform | "web";
+}
+
+export interface WorkMonitorActionResponse {
+  accepted: boolean;
 }
 
 export type RuntimeBootstrap =
@@ -88,6 +101,7 @@ export async function readRuntimeBootstrap(): Promise<RuntimeBootstrap> {
       status: "ready",
       info: {
         apiBaseUrl: info.apiBaseUrl,
+        otelBaseUrl: info.otelBaseUrl,
         chromeState: info.chromeState,
         hostKind: "electron",
         logPath: info.logPath,
@@ -100,6 +114,7 @@ export async function readRuntimeBootstrap(): Promise<RuntimeBootstrap> {
     status: "ready",
     info: {
       apiBaseUrl: readWebApiBaseUrl(),
+      otelBaseUrl: readWebOtelBaseUrl(),
       chromeState: browserChromeState(),
       hostKind: "web",
       platform: "web",
@@ -126,6 +141,7 @@ export async function retryRuntimeBootstrap(): Promise<RuntimeBootstrap> {
     status: "ready",
     info: {
       apiBaseUrl: info.apiBaseUrl,
+      otelBaseUrl: info.otelBaseUrl,
       chromeState: info.chromeState,
       hostKind: "electron",
       logPath: info.logPath,
@@ -166,6 +182,32 @@ export function subscribeRuntimeChromeState(
   return window.velaDesktop?.onDesktopChromeStateChange?.(listener) ?? (() => undefined);
 }
 
+export async function openWorkMonitor(sessionId: string) {
+  return window.velaDesktop?.openWorkMonitor?.(sessionId) ?? { accepted: false };
+}
+
+export async function hideWorkMonitor() {
+  return window.velaDesktop?.hideWorkMonitor?.() ?? { accepted: false };
+}
+
+export async function moveWorkMonitorBy(deltaX: number, deltaY: number) {
+  return window.velaDesktop?.moveWorkMonitorBy?.(deltaX, deltaY) ?? { accepted: false };
+}
+
+export async function focusDesktopSession(sessionId: string) {
+  return window.velaDesktop?.focusDesktopSession?.(sessionId) ?? { accepted: false };
+}
+
+export function subscribeOpenDesktopSession(listener: (sessionId: string) => void) {
+  return (
+    window.velaDesktop?.onOpenDesktopSession?.((sessionId) => {
+      if (typeof sessionId === "string" && sessionId.trim()) {
+        listener(sessionId.trim());
+      }
+    }) ?? (() => undefined)
+  );
+}
+
 function readWebApiBaseUrl() {
   const fromQuery = new URL(window.location.href).searchParams.get("api_base_url");
   if (fromQuery) return fromQuery;
@@ -174,6 +216,16 @@ function readWebApiBaseUrl() {
   if (fromEnv) return fromEnv;
 
   return DEFAULT_WEB_API_BASE_URL;
+}
+
+function readWebOtelBaseUrl() {
+  const fromQuery = new URL(window.location.href).searchParams.get("otel_base_url");
+  if (fromQuery) return fromQuery;
+
+  const fromEnv = import.meta.env.VITE_VELA_OTEL_BASE_URL;
+  if (fromEnv) return fromEnv;
+
+  return undefined;
 }
 
 function electronRuntimeHostBridge(

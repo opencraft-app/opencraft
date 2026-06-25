@@ -1,0 +1,69 @@
+.workMonitorApp {
+  display: grid;
+  width: 100vw;
+  height: 100vh;
+  place-items: center;
+  overflow: hidden;
+  background: transparent;
+  box-sizing: border-box;
+  padding: 2px;
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.workMonitorApp button {
+  -webkit-app-region: no-drag;
+}
+
+.workMonitorLoading,
+.workMonitorError {
+  display: grid;
+  width: min(100%, 380px);
+  min-height: 150px;
+  align-content: center;
+  gap: 10px;
+  border: 1px solid rgb(13 13 13 / 10%);
+  border-radius: 14px;
+  background: rgb(250 250 249 / 96%);
+  box-shadow:
+    0 1px 2px rgb(15 23 42 / 18%),
+    0 2px 0 rgb(255 255 255 / 72%) inset;
+  color: #2d2a27;
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  padding: 28px;
+  text-align: left;
+}
+
+.workMonitorError {
+  border: 1px solid rgb(239 68 68 / 22%);
+  background: rgb(255 241 241 / 96%);
+  cursor: pointer;
+}
+
+.workMonitorLoading span,
+.workMonitorError span {
+  color: #8a8178;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.workMonitorLoading strong,
+.workMonitorError strong {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #2d2a27;
+  font-size: 20px;
+  font-weight: 680;
+  letter-spacing: 0;
+  line-height: 1.18;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}

@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import test from "node:test";
 
+import { VelaLocalTracer } from "../../../../packages/vela-observability-client/src";
 import { VeladRuntimeManager } from "./velad-runtime-manager";
 import {
   parseVeladReadyLine,
@@ -31,10 +32,12 @@ class MemoryLogger {
 }
 
 function createManager(options: {
+  env?: NodeJS.ProcessEnv;
   fetchImpl?: typeof fetch;
   readyTimeoutMs?: number;
   shutdownTimeoutMs?: number;
-  onSpawn?: (child: FakeChild, command: string, args: string[]) => void;
+  observability?: VelaLocalTracer;
+  onSpawn?: (child: FakeChild, command: string, args: string[], options: unknown) => void;
 }) {
   const logger = new MemoryLogger();
   let child: FakeChild | null = null;
@@ -45,15 +48,17 @@ function createManager(options: {
       },
     },
     resourcesPath: "/tmp/resources",
+    env: options.env,
     logger,
     fetchImpl: options.fetchImpl ?? fetch,
+    observability: options.observability,
     readyTimeoutMs: options.readyTimeoutMs ?? 100,
     shutdownTimeoutMs: options.shutdownTimeoutMs ?? 100,
     requestTimeoutMs: 100,
     resolveBundledVeladPath: () => "/tmp/velad",
-    spawnImpl: ((command: string, args: string[]) => {
+    spawnImpl: ((command: string, args: string[], spawnOptions: unknown) => {
       child = new FakeChild();
-      options.onSpawn?.(child, command, args);
+      options.onSpawn?.(child, command, args, spawnOptions);
       return child;
     }) as never,
   });
@@ -68,12 +73,15 @@ function readyLine(overrides: Record<string, unknown> = {}) {
     pid: 123,
     listen_addr: "127.0.0.1:49321",
     api_base_url: "http://127.0.0.1:49321/api/v1",
+    otel_protocol: "otlp.http.json",
+    otel_base_url: "http://127.0.0.1:49321",
+    observability_base_url: "http://127.0.0.1:49321/api/v1/observability",
     version: "0.1.0",
     ...overrides,
   })}\n`;
 }
 
-test("manager resolves bundled startup from stdout velad.ready", async () => {
+test("manager resolves local startup from stdout velad.ready", async () => {
   let spawnedArgs: string[] = [];
   const { manager, getChild } = createManager({
     onSpawn(child, _command, args) {
@@ -88,6 +96,59 @@ test("manager resolves bundled startup from stdout velad.ready", async () => {
   assert.equal(info.listenAddr, "127.0.0.1:49321");
   assert.deepEqual(spawnedArgs.slice(0, 2), ["--listen", "127.0.0.1:0"]);
   assert.equal(getChild()?.killed, false);
+});
+
+test("manager exports local startup span to velad OTLP endpoint", async () => {
+  const traceRequests: any[] = [];
+  const observability = new VelaLocalTracer({
+    serviceName: "vela-desktop-electron-test",
+    tracerName: "vela.desktop.electron.test",
+    fetchImpl: (async (url: RequestInfo | URL, init?: RequestInit) => {
+      traceRequests.push({ url: String(url), body: JSON.parse(String(init?.body)) });
+      return Response.json({ accepted: true, spans: 1, logs: 0 });
+    }) as typeof fetch,
+  });
+  const { manager } = createManager({
+    observability,
+    onSpawn(child) {
+      queueMicrotask(() => child.stdout.write(readyLine()));
+    },
+  });
+
+  await manager.ensureReady();
+
+  assert.equal(traceRequests.length, 1);
+  assert.equal(traceRequests[0].url, "http://127.0.0.1:49321/v1/traces");
+  const span = traceRequests[0].body.resourceSpans[0].scopeSpans[0].spans[0];
+  assert.equal(span.name, "electron.velad.start");
+  assert.deepEqual(
+    span.attributes.find((attribute: any) => attribute.key === "velad.runtime.mode"),
+    { key: "velad.runtime.mode", value: { stringValue: "local" } },
+  );
+  assert.deepEqual(
+    span.attributes.find((attribute: any) => attribute.key === "velad.otel_base_url"),
+    { key: "velad.otel_base_url", value: { stringValue: "http://127.0.0.1:49321" } },
+  );
+});
+
+test("manager preserves runtime PATH precedence when spawning local velad", async () => {
+  let spawnedOptions: { env?: NodeJS.ProcessEnv } | null = null;
+  const { manager } = createManager({
+    env: {
+      HOME: "/tmp/home",
+      PATH: "/login/bin:/opt/homebrew/bin:/usr/bin",
+      RUST_LOG: "debug",
+    },
+    onSpawn(child, _command, _args, options) {
+      spawnedOptions = options as { env?: NodeJS.ProcessEnv };
+      queueMicrotask(() => child.stdout.write(readyLine()));
+    },
+  });
+
+  await manager.ensureReady();
+
+  assert.equal(spawnedOptions?.env?.RUST_LOG, "debug");
+  assert.match(spawnedOptions?.env?.PATH ?? "", /^\/login\/bin:\/opt\/homebrew\/bin:\/usr\/bin/);
 });
 
 test("non-json stdout is logged but does not trigger ready", async () => {
@@ -112,29 +173,29 @@ test("wrong ready protocol fails startup", async () => {
   await assert.rejects(manager.ensureReady(), /unsupported velad runtime protocol/);
 });
 
-test("external runtime validates runtime-info without fetching backends", async () => {
+test("manager ignores legacy listen env and spawns local velad", async () => {
+  let spawnedCommand = "";
   const requested: string[] = [];
-  const logger = new MemoryLogger();
-  const manager = new VeladRuntimeManager({
-    host: {
-      getPath(name) {
-        return name === "home" ? "/tmp/home" : "/tmp/user-data";
-      },
+  const legacyListenEnv = ["VELA", "DESKTOP", "VELAD", "LISTEN", "ADDR"].join("_");
+  const { manager } = createManager({
+    env: {
+      [legacyListenEnv]: "127.0.0.1:3857",
+      VELA_DESKTOP_VELAD_PATH: "/tmp/dev-velad",
     },
-    resourcesPath: "/missing/resources",
-    env: { VELA_DESKTOP_VELAD_LISTEN_ADDR: "127.0.0.1:3857" },
-    logger,
-    requestTimeoutMs: 100,
     fetchImpl: (async (url: RequestInfo | URL) => {
       requested.push(String(url));
       return Response.json(JSON.parse(readyLine()));
     }) as typeof fetch,
+    onSpawn(child, command) {
+      spawnedCommand = command;
+      queueMicrotask(() => child.stdout.write(readyLine()));
+    },
   });
 
   await manager.ensureReady();
 
-  assert.deepEqual(requested, ["http://127.0.0.1:3857/api/v1/runtime-info"]);
-  assert.doesNotMatch(requested.join("\n"), /backends/);
+  assert.equal(spawnedCommand, "/tmp/dev-velad");
+  assert.deepEqual(requested, []);
 });
 
 test("shutdown posts runtime endpoint and waits for child exit", async () => {

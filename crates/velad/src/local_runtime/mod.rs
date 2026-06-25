@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 pub const RUNTIME_PROTOCOL: &str = "velad.local.v1";
 pub const API_PROTOCOL: &str = "velachat.v1";
 pub const READY_EVENT_TYPE: &str = "velad.ready";
+pub const OTEL_PROTOCOL: &str = "otlp.http.json";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LocalRuntimeConfig {
@@ -101,9 +102,12 @@ pub struct ReadyEvent {
     pub event_type: String,
     pub runtime_protocol: String,
     pub api_protocol: String,
+    pub otel_protocol: String,
     pub pid: u32,
     pub listen_addr: String,
     pub api_base_url: String,
+    pub otel_base_url: String,
+    pub observability_base_url: String,
     pub version: String,
 }
 
@@ -114,8 +118,11 @@ impl ReadyEvent {
             event_type: READY_EVENT_TYPE.to_string(),
             runtime_protocol: RUNTIME_PROTOCOL.to_string(),
             api_protocol: API_PROTOCOL.to_string(),
+            otel_protocol: OTEL_PROTOCOL.to_string(),
             pid: std::process::id(),
             api_base_url: format!("http://{listen_addr}/api/v1"),
+            otel_base_url: format!("http://{listen_addr}"),
+            observability_base_url: format!("http://{listen_addr}/api/v1/observability"),
             listen_addr,
             version: env!("CARGO_PKG_VERSION").to_string(),
         }
@@ -168,7 +175,14 @@ mod tests {
         assert_ne!(addr.port(), 0);
         assert_eq!(ready.runtime_protocol, RUNTIME_PROTOCOL);
         assert_eq!(ready.api_protocol, API_PROTOCOL);
+        assert_eq!(ready.otel_protocol, OTEL_PROTOCOL);
         assert!(ready.listen_addr.ends_with(&format!(":{}", addr.port())));
         assert!(ready.api_base_url.ends_with("/api/v1"));
+        assert!(ready.otel_base_url.starts_with("http://127.0.0.1:"));
+        assert!(
+            ready
+                .observability_base_url
+                .ends_with("/api/v1/observability")
+        );
     }
 }

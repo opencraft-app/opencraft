@@ -1,6 +1,28 @@
 export interface VeladClientOptions {
   baseUrl: string;
   fetch?: typeof fetch;
+  observability?: VeladClientObservability;
+}
+
+export interface VeladObservedSpan {
+  setAttribute: (key: string, value: string | number | boolean) => void;
+  setStatus: (status: { code: number; message?: string }) => void;
+  end: () => void;
+  spanContext?: () => { traceId: string; spanId: string };
+}
+
+export interface VeladClientObservability {
+  startSpan: (name: string, options?: { attributes?: Record<string, unknown> }) => VeladObservedSpan;
+  recordError: (span: VeladObservedSpan, error: unknown) => void;
+  traceparent: (span: unknown) => string;
+  emitLog?: (record: {
+    body: string;
+    severityText?: string;
+    attributes?: Record<string, unknown>;
+    span?: VeladObservedSpan | null;
+    traceId?: string;
+    spanId?: string;
+  }) => void | Promise<void>;
 }
 
 export interface CursorWindow {
@@ -474,9 +496,16 @@ export interface BackendWire {
   permission_modes: PermissionModeOptionWire[];
   features: BackendFeatureWire[];
   diagnostics?: Record<string, unknown>;
+  snapshot_protocol?: string;
+  fetched_at?: string;
 }
 
-export type BackendStatusWire = "available" | "unavailable" | "degraded" | "error";
+export type BackendStatusWire =
+  | "loading"
+  | "available"
+  | "unavailable"
+  | "degraded"
+  | "error";
 
 export interface BackendsWireResponse {
   backends: BackendWire[];

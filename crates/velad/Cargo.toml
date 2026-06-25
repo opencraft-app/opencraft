@@ -19,6 +19,7 @@ tower-http.workspace = true
 tracing-subscriber.workspace = true
 vela-backends.workspace = true
 vela-core.workspace = true
+vela-observability.workspace = true
 vela-projection.workspace = true
 vela-protocol.workspace = true
 vela-runtime.workspace = true

@@ -1,5 +1,18 @@
 use super::*;
 
+fn codex_model(id: &str, default_reasoning: Option<&str>) -> vela_core::BackendModel {
+    vela_core::BackendModel {
+        id: id.to_string(),
+        label: id.to_string(),
+        description: None,
+        is_default: true,
+        reasoning_efforts: vela_backends::codex::capabilities::codex_reasoning_effort_options(
+            default_reasoning,
+        ),
+        metadata: Default::default(),
+    }
+}
+
 #[tokio::test]
 async fn backend_catalog_exposes_generic_reasoning_effort_options_for_model_picker() {
     let (app, _) = test_app_with_backend_outputs_and_default_model(
@@ -99,7 +112,10 @@ async fn backends_expose_configured_default_model() {
 #[tokio::test]
 async fn codex_backend_can_be_configured_and_used_for_sessions() {
     let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
-    let backend = Arc::new(MockBackendAdapter::new(support::default_backend_outputs()));
+    let backend = Arc::new(
+        MockBackendAdapter::new(support::default_backend_outputs())
+            .with_models(vec![codex_model("gpt-5.4", Some("high"))]),
+    );
     let runtime = Runtime::new(store.clone(), backend.clone());
     let app = velad::build_app(
         velad::ApiState::new(store, runtime).with_codex_backend(Some("gpt-5.4".to_string())),
@@ -109,6 +125,7 @@ async fn codex_backend_can_be_configured_and_used_for_sessions() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["backend"]["kind"], "codex");
     assert_eq!(body["backend"]["models"][0]["id"], "gpt-5.4");
+    assert_eq!(body["backend"]["diagnostics"]["model_source"], "discovered");
 
     let (status, created) = json_request(
         app.clone(),
@@ -154,7 +171,7 @@ async fn codex_backend_can_be_configured_and_used_for_sessions() {
 }
 
 #[tokio::test]
-async fn codex_backend_exposes_default_model_when_env_model_is_absent() {
+async fn codex_backend_without_discovered_models_is_an_error_snapshot() {
     let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
     let backend = Arc::new(MockBackendAdapter::new(support::default_backend_outputs()));
     let runtime = Runtime::new(store.clone(), backend);
@@ -164,8 +181,91 @@ async fn codex_backend_exposes_default_model_when_env_model_is_absent() {
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["backend"]["kind"], "codex");
-    assert_eq!(body["backend"]["models"][0]["id"], "gpt-5.3-codex-spark");
-    assert_eq!(body["backend"]["models"][0]["is_default"], true);
+    assert_eq!(body["backend"]["status"], "error");
+    assert!(body["backend"]["models"].as_array().unwrap().is_empty());
+    assert_eq!(body["backend"]["diagnostics"]["model_source"], "none");
+    assert!(
+        body["backend"]["status_message"]
+            .as_str()
+            .unwrap()
+            .contains("no models discovered")
+    );
+}
+
+#[tokio::test]
+async fn codex_backend_snapshot_uses_discovered_models_and_reasoning_options() {
+    let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
+    let backend = Arc::new(
+        MockBackendAdapter::new(support::default_backend_outputs())
+            .with_models(vec![codex_model("gpt-5.4", Some("high"))]),
+    );
+    let runtime = Runtime::new(store.clone(), backend);
+    let app = velad::build_app(velad::ApiState::new(store, runtime).with_codex_backend(None));
+
+    let (status, body) = get_json(app.clone(), "/api/v1/backends/codex").await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["backend"]["kind"], "codex");
+    assert_eq!(body["backend"]["status"], "available");
+    assert_eq!(body["backend"]["models"][0]["id"], "gpt-5.4");
+    assert!(
+        body["backend"]["models"][0]["reasoning_efforts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|option| option["id"] == "high" && option["is_default"] == true)
+    );
+    assert_eq!(body["backend"]["diagnostics"]["model_source"], "discovered");
+
+    let (status, created) = json_request(
+        app,
+        Method::POST,
+        "/api/v1/sessions",
+        json!({
+            "backend": "codex",
+            "working_directory": "/tmp/codex-project",
+            "agent_config": {
+                "permission_mode": "auto"
+            }
+        }),
+        Some("ses-codex-discovered-default"),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(created["session"]["agent_config"]["model"], "gpt-5.4");
+    assert_eq!(
+        created["session"]["agent_config"]["reasoning_effort"],
+        "high"
+    );
+}
+
+#[tokio::test]
+async fn codex_configured_default_only_marks_one_discovered_model_as_default() {
+    let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
+    let backend = Arc::new(
+        MockBackendAdapter::new(support::default_backend_outputs()).with_models(vec![
+            codex_model("gpt-5.4-mini", Some("medium")),
+            codex_model("gpt-5.4", Some("high")),
+        ]),
+    );
+    let runtime = Runtime::new(store.clone(), backend);
+    let app = velad::build_app(
+        velad::ApiState::new(store, runtime).with_codex_backend(Some("gpt-5.4".to_string())),
+    );
+
+    let (status, body) = get_json(app, "/api/v1/backends/codex").await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["backend"]["status"], "available");
+    let defaults = body["backend"]["models"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|model| model["is_default"] == true)
+        .map(|model| model["id"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(defaults, vec!["gpt-5.4"]);
 }
 
 #[tokio::test]
@@ -192,8 +292,12 @@ async fn codex_backend_model_discovery_failure_is_an_error_snapshot() {
             .unwrap()
             .contains("service_tier default unsupported")
     );
+    assert_eq!(
+        body["backend"]["diagnostics"]["error"]["code"],
+        "model_discovery_failed"
+    );
     assert!(
-        body["backend"]["diagnostics"]["model_discovery_error"]
+        body["backend"]["diagnostics"]["error"]["message"]
             .as_str()
             .unwrap()
             .contains("service_tier default unsupported")
@@ -227,7 +331,10 @@ async fn codex_backend_model_discovery_failure_is_an_error_snapshot() {
 #[tokio::test]
 async fn codex_create_session_rejects_unknown_model() {
     let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
-    let backend = Arc::new(MockBackendAdapter::new(support::default_backend_outputs()));
+    let backend = Arc::new(
+        MockBackendAdapter::new(support::default_backend_outputs())
+            .with_models(vec![codex_model("gpt-5.4", Some("high"))]),
+    );
     let runtime = Runtime::new(store.clone(), backend);
     let app = velad::build_app(
         velad::ApiState::new(store, runtime).with_codex_backend(Some("gpt-5.4".to_string())),
@@ -261,7 +368,10 @@ async fn codex_create_session_rejects_unknown_model() {
 #[tokio::test]
 async fn codex_create_session_rejects_unsupported_feature_values() {
     let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
-    let backend = Arc::new(MockBackendAdapter::new(support::default_backend_outputs()));
+    let backend = Arc::new(
+        MockBackendAdapter::new(support::default_backend_outputs())
+            .with_models(vec![codex_model("legacy-model", Some("medium"))]),
+    );
     let runtime = Runtime::new(store.clone(), backend);
     let app = velad::build_app(
         velad::ApiState::new(store, runtime).with_codex_backend(Some("legacy-model".to_string())),

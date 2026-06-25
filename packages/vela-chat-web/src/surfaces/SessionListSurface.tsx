@@ -1,10 +1,20 @@
-import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import type { SessionListItemWire } from "../../../vela-chat-client/src";
+import type { ChatRenderModel } from "../../../vela-chat-render-model/src";
+import { ConversationPreviewSurface } from "../thumbnail/ConversationPreviewSurface";
 
 export interface SessionListSurfaceProps {
   sessions: SessionListItemWire[];
   currentSessionId: string | null;
+  sessionPreviews?: Record<string, ChatRenderModel | undefined>;
   onArchiveSession?: (sessionId: string) => void | Promise<void>;
   onSelectSession: (sessionId: string) => void;
 }
@@ -12,6 +22,7 @@ export interface SessionListSurfaceProps {
 export function SessionListSurface({
   sessions,
   currentSessionId,
+  sessionPreviews,
   onArchiveSession,
   onSelectSession,
 }: SessionListSurfaceProps) {
@@ -22,6 +33,7 @@ export function SessionListSurface({
           key={session.id}
           session={session}
           isActive={session.id === currentSessionId}
+          previewModel={sessionPreviews?.[session.id]}
           onArchiveSession={onArchiveSession ? () => onArchiveSession(session.id) : undefined}
           onSelect={() => onSelectSession(session.id)}
         />
@@ -33,11 +45,13 @@ export function SessionListSurface({
 function SessionListSurfaceItem({
   session,
   isActive,
+  previewModel,
   onArchiveSession,
   onSelect,
 }: {
   session: SessionListItemWire;
   isActive: boolean;
+  previewModel?: ChatRenderModel;
   onArchiveSession?: () => void | Promise<void>;
   onSelect: () => void;
 }) {
@@ -46,9 +60,14 @@ function SessionListSurfaceItem({
   const rootRef = useRef<HTMLLIElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const isRunning = session.running || session.status === "running";
-  const isWaiting = session.status === "waiting_for_input" || session.pending_request_count > 0;
+  const isRunning =
+    session.running || session.status === "running" || hasRunningPreview(previewModel);
+  const isWaiting =
+    session.status === "waiting_for_input" ||
+    session.pending_request_count > 0 ||
+    hasPendingPreviewRequest(previewModel);
   const isFailed = session.status === "failed";
+  const compactPreview = isRunning || isWaiting ? previewModel : null;
   const badgeLabel = isWaiting
     ? session.pending_request_count > 0
       ? `${session.pending_request_count} request`
@@ -110,6 +129,11 @@ function SessionListSurfaceItem({
     setIsMenuOpen(false);
     await onArchiveSession?.();
   };
+  const selectSessionFromKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    onSelect();
+  };
 
   const menu = isMenuOpen ? (
     <div
@@ -152,15 +176,18 @@ function SessionListSurfaceItem({
       data-running={isRunning ? "true" : undefined}
       data-waiting={isWaiting ? "true" : undefined}
       data-failed={isFailed ? "true" : undefined}
+      data-has-thumbnail={compactPreview ? "true" : undefined}
     >
-      <button
+      <div
         className="vela-sidebar-menu-button vela-session-main"
         data-active={isActive ? "true" : undefined}
         data-sidebar="menu-button"
         data-size="compact"
         data-slot="session-list-surface-button"
-        type="button"
+        role="button"
+        tabIndex={0}
         onClick={onSelect}
+        onKeyDown={selectSessionFromKeyboard}
       >
         <span className="vela-session-icon" aria-hidden>
           <MessageGlyph />
@@ -171,13 +198,29 @@ function SessionListSurfaceItem({
             <span className="vela-session-title">{session.title || session.id}</span>
             {badgeLabel ? <span className="vela-session-badge">{badgeLabel}</span> : null}
           </span>
-          <span className="vela-session-preview">{sessionPreviewLabel(session)}</span>
-          <span className="vela-session-meta">{sessionMetaLabel(session)}</span>
+          {compactPreview ? (
+            <span
+              className="vela-session-thumbnail-preview"
+              data-slot="session-thumbnail-preview"
+              aria-hidden="true"
+              inert
+            >
+              <ConversationPreviewSurface
+                model={compactPreview}
+                scale={0.15}
+              />
+            </span>
+          ) : (
+            <>
+              <span className="vela-session-preview">{sessionPreviewLabel(session)}</span>
+              <span className="vela-session-meta">{sessionMetaLabel(session)}</span>
+            </>
+          )}
         </span>
         <span className="vela-session-rail" aria-hidden>
           {sessionRailLabel(session)}
         </span>
-      </button>
+      </div>
       {onArchiveSession ? (
         <>
           <button
@@ -266,6 +309,27 @@ function sessionPreviewLabel(session: SessionListItemWire) {
   if (cwd) return cwd.split("/").filter(Boolean).at(-1) ?? cwd;
 
   return sessionMetaLabel(session);
+}
+
+function hasPendingPreviewRequest(model: ChatRenderModel | undefined) {
+  return Boolean(model?.requests.items.some((request) => request.status === "pending"));
+}
+
+function hasRunningPreview(model: ChatRenderModel | undefined) {
+  if (!model) return false;
+  if (model.composer.is_running) return true;
+  return model.rows.some((row) => {
+    if (row.kind === "assistant_message") return row.streaming;
+    if (row.kind === "agent_work") return row.status === "running" || row.status === "pending";
+    if (row.kind === "agent_work_group") {
+      return row.children.some(
+        (child) => child.status === "running" || child.status === "pending",
+      );
+    }
+    if (row.kind === "turn_meta") return row.status === "running";
+    if (row.kind === "status") return row.status === "pending" || row.status === "streaming";
+    return false;
+  });
 }
 
 function sessionRailLabel(session: SessionListItemWire) {

@@ -209,11 +209,35 @@ test("builds pending requests view URLs with status filters", () => {
 test("fetch event stream transport reports normal stream completion", async () => {
   const events: string[] = [];
   let closeCount = 0;
-  const transport = createFetchVelaEventStreamTransport(async () => {
+  const requests: RequestInit[] = [];
+  const spans: Array<{ ended?: boolean; status?: { code: number; message?: string } }> = [];
+  const observability = {
+    startSpan() {
+      const span = {
+        setAttribute() {},
+        setStatus(status: { code: number; message?: string }) {
+          this.status = status;
+        },
+        end() {
+          this.ended = true;
+        },
+      };
+      spans.push(span);
+      return span;
+    },
+    recordError() {},
+    traceparent() {
+      return "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+    },
+  };
+  const transport = createFetchVelaEventStreamTransport(async (_url, init) => {
+    requests.push(init ?? {});
     return new Response(
       'event: turn.completed\ndata: {"type":"turn.completed","event_id":"evt_1","epoch":1,"seq":1}\n\n',
       { status: 200, headers: { "Content-Type": "text/event-stream" } },
     );
+  }, {
+    observability,
   });
 
   transport.subscribe(new URL("http://127.0.0.1:3857/api/v1/sessions/sess_1/events/stream"), {
@@ -227,6 +251,11 @@ test("fetch event stream transport reports normal stream completion", async () =
 
   await waitUntil(() => closeCount === 1);
   assert.deepEqual(events, ["turn.completed"]);
+  assert.equal(
+    new Headers(requests[0].headers).get("traceparent"),
+    "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+  );
+  assert.equal(spans[0].ended, true);
 });
 
 test("builds diff review view URLs", () => {
@@ -847,6 +876,81 @@ test("creates a local pi session with idempotency key", async () => {
     working_directory: "/tmp/project",
     title: "New chat",
   });
+});
+
+test("adds traceparent header and records failed create session fetches", async () => {
+  const spans: Array<{
+    name: string;
+    attributes?: Record<string, unknown>;
+    status?: { code: number; message?: string };
+    ended?: boolean;
+    error?: string;
+  }> = [];
+  const logs: Array<{
+    body: string;
+    severityText?: string;
+    attributes?: Record<string, unknown>;
+  }> = [];
+  const requests: Array<{ url: string; init?: RequestInit }> = [];
+  const observability = {
+    startSpan(name: string, options?: { attributes?: Record<string, unknown> }) {
+      const span = {
+        name,
+        attributes: options?.attributes,
+        setAttribute(key: string, value: string | number | boolean) {
+          this.attributes = { ...this.attributes, [key]: value };
+        },
+        setStatus(status: { code: number; message?: string }) {
+          this.status = status;
+        },
+        end() {
+          this.ended = true;
+        },
+      };
+      spans.push(span);
+      return span;
+    },
+    recordError(span: (typeof spans)[number], error: unknown) {
+      span.error = error instanceof Error ? error.message : String(error);
+      span.status = { code: 2, message: span.error };
+    },
+    traceparent() {
+      return "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+    },
+    emitLog(record: { body: string; severityText?: string; attributes?: Record<string, unknown> }) {
+      logs.push(record);
+    },
+  };
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    observability,
+    fetch: async (url, init) => {
+      requests.push({ url: String(url), init });
+      throw new Error("failed to fetch");
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      client.createSession({
+        idempotencyKey: "ses_created",
+        backend: "codex",
+        workingDirectory: "/tmp/project",
+      }),
+    /failed to fetch/,
+  );
+
+  assert.equal(requests[0]?.url, "http://127.0.0.1:3857/api/v1/sessions");
+  assert.equal(
+    (requests[0]?.init?.headers as Record<string, string>).traceparent,
+    "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+  );
+  assert.equal(spans[0].name, "velad.session.create");
+  assert.equal(spans[0].error, "failed to fetch");
+  assert.equal(spans[0].ended, true);
+  assert.equal(logs[0].severityText, "ERROR");
+  assert.equal(logs[0].body, "failed to fetch");
+  assert.equal(logs[0].attributes?.["vela.operation"], "velad.session.create");
 });
 
 test("archives a session with explicit archive action endpoint", async () => {
@@ -1511,8 +1615,15 @@ test("parses backend error snapshots with status message", async () => {
               models: [],
               permission_modes: [{ id: "auto", label: "Default permissions" }],
               features: [],
+              snapshot_protocol: "velad.backend_snapshot.v1",
+              fetched_at: "2026-06-25T00:00:00Z",
               diagnostics: {
-                model_discovery_error: "invalid config",
+                model_source: "none",
+                error: {
+                  code: "model_discovery_failed",
+                  stage: "model_discovery",
+                  message: "invalid config",
+                },
               },
             },
           ],
@@ -1525,6 +1636,8 @@ test("parses backend error snapshots with status message", async () => {
 
   assert.equal(response.backends[0]?.status, "error");
   assert.equal(response.backends[0]?.status_message, "model discovery failed: invalid config");
+  assert.equal(response.backends[0]?.snapshot_protocol, "velad.backend_snapshot.v1");
+  assert.equal(response.backends[0]?.fetched_at, "2026-06-25T00:00:00Z");
   assert.deepEqual(response.backends[0]?.models, []);
 });
 

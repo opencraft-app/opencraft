@@ -24,6 +24,7 @@ pub(crate) fn is_codex_control_plane_notification(method: &str) -> bool {
         "remoteControl/status/changed"
             | "mcpServer/startupStatus/updated"
             | "thread/status/changed"
+            | "thread/settings/updated"
             | "account/rateLimits/updated"
             | "warning"
             | "error"

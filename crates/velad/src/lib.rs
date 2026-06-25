@@ -20,11 +20,11 @@ use tokio::sync::broadcast;
 use tower_http::cors::{Any, CorsLayer};
 use vela_backends::BackendAdapter;
 use vela_core::{
-    AcceptedCommandAck, AgentConfig, AgentConfigPatch, BackendFeature, BackendKind, BackendModel,
-    BlobRef, CanonicalEvent, CommandAck, CommandId, ConversationItemKind, EventCursor, EventId,
-    EventSource, EventType, PermissionMode, PermissionModeOption, ReasoningEffortOption,
-    RejectedCommandAck, SessionId, SourceEventRange, UserMessageBlock,
+    AcceptedCommandAck, AgentConfig, AgentConfigPatch, BackendKind, BlobRef, CanonicalEvent,
+    CommandAck, CommandId, ConversationItemKind, EventCursor, EventId, EventSource, EventType,
+    PermissionMode, RejectedCommandAck, SessionId, SourceEventRange, UserMessageBlock,
 };
+use vela_observability::{ManualSpan, ObservabilityStore, TraceContext, parse_traceparent};
 use vela_projection::{
     ConversationWindowDirection, ConversationWindowError, ConversationWindowQuery,
     project_conversation, project_conversation_window, project_pending_requests,
@@ -32,6 +32,7 @@ use vela_projection::{
 use vela_runtime::{Runtime, SendUserMessage};
 use vela_store::{SqliteEventStore, StoredSession};
 
+mod backend_snapshot;
 pub mod local_runtime;
 
 pub struct ApiState<B> {
@@ -42,6 +43,7 @@ pub struct ApiState<B> {
     configured_backends: Vec<ConfiguredBackend>,
     local_runtime: Option<local_runtime::LocalRuntimeState>,
     shutdown_tx: Option<tokio::sync::watch::Sender<bool>>,
+    observability: Option<ObservabilityStore>,
 }
 
 impl<B> Clone for ApiState<B> {
@@ -54,6 +56,7 @@ impl<B> Clone for ApiState<B> {
             configured_backends: self.configured_backends.clone(),
             local_runtime: self.local_runtime.clone(),
             shutdown_tx: self.shutdown_tx.clone(),
+            observability: self.observability.clone(),
         }
     }
 }
@@ -97,6 +100,7 @@ where
             }],
             local_runtime: None,
             shutdown_tx: None,
+            observability: None,
         }
     }
 
@@ -114,7 +118,6 @@ where
     }
 
     pub fn with_codex_backend(mut self, default_model: Option<String>) -> Self {
-        let default_model = default_model.or_else(|| Some("gpt-5.3-codex-spark".to_string()));
         if let Some(backend) = self
             .configured_backends
             .iter_mut()
@@ -157,6 +160,11 @@ where
     ) -> Self {
         self.local_runtime = Some(local_runtime);
         self.shutdown_tx = Some(shutdown_tx);
+        self
+    }
+
+    pub fn with_observability(mut self, observability: ObservabilityStore) -> Self {
+        self.observability = Some(observability);
         self
     }
 
@@ -255,6 +263,20 @@ where
         .route("/api/v1/backends/{backend}/probe", post(probe_backend::<B>))
         .route("/api/v1/runtime-info", get(get_runtime_info::<B>))
         .route("/api/v1/runtime/shutdown", post(shutdown_runtime::<B>))
+        .route("/v1/traces", post(post_otlp_traces::<B>))
+        .route("/v1/logs", post(post_otlp_logs::<B>))
+        .route(
+            "/api/v1/observability/status",
+            get(get_observability_status::<B>),
+        )
+        .route(
+            "/api/v1/observability/recent-errors",
+            get(get_observability_recent_errors::<B>),
+        )
+        .route(
+            "/api/v1/observability/traces/{trace_id}",
+            get(get_observability_trace::<B>),
+        )
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
@@ -340,6 +362,180 @@ fn bearer_token(headers: &HeaderMap) -> Option<&str> {
         .strip_prefix("Bearer ")
 }
 
+fn trace_context_from_headers(headers: &HeaderMap) -> Option<TraceContext> {
+    headers
+        .get("traceparent")?
+        .to_str()
+        .ok()
+        .and_then(parse_traceparent)
+}
+
+async fn record_velad_span<B>(
+    state: &ApiState<B>,
+    trace_context: Option<&TraceContext>,
+    name: &str,
+    start_time: chrono::DateTime<Utc>,
+    ok: bool,
+    session_id: Option<&str>,
+    backend: Option<&str>,
+    error_message: Option<String>,
+    attributes: Value,
+) where
+    B: BackendAdapter + 'static,
+{
+    let (Some(observability), Some(trace)) = (state.observability.as_ref(), trace_context) else {
+        return;
+    };
+    let _ = observability
+        .record_span(ManualSpan {
+            trace: trace.clone(),
+            parent_span_id: None,
+            name: name.to_string(),
+            start_time,
+            end_time: Utc::now(),
+            status_code: Some(if ok { "OK" } else { "ERROR" }.to_string()),
+            status_message: error_message.clone(),
+            session_id: session_id.map(str::to_string),
+            backend: backend.map(str::to_string),
+            error_message,
+            attributes,
+        })
+        .await;
+}
+
+fn command_ack_error_message(ack: &CommandAck) -> String {
+    match ack {
+        CommandAck::Rejected(rejected) => rejected.message.clone(),
+        CommandAck::Accepted(_) | CommandAck::Queued(_) => "command did not succeed".to_string(),
+    }
+}
+
+async fn post_otlp_traces<B>(
+    State(state): State<ApiState<B>>,
+    body: Result<Json<Value>, JsonRejection>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let Some(observability) = state.observability else {
+        return observability_unavailable();
+    };
+    let payload = match body {
+        Ok(Json(payload)) => payload,
+        Err(err) => return invalid_request(format!("invalid OTLP JSON traces payload: {err}")),
+    };
+    match observability.ingest_traces(payload).await {
+        Ok(summary) => Json(summary).into_response(),
+        Err(err) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "observability_ingest_failed",
+            err.to_string(),
+        ),
+    }
+}
+
+async fn post_otlp_logs<B>(
+    State(state): State<ApiState<B>>,
+    body: Result<Json<Value>, JsonRejection>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let Some(observability) = state.observability else {
+        return observability_unavailable();
+    };
+    let payload = match body {
+        Ok(Json(payload)) => payload,
+        Err(err) => return invalid_request(format!("invalid OTLP JSON logs payload: {err}")),
+    };
+    match observability.ingest_logs(payload).await {
+        Ok(summary) => Json(summary).into_response(),
+        Err(err) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "observability_ingest_failed",
+            err.to_string(),
+        ),
+    }
+}
+
+async fn get_observability_status<B>(State(state): State<ApiState<B>>) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let Some(observability) = state.observability else {
+        return observability_unavailable();
+    };
+    match observability.status().await {
+        Ok(status) => Json(status).into_response(),
+        Err(err) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "observability_query_failed",
+            err.to_string(),
+        ),
+    }
+}
+
+async fn get_observability_recent_errors<B>(
+    State(state): State<ApiState<B>>,
+    query: Result<Query<ObservabilityErrorsQuery>, QueryRejection>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let Some(observability) = state.observability else {
+        return observability_unavailable();
+    };
+    let query = match parsed_query(query) {
+        Ok(query) => query,
+        Err(response) => return response,
+    };
+    let limit = match validated_limit(query.limit) {
+        Ok(limit) => limit.unwrap_or(50),
+        Err(response) => return response,
+    };
+    match observability.recent_errors(limit).await {
+        Ok(errors) => Json(json!({ "errors": errors })).into_response(),
+        Err(err) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "observability_query_failed",
+            err.to_string(),
+        ),
+    }
+}
+
+async fn get_observability_trace<B>(
+    State(state): State<ApiState<B>>,
+    Path(trace_id): Path<String>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let Some(observability) = state.observability else {
+        return observability_unavailable();
+    };
+    match observability.trace_detail(&trace_id).await {
+        Ok(Some(trace)) => Json(trace).into_response(),
+        Ok(None) => error(
+            StatusCode::NOT_FOUND,
+            "observability_trace_not_found",
+            "trace does not exist",
+        ),
+        Err(err) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "observability_query_failed",
+            err.to_string(),
+        ),
+    }
+}
+
+fn observability_unavailable() -> Response {
+    error(
+        StatusCode::NOT_FOUND,
+        "observability_unavailable",
+        "local observability store is not configured",
+    )
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 struct ClientInputEvent {
     #[serde(rename = "type")]
@@ -409,6 +605,12 @@ struct TimelineQuery {
 #[serde(deny_unknown_fields)]
 struct TraceQuery {
     after_id: Option<String>,
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ObservabilityErrorsQuery {
     limit: Option<usize>,
 }
 
@@ -488,6 +690,8 @@ where
         Ok(Json(request)) => request,
         Err(rejection) => return invalid_request(rejection.to_string()),
     };
+    let trace_context = trace_context_from_headers(&headers);
+    let span_start = Utc::now();
     let Some(engine_backend) = state.configured_engine_kind(request.backend) else {
         return error(
             StatusCode::CONFLICT,
@@ -516,6 +720,22 @@ where
     {
         Ok(append) => {
             let _ = state.events.send(append.event.clone());
+            record_velad_span(
+                &state,
+                trace_context.as_ref(),
+                "velad.session.create",
+                span_start,
+                true,
+                Some(session_id.as_str()),
+                Some(request.backend.as_str()),
+                None,
+                json!({
+                    "velad.session_id": session_id.as_str(),
+                    "velad.backend": request.backend.as_str(),
+                    "velad.working_directory": &request.working_directory,
+                }),
+            )
+            .await;
             let session = session_json(
                 &session_id,
                 request.backend.as_str(),
@@ -806,6 +1026,8 @@ where
         Ok(Json(request)) => request,
         Err(rejection) => return invalid_request(rejection.to_string()),
     };
+    let trace_context = trace_context_from_headers(&headers);
+    let span_start = Utc::now();
     if request.events.is_empty() {
         return error(
             StatusCode::BAD_REQUEST,
@@ -869,7 +1091,7 @@ where
                 Ok(blocks) if contains_image_block(&blocks) => {
                     state
                         .runtime
-                        .send_user_message_with_blocks(
+                        .send_user_message_with_blocks_and_trace(
                             SendUserMessage {
                                 session_id: session_id.clone(),
                                 idempotency_key: event_idempotency_key,
@@ -877,18 +1099,22 @@ where
                                 command_id: None,
                             },
                             blocks,
+                            trace_context.clone(),
                         )
                         .await
                 }
                 Ok(_) => {
                     state
                         .runtime
-                        .send_user_message(SendUserMessage {
-                            session_id: session_id.clone(),
-                            idempotency_key: event_idempotency_key,
-                            content,
-                            command_id: None,
-                        })
+                        .send_user_message_with_trace(
+                            SendUserMessage {
+                                session_id: session_id.clone(),
+                                idempotency_key: event_idempotency_key,
+                                content,
+                                command_id: None,
+                            },
+                            trace_context.clone(),
+                        )
                         .await
                 }
                 Err(error) => Ok(rejected_command_ack(
@@ -922,13 +1148,47 @@ where
                 .await
                 .unwrap_or_default();
             publish_new_events(&state, &events, before_len);
+            let is_ok = !matches!(ack, CommandAck::Rejected(_));
+            record_velad_span(
+                &state,
+                trace_context.as_ref(),
+                "velad.session.send_events",
+                span_start,
+                is_ok,
+                Some(session_id.as_str()),
+                None,
+                if is_ok {
+                    None
+                } else {
+                    Some(command_ack_error_message(&ack))
+                },
+                json!({
+                    "velad.session_id": session_id.as_str(),
+                    "velad.input_events": batch_len,
+                }),
+            )
+            .await;
             (StatusCode::ACCEPTED, Json(command_ack_json(&ack, &events))).into_response()
         }
-        Err(err) => error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "runtime_error",
-            err.to_string(),
-        ),
+        Err(err) => {
+            let message = err.to_string();
+            record_velad_span(
+                &state,
+                trace_context.as_ref(),
+                "velad.session.send_events",
+                span_start,
+                false,
+                Some(session_id.as_str()),
+                None,
+                Some(message.clone()),
+                json!({
+                    "velad.session_id": session_id.as_str(),
+                    "velad.input_events": batch_len,
+                }),
+            )
+            .await;
+            error(StatusCode::INTERNAL_SERVER_ERROR, "runtime_error", message)
+        }
     }
 }
 
@@ -1489,19 +1749,15 @@ async fn list_backends<B>(State(state): State<ApiState<B>>) -> Response
 where
     B: BackendAdapter + 'static,
 {
-    Json(json!({ "backends": backend_catalog(&state).await })).into_response()
+    Json(json!({ "backends": backend_snapshot::catalog_json(&state).await })).into_response()
 }
 
 async fn get_backend<B>(State(state): State<ApiState<B>>, Path(backend): Path<String>) -> Response
 where
     B: BackendAdapter + 'static,
 {
-    match backend_catalog(&state)
-        .await
-        .into_iter()
-        .find(|item| item["kind"] == backend)
-    {
-        Some(backend) => Json(json!({ "backend": backend })).into_response(),
+    match backend_snapshot::snapshot_for_kind(&state, &backend).await {
+        Some(backend) => Json(json!({ "backend": backend.to_wire_json() })).into_response(),
         None => error(
             StatusCode::NOT_FOUND,
             "backend_not_found",
@@ -1909,13 +2165,12 @@ where
     };
     let mut agent_config = request.agent_config.clone().unwrap_or_default();
     if agent_config.model.is_none() {
-        agent_config.model = request
-            .model
-            .clone()
-            .or_else(|| configured_backend.default_model());
+        agent_config.model = request.model.clone();
     }
-    apply_backend_agent_config_defaults(state, configured_backend, &mut agent_config).await;
-    validate_agent_config_for_backend(state, configured_backend, &agent_config).await?;
+    let snapshot = backend_snapshot::snapshot(state, configured_backend).await;
+    ensure_snapshot_accepts_session(configured_backend, &snapshot)?;
+    apply_backend_agent_config_defaults(configured_backend, &snapshot, &mut agent_config);
+    validate_agent_config_for_backend(configured_backend, &snapshot, &agent_config)?;
     Ok(agent_config)
 }
 
@@ -1934,58 +2189,57 @@ where
             format!("backend {} is not configured", backend.as_str()),
         ));
     };
-    validate_agent_config_for_backend(state, configured_backend, agent_config).await
+    let snapshot = backend_snapshot::snapshot(state, configured_backend).await;
+    ensure_snapshot_accepts_session(configured_backend, &snapshot)?;
+    validate_agent_config_for_backend(configured_backend, &snapshot, agent_config)
 }
 
-async fn apply_backend_agent_config_defaults<B>(
-    state: &ApiState<B>,
+fn ensure_snapshot_accepts_session(
     backend: &ConfiguredBackend,
+    snapshot: &backend_snapshot::BackendSnapshot,
+) -> Result<(), Response> {
+    if snapshot.status.accepts_session_creation() {
+        return Ok(());
+    }
+    Err(error(
+        StatusCode::CONFLICT,
+        "backend_unavailable",
+        snapshot
+            .status_message
+            .clone()
+            .unwrap_or_else(|| format!("backend {} is not available", backend.kind)),
+    ))
+}
+
+fn apply_backend_agent_config_defaults(
+    backend: &ConfiguredBackend,
+    snapshot: &backend_snapshot::BackendSnapshot,
     agent_config: &mut AgentConfig,
-) where
-    B: BackendAdapter + 'static,
-{
-    let models = effective_backend_models(state, backend).await;
+) {
     if agent_config.model.is_none() {
-        agent_config.model =
-            default_model_from_catalog(&models).or_else(|| backend.default_model());
+        agent_config.model = snapshot.default_model().or_else(|| backend.default_model());
     }
     if agent_config.permission_mode.is_none() && backend.kind == "codex" {
         agent_config.permission_mode = Some(PermissionMode::Auto);
     }
     if agent_config.reasoning_effort.is_none()
         && let Some(model) = agent_config.model.as_deref()
-        && let Some(default_reasoning) = default_reasoning_for_model(&models, model)
+        && let Some(default_reasoning) = snapshot.default_reasoning_for_model(model)
     {
         agent_config.reasoning_effort = Some(default_reasoning);
     }
 }
 
-async fn validate_agent_config_for_backend<B>(
-    state: &ApiState<B>,
+fn validate_agent_config_for_backend(
     backend: &ConfiguredBackend,
+    snapshot: &backend_snapshot::BackendSnapshot,
     agent_config: &AgentConfig,
-) -> Result<(), Response>
-where
-    B: BackendAdapter + 'static,
-{
+) -> Result<(), Response> {
     if backend.kind != "codex" {
         return Ok(());
     }
-    let discovered = state
-        .runtime
-        .list_backend_models(Some(backend.engine_kind))
-        .await
-        .map_err(|err| {
-            error(
-                StatusCode::CONFLICT,
-                "backend_unavailable",
-                format!("backend {} model discovery failed: {err}", backend.kind),
-            )
-        })?;
-    let models = catalog_models(backend.kind, backend.default_model.as_deref(), discovered);
     if let Some(model) = agent_config.model.as_deref()
-        && !models.is_empty()
-        && !models.iter().any(|candidate| candidate.id == model)
+        && !snapshot.has_model(model)
     {
         return Err(invalid_agent_config(format!(
             "model {model} is not available for backend codex"
@@ -1997,7 +2251,7 @@ where
                 "reasoning_effort requires a selected model",
             ));
         };
-        let reasoning_options = reasoning_options_for_model(&models, model);
+        let reasoning_options = snapshot.reasoning_options_for_model(model);
         if !reasoning_options.is_empty()
             && !reasoning_options
                 .iter()
@@ -2009,9 +2263,7 @@ where
         }
     }
     if let Some(permission_mode) = agent_config.permission_mode
-        && !backend_permission_modes(backend.kind)
-            .iter()
-            .any(|mode| mode.id == permission_mode)
+        && !snapshot.has_permission_mode(permission_mode)
     {
         return Err(invalid_agent_config(
             "permission_mode is not available for backend codex",
@@ -2019,47 +2271,6 @@ where
     }
     validate_codex_feature_values(agent_config)?;
     Ok(())
-}
-
-async fn effective_backend_models<B>(
-    state: &ApiState<B>,
-    backend: &ConfiguredBackend,
-) -> Vec<BackendModel>
-where
-    B: BackendAdapter + 'static,
-{
-    let discovered = state
-        .runtime
-        .list_backend_models(Some(backend.engine_kind))
-        .await
-        .unwrap_or_default();
-    catalog_models(backend.kind, backend.default_model.as_deref(), discovered)
-}
-
-fn default_model_from_catalog(models: &[BackendModel]) -> Option<String> {
-    models
-        .iter()
-        .find(|model| model.is_default)
-        .or_else(|| models.first())
-        .map(|model| model.id.clone())
-}
-
-fn default_reasoning_for_model(models: &[BackendModel], model: &str) -> Option<String> {
-    let model = models.iter().find(|candidate| candidate.id == model)?;
-    model
-        .reasoning_efforts
-        .iter()
-        .find(|option| option.is_default)
-        .or_else(|| model.reasoning_efforts.first())
-        .map(|option| option.id.clone())
-}
-
-fn reasoning_options_for_model(models: &[BackendModel], model: &str) -> Vec<ReasoningEffortOption> {
-    models
-        .iter()
-        .find(|candidate| candidate.id == model)
-        .map(|model| model.reasoning_efforts.clone())
-        .unwrap_or_default()
 }
 
 fn validate_codex_feature_values(agent_config: &AgentConfig) -> Result<(), Response> {
@@ -3041,225 +3252,6 @@ fn timeline_item_json(event: &CanonicalEvent) -> Value {
             "to_event_id": event.event_id.as_str(),
         }
     })
-}
-
-async fn backend_catalog<B>(state: &ApiState<B>) -> Vec<Value>
-where
-    B: BackendAdapter + 'static,
-{
-    let mut backends = Vec::new();
-    for backend in &state.configured_backends {
-        let capabilities = state
-            .runtime
-            .backend_capabilities_for(Some(backend.engine_kind));
-        let model_result = state
-            .runtime
-            .list_backend_models(Some(backend.engine_kind))
-            .await;
-        let (discovered_models, status, status_message, diagnostics) = match model_result {
-            Ok(models) => (models, "available", None, json!({})),
-            Err(error) => {
-                let message = format!("model discovery failed: {error}");
-                (
-                    Vec::new(),
-                    "error",
-                    Some(message),
-                    json!({ "model_discovery_error": error.to_string() }),
-                )
-            }
-        };
-        backends.push(backend_json(
-            backend.kind,
-            backend.display_name,
-            backend.default_model.as_deref(),
-            discovered_models,
-            status,
-            status_message.as_deref(),
-            diagnostics,
-            capabilities.streaming,
-            capabilities.cancel,
-            capabilities.permission_requests,
-            capabilities.structured_diff,
-            capabilities.session_agent_config,
-        ));
-    }
-    backends
-}
-
-fn catalog_models(
-    kind: &str,
-    default_model: Option<&str>,
-    discovered_models: Vec<BackendModel>,
-) -> Vec<BackendModel> {
-    if !discovered_models.is_empty() {
-        return discovered_models;
-    }
-    default_model
-        .map(|model| {
-            vec![BackendModel {
-                id: model.to_string(),
-                label: model.to_string(),
-                description: None,
-                is_default: true,
-                reasoning_efforts: if kind == "acp" {
-                    Vec::new()
-                } else if kind == "codex" {
-                    vela_backends::codex::capabilities::codex_reasoning_effort_options(None)
-                } else {
-                    common_reasoning_effort_options()
-                },
-                metadata: Default::default(),
-            }]
-        })
-        .unwrap_or_default()
-}
-
-fn backend_permission_modes(kind: &str) -> Vec<PermissionModeOption> {
-    let mut modes = if kind == "codex" {
-        vec![
-            PermissionModeOption {
-                id: PermissionMode::ReadOnly,
-                label: "Read only".to_string(),
-                description: Some("Inspect files and ask before writes or commands.".to_string()),
-                is_default: false,
-                metadata: Default::default(),
-            },
-            PermissionModeOption {
-                id: PermissionMode::Auto,
-                label: "Default permissions".to_string(),
-                description: Some("Workspace-write with Codex's normal approval flow.".to_string()),
-                is_default: true,
-                metadata: Default::default(),
-            },
-            PermissionModeOption {
-                id: PermissionMode::AutoReview,
-                label: "Auto-review".to_string(),
-                description: Some(
-                    "Workspace-write with eligible approvals routed through auto-review."
-                        .to_string(),
-                ),
-                is_default: false,
-                metadata: Default::default(),
-            },
-            PermissionModeOption {
-                id: PermissionMode::FullAccess,
-                label: "Full access".to_string(),
-                description: Some(
-                    "Allow local full access without additional prompts.".to_string(),
-                ),
-                is_default: false,
-                metadata: Default::default(),
-            },
-        ]
-    } else {
-        vec![
-            PermissionModeOption {
-                id: PermissionMode::Auto,
-                label: "Auto".to_string(),
-                description: Some("Default local coding permission flow.".to_string()),
-                is_default: true,
-                metadata: Default::default(),
-            },
-            PermissionModeOption {
-                id: PermissionMode::FullAccess,
-                label: "Full access".to_string(),
-                description: Some(
-                    "Allow elevated local access when the backend supports it.".to_string(),
-                ),
-                is_default: false,
-                metadata: Default::default(),
-            },
-        ]
-    };
-    if !modes.iter().any(|mode| mode.is_default)
-        && let Some(first) = modes.first_mut()
-    {
-        first.is_default = true;
-    }
-    modes
-}
-
-fn backend_features(kind: &str) -> Vec<BackendFeature> {
-    let mut features = vec![BackendFeature::Toggle {
-        id: "fast_mode".to_string(),
-        label: "Fast".to_string(),
-        description: Some("Lower latency when supported by the backend.".to_string()),
-        default_value: false,
-        metadata: Default::default(),
-    }];
-    if kind != "codex" {
-        features.push(BackendFeature::Toggle {
-            id: "plan_mode".to_string(),
-            label: "Plan".to_string(),
-            description: Some(
-                "Plan before implementation when supported by the backend.".to_string(),
-            ),
-            default_value: false,
-            metadata: Default::default(),
-        });
-    }
-    features
-}
-
-fn backend_json(
-    kind: &str,
-    display_name: &str,
-    default_model: Option<&str>,
-    discovered_models: Vec<BackendModel>,
-    status: &str,
-    status_message: Option<&str>,
-    diagnostics: Value,
-    streaming: bool,
-    cancel: bool,
-    permission_requests: bool,
-    structured_diff: bool,
-    session_agent_config: bool,
-) -> Value {
-    let models = if status == "error" {
-        Vec::new()
-    } else {
-        catalog_models(kind, default_model, discovered_models)
-    };
-    let mut payload = json!({
-        "kind": kind,
-        "status": status,
-        "display_name": display_name,
-        "capabilities": {
-            "streaming": streaming,
-            "cancel": cancel,
-            "permission_requests": permission_requests,
-            "structured_diff": structured_diff,
-            "session_agent_config": session_agent_config,
-        },
-        "models": models,
-        "permission_modes": backend_permission_modes(kind),
-        "features": backend_features(kind),
-        "diagnostics": diagnostics,
-    });
-    if let Some(status_message) = status_message {
-        payload["status_message"] = json!(status_message);
-    }
-    payload
-}
-
-fn common_reasoning_effort_options() -> Vec<ReasoningEffortOption> {
-    [
-        ("off", "Off"),
-        ("minimal", "Minimal"),
-        ("low", "Low"),
-        ("medium", "Medium"),
-        ("high", "High"),
-        ("xhigh", "XHigh"),
-    ]
-    .into_iter()
-    .map(|(id, label)| ReasoningEffortOption {
-        id: id.to_string(),
-        label: label.to_string(),
-        description: None,
-        is_default: id == "medium",
-        metadata: Default::default(),
-    })
-    .collect()
 }
 
 fn error(status: StatusCode, code: impl Into<String>, message: impl Into<String>) -> Response {

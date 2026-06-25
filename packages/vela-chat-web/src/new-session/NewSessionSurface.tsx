@@ -1,5 +1,11 @@
 import type { BackendKindWire, PermissionModeWire } from "../../../vela-chat-client/src";
+import { ShellSelect } from "../../../vela-desktop-shell/src";
+import { Brain, FolderGit2, Laptop, Shield } from "lucide-react";
+import type { ReactNode } from "react";
 import styles from "../styles/desktop.module.css";
+import { useAutoResizeTextarea } from "../hooks/useAutoResizeTextarea";
+import { useComposerKeyboard } from "../hooks/useComposerKeyboard";
+import { PromptInput } from "../primitives/prompt-input/PromptInput";
 import {
   canSubmitNewSession,
   type NewSessionOption,
@@ -59,121 +65,133 @@ export function NewSessionSurface({
     isSubmitting,
   });
   const surfaceError = error ?? backendStatusMessage;
+  const permissionTone = selectedPermissionMode === "full_access" ? "accent" : "neutral";
+  const textareaRef = useAutoResizeTextarea(initialPrompt);
+  const submitSession = () => {
+    if (!canSubmit || !selectedBackend) return;
+    onSubmit({
+      backend: selectedBackend,
+      workingDirectory: workingDirectory.trim(),
+      initialPrompt: initialPrompt.trim(),
+      agentConfig,
+    });
+  };
+  const handleKeyDown = useComposerKeyboard(submitSession);
 
   return (
     <main className={styles.newSessionShell} aria-label="New session">
-      <form
-        className={styles.newSessionContent}
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!canSubmit || !selectedBackend) return;
-          onSubmit({
-            backend: selectedBackend,
-            workingDirectory: workingDirectory.trim(),
-            initialPrompt: initialPrompt.trim(),
-            agentConfig,
-          });
-        }}
-      >
-        <section className={styles.newSessionHeader}>
-          <h1>New session</h1>
-          <p>Choose the runtime setup before opening a chat.</p>
-        </section>
-
-        <section className={styles.newSessionDirectory} aria-label="Workspace">
-          <label htmlFor="new-session-working-directory">Workspace</label>
-          <input
-            id="new-session-working-directory"
-            value={workingDirectory}
-            onChange={(event) => onWorkingDirectoryChange(event.currentTarget.value)}
-            placeholder="Enter a project path"
-            spellCheck={false}
-          />
-        </section>
-
-        <section className={styles.newSessionComposer} aria-label="Initial prompt">
-          <textarea
+      <div className={styles.newSessionContent}>
+        <section className={styles.newSessionFrame} aria-label="New session composer">
+          <PromptInput
+            attachedSurface={
+              <div className={styles.newSessionContextBar} aria-label="Session context">
+                <label className={styles.newSessionWorkspaceField}>
+                  <FolderGit2 size={17} aria-hidden />
+                  <input
+                    id="new-session-working-directory"
+                    aria-label="Workspace path"
+                    value={workingDirectory}
+                    onChange={(event) => onWorkingDirectoryChange(event.currentTarget.value)}
+                    placeholder="Workspace path"
+                    spellCheck={false}
+                  />
+                </label>
+                <SelectControl
+                  ariaLabel="Select agent backend"
+                  icon={<Laptop size={17} />}
+                  value={selectedBackend}
+                  options={backendOptions}
+                  placeholder="No backend"
+                  onChange={(value) => onBackendChange(value as BackendKindWire | "")}
+                />
+              </div>
+            }
+            canSubmit={canSubmit}
+            isRunning={false}
+            layout="inline"
+            onChange={onInitialPromptChange}
+            onKeyDown={handleKeyDown}
+            onSubmit={submitSession}
+            placeholder="随心输入"
+            submitLabel={isSubmitting ? "Creating session" : "Create session"}
+            textareaRef={textareaRef}
             value={initialPrompt}
-            onChange={(event) => onInitialPromptChange(event.currentTarget.value)}
-            placeholder="Ask Codex to inspect, edit, or explain this workspace"
-            rows={4}
+            leftToolbarControls={
+              <div className={styles.newSessionControlCluster}>
+                <SelectControl
+                  ariaLabel="Select permission mode"
+                  icon={<Shield size={16} />}
+                  value={selectedPermissionMode}
+                  options={permissionModeOptions}
+                  placeholder="Permissions"
+                  tone={permissionTone}
+                  onChange={(value) => onPermissionModeChange(value as PermissionModeWire | "")}
+                />
+              </div>
+            }
+            rightToolbarControls={
+              <div className={styles.newSessionControlCluster}>
+                <SelectControl
+                  ariaLabel="Select model"
+                  icon={<Brain size={16} />}
+                  value={selectedModel}
+                  options={modelOptions}
+                  placeholder="Default model"
+                  onChange={onModelChange}
+                />
+                <SelectControl
+                  ariaLabel="Select reasoning effort"
+                  icon={null}
+                  value={selectedReasoningEffort}
+                  options={reasoningEffortOptions}
+                  placeholder="Reasoning"
+                  onChange={onReasoningEffortChange}
+                />
+              </div>
+            }
           />
-          <div className={styles.newSessionControls}>
-            <div className={styles.newSessionSelectGroup}>
-              <SelectControl
-                label="Backend"
-                value={selectedBackend}
-                options={backendOptions}
-                placeholder="No backend"
-                onChange={(value) => onBackendChange(value as BackendKindWire | "")}
-              />
-              <SelectControl
-                label="Model"
-                value={selectedModel}
-                options={modelOptions}
-                placeholder="Default model"
-                onChange={onModelChange}
-              />
-              <SelectControl
-                label="Reasoning"
-                value={selectedReasoningEffort}
-                options={reasoningEffortOptions}
-                placeholder="Default reasoning"
-                onChange={onReasoningEffortChange}
-              />
-              <SelectControl
-                label="Permissions"
-                value={selectedPermissionMode}
-                options={permissionModeOptions}
-                placeholder="Default permissions"
-                onChange={(value) => onPermissionModeChange(value as PermissionModeWire | "")}
-              />
-            </div>
-
-            <button
-              className={styles.newSessionSubmit}
-              type="submit"
-              disabled={!canSubmit}
-            >
-              {isSubmitting ? "Creating" : "Create session"}
-            </button>
-          </div>
         </section>
 
         {surfaceError ? <div className={styles.newSessionError}>{surfaceError}</div> : null}
-      </form>
+      </div>
     </main>
   );
 }
 
 function SelectControl<T extends string>({
-  label,
+  ariaLabel,
+  icon,
   value,
   options,
   placeholder,
+  tone = "neutral",
   onChange,
 }: {
-  label: string;
+  ariaLabel: string;
+  icon: ReactNode;
   value: T | "";
   options: NewSessionOption<T>[];
   placeholder: string;
+  tone?: "neutral" | "accent";
   onChange: (value: T | "") => void;
 }) {
   return (
-    <label className={styles.newSessionSelect}>
-      <span>{label}</span>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.currentTarget.value as T | "")}
-        disabled={options.length === 0}
-      >
-        {options.length === 0 || !value ? <option value="">{placeholder}</option> : null}
-        {options.map((option) => (
-          <option value={option.id} disabled={option.disabled} key={option.id}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </label>
+    <ShellSelect
+      ariaLabel={ariaLabel}
+      density="compact"
+      disabled={options.length === 0}
+      leading={icon}
+      options={options.map((option) => ({
+        id: option.id,
+        label: option.label,
+        description: option.description,
+        disabled: option.disabled,
+      }))}
+      placement="top-start"
+      placeholder={placeholder}
+      tone={tone}
+      value={value || undefined}
+      onValueChange={(nextValue) => onChange(nextValue as T)}
+    />
   );
 }

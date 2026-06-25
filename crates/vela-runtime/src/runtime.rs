@@ -1,3 +1,4 @@
+use chrono::Utc;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{collections::HashSet, sync::Arc};
@@ -10,6 +11,7 @@ use vela_core::{
     AgentConfig, BackendKind, CanonicalEvent, CommandAck, CommandId, EventId, EventSource,
     EventType, ResolvedAgentConfig, SessionId, TurnId, UserMessageBlock,
 };
+use vela_observability::{ManualSpan, ObservabilityStore, TraceContext};
 use vela_store::{AppendResult, SqliteEventStore};
 
 type EventObserver = Arc<dyn Fn(CanonicalEvent) + Send + Sync>;
@@ -19,6 +21,7 @@ pub struct Runtime<B> {
     backend: Arc<B>,
     running: Arc<Mutex<HashSet<SessionId>>>,
     event_observer: Option<EventObserver>,
+    observability: Option<ObservabilityStore>,
 }
 
 impl<B> Clone for Runtime<B> {
@@ -28,6 +31,7 @@ impl<B> Clone for Runtime<B> {
             backend: self.backend.clone(),
             running: self.running.clone(),
             event_observer: self.event_observer.clone(),
+            observability: self.observability.clone(),
         }
     }
 }
@@ -50,11 +54,17 @@ where
             backend,
             running: Arc::new(Mutex::new(HashSet::new())),
             event_observer: None,
+            observability: None,
         }
     }
 
     pub fn with_event_observer(mut self, observer: EventObserver) -> Self {
         self.event_observer = Some(observer);
+        self
+    }
+
+    pub fn with_observability(mut self, observability: ObservabilityStore) -> Self {
+        self.observability = Some(observability);
         self
     }
 
@@ -128,7 +138,8 @@ where
     }
 
     pub async fn send_user_message(&self, input: SendUserMessage) -> anyhow::Result<CommandAck> {
-        self.send_user_message_internal(input, Vec::new()).await
+        self.send_user_message_internal(input, Vec::new(), None)
+            .await
     }
 
     pub async fn send_user_message_with_blocks(
@@ -136,13 +147,33 @@ where
         input: SendUserMessage,
         blocks: Vec<UserMessageBlock>,
     ) -> anyhow::Result<CommandAck> {
-        self.send_user_message_internal(input, blocks).await
+        self.send_user_message_internal(input, blocks, None).await
+    }
+
+    pub async fn send_user_message_with_trace(
+        &self,
+        input: SendUserMessage,
+        trace_context: Option<TraceContext>,
+    ) -> anyhow::Result<CommandAck> {
+        self.send_user_message_internal(input, Vec::new(), trace_context)
+            .await
+    }
+
+    pub async fn send_user_message_with_blocks_and_trace(
+        &self,
+        input: SendUserMessage,
+        blocks: Vec<UserMessageBlock>,
+        trace_context: Option<TraceContext>,
+    ) -> anyhow::Result<CommandAck> {
+        self.send_user_message_internal(input, blocks, trace_context)
+            .await
     }
 
     async fn send_user_message_internal(
         &self,
         input: SendUserMessage,
         blocks: Vec<UserMessageBlock>,
+        trace_context: Option<TraceContext>,
     ) -> anyhow::Result<CommandAck> {
         let session = match self.store.get_session(&input.session_id).await? {
             Some(session) if session.status == "closed" => {
@@ -248,6 +279,7 @@ where
             turn_id,
             session.working_directory.clone(),
             resolved_agent_config,
+            trace_context,
         );
 
         Ok(acceptance.ack())
@@ -261,16 +293,21 @@ where
         turn_id: TurnId,
         working_directory: String,
         resolved_agent_config: ResolvedAgentConfig,
+        trace_context: Option<TraceContext>,
     ) {
         let store = self.store.clone();
         let backend = self.backend.clone();
         let running = self.running.clone();
         let event_observer = self.event_observer.clone();
+        let observability = self.observability.clone();
         tokio::spawn(async move {
             let backend_source_name = resolved_agent_config.backend.as_str().to_string();
             let backend_session_id = session_id.clone();
             let backend_turn_id = turn_id.clone();
+            let backend_kind = resolved_agent_config.backend;
             let (sink, mut receiver) = backend_output_channel(32);
+            let backend_span_start = Utc::now();
+            let emit_backend_diagnostics = trace_context.is_some();
             let backend_task = tokio::spawn(async move {
                 backend
                     .stream_user_message(
@@ -281,6 +318,7 @@ where
                             turn_id: Some(backend_turn_id),
                             working_directory: Some(working_directory),
                             resolved_agent_config: Some(resolved_agent_config),
+                            emit_diagnostics: emit_backend_diagnostics,
                         },
                         sink,
                     )
@@ -292,6 +330,18 @@ where
             while let Some(output) = receiver.recv().await {
                 match output {
                     Ok(output) => {
+                        if consume_backend_diagnostic_output(
+                            observability.as_ref(),
+                            trace_context.as_ref(),
+                            &session_id,
+                            &backend_source_name,
+                            &turn_id,
+                            &output,
+                        )
+                        .await
+                        {
+                            continue;
+                        }
                         if let Some(output) = normalize_backend_output(output) {
                             if is_backend_terminal_output(output.event_type) {
                                 turn_terminal = true;
@@ -336,6 +386,17 @@ where
 
             match backend_task.await {
                 Ok(Ok(())) if !turn_failed && !turn_terminal => {
+                    record_backend_span(
+                        observability.as_ref(),
+                        trace_context.as_ref(),
+                        &session_id,
+                        backend_kind.as_str(),
+                        &turn_id,
+                        backend_span_start,
+                        false,
+                        Some("backend completed without a terminal turn event".to_string()),
+                    )
+                    .await;
                     append_turn_failed(
                         &store,
                         &event_observer,
@@ -345,26 +406,48 @@ where
                     )
                     .await;
                 }
-                Ok(Ok(())) => {}
-                Ok(Err(error)) if !turn_failed => {
-                    append_turn_failed(
-                        &store,
-                        &event_observer,
+                Ok(Ok(())) => {
+                    record_backend_span(
+                        observability.as_ref(),
+                        trace_context.as_ref(),
                         &session_id,
+                        backend_kind.as_str(),
                         &turn_id,
-                        error.to_string(),
+                        backend_span_start,
+                        true,
+                        None,
                     )
                     .await;
                 }
-                Err(error) if !turn_failed => {
-                    append_turn_failed(
-                        &store,
-                        &event_observer,
+                Ok(Err(error)) if !turn_failed => {
+                    let error = error.to_string();
+                    record_backend_span(
+                        observability.as_ref(),
+                        trace_context.as_ref(),
                         &session_id,
+                        backend_kind.as_str(),
                         &turn_id,
-                        error.to_string(),
+                        backend_span_start,
+                        false,
+                        Some(error.clone()),
                     )
                     .await;
+                    append_turn_failed(&store, &event_observer, &session_id, &turn_id, error).await;
+                }
+                Err(error) if !turn_failed => {
+                    let error = error.to_string();
+                    record_backend_span(
+                        observability.as_ref(),
+                        trace_context.as_ref(),
+                        &session_id,
+                        backend_kind.as_str(),
+                        &turn_id,
+                        backend_span_start,
+                        false,
+                        Some(error.clone()),
+                    )
+                    .await;
+                    append_turn_failed(&store, &event_observer, &session_id, &turn_id, error).await;
                 }
                 Ok(Err(_)) | Err(_) => {}
             }
@@ -565,6 +648,125 @@ async fn append_turn_failed(
     {
         publish_event(event_observer, append.event);
     }
+}
+
+async fn record_backend_span(
+    observability: Option<&ObservabilityStore>,
+    trace_context: Option<&TraceContext>,
+    session_id: &SessionId,
+    backend: &str,
+    turn_id: &TurnId,
+    start_time: chrono::DateTime<Utc>,
+    ok: bool,
+    error_message: Option<String>,
+) {
+    let (Some(observability), Some(trace)) = (observability, trace_context) else {
+        return;
+    };
+    let _ = observability
+        .record_span(ManualSpan {
+            trace: trace.clone(),
+            parent_span_id: None,
+            name: "velad.backend.send".to_string(),
+            start_time,
+            end_time: Utc::now(),
+            status_code: Some(if ok { "OK" } else { "ERROR" }.to_string()),
+            status_message: error_message.clone(),
+            session_id: Some(session_id.as_str().to_string()),
+            backend: Some(backend.to_string()),
+            error_message,
+            attributes: json!({
+                "velad.session_id": session_id.as_str(),
+                "velad.backend": backend,
+                "velad.turn_id": turn_id,
+            }),
+        })
+        .await;
+}
+
+async fn consume_backend_diagnostic_output(
+    observability: Option<&ObservabilityStore>,
+    trace_context: Option<&TraceContext>,
+    session_id: &SessionId,
+    backend: &str,
+    turn_id: &TurnId,
+    output: &vela_backends::BackendOutput,
+) -> bool {
+    if output.event_type != EventType::WARNING_RAISED
+        || output.payload.get("code").and_then(Value::as_str) != Some("codex_app_server_trace")
+    {
+        return false;
+    }
+
+    let (Some(observability), Some(trace)) = (observability, trace_context) else {
+        return true;
+    };
+    let name = output
+        .payload
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("codex.app_server");
+    let duration_ms = output
+        .payload
+        .get("duration_ms")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0)
+        .max(0.0);
+    let end_time = Utc::now();
+    let start_time =
+        end_time - chrono::Duration::microseconds((duration_ms * 1_000.0).round() as i64);
+    let status_code = output
+        .payload
+        .get("status_code")
+        .and_then(Value::as_str)
+        .unwrap_or("UNSET")
+        .to_string();
+    let error_message = output
+        .payload
+        .get("error_message")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let mut attributes = output
+        .payload
+        .get("attributes")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    attributes.insert(
+        "velad.session_id".to_string(),
+        Value::String(session_id.as_str().to_string()),
+    );
+    attributes.insert(
+        "velad.backend".to_string(),
+        Value::String(backend.to_string()),
+    );
+    attributes.insert(
+        "velad.turn_id".to_string(),
+        Value::String(turn_id.to_string()),
+    );
+    if let Some(method) = output.payload.get("method").and_then(Value::as_str) {
+        attributes.insert(
+            "codex.method".to_string(),
+            Value::String(method.to_string()),
+        );
+    }
+
+    let _ = observability
+        .record_span(ManualSpan {
+            trace: trace.clone(),
+            parent_span_id: None,
+            name: name.to_string(),
+            start_time,
+            end_time,
+            status_code: Some(status_code.clone()),
+            status_message: error_message.clone(),
+            session_id: Some(session_id.as_str().to_string()),
+            backend: Some(backend.to_string()),
+            error_message: error_message.filter(|_| status_code == "ERROR"),
+            attributes: Value::Object(attributes),
+        })
+        .await;
+    true
 }
 
 fn publish_event(event_observer: &Option<EventObserver>, event: CanonicalEvent) {

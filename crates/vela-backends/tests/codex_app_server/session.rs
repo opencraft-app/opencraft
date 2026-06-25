@@ -172,6 +172,69 @@ async fn codex_app_server_adapter_starts_thread_once_and_reuses_it_for_session_t
 }
 
 #[tokio::test]
+async fn codex_app_server_adapter_emits_diagnostics_only_when_requested() {
+    let host = ScriptedHost::new(vec![
+        AppServerInbound::response(json!({ "ok": true })),
+        AppServerInbound::response(json!({ "thread": { "id": "thr_diag" } })),
+        AppServerInbound::response(json!({ "turn": { "id": "turn_1" } })),
+        AppServerInbound::notification(
+            "turn/completed",
+            json!({ "threadId": "thr_diag", "turn": { "status": "completed" } }),
+        ),
+    ]);
+    let adapter = CodexAppServerBackendAdapter::new(Arc::new(host), "/repo");
+    let mut input = BackendSend::new("hello");
+    input.session_id = Some(SessionId::from("ses_diag"));
+    input.emit_diagnostics = true;
+
+    let outputs = support::collect_backend_outputs(&adapter, input)
+        .await
+        .unwrap();
+    let diagnostics = outputs
+        .iter()
+        .filter(|output| output.payload["code"] == "codex_app_server_trace")
+        .collect::<Vec<_>>();
+
+    assert!(
+        diagnostics
+            .iter()
+            .any(|output| output.payload["name"] == "codex.app_server.thread_start")
+    );
+    assert!(
+        diagnostics
+            .iter()
+            .any(|output| output.payload["name"] == "codex.app_server.turn_start")
+    );
+    assert!(
+        outputs
+            .iter()
+            .any(|output| output.event_type == EventType::TURN_COMPLETED)
+    );
+
+    let host = ScriptedHost::new(vec![
+        AppServerInbound::response(json!({ "ok": true })),
+        AppServerInbound::response(json!({ "thread": { "id": "thr_no_diag" } })),
+        AppServerInbound::response(json!({ "turn": { "id": "turn_1" } })),
+        AppServerInbound::notification(
+            "turn/completed",
+            json!({ "threadId": "thr_no_diag", "turn": { "status": "completed" } }),
+        ),
+    ]);
+    let adapter = CodexAppServerBackendAdapter::new(Arc::new(host), "/repo");
+    let mut input = BackendSend::new("hello");
+    input.session_id = Some(SessionId::from("ses_no_diag"));
+
+    let outputs = support::collect_backend_outputs(&adapter, input)
+        .await
+        .unwrap();
+    assert!(
+        outputs
+            .iter()
+            .all(|output| output.payload["code"] != "codex_app_server_trace")
+    );
+}
+
+#[tokio::test]
 async fn codex_app_server_adapter_interrupts_active_turn_by_session() {
     let host = ScriptedHost::new(vec![
         AppServerInbound::response(json!({ "ok": true })),

@@ -1,5 +1,6 @@
 import { MessageSquareText, Plus, Search } from "lucide-react";
 import type { SessionListItemWire } from "../../../../vela-chat-client/src";
+import type { ChatRenderModel } from "../../../../vela-chat-render-model/src";
 import { SessionListSurface } from "../../../../vela-chat-web/src/surfaces/SessionListSurface";
 import {
   Sidebar,
@@ -19,10 +20,9 @@ import {
 export interface SessionSidebarProps {
   sessions: SessionListItemWire[];
   currentSessionId: string | null;
+  sessionPreviews?: Record<string, ChatRenderModel | undefined>;
   searchQuery?: string;
   showTrafficLights?: boolean;
-  accountLabel?: string;
-  accountPlanLabel?: string;
   canClearSessions?: boolean;
   canCreateSession?: boolean;
   defaultSettingsMenuOpen?: boolean;
@@ -45,10 +45,9 @@ export interface SessionSidebarProps {
 export function SessionSidebar({
   sessions,
   currentSessionId,
+  sessionPreviews,
   searchQuery = "",
   showTrafficLights = false,
-  accountLabel,
-  accountPlanLabel,
   canClearSessions,
   canCreateSession = true,
   defaultSettingsMenuOpen = false,
@@ -99,6 +98,7 @@ export function SessionSidebar({
 
             <SessionListSurface
               currentSessionId={currentSessionId}
+              sessionPreviews={sessionPreviews}
               sessions={sessions}
               onArchiveSession={onArchiveSession}
               onSelectSession={onSelectSession}
@@ -107,8 +107,6 @@ export function SessionSidebar({
         </SidebarContent>
         <SidebarFixedFooter>
           <SidebarSettingsMenu
-            accountLabel={accountLabel}
-            accountPlanLabel={accountPlanLabel}
             canClearSessions={canClearSessions ?? sessions.length > 0}
             defaultOpen={defaultSettingsMenuOpen}
             onClearSessions={onClearSessions}

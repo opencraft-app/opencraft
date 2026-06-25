@@ -4,7 +4,11 @@ import {
   readVelaStreamEventData,
   subscribeVelaEventSource,
 } from "./stream";
-import type { VelaStreamEventWire } from "./wire";
+import type {
+  VelaStreamEventWire,
+  VeladClientObservability,
+  VeladObservedSpan,
+} from "./wire";
 
 export interface VelaEventStreamHandlers {
   onEvent: (event: VelaStreamEventWire) => void;
@@ -22,6 +26,12 @@ export interface VelaEventStreamTransport {
     url: URL,
     handlers: VelaEventStreamHandlers,
   ) => VelaEventStreamSubscription;
+}
+
+export type VelaEventStreamObservability = VeladClientObservability;
+
+export interface VelaEventStreamTransportOptions {
+  observability?: VelaEventStreamObservability;
 }
 
 export function createBrowserVelaEventStreamTransport(): VelaEventStreamTransport {
@@ -54,16 +64,25 @@ export function createBrowserVelaEventStreamTransport(): VelaEventStreamTranspor
 
 export function createFetchVelaEventStreamTransport(
   doFetch: typeof fetch,
+  options: VelaEventStreamTransportOptions = {},
 ): VelaEventStreamTransport {
   return {
     subscribe(url, handlers) {
       const controller = new AbortController();
       let closed = false;
+      const span = options.observability?.startSpan("velad.session.events.stream", {
+        attributes: {
+          "http.method": "GET",
+          "http.url": url.toString(),
+        },
+      });
 
       void readFetchEventStream({
         doFetch,
         handlers,
         isClosed: () => closed,
+        observability: options.observability,
+        span,
         signal: controller.signal,
         url,
       });
@@ -71,6 +90,9 @@ export function createFetchVelaEventStreamTransport(
       return {
         close() {
           closed = true;
+          span?.setAttribute("velad.stream.closed_by_client", true);
+          span?.setStatus({ code: 1 });
+          span?.end();
           controller.abort();
         },
       };
@@ -82,6 +104,8 @@ interface ReadFetchEventStreamInput {
   doFetch: typeof fetch;
   handlers: VelaEventStreamHandlers;
   isClosed: () => boolean;
+  observability?: VelaEventStreamObservability;
+  span?: VeladObservedSpan;
   signal: AbortSignal;
   url: URL;
 }
@@ -90,16 +114,23 @@ async function readFetchEventStream({
   doFetch,
   handlers,
   isClosed,
+  observability,
+  span,
   signal,
   url,
 }: ReadFetchEventStreamInput) {
   const parser = createSseJsonFrameParser();
   try {
+    const headers = new Headers({ Accept: "text/event-stream" });
+    if (span && observability) {
+      headers.set("traceparent", observability.traceparent(span));
+    }
     const response = await doFetch(url, {
-      headers: { Accept: "text/event-stream" },
+      headers,
       signal,
     });
     if (isClosed()) return;
+    span?.setAttribute("http.status_code", response.status);
     if (!response.ok) {
       throw new Error(`velad event stream failed with HTTP ${response.status}`);
     }
@@ -109,7 +140,11 @@ async function readFetchEventStream({
     if (!response.body) {
       emitFrames(parser.push(await response.text()), handlers);
       emitFrames(parser.finish(), handlers);
-      if (!isClosed()) handlers.onClose?.();
+      if (!isClosed()) {
+        span?.setStatus({ code: 1 });
+        span?.end();
+        handlers.onClose?.();
+      }
       return;
     }
 
@@ -126,12 +161,34 @@ async function readFetchEventStream({
     const tail = decoder.decode();
     if (tail) emitFrames(parser.push(tail), handlers);
     emitFrames(parser.finish(), handlers);
-    if (!isClosed()) handlers.onClose?.();
+    if (!isClosed()) {
+      span?.setStatus({ code: 1 });
+      span?.end();
+      handlers.onClose?.();
+    }
   } catch (error) {
     if (!isClosed() && !isAbortError(error)) {
+      if (span && observability) {
+        observability.recordError(span, error);
+        void observability.emitLog?.({
+          severityText: "ERROR",
+          body: errorMessage(error),
+          span,
+          attributes: {
+            "http.method": "GET",
+            "http.url": url.toString(),
+            "vela.operation": "velad.session.events.stream",
+          },
+        });
+        span.end();
+      }
       handlers.onError?.(error);
     }
   }
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function emitFrames(frames: SseJsonFrame[], handlers: VelaEventStreamHandlers) {

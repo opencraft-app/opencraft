@@ -14,7 +14,6 @@ use vela_store::SqliteEventStore;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     load_local_env_files();
-    init_logging();
 
     let config = velad::local_runtime::LocalRuntimeConfig::from_env_args()?;
     let backend_cwd = env::var("VELAD_BACKEND_CWD")
@@ -22,6 +21,10 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|_| ".".to_string());
 
     let store = Arc::new(SqliteEventStore::connect(&config.database_url).await?);
+    let observability =
+        vela_observability::ObservabilityStore::connect_for_database_url(&config.database_url)
+            .await?;
+    init_logging(observability.clone());
     let pi_backend = pi_backend_from_env(backend_cwd.clone())?;
     let default_session_model = pi_backend.model.clone();
     let pi_backend = Arc::new(pi_backend);
@@ -35,7 +38,7 @@ async fn main() -> anyhow::Result<()> {
             .with_backend(BackendKind::Codex, codex_backend)
             .with_backend(BackendKind::Acp, acp_backend),
     );
-    let runtime = Runtime::new(store.clone(), backend);
+    let runtime = Runtime::new(store.clone(), backend).with_observability(observability.clone());
     let listener = tokio::net::TcpListener::bind(config.listen_addr).await?;
     let bound_addr = listener.local_addr()?;
     let ready = velad::local_runtime::ReadyEvent::new(bound_addr);
@@ -45,6 +48,7 @@ async fn main() -> anyhow::Result<()> {
             .with_default_session_model(default_session_model)
             .with_codex_backend(env::var("VELAD_CODEX_MODEL").ok())
             .with_acp_backend(acp_default_model)
+            .with_observability(observability)
             .with_local_runtime(
                 velad::local_runtime::LocalRuntimeState::new(
                     ready.clone(),
@@ -89,12 +93,13 @@ async fn terminate_signal() {
     std::future::pending::<()>().await;
 }
 
-fn init_logging() {
+fn init_logging(observability: vela_observability::ObservabilityStore) {
     use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn"));
     let _ = tracing_subscriber::registry()
         .with(filter)
+        .with(vela_observability::tracing_log_layer(observability))
         .with(fmt::layer())
         .try_init();
 }

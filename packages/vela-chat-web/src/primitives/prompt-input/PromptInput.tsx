@@ -52,6 +52,9 @@ export interface PromptInputProps {
   canSubmit: boolean;
   isRunning: boolean;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
+  layout?: "dock" | "inline";
+  submitLabel?: string;
+  stopLabel?: string;
   onChange: (value: string) => void;
   onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onSubmit: () => void;
@@ -62,6 +65,7 @@ export interface PromptInputProps {
   pendingAttachments?: PromptInputAttachment[];
   leftToolbarControls?: ReactNode;
   rightToolbarControls?: ReactNode;
+  attachedSurface?: ReactNode;
 }
 
 export function PromptInput({
@@ -70,6 +74,9 @@ export function PromptInput({
   canSubmit,
   isRunning,
   textareaRef,
+  layout = "dock",
+  submitLabel = "Send message",
+  stopLabel = "Stop generation",
   onChange,
   onKeyDown,
   onSubmit,
@@ -80,6 +87,7 @@ export function PromptInput({
   pendingAttachments = [],
   leftToolbarControls,
   rightToolbarControls,
+  attachedSurface,
 }: PromptInputProps) {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
@@ -91,6 +99,7 @@ export function PromptInput({
     typeof window !== "undefined" &&
     Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
   const isStopControl = isRunning && !canSubmit && Boolean(onStop);
+  const primaryControlLabel = isStopControl ? stopLabel : submitLabel;
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
     if (canSubmit) onSubmit();
@@ -178,7 +187,13 @@ export function PromptInput({
   );
 
   return (
-    <form className={styles.composerDock} onSubmit={handleSubmit} ref={rootRef}>
+    <form
+      className={[styles.composerDock, layout === "inline" ? styles.composerDockInline : ""]
+        .filter(Boolean)
+        .join(" ")}
+      onSubmit={handleSubmit}
+      ref={rootRef}
+    >
       <div className={styles.composer}>
         <textarea
           className={styles.textarea}
@@ -247,11 +262,11 @@ export function PromptInput({
               <Mic size={17} strokeWidth={2.1} aria-hidden="true" />
             </button>
             <button
-              aria-label={isStopControl ? "Stop generation" : "Send message"}
+              aria-label={primaryControlLabel}
               className={isStopControl ? styles.stopButton : styles.sendButton}
               disabled={isStopControl ? false : !canSubmit}
               onClick={isStopControl ? handleStop : undefined}
-              title={isStopControl ? "Stop generation" : "Send message"}
+              title={primaryControlLabel}
               type={isStopControl ? "button" : "submit"}
             >
               {isStopControl ? (
@@ -263,6 +278,7 @@ export function PromptInput({
           </div>
         </div>
       </div>
+      {attachedSurface}
     </form>
   );
 }

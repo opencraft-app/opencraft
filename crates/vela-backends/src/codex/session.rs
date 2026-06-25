@@ -2,7 +2,7 @@ use super::{
     capabilities::{
         codex_reasoning_effort_options, initialize_params, thread_start_params, turn_start_params,
     },
-    events::warning,
+    events::{trace_span, warning},
     normalizer::normalize_codex_app_server_notification,
     permissions::{
         CodexPermissionResponse, codex_cancel_response_payload, codex_permission_request_output,
@@ -18,7 +18,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use serde_json::{Value, json};
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Instant};
 use tokio::sync::{Mutex, oneshot};
 use vela_core::{BackendModel, EventType};
 
@@ -116,14 +116,98 @@ impl BackendAdapter for CodexAppServerBackendAdapter {
         };
 
         if session.is_none() {
-            let mut connection = self.host.connect().await?;
-            initialize_connection(connection.as_mut()).await?;
-            let thread = connection
+            let connect_start = Instant::now();
+            let mut connection = match self.host.connect().await {
+                Ok(connection) => {
+                    emit_timed_trace_span(
+                        &sink,
+                        input.emit_diagnostics,
+                        "codex.app_server.connect",
+                        None,
+                        connect_start,
+                        Ok(()),
+                        json!({}),
+                    )
+                    .await;
+                    connection
+                }
+                Err(error) => {
+                    emit_timed_trace_span(
+                        &sink,
+                        input.emit_diagnostics,
+                        "codex.app_server.connect",
+                        None,
+                        connect_start,
+                        Err(error.to_string()),
+                        json!({}),
+                    )
+                    .await;
+                    return Err(error);
+                }
+            };
+            let initialize_start = Instant::now();
+            if let Err(error) = initialize_connection(connection.as_mut()).await {
+                emit_timed_trace_span(
+                    &sink,
+                    input.emit_diagnostics,
+                    "codex.app_server.initialize",
+                    Some("initialize"),
+                    initialize_start,
+                    Err(error.to_string()),
+                    json!({}),
+                )
+                .await;
+                return Err(error);
+            }
+            emit_timed_trace_span(
+                &sink,
+                input.emit_diagnostics,
+                "codex.app_server.initialize",
+                Some("initialize"),
+                initialize_start,
+                Ok(()),
+                json!({}),
+            )
+            .await;
+            let thread_start = Instant::now();
+            let thread = match connection
                 .request(
                     "thread/start",
                     thread_start_params(&input, &self.default_cwd),
                 )
-                .await?;
+                .await
+            {
+                Ok(thread) => {
+                    emit_timed_trace_span(
+                        &sink,
+                        input.emit_diagnostics,
+                        "codex.app_server.thread_start",
+                        Some("thread/start"),
+                        thread_start,
+                        Ok(()),
+                        json!({
+                            "codex.cwd": input.working_directory.as_deref().unwrap_or(&self.default_cwd),
+                        }),
+                    )
+                    .await;
+                    thread
+                }
+                Err(error) => {
+                    emit_timed_trace_span(
+                        &sink,
+                        input.emit_diagnostics,
+                        "codex.app_server.thread_start",
+                        Some("thread/start"),
+                        thread_start,
+                        Err(error.to_string()),
+                        json!({
+                            "codex.cwd": input.working_directory.as_deref().unwrap_or(&self.default_cwd),
+                        }),
+                    )
+                    .await;
+                    return Err(error);
+                }
+            };
             let thread_id = read_thread_id(&thread)?;
             session = Some(CodexAppServerSession {
                 thread_id,
@@ -133,10 +217,30 @@ impl BackendAdapter for CodexAppServerBackendAdapter {
 
         let mut session = session.expect("session initialized");
         let turn_params = turn_start_params(&input, &session.thread_id);
-        session
-            .connection
-            .request("turn/start", turn_params)
-            .await?;
+        let turn_start = Instant::now();
+        if let Err(error) = session.connection.request("turn/start", turn_params).await {
+            emit_timed_trace_span(
+                &sink,
+                input.emit_diagnostics,
+                "codex.app_server.turn_start",
+                Some("turn/start"),
+                turn_start,
+                Err(error.to_string()),
+                json!({ "codex.thread_id": session.thread_id.clone() }),
+            )
+            .await;
+            return Err(error);
+        }
+        emit_timed_trace_span(
+            &sink,
+            input.emit_diagnostics,
+            "codex.app_server.turn_start",
+            Some("turn/start"),
+            turn_start,
+            Ok(()),
+            json!({ "codex.thread_id": session.thread_id.clone() }),
+        )
+        .await;
 
         let (cancel_tx, mut cancel_rx) = oneshot::channel();
         if session_key != "__ephemeral__" {
@@ -151,10 +255,34 @@ impl BackendAdapter for CodexAppServerBackendAdapter {
         loop {
             tokio::select! {
                 _ = &mut cancel_rx => {
-                    session
+                    let interrupt_start = Instant::now();
+                    if let Err(error) = session
                         .connection
                         .request("turn/interrupt", json!({ "threadId": session.thread_id.clone() }))
-                        .await?;
+                        .await
+                    {
+                        emit_timed_trace_span(
+                            &sink,
+                            input.emit_diagnostics,
+                            "codex.app_server.turn_interrupt",
+                            Some("turn/interrupt"),
+                            interrupt_start,
+                            Err(error.to_string()),
+                            json!({ "codex.thread_id": session.thread_id.clone() }),
+                        )
+                        .await;
+                        return Err(error);
+                    }
+                    emit_timed_trace_span(
+                        &sink,
+                        input.emit_diagnostics,
+                        "codex.app_server.turn_interrupt",
+                        Some("turn/interrupt"),
+                        interrupt_start,
+                        Ok(()),
+                        json!({ "codex.thread_id": session.thread_id.clone() }),
+                    )
+                    .await;
                     sink.send(BackendOutput::event(
                         EventType::TURN_CANCELLED,
                         json!({ "reason": "user_cancelled" }),
@@ -190,6 +318,7 @@ impl BackendAdapter for CodexAppServerBackendAdapter {
                                 &sink,
                                 &mut cancel_rx,
                                 session.thread_id.clone(),
+                                input.emit_diagnostics,
                             )
                             .await?;
                             if outcome == CodexRequestOutcome::Cancelled {
@@ -226,11 +355,23 @@ impl CodexAppServerBackendAdapter {
         sink: &BackendOutputSink,
         cancel_rx: &mut oneshot::Receiver<()>,
         thread_id: String,
+        emit_diagnostics: bool,
     ) -> anyhow::Result<CodexRequestOutcome> {
+        let request_start = Instant::now();
         let Some(output) = codex_permission_request_output(id, method, params.clone()) else {
             connection
                 .respond(id, json!({ "decision": "decline" }))
                 .await?;
+            emit_timed_trace_span(
+                sink,
+                emit_diagnostics,
+                "codex.app_server.permission_request",
+                Some(method),
+                request_start,
+                Err(format!("unsupported Codex app-server request {method}")),
+                json!({ "codex.thread_id": thread_id }),
+            )
+            .await;
             sink.send(warning(
                 format!("unsupported Codex app-server request {method}"),
                 json!({ "id": id, "method": method, "params": params }),
@@ -270,9 +411,33 @@ impl CodexAppServerBackendAdapter {
                 connection
                     .respond(id, codex_cancel_response_payload(method))
                     .await?;
-                connection
-                    .request("turn/interrupt", json!({ "threadId": thread_id }))
-                    .await?;
+                let interrupt_start = Instant::now();
+                if let Err(error) = connection
+                    .request("turn/interrupt", json!({ "threadId": thread_id.clone() }))
+                    .await
+                {
+                    emit_timed_trace_span(
+                        sink,
+                        emit_diagnostics,
+                        "codex.app_server.turn_interrupt",
+                        Some("turn/interrupt"),
+                        interrupt_start,
+                        Err(error.to_string()),
+                        json!({ "codex.thread_id": thread_id.clone() }),
+                    )
+                    .await;
+                    return Err(error);
+                }
+                emit_timed_trace_span(
+                    sink,
+                    emit_diagnostics,
+                    "codex.app_server.turn_interrupt",
+                    Some("turn/interrupt"),
+                    interrupt_start,
+                    Ok(()),
+                    json!({ "codex.thread_id": thread_id.clone() }),
+                )
+                .await;
                 sink.send(BackendOutput::event(
                     EventType::TURN_CANCELLED,
                     json!({ "reason": "user_cancelled" }),
@@ -288,8 +453,47 @@ impl CodexAppServerBackendAdapter {
                 codex_permission_response_payload(method, &params, response),
             )
             .await?;
+        emit_timed_trace_span(
+            sink,
+            emit_diagnostics,
+            "codex.app_server.permission_request",
+            Some(method),
+            request_start,
+            Ok(()),
+            json!({ "codex.thread_id": thread_id.clone() }),
+        )
+        .await;
         Ok(CodexRequestOutcome::Continue)
     }
+}
+
+async fn emit_timed_trace_span(
+    sink: &BackendOutputSink,
+    enabled: bool,
+    name: &str,
+    method: Option<&str>,
+    start: Instant,
+    result: Result<(), String>,
+    attributes: Value,
+) {
+    if !enabled {
+        return;
+    }
+    let duration_ms = start.elapsed().as_secs_f64() * 1000.0;
+    let (ok, error_message) = match result {
+        Ok(()) => (true, None),
+        Err(message) => (false, Some(message)),
+    };
+    let _ = sink
+        .send(trace_span(
+            name,
+            method,
+            duration_ms,
+            ok,
+            error_message,
+            attributes,
+        ))
+        .await;
 }
 
 async fn initialize_connection(

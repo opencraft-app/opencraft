@@ -12,6 +12,8 @@
     "test": "node --test --import tsx \"packages/**/*.test.ts\""
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/sdk-trace-base": "^2.8.0",
     "@scalar/nextjs-api-reference": "latest",
     "@tanstack/react-query": "^5.90.12",
     "@tanstack/react-virtual": "^3.14.3",

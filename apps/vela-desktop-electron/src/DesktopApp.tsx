@@ -1,42 +1,50 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  createFetchVelaEventStreamTransport,
   createVeladClient,
   type BackendKindWire,
-  type BackendWire,
 } from "../../../packages/vela-chat-client/src";
-import {
-  buildVelaSessionSetupSelection,
-  useVelaChatSession,
-} from "../../../packages/vela-chat-controller/src";
+import { useVelaChatSession } from "../../../packages/vela-chat-controller/src";
 import {
   VelaQueryProvider,
   useArchiveSessionMutation,
   useSessionListViewQuery,
 } from "../../../packages/vela-chat-query/src";
-import type { ChatHostPolicy } from "../../../packages/vela-chat-render-model/src";
+import {
+  type ChatRenderModel,
+  type ChatHostPolicy,
+} from "../../../packages/vela-chat-render-model/src";
 import { ChatSurface } from "../../../packages/vela-chat-web/src";
 import {
   SessionSidebar,
   VelaDesktopShell,
   type RuntimeHostBridge,
 } from "../../../packages/vela-desktop-shell/src";
+import { VelaLocalTracer } from "../../../packages/vela-observability-client/src";
 import {
+  hideWorkMonitor,
+  openWorkMonitor,
   runtimeHostBridgeForInfo,
   readRuntimeBootstrap,
   readRuntimeChromeState,
   retryRuntimeBootstrap,
+  subscribeOpenDesktopSession,
   subscribeRuntimeChromeState,
   type RuntimeChromeStateResponse,
   type RuntimeHostInfo,
   type RuntimeBootstrap,
 } from "./desktopBridge";
-import { DesktopEmptySurface } from "./DesktopEmptySurface";
 import {
   DesktopSettingsPage,
   DesktopSettingsSidebar,
   type DesktopSettingsPanelId,
 } from "./DesktopSettingsPage";
 import { createRuntimeHostStateStores } from "./hostState";
+import {
+  DesktopNewSessionPage,
+  type DesktopNewSessionSubmitInput,
+} from "./new-session";
+import { normalizeInitialSessionMessage } from "./sessionCreation";
 import "./style.css";
 
 const DEFAULT_WORKING_DIRECTORY = "/";
@@ -48,6 +56,7 @@ const DESKTOP_SHELL_HOST_POLICY = { kind: "desktop_shell" } satisfies ChatHostPo
 const DESKTOP_SESSION_LIST_OPTIONS = { limit: 80 };
 
 type RuntimeHostStateStores = ReturnType<typeof createRuntimeHostStateStores>;
+type DesktopMainView = "new-session" | "chat";
 
 export function DesktopApp() {
   const hostStateStores = useMemo(() => createRuntimeHostStateStores(), []);
@@ -55,6 +64,7 @@ export function DesktopApp() {
   const initialHostInfo = useMemo<RuntimeHostInfo>(
     () => ({
       apiBaseUrl: DEFAULT_WEB_API_BASE_URL,
+      otelBaseUrl: undefined,
       chromeState: {
         platform: "darwin",
         isFullscreen: false,
@@ -163,14 +173,12 @@ function DesktopReadyApp({
   onSidebarVisibilityChange,
   onSidebarWidthChange,
 }: DesktopReadyAppProps) {
-  const [activeSessionId, setActiveSessionId] = useState(
-    () => hostStateStores.sessionSelectionStore?.read()?.sessionId ?? "",
-  );
+  const [activeSessionId, setActiveSessionId] = useState("");
+  const [mainView, setMainView] = useState<DesktopMainView>("new-session");
   const [settingsPanel, setSettingsPanel] =
     useState<DesktopSettingsPanelId>("general");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [homeDraft, setHomeDraft] = useState("");
-  const [isCreatingHomeSession, setIsCreatingHomeSession] = useState(false);
+  const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [selectedBackendKind, setSelectedBackendKind] = useState<BackendKindWire | "">(
     readDefaultBackendPreference,
   );
@@ -192,6 +200,15 @@ function DesktopReadyApp({
   }, [activeSessionId, hostStateStores.sessionSelectionStore]);
 
   const apiBaseUrl = hostInfo.apiBaseUrl;
+  const observability = useMemo(
+    () =>
+      new VelaLocalTracer({
+        endpoint: hostInfo.otelBaseUrl,
+        serviceName: hostInfo.hostKind === "electron" ? "vela-desktop-renderer" : "vela-web",
+        tracerName: "vela.chat.client",
+      }),
+    [hostInfo.hostKind, hostInfo.otelBaseUrl],
+  );
   useEffect(() => {
     let cancelled = false;
     void readRuntimeChromeState(hostInfo.chromeState).then((nextChromeState) => {
@@ -208,7 +225,14 @@ function DesktopReadyApp({
     () => runtimeHostBridgeForInfo(hostInfo, chromeState),
     [chromeState, hostInfo],
   );
-  const client = useMemo(() => createVeladClient({ baseUrl: apiBaseUrl }), [apiBaseUrl]);
+  const client = useMemo(
+    () => createVeladClient({ baseUrl: apiBaseUrl, observability }),
+    [apiBaseUrl, observability],
+  );
+  const eventStreamTransport = useMemo(
+    () => createFetchVelaEventStreamTransport(fetch, { observability }),
+    [observability],
+  );
   const sessionList = useSessionListViewQuery({
     client,
     options: DESKTOP_SESSION_LIST_OPTIONS,
@@ -218,81 +242,83 @@ function DesktopReadyApp({
     client,
     baseUrl: apiBaseUrl,
     clientStateStore: hostStateStores.clientStateStore,
+    eventStreamTransport,
     hostPolicy: DESKTOP_SHELL_HOST_POLICY,
     sessionId: activeSessionId,
   });
-  const setup = useMemo(
-    () =>
-      buildVelaSessionSetupSelection({
-        backends: controller.backends,
-        selectedBackend: selectedBackendKind,
-        preferredBackends: DESKTOP_BACKEND_PREFERENCE,
-        selectedModel: "",
-        selectedPermissionMode: "",
-        selectedReasoningEffort: "",
-      }),
-    [controller.backends, selectedBackendKind],
-  );
-  const homeContext = useMemo(
-    () => ({
-      locationLabel: "本地",
-      modelLabel:
-        setup.setupModelOptions.find((model) => model.id === setup.setupSelectedModel)
-          ?.label ??
-        setup.setupSelectedModel ??
-        setup.selectedBackendDetails?.display_name ??
-        "Agent",
-      permissionLabel:
-        setup.setupPermissionOptions.find(
-          (option) => option.id === setup.setupSelectedPermissionMode,
-        )?.label ?? "Default permissions",
-      reasoningLabel:
-        setup.setupReasoningOptions.find(
-          (option) => option.id === setup.setupSelectedReasoningEffort,
-        )?.label ?? "High",
-      sourceLabel: setup.selectedBackendDetails?.display_name ?? "Vela/local",
-    }),
-    [setup],
-  );
-  const homeBackendStatusMessage = useMemo(() => {
-    const selectedBackend = selectedBackendKind
-      ? controller.backends.find((backend) => backend.kind === selectedBackendKind)
-      : null;
-    if (selectedBackend && selectedBackend.status !== "available") {
-      return backendStatusMessage(selectedBackend);
-    }
-    if (setup.resolvedSelectedBackend) return null;
-    return backendStatusMessage(
-      controller.backends.find((backend) => backend.status !== "available") ?? null,
-    );
-  }, [controller.backends, selectedBackendKind, setup.resolvedSelectedBackend]);
   const hostLabel =
     hostBridge.platform === "web"
       ? "Browser preview"
       : hostBridge.platform === "macos"
         ? "Electron on macOS"
         : `Electron on ${hostBridge.platform}`;
+  const shouldShowWorkMonitor =
+    hostInfo.hostKind === "electron" &&
+    mainView === "chat" &&
+    Boolean(activeSessionId) &&
+    hasWorkMonitorActivity(controller.model);
+  const sidebarSessionPreviews = useMemo<
+    Record<string, ChatRenderModel | undefined>
+  >(() => {
+    if (!activeSessionId || !hasWorkMonitorActivity(controller.model)) {
+      return {};
+    }
+    return { [activeSessionId]: controller.model };
+  }, [activeSessionId, controller.model]);
+
+  useEffect(() => {
+    return subscribeOpenDesktopSession((sessionId) => {
+      setError(null);
+      setActiveSessionId(sessionId);
+      setIsSettingsOpen(false);
+      setMainView("chat");
+    });
+  }, []);
+
+  useEffect(() => {
+    if (hostInfo.hostKind !== "electron") return;
+    if (shouldShowWorkMonitor && activeSessionId) {
+      void openWorkMonitor(activeSessionId);
+      return;
+    }
+    const hideDelayMs = activeSessionId ? 4_000 : 0;
+    const hideTimer = window.setTimeout(() => {
+      void hideWorkMonitor();
+    }, hideDelayMs);
+    return () => {
+      window.clearTimeout(hideTimer);
+    };
+  }, [activeSessionId, hostInfo.hostKind, shouldShowWorkMonitor]);
 
   useEffect(() => {
     if (!sessionList.data) return;
     setError(null);
-    setActiveSessionId((current) =>
-      current && sessionList.data.sessions.some((session) => session.id === current)
-        ? current
-        : sessionList.data.sessions[0]?.id || "",
-    );
-  }, [sessionList.data]);
+    if (
+      activeSessionId &&
+      !sessionList.data.sessions.some((session) => session.id === activeSessionId)
+    ) {
+      setActiveSessionId("");
+      setMainView("new-session");
+    }
+  }, [activeSessionId, sessionList.data]);
 
   useEffect(() => {
     if (!sessionList.error) return;
-    setError(sessionList.error instanceof Error ? sessionList.error.message : String(sessionList.error));
+    setError(
+      sessionList.error instanceof Error
+        ? sessionList.error.message
+        : String(sessionList.error),
+    );
   }, [sessionList.error]);
 
   const archiveSessionMutation = useArchiveSessionMutation({
     client,
     currentSessionId: activeSessionId || null,
     sessionListOptions: DESKTOP_SESSION_LIST_OPTIONS,
-    onSelectSession: setActiveSessionId,
+    onSelectSession: (sessionId) => {
+      setActiveSessionId(sessionId);
+      setMainView("chat");
+    },
   });
 
   const archiveSession = useCallback(
@@ -312,81 +338,102 @@ function DesktopReadyApp({
       setError(null);
       const response = await sessionList.refetch();
       if (!response.data) return;
-      setActiveSessionId((current) =>
-        current && response.data.sessions.some((session) => session.id === current)
-          ? current
-          : response.data.sessions[0]?.id || "",
-      );
+      if (
+        activeSessionId &&
+        !response.data.sessions.some((session) => session.id === activeSessionId)
+      ) {
+        setActiveSessionId("");
+        setMainView("new-session");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [sessionList]);
+  }, [activeSessionId, sessionList]);
 
-  const buildSessionSetup = useCallback(
-    (backends: BackendWire[]) =>
-      buildVelaSessionSetupSelection({
-        backends,
-        selectedBackend: selectedBackendKind,
-        preferredBackends: DESKTOP_BACKEND_PREFERENCE,
-        selectedModel: "",
-        selectedPermissionMode: "",
-        selectedReasoningEffort: "",
-      }),
-    [selectedBackendKind],
+  const createSession = useCallback(
+    async (input: DesktopNewSessionSubmitInput) => {
+      if (isCreatingSession) return;
+      try {
+        setIsCreatingSession(true);
+        setError(null);
+        const created = await client.createSession({
+          backend: input.backend,
+          agentConfig: input.agentConfig,
+          title: input.title,
+          workingDirectory: input.workingDirectory,
+        });
+        setActiveSessionId(created.session.id);
+        setMainView("chat");
+        const trimmedInitialMessage = normalizeInitialSessionMessage(input.initialPrompt);
+        if (trimmedInitialMessage) {
+          if (hostInfo.hostKind === "electron") {
+            void openWorkMonitor(created.session.id);
+          }
+          await client.sendUserMessage({
+            sessionId: created.session.id,
+            text: trimmedInitialMessage,
+          });
+        }
+        await refreshSessions();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setIsCreatingSession(false);
+      }
+    },
+    [client, hostInfo.hostKind, isCreatingSession, refreshSessions],
   );
 
-  const resolveNewSessionSetup = useCallback(async () => {
-    if (setup.resolvedSelectedBackend) return setup;
-    const nextBackends = await client.getBackends();
-    return buildSessionSetup(nextBackends.backends);
-  }, [buildSessionSetup, client, setup]);
-
-  const createSession = useCallback(async (initialMessage = "") => {
-    if (isCreatingHomeSession) return;
-    try {
-      setIsCreatingHomeSession(true);
-      setError(null);
-      const nextSetup = await resolveNewSessionSetup();
-      const backend = nextSetup.resolvedSelectedBackend;
-      if (!backend) {
-        setError("No backend is available yet. Please try again after velad finishes starting.");
-        return;
-      }
-      const created = await client.createSession({
-        backend,
-        agentConfig: nextSetup.setupAgentConfig,
-        title: "New chat",
-        workingDirectory: DEFAULT_WORKING_DIRECTORY,
-      });
-      setActiveSessionId(created.session.id);
-      const trimmedInitialMessage = initialMessage.trim();
-      if (trimmedInitialMessage) {
-        setHomeDraft("");
-        await client.sendUserMessage({
-          sessionId: created.session.id,
-          text: trimmedInitialMessage,
-        });
-      }
-      await refreshSessions();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setIsCreatingHomeSession(false);
+  const submitChatMessage = useCallback(async () => {
+    const hasMessageIntent =
+      controller.draft.trim().length > 0 || controller.pendingAttachments.length > 0;
+    if (hostInfo.hostKind === "electron" && activeSessionId && hasMessageIntent) {
+      void openWorkMonitor(activeSessionId);
     }
-  }, [client, isCreatingHomeSession, refreshSessions, resolveNewSessionSetup]);
+    await controller.send();
+  }, [
+    activeSessionId,
+    controller.draft,
+    controller.pendingAttachments.length,
+    controller.send,
+    hostInfo.hostKind,
+  ]);
+
+  const respondToRequest = useCallback(
+    async (response: Parameters<typeof controller.respondToRequest>[0]) => {
+      if (hostInfo.hostKind === "electron" && activeSessionId) {
+        void openWorkMonitor(activeSessionId);
+      }
+      await controller.respondToRequest(response);
+    },
+    [activeSessionId, controller.respondToRequest, hostInfo.hostKind],
+  );
+
+  const openNewSessionPage = useCallback(() => {
+    setError(null);
+    setActiveSessionId("");
+    setIsSettingsOpen(false);
+    setMainView("new-session");
+  }, []);
+
+  const selectSession = useCallback((sessionId: string) => {
+    setError(null);
+    setActiveSessionId(sessionId);
+    setIsSettingsOpen(false);
+    setMainView("chat");
+  }, []);
 
   const appSidebar = (
     <SessionSidebar
-      currentSessionId={activeSessionId || null}
+      currentSessionId={mainView === "chat" ? activeSessionId || null : null}
+      sessionPreviews={sidebarSessionPreviews}
       sessions={sessions}
       showTrafficLights={hostBridge.chrome.showTrafficLights}
-      accountLabel={hostLabel}
-      accountPlanLabel="Local desktop"
       canCreateSession
-      onCreateSession={createSession}
+      onCreateSession={openNewSessionPage}
       onArchiveSession={archiveSession}
       onOpenSettings={() => setIsSettingsOpen(true)}
-      onSelectSession={setActiveSessionId}
+      onSelectSession={selectSession}
     />
   );
   const settingsSidebar = (
@@ -405,7 +452,7 @@ function DesktopReadyApp({
       sidebar={isSettingsOpen ? settingsSidebar : appSidebar}
       sidebarPresentation="auto"
       sidebarWidthPx={sidebarWidthPx}
-      onCreateSession={createSession}
+      onCreateSession={openNewSessionPage}
       onSidebarVisibilityChange={onSidebarVisibilityChange}
       onSidebarWidthChange={onSidebarWidthChange}
       onToggleSidebar={() => onSidebarVisibilityChange(!isSidebarVisible)}
@@ -422,7 +469,7 @@ function DesktopReadyApp({
           sessionsCount={sessions.length}
           onSelectedBackendChange={setSelectedBackendKind}
         />
-      ) : activeSessionId ? (
+      ) : mainView === "chat" && activeSessionId ? (
         <ChatSurface
           canLoadOlder={controller.canLoadOlder}
           clientStateStore={hostStateStores.clientStateStore}
@@ -441,27 +488,43 @@ function DesktopReadyApp({
           onDraftChange={controller.setDraft}
           onLoadOlder={controller.loadOlderConversation}
           onRemoveAttachment={controller.removeAttachment}
-          onRespondToRequest={controller.respondToRequest}
+          onRespondToRequest={respondToRequest}
           onStop={controller.stop}
-          onSubmit={controller.send}
+          onSubmit={submitChatMessage}
           pendingAttachments={controller.pendingAttachments}
         />
       ) : (
-        <DesktopEmptySurface
-          canCreateSession={Boolean(setup.resolvedSelectedBackend)}
-          draft={homeDraft}
-          error={error ?? homeBackendStatusMessage}
-          isCreatingSession={isCreatingHomeSession}
-          locationLabel={homeContext.locationLabel}
-          modelLabel={homeContext.modelLabel}
-          permissionLabel={homeContext.permissionLabel}
-          reasoningLabel={homeContext.reasoningLabel}
-          sourceLabel={homeContext.sourceLabel}
-          onDraftChange={setHomeDraft}
-          onSubmit={() => createSession(homeDraft)}
+        <DesktopNewSessionPage
+          backends={controller.backends}
+          defaultBackend={selectedBackendKind}
+          defaultWorkingDirectory={DEFAULT_WORKING_DIRECTORY}
+          error={error}
+          isSubmitting={isCreatingSession}
+          preferredBackends={DESKTOP_BACKEND_PREFERENCE}
+          onDefaultBackendChange={setSelectedBackendKind}
+          onSubmit={createSession}
         />
       )}
     </VelaDesktopShell>
+  );
+}
+
+function hasWorkMonitorActivity(model: ChatRenderModel) {
+  return (
+    model.composer.is_running ||
+    model.requests.items.some((request) => request.status === "pending") ||
+    model.rows.some((row) => {
+      if (row.kind === "assistant_message") return row.streaming;
+      if (row.kind === "agent_work") return row.status === "running" || row.status === "pending";
+      if (row.kind === "agent_work_group") {
+        return row.children.some(
+          (child) => child.status === "running" || child.status === "pending",
+        );
+      }
+      if (row.kind === "turn_meta") return row.status === "running";
+      if (row.kind === "status") return row.status === "pending" || row.status === "streaming";
+      return false;
+    })
   );
 }
 
@@ -485,14 +548,11 @@ function DesktopBootstrapApp({
   onSidebarWidthChange,
 }: DesktopBootstrapAppProps) {
   const hostBridge = useMemo(() => runtimeHostBridgeForInfo(hostInfo), [hostInfo]);
-  const hostLabel = hostBridge.platform === "macos" ? "Electron on macOS" : "Runtime host";
   const sidebar = (
     <SessionSidebar
       currentSessionId={null}
       sessions={[]}
       showTrafficLights={hostBridge.chrome.showTrafficLights}
-      accountLabel={hostLabel}
-      accountPlanLabel="Local desktop"
       canClearSessions={false}
       canCreateSession={false}
       onCreateSession={() => undefined}
@@ -515,9 +575,27 @@ function DesktopBootstrapApp({
       {bootstrap.status === "failed" ? (
         <DesktopBootstrapSurface bootstrap={bootstrap} onRetry={onRetry} />
       ) : (
-        <DesktopEmptySurface />
+        <DesktopRuntimeStartingSurface bootstrap={bootstrap} />
       )}
     </VelaDesktopShell>
+  );
+}
+
+function DesktopRuntimeStartingSurface({
+  bootstrap,
+}: {
+  bootstrap: Extract<RuntimeBootstrap, { status: "starting" }>;
+}) {
+  return (
+    <div className="vela-runtime-bootstrap" role="status" aria-live="polite">
+      <div className="vela-runtime-bootstrap-card">
+        <div className="vela-runtime-bootstrap-orb" data-state="starting" />
+        <div>
+          <h1>Starting local runtime</h1>
+          <p>{bootstrap.message}</p>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -560,16 +638,6 @@ function writeDefaultBackendPreference(value: BackendKindWire | "") {
     return;
   }
   window.localStorage.setItem(DEFAULT_BACKEND_STORAGE_KEY, value);
-}
-
-function backendStatusMessage(backend: BackendWire | null) {
-  if (!backend || backend.status === "available") return null;
-  if (backend.status_message) return backend.status_message;
-  const discoveryError = backend.diagnostics?.model_discovery_error;
-  if (typeof discoveryError === "string" && discoveryError.trim()) {
-    return `Backend ${backend.display_name || backend.kind} model discovery failed: ${discoveryError}`;
-  }
-  return `Backend ${backend.display_name || backend.kind} is ${backend.status}.`;
 }
 
 function isBackendKind(value: string | null): value is BackendKindWire {

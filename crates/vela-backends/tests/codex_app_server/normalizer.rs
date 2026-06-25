@@ -75,6 +75,10 @@ fn codex_app_server_normalizer_absorbs_control_plane_notifications_without_warni
             json!({ "threadId": "thr_1", "status": { "type": "active" } }),
         ),
         (
+            "thread/settings/updated",
+            json!({ "threadId": "thr_1", "threadSettings": { "model": "gpt-5.5" } }),
+        ),
+        (
             "account/rateLimits/updated",
             json!({ "rateLimits": { "limitId": "codex", "planType": "pro" } }),
         ),

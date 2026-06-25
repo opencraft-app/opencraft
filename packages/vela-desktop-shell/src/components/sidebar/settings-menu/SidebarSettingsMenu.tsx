@@ -9,18 +9,12 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import {
-  ChevronRight,
   CircleUserRound,
-  Gauge,
-  LogOut,
-  Mail,
   Settings,
   Trash2,
 } from "lucide-react";
 
 export interface SidebarSettingsMenuProps {
-  accountLabel?: string;
-  accountPlanLabel?: string;
   canClearSessions?: boolean;
   defaultOpen?: boolean;
   onClearSessions?: () => void;
@@ -28,8 +22,6 @@ export interface SidebarSettingsMenuProps {
 }
 
 export function SidebarSettingsMenu({
-  accountLabel = "Vela local runtime",
-  accountPlanLabel = "Personal account",
   canClearSessions = false,
   defaultOpen = false,
   onClearSessions,
@@ -113,27 +105,6 @@ export function SidebarSettingsMenu({
       >
         <div className="vela-popover-menu vela-settings-menu">
           <button
-            className="vela-popover-menu-item vela-settings-menu-item is-muted"
-            type="button"
-            role="menuitem"
-            onClick={openSettings}
-          >
-            <CircleUserRound size={14} aria-hidden />
-            <span>{accountLabel}</span>
-          </button>
-          <button
-            className="vela-popover-menu-item vela-settings-menu-item is-muted"
-            type="button"
-            role="menuitem"
-            onClick={openSettings}
-          >
-            <Settings size={14} aria-hidden />
-            <span>{accountPlanLabel}</span>
-          </button>
-
-          <div className="vela-popover-menu-separator vela-settings-menu-separator" role="none" />
-
-          <button
             className="vela-popover-menu-item vela-settings-menu-item"
             type="button"
             role="menuitem"
@@ -153,52 +124,24 @@ export function SidebarSettingsMenu({
             <kbd>⌘,</kbd>
           </button>
 
-          <div className="vela-popover-menu-separator vela-settings-menu-separator" role="none" />
-
-          <button
-            className="vela-popover-menu-item vela-settings-menu-item"
-            type="button"
-            role="menuitem"
-            disabled
-          >
-            <Gauge size={14} aria-hidden />
-            <span>Remaining usage</span>
-            <ChevronRight size={14} aria-hidden />
-          </button>
-          <button
-            className="vela-popover-menu-item vela-settings-menu-item"
-            type="button"
-            role="menuitem"
-            disabled
-          >
-            <Mail size={14} aria-hidden />
-            <span>Invite friends</span>
-          </button>
-          <button
-            className="vela-popover-menu-item vela-settings-menu-item"
-            type="button"
-            role="menuitem"
-            disabled={!canClear}
-            onClick={clearSessions}
-          >
-            <Trash2 size={14} aria-hidden />
-            <span>Clear chats</span>
-          </button>
-          <button
-            className="vela-popover-menu-item vela-settings-menu-item"
-            type="button"
-            role="menuitem"
-            disabled
-          >
-            <LogOut size={14} aria-hidden />
-            <span>Log out</span>
-          </button>
+          {canClear ? (
+            <>
+              <div className="vela-popover-menu-separator vela-settings-menu-separator" role="none" />
+              <button
+                className="vela-popover-menu-item vela-settings-menu-item"
+                type="button"
+                role="menuitem"
+                onClick={clearSessions}
+              >
+                <Trash2 size={14} aria-hidden />
+                <span>Clear chats</span>
+              </button>
+            </>
+          ) : null}
         </div>
       </div>
     ),
     [
-      accountLabel,
-      accountPlanLabel,
       canClear,
       canPortal,
       clearSessions,

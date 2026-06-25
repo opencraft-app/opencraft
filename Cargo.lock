@@ -2236,6 +2236,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "vela-observability"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "vela-projection"
 version = "0.1.0"
 dependencies = [
@@ -2260,6 +2276,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "chrono",
  "serde",
  "serde_json",
  "sha2",
@@ -2268,6 +2285,7 @@ dependencies = [
  "tokio",
  "vela-backends",
  "vela-core",
+ "vela-observability",
  "vela-store",
 ]
 
@@ -2304,6 +2322,7 @@ dependencies = [
  "tracing-subscriber",
  "vela-backends",
  "vela-core",
+ "vela-observability",
  "vela-projection",
  "vela-protocol",
  "vela-runtime",

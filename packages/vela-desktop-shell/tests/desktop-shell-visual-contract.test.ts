@@ -1,16 +1,21 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { register } from "node:module";
 import { join } from "node:path";
 import test from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import type { SessionListItemWire } from "../../vela-chat-client/src";
-import {
+import type { ChatRenderModel } from "../../vela-chat-render-model/src";
+
+register(new URL("../../vela-chat-web/tests/css-module-loader.mjs", import.meta.url));
+
+const {
   SessionSidebar,
   VelaDesktopShell,
   browserRuntimeHostBridge,
-} from "../src";
+} = await import("../src");
 
 const root = process.cwd();
 
@@ -115,13 +120,16 @@ test("session sidebar renders the codex-desktop settings menu in the footer", ()
   assert.match(html, /role="menu"/);
   assert.match(html, />Settings</);
   assert.match(html, />Clear chats</);
+  assert.doesNotMatch(html, />Remaining usage</);
+  assert.doesNotMatch(html, />Invite friends</);
+  assert.doesNotMatch(html, />Log out</);
   assert.ok(
     html.indexOf("session-list-surface") < html.indexOf("vela-settings-menu-root"),
     "settings menu should live in the sidebar footer after the session list",
   );
 });
 
-test("session rows use a compact desktop sidebar model with preview, rail, and status", () => {
+test("running session rows use a compact scaled thumbnail preview", () => {
   const runningSession: SessionListItemWire = {
     ...session,
     id: "ses_running_visual_contract",
@@ -131,21 +139,31 @@ test("session rows use a compact desktop sidebar model with preview, rail, and s
     running: true,
     pending_request_count: 0,
   };
+  const preview = chatPreviewModel(runningSession.id);
 
   const html = renderToStaticMarkup(
     React.createElement(SessionSidebar, {
       sessions: [runningSession],
       currentSessionId: runningSession.id,
+      sessionPreviews: { [runningSession.id]: preview },
       onCreateSession: () => {},
       onSelectSession: () => {},
     }),
   );
 
-  assert.match(html, /class="vela-session-preview"/);
-  assert.match(html, /Renderer keeps a small release buffer/);
+  assert.match(html, /data-slot="session-thumbnail-preview"/);
+  assert.match(html, /data-conversation-preview="true"/);
+  assert.match(html, /transform:scale\(0\.15\)/);
+  assert.match(html, /width:126px/);
+  assert.match(html, /height:78px/);
+  assert.doesNotMatch(html, /class="vela-session-preview"/);
+  assert.doesNotMatch(html, /Renderer keeps a small release buffer/);
+  assert.match(html, /Please investigate the markdown stream/);
+  assert.match(html, /Checking[\s\S]*release[\s\S]*buffer/);
   assert.match(html, /class="vela-session-rail"/);
   assert.match(html, /class="vela-session-status-dot"/);
   assert.match(html, /data-running="true"/);
+  assert.match(html, /data-has-thumbnail="true"/);
   assert.match(html, /Running/);
   assert.doesNotMatch(html, /class="[^"]*card/);
 });
@@ -225,6 +243,57 @@ test("desktop host uses unified chrome and drag-region semantics", () => {
   assert.doesNotMatch(css, /\.vela-sidebar-traffic-zone/);
 });
 
+function chatPreviewModel(sessionId: string): ChatRenderModel {
+  return {
+    session_id: sessionId,
+    host: { kind: "desktop_shell" },
+    requests: { items: [] },
+    composer: {
+      placeholder: "要求后续变更",
+      can_send: true,
+      is_running: true,
+    },
+    rows: [
+      {
+        kind: "user_message",
+        id: `${sessionId}:user`,
+        key: `${sessionId}:user`,
+        text: "Please investigate the markdown stream",
+        copy_text: "Please investigate the markdown stream",
+        collapsed: false,
+        parts: [
+          {
+            id: `${sessionId}:user:text`,
+            type: "text",
+            text: "Please investigate the markdown stream",
+          },
+        ],
+        createdAt: "2026-06-23T00:00:01.000Z",
+        debug: debug(`${sessionId}:user`),
+      },
+      {
+        kind: "assistant_message",
+        id: `${sessionId}:assistant`,
+        key: `${sessionId}:assistant`,
+        blocks: [{ id: `${sessionId}:assistant:block`, text: "Checking the release buffer" }],
+        status: "streaming",
+        streaming: true,
+        revision: 1,
+        createdAt: "2026-06-23T00:00:02.000Z",
+        debug: debug(`${sessionId}:assistant`),
+      },
+    ],
+  };
+}
+
+function debug(id: string) {
+  return {
+    projection: "conversation" as const,
+    source_event_ids: [`evt_${id}`],
+    source_event_ranges: [],
+  };
+}
+
 test("desktop session list CSS follows the codex-style compact rail layout", () => {
   const css = readFileSync(
     join(root, "apps/vela-desktop-electron/src/style.css"),
@@ -237,6 +306,9 @@ test("desktop session list CSS follows the codex-style compact rail layout", () 
   assert.match(css, /\.vela-session-item\s*\{[^}]*--vela-session-rail-width:\s*44px;/s);
   assert.match(css, /\.vela-session-main\s*\{[^}]*grid-template-columns:\s*18px minmax\(0, 1fr\) var\(--vela-session-rail-width\);/s);
   assert.match(css, /\.vela-session-main\s*\{[^}]*min-height:\s*50px;/s);
+  assert.match(css, /\.vela-session-thumbnail-preview\s*\{[^}]*width:\s*126px;/s);
+  assert.match(css, /\.vela-session-thumbnail-preview\s*\{[^}]*height:\s*78px;/s);
+  assert.match(css, /\.vela-session-item\[data-has-thumbnail="true"\]\s+\.vela-session-main\s*\{[^}]*min-height:\s*112px;/s);
   assert.match(css, /\.vela-session-preview\s*\{[^}]*font-size:\s*12px;/s);
   assert.match(css, /\.vela-session-rail\s*\{[^}]*justify-self:\s*end;/s);
   assert.match(css, /\.vela-session-status-dot\s*\{[^}]*width:\s*6px;/s);

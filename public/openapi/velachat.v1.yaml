@@ -19,6 +19,7 @@ tags:
   - name: Diagnostics
   - name: Requests
   - name: Backends
+  - name: Observability
 paths:
   /sessions:
     get:
@@ -542,6 +543,102 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
+  /observability/status:
+    get:
+      tags: [Observability]
+      operationId: getObservabilityStatus
+      summary: 获取本机观测存储状态
+      responses:
+        '200':
+          description: Local observability status。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObservabilityStatus'
+  /observability/recent-errors:
+    get:
+      tags: [Observability]
+      operationId: listRecentObservabilityErrors
+      summary: 查询最近错误
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Recent local errors。
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [errors]
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ObservabilityErrorRecord'
+  /observability/traces/{trace_id}:
+    get:
+      tags: [Observability]
+      operationId: getObservabilityTrace
+      summary: 查询单条 trace
+      parameters:
+        - name: trace_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Trace detail。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObservabilityTraceDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /v1/traces:
+    post:
+      tags: [Observability]
+      operationId: ingestOtlpJsonTraces
+      summary: 接收 OTLP/HTTP JSON traces
+      servers:
+        - url: http://127.0.0.1:3857
+          description: 本地 daemon OTLP endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Trace payload accepted。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObservabilityIngestSummary'
+  /v1/logs:
+    post:
+      tags: [Observability]
+      operationId: ingestOtlpJsonLogs
+      summary: 接收 OTLP/HTTP JSON logs
+      servers:
+        - url: http://127.0.0.1:3857
+          description: 本地 daemon OTLP endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Log payload accepted。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObservabilityIngestSummary'
 components:
   parameters:
     SessionId:
@@ -600,7 +697,7 @@ components:
   schemas:
     LocalRuntimeInfo:
       type: object
-      required: [type, runtime_protocol, api_protocol, pid, listen_addr, api_base_url, version]
+      required: [type, runtime_protocol, api_protocol, otel_protocol, pid, listen_addr, api_base_url, otel_base_url, observability_base_url, version]
       properties:
         type:
           type: string
@@ -611,12 +708,19 @@ components:
         api_protocol:
           type: string
           enum: [velachat.v1]
+        otel_protocol:
+          type: string
+          enum: [otlp.http.json]
         pid:
           type: integer
           minimum: 1
         listen_addr:
           type: string
         api_base_url:
+          type: string
+        otel_base_url:
+          type: string
+        observability_base_url:
           type: string
         version:
           type: string
@@ -626,6 +730,112 @@ components:
       properties:
         accepted:
           type: boolean
+    ObservabilityIngestSummary:
+      type: object
+      required: [accepted, spans, logs]
+      properties:
+        accepted:
+          type: boolean
+        spans:
+          type: integer
+          minimum: 0
+        logs:
+          type: integer
+          minimum: 0
+    ObservabilityStatus:
+      type: object
+      required: [enabled, spans, logs]
+      properties:
+        enabled:
+          type: boolean
+        spans:
+          type: integer
+          minimum: 0
+        logs:
+          type: integer
+          minimum: 0
+        raw_dir:
+          type: string
+          nullable: true
+    ObservabilityTraceDetail:
+      type: object
+      required: [trace_id, spans]
+      properties:
+        trace_id:
+          type: string
+        spans:
+          type: array
+          items:
+            $ref: '#/components/schemas/ObservabilitySpan'
+    ObservabilitySpan:
+      type: object
+      required: [trace_id, span_id, name, attributes, observed_at]
+      properties:
+        trace_id:
+          type: string
+        span_id:
+          type: string
+        parent_span_id:
+          type: string
+          nullable: true
+        name:
+          type: string
+        start_time_unix_nano:
+          type: integer
+          nullable: true
+        end_time_unix_nano:
+          type: integer
+          nullable: true
+        duration_ms:
+          type: number
+          nullable: true
+        status_code:
+          type: string
+          nullable: true
+        status_message:
+          type: string
+          nullable: true
+        session_id:
+          type: string
+          nullable: true
+        backend:
+          type: string
+          nullable: true
+        error_message:
+          type: string
+          nullable: true
+        attributes:
+          type: object
+          additionalProperties: true
+        observed_at:
+          type: string
+          format: date-time
+    ObservabilityErrorRecord:
+      type: object
+      required: [source, name, message, observed_at]
+      properties:
+        source:
+          type: string
+          enum: [span, log]
+        trace_id:
+          type: string
+          nullable: true
+        span_id:
+          type: string
+          nullable: true
+        name:
+          type: string
+        message:
+          type: string
+        session_id:
+          type: string
+          nullable: true
+        backend:
+          type: string
+          nullable: true
+        observed_at:
+          type: string
+          format: date-time
     BackendKind:
       type: string
       enum: [codex, cloudagent, claude_code, pi, opencode, acp, qoder]
@@ -1466,9 +1676,14 @@ components:
           $ref: '#/components/schemas/BackendKind'
         status:
           type: string
-          enum: [available, unavailable, degraded, error]
+          enum: [loading, available, unavailable, degraded, error]
         status_message:
           type: string
+        snapshot_protocol:
+          type: string
+        fetched_at:
+          type: string
+          format: date-time
         display_name:
           type: string
         capabilities:
@@ -1617,7 +1832,7 @@ components:
           $ref: '#/components/schemas/BackendKind'
         status:
           type: string
-          enum: [available, unavailable, degraded, error]
+          enum: [loading, available, unavailable, degraded, error]
         message:
           type: string
     CommandAck:

@@ -8,7 +8,7 @@ VELAD_LINUX_AMD64_OUT := dist/velad/linux-amd64/velad
 	install \
 	server-build server-release server-release-linux-amd64 server-run server-test server-clean \
 	desktop-dev desktop-dev-web desktop-build \
-	desktop-preview \
+	desktop-preview desktop-preview-fast desktop-open-installed desktop-pids \
 	desktop-pack desktop-pack-dev desktop-install desktop-install-dev desktop-dist desktop-clean \
 	stack-dev
 
@@ -40,12 +40,20 @@ server-clean:
 	cargo clean -p velad
 
 desktop-dev:
-	VELA_DESKTOP_VELAD_LISTEN_ADDR=$(VELAD_LISTEN_ADDR) npm --prefix $(ELECTRON_APP_DIR) run dev
+	npm --prefix $(ELECTRON_APP_DIR) run dev
 
 desktop-dev-web:
 	npm --prefix $(ELECTRON_APP_DIR) run dev:web
 
-desktop-preview: stack-dev
+desktop-preview: desktop-dev
+
+desktop-preview-fast: desktop-preview
+
+desktop-open-installed:
+	open /Applications/Vela.app
+
+desktop-pids:
+	@pgrep -fl '/Applications/Vela.app|Vela.app|Contents/Resources/bin/velad' || true
 
 desktop-build: server-build
 	npm --prefix $(ELECTRON_APP_DIR) run build
@@ -78,17 +86,4 @@ desktop-dist: server-release desktop-build
 desktop-clean:
 	rm -rf $(ELECTRON_APP_DIR)/dist $(ELECTRON_APP_DIR)/dist-electron $(ELECTRON_APP_DIR)/release
 
-stack-dev:
-	@echo "Starting velad on $(VELAD_LISTEN_ADDR) and Electron desktop dev host"
-	@bash -lc 'set -e; \
-	VELAD_LISTEN_ADDR=$(VELAD_LISTEN_ADDR) cargo run -p velad & \
-	velad_pid=$$!; \
-	VELA_DESKTOP_VELAD_LISTEN_ADDR=$(VELAD_LISTEN_ADDR) npm --prefix $(ELECTRON_APP_DIR) run dev & \
-	electron_pid=$$!; \
-	trap '"'"'kill $$velad_pid $$electron_pid 2>/dev/null || true'"'"' INT TERM EXIT; \
-	status=0; \
-	while kill -0 $$velad_pid 2>/dev/null && kill -0 $$electron_pid 2>/dev/null; do sleep 0.5; done; \
-	wait $$velad_pid 2>/dev/null || status=$$?; \
-	wait $$electron_pid 2>/dev/null || status=$$?; \
-	kill $$velad_pid $$electron_pid 2>/dev/null || true; \
-	exit $$status'
+stack-dev: desktop-preview
