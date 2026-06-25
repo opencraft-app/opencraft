@@ -119,6 +119,26 @@ replacements:
   - source:
       kind: ConfigMap
       name: auth-platform-values
+      fieldPath: data.AUTH_GITHUB_CLIENT_ID
+    targets:
+      - select:
+          kind: ConfigMap
+          name: lightclaw-auth-config
+        fieldPaths:
+          - data.LIGHTCLAW_GITHUB_CLIENT_ID
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
+      fieldPath: data.AUTH_GITHUB_REDIRECT_URI
+    targets:
+      - select:
+          kind: ConfigMap
+          name: lightclaw-auth-config
+        fieldPaths:
+          - data.LIGHTCLAW_GITHUB_REDIRECT_URI
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
       fieldPath: data.AUTH_MYSQL_HOST
     targets:
       - select:
