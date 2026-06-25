@@ -7,14 +7,16 @@ import {
 import { useVelaChatSession } from "../../../../packages/vela-chat-controller/src";
 import { type ChatHostPolicy } from "../../../../packages/vela-chat-render-model/src";
 import type { ConversationScrollControllerDebug } from "../../../../packages/vela-chat-web/src/conversation-runtime/scroll/useConversationScrollController";
-import { ConversationPreviewSurface } from "../../../../packages/vela-chat-web/src";
 import { VelaLocalTracer } from "../../../../packages/vela-observability-client/src";
 import {
   focusDesktopSession,
   moveWorkMonitorBy,
   type RuntimeHostInfo,
 } from "../desktopBridge";
-import styles from "./work-monitor.module.css";
+import {
+  SessionPreviewStatus,
+  SessionPreviewWindowContent,
+} from "../session-preview";
 
 const WORK_MONITOR_HOST_POLICY = { kind: "desktop_shell" } satisfies ChatHostPolicy;
 const WORK_MONITOR_DRAG_THRESHOLD_PX = 4;
@@ -164,39 +166,29 @@ export function WorkMonitorApp({ hostInfo, sessionId }: WorkMonitorAppProps) {
   };
 
   return (
-    <main className={styles.workMonitorApp}>
-      {controller.error ? (
-        <button
-          className={styles.workMonitorError}
-          type="button"
-          onClick={handleOpenClick}
-          onPointerCancel={handlePointerEnd}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerEnd}
-        >
-          <span>Monitor failed</span>
-          <strong>{controller.error}</strong>
-        </button>
-      ) : (
-        <div className={styles.workMonitorPreview}>
-          <ConversationPreviewSurface
-            followOutputToken={followOutputToken}
-            model={controller.model}
-            scale={0.25}
-            onConversationScrollDebugChange={handleConversationScrollDebugChange}
-            onOpenSession={handleOpenClick}
-            onPointerCancel={handlePointerEnd}
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerEnd}
-          />
-          <div className={styles.workMonitorTitle} title={sessionTitle}>
-            {sessionTitle}
-          </div>
-        </div>
-      )}
-    </main>
+    controller.error ? (
+      <SessionPreviewStatus
+        label="Monitor failed"
+        value={controller.error}
+        onOpenSession={handleOpenClick}
+        onPointerCancel={handlePointerEnd}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerEnd}
+      />
+    ) : (
+      <SessionPreviewWindowContent
+        followOutputToken={followOutputToken}
+        model={controller.model}
+        title={sessionTitle}
+        onConversationScrollDebugChange={handleConversationScrollDebugChange}
+        onOpenSession={handleOpenClick}
+        onPointerCancel={handlePointerEnd}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerEnd}
+      />
+    )
   );
 }
 

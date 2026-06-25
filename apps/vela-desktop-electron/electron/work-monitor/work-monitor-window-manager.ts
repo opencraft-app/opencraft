@@ -1,4 +1,5 @@
 import { BrowserWindow, screen, type Rectangle, type WebContents } from "electron";
+import { sessionPreviewWindowSize } from "../session-preview";
 
 export interface WorkMonitorWindowManagerOptions {
   getAnchorWindow?: () => BrowserWindow | null;
@@ -9,10 +10,6 @@ export interface WorkMonitorWindowManagerOptions {
   preloadPath: string;
 }
 
-const workMonitorSize = {
-  width: 214,
-  height: 134,
-};
 const workMonitorScreenMargin = 24;
 
 export class WorkMonitorWindowManager {
@@ -99,10 +96,10 @@ export class WorkMonitorWindowManager {
   private ensureWindow() {
     if (this.window && !this.window.isDestroyed()) return this.window;
     const window = new BrowserWindow({
-      width: workMonitorSize.width,
-      height: workMonitorSize.height,
-      minWidth: workMonitorSize.width,
-      minHeight: workMonitorSize.height,
+      width: sessionPreviewWindowSize.width,
+      height: sessionPreviewWindowSize.height,
+      minWidth: sessionPreviewWindowSize.width,
+      minHeight: sessionPreviewWindowSize.height,
       frame: false,
       hasShadow: false,
       resizable: false,
@@ -149,8 +146,8 @@ export class WorkMonitorWindowManager {
     window.setBounds(
       {
         ...position,
-        width: workMonitorSize.width,
-        height: workMonitorSize.height,
+        width: sessionPreviewWindowSize.width,
+        height: sessionPreviewWindowSize.height,
       },
       false,
     );
@@ -158,10 +155,12 @@ export class WorkMonitorWindowManager {
 }
 
 function workMonitorPositionInWorkArea(workArea: Rectangle): Pick<Rectangle, "x" | "y"> {
-  const maxX = workArea.x + Math.max(0, workArea.width - workMonitorSize.width);
-  const maxY = workArea.y + Math.max(0, workArea.height - workMonitorSize.height);
-  const preferredX = workArea.x + workArea.width - workMonitorSize.width - workMonitorScreenMargin;
-  const preferredY = workArea.y + workArea.height - workMonitorSize.height - workMonitorScreenMargin;
+  const maxX = workArea.x + Math.max(0, workArea.width - sessionPreviewWindowSize.width);
+  const maxY = workArea.y + Math.max(0, workArea.height - sessionPreviewWindowSize.height);
+  const preferredX =
+    workArea.x + workArea.width - sessionPreviewWindowSize.width - workMonitorScreenMargin;
+  const preferredY =
+    workArea.y + workArea.height - sessionPreviewWindowSize.height - workMonitorScreenMargin;
   return {
     x: Math.max(workArea.x, Math.min(maxX, preferredX)),
     y: Math.max(workArea.y, Math.min(maxY, preferredY)),

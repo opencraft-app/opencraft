@@ -31,8 +31,10 @@ test("desktop integration is split into host, shell, controller, and chat render
     "apps/vela-desktop-electron/README.md",
     "apps/vela-desktop-electron/electron/main.ts",
     "apps/vela-desktop-electron/electron/preload.ts",
+    "apps/vela-desktop-electron/electron/session-preview/session-preview-window-metrics.ts",
     "apps/vela-desktop-electron/electron/work-monitor/work-monitor-window-manager.ts",
     "apps/vela-desktop-electron/src/DesktopApp.tsx",
+    "apps/vela-desktop-electron/src/session-preview/SessionPreviewWindowContent.tsx",
     "apps/vela-desktop-electron/src/work-monitor/WorkMonitorRoot.tsx",
     "packages/vela-chat-controller/README.md",
     "packages/vela-chat-controller/src/useVelaChatSession.ts",
@@ -271,6 +273,11 @@ test("session work monitor keeps host windowing separate from thumbnail renderin
     join(root, "apps/vela-desktop-electron/electron/work-monitor/README.md"),
     "utf8",
   );
+  const sessionPreviewMain = readFiles(
+    listSourceFiles(join(root, "apps/vela-desktop-electron/electron/session-preview"))
+      .filter((path) => /\.(ts|tsx)$/.test(path))
+      .map((path) => path.slice(root.length + 1)),
+  );
   const rendererMain = readFileSync(
     join(root, "apps/vela-desktop-electron/src/main.tsx"),
     "utf8",
@@ -280,8 +287,13 @@ test("session work monitor keeps host windowing separate from thumbnail renderin
       .filter((path) => /\.(ts|tsx)$/.test(path))
       .map((path) => path.slice(root.length + 1)),
   );
-  const workMonitorCss = readFileSync(
-    join(root, "apps/vela-desktop-electron/src/work-monitor/work-monitor.module.css"),
+  const rendererSessionPreview = readFiles(
+    listSourceFiles(join(root, "apps/vela-desktop-electron/src/session-preview"))
+      .filter((path) => /\.(ts|tsx|css)$/.test(path))
+      .map((path) => path.slice(root.length + 1)),
+  );
+  const sessionPreviewCss = readFileSync(
+    join(root, "apps/vela-desktop-electron/src/session-preview/session-preview.module.css"),
     "utf8",
   );
   const electronMain = readFileSync(
@@ -299,21 +311,23 @@ test("session work monitor keeps host windowing separate from thumbnail renderin
   assert.match(workMonitorMain, /window\.webContents !== sender/);
   assert.match(workMonitorMain, /setPosition\(/);
   assert.match(workMonitorMain, /alwaysOnTop/);
-  assert.match(workMonitorMain, /width:\s*214/);
-  assert.match(workMonitorMain, /height:\s*134/);
+  assert.match(workMonitorMain, /sessionPreviewWindowSize/);
+  assert.doesNotMatch(workMonitorMain, /const workMonitorSize/);
+  assert.match(sessionPreviewMain, /width:\s*214/);
+  assert.match(sessionPreviewMain, /height:\s*134/);
   assert.match(workMonitorMain, /hasShadow:\s*false/);
   assert.match(workMonitorMain, /setHasShadow\(false\)/);
   assert.match(workMonitorMain, /window: "work-monitor"/);
   assert.doesNotMatch(workMonitorMain, /React/);
   assert.doesNotMatch(workMonitorMain, /ChatSurface/);
   assert.doesNotMatch(workMonitorMain, /useVelaChatSession/);
-  assert.match(workMonitorCss, /padding:\s*2px/);
-  assert.match(workMonitorCss, /border-radius:\s*14px/);
-  assert.match(workMonitorCss, /0 1px 2px rgb\(15 23 42 \/ 18%\)/);
-  assert.match(workMonitorCss, /\.workMonitorTitle/);
-  assert.match(workMonitorCss, /text-overflow:\s*ellipsis/);
-  assert.match(workMonitorCss, /pointer-events:\s*none/);
-  assert.doesNotMatch(workMonitorCss, /0 28px 90px/);
+  assert.match(sessionPreviewCss, /padding:\s*2px/);
+  assert.match(sessionPreviewCss, /border-radius:\s*14px/);
+  assert.match(sessionPreviewCss, /0 1px 2px rgb\(15 23 42 \/ 18%\)/);
+  assert.match(sessionPreviewCss, /\.sessionPreviewTitle/);
+  assert.match(sessionPreviewCss, /text-overflow:\s*ellipsis/);
+  assert.match(sessionPreviewCss, /pointer-events:\s*none/);
+  assert.doesNotMatch(sessionPreviewCss, /0 28px 90px/);
   assert.match(workMonitorReadme, /local session work-monitor window lifecycle/);
   assert.match(workMonitorReadme, /same display as the main desktop window/);
   assert.match(workMonitorReadme, /must not import React/);
@@ -322,7 +336,8 @@ test("session work monitor keeps host windowing separate from thumbnail renderin
   assert.match(rendererMain, /windowKind === "work-monitor"/);
   assert.match(rendererMain, /WorkMonitorRoot/);
   assert.match(rendererWorkMonitor, /useVelaChatSession/);
-  assert.match(rendererWorkMonitor, /ConversationPreviewSurface/);
+  assert.match(rendererWorkMonitor, /SessionPreviewWindowContent/);
+  assert.match(rendererWorkMonitor, /SessionPreviewStatus/);
   assert.match(rendererWorkMonitor, /controller\.model/);
   assert.match(rendererWorkMonitor, /controller\.followOutputToken/);
   assert.match(rendererWorkMonitor, /followOutputToken=\{followOutputToken\}/);
@@ -331,16 +346,19 @@ test("session work monitor keeps host windowing separate from thumbnail renderin
   assert.match(rendererWorkMonitor, /vela\.work_monitor\.bottom_anchor\.mode/);
   assert.match(rendererWorkMonitor, /client\.getSession\(sessionId\)/);
   assert.match(rendererWorkMonitor, /session\.title\.trim\(\)/);
-  assert.match(rendererWorkMonitor, /workMonitorTitle/);
   assert.match(rendererWorkMonitor, /moveWorkMonitorBy/);
   assert.match(rendererWorkMonitor, /onPointerDown/);
   assert.match(rendererWorkMonitor, /WORK_MONITOR_DRAG_THRESHOLD_PX/);
   assert.match(rendererWorkMonitor, /suppressNextOpenRef/);
-  assert.match(rendererWorkMonitor, /scale=\{0\.25\}/);
+  assert.match(rendererSessionPreview, /ConversationPreviewSurface/);
+  assert.match(rendererSessionPreview, /SESSION_PREVIEW_SCALE = 0\.25/);
+  assert.match(rendererSessionPreview, /scale=\{SESSION_PREVIEW_SCALE\}/);
+  assert.match(rendererSessionPreview, /sessionPreviewTitle/);
   assert.match(rendererWorkMonitor, /historyPolicy: "tail_only"/);
   assert.doesNotMatch(rendererWorkMonitor, /buildChatThumbnailModel/);
   assert.doesNotMatch(rendererWorkMonitor, /SessionThumbnailSurface/);
   assert.doesNotMatch(rendererWorkMonitor, /ChatSurface/);
+  assert.doesNotMatch(rendererWorkMonitor, /ConversationPreviewSurface/);
   assert.doesNotMatch(rendererWorkMonitor, /BrowserWindow/);
 });
 
@@ -398,9 +416,19 @@ test("session drag preview is a transient native Electron window, not a sidebar 
       .filter((path) => /\.(ts|tsx)$/.test(path))
       .map((path) => path.slice(root.length + 1)),
   );
+  const sessionPreviewMain = readFiles(
+    listSourceFiles(join(root, "apps/vela-desktop-electron/electron/session-preview"))
+      .filter((path) => /\.(ts|tsx)$/.test(path))
+      .map((path) => path.slice(root.length + 1)),
+  );
   const dragPreviewRenderer = readFiles(
     listSourceFiles(join(root, "apps/vela-desktop-electron/src/session-drag-preview"))
       .filter((path) => /\.(ts|tsx)$/.test(path))
+      .map((path) => path.slice(root.length + 1)),
+  );
+  const sessionPreviewRenderer = readFiles(
+    listSourceFiles(join(root, "apps/vela-desktop-electron/src/session-preview"))
+      .filter((path) => /\.(ts|tsx|css)$/.test(path))
       .map((path) => path.slice(root.length + 1)),
   );
   const sessionListSurface = readFileSync(
@@ -418,6 +446,10 @@ test("session drag preview is a transient native Electron window, not a sidebar 
   assert.match(dragPreviewMain, /showInactive\(\)/);
   assert.match(dragPreviewMain, /screen\.getDisplayNearestPoint/);
   assert.match(dragPreviewMain, /setBounds\(/);
+  assert.match(dragPreviewMain, /sessionPreviewWindowSize/);
+  assert.doesNotMatch(dragPreviewMain, /292|184/);
+  assert.match(sessionPreviewMain, /width:\s*214/);
+  assert.match(sessionPreviewMain, /height:\s*134/);
   assert.doesNotMatch(dragPreviewMain, /React|useVelaChatSession|ConversationPreviewSurface/);
   assert.match(electronMain, /SessionDragPreviewWindowManager/);
   assert.match(electronMain, /vela:session-drag-preview-start/);
@@ -432,9 +464,16 @@ test("session drag preview is a transient native Electron window, not a sidebar 
   assert.match(rendererMain, /windowKind === "session-drag-preview"/);
   assert.match(rendererMain, /SessionDragPreviewRoot/);
   assert.match(dragPreviewRenderer, /useVelaChatSession/);
-  assert.match(dragPreviewRenderer, /ConversationPreviewSurface/);
+  assert.match(dragPreviewRenderer, /client\.getSession\(sessionId\)/);
+  assert.match(dragPreviewRenderer, /session\.title\.trim\(\)/);
+  assert.match(dragPreviewRenderer, /SessionPreviewWindowContent/);
+  assert.match(dragPreviewRenderer, /SessionPreviewStatus/);
   assert.match(dragPreviewRenderer, /historyPolicy: "tail_only"/);
-  assert.match(dragPreviewRenderer, /scale=\{0\.34\}/);
+  assert.doesNotMatch(dragPreviewRenderer, /scale=\{0\.34\}|ConversationPreviewSurface/);
+  assert.match(sessionPreviewRenderer, /ConversationPreviewSurface/);
+  assert.match(sessionPreviewRenderer, /SESSION_PREVIEW_SCALE = 0\.25/);
+  assert.match(sessionPreviewRenderer, /scale=\{SESSION_PREVIEW_SCALE\}/);
+  assert.match(sessionPreviewRenderer, /sessionPreviewTitle/);
   assert.doesNotMatch(dragPreviewRenderer, /BrowserWindow|ipcRenderer/);
   assert.match(sessionListSurface, /onSessionDragPreviewStart/);
   assert.doesNotMatch(sessionListSurface, /data-slot="session-drag-preview"/);

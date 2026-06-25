@@ -11,6 +11,10 @@ The window hosts the reusable web thumbnail surface through the renderer bundle.
 It does not perform screenshots, offscreen bitmap rendering, or native screen
 capture.
 
+Native window metrics are shared with the session drag preview through
+`apps/vela-desktop-electron/electron/session-preview`; only placement policy
+belongs here.
+
 When multiple displays are connected, the monitor is positioned by the Electron
 main process on the same display as the main desktop window. Renderer code must
 not read screen coordinates or decide native window placement.

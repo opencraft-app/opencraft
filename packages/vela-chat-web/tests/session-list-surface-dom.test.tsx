@@ -487,6 +487,7 @@ test("dragging a session row emits host preview events without selecting", async
           screenY: 390,
         }),
       );
+      await waitForAnimationFrame();
     });
 
     assert.deepEqual(previewEvents, [
@@ -529,6 +530,12 @@ test("dragging a session row emits host preview events without selecting", async
 function waitForHoverCardDelay() {
   return new Promise<void>((resolve) => {
     window.setTimeout(resolve, 820);
+  });
+}
+
+function waitForAnimationFrame() {
+  return new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => resolve());
   });
 }
 

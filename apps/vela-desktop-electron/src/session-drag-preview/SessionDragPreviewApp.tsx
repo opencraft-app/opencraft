@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   createFetchVelaEventStreamTransport,
   createVeladClient,
@@ -6,10 +6,12 @@ import {
 } from "../../../../packages/vela-chat-client/src";
 import { useVelaChatSession } from "../../../../packages/vela-chat-controller/src";
 import { type ChatHostPolicy } from "../../../../packages/vela-chat-render-model/src";
-import { ConversationPreviewSurface } from "../../../../packages/vela-chat-web/src";
 import { VelaLocalTracer } from "../../../../packages/vela-observability-client/src";
 import type { RuntimeHostInfo } from "../desktopBridge";
-import styles from "./session-drag-preview.module.css";
+import {
+  SessionPreviewStatus,
+  SessionPreviewWindowContent,
+} from "../session-preview";
 
 const SESSION_DRAG_PREVIEW_HOST_POLICY = { kind: "desktop_shell" } satisfies ChatHostPolicy;
 
@@ -19,6 +21,7 @@ export interface SessionDragPreviewAppProps {
 }
 
 export function SessionDragPreviewApp({ hostInfo, sessionId }: SessionDragPreviewAppProps) {
+  const [sessionTitle, setSessionTitle] = useState(sessionId);
   const observability = useMemo(
     () =>
       new VelaLocalTracer({
@@ -37,6 +40,21 @@ export function SessionDragPreviewApp({ hostInfo, sessionId }: SessionDragPrevie
     () => createFetchVelaEventStreamTransport(veladFetch, { observability }),
     [observability, veladFetch],
   );
+  useEffect(() => {
+    let cancelled = false;
+    setSessionTitle(sessionId);
+    void client.getSession(sessionId).then(
+      ({ session }) => {
+        if (!cancelled) setSessionTitle(session.title.trim() || sessionId);
+      },
+      () => {
+        if (!cancelled) setSessionTitle(sessionId);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [client, sessionId]);
   const controller = useVelaChatSession({
     client,
     baseUrl: hostInfo.apiBaseUrl,
@@ -49,19 +67,18 @@ export function SessionDragPreviewApp({ hostInfo, sessionId }: SessionDragPrevie
   });
 
   return (
-    <main className={styles.sessionDragPreviewApp}>
-      {controller.error ? (
-        <div className={styles.sessionDragPreviewStatus} role="alert">
-          <span>Preview failed</span>
-          <strong>{controller.error}</strong>
-        </div>
-      ) : (
-        <ConversationPreviewSurface
-          followOutputToken={controller.followOutputToken}
-          model={controller.model}
-          scale={0.34}
-        />
-      )}
-    </main>
+    controller.error ? (
+      <SessionPreviewStatus
+        label="Preview failed"
+        role="alert"
+        value={controller.error}
+      />
+    ) : (
+      <SessionPreviewWindowContent
+        followOutputToken={controller.followOutputToken}
+        model={controller.model}
+        title={sessionTitle}
+      />
+    )
   );
 }

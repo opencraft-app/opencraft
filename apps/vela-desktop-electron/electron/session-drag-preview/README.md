@@ -10,3 +10,7 @@ The sidebar renderer reports session drag intent with screen coordinates. This
 main-process layer turns that intent into a small transparent always-on-top
 window that follows the pointer. The renderer bundle loaded inside the window
 owns the read-model and visual thumbnail.
+
+The native window size is shared with the work monitor through
+`apps/vela-desktop-electron/electron/session-preview`; this folder may only own
+pointer-follow placement and lifecycle.

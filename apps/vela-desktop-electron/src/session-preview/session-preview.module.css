@@ -1,27 +1,26 @@
-.workMonitorApp {
+.sessionPreviewApp {
   display: grid;
   width: 100vw;
   height: 100vh;
   place-items: center;
   overflow: hidden;
-  background: transparent;
   box-sizing: border-box;
   padding: 2px;
+  background: transparent;
   -webkit-app-region: drag;
   user-select: none;
 }
 
-.workMonitorApp button,
-.workMonitorApp [role="button"],
-.workMonitorPreview {
+.sessionPreviewApp [role="button"],
+.sessionPreviewFrame {
   -webkit-app-region: no-drag;
 }
 
-.workMonitorPreview {
+.sessionPreviewFrame {
   position: relative;
 }
 
-.workMonitorTitle {
+.sessionPreviewTitle {
   position: absolute;
   top: 8px;
   left: 46px;
@@ -47,8 +46,7 @@
   white-space: nowrap;
 }
 
-.workMonitorLoading,
-.workMonitorError {
+.sessionPreviewStatus {
   display: grid;
   width: min(100%, 380px);
   min-height: 150px;
@@ -72,14 +70,13 @@
   text-align: left;
 }
 
-.workMonitorError {
+.sessionPreviewStatus[role="button"] {
   border: 1px solid rgb(239 68 68 / 22%);
   background: rgb(255 241 241 / 96%);
   cursor: pointer;
 }
 
-.workMonitorLoading span,
-.workMonitorError span {
+.sessionPreviewStatus span {
   color: #8a8178;
   font-size: 13px;
   font-weight: 650;
@@ -87,8 +84,7 @@
   text-transform: uppercase;
 }
 
-.workMonitorLoading strong,
-.workMonitorError strong {
+.sessionPreviewStatus strong {
   display: -webkit-box;
   overflow: hidden;
   color: #2d2a27;

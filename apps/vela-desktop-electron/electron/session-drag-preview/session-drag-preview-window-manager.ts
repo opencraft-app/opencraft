@@ -1,4 +1,5 @@
 import { BrowserWindow, screen, type Rectangle } from "electron";
+import { sessionPreviewWindowSize } from "../session-preview";
 
 export interface SessionDragPreviewWindowManagerOptions {
   loadRenderer: (
@@ -12,11 +13,6 @@ export interface SessionDragPreviewPoint {
   screenX: number;
   screenY: number;
 }
-
-const sessionDragPreviewSize = {
-  width: 292,
-  height: 184,
-};
 
 const sessionDragPreviewOffset = {
   x: 18,
@@ -81,8 +77,8 @@ export class SessionDragPreviewWindowManager {
     window.setBounds(
       {
         ...position,
-        width: sessionDragPreviewSize.width,
-        height: sessionDragPreviewSize.height,
+        width: sessionPreviewWindowSize.width,
+        height: sessionPreviewWindowSize.height,
       },
       false,
     );
@@ -112,10 +108,10 @@ export class SessionDragPreviewWindowManager {
   private ensureWindow() {
     if (this.window && !this.window.isDestroyed()) return this.window;
     const window = new BrowserWindow({
-      width: sessionDragPreviewSize.width,
-      height: sessionDragPreviewSize.height,
-      minWidth: sessionDragPreviewSize.width,
-      minHeight: sessionDragPreviewSize.height,
+      width: sessionPreviewWindowSize.width,
+      height: sessionPreviewWindowSize.height,
+      minWidth: sessionPreviewWindowSize.width,
+      minHeight: sessionPreviewWindowSize.height,
       frame: false,
       hasShadow: false,
       resizable: false,
@@ -155,11 +151,19 @@ function sessionDragPreviewPosition(point: SessionDragPreviewPoint): Pick<Rectan
     y: Math.round(point.screenY),
   });
   const workArea = display.workArea;
-  const maxX = workArea.x + Math.max(0, workArea.width - sessionDragPreviewSize.width);
-  const maxY = workArea.y + Math.max(0, workArea.height - sessionDragPreviewSize.height);
+  const maxX = workArea.x + Math.max(0, workArea.width - sessionPreviewWindowSize.width);
+  const maxY = workArea.y + Math.max(0, workArea.height - sessionPreviewWindowSize.height);
   return {
-    x: clamp(Math.round(point.screenX + sessionDragPreviewOffset.x), workArea.x + screenInsetPx, maxX - screenInsetPx),
-    y: clamp(Math.round(point.screenY + sessionDragPreviewOffset.y), workArea.y + screenInsetPx, maxY - screenInsetPx),
+    x: clamp(
+      Math.round(point.screenX + sessionDragPreviewOffset.x),
+      workArea.x + screenInsetPx,
+      maxX - screenInsetPx,
+    ),
+    y: clamp(
+      Math.round(point.screenY + sessionDragPreviewOffset.y),
+      workArea.y + screenInsetPx,
+      maxY - screenInsetPx,
+    ),
   };
 }
 

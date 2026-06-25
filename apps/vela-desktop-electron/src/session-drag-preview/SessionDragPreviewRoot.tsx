@@ -3,8 +3,8 @@ import {
   readRuntimeBootstrap,
   type RuntimeBootstrap,
 } from "../desktopBridge";
+import { SessionPreviewStatus } from "../session-preview";
 import { SessionDragPreviewApp } from "./SessionDragPreviewApp";
-import styles from "./session-drag-preview.module.css";
 
 export interface SessionDragPreviewRootProps {
   sessionId: string;
@@ -44,11 +44,10 @@ export function SessionDragPreviewRoot({ sessionId }: SessionDragPreviewRootProp
 
 function PreviewStatus({ label, value }: { label: string; value: string }) {
   return (
-    <main className={styles.sessionDragPreviewApp}>
-      <div className={styles.sessionDragPreviewStatus}>
-        <span>{label}</span>
-        <strong>{value}</strong>
-      </div>
-    </main>
+    <SessionPreviewStatus
+      label={label}
+      role={label.includes("failed") || label.includes("unavailable") ? "alert" : "status"}
+      value={value}
+    />
   );
 }

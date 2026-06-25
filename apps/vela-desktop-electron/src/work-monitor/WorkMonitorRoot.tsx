@@ -3,8 +3,8 @@ import {
   readRuntimeBootstrap,
   type RuntimeBootstrap,
 } from "../desktopBridge";
+import { SessionPreviewStatus } from "../session-preview";
 import { WorkMonitorApp } from "./WorkMonitorApp";
-import styles from "./work-monitor.module.css";
 
 export interface WorkMonitorRootProps {
   sessionId: string;
@@ -28,12 +28,11 @@ export function WorkMonitorRoot({ sessionId }: WorkMonitorRootProps) {
 
   if (!sessionId.trim()) {
     return (
-      <main className={styles.workMonitorApp}>
-        <div className={styles.workMonitorError} role="alert">
-          <span>Monitor unavailable</span>
-          <strong>Missing session id</strong>
-        </div>
-      </main>
+      <SessionPreviewStatus
+        label="Monitor unavailable"
+        role="alert"
+        value="Missing session id"
+      />
     );
   }
 
@@ -42,13 +41,10 @@ export function WorkMonitorRoot({ sessionId }: WorkMonitorRootProps) {
   }
 
   return (
-    <main className={styles.workMonitorApp}>
-      <div className={styles.workMonitorLoading} data-state={bootstrap.status}>
-        <span>{bootstrap.status === "starting" ? "Connecting" : "Monitor failed"}</span>
-        <strong>
-          {bootstrap.status === "starting" ? bootstrap.message : bootstrap.error}
-        </strong>
-      </div>
-    </main>
+    <SessionPreviewStatus
+      label={bootstrap.status === "starting" ? "Connecting" : "Monitor failed"}
+      role={bootstrap.status === "starting" ? "status" : "alert"}
+      value={bootstrap.status === "starting" ? bootstrap.message : bootstrap.error}
+    />
   );
 }
