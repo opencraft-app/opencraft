@@ -392,7 +392,7 @@ body {
   position: relative;
   z-index: 6;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   min-height: 92px;
   padding: 18px var(--vela-chat-topbar-base-padding-right) 18px var(--vela-chat-topbar-leading-padding);
@@ -421,8 +421,7 @@ body {
   pointer-events: none;
 }
 
-.vela-chat-topbar-title-group,
-.vela-chat-topbar-actions {
+.vela-chat-topbar-title-group {
   display: inline-flex;
   min-width: 0;
   align-items: center;
@@ -459,7 +458,7 @@ body {
 }
 
 .vela-chat-topbar-title-line {
-  gap: 10px;
+  gap: 0;
 }
 
 .vela-chat-topbar-title {
@@ -475,67 +474,6 @@ body {
   white-space: nowrap;
 }
 
-.vela-chat-topbar-actions {
-  justify-self: end;
-  gap: 18px;
-  color: #81858b;
-}
-
-.vela-chat-topbar-icon-button,
-.vela-chat-topbar-backend-button {
-  appearance: none;
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  background: transparent;
-  color: #858a91;
-  cursor: default;
-}
-
-.vela-chat-topbar-icon-button {
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
-  padding: 0;
-}
-
-.vela-chat-topbar-more {
-  width: 30px;
-  height: 30px;
-  color: #8a8e94;
-}
-
-.vela-chat-topbar-backend-button {
-  min-width: 84px;
-  height: 44px;
-  gap: 10px;
-  border: 1px solid rgba(60, 60, 67, 0.1);
-  border-radius: 13px;
-  padding: 0 14px;
-  background: color-mix(in srgb, #ffffff 86%, #f5f5f4);
-  box-shadow:
-    0 1px 2px rgb(15 23 42 / 4%),
-    inset 0 1px 0 rgb(255 255 255 / 74%);
-}
-
-.vela-chat-topbar-icon-button:hover,
-.vela-chat-topbar-backend-button:hover {
-  background: rgba(0, 0, 0, 0.045);
-  color: #2f3338;
-}
-
-.vela-chat-topbar-backend-button:hover {
-  background: color-mix(in srgb, #ffffff 78%, #eceef0);
-}
-
-.vela-chat-topbar-icon-button:focus-visible,
-.vela-chat-topbar-backend-button:focus-visible {
-  outline: 2px solid rgba(45, 127, 249, 0.36);
-  outline-offset: 2px;
-}
-
 .vela-chat-topbar svg {
   stroke: currentColor;
   stroke-linecap: round;
@@ -549,18 +487,6 @@ body {
     min-height: 76px;
   }
 
-  .vela-chat-topbar-actions {
-    gap: 7px;
-  }
-
-  .vela-chat-topbar-backend-button {
-    min-width: 56px;
-    padding: 0 10px;
-  }
-
-  .vela-chat-topbar-actions .vela-chat-topbar-icon-button:nth-last-child(-n + 2) {
-    display: none;
-  }
 }
 
 .new-session-btn,
@@ -999,7 +925,7 @@ body {
   color: #bcc1c8;
 }
 
-.vela-session-actions-trigger {
+.vela-session-archive-action {
   position: absolute;
   top: 9px;
   right: 6px;
@@ -1020,15 +946,14 @@ body {
     opacity 90ms ease;
 }
 
-.vela-session-actions-trigger:hover,
-.vela-session-actions-trigger[aria-expanded="true"] {
+.vela-session-archive-action:hover,
+.vela-session-archive-action:focus-visible {
   background: rgba(123, 127, 133, 0.12);
   color: #5f656b;
 }
 
-.vela-session-item[data-has-actions="true"]:hover .vela-session-actions-trigger,
-.vela-session-item[data-has-actions="true"]:focus-within .vela-session-actions-trigger,
-.vela-session-actions-trigger[aria-expanded="true"] {
+.vela-session-item[data-has-actions="true"]:hover .vela-session-archive-action,
+.vela-session-item[data-has-actions="true"]:focus-within .vela-session-archive-action {
   opacity: 1;
 }
 

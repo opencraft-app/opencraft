@@ -1,15 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SpanStatusCode } from "@opentelemetry/api";
-import {
-  ChevronDown,
-  Code2,
-  Columns2,
-  Folder,
-  ListChecks,
-  MoreHorizontal,
-  PanelRight,
-  RectangleHorizontal,
-} from "lucide-react";
+import { Folder } from "lucide-react";
 import {
   createFetchVelaEventStreamTransport,
   createVeladClient,
@@ -571,11 +562,8 @@ function DesktopReadyApp({
       ) : mainView === "chat" && activeSessionId ? (
         <div className="vela-chat-page">
           <DesktopChatTopbar
-            isSidebarVisible={isSidebarVisible}
             locationInfo={activeSessionLocationInfo}
             title={activeSessionTitle}
-            onOpenSettings={() => setIsSettingsOpen(true)}
-            onToggleSidebar={() => onSidebarVisibilityChange(!isSidebarVisible)}
           />
           <ChatSurface
             canLoadOlder={controller.canLoadOlder}
@@ -626,17 +614,11 @@ function DesktopReadyApp({
 interface DesktopChatTopbarProps {
   title: string;
   locationInfo: SessionLocationInfo | null;
-  isSidebarVisible: boolean;
-  onOpenSettings: () => void;
-  onToggleSidebar: () => void;
 }
 
 function DesktopChatTopbar({
   title,
   locationInfo,
-  isSidebarVisible,
-  onOpenSettings,
-  onToggleSidebar,
 }: DesktopChatTopbarProps) {
   return (
     <header className="vela-chat-topbar" data-window-drag-region="true">
@@ -653,60 +635,7 @@ function DesktopChatTopbar({
         ) : null}
         <div className="vela-chat-topbar-title-line">
           <h1 className="vela-chat-topbar-title">{title}</h1>
-          <button
-            type="button"
-            className="vela-chat-topbar-icon-button vela-chat-topbar-more"
-            aria-label="More chat actions"
-            title="More"
-          >
-            <MoreHorizontal size={22} strokeWidth={2.5} />
-          </button>
         </div>
-      </div>
-      <div className="vela-chat-topbar-actions" role="toolbar" aria-label="Chat view controls">
-        <button
-          type="button"
-          className="vela-chat-topbar-backend-button"
-          aria-label="Agent backend"
-          title="Agent backend"
-          onClick={onOpenSettings}
-        >
-          <Code2 size={22} strokeWidth={2.45} />
-          <ChevronDown size={17} strokeWidth={2.4} />
-        </button>
-        <button
-          type="button"
-          className="vela-chat-topbar-icon-button"
-          aria-label="Queue"
-          title="Queue"
-        >
-          <ListChecks size={23} strokeWidth={2.25} />
-        </button>
-        <button
-          type="button"
-          className="vela-chat-topbar-icon-button"
-          aria-label={isSidebarVisible ? "Hide sidebar" : "Show sidebar"}
-          title={isSidebarVisible ? "Hide sidebar" : "Show sidebar"}
-          onClick={onToggleSidebar}
-        >
-          <PanelRight size={23} strokeWidth={2.25} />
-        </button>
-        <button
-          type="button"
-          className="vela-chat-topbar-icon-button"
-          aria-label="Compact view"
-          title="Compact view"
-        >
-          <RectangleHorizontal size={23} strokeWidth={2.2} />
-        </button>
-        <button
-          type="button"
-          className="vela-chat-topbar-icon-button"
-          aria-label="Split view"
-          title="Split view"
-        >
-          <Columns2 size={23} strokeWidth={2.2} />
-        </button>
       </div>
     </header>
   );

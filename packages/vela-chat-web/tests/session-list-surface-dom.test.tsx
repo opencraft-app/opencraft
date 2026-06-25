@@ -32,7 +32,7 @@ const session: SessionListItemWire = {
   },
 };
 
-test("session list item menu archives the selected session", async () => {
+test("session list archive button archives the selected session", async () => {
   const dom = installDomRuntime();
   try {
     const { SessionListSurface } = await import("../src");
@@ -52,22 +52,13 @@ test("session list item menu archives the selected session", async () => {
       );
     });
 
-    const menuTrigger = document.querySelector<HTMLButtonElement>(
+    const archiveButton = document.querySelector<HTMLButtonElement>(
       '[aria-label="归档对话: Archive from menu"]',
     );
-    assert.ok(menuTrigger);
+    assert.ok(archiveButton);
 
     await act(async () => {
-      menuTrigger.click();
-    });
-
-    const archiveItem = document.querySelector<HTMLButtonElement>(
-      '[role="menuitem"][data-action="archive-session"]',
-    );
-    assert.ok(archiveItem);
-
-    await act(async () => {
-      archiveItem.click();
+      archiveButton.click();
     });
 
     assert.deepEqual(archivedSessionIds, [session.id]);
@@ -80,7 +71,7 @@ test("session list item menu archives the selected session", async () => {
   }
 });
 
-test("session action menu uses a portal layer outside the session item", async () => {
+test("session action menu opens from row context menu in a portal layer", async () => {
   const dom = installDomRuntime();
   try {
     const { SessionListSurface } = await import("../src");
@@ -99,13 +90,20 @@ test("session action menu uses a portal layer outside the session item", async (
       );
     });
 
-    const menuTrigger = document.querySelector<HTMLButtonElement>(
-      '[aria-label="归档对话: Archive from menu"]',
+    const row = document.querySelector<HTMLElement>(
+      '[data-slot="session-list-surface-item"]',
     );
-    assert.ok(menuTrigger);
+    assert.ok(row);
 
     await act(async () => {
-      menuTrigger.click();
+      row.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: 120,
+          clientY: 80,
+        }),
+      );
     });
 
     const menu = document.querySelector<HTMLElement>('[role="menu"][aria-label="Session actions"]');
@@ -117,6 +115,7 @@ test("session action menu uses a portal layer outside the session item", async (
     assert.equal(menu.classList.contains("vela-popover-surface"), true);
     assert.equal(menu.classList.contains("vela-session-actions-popover"), true);
     assert.equal(menu.classList.contains("vela-settings-popover"), false);
+    assert.match(menu.getAttribute("style") ?? "", /position:\s*fixed/);
 
     await act(async () => {
       root.unmount();

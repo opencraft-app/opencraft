@@ -1,6 +1,7 @@
 import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -9,13 +10,16 @@ import {
 import { createPortal } from "react-dom";
 import { Folder } from "lucide-react";
 import type { SessionListItemWire } from "../../../vela-chat-client/src";
+import type { ChatRenderModel } from "../../../vela-chat-render-model/src";
 import { useVerticalScrollbarOverlay } from "../conversation-runtime/scrollbar/useVerticalScrollbarOverlay";
 import { buildSessionListRowModel } from "../session-list/sessionListRowModel";
 import styles from "../styles/desktop.module.css";
+import { ConversationPreviewSurface } from "../thumbnail/ConversationPreviewSurface";
 
 export interface SessionListSurfaceProps {
   sessions: SessionListItemWire[];
   currentSessionId: string | null;
+  sessionPreviews?: Record<string, ChatRenderModel | undefined>;
   onArchiveSession?: (sessionId: string) => void | Promise<void>;
   onSelectSession: (sessionId: string) => void;
 }
@@ -23,6 +27,7 @@ export interface SessionListSurfaceProps {
 export function SessionListSurface({
   sessions,
   currentSessionId,
+  sessionPreviews,
   onArchiveSession,
   onSelectSession,
 }: SessionListSurfaceProps) {
@@ -53,6 +58,7 @@ export function SessionListSurface({
               key={session.id}
               session={session}
               isActive={session.id === currentSessionId}
+              previewModel={sessionPreviews?.[session.id]}
               onArchiveSession={onArchiveSession ? () => onArchiveSession(session.id) : undefined}
               onSelect={() => onSelectSession(session.id)}
             />
@@ -67,20 +73,22 @@ export function SessionListSurface({
 function SessionListSurfaceItem({
   session,
   isActive,
+  previewModel,
   onArchiveSession,
   onSelect,
 }: {
   session: SessionListItemWire;
   isActive: boolean;
+  previewModel?: ChatRenderModel;
   onArchiveSession?: () => void | Promise<void>;
   onSelect: () => void;
 }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null);
   const [menuStyle, setMenuStyle] = useState<CSSProperties | null>(null);
   const rootRef = useRef<HTMLLIElement | null>(null);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const row = buildSessionListRowModel(session);
+  const row = buildSessionListRowModel(session, previewModel);
 
   useEffect(() => {
     if (!isMenuOpen) return;
@@ -106,19 +114,16 @@ function SessionListSurfaceItem({
   }, [isMenuOpen]);
 
   useLayoutEffect(() => {
-    if (!isMenuOpen || !canUseDocument()) {
+    if (!isMenuOpen || !menuAnchor || !canUseDocument()) {
       setMenuStyle(null);
       return;
     }
 
     const updatePosition = () => {
-      const trigger = triggerRef.current;
-      if (!trigger) return;
-      const rect = trigger.getBoundingClientRect();
       setMenuStyle({
         position: "fixed",
-        top: `${rect.bottom + 6}px`,
-        left: `${Math.max(8, Math.min(rect.right - 164, window.innerWidth - 172))}px`,
+        top: `${Math.max(8, Math.min(menuAnchor.y + 6, window.innerHeight - 64))}px`,
+        left: `${Math.max(8, Math.min(menuAnchor.x, window.innerWidth - 172))}px`,
       });
     };
 
@@ -129,16 +134,37 @@ function SessionListSurfaceItem({
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     };
-  }, [isMenuOpen]);
+  }, [isMenuOpen, menuAnchor]);
 
   const archiveSession = async () => {
     setIsMenuOpen(false);
     await onArchiveSession?.();
   };
   const selectSessionFromKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== "Enter" && event.key !== " ") return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onSelect();
+      return;
+    }
+    if (event.key !== "ContextMenu" && !(event.key === "F10" && event.shiftKey)) return;
     event.preventDefault();
-    onSelect();
+    openMenuFromKeyboard();
+  };
+  const openMenuAt = (x: number, y: number) => {
+    if (!onArchiveSession) return;
+    setMenuAnchor({ x, y });
+    setIsMenuOpen(true);
+  };
+  const openMenuFromKeyboard = () => {
+    const rect = rootRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    openMenuAt(rect.right - 164, rect.top + 8);
+  };
+  const openMenuFromContext = (event: ReactMouseEvent<HTMLElement>) => {
+    if (!onArchiveSession) return;
+    event.preventDefault();
+    event.stopPropagation();
+    openMenuAt(event.clientX, event.clientY);
   };
 
   const menu = isMenuOpen ? (
@@ -183,6 +209,8 @@ function SessionListSurfaceItem({
       data-running={row.status.isRunning ? "true" : undefined}
       data-waiting={row.status.isWaiting ? "true" : undefined}
       data-failed={row.status.isFailed ? "true" : undefined}
+      data-has-thumbnail={row.status.hasThumbnail ? "true" : undefined}
+      onContextMenu={openMenuFromContext}
     >
       <div
         className="vela-sidebar-menu-button vela-session-main"
@@ -199,14 +227,38 @@ function SessionListSurfaceItem({
           <span className="vela-session-title-row">
             <span className="vela-session-title">{row.title}</span>
           </span>
-          <span className="vela-session-preview">{row.previewLabel}</span>
-          {row.locationInfo ? (
-            <span className="vela-session-location" title={row.locationInfo.path}>
-              <Folder size={12} strokeWidth={2.1} aria-hidden="true" />
-              <span>{row.locationInfo.label}</span>
-            </span>
+          {row.compactPreview ? (
+            <>
+              {row.locationInfo ? (
+                <span className="vela-session-location" title={row.locationInfo.path}>
+                  <Folder size={12} strokeWidth={2.1} aria-hidden="true" />
+                  <span>{row.locationInfo.label}</span>
+                </span>
+              ) : null}
+              <span
+                className="vela-session-thumbnail-preview"
+                data-slot="session-thumbnail-preview"
+                aria-hidden="true"
+                inert
+              >
+                <ConversationPreviewSurface
+                  model={row.compactPreview}
+                  scale={0.09}
+                />
+              </span>
+            </>
           ) : (
-            <span className="vela-session-meta">{row.metaLabel}</span>
+            <>
+              <span className="vela-session-preview">{row.previewLabel}</span>
+              {row.locationInfo ? (
+                <span className="vela-session-location" title={row.locationInfo.path}>
+                  <Folder size={12} strokeWidth={2.1} aria-hidden="true" />
+                  <span>{row.locationInfo.label}</span>
+                </span>
+              ) : (
+                <span className="vela-session-meta">{row.metaLabel}</span>
+              )}
+            </>
           )}
         </span>
         {row.rail ? (
@@ -218,18 +270,15 @@ function SessionListSurfaceItem({
       {onArchiveSession ? (
         <>
           <button
-            ref={triggerRef}
-            className="vela-session-actions-trigger"
+            className="vela-session-archive-action"
             type="button"
             aria-label={row.archiveActionLabel}
-            aria-haspopup="menu"
-            aria-expanded={isMenuOpen ? "true" : "false"}
             onClick={(event) => {
               event.stopPropagation();
-              setIsMenuOpen((current) => !current);
+              void archiveSession();
             }}
           >
-            <MoreGlyph />
+            <ArchiveGlyph />
           </button>
           {menu ? renderMenu(menu) : null}
         </>
@@ -245,19 +294,6 @@ function renderMenu(menu: JSX.Element) {
 
 function canUseDocument() {
   return typeof document !== "undefined" && typeof window !== "undefined";
-}
-
-function MoreGlyph() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M6.5 12h.01M12 12h.01M17.5 12h.01"
-        stroke="currentColor"
-        strokeWidth="3"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
 }
 
 function ArchiveGlyph() {
