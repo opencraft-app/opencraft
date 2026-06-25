@@ -25,8 +25,8 @@ test("conversation preview renders the shared conversation DOM scaled", async ()
 
   assert.match(html, /data-conversation-preview="true"/);
   assert.match(html, /data-layout="contained"/);
-  assert.match(html, /class="composerDock"/);
-  assert.match(html, /placeholder="要求后续变更"/);
+  assert.match(html, /class="[^"]*composerDock/);
+  assert.match(html, /要求后续变更/);
   assert.match(html, /data-conversation-strategy="web-plain"/);
   assert.match(html, /data-turn-kind="user_message"/);
   assert.match(html, /data-turn-kind="agent_work"/);
@@ -51,6 +51,8 @@ test("conversation preview reuses ChatSurface without Electron or custom turn re
   );
 
   assert.match(source, /ChatSurface/);
+  assert.match(source, /followOutputToken/);
+  assert.match(source, /onConversationScrollDebugChange/);
   assert.doesNotMatch(source, /VelaTurnList/);
   assert.doesNotMatch(source, /toWebChatModel/);
   assert.doesNotMatch(source, /electron|ipcRenderer|BrowserWindow/);

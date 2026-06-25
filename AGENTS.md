@@ -64,6 +64,20 @@ Important span names:
   `codex.app_server.turn_start`, `codex.app_server.turn_interrupt`, and
   `codex.app_server.permission_request`.
 
+Important local log signals:
+
+- `vela.turn.lifecycle.cancel_terminalized`: runtime accepted cancel and wrote
+  the terminal `turn.cancelled` event for the active turn.
+- `vela.turn.lifecycle.late_backend_output_suppressed`: backend produced output
+  after the turn was cancelled; runtime suppressed it so the cancelled turn is
+  not overwritten by a late terminal event.
+- `vela.turn.lifecycle.cancelled_backend_task_suppressed`: backend stream/task
+  finished with an error after the turn was cancelled; runtime suppressed it so
+  the cancelled turn is not rewritten as failed.
+- `vela.conversation.projection_invariant`: conversation projection still has
+  live work while the session activity is idle. This is an error-level signal
+  and should appear in `/api/v1/observability/recent-errors`.
+
 For packaged macOS builds, the default database is:
 
 ```bash

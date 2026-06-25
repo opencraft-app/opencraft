@@ -125,6 +125,119 @@ test("session action menu opens from row context menu in a portal layer", async 
   }
 });
 
+test("session action menu closes when clicking the owning row outside the popover", async () => {
+  const dom = installDomRuntime();
+  try {
+    const { SessionListSurface } = await import("../src");
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <SessionListSurface
+          sessions={[session]}
+          currentSessionId={session.id}
+          onSelectSession={() => {}}
+          onArchiveSession={() => {}}
+        />,
+      );
+    });
+
+    const row = document.querySelector<HTMLElement>(
+      '[data-slot="session-list-surface-item"]',
+    );
+    assert.ok(row);
+
+    await act(async () => {
+      row.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: 120,
+          clientY: 80,
+        }),
+      );
+    });
+
+    assert.notEqual(document.querySelector('[role="menu"][aria-label="Session actions"]'), null);
+
+    await act(async () => {
+      row.dispatchEvent(
+        new MouseEvent("pointerdown", {
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+
+    assert.equal(document.querySelector('[role="menu"][aria-label="Session actions"]'), null);
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("session action menu keeps open when clicking inside the popover", async () => {
+  const dom = installDomRuntime();
+  try {
+    const { SessionListSurface } = await import("../src");
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <SessionListSurface
+          sessions={[session]}
+          currentSessionId={session.id}
+          onSelectSession={() => {}}
+          onArchiveSession={() => {}}
+        />,
+      );
+    });
+
+    const row = document.querySelector<HTMLElement>(
+      '[data-slot="session-list-surface-item"]',
+    );
+    assert.ok(row);
+
+    await act(async () => {
+      row.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: 120,
+          clientY: 80,
+        }),
+      );
+    });
+
+    const menu = document.querySelector<HTMLElement>('[role="menu"][aria-label="Session actions"]');
+    assert.ok(menu);
+
+    await act(async () => {
+      menu.dispatchEvent(
+        new MouseEvent("pointerdown", {
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+
+    assert.notEqual(document.querySelector('[role="menu"][aria-label="Session actions"]'), null);
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 test("session list rows show the folder location text", async () => {
   const dom = installDomRuntime();
   try {

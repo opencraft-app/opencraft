@@ -24,7 +24,9 @@ use vela_core::{
     CommandAck, CommandId, ConversationItemKind, EventCursor, EventId, EventSource, EventType,
     PermissionMode, RejectedCommandAck, SessionId, SourceEventRange, UserMessageBlock,
 };
-use vela_observability::{ManualSpan, ObservabilityStore, TraceContext, parse_traceparent};
+use vela_observability::{
+    ManualLog, ManualSpan, ObservabilityStore, TraceContext, parse_traceparent,
+};
 use vela_projection::{
     ConversationWindowDirection, ConversationWindowError, ConversationWindowQuery,
     project_conversation, project_conversation_window, project_pending_requests,
@@ -1533,10 +1535,18 @@ where
         Ok(query) => query,
         Err(response) => return response,
     };
-    let events = match events_or_404(&state, &SessionId::from(session_id)).await {
+    let session_id = SessionId::from(session_id);
+    let events = match events_or_404(&state, &session_id).await {
         Ok(events) => events,
         Err(response) => return response,
     };
+    let session = state.store.get_session(&session_id).await.ok().flatten();
+    observe_conversation_projection_invariants(
+        state.observability.as_ref(),
+        session.as_ref(),
+        &events,
+    )
+    .await;
     let view = match project_conversation_window(&events, window_query) {
         Ok(view) => view,
         Err(ConversationWindowError::UnknownItemId(_)) => {
@@ -1599,6 +1609,66 @@ where
         "cursor": view.cursor.as_ref().map(event_cursor_value).unwrap_or_else(empty_cursor_json),
     }))
     .into_response()
+}
+
+async fn observe_conversation_projection_invariants(
+    observability: Option<&ObservabilityStore>,
+    session: Option<&StoredSession>,
+    events: &[CanonicalEvent],
+) {
+    let (Some(observability), Some(session)) = (observability, session) else {
+        return;
+    };
+    let pending_request_count = project_pending_requests(events).requests.len();
+    if session_is_running(&session.status) || pending_request_count > 0 {
+        return;
+    }
+    let conversation = project_conversation(events);
+    let live_items = conversation
+        .items
+        .iter()
+        .filter(|item| conversation_item_is_live(item.kind, item.status.as_str()))
+        .collect::<Vec<_>>();
+    let Some(first_live_item) = live_items.first() else {
+        return;
+    };
+    let message = "conversation projection has live work while session is idle";
+    let _ = observability
+        .record_log(ManualLog {
+            trace_id: None,
+            span_id: None,
+            severity: Some("ERROR".to_string()),
+            body: Some(message.to_string()),
+            session_id: Some(session.session_id.as_str().to_string()),
+            backend: Some(session.backend.as_str().to_string()),
+            error_message: Some(message.to_string()),
+            attributes: json!({
+                "vela.operation": "vela.conversation.projection_invariant",
+                "vela.session_id": session.session_id.as_str(),
+                "vela.session.status": session.status,
+                "vela.session.pending_request_count": pending_request_count,
+                "vela.conversation.live_item_count": live_items.len(),
+                "vela.conversation.first_live_item_id": first_live_item.item_id,
+                "vela.conversation.first_live_item_kind": first_live_item.kind.as_str(),
+                "vela.conversation.first_live_item_status": first_live_item.status,
+                "vela.turn_id": first_live_item.turn_id.as_ref().map(|turn_id| turn_id.as_str()),
+            }),
+            raw: json!({
+                "source": "velad",
+                "event": "conversation_projection_invariant",
+            }),
+        })
+        .await;
+}
+
+fn conversation_item_is_live(kind: ConversationItemKind, status: &str) -> bool {
+    match kind {
+        ConversationItemKind::TurnMeta => status == "running",
+        ConversationItemKind::AgentWork => status == "running" || status == "pending",
+        ConversationItemKind::AssistantMessage => status == "streaming",
+        ConversationItemKind::Status => status == "pending" || status == "streaming",
+        ConversationItemKind::UserMessage => false,
+    }
 }
 
 async fn get_requests_view<B>(

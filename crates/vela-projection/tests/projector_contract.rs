@@ -487,6 +487,35 @@ fn conversation_preserves_turn_failure_error_payload() {
 }
 
 #[test]
+fn conversation_treats_cancel_acceptance_as_cancelled_turn_terminalization() {
+    let events = vec![
+        event_at(
+            1,
+            1,
+            EventType::TURN_STARTED,
+            json!({ "turn_id": "turn_1" }),
+        ),
+        event_at(2, 2, EventType::TURN_CANCEL_ACCEPTED, json!({})),
+    ];
+
+    let conversation = project_conversation(&events);
+
+    assert_eq!(conversation.items.len(), 2);
+    assert_eq!(conversation.items[0].kind, ConversationItemKind::TurnMeta);
+    assert_eq!(conversation.items[0].status, "cancelled");
+    assert_eq!(
+        conversation.items[0].updated_at,
+        Utc.with_ymd_and_hms(2026, 6, 18, 10, 0, 2).unwrap()
+    );
+    assert_eq!(conversation.items[1].kind, ConversationItemKind::Status);
+    assert_eq!(conversation.items[1].status, "cancelled");
+    assert_eq!(
+        conversation.items[1].text.as_deref(),
+        Some("Turn cancelled")
+    );
+}
+
+#[test]
 fn conversation_coalesces_duplicate_turn_failure_status_items() {
     let events = vec![
         event_at(

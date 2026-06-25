@@ -309,6 +309,11 @@ test("session work monitor keeps host windowing separate from thumbnail renderin
   assert.match(rendererWorkMonitor, /useVelaChatSession/);
   assert.match(rendererWorkMonitor, /ConversationPreviewSurface/);
   assert.match(rendererWorkMonitor, /controller\.model/);
+  assert.match(rendererWorkMonitor, /controller\.followOutputToken/);
+  assert.match(rendererWorkMonitor, /followOutputToken=\{followOutputToken\}/);
+  assert.match(rendererWorkMonitor, /onConversationScrollDebugChange/);
+  assert.match(rendererWorkMonitor, /observability\.emitLog/);
+  assert.match(rendererWorkMonitor, /vela\.work_monitor\.bottom_anchor\.mode/);
   assert.match(rendererWorkMonitor, /client\.getSession\(sessionId\)/);
   assert.match(rendererWorkMonitor, /session\.title\.trim\(\)/);
   assert.match(rendererWorkMonitor, /workMonitorTitle/);

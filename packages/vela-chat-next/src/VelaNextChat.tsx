@@ -62,7 +62,7 @@ export function VelaNextChat({
       isRespondingToRequest={controller.isRespondingToRequest}
       isUpdatingComposerControls={controller.isUpdatingAgentConfig}
       layout="contained"
-      messageFollowToken={controller.messageFollowToken}
+      followOutputToken={controller.followOutputToken}
       model={controller.model}
       onAgentConfigChange={controller.updateAgentConfig}
       onAttachImages={controller.attachImages}

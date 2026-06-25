@@ -35,9 +35,9 @@ export interface ChatWorkbenchViewProps {
   historyPhase: "unselected" | "hydrating_history" | "ready";
   isLoadingOlder?: boolean;
   composerControls?: ComposerControlsModel;
+  followOutputToken?: number;
   isUpdatingComposerControls?: boolean;
   isRespondingToRequest?: boolean;
-  messageFollowToken?: number;
   pendingAttachments?: PromptInputAttachment[];
   queuedInputs?: QueuedComposerInputClientState[];
   showScrollInspector?: boolean;
@@ -64,9 +64,9 @@ export function ChatWorkbenchView({
   historyPhase,
   isLoadingOlder = false,
   composerControls,
+  followOutputToken,
   isUpdatingComposerControls = false,
   isRespondingToRequest = false,
-  messageFollowToken,
   pendingAttachments,
   queuedInputs,
   showScrollInspector = false,
@@ -147,10 +147,10 @@ export function ChatWorkbenchView({
             clientStateStore={clientStateStore}
             isHistoryReady={historyPhase === "ready"}
             isLoadingOlder={isLoadingOlder}
+            followOutputToken={followOutputToken}
             onLoadOlder={onLoadOlder}
             onScrollDebugChange={handleConversationScrollDebugChange}
             ref={conversationRef}
-            messageFollowToken={messageFollowToken}
             webModel={webModel}
           />
         </div>

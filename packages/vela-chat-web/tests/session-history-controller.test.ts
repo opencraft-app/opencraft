@@ -254,6 +254,104 @@ test("controller uses injected event stream transport for live session updates",
   }
 });
 
+test("controller advances follow output token and observability on live tail changes", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { useVelaChatSession } = await import(
+      "../../vela-chat-controller/src/useVelaChatSession"
+    );
+    const client = new FakeVeladClient();
+    client.replaceTailConversation(
+      "sess_follow",
+      conversationView({
+        hasOlder: false,
+        itemId: "sess_follow:tail",
+        seq: 10,
+        sessionId: "sess_follow",
+        status: "streaming",
+      }),
+    );
+    const observability = new FakeObservability();
+    const transport = new FakeEventStreamTransport();
+    const snapshots: Array<{ text: string; token: number }> = [];
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    function Probe({ sessionId }: { sessionId: string }) {
+      const controller = useVelaChatSession({
+        client,
+        eventStreamTransport: transport,
+        fetchBackends: false,
+        historyPolicy: "tail_only",
+        observability,
+        sessionId,
+      });
+      React.useEffect(() => {
+        snapshots.push({
+          text: controller.conversation?.items.at(-1)?.text ?? "",
+          token: controller.followOutputToken,
+        });
+      }, [controller.conversation, controller.followOutputToken]);
+      return React.createElement("div");
+    }
+
+    await renderSession({ React, act, root, Probe, sessionId: "sess_follow" });
+    await flushHookEffects(
+      act,
+      dom,
+      () => transport.subscribeCount === 1 && snapshots.some((snapshot) => snapshot.token > 0),
+    );
+    const initialToken = snapshots.findLast((snapshot) => snapshot.token > 0)?.token ?? 0;
+
+    await act(async () => {
+      transport.emit({
+        event_id: "evt_follow_11",
+        epoch: 1,
+        payload: {
+          delta: " live",
+          message_id: "sess_follow:tail",
+        },
+        seq: 11,
+        session_id: "sess_follow",
+        type: "assistant.message.delta",
+      });
+    });
+    await flushHookEffects(
+      act,
+      dom,
+      () =>
+        snapshots.some(
+          (snapshot) =>
+            snapshot.text === "message for sess_follow live" &&
+            snapshot.token > initialToken,
+        ),
+    );
+
+    assert.ok(
+      snapshots.at(-1)!.token > initialToken,
+      "live tail output must advance the controller follow token",
+    );
+    assert.deepEqual(
+      observability.spans.map((span) => span.name),
+      ["vela.chat.follow_output.advance", "vela.chat.follow_output.advance"],
+    );
+    assert.equal(
+      observability.logs.at(-1)?.attributes?.["vela.follow_output.reason"],
+      "tail_changed",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 test("controller treats sync reset as a full read-model resync", async () => {
   const dom = installDomRuntime();
   try {
@@ -832,6 +930,69 @@ class FakeEventStreamTransport implements VelaEventStreamTransport {
 
   emitError(error: unknown) {
     this.handlers?.onError?.(error);
+  }
+}
+
+class FakeObservability {
+  readonly logs: Array<{
+    attributes?: Record<string, unknown>;
+    body: string;
+    severityText?: string;
+  }> = [];
+  readonly spans: Array<FakeSpan> = [];
+
+  emitLog(record: {
+    attributes?: Record<string, unknown>;
+    body: string;
+    severityText?: string;
+  }) {
+    this.logs.push(record);
+  }
+
+  recordError(span: FakeSpan, error: unknown) {
+    span.error = error instanceof Error ? error.message : String(error);
+  }
+
+  startSpan(name: string, options?: { attributes?: Record<string, unknown> }) {
+    const span = new FakeSpan(name, options?.attributes ?? {});
+    this.spans.push(span);
+    return span;
+  }
+
+  traceparent(span: FakeSpan) {
+    return `00-${span.traceId}-${span.spanId}-01`;
+  }
+}
+
+class FakeSpan {
+  ended = false;
+  error: string | null = null;
+  readonly spanId = "2222222222222222";
+  readonly traceId = "11111111111111111111111111111111";
+  status: { code: number; message?: string } | null = null;
+
+  constructor(
+    readonly name: string,
+    readonly attributes: Record<string, unknown>,
+  ) {}
+
+  end() {
+    this.ended = true;
+  }
+
+  setAttribute(key: string, value: string | number | boolean) {
+    this.attributes[key] = value;
+  }
+
+  setStatus(status: { code: number; message?: string }) {
+    this.status = status;
+  }
+
+  spanContext() {
+    return {
+      spanId: this.spanId,
+      traceId: this.traceId,
+    };
   }
 }
 

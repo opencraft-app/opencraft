@@ -1,4 +1,7 @@
 use super::*;
+use vela_core::{BackendKind, EventSource, SessionId};
+use vela_observability::ObservabilityStore;
+use vela_store::SqliteEventStore;
 
 #[tokio::test]
 async fn openapi_documents_local_observability_contract() {
@@ -310,6 +313,87 @@ async fn backend_diagnostic_errors_are_queryable_with_turn_context() {
                     .is_some_and(|message| message.contains("missing field `turnId`"))
         }),
         "trace detail should keep method, thread, turn and raw error: {trace:#}"
+    );
+}
+
+#[tokio::test]
+async fn conversation_projection_mismatch_is_queryable_as_recent_error() {
+    let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
+    let session_id = SessionId::from("ses_projection_mismatch");
+    store
+        .create_session(&session_id, BackendKind::Pi, "/tmp/project")
+        .await
+        .expect("create session");
+    store
+        .append_event(
+            &session_id,
+            EventType::SESSION_CREATED,
+            EventSource::runtime("test"),
+            json!({
+                "backend": "pi",
+                "working_directory": "/tmp/project",
+                "title": "stale running turn",
+                "agent_config": {},
+                "metadata": {},
+            }),
+            None,
+        )
+        .await
+        .expect("session.created");
+    store
+        .append_event(
+            &session_id,
+            EventType::USER_MESSAGE_ACCEPTED,
+            EventSource::runtime("test"),
+            json!({ "content": "hello" }),
+            None,
+        )
+        .await
+        .expect("user.message.accepted");
+    store
+        .append_event(
+            &session_id,
+            EventType::TURN_STARTED,
+            EventSource::runtime("test"),
+            json!({ "turn_id": "turn_stale" }),
+            None,
+        )
+        .await
+        .expect("turn.started");
+
+    let observability = ObservabilityStore::connect("sqlite::memory:", None)
+        .await
+        .expect("observability");
+    let runtime = Runtime::new(store.clone(), Arc::new(MockBackendAdapter::new(Vec::new())))
+        .with_observability(observability.clone());
+    let app =
+        velad::build_app(velad::ApiState::new(store, runtime).with_observability(observability));
+
+    let (status, conversation) = get_json(
+        app.clone(),
+        "/api/v1/sessions/ses_projection_mismatch/views/conversation",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        conversation["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| { item["kind"] == "turn_meta" && item["status"] == "running" })
+    );
+
+    let (status, errors) = get_json(app, "/api/v1/observability/recent-errors?limit=10").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        errors["errors"].as_array().unwrap().iter().any(|error| {
+            error["source"] == "log"
+                && error["session_id"] == "ses_projection_mismatch"
+                && error["message"].as_str().is_some_and(|message| {
+                    message.contains("conversation projection has live work while session is idle")
+                })
+        }),
+        "projection mismatch should be visible in recent errors: {errors:#}"
     );
 }
 

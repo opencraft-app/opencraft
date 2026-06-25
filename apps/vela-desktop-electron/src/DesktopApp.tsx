@@ -293,6 +293,7 @@ function DesktopReadyApp({
     clientStateStore: hostStateStores.clientStateStore,
     eventStreamTransport,
     hostPolicy: DESKTOP_SHELL_HOST_POLICY,
+    observability,
     sessionId: activeSessionId,
   });
   const hostLabel =
@@ -571,11 +572,11 @@ function DesktopReadyApp({
             composerControls={controller.composerControls}
             draft={controller.draft}
             error={controller.error ?? error}
+            followOutputToken={controller.followOutputToken}
             historyPhase={controller.historyPhase}
             isLoadingOlder={controller.isLoadingOlder}
             isRespondingToRequest={controller.isRespondingToRequest}
             isUpdatingComposerControls={controller.isUpdatingAgentConfig}
-            messageFollowToken={controller.messageFollowToken}
             model={controller.model}
             onAgentConfigChange={controller.updateAgentConfig}
             onAttachImages={controller.attachImages}

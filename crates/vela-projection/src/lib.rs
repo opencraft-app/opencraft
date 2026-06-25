@@ -136,6 +136,28 @@ pub fn project_conversation(events: &[CanonicalEvent]) -> ConversationView {
             continue;
         }
 
+        if event.event_type == EventType::TURN_CANCEL_ACCEPTED {
+            let live_turn_id =
+                turn_id_from_payload(event).or_else(|| latest_running_turn_id(&items));
+            if live_turn_id.is_some() {
+                mark_latest_streaming_assistant_terminal(&mut items, event, "cancelled");
+                mark_agent_work_terminal_for_turn_id(
+                    &mut items,
+                    live_turn_id.as_ref(),
+                    event,
+                    "cancelled",
+                );
+                mark_turn_meta_terminal(&mut items, event, "cancelled");
+                push_turn_status(
+                    &mut items,
+                    event,
+                    "cancelled",
+                    turn_status_text(event, "Turn cancelled"),
+                );
+            }
+            continue;
+        }
+
         if let Some((work_id, title)) = agent_work_identity(event) {
             upsert_agent_work(&mut items, event, work_id, title);
         }
@@ -364,13 +386,22 @@ fn mark_agent_work_terminal_for_turn(
     event: &CanonicalEvent,
     status: &str,
 ) {
-    let Some(turn_id) = turn_id_from_payload(event) else {
+    let turn_id = turn_id_from_payload(event);
+    mark_agent_work_terminal_for_turn_id(items, turn_id.as_ref(), event, status);
+}
+
+fn mark_agent_work_terminal_for_turn_id(
+    items: &mut [ConversationItem],
+    turn_id: Option<&TurnId>,
+    event: &CanonicalEvent,
+    status: &str,
+) {
+    let Some(turn_id) = turn_id else {
         return;
     };
-
     for item in items.iter_mut().filter(|item| {
         item.kind == ConversationItemKind::AgentWork
-            && item.turn_id.as_ref() == Some(&turn_id)
+            && item.turn_id.as_ref() == Some(turn_id)
             && is_live_status(item.status.as_str())
     }) {
         item.status = status.to_string();
@@ -378,6 +409,14 @@ fn mark_agent_work_terminal_for_turn(
         item.revision += 1;
         push_source_event(item, event);
     }
+}
+
+fn latest_running_turn_id(items: &[ConversationItem]) -> Option<TurnId> {
+    items
+        .iter()
+        .rev()
+        .find(|item| item.kind == ConversationItemKind::TurnMeta && item.status == "running")
+        .and_then(|item| item.turn_id.clone())
 }
 
 fn push_turn_status(

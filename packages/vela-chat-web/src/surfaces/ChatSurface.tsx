@@ -21,9 +21,9 @@ export interface ChatSurfaceProps {
   historyPhase: "unselected" | "hydrating_history" | "ready";
   isLoadingOlder?: boolean;
   composerControls?: ComposerControlsModel;
+  followOutputToken?: number;
   isUpdatingComposerControls?: boolean;
   isRespondingToRequest?: boolean;
-  messageFollowToken?: number;
   pendingAttachments?: PromptInputAttachment[];
   queuedInputs?: QueuedComposerInputClientState[];
   showScrollInspector?: boolean;
@@ -50,9 +50,9 @@ export function ChatSurface({
   historyPhase,
   isLoadingOlder,
   composerControls,
+  followOutputToken,
   isUpdatingComposerControls,
   isRespondingToRequest,
-  messageFollowToken,
   pendingAttachments,
   queuedInputs,
   showScrollInspector,
@@ -75,12 +75,12 @@ export function ChatSurface({
       composerControls={composerControls}
       draft={draft}
       error={error}
+      followOutputToken={followOutputToken}
       historyPhase={historyPhase}
       layout={layout}
       isLoadingOlder={isLoadingOlder}
       isUpdatingComposerControls={isUpdatingComposerControls}
       isRespondingToRequest={isRespondingToRequest}
-      messageFollowToken={messageFollowToken}
       model={model}
       onAttachImages={onAttachImages}
       onAgentConfigChange={onAgentConfigChange}

@@ -852,7 +852,7 @@ test("conversation viewport exposes explicit bottom-anchor intents to the workbe
   assert.match(workbenchView, /requestBottomAnchor\("message_sent"\)/);
 });
 
-test("message sends can request bottom anchoring after the committed read model update", () => {
+test("tail output changes can request bottom anchoring after the committed read model update", () => {
   const chatSurface = readFileSync(
     join(root, "packages/vela-chat-web/src/surfaces/ChatSurface.tsx"),
     "utf8",
@@ -874,12 +874,17 @@ test("message sends can request bottom anchoring after the committed read model 
     "utf8",
   );
 
-  assert.match(chatSurface, /messageFollowToken\?:\s*number/);
-  assert.match(workbenchView, /messageFollowToken/);
-  assert.match(conversation, /messageFollowToken/);
-  assert.match(conversation, /requestBottomAnchor\("message_sent"\)/);
-  assert.match(controller, /setMessageFollowToken/);
-  assert.match(chatWorkbench, /messageFollowToken=\{controller\.messageFollowToken\}/);
+  assert.match(chatSurface, /followOutputToken\?:\s*number/);
+  assert.match(workbenchView, /followOutputToken/);
+  assert.match(conversation, /followOutputToken/);
+  assert.match(conversation, /requestBottomAnchor\("follow_output"\)/);
+  assert.match(controller, /deriveFollowOutputTailSignature/);
+  assert.match(controller, /observeFollowOutputTokenAdvance/);
+  assert.match(chatWorkbench, /followOutputToken=\{controller\.followOutputToken\}/);
+  assert.doesNotMatch(chatSurface, /messageFollowToken/);
+  assert.doesNotMatch(workbenchView, /messageFollowToken/);
+  assert.doesNotMatch(conversation, /messageFollowToken/);
+  assert.doesNotMatch(controller, /setMessageFollowToken/);
 });
 
 test("composer height is measured instead of using fixed bottom padding", () => {

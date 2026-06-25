@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import {
   createFetchVelaEventStreamTransport,
   createVeladClient,
@@ -6,6 +6,7 @@ import {
 } from "../../../../packages/vela-chat-client/src";
 import { useVelaChatSession } from "../../../../packages/vela-chat-controller/src";
 import { type ChatHostPolicy } from "../../../../packages/vela-chat-render-model/src";
+import type { ConversationScrollControllerDebug } from "../../../../packages/vela-chat-web/src/conversation-runtime/scroll/useConversationScrollController";
 import { ConversationPreviewSurface } from "../../../../packages/vela-chat-web/src";
 import { VelaLocalTracer } from "../../../../packages/vela-observability-client/src";
 import {
@@ -33,6 +34,7 @@ export interface WorkMonitorAppProps {
 
 export function WorkMonitorApp({ hostInfo, sessionId }: WorkMonitorAppProps) {
   const dragStateRef = useRef<DragState | null>(null);
+  const scrollDebugSignatureRef = useRef<string | null>(null);
   const suppressNextOpenRef = useRef(false);
   const [sessionTitle, setSessionTitle] = useState(sessionId);
   const observability = useMemo(
@@ -75,8 +77,37 @@ export function WorkMonitorApp({ hostInfo, sessionId }: WorkMonitorAppProps) {
     fetchBackends: false,
     historyPolicy: "tail_only",
     hostPolicy: WORK_MONITOR_HOST_POLICY,
+    observability,
     sessionId,
   });
+  const followOutputToken = controller.followOutputToken;
+  const setConversationScrollDebug = controller.setConversationScrollDebug;
+  const handleConversationScrollDebugChange = useCallback(
+    (debug: ConversationScrollControllerDebug) => {
+      setConversationScrollDebug(debug);
+      const signature = workMonitorScrollDebugSignature(debug, followOutputToken);
+      if (scrollDebugSignatureRef.current === signature) return;
+      scrollDebugSignatureRef.current = signature;
+      void observability.emitLog({
+        attributes: {
+          "vela.follow_output.token": followOutputToken,
+          "vela.session_id": sessionId,
+          "vela.work_monitor.bottom_anchor.mode": debug.bottomAnchorMode,
+          "vela.work_monitor.bottom_anchor.blocked_reason":
+            debug.bottomAnchorBlockedReason ?? "",
+          "vela.work_monitor.bottom_anchor.pending_reason":
+            debug.bottomAnchorPendingReason ?? "",
+          "vela.work_monitor.bottom_anchor.last_fulfilled_reason":
+            debug.bottomAnchorLastFulfilledReason ?? "",
+          "vela.work_monitor.follow_output": debug.followOutput,
+          "vela.work_monitor.route_resume_status": debug.routeResumeStatus,
+        },
+        body: "work monitor conversation scroll debug changed",
+        severityText: "INFO",
+      });
+    },
+    [followOutputToken, observability, sessionId, setConversationScrollDebug],
+  );
   const openSession = () => {
     void focusDesktopSession(sessionId);
   };
@@ -150,8 +181,10 @@ export function WorkMonitorApp({ hostInfo, sessionId }: WorkMonitorAppProps) {
       ) : (
         <div className={styles.workMonitorPreview}>
           <ConversationPreviewSurface
+            followOutputToken={followOutputToken}
             model={controller.model}
             scale={0.25}
+            onConversationScrollDebugChange={handleConversationScrollDebugChange}
             onOpenSession={handleOpenClick}
             onPointerCancel={handlePointerEnd}
             onPointerDown={handlePointerDown}
@@ -165,4 +198,22 @@ export function WorkMonitorApp({ hostInfo, sessionId }: WorkMonitorAppProps) {
       )}
     </main>
   );
+}
+
+function workMonitorScrollDebugSignature(
+  debug: ConversationScrollControllerDebug,
+  followOutputToken: number,
+) {
+  return [
+    followOutputToken,
+    debug.followOutput,
+    debug.bottomAnchorMode,
+    debug.bottomAnchorBlockedReason ?? "",
+    debug.bottomAnchorPendingReason ?? "",
+    debug.bottomAnchorLastFulfilledReason ?? "",
+    debug.routeResumeStatus,
+    debug.routeResumeScrollTop ?? "",
+    debug.lastScrollWrite?.reason ?? "",
+    debug.lastScrollWrite?.nextScrollTop ?? "",
+  ].join("|");
 }

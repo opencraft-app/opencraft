@@ -2,7 +2,7 @@ import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
-  useEffect,
+  useCallback,
   useLayoutEffect,
   useRef,
   useState,
@@ -11,6 +11,7 @@ import { createPortal } from "react-dom";
 import { Folder } from "lucide-react";
 import type { SessionListItemWire } from "../../../vela-chat-client/src";
 import type { ChatRenderModel } from "../../../vela-chat-render-model/src";
+import { useDismissableLayer } from "../../../vela-ui/src";
 import { useVerticalScrollbarOverlay } from "../conversation-runtime/scrollbar/useVerticalScrollbarOverlay";
 import { buildSessionListRowModel } from "../session-list/sessionListRowModel";
 import styles from "../styles/desktop.module.css";
@@ -89,29 +90,13 @@ function SessionListSurfaceItem({
   const rootRef = useRef<HTMLLIElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const row = buildSessionListRowModel(session, previewModel);
+  const closeMenu = useCallback(() => setIsMenuOpen(false), []);
 
-  useEffect(() => {
-    if (!isMenuOpen) return;
-
-    const onPointerDown = (event: PointerEvent) => {
-      const root = rootRef.current;
-      const menu = menuRef.current;
-      const target = event.target;
-      if (root && target instanceof Node && root.contains(target)) return;
-      if (menu && target instanceof Node && menu.contains(target)) return;
-      setIsMenuOpen(false);
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setIsMenuOpen(false);
-    };
-
-    document.addEventListener("pointerdown", onPointerDown, true);
-    document.addEventListener("keydown", onKeyDown, true);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown, true);
-      document.removeEventListener("keydown", onKeyDown, true);
-    };
-  }, [isMenuOpen]);
+  useDismissableLayer({
+    enabled: isMenuOpen,
+    refs: [menuRef],
+    onDismiss: closeMenu,
+  });
 
   useLayoutEffect(() => {
     if (!isMenuOpen || !menuAnchor || !canUseDocument()) {
@@ -137,7 +122,7 @@ function SessionListSurfaceItem({
   }, [isMenuOpen, menuAnchor]);
 
   const archiveSession = async () => {
-    setIsMenuOpen(false);
+    closeMenu();
     await onArchiveSession?.();
   };
   const selectSessionFromKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>) => {

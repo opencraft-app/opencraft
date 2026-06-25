@@ -22,6 +22,7 @@ import {
   type PendingRequestsWireView,
   type SessionWire,
   type VeladClient,
+  type VeladClientObservability,
   type VelaEventStreamTransport,
 } from "../../vela-chat-client/src";
 import {
@@ -34,7 +35,11 @@ import type { RequestDockResponse } from "../../vela-chat-web/src/components/req
 import { buildRequestResponseInputEvent } from "../../vela-chat-web/src/components/requests/requestResponses";
 import { buildComposerControlsModel } from "../../vela-chat-web/src/components/composer-controls/model";
 import type { ConversationScrollControllerDebug } from "../../vela-chat-web/src/conversation-runtime/scroll/useConversationScrollController";
-import type { ChatHostPolicy } from "../../vela-chat-render-model/src";
+import type {
+  ChatHostPolicy,
+  ChatRenderModel,
+  ChatRenderRow,
+} from "../../vela-chat-render-model/src";
 import { buildPendingImageAttachments, type PendingImageAttachment } from "./attachments";
 import { DEFAULT_VELAD_BASE_URL } from "./constants";
 import {
@@ -66,6 +71,7 @@ export interface VelaChatSessionControllerOptions {
   historyPolicy?: VelaConversationHistoryPolicy;
   eventStreamTransport?: VelaEventStreamTransport;
   fetchBackends?: boolean;
+  observability?: VeladClientObservability;
 }
 
 export interface VelaChatSessionController {
@@ -82,7 +88,7 @@ export interface VelaChatSessionController {
   isRespondingToRequest: boolean;
   isStreamConnected: boolean;
   isUpdatingAgentConfig: boolean;
-  messageFollowToken: number;
+  followOutputToken: number;
   model: ReturnType<typeof buildVelaChatControllerRenderModel>;
   pendingAttachments: PendingImageAttachment[];
   queuedInputs: QueuedComposerInputClientState[];
@@ -112,6 +118,7 @@ export function useVelaChatSession({
   historyPolicy = DEFAULT_DESKTOP_CONVERSATION_HISTORY_POLICY,
   eventStreamTransport: providedEventStreamTransport,
   fetchBackends = true,
+  observability,
 }: VelaChatSessionControllerOptions): VelaChatSessionController {
   const [conversation, setConversation] = useState<ConversationWireView | null>(null);
   const [requests, setRequests] = useState<PendingRequestsWireView | null>(null);
@@ -126,7 +133,7 @@ export function useVelaChatSession({
   const [isUpdatingAgentConfig, setIsUpdatingAgentConfig] = useState(false);
   const [isRespondingToRequest, setIsRespondingToRequest] = useState(false);
   const [isCancellingSession, setIsCancellingSession] = useState(false);
-  const [messageFollowToken, setMessageFollowToken] = useState(0);
+  const [followOutputToken, setFollowOutputToken] = useState(0);
   const [
     completedInitialHydrationSessionIds,
     setCompletedInitialHydrationSessionIds,
@@ -141,7 +148,12 @@ export function useVelaChatSession({
   const requestsRef = useRef<typeof requests>(null);
   const queuedInputsRef = useRef<QueuedComposerInputClientState[]>([]);
   const queueDrainInFlightRef = useRef(false);
+  const followOutputTokenRef = useRef(0);
   const previousRunningRef = useRef<{ sessionId: string; running: boolean } | null>(null);
+  const previousTailSignatureRef = useRef<{
+    sessionId: string;
+    signature: string | null;
+  } | null>(null);
   activeSessionIdRef.current = activeSessionId;
 
   const ownedClient = useMemo(() => createVeladClient({ baseUrl }), [baseUrl]);
@@ -525,6 +537,35 @@ export function useVelaChatSession({
     });
   }, [activeConversation, activeRequests, activeSessionId, hostPolicy, streamConnected]);
 
+  useEffect(() => {
+    if (!activeSessionId) {
+      previousTailSignatureRef.current = null;
+      return;
+    }
+
+    const nextSignature = deriveFollowOutputTailSignature(model);
+    const previous = previousTailSignatureRef.current;
+    const isNewSession = previous?.sessionId !== activeSessionId;
+    if (!isNewSession && previous?.signature === nextSignature) return;
+
+    previousTailSignatureRef.current = {
+      sessionId: activeSessionId,
+      signature: nextSignature,
+    };
+    if (!nextSignature) return;
+
+    const reason = isNewSession ? "initial_tail" : "tail_changed";
+    const nextToken = followOutputTokenRef.current + 1;
+    followOutputTokenRef.current = nextToken;
+    setFollowOutputToken(nextToken);
+    observeFollowOutputTokenAdvance(observability, {
+      reason,
+      rowCount: model.rows.length,
+      sessionId: activeSessionId,
+      token: nextToken,
+    });
+  }, [activeSessionId, model, observability]);
+
   const sendMessageContent = useCallback(async (messageContent: ClientInputPart[]) => {
     if (messageContent.length === 0 || !activeSessionId) return false;
     try {
@@ -536,7 +577,6 @@ export function useVelaChatSession({
         return false;
       }
       await refreshAll();
-      setMessageFollowToken((current) => current + 1);
       return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -743,7 +783,7 @@ export function useVelaChatSession({
     isRespondingToRequest,
     isStreamConnected: streamConnected,
     isUpdatingAgentConfig,
-    messageFollowToken,
+    followOutputToken,
     model,
     pendingAttachments,
     queuedInputs,
@@ -763,6 +803,111 @@ export function useVelaChatSession({
     stop,
     updateAgentConfig,
   };
+}
+
+export function deriveFollowOutputTailSignature(model: ChatRenderModel) {
+  const row = findFollowOutputTailRow(model.rows);
+  if (!row) return null;
+  return [
+    model.session_id,
+    row.kind,
+    readRowString(row, "id"),
+    readRowString(row, "key"),
+    readRowString(row, "status"),
+    readRowString(row, "display"),
+    readRowString(row, "createdAt"),
+    readRowString(row, "updatedAt"),
+    readRowNumber(row, "revision"),
+    readRowBoolean(row, "streaming"),
+    visibleRowTextFingerprint(row),
+  ].join("|");
+}
+
+function findFollowOutputTailRow(rows: readonly ChatRenderRow[]) {
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const row = rows[index];
+    if (row) return row;
+  }
+  return null;
+}
+
+function readRowString(row: ChatRenderRow, key: string) {
+  const value = (row as Record<string, unknown>)[key];
+  return typeof value === "string" ? value : "";
+}
+
+function readRowNumber(row: ChatRenderRow, key: string) {
+  const value = (row as Record<string, unknown>)[key];
+  return typeof value === "number" && Number.isFinite(value) ? String(value) : "";
+}
+
+function readRowBoolean(row: ChatRenderRow, key: string) {
+  const value = (row as Record<string, unknown>)[key];
+  return typeof value === "boolean" ? String(value) : "";
+}
+
+function visibleRowTextFingerprint(row: ChatRenderRow) {
+  const values: string[] = [];
+  collectVisibleRowStrings(row, values);
+  const text = values.join("\n");
+  return `${text.length}:${hashString(text)}`;
+}
+
+function collectVisibleRowStrings(value: unknown, output: string[]) {
+  if (typeof value === "string") {
+    output.push(value);
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    for (const item of value) collectVisibleRowStrings(item, output);
+    return;
+  }
+  for (const key of ["text", "label", "title", "summary"]) {
+    const candidate = (value as Record<string, unknown>)[key];
+    if (typeof candidate === "string") output.push(candidate);
+  }
+  for (const key of ["blocks", "parts", "items"]) {
+    collectVisibleRowStrings((value as Record<string, unknown>)[key], output);
+  }
+}
+
+function hashString(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function observeFollowOutputTokenAdvance(
+  observability: VeladClientObservability | undefined,
+  input: {
+    reason: "initial_tail" | "tail_changed";
+    rowCount: number;
+    sessionId: string;
+    token: number;
+  },
+) {
+  if (!observability) return;
+  const attributes = {
+    "vela.follow_output.reason": input.reason,
+    "vela.follow_output.row_count": input.rowCount,
+    "vela.follow_output.token": input.token,
+    "vela.session_id": input.sessionId,
+  };
+  const span = observability.startSpan("vela.chat.follow_output.advance", {
+    attributes,
+  });
+  span.setStatus({ code: 1 });
+  void observability.emitLog?.({
+    attributes,
+    body: "chat follow output token advanced",
+    severityText: "INFO",
+    span,
+  });
+  span.end();
 }
 
 function cloneQueueInputPart(part: ClientInputPart): ComposerQueueInputPart {

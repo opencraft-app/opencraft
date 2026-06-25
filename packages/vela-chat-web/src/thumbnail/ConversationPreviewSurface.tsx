@@ -3,6 +3,7 @@ import {
   type PointerEventHandler,
 } from "react";
 import type { ChatRenderModel } from "../../../vela-chat-render-model/src";
+import type { ConversationScrollControllerDebug } from "../conversation-runtime/scroll/useConversationScrollController";
 import { ChatSurface } from "../surfaces/ChatSurface";
 import { ScaledThumbnailCanvas } from "./ScaledThumbnailCanvas";
 import styles from "./thumbnail.module.css";
@@ -11,8 +12,10 @@ export interface ConversationPreviewSurfaceProps {
   model: ChatRenderModel;
   canvasHeight?: number;
   canvasWidth?: number;
+  followOutputToken?: number;
   scale?: number;
   onOpenSession?: () => void;
+  onConversationScrollDebugChange?: (debug: ConversationScrollControllerDebug) => void;
   onPointerCancel?: PointerEventHandler<HTMLDivElement>;
   onPointerDown?: PointerEventHandler<HTMLDivElement>;
   onPointerMove?: PointerEventHandler<HTMLDivElement>;
@@ -23,8 +26,10 @@ export function ConversationPreviewSurface({
   model,
   canvasHeight = 520,
   canvasWidth = 840,
+  followOutputToken,
   scale,
   onOpenSession,
+  onConversationScrollDebugChange,
   onPointerCancel,
   onPointerDown,
   onPointerMove,
@@ -49,9 +54,11 @@ export function ConversationPreviewSurface({
       >
         <ChatSurface
           draft=""
+          followOutputToken={followOutputToken}
           historyPhase="ready"
           layout="contained"
           model={model}
+          onConversationScrollDebugChange={onConversationScrollDebugChange}
           pendingAttachments={[]}
           onDraftChange={() => undefined}
           onSubmit={() => undefined}

@@ -530,6 +530,60 @@ async fn send_user_message_returns_ack_before_backend_turn_finishes() {
 }
 
 #[tokio::test]
+async fn cancel_backend_terminalizes_running_turn_and_ignores_late_backend_completion() {
+    let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
+    let backend = Arc::new(BlockingBackend::default());
+    let runtime = Arc::new(Runtime::new(store.clone(), backend.clone()));
+    let session_id = SessionId::from("ses_runtime_cancel_terminalizes_turn");
+    runtime
+        .create_session(session_id.clone(), BackendKind::Pi, "/tmp/vela")
+        .await
+        .expect("create session");
+    let called = backend.arm().await;
+
+    runtime
+        .send_user_message(SendUserMessage {
+            session_id: session_id.clone(),
+            idempotency_key: "idem-cancel".to_string(),
+            content: "hold".to_string(),
+            command_id: None,
+        })
+        .await
+        .expect("send");
+    called.await.expect("backend called");
+
+    runtime
+        .cancel_backend(&session_id)
+        .await
+        .expect("cancel backend");
+
+    let events = eventually_contains_event(&store, &session_id, EventType::TURN_CANCELLED).await;
+    let turn_started = events
+        .iter()
+        .find(|event| event.event_type == EventType::TURN_STARTED)
+        .expect("turn.started");
+    let turn_cancelled = events
+        .iter()
+        .find(|event| event.event_type == EventType::TURN_CANCELLED)
+        .expect("turn.cancelled");
+    assert_eq!(
+        turn_cancelled.payload["turn_id"],
+        turn_started.payload["turn_id"]
+    );
+
+    backend.release().await;
+    sleep(Duration::from_millis(50)).await;
+    let events = store.list_events(&session_id).await.expect("events");
+    assert!(
+        events
+            .iter()
+            .all(|event| event.event_type != EventType::TURN_COMPLETED
+                && event.event_type != EventType::TURN_FAILED),
+        "late backend completion must not overwrite a cancelled turn"
+    );
+}
+
+#[tokio::test]
 async fn backend_outputs_are_persisted_before_backend_stream_finishes() {
     let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
     let backend = Arc::new(StreamingBlockingBackend::default());
@@ -858,8 +912,14 @@ async fn backend_output_append_failure_records_observable_error_detail() {
         .find(|error| error.name == "velad.backend.send")
         .expect("backend send error");
     assert!(matches!(ack, CommandAck::Accepted(_)));
-    assert_eq!(backend_error.trace_id.as_deref(), Some(trace.trace_id.as_str()));
-    assert_eq!(backend_error.session_id.as_deref(), Some(session_id.as_str()));
+    assert_eq!(
+        backend_error.trace_id.as_deref(),
+        Some(trace.trace_id.as_str())
+    );
+    assert_eq!(
+        backend_error.session_id.as_deref(),
+        Some(session_id.as_str())
+    );
     assert_eq!(backend_error.backend.as_deref(), Some("pi"));
     assert!(
         backend_error
