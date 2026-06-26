@@ -27,7 +27,7 @@ HERMES_SRC_VERSION=""
 HERMES_GIT_COMMIT=""
 HERMES_QWEN_CODE_VERSION="latest"
 HERMES_ACLI_INSTALL_URL="https://example.com/acli/install.sh"
-HERMES_BACKEND_BLUEPRINT_ID_FILE="${TMPDIR}/hermes-backend-blueprint-id"
+HERMES_BACKEND_BLUEPRINT_RESOLVER="${TMPDIR}/resolve-hermes-backend-blueprint-id.py"
 SKILLHUB_INSTALL_URL="https://example.com/skillhub.sh"
 HERMES_ENV_PROFILE_PATH="${TMPDIR}/etc/profile.d/hermes-env.sh"
 HERMES_SOURCE_CACHE_DIR="${TMPDIR}/var/cache/lightclaw/hermes"
@@ -35,12 +35,17 @@ HERMES_SYSTEM_BIN_DIR="${TMPDIR}/usr-local-bin"
 HERMES_SYSTEM_LINK_DIR="${TMPDIR}/usr-bin"
 ACLI_IDENTITY_PATH="${TMPDIR}/etc/acli/identity.yaml"
 export ACLI_IDENTITY_PATH
-printf 'lhbp-8gsotw6u\n' >"${HERMES_BACKEND_BLUEPRINT_ID_FILE}"
+cat >"${HERMES_BACKEND_BLUEPRINT_RESOLVER}" <<'PY'
+#!/usr/bin/env python3
+print("lhbp-lyx28qje")
+PY
+chmod +x "${HERMES_BACKEND_BLUEPRINT_RESOLVER}"
 
 LOG_FILE="${TMPDIR}/calls.log"
 PROFILE_FILE="${HERMES_ENV_PROFILE_PATH}"
 INSTALLER_PAYLOAD="${TMPDIR}/installer-payload.sh"
 HERMES_TARBALL="${TMPDIR}/hermes-agent.tar.gz"
+LIGHTCLAWBOT_WHL="${TMPDIR}/lightclawbot-0.0.6-py3-none-any.whl"
 ACLI_BACKEND_MARKER="${TMPDIR}/acli-backend-ready"
 
 log_call() {
@@ -104,12 +109,37 @@ if [ "${1:-}" = "-c" ]; then
     exit 0
   fi
 fi
+if [ "${1:-}" = "-" ]; then
+  script="$(cat)"
+  if [[ "$script" == *"lightclawbot"* ]]; then
+    config_path="${2:-$HOME/.hermes/config.yaml}"
+    cat >"$config_path" <<'YAML'
+plugins:
+  enabled:
+  - lightclawbot
+platforms:
+  lightclawbot:
+    enabled: true
+display:
+  platforms:
+    lightclawbot:
+      streaming: true
+YAML
+    exit 0
+  fi
+fi
 exit 0
 INNER
 chmod +x "$HOME/.hermes/hermes-agent/venv/bin/hermes-agent"
 chmod +x "$HOME/.hermes/hermes-agent/venv/bin/hermes"
 chmod +x "$HOME/.hermes/hermes-agent/venv/bin/python"
 chmod +x "$HOME/.hermes/bin/uv"
+mkdir -p "$HOME/.hermes/skills/software-development/plan" \
+  "$HOME/.hermes/skills/software-development/noisy-skill" \
+  "$HOME/.hermes/skills/empty-category"
+printf 'keep\n' >"$HOME/.hermes/skills/software-development/plan/SKILL.md"
+printf 'remove\n' >"$HOME/.hermes/skills/software-development/noisy-skill/SKILL.md"
+printf 'description\n' >"$HOME/.hermes/skills/empty-category/DESCRIPTION.md"
 exit 0
 EOF
 python3 - "${INSTALLER_PAYLOAD}" "${LOG_FILE}" <<'PY'
@@ -140,7 +170,58 @@ cat >"${TMPDIR}/hermes-src/hermes-agent/scripts/whatsapp-bridge/package.json" <<
 EOF
 tar -czf "${HERMES_TARBALL}" -C "${TMPDIR}/hermes-src" hermes-agent
 
+mkdir -p "${TMPDIR}/lightclawbot-wheel/lightclawbot/src"
+cat >"${TMPDIR}/lightclawbot-wheel/lightclawbot/__init__.py" <<'EOF'
+def register(ctx):
+    return None
+EOF
+cat >"${TMPDIR}/lightclawbot-wheel/lightclawbot/plugin.yaml" <<'EOF'
+name: lightclawbot
+kind: platform
+version: 0.0.6
+requires_env:
+  - LIGHTCLAW_API_KEY_${UIN}
+EOF
+cat >"${TMPDIR}/lightclawbot-wheel/lightclawbot/src/__init__.py" <<'EOF'
+EOF
+python3 - "${LIGHTCLAWBOT_WHL}" "${TMPDIR}/lightclawbot-wheel" <<'PY'
+import os
+import sys
+import zipfile
+
+wheel_path, root = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(wheel_path, "w") as zf:
+    for dirpath, _, filenames in os.walk(root):
+        for filename in filenames:
+            path = os.path.join(dirpath, filename)
+            zf.write(path, os.path.relpath(path, root))
+PY
+
 curl() {
+  local output="" url="" prev=""
+  for arg in "$@"; do
+    if [[ "${prev}" == "-o" ]]; then
+      output="${arg}"
+    fi
+    if [[ "${arg}" == http* ]]; then
+      url="${arg}"
+    fi
+    prev="${arg}"
+  done
+  if [[ "${url}" == "${HERMES_PYPI_INDEX_URL%/}/lightclawbot/" && -n "${output}" ]]; then
+    cat >"${output}" <<'EOF'
+<html><body>
+<a href="lightclawbot-0.0.6-py3-none-any.whl">lightclawbot-0.0.6-py3-none-any.whl</a>
+</body></html>
+EOF
+    log_call "curl-lightclawbot-index"
+    return 0
+  fi
+  if [[ "${url}" == "${HERMES_PYPI_INDEX_URL%/}/lightclawbot/lightclawbot-0.0.6-py3-none-any.whl" && -n "${output}" ]]; then
+    cp "${LIGHTCLAWBOT_WHL}" "${output}"
+    log_call "curl-lightclawbot-wheel ${output}"
+    return 0
+  fi
   if [[ "${1:-}" == "-fsSL" && "${2:-}" == "${HERMES_COS_BASE}/latest.json" ]]; then
     cat <<'EOF'
 {
@@ -307,12 +388,14 @@ mkdir -p "${HOME}/.local/bin" "${HOME}/.config"
 install_hermes_runtime
 configure_hermes_python_mirrors
 install_hermes_python_deps
+install_hermes_lightclawbot_plugin
 install_hermes_whatsapp_bridge_deps
 ensure_hermes_gateway_service
 install_hermes_extra_tools
 install_hermes_acli
 upgrade_hermes_backend_blueprint
 finalize_hermes_runtime_pin
+curate_hermes_skills
 
 grep -q "curl-hermes-latest" "${LOG_FILE}"
 grep -q "curl-hermes-tarball" "${LOG_FILE}"
@@ -327,6 +410,12 @@ test "$(grep -Fc "uv-pip-install pip install --python ${RUNTIME_HOME}/.hermes/he
 grep -q "npm-install @qwen-code/qwen-code@latest" "${LOG_FILE}"
 grep -q ".hermes/bin/uv.*--version" "${LOG_FILE}"
 grep -q "uv-pip-install pip install --index-url https://mirrors.tencent.com/pypi/simple --extra-index-url https://mirrors.cloud.tencent.com/pypi/simple --python ${RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/python lark-oapi==1.5.3 qrcode==7.4.2" "${LOG_FILE}"
+grep -q "curl-lightclawbot-index" "${LOG_FILE}"
+grep -q "curl-lightclawbot-wheel" "${LOG_FILE}"
+test -f "${RUNTIME_HOME}/.hermes/plugins/lightclawbot/plugin.yaml"
+grep -q '^name: lightclawbot$' "${RUNTIME_HOME}/.hermes/plugins/lightclawbot/plugin.yaml"
+grep -q 'lightclawbot' "${RUNTIME_HOME}/.hermes/config.yaml"
+! grep -q '^LIGHTCLAW_API_KEY' "${RUNTIME_HOME}/.hermes/.env"
 grep -Fq "index-url = https://mirrors.tencent.com/pypi/simple" "${RUNTIME_HOME}/.config/pip/pip.conf"
 grep -Fq "https://mirrors.cloud.tencent.com/pypi/simple" "${RUNTIME_HOME}/.config/pip/pip.conf"
 grep -Fq 'index-url = "https://mirrors.tencent.com/pypi/simple"' "${RUNTIME_HOME}/.config/uv/uv.toml"
@@ -352,7 +441,7 @@ grep -q "run_as_runtime_user acli --help" "${LOG_FILE}"
 grep -q "acli doctor" "${LOG_FILE}"
 grep -q "acli backend --help" "${LOG_FILE}"
 grep -q "acli bundle-update" "${LOG_FILE}"
-grep -q "acli backend upgrade-start --blueprint-id lhbp-8gsotw6u --wait=true --force=true" "${LOG_FILE}"
+grep -q "acli backend upgrade-start --blueprint-id lhbp-lyx28qje --wait=true --force=true" "${LOG_FILE}"
 grep -q '\$HOME/.hermes/hermes-agent/venv/bin' "${PROFILE_FILE}"
 grep -q '\$HOME/.local/bin:\$PATH' "${PROFILE_FILE}"
 grep -q '^YUANBAO_ALLOW_ALL_USERS=true$' "${HOME}/.hermes/.env"
@@ -365,5 +454,8 @@ grep -q "exec ${REAL_RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/hermes " "${HER
 grep -q "exec ${REAL_RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/hermes-agent " "${HERMES_SYSTEM_BIN_DIR}/hermes-agent"
 ! grep -q "ln -sfn ${HOME}/.hermes/hermes-agent/venv/bin/hermes ${HERMES_SYSTEM_BIN_DIR}/hermes" "${LOG_FILE}"
 ! grep -q "ln -sfn ${HOME}/.local/bin/hermes ${HERMES_SYSTEM_BIN_DIR}/hermes" "${LOG_FILE}"
+test -f "${RUNTIME_HOME}/.hermes/skills/software-development/plan/SKILL.md"
+test ! -e "${RUNTIME_HOME}/.hermes/skills/software-development/noisy-skill"
+test ! -e "${RUNTIME_HOME}/.hermes/skills/empty-category"
 
 echo "ok"

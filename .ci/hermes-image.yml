@@ -54,9 +54,10 @@ stages:
               ci_require_command go
               ci_load_tencentcloud_credentials
 
-              bash -n images/build.sh images/deploy-build.sh images/helpers/config-hermes-python-mirrors.sh images/tests/test-hermes-build-script.sh images/tests/test-hermes-runtime.sh .ci/runtime/commands/refresh_hermes_sandbox_env.sh .ci/runtime/commands/refresh_hermes_sandbox_pools.sh .ci/runtime/commands/repair_hermes_existing_vms.sh .ci/runtime/commands/list_hermes_pool_vms.sh .ci/runtime/commands/create_hermes_tat_command.sh .ci/runtime/commands/invoke_hermes_tat_command.sh .ci/runtime/commands/rollout_hermes_sandbox_env.sh
-              python3 -m py_compile images/build-image.py
+              bash -n images/build.sh images/deploy-build.sh images/helpers/config-hermes-python-mirrors.sh images/tests/test-hermes-build-script.sh images/tests/test-hermes-runtime.sh images/tests/test-resolve-hermes-backend-blueprint-id.sh .ci/runtime/commands/refresh_hermes_sandbox_env.sh .ci/runtime/commands/refresh_hermes_sandbox_pools.sh .ci/runtime/commands/repair_hermes_existing_vms.sh .ci/runtime/commands/list_hermes_pool_vms.sh .ci/runtime/commands/create_hermes_tat_command.sh .ci/runtime/commands/invoke_hermes_tat_command.sh .ci/runtime/commands/rollout_hermes_sandbox_env.sh
+              python3 -m py_compile images/build-image.py images/helpers/resolve-hermes-backend-blueprint-id.py
               python3 images/tests/test-build-image-sync.py
+              bash images/tests/test-resolve-hermes-backend-blueprint-id.sh
               resolve_hermes_reuse_image_name() {
                 if [[ -n "${HERMES_REUSE_IMAGE_NAME:-}" ]]; then
                   printf '%s\n' "$HERMES_REUSE_IMAGE_NAME"

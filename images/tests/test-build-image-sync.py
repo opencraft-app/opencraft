@@ -15,6 +15,40 @@ SPEC.loader.exec_module(build_image)
 
 
 class ImageSyncTests(unittest.TestCase):
+    def test_hermes_deploy_injects_resolved_backend_blueprint_id(self):
+        calls = []
+        original_ensure = build_image.ensure_remote_build_assets
+        original_start = build_image.start_remote_build_job
+        original_wait = build_image.wait_for_remote_build_job
+        original_resolve = build_image.resolve_hermes_backend_blueprint_id
+
+        def fake_start(*args, **kwargs):
+            calls.append((args, kwargs))
+            return {"status_file": "/tmp/status.json"}
+
+        try:
+            build_image.ensure_remote_build_assets = lambda *_args, **_kwargs: None
+            build_image.start_remote_build_job = fake_start
+            build_image.wait_for_remote_build_job = lambda *_args, **_kwargs: None
+            build_image.resolve_hermes_backend_blueprint_id = lambda: "lhbp-latest"
+
+            build_image.step_deploy_build(
+                "ubuntu@example.com",
+                "22",
+                runtime_kind="hermes",
+                runtime_user="agentuser",
+            )
+        finally:
+            build_image.ensure_remote_build_assets = original_ensure
+            build_image.start_remote_build_job = original_start
+            build_image.wait_for_remote_build_job = original_wait
+            build_image.resolve_hermes_backend_blueprint_id = original_resolve
+
+        self.assertEqual(len(calls), 1)
+        args, _kwargs = calls[0]
+        self.assertEqual(args[5], "agentuser")
+        self.assertEqual(args[6], "lhbp-latest")
+
     def test_multi_region_sync_waits_for_source_between_regions(self):
         source_busy = False
         sync_calls = []

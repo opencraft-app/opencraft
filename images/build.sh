@@ -57,6 +57,7 @@ HERMES_WHATSAPP_BRIDGE_USER="${HERMES_WHATSAPP_BRIDGE_USER:-}"
 HERMES_WHATSAPP_BRIDGE_HOME="${HERMES_WHATSAPP_BRIDGE_HOME:-}"
 HERMES_PYPI_INDEX_URL="${HERMES_PYPI_INDEX_URL:-https://mirrors.tencent.com/pypi/simple}"
 HERMES_PYPI_EXTRA_INDEX_URL="${HERMES_PYPI_EXTRA_INDEX_URL:-https://mirrors.cloud.tencent.com/pypi/simple}"
+HERMES_LIGHTCLAWBOT_PACKAGE="${HERMES_LIGHTCLAWBOT_PACKAGE:-lightclawbot}"
 ACLI_IDENTITY_PATH="${ACLI_IDENTITY_PATH:-/etc/acli/identity.yaml}"
 HERMES_UV_CMD=""
 NODE_VERSION=""
@@ -85,7 +86,7 @@ ARG_HERMES_SRC_VERSION="${ARG_HERMES_SRC_VERSION:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || pwd)"
 MANIFEST_PATH="${SCRIPT_DIR}/build-manifest.json"
-HERMES_BACKEND_BLUEPRINT_ID_FILE="${HERMES_BACKEND_BLUEPRINT_ID_FILE:-${SCRIPT_DIR}/hermes-backend-blueprint-id}"
+HERMES_BACKEND_BLUEPRINT_RESOLVER="${HERMES_BACKEND_BLUEPRINT_RESOLVER:-${SCRIPT_DIR}/helpers/resolve-hermes-backend-blueprint-id.py}"
 ENVD_BINARY="/usr/local/bin/envd"
 ENVD_SERVICE="envd.service"
 ENVD_LISTEN_PORT="${ENVD_LISTEN_PORT:-49983}"
@@ -922,6 +923,221 @@ install_hermes_extra_tools() {
   fi
 }
 
+install_hermes_lightclawbot_plugin() {
+  local hermes_home="${RUNTIME_HOME}/.hermes"
+  local plugin_name="${HERMES_LIGHTCLAWBOT_PACKAGE}"
+  local plugin_dir="${hermes_home}/plugins/${plugin_name}"
+  local index_url="${HERMES_PYPI_INDEX_URL%/}/${plugin_name}/"
+  local tmp_dir=""
+  local html_file=""
+  local whl_url=""
+  local whl_file=""
+  local extracted_dir=""
+  local extracted_plugin=""
+  local config_file="${hermes_home}/config.yaml"
+  local hermes_python="${hermes_home}/hermes-agent/venv/bin/python"
+
+  log_info "installing Hermes ${plugin_name} platform plugin"
+  if [ ! -x "${hermes_python}" ]; then
+    log_error "Hermes venv python not found: ${hermes_python}"
+    return 1
+  fi
+
+  tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/hermes-${plugin_name}-XXXXXX")"
+  html_file="${tmp_dir}/index.html"
+  whl_file="${tmp_dir}/${plugin_name}.whl"
+  extracted_dir="${tmp_dir}/extracted"
+
+  curl -fsSL --connect-timeout 10 --max-time 30 --retry 3 "${index_url}" -o "${html_file}"
+  whl_url="$(
+    python3 - "${index_url}" "${html_file}" <<'PY'
+import html.parser
+import pathlib
+import re
+import sys
+import urllib.parse
+
+index_url = sys.argv[1]
+html_text = pathlib.Path(sys.argv[2]).read_text(encoding="utf-8", errors="replace")
+
+class LinkParser(html.parser.HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.links = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() != "a":
+            return
+        attrs = dict(attrs)
+        href = attrs.get("href")
+        if href and ".whl" in href:
+            self.links.append(href.split("#", 1)[0])
+
+parser = LinkParser()
+parser.feed(html_text)
+links = parser.links
+if not links:
+    raise SystemExit("no wheel link found")
+
+def version_key(href):
+    name = pathlib.PurePosixPath(urllib.parse.urlparse(href).path).name
+    match = re.match(r"^[^-]+-([^-]+)-", name)
+    version = match.group(1) if match else ""
+    return [int(part) if part.isdigit() else part for part in re.split(r"([0-9]+)", version)]
+
+print(urllib.parse.urljoin(index_url, sorted(links, key=version_key)[-1]))
+PY
+  )"
+  if [ -z "${whl_url}" ]; then
+    log_error "failed to resolve ${plugin_name} wheel from ${index_url}"
+    rm -rf "${tmp_dir}"
+    return 1
+  fi
+
+  curl -fsSL --connect-timeout 10 --max-time 120 --retry 3 "${whl_url}" -o "${whl_file}"
+  mkdir -p "${extracted_dir}"
+  python3 - "${whl_file}" "${extracted_dir}" <<'PY'
+import sys
+import zipfile
+
+with zipfile.ZipFile(sys.argv[1]) as zf:
+    zf.extractall(sys.argv[2])
+PY
+
+  extracted_plugin="${extracted_dir}/${plugin_name}"
+  if [ ! -f "${extracted_plugin}/__init__.py" ] || [ ! -f "${extracted_plugin}/plugin.yaml" ]; then
+    log_error "${plugin_name} wheel did not contain expected plugin package"
+    rm -rf "${tmp_dir}"
+    return 1
+  fi
+
+  mkdir -p "${hermes_home}/plugins"
+  rm -rf "${plugin_dir}"
+  cp -a "${extracted_plugin}" "${plugin_dir}"
+  chown -R "${RUNTIME_USER}:${RUNTIME_USER}" "${plugin_dir}" "${hermes_home}/plugins"
+
+  touch "${config_file}"
+  chown "${RUNTIME_USER}:${RUNTIME_USER}" "${config_file}"
+  run_as_runtime_user "'${hermes_python}' - '${config_file}' <<'PY'
+import sys
+import yaml
+
+path = sys.argv[1]
+with open(path, 'r', encoding='utf-8') as fh:
+    config = yaml.safe_load(fh) or {}
+
+plugins = config.setdefault('plugins', {})
+enabled = plugins.get('enabled')
+if not isinstance(enabled, list):
+    enabled = []
+plugins['enabled'] = enabled
+if 'lightclawbot' not in enabled:
+    enabled.append('lightclawbot')
+
+platforms = config.setdefault('platforms', {})
+platform = platforms.get('lightclawbot')
+if not isinstance(platform, dict):
+    platform = {}
+platform['enabled'] = True
+platforms['lightclawbot'] = platform
+
+display = config.setdefault('display', {})
+display_platforms = display.get('platforms')
+if not isinstance(display_platforms, dict):
+    display_platforms = {}
+display['platforms'] = display_platforms
+display_platform = display_platforms.get('lightclawbot')
+if not isinstance(display_platform, dict):
+    display_platform = {}
+display_platform['streaming'] = True
+display_platforms['lightclawbot'] = display_platform
+
+with open(path, 'w', encoding='utf-8') as fh:
+    yaml.safe_dump(config, fh, sort_keys=False, allow_unicode=True)
+PY"
+
+  run_as_runtime_user "test -f '${plugin_dir}/plugin.yaml' && grep -q '^name: lightclawbot$' '${plugin_dir}/plugin.yaml'"
+  rm -rf "${tmp_dir}"
+}
+
+curate_hermes_skills() {
+  local skills_root="${RUNTIME_HOME}/.hermes/skills"
+  local keep_list=(
+    "autonomous-ai-agents/hermes-agent"
+    "software-development/hermes-agent-skill-authoring"
+    "software-development/plan"
+    "software-development/spike"
+    "software-development/systematic-debugging"
+    "software-development/test-driven-development"
+    "software-development/requesting-code-review"
+    "github/codebase-inspection"
+    "software-development/node-inspect-debugger"
+    "software-development/python-debugpy"
+    "dogfood"
+    "productivity/ocr-and-documents"
+    "productivity/nano-pdf"
+    "productivity/powerpoint"
+    "research/arxiv"
+    "productivity/maps"
+    "creative/architecture-diagram"
+    "creative/humanizer"
+  )
+  local skill=""
+  local skill_dir=""
+  local category_dir=""
+  local kept=0
+  local removed=0
+  local missing=()
+
+  log_info "curating Hermes bundled skills"
+  if [ ! -d "${skills_root}" ]; then
+    log_warn "Hermes skills root not found, skipping curate: ${skills_root}"
+    return 0
+  fi
+
+  should_keep_hermes_skill() {
+    local candidate="$1"
+    local keep=""
+    for keep in "${keep_list[@]}"; do
+      if [ "${candidate}" = "${keep}" ]; then
+        return 0
+      fi
+    done
+    return 1
+  }
+
+  while IFS= read -r skill_dir; do
+    skill="${skill_dir#${skills_root}/}"
+    if should_keep_hermes_skill "${skill}"; then
+      kept=$((kept + 1))
+      continue
+    fi
+    rm -rf "${skill_dir}"
+    removed=$((removed + 1))
+    log_info "removed Hermes skill: ${skill}"
+  done < <(find "${skills_root}" -maxdepth 4 -name SKILL.md -type f -exec dirname {} \; | sort)
+
+  while IFS= read -r category_dir; do
+    if ! find "${category_dir}" -maxdepth 4 -name SKILL.md -type f -print -quit | grep -q .; then
+      rm -rf "${category_dir}"
+      log_info "removed empty Hermes skill category: ${category_dir#${skills_root}/}"
+    fi
+  done < <(find "${skills_root}" -mindepth 1 -maxdepth 1 -type d -not -name '.*')
+
+  for skill in "${keep_list[@]}"; do
+    if [ ! -f "${skills_root}/${skill}/SKILL.md" ]; then
+      missing+=("${skill}")
+    fi
+  done
+  if [ "${#missing[@]}" -gt 0 ]; then
+    log_warn "Hermes kept-list entries not found in bundle:"
+    printf 'WARN:   - %s\n' "${missing[@]}" >&2
+  fi
+
+  chown -R "${RUNTIME_USER}:${RUNTIME_USER}" "${skills_root}" 2>/dev/null || true
+  log_info "Hermes skills curated: kept ${kept}, removed ${removed}"
+}
+
 install_hermes_whatsapp_bridge_deps() {
   local bridge_user="${HERMES_WHATSAPP_BRIDGE_USER:-${RUNTIME_USER}}"
   local bridge_home="${HERMES_WHATSAPP_BRIDGE_HOME:-${RUNTIME_HOME}}"
@@ -1441,11 +1657,11 @@ install_hermes_acli() {
 load_hermes_backend_blueprint_id() {
   local blueprint_id="${HERMES_BACKEND_BLUEPRINT_ID:-}"
   if [ -z "${blueprint_id}" ]; then
-    if [ ! -r "${HERMES_BACKEND_BLUEPRINT_ID_FILE}" ]; then
-      log_error "Hermes backend blueprint id file not found: ${HERMES_BACKEND_BLUEPRINT_ID_FILE}"
+    if [ ! -r "${HERMES_BACKEND_BLUEPRINT_RESOLVER}" ]; then
+      log_error "Hermes backend blueprint resolver not found: ${HERMES_BACKEND_BLUEPRINT_RESOLVER}"
       return 1
     fi
-    blueprint_id="$(tr -d '[:space:]' < "${HERMES_BACKEND_BLUEPRINT_ID_FILE}")"
+    blueprint_id="$(python3 "${HERMES_BACKEND_BLUEPRINT_RESOLVER}")"
   fi
   if [[ ! "${blueprint_id}" =~ ^lhbp-[A-Za-z0-9_-]+$ ]]; then
     log_error "invalid Hermes backend blueprint id: ${blueprint_id:-<empty>}"
@@ -1919,12 +2135,14 @@ build_app_layer() {
     install_hermes_runtime
     configure_hermes_python_mirrors
     install_hermes_python_deps
+    install_hermes_lightclawbot_plugin
     install_hermes_whatsapp_bridge_deps
     ensure_hermes_gateway_service
     install_hermes_extra_tools
     install_hermes_acli
     upgrade_hermes_backend_blueprint
     finalize_hermes_runtime_pin
+    curate_hermes_skills
   else
     install_openclaw
     install_all_plugins
