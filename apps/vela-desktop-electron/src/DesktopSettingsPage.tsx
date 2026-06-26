@@ -4,6 +4,9 @@ import {
   Bot,
   ExternalLink,
   Info,
+  Loader2,
+  Network,
+  Plug,
   Search,
   Sparkles,
 } from "lucide-react";
@@ -12,6 +15,8 @@ import type {
   BackendKindWire,
   BackendUsageWireResponse,
   BackendWire,
+  NodeWire,
+  RuntimeTargetWire,
   VeladClient,
 } from "../../../packages/vela-chat-client/src";
 import {
@@ -51,10 +56,11 @@ export interface DesktopSettingsPageProps {
   onSelectedBackendChange: (backend: BackendKindWire) => void;
 }
 
-export type DesktopSettingsPanelId = "engine" | "archive" | "about";
+export type DesktopSettingsPanelId = "engine" | "nodes" | "archive" | "about";
 
 const settingsPanels = [
   { icon: Bot, id: "engine", label: "引擎" },
+  { icon: Network, id: "nodes", label: "节点" },
   { icon: Archive, id: "archive", label: "已归档对话" },
   { icon: Info, id: "about", label: "关于 LightVela" },
 ] satisfies Array<{
@@ -144,6 +150,8 @@ export function DesktopSettingsPage({
           settings={settings}
         />
       );
+    case "nodes":
+      return <DesktopSettingsNodesPanel client={client} />;
   }
 }
 
@@ -232,6 +240,410 @@ function BackendUsageSettingsRow({
   );
 }
 
+interface SshNodeDraft {
+  displayName: string;
+  host: string;
+  port: string;
+  username: string;
+  password: string;
+  targetOs: string;
+  targetArch: string;
+}
+
+function DesktopSettingsNodesPanel({ client }: { client: VeladClient }) {
+  const [nodes, setNodes] = React.useState<NodeWire[]>([]);
+  const [targets, setTargets] = React.useState<RuntimeTargetWire[]>([]);
+  const [isLoading, setIsLoading] = React.useState(true);
+  const [isSaving, setIsSaving] = React.useState(false);
+  const [busyTargetId, setBusyTargetId] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const [draft, setDraft] = React.useState<SshNodeDraft>({
+    displayName: "",
+    host: "",
+    password: "",
+    port: "22",
+    targetArch: "x86_64",
+    targetOs: "linux",
+    username: "",
+  });
+
+  const loadNodes = React.useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      await client.getNodeProviders();
+      const [nodesResponse, targetsResponse] = await Promise.all([
+        client.listNodes(),
+        client.getRuntimeTargets(),
+      ]);
+      setNodes(nodesResponse.nodes);
+      setTargets(targetsResponse.targets);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [client]);
+
+  React.useEffect(() => {
+    void loadNodes();
+  }, [loadNodes]);
+
+  const targetByNodeId = React.useMemo(() => {
+    const map = new Map<string, RuntimeTargetWire>();
+    for (const target of targets) {
+      if (target.node_id) map.set(target.node_id, target);
+    }
+    return map;
+  }, [targets]);
+
+  const updateInputDraft = React.useCallback(
+    (field: keyof SshNodeDraft) =>
+      (event: React.FormEvent<HTMLInputElement>) => {
+        const value = event.currentTarget.value;
+        setDraft((current) => ({ ...current, [field]: value }));
+      },
+    [],
+  );
+  const updateSelectDraft = React.useCallback(
+    (field: keyof SshNodeDraft) =>
+      (event: React.ChangeEvent<HTMLSelectElement>) => {
+        const value = event.currentTarget.value;
+        setDraft((current) => ({ ...current, [field]: value }));
+      },
+    [],
+  );
+
+  const createAndConnectNode = React.useCallback(async () => {
+    const host = draft.host.trim();
+    const username = draft.username.trim();
+    const password = draft.password;
+    const port = Number.parseInt(draft.port, 10);
+    if (!host || !username || !password || !Number.isInteger(port) || port < 1 || port > 65535) {
+      setError("请填写有效的 host、username、password 和 port。");
+      return;
+    }
+    setIsSaving(true);
+    setError(null);
+    try {
+      const created = await client.createNode({
+        auth: {
+          method: "password",
+          password,
+        },
+        displayName: draft.displayName.trim() || host,
+        provider: "ssh",
+        ssh: {
+          host,
+          port,
+          username,
+        },
+        target: {
+          arch: draft.targetArch,
+          os: draft.targetOs,
+        },
+      });
+      setDraft((current) => ({ ...current, password: "" }));
+      const targetId = `target:${created.node.id}`;
+      setBusyTargetId(targetId);
+      await client.connectRuntimeTarget(targetId);
+      await loadNodes();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusyTargetId(null);
+      setIsSaving(false);
+    }
+  }, [client, draft, loadNodes]);
+
+  const connectTarget = React.useCallback(
+    async (targetId: string) => {
+      setBusyTargetId(targetId);
+      setError(null);
+      try {
+        await client.connectRuntimeTarget(targetId);
+        await loadNodes();
+      } catch (err) {
+        setError(errorMessage(err));
+      } finally {
+        setBusyTargetId(null);
+      }
+    },
+    [client, loadNodes],
+  );
+
+  const disconnectTarget = React.useCallback(
+    async (targetId: string) => {
+      setBusyTargetId(targetId);
+      setError(null);
+      try {
+        await client.disconnectRuntimeTarget(targetId);
+        await loadNodes();
+      } catch (err) {
+        setError(errorMessage(err));
+      } finally {
+        setBusyTargetId(null);
+      }
+    },
+    [client, loadNodes],
+  );
+
+  return (
+    <main className="vela-settings-page" aria-label="Node settings">
+      <div className="vela-settings-content">
+        <h1>节点</h1>
+
+        <section className="vela-settings-section" aria-labelledby="node-ssh-title">
+          <div className="vela-settings-section-heading">
+            <h2 id="node-ssh-title">SSH 主机</h2>
+            <p>新增一台 Unix-like 主机，本机 velad 会通过原生 SSH 上传并启动远端 runtime。</p>
+          </div>
+          <div className="vela-settings-card">
+            <div className="vela-settings-form-grid">
+              <SettingsFormField label="名称">
+                <input
+                  className="vela-settings-text-input"
+                  aria-label="SSH 节点名称"
+                  placeholder="Remote dev"
+                  value={draft.displayName}
+                  onInput={updateInputDraft("displayName")}
+                />
+              </SettingsFormField>
+              <SettingsFormField label="Host">
+                <input
+                  aria-label="SSH Host"
+                  className="vela-settings-text-input"
+                  placeholder="dev.example.com"
+                  value={draft.host}
+                  onInput={updateInputDraft("host")}
+                />
+              </SettingsFormField>
+              <SettingsFormField label="Port">
+                <input
+                  aria-label="SSH Port"
+                  className="vela-settings-text-input"
+                  inputMode="numeric"
+                  value={draft.port}
+                  onInput={updateInputDraft("port")}
+                />
+              </SettingsFormField>
+              <SettingsFormField label="Username">
+                <input
+                  aria-label="SSH Username"
+                  className="vela-settings-text-input"
+                  autoComplete="username"
+                  value={draft.username}
+                  onInput={updateInputDraft("username")}
+                />
+              </SettingsFormField>
+              <SettingsFormField label="Password">
+                <input
+                  aria-label="SSH Password"
+                  className="vela-settings-text-input"
+                  autoComplete="current-password"
+                  type="password"
+                  value={draft.password}
+                  onInput={updateInputDraft("password")}
+                />
+              </SettingsFormField>
+              <SettingsFormField label="Target">
+                <div className="vela-settings-inline-fields">
+                  <select
+                    aria-label="Target OS"
+                    className="vela-settings-select-input"
+                    value={draft.targetOs}
+                    onChange={updateSelectDraft("targetOs")}
+                  >
+                    <option value="linux">Linux</option>
+                    <option value="darwin">macOS</option>
+                  </select>
+                  <select
+                    aria-label="Target architecture"
+                    className="vela-settings-select-input"
+                    value={draft.targetArch}
+                    onChange={updateSelectDraft("targetArch")}
+                  >
+                    <option value="x86_64">x86_64</option>
+                    <option value="amd64">amd64</option>
+                  </select>
+                </div>
+              </SettingsFormField>
+            </div>
+            <div className="vela-settings-action-row">
+              <span>
+                <strong>连接策略</strong>
+                <small>密码保存到系统 keyring；第一版会立即尝试连接并启动远端 velad。</small>
+              </span>
+              <button
+                className="vela-settings-primary-button"
+                disabled={isSaving}
+                type="button"
+                onClick={createAndConnectNode}
+              >
+                {isSaving ? <Loader2 size={15} aria-hidden /> : <Plug size={15} aria-hidden />}
+                <span>{isSaving ? "连接中" : "新增并连接"}</span>
+              </button>
+            </div>
+            {error ? <div className="vela-settings-error-row">{error}</div> : null}
+          </div>
+        </section>
+
+        <section className="vela-settings-section" aria-labelledby="node-runtime-title">
+          <div className="vela-settings-section-heading">
+            <h2 id="node-runtime-title">Runtime targets</h2>
+            <p>查看本机和 SSH 节点对应的 runtime 连接状态。</p>
+          </div>
+          <div className="vela-settings-card">
+            {isLoading ? <SettingsInfoRow label="状态" value="加载中" /> : null}
+            {!isLoading && targets.length === 0 ? (
+              <SettingsInfoRow label="状态" value="暂无 runtime target" />
+            ) : null}
+            {targets.map((target) => (
+              <RuntimeTargetRow
+                busy={busyTargetId === target.id}
+                key={target.id}
+                target={target}
+                onConnect={connectTarget}
+                onDisconnect={disconnectTarget}
+              />
+            ))}
+          </div>
+        </section>
+
+        <section className="vela-settings-section" aria-labelledby="node-saved-title">
+          <div className="vela-settings-section-heading">
+            <h2 id="node-saved-title">已保存节点</h2>
+          </div>
+          <div className="vela-settings-card">
+            {!isLoading && nodes.length === 0 ? (
+              <SettingsInfoRow label="状态" value="还没有 SSH 节点" />
+            ) : null}
+            {nodes.map((node) => (
+              <NodeSettingsRow
+                key={node.id}
+                node={node}
+                target={targetByNodeId.get(node.id)}
+              />
+            ))}
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function SettingsFormField({
+  children,
+  label,
+}: {
+  children: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <label className="vela-settings-form-field">
+      <span>{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function RuntimeTargetRow({
+  busy,
+  onConnect,
+  onDisconnect,
+  target,
+}: {
+  busy: boolean;
+  onConnect: (targetId: string) => void;
+  onDisconnect: (targetId: string) => void;
+  target: RuntimeTargetWire;
+}) {
+  const isConnected = target.status === "ready" || target.status === "connected";
+  const isTransitioning = target.status === "connecting" || target.status === "reconnecting";
+  const canConnect = target.kind === "remote" && !isConnected && !isTransitioning;
+  const canDisconnect = target.kind === "remote" && isConnected;
+  return (
+    <div className="vela-settings-row" data-runtime-target-id={target.id}>
+      <span>
+        <strong>{target.display_name}</strong>
+        <small>{runtimeTargetDetail(target)}</small>
+      </span>
+      <div className="vela-settings-row-actions">
+        <output data-runtime-status={target.status}>{runtimeStatusLabel(target.status)}</output>
+        {canConnect ? (
+          <button
+            className="vela-settings-secondary-button"
+            disabled={busy}
+            type="button"
+            onClick={() => onConnect(target.id)}
+          >
+            {busy ? "连接中" : "连接"}
+          </button>
+        ) : null}
+        {canDisconnect ? (
+          <button
+            className="vela-settings-secondary-button"
+            disabled={busy}
+            type="button"
+            onClick={() => onDisconnect(target.id)}
+          >
+            {busy ? "断开中" : "断开"}
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function NodeSettingsRow({ node, target }: { node: NodeWire; target?: RuntimeTargetWire }) {
+  return (
+    <div className="vela-settings-row" data-node-id={node.id}>
+      <span>
+        <strong>{node.display_name}</strong>
+        <small>
+          {node.ssh.username}@{node.ssh.host}:{node.ssh.port} · {node.target.os}/
+          {node.target.arch}
+        </small>
+      </span>
+      <output>{target ? runtimeStatusLabel(target.status) : "未连接"}</output>
+    </div>
+  );
+}
+
+function runtimeTargetDetail(target: RuntimeTargetWire) {
+  if (target.kind === "local") return "本机 velad";
+  const apiBaseUrl =
+    typeof target.transport.api_base_url === "string" ? target.transport.api_base_url : "";
+  const remoteAddr =
+    typeof target.transport.remote_listen_addr === "string"
+      ? target.transport.remote_listen_addr
+      : "";
+  return [remoteAddr, apiBaseUrl].filter(Boolean).join(" · ") || "SSH remote velad";
+}
+
+function runtimeStatusLabel(status: RuntimeTargetWire["status"]) {
+  switch (status) {
+    case "ready":
+    case "connected":
+      return "已连接";
+    case "connecting":
+      return "连接中";
+    case "reconnecting":
+      return "重连中";
+    case "degraded":
+      return "降级";
+    case "failed":
+    case "error":
+      return "失败";
+    case "disconnected":
+      return "未连接";
+  }
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function usageDetail(usage: BackendUsageWireResponse | undefined) {
   if (!usage) return "正在读取 backend usage";
   if (usage.detail) return usage.detail;
@@ -250,7 +662,7 @@ function SettingsNavGroup({
   title,
 }: {
   activePanel: DesktopSettingsPanelId;
-  items: Array<{ icon: typeof Settings; id: DesktopSettingsPanelId; label: string }>;
+  items: Array<{ icon: typeof Bot; id: DesktopSettingsPanelId; label: string }>;
   onPanelChange: (panel: DesktopSettingsPanelId) => void;
   title: string;
 }) {

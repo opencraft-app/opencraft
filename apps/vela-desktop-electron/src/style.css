@@ -1614,6 +1614,161 @@ body {
   box-shadow: 0 0 0 2px rgba(54, 162, 255, 0.14);
 }
 
+.vela-settings-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 12px;
+  border-bottom: 1px solid #eff0f1;
+  padding: 16px;
+}
+
+.vela-settings-form-field {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+  color: #626872;
+  font-size: 12px;
+  font-weight: 560;
+  letter-spacing: 0;
+}
+
+.vela-settings-form-field .vela-settings-text-input {
+  width: 100%;
+  min-width: 0;
+}
+
+.vela-settings-inline-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+.vela-settings-select-input {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  border: 1px solid #dfe2e6;
+  border-radius: 9px;
+  background: #ffffff;
+  color: #292d33;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  outline: none;
+  padding: 0 10px;
+  box-sizing: border-box;
+}
+
+.vela-settings-select-input:focus {
+  border-color: #9ecbff;
+  box-shadow: 0 0 0 2px rgba(54, 162, 255, 0.14);
+}
+
+.vela-settings-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+}
+
+.vela-settings-action-row span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.vela-settings-action-row strong {
+  color: #292d33;
+  font-size: 13px;
+  font-weight: 590;
+  line-height: 1.35;
+}
+
+.vela-settings-action-row small {
+  color: #7f858d;
+  font-size: 12px;
+  font-weight: 430;
+  line-height: 1.4;
+}
+
+.vela-settings-primary-button,
+.vela-settings-secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 9px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 590;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.vela-settings-primary-button {
+  min-height: 36px;
+  border: 1px solid transparent;
+  background: #252a30;
+  color: #ffffff;
+  padding: 0 14px;
+}
+
+.vela-settings-secondary-button {
+  min-height: 32px;
+  border: 1px solid #dfe2e6;
+  background: #ffffff;
+  color: #3d444d;
+  padding: 0 11px;
+}
+
+.vela-settings-primary-button:disabled,
+.vela-settings-secondary-button:disabled {
+  opacity: 0.55;
+}
+
+.vela-settings-row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.vela-settings-error-row {
+  border-top: 1px solid #ffe0e0;
+  background: #fff8f8;
+  color: #9b3535;
+  font-size: 13px;
+  font-weight: 520;
+  line-height: 1.45;
+  padding: 12px 16px;
+}
+
+.vela-settings-row output[data-runtime-status="ready"],
+.vela-settings-row output[data-runtime-status="connected"] {
+  background: #edf7f1;
+  color: #267348;
+}
+
+.vela-settings-row output[data-runtime-status="connecting"],
+.vela-settings-row output[data-runtime-status="reconnecting"] {
+  background: #edf5ff;
+  color: #2f6fae;
+}
+
+.vela-settings-row output[data-runtime-status="degraded"] {
+  background: #fff6e5;
+  color: #8a5a00;
+}
+
+.vela-settings-row output[data-runtime-status="failed"],
+.vela-settings-row output[data-runtime-status="error"] {
+  background: #fff0f0;
+  color: #a83b3b;
+}
+
 .vela-shell-switch {
   position: relative;
   width: 38px;
@@ -1963,10 +2118,25 @@ body {
 
   .vela-settings-row output,
   .vela-settings-text-input,
+  .vela-settings-select-input,
   .vela-shell-select,
   .vela-settings-segment,
   .vela-shell-switch {
     justify-self: start;
+  }
+
+  .vela-settings-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .vela-settings-action-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .vela-settings-row-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
   }
 
   .vela-settings-about-grid {

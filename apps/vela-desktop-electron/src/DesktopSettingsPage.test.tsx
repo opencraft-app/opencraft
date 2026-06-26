@@ -51,6 +51,78 @@ function testClient() {
       missing_fields: ["endpoint", "api_key", "model"],
       updated_at: null,
     }),
+    getNodeProviders: async () => ({
+      schema: "velad.node_providers.v1",
+      providers: [
+        {
+          id: "ssh",
+          display_name: "SSH",
+          kind: "ssh",
+          auth_methods: ["password"],
+          secret_storage: "local_os_keyring",
+          capabilities: {},
+          target_constraints: { os: ["linux", "darwin"], arch: ["x86_64", "amd64"] },
+        },
+      ],
+    }),
+    listNodes: async () => ({
+      schema: "velad.nodes.v1",
+      nodes: [],
+    }),
+    createNode: async () => ({
+      schema: "velad.nodes.v1",
+      node: {
+        id: "node_1",
+        provider: "ssh",
+        display_name: "Remote dev",
+        ssh: { host: "dev.example.com", port: 22, username: "root" },
+        target: { os: "linux", arch: "x86_64" },
+        auth: { method: "password", password_configured: true },
+        created_at: "2026-06-26T00:00:00Z",
+        updated_at: "2026-06-26T00:00:00Z",
+      },
+    }),
+    getRuntimeTargets: async () => ({
+      schema: "velad.runtime_targets.v1",
+      targets: [
+        {
+          id: "local",
+          kind: "local",
+          provider: "local",
+          display_name: "本机 velad",
+          status: "ready",
+          transport: { kind: "local" },
+        },
+      ],
+    }),
+    connectRuntimeTarget: async (targetId: string) => ({
+      schema: "velad.runtime_targets.v1",
+      target: {
+        id: targetId,
+        kind: "remote",
+        provider: "ssh",
+        node_id: "node_1",
+        display_name: "Remote dev",
+        status: "ready",
+        transport: {
+          kind: "ssh",
+          api_base_url: "http://127.0.0.1:49200/api/v1",
+          remote_listen_addr: "127.0.0.1:0",
+        },
+      },
+    }),
+    disconnectRuntimeTarget: async (targetId: string) => ({
+      schema: "velad.runtime_targets.v1",
+      target: {
+        id: targetId,
+        kind: "remote",
+        provider: "ssh",
+        node_id: "node_1",
+        display_name: "Remote dev",
+        status: "disconnected",
+        transport: { kind: "ssh" },
+      },
+    }),
   } as any;
 }
 
@@ -97,11 +169,35 @@ test("desktop settings sidebar exposes return and navigation inside shell chrome
   assert.match(html, /placeholder="搜索设置\.\.\."/);
   assert.doesNotMatch(html, />常规</);
   assert.match(html, />引擎</);
+  assert.match(html, />节点</);
   assert.match(html, />关于 LightVela</);
   assert.match(html, />已归档对话</);
   assert.doesNotMatch(html, />个人资料</);
   assert.doesNotMatch(html, />MCP 服务器</);
   assert.doesNotMatch(html, />工作树</);
+});
+
+test("desktop nodes settings render ssh runtime target entry", () => {
+  const html = renderToStaticMarkup(
+    <DesktopSettingsPage
+      apiBaseUrl="/api/v1"
+      appVersion="0.0.1"
+      activePanel="nodes"
+      backends={[codexBackend()]}
+      client={testClient()}
+      hostLabel="Browser preview"
+      selectedBackend="codex"
+      onSelectedBackendChange={() => {}}
+    />,
+  );
+
+  assert.match(html, /aria-label="Node settings"/);
+  assert.match(html, />节点</);
+  assert.match(html, />SSH 主机</);
+  assert.match(html, />新增并连接</);
+  assert.match(html, />Runtime targets</);
+  assert.match(html, /aria-label="SSH Host"/);
+  assert.match(html, /aria-label="SSH Password"/);
 });
 
 test("desktop settings renders about panel with current version", () => {
@@ -124,6 +220,139 @@ test("desktop settings renders about panel with current version", () => {
   assert.match(html, /云端专属个人 Agent/);
   assert.match(html, /https:\/\/lightvela\.com/);
   assert.doesNotMatch(html, />Backend</);
+});
+
+test("desktop nodes settings create and connect ssh node", async () => {
+  const dom = installDomRuntime();
+  try {
+    const createInputs: unknown[] = [];
+    const connectIds: string[] = [];
+    let createdNode: Record<string, unknown> | null = null;
+    const client = {
+      ...testClient(),
+      listNodes: async () => ({
+        schema: "velad.nodes.v1",
+        nodes: createdNode ? [createdNode] : [],
+      }),
+      getRuntimeTargets: async () => ({
+        schema: "velad.runtime_targets.v1",
+        targets: createdNode
+          ? [
+              {
+                id: "target:node_1",
+                kind: "remote",
+                provider: "ssh",
+                node_id: "node_1",
+                display_name: "Dev box",
+                status: connectIds.length > 0 ? "ready" : "disconnected",
+                transport: {
+                  kind: "ssh",
+                  api_base_url: "http://127.0.0.1:49200/api/v1",
+                  remote_listen_addr: "127.0.0.1:0",
+                },
+              },
+            ]
+          : [],
+      }),
+      createNode: async (input: unknown) => {
+        createInputs.push(input);
+        createdNode = {
+          id: "node_1",
+          provider: "ssh",
+          display_name: "Dev box",
+          ssh: { host: "192.168.50.10", port: 22, username: "root" },
+          target: { os: "linux", arch: "x86_64" },
+          auth: { method: "password", password_configured: true },
+          created_at: "2026-06-26T00:00:00Z",
+          updated_at: "2026-06-26T00:00:00Z",
+        };
+        return { schema: "velad.nodes.v1", node: createdNode };
+      },
+      connectRuntimeTarget: async (targetId: string) => {
+        connectIds.push(targetId);
+        return {
+          schema: "velad.runtime_targets.v1",
+          target: {
+            id: targetId,
+            kind: "remote",
+            provider: "ssh",
+            node_id: "node_1",
+            display_name: "Dev box",
+            status: "ready",
+            transport: {
+              kind: "ssh",
+              api_base_url: "http://127.0.0.1:49200/api/v1",
+              remote_listen_addr: "127.0.0.1:0",
+            },
+          },
+        };
+      },
+    } as any;
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <DesktopSettingsPage
+          apiBaseUrl="/api/v1"
+          appVersion="0.0.1"
+          activePanel="nodes"
+          backends={[codexBackend()]}
+          client={client}
+          hostLabel="Browser preview"
+          selectedBackend="codex"
+          onSelectedBackendChange={() => {}}
+        />,
+      );
+    });
+    await flushDom();
+
+    const name = document.querySelector<HTMLInputElement>('input[aria-label="SSH 节点名称"]');
+    const host = document.querySelector<HTMLInputElement>('input[aria-label="SSH Host"]');
+    const username = document.querySelector<HTMLInputElement>('input[aria-label="SSH Username"]');
+    const password = document.querySelector<HTMLInputElement>('input[aria-label="SSH Password"]');
+    assert.notEqual(name, null);
+    assert.notEqual(host, null);
+    assert.notEqual(username, null);
+    assert.notEqual(password, null);
+
+    await changeInput(name!, "Dev box");
+    await changeInput(host!, "192.168.50.10");
+    await changeInput(username!, "root");
+    await changeInput(password!, "pw");
+
+    const submit = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("新增并连接"),
+    );
+    assert.notEqual(submit, undefined);
+
+    await act(async () => {
+      submit!.click();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await flushDom();
+
+    assert.deepEqual(createInputs, [
+      {
+        auth: { method: "password", password: "pw" },
+        displayName: "Dev box",
+        provider: "ssh",
+        ssh: { host: "192.168.50.10", port: 22, username: "root" },
+        target: { arch: "x86_64", os: "linux" },
+      },
+    ]);
+    assert.deepEqual(connectIds, ["target:node_1"]);
+    assert.equal(password!.value, "");
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
 });
 
 test("desktop engine text settings keep focus and save on blur", async () => {
