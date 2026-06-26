@@ -15,10 +15,7 @@ import {
   useArchiveSessionMutation,
   useSessionListViewQuery,
 } from "../../../packages/vela-chat-query/src";
-import {
-  type ChatRenderModel,
-  type ChatHostPolicy,
-} from "../../../packages/vela-chat-render-model/src";
+import { type ChatHostPolicy } from "../../../packages/vela-chat-render-model/src";
 import {
   buildSessionLocationInfo,
   ChatSurface,
@@ -36,9 +33,7 @@ import {
 import { VelaLocalTracer } from "../../../packages/vela-observability-client/src";
 import {
   endSessionDragPreview,
-  hideWorkMonitor,
   moveSessionDragPreview,
-  openWorkMonitor,
   runtimeHostBridgeForInfo,
   readDesktopSettings,
   readRuntimeBootstrap,
@@ -633,12 +628,6 @@ function DesktopReadyApp({
       : hostBridge.platform === "macos"
         ? "Electron on macOS"
         : `Electron on ${hostBridge.platform}`;
-  const shouldShowWorkMonitor =
-    hostInfo.hostKind === "electron" &&
-    mainView === "chat" &&
-    Boolean(activeSessionId) &&
-    hasWorkMonitorActivity(controller.model);
-
   const selectChatSession = useCallback((sessionId: string) => {
     setError(null);
     setActiveSessionId(sessionId);
@@ -651,21 +640,6 @@ function DesktopReadyApp({
       selectChatSession(sessionId);
     });
   }, [selectChatSession]);
-
-  useEffect(() => {
-    if (hostInfo.hostKind !== "electron") return;
-    if (shouldShowWorkMonitor && activeSessionId) {
-      void openWorkMonitor(activeSessionId);
-      return;
-    }
-    const hideDelayMs = activeSessionId ? 4_000 : 0;
-    const hideTimer = window.setTimeout(() => {
-      void hideWorkMonitor();
-    }, hideDelayMs);
-    return () => {
-      window.clearTimeout(hideTimer);
-    };
-  }, [activeSessionId, hostInfo.hostKind, shouldShowWorkMonitor]);
 
   useEffect(() => {
     if (!sessionList.data) return;
@@ -785,9 +759,6 @@ function DesktopReadyApp({
         span.setAttribute("vela.session_id", created.session.id);
         span.setAttribute("vela.desktop.main_view", "chat");
         if (trimmedInitialMessage) {
-          if (hostInfo.hostKind === "electron") {
-            void openWorkMonitor(created.session.id);
-          }
           const initialContent: ClientInputPart[] = [
             { type: "text", text: trimmedInitialMessage },
             ...(input.initialSkillRefs ?? []),
@@ -810,7 +781,6 @@ function DesktopReadyApp({
     },
     [
       client,
-      hostInfo.hostKind,
       isCreatingSession,
       observability,
       refreshSessions,
@@ -819,37 +789,20 @@ function DesktopReadyApp({
   );
 
   const submitChatMessage = useCallback(async () => {
-    const hasMessageIntent =
-      controller.draft.trim().length > 0 || controller.pendingAttachments.length > 0;
-    if (hostInfo.hostKind === "electron" && activeSessionId && hasMessageIntent) {
-      void openWorkMonitor(activeSessionId);
-    }
     await controller.send();
-  }, [
-    activeSessionId,
-    controller.draft,
-    controller.pendingAttachments.length,
-    controller.send,
-    hostInfo.hostKind,
-  ]);
+  }, [controller.send]);
   const submitChatText = useCallback(
     async (text: string) => {
-      if (hostInfo.hostKind === "electron" && activeSessionId && text.trim()) {
-        void openWorkMonitor(activeSessionId);
-      }
       await controller.sendText(text);
     },
-    [activeSessionId, controller.sendText, hostInfo.hostKind],
+    [controller.sendText],
   );
 
   const respondToRequest = useCallback(
     async (response: Parameters<typeof controller.respondToRequest>[0]) => {
-      if (hostInfo.hostKind === "electron" && activeSessionId) {
-        void openWorkMonitor(activeSessionId);
-      }
       await controller.respondToRequest(response);
     },
-    [activeSessionId, controller.respondToRequest, hostInfo.hostKind],
+    [controller.respondToRequest],
   );
 
   const openNewSessionPage = useCallback(() => {
@@ -1008,25 +961,6 @@ function DesktopChatTopbar({
         </button>
       ) : null}
     </header>
-  );
-}
-
-function hasWorkMonitorActivity(model: ChatRenderModel) {
-  return (
-    model.composer.is_running ||
-    model.requests.items.some((request) => request.status === "pending") ||
-    model.rows.some((row) => {
-      if (row.kind === "assistant_message") return row.streaming;
-      if (row.kind === "agent_work") return row.status === "running" || row.status === "pending";
-      if (row.kind === "agent_work_group") {
-        return row.children.some(
-          (child) => child.status === "running" || child.status === "pending",
-        );
-      }
-      if (row.kind === "turn_meta") return row.status === "running";
-      if (row.kind === "status") return row.status === "pending" || row.status === "streaming";
-      return false;
-    })
   );
 }
 

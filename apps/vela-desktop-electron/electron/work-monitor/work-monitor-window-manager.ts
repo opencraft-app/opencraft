@@ -10,7 +10,17 @@ export interface WorkMonitorWindowManagerOptions {
   preloadPath: string;
 }
 
+export interface WorkMonitorPoint {
+  screenX: number;
+  screenY: number;
+}
+
 const workMonitorScreenMargin = 24;
+const workMonitorPointerOffset = {
+  x: 18,
+  y: 16,
+};
+const workMonitorPointerScreenInsetPx = 8;
 
 export class WorkMonitorWindowManager {
   private window: BrowserWindow | null = null;
@@ -22,9 +32,35 @@ export class WorkMonitorWindowManager {
   constructor(private readonly options: WorkMonitorWindowManagerOptions) {}
 
   async open(sessionId: string) {
+    await this.openWithPlacement(sessionId, null);
+  }
+
+  async openAtPoint(sessionId: string, point: WorkMonitorPoint) {
+    if (!sessionId.trim() || !isFinitePoint(point)) return false;
+    await this.openWithPlacement(sessionId, point);
+    return true;
+  }
+
+  moveToPoint(point: WorkMonitorPoint) {
+    const window = this.window;
+    if (!window || window.isDestroyed() || !isFinitePoint(point)) return false;
+    const position = workMonitorPositionNearPoint(point);
+    window.setBounds(
+      {
+        ...position,
+        width: sessionPreviewWindowSize.width,
+        height: sessionPreviewWindowSize.height,
+      },
+      false,
+    );
+    return true;
+  }
+
+  private async openWithPlacement(sessionId: string, point: WorkMonitorPoint | null) {
     const normalizedSessionId = sessionId.trim();
     if (!normalizedSessionId) return;
     const window = this.ensureWindow();
+    if (point) this.moveToPoint(point);
     if (this.currentSessionId === normalizedSessionId && !this.loadingPromise) {
       this.showWindow(window);
       return;
@@ -56,6 +92,7 @@ export class WorkMonitorWindowManager {
     if (requestId !== this.loadRequestId) return;
     this.currentSessionId = normalizedSessionId;
     if (window.isDestroyed()) return;
+    if (point) this.moveToPoint(point);
     this.showWindow(window);
   }
 
@@ -165,6 +202,36 @@ function workMonitorPositionInWorkArea(workArea: Rectangle): Pick<Rectangle, "x"
     x: Math.max(workArea.x, Math.min(maxX, preferredX)),
     y: Math.max(workArea.y, Math.min(maxY, preferredY)),
   };
+}
+
+function workMonitorPositionNearPoint(point: WorkMonitorPoint): Pick<Rectangle, "x" | "y"> {
+  const display = screen.getDisplayNearestPoint({
+    x: Math.round(point.screenX),
+    y: Math.round(point.screenY),
+  });
+  const workArea = display.workArea;
+  const maxX = workArea.x + Math.max(0, workArea.width - sessionPreviewWindowSize.width);
+  const maxY = workArea.y + Math.max(0, workArea.height - sessionPreviewWindowSize.height);
+  return {
+    x: clamp(
+      Math.round(point.screenX + workMonitorPointerOffset.x),
+      workArea.x + workMonitorPointerScreenInsetPx,
+      maxX - workMonitorPointerScreenInsetPx,
+    ),
+    y: clamp(
+      Math.round(point.screenY + workMonitorPointerOffset.y),
+      workArea.y + workMonitorPointerScreenInsetPx,
+      maxY - workMonitorPointerScreenInsetPx,
+    ),
+  };
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(value, max));
+}
+
+function isFinitePoint(point: WorkMonitorPoint) {
+  return Number.isFinite(point.screenX) && Number.isFinite(point.screenY);
 }
 
 function isNavigationAbort(err: unknown) {

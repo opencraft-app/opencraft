@@ -308,6 +308,9 @@ test("session work monitor keeps host windowing separate from thumbnail renderin
   assert.match(workMonitorMain, /setBounds\(/);
   assert.match(workMonitorMain, /if \(!window\.isVisible\(\)\)/);
   assert.match(workMonitorMain, /moveBySender/);
+  assert.match(workMonitorMain, /openAtPoint/);
+  assert.match(workMonitorMain, /moveToPoint/);
+  assert.match(workMonitorMain, /screen\.getDisplayNearestPoint/);
   assert.match(workMonitorMain, /window\.webContents !== sender/);
   assert.match(workMonitorMain, /setPosition\(/);
   assert.match(workMonitorMain, /alwaysOnTop/);
@@ -394,7 +397,7 @@ test("clicking the work monitor focuses the desktop session without hiding the m
   assert.match(bridge, /moveWorkMonitorBy/);
 });
 
-test("session drag preview is a transient native Electron window, not a sidebar DOM layer", () => {
+test("sidebar session drag opens the shared work monitor instead of a second preview window", () => {
   const electronMain = readFileSync(
     join(root, "apps/vela-desktop-electron/electron/main.ts"),
     "utf8",
@@ -411,18 +414,8 @@ test("session drag preview is a transient native Electron window, not a sidebar 
     join(root, "apps/vela-desktop-electron/src/main.tsx"),
     "utf8",
   );
-  const dragPreviewMain = readFiles(
-    listSourceFiles(join(root, "apps/vela-desktop-electron/electron/session-drag-preview"))
-      .filter((path) => /\.(ts|tsx)$/.test(path))
-      .map((path) => path.slice(root.length + 1)),
-  );
   const sessionPreviewMain = readFiles(
     listSourceFiles(join(root, "apps/vela-desktop-electron/electron/session-preview"))
-      .filter((path) => /\.(ts|tsx)$/.test(path))
-      .map((path) => path.slice(root.length + 1)),
-  );
-  const dragPreviewRenderer = readFiles(
-    listSourceFiles(join(root, "apps/vela-desktop-electron/src/session-drag-preview"))
       .filter((path) => /\.(ts|tsx)$/.test(path))
       .map((path) => path.slice(root.length + 1)),
   );
@@ -440,61 +433,46 @@ test("session drag preview is a transient native Electron window, not a sidebar 
     "utf8",
   );
 
-  assert.match(dragPreviewMain, /BrowserWindow/);
-  assert.match(dragPreviewMain, /setIgnoreMouseEvents\(true\)/);
-  assert.match(dragPreviewMain, /window: "session-drag-preview"/);
-  assert.match(dragPreviewMain, /showInactive\(\)/);
-  assert.match(dragPreviewMain, /screen\.getDisplayNearestPoint/);
-  assert.match(dragPreviewMain, /setBounds\(/);
-  assert.match(dragPreviewMain, /sessionPreviewWindowSize/);
-  assert.doesNotMatch(dragPreviewMain, /292|184/);
   assert.match(sessionPreviewMain, /width:\s*214/);
   assert.match(sessionPreviewMain, /height:\s*134/);
-  assert.doesNotMatch(dragPreviewMain, /React|useVelaChatSession|ConversationPreviewSurface/);
-  assert.match(electronMain, /SessionDragPreviewWindowManager/);
+  assert.doesNotMatch(electronMain, /SessionDragPreviewWindowManager/);
   assert.match(electronMain, /vela:session-drag-preview-start/);
   assert.match(electronMain, /vela:session-drag-preview-move/);
   assert.match(electronMain, /vela:session-drag-preview-end/);
+  assert.match(electronMain, /workMonitor\.openAtPoint\(sessionId,\s*\{\s*screenX,\s*screenY\s*\}\)/);
+  assert.match(electronMain, /workMonitor\.moveToPoint\(\{\s*screenX,\s*screenY\s*\}\)/);
   assert.match(preload, /startSessionDragPreview/);
   assert.match(preload, /moveSessionDragPreview/);
   assert.match(preload, /endSessionDragPreview/);
   assert.match(bridge, /startSessionDragPreview/);
   assert.match(bridge, /moveSessionDragPreview/);
   assert.match(bridge, /endSessionDragPreview/);
-  assert.match(rendererMain, /windowKind === "session-drag-preview"/);
-  assert.match(rendererMain, /SessionDragPreviewRoot/);
-  assert.match(dragPreviewRenderer, /useVelaChatSession/);
-  assert.match(dragPreviewRenderer, /client\.getSession\(sessionId\)/);
-  assert.match(dragPreviewRenderer, /session\.title\.trim\(\)/);
-  assert.match(dragPreviewRenderer, /SessionPreviewWindowContent/);
-  assert.match(dragPreviewRenderer, /SessionPreviewStatus/);
-  assert.match(dragPreviewRenderer, /historyPolicy: "tail_only"/);
-  assert.doesNotMatch(dragPreviewRenderer, /scale=\{0\.34\}|ConversationPreviewSurface/);
+  assert.doesNotMatch(rendererMain, /session-drag-preview|SessionDragPreviewRoot/);
   assert.match(sessionPreviewRenderer, /ConversationPreviewSurface/);
   assert.match(sessionPreviewRenderer, /SESSION_PREVIEW_SCALE = 0\.25/);
   assert.match(sessionPreviewRenderer, /scale=\{SESSION_PREVIEW_SCALE\}/);
   assert.match(sessionPreviewRenderer, /sessionPreviewTitle/);
-  assert.doesNotMatch(dragPreviewRenderer, /BrowserWindow|ipcRenderer/);
   assert.match(sessionListSurface, /onSessionDragPreviewStart/);
   assert.doesNotMatch(sessionListSurface, /data-slot="session-drag-preview"/);
   assert.doesNotMatch(sessionListSurface, /ConversationPreviewSurface/);
   assert.doesNotMatch(desktopCss, /\.vela-session-drag-preview/);
 });
 
-test("desktop app opens the work monitor from thumbnail activity and local send intent", () => {
+test("desktop app does not auto-open the work monitor from running activity", () => {
   const renderer = readFileSync(
     join(root, "apps/vela-desktop-electron/src/DesktopApp.tsx"),
     "utf8",
   );
 
-  assert.match(renderer, /hasWorkMonitorActivity\(controller\.model\)/);
   assert.match(renderer, /startSidebarSessionDragPreview/);
   assert.match(renderer, /startSessionDragPreview\(input\.sessionId,\s*input\.point\.screenX,\s*input\.point\.screenY\)/);
   assert.match(renderer, /onSessionDragPreviewStart=\{startSidebarSessionDragPreview\}/);
   assert.doesNotMatch(renderer, /sessionPreviews=\{/);
   assert.doesNotMatch(renderer, /hasPendingRequests/);
   assert.doesNotMatch(renderer, /buildChatThumbnailModel/);
-  assert.match(renderer, /void openWorkMonitor\(created\.session\.id\)/);
+  assert.doesNotMatch(renderer, /hasWorkMonitorActivity/);
+  assert.doesNotMatch(renderer, /openWorkMonitor/);
+  assert.doesNotMatch(renderer, /hideWorkMonitor/);
   assert.match(renderer, /const submitChatMessage = useCallback/);
   assert.match(renderer, /onSubmit=\{submitChatMessage\}/);
   assert.match(renderer, /const respondToRequest = useCallback/);
