@@ -21,6 +21,7 @@ declare global {
       getDesktopChromeState?: () => Promise<RuntimeChromeStateResponse>;
       leaveFullscreen?: () => Promise<RuntimeChromeStateResponse>;
       selectWorkingDirectory?: () => Promise<unknown>;
+      showPathInFolder?: (path: string) => Promise<unknown>;
       openWorkMonitor?: (sessionId: string) => Promise<WorkMonitorActionResponse>;
       hideWorkMonitor?: () => Promise<WorkMonitorActionResponse>;
       moveWorkMonitorBy?: (deltaX: number, deltaY: number) => Promise<WorkMonitorActionResponse>;
@@ -269,6 +270,10 @@ export async function selectDesktopWorkingDirectory(): Promise<string | null> {
   if (typeof selected !== "string") return null;
   const trimmed = selected.trim();
   return trimmed ? trimmed : null;
+}
+
+export async function showDesktopPathInFolder(path: string): Promise<boolean> {
+  return (await window.velaDesktop?.showPathInFolder?.(path)) === true;
 }
 
 export function subscribeOpenDesktopSession(listener: (sessionId: string) => void) {

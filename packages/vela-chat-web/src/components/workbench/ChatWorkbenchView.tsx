@@ -10,6 +10,7 @@ import type { AgentConfigPatchWire } from "../../../../vela-chat-client/src";
 import type { ChatRenderModel } from "../../../../vela-chat-render-model/src";
 import type { VoiceInputHost } from "../../../../vela-desktop-shell/src";
 import { toWebChatModel } from "../../adapters/toWebBlocks";
+import type { ComposerSkill } from "../../composer-skills/model";
 import type { ComposerControlsModel } from "../composer-controls/model";
 import type { PromptInputAttachment } from "../../primitives/prompt-input/PromptInput";
 import { VelaComposer } from "../composer/VelaComposer";
@@ -58,6 +59,7 @@ export interface ChatWorkbenchViewProps {
   isRespondingToRequest?: boolean;
   pendingAttachments?: PromptInputAttachment[];
   queuedInputs?: QueuedComposerInputClientState[];
+  skills?: ComposerSkill[];
   showScrollInspector?: boolean;
   voiceInput?: VoiceInputHost;
   onDraftChange: (value: string) => void;
@@ -72,6 +74,7 @@ export interface ChatWorkbenchViewProps {
   onRespondToRequest?: (response: RequestDockResponse) => void;
   onStop?: () => void;
   onSubmit: () => void;
+  onSubmitText?: (text: string) => void | Promise<void>;
 }
 
 export function ChatWorkbenchView({
@@ -89,6 +92,7 @@ export function ChatWorkbenchView({
   isRespondingToRequest = false,
   pendingAttachments,
   queuedInputs,
+  skills,
   showScrollInspector = false,
   voiceInput,
   onDraftChange,
@@ -103,6 +107,7 @@ export function ChatWorkbenchView({
   onRespondToRequest,
   onStop,
   onSubmit,
+  onSubmitText,
 }: ChatWorkbenchViewProps) {
   const webModel = useMemo(() => toWebChatModel(model), [model]);
   const conversationRef = useRef<ConversationViewportHandle | null>(null);
@@ -125,6 +130,13 @@ export function ChatWorkbenchView({
     conversationRef.current?.requestBottomAnchor("message_sent");
     onSubmit();
   }, [onSubmit]);
+  const handleSubmitText = useCallback(
+    (text: string) => {
+      conversationRef.current?.requestBottomAnchor("message_sent");
+      void onSubmitText?.(text);
+    },
+    [onSubmitText],
+  );
   const handleComposerHeightChange = useCallback((height: number) => {
     setComposerHeight((current) => (Math.abs(current - height) < 1 ? current : height));
     conversationRef.current?.prepareForViewportChange();
@@ -148,8 +160,7 @@ export function ChatWorkbenchView({
   const isConversationScrollSettled =
     conversationScrollDebug !== null &&
     conversationScrollDebug.routeInitialized &&
-    conversationScrollDebug.routeResumeStatus !== "pending" &&
-    !conversationScrollDebug.bottomAnchorPendingWork;
+    conversationScrollDebug.routeResumeStatus !== "pending";
   const isMeasuringReadyConversation =
     historyPhase === "ready" && !isConversationScrollSettled;
   const conversationRevealState =
@@ -262,9 +273,11 @@ export function ChatWorkbenchView({
           onRemoveQueuedInput={onRemoveQueuedInput}
           onStop={onStop}
           onSubmit={handleSubmit}
+          onSubmitText={handleSubmitText}
           pendingAttachments={pendingAttachments}
           placeholder={webModel.composer.placeholder}
           queuedInputs={queuedInputs}
+          skills={skills}
           voiceInput={voiceInput}
         />
       </div>

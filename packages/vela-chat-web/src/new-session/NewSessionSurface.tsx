@@ -7,6 +7,8 @@ import { ShellSelect, type VoiceInputHost } from "../../../vela-desktop-shell/sr
 import { FolderGit2, HardDrive, Laptop } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import styles from "../styles/desktop.module.css";
+import type { ComposerSkill } from "../composer-skills/model";
+import { skillRefInputPartsFromText } from "../composer-skills/model";
 import { PromptInput } from "../primitives/prompt-input/PromptInput";
 import { ComposerControls } from "../components/composer-controls/ComposerControls";
 import { buildComposerSetupControlsModel } from "../components/composer-controls/model";
@@ -30,6 +32,7 @@ export interface NewSessionSurfaceProps {
   workingDirectory: string;
   initialPrompt: string;
   agentConfig: NewSessionSubmitInput["agentConfig"];
+  skills?: ComposerSkill[];
   error?: string | null;
   backendStatusMessage?: string | null;
   isSubmitting?: boolean;
@@ -59,6 +62,7 @@ export function NewSessionSurface({
   workingDirectory,
   initialPrompt,
   agentConfig,
+  skills = [],
   error,
   backendStatusMessage,
   isSubmitting,
@@ -101,12 +105,14 @@ export function NewSessionSurface({
     }
     if (patch.permission_mode) onPermissionModeChange(patch.permission_mode);
   };
-  const submitSession = () => {
+  const submitSession = (prompt = initialPrompt) => {
     if (!canSubmit || !selectedBackend) return;
+    const trimmedPrompt = prompt.trim();
     onSubmit({
       backend: selectedBackend,
       workingDirectory: workingDirectory.trim(),
-      initialPrompt: initialPrompt.trim(),
+      initialPrompt: trimmedPrompt,
+      initialSkillRefs: skillRefInputPartsFromText(trimmedPrompt, skills, selectedBackend),
       agentConfig,
     });
   };
@@ -177,13 +183,16 @@ export function NewSessionSurface({
               </div>
             }
             canSubmit={canSubmit}
+            canSubmitText={canSubmit}
             isRunning={false}
             layout="inline"
             onChange={onInitialPromptChange}
             onSubmit={submitSession}
+            onSubmitText={submitSession}
             placeholder="随心输入"
             submitLabel={isSubmitting ? "Creating session" : "Create session"}
             value={initialPrompt}
+            skills={skills}
             voiceInput={voiceInput}
             leftToolbarControls={
               <ComposerControls

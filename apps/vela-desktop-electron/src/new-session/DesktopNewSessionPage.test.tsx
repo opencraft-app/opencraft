@@ -4,7 +4,7 @@ import test from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import type { BackendWire } from "../../../../packages/vela-chat-client/src";
+import type { BackendWire, VeladClient } from "../../../../packages/vela-chat-client/src";
 
 register(
   new URL(
@@ -20,6 +20,7 @@ test("desktop new session page renders setup controls by default", async () => {
       backends={[codexBackend()]}
       defaultBackend="codex"
       defaultWorkingDirectory="/Users/example/project"
+      client={mockClient()}
       preferredBackends={["codex", "acp", "pi"]}
       onDefaultBackendChange={() => undefined}
       onSubmit={() => undefined}
@@ -56,6 +57,7 @@ test("desktop new session exposes native folder picker only for local electron b
       backends={[codexBackend()]}
       defaultBackend="codex"
       defaultWorkingDirectory="/Users/example/project"
+      client={mockClient()}
       preferredBackends={["codex"]}
       runtimeHostKind="electron"
       onDefaultBackendChange={() => undefined}
@@ -70,6 +72,7 @@ test("desktop new session exposes native folder picker only for local electron b
       backends={[codexBackend()]}
       defaultBackend="codex"
       defaultWorkingDirectory="/Users/example/project"
+      client={mockClient()}
       preferredBackends={["codex"]}
       runtimeHostKind="web"
       onDefaultBackendChange={() => undefined}
@@ -104,4 +107,22 @@ function codexBackend(): BackendWire {
     permission_modes: [{ id: "auto", label: "Default permissions", is_default: true }],
     features: [],
   };
+}
+
+function mockClient(): VeladClient {
+  return {
+    listBackendSkills: async (backend) => ({
+      schema: "velad.backend_skills.v1",
+      backend,
+      skill_protocol: "codex.skills.v1",
+      capabilities: {
+        discovery: true,
+        invocation: "native",
+        requires_text_token: true,
+        preferred_token_prefix: "$",
+        accepted_token_prefixes: ["$", "/"],
+      },
+      skills: [],
+    }),
+  } as VeladClient;
 }

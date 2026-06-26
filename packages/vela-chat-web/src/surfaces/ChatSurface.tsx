@@ -6,6 +6,7 @@ import type {
 import type { ChatRenderModel } from "../../../vela-chat-render-model/src";
 import type { VoiceInputHost } from "../../../vela-desktop-shell/src";
 import type { ComposerControlsModel } from "../components/composer-controls/model";
+import type { ComposerSkill } from "../composer-skills/model";
 import type { RequestDockResponse } from "../components/requests/RequestDock";
 import {
   ChatWorkbenchView,
@@ -34,6 +35,7 @@ export interface ChatSurfaceProps {
   isRespondingToRequest?: boolean;
   pendingAttachments?: PromptInputAttachment[];
   queuedInputs?: QueuedComposerInputClientState[];
+  skills?: ComposerSkill[];
   showScrollInspector?: boolean;
   voiceInput?: VoiceInputHost;
   onDraftChange: (value: string) => void;
@@ -48,6 +50,7 @@ export interface ChatSurfaceProps {
   onRespondToRequest?: (response: RequestDockResponse) => void;
   onStop?: () => void;
   onSubmit: () => void;
+  onSubmitText?: (text: string) => void | Promise<void>;
 }
 
 export function ChatSurface({
@@ -65,6 +68,7 @@ export function ChatSurface({
   isRespondingToRequest,
   pendingAttachments,
   queuedInputs,
+  skills,
   showScrollInspector,
   voiceInput,
   onDraftChange,
@@ -79,6 +83,7 @@ export function ChatSurface({
   onRespondToRequest,
   onStop,
   onSubmit,
+  onSubmitText,
 }: ChatSurfaceProps) {
   return (
     <ChatWorkbenchView
@@ -106,8 +111,10 @@ export function ChatSurface({
       onRespondToRequest={onRespondToRequest}
       onStop={onStop}
       onSubmit={onSubmit}
+      onSubmitText={onSubmitText}
       pendingAttachments={pendingAttachments}
       queuedInputs={queuedInputs}
+      skills={skills}
       showScrollInspector={showScrollInspector}
       voiceInput={voiceInput}
     />

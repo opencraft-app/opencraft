@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SpanStatusCode } from "@opentelemetry/api";
-import { Folder } from "lucide-react";
+import { Folder, FolderOpen } from "lucide-react";
 import {
   createFetchVelaEventStreamTransport,
   createVeladClient,
   resolveVeladFetch,
   type BackendKindWire,
   type BackendUsageWireResponse,
+  type ClientInputPart,
 } from "../../../packages/vela-chat-client/src";
 import { useVelaChatSession } from "../../../packages/vela-chat-controller/src";
 import {
@@ -45,6 +46,7 @@ import {
   retryRuntimeBootstrap,
   saveDesktopSettings,
   selectDesktopWorkingDirectory,
+  showDesktopPathInFolder,
   startSessionDragPreview,
   subscribeOpenDesktopSession,
   subscribeRuntimeChromeState,
@@ -502,6 +504,30 @@ function DesktopReadyApp({
     () => buildSessionLocationInfo(activeSession?.working_directory),
     [activeSession?.working_directory],
   );
+  const openActiveSessionLocation = useCallback(() => {
+    if (hostInfo.hostKind !== "electron" || !activeSessionLocationInfo?.path) return;
+    const locationPath = activeSessionLocationInfo.path;
+    const span = observability.startSpan("vela.desktop.open_location", {
+      attributes: {
+        path: locationPath,
+        session_id: activeSessionId ?? "",
+      },
+    });
+    void showDesktopPathInFolder(locationPath)
+      .then((accepted) => {
+        observability.endSpan(span, {
+          code: accepted ? SpanStatusCode.OK : SpanStatusCode.ERROR,
+          message: accepted ? undefined : "desktop host rejected open location",
+        });
+      })
+      .catch((error) => {
+        observability.recordError(span, error);
+        observability.endSpan(span, {
+          code: SpanStatusCode.ERROR,
+          message: error instanceof Error ? error.message : "failed to open location",
+        });
+      });
+  }, [activeSessionId, activeSessionLocationInfo?.path, hostInfo.hostKind, observability]);
   const controller = useVelaChatSession({
     client,
     baseUrl: apiBaseUrl,
@@ -761,9 +787,13 @@ function DesktopReadyApp({
           if (hostInfo.hostKind === "electron") {
             void openWorkMonitor(created.session.id);
           }
+          const initialContent: ClientInputPart[] = [
+            { type: "text", text: trimmedInitialMessage },
+            ...(input.initialSkillRefs ?? []),
+          ];
           await client.sendUserMessage({
             sessionId: created.session.id,
-            text: trimmedInitialMessage,
+            content: initialContent,
           });
         }
         await refreshSessions({ skipMissingActiveSessionCheck: true });
@@ -801,6 +831,15 @@ function DesktopReadyApp({
     controller.send,
     hostInfo.hostKind,
   ]);
+  const submitChatText = useCallback(
+    async (text: string) => {
+      if (hostInfo.hostKind === "electron" && activeSessionId && text.trim()) {
+        void openWorkMonitor(activeSessionId);
+      }
+      await controller.sendText(text);
+    },
+    [activeSessionId, controller.sendText, hostInfo.hostKind],
+  );
 
   const respondToRequest = useCallback(
     async (response: Parameters<typeof controller.respondToRequest>[0]) => {
@@ -872,6 +911,7 @@ function DesktopReadyApp({
         <div className="vela-chat-page">
           <DesktopChatTopbar
             locationInfo={activeSessionLocationInfo}
+            onOpenLocation={hostInfo.hostKind === "electron" ? openActiveSessionLocation : undefined}
             title={activeSessionTitle}
           />
           <ChatSurface
@@ -898,8 +938,10 @@ function DesktopReadyApp({
             onRespondToRequest={respondToRequest}
             onStop={controller.stop}
             onSubmit={submitChatMessage}
+            onSubmitText={submitChatText}
             pendingAttachments={controller.pendingAttachments}
             queuedInputs={controller.queuedInputs}
+            skills={controller.skills}
             voiceInput={hostBridge.voiceInput}
           />
         </div>
@@ -907,6 +949,7 @@ function DesktopReadyApp({
         <DesktopNewSessionPage
           backends={controller.backends}
           backendUsages={backendUsages}
+          client={client}
           defaultBackend={selectedBackendKind}
           defaultWorkingDirectory={DEFAULT_WORKING_DIRECTORY}
           error={error}
@@ -926,12 +969,15 @@ function DesktopReadyApp({
 interface DesktopChatTopbarProps {
   title: string;
   locationInfo: SessionLocationInfo | null;
+  onOpenLocation?: () => void;
 }
 
 function DesktopChatTopbar({
   title,
   locationInfo,
+  onOpenLocation,
 }: DesktopChatTopbarProps) {
+  const canOpenLocation = Boolean(locationInfo && onOpenLocation);
   return (
     <header className="vela-chat-topbar" data-window-drag-region="true">
       <div className="vela-chat-topbar-title-group">
@@ -949,6 +995,17 @@ function DesktopChatTopbar({
           <h1 className="vela-chat-topbar-title">{title}</h1>
         </div>
       </div>
+      {canOpenLocation && locationInfo ? (
+        <button
+          type="button"
+          className="vela-chat-topbar-location-action"
+          aria-label={`Open ${locationInfo.label} in file manager`}
+          title={locationInfo.path}
+          onClick={onOpenLocation}
+        >
+          <FolderOpen size={17} strokeWidth={2.05} />
+        </button>
+      ) : null}
     </header>
   );
 }

@@ -178,6 +178,56 @@ async fn codex_backend_can_be_configured_and_used_for_sessions() {
 }
 
 #[tokio::test]
+async fn backend_skills_are_discovered_from_server_side_cwd() {
+    let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
+    let backend = Arc::new(MockBackendAdapter::new(support::default_backend_outputs()));
+    let runtime = Runtime::new(store.clone(), backend);
+    let app = velad::build_app(
+        velad::ApiState::new(store, runtime).with_codex_backend(Some("gpt-5.4".to_string())),
+    );
+    let cwd = std::env::temp_dir().join(format!(
+        "velad-skills-test-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("time")
+            .as_nanos()
+    ));
+    let skill_dir = cwd.join(".codex/skills/review-code");
+    std::fs::create_dir_all(&skill_dir).expect("skill dir");
+    std::fs::write(
+        skill_dir.join("SKILL.md"),
+        "# Review Code\n\ndescription: Review code changes from the server-side workspace.\n",
+    )
+    .expect("skill file");
+
+    let (status, body) = get_json(
+        app,
+        &format!("/api/v1/backends/codex/skills?cwd={}", cwd.to_string_lossy()),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["schema"], "velad.backend_skills.v1");
+    assert_eq!(body["backend"], "codex");
+    assert_eq!(body["skill_protocol"], "codex.skills.v1");
+    assert_eq!(body["capabilities"]["preferred_token_prefix"], "$");
+    let skill = body["skills"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|skill| skill["name"] == "review-code")
+        .expect("review-code skill");
+    assert_eq!(skill["protocol"], "codex.skills.v1");
+    assert_eq!(skill["scope"], "project");
+    assert_eq!(
+        skill["description"],
+        "Review code changes from the server-side workspace."
+    );
+
+    let _ = std::fs::remove_dir_all(cwd);
+}
+
+#[tokio::test]
 async fn codex_backend_without_discovered_models_is_an_error_snapshot() {
     let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
     let backend = Arc::new(MockBackendAdapter::new(support::default_backend_outputs()));

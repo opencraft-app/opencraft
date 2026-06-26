@@ -5,12 +5,15 @@ import type {
   BackendUsageWireResponse,
   BackendWire,
   PermissionModeWire,
+  VeladClient,
 } from "../../../../packages/vela-chat-client/src";
 import { buildVelaSessionSetupSelection } from "../../../../packages/vela-chat-controller/src";
 import type { VoiceInputHost } from "../../../../packages/vela-desktop-shell/src";
 import {
   buildNewSessionTitle,
   NewSessionSurface,
+  toComposerSkills,
+  type ComposerSkill,
   type NewSessionOption,
   type NewSessionSubmitInput,
 } from "../../../../packages/vela-chat-web/src";
@@ -19,6 +22,7 @@ export interface DesktopNewSessionSubmitInput {
   backend: BackendKindWire;
   workingDirectory: string;
   initialPrompt: string;
+  initialSkillRefs?: NewSessionSubmitInput["initialSkillRefs"];
   title: string;
   agentConfig: AgentConfigWire;
 }
@@ -30,6 +34,7 @@ export interface DesktopNewSessionPageProps {
   defaultWorkingDirectory: string;
   error?: string | null;
   isSubmitting?: boolean;
+  client: VeladClient;
   preferredBackends: BackendKindWire[];
   runtimeHostKind?: "electron" | "web";
   voiceInput?: VoiceInputHost;
@@ -48,6 +53,7 @@ export function DesktopNewSessionPage({
   defaultWorkingDirectory,
   error,
   isSubmitting,
+  client,
   preferredBackends,
   runtimeHostKind = "web",
   voiceInput,
@@ -66,6 +72,7 @@ export function DesktopNewSessionPage({
   );
   const [workingDirectory, setWorkingDirectory] = useState(defaultWorkingDirectory);
   const [initialPrompt, setInitialPrompt] = useState("");
+  const [skills, setSkills] = useState<ComposerSkill[]>([]);
 
   useEffect(() => {
     if (!selectedBackend && defaultBackend) {
@@ -106,6 +113,25 @@ export function DesktopNewSessionPage({
     selectedEnvironment === LOCAL_ENVIRONMENT_ID &&
     canUseNativeWorkingDirectoryPicker(runtimeHostKind, surfaceBackendDetails);
 
+  useEffect(() => {
+    let disposed = false;
+    if (!surfaceBackend || !workingDirectory.trim()) {
+      setSkills([]);
+      return;
+    }
+    void client
+      .listBackendSkills(surfaceBackend, { cwd: workingDirectory.trim() })
+      .then((response) => {
+        if (!disposed) setSkills(toComposerSkills(response.skills));
+      })
+      .catch(() => {
+        if (!disposed) setSkills([]);
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [client, surfaceBackend, workingDirectory]);
+
   return (
     <NewSessionSurface
       agentConfig={setup.setupAgentConfig}
@@ -123,6 +149,7 @@ export function DesktopNewSessionPage({
       selectedModel={setup.setupSelectedModel}
       selectedPermissionMode={setup.setupSelectedPermissionMode}
       selectedReasoningEffort={setup.setupSelectedReasoningEffort}
+      skills={skills}
       voiceInput={voiceInput}
       workingDirectory={workingDirectory}
       onBackendChange={(backend) => {
@@ -164,6 +191,7 @@ async function submitNewSession(
     backend: input.backend,
     workingDirectory: input.workingDirectory,
     initialPrompt: input.initialPrompt,
+    initialSkillRefs: input.initialSkillRefs,
     title: buildNewSessionTitle(input.initialPrompt),
     agentConfig: input.agentConfig,
   });

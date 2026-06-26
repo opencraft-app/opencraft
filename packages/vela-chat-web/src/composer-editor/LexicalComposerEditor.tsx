@@ -29,7 +29,11 @@ import {
   useRef,
   type ForwardedRef,
 } from "react";
-import { createComposerEditorSnapshot } from "./model";
+import {
+  createComposerEditorSnapshot,
+  hasComposerLineBreak,
+  normalizeComposerSingleLine,
+} from "./model";
 import type { ComposerEditorCursor, ComposerEditorHandle, ComposerEditorSnapshot } from "./types";
 
 export interface LexicalComposerEditorProps {
@@ -39,8 +43,11 @@ export interface LexicalComposerEditorProps {
   placeholderClassName?: string;
   ariaLabel?: string;
   disabled?: boolean;
+  canSubmitText?: boolean;
   onChange: (value: string) => void;
+  onSnapshotChange?: (snapshot: ComposerEditorSnapshot) => void;
   onSubmit: () => void;
+  onSubmitText?: (value: string) => void | Promise<void>;
 }
 
 export const LexicalComposerEditor = forwardRef<
@@ -54,8 +61,11 @@ export const LexicalComposerEditor = forwardRef<
     placeholderClassName,
     ariaLabel = "Message",
     disabled = false,
+    canSubmitText = false,
     onChange,
+    onSnapshotChange,
     onSubmit,
+    onSubmitText,
   },
   ref,
 ) {
@@ -112,9 +122,12 @@ export const LexicalComposerEditor = forwardRef<
       <HistoryPlugin />
       <EditorBridgePlugin
         disabled={disabled}
+        canSubmitText={canSubmitText}
         forwardedRef={ref}
         onChange={onChange}
+        onSnapshotChange={onSnapshotChange}
         onSubmit={onSubmit}
+        onSubmitText={onSubmitText}
         value={value}
       />
     </LexicalComposer>
@@ -131,15 +144,21 @@ function canUseLexicalDom() {
 
 function EditorBridgePlugin({
   disabled,
+  canSubmitText,
   forwardedRef,
   onChange,
+  onSnapshotChange,
   onSubmit,
+  onSubmitText,
   value,
 }: {
   disabled: boolean;
+  canSubmitText: boolean;
   forwardedRef: ForwardedRef<ComposerEditorHandle>;
   onChange: (value: string) => void;
+  onSnapshotChange?: (snapshot: ComposerEditorSnapshot) => void;
   onSubmit: () => void;
+  onSubmitText?: (value: string) => void | Promise<void>;
   value: string;
 }) {
   const [editor] = useLexicalComposerContext();
@@ -176,7 +195,7 @@ function EditorBridgePlugin({
       editor.registerCommand(
         KEY_ENTER_COMMAND,
         (event: KeyboardEvent | null) => {
-          if (!event || event.shiftKey || event.isComposing) return false;
+          if (!event || event.isComposing) return false;
           event.preventDefault();
           onSubmit();
           return true;
@@ -230,17 +249,39 @@ function EditorBridgePlugin({
     <OnChangePlugin
       ignoreSelectionChange={false}
       onChange={(editorState: EditorState) => {
+        let nextValue = "";
+        let nextSnapshot: ComposerEditorSnapshot | null = null;
         editorState.read(() => {
-          const nextValue = $getRoot().getTextContent();
-          const nextSnapshot = createComposerEditorSnapshot({
+          nextValue = $getRoot().getTextContent();
+          nextSnapshot = createComposerEditorSnapshot({
             value: nextValue,
             cursor: readCurrentCursor(nextValue),
           });
-          latestSnapshotRef.current = nextSnapshot;
-          if (nextValue === externalValueRef.current) return;
-          externalValueRef.current = nextValue;
-          onChange(nextValue);
         });
+        if (!nextSnapshot) return;
+        if (hasComposerLineBreak(nextValue)) {
+          const shouldSubmitText = canSubmitText && Boolean(onSubmitText) && nextValue.trim();
+          const replacementValue = shouldSubmitText
+            ? ""
+            : normalizeComposerSingleLine(nextValue);
+          const replacementSnapshot = createComposerEditorSnapshot({
+            value: replacementValue,
+          });
+          latestSnapshotRef.current = replacementSnapshot;
+          onSnapshotChange?.(replacementSnapshot);
+          externalValueRef.current = replacementValue;
+          editor.update(() => {
+            replaceRootText(replacementValue);
+          });
+          onChange(replacementValue);
+          if (shouldSubmitText) void onSubmitText(nextValue);
+          return;
+        }
+        latestSnapshotRef.current = nextSnapshot;
+        onSnapshotChange?.(nextSnapshot);
+        if (nextValue === externalValueRef.current) return;
+        externalValueRef.current = nextValue;
+        onChange(nextValue);
       }}
     />
   );

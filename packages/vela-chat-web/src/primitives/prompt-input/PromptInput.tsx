@@ -1,10 +1,16 @@
 "use client";
 
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, ImagePlus, Mic, Square } from "lucide-react";
 import type { VoiceInputHost, VoiceInputState } from "../../../../vela-desktop-shell/src";
 import { LexicalComposerEditor, type ComposerEditorHandle } from "../../composer-editor";
+import type { ComposerSkill, ComposerSkillTrigger } from "../../composer-skills/model";
+import {
+  applyComposerSkillToken,
+  filterComposerSkills,
+  readComposerSkillTrigger,
+} from "../../composer-skills/model";
 import styles from "../../styles/desktop.module.css";
 
 export interface PromptInputAttachment {
@@ -17,17 +23,20 @@ export interface PromptInputProps {
   value: string;
   placeholder: string;
   canSubmit: boolean;
+  canSubmitText?: boolean;
   isRunning: boolean;
   layout?: "dock" | "inline";
   submitLabel?: string;
   stopLabel?: string;
   onChange: (value: string) => void;
   onSubmit: () => void;
+  onSubmitText?: (value: string) => void | Promise<void>;
   onStop?: () => void;
   onAttachImages?: (files: File[]) => void;
   onHeightChange?: (height: number) => void;
   onRemoveAttachment?: (attachmentId: string) => void;
   pendingAttachments?: PromptInputAttachment[];
+  skills?: ComposerSkill[];
   voiceInput?: VoiceInputHost;
   leftToolbarControls?: ReactNode;
   rightToolbarControls?: ReactNode;
@@ -38,17 +47,20 @@ export function PromptInput({
   value,
   placeholder,
   canSubmit,
+  canSubmitText,
   isRunning,
   layout = "dock",
   submitLabel = "Send message",
   stopLabel = "Stop generation",
   onChange,
   onSubmit,
+  onSubmitText,
   onStop,
   onAttachImages,
   onHeightChange,
   onRemoveAttachment,
   pendingAttachments = [],
+  skills = [],
   voiceInput,
   leftToolbarControls,
   rightToolbarControls,
@@ -62,14 +74,36 @@ export function PromptInput({
   const voiceInputRef = useRef<VoiceInputHost | undefined>(voiceInput);
   const [isDictating, setIsDictating] = useState(false);
   const [supportsDictation, setSupportsDictation] = useState(Boolean(voiceInput));
+  const [skillTrigger, setSkillTrigger] = useState<ComposerSkillTrigger | null>(null);
   const isStopControl = isRunning && !canSubmit && Boolean(onStop);
   const primaryControlLabel = isStopControl ? stopLabel : submitLabel;
+  const filteredSkills = useMemo(
+    () => filterComposerSkills(skills, skillTrigger),
+    [skillTrigger, skills],
+  );
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
     if (canSubmit) onSubmit();
   };
   const handleEditorSubmit = () => {
     if (canSubmit) onSubmit();
+  };
+  const handleEditorSubmitText = (text: string) => {
+    if (canSubmitText ?? canSubmit) void onSubmitText?.(text);
+  };
+  const handleChange = (nextValue: string) => {
+    valueRef.current = nextValue;
+    onChange(nextValue);
+  };
+  const handleSkillSelect = (skill: ComposerSkill) => {
+    if (!skillTrigger) return;
+    const next = applyComposerSkillToken(valueRef.current, skillTrigger, skill, "$");
+    setSkillTrigger(null);
+    valueRef.current = next.value;
+    onChange(next.value);
+    requestAnimationFrame(() => {
+      editorRef.current?.focusAt(next.cursorIndex);
+    });
   };
   const handleStop = () => {
     if (isStopControl) onStop?.();
@@ -173,14 +207,39 @@ export function PromptInput({
       <div className={styles.composer}>
         <LexicalComposerEditor
           ariaLabel="Message"
+          canSubmitText={canSubmitText ?? canSubmit}
           className={styles.composerEditor}
           placeholderClassName={styles.composerEditorPlaceholder}
           value={value}
-          onChange={onChange}
+          onChange={handleChange}
+          onSnapshotChange={(snapshot) => {
+            setSkillTrigger(readComposerSkillTrigger(snapshot.value, snapshot.cursor));
+          }}
           onSubmit={handleEditorSubmit}
+          onSubmitText={handleEditorSubmitText}
           placeholder={placeholder}
           ref={editorRef}
         />
+        {filteredSkills.length > 0 ? (
+          <div className={styles.skillMenu} role="listbox" aria-label="Skills">
+            {filteredSkills.map((skill) => (
+              <button
+                className={styles.skillMenuItem}
+                key={`${skill.protocol}:${skill.path}`}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  handleSkillSelect(skill);
+                }}
+                type="button"
+              >
+                <span className={styles.skillMenuName}>${skill.name}</span>
+                {skill.description ? (
+                  <span className={styles.skillMenuDescription}>{skill.description}</span>
+                ) : null}
+              </button>
+            ))}
+          </div>
+        ) : null}
         {pendingAttachments.length > 0 ? (
           <div className={styles.attachmentTray} aria-label="Pending attachments">
             {pendingAttachments.map((attachment) => (

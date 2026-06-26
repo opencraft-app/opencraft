@@ -1,4 +1,10 @@
-use std::{collections::HashMap, convert::Infallible, path::PathBuf, sync::Arc};
+use std::{
+    collections::HashMap,
+    convert::Infallible,
+    env, fs,
+    path::{Path as FsPath, PathBuf},
+    sync::Arc,
+};
 
 use axum::{
     Json, Router,
@@ -325,6 +331,10 @@ where
             "/api/v1/backends/{backend}/settings",
             get(get_backend_settings::<B>).patch(patch_backend_settings::<B>),
         )
+        .route(
+            "/api/v1/backends/{backend}/skills",
+            get(list_backend_skills::<B>),
+        )
         .route("/api/v1/runtime-info", get(get_runtime_info::<B>))
         .route("/api/v1/runtime/shutdown", post(shutdown_runtime::<B>))
         .route("/v1/traces", post(post_otlp_traces::<B>))
@@ -619,6 +629,10 @@ struct InputPart {
     text: Option<String>,
     uri: Option<String>,
     data: Option<String>,
+    name: Option<String>,
+    path: Option<String>,
+    protocol: Option<String>,
+    backend: Option<BackendKindWire>,
     #[serde(alias = "mimeType")]
     mime_type: Option<String>,
 }
@@ -678,6 +692,12 @@ struct ObservabilityErrorsQuery {
     limit: Option<usize>,
 }
 
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BackendSkillsQuery {
+    cwd: Option<String>,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 enum ViewWindowDirection {
@@ -687,7 +707,7 @@ enum ViewWindowDirection {
     Around,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum BackendKindWire {
     VelaEngine,
@@ -1167,7 +1187,7 @@ where
         ack_result = if input.event_type == "user.message" {
             let content = input_content(input);
             match input_message_blocks(input) {
-                Ok(blocks) if contains_image_block(&blocks) => {
+                Ok(blocks) if contains_structured_block(&blocks) => {
                     state
                         .runtime
                         .send_user_message_with_blocks_and_trace(
@@ -1997,6 +2017,90 @@ where
     }
 }
 
+#[derive(Debug, Serialize)]
+struct BackendSkillsResponse {
+    schema: &'static str,
+    backend: BackendKindWire,
+    cwd: Option<String>,
+    skill_protocol: &'static str,
+    capabilities: BackendSkillsCapabilities,
+    skills: Vec<BackendSkillDescriptor>,
+}
+
+#[derive(Debug, Serialize)]
+struct BackendSkillsCapabilities {
+    discovery: bool,
+    invocation: &'static str,
+    requires_text_token: bool,
+    preferred_token_prefix: &'static str,
+    accepted_token_prefixes: Vec<&'static str>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct BackendSkillDescriptor {
+    name: String,
+    display_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    path: String,
+    origin: &'static str,
+    scope: &'static str,
+    protocol: &'static str,
+}
+
+async fn list_backend_skills<B>(
+    State(state): State<ApiState<B>>,
+    Path(backend): Path<String>,
+    query: Result<Query<BackendSkillsQuery>, QueryRejection>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let query = match parsed_query(query) {
+        Ok(query) => query,
+        Err(response) => return response,
+    };
+    let Some(backend_kind) = BackendKindWire::from_str(&backend) else {
+        return error(
+            StatusCode::NOT_FOUND,
+            "backend_not_found",
+            "backend is not configured",
+        );
+    };
+    if state.configured_engine_kind(backend_kind).is_none() {
+        return error(
+            StatusCode::NOT_FOUND,
+            "backend_not_found",
+            "backend is not configured",
+        );
+    }
+
+    let supports_codex_skills = matches!(
+        backend_kind,
+        BackendKindWire::Codex | BackendKindWire::VelaEngine
+    );
+    let skills = if supports_codex_skills {
+        discover_codex_skills(query.cwd.as_deref())
+    } else {
+        Vec::new()
+    };
+    Json(BackendSkillsResponse {
+        schema: "velad.backend_skills.v1",
+        backend: backend_kind,
+        cwd: query.cwd,
+        skill_protocol: "codex.skills.v1",
+        capabilities: BackendSkillsCapabilities {
+            discovery: supports_codex_skills,
+            invocation: if supports_codex_skills { "native" } else { "none" },
+            requires_text_token: true,
+            preferred_token_prefix: "$",
+            accepted_token_prefixes: vec!["$", "/"],
+        },
+        skills,
+    })
+    .into_response()
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct VelaEngineBackendSettingsPatch {
@@ -2456,6 +2560,140 @@ where
     }))
 }
 
+fn discover_codex_skills(cwd: Option<&str>) -> Vec<BackendSkillDescriptor> {
+    let mut roots = Vec::new();
+    if let Some(value) = env::var_os("VELAD_SKILLS_DIR") {
+        for root in env::split_paths(&value) {
+            roots.push(SkillRoot {
+                path: root,
+                origin: "env",
+                scope: "runtime",
+            });
+        }
+    }
+    if let Some(home) = home_dir() {
+        roots.push(SkillRoot {
+            path: home.join(".codex/skills"),
+            origin: "codex_home",
+            scope: "user",
+        });
+        roots.push(SkillRoot {
+            path: home.join(".agents/skills"),
+            origin: "agents_home",
+            scope: "user",
+        });
+    }
+    if let Some(cwd) = cwd.and_then(normalized_cwd_path) {
+        roots.push(SkillRoot {
+            path: cwd.join(".codex/skills"),
+            origin: "workspace",
+            scope: "project",
+        });
+        roots.push(SkillRoot {
+            path: cwd.join(".agents/skills"),
+            origin: "workspace",
+            scope: "project",
+        });
+    }
+
+    let mut skills = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for root in roots {
+        for skill in discover_skills_in_root(&root) {
+            if seen.insert(skill.name.clone()) {
+                skills.push(skill);
+            }
+        }
+    }
+    skills.sort_by(|left, right| left.name.cmp(&right.name));
+    skills
+}
+
+struct SkillRoot {
+    path: PathBuf,
+    origin: &'static str,
+    scope: &'static str,
+}
+
+fn discover_skills_in_root(root: &SkillRoot) -> Vec<BackendSkillDescriptor> {
+    let entries = match fs::read_dir(&root.path) {
+        Ok(entries) => entries,
+        Err(_) => return Vec::new(),
+    };
+    entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let path = entry.path();
+            if !path.is_dir() || !path.join("SKILL.md").is_file() {
+                return None;
+            }
+            let name = path.file_name()?.to_str()?.to_string();
+            if !is_valid_skill_name(&name) {
+                return None;
+            }
+            Some(BackendSkillDescriptor {
+                display_name: display_name_from_skill_name(&name),
+                description: read_skill_description(&path.join("SKILL.md")),
+                path: path.to_string_lossy().to_string(),
+                name,
+                origin: root.origin,
+                scope: root.scope,
+                protocol: "codex.skills.v1",
+            })
+        })
+        .collect()
+}
+
+fn home_dir() -> Option<PathBuf> {
+    env::var_os("HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            env::var_os("USERPROFILE")
+                .filter(|value| !value.is_empty())
+                .map(PathBuf::from)
+        })
+}
+
+fn normalized_cwd_path(cwd: &str) -> Option<PathBuf> {
+    let trimmed = cwd.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(PathBuf::from(trimmed))
+}
+
+fn is_valid_skill_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+}
+
+fn display_name_from_skill_name(name: &str) -> String {
+    name.replace(['-', '_'], " ")
+}
+
+fn read_skill_description(path: &FsPath) -> Option<String> {
+    let content = fs::read_to_string(path).ok()?;
+    for line in content.lines().take(24) {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some(description) = line.strip_prefix("description:") {
+            let description = description.trim().trim_matches('"').trim_matches('\'');
+            if !description.is_empty() {
+                return Some(description.to_string());
+            }
+        }
+        if line.len() >= 8 {
+            return Some(line.chars().take(180).collect());
+        }
+    }
+    None
+}
+
 fn input_content(input: &ClientInputEvent) -> String {
     input
         .content
@@ -2484,10 +2722,34 @@ fn input_message_blocks(input: &ClientInputEvent) -> anyhow::Result<Vec<UserMess
                 .as_ref()
                 .filter(|text| !text.is_empty())
                 .map(|text| Ok(UserMessageBlock::text(text.clone()))),
+            "skill_ref" => Some(skill_block_from_part(part)),
             "image" => Some(image_block_from_part(part)),
             _ => None,
         })
         .collect()
+}
+
+fn skill_block_from_part(part: &InputPart) -> anyhow::Result<UserMessageBlock> {
+    let name = part
+        .name
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("skill_ref input part requires name"))?;
+    if !is_valid_skill_name(&name) {
+        anyhow::bail!("skill_ref input part name is invalid");
+    }
+    let protocol = part
+        .protocol
+        .clone()
+        .unwrap_or_else(|| "codex.skills.v1".to_string());
+    if protocol != "codex.skills.v1" {
+        anyhow::bail!("skill_ref input part protocol is unsupported");
+    }
+    Ok(UserMessageBlock::skill_ref(
+        name,
+        protocol,
+        part.backend.and_then(BackendKindWire::engine_kind),
+        part.path.clone(),
+    ))
 }
 
 fn image_block_from_part(part: &InputPart) -> anyhow::Result<UserMessageBlock> {
@@ -2514,10 +2776,10 @@ fn image_block_from_part(part: &InputPart) -> anyhow::Result<UserMessageBlock> {
     })
 }
 
-fn contains_image_block(blocks: &[UserMessageBlock]) -> bool {
+fn contains_structured_block(blocks: &[UserMessageBlock]) -> bool {
     blocks
         .iter()
-        .any(|block| matches!(block, UserMessageBlock::Image { .. }))
+        .any(|block| !matches!(block, UserMessageBlock::Text { .. }))
 }
 
 fn hash_value(value: &Value) -> String {

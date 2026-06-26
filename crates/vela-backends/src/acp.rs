@@ -583,6 +583,7 @@ fn acp_prompt_blocks(input: &BackendSend) -> Vec<Value> {
             UserMessageBlock::Image {
                 blob: BlobRef::Stored { .. },
             } => None,
+            UserMessageBlock::SkillRef { .. } => None,
         })
         .collect()
 }

@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld("velaDesktop", {
   leaveFullscreen: () => ipcRenderer.invoke("vela:desktop-leave-fullscreen"),
   selectWorkingDirectory: () =>
     ipcRenderer.invoke("vela:desktop-select-working-directory"),
+  showPathInFolder: (path: string) =>
+    ipcRenderer.invoke("vela:desktop-show-path-in-folder", path),
   openWorkMonitor: (sessionId: string) =>
     ipcRenderer.invoke("vela:work-monitor-open", sessionId),
   hideWorkMonitor: () => ipcRenderer.invoke("vela:work-monitor-hide"),

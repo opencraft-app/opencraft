@@ -24,9 +24,26 @@ export interface ComposerDraftClientState {
 
 export type ComposerQueueInputPart =
   | { type: "text"; text: string }
+  | {
+      type: "skill_ref";
+      name: string;
+      protocol: "codex.skills.v1";
+      backend?: ComposerQueueBackendKind;
+      path?: string;
+    }
   | { type: "file_ref"; uri: string }
   | { type: "image_ref"; uri: string }
   | { type: "image"; data: string; mime_type: string };
+
+type ComposerQueueBackendKind =
+  | "vela_engine"
+  | "codex"
+  | "cloudagent"
+  | "claude_code"
+  | "pi"
+  | "opencode"
+  | "acp"
+  | "qoder";
 
 export interface QueuedComposerInputClientState {
   id: string;
@@ -413,6 +430,16 @@ function parseComposerQueueInputPart(value: unknown): ComposerQueueInputPart | n
   switch (record.type) {
     case "text":
       return typeof record.text === "string" ? { type: "text", text: record.text } : null;
+    case "skill_ref":
+      return typeof record.name === "string" && record.protocol === "codex.skills.v1"
+        ? {
+            type: "skill_ref",
+            name: record.name,
+            protocol: "codex.skills.v1",
+            ...(isComposerQueueBackendKind(record.backend) ? { backend: record.backend } : {}),
+            ...(typeof record.path === "string" ? { path: record.path } : {}),
+          }
+        : null;
     case "file_ref":
       return typeof record.uri === "string" ? { type: "file_ref", uri: record.uri } : null;
     case "image_ref":
@@ -424,6 +451,19 @@ function parseComposerQueueInputPart(value: unknown): ComposerQueueInputPart | n
     default:
       return null;
   }
+}
+
+function isComposerQueueBackendKind(value: unknown): value is ComposerQueueBackendKind {
+  return (
+    value === "vela_engine" ||
+    value === "codex" ||
+    value === "cloudagent" ||
+    value === "claude_code" ||
+    value === "pi" ||
+    value === "opencode" ||
+    value === "acp" ||
+    value === "qoder"
+  );
 }
 
 function serializeShellLayoutState(state: ShellLayoutState): string {

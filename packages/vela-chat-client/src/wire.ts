@@ -628,6 +628,33 @@ export interface BackendSettingsPatchWire {
   model?: string;
 }
 
+export interface BackendSkillDescriptorWire {
+  name: string;
+  display_name: string;
+  description?: string;
+  path: string;
+  origin: string;
+  scope: string;
+  protocol: "codex.skills.v1";
+}
+
+export interface BackendSkillsCapabilitiesWire {
+  discovery: boolean;
+  invocation: "native" | "none" | string;
+  requires_text_token: boolean;
+  preferred_token_prefix: "$" | "/" | string;
+  accepted_token_prefixes: string[];
+}
+
+export interface BackendSkillsWireResponse {
+  schema: "velad.backend_skills.v1";
+  backend: BackendKindWire;
+  cwd?: string | null;
+  skill_protocol: "codex.skills.v1";
+  capabilities: BackendSkillsCapabilitiesWire;
+  skills: BackendSkillDescriptorWire[];
+}
+
 export interface UpdateAgentConfigWireResponse {
   session: SessionWire;
   effective_after: "current_session" | "next_turn";
@@ -636,6 +663,13 @@ export interface UpdateAgentConfigWireResponse {
 
 export type ClientInputPart =
   | { type: "text"; text: string }
+  | {
+      type: "skill_ref";
+      name: string;
+      protocol: "codex.skills.v1";
+      backend?: BackendKindWire;
+      path?: string;
+    }
   | { type: "file_ref"; uri: string }
   | { type: "image_ref"; uri: string }
   | { type: "image"; data: string; mime_type: string };

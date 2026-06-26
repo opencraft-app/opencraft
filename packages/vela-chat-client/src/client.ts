@@ -4,6 +4,7 @@ import type {
   ArchiveSessionWireResponse,
   BackendKindWire,
   BackendProbeResultWire,
+  BackendSkillsWireResponse,
   BackendSettingsPatchWire,
   BackendSettingsWireResponse,
   BackendUsageWireResponse,
@@ -34,6 +35,7 @@ import {
   encodeSessionId,
   normalizeBaseUrl,
   readBackendProbeResponse,
+  readBackendSkillsResponse,
   readBackendSettingsResponse,
   readBackendUsageResponse,
   readBackendResponse,
@@ -51,6 +53,7 @@ import {
   validateAfterId,
   validateAgentConfigPatch,
   validateBackendSettingsPatch,
+  validateBackendSkillsOptions,
   validateClientInputEvents,
   validateConversationWindowOptions,
   validateCreateSessionInput,
@@ -71,6 +74,10 @@ export interface VeladClient {
   getBackend: (backend: BackendKindWire) => Promise<BackendWireResponse>;
   getBackendUsage: (backend: BackendKindWire) => Promise<BackendUsageWireResponse>;
   probeBackend: (backend: BackendKindWire) => Promise<BackendProbeResultWire>;
+  listBackendSkills: (
+    backend: BackendKindWire,
+    options?: { cwd?: string | null },
+  ) => Promise<BackendSkillsWireResponse>;
   getBackendSettings: (backend: BackendKindWire) => Promise<BackendSettingsWireResponse>;
   updateBackendSettings: (
     backend: BackendKindWire,
@@ -296,6 +303,18 @@ export function createVeladClient(options: VeladClientOptions): VeladClient {
       const url = new URL(`backends/${encodeBackendKind(backend)}/probe`, baseUrl);
       const response = await observedFetch("velad.backend.probe", url, { method: "POST" }, { "velad.backend": backend });
       return readBackendProbeResponse(response);
+    },
+    async listBackendSkills(backend, options) {
+      validateBackendSkillsOptions(options);
+      const url = new URL(`backends/${encodeBackendKind(backend)}/skills`, baseUrl);
+      if (options?.cwd) url.searchParams.set("cwd", options.cwd);
+      return observedRequest(
+        "velad.backend.skills.list",
+        url,
+        {},
+        { "velad.backend": backend },
+        readBackendSkillsResponse,
+      );
     },
     async getBackendSettings(backend) {
       const url = new URL(`backends/${encodeBackendKind(backend)}/settings`, baseUrl);

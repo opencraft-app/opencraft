@@ -34,6 +34,11 @@ import {
 import type { RequestDockResponse } from "../../vela-chat-web/src/components/requests/RequestDock";
 import { buildRequestResponseInputEvent } from "../../vela-chat-web/src/components/requests/requestResponses";
 import { buildComposerControlsModel } from "../../vela-chat-web/src/components/composer-controls/model";
+import {
+  skillRefInputPartsFromText,
+  toComposerSkills,
+  type ComposerSkill,
+} from "../../vela-chat-web/src/composer-skills/model";
 import type { ConversationScrollControllerDebug } from "../../vela-chat-web/src/conversation-runtime/scroll/useConversationScrollController";
 import type {
   ChatHostPolicy,
@@ -94,6 +99,7 @@ export interface VelaChatSessionController {
   queuedInputs: QueuedComposerInputClientState[];
   requests: PendingRequestsWireView | null;
   session: SessionWire | null;
+  skills: ComposerSkill[];
   attachImages: (files: File[]) => Promise<void>;
   loadOlderConversation: () => Promise<void>;
   refreshAll: () => Promise<void>;
@@ -124,6 +130,7 @@ export function useVelaChatSession({
   const [requests, setRequests] = useState<PendingRequestsWireView | null>(null);
   const [session, setSession] = useState<SessionWire | null>(null);
   const [backends, setBackends] = useState<BackendWire[]>([]);
+  const [skills, setSkills] = useState<ComposerSkill[]>([]);
   const [draft, setDraftState] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<PendingImageAttachment[]>([]);
   const [queuedInputs, setQueuedInputsState] = useState<QueuedComposerInputClientState[]>([]);
@@ -311,27 +318,55 @@ export function useVelaChatSession({
     }
   }, [client, fetchBackends]);
 
+  const loadSkills = useCallback(async () => {
+    const requestedSessionId = activeSessionId;
+    const currentSession = session;
+    if (!requestedSessionId || !currentSession) {
+      setSkills([]);
+      return;
+    }
+    try {
+      const response = await client.listBackendSkills(currentSession.backend, {
+        cwd: currentSession.working_directory,
+      });
+      if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
+      setSkills(toComposerSkills(response.skills));
+    } catch (err) {
+      if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
+      setSkills([]);
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [activeSessionId, client, session]);
+
   const refreshAll = useCallback(async () => {
     const requestedSessionId = activeSessionId;
     if (!requestedSessionId) return;
+    const span = observability?.startSpan("vela.chat.session.load", {
+      attributes: {
+        "vela.session_id": requestedSessionId,
+        "vela.chat.session_load.includes_backends": false,
+      },
+    });
     try {
       setError(null);
-      const [nextConversation, nextRequests, nextSession, nextBackends] = await Promise.all([
+      const [nextConversation, nextRequests, nextSession] = await Promise.all([
         client.getConversation(requestedSessionId),
         client.getPendingRequests(requestedSessionId, { status: "pending" }),
         client.getSession(requestedSessionId),
-        fetchBackends ? client.getBackends() : Promise.resolve(null),
       ]);
       if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
       commitConversation(nextConversation);
       commitRequests(nextRequests);
       setSession(nextSession.session);
-      if (nextBackends) setBackends(nextBackends.backends);
+      span?.setStatus({ code: 1 });
     } catch (err) {
       if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
+      if (span && observability) observability.recordError(span, err);
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      span?.end();
     }
-  }, [activeSessionId, client, commitConversation, commitRequests, fetchBackends]);
+  }, [activeSessionId, client, commitConversation, commitRequests, observability]);
 
   useEffect(() => {
     void refreshAll();
@@ -340,6 +375,10 @@ export function useVelaChatSession({
   useEffect(() => {
     void loadBackends();
   }, [loadBackends]);
+
+  useEffect(() => {
+    void loadSkills();
+  }, [loadSkills]);
 
   const activeConversation =
     readModelForActiveSession(activeSessionId, conversation) ??
@@ -604,9 +643,11 @@ export function useVelaChatSession({
   const send = useCallback(async () => {
     const text = draft.trim();
     const imageParts = pendingAttachments.map((attachment) => attachment.part);
+    const skillParts = skillRefInputPartsFromText(text, skills, session?.backend);
     if (!text && imageParts.length === 0) return;
     const messageContent: ClientInputPart[] = [
       ...(text ? [{ type: "text", text } satisfies ClientInputPart] : []),
+      ...skillParts,
       ...imageParts,
     ];
     if (model.composer.is_running) {
@@ -626,12 +667,20 @@ export function useVelaChatSession({
     model.composer.is_running,
     pendingAttachments,
     sendMessageContent,
+    session?.backend,
+    skills,
   ]);
 
   const sendText = useCallback(async (text: string) => {
     const trimmed = text.trim();
-    if (!trimmed) return;
-    const messageContent: ClientInputPart[] = [{ type: "text", text: trimmed }];
+    const imageParts = pendingAttachments.map((attachment) => attachment.part);
+    const skillParts = skillRefInputPartsFromText(trimmed, skills, session?.backend);
+    if (!trimmed && imageParts.length === 0) return;
+    const messageContent: ClientInputPart[] = [
+      ...(trimmed ? [{ type: "text", text: trimmed } satisfies ClientInputPart] : []),
+      ...skillParts,
+      ...imageParts,
+    ];
     if (model.composer.is_running) {
       enqueueMessageContent(messageContent);
       commitDraft("");
@@ -642,7 +691,15 @@ export function useVelaChatSession({
     if (!accepted) return;
     commitDraft("");
     setPendingAttachments([]);
-  }, [commitDraft, enqueueMessageContent, model.composer.is_running, sendMessageContent]);
+  }, [
+    commitDraft,
+    enqueueMessageContent,
+    model.composer.is_running,
+    pendingAttachments,
+    sendMessageContent,
+    session?.backend,
+    skills,
+  ]);
 
   const removeQueuedInput = useCallback(
     (id: string) => {
@@ -791,6 +848,7 @@ export function useVelaChatSession({
     queuedInputs,
     requests: activeRequests,
     session,
+    skills,
     attachImages,
     loadOlderConversation,
     refreshAll,
@@ -916,6 +974,14 @@ function cloneQueueInputPart(part: ClientInputPart): ComposerQueueInputPart {
   switch (part.type) {
     case "text":
       return { type: "text", text: part.text };
+    case "skill_ref":
+      return {
+        type: "skill_ref",
+        name: part.name,
+        protocol: part.protocol,
+        ...(part.backend ? { backend: part.backend } : {}),
+        ...(part.path ? { path: part.path } : {}),
+      };
     case "file_ref":
       return { type: "file_ref", uri: part.uri };
     case "image_ref":

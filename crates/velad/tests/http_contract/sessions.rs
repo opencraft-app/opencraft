@@ -160,6 +160,65 @@ async fn session_activity_separates_user_attention_from_running_execution() {
 }
 
 #[tokio::test]
+async fn send_message_preserves_structured_skill_refs_in_user_blocks() {
+    let app = test_app().await;
+
+    let (status, created) = json_request(
+        app.clone(),
+        Method::POST,
+        "/api/v1/sessions",
+        json!({
+            "backend": "pi",
+            "working_directory": "/tmp/project",
+            "title": "Skill refs"
+        }),
+        Some("session-skill-refs"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let session_id = created["session"]["id"].as_str().unwrap();
+
+    let (status, _) = json_request(
+        app.clone(),
+        Method::POST,
+        &format!("/api/v1/sessions/{session_id}/events"),
+        json!({
+            "events": [{
+                "type": "user.message",
+                "content": [
+                    { "type": "text", "text": "$review-code inspect this patch" },
+                    {
+                        "type": "skill_ref",
+                        "name": "review-code",
+                        "protocol": "codex.skills.v1",
+                        "backend": "codex",
+                        "path": "/tmp/project/.codex/skills/review-code"
+                    }
+                ]
+            }]
+        }),
+        Some("cmd-session-skill-refs"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+
+    let events = wait_for_session_event(app, session_id, "user.message.accepted").await;
+    let accepted = events["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|event| event["type"] == "user.message.accepted")
+        .expect("accepted event");
+    assert_eq!(accepted["payload"]["content"], "$review-code inspect this patch");
+    assert_eq!(accepted["payload"]["blocks"][1]["type"], "skill_ref");
+    assert_eq!(accepted["payload"]["blocks"][1]["name"], "review-code");
+    assert_eq!(
+        accepted["payload"]["blocks"][1]["protocol"],
+        "codex.skills.v1"
+    );
+}
+
+#[tokio::test]
 async fn create_session_uses_configured_default_model_when_request_omits_model() {
     let (app, _) = test_app_with_backend_outputs_and_default_model(
         support::default_backend_outputs(),

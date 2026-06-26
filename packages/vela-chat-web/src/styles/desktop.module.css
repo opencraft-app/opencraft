@@ -1128,6 +1128,69 @@
   margin: 0;
 }
 
+.skillMenu {
+  position: absolute;
+  right: 14px;
+  bottom: 58px;
+  left: 14px;
+  z-index: 3;
+  display: grid;
+  gap: 4px;
+  max-height: 220px;
+  overflow: hidden auto;
+  border: 1px solid rgb(13 13 13 / 8%);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 94%);
+  box-shadow:
+    0 10px 28px rgb(15 23 42 / 9%),
+    inset 0 1px 0 rgb(255 255 255 / 66%);
+  padding: 6px;
+  -webkit-backdrop-filter: saturate(1.1) blur(14px);
+  backdrop-filter: saturate(1.1) blur(14px);
+}
+
+.skillMenuItem {
+  display: grid;
+  grid-template-columns: minmax(120px, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #292524;
+  cursor: pointer;
+  padding: 7px 10px;
+  text-align: left;
+}
+
+.skillMenuItem:hover,
+.skillMenuItem:focus-visible {
+  outline: 0;
+  background: rgb(243 244 246 / 88%);
+}
+
+.skillMenuName {
+  min-width: 0;
+  overflow: hidden;
+  color: #1f2937;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skillMenuDescription {
+  min-width: 0;
+  overflow: hidden;
+  color: #8a8782;
+  font-size: 12px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .composerAttachedSurface {
   display: grid;
   width: min(100%, var(--vela-composer-max-width));

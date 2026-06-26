@@ -17,6 +17,8 @@ import type {
   BackendLocationWire,
   BackendModelWire,
   BackendProbeResultWire,
+  BackendSkillDescriptorWire,
+  BackendSkillsWireResponse,
   BackendSettingsPatchWire,
   BackendSettingsWireResponse,
   BackendStatusWire,
@@ -469,6 +471,19 @@ function validateClientInputPart(part: unknown): asserts part is ClientInputPart
     case "text":
       requireInputPartString(part, "text");
       return;
+    case "skill_ref":
+      requireInputPartString(part, "name");
+      requireInputPartString(part, "protocol");
+      if (part.protocol !== "codex.skills.v1") {
+        throw invalidInputPart("InputPart.skill_ref protocol must be codex.skills.v1");
+      }
+      if (part.backend !== undefined) {
+        requireInputPartEnum(part, "backend", backendKinds);
+      }
+      if (part.path !== undefined) {
+        requireInputPartString(part, "path");
+      }
+      return;
     case "file_ref":
     case "image_ref":
       requireInputPartString(part, "uri");
@@ -478,7 +493,7 @@ function validateClientInputPart(part: unknown): asserts part is ClientInputPart
       requireInputPartString(part, "mime_type");
       return;
     default:
-      throw invalidInputPart("InputPart.type must be text, file_ref, image_ref, or image");
+      throw invalidInputPart("InputPart.type must be text, skill_ref, file_ref, image_ref, or image");
   }
 }
 
@@ -511,6 +526,17 @@ function validateOptionalInputEventOptions(event: Record<string, unknown>) {
 function requireInputPartString(part: Record<string, unknown>, field: string) {
   if (typeof part[field] !== "string") {
     throw invalidInputPart(`InputPart.${String(part.type)} requires ${field}`);
+  }
+}
+
+function requireInputPartEnum(
+  part: Record<string, unknown>,
+  field: string,
+  values: Set<string>,
+) {
+  const value = part[field];
+  if (typeof value !== "string" || !values.has(value)) {
+    throw invalidInputPart(`InputPart.${String(part.type)} ${field} must be a known value`);
   }
 }
 
@@ -866,6 +892,93 @@ function parseBackendUsageLine(data: unknown, owner: string): BackendUsageLineWi
   };
 }
 
+export async function readBackendSkillsResponse(
+  response: Response,
+): Promise<BackendSkillsWireResponse> {
+  return parseBackendSkillsWireResponse(await readJsonResponse<unknown>(response));
+}
+
+export function parseBackendSkillsWireResponse(data: unknown): BackendSkillsWireResponse {
+  if (!isRecord(data)) {
+    throw invalidBackendsResponse("BackendSkillsResponse must be an object");
+  }
+  if (data.schema !== "velad.backend_skills.v1") {
+    throw invalidBackendsResponse(
+      "BackendSkillsResponse.schema must be velad.backend_skills.v1",
+    );
+  }
+  const backend = data.backend;
+  if (typeof backend !== "string" || !backendKinds.has(backend)) {
+    throw invalidBackendsResponse("BackendSkillsResponse.backend must be a known BackendKind");
+  }
+  if (data.skill_protocol !== "codex.skills.v1") {
+    throw invalidBackendsResponse(
+      "BackendSkillsResponse.skill_protocol must be codex.skills.v1",
+    );
+  }
+  const capabilities = data.capabilities;
+  if (!isRecord(capabilities)) {
+    throw invalidBackendsResponse("BackendSkillsResponse.capabilities must be an object");
+  }
+  const acceptedTokenPrefixes = capabilities.accepted_token_prefixes;
+  if (
+    !Array.isArray(acceptedTokenPrefixes) ||
+    acceptedTokenPrefixes.some((prefix) => typeof prefix !== "string")
+  ) {
+    throw invalidBackendsResponse(
+      "BackendSkillsResponse.capabilities.accepted_token_prefixes must be a string array",
+    );
+  }
+  const cwd = data.cwd;
+  if (cwd !== undefined && cwd !== null && typeof cwd !== "string") {
+    throw invalidBackendsResponse("BackendSkillsResponse.cwd must be a string or null");
+  }
+  return {
+    schema: data.schema,
+    backend: backend as BackendKindWire,
+    ...(cwd !== undefined ? { cwd: cwd as string | null } : {}),
+    skill_protocol: data.skill_protocol,
+    capabilities: {
+      discovery: requiredBackendBoolean(capabilities, "discovery", "BackendSkillsResponse.capabilities"),
+      invocation: requiredBackendString(capabilities, "invocation", "BackendSkillsResponse.capabilities"),
+      requires_text_token: requiredBackendBoolean(
+        capabilities,
+        "requires_text_token",
+        "BackendSkillsResponse.capabilities",
+      ),
+      preferred_token_prefix: requiredBackendString(
+        capabilities,
+        "preferred_token_prefix",
+        "BackendSkillsResponse.capabilities",
+      ),
+      accepted_token_prefixes: acceptedTokenPrefixes,
+    },
+    skills: requiredBackendArray(data, "skills", "BackendSkillsResponse").map((skill, index) =>
+      parseBackendSkillDescriptor(skill, `BackendSkillsResponse.skills[${index}]`),
+    ),
+  };
+}
+
+function parseBackendSkillDescriptor(data: unknown, owner: string): BackendSkillDescriptorWire {
+  if (!isRecord(data)) {
+    throw invalidBackendsResponse(`${owner} must be an object`);
+  }
+  if (data.protocol !== "codex.skills.v1") {
+    throw invalidBackendsResponse(`${owner}.protocol must be codex.skills.v1`);
+  }
+  return {
+    name: requiredBackendString(data, "name", owner),
+    display_name: requiredBackendString(data, "display_name", owner),
+    ...(data.description !== undefined
+      ? { description: optionalBackendString(data, "description", owner) }
+      : {}),
+    path: requiredBackendString(data, "path", owner),
+    origin: requiredBackendString(data, "origin", owner),
+    scope: requiredBackendString(data, "scope", owner),
+    protocol: "codex.skills.v1",
+  };
+}
+
 function parseBackendWire(data: unknown, owner: string): BackendWire {
   if (!isRecord(data)) {
     throw invalidBackendsResponse(`${owner} must be an object`);
@@ -1140,6 +1253,17 @@ export function validateBackendSettingsPatch(patch: unknown): asserts patch is B
   validateOptionalBackendSettingsString(patch, "endpoint");
   validateOptionalBackendSettingsString(patch, "api_key");
   validateOptionalBackendSettingsString(patch, "model");
+}
+
+export function validateBackendSkillsOptions(options: unknown) {
+  if (options === undefined) return;
+  if (!isRecord(options)) {
+    throw invalidBackendSettingsRequest("Backend skills options must be an object");
+  }
+  const cwd = options.cwd;
+  if (cwd !== undefined && cwd !== null && typeof cwd !== "string") {
+    throw invalidBackendSettingsRequest("Backend skills cwd must be a string or null");
+  }
 }
 
 function validateOptionalBackendSettingsString(

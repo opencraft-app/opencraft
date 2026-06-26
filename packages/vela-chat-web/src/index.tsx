@@ -7,6 +7,7 @@ export function VelaChatWeb(props: VelaChatWebProps) {
 }
 
 export * from "./surfaces";
+export * from "./composer-skills/model";
 export * from "./session-list";
 export * from "./session-location/sessionLocation";
 export * from "./new-session";

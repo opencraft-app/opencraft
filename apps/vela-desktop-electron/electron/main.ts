@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, session } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, session, shell } from "electron";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { env as nodeEnv } from "node:process";
@@ -369,6 +369,17 @@ ipcMain.handle("vela:desktop-select-working-directory", async () => {
     : await dialog.showOpenDialog(options);
   if (result.canceled) return null;
   return result.filePaths[0] ?? null;
+});
+
+ipcMain.handle("vela:desktop-show-path-in-folder", async (_event, path: unknown) => {
+  if (typeof path !== "string" || !path.trim()) return false;
+  const targetPath = path.trim();
+  shell.showItemInFolder(targetPath);
+  if (targetPath.endsWith("/") || targetPath.endsWith("\\")) {
+    const error = await shell.openPath(targetPath);
+    return !error;
+  }
+  return true;
 });
 
 ipcMain.handle("vela:work-monitor-open", async (_event, sessionId: unknown) => {

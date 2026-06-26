@@ -15,6 +15,15 @@ export function normalizeComposerCursor(
     end: clampComposerOffset(value, cursor.end),
   };
 }
+
+export function hasComposerLineBreak(value: string): boolean {
+  return /[\r\n]/.test(value);
+}
+
+export function normalizeComposerSingleLine(value: string): string {
+  return value.replace(/\r\n?|\n/g, " ");
+}
+
 export function createComposerEditorSnapshot({
   value,
   cursor,

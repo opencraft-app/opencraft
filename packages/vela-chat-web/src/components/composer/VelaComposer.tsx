@@ -4,6 +4,7 @@ import type { AgentConfigPatchWire } from "../../../../vela-chat-client/src";
 import type { QueuedComposerInputClientState } from "../../../../vela-chat-host-state/src";
 import type { VoiceInputHost } from "../../../../vela-desktop-shell/src";
 import { CornerDownRight, Trash2 } from "lucide-react";
+import type { ComposerSkill } from "../../composer-skills/model";
 import { ComposerControls } from "../composer-controls/ComposerControls";
 import type { ComposerControlsModel } from "../composer-controls/model";
 import { PromptInput } from "../../primitives/prompt-input/PromptInput";
@@ -19,6 +20,7 @@ export function VelaComposer({
   isUpdatingControls,
   pendingAttachments = [],
   queuedInputs = [],
+  skills = [],
   voiceInput,
   onDraftChange,
   onAttachImages,
@@ -28,6 +30,7 @@ export function VelaComposer({
   onRemoveQueuedInput,
   onStop,
   onSubmit,
+  onSubmitText,
 }: {
   draft: string;
   placeholder: string;
@@ -37,6 +40,7 @@ export function VelaComposer({
   isUpdatingControls?: boolean;
   pendingAttachments?: PromptInputAttachment[];
   queuedInputs?: QueuedComposerInputClientState[];
+  skills?: ComposerSkill[];
   voiceInput?: VoiceInputHost;
   onDraftChange: (value: string) => void;
   onAttachImages?: (files: File[]) => void;
@@ -46,11 +50,13 @@ export function VelaComposer({
   onRemoveQueuedInput?: (queuedInputId: string) => void;
   onStop?: () => void;
   onSubmit: () => void;
+  onSubmitText?: (text: string) => void | Promise<void>;
 }) {
   const canSubmit = canSend && (draft.trim().length > 0 || pendingAttachments.length > 0);
 
   return (
     <PromptInput
+      canSubmitText={canSend}
       canSubmit={canSubmit}
       isRunning={isRunning}
       onChange={onDraftChange}
@@ -59,7 +65,9 @@ export function VelaComposer({
       onRemoveAttachment={onRemoveAttachment}
       onStop={onStop}
       onSubmit={onSubmit}
+      onSubmitText={onSubmitText}
       pendingAttachments={pendingAttachments}
+      skills={skills}
       placeholder={placeholder}
       voiceInput={voiceInput}
       leftToolbarControls={

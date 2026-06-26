@@ -10,6 +10,7 @@ export * from "./veladFetch";
 export * from "./wire";
 export {
   parseBackendProbeResultWire,
+  parseBackendSkillsWireResponse,
   parseBackendSettingsWireResponse,
   parseBackendUsageWireResponse,
   parseBackendWireResponse,
