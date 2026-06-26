@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createFetchVelaEventStreamTransport,
   createVeladClient,
@@ -8,26 +8,14 @@ import { useVelaChatSession } from "../../../../packages/vela-chat-controller/sr
 import { type ChatHostPolicy } from "../../../../packages/vela-chat-render-model/src";
 import type { ConversationScrollControllerDebug } from "../../../../packages/vela-chat-web/src/conversation-runtime/scroll/useConversationScrollController";
 import { VelaLocalTracer } from "../../../../packages/vela-observability-client/src";
-import {
-  focusDesktopSession,
-  moveWorkMonitorBy,
-  type RuntimeHostInfo,
-} from "../desktopBridge";
+import { type RuntimeHostInfo } from "../desktopBridge";
 import {
   SessionPreviewStatus,
   SessionPreviewWindowContent,
 } from "../session-preview";
+import { useWorkMonitorInteraction } from "./work-monitor-interaction";
 
 const WORK_MONITOR_HOST_POLICY = { kind: "desktop_shell" } satisfies ChatHostPolicy;
-const WORK_MONITOR_DRAG_THRESHOLD_PX = 4;
-
-interface DragState {
-  lastScreenX: number;
-  lastScreenY: number;
-  originScreenX: number;
-  originScreenY: number;
-  pointerId: number;
-}
 
 export interface WorkMonitorAppProps {
   hostInfo: RuntimeHostInfo;
@@ -35,10 +23,9 @@ export interface WorkMonitorAppProps {
 }
 
 export function WorkMonitorApp({ hostInfo, sessionId }: WorkMonitorAppProps) {
-  const dragStateRef = useRef<DragState | null>(null);
   const scrollDebugSignatureRef = useRef<string | null>(null);
-  const suppressNextOpenRef = useRef(false);
   const [sessionTitle, setSessionTitle] = useState(sessionId);
+  const interaction = useWorkMonitorInteraction();
   const observability = useMemo(
     () =>
       new VelaLocalTracer({
@@ -110,83 +97,26 @@ export function WorkMonitorApp({ hostInfo, sessionId }: WorkMonitorAppProps) {
     },
     [followOutputToken, observability, sessionId, setConversationScrollDebug],
   );
-  const openSession = () => {
-    void focusDesktopSession(sessionId);
-  };
-  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
-    dragStateRef.current = {
-      lastScreenX: event.screenX,
-      lastScreenY: event.screenY,
-      originScreenX: event.screenX,
-      originScreenY: event.screenY,
-      pointerId: event.pointerId,
-    };
-    event.currentTarget.setPointerCapture(event.pointerId);
-  };
-  const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    const dragState = dragStateRef.current;
-    if (!dragState || dragState.pointerId !== event.pointerId) return;
-    const deltaX = event.screenX - dragState.lastScreenX;
-    const deltaY = event.screenY - dragState.lastScreenY;
-    if (deltaX === 0 && deltaY === 0) return;
-
-    const totalDistance = Math.hypot(
-      event.screenX - dragState.originScreenX,
-      event.screenY - dragState.originScreenY,
-    );
-    if (totalDistance >= WORK_MONITOR_DRAG_THRESHOLD_PX) {
-      suppressNextOpenRef.current = true;
-      void moveWorkMonitorBy(deltaX, deltaY);
-      event.preventDefault();
-    }
-
-    dragState.lastScreenX = event.screenX;
-    dragState.lastScreenY = event.screenY;
-  };
-  const handlePointerEnd = (event: PointerEvent<HTMLDivElement>) => {
-    const dragState = dragStateRef.current;
-    if (!dragState || dragState.pointerId !== event.pointerId) return;
-    dragStateRef.current = null;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    if (suppressNextOpenRef.current) {
-      window.setTimeout(() => {
-        suppressNextOpenRef.current = false;
-      }, 200);
-    }
-  };
-  const handleOpenClick = () => {
-    if (suppressNextOpenRef.current) {
-      suppressNextOpenRef.current = false;
-      return;
-    }
-    openSession();
-  };
-
   return (
     controller.error ? (
       <SessionPreviewStatus
+        isCloseVisible={interaction.isCloseVisible}
+        isDragging={interaction.isDragging}
         label="Monitor failed"
         value={controller.error}
-        onOpenSession={handleOpenClick}
-        onPointerCancel={handlePointerEnd}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerEnd}
+        onCloseMonitor={interaction.onClose}
+        {...interaction.interactionProps}
       />
     ) : (
       <SessionPreviewWindowContent
         followOutputToken={followOutputToken}
+        isCloseVisible={interaction.isCloseVisible}
+        isDragging={interaction.isDragging}
         model={controller.model}
         title={sessionTitle}
         onConversationScrollDebugChange={handleConversationScrollDebugChange}
-        onOpenSession={handleOpenClick}
-        onPointerCancel={handlePointerEnd}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerEnd}
+        onCloseMonitor={interaction.onClose}
+        {...interaction.interactionProps}
       />
     )
   );

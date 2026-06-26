@@ -1,7 +1,8 @@
 import {
-  type KeyboardEventHandler,
+  type MouseEventHandler,
   type PointerEventHandler,
 } from "react";
+import { X } from "lucide-react";
 import type { ChatRenderModel } from "../../../../packages/vela-chat-render-model/src";
 import type { ConversationScrollControllerDebug } from "../../../../packages/vela-chat-web/src/conversation-runtime/scroll/useConversationScrollController";
 import { ConversationPreviewSurface } from "../../../../packages/vela-chat-web/src";
@@ -12,43 +13,62 @@ export const SESSION_PREVIEW_SCALE = 0.25;
 export interface SessionPreviewPointerHandlers {
   onPointerCancel?: PointerEventHandler<HTMLDivElement>;
   onPointerDown?: PointerEventHandler<HTMLDivElement>;
+  onPointerEnter?: PointerEventHandler<HTMLDivElement>;
+  onPointerLeave?: PointerEventHandler<HTMLDivElement>;
   onPointerMove?: PointerEventHandler<HTMLDivElement>;
   onPointerUp?: PointerEventHandler<HTMLDivElement>;
 }
 
 export interface SessionPreviewWindowContentProps extends SessionPreviewPointerHandlers {
   followOutputToken?: number;
+  isCloseVisible?: boolean;
+  isDragging?: boolean;
   model: ChatRenderModel;
   onConversationScrollDebugChange?: (debug: ConversationScrollControllerDebug) => void;
-  onOpenSession?: () => void;
+  onCloseMonitor?: () => void;
   title: string;
 }
 
 export function SessionPreviewWindowContent({
   followOutputToken,
+  isCloseVisible = false,
+  isDragging = false,
   model,
   onConversationScrollDebugChange,
-  onOpenSession,
+  onCloseMonitor,
   onPointerCancel,
   onPointerDown,
+  onPointerEnter,
+  onPointerLeave,
   onPointerMove,
   onPointerUp,
   title,
 }: SessionPreviewWindowContentProps) {
   return (
     <main className={styles.sessionPreviewApp}>
-      <div className={styles.sessionPreviewFrame}>
+      <div
+        className={styles.sessionPreviewFrame}
+        data-close-visible={isCloseVisible ? "true" : "false"}
+        data-dragging={isDragging ? "true" : "false"}
+        onPointerCancel={onPointerCancel}
+        onPointerDown={onPointerDown}
+        onPointerEnter={onPointerEnter}
+        onPointerLeave={onPointerLeave}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+      >
         <ConversationPreviewSurface
           followOutputToken={followOutputToken}
           model={model}
           scale={SESSION_PREVIEW_SCALE}
           onConversationScrollDebugChange={onConversationScrollDebugChange}
-          onOpenSession={onOpenSession}
-          onPointerCancel={onPointerCancel}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
         />
+        {onCloseMonitor ? (
+          <SessionPreviewCloseButton
+            isVisible={isCloseVisible}
+            onClose={onCloseMonitor}
+          />
+        ) : null}
         <div className={styles.sessionPreviewTitle} title={title}>
           {title}
         </div>
@@ -58,17 +78,23 @@ export function SessionPreviewWindowContent({
 }
 
 export interface SessionPreviewStatusProps extends SessionPreviewPointerHandlers {
+  isCloseVisible?: boolean;
+  isDragging?: boolean;
   label: string;
-  onOpenSession?: () => void;
+  onCloseMonitor?: () => void;
   role?: "alert" | "status";
   value: string;
 }
 
 export function SessionPreviewStatus({
+  isCloseVisible = false,
+  isDragging = false,
   label,
-  onOpenSession,
+  onCloseMonitor,
   onPointerCancel,
   onPointerDown,
+  onPointerEnter,
+  onPointerLeave,
   onPointerMove,
   onPointerUp,
   role,
@@ -80,33 +106,59 @@ export function SessionPreviewStatus({
       <strong>{value}</strong>
     </>
   );
-  const handleKeyDown: KeyboardEventHandler<HTMLDivElement> = (event) => {
-    if (!onOpenSession || (event.key !== "Enter" && event.key !== " ")) return;
-    event.preventDefault();
-    onOpenSession();
-  };
 
   return (
     <main className={styles.sessionPreviewApp}>
-      {onOpenSession ? (
-        <div
-          className={styles.sessionPreviewStatus}
-          role="button"
-          tabIndex={0}
-          onClick={onOpenSession}
-          onKeyDown={handleKeyDown}
-          onPointerCancel={onPointerCancel}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-        >
-          {content}
-        </div>
-      ) : (
+      <div
+        className={styles.sessionPreviewFrame}
+        data-close-visible={isCloseVisible ? "true" : "false"}
+        data-dragging={isDragging ? "true" : "false"}
+        onPointerCancel={onPointerCancel}
+        onPointerDown={onPointerDown}
+        onPointerEnter={onPointerEnter}
+        onPointerLeave={onPointerLeave}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+      >
         <div className={styles.sessionPreviewStatus} role={role}>
           {content}
         </div>
-      )}
+        {onCloseMonitor ? (
+          <SessionPreviewCloseButton
+            isVisible={isCloseVisible}
+            onClose={onCloseMonitor}
+          />
+        ) : null}
+      </div>
     </main>
+  );
+}
+
+function SessionPreviewCloseButton({
+  isVisible,
+  onClose,
+}: {
+  isVisible: boolean;
+  onClose: () => void;
+}) {
+  const handlePointerDown: PointerEventHandler<HTMLButtonElement> = (event) => {
+    event.stopPropagation();
+  };
+  const handleClick: MouseEventHandler<HTMLButtonElement> = (event) => {
+    event.stopPropagation();
+    onClose();
+  };
+
+  return (
+    <button
+      type="button"
+      className={styles.sessionPreviewCloseButton}
+      aria-label="Close monitor"
+      data-visible={isVisible ? "true" : "false"}
+      onClick={handleClick}
+      onPointerDown={handlePointerDown}
+    >
+      <X size={12} strokeWidth={2.4} />
+    </button>
   );
 }

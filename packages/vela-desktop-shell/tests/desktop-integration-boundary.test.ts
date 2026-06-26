@@ -357,14 +357,22 @@ test("session work monitor keeps host windowing separate from thumbnail renderin
   assert.match(rendererWorkMonitor, /vela\.work_monitor\.bottom_anchor\.mode/);
   assert.match(rendererWorkMonitor, /client\.getSession\(sessionId\)/);
   assert.match(rendererWorkMonitor, /session\.title\.trim\(\)/);
+  assert.match(rendererWorkMonitor, /useWorkMonitorInteraction/);
   assert.match(rendererWorkMonitor, /moveWorkMonitorBy/);
+  assert.match(rendererWorkMonitor, /closeWorkMonitor/);
   assert.match(rendererWorkMonitor, /onPointerDown/);
   assert.match(rendererWorkMonitor, /WORK_MONITOR_DRAG_THRESHOLD_PX/);
-  assert.match(rendererWorkMonitor, /suppressNextOpenRef/);
+  assert.doesNotMatch(rendererWorkMonitor, /suppressNextOpenRef/);
+  assert.doesNotMatch(rendererWorkMonitor, /focusDesktopSession/);
+  assert.doesNotMatch(rendererWorkMonitor, /onOpenSession/);
   assert.match(rendererSessionPreview, /ConversationPreviewSurface/);
   assert.match(rendererSessionPreview, /SESSION_PREVIEW_SCALE = 0\.25/);
   assert.match(rendererSessionPreview, /scale=\{SESSION_PREVIEW_SCALE\}/);
   assert.match(rendererSessionPreview, /sessionPreviewTitle/);
+  assert.match(rendererSessionPreview, /sessionPreviewCloseButton/);
+  assert.match(rendererSessionPreview, /onCloseMonitor/);
+  assert.doesNotMatch(rendererSessionPreview, /onOpenSession/);
+  assert.doesNotMatch(rendererSessionPreview, /role="button"/);
   assert.match(rendererWorkMonitor, /historyPolicy: "tail_only"/);
   assert.doesNotMatch(rendererWorkMonitor, /buildChatThumbnailModel/);
   assert.doesNotMatch(rendererWorkMonitor, /SessionThumbnailSurface/);
@@ -373,20 +381,20 @@ test("session work monitor keeps host windowing separate from thumbnail renderin
   assert.doesNotMatch(rendererWorkMonitor, /BrowserWindow/);
 });
 
-test("clicking the work monitor focuses the desktop session without hiding the monitor", () => {
+test("work monitor body is drag-only and only the close icon closes its own window", () => {
   const main = readFileSync(
     join(root, "apps/vela-desktop-electron/electron/main.ts"),
     "utf8",
   );
-  const focusSessionHandler = sourceBetween(
+  const workMonitorCloseHandler = sourceBetween(
     main,
-    'ipcMain.handle("vela:desktop-focus-session"',
-    "app.whenReady()",
+    'ipcMain.handle("vela:work-monitor-close"',
+    'ipcMain.handle("vela:work-monitor-move-by"',
   );
   const workMonitorMoveHandler = sourceBetween(
     main,
     'ipcMain.handle("vela:work-monitor-move-by"',
-    'ipcMain.handle("vela:desktop-focus-session"',
+    '"vela:session-drag-preview-start"',
   );
   const preload = readFileSync(
     join(root, "apps/vela-desktop-electron/electron/preload.ts"),
@@ -396,13 +404,39 @@ test("clicking the work monitor focuses the desktop session without hiding the m
     join(root, "apps/vela-desktop-electron/src/desktopBridge.ts"),
     "utf8",
   );
+  const rendererWorkMonitor = readFiles(
+    listSourceFiles(join(root, "apps/vela-desktop-electron/src/work-monitor"))
+      .filter((path) => /\.(ts|tsx)$/.test(path))
+      .map((path) => path.slice(root.length + 1)),
+  );
+  const sessionPreview = readFileSync(
+    join(root, "apps/vela-desktop-electron/src/session-preview/SessionPreviewWindowContent.tsx"),
+    "utf8",
+  );
+  const sessionPreviewCss = readFileSync(
+    join(root, "apps/vela-desktop-electron/src/session-preview/session-preview.module.css"),
+    "utf8",
+  );
 
-  assert.match(focusSessionHandler, /mainWindow\.focus\(\)/);
-  assert.match(focusSessionHandler, /vela:desktop-open-session/);
-  assert.doesNotMatch(focusSessionHandler, /workMonitor\.hide\(\)/);
+  assert.match(workMonitorCloseHandler, /workMonitor\.closeBySender\(event\.sender\)/);
   assert.match(workMonitorMoveHandler, /workMonitor\.moveBySender\(event\.sender,\s*deltaX,\s*deltaY\)/);
+  assert.doesNotMatch(main, /vela:desktop-focus-session/);
+  assert.doesNotMatch(main, /vela:desktop-open-session/);
+  assert.match(preload, /vela:work-monitor-close/);
   assert.match(preload, /vela:work-monitor-move-by/);
+  assert.doesNotMatch(preload, /focusDesktopSession/);
   assert.match(bridge, /moveWorkMonitorBy/);
+  assert.match(bridge, /closeWorkMonitor/);
+  assert.doesNotMatch(bridge, /focusDesktopSession/);
+  assert.match(rendererWorkMonitor, /useWorkMonitorInteraction/);
+  assert.doesNotMatch(rendererWorkMonitor, /focusDesktopSession/);
+  assert.doesNotMatch(rendererWorkMonitor, /onOpenSession/);
+  assert.match(sessionPreview, /SessionPreviewCloseButton/);
+  assert.match(sessionPreview, /aria-label="Close monitor"/);
+  assert.match(sessionPreviewCss, /\.sessionPreviewFrame\s*\{[^}]*cursor:\s*grab;/s);
+  assert.match(sessionPreviewCss, /\.sessionPreviewFrame\[data-dragging="true"\]\s*\{[^}]*cursor:\s*grabbing;/s);
+  assert.match(sessionPreviewCss, /\.sessionPreviewCloseButton\s*\{[^}]*pointer-events:\s*none;/s);
+  assert.match(sessionPreviewCss, /\.sessionPreviewCloseButton\[data-visible="true"\]/);
 });
 
 test("sidebar session drag opens a session-scoped work monitor instead of a second preview window", () => {

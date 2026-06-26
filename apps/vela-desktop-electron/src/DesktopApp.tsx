@@ -43,7 +43,6 @@ import {
   selectDesktopWorkingDirectory,
   showDesktopPathInFolder,
   startSessionDragPreview,
-  subscribeOpenDesktopSession,
   subscribeRuntimeChromeState,
   type RuntimeChromeStateResponse,
   type RuntimeHostInfo,
@@ -634,12 +633,6 @@ function DesktopReadyApp({
     setIsSettingsOpen(false);
     setMainView("chat");
   }, []);
-
-  useEffect(() => {
-    return subscribeOpenDesktopSession((sessionId) => {
-      selectChatSession(sessionId);
-    });
-  }, [selectChatSession]);
 
   useEffect(() => {
     if (!sessionList.data) return;

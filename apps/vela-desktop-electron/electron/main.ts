@@ -382,10 +382,9 @@ ipcMain.handle("vela:work-monitor-open", async (_event, sessionId: unknown) => {
   return { accepted: await workMonitor.open(sessionId) };
 });
 
-ipcMain.handle("vela:work-monitor-hide", async () => {
-  workMonitor.hide();
-  return { accepted: true };
-});
+ipcMain.handle("vela:work-monitor-close", async (event) => ({
+  accepted: workMonitor.closeBySender(event.sender),
+}));
 
 ipcMain.handle("vela:work-monitor-move-by", async (event, deltaX: unknown, deltaY: unknown) => ({
   accepted:
@@ -414,18 +413,6 @@ ipcMain.handle("vela:session-drag-preview-move", async (_event, screenX: unknown
 
 ipcMain.handle("vela:session-drag-preview-end", async () => {
   workMonitor.endSessionDragPreview();
-  return { accepted: true };
-});
-
-ipcMain.handle("vela:desktop-focus-session", async (_event, sessionId: unknown) => {
-  if (typeof sessionId !== "string" || !sessionId.trim()) {
-    return { accepted: false };
-  }
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.show();
-    mainWindow.focus();
-    mainWindow.webContents.send("vela:desktop-open-session", sessionId.trim());
-  }
   return { accepted: true };
 });
 

@@ -120,12 +120,6 @@ export class WorkMonitorWindowManager {
     return true;
   }
 
-  hide() {
-    for (const { window } of this.windowsBySessionId.values()) {
-      if (!window.isDestroyed()) window.hide();
-    }
-  }
-
   moveBySender(sender: WebContents, deltaX: number, deltaY: number) {
     const window = this.findWindowBySender(sender);
     if (!window) return false;
@@ -139,6 +133,23 @@ export class WorkMonitorWindowManager {
       false,
     );
     return true;
+  }
+
+  closeBySender(sender: WebContents) {
+    for (const [sessionId, record] of this.windowsBySessionId.entries()) {
+      const window = record.window;
+      if (window.isDestroyed() || window.webContents !== sender) continue;
+      record.loadRequestId += 1;
+      record.loadingPromise = null;
+      record.loaded = false;
+      if (this.activeDragPreviewSessionId === sessionId) {
+        this.activeDragPreviewSessionId = null;
+      }
+      this.windowsBySessionId.delete(sessionId);
+      window.close();
+      return true;
+    }
+    return false;
   }
 
   close() {

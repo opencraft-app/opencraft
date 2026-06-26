@@ -14,7 +14,7 @@ contextBridge.exposeInMainWorld("velaDesktop", {
     ipcRenderer.invoke("vela:desktop-show-path-in-folder", path),
   openWorkMonitor: (sessionId: string) =>
     ipcRenderer.invoke("vela:work-monitor-open", sessionId),
-  hideWorkMonitor: () => ipcRenderer.invoke("vela:work-monitor-hide"),
+  closeWorkMonitor: () => ipcRenderer.invoke("vela:work-monitor-close"),
   moveWorkMonitorBy: (deltaX: number, deltaY: number) =>
     ipcRenderer.invoke("vela:work-monitor-move-by", deltaX, deltaY),
   startSessionDragPreview: (sessionId: string, screenX: number, screenY: number) =>
@@ -22,8 +22,6 @@ contextBridge.exposeInMainWorld("velaDesktop", {
   moveSessionDragPreview: (screenX: number, screenY: number) =>
     ipcRenderer.invoke("vela:session-drag-preview-move", screenX, screenY),
   endSessionDragPreview: () => ipcRenderer.invoke("vela:session-drag-preview-end"),
-  focusDesktopSession: (sessionId: string) =>
-    ipcRenderer.invoke("vela:desktop-focus-session", sessionId),
   isMacosSpeechAvailable: () => ipcRenderer.invoke("vela:voice-macos-available"),
   startMacosSpeech: (options: unknown) =>
     ipcRenderer.invoke("vela:voice-macos-start", options),
@@ -37,10 +35,5 @@ contextBridge.exposeInMainWorld("velaDesktop", {
     const handler = (_event: IpcRendererEvent, state: unknown) => listener(state);
     ipcRenderer.on("vela:desktop-chrome-state", handler);
     return () => ipcRenderer.removeListener("vela:desktop-chrome-state", handler);
-  },
-  onOpenDesktopSession: (listener: (sessionId: unknown) => void) => {
-    const handler = (_event: IpcRendererEvent, sessionId: unknown) => listener(sessionId);
-    ipcRenderer.on("vela:desktop-open-session", handler);
-    return () => ipcRenderer.removeListener("vela:desktop-open-session", handler);
   },
 });

@@ -11,13 +11,63 @@
   user-select: none;
 }
 
-.sessionPreviewApp [role="button"],
 .sessionPreviewFrame {
   -webkit-app-region: no-drag;
+  position: relative;
+  cursor: grab;
 }
 
-.sessionPreviewFrame {
-  position: relative;
+.sessionPreviewFrame[data-dragging="true"] {
+  cursor: grabbing;
+}
+
+.sessionPreviewCloseButton {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  z-index: 5;
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 82%);
+  box-shadow:
+    0 1px 2px rgb(15 23 42 / 16%),
+    0 0 0 1px rgb(15 23 42 / 8%);
+  color: rgb(39 39 42 / 74%);
+  cursor: pointer;
+  opacity: 0;
+  padding: 0;
+  pointer-events: none;
+  transform: translateY(-1px) scale(0.94);
+  transition:
+    opacity 90ms ease,
+    transform 90ms ease,
+    background 90ms ease,
+    color 90ms ease;
+}
+
+.sessionPreviewCloseButton[data-visible="true"],
+.sessionPreviewCloseButton:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.sessionPreviewCloseButton:hover {
+  background: rgb(255 255 255 / 95%);
+  color: rgb(24 24 27 / 88%);
+}
+
+.sessionPreviewCloseButton:active {
+  transform: translateY(0) scale(0.96);
+}
+
+.sessionPreviewCloseButton:focus-visible {
+  outline: 2px solid rgb(59 130 246 / 48%);
+  outline-offset: 2px;
 }
 
 .sessionPreviewTitle {
@@ -68,12 +118,6 @@
     sans-serif;
   padding: 28px;
   text-align: left;
-}
-
-.sessionPreviewStatus[role="button"] {
-  border: 1px solid rgb(239 68 68 / 22%);
-  background: rgb(255 241 241 / 96%);
-  cursor: pointer;
 }
 
 .sessionPreviewStatus span {

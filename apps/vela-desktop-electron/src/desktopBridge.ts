@@ -23,7 +23,7 @@ declare global {
       selectWorkingDirectory?: () => Promise<unknown>;
       showPathInFolder?: (path: string) => Promise<unknown>;
       openWorkMonitor?: (sessionId: string) => Promise<WorkMonitorActionResponse>;
-      hideWorkMonitor?: () => Promise<WorkMonitorActionResponse>;
+      closeWorkMonitor?: () => Promise<WorkMonitorActionResponse>;
       moveWorkMonitorBy?: (deltaX: number, deltaY: number) => Promise<WorkMonitorActionResponse>;
       startSessionDragPreview?: (
         sessionId: string,
@@ -35,16 +35,12 @@ declare global {
         screenY: number,
       ) => Promise<WorkMonitorActionResponse>;
       endSessionDragPreview?: () => Promise<WorkMonitorActionResponse>;
-      focusDesktopSession?: (sessionId: string) => Promise<WorkMonitorActionResponse>;
       isMacosSpeechAvailable?: () => Promise<boolean>;
       startMacosSpeech?: (options?: VoiceInputOptions) => Promise<WorkMonitorActionResponse>;
       stopMacosSpeech?: () => Promise<WorkMonitorActionResponse>;
       onMacosSpeechEvent?: (listener: (event: unknown) => void) => () => void;
       onDesktopChromeStateChange?: (
         listener: (state: RuntimeChromeStateResponse) => void,
-      ) => () => void;
-      onOpenDesktopSession?: (
-        listener: (sessionId: unknown) => void,
       ) => () => void;
     };
   }
@@ -216,8 +212,8 @@ export async function openWorkMonitor(sessionId: string) {
   return window.velaDesktop?.openWorkMonitor?.(sessionId) ?? { accepted: false };
 }
 
-export async function hideWorkMonitor() {
-  return window.velaDesktop?.hideWorkMonitor?.() ?? { accepted: false };
+export async function closeWorkMonitor() {
+  return window.velaDesktop?.closeWorkMonitor?.() ?? { accepted: false };
 }
 
 export async function moveWorkMonitorBy(deltaX: number, deltaY: number) {
@@ -246,10 +242,6 @@ export async function endSessionDragPreview() {
   return window.velaDesktop?.endSessionDragPreview?.() ?? { accepted: false };
 }
 
-export async function focusDesktopSession(sessionId: string) {
-  return window.velaDesktop?.focusDesktopSession?.(sessionId) ?? { accepted: false };
-}
-
 export async function readDesktopSettings(): Promise<DesktopSettings> {
   return (
     (await window.velaDesktop?.getDesktopSettings?.()) ?? {
@@ -274,16 +266,6 @@ export async function selectDesktopWorkingDirectory(): Promise<string | null> {
 
 export async function showDesktopPathInFolder(path: string): Promise<boolean> {
   return (await window.velaDesktop?.showPathInFolder?.(path)) === true;
-}
-
-export function subscribeOpenDesktopSession(listener: (sessionId: string) => void) {
-  return (
-    window.velaDesktop?.onOpenDesktopSession?.((sessionId) => {
-      if (typeof sessionId === "string" && sessionId.trim()) {
-        listener(sessionId.trim());
-      }
-    }) ?? (() => undefined)
-  );
 }
 
 function readWebApiBaseUrl() {
