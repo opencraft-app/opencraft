@@ -303,6 +303,7 @@ export interface AgentWorkGenericDetailWire {
 export type BackendKindWire =
   | "vela_engine"
   | "codex"
+  | "tcodex"
   | "cloudagent"
   | "claude_code"
   | "pi"

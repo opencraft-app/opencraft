@@ -178,6 +178,7 @@ where
     let discovery = discover_models(state, backend).await;
     let mut diagnostics = json!({
         "snapshot_protocol": SNAPSHOT_PROTOCOL,
+        "backend_family": backend_family(backend.kind),
         "model_source": discovery.model_source.as_str(),
         "fetched_at": fetched_at,
         "model_count": discovery.models.len(),
@@ -225,7 +226,7 @@ where
         Ok(_) if backend.kind == "vela_engine" => {
             model_unconfigured("Vela Engine endpoint, key, and model are not configured")
         }
-        Ok(_) if backend.kind == "codex" => model_error(
+        Ok(_) if is_codex_family_kind(backend.kind) => model_error(
             "no_models_discovered",
             "model_discovery",
             format!("no models discovered for backend {}", backend.kind),
@@ -234,7 +235,7 @@ where
         Err(error) if backend.kind == "vela_engine" => {
             model_unconfigured(format!("Vela Engine model discovery failed: {error}"))
         }
-        Err(error) if backend.kind == "codex" => model_error(
+        Err(error) if is_codex_family_kind(backend.kind) => model_error(
             "model_discovery_failed",
             "model_discovery",
             format!("model discovery failed: {error}"),
@@ -368,7 +369,7 @@ fn apply_configured_default(backend: &ConfiguredBackend, models: &mut [BackendMo
 }
 
 pub(crate) fn permission_modes(kind: &str) -> Vec<PermissionModeOption> {
-    let mut modes = if kind == "codex" || kind == "vela_engine" {
+    let mut modes = if is_codex_family_kind(kind) || kind == "vela_engine" {
         vec![
             PermissionModeOption {
                 id: PermissionMode::ReadOnly,
@@ -440,7 +441,7 @@ pub(crate) fn features(kind: &str) -> Vec<BackendFeature> {
         default_value: false,
         metadata: Default::default(),
     }];
-    if kind != "codex" && kind != "vela_engine" {
+    if !is_codex_family_kind(kind) && kind != "vela_engine" {
         features.push(BackendFeature::Toggle {
             id: "plan_mode".to_string(),
             label: "Plan".to_string(),
@@ -452,6 +453,18 @@ pub(crate) fn features(kind: &str) -> Vec<BackendFeature> {
         });
     }
     features
+}
+
+fn is_codex_family_kind(kind: &str) -> bool {
+    matches!(kind, "codex" | "tcodex")
+}
+
+fn backend_family(kind: &str) -> String {
+    if is_codex_family_kind(kind) {
+        "codex_app_server".to_string()
+    } else {
+        kind.to_string()
+    }
 }
 
 fn common_reasoning_effort_options() -> Vec<ReasoningEffortOption> {

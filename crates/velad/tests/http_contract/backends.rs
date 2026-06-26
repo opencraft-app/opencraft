@@ -171,6 +171,82 @@ async fn codex_backend_can_be_configured_and_used_for_sessions() {
 }
 
 #[tokio::test]
+async fn tcodex_backend_uses_codex_app_server_modeling() {
+    let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
+    let backend = Arc::new(
+        MockBackendAdapter::new(support::default_backend_outputs())
+            .with_models(vec![codex_model("gpt-5.4", Some("medium"))]),
+    );
+    let runtime = Runtime::new(store.clone(), backend.clone());
+    let app = velad::build_app(
+        velad::ApiState::new(store, runtime).with_tcodex_backend(Some("gpt-5.4".to_string())),
+    );
+
+    let (status, body) = get_json(app.clone(), "/api/v1/backends/tcodex").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["backend"]["kind"], "tcodex");
+    assert_eq!(body["backend"]["display_name"], "TCodex");
+    assert_eq!(body["backend"]["status"], "available");
+    assert_eq!(
+        body["backend"]["diagnostics"]["backend_family"],
+        "codex_app_server"
+    );
+    assert_eq!(body["backend"]["permission_modes"][0]["id"], "read_only");
+    assert!(
+        body["backend"]["features"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|feature| { feature["id"] != "plan_mode" })
+    );
+
+    let (status, created) = json_request(
+        app.clone(),
+        Method::POST,
+        "/api/v1/sessions",
+        json!({
+            "backend": "tcodex",
+            "working_directory": "/tmp/tcodex-project",
+            "agent_config": {
+                "model": "gpt-5.4"
+            }
+        }),
+        Some("ses-tcodex-http"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(created["session"]["backend"], "tcodex");
+    assert_eq!(
+        created["session"]["agent_config"]["permission_mode"],
+        "auto"
+    );
+
+    let session_id = created["session"]["id"].as_str().expect("session id");
+    let (status, _) = json_request(
+        app,
+        Method::POST,
+        &format!("/api/v1/sessions/{session_id}/events"),
+        json!({
+            "events": [{
+                "type": "user.message",
+                "content": [{ "type": "text", "text": "hello tcodex" }]
+            }]
+        }),
+        Some("tcodex-http-send"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+
+    eventually_backend_called(&backend).await;
+    assert_eq!(
+        backend.recorded_resolved_agent_configs().await[0]
+            .as_ref()
+            .map(|config| config.backend),
+        Some(vela_core::BackendKind::Tcodex)
+    );
+}
+
+#[tokio::test]
 async fn codex_backend_without_discovered_models_is_an_error_snapshot() {
     let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
     let backend = Arc::new(MockBackendAdapter::new(support::default_backend_outputs()));

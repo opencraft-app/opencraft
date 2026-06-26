@@ -63,6 +63,7 @@ function isDesktopBackendKind(value: string): value is DesktopBackendKind {
   return (
     value === "vela_engine" ||
     value === "codex" ||
+    value === "tcodex" ||
     value === "cloudagent" ||
     value === "claude_code" ||
     value === "pi" ||

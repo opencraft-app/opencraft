@@ -6,6 +6,7 @@ pub enum BackendKind {
     Pi,
     VelaEngine,
     Codex,
+    Tcodex,
     Claude,
     Acp,
 }
@@ -16,6 +17,7 @@ impl BackendKind {
             Self::Pi => "pi",
             Self::VelaEngine => "vela_engine",
             Self::Codex => "codex",
+            Self::Tcodex => "tcodex",
             Self::Claude => "claude",
             Self::Acp => "acp",
         }

@@ -112,6 +112,7 @@ const backendKinds = new Set<string>(
   [
     "vela_engine",
     "codex",
+    "tcodex",
     "cloudagent",
     "claude_code",
     "pi",

@@ -60,6 +60,22 @@ impl CodexAppServerBackendAdapter {
             default_cwd,
         )
     }
+
+    pub fn stdio_command(
+        default_cwd: impl Into<String>,
+        command: impl Into<String>,
+        args: Vec<String>,
+    ) -> Self {
+        let default_cwd = default_cwd.into();
+        Self::new(
+            Arc::new(CodexStdioAppServerHost::with_command(
+                &default_cwd,
+                command,
+                args,
+            )),
+            default_cwd,
+        )
+    }
 }
 
 #[async_trait]
