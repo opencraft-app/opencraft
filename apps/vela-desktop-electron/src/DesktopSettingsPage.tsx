@@ -10,6 +10,7 @@ import {
 import React from "react";
 import type {
   BackendKindWire,
+  BackendUsageWireResponse,
   BackendWire,
   VeladClient,
 } from "../../../packages/vela-chat-client/src";
@@ -42,6 +43,7 @@ export interface DesktopSettingsPageProps {
   apiBaseUrl: string;
   appVersion: string;
   backends: BackendWire[];
+  backendUsages?: Partial<Record<BackendKindWire, BackendUsageWireResponse>>;
   hostLabel: string;
   client: VeladClient;
   selectedBackend: BackendKindWire | "";
@@ -109,6 +111,7 @@ export function DesktopSettingsPage({
   apiBaseUrl,
   appVersion,
   backends,
+  backendUsages = {},
   hostLabel,
   client,
   selectedBackend,
@@ -133,15 +136,26 @@ export function DesktopSettingsPage({
     case "archive":
       return <DesktopSettingsArchivePanel />;
     case "engine":
-      return <DesktopSettingsEnginePanel apiBaseUrl={apiBaseUrl} settings={settings} />;
+      return (
+        <DesktopSettingsEnginePanel
+          apiBaseUrl={apiBaseUrl}
+          backends={backends}
+          backendUsages={backendUsages}
+          settings={settings}
+        />
+      );
   }
 }
 
 function DesktopSettingsEnginePanel({
   apiBaseUrl,
+  backends,
+  backendUsages,
   settings,
 }: {
   apiBaseUrl: string;
+  backends: BackendWire[];
+  backendUsages: Partial<Record<BackendKindWire, BackendUsageWireResponse>>;
   settings: ReturnType<typeof createDesktopSettings>;
 }) {
   return (
@@ -162,6 +176,27 @@ function DesktopSettingsEnginePanel({
           </div>
         </section>
 
+        <section className="vela-settings-section" aria-labelledby="backend-usage-title">
+          <div className="vela-settings-section-heading">
+            <h2 id="backend-usage-title">Backend 用量</h2>
+            <p>展示当前 backend 实例的账号级剩余用量</p>
+          </div>
+          <div className="vela-settings-card">
+            {backends
+              .filter((backend) => backend.capabilities.usage_snapshot === true)
+              .map((backend) => (
+                <BackendUsageSettingsRow
+                  backend={backend}
+                  key={backend.kind}
+                  usage={backendUsages[backend.kind]}
+                />
+              ))}
+            {backends.some((backend) => backend.capabilities.usage_snapshot === true) ? null : (
+              <SettingsInfoRow label="状态" value="当前 backend 暂无用量接口" />
+            )}
+          </div>
+        </section>
+
         <section className="vela-settings-section" aria-labelledby="vela-engine-title">
           <div className="vela-settings-section-heading">
             <h2 id="vela-engine-title">Vela 内置引擎</h2>
@@ -176,6 +211,36 @@ function DesktopSettingsEnginePanel({
       </div>
     </main>
   );
+}
+
+function BackendUsageSettingsRow({
+  backend,
+  usage,
+}: {
+  backend: BackendWire;
+  usage?: BackendUsageWireResponse;
+}) {
+  const value = usage?.summary?.label ?? "加载中";
+  return (
+    <div className="vela-settings-row" data-setting-id={`backendUsage.${backend.kind}`}>
+      <span>
+        <strong>{backend.display_name}</strong>
+        <small>{usageDetail(usage)}</small>
+      </span>
+      <output data-usage-tone={usage?.summary?.tone ?? "neutral"}>{value}</output>
+    </div>
+  );
+}
+
+function usageDetail(usage: BackendUsageWireResponse | undefined) {
+  if (!usage) return "正在读取 backend usage";
+  if (usage.detail) return usage.detail;
+  const limits = usage.limits.map((limit) =>
+    limit.used_percent === undefined
+      ? limit.label
+      : `${limit.label} 已用 ${Math.round(limit.used_percent)}%`,
+  );
+  return limits.length > 0 ? limits.join(" · ") : usage.source;
 }
 
 function SettingsNavGroup({

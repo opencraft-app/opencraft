@@ -1,4 +1,4 @@
-use std::{convert::Infallible, sync::Arc};
+use std::{collections::HashMap, convert::Infallible, path::PathBuf, sync::Arc};
 
 use axum::{
     Json, Router,
@@ -35,6 +35,7 @@ use vela_runtime::{Runtime, SendUserMessage};
 use vela_store::{SqliteEventStore, StoredSession};
 
 mod backend_snapshot;
+mod backend_usage;
 pub mod local_runtime;
 
 pub struct ApiState<B> {
@@ -43,6 +44,7 @@ pub struct ApiState<B> {
     events: broadcast::Sender<CanonicalEvent>,
     default_session_model: Option<String>,
     configured_backends: Vec<ConfiguredBackend>,
+    backend_usage: backend_usage::BackendUsageService,
     backend_settings_updater: Option<Arc<dyn BackendSettingsUpdater>>,
     local_runtime: Option<local_runtime::LocalRuntimeState>,
     shutdown_tx: Option<tokio::sync::watch::Sender<bool>>,
@@ -61,6 +63,7 @@ impl<B> Clone for ApiState<B> {
             events: self.events.clone(),
             default_session_model: self.default_session_model.clone(),
             configured_backends: self.configured_backends.clone(),
+            backend_usage: self.backend_usage.clone(),
             backend_settings_updater: self.backend_settings_updater.clone(),
             local_runtime: self.local_runtime.clone(),
             shutdown_tx: self.shutdown_tx.clone(),
@@ -113,6 +116,7 @@ where
                 display_name: "PiCoding Agent",
                 default_model: None,
             }],
+            backend_usage: backend_usage::BackendUsageService::default(),
             backend_settings_updater: None,
             local_runtime: None,
             shutdown_tx: None,
@@ -210,6 +214,16 @@ where
         self
     }
 
+    #[doc(hidden)]
+    pub fn with_backend_usage_test_context(
+        mut self,
+        env: HashMap<String, String>,
+        home_dir: Option<PathBuf>,
+    ) -> Self {
+        self.backend_usage = backend_usage::BackendUsageService::with_codex_context(env, home_dir);
+        self
+    }
+
     fn configured_engine_kind(&self, backend: BackendKindWire) -> Option<BackendKind> {
         let kind = backend.as_str();
         self.configured_backends
@@ -302,6 +316,10 @@ where
         .route("/api/v1/requests/{request_id}", get(get_request::<B>))
         .route("/api/v1/backends", get(list_backends::<B>))
         .route("/api/v1/backends/{backend}", get(get_backend::<B>))
+        .route(
+            "/api/v1/backends/{backend}/usage",
+            get(get_backend_usage::<B>),
+        )
         .route("/api/v1/backends/{backend}/probe", post(probe_backend::<B>))
         .route(
             "/api/v1/backends/{backend}/settings",
@@ -1893,6 +1911,56 @@ where
             "backend is not configured",
         ),
     }
+}
+
+async fn get_backend_usage<B>(
+    State(state): State<ApiState<B>>,
+    headers: HeaderMap,
+    Path(backend): Path<String>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let start_time = Utc::now();
+    let trace_context = trace_context_from_headers(&headers);
+    let Some(configured) = state
+        .configured_backends
+        .iter()
+        .find(|item| item.kind == backend)
+    else {
+        return error(
+            StatusCode::NOT_FOUND,
+            "backend_not_found",
+            "backend is not configured",
+        );
+    };
+    let snapshot = state.backend_usage.fetch(configured).await;
+    let status = snapshot.status;
+    let backend_type = snapshot.backend_type.clone();
+    let source = snapshot.source.clone();
+    let detail = snapshot.detail.clone();
+    record_velad_span(
+        &state,
+        trace_context.as_ref(),
+        "velad.backend_usage.fetch",
+        start_time,
+        !status.is_error(),
+        None,
+        Some(&backend),
+        status.is_error().then(|| {
+            detail
+                .clone()
+                .unwrap_or_else(|| "backend usage fetch failed".to_string())
+        }),
+        json!({
+            "velad.backend": backend,
+            "velad.backend_type": backend_type,
+            "velad.backend_usage.status": status.as_str(),
+            "velad.backend_usage.source": source,
+        }),
+    )
+    .await;
+    Json(snapshot).into_response()
 }
 
 async fn probe_backend<B>(State(state): State<ApiState<B>>, Path(backend): Path<String>) -> Response

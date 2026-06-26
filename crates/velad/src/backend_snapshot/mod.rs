@@ -13,6 +13,7 @@ const SNAPSHOT_PROTOCOL: &str = "velad.backend_snapshot.v1";
 #[derive(Clone, Debug)]
 pub(crate) struct BackendSnapshot {
     pub kind: &'static str,
+    pub backend_type: &'static str,
     pub display_name: &'static str,
     pub status: BackendSnapshotStatus,
     pub status_message: Option<String>,
@@ -71,6 +72,7 @@ pub(crate) struct BackendSnapshotCapabilities {
     pub permission_requests: bool,
     pub structured_diff: bool,
     pub session_agent_config: bool,
+    pub usage_snapshot: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -119,6 +121,7 @@ impl BackendSnapshot {
     pub(crate) fn to_wire_json(&self) -> Value {
         let mut payload = json!({
             "kind": self.kind,
+            "backend_type": self.backend_type,
             "status": self.status.as_str(),
             "display_name": self.display_name,
             "location": {
@@ -131,6 +134,7 @@ impl BackendSnapshot {
                 "permission_requests": self.capabilities.permission_requests,
                 "structured_diff": self.capabilities.structured_diff,
                 "session_agent_config": self.capabilities.session_agent_config,
+                "usage_snapshot": self.capabilities.usage_snapshot,
             },
             "models": self.models,
             "permission_modes": self.permission_modes,
@@ -185,6 +189,7 @@ where
         permission_requests: capabilities.permission_requests,
         structured_diff: capabilities.structured_diff,
         session_agent_config: capabilities.session_agent_config,
+        usage_snapshot: state.backend_usage.supports(backend),
     };
     let discovery = discover_models(state, backend).await;
     let mut diagnostics = json!({
@@ -202,6 +207,7 @@ where
 
     BackendSnapshot {
         kind: backend.kind,
+        backend_type: backend.engine_kind.as_str(),
         display_name: backend.display_name,
         status: discovery.status,
         status_message: discovery.status_message,

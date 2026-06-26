@@ -11,6 +11,7 @@ export * from "./wire";
 export {
   parseBackendProbeResultWire,
   parseBackendSettingsWireResponse,
+  parseBackendUsageWireResponse,
   parseBackendWireResponse,
   parseBackendsWireResponse,
   parseCommandAckWire,

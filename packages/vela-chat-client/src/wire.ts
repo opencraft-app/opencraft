@@ -509,6 +509,7 @@ export interface BackendCapabilitiesWire {
   permission_requests: boolean;
   structured_diff: boolean;
   session_agent_config: boolean;
+  usage_snapshot?: boolean;
   [key: string]: unknown;
 }
 
@@ -521,6 +522,7 @@ export interface BackendLocationWire {
 
 export interface BackendWire {
   kind: BackendKindWire;
+  backend_type?: BackendKindWire;
   status: BackendStatusWire;
   status_message?: string;
   display_name: string;
@@ -547,6 +549,55 @@ export interface BackendsWireResponse {
 
 export interface BackendWireResponse {
   backend: BackendWire;
+}
+
+export type BackendUsageStatusWire = "ok" | "needs_auth" | "unsupported" | "error";
+export type BackendUsageToneWire = "ok" | "warning" | "critical" | "neutral";
+
+export interface BackendUsageSummaryWire {
+  label: string;
+  tone: BackendUsageToneWire;
+}
+
+export interface BackendUsageLimitWire {
+  kind: string;
+  label: string;
+  used_percent?: number;
+  remaining_percent?: number;
+  resets_at?: string;
+  window_duration_mins?: number;
+}
+
+export interface BackendUsageLineWire {
+  label: string;
+  value: string;
+  subtitle?: string;
+}
+
+export interface BackendUsageProfileWire {
+  profile_id: string;
+  display_name: string;
+  status: BackendUsageStatusWire;
+  source: string;
+  summary?: BackendUsageSummaryWire;
+  limits: BackendUsageLimitWire[];
+  usage_lines: BackendUsageLineWire[];
+  detail?: string;
+}
+
+export interface BackendUsageWireResponse {
+  schema: "velad.backend_usage.v1";
+  backend: BackendKindWire;
+  backend_type: BackendKindWire;
+  status: BackendUsageStatusWire;
+  source: string;
+  fetched_at: string;
+  plan_name?: string;
+  summary?: BackendUsageSummaryWire;
+  limits: BackendUsageLimitWire[];
+  usage_lines: BackendUsageLineWire[];
+  profiles: BackendUsageProfileWire[];
+  detail?: string;
 }
 
 export interface BackendProbeResultWire {

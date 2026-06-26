@@ -13,6 +13,7 @@ import {
   imageFileToInputPart,
   mergeConversationSnapshot,
   needsConversationRefreshAfterLiveOverlay,
+  parseBackendUsageWireResponse,
   parseConversationWireView,
   parseSseJsonFrames,
   readVelaStreamEvent,
@@ -723,6 +724,59 @@ test("keeps OpenAPI backend capabilities required booleans in the client wire mo
     /function requiredBackendCapabilities\([\s\S]*?data: Record<string, unknown>[\s\S]*?owner: string[\s\S]*?\): BackendCapabilitiesWire/,
   );
   assert.doesNotMatch(backendInterface, /capabilities:\s*Record<string, unknown>/);
+});
+
+test("keeps backend usage as a typed backend read model", async () => {
+  const source = clientSource;
+  const usageInterface =
+    source.match(/export interface BackendUsageWireResponse \{[\s\S]*?\n\}/)?.[0] ?? "";
+  const backendInterface = source.match(/export interface BackendWire \{[\s\S]*?\n\}/)?.[0] ?? "";
+
+  assert.match(backendInterface, /backend_type\?:\s*BackendKindWire/);
+  assert.match(source, /usage_snapshot\?:\s*boolean/);
+  assert.match(usageInterface, /schema:\s*"velad\.backend_usage\.v1"/);
+  assert.match(usageInterface, /backend:\s*BackendKindWire/);
+  assert.match(usageInterface, /backend_type:\s*BackendKindWire/);
+  assert.match(usageInterface, /profiles:\s*BackendUsageProfileWire\[\]/);
+  assert.match(source, /getBackendUsage:\s*\(backend:\s*BackendKindWire\)/);
+  assert.match(source, /parseBackendUsageWireResponse/);
+});
+
+test("parses backend usage snapshots for menu and settings display", () => {
+  const parsed = parseBackendUsageWireResponse({
+    schema: "velad.backend_usage.v1",
+    backend: "codex",
+    backend_type: "codex",
+    status: "ok",
+    source: "codex_wham_usage",
+    fetched_at: "2026-06-26T00:00:00Z",
+    summary: { label: "剩余 58%", tone: "ok" },
+    limits: [
+      {
+        kind: "primary",
+        label: "5h",
+        used_percent: 42,
+        remaining_percent: 58,
+      },
+    ],
+    usage_lines: [{ label: "Credits", value: "$12.50" }],
+    profiles: [
+      {
+        profile_id: "default",
+        display_name: "Codex",
+        status: "ok",
+        source: "codex_wham_usage",
+        summary: { label: "剩余 58%", tone: "ok" },
+        limits: [],
+        usage_lines: [],
+      },
+    ],
+  });
+
+  assert.equal(parsed.backend, "codex");
+  assert.equal(parsed.backend_type, "codex");
+  assert.equal(parsed.summary?.label, "剩余 58%");
+  assert.equal(parsed.limits[0]?.remaining_percent, 58);
 });
 
 test("keeps OpenAPI AgentConfig fields non-null while runtime info may be nullable", async () => {

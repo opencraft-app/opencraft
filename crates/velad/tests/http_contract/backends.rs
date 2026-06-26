@@ -51,6 +51,7 @@ async fn lists_backends_without_calling_runtime_business_logic() {
     let (status, body) = get_json(app, "/api/v1/backends/pi").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["backend"]["kind"], "pi");
+    assert_eq!(body["backend"]["backend_type"], "pi");
     assert_eq!(body["backend"]["location"]["kind"], "local");
 }
 
@@ -128,6 +129,8 @@ async fn codex_backend_can_be_configured_and_used_for_sessions() {
     let (status, body) = get_json(app.clone(), "/api/v1/backends/codex").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["backend"]["kind"], "codex");
+    assert_eq!(body["backend"]["backend_type"], "codex");
+    assert_eq!(body["backend"]["capabilities"]["usage_snapshot"], true);
     assert_eq!(body["backend"]["models"][0]["id"], "gpt-5.4");
     assert_eq!(body["backend"]["diagnostics"]["model_source"], "discovered");
 
@@ -236,6 +239,48 @@ async fn vela_engine_backend_settings_are_stored_without_echoing_secret() {
     assert_eq!(body["backend"]["kind"], "vela_engine");
     assert_eq!(body["backend"]["status"], "available");
     assert_eq!(body["backend"]["models"][0]["id"], "gpt-local");
+}
+
+#[tokio::test]
+async fn codex_backend_usage_reports_needs_auth_without_auth_file() {
+    let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
+    let backend = Arc::new(
+        MockBackendAdapter::new(support::default_backend_outputs())
+            .with_models(vec![codex_model("gpt-5.4", Some("high"))]),
+    );
+    let runtime = Runtime::new(store.clone(), backend);
+    let home = tempfile::tempdir().expect("home");
+    let app = velad::build_app(
+        velad::ApiState::new(store, runtime)
+            .with_codex_backend(Some("gpt-5.4".to_string()))
+            .with_backend_usage_test_context(
+                std::collections::HashMap::new(),
+                Some(home.path().to_path_buf()),
+            ),
+    );
+
+    let (status, body) = get_json(app, "/api/v1/backends/codex/usage").await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["schema"], "velad.backend_usage.v1");
+    assert_eq!(body["backend"], "codex");
+    assert_eq!(body["backend_type"], "codex");
+    assert_eq!(body["status"], "needs_auth");
+    assert_eq!(body["summary"]["label"], "需要登录 Codex");
+    assert_eq!(body["profiles"][0]["profile_id"], "default");
+}
+
+#[tokio::test]
+async fn backend_usage_is_unsupported_for_non_usage_backends() {
+    let app = test_app().await;
+
+    let (status, body) = get_json(app, "/api/v1/backends/pi/usage").await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["schema"], "velad.backend_usage.v1");
+    assert_eq!(body["backend"], "pi");
+    assert_eq!(body["backend_type"], "pi");
+    assert_eq!(body["status"], "unsupported");
 }
 
 #[tokio::test]
