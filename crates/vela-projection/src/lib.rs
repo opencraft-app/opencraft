@@ -104,14 +104,24 @@ pub fn project_conversation(events: &[CanonicalEvent]) -> ConversationView {
         }
 
         if event.event_type == EventType::TURN_COMPLETED {
-            mark_latest_streaming_assistant_terminal(&mut items, event, "completed");
+            mark_assistant_messages_terminal_for_turn_id(
+                &mut items,
+                event,
+                turn_id_from_payload(event),
+                "completed",
+            );
             mark_turn_meta_terminal(&mut items, event, "completed");
             mark_agent_work_terminal_for_turn(&mut items, event, "completed");
             continue;
         }
 
         if event.event_type == EventType::TURN_FAILED {
-            mark_latest_streaming_assistant_terminal(&mut items, event, "failed");
+            mark_assistant_messages_terminal_for_turn_id(
+                &mut items,
+                event,
+                turn_id_from_payload(event),
+                "failed",
+            );
             mark_turn_meta_terminal(&mut items, event, "failed");
             mark_agent_work_terminal_for_turn(&mut items, event, "failed");
             push_turn_status(
@@ -124,7 +134,12 @@ pub fn project_conversation(events: &[CanonicalEvent]) -> ConversationView {
         }
 
         if event.event_type == EventType::TURN_CANCELLED {
-            mark_latest_streaming_assistant_terminal(&mut items, event, "cancelled");
+            mark_assistant_messages_terminal_for_turn_id(
+                &mut items,
+                event,
+                turn_id_from_payload(event),
+                "cancelled",
+            );
             mark_turn_meta_terminal(&mut items, event, "cancelled");
             mark_agent_work_terminal_for_turn(&mut items, event, "cancelled");
             push_turn_status(
@@ -140,7 +155,12 @@ pub fn project_conversation(events: &[CanonicalEvent]) -> ConversationView {
             let live_turn_id =
                 turn_id_from_payload(event).or_else(|| latest_running_turn_id(&items));
             if live_turn_id.is_some() {
-                mark_latest_streaming_assistant_terminal(&mut items, event, "cancelled");
+                mark_assistant_messages_terminal_for_turn_id(
+                    &mut items,
+                    event,
+                    live_turn_id.clone(),
+                    "cancelled",
+                );
                 mark_agent_work_terminal_for_turn_id(
                     &mut items,
                     live_turn_id.as_ref(),
@@ -298,17 +318,38 @@ fn mark_assistant_message_completed(items: &mut [ConversationItem], event: &Cano
     }
 }
 
-fn mark_latest_streaming_assistant_terminal(
+fn mark_assistant_messages_terminal_for_turn_id(
     items: &mut [ConversationItem],
     event: &CanonicalEvent,
+    turn_id: Option<TurnId>,
     status: &str,
 ) {
+    let mut changed = false;
+
+    if let Some(turn_id) = turn_id.as_ref() {
+        for item in items.iter_mut().filter(|item| {
+            item.kind == ConversationItemKind::AssistantMessage
+                && (item.status == "streaming" || item.status == "pending")
+                && item.turn_id.as_ref() == Some(turn_id)
+        }) {
+            item.status = status.to_string();
+            item.updated_at = event.created_at;
+            item.revision += 1;
+            push_source_event(item, event);
+            changed = true;
+        }
+    }
+
+    if changed {
+        return;
+    }
+
     if let Some(item) = items.iter_mut().rev().find(|item| {
         item.kind == ConversationItemKind::AssistantMessage
             && (item.status == "streaming" || item.status == "pending")
     }) {
         if item.turn_id.is_none() {
-            item.turn_id = turn_id_from_payload(event);
+            item.turn_id = turn_id;
         }
         item.status = status.to_string();
         item.updated_at = event.created_at;

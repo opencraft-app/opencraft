@@ -508,6 +508,61 @@ fn conversation_tracks_turn_meta_from_runtime_lifecycle() {
 }
 
 #[test]
+fn conversation_terminal_turn_closes_all_live_assistant_messages_for_that_turn() {
+    let events = vec![
+        event_at(
+            1,
+            1,
+            EventType::TURN_STARTED,
+            json!({ "turn_id": "turn_1" }),
+        ),
+        event_at(
+            2,
+            2,
+            EventType::ASSISTANT_MESSAGE_DELTA,
+            json!({ "turn_id": "turn_1", "message_id": "msg_a", "delta": "hello" }),
+        ),
+        event_at(
+            3,
+            3,
+            EventType::ASSISTANT_MESSAGE_DELTA,
+            json!({ "turn_id": "turn_1", "message_id": "msg_b", "delta": "hello" }),
+        ),
+        event_at(
+            4,
+            4,
+            EventType::TURN_COMPLETED,
+            json!({ "turn_id": "turn_1" }),
+        ),
+    ];
+
+    let conversation = project_conversation(&events);
+    let assistant_items = conversation
+        .items
+        .iter()
+        .filter(|item| item.kind == ConversationItemKind::AssistantMessage)
+        .collect::<Vec<_>>();
+
+    assert_eq!(assistant_items.len(), 2);
+    assert!(
+        assistant_items
+            .iter()
+            .all(|item| item.status == "completed"),
+        "terminal turns must not leave duplicate assistant identities streaming"
+    );
+    assert_eq!(
+        assistant_items
+            .iter()
+            .map(|item| item.updated_at)
+            .collect::<Vec<_>>(),
+        vec![
+            Utc.with_ymd_and_hms(2026, 6, 18, 10, 0, 4).unwrap(),
+            Utc.with_ymd_and_hms(2026, 6, 18, 10, 0, 4).unwrap(),
+        ]
+    );
+}
+
+#[test]
 fn conversation_preserves_turn_failure_error_payload() {
     let events = vec![
         event_at(
