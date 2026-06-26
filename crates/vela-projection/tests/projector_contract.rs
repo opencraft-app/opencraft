@@ -365,6 +365,44 @@ fn conversation_terminal_turn_closes_live_agent_work() {
 }
 
 #[test]
+fn conversation_terminal_turn_closes_started_agent_work_without_tool_completed() {
+    let events = vec![
+        event_at(
+            1,
+            1,
+            EventType::TURN_STARTED,
+            json!({ "turn_id": "turn_1" }),
+        ),
+        event_at(
+            2,
+            2,
+            EventType::TOOL_STARTED,
+            json!({ "tool_id": "tool_1", "name": "Read file", "status": "started", "turn_id": "turn_1" }),
+        ),
+        event_at(
+            3,
+            6,
+            EventType::TURN_COMPLETED,
+            json!({ "turn_id": "turn_1" }),
+        ),
+    ];
+
+    let conversation = project_conversation(&events);
+    let work = conversation
+        .items
+        .iter()
+        .find(|item| item.kind == ConversationItemKind::AgentWork)
+        .expect("agent work");
+
+    assert_eq!(work.status, "completed");
+    assert_eq!(
+        work.updated_at,
+        Utc.with_ymd_and_hms(2026, 6, 18, 10, 0, 6).unwrap()
+    );
+    assert_eq!(work.source_event_ids.len(), 2);
+}
+
+#[test]
 fn conversation_non_terminal_updates_do_not_resurrect_completed_work() {
     let events = vec![
         event_at(

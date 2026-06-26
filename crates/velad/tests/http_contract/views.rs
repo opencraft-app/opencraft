@@ -253,6 +253,77 @@ async fn conversation_view_normalizes_typed_agent_work_detail_fields_to_wire_typ
 }
 
 #[tokio::test]
+async fn conversation_view_terminal_turn_closes_started_agent_work() {
+    let (app, _) = test_app_with_backend_outputs(vec![
+        BackendOutput::event(
+            EventType::TOOL_STARTED,
+            json!({
+                "tool_id": "tool_readme",
+                "name": "read: ./README.md",
+                "status": "started",
+                "kind": "read"
+            }),
+        ),
+        BackendOutput::event(
+            EventType::ASSISTANT_MESSAGE_DELTA,
+            json!({ "message_id": "msg_answer", "delta": "done" }),
+        ),
+        BackendOutput::event(
+            EventType::TURN_COMPLETED,
+            json!({ "stop_reason": "end_turn" }),
+        ),
+    ])
+    .await;
+    let (_, created) = json_request(
+        app.clone(),
+        Method::POST,
+        "/api/v1/sessions",
+        json!({ "backend": "pi", "working_directory": "/tmp/project" }),
+        Some("ses-conversation-started-work"),
+    )
+    .await;
+    let session_id = created["session"]["id"].as_str().unwrap();
+
+    let (status, _) = json_request(
+        app.clone(),
+        Method::POST,
+        &format!("/api/v1/sessions/{session_id}/events"),
+        json!({
+            "events": [{
+                "type": "user.message",
+                "content": [{ "type": "text", "text": "what is this project" }]
+            }]
+        }),
+        Some("cmd-conversation-started-work"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    wait_for_session_event(app.clone(), session_id, "turn.completed").await;
+
+    let (status, body) = get_json(
+        app,
+        &format!("/api/v1/sessions/{session_id}/views/conversation?direction=tail&limit=20"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let work = body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["kind"] == "agent_work" && item["title"] == "read: ./README.md")
+        .expect("agent work should be present");
+    assert_eq!(work["status"], "completed");
+    assert!(
+        body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| { !(item["kind"] == "agent_work" && item["status"] == "running") }),
+        "terminal turn must not leave agent work running: {body:#?}"
+    );
+}
+
+#[tokio::test]
 async fn conversation_view_rejects_invalid_direction_anchor_combinations() {
     let app = test_app().await;
     let (_, created) = json_request(

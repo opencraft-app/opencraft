@@ -849,14 +849,18 @@ fn matches_event(event: &CanonicalEvent, prefix: &str) -> bool {
 }
 
 fn status_from_payload(payload: &Value, event_type: &EventType) -> Option<String> {
-    string_field(payload, "status")
+    let raw_status = string_field(payload, "status")
         .or_else(|| default_status_for_event_type(event_type).map(str::to_string))
         .or_else(|| {
             event_type
                 .0
                 .rsplit_once('.')
                 .map(|(_, status)| status.to_string())
-        })
+        })?;
+    Some(normalize_conversation_item_status(
+        raw_status.as_str(),
+        event_type,
+    ))
 }
 
 fn merge_terminal_status(current: &str, incoming: Option<&str>) -> String {
@@ -877,7 +881,31 @@ fn is_terminal_status(status: &str) -> bool {
 }
 
 fn is_live_status(status: &str) -> bool {
-    matches!(status, "running" | "pending" | "streaming")
+    matches!(
+        status,
+        "running" | "pending" | "streaming" | "started" | "in_progress"
+    )
+}
+
+fn normalize_conversation_item_status(raw: &str, event_type: &EventType) -> String {
+    match raw {
+        "pending" | "queued" | "opened" => "pending",
+        "running" | "started" | "in_progress" | "streaming" => "running",
+        "completed" | "success" | "succeeded" | "done" | "resolved" | "updated" | "accepted" => {
+            "completed"
+        }
+        "failed" | "error" => "failed",
+        "cancelled" | "canceled" => "cancelled",
+        _ if *event_type == EventType::TOOL_STARTED || *event_type == EventType::TASK_STARTED => {
+            "running"
+        }
+        _ if *event_type == EventType::TOOL_COMPLETED => "completed",
+        _ if *event_type == EventType::TOOL_FAILED => "failed",
+        _ if *event_type == EventType::REQUEST_OPENED => "pending",
+        _ if *event_type == EventType::REQUEST_RESOLVED => "completed",
+        _ => "running",
+    }
+    .to_string()
 }
 
 fn activity_summary_text(payload: &Value) -> Option<String> {
