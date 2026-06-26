@@ -233,6 +233,8 @@ test("desktop host uses unified chrome and drag-region semantics", () => {
   assert.doesNotMatch(css, /\.vela-chat-topbar::after\s*\{[^}]*top:\s*68px;/s);
   assert.match(css, /\.vela-desktop-shell\[data-state="collapsed"\] \.vela-chat-topbar,\s*\.vela-desktop-shell\[data-sidebar-presentation="overlay"\] \.vela-chat-topbar\s*\{[^}]*--vela-chat-topbar-leading-padding:\s*max\(/s);
   assert.match(css, /\.vela-desktop-shell\[data-state="collapsed"\] \.vela-chat-topbar,\s*\.vela-desktop-shell\[data-sidebar-presentation="overlay"\] \.vela-chat-topbar\s*\{[^}]*var\(--vela-window-leading-content-inset\)/s);
+  assert.match(css, /\.vela-desktop-shell:not\(\[data-sidebar-dragging="true"\]\) \.vela-chat-topbar\s*\{[^}]*transition:\s*padding-left var\(--vela-sidebar-toggle-duration\) var\(--vela-sidebar-toggle-ease\);/s);
+  assert.match(css, /\.vela-desktop-shell\[data-sidebar-dragging="true"\] \.vela-chat-topbar\s*\{[^}]*transition:\s*none;/s);
   assert.match(css, /\[data-window-drag-region="true"\]\s*\{[^}]*-webkit-app-region:\s*drag;/s);
   assert.match(css, /\[data-window-drag-region="false"\]/);
   assert.match(css, /\.vela-window-chrome\s*\{[^}]*height:\s*var\(--vela-titlebar-height\);/s);
@@ -371,8 +373,11 @@ test("desktop sidebar toggle motion is main-surface owned and disabled during dr
   assert.match(css, /\.vela-main-inset\s*\{[^}]*left:\s*var\(--vela-sidebar-width, 300px\);/s);
   assert.match(css, /\.vela-desktop-shell\[data-state="collapsed"\] \.vela-main-inset\s*\{[^}]*left:\s*0;/s);
   assert.match(css, /\.vela-desktop-shell:not\(\[data-sidebar-dragging="true"\]\) \.vela-main-inset\s*\{[^}]*transition:/s);
+  assert.match(css, /\.vela-desktop-shell:not\(\[data-sidebar-dragging="true"\]\) \.vela-chat-topbar\s*\{[^}]*transition:\s*padding-left var\(--vela-sidebar-toggle-duration\) var\(--vela-sidebar-toggle-ease\);/s);
   assert.match(css, /\.vela-desktop-shell\[data-sidebar-dragging="true"\] \.vela-main-inset\s*\{[^}]*transition:\s*none;/s);
+  assert.match(css, /\.vela-desktop-shell\[data-sidebar-dragging="true"\] \.vela-chat-topbar\s*\{[^}]*transition:\s*none;/s);
   assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)/);
+  assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)\s*\{[^}]*\.vela-desktop-shell:not\(\[data-sidebar-dragging="true"\]\) \.vela-main-inset,\s*\.vela-desktop-shell:not\(\[data-sidebar-dragging="true"\]\) \.vela-chat-topbar\s*\{[^}]*transition-duration:\s*0\.01ms;/s);
 });
 
 test("desktop main surface renders a codex-style blur veil while covering the sidebar", () => {

@@ -328,6 +328,10 @@ body {
   transition: left var(--vela-sidebar-toggle-duration) var(--vela-sidebar-toggle-ease);
 }
 
+.vela-desktop-shell:not([data-sidebar-dragging="true"]) .vela-chat-topbar {
+  transition: padding-left var(--vela-sidebar-toggle-duration) var(--vela-sidebar-toggle-ease);
+}
+
 .vela-desktop-shell[data-state="collapsed"] .vela-main-inset {
   left: 0;
   border-left-color: transparent;
@@ -357,6 +361,10 @@ body {
 }
 
 .vela-desktop-shell[data-sidebar-dragging="true"] .vela-main-inset {
+  transition: none;
+}
+
+.vela-desktop-shell[data-sidebar-dragging="true"] .vela-chat-topbar {
   transition: none;
 }
 
@@ -2285,7 +2293,8 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .vela-desktop-shell:not([data-sidebar-dragging="true"]) .vela-main-inset {
+  .vela-desktop-shell:not([data-sidebar-dragging="true"]) .vela-main-inset,
+  .vela-desktop-shell:not([data-sidebar-dragging="true"]) .vela-chat-topbar {
     transition-duration: 0.01ms;
   }
 
