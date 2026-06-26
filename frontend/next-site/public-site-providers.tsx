@@ -8,6 +8,7 @@ import { RuntimeConfigProvider } from '@/contexts/runtime-config-context';
 import { SessionProvider } from '@/contexts/session-context';
 import i18n from '@/i18n';
 import { ProductAnalyticsBridge } from '@/observability/product-analytics-bridge';
+import { RumUserBridge } from '@/observability/rum-user-bridge';
 
 import type { PublicRouteLocale } from './public-locale';
 
@@ -34,6 +35,7 @@ export function PublicSiteAppProviders({ children }: { children: ReactNode }) {
     <RepositoryProvider>
       <RuntimeConfigProvider>
         <SessionProvider>
+          <RumUserBridge />
           <ProductAnalyticsBridge />
           <OpenClawProvider>{children}</OpenClawProvider>
         </SessionProvider>
