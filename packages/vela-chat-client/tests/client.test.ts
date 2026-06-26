@@ -520,6 +520,88 @@ test("validates conversation agent work detail at the client wire boundary", asy
   );
 });
 
+test("accepts structured conversation agent work content parts at the client wire boundary", () => {
+  const view = parseConversationWireView(
+    conversationFixture({
+      items: [
+        {
+          id: "work_content_parts",
+          kind: "agent_work",
+          created_at: "2026-06-19T00:00:00Z",
+          updated_at: "2026-06-19T00:00:00Z",
+          revision: 1,
+          status: "completed",
+          title: "Read file",
+          detail: {
+            type: "read",
+            file_path: "README.md",
+            content: "hello",
+            content_parts: [
+              { type: "text", text: "hello" },
+              { type: "json", value: { path: "README.md", lines: 1 } },
+              { type: "resource_link", uri: "file:///tmp/README.md", name: "README.md" },
+            ],
+          },
+          source_event_ids: ["evt_1"],
+          source_event_ranges: [
+            { epoch: 1, from_event_id: "evt_1", to_event_id: "evt_1", from_seq: 1, to_seq: 1 },
+          ],
+        },
+      ],
+    }),
+  );
+
+  const item = view.items[0];
+  assert.equal(item?.kind, "agent_work");
+  if (item?.kind !== "agent_work") throw new Error("expected agent work item");
+  assert.deepEqual(item.detail.content_parts, [
+    { type: "text", text: "hello" },
+    { type: "json", value: { path: "README.md", lines: 1 } },
+    { type: "resource_link", uri: "file:///tmp/README.md", name: "README.md" },
+  ]);
+});
+
+test("rejects raw provider fields from conversation agent work detail", () => {
+  assert.throws(
+    () =>
+      parseConversationWireView(
+        conversationFixture({
+          items: [
+            {
+              id: "work_raw_detail",
+              kind: "agent_work",
+              created_at: "2026-06-19T00:00:00Z",
+              updated_at: "2026-06-19T00:00:00Z",
+              revision: 1,
+              status: "completed",
+              title: "Tool call",
+              detail: {
+                type: "tool",
+                name: "unknown_tool",
+                raw_input: { secret: "do-not-project" },
+                raw_output: { secret: "do-not-project" },
+              },
+              source_event_ids: ["evt_1"],
+              source_event_ranges: [
+                {
+                  epoch: 1,
+                  from_event_id: "evt_1",
+                  to_event_id: "evt_1",
+                  from_seq: 1,
+                  to_seq: 1,
+                },
+              ],
+            },
+          ],
+        }),
+      ),
+    (err) =>
+      err instanceof VeladClientError &&
+      err.code === "invalid_agent_work_detail" &&
+      /raw_input/.test(err.message),
+  );
+});
+
 test("keeps OpenAPI-required conversation item fields required in the client wire model", async () => {
   const source = clientSource;
   const baseInterface =
@@ -549,6 +631,8 @@ test("keeps OpenAPI conversation and agent work enums narrow in the client wire 
   const detailUnion =
     source.match(/export type AgentWorkDetailWire\s*=[\s\S]*?AgentWorkGenericDetailWire;/)?.[0] ??
     "";
+  const genericDetailInterface =
+    source.match(/export interface AgentWorkGenericDetailWire \{[\s\S]*?\n\}/)?.[0] ?? "";
 
   assert.match(source, /export type ConversationItemKindWire\s*=/);
   assert.match(source, /export type ConversationItemStatusWire\s*=/);
@@ -562,6 +646,9 @@ test("keeps OpenAPI conversation and agent work enums narrow in the client wire 
   assert.match(detailUnion, /AgentWorkSearchDetailWire/);
   assert.match(detailUnion, /AgentWorkFetchDetailWire/);
   assert.match(detailUnion, /AgentWorkGenericDetailWire/);
+  assert.match(source, /export type AgentWorkContentPartWire\s*=/);
+  assert.match(source, /content_parts\?:\s*AgentWorkContentPartWire\[\]/);
+  assert.doesNotMatch(genericDetailInterface, /\[key:\s*string\]:\s*unknown/);
   assert.doesNotMatch(source, /export interface ChatTranscriptWireView/);
   assert.doesNotMatch(source, /export interface ActivityWireView/);
 });

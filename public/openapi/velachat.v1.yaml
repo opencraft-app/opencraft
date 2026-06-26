@@ -1755,8 +1755,49 @@ components:
         - $ref: '#/components/schemas/AgentWorkGenericDetail'
       discriminator:
         propertyName: type
+    AgentWorkContentPart:
+      oneOf:
+        - $ref: '#/components/schemas/AgentWorkTextContentPart'
+        - $ref: '#/components/schemas/AgentWorkJsonContentPart'
+        - $ref: '#/components/schemas/AgentWorkResourceLinkContentPart'
+      discriminator:
+        propertyName: type
+    AgentWorkTextContentPart:
+      type: object
+      additionalProperties: false
+      required: [type, text]
+      properties:
+        type:
+          type: string
+          enum: [text]
+        text:
+          type: string
+    AgentWorkJsonContentPart:
+      type: object
+      additionalProperties: false
+      required: [type, value]
+      properties:
+        type:
+          type: string
+          enum: [json]
+        value: {}
+    AgentWorkResourceLinkContentPart:
+      type: object
+      additionalProperties: false
+      required: [type, uri]
+      properties:
+        type:
+          type: string
+          enum: [resource_link]
+        uri:
+          type: string
+        name:
+          type: string
+        mime_type:
+          type: string
     AgentWorkShellDetail:
       type: object
+      additionalProperties: false
       required: [type]
       properties:
         type:
@@ -1783,6 +1824,7 @@ components:
           type: string
     AgentWorkShellStream:
       type: object
+      additionalProperties: false
       required: [stream_id]
       properties:
         stream_id:
@@ -1807,6 +1849,7 @@ components:
           type: string
     AgentWorkFileDetail:
       type: object
+      additionalProperties: false
       required: [type]
       properties:
         type:
@@ -1819,6 +1862,10 @@ components:
           deprecated: true
         content:
           type: string
+        content_parts:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentWorkContentPart'
         old_string:
           type: string
         new_string:
@@ -1827,6 +1874,7 @@ components:
           type: string
     AgentWorkSearchDetail:
       type: object
+      additionalProperties: false
       required: [type]
       properties:
         type:
@@ -1839,6 +1887,10 @@ components:
           enum: [code, web, files, unknown]
         content:
           type: string
+        content_parts:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentWorkContentPart'
         num_files:
           type: integer
         num_matches:
@@ -1849,6 +1901,7 @@ components:
           type: boolean
     AgentWorkFetchDetail:
       type: object
+      additionalProperties: false
       required: [type]
       properties:
         type:
@@ -1860,6 +1913,10 @@ components:
           type: string
         result:
           type: string
+        content_parts:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentWorkContentPart'
         code:
           type: integer
         code_text:
@@ -1870,12 +1927,58 @@ components:
           type: integer
     AgentWorkGenericDetail:
       type: object
+      additionalProperties: false
       required: [type]
       properties:
         type:
           type: string
           enum: [browser, mcp_tool, dynamic_tool, sub_agent, image_generation, image_view, plan, plain_text, unknown, tool]
-      additionalProperties: true
+        tool_id:
+          type: string
+        call_id:
+          type: string
+        name:
+          type: string
+        label:
+          type: string
+        summary:
+          type: string
+        description:
+          type: string
+        text:
+          type: string
+        content:
+          type: string
+        command:
+          type: string
+        cwd:
+          type: string
+        query:
+          type: string
+        file_path:
+          type: string
+        path:
+          type: string
+        url:
+          type: string
+        output:
+          type: string
+        stdout:
+          type: string
+        stderr:
+          type: string
+        error:
+          type: string
+        delta:
+          type: string
+        status:
+          type: string
+        exit_code:
+          type: integer
+        content_parts:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentWorkContentPart'
     PendingRequestsView:
       type: object
       required: [requests, cursor]

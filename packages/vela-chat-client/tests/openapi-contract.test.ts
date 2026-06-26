@@ -61,6 +61,35 @@ test("client agent work detail allowlist covers the OpenAPI detail union", () =>
   assertSetEqual(openapiDetailTypes, clientStringSet("agentWorkDetailTypes"));
 });
 
+test("OpenAPI agent work detail contract stays display-safe and structured", () => {
+  assert.match(openapiSchemaBlock("AgentWorkContentPart"), /AgentWorkTextContentPart/);
+  assert.match(openapiSchemaBlock("AgentWorkContentPart"), /AgentWorkJsonContentPart/);
+  assert.match(openapiSchemaBlock("AgentWorkContentPart"), /AgentWorkResourceLinkContentPart/);
+
+  for (const schemaName of [
+    "AgentWorkShellDetail",
+    "AgentWorkShellStream",
+    "AgentWorkFileDetail",
+    "AgentWorkSearchDetail",
+    "AgentWorkFetchDetail",
+    "AgentWorkGenericDetail",
+  ]) {
+    const block = openapiSchemaBlock(schemaName);
+    assert.match(block, /additionalProperties: false/, `${schemaName} must reject raw payload fields`);
+    assert.doesNotMatch(block, /additionalProperties: true/);
+    assert.doesNotMatch(block, /raw_input|raw_output/);
+  }
+
+  for (const schemaName of [
+    "AgentWorkFileDetail",
+    "AgentWorkSearchDetail",
+    "AgentWorkFetchDetail",
+    "AgentWorkGenericDetail",
+  ]) {
+    assert.match(openapiSchemaBlock(schemaName), /content_parts:/, `${schemaName} needs content_parts`);
+  }
+});
+
 function openapiSchemaEnum(schemaName: string) {
   return enumValues(openapiSchemaBlock(schemaName));
 }

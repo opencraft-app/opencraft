@@ -135,7 +135,12 @@ function summaryFromDetail(detail: AgentWorkDetailWire | undefined): string {
       return truncateMiddle(stringField(detail.text));
     case "unknown":
     case "tool":
-      return truncateMiddle(stringField(detail.output) || stringField(detail.input));
+      return truncateMiddle(
+        stringField(detail.output) ||
+          stringField(detail.content) ||
+          stringField(detail.summary) ||
+          stringField(detail.name),
+      );
     default: {
       const generic = detail as Record<string, unknown>;
       return truncateMiddle(
@@ -193,29 +198,7 @@ function normalizedAgentWorkDetail(
   if (typeof detail.type === "string") {
     return detail as AgentWorkDetailWire;
   }
-
-  const nested = detail.detail;
-  if (!isRecord(nested) || typeof nested.type !== "string") {
-    return undefined;
-  }
-
-  const merged: Record<string, unknown> = { ...nested };
-  copyIfMissing(detail, merged, "streams");
-  copyIfMissing(detail, merged, "stdout");
-  copyIfMissing(detail, merged, "stderr");
-  copyIfMissing(detail, merged, "output");
-  copyIfMissing(detail, merged, "error");
-  return merged as AgentWorkDetailWire;
-}
-
-function copyIfMissing(
-  from: Record<string, unknown>,
-  to: Record<string, unknown>,
-  key: string,
-) {
-  if (to[key] === undefined && from[key] !== undefined) {
-    to[key] = from[key];
-  }
+  return undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

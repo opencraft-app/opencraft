@@ -3904,9 +3904,9 @@ fn activity_file_detail_json(detail_type: &str, payload: &Value) -> Value {
     if let Some(path) = payload
         .get("file_path")
         .or_else(|| payload.get("path"))
-        .cloned()
+        .and_then(detail_string_value)
     {
-        object.insert("file_path".to_string(), path);
+        object.insert("file_path".to_string(), Value::String(path));
     }
     detail
 }
@@ -3920,39 +3920,7 @@ fn activity_fetch_detail_json(payload: &Value) -> Value {
 }
 
 fn activity_generic_tool_detail_json(payload: &Value) -> Value {
-    detail_json(
-        "tool",
-        payload,
-        &[
-            "tool_id",
-            "call_id",
-            "name",
-            "command",
-            "cwd",
-            "query",
-            "file_path",
-            "path",
-            "url",
-            "summary",
-            "delta",
-            "output",
-            "stdout",
-            "stderr",
-            "exit_code",
-            "error",
-        ],
-    )
-}
-
-fn detail_json(detail_type: &str, payload: &Value, fields: &[&str]) -> Value {
-    let mut detail = serde_json::Map::new();
-    detail.insert("type".to_string(), Value::String(detail_type.to_string()));
-    for field in fields {
-        if let Some(value) = payload.get(field) {
-            detail.insert((*field).to_string(), value.clone());
-        }
-    }
-    Value::Object(detail)
+    generic_detail_json("tool", payload)
 }
 
 fn normalized_detail_json(detail_type: &str, payload: &Value) -> Value {
@@ -3996,14 +3964,7 @@ fn normalized_detail_json(detail_type: &str, payload: &Value) -> Value {
             &[],
             &[],
         ),
-        _ => {
-            let mut detail = payload
-                .as_object()
-                .cloned()
-                .unwrap_or_else(serde_json::Map::new);
-            detail.insert("type".to_string(), Value::String(detail_type.to_string()));
-            Value::Object(detail)
-        }
+        _ => generic_detail_json(detail_type, payload),
     }
 }
 
@@ -4018,7 +3979,12 @@ fn typed_detail_json(
     let mut detail = Map::new();
     detail.insert("type".to_string(), Value::String(detail_type.to_string()));
     for field in string_fields {
-        if let Some(value) = payload.get(field).and_then(detail_string_value) {
+        let Some(raw_value) = payload.get(field) else {
+            continue;
+        };
+        if matches!(*field, "content" | "result") {
+            insert_content_projection(&mut detail, field, raw_value);
+        } else if let Some(value) = detail_string_value(raw_value) {
             detail.insert((*field).to_string(), Value::String(value));
         }
     }
@@ -4040,13 +4006,161 @@ fn typed_detail_json(
     Value::Object(detail)
 }
 
+fn generic_detail_json(detail_type: &str, payload: &Value) -> Value {
+    let mut detail = Map::new();
+    detail.insert(
+        "type".to_string(),
+        Value::String(generic_detail_type(detail_type).to_string()),
+    );
+    for field in [
+        "tool_id",
+        "call_id",
+        "name",
+        "label",
+        "summary",
+        "description",
+        "text",
+        "command",
+        "cwd",
+        "query",
+        "file_path",
+        "path",
+        "url",
+        "stdout",
+        "stderr",
+        "error",
+        "delta",
+        "status",
+    ] {
+        if let Some(value) = payload.get(field).and_then(detail_string_value) {
+            detail.insert(field.to_string(), Value::String(value));
+        }
+    }
+    for field in ["content", "output"] {
+        if let Some(value) = payload.get(field) {
+            insert_content_projection(&mut detail, field, value);
+        }
+    }
+    if let Some(exit_code) = payload.get("exit_code").and_then(Value::as_i64) {
+        detail.insert("exit_code".to_string(), json!(exit_code));
+    }
+    Value::Object(detail)
+}
+
+fn generic_detail_type(detail_type: &str) -> &str {
+    match detail_type {
+        "browser" | "mcp_tool" | "dynamic_tool" | "sub_agent" | "image_generation"
+        | "image_view" | "plan" | "plain_text" | "unknown" | "tool" => detail_type,
+        _ => "unknown",
+    }
+}
+
+fn insert_content_projection(detail: &mut Map<String, Value>, field: &str, value: &Value) {
+    if let Some(preview) = detail_content_preview(value) {
+        detail.insert(field.to_string(), Value::String(preview));
+    }
+    if !detail.contains_key("content_parts") {
+        let parts = detail_content_parts(value);
+        if !parts.is_empty() {
+            detail.insert("content_parts".to_string(), Value::Array(parts));
+        }
+    }
+}
+
+fn detail_content_preview(value: &Value) -> Option<String> {
+    let parts = detail_content_parts(value);
+    let preview = parts
+        .iter()
+        .filter_map(content_part_preview)
+        .filter(|part| !part.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    if preview.trim().is_empty() {
+        None
+    } else {
+        Some(truncate_preview(&preview, 500))
+    }
+}
+
+fn content_part_preview(part: &Value) -> Option<String> {
+    match part.get("type").and_then(Value::as_str) {
+        Some("text") => part.get("text").and_then(Value::as_str).map(str::to_string),
+        Some("json") => part.get("value").map(Value::to_string),
+        Some("resource_link") => part
+            .get("name")
+            .and_then(Value::as_str)
+            .or_else(|| part.get("uri").and_then(Value::as_str))
+            .map(str::to_string),
+        _ => None,
+    }
+}
+
+fn detail_content_parts(value: &Value) -> Vec<Value> {
+    match value {
+        Value::Null => Vec::new(),
+        Value::String(value) => vec![json!({ "type": "text", "text": value })],
+        Value::Bool(value) => vec![json!({ "type": "text", "text": value.to_string() })],
+        Value::Number(value) => vec![json!({ "type": "text", "text": value.to_string() })],
+        Value::Array(values) => values
+            .iter()
+            .flat_map(detail_content_parts)
+            .collect::<Vec<_>>(),
+        Value::Object(object) => {
+            if let Some(part) = known_content_part(object) {
+                return vec![part];
+            }
+            for field in ["content", "text", "output"] {
+                if let Some(value) = object.get(field) {
+                    let parts = detail_content_parts(value);
+                    if !parts.is_empty() {
+                        return parts;
+                    }
+                }
+            }
+            vec![json!({ "type": "json", "value": Value::Object(object.clone()) })]
+        }
+    }
+}
+
+fn known_content_part(object: &Map<String, Value>) -> Option<Value> {
+    match object.get("type").and_then(Value::as_str) {
+        Some("text") => object
+            .get("text")
+            .and_then(Value::as_str)
+            .map(|text| json!({ "type": "text", "text": text })),
+        Some("json") => object
+            .get("value")
+            .map(|value| json!({ "type": "json", "value": value })),
+        Some("resource_link") => {
+            let uri = object.get("uri").and_then(Value::as_str)?;
+            let mut part = Map::new();
+            part.insert(
+                "type".to_string(),
+                Value::String("resource_link".to_string()),
+            );
+            part.insert("uri".to_string(), Value::String(uri.to_string()));
+            if let Some(name) = object.get("name").and_then(Value::as_str) {
+                part.insert("name".to_string(), Value::String(name.to_string()));
+            }
+            if let Some(mime_type) = object.get("mime_type").and_then(Value::as_str) {
+                part.insert(
+                    "mime_type".to_string(),
+                    Value::String(mime_type.to_string()),
+                );
+            }
+            Some(Value::Object(part))
+        }
+        _ => None,
+    }
+}
+
 fn detail_string_value(value: &Value) -> Option<String> {
     match value {
         Value::Null => None,
         Value::String(value) => Some(value.clone()),
         Value::Bool(value) => Some(value.to_string()),
         Value::Number(value) => Some(value.to_string()),
-        Value::Array(_) | Value::Object(_) => Some(value.to_string()),
+        Value::Array(_) | Value::Object(_) => None,
     }
 }
 

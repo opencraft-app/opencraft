@@ -1,9 +1,11 @@
 import type {
+  AgentWorkContentPartWire,
   AgentWorkDetailTypeWire,
   AgentWorkFileDetailTypeWire,
   AgentWorkGenericDetailTypeWire,
   AgentWorkSearchModeWire,
   AgentWorkDetailWire,
+  AgentWorkShellStreamWire,
   AgentConfigPatchWire,
   ArchiveSessionWireResponse,
   AgentConfigWire,
@@ -328,6 +330,86 @@ const agentWorkDetailTypes = new Set<string>(
     "tool",
   ] satisfies AgentWorkDetailTypeWire[],
 );
+const agentWorkShellDetailFields = new Set([
+  "type",
+  "command",
+  "cwd",
+  "output",
+  "stdout",
+  "stderr",
+  "streams",
+  "exit_code",
+  "error",
+]);
+const agentWorkShellStreamFields = new Set([
+  "stream_id",
+  "stream",
+  "text",
+  "last_delta",
+  "chunk_count",
+  "last_sequence",
+  "last_chunk_id",
+]);
+const agentWorkFileDetailFields = new Set([
+  "type",
+  "file_path",
+  "path",
+  "content",
+  "content_parts",
+  "old_string",
+  "new_string",
+  "unified_diff",
+]);
+const agentWorkSearchDetailFields = new Set([
+  "type",
+  "query",
+  "mode",
+  "content",
+  "content_parts",
+  "num_files",
+  "num_matches",
+  "duration_ms",
+  "truncated",
+]);
+const agentWorkFetchDetailFields = new Set([
+  "type",
+  "url",
+  "prompt",
+  "result",
+  "content_parts",
+  "code",
+  "code_text",
+  "bytes",
+  "duration_ms",
+]);
+const agentWorkGenericDetailFields = new Set([
+  "type",
+  "tool_id",
+  "call_id",
+  "name",
+  "label",
+  "summary",
+  "description",
+  "text",
+  "content",
+  "command",
+  "cwd",
+  "query",
+  "file_path",
+  "path",
+  "url",
+  "output",
+  "stdout",
+  "stderr",
+  "error",
+  "delta",
+  "status",
+  "exit_code",
+  "content_parts",
+]);
+const agentWorkTextContentPartFields = new Set(["type", "text"]);
+const agentWorkJsonContentPartFields = new Set(["type", "value"]);
+const agentWorkResourceLinkContentPartFields = new Set(["type", "uri", "name", "mime_type"]);
 const backendCapabilityFields = [
   "streaming",
   "cancel",
@@ -1897,8 +1979,8 @@ function parseAgentWorkDetailWire(data: unknown, owner: string): AgentWorkDetail
     throw invalidAgentWorkDetail(`${owner}.type must be a known activity detail type`);
   }
   if (type === "shell") {
+    rejectUnknownViewFields(data, owner, agentWorkShellDetailFields, invalidAgentWorkDetail);
     return {
-      ...(data as Record<string, unknown>),
       type: "shell",
       ...(data.command !== undefined
         ? { command: optionalViewString(data, "command", owner, invalidAgentWorkDetail) }
@@ -1915,6 +1997,9 @@ function parseAgentWorkDetailWire(data: unknown, owner: string): AgentWorkDetail
       ...(data.stderr !== undefined
         ? { stderr: optionalViewString(data, "stderr", owner, invalidAgentWorkDetail) }
         : {}),
+      ...(data.streams !== undefined
+        ? { streams: parseAgentWorkShellStreams(data.streams, `${owner}.streams`) }
+        : {}),
       ...(data.exit_code !== undefined
         ? { exit_code: optionalViewInteger(data, "exit_code", owner, invalidAgentWorkDetail) }
         : {}),
@@ -1924,8 +2009,8 @@ function parseAgentWorkDetailWire(data: unknown, owner: string): AgentWorkDetail
     };
   }
   if (type === "search") {
+    rejectUnknownViewFields(data, owner, agentWorkSearchDetailFields, invalidAgentWorkDetail);
     return {
-      ...(data as Record<string, unknown>),
       type: "search",
       ...(data.query !== undefined
         ? { query: optionalViewString(data, "query", owner, invalidAgentWorkDetail) }
@@ -1936,6 +2021,7 @@ function parseAgentWorkDetailWire(data: unknown, owner: string): AgentWorkDetail
       ...(data.content !== undefined
         ? { content: optionalViewString(data, "content", owner, invalidAgentWorkDetail) }
         : {}),
+      ...optionalAgentWorkContentParts(data, owner),
       ...(data.num_matches !== undefined
         ? { num_matches: optionalViewInteger(data, "num_matches", owner, invalidAgentWorkDetail) }
         : {}),
@@ -1951,8 +2037,8 @@ function parseAgentWorkDetailWire(data: unknown, owner: string): AgentWorkDetail
     };
   }
   if (type === "read" || type === "edit" || type === "write") {
+    rejectUnknownViewFields(data, owner, agentWorkFileDetailFields, invalidAgentWorkDetail);
     return {
-      ...(data as Record<string, unknown>),
       type: type as AgentWorkFileDetailTypeWire,
       ...(data.file_path !== undefined
         ? { file_path: optionalViewString(data, "file_path", owner, invalidAgentWorkDetail) }
@@ -1963,6 +2049,7 @@ function parseAgentWorkDetailWire(data: unknown, owner: string): AgentWorkDetail
       ...(data.content !== undefined
         ? { content: optionalViewString(data, "content", owner, invalidAgentWorkDetail) }
         : {}),
+      ...optionalAgentWorkContentParts(data, owner),
       ...(data.old_string !== undefined
         ? { old_string: optionalViewString(data, "old_string", owner, invalidAgentWorkDetail) }
         : {}),
@@ -1975,8 +2062,8 @@ function parseAgentWorkDetailWire(data: unknown, owner: string): AgentWorkDetail
     };
   }
   if (type === "fetch") {
+    rejectUnknownViewFields(data, owner, agentWorkFetchDetailFields, invalidAgentWorkDetail);
     return {
-      ...(data as Record<string, unknown>),
       type: "fetch",
       ...(data.url !== undefined
         ? { url: optionalViewString(data, "url", owner, invalidAgentWorkDetail) }
@@ -1987,6 +2074,7 @@ function parseAgentWorkDetailWire(data: unknown, owner: string): AgentWorkDetail
       ...(data.result !== undefined
         ? { result: optionalViewString(data, "result", owner, invalidAgentWorkDetail) }
         : {}),
+      ...optionalAgentWorkContentParts(data, owner),
       ...(data.code !== undefined
         ? { code: optionalViewInteger(data, "code", owner, invalidAgentWorkDetail) }
         : {}),
@@ -2001,7 +2089,235 @@ function parseAgentWorkDetailWire(data: unknown, owner: string): AgentWorkDetail
         : {}),
     };
   }
-  return { ...(data as Record<string, unknown>), type: type as AgentWorkGenericDetailTypeWire };
+  rejectUnknownViewFields(data, owner, agentWorkGenericDetailFields, invalidAgentWorkDetail);
+  return {
+    type: type as AgentWorkGenericDetailTypeWire,
+    ...(data.tool_id !== undefined
+      ? { tool_id: optionalViewString(data, "tool_id", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.call_id !== undefined
+      ? { call_id: optionalViewString(data, "call_id", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.name !== undefined
+      ? { name: optionalViewString(data, "name", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.label !== undefined
+      ? { label: optionalViewString(data, "label", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.summary !== undefined
+      ? { summary: optionalViewString(data, "summary", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.description !== undefined
+      ? { description: optionalViewString(data, "description", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.text !== undefined
+      ? { text: optionalViewString(data, "text", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.content !== undefined
+      ? { content: optionalViewString(data, "content", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.command !== undefined
+      ? { command: optionalViewString(data, "command", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.cwd !== undefined
+      ? { cwd: optionalViewString(data, "cwd", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.query !== undefined
+      ? { query: optionalViewString(data, "query", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.file_path !== undefined
+      ? { file_path: optionalViewString(data, "file_path", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.path !== undefined
+      ? { path: optionalViewString(data, "path", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.url !== undefined
+      ? { url: optionalViewString(data, "url", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.output !== undefined
+      ? { output: optionalViewString(data, "output", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.stdout !== undefined
+      ? { stdout: optionalViewString(data, "stdout", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.stderr !== undefined
+      ? { stderr: optionalViewString(data, "stderr", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.error !== undefined
+      ? { error: optionalViewString(data, "error", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.delta !== undefined
+      ? { delta: optionalViewString(data, "delta", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.status !== undefined
+      ? { status: optionalViewString(data, "status", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.exit_code !== undefined
+      ? { exit_code: optionalViewInteger(data, "exit_code", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...optionalAgentWorkContentParts(data, owner),
+  };
+}
+
+function parseAgentWorkShellStreams(data: unknown, owner: string): AgentWorkShellStreamWire[] {
+  if (!Array.isArray(data)) {
+    throw invalidAgentWorkDetail(`${owner} must be an array`);
+  }
+  return data.map((stream, index) => {
+    const streamOwner = `${owner}[${index}]`;
+    if (!isRecord(stream)) {
+      throw invalidAgentWorkDetail(`${streamOwner} must be an object`);
+    }
+    rejectUnknownViewFields(
+      stream,
+      streamOwner,
+      agentWorkShellStreamFields,
+      invalidAgentWorkDetail,
+    );
+    return {
+      stream_id: requiredViewString(
+        stream,
+        "stream_id",
+        streamOwner,
+        invalidAgentWorkDetail,
+      ),
+      ...(stream.stream !== undefined
+        ? { stream: optionalViewString(stream, "stream", streamOwner, invalidAgentWorkDetail) }
+        : {}),
+      ...(stream.text !== undefined
+        ? { text: optionalViewString(stream, "text", streamOwner, invalidAgentWorkDetail) }
+        : {}),
+      ...(stream.last_delta !== undefined
+        ? {
+            last_delta: optionalViewString(
+              stream,
+              "last_delta",
+              streamOwner,
+              invalidAgentWorkDetail,
+            ),
+          }
+        : {}),
+      ...(stream.chunk_count !== undefined
+        ? {
+            chunk_count: optionalViewInteger(
+              stream,
+              "chunk_count",
+              streamOwner,
+              invalidAgentWorkDetail,
+            ),
+          }
+        : {}),
+      ...(stream.last_sequence !== undefined
+        ? {
+            last_sequence: optionalViewInteger(
+              stream,
+              "last_sequence",
+              streamOwner,
+              invalidAgentWorkDetail,
+            ),
+          }
+        : {}),
+      ...(stream.last_chunk_id !== undefined
+        ? {
+            last_chunk_id: optionalViewString(
+              stream,
+              "last_chunk_id",
+              streamOwner,
+              invalidAgentWorkDetail,
+            ),
+          }
+        : {}),
+    };
+  });
+}
+
+function optionalAgentWorkContentParts(
+  data: Record<string, unknown>,
+  owner: string,
+): { content_parts?: AgentWorkContentPartWire[] } {
+  if (data.content_parts === undefined) return {};
+  return {
+    content_parts: parseAgentWorkContentParts(data.content_parts, `${owner}.content_parts`),
+  };
+}
+
+function parseAgentWorkContentParts(data: unknown, owner: string): AgentWorkContentPartWire[] {
+  if (!Array.isArray(data)) {
+    throw invalidAgentWorkDetail(`${owner} must be an array`);
+  }
+  return data.map((part, index) => {
+    const partOwner = `${owner}[${index}]`;
+    if (!isRecord(part)) {
+      throw invalidAgentWorkDetail(`${partOwner} must be an object`);
+    }
+    const type = part.type;
+    if (type === "text") {
+      rejectUnknownViewFields(
+        part,
+        partOwner,
+        agentWorkTextContentPartFields,
+        invalidAgentWorkDetail,
+      );
+      return {
+        type: "text",
+        text: requiredViewString(part, "text", partOwner, invalidAgentWorkDetail),
+      };
+    }
+    if (type === "json") {
+      rejectUnknownViewFields(
+        part,
+        partOwner,
+        agentWorkJsonContentPartFields,
+        invalidAgentWorkDetail,
+      );
+      if (!("value" in part)) {
+        throw invalidAgentWorkDetail(`${partOwner} requires value`);
+      }
+      return {
+        type: "json",
+        value: part.value,
+      };
+    }
+    if (type === "resource_link") {
+      rejectUnknownViewFields(
+        part,
+        partOwner,
+        agentWorkResourceLinkContentPartFields,
+        invalidAgentWorkDetail,
+      );
+      return {
+        type: "resource_link",
+        uri: requiredViewString(part, "uri", partOwner, invalidAgentWorkDetail),
+        ...(part.name !== undefined
+          ? { name: optionalViewString(part, "name", partOwner, invalidAgentWorkDetail) }
+          : {}),
+        ...(part.mime_type !== undefined
+          ? {
+              mime_type: optionalViewString(
+                part,
+                "mime_type",
+                partOwner,
+                invalidAgentWorkDetail,
+              ),
+            }
+          : {}),
+      };
+    }
+    throw invalidAgentWorkDetail(`${partOwner}.type must be a known content part type`);
+  });
+}
+
+function rejectUnknownViewFields(
+  data: Record<string, unknown>,
+  owner: string,
+  allowedFields: ReadonlySet<string>,
+  invalid: ViewContractErrorFactory,
+) {
+  for (const field of Object.keys(data)) {
+    if (!allowedFields.has(field)) {
+      throw invalid(`${owner}.${field} is not part of the view contract`);
+    }
+  }
 }
 
 function parseAgentWorkEventRange(
