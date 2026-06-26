@@ -49,24 +49,6 @@ export function readComposerSkillTrigger(
   return { prefix, query, start, end };
 }
 
-export function filterComposerSkills(
-  skills: readonly ComposerSkill[],
-  trigger: ComposerSkillTrigger | null,
-  limit = 8,
-) {
-  if (!trigger) return [];
-  const query = trigger.query.toLowerCase();
-  return skills
-    .filter((skill) => {
-      if (!query) return true;
-      return (
-        skill.name.toLowerCase().includes(query) ||
-        skill.displayName.toLowerCase().includes(query)
-      );
-    })
-    .slice(0, limit);
-}
-
 export function applyComposerSkillToken(
   value: string,
   trigger: ComposerSkillTrigger,

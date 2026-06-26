@@ -1,16 +1,21 @@
 "use client";
 
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, ImagePlus, Mic, Square } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowUp, ImagePlus, Mic, Square, WandSparkles } from "lucide-react";
 import type { VoiceInputHost, VoiceInputState } from "../../../../vela-desktop-shell/src";
 import { LexicalComposerEditor, type ComposerEditorHandle } from "../../composer-editor";
 import type { ComposerSkill, ComposerSkillTrigger } from "../../composer-skills/model";
 import {
   applyComposerSkillToken,
-  filterComposerSkills,
   readComposerSkillTrigger,
 } from "../../composer-skills/model";
+import {
+  clampComposerSuggestionIndex,
+  createSkillSuggestionItems,
+  nextComposerSuggestionIndex,
+  type ComposerSuggestionItem,
+} from "../../composer-suggestions/model";
 import styles from "../../styles/desktop.module.css";
 
 export interface PromptInputAttachment {
@@ -75,12 +80,16 @@ export function PromptInput({
   const [isDictating, setIsDictating] = useState(false);
   const [supportsDictation, setSupportsDictation] = useState(Boolean(voiceInput));
   const [skillTrigger, setSkillTrigger] = useState<ComposerSkillTrigger | null>(null);
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
   const isStopControl = isRunning && !canSubmit && Boolean(onStop);
   const primaryControlLabel = isStopControl ? stopLabel : submitLabel;
-  const filteredSkills = useMemo(
-    () => filterComposerSkills(skills, skillTrigger),
+  const suggestionItems = useMemo(
+    () => createSkillSuggestionItems(skills, skillTrigger),
     [skillTrigger, skills],
   );
+  const skillTokenNames = useMemo(() => skills.map((skill) => skill.name), [skills]);
+  const activeSuggestion = suggestionItems[activeSuggestionIndex] ?? suggestionItems[0] ?? null;
+  const isSuggestionMenuOpen = suggestionItems.length > 0;
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
     if (canSubmit) onSubmit();
@@ -95,16 +104,52 @@ export function PromptInput({
     valueRef.current = nextValue;
     onChange(nextValue);
   };
-  const handleSkillSelect = (skill: ComposerSkill) => {
+  const handleSkillSelect = useCallback((skill: ComposerSkill) => {
     if (!skillTrigger) return;
     const next = applyComposerSkillToken(valueRef.current, skillTrigger, skill, "$");
     setSkillTrigger(null);
+    setActiveSuggestionIndex(0);
     valueRef.current = next.value;
     onChange(next.value);
     requestAnimationFrame(() => {
       editorRef.current?.focusAt(next.cursorIndex);
     });
-  };
+  }, [onChange, skillTrigger]);
+  const handleSuggestionSelect = useCallback(
+    (item: ComposerSuggestionItem | null) => {
+      if (!item) return;
+      if (item.type === "skill") handleSkillSelect(item.skill);
+    },
+    [handleSkillSelect],
+  );
+  const handleComposerCommandKey = useCallback(
+    (key: "ArrowDown" | "ArrowUp" | "Enter" | "Escape" | "Tab") => {
+      if (!isSuggestionMenuOpen) return false;
+      if (key === "ArrowDown") {
+        setActiveSuggestionIndex((index) =>
+          nextComposerSuggestionIndex(suggestionItems.length, index, 1),
+        );
+        return true;
+      }
+      if (key === "ArrowUp") {
+        setActiveSuggestionIndex((index) =>
+          nextComposerSuggestionIndex(suggestionItems.length, index, -1),
+        );
+        return true;
+      }
+      if (key === "Escape") {
+        setSkillTrigger(null);
+        setActiveSuggestionIndex(0);
+        return true;
+      }
+      if (key === "Enter" || key === "Tab") {
+        handleSuggestionSelect(activeSuggestion);
+        return true;
+      }
+      return false;
+    },
+    [activeSuggestion, handleSuggestionSelect, isSuggestionMenuOpen, suggestionItems.length],
+  );
   const handleStop = () => {
     if (isStopControl) onStop?.();
   };
@@ -130,6 +175,12 @@ export function PromptInput({
     valueRef.current = value;
     onChangeRef.current = onChange;
   }, [onChange, value]);
+
+  useEffect(() => {
+    setActiveSuggestionIndex((index) =>
+      clampComposerSuggestionIndex(suggestionItems.length, index),
+    );
+  }, [suggestionItems.length]);
 
   useEffect(() => {
     voiceInputRef.current = voiceInput;
@@ -204,22 +255,34 @@ export function PromptInput({
       onSubmit={handleSubmit}
       ref={rootRef}
     >
-      {filteredSkills.length > 0 ? (
+      {isSuggestionMenuOpen ? (
         <div className={styles.skillMenu} role="listbox" aria-label="Skills">
-          {filteredSkills.map((skill) => (
+          {suggestionItems.map((item, index) => (
             <button
-              className={styles.skillMenuItem}
-              key={`${skill.protocol}:${skill.path}`}
+              aria-selected={index === activeSuggestionIndex}
+              className={[
+                styles.skillMenuItem,
+                index === activeSuggestionIndex ? styles.skillMenuItemActive : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              key={item.id}
               onMouseDown={(event) => {
                 event.preventDefault();
-                handleSkillSelect(skill);
+                handleSuggestionSelect(item);
               }}
+              onMouseEnter={() => setActiveSuggestionIndex(index)}
+              role="option"
               type="button"
             >
-              <span className={styles.skillMenuName}>${skill.name}</span>
-              {skill.description ? (
-                <span className={styles.skillMenuDescription}>{skill.description}</span>
-              ) : null}
+              <span className={styles.skillMenuIcon} aria-hidden="true">
+                <WandSparkles size={14} strokeWidth={2} />
+              </span>
+              <span className={styles.skillMenuText}>
+                <span className={styles.skillMenuName}>${item.skill.name}</span>
+                <span className={styles.skillMenuDescription}>{item.detail}</span>
+              </span>
+              <span className={styles.skillMenuMeta}>{item.meta}</span>
             </button>
           ))}
         </div>
@@ -233,11 +296,13 @@ export function PromptInput({
           value={value}
           onChange={handleChange}
           onSnapshotChange={(snapshot) => {
-            setSkillTrigger(readComposerSkillTrigger(snapshot.value, snapshot.cursor));
+            setSkillTrigger(readComposerSkillTrigger(snapshot.value, snapshot.expandedCursor));
           }}
+          onCommandKeyDown={(key) => handleComposerCommandKey(key)}
           onSubmit={handleEditorSubmit}
           onSubmitText={handleEditorSubmitText}
           placeholder={placeholder}
+          skillTokenNames={skillTokenNames}
           ref={editorRef}
         />
         {pendingAttachments.length > 0 ? (

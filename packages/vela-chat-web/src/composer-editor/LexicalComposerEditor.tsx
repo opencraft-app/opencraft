@@ -9,15 +9,23 @@ import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin";
 import { PlainTextPlugin } from "@lexical/react/LexicalPlainTextPlugin";
 import {
   $createParagraphNode,
+  $createLineBreakNode,
+  $createRangeSelection,
+  $createTextNode,
   $generateNodesFromRawText,
   $getRoot,
   $getSelection,
+  $setSelection,
   $isElementNode,
   $isLineBreakNode,
   $isRangeSelection,
   $isTextNode,
   COMMAND_PRIORITY_HIGH,
+  KEY_ARROW_DOWN_COMMAND,
+  KEY_ARROW_UP_COMMAND,
   KEY_ENTER_COMMAND,
+  KEY_ESCAPE_COMMAND,
+  KEY_TAB_COMMAND,
   type EditorState,
   type LexicalNode,
 } from "lexical";
@@ -33,7 +41,13 @@ import {
   createComposerEditorSnapshot,
   hasComposerLineBreak,
   normalizeComposerSingleLine,
+  splitComposerInlineSegments,
 } from "./model";
+import {
+  $createComposerSkillNode,
+  $isComposerSkillNode,
+  ComposerSkillNode,
+} from "./ComposerSkillNode";
 import type { ComposerEditorCursor, ComposerEditorHandle, ComposerEditorSnapshot } from "./types";
 
 export interface LexicalComposerEditorProps {
@@ -44,8 +58,13 @@ export interface LexicalComposerEditorProps {
   ariaLabel?: string;
   disabled?: boolean;
   canSubmitText?: boolean;
+  skillTokenNames?: readonly string[];
   onChange: (value: string) => void;
   onSnapshotChange?: (snapshot: ComposerEditorSnapshot) => void;
+  onCommandKeyDown?: (
+    key: "ArrowDown" | "ArrowUp" | "Enter" | "Escape" | "Tab",
+    event: KeyboardEvent,
+  ) => boolean;
   onSubmit: () => void;
   onSubmitText?: (value: string) => void | Promise<void>;
 }
@@ -62,8 +81,10 @@ export const LexicalComposerEditor = forwardRef<
     ariaLabel = "Message",
     disabled = false,
     canSubmitText = false,
+    skillTokenNames = [],
     onChange,
     onSnapshotChange,
+    onCommandKeyDown,
     onSubmit,
     onSubmitText,
   },
@@ -75,8 +96,9 @@ export const LexicalComposerEditor = forwardRef<
     () => ({
       namespace: "VelaComposerEditor",
       editable: initialEditableRef.current,
+      nodes: [ComposerSkillNode],
       editorState: () => {
-        replaceRootText(initialValueRef.current);
+        replaceRootText(initialValueRef.current, []);
       },
       onError(error: Error) {
         throw error;
@@ -126,8 +148,10 @@ export const LexicalComposerEditor = forwardRef<
         forwardedRef={ref}
         onChange={onChange}
         onSnapshotChange={onSnapshotChange}
+        onCommandKeyDown={onCommandKeyDown}
         onSubmit={onSubmit}
         onSubmitText={onSubmitText}
+        skillTokenNames={skillTokenNames}
         value={value}
       />
     </LexicalComposer>
@@ -148,8 +172,10 @@ function EditorBridgePlugin({
   forwardedRef,
   onChange,
   onSnapshotChange,
+  onCommandKeyDown,
   onSubmit,
   onSubmitText,
+  skillTokenNames,
   value,
 }: {
   disabled: boolean;
@@ -157,12 +183,22 @@ function EditorBridgePlugin({
   forwardedRef: ForwardedRef<ComposerEditorHandle>;
   onChange: (value: string) => void;
   onSnapshotChange?: (snapshot: ComposerEditorSnapshot) => void;
+  onCommandKeyDown?: (
+    key: "ArrowDown" | "ArrowUp" | "Enter" | "Escape" | "Tab",
+    event: KeyboardEvent,
+  ) => boolean;
   onSubmit: () => void;
   onSubmitText?: (value: string) => void | Promise<void>;
+  skillTokenNames: readonly string[];
   value: string;
 }) {
   const [editor] = useLexicalComposerContext();
   const externalValueRef = useRef(value);
+  const skillTokenKey = useMemo(
+    () => [...new Set(skillTokenNames)].sort().join("\n"),
+    [skillTokenNames],
+  );
+  const renderedSkillTokenKeyRef = useRef("");
   const latestSnapshotRef = useRef<ComposerEditorSnapshot>(
     createComposerEditorSnapshot({ value }),
   );
@@ -176,6 +212,7 @@ function EditorBridgePlugin({
     latestSnapshotRef.current = createComposerEditorSnapshot({
       value,
       cursor: latestSnapshotRef.current.cursor,
+      expandedCursor: latestSnapshotRef.current.expandedCursor,
     });
   }, [value]);
 
@@ -184,11 +221,15 @@ function EditorBridgePlugin({
     editor.getEditorState().read(() => {
       currentValue = $getRoot().getTextContent();
     });
-    if (currentValue === value) return;
+    if (currentValue === value && renderedSkillTokenKeyRef.current === skillTokenKey) return;
+    const cursorToRestore =
+      currentValue === value ? latestSnapshotRef.current.expandedCursor?.start ?? value.length : value.length;
     editor.update(() => {
-      replaceRootText(value);
+      replaceRootText(value, skillTokenNames);
+      selectPlainTextOffset(cursorToRestore);
+      renderedSkillTokenKeyRef.current = skillTokenKey;
     });
-  }, [editor, value]);
+  }, [editor, skillTokenKey, skillTokenNames, value]);
 
   useEffect(
     () =>
@@ -196,14 +237,60 @@ function EditorBridgePlugin({
         KEY_ENTER_COMMAND,
         (event: KeyboardEvent | null) => {
           if (!event || event.isComposing) return false;
+          if (onCommandKeyDown?.("Enter", event)) {
+            event.preventDefault();
+            event.stopPropagation();
+            return true;
+          }
           event.preventDefault();
           onSubmit();
           return true;
         },
         COMMAND_PRIORITY_HIGH,
       ),
-    [editor, onSubmit],
+    [editor, onCommandKeyDown, onSubmit],
   );
+
+  useEffect(() => {
+    const handleCommand = (
+      key: "ArrowDown" | "ArrowUp" | "Escape" | "Tab",
+      event: KeyboardEvent | null,
+    ) => {
+      if (!event || event.isComposing) return false;
+      if (!onCommandKeyDown?.(key, event)) return false;
+      event.preventDefault();
+      event.stopPropagation();
+      return true;
+    };
+
+    const unregisterArrowDown = editor.registerCommand(
+      KEY_ARROW_DOWN_COMMAND,
+      (event) => handleCommand("ArrowDown", event),
+      COMMAND_PRIORITY_HIGH,
+    );
+    const unregisterArrowUp = editor.registerCommand(
+      KEY_ARROW_UP_COMMAND,
+      (event) => handleCommand("ArrowUp", event),
+      COMMAND_PRIORITY_HIGH,
+    );
+    const unregisterEscape = editor.registerCommand(
+      KEY_ESCAPE_COMMAND,
+      (event) => handleCommand("Escape", event),
+      COMMAND_PRIORITY_HIGH,
+    );
+    const unregisterTab = editor.registerCommand(
+      KEY_TAB_COMMAND,
+      (event) => handleCommand("Tab", event),
+      COMMAND_PRIORITY_HIGH,
+    );
+
+    return () => {
+      unregisterArrowDown();
+      unregisterArrowUp();
+      unregisterEscape();
+      unregisterTab();
+    };
+  }, [editor, onCommandKeyDown]);
 
   useImperativeHandle(
     forwardedRef,
@@ -233,9 +320,12 @@ function EditorBridgePlugin({
       readSnapshot() {
         let snapshot = latestSnapshotRef.current;
         editor.getEditorState().read(() => {
+          const currentValue = $getRoot().getTextContent();
+          const cursors = readCurrentCursors(currentValue);
           snapshot = createComposerEditorSnapshot({
-            value: $getRoot().getTextContent(),
-            cursor: readCurrentCursor($getRoot().getTextContent()),
+            value: currentValue,
+            cursor: cursors?.cursor ?? null,
+            expandedCursor: cursors?.expandedCursor ?? null,
           });
         });
         latestSnapshotRef.current = snapshot;
@@ -253,9 +343,11 @@ function EditorBridgePlugin({
         let nextSnapshot: ComposerEditorSnapshot | null = null;
         editorState.read(() => {
           nextValue = $getRoot().getTextContent();
+          const cursors = readCurrentCursors(nextValue);
           nextSnapshot = createComposerEditorSnapshot({
             value: nextValue,
-            cursor: readCurrentCursor(nextValue),
+            cursor: cursors?.cursor ?? null,
+            expandedCursor: cursors?.expandedCursor ?? null,
           });
         });
         if (!nextSnapshot) return;
@@ -271,7 +363,7 @@ function EditorBridgePlugin({
           onSnapshotChange?.(replacementSnapshot);
           externalValueRef.current = replacementValue;
           editor.update(() => {
-            replaceRootText(replacementValue);
+            replaceRootText(replacementValue, skillTokenNames);
           });
           onChange(replacementValue);
           if (shouldSubmitText) void onSubmitText(nextValue);
@@ -287,78 +379,188 @@ function EditorBridgePlugin({
   );
 }
 
-function replaceRootText(value: string) {
+function replaceRootText(value: string, skillTokenNames: readonly string[]) {
   const root = $getRoot();
   root.clear();
   const paragraph = $createParagraphNode();
-  paragraph.append(...$generateNodesFromRawText(value));
+  const segments = splitComposerInlineSegments(value, { skillNames: skillTokenNames });
+  if (segments.length === 0) {
+    paragraph.append(...$generateNodesFromRawText(value));
+  } else {
+    for (const segment of segments) {
+      if (segment.type === "skill") {
+        paragraph.append($createComposerSkillNode(segment.text));
+      } else {
+        appendTextWithLineBreaks(paragraph, segment.text);
+      }
+    }
+  }
   root.append(paragraph);
   root.selectEnd();
 }
 
-function readCurrentCursor(value: string): ComposerEditorCursor | null {
+function appendTextWithLineBreaks(parent: ReturnType<typeof $createParagraphNode>, text: string) {
+  const lines = text.split("\n");
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    if (line.length > 0) parent.append($createTextNode(line));
+    if (index < lines.length - 1) parent.append($createLineBreakNode());
+  }
+}
+
+function readCurrentCursors(
+  value: string,
+): { cursor: ComposerEditorCursor; expandedCursor: ComposerEditorCursor } | null {
   const selection = $getSelection();
   if (!$isRangeSelection(selection)) return null;
   return {
-    start: Math.min(
-      value.length,
-      pointToPlainTextOffset(selection.anchor.key, selection.anchor.offset),
-    ),
-    end: Math.min(
-      value.length,
-      pointToPlainTextOffset(selection.focus.key, selection.focus.offset),
-    ),
+    cursor: {
+      start: Math.min(
+        value.length,
+        pointToComposerOffset(selection.anchor.key, selection.anchor.offset),
+      ),
+      end: Math.min(value.length, pointToComposerOffset(selection.focus.key, selection.focus.offset)),
+    },
+    expandedCursor: {
+      start: Math.min(
+        value.length,
+        pointToExpandedTextOffset(selection.anchor.key, selection.anchor.offset),
+      ),
+      end: Math.min(
+        value.length,
+        pointToExpandedTextOffset(selection.focus.key, selection.focus.offset),
+      ),
+    },
   };
 }
 
-function pointToPlainTextOffset(key: string, offset: number): number {
-  let plainTextOffset = 0;
-  for (const node of collectPlainTextNodes()) {
-    if (node.getKey() === key) return plainTextOffset + offset;
-    plainTextOffset += node.getTextContent().length;
+function nodeComposerLength(node: LexicalNode): number {
+  if ($isComposerSkillNode(node)) return 1;
+  if ($isTextNode(node) || $isLineBreakNode(node)) return node.getTextContent().length;
+  if ($isElementNode(node)) {
+    return node.getChildren().reduce((total, child) => total + nodeComposerLength(child), 0);
+  }
+  return 0;
+}
+
+function nodeExpandedLength(node: LexicalNode): number {
+  if ($isTextNode(node) || $isLineBreakNode(node)) return node.getTextContent().length;
+  if ($isElementNode(node)) {
+    return node.getChildren().reduce((total, child) => total + nodeExpandedLength(child), 0);
+  }
+  return 0;
+}
+
+function pointToComposerOffset(key: string, pointOffset: number): number {
+  return pointToOffset(key, pointOffset, "collapsed");
+}
+
+function pointToExpandedTextOffset(key: string, pointOffset: number): number {
+  return pointToOffset(key, pointOffset, "expanded");
+}
+
+function pointToOffset(key: string, pointOffset: number, mode: "collapsed" | "expanded"): number {
+  const target = findNodeByKey($getRoot(), key);
+  if (!target) return pointOffset;
+
+  let offset = 0;
+  let current: LexicalNode | null = target;
+  while (current) {
+    const parent = current.getParent();
+    if (!parent || !$isElementNode(parent)) break;
+    const siblings = parent.getChildren();
+    const index = current.getIndexWithinParent();
+    for (let siblingIndex = 0; siblingIndex < index; siblingIndex += 1) {
+      const sibling = siblings[siblingIndex];
+      if (!sibling) continue;
+      offset += mode === "collapsed" ? nodeComposerLength(sibling) : nodeExpandedLength(sibling);
+    }
+    current = parent;
+  }
+
+  if ($isComposerSkillNode(target)) {
+    return (
+      offset +
+      (pointOffset > 0 ? (mode === "collapsed" ? 1 : target.getTextContent().length) : 0)
+    );
+  }
+  if ($isTextNode(target) || $isLineBreakNode(target)) {
+    return offset + Math.min(pointOffset, target.getTextContent().length);
+  }
+  if ($isElementNode(target)) {
+    const children = target.getChildren();
+    const clampedOffset = Math.max(0, Math.min(pointOffset, children.length));
+    for (let index = 0; index < clampedOffset; index += 1) {
+      const child = children[index];
+      if (!child) continue;
+      offset += mode === "collapsed" ? nodeComposerLength(child) : nodeExpandedLength(child);
+    }
   }
   return offset;
 }
 
 function selectPlainTextOffset(index: number) {
   const root = $getRoot();
-  const plainTextNodes = collectPlainTextNodes();
-  if (plainTextNodes.length === 0) {
+  const point = findSelectionPointAtExpandedOffset(root, {
+    value: Math.max(0, Math.trunc(index)),
+  });
+  if (!point) {
     root.selectEnd();
     return;
   }
-
-  const targetOffset = Math.max(0, Math.trunc(index));
-  let remainingOffset = targetOffset;
-  for (const node of plainTextNodes) {
-    const length = node.getTextContent().length;
-    if (remainingOffset <= length) {
-      if ($isTextNode(node)) {
-        node.select(remainingOffset, remainingOffset);
-      } else if ($isLineBreakNode(node) && remainingOffset === 0) {
-        node.selectPrevious();
-      } else {
-        node.selectNext();
-      }
-      return;
-    }
-    remainingOffset -= length;
-  }
-
-  plainTextNodes[plainTextNodes.length - 1]?.selectEnd();
+  const selection = $createRangeSelection();
+  selection.anchor.set(point.key, point.offset, point.type);
+  selection.focus.set(point.key, point.offset, point.type);
+  $setSelection(selection);
 }
 
-function collectPlainTextNodes(): LexicalNode[] {
-  const nodes: LexicalNode[] = [];
-  const visit = (node: LexicalNode) => {
-    if ($isTextNode(node) || $isLineBreakNode(node)) {
-      nodes.push(node);
-      return;
+function findSelectionPointAtExpandedOffset(
+  node: LexicalNode,
+  remainingRef: { value: number },
+): { key: string; offset: number; type: "text" | "element" } | null {
+  if ($isComposerSkillNode(node)) {
+    const parent = node.getParent();
+    if (!parent || !$isElementNode(parent)) return null;
+    const index = node.getIndexWithinParent();
+    if (remainingRef.value === 0) return { key: parent.getKey(), offset: index, type: "element" };
+    if (remainingRef.value <= node.getTextContent().length) {
+      return { key: parent.getKey(), offset: index + 1, type: "element" };
     }
-    if ($isElementNode(node)) {
-      for (const child of node.getChildren()) visit(child);
+    remainingRef.value -= node.getTextContent().length;
+    return null;
+  }
+  if ($isTextNode(node)) {
+    const size = node.getTextContent().length;
+    if (remainingRef.value <= size) {
+      return { key: node.getKey(), offset: remainingRef.value, type: "text" };
     }
-  };
-  for (const child of $getRoot().getChildren()) visit(child);
-  return nodes;
+    remainingRef.value -= size;
+    return null;
+  }
+  if ($isLineBreakNode(node)) {
+    const parent = node.getParent();
+    if (!parent || !$isElementNode(parent)) return null;
+    const index = node.getIndexWithinParent();
+    if (remainingRef.value <= 1) return { key: parent.getKey(), offset: index + 1, type: "element" };
+    remainingRef.value -= 1;
+    return null;
+  }
+  if ($isElementNode(node)) {
+    for (const child of node.getChildren()) {
+      const point = findSelectionPointAtExpandedOffset(child, remainingRef);
+      if (point) return point;
+    }
+    return { key: node.getKey(), offset: node.getChildrenSize(), type: "element" };
+  }
+  return null;
+}
+
+function findNodeByKey(node: LexicalNode, key: string): LexicalNode | null {
+  if (node.getKey() === key) return node;
+  if (!$isElementNode(node)) return null;
+  for (const child of node.getChildren()) {
+    const found = findNodeByKey(child, key);
+    if (found) return found;
+  }
+  return null;
 }
