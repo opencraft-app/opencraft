@@ -6,6 +6,7 @@ import {
   createVeladClient,
   resolveVeladFetch,
   type BackendKindWire,
+  type BackendUsageWireResponse,
 } from "../../../packages/vela-chat-client/src";
 import { useVelaChatSession } from "../../../packages/vela-chat-controller/src";
 import {
@@ -236,7 +237,7 @@ export function DesktopApp() {
   );
   const [bootstrap, setBootstrap] = useState<RuntimeBootstrap>({
     status: "starting",
-    message: window.velaDesktop ? "Starting local runtime..." : "Connecting to runtime...",
+    message: window.velaDesktop ? "Starting Vela" : "Connecting",
   });
   const [fallbackHostInfo, setFallbackHostInfo] = useState(initialHostInfo);
   const [isSidebarVisible, setIsSidebarVisible] = useState(
@@ -249,7 +250,7 @@ export function DesktopApp() {
   const loadRuntimeBootstrap = useCallback(async (retry = false) => {
     setBootstrap({
       status: "starting",
-      message: window.velaDesktop ? "Starting local runtime..." : "Connecting to runtime...",
+      message: window.velaDesktop ? "Starting Vela" : "Connecting",
     });
     const nextBootstrap = retry
       ? await retryRuntimeBootstrap()
@@ -262,7 +263,7 @@ export function DesktopApp() {
     let cancelled = false;
     setBootstrap({
       status: "starting",
-      message: window.velaDesktop ? "Starting local runtime..." : "Connecting to runtime...",
+      message: window.velaDesktop ? "Starting Vela" : "Connecting",
     });
     void readRuntimeBootstrap().then((nextBootstrap) => {
       if (cancelled) return;
@@ -334,6 +335,9 @@ function DesktopReadyApp({
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [selectedBackendKind, setSelectedBackendKind] = useState<BackendKindWire | "">("");
+  const [backendUsages, setBackendUsages] = useState<
+    Partial<Record<BackendKindWire, BackendUsageWireResponse>>
+  >({});
   const [hasLoadedDesktopSettings, setHasLoadedDesktopSettings] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [chromeState, setChromeState] = useState<RuntimeChromeStateResponse | undefined>(
@@ -507,6 +511,36 @@ function DesktopReadyApp({
     observability,
     sessionId: activeSessionId,
   });
+  useEffect(() => {
+    let cancelled = false;
+    const usageBackends = controller.backends.filter(
+      (backend) => backend.capabilities.usage_snapshot === true,
+    );
+    if (usageBackends.length === 0) {
+      setBackendUsages({});
+      return;
+    }
+    void Promise.all(
+      usageBackends.map(async (backend) => {
+        try {
+          return [backend.kind, await client.getBackendUsage(backend.kind)] as const;
+        } catch (err) {
+          console.warn(`Failed to load backend usage for ${backend.kind}`, err);
+          return null;
+        }
+      }),
+    ).then((entries) => {
+      if (cancelled) return;
+      const next: Partial<Record<BackendKindWire, BackendUsageWireResponse>> = {};
+      for (const entry of entries) {
+        if (entry) next[entry[0]] = entry[1];
+      }
+      setBackendUsages(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, controller.backends]);
   const startSidebarSessionDragPreview = useCallback(
     (input: SessionDragPreviewInput) => {
       if (hostInfo.hostKind !== "electron") return;
@@ -827,6 +861,7 @@ function DesktopReadyApp({
           apiBaseUrl={apiBaseUrl}
           appVersion={DESKTOP_APP_VERSION}
           backends={controller.backends}
+          backendUsages={backendUsages}
           client={client}
           hostLabel={hostLabel}
           selectedBackend={selectedBackendKind}
@@ -871,6 +906,7 @@ function DesktopReadyApp({
       ) : (
         <DesktopNewSessionPage
           backends={controller.backends}
+          backendUsages={backendUsages}
           defaultBackend={selectedBackendKind}
           defaultWorkingDirectory={DEFAULT_WORKING_DIRECTORY}
           error={error}
@@ -995,13 +1031,15 @@ function DesktopRuntimeStartingSurface({
   bootstrap: Extract<RuntimeBootstrap, { status: "starting" }>;
 }) {
   return (
-    <div className="vela-runtime-bootstrap" role="status" aria-live="polite">
-      <div className="vela-runtime-bootstrap-card">
-        <div className="vela-runtime-bootstrap-orb" data-state="starting" />
-        <div>
-          <h1>Starting local runtime</h1>
-          <p>{bootstrap.message}</p>
-        </div>
+    <div
+      aria-label={bootstrap.message}
+      className="vela-runtime-bootstrap"
+      role="status"
+      aria-live="polite"
+    >
+      <div className="vela-runtime-bootstrap-card" data-state="starting">
+        <span className="vela-runtime-bootstrap-spinner" aria-hidden="true" />
+        <span className="vela-runtime-bootstrap-label">{bootstrap.message}</span>
       </div>
     </div>
   );
@@ -1016,7 +1054,7 @@ function DesktopBootstrapSurface({
 }) {
   return (
     <div className="vela-runtime-bootstrap" role="alert">
-      <div className="vela-runtime-bootstrap-card">
+      <div className="vela-runtime-bootstrap-card" data-state="failed">
         <div className="vela-runtime-bootstrap-orb" data-state="failed" />
         <div>
           <h1>Runtime could not start</h1>

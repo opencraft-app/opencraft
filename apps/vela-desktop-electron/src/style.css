@@ -1577,6 +1577,21 @@ body {
   white-space: nowrap;
 }
 
+.vela-settings-row output[data-usage-tone="ok"] {
+  background: #edf7f1;
+  color: #267348;
+}
+
+.vela-settings-row output[data-usage-tone="warning"] {
+  background: #fff6e5;
+  color: #8a5a00;
+}
+
+.vela-settings-row output[data-usage-tone="critical"] {
+  background: #fff0f0;
+  color: #a83b3b;
+}
+
 .vela-settings-text-input {
   width: min(360px, 42vw);
   min-width: 220px;
@@ -1974,9 +1989,7 @@ body {
   place-items: center;
   min-height: 100%;
   padding: 32px;
-  background:
-    radial-gradient(circle at 50% 38%, rgb(32 118 255 / 5%), transparent 34%),
-    var(--vela-main-surface);
+  background: var(--vela-main-surface);
 }
 
 .vela-runtime-bootstrap-card {
@@ -1992,6 +2005,22 @@ body {
   gap: 18px;
   padding: 30px 30px 28px;
   text-align: center;
+}
+
+.vela-runtime-bootstrap-card[data-state="starting"] {
+  width: auto;
+  min-width: 132px;
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--vela-main-surface) 92%, var(--tw-foreground) 3%);
+  box-shadow:
+    0 1px 2px rgb(15 23 42 / 5%),
+    inset 0 1px 0 rgb(255 255 255 / 68%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 9px 13px;
+  text-align: left;
 }
 
 .vela-runtime-bootstrap-card h1 {
@@ -2011,6 +2040,22 @@ body {
 
 .vela-runtime-bootstrap-log {
   overflow-wrap: anywhere;
+}
+
+.vela-runtime-bootstrap-label {
+  color: color-mix(in srgb, var(--tw-foreground) 70%, transparent);
+  font-size: 13px;
+  font-weight: 560;
+  line-height: 1;
+}
+
+.vela-runtime-bootstrap-spinner {
+  width: 15px;
+  height: 15px;
+  border-radius: 999px;
+  border: 1.5px solid color-mix(in srgb, var(--tw-foreground) 16%, transparent);
+  border-top-color: color-mix(in srgb, var(--tw-foreground) 58%, transparent);
+  animation: vela-runtime-spin 820ms linear infinite;
 }
 
 .vela-runtime-bootstrap-orb {
@@ -2050,6 +2095,12 @@ body {
   background: color-mix(in srgb, var(--vela-main-surface) 82%, var(--tw-foreground) 7%);
 }
 
+@keyframes vela-runtime-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @keyframes vela-runtime-pulse {
   0%,
   100% {
@@ -2065,5 +2116,9 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .vela-desktop-shell:not([data-sidebar-dragging="true"]) .vela-main-inset {
     transition-duration: 0.01ms;
+  }
+
+  .vela-runtime-bootstrap-spinner {
+    animation-duration: 0.01ms;
   }
 }

@@ -6,6 +6,7 @@ import type {
   BackendProbeResultWire,
   BackendSettingsPatchWire,
   BackendSettingsWireResponse,
+  BackendUsageWireResponse,
   BackendWireResponse,
   BackendsWireResponse,
   ClientInputPart,
@@ -34,6 +35,7 @@ import {
   normalizeBaseUrl,
   readBackendProbeResponse,
   readBackendSettingsResponse,
+  readBackendUsageResponse,
   readBackendResponse,
   readBackendsResponse,
   readCommandAckResponse,
@@ -67,6 +69,7 @@ export interface VeladClient {
   getSession: (sessionId: string) => Promise<SessionWireResponse>;
   getBackends: () => Promise<BackendsWireResponse>;
   getBackend: (backend: BackendKindWire) => Promise<BackendWireResponse>;
+  getBackendUsage: (backend: BackendKindWire) => Promise<BackendUsageWireResponse>;
   probeBackend: (backend: BackendKindWire) => Promise<BackendProbeResultWire>;
   getBackendSettings: (backend: BackendKindWire) => Promise<BackendSettingsWireResponse>;
   updateBackendSettings: (
@@ -277,6 +280,16 @@ export function createVeladClient(options: VeladClientOptions): VeladClient {
         {},
         { "velad.backend": backend },
         readBackendResponse,
+      );
+    },
+    async getBackendUsage(backend) {
+      const url = new URL(`backends/${encodeBackendKind(backend)}/usage`, baseUrl);
+      return observedRequest(
+        "velad.backend.usage.get",
+        url,
+        {},
+        { "velad.backend": backend },
+        readBackendUsageResponse,
       );
     },
     async probeBackend(backend) {

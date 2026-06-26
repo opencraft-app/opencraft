@@ -20,6 +20,13 @@ import type {
   BackendSettingsPatchWire,
   BackendSettingsWireResponse,
   BackendStatusWire,
+  BackendUsageLimitWire,
+  BackendUsageLineWire,
+  BackendUsageProfileWire,
+  BackendUsageStatusWire,
+  BackendUsageSummaryWire,
+  BackendUsageToneWire,
+  BackendUsageWireResponse,
   BackendWire,
   BackendWireResponse,
   BackendsWireResponse,
@@ -248,6 +255,8 @@ const backendCapabilityFields = [
   "structured_diff",
   "session_agent_config",
 ];
+const backendUsageStatuses = new Set(["ok", "needs_auth", "unsupported", "error"]);
+const backendUsageTones = new Set(["ok", "warning", "critical", "neutral"]);
 
 export function validateAgentConfigPatch(patch: unknown): asserts patch is AgentConfigPatchWire {
   if (!isRecord(patch)) {
@@ -738,6 +747,125 @@ export function parseBackendWireResponse(data: unknown): BackendWireResponse {
   };
 }
 
+export async function readBackendUsageResponse(
+  response: Response,
+): Promise<BackendUsageWireResponse> {
+  return parseBackendUsageWireResponse(await readJsonResponse<unknown>(response));
+}
+
+export function parseBackendUsageWireResponse(data: unknown): BackendUsageWireResponse {
+  if (!isRecord(data)) {
+    throw invalidBackendsResponse("BackendUsageResponse must be an object");
+  }
+  const schema = requiredBackendString(data, "schema", "BackendUsageResponse");
+  if (schema !== "velad.backend_usage.v1") {
+    throw invalidBackendsResponse("BackendUsageResponse.schema must be velad.backend_usage.v1");
+  }
+  const backend = requiredBackendKind(data, "backend", "BackendUsageResponse");
+  const backendType = requiredBackendKind(data, "backend_type", "BackendUsageResponse");
+  const status = requiredBackendUsageStatus(data, "status", "BackendUsageResponse");
+  return {
+    schema,
+    backend,
+    backend_type: backendType,
+    status,
+    source: requiredBackendString(data, "source", "BackendUsageResponse"),
+    fetched_at: requiredBackendString(data, "fetched_at", "BackendUsageResponse"),
+    ...(data.plan_name !== undefined
+      ? { plan_name: optionalBackendString(data, "plan_name", "BackendUsageResponse") }
+      : {}),
+    ...(data.summary !== undefined
+      ? {
+          summary: parseBackendUsageSummary(
+            data.summary,
+            "BackendUsageResponse.summary",
+          ),
+        }
+      : {}),
+    limits: optionalBackendArray(data, "limits", "BackendUsageResponse").map((limit, index) =>
+      parseBackendUsageLimit(limit, `BackendUsageResponse.limits[${index}]`),
+    ),
+    usage_lines: optionalBackendArray(data, "usage_lines", "BackendUsageResponse").map(
+      (line, index) => parseBackendUsageLine(line, `BackendUsageResponse.usage_lines[${index}]`),
+    ),
+    profiles: optionalBackendArray(data, "profiles", "BackendUsageResponse").map(
+      (profile, index) => parseBackendUsageProfile(profile, `BackendUsageResponse.profiles[${index}]`),
+    ),
+    ...(data.detail !== undefined
+      ? { detail: optionalBackendString(data, "detail", "BackendUsageResponse") }
+      : {}),
+  };
+}
+
+function parseBackendUsageProfile(data: unknown, owner: string): BackendUsageProfileWire {
+  if (!isRecord(data)) {
+    throw invalidBackendsResponse(`${owner} must be an object`);
+  }
+  return {
+    profile_id: requiredBackendString(data, "profile_id", owner),
+    display_name: requiredBackendString(data, "display_name", owner),
+    status: requiredBackendUsageStatus(data, "status", owner),
+    source: requiredBackendString(data, "source", owner),
+    ...(data.summary !== undefined
+      ? { summary: parseBackendUsageSummary(data.summary, `${owner}.summary`) }
+      : {}),
+    limits: optionalBackendArray(data, "limits", owner).map((limit, index) =>
+      parseBackendUsageLimit(limit, `${owner}.limits[${index}]`),
+    ),
+    usage_lines: optionalBackendArray(data, "usage_lines", owner).map((line, index) =>
+      parseBackendUsageLine(line, `${owner}.usage_lines[${index}]`),
+    ),
+    ...(data.detail !== undefined ? { detail: optionalBackendString(data, "detail", owner) } : {}),
+  };
+}
+
+function parseBackendUsageSummary(data: unknown, owner: string): BackendUsageSummaryWire {
+  if (!isRecord(data)) {
+    throw invalidBackendsResponse(`${owner} must be an object`);
+  }
+  const tone = requiredBackendString(data, "tone", owner);
+  if (!backendUsageTones.has(tone)) {
+    throw invalidBackendsResponse(`${owner}.tone must be ok, warning, critical, or neutral`);
+  }
+  return {
+    label: requiredBackendString(data, "label", owner),
+    tone: tone as BackendUsageToneWire,
+  };
+}
+
+function parseBackendUsageLimit(data: unknown, owner: string): BackendUsageLimitWire {
+  if (!isRecord(data)) {
+    throw invalidBackendsResponse(`${owner} must be an object`);
+  }
+  return {
+    kind: requiredBackendString(data, "kind", owner),
+    label: requiredBackendString(data, "label", owner),
+    ...(data.used_percent !== undefined
+      ? { used_percent: optionalBackendNumber(data, "used_percent", owner) }
+      : {}),
+    ...(data.remaining_percent !== undefined
+      ? { remaining_percent: optionalBackendNumber(data, "remaining_percent", owner) }
+      : {}),
+    ...(data.resets_at !== undefined
+      ? { resets_at: optionalBackendString(data, "resets_at", owner) }
+      : {}),
+    ...(data.window_duration_mins !== undefined
+      ? { window_duration_mins: optionalBackendNumber(data, "window_duration_mins", owner) }
+      : {}),
+  };
+}
+
+function parseBackendUsageLine(data: unknown, owner: string): BackendUsageLineWire {
+  if (!isRecord(data)) {
+    throw invalidBackendsResponse(`${owner} must be an object`);
+  }
+  return {
+    label: requiredBackendString(data, "label", owner),
+    value: requiredBackendString(data, "value", owner),
+    ...(data.subtitle !== undefined ? { subtitle: optionalBackendString(data, "subtitle", owner) } : {}),
+  };
+}
+
 function parseBackendWire(data: unknown, owner: string): BackendWire {
   if (!isRecord(data)) {
     throw invalidBackendsResponse(`${owner} must be an object`);
@@ -754,6 +882,11 @@ function parseBackendWire(data: unknown, owner: string): BackendWire {
   }
   return {
     kind: kind as BackendKindWire,
+    ...(data.backend_type !== undefined
+      ? {
+          backend_type: requiredBackendKind(data, "backend_type", owner),
+        }
+      : {}),
     status: status as BackendStatusWire,
     ...(data.status_message !== undefined
       ? {
@@ -1927,6 +2060,30 @@ function requiredBackendString(data: Record<string, unknown>, field: string, own
   return value;
 }
 
+function requiredBackendKind(
+  data: Record<string, unknown>,
+  field: string,
+  owner: string,
+): BackendKindWire {
+  const value = requiredBackendString(data, field, owner);
+  if (!backendKinds.has(value)) {
+    throw invalidBackendsResponse(`${owner}.${field} must be a known BackendKind`);
+  }
+  return value as BackendKindWire;
+}
+
+function requiredBackendUsageStatus(
+  data: Record<string, unknown>,
+  field: string,
+  owner: string,
+): BackendUsageStatusWire {
+  const value = requiredBackendString(data, field, owner);
+  if (!backendUsageStatuses.has(value)) {
+    throw invalidBackendsResponse(`${owner}.${field} must be ok, needs_auth, unsupported, or error`);
+  }
+  return value as BackendUsageStatusWire;
+}
+
 function optionalBackendString(data: Record<string, unknown>, field: string, owner: string) {
   const value = data[field];
   if (value === undefined) return undefined;
@@ -1960,6 +2117,15 @@ function optionalBackendBoolean(data: Record<string, unknown>, field: string, ow
   if (value === undefined) return undefined;
   if (typeof value !== "boolean") {
     throw invalidBackendsResponse(`${owner}.${field} must be a boolean`);
+  }
+  return value;
+}
+
+function optionalBackendNumber(data: Record<string, unknown>, field: string, owner: string) {
+  const value = data[field];
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw invalidBackendsResponse(`${owner}.${field} must be a finite number`);
   }
   return value;
 }

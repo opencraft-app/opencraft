@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import type {
   AgentConfigWire,
   BackendKindWire,
+  BackendUsageWireResponse,
   BackendWire,
   PermissionModeWire,
 } from "../../../../packages/vela-chat-client/src";
@@ -24,6 +25,7 @@ export interface DesktopNewSessionSubmitInput {
 
 export interface DesktopNewSessionPageProps {
   backends: BackendWire[];
+  backendUsages?: Partial<Record<BackendKindWire, BackendUsageWireResponse>>;
   defaultBackend: BackendKindWire | "";
   defaultWorkingDirectory: string;
   error?: string | null;
@@ -41,6 +43,7 @@ const ENVIRONMENT_OPTIONS: NewSessionOption[] = [{ id: LOCAL_ENVIRONMENT_ID, lab
 
 export function DesktopNewSessionPage({
   backends,
+  backendUsages = {},
   defaultBackend,
   defaultWorkingDirectory,
   error,
@@ -106,7 +109,7 @@ export function DesktopNewSessionPage({
   return (
     <NewSessionSurface
       agentConfig={setup.setupAgentConfig}
-      backendOptions={backendOptions(backends)}
+      backendOptions={backendOptions(backends, backendUsages)}
       backendStatusMessage={backendStatus}
       environmentOptions={ENVIRONMENT_OPTIONS}
       error={error}
@@ -166,7 +169,10 @@ async function submitNewSession(
   });
 }
 
-function backendOptions(backends: BackendWire[]): NewSessionOption<BackendKindWire>[] {
+function backendOptions(
+  backends: BackendWire[],
+  backendUsages: Partial<Record<BackendKindWire, BackendUsageWireResponse>>,
+): NewSessionOption<BackendKindWire>[] {
   return backends.map((backend) => ({
     id: backend.kind,
     label:
@@ -174,8 +180,17 @@ function backendOptions(backends: BackendWire[]): NewSessionOption<BackendKindWi
         ? backend.display_name
         : `${backend.display_name} (${backend.status})`,
     disabled: !isBackendSelectable(backend),
-    description: backend.status_message,
+    description: backendOptionDescription(backend, backendUsages[backend.kind]),
   }));
+}
+
+function backendOptionDescription(
+  backend: BackendWire,
+  usage: BackendUsageWireResponse | undefined,
+) {
+  const usageLabel = usage?.summary?.label;
+  if (backend.status_message && usageLabel) return `${backend.status_message} · ${usageLabel}`;
+  return usageLabel ?? backend.status_message;
 }
 
 function isBackendSelectable(backend: BackendWire) {
