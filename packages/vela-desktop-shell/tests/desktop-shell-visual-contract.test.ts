@@ -226,7 +226,11 @@ test("desktop host uses unified chrome and drag-region semantics", () => {
   assert.match(css, /--vela-window-toolbar-gap:\s*16px;/);
   assert.match(css, /--vela-window-toolbar-item-gap:\s*0px;/);
   assert.match(css, /\.vela-chat-topbar\s*\{[^}]*--vela-chat-topbar-leading-padding:\s*var\(--vela-chat-topbar-base-padding-left\);/s);
-  assert.match(css, /\.vela-chat-topbar\s*\{[^}]*padding:\s*18px var\(--vela-chat-topbar-base-padding-right\) 18px var\(--vela-chat-topbar-leading-padding\);/s);
+  assert.match(css, /\.vela-chat-topbar\s*\{[^}]*min-height:\s*46px;/s);
+  assert.match(css, /\.vela-chat-topbar\s*\{[^}]*padding:\s*6px var\(--vela-chat-topbar-base-padding-right\) 6px var\(--vela-chat-topbar-leading-padding\);/s);
+  assert.match(css, /\.vela-chat-topbar\s*\{[^}]*box-shadow:\s*none;/s);
+  assert.match(css, /\.vela-chat-topbar::after\s*\{[^}]*bottom:\s*0;/s);
+  assert.doesNotMatch(css, /\.vela-chat-topbar::after\s*\{[^}]*top:\s*68px;/s);
   assert.match(css, /\.vela-desktop-shell\[data-state="collapsed"\] \.vela-chat-topbar,\s*\.vela-desktop-shell\[data-sidebar-presentation="overlay"\] \.vela-chat-topbar\s*\{[^}]*--vela-chat-topbar-leading-padding:\s*max\(/s);
   assert.match(css, /\.vela-desktop-shell\[data-state="collapsed"\] \.vela-chat-topbar,\s*\.vela-desktop-shell\[data-sidebar-presentation="overlay"\] \.vela-chat-topbar\s*\{[^}]*var\(--vela-window-leading-content-inset\)/s);
   assert.match(css, /\[data-window-drag-region="true"\]\s*\{[^}]*-webkit-app-region:\s*drag;/s);
