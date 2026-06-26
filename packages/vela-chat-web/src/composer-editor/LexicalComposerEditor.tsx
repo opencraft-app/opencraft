@@ -236,7 +236,7 @@ function EditorBridgePlugin({
       editor.registerCommand(
         KEY_ENTER_COMMAND,
         (event: KeyboardEvent | null) => {
-          if (!event || event.isComposing) return false;
+          if (!isPlainEnterKeyDown(event)) return false;
           if (onCommandKeyDown?.("Enter", event)) {
             event.preventDefault();
             event.stopPropagation();
@@ -250,6 +250,19 @@ function EditorBridgePlugin({
       ),
     [editor, onCommandKeyDown, onSubmit],
   );
+
+  function isPlainEnterKeyDown(event: KeyboardEvent | null): event is KeyboardEvent {
+    return Boolean(
+      event &&
+        event.type === "keydown" &&
+        event.key === "Enter" &&
+        !event.isComposing &&
+        !event.shiftKey &&
+        !event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey,
+    );
+  }
 
   useEffect(() => {
     const handleCommand = (

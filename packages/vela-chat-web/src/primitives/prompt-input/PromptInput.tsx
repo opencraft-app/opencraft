@@ -92,9 +92,15 @@ export function PromptInput({
   const isSuggestionMenuOpen = suggestionItems.length > 0;
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
-    if (canSubmit) onSubmit();
   };
   const handleEditorSubmit = () => {
+    if (canSubmit) onSubmit();
+  };
+  const handlePrimaryControlClick = () => {
+    if (isStopControl) {
+      onStop?.();
+      return;
+    }
     if (canSubmit) onSubmit();
   };
   const handleEditorSubmitText = (text: string) => {
@@ -150,9 +156,6 @@ export function PromptInput({
     },
     [activeSuggestion, handleSuggestionSelect, isSuggestionMenuOpen, suggestionItems.length],
   );
-  const handleStop = () => {
-    if (isStopControl) onStop?.();
-  };
   const handleAttachClick = () => {
     imageInputRef.current?.click();
   };
@@ -366,9 +369,9 @@ export function PromptInput({
               aria-label={primaryControlLabel}
               className={isStopControl ? styles.stopButton : styles.sendButton}
               disabled={isStopControl ? false : !canSubmit}
-              onClick={isStopControl ? handleStop : undefined}
+              onClick={handlePrimaryControlClick}
               title={primaryControlLabel}
-              type={isStopControl ? "button" : "submit"}
+              type="button"
             >
               {isStopControl ? (
                 <Square size={13} strokeWidth={0} fill="currentColor" aria-hidden="true" />
