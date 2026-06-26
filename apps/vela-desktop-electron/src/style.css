@@ -641,6 +641,7 @@ body {
 }
 
 .vela-sidebar-resize-handle {
+  -webkit-app-region: no-drag;
   position: absolute;
   z-index: 48;
   top: 0;
