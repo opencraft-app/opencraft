@@ -9,6 +9,7 @@ import { SessionProvider } from '@/contexts/session-context';
 import i18n, { setLocale } from '@/i18n';
 import { ProductAnalyticsBridge } from '@/observability/product-analytics-bridge';
 import { RumUserBridge } from '@/observability/rum-user-bridge';
+import { MaintenanceAnnouncementBanner } from '@/components/site/maintenance-announcement-banner';
 
 import type { PublicRouteLocale } from './public-locale';
 
@@ -37,7 +38,10 @@ export function PublicSiteAppProviders({ children }: { children: ReactNode }) {
         <SessionProvider>
           <RumUserBridge />
           <ProductAnalyticsBridge />
-          <OpenClawProvider>{children}</OpenClawProvider>
+          <OpenClawProvider>
+            <MaintenanceAnnouncementBanner />
+            {children}
+          </OpenClawProvider>
         </SessionProvider>
       </RuntimeConfigProvider>
     </RepositoryProvider>
