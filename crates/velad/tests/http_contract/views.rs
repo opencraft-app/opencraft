@@ -174,6 +174,85 @@ async fn conversation_view_supports_direction_anchor_paging() {
 }
 
 #[tokio::test]
+async fn conversation_view_normalizes_typed_agent_work_detail_fields_to_wire_types() {
+    let (app, _) = test_app_with_backend_outputs(vec![
+        BackendOutput::event(
+            EventType::TOOL_STARTED,
+            json!({
+                "tool_id": "tool_structured_read",
+                "name": "read",
+                "status": "running",
+                "detail": {
+                    "type": "read",
+                    "file_path": "README.md",
+                    "content": [{ "type": "text", "text": "hello" }]
+                }
+            }),
+        ),
+        BackendOutput::event(
+            EventType::TOOL_COMPLETED,
+            json!({
+                "tool_id": "tool_structured_read",
+                "name": "read",
+                "status": "completed",
+                "detail": {
+                    "type": "read",
+                    "file_path": "README.md",
+                    "content": [{ "type": "text", "text": "hello" }]
+                }
+            }),
+        ),
+        BackendOutput::event(EventType::TURN_COMPLETED, json!({})),
+    ])
+    .await;
+    let (_, created) = json_request(
+        app.clone(),
+        Method::POST,
+        "/api/v1/sessions",
+        json!({ "backend": "pi", "working_directory": "/tmp/project" }),
+        Some("ses-conversation-detail-wire"),
+    )
+    .await;
+    let session_id = created["session"]["id"].as_str().unwrap();
+
+    let (status, _) = json_request(
+        app.clone(),
+        Method::POST,
+        &format!("/api/v1/sessions/{session_id}/events"),
+        json!({
+            "events": [{
+                "type": "user.message",
+                "content": [{ "type": "text", "text": "read structured content" }]
+            }]
+        }),
+        Some("cmd-conversation-detail-wire"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    wait_for_session_event(app.clone(), session_id, "turn.completed").await;
+
+    let (status, view) = get_json(
+        app,
+        &format!("/api/v1/sessions/{session_id}/views/conversation?direction=tail&limit=10"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let work = view["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["kind"] == "agent_work")
+        .expect("agent work item");
+
+    assert_eq!(work["detail"]["type"], "read");
+    assert_eq!(work["detail"]["file_path"], "README.md");
+    assert!(
+        work["detail"]["content"].as_str().is_some(),
+        "detail.content must be normalized to a string: {work:#?}"
+    );
+}
+
+#[tokio::test]
 async fn conversation_view_rejects_invalid_direction_anchor_combinations() {
     let app = test_app().await;
     let (_, created) = json_request(

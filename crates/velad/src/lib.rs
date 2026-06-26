@@ -3836,8 +3836,11 @@ fn activity_status_wire(status: &str) -> &str {
 
 fn activity_detail_json(kind: &str, payload: &Value) -> Option<Value> {
     if let Some(detail) = payload.get("detail").and_then(Value::as_object) {
-        if detail.get("type").and_then(Value::as_str).is_some() {
-            return Some(Value::Object(detail.clone()));
+        if let Some(detail_type) = detail.get("type").and_then(Value::as_str) {
+            return Some(normalized_detail_json(
+                detail_type,
+                &Value::Object(detail.clone()),
+            ));
         }
     }
 
@@ -3890,33 +3893,11 @@ fn inferred_activity_tool_detail_type(payload: &Value) -> &'static str {
 }
 
 fn activity_shell_detail_json(payload: &Value) -> Value {
-    detail_json(
-        "shell",
-        payload,
-        &[
-            "command",
-            "cwd",
-            "output",
-            "stdout",
-            "stderr",
-            "exit_code",
-            "error",
-        ],
-    )
+    normalized_detail_json("shell", payload)
 }
 
 fn activity_file_detail_json(detail_type: &str, payload: &Value) -> Value {
-    let mut detail = detail_json(
-        detail_type,
-        payload,
-        &[
-            "content",
-            "old_string",
-            "new_string",
-            "unified_diff",
-            "error",
-        ],
-    );
+    let mut detail = normalized_detail_json(detail_type, payload);
     let Some(object) = detail.as_object_mut() else {
         return detail;
     };
@@ -3931,35 +3912,11 @@ fn activity_file_detail_json(detail_type: &str, payload: &Value) -> Value {
 }
 
 fn activity_search_detail_json(payload: &Value) -> Value {
-    detail_json(
-        "search",
-        payload,
-        &[
-            "query",
-            "mode",
-            "content",
-            "num_files",
-            "num_matches",
-            "duration_ms",
-            "truncated",
-        ],
-    )
+    normalized_detail_json("search", payload)
 }
 
 fn activity_fetch_detail_json(payload: &Value) -> Value {
-    detail_json(
-        "fetch",
-        payload,
-        &[
-            "url",
-            "prompt",
-            "result",
-            "code",
-            "code_text",
-            "bytes",
-            "duration_ms",
-        ],
-    )
+    normalized_detail_json("fetch", payload)
 }
 
 fn activity_generic_tool_detail_json(payload: &Value) -> Value {
@@ -3996,6 +3953,101 @@ fn detail_json(detail_type: &str, payload: &Value, fields: &[&str]) -> Value {
         }
     }
     Value::Object(detail)
+}
+
+fn normalized_detail_json(detail_type: &str, payload: &Value) -> Value {
+    match detail_type {
+        "shell" => typed_detail_json(
+            "shell",
+            payload,
+            &["command", "cwd", "output", "stdout", "stderr", "error"],
+            &["exit_code"],
+            &[],
+            &["streams"],
+        ),
+        "read" | "edit" | "write" => typed_detail_json(
+            detail_type,
+            payload,
+            &[
+                "file_path",
+                "path",
+                "content",
+                "old_string",
+                "new_string",
+                "unified_diff",
+            ],
+            &[],
+            &[],
+            &[],
+        ),
+        "search" => typed_detail_json(
+            "search",
+            payload,
+            &["query", "mode", "content"],
+            &["num_files", "num_matches", "duration_ms"],
+            &["truncated"],
+            &[],
+        ),
+        "fetch" => typed_detail_json(
+            "fetch",
+            payload,
+            &["url", "prompt", "result", "code_text"],
+            &["code", "bytes", "duration_ms"],
+            &[],
+            &[],
+        ),
+        _ => {
+            let mut detail = payload
+                .as_object()
+                .cloned()
+                .unwrap_or_else(serde_json::Map::new);
+            detail.insert("type".to_string(), Value::String(detail_type.to_string()));
+            Value::Object(detail)
+        }
+    }
+}
+
+fn typed_detail_json(
+    detail_type: &str,
+    payload: &Value,
+    string_fields: &[&str],
+    integer_fields: &[&str],
+    boolean_fields: &[&str],
+    passthrough_fields: &[&str],
+) -> Value {
+    let mut detail = Map::new();
+    detail.insert("type".to_string(), Value::String(detail_type.to_string()));
+    for field in string_fields {
+        if let Some(value) = payload.get(field).and_then(detail_string_value) {
+            detail.insert((*field).to_string(), Value::String(value));
+        }
+    }
+    for field in integer_fields {
+        if let Some(value) = payload.get(field).and_then(Value::as_i64) {
+            detail.insert((*field).to_string(), json!(value));
+        }
+    }
+    for field in boolean_fields {
+        if let Some(value) = payload.get(field).and_then(Value::as_bool) {
+            detail.insert((*field).to_string(), json!(value));
+        }
+    }
+    for field in passthrough_fields {
+        if let Some(value) = payload.get(field) {
+            detail.insert((*field).to_string(), value.clone());
+        }
+    }
+    Value::Object(detail)
+}
+
+fn detail_string_value(value: &Value) -> Option<String> {
+    match value {
+        Value::Null => None,
+        Value::String(value) => Some(value.clone()),
+        Value::Bool(value) => Some(value.to_string()),
+        Value::Number(value) => Some(value.to_string()),
+        Value::Array(_) | Value::Object(_) => Some(value.to_string()),
+    }
 }
 
 fn publish_new_events<B>(state: &ApiState<B>, events: &[CanonicalEvent], before_len: usize) {
