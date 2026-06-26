@@ -1165,7 +1165,11 @@ install_hermes_whatsapp_bridge_deps() {
     mkdir -p "$(dirname "${bridge_dir}")"
     cp -a "${runtime_bridge_dir}" "${bridge_dir}"
   fi
-  chown -R "${bridge_user}:${bridge_user}" "${bridge_home}/.hermes"
+  chown "${bridge_user}:${bridge_user}" \
+    "${bridge_home}/.hermes" \
+    "${bridge_home}/.hermes/hermes-agent" \
+    "${bridge_home}/.hermes/hermes-agent/scripts" 2>/dev/null || true
+  chown -R "${bridge_user}:${bridge_user}" "${bridge_dir}" 2>/dev/null || true
 
   sudo npm install -g pnpm
 
