@@ -464,19 +464,34 @@ export function createVeladClient(options: VeladClientOptions): VeladClient {
       return url;
     },
     async getConversation(sessionId, options) {
-      const response = await observedFetch("velad.conversation.get", this.conversationUrl(sessionId, options), {}, { "velad.session_id": sessionId });
-      return readConversationViewResponse(response);
+      return observedRequest(
+        "velad.conversation.get",
+        this.conversationUrl(sessionId, options),
+        {},
+        { "velad.session_id": sessionId },
+        readConversationViewResponse,
+      );
     },
     async getRequests(sessionId, options) {
-      const response = await observedFetch("velad.requests.get", this.requestsUrl(sessionId, options), {}, { "velad.session_id": sessionId });
-      return readPendingRequestsViewResponse(response);
+      return observedRequest(
+        "velad.requests.get",
+        this.requestsUrl(sessionId, options),
+        {},
+        { "velad.session_id": sessionId },
+        readPendingRequestsViewResponse,
+      );
     },
     async getPendingRequests(sessionId, options) {
       return this.getRequests(sessionId, options);
     },
     async getDiffs(sessionId) {
-      const response = await observedFetch("velad.diffs.get", this.diffsUrl(sessionId), {}, { "velad.session_id": sessionId });
-      return readDiffReviewViewResponse(response);
+      return observedRequest(
+        "velad.diffs.get",
+        this.diffsUrl(sessionId),
+        {},
+        { "velad.session_id": sessionId },
+        readDiffReviewViewResponse,
+      );
     },
     async cancelSession({ sessionId, idempotencyKey }) {
       const url = new URL(`sessions/${encodeSessionId(sessionId)}/cancel`, baseUrl);

@@ -85,7 +85,7 @@ function assistantConversationItem(overrides: Record<string, unknown> = {}) {
     status: "streaming" as const,
     source_event_ids: ["evt_1"],
     source_event_ranges: [
-      { from_event_id: "evt_1", to_event_id: "evt_1", from_seq: 1, to_seq: 1 },
+      { epoch: 1, from_event_id: "evt_1", to_event_id: "evt_1", from_seq: 1, to_seq: 1 },
     ],
     ...overrides,
   };
@@ -1179,6 +1179,112 @@ test("records backend catalog wire contract mismatches in observability", async 
   assert.equal(logs[0].severityText, "ERROR");
   assert.equal(logs[0].attributes?.["vela.operation"], "velad.backends.list");
   assert.equal(logs[0].attributes?.["velad.error_code"], "invalid_backends_response");
+});
+
+test("records conversation view wire contract mismatches in observability", async () => {
+  const spans: Array<{
+    name: string;
+    attributes?: Record<string, unknown>;
+    status?: { code: number; message?: string };
+    ended?: boolean;
+    error?: string;
+  }> = [];
+  const logs: Array<{
+    body: string;
+    severityText?: string;
+    attributes?: Record<string, unknown>;
+  }> = [];
+  const observability = {
+    startSpan(name: string, options?: { attributes?: Record<string, unknown> }) {
+      const span = {
+        name,
+        attributes: options?.attributes,
+        setAttribute(key: string, value: string | number | boolean) {
+          this.attributes = { ...this.attributes, [key]: value };
+        },
+        setStatus(status: { code: number; message?: string }) {
+          this.status = status;
+        },
+        end() {
+          this.ended = true;
+        },
+      };
+      spans.push(span);
+      return span;
+    },
+    recordError(span: (typeof spans)[number], error: unknown) {
+      span.error = error instanceof Error ? error.message : String(error);
+      span.status = { code: 2, message: span.error };
+    },
+    traceparent() {
+      return "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+    },
+    emitLog(record: { body: string; severityText?: string; attributes?: Record<string, unknown> }) {
+      logs.push(record);
+    },
+  };
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    observability,
+    fetch: async () =>
+      new Response(
+        JSON.stringify(
+          conversationFixture({
+            items: [
+              assistantConversationItem({ id: "msg_1", text: "ok" }),
+              assistantConversationItem({ id: "msg_2", text: "ok" }),
+              {
+                id: "work_bad_detail",
+                kind: "agent_work",
+                created_at: "2026-06-19T00:00:00Z",
+                updated_at: "2026-06-19T00:00:00Z",
+                revision: 1,
+                status: "completed",
+                title: "Read file",
+                detail: { type: "read", content: [{ type: "text", text: "hello" }] },
+                source_event_ids: ["evt_1"],
+                source_event_ranges: [
+                  {
+                    epoch: 1,
+                    from_event_id: "evt_1",
+                    to_event_id: "evt_1",
+                    from_seq: 1,
+                    to_seq: 1,
+                  },
+                ],
+              },
+            ],
+          }),
+        ),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+  });
+
+  await assert.rejects(
+    () => client.getConversation("sess_123"),
+    (err) =>
+      err instanceof VeladClientError &&
+      err.code === "invalid_agent_work_detail" &&
+      /ConversationView\.items\[2\]\.detail\.content/.test(err.message),
+  );
+
+  assert.equal(spans[0].name, "velad.conversation.get");
+  assert.equal(spans[0].status?.code, 2);
+  assert.equal(
+    spans[0].error,
+    "ConversationView.items[2].detail.content must be a string",
+  );
+  assert.equal(spans[0].ended, true);
+  assert.equal(spans[0].attributes?.["velad.session_id"], "sess_123");
+  assert.equal(spans[0].attributes?.["velad.error_code"], "invalid_agent_work_detail");
+  assert.equal(
+    spans[0].attributes?.["velad.response_contract_owner"],
+    "ConversationView.items[2].detail.content",
+  );
+  assert.equal(logs[0].severityText, "ERROR");
+  assert.equal(logs[0].attributes?.["vela.operation"], "velad.conversation.get");
+  assert.equal(logs[0].attributes?.["velad.session_id"], "sess_123");
+  assert.equal(logs[0].attributes?.["velad.error_code"], "invalid_agent_work_detail");
 });
 
 test("archives a session with explicit archive action endpoint", async () => {
