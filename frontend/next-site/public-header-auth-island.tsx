@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useTranslation } from 'react-i18next';
 
 import { LoginModal } from '@/components/site/login-modal';
 import type { HeaderAppearance } from '@/components/site/public-site-header';
@@ -45,16 +46,18 @@ type PublicHeaderAuthIslandProps = {
 
 function PublicHeaderAuthControls({
   appearance = 'solid',
-  locale = 'zh-CN',
+  locale,
   oauthError = null,
   showLanguageSwitcher = isGlobal,
 }: PublicHeaderAuthIslandProps) {
   const router = useRouter();
+  const { i18n } = useTranslation();
   const { authReady, isAuthenticated } = useSession();
   const { bots, isSubscribed } = useOpenClaw();
   const [showLogin, setShowLogin] = useState(false);
   const loginErrorMessage = useMemo(() => oauthErrorMessage(oauthError), [oauthError]);
-  const copy = copyByLocale[locale];
+  const activeLocale: PublicSiteLocale = locale ?? (i18n.language?.startsWith('zh') ? 'zh-SG' : 'en-US');
+  const copy = copyByLocale[activeLocale] || copyByLocale['en-US'];
 
   useEffect(() => {
     if (oauthError) {
@@ -93,7 +96,7 @@ function PublicHeaderAuthControls({
     return (
       <>
         <div className="hidden shrink-0 items-center gap-3 md:flex">
-          {showLanguageSwitcher && renderNextLanguageSwitcher({ activeLocale: locale, reloadAfterSwitch: false, variant: 'dropdown' })}
+          {showLanguageSwitcher && renderNextLanguageSwitcher({ activeLocale: activeLocale, reloadAfterSwitch: false, variant: 'dropdown' })}
           <UserAvatarMenu />
         </div>
         <div className="ml-auto flex items-center gap-2 md:hidden">
@@ -123,7 +126,7 @@ function PublicHeaderAuthControls({
         >
           {copy.login}
         </button>
-        {showLanguageSwitcher && renderNextLanguageSwitcher({ activeLocale: locale, reloadAfterSwitch: false, variant: 'dropdown' })}
+        {showLanguageSwitcher && renderNextLanguageSwitcher({ activeLocale: activeLocale, reloadAfterSwitch: false, variant: 'dropdown' })}
       </div>
       <div className="ml-auto flex items-center gap-2 md:hidden">
         <button

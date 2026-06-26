@@ -2,7 +2,8 @@
 /**
  * i18n 文案提取脚本
  * ──────────────────────────────────────────────────────────────
- * 扫描 `src/**\/*.{ts,tsx}` 内所有 `t("中文")` / `useT()` 调用，
+ * 扫描 `src/**\/*.{ts,tsx}` 与 `next-site/**\/*.{ts,tsx}` 内所有
+ * `t("中文")` / `useT()` 调用，
  * 为每条中文生成稳定的 hash key，产出三份 JSON：
  *
  *   src/i18n/generated/zh-to-key.json  —— 中文 → hash（运行时反查）
@@ -27,12 +28,15 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
 const SRC = join(ROOT, "src");
+const NEXT_SITE = join(ROOT, "next-site");
+const SOURCE_ROOTS = [SRC, NEXT_SITE];
 const OUT_DIR = join(SRC, "i18n", "generated");
 
 const CHECK_ONLY = process.argv.includes("--check");
 
 /** 递归列出所有 .ts/.tsx 文件，排除 node_modules / i18n 本身 / 测试文件 */
 function listSourceFiles(dir) {
+  if (!existsSync(dir)) return [];
   const out = [];
   for (const name of readdirSync(dir)) {
     if (name === "node_modules" || name.startsWith(".")) continue;
@@ -107,7 +111,7 @@ function writeJson(file, obj) {
 
 /* ── 主流程 ───────────────────────────────────────────── */
 
-const files = listSourceFiles(SRC);
+const files = SOURCE_ROOTS.flatMap(listSourceFiles);
 /** 所有中文原文去重集合 */
 const zhSet = new Set();
 /** 便于排查：记录每条中文来自哪些文件 */
