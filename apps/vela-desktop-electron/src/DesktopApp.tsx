@@ -73,6 +73,7 @@ const DESKTOP_APP_VERSION = "0.0.1";
 const DESKTOP_BACKEND_PREFERENCE = [
   "vela_engine",
   "codex",
+  "tcodex",
   "acp",
   "pi",
 ] satisfies BackendKindWire[];

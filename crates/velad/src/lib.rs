@@ -168,6 +168,24 @@ where
         self
     }
 
+    pub fn with_tcodex_backend(mut self, default_model: Option<String>) -> Self {
+        if let Some(backend) = self
+            .configured_backends
+            .iter_mut()
+            .find(|backend| backend.kind == "tcodex")
+        {
+            backend.default_model = default_model;
+            return self;
+        }
+        self.configured_backends.push(ConfiguredBackend {
+            kind: "tcodex",
+            engine_kind: BackendKind::Tcodex,
+            display_name: "TCodex",
+            default_model,
+        });
+        self
+    }
+
     pub fn with_vela_engine_backend(mut self, default_model: Option<String>) -> Self {
         if let Some(backend) = self
             .configured_backends
@@ -746,6 +764,7 @@ enum ViewWindowDirection {
 enum BackendKindWire {
     VelaEngine,
     Codex,
+    Tcodex,
     Cloudagent,
     ClaudeCode,
     Pi,
@@ -759,6 +778,7 @@ impl BackendKindWire {
         match value {
             "vela_engine" => Some(Self::VelaEngine),
             "codex" => Some(Self::Codex),
+            "tcodex" => Some(Self::Tcodex),
             "cloudagent" => Some(Self::Cloudagent),
             "claude_code" => Some(Self::ClaudeCode),
             "pi" => Some(Self::Pi),
@@ -773,6 +793,7 @@ impl BackendKindWire {
         match self {
             Self::VelaEngine => "vela_engine",
             Self::Codex => "codex",
+            Self::Tcodex => "tcodex",
             Self::Cloudagent => "cloudagent",
             Self::ClaudeCode => "claude_code",
             Self::Pi => "pi",
@@ -787,6 +808,7 @@ impl BackendKindWire {
             Self::Pi => Some(BackendKind::Pi),
             Self::VelaEngine => Some(BackendKind::VelaEngine),
             Self::Codex => Some(BackendKind::Codex),
+            Self::Tcodex => Some(BackendKind::Tcodex),
             Self::Acp => Some(BackendKind::Acp),
             Self::Cloudagent | Self::ClaudeCode | Self::Opencode | Self::Qoder => None,
         }
@@ -3261,7 +3283,7 @@ fn apply_backend_agent_config_defaults(
     if agent_config.model.is_none() {
         agent_config.model = snapshot.default_model().or_else(|| backend.default_model());
     }
-    if agent_config.permission_mode.is_none() && backend.kind == "codex" {
+    if agent_config.permission_mode.is_none() && is_codex_family_backend(backend.kind) {
         agent_config.permission_mode = Some(PermissionMode::Auto);
     }
     if agent_config.reasoning_effort.is_none()
@@ -3277,7 +3299,8 @@ fn validate_agent_config_for_backend(
     snapshot: &backend_snapshot::BackendSnapshot,
     agent_config: &AgentConfig,
 ) -> Result<(), Response> {
-    let validates_against_snapshot = backend.kind == "codex" || backend.kind == "vela_engine";
+    let validates_against_snapshot =
+        is_codex_family_backend(backend.kind) || backend.kind == "vela_engine";
     if validates_against_snapshot {
         if let Some(model) = agent_config.model.as_deref()
             && !snapshot.has_model(model)
@@ -3313,13 +3336,20 @@ fn validate_agent_config_for_backend(
             )));
         }
     }
-    if backend.kind == "codex" {
-        validate_codex_feature_values(agent_config)?;
+    if is_codex_family_backend(backend.kind) {
+        validate_codex_feature_values(backend.kind, agent_config)?;
     }
     Ok(())
 }
 
-fn validate_codex_feature_values(agent_config: &AgentConfig) -> Result<(), Response> {
+fn is_codex_family_backend(kind: &str) -> bool {
+    matches!(kind, "codex" | "tcodex")
+}
+
+fn validate_codex_feature_values(
+    backend_kind: &str,
+    agent_config: &AgentConfig,
+) -> Result<(), Response> {
     for (feature_id, value) in &agent_config.feature_values {
         match feature_id.as_str() {
             "fast_mode" => {
@@ -3338,7 +3368,7 @@ fn validate_codex_feature_values(agent_config: &AgentConfig) -> Result<(), Respo
             }
             _ => {
                 return Err(invalid_agent_config(format!(
-                    "feature {feature_id} is not available for backend codex"
+                    "feature {feature_id} is not available for backend {backend_kind}"
                 )));
             }
         }

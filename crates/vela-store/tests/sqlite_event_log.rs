@@ -99,6 +99,24 @@ async fn session_backend_kind_round_trips_acp() {
 }
 
 #[tokio::test]
+async fn session_backend_kind_round_trips_tcodex() {
+    let store = SqliteEventStore::in_memory().await.expect("store");
+    let session_id = SessionId::from("ses_store_tcodex");
+    store
+        .create_session(&session_id, BackendKind::Tcodex, "/tmp/vela")
+        .await
+        .expect("create tcodex session");
+
+    let session = store
+        .get_session(&session_id)
+        .await
+        .expect("get session")
+        .expect("session exists");
+
+    assert_eq!(session.backend, BackendKind::Tcodex);
+}
+
+#[tokio::test]
 async fn archive_session_hides_it_from_default_session_list() {
     let store = SqliteEventStore::in_memory().await.expect("store");
     let archived_id = SessionId::from("ses_store_archived");

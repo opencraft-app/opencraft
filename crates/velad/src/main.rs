@@ -29,12 +29,18 @@ async fn main() -> anyhow::Result<()> {
     let default_session_model = pi_backend.model.clone();
     let pi_backend = Arc::new(pi_backend);
     let codex_backend = Arc::new(CodexAppServerBackendAdapter::stdio(backend_cwd.clone()));
+    let tcodex_backend = Arc::new(CodexAppServerBackendAdapter::stdio_command(
+        backend_cwd.clone(),
+        env::var("VELAD_TCODEX_COMMAND").unwrap_or_else(|_| "tcodex".to_string()),
+        tcodex_args(),
+    ));
     let acp_backend = acp_backend_from_env(backend_cwd.clone());
     let acp_default_model = acp_default_model();
     let acp_backend = Arc::new(acp_backend);
     let backend = BackendRouter::new()
         .with_backend(BackendKind::Pi, pi_backend)
         .with_backend(BackendKind::Codex, codex_backend)
+        .with_backend(BackendKind::Tcodex, tcodex_backend)
         .with_backend(BackendKind::Acp, acp_backend);
     #[cfg(feature = "embedded-vela-engine")]
     let (backend, vela_engine_default_model, vela_engine_updater) = {
@@ -75,6 +81,7 @@ async fn main() -> anyhow::Result<()> {
     let state = velad::ApiState::new(store, runtime)
         .with_default_session_model(default_session_model)
         .with_codex_backend(env::var("VELAD_CODEX_MODEL").ok())
+        .with_tcodex_backend(env::var("VELAD_TCODEX_MODEL").ok())
         .with_acp_backend(acp_default_model)
         .with_observability(observability);
     #[cfg(feature = "embedded-vela-engine")]
@@ -177,6 +184,20 @@ fn acp_default_model() -> Option<String> {
                 .ok()
                 .map(|_| "minimax-m2.7".to_string())
         })
+}
+
+fn tcodex_args() -> Vec<String> {
+    env::var("VELAD_TCODEX_ARGS")
+        .ok()
+        .map(|value| {
+            value
+                .split_whitespace()
+                .filter(|part| !part.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .filter(|args| !args.is_empty())
+        .unwrap_or_else(|| vec!["app-server".to_string(), "--stdio".to_string()])
 }
 
 #[cfg(feature = "embedded-vela-engine")]

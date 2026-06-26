@@ -664,6 +664,7 @@ fn row_to_session(row: sqlx::sqlite::SqliteRow) -> Result<StoredSession> {
         "pi" => BackendKind::Pi,
         "vela_engine" => BackendKind::VelaEngine,
         "codex" => BackendKind::Codex,
+        "tcodex" => BackendKind::Tcodex,
         "claude" => BackendKind::Claude,
         "acp" => BackendKind::Acp,
         _ => BackendKind::Pi,

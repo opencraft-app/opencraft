@@ -56,6 +56,10 @@ fn backend_kind_serializes_as_openapi_wire_literals() {
         json!("codex")
     );
     assert_eq!(
+        serde_json::to_value(BackendKind::Tcodex).unwrap(),
+        json!("tcodex")
+    );
+    assert_eq!(
         serde_json::to_value(BackendKind::Acp).unwrap(),
         json!("acp")
     );
