@@ -83,6 +83,25 @@ test("desktop new session exposes native folder picker only for local electron b
   assert.doesNotMatch(webHtml, /Choose workspace folder/);
 });
 
+test("desktop new session shows backend loading chrome instead of webby fallback copy", async () => {
+  const { DesktopNewSessionPage } = await import("./DesktopNewSessionPage");
+  const html = renderToStaticMarkup(
+    <DesktopNewSessionPage
+      backends={[]}
+      defaultBackend=""
+      defaultWorkingDirectory="/Users/example/project"
+      client={mockClient()}
+      preferredBackends={["codex"]}
+      onDefaultBackendChange={() => undefined}
+      onSubmit={() => undefined}
+    />,
+  );
+
+  assert.doesNotMatch(html, /No backend is available yet/);
+  assert.match(html, /Backend catalog loading/);
+  assert.match(html, /newSessionBackendSpinner/);
+});
+
 function codexBackend(): BackendWire {
   return {
     kind: "codex",

@@ -103,7 +103,7 @@ export function DesktopNewSessionPage({
   const surfaceBackend = selectedBackend || setup.resolvedSelectedBackend;
   const surfaceBackendDetails =
     backends.find((backend) => backend.kind === surfaceBackend) ?? null;
-  const backendStatus = backendStatusMessage(
+  const backendStatus = backendStatusPresentation(
     surfaceBackendDetails ??
       backends.find((backend) => backend.status !== "available") ??
       null,
@@ -136,7 +136,8 @@ export function DesktopNewSessionPage({
     <NewSessionSurface
       agentConfig={setup.setupAgentConfig}
       backendOptions={backendOptions(backends, backendUsages)}
-      backendStatusMessage={backendStatus}
+      backendStatusLoading={backendStatus.loading}
+      backendStatusMessage={backendStatus.message}
       environmentOptions={ENVIRONMENT_OPTIONS}
       error={error}
       initialPrompt={initialPrompt}
@@ -235,24 +236,27 @@ function optionList<T extends string>(
   }));
 }
 
-function backendStatusMessage(
+function backendStatusPresentation(
   backend: BackendWire | null,
   hasAvailableBackend: boolean,
 ) {
   if (!backend) {
-    return hasAvailableBackend ? null : "No backend is available yet.";
+    return { loading: !hasAvailableBackend, message: null };
   }
   if (backend.status === "loading") {
-    return `Backend ${backend.display_name || backend.kind} is loading.`;
+    return { loading: true, message: null };
   }
-  if (backend.status === "available") return null;
-  if (backend.status_message) return backend.status_message;
+  if (backend.status === "available") return { loading: false, message: null };
+  if (backend.status_message) return { loading: false, message: backend.status_message };
   const snapshotError = backend.diagnostics?.error;
   if (typeof snapshotError === "object" && snapshotError !== null && "message" in snapshotError) {
     const message = snapshotError.message;
     if (typeof message === "string" && message.trim()) {
-      return message;
+      return { loading: false, message };
     }
   }
-  return `Backend ${backend.display_name || backend.kind} is ${backend.status}.`;
+  return {
+    loading: false,
+    message: `Backend ${backend.display_name || backend.kind} is ${backend.status}.`,
+  };
 }

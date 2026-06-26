@@ -1712,6 +1712,31 @@
   white-space: nowrap;
 }
 
+.newSessionBackendLoading {
+  display: inline-grid;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid rgb(13 13 13 / 6%);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgb(255 255 255 / 0), rgb(255 255 255 / 58%), rgb(255 255 255 / 0)),
+    rgb(255 255 255 / 46%);
+  background-size: 180% 100%, 100% 100%;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 64%);
+  animation: velaNewSessionBackendPulse 1100ms ease-in-out infinite;
+}
+
+.newSessionBackendSpinner {
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgb(120 113 108 / 24%);
+  border-top-color: #78716c;
+  border-radius: 999px;
+  animation: velaNewSessionBackendSpin 760ms linear infinite;
+}
+
 .newSessionWorkspaceField {
   display: inline-grid;
   flex: 1 1 280px;
@@ -1821,6 +1846,23 @@
   font-size: 13px;
   line-height: 1.45;
   padding: 10px 12px;
+}
+
+@keyframes velaNewSessionBackendSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes velaNewSessionBackendPulse {
+  0%,
+  100% {
+    background-position: 0% 0, 0 0;
+  }
+
+  50% {
+    background-position: 100% 0, 0 0;
+  }
 }
 
 @keyframes velaHistoryHydrationSpin {

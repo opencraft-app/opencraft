@@ -34,6 +34,7 @@ export interface NewSessionSurfaceProps {
   agentConfig: NewSessionSubmitInput["agentConfig"];
   skills?: ComposerSkill[];
   error?: string | null;
+  backendStatusLoading?: boolean;
   backendStatusMessage?: string | null;
   isSubmitting?: boolean;
   voiceInput?: VoiceInputHost;
@@ -64,6 +65,7 @@ export function NewSessionSurface({
   agentConfig,
   skills = [],
   error,
+  backendStatusLoading = false,
   backendStatusMessage,
   isSubmitting,
   voiceInput,
@@ -85,7 +87,7 @@ export function NewSessionSurface({
     workingDirectory,
     isSubmitting,
   });
-  const surfaceError = error ?? backendStatusMessage ?? workingDirectorySelectionError;
+  const surfaceError = error ?? workingDirectorySelectionError ?? backendStatusMessage;
   const selectedBackendLabel =
     backendOptions.find((option) => option.id === selectedBackend)?.label ?? "Agent";
   const composerControls = buildComposerSetupControlsModel({
@@ -180,6 +182,15 @@ export function NewSessionSurface({
                   placeholder="No backend"
                   onChange={(value) => onBackendChange(value as BackendKindWire | "")}
                 />
+                {backendStatusLoading ? (
+                  <span
+                    className={styles.newSessionBackendLoading}
+                    aria-label="Backend catalog loading"
+                    role="status"
+                  >
+                    <span className={styles.newSessionBackendSpinner} aria-hidden="true" />
+                  </span>
+                ) : null}
               </div>
             }
             canSubmit={canSubmit}
