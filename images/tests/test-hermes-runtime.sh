@@ -341,6 +341,82 @@ else
   echo "${SKILLHUB_OUTPUT}"
 fi
 
+info "checking lightclawbot Hermes plugin"
+LIGHTCLAWBOT_OUTPUT="$(remote_exec_runtime '
+  set -euo pipefail
+  export HOME='"${RUNTIME_HOME}"'
+  plugin_dir="$HOME/.hermes/plugins/lightclawbot"
+  config_file="$HOME/.hermes/config.yaml"
+  test -f "$plugin_dir/plugin.yaml"
+  grep -q "^name: lightclawbot$" "$plugin_dir/plugin.yaml"
+  grep -q "lightclawbot" "$config_file"
+  if [ -f "$HOME/.hermes/.env" ]; then
+    ! grep -q "^LIGHTCLAW_API_KEY" "$HOME/.hermes/.env"
+  fi
+  echo "lightclawbot-plugin-ok"
+' 2>&1 || true)"
+if echo "${LIGHTCLAWBOT_OUTPUT}" | grep -q 'lightclawbot-plugin-ok' \
+  && ! echo "${LIGHTCLAWBOT_OUTPUT}" | grep -Eqi 'no such file|not found|error'; then
+  pass "lightclawbot plugin is preinstalled and enabled"
+else
+  fail "lightclawbot plugin is not preinstalled correctly"
+  echo "${LIGHTCLAWBOT_OUTPUT}"
+fi
+
+info "checking Hermes bundled skill curation"
+HERMES_SKILLS_OUTPUT="$(remote_exec_runtime '
+  set -euo pipefail
+  export HOME='"${RUNTIME_HOME}"'
+  skills_root="$HOME/.hermes/skills"
+  if [ ! -d "$skills_root" ]; then
+    echo "skills-root-missing"
+    exit 0
+  fi
+  python3 - "$skills_root" <<'"'"'PY'"'"'
+import os
+import sys
+
+root = sys.argv[1]
+keep = {
+    "autonomous-ai-agents/hermes-agent",
+    "software-development/hermes-agent-skill-authoring",
+    "software-development/plan",
+    "software-development/spike",
+    "software-development/systematic-debugging",
+    "software-development/test-driven-development",
+    "software-development/requesting-code-review",
+    "github/codebase-inspection",
+    "software-development/node-inspect-debugger",
+    "software-development/python-debugpy",
+    "dogfood",
+    "productivity/ocr-and-documents",
+    "productivity/nano-pdf",
+    "productivity/powerpoint",
+    "research/arxiv",
+    "productivity/maps",
+    "creative/architecture-diagram",
+    "creative/humanizer",
+}
+found = []
+for dirpath, _, filenames in os.walk(root):
+    if "SKILL.md" in filenames:
+        found.append(os.path.relpath(dirpath, root))
+extra = sorted(set(found) - keep)
+if extra:
+    print("extra-skills:")
+    print("\n".join(extra))
+    raise SystemExit(1)
+print("curated-skills-ok")
+PY
+' 2>&1 || true)"
+if echo "${HERMES_SKILLS_OUTPUT}" | grep -Eq 'curated-skills-ok|skills-root-missing' \
+  && ! echo "${HERMES_SKILLS_OUTPUT}" | grep -q '^extra-skills:'; then
+  pass "Hermes bundled skills are curated"
+else
+  fail "Hermes bundled skills are not curated"
+  echo "${HERMES_SKILLS_OUTPUT}"
+fi
+
 info "checking WhatsApp bridge Node dependencies"
 WHATSAPP_BRIDGE_OUTPUT="$(remote_exec_runtime 'set -euo pipefail; export HOME='"${RUNTIME_HOME}"'; export HERMES_HOME='"${RUNTIME_HOME}"'/.hermes; cd '"${RUNTIME_HOME}"'/.hermes/hermes-agent/scripts/whatsapp-bridge; node -e '"'"'for (const m of ["@whiskeysockets/baileys","qrcode-terminal","express","pino"]) console.log(m, require.resolve(m))'"'" 2>&1 || true)"
 info "whatsapp bridge dependency output:"

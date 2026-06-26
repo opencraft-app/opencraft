@@ -101,10 +101,12 @@ python3 images/build-image.py --runtime hermes --base-image-id img-id352nof --wi
 - 解压到 `~/.hermes/hermes-agent`，伪造成本地 git repo 后复用官方 `install.sh --skip-setup --branch main`
 - 安装 `@qwen-code/qwen-code`
 - 为 `agentuser` 固化 PyPI mirror：`mirrors.tencent.com` 为 primary，`mirrors.cloud.tencent.com` 为 extra，并预装 `lark-oapi==1.5.3`、`qrcode==7.4.2`
+- 预装 Hermes platform plugin `lightclawbot` 到 `/home/agentuser/.hermes/plugins/lightclawbot`，并在 `/home/agentuser/.hermes/config.yaml` 启用；镜像不写入 `LIGHTCLAW_API_KEY_<UIN>`，实例运行时再注入
 - 为 `agentuser` 的 `~/.hermes/hermes-agent/scripts/whatsapp-bridge` 预装 `@whiskeysockets/baileys@7.0.0-rc.9`、`qrcode-terminal`、`express`、`pino`
 - 安装 `skillhub --cli-only`
+- 裁剪 Hermes bundle skills，仅保留核心开发、调试、QA、文档和轻量研究类 skill
 - 安装 `acli` 并以 `acli doctor` 作为 gate
-- 从 `images/hermes-backend-blueprint-id` 读取 backend blueprint 基线，并以 `agentuser` 执行 `acli backend upgrade-start --blueprint-id <id> --wait=true --force=true`
+- 动态解析 Lighthouse 最新非南京 Hermes backend blueprint，并以 `agentuser` 执行 `acli backend upgrade-start --blueprint-id <id> --wait=true --force=true`
 - 默认验证套件：`runtime-hermes`
 - 不支持 OpenClaw 的插件 / skill 安装参数
 
@@ -117,7 +119,7 @@ CI 入口：
 - CI 会验证 `agentuser` 的 Hermes venv 可以 import `lark_oapi` 和 `qrcode`
 - Hermes CI 镜像会并发同步到北京、上海和新加坡
 - Hermes CI 在人工确认后会从仓库内修补脚本临时创建 TAT Command 修复存量 VM，不要求手工传 `HERMES_TAT_COMMAND_ID`
-- TAT Command 创建脚本会读取 `images/hermes-backend-blueprint-id` 并把 ID 注入到下发脚本环境，目标 VM 不需要携带仓库文件
+- TAT Command 创建脚本会动态解析最新非南京 Hermes backend blueprint，并把 ID 注入到下发脚本环境，目标 VM 不需要携带仓库文件
 - `images/hermes-image-trigger` 是专用触发文件；当只改 `.ci/**` 但需要触发 `.ci/hermes-image.yml` 时，更新这个文件并随 MR 合入
 - 腾讯云凭据从构建机本地 `/etc/lightclaw-ci/tencentcloud_secret_id` 和 `/etc/lightclaw-ci/tencentcloud_secret_key` 读取
 - CI 会自动安装并缓存 `tccli`，不要求构建机预装腾讯云 CLI
@@ -129,32 +131,33 @@ CI 入口：
 - TAT 建议用 root/default 身份执行；脚本内部通过 `LIGHTCLAW_RUNTIME_USER`（默认 `agentuser`）定位目标用户 home、修正文件属主，并通过 `sudo -u agentuser -H bash -lc` 执行 `acli backend upgrade-start --blueprint-id <id> --wait=true --force=true`
 - `acli backend upgrade-start` 命令本身不加 `sudo`，必须以 `agentuser` 身份运行
 
-### Hermes Backend Blueprint Baseline
+### Hermes Backend Blueprint Resolution
 
-Hermes backend blueprint 的唯一 Git 维护入口是：
-
-```text
-images/hermes-backend-blueprint-id
-```
-
-这个文件只存一行 blueprint ID，例如：
+Hermes backend blueprint 默认不维护静态 Git 基线。构建和存量 VM 修复都会调用：
 
 ```text
-lhbp-8gsotw6u
+images/helpers/resolve-hermes-backend-blueprint-id.py
 ```
 
-后续升级 Hermes backend baseline 时，只修改这个文件里的 ID，然后提交 MR。不要在 `build.sh`、`deploy-build.sh`、TAT 脚本或前端命令里散写新的 `lhbp-*`。
+解析规则：
+
+- 查询 `ap-beijing` 的 Lighthouse blueprint 列表
+- 只选择 `BlueprintName` / `DisplayTitle` / `DisplayName` 为 `hermes_agent` / `Hermes Agent` 的 `NORMAL` blueprint
+- 排除名称、标题、描述、系统名或平台里包含 `南京` / `nanjing` 的 blueprint
+- 按 `CreatedTime` 选择最新的一条
+- 如果动态解析失败，构建和 TAT 命令生成直接失败，不回退到静态文件
 
 当前基线命令为：
 
 ```bash
-acli backend upgrade-start --blueprint-id "$(cat images/hermes-backend-blueprint-id)" --wait=true --force=true
+acli backend upgrade-start --blueprint-id "$(python3 images/helpers/resolve-hermes-backend-blueprint-id.py)" --wait=true --force=true
 ```
 
 执行身份约束：
 
-- CVM 镜像构建：`images/build.sh` 读取 `images/hermes-backend-blueprint-id`，通过 `run_as_runtime_user` 以 `agentuser` 执行该命令
-- 存量 VM 修复：`.ci/runtime/commands/create_hermes_tat_command.sh` 读取同一个 ID 文件，并把 `HERMES_BACKEND_BLUEPRINT_ID` 注入到 TAT command 内容；目标 VM 上的修补脚本再以 `agentuser` 执行该命令
+- CVM 镜像构建：`images/build-image.py` / `images/deploy-build.sh` 先解析最新非南京 blueprint，再把 `HERMES_BACKEND_BLUEPRINT_ID` 注入远端构建；`images/build.sh` 会用同一个 resolver 作为直接执行时的解析入口
+- 存量 VM 修复：`.ci/runtime/commands/create_hermes_tat_command.sh` 解析最新非南京 blueprint，并把 `HERMES_BACKEND_BLUEPRINT_ID` 注入到 TAT command 内容；目标 VM 上的修补脚本再以 `agentuser` 执行该命令
+- 如需一次性人工覆盖，可显式设置 `HERMES_BACKEND_BLUEPRINT_ID=lhbp-...`
 - 不要写成 `sudo acli backend upgrade-start ...`；如果 TAT 以 root 执行，只允许用 sudo 切换到 `agentuser`
 
 ### Full Build
@@ -225,7 +228,7 @@ bash images/deploy-build.sh ubuntu@<host> --app-only --only-plugins qqbot,weixin
 
 - `build.sh`
 - `build-manifest.json`
-- `hermes-backend-blueprint-id`
+- `helpers/resolve-hermes-backend-blueprint-id.py`
 - `bin/envd`
 - `runtime/openclaw-weixin-login-session.sh`
 

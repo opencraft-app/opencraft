@@ -76,6 +76,9 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(SCRIPT_DIR)
 MANIFEST_PATH = os.path.join(SCRIPT_DIR, "build-manifest.json")
 DEPLOY_BUILD_SCRIPT = os.path.join(SCRIPT_DIR, "deploy-build.sh")
+HERMES_BLUEPRINT_RESOLVER_SCRIPT = os.path.join(
+    SCRIPT_DIR, "helpers", "resolve-hermes-backend-blueprint-id.py"
+)
 TEST_ENVD_SCRIPT = os.path.join(SCRIPT_DIR, "tests", "test-envd-agent.sh")
 TEST_ONBOARD_SCRIPT = os.path.join(SCRIPT_DIR, "tests", "test-onboard.sh")
 TEST_RUNTIME_SCRIPT = os.path.join(SCRIPT_DIR, "tests", "test-runtime.sh")
@@ -151,6 +154,7 @@ DEFAULT_HERMES_QWEN_CODE_VERSION = BUILD_MANIFEST.get("runtime_hermes", {}).get(
 DEFAULT_HERMES_VERSION = BUILD_MANIFEST.get("runtime_hermes", {}).get("version", "")
 DEFAULT_HERMES_SRC_VERSION = BUILD_MANIFEST.get("runtime_hermes", {}).get("src_version", "")
 DEFAULT_HERMES_GIT_COMMIT = BUILD_MANIFEST.get("runtime_hermes", {}).get("git_commit", "")
+RESOLVED_HERMES_BACKEND_BLUEPRINT_ID = None
 BOOTSTRAP_SSH_USERS = ("ubuntu",)
 VERSION_QUERY_TIMEOUT = 15
 
@@ -619,6 +623,38 @@ def ensure_remote_build_assets(ssh_host, ssh_port, remote_dir):
     run_cmd(cmd, timeout=1800)
 
 
+def resolve_hermes_backend_blueprint_id():
+    global RESOLVED_HERMES_BACKEND_BLUEPRINT_ID
+    if RESOLVED_HERMES_BACKEND_BLUEPRINT_ID:
+        return RESOLVED_HERMES_BACKEND_BLUEPRINT_ID
+
+    env_id = os.environ.get("HERMES_BACKEND_BLUEPRINT_ID", "").strip()
+    if env_id:
+        if not re.match(r"^lhbp-[A-Za-z0-9_-]+$", env_id):
+            raise RuntimeError(f"invalid HERMES_BACKEND_BLUEPRINT_ID: {env_id}")
+        RESOLVED_HERMES_BACKEND_BLUEPRINT_ID = env_id
+        log(f"Hermes backend blueprint: using explicit HERMES_BACKEND_BLUEPRINT_ID={env_id}")
+        return env_id
+
+    cmd = [sys.executable, HERMES_BLUEPRINT_RESOLVER_SCRIPT]
+    log("解析最新非南京 Hermes backend blueprint")
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if result.stderr.strip():
+        for line in result.stderr.strip().splitlines():
+            log(line)
+    if result.returncode != 0:
+        raise RuntimeError(
+            "Hermes backend blueprint resolver failed "
+            f"(exit {result.returncode}): {result.stderr.strip() or result.stdout.strip()}"
+        )
+    blueprint_id = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else ""
+    if not re.match(r"^lhbp-[A-Za-z0-9_-]+$", blueprint_id):
+        raise RuntimeError(f"invalid Hermes backend blueprint id resolved: {blueprint_id or '<empty>'}")
+    RESOLVED_HERMES_BACKEND_BLUEPRINT_ID = blueprint_id
+    log(f"Hermes backend blueprint: {blueprint_id}")
+    return blueprint_id
+
+
 def start_remote_build_job(
     ssh_host,
     ssh_port,
@@ -626,6 +662,7 @@ def start_remote_build_job(
     run_id,
     build_args,
     runtime_user,
+    hermes_backend_blueprint_id=None,
 ):
     ssh_user, _ = split_ssh_host(ssh_host)
     status_file = f"{remote_dir}/.build-status-{run_id}.json"
@@ -649,10 +686,10 @@ def start_remote_build_job(
         "--",
         "env",
         f"LIGHTCLAW_RUNTIME_USER={runtime_user}",
-        "bash",
-        "./build.sh",
-        *build_args,
     ]
+    if hermes_backend_blueprint_id:
+        runner_cmd.append(f"HERMES_BACKEND_BLUEPRINT_ID={hermes_backend_blueprint_id}")
+    runner_cmd.extend(["bash", "./build.sh", *build_args])
     status_stub = json.dumps(
         {
             "state": "starting",
@@ -1478,6 +1515,9 @@ def step_deploy_build(ssh_host, ssh_port, openclaw_version=None, build_mode=None
             build_args.extend(["--skills", skills_mode])
         if custom_skills:
             build_args.extend(["--custom-skills", custom_skills])
+    hermes_backend_blueprint_id = None
+    if runtime_kind == "hermes":
+        hermes_backend_blueprint_id = resolve_hermes_backend_blueprint_id()
 
     run_id = f"{build_timestamp()}-{build_mode or 'full'}"
     log(
@@ -1496,6 +1536,7 @@ def step_deploy_build(ssh_host, ssh_port, openclaw_version=None, build_mode=None
         run_id,
         build_args,
         runtime_user,
+        hermes_backend_blueprint_id,
     )
     wait_for_remote_build_job(ssh_host, ssh_port, job, timeout=3600)
     log("远端构建任务执行完成")
