@@ -303,6 +303,8 @@ test("session work monitor keeps host windowing separate from thumbnail renderin
 
   assert.match(workMonitorMain, /BrowserWindow/);
   assert.match(workMonitorMain, /screen/);
+  assert.match(workMonitorMain, /windowsBySessionId = new Map/);
+  assert.match(workMonitorMain, /activeDragPreviewSessionId/);
   assert.match(workMonitorMain, /getDisplayMatching\(anchorBounds\)/);
   assert.match(workMonitorMain, /getPrimaryDisplay\(\)/);
   assert.match(workMonitorMain, /setBounds\(/);
@@ -310,11 +312,16 @@ test("session work monitor keeps host windowing separate from thumbnail renderin
   assert.match(workMonitorMain, /moveBySender/);
   assert.match(workMonitorMain, /openAtPoint/);
   assert.match(workMonitorMain, /moveToPoint/);
+  assert.match(workMonitorMain, /endSessionDragPreview/);
   assert.match(workMonitorMain, /screen\.getDisplayNearestPoint/);
-  assert.match(workMonitorMain, /window\.webContents !== sender/);
+  assert.match(workMonitorMain, /findWindowBySender/);
+  assert.match(workMonitorMain, /window\.webContents === sender/);
   assert.match(workMonitorMain, /setPosition\(/);
   assert.match(workMonitorMain, /alwaysOnTop/);
   assert.match(workMonitorMain, /sessionPreviewWindowSize/);
+  assert.match(workMonitorMain, /visibleWindowCountForDisplay/);
+  assert.match(workMonitorMain, /workMonitorStackGap/);
+  assert.match(workMonitorMain, /for \(const record of records\)/);
   assert.doesNotMatch(workMonitorMain, /const workMonitorSize/);
   assert.match(sessionPreviewMain, /width:\s*214/);
   assert.match(sessionPreviewMain, /height:\s*134/);
@@ -332,6 +339,7 @@ test("session work monitor keeps host windowing separate from thumbnail renderin
   assert.match(sessionPreviewCss, /pointer-events:\s*none/);
   assert.doesNotMatch(sessionPreviewCss, /0 28px 90px/);
   assert.match(workMonitorReadme, /local session work-monitor window lifecycle/);
+  assert.match(workMonitorReadme, /Each visible session owns at most one native monitor window/);
   assert.match(workMonitorReadme, /same display as the main desktop window/);
   assert.match(workMonitorReadme, /must not import React/);
   assert.match(electronMain, /getAnchorWindow:\s*\(\)\s*=>\s*mainWindow/);
@@ -397,7 +405,7 @@ test("clicking the work monitor focuses the desktop session without hiding the m
   assert.match(bridge, /moveWorkMonitorBy/);
 });
 
-test("sidebar session drag opens the shared work monitor instead of a second preview window", () => {
+test("sidebar session drag opens a session-scoped work monitor instead of a second preview window", () => {
   const electronMain = readFileSync(
     join(root, "apps/vela-desktop-electron/electron/main.ts"),
     "utf8",
@@ -441,6 +449,7 @@ test("sidebar session drag opens the shared work monitor instead of a second pre
   assert.match(electronMain, /vela:session-drag-preview-end/);
   assert.match(electronMain, /workMonitor\.openAtPoint\(sessionId,\s*\{\s*screenX,\s*screenY\s*\}\)/);
   assert.match(electronMain, /workMonitor\.moveToPoint\(\{\s*screenX,\s*screenY\s*\}\)/);
+  assert.match(electronMain, /workMonitor\.endSessionDragPreview\(\)/);
   assert.match(preload, /startSessionDragPreview/);
   assert.match(preload, /moveSessionDragPreview/);
   assert.match(preload, /endSessionDragPreview/);

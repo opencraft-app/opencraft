@@ -379,8 +379,7 @@ ipcMain.handle("vela:desktop-show-path-in-folder", async (_event, path: unknown)
 
 ipcMain.handle("vela:work-monitor-open", async (_event, sessionId: unknown) => {
   if (typeof sessionId !== "string") return { accepted: false };
-  await workMonitor.open(sessionId);
-  return { accepted: true };
+  return { accepted: await workMonitor.open(sessionId) };
 });
 
 ipcMain.handle("vela:work-monitor-hide", async () => {
@@ -413,7 +412,10 @@ ipcMain.handle("vela:session-drag-preview-move", async (_event, screenX: unknown
     workMonitor.moveToPoint({ screenX, screenY }),
 }));
 
-ipcMain.handle("vela:session-drag-preview-end", async () => ({ accepted: true }));
+ipcMain.handle("vela:session-drag-preview-end", async () => {
+  workMonitor.endSessionDragPreview();
+  return { accepted: true };
+});
 
 ipcMain.handle("vela:desktop-focus-session", async (_event, sessionId: unknown) => {
   if (typeof sessionId !== "string" || !sessionId.trim()) {
