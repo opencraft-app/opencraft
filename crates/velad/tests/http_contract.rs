@@ -239,6 +239,9 @@ mod diagnostics;
 #[path = "http_contract/backends.rs"]
 mod backends;
 
+#[path = "http_contract/nodes.rs"]
+mod nodes;
+
 #[path = "http_contract/runtime.rs"]
 mod runtime;
 

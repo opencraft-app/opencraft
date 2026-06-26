@@ -1976,6 +1976,235 @@ test("rejects malformed backend probe responses at the client wire boundary", as
   );
 });
 
+test("fetches node providers, creates ssh nodes, and lists runtime targets", async () => {
+  const requests: Array<{ url: string; init?: RequestInit }> = [];
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async (url, init) => {
+      requests.push({ url: String(url), init });
+      if (String(url).endsWith("/node-providers")) {
+        return new Response(
+          JSON.stringify({
+            schema: "velad.node_providers.v1",
+            providers: [
+              {
+                id: "ssh",
+                display_name: "SSH",
+                kind: "ssh",
+                auth_methods: ["password"],
+                secret_storage: "local_os_keyring",
+                capabilities: {
+                  native_ssh: true,
+                  sftp_upload: true,
+                },
+                target_constraints: {
+                  os: ["linux", "darwin"],
+                  arch: ["x86_64", "amd64"],
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (String(url).endsWith("/nodes") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            schema: "velad.nodes.v1",
+            node: {
+              id: "node_1",
+              provider: "ssh",
+              display_name: "Dev Box",
+              ssh: { host: "dev.example.test", port: 22, username: "skip" },
+              target: { os: "linux", arch: "x86_64" },
+              auth: {
+                method: "password",
+                password_configured: true,
+                secret_ref: "node:node_1:ssh-password",
+              },
+              created_at: "2026-06-26T00:00:00Z",
+              updated_at: "2026-06-26T00:00:00Z",
+            },
+          }),
+          { status: 201, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (String(url).endsWith("/runtime-targets")) {
+        return new Response(
+          JSON.stringify({
+            schema: "velad.runtime_targets.v1",
+            targets: [
+              {
+                id: "local",
+                kind: "local",
+                provider: "local",
+                node_id: null,
+                display_name: "Local velad",
+                status: "connected",
+                transport: { kind: "loopback", api_base_url: null },
+              },
+              {
+                id: "target:node_1",
+                kind: "remote",
+                provider: "ssh",
+                node_id: "node_1",
+                display_name: "Dev Box",
+                status: "disconnected",
+                transport: { kind: "ssh" },
+                target: { os: "linux", arch: "x86_64" },
+                compatibility: { version_policy: "exact" },
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (String(url).endsWith("/runtime-targets/target%3Anode_1/connect")) {
+        return new Response(
+          JSON.stringify({
+            schema: "velad.runtime_targets.v1",
+            target: {
+              id: "target:node_1",
+              kind: "remote",
+              provider: "ssh",
+              node_id: "node_1",
+              display_name: "Dev Box",
+              status: "ready",
+              generation: 1,
+              transport: {
+                kind: "ssh",
+                api_base_url: "http://127.0.0.1:49152/api/v1",
+                remote_listen_addr: "127.0.0.1:49321",
+              },
+              compatibility: { version_policy: "exact", version: "0.1.0" },
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (String(url).endsWith("/runtime-targets/target%3Anode_1/disconnect")) {
+        return new Response(
+          JSON.stringify({
+            schema: "velad.runtime_targets.v1",
+            target: {
+              id: "target:node_1",
+              kind: "remote",
+              provider: "ssh",
+              node_id: "node_1",
+              display_name: "Dev Box",
+              status: "disconnected",
+              transport: { kind: "ssh" },
+              compatibility: { version_policy: "exact" },
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          schema: "velad.nodes.v1",
+          nodes: [],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    },
+  });
+
+  const providers = await client.getNodeProviders();
+  const created = await client.createNode({
+    provider: "ssh",
+    displayName: "Dev Box",
+    ssh: { host: "dev.example.test", port: 22, username: "skip" },
+    auth: { method: "password", password: "secret" },
+    target: { os: "linux", arch: "x86_64" },
+  });
+  const targets = await client.getRuntimeTargets();
+  const connected = await client.connectRuntimeTarget("target:node_1");
+  const disconnected = await client.disconnectRuntimeTarget("target:node_1");
+
+  assert.equal(providers.providers[0]?.id, "ssh");
+  assert.equal(created.node.auth.password_configured, true);
+  assert.equal(created.node.auth.secret_ref, "node:node_1:ssh-password");
+  assert.equal(targets.targets[1]?.provider, "ssh");
+  assert.equal(targets.targets[1]?.status, "disconnected");
+  assert.equal(connected.target.status, "ready");
+  assert.equal(disconnected.target.status, "disconnected");
+  assert.equal(requests[1]?.url, "http://127.0.0.1:3857/api/v1/nodes");
+  assert.equal(requests[1]?.init?.method, "POST");
+  assert.deepEqual(JSON.parse(String(requests[1]?.init?.body)), {
+    provider: "ssh",
+    display_name: "Dev Box",
+    ssh: { host: "dev.example.test", port: 22, username: "skip" },
+    auth: { method: "password", password: "secret" },
+    target: { os: "linux", arch: "x86_64" },
+  });
+});
+
+test("rejects node responses that echo ssh passwords", async () => {
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async () =>
+      new Response(
+        JSON.stringify({
+          schema: "velad.nodes.v1",
+          node: {
+            id: "node_1",
+            provider: "ssh",
+            display_name: "Dev Box",
+            ssh: { host: "dev.example.test", port: 22, username: "skip" },
+            target: { os: "linux", arch: "x86_64" },
+            auth: {
+              method: "password",
+              password_configured: true,
+              password: "secret",
+            },
+            created_at: "2026-06-26T00:00:00Z",
+            updated_at: "2026-06-26T00:00:00Z",
+          },
+        }),
+        { status: 201, headers: { "Content-Type": "application/json" } },
+      ),
+  });
+
+  await assert.rejects(
+    () =>
+      client.createNode({
+        provider: "ssh",
+        ssh: { host: "dev.example.test", port: 22, username: "skip" },
+        auth: { method: "password", password: "secret" },
+      }),
+    (err) =>
+      err instanceof VeladClientError &&
+      err.code === "invalid_nodes_response" &&
+      /must not include password/.test(err.message),
+  );
+});
+
+test("rejects invalid ssh node input before fetch", async () => {
+  let fetchCalled = false;
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async () => {
+      fetchCalled = true;
+      return new Response("{}", { status: 201 });
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      client.createNode({
+        provider: "ssh",
+        ssh: { host: "", port: 22, username: "skip" },
+        auth: { method: "password", password: "secret" },
+      }),
+    (err) =>
+      err instanceof VeladClientError &&
+      err.code === "invalid_nodes_request" &&
+      /host/.test(err.message),
+  );
+  assert.equal(fetchCalled, false);
+});
+
 test("fetches session, backend catalog, and patches agent config", async () => {
   const requests: Array<{ url: string; init?: RequestInit }> = [];
   const client = createVeladClient({

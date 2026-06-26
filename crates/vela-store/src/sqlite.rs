@@ -18,6 +18,8 @@ pub enum StoreError {
     SessionNotFound(String),
     #[error("backend settings not found: {0}")]
     BackendSettingsNotFound(String),
+    #[error("node not found: {0}")]
+    NodeNotFound(String),
 }
 
 pub type Result<T> = std::result::Result<T, StoreError>;
@@ -53,6 +55,17 @@ pub struct StoredSession {
 pub struct StoredBackendSettings {
     pub backend: String,
     pub settings: Value,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct StoredNode {
+    pub node_id: String,
+    pub provider: String,
+    pub display_name: String,
+    pub config: Value,
+    pub secret_ref: Option<String>,
+    pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
@@ -147,6 +160,16 @@ impl SqliteEventStore {
                 settings_json TEXT NOT NULL,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+
+            CREATE TABLE IF NOT EXISTS nodes (
+                node_id TEXT PRIMARY KEY,
+                provider TEXT NOT NULL,
+                display_name TEXT NOT NULL,
+                config_json TEXT NOT NULL DEFAULT '{}',
+                secret_ref TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
             "#,
         )
         .execute(&self.pool)
@@ -200,6 +223,62 @@ impl SqliteEventStore {
         self.get_backend_settings(backend)
             .await?
             .ok_or_else(|| StoreError::BackendSettingsNotFound(backend.to_string()))
+    }
+
+    pub async fn create_node(
+        &self,
+        node_id: &str,
+        provider: &str,
+        display_name: &str,
+        config: Value,
+        secret_ref: Option<&str>,
+    ) -> Result<StoredNode> {
+        sqlx::query(
+            r#"
+            INSERT INTO nodes (node_id, provider, display_name, config_json, secret_ref)
+            VALUES (?1, ?2, ?3, ?4, ?5)
+            "#,
+        )
+        .bind(node_id)
+        .bind(provider)
+        .bind(display_name)
+        .bind(serde_json::to_string(&config)?)
+        .bind(secret_ref)
+        .execute(&self.pool)
+        .await?;
+
+        self.get_node(node_id)
+            .await?
+            .ok_or_else(|| StoreError::NodeNotFound(node_id.to_string()))
+    }
+
+    pub async fn get_node(&self, node_id: &str) -> Result<Option<StoredNode>> {
+        let row = sqlx::query(
+            r#"
+            SELECT node_id, provider, display_name, config_json, secret_ref, created_at, updated_at
+            FROM nodes
+            WHERE node_id = ?1
+            "#,
+        )
+        .bind(node_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        row.map(row_to_node).transpose()
+    }
+
+    pub async fn list_nodes(&self) -> Result<Vec<StoredNode>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT node_id, provider, display_name, config_json, secret_ref, created_at, updated_at
+            FROM nodes
+            ORDER BY updated_at DESC, node_id ASC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.into_iter().map(row_to_node).collect()
     }
 
     async fn ensure_column(&self, table: &str, column: &str, definition: &str) -> Result<()> {
@@ -612,6 +691,18 @@ fn row_to_backend_settings(row: sqlx::sqlite::SqliteRow) -> Result<StoredBackend
     Ok(StoredBackendSettings {
         backend: row.try_get("backend")?,
         settings: serde_json::from_str(&row.try_get::<String, _>("settings_json")?)?,
+        updated_at: parse_sqlite_datetime(row.try_get("updated_at")?),
+    })
+}
+
+fn row_to_node(row: sqlx::sqlite::SqliteRow) -> Result<StoredNode> {
+    Ok(StoredNode {
+        node_id: row.try_get("node_id")?,
+        provider: row.try_get("provider")?,
+        display_name: row.try_get("display_name")?,
+        config: serde_json::from_str(&row.try_get::<String, _>("config_json")?)?,
+        secret_ref: row.try_get("secret_ref")?,
+        created_at: parse_sqlite_datetime(row.try_get("created_at")?),
         updated_at: parse_sqlite_datetime(row.try_get("updated_at")?),
     })
 }

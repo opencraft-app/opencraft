@@ -32,6 +32,7 @@ import type {
   BackendWire,
   BackendWireResponse,
   BackendsWireResponse,
+  CreateNodeInput,
   ClientInputEvent,
   ClientInputPart,
   CommandAckWire,
@@ -51,12 +52,25 @@ import type {
   EventCursorWire,
   MessagePartTypeWire,
   MessagePartWire,
+  NodeAuthMethodWire,
+  NodeProviderKindWire,
+  NodeProviderWire,
+  NodeProvidersWireResponse,
+  NodeTargetWire,
+  NodeWire,
+  NodeWireResponse,
+  NodesWireResponse,
   PendingRequestsOptions,
   PendingRequestsWireView,
   PermissionModeOptionWire,
   PermissionModeWire,
   ReasoningEffortOptionWire,
   RequestStatusWire,
+  RuntimeTargetKindWire,
+  RuntimeTargetStatusWire,
+  RuntimeTargetWire,
+  RuntimeTargetWireResponse,
+  RuntimeTargetsWireResponse,
   SessionListOptions,
   SessionListItemWire,
   SessionListViewWireResponse,
@@ -135,6 +149,24 @@ const backendKinds = new Set<string>(
   ] satisfies BackendKindWire[],
 );
 
+const nodeProviderKinds = new Set<string>(["ssh"] satisfies NodeProviderKindWire[]);
+const nodeAuthMethods = new Set<string>(["password"] satisfies NodeAuthMethodWire[]);
+const runtimeTargetKinds = new Set<string>(
+  ["local", "remote"] satisfies RuntimeTargetKindWire[],
+);
+const runtimeTargetStatuses = new Set<string>(
+  [
+    "connected",
+    "connecting",
+    "ready",
+    "degraded",
+    "reconnecting",
+    "disconnected",
+    "failed",
+    "error",
+  ] satisfies RuntimeTargetStatusWire[],
+);
+
 export function validateCreateSessionInput(input: unknown): asserts input is CreateSessionInput {
   if (!isRecord(input)) {
     throw invalidCreateSessionRequest("CreateSessionRequest must be an object");
@@ -159,6 +191,51 @@ export function validateCreateSessionInput(input: unknown): asserts input is Cre
 
   if (input.agentConfig !== undefined) {
     validateAgentConfigShape(input.agentConfig, invalidCreateSessionRequest, "CreateSessionRequest.agent_config");
+  }
+}
+
+export function validateCreateNodeInput(input: unknown): asserts input is CreateNodeInput {
+  if (!isRecord(input)) {
+    throw invalidNodesRequest("CreateNodeInput must be an object");
+  }
+  if (input.provider !== "ssh") {
+    throw invalidNodesRequest("CreateNodeInput.provider must be ssh");
+  }
+  if (input.displayName !== undefined && typeof input.displayName !== "string") {
+    throw invalidNodesRequest("CreateNodeInput.displayName must be a string");
+  }
+  if (!isRecord(input.ssh)) {
+    throw invalidNodesRequest("CreateNodeInput.ssh must be an object");
+  }
+  const { host, port, username } = input.ssh;
+  if (typeof host !== "string" || host.trim().length === 0) {
+    throw invalidNodesRequest("CreateNodeInput.ssh.host must not be empty");
+  }
+  if (typeof username !== "string" || username.trim().length === 0) {
+    throw invalidNodesRequest("CreateNodeInput.ssh.username must not be empty");
+  }
+  if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) {
+    throw invalidNodesRequest("CreateNodeInput.ssh.port must be a valid TCP port");
+  }
+  if (!isRecord(input.auth)) {
+    throw invalidNodesRequest("CreateNodeInput.auth must be an object");
+  }
+  if (input.auth.method !== "password") {
+    throw invalidNodesRequest("CreateNodeInput.auth.method must be password");
+  }
+  if (typeof input.auth.password !== "string" || input.auth.password.trim().length === 0) {
+    throw invalidNodesRequest("CreateNodeInput.auth.password must not be empty");
+  }
+  if (input.target !== undefined) {
+    if (!isRecord(input.target)) {
+      throw invalidNodesRequest("CreateNodeInput.target must be an object");
+    }
+    if (input.target.os !== undefined && typeof input.target.os !== "string") {
+      throw invalidNodesRequest("CreateNodeInput.target.os must be a string");
+    }
+    if (input.target.arch !== undefined && typeof input.target.arch !== "string") {
+      throw invalidNodesRequest("CreateNodeInput.target.arch must be a string");
+    }
   }
 }
 
@@ -1273,6 +1350,299 @@ function validateOptionalBackendSettingsString(
   if (patch[field] !== undefined && typeof patch[field] !== "string") {
     throw invalidBackendSettingsRequest(`Backend settings ${field} must be a string`);
   }
+}
+
+export async function readNodeProvidersResponse(
+  response: Response,
+): Promise<NodeProvidersWireResponse> {
+  return parseNodeProvidersWireResponse(await readJsonResponse<unknown>(response));
+}
+
+export function parseNodeProvidersWireResponse(data: unknown): NodeProvidersWireResponse {
+  if (!isRecord(data)) {
+    throw invalidNodesResponse("NodeProvidersResponse must be an object");
+  }
+  if (data.schema !== "velad.node_providers.v1") {
+    throw invalidNodesResponse("NodeProvidersResponse.schema must be velad.node_providers.v1");
+  }
+  const providers = requiredViewArray(
+    data,
+    "providers",
+    "NodeProvidersResponse",
+    invalidNodesResponse,
+  );
+  return {
+    schema: "velad.node_providers.v1",
+    providers: providers.map((provider, index) =>
+      parseNodeProviderWire(provider, `NodeProvidersResponse.providers[${index}]`),
+    ),
+  };
+}
+
+export async function readNodesResponse(response: Response): Promise<NodesWireResponse> {
+  return parseNodesWireResponse(await readJsonResponse<unknown>(response));
+}
+
+export function parseNodesWireResponse(data: unknown): NodesWireResponse {
+  if (!isRecord(data)) {
+    throw invalidNodesResponse("NodesResponse must be an object");
+  }
+  if (data.schema !== "velad.nodes.v1") {
+    throw invalidNodesResponse("NodesResponse.schema must be velad.nodes.v1");
+  }
+  const nodes = requiredViewArray(data, "nodes", "NodesResponse", invalidNodesResponse);
+  return {
+    schema: "velad.nodes.v1",
+    nodes: nodes.map((node, index) => parseNodeWire(node, `NodesResponse.nodes[${index}]`)),
+  };
+}
+
+export async function readNodeResponse(response: Response): Promise<NodeWireResponse> {
+  return parseNodeWireResponse(await readJsonResponse<unknown>(response));
+}
+
+export function parseNodeWireResponse(data: unknown): NodeWireResponse {
+  if (!isRecord(data)) {
+    throw invalidNodesResponse("NodeResponse must be an object");
+  }
+  if (data.schema !== "velad.nodes.v1") {
+    throw invalidNodesResponse("NodeResponse.schema must be velad.nodes.v1");
+  }
+  if (!isRecord(data.node)) {
+    throw invalidNodesResponse("NodeResponse.node must be an object");
+  }
+  return {
+    schema: "velad.nodes.v1",
+    node: parseNodeWire(data.node, "NodeResponse.node"),
+  };
+}
+
+export async function readRuntimeTargetsResponse(
+  response: Response,
+): Promise<RuntimeTargetsWireResponse> {
+  return parseRuntimeTargetsWireResponse(await readJsonResponse<unknown>(response));
+}
+
+export function parseRuntimeTargetsWireResponse(data: unknown): RuntimeTargetsWireResponse {
+  if (!isRecord(data)) {
+    throw invalidRuntimeTargetsResponse("RuntimeTargetsResponse must be an object");
+  }
+  if (data.schema !== "velad.runtime_targets.v1") {
+    throw invalidRuntimeTargetsResponse(
+      "RuntimeTargetsResponse.schema must be velad.runtime_targets.v1",
+    );
+  }
+  const targets = requiredViewArray(
+    data,
+    "targets",
+    "RuntimeTargetsResponse",
+    invalidRuntimeTargetsResponse,
+  );
+  return {
+    schema: "velad.runtime_targets.v1",
+    targets: targets.map((target, index) =>
+      parseRuntimeTargetWire(target, `RuntimeTargetsResponse.targets[${index}]`),
+    ),
+  };
+}
+
+export async function readRuntimeTargetResponse(
+  response: Response,
+): Promise<RuntimeTargetWireResponse> {
+  return parseRuntimeTargetWireResponse(await readJsonResponse<unknown>(response));
+}
+
+export function parseRuntimeTargetWireResponse(data: unknown): RuntimeTargetWireResponse {
+  if (!isRecord(data)) {
+    throw invalidRuntimeTargetsResponse("RuntimeTargetResponse must be an object");
+  }
+  if (data.schema !== "velad.runtime_targets.v1") {
+    throw invalidRuntimeTargetsResponse(
+      "RuntimeTargetResponse.schema must be velad.runtime_targets.v1",
+    );
+  }
+  if (!isRecord(data.target)) {
+    throw invalidRuntimeTargetsResponse("RuntimeTargetResponse.target must be an object");
+  }
+  return {
+    schema: "velad.runtime_targets.v1",
+    target: parseRuntimeTargetWire(data.target, "RuntimeTargetResponse.target"),
+  };
+}
+
+function parseNodeProviderWire(data: unknown, owner: string): NodeProviderWire {
+  if (!isRecord(data)) {
+    throw invalidNodesResponse(`${owner} must be an object`);
+  }
+  const id = requiredViewString(data, "id", owner, invalidNodesResponse);
+  if (!nodeProviderKinds.has(id)) {
+    throw invalidNodesResponse(`${owner}.id must be a known NodeProviderKind`);
+  }
+  const kind = requiredViewString(data, "kind", owner, invalidNodesResponse);
+  if (!nodeProviderKinds.has(kind)) {
+    throw invalidNodesResponse(`${owner}.kind must be a known NodeProviderKind`);
+  }
+  const authMethods = requiredViewStringArray(
+    data,
+    "auth_methods",
+    owner,
+    invalidNodesResponse,
+  );
+  if (authMethods.some((method) => !nodeAuthMethods.has(method))) {
+    throw invalidNodesResponse(`${owner}.auth_methods must contain known auth methods`);
+  }
+  if (data.secret_storage !== "local_os_keyring") {
+    throw invalidNodesResponse(`${owner}.secret_storage must be local_os_keyring`);
+  }
+  const capabilities = data.capabilities;
+  if (!isRecord(capabilities)) {
+    throw invalidNodesResponse(`${owner}.capabilities must be an object`);
+  }
+  const targetConstraints = data.target_constraints;
+  if (!isRecord(targetConstraints)) {
+    throw invalidNodesResponse(`${owner}.target_constraints must be an object`);
+  }
+  return {
+    id: id as NodeProviderKindWire,
+    display_name: requiredViewString(data, "display_name", owner, invalidNodesResponse),
+    kind: kind as NodeProviderKindWire,
+    auth_methods: authMethods as NodeAuthMethodWire[],
+    secret_storage: "local_os_keyring",
+    capabilities,
+    target_constraints: {
+      os: requiredViewStringArray(
+        targetConstraints,
+        "os",
+        `${owner}.target_constraints`,
+        invalidNodesResponse,
+      ),
+      arch: requiredViewStringArray(
+        targetConstraints,
+        "arch",
+        `${owner}.target_constraints`,
+        invalidNodesResponse,
+      ),
+    },
+  };
+}
+
+function parseNodeWire(data: unknown, owner: string): NodeWire {
+  if (!isRecord(data)) {
+    throw invalidNodesResponse(`${owner} must be an object`);
+  }
+  const provider = requiredViewString(data, "provider", owner, invalidNodesResponse);
+  if (!nodeProviderKinds.has(provider)) {
+    throw invalidNodesResponse(`${owner}.provider must be a known NodeProviderKind`);
+  }
+  return {
+    id: requiredViewString(data, "id", owner, invalidNodesResponse),
+    provider: provider as NodeProviderKindWire,
+    display_name: requiredViewString(data, "display_name", owner, invalidNodesResponse),
+    ssh: parseSshNodeWire(data.ssh, `${owner}.ssh`),
+    target: parseNodeTargetWire(data.target, `${owner}.target`),
+    auth: parseNodeAuthWire(data.auth, `${owner}.auth`),
+    created_at: requiredViewString(data, "created_at", owner, invalidNodesResponse),
+    updated_at: requiredViewString(data, "updated_at", owner, invalidNodesResponse),
+  };
+}
+
+function parseSshNodeWire(data: unknown, owner: string) {
+  if (!isRecord(data)) {
+    throw invalidNodesResponse(`${owner} must be an object`);
+  }
+  return {
+    host: requiredViewString(data, "host", owner, invalidNodesResponse),
+    port: requiredViewInteger(data, "port", owner, invalidNodesResponse, { minimum: 1 }),
+    username: requiredViewString(data, "username", owner, invalidNodesResponse),
+  };
+}
+
+function parseNodeTargetWire(data: unknown, owner: string): NodeTargetWire {
+  if (!isRecord(data)) {
+    throw invalidNodesResponse(`${owner} must be an object`);
+  }
+  return {
+    os: requiredViewString(data, "os", owner, invalidNodesResponse),
+    arch: requiredViewString(data, "arch", owner, invalidNodesResponse),
+  };
+}
+
+function parseNodeAuthWire(data: unknown, owner: string) {
+  if (!isRecord(data)) {
+    throw invalidNodesResponse(`${owner} must be an object`);
+  }
+  if (Object.prototype.hasOwnProperty.call(data, "password")) {
+    throw invalidNodesResponse(`${owner} must not include password`);
+  }
+  const method = requiredViewString(data, "method", owner, invalidNodesResponse);
+  if (!nodeAuthMethods.has(method)) {
+    throw invalidNodesResponse(`${owner}.method must be a known auth method`);
+  }
+  return {
+    method: method as NodeAuthMethodWire,
+    password_configured: requiredViewBoolean(
+      data,
+      "password_configured",
+      owner,
+      invalidNodesResponse,
+    ),
+    ...(data.secret_ref !== undefined
+      ? { secret_ref: optionalNullableViewString(data, "secret_ref", owner, invalidNodesResponse) }
+      : {}),
+  };
+}
+
+function parseRuntimeTargetWire(data: unknown, owner: string): RuntimeTargetWire {
+  if (!isRecord(data)) {
+    throw invalidRuntimeTargetsResponse(`${owner} must be an object`);
+  }
+  const kind = requiredViewString(data, "kind", owner, invalidRuntimeTargetsResponse);
+  if (!runtimeTargetKinds.has(kind)) {
+    throw invalidRuntimeTargetsResponse(`${owner}.kind must be local or remote`);
+  }
+  const provider = requiredViewString(data, "provider", owner, invalidRuntimeTargetsResponse);
+  if (provider !== "local" && !nodeProviderKinds.has(provider)) {
+    throw invalidRuntimeTargetsResponse(`${owner}.provider must be local or a known provider`);
+  }
+  const status = requiredViewString(data, "status", owner, invalidRuntimeTargetsResponse);
+  if (!runtimeTargetStatuses.has(status)) {
+    throw invalidRuntimeTargetsResponse(`${owner}.status must be a known RuntimeTargetStatus`);
+  }
+  const transport = data.transport;
+  if (!isRecord(transport)) {
+    throw invalidRuntimeTargetsResponse(`${owner}.transport must be an object`);
+  }
+  return {
+    id: requiredViewString(data, "id", owner, invalidRuntimeTargetsResponse),
+    kind: kind as RuntimeTargetKindWire,
+    provider: provider as "local" | NodeProviderKindWire,
+    ...(data.node_id !== undefined
+      ? {
+          node_id: optionalNullableViewString(
+            data,
+            "node_id",
+            owner,
+            invalidRuntimeTargetsResponse,
+          ),
+        }
+      : {}),
+    display_name: requiredViewString(data, "display_name", owner, invalidRuntimeTargetsResponse),
+    status: status as RuntimeTargetStatusWire,
+    transport,
+    ...(data.target !== undefined
+      ? { target: optionalViewObject(data, "target", owner, invalidRuntimeTargetsResponse) }
+      : {}),
+    ...(data.compatibility !== undefined
+      ? {
+          compatibility: optionalViewObject(
+            data,
+            "compatibility",
+            owner,
+            invalidRuntimeTargetsResponse,
+          ),
+        }
+      : {}),
+  };
 }
 
 export async function readConversationViewResponse(response: Response): Promise<ConversationWireView> {
@@ -2403,6 +2773,18 @@ function invalidBackendSettingsRequest(message: string) {
 
 function invalidBackendSettingsResponse(message: string) {
   return new VeladClientError("invalid_backend_settings_response", message);
+}
+
+function invalidNodesRequest(message: string) {
+  return new VeladClientError("invalid_nodes_request", message);
+}
+
+function invalidNodesResponse(message: string) {
+  return new VeladClientError("invalid_nodes_response", message);
+}
+
+function invalidRuntimeTargetsResponse(message: string) {
+  return new VeladClientError("invalid_runtime_targets_response", message);
 }
 
 function invalidConversationView(message: string) {

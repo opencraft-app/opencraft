@@ -19,6 +19,7 @@ tags:
   - name: Diagnostics
   - name: Requests
   - name: Backends
+  - name: Nodes
   - name: Observability
 paths:
   /sessions:
@@ -507,6 +508,158 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BackendProbeResult'
+  /node-providers:
+    get:
+      tags: [Nodes]
+      operationId: listNodeProviders
+      summary: 列出本机 velad 支持的 node providers
+      description: |
+        Node providers are transport/connectors for where velad may run, not
+        agent backends. The first managed remote provider is native SSH.
+      responses:
+        '200':
+          description: Node provider catalog。
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [schema, providers]
+                properties:
+                  schema:
+                    type: string
+                    const: velad.node_providers.v1
+                  providers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/NodeProvider'
+  /nodes:
+    get:
+      tags: [Nodes]
+      operationId: listNodes
+      summary: 列出已保存 nodes
+      responses:
+        '200':
+          description: Saved nodes。
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [schema, nodes]
+                properties:
+                  schema:
+                    type: string
+                    const: velad.nodes.v1
+                  nodes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Node'
+    post:
+      tags: [Nodes]
+      operationId: createNode
+      summary: 新增 SSH node
+      description: |
+        Password is write-only. velad stores it in the local OS credential
+        store and only returns `secret_ref` plus `password_configured`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateNodeRequest'
+      responses:
+        '201':
+          description: Node created。
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [schema, node]
+                properties:
+                  schema:
+                    type: string
+                    const: velad.nodes.v1
+                  node:
+                    $ref: '#/components/schemas/Node'
+  /runtime-targets:
+    get:
+      tags: [Nodes]
+      operationId: listRuntimeTargets
+      summary: 列出 local velad 可投影的 runtime targets
+      description: |
+        Runtime targets are connection-state projections derived from local
+        runtime state and saved nodes. Remote targets start as disconnected
+        until an SSH transport opens them.
+      responses:
+        '200':
+          description: Runtime target projection。
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [schema, targets]
+                properties:
+                  schema:
+                    type: string
+                    const: velad.runtime_targets.v1
+                  targets:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RuntimeTarget'
+  /runtime-targets/{target_id}/connect:
+    post:
+      tags: [Nodes]
+      operationId: connectRuntimeTarget
+      summary: 连接 remote runtime target
+      description: |
+        Opens the target's native SSH transport, uploads or reuses the exact
+        remote `velad` artifact, waits for the remote ready-file handshake,
+        opens a local loopback tunnel, and verifies `/runtime-info`.
+      parameters:
+        - name: target_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Runtime target connection state。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeTargetResponse'
+        '502':
+          description: SSH transport or remote runtime connection failed。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /runtime-targets/{target_id}/disconnect:
+    post:
+      tags: [Nodes]
+      operationId: disconnectRuntimeTarget
+      summary: 断开 remote runtime target
+      description: |
+        Requests graceful shutdown through the remote runtime endpoint over
+        the local tunnel, then closes the SSH tunnel/session handle.
+      parameters:
+        - name: target_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Runtime target disconnected state。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeTargetResponse'
+        '502':
+          description: Remote shutdown or SSH cleanup failed。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
   /runtime-info:
     get:
       tags: [Runtime]
@@ -848,6 +1001,175 @@ components:
     RequestStatus:
       type: string
       enum: [pending, approved, denied, answered, expired, cancelled]
+    NodeProviderKind:
+      type: string
+      enum: [ssh]
+    NodeAuthMethod:
+      type: string
+      enum: [password]
+    RuntimeTargetKind:
+      type: string
+      enum: [local, remote]
+    RuntimeTargetStatus:
+      type: string
+      enum: [connected, connecting, ready, degraded, reconnecting, disconnected, failed, error]
+    NodeProvider:
+      type: object
+      required: [id, display_name, kind, auth_methods, secret_storage, capabilities, target_constraints]
+      properties:
+        id:
+          $ref: '#/components/schemas/NodeProviderKind'
+        display_name:
+          type: string
+        kind:
+          $ref: '#/components/schemas/NodeProviderKind'
+        auth_methods:
+          type: array
+          items:
+            $ref: '#/components/schemas/NodeAuthMethod'
+        secret_storage:
+          type: string
+          enum: [local_os_keyring]
+        capabilities:
+          type: object
+          additionalProperties: true
+        target_constraints:
+          type: object
+          required: [os, arch]
+          properties:
+            os:
+              type: array
+              items:
+                type: string
+                enum: [linux, darwin]
+            arch:
+              type: array
+              items:
+                type: string
+                enum: [x86_64, amd64]
+    SshNode:
+      type: object
+      required: [host, port, username]
+      properties:
+        host:
+          type: string
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        username:
+          type: string
+    NodeTarget:
+      type: object
+      required: [os, arch]
+      properties:
+        os:
+          type: string
+          enum: [linux, darwin]
+        arch:
+          type: string
+          enum: [x86_64]
+    NodeAuth:
+      type: object
+      required: [method, password_configured]
+      properties:
+        method:
+          $ref: '#/components/schemas/NodeAuthMethod'
+        password_configured:
+          type: boolean
+        secret_ref:
+          type: string
+          nullable: true
+      additionalProperties: false
+    Node:
+      type: object
+      required: [id, provider, display_name, ssh, target, auth, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        provider:
+          $ref: '#/components/schemas/NodeProviderKind'
+        display_name:
+          type: string
+        ssh:
+          $ref: '#/components/schemas/SshNode'
+        target:
+          $ref: '#/components/schemas/NodeTarget'
+        auth:
+          $ref: '#/components/schemas/NodeAuth'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CreateNodeRequest:
+      type: object
+      required: [provider, ssh, auth]
+      additionalProperties: false
+      properties:
+        provider:
+          $ref: '#/components/schemas/NodeProviderKind'
+        display_name:
+          type: string
+        ssh:
+          $ref: '#/components/schemas/SshNode'
+        auth:
+          type: object
+          required: [method, password]
+          additionalProperties: false
+          properties:
+            method:
+              $ref: '#/components/schemas/NodeAuthMethod'
+            password:
+              type: string
+              writeOnly: true
+        target:
+          type: object
+          additionalProperties: false
+          properties:
+            os:
+              type: string
+              enum: [linux, darwin]
+            arch:
+              type: string
+              enum: [x86_64, amd64]
+    RuntimeTarget:
+      type: object
+      required: [id, kind, provider, display_name, status, transport]
+      properties:
+        id:
+          type: string
+        kind:
+          $ref: '#/components/schemas/RuntimeTargetKind'
+        provider:
+          type: string
+          enum: [local, ssh]
+        node_id:
+          type: string
+          nullable: true
+        display_name:
+          type: string
+        status:
+          $ref: '#/components/schemas/RuntimeTargetStatus'
+        transport:
+          type: object
+          additionalProperties: true
+        target:
+          type: object
+          additionalProperties: true
+        compatibility:
+          type: object
+          additionalProperties: true
+    RuntimeTargetResponse:
+      type: object
+      required: [schema, target]
+      properties:
+        schema:
+          type: string
+          const: velad.runtime_targets.v1
+        target:
+          $ref: '#/components/schemas/RuntimeTarget'
     CreateSessionRequest:
       type: object
       required: [backend, working_directory]

@@ -43,6 +43,7 @@ use vela_store::{SqliteEventStore, StoredSession};
 mod backend_snapshot;
 mod backend_usage;
 pub mod local_runtime;
+pub mod runtime_targets;
 
 pub struct ApiState<B> {
     store: Arc<SqliteEventStore>,
@@ -52,6 +53,8 @@ pub struct ApiState<B> {
     configured_backends: Vec<ConfiguredBackend>,
     backend_usage: backend_usage::BackendUsageService,
     backend_settings_updater: Option<Arc<dyn BackendSettingsUpdater>>,
+    node_secret_store: Arc<dyn runtime_targets::NodeSecretStore>,
+    runtime_target_manager: Arc<runtime_targets::RuntimeTargetManager>,
     local_runtime: Option<local_runtime::LocalRuntimeState>,
     shutdown_tx: Option<tokio::sync::watch::Sender<bool>>,
     observability: Option<ObservabilityStore>,
@@ -71,6 +74,8 @@ impl<B> Clone for ApiState<B> {
             configured_backends: self.configured_backends.clone(),
             backend_usage: self.backend_usage.clone(),
             backend_settings_updater: self.backend_settings_updater.clone(),
+            node_secret_store: self.node_secret_store.clone(),
+            runtime_target_manager: self.runtime_target_manager.clone(),
             local_runtime: self.local_runtime.clone(),
             shutdown_tx: self.shutdown_tx.clone(),
             observability: self.observability.clone(),
@@ -124,6 +129,8 @@ where
             }],
             backend_usage: backend_usage::BackendUsageService::default(),
             backend_settings_updater: None,
+            node_secret_store: Arc::new(runtime_targets::KeyringNodeSecretStore::default()),
+            runtime_target_manager: Arc::new(runtime_targets::RuntimeTargetManager::default()),
             local_runtime: None,
             shutdown_tx: None,
             observability: None,
@@ -202,6 +209,22 @@ where
         updater: Arc<dyn BackendSettingsUpdater>,
     ) -> Self {
         self.backend_settings_updater = Some(updater);
+        self
+    }
+
+    pub fn with_node_secret_store(
+        mut self,
+        secret_store: Arc<dyn runtime_targets::NodeSecretStore>,
+    ) -> Self {
+        self.node_secret_store = secret_store;
+        self
+    }
+
+    pub fn with_runtime_target_manager(
+        mut self,
+        manager: Arc<runtime_targets::RuntimeTargetManager>,
+    ) -> Self {
+        self.runtime_target_manager = manager;
         self
     }
 
@@ -334,6 +357,17 @@ where
         .route(
             "/api/v1/backends/{backend}/skills",
             get(list_backend_skills::<B>),
+        )
+        .route("/api/v1/node-providers", get(list_node_providers::<B>))
+        .route("/api/v1/nodes", get(list_nodes::<B>).post(create_node::<B>))
+        .route("/api/v1/runtime-targets", get(list_runtime_targets::<B>))
+        .route(
+            "/api/v1/runtime-targets/{target_id}/connect",
+            post(connect_runtime_target::<B>),
+        )
+        .route(
+            "/api/v1/runtime-targets/{target_id}/disconnect",
+            post(disconnect_runtime_target::<B>),
         )
         .route("/api/v1/runtime-info", get(get_runtime_info::<B>))
         .route("/api/v1/runtime/shutdown", post(shutdown_runtime::<B>))
@@ -2107,6 +2141,355 @@ struct VelaEngineBackendSettingsPatch {
     endpoint: Option<String>,
     api_key: Option<String>,
     model: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CreateNodeRequest {
+    provider: String,
+    display_name: Option<String>,
+    ssh: Option<SshNodeRequest>,
+    auth: Option<NodeAuthRequest>,
+    target: Option<NodeTargetRequest>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SshNodeRequest {
+    host: String,
+    port: Option<u16>,
+    username: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NodeAuthRequest {
+    method: String,
+    password: Option<String>,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NodeTargetRequest {
+    os: Option<String>,
+    arch: Option<String>,
+}
+
+struct NormalizedNodeCreate {
+    display_name: String,
+    config: Value,
+    password: String,
+}
+
+async fn list_node_providers<B>() -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    Json(runtime_targets::node_providers_json()).into_response()
+}
+
+async fn list_nodes<B>(State(state): State<ApiState<B>>) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    match state.store.list_nodes().await {
+        Ok(nodes) => Json(runtime_targets::nodes_json(&nodes)).into_response(),
+        Err(err) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "nodes_read_failed",
+            err.to_string(),
+        ),
+    }
+}
+
+async fn create_node<B>(
+    State(state): State<ApiState<B>>,
+    request: Result<Json<CreateNodeRequest>, JsonRejection>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let request = match request {
+        Ok(Json(request)) => request,
+        Err(rejection) => return invalid_request(rejection.to_string()),
+    };
+    let normalized = match normalize_create_node_request(request) {
+        Ok(normalized) => normalized,
+        Err(response) => return response,
+    };
+    let node_id = format!("node_{}", uuid::Uuid::new_v4().simple());
+    let secret_ref = runtime_targets::ssh_password_secret_ref(&node_id);
+
+    if let Err(err) = state
+        .node_secret_store
+        .put_password(&secret_ref, &normalized.password)
+        .await
+    {
+        return error(StatusCode::SERVICE_UNAVAILABLE, err.code, err.message);
+    }
+
+    match state
+        .store
+        .create_node(
+            &node_id,
+            runtime_targets::SSH_PROVIDER_ID,
+            &normalized.display_name,
+            normalized.config,
+            Some(&secret_ref),
+        )
+        .await
+    {
+        Ok(node) => (
+            StatusCode::CREATED,
+            Json(runtime_targets::node_response_json(&node)),
+        )
+            .into_response(),
+        Err(err) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "node_write_failed",
+            err.to_string(),
+        ),
+    }
+}
+
+async fn list_runtime_targets<B>(State(state): State<ApiState<B>>) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let local_api_base_url = state
+        .local_runtime
+        .as_ref()
+        .map(|runtime| runtime.info.api_base_url.as_str());
+    match state.store.list_nodes().await {
+        Ok(nodes) => Json(runtime_targets::runtime_targets_json(
+            &nodes,
+            local_api_base_url,
+            &state.runtime_target_manager.snapshots().await,
+        ))
+        .into_response(),
+        Err(err) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "runtime_targets_read_failed",
+            err.to_string(),
+        ),
+    }
+}
+
+async fn connect_runtime_target<B>(
+    State(state): State<ApiState<B>>,
+    Path(target_id): Path<String>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let Some(node_id) = node_id_from_target_id(&target_id) else {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "unsupported_runtime_target",
+            "only remote node runtime targets can be connected",
+        );
+    };
+    let node = match state.store.get_node(node_id).await {
+        Ok(Some(node)) => node,
+        Ok(None) => {
+            return error(
+                StatusCode::NOT_FOUND,
+                "node_not_found",
+                format!("node not found: {node_id}"),
+            );
+        }
+        Err(err) => {
+            return error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "node_read_failed",
+                err.to_string(),
+            );
+        }
+    };
+    let Some(secret_ref) = node.secret_ref.as_deref() else {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "node_auth_missing",
+            "node password is not configured",
+        );
+    };
+    let password = match state.node_secret_store.get_password(secret_ref).await {
+        Ok(password) => password,
+        Err(err) => return error(StatusCode::SERVICE_UNAVAILABLE, err.code, err.message),
+    };
+    match state
+        .runtime_target_manager
+        .connect_node(node, password)
+        .await
+    {
+        Ok(snapshot) => {
+            Json(runtime_targets::runtime_target_response_json(&snapshot)).into_response()
+        }
+        Err(err) => error(StatusCode::BAD_GATEWAY, err.code, err.message),
+    }
+}
+
+async fn disconnect_runtime_target<B>(
+    State(state): State<ApiState<B>>,
+    Path(target_id): Path<String>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let Some(node_id) = node_id_from_target_id(&target_id) else {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "unsupported_runtime_target",
+            "only remote node runtime targets can be disconnected",
+        );
+    };
+    match state
+        .runtime_target_manager
+        .disconnect_target(&target_id)
+        .await
+    {
+        Ok(Some(snapshot)) => {
+            Json(runtime_targets::runtime_target_response_json(&snapshot)).into_response()
+        }
+        Ok(None) => match state.store.get_node(node_id).await {
+            Ok(Some(node)) => Json(runtime_targets::disconnected_runtime_target_response_json(
+                &node,
+            ))
+            .into_response(),
+            Ok(None) => error(
+                StatusCode::NOT_FOUND,
+                "node_not_found",
+                format!("node not found: {node_id}"),
+            ),
+            Err(err) => error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "node_read_failed",
+                err.to_string(),
+            ),
+        },
+        Err(err) => error(StatusCode::BAD_GATEWAY, err.code, err.message),
+    }
+}
+
+fn node_id_from_target_id(target_id: &str) -> Option<&str> {
+    target_id.strip_prefix("target:")
+}
+
+fn normalize_create_node_request(
+    request: CreateNodeRequest,
+) -> Result<NormalizedNodeCreate, Response> {
+    if request.provider != runtime_targets::SSH_PROVIDER_ID {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "unsupported_node_provider",
+            "node provider must be ssh",
+        ));
+    }
+    let ssh = request.ssh.ok_or_else(|| {
+        error(
+            StatusCode::BAD_REQUEST,
+            "missing_ssh_config",
+            "ssh config is required for ssh nodes",
+        )
+    })?;
+    let host = ssh.host.trim();
+    if host.is_empty() {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "invalid_node_host",
+            "ssh host must not be empty",
+        ));
+    }
+    let username = ssh.username.trim();
+    if username.is_empty() {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "invalid_node_username",
+            "ssh username must not be empty",
+        ));
+    }
+    let port = ssh.port.unwrap_or(22);
+    if port == 0 {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "invalid_node_port",
+            "ssh port must be greater than zero",
+        ));
+    }
+
+    let auth = request.auth.ok_or_else(|| {
+        error(
+            StatusCode::BAD_REQUEST,
+            "missing_node_auth",
+            "ssh nodes require password auth in v1",
+        )
+    })?;
+    if auth.method != "password" {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "unsupported_node_auth",
+            "ssh nodes support password auth only in v1",
+        ));
+    }
+    let password = auth.password.unwrap_or_default().trim().to_string();
+    if password.is_empty() {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "missing_node_password",
+            "ssh password must not be empty",
+        ));
+    }
+
+    let target = request.target.unwrap_or_default();
+    let os = target
+        .os
+        .unwrap_or_else(|| "linux".to_string())
+        .trim()
+        .to_string();
+    if os != "linux" && os != "darwin" {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "unsupported_node_os",
+            "ssh target os must be linux or darwin",
+        ));
+    }
+    let arch = target
+        .arch
+        .unwrap_or_else(|| "x86_64".to_string())
+        .trim()
+        .to_string();
+    let arch = match arch.as_str() {
+        "x86_64" | "amd64" => "x86_64",
+        _ => {
+            return Err(error(
+                StatusCode::BAD_REQUEST,
+                "unsupported_node_arch",
+                "ssh target arch must be x86_64 or amd64",
+            ));
+        }
+    };
+
+    let display_name = request
+        .display_name
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| format!("{username}@{host}"));
+
+    Ok(NormalizedNodeCreate {
+        display_name,
+        password,
+        config: json!({
+            "ssh": {
+                "host": host,
+                "port": port,
+                "username": username,
+            },
+            "target": {
+                "os": os,
+                "arch": arch,
+            }
+        }),
+    })
 }
 
 async fn get_backend_settings<B>(

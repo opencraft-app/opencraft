@@ -66,7 +66,11 @@ async fn main() -> anyhow::Result<()> {
     let runtime = Runtime::new(store.clone(), backend).with_observability(observability.clone());
     let listener = tokio::net::TcpListener::bind(config.listen_addr).await?;
     let bound_addr = listener.local_addr()?;
-    let ready = velad::local_runtime::ReadyEvent::new(bound_addr);
+    let ready = velad::local_runtime::ReadyEvent::new(bound_addr).with_remote_metadata(
+        config.build_id.clone(),
+        config.target_triple.clone(),
+        config.remote_instance_id.clone(),
+    );
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     let state = velad::ApiState::new(store, runtime)
         .with_default_session_model(default_session_model)
@@ -82,6 +86,9 @@ async fn main() -> anyhow::Result<()> {
         shutdown_tx,
     ));
 
+    if let Some(ready_file) = config.ready_file.as_deref() {
+        velad::local_runtime::write_ready_file(ready_file, &ready)?;
+    }
     println!("{}", serde_json::to_string(&ready)?);
     axum::serve(listener, app)
         .with_graceful_shutdown(wait_for_shutdown(shutdown_rx))

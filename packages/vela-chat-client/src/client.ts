@@ -15,11 +15,17 @@ import type {
   CancelSessionInput,
   ConversationWindowOptions,
   ConversationWireView,
+  CreateNodeInput,
   CreateSessionInput,
   CreateSessionWireResponse,
   DiffReviewWireView,
+  NodeProvidersWireResponse,
+  NodesWireResponse,
+  NodeWireResponse,
   PendingRequestsOptions,
   PendingRequestsWireView,
+  RuntimeTargetWireResponse,
+  RuntimeTargetsWireResponse,
   SendSessionInputEventsInput,
   SessionListOptions,
   SessionListViewWireResponse,
@@ -42,9 +48,14 @@ import {
   readBackendsResponse,
   readCommandAckResponse,
   readConversationViewResponse,
+  readNodeProvidersResponse,
+  readNodeResponse,
+  readNodesResponse,
   readCreateSessionResponse,
   readDiffReviewViewResponse,
   readPendingRequestsViewResponse,
+  readRuntimeTargetsResponse,
+  readRuntimeTargetResponse,
   readSessionListViewResponse,
   readSessionListResponse,
   readSessionResponse,
@@ -56,6 +67,7 @@ import {
   validateBackendSkillsOptions,
   validateClientInputEvents,
   validateConversationWindowOptions,
+  validateCreateNodeInput,
   validateCreateSessionInput,
   validateOptionalIdempotencyKey,
   validatePendingRequestsOptions,
@@ -83,6 +95,12 @@ export interface VeladClient {
     backend: BackendKindWire,
     patch: BackendSettingsPatchWire,
   ) => Promise<BackendSettingsWireResponse>;
+  getNodeProviders: () => Promise<NodeProvidersWireResponse>;
+  listNodes: () => Promise<NodesWireResponse>;
+  createNode: (input: CreateNodeInput) => Promise<NodeWireResponse>;
+  getRuntimeTargets: () => Promise<RuntimeTargetsWireResponse>;
+  connectRuntimeTarget: (targetId: string) => Promise<RuntimeTargetWireResponse>;
+  disconnectRuntimeTarget: (targetId: string) => Promise<RuntimeTargetWireResponse>;
   updateAgentConfig: (input: {
     sessionId: string;
     patch: AgentConfigPatchWire;
@@ -332,6 +350,79 @@ export function createVeladClient(options: VeladClientOptions): VeladClient {
         body: JSON.stringify(patch),
       }, { "velad.backend": backend });
       return readBackendSettingsResponse(response);
+    },
+    async getNodeProviders() {
+      const url = new URL("node-providers", baseUrl);
+      return observedRequest("velad.node_providers.list", url, {}, {}, readNodeProvidersResponse);
+    },
+    async listNodes() {
+      const url = new URL("nodes", baseUrl);
+      return observedRequest("velad.nodes.list", url, {}, {}, readNodesResponse);
+    },
+    async createNode(input) {
+      validateCreateNodeInput(input);
+      const url = new URL("nodes", baseUrl);
+      return observedRequest(
+        "velad.nodes.create",
+        url,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            provider: input.provider,
+            ...(input.displayName ? { display_name: input.displayName } : {}),
+            ssh: input.ssh,
+            auth: input.auth,
+            ...(input.target ? { target: input.target } : {}),
+          }),
+        },
+        { "velad.node_provider": input.provider },
+        readNodeResponse,
+      );
+    },
+    async getRuntimeTargets() {
+      const url = new URL("runtime-targets", baseUrl);
+      return observedRequest(
+        "velad.runtime_targets.list",
+        url,
+        {},
+        {},
+        readRuntimeTargetsResponse,
+      );
+    },
+    async connectRuntimeTarget(targetId) {
+      const url = new URL(`runtime-targets/${encodeURIComponent(targetId)}/connect`, baseUrl);
+      return observedRequest(
+        "velad.runtime_targets.connect",
+        url,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: "{}",
+        },
+        { "velad.runtime_target_id": targetId },
+        readRuntimeTargetResponse,
+      );
+    },
+    async disconnectRuntimeTarget(targetId) {
+      const url = new URL(`runtime-targets/${encodeURIComponent(targetId)}/disconnect`, baseUrl);
+      return observedRequest(
+        "velad.runtime_targets.disconnect",
+        url,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: "{}",
+        },
+        { "velad.runtime_target_id": targetId },
+        readRuntimeTargetResponse,
+      );
     },
     async updateAgentConfig({ sessionId, patch, idempotencyKey }) {
       validateAgentConfigPatch(patch);

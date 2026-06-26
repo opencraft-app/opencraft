@@ -655,6 +655,108 @@ export interface BackendSkillsWireResponse {
   skills: BackendSkillDescriptorWire[];
 }
 
+export type NodeProviderKindWire = "ssh";
+export type NodeAuthMethodWire = "password";
+export type RuntimeTargetKindWire = "local" | "remote";
+export type RuntimeTargetStatusWire =
+  | "connected"
+  | "connecting"
+  | "ready"
+  | "degraded"
+  | "reconnecting"
+  | "disconnected"
+  | "failed"
+  | "error";
+
+export interface NodeProviderWire {
+  id: NodeProviderKindWire;
+  display_name: string;
+  kind: NodeProviderKindWire;
+  auth_methods: NodeAuthMethodWire[];
+  secret_storage: "local_os_keyring";
+  capabilities: Record<string, unknown>;
+  target_constraints: {
+    os: string[];
+    arch: string[];
+  };
+}
+
+export interface NodeProvidersWireResponse {
+  schema: "velad.node_providers.v1";
+  providers: NodeProviderWire[];
+}
+
+export interface SshNodeWire {
+  host: string;
+  port: number;
+  username: string;
+}
+
+export interface NodeTargetWire {
+  os: string;
+  arch: string;
+}
+
+export interface NodeAuthWire {
+  method: NodeAuthMethodWire;
+  password_configured: boolean;
+  secret_ref?: string | null;
+}
+
+export interface NodeWire {
+  id: string;
+  provider: NodeProviderKindWire;
+  display_name: string;
+  ssh: SshNodeWire;
+  target: NodeTargetWire;
+  auth: NodeAuthWire;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NodesWireResponse {
+  schema: "velad.nodes.v1";
+  nodes: NodeWire[];
+}
+
+export interface NodeWireResponse {
+  schema: "velad.nodes.v1";
+  node: NodeWire;
+}
+
+export interface CreateNodeInput {
+  provider: NodeProviderKindWire;
+  displayName?: string;
+  ssh: SshNodeWire;
+  auth: {
+    method: NodeAuthMethodWire;
+    password: string;
+  };
+  target?: Partial<NodeTargetWire>;
+}
+
+export interface RuntimeTargetWire {
+  id: string;
+  kind: RuntimeTargetKindWire;
+  provider: "local" | NodeProviderKindWire;
+  node_id?: string | null;
+  display_name: string;
+  status: RuntimeTargetStatusWire;
+  transport: Record<string, unknown>;
+  target?: Partial<NodeTargetWire>;
+  compatibility?: Record<string, unknown>;
+}
+
+export interface RuntimeTargetsWireResponse {
+  schema: "velad.runtime_targets.v1";
+  targets: RuntimeTargetWire[];
+}
+
+export interface RuntimeTargetWireResponse {
+  schema: "velad.runtime_targets.v1";
+  target: RuntimeTargetWire;
+}
+
 export interface UpdateAgentConfigWireResponse {
   session: SessionWire;
   effective_after: "current_session" | "next_turn";
