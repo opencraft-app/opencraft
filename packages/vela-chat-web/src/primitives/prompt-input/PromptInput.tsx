@@ -204,6 +204,26 @@ export function PromptInput({
       onSubmit={handleSubmit}
       ref={rootRef}
     >
+      {filteredSkills.length > 0 ? (
+        <div className={styles.skillMenu} role="listbox" aria-label="Skills">
+          {filteredSkills.map((skill) => (
+            <button
+              className={styles.skillMenuItem}
+              key={`${skill.protocol}:${skill.path}`}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                handleSkillSelect(skill);
+              }}
+              type="button"
+            >
+              <span className={styles.skillMenuName}>${skill.name}</span>
+              {skill.description ? (
+                <span className={styles.skillMenuDescription}>{skill.description}</span>
+              ) : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
       <div className={styles.composer}>
         <LexicalComposerEditor
           ariaLabel="Message"
@@ -220,26 +240,6 @@ export function PromptInput({
           placeholder={placeholder}
           ref={editorRef}
         />
-        {filteredSkills.length > 0 ? (
-          <div className={styles.skillMenu} role="listbox" aria-label="Skills">
-            {filteredSkills.map((skill) => (
-              <button
-                className={styles.skillMenuItem}
-                key={`${skill.protocol}:${skill.path}`}
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  handleSkillSelect(skill);
-                }}
-                type="button"
-              >
-                <span className={styles.skillMenuName}>${skill.name}</span>
-                {skill.description ? (
-                  <span className={styles.skillMenuDescription}>{skill.description}</span>
-                ) : null}
-              </button>
-            ))}
-          </div>
-        ) : null}
         {pendingAttachments.length > 0 ? (
           <div className={styles.attachmentTray} aria-label="Pending attachments">
             {pendingAttachments.map((attachment) => (
