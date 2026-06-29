@@ -134,6 +134,10 @@ type TradeOrder struct {
 	// Source（migration 000006 新增列）：订单来源枚举，取值 "jifei" / "dianshi"。
 	// createResource handler 按本字段判定是否需要 INSERT trade_user_activity_participation（设计稿 §5.6.1 step 4）。
 	Source string
+	// ActivityID / ActID（migration 000008 新增列）：点石订单落下单时使用的活动大 ID / 商品大 ID。
+	// 非点石订单为 0；placeOrderDianshi 用这两个字段支持 user+activity+bundle 的有效订单复用。
+	ActivityID int64
+	ActID      int64
 	// v1.7.28 BUG-12 修复 (2026-05-21)：删除 ExpireTime 字段（trade 业务层从未拥有
 	// "订单何时失效"的真源，列从 schema 删了，见 migration 0004）。
 	CreatedTime time.Time
@@ -160,19 +164,30 @@ type OrderStore interface {
 	GetOrderByDealName(ctx context.Context, dealName string) (*TradeOrder, error)
 }
 
+// ReusableDianshiOrderStore 是点石下单幂等所需的可选订单读能力。
+//
+// 不并入 OrderStore 基础接口，避免牵连 checkCreate/createResource/orderstatus 等只需要
+// GetOrderByDealName 的调用方和测试替身。生产 *MySQLStore 实现本接口；placeorder 点石
+// 分支通过类型断言要求该能力存在。
+type ReusableDianshiOrderStore interface {
+	// FindReusableDianshiOrder 查找同 user+activity+bundle 在有效期内的点石中态订单。
+	//
+	// 返回：
+	//   - 命中 → (*TradeOrder, nil)
+	//   - 无可复用订单 → (nil, ErrTradeOrderNotFound)
+	//   - DB 错误 / JSON 解码错误 → (nil, err)
+	FindReusableDianshiOrder(ctx context.Context, externalUserID string, activityID int64, bundleID string, createdAfter time.Time) (*TradeOrder, error)
+}
+
 // 编译期断言 *MySQLStore 实现 OrderStore 接口。
 var _ OrderStore = (*MySQLStore)(nil)
+var _ ReusableDianshiOrderStore = (*MySQLStore)(nil)
 
 // GetOrderByDealName 实现 OrderStore 接口。
 //
 // SQL：
 //
-//	SELECT id, big_order_id, deal_name, external_user_id, uin, app_id,
-//	       sub_product_code, bundle_id, order_type, period, time_unit, goods_num,
-//	       region_id, pay_mode, goods_detail, pay_url, status,
-//	       resource_type, resource_id, created_time, updated_time
-//	  FROM trade_order
-//	 WHERE deal_name = ?
+//	SELECT <trade_order columns> FROM trade_order WHERE deal_name = ?
 //
 // deal_name 列 UNIQUE，命中至多 1 行；无命中返 ErrTradeOrderNotFound。
 //
@@ -183,14 +198,73 @@ func (s *MySQLStore) GetOrderByDealName(ctx context.Context, dealName string) (*
 	if s == nil || s.db == nil {
 		return nil, fmt.Errorf("trade_order: store is nil")
 	}
-	const q = `
+	const q = selectTradeOrderColumns + ` WHERE deal_name = ?`
+	order, err := scanTradeOrder(s.db.QueryRowContext(ctx, q, dealName))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrTradeOrderNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("trade_order: query dealName=%s: %w", dealName, err)
+	}
+	return order, nil
+}
+
+// FindReusableDianshiOrder 实现 ReusableDianshiOrderStore 接口。
+func (s *MySQLStore) FindReusableDianshiOrder(
+	ctx context.Context,
+	externalUserID string,
+	activityID int64,
+	bundleID string,
+	createdAfter time.Time,
+) (*TradeOrder, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("trade_order: store is nil")
+	}
+	const q = selectTradeOrderColumns + `
+		 WHERE external_user_id = ?
+		   AND activity_id = ?
+		   AND bundle_id = ?
+		   AND source = ?
+		   AND resource_type = 'pass'
+		   AND (resource_id IS NULL OR resource_id = '')
+		   AND status IN (?, ?, ?)
+		   AND created_time >= ?
+		 ORDER BY created_time DESC
+		 LIMIT 1
+	`
+	order, err := scanTradeOrder(s.db.QueryRowContext(ctx, q,
+		externalUserID,
+		activityID,
+		bundleID,
+		OrderSourceDianshi,
+		OrderStatusCreated,
+		OrderStatusPendingPay,
+		OrderStatusPaidPendingProvision,
+		createdAfter,
+	))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrTradeOrderNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("trade_order: query reusable dianshi externalUserID=%s activityID=%d bundleID=%s: %w",
+			externalUserID, activityID, bundleID, err)
+	}
+	return order, nil
+}
+
+const selectTradeOrderColumns = `
 		SELECT id, big_order_id, deal_name, external_user_id, uin, app_id,
 		       sub_product_code, bundle_id, order_type, period, time_unit, goods_num,
 		       region_id, pay_mode, goods_detail, pay_url, status,
-		       resource_type, resource_id, source, created_time, updated_time
+		       resource_type, resource_id, source, activity_id, act_id, created_time, updated_time
 		  FROM trade_order
-		 WHERE deal_name = ?
-	`
+`
+
+type rowScanner interface {
+	Scan(dest ...interface{}) error
+}
+
+func scanTradeOrder(row rowScanner) (*TradeOrder, error) {
 	var (
 		id          int64
 		bigOrderID  string
@@ -212,20 +286,19 @@ func (s *MySQLStore) GetOrderByDealName(ctx context.Context, dealName string) (*
 		resType     string
 		resID       sql.NullString
 		source      string
+		activityID  int64
+		actID       int64
 		createdTime time.Time
 		updatedTime time.Time
 	)
-	err := s.db.QueryRowContext(ctx, q, dealName).Scan(
+	err := row.Scan(
 		&id, &bigOrderID, &dn, &extUID, &uin, &appID,
 		&subProd, &bundleID, &orderType, &period, &timeUnit, &goodsNum,
 		&regionID, &payMode, &goodsRaw, &payURL, &status,
-		&resType, &resID, &source, &createdTime, &updatedTime,
+		&resType, &resID, &source, &activityID, &actID, &createdTime, &updatedTime,
 	)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrTradeOrderNotFound
-	}
 	if err != nil {
-		return nil, fmt.Errorf("trade_order: query dealName=%s: %w", dealName, err)
+		return nil, err
 	}
 
 	order, err := decodeTradeOrder(decodeArgs{
@@ -249,11 +322,13 @@ func (s *MySQLStore) GetOrderByDealName(ctx context.Context, dealName string) (*
 		ResourceType:   resType,
 		ResourceID:     resID,
 		Source:         source,
+		ActivityID:     activityID,
+		ActID:          actID,
 		CreatedTime:    createdTime,
 		UpdatedTime:    updatedTime,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("trade_order: decode dealName=%s: %w", dealName, err)
+		return nil, err
 	}
 	return order, nil
 }
@@ -275,6 +350,7 @@ type decodeArgs struct {
 	Status, ResourceType                             string
 	ResourceID                                       sql.NullString
 	Source                                           string
+	ActivityID, ActID                                int64
 	CreatedTime, UpdatedTime                         time.Time
 }
 
@@ -298,6 +374,8 @@ func decodeTradeOrder(a decodeArgs) (*TradeOrder, error) {
 		Status:         a.Status,
 		ResourceType:   a.ResourceType,
 		Source:         a.Source,
+		ActivityID:     a.ActivityID,
+		ActID:          a.ActID,
 		CreatedTime:    a.CreatedTime,
 		UpdatedTime:    a.UpdatedTime,
 	}

@@ -1481,6 +1481,33 @@ func (s *Service) placeOrderDianshi(
 		return nil, fmt.Errorf("placeorder: dianshi client not configured (ActivityResolver injected without DianshiClient)")
 	}
 
+	reusableStore, ok := s.deps.OrderStore.(store.ReusableDianshiOrderStore)
+	if !ok {
+		return nil, fmt.Errorf("placeorder: reusable dianshi order store not configured")
+	}
+	reuseHours := mapping.OrderExpiredTime
+	if reuseHours <= 0 {
+		log.Printf("[dianshi-order-idempotency] invalid order_expired_time=%f, fallback=1 bundleId=%s activityId=%d",
+			reuseHours, req.BundleID, mapping.ActivityID)
+		reuseHours = 1
+	}
+	reuseWindow := time.Duration(reuseHours * float64(time.Hour))
+	createdAfter := time.Now().UTC().Add(-reuseWindow)
+	order, err := reusableStore.FindReusableDianshiOrder(ctx, req.ExternalUserID, mapping.ActivityID, req.BundleID, createdAfter)
+	if err != nil && !errors.Is(err, store.ErrTradeOrderNotFound) {
+		return nil, fmt.Errorf("placeorder: find reusable dianshi order bundleId=%s activityId=%d externalUserId=%s: %w",
+			req.BundleID, mapping.ActivityID, req.ExternalUserID, err)
+	}
+	if err == nil && order != nil {
+		log.Printf("[dianshi-order-idempotency] hit externalUserId=%s activityId=%d bundleId=%s dealName=%s status=%s createdTime=%s",
+			req.ExternalUserID, mapping.ActivityID, req.BundleID, order.DealName, order.Status, order.CreatedTime.Format(time.RFC3339Nano))
+		return &PlaceOrderResult{
+			DealName:   order.DealName,
+			BigOrderID: order.BigOrderID,
+			PayURL:     order.PayURL,
+		}, nil
+	}
+
 	// 1. check_sum：mapping.SecretKey 为空 → 不发字段（dianshiclient.CalcCheckSum 返空字符串触发 omitempty）
 	checkSum := dianshiclient.CalcCheckSum(req.Uin, mapping.ActivityID, mapping.SecretKey)
 
@@ -1559,6 +1586,8 @@ func (s *Service) placeOrderDianshi(
 		Status:         store.OrderStatusPaidPendingProvision,
 		ResourceType:   "pass",
 		Source:         store.OrderSourceDianshi,
+		ActivityID:     mapping.ActivityID,
+		ActID:          mapping.ActID,
 	}
 	if err := s.deps.OrderWriter.CreateOrder(ctx, in); err != nil {
 		if errors.Is(err, store.ErrTradeOrderDuplicate) {

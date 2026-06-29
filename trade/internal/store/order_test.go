@@ -34,6 +34,9 @@ func TestDecodeTradeOrder_HappyPath(t *testing.T) {
 		Status:       "pending_pay",
 		ResourceType: "pass",
 		ResourceID:   sql.NullString{Valid: false},
+		Source:       OrderSourceDianshi,
+		ActivityID:   164273735574009,
+		ActID:        1862147936410255,
 		CreatedTime:  now,
 		UpdatedTime:  now,
 	}
@@ -49,6 +52,9 @@ func TestDecodeTradeOrder_HappyPath(t *testing.T) {
 	}
 	if got.ResourceID != "" {
 		t.Fatalf("expected empty ResourceID for null column, got %q", got.ResourceID)
+	}
+	if got.Source != OrderSourceDianshi || got.ActivityID != 164273735574009 || got.ActID != 1862147936410255 {
+		t.Fatalf("dianshi fields mismatch: source=%q activityID=%d actID=%d", got.Source, got.ActivityID, got.ActID)
 	}
 	// Q71：JSON unmarshal 默认数字走 float64；pid / sv_* 在 trade_order 快照中也是裸数字。
 	if v, ok := got.GoodsDetail["pid"].(float64); !ok || v != 40000 {

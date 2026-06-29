@@ -11,8 +11,10 @@ package placeorder
 import (
 	"context"
 	"errors"
+	"math"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"git.woa.com/wisp/mono/trade/internal/dianshiclient"
 	"git.woa.com/wisp/mono/trade/internal/logic/activity"
@@ -72,12 +74,13 @@ func newFakeDianshiSuccess() *fakeDianshi {
 // stdActivityMapping 给点石分叉单测一份默认 mapping（启航 01 / 已开鉴权）。
 func stdActivityMapping() *activity.Mapping {
 	return &activity.Mapping{
-		BundleID:     "bundle_launch_01",
-		ActivityID:   164273735574009,
-		ActID:        1862147936410255,
-		SecretKey:    "demo_secret",
-		Active:       true,
-		TimeSpanUnit: "7d",
+		BundleID:         "bundle_launch_01",
+		ActivityID:       164273735574009,
+		ActID:            1862147936410255,
+		SecretKey:        "demo_secret",
+		Active:           true,
+		TimeSpanUnit:     "7d",
+		OrderExpiredTime: 1,
 	}
 }
 
@@ -134,6 +137,12 @@ func TestPlaceOrder_DianshiBranch_HappyPath(t *testing.T) {
 	if in.Source != store.OrderSourceDianshi {
 		t.Errorf("trade_order.source=%q want %q", in.Source, store.OrderSourceDianshi)
 	}
+	if in.ActivityID != 164273735574009 {
+		t.Errorf("trade_order.activity_id=%d want 164273735574009", in.ActivityID)
+	}
+	if in.ActID != 1862147936410255 {
+		t.Errorf("trade_order.act_id=%d want 1862147936410255", in.ActID)
+	}
 	if in.Status != store.OrderStatusPaidPendingProvision {
 		t.Errorf("trade_order.status=%q want %q", in.Status, store.OrderStatusPaidPendingProvision)
 	}
@@ -164,6 +173,67 @@ func TestPlaceOrder_DianshiBranch_HappyPath(t *testing.T) {
 	}
 	if prefParam["externalUserId"] != stdPlaceOrderReq().ExternalUserID {
 		t.Errorf("preference_param.externalUserId=%v want %s", prefParam["externalUserId"], stdPlaceOrderReq().ExternalUserID)
+	}
+}
+
+func TestPlaceOrder_DianshiBranch_ReusesPendingOrder(t *testing.T) {
+	d, _, dc := newDianshiDeps()
+	d.store.findReusableFn = func(ctx context.Context, externalUserID string, activityID int64, bundleID string, createdAfter time.Time) (*store.TradeOrder, error) {
+		if externalUserID != stdPlaceOrderReq().ExternalUserID {
+			t.Errorf("externalUserID=%q", externalUserID)
+		}
+		if activityID != 164273735574009 {
+			t.Errorf("activityID=%d", activityID)
+		}
+		if bundleID != stdPlaceOrderReq().BundleID {
+			t.Errorf("bundleID=%q", bundleID)
+		}
+		return &store.TradeOrder{
+			DealName:    "20260629004153859479231",
+			BigOrderID:  "20260629004153859479221",
+			PayURL:      "https://buy.example/pay/reused",
+			Status:      store.OrderStatusPaidPendingProvision,
+			CreatedTime: time.Now().UTC().Add(-10 * time.Minute),
+		}, nil
+	}
+
+	res, err := d.service.PlaceOrder(context.Background(), stdPlaceOrderReq())
+	if err != nil {
+		t.Fatalf("PlaceOrder err=%v", err)
+	}
+	if res.DealName != "20260629004153859479231" || res.BigOrderID != "20260629004153859479221" {
+		t.Fatalf("unexpected reused result: %+v", res)
+	}
+	if res.PayURL != "https://buy.example/pay/reused" {
+		t.Errorf("PayURL=%q", res.PayURL)
+	}
+	if dc.doGoodsCalls.Load() != 0 {
+		t.Errorf("dianshi DoGoods should NOT be called on idempotency hit, calls=%d", dc.doGoodsCalls.Load())
+	}
+	if d.writer.createOrderCalls.Load() != 0 {
+		t.Errorf("CreateOrder should NOT be called on idempotency hit, calls=%d", d.writer.createOrderCalls.Load())
+	}
+}
+
+func TestPlaceOrder_DianshiBranch_OrderExpiredTimeHalfHour(t *testing.T) {
+	d, r, dc := newDianshiDeps()
+	r.mapping.OrderExpiredTime = 0.5
+	var createdAfter time.Time
+	d.store.findReusableFn = func(ctx context.Context, externalUserID string, activityID int64, bundleID string, ca time.Time) (*store.TradeOrder, error) {
+		createdAfter = ca
+		return nil, store.ErrTradeOrderNotFound
+	}
+
+	before := time.Now().UTC()
+	if _, err := d.service.PlaceOrder(context.Background(), stdPlaceOrderReq()); err != nil {
+		t.Fatalf("PlaceOrder err=%v", err)
+	}
+	if dc.doGoodsCalls.Load() != 1 {
+		t.Fatalf("dianshi DoGoods calls=%d want 1", dc.doGoodsCalls.Load())
+	}
+	gotSeconds := before.Sub(createdAfter).Seconds()
+	if math.Abs(gotSeconds-1800) > 2 {
+		t.Fatalf("createdAfter window seconds=%f want about 1800", gotSeconds)
 	}
 }
 
