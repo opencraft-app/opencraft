@@ -13,7 +13,7 @@
  *   - 完整订单 query + 微信内 + 有 openid + order-url 失败 → error 态
  *   - 完整订单 query + 微信内 + 已尝试 OAuth 仍无 openid → 保持 loading（OAuth effect short-circuit）
  *   - 兼容 hash / 微信命名（wx_openid）的 openid 字段
- *   - 自定义 VITE_WECHAT_PAY_AUTH_BASE_URL 覆盖默认后端
+ *   - 自定义 NEXT_PUBLIC_WECHAT_PAY_AUTH_BASE_URL 覆盖默认后端
  */
 import { MemoryRouter } from "react-router-dom";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
@@ -90,7 +90,7 @@ describe("WeChatPayPage / 无订单 query（联调占位 / 旧行为兼容）", 
     expect(redirected.searchParams.get("mode")).toBe("official_account");
     expect(redirected.searchParams.get("scope")).toBe("base");
     expect(redirected.searchParams.get("return_to")).toBe(
-      "http://localhost:3000/auth/wechat-pay?openid_auth_attempted=1",
+      `${window.location.origin}/auth/wechat-pay?openid_auth_attempted=1`,
     );
   });
 
@@ -140,7 +140,7 @@ describe("WeChatPayPage / 无订单 query（联调占位 / 旧行为兼容）", 
   });
 
   it("支持显式覆盖支付 OpenID 授权后端", () => {
-    vi.stubEnv("VITE_WECHAT_PAY_AUTH_BASE_URL", "https://wechat-pay-auth.example.com/");
+    vi.stubEnv("NEXT_PUBLIC_WECHAT_PAY_AUTH_BASE_URL", "https://wechat-pay-auth.example.com/");
     setUserAgent(WECHAT_UA);
     renderPage();
 
@@ -165,8 +165,8 @@ describe("WeChatPayPage / 完整支付链路（A 方案）", () => {
   };
 
   beforeEach(() => {
-    vi.stubEnv("VITE_WX_BUY_HOST", "buy.cloud.tencent.com");
-    vi.stubEnv("VITE_WX_PAY_PRODUCT_ID", "lightvela_pro_v1");
+    vi.stubEnv("NEXT_PUBLIC_WX_BUY_HOST", "buy.cloud.tencent.com");
+    vi.stubEnv("NEXT_PUBLIC_WX_PAY_PRODUCT_ID", "lightvela_pro_v1");
   });
 
   it("已过期 → expired 态（OAuth effect 与业务解耦，UI 显示 expired 即正确）", () => {

@@ -33,12 +33,12 @@
  * 视图，用于联调期前端独立调试拿 openid 的链路。
  *
  * 环境变量：
- *   VITE_WECHAT_PAY_AUTH_BASE_URL  后端 OAuth 起点的域名（缺省 https://lightclaw.tech）
- *   VITE_WX_PAY_BRIDGE_BASE_URL    PC 端生成二维码用的中转页绝对 URL
- *   VITE_WX_BUY_HOST               米大师 H5 中转页域名
- *   VITE_WX_PAY_PRODUCT_ID         签约模板 productId
- *   VITE_WX_PAY_PROCESS_VERSION    签约版本（可选）
- *   VITE_MIDAS_SANDBOX             "true" 启用沙箱
+ *   NEXT_PUBLIC_WECHAT_PAY_AUTH_BASE_URL  后端 OAuth 起点的域名（缺省 https://lightclaw.tech）
+ *   NEXT_PUBLIC_WX_PAY_BRIDGE_BASE_URL    PC 端生成二维码用的中转页绝对 URL
+ *   NEXT_PUBLIC_WX_BUY_HOST               米大师 H5 中转页域名
+ *   NEXT_PUBLIC_WX_PAY_PRODUCT_ID         签约模板 productId
+ *   NEXT_PUBLIC_WX_PAY_PROCESS_VERSION    签约版本（可选）
+ *   NEXT_PUBLIC_MIDAS_SANDBOX             "true" 启用沙箱
  *
  * 联调文档：codesign/ctl-frontend-billing-api.md §2.2 / §3.3
  */
@@ -93,6 +93,11 @@ const OPEN_ID_PARAM_NAMES = ["openid", "open_id", "openId", "wx_openid", "wxOpen
 const DEFAULT_WECHAT_PAY_AUTH_BASE_URL = "https://lightclaw.tech";
 const OPEN_ID_AUTH_ATTEMPTED_PARAM = "openid_auth_attempted";
 const AUTH_TOKEN_STORAGE_KEY = "lightclaw-auth-token-v1";
+
+const trimPublicEnv = (value: string | undefined): string | undefined => {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : undefined;
+};
 
 interface APIEnvelope<T> {
   code: string;
@@ -540,7 +545,9 @@ const readOpenId = (search: string, hash: string) => {
 };
 
 const resolveWeChatPayAuthBaseUrl = () => {
-  const configured = import.meta.env.VITE_WECHAT_PAY_AUTH_BASE_URL?.trim();
+  const configured = trimPublicEnv(
+    typeof process !== "undefined" ? process.env.NEXT_PUBLIC_WECHAT_PAY_AUTH_BASE_URL : undefined,
+  );
   return (configured && configured.length > 0
     ? configured
     : DEFAULT_WECHAT_PAY_AUTH_BASE_URL
@@ -655,13 +662,15 @@ const DEFAULT_WX_BUY_HOST = "test.buy.cloud.tencent.com";
 /**
  * 解析 wxSign 需要的 BuyHost：
  *   1. 优先调 SDK detectAvailableBuyDomain() 拿运行时探测出的可用域名（依赖 @tencent/i18n/hostPlugin 副作用）
- *   2. 探测返回 undefined（无 i18nHostPlugin / 全部探测失败 / SDK 内部异常）→ 回落 VITE_WX_BUY_HOST
+ *   2. 探测返回 undefined（无 i18nHostPlugin / 全部探测失败 / SDK 内部异常）→ 回落 NEXT_PUBLIC_WX_BUY_HOST
  *   3. env 也未配 → 回落硬编码 buy.cloud.tencent.com（SDK 注释中给出的默认值）
  *
  * SDK 内部对探测结果做了模块级缓存，重复调用不会重复发请求，无需在外层缓存。
  */
 async function resolveBuyHost(): Promise<string> {
-  const fromEnv = (import.meta.env.VITE_WX_BUY_HOST as string | undefined)?.trim();
+  const fromEnv = trimPublicEnv(
+    typeof process !== "undefined" ? process.env.NEXT_PUBLIC_WX_BUY_HOST : undefined,
+  );
   if (fromEnv && fromEnv.length > 0) {
     return fromEnv;
   }
@@ -697,9 +706,13 @@ async function launchWxSign(
   openId: string,
 ): Promise<void> {
   const buyHost = await resolveBuyHost();
-  const productId = (import.meta.env.VITE_WX_PAY_PRODUCT_ID as string | undefined) ?? "";
+  const productId = trimPublicEnv(
+    typeof process !== "undefined" ? process.env.NEXT_PUBLIC_WX_PAY_PRODUCT_ID : undefined,
+  ) ?? "";
   // const processVersion =
-  //   (import.meta.env.VITE_WX_PAY_PROCESS_VERSION as string | undefined) ?? undefined;
+  //   trimPublicEnv(
+  //     typeof process !== "undefined" ? process.env.NEXT_PUBLIC_WX_PAY_PROCESS_VERSION : undefined,
+  //   );
   if (!orderUrl.pay_url || !orderUrl.midas_app_id || !orderUrl.token_id) {
     console.error("[wechat-pay] order-url 响应缺少 pay_url / midas_app_id / token_id", orderUrl);
     throw new Error("支付参数获取失败，请稍后重试");
