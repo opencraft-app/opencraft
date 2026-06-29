@@ -486,8 +486,13 @@ func (s *workerActionService) handleCurrent(w http.ResponseWriter, r *http.Reque
 		writeJSONAny(w, http.StatusBadRequest, map[string]string{"error": "unsupported_action"})
 		return
 	}
-	if _, err := s.resolveBotTarget(r.Context(), session, botID); err != nil {
+	target, err := s.resolveBotTarget(r.Context(), session, botID)
+	if err != nil {
 		writeWorkerActionUpstreamError(w, err)
+		return
+	}
+	if target.CloudID == "" || target.Region == "" {
+		writeJSONAny(w, http.StatusBadGateway, map[string]string{"error": "bot_target_unresolved"})
 		return
 	}
 	workflowID := buildWorkerActionWorkflowID(botID, action)
@@ -517,8 +522,13 @@ func (s *workerActionService) handleQuery(w http.ResponseWriter, r *http.Request
 		writeJSONAny(w, http.StatusForbidden, map[string]string{"error": "action_run_forbidden"})
 		return
 	}
-	if _, err := s.resolveBotTarget(r.Context(), session, botID); err != nil {
+	target, err := s.resolveBotTarget(r.Context(), session, botID)
+	if err != nil {
 		writeWorkerActionUpstreamError(w, err)
+		return
+	}
+	if target.CloudID == "" || target.Region == "" {
+		writeJSONAny(w, http.StatusBadGateway, map[string]string{"error": "bot_target_unresolved"})
 		return
 	}
 	status, err := s.backend.QueryWorkflow(r.Context(), actionRunID, r.URL.Query().Get("run_id"), workerActionStatusQueryName)

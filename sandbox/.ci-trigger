@@ -1,2 +1,2 @@
-triggered_at=2026-05-18T21:42:35Z
-reason=refresh sandbox service CI from master
+triggered_at=2026-06-29T12:22:00Z
+reason=rebuild-prod-sandbox-api-for-worker-actions-target-fields
