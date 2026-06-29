@@ -1062,6 +1062,62 @@ func TestWorkerActionCurrentReturnsEmptyStatusWhenNoWorkflowExists(t *testing.T)
 	}
 }
 
+func TestWorkerActionCurrentReturnsUnresolvedWhenSandboxOmitsTarget(t *testing.T) {
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"session": map[string]any{
+				"user": map[string]any{"id": "usr_123", "email": "user@example.com"},
+			},
+		})
+	}))
+	defer auth.Close()
+	ctl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": "OK",
+			"data": map[string]any{"instance_id": "bot-1", "sandbox_id": "sbx-1", "status": "Running"},
+		})
+	}))
+	defer ctl.Close()
+	sandbox := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"sandboxID": "sbx-1"})
+	}))
+	defer sandbox.Close()
+
+	backend := &fakeWorkerActionBackend{}
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		Routes: []Route{
+			{Name: "ctl", Prefix: "/v1/instances", Upstream: ctl.URL, Access: AccessAuthenticated},
+			{Name: "sandbox", Prefix: "/sandboxes", Upstream: sandbox.URL, Access: AccessAuthenticated},
+		},
+		WorkerActions: WorkerActionsConfig{Enabled: true},
+	}, WithWorkerActionBackend(backend))
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/worker-actions?bot_id=bot-1&action=rescue_export", nil)
+	req.Header.Set("Authorization", "Bearer tok-123")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Error string `json:"error"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.Error != "bot_target_unresolved" {
+		t.Fatalf("unexpected error %q", body.Error)
+	}
+	if backend.queryWorkflowID != "" {
+		t.Fatalf("temporal query should not be called, got %s", backend.queryWorkflowID)
+	}
+}
+
 func TestWorkerActionQueryResolvesBotAndQueriesTemporal(t *testing.T) {
 	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -1106,6 +1162,62 @@ func TestWorkerActionQueryResolvesBotAndQueriesTemporal(t *testing.T) {
 	}
 	if backend.queryWorkflowID != "worker-action-bot-1-rescue_export-123" || backend.queryRunID != "run-1" || backend.queryType != workerActionStatusQueryName {
 		t.Fatalf("unexpected query call: %+v", backend)
+	}
+}
+
+func TestWorkerActionQueryReturnsUnresolvedWhenSandboxOmitsTarget(t *testing.T) {
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"session": map[string]any{
+				"user": map[string]any{"id": "usr_123", "email": "user@example.com"},
+			},
+		})
+	}))
+	defer auth.Close()
+	ctl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": "OK",
+			"data": map[string]any{"instance_id": "bot-1", "sandbox_id": "sbx-1", "status": "Running"},
+		})
+	}))
+	defer ctl.Close()
+	sandbox := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"sandboxID": "sbx-1"})
+	}))
+	defer sandbox.Close()
+
+	backend := &fakeWorkerActionBackend{}
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		Routes: []Route{
+			{Name: "ctl", Prefix: "/v1/instances", Upstream: ctl.URL, Access: AccessAuthenticated},
+			{Name: "sandbox", Prefix: "/sandboxes", Upstream: sandbox.URL, Access: AccessAuthenticated},
+		},
+		WorkerActions: WorkerActionsConfig{Enabled: true},
+	}, WithWorkerActionBackend(backend))
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/worker-actions/worker-action-bot-1-rescue_export-123?bot_id=bot-1&run_id=run-1", nil)
+	req.Header.Set("Authorization", "Bearer tok-123")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Error string `json:"error"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.Error != "bot_target_unresolved" {
+		t.Fatalf("unexpected error %q", body.Error)
+	}
+	if backend.queryWorkflowID != "" {
+		t.Fatalf("temporal query should not be called, got %s", backend.queryWorkflowID)
 	}
 }
 
