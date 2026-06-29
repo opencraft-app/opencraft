@@ -370,7 +370,7 @@ func addTemporalFlags(fs *flag.FlagSet) *rescue.TemporalConfig {
 }
 
 func addStartFlags(fs *flag.FlagSet) (*rescue.ExportRequest, *rescue.TencentConfig) {
-	req := &rescue.ExportRequest{InstanceID: "ins-0fverxpd", RescueUsername: "root", RescuePasswordEnv: "RESCUE_PASSWORD", StopType: "SOFT_FIRST", CommandTransport: "tat", SSHUser: "root", SSHPort: 22, TATUsername: "root", TATWorkingDirectory: "/root", TATWaitTimeoutSeconds: 180, COSUploadRegion: "ap-beijing", COSUploadKeyPrefix: "rescue-exports", COSUploadURLTTLSeconds: 28800, LocalOutputDir: "./exports", MountRoot: "/mnt/rescue-root", RemoteWorkDir: "/root", ArchiveMode: rescue.ArchiveModeHermes, WaitTimeoutSeconds: 90, CommandTimeoutSeconds: 1800}
+	req := &rescue.ExportRequest{InstanceID: "ins-0fverxpd", RescueUsername: "root", RescuePasswordEnv: "RESCUE_PASSWORD", StopType: rescue.DefaultRescueStopType, CommandTransport: "tat", SSHUser: "root", SSHPort: 22, TATUsername: "root", TATWorkingDirectory: "/root", TATWaitTimeoutSeconds: 180, COSUploadRegion: "ap-beijing", COSUploadKeyPrefix: "rescue-exports", COSUploadURLTTLSeconds: 28800, LocalOutputDir: "./exports", MountRoot: "/mnt/rescue-root", RemoteWorkDir: "/root", ArchiveMode: rescue.ArchiveModeHermes, WaitTimeoutSeconds: rescue.DefaultRescueWaitTimeoutSeconds, CommandTimeoutSeconds: 1800}
 	cfg := &rescue.TencentConfig{}
 	fs.StringVar(&cfg.CredentialFile, "credential-file", "", "Optional Tencent credential JSON; env vars take precedence")
 	fs.StringVar(&req.InstanceID, "instance-id", req.InstanceID, "Tencent CVM instance ID")
