@@ -16,6 +16,9 @@ configMapGenerator:
 - name: cloudladdergateway-platform-values
   envs:
   - cloudladdergateway-platform.env
+- name: cloudladdergateway-platform-testing-values
+  envs:
+  - cloudladdergateway-platform-testing.env
 replacements:
 - source:
     kind: ConfigMap
@@ -27,6 +30,11 @@ replacements:
       name: lightvela-proxy
     fieldPaths:
     - spec.template.spec.containers.0.image
+- source:
+    kind: ConfigMap
+    name: cloudladdergateway-platform-testing-values
+    fieldPath: data.CLOUDLADDERGATEWAY_IMAGE
+  targets:
   - select:
       kind: StatefulSetPlus
       name: lightvela-proxy-testing
@@ -42,6 +50,11 @@ replacements:
       name: lightvela-proxy
     fieldPaths:
     - spec.template.metadata.annotations.[cloudladdergateway.lightvela.com/redeploy-at]
+- source:
+    kind: ConfigMap
+    name: cloudladdergateway-platform-testing-values
+    fieldPath: data.CLOUDLADDERGATEWAY_DEPLOYED_AT
+  targets:
   - select:
       kind: StatefulSetPlus
       name: lightvela-proxy-testing
