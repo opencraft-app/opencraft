@@ -12,12 +12,6 @@ interface ImportMetaEnv {
   readonly VITE_POSTHOG_PROJECT_TOKEN?: string;
   readonly VITE_POSTHOG_HOST?: string;
   readonly VITE_POSTHOG_UI_HOST?: string;
-  readonly VITE_WECHAT_PAY_AUTH_BASE_URL?: string;
-  readonly VITE_WX_BUY_HOST?: string;
-  readonly VITE_WX_PAY_BRIDGE_BASE_URL?: string;
-  readonly VITE_WX_PAY_PROCESS_VERSION?: string;
-  readonly VITE_WX_PAY_PRODUCT_ID?: string;
-  readonly VITE_MIDAS_SANDBOX?: string;
   readonly NEXT_PUBLIC_POSTHOG_ENABLED?: string;
   readonly NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN?: string;
   readonly NEXT_PUBLIC_POSTHOG_HOST?: string;
@@ -26,4 +20,15 @@ interface ImportMetaEnv {
 
 interface ImportMeta {
   readonly env: ImportMetaEnv;
+}
+
+declare namespace NodeJS {
+  interface ProcessEnv {
+    readonly NEXT_PUBLIC_WECHAT_PAY_AUTH_BASE_URL?: string;
+    readonly NEXT_PUBLIC_WX_BUY_HOST?: string;
+    readonly NEXT_PUBLIC_WX_PAY_BRIDGE_BASE_URL?: string;
+    readonly NEXT_PUBLIC_WX_PAY_PROCESS_VERSION?: string;
+    readonly NEXT_PUBLIC_WX_PAY_PRODUCT_ID?: string;
+    readonly NEXT_PUBLIC_MIDAS_SANDBOX?: string;
+  }
 }
