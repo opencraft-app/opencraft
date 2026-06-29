@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"git.woa.com/wisp/mono/trade/internal/ctlclient"
 	"git.woa.com/wisp/mono/trade/internal/jifeiclient"
@@ -194,7 +195,9 @@ func (f *fakeOrderWriter) MarkOrderCancelled(ctx context.Context, dealName strin
 }
 
 type fakeOrderStore struct {
-	getOrderByDealNameFn func(ctx context.Context, dealName string) (*store.TradeOrder, error)
+	getOrderByDealNameFn     func(ctx context.Context, dealName string) (*store.TradeOrder, error)
+	findReusableFn           func(ctx context.Context, externalUserID string, activityID int64, bundleID string, createdAfter time.Time) (*store.TradeOrder, error)
+	lastReusableCreatedAfter time.Time
 }
 
 func (f *fakeOrderStore) GetOrderByDealName(ctx context.Context, dealName string) (*store.TradeOrder, error) {
@@ -202,6 +205,14 @@ func (f *fakeOrderStore) GetOrderByDealName(ctx context.Context, dealName string
 		return f.getOrderByDealNameFn(ctx, dealName)
 	}
 	return nil, errors.New("fakeOrderStore: GetOrderByDealName not implemented")
+}
+
+func (f *fakeOrderStore) FindReusableDianshiOrder(ctx context.Context, externalUserID string, activityID int64, bundleID string, createdAfter time.Time) (*store.TradeOrder, error) {
+	f.lastReusableCreatedAfter = createdAfter
+	if f.findReusableFn != nil {
+		return f.findReusableFn(ctx, externalUserID, activityID, bundleID, createdAfter)
+	}
+	return nil, store.ErrTradeOrderNotFound
 }
 
 // ============================================================================
