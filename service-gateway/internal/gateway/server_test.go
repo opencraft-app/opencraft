@@ -605,6 +605,9 @@ func TestWorkerActionStartResolvesBotAndStartsRescueExportWorkflow(t *testing.T)
 	if exportReq.ArchiveMode != "hermes" {
 		t.Fatalf("unexpected archive mode: %+v", exportReq)
 	}
+	if exportReq.StopType != "SOFT_FIRST" || exportReq.WaitTimeoutSeconds != 400 {
+		t.Fatalf("unexpected rescue mode defaults: stop_type=%s wait_timeout=%d", exportReq.StopType, exportReq.WaitTimeoutSeconds)
+	}
 	if !exportReq.Execute || !exportReq.Confirmed {
 		t.Fatalf("expected real export request, got execute=%v confirmed=%v", exportReq.Execute, exportReq.Confirmed)
 	}
@@ -831,6 +834,9 @@ func TestWorkerActionStartHermesImportWorkflow(t *testing.T) {
 	}
 	if importReq.TATUsername != "agentuser" || importReq.TATWorkingDirectory != "/home/agentuser" {
 		t.Fatalf("expected agentuser TAT import request, got %+v", importReq)
+	}
+	if importReq.WaitTimeoutSeconds != 360 || importReq.TATWaitTimeoutSeconds != 360 {
+		t.Fatalf("unexpected import wait defaults: wait=%d tat_wait=%d", importReq.WaitTimeoutSeconds, importReq.TATWaitTimeoutSeconds)
 	}
 	if !importReq.Execute {
 		t.Fatalf("expected real import request, got %+v", importReq)

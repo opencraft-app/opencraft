@@ -41,6 +41,8 @@ const (
 	rescueArchiveModeGeneric       = "generic"
 	defaultHermesRemotePath        = "/home/agentuser/.hermes"
 	defaultImportUploadTTLSeconds  = 900
+	defaultRescueWaitTimeoutSecs   = 400
+	defaultImportWaitTimeoutSecs   = 360
 )
 
 var workerActionIDSafePattern = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
@@ -715,9 +717,9 @@ func (s *workerActionService) buildHermesImportRequest(raw json.RawMessage, targ
 		COSUploadURLTTLSeconds: s.importUploadTTLSeconds(),
 		TATUsername:            "agentuser",
 		TATWorkingDirectory:    "/home/agentuser",
-		TATWaitTimeoutSeconds:  180,
+		TATWaitTimeoutSeconds:  defaultImportWaitTimeoutSecs,
 		Execute:                true,
-		WaitTimeoutSeconds:     90,
+		WaitTimeoutSeconds:     defaultImportWaitTimeoutSecs,
 		CommandTimeoutSeconds:  1800,
 	}, nil
 }
@@ -786,7 +788,7 @@ func (s *workerActionService) buildRescueExportRequest(raw json.RawMessage, targ
 		COSUploadURLTTLSeconds: s.cfg.RescueExport.COSUploadURLTTLSeconds,
 		Execute:                true,
 		Confirmed:              true,
-		WaitTimeoutSeconds:     90,
+		WaitTimeoutSeconds:     defaultRescueWaitTimeoutSecs,
 		CommandTimeoutSeconds:  1800,
 	}, nil
 }
