@@ -29,6 +29,7 @@ import (
 	"ctl/pkg/tracing"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 const (
@@ -1163,7 +1164,8 @@ var ErrSnapshotPermanentFailed = errors.New("snapshot permanent failed")
 // 重投幂等：
 //   - SnapshotID != "" → 跳过阶段 1
 //   - SnapshotsDone == true → 跳过阶段 1+2，直接进 3+4
-//   - 阶段 3+4 通过反查 instance.status==Deleted 判断已完成
+//   - 父 task 已提前将 instance 从用户侧软删/脱钩时，子 task 继续使用 payload.SandboxID/UserID
+//     完成快照和 sandbox 删除，snapshot 表保留原用户关联用于恢复
 //
 // 入参 taskID 用于 UpdatePayload 持久化进度位（写回 task.task_params 列）。
 func (l *logic) RunDestroyInstanceForPassTask(ctx pctx.Context, taskID string, payload *common.DestroyInstanceForPassTaskPayload) error {
@@ -1187,32 +1189,44 @@ func (l *logic) RunDestroyInstanceForPassTask(ctx pctx.Context, taskID string, p
 		zap.String("task_id", taskID),
 	)
 
-	// 反查 instance（任何阶段都需要）— 不存在 / 已 Deleted 直接成功（幂等）
-	entity, err := l.instanceDao.GetByInstanceID(ctx, payload.InstanceID)
+	entity, err := getInstanceForPassDestroy(ctx, l.instanceDao, payload.InstanceID)
 	if err != nil {
 		if errors.Is(err, errcode.ErrInstanceNotFound) {
-			logger.Info("destroy task: instance not found, treat as already destroyed (success)")
-			return nil
+			if payload.SandboxID != "" && !isPendingSandboxID(payload.SandboxID) {
+				logger.Warn("destroy task: instance row not found, continue with payload sandbox id",
+					zap.String("sandbox_id", payload.SandboxID))
+			} else {
+				logger.Info("destroy task: instance not found and no usable payload sandbox, treat as already destroyed")
+				return nil
+			}
+		} else {
+			return fmt.Errorf("get instance: %w", err)
 		}
-		return fmt.Errorf("get instance: %w", err)
 	}
-	if entity.Status == modelinstance.InstanceStatusDeleted {
-		logger.Info("destroy task: instance already deleted, success")
-		return nil
+	sandboxID := strings.TrimSpace(payload.SandboxID)
+	if sandboxID == "" && entity != nil {
+		sandboxID = entity.SandboxId
 	}
-	if entity.Status == modelinstance.InstanceStatusFailed {
-		// Failed 是终态，sandbox 已不可达；记录 warn 后视为成功（不强行删 cvm，避免无限重试）
-		logger.Warn("destroy task: instance in Failed terminal state, treat as success",
+	if entity != nil && entity.Status == modelinstance.InstanceStatusFailed &&
+		(sandboxID == "" || isPendingSandboxID(sandboxID)) {
+		// Failed 是终态且无可用 sandbox；记录 warn 后视为成功（不强行删 cvm，避免无限重试）
+		logger.Warn("destroy task: instance in Failed terminal state without usable sandbox, treat as success",
 			zap.String("status", entity.Status))
 		return nil
+	}
+	if sandboxID == "" || isPendingSandboxID(sandboxID) {
+		if entity != nil && entity.Status == modelinstance.InstanceStatusDeleted && payload.SnapshotsDone {
+			logger.Info("destroy task: detached instance has no usable sandbox and snapshots are done, success")
+			return nil
+		}
 	}
 
 	// === 阶段 1：发起快照创建 ===
 	if payload.SnapshotID == "" {
-		if entity.SandboxId == "" || isPendingSandboxID(entity.SandboxId) {
+		if sandboxID == "" || isPendingSandboxID(sandboxID) {
 			// instance 没有可用 sandbox → 跳过快照（无系统盘语义同等价处理）
 			logger.Warn("destroy task: instance has no usable sandbox, skip snapshot phase",
-				zap.String("sandbox_id", entity.SandboxId))
+				zap.String("sandbox_id", sandboxID))
 			payload.SnapshotID = "<no-sandbox>"
 			payload.SnapshotsDone = true
 			if updErr := l.updateTaskPayload(ctx, taskID, payload); updErr != nil {
@@ -1228,7 +1242,7 @@ func (l *logic) RunDestroyInstanceForPassTask(ctx pctx.Context, taskID string, p
 				Region:           payload.Region,
 				RetentionSeconds: retentionSec,
 			}
-			resp, sErr := l.sandboxAdapter.CreateSnapshot(ctx, entity.SandboxId, req)
+			resp, sErr := l.sandboxAdapter.CreateSnapshot(ctx, sandboxID, req)
 			if sErr != nil {
 				if isInstanceNoSystemDiskError(sErr) {
 					// Q10/Q25 联动：无系统盘 → 跳过快照阶段，直接进入阶段 3+4
@@ -1263,8 +1277,8 @@ func (l *logic) RunDestroyInstanceForPassTask(ctx pctx.Context, taskID string, p
 	// === 阶段 2：轮询快照状态 + 入 snapshot 表 ===
 	if !payload.SnapshotsDone {
 		// payload.SnapshotID != "<no-disk>" / "<no-sandbox>" 时才真调 sandbox 轮询
-		if !isSnapshotSentinel(payload.SnapshotID) && entity.SandboxId != "" && !isPendingSandboxID(entity.SandboxId) {
-			statusResp, sErr := l.sandboxAdapter.GetSnapshotStatus(ctx, entity.SandboxId, payload.SnapshotID)
+		if !isSnapshotSentinel(payload.SnapshotID) && sandboxID != "" && !isPendingSandboxID(sandboxID) {
+			statusResp, sErr := l.sandboxAdapter.GetSnapshotStatus(ctx, sandboxID, payload.SnapshotID)
 			if sErr != nil {
 				return fmt.Errorf("sandbox.GetSnapshotStatus: %w", sErr)
 			}
@@ -1324,14 +1338,15 @@ func (l *logic) RunDestroyInstanceForPassTask(ctx pctx.Context, taskID string, p
 	}
 
 	// === 阶段 3：删除 sandbox（与老 DestroyInstance 同接口）===
-	if entity.SandboxId != "" && !isPendingSandboxID(entity.SandboxId) {
-		if err := l.sandboxAdapter.DeleteSandbox(ctx, entity.SandboxId); err != nil && !isSandboxNotFound(err) {
+	if sandboxID != "" && !isPendingSandboxID(sandboxID) {
+		if err := l.sandboxAdapter.DeleteSandbox(ctx, sandboxID); err != nil && !isSandboxNotFound(err) {
 			return fmt.Errorf("sandbox.DeleteSandbox: %w", err)
 		}
-		logger.Info("destroy task: sandbox deleted")
+		logger.Info("destroy task: sandbox deleted",
+			zap.String("sandbox_id", sandboxID))
 	} else {
 		logger.Warn("destroy task: instance has no usable sandbox, skip DeleteSandbox call",
-			zap.String("sandbox_id", entity.SandboxId))
+			zap.String("sandbox_id", sandboxID))
 	}
 
 	// === 阶段 4：CAS instance.status → Deleted + 软删 instance 行 ===
@@ -1342,9 +1357,19 @@ func (l *logic) RunDestroyInstanceForPassTask(ctx pctx.Context, taskID string, p
 	//   - 软删 instance 行（GORM `Delete(&Entity{})` 写 `deleted_at`），与老 DestroyInstance 链路保持一致：
 	//     软删后 GORM 默认查询过滤 deleted_at IS NULL，列表/详情查询自动屏蔽该 instance。
 	//
-	// 配额释放：本阶段**不**调 +1 release，配额回收完全交给父 task `MoveToHistory` step 4 的整行删
-	//（`DELETE user_resource_quota WHERE user_id=? AND resource_name='OPENCLAW_INSTANCE'`），
-	// 销毁链路里"配额回收"由父 task 单点接管，子 task 单一职责（status + 软删）。
+	// 配额释放：本阶段绝不能调普通实例销毁的 finalizeInstanceDeletion/releaseQuota。
+	// pass 销毁父 task 已经前置删除旧 pass 配额；更晚执行到这里时，同一用户也可能已经购买新 pass。
+	// 子 task 若再 +1 恢复配额，会污染新 pass 的 user_resource_quota。这里仅负责实例状态/软删和 sandbox 清理。
+	if entity == nil {
+		logger.Info("destroy task: instance row absent, sandbox cleanup finished")
+		return nil
+	}
+	if entity.Status == modelinstance.InstanceStatusDeleted || entity.DeletedAt.Valid || entity.UserId == "" {
+		logger.Info("destroy task: instance already detached from user, sandbox cleanup finished",
+			zap.String("status", entity.Status),
+			zap.Bool("deleted_at_valid", entity.DeletedAt.Valid))
+		return nil
+	}
 	if err := l.instanceDao.TransitionStatus(
 		ctx,
 		entity.Id,
@@ -1381,6 +1406,25 @@ func (l *logic) RunDestroyInstanceForPassTask(ctx pctx.Context, taskID string, p
 	}
 	logger.Info("destroy task: instance deleted successfully")
 	return nil
+}
+
+func getInstanceForPassDestroy(ctx pctx.Context, instanceDao modelinstance.Dao, instanceID string) (*modelinstance.Entity, error) {
+	if strings.TrimSpace(instanceID) == "" {
+		return nil, errcode.ErrInstanceInvalidParam
+	}
+	if resource.GormDB != nil {
+		var entity modelinstance.Entity
+		if err := resource.GormDB.Unscoped().
+			Where(fmt.Sprintf("%s = ?", modelinstance.ColumnInstanceID), instanceID).
+			First(&entity).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, errcode.ErrInstanceNotFound
+			}
+			return nil, err
+		}
+		return &entity, nil
+	}
+	return instanceDao.GetByInstanceID(ctx, instanceID)
 }
 
 // FinalizeDestroyInstanceForPassTaskFailure 子 task DestroyInstanceWithSnapshot 失败兜底

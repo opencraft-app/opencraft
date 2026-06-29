@@ -1,13 +1,12 @@
 // Package pass 实现 pass 相关的后台 task worker。
 //
-// 销毁父 task DestroyPass 派发并等待若干个 DestroyInstanceWithSnapshot 子 task 终态后收尾：
+// 销毁父 task DestroyPass 派发 DestroyInstanceWithSnapshot 子 task 后立即收尾：
 //
 //	5a CancelSubscription / 5b MoveToHistory / 5c CompleteFlow（Q6 步骤级幂等）
 //
 // 设计稿：.tmp/trade-pass-destroy-design.md §4.5.2 / §4.5.3 / §4.6 / §4.7 / §11-A Q1 / Q3 / Q5 / Q6 / Q21 / Q24
 //
-// D-6 切片：父 task execute 阶段 1~4（列实例 + 派子 task + 等终态）已落地。
-// D-7 切片（本文件升级）：execute 阶段 5（步骤级幂等收尾 5a/5b/5c）+ payload 进度位持久化。
+// 当前实现：父 task 列实例 + 派子 task + 立即从用户侧解除实例关联，再执行 5a/5b/5c 收尾。
 package pass
 
 import (
@@ -25,6 +24,7 @@ import (
 	modelinstance "ctl/pkg/model/instance"
 	modelpass "ctl/pkg/model/pass"
 	taskmodel "ctl/pkg/model/task"
+	"ctl/pkg/resource"
 	"ctl/pkg/taskflow"
 	"ctl/pkg/taskruntime"
 	taskcommon "ctl/pkg/taskruntime/common"
@@ -86,13 +86,13 @@ func (t *destroyPassTask) StepConfigMap() map[string]*taskflow.StepConfig[pctx.C
 	return stepMap
 }
 
-// execute 是销毁父 task 的核心（D-6 阶段 1~4 子 task 派发 + D-7 阶段 5a/5b/5c 步骤级幂等收尾）
+// execute 是销毁父 task 的核心（子 task 派发 + 5a/5b/5c 步骤级幂等收尾）
 //
 // 流程：
 //  1. 校验 t.in.PassID 非空
 //  2. 反查 pass：terminating → 进入子 task 派发 / 收尾；不存在 → 走 PassDeleted=true 的 5c 重投路径
-//  3. 阶段 1~4 子 task 派发 + 等终态（D-6）— 全部进度位都 true 时跳过该步以加速 markSuccess
-//  4. 阶段 5（D-7，步骤级幂等）：
+//  3. 派发 instance 异步销毁子 task，并立即从用户侧解除待销毁实例关联
+//  4. 阶段 5（步骤级幂等）：
 //     - 5a：!SubscriptionDone → ai-gateway.CancelSubscription（best-effort，Q3 拍板）→ 持久化进度位
 //     - 5b：!PassDeleted → dao.MoveToHistory（删 pass + 写 history_pass，单事务）→ 持久化
 //     - 5c：!FlowCompleted && TradeFlowID > 0 → trade.CompleteFlow（best-effort）→ 持久化
@@ -137,9 +137,9 @@ func (t *destroyPassTask) execute(ctx pctx.Context) (string, error) {
 		return t.markSuccess(ctx)
 	}
 
-	// === 阶段 1+2+3+4：子 task 派发 + 等所有子 task 终态（D-6 落地）===
+	// === 阶段 1+2+3+4：子 task 派发 + 立即解除实例用户关联 ===
 	if !(t.in.SubscriptionDone && t.in.PassDeleted && t.in.FlowCompleted) {
-		if err := t.dispatchAndWaitChildTasks(ctx, logger, passEntity); err != nil {
+		if err := t.dispatchChildTasksAndDetachInstances(ctx, logger, passEntity); err != nil {
 			return "", err
 		}
 	}
@@ -186,8 +186,12 @@ func (t *destroyPassTask) finalizePostPassDeleted(ctx pctx.Context, logger *zap.
 	return t.markSuccess(ctx)
 }
 
-// dispatchAndWaitChildTasks 阶段 1~4：列实例 / 反查 child_registry / 派子 task / 等终态
-func (t *destroyPassTask) dispatchAndWaitChildTasks(ctx pctx.Context, logger *zap.Logger, passEntity *modelpass.Entity) error {
+// dispatchChildTasksAndDetachInstances 阶段 1~4：列实例 / 反查 child_registry / 派子 task / 解除用户关联。
+//
+// 父 task 不再等待子 task 终态。子 task 通过 task runtime 的 checkTasks bypass 独立重试；
+// 父 task 只保证每个当前归属用户的非终态 instance 至少已有一个非 failed 子 task，然后立即把
+// instance 从用户侧软删/脱钩，让 pass 销毁、配额删除和订阅取消不被快照/CVM 删除耗时阻塞。
+func (t *destroyPassTask) dispatchChildTasksAndDetachInstances(ctx pctx.Context, logger *zap.Logger, passEntity *modelpass.Entity) error {
 	instanceDao := daoFactory.DefaultDaoFactory.InstanceDao(nil)
 	userID := t.in.UserID
 	if userID == "" {
@@ -227,59 +231,72 @@ func (t *destroyPassTask) dispatchAndWaitChildTasks(ctx pctx.Context, logger *za
 		dispatched[p.InstanceID] = ct
 	}
 
+	toDetach := make([]*modelinstance.Entity, 0, len(instances))
 	for _, inst := range instances {
-		if _, ok := dispatched[inst.InstanceId]; ok {
-			continue
-		}
 		if inst.Status == modelinstance.InstanceStatusDeleted ||
 			inst.Status == modelinstance.InstanceStatusFailed {
 			continue
 		}
-		childPayload := taskcommon.DestroyInstanceForPassTaskPayload{
-			InstanceID:  inst.InstanceId,
-			PassID:      t.in.PassID,
-			UserID:      userID,
-			OperationID: t.in.OperationID,
-			SandboxID:   inst.SandboxId,
-			Region:      t.in.Region,
-			UIN:         passEntity.Uin,
-			AppID:       passEntity.AppID,
-			TradeFlowID: t.in.TradeFlowID,
+		if _, ok := dispatched[inst.InstanceId]; !ok {
+			childPayload := taskcommon.DestroyInstanceForPassTaskPayload{
+				InstanceID:  inst.InstanceId,
+				PassID:      t.in.PassID,
+				UserID:      userID,
+				OperationID: t.in.OperationID,
+				SandboxID:   inst.SandboxId,
+				Region:      t.in.Region,
+				UIN:         passEntity.Uin,
+				AppID:       passEntity.AppID,
+				TradeFlowID: t.in.TradeFlowID,
+			}
+			if err := instanceasync.EnqueueDestroyInstanceForPassTask(
+				ctx,
+				childPayload,
+				t.TaskId,
+				destroyInstanceForPassTaskExecuteInterval,
+				destroyInstanceForPassTaskMaxExecuteCount,
+			); err != nil {
+				return fmt.Errorf("enqueue destroy instance for pass task for %s: %w", inst.InstanceId, err)
+			}
+			logger.Info("destroy pass: dispatched destroy instance child task",
+				zap.String("instance_id", inst.InstanceId))
 		}
-		if err := instanceasync.EnqueueDestroyInstanceForPassTask(
-			ctx,
-			childPayload,
-			t.TaskId,
-			destroyInstanceForPassTaskExecuteInterval,
-			destroyInstanceForPassTaskMaxExecuteCount,
-		); err != nil {
-			return fmt.Errorf("enqueue destroy instance for pass task for %s: %w", inst.InstanceId, err)
-		}
-		logger.Info("destroy pass: dispatched destroy instance child task",
-			zap.String("instance_id", inst.InstanceId))
+		toDetach = append(toDetach, inst)
 	}
 
-	childTasks, err = daoFactory.DefaultDaoFactory.TaskDao(nil).ListByParentTaskID(t.TaskId)
-	if err != nil {
-		return fmt.Errorf("re-list child tasks: %w", err)
+	if err := detachInstancesForPassDestroy(userID, toDetach); err != nil {
+		return fmt.Errorf("detach instances for pass destroy: %w", err)
 	}
-	pendingCount := 0
-	for _, ct := range childTasks {
-		if ct.TaskName != taskcommon.TaskNameDestroyInstanceWithSnapshot {
-			continue
+	logger.Info("destroy pass: child tasks dispatched and instances detached from user",
+		zap.Int("instance_count", len(toDetach)))
+	return nil
+}
+
+func detachInstancesForPassDestroy(userID string, instances []*modelinstance.Entity) error {
+	if userID == "" || len(instances) == 0 {
+		return nil
+	}
+	ids := make([]int64, 0, len(instances))
+	for _, inst := range instances {
+		if inst != nil && inst.Id > 0 {
+			ids = append(ids, inst.Id)
 		}
-		if !taskmodel.TaskCompleted(ct.TaskState) {
-			pendingCount++
-		}
 	}
-	if pendingCount > 0 {
-		logger.Info("destroy pass: child tasks pending, will retry parent",
-			zap.Int("pending_count", pendingCount),
-			zap.Int("total_children", len(childTasks)))
-		return fmt.Errorf("waiting for %d child task(s)", pendingCount)
+	if len(ids) == 0 {
+		return nil
 	}
-	logger.Info("destroy pass: all child tasks terminal, ready for finalize",
-		zap.Int("total_children", len(childTasks)))
+	now := time.Now().UTC()
+	result := resource.GormDB.Table(modelinstance.TableName).
+		Where(fmt.Sprintf("%s = ? AND %s IN ?", modelinstance.ColumnUserID, modelinstance.ColumnID), userID, ids).
+		Updates(map[string]interface{}{
+			modelinstance.ColumnUserID:    "",
+			modelinstance.ColumnStatus:    modelinstance.InstanceStatusDeleted,
+			modelinstance.ColumnDeletedAt: now,
+			modelinstance.ColumnUpdatedAt: now,
+		})
+	if result.Error != nil {
+		return result.Error
+	}
 	return nil
 }
 
