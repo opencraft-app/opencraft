@@ -1,6 +1,6 @@
 ---
 name: prd-init
-description: 当 LightVela、Hermes Agent、SkillHub 底层 API、MCP 或 Agent 控制台相关工作还停留在想法、反馈、Issue/问题单、老板口头需求、模糊 TAPD 单或未完成 PRD 阶段，并且需要做产品前置、PRD 梳理、TAPD 产品需求建单或研发交接时使用。
+description: 当 LightVela相关产品需求还停留在想法、反馈、Issue/问题单、老板口头需求、模糊 TAPD 单或未完成 PRD 阶段，并且需要做产品前置、PRD 梳理、TAPD 产品需求建单或研发交接时使用。
 ---
 
 # LightVela 产品前置与需求建单
