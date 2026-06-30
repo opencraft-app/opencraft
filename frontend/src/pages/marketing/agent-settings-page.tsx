@@ -3556,7 +3556,7 @@ export const AgentSettingsPage = ({
       setExportStatusErrors((prev) => ({ ...prev, [botId]: null }));
       return status;
     } catch (err) {
-      const message = err instanceof Error ? err.message : rawT("导出状态查询失败");
+      const message = err instanceof Error ? err.message : rawT("备份状态查询失败");
       setExportStatusErrors((prev) => ({ ...prev, [botId]: message }));
       throw err;
     } finally {
@@ -3576,7 +3576,7 @@ export const AgentSettingsPage = ({
       setImportStatusErrors((prev) => ({ ...prev, [botId]: null }));
       return status;
     } catch (err) {
-      const message = err instanceof Error ? err.message : rawT("导入状态查询失败");
+      const message = err instanceof Error ? err.message : rawT("恢复状态查询失败");
       setImportStatusErrors((prev) => ({ ...prev, [botId]: message }));
       throw err;
     } finally {
@@ -3618,18 +3618,18 @@ export const AgentSettingsPage = ({
     }));
     try {
       await repositories.bots.startRescueExport(targetBotId);
-      toast.success(t("导出任务已发起，完成后会发送到绑定邮箱。"));
+      toast.success(t("备份任务已发起，完成后会发送到绑定邮箱。"));
       await loadRescueExportStatus(targetBotId).catch(() => undefined);
     } catch (err) {
       const message = err instanceof Error ? err.message : "";
       if (message.includes("action_already_running")) {
-        toast.success(t("已有导出任务正在执行，已为你加载当前进度。"));
+        toast.success(t("已有备份任务正在执行，已为你加载当前进度。"));
         await loadRescueExportStatus(targetBotId).catch(() => undefined);
         return;
       }
       const friendlyMessage = message.includes("cos_upload_bucket_not_configured")
-          ? t("导出存储桶未配置，请稍后再试。")
-          : describeWorkspaceActionError("export", message || t("导出任务发起失败")).message;
+        ? t("备份存储桶未配置，请稍后再试。")
+        : describeWorkspaceActionError("export", message || t("备份任务发起失败")).message;
       setExportStatusByBotId((prev) => ({
         ...prev,
         [targetBotId]: {
@@ -3677,16 +3677,16 @@ export const AgentSettingsPage = ({
     }));
     try {
       await repositories.bots.importHermesWorkspace(targetBotId, file);
-      toast.success(t("导入任务已发起，完成后会发送到绑定邮箱。"));
+      toast.success(t("恢复任务已发起，完成后会发送到绑定邮箱。"));
       await loadHermesImportStatus(targetBotId).catch(() => undefined);
     } catch (err) {
       const message = err instanceof Error ? err.message : "";
       if (message.includes("action_already_running")) {
-        toast.success(t("已有导入任务正在执行，已为你加载当前进度。"));
+        toast.success(t("已有恢复任务正在执行，已为你加载当前进度。"));
         await loadHermesImportStatus(targetBotId).catch(() => undefined);
         return;
       }
-      const friendlyMessage = describeWorkspaceActionError("import", message || t("导入任务发起失败")).message;
+      const friendlyMessage = describeWorkspaceActionError("import", message || t("恢复任务发起失败")).message;
       setImportStatusByBotId((prev) => ({
         ...prev,
         [targetBotId]: {
@@ -4059,6 +4059,10 @@ export const AgentSettingsPage = ({
         return t("恢复过程中遇到异常，请稍后重试。");
       case "备份过程中遇到异常，请稍后重试。":
         return t("备份过程中遇到异常，请稍后重试。");
+      case "备份状态查询失败":
+        return t("备份状态查询失败");
+      case "恢复状态查询失败":
+        return t("恢复状态查询失败");
       default:
         return message;
     }
@@ -4086,10 +4090,16 @@ export const AgentSettingsPage = ({
   const workspaceTaskPhase = activeWorkspaceTask?.status.phase;
   const isWorkspaceTaskLoading = isActiveExportStatusLoading || isActiveImportStatusLoading;
   const isWorkspaceTaskRunning = isWorkspaceActionRunning(activeWorkspaceTask?.status);
-  const workspaceStatusError = activeWorkspaceTask?.kind === "export" ? activeExportStatusError : activeImportStatusError;
+  const workspaceStatusErrorKind: WorkspaceActionKind =
+    activeWorkspaceTask?.kind ?? (activeExportStatusError ? "export" : "import");
+  const workspaceStatusError = activeWorkspaceTask?.kind === "export"
+    ? activeExportStatusError
+    : activeWorkspaceTask?.kind === "import"
+      ? activeImportStatusError
+      : activeExportStatusError || activeImportStatusError;
   const workspaceRawError = workspaceStatusError || activeWorkspaceTask?.status.error || "";
-  const workspaceError = activeWorkspaceTask && workspaceRawError
-    ? describeWorkspaceActionError(activeWorkspaceTask.kind, workspaceRawError)
+  const workspaceError = workspaceRawError
+    ? describeWorkspaceActionError(workspaceStatusErrorKind, workspaceRawError)
     : null;
   const workspaceLastLogTime = workspaceTaskLogs.length > 0 ? workspaceTaskLogs[workspaceTaskLogs.length - 1]?.time : undefined;
   const canStartWorkspaceAction = !workspaceActionDisabledReason && !isActiveBotExporting && !isActiveBotImporting;
