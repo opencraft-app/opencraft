@@ -43,6 +43,12 @@ export interface DocGroup {
 /** 国内站 sidebar：微信 / 飞书 / QQ */
 const CN_SIDEBAR: DocGroup[] = [
   {
+    title: "产品公告",
+    items: [
+      { slug: "announcements/public-beta", title: "公测计划及付费版本预告" },
+    ],
+  },
+  {
     title: "开始使用",
     items: [
       { slug: "overview", title: "LightVela 是什么" },
@@ -132,6 +138,7 @@ const CN_SLUG_TO_FILE: Record<string, string> = {
   "configuration/channel-feishu": "configuration/channel-feishu.md",
   "configuration/channel-qq": "configuration/channel-qq.md",
   "configuration/skill": "configuration/skill.md",
+  "announcements/public-beta": "announcements/public-beta.md",
   faq: "07-faq.md",
 };
 
