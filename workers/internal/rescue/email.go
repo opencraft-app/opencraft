@@ -26,6 +26,8 @@ const (
 	sesDeliverStatusRejected = 3
 )
 
+const defaultSESDeliveryTimeout = 20 * time.Minute
+
 type EmailNotificationResult struct {
 	MessageID      string
 	ToEmail        string
@@ -39,11 +41,11 @@ type EmailNotificationResult struct {
 func sesDeliveryTimeout() time.Duration {
 	raw := strings.TrimSpace(os.Getenv("RESCUE_EXPORT_SES_DELIVERY_TIMEOUT_SECONDS"))
 	if raw == "" {
-		return 10 * time.Minute
+		return defaultSESDeliveryTimeout
 	}
 	seconds, err := strconv.Atoi(raw)
 	if err != nil || seconds <= 0 {
-		return 10 * time.Minute
+		return defaultSESDeliveryTimeout
 	}
 	return time.Duration(seconds) * time.Second
 }
@@ -210,8 +212,22 @@ func confirmExportNotificationDelivered(ctx context.Context, cfg TencentConfig, 
 			return last, err
 		}
 	}
-	return last, temporalActivityError(fmt.Errorf("timed out waiting for SES delivery message_id=%s to=%s last_deliver_status=%d message=%s",
-		sent.MessageID, sent.ToEmail, last.DeliverStatus, last.DeliverMessage))
+	return sesDeliveryTimeoutResult(sent, last), nil
+}
+
+func sesDeliveryTimeoutResult(sent EmailNotificationResult, last EmailNotificationResult) EmailNotificationResult {
+	if strings.TrimSpace(last.MessageID) == "" {
+		last.MessageID = sent.MessageID
+	}
+	if strings.TrimSpace(last.ToEmail) == "" {
+		last.ToEmail = sent.ToEmail
+	}
+	if strings.TrimSpace(last.DeliverMessage) == "" {
+		last.DeliverMessage = fmt.Sprintf("timed out waiting for SES delivery after %s", sesDeliveryTimeout())
+	}
+	fmt.Printf("[rescue] SES delivery confirmation timed out message_id=%s to=%s last_deliver_status=%d message=%q\n",
+		last.MessageID, last.ToEmail, last.DeliverStatus, last.DeliverMessage)
+	return last
 }
 
 func querySESDeliveryStatus(ctx context.Context, client TencentClient, requestDate, messageID, toEmail string) (EmailNotificationResult, error) {

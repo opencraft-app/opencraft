@@ -4131,7 +4131,13 @@ export const AgentSettingsPage = ({
           <ol className="space-y-0">
             {[...exportPanelLogs, ...importPanelLogs].map((log, index, allLogs) => {
               const isLast = index === allLogs.length - 1;
-              const tone = log.level === "error" ? "bg-red-500" : log.level === "success" ? "bg-emerald-500" : "bg-black/35";
+              const tone = log.level === "error"
+                ? "bg-red-500"
+                : log.level === "success"
+                  ? "bg-emerald-500"
+                  : log.level === "warning"
+                    ? "bg-amber-500"
+                    : "bg-black/35";
               return (
                 <li key={`${log.time ?? "log"}-${index}`} className="grid grid-cols-[72px_16px_minmax(0,1fr)] gap-3">
                   <div className="pt-0.5 text-right text-[11px] text-black/35">

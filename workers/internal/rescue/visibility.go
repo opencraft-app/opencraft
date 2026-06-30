@@ -130,6 +130,9 @@ func completeWorkflowStatus(ctx workflow.Context, req ExportRequest, status *Exp
 		status.Error = productFailureReason(err.Error())
 		appendExportStatusLog(ctx, status, PhaseFailed, status.Error, "error")
 	} else {
+		if message := emailDeliveryWarningLog(status.EmailMessageID, status.EmailDelivered, status.EmailDeliverMessage); message != "" {
+			appendExportStatusLog(ctx, status, PhaseConfirmEmailDelivery, message, "warning")
+		}
 		status.Phase = PhaseCompleted
 		appendExportStatusLog(ctx, status, PhaseCompleted, phaseStatusMessage(PhaseCompleted, status.DryRun), "success")
 	}
@@ -159,6 +162,9 @@ func completeImportWorkflowStatus(ctx workflow.Context, req ImportRequest, statu
 		status.Error = productFailureReason(err.Error())
 		appendImportStatusLog(ctx, status, PhaseFailed, status.Error, "error")
 	} else {
+		if message := emailDeliveryWarningLog(status.EmailMessageID, status.EmailDelivered, status.EmailDeliverMessage); message != "" {
+			appendImportStatusLog(ctx, status, PhaseConfirmEmailDelivery, message, "warning")
+		}
 		status.Phase = PhaseCompleted
 		appendImportStatusLog(ctx, status, PhaseCompleted, importPhaseStatusMessage(PhaseCompleted, status.DryRun), "success")
 	}
@@ -245,6 +251,13 @@ func appendImportStatusLog(ctx workflow.Context, status *ImportStatus, phase str
 	if len(status.Logs) > maxExportStatusLogs {
 		status.Logs = status.Logs[len(status.Logs)-maxExportStatusLogs:]
 	}
+}
+
+func emailDeliveryWarningLog(messageID string, delivered bool, deliverMessage string) string {
+	if strings.TrimSpace(messageID) == "" || delivered || strings.TrimSpace(deliverMessage) == "" {
+		return ""
+	}
+	return "任务已完成，但邮件投递状态暂未确认。请稍后查看邮箱；如长时间未收到邮件，可以重新发起或联系支持处理。"
 }
 
 func phaseStatusMessage(phase string, dryRun bool) string {
