@@ -39,10 +39,11 @@ import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
 import { ProductFooter, ProductReturnHomeHeader } from "@/components/site/product-chrome";
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
+import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { useOpenClaw, type OpenClawBot } from "@/contexts/openclaw-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { useT, t as rawT } from "@/i18n/t";
-import { isGlobal } from "@/lib/region";
+import { isCN, isGlobal } from "@/lib/region";
 import { useSession } from "@/contexts/session-context";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { AppLink, useAppLocation, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
@@ -4690,6 +4691,18 @@ export const AgentSettingsPage = ({
                         );
                       })}
                     </nav>
+
+                    {isCN ? (
+                      <a
+                        href={PRODUCT_FEEDBACK_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-3 flex items-center gap-2 rounded-md px-3 py-2 text-xs font-medium text-black/40 transition-colors hover:bg-black/[0.025] hover:text-black/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/30"
+                      >
+                        <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" />
+                        <span>{t("有建议？提交反馈")}</span>
+                      </a>
+                    ) : null}
                   </aside>
 
                   <section className="min-w-0">
