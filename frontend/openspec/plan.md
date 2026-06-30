@@ -1,10 +1,10 @@
-# 需求名: 诊断中心工作区备份与恢复交互优化
+# 需求名: 诊断中心 Agent 备份与恢复交互优化
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 让诊断中心里的 Hermes 工作区备份与恢复从 worker 调试面板变成清晰、可恢复、自动推进的任务控制台。
+**Goal:** 让诊断中心里的 Hermes Agent 备份与恢复从 worker 调试面板变成清晰、可恢复、自动推进的任务控制台。
 
-**Architecture:** 保持现有 repository API 不变，在 `agent-settings-page.tsx` 内抽出前端状态派生、阶段文案和错误清洗 helper；UI 层将导入/导出状态统一投射成“当前工作区任务”，确认动作改用产品内弹窗，日志按任务归属展示。
+**Architecture:** 保持现有 repository API 不变，在 `agent-settings-page.tsx` 内抽出前端状态派生、阶段文案和错误清洗 helper；UI 层将导入/导出状态统一投射成“当前 Agent 备份或恢复任务”，确认动作改用产品内弹窗，日志按任务归属展示。
 
 **Tech Stack:** React 19, TypeScript, Tailwind CSS v4, lucide-react, existing i18n `useT()` / `rawT()`, Vitest.
 
@@ -40,10 +40,10 @@
 **验收方式**:
 
 - 不再使用 `window.confirm`。
-- 导出确认展示目标 Agent、工作区路径、邮箱通知。
+- 导出确认展示目标 Agent、Agent 文件路径、邮箱通知。
 - 导入确认展示文件名、大小、目标 Agent 和覆盖风险。
 
-- [x] Step 1: 新增工作区任务确认弹窗状态，支持 export/import 两种模式。
+- [x] Step 1: 新增 Agent 备份或恢复任务确认弹窗状态，支持 export/import 两种模式。
 - [x] Step 2: 导出按钮改为打开确认弹窗，确认后调用现有 `startRescueExport`。
 - [x] Step 3: 导入文件选择后打开确认弹窗，确认后调用现有 `importHermesWorkspace`。
 - [x] Step 4: 未绑定邮箱、Agent 非 running、已有任务运行中时，就地展示原因并阻止发起。
@@ -64,8 +64,8 @@
 - 空态有明确下一步行动。
 
 - [x] Step 1: 将导出/导入两条操作行收束为“当前任务 + 两个主动作”的控制台布局。
-- [x] Step 2: 增加范围说明折叠区，默认保留一句“仅备份 Hermes 工作区”。
-- [x] Step 3: 日志按任务归属展示，并为失败态提供“查看诊断详情 / 复制诊断信息”。
+- [x] Step 2: 增加范围说明折叠区，默认保留一句“仅备份 Hermes Agent 相关文件”。
+- [x] Step 3: 日志按任务归属展示，并为失败态提供“查看备份或恢复详情 / 复制备份或恢复信息”。
 - [x] Step 4: 调整按钮、状态点、loading、空态，遵守 `rounded-md`、轻边框和紧凑工具感。
 
 ## 任务 4: i18n、测试与本地验证

@@ -3581,7 +3581,7 @@ export const AgentSettingsPage = ({
       ...prev,
       [targetBotId]: {
         phase: "starting",
-        logs: [{ time: new Date().toISOString(), phase: "starting", message: t("正在发起工作区导出任务。"), level: "info" }],
+        logs: [{ time: new Date().toISOString(), phase: "starting", message: t("正在发起 Agent 备份任务。"), level: "info" }],
       },
     }));
     try {
@@ -3640,7 +3640,7 @@ export const AgentSettingsPage = ({
       ...prev,
       [targetBotId]: {
         phase: "starting",
-        logs: [{ time: new Date().toISOString(), phase: "starting", message: t("正在上传工作区导入包。"), level: "info" }],
+        logs: [{ time: new Date().toISOString(), phase: "starting", message: t("正在上传 Agent 恢复包。"), level: "info" }],
       },
     }));
     try {
@@ -3994,8 +3994,8 @@ export const AgentSettingsPage = ({
         return t("连接 Agent");
       case "校验备份包":
         return t("校验备份包");
-      case "恢复工作区":
-        return t("恢复工作区");
+      case "恢复 Agent":
+        return t("恢复 Agent");
       case "确认恢复结果":
         return t("确认恢复结果");
       case "清理临时文件":
@@ -4035,21 +4035,21 @@ export const AgentSettingsPage = ({
     switch (reason) {
       case "请选择正在运行的 Agent。":
         return t("请选择正在运行的 Agent。");
-      case "Agent 运行中后才能使用工作区任务。":
-        return t("Agent 运行中后才能使用工作区任务。");
+      case "Agent 运行中后才能使用备份或恢复任务。":
+        return t("Agent 运行中后才能使用备份或恢复任务。");
       case "Agent 维护任务执行中，请稍后再试。":
         return t("Agent 维护任务执行中，请稍后再试。");
       case "请先在账号页绑定邮箱。":
         return t("请先在账号页绑定邮箱。");
-      case "当前已有工作区备份任务运行中。":
-        return t("当前已有工作区备份任务运行中。");
-      case "当前已有工作区恢复任务运行中。":
-        return t("当前已有工作区恢复任务运行中。");
+      case "当前已有 Agent 备份任务运行中。":
+        return t("当前已有 Agent 备份任务运行中。");
+      case "当前已有 Agent 恢复任务运行中。":
+        return t("当前已有 Agent 恢复任务运行中。");
       default:
         return reason;
     }
   };
-  const workspaceTaskLabel = (kind: WorkspaceActionKind) => (kind === "export" ? t("工作区备份") : t("工作区恢复"));
+  const workspaceTaskLabel = (kind: WorkspaceActionKind) => (kind === "export" ? t("Agent 备份") : t("Agent 恢复"));
   const workspaceTaskLogs = activeWorkspaceTask?.status.logs ?? [];
   const workspaceTaskPhase = activeWorkspaceTask?.status.phase;
   const isWorkspaceTaskLoading = isActiveExportStatusLoading || isActiveImportStatusLoading;
@@ -4078,28 +4078,38 @@ export const AgentSettingsPage = ({
     ].filter(Boolean);
     try {
       await navigator.clipboard.writeText(lines.join("\n"));
-      toast.success(t("诊断信息已复制"));
+      toast.success(activeWorkspaceTask.kind === "export" ? t("备份信息已复制") : t("恢复信息已复制"));
     } catch {
       toast.error(t("复制失败，请手动选择日志内容"));
     }
   };
+  const workspaceDetailsToggleLabel = () => {
+    if (activeWorkspaceTask?.kind === "export") {
+      return workspaceDetailsOpen ? t("收起备份详情") : t("查看备份详情");
+    }
+    if (activeWorkspaceTask?.kind === "import") {
+      return workspaceDetailsOpen ? t("收起恢复详情") : t("查看恢复详情");
+    }
+    return workspaceDetailsOpen ? t("收起备份或恢复详情") : t("查看备份或恢复详情");
+  };
+  const workspaceCopyLabel = activeWorkspaceTask?.kind === "export" ? t("复制备份信息") : t("复制恢复信息");
   const workspaceRecoveryPanel = showHiddenAgentTools && activeBot ? (
     <section className="rounded-md border border-black/[0.08] bg-white p-5 shadow-sm">
       <div className="mb-4">
-        <h3 className="text-base font-semibold text-black/90 text-balance">{t("工作区备份与恢复")}</h3>
+        <h3 className="text-base font-semibold text-black/90 text-balance">{t("Agent 备份与恢复")}</h3>
         <p className="mt-1 truncate text-xs text-black/45" title={activeBot.name}>
           {activeBot.name} · {HERMES_WORKSPACE_EXPORT_PATH}
         </p>
       </div>
       <details className="mb-4 rounded-md border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-xs leading-relaxed text-black/65">
         <summary className="cursor-pointer select-none font-medium text-black/75">
-          {t("仅备份 Hermes 工作区，不是整机备份。")}
+          {t("仅备份 Hermes Agent 相关文件，不是整机备份。")}
         </summary>
         <p className="mt-2 text-pretty">
-          {t("备份范围：{{path}}。会排除 hermes-agent、bin/、backups/、checkpoints/、node_modules、.git、__pycache__、pid 文件、Python 字节码和 SQLite 临时 sidecar。", { path: HERMES_WORKSPACE_EXPORT_PATH })}
+          {t("备份范围：{{path}} 中的 Hermes Agent 相关文件。会排除 hermes-agent、bin/、backups/、checkpoints/、node_modules、.git、__pycache__、pid 文件、Python 字节码和 SQLite 临时 sidecar。", { path: HERMES_WORKSPACE_EXPORT_PATH })}
         </p>
         <p className="mt-1 text-pretty">
-          {t("从备份恢复会覆盖目标 Agent 的 Hermes 工作区。备份、恢复成功或失败都会通过绑定邮箱通知。")}
+          {t("从备份恢复会覆盖目标 Agent 的 Hermes Agent 相关文件。备份、恢复成功或失败都会通过绑定邮箱通知。")}
         </p>
       </details>
       <input
@@ -4126,7 +4136,7 @@ export const AgentSettingsPage = ({
               <span className="text-sm font-semibold text-black/85">
                 {activeWorkspaceTask
                   ? `${workspaceTaskLabel(activeWorkspaceTask.kind)} · ${workspacePhaseLabel(activeWorkspaceTask.kind, workspaceTaskPhase)}`
-                  : t("暂无工作区任务")}
+                  : t("暂无 Agent 任务")}
               </span>
               {(isActiveBotExporting || isActiveBotImporting || isWorkspaceTaskLoading || isWorkspaceTaskRunning) && (
                 <Loader2 className="h-3.5 w-3.5 animate-spin text-black/35" aria-hidden="true" />
@@ -4137,7 +4147,7 @@ export const AgentSettingsPage = ({
                 ? workspaceLastLogTime
                   ? t("最近更新：{{time}}", { time: formatExportLogTime(workspaceLastLogTime) })
                   : t("正在等待任务状态更新")
-                : t("可以备份当前工作区，或从 Hermes zip 备份恢复。")}
+                : t("可以备份当前 Agent，或从 Hermes zip 备份恢复。")}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -4194,7 +4204,7 @@ export const AgentSettingsPage = ({
             aria-controls="workspace-recovery-details"
           >
             <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", workspaceDetailsOpen && "rotate-180")} aria-hidden="true" />
-            {workspaceDetailsOpen ? t("收起诊断详情") : t("查看诊断详情")}
+            {workspaceDetailsToggleLabel()}
           </button>
           {activeWorkspaceTask && (
             <button
@@ -4203,7 +4213,7 @@ export const AgentSettingsPage = ({
               className="inline-flex h-7 items-center gap-1.5 rounded-md border border-black/[0.08] bg-white px-2.5 text-xs font-medium text-black/55 transition-colors hover:bg-black/[0.035] hover:text-black/80"
             >
               <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-              {t("复制诊断信息")}
+              {workspaceCopyLabel}
             </button>
           )}
         </div>
@@ -4212,7 +4222,7 @@ export const AgentSettingsPage = ({
         <div id="workspace-recovery-details" className="mt-4 max-h-[320px] overflow-y-auto pr-1">
           {workspaceTaskLogs.length === 0 ? (
           <div className="rounded-md border border-dashed border-black/[0.12] px-4 py-8 text-center text-sm text-black/45">
-            {isWorkspaceTaskLoading ? t("正在读取任务状态...") : t("暂无工作区任务记录")}
+            {isWorkspaceTaskLoading ? t("正在读取任务状态...") : t("暂无 Agent 任务记录")}
           </div>
         ) : (
           <ol className="space-y-0">
@@ -4257,12 +4267,12 @@ export const AgentSettingsPage = ({
             <>
               <DialogHeader className="pr-8">
                 <DialogTitle>
-                  {workspaceConfirm.kind === "export" ? t("备份 Hermes 工作区") : t("从备份恢复工作区")}
+                  {workspaceConfirm.kind === "export" ? t("备份 Hermes Agent") : t("从备份恢复 Agent")}
                 </DialogTitle>
                 <DialogDescription className="leading-relaxed">
                   {workspaceConfirm.kind === "export"
                     ? t("备份完成后会发送到当前账号绑定邮箱，导出期间不需要停用 Agent。")
-                    : t("恢复会覆盖目标 Agent 的 Hermes 工作区，执行后会通过绑定邮箱通知结果。")}
+                    : t("恢复会覆盖目标 Agent 的 Hermes Agent 相关文件，执行后会通过绑定邮箱通知结果。")}
                 </DialogDescription>
               </DialogHeader>
               <div className="mt-4 space-y-3">
@@ -4272,7 +4282,7 @@ export const AgentSettingsPage = ({
                     <span className="min-w-0 truncate font-medium text-black/85" title={activeBot?.name}>
                       {activeBot?.name ?? t("当前 Agent")}
                     </span>
-                    <span className="text-black/45">{t("工作区")}</span>
+                    <span className="text-black/45">{t("Agent 文件")}</span>
                     <span className="min-w-0 truncate font-mono text-xs text-black/70" title={HERMES_WORKSPACE_EXPORT_PATH}>
                       {HERMES_WORKSPACE_EXPORT_PATH}
                     </span>
@@ -4296,7 +4306,7 @@ export const AgentSettingsPage = ({
                 {workspaceConfirm.kind === "import" && (
                   <div className="flex gap-2 rounded-md border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-xs leading-relaxed text-black/65" role="status">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-amber-600" aria-hidden="true" />
-                    <span>{t("恢复开始后会替换目标工作区，请确认备份文件来自 Hermes 工作区导出。")}</span>
+                    <span>{t("恢复开始后会替换目标 Agent 相关文件，请确认备份文件来自 Hermes Agent 备份。")}</span>
                   </div>
                 )}
               </div>

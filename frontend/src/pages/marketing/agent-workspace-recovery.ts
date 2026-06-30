@@ -70,7 +70,7 @@ export function getWorkspaceTaskPhaseLabel(kind: WorkspaceActionKind, phase?: st
         return "校验备份包";
       case "start_tat":
       case "wait_tat":
-        return "恢复工作区";
+        return "恢复 Agent";
       case "finalize_import":
         return "确认恢复结果";
       case "cleanup_import_object":
@@ -151,11 +151,11 @@ export function describeWorkspaceActionError(
 
 export function buildWorkspaceActionDisabledReason(input: WorkspaceActionDisabledInput) {
   if (!input.hasActiveBot) return "请选择正在运行的 Agent。";
-  if (!input.botRunning) return "Agent 运行中后才能使用工作区任务。";
+  if (!input.botRunning) return "Agent 运行中后才能使用备份或恢复任务。";
   if (input.resetting) return "Agent 维护任务执行中，请稍后再试。";
   if (!input.hasEmail) return "请先在账号页绑定邮箱。";
   if (input.currentTask && isWorkspaceActionRunning(input.currentTask.status)) {
-    return input.currentTask.kind === "export" ? "当前已有工作区备份任务运行中。" : "当前已有工作区恢复任务运行中。";
+    return input.currentTask.kind === "export" ? "当前已有 Agent 备份任务运行中。" : "当前已有 Agent 恢复任务运行中。";
   }
   return null;
 }

@@ -42,7 +42,7 @@ describe("workspace recovery helpers", () => {
   it("uses task-specific phase labels", () => {
     expect(getWorkspaceTaskPhaseLabel("export", "prepare_archive")).toBe("生成备份包");
     expect(getWorkspaceTaskPhaseLabel("import", "prepare_import")).toBe("校验备份包");
-    expect(getWorkspaceTaskPhaseLabel("import", "wait_tat")).toBe("恢复工作区");
+    expect(getWorkspaceTaskPhaseLabel("import", "wait_tat")).toBe("恢复 Agent");
     expect(getWorkspaceTaskPhaseLabel("export", undefined)).toBe("暂无任务");
   });
 
@@ -64,10 +64,10 @@ describe("workspace recovery helpers", () => {
     const activeKind: WorkspaceActionKind = "export";
 
     expect(buildWorkspaceActionDisabledReason({ hasActiveBot: false, botRunning: false, hasEmail: true })).toBe("请选择正在运行的 Agent。");
-    expect(buildWorkspaceActionDisabledReason({ hasActiveBot: true, botRunning: false, hasEmail: true })).toBe("Agent 运行中后才能使用工作区任务。");
+    expect(buildWorkspaceActionDisabledReason({ hasActiveBot: true, botRunning: false, hasEmail: true })).toBe("Agent 运行中后才能使用备份或恢复任务。");
     expect(buildWorkspaceActionDisabledReason({ hasActiveBot: true, botRunning: true, hasEmail: false })).toBe("请先在账号页绑定邮箱。");
     expect(buildWorkspaceActionDisabledReason({ hasActiveBot: true, botRunning: true, hasEmail: true, currentTask: { kind: activeKind, status: running } })).toBe(
-      "当前已有工作区备份任务运行中。",
+      "当前已有 Agent 备份任务运行中。",
     );
     expect(buildWorkspaceActionDisabledReason({ hasActiveBot: true, botRunning: true, hasEmail: true })).toBeNull();
   });
