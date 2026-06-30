@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use serde_json::Value;
+use serde_json::{Map, Value};
 use vela_core::{
     CanonicalEvent, ConversationItem, ConversationItemKind, ConversationPart, ConversationView,
     ConversationWindow, ConversationWindowView, EventCursor, EventType, PendingRequest,
@@ -104,14 +104,26 @@ pub fn project_conversation(events: &[CanonicalEvent]) -> ConversationView {
         }
 
         if event.event_type == EventType::TURN_COMPLETED {
-            mark_latest_streaming_assistant_terminal(&mut items, event, "completed");
+            mark_assistant_messages_terminal_for_turn_id(
+                &mut items,
+                event,
+                turn_id_from_payload(event),
+                "completed",
+            );
             mark_turn_meta_terminal(&mut items, event, "completed");
+            mark_agent_work_terminal_for_turn(&mut items, event, "completed");
             continue;
         }
 
         if event.event_type == EventType::TURN_FAILED {
-            mark_latest_streaming_assistant_terminal(&mut items, event, "failed");
+            mark_assistant_messages_terminal_for_turn_id(
+                &mut items,
+                event,
+                turn_id_from_payload(event),
+                "failed",
+            );
             mark_turn_meta_terminal(&mut items, event, "failed");
+            mark_agent_work_terminal_for_turn(&mut items, event, "failed");
             push_turn_status(
                 &mut items,
                 event,
@@ -122,14 +134,47 @@ pub fn project_conversation(events: &[CanonicalEvent]) -> ConversationView {
         }
 
         if event.event_type == EventType::TURN_CANCELLED {
-            mark_latest_streaming_assistant_terminal(&mut items, event, "cancelled");
+            mark_assistant_messages_terminal_for_turn_id(
+                &mut items,
+                event,
+                turn_id_from_payload(event),
+                "cancelled",
+            );
             mark_turn_meta_terminal(&mut items, event, "cancelled");
+            mark_agent_work_terminal_for_turn(&mut items, event, "cancelled");
             push_turn_status(
                 &mut items,
                 event,
                 "cancelled",
                 turn_status_text(event, "Turn cancelled"),
             );
+            continue;
+        }
+
+        if event.event_type == EventType::TURN_CANCEL_ACCEPTED {
+            let live_turn_id =
+                turn_id_from_payload(event).or_else(|| latest_running_turn_id(&items));
+            if live_turn_id.is_some() {
+                mark_assistant_messages_terminal_for_turn_id(
+                    &mut items,
+                    event,
+                    live_turn_id.clone(),
+                    "cancelled",
+                );
+                mark_agent_work_terminal_for_turn_id(
+                    &mut items,
+                    live_turn_id.as_ref(),
+                    event,
+                    "cancelled",
+                );
+                mark_turn_meta_terminal(&mut items, event, "cancelled");
+                push_turn_status(
+                    &mut items,
+                    event,
+                    "cancelled",
+                    turn_status_text(event, "Turn cancelled"),
+                );
+            }
             continue;
         }
 
@@ -273,17 +318,38 @@ fn mark_assistant_message_completed(items: &mut [ConversationItem], event: &Cano
     }
 }
 
-fn mark_latest_streaming_assistant_terminal(
+fn mark_assistant_messages_terminal_for_turn_id(
     items: &mut [ConversationItem],
     event: &CanonicalEvent,
+    turn_id: Option<TurnId>,
     status: &str,
 ) {
+    let mut changed = false;
+
+    if let Some(turn_id) = turn_id.as_ref() {
+        for item in items.iter_mut().filter(|item| {
+            item.kind == ConversationItemKind::AssistantMessage
+                && (item.status == "streaming" || item.status == "pending")
+                && item.turn_id.as_ref() == Some(turn_id)
+        }) {
+            item.status = status.to_string();
+            item.updated_at = event.created_at;
+            item.revision += 1;
+            push_source_event(item, event);
+            changed = true;
+        }
+    }
+
+    if changed {
+        return;
+    }
+
     if let Some(item) = items.iter_mut().rev().find(|item| {
         item.kind == ConversationItemKind::AssistantMessage
             && (item.status == "streaming" || item.status == "pending")
     }) {
         if item.turn_id.is_none() {
-            item.turn_id = turn_id_from_payload(event);
+            item.turn_id = turn_id;
         }
         item.status = status.to_string();
         item.updated_at = event.created_at;
@@ -356,6 +422,44 @@ fn mark_turn_meta_terminal(
     push_source_event(item, event);
 }
 
+fn mark_agent_work_terminal_for_turn(
+    items: &mut [ConversationItem],
+    event: &CanonicalEvent,
+    status: &str,
+) {
+    let turn_id = turn_id_from_payload(event);
+    mark_agent_work_terminal_for_turn_id(items, turn_id.as_ref(), event, status);
+}
+
+fn mark_agent_work_terminal_for_turn_id(
+    items: &mut [ConversationItem],
+    turn_id: Option<&TurnId>,
+    event: &CanonicalEvent,
+    status: &str,
+) {
+    let Some(turn_id) = turn_id else {
+        return;
+    };
+    for item in items.iter_mut().filter(|item| {
+        item.kind == ConversationItemKind::AgentWork
+            && item.turn_id.as_ref() == Some(turn_id)
+            && is_live_status(item.status.as_str())
+    }) {
+        item.status = status.to_string();
+        item.updated_at = event.created_at;
+        item.revision += 1;
+        push_source_event(item, event);
+    }
+}
+
+fn latest_running_turn_id(items: &[ConversationItem]) -> Option<TurnId> {
+    items
+        .iter()
+        .rev()
+        .find(|item| item.kind == ConversationItemKind::TurnMeta && item.status == "running")
+        .and_then(|item| item.turn_id.clone())
+}
+
 fn push_turn_status(
     items: &mut Vec<ConversationItem>,
     event: &CanonicalEvent,
@@ -369,6 +473,18 @@ fn push_turn_status(
             .unwrap_or_else(|| event.event_id.to_string()),
         event.event_type.0
     );
+    if let Some(item) = items
+        .iter_mut()
+        .find(|item| item.kind == ConversationItemKind::Status && item.item_id == item_id)
+    {
+        item.status = status.to_string();
+        item.text = Some(text);
+        item.updated_at = event.created_at;
+        item.revision += 1;
+        item.detail = merge_payload(&item.detail, &event.payload);
+        push_source_event(item, event);
+        return;
+    }
     items.push(ConversationItem {
         item_id,
         session_id: event.session_id.clone(),
@@ -425,7 +541,7 @@ fn upsert_agent_work(
         item.updated_at = event.created_at;
         item.revision += 1;
         item.summary = activity_summary_text(&event.payload).or_else(|| item.summary.clone());
-        item.detail = merge_payload(&item.detail, &event.payload);
+        item.detail = merge_agent_work_detail(&item.detail, event);
         push_source_event(item, event);
         return;
     }
@@ -444,10 +560,20 @@ fn upsert_agent_work(
         parts: Vec::new(),
         title: Some(title),
         summary: activity_summary_text(&event.payload),
-        detail: event.payload.clone(),
+        detail: merge_agent_work_detail(&Value::Null, event),
         source_event_ids: vec![event.event_id.clone()],
         source_event_ranges: vec![source_event_range(event)],
     });
+}
+
+fn default_status_for_event_type(event_type: &EventType) -> Option<&'static str> {
+    if *event_type == EventType::WARNING_RAISED {
+        return Some("completed");
+    }
+    if *event_type == EventType::ERROR_RAISED {
+        return Some("failed");
+    }
+    None
 }
 
 fn push_source_event(item: &mut ConversationItem, event: &CanonicalEvent) {
@@ -723,12 +849,18 @@ fn matches_event(event: &CanonicalEvent, prefix: &str) -> bool {
 }
 
 fn status_from_payload(payload: &Value, event_type: &EventType) -> Option<String> {
-    string_field(payload, "status").or_else(|| {
-        event_type
-            .0
-            .rsplit_once('.')
-            .map(|(_, status)| status.to_string())
-    })
+    let raw_status = string_field(payload, "status")
+        .or_else(|| default_status_for_event_type(event_type).map(str::to_string))
+        .or_else(|| {
+            event_type
+                .0
+                .rsplit_once('.')
+                .map(|(_, status)| status.to_string())
+        })?;
+    Some(normalize_conversation_item_status(
+        raw_status.as_str(),
+        event_type,
+    ))
 }
 
 fn merge_terminal_status(current: &str, incoming: Option<&str>) -> String {
@@ -748,6 +880,34 @@ fn is_terminal_status(status: &str) -> bool {
     )
 }
 
+fn is_live_status(status: &str) -> bool {
+    matches!(
+        status,
+        "running" | "pending" | "streaming" | "started" | "in_progress"
+    )
+}
+
+fn normalize_conversation_item_status(raw: &str, event_type: &EventType) -> String {
+    match raw {
+        "pending" | "queued" | "opened" => "pending",
+        "running" | "started" | "in_progress" | "streaming" => "running",
+        "completed" | "success" | "succeeded" | "done" | "resolved" | "updated" | "accepted" => {
+            "completed"
+        }
+        "failed" | "error" => "failed",
+        "cancelled" | "canceled" => "cancelled",
+        _ if *event_type == EventType::TOOL_STARTED || *event_type == EventType::TASK_STARTED => {
+            "running"
+        }
+        _ if *event_type == EventType::TOOL_COMPLETED => "completed",
+        _ if *event_type == EventType::TOOL_FAILED => "failed",
+        _ if *event_type == EventType::REQUEST_OPENED => "pending",
+        _ if *event_type == EventType::REQUEST_RESOLVED => "completed",
+        _ => "running",
+    }
+    .to_string()
+}
+
 fn activity_summary_text(payload: &Value) -> Option<String> {
     payload
         .get("message")
@@ -760,6 +920,147 @@ fn activity_summary_text(payload: &Value) -> Option<String> {
 
 fn turn_status_text(event: &CanonicalEvent, fallback: &str) -> String {
     activity_summary_text(&event.payload).unwrap_or_else(|| fallback.to_string())
+}
+
+fn merge_agent_work_detail(old: &Value, event: &CanonicalEvent) -> Value {
+    let merged = merge_payload(old, &event.payload);
+    if event.event_type != EventType::TOOL_OUTPUT_DELTA {
+        return merged;
+    }
+    append_tool_output_delta(merged, &event.payload)
+}
+
+fn append_tool_output_delta(detail: Value, payload: &Value) -> Value {
+    let delta = delta_from_payload(payload);
+    if delta.is_empty() {
+        return detail;
+    }
+
+    let stream_id = string_field(payload, "stream_id")
+        .or_else(|| string_field(payload, "stream"))
+        .unwrap_or_else(|| "stdout".to_string());
+    let sequence = payload
+        .get("sequence")
+        .or_else(|| payload.get("seq"))
+        .and_then(Value::as_i64);
+    let chunk_id = string_field(payload, "chunk_id").or_else(|| string_field(payload, "chunkId"));
+
+    let mut object = match detail {
+        Value::Object(object) => object,
+        Value::Null => Map::new(),
+        other => {
+            let mut object = Map::new();
+            object.insert("value".to_string(), other);
+            object
+        }
+    };
+
+    append_stream_summary(
+        &mut object,
+        &stream_id,
+        delta,
+        sequence,
+        chunk_id.as_deref(),
+    );
+    if let Some(Value::Object(shell_detail)) = object.get_mut("detail") {
+        append_stream_summary(
+            shell_detail,
+            &stream_id,
+            delta,
+            sequence,
+            chunk_id.as_deref(),
+        );
+        append_shell_output_aliases(shell_detail, &stream_id, delta);
+    } else {
+        append_shell_output_aliases(&mut object, &stream_id, delta);
+    }
+
+    Value::Object(object)
+}
+
+fn append_stream_summary(
+    object: &mut Map<String, Value>,
+    stream_id: &str,
+    delta: &str,
+    sequence: Option<i64>,
+    chunk_id: Option<&str>,
+) {
+    let streams = object
+        .entry("streams".to_string())
+        .or_insert_with(|| Value::Array(Vec::new()));
+    if !streams.is_array() {
+        *streams = Value::Array(Vec::new());
+    }
+    let streams = streams
+        .as_array_mut()
+        .expect("streams value was normalized to an array");
+
+    let stream_index = streams.iter().position(|stream| {
+        stream
+            .get("stream_id")
+            .or_else(|| stream.get("stream"))
+            .and_then(Value::as_str)
+            == Some(stream_id)
+    });
+
+    let stream = if let Some(index) = stream_index {
+        if !streams[index].is_object() {
+            streams[index] = Value::Object(Map::new());
+        }
+        streams[index]
+            .as_object_mut()
+            .expect("stream summary was normalized to an object")
+    } else {
+        streams.push(Value::Object(Map::new()));
+        streams
+            .last_mut()
+            .and_then(Value::as_object_mut)
+            .expect("pushed stream summary object")
+    };
+
+    stream.insert(
+        "stream_id".to_string(),
+        Value::String(stream_id.to_string()),
+    );
+    stream.insert("stream".to_string(), Value::String(stream_id.to_string()));
+    append_string_field(stream, "text", delta);
+    stream.insert("last_delta".to_string(), Value::String(delta.to_string()));
+    let chunk_count = stream
+        .get("chunk_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+        + 1;
+    stream.insert("chunk_count".to_string(), Value::from(chunk_count));
+    if let Some(sequence) = sequence {
+        stream.insert("last_sequence".to_string(), Value::from(sequence));
+    }
+    if let Some(chunk_id) = chunk_id {
+        stream.insert(
+            "last_chunk_id".to_string(),
+            Value::String(chunk_id.to_string()),
+        );
+    }
+}
+
+fn append_shell_output_aliases(object: &mut Map<String, Value>, stream_id: &str, delta: &str) {
+    match stream_id {
+        "stderr" => append_string_field(object, "stderr", delta),
+        "stdout" => {
+            append_string_field(object, "stdout", delta);
+            append_string_field(object, "output", delta);
+        }
+        _ => {}
+    }
+}
+
+fn append_string_field(object: &mut Map<String, Value>, field: &str, delta: &str) {
+    let mut text = object
+        .get(field)
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    text.push_str(delta);
+    object.insert(field.to_string(), Value::String(text));
 }
 
 fn merge_payload(old: &Value, new: &Value) -> Value {

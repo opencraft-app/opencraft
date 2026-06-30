@@ -1,4 +1,5 @@
 import type {
+  AgentWorkDetailWire,
   ChatSurfaceAgentWorkItem,
   ChatSurfaceConversationDebug,
 } from "../../../vela-chat-surface/src";
@@ -17,12 +18,15 @@ export interface AgentWorkRenderRow {
   updatedAt?: string;
   turnId?: string;
   agentWorkId?: string;
+  detail?: AgentWorkDetailWire;
+  detailFingerprint: string;
   debug: ChatSurfaceConversationDebug;
 }
 
 export function renderAgentWorkRows(items: ChatSurfaceAgentWorkItem[]): AgentWorkRenderRow[] {
   return items.flatMap((item) => {
-    const presentation = toolPresentation(item);
+    const detail = normalizedAgentWorkDetail(item.detail);
+    const presentation = toolPresentation(item, detail);
     if (!presentation) return [];
     return [
       {
@@ -37,6 +41,8 @@ export function renderAgentWorkRows(items: ChatSurfaceAgentWorkItem[]): AgentWor
         updatedAt: item.updated_at,
         ...(item.turn_id !== undefined ? { turnId: item.turn_id } : {}),
         agentWorkId: item.id,
+        ...(detail ? { detail } : {}),
+        detailFingerprint: detail ? JSON.stringify(detail) : "",
         debug: item.debug,
       },
     ];
@@ -45,8 +51,8 @@ export function renderAgentWorkRows(items: ChatSurfaceAgentWorkItem[]): AgentWor
 
 function toolPresentation(
   item: ChatSurfaceAgentWorkItem,
+  detail: AgentWorkDetailWire | undefined,
 ): { title: string; summary: string } | undefined {
-  const detail = item.detail;
   const explicitTitle = isGenericToolTitle(item.title) ? "" : item.title;
   const title =
     titleFromDetail(detail, item.status) ||
@@ -67,7 +73,7 @@ function toolPresentation(
 }
 
 function titleFromDetail(
-  detail: ChatSurfaceAgentWorkItem["detail"],
+  detail: AgentWorkDetailWire | undefined,
   status: string,
 ): string {
   if (!detail) return "";
@@ -106,7 +112,7 @@ function titleFromDetail(
   }
 }
 
-function summaryFromDetail(detail: ChatSurfaceAgentWorkItem["detail"]): string {
+function summaryFromDetail(detail: AgentWorkDetailWire | undefined): string {
   if (!detail) return "";
   switch (detail.type) {
     case "shell":
@@ -129,7 +135,12 @@ function summaryFromDetail(detail: ChatSurfaceAgentWorkItem["detail"]): string {
       return truncateMiddle(stringField(detail.text));
     case "unknown":
     case "tool":
-      return truncateMiddle(stringField(detail.output) || stringField(detail.input));
+      return truncateMiddle(
+        stringField(detail.output) ||
+          stringField(detail.content) ||
+          stringField(detail.summary) ||
+          stringField(detail.name),
+      );
     default: {
       const generic = detail as Record<string, unknown>;
       return truncateMiddle(
@@ -143,12 +154,13 @@ function summaryFromDetail(detail: ChatSurfaceAgentWorkItem["detail"]): string {
 }
 
 function toolDisplayIntent(item: ChatSurfaceAgentWorkItem): AgentWorkDisplay {
+  const detail = normalizedAgentWorkDetail(item.detail);
   if (item.status === "failed" || item.status === "running" || item.status === "pending") {
     return "prominent";
   }
-  if (!item.detail) return "compact";
+  if (!detail) return "compact";
 
-  switch (item.detail.type) {
+  switch (detail.type) {
     case "edit":
     case "write":
     case "browser":
@@ -158,7 +170,7 @@ function toolDisplayIntent(item: ChatSurfaceAgentWorkItem): AgentWorkDisplay {
     case "image_generation":
       return "prominent";
     case "tool": {
-      const name = `${stringField(item.detail.name)} ${stringField(item.detail.command)}`.toLowerCase();
+      const name = `${stringField(detail.name)} ${stringField(detail.command)}`.toLowerCase();
       if (
         name.includes("bash") ||
         name.includes("shell") ||
@@ -179,6 +191,20 @@ function toolDisplayIntent(item: ChatSurfaceAgentWorkItem): AgentWorkDisplay {
   return "compact";
 }
 
+function normalizedAgentWorkDetail(
+  detail: unknown,
+): AgentWorkDetailWire | undefined {
+  if (!isRecord(detail)) return undefined;
+  if (typeof detail.type === "string") {
+    return detail as AgentWorkDetailWire;
+  }
+  return undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function stringField(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
@@ -194,13 +220,13 @@ function numberField(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-function filePathFromDetail(detail: ChatSurfaceAgentWorkItem["detail"]): string {
+function filePathFromDetail(detail: AgentWorkDetailWire | undefined): string {
   if (!detail) return "";
   const generic = detail as Record<string, unknown>;
   return stringField(generic.file_path) || stringField(generic.path);
 }
 
-function outputSummary(detail: ChatSurfaceAgentWorkItem["detail"]): string {
+function outputSummary(detail: AgentWorkDetailWire | undefined): string {
   if (!detail) return "";
   const generic = detail as Record<string, unknown>;
   return (

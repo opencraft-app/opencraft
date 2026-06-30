@@ -78,6 +78,9 @@ interface WindowToolbarButtonModel {
   tone?: "default" | "muted";
 }
 
+const windowToolbarItemGapPx = 0;
+const windowToolbarContentGapPx = 16;
+
 const SidebarContext = createContext<SidebarContextValue | null>(null);
 
 export function useSidebar() {
@@ -214,6 +217,11 @@ export function VelaSidebarShell({
   );
   const shouldShowOverlayTrigger =
     sidebarPresentation === "auto" && !isSidebarVisible;
+  const windowToolbarButtons = useMemo(
+    () => windowToolbarButtonModels(host, handleToggleSidebar, onCreateSession),
+    [handleToggleSidebar, host, onCreateSession],
+  );
+  const leadingContentInsetPx = windowLeadingContentInsetPx(host, windowToolbarButtons);
 
   useEffect(() => {
     if (!isTransientOverlayOpen) return undefined;
@@ -259,15 +267,11 @@ export function VelaSidebarShell({
             "--vela-window-toolbar-center-y": `${host.chrome.safeArea.toolbarCenterY}px`,
             "--vela-window-toolbar-icon-size": `${host.chrome.safeArea.toolbarIconSize}px`,
             "--vela-window-toolbar-size": `${host.chrome.safeArea.toolbarSize}px`,
+            "--vela-window-leading-content-inset": `${leadingContentInsetPx}px`,
           } as CSSProperties
         }
       >
         <VelaWindowChrome host={host} />
-        <VelaSidebarWindowControls
-          host={host}
-          onCreateSession={onCreateSession}
-          onToggleSidebar={handleToggleSidebar}
-        />
         {shouldShowOverlayTrigger ? (
           <button
             type="button"
@@ -303,6 +307,9 @@ export function VelaSidebarShell({
         <main className="vela-sidebar-inset vela-main-inset" data-sidebar-inset="main">
           {children}
         </main>
+        <VelaSidebarWindowControls
+          buttons={windowToolbarButtons}
+        />
       </div>
     </SidebarProvider>
   );
@@ -416,7 +423,7 @@ export function SidebarScrollRegion({ className, ...props }: HTMLAttributes<HTML
 export function SidebarFixedFooter({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={["vela-sidebar-footer", className].filter(Boolean).join(" ")}
+      className={["vela-sidebar-fixed-footer", className].filter(Boolean).join(" ")}
       data-sidebar="fixed-footer"
       data-slot="sidebar-fixed-footer"
       {...props}
@@ -525,16 +532,12 @@ export function SidebarMenuButton({
   );
 }
 
-function VelaSidebarWindowControls({
-  host,
-  onToggleSidebar,
-  onCreateSession,
-}: {
-  host: RuntimeHostBridge;
-  onToggleSidebar?: () => void;
-  onCreateSession?: () => void;
-}) {
-  const buttons: WindowToolbarButtonModel[] = [
+function windowToolbarButtonModels(
+  host: RuntimeHostBridge,
+  onToggleSidebar?: () => void,
+  onCreateSession?: () => void,
+) {
+  return [
     host.platform === "macos" && host.chrome.safeArea.isFullscreen
       ? {
           id: "leave-fullscreen",
@@ -556,6 +559,25 @@ function VelaSidebarWindowControls({
       onClick: onCreateSession,
     },
   ].filter((button): button is WindowToolbarButtonModel => Boolean(button?.onClick));
+}
+
+function windowLeadingContentInsetPx(
+  host: RuntimeHostBridge,
+  buttons: WindowToolbarButtonModel[],
+) {
+  return (
+    host.chrome.safeArea.leadingToolbarInset +
+    buttons.length * host.chrome.safeArea.toolbarSize +
+    Math.max(0, buttons.length - 1) * windowToolbarItemGapPx +
+    (buttons.length > 0 ? windowToolbarContentGapPx : 0)
+  );
+}
+
+function VelaSidebarWindowControls({
+  buttons,
+}: {
+  buttons: WindowToolbarButtonModel[];
+}) {
   if (buttons.length === 0) return null;
   return (
     <div

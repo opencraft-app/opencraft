@@ -21,3 +21,12 @@ Codex app-server wire names should be interpreted.
 
 Do not add Codex app-server raw method names outside this folder unless the code
 is a test fixture, a contract test, or documentation explaining the adapter.
+
+Observability boundary:
+
+- `session.rs` may emit internal diagnostic `BackendOutput` records when
+  `BackendSend.emit_diagnostics` is true.
+- Those records use `payload.code = "codex_app_server_trace"` and are meant for
+  `vela-runtime` to consume into local observability spans.
+- This folder must not import `vela-observability`; adapter diagnostics are a
+  wire-level fact, not a storage/export decision.

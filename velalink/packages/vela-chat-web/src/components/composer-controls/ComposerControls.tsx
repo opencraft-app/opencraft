@@ -2,7 +2,8 @@
 
 import type { AgentConfigPatchWire } from "../../../../vela-chat-client/src";
 import { ShellSelect } from "../../../../vela-desktop-shell/src";
-import { Brain, CircleDot, ShieldCheck } from "lucide-react";
+import { Brain, Shield, Sparkles } from "lucide-react";
+import type { ReactNode } from "react";
 import styles from "../../styles/desktop.module.css";
 import type {
   ComposerControlsModel,
@@ -48,9 +49,10 @@ export function ComposerControls({
         <>
           <ControlMenu
             ariaLabel="Select model"
+            control="model"
             disabled={disabled || controls.modelOptions.length === 0}
             label={controls.selectedModel?.label ?? controls.providerLabel}
-            leading={<ControlIcon kind="model" />}
+            leading={<Brain size={16} strokeWidth={2} />}
             options={controls.modelOptions}
             selectedId={controls.selectedModel?.id}
             onSelect={(option) => onChange({ model: option.id })}
@@ -58,9 +60,10 @@ export function ComposerControls({
           {controls.reasoningEffortOptions.length > 0 ? (
             <ControlMenu
               ariaLabel="Select reasoning effort"
+              control="reasoning"
               disabled={disabled}
               label={controls.selectedReasoningEffort?.label ?? "Reasoning"}
-              leading={<ControlIcon kind="reasoning" />}
+              leading={<Sparkles size={15} strokeWidth={2.1} />}
               options={controls.reasoningEffortOptions}
               selectedId={controls.selectedReasoningEffort?.id}
               onSelect={(option) => onChange({ reasoning_effort: option.id })}
@@ -71,9 +74,10 @@ export function ComposerControls({
       {placement === "all" || placement === "primary" ? (
         <ControlMenu
           ariaLabel="Select permission mode"
+          control="permission"
           disabled={disabled || controls.permissionModeOptions.length === 0}
           label={controls.selectedPermissionMode?.label ?? "Permissions"}
-          leading={<ControlIcon kind="permission" />}
+          leading={<Shield size={16} strokeWidth={2} />}
           options={controls.permissionModeOptions}
           selectedId={controls.selectedPermissionMode?.id}
           tone={controls.selectedPermissionMode?.id === "full_access" ? "accent" : "neutral"}
@@ -84,23 +88,9 @@ export function ComposerControls({
   );
 }
 
-function ControlIcon({ kind }: { kind: "model" | "permission" | "reasoning" }) {
-  const Icon =
-    kind === "model" ? CircleDot : kind === "permission" ? ShieldCheck : Brain;
-
-  return (
-    <Icon
-      aria-hidden="true"
-      className={styles.composerControlIcon}
-      data-composer-control-icon={kind}
-      size={15}
-      strokeWidth={2}
-    />
-  );
-}
-
 function ControlMenu<T extends ComposerModelOption | ComposerOption | ComposerPermissionOption>({
   ariaLabel,
+  control,
   disabled,
   label,
   leading,
@@ -110,9 +100,10 @@ function ControlMenu<T extends ComposerModelOption | ComposerOption | ComposerPe
   onSelect,
 }: {
   ariaLabel: string;
+  control: "model" | "reasoning" | "permission";
   disabled: boolean;
   label: string;
-  leading: string;
+  leading: ReactNode;
   options: T[];
   selectedId?: string;
   tone?: "neutral" | "accent";
@@ -121,25 +112,26 @@ function ControlMenu<T extends ComposerModelOption | ComposerOption | ComposerPe
   const selectedOption = options.find((option) => option.id === selectedId);
 
   return (
-    <ShellSelect
-      ariaLabel={ariaLabel}
-      density="compact"
-      disabled={disabled}
-      leading={leading}
-      options={options.map((option) => ({
-        id: option.id,
-        label: option.label,
-        description: option.description,
-      }))}
-      placement="top-start"
-      popoverClassName={styles.shellSelectPopover}
-      placeholder={label}
-      tone={tone}
-      value={selectedOption?.id}
-      onValueChange={(value) => {
-        const option = options.find((candidate) => candidate.id === value);
-        if (option) onSelect(option);
-      }}
-    />
+    <span className={styles.composerControl} data-composer-control={control}>
+      <ShellSelect
+        ariaLabel={ariaLabel}
+        density="compact"
+        disabled={disabled}
+        leading={leading}
+        options={options.map((option) => ({
+          id: option.id,
+          label: option.label,
+          description: option.description,
+        }))}
+        placement="top-start"
+        placeholder={label}
+        tone={tone}
+        value={selectedOption?.id}
+        onValueChange={(value) => {
+          const option = options.find((candidate) => candidate.id === value);
+          if (option) onSelect(option);
+        }}
+      />
+    </span>
   );
 }

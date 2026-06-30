@@ -1,0 +1,162 @@
+---
+title: OpenAPI 设计准则
+description: velaChat client-facing OpenAPI 的设计边界、命名、schema 和演进规则。
+---
+
+# OpenAPI 设计准则
+
+`public/openapi/velachat.v1.yaml` 是唯一 client-facing wire contract。Rust、TypeScript、React、Electron 和 provider adapter 可以有内部类型，但对外 HTTP JSON、SSE data、错误结构和 read model 字段必须以 OpenAPI 为准。
+
+## 分层原则
+
+OpenAPI 只描述客户端能依赖的协议，不描述 provider 私有 wire，也不描述前端临时 UI state。
+
+```txt
+Provider wire protocol
+  Codex app-server / ACP / Vela Engine / Qoder / other managed agents
+
+Canonical Runtime Event Protocol
+  append-only facts exposed as VelaEvent
+
+Projection / Read Model Protocol
+  ConversationView, PendingRequestsView, DiffReviewView, SessionView
+
+Renderer UI state
+  expanded rows, selected tab, scroll position, hover, focus
+```
+
+OpenAPI 包含 runtime events 和 projections；不包含 provider raw JSON-RPC 方法，也不包含 React 状态。
+
+## 命名规则
+
+- JSON 字段使用 `snake_case`。
+- Event type 使用 dot namespace，例如 `tool.output.delta`。
+- Resource kind / discriminator value 使用 lowercase snake case，例如 `agent_work`、`user_message`、`shell`。
+- ID 字段统一用 opaque string。Client 只能保存和原样传回，不能解析格式。
+- 时间统一用 RFC 3339 UTC string。
+- Cursor 一律 opaque；`epoch` / `seq` 只用于恢复和诊断，不作为业务排序 API。
+
+## Schema 规则
+
+- 需要分支的对象必须使用 `oneOf` + discriminator。
+- 每个分支必须有稳定 `required` 字段，不能靠“字段存在即代表分支”。
+- `additionalProperties: true` 只能用于明确的 extension bag，例如 `metadata`、provider-safe `feature_values`、diagnostics raw data。
+- 普通 UI read model 不应暴露 provider raw payload。
+- Deprecated 字段必须标 `deprecated: true`，并说明替代字段。
+- 新字段默认 additive；删除、改类型、改 required 都是 breaking change。
+
+## Runtime Event 设计
+
+Runtime event 是事实协议。它应该低层、稳定、可回放，不带 UI 展开/折叠意图。
+
+推荐字段：
+
+```json
+{
+  "event_id": "evt_123",
+  "epoch": 1,
+  "seq": 42,
+  "session_id": "ses_123",
+  "thread_id": "thr_123",
+  "type": "tool.output.delta",
+  "created_at": "2026-06-26T12:00:00Z",
+  "affected_views": ["conversation", "timeline"],
+  "payload": {}
+}
+```
+
+Runtime payload 应表达“发生了什么”，例如 `tool_id`、`stream_id`、`sequence`、`delta`。不要出现 `expanded`、`button_label`、`selected_tab` 这类 UI state。
+
+## Projection 设计
+
+Projection 是展示协议。它可以为 UI 友好而冗余、截断、摘要、分组，但必须可从 runtime events 重建。
+
+Projection 字段可以表达：
+
+- `title` / `summary`
+- compact row 所需信息
+- expanded view 的 view hint
+- stream preview
+- truncation / pagination metadata
+- source event ids/ranges
+
+Projection 不应成为唯一事实源。如果一个字段承载 append-only 输出流，事实必须先在 runtime event 中存在。
+
+## Tool Stream 设计
+
+工具调用必须是一等实体。最小稳定概念是：
+
+- `tool_id`: 工具调用实体 ID，贯穿 started / delta / completed / failed / request。
+- `stream_id`: 同一工具内的输出通道，例如 `stdout`、`stderr`、`progress`、`diff`。
+- `chunk_id` / `sequence`: 输出分片身份和顺序，用于 replay、去重、分页和长输出查看。
+- `detail`: 工具类型结构化信息，例如 shell command、cwd、exit code。
+
+OpenAPI 应同时描述：
+
+- runtime event payload contract: `ToolStartedPayload`、`ToolOutputDeltaPayload`、`ToolCompletedPayload`；
+- projection detail contract: `AgentWorkToolStream`、`AgentWorkViewHint`、`AgentWorkShellDetail.streams`。
+
+## Endpoint 设计
+
+- 写事实的 endpoint 返回 command ack 或 accepted command，不直接返回 UI projection 假象。
+- 读 projection 的 endpoint 不写事实。
+- Diagnostics endpoint 不能成为普通 UI 的数据依赖。
+- SSE stream 只负责恢复和 invalidation；普通 UI 首屏必须能通过 read model fetch 重建。
+
+## Error 设计
+
+错误统一使用 `ErrorEnvelope`：
+
+```json
+{
+  "error": {
+    "code": "stale_cursor",
+    "message": "Conversation window anchor is no longer available.",
+    "details": {
+      "anchor_item_id": "item_123"
+    }
+  }
+}
+```
+
+`message` 面向人读；客户端逻辑依赖 `code` 和结构化 `details`。
+
+## 演进规则
+
+- v1 内优先 additive change。
+- 新 read model 字段可以 optional 添加。
+- 新 event type 必须先进入 event vocabulary，再进入 OpenAPI，再进入实现和 contract test。
+- Provider 新 wire method 先在 adapter 归一化，不直接暴露给 OpenAPI。
+- 如果必须 breaking change，升级协议版本，不在 `velachat.v1` 静默改变语义。
+
+## Requirements
+
+### Requirement: OpenAPI 不描述 UI 临时状态
+
+OpenAPI MUST NOT include component-local state such as hover, selected tabs, expanded rows, or scroll offsets.
+
+#### Scenario: 工具输出被用户展开
+
+- **WHEN** user expands a shell output row
+- **THEN** renderer stores that expanded state locally
+- **AND** OpenAPI only exposes whether the row supports terminal/chunk views
+
+### Requirement: Runtime event 不能承担 projection 责任
+
+Runtime event payload MUST describe facts, not presentation.
+
+#### Scenario: command 输出增量
+
+- **WHEN** adapter emits `tool.output.delta`
+- **THEN** payload contains `tool_id`, `stream_id`, `sequence`, and `delta`
+- **AND** it does not contain compact-row title or expanded terminal layout
+
+### Requirement: Projection 不能成为唯一事实源
+
+Read models MUST be rebuildable from canonical events and daemon-owned state.
+
+#### Scenario: 打开历史会话
+
+- **WHEN** client fetches `ConversationView`
+- **THEN** tool output previews and stream metadata are reconstructed from event log
+- **AND** client does not need diagnostics timeline or provider raw events

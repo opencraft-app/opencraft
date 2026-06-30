@@ -9,9 +9,17 @@ files:
 extraResources:
   - from: ../../target/release/velad
     to: bin/velad
+  - from: native/macos-speech/build/vela-speech-macos
+    to: bin/vela-speech-macos
 mac:
   icon: build/icon.icns
   category: public.app-category.developer-tools
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.inherit.plist
+  extendInfo:
+    NSMicrophoneUsageDescription: Vela uses the microphone for voice input in chat.
+    NSSpeechRecognitionUsageDescription: Vela uses speech recognition to transcribe voice input in chat.
   target:
     - dmg
     - zip

@@ -3,6 +3,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use vela_core::EventType;
 
+pub(crate) const CODEX_APP_SERVER_TRACE_CODE: &str = "codex_app_server_trace";
+
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct CodexRawNotification {
     pub method: String,
@@ -37,6 +39,29 @@ pub(crate) fn warning(message: impl Into<String>, raw: Value) -> BackendOutput {
             "message": message.into(),
         }),
         raw: Some(raw),
+    }
+}
+
+pub(crate) fn trace_span(
+    name: impl Into<String>,
+    method: Option<&str>,
+    duration_ms: f64,
+    ok: bool,
+    error_message: Option<String>,
+    attributes: Value,
+) -> BackendOutput {
+    BackendOutput {
+        event_type: EventType::WARNING_RAISED,
+        payload: json!({
+            "code": CODEX_APP_SERVER_TRACE_CODE,
+            "name": name.into(),
+            "method": method,
+            "duration_ms": duration_ms,
+            "status_code": if ok { "OK" } else { "ERROR" },
+            "error_message": error_message,
+            "attributes": attributes,
+        }),
+        raw: None,
     }
 }
 

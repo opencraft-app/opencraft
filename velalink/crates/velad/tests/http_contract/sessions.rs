@@ -21,12 +21,16 @@ async fn creates_session_and_exposes_session_view() {
     assert_eq!(body["session"]["id"], "create-1");
     assert_eq!(body["session"]["working_directory"], "/tmp/project");
     assert_eq!(body["cursor"]["event_id"], body["session"]["last_event_id"]);
+    let created_at = body["session"]["created_at"].clone();
+    let updated_at = body["session"]["updated_at"].clone();
 
     let session_id = body["session"]["id"].as_str().unwrap();
     let (status, view) = get_json(app, &format!("/api/v1/sessions/{session_id}")).await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(view["session"]["id"], session_id);
+    assert_eq!(view["session"]["created_at"], created_at);
+    assert_eq!(view["session"]["updated_at"], updated_at);
 }
 
 #[tokio::test]
@@ -64,13 +68,20 @@ async fn session_view_exposes_generic_capability_surface_without_provider_method
     assert_eq!(session["runtime_info"]["permission_mode"], "auto");
     assert_eq!(session["operations"]["send_message"]["available"], true);
     assert_eq!(session["operations"]["cancel"]["available"], false);
+    assert_eq!(session["activity"]["phase"], "idle");
+    assert_eq!(session["activity"]["attention"], "none");
+    assert_eq!(session["activity"]["pending_request_count"], 0);
     assert_eq!(
         session["operations"]["update_agent_config"]["effective_after"],
         "next_turn"
     );
     assert_eq!(
         session["operations"]["respond_to_request"]["available"],
-        true
+        false
+    );
+    assert_eq!(
+        session["operations"]["respond_to_request"]["reason"],
+        "no_pending_request"
     );
 
     let session_text = session.to_string();
@@ -78,6 +89,133 @@ async fn session_view_exposes_generic_capability_surface_without_provider_method
     assert!(!session_text.contains("respondToPermission"));
     assert!(!session_text.contains("getPendingPermissions"));
     assert!(!session_text.contains("turn/interrupt"));
+}
+
+#[tokio::test]
+async fn session_activity_separates_user_attention_from_running_execution() {
+    let app = test_app().await;
+
+    let (_, created) = json_request(
+        app.clone(),
+        Method::POST,
+        "/api/v1/sessions",
+        json!({
+            "backend": "pi",
+            "working_directory": "/tmp/project",
+            "title": "Needs approval"
+        }),
+        Some("session-activity-attention"),
+    )
+    .await;
+    let session_id = created["session"]["id"].as_str().unwrap();
+
+    let (status, _) = json_request(
+        app.clone(),
+        Method::POST,
+        &format!("/api/v1/sessions/{session_id}/events"),
+        json!({
+            "events": [{
+                "type": "user.message",
+                "content": [{ "type": "text", "text": "run the command" }]
+            }]
+        }),
+        Some("cmd-session-activity-attention"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    wait_for_session_event(app.clone(), session_id, "turn.completed").await;
+
+    let (status, view) = get_json(
+        app.clone(),
+        &format!("/api/v1/sessions/{session_id}/views/session"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(view["session"]["activity"]["phase"], "idle");
+    assert_eq!(view["session"]["activity"]["attention"], "waiting_for_user");
+    assert_eq!(view["session"]["activity"]["pending_request_count"], 1);
+    assert_eq!(view["session"]["operations"]["cancel"]["available"], false);
+    assert_eq!(
+        view["session"]["operations"]["cancel"]["reason"],
+        "waiting_for_user"
+    );
+    assert_eq!(
+        view["session"]["operations"]["respond_to_request"]["available"],
+        true
+    );
+
+    let (status, list) = get_json(app, "/api/v1/views/sessions?limit=20").await;
+    assert_eq!(status, StatusCode::OK);
+    let item = list["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["id"] == session_id)
+        .expect("session should appear in list");
+    assert_eq!(item["pending_request_count"], 1);
+    assert_eq!(item["running"], false);
+    assert_eq!(item["activity"]["phase"], "idle");
+    assert_eq!(item["activity"]["attention"], "waiting_for_user");
+    assert_eq!(item["activity"]["pending_request_count"], 1);
+}
+
+#[tokio::test]
+async fn send_message_preserves_structured_skill_refs_in_user_blocks() {
+    let app = test_app().await;
+
+    let (status, created) = json_request(
+        app.clone(),
+        Method::POST,
+        "/api/v1/sessions",
+        json!({
+            "backend": "pi",
+            "working_directory": "/tmp/project",
+            "title": "Skill refs"
+        }),
+        Some("session-skill-refs"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let session_id = created["session"]["id"].as_str().unwrap();
+
+    let (status, _) = json_request(
+        app.clone(),
+        Method::POST,
+        &format!("/api/v1/sessions/{session_id}/events"),
+        json!({
+            "events": [{
+                "type": "user.message",
+                "content": [
+                    { "type": "text", "text": "$review-code inspect this patch" },
+                    {
+                        "type": "skill_ref",
+                        "name": "review-code",
+                        "protocol": "codex.skills.v1",
+                        "backend": "codex",
+                        "path": "/tmp/project/.codex/skills/review-code"
+                    }
+                ]
+            }]
+        }),
+        Some("cmd-session-skill-refs"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+
+    let events = wait_for_session_event(app, session_id, "user.message.accepted").await;
+    let accepted = events["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|event| event["type"] == "user.message.accepted")
+        .expect("accepted event");
+    assert_eq!(accepted["payload"]["content"], "$review-code inspect this patch");
+    assert_eq!(accepted["payload"]["blocks"][1]["type"], "skill_ref");
+    assert_eq!(accepted["payload"]["blocks"][1]["name"], "review-code");
+    assert_eq!(
+        accepted["payload"]["blocks"][1]["protocol"],
+        "codex.skills.v1"
+    );
 }
 
 #[tokio::test]

@@ -11,4 +11,4 @@ Depends on:
 - React
 
 Used by:
-- `components`
+- Shared ChatUI browser helpers

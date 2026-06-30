@@ -1,99 +1,166 @@
-import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type FocusEvent as ReactFocusEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
+import { Folder } from "lucide-react";
 import type { SessionListItemWire } from "../../../vela-chat-client/src";
+import { useDismissableLayer } from "../../../vela-ui/src";
+import { useVerticalScrollbarOverlay } from "../conversation-runtime/scrollbar/useVerticalScrollbarOverlay";
+import { useSessionDragPreview, type SessionDragPreviewPoint } from "../session-list/drag-preview";
+import { buildSessionListRowModel } from "../session-list/sessionListRowModel";
+import styles from "../styles/desktop.module.css";
+
+const sessionHoverCardOpenDelayMs = 800;
 
 export interface SessionListSurfaceProps {
   sessions: SessionListItemWire[];
   currentSessionId: string | null;
+  onSessionDragPreviewEnd?: () => void;
+  onSessionDragPreviewMove?: (input: SessionDragPreviewInput) => void;
+  onSessionDragPreviewStart?: (input: SessionDragPreviewInput) => void;
   onArchiveSession?: (sessionId: string) => void | Promise<void>;
   onSelectSession: (sessionId: string) => void;
+}
+
+export interface SessionDragPreviewInput {
+  point: SessionDragPreviewPoint;
+  sessionId: string;
 }
 
 export function SessionListSurface({
   sessions,
   currentSessionId,
+  onSessionDragPreviewEnd,
+  onSessionDragPreviewMove,
+  onSessionDragPreviewStart,
   onArchiveSession,
   onSelectSession,
 }: SessionListSurfaceProps) {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLUListElement | null>(null);
+  const scrollbarOverlay = useVerticalScrollbarOverlay(scrollRef, {
+    contentRef,
+  });
+
   return (
-    <ul className="vela-sidebar-menu session-list" data-sidebar="menu" data-slot="session-list-surface">
-      {sessions.map((session) => (
-        <SessionListSurfaceItem
-          key={session.id}
-          session={session}
-          isActive={session.id === currentSessionId}
-          onArchiveSession={onArchiveSession ? () => onArchiveSession(session.id) : undefined}
-          onSelect={() => onSelectSession(session.id)}
-        />
-      ))}
-    </ul>
+    <div
+      className={styles.sessionListScrollShell}
+      data-slot="session-list-scroll-shell"
+    >
+      <div
+        className={styles.sessionListScrollViewport}
+        data-slot="session-list-scroll-viewport"
+        ref={scrollRef}
+      >
+        <ul
+          className="vela-sidebar-menu session-list"
+          data-sidebar="menu"
+          data-slot="session-list-surface"
+          ref={contentRef}
+        >
+          {sessions.map((session) => (
+            <SessionListSurfaceItem
+              key={session.id}
+              session={session}
+              isActive={session.id === currentSessionId}
+              onDragPreviewEnd={onSessionDragPreviewEnd}
+              onDragPreviewMove={onSessionDragPreviewMove}
+              onDragPreviewStart={onSessionDragPreviewStart}
+              onArchiveSession={onArchiveSession ? () => onArchiveSession(session.id) : undefined}
+              onSelect={() => onSelectSession(session.id)}
+            />
+          ))}
+        </ul>
+      </div>
+      {scrollbarOverlay}
+    </div>
   );
 }
 
 function SessionListSurfaceItem({
   session,
   isActive,
+  onDragPreviewEnd,
+  onDragPreviewMove,
+  onDragPreviewStart,
   onArchiveSession,
   onSelect,
 }: {
   session: SessionListItemWire;
   isActive: boolean;
+  onDragPreviewEnd?: () => void;
+  onDragPreviewMove?: (input: SessionDragPreviewInput) => void;
+  onDragPreviewStart?: (input: SessionDragPreviewInput) => void;
   onArchiveSession?: () => void | Promise<void>;
   onSelect: () => void;
 }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isHoverCardOpen, setIsHoverCardOpen] = useState(false);
+  const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null);
   const [menuStyle, setMenuStyle] = useState<CSSProperties | null>(null);
+  const [hoverCardStyle, setHoverCardStyle] = useState<CSSProperties | null>(null);
   const rootRef = useRef<HTMLLIElement | null>(null);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const isRunning = session.running || session.status === "running";
-  const isWaiting = session.status === "waiting_for_input" || session.pending_request_count > 0;
-  const isFailed = session.status === "failed";
-  const badgeLabel = isWaiting
-    ? session.pending_request_count > 0
-      ? `${session.pending_request_count} request`
-      : "Waiting"
-    : isRunning
-      ? "Running"
-      : null;
+  const hoverOpenTimerRef = useRef<number | null>(null);
+  const row = buildSessionListRowModel(session);
+  const closeMenu = useCallback(() => setIsMenuOpen(false), []);
+  const cancelHoverCardOpen = useCallback(() => {
+    if (!canUseDocument() || hoverOpenTimerRef.current === null) return;
+    window.clearTimeout(hoverOpenTimerRef.current);
+    hoverOpenTimerRef.current = null;
+  }, []);
+  const openHoverCardAfterDelay = useCallback(() => {
+    if (!canUseDocument()) {
+      setIsHoverCardOpen(true);
+      return;
+    }
+    cancelHoverCardOpen();
+    hoverOpenTimerRef.current = window.setTimeout(() => {
+      hoverOpenTimerRef.current = null;
+      setIsHoverCardOpen(true);
+    }, sessionHoverCardOpenDelayMs);
+  }, [cancelHoverCardOpen]);
+  const closeHoverCard = useCallback(() => {
+    cancelHoverCardOpen();
+    setIsHoverCardOpen(false);
+  }, [cancelHoverCardOpen]);
+  const dragPreview = useSessionDragPreview({
+    canPreview: Boolean(onDragPreviewStart),
+    onDragPreviewEnd,
+    onDragPreviewMove: (point) => onDragPreviewMove?.({ point, sessionId: session.id }),
+    onDragPreviewStart: (point) => {
+      closeHoverCard();
+      onDragPreviewStart?.({ point, sessionId: session.id });
+    },
+  });
 
-  useEffect(() => {
-    if (!isMenuOpen) return;
+  useDismissableLayer({
+    enabled: isMenuOpen,
+    refs: [menuRef],
+    onDismiss: closeMenu,
+  });
 
-    const onPointerDown = (event: PointerEvent) => {
-      const root = rootRef.current;
-      const menu = menuRef.current;
-      const target = event.target;
-      if (root && target instanceof Node && root.contains(target)) return;
-      if (menu && target instanceof Node && menu.contains(target)) return;
-      setIsMenuOpen(false);
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setIsMenuOpen(false);
-    };
-
-    document.addEventListener("pointerdown", onPointerDown, true);
-    document.addEventListener("keydown", onKeyDown, true);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown, true);
-      document.removeEventListener("keydown", onKeyDown, true);
-    };
-  }, [isMenuOpen]);
+  useEffect(() => closeHoverCard, [closeHoverCard]);
 
   useLayoutEffect(() => {
-    if (!isMenuOpen || !canUseDocument()) {
+    if (!isMenuOpen || !menuAnchor || !canUseDocument()) {
       setMenuStyle(null);
       return;
     }
 
     const updatePosition = () => {
-      const trigger = triggerRef.current;
-      if (!trigger) return;
-      const rect = trigger.getBoundingClientRect();
       setMenuStyle({
         position: "fixed",
-        top: `${rect.bottom + 6}px`,
-        left: `${Math.max(8, Math.min(rect.right - 164, window.innerWidth - 172))}px`,
+        top: `${Math.max(8, Math.min(menuAnchor.y + 6, window.innerHeight - 64))}px`,
+        left: `${Math.max(8, Math.min(menuAnchor.x, window.innerWidth - 172))}px`,
       });
     };
 
@@ -104,11 +171,77 @@ function SessionListSurfaceItem({
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     };
-  }, [isMenuOpen]);
+  }, [isMenuOpen, menuAnchor]);
+
+  useLayoutEffect(() => {
+    if (!isHoverCardOpen || !canUseDocument()) {
+      setHoverCardStyle(null);
+      return;
+    }
+
+    const updatePosition = () => {
+      const rect = rootRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const width = Math.min(282, Math.max(232, window.innerWidth - rect.right - 18));
+      setHoverCardStyle({
+        position: "fixed",
+        top: `${Math.max(8, Math.min(rect.top + rect.height / 2 - 45, window.innerHeight - 108))}px`,
+        left: `${Math.max(8, Math.min(rect.right + 8, window.innerWidth - width - 8))}px`,
+        width: `${width}px`,
+      });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [isHoverCardOpen]);
 
   const archiveSession = async () => {
-    setIsMenuOpen(false);
+    closeMenu();
     await onArchiveSession?.();
+  };
+  const selectSessionFromKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onSelect();
+      return;
+    }
+    if (event.key !== "ContextMenu" && !(event.key === "F10" && event.shiftKey)) return;
+    event.preventDefault();
+    openMenuFromKeyboard();
+  };
+  const openMenuAt = (x: number, y: number) => {
+    if (!onArchiveSession) return;
+    setMenuAnchor({ x, y });
+    setIsMenuOpen(true);
+  };
+  const openMenuFromKeyboard = () => {
+    const rect = rootRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    openMenuAt(rect.right - 164, rect.top + 8);
+  };
+  const openMenuFromContext = (event: ReactMouseEvent<HTMLElement>) => {
+    if (!onArchiveSession) return;
+    event.preventDefault();
+    event.stopPropagation();
+    openMenuAt(event.clientX, event.clientY);
+  };
+  const closeHoverCardFromBlur = (event: ReactFocusEvent<HTMLLIElement>) => {
+    const nextTarget = event.relatedTarget;
+    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
+    closeHoverCard();
+  };
+  const selectSessionFromClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (dragPreview.consumeSuppressedClick()) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    onSelect();
   };
 
   const menu = isMenuOpen ? (
@@ -133,12 +266,36 @@ function SessionListSurfaceItem({
           }}
         >
           <ArchiveGlyph />
-          <span>Archive chat</span>
+          <span>{row.archiveMenuLabel}</span>
         </button>
       </div>
     </div>
   ) : null;
-
+  const hoverPreview = session.preview.trim();
+  const hoverCard = isHoverCardOpen ? (
+    <div
+      className="vela-popover-surface vela-session-hover-card vela-motion-popover"
+      role="tooltip"
+      data-slot="session-hover-card"
+      data-state="open"
+      style={hoverCardStyle ?? undefined}
+    >
+      <div className="vela-session-hover-card-title-row">
+        <span className="vela-session-hover-card-title">{row.title}</span>
+        {row.rail ? (
+          <span className="vela-session-hover-card-recency">{row.rail.label}</span>
+        ) : null}
+      </div>
+      <div className="vela-session-hover-card-detail">
+        <Folder size={15} strokeWidth={2} aria-hidden="true" />
+        <span>{row.locationInfo?.label ?? session.working_directory}</span>
+      </div>
+      <div className="vela-session-hover-card-meta">{row.metaLabel}</div>
+      {hoverPreview ? (
+        <div className="vela-session-hover-card-preview">{hoverPreview}</div>
+      ) : null}
+    </div>
+  ) : null;
   return (
     <li
       ref={rootRef}
@@ -148,55 +305,70 @@ function SessionListSurfaceItem({
       data-sidebar="menu-item"
       data-slot="session-list-surface-item"
       data-status={session.status}
+      data-activity={row.status.activity}
       data-has-actions={onArchiveSession ? "true" : undefined}
-      data-running={isRunning ? "true" : undefined}
-      data-waiting={isWaiting ? "true" : undefined}
-      data-failed={isFailed ? "true" : undefined}
+      data-running={row.status.isRunning ? "true" : undefined}
+      data-waiting={row.status.isWaiting ? "true" : undefined}
+      data-failed={row.status.isFailed ? "true" : undefined}
+      data-dragging-preview={dragPreview.isDragging ? "true" : undefined}
+      onContextMenu={openMenuFromContext}
+      onBlur={closeHoverCardFromBlur}
+      onFocus={openHoverCardAfterDelay}
+      onPointerEnter={openHoverCardAfterDelay}
+      onPointerLeave={closeHoverCard}
     >
-      <button
+      <div
         className="vela-sidebar-menu-button vela-session-main"
         data-active={isActive ? "true" : undefined}
         data-sidebar="menu-button"
         data-size="compact"
         data-slot="session-list-surface-button"
-        type="button"
-        onClick={onSelect}
+        role="button"
+        tabIndex={0}
+        onClick={selectSessionFromClick}
+        onKeyDown={selectSessionFromKeyboard}
+        onPointerCancel={dragPreview.onPointerCancel}
+        onPointerDown={dragPreview.onPointerDown}
+        onPointerMove={dragPreview.onPointerMove}
+        onPointerUp={dragPreview.onPointerUp}
       >
-        <span className="vela-session-icon" aria-hidden>
-          <MessageGlyph />
-          <span className="vela-session-status-dot" />
-        </span>
         <span className="vela-session-copy">
           <span className="vela-session-title-row">
-            <span className="vela-session-title">{session.title || session.id}</span>
-            {badgeLabel ? <span className="vela-session-badge">{badgeLabel}</span> : null}
+            <span className="vela-session-title">{row.title}</span>
           </span>
-          <span className="vela-session-preview">{sessionPreviewLabel(session)}</span>
-          <span className="vela-session-meta">{sessionMetaLabel(session)}</span>
+          <span className="vela-session-preview">{row.previewLabel}</span>
+          {row.locationInfo ? (
+            <span className="vela-session-location" title={row.locationInfo.path}>
+              <Folder size={12} strokeWidth={2.1} aria-hidden="true" />
+              <span>{row.locationInfo.label}</span>
+            </span>
+          ) : (
+            <span className="vela-session-meta">{row.metaLabel}</span>
+          )}
         </span>
-        <span className="vela-session-rail" aria-hidden>
-          {sessionRailLabel(session)}
-        </span>
-      </button>
+        {row.rail ? (
+          <span className="vela-session-rail" data-recency={row.rail.recency} aria-hidden>
+            {row.rail.label}
+          </span>
+        ) : null}
+      </div>
       {onArchiveSession ? (
         <>
           <button
-            ref={triggerRef}
-            className="vela-session-actions-trigger"
+            className="vela-session-archive-action"
             type="button"
-            aria-label={`Session actions for ${session.title || session.id}`}
-            aria-haspopup="menu"
-            aria-expanded={isMenuOpen ? "true" : "false"}
+            aria-label={row.archiveActionLabel}
             onClick={(event) => {
               event.stopPropagation();
-              setIsMenuOpen((current) => !current);
+              void archiveSession();
             }}
           >
-            <MoreGlyph />
+            <ArchiveGlyph />
           </button>
           {menu ? renderMenu(menu) : null}
         </>
       ) : null}
+      {hoverCard ? renderHoverCard(hoverCard) : null}
     </li>
   );
 }
@@ -206,21 +378,13 @@ function renderMenu(menu: JSX.Element) {
   return createPortal(menu, document.body);
 }
 
-function canUseDocument() {
-  return typeof document !== "undefined" && typeof window !== "undefined";
+function renderHoverCard(card: JSX.Element) {
+  if (!canUseDocument()) return card;
+  return createPortal(card, document.body);
 }
 
-function MoreGlyph() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M6.5 12h.01M12 12h.01M17.5 12h.01"
-        stroke="currentColor"
-        strokeWidth="3"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
+function canUseDocument() {
+  return typeof document !== "undefined" && typeof window !== "undefined";
 }
 
 function ArchiveGlyph() {
@@ -235,52 +399,4 @@ function ArchiveGlyph() {
       />
     </svg>
   );
-}
-
-function MessageGlyph() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M5 6.5C5 5.12 6.12 4 7.5 4h9C17.88 4 19 5.12 19 6.5v6c0 1.38-1.12 2.5-2.5 2.5H10l-4.2 3.2c-.33.25-.8.02-.8-.4V6.5Z"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path d="M8.5 8.5h7M8.5 11.5h4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function sessionMetaLabel(session: SessionListItemWire) {
-  const backend = session.backend;
-  const model = session.agent_config?.model ?? session.model;
-  return [backend, model].filter(Boolean).join(" · ");
-}
-
-function sessionPreviewLabel(session: SessionListItemWire) {
-  const preview = session.preview.trim();
-  if (preview) return preview;
-
-  const cwd = session.working_directory.trim();
-  if (cwd) return cwd.split("/").filter(Boolean).at(-1) ?? cwd;
-
-  return sessionMetaLabel(session);
-}
-
-function sessionRailLabel(session: SessionListItemWire) {
-  return relativeSessionTime(session.last_activity_at || session.updated_at);
-}
-
-function relativeSessionTime(value: string) {
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return "";
-  const diffMs = Date.now() - timestamp;
-  if (diffMs < 60_000) return "now";
-  const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  const days = Math.floor(hours / 24);
-  return `${days}d`;
 }

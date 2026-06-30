@@ -1,11 +1,12 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use serde_json::Value;
-use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
+use sqlx::{Row, SqlitePool};
 use thiserror::Error;
 use vela_core::{
     AcceptedCommandAck, AgentConfig, BackendKind, CanonicalEvent, CommandAck, CommandId,
     EventCursor, EventSource, EventType, QueuedCommandAck, SessionId,
 };
+use vela_sqlite::connect_local_sqlite_pool;
 
 #[derive(Debug, Error)]
 pub enum StoreError {
@@ -15,6 +16,10 @@ pub enum StoreError {
     Json(#[from] serde_json::Error),
     #[error("session not found: {0}")]
     SessionNotFound(String),
+    #[error("backend settings not found: {0}")]
+    BackendSettingsNotFound(String),
+    #[error("node not found: {0}")]
+    NodeNotFound(String),
 }
 
 pub type Result<T> = std::result::Result<T, StoreError>;
@@ -42,6 +47,24 @@ pub struct StoredSession {
     pub metadata: Value,
     pub epoch: i64,
     pub next_seq: i64,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct StoredBackendSettings {
+    pub backend: String,
+    pub settings: Value,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct StoredNode {
+    pub node_id: String,
+    pub provider: String,
+    pub display_name: String,
+    pub config: Value,
+    pub secret_ref: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -83,10 +106,7 @@ impl SqliteEventStore {
     }
 
     pub async fn connect(database_url: &str) -> Result<Self> {
-        let pool = SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect(database_url)
-            .await?;
+        let pool = connect_local_sqlite_pool(database_url).await?;
         let store = Self { pool };
         store.migrate().await?;
         Ok(store)
@@ -134,6 +154,22 @@ impl SqliteEventStore {
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY(session_id, key)
             );
+
+            CREATE TABLE IF NOT EXISTS backend_settings (
+                backend TEXT PRIMARY KEY,
+                settings_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS nodes (
+                node_id TEXT PRIMARY KEY,
+                provider TEXT NOT NULL,
+                display_name TEXT NOT NULL,
+                config_json TEXT NOT NULL DEFAULT '{}',
+                secret_ref TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
             "#,
         )
         .execute(&self.pool)
@@ -145,6 +181,104 @@ impl SqliteEventStore {
         )
         .await?;
         Ok(())
+    }
+
+    pub async fn get_backend_settings(
+        &self,
+        backend: &str,
+    ) -> Result<Option<StoredBackendSettings>> {
+        let row = sqlx::query(
+            r#"
+            SELECT backend, settings_json, updated_at
+            FROM backend_settings
+            WHERE backend = ?1
+            "#,
+        )
+        .bind(backend)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        row.map(row_to_backend_settings).transpose()
+    }
+
+    pub async fn upsert_backend_settings(
+        &self,
+        backend: &str,
+        settings: Value,
+    ) -> Result<StoredBackendSettings> {
+        sqlx::query(
+            r#"
+            INSERT INTO backend_settings (backend, settings_json, updated_at)
+            VALUES (?1, ?2, CURRENT_TIMESTAMP)
+            ON CONFLICT(backend) DO UPDATE SET
+                settings_json = excluded.settings_json,
+                updated_at = CURRENT_TIMESTAMP
+            "#,
+        )
+        .bind(backend)
+        .bind(serde_json::to_string(&settings)?)
+        .execute(&self.pool)
+        .await?;
+
+        self.get_backend_settings(backend)
+            .await?
+            .ok_or_else(|| StoreError::BackendSettingsNotFound(backend.to_string()))
+    }
+
+    pub async fn create_node(
+        &self,
+        node_id: &str,
+        provider: &str,
+        display_name: &str,
+        config: Value,
+        secret_ref: Option<&str>,
+    ) -> Result<StoredNode> {
+        sqlx::query(
+            r#"
+            INSERT INTO nodes (node_id, provider, display_name, config_json, secret_ref)
+            VALUES (?1, ?2, ?3, ?4, ?5)
+            "#,
+        )
+        .bind(node_id)
+        .bind(provider)
+        .bind(display_name)
+        .bind(serde_json::to_string(&config)?)
+        .bind(secret_ref)
+        .execute(&self.pool)
+        .await?;
+
+        self.get_node(node_id)
+            .await?
+            .ok_or_else(|| StoreError::NodeNotFound(node_id.to_string()))
+    }
+
+    pub async fn get_node(&self, node_id: &str) -> Result<Option<StoredNode>> {
+        let row = sqlx::query(
+            r#"
+            SELECT node_id, provider, display_name, config_json, secret_ref, created_at, updated_at
+            FROM nodes
+            WHERE node_id = ?1
+            "#,
+        )
+        .bind(node_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        row.map(row_to_node).transpose()
+    }
+
+    pub async fn list_nodes(&self) -> Result<Vec<StoredNode>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT node_id, provider, display_name, config_json, secret_ref, created_at, updated_at
+            FROM nodes
+            ORDER BY updated_at DESC, node_id ASC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        rows.into_iter().map(row_to_node).collect()
     }
 
     async fn ensure_column(&self, table: &str, column: &str, definition: &str) -> Result<()> {
@@ -318,7 +452,7 @@ impl SqliteEventStore {
         payload: Value,
         raw: Option<Value>,
     ) -> Result<AppendResult> {
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         let event = self
             .append_event_tx(&mut tx, session_id, event_type, source, payload, raw)
             .await?;
@@ -339,7 +473,7 @@ impl SqliteEventStore {
         source: EventSource,
         payload: Value,
     ) -> Result<IdempotencyAcceptance> {
-        let mut tx = self.pool.begin().await?;
+        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
 
         if let Some(row) =
             sqlx::query("SELECT command_hash, command_ack_json FROM idempotency_keys WHERE session_id = ?1 AND key = ?2")
@@ -528,7 +662,9 @@ fn row_to_event(row: sqlx::sqlite::SqliteRow) -> Result<CanonicalEvent> {
 fn row_to_session(row: sqlx::sqlite::SqliteRow) -> Result<StoredSession> {
     let backend = match row.try_get::<String, _>("backend")?.as_str() {
         "pi" => BackendKind::Pi,
+        "vela_engine" => BackendKind::VelaEngine,
         "codex" => BackendKind::Codex,
+        "tcodex" => BackendKind::Tcodex,
         "claude" => BackendKind::Claude,
         "acp" => BackendKind::Acp,
         _ => BackendKind::Pi,
@@ -552,6 +688,26 @@ fn row_to_session(row: sqlx::sqlite::SqliteRow) -> Result<StoredSession> {
     })
 }
 
+fn row_to_backend_settings(row: sqlx::sqlite::SqliteRow) -> Result<StoredBackendSettings> {
+    Ok(StoredBackendSettings {
+        backend: row.try_get("backend")?,
+        settings: serde_json::from_str(&row.try_get::<String, _>("settings_json")?)?,
+        updated_at: parse_sqlite_datetime(row.try_get("updated_at")?),
+    })
+}
+
+fn row_to_node(row: sqlx::sqlite::SqliteRow) -> Result<StoredNode> {
+    Ok(StoredNode {
+        node_id: row.try_get("node_id")?,
+        provider: row.try_get("provider")?,
+        display_name: row.try_get("display_name")?,
+        config: serde_json::from_str(&row.try_get::<String, _>("config_json")?)?,
+        secret_ref: row.try_get("secret_ref")?,
+        created_at: parse_sqlite_datetime(row.try_get("created_at")?),
+        updated_at: parse_sqlite_datetime(row.try_get("updated_at")?),
+    })
+}
+
 fn row_to_agent_config(row: &sqlx::sqlite::SqliteRow) -> Result<AgentConfig> {
     let model: Option<String> = row.try_get("model")?;
     let mut agent_config: AgentConfig =
@@ -563,7 +719,106 @@ fn row_to_agent_config(row: &sqlx::sqlite::SqliteRow) -> Result<AgentConfig> {
 }
 
 fn parse_sqlite_datetime(value: String) -> DateTime<Utc> {
-    DateTime::parse_from_rfc3339(&value)
-        .map(|dt| dt.with_timezone(&Utc))
-        .unwrap_or_else(|_| Utc::now())
+    if let Ok(dt) = DateTime::parse_from_rfc3339(&value) {
+        return dt.with_timezone(&Utc);
+    }
+    if let Ok(dt) = NaiveDateTime::parse_from_str(&value, "%Y-%m-%d %H:%M:%S") {
+        return DateTime::from_naive_utc_and_offset(dt, Utc);
+    }
+    Utc::now()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+    use serde_json::json;
+    use sqlx::sqlite::SqlitePoolOptions;
+    use std::{
+        env,
+        path::PathBuf,
+        sync::atomic::{AtomicUsize, Ordering},
+        time::Duration,
+    };
+
+    static TEST_DB_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+    #[test]
+    fn parses_sqlite_current_timestamp_as_utc() {
+        let parsed = parse_sqlite_datetime("2026-06-18 10:00:06".to_string());
+
+        assert_eq!(parsed, Utc.with_ymd_and_hms(2026, 6, 18, 10, 0, 6).unwrap());
+    }
+
+    #[test]
+    fn parses_rfc3339_timestamp_as_utc() {
+        let parsed = parse_sqlite_datetime("2026-06-18T10:00:06.123456+00:00".to_string());
+        let expected = DateTime::parse_from_rfc3339("2026-06-18T10:00:06.123456+00:00")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        assert_eq!(parsed, expected);
+    }
+
+    #[tokio::test]
+    async fn file_store_waits_for_transient_sqlite_writer_lock() {
+        let (db_url, db_path) = temp_sqlite_url("vela-store-lock");
+        let store = SqliteEventStore::connect(&db_url).await.expect("store");
+        let session_id = SessionId::from("ses_store_lock");
+        store
+            .create_session(&session_id, BackendKind::Pi, "/tmp/vela")
+            .await
+            .expect("create session");
+
+        let lock_pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect(&db_url)
+            .await
+            .expect("lock pool");
+        let mut lock = lock_pool.acquire().await.expect("lock connection");
+        sqlx::query("BEGIN IMMEDIATE")
+            .execute(&mut *lock)
+            .await
+            .expect("hold sqlite writer lock");
+
+        let append = {
+            let store = store.clone();
+            let session_id = session_id.clone();
+            tokio::spawn(async move {
+                store
+                    .append_event(
+                        &session_id,
+                        EventType::USER_MESSAGE_ACCEPTED,
+                        EventSource::runtime("test"),
+                        json!({ "content": "hello" }),
+                        None,
+                    )
+                    .await
+            })
+        };
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        sqlx::query("COMMIT")
+            .execute(&mut *lock)
+            .await
+            .expect("release sqlite writer lock");
+
+        let result = tokio::time::timeout(Duration::from_secs(2), append)
+            .await
+            .expect("append did not wait forever")
+            .expect("append task");
+        result.expect("append should wait for sqlite writer lock");
+
+        let _ = std::fs::remove_file(db_path);
+    }
+
+    fn temp_sqlite_url(prefix: &str) -> (String, PathBuf) {
+        let path = env::temp_dir().join(format!(
+            "{prefix}-{}-{}.sqlite",
+            std::process::id(),
+            TEST_DB_COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = std::fs::remove_file(&path);
+        (format!("sqlite://{}?mode=rwc", path.display()), path)
+    }
 }

@@ -18,6 +18,7 @@ type AgentWorkWebBlock = {
   updatedAt?: string;
   sourceTurnId?: string;
   sourceAgentWorkId?: string;
+  detail?: Extract<ChatRenderRow, { kind: "agent_work" }>["detail"];
 };
 
 export interface WebChatModel {
@@ -230,7 +231,7 @@ function rowFingerprint(row: ChatRenderRow): string {
     return `${row.key}:created:${hashString(row.createdAt)}:collapsed:${row.collapsed}:len:${row.text.length}:text:${hashString(row.text)}:copy:${hashString(row.copy_text)}:parts:${partsFingerprint(row.parts)}`;
   }
   if (row.kind === "agent_work") {
-    return `${row.key}:${row.status}:display:${row.display}:created:${hashString(row.createdAt)}:updated:${hashString(row.updatedAt ?? "")}:title:${hashString(row.title)}:summary:${hashString(row.summary)}`;
+    return `${row.key}:${row.status}:display:${row.display}:created:${hashString(row.createdAt)}:updated:${hashString(row.updatedAt ?? "")}:title:${hashString(row.title)}:summary:${hashString(row.summary)}:detail:${hashString(row.detailFingerprint)}`;
   }
   if (row.kind === "agent_work_group") {
     return `${row.key}:${row.status}:display:${row.display}:created:${hashString(row.createdAt)}:updated:${hashString(row.updatedAt ?? "")}:title:${hashString(row.title)}:summary:${hashString(row.summary)}:children:${row.children.map(rowFingerprint).join(",")}`;
@@ -331,6 +332,7 @@ function agentWorkRowToBlock(row: Extract<ChatRenderRow, { kind: "agent_work" }>
     updatedAt: row.updatedAt,
     sourceTurnId: row.turnId,
     sourceAgentWorkId: row.agentWorkId,
+    detail: row.detail,
   };
 }
 

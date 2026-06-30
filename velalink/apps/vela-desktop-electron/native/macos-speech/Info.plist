@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>com.vela.desktop.speech-helper</string>
+  <key>CFBundleName</key>
+  <string>VelaSpeechHelper</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Vela uses the microphone for voice input in chat.</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>Vela uses speech recognition to transcribe voice input in chat.</string>
+</dict>
+</plist>

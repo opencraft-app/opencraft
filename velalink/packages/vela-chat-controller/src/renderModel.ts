@@ -1,4 +1,5 @@
 import type {
+  ConversationWireItem,
   ConversationWireView,
   PendingRequestsWireView,
 } from "../../vela-chat-client/src";
@@ -32,7 +33,22 @@ export function buildVelaChatControllerRenderModel({
       cursor: EMPTY_EVENT_CURSOR,
     },
     requests: requests ?? { requests: [], cursor: EMPTY_CURSOR_WINDOW },
-    stream: { connected: streamConnected },
+    stream: {
+      connected: streamConnected,
+      running: conversation ? conversationHasRunningWork(conversation) : false,
+    },
   });
   return buildChatRenderModel(surface, hostPolicy);
+}
+
+function conversationHasRunningWork(conversation: ConversationWireView) {
+  return conversation.items.some(isRunningConversationItem);
+}
+
+function isRunningConversationItem(item: ConversationWireItem) {
+  if (item.kind === "turn_meta") return item.status === "running";
+  if (item.kind === "agent_work") return item.status === "running" || item.status === "pending";
+  if (item.kind === "assistant_message") return item.status === "streaming";
+  if (item.kind === "status") return item.status === "pending" || item.status === "streaming";
+  return false;
 }

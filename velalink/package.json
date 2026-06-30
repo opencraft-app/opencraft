@@ -12,12 +12,16 @@
     "test": "node --test --import tsx \"packages/**/*.test.ts\""
   },
   "dependencies": {
+    "@lexical/react": "^0.45.0",
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/sdk-trace-base": "^2.8.0",
     "@scalar/nextjs-api-reference": "latest",
     "@tanstack/react-query": "^5.90.12",
     "@tanstack/react-virtual": "^3.14.3",
     "fumadocs-core": "latest",
     "fumadocs-mdx": "latest",
     "fumadocs-ui": "latest",
+    "lexical": "^0.45.0",
     "marked": "^18.0.5",
     "next": "latest",
     "react": "latest",

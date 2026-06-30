@@ -1,9 +1,11 @@
 import type {
+  AgentWorkContentPartWire,
   AgentWorkDetailTypeWire,
   AgentWorkFileDetailTypeWire,
   AgentWorkGenericDetailTypeWire,
   AgentWorkSearchModeWire,
   AgentWorkDetailWire,
+  AgentWorkShellStreamWire,
   AgentConfigPatchWire,
   ArchiveSessionWireResponse,
   AgentConfigWire,
@@ -13,12 +15,26 @@ import type {
   BackendFeatureBaseWire,
   BackendFeatureWire,
   BackendKindWire,
+  BackendLocationKindWire,
+  BackendLocationWire,
   BackendModelWire,
   BackendProbeResultWire,
+  BackendSkillDescriptorWire,
+  BackendSkillsWireResponse,
+  BackendSettingsPatchWire,
+  BackendSettingsWireResponse,
   BackendStatusWire,
+  BackendUsageLimitWire,
+  BackendUsageLineWire,
+  BackendUsageProfileWire,
+  BackendUsageStatusWire,
+  BackendUsageSummaryWire,
+  BackendUsageToneWire,
+  BackendUsageWireResponse,
   BackendWire,
   BackendWireResponse,
   BackendsWireResponse,
+  CreateNodeInput,
   ClientInputEvent,
   ClientInputPart,
   CommandAckWire,
@@ -38,16 +54,32 @@ import type {
   EventCursorWire,
   MessagePartTypeWire,
   MessagePartWire,
+  NodeAuthMethodWire,
+  NodeProviderKindWire,
+  NodeProviderWire,
+  NodeProvidersWireResponse,
+  NodeTargetWire,
+  NodeWire,
+  NodeWireResponse,
+  NodesWireResponse,
   PendingRequestsOptions,
   PendingRequestsWireView,
   PermissionModeOptionWire,
   PermissionModeWire,
   ReasoningEffortOptionWire,
   RequestStatusWire,
+  RuntimeTargetKindWire,
+  RuntimeTargetStatusWire,
+  RuntimeTargetWire,
+  RuntimeTargetWireResponse,
+  RuntimeTargetsWireResponse,
   SessionListOptions,
   SessionListItemWire,
   SessionListViewWireResponse,
   SessionListWireResponse,
+  SessionActivityAttentionWire,
+  SessionActivityPhaseWire,
+  SessionActivityWire,
   SessionSummaryWire,
   SessionOperationWire,
   SessionRuntimeInfoWire,
@@ -108,7 +140,9 @@ export function encodeBackendKind(backend: unknown) {
 
 const backendKinds = new Set<string>(
   [
+    "vela_engine",
     "codex",
+    "tcodex",
     "cloudagent",
     "claude_code",
     "pi",
@@ -116,6 +150,24 @@ const backendKinds = new Set<string>(
     "acp",
     "qoder",
   ] satisfies BackendKindWire[],
+);
+
+const nodeProviderKinds = new Set<string>(["ssh"] satisfies NodeProviderKindWire[]);
+const nodeAuthMethods = new Set<string>(["password"] satisfies NodeAuthMethodWire[]);
+const runtimeTargetKinds = new Set<string>(
+  ["local", "remote"] satisfies RuntimeTargetKindWire[],
+);
+const runtimeTargetStatuses = new Set<string>(
+  [
+    "connected",
+    "connecting",
+    "ready",
+    "degraded",
+    "reconnecting",
+    "disconnected",
+    "failed",
+    "error",
+  ] satisfies RuntimeTargetStatusWire[],
 );
 
 export function validateCreateSessionInput(input: unknown): asserts input is CreateSessionInput {
@@ -145,6 +197,51 @@ export function validateCreateSessionInput(input: unknown): asserts input is Cre
   }
 }
 
+export function validateCreateNodeInput(input: unknown): asserts input is CreateNodeInput {
+  if (!isRecord(input)) {
+    throw invalidNodesRequest("CreateNodeInput must be an object");
+  }
+  if (input.provider !== "ssh") {
+    throw invalidNodesRequest("CreateNodeInput.provider must be ssh");
+  }
+  if (input.displayName !== undefined && typeof input.displayName !== "string") {
+    throw invalidNodesRequest("CreateNodeInput.displayName must be a string");
+  }
+  if (!isRecord(input.ssh)) {
+    throw invalidNodesRequest("CreateNodeInput.ssh must be an object");
+  }
+  const { host, port, username } = input.ssh;
+  if (typeof host !== "string" || host.trim().length === 0) {
+    throw invalidNodesRequest("CreateNodeInput.ssh.host must not be empty");
+  }
+  if (typeof username !== "string" || username.trim().length === 0) {
+    throw invalidNodesRequest("CreateNodeInput.ssh.username must not be empty");
+  }
+  if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) {
+    throw invalidNodesRequest("CreateNodeInput.ssh.port must be a valid TCP port");
+  }
+  if (!isRecord(input.auth)) {
+    throw invalidNodesRequest("CreateNodeInput.auth must be an object");
+  }
+  if (input.auth.method !== "password") {
+    throw invalidNodesRequest("CreateNodeInput.auth.method must be password");
+  }
+  if (typeof input.auth.password !== "string" || input.auth.password.trim().length === 0) {
+    throw invalidNodesRequest("CreateNodeInput.auth.password must not be empty");
+  }
+  if (input.target !== undefined) {
+    if (!isRecord(input.target)) {
+      throw invalidNodesRequest("CreateNodeInput.target must be an object");
+    }
+    if (input.target.os !== undefined && typeof input.target.os !== "string") {
+      throw invalidNodesRequest("CreateNodeInput.target.os must be a string");
+    }
+    if (input.target.arch !== undefined && typeof input.target.arch !== "string") {
+      throw invalidNodesRequest("CreateNodeInput.target.arch must be a string");
+    }
+  }
+}
+
 function validateOptionalCreateSessionString(input: Record<string, unknown>, field: string) {
   if (input[field] !== undefined && typeof input[field] !== "string") {
     throw invalidCreateSessionRequest(`CreateSessionRequest ${field} must be a string`);
@@ -160,7 +257,14 @@ const agentConfigPatchKeys = new Set([
 
 const permissionModes = new Set(["read_only", "auto", "auto_review", "full_access"]);
 const viewWindowDirections = new Set(["tail", "before", "after", "around"]);
-const backendStatuses = new Set(["available", "unavailable", "degraded", "error"]);
+const backendStatuses = new Set(["loading", "available", "unavailable", "degraded", "error"]);
+const backendLocationKinds = new Set(["local", "remote"]);
+const sessionActivityPhases = new Set<string>(
+  ["idle", "starting", "running", "canceling"] satisfies SessionActivityPhaseWire[],
+);
+const sessionActivityAttentions = new Set<string>(
+  ["none", "waiting_for_user", "error"] satisfies SessionActivityAttentionWire[],
+);
 const sessionStatuses = new Set<string>(
   [
     "starting",
@@ -226,6 +330,86 @@ const agentWorkDetailTypes = new Set<string>(
     "tool",
   ] satisfies AgentWorkDetailTypeWire[],
 );
+const agentWorkShellDetailFields = new Set([
+  "type",
+  "command",
+  "cwd",
+  "output",
+  "stdout",
+  "stderr",
+  "streams",
+  "exit_code",
+  "error",
+]);
+const agentWorkShellStreamFields = new Set([
+  "stream_id",
+  "stream",
+  "text",
+  "last_delta",
+  "chunk_count",
+  "last_sequence",
+  "last_chunk_id",
+]);
+const agentWorkFileDetailFields = new Set([
+  "type",
+  "file_path",
+  "path",
+  "content",
+  "content_parts",
+  "old_string",
+  "new_string",
+  "unified_diff",
+]);
+const agentWorkSearchDetailFields = new Set([
+  "type",
+  "query",
+  "mode",
+  "content",
+  "content_parts",
+  "num_files",
+  "num_matches",
+  "duration_ms",
+  "truncated",
+]);
+const agentWorkFetchDetailFields = new Set([
+  "type",
+  "url",
+  "prompt",
+  "result",
+  "content_parts",
+  "code",
+  "code_text",
+  "bytes",
+  "duration_ms",
+]);
+const agentWorkGenericDetailFields = new Set([
+  "type",
+  "tool_id",
+  "call_id",
+  "name",
+  "label",
+  "summary",
+  "description",
+  "text",
+  "content",
+  "command",
+  "cwd",
+  "query",
+  "file_path",
+  "path",
+  "url",
+  "output",
+  "stdout",
+  "stderr",
+  "error",
+  "delta",
+  "status",
+  "exit_code",
+  "content_parts",
+]);
+const agentWorkTextContentPartFields = new Set(["type", "text"]);
+const agentWorkJsonContentPartFields = new Set(["type", "value"]);
+const agentWorkResourceLinkContentPartFields = new Set(["type", "uri", "name", "mime_type"]);
 const backendCapabilityFields = [
   "streaming",
   "cancel",
@@ -233,6 +417,8 @@ const backendCapabilityFields = [
   "structured_diff",
   "session_agent_config",
 ];
+const backendUsageStatuses = new Set(["ok", "needs_auth", "unsupported", "error"]);
+const backendUsageTones = new Set(["ok", "warning", "critical", "neutral"]);
 
 export function validateAgentConfigPatch(patch: unknown): asserts patch is AgentConfigPatchWire {
   if (!isRecord(patch)) {
@@ -445,6 +631,19 @@ function validateClientInputPart(part: unknown): asserts part is ClientInputPart
     case "text":
       requireInputPartString(part, "text");
       return;
+    case "skill_ref":
+      requireInputPartString(part, "name");
+      requireInputPartString(part, "protocol");
+      if (part.protocol !== "codex.skills.v1") {
+        throw invalidInputPart("InputPart.skill_ref protocol must be codex.skills.v1");
+      }
+      if (part.backend !== undefined) {
+        requireInputPartEnum(part, "backend", backendKinds);
+      }
+      if (part.path !== undefined) {
+        requireInputPartString(part, "path");
+      }
+      return;
     case "file_ref":
     case "image_ref":
       requireInputPartString(part, "uri");
@@ -454,7 +653,7 @@ function validateClientInputPart(part: unknown): asserts part is ClientInputPart
       requireInputPartString(part, "mime_type");
       return;
     default:
-      throw invalidInputPart("InputPart.type must be text, file_ref, image_ref, or image");
+      throw invalidInputPart("InputPart.type must be text, skill_ref, file_ref, image_ref, or image");
   }
 }
 
@@ -487,6 +686,17 @@ function validateOptionalInputEventOptions(event: Record<string, unknown>) {
 function requireInputPartString(part: Record<string, unknown>, field: string) {
   if (typeof part[field] !== "string") {
     throw invalidInputPart(`InputPart.${String(part.type)} requires ${field}`);
+  }
+}
+
+function requireInputPartEnum(
+  part: Record<string, unknown>,
+  field: string,
+  values: Set<string>,
+) {
+  const value = part[field];
+  if (typeof value !== "string" || !values.has(value)) {
+    throw invalidInputPart(`InputPart.${String(part.type)} ${field} must be a known value`);
   }
 }
 
@@ -723,6 +933,212 @@ export function parseBackendWireResponse(data: unknown): BackendWireResponse {
   };
 }
 
+export async function readBackendUsageResponse(
+  response: Response,
+): Promise<BackendUsageWireResponse> {
+  return parseBackendUsageWireResponse(await readJsonResponse<unknown>(response));
+}
+
+export function parseBackendUsageWireResponse(data: unknown): BackendUsageWireResponse {
+  if (!isRecord(data)) {
+    throw invalidBackendsResponse("BackendUsageResponse must be an object");
+  }
+  const schema = requiredBackendString(data, "schema", "BackendUsageResponse");
+  if (schema !== "velad.backend_usage.v1") {
+    throw invalidBackendsResponse("BackendUsageResponse.schema must be velad.backend_usage.v1");
+  }
+  const backend = requiredBackendKind(data, "backend", "BackendUsageResponse");
+  const backendType = requiredBackendKind(data, "backend_type", "BackendUsageResponse");
+  const status = requiredBackendUsageStatus(data, "status", "BackendUsageResponse");
+  return {
+    schema,
+    backend,
+    backend_type: backendType,
+    status,
+    source: requiredBackendString(data, "source", "BackendUsageResponse"),
+    fetched_at: requiredBackendString(data, "fetched_at", "BackendUsageResponse"),
+    ...(data.plan_name !== undefined
+      ? { plan_name: optionalBackendString(data, "plan_name", "BackendUsageResponse") }
+      : {}),
+    ...(data.summary !== undefined
+      ? {
+          summary: parseBackendUsageSummary(
+            data.summary,
+            "BackendUsageResponse.summary",
+          ),
+        }
+      : {}),
+    limits: optionalBackendArray(data, "limits", "BackendUsageResponse").map((limit, index) =>
+      parseBackendUsageLimit(limit, `BackendUsageResponse.limits[${index}]`),
+    ),
+    usage_lines: optionalBackendArray(data, "usage_lines", "BackendUsageResponse").map(
+      (line, index) => parseBackendUsageLine(line, `BackendUsageResponse.usage_lines[${index}]`),
+    ),
+    profiles: optionalBackendArray(data, "profiles", "BackendUsageResponse").map(
+      (profile, index) => parseBackendUsageProfile(profile, `BackendUsageResponse.profiles[${index}]`),
+    ),
+    ...(data.detail !== undefined
+      ? { detail: optionalBackendString(data, "detail", "BackendUsageResponse") }
+      : {}),
+  };
+}
+
+function parseBackendUsageProfile(data: unknown, owner: string): BackendUsageProfileWire {
+  if (!isRecord(data)) {
+    throw invalidBackendsResponse(`${owner} must be an object`);
+  }
+  return {
+    profile_id: requiredBackendString(data, "profile_id", owner),
+    display_name: requiredBackendString(data, "display_name", owner),
+    status: requiredBackendUsageStatus(data, "status", owner),
+    source: requiredBackendString(data, "source", owner),
+    ...(data.summary !== undefined
+      ? { summary: parseBackendUsageSummary(data.summary, `${owner}.summary`) }
+      : {}),
+    limits: optionalBackendArray(data, "limits", owner).map((limit, index) =>
+      parseBackendUsageLimit(limit, `${owner}.limits[${index}]`),
+    ),
+    usage_lines: optionalBackendArray(data, "usage_lines", owner).map((line, index) =>
+      parseBackendUsageLine(line, `${owner}.usage_lines[${index}]`),
+    ),
+    ...(data.detail !== undefined ? { detail: optionalBackendString(data, "detail", owner) } : {}),
+  };
+}
+
+function parseBackendUsageSummary(data: unknown, owner: string): BackendUsageSummaryWire {
+  if (!isRecord(data)) {
+    throw invalidBackendsResponse(`${owner} must be an object`);
+  }
+  const tone = requiredBackendString(data, "tone", owner);
+  if (!backendUsageTones.has(tone)) {
+    throw invalidBackendsResponse(`${owner}.tone must be ok, warning, critical, or neutral`);
+  }
+  return {
+    label: requiredBackendString(data, "label", owner),
+    tone: tone as BackendUsageToneWire,
+  };
+}
+
+function parseBackendUsageLimit(data: unknown, owner: string): BackendUsageLimitWire {
+  if (!isRecord(data)) {
+    throw invalidBackendsResponse(`${owner} must be an object`);
+  }
+  return {
+    kind: requiredBackendString(data, "kind", owner),
+    label: requiredBackendString(data, "label", owner),
+    ...(data.used_percent !== undefined
+      ? { used_percent: optionalBackendNumber(data, "used_percent", owner) }
+      : {}),
+    ...(data.remaining_percent !== undefined
+      ? { remaining_percent: optionalBackendNumber(data, "remaining_percent", owner) }
+      : {}),
+    ...(data.resets_at !== undefined
+      ? { resets_at: optionalBackendString(data, "resets_at", owner) }
+      : {}),
+    ...(data.window_duration_mins !== undefined
+      ? { window_duration_mins: optionalBackendNumber(data, "window_duration_mins", owner) }
+      : {}),
+  };
+}
+
+function parseBackendUsageLine(data: unknown, owner: string): BackendUsageLineWire {
+  if (!isRecord(data)) {
+    throw invalidBackendsResponse(`${owner} must be an object`);
+  }
+  return {
+    label: requiredBackendString(data, "label", owner),
+    value: requiredBackendString(data, "value", owner),
+    ...(data.subtitle !== undefined ? { subtitle: optionalBackendString(data, "subtitle", owner) } : {}),
+  };
+}
+
+export async function readBackendSkillsResponse(
+  response: Response,
+): Promise<BackendSkillsWireResponse> {
+  return parseBackendSkillsWireResponse(await readJsonResponse<unknown>(response));
+}
+
+export function parseBackendSkillsWireResponse(data: unknown): BackendSkillsWireResponse {
+  if (!isRecord(data)) {
+    throw invalidBackendsResponse("BackendSkillsResponse must be an object");
+  }
+  if (data.schema !== "velad.backend_skills.v1") {
+    throw invalidBackendsResponse(
+      "BackendSkillsResponse.schema must be velad.backend_skills.v1",
+    );
+  }
+  const backend = data.backend;
+  if (typeof backend !== "string" || !backendKinds.has(backend)) {
+    throw invalidBackendsResponse("BackendSkillsResponse.backend must be a known BackendKind");
+  }
+  if (data.skill_protocol !== "codex.skills.v1") {
+    throw invalidBackendsResponse(
+      "BackendSkillsResponse.skill_protocol must be codex.skills.v1",
+    );
+  }
+  const capabilities = data.capabilities;
+  if (!isRecord(capabilities)) {
+    throw invalidBackendsResponse("BackendSkillsResponse.capabilities must be an object");
+  }
+  const acceptedTokenPrefixes = capabilities.accepted_token_prefixes;
+  if (
+    !Array.isArray(acceptedTokenPrefixes) ||
+    acceptedTokenPrefixes.some((prefix) => typeof prefix !== "string")
+  ) {
+    throw invalidBackendsResponse(
+      "BackendSkillsResponse.capabilities.accepted_token_prefixes must be a string array",
+    );
+  }
+  const cwd = data.cwd;
+  if (cwd !== undefined && cwd !== null && typeof cwd !== "string") {
+    throw invalidBackendsResponse("BackendSkillsResponse.cwd must be a string or null");
+  }
+  return {
+    schema: data.schema,
+    backend: backend as BackendKindWire,
+    ...(cwd !== undefined ? { cwd: cwd as string | null } : {}),
+    skill_protocol: data.skill_protocol,
+    capabilities: {
+      discovery: requiredBackendBoolean(capabilities, "discovery", "BackendSkillsResponse.capabilities"),
+      invocation: requiredBackendString(capabilities, "invocation", "BackendSkillsResponse.capabilities"),
+      requires_text_token: requiredBackendBoolean(
+        capabilities,
+        "requires_text_token",
+        "BackendSkillsResponse.capabilities",
+      ),
+      preferred_token_prefix: requiredBackendString(
+        capabilities,
+        "preferred_token_prefix",
+        "BackendSkillsResponse.capabilities",
+      ),
+      accepted_token_prefixes: acceptedTokenPrefixes,
+    },
+    skills: requiredBackendArray(data, "skills", "BackendSkillsResponse").map((skill, index) =>
+      parseBackendSkillDescriptor(skill, `BackendSkillsResponse.skills[${index}]`),
+    ),
+  };
+}
+
+function parseBackendSkillDescriptor(data: unknown, owner: string): BackendSkillDescriptorWire {
+  if (!isRecord(data)) {
+    throw invalidBackendsResponse(`${owner} must be an object`);
+  }
+  if (data.protocol !== "codex.skills.v1") {
+    throw invalidBackendsResponse(`${owner}.protocol must be codex.skills.v1`);
+  }
+  return {
+    name: requiredBackendString(data, "name", owner),
+    display_name: requiredBackendString(data, "display_name", owner),
+    ...(data.description !== undefined
+      ? { description: optionalBackendString(data, "description", owner) }
+      : {}),
+    path: requiredBackendString(data, "path", owner),
+    origin: requiredBackendString(data, "origin", owner),
+    scope: requiredBackendString(data, "scope", owner),
+    protocol: "codex.skills.v1",
+  };
+}
+
 function parseBackendWire(data: unknown, owner: string): BackendWire {
   if (!isRecord(data)) {
     throw invalidBackendsResponse(`${owner} must be an object`);
@@ -734,11 +1150,16 @@ function parseBackendWire(data: unknown, owner: string): BackendWire {
   const status = requiredViewString(data, "status", owner, invalidBackendsResponse);
   if (!backendStatuses.has(status)) {
     throw invalidBackendsResponse(
-      `${owner}.status must be available, unavailable, degraded, or error`,
+      `${owner}.status must be loading, available, unavailable, degraded, or error`,
     );
   }
   return {
     kind: kind as BackendKindWire,
+    ...(data.backend_type !== undefined
+      ? {
+          backend_type: requiredBackendKind(data, "backend_type", owner),
+        }
+      : {}),
     status: status as BackendStatusWire,
     ...(data.status_message !== undefined
       ? {
@@ -746,6 +1167,7 @@ function parseBackendWire(data: unknown, owner: string): BackendWire {
         }
       : {}),
     display_name: requiredViewString(data, "display_name", owner, invalidBackendsResponse),
+    location: parseBackendLocationWire(data.location, `${owner}.location`),
     capabilities: requiredBackendCapabilities(data, owner),
     models: optionalBackendArray(data, "models", owner).map((model, index) =>
       parseBackendModelWire(model, `${owner}.models[${index}]`),
@@ -759,6 +1181,28 @@ function parseBackendWire(data: unknown, owner: string): BackendWire {
     ...(data.diagnostics !== undefined
       ? { diagnostics: optionalBackendObject(data, "diagnostics", owner) }
       : {}),
+    ...(data.snapshot_protocol !== undefined
+      ? {
+          snapshot_protocol: optionalBackendString(data, "snapshot_protocol", owner),
+        }
+      : {}),
+    ...(data.fetched_at !== undefined
+      ? { fetched_at: optionalBackendString(data, "fetched_at", owner) }
+      : {}),
+  };
+}
+
+function parseBackendLocationWire(data: unknown, owner: string): BackendLocationWire {
+  if (!isRecord(data)) {
+    throw invalidBackendsResponse(`${owner} must be an object`);
+  }
+  const kind = requiredViewString(data, "kind", owner, invalidBackendsResponse);
+  if (!backendLocationKinds.has(kind)) {
+    throw invalidBackendsResponse(`${owner}.kind must be local or remote`);
+  }
+  return {
+    kind: kind as BackendLocationKindWire,
+    label: requiredViewString(data, "label", owner, invalidBackendsResponse),
   };
 }
 
@@ -887,7 +1331,7 @@ export function parseBackendProbeResultWire(data: unknown): BackendProbeResultWi
   const status = data.status;
   if (typeof status !== "string" || !backendStatuses.has(status)) {
     throw invalidBackendProbeResponse(
-      "BackendProbeResult.status must be available, unavailable, degraded, or error",
+      "BackendProbeResult.status must be loading, available, unavailable, degraded, or error",
     );
   }
   const message = data.message;
@@ -898,6 +1342,389 @@ export function parseBackendProbeResultWire(data: unknown): BackendProbeResultWi
     backend: backend as BackendKindWire,
     status: status as BackendProbeResultWire["status"],
     ...(message !== undefined ? { message } : {}),
+  };
+}
+
+export async function readBackendSettingsResponse(
+  response: Response,
+): Promise<BackendSettingsWireResponse> {
+  return parseBackendSettingsWireResponse(await readJsonResponse<unknown>(response));
+}
+
+export function parseBackendSettingsWireResponse(data: unknown): BackendSettingsWireResponse {
+  if (!isRecord(data)) {
+    throw invalidBackendSettingsResponse("BackendSettingsResponse must be an object");
+  }
+  const schema = data.schema;
+  if (schema !== "velad.backend_settings.v1") {
+    throw invalidBackendSettingsResponse(
+      "BackendSettingsResponse.schema must be velad.backend_settings.v1",
+    );
+  }
+  const backend = data.backend;
+  if (typeof backend !== "string" || !backendKinds.has(backend)) {
+    throw invalidBackendSettingsResponse(
+      "BackendSettingsResponse.backend must be a known BackendKind",
+    );
+  }
+  const settings = data.settings;
+  if (!isRecord(settings)) {
+    throw invalidBackendSettingsResponse("BackendSettingsResponse.settings must be an object");
+  }
+  const status = data.status;
+  if (status !== "configured" && status !== "unconfigured") {
+    throw invalidBackendSettingsResponse(
+      "BackendSettingsResponse.status must be configured or unconfigured",
+    );
+  }
+  const missingFields = data.missing_fields;
+  if (!Array.isArray(missingFields) || missingFields.some((field) => typeof field !== "string")) {
+    throw invalidBackendSettingsResponse(
+      "BackendSettingsResponse.missing_fields must be a string array",
+    );
+  }
+  const updatedAt = data.updated_at;
+  if (updatedAt !== undefined && updatedAt !== null && typeof updatedAt !== "string") {
+    throw invalidBackendSettingsResponse(
+      "BackendSettingsResponse.updated_at must be a string or null",
+    );
+  }
+  return {
+    schema,
+    backend: backend as BackendKindWire,
+    settings: {
+      ...settings,
+      ...(typeof settings.endpoint === "string" ? { endpoint: settings.endpoint } : {}),
+      ...(typeof settings.api_key_set === "boolean"
+        ? { api_key_set: settings.api_key_set }
+        : {}),
+      ...(typeof settings.model === "string" ? { model: settings.model } : {}),
+    },
+    status,
+    missing_fields: missingFields,
+    ...(updatedAt !== undefined ? { updated_at: updatedAt } : {}),
+  };
+}
+
+export function validateBackendSettingsPatch(patch: unknown): asserts patch is BackendSettingsPatchWire {
+  if (!isRecord(patch)) {
+    throw invalidBackendSettingsRequest("Backend settings patch must be an object");
+  }
+  validateOptionalBackendSettingsString(patch, "endpoint");
+  validateOptionalBackendSettingsString(patch, "api_key");
+  validateOptionalBackendSettingsString(patch, "model");
+}
+
+export function validateBackendSkillsOptions(options: unknown) {
+  if (options === undefined) return;
+  if (!isRecord(options)) {
+    throw invalidBackendSettingsRequest("Backend skills options must be an object");
+  }
+  const cwd = options.cwd;
+  if (cwd !== undefined && cwd !== null && typeof cwd !== "string") {
+    throw invalidBackendSettingsRequest("Backend skills cwd must be a string or null");
+  }
+}
+
+function validateOptionalBackendSettingsString(
+  patch: Record<string, unknown>,
+  field: string,
+) {
+  if (patch[field] !== undefined && typeof patch[field] !== "string") {
+    throw invalidBackendSettingsRequest(`Backend settings ${field} must be a string`);
+  }
+}
+
+export async function readNodeProvidersResponse(
+  response: Response,
+): Promise<NodeProvidersWireResponse> {
+  return parseNodeProvidersWireResponse(await readJsonResponse<unknown>(response));
+}
+
+export function parseNodeProvidersWireResponse(data: unknown): NodeProvidersWireResponse {
+  if (!isRecord(data)) {
+    throw invalidNodesResponse("NodeProvidersResponse must be an object");
+  }
+  if (data.schema !== "velad.node_providers.v1") {
+    throw invalidNodesResponse("NodeProvidersResponse.schema must be velad.node_providers.v1");
+  }
+  const providers = requiredViewArray(
+    data,
+    "providers",
+    "NodeProvidersResponse",
+    invalidNodesResponse,
+  );
+  return {
+    schema: "velad.node_providers.v1",
+    providers: providers.map((provider, index) =>
+      parseNodeProviderWire(provider, `NodeProvidersResponse.providers[${index}]`),
+    ),
+  };
+}
+
+export async function readNodesResponse(response: Response): Promise<NodesWireResponse> {
+  return parseNodesWireResponse(await readJsonResponse<unknown>(response));
+}
+
+export function parseNodesWireResponse(data: unknown): NodesWireResponse {
+  if (!isRecord(data)) {
+    throw invalidNodesResponse("NodesResponse must be an object");
+  }
+  if (data.schema !== "velad.nodes.v1") {
+    throw invalidNodesResponse("NodesResponse.schema must be velad.nodes.v1");
+  }
+  const nodes = requiredViewArray(data, "nodes", "NodesResponse", invalidNodesResponse);
+  return {
+    schema: "velad.nodes.v1",
+    nodes: nodes.map((node, index) => parseNodeWire(node, `NodesResponse.nodes[${index}]`)),
+  };
+}
+
+export async function readNodeResponse(response: Response): Promise<NodeWireResponse> {
+  return parseNodeWireResponse(await readJsonResponse<unknown>(response));
+}
+
+export function parseNodeWireResponse(data: unknown): NodeWireResponse {
+  if (!isRecord(data)) {
+    throw invalidNodesResponse("NodeResponse must be an object");
+  }
+  if (data.schema !== "velad.nodes.v1") {
+    throw invalidNodesResponse("NodeResponse.schema must be velad.nodes.v1");
+  }
+  if (!isRecord(data.node)) {
+    throw invalidNodesResponse("NodeResponse.node must be an object");
+  }
+  return {
+    schema: "velad.nodes.v1",
+    node: parseNodeWire(data.node, "NodeResponse.node"),
+  };
+}
+
+export async function readRuntimeTargetsResponse(
+  response: Response,
+): Promise<RuntimeTargetsWireResponse> {
+  return parseRuntimeTargetsWireResponse(await readJsonResponse<unknown>(response));
+}
+
+export function parseRuntimeTargetsWireResponse(data: unknown): RuntimeTargetsWireResponse {
+  if (!isRecord(data)) {
+    throw invalidRuntimeTargetsResponse("RuntimeTargetsResponse must be an object");
+  }
+  if (data.schema !== "velad.runtime_targets.v1") {
+    throw invalidRuntimeTargetsResponse(
+      "RuntimeTargetsResponse.schema must be velad.runtime_targets.v1",
+    );
+  }
+  const targets = requiredViewArray(
+    data,
+    "targets",
+    "RuntimeTargetsResponse",
+    invalidRuntimeTargetsResponse,
+  );
+  return {
+    schema: "velad.runtime_targets.v1",
+    targets: targets.map((target, index) =>
+      parseRuntimeTargetWire(target, `RuntimeTargetsResponse.targets[${index}]`),
+    ),
+  };
+}
+
+export async function readRuntimeTargetResponse(
+  response: Response,
+): Promise<RuntimeTargetWireResponse> {
+  return parseRuntimeTargetWireResponse(await readJsonResponse<unknown>(response));
+}
+
+export function parseRuntimeTargetWireResponse(data: unknown): RuntimeTargetWireResponse {
+  if (!isRecord(data)) {
+    throw invalidRuntimeTargetsResponse("RuntimeTargetResponse must be an object");
+  }
+  if (data.schema !== "velad.runtime_targets.v1") {
+    throw invalidRuntimeTargetsResponse(
+      "RuntimeTargetResponse.schema must be velad.runtime_targets.v1",
+    );
+  }
+  if (!isRecord(data.target)) {
+    throw invalidRuntimeTargetsResponse("RuntimeTargetResponse.target must be an object");
+  }
+  return {
+    schema: "velad.runtime_targets.v1",
+    target: parseRuntimeTargetWire(data.target, "RuntimeTargetResponse.target"),
+  };
+}
+
+function parseNodeProviderWire(data: unknown, owner: string): NodeProviderWire {
+  if (!isRecord(data)) {
+    throw invalidNodesResponse(`${owner} must be an object`);
+  }
+  const id = requiredViewString(data, "id", owner, invalidNodesResponse);
+  if (!nodeProviderKinds.has(id)) {
+    throw invalidNodesResponse(`${owner}.id must be a known NodeProviderKind`);
+  }
+  const kind = requiredViewString(data, "kind", owner, invalidNodesResponse);
+  if (!nodeProviderKinds.has(kind)) {
+    throw invalidNodesResponse(`${owner}.kind must be a known NodeProviderKind`);
+  }
+  const authMethods = requiredViewStringArray(
+    data,
+    "auth_methods",
+    owner,
+    invalidNodesResponse,
+  );
+  if (authMethods.some((method) => !nodeAuthMethods.has(method))) {
+    throw invalidNodesResponse(`${owner}.auth_methods must contain known auth methods`);
+  }
+  if (data.secret_storage !== "local_os_keyring") {
+    throw invalidNodesResponse(`${owner}.secret_storage must be local_os_keyring`);
+  }
+  const capabilities = data.capabilities;
+  if (!isRecord(capabilities)) {
+    throw invalidNodesResponse(`${owner}.capabilities must be an object`);
+  }
+  const targetConstraints = data.target_constraints;
+  if (!isRecord(targetConstraints)) {
+    throw invalidNodesResponse(`${owner}.target_constraints must be an object`);
+  }
+  return {
+    id: id as NodeProviderKindWire,
+    display_name: requiredViewString(data, "display_name", owner, invalidNodesResponse),
+    kind: kind as NodeProviderKindWire,
+    auth_methods: authMethods as NodeAuthMethodWire[],
+    secret_storage: "local_os_keyring",
+    capabilities,
+    target_constraints: {
+      os: requiredViewStringArray(
+        targetConstraints,
+        "os",
+        `${owner}.target_constraints`,
+        invalidNodesResponse,
+      ),
+      arch: requiredViewStringArray(
+        targetConstraints,
+        "arch",
+        `${owner}.target_constraints`,
+        invalidNodesResponse,
+      ),
+    },
+  };
+}
+
+function parseNodeWire(data: unknown, owner: string): NodeWire {
+  if (!isRecord(data)) {
+    throw invalidNodesResponse(`${owner} must be an object`);
+  }
+  const provider = requiredViewString(data, "provider", owner, invalidNodesResponse);
+  if (!nodeProviderKinds.has(provider)) {
+    throw invalidNodesResponse(`${owner}.provider must be a known NodeProviderKind`);
+  }
+  return {
+    id: requiredViewString(data, "id", owner, invalidNodesResponse),
+    provider: provider as NodeProviderKindWire,
+    display_name: requiredViewString(data, "display_name", owner, invalidNodesResponse),
+    ssh: parseSshNodeWire(data.ssh, `${owner}.ssh`),
+    target: parseNodeTargetWire(data.target, `${owner}.target`),
+    auth: parseNodeAuthWire(data.auth, `${owner}.auth`),
+    created_at: requiredViewString(data, "created_at", owner, invalidNodesResponse),
+    updated_at: requiredViewString(data, "updated_at", owner, invalidNodesResponse),
+  };
+}
+
+function parseSshNodeWire(data: unknown, owner: string) {
+  if (!isRecord(data)) {
+    throw invalidNodesResponse(`${owner} must be an object`);
+  }
+  return {
+    host: requiredViewString(data, "host", owner, invalidNodesResponse),
+    port: requiredViewInteger(data, "port", owner, invalidNodesResponse, { minimum: 1 }),
+    username: requiredViewString(data, "username", owner, invalidNodesResponse),
+  };
+}
+
+function parseNodeTargetWire(data: unknown, owner: string): NodeTargetWire {
+  if (!isRecord(data)) {
+    throw invalidNodesResponse(`${owner} must be an object`);
+  }
+  return {
+    os: requiredViewString(data, "os", owner, invalidNodesResponse),
+    arch: requiredViewString(data, "arch", owner, invalidNodesResponse),
+  };
+}
+
+function parseNodeAuthWire(data: unknown, owner: string) {
+  if (!isRecord(data)) {
+    throw invalidNodesResponse(`${owner} must be an object`);
+  }
+  if (Object.prototype.hasOwnProperty.call(data, "password")) {
+    throw invalidNodesResponse(`${owner} must not include password`);
+  }
+  const method = requiredViewString(data, "method", owner, invalidNodesResponse);
+  if (!nodeAuthMethods.has(method)) {
+    throw invalidNodesResponse(`${owner}.method must be a known auth method`);
+  }
+  return {
+    method: method as NodeAuthMethodWire,
+    password_configured: requiredViewBoolean(
+      data,
+      "password_configured",
+      owner,
+      invalidNodesResponse,
+    ),
+    ...(data.secret_ref !== undefined
+      ? { secret_ref: optionalNullableViewString(data, "secret_ref", owner, invalidNodesResponse) }
+      : {}),
+  };
+}
+
+function parseRuntimeTargetWire(data: unknown, owner: string): RuntimeTargetWire {
+  if (!isRecord(data)) {
+    throw invalidRuntimeTargetsResponse(`${owner} must be an object`);
+  }
+  const kind = requiredViewString(data, "kind", owner, invalidRuntimeTargetsResponse);
+  if (!runtimeTargetKinds.has(kind)) {
+    throw invalidRuntimeTargetsResponse(`${owner}.kind must be local or remote`);
+  }
+  const provider = requiredViewString(data, "provider", owner, invalidRuntimeTargetsResponse);
+  if (provider !== "local" && !nodeProviderKinds.has(provider)) {
+    throw invalidRuntimeTargetsResponse(`${owner}.provider must be local or a known provider`);
+  }
+  const status = requiredViewString(data, "status", owner, invalidRuntimeTargetsResponse);
+  if (!runtimeTargetStatuses.has(status)) {
+    throw invalidRuntimeTargetsResponse(`${owner}.status must be a known RuntimeTargetStatus`);
+  }
+  const transport = data.transport;
+  if (!isRecord(transport)) {
+    throw invalidRuntimeTargetsResponse(`${owner}.transport must be an object`);
+  }
+  return {
+    id: requiredViewString(data, "id", owner, invalidRuntimeTargetsResponse),
+    kind: kind as RuntimeTargetKindWire,
+    provider: provider as "local" | NodeProviderKindWire,
+    ...(data.node_id !== undefined
+      ? {
+          node_id: optionalNullableViewString(
+            data,
+            "node_id",
+            owner,
+            invalidRuntimeTargetsResponse,
+          ),
+        }
+      : {}),
+    display_name: requiredViewString(data, "display_name", owner, invalidRuntimeTargetsResponse),
+    status: status as RuntimeTargetStatusWire,
+    transport,
+    ...(data.target !== undefined
+      ? { target: optionalViewObject(data, "target", owner, invalidRuntimeTargetsResponse) }
+      : {}),
+    ...(data.compatibility !== undefined
+      ? {
+          compatibility: optionalViewObject(
+            data,
+            "compatibility",
+            owner,
+            invalidRuntimeTargetsResponse,
+          ),
+        }
+      : {}),
   };
 }
 
@@ -1152,8 +1979,8 @@ function parseAgentWorkDetailWire(data: unknown, owner: string): AgentWorkDetail
     throw invalidAgentWorkDetail(`${owner}.type must be a known activity detail type`);
   }
   if (type === "shell") {
+    rejectUnknownViewFields(data, owner, agentWorkShellDetailFields, invalidAgentWorkDetail);
     return {
-      ...(data as Record<string, unknown>),
       type: "shell",
       ...(data.command !== undefined
         ? { command: optionalViewString(data, "command", owner, invalidAgentWorkDetail) }
@@ -1170,6 +1997,9 @@ function parseAgentWorkDetailWire(data: unknown, owner: string): AgentWorkDetail
       ...(data.stderr !== undefined
         ? { stderr: optionalViewString(data, "stderr", owner, invalidAgentWorkDetail) }
         : {}),
+      ...(data.streams !== undefined
+        ? { streams: parseAgentWorkShellStreams(data.streams, `${owner}.streams`) }
+        : {}),
       ...(data.exit_code !== undefined
         ? { exit_code: optionalViewInteger(data, "exit_code", owner, invalidAgentWorkDetail) }
         : {}),
@@ -1179,8 +2009,8 @@ function parseAgentWorkDetailWire(data: unknown, owner: string): AgentWorkDetail
     };
   }
   if (type === "search") {
+    rejectUnknownViewFields(data, owner, agentWorkSearchDetailFields, invalidAgentWorkDetail);
     return {
-      ...(data as Record<string, unknown>),
       type: "search",
       ...(data.query !== undefined
         ? { query: optionalViewString(data, "query", owner, invalidAgentWorkDetail) }
@@ -1191,6 +2021,7 @@ function parseAgentWorkDetailWire(data: unknown, owner: string): AgentWorkDetail
       ...(data.content !== undefined
         ? { content: optionalViewString(data, "content", owner, invalidAgentWorkDetail) }
         : {}),
+      ...optionalAgentWorkContentParts(data, owner),
       ...(data.num_matches !== undefined
         ? { num_matches: optionalViewInteger(data, "num_matches", owner, invalidAgentWorkDetail) }
         : {}),
@@ -1206,8 +2037,8 @@ function parseAgentWorkDetailWire(data: unknown, owner: string): AgentWorkDetail
     };
   }
   if (type === "read" || type === "edit" || type === "write") {
+    rejectUnknownViewFields(data, owner, agentWorkFileDetailFields, invalidAgentWorkDetail);
     return {
-      ...(data as Record<string, unknown>),
       type: type as AgentWorkFileDetailTypeWire,
       ...(data.file_path !== undefined
         ? { file_path: optionalViewString(data, "file_path", owner, invalidAgentWorkDetail) }
@@ -1218,6 +2049,7 @@ function parseAgentWorkDetailWire(data: unknown, owner: string): AgentWorkDetail
       ...(data.content !== undefined
         ? { content: optionalViewString(data, "content", owner, invalidAgentWorkDetail) }
         : {}),
+      ...optionalAgentWorkContentParts(data, owner),
       ...(data.old_string !== undefined
         ? { old_string: optionalViewString(data, "old_string", owner, invalidAgentWorkDetail) }
         : {}),
@@ -1230,8 +2062,8 @@ function parseAgentWorkDetailWire(data: unknown, owner: string): AgentWorkDetail
     };
   }
   if (type === "fetch") {
+    rejectUnknownViewFields(data, owner, agentWorkFetchDetailFields, invalidAgentWorkDetail);
     return {
-      ...(data as Record<string, unknown>),
       type: "fetch",
       ...(data.url !== undefined
         ? { url: optionalViewString(data, "url", owner, invalidAgentWorkDetail) }
@@ -1242,6 +2074,7 @@ function parseAgentWorkDetailWire(data: unknown, owner: string): AgentWorkDetail
       ...(data.result !== undefined
         ? { result: optionalViewString(data, "result", owner, invalidAgentWorkDetail) }
         : {}),
+      ...optionalAgentWorkContentParts(data, owner),
       ...(data.code !== undefined
         ? { code: optionalViewInteger(data, "code", owner, invalidAgentWorkDetail) }
         : {}),
@@ -1256,7 +2089,235 @@ function parseAgentWorkDetailWire(data: unknown, owner: string): AgentWorkDetail
         : {}),
     };
   }
-  return { ...(data as Record<string, unknown>), type: type as AgentWorkGenericDetailTypeWire };
+  rejectUnknownViewFields(data, owner, agentWorkGenericDetailFields, invalidAgentWorkDetail);
+  return {
+    type: type as AgentWorkGenericDetailTypeWire,
+    ...(data.tool_id !== undefined
+      ? { tool_id: optionalViewString(data, "tool_id", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.call_id !== undefined
+      ? { call_id: optionalViewString(data, "call_id", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.name !== undefined
+      ? { name: optionalViewString(data, "name", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.label !== undefined
+      ? { label: optionalViewString(data, "label", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.summary !== undefined
+      ? { summary: optionalViewString(data, "summary", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.description !== undefined
+      ? { description: optionalViewString(data, "description", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.text !== undefined
+      ? { text: optionalViewString(data, "text", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.content !== undefined
+      ? { content: optionalViewString(data, "content", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.command !== undefined
+      ? { command: optionalViewString(data, "command", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.cwd !== undefined
+      ? { cwd: optionalViewString(data, "cwd", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.query !== undefined
+      ? { query: optionalViewString(data, "query", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.file_path !== undefined
+      ? { file_path: optionalViewString(data, "file_path", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.path !== undefined
+      ? { path: optionalViewString(data, "path", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.url !== undefined
+      ? { url: optionalViewString(data, "url", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.output !== undefined
+      ? { output: optionalViewString(data, "output", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.stdout !== undefined
+      ? { stdout: optionalViewString(data, "stdout", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.stderr !== undefined
+      ? { stderr: optionalViewString(data, "stderr", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.error !== undefined
+      ? { error: optionalViewString(data, "error", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.delta !== undefined
+      ? { delta: optionalViewString(data, "delta", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.status !== undefined
+      ? { status: optionalViewString(data, "status", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...(data.exit_code !== undefined
+      ? { exit_code: optionalViewInteger(data, "exit_code", owner, invalidAgentWorkDetail) }
+      : {}),
+    ...optionalAgentWorkContentParts(data, owner),
+  };
+}
+
+function parseAgentWorkShellStreams(data: unknown, owner: string): AgentWorkShellStreamWire[] {
+  if (!Array.isArray(data)) {
+    throw invalidAgentWorkDetail(`${owner} must be an array`);
+  }
+  return data.map((stream, index) => {
+    const streamOwner = `${owner}[${index}]`;
+    if (!isRecord(stream)) {
+      throw invalidAgentWorkDetail(`${streamOwner} must be an object`);
+    }
+    rejectUnknownViewFields(
+      stream,
+      streamOwner,
+      agentWorkShellStreamFields,
+      invalidAgentWorkDetail,
+    );
+    return {
+      stream_id: requiredViewString(
+        stream,
+        "stream_id",
+        streamOwner,
+        invalidAgentWorkDetail,
+      ),
+      ...(stream.stream !== undefined
+        ? { stream: optionalViewString(stream, "stream", streamOwner, invalidAgentWorkDetail) }
+        : {}),
+      ...(stream.text !== undefined
+        ? { text: optionalViewString(stream, "text", streamOwner, invalidAgentWorkDetail) }
+        : {}),
+      ...(stream.last_delta !== undefined
+        ? {
+            last_delta: optionalViewString(
+              stream,
+              "last_delta",
+              streamOwner,
+              invalidAgentWorkDetail,
+            ),
+          }
+        : {}),
+      ...(stream.chunk_count !== undefined
+        ? {
+            chunk_count: optionalViewInteger(
+              stream,
+              "chunk_count",
+              streamOwner,
+              invalidAgentWorkDetail,
+            ),
+          }
+        : {}),
+      ...(stream.last_sequence !== undefined
+        ? {
+            last_sequence: optionalViewInteger(
+              stream,
+              "last_sequence",
+              streamOwner,
+              invalidAgentWorkDetail,
+            ),
+          }
+        : {}),
+      ...(stream.last_chunk_id !== undefined
+        ? {
+            last_chunk_id: optionalViewString(
+              stream,
+              "last_chunk_id",
+              streamOwner,
+              invalidAgentWorkDetail,
+            ),
+          }
+        : {}),
+    };
+  });
+}
+
+function optionalAgentWorkContentParts(
+  data: Record<string, unknown>,
+  owner: string,
+): { content_parts?: AgentWorkContentPartWire[] } {
+  if (data.content_parts === undefined) return {};
+  return {
+    content_parts: parseAgentWorkContentParts(data.content_parts, `${owner}.content_parts`),
+  };
+}
+
+function parseAgentWorkContentParts(data: unknown, owner: string): AgentWorkContentPartWire[] {
+  if (!Array.isArray(data)) {
+    throw invalidAgentWorkDetail(`${owner} must be an array`);
+  }
+  return data.map((part, index) => {
+    const partOwner = `${owner}[${index}]`;
+    if (!isRecord(part)) {
+      throw invalidAgentWorkDetail(`${partOwner} must be an object`);
+    }
+    const type = part.type;
+    if (type === "text") {
+      rejectUnknownViewFields(
+        part,
+        partOwner,
+        agentWorkTextContentPartFields,
+        invalidAgentWorkDetail,
+      );
+      return {
+        type: "text",
+        text: requiredViewString(part, "text", partOwner, invalidAgentWorkDetail),
+      };
+    }
+    if (type === "json") {
+      rejectUnknownViewFields(
+        part,
+        partOwner,
+        agentWorkJsonContentPartFields,
+        invalidAgentWorkDetail,
+      );
+      if (!("value" in part)) {
+        throw invalidAgentWorkDetail(`${partOwner} requires value`);
+      }
+      return {
+        type: "json",
+        value: part.value,
+      };
+    }
+    if (type === "resource_link") {
+      rejectUnknownViewFields(
+        part,
+        partOwner,
+        agentWorkResourceLinkContentPartFields,
+        invalidAgentWorkDetail,
+      );
+      return {
+        type: "resource_link",
+        uri: requiredViewString(part, "uri", partOwner, invalidAgentWorkDetail),
+        ...(part.name !== undefined
+          ? { name: optionalViewString(part, "name", partOwner, invalidAgentWorkDetail) }
+          : {}),
+        ...(part.mime_type !== undefined
+          ? {
+              mime_type: optionalViewString(
+                part,
+                "mime_type",
+                partOwner,
+                invalidAgentWorkDetail,
+              ),
+            }
+          : {}),
+      };
+    }
+    throw invalidAgentWorkDetail(`${partOwner}.type must be a known content part type`);
+  });
+}
+
+function rejectUnknownViewFields(
+  data: Record<string, unknown>,
+  owner: string,
+  allowedFields: ReadonlySet<string>,
+  invalid: ViewContractErrorFactory,
+) {
+  for (const field of Object.keys(data)) {
+    if (!allowedFields.has(field)) {
+      throw invalid(`${owner}.${field} is not part of the view contract`);
+    }
+  }
 }
 
 function parseAgentWorkEventRange(
@@ -1468,6 +2529,11 @@ function parseSessionListItemWire(
   const lastActivityAt = requiredViewString(data, "last_activity_at", owner, invalid);
   const preview = requiredViewString(data, "preview", owner, invalid);
   const pendingRequestCount = requiredViewInteger(data, "pending_request_count", owner, invalid);
+  const activity = data.activity;
+  const parsedActivity =
+    activity !== undefined
+      ? parseSessionActivityWire(activity, invalid, `${owner}.activity`)
+      : undefined;
   const running = requiredViewBoolean(data, "running", owner, invalid);
   const model = data.model;
   if (model !== undefined && model !== null && typeof model !== "string") {
@@ -1481,8 +2547,34 @@ function parseSessionListItemWire(
     last_activity_at: lastActivityAt,
     preview,
     pending_request_count: pendingRequestCount,
+    ...(parsedActivity !== undefined ? { activity: parsedActivity } : {}),
     running,
     ...(model !== undefined ? { model: model as string | null } : {}),
+  };
+}
+
+function parseSessionActivityWire(
+  data: unknown,
+  invalid: ViewContractErrorFactory,
+  owner: string,
+): SessionActivityWire {
+  if (!isRecord(data)) {
+    throw invalid(`${owner} must be an object`);
+  }
+  const phase = data.phase;
+  if (typeof phase !== "string" || !sessionActivityPhases.has(phase)) {
+    throw invalid(`${owner}.phase must be a known SessionActivityPhase`);
+  }
+  const attention = data.attention;
+  if (typeof attention !== "string" || !sessionActivityAttentions.has(attention)) {
+    throw invalid(`${owner}.attention must be a known SessionActivityAttention`);
+  }
+  const pendingRequestCount = requiredViewInteger(data, "pending_request_count", owner, invalid);
+  return {
+    ...(data as unknown as SessionActivityWire),
+    phase: phase as SessionActivityPhaseWire,
+    attention: attention as SessionActivityAttentionWire,
+    pending_request_count: pendingRequestCount,
   };
 }
 
@@ -1520,6 +2612,11 @@ function parseSessionWire(
   if (operations !== undefined) {
     validateSessionOperationsShape(operations, invalid, `${owner}.operations`);
   }
+  const activity = data.activity;
+  const parsedActivity =
+    activity !== undefined
+      ? parseSessionActivityWire(activity, invalid, `${owner}.activity`)
+      : undefined;
   return {
     ...(data as unknown as SessionWire),
     id,
@@ -1531,6 +2628,7 @@ function parseSessionWire(
     updated_at: updatedAt,
     ...(agentConfig !== undefined ? { agent_config: agentConfig } : {}),
     ...(parsedRuntimeInfo !== undefined ? { runtime_info: parsedRuntimeInfo } : {}),
+    ...(parsedActivity !== undefined ? { activity: parsedActivity } : {}),
     ...(operations !== undefined ? { operations } : {}),
   };
 }
@@ -1773,6 +2871,30 @@ function requiredBackendString(data: Record<string, unknown>, field: string, own
   return value;
 }
 
+function requiredBackendKind(
+  data: Record<string, unknown>,
+  field: string,
+  owner: string,
+): BackendKindWire {
+  const value = requiredBackendString(data, field, owner);
+  if (!backendKinds.has(value)) {
+    throw invalidBackendsResponse(`${owner}.${field} must be a known BackendKind`);
+  }
+  return value as BackendKindWire;
+}
+
+function requiredBackendUsageStatus(
+  data: Record<string, unknown>,
+  field: string,
+  owner: string,
+): BackendUsageStatusWire {
+  const value = requiredBackendString(data, field, owner);
+  if (!backendUsageStatuses.has(value)) {
+    throw invalidBackendsResponse(`${owner}.${field} must be ok, needs_auth, unsupported, or error`);
+  }
+  return value as BackendUsageStatusWire;
+}
+
 function optionalBackendString(data: Record<string, unknown>, field: string, owner: string) {
   const value = data[field];
   if (value === undefined) return undefined;
@@ -1806,6 +2928,15 @@ function optionalBackendBoolean(data: Record<string, unknown>, field: string, ow
   if (value === undefined) return undefined;
   if (typeof value !== "boolean") {
     throw invalidBackendsResponse(`${owner}.${field} must be a boolean`);
+  }
+  return value;
+}
+
+function optionalBackendNumber(data: Record<string, unknown>, field: string, owner: string) {
+  const value = data[field];
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw invalidBackendsResponse(`${owner}.${field} must be a finite number`);
   }
   return value;
 }
@@ -1951,6 +3082,26 @@ function invalidBackendsResponse(message: string) {
 
 function invalidBackendProbeResponse(message: string) {
   return new VeladClientError("invalid_backend_probe_response", message);
+}
+
+function invalidBackendSettingsRequest(message: string) {
+  return new VeladClientError("invalid_backend_settings_request", message);
+}
+
+function invalidBackendSettingsResponse(message: string) {
+  return new VeladClientError("invalid_backend_settings_response", message);
+}
+
+function invalidNodesRequest(message: string) {
+  return new VeladClientError("invalid_nodes_request", message);
+}
+
+function invalidNodesResponse(message: string) {
+  return new VeladClientError("invalid_nodes_response", message);
+}
+
+function invalidRuntimeTargetsResponse(message: string) {
+  return new VeladClientError("invalid_runtime_targets_response", message);
 }
 
 function invalidConversationView(message: string) {

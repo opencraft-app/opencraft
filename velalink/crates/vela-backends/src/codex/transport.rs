@@ -68,6 +68,18 @@ impl CodexStdioAppServerHost {
             cwd: cwd.into(),
         }
     }
+
+    pub fn with_command(
+        cwd: impl Into<String>,
+        command: impl Into<String>,
+        args: Vec<String>,
+    ) -> Self {
+        Self {
+            command: command.into(),
+            args,
+            cwd: cwd.into(),
+        }
+    }
 }
 
 #[async_trait]

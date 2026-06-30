@@ -15,6 +15,7 @@
     "event-log",
     "backend-adapters",
     "sync-protocol",
+    "velad-over-ssh-transport",
     "pulsar-integration"
   ]
 }
