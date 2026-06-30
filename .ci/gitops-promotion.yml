@@ -9,6 +9,7 @@ on:
       - promote-sandbox-bj-*
       - promote-sandbox-kr-*
       - promote-devcloud-dep-*
+      - promote-shanghai-workers-*
       - promote-tkexgz-*
       - promote-tkexsg-*
 
