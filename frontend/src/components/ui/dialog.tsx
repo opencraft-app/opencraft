@@ -38,8 +38,11 @@ const DialogContent = React.forwardRef<
       {...props}
     >
       {children}
-      <DialogClose className="absolute right-3 top-3 rounded-lg p-1 text-[var(--text-tertiary)] hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)]">
-        <X className="size-4" />
+      <DialogClose
+        aria-label="Close"
+        className="absolute right-3 top-3 rounded-lg p-1 text-[var(--text-tertiary)] hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)]"
+      >
+        <X className="size-4" aria-hidden="true" />
       </DialogClose>
     </DialogPrimitive.Content>
   </DialogPortal>

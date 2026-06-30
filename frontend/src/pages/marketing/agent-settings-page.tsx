@@ -5,6 +5,7 @@ import {
   CalendarClock,
   ChevronDown,
   Check,
+  Copy,
   Globe2,
   MessageCircle,
   MessageSquare,
@@ -39,6 +40,7 @@ import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
 import { ProductFooter, ProductReturnHomeHeader } from "@/components/site/product-chrome";
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useOpenClaw, type OpenClawBot } from "@/contexts/openclaw-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { useT, t as rawT } from "@/i18n/t";
@@ -79,6 +81,14 @@ import { AchievementsPanel } from "@/pages/marketing/openclaw-achievements-panel
 import { AutomationsPanel } from "@/pages/marketing/openclaw-automations-panel";
 import { shouldShowAgentSettingsDataLoading } from "@/pages/marketing/agent-settings-loading";
 import { StableTeaSdkPanelHost } from "@/pages/marketing/agent-settings-sdk-stable-host";
+import {
+  buildWorkspaceActionDisabledReason,
+  describeWorkspaceActionError,
+  getWorkspaceTaskPhaseLabel,
+  isWorkspaceActionRunning,
+  selectCurrentWorkspaceTask,
+  type WorkspaceActionKind,
+} from "@/pages/marketing/agent-workspace-recovery";
 import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
 import {
   getRestartBlockReason,
@@ -2878,6 +2888,24 @@ const HERMES_WORKSPACE_EXPORT_PATH = "/home/agentuser/.hermes";
 const RESCUE_EXPORT_TERMINAL_PHASES = new Set(["completed", "failed"]);
 const TEA_SDK_SECTIONS = new Set<AgentSettingsSectionId>(["channel", "model", "skill"]);
 
+type WorkspaceConfirmState =
+  | { kind: "export" }
+  | { kind: "import"; file: File };
+
+const formatWorkspaceImportFileSize = (bytes: number) => {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 KB";
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  const fractionDigits = value >= 10 || unitIndex === 0 ? 0 : 1;
+  const unit = units[unitIndex] ?? "GB";
+  return `${value.toFixed(fractionDigits)} ${unit}`;
+};
+
 function AgentSettingsDataLoading() {
   return (
     <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]" aria-hidden="true">
@@ -3460,6 +3488,8 @@ export const AgentSettingsPage = ({
   const [importStatusByBotId, setImportStatusByBotId] = useState<Record<string, WorkerActionStatusResult | null>>({});
   const [importStatusLoadingBotIds, setImportStatusLoadingBotIds] = useState<Set<string>>(new Set());
   const [importStatusErrors, setImportStatusErrors] = useState<Record<string, string | null>>({});
+  const [workspaceConfirm, setWorkspaceConfirm] = useState<WorkspaceConfirmState | null>(null);
+  const [workspaceDetailsOpen, setWorkspaceDetailsOpen] = useState(false);
   const importFileInputRef = useRef<HTMLInputElement | null>(null);
   // 错误按 bot 维度存储，多 bot 并行失败时各自保留错误信息
   const [restartErrors, setRestartErrors] = useState<RestartErrors>(new Map());
@@ -3534,21 +3564,18 @@ export const AgentSettingsPage = ({
     }
   }, [repositories.bots]);
 
-  const handleExportWorkspace = async () => {
-    if (!activeBot || activeBot.status !== "running" || exportingBotIds.has(activeBot.id)) return;
-    if (!user?.email) {
-      toast.error(t("请先在账号页绑定邮箱，导出结果会通过邮件通知。"));
+  const handleRequestExportWorkspace = () => {
+    if (workspaceActionDisabledReason) {
+      toast.error(workspaceActionDisabledReason);
       return;
     }
-    const confirmed = window.confirm([
-      t("确认导出 Hermes 工作区？"),
-      "",
-      t("导出范围：仅包含 {{path}}，不是整机备份，也不会包含其它目录。", { path: HERMES_WORKSPACE_EXPORT_PATH }),
-      t("兼容包会排除 hermes-agent、bin/、backups/、checkpoints/、node_modules、.git、__pycache__、pid 文件、Python 字节码和 SQLite 临时 sidecar。"),
-      t("导出成功或失败都会通过绑定邮箱通知。"),
-    ].join("\n"));
-    if (!confirmed) return;
+    setWorkspaceConfirm({ kind: "export" });
+  };
+
+  const handleExportWorkspace = async () => {
+    if (!activeBot || activeBot.status !== "running" || exportingBotIds.has(activeBot.id)) return;
     const targetBotId = activeBot.id;
+    setWorkspaceConfirm(null);
     setExportingBotIds((prev) => new Set(prev).add(targetBotId));
     setExportStatusByBotId((prev) => ({
       ...prev,
@@ -3568,11 +3595,9 @@ export const AgentSettingsPage = ({
         await loadRescueExportStatus(targetBotId).catch(() => undefined);
         return;
       }
-      const friendlyMessage = message.includes("missing_user_email")
-        ? t("请先在账号页绑定邮箱，导出结果会通过邮件通知。")
-        : message.includes("cos_upload_bucket_not_configured")
+      const friendlyMessage = message.includes("cos_upload_bucket_not_configured")
           ? t("导出存储桶未配置，请稍后再试。")
-          : message || t("导出任务发起失败");
+          : describeWorkspaceActionError("export", message || t("导出任务发起失败")).message;
       setExportStatusByBotId((prev) => ({
         ...prev,
         [targetBotId]: {
@@ -3598,20 +3623,18 @@ export const AgentSettingsPage = ({
   const handleSelectHermesImportFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
     event.target.value = "";
-    if (!file || !activeBot || activeBot.status !== "running" || importingBotIds.has(activeBot.id)) return;
-    if (!user?.email) {
-      toast.error(t("请先在账号页绑定邮箱，导入结果会通过邮件通知。"));
+    if (!file) return;
+    if (workspaceActionDisabledReason) {
+      toast.error(workspaceActionDisabledReason);
       return;
     }
-    const confirmed = window.confirm([
-      t("确认导入 Hermes 工作区？"),
-      "",
-      t("导入会覆盖目标 Agent 的 {{path}}。", { path: HERMES_WORKSPACE_EXPORT_PATH }),
-      t("请确认选择的是 Hermes 工作区导出的 zip 兼容包。"),
-      t("导入成功或失败都会通过绑定邮箱通知。"),
-    ].join("\n"));
-    if (!confirmed) return;
+    setWorkspaceConfirm({ kind: "import", file });
+  };
+
+  const handleImportWorkspace = async (file: File) => {
+    if (!activeBot || activeBot.status !== "running" || importingBotIds.has(activeBot.id)) return;
     const targetBotId = activeBot.id;
+    setWorkspaceConfirm(null);
     setImportingBotIds((prev) => new Set(prev).add(targetBotId));
     setImportStatusByBotId((prev) => ({
       ...prev,
@@ -3631,11 +3654,7 @@ export const AgentSettingsPage = ({
         await loadHermesImportStatus(targetBotId).catch(() => undefined);
         return;
       }
-      const friendlyMessage = message.includes("hermes_import_zip_required")
-        ? t("请选择 Hermes 导出的 zip 文件。")
-        : message.includes("missing_user_email")
-          ? t("请先在账号页绑定邮箱，导入结果会通过邮件通知。")
-          : message || t("导入任务发起失败");
+      const friendlyMessage = describeWorkspaceActionError("import", message || t("导入任务发起失败")).message;
       setImportStatusByBotId((prev) => ({
         ...prev,
         [targetBotId]: {
@@ -3664,6 +3683,14 @@ export const AgentSettingsPage = ({
   const isActiveImportStatusLoading = activeBot ? importStatusLoadingBotIds.has(activeBot.id) : false;
   const activeExportStatusError = activeBot ? exportStatusErrors[activeBot.id] ?? null : null;
   const activeImportStatusError = activeBot ? importStatusErrors[activeBot.id] ?? null : null;
+  const activeWorkspaceTask = selectCurrentWorkspaceTask(activeExportStatus, activeImportStatus);
+  const workspaceActionDisabledReason = buildWorkspaceActionDisabledReason({
+    hasActiveBot: Boolean(activeBot),
+    botRunning: activeBot?.status === "running",
+    hasEmail: Boolean(user?.email),
+    resetting: resettingAcli,
+    currentTask: activeWorkspaceTask,
+  });
   // 当前 tab 是否展示错误
   const activeBotRestartError = getActiveBotRestartError(activeBot, restartErrors);
   const sdkInstance = useMemo<TeaSdkInstanceInfo | null>(() => {
@@ -3945,70 +3972,136 @@ export const AgentSettingsPage = ({
   };
 
   const avatarUrl = activeBot ? getAvatarForBot(activeBot.id) : "";
-  const exportPhaseLabel = (phase?: string) => {
-    switch (phase) {
-      case "starting":
+  const translateWorkspaceLabel = (label: string) => {
+    switch (label) {
+      case "发起中":
         return t("发起中");
-      case "locating":
-        return t("定位资源");
-      case "enter_rescue":
-      case "wait_rescue":
-      case "wait_remote_access":
-        return t("准备导出环境");
-      case "prepare_archive":
-      case "prepare_import":
-      case "start_tat":
-      case "wait_tat":
-      case "finalize_archive":
-      case "finalize_import":
-        return t("打包中");
-      case "copy_archive":
-        return t("上传中");
-      case "notify_email":
-      case "confirm_email_delivery":
-        return t("发送邮件");
-      case "cleanup_remote":
-      case "cleanup_import_object":
-      case "exit_rescue":
-      case "wait_running":
-        return t("恢复环境");
-      case "completed":
+      case "已完成":
         return t("已完成");
-      case "failed":
+      case "未完成":
         return t("未完成");
+      case "定位 Agent":
+        return t("定位 Agent");
+      case "准备导出环境":
+        return t("准备导出环境");
+      case "生成备份包":
+        return t("生成备份包");
+      case "上传备份包":
+        return t("上传备份包");
+      case "恢复运行环境":
+        return t("恢复运行环境");
+      case "连接 Agent":
+        return t("连接 Agent");
+      case "校验备份包":
+        return t("校验备份包");
+      case "恢复工作区":
+        return t("恢复工作区");
+      case "确认恢复结果":
+        return t("确认恢复结果");
+      case "清理临时文件":
+        return t("清理临时文件");
+      case "发送邮件":
+        return t("发送邮件");
+      case "恢复处理中":
+        return t("恢复处理中");
+      case "备份处理中":
+        return t("备份处理中");
       default:
         return t("暂无任务");
     }
   };
-  const exportPanelLogs = activeExportStatus?.logs ?? [];
-  const importPanelLogs = activeImportStatus?.logs ?? [];
-  const exportPanelPhase = activeExportStatus?.phase;
-  const importPanelPhase = activeImportStatus?.phase;
-  const canStartExportFromPanel = Boolean(activeBot && activeBot.status === "running" && !resettingAcli && !isActiveBotExporting && !isRescueExportRunning(activeExportStatus));
-  const canStartImportFromPanel = Boolean(activeBot && activeBot.status === "running" && !resettingAcli && !isActiveBotImporting && !isRescueExportRunning(activeImportStatus));
+  const workspacePhaseLabel = (kind: WorkspaceActionKind, phase?: string) => translateWorkspaceLabel(getWorkspaceTaskPhaseLabel(kind, phase));
+  const translateWorkspaceErrorMessage = (message: string) => {
+    switch (message) {
+      case "导出环境启动超时，Agent 所在云主机仍在准备中。请稍后重试。":
+        return t("导出环境启动超时，Agent 所在云主机仍在准备中。请稍后重试。");
+      case "远程命令通道暂时不可用，请稍后重试。":
+        return t("远程命令通道暂时不可用，请稍后重试。");
+      case "备份包无法识别或已损坏，请重新选择 Hermes 导出的 zip 文件。":
+        return t("备份包无法识别或已损坏，请重新选择 Hermes 导出的 zip 文件。");
+      case "请选择 Hermes 导出的 zip 文件。":
+        return t("请选择 Hermes 导出的 zip 文件。");
+      case "请先在账号页绑定邮箱。":
+        return t("请先在账号页绑定邮箱。");
+      case "恢复过程中遇到异常，请稍后重试。":
+        return t("恢复过程中遇到异常，请稍后重试。");
+      case "备份过程中遇到异常，请稍后重试。":
+        return t("备份过程中遇到异常，请稍后重试。");
+      default:
+        return message;
+    }
+  };
+  const translateWorkspaceDisabledReason = (reason: string) => {
+    switch (reason) {
+      case "请选择正在运行的 Agent。":
+        return t("请选择正在运行的 Agent。");
+      case "Agent 运行中后才能使用工作区任务。":
+        return t("Agent 运行中后才能使用工作区任务。");
+      case "Agent 维护任务执行中，请稍后再试。":
+        return t("Agent 维护任务执行中，请稍后再试。");
+      case "请先在账号页绑定邮箱。":
+        return t("请先在账号页绑定邮箱。");
+      case "当前已有工作区备份任务运行中。":
+        return t("当前已有工作区备份任务运行中。");
+      case "当前已有工作区恢复任务运行中。":
+        return t("当前已有工作区恢复任务运行中。");
+      default:
+        return reason;
+    }
+  };
+  const workspaceTaskLabel = (kind: WorkspaceActionKind) => (kind === "export" ? t("工作区备份") : t("工作区恢复"));
+  const workspaceTaskLogs = activeWorkspaceTask?.status.logs ?? [];
+  const workspaceTaskPhase = activeWorkspaceTask?.status.phase;
+  const isWorkspaceTaskLoading = isActiveExportStatusLoading || isActiveImportStatusLoading;
+  const isWorkspaceTaskRunning = isWorkspaceActionRunning(activeWorkspaceTask?.status);
+  const workspaceStatusError = activeWorkspaceTask?.kind === "export" ? activeExportStatusError : activeImportStatusError;
+  const workspaceRawError = workspaceStatusError || activeWorkspaceTask?.status.error || "";
+  const workspaceError = activeWorkspaceTask && workspaceRawError
+    ? describeWorkspaceActionError(activeWorkspaceTask.kind, workspaceRawError)
+    : null;
+  const workspaceLastLogTime = workspaceTaskLogs.length > 0 ? workspaceTaskLogs[workspaceTaskLogs.length - 1]?.time : undefined;
+  const canStartWorkspaceAction = !workspaceActionDisabledReason && !isActiveBotExporting && !isActiveBotImporting;
+  const workspaceDisabledReasonText = workspaceActionDisabledReason ? translateWorkspaceDisabledReason(workspaceActionDisabledReason) : null;
   const formatExportLogTime = (value?: string) => {
     if (!value) return "";
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "";
     return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   };
+  const copyWorkspaceDiagnostics = async () => {
+    if (!activeWorkspaceTask) return;
+    const lines = [
+      `task=${activeWorkspaceTask.kind}`,
+      `phase=${activeWorkspaceTask.status.phase}`,
+      workspaceRawError ? `error=${workspaceRawError}` : "",
+      ...workspaceTaskLogs.map((log) => `[${log.time ?? ""}] ${log.phase ?? ""} ${log.level ?? ""} ${log.message}`),
+    ].filter(Boolean);
+    try {
+      await navigator.clipboard.writeText(lines.join("\n"));
+      toast.success(t("诊断信息已复制"));
+    } catch {
+      toast.error(t("复制失败，请手动选择日志内容"));
+    }
+  };
   const workspaceRecoveryPanel = showHiddenAgentTools && activeBot ? (
-    <section className="rounded-lg border border-black/[0.08] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+    <section className="rounded-md border border-black/[0.08] bg-white p-5 shadow-sm">
       <div className="mb-4">
-        <h3 className="text-base font-semibold text-black/90">{t("工作区备份与恢复")}</h3>
+        <h3 className="text-base font-semibold text-black/90 text-balance">{t("工作区备份与恢复")}</h3>
         <p className="mt-1 truncate text-xs text-black/45" title={activeBot.name}>
           {activeBot.name} · {HERMES_WORKSPACE_EXPORT_PATH}
         </p>
       </div>
-      <div className="mb-4 rounded-md border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-xs leading-relaxed text-black/65">
-        <p className="font-medium text-black/75">{t("导出只包含 Hermes 工作区，不是整机备份。")}</p>
-        <p className="mt-1">
-          {t("导出范围：{{path}}。会排除 hermes-agent、bin/、backups/、checkpoints/、node_modules、.git、__pycache__、pid 文件、Python 字节码和 SQLite 临时 sidecar。", { path: HERMES_WORKSPACE_EXPORT_PATH })}
+      <details className="mb-4 rounded-md border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-xs leading-relaxed text-black/65">
+        <summary className="cursor-pointer select-none font-medium text-black/75">
+          {t("仅备份 Hermes 工作区，不是整机备份。")}
+        </summary>
+        <p className="mt-2 text-pretty">
+          {t("备份范围：{{path}}。会排除 hermes-agent、bin/、backups/、checkpoints/、node_modules、.git、__pycache__、pid 文件、Python 字节码和 SQLite 临时 sidecar。", { path: HERMES_WORKSPACE_EXPORT_PATH })}
         </p>
-        <p className="mt-1">
-          {t("导入会覆盖目标 Agent 的 Hermes 工作区。导入、导出成功或失败都会通过绑定邮箱通知；如果没有绑定邮箱，请先到账号页绑定。")}
+        <p className="mt-1 text-pretty">
+          {t("从备份恢复会覆盖目标 Agent 的 Hermes 工作区。备份、恢复成功或失败都会通过绑定邮箱通知。")}
         </p>
-      </div>
+      </details>
       <input
         ref={importFileInputRef}
         type="file"
@@ -4016,120 +4109,114 @@ export const AgentSettingsPage = ({
         className="hidden"
         onChange={(event) => void handleSelectHermesImportFile(event)}
       />
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-black/[0.06] bg-black/[0.02] px-3 py-3">
-        <div className="flex items-center gap-2">
-          <span className={cn(
-            "inline-flex h-2.5 w-2.5 rounded-full",
-            exportPanelPhase === "completed"
-              ? "bg-emerald-500"
-              : exportPanelPhase === "failed"
-                ? "bg-red-500"
-                : activeExportStatus
-                  ? "bg-amber-500"
-                  : "bg-black/20",
-          )} />
-          <span className="text-sm font-medium text-black/80">{t("工作区导出")} · {exportPhaseLabel(exportPanelPhase)}</span>
-          {(isActiveBotExporting || isActiveExportStatusLoading || isRescueExportRunning(activeExportStatus)) && (
-            <Loader2 className="h-3.5 w-3.5 animate-spin text-black/35" />
+      <div className="rounded-md border border-black/[0.06] bg-black/[0.02] px-3 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className={cn(
+                "inline-flex h-2.5 w-2.5 rounded-full",
+                workspaceTaskPhase === "completed"
+                  ? "bg-emerald-500"
+                  : workspaceTaskPhase === "failed"
+                    ? "bg-red-500"
+                    : activeWorkspaceTask
+                      ? "bg-amber-500"
+                      : "bg-black/20",
+              )} />
+              <span className="text-sm font-semibold text-black/85">
+                {activeWorkspaceTask
+                  ? `${workspaceTaskLabel(activeWorkspaceTask.kind)} · ${workspacePhaseLabel(activeWorkspaceTask.kind, workspaceTaskPhase)}`
+                  : t("暂无工作区任务")}
+              </span>
+              {(isActiveBotExporting || isActiveBotImporting || isWorkspaceTaskLoading || isWorkspaceTaskRunning) && (
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-black/35" aria-hidden="true" />
+              )}
+            </div>
+            <p className="mt-1 text-xs text-black/45">
+              {activeWorkspaceTask
+                ? workspaceLastLogTime
+                  ? t("最近更新：{{time}}", { time: formatExportLogTime(workspaceLastLogTime) })
+                  : t("正在等待任务状态更新")
+                : t("可以备份当前工作区，或从 Hermes zip 备份恢复。")}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                if (!activeBot) return;
+                void Promise.all([
+                  loadRescueExportStatus(activeBot.id).catch(() => undefined),
+                  loadHermesImportStatus(activeBot.id).catch(() => undefined),
+                ]);
+              }}
+              disabled={isWorkspaceTaskLoading}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-black/[0.08] bg-white px-2.5 text-xs font-medium text-black/65 transition-colors hover:bg-black/[0.035] disabled:cursor-not-allowed disabled:text-black/25"
+            >
+              <RefreshCw className={cn("h-3.5 w-3.5", isWorkspaceTaskLoading && "animate-spin")} aria-hidden="true" />
+              {t("刷新")}
+            </button>
+            <button
+              type="button"
+              onClick={handleRequestExportWorkspace}
+              disabled={!canStartWorkspaceAction}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-black/90 px-3 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-black/20"
+            >
+              {isActiveBotExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Download className="h-3.5 w-3.5" aria-hidden="true" />}
+              {t("备份到邮箱")}
+            </button>
+            <button
+              type="button"
+              onClick={() => importFileInputRef.current?.click()}
+              disabled={!canStartWorkspaceAction}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-black/90 px-3 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-black/20"
+            >
+              {isActiveBotImporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <UploadCloud className="h-3.5 w-3.5" aria-hidden="true" />}
+              {t("从备份恢复")}
+            </button>
+          </div>
+        </div>
+        {workspaceDisabledReasonText && (
+          <p className="mt-3 text-xs leading-5 text-black/45">{workspaceDisabledReasonText}</p>
+        )}
+        {workspaceError && (
+          <div className="mt-3 flex gap-2 rounded-md border border-red-500/15 bg-red-500/[0.04] px-3 py-2 text-xs leading-relaxed text-red-600" role="status" aria-live="polite">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" aria-hidden="true" />
+            <span>{translateWorkspaceErrorMessage(workspaceError.message)}</span>
+          </div>
+        )}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setWorkspaceDetailsOpen((open) => !open)}
+            className="inline-flex h-7 items-center gap-1.5 rounded-md border border-black/[0.08] bg-white px-2.5 text-xs font-medium text-black/55 transition-colors hover:bg-black/[0.035] hover:text-black/80"
+            aria-expanded={workspaceDetailsOpen}
+            aria-controls="workspace-recovery-details"
+          >
+            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", workspaceDetailsOpen && "rotate-180")} aria-hidden="true" />
+            {workspaceDetailsOpen ? t("收起诊断详情") : t("查看诊断详情")}
+          </button>
+          {activeWorkspaceTask && (
+            <button
+              type="button"
+              onClick={() => void copyWorkspaceDiagnostics()}
+              className="inline-flex h-7 items-center gap-1.5 rounded-md border border-black/[0.08] bg-white px-2.5 text-xs font-medium text-black/55 transition-colors hover:bg-black/[0.035] hover:text-black/80"
+            >
+              <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+              {t("复制诊断信息")}
+            </button>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => void loadRescueExportStatus(activeBot.id).catch(() => undefined)}
-            disabled={isActiveExportStatusLoading}
-            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-black/[0.08] bg-white px-2.5 text-xs font-medium text-black/65 transition-colors hover:bg-black/[0.035] disabled:cursor-not-allowed disabled:text-black/25"
-          >
-            <RefreshCw className={cn("h-3.5 w-3.5", isActiveExportStatusLoading && "animate-spin")} />
-            {t("刷新")}
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleExportWorkspace()}
-            disabled={!canStartExportFromPanel}
-            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-black/90 px-3 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-black/20"
-          >
-            {isActiveBotExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-            {isActiveBotExporting ? t("发起中") : t("开始导出")}
-          </button>
-        </div>
       </div>
-
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-black/[0.06] bg-black/[0.02] px-3 py-3">
-        <div className="flex items-center gap-2">
-          <span className={cn(
-            "inline-flex h-2.5 w-2.5 rounded-full",
-            importPanelPhase === "completed"
-              ? "bg-emerald-500"
-              : importPanelPhase === "failed"
-                ? "bg-red-500"
-                : activeImportStatus
-                  ? "bg-amber-500"
-                  : "bg-black/20",
-          )} />
-          <span className="text-sm font-medium text-black/80">{t("工作区导入")} · {exportPhaseLabel(importPanelPhase)}</span>
-          {(isActiveBotImporting || isActiveImportStatusLoading || isRescueExportRunning(activeImportStatus)) && (
-            <Loader2 className="h-3.5 w-3.5 animate-spin text-black/35" />
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => void loadHermesImportStatus(activeBot.id).catch(() => undefined)}
-            disabled={isActiveImportStatusLoading}
-            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-black/[0.08] bg-white px-2.5 text-xs font-medium text-black/65 transition-colors hover:bg-black/[0.035] disabled:cursor-not-allowed disabled:text-black/25"
-          >
-            <RefreshCw className={cn("h-3.5 w-3.5", isActiveImportStatusLoading && "animate-spin")} />
-            {t("刷新")}
-          </button>
-          <button
-            type="button"
-            onClick={() => importFileInputRef.current?.click()}
-            disabled={!canStartImportFromPanel}
-            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-black/90 px-3 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-black/20"
-          >
-            {isActiveBotImporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UploadCloud className="h-3.5 w-3.5" />}
-            {isActiveBotImporting ? t("上传中") : t("上传并导入")}
-          </button>
-        </div>
-      </div>
-
-      {activeExportStatusError && (
-        <div className="mt-3 flex gap-2 rounded-md border border-red-500/15 bg-red-500/[0.04] px-3 py-2 text-xs leading-relaxed text-red-600">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-          <span>{activeExportStatusError}</span>
-        </div>
-      )}
-
-      {activeExportStatus?.error && !activeExportStatusError && (
-        <div className="mt-3 flex gap-2 rounded-md border border-red-500/15 bg-red-500/[0.04] px-3 py-2 text-xs leading-relaxed text-red-600">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-          <span>{activeExportStatus.error}</span>
-        </div>
-      )}
-
-      {activeImportStatusError && (
-        <div className="mt-3 flex gap-2 rounded-md border border-red-500/15 bg-red-500/[0.04] px-3 py-2 text-xs leading-relaxed text-red-600">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-          <span>{activeImportStatusError}</span>
-        </div>
-      )}
-
-      {activeImportStatus?.error && !activeImportStatusError && (
-        <div className="mt-3 flex gap-2 rounded-md border border-red-500/15 bg-red-500/[0.04] px-3 py-2 text-xs leading-relaxed text-red-600">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-          <span>{activeImportStatus.error}</span>
-        </div>
-      )}
-
-      <div className="mt-4 max-h-[320px] overflow-y-auto pr-1">
-        {exportPanelLogs.length === 0 && importPanelLogs.length === 0 ? (
+      {workspaceDetailsOpen && (
+        <div id="workspace-recovery-details" className="mt-4 max-h-[320px] overflow-y-auto pr-1">
+          {workspaceTaskLogs.length === 0 ? (
           <div className="rounded-md border border-dashed border-black/[0.12] px-4 py-8 text-center text-sm text-black/45">
-            {(isActiveExportStatusLoading || isActiveImportStatusLoading) ? t("正在读取任务状态...") : t("暂无导入导出记录")}
+            {isWorkspaceTaskLoading ? t("正在读取任务状态...") : t("暂无工作区任务记录")}
           </div>
         ) : (
           <ol className="space-y-0">
-            {[...exportPanelLogs, ...importPanelLogs].map((log, index, allLogs) => {
+            {workspaceTaskLogs.map((log, index, allLogs) => {
               const isLast = index === allLogs.length - 1;
               const tone = log.level === "error" ? "bg-red-500" : log.level === "success" ? "bg-emerald-500" : "bg-black/35";
               return (
@@ -4143,20 +4230,110 @@ export const AgentSettingsPage = ({
                   </div>
                   <div className="pb-4">
                     <p className="text-sm leading-relaxed text-black/78">{log.message}</p>
-                    {log.phase && <p className="mt-0.5 text-[11px] text-black/35">{exportPhaseLabel(log.phase)}</p>}
+                    {activeWorkspaceTask && log.phase && <p className="mt-0.5 text-[11px] text-black/35">{workspacePhaseLabel(activeWorkspaceTask.kind, log.phase)}</p>}
                   </div>
                 </li>
               );
             })}
           </ol>
         )}
-      </div>
+        </div>
+      )}
     </section>
   ) : null;
 
   return (
     <div className="flex min-h-screen flex-col bg-white" style={{ color: "rgba(0,0,0,0.90)" }}>
       {showHeader && <ProductReturnHomeHeader reloadLanguageAfterSwitch />}
+
+      <Dialog
+        open={Boolean(workspaceConfirm)}
+        onOpenChange={(open) => {
+          if (!open) setWorkspaceConfirm(null);
+        }}
+      >
+        <DialogContent className="rounded-md border border-black/[0.08] bg-white p-5 shadow-xl md:w-[30rem]">
+          {workspaceConfirm && (
+            <>
+              <DialogHeader className="pr-8">
+                <DialogTitle>
+                  {workspaceConfirm.kind === "export" ? t("备份 Hermes 工作区") : t("从备份恢复工作区")}
+                </DialogTitle>
+                <DialogDescription className="leading-relaxed">
+                  {workspaceConfirm.kind === "export"
+                    ? t("备份完成后会发送到当前账号绑定邮箱，导出期间不需要停用 Agent。")
+                    : t("恢复会覆盖目标 Agent 的 Hermes 工作区，执行后会通过绑定邮箱通知结果。")}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="mt-4 space-y-3">
+                <div className="rounded-md border border-black/[0.06] bg-black/[0.02] px-3 py-3 text-sm">
+                  <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-x-3 gap-y-2">
+                    <span className="text-black/45">{t("目标 Agent")}</span>
+                    <span className="min-w-0 truncate font-medium text-black/85" title={activeBot?.name}>
+                      {activeBot?.name ?? t("当前 Agent")}
+                    </span>
+                    <span className="text-black/45">{t("工作区")}</span>
+                    <span className="min-w-0 truncate font-mono text-xs text-black/70" title={HERMES_WORKSPACE_EXPORT_PATH}>
+                      {HERMES_WORKSPACE_EXPORT_PATH}
+                    </span>
+                    {workspaceConfirm.kind === "import" ? (
+                      <>
+                        <span className="text-black/45">{t("备份文件")}</span>
+                        <span className="min-w-0 truncate text-black/75" title={workspaceConfirm.file.name}>
+                          {workspaceConfirm.file.name} · {formatWorkspaceImportFileSize(workspaceConfirm.file.size)}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-black/45">{t("发送到")}</span>
+                        <span className="min-w-0 truncate text-black/75" title={user?.email ?? undefined}>
+                          {user?.email ?? t("绑定邮箱")}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+                {workspaceConfirm.kind === "import" && (
+                  <div className="flex gap-2 rounded-md border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-xs leading-relaxed text-black/65" role="status">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-amber-600" aria-hidden="true" />
+                    <span>{t("恢复开始后会替换目标工作区，请确认备份文件来自 Hermes 工作区导出。")}</span>
+                  </div>
+                )}
+              </div>
+              <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={() => setWorkspaceConfirm(null)}
+                  className="inline-flex h-9 items-center justify-center rounded-md border border-black/[0.08] bg-white px-3 text-sm font-medium text-black/65 transition-colors hover:bg-black/[0.035]"
+                >
+                  {t("取消")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (workspaceConfirm.kind === "export") {
+                      void handleExportWorkspace();
+                      return;
+                    }
+                    void handleImportWorkspace(workspaceConfirm.file);
+                  }}
+                  disabled={!canStartWorkspaceAction}
+                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-black/90 px-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-black/20"
+                >
+                  {isActiveBotExporting || isActiveBotImporting ? (
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  ) : workspaceConfirm.kind === "export" ? (
+                    <Download className="h-4 w-4" aria-hidden="true" />
+                  ) : (
+                    <UploadCloud className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  {workspaceConfirm.kind === "export" ? t("确认备份") : t("确认恢复")}
+                </button>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirm Dialog */}
       {showDeleteConfirm && activeBot && createPortal(
