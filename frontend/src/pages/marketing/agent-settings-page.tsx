@@ -34,7 +34,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo, type ChangeEvent, type ComponentType } from "react";
+import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo, useId, type ChangeEvent, type ComponentType, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
@@ -416,6 +416,30 @@ function SettingsIconTooltip({ label }: { label: string }) {
     <span role="tooltip" className={SETTINGS_ICON_TOOLTIP_CLASS}>
       {label}
       <span className={SETTINGS_ICON_TOOLTIP_ARROW_CLASS} />
+    </span>
+  );
+}
+
+function WorkspaceActionTooltip({ children, content }: { children: ReactNode; content?: ReactNode }) {
+  const tooltipId = useId();
+  if (!content) return <>{children}</>;
+
+  return (
+    <span
+      className="group relative inline-flex rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/30"
+      tabIndex={0}
+      aria-describedby={tooltipId}
+    >
+      {children}
+      <span className="absolute bottom-full left-0 h-2 w-full" aria-hidden="true" />
+      <span
+        id={tooltipId}
+        role="tooltip"
+        className="invisible pointer-events-auto absolute bottom-full left-1/2 z-20 mb-2 w-72 -translate-x-1/2 rounded-md border border-[var(--border-subtle)] bg-white px-3 py-2 text-[11px] font-medium leading-relaxed text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100"
+      >
+        {content}
+        <span className={SETTINGS_ICON_TOOLTIP_ARROW_CLASS} />
+      </span>
     </span>
   );
 }
@@ -4061,7 +4085,18 @@ export const AgentSettingsPage = ({
     : null;
   const workspaceLastLogTime = workspaceTaskLogs.length > 0 ? workspaceTaskLogs[workspaceTaskLogs.length - 1]?.time : undefined;
   const canStartWorkspaceAction = !workspaceActionDisabledReason && !isActiveBotExporting && !isActiveBotImporting;
+  const needsEmailBinding = workspaceActionDisabledReason === "请先在账号页绑定邮箱。";
   const workspaceDisabledReasonText = workspaceActionDisabledReason ? translateWorkspaceDisabledReason(workspaceActionDisabledReason) : null;
+  const workspaceEmailBindingTooltip = needsEmailBinding ? (
+    <>
+      <span className="block text-pretty">
+        {t("备份或恢复结果需要通过邮箱通知，请先绑定邮箱。")}
+      </span>
+      <AppLink to="/account" className="mt-1 inline-flex font-semibold text-black/85 underline underline-offset-2 hover:text-black">
+        {t("前往账号页绑定邮箱")}
+      </AppLink>
+    </>
+  ) : undefined;
   const formatExportLogTime = (value?: string) => {
     if (!value) return "";
     const date = new Date(value);
@@ -4103,13 +4138,16 @@ export const AgentSettingsPage = ({
       </div>
       <details className="mb-4 rounded-md border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-xs leading-relaxed text-black/65">
         <summary className="cursor-pointer select-none font-medium text-black/75">
-          {t("仅备份 Hermes Agent 相关文件，不是整机备份。")}
+          {t("备份的是 Hermes Agent 数据目录，不是整机备份。")}
         </summary>
         <p className="mt-2 text-pretty">
-          {t("备份范围：{{path}} 中的 Hermes Agent 相关文件。会排除 hermes-agent、bin/、backups/、checkpoints/、node_modules、.git、__pycache__、pid 文件、Python 字节码和 SQLite 临时 sidecar。", { path: HERMES_WORKSPACE_EXPORT_PATH })}
+          {t("数据目录：{{path}}。这里保存 Hermes Agent 的配置、工作空间、记忆、已安装技能等数据。", { path: HERMES_WORKSPACE_EXPORT_PATH })}
         </p>
         <p className="mt-1 text-pretty">
-          {t("从备份恢复会覆盖目标 Agent 的 Hermes Agent 相关文件。备份、恢复成功或失败都会通过绑定邮箱通知。")}
+          {t("为避免备份包过大或包含运行时临时文件，会排除 hermes-agent、bin/、backups/、checkpoints/、node_modules、.git、__pycache__、pid 文件、Python 字节码和 SQLite 临时 sidecar。")}
+        </p>
+        <p className="mt-1 text-pretty">
+          {t("从备份恢复会覆盖目标 Agent 的对应数据。备份、恢复成功或失败都会通过绑定邮箱通知。")}
         </p>
       </details>
       <input
@@ -4166,24 +4204,28 @@ export const AgentSettingsPage = ({
               <RefreshCw className={cn("h-3.5 w-3.5", isWorkspaceTaskLoading && "animate-spin")} aria-hidden="true" />
               {t("刷新")}
             </button>
-            <button
-              type="button"
-              onClick={handleRequestExportWorkspace}
-              disabled={!canStartWorkspaceAction}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-black/90 px-3 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-black/20"
-            >
-              {isActiveBotExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Download className="h-3.5 w-3.5" aria-hidden="true" />}
-              {t("备份到邮箱")}
-            </button>
-            <button
-              type="button"
-              onClick={() => importFileInputRef.current?.click()}
-              disabled={!canStartWorkspaceAction}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-black/90 px-3 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-black/20"
-            >
-              {isActiveBotImporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <UploadCloud className="h-3.5 w-3.5" aria-hidden="true" />}
-              {t("从备份恢复")}
-            </button>
+            <WorkspaceActionTooltip content={workspaceEmailBindingTooltip}>
+              <button
+                type="button"
+                onClick={handleRequestExportWorkspace}
+                disabled={!canStartWorkspaceAction}
+                className="inline-flex h-8 items-center gap-1.5 rounded-md bg-black/90 px-3 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-black/20"
+              >
+                {isActiveBotExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Download className="h-3.5 w-3.5" aria-hidden="true" />}
+                {t("备份到邮箱")}
+              </button>
+            </WorkspaceActionTooltip>
+            <WorkspaceActionTooltip content={workspaceEmailBindingTooltip}>
+              <button
+                type="button"
+                onClick={() => importFileInputRef.current?.click()}
+                disabled={!canStartWorkspaceAction}
+                className="inline-flex h-8 items-center gap-1.5 rounded-md bg-black/90 px-3 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-black/20"
+              >
+                {isActiveBotImporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <UploadCloud className="h-3.5 w-3.5" aria-hidden="true" />}
+                {t("从备份恢复")}
+              </button>
+            </WorkspaceActionTooltip>
           </div>
         </div>
         {workspaceDisabledReasonText && (
@@ -4271,8 +4313,8 @@ export const AgentSettingsPage = ({
                 </DialogTitle>
                 <DialogDescription className="leading-relaxed">
                   {workspaceConfirm.kind === "export"
-                    ? t("备份完成后会发送到当前账号绑定邮箱，导出期间不需要停用 Agent。")
-                    : t("恢复会覆盖目标 Agent 的 Hermes Agent 相关文件，执行后会通过绑定邮箱通知结果。")}
+                    ? t("将打包 Hermes Agent 数据目录，并把备份下载链接发送到当前账号绑定邮箱。")
+                    : t("选择 Hermes Agent 备份包恢复数据，恢复前请确认目标 Agent 和备份文件。")}
                 </DialogDescription>
               </DialogHeader>
               <div className="mt-4 space-y-3">
@@ -4282,7 +4324,7 @@ export const AgentSettingsPage = ({
                     <span className="min-w-0 truncate font-medium text-black/85" title={activeBot?.name}>
                       {activeBot?.name ?? t("当前 Agent")}
                     </span>
-                    <span className="text-black/45">{t("Agent 文件")}</span>
+                    <span className="text-black/45">{t("数据目录")}</span>
                     <span className="min-w-0 truncate font-mono text-xs text-black/70" title={HERMES_WORKSPACE_EXPORT_PATH}>
                       {HERMES_WORKSPACE_EXPORT_PATH}
                     </span>
@@ -4303,10 +4345,23 @@ export const AgentSettingsPage = ({
                     )}
                   </div>
                 </div>
-                {workspaceConfirm.kind === "import" && (
+                {workspaceConfirm.kind === "export" ? (
+                  <div className="rounded-md border border-black/[0.08] bg-white px-3 py-3 text-xs leading-relaxed text-black/65">
+                    <p className="font-semibold text-black/80">{t("备份说明")}</p>
+                    <ul className="mt-2 list-disc space-y-1 pl-4 text-pretty">
+                      <li>{t("备份范围包含 Hermes Agent 的配置、工作空间、记忆、已安装技能等数据。")}</li>
+                      <li>{t("备份下载链接保留 8 小时，过期后需要重新发起备份。")}</li>
+                      <li>{t("备份过程可能较久，请耐心等待；完成或失败都会通过绑定邮箱通知。")}</li>
+                    </ul>
+                  </div>
+                ) : (
                   <div className="flex gap-2 rounded-md border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-xs leading-relaxed text-black/65" role="status">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-amber-600" aria-hidden="true" />
-                    <span>{t("恢复开始后会替换目标 Agent 相关文件，请确认备份文件来自 Hermes Agent 备份。")}</span>
+                    <div className="space-y-1 text-pretty">
+                      <p className="font-semibold text-black/75">{t("恢复前请确认")}</p>
+                      <p>{t("从备份恢复会覆盖目标 Agent 的 Hermes Agent 相关文件，包括配置、工作空间、记忆、已安装技能等数据。")}</p>
+                      <p>{t("恢复成功或失败均会通过绑定邮箱通知。")}</p>
+                    </div>
                   </div>
                 )}
               </div>
