@@ -23,6 +23,7 @@ type CloudAgentClient struct {
 	client               *http.Client
 	supportsSessionClose bool
 	supportsWorkspaceKey bool
+	sandboxBackend       string
 }
 
 type cloudAgentRunResponse struct {
@@ -146,6 +147,10 @@ func NewCloudAgentClient(baseURL string, headers http.Header) *CloudAgentClient 
 	}
 }
 
+func (c *CloudAgentClient) SetSandboxBackend(backend string) {
+	c.sandboxBackend = strings.TrimSpace(backend)
+}
+
 func (c *CloudAgentClient) Initialize(ctx context.Context) error {
 	if c.baseURL == "" {
 		return errors.New("cloudagent base url is required")
@@ -162,6 +167,9 @@ func (c *CloudAgentClient) NewSession(ctx context.Context, cwd, workspaceKey str
 		SessionID string `json:"session_id"`
 	}
 	body := map[string]any{"cwd": defaultCWD(cwd)}
+	if c.sandboxBackend != "" {
+		body["sandbox_backend"] = c.sandboxBackend
+	}
 	if c.supportsWorkspaceKey && strings.TrimSpace(workspaceKey) != "" {
 		body["workspace_key"] = workspaceKey
 	}

@@ -10,24 +10,25 @@ import (
 )
 
 type Config struct {
-	DBPath               string
-	DBDriver             string
-	EventBus             EventBusConfig
-	ACPURL               string
-	RuntimeProtocol      string
-	ACPAuthorization     string
-	TenantID             string
-	ProjectID            string
-	OwnerID              string
-	ListenAddr           string
-	LeaseTTL             time.Duration
-	RequestTimeout       time.Duration
-	PromptTimeout        time.Duration
-	ACPInitializeTimeout time.Duration
-	SessionIdleClose     time.Duration
-	WeCom                WeComConfig
-	WeComAccounts        []WeComConfig
-	parseErrors          []string
+	DBPath                   string
+	DBDriver                 string
+	EventBus                 EventBusConfig
+	ACPURL                   string
+	RuntimeProtocol          string
+	ACPAuthorization         string
+	CloudAgentSandboxBackend string
+	TenantID                 string
+	ProjectID                string
+	OwnerID                  string
+	ListenAddr               string
+	LeaseTTL                 time.Duration
+	RequestTimeout           time.Duration
+	PromptTimeout            time.Duration
+	ACPInitializeTimeout     time.Duration
+	SessionIdleClose         time.Duration
+	WeCom                    WeComConfig
+	WeComAccounts            []WeComConfig
+	parseErrors              []string
 }
 
 type WeComConfig struct {
@@ -88,21 +89,22 @@ func LoadFromEnv() Config {
 			PollInterval:       envDuration("CHANNELGATEWAY_EVENT_BUS_POLL_INTERVAL", time.Second),
 			InboundWorkerCount: envInt("CHANNELGATEWAY_EVENT_BUS_INBOUND_WORKERS", 4),
 		},
-		ACPURL:               env("CHANNELGATEWAY_ACP_URL", "ws://127.0.0.1:18094/acp"),
-		RuntimeProtocol:      strings.ToLower(env("CHANNELGATEWAY_RUNTIME_PROTOCOL", "acp")),
-		ACPAuthorization:     env("CHANNELGATEWAY_ACP_AUTHORIZATION", ""),
-		TenantID:             env("CHANNELGATEWAY_TENANT_ID", "default"),
-		ProjectID:            env("CHANNELGATEWAY_PROJECT_ID", "default"),
-		OwnerID:              env("CHANNELGATEWAY_OWNER_ID", "channelgateway-"+shortHostname()),
-		ListenAddr:           env("CHANNELGATEWAY_LISTEN_ADDR", ":8094"),
-		LeaseTTL:             envDuration("CHANNELGATEWAY_LEASE_TTL", 90*time.Second),
-		RequestTimeout:       envDuration("CHANNELGATEWAY_REQUEST_TIMEOUT", 60*time.Second),
-		PromptTimeout:        envDuration("CHANNELGATEWAY_PROMPT_TIMEOUT", 30*time.Minute),
-		ACPInitializeTimeout: envDuration("CHANNELGATEWAY_ACP_INITIALIZE_TIMEOUT", 15*time.Second),
-		SessionIdleClose:     envDuration("CHANNELGATEWAY_SESSION_IDLE_CLOSE", time.Minute),
-		WeCom:                wecom,
-		WeComAccounts:        accounts,
-		parseErrors:          parseErrs,
+		ACPURL:                   env("CHANNELGATEWAY_ACP_URL", "ws://127.0.0.1:18094/acp"),
+		RuntimeProtocol:          strings.ToLower(env("CHANNELGATEWAY_RUNTIME_PROTOCOL", "acp")),
+		ACPAuthorization:         env("CHANNELGATEWAY_ACP_AUTHORIZATION", ""),
+		CloudAgentSandboxBackend: strings.TrimSpace(env("CHANNELGATEWAY_CLOUDAGENT_SANDBOX_BACKEND", "")),
+		TenantID:                 env("CHANNELGATEWAY_TENANT_ID", "default"),
+		ProjectID:                env("CHANNELGATEWAY_PROJECT_ID", "default"),
+		OwnerID:                  env("CHANNELGATEWAY_OWNER_ID", "channelgateway-"+shortHostname()),
+		ListenAddr:               env("CHANNELGATEWAY_LISTEN_ADDR", ":8094"),
+		LeaseTTL:                 envDuration("CHANNELGATEWAY_LEASE_TTL", 90*time.Second),
+		RequestTimeout:           envDuration("CHANNELGATEWAY_REQUEST_TIMEOUT", 60*time.Second),
+		PromptTimeout:            envDuration("CHANNELGATEWAY_PROMPT_TIMEOUT", 30*time.Minute),
+		ACPInitializeTimeout:     envDuration("CHANNELGATEWAY_ACP_INITIALIZE_TIMEOUT", 15*time.Second),
+		SessionIdleClose:         envDuration("CHANNELGATEWAY_SESSION_IDLE_CLOSE", time.Minute),
+		WeCom:                    wecom,
+		WeComAccounts:            accounts,
+		parseErrors:              parseErrs,
 	}
 }
 

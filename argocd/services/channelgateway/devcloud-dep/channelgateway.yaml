@@ -9,6 +9,7 @@ data:
   CHANNELGATEWAY_DB_DRIVER: "mysql"
   CHANNELGATEWAY_ACP_URL: "http://cloudagent-gateway.dep.svc.cluster.local"
   CHANNELGATEWAY_RUNTIME_PROTOCOL: "cloudagent"
+  CHANNELGATEWAY_CLOUDAGENT_SANDBOX_BACKEND: "talos"
   CHANNELGATEWAY_TENANT_ID: "tenant-devcloud-dep"
   CHANNELGATEWAY_PROJECT_ID: "project-devcloud-dep"
   CHANNELGATEWAY_OWNER_ID: "channelgateway-devcloud-dep"
