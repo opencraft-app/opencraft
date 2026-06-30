@@ -10,6 +10,7 @@ test("workbench setup does not send runtime model config when backend capability
       kind: "acp",
       status: "available",
       display_name: "Hermes ACP",
+      location: { kind: "local", label: "Local" },
       capabilities: {
         streaming: true,
         cancel: false,
@@ -51,6 +52,7 @@ test("workbench setup does not select errored backends", () => {
       status: "error",
       status_message: "model discovery failed",
       display_name: "Codex",
+      location: { kind: "local", label: "Local" },
       capabilities: { session_agent_config: true },
       models: [],
       permission_modes: [{ id: "auto", label: "Auto" }],
@@ -72,4 +74,40 @@ test("workbench setup does not select errored backends", () => {
   assert.equal(selection.setupSelectedPermissionMode, "");
   assert.deepEqual(selection.setupPermissionOptions, []);
   assert.deepEqual(selection.setupAgentConfig, {});
+});
+
+test("workbench setup can select degraded backends with discovered models", () => {
+  const backends: BackendWire[] = [
+    {
+      kind: "codex",
+      status: "degraded",
+      status_message: "configured default model was not discovered",
+      display_name: "Codex",
+      location: { kind: "local", label: "Local" },
+      capabilities: { session_agent_config: true },
+      models: [
+        {
+          id: "gpt-5.4",
+          label: "GPT-5.4",
+          is_default: true,
+          reasoning_efforts: [{ id: "high", label: "High", is_default: true }],
+        },
+      ],
+      permission_modes: [{ id: "auto", label: "Auto", is_default: true }],
+      features: [],
+    },
+  ];
+
+  const selection = buildVelaSessionSetupSelection({
+    backends,
+    selectedBackend: "codex",
+    selectedModel: "",
+    selectedReasoningEffort: "",
+    selectedPermissionMode: "",
+  });
+
+  assert.equal(selection.resolvedSelectedBackend, "codex");
+  assert.equal(selection.setupSelectedModel, "gpt-5.4");
+  assert.equal(selection.setupSelectedReasoningEffort, "high");
+  assert.equal(selection.setupSelectedPermissionMode, "auto");
 });

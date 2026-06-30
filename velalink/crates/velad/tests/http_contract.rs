@@ -45,6 +45,20 @@ async fn test_app_with_backend_outputs_and_default_model(
     )
 }
 
+async fn test_app_with_observability() -> axum::Router {
+    test_app_with_observability_outputs(support::default_backend_outputs()).await
+}
+
+async fn test_app_with_observability_outputs(outputs: Vec<BackendOutput>) -> axum::Router {
+    let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
+    let backend = Arc::new(MockBackendAdapter::new(outputs));
+    let observability = vela_observability::ObservabilityStore::connect("sqlite::memory:", None)
+        .await
+        .expect("observability");
+    let runtime = Runtime::new(store.clone(), backend).with_observability(observability.clone());
+    velad::build_app(velad::ApiState::new(store, runtime).with_observability(observability))
+}
+
 async fn json_request(
     app: axum::Router,
     method: Method,
@@ -75,6 +89,31 @@ async fn json_request_with_headers(
     }
     let response = app
         .oneshot(builder.body(Body::from(body.to_string())).unwrap())
+        .await
+        .expect("response");
+    let status = response.status();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let value = serde_json::from_slice(&bytes).unwrap_or_else(|_| json!(null));
+    (status, value)
+}
+
+async fn json_request_with_authorization(
+    app: axum::Router,
+    method: Method,
+    uri: &str,
+    body: Value,
+    authorization: &str,
+) -> (StatusCode, Value) {
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(method)
+                .uri(uri)
+                .header("content-type", "application/json")
+                .header("authorization", authorization)
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
         .await
         .expect("response");
     let status = response.status();
@@ -199,3 +238,12 @@ mod diagnostics;
 
 #[path = "http_contract/backends.rs"]
 mod backends;
+
+#[path = "http_contract/nodes.rs"]
+mod nodes;
+
+#[path = "http_contract/runtime.rs"]
+mod runtime;
+
+#[path = "http_contract/observability.rs"]
+mod observability;

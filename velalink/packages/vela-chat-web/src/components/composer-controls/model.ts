@@ -33,6 +33,17 @@ export interface ComposerPermissionOption extends ComposerOption {
   id: PermissionModeWire;
 }
 
+export interface ComposerSetupControlsInput {
+  disabled?: boolean;
+  providerLabel: string;
+  selectedModel: string;
+  selectedReasoningEffort: string;
+  selectedPermissionMode: PermissionModeWire | "";
+  modelOptions: Array<ComposerOption>;
+  reasoningEffortOptions: Array<ComposerOption>;
+  permissionModeOptions: Array<ComposerPermissionOption>;
+}
+
 export function buildComposerControlsModel({
   session,
   backends,
@@ -94,6 +105,53 @@ export function buildComposerControlsModel({
     modelOptions,
     reasoningEffortOptions,
     permissionModeOptions,
+  };
+}
+
+export function buildComposerSetupControlsModel({
+  disabled = false,
+  providerLabel,
+  selectedModel,
+  selectedReasoningEffort,
+  selectedPermissionMode,
+  modelOptions,
+  reasoningEffortOptions,
+  permissionModeOptions,
+}: ComposerSetupControlsInput): ComposerControlsModel {
+  const normalizedReasoningOptions = reasoningEffortOptions.map((option) => ({
+    id: option.id,
+    label: option.label,
+    description: option.description,
+  }));
+  const normalizedModelOptions = modelOptions.map((option) => ({
+    id: option.id,
+    label: option.label,
+    description: option.description,
+    reasoningEfforts: normalizedReasoningOptions,
+  }));
+  const normalizedPermissionOptions = permissionModeOptions.map((option) => ({
+    id: option.id,
+    label: option.label,
+    description: option.description,
+  }));
+
+  return {
+    ready: true,
+    disabled,
+    providerLabel,
+    selectedModel:
+      normalizedModelOptions.find((option) => option.id === selectedModel) ??
+      normalizedModelOptions[0],
+    selectedReasoningEffort:
+      normalizedReasoningOptions.find((option) => option.id === selectedReasoningEffort) ??
+      normalizedReasoningOptions[0],
+    selectedPermissionMode:
+      normalizedPermissionOptions.find((option) => option.id === selectedPermissionMode) ??
+      normalizedPermissionOptions.find((option) => option.id === "auto") ??
+      normalizedPermissionOptions[0],
+    modelOptions: normalizedModelOptions,
+    reasoningEffortOptions: normalizedReasoningOptions,
+    permissionModeOptions: normalizedPermissionOptions,
   };
 }
 

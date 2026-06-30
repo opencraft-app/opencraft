@@ -5,6 +5,46 @@ use vela_store::{SqliteEventStore, StoreError};
 mod support;
 
 #[tokio::test]
+async fn backend_settings_persist_and_update_json_payload() {
+    let store = SqliteEventStore::in_memory().await.expect("store");
+
+    let stored = store
+        .upsert_backend_settings(
+            "vela_engine",
+            json!({
+                "endpoint": "https://example.test/v1",
+                "api_key": "secret",
+                "model": "gpt-local",
+            }),
+        )
+        .await
+        .expect("insert backend settings");
+    assert_eq!(stored.backend, "vela_engine");
+    assert_eq!(stored.settings["model"], "gpt-local");
+
+    let updated = store
+        .upsert_backend_settings(
+            "vela_engine",
+            json!({
+                "endpoint": "https://example.test/v2",
+                "api_key": "",
+                "model": "gpt-next",
+            }),
+        )
+        .await
+        .expect("update backend settings");
+    assert_eq!(updated.settings["endpoint"], "https://example.test/v2");
+    assert_eq!(updated.settings["api_key"], "");
+
+    let loaded = store
+        .get_backend_settings("vela_engine")
+        .await
+        .expect("load backend settings")
+        .expect("stored settings");
+    assert_eq!(loaded.settings["model"], "gpt-next");
+}
+
+#[tokio::test]
 async fn appends_events_with_monotonic_session_cursor() {
     let store = SqliteEventStore::in_memory().await.expect("store");
     let session_id = SessionId::from("ses_store_1");
@@ -56,6 +96,24 @@ async fn session_backend_kind_round_trips_acp() {
         .expect("session exists");
 
     assert_eq!(session.backend, BackendKind::Acp);
+}
+
+#[tokio::test]
+async fn session_backend_kind_round_trips_tcodex() {
+    let store = SqliteEventStore::in_memory().await.expect("store");
+    let session_id = SessionId::from("ses_store_tcodex");
+    store
+        .create_session(&session_id, BackendKind::Tcodex, "/tmp/vela")
+        .await
+        .expect("create tcodex session");
+
+    let session = store
+        .get_session(&session_id)
+        .await
+        .expect("get session")
+        .expect("session exists");
+
+    assert_eq!(session.backend, BackendKind::Tcodex);
 }
 
 #[tokio::test]

@@ -134,6 +134,7 @@ async fn codex_app_server_adapter_interrupts_while_permission_request_is_pending
     let calls = host.calls().await;
     assert_eq!(calls[3].method, "turn/interrupt");
     assert_eq!(calls[3].params["threadId"], "thr_permission_cancel");
+    assert_eq!(calls[3].params["turnId"], "turn_1");
 }
 
 #[tokio::test]

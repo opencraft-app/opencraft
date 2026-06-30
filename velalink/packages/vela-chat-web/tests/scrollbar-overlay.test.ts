@@ -96,7 +96,7 @@ test("overlay thumb drag exposes committed scroll offsets to the conversation sc
   const source = readFileSync(
     join(
       root,
-      "packages/vela-chat-web/src/conversation-runtime/scrollbar/useConversationScrollbarOverlay.tsx",
+      "packages/vela-chat-web/src/conversation-runtime/scrollbar/useVerticalScrollbarOverlay.tsx",
     ),
     "utf8",
   );
@@ -111,4 +111,50 @@ test("overlay thumb drag exposes committed scroll offsets to the conversation sc
     /onUserScrollIntent/,
     "thumb dragging is user scroll intent and must be reported to bottom-anchor ownership, not inferred later from an async DOM scroll event",
   );
+});
+
+test("layout resize updates scrollbar geometry without revealing the overlay", () => {
+  const source = readFileSync(
+    join(
+      root,
+      "packages/vela-chat-web/src/conversation-runtime/scrollbar/useVerticalScrollbarOverlay.tsx",
+    ),
+    "utf8",
+  );
+  const scrollHandler = source.match(/const handleScroll = \(\) => \{[\s\S]*?\n    \};/);
+  const resizeHandler = source.match(/const handleResize = \(\) => \{[\s\S]*?\n    \};/);
+
+  assert.ok(scrollHandler, "scroll events must own scrollbar reveal behavior");
+  assert.match(scrollHandler[0], /revealFromScroll\(\)/);
+  assert.match(scrollHandler[0], /markScrollActive\(\)/);
+  assert.match(scrollHandler[0], /suppressScrollRevealForResizeRef\.current/);
+  assert.ok(resizeHandler, "resize observer must be present for geometry updates");
+  assert.match(resizeHandler[0], /updateMetrics\(\)/);
+  assert.match(resizeHandler[0], /requestAnimationFrame/);
+  assert.doesNotMatch(resizeHandler[0], /revealFromScroll|markScrollActive/);
+  assert.match(source, /new ResizeObserver\(handleResize\)/);
+});
+
+test("programmatic content scroll updates geometry without revealing the overlay", () => {
+  const source = readFileSync(
+    join(
+      root,
+      "packages/vela-chat-web/src/conversation-runtime/scrollbar/useVerticalScrollbarOverlay.tsx",
+    ),
+    "utf8",
+  );
+  const scrollHandler = source.match(/const handleScroll = \(\) => \{[\s\S]*?\n    \};/);
+
+  assert.ok(scrollHandler, "scroll events must keep thumb geometry in sync");
+  assert.match(scrollHandler[0], /updateMetrics\(\)/);
+  assert.match(scrollHandler[0], /hasRecentUserScrollIntent\(\)/);
+  assert.match(
+    scrollHandler[0],
+    /if \(!hasRecentUserScrollIntent\(\)\) return;/,
+    "programmatic scroll from content append or bottom-follow must not reveal the overlay",
+  );
+  assert.match(source, /element\.addEventListener\("wheel", markUserScrollIntent/);
+  assert.match(source, /element\.addEventListener\("touchmove", markUserScrollIntent/);
+  assert.match(source, /element\.addEventListener\("keydown", handleKeyDown/);
+  assert.match(source, /USER_SCROLL_INTENT_MS/);
 });

@@ -75,6 +75,10 @@ fn codex_app_server_normalizer_absorbs_control_plane_notifications_without_warni
             json!({ "threadId": "thr_1", "status": { "type": "active" } }),
         ),
         (
+            "thread/settings/updated",
+            json!({ "threadId": "thr_1", "threadSettings": { "model": "gpt-5.5" } }),
+        ),
+        (
             "account/rateLimits/updated",
             json!({ "rateLimits": { "limitId": "codex", "planType": "pro" } }),
         ),
@@ -157,8 +161,28 @@ fn codex_app_server_normalizer_maps_command_output_and_unknown_method_safely() {
     );
     assert_eq!(outputs[0].event_type, EventType::TOOL_OUTPUT_DELTA);
     assert_eq!(outputs[0].payload["tool_id"], "cmd_1");
+    assert_eq!(outputs[0].payload["stream_id"], "stderr");
     assert_eq!(outputs[0].payload["stream"], "stderr");
     assert_eq!(outputs[0].payload["delta"], "warn");
+    assert_eq!(outputs[0].payload["encoding"], "utf8");
+
+    let outputs = normalize_codex_app_server_notification(
+        "item/commandExecution/outputDelta",
+        json!({
+            "itemId": "cmd_2",
+            "stream": "stdout",
+            "content": { "text": "building" },
+            "sequence": 3,
+            "chunkId": "chunk_3"
+        }),
+    );
+    assert_eq!(outputs[0].event_type, EventType::TOOL_OUTPUT_DELTA);
+    assert_eq!(outputs[0].payload["tool_id"], "cmd_2");
+    assert_eq!(outputs[0].payload["stream_id"], "stdout");
+    assert_eq!(outputs[0].payload["stream"], "stdout");
+    assert_eq!(outputs[0].payload["delta"], "building");
+    assert_eq!(outputs[0].payload["sequence"], 3);
+    assert_eq!(outputs[0].payload["chunk_id"], "chunk_3");
 
     let outputs = normalize_codex_app_server_notification(
         "codex/event/exec_command_end",

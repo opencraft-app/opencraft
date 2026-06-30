@@ -320,11 +320,11 @@ export function ChatWorkbench({
       model={controller.model}
       draft={controller.draft}
       error={error}
+      followOutputToken={controller.followOutputToken}
       historyPhase={controller.historyPhase}
       isLoadingOlder={controller.isLoadingOlder}
       isUpdatingComposerControls={controller.isUpdatingAgentConfig}
       isRespondingToRequest={controller.isRespondingToRequest}
-      messageFollowToken={controller.messageFollowToken}
       onAttachImages={controller.attachImages}
       onAgentConfigChange={controller.updateAgentConfig}
       onConversationScrollDebugChange={controller.setConversationScrollDebug}

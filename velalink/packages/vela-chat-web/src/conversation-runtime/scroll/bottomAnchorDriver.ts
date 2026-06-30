@@ -8,6 +8,7 @@ export type BottomAnchorMode = "sticky_bottom" | "detached";
 export type BottomAnchorRequestReason =
   | "route_initial_entry"
   | "route_resume"
+  | "follow_output"
   | "message_sent"
   | "jump_to_bottom"
   | "viewport_changed"
@@ -71,7 +72,7 @@ export interface BottomAnchorRouteRequestInput {
 }
 
 export interface BottomAnchorLocalRequestInput {
-  reason: Extract<BottomAnchorRequestReason, "message_sent" | "jump_to_bottom">;
+  reason: Extract<BottomAnchorRequestReason, "follow_output" | "message_sent" | "jump_to_bottom">;
   requestKey: string;
 }
 

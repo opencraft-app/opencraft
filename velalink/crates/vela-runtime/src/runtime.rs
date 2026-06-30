@@ -1,6 +1,10 @@
+use chrono::Utc;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 use tokio::sync::Mutex;
 use vela_backends::{
     BackendAdapter, BackendCancel, BackendCapabilities, BackendProbe, BackendRequestResponse,
@@ -10,6 +14,7 @@ use vela_core::{
     AgentConfig, BackendKind, CanonicalEvent, CommandAck, CommandId, EventId, EventSource,
     EventType, ResolvedAgentConfig, SessionId, TurnId, UserMessageBlock,
 };
+use vela_observability::{ManualLog, ManualSpan, ObservabilityStore, TraceContext};
 use vela_store::{AppendResult, SqliteEventStore};
 
 type EventObserver = Arc<dyn Fn(CanonicalEvent) + Send + Sync>;
@@ -17,8 +22,10 @@ type EventObserver = Arc<dyn Fn(CanonicalEvent) + Send + Sync>;
 pub struct Runtime<B> {
     store: Arc<SqliteEventStore>,
     backend: Arc<B>,
-    running: Arc<Mutex<HashSet<SessionId>>>,
+    running: Arc<Mutex<HashMap<SessionId, TurnId>>>,
+    cancelled_turns: Arc<Mutex<HashSet<TurnId>>>,
     event_observer: Option<EventObserver>,
+    observability: Option<ObservabilityStore>,
 }
 
 impl<B> Clone for Runtime<B> {
@@ -27,7 +34,9 @@ impl<B> Clone for Runtime<B> {
             store: self.store.clone(),
             backend: self.backend.clone(),
             running: self.running.clone(),
+            cancelled_turns: self.cancelled_turns.clone(),
             event_observer: self.event_observer.clone(),
+            observability: self.observability.clone(),
         }
     }
 }
@@ -48,13 +57,20 @@ where
         Self {
             store,
             backend,
-            running: Arc::new(Mutex::new(HashSet::new())),
+            running: Arc::new(Mutex::new(HashMap::new())),
+            cancelled_turns: Arc::new(Mutex::new(HashSet::new())),
             event_observer: None,
+            observability: None,
         }
     }
 
     pub fn with_event_observer(mut self, observer: EventObserver) -> Self {
         self.event_observer = Some(observer);
+        self
+    }
+
+    pub fn with_observability(mut self, observability: ObservabilityStore) -> Self {
+        self.observability = Some(observability);
         self
     }
 
@@ -128,7 +144,8 @@ where
     }
 
     pub async fn send_user_message(&self, input: SendUserMessage) -> anyhow::Result<CommandAck> {
-        self.send_user_message_internal(input, Vec::new()).await
+        self.send_user_message_internal(input, Vec::new(), None)
+            .await
     }
 
     pub async fn send_user_message_with_blocks(
@@ -136,13 +153,33 @@ where
         input: SendUserMessage,
         blocks: Vec<UserMessageBlock>,
     ) -> anyhow::Result<CommandAck> {
-        self.send_user_message_internal(input, blocks).await
+        self.send_user_message_internal(input, blocks, None).await
+    }
+
+    pub async fn send_user_message_with_trace(
+        &self,
+        input: SendUserMessage,
+        trace_context: Option<TraceContext>,
+    ) -> anyhow::Result<CommandAck> {
+        self.send_user_message_internal(input, Vec::new(), trace_context)
+            .await
+    }
+
+    pub async fn send_user_message_with_blocks_and_trace(
+        &self,
+        input: SendUserMessage,
+        blocks: Vec<UserMessageBlock>,
+        trace_context: Option<TraceContext>,
+    ) -> anyhow::Result<CommandAck> {
+        self.send_user_message_internal(input, blocks, trace_context)
+            .await
     }
 
     async fn send_user_message_internal(
         &self,
         input: SendUserMessage,
         blocks: Vec<UserMessageBlock>,
+        trace_context: Option<TraceContext>,
     ) -> anyhow::Result<CommandAck> {
         let session = match self.store.get_session(&input.session_id).await? {
             Some(session) if session.status == "closed" => {
@@ -184,7 +221,7 @@ where
             .command_id
             .clone()
             .unwrap_or_else(|| CommandId::from(input.idempotency_key.clone()));
-        if self.running.lock().await.contains(&input.session_id) {
+        if self.running.lock().await.contains_key(&input.session_id) {
             let queued_message_id = EventId::new().to_string();
             let acceptance = self
                 .store
@@ -223,12 +260,15 @@ where
             return Ok(acceptance.ack());
         }
 
-        self.running.lock().await.insert(input.session_id.clone());
         let resolved_agent_config = ResolvedAgentConfig {
             backend: session.backend,
             config: session.agent_config.clone(),
         };
         let turn_id = TurnId::new();
+        self.running
+            .lock()
+            .await
+            .insert(input.session_id.clone(), turn_id.clone());
         self.store
             .append_event(
                 &input.session_id,
@@ -248,6 +288,7 @@ where
             turn_id,
             session.working_directory.clone(),
             resolved_agent_config,
+            trace_context,
         );
 
         Ok(acceptance.ack())
@@ -261,16 +302,22 @@ where
         turn_id: TurnId,
         working_directory: String,
         resolved_agent_config: ResolvedAgentConfig,
+        trace_context: Option<TraceContext>,
     ) {
         let store = self.store.clone();
         let backend = self.backend.clone();
         let running = self.running.clone();
+        let cancelled_turns = self.cancelled_turns.clone();
         let event_observer = self.event_observer.clone();
+        let observability = self.observability.clone();
         tokio::spawn(async move {
             let backend_source_name = resolved_agent_config.backend.as_str().to_string();
             let backend_session_id = session_id.clone();
             let backend_turn_id = turn_id.clone();
+            let backend_kind = resolved_agent_config.backend;
             let (sink, mut receiver) = backend_output_channel(32);
+            let backend_span_start = Utc::now();
+            let emit_backend_diagnostics = trace_context.is_some();
             let backend_task = tokio::spawn(async move {
                 backend
                     .stream_user_message(
@@ -281,6 +328,7 @@ where
                             turn_id: Some(backend_turn_id),
                             working_directory: Some(working_directory),
                             resolved_agent_config: Some(resolved_agent_config),
+                            emit_diagnostics: emit_backend_diagnostics,
                         },
                         sink,
                     )
@@ -288,12 +336,38 @@ where
             });
             let mut turn_failed = false;
             let mut turn_terminal = false;
+            let mut turn_failure_message: Option<String> = None;
 
             while let Some(output) = receiver.recv().await {
                 match output {
                     Ok(output) => {
+                        if consume_backend_diagnostic_output(
+                            observability.as_ref(),
+                            trace_context.as_ref(),
+                            &session_id,
+                            &backend_source_name,
+                            &turn_id,
+                            &output,
+                        )
+                        .await
+                        {
+                            continue;
+                        }
                         if let Some(output) = normalize_backend_output(output) {
-                            if is_backend_terminal_output(output.event_type) {
+                            let output_event_type = output.event_type;
+                            let output_failure_message = backend_output_failure_message(&output);
+                            if is_cancelled_turn(&cancelled_turns, &turn_id).await {
+                                record_cancelled_turn_output_suppressed_log(
+                                    observability.as_ref(),
+                                    &session_id,
+                                    backend_kind.as_str(),
+                                    &turn_id,
+                                    output_event_type,
+                                )
+                                .await;
+                                continue;
+                            }
+                            if is_backend_terminal_output(output_event_type) {
                                 turn_terminal = true;
                             }
                             if let Err(error) = persist_backend_output(
@@ -305,70 +379,188 @@ where
                             )
                             .await
                             {
+                                let error = format!("failed to append backend output: {error}");
                                 append_turn_failed(
                                     &store,
                                     &event_observer,
                                     &session_id,
                                     &turn_id,
-                                    format!("failed to append backend output: {error}"),
+                                    error.clone(),
                                 )
                                 .await;
                                 turn_failed = true;
+                                turn_failure_message = Some(error);
                                 break;
+                            }
+                            if output_event_type == EventType::TURN_FAILED {
+                                turn_failed = true;
+                                turn_failure_message = output_failure_message;
                             }
                         }
                     }
                     Err(error) => {
+                        let error = error.to_string();
+                        if is_cancelled_turn(&cancelled_turns, &turn_id).await {
+                            record_cancelled_backend_task_suppressed_log(
+                                observability.as_ref(),
+                                &session_id,
+                                backend_kind.as_str(),
+                                &turn_id,
+                                "backend_output_stream",
+                                error,
+                            )
+                            .await;
+                            break;
+                        }
                         append_turn_failed(
                             &store,
                             &event_observer,
                             &session_id,
                             &turn_id,
-                            error.to_string(),
+                            error.clone(),
                         )
                         .await;
                         turn_failed = true;
+                        turn_failure_message = Some(error);
                         break;
                     }
                 }
             }
             drop(receiver);
 
+            let turn_cancelled = is_cancelled_turn(&cancelled_turns, &turn_id).await;
             match backend_task.await {
+                Ok(Ok(())) if turn_cancelled => {
+                    record_backend_span(
+                        observability.as_ref(),
+                        trace_context.as_ref(),
+                        &session_id,
+                        backend_kind.as_str(),
+                        &turn_id,
+                        backend_span_start,
+                        true,
+                        None,
+                    )
+                    .await;
+                }
                 Ok(Ok(())) if !turn_failed && !turn_terminal => {
+                    let error = "backend completed without a terminal turn event".to_string();
                     append_turn_failed(
                         &store,
                         &event_observer,
                         &session_id,
                         &turn_id,
-                        "backend completed without a terminal turn event".to_string(),
+                        error.clone(),
+                    )
+                    .await;
+                    record_backend_span(
+                        observability.as_ref(),
+                        trace_context.as_ref(),
+                        &session_id,
+                        backend_kind.as_str(),
+                        &turn_id,
+                        backend_span_start,
+                        false,
+                        Some(error),
                     )
                     .await;
                 }
-                Ok(Ok(())) => {}
-                Ok(Err(error)) if !turn_failed => {
-                    append_turn_failed(
-                        &store,
-                        &event_observer,
+                Ok(Ok(())) => {
+                    record_backend_span(
+                        observability.as_ref(),
+                        trace_context.as_ref(),
                         &session_id,
+                        backend_kind.as_str(),
                         &turn_id,
+                        backend_span_start,
+                        !turn_failed,
+                        turn_failure_message.clone(),
+                    )
+                    .await;
+                }
+                Ok(Err(error)) if turn_cancelled => {
+                    record_backend_span(
+                        observability.as_ref(),
+                        trace_context.as_ref(),
+                        &session_id,
+                        backend_kind.as_str(),
+                        &turn_id,
+                        backend_span_start,
+                        true,
+                        None,
+                    )
+                    .await;
+                    record_cancelled_backend_task_suppressed_log(
+                        observability.as_ref(),
+                        &session_id,
+                        backend_kind.as_str(),
+                        &turn_id,
+                        "backend_task",
                         error.to_string(),
                     )
                     .await;
                 }
-                Err(error) if !turn_failed => {
-                    append_turn_failed(
-                        &store,
-                        &event_observer,
+                Ok(Err(error)) => {
+                    let error = error.to_string();
+                    record_backend_span(
+                        observability.as_ref(),
+                        trace_context.as_ref(),
                         &session_id,
+                        backend_kind.as_str(),
                         &turn_id,
+                        backend_span_start,
+                        false,
+                        Some(error.clone()),
+                    )
+                    .await;
+                    if !turn_failed {
+                        append_turn_failed(&store, &event_observer, &session_id, &turn_id, error)
+                            .await;
+                    }
+                }
+                Err(error) if turn_cancelled => {
+                    record_backend_span(
+                        observability.as_ref(),
+                        trace_context.as_ref(),
+                        &session_id,
+                        backend_kind.as_str(),
+                        &turn_id,
+                        backend_span_start,
+                        true,
+                        None,
+                    )
+                    .await;
+                    record_cancelled_backend_task_suppressed_log(
+                        observability.as_ref(),
+                        &session_id,
+                        backend_kind.as_str(),
+                        &turn_id,
+                        "backend_task_join",
                         error.to_string(),
                     )
                     .await;
                 }
-                Ok(Err(_)) | Err(_) => {}
+                Err(error) => {
+                    let error = error.to_string();
+                    record_backend_span(
+                        observability.as_ref(),
+                        trace_context.as_ref(),
+                        &session_id,
+                        backend_kind.as_str(),
+                        &turn_id,
+                        backend_span_start,
+                        false,
+                        Some(error.clone()),
+                    )
+                    .await;
+                    if !turn_failed {
+                        append_turn_failed(&store, &event_observer, &session_id, &turn_id, error)
+                            .await;
+                    }
+                }
             }
-            running.lock().await.remove(&session_id);
+            remove_running_turn(&running, &session_id, &turn_id).await;
+            cancelled_turns.lock().await.remove(&turn_id);
         });
     }
 
@@ -381,7 +573,7 @@ where
     }
 
     pub async fn is_session_running(&self, session_id: &SessionId) -> bool {
-        self.running.lock().await.contains(session_id)
+        self.running.lock().await.contains_key(session_id)
     }
 
     pub async fn probe_backend(
@@ -399,6 +591,7 @@ where
     }
 
     pub async fn cancel_backend(&self, session_id: &SessionId) -> anyhow::Result<()> {
+        let active_turn_id = self.running.lock().await.get(session_id).cloned();
         let backend = self
             .store
             .get_session(session_id)
@@ -409,7 +602,20 @@ where
                 session_id: session_id.to_string(),
                 backend,
             })
-            .await
+            .await?;
+        if let Some(turn_id) = active_turn_id {
+            self.cancelled_turns.lock().await.insert(turn_id.clone());
+            remove_running_turn(&self.running, session_id, &turn_id).await;
+            append_turn_cancelled(&self.store, &self.event_observer, session_id, &turn_id).await;
+            record_turn_cancelled_log(
+                self.observability.as_ref(),
+                session_id,
+                backend.map(BackendKind::as_str),
+                &turn_id,
+            )
+            .await;
+        }
+        Ok(())
     }
 
     pub async fn respond_to_request(
@@ -506,6 +712,24 @@ async fn persist_backend_output(
     Ok(())
 }
 
+async fn is_cancelled_turn(
+    cancelled_turns: &Arc<Mutex<HashSet<TurnId>>>,
+    turn_id: &TurnId,
+) -> bool {
+    cancelled_turns.lock().await.contains(turn_id)
+}
+
+async fn remove_running_turn(
+    running: &Arc<Mutex<HashMap<SessionId, TurnId>>>,
+    session_id: &SessionId,
+    turn_id: &TurnId,
+) {
+    let mut running = running.lock().await;
+    if running.get(session_id) == Some(turn_id) {
+        running.remove(session_id);
+    }
+}
+
 fn is_backend_lifecycle_noise(event_type: EventType) -> bool {
     event_type == EventType::TURN_STARTED
 }
@@ -515,6 +739,18 @@ fn is_backend_terminal_output(event_type: EventType) -> bool {
         event_type,
         EventType::TURN_COMPLETED | EventType::TURN_FAILED | EventType::TURN_CANCELLED
     )
+}
+
+fn backend_output_failure_message(output: &vela_backends::BackendOutput) -> Option<String> {
+    if output.event_type != EventType::TURN_FAILED {
+        return None;
+    }
+    output
+        .payload
+        .get("error")
+        .and_then(Value::as_str)
+        .or_else(|| output.payload.get("message").and_then(Value::as_str))
+        .map(str::to_string)
 }
 
 fn is_backend_output_allowed(event_type: EventType) -> bool {
@@ -565,6 +801,248 @@ async fn append_turn_failed(
     {
         publish_event(event_observer, append.event);
     }
+}
+
+async fn append_turn_cancelled(
+    store: &SqliteEventStore,
+    event_observer: &Option<EventObserver>,
+    session_id: &SessionId,
+    turn_id: &TurnId,
+) {
+    if let Ok(append) = store
+        .append_event(
+            session_id,
+            EventType::TURN_CANCELLED,
+            EventSource::runtime("vela-runtime"),
+            json!({
+                "turn_id": turn_id,
+                "reason": "cancel_accepted",
+            }),
+            None,
+        )
+        .await
+    {
+        publish_event(event_observer, append.event);
+    }
+}
+
+async fn record_turn_cancelled_log(
+    observability: Option<&ObservabilityStore>,
+    session_id: &SessionId,
+    backend: Option<&str>,
+    turn_id: &TurnId,
+) {
+    let Some(observability) = observability else {
+        return;
+    };
+    let _ = observability
+        .record_log(ManualLog {
+            trace_id: None,
+            span_id: None,
+            severity: Some("INFO".to_string()),
+            body: Some("Runtime terminalized cancelled turn".to_string()),
+            session_id: Some(session_id.as_str().to_string()),
+            backend: backend.map(str::to_string),
+            error_message: None,
+            attributes: json!({
+                "vela.operation": "vela.turn.lifecycle.cancel_terminalized",
+                "vela.session_id": session_id.as_str(),
+                "vela.turn_id": turn_id.as_str(),
+                "vela.turn.terminal_event": EventType::TURN_CANCELLED.0,
+            }),
+            raw: json!({
+                "source": "vela-runtime",
+                "event": "turn_cancel_terminalized",
+            }),
+        })
+        .await;
+}
+
+async fn record_cancelled_turn_output_suppressed_log(
+    observability: Option<&ObservabilityStore>,
+    session_id: &SessionId,
+    backend: &str,
+    turn_id: &TurnId,
+    event_type: EventType,
+) {
+    let Some(observability) = observability else {
+        return;
+    };
+    let _ = observability
+        .record_log(ManualLog {
+            trace_id: None,
+            span_id: None,
+            severity: Some("WARN".to_string()),
+            body: Some("Suppressed backend output after turn cancellation".to_string()),
+            session_id: Some(session_id.as_str().to_string()),
+            backend: Some(backend.to_string()),
+            error_message: None,
+            attributes: json!({
+                "vela.operation": "vela.turn.lifecycle.late_backend_output_suppressed",
+                "vela.session_id": session_id.as_str(),
+                "vela.turn_id": turn_id.as_str(),
+                "vela.backend.event_type": event_type.0,
+            }),
+            raw: json!({
+                "source": "vela-runtime",
+                "event": "late_backend_output_suppressed",
+            }),
+        })
+        .await;
+}
+
+async fn record_cancelled_backend_task_suppressed_log(
+    observability: Option<&ObservabilityStore>,
+    session_id: &SessionId,
+    backend: &str,
+    turn_id: &TurnId,
+    stage: &str,
+    error: String,
+) {
+    let Some(observability) = observability else {
+        return;
+    };
+    let _ = observability
+        .record_log(ManualLog {
+            trace_id: None,
+            span_id: None,
+            severity: Some("WARN".to_string()),
+            body: Some("Suppressed backend task error after turn cancellation".to_string()),
+            session_id: Some(session_id.as_str().to_string()),
+            backend: Some(backend.to_string()),
+            error_message: Some(error.clone()),
+            attributes: json!({
+                "vela.operation": "vela.turn.lifecycle.cancelled_backend_task_suppressed",
+                "vela.session_id": session_id.as_str(),
+                "vela.turn_id": turn_id.as_str(),
+                "vela.backend.stage": stage,
+            }),
+            raw: json!({
+                "source": "vela-runtime",
+                "event": "cancelled_backend_task_suppressed",
+                "error": error,
+            }),
+        })
+        .await;
+}
+
+async fn record_backend_span(
+    observability: Option<&ObservabilityStore>,
+    trace_context: Option<&TraceContext>,
+    session_id: &SessionId,
+    backend: &str,
+    turn_id: &TurnId,
+    start_time: chrono::DateTime<Utc>,
+    ok: bool,
+    error_message: Option<String>,
+) {
+    let (Some(observability), Some(trace)) = (observability, trace_context) else {
+        return;
+    };
+    let _ = observability
+        .record_span(ManualSpan {
+            trace: trace.clone(),
+            parent_span_id: None,
+            name: "velad.backend.send".to_string(),
+            start_time,
+            end_time: Utc::now(),
+            status_code: Some(if ok { "OK" } else { "ERROR" }.to_string()),
+            status_message: error_message.clone(),
+            session_id: Some(session_id.as_str().to_string()),
+            backend: Some(backend.to_string()),
+            error_message,
+            attributes: json!({
+                "velad.session_id": session_id.as_str(),
+                "velad.backend": backend,
+                "velad.turn_id": turn_id,
+            }),
+        })
+        .await;
+}
+
+async fn consume_backend_diagnostic_output(
+    observability: Option<&ObservabilityStore>,
+    trace_context: Option<&TraceContext>,
+    session_id: &SessionId,
+    backend: &str,
+    turn_id: &TurnId,
+    output: &vela_backends::BackendOutput,
+) -> bool {
+    if output.event_type != EventType::WARNING_RAISED
+        || output.payload.get("code").and_then(Value::as_str) != Some("codex_app_server_trace")
+    {
+        return false;
+    }
+
+    let (Some(observability), Some(trace)) = (observability, trace_context) else {
+        return true;
+    };
+    let name = output
+        .payload
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("codex.app_server");
+    let duration_ms = output
+        .payload
+        .get("duration_ms")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0)
+        .max(0.0);
+    let end_time = Utc::now();
+    let start_time =
+        end_time - chrono::Duration::microseconds((duration_ms * 1_000.0).round() as i64);
+    let status_code = output
+        .payload
+        .get("status_code")
+        .and_then(Value::as_str)
+        .unwrap_or("UNSET")
+        .to_string();
+    let error_message = output
+        .payload
+        .get("error_message")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let mut attributes = output
+        .payload
+        .get("attributes")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    attributes.insert(
+        "velad.session_id".to_string(),
+        Value::String(session_id.as_str().to_string()),
+    );
+    attributes.insert(
+        "velad.backend".to_string(),
+        Value::String(backend.to_string()),
+    );
+    attributes.insert(
+        "velad.turn_id".to_string(),
+        Value::String(turn_id.to_string()),
+    );
+    if let Some(method) = output.payload.get("method").and_then(Value::as_str) {
+        attributes.insert(
+            "codex.method".to_string(),
+            Value::String(method.to_string()),
+        );
+    }
+
+    let _ = observability
+        .record_span(ManualSpan {
+            trace: trace.clone(),
+            parent_span_id: None,
+            name: name.to_string(),
+            start_time,
+            end_time,
+            status_code: Some(status_code.clone()),
+            status_message: error_message.clone(),
+            session_id: Some(session_id.as_str().to_string()),
+            backend: Some(backend.to_string()),
+            error_message: error_message.filter(|_| status_code == "ERROR"),
+            attributes: Value::Object(attributes),
+        })
+        .await;
+    true
 }
 
 fn publish_event(event_observer: &Option<EventObserver>, event: CanonicalEvent) {

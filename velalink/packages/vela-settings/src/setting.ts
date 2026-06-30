@@ -12,6 +12,7 @@ export interface VelaSetting<T> {
   control: VelaSettingControl;
   description?: string;
   id: string;
+  inputType?: "password" | "text" | "url";
   load: () => Promise<T> | T;
   options?: Array<VelaSettingOption<T>>;
   save?: (value: T) => Promise<void> | void;
@@ -28,4 +29,3 @@ export interface VelaSettingState<T> {
   status: VelaSettingStatus;
   value: T | undefined;
 }
-

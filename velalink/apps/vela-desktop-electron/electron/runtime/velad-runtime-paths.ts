@@ -10,6 +10,8 @@ export function bundledVeladPath(resourcesPath: string) {
   const binaryName = process.platform === "win32" ? "velad.exe" : "velad";
   const packagedPath = join(resourcesPath, "bin", binaryName);
   if (existsSync(packagedPath)) return packagedPath;
+  const devPath = join(process.cwd(), "..", "..", "target", "debug", binaryName);
+  if (existsSync(devPath)) return devPath;
   return null;
 }
 
@@ -24,6 +26,7 @@ export function bundledVeladDatabaseUrl(host: RuntimePathHost, configuredDatabas
 export function desktopRuntimeEnv(host: RuntimePathHost, baseEnv: NodeJS.ProcessEnv) {
   const home = baseEnv.HOME ?? host.getPath("home");
   const pathEntries = [
+    baseEnv.PATH ?? "",
     join(home, ".local", "bin"),
     join(home, ".bun", "bin"),
     "/opt/homebrew/bin",
@@ -33,7 +36,6 @@ export function desktopRuntimeEnv(host: RuntimePathHost, baseEnv: NodeJS.Process
     "/bin",
     "/usr/sbin",
     "/sbin",
-    baseEnv.PATH ?? "",
   ].filter(Boolean);
   return {
     ...baseEnv,

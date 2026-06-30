@@ -9,7 +9,6 @@ Do not:
 
 Depends on:
 - `primitives/prompt-input`
-- `hooks`
 - `styles`
 
 Used by:

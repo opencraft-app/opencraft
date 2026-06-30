@@ -175,19 +175,21 @@ needs a scroll action, it should use `ConversationViewportHandle`.
 
 The workbench owns visual reveal, not scroll truth.
 
-`ChatWorkbenchView` may mount a candidate conversation before it is safe to show
-it. This is intentional: the scroll controller still needs a real DOM tree to
-measure, restore a saved route offset, and confirm layout. The candidate is
-only revealed when both conditions are true:
+`ChatWorkbenchView` may mount a candidate conversation before route scroll is
+safe to show. This is intentional: the scroll controller still needs a real DOM
+tree to measure, restore a saved route offset, and confirm layout.
 
-- the read model history is authoritative (`historyPhase === "ready"`)
-- the route scroll resume is no longer pending
+History hydration and route measurement are separate states. During
+`historyPhase === "hydrating_history"`, the active session conversation may
+remain visible under the hydration overlay so tab switches do not become a blank
+page. During `historyPhase === "ready"`, the candidate is revealed only after
+route scroll resume has initialized and no bottom-anchor work is pending.
 
-While either condition is false, the candidate conversation remains mounted for
-measurement but is marked as `data-conversation-reveal-state="measuring"` and
-hidden from both pixels and accessibility. This prevents one-frame leaks where a
-tail-only page or an un-restored route flashes before the final scroll position
-settles.
+While route scroll is not settled in the ready phase, the candidate conversation
+remains mounted for measurement but is marked as
+`data-conversation-reveal-state="measuring"` and hidden from both pixels and
+accessibility. This prevents one-frame leaks where an un-restored route flashes
+before the final scroll position settles.
 
 Do not solve presentation flashes by moving session data into extra
 `presentedModel` state in the controller. The controller owns data readiness;

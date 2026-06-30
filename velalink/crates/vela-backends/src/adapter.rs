@@ -41,6 +41,7 @@ pub struct BackendSend {
     pub turn_id: Option<TurnId>,
     pub working_directory: Option<String>,
     pub resolved_agent_config: Option<ResolvedAgentConfig>,
+    pub emit_diagnostics: bool,
 }
 
 impl BackendSend {
@@ -53,6 +54,7 @@ impl BackendSend {
             turn_id: None,
             working_directory: None,
             resolved_agent_config: None,
+            emit_diagnostics: false,
         }
     }
 }

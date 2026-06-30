@@ -12,6 +12,7 @@ import {
 import {
   useConversationScrollController,
   type ConversationScrollControllerDebug,
+  type ConversationScrollLifecycleEvent,
 } from "../../conversation-runtime/scroll/useConversationScrollController";
 import type { ConversationViewportHandle } from "../../conversation-runtime/scroll/viewportHandle";
 import { useConversationScrollbarOverlay } from "../../conversation-runtime/scrollbar/useConversationScrollbarOverlay";
@@ -23,22 +24,24 @@ export const VelaConversation = forwardRef<ConversationViewportHandle, {
   webModel: WebChatModel;
   canLoadOlder?: boolean;
   clientStateStore?: VelaClientStateStore | null;
+  followOutputToken?: number;
   isHistoryReady?: boolean;
   isLoadingOlder?: boolean;
-  messageFollowToken?: number;
   onLoadOlder?: () => void;
+  onScrollLifecycleEvent?: (event: ConversationScrollLifecycleEvent) => void;
   onScrollDebugChange?: (debug: ConversationScrollControllerDebug) => void;
 }>(function VelaConversation({
   webModel,
   canLoadOlder = false,
   clientStateStore = null,
+  followOutputToken,
   isHistoryReady = true,
   isLoadingOlder = false,
-  messageFollowToken,
   onLoadOlder,
+  onScrollLifecycleEvent,
   onScrollDebugChange,
 }, ref) {
-  const previousMessageFollowTokenRef = useRef(messageFollowToken);
+  const previousFollowOutputTokenRef = useRef(followOutputToken);
   const items = useMemo(
     () => buildConversationStreamItems(webModel.turns),
     [webModel.turns],
@@ -61,6 +64,7 @@ export const VelaConversation = forwardRef<ConversationViewportHandle, {
     historyStartKey: webModel.sessionId,
     isHistoryReady,
     isLoadingOlderHistory: isLoadingOlder,
+    onLifecycleEvent: onScrollLifecycleEvent,
     onNearHistoryStart: onLoadOlder,
     transportKey: segments.boundary.hasVirtualizedHistory
       ? "web-partial-virtualized"
@@ -77,11 +81,11 @@ export const VelaConversation = forwardRef<ConversationViewportHandle, {
   }, [onScrollDebugChange, scroll.debug]);
 
   useEffect(() => {
-    if (messageFollowToken === undefined) return;
-    if (previousMessageFollowTokenRef.current === messageFollowToken) return;
-    previousMessageFollowTokenRef.current = messageFollowToken;
-    scroll.requestBottomAnchor("message_sent");
-  }, [messageFollowToken, scroll.requestBottomAnchor]);
+    if (followOutputToken === undefined) return;
+    if (previousFollowOutputTokenRef.current === followOutputToken) return;
+    previousFollowOutputTokenRef.current = followOutputToken;
+    scroll.requestBottomAnchor("follow_output");
+  }, [followOutputToken, scroll.requestBottomAnchor]);
 
   useImperativeHandle(
     ref,

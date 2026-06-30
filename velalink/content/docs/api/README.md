@@ -11,4 +11,6 @@ Start with:
 
 - `client-contract.mdx`: how external clients should combine Backend discovery, SessionView, ConversationView, requests, and input commands.
 - `openapi.mdx`: source-of-truth rules and Scalar reference.
+- `openapi-design.mdx`: schema, naming, layering, and evolution rules for the OpenAPI contract.
+- `tool-streams.mdx`: canonical tool call/output stream model and ConversationView projection boundary.
 - `sessions.mdx`, `backends.mdx`, `input-events.mdx`, `ui-read-models.mdx`: endpoint behavior and boundaries.

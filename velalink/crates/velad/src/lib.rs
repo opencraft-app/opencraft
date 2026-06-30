@@ -1,4 +1,10 @@
-use std::{convert::Infallible, sync::Arc};
+use std::{
+    collections::HashMap,
+    convert::Infallible,
+    env, fs,
+    path::{Path as FsPath, PathBuf},
+    sync::Arc,
+};
 
 use axum::{
     Json, Router,
@@ -11,7 +17,7 @@ use axum::{
     routing::{get, patch, post},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use futures::{StreamExt, stream};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -20,10 +26,12 @@ use tokio::sync::broadcast;
 use tower_http::cors::{Any, CorsLayer};
 use vela_backends::BackendAdapter;
 use vela_core::{
-    AcceptedCommandAck, AgentConfig, AgentConfigPatch, BackendFeature, BackendKind, BackendModel,
-    BlobRef, CanonicalEvent, CommandAck, CommandId, ConversationItemKind, EventCursor, EventId,
-    EventSource, EventType, PermissionMode, PermissionModeOption, ReasoningEffortOption,
-    RejectedCommandAck, SessionId, SourceEventRange, UserMessageBlock,
+    AcceptedCommandAck, AgentConfig, AgentConfigPatch, BackendKind, BlobRef, CanonicalEvent,
+    CommandAck, CommandId, ConversationItemKind, EventCursor, EventId, EventSource, EventType,
+    PermissionMode, RejectedCommandAck, SessionId, SourceEventRange, UserMessageBlock,
+};
+use vela_observability::{
+    ManualLog, ManualSpan, ObservabilityStore, TraceContext, parse_traceparent,
 };
 use vela_projection::{
     ConversationWindowDirection, ConversationWindowError, ConversationWindowQuery,
@@ -32,12 +40,28 @@ use vela_projection::{
 use vela_runtime::{Runtime, SendUserMessage};
 use vela_store::{SqliteEventStore, StoredSession};
 
+mod backend_snapshot;
+mod backend_usage;
+pub mod local_runtime;
+pub mod runtime_targets;
+
 pub struct ApiState<B> {
     store: Arc<SqliteEventStore>,
     runtime: Runtime<B>,
     events: broadcast::Sender<CanonicalEvent>,
     default_session_model: Option<String>,
     configured_backends: Vec<ConfiguredBackend>,
+    backend_usage: backend_usage::BackendUsageService,
+    backend_settings_updater: Option<Arc<dyn BackendSettingsUpdater>>,
+    node_secret_store: Arc<dyn runtime_targets::NodeSecretStore>,
+    runtime_target_manager: Arc<runtime_targets::RuntimeTargetManager>,
+    local_runtime: Option<local_runtime::LocalRuntimeState>,
+    shutdown_tx: Option<tokio::sync::watch::Sender<bool>>,
+    observability: Option<ObservabilityStore>,
+}
+
+pub trait BackendSettingsUpdater: Send + Sync {
+    fn update_vela_engine(&self, settings: VelaEngineBackendSettings);
 }
 
 impl<B> Clone for ApiState<B> {
@@ -48,6 +72,13 @@ impl<B> Clone for ApiState<B> {
             events: self.events.clone(),
             default_session_model: self.default_session_model.clone(),
             configured_backends: self.configured_backends.clone(),
+            backend_usage: self.backend_usage.clone(),
+            backend_settings_updater: self.backend_settings_updater.clone(),
+            node_secret_store: self.node_secret_store.clone(),
+            runtime_target_manager: self.runtime_target_manager.clone(),
+            local_runtime: self.local_runtime.clone(),
+            shutdown_tx: self.shutdown_tx.clone(),
+            observability: self.observability.clone(),
         }
     }
 }
@@ -58,6 +89,13 @@ struct ConfiguredBackend {
     engine_kind: BackendKind,
     display_name: &'static str,
     default_model: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct VelaEngineBackendSettings {
+    pub endpoint: String,
+    pub api_key: String,
+    pub model: String,
 }
 
 impl ConfiguredBackend {
@@ -89,6 +127,13 @@ where
                 display_name: "PiCoding Agent",
                 default_model: None,
             }],
+            backend_usage: backend_usage::BackendUsageService::default(),
+            backend_settings_updater: None,
+            node_secret_store: Arc::new(runtime_targets::KeyringNodeSecretStore::default()),
+            runtime_target_manager: Arc::new(runtime_targets::RuntimeTargetManager::default()),
+            local_runtime: None,
+            shutdown_tx: None,
+            observability: None,
         }
     }
 
@@ -106,7 +151,6 @@ where
     }
 
     pub fn with_codex_backend(mut self, default_model: Option<String>) -> Self {
-        let default_model = default_model.or_else(|| Some("gpt-5.3-codex-spark".to_string()));
         if let Some(backend) = self
             .configured_backends
             .iter_mut()
@@ -119,6 +163,42 @@ where
             kind: "codex",
             engine_kind: BackendKind::Codex,
             display_name: "Codex",
+            default_model,
+        });
+        self
+    }
+
+    pub fn with_tcodex_backend(mut self, default_model: Option<String>) -> Self {
+        if let Some(backend) = self
+            .configured_backends
+            .iter_mut()
+            .find(|backend| backend.kind == "tcodex")
+        {
+            backend.default_model = default_model;
+            return self;
+        }
+        self.configured_backends.push(ConfiguredBackend {
+            kind: "tcodex",
+            engine_kind: BackendKind::Tcodex,
+            display_name: "TCodex",
+            default_model,
+        });
+        self
+    }
+
+    pub fn with_vela_engine_backend(mut self, default_model: Option<String>) -> Self {
+        if let Some(backend) = self
+            .configured_backends
+            .iter_mut()
+            .find(|backend| backend.kind == "vela_engine")
+        {
+            backend.default_model = default_model;
+            return self;
+        }
+        self.configured_backends.push(ConfiguredBackend {
+            kind: "vela_engine",
+            engine_kind: BackendKind::VelaEngine,
+            display_name: "Vela 内置引擎",
             default_model,
         });
         self
@@ -139,6 +219,55 @@ where
             display_name: "Hermes ACP",
             default_model,
         });
+        self
+    }
+
+    pub fn with_backend_settings_updater(
+        mut self,
+        updater: Arc<dyn BackendSettingsUpdater>,
+    ) -> Self {
+        self.backend_settings_updater = Some(updater);
+        self
+    }
+
+    pub fn with_node_secret_store(
+        mut self,
+        secret_store: Arc<dyn runtime_targets::NodeSecretStore>,
+    ) -> Self {
+        self.node_secret_store = secret_store;
+        self
+    }
+
+    pub fn with_runtime_target_manager(
+        mut self,
+        manager: Arc<runtime_targets::RuntimeTargetManager>,
+    ) -> Self {
+        self.runtime_target_manager = manager;
+        self
+    }
+
+    pub fn with_local_runtime(
+        mut self,
+        local_runtime: local_runtime::LocalRuntimeState,
+        shutdown_tx: tokio::sync::watch::Sender<bool>,
+    ) -> Self {
+        self.local_runtime = Some(local_runtime);
+        self.shutdown_tx = Some(shutdown_tx);
+        self
+    }
+
+    pub fn with_observability(mut self, observability: ObservabilityStore) -> Self {
+        self.observability = Some(observability);
+        self
+    }
+
+    #[doc(hidden)]
+    pub fn with_backend_usage_test_context(
+        mut self,
+        env: HashMap<String, String>,
+        home_dir: Option<PathBuf>,
+    ) -> Self {
+        self.backend_usage = backend_usage::BackendUsageService::with_codex_context(env, home_dir);
         self
     }
 
@@ -234,7 +363,46 @@ where
         .route("/api/v1/requests/{request_id}", get(get_request::<B>))
         .route("/api/v1/backends", get(list_backends::<B>))
         .route("/api/v1/backends/{backend}", get(get_backend::<B>))
+        .route(
+            "/api/v1/backends/{backend}/usage",
+            get(get_backend_usage::<B>),
+        )
         .route("/api/v1/backends/{backend}/probe", post(probe_backend::<B>))
+        .route(
+            "/api/v1/backends/{backend}/settings",
+            get(get_backend_settings::<B>).patch(patch_backend_settings::<B>),
+        )
+        .route(
+            "/api/v1/backends/{backend}/skills",
+            get(list_backend_skills::<B>),
+        )
+        .route("/api/v1/node-providers", get(list_node_providers::<B>))
+        .route("/api/v1/nodes", get(list_nodes::<B>).post(create_node::<B>))
+        .route("/api/v1/runtime-targets", get(list_runtime_targets::<B>))
+        .route(
+            "/api/v1/runtime-targets/{target_id}/connect",
+            post(connect_runtime_target::<B>),
+        )
+        .route(
+            "/api/v1/runtime-targets/{target_id}/disconnect",
+            post(disconnect_runtime_target::<B>),
+        )
+        .route("/api/v1/runtime-info", get(get_runtime_info::<B>))
+        .route("/api/v1/runtime/shutdown", post(shutdown_runtime::<B>))
+        .route("/v1/traces", post(post_otlp_traces::<B>))
+        .route("/v1/logs", post(post_otlp_logs::<B>))
+        .route(
+            "/api/v1/observability/status",
+            get(get_observability_status::<B>),
+        )
+        .route(
+            "/api/v1/observability/recent-errors",
+            get(get_observability_recent_errors::<B>),
+        )
+        .route(
+            "/api/v1/observability/traces/{trace_id}",
+            get(get_observability_trace::<B>),
+        )
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
@@ -262,6 +430,238 @@ struct SendSessionEventsRequest {
     options: Option<Value>,
 }
 
+async fn get_runtime_info<B>(State(state): State<ApiState<B>>) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    match state.local_runtime {
+        Some(runtime) => Json(runtime.info).into_response(),
+        None => error(
+            StatusCode::NOT_FOUND,
+            "runtime_info_unavailable",
+            "local runtime information is not configured",
+        ),
+    }
+}
+
+async fn shutdown_runtime<B>(State(state): State<ApiState<B>>, headers: HeaderMap) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let Some(runtime) = state.local_runtime else {
+        return error(
+            StatusCode::FORBIDDEN,
+            "runtime_shutdown_unavailable",
+            "runtime shutdown requires a management token",
+        );
+    };
+    let Some(expected_token) = runtime.management_token.as_deref() else {
+        return error(
+            StatusCode::FORBIDDEN,
+            "runtime_shutdown_unavailable",
+            "runtime shutdown requires a management token",
+        );
+    };
+    if bearer_token(&headers) != Some(expected_token) {
+        return error(
+            StatusCode::FORBIDDEN,
+            "runtime_shutdown_forbidden",
+            "invalid runtime management token",
+        );
+    }
+    let Some(shutdown_tx) = state.shutdown_tx else {
+        return error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "runtime_shutdown_unavailable",
+            "runtime shutdown trigger is not configured",
+        );
+    };
+    let _ = shutdown_tx.send(true);
+    Json(json!({ "accepted": true })).into_response()
+}
+
+fn bearer_token(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get("authorization")?
+        .to_str()
+        .ok()?
+        .strip_prefix("Bearer ")
+}
+
+fn trace_context_from_headers(headers: &HeaderMap) -> Option<TraceContext> {
+    headers
+        .get("traceparent")?
+        .to_str()
+        .ok()
+        .and_then(parse_traceparent)
+}
+
+async fn record_velad_span<B>(
+    state: &ApiState<B>,
+    trace_context: Option<&TraceContext>,
+    name: &str,
+    start_time: chrono::DateTime<Utc>,
+    ok: bool,
+    session_id: Option<&str>,
+    backend: Option<&str>,
+    error_message: Option<String>,
+    attributes: Value,
+) where
+    B: BackendAdapter + 'static,
+{
+    let (Some(observability), Some(trace)) = (state.observability.as_ref(), trace_context) else {
+        return;
+    };
+    let _ = observability
+        .record_span(ManualSpan {
+            trace: trace.clone(),
+            parent_span_id: None,
+            name: name.to_string(),
+            start_time,
+            end_time: Utc::now(),
+            status_code: Some(if ok { "OK" } else { "ERROR" }.to_string()),
+            status_message: error_message.clone(),
+            session_id: session_id.map(str::to_string),
+            backend: backend.map(str::to_string),
+            error_message,
+            attributes,
+        })
+        .await;
+}
+
+fn command_ack_error_message(ack: &CommandAck) -> String {
+    match ack {
+        CommandAck::Rejected(rejected) => rejected.message.clone(),
+        CommandAck::Accepted(_) | CommandAck::Queued(_) => "command did not succeed".to_string(),
+    }
+}
+
+async fn post_otlp_traces<B>(
+    State(state): State<ApiState<B>>,
+    body: Result<Json<Value>, JsonRejection>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let Some(observability) = state.observability else {
+        return observability_unavailable();
+    };
+    let payload = match body {
+        Ok(Json(payload)) => payload,
+        Err(err) => return invalid_request(format!("invalid OTLP JSON traces payload: {err}")),
+    };
+    match observability.ingest_traces(payload).await {
+        Ok(summary) => Json(summary).into_response(),
+        Err(err) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "observability_ingest_failed",
+            err.to_string(),
+        ),
+    }
+}
+
+async fn post_otlp_logs<B>(
+    State(state): State<ApiState<B>>,
+    body: Result<Json<Value>, JsonRejection>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let Some(observability) = state.observability else {
+        return observability_unavailable();
+    };
+    let payload = match body {
+        Ok(Json(payload)) => payload,
+        Err(err) => return invalid_request(format!("invalid OTLP JSON logs payload: {err}")),
+    };
+    match observability.ingest_logs(payload).await {
+        Ok(summary) => Json(summary).into_response(),
+        Err(err) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "observability_ingest_failed",
+            err.to_string(),
+        ),
+    }
+}
+
+async fn get_observability_status<B>(State(state): State<ApiState<B>>) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let Some(observability) = state.observability else {
+        return observability_unavailable();
+    };
+    match observability.status().await {
+        Ok(status) => Json(status).into_response(),
+        Err(err) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "observability_query_failed",
+            err.to_string(),
+        ),
+    }
+}
+
+async fn get_observability_recent_errors<B>(
+    State(state): State<ApiState<B>>,
+    query: Result<Query<ObservabilityErrorsQuery>, QueryRejection>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let Some(observability) = state.observability else {
+        return observability_unavailable();
+    };
+    let query = match parsed_query(query) {
+        Ok(query) => query,
+        Err(response) => return response,
+    };
+    let limit = match validated_limit(query.limit) {
+        Ok(limit) => limit.unwrap_or(50),
+        Err(response) => return response,
+    };
+    match observability.recent_errors(limit).await {
+        Ok(errors) => Json(json!({ "errors": errors })).into_response(),
+        Err(err) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "observability_query_failed",
+            err.to_string(),
+        ),
+    }
+}
+
+async fn get_observability_trace<B>(
+    State(state): State<ApiState<B>>,
+    Path(trace_id): Path<String>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let Some(observability) = state.observability else {
+        return observability_unavailable();
+    };
+    match observability.trace_detail(&trace_id).await {
+        Ok(Some(trace)) => Json(trace).into_response(),
+        Ok(None) => error(
+            StatusCode::NOT_FOUND,
+            "observability_trace_not_found",
+            "trace does not exist",
+        ),
+        Err(err) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "observability_query_failed",
+            err.to_string(),
+        ),
+    }
+}
+
+fn observability_unavailable() -> Response {
+    error(
+        StatusCode::NOT_FOUND,
+        "observability_unavailable",
+        "local observability store is not configured",
+    )
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 struct ClientInputEvent {
     #[serde(rename = "type")]
@@ -281,6 +681,10 @@ struct InputPart {
     text: Option<String>,
     uri: Option<String>,
     data: Option<String>,
+    name: Option<String>,
+    path: Option<String>,
+    protocol: Option<String>,
+    backend: Option<BackendKindWire>,
     #[serde(alias = "mimeType")]
     mime_type: Option<String>,
 }
@@ -334,6 +738,18 @@ struct TraceQuery {
     limit: Option<usize>,
 }
 
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ObservabilityErrorsQuery {
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BackendSkillsQuery {
+    cwd: Option<String>,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 enum ViewWindowDirection {
@@ -343,10 +759,12 @@ enum ViewWindowDirection {
     Around,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum BackendKindWire {
+    VelaEngine,
     Codex,
+    Tcodex,
     Cloudagent,
     ClaudeCode,
     Pi,
@@ -358,7 +776,9 @@ enum BackendKindWire {
 impl BackendKindWire {
     fn from_str(value: &str) -> Option<Self> {
         match value {
+            "vela_engine" => Some(Self::VelaEngine),
             "codex" => Some(Self::Codex),
+            "tcodex" => Some(Self::Tcodex),
             "cloudagent" => Some(Self::Cloudagent),
             "claude_code" => Some(Self::ClaudeCode),
             "pi" => Some(Self::Pi),
@@ -371,7 +791,9 @@ impl BackendKindWire {
 
     fn as_str(self) -> &'static str {
         match self {
+            Self::VelaEngine => "vela_engine",
             Self::Codex => "codex",
+            Self::Tcodex => "tcodex",
             Self::Cloudagent => "cloudagent",
             Self::ClaudeCode => "claude_code",
             Self::Pi => "pi",
@@ -384,7 +806,9 @@ impl BackendKindWire {
     fn engine_kind(self) -> Option<BackendKind> {
         match self {
             Self::Pi => Some(BackendKind::Pi),
+            Self::VelaEngine => Some(BackendKind::VelaEngine),
             Self::Codex => Some(BackendKind::Codex),
+            Self::Tcodex => Some(BackendKind::Tcodex),
             Self::Acp => Some(BackendKind::Acp),
             Self::Cloudagent | Self::ClaudeCode | Self::Opencode | Self::Qoder => None,
         }
@@ -410,6 +834,8 @@ where
         Ok(Json(request)) => request,
         Err(rejection) => return invalid_request(rejection.to_string()),
     };
+    let trace_context = trace_context_from_headers(&headers);
+    let span_start = Utc::now();
     let Some(engine_backend) = state.configured_engine_kind(request.backend) else {
         return error(
             StatusCode::CONFLICT,
@@ -438,16 +864,38 @@ where
     {
         Ok(append) => {
             let _ = state.events.send(append.event.clone());
-            let session = session_json(
-                &session_id,
-                request.backend.as_str(),
-                "idle",
-                &request.working_directory,
-                request.title.as_deref(),
-                &agent_config,
-                request.metadata,
-                Some(&append.event),
-            );
+            record_velad_span(
+                &state,
+                trace_context.as_ref(),
+                "velad.session.create",
+                span_start,
+                true,
+                Some(session_id.as_str()),
+                Some(request.backend.as_str()),
+                None,
+                json!({
+                    "velad.session_id": session_id.as_str(),
+                    "velad.backend": request.backend.as_str(),
+                    "velad.working_directory": &request.working_directory,
+                }),
+            )
+            .await;
+            let session = match state.store.get_session(&session_id).await {
+                Ok(Some(stored)) => stored_session_json(&stored, &[], Some(&append.event)),
+                _ => session_json(
+                    &session_id,
+                    request.backend.as_str(),
+                    "idle",
+                    &request.working_directory,
+                    request.title.as_deref(),
+                    &agent_config,
+                    request.metadata,
+                    append.event.created_at,
+                    append.event.created_at,
+                    0,
+                    Some(&append.event),
+                ),
+            };
             (
                 StatusCode::CREATED,
                 Json(json!({
@@ -469,7 +917,7 @@ where
                     (
                         StatusCode::CREATED,
                         Json(json!({
-                            "session": stored_session_json(&existing, last),
+                            "session": stored_session_json(&existing, &events, last),
                             "cursor": last.map(event_cursor_json).unwrap_or_else(empty_cursor_json),
                         })),
                     )
@@ -579,8 +1027,13 @@ where
     } else {
         "current_session"
     };
+    let events = state
+        .store
+        .list_events(&session_id)
+        .await
+        .unwrap_or_default();
     Json(json!({
-        "session": stored_session_json(&updated, Some(&append.event)),
+        "session": stored_session_json(&updated, &events, Some(&append.event)),
         "effective_after": effective_after,
         "cursor": event_cursor_json(&append.event),
     }))
@@ -684,7 +1137,7 @@ where
                 .await
                 .unwrap_or_default();
             let last = events.last();
-            let value = stored_session_json(&session, last);
+            let value = stored_session_json(&session, &events, last);
             if include_cursor {
                 Json(json!({
                     "session": value,
@@ -728,6 +1181,8 @@ where
         Ok(Json(request)) => request,
         Err(rejection) => return invalid_request(rejection.to_string()),
     };
+    let trace_context = trace_context_from_headers(&headers);
+    let span_start = Utc::now();
     if request.events.is_empty() {
         return error(
             StatusCode::BAD_REQUEST,
@@ -788,10 +1243,10 @@ where
         ack_result = if input.event_type == "user.message" {
             let content = input_content(input);
             match input_message_blocks(input) {
-                Ok(blocks) if contains_image_block(&blocks) => {
+                Ok(blocks) if contains_structured_block(&blocks) => {
                     state
                         .runtime
-                        .send_user_message_with_blocks(
+                        .send_user_message_with_blocks_and_trace(
                             SendUserMessage {
                                 session_id: session_id.clone(),
                                 idempotency_key: event_idempotency_key,
@@ -799,18 +1254,22 @@ where
                                 command_id: None,
                             },
                             blocks,
+                            trace_context.clone(),
                         )
                         .await
                 }
                 Ok(_) => {
                     state
                         .runtime
-                        .send_user_message(SendUserMessage {
-                            session_id: session_id.clone(),
-                            idempotency_key: event_idempotency_key,
-                            content,
-                            command_id: None,
-                        })
+                        .send_user_message_with_trace(
+                            SendUserMessage {
+                                session_id: session_id.clone(),
+                                idempotency_key: event_idempotency_key,
+                                content,
+                                command_id: None,
+                            },
+                            trace_context.clone(),
+                        )
                         .await
                 }
                 Err(error) => Ok(rejected_command_ack(
@@ -844,13 +1303,47 @@ where
                 .await
                 .unwrap_or_default();
             publish_new_events(&state, &events, before_len);
+            let is_ok = !matches!(ack, CommandAck::Rejected(_));
+            record_velad_span(
+                &state,
+                trace_context.as_ref(),
+                "velad.session.send_events",
+                span_start,
+                is_ok,
+                Some(session_id.as_str()),
+                None,
+                if is_ok {
+                    None
+                } else {
+                    Some(command_ack_error_message(&ack))
+                },
+                json!({
+                    "velad.session_id": session_id.as_str(),
+                    "velad.input_events": batch_len,
+                }),
+            )
+            .await;
             (StatusCode::ACCEPTED, Json(command_ack_json(&ack, &events))).into_response()
         }
-        Err(err) => error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "runtime_error",
-            err.to_string(),
-        ),
+        Err(err) => {
+            let message = err.to_string();
+            record_velad_span(
+                &state,
+                trace_context.as_ref(),
+                "velad.session.send_events",
+                span_start,
+                false,
+                Some(session_id.as_str()),
+                None,
+                Some(message.clone()),
+                json!({
+                    "velad.session_id": session_id.as_str(),
+                    "velad.input_events": batch_len,
+                }),
+            )
+            .await;
+            error(StatusCode::INTERNAL_SERVER_ERROR, "runtime_error", message)
+        }
     }
 }
 
@@ -1136,10 +1629,18 @@ where
         Ok(query) => query,
         Err(response) => return response,
     };
-    let events = match events_or_404(&state, &SessionId::from(session_id)).await {
+    let session_id = SessionId::from(session_id);
+    let events = match events_or_404(&state, &session_id).await {
         Ok(events) => events,
         Err(response) => return response,
     };
+    let session = state.store.get_session(&session_id).await.ok().flatten();
+    observe_conversation_projection_invariants(
+        state.observability.as_ref(),
+        session.as_ref(),
+        &events,
+    )
+    .await;
     let view = match project_conversation_window(&events, window_query) {
         Ok(view) => view,
         Err(ConversationWindowError::UnknownItemId(_)) => {
@@ -1202,6 +1703,66 @@ where
         "cursor": view.cursor.as_ref().map(event_cursor_value).unwrap_or_else(empty_cursor_json),
     }))
     .into_response()
+}
+
+async fn observe_conversation_projection_invariants(
+    observability: Option<&ObservabilityStore>,
+    session: Option<&StoredSession>,
+    events: &[CanonicalEvent],
+) {
+    let (Some(observability), Some(session)) = (observability, session) else {
+        return;
+    };
+    let pending_request_count = project_pending_requests(events).requests.len();
+    if session_is_running(&session.status) || pending_request_count > 0 {
+        return;
+    }
+    let conversation = project_conversation(events);
+    let live_items = conversation
+        .items
+        .iter()
+        .filter(|item| conversation_item_is_live(item.kind, item.status.as_str()))
+        .collect::<Vec<_>>();
+    let Some(first_live_item) = live_items.first() else {
+        return;
+    };
+    let message = "conversation projection has live work while session is idle";
+    let _ = observability
+        .record_log(ManualLog {
+            trace_id: None,
+            span_id: None,
+            severity: Some("ERROR".to_string()),
+            body: Some(message.to_string()),
+            session_id: Some(session.session_id.as_str().to_string()),
+            backend: Some(session.backend.as_str().to_string()),
+            error_message: Some(message.to_string()),
+            attributes: json!({
+                "vela.operation": "vela.conversation.projection_invariant",
+                "vela.session_id": session.session_id.as_str(),
+                "vela.session.status": session.status,
+                "vela.session.pending_request_count": pending_request_count,
+                "vela.conversation.live_item_count": live_items.len(),
+                "vela.conversation.first_live_item_id": first_live_item.item_id,
+                "vela.conversation.first_live_item_kind": first_live_item.kind.as_str(),
+                "vela.conversation.first_live_item_status": first_live_item.status,
+                "vela.turn_id": first_live_item.turn_id.as_ref().map(|turn_id| turn_id.as_str()),
+            }),
+            raw: json!({
+                "source": "velad",
+                "event": "conversation_projection_invariant",
+            }),
+        })
+        .await;
+}
+
+fn conversation_item_is_live(kind: ConversationItemKind, status: &str) -> bool {
+    match kind {
+        ConversationItemKind::TurnMeta => status == "running",
+        ConversationItemKind::AgentWork => status == "running" || status == "pending",
+        ConversationItemKind::AssistantMessage => status == "streaming",
+        ConversationItemKind::Status => status == "pending" || status == "streaming",
+        ConversationItemKind::UserMessage => false,
+    }
 }
 
 async fn get_requests_view<B>(
@@ -1411,25 +1972,71 @@ async fn list_backends<B>(State(state): State<ApiState<B>>) -> Response
 where
     B: BackendAdapter + 'static,
 {
-    Json(json!({ "backends": backend_catalog(&state).await })).into_response()
+    Json(json!({ "backends": backend_snapshot::catalog_json(&state).await })).into_response()
 }
 
 async fn get_backend<B>(State(state): State<ApiState<B>>, Path(backend): Path<String>) -> Response
 where
     B: BackendAdapter + 'static,
 {
-    match backend_catalog(&state)
-        .await
-        .into_iter()
-        .find(|item| item["kind"] == backend)
-    {
-        Some(backend) => Json(json!({ "backend": backend })).into_response(),
+    match backend_snapshot::snapshot_for_kind(&state, &backend).await {
+        Some(backend) => Json(json!({ "backend": backend.to_wire_json() })).into_response(),
         None => error(
             StatusCode::NOT_FOUND,
             "backend_not_found",
             "backend is not configured",
         ),
     }
+}
+
+async fn get_backend_usage<B>(
+    State(state): State<ApiState<B>>,
+    headers: HeaderMap,
+    Path(backend): Path<String>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let start_time = Utc::now();
+    let trace_context = trace_context_from_headers(&headers);
+    let Some(configured) = state
+        .configured_backends
+        .iter()
+        .find(|item| item.kind == backend)
+    else {
+        return error(
+            StatusCode::NOT_FOUND,
+            "backend_not_found",
+            "backend is not configured",
+        );
+    };
+    let snapshot = state.backend_usage.fetch(configured).await;
+    let status = snapshot.status;
+    let backend_type = snapshot.backend_type.clone();
+    let source = snapshot.source.clone();
+    let detail = snapshot.detail.clone();
+    record_velad_span(
+        &state,
+        trace_context.as_ref(),
+        "velad.backend_usage.fetch",
+        start_time,
+        !status.is_error(),
+        None,
+        Some(&backend),
+        status.is_error().then(|| {
+            detail
+                .clone()
+                .unwrap_or_else(|| "backend usage fetch failed".to_string())
+        }),
+        json!({
+            "velad.backend": backend,
+            "velad.backend_type": backend_type,
+            "velad.backend_usage.status": status.as_str(),
+            "velad.backend_usage.source": source,
+        }),
+    )
+    .await;
+    Json(snapshot).into_response()
 }
 
 async fn probe_backend<B>(State(state): State<ApiState<B>>, Path(backend): Path<String>) -> Response
@@ -1464,6 +2071,639 @@ where
         }))
         .into_response(),
     }
+}
+
+#[derive(Debug, Serialize)]
+struct BackendSkillsResponse {
+    schema: &'static str,
+    backend: BackendKindWire,
+    cwd: Option<String>,
+    skill_protocol: &'static str,
+    capabilities: BackendSkillsCapabilities,
+    skills: Vec<BackendSkillDescriptor>,
+}
+
+#[derive(Debug, Serialize)]
+struct BackendSkillsCapabilities {
+    discovery: bool,
+    invocation: &'static str,
+    requires_text_token: bool,
+    preferred_token_prefix: &'static str,
+    accepted_token_prefixes: Vec<&'static str>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct BackendSkillDescriptor {
+    name: String,
+    display_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    path: String,
+    origin: &'static str,
+    scope: &'static str,
+    protocol: &'static str,
+}
+
+async fn list_backend_skills<B>(
+    State(state): State<ApiState<B>>,
+    Path(backend): Path<String>,
+    query: Result<Query<BackendSkillsQuery>, QueryRejection>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let query = match parsed_query(query) {
+        Ok(query) => query,
+        Err(response) => return response,
+    };
+    let Some(backend_kind) = BackendKindWire::from_str(&backend) else {
+        return error(
+            StatusCode::NOT_FOUND,
+            "backend_not_found",
+            "backend is not configured",
+        );
+    };
+    if state.configured_engine_kind(backend_kind).is_none() {
+        return error(
+            StatusCode::NOT_FOUND,
+            "backend_not_found",
+            "backend is not configured",
+        );
+    }
+
+    let supports_codex_skills = matches!(
+        backend_kind,
+        BackendKindWire::Codex | BackendKindWire::VelaEngine
+    );
+    let skills = if supports_codex_skills {
+        discover_codex_skills(query.cwd.as_deref())
+    } else {
+        Vec::new()
+    };
+    Json(BackendSkillsResponse {
+        schema: "velad.backend_skills.v1",
+        backend: backend_kind,
+        cwd: query.cwd,
+        skill_protocol: "codex.skills.v1",
+        capabilities: BackendSkillsCapabilities {
+            discovery: supports_codex_skills,
+            invocation: if supports_codex_skills { "native" } else { "none" },
+            requires_text_token: true,
+            preferred_token_prefix: "$",
+            accepted_token_prefixes: vec!["$", "/"],
+        },
+        skills,
+    })
+    .into_response()
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VelaEngineBackendSettingsPatch {
+    endpoint: Option<String>,
+    api_key: Option<String>,
+    model: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CreateNodeRequest {
+    provider: String,
+    display_name: Option<String>,
+    ssh: Option<SshNodeRequest>,
+    auth: Option<NodeAuthRequest>,
+    target: Option<NodeTargetRequest>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SshNodeRequest {
+    host: String,
+    port: Option<u16>,
+    username: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NodeAuthRequest {
+    method: String,
+    password: Option<String>,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NodeTargetRequest {
+    os: Option<String>,
+    arch: Option<String>,
+}
+
+struct NormalizedNodeCreate {
+    display_name: String,
+    config: Value,
+    password: String,
+}
+
+async fn list_node_providers<B>() -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    Json(runtime_targets::node_providers_json()).into_response()
+}
+
+async fn list_nodes<B>(State(state): State<ApiState<B>>) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    match state.store.list_nodes().await {
+        Ok(nodes) => Json(runtime_targets::nodes_json(&nodes)).into_response(),
+        Err(err) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "nodes_read_failed",
+            err.to_string(),
+        ),
+    }
+}
+
+async fn create_node<B>(
+    State(state): State<ApiState<B>>,
+    request: Result<Json<CreateNodeRequest>, JsonRejection>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let request = match request {
+        Ok(Json(request)) => request,
+        Err(rejection) => return invalid_request(rejection.to_string()),
+    };
+    let normalized = match normalize_create_node_request(request) {
+        Ok(normalized) => normalized,
+        Err(response) => return response,
+    };
+    let node_id = format!("node_{}", uuid::Uuid::new_v4().simple());
+    let secret_ref = runtime_targets::ssh_password_secret_ref(&node_id);
+
+    if let Err(err) = state
+        .node_secret_store
+        .put_password(&secret_ref, &normalized.password)
+        .await
+    {
+        return error(StatusCode::SERVICE_UNAVAILABLE, err.code, err.message);
+    }
+
+    match state
+        .store
+        .create_node(
+            &node_id,
+            runtime_targets::SSH_PROVIDER_ID,
+            &normalized.display_name,
+            normalized.config,
+            Some(&secret_ref),
+        )
+        .await
+    {
+        Ok(node) => (
+            StatusCode::CREATED,
+            Json(runtime_targets::node_response_json(&node)),
+        )
+            .into_response(),
+        Err(err) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "node_write_failed",
+            err.to_string(),
+        ),
+    }
+}
+
+async fn list_runtime_targets<B>(State(state): State<ApiState<B>>) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let local_api_base_url = state
+        .local_runtime
+        .as_ref()
+        .map(|runtime| runtime.info.api_base_url.as_str());
+    match state.store.list_nodes().await {
+        Ok(nodes) => Json(runtime_targets::runtime_targets_json(
+            &nodes,
+            local_api_base_url,
+            &state.runtime_target_manager.snapshots().await,
+        ))
+        .into_response(),
+        Err(err) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "runtime_targets_read_failed",
+            err.to_string(),
+        ),
+    }
+}
+
+async fn connect_runtime_target<B>(
+    State(state): State<ApiState<B>>,
+    Path(target_id): Path<String>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let Some(node_id) = node_id_from_target_id(&target_id) else {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "unsupported_runtime_target",
+            "only remote node runtime targets can be connected",
+        );
+    };
+    let node = match state.store.get_node(node_id).await {
+        Ok(Some(node)) => node,
+        Ok(None) => {
+            return error(
+                StatusCode::NOT_FOUND,
+                "node_not_found",
+                format!("node not found: {node_id}"),
+            );
+        }
+        Err(err) => {
+            return error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "node_read_failed",
+                err.to_string(),
+            );
+        }
+    };
+    let Some(secret_ref) = node.secret_ref.as_deref() else {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "node_auth_missing",
+            "node password is not configured",
+        );
+    };
+    let password = match state.node_secret_store.get_password(secret_ref).await {
+        Ok(password) => password,
+        Err(err) => return error(StatusCode::SERVICE_UNAVAILABLE, err.code, err.message),
+    };
+    match state
+        .runtime_target_manager
+        .connect_node(node, password)
+        .await
+    {
+        Ok(snapshot) => {
+            Json(runtime_targets::runtime_target_response_json(&snapshot)).into_response()
+        }
+        Err(err) => error(StatusCode::BAD_GATEWAY, err.code, err.message),
+    }
+}
+
+async fn disconnect_runtime_target<B>(
+    State(state): State<ApiState<B>>,
+    Path(target_id): Path<String>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    let Some(node_id) = node_id_from_target_id(&target_id) else {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "unsupported_runtime_target",
+            "only remote node runtime targets can be disconnected",
+        );
+    };
+    match state
+        .runtime_target_manager
+        .disconnect_target(&target_id)
+        .await
+    {
+        Ok(Some(snapshot)) => {
+            Json(runtime_targets::runtime_target_response_json(&snapshot)).into_response()
+        }
+        Ok(None) => match state.store.get_node(node_id).await {
+            Ok(Some(node)) => Json(runtime_targets::disconnected_runtime_target_response_json(
+                &node,
+            ))
+            .into_response(),
+            Ok(None) => error(
+                StatusCode::NOT_FOUND,
+                "node_not_found",
+                format!("node not found: {node_id}"),
+            ),
+            Err(err) => error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "node_read_failed",
+                err.to_string(),
+            ),
+        },
+        Err(err) => error(StatusCode::BAD_GATEWAY, err.code, err.message),
+    }
+}
+
+fn node_id_from_target_id(target_id: &str) -> Option<&str> {
+    target_id.strip_prefix("target:")
+}
+
+fn normalize_create_node_request(
+    request: CreateNodeRequest,
+) -> Result<NormalizedNodeCreate, Response> {
+    if request.provider != runtime_targets::SSH_PROVIDER_ID {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "unsupported_node_provider",
+            "node provider must be ssh",
+        ));
+    }
+    let ssh = request.ssh.ok_or_else(|| {
+        error(
+            StatusCode::BAD_REQUEST,
+            "missing_ssh_config",
+            "ssh config is required for ssh nodes",
+        )
+    })?;
+    let host = ssh.host.trim();
+    if host.is_empty() {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "invalid_node_host",
+            "ssh host must not be empty",
+        ));
+    }
+    let username = ssh.username.trim();
+    if username.is_empty() {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "invalid_node_username",
+            "ssh username must not be empty",
+        ));
+    }
+    let port = ssh.port.unwrap_or(22);
+    if port == 0 {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "invalid_node_port",
+            "ssh port must be greater than zero",
+        ));
+    }
+
+    let auth = request.auth.ok_or_else(|| {
+        error(
+            StatusCode::BAD_REQUEST,
+            "missing_node_auth",
+            "ssh nodes require password auth in v1",
+        )
+    })?;
+    if auth.method != "password" {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "unsupported_node_auth",
+            "ssh nodes support password auth only in v1",
+        ));
+    }
+    let password = auth.password.unwrap_or_default().trim().to_string();
+    if password.is_empty() {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "missing_node_password",
+            "ssh password must not be empty",
+        ));
+    }
+
+    let target = request.target.unwrap_or_default();
+    let os = target
+        .os
+        .unwrap_or_else(|| "linux".to_string())
+        .trim()
+        .to_string();
+    if os != "linux" && os != "darwin" {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "unsupported_node_os",
+            "ssh target os must be linux or darwin",
+        ));
+    }
+    let arch = target
+        .arch
+        .unwrap_or_else(|| "x86_64".to_string())
+        .trim()
+        .to_string();
+    let arch = match arch.as_str() {
+        "x86_64" | "amd64" => "x86_64",
+        _ => {
+            return Err(error(
+                StatusCode::BAD_REQUEST,
+                "unsupported_node_arch",
+                "ssh target arch must be x86_64 or amd64",
+            ));
+        }
+    };
+
+    let display_name = request
+        .display_name
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| format!("{username}@{host}"));
+
+    Ok(NormalizedNodeCreate {
+        display_name,
+        password,
+        config: json!({
+            "ssh": {
+                "host": host,
+                "port": port,
+                "username": username,
+            },
+            "target": {
+                "os": os,
+                "arch": arch,
+            }
+        }),
+    })
+}
+
+async fn get_backend_settings<B>(
+    State(state): State<ApiState<B>>,
+    Path(backend): Path<String>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    if let Err(response) = ensure_backend_settings_supported(&state, &backend) {
+        return response;
+    }
+    let (settings, updated_at) = match state.store.get_backend_settings("vela_engine").await {
+        Ok(Some(stored)) => (
+            vela_engine_backend_settings_from_json(stored.settings),
+            Some(stored.updated_at.to_rfc3339()),
+        ),
+        Ok(None) => (VelaEngineBackendSettings::default(), None),
+        Err(err) => {
+            return error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "backend_settings_read_failed",
+                err.to_string(),
+            );
+        }
+    };
+    Json(vela_engine_backend_settings_json(
+        &backend, &settings, updated_at,
+    ))
+    .into_response()
+}
+
+async fn patch_backend_settings<B>(
+    State(state): State<ApiState<B>>,
+    Path(backend): Path<String>,
+    request: Result<Json<VelaEngineBackendSettingsPatch>, JsonRejection>,
+) -> Response
+where
+    B: BackendAdapter + 'static,
+{
+    if let Err(response) = ensure_backend_settings_supported(&state, &backend) {
+        return response;
+    }
+    let patch = match request {
+        Ok(Json(patch)) => patch,
+        Err(rejection) => return invalid_request(rejection.to_string()),
+    };
+    let mut settings = match load_vela_engine_backend_settings(&state).await {
+        Ok(settings) => settings,
+        Err(response) => return response,
+    };
+    if let Some(endpoint) = patch.endpoint {
+        settings.endpoint = endpoint.trim().to_string();
+    }
+    if let Some(api_key) = patch.api_key {
+        settings.api_key = api_key.trim().to_string();
+    }
+    if let Some(model) = patch.model {
+        settings.model = model.trim().to_string();
+    }
+
+    if let Some(updater) = &state.backend_settings_updater {
+        updater.update_vela_engine(settings.clone());
+    }
+    let stored = match state
+        .store
+        .upsert_backend_settings(
+            &backend,
+            vela_engine_backend_settings_storage_json(&settings),
+        )
+        .await
+    {
+        Ok(stored) => stored,
+        Err(err) => {
+            return error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "backend_settings_write_failed",
+                err.to_string(),
+            );
+        }
+    };
+    Json(vela_engine_backend_settings_json(
+        &backend,
+        &settings,
+        Some(stored.updated_at.to_rfc3339()),
+    ))
+    .into_response()
+}
+
+fn ensure_backend_settings_supported<B>(state: &ApiState<B>, backend: &str) -> Result<(), Response>
+where
+    B: BackendAdapter + 'static,
+{
+    let Some(configured) = state
+        .configured_backends
+        .iter()
+        .find(|item| item.kind == backend)
+    else {
+        return Err(error(
+            StatusCode::NOT_FOUND,
+            "backend_not_found",
+            "backend is not configured",
+        ));
+    };
+    if configured.kind != "vela_engine" {
+        return Err(error(
+            StatusCode::NOT_FOUND,
+            "backend_settings_not_supported",
+            "backend settings are not supported for this backend",
+        ));
+    }
+    Ok(())
+}
+
+async fn load_vela_engine_backend_settings<B>(
+    state: &ApiState<B>,
+) -> Result<VelaEngineBackendSettings, Response>
+where
+    B: BackendAdapter + 'static,
+{
+    match state.store.get_backend_settings("vela_engine").await {
+        Ok(Some(stored)) => Ok(vela_engine_backend_settings_from_json(stored.settings)),
+        Ok(None) => Ok(VelaEngineBackendSettings::default()),
+        Err(err) => Err(error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "backend_settings_read_failed",
+            err.to_string(),
+        )),
+    }
+}
+
+fn vela_engine_backend_settings_from_json(value: Value) -> VelaEngineBackendSettings {
+    let object = value.as_object();
+    VelaEngineBackendSettings {
+        endpoint: object
+            .and_then(|object| object.get("endpoint"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        api_key: object
+            .and_then(|object| object.get("api_key"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        model: object
+            .and_then(|object| object.get("model"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+    }
+}
+
+fn vela_engine_backend_settings_storage_json(settings: &VelaEngineBackendSettings) -> Value {
+    json!({
+        "endpoint": settings.endpoint,
+        "api_key": settings.api_key,
+        "model": settings.model,
+    })
+}
+
+fn vela_engine_backend_settings_json(
+    backend: &str,
+    settings: &VelaEngineBackendSettings,
+    updated_at: Option<String>,
+) -> Value {
+    let missing_fields = vela_engine_missing_settings(settings);
+    json!({
+        "schema": "velad.backend_settings.v1",
+        "backend": backend,
+        "settings": {
+            "endpoint": settings.endpoint,
+            "api_key_set": !settings.api_key.is_empty(),
+            "model": settings.model,
+        },
+        "status": if missing_fields.is_empty() { "configured" } else { "unconfigured" },
+        "missing_fields": missing_fields,
+        "updated_at": updated_at,
+    })
+}
+
+fn vela_engine_missing_settings(settings: &VelaEngineBackendSettings) -> Vec<&'static str> {
+    let mut missing = Vec::new();
+    if settings.endpoint.trim().is_empty() {
+        missing.push("endpoint");
+    }
+    if settings.api_key.trim().is_empty() {
+        missing.push("api_key");
+    }
+    if settings.model.trim().is_empty() {
+        missing.push("model");
+    }
+    missing
 }
 
 async fn events_or_404<B>(
@@ -1725,6 +2965,140 @@ where
     }))
 }
 
+fn discover_codex_skills(cwd: Option<&str>) -> Vec<BackendSkillDescriptor> {
+    let mut roots = Vec::new();
+    if let Some(value) = env::var_os("VELAD_SKILLS_DIR") {
+        for root in env::split_paths(&value) {
+            roots.push(SkillRoot {
+                path: root,
+                origin: "env",
+                scope: "runtime",
+            });
+        }
+    }
+    if let Some(home) = home_dir() {
+        roots.push(SkillRoot {
+            path: home.join(".codex/skills"),
+            origin: "codex_home",
+            scope: "user",
+        });
+        roots.push(SkillRoot {
+            path: home.join(".agents/skills"),
+            origin: "agents_home",
+            scope: "user",
+        });
+    }
+    if let Some(cwd) = cwd.and_then(normalized_cwd_path) {
+        roots.push(SkillRoot {
+            path: cwd.join(".codex/skills"),
+            origin: "workspace",
+            scope: "project",
+        });
+        roots.push(SkillRoot {
+            path: cwd.join(".agents/skills"),
+            origin: "workspace",
+            scope: "project",
+        });
+    }
+
+    let mut skills = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for root in roots {
+        for skill in discover_skills_in_root(&root) {
+            if seen.insert(skill.name.clone()) {
+                skills.push(skill);
+            }
+        }
+    }
+    skills.sort_by(|left, right| left.name.cmp(&right.name));
+    skills
+}
+
+struct SkillRoot {
+    path: PathBuf,
+    origin: &'static str,
+    scope: &'static str,
+}
+
+fn discover_skills_in_root(root: &SkillRoot) -> Vec<BackendSkillDescriptor> {
+    let entries = match fs::read_dir(&root.path) {
+        Ok(entries) => entries,
+        Err(_) => return Vec::new(),
+    };
+    entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let path = entry.path();
+            if !path.is_dir() || !path.join("SKILL.md").is_file() {
+                return None;
+            }
+            let name = path.file_name()?.to_str()?.to_string();
+            if !is_valid_skill_name(&name) {
+                return None;
+            }
+            Some(BackendSkillDescriptor {
+                display_name: display_name_from_skill_name(&name),
+                description: read_skill_description(&path.join("SKILL.md")),
+                path: path.to_string_lossy().to_string(),
+                name,
+                origin: root.origin,
+                scope: root.scope,
+                protocol: "codex.skills.v1",
+            })
+        })
+        .collect()
+}
+
+fn home_dir() -> Option<PathBuf> {
+    env::var_os("HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            env::var_os("USERPROFILE")
+                .filter(|value| !value.is_empty())
+                .map(PathBuf::from)
+        })
+}
+
+fn normalized_cwd_path(cwd: &str) -> Option<PathBuf> {
+    let trimmed = cwd.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(PathBuf::from(trimmed))
+}
+
+fn is_valid_skill_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+}
+
+fn display_name_from_skill_name(name: &str) -> String {
+    name.replace(['-', '_'], " ")
+}
+
+fn read_skill_description(path: &FsPath) -> Option<String> {
+    let content = fs::read_to_string(path).ok()?;
+    for line in content.lines().take(24) {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some(description) = line.strip_prefix("description:") {
+            let description = description.trim().trim_matches('"').trim_matches('\'');
+            if !description.is_empty() {
+                return Some(description.to_string());
+            }
+        }
+        if line.len() >= 8 {
+            return Some(line.chars().take(180).collect());
+        }
+    }
+    None
+}
+
 fn input_content(input: &ClientInputEvent) -> String {
     input
         .content
@@ -1753,10 +3127,34 @@ fn input_message_blocks(input: &ClientInputEvent) -> anyhow::Result<Vec<UserMess
                 .as_ref()
                 .filter(|text| !text.is_empty())
                 .map(|text| Ok(UserMessageBlock::text(text.clone()))),
+            "skill_ref" => Some(skill_block_from_part(part)),
             "image" => Some(image_block_from_part(part)),
             _ => None,
         })
         .collect()
+}
+
+fn skill_block_from_part(part: &InputPart) -> anyhow::Result<UserMessageBlock> {
+    let name = part
+        .name
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("skill_ref input part requires name"))?;
+    if !is_valid_skill_name(&name) {
+        anyhow::bail!("skill_ref input part name is invalid");
+    }
+    let protocol = part
+        .protocol
+        .clone()
+        .unwrap_or_else(|| "codex.skills.v1".to_string());
+    if protocol != "codex.skills.v1" {
+        anyhow::bail!("skill_ref input part protocol is unsupported");
+    }
+    Ok(UserMessageBlock::skill_ref(
+        name,
+        protocol,
+        part.backend.and_then(BackendKindWire::engine_kind),
+        part.path.clone(),
+    ))
 }
 
 fn image_block_from_part(part: &InputPart) -> anyhow::Result<UserMessageBlock> {
@@ -1783,10 +3181,10 @@ fn image_block_from_part(part: &InputPart) -> anyhow::Result<UserMessageBlock> {
     })
 }
 
-fn contains_image_block(blocks: &[UserMessageBlock]) -> bool {
+fn contains_structured_block(blocks: &[UserMessageBlock]) -> bool {
     blocks
         .iter()
-        .any(|block| matches!(block, UserMessageBlock::Image { .. }))
+        .any(|block| !matches!(block, UserMessageBlock::Text { .. }))
 }
 
 fn hash_value(value: &Value) -> String {
@@ -1831,13 +3229,12 @@ where
     };
     let mut agent_config = request.agent_config.clone().unwrap_or_default();
     if agent_config.model.is_none() {
-        agent_config.model = request
-            .model
-            .clone()
-            .or_else(|| configured_backend.default_model());
+        agent_config.model = request.model.clone();
     }
-    apply_backend_agent_config_defaults(state, configured_backend, &mut agent_config).await;
-    validate_agent_config_for_backend(state, configured_backend, &agent_config).await?;
+    let snapshot = backend_snapshot::snapshot(state, configured_backend).await;
+    ensure_snapshot_accepts_session(configured_backend, &snapshot)?;
+    apply_backend_agent_config_defaults(configured_backend, &snapshot, &mut agent_config);
+    validate_agent_config_for_backend(configured_backend, &snapshot, &agent_config)?;
     Ok(agent_config)
 }
 
@@ -1856,135 +3253,103 @@ where
             format!("backend {} is not configured", backend.as_str()),
         ));
     };
-    validate_agent_config_for_backend(state, configured_backend, agent_config).await
+    let snapshot = backend_snapshot::snapshot(state, configured_backend).await;
+    ensure_snapshot_accepts_session(configured_backend, &snapshot)?;
+    validate_agent_config_for_backend(configured_backend, &snapshot, agent_config)
 }
 
-async fn apply_backend_agent_config_defaults<B>(
-    state: &ApiState<B>,
+fn ensure_snapshot_accepts_session(
     backend: &ConfiguredBackend,
-    agent_config: &mut AgentConfig,
-) where
-    B: BackendAdapter + 'static,
-{
-    let models = effective_backend_models(state, backend).await;
-    if agent_config.model.is_none() {
-        agent_config.model =
-            default_model_from_catalog(&models).or_else(|| backend.default_model());
+    snapshot: &backend_snapshot::BackendSnapshot,
+) -> Result<(), Response> {
+    if snapshot.status.accepts_session_creation() {
+        return Ok(());
     }
-    if agent_config.permission_mode.is_none() && backend.kind == "codex" {
+    Err(error(
+        StatusCode::CONFLICT,
+        "backend_unavailable",
+        snapshot
+            .status_message
+            .clone()
+            .unwrap_or_else(|| format!("backend {} is not available", backend.kind)),
+    ))
+}
+
+fn apply_backend_agent_config_defaults(
+    backend: &ConfiguredBackend,
+    snapshot: &backend_snapshot::BackendSnapshot,
+    agent_config: &mut AgentConfig,
+) {
+    if agent_config.model.is_none() {
+        agent_config.model = snapshot.default_model().or_else(|| backend.default_model());
+    }
+    if agent_config.permission_mode.is_none() && is_codex_family_backend(backend.kind) {
         agent_config.permission_mode = Some(PermissionMode::Auto);
     }
     if agent_config.reasoning_effort.is_none()
         && let Some(model) = agent_config.model.as_deref()
-        && let Some(default_reasoning) = default_reasoning_for_model(&models, model)
+        && let Some(default_reasoning) = snapshot.default_reasoning_for_model(model)
     {
         agent_config.reasoning_effort = Some(default_reasoning);
     }
 }
 
-async fn validate_agent_config_for_backend<B>(
-    state: &ApiState<B>,
+fn validate_agent_config_for_backend(
     backend: &ConfiguredBackend,
+    snapshot: &backend_snapshot::BackendSnapshot,
     agent_config: &AgentConfig,
-) -> Result<(), Response>
-where
-    B: BackendAdapter + 'static,
-{
-    if backend.kind != "codex" {
-        return Ok(());
-    }
-    let discovered = state
-        .runtime
-        .list_backend_models(Some(backend.engine_kind))
-        .await
-        .map_err(|err| {
-            error(
-                StatusCode::CONFLICT,
-                "backend_unavailable",
-                format!("backend {} model discovery failed: {err}", backend.kind),
-            )
-        })?;
-    let models = catalog_models(backend.kind, backend.default_model.as_deref(), discovered);
-    if let Some(model) = agent_config.model.as_deref()
-        && !models.is_empty()
-        && !models.iter().any(|candidate| candidate.id == model)
-    {
-        return Err(invalid_agent_config(format!(
-            "model {model} is not available for backend codex"
-        )));
-    }
-    if let Some(reasoning_effort) = agent_config.reasoning_effort.as_deref() {
-        let Some(model) = agent_config.model.as_deref() else {
-            return Err(invalid_agent_config(
-                "reasoning_effort requires a selected model",
-            ));
-        };
-        let reasoning_options = reasoning_options_for_model(&models, model);
-        if !reasoning_options.is_empty()
-            && !reasoning_options
-                .iter()
-                .any(|option| option.id == reasoning_effort)
+) -> Result<(), Response> {
+    let validates_against_snapshot =
+        is_codex_family_backend(backend.kind) || backend.kind == "vela_engine";
+    if validates_against_snapshot {
+        if let Some(model) = agent_config.model.as_deref()
+            && !snapshot.has_model(model)
         {
             return Err(invalid_agent_config(format!(
-                "reasoning_effort {reasoning_effort} is not available for model {model}"
+                "model {model} is not available for backend {}",
+                backend.kind
+            )));
+        }
+        if let Some(reasoning_effort) = agent_config.reasoning_effort.as_deref() {
+            let Some(model) = agent_config.model.as_deref() else {
+                return Err(invalid_agent_config(
+                    "reasoning_effort requires a selected model",
+                ));
+            };
+            let reasoning_options = snapshot.reasoning_options_for_model(model);
+            if !reasoning_options.is_empty()
+                && !reasoning_options
+                    .iter()
+                    .any(|option| option.id == reasoning_effort)
+            {
+                return Err(invalid_agent_config(format!(
+                    "reasoning_effort {reasoning_effort} is not available for model {model}"
+                )));
+            }
+        }
+        if let Some(permission_mode) = agent_config.permission_mode
+            && !snapshot.has_permission_mode(permission_mode)
+        {
+            return Err(invalid_agent_config(format!(
+                "permission_mode is not available for backend {}",
+                backend.kind
             )));
         }
     }
-    if let Some(permission_mode) = agent_config.permission_mode
-        && !backend_permission_modes(backend.kind)
-            .iter()
-            .any(|mode| mode.id == permission_mode)
-    {
-        return Err(invalid_agent_config(
-            "permission_mode is not available for backend codex",
-        ));
+    if is_codex_family_backend(backend.kind) {
+        validate_codex_feature_values(backend.kind, agent_config)?;
     }
-    validate_codex_feature_values(agent_config)?;
     Ok(())
 }
 
-async fn effective_backend_models<B>(
-    state: &ApiState<B>,
-    backend: &ConfiguredBackend,
-) -> Vec<BackendModel>
-where
-    B: BackendAdapter + 'static,
-{
-    let discovered = state
-        .runtime
-        .list_backend_models(Some(backend.engine_kind))
-        .await
-        .unwrap_or_default();
-    catalog_models(backend.kind, backend.default_model.as_deref(), discovered)
+fn is_codex_family_backend(kind: &str) -> bool {
+    matches!(kind, "codex" | "tcodex")
 }
 
-fn default_model_from_catalog(models: &[BackendModel]) -> Option<String> {
-    models
-        .iter()
-        .find(|model| model.is_default)
-        .or_else(|| models.first())
-        .map(|model| model.id.clone())
-}
-
-fn default_reasoning_for_model(models: &[BackendModel], model: &str) -> Option<String> {
-    let model = models.iter().find(|candidate| candidate.id == model)?;
-    model
-        .reasoning_efforts
-        .iter()
-        .find(|option| option.is_default)
-        .or_else(|| model.reasoning_efforts.first())
-        .map(|option| option.id.clone())
-}
-
-fn reasoning_options_for_model(models: &[BackendModel], model: &str) -> Vec<ReasoningEffortOption> {
-    models
-        .iter()
-        .find(|candidate| candidate.id == model)
-        .map(|model| model.reasoning_efforts.clone())
-        .unwrap_or_default()
-}
-
-fn validate_codex_feature_values(agent_config: &AgentConfig) -> Result<(), Response> {
+fn validate_codex_feature_values(
+    backend_kind: &str,
+    agent_config: &AgentConfig,
+) -> Result<(), Response> {
     for (feature_id, value) in &agent_config.feature_values {
         match feature_id.as_str() {
             "fast_mode" => {
@@ -2003,7 +3368,7 @@ fn validate_codex_feature_values(agent_config: &AgentConfig) -> Result<(), Respo
             }
             _ => {
                 return Err(invalid_agent_config(format!(
-                    "feature {feature_id} is not available for backend codex"
+                    "feature {feature_id} is not available for backend {backend_kind}"
                 )));
             }
         }
@@ -2471,8 +3836,11 @@ fn activity_status_wire(status: &str) -> &str {
 
 fn activity_detail_json(kind: &str, payload: &Value) -> Option<Value> {
     if let Some(detail) = payload.get("detail").and_then(Value::as_object) {
-        if detail.get("type").and_then(Value::as_str).is_some() {
-            return Some(Value::Object(detail.clone()));
+        if let Some(detail_type) = detail.get("type").and_then(Value::as_str) {
+            return Some(normalized_detail_json(
+                detail_type,
+                &Value::Object(detail.clone()),
+            ));
         }
     }
 
@@ -2525,112 +3893,275 @@ fn inferred_activity_tool_detail_type(payload: &Value) -> &'static str {
 }
 
 fn activity_shell_detail_json(payload: &Value) -> Value {
-    detail_json(
-        "shell",
-        payload,
-        &[
-            "command",
-            "cwd",
-            "output",
-            "stdout",
-            "stderr",
-            "exit_code",
-            "error",
-        ],
-    )
+    normalized_detail_json("shell", payload)
 }
 
 fn activity_file_detail_json(detail_type: &str, payload: &Value) -> Value {
-    let mut detail = detail_json(
-        detail_type,
-        payload,
-        &[
-            "content",
-            "old_string",
-            "new_string",
-            "unified_diff",
-            "error",
-        ],
-    );
+    let mut detail = normalized_detail_json(detail_type, payload);
     let Some(object) = detail.as_object_mut() else {
         return detail;
     };
     if let Some(path) = payload
         .get("file_path")
         .or_else(|| payload.get("path"))
-        .cloned()
+        .and_then(detail_string_value)
     {
-        object.insert("file_path".to_string(), path);
+        object.insert("file_path".to_string(), Value::String(path));
     }
     detail
 }
 
 fn activity_search_detail_json(payload: &Value) -> Value {
-    detail_json(
-        "search",
-        payload,
-        &[
-            "query",
-            "mode",
-            "content",
-            "num_files",
-            "num_matches",
-            "duration_ms",
-            "truncated",
-        ],
-    )
+    normalized_detail_json("search", payload)
 }
 
 fn activity_fetch_detail_json(payload: &Value) -> Value {
-    detail_json(
-        "fetch",
-        payload,
-        &[
-            "url",
-            "prompt",
-            "result",
-            "code",
-            "code_text",
-            "bytes",
-            "duration_ms",
-        ],
-    )
+    normalized_detail_json("fetch", payload)
 }
 
 fn activity_generic_tool_detail_json(payload: &Value) -> Value {
-    detail_json(
-        "tool",
-        payload,
-        &[
-            "tool_id",
-            "call_id",
-            "name",
-            "command",
-            "cwd",
-            "query",
-            "file_path",
-            "path",
-            "url",
-            "summary",
-            "delta",
-            "output",
-            "stdout",
-            "stderr",
-            "exit_code",
-            "error",
-        ],
-    )
+    generic_detail_json("tool", payload)
 }
 
-fn detail_json(detail_type: &str, payload: &Value, fields: &[&str]) -> Value {
-    let mut detail = serde_json::Map::new();
+fn normalized_detail_json(detail_type: &str, payload: &Value) -> Value {
+    match detail_type {
+        "shell" => typed_detail_json(
+            "shell",
+            payload,
+            &["command", "cwd", "output", "stdout", "stderr", "error"],
+            &["exit_code"],
+            &[],
+            &["streams"],
+        ),
+        "read" | "edit" | "write" => typed_detail_json(
+            detail_type,
+            payload,
+            &[
+                "file_path",
+                "path",
+                "content",
+                "old_string",
+                "new_string",
+                "unified_diff",
+            ],
+            &[],
+            &[],
+            &[],
+        ),
+        "search" => typed_detail_json(
+            "search",
+            payload,
+            &["query", "mode", "content"],
+            &["num_files", "num_matches", "duration_ms"],
+            &["truncated"],
+            &[],
+        ),
+        "fetch" => typed_detail_json(
+            "fetch",
+            payload,
+            &["url", "prompt", "result", "code_text"],
+            &["code", "bytes", "duration_ms"],
+            &[],
+            &[],
+        ),
+        _ => generic_detail_json(detail_type, payload),
+    }
+}
+
+fn typed_detail_json(
+    detail_type: &str,
+    payload: &Value,
+    string_fields: &[&str],
+    integer_fields: &[&str],
+    boolean_fields: &[&str],
+    passthrough_fields: &[&str],
+) -> Value {
+    let mut detail = Map::new();
     detail.insert("type".to_string(), Value::String(detail_type.to_string()));
-    for field in fields {
+    for field in string_fields {
+        let Some(raw_value) = payload.get(field) else {
+            continue;
+        };
+        if matches!(*field, "content" | "result") {
+            insert_content_projection(&mut detail, field, raw_value);
+        } else if let Some(value) = detail_string_value(raw_value) {
+            detail.insert((*field).to_string(), Value::String(value));
+        }
+    }
+    for field in integer_fields {
+        if let Some(value) = payload.get(field).and_then(Value::as_i64) {
+            detail.insert((*field).to_string(), json!(value));
+        }
+    }
+    for field in boolean_fields {
+        if let Some(value) = payload.get(field).and_then(Value::as_bool) {
+            detail.insert((*field).to_string(), json!(value));
+        }
+    }
+    for field in passthrough_fields {
         if let Some(value) = payload.get(field) {
             detail.insert((*field).to_string(), value.clone());
         }
     }
     Value::Object(detail)
+}
+
+fn generic_detail_json(detail_type: &str, payload: &Value) -> Value {
+    let mut detail = Map::new();
+    detail.insert(
+        "type".to_string(),
+        Value::String(generic_detail_type(detail_type).to_string()),
+    );
+    for field in [
+        "tool_id",
+        "call_id",
+        "name",
+        "label",
+        "summary",
+        "description",
+        "text",
+        "command",
+        "cwd",
+        "query",
+        "file_path",
+        "path",
+        "url",
+        "stdout",
+        "stderr",
+        "error",
+        "delta",
+        "status",
+    ] {
+        if let Some(value) = payload.get(field).and_then(detail_string_value) {
+            detail.insert(field.to_string(), Value::String(value));
+        }
+    }
+    for field in ["content", "output"] {
+        if let Some(value) = payload.get(field) {
+            insert_content_projection(&mut detail, field, value);
+        }
+    }
+    if let Some(exit_code) = payload.get("exit_code").and_then(Value::as_i64) {
+        detail.insert("exit_code".to_string(), json!(exit_code));
+    }
+    Value::Object(detail)
+}
+
+fn generic_detail_type(detail_type: &str) -> &str {
+    match detail_type {
+        "browser" | "mcp_tool" | "dynamic_tool" | "sub_agent" | "image_generation"
+        | "image_view" | "plan" | "plain_text" | "unknown" | "tool" => detail_type,
+        _ => "unknown",
+    }
+}
+
+fn insert_content_projection(detail: &mut Map<String, Value>, field: &str, value: &Value) {
+    if let Some(preview) = detail_content_preview(value) {
+        detail.insert(field.to_string(), Value::String(preview));
+    }
+    if !detail.contains_key("content_parts") {
+        let parts = detail_content_parts(value);
+        if !parts.is_empty() {
+            detail.insert("content_parts".to_string(), Value::Array(parts));
+        }
+    }
+}
+
+fn detail_content_preview(value: &Value) -> Option<String> {
+    let parts = detail_content_parts(value);
+    let preview = parts
+        .iter()
+        .filter_map(content_part_preview)
+        .filter(|part| !part.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    if preview.trim().is_empty() {
+        None
+    } else {
+        Some(truncate_preview(&preview, 500))
+    }
+}
+
+fn content_part_preview(part: &Value) -> Option<String> {
+    match part.get("type").and_then(Value::as_str) {
+        Some("text") => part.get("text").and_then(Value::as_str).map(str::to_string),
+        Some("json") => part.get("value").map(Value::to_string),
+        Some("resource_link") => part
+            .get("name")
+            .and_then(Value::as_str)
+            .or_else(|| part.get("uri").and_then(Value::as_str))
+            .map(str::to_string),
+        _ => None,
+    }
+}
+
+fn detail_content_parts(value: &Value) -> Vec<Value> {
+    match value {
+        Value::Null => Vec::new(),
+        Value::String(value) => vec![json!({ "type": "text", "text": value })],
+        Value::Bool(value) => vec![json!({ "type": "text", "text": value.to_string() })],
+        Value::Number(value) => vec![json!({ "type": "text", "text": value.to_string() })],
+        Value::Array(values) => values
+            .iter()
+            .flat_map(detail_content_parts)
+            .collect::<Vec<_>>(),
+        Value::Object(object) => {
+            if let Some(part) = known_content_part(object) {
+                return vec![part];
+            }
+            for field in ["content", "text", "output"] {
+                if let Some(value) = object.get(field) {
+                    let parts = detail_content_parts(value);
+                    if !parts.is_empty() {
+                        return parts;
+                    }
+                }
+            }
+            vec![json!({ "type": "json", "value": Value::Object(object.clone()) })]
+        }
+    }
+}
+
+fn known_content_part(object: &Map<String, Value>) -> Option<Value> {
+    match object.get("type").and_then(Value::as_str) {
+        Some("text") => object
+            .get("text")
+            .and_then(Value::as_str)
+            .map(|text| json!({ "type": "text", "text": text })),
+        Some("json") => object
+            .get("value")
+            .map(|value| json!({ "type": "json", "value": value })),
+        Some("resource_link") => {
+            let uri = object.get("uri").and_then(Value::as_str)?;
+            let mut part = Map::new();
+            part.insert(
+                "type".to_string(),
+                Value::String("resource_link".to_string()),
+            );
+            part.insert("uri".to_string(), Value::String(uri.to_string()));
+            if let Some(name) = object.get("name").and_then(Value::as_str) {
+                part.insert("name".to_string(), Value::String(name.to_string()));
+            }
+            if let Some(mime_type) = object.get("mime_type").and_then(Value::as_str) {
+                part.insert(
+                    "mime_type".to_string(),
+                    Value::String(mime_type.to_string()),
+                );
+            }
+            Some(Value::Object(part))
+        }
+        _ => None,
+    }
+}
+
+fn detail_string_value(value: &Value) -> Option<String> {
+    match value {
+        Value::Null => None,
+        Value::String(value) => Some(value.clone()),
+        Value::Bool(value) => Some(value.to_string()),
+        Value::Number(value) => Some(value.to_string()),
+        Value::Array(_) | Value::Object(_) => None,
+    }
 }
 
 fn publish_new_events<B>(state: &ApiState<B>, events: &[CanonicalEvent], before_len: usize) {
@@ -2775,22 +4306,25 @@ fn session_json(
     title: Option<&str>,
     agent_config: &AgentConfig,
     metadata: Option<Value>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+    pending_request_count: usize,
     last_event: Option<&CanonicalEvent>,
 ) -> Value {
-    let now = Utc::now().to_rfc3339();
     json!({
         "id": session_id.as_str(),
         "backend": backend,
         "status": status,
         "title": title.unwrap_or(session_id.as_str()),
-        "updated_at": now,
+        "updated_at": updated_at.to_rfc3339(),
         "working_directory": working_directory,
         "model": agent_config.model,
         "agent_config": agent_config,
-        "created_at": now,
+        "created_at": created_at.to_rfc3339(),
         "metadata": metadata.unwrap_or_else(|| json!({})),
         "runtime_info": session_runtime_info_json(backend, agent_config),
-        "operations": session_operations_json(status),
+        "activity": session_activity_json(status, pending_request_count),
+        "operations": session_operations_json(status, pending_request_count),
         "last_event_id": last_event.map(|event| event.event_id.as_str()).unwrap_or(""),
     })
 }
@@ -2806,9 +4340,41 @@ fn session_runtime_info_json(backend: &str, agent_config: &AgentConfig) -> Value
     })
 }
 
-fn session_operations_json(status: &str) -> Value {
+fn session_activity_json(status: &str, pending_request_count: usize) -> Value {
+    let phase = session_activity_phase(status);
+    let attention = session_activity_attention(status, pending_request_count);
+    json!({
+        "phase": phase,
+        "attention": attention,
+        "pending_request_count": pending_request_count,
+    })
+}
+
+fn session_activity_phase(status: &str) -> &str {
+    match status {
+        "starting" => "starting",
+        "running" => "running",
+        "canceling" => "canceling",
+        _ => "idle",
+    }
+}
+
+fn session_activity_attention(status: &str, pending_request_count: usize) -> &str {
+    if status == "failed" {
+        "error"
+    } else if status == "waiting_for_input" || pending_request_count > 0 {
+        "waiting_for_user"
+    } else {
+        "none"
+    }
+}
+
+fn session_operations_json(status: &str, pending_request_count: usize) -> Value {
     let closed = status == "closed";
-    let running = matches!(status, "running" | "canceling" | "waiting_for_input");
+    let running = session_is_running(status);
+    let waiting_for_user =
+        session_activity_attention(status, pending_request_count) == "waiting_for_user";
+    let has_pending_request = pending_request_count > 0;
     json!({
         "send_message": {
             "available": !closed,
@@ -2822,6 +4388,8 @@ fn session_operations_json(status: &str) -> Value {
             "available": running,
             "reason": if closed {
                 Value::String("session_closed".to_string())
+            } else if waiting_for_user {
+                Value::String("waiting_for_user".to_string())
             } else if running {
                 Value::Null
             } else {
@@ -2834,8 +4402,14 @@ fn session_operations_json(status: &str) -> Value {
             "reason": if closed { Value::String("session_closed".to_string()) } else { Value::Null },
         },
         "respond_to_request": {
-            "available": !closed,
-            "reason": if closed { Value::String("session_closed".to_string()) } else { Value::Null },
+            "available": !closed && has_pending_request,
+            "reason": if closed {
+                Value::String("session_closed".to_string())
+            } else if has_pending_request {
+                Value::Null
+            } else {
+                Value::String("no_pending_request".to_string())
+            },
         },
         "rewind_conversation": {
             "available": false,
@@ -2848,7 +4422,11 @@ fn session_operations_json(status: &str) -> Value {
     })
 }
 
-fn stored_session_json(session: &StoredSession, last_event: Option<&CanonicalEvent>) -> Value {
+fn stored_session_json(
+    session: &StoredSession,
+    events: &[CanonicalEvent],
+    last_event: Option<&CanonicalEvent>,
+) -> Value {
     session_json(
         &session.session_id,
         session.backend.as_str(),
@@ -2857,6 +4435,9 @@ fn stored_session_json(session: &StoredSession, last_event: Option<&CanonicalEve
         Some(&session.title),
         &session.agent_config,
         Some(session.metadata.clone()),
+        session.created_at,
+        session.updated_at,
+        project_pending_requests(events).requests.len(),
         last_event,
     )
 }
@@ -2877,6 +4458,7 @@ fn session_list_item_json(session: &StoredSession, events: &[CanonicalEvent]) ->
         .last()
         .map(|event| event.created_at)
         .unwrap_or(session.updated_at);
+    let pending_request_count = project_pending_requests(events).requests.len();
     json!({
         "id": session.session_id.as_str(),
         "backend": session.backend.as_str(),
@@ -2888,7 +4470,8 @@ fn session_list_item_json(session: &StoredSession, events: &[CanonicalEvent]) ->
         "created_at": session.created_at.to_rfc3339(),
         "last_activity_at": last_activity_at.to_rfc3339(),
         "preview": session_preview(events),
-        "pending_request_count": project_pending_requests(events).requests.len(),
+        "pending_request_count": pending_request_count,
+        "activity": session_activity_json(&session.status, pending_request_count),
         "running": session_is_running(&session.status),
         "model": session.agent_config.model.as_ref().or(session.model.as_ref()),
     })
@@ -2924,10 +4507,7 @@ fn truncate_preview(value: &str, max_chars: usize) -> String {
 }
 
 fn session_is_running(status: &str) -> bool {
-    matches!(
-        status,
-        "starting" | "running" | "waiting_for_input" | "canceling"
-    )
+    matches!(status, "starting" | "running" | "canceling")
 }
 
 fn timeline_item_json(event: &CanonicalEvent) -> Value {
@@ -2963,225 +4543,6 @@ fn timeline_item_json(event: &CanonicalEvent) -> Value {
             "to_event_id": event.event_id.as_str(),
         }
     })
-}
-
-async fn backend_catalog<B>(state: &ApiState<B>) -> Vec<Value>
-where
-    B: BackendAdapter + 'static,
-{
-    let mut backends = Vec::new();
-    for backend in &state.configured_backends {
-        let capabilities = state
-            .runtime
-            .backend_capabilities_for(Some(backend.engine_kind));
-        let model_result = state
-            .runtime
-            .list_backend_models(Some(backend.engine_kind))
-            .await;
-        let (discovered_models, status, status_message, diagnostics) = match model_result {
-            Ok(models) => (models, "available", None, json!({})),
-            Err(error) => {
-                let message = format!("model discovery failed: {error}");
-                (
-                    Vec::new(),
-                    "error",
-                    Some(message),
-                    json!({ "model_discovery_error": error.to_string() }),
-                )
-            }
-        };
-        backends.push(backend_json(
-            backend.kind,
-            backend.display_name,
-            backend.default_model.as_deref(),
-            discovered_models,
-            status,
-            status_message.as_deref(),
-            diagnostics,
-            capabilities.streaming,
-            capabilities.cancel,
-            capabilities.permission_requests,
-            capabilities.structured_diff,
-            capabilities.session_agent_config,
-        ));
-    }
-    backends
-}
-
-fn catalog_models(
-    kind: &str,
-    default_model: Option<&str>,
-    discovered_models: Vec<BackendModel>,
-) -> Vec<BackendModel> {
-    if !discovered_models.is_empty() {
-        return discovered_models;
-    }
-    default_model
-        .map(|model| {
-            vec![BackendModel {
-                id: model.to_string(),
-                label: model.to_string(),
-                description: None,
-                is_default: true,
-                reasoning_efforts: if kind == "acp" {
-                    Vec::new()
-                } else if kind == "codex" {
-                    vela_backends::codex::capabilities::codex_reasoning_effort_options(None)
-                } else {
-                    common_reasoning_effort_options()
-                },
-                metadata: Default::default(),
-            }]
-        })
-        .unwrap_or_default()
-}
-
-fn backend_permission_modes(kind: &str) -> Vec<PermissionModeOption> {
-    let mut modes = if kind == "codex" {
-        vec![
-            PermissionModeOption {
-                id: PermissionMode::ReadOnly,
-                label: "Read only".to_string(),
-                description: Some("Inspect files and ask before writes or commands.".to_string()),
-                is_default: false,
-                metadata: Default::default(),
-            },
-            PermissionModeOption {
-                id: PermissionMode::Auto,
-                label: "Default permissions".to_string(),
-                description: Some("Workspace-write with Codex's normal approval flow.".to_string()),
-                is_default: true,
-                metadata: Default::default(),
-            },
-            PermissionModeOption {
-                id: PermissionMode::AutoReview,
-                label: "Auto-review".to_string(),
-                description: Some(
-                    "Workspace-write with eligible approvals routed through auto-review."
-                        .to_string(),
-                ),
-                is_default: false,
-                metadata: Default::default(),
-            },
-            PermissionModeOption {
-                id: PermissionMode::FullAccess,
-                label: "Full access".to_string(),
-                description: Some(
-                    "Allow local full access without additional prompts.".to_string(),
-                ),
-                is_default: false,
-                metadata: Default::default(),
-            },
-        ]
-    } else {
-        vec![
-            PermissionModeOption {
-                id: PermissionMode::Auto,
-                label: "Auto".to_string(),
-                description: Some("Default local coding permission flow.".to_string()),
-                is_default: true,
-                metadata: Default::default(),
-            },
-            PermissionModeOption {
-                id: PermissionMode::FullAccess,
-                label: "Full access".to_string(),
-                description: Some(
-                    "Allow elevated local access when the backend supports it.".to_string(),
-                ),
-                is_default: false,
-                metadata: Default::default(),
-            },
-        ]
-    };
-    if !modes.iter().any(|mode| mode.is_default)
-        && let Some(first) = modes.first_mut()
-    {
-        first.is_default = true;
-    }
-    modes
-}
-
-fn backend_features(kind: &str) -> Vec<BackendFeature> {
-    let mut features = vec![BackendFeature::Toggle {
-        id: "fast_mode".to_string(),
-        label: "Fast".to_string(),
-        description: Some("Lower latency when supported by the backend.".to_string()),
-        default_value: false,
-        metadata: Default::default(),
-    }];
-    if kind != "codex" {
-        features.push(BackendFeature::Toggle {
-            id: "plan_mode".to_string(),
-            label: "Plan".to_string(),
-            description: Some(
-                "Plan before implementation when supported by the backend.".to_string(),
-            ),
-            default_value: false,
-            metadata: Default::default(),
-        });
-    }
-    features
-}
-
-fn backend_json(
-    kind: &str,
-    display_name: &str,
-    default_model: Option<&str>,
-    discovered_models: Vec<BackendModel>,
-    status: &str,
-    status_message: Option<&str>,
-    diagnostics: Value,
-    streaming: bool,
-    cancel: bool,
-    permission_requests: bool,
-    structured_diff: bool,
-    session_agent_config: bool,
-) -> Value {
-    let models = if status == "error" {
-        Vec::new()
-    } else {
-        catalog_models(kind, default_model, discovered_models)
-    };
-    let mut payload = json!({
-        "kind": kind,
-        "status": status,
-        "display_name": display_name,
-        "capabilities": {
-            "streaming": streaming,
-            "cancel": cancel,
-            "permission_requests": permission_requests,
-            "structured_diff": structured_diff,
-            "session_agent_config": session_agent_config,
-        },
-        "models": models,
-        "permission_modes": backend_permission_modes(kind),
-        "features": backend_features(kind),
-        "diagnostics": diagnostics,
-    });
-    if let Some(status_message) = status_message {
-        payload["status_message"] = json!(status_message);
-    }
-    payload
-}
-
-fn common_reasoning_effort_options() -> Vec<ReasoningEffortOption> {
-    [
-        ("off", "Off"),
-        ("minimal", "Minimal"),
-        ("low", "Low"),
-        ("medium", "Medium"),
-        ("high", "High"),
-        ("xhigh", "XHigh"),
-    ]
-    .into_iter()
-    .map(|(id, label)| ReasoningEffortOption {
-        id: id.to_string(),
-        label: label.to_string(),
-        description: None,
-        is_default: id == "medium",
-        metadata: Default::default(),
-    })
-    .collect()
 }
 
 fn error(status: StatusCode, code: impl Into<String>, message: impl Into<String>) -> Response {

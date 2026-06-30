@@ -62,7 +62,7 @@ export function VelaNextChat({
       isRespondingToRequest={controller.isRespondingToRequest}
       isUpdatingComposerControls={controller.isUpdatingAgentConfig}
       layout="contained"
-      messageFollowToken={controller.messageFollowToken}
+      followOutputToken={controller.followOutputToken}
       model={controller.model}
       onAgentConfigChange={controller.updateAgentConfig}
       onAttachImages={controller.attachImages}
@@ -70,10 +70,12 @@ export function VelaNextChat({
       onDraftChange={controller.setDraft}
       onLoadOlder={controller.loadOlderConversation}
       onRemoveAttachment={controller.removeAttachment}
+      onRemoveQueuedInput={controller.removeQueuedInput}
       onRespondToRequest={controller.respondToRequest}
       onStop={controller.stop}
       onSubmit={controller.send}
       pendingAttachments={controller.pendingAttachments}
+      queuedInputs={controller.queuedInputs}
     />
   );
 }
