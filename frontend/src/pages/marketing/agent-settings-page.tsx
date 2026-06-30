@@ -2914,7 +2914,7 @@ const TEA_SDK_SECTIONS = new Set<AgentSettingsSectionId>(["channel", "model", "s
 
 type WorkspaceConfirmState =
   | { kind: "export" }
-  | { kind: "import"; file: File };
+  | { kind: "import"; file: File | null };
 
 const formatWorkspaceImportFileSize = (bytes: number) => {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 KB";
@@ -3596,6 +3596,14 @@ export const AgentSettingsPage = ({
     setWorkspaceConfirm({ kind: "export" });
   };
 
+  const handleRequestImportWorkspace = () => {
+    if (workspaceActionDisabledReason) {
+      toast.error(workspaceActionDisabledReason);
+      return;
+    }
+    setWorkspaceConfirm({ kind: "import", file: null });
+  };
+
   const handleExportWorkspace = async () => {
     if (!activeBot || activeBot.status !== "running" || exportingBotIds.has(activeBot.id)) return;
     const targetBotId = activeBot.id;
@@ -3745,26 +3753,26 @@ export const AgentSettingsPage = ({
   }), [commandAdapter]);
 
   useEffect(() => {
-    if (!showHiddenAgentTools || activeSection !== "diagnostics" || !activeBot?.id) return;
+    if (activeSection !== "diagnostics" || !activeBot?.id) return;
     void loadRescueExportStatus(activeBot.id).catch(() => undefined);
     void loadHermesImportStatus(activeBot.id).catch(() => undefined);
-  }, [showHiddenAgentTools, activeSection, activeBot?.id, loadRescueExportStatus, loadHermesImportStatus]);
+  }, [activeSection, activeBot?.id, loadRescueExportStatus, loadHermesImportStatus]);
 
   useEffect(() => {
-    if (!showHiddenAgentTools || activeSection !== "diagnostics" || !activeBot?.id || !isRescueExportRunning(activeExportStatus)) return;
+    if (activeSection !== "diagnostics" || !activeBot?.id || !isRescueExportRunning(activeExportStatus)) return;
     const timer = window.setInterval(() => {
       void loadRescueExportStatus(activeBot.id).catch(() => undefined);
     }, RESCUE_EXPORT_POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [showHiddenAgentTools, activeSection, activeBot?.id, activeExportStatus?.phase, loadRescueExportStatus]);
+  }, [activeSection, activeBot?.id, activeExportStatus?.phase, loadRescueExportStatus]);
 
   useEffect(() => {
-    if (!showHiddenAgentTools || activeSection !== "diagnostics" || !activeBot?.id || !isRescueExportRunning(activeImportStatus)) return;
+    if (activeSection !== "diagnostics" || !activeBot?.id || !isRescueExportRunning(activeImportStatus)) return;
     const timer = window.setInterval(() => {
       void loadHermesImportStatus(activeBot.id).catch(() => undefined);
     }, RESCUE_EXPORT_POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [showHiddenAgentTools, activeSection, activeBot?.id, activeImportStatus?.phase, loadHermesImportStatus]);
+  }, [activeSection, activeBot?.id, activeImportStatus?.phase, loadHermesImportStatus]);
 
   useEffect(() => {
     return installOpenClawConsoleHelpers({
@@ -4128,28 +4136,17 @@ export const AgentSettingsPage = ({
     return workspaceDetailsOpen ? t("收起备份或恢复详情") : t("查看备份或恢复详情");
   };
   const workspaceCopyLabel = activeWorkspaceTask?.kind === "export" ? t("复制备份信息") : t("复制恢复信息");
-  const workspaceRecoveryPanel = showHiddenAgentTools && activeBot ? (
+  const workspaceRecoveryPanel = activeBot ? (
     <section className="rounded-md border border-black/[0.08] bg-white p-5 shadow-sm">
       <div className="mb-4">
         <h3 className="text-base font-semibold text-black/90 text-balance">{t("Agent 备份与恢复")}</h3>
-        <p className="mt-1 truncate text-xs text-black/45" title={activeBot.name}>
-          {activeBot.name} · {HERMES_WORKSPACE_EXPORT_PATH}
-        </p>
       </div>
-      <details className="mb-4 rounded-md border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-xs leading-relaxed text-black/65">
-        <summary className="cursor-pointer select-none font-medium text-black/75">
-          {t("备份的是 Hermes Agent 数据目录，不是整机备份。")}
-        </summary>
-        <p className="mt-2 text-pretty">
-          {t("数据目录：{{path}}。这里保存 Hermes Agent 的配置、工作空间、记忆、已安装技能等数据。", { path: HERMES_WORKSPACE_EXPORT_PATH })}
-        </p>
-        <p className="mt-1 text-pretty">
-          {t("为避免备份包过大或包含运行时临时文件，会排除 hermes-agent、bin/、backups/、checkpoints/、node_modules、.git、__pycache__、pid 文件、Python 字节码和 SQLite 临时 sidecar。")}
-        </p>
-        <p className="mt-1 text-pretty">
-          {t("从备份恢复会覆盖目标 Agent 的对应数据。备份、恢复成功或失败都会通过绑定邮箱通知。")}
-        </p>
-      </details>
+      <div className="mb-4 rounded-md border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-xs leading-relaxed text-black/65">
+        <ul className="list-disc space-y-1 pl-4 text-pretty">
+          <li>{t("备份范围是 Hermes Agent 的数据目录，包含 Hermes Agent 的配置、工作空间、记忆、已安装技能等数据。")}</li>
+          <li>{t("从备份恢复会覆盖目标 Agent 的对应数据。备份、恢复成功或失败都会通过绑定邮箱通知。")}</li>
+        </ul>
+      </div>
       <input
         ref={importFileInputRef}
         type="file"
@@ -4218,7 +4215,7 @@ export const AgentSettingsPage = ({
             <WorkspaceActionTooltip content={workspaceEmailBindingTooltip}>
               <button
                 type="button"
-                onClick={() => importFileInputRef.current?.click()}
+                onClick={handleRequestImportWorkspace}
                 disabled={!canStartWorkspaceAction}
                 className="inline-flex h-8 items-center gap-1.5 rounded-md bg-black/90 px-3 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-black/20"
               >
@@ -4331,8 +4328,10 @@ export const AgentSettingsPage = ({
                     {workspaceConfirm.kind === "import" ? (
                       <>
                         <span className="text-black/45">{t("备份文件")}</span>
-                        <span className="min-w-0 truncate text-black/75" title={workspaceConfirm.file.name}>
-                          {workspaceConfirm.file.name} · {formatWorkspaceImportFileSize(workspaceConfirm.file.size)}
+                        <span className="min-w-0 truncate text-black/75" title={workspaceConfirm.file?.name}>
+                          {workspaceConfirm.file
+                            ? `${workspaceConfirm.file.name} · ${formatWorkspaceImportFileSize(workspaceConfirm.file.size)}`
+                            : t("尚未选择备份文件")}
                         </span>
                       </>
                     ) : (
@@ -4355,14 +4354,43 @@ export const AgentSettingsPage = ({
                     </ul>
                   </div>
                 ) : (
-                  <div className="flex gap-2 rounded-md border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-xs leading-relaxed text-black/65" role="status">
-                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-amber-600" aria-hidden="true" />
-                    <div className="space-y-1 text-pretty">
-                      <p className="font-semibold text-black/75">{t("恢复前请确认")}</p>
-                      <p>{t("从备份恢复会覆盖目标 Agent 的 Hermes Agent 相关文件，包括配置、工作空间、记忆、已安装技能等数据。")}</p>
-                      <p>{t("恢复成功或失败均会通过绑定邮箱通知。")}</p>
+                  <>
+                    <div className="rounded-md border border-black/[0.08] bg-white px-3 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-black/80" title={workspaceConfirm.file?.name}>
+                            {workspaceConfirm.file ? workspaceConfirm.file.name : t("选择 Hermes zip 备份包")}
+                          </p>
+                          <p className="mt-1 text-xs text-black/45">
+                            {workspaceConfirm.file
+                              ? formatWorkspaceImportFileSize(workspaceConfirm.file.size)
+                              : t("支持 Hermes 导出的 .zip 备份包。")}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => importFileInputRef.current?.click()}
+                          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-black/[0.08] bg-white px-3 text-xs font-medium text-black/70 transition-colors hover:bg-black/[0.035]"
+                        >
+                          <UploadCloud className="h-3.5 w-3.5" aria-hidden="true" />
+                          {workspaceConfirm.file ? t("重新选择") : t("选择文件")}
+                        </button>
+                      </div>
+                      {!workspaceConfirm.file && (
+                        <p id="workspace-import-file-helper" className="mt-2 text-xs text-black/45">
+                          {t("请选择 Hermes 导出的 zip 备份包后再确认恢复。")}
+                        </p>
+                      )}
                     </div>
-                  </div>
+                    <div className="flex gap-2 rounded-md border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-xs leading-relaxed text-black/65" role="status">
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-amber-600" aria-hidden="true" />
+                      <div className="space-y-1 text-pretty">
+                        <p className="font-semibold text-black/75">{t("恢复前请确认")}</p>
+                        <p>{t("从备份恢复会覆盖目标 Agent 的 Hermes Agent 相关文件，包括配置、工作空间、记忆、已安装技能等数据。")}</p>
+                        <p>{t("恢复成功或失败均会通过绑定邮箱通知。")}</p>
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
               <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -4380,9 +4408,11 @@ export const AgentSettingsPage = ({
                       void handleExportWorkspace();
                       return;
                     }
+                    if (!workspaceConfirm.file) return;
                     void handleImportWorkspace(workspaceConfirm.file);
                   }}
-                  disabled={!canStartWorkspaceAction}
+                  disabled={!canStartWorkspaceAction || (workspaceConfirm.kind === "import" && !workspaceConfirm.file)}
+                  aria-describedby={workspaceConfirm.kind === "import" && !workspaceConfirm.file ? "workspace-import-file-helper" : undefined}
                   className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-black/90 px-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-black/20"
                 >
                   {isActiveBotExporting || isActiveBotImporting ? (
