@@ -1,8 +1,33 @@
 # 当前需求提案
 
-> 工作区已清理（上一需求归档于 2026-06-17：Hermes Agent 版本更新公告）。
->
-> - 详细变更记录：`openspec/changes/2026-06-17-frontsandbox-hermes-agent-version-announcement.md`
-> - 源分支：`frontsandbox/hermes-agent-version-announcement`
->
-> 请通过 `/feai-start` 启动新流程。
+## 需求名称
+
+国内站文档新增 LightVela 公测公告与首页公告入口
+
+## 背景
+
+LightVela 预计将于 2026 年 7 月 15 日开启公测，并需要在官网承载「公测计划及付费版本预告」完整公告内容。用户希望公告内容直接进入项目，不依赖 Wiki 外链，同时在 `/docs` 页面下增加产品公告目录，把公告作为文档文章承载。
+
+## 范围
+
+- 在项目内维护一份公测公告静态内容。
+- 在 `/docs` 页面下新增「产品公告」目录，并新增文档页 `/docs/announcements/public-beta`。
+- 首页顶部公告条展示短提示，点击进入文档公告页。
+- 公告文档接入 Fumadocs 同步脚本、docs route manifest、SEO title 和 sitemap。
+- 保持现有官网导航结构，不新增长期主导航「公告」入口。
+
+## 不在范围
+
+- 不建设完整公告列表、公告后台或 CMS。
+- 不改付费下单流程、套餐接口或订阅页真实价格逻辑。
+- 不改国际站公告策略；本次只保证国内站入口与页面稳定。
+- 不提交、不推送、不创建 MR，除非用户后续明确确认。
+
+## 验收标准
+
+- 国内站首页出现一条可关闭的公测短公告，关闭状态使用新公告 ID 隔离旧公告，详情链接指向 `/docs/announcements/public-beta`。
+- `/docs` 侧边栏出现「产品公告」目录，目录下包含「公测计划及付费版本预告」。
+- 访问 `/docs/announcements/public-beta` 可以看到公告全文，包括预计公测时间、延期权益、能力清单、两组价格表、新用户权益、后续迭代方向和交流群入口。
+- 公告文档按文章排版，在桌面和移动端可读，价格表不产生文本遮挡。
+- 公告文档有稳定 title、description，并通过 docs manifest 出现在 sitemap。
+- `pnpm i18n:extract`、`pnpm i18n:check`、`pnpm check` 通过；如时间允许补充 CN build 或浏览器 smoke。

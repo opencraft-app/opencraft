@@ -1,24 +1,17 @@
 # 当前执行计划
 
-> 当前需求：为国际站 LightVela 启用人设功能，并补齐英文模式的人设测试、卡片、详情与 SOUL.md 内容。
+> 当前需求：国内站 `/docs` 新增 LightVela 产品公告目录，并让首页公告跳转到文档页。
+> 规模：M。模式：单 Agent。Figma：不涉及。
 
-- [x] 打开国际站 `/agents/persona` 人设入口，并在国际站控制台顺序上放在自动任务之前。
-- [x] 为国际站英文模式新增独立英文 soul 测试数据、16 张 soul 卡片摘要、详情解读与 SOUL.md 内容；国际站中文模式复用国内站中文体验。
-- [x] 让人设抽卡、答题推荐、详情预览、注入 SOUL.md 在中英文模式下选择对应数据源。
-- [x] 补充针对性测试并运行 i18n、单测、类型检查。
-- [x] 修复频繁切换中英文时的人设状态重复保存 / soul 列表重复请求，并修复 Next Header 首屏 hydration href 不一致。
-
-> 近期 master 已合入需求：LightVela Agent 控制台新增“专家/技能包”安装功能，并合并到技能页面。
-
-- [x] 参考 SkillHub AI 搭子的 SkillSet/技能包模型，补齐 LightVela 读取 SkillSet 列表与详情的公共 API。
-- [x] 在 `/agents` 左侧导航新增“专家”入口，展示金融、科技、设计、营销等专家场景和对应技能包。
-- [x] 用户选择专家后，可安装该专家技能包内的一组 skills；安装链路复用 `debug/exec` 下发 `acli` 命令。
-- [x] 为命令构造、SkillHub API、路由映射补充针对性测试，并运行 i18n 与类型检查。
-- [x] 参考 SkillHub 技能包展示样式，为专家技能包卡片接入同源专家头像资源。
-- [x] 将专家技能包页面合并到技能页面，在技能页顶部提供“技能 / 技能包”两个 tab，移除独立专家入口。
-
-> 近期 master 已合入需求：为国际站 LightVela 安全接入 PostHog 产品分析。
-
-- [x] 在前端 observability 层新增 consent-gated PostHog 初始化、用户识别桥和基础事件 API。
-- [x] 将 PostHog 配置接入 release matrix / Next public env，并保持默认关闭直到配置项目 token。
-- [x] 增加依赖供应链防护配置与测试验证，避免新 npm 包静默执行安装脚本或泄漏环境配置。
+- [x] Planner/Developer: 梳理公告内容模型与 docs 接入点。
+  - 影响文件：`frontend/src/content/docs/announcements/public-beta.md`、`frontend/src/config/docs-sidebar.ts`
+  - 验收方式：公告全文结构覆盖用户确认内容，并在国内站 docs sidebar 出现「产品公告」目录。
+- [x] Developer: 接入 Fumadocs 同步和 docs route manifest。
+  - 影响文件：`frontend/scripts/sync-fumadocs-content.mjs`、`frontend/next-site/docs-route-manifest.ts`
+  - 验收方式：`node frontend/scripts/sync-fumadocs-content.mjs` 后 manifest 包含 `announcements/public-beta`。
+- [x] Developer: 更新首页公告条跳转，并移除旧独立公告路由。
+  - 影响文件：`frontend/src/components/site/maintenance-announcement-banner.tsx`、`frontend/next-site/public-pages.tsx`、`frontend/src/app/sitemap.xml/route.next.ts`、`frontend/src/lib/public-site-routing.ts`
+  - 验收方式：首页短公告详情链接指向 `/docs/announcements/public-beta`；旧 `/announcements/lightvela-public-beta` 不再作为公开入口。
+- [x] Reviewer: 运行质量门禁与页面 smoke。
+  - 影响文件：`frontend/src/i18n/generated/*.json`
+  - 验收方式：`pnpm i18n:check`、`pnpm check`、`pnpm build:cn` 通过；本地预览验证首页入口和 docs 文章页。

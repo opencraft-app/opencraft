@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { BEIAN_URL, CN_PRIVACY_POLICY_URL, ICP_LICENSE, shouldShowICP } from "@/constants/legal";
+import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { useT } from "@/i18n/t";
-import { isGlobal } from "@/lib/region";
+import { isCN, isGlobal } from "@/lib/region";
 
 interface LegalFooterProps {
   icpPlacement?: "inline" | "right";
@@ -64,6 +65,19 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
             >
               {t("服务条款")}
             </a>
+            {isCN ? (
+              <>
+                ·
+                <a
+                  href={PRODUCT_FEEDBACK_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={footerLinkClass}
+                >
+                  {t("产品反馈")}
+                </a>
+              </>
+            ) : null}
             {isGlobal ? (
               <>
                 ·
