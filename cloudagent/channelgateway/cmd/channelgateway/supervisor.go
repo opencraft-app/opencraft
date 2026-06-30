@@ -507,7 +507,9 @@ func weComConfigForAccount(account store.ChannelAccount) (wecom.Config, error) {
 
 func newAccountACPClient(cfg config.Config, account store.ChannelAccount) acpRuntimeClient {
 	if strings.EqualFold(strings.TrimSpace(cfg.RuntimeProtocol), "cloudagent") {
-		return acp.NewCloudAgentClient(normalizeCloudAgentURL(cfg.ACPURL), acpHeadersForAccount(cfg, account))
+		client := acp.NewCloudAgentClient(normalizeCloudAgentURL(cfg.ACPURL), acpHeadersForAccount(cfg, account))
+		client.SetSandboxBackend(cfg.CloudAgentSandboxBackend)
+		return client
 	}
 	return acp.NewClient(normalizeACPURL(cfg.ACPURL), acpHeadersForAccount(cfg, account))
 }
