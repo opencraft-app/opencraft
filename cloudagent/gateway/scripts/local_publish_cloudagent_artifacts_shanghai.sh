@@ -13,6 +13,7 @@ Usage:
 
 Options:
   --env-file PATH       Load release secrets from PATH before publishing.
+  --arches LIST         Build and publish artifact arches, for example "amd64 arm64".
   --dry-run             Build/sign locally but do not upload to COS.
   --wisp-package PATH   Use an existing Wisp package artifact instead of building one.
   --help                Show this help.
@@ -110,6 +111,14 @@ while [ "$#" -gt 0 ]; do
       export CLOUDAGENT_ARTIFACTS_DRY_RUN=1
       shift
       ;;
+    --arches)
+      if [ "$#" -lt 2 ]; then
+        printf 'missing value for --arches\n' >&2
+        exit 2
+      fi
+      export CLOUDAGENT_ARTIFACT_ARCHES="$2"
+      shift 2
+      ;;
     --wisp-package)
       if [ "$#" -lt 2 ]; then
         printf 'missing value for --wisp-package\n' >&2
@@ -192,6 +201,7 @@ export CLOUDAGENT_AGENT_RELEASE_ED25519_SEED_B64="$SIGNING_SEED"
 printf '[cloudagent-local-publish] repo=%s\n' "$REPO_ROOT" >&2
 printf '[cloudagent-local-publish] bucket=%s region=%s\n' "$CLOUDAGENT_AGENT_COS_BUCKET" "$CLOUDAGENT_AGENT_COS_REGION" >&2
 printf '[cloudagent-local-publish] agent_prefix=%s workspace_prefix=%s\n' "$CLOUDAGENT_AGENT_COS_OBJECT_PREFIX" "$CLOUDAGENT_WISP_COS_OBJECT_PREFIX" >&2
+printf '[cloudagent-local-publish] arches=%s\n' "${CLOUDAGENT_ARTIFACT_ARCHES:-${CLOUDAGENT_AGENT_GOARCH:-${LINUX_GOARCH:-amd64}}}" >&2
 if [ "${CLOUDAGENT_ARTIFACTS_DRY_RUN:-0}" = "1" ]; then
   printf '[cloudagent-local-publish] dry_run=1\n' >&2
 fi

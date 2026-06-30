@@ -30,8 +30,9 @@ gateway test process on macOS
 准备条件：
 
 - OrbStack 已启动，并且 `ssh orb uname -a` 可用。
-- `cloudagent/gateway/.env` 或当前 shell 提供 TokenHub、sidecar、上海 SMH/Wisp 配置；local_wisp 不需要 AGS API credential。
-- OrbStack Linux 允许免交互 sudo；脚本会自动检查 `/dev/fuse`、`fsck.erofs`、`crun`、loop device。
+- `cloudagent/gateway/.env` 或当前 shell 提供上海 SMH 配置；local_wisp 不需要 AGS API credential。
+- OrbStack Linux 允许免交互 sudo；脚本会自动检查 `/dev/fuse`、`fsck.erofs`、loop device。
+- `dist/cloudagent-sidecar-linux-$(goarch)` 和 `cloudagent/wisp/dist-release/wisp-linux-$(goarch)-*.erofs` 已存在，或者通过环境变量传入可访问的 URL。脚本会优先使用显式 URL，其次使用 `dist/*.clean`，最后自动把本地产物用临时 HTTP server 暴露给 Linux runtime。
 
 运行：
 
@@ -40,26 +41,22 @@ cd cloudagent/gateway
 make e2e-local-orbstack-wisp-smh
 ```
 
-如果要验证本地刚构建的 Wisp 包，先在 macOS 上启动一个静态文件服务：
-
-```bash
-cd cloudagent/wisp
-GOOS=linux GOARCH=amd64 WISP_PACKAGE_EROFS=1 WISP_PACKAGE_TAR_GZ=0 WISP_PACKAGE_WITH_DOCKER=1 ./hack/release/package-tarball.sh
-ruby -run -e httpd "$PWD/dist-release" -p 18097
-```
-
-然后用 `host.orb.internal` 传给 OrbStack Linux：
+如果要验证本地刚构建的 arm64 Wisp 包和 sidecar：
 
 ```bash
 cd cloudagent/gateway
-GATEWAY_WISP_PACKAGE_URL=http://host.orb.internal:18097/wisp-linux-amd64-YYYYMMDDTHHMMSSZ.erofs \
-  make e2e-local-orbstack-wisp-smh
+make LINUX_GOARCH=arm64 cloudagent-sidecar-linux
+GOARCH=arm64 WISP_PACKAGE_EROFS=1 WISP_PACKAGE_TAR_GZ=0 \
+  ./scripts/publish_cloudagent_wisp_package.sh
+make e2e-local-orbstack-wisp-smh
 ```
+
+`publish_cloudagent_wisp_package.sh` 默认会上传 COS；只想本地 dry-run 生成 EROFS 时，设置 `CLOUDAGENT_WISP_PUBLISH_DRY_RUN=1 COS_PUBLISH_DRY_RUN=1 COSCMD_BIN=echo` 并提供 dry-run coscmd config。
 
 实现约束：
 
 - OrbStack 当前按主机级 Wisp daemon 跑，inner/outer 两个 Wisp container 共享同一个 daemon。
-- arm64 Mac 上默认仍可使用 amd64 Wisp 包，但 container runtime 使用 OrbStack Linux 里的原生 `crun`，不要使用包内 amd64 `crun`。
+- 本地 Linux runtime 必须使用同架构 Wisp package。arm64 OrbStack/Docker 使用 `linux-arm64` EROFS；amd64 host 使用 `linux-amd64` EROFS。不要依赖 QEMU/Rosetta 跑包内 `crun`。
 - active `root-upper.img` 直接在 Wisp/JuiceFS 路径上创建；干净 VM 下 `mke2fs` 本身不是瓶颈。
 - 如果手工中断过 Wisp 启动，OrbStack 里可能残留坏的 mount/loop 现场。新的 session 不应被 sibling runtime root 的旧 loop 阻断；Wisp 只会在当前 session 自己的 runtime root 上做恢复/清理。如果已经出现不可杀 D-state，重启 OrbStack VM 比脚本里强行 `umount` 更可靠。
 
@@ -362,7 +359,7 @@ CLOUDAGENT_LOCAL_RUNTIME_HOST_DOCKER=1 make e2e-local-runtime-host
 make e2e-local-docker-wisp-smh
 ```
 
-这个目标不是 fake runtime。Docker 只提供本地 Linux 计算环境；Wisp package、SMH space/token、outer Wisp、workspace Wisp 都走真实上海配置。脚本会启动一个 privileged `linux/amd64` Debian 容器，设置 `GATEWAY_RUNTIME_HOST=local_wisp`，然后跑 `TestLiveLocalDockerWispSMHRuntime`：
+这个目标不是 fake runtime。Docker 只提供本地 Linux 计算环境；Wisp package、SMH space/token、outer Wisp、workspace Wisp 都走真实上海配置。脚本会启动一个 privileged Debian 容器，默认跟随 Docker daemon 原生架构，设置 `GATEWAY_RUNTIME_HOST=local_wisp`，然后跑 `TestLiveLocalDockerWispSMHRuntime`：
 
 - 创建 outer local runtime target。
 - 创建 workspace local runtime target。
@@ -375,9 +372,17 @@ make e2e-local-docker-wisp-smh
 必需配置：
 
 ```bash
-GATEWAY_AGENT_SIDECAR_URL=...
 GATEWAY_WISP_SMH_LIBRARY_SECRET=...
 ```
+
+如果没有 `GATEWAY_AGENT_SIDECAR_URL` / `GATEWAY_WISP_PACKAGE_URL`，脚本会自动查找本地产物：
+
+```text
+cloudagent/gateway/dist/cloudagent-sidecar-linux-$arch
+cloudagent/wisp/dist-release/wisp-linux-$arch-*.erofs
+```
+
+并通过临时 HTTP server 暴露给 Docker Linux。Docker 使用 `host.docker.internal` 访问宿主机；OrbStack 使用 `host.orb.internal`。
 
 默认会使用上海 SMH library：
 
@@ -397,12 +402,11 @@ make e2e-local-orbstack-wisp-smh
 - 不再嵌套 `crun in Docker`。
 - 继续使用真实上海 SMH library、SMH token、Wisp package。
 - outer Wisp 和 workspace Wisp 在同一台 OrbStack VM 上启动，当前共享同一个主机级 Wisp daemon。Wisp daemon 不是按端口多实例模型；不要为了 inner/outer 强行起两个 daemon。
-- 默认复用上海 `linux-amd64` EROFS package，并依赖 OrbStack/Rosetta 的 amd64 ELF 支持；如果后续发布 `linux-arm64` Wisp package，可通过 `GATEWAY_WISP_PACKAGE_URL` 和 `GATEWAY_WISP_PACKAGE_ARCH=arm64` 切换。
+- 默认要求 Wisp package 架构和 OrbStack Linux 架构一致。arm64 Mac/OrbStack 使用 `linux-arm64` EROFS，脚本会拒绝 `linux-amd64` package，避免 `crun` 在错误架构下 re-exec 失败。
 
 必需配置同 Docker 目标：
 
 ```bash
-GATEWAY_AGENT_SIDECAR_URL=...
 GATEWAY_WISP_SMH_LIBRARY_SECRET=...
 ```
 

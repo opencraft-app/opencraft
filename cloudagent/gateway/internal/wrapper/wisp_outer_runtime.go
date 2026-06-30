@@ -19,7 +19,7 @@ import (
 
 const (
 	defaultWispOuterAdminAddr = "http://127.0.0.1:8520"
-	defaultWispPackageURL     = "https://cloudagent-sidecar-shanghai-1388575217.cos.ap-shanghai.myqcloud.com/workspace/releases/wisp-linux-amd64-20260622T065610Z-6ec59c76cb2e.erofs"
+	defaultWispPackageURL     = "https://cloudagent-sidecar-shanghai-1388575217.cos.ap-shanghai.myqcloud.com/workspace/20260528/wisp-linux-amd64-20260528T061826Z-8ceda87c563b.erofs"
 )
 
 func wispAdminAddr(ACPSessionRuntime) string {
@@ -141,6 +141,8 @@ func (w *AgentSidecarWorker) prepareWispRuntimeWithSpace(ctx context.Context, ho
 		"WISP_PACKAGE_ARCH":                   firstEnv("GATEWAY_WISP_PACKAGE_ARCH", "WISP_PACKAGE_ARCH"),
 		"WISP_USE_HOST_E2FSPROGS":             firstEnv("GATEWAY_WISP_USE_HOST_E2FSPROGS", "WISP_USE_HOST_E2FSPROGS"),
 		"WISP_USE_HOST_CRUN":                  firstEnv("GATEWAY_WISP_USE_HOST_CRUN", "WISP_USE_HOST_CRUN"),
+		"WISP_CRUN_BINARY":                    firstEnv("GATEWAY_WISP_CRUN_BINARY", "WISP_CRUN_BINARY"),
+		"WISP_CRUN_BINARY_PATH":               firstEnv("GATEWAY_WISP_CRUN_BINARY_PATH", "WISP_CRUN_BINARY_PATH"),
 	}
 	w.logWispMountEvent("acp_runtime_wisp_mount_start", req, runtime, sb, space, target, "")
 	result, err := host.RunCommand(ctx, sb, wispOuterPrepareScript(), env, nil, func(text string) error {
@@ -203,6 +205,8 @@ func (w *AgentSidecarWorker) prepareWispHostOnly(ctx context.Context, host Runti
 		"WISP_PACKAGE_ARCH":                   firstEnv("GATEWAY_WISP_PACKAGE_ARCH", "WISP_PACKAGE_ARCH"),
 		"WISP_USE_HOST_E2FSPROGS":             firstEnv("GATEWAY_WISP_USE_HOST_E2FSPROGS", "WISP_USE_HOST_E2FSPROGS"),
 		"WISP_USE_HOST_CRUN":                  firstEnv("GATEWAY_WISP_USE_HOST_CRUN", "WISP_USE_HOST_CRUN"),
+		"WISP_CRUN_BINARY":                    firstEnv("GATEWAY_WISP_CRUN_BINARY", "WISP_CRUN_BINARY"),
+		"WISP_CRUN_BINARY_PATH":               firstEnv("GATEWAY_WISP_CRUN_BINARY_PATH", "WISP_CRUN_BINARY_PATH"),
 	}
 	result, err := host.RunCommand(ctx, sb, wispOuterPrepareScript(), env, nil, func(text string) error {
 		logRemoteStderr(time.Now(), workerJob{JobID: firstNonEmpty(jobID, "wisp_host_prepare"), ResponseID: sb.ID}, text)
@@ -532,23 +536,6 @@ func (w *AgentSidecarWorker) runWispStopCommandWithRetry(ctx context.Context, ho
 	return result, err
 }
 
-func isRuntimeHostRunCommandNotFoundError(err error) bool {
-	if err == nil {
-		return false
-	}
-	message := strings.ToLower(err.Error())
-	return strings.Contains(message, "op=run_command") &&
-		(strings.Contains(message, "ags http 404") ||
-			(strings.Contains(message, "http 404") && strings.Contains(message, "requested resource does not exist")))
-}
-
-func errorString(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
-}
-
 func wispOuterStopCommand(runtime ACPSessionRuntime) string {
 	return wispStopCommand(runtime)
 }
@@ -577,7 +564,8 @@ func wispStopCommand(runtime ACPSessionRuntime) string {
 		"  sed -E \"s/(SMH_ACCESS_TOKEN=)[^[:space:]]+/\\1<redacted>/Ig; s/(access[_-]?token=)[^[:space:]]+/\\1<redacted>/Ig; s/(api[_-]?key=)[^[:space:]]+/\\1<redacted>/Ig; s/(library[_-]?secret=)[^[:space:]]+/\\1<redacted>/Ig; s/(secret[_-]?key=)[^[:space:]]+/\\1<redacted>/Ig\"\n" +
 		"}\n" +
 		"tail_safe_log() {\n" +
-		"  grep -aE 'timeline source=hermes_sidecar|runtime_host_event|workspace_runtime_shutdown|inner_shutdown|filesystem_write_committed|restore_checkpoint|request (start|ok|fail) action=(admin|wisp)\\.stop|runtime.stop|runtime.stop_state|stop step=|stop_container|runtime.create_stop_checkpoint|runtime.promote_stop_checkpoint|create_checkpoint source_stat|create_checkpoint clone_start|create_checkpoint clone_done|active_fsync_(start|done)|stop_checkpoint_promote|reset_runtime|sync_checkpoint_source|Checkpoint created|checkpoint_manifest_durable|writeback_cut_barrier|meta_barrier|SUMMARY stop|litestream .*barrier|litestream checkpoint|checkpoint cut|sqlite_litestream_trace|smh_http |ERROR|WARN|error=|event=' \"$log\" 2>/dev/null | tail -n 340 | redact_line || true\n" +
+		"  echo \"wisp stop_daemon_log: $log\"\n" +
+		"  grep -aE 'timeline source=hermes_sidecar|runtime_host_event|workspace_runtime_shutdown|inner_shutdown|checkpoint_manifest_durable|filesystem_write_committed|restore_checkpoint|runtime.stop_state|runtime.promote_stop_checkpoint|create_checkpoint source_stat|create_checkpoint clone_start|create_checkpoint clone_done|active_fsync_(start|done)|stop_checkpoint_promote|reset_runtime|SUMMARY stop|writeback_cut_barrier|meta_barrier|litestream .*barrier|litestream checkpoint|checkpoint cut|sqlite_litestream_trace|smh_http |ERROR|WARN|error=|event=' \"$log\" 2>/dev/null | tail -n 260 | redact_line || true\n" +
 		"}\n" +
 		"tail_juicefs_log() {\n" +
 		"  local assert_log=/tmp/juicefs-assertmount.log\n" +
@@ -629,11 +617,6 @@ func wispStopCommand(runtime ACPSessionRuntime) string {
 		"  exit \"$code\"\n" +
 		"fi\n" +
 		"cat \"$stop_stdout\" || true\n" +
-		"if [[ -n \"$log\" && -f \"$log\" ]]; then\n" +
-		"  echo \"wisp stop_daemon_log:\" >&2\n" +
-		"  tail_safe_log >&2 || true\n" +
-		"fi\n" +
-		"tail_juicefs_log >&2 || true\n" +
 		"echo \"wisp umount_done name=$name\" >&2\n" +
 		"echo CLOUDAGENT_WISP_STOPPED\n"
 }
@@ -815,36 +798,12 @@ func wispOuterPrepareScript() string {
 	  local total
 	  total="$(wc -l <"$log" | tr -d ' ')"
 	  if [[ "$total" -ge "$daemon_log_line" ]]; then
-		    sed -n "${daemon_log_line},${total}p" "$log" \
-		      | grep -aE 'request (start|ok|fail) action=(admin|wisp)\\.(create|backend_bind|start|stop)|bound_config|bootstrap-global|bootstrap step=|ensure_cos_root (skip|assertmount|wait_mount|usable_check|mounted|already_mounted)|ensure_workspace_ready|pre_start_recovery|active_image_valid|restore_checkpoint|filesystem_write_committed|Restored active image|ensure_active_image|start step=|start_container step=|runtime.stop|runtime.stop_state|stop step=|stop_container|runtime.create_stop_checkpoint|runtime.promote_stop_checkpoint|create_checkpoint source_stat|create_checkpoint clone_start|create_checkpoint clone_done|active_fsync_(start|done)|stop_checkpoint_promote|reset_runtime|sync_checkpoint_source|checkpoint retention|Checkpoint created|checkpoint_manifest_durable|writeback_cut_barrier|meta_barrier|mount_runtime|runtime.start_container|runtime.start.crun_run|crun container|SUMMARY (bootstrap|bootstrap-global|ensure_workspace_ready|ensure_active_image|mount_runtime|start|stop)|HUMAN (bootstrap|start|stop)|assertmount_detail |mount_target_timing |litestream .*barrier|litestream checkpoint|checkpoint cut|file barrier|writeback barrier|smh_http |cos_http |sqlite_litestream_trace |s3_litestream_trace ' \
+	    sed -n "${daemon_log_line},${total}p" "$log" \
+	      | grep -aE 'bootstrap-global|bootstrap step=|ensure_cos_root (assertmount|wait_mount|usable_check|mounted|already_mounted)|ensure_workspace_ready|pre_start_recovery|active_image_valid|Restored active image|ensure_active_image|start step=|checkpoint_manifest_durable|writeback_cut_barrier|meta_barrier|mount_runtime|runtime.start_container|runtime.start.crun_run|crun container|SUMMARY (bootstrap|bootstrap-global|ensure_workspace_ready|ensure_active_image|mount_runtime|start)|HUMAN (bootstrap|start)|assertmount_detail |mount_target_timing |litestream .*barrier|litestream checkpoint|checkpoint cut|file barrier|writeback barrier|smh_http |cos_http |sqlite_litestream_trace |s3_litestream_trace ' \
 	      | redact_line \
 	      | sed "s/^/DAEMON_TRACE label=$label /" >&2 || true
 	    daemon_log_line=$((total + 1))
 	  fi
-	}
-
-	follow_daemon_log_until_stopped() {
-	  local label="$1"
-	  while true; do
-	    flush_daemon_log "$label"
-	    sleep 2
-	  done
-	}
-
-	start_daemon_log_follower() {
-	  local label="$1"
-	  follow_daemon_log_until_stopped "$label" >/dev/null &
-	  echo "$!"
-	}
-
-	stop_daemon_log_follower() {
-	  local pid="${1:-}"
-	  local label="$2"
-	  if [[ -n "$pid" ]]; then
-	    kill "$pid" >/dev/null 2>&1 || true
-	    wait "$pid" >/dev/null 2>&1 || true
-	  fi
-	  flush_daemon_log "$label"
 	}
 	
 	install="$WISP_INSTALL_DIR"
@@ -910,14 +869,21 @@ esac
 	  pkg_arch=amd64
 	fi
 	if [[ "${WISP_USE_HOST_CRUN:-0}" == "1" ]]; then
-	  crun_binary="$(command -v crun || true)"
+	  crun_binary="${WISP_CRUN_BINARY:-}"
+	  if [[ -z "$crun_binary" ]]; then
+	    crun_binary="$(command -v crun || true)"
+	  fi
 	  if [[ -z "$crun_binary" ]]; then
 	    echo "WISP_USE_HOST_CRUN=1 but host crun is not installed" >&2
 	    exit 2
 	  fi
-	  crun_binary_path="$crun_binary"
+	  if [[ ! -x "$crun_binary" ]]; then
+	    echo "WISP_USE_HOST_CRUN=1 but host crun is not executable path=$crun_binary" >&2
+	    exit 2
+	  fi
+	  crun_binary_path="${WISP_CRUN_BINARY_PATH:-/var/lib/wisp/shared/tools/crun}"
 	else
-	  crun_binary="$install/assets/bin/crun/crun-$pkg_arch"
+	  crun_binary="${WISP_CRUN_BINARY:-$install/assets/bin/crun/crun-$pkg_arch}"
 	  if [[ ! -e "$crun_binary" ]]; then
 	    echo "packaged crun missing diagnostics begin" >&2
 	    echo "package_url=${WISP_PACKAGE_URL:-}" >&2
@@ -937,7 +903,7 @@ esac
 	    echo "packaged crun is not executable for arch=$pkg_arch path=$crun_binary; check permissions or noexec mount options" >&2
 	    exit 2
 	  fi
-	  crun_binary_path="/var/lib/wisp/shared/tools/crun"
+	  crun_binary_path="${WISP_CRUN_BINARY_PATH:-/var/lib/wisp/shared/tools/crun}"
 	fi
 	blank_root_upper_sparse="$install/assets/rootfs/blank-ext4/root-upper-default.sparse"
 		if [[ ! -f "$blank_root_upper_sparse" ]]; then
@@ -1015,7 +981,7 @@ export JFS_LITESTREAM_TRACE="${JFS_LITESTREAM_TRACE:-}"
 	  step wisp_daemon_already_ready
 	else
 	  step_start wisp_daemon_spawn
-	  nohup sudo -n env \
+	  sudo -n env \
   WISP_CONFIG="$WISP_CONFIG" \
   JFS_ROOT="$JFS_ROOT" \
   JFS_LOCAL_ROOT="$JFS_LOCAL_ROOT" \
@@ -1046,7 +1012,7 @@ export JFS_LITESTREAM_TRACE="${JFS_LITESTREAM_TRACE:-}"
   JFS_MOUNT_CACHE_SIZE="$JFS_MOUNT_CACHE_SIZE" \
   JFS_MOUNT_MIN_FREE_BYTES="$JFS_MOUNT_MIN_FREE_BYTES" \
 	  JFS_WRITEBACK_BARRIER_POLL_INTERVAL="$JFS_WRITEBACK_BARRIER_POLL_INTERVAL" \
-  "$install/bin/wisp" daemon run --config "$WISP_CONFIG" >>"$log" 2>&1 </dev/null &
+  "$install/bin/wisp" daemon run --config "$WISP_CONFIG" >"$log" 2>&1 &
 	  step_done wisp_daemon_spawn
 	fi
 	
@@ -1090,11 +1056,13 @@ export JFS_LITESTREAM_TRACE="${JFS_LITESTREAM_TRACE:-}"
 	flush_daemon_log create
 	
 	step_start wisp_start
-	start_log_follower_pid="$(start_daemon_log_follower start_live)"
+	tail -n 0 -F "$log" >&2 &
+	start_log_tail_pid=$!
 	start_rc=0
 	"$install/bin/wispclient" -server "$admin_server" start "$WISP_NAME" || start_rc=$?
-	stop_daemon_log_follower "$start_log_follower_pid" start
-	if [[ "$start_rc" -ne 0 ]]; then
+	kill "$start_log_tail_pid" >/dev/null 2>&1 || true
+	wait "$start_log_tail_pid" >/dev/null 2>&1 || true
+	if [[ "$start_rc" != "0" ]]; then
 	  echo "daemon log after start failure:" >&2
 	  cat "$log" >&2 || true
 	  exit "$start_rc"
@@ -1269,4 +1237,21 @@ func (w *AgentSidecarWorker) writeWispHermesBootstrapManifest(ctx context.Contex
 		" exec \"$name\" -- /bin/sh -lc " + shellQuote(writeScript) + "\n"
 	_, err = host.RunCommand(ctx, sb, command, nil, nil, nil)
 	return err
+}
+
+func isRuntimeHostRunCommandNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "op=run_command") &&
+		(strings.Contains(message, "ags http 404") ||
+			(strings.Contains(message, "http 404") && strings.Contains(message, "requested resource does not exist")))
+}
+
+func errorString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }

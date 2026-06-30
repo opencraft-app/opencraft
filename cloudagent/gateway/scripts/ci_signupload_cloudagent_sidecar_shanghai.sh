@@ -134,6 +134,13 @@ require_cmd make
 require_cmd shasum
 require_cmd curl
 
+case "$(uname -m)" in
+  x86_64|amd64) HOST_GOARCH=amd64 ;;
+  aarch64|arm64) HOST_GOARCH=arm64 ;;
+  *) HOST_GOARCH="$(uname -m)" ;;
+esac
+AGENT_GOARCH="${CLOUDAGENT_AGENT_GOARCH:-${LINUX_GOARCH:-amd64}}"
+
 COSCMD_CONFIG="${COSCMD_CONFIG:-/tmp/cloudagent-agent-shanghai-coscmd.conf}"
 mkdir -p "$(dirname "$COSCMD_CONFIG")" "$ROOT_DIR/dist"
 umask 077
@@ -150,8 +157,9 @@ part_size = 20
 EOF
 
 log "target cos bucket=${COS_BUCKET} region=${COS_REGION}"
-log "build CloudAgent sidecar and release signer"
-make cloudagent-sidecar-linux cloudagent-agent-sign-linux
+log "build CloudAgent sidecar arch=$AGENT_GOARCH and release signer host_arch=$HOST_GOARCH"
+make "LINUX_GOARCH=$AGENT_GOARCH" cloudagent-sidecar-linux
+make "LINUX_GOARCH=$HOST_GOARCH" cloudagent-agent-sign-linux
 
 export COSCMD_CONFIG
 export COS_BUCKET
@@ -160,8 +168,10 @@ export COS_PUBLIC_BASE_URL="${CLOUDAGENT_AGENT_COS_PUBLIC_BASE_URL:-https://${CO
 export COS_OBJECT_PREFIX="${CLOUDAGENT_AGENT_COS_OBJECT_PREFIX:-/agent-sidecar/releases}"
 export CLOUDAGENT_SKIP_ENV_FILE=1
 if [ -z "${CLOUDAGENT_AGENT_SIGN_BIN:-}" ] && [ "$(uname -s)" = "Linux" ]; then
-  export CLOUDAGENT_AGENT_SIGN_BIN="$ROOT_DIR/dist/cloudagent-agent-sign-linux-amd64"
+  export CLOUDAGENT_AGENT_SIGN_BIN="$ROOT_DIR/dist/cloudagent-agent-sign-linux-$HOST_GOARCH"
 fi
+export CLOUDAGENT_AGENT_GOARCH="$AGENT_GOARCH"
+export LINUX_GOARCH="$AGENT_GOARCH"
 export CLOUDAGENT_AGENT_RELEASE_ED25519_SEED_B64="$SIGNING_SEED"
 export CLOUDAGENT_AGENT_VERSION_PREFIX="${CLOUDAGENT_AGENT_VERSION_PREFIX:-cloudagent.v1}"
 export CLOUDAGENT_AGENT_REGISTRY_FILE="${CLOUDAGENT_AGENT_REGISTRY_FILE:-$ROOT_DIR/dist/cloudagent-agent-version-registry.json}"

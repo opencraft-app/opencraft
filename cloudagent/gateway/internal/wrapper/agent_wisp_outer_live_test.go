@@ -3,7 +3,11 @@ package wrapper
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
+	"io"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -112,6 +116,122 @@ func TestLiveACPWispOuterSession(t *testing.T) {
 		t.Fatalf("inner sandbox identity incomplete: %#v", update)
 	}
 	t.Logf("inner sandbox ok inner=%s domain=%s", update.InnerSandboxID, update.InnerSandboxDomain)
+}
+
+func TestLiveACPWispACPChatSmoke(t *testing.T) {
+	if os.Getenv("RUN_LIVE_ACP_WISP_OUTER") != "1" {
+		t.Skip("set RUN_LIVE_ACP_WISP_OUTER=1 to run live ACP websocket + Shanghai AGS + Wisp outer session")
+	}
+
+	requestTimeout := liveDurationEnv("LIVE_ACP_WISP_OUTER_TIMEOUT", 20*time.Minute)
+	_, worker := newLiveWispWorker(t, requestTimeout)
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := NewServer(store, worker)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", map[string]string{"Authorization": "Bearer test-key"})
+	defer client.close()
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})
+	liveWaitForRPCID(t, client, float64(1), 10*time.Second)
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      2,
+		"method":  "session/new",
+		"params": map[string]any{
+			"cwd": "/workspace",
+			"_meta": map[string]any{"cloudagent": map[string]any{
+				"outer_runtime":    outerRuntimeWisp,
+				"sandbox_backend":  "ags",
+				"runtime_recovery": runtimeRecoveryReattachOrRecreate,
+			}},
+		},
+	})
+	newResp := liveWaitForRPCID(t, client, float64(2), requestTimeout)
+	if errObj, ok := newResp["error"].(map[string]any); ok {
+		t.Fatalf("session/new failed before chat prompt: %#v", errObj)
+	}
+	sessionID := newResp["result"].(map[string]any)["sessionId"].(string)
+
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      3,
+		"method":  "session/prompt",
+		"params": map[string]any{
+			"sessionId": sessionID,
+			"prompt":    []any{map[string]any{"type": "text", "text": "请只输出 WISP_CHAT_OK，不要调用工具。"}},
+		},
+	})
+	liveWaitForMethod(t, client, "session/update", requestTimeout)
+	promptResp := liveWaitForRPCID(t, client, float64(3), requestTimeout)
+	if errObj, ok := promptResp["error"].(map[string]any); ok {
+		t.Fatalf("session/prompt failed: %#v", errObj)
+	}
+}
+
+func liveWaitForRPCID(t *testing.T, client *acpWSClient, id float64, timeout time.Duration) map[string]any {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		msg := liveReadACPJSON(t, client, time.Until(deadline))
+		if got, ok := msg["id"].(float64); ok && got == id {
+			return msg
+		}
+	}
+	t.Fatalf("timed out waiting for rpc response id=%v", id)
+	return nil
+}
+
+func liveWaitForMethod(t *testing.T, client *acpWSClient, method string, timeout time.Duration) map[string]any {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		msg := liveReadACPJSON(t, client, time.Until(deadline))
+		if got, ok := msg["method"].(string); ok && got == method {
+			return msg
+		}
+	}
+	t.Fatalf("timed out waiting for method %s", method)
+	return nil
+}
+
+func liveReadACPJSON(t *testing.T, client *acpWSClient, timeout time.Duration) map[string]any {
+	t.Helper()
+	if timeout <= 0 {
+		timeout = time.Second
+	}
+	_ = client.conn.SetReadDeadline(time.Now().Add(timeout))
+	header := make([]byte, 2)
+	if _, err := io.ReadFull(client.br, header); err != nil {
+		t.Fatal(err)
+	}
+	opcode := header[0] & 0x0F
+	if opcode == 0x8 {
+		t.Fatal("websocket closed")
+	}
+	length := int(header[1] & 0x7F)
+	switch length {
+	case 126:
+		var ext [2]byte
+		if _, err := io.ReadFull(client.br, ext[:]); err != nil {
+			t.Fatal(err)
+		}
+		length = int(binary.BigEndian.Uint16(ext[:]))
+	case 127:
+		t.Fatal("unexpected large websocket frame")
+	}
+	payload := make([]byte, length)
+	if _, err := io.ReadFull(client.br, payload); err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(payload, &out); err != nil {
+		t.Fatalf("invalid json payload %s: %v", string(payload), err)
+	}
+	return out
 }
 
 func TestLiveACPWispOuterCloseCheckpoints(t *testing.T) {
@@ -286,7 +406,7 @@ func TestLiveLocalDockerWispSMHRuntime(t *testing.T) {
 	if !innerHandleAfter.ExpiresAt.After(innerHandleBefore.ExpiresAt) {
 		t.Fatalf("inner refresh did not extend local handle expiry: before=%s after=%s", innerHandleBefore.ExpiresAt, innerHandleAfter.ExpiresAt)
 	}
-	closeCtx, closeCancel := context.WithTimeout(ctx, liveDurationEnv("LIVE_LOCAL_DOCKER_WISP_CLOSE_TIMEOUT", 3*time.Minute))
+	closeCtx, closeCancel := context.WithTimeout(ctx, liveDurationEnv("LIVE_LOCAL_DOCKER_WISP_CLOSE_TIMEOUT", 10*time.Minute))
 	defer closeCancel()
 	if err := worker.DeleteSessionRuntime(closeCtx, runtime); err != nil {
 		t.Fatalf("close local docker wisp runtime: %v", err)
