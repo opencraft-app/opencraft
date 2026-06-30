@@ -1128,7 +1128,7 @@
   margin: 0;
 }
 
-:global(.velaComposerSkillChip) {
+.composerEditor :global(.velaComposerSkillChip) {
   display: inline-grid;
   grid-auto-flow: column;
   align-items: center;
@@ -1148,11 +1148,11 @@
   white-space: nowrap;
 }
 
-:global(.velaComposerSkillChipPrefix) {
+.composerEditor :global(.velaComposerSkillChipPrefix) {
   color: #8a847c;
 }
 
-:global(.velaComposerSkillChipLabel) {
+.composerEditor :global(.velaComposerSkillChipLabel) {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
