@@ -33,8 +33,8 @@
     {
       "id": 5,
       "name": "按复杂度选择调研深度",
-      "prompt": "这个需求涉及 /agents 页面、SkillHub 安装状态和 Hermes 命令反馈，先帮我做产品前置分析",
-      "expected_output": "识别为复杂 LightVela 需求，按轻量/标准/复杂分层选择复杂需求路径，补齐跨 /agents、SkillHub、Hermes/OpenClaw、MCP 或 SDK 的影响面、风险、灰度回滚和研发交接建议",
+      "prompt": "这个需求涉及 /agents 页面、SkillHub 底层 API 调用和 Hermes Agent 命令反馈，先帮我做产品前置分析",
+      "expected_output": "识别为复杂 LightVela 需求，按轻量/标准/复杂分层选择复杂需求路径，补齐跨 /agents、SkillHub 底层 API、Hermes Agent、MCP 或 SDK 的影响面、风险、灰度回滚和研发交接建议",
       "files": []
     },
     {

@@ -1,6 +1,6 @@
 ---
 name: prd-init
-description: 当 LightVela、Hermes、OpenClaw、SkillHub、MCP 或 Agent 控制台相关工作还停留在想法、反馈、Issue/问题单、老板口头需求、模糊 TAPD 单或未完成 PRD 阶段，并且需要做产品前置、PRD 梳理、TAPD 产品需求建单或研发交接时使用。
+description: 当 LightVela、Hermes Agent、SkillHub 底层 API、MCP 或 Agent 控制台相关工作还停留在想法、反馈、Issue/问题单、老板口头需求、模糊 TAPD 单或未完成 PRD 阶段，并且需要做产品前置、PRD 梳理、TAPD 产品需求建单或研发交接时使用。
 ---
 
 # LightVela 产品前置与需求建单
@@ -14,7 +14,7 @@ description: 当 LightVela、Hermes、OpenClaw、SkillHub、MCP 或 Agent 控制
 - LightVela 的想法还没有被产品化，不能直接进入研发。
 - 用户要求创建 TAPD 产品需求、产品父单、PRD、验收标准或研发交接建议。
 - 已有 TAPD 或 Issue，但缺少清晰的用户场景、范围、非目标或验收标准。
-- 需求影响 `/agents`、设置页、专家/工具、Hermes/OpenClaw 运行时、SkillHub、MCP 工具、诊断、SDK 流程、记忆/配置或新手引导等产品面。
+- 需求影响 `/agents`、设置页、专家/工具、Hermes Agent 运行时、SkillHub 底层 API、MCP 工具、诊断、SDK 流程、记忆/配置或新手引导等产品面。
 
 ## 什么时候不要使用
 
@@ -46,7 +46,7 @@ description: 当 LightVela、Hermes、OpenClaw、SkillHub、MCP 或 Agent 控制
 | --- | --- | --- | --- |
 | 轻量需求 | 文案、入口、状态展示、小范围配置、已有页面上的小交互 | 来源、目标用户、当前问题、目标状态、范围/非目标、验收标准 | 简单流程图、截图标注 |
 | 标准需求 | 新增或调整控制台流程、安装链路、工具/专家体验、MCP 或 SDK 可见行为 | 轻量需求全部内容、用户场景、影响面、依赖、异常/空态、发布与观测 | 交互草图、数据/接口约束 |
-| 复杂需求 | 跨 `/agents`、Hermes/OpenClaw、SkillHub、MCP、SDK、权限、发布或运营多面协同 | 标准需求全部内容、调研结论、替代方案、风险、灰度/回滚、研发交接建议、评审材料 | 用户访谈、竞品/内部替代方案分析、指标口径 |
+| 复杂需求 | 跨 `/agents`、Hermes Agent、SkillHub 底层 API、MCP、SDK、权限、发布或运营多面协同 | 标准需求全部内容、调研结论、替代方案、风险、灰度/回滚、研发交接建议、评审材料 | 用户访谈、竞品/内部替代方案分析、指标口径 |
 
 调研输出不需要长篇论文，但必须回答三个问题：谁在什么场景卡住了；这次解决到什么边界；怎么判断做完。
 
@@ -84,8 +84,8 @@ description: 当 LightVela、Hermes、OpenClaw、SkillHub、MCP 或 Agent 控制
 
 ## LightVela 影响面
 - 前端页面/路由：
-- Hermes/OpenClaw/运行时：
-- SkillHub/MCP/工具：
+- Hermes Agent/运行时：
+- SkillHub 底层 API/MCP/工具：
 - SDK/文档/运营：
 - 权限/安全/数据：
 
@@ -119,7 +119,7 @@ PRD 草稿完成后，先判断是否需要原型或交互评审稿。这里不�
 
 - 新增或重构页面、设置项、弹窗、抽屉、列表、详情、安装流程或诊断流程。
 - 产品、设计、前端需要在研发评估前确认页面结构、主路径、异常状态或空态。
-- 涉及 `/agents`、专家/工具卡片、SkillHub 安装、Hermes 命令反馈、MCP 权限提示等用户可见流程。
+- 涉及 `/agents`、专家/工具卡片、SkillHub 底层 API 调用、Hermes Agent 命令反馈、MCP 权限提示等用户可见流程。
 - PRD 中存在多个状态或跨页面跳转，仅靠文字容易误解。
 
 可跳过原型的场景：
@@ -242,7 +242,7 @@ v_status: <目标状态：评审中 / 已通过 / 产品完成的等价状态>
 | --- | --- | --- |
 | 设计 / UX | 有新交互、控制台流程变化、新页面状态、文案层级变化，或需要视觉评审 | 纯后端/运行时变化，没有用户可见行为 |
 | 前端 | 涉及路由、组件、状态、API 客户端、i18n、设置页、Agents 页、工具/专家 UI 或 SDK 驱动的 UI 变化 | 现有 UI 已支持，只是数据变化 |
-| 后端 / 运行时 | 涉及 Hermes/OpenClaw 命令行为、`acli`、MCP、实例状态、鉴权、配置、`debug/exec`、API 契约或持久化 | 纯前端展示或文案变化 |
+| 后端 / 运行时 | 涉及 Hermes Agent 命令行为、SkillHub 底层 API、`acli`、MCP、实例状态、鉴权、配置、`debug/exec`、API 契约或持久化 | 纯前端展示或文案变化 |
 | Skill / 内容 / 文档 | 需要新增或修改 skill、prompt、模板、用户指南、新手引导、发布说明或支持手册 | 产品行为不需要用户可见说明 |
 | QA / 发布 / 运营 | 涉及跨产品面发布、迁移、特性开关、观测、回滚、浏览器冒烟或高风险链路验证 | 小范围改动可由研发技术需求单自行覆盖 |
 
