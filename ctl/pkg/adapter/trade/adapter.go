@@ -506,6 +506,15 @@ type Adapter interface {
 	// **重要**：B7 jifei 不可达场景（200 + Source="local"）**不是错误**，调用方需检查
 	// result.Source / result.UpstreamErr 字段判断是否为降级路径。
 	QueryOrderStatus(ctx context.Context, dealName, externalUserID string) (*OrderStatusResult, error)
+
+	// ListDianshiRecords 查询点石来源订单和活动参与记录，供 admin 后台排障/重试下单。
+	ListDianshiRecords(ctx context.Context, filter DianshiRecordFilter) (*DianshiRecordsResult, error)
+
+	// DeleteDianshiOrder 删除点石来源订单，供 admin 后台清理后重试下单。
+	DeleteDianshiOrder(ctx context.Context, dealName string) (*DeleteDianshiRecordResult, error)
+
+	// DeleteDianshiParticipation 删除点石活动参与记录，供 admin 后台清理后重试下单。
+	DeleteDianshiParticipation(ctx context.Context, id int64) (*DeleteDianshiRecordResult, error)
 }
 
 // Config trade 适配器配置（与 ShadowConfig / AiGatewayConfig 风格一致）。
