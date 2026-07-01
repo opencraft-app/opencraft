@@ -29,10 +29,15 @@ import { DataTable } from "@/components/shared/data-table";
 import { PageHeader } from "@/components/shared/page-header";
 import {
   type CtlBundle,
+  type CtlDianshiOrder,
+  type CtlDianshiParticipation,
   type CtlPass,
   useCtlAdminBundles,
   useCtlAdminPasses,
+  useCtlDeleteDianshiOrder,
+  useCtlDeleteDianshiParticipation,
   useCtlDestroyPass,
+  useCtlDianshiRecords,
   useCtlRefundPass,
 } from "@/lib/queries/use-ctl-pass-admin";
 import { formatDateTime, formatNumber, statusVariant } from "@/lib/utils";
@@ -68,6 +73,12 @@ export default function SubscriptionsPage() {
   const [refundReason, setRefundReason] = useState("");
   const [operatorUin, setOperatorUin] = useState("");
   const [destroyTarget, setDestroyTarget] = useState<CtlPass | null>(null);
+  const [dianshiDealName, setDianshiDealName] = useState("");
+  const [dianshiActivityID, setDianshiActivityID] = useState("");
+  const [dianshiUin, setDianshiUin] = useState("");
+  const [deleteDianshiOrderTarget, setDeleteDianshiOrderTarget] = useState<CtlDianshiOrder | null>(null);
+  const [deleteDianshiParticipationTarget, setDeleteDianshiParticipationTarget] =
+    useState<CtlDianshiParticipation | null>(null);
 
   const bundles = useCtlAdminBundles();
   const passes = useCtlAdminPasses({
@@ -76,6 +87,15 @@ export default function SubscriptionsPage() {
   });
   const refundPass = useCtlRefundPass();
   const destroyPass = useCtlDestroyPass();
+  const dianshiRecords = useCtlDianshiRecords({
+    userID: userID.trim() || undefined,
+    bundleID: bundleID === "all" ? undefined : bundleID,
+    dealName: dianshiDealName.trim() || undefined,
+    activityID: dianshiActivityID.trim() || undefined,
+    uin: dianshiUin.trim() || undefined,
+  });
+  const deleteDianshiOrder = useCtlDeleteDianshiOrder();
+  const deleteDianshiParticipation = useCtlDeleteDianshiParticipation();
 
   const bundleItems = bundles.data ?? [];
   const passItems = useMemo(() => {
@@ -85,6 +105,16 @@ export default function SubscriptionsPage() {
     }
     return items.filter((item) => item.status === status);
   }, [passes.data, status]);
+
+  const dianshiOrderItems = dianshiRecords.data?.orders ?? [];
+  const dianshiParticipationItems = dianshiRecords.data?.participations ?? [];
+  const hasDianshiFilters = Boolean(
+    userID.trim() ||
+    (bundleID !== "all" && bundleID) ||
+    dianshiDealName.trim() ||
+    dianshiActivityID.trim() ||
+    dianshiUin.trim()
+  );
 
   async function handleRefundPass() {
     if (!refundTarget) {
@@ -124,6 +154,32 @@ export default function SubscriptionsPage() {
       setDestroyTarget(null);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "销毁失败");
+    }
+  }
+
+  async function handleDeleteDianshiOrder() {
+    if (!deleteDianshiOrderTarget) {
+      return;
+    }
+    try {
+      const result = await deleteDianshiOrder.mutateAsync(deleteDianshiOrderTarget.deal_name);
+      toast.success(result.deleted ? "点石订单记录已删除" : "未找到可删除的点石订单记录");
+      setDeleteDianshiOrderTarget(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "删除点石订单失败");
+    }
+  }
+
+  async function handleDeleteDianshiParticipation() {
+    if (!deleteDianshiParticipationTarget) {
+      return;
+    }
+    try {
+      const result = await deleteDianshiParticipation.mutateAsync(deleteDianshiParticipationTarget.id);
+      toast.success(result.deleted ? "点石参与记录已删除" : "未找到可删除的参与记录");
+      setDeleteDianshiParticipationTarget(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "删除点石参与记录失败");
     }
   }
 
@@ -282,6 +338,138 @@ export default function SubscriptionsPage() {
     []
   );
 
+  const dianshiOrderColumns = useMemo<ColumnDef<CtlDianshiOrder>[]>(
+    () => [
+      {
+        accessorKey: "deal_name",
+        header: "订单号",
+        cell: ({ row }) => (
+          <div className="space-y-1">
+            <code className="block max-w-52 truncate font-mono text-xs">{row.original.deal_name}</code>
+            <code className="block max-w-52 truncate font-mono text-[11px] text-muted-foreground">
+              {row.original.big_order_id}
+            </code>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "external_user_id",
+        header: "用户",
+        cell: ({ row }) => <code className="font-mono text-xs">{row.original.external_user_id}</code>,
+      },
+      {
+        accessorKey: "bundle_id",
+        header: "Bundle / 活动",
+        cell: ({ row }) => (
+          <div className="space-y-1">
+            <code className="block max-w-44 truncate font-mono text-xs">{row.original.bundle_id}</code>
+            <div className="font-mono text-[11px] text-muted-foreground">
+              {row.original.activity_id} / {row.original.act_id}
+            </div>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "status",
+        header: "状态",
+        cell: ({ row }) => <Badge variant={statusVariant(row.original.status)}>{row.original.status}</Badge>,
+      },
+      {
+        accessorKey: "resource_id",
+        header: "资源",
+        cell: ({ row }) => (
+          <code className="block max-w-36 truncate font-mono text-xs">{row.original.resource_id || "-"}</code>
+        ),
+      },
+      {
+        accessorKey: "created_time",
+        header: "创建时间",
+        cell: ({ row }) => formatDateTime(row.original.created_time),
+      },
+      {
+        id: "actions",
+        header: "",
+        cell: ({ row }) => (
+          <Button
+            aria-label="删除点石订单"
+            variant="ghost"
+            size="icon"
+            onClick={() => setDeleteDianshiOrderTarget(row.original)}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        ),
+      },
+    ],
+    []
+  );
+
+  const dianshiParticipationColumns = useMemo<ColumnDef<CtlDianshiParticipation>[]>(
+    () => [
+      {
+        accessorKey: "id",
+        header: "ID",
+        cell: ({ row }) => <span className="tabular-nums">{row.original.id}</span>,
+      },
+      {
+        accessorKey: "external_user_id",
+        header: "用户",
+        cell: ({ row }) => (
+          <div className="space-y-1">
+            <code className="block font-mono text-xs">{row.original.external_user_id}</code>
+            <div className="font-mono text-[11px] text-muted-foreground">
+              {row.original.uin || "-"} / {row.original.app_id || "-"}
+            </div>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "bundle_id",
+        header: "Bundle / 活动",
+        cell: ({ row }) => (
+          <div className="space-y-1">
+            <code className="block max-w-44 truncate font-mono text-xs">{row.original.bundle_id}</code>
+            <div className="font-mono text-[11px] text-muted-foreground">
+              {row.original.activity_id} / {row.original.act_id}
+            </div>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "deal_name",
+        header: "订单号",
+        cell: ({ row }) => (
+          <div className="space-y-1">
+            <code className="block max-w-52 truncate font-mono text-xs">{row.original.deal_name}</code>
+            <code className="block max-w-52 truncate font-mono text-[11px] text-muted-foreground">
+              {row.original.big_deal_no}
+            </code>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "created_time",
+        header: "创建时间",
+        cell: ({ row }) => formatDateTime(row.original.created_time),
+      },
+      {
+        id: "actions",
+        header: "",
+        cell: ({ row }) => (
+          <Button
+            aria-label="删除点石参与记录"
+            variant="ghost"
+            size="icon"
+            onClick={() => setDeleteDianshiParticipationTarget(row.original)}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        ),
+      },
+    ],
+    []
+  );
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -364,6 +552,73 @@ export default function SubscriptionsPage() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>点石下单记录</CardTitle>
+          <CardDescription>查询点石订单和活动参与记录，并删除阻塞重试的记录。</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="flex flex-wrap gap-3">
+            <Input
+              placeholder="订单号"
+              value={dianshiDealName}
+              onChange={(event) => setDianshiDealName(event.target.value)}
+              className="max-w-md"
+            />
+            <Input
+              placeholder="活动 ID"
+              value={dianshiActivityID}
+              onChange={(event) => setDianshiActivityID(event.target.value)}
+              className="w-[180px]"
+            />
+            <Input
+              placeholder="UIN"
+              value={dianshiUin}
+              onChange={(event) => setDianshiUin(event.target.value)}
+              className="w-[180px]"
+            />
+            <Button
+              variant="outline"
+              onClick={() => void dianshiRecords.refetch()}
+              disabled={!hasDianshiFilters || dianshiRecords.isFetching}
+            >
+              <RefreshCw className="mr-2 h-4 w-4" />
+              查询
+            </Button>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <h3 className="text-sm font-medium">订单</h3>
+              <p className="text-sm text-muted-foreground">trade_order 中 source=dianshi 的记录。</p>
+            </div>
+            <div className="overflow-x-auto">
+              <DataTable
+                columns={dianshiOrderColumns}
+                data={dianshiOrderItems}
+                total={dianshiOrderItems.length}
+                isLoading={dianshiRecords.isLoading}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <h3 className="text-sm font-medium">参与记录</h3>
+              <p className="text-sm text-muted-foreground">trade_user_activity_participation 中用于拦截重复参与的记录。</p>
+            </div>
+            <div className="overflow-x-auto">
+              <DataTable
+                columns={dianshiParticipationColumns}
+                data={dianshiParticipationItems}
+                total={dianshiParticipationItems.length}
+                isLoading={dianshiRecords.isLoading}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <Dialog open={!!refundTarget} onOpenChange={(open) => {
         if (!open) {
           setRefundTarget(null);
@@ -420,6 +675,28 @@ export default function SubscriptionsPage() {
         variant="destructive"
         onConfirm={handleDestroyPass}
         loading={destroyPass.isPending}
+      />
+
+      <ConfirmDialog
+        open={!!deleteDianshiOrderTarget}
+        onOpenChange={(open) => !open && setDeleteDianshiOrderTarget(null)}
+        title="删除点石订单"
+        description={`确认删除订单 ${deleteDianshiOrderTarget?.deal_name ?? ""}？删除后再次下单不会复用这笔点石订单。`}
+        confirmLabel="删除"
+        variant="destructive"
+        onConfirm={handleDeleteDianshiOrder}
+        loading={deleteDianshiOrder.isPending}
+      />
+
+      <ConfirmDialog
+        open={!!deleteDianshiParticipationTarget}
+        onOpenChange={(open) => !open && setDeleteDianshiParticipationTarget(null)}
+        title="删除点石参与记录"
+        description={`确认删除参与记录 ${deleteDianshiParticipationTarget?.id ?? ""}？删除后该用户可重新尝试点石活动下单。`}
+        confirmLabel="删除"
+        variant="destructive"
+        onConfirm={handleDeleteDianshiParticipation}
+        loading={deleteDianshiParticipation.isPending}
       />
     </div>
   );
