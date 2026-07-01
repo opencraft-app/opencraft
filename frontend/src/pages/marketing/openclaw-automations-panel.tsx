@@ -20,6 +20,12 @@ import { createPortal } from "react-dom";
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { useT } from "@/i18n/t";
 import { isGlobal } from "@/lib/region";
+import { ScenarioEnableConfirmModal } from "./scenario-tasks/ScenarioEnableConfirmModal";
+import { ScenarioInstallModal } from "./scenario-tasks/ScenarioInstallModal";
+import { ScenarioRunPreview, type ScenarioPreviewStatus } from "./scenario-tasks/ScenarioRunPreview";
+import { ScenarioTaskGrid } from "./scenario-tasks/ScenarioTaskGrid";
+import { getScenarioTaskPack, SCENARIO_TASK_PACKS, type ScenarioTaskId, type ScenarioTaskPack } from "./scenario-tasks/scenario-packs";
+import { buildScenarioTaskDraft, findScenarioPreviewRun, isScenarioRecurringJobName, type ScenarioTaskDraft } from "./scenario-tasks/scenario-task-builder";
 import {
   CronCommandError,
   createCronJobWithScriptRollback,
@@ -262,6 +268,13 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
   const [creating, setCreating] = useState(false);
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [creatingFromTemplate, setCreatingFromTemplate] = useState<AutomationTemplate | null>(null);
+  const [scenarioInstallPack, setScenarioInstallPack] = useState<ScenarioTaskPack | null>(null);
+  const [scenarioDraft, setScenarioDraft] = useState<ScenarioTaskDraft | null>(null);
+  const [scenarioPreviewStatus, setScenarioPreviewStatus] = useState<ScenarioPreviewStatus | null>(null);
+  const [scenarioPreviewRun, setScenarioPreviewRun] = useState<CronRunRecord | null>(null);
+  const [scenarioPreviewStartedAt, setScenarioPreviewStartedAt] = useState<number | null>(null);
+  const [scenarioPreviewError, setScenarioPreviewError] = useState<string | null>(null);
+  const [scenarioEnableConfirmOpen, setScenarioEnableConfirmOpen] = useState(false);
   const [pendingCreateMode, setPendingCreateMode] = useState<"blank" | "template" | null>(null);
   const [confirmCreateOverLimit, setConfirmCreateOverLimit] = useState(false);
   const [viewingJob, setViewingJob] = useState<CronJob | null>(null);
@@ -271,13 +284,21 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
   const [confirmDeleteJob, setConfirmDeleteJob] = useState<CronJob | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   /** 列表加载失败的 inline 错误（与 toast 分离：list 失败不 toast，避免首屏刷屏） */
   const [listError, setListError] = useState<string | null>(null);
   const errorTimerRef = useRef<number | null>(null);
+  const successTimerRef = useRef<number | null>(null);
+  const scenarioPollTimerRef = useRef<number | null>(null);
   const jobsRef = useRef<CronJob[]>([]);
   const visibleJobs = useMemo(() => jobs.filter((job) => !isCronJobExpiredBeyondGrace(job)), [jobs]);
   const jobLimitReached = visibleJobs.length >= MAX_CRON_JOBS_PER_BOT;
   const templates = useMemo(() => getAutomationTemplates(t), [t]);
+  const installedScenarioIds = useMemo(() => new Set(
+    SCENARIO_TASK_PACKS
+      .filter((pack) => visibleJobs.some((job) => isScenarioRecurringJobName({ generatedName: pack.name }, job.name) && !isOnceCronJob(job)))
+      .map((pack) => pack.id),
+  ), [visibleJobs]);
 
   const refreshChannelStatus = useCallback(async () => {
     if (!botId) {
@@ -317,8 +338,22 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
       errorTimerRef.current = null;
     }, 5000);
   }, []);
+
+  const showSuccess = useCallback((message: string) => {
+    if (successTimerRef.current) {
+      window.clearTimeout(successTimerRef.current);
+    }
+    setSuccessMessage(message);
+    successTimerRef.current = window.setTimeout(() => {
+      setSuccessMessage(null);
+      successTimerRef.current = null;
+    }, 5000);
+  }, []);
+
   useEffect(() => () => {
     if (errorTimerRef.current) window.clearTimeout(errorTimerRef.current);
+    if (successTimerRef.current) window.clearTimeout(successTimerRef.current);
+    if (scenarioPollTimerRef.current) window.clearTimeout(scenarioPollTimerRef.current);
   }, []);
 
   const refreshCreatedJobs = useCallback(async (manageLoading = true) => {
@@ -347,14 +382,16 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
   const refreshRecentRuns = useCallback(async (currentJobs?: CronJob[], manageLoading = true) => {
     if (!botId) {
       setRecentRuns([]);
-      return;
+      return [];
     }
     if (manageLoading) setLoadingRecentRuns(true);
     try {
       const runs = await listRecentCronRuns(botId, currentJobs ?? jobsRef.current, 10);
       setRecentRuns(runs);
+      return runs;
     } catch {
       setRecentRuns([]);
+      return [];
     } finally {
       if (manageLoading) setLoadingRecentRuns(false);
     }
@@ -380,6 +417,15 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
     }
   }, [botId, refreshCreatedJobs, refreshRecentRuns]);
 
+  const checkScenarioPreviewRun = useCallback(async (
+    draft: ScenarioTaskDraft,
+    startedAt: number,
+  ) => {
+    const list = await refreshCreatedJobs(false);
+    const runs = await refreshRecentRuns(list ?? jobsRef.current, false);
+    return findScenarioPreviewRun(draft, runs, startedAt);
+  }, [refreshCreatedJobs, refreshRecentRuns]);
+
   useEffect(() => {
     void refreshAll();
   }, [refreshAll]);
@@ -387,6 +433,153 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
   useEffect(() => {
     void refreshChannelStatus();
   }, [refreshChannelStatus]);
+
+  useEffect(() => {
+    if (scenarioPreviewStatus !== "waiting" || !scenarioDraft || scenarioPreviewStartedAt === null) return;
+    let cancelled = false;
+    let timer: number | null = null;
+
+    const poll = async () => {
+      const matchedRun = await checkScenarioPreviewRun(scenarioDraft, scenarioPreviewStartedAt);
+      if (cancelled) return;
+      if (matchedRun) {
+        setScenarioPreviewRun(matchedRun);
+        setScenarioPreviewStatus("succeeded");
+        return;
+      }
+      if (Date.now() - scenarioPreviewStartedAt >= 2 * 60_000) {
+        setScenarioPreviewStatus("timeout");
+        return;
+      }
+      timer = window.setTimeout(() => {
+        void poll();
+      }, 4000);
+    };
+
+    void poll();
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [checkScenarioPreviewRun, scenarioDraft, scenarioPreviewStartedAt, scenarioPreviewStatus]);
+
+  const openScenarioInstaller = useCallback((pack: ScenarioTaskPack) => {
+    setScenarioInstallPack(pack);
+    setScenarioPreviewError(null);
+  }, []);
+
+  const resetScenarioFlow = useCallback(() => {
+    setScenarioInstallPack(null);
+    setScenarioDraft(null);
+    setScenarioPreviewStatus(null);
+    setScenarioPreviewRun(null);
+    setScenarioPreviewStartedAt(null);
+    setScenarioPreviewError(null);
+    setScenarioEnableConfirmOpen(false);
+  }, []);
+
+  const handleScenarioRunOnce = useCallback(async (draft: ScenarioTaskDraft) => {
+    if (!botId) return;
+    if (jobLimitReached) {
+      showError(t("自动任务数量已达上限，请先删除不需要的任务后再试跑场景"));
+      return;
+    }
+    const pack = getScenarioTaskPack(draft.scenarioId);
+    const nextDraft = buildScenarioTaskDraft({
+      pack,
+      values: draft.values,
+      now: new Date(),
+      deliver: draft.generatedDeliver,
+    });
+    const startedAt = Date.now();
+    setScenarioInstallPack(null);
+    setScenarioDraft(nextDraft);
+    setScenarioPreviewRun(null);
+    setScenarioPreviewError(null);
+    setScenarioPreviewStartedAt(startedAt);
+    setScenarioPreviewStatus("creating");
+    try {
+      await createCronJobWithScriptRollback(botId, {
+        name: nextDraft.oneShotJobName,
+        prompt: nextDraft.generatedPrompt,
+        schedule: nextDraft.oneShotSchedule,
+        deliver: nextDraft.generatedDeliver,
+      });
+      const list = await refreshCreatedJobs(false);
+      const runs = await refreshRecentRuns(list ?? jobsRef.current, false);
+      const matchedRun = findScenarioPreviewRun(nextDraft, runs, startedAt);
+      if (matchedRun) {
+        setScenarioPreviewRun(matchedRun);
+        setScenarioPreviewStatus("succeeded");
+      } else {
+        setScenarioPreviewStatus("waiting");
+      }
+    } catch (err) {
+      const message = err instanceof CronCommandError ? err.message : err instanceof Error ? err.message : String(err);
+      setScenarioPreviewError(message);
+      setScenarioPreviewStatus("failed");
+      showError(t("创建场景试跑失败：{{message}}", { message }));
+    }
+  }, [botId, jobLimitReached, refreshCreatedJobs, refreshRecentRuns, showError, t]);
+
+  const handleScenarioRefresh = useCallback(async () => {
+    if (!scenarioDraft || scenarioPreviewStartedAt === null) return;
+    setScenarioPreviewStatus("waiting");
+    const matchedRun = await checkScenarioPreviewRun(scenarioDraft, scenarioPreviewStartedAt);
+    if (matchedRun) {
+      setScenarioPreviewRun(matchedRun);
+      setScenarioPreviewStatus("succeeded");
+    } else if (Date.now() - scenarioPreviewStartedAt >= 2 * 60_000) {
+      setScenarioPreviewStatus("timeout");
+    }
+  }, [checkScenarioPreviewRun, scenarioDraft, scenarioPreviewStartedAt]);
+
+  const handleScenarioEdit = useCallback(() => {
+    if (!scenarioDraft) return;
+    setScenarioInstallPack(getScenarioTaskPack(scenarioDraft.scenarioId));
+    setScenarioPreviewStatus(null);
+    setScenarioEnableConfirmOpen(false);
+  }, [scenarioDraft]);
+
+  const handleScenarioEnableDirect = useCallback((draft: ScenarioTaskDraft) => {
+    setScenarioInstallPack(null);
+    setScenarioDraft(draft);
+    setScenarioEnableConfirmOpen(true);
+  }, []);
+
+  const handleScenarioEnableConfirm = useCallback(async () => {
+    if (!botId || !scenarioDraft) return;
+    const scenarioTrialJob = jobsRef.current.find((job) => job.name === scenarioDraft.oneShotJobName && isOnceCronJob(job));
+    if (jobLimitReached && !scenarioTrialJob) {
+      showError(t("自动任务数量已达上限，请先删除不需要的任务后再启用场景"));
+      return;
+    }
+    const previousStatus = scenarioPreviewStatus;
+    setScenarioPreviewStatus("enabling");
+    try {
+      if (jobLimitReached && scenarioTrialJob) {
+        await removeCronJob(botId, scenarioTrialJob.id);
+      }
+      await createCronJobWithScriptRollback(botId, {
+        name: scenarioDraft.generatedName,
+        prompt: scenarioDraft.generatedPrompt,
+        schedule: scenarioDraft.recurringSchedule,
+        deliver: scenarioDraft.generatedDeliver,
+      });
+      setScenarioEnableConfirmOpen(false);
+      await refreshAll();
+      showSuccess(t("已添加为自动任务"));
+      if (previousStatus) {
+        setScenarioPreviewStatus("enabled");
+      } else {
+        resetScenarioFlow();
+      }
+    } catch (err) {
+      const message = err instanceof CronCommandError ? err.message : err instanceof Error ? err.message : String(err);
+      setScenarioPreviewStatus(previousStatus);
+      showError(t("添加场景自动任务失败：{{message}}", { message }));
+    }
+  }, [botId, jobLimitReached, refreshAll, resetScenarioFlow, scenarioDraft, scenarioPreviewStatus, showError, showSuccess, t]);
 
   const handleAction = useCallback(async (
     job: CronJob,
@@ -423,6 +616,7 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
   return (
     <div className="space-y-4">
       {errorMessage && <ErrorToast message={errorMessage} onClose={() => setErrorMessage(null)} />}
+      {successMessage && <ErrorToast message={successMessage} tone="success" onClose={() => setSuccessMessage(null)} />}
 
       <AgentSectionHeader
         title={t("自动任务")}
@@ -447,6 +641,14 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
             </button>
           </div>
         )}
+      />
+
+      <ScenarioTaskGrid
+        packs={SCENARIO_TASK_PACKS}
+        installedScenarioIds={installedScenarioIds}
+        compact={visibleJobs.length > 0}
+        onRunOnce={openScenarioInstaller}
+        onSchedule={openScenarioInstaller}
       />
 
       <div className="flex items-center justify-between gap-3">
@@ -557,6 +759,44 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
             await refreshAll();
           }}
           onError={showError}
+        />
+      )}
+
+      {scenarioInstallPack && (
+        <ScenarioInstallModal
+          pack={scenarioInstallPack}
+          submitting={scenarioPreviewStatus === "creating" || scenarioPreviewStatus === "enabling"}
+          initialValues={scenarioDraft?.scenarioId === scenarioInstallPack.id ? scenarioDraft.values : undefined}
+          initialDeliver={scenarioDraft?.scenarioId === scenarioInstallPack.id ? scenarioDraft.generatedDeliver : undefined}
+          enabledChannels={enabledChannels}
+          channelStatus={channelStatus}
+          onClose={() => setScenarioInstallPack(null)}
+          onRunOnce={handleScenarioRunOnce}
+          onEnableDirect={handleScenarioEnableDirect}
+        />
+      )}
+
+      {scenarioDraft && scenarioPreviewStatus && (
+        <ScenarioRunPreview
+          pack={getScenarioTaskPack(scenarioDraft.scenarioId)}
+          draft={scenarioDraft}
+          status={scenarioPreviewStatus}
+          run={scenarioPreviewRun}
+          errorMessage={scenarioPreviewError}
+          onClose={resetScenarioFlow}
+          onEdit={handleScenarioEdit}
+          onRefresh={handleScenarioRefresh}
+          onEnable={() => setScenarioEnableConfirmOpen(true)}
+        />
+      )}
+
+      {scenarioEnableConfirmOpen && scenarioDraft && (
+        <ScenarioEnableConfirmModal
+          pack={getScenarioTaskPack(scenarioDraft.scenarioId)}
+          draft={scenarioDraft}
+          busy={scenarioPreviewStatus === "enabling"}
+          onCancel={() => setScenarioEnableConfirmOpen(false)}
+          onConfirm={handleScenarioEnableConfirm}
         />
       )}
 
