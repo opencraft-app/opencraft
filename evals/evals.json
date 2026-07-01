@@ -6,14 +6,14 @@
       "id": 1,
       "name": "粗糙想法进入产品输入稿",
       "prompt": "老板说 LightVela 的 /agents 页面看不出哪些 skill 已安装，帮我先建一个需求",
-      "expected_output": "识别为 LightVela 产品前置需求，先补齐来源、目标用户、当前痛点、影响面、验收标准和 TAPD 写入计划；在确认前不直接创建 TAPD 单",
+      "expected_output": "识别为 LightVela 产品需求建单场景，先输出需求澄清摘要或关键澄清问题，再补齐来源、目标用户、当前痛点、影响面和验收标准，将 PRD Markdown 落到 mono2 仓库 product/prd/ 目录；PRD 准备好后询问用户是否需要创建 TAPD，在确认前不直接创建 TAPD 单",
       "files": []
     },
     {
       "id": 2,
       "name": "写入 TAPD 前先发现字段并确认",
       "prompt": "按这个 PRD 给 LightVela 创建 TAPD 产品父单，并放到 backlog",
-      "expected_output": "先发现当前 TAPD 工作区、分类、必填字段和 backlog 等价状态，展示写入计划并等待明确确认；不复用旧项目的 workspace_id 或状态字符串",
+      "expected_output": "先确认 PRD Markdown 已落到 product/prd/，再发现当前 TAPD 工作区、分类、必填字段和 backlog 等价状态，展示写入计划并等待明确确认；不复用旧项目的 workspace_id 或状态字符串",
       "files": []
     },
     {
@@ -48,7 +48,21 @@
       "id": 7,
       "name": "输出 TAPD payload 和完成总结",
       "prompt": "产品方案已经确认，帮我整理建父单和研发交接的 TAPD 写入内容，最后给我总结",
-      "expected_output": "先发现当前 TAPD 字段并展示产品父单和更新父单的 payload 模板，确认后才能写入；不创建子需求 payload；结束时按 LightVela 产品前置完成表汇报父单、文档、原型、研发交接建议、待确认问题和下一步",
+      "expected_output": "先以 product/prd/ 下的 PRD Markdown 作为事实源，再发现当前 TAPD 字段并展示产品父单和更新父单的 payload 模板，确认后才能写入；不创建子需求 payload；结束时按 LightVela 产品前置完成表汇报父单、PRD 文档路径、原型、研发交接建议、待确认问题和下一步",
+      "files": []
+    },
+    {
+      "id": 8,
+      "name": "用户可以只落 PRD 不创建 TAPD",
+      "prompt": "这个 LightVela 需求先只要 PRD 文档，不要建 TAPD 单，帮我整理一下",
+      "expected_output": "产出并优先落地 mono2 仓库 product/prd/ 下的 Markdown PRD，完成后明确说明本轮用户选择不创建 TAPD；不生成 TAPD payload、不调用 TAPD 写入，只给出后续如需建单时可复用的标题、摘要和 PRD 路径",
+      "files": []
+    },
+    {
+      "id": 9,
+      "name": "出稿前先完成需求澄清",
+      "prompt": "老板说 LightVela 的 /agents 页面里用户不知道怎么卸载 skill，要增加这个功能，帮我建需求",
+      "expected_output": "在形成 PRD Markdown、TAPD 写入计划或产品父单前，先输出需求澄清摘要或关键澄清问题，明确已确认事实、默认假设、待确认问题和本轮出稿范围；如果用户要求继续，才基于假设生成 product/prd/ 下的 PRD 草稿，并在用户确认前不创建或更新 TAPD",
       "files": []
     }
   ]
