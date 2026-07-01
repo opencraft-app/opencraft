@@ -1,29 +1,20 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ColumnDef } from "@tanstack/react-table";
-import { MoreHorizontal, RefreshCw, ScrollText, Trash2 } from "lucide-react";
+import { MoreHorizontal, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -35,293 +26,321 @@ import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { DataTable } from "@/components/shared/data-table";
 import { PageHeader } from "@/components/shared/page-header";
 import {
-  type SubscriptionAdminPlan,
-  type SubscriptionAdminRecord,
-  useSubscriptionAdminCancel,
-  useSubscriptionAdminDeletePlan,
-  useSubscriptionAdminEvents,
-  useSubscriptionAdminPlans,
-  useSubscriptionAdminResync,
-  useSubscriptionAdminSet,
-  useSubscriptionAdminSubscriptions,
-  useSubscriptionAdminUpsertPlan,
-} from "@/lib/queries/use-subscription-admin";
-import { ensureItems } from "@/lib/page-null-guards";
-import { formatDateTime, statusVariant } from "@/lib/utils";
+  type CtlBundle,
+  type CtlDianshiParticipation,
+  type CtlPass,
+  useCtlAdminBundles,
+  useCtlAdminPasses,
+  useCtlDeleteDianshiParticipation,
+  useCtlDestroyPass,
+  useCtlDianshiRecords,
+  useCtlRefundPass,
+} from "@/lib/queries/use-ctl-pass-admin";
+import { formatDateTime, formatNumber, statusVariant } from "@/lib/utils";
 
-function planLabel(code: string) {
-  if (!code) return "—";
-  return code.toUpperCase();
+function formatTimeSpan(span: number, unit: string) {
+  const unitLabel = unit === "m" ? "月" : unit === "y" ? "年" : unit === "d" ? "天" : unit;
+  return `${span}${unitLabel}`;
+}
+
+function formatOptionalDateTime(value?: string | null) {
+  return value ? formatDateTime(value) : "-";
+}
+
+function formatSpec(bundle: CtlBundle) {
+  if (bundle.instance_spec_display) {
+    return bundle.instance_spec_display;
+  }
+  if (bundle.cpu && bundle.memory && bundle.system_disk_size) {
+    return `${bundle.cpu}C / ${bundle.memory}G / ${bundle.system_disk_size}G`;
+  }
+  return "-";
+}
+
+function passActionLabel(pass: CtlPass) {
+  return `${pass.pass_id} / ${pass.user_id}`;
 }
 
 export default function SubscriptionsPage() {
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<string>("all");
-  const [code, setCode] = useState<string>("all");
-  const [setTarget, setSetTarget] = useState<SubscriptionAdminRecord | null>(null);
-  const [setCodeValue, setSetCodeValue] = useState<string>("");
-  const [cancelTarget, setCancelTarget] = useState<SubscriptionAdminRecord | null>(null);
-  const [eventTarget, setEventTarget] = useState<SubscriptionAdminRecord | null>(null);
-  const [planEditorOpen, setPlanEditorOpen] = useState(false);
-  const [planEditorTarget, setPlanEditorTarget] = useState<SubscriptionAdminPlan | null>(null);
-  const [planCodeValue, setPlanCodeValue] = useState("");
-  const [planDescriptionValue, setPlanDescriptionValue] = useState("");
-  const [planMaxBotCountValue, setPlanMaxBotCountValue] = useState("0");
-  const [deletePlanTarget, setDeletePlanTarget] = useState<SubscriptionAdminPlan | null>(null);
+  const [userID, setUserID] = useState("");
+  const [bundleID, setBundleID] = useState("all");
+  const [status, setStatus] = useState("all");
+  const [refundTarget, setRefundTarget] = useState<CtlPass | null>(null);
+  const [destroyTarget, setDestroyTarget] = useState<CtlPass | null>(null);
+  const [deleteDianshiParticipationTarget, setDeleteDianshiParticipationTarget] =
+    useState<CtlDianshiParticipation | null>(null);
 
-  const plans = useSubscriptionAdminPlans();
-  const planItems = plans.data?.items ?? [];
-  const { data, isLoading } = useSubscriptionAdminSubscriptions(
-    search || undefined,
-    status === "all" ? undefined : status,
-    code === "all" ? undefined : code,
-    200
-  );
-  const events = useSubscriptionAdminEvents(eventTarget?.externalUserId, 100);
-  const eventItems = ensureItems(events.data?.items);
-  const setSubscription = useSubscriptionAdminSet();
-  const resyncSubscription = useSubscriptionAdminResync();
-  const cancelSubscription = useSubscriptionAdminCancel();
-  const upsertPlan = useSubscriptionAdminUpsertPlan();
-  const deletePlan = useSubscriptionAdminDeletePlan();
+  const bundles = useCtlAdminBundles();
+  const passes = useCtlAdminPasses({
+    userID: userID.trim() || undefined,
+    bundleID: bundleID === "all" ? undefined : bundleID,
+  });
+  const refundPass = useCtlRefundPass();
+  const destroyPass = useCtlDestroyPass();
+  const dianshiRecords = useCtlDianshiRecords({
+    userID: userID.trim() || undefined,
+  });
+  const deleteDianshiParticipation = useCtlDeleteDianshiParticipation();
 
-  function openPlanEditor(plan?: SubscriptionAdminPlan) {
-    setPlanEditorOpen(true);
-    setPlanEditorTarget(plan ?? null);
-    setPlanCodeValue(plan?.code ?? "");
-    setPlanDescriptionValue(plan?.description ?? "");
-    setPlanMaxBotCountValue(String(plan?.maxBotCount ?? 0));
-  }
+  const bundleItems = bundles.data ?? [];
+  const passItems = useMemo(() => {
+    const items = passes.data ?? [];
+    if (status === "all") {
+      return items;
+    }
+    return items.filter((item) => item.status === status);
+  }, [passes.data, status]);
 
-  async function handleSetSubscription() {
-    if (!setTarget) {
+  const dianshiParticipationItems = dianshiRecords.data?.participations ?? [];
+
+  async function handleRefundPass() {
+    if (!refundTarget) {
       return;
     }
+
     try {
-      await setSubscription.mutateAsync({
-        externalUserId: setTarget.externalUserId,
-        code: setCodeValue,
+      const result = await refundPass.mutateAsync({
+        passID: refundTarget.pass_id,
       });
-      toast.success("订阅已更新");
-      setSetTarget(null);
+      toast.success(`退款已提交：${result.deal_name}`);
+      setRefundTarget(null);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "更新订阅失败");
+      toast.error(error instanceof Error ? error.message : "退款失败");
     }
   }
 
-  async function handleCancelSubscription() {
-    if (!cancelTarget) {
+  async function handleDestroyPass() {
+    if (!destroyTarget) {
       return;
     }
     try {
-      await cancelSubscription.mutateAsync(cancelTarget.externalUserId);
-      toast.success("订阅已取消");
-      setCancelTarget(null);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "取消订阅失败");
-    }
-  }
-
-  const handleResyncSubscription = useCallback(async (record: SubscriptionAdminRecord) => {
-    try {
-      await resyncSubscription.mutateAsync(record.externalUserId);
-      toast.success("已重新同步到 AI Gateway");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "重同步失败");
-    }
-  }, [resyncSubscription]);
-
-  async function handleSavePlan() {
-    const normalizedCode = planCodeValue.trim().toLowerCase();
-    const maxBotCount = Number(planMaxBotCountValue);
-    if (!normalizedCode) {
-      toast.error("套餐 code 不能为空");
-      return;
-    }
-    if (!Number.isInteger(maxBotCount) || maxBotCount < 0) {
-      toast.error("最大 Bot 数量必须是大于等于 0 的整数");
-      return;
-    }
-    try {
-      await upsertPlan.mutateAsync({
-        code: normalizedCode,
-        description: planDescriptionValue.trim(),
-        maxBotCount,
+      await destroyPass.mutateAsync({
+        passID: destroyTarget.pass_id,
+        userID: destroyTarget.user_id,
       });
-      toast.success(planEditorTarget ? "套餐已更新" : "套餐已创建");
-      setPlanEditorOpen(false);
-      setPlanEditorTarget(null);
-      setPlanCodeValue("");
-      setPlanDescriptionValue("");
-      setPlanMaxBotCountValue("0");
+      toast.success("销毁已触发");
+      setDestroyTarget(null);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "保存套餐失败");
+      toast.error(error instanceof Error ? error.message : "销毁失败");
     }
   }
 
-  async function handleDeletePlan() {
-    if (!deletePlanTarget) {
+  async function handleDeleteDianshiParticipation() {
+    if (!deleteDianshiParticipationTarget) {
       return;
     }
     try {
-      await deletePlan.mutateAsync(deletePlanTarget.code);
-      toast.success("套餐已删除");
-      setDeletePlanTarget(null);
+      const result = await deleteDianshiParticipation.mutateAsync(deleteDianshiParticipationTarget.id);
+      toast.success(result.deleted ? "点石参与记录已删除" : "未找到可删除的参与记录");
+      setDeleteDianshiParticipationTarget(null);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "删除套餐失败");
+      toast.error(error instanceof Error ? error.message : "删除点石参与记录失败");
     }
   }
 
-  const subscriptionColumns = useMemo<ColumnDef<SubscriptionAdminRecord>[]>(
+  const bundleColumns = useMemo<ColumnDef<CtlBundle>[]>(
     () => [
       {
-        accessorKey: "externalUserId",
-        header: "用户 ID",
-        cell: ({ row }) => (
-          <code className="font-mono text-xs">{row.original.externalUserId}</code>
-        ),
+        accessorKey: "bundle_id",
+        header: "Bundle ID",
+        cell: ({ row }) => <code className="font-mono text-xs">{row.original.bundle_id}</code>,
       },
       {
-        accessorKey: "code",
-        header: "套餐",
-        cell: ({ row }) => <Badge variant="outline">{planLabel(row.original.code)}</Badge>,
+        accessorKey: "bundle_name",
+        header: "名称",
+        cell: ({ row }) => <div className="max-w-48 truncate">{row.original.bundle_name}</div>,
+      },
+      {
+        accessorKey: "bundle_type",
+        header: "类型",
+        cell: ({ row }) => <Badge variant="outline">{row.original.bundle_type}</Badge>,
+      },
+      {
+        accessorKey: "bundle_state",
+        header: "状态",
+        cell: ({ row }) => <Badge variant={statusVariant(row.original.bundle_state)}>{row.original.bundle_state}</Badge>,
+      },
+      {
+        accessorKey: "time_span",
+        header: "有效期",
+        cell: ({ row }) => formatTimeSpan(row.original.time_span, row.original.time_unit),
+      },
+      {
+        accessorKey: "agent_quota",
+        header: "实例配额",
+        cell: ({ row }) => <span className="tabular-nums">{formatNumber(row.original.agent_quota)}</span>,
+      },
+      {
+        accessorKey: "credit",
+        header: "点数",
+        cell: ({ row }) => <span className="tabular-nums">{formatNumber(row.original.credit)}</span>,
+      },
+      {
+        accessorKey: "instance_spec_id",
+        header: "实例规格",
+        cell: ({ row }) => <span className="text-sm">{formatSpec(row.original)}</span>,
+      },
+      {
+        accessorKey: "bundle_sales_state",
+        header: "库存",
+        cell: ({ row }) => (
+          <div className="space-y-1">
+            <Badge variant={statusVariant(row.original.bundle_sales_state)}>{row.original.bundle_sales_state}</Badge>
+            <div className="text-xs tabular-nums text-muted-foreground">
+              {formatNumber(row.original.bundle_sales_available_count)} / {formatNumber(row.original.bundle_sales_total_count)}
+            </div>
+          </div>
+        ),
+      },
+    ],
+    []
+  );
+
+  const passColumns = useMemo<ColumnDef<CtlPass>[]>(
+    () => [
+      {
+        accessorKey: "pass_id",
+        header: "Pass ID",
+        cell: ({ row }) => <code className="font-mono text-xs">{row.original.pass_id}</code>,
+      },
+      {
+        accessorKey: "user_id",
+        header: "用户 ID",
+        cell: ({ row }) => <code className="font-mono text-xs">{row.original.user_id}</code>,
+      },
+      {
+        accessorKey: "bundle_name",
+        header: "Bundle",
+        cell: ({ row }) => (
+          <div className="space-y-1">
+            <div className="max-w-44 truncate text-sm font-medium">{row.original.bundle_name || "-"}</div>
+            <code className="block max-w-44 truncate font-mono text-[11px] text-muted-foreground">
+              {row.original.bundle_id}
+            </code>
+          </div>
+        ),
       },
       {
         accessorKey: "status",
         header: "状态",
+        cell: ({ row }) => <Badge variant={statusVariant(row.original.status)}>{row.original.status}</Badge>,
+      },
+      {
+        accessorKey: "expired_time",
+        header: "到期时间",
+        cell: ({ row }) => formatDateTime(row.original.expired_time),
+      },
+      {
+        accessorKey: "isolated_time",
+        header: "隔离时间",
+        cell: ({ row }) => formatOptionalDateTime(row.original.isolated_time),
+      },
+      {
+        accessorKey: "credit_available",
+        header: "点数",
         cell: ({ row }) => (
-          <Badge variant={statusVariant(row.original.status)}>
-            {row.original.status}
-          </Badge>
+          <span className="tabular-nums">
+            {formatNumber(row.original.credit_available)} / {formatNumber(row.original.credit_total)}
+          </span>
         ),
       },
       {
-        accessorKey: "currentPeriodStart",
-        header: "生效时间",
-        cell: ({ row }) =>
-          row.original.currentPeriodStart ? formatDateTime(row.original.currentPeriodStart) : "—",
+        accessorKey: "agent_quota_available",
+        header: "实例配额",
+        cell: ({ row }) => (
+          <span className="tabular-nums">
+            {formatNumber(row.original.agent_quota_available)} / {formatNumber(row.original.agent_quota_total)}
+          </span>
+        ),
       },
       {
-        accessorKey: "currentPeriodEnd",
-        header: "到期时间",
-        cell: ({ row }) =>
-          row.original.currentPeriodEnd ? formatDateTime(row.original.currentPeriodEnd) : "—",
+        accessorKey: "uin",
+        header: "UIN / AppID",
+        cell: ({ row }) => (
+          <div className="space-y-1 font-mono text-[11px]">
+            <div>{row.original.uin || "-"}</div>
+            <div className="text-muted-foreground">{row.original.app_id || "-"}</div>
+          </div>
+        ),
       },
       {
-        accessorKey: "sourceOrderId",
-        header: "来源",
-        cell: ({ row }) =>
-          row.original.sourceOrderId ? (
-            <code className="font-mono text-[11px]">{row.original.sourceOrderId}</code>
-          ) : (
-            "—"
-          ),
-      },
-      {
-        accessorKey: "aiGatewaySubscriptionId",
-        header: "AI Gateway 副本",
-        cell: ({ row }) =>
-          row.original.aiGatewaySubscriptionId ? (
-            <code className="font-mono text-[11px]">{row.original.aiGatewaySubscriptionId}</code>
-          ) : (
-            "—"
-          ),
-      },
-      {
-        accessorKey: "updatedAt",
+        accessorKey: "updated_time",
         header: "更新时间",
-        cell: ({ row }) => formatDateTime(row.original.updatedAt),
+        cell: ({ row }) => formatDateTime(row.original.updated_time),
       },
       {
         id: "actions",
         header: "",
         cell: ({ row }) => (
           <DropdownMenu>
-            <DropdownMenuTrigger
-              render={<Button variant="ghost" size="icon" />}
-            >
+            <DropdownMenuTrigger render={<Button aria-label="打开 pass 操作" variant="ghost" size="icon" />}>
               <MoreHorizontal className="h-4 w-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                onClick={() => {
-                  setSetTarget(row.original);
-                  setSetCodeValue(row.original.code);
-                }}
-              >
-                <RefreshCw className="mr-2 h-4 w-4" />
-                修改套餐
+              <DropdownMenuItem onClick={() => setRefundTarget(row.original)}>
+                <RotateCcw className="mr-2 h-4 w-4" />
+                退款
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleResyncSubscription(row.original)}>
-                <RefreshCw className="mr-2 h-4 w-4" />
-                重同步
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setEventTarget(row.original)}>
-                <ScrollText className="mr-2 h-4 w-4" />
-                查看事件
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                variant="destructive"
-                onClick={() => setCancelTarget(row.original)}
-              >
+              <DropdownMenuItem variant="destructive" onClick={() => setDestroyTarget(row.original)}>
                 <Trash2 className="mr-2 h-4 w-4" />
-                取消订阅
+                销毁
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         ),
       },
     ],
-    [handleResyncSubscription]
+    []
   );
 
-  const planColumns = useMemo<ColumnDef<SubscriptionAdminPlan>[]>(
+  const dianshiParticipationColumns = useMemo<ColumnDef<CtlDianshiParticipation>[]>(
     () => [
       {
-        accessorKey: "code",
-        header: "套餐 code",
-        cell: ({ row }) => <Badge variant="outline">{row.original.code}</Badge>,
+        accessorKey: "id",
+        header: "ID",
+        cell: ({ row }) => <span className="tabular-nums">{row.original.id}</span>,
       },
       {
-        accessorKey: "description",
-        header: "描述",
+        accessorKey: "external_user_id",
+        header: "用户",
         cell: ({ row }) => (
-          <div className="max-w-[420px] whitespace-pre-wrap text-sm">{row.original.description || "—"}</div>
+          <div className="space-y-1">
+            <code className="block font-mono text-xs">{row.original.external_user_id}</code>
+            <div className="font-mono text-[11px] text-muted-foreground">
+              {row.original.uin || "-"} / {row.original.app_id || "-"}
+            </div>
+          </div>
         ),
       },
       {
-        accessorKey: "maxBotCount",
-        header: "最大 Bot 数量",
+        accessorKey: "bundle_id",
+        header: "Bundle / 活动",
+        cell: ({ row }) => (
+          <div className="space-y-1">
+            <code className="block max-w-44 truncate font-mono text-xs">{row.original.bundle_id}</code>
+            <div className="font-mono text-[11px] text-muted-foreground">
+              {row.original.activity_id} / {row.original.act_id}
+            </div>
+          </div>
+        ),
       },
       {
-        accessorKey: "updatedAt",
-        header: "更新时间",
-        cell: ({ row }) => formatDateTime(row.original.updatedAt),
+        accessorKey: "created_time",
+        header: "创建时间",
+        cell: ({ row }) => formatDateTime(row.original.created_time),
       },
       {
         id: "actions",
         header: "",
         cell: ({ row }) => (
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={<Button variant="ghost" size="icon" />}
-            >
-              <MoreHorizontal className="h-4 w-4" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => openPlanEditor(row.original)}>
-                <RefreshCw className="mr-2 h-4 w-4" />
-                编辑套餐
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                variant="destructive"
-                onClick={() => setDeletePlanTarget(row.original)}
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                删除套餐
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <Button
+            aria-label="删除点石参与记录"
+            variant="ghost"
+            size="icon"
+            onClick={() => setDeleteDianshiParticipationTarget(row.original)}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
         ),
       },
     ],
@@ -332,241 +351,161 @@ export default function SubscriptionsPage() {
     <div className="space-y-6">
       <PageHeader
         title="业务订阅"
-        description="subscription 服务现在同时管理套餐目录和用户当前订阅，作为订阅真相源。"
+        description="查看 ctl bundle 目录和 pass 当前态，并处理 pass 退款、销毁。"
       />
 
       <Card>
         <CardHeader className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <CardTitle>套餐目录</CardTitle>
-            <CardDescription>维护业务套餐定义：code、描述和最大可创建 Bot 数量。</CardDescription>
+            <CardTitle>Bundle 目录</CardTitle>
+            <CardDescription>ctl 当前维护的套餐、规格、配额和库存状态。</CardDescription>
           </div>
-          <Button onClick={() => openPlanEditor()}>
-            新建套餐
+          <Button variant="outline" onClick={() => void bundles.refetch()} disabled={bundles.isFetching}>
+            <RefreshCw className="mr-2 h-4 w-4" />
+            刷新
           </Button>
         </CardHeader>
         <CardContent>
           <DataTable
-            columns={planColumns}
-            data={planItems}
-            total={planItems.length}
-            isLoading={plans.isLoading}
+            columns={bundleColumns}
+            data={bundleItems}
+            total={bundleItems.length}
+            isLoading={bundles.isLoading}
           />
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>当前订阅</CardTitle>
-          <CardDescription>按用户查看订阅当前态，以及同步到 AI Gateway 的权益副本。</CardDescription>
+          <CardTitle>Pass 列表</CardTitle>
+          <CardDescription>按用户或 bundle 查询 pass，并执行退款、销毁操作。</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="flex flex-wrap gap-3">
             <Input
-              placeholder="按用户 ID / code / status 搜索"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              placeholder="用户 ID"
+              value={userID}
+              onChange={(event) => setUserID(event.target.value)}
               className="max-w-md"
             />
-            <Select value={status} onValueChange={(value) => setStatus(value ?? "all")}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="订阅状态" />
+            <Select value={bundleID} onValueChange={(value) => setBundleID(value ?? "all")}>
+              <SelectTrigger className="w-[220px]">
+                <SelectValue placeholder="Bundle" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">全部状态</SelectItem>
-                <SelectItem value="active">active</SelectItem>
-                <SelectItem value="cancelled">cancelled</SelectItem>
-                <SelectItem value="expired">expired</SelectItem>
-                <SelectItem value="pending_payment">pending_payment</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={code} onValueChange={(value) => setCode(value ?? "all")}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="套餐类型" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部套餐</SelectItem>
-                {planItems.map((plan) => (
-                  <SelectItem key={plan.code} value={plan.code}>
-                    {planLabel(plan.code)}
+                <SelectItem value="all">全部 Bundle</SelectItem>
+                {bundleItems.map((bundle) => (
+                  <SelectItem key={bundle.bundle_id} value={bundle.bundle_id}>
+                    {bundle.bundle_name || bundle.bundle_id}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            <Select value={status} onValueChange={(value) => setStatus(value ?? "all")}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Pass 状态" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部状态</SelectItem>
+                <SelectItem value="active">active</SelectItem>
+                <SelectItem value="isolating">isolating</SelectItem>
+                <SelectItem value="isolated">isolated</SelectItem>
+                <SelectItem value="deleting">deleting</SelectItem>
+                <SelectItem value="terminating">terminating</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button variant="outline" onClick={() => void passes.refetch()} disabled={passes.isFetching}>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              刷新
+            </Button>
           </div>
 
           <DataTable
-            columns={subscriptionColumns}
-            data={data?.items ?? []}
-            total={data?.total ?? 0}
-            isLoading={isLoading}
+            columns={passColumns}
+            data={passItems}
+            total={passItems.length}
+            isLoading={passes.isLoading}
           />
         </CardContent>
       </Card>
 
-      <Dialog open={!!setTarget} onOpenChange={(open) => !open && setSetTarget(null)}>
-        <DialogContent className="sm:max-w-[420px]">
-          <DialogHeader>
-            <DialogTitle>修改订阅套餐</DialogTitle>
-            <DialogDescription>
-              直接修改 {setTarget?.externalUserId} 的业务订阅，并同步到 AI Gateway。
-            </DialogDescription>
-          </DialogHeader>
-          <Select value={setCodeValue} onValueChange={(value) => setSetCodeValue(value ?? "")}>
-            <SelectTrigger>
-              <SelectValue placeholder={planItems.length ? "选择套餐" : "请先创建套餐目录"} />
-            </SelectTrigger>
-            <SelectContent>
-              {planItems.map((plan) => (
-                <SelectItem key={plan.code} value={plan.code}>
-                  {planLabel(plan.code)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSetTarget(null)}>
-              取消
-            </Button>
+      <Card>
+        <CardHeader>
+          <CardTitle>点石参与记录</CardTitle>
+          <CardDescription>查询点石参与记录，并删除阻塞重试的记录。</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="flex flex-wrap gap-3">
             <Button
-              onClick={handleSetSubscription}
-              disabled={setSubscription.isPending || !setCodeValue}
+              variant="outline"
+              onClick={() => void dianshiRecords.refetch()}
+              disabled={dianshiRecords.isFetching}
             >
-              保存
+              <RefreshCw className="mr-2 h-4 w-4" />
+              查询
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
 
-      <Dialog open={planEditorOpen} onOpenChange={(open) => {
-        setPlanEditorOpen(open);
+          <div className="space-y-3">
+            <div>
+              <h3 className="text-sm font-medium">参与记录</h3>
+              <p className="text-sm text-muted-foreground">trade_user_activity_participation 中用于拦截重复参与的记录。</p>
+            </div>
+            <div className="overflow-x-auto">
+              <DataTable
+                columns={dianshiParticipationColumns}
+                data={dianshiParticipationItems}
+                total={dianshiParticipationItems.length}
+                isLoading={dianshiRecords.isLoading}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Dialog open={!!refundTarget} onOpenChange={(open) => {
         if (!open) {
-          setPlanEditorTarget(null);
-          setPlanCodeValue("");
-          setPlanDescriptionValue("");
-          setPlanMaxBotCountValue("0");
+          setRefundTarget(null);
         }
       }}>
         <DialogContent className="sm:max-w-[520px]">
           <DialogHeader>
-            <DialogTitle>{planEditorTarget ? "编辑套餐" : "新建套餐"}</DialogTitle>
+            <DialogTitle>Pass 退款</DialogTitle>
             <DialogDescription>
-              这里维护 subscription 服务自己的套餐目录。AI Gateway 只保留下游权益副本。
+              确认为 {refundTarget ? passActionLabel(refundTarget) : ""} 发起退款？
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="plan-code">套餐 code</Label>
-              <Input
-                id="plan-code"
-                value={planCodeValue}
-                disabled={!!planEditorTarget}
-                onChange={(event) => setPlanCodeValue(event.target.value)}
-                placeholder="free / lite / pro"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="plan-description">描述</Label>
-              <Textarea
-                id="plan-description"
-                value={planDescriptionValue}
-                onChange={(event) => setPlanDescriptionValue(event.target.value)}
-                placeholder="用于后台说明和运营识别"
-                rows={4}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="plan-max-bots">最大 Bot 数量</Label>
-              <Input
-                id="plan-max-bots"
-                type="number"
-                min={0}
-                value={planMaxBotCountValue}
-                onChange={(event) => setPlanMaxBotCountValue(event.target.value)}
-              />
-            </div>
-          </div>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setPlanEditorOpen(false);
-                setPlanEditorTarget(null);
-                setPlanCodeValue("");
-                setPlanDescriptionValue("");
-                setPlanMaxBotCountValue("0");
-              }}
-            >
+            <Button variant="outline" onClick={() => setRefundTarget(null)}>
               取消
             </Button>
-            <Button onClick={handleSavePlan} disabled={upsertPlan.isPending}>
-              保存
+            <Button onClick={handleRefundPass} disabled={refundPass.isPending}>
+              发起退款
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!eventTarget} onOpenChange={(open) => !open && setEventTarget(null)}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>订阅事件</DialogTitle>
-            <DialogDescription>
-              {eventTarget?.externalUserId} 的 subscription_events 时间线。
-            </DialogDescription>
-          </DialogHeader>
-          <div className="max-h-[420px] space-y-3 overflow-y-auto">
-            {events.isLoading ? (
-              <div className="text-sm text-muted-foreground">加载中...</div>
-            ) : eventItems.length > 0 ? (
-              eventItems.map((event) => (
-                <div key={event.id} className="rounded-lg border p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline">{event.eventType}</Badge>
-                      <Badge variant={statusVariant(event.status)}>{event.status}</Badge>
-                      <Badge variant="secondary">{event.code}</Badge>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {formatDateTime(event.createdAt)}
-                    </div>
-                  </div>
-                  <div className="mt-2 text-xs text-muted-foreground">
-                    subscriptionId: <code>{event.subscriptionId}</code>
-                  </div>
-                  {event.sourceOrderId ? (
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      source: <code>{event.sourceOrderId}</code>
-                    </div>
-                  ) : null}
-                </div>
-              ))
-            ) : (
-              <div className="text-sm text-muted-foreground">暂无事件</div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
-
       <ConfirmDialog
-        open={!!cancelTarget}
-        onOpenChange={(open) => !open && setCancelTarget(null)}
-        title="取消订阅"
-        description={`确认取消 ${cancelTarget?.externalUserId ?? ""} 的当前订阅？这会同时尝试取消 AI Gateway 侧的权益副本。`}
-        confirmLabel="取消订阅"
+        open={!!destroyTarget}
+        onOpenChange={(open) => !open && setDestroyTarget(null)}
+        title="销毁 Pass"
+        description={`确认销毁 ${destroyTarget ? passActionLabel(destroyTarget) : ""}？销毁会触发 ctl/pass 的异步销毁链路。`}
+        confirmLabel="销毁"
         variant="destructive"
-        onConfirm={handleCancelSubscription}
-        loading={cancelSubscription.isPending}
+        onConfirm={handleDestroyPass}
+        loading={destroyPass.isPending}
       />
 
       <ConfirmDialog
-        open={!!deletePlanTarget}
-        onOpenChange={(open) => !open && setDeletePlanTarget(null)}
-        title="删除套餐"
-        description={`确认删除套餐 ${deletePlanTarget?.code ?? ""}？如果当前有用户正在使用这个套餐，后端会拒绝删除。`}
-        confirmLabel="删除套餐"
+        open={!!deleteDianshiParticipationTarget}
+        onOpenChange={(open) => !open && setDeleteDianshiParticipationTarget(null)}
+        title="删除点石参与记录"
+        description={`确认删除参与记录 ${deleteDianshiParticipationTarget?.id ?? ""}？删除后该用户可重新尝试点石活动下单。`}
+        confirmLabel="删除"
         variant="destructive"
-        onConfirm={handleDeletePlan}
-        loading={deletePlan.isPending}
+        onConfirm={handleDeleteDianshiParticipation}
+        loading={deleteDianshiParticipation.isPending}
       />
     </div>
   );

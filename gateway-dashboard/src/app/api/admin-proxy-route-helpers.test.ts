@@ -83,6 +83,27 @@ test("buildModuleAdminProxyRequest maps sandbox module to internal API and forwa
   assert.equal(await new Response(built.init.body).text(), JSON.stringify({ pool_id: "default" }));
 });
 
+test("buildModuleAdminProxyRequest maps ctl-admin module to ctl admin API", async () => {
+  const req = new Request("https://admin.example.com/admin/api/ctl/admin/passes/user-pass-1/refund", {
+    method: "POST",
+    headers: {
+      authorization: "Bearer browser-token",
+    },
+    body: JSON.stringify({ reason: "manual refund" }),
+  });
+
+  const built = await buildModuleAdminProxyRequest(req, {
+    module: "ctl-admin",
+    path: ["passes", "user-pass-1", "refund"],
+    upstreamBaseURL: "https://ctl.internal",
+    forwardBrowserToken: false,
+  });
+
+  assert.equal(built.url.toString(), "https://ctl.internal/admin/api/ctl/passes/user-pass-1/refund");
+  assert.equal(built.init.headers.get("authorization"), null);
+  assert.equal(await new Response(built.init.body).text(), JSON.stringify({ reason: "manual refund" }));
+});
+
 test("buildModuleAdminProxyRequest maps sandbox PUT binding replacements to internal API", async () => {
   const body = JSON.stringify([{ sku_id: "sku-hermes-2c4g", priority: 1, weight: 100 }]);
   const req = new Request("https://admin.example.com/admin/api/sandbox/template-classes/hermes/skus", {
