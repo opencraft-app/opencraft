@@ -9,7 +9,8 @@ export type AdminProxyModule =
   | "auth"
   | "subscription"
   | "sandbox"
-  | "ctl";
+  | "ctl"
+  | "ctl-admin";
 
 interface BuildModuleAdminProxyRequestOptions {
   module: AdminProxyModule;
@@ -35,6 +36,7 @@ const upstreamPathPrefixes: Record<AdminProxyModule, string> = {
   subscription: "/admin",
   sandbox: "/internal",
   ctl: "/internal",
+  "ctl-admin": "/admin/api/ctl",
 };
 
 interface BuiltAdminProxyRequest {
