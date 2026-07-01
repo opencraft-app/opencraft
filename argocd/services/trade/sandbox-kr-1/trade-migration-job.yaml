@@ -1,0 +1,59 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: trade-migrate
+  labels:
+    app: trade
+    job: trade-migrate
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: trade
+        job: trade-migrate
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+        - name: db-bootstrap
+          image: mysql:8.0
+          env:
+            - name: MYSQL_HOST
+              value: mysql.lightvela-playground-sandbox-kr-1.svc.cluster.local
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: playground-runtime-secrets
+                  key: MYSQL_ROOT_PASSWORD
+            - name: TRADE_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: trade-runtime-secrets
+                  key: TRADE_DB_PASSWORD
+          command:
+            - /bin/sh
+            - -ec
+          args:
+            - |
+              until mysql --host="$MYSQL_HOST" --port=3306 --user=root --password="$MYSQL_ROOT_PASSWORD" -e 'SELECT 1'; do  # pragma: allowlist secret
+                echo "waiting for mysql"
+                sleep 5
+              done
+              mysql --host="$MYSQL_HOST" --port=3306 --user=root --password="$MYSQL_ROOT_PASSWORD" <<SQL  # pragma: allowlist secret
+              CREATE DATABASE IF NOT EXISTS `trade_sandbox_kr_1` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+              CREATE USER IF NOT EXISTS 'trade'@'%' IDENTIFIED BY '${TRADE_DB_PASSWORD}';  # pragma: allowlist secret
+              ALTER USER 'trade'@'%' IDENTIFIED BY '${TRADE_DB_PASSWORD}';  # pragma: allowlist secret
+              GRANT ALL PRIVILEGES ON `trade_sandbox_kr_1`.* TO 'trade'@'%';
+              FLUSH PRIVILEGES;
+              SQL
+      containers:
+        - name: trade-migrate
+          image: lightclaw-kr1.tencentcloudcr.com/lightclaw/trade@sha256:2a1b099ec5cce685a235adfbf834fa2d0f368655611c0b0030bdda2966d48f28
+          command:
+            - /usr/local/bin/trade-migrate
+          envFrom:
+            - configMapRef:
+                name: trade-config
+            - secretRef:
+                name: trade-runtime-secrets
