@@ -138,14 +138,6 @@ func parseDianshiRecordFilter(c *gin.Context) (store.DianshiRecordFilter, bool) 
 		}
 		filter.Limit = limit
 	}
-	if filter.ExternalUserID == "" && filter.Uin == "" && filter.ActivityID == 0 &&
-		filter.BundleID == "" && filter.DealName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    "InvalidRequest",
-			"message": "at least one filter is required",
-		})
-		return filter, false
-	}
 	return filter, true
 }
 
