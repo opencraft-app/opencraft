@@ -198,6 +198,285 @@ a {
   margin-top: 4px;
 }
 
+/* ── /agents 左侧导航视觉升级 ───────────────────────────────────────────── */
+.lv-agents-sidebar {
+  min-height: calc(100dvh - 178px);
+  padding-right: 28px;
+  border-right: 1px solid #e9ecf1;
+}
+
+.lv-agent-profile-wrap {
+  width: 220px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e9ecf1;
+}
+
+.lv-agent-profile {
+  position: relative;
+  display: flex;
+  width: 220px;
+  min-height: 44px;
+  align-items: center;
+  gap: 16px;
+  border-radius: 6px;
+  color: #1f1f1f;
+  transition: background 0.15s ease;
+}
+
+.lv-agent-avatar {
+  display: flex;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 50%;
+}
+
+.lv-agent-avatar img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+
+.lv-agent-profile-text {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.lv-agent-profile-name {
+  display: block;
+  overflow: hidden;
+  color: #1f1f1f;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 22px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lv-agent-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  color: rgb(0 0 0 / 40%);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.lv-agent-actions {
+  position: relative;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.lv-agent-more {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 4px;
+  color: #111111;
+  background: #f2f4f8;
+}
+
+.lv-agent-more:hover,
+.lv-agent-more:focus-visible {
+  background: #e9ecf1;
+  outline: none;
+}
+
+.lv-agent-action-menu {
+  position: absolute;
+  top: 28px;
+  right: 0;
+  z-index: 30;
+  display: flex;
+  width: 136px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+  border: 1px solid rgb(0 0 0 / 4%);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 14px 32px rgb(15 23 42 / 12%);
+}
+
+.lv-agent-action-menu button {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 0;
+  color: rgb(0 0 0 / 72%);
+  background: transparent;
+  font-size: 13px;
+  line-height: 20px;
+  text-align: left;
+}
+
+.lv-agent-action-menu button:hover,
+.lv-agent-action-menu button:focus-visible {
+  background: #f7f8fb;
+  outline: none;
+}
+
+.lv-agent-action-menu button:disabled {
+  cursor: not-allowed;
+  color: rgb(0 0 0 / 28%);
+}
+
+.lv-agent-action-menu button.is-danger {
+  color: #e5484d;
+}
+
+.lv-agent-action-menu button.is-danger:disabled {
+  color: rgb(0 0 0 / 28%);
+}
+
+.lv-agent-create-button {
+  display: flex;
+  width: 220px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+  border: 1px solid #e9ecf1;
+  border-radius: 6px;
+  color: rgb(0 0 0 / 72%);
+  background: #ffffff;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.lv-agent-create-button:hover,
+.lv-agent-create-button:focus-visible {
+  border-color: #dfe3ea;
+  color: rgb(0 0 0 / 90%);
+  background: #f7f8fb;
+  outline: none;
+}
+
+.lv-agents-nav {
+  display: flex;
+  width: 220px;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 16px;
+}
+
+.lv-agents-nav .lw-settings-nav-item + .lw-settings-nav-item {
+  margin-top: 0;
+}
+
+.lv-agents-nav-item {
+  display: flex;
+  width: 220px;
+  height: 38px;
+  align-items: center;
+  gap: 14px;
+  padding: 0 12px;
+  border-radius: 6px;
+  color: rgb(0 0 0 / 72%);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 22px;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.lv-agents-nav-item.is-active {
+  color: #1f1f1f;
+  background: #f7f8fb;
+  font-weight: 600;
+}
+
+.lv-agents-nav-icon {
+  display: flex;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  align-items: center;
+  justify-content: center;
+}
+
+.lv-agents-nav-icon svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.8;
+}
+
+.lv-agent-feedback-link {
+  display: flex;
+  width: 220px;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 14px 12px 8px;
+  border-top: 1px solid #e9ecf1;
+  border-radius: 6px;
+  color: rgb(0 0 0 / 40%);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.lv-agent-feedback-link:hover {
+  color: rgb(0 0 0 / 70%);
+  background: rgb(0 0 0 / 2.5%);
+}
+
+.lv-agent-feedback-link:focus-visible {
+  color: rgb(0 0 0 / 70%);
+  background: rgb(0 0 0 / 2.5%);
+  outline: 2px solid rgb(0 0 0 / 30%);
+  outline-offset: 2px;
+}
+
+@media (max-width: 1023px) {
+  .lv-agents-sidebar {
+    min-height: auto;
+    padding-right: 0;
+    border-right: 0;
+  }
+
+  .lv-agent-profile-wrap,
+  .lv-agent-profile,
+  .lv-agent-create-button,
+  .lv-agents-nav,
+  .lv-agent-feedback-link {
+    width: 100%;
+  }
+
+  .lv-agents-nav {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .lv-agents-nav-item {
+    width: 100%;
+  }
+}
+
+@media (max-width: 720px) {
+  .lv-agents-nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (min-width: 768px) {
   .lw-landing-navbar .lw-landing-navbar__nav {
     display: flex;

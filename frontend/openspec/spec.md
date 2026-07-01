@@ -1,45 +1,18 @@
 # 当前技术规格
 
-## 方案概述
+> 当前需求：参考 `lightvela-next-figma.zip` 与截图，仅升级 `/agents/*` 控制台左侧导航样式。
 
-使用项目现有文档系统实现公告页：
+## 实现策略
 
-- 公告正文放在 `frontend/src/content/docs/announcements/public-beta.md`，由 Fumadocs 同步脚本生成文档页。
-- 国内站 docs sidebar 新增「产品公告」目录，包含「公测计划及付费版本预告」。
-- `frontend/scripts/sync-fumadocs-content.mjs` 生成 `announcements` 目录 meta 和 docs route manifest。
-- 首页顶部 `MaintenanceAnnouncementBanner` 更新为公测公告短提示，详情链接指向 `/docs/announcements/public-beta`。
-- sitemap 通过 docs route manifest 自动包含新文档页；不再新增独立 `/announcements` 公开路由。
+- 入口仍复用 `frontend/src/pages/marketing/agent-settings-page.tsx`，只调整左侧 `<aside>`、Agent profile 和 `<nav>` 的 class 与局部交互结构。
+- 左侧导航以 `origin/master` 的 `settingsSections` 为能力基线：通道、模型、技能、人设、自动任务、记忆、成就、云存储、对话（条件）、诊断中心，以及隐藏工具开关下的终端/浏览器都必须保留。
+- 原 profile 中的重启 / 删除快捷按钮改为更多菜单，菜单项仍调用 `setShowRestartConfirm` / `setShowDeleteConfirm`，禁用条件沿用 master。
+- 样式只新增 `/agents` 左侧导航相关 scoped class：`lv-agents-sidebar`、`lv-agent-*`、`lv-agents-nav*`；不覆盖 SDK 面板、记忆页或公开站点 header。
+- 响应式仅保证左侧导航在窄屏下回到无右边框、网格导航的可读布局。
+- 最新 master 的公测公告文档、docs route manifest、首页公告条和 sitemap 逻辑保持不动。
 
-## 内容模型
+## 验证
 
-公告内容以 docs Markdown 维护，原因：
-
-- 公告属于产品公告/文档内容，适合进入 `/docs` 信息架构。
-- 复用现有 Fumadocs 内容同步、metadata 和 sitemap 能力。
-- 未来新增公告时，只需要在 `src/content/docs/announcements/` 增加文档并更新目录配置。
-
-首版只在国内站 docs sidebar 暴露，国际站不新增公告入口。
-
-## UI 约束
-
-- 公告在 docs 正文中按普通文章呈现，不做活动页式大首屏、事实卡片、能力卡片或路线图卡片。
-- 价格表使用 Markdown 表格，文案保持紧凑，降低套餐说明在桌面端换行概率。
-- 首页顶部公告条使用原生 `<a>` 与 `<button>`，icon-only close 按钮保留 `aria-label`。
-
-## SEO 约束
-
-- 公告文档是公开可分享页面，默认 index/follow。
-- metadata title: `LightVela 公测计划及付费版本预告`
-- description 聚焦 2026 年 7 月 15 日公测、内测延期、付费版本与新用户权益。
-- docs route manifest 增加 `/docs/announcements/public-beta`。
-- sitemap 通过 docs manifest 生成新文档 URL；独立 publicPaths 不包含 `/announcements`。
-
-## 验证计划
-
-- 运行 `node frontend/scripts/sync-fumadocs-content.mjs` 同步 docs 内容和 route manifest。
-- 运行 `cd frontend && pnpm i18n:check`。
-- 运行 `cd frontend && pnpm check`。
-- 运行 `cd frontend && pnpm build:cn`。
-- 启动 `pnpm dev:cn` 后 smoke：
-  - `/` 首页顶部公告可见、跳转正确、关闭可用；
-  - `/docs/announcements/public-beta` 呈现为 docs 文章页，左侧目录出现「产品公告」，正文包含公告内容和套餐表。
+- `pnpm i18n:extract` / `pnpm i18n:check`：新增“更多操作”文案后字典完整。
+- `pnpm check`：类型检查通过。
+- 本地 Next 预览 `/agents/channels/` 和 `/agents/memory/` 返回 200，确认非左栏区域没有因撤销而破坏渲染。
