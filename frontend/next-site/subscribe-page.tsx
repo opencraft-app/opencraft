@@ -794,7 +794,7 @@ const PlanCard = ({
                 padding: "6px 12px",
               }}
             >
-              {t("询价中")}
+              {t("暂无报价")}
             </span>
           </div>
         ) : plan.price ? (
