@@ -86,11 +86,11 @@ func (a *adapter) ListDianshiRecords(ctx context.Context, filter DianshiRecordFi
 	if filter.Limit > 0 {
 		query.Set("limit", strconv.Itoa(filter.Limit))
 	}
-	if len(query) == 0 {
-		return nil, fmt.Errorf("trade adapter: ListDianshiRecords: at least one filter is required")
-	}
 
-	endpoint := strings.TrimRight(a.config.BaseURL, "/") + "/internal/trade/dianshi/orders?" + query.Encode()
+	endpoint := strings.TrimRight(a.config.BaseURL, "/") + "/internal/trade/dianshi/orders"
+	if encoded := query.Encode(); encoded != "" {
+		endpoint += "?" + encoded
+	}
 	var result DianshiRecordsResult
 	if err := a.doJSON(ctx, http.MethodGet, endpoint, nil, &result); err != nil {
 		return nil, err
