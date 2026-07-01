@@ -104,8 +104,72 @@ interface PlanInfo {
   /* 当日剩余名额展示 */
   availableCount?: number;
   totalCount?: number;
+  /**
+   * 套餐分类（用于按 tab 分组展示），原始值来自后端 `bundle.bundle_type`。
+   * 后端枚举：`free` / `general` / `ai`（migration 000023 拍板）。
+   * 联调期可能缺失或为空串：归入 `BUNDLE_TYPE_FALLBACK_KEY`（其他）兜底分组。
+   * 注意：`free` 套餐由订阅页上游 planList 过滤掉，不会到达分组逻辑。
+   */
+  bundleType?: string;
   raw: Bundle;
 }
+
+/* ─── 套餐分类 Tab 配置 ─── */
+
+/**
+ * 套餐分类 tab，与后端 `bundle.bundle_type` 枚举对应（migration 000023 / 2026-06 后端联调确认）：
+ *   - general  标准版（启航 / 巡游 / 远航）
+ *   - ai       AI 增强版（启航 AI / 巡游 AI / 远航 AI）
+ *   - free     免费试用套餐（订阅页**不展示**，由 planList 上游过滤）
+ * 后端新增付费枚举后，**只需修改本数组**（顺序 / key / 文案）即可，业务逻辑无需变更。
+ *
+ * 渲染规则（见 SubscribePage 中实现）：
+ *   1. 当所有套餐都没有 `bundle_type` → 不渲染 tab 栏（行为同改造前）
+ *   2. 当前 tab 下无套餐 → 该 tab 隐藏，不占位
+ *   3. 后端下发的 `bundle_type` 不在本表中（含联调期空串）→ 归入「其他」兜底分组
+ */
+const BUNDLE_TYPE_FALLBACK_KEY = "__uncategorized__";
+
+interface BundleTypeTabDef {
+  /** 与后端 `bundle.bundle_type` 字段值匹配的 key，大小写敏感 */
+  key: string;
+  /** 中文文案（i18n 字典中文回显此值） */
+  zhLabel: string;
+}
+
+const BUNDLE_TYPE_TABS: BundleTypeTabDef[] = [
+  { key: "general", zhLabel: "标准版" },
+  { key: "ai", zhLabel: "AI 增强版" },
+];
+
+/* ─── AI 增强版：付费时长子 Tab（月付 / 年付）─── */
+
+/**
+ * 仅在计费开关开启（paidBillingActive=true）且当前 tab 为 `ai` 时展示。
+ * 切换后以 { time_span, time_unit } 作为 listBundles 询价参数，重拉套餐价格；
+ * 下单时把 { period, time_unit } 传给 createPassOrder。
+ *
+ * 关于「年付」编码：暂用 `12m`（12 个月）而非 `1y`。
+ *   - 后端 BundleTimeUnit 类型允许 y/m/d，但当前后端未验证 y 是否已支持；
+ *   - 12m 语义等价、最兼容；后端确认支持 y 后可改回。
+ */
+interface AiDurationTabDef {
+  key: "monthly" | "yearly";
+  period: number;
+  time_unit: "m";
+  zhLabel: string;
+}
+
+const AI_DURATION_TABS: AiDurationTabDef[] = [
+  { key: "monthly", period: 1, time_unit: "m", zhLabel: "月付" },
+  { key: "yearly", period: 12, time_unit: "m", zhLabel: "年付" },
+];
+
+/* i18n 静态标记：AI_DURATION_TABS 的 zhLabel 是动态变量，extract 脚本扫不到 t() 调用 */
+const __markAiDurationTabsForI18n = (t: (zh: string, opts?: Record<string, unknown>) => string): void => {
+  void t("月付");
+  void t("年付");
+};
 
 const iconStyle = { width: 16, height: 16, color: colors.warmGray300, strokeWidth: 1.5 };
 
@@ -159,6 +223,18 @@ const __markBundleBackendStringsForI18n = (t: (zh: string, opts?: Record<string,
   void t("启航 Launch");
   /* description.Key */
   void t("7*24小时在线");
+};
+
+/**
+ * i18n 静态标记块（前端常量）：BUNDLE_TYPE_TABS 的 zhLabel 是动态变量，
+ * extract 脚本扫不到 `t(tab.zhLabel)`，这里把所有 tab 文案 + fallback 文案静态列举。
+ * 仅供 extract 工具静态分析；运行时由 SubscribePage 在组件挂载时调用一次。
+ */
+const __markBundleTypeTabsForI18n = (t: (zh: string, opts?: Record<string, unknown>) => string): void => {
+  void t("套餐分类");
+  void t("标准版");
+  void t("AI 增强版");
+  void t("其他");
 };
 
 const mapBundleToPlan = (bundle: Bundle, index: number, t: (zh: string, opts?: Record<string, unknown>) => string, paidBillingEnabled: boolean): PlanInfo => {
@@ -226,14 +302,18 @@ const mapBundleToPlan = (bundle: Bundle, index: number, t: (zh: string, opts?: R
   }
 
   /**
-   * 价格 / 促销标签 / 是否跳过支付，按站点分流：
-   *   - paidBillingEnabled=true：消费后端真实价格 bundle.price.real_total_cost；
-   *     无价（trade 故障 / 未登录）时禁用按钮、不展示促销徽章
-   *   - paidBillingEnabled=false：保持「限时免费」内测策略 — 价格写死¥49 仅作锚点，
-   *     按 skipPayment=true 走免费 createPass 路径
+   * 价格 / 促销标签 / 是否跳过支付，按「计费开关 × 站点」二维分流：
+   *   - `paidBillingEnabled=false`（开关未开启，老逻辑）：
+   *       国内外一律走「限时免费」视觉（价格锚点 $7.5 / ¥49、显示"限时免费"标签、
+   *       skipPayment=true 走免费 createPass），保证灰度期兜底与老用户视觉一致。
+   *   - `paidBillingEnabled=true`（开关已开启，新逻辑）：
+   *       国内站（isGlobal=false）消费后端真实价格 bundle.price.real_total_cost；
+   *         无价（trade 故障 / 未登录）时禁用按钮、不展示促销徽章。
+   *       国际站（isGlobal=true）暂时仍保持「限时免费」内测策略，待海外计费闭环后再切换。
    */
   const soldOut = bundle.bundle_sales_state === "SOLD_OUT";
-  const paid = isPaidBillingEnabled(paidBillingEnabled);
+  /* 计费开关未开启时无论国内外都视为免费视觉；开启后仅国内站进入真实计费。 */
+  const paid = paidBillingEnabled && !isGlobal;
   /** 国内站要展示的真实金额（元）；后端 bundle.price.real_total_cost 单位是分，
    *  展示前需调 centsToYuan 转为元；后端 price 为 null 时返回 null 并标记为「暂无报价」禁用 */
   const realPriceYuan =
@@ -283,6 +363,8 @@ const mapBundleToPlan = (bundle: Bundle, index: number, t: (zh: string, opts?: R
     skipPayment: !paid,
     availableCount: bundle.bundle_sales_available_count,
     totalCount: bundle.bundle_sales_total_count,
+    /* 后端联调期可能缺失：缺失时由后续 tabGroups 兜底到「未分类」分组 */
+    bundleType: bundle.bundle_type,
     /**
      * TODO(temp-bypass, 联调期): 后端 /v1/bundles 列表当前未下发 time_span / time_unit，
      * 导致 createPassOrder 的 body 缺少 period / time_unit 字段，被后端 prepareCreatePassOrder
@@ -346,6 +428,11 @@ interface PlaceholderPlanDef {
   maxBots: number;
   comingSoon?: boolean;
   agentQuota: number;
+  /**
+   * 套餐分类，用于未开启计费开关（国际站占位卡场景）时也能按 BUNDLE_TYPE_TABS 分 tab。
+   * 缺省会落入「其他」兜底分组；巡游/远航属于传统标准套餐语义，默认 "general"。
+   */
+  bundleType?: string;
 }
 
 const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
@@ -370,6 +457,7 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
     maxBots: 1,
     comingSoon: true,
     agentQuota: 1,
+    bundleType: "general",
   },
   {
     id: "placeholder-pro",
@@ -393,6 +481,7 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
     maxBots: 3,
     comingSoon: true,
     agentQuota: 3,
+    bundleType: "general",
   },
 ];
 
@@ -434,6 +523,7 @@ const buildPlaceholderPlans = (t: (zh: string, opts?: Record<string, unknown>) =
     ctaStyle: def.ctaStyle,
     maxBots: def.maxBots,
     comingSoon: def.comingSoon,
+    bundleType: def.bundleType,
     raw: makePlaceholderBundle(def.id, def.name, def.agentQuota),
   }));
 };
@@ -1267,6 +1357,9 @@ export const SubscribePage = ({
   renderLink = renderAppHeaderLink,
 }: SubscribePageProps = {}) => {
   const t = useT();
+  /* i18n 静态标记：BUNDLE_TYPE_TABS 里的 zhLabel 是动态变量，extract 脚本扫不到 t() 调用，
+     这里在组件函数体顺序执行一次，与 t 同生命周期，避免放在 useEffect 的异步路径里漏扣。 */
+  __markBundleTypeTabsForI18n(t);
   const navigate = useAppNavigate();
   const { isLoggedIn, login, isSubscribed, subscribe, addBot, bots, user, refreshPasses } = useOpenClaw();
   const { authReady, isAuthenticated, session } = useSession();
@@ -1282,6 +1375,17 @@ export const SubscribePage = ({
   const [bundles, setBundles] = useState<Bundle[] | null>(null);
   const [bundlesLoading, setBundlesLoading] = useState(false);
   const [bundlesError, setBundlesError] = useState<string | null>(null);
+
+  /* 当前选中的套餐分类 tab key；null 表示尚未根据数据初始化 */
+  const [selectedBundleTab, setSelectedBundleTab] = useState<string | null>(null);
+
+  /* AI 增强版付费时长（仅 paidBillingActive && selectedBundleTab==='ai' 时生效）；
+     切换时会触发 listBundles 用新时长重拉价格。默认月付。 */
+  const [aiDurationKey, setAiDurationKey] = useState<AiDurationTabDef["key"]>("monthly");
+  const aiDuration = useMemo(
+    () => AI_DURATION_TABS.find((d) => d.key === aiDurationKey) ?? AI_DURATION_TABS[0],
+    [aiDurationKey],
+  );
 
   const paidBillingEnabled = usePaidBillingEnabled();
   const paidBillingActive = isPaidBillingEnabled(paidBillingEnabled);
@@ -1305,14 +1409,47 @@ export const SubscribePage = ({
     }
   }, [isLoggedIn, login]);
 
-  /* 拉取上线套餐列表（GET /v1/bundles）*/
+  /* 拉取上线套餐列表（GET /v1/bundles）
+     计费开关开启且当前是 AI tab 时，携带 { time_span, time_unit } 询价参数；
+     其他情况保持无参调用（老逻辑，含未开启计费开关的国际站占位卡场景）。
+
+     加载策略（避免首屏多余请求）：
+       - selectedBundleTab === null（首屏未初始化）：无参加载一次
+       - selectedBundleTab === 'ai' && paidBillingActive && 非默认时长（如年付）：带参重拉覆盖价格
+       - selectedBundleTab === 'ai' && paidBillingActive && 月付（默认）：复用首屏无参结果
+         （已与后端约定：无参调用 == time_span=1&time_unit=m 的月付定价）
+       - selectedBundleTab 变为其他 tab：不再重复拉取（数据已有，切 tab 只做前端分组）
+
+     使用 loadKey 显式表达「要拉哪批数据」，只在 loadKey 变化时触发。
+     ⚠️ 契约：loadKey 必须是稳定字符串——非 AI tab 与 AI 月付一律映射到 "__initial__"，
+     依赖 useEffect 依赖 diff 机制实现「切回已加载过的场景不重拉」。
+     修改本处务必保持这一映射稳定，否则会破坏首屏请求次数优化。
+
+     retryToken 用于错误重试：++retryToken 会让 loadKey 变更 → useEffect 重跑，
+     自然享受同一套 cancelled 竞态保护，无需重复抽取加载函数。 */
+  const [retryToken, setRetryToken] = useState(0);
+  /* AI tab 是否需要带参询价：仅当选中非默认时长（当前即年付）时为 true。
+     月付为默认，与首屏无参调用返回的价格等价，直接复用即可。 */
+  const needsAiPriceQuery =
+    paidBillingActive && selectedBundleTab === "ai" && aiDurationKey !== "monthly";
+  const loadKey = useMemo(() => {
+    const base = needsAiPriceQuery
+      ? `ai:${aiDurationKey}`
+      : "__initial__";
+    return `${base}#${retryToken}`;
+  }, [needsAiPriceQuery, aiDurationKey, retryToken]);
+
   useEffect(() => {
     let cancelled = false;
-    const loadBundles = async () => {
+    const run = async () => {
       setBundlesLoading(true);
       setBundlesError(null);
       try {
-        const list = await repositories.plans.listBundles();
+        const list = await repositories.plans.listBundles(
+          needsAiPriceQuery
+            ? { time_span: aiDuration.period, time_unit: aiDuration.time_unit }
+            : undefined,
+        );
         if (!cancelled) {
           setBundles(list);
         }
@@ -1326,19 +1463,77 @@ export const SubscribePage = ({
         }
       }
     };
-    void loadBundles();
+    void run();
     return () => {
       cancelled = true;
     };
-  }, [repositories.plans]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadKey]);
 
   /* 映射成 PlanInfo，保留原 bundle 用于后续时用 bundle_id 调购买 */
   const planList = useMemo<PlanInfo[]>(() => {
     if (!bundles) return [];
-    const fromBackend = bundles.map((b, idx) => mapBundleToPlan(b, idx, t, paidBillingActive));
-    /* 付费开关关闭时保持 master 当前展示：后端套餐 + 两张敬请期待占位卡。 */
+    /* 防御性过滤：bundle_type === "free" 是免费试用套餐（走 CreateTrialPass 链路，不下单不计费），
+       后端语义上不应出现在订阅付费页；即使运营误推或后端未来口径变更，前端也明确不展示。 */
+    const purchasable = bundles.filter((b) => b.bundle_type !== "free");
+    const fromBackend = purchasable.map((b, idx) => mapBundleToPlan(b, idx, t, paidBillingActive));
+    /* 国内站一律以后端返回为准，不再补占位卡；
+       国际站维持既有策略：付费开关关闭时补两张「敬请期待」占位卡。 */
+    if (!isGlobal) return fromBackend;
     return paidBillingActive ? fromBackend : [...fromBackend, ...buildPlaceholderPlans(t)];
   }, [bundles, paidBillingActive, t]);
+
+  /**
+   * 按 `bundleType` 把 planList 分组：
+   *   - 所有套餐都没有 bundleType → hasAnyType=false，UI 不渲染 tab 栏（兼容后端未下发字段的过渡期）
+   *   - 命中 BUNDLE_TYPE_TABS 的归入对应 key；未命中或为空 → 归入 fallback（未分类）
+   *   - 仅保留「有套餐」的 tab；空 tab 不展示
+   */
+  const { tabs: bundleTabs, plansByTab } = useMemo(() => {
+    const hasAnyType = planList.some((p) => typeof p.bundleType === "string" && p.bundleType.trim() !== "");
+    if (!hasAnyType) {
+      return {
+        tabs: [] as { key: string; label: string }[],
+        plansByTab: {} as Record<string, PlanInfo[]>,
+      };
+    }
+    const knownKeys = new Set(BUNDLE_TYPE_TABS.map((tab) => tab.key));
+    const groups: Record<string, PlanInfo[]> = {};
+    for (const plan of planList) {
+      const raw = plan.bundleType?.trim() ?? "";
+      const bucketKey = raw && knownKeys.has(raw) ? raw : BUNDLE_TYPE_FALLBACK_KEY;
+      if (!groups[bucketKey]) groups[bucketKey] = [];
+      groups[bucketKey].push(plan);
+    }
+    const orderedTabs: { key: string; label: string }[] = [];
+    for (const tab of BUNDLE_TYPE_TABS) {
+      if (groups[tab.key]?.length) {
+        orderedTabs.push({ key: tab.key, label: t(tab.zhLabel) });
+      }
+    }
+    if (groups[BUNDLE_TYPE_FALLBACK_KEY]?.length) {
+      orderedTabs.push({ key: BUNDLE_TYPE_FALLBACK_KEY, label: t("其他") });
+    }
+    return { tabs: orderedTabs, plansByTab: groups };
+  }, [planList, t]);
+
+  /* 数据加载完后初始化默认选中 tab：选第一个有套餐的 tab；若用户切换后数据刷新导致选中 tab 消失，自动回退到第一个 tab */
+  useEffect(() => {
+    if (bundleTabs.length === 0) {
+      if (selectedBundleTab !== null) setSelectedBundleTab(null);
+      return;
+    }
+    if (selectedBundleTab === null || !bundleTabs.some((tab) => tab.key === selectedBundleTab)) {
+      setSelectedBundleTab(bundleTabs[0].key);
+    }
+  }, [bundleTabs, selectedBundleTab]);
+
+  /* 当前 tab 下展示的套餐：没有 tab（后端未下发字段）时直接展示全部 */
+  const visiblePlans = useMemo<PlanInfo[]>(() => {
+    if (bundleTabs.length === 0) return planList;
+    if (!selectedBundleTab) return [];
+    return plansByTab[selectedBundleTab] ?? [];
+  }, [bundleTabs, plansByTab, planList, selectedBundleTab]);
 
   /* 付费过程上下文：仅在国内站走付费链路时使用。
      v1.7.31 起统一走 bridge 中转页二维码方案；不再保留 fallback 新窗口模式。
@@ -1428,11 +1623,14 @@ export const SubscribePage = ({
       await finalizeBot(plan);
       return;
     }
-    /* 阶段一：下单拿 deal_names + auth_code */
+    /* 阶段一：下单拿 deal_names + auth_code
+       AI 增强版下单：优先使用当前选中的付费时长（AI_DURATION_TABS），
+       其他 tab 或未开启计费开关时沿用 bundle 自带 time_span/time_unit（老逻辑）。 */
+    const useAiDuration = paidBillingActive && plan.bundleType === "ai";
     const order = await repositories.plans.createPassOrder({
       bundle_id: plan.raw.bundle_id,
-      period: plan.raw.time_span,
-      time_unit: plan.raw.time_unit,
+      period: useAiDuration ? aiDuration.period : plan.raw.time_span,
+      time_unit: useAiDuration ? aiDuration.time_unit : plan.raw.time_unit,
     });
 
     /* 把 deal_name + auth_code + bundleName 编进二维码 URL；
@@ -1447,7 +1645,7 @@ export const SubscribePage = ({
     setPaymentContext({ plan, dealNames: order.deal_names, bridgeUrl: payPlan.bridgeUrl });
     setSelectedPlan(plan);
     setModalStep("paying");
-  }, [isSubscribed, repositories.plans, finalizeBot]);
+  }, [isSubscribed, repositories.plans, finalizeBot, paidBillingActive, aiDuration]);
 
   /* finalizeBot 的 ref 镜像 — 见 isSubscribedRef 的注释，目的相同：
      轮询 effect 内的 setInterval 闭包要拿最新 finalizeBot，又不能依赖它（会反复重建）。
@@ -1515,7 +1713,9 @@ export const SubscribePage = ({
       paid_billing_active: paidBillingActive,
     });
     try {
-      if (paidBillingActive && !plan.skipPayment) {
+      /* 国内站一律走付费下单链路（plan.skipPayment 已在 mapBundleToPlan 中按站点置为 false）；
+         国际站维持「paidBillingActive 开关 + skipPayment」组合控制。 */
+      if ((!isGlobal || paidBillingActive) && !plan.skipPayment) {
         /* 付费链路：startPaidPassOrder 只展示二维码并把弹窗切到 paying；
            真正的 addBot + 跳转由两条接棒路径承接：
              ① paying 阶段轮询到 active pass → 自动 finalizeBot
@@ -1844,6 +2044,99 @@ export const SubscribePage = ({
             </motion.div>
           )}
 
+          {/* Bundle Type Tabs — 后端联调期：bundleTabs 为空时（所有套餐缺 bundle_type）整段不渲染，行为退化为改造前 */}
+          {bundleTabs.length > 0 && (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "center",
+                gap: 8,
+                marginBottom: 32,
+              }}
+              role="tablist"
+              aria-label={t("套餐分类")}
+            >
+              {bundleTabs.map((tab) => {
+                const active = tab.key === selectedBundleTab;
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setSelectedBundleTab(tab.key)}
+                    style={{
+                      padding: "8px 20px",
+                      borderRadius: 9999,
+                      border: `1px solid ${active ? colors.black : colors.border}`,
+                      background: active ? colors.black : colors.white,
+                      color: active ? colors.white : colors.warmGray500,
+                      fontSize: 14,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      transition: "all 0.2s ease",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!active) {
+                        e.currentTarget.style.color = colors.black;
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!active) {
+                        e.currentTarget.style.color = colors.warmGray500;
+                      }
+                    }}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* AI 增强版付费时长子 Tab — 仅开启计费开关且当前 tab 为 AI 时展示 */}
+          {paidBillingActive && selectedBundleTab === "ai" && (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "center",
+                gap: 8,
+                marginBottom: 24,
+                marginTop: -16,
+              }}
+              role="tablist"
+              aria-label={t("付费时长")}
+            >
+              {AI_DURATION_TABS.map((tab) => {
+                const active = tab.key === aiDurationKey;
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setAiDurationKey(tab.key)}
+                    disabled={bundlesLoading}
+                    style={{
+                      padding: "6px 16px",
+                      borderRadius: 9999,
+                      border: `1px solid ${active ? colors.black : colors.border}`,
+                      background: active ? colors.black : colors.white,
+                      color: active ? colors.white : colors.warmGray500,
+                      fontSize: 13,
+                      fontWeight: 500,
+                      cursor: bundlesLoading ? "not-allowed" : "pointer",
+                      opacity: bundlesLoading && !active ? 0.6 : 1,
+                      transition: "all 0.2s ease",
+                    }}
+                  >
+                    {t(tab.zhLabel)}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {/* Plan Cards */}
           {bundlesLoading && !bundles ? (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "48px 0", gap: 8 }}>
@@ -1855,16 +2148,15 @@ export const SubscribePage = ({
               <p style={{ fontSize: 14, color: "#cf3d4c", marginBottom: 12 }}>{bundlesError}</p>
               <button
                 onClick={() => {
-                  setBundles(null);
                   setBundlesError(null);
-                  void repositories.plans.listBundles().then(setBundles).catch((err) => setBundlesError(err instanceof Error ? err.message : t("套餐列表加载失败")));
+                  setRetryToken((n) => n + 1);
                 }}
                 style={{ padding: "8px 20px", borderRadius: 8, border: `1px solid ${colors.border}`, background: colors.white, color: colors.black, fontSize: 14, fontWeight: 600, cursor: "pointer" }}
               >
                 {t("重试")}
               </button>
             </div>
-          ) : planList.length === 0 ? (
+          ) : visiblePlans.length === 0 ? (
             <div style={{ maxWidth: 480, margin: "0 auto", textAlign: "center", padding: "48px 0" }}>
               <Sparkles style={{ width: 24, height: 24, color: colors.warmGray300, margin: "0 auto 8px" }} />
               <p style={{ fontSize: 14, color: colors.warmGray300 }}>{t("暂无在售套餐，敬请期待")}</p>
@@ -1876,13 +2168,13 @@ export const SubscribePage = ({
               animate="visible"
               style={{
                 display: "grid",
-                gridTemplateColumns: planList.length >= 3 ? "repeat(3, 1fr)" : `repeat(${planList.length}, 1fr)`,
+                gridTemplateColumns: visiblePlans.length >= 3 ? "repeat(3, 1fr)" : `repeat(${visiblePlans.length}, 1fr)`,
                 gap: 24,
                 maxWidth: 960,
                 margin: "0 auto",
               }}
             >
-              {planList.map((plan, idx) => (
+              {visiblePlans.map((plan, idx) => (
                 <PlanCard
                   key={plan.id}
                   plan={plan}
