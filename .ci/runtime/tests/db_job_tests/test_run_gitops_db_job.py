@@ -95,6 +95,33 @@ class RunGitopsDbJobTests(unittest.TestCase):
                     allow_ci_default_file=False,
                 )
 
+    def test_korea_playground_namespace_uses_seoul_catalog(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            catalog = Path(tmp) / "argocd/catalogs/playground/seoul-playground/sandbox-kr-1/trade.yaml"
+            catalog.parent.mkdir(parents=True)
+            catalog.write_text(
+                "\n".join(
+                    [
+                        "service: trade",
+                        "env: sandbox-kr-1",
+                        "destinationName: seoul-sandbox",
+                        "namespace: lightvela-playground-sandbox-kr-1",
+                    ]
+                )
+                + "\n"
+            )
+
+            cluster_name = db_job.resolve_kubeconfig_cluster_name(
+                {"PULUMI_ENV_NAME": "sandbox-kr-1"},
+                Path(tmp),
+                "sandbox-kr-1",
+                "trade",
+            )
+            namespace = db_job.resolve_job_namespace(Path(tmp), "sandbox-kr-1", "trade", "")
+
+        self.assertEqual(cluster_name, "seoul-sandbox")
+        self.assertEqual(namespace, "lightvela-playground-sandbox-kr-1")
+
     def test_main_uses_playground_catalog_cluster_for_kubeconfig(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             deploy_root = Path(tmp)

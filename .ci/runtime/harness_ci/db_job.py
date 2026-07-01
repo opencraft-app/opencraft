@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from contracts.bundles import DEFAULT_MANIFEST_PATH, load_bundle, load_manifest
+from contracts.bundles import DEFAULT_MANIFEST_PATH, load_bundle, load_manifest, playground_catalog_root
 from harness_ci.secrets import build_secret_manifest, redact, resolve_contract_secret_values, secret_env_ref
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -239,15 +239,7 @@ def load_service_platform_env(spec: dict[str, Any], env_name: str, deploy_root: 
 
 
 def load_playground_catalog_value(deploy_root: Path, env_name: str, service: str, key: str) -> str:
-    path = (
-        deploy_root
-        / "argocd"
-        / "catalogs"
-        / "playground"
-        / "beijing-playground"
-        / env_name
-        / f"{service}.yaml"
-    )
+    path = deploy_root / playground_catalog_root(env_name) / env_name / f"{service}.yaml"
     if not path.is_file():
         return ""
     for raw in path.read_text().splitlines():
