@@ -548,7 +548,7 @@ def main() -> int:
     if not verifier:
         raise ValueError(f"bundle {args.service} does not define db_contract.verifier")
     catalog_service = resolve_catalog_service(args.service, contract)
-    verifier["namespace"] = resolve_verifier_namespace(repo_root, args.env, catalog_service, verifier)
+    verifier["namespace"] = resolve_verifier_namespace(deploy_root, args.env, catalog_service, verifier)
     expected_version = max_migration_version(repo_root, str(contract.get("expected_migration_source") or ""))
     env_values, node_selector, env_secret_values = resolve_runtime_env(deploy_root, args.env, verifier, contract)
     kubeconfig = ""

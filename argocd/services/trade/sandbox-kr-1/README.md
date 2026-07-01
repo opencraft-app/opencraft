@@ -11,5 +11,6 @@ Runtime notes:
 - trade region override: `ap-singapore`
 - DB job catalog: `argocd/catalogs/playground/seoul-playground/sandbox-kr-1/trade.yaml`
 - DB readiness catalog: `argocd/catalogs/playground/seoul-playground/sandbox-kr-1/trade.yaml`
+- DB readiness catalog source: GitOps deploy projection
 
 The runtime secret is sourced from `../../../secrets/sandbox-kr-1/trade-runtime-secrets.sops.yaml`.

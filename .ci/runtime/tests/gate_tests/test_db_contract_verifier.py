@@ -290,6 +290,85 @@ class DbContractVerifierTests(unittest.TestCase):
             self.assertEqual(summary["expected_schema_version"], 12)
             self.assertEqual(summary["status"], "rendered")
 
+    def test_main_resolves_playground_namespace_from_deploy_root_catalog(self) -> None:
+        with tempfile.TemporaryDirectory() as source_tmp, tempfile.TemporaryDirectory() as deploy_tmp:
+            source_root = Path(source_tmp)
+            deploy_root = Path(deploy_tmp)
+            migrations = source_root / "trade" / "migrations"
+            migrations.mkdir(parents=True)
+            (migrations / "000007_trade_bundle_activity_time_span_unit.up.sql").write_text("select 1;\n")
+
+            catalog = deploy_root / "argocd/catalogs/playground/seoul-playground/sandbox-kr-1/trade.yaml"
+            catalog.parent.mkdir(parents=True)
+            catalog.write_text(
+                "\n".join(
+                    [
+                        "service: trade",
+                        "env: sandbox-kr-1",
+                        "destinationName: seoul-sandbox",
+                        "namespace: lightvela-playground-sandbox-kr-1",
+                        "sourcePath: argocd/services/trade/sandbox-kr-1",
+                        "",
+                    ]
+                )
+            )
+            env_file = deploy_root / "argocd/services/trade/sandbox-kr-1/trade-platform.env"
+            env_file.parent.mkdir(parents=True)
+            env_file.write_text(
+                "TRADE_MYSQL_HOST=mysql.lightvela-playground-sandbox-kr-1.svc.cluster.local\n"
+                "TRADE_MYSQL_PORT=3306\n"
+            )
+            bundle = mock.Mock(
+                db_contract={
+                    "mode": "migration",
+                    "expected_migration_source": "trade/migrations",
+                    "verifier": {
+                        "namespace": "trade",
+                        "service_platform_env_file": "argocd/services/trade/{env}/trade-platform.env",
+                        "database_env": "TRADE_DB",
+                        "user_env": "TRADE_DB_USER",
+                        "password_env": "TRADE_DB_PASSWORD",
+                        "static_env": {
+                            "TRADE_DB": "trade_sandbox_kr_1",
+                            "TRADE_DB_USER": "trade",
+                        },
+                        "env_from_service_platform": {
+                            "MYSQL_HOST": "TRADE_MYSQL_HOST",
+                            "MYSQL_PORT": "TRADE_MYSQL_PORT",
+                        },
+                    },
+                }
+            )
+
+            with (
+                mock.patch(
+                    "sys.argv",
+                    [
+                        "verify_db_contract.py",
+                        "--repo-root",
+                        str(source_root),
+                        "--deploy-root",
+                        str(deploy_root),
+                        "--service",
+                        "trade",
+                        "--env",
+                        "sandbox-kr-1",
+                        "--apply",
+                    ],
+                ),
+                mock.patch("gates.db_contract_verifier.load_manifest", return_value={}),
+                mock.patch("gates.db_contract_verifier.load_bundle", return_value=bundle),
+                mock.patch(
+                    "gates.db_contract_verifier.resolve_kubeconfig",
+                    return_value=("/tmp/kubeconfig", None),
+                ),
+                mock.patch("gates.db_contract_verifier.apply_manifest") as apply,
+                mock.patch("gates.db_contract_verifier.delete_manifest"),
+            ):
+                self.assertEqual(main(), 0)
+
+        self.assertEqual(apply.call_args.args[1]["metadata"]["namespace"], "lightvela-playground-sandbox-kr-1")
+
     def test_job_manifest_supports_runtime_env_and_host_network(self) -> None:
         verifier = {
             "namespace": "ctl",
