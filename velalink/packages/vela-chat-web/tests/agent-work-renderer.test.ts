@@ -103,6 +103,23 @@ test("agent work renderer uses quiet work-log icons instead of orange bullet dot
   assert.doesNotMatch(styles, /#df7048/);
 });
 
+test("agent work renderer can expand shell stream output", () => {
+  const renderer = readFileSync(
+    join(root, "packages/vela-chat-web/src/renderers/blocks/AgentWorkRenderer.tsx"),
+    "utf8",
+  );
+  const adapter = readFileSync(
+    join(root, "packages/vela-chat-web/src/adapters/toWebBlocks.ts"),
+    "utf8",
+  );
+
+  assert.match(adapter, /detail: row\.detail/);
+  assert.match(renderer, /shellTerminalFromDetail/);
+  assert.match(renderer, /aria-expanded=\{expanded\}/);
+  assert.match(renderer, /agentWorkTerminal/);
+  assert.match(renderer, /detail\.streams/);
+});
+
 test("agent work visual summaries omit duplicate generic text", () => {
   assert.equal(agentWorkVisualSummary("Read file", "Read file"), "");
   assert.equal(agentWorkVisualSummary("README.md", "Read file"), "README.md");

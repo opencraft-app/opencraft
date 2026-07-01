@@ -13,6 +13,7 @@ import {
   imageFileToInputPart,
   mergeConversationSnapshot,
   needsConversationRefreshAfterLiveOverlay,
+  parseBackendUsageWireResponse,
   parseConversationWireView,
   parseSseJsonFrames,
   readVelaStreamEvent,
@@ -35,10 +36,12 @@ function readClientSource() {
     .join("\n");
 }
 
-async function flushMicrotasks(times = 5) {
-  for (let index = 0; index < times; index += 1) {
-    await Promise.resolve();
+async function waitUntil(done: () => boolean) {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    if (done()) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
   }
+  assert.equal(done(), true);
 }
 
 function sessionFixture(overrides: Record<string, unknown> = {}) {
@@ -82,7 +85,7 @@ function assistantConversationItem(overrides: Record<string, unknown> = {}) {
     status: "streaming" as const,
     source_event_ids: ["evt_1"],
     source_event_ranges: [
-      { from_event_id: "evt_1", to_event_id: "evt_1", from_seq: 1, to_seq: 1 },
+      { epoch: 1, from_event_id: "evt_1", to_event_id: "evt_1", from_seq: 1, to_seq: 1 },
     ],
     ...overrides,
   };
@@ -101,30 +104,62 @@ test("builds conversation and event URLs for local velad", () => {
   );
 });
 
-test("fetch event stream transport reports stream close after reading frames", async () => {
-  const events: string[] = [];
-  const transport = createFetchVelaEventStreamTransport(async () =>
-    new Response(
-      [
-        "event: session.updated",
-        'data: {"type":"session.updated","session_id":"sess_1","event_id":"evt_1","epoch":1,"seq":1,"payload":{}}',
-        "",
-        "",
-      ].join("\n"),
-      {
-        headers: { "Content-Type": "text/event-stream" },
-      },
-    ),
-  );
-
-  transport.subscribe(new URL("http://127.0.0.1:3857/api/v1/sessions/sess_1/events/stream"), {
-    onClose: () => events.push("close"),
-    onEvent: (event) => events.push(event.event_id ?? ""),
+test("uses injected fetch instead of assuming browser network reachability", async () => {
+  const previousFetch = globalThis.fetch;
+  const requests: string[] = [];
+  Object.defineProperty(globalThis, "fetch", {
+    configurable: true,
+    value: async () => {
+      throw new Error("global fetch must not be used");
+    },
   });
 
-  await flushMicrotasks();
+  try {
+    const client = createVeladClient({
+      baseUrl: "http://127.0.0.1:3857/api/v1/",
+      fetch: async (url) => {
+        requests.push(String(url));
+        return new Response(JSON.stringify({ session: sessionFixture({ id: "ses_remote" }) }), {
+          headers: { "Content-Type": "application/json" },
+          status: 200,
+        });
+      },
+    });
 
-  assert.deepEqual(events, ["evt_1", "close"]);
+    const response = await client.getSession("ses_remote");
+
+    assert.equal(response.session.id, "ses_remote");
+    assert.deepEqual(requests, [
+      "http://127.0.0.1:3857/api/v1/sessions/ses_remote",
+    ]);
+  } finally {
+    Object.defineProperty(globalThis, "fetch", {
+      configurable: true,
+      value: previousFetch,
+    });
+  }
+});
+
+test("reports a clear SDK error when no fetch transport is available", async () => {
+  const previousFetch = globalThis.fetch;
+  Object.defineProperty(globalThis, "fetch", {
+    configurable: true,
+    value: undefined,
+  });
+
+  try {
+    const client = createVeladClient({ baseUrl: "http://127.0.0.1:3857/api/v1/" });
+
+    await assert.rejects(
+      () => client.getSession("ses_missing_fetch"),
+      /pass a VeladFetch to createVeladClient\(\{ baseUrl, fetch \}\)/,
+    );
+  } finally {
+    Object.defineProperty(globalThis, "fetch", {
+      configurable: true,
+      value: previousFetch,
+    });
+  }
 });
 
 test("rejects invalid session path and event cursor parameter types", async () => {
@@ -228,6 +263,74 @@ test("builds pending requests view URLs with status filters", () => {
     client.requestsUrl("sess_123", { status: "pending" }).toString(),
     "http://127.0.0.1:3857/api/v1/sessions/sess_123/views/requests?status=pending",
   );
+});
+
+test("fetch event stream transport reports normal stream completion", async () => {
+  const events: string[] = [];
+  let closeCount = 0;
+  const requests: RequestInit[] = [];
+  const spans: Array<{
+    attributes: Record<string, string | number | boolean>;
+    ended?: boolean;
+    status?: { code: number; message?: string };
+  }> = [];
+  const logs: Array<{ body: string; severityText?: string; attributes?: Record<string, unknown> }> = [];
+  const observability = {
+    startSpan() {
+      const span = {
+        attributes: {} as Record<string, string | number | boolean>,
+        setAttribute(key: string, value: string | number | boolean) {
+          this.attributes[key] = value;
+        },
+        setStatus(status: { code: number; message?: string }) {
+          this.status = status;
+        },
+        end() {
+          this.ended = true;
+        },
+      };
+      spans.push(span);
+      return span;
+    },
+    recordError() {},
+    traceparent() {
+      return "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+    },
+    emitLog(record: { body: string; severityText?: string; attributes?: Record<string, unknown> }) {
+      logs.push(record);
+    },
+  };
+  const transport = createFetchVelaEventStreamTransport(async (_url, init) => {
+    requests.push(init ?? {});
+    return new Response(
+      'event: turn.completed\ndata: {"type":"turn.completed","event_id":"evt_1","epoch":1,"seq":1,"session_id":"sess_1","payload":{"turn_id":"turn_1"}}\n\n',
+      { status: 200, headers: { "Content-Type": "text/event-stream" } },
+    );
+  }, {
+    observability,
+  });
+
+  transport.subscribe(new URL("http://127.0.0.1:3857/api/v1/sessions/sess_1/events/stream"), {
+    onClose: () => {
+      closeCount += 1;
+    },
+    onEvent: (event) => {
+      events.push(event.type);
+    },
+  });
+
+  await waitUntil(() => closeCount === 1);
+  assert.deepEqual(events, ["turn.completed"]);
+  assert.equal(
+    new Headers(requests[0].headers).get("traceparent"),
+    "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+  );
+  assert.equal(spans[0].ended, true);
+  assert.equal(spans[0].attributes["velad.stream.last_event_type"], "turn.completed");
+  assert.equal(spans[0].attributes["velad.stream.last_event_id"], "evt_1");
+  assert.equal(logs[0]?.body, "renderer received turn.completed");
+  assert.equal(logs[0]?.attributes?.["velad.session_id"], "sess_1");
+  assert.equal(logs[0]?.attributes?.["velad.turn_id"], "turn_1");
 });
 
 test("builds diff review view URLs", () => {
@@ -417,6 +520,88 @@ test("validates conversation agent work detail at the client wire boundary", asy
   );
 });
 
+test("accepts structured conversation agent work content parts at the client wire boundary", () => {
+  const view = parseConversationWireView(
+    conversationFixture({
+      items: [
+        {
+          id: "work_content_parts",
+          kind: "agent_work",
+          created_at: "2026-06-19T00:00:00Z",
+          updated_at: "2026-06-19T00:00:00Z",
+          revision: 1,
+          status: "completed",
+          title: "Read file",
+          detail: {
+            type: "read",
+            file_path: "README.md",
+            content: "hello",
+            content_parts: [
+              { type: "text", text: "hello" },
+              { type: "json", value: { path: "README.md", lines: 1 } },
+              { type: "resource_link", uri: "file:///tmp/README.md", name: "README.md" },
+            ],
+          },
+          source_event_ids: ["evt_1"],
+          source_event_ranges: [
+            { epoch: 1, from_event_id: "evt_1", to_event_id: "evt_1", from_seq: 1, to_seq: 1 },
+          ],
+        },
+      ],
+    }),
+  );
+
+  const item = view.items[0];
+  assert.equal(item?.kind, "agent_work");
+  if (item?.kind !== "agent_work") throw new Error("expected agent work item");
+  assert.deepEqual(item.detail.content_parts, [
+    { type: "text", text: "hello" },
+    { type: "json", value: { path: "README.md", lines: 1 } },
+    { type: "resource_link", uri: "file:///tmp/README.md", name: "README.md" },
+  ]);
+});
+
+test("rejects raw provider fields from conversation agent work detail", () => {
+  assert.throws(
+    () =>
+      parseConversationWireView(
+        conversationFixture({
+          items: [
+            {
+              id: "work_raw_detail",
+              kind: "agent_work",
+              created_at: "2026-06-19T00:00:00Z",
+              updated_at: "2026-06-19T00:00:00Z",
+              revision: 1,
+              status: "completed",
+              title: "Tool call",
+              detail: {
+                type: "tool",
+                name: "unknown_tool",
+                raw_input: { secret: "do-not-project" },
+                raw_output: { secret: "do-not-project" },
+              },
+              source_event_ids: ["evt_1"],
+              source_event_ranges: [
+                {
+                  epoch: 1,
+                  from_event_id: "evt_1",
+                  to_event_id: "evt_1",
+                  from_seq: 1,
+                  to_seq: 1,
+                },
+              ],
+            },
+          ],
+        }),
+      ),
+    (err) =>
+      err instanceof VeladClientError &&
+      err.code === "invalid_agent_work_detail" &&
+      /raw_input/.test(err.message),
+  );
+});
+
 test("keeps OpenAPI-required conversation item fields required in the client wire model", async () => {
   const source = clientSource;
   const baseInterface =
@@ -446,6 +631,8 @@ test("keeps OpenAPI conversation and agent work enums narrow in the client wire 
   const detailUnion =
     source.match(/export type AgentWorkDetailWire\s*=[\s\S]*?AgentWorkGenericDetailWire;/)?.[0] ??
     "";
+  const genericDetailInterface =
+    source.match(/export interface AgentWorkGenericDetailWire \{[\s\S]*?\n\}/)?.[0] ?? "";
 
   assert.match(source, /export type ConversationItemKindWire\s*=/);
   assert.match(source, /export type ConversationItemStatusWire\s*=/);
@@ -459,6 +646,9 @@ test("keeps OpenAPI conversation and agent work enums narrow in the client wire 
   assert.match(detailUnion, /AgentWorkSearchDetailWire/);
   assert.match(detailUnion, /AgentWorkFetchDetailWire/);
   assert.match(detailUnion, /AgentWorkGenericDetailWire/);
+  assert.match(source, /export type AgentWorkContentPartWire\s*=/);
+  assert.match(source, /content_parts\?:\s*AgentWorkContentPartWire\[\]/);
+  assert.doesNotMatch(genericDetailInterface, /\[key:\s*string\]:\s*unknown/);
   assert.doesNotMatch(source, /export interface ChatTranscriptWireView/);
   assert.doesNotMatch(source, /export interface ActivityWireView/);
 });
@@ -468,7 +658,10 @@ test("keeps OpenAPI backend status enum separate from conversation item status",
   const backendInterface = source.match(/export interface BackendWire \{[\s\S]*?\n\}/)?.[0] ?? "";
 
   assert.match(source, /export type BackendStatusWire\s*=/);
+  assert.match(source, /export type BackendLocationKindWire\s*=/);
   assert.match(backendInterface, /status:\s*BackendStatusWire/);
+  assert.match(backendInterface, /location:\s*BackendLocationWire/);
+  assert.match(source, /kind:\s*kind as BackendLocationKindWire/);
   assert.doesNotMatch(backendInterface, /status:\s*string/);
   assert.match(source, /status:\s*status as BackendStatusWire/);
   assert.doesNotMatch(source, /status:\s*status as ConversationItemStatusWire,\n\s*display_name/);
@@ -486,14 +679,19 @@ test("keeps OpenAPI session backend and status enums narrow in the client wire m
 
   assert.match(source, /export type BackendKindWire\s*=/);
   assert.match(source, /export type SessionStatusWire\s*=/);
+  assert.match(source, /export type SessionActivityPhaseWire\s*=/);
+  assert.match(source, /export type SessionActivityAttentionWire\s*=/);
   assert.match(sessionInterface, /backend:\s*BackendKindWire/);
   assert.match(createSessionInputInterface, /backend:\s*BackendKindWire/);
   assert.match(veladClientInterface, /getBackend:\s*\(backend:\s*BackendKindWire\)/);
   assert.match(veladClientInterface, /probeBackend:\s*\(backend:\s*BackendKindWire\)/);
   assert.match(sessionInterface, /status:\s*SessionStatusWire/);
+  assert.match(sessionInterface, /activity\?:\s*SessionActivityWire/);
   assert.match(runtimeInfoInterface, /provider:\s*BackendKindWire/);
   assert.match(source, /backend:\s*backend as BackendKindWire/);
   assert.match(source, /status:\s*status as SessionStatusWire/);
+  assert.match(source, /phase:\s*phase as SessionActivityPhaseWire/);
+  assert.match(source, /attention:\s*attention as SessionActivityAttentionWire/);
   assert.match(source, /provider:\s*provider as BackendKindWire/);
   assert.doesNotMatch(sessionInterface, /backend:\s*"pi"\s*\|\s*string/);
   assert.doesNotMatch(createSessionInputInterface, /backend\?:/);
@@ -613,6 +811,59 @@ test("keeps OpenAPI backend capabilities required booleans in the client wire mo
     /function requiredBackendCapabilities\([\s\S]*?data: Record<string, unknown>[\s\S]*?owner: string[\s\S]*?\): BackendCapabilitiesWire/,
   );
   assert.doesNotMatch(backendInterface, /capabilities:\s*Record<string, unknown>/);
+});
+
+test("keeps backend usage as a typed backend read model", async () => {
+  const source = clientSource;
+  const usageInterface =
+    source.match(/export interface BackendUsageWireResponse \{[\s\S]*?\n\}/)?.[0] ?? "";
+  const backendInterface = source.match(/export interface BackendWire \{[\s\S]*?\n\}/)?.[0] ?? "";
+
+  assert.match(backendInterface, /backend_type\?:\s*BackendKindWire/);
+  assert.match(source, /usage_snapshot\?:\s*boolean/);
+  assert.match(usageInterface, /schema:\s*"velad\.backend_usage\.v1"/);
+  assert.match(usageInterface, /backend:\s*BackendKindWire/);
+  assert.match(usageInterface, /backend_type:\s*BackendKindWire/);
+  assert.match(usageInterface, /profiles:\s*BackendUsageProfileWire\[\]/);
+  assert.match(source, /getBackendUsage:\s*\(backend:\s*BackendKindWire\)/);
+  assert.match(source, /parseBackendUsageWireResponse/);
+});
+
+test("parses backend usage snapshots for menu and settings display", () => {
+  const parsed = parseBackendUsageWireResponse({
+    schema: "velad.backend_usage.v1",
+    backend: "codex",
+    backend_type: "codex",
+    status: "ok",
+    source: "codex_wham_usage",
+    fetched_at: "2026-06-26T00:00:00Z",
+    summary: { label: "剩余 58%", tone: "ok" },
+    limits: [
+      {
+        kind: "primary",
+        label: "5h",
+        used_percent: 42,
+        remaining_percent: 58,
+      },
+    ],
+    usage_lines: [{ label: "Credits", value: "$12.50" }],
+    profiles: [
+      {
+        profile_id: "default",
+        display_name: "Codex",
+        status: "ok",
+        source: "codex_wham_usage",
+        summary: { label: "剩余 58%", tone: "ok" },
+        limits: [],
+        usage_lines: [],
+      },
+    ],
+  });
+
+  assert.equal(parsed.backend, "codex");
+  assert.equal(parsed.backend_type, "codex");
+  assert.equal(parsed.summary?.label, "剩余 58%");
+  assert.equal(parsed.limits[0]?.remaining_percent, 58);
 });
 
 test("keeps OpenAPI AgentConfig fields non-null while runtime info may be nullable", async () => {
@@ -850,6 +1101,279 @@ test("creates a local pi session with idempotency key", async () => {
   });
 });
 
+test("adds traceparent header and records failed create session fetches", async () => {
+  const spans: Array<{
+    name: string;
+    attributes?: Record<string, unknown>;
+    status?: { code: number; message?: string };
+    ended?: boolean;
+    error?: string;
+  }> = [];
+  const logs: Array<{
+    body: string;
+    severityText?: string;
+    attributes?: Record<string, unknown>;
+  }> = [];
+  const requests: Array<{ url: string; init?: RequestInit }> = [];
+  const observability = {
+    startSpan(name: string, options?: { attributes?: Record<string, unknown> }) {
+      const span = {
+        name,
+        attributes: options?.attributes,
+        setAttribute(key: string, value: string | number | boolean) {
+          this.attributes = { ...this.attributes, [key]: value };
+        },
+        setStatus(status: { code: number; message?: string }) {
+          this.status = status;
+        },
+        end() {
+          this.ended = true;
+        },
+      };
+      spans.push(span);
+      return span;
+    },
+    recordError(span: (typeof spans)[number], error: unknown) {
+      span.error = error instanceof Error ? error.message : String(error);
+      span.status = { code: 2, message: span.error };
+    },
+    traceparent() {
+      return "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+    },
+    emitLog(record: { body: string; severityText?: string; attributes?: Record<string, unknown> }) {
+      logs.push(record);
+    },
+  };
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    observability,
+    fetch: async (url, init) => {
+      requests.push({ url: String(url), init });
+      throw new Error("failed to fetch");
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      client.createSession({
+        idempotencyKey: "ses_created",
+        backend: "codex",
+        workingDirectory: "/tmp/project",
+      }),
+    /failed to fetch/,
+  );
+
+  assert.equal(requests[0]?.url, "http://127.0.0.1:3857/api/v1/sessions");
+  assert.equal(
+    (requests[0]?.init?.headers as Record<string, string>).traceparent,
+    "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+  );
+  assert.equal(spans[0].name, "velad.session.create");
+  assert.equal(spans[0].error, "failed to fetch");
+  assert.equal(spans[0].ended, true);
+  assert.equal(logs[0].severityText, "ERROR");
+  assert.equal(logs[0].body, "failed to fetch");
+  assert.equal(logs[0].attributes?.["vela.operation"], "velad.session.create");
+});
+
+test("records backend catalog wire contract mismatches in observability", async () => {
+  const spans: Array<{
+    name: string;
+    attributes?: Record<string, unknown>;
+    status?: { code: number; message?: string };
+    ended?: boolean;
+    error?: string;
+  }> = [];
+  const logs: Array<{
+    body: string;
+    severityText?: string;
+    attributes?: Record<string, unknown>;
+  }> = [];
+  const observability = {
+    startSpan(name: string, options?: { attributes?: Record<string, unknown> }) {
+      const span = {
+        name,
+        attributes: options?.attributes,
+        setAttribute(key: string, value: string | number | boolean) {
+          this.attributes = { ...this.attributes, [key]: value };
+        },
+        setStatus(status: { code: number; message?: string }) {
+          this.status = status;
+        },
+        end() {
+          this.ended = true;
+        },
+      };
+      spans.push(span);
+      return span;
+    },
+    recordError(span: (typeof spans)[number], error: unknown) {
+      span.error = error instanceof Error ? error.message : String(error);
+      span.status = { code: 2, message: span.error };
+    },
+    traceparent() {
+      return "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+    },
+    emitLog(record: { body: string; severityText?: string; attributes?: Record<string, unknown> }) {
+      logs.push(record);
+    },
+  };
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    observability,
+    fetch: async () =>
+      new Response(
+        JSON.stringify({
+          backends: [
+            {
+              kind: "pi",
+              display_name: "PiCoding Agent",
+              status: "available",
+              capabilities: {
+                streaming: true,
+                cancel: true,
+                permission_requests: true,
+                structured_diff: true,
+                session_agent_config: true,
+              },
+              models: [],
+              permission_modes: [],
+              features: [],
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+  });
+
+  await assert.rejects(
+    () => client.getBackends(),
+    (err) =>
+      err instanceof VeladClientError &&
+      err.code === "invalid_backends_response" &&
+      /BackendsResponse\.backends\[0\]\.location/.test(err.message),
+  );
+
+  assert.equal(spans[0].name, "velad.backends.list");
+  assert.equal(spans[0].status?.code, 2);
+  assert.equal(spans[0].error, "BackendsResponse.backends[0].location must be an object");
+  assert.equal(spans[0].ended, true);
+  assert.equal(spans[0].attributes?.["velad.error_code"], "invalid_backends_response");
+  assert.equal(
+    spans[0].attributes?.["velad.response_contract_owner"],
+    "BackendsResponse.backends[0].location",
+  );
+  assert.equal(logs[0].severityText, "ERROR");
+  assert.equal(logs[0].attributes?.["vela.operation"], "velad.backends.list");
+  assert.equal(logs[0].attributes?.["velad.error_code"], "invalid_backends_response");
+});
+
+test("records conversation view wire contract mismatches in observability", async () => {
+  const spans: Array<{
+    name: string;
+    attributes?: Record<string, unknown>;
+    status?: { code: number; message?: string };
+    ended?: boolean;
+    error?: string;
+  }> = [];
+  const logs: Array<{
+    body: string;
+    severityText?: string;
+    attributes?: Record<string, unknown>;
+  }> = [];
+  const observability = {
+    startSpan(name: string, options?: { attributes?: Record<string, unknown> }) {
+      const span = {
+        name,
+        attributes: options?.attributes,
+        setAttribute(key: string, value: string | number | boolean) {
+          this.attributes = { ...this.attributes, [key]: value };
+        },
+        setStatus(status: { code: number; message?: string }) {
+          this.status = status;
+        },
+        end() {
+          this.ended = true;
+        },
+      };
+      spans.push(span);
+      return span;
+    },
+    recordError(span: (typeof spans)[number], error: unknown) {
+      span.error = error instanceof Error ? error.message : String(error);
+      span.status = { code: 2, message: span.error };
+    },
+    traceparent() {
+      return "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+    },
+    emitLog(record: { body: string; severityText?: string; attributes?: Record<string, unknown> }) {
+      logs.push(record);
+    },
+  };
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    observability,
+    fetch: async () =>
+      new Response(
+        JSON.stringify(
+          conversationFixture({
+            items: [
+              assistantConversationItem({ id: "msg_1", text: "ok" }),
+              assistantConversationItem({ id: "msg_2", text: "ok" }),
+              {
+                id: "work_bad_detail",
+                kind: "agent_work",
+                created_at: "2026-06-19T00:00:00Z",
+                updated_at: "2026-06-19T00:00:00Z",
+                revision: 1,
+                status: "completed",
+                title: "Read file",
+                detail: { type: "read", content: [{ type: "text", text: "hello" }] },
+                source_event_ids: ["evt_1"],
+                source_event_ranges: [
+                  {
+                    epoch: 1,
+                    from_event_id: "evt_1",
+                    to_event_id: "evt_1",
+                    from_seq: 1,
+                    to_seq: 1,
+                  },
+                ],
+              },
+            ],
+          }),
+        ),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+  });
+
+  await assert.rejects(
+    () => client.getConversation("sess_123"),
+    (err) =>
+      err instanceof VeladClientError &&
+      err.code === "invalid_agent_work_detail" &&
+      /ConversationView\.items\[2\]\.detail\.content/.test(err.message),
+  );
+
+  assert.equal(spans[0].name, "velad.conversation.get");
+  assert.equal(spans[0].status?.code, 2);
+  assert.equal(
+    spans[0].error,
+    "ConversationView.items[2].detail.content must be a string",
+  );
+  assert.equal(spans[0].ended, true);
+  assert.equal(spans[0].attributes?.["velad.session_id"], "sess_123");
+  assert.equal(spans[0].attributes?.["velad.error_code"], "invalid_agent_work_detail");
+  assert.equal(
+    spans[0].attributes?.["velad.response_contract_owner"],
+    "ConversationView.items[2].detail.content",
+  );
+  assert.equal(logs[0].severityText, "ERROR");
+  assert.equal(logs[0].attributes?.["vela.operation"], "velad.conversation.get");
+  assert.equal(logs[0].attributes?.["velad.session_id"], "sess_123");
+  assert.equal(logs[0].attributes?.["velad.error_code"], "invalid_agent_work_detail");
+});
+
 test("archives a session with explicit archive action endpoint", async () => {
   const requests: Array<{ url: string; init?: RequestInit }> = [];
   const client = createVeladClient({
@@ -929,6 +1453,11 @@ test("reads SessionListView from UI read-model endpoint", async () => {
               last_activity_at: "2026-06-19T00:10:00Z",
               preview: "Inspecting the repo",
               pending_request_count: 2,
+              activity: {
+                phase: "idle",
+                attention: "waiting_for_user",
+                pending_request_count: 2,
+              },
               running: true,
               agent_config: {
                 model: "minimax-m2.7",
@@ -954,6 +1483,9 @@ test("reads SessionListView from UI read-model endpoint", async () => {
   assert.equal(response.sessions[0]?.working_directory, "/tmp/project");
   assert.equal(response.sessions[0]?.preview, "Inspecting the repo");
   assert.equal(response.sessions[0]?.pending_request_count, 2);
+  assert.equal(response.sessions[0]?.activity?.phase, "idle");
+  assert.equal(response.sessions[0]?.activity?.attention, "waiting_for_user");
+  assert.equal(response.sessions[0]?.activity?.pending_request_count, 2);
   assert.equal(response.sessions[0]?.running, true);
   assert.equal(response.sessions[0]?.agent_config?.model, "minimax-m2.7");
 });
@@ -1421,6 +1953,7 @@ test("validates backend catalog nested option shapes at the client wire boundary
     kind: "pi",
     display_name: "Pi Coding",
     status: "available",
+    location: { kind: "local", label: "Local" },
     capabilities: {
       streaming: true,
       cancel: true,
@@ -1502,6 +2035,7 @@ test("parses backend error snapshots with status message", async () => {
               display_name: "Codex",
               status: "error",
               status_message: "model discovery failed: invalid config",
+              location: { kind: "local", label: "Local" },
               capabilities: {
                 streaming: true,
                 cancel: true,
@@ -1512,8 +2046,15 @@ test("parses backend error snapshots with status message", async () => {
               models: [],
               permission_modes: [{ id: "auto", label: "Default permissions" }],
               features: [],
+              snapshot_protocol: "velad.backend_snapshot.v1",
+              fetched_at: "2026-06-25T00:00:00Z",
               diagnostics: {
-                model_discovery_error: "invalid config",
+                model_source: "none",
+                error: {
+                  code: "model_discovery_failed",
+                  stage: "model_discovery",
+                  message: "invalid config",
+                },
               },
             },
           ],
@@ -1526,6 +2067,8 @@ test("parses backend error snapshots with status message", async () => {
 
   assert.equal(response.backends[0]?.status, "error");
   assert.equal(response.backends[0]?.status_message, "model discovery failed: invalid config");
+  assert.equal(response.backends[0]?.snapshot_protocol, "velad.backend_snapshot.v1");
+  assert.equal(response.backends[0]?.fetched_at, "2026-06-25T00:00:00Z");
   assert.deepEqual(response.backends[0]?.models, []);
 });
 
@@ -1541,6 +2084,7 @@ test("fetches one backend detail and validates backend path kind before fetch", 
             kind: "pi",
             display_name: "Pi Coding",
             status: "available",
+            location: { kind: "local", label: "Local" },
             capabilities: {
               streaming: true,
               cancel: true,
@@ -1625,6 +2169,235 @@ test("rejects malformed backend probe responses at the client wire boundary", as
   );
 });
 
+test("fetches node providers, creates ssh nodes, and lists runtime targets", async () => {
+  const requests: Array<{ url: string; init?: RequestInit }> = [];
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async (url, init) => {
+      requests.push({ url: String(url), init });
+      if (String(url).endsWith("/node-providers")) {
+        return new Response(
+          JSON.stringify({
+            schema: "velad.node_providers.v1",
+            providers: [
+              {
+                id: "ssh",
+                display_name: "SSH",
+                kind: "ssh",
+                auth_methods: ["password"],
+                secret_storage: "local_os_keyring",
+                capabilities: {
+                  native_ssh: true,
+                  sftp_upload: true,
+                },
+                target_constraints: {
+                  os: ["linux", "darwin"],
+                  arch: ["x86_64", "amd64"],
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (String(url).endsWith("/nodes") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            schema: "velad.nodes.v1",
+            node: {
+              id: "node_1",
+              provider: "ssh",
+              display_name: "Dev Box",
+              ssh: { host: "dev.example.test", port: 22, username: "skip" },
+              target: { os: "linux", arch: "x86_64" },
+              auth: {
+                method: "password",
+                password_configured: true,
+                secret_ref: "node:node_1:ssh-password",
+              },
+              created_at: "2026-06-26T00:00:00Z",
+              updated_at: "2026-06-26T00:00:00Z",
+            },
+          }),
+          { status: 201, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (String(url).endsWith("/runtime-targets")) {
+        return new Response(
+          JSON.stringify({
+            schema: "velad.runtime_targets.v1",
+            targets: [
+              {
+                id: "local",
+                kind: "local",
+                provider: "local",
+                node_id: null,
+                display_name: "Local velad",
+                status: "connected",
+                transport: { kind: "loopback", api_base_url: null },
+              },
+              {
+                id: "target:node_1",
+                kind: "remote",
+                provider: "ssh",
+                node_id: "node_1",
+                display_name: "Dev Box",
+                status: "disconnected",
+                transport: { kind: "ssh" },
+                target: { os: "linux", arch: "x86_64" },
+                compatibility: { version_policy: "exact" },
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (String(url).endsWith("/runtime-targets/target%3Anode_1/connect")) {
+        return new Response(
+          JSON.stringify({
+            schema: "velad.runtime_targets.v1",
+            target: {
+              id: "target:node_1",
+              kind: "remote",
+              provider: "ssh",
+              node_id: "node_1",
+              display_name: "Dev Box",
+              status: "ready",
+              generation: 1,
+              transport: {
+                kind: "ssh",
+                api_base_url: "http://127.0.0.1:49152/api/v1",
+                remote_listen_addr: "127.0.0.1:49321",
+              },
+              compatibility: { version_policy: "exact", version: "0.1.0" },
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (String(url).endsWith("/runtime-targets/target%3Anode_1/disconnect")) {
+        return new Response(
+          JSON.stringify({
+            schema: "velad.runtime_targets.v1",
+            target: {
+              id: "target:node_1",
+              kind: "remote",
+              provider: "ssh",
+              node_id: "node_1",
+              display_name: "Dev Box",
+              status: "disconnected",
+              transport: { kind: "ssh" },
+              compatibility: { version_policy: "exact" },
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          schema: "velad.nodes.v1",
+          nodes: [],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    },
+  });
+
+  const providers = await client.getNodeProviders();
+  const created = await client.createNode({
+    provider: "ssh",
+    displayName: "Dev Box",
+    ssh: { host: "dev.example.test", port: 22, username: "skip" },
+    auth: { method: "password", password: "secret" },
+    target: { os: "linux", arch: "x86_64" },
+  });
+  const targets = await client.getRuntimeTargets();
+  const connected = await client.connectRuntimeTarget("target:node_1");
+  const disconnected = await client.disconnectRuntimeTarget("target:node_1");
+
+  assert.equal(providers.providers[0]?.id, "ssh");
+  assert.equal(created.node.auth.password_configured, true);
+  assert.equal(created.node.auth.secret_ref, "node:node_1:ssh-password");
+  assert.equal(targets.targets[1]?.provider, "ssh");
+  assert.equal(targets.targets[1]?.status, "disconnected");
+  assert.equal(connected.target.status, "ready");
+  assert.equal(disconnected.target.status, "disconnected");
+  assert.equal(requests[1]?.url, "http://127.0.0.1:3857/api/v1/nodes");
+  assert.equal(requests[1]?.init?.method, "POST");
+  assert.deepEqual(JSON.parse(String(requests[1]?.init?.body)), {
+    provider: "ssh",
+    display_name: "Dev Box",
+    ssh: { host: "dev.example.test", port: 22, username: "skip" },
+    auth: { method: "password", password: "secret" },
+    target: { os: "linux", arch: "x86_64" },
+  });
+});
+
+test("rejects node responses that echo ssh passwords", async () => {
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async () =>
+      new Response(
+        JSON.stringify({
+          schema: "velad.nodes.v1",
+          node: {
+            id: "node_1",
+            provider: "ssh",
+            display_name: "Dev Box",
+            ssh: { host: "dev.example.test", port: 22, username: "skip" },
+            target: { os: "linux", arch: "x86_64" },
+            auth: {
+              method: "password",
+              password_configured: true,
+              password: "secret",
+            },
+            created_at: "2026-06-26T00:00:00Z",
+            updated_at: "2026-06-26T00:00:00Z",
+          },
+        }),
+        { status: 201, headers: { "Content-Type": "application/json" } },
+      ),
+  });
+
+  await assert.rejects(
+    () =>
+      client.createNode({
+        provider: "ssh",
+        ssh: { host: "dev.example.test", port: 22, username: "skip" },
+        auth: { method: "password", password: "secret" },
+      }),
+    (err) =>
+      err instanceof VeladClientError &&
+      err.code === "invalid_nodes_response" &&
+      /must not include password/.test(err.message),
+  );
+});
+
+test("rejects invalid ssh node input before fetch", async () => {
+  let fetchCalled = false;
+  const client = createVeladClient({
+    baseUrl: "http://127.0.0.1:3857/api/v1/",
+    fetch: async () => {
+      fetchCalled = true;
+      return new Response("{}", { status: 201 });
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      client.createNode({
+        provider: "ssh",
+        ssh: { host: "", port: 22, username: "skip" },
+        auth: { method: "password", password: "secret" },
+      }),
+    (err) =>
+      err instanceof VeladClientError &&
+      err.code === "invalid_nodes_request" &&
+      /host/.test(err.message),
+  );
+  assert.equal(fetchCalled, false);
+});
+
 test("fetches session, backend catalog, and patches agent config", async () => {
   const requests: Array<{ url: string; init?: RequestInit }> = [];
   const client = createVeladClient({
@@ -1639,6 +2412,7 @@ test("fetches session, backend catalog, and patches agent config", async () => {
                 kind: "pi",
                 display_name: "Pi Coding",
                 status: "available",
+                location: { kind: "local", label: "Local" },
                 capabilities: {
                   streaming: true,
                   cancel: true,

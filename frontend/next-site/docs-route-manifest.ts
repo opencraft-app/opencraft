@@ -72,6 +72,10 @@ export const DOCS_ROUTE_SLUGS = {
   "zh-cn": [
     [],
     [
+      "announcements",
+      "public-beta"
+    ],
+    [
       "overview"
     ],
     [

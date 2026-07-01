@@ -3,6 +3,7 @@ dist/
 /wisp
 config.jsonnet
 assets/bin/
+assets/rootfs/rootfs/
 assets/ubuntu-plucky/*.tar.xz
 assets/rootfs/downloads/*.tar.xz
 assets/rootfs/images/*.img

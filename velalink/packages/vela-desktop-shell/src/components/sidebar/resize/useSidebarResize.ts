@@ -11,6 +11,11 @@ import {
   type SidebarResizeResolution,
 } from "./model";
 
+interface StopDraggingOptions {
+  commit: boolean;
+  updateState: boolean;
+}
+
 export interface UseSidebarResizeInput {
   sidebarWidthPx: number;
   onResizeStart?: () => void;
@@ -28,6 +33,9 @@ export function useSidebarResize({
   const frameRef = useRef<number | null>(null);
   const pendingClientXRef = useRef<number | null>(null);
   const shellLeftRef = useRef(0);
+  const stopDraggingRef = useRef<((options?: Partial<StopDraggingOptions>) => void) | null>(
+    null,
+  );
   const pendingResolutionRef = useRef<SidebarResizeResolution>(
     resolveSidebarResize(sidebarWidthPx),
   );
@@ -65,10 +73,28 @@ export function useSidebarResize({
     [previewWidthFromClientX],
   );
 
+  useEffect(() => {
+    return () => {
+      stopDraggingRef.current?.({ commit: false, updateState: false });
+    };
+  }, []);
+
   const onPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       if (event.button !== 0) return;
       event.preventDefault();
+      stopDraggingRef.current?.();
+
+      const handle = event.currentTarget;
+      const pointerId = event.pointerId;
+      let hasPointerCapture = false;
+      try {
+        handle.setPointerCapture(pointerId);
+        hasPointerCapture = true;
+      } catch {
+        hasPointerCapture = false;
+      }
+
       const shell = handleRef.current?.closest(
         '[data-slot="sidebar-shell"]',
       ) as HTMLElement | null;
@@ -82,7 +108,11 @@ export function useSidebarResize({
         moveEvent.preventDefault();
         scheduleWidthPreview(moveEvent.clientX);
       };
-      const stopDragging = () => {
+      let stopped = false;
+      const stopDragging = (options: Partial<StopDraggingOptions> = {}) => {
+        if (stopped) return;
+        stopped = true;
+        const { commit = true, updateState = true } = options;
         if (frameRef.current !== null) {
           window.cancelAnimationFrame(frameRef.current);
           frameRef.current = null;
@@ -92,18 +122,37 @@ export function useSidebarResize({
           pendingClientXRef.current = null;
         }
         const resolution = pendingResolutionRef.current;
-        setIsDragging(false);
+        if (updateState) setIsDragging(false);
         shell?.removeAttribute("data-sidebar-dragging");
         shell?.style.removeProperty("--vela-sidebar-width");
-        onWidthCommit(resolution);
+        if (commit) onWidthCommit(resolution);
+        if (hasPointerCapture) {
+          try {
+            handle.releasePointerCapture(pointerId);
+          } catch {
+            // The OS/browser may already have dropped capture after blur.
+          }
+        }
+        if (stopDraggingRef.current === stopDragging) stopDraggingRef.current = null;
         window.removeEventListener("pointermove", handlePointerMove);
-        window.removeEventListener("pointerup", stopDragging);
-        window.removeEventListener("pointercancel", stopDragging);
+        window.removeEventListener("pointerup", handlePointerUp);
+        window.removeEventListener("pointercancel", handlePointerCancel);
+        window.removeEventListener("blur", handleWindowBlur);
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+      };
+      const handlePointerUp = () => stopDragging();
+      const handlePointerCancel = () => stopDragging();
+      const handleWindowBlur = () => stopDragging();
+      const handleVisibilityChange = () => {
+        if (document.visibilityState !== "visible") stopDragging();
       };
 
+      stopDraggingRef.current = stopDragging;
       window.addEventListener("pointermove", handlePointerMove);
-      window.addEventListener("pointerup", stopDragging);
-      window.addEventListener("pointercancel", stopDragging);
+      window.addEventListener("pointerup", handlePointerUp);
+      window.addEventListener("pointercancel", handlePointerCancel);
+      window.addEventListener("blur", handleWindowBlur);
+      document.addEventListener("visibilitychange", handleVisibilityChange);
     },
     [onResizeStart, onWidthCommit, previewWidthFromClientX, scheduleWidthPreview],
   );
@@ -114,4 +163,3 @@ export function useSidebarResize({
     onPointerDown,
   };
 }
-

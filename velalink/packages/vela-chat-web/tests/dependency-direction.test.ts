@@ -19,8 +19,8 @@ test("repository root stays free of local browser debug artifacts", () => {
   const rootFiles = readdirSync(root, { withFileTypes: true })
     .filter((entry) => entry.isFile())
     .map((entry) => entry.name);
-  const generatedAppCss = rootFiles.filter((name) => /^app-[A-Za-z0-9_-]+\.css$/.test(name));
-  assert.deepEqual(generatedAppCss, []);
+  const generatedAppAssets = rootFiles.filter((name) => /^(app|index)-[A-Za-z0-9_-]+\.(css|js)$/.test(name));
+  assert.deepEqual(generatedAppAssets, []);
 });
 
 function readChatWorkbenchSource() {
@@ -212,6 +212,11 @@ test("desktop renderer is split into agent-friendly component folders with local
     "packages/vela-chat-web/src/primitives/conversation/Conversation.tsx",
     "packages/vela-chat-web/src/primitives/prompt-input/README.md",
     "packages/vela-chat-web/src/primitives/prompt-input/PromptInput.tsx",
+    "packages/vela-chat-web/src/composer-editor/README.md",
+    "packages/vela-chat-web/src/composer-editor/LexicalComposerEditor.tsx",
+    "packages/vela-chat-web/src/composer-editor/index.ts",
+    "packages/vela-chat-web/src/composer-editor/model.ts",
+    "packages/vela-chat-web/src/composer-editor/types.ts",
     "packages/vela-chat-web/src/components/README.md",
     "packages/vela-chat-web/src/components/requests/README.md",
     "packages/vela-chat-web/src/components/requests/RequestDock.tsx",
@@ -230,8 +235,6 @@ test("desktop renderer is split into agent-friendly component folders with local
     "packages/vela-chat-web/src/components/composer-controls/ComposerControls.tsx",
     "packages/vela-chat-web/src/components/composer-controls/model.ts",
     "packages/vela-chat-web/src/hooks/README.md",
-    "packages/vela-chat-web/src/hooks/useAutoResizeTextarea.ts",
-    "packages/vela-chat-web/src/hooks/useComposerKeyboard.ts",
     "packages/vela-chat-web/src/new-session/README.md",
     "packages/vela-chat-web/src/new-session/NewSessionSurface.tsx",
     "packages/vela-chat-web/src/new-session/index.ts",
@@ -312,6 +315,38 @@ test("package entrypoint stays thin and delegates desktop rendering details", ()
   assert.equal(source.includes("function MarkdownBlock"), false);
   assert.equal(source.includes("function renderInlineCode"), false);
   assert.equal(source.includes("<textarea"), false);
+});
+
+test("composer editor boundary hides Lexical behind a stable model", () => {
+  const promptInput = readFileSync(
+    join(root, "packages/vela-chat-web/src/primitives/prompt-input/PromptInput.tsx"),
+    "utf8",
+  );
+  const editorIndex = readFileSync(
+    join(root, "packages/vela-chat-web/src/composer-editor/index.ts"),
+    "utf8",
+  );
+  const editorTypes = readFileSync(
+    join(root, "packages/vela-chat-web/src/composer-editor/types.ts"),
+    "utf8",
+  );
+  const editorModel = readFileSync(
+    join(root, "packages/vela-chat-web/src/composer-editor/model.ts"),
+    "utf8",
+  );
+  const lexicalEditor = readFileSync(
+    join(root, "packages/vela-chat-web/src/composer-editor/LexicalComposerEditor.tsx"),
+    "utf8",
+  );
+
+  assert.match(promptInput, /LexicalComposerEditor/);
+  assert.equal(promptInput.includes("<textarea"), false);
+  assert.match(editorIndex, /ComposerEditorHandle/);
+  assert.match(editorTypes, /interface ComposerEditorSnapshot/);
+  assert.match(editorTypes, /interface ComposerEditorHandle/);
+  assert.match(editorModel, /createComposerEditorSnapshot/);
+  assert.match(lexicalEditor, /@lexical\/react\/LexicalComposer/);
+  assert.doesNotMatch(promptInput, /@lexical\/react|from "lexical"/);
 });
 
 test("web partial virtualization uses item-level tanstack virtualizer instead of mounting every history item", () => {
@@ -557,13 +592,18 @@ test("chat transcript hides native scrollbars behind a cross-platform overlay", 
     join(root, "packages/vela-chat-web/src/conversation-runtime/scrollbar/useConversationScrollbarOverlay.tsx"),
     "utf8",
   );
+  const verticalOverlaySource = readFileSync(
+    join(root, "packages/vela-chat-web/src/conversation-runtime/scrollbar/useVerticalScrollbarOverlay.tsx"),
+    "utf8",
+  );
 
   assert.match(conversationSource, /useConversationScrollbarOverlay/);
-  assert.match(overlaySource, /ResizeObserver/);
   assert.match(overlaySource, /applyConversationScrollWrite/);
   assert.match(overlaySource, /source:\s*"scrollbar_overlay"/);
   assert.doesNotMatch(overlaySource, /\b(?:element|scrollElement|container)\.scrollTop\s*=/);
-  assert.match(overlaySource, /computeScrollOffsetFromThumbOffset/);
+  assert.match(verticalOverlaySource, /ResizeObserver/);
+  assert.match(verticalOverlaySource, /computeScrollOffsetFromThumbOffset/);
+  assert.doesNotMatch(verticalOverlaySource, /setHovered|onMouseEnter|onMouseLeave|onPointerEnter|onPointerLeave/);
   assert.match(conversation, /overscroll-behavior:\s*contain;/);
   assert.match(conversation, /scrollbar-width:\s*none;/);
   assert.match(conversation, /-ms-overflow-style:\s*none;/);
@@ -581,6 +621,69 @@ test("chat transcript hides native scrollbars behind a cross-platform overlay", 
   assert.doesNotMatch(conversation, /scrollbar-gutter:\s*stable;/);
   assert.doesNotMatch(css, /\.messageResponse pre\s*\{[^}]*scrollbar-width:\s*thin;/s);
   assert.doesNotMatch(css, /\.markdownTableScroller\s*\{[^}]*scrollbar-width:\s*thin;/s);
+});
+
+test("session list reuses the self-drawn scrollbar overlay", () => {
+  const css = readFileSync(
+    join(root, "packages/vela-chat-web/src/styles/desktop.module.css"),
+    "utf8",
+  );
+  const desktopCss = readFileSync(
+    join(root, "apps/vela-desktop-electron/src/style.css"),
+    "utf8",
+  );
+  const sessionListSurface = readFileSync(
+    join(root, "packages/vela-chat-web/src/surfaces/SessionListSurface.tsx"),
+    "utf8",
+  );
+  const sessionListShell = cssBlock(css, "sessionListScrollShell");
+  const sessionListViewport = cssBlock(css, "sessionListScrollViewport");
+  const desktopScrollRegion =
+    desktopCss.match(/\.vela-sidebar-scroll-region\s*\{[^}]+\}/)?.[0] ?? "";
+
+  assert.match(sessionListSurface, /useVerticalScrollbarOverlay/);
+  assert.match(sessionListSurface, /data-slot="session-list-scroll-shell"/);
+  assert.match(sessionListSurface, /data-slot="session-list-scroll-viewport"/);
+  assert.match(sessionListShell, /position:\s*relative;/);
+  assert.match(sessionListShell, /overflow:\s*hidden;/);
+  assert.match(sessionListViewport, /overflow-y:\s*auto;/);
+  assert.match(sessionListViewport, /scrollbar-width:\s*none;/);
+  assert.match(sessionListViewport, /-ms-overflow-style:\s*none;/);
+  assert.match(css, /\.sessionListScrollViewport::-webkit-scrollbar\s*\{[^}]*display:\s*none;/s);
+  assert.match(css, /\.conversationScrollbarOverlay\s*\{[^}]*pointer-events:\s*none;/s);
+  assert.match(css, /\.conversationScrollbarOverlay\[data-visible="true"\]\s*\{[^}]*pointer-events:\s*auto;/s);
+  assert.match(desktopScrollRegion, /display:\s*flex;/);
+  assert.match(desktopScrollRegion, /overflow:\s*hidden;/);
+  assert.doesNotMatch(desktopScrollRegion, /scrollbar-width:\s*thin;/);
+});
+
+test("session recency rail floats inside the row instead of defining the sidebar edge", () => {
+  const desktopCss = readFileSync(
+    join(root, "apps/vela-desktop-electron/src/style.css"),
+    "utf8",
+  );
+  const sessionListSurface = readFileSync(
+    join(root, "packages/vela-chat-web/src/surfaces/SessionListSurface.tsx"),
+    "utf8",
+  );
+  const rowModel = readFileSync(
+    join(root, "packages/vela-chat-web/src/session-list/sessionListRowModel.ts"),
+    "utf8",
+  );
+  const sessionMain = desktopCss.match(/\.vela-session-main\s*\{[^}]+\}/)?.[0] ?? "";
+  const sessionRail =
+    [...desktopCss.matchAll(/\.vela-session-rail\s*\{[^}]+\}/g)].find((match) =>
+      match[0].includes("position: absolute;"),
+    )?.[0] ?? "";
+
+  assert.match(rowModel, /rail:\s*SessionListRailModel \| null/);
+  assert.match(sessionListSurface, /className="vela-session-rail"/);
+  assert.match(sessionMain, /position:\s*relative;/);
+  assert.match(sessionMain, /grid-template-columns:\s*minmax\(0, 1fr\);/);
+  assert.doesNotMatch(sessionMain, /var\(--vela-session-rail-width\)/);
+  assert.match(sessionRail, /position:\s*absolute;/);
+  assert.match(sessionRail, /right:\s*22px;/);
+  assert.match(sessionRail, /color:\s*#c1c6cd;/);
 });
 
 test("chat viewport prevents horizontal panning while markdown leaves keep local scrollers", () => {
@@ -733,7 +836,7 @@ test("conversation viewport exposes explicit bottom-anchor intents to the workbe
   assert.match(workbenchView, /requestBottomAnchor\("message_sent"\)/);
 });
 
-test("message sends can request bottom anchoring after the committed read model update", () => {
+test("tail output changes can request bottom anchoring after the committed read model update", () => {
   const chatSurface = readFileSync(
     join(root, "packages/vela-chat-web/src/surfaces/ChatSurface.tsx"),
     "utf8",
@@ -755,12 +858,17 @@ test("message sends can request bottom anchoring after the committed read model 
     "utf8",
   );
 
-  assert.match(chatSurface, /messageFollowToken\?:\s*number/);
-  assert.match(workbenchView, /messageFollowToken/);
-  assert.match(conversation, /messageFollowToken/);
-  assert.match(conversation, /requestBottomAnchor\("message_sent"\)/);
-  assert.match(controller, /setMessageFollowToken/);
-  assert.match(chatWorkbench, /messageFollowToken=\{controller\.messageFollowToken\}/);
+  assert.match(chatSurface, /followOutputToken\?:\s*number/);
+  assert.match(workbenchView, /followOutputToken/);
+  assert.match(conversation, /followOutputToken/);
+  assert.match(conversation, /requestBottomAnchor\("follow_output"\)/);
+  assert.match(controller, /deriveFollowOutputTailSignature/);
+  assert.match(controller, /observeFollowOutputTokenAdvance/);
+  assert.match(chatWorkbench, /followOutputToken=\{controller\.followOutputToken\}/);
+  assert.doesNotMatch(chatSurface, /messageFollowToken/);
+  assert.doesNotMatch(workbenchView, /messageFollowToken/);
+  assert.doesNotMatch(conversation, /messageFollowToken/);
+  assert.doesNotMatch(controller, /setMessageFollowToken/);
 });
 
 test("composer height is measured instead of using fixed bottom padding", () => {
@@ -799,20 +907,24 @@ test("composer backdrop is an independent layer between conversation content and
     join(root, "packages/vela-chat-web/src/styles/desktop.module.css"),
     "utf8",
   );
+  const sharedShellTokenBlock =
+    stylesBlock(css, /\.shell,\s*\.newSessionShell\s*\{([\s\S]*?)\}/);
 
   assert.match(workbenchView, /styles\.composerBackdrop/);
   assert.match(css, /--vela-bg:\s*rgb\(255 255 255 \/ [0-9.]+%\);/);
   assert.match(css, /\.shell\s*\{[^}]*position:\s*relative;/s);
   assert.match(css, /\.shell\s*\{[^}]*width:\s*100%;/s);
   assert.match(css, /\.shell\s*\{[^}]*min-width:\s*0;/s);
-  assert.match(css, /\.shell\s*\{[^}]*--vela-spacing:\s*0\.25rem;/s);
-  assert.match(css, /\.shell\s*\{[^}]*--vela-toolbar-height:\s*46px;/s);
-  assert.match(css, /\.shell\s*\{[^}]*--vela-shell-radius:\s*16px;/s);
-  assert.match(css, /\.shell\s*\{[^}]*--vela-composer-radius:\s*20px;/s);
-  assert.match(css, /\.shell\s*\{[^}]*--vela-composer-blur:\s*16px;/s);
-  assert.match(css, /\.shell\s*\{[^}]*--vela-composer-shadow:\s*0 4px 16px 0 rgb\(0 0 0 \/ 5%\);/s);
+  assert.match(sharedShellTokenBlock, /--vela-spacing:\s*0\.25rem;/);
+  assert.match(sharedShellTokenBlock, /--vela-toolbar-height:\s*46px;/);
+  assert.match(sharedShellTokenBlock, /--vela-shell-radius:\s*16px;/);
+  assert.doesNotMatch(sharedShellTokenBlock, /--vela-composer-radius:/);
+  assert.doesNotMatch(sharedShellTokenBlock, /--vela-composer-bg:/);
+  assert.doesNotMatch(sharedShellTokenBlock, /--vela-composer-blur:/);
+  assert.doesNotMatch(sharedShellTokenBlock, /--vela-composer-shadow:/);
+  assert.match(sharedShellTokenBlock, /background:\s*var\(--vela-bg\);/);
+  assert.match(sharedShellTokenBlock, /color:\s*var\(--vela-text\);/);
   assert.match(css, /\.shell\s*\{[^}]*border-top-left-radius:\s*var\(--vela-shell-radius\);/s);
-  assert.match(css, /\.shell\s*\{[^}]*background:\s*var\(--vela-bg\);/s);
   assert.match(css, /\.shell\s*\{[^}]*-webkit-backdrop-filter:\s*saturate/s);
   assert.match(css, /\.shell\s*\{[^}]*backdrop-filter:\s*saturate/s);
   assert.doesNotMatch(css, /\.shell\s*\{[^}]*background:\s*transparent;/s);
@@ -830,7 +942,10 @@ test("composer backdrop is an independent layer between conversation content and
   assert.match(css, /\.composerBackdrop\s*\{[^}]*z-index:\s*19;/s);
   assert.match(css, /\.composerDock\s*\{[^}]*position:\s*absolute;/s);
   assert.match(css, /\.composerDock\s*\{[^}]*z-index:\s*20;/s);
-  assert.match(css, /\.composerDock\s*\{[^}]*padding:\s*0 24px var\(--vela-thread-floating-content-bottom-inset\);/s);
+  assert.match(
+    css,
+    /\.composerDock\s*\{[^}]*padding:\s*0 24px var\(--vela-thread-floating-content-bottom-inset,\s*12px\);/s,
+  );
   assert.match(css, /\.requestDock\s*\{[^}]*position:\s*absolute;/s);
   assert.match(css, /\.requestDock\s*\{[^}]*bottom:\s*calc\(var\(--vela-composer-height\) \+ var\(--vela-thread-floating-content-top-inset\)\);/s);
   assert.match(css, /\.error\s*\{[^}]*position:\s*absolute;/s);
@@ -1045,14 +1160,14 @@ test("chat typography follows Codex-style reading weight and size", () => {
     "utf8",
   );
 
-  const shell = cssBlock(css, "shell");
+  const shellTokens = stylesBlock(css, /\.shell,\s*\.newSessionShell\s*\{([\s\S]*?)\}/);
   const assistant = cssBlock(css, "messageResponse");
   const user = cssBlock(css, "userBubble");
   const strong = cssBlockContaining(css, "messageResponse strong");
 
-  assert.match(shell, /"PingFang SC"/);
-  assert.match(shell, /"Hiragino Sans GB"/);
-  assert.doesNotMatch(shell, /"SF Pro Text"/);
+  assert.match(shellTokens, /"PingFang SC"/);
+  assert.match(shellTokens, /"Hiragino Sans GB"/);
+  assert.doesNotMatch(shellTokens, /"SF Pro Text"/);
   assert.match(assistant, /font-size:\s*14px;/);
   assert.match(assistant, /font-weight:\s*400;/);
   assert.match(user, /font-size:\s*14px;/);
@@ -1141,17 +1256,25 @@ test("chat markdown and agent work use compact Codex-style vertical rhythm", () 
 });
 
 function cssBlock(css: string, selector: string) {
-  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = css.match(new RegExp(`\\.${escaped}\\s*\\{([\\s\\S]*?)\\}`));
+  const match = css.match(new RegExp(`\\.${escapeRegex(selector)}\\s*\\{([\\s\\S]*?)\\}`));
   assert.ok(match, `missing .${selector} block`);
   return match[1] ?? "";
 }
 
+function stylesBlock(css: string, pattern: RegExp) {
+  const match = css.match(pattern);
+  assert.ok(match, `missing css block matching ${pattern}`);
+  return match[1] ?? "";
+}
+
 function cssBlockContaining(css: string, selectorFragment: string) {
-  const escaped = selectorFragment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = css.match(new RegExp(`[^{}]*\\.${escaped}[^{}]*\\{([\\s\\S]*?)\\}`));
+  const match = css.match(new RegExp(`[^{}]*\\.${escapeRegex(selectorFragment)}[^{}]*\\{([\\s\\S]*?)\\}`));
   assert.ok(match, `missing selector containing .${selectorFragment}`);
   return match[1] ?? "";
+}
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function listSourceFiles(directory: string): string[] {
@@ -1251,7 +1374,7 @@ test("chat request dock uses PendingRequestsView and responds through input even
   assert.equal(existsSync(join(root, "app/chat/requestResponses.ts")), false);
 });
 
-test("composer plus control is wired to image attachments instead of being decorative", () => {
+test("composer image attach control is owned by the shared prompt input", () => {
   const promptInput = readFileSync(
     join(root, "packages/vela-chat-web/src/primitives/prompt-input/PromptInput.tsx"),
     "utf8",
@@ -1265,9 +1388,40 @@ test("composer plus control is wired to image attachments instead of being decor
   assert.match(promptInput, /type="file"/);
   assert.match(promptInput, /accept="image\/\*"/);
   assert.match(promptInput, /onAttachImages/);
+  assert.match(promptInput, /ImagePlus/);
+  assert.doesNotMatch(promptInput, />\s*\+\s*</);
   assert.match(composer, /pendingAttachments/);
   assert.match(chatWorkbench, /imageFileToInputPart/);
   assert.match(chatWorkbench, /content: messageContent/);
+});
+
+test("new session setup uses the same composer controls boundary as active chat", () => {
+  const newSessionSurface = readFileSync(
+    join(root, "packages/vela-chat-web/src/new-session/NewSessionSurface.tsx"),
+    "utf8",
+  );
+  const composerControls = readFileSync(
+    join(root, "packages/vela-chat-web/src/components/composer-controls/ComposerControls.tsx"),
+    "utf8",
+  );
+  const styles = readFileSync(
+    join(root, "packages/vela-chat-web/src/styles/desktop.module.css"),
+    "utf8",
+  );
+
+  assert.match(newSessionSurface, /<PromptInput/);
+  assert.match(newSessionSurface, /<ComposerControls/);
+  assert.match(newSessionSurface, /buildComposerSetupControlsModel/);
+  assert.match(newSessionSurface, /applyAgentConfigPatch/);
+  assert.match(styles, /\.newSessionContent\s*\{[^}]*width:\s*min\(100%,\s*760px\);/s);
+  assert.doesNotMatch(newSessionSurface, /Brain|Shield/);
+  assert.match(composerControls, /import \{ Brain, Shield, Sparkles \} from "lucide-react";/);
+  assert.match(composerControls, /<Brain size=\{16\}/);
+  assert.match(composerControls, /<Shield size=\{16\}/);
+  assert.match(composerControls, /<Sparkles size=\{15\}/);
+  assert.doesNotMatch(composerControls, /leading="◎"|leading="▣"|leading="✣"/);
+  assert.doesNotMatch(newSessionSurface, /newSessionControlCluster/);
+  assert.doesNotMatch(styles, /\.newSessionControlCluster\b/);
 });
 
 test("composer primary control has stable accessible action labels", () => {
@@ -1276,8 +1430,11 @@ test("composer primary control has stable accessible action labels", () => {
     "utf8",
   );
 
-  assert.match(promptInput, /aria-label=\{isStopControl \? "Stop generation" : "Send message"\}/);
-  assert.match(promptInput, /title=\{isStopControl \? "Stop generation" : "Send message"\}/);
+  assert.match(promptInput, /submitLabel = "Send message"/);
+  assert.match(promptInput, /stopLabel = "Stop generation"/);
+  assert.match(promptInput, /const primaryControlLabel = isStopControl \? stopLabel : submitLabel;/);
+  assert.match(promptInput, /aria-label=\{primaryControlLabel\}/);
+  assert.match(promptInput, /title=\{primaryControlLabel\}/);
 });
 
 test("composer primary control keeps codex-desktop dimensions in narrow flex layouts", () => {
@@ -1308,38 +1465,84 @@ test("composer input frame matches the codex-desktop visual rhythm", () => {
     "utf8",
   );
 
+  const rootBlock = cssBlock(styles, "composerRoot");
+  const dockBlock = cssBlock(styles, "composerDock");
   const frameBlock = cssBlock(styles, "composer");
-  const textareaBlock = cssBlock(styles, "textarea");
+  const editorBlock = cssBlock(styles, "composerEditor");
+  const attachedSurfaceBlock = cssBlock(styles, "composerAttachedSurface");
+  const dockAttachedSurfaceBlock =
+    styles.match(/\.composerDock:not\(\.composerDockInline\) \.composerAttachedSurface\s*\{[^}]+\}/)?.[0] ?? "";
+  const localQueueRowBlock = cssBlock(styles, "localQueueRow");
+  const newSessionContextBlock = cssBlock(styles, "newSessionContextBar");
   const toolbarBlock = cssBlock(styles, "composerFooter");
   const toolbarLaneBlock = styles.match(/\.composerLeft,\n\.composerRight\s*\{[^}]+\}/)?.[0] ?? "";
   const leftBlock = styles.match(/\.composerLeft\s*\{[^}]+\}/)?.[0] ?? "";
-  const rightBlock = [...styles.matchAll(/\.composerRight\s*\{[^}]+\}/g)].at(-1)?.[0] ?? "";
+  const rightBlock =
+    [...styles.matchAll(/\.composerRight\s*\{[^}]+\}/g)].find((match) =>
+      match[0].includes("flex: 0 1 auto;"),
+    )?.[0] ?? "";
   const iconButtonBlock = cssBlock(styles, "iconButton");
 
+  assert.match(rootBlock, /--vela-composer-radius:\s*20px;/);
+  assert.match(rootBlock, /--vela-composer-bg:\s*rgb\(255 255 255 \/ 90%\);/);
+  assert.match(rootBlock, /--vela-composer-blur:\s*16px;/);
+  assert.match(rootBlock, /--vela-composer-shadow:\s*0 4px 16px 0 rgb\(0 0 0 \/ 5%\);/);
+  assert.match(rootBlock, /--vela-composer-max-width:\s*var\(--vela-thread-content-max-width,\s*860px\);/);
+  assert.match(dockBlock, /display:\s*grid;/);
+  assert.match(dockBlock, /align-content:\s*end;/);
+  assert.match(dockBlock, /justify-items:\s*center;/);
+  assert.match(dockBlock, /padding:\s*0 24px var\(--vela-thread-floating-content-bottom-inset,\s*12px\);/);
   assert.match(frameBlock, /overflow:\s*hidden auto;/);
   assert.match(frameBlock, /border:\s*1px solid rgb\(13 13 13 \/ 10%\);/);
+  assert.match(frameBlock, /width:\s*min\(100%, var\(--vela-composer-max-width\)\);/);
   assert.match(frameBlock, /border-radius:\s*var\(--vela-composer-radius\);/);
   assert.match(frameBlock, /background:\s*var\(--vela-composer-bg\);/);
-  assert.match(frameBlock, /box-shadow:\s*var\(--vela-composer-shadow\);/);
+  assert.match(frameBlock, /0 18px 46px rgb\(15 23 42 \/ 9%\)/);
+  assert.match(frameBlock, /var\(--vela-composer-shadow\);/);
   assert.match(frameBlock, /backdrop-filter:\s*saturate\(1\.2\) blur\(var\(--vela-composer-blur\)\);/);
   assert.doesNotMatch(frameBlock, /min-height:\s*112px;/);
 
-  assert.match(textareaBlock, /min-height:\s*24px;/);
-  assert.match(textareaBlock, /max-height:\s*200px;/);
-  assert.match(textareaBlock, /font-size:\s*14px;/);
-  assert.match(textareaBlock, /line-height:\s*1\.5;/);
-  assert.match(textareaBlock, /padding:\s*12px 16px 8px;/);
+  assert.match(editorBlock, /min-height:\s*var\(--vela-composer-input-min-height,\s*24px\);/);
+  assert.match(editorBlock, /max-height:\s*var\(--vela-composer-input-max-height,\s*200px\);/);
+  assert.match(editorBlock, /font-size:\s*14px;/);
+  assert.match(editorBlock, /line-height:\s*1\.5;/);
+  assert.match(editorBlock, /padding:\s*12px 16px 8px;/);
+  assert.doesNotMatch(styles, /\.composerDockInline\s*\{[^}]*--vela-composer-input-min-height:/s);
+  assert.doesNotMatch(styles, /\.composerDockInline \.composerEditor\s*\{/);
+
+  assert.match(attachedSurfaceBlock, /width:\s*min\(100%, var\(--vela-composer-max-width\)\);/);
+  assert.match(attachedSurfaceBlock, /border:\s*1px solid rgb\(13 13 13 \/ 5%\);/);
+  assert.match(attachedSurfaceBlock, /border-radius:\s*0 0 15px 15px;/);
+  assert.match(attachedSurfaceBlock, /background:\s*rgb\(247 247 248 \/ 72%\);/);
+  assert.match(dockAttachedSurfaceBlock, /order:\s*-1;/);
+  assert.match(dockAttachedSurfaceBlock, /width:\s*min\(calc\(100% - 72px\), calc\(var\(--vela-composer-max-width\) - 72px\)\);/);
+  assert.match(dockAttachedSurfaceBlock, /border-radius:\s*18px 18px 0 0;/);
+  assert.match(dockAttachedSurfaceBlock, /background:\s*rgb\(241 242 243 \/ 90%\);/);
+  assert.match(dockAttachedSurfaceBlock, /backdrop-filter:\s*saturate\(1\.02\) blur\(3px\);/);
+  assert.match(styles, /\.composerDockInline \.composerAttachedSurface\s*\{[^}]*width:\s*min\(calc\(100% - 44px\), calc\(var\(--vela-composer-max-width\) - 44px\)\);/s);
+  assert.match(newSessionContextBlock, /gap:\s*14px;/);
+  assert.match(newSessionContextBlock, /min-height:\s*32px;/);
+  assert.match(localQueueRowBlock, /grid-template-columns:\s*72px minmax\(0, 1fr\) 32px;/);
+  assert.match(localQueueRowBlock, /background:\s*transparent;/);
+  assert.doesNotMatch(newSessionContextBlock, /border:/);
+  assert.doesNotMatch(newSessionContextBlock, /border-radius:/);
+  assert.doesNotMatch(newSessionContextBlock, /background:/);
 
   assert.match(toolbarBlock, /align-items:\s*flex-end;/);
-  assert.match(toolbarBlock, /flex-wrap:\s*wrap;/);
+  assert.match(toolbarBlock, /flex-wrap:\s*nowrap;/);
   assert.match(toolbarBlock, /gap:\s*10px;/);
   assert.match(toolbarBlock, /padding:\s*0 16px 16px;/);
-  assert.match(toolbarLaneBlock, /flex-wrap:\s*wrap;/);
+  assert.match(toolbarLaneBlock, /flex-wrap:\s*nowrap;/);
   assert.match(toolbarLaneBlock, /gap:\s*8px;/);
   assert.match(leftBlock, /flex:\s*1 1 auto;/);
   assert.match(rightBlock, /flex:\s*0 1 auto;/);
   assert.match(rightBlock, /justify-content:\s*flex-end;/);
   assert.match(rightBlock, /margin-left:\s*auto;/);
+  assert.match(styles, /\.composerControls\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*overflow:\s*hidden;/s);
+  assert.match(styles, /\.composerControl\s*\{[^}]*min-width:\s*0;[^}]*flex:\s*0 1 auto;/s);
+  assert.match(styles, /\.composerControl\[data-composer-control="permission"\]\s*\{[^}]*flex-shrink:\s*1\.8;/s);
+  assert.match(styles, /@container composer-footer \(max-width:\s*620px\)\s*\{[^}]*\.composerControl\[data-composer-control="permission"\] :global\(\.vela-shell-select-trigger-label\)\s*\{[^}]*display:\s*none;/s);
+  assert.match(styles, /@container composer-footer \(max-width:\s*520px\)\s*\{[^}]*\.composerControl\[data-composer-control="model"\] :global\(\.vela-shell-select-trigger-label\)\s*\{[^}]*display:\s*none;/s);
   assert.match(styles, /\.composerControls\[data-composer-controls-ready="false"\]\s*\{[^}]*visibility:\s*hidden;/s);
   assert.match(styles, /\.composerControls\[data-composer-controls-ready="false"\]\[data-placement="primary"\]\s*\{[^}]*min-width:\s*136px;/s);
   assert.match(styles, /\.composerControls\[data-composer-controls-ready="false"\]\[data-placement="secondary"\]\s*\{[^}]*min-width:\s*260px;/s);
@@ -1348,8 +1551,38 @@ test("composer input frame matches the codex-desktop visual rhythm", () => {
   assert.match(iconButtonBlock, /height:\s*32px;/);
   assert.match(iconButtonBlock, /border:\s*1px solid #e7e5e4;/);
   assert.match(iconButtonBlock, /border-radius:\s*8px;/);
-  assert.match(styles, /@supports \(corner-shape:\s*superellipse\(1\.5\)\)\s*\{[^}]*\.composer\s*\{[^}]*corner-shape:\s*superellipse\(1\.5\);/s);
+  assert.match(styles, /@supports \(corner-shape:\s*superellipse\(1\.5\)\)\s*\{[^}]*\.composer,\s*\.composerAttachedSurface\s*\{[^}]*corner-shape:\s*superellipse\(1\.5\);/s);
   assert.doesNotMatch(styles, /\.controlButtonLabel/);
+});
+
+test("composer frames disable selection outside editable user input", () => {
+  const styles = readFileSync(
+    join(root, "packages/vela-chat-web/src/styles/desktop.module.css"),
+    "utf8",
+  );
+  const newSessionSurface = readFileSync(
+    join(root, "packages/vela-chat-web/src/new-session/NewSessionSurface.tsx"),
+    "utf8",
+  );
+
+  const chatFrameBlock = cssBlock(styles, "composer");
+  const chatEditorBlock = cssBlock(styles, "composerEditor");
+  const chatAttachmentLabelBlock = cssBlock(styles, "attachmentLabel");
+  const chatControlsBlock = cssBlock(styles, "composerControls");
+  const promptInput = readFileSync(
+    join(root, "packages/vela-chat-web/src/primitives/prompt-input/PromptInput.tsx"),
+    "utf8",
+  );
+
+  assert.match(chatFrameBlock, /user-select:\s*none;/);
+  assert.match(chatEditorBlock, /user-select:\s*text;/);
+  assert.doesNotMatch(chatAttachmentLabelBlock, /user-select:\s*(text|all);/);
+  assert.doesNotMatch(chatControlsBlock, /user-select:\s*(text|all);/);
+  assert.match(newSessionSurface, /<PromptInput/);
+  assert.match(newSessionSurface, /layout="inline"/);
+  assert.match(promptInput, /styles\.composerRoot/);
+  assert.match(promptInput, /composerAttachedSurface/);
+  assert.doesNotMatch(styles, /newSessionComposer/);
 });
 
 test("composer primary control switches to stop while a turn is running", () => {
@@ -1373,8 +1606,8 @@ test("composer primary control switches to stop while a turn is running", () => 
 
   assert.match(promptInput, /isRunning/);
   assert.match(promptInput, /onStop/);
-  assert.match(promptInput, /import \{ ArrowUp, Mic, Square \} from "lucide-react";/);
-  assert.match(promptInput, /aria-label=\{isStopControl \? "Stop generation" : "Send message"\}/);
+  assert.match(promptInput, /import \{ ArrowUp, ImagePlus, Mic, Square \} from "lucide-react";/);
+  assert.match(promptInput, /aria-label=\{primaryControlLabel\}/);
   assert.match(promptInput, /<Square size=\{13\} strokeWidth=\{0\} fill="currentColor" aria-hidden="true" \/>/);
   assert.match(promptInput, /<ArrowUp size=\{22\} strokeWidth=\{2\.4\} aria-hidden="true" \/>/);
   assert.match(composer, /isRunning/);
@@ -1385,19 +1618,31 @@ test("composer primary control switches to stop while a turn is running", () => 
   assert.match(chatWorkbench, /client\.cancelSession\(\{ sessionId: requestedSessionId \}\)/);
 });
 
-test("composer gates dictation behind browser speech recognition", () => {
+test("composer gates dictation behind the runtime voice input host", () => {
   const promptInput = readFileSync(
     join(root, "packages/vela-chat-web/src/primitives/prompt-input/PromptInput.tsx"),
     "utf8",
   );
+  const browserRuntimeHost = readFileSync(
+    join(root, "packages/vela-desktop-shell/src/host/browserRuntimeHost.ts"),
+    "utf8",
+  );
+  const voiceInputHost = readFileSync(
+    join(root, "packages/vela-desktop-shell/src/host/capabilities/webSpeechVoiceInput.ts"),
+    "utf8",
+  );
 
-  assert.match(promptInput, /import \{ ArrowUp, Mic, Square \} from "lucide-react";/);
-  assert.match(promptInput, /window\.SpeechRecognition \|\| window\.webkitSpeechRecognition/);
-  assert.match(promptInput, /recognition\.interimResults = true;/);
-  assert.match(promptInput, /recognition\.onresult = \(event\) =>/);
+  assert.match(promptInput, /import \{ ArrowUp, ImagePlus, Mic, Square \} from "lucide-react";/);
+  assert.match(promptInput, /voiceInput\?: VoiceInputHost/);
+  assert.match(promptInput, /voiceInput\.onFinalTranscript/);
+  assert.match(promptInput, /host\.start\(\{ interimResults: true \}\)/);
   assert.match(promptInput, /aria-label=\{isDictating \? "Stop dictation" : "Start dictation"\}/);
   assert.match(promptInput, /disabled=\{!supportsDictation\}/);
   assert.match(promptInput, /<Mic size=\{17\} strokeWidth=\{2\.1\} aria-hidden="true" \/>/);
+  assert.match(browserRuntimeHost, /voiceInput: createWebSpeechVoiceInputHost\(\)/);
+  assert.match(voiceInputHost, /navigator\.mediaDevices\.getUserMedia\(\{ audio: true \}\)/);
+  assert.match(voiceInputHost, /SpeechRecognition \?\? speechWindow\.webkitSpeechRecognition/);
+  assert.doesNotMatch(promptInput, /window\.SpeechRecognition \|\| window\.webkitSpeechRecognition/);
   assert.doesNotMatch(promptInput, />\s*⌘\s*</);
 });
 

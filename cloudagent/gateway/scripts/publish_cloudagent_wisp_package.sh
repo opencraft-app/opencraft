@@ -133,8 +133,11 @@ if [ -z "$COS_BUCKET" ] || [ -z "$COS_REGION" ]; then
 fi
 
 GOOS="${GOOS:-linux}"
-GOARCH="${GOARCH:-amd64}"
+GOARCH="${GOARCH:-${LINUX_GOARCH:-amd64}}"
 export GOOS GOARCH
+export WISP_APT_MIRROR="${WISP_APT_MIRROR:-${CLOUDAGENT_WISP_APT_MIRROR:-http://mirrors.cloud.tencent.com/debian}}"
+export ALPINE_MIRROR="${ALPINE_MIRROR:-${CLOUDAGENT_WISP_ALPINE_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.23}}"
+export ALPINE_APK_REPOSITORY="${ALPINE_APK_REPOSITORY:-$ALPINE_MIRROR}"
 
 CRUN_BINARY="${WISP_CRUN_BINARY:-$WISP_DIR/assets/bin/crun/crun-$GOARCH}"
 TINI_BINARY="${WISP_TINI_BINARY:-$WISP_DIR/assets/bin/tini/tini-$GOARCH}"
@@ -254,15 +257,16 @@ printf '%s\n' "$url" >"$URL_FILE"
 printf '%s\n' "$sha256" >"$SHA_FILE"
 
 workspace_version="${CLOUDAGENT_WORKSPACE_VERSION:-${WORKSPACE_VERSION_PREFIX}-${sha256:0:12}}"
-python3 - "$REGISTRY_FILE" "$workspace_version" "$url" "$sha256" <<'PY'
+python3 - "$REGISTRY_FILE" "$workspace_version" "$url" "$sha256" "$GOARCH" <<'PY'
 import json
 import sys
 
-path, version, url, sha256 = sys.argv[1:]
+path, version, url, sha256, arch = sys.argv[1:]
 entry = {
     version: {
         "wisp_package_url": url,
         "wisp_package_sha256": sha256,
+        "arch": arch,
     }
 }
 raw = json.dumps(entry, indent=2, sort_keys=True)

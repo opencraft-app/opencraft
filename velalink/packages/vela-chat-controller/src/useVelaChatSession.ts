@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { VelaClientStateStore } from "../../vela-chat-host-state/src";
+import type {
+  ComposerQueueInputPart,
+  QueuedComposerInputClientState,
+  VelaClientStateStore,
+} from "../../vela-chat-host-state/src";
 import {
   applyConversationLiveOverlay,
   commandAckRejectionMessage,
@@ -18,6 +22,7 @@ import {
   type PendingRequestsWireView,
   type SessionWire,
   type VeladClient,
+  type VeladClientObservability,
   type VelaEventStreamTransport,
 } from "../../vela-chat-client/src";
 import {
@@ -29,8 +34,17 @@ import {
 import type { RequestDockResponse } from "../../vela-chat-web/src/components/requests/RequestDock";
 import { buildRequestResponseInputEvent } from "../../vela-chat-web/src/components/requests/requestResponses";
 import { buildComposerControlsModel } from "../../vela-chat-web/src/components/composer-controls/model";
+import {
+  skillRefInputPartsFromText,
+  toComposerSkills,
+  type ComposerSkill,
+} from "../../vela-chat-web/src/composer-skills/model";
 import type { ConversationScrollControllerDebug } from "../../vela-chat-web/src/conversation-runtime/scroll/useConversationScrollController";
-import type { ChatHostPolicy } from "../../vela-chat-render-model/src";
+import type {
+  ChatHostPolicy,
+  ChatRenderModel,
+  ChatRenderRow,
+} from "../../vela-chat-render-model/src";
 import { buildPendingImageAttachments, type PendingImageAttachment } from "./attachments";
 import { DEFAULT_VELAD_BASE_URL } from "./constants";
 import {
@@ -52,39 +66,6 @@ import { subscribeRecoveringSessionEventStream } from "./sessionEventStream";
 import { handleVelaChatSessionStreamEvent } from "./streamHandler";
 
 const DEFAULT_CHAT_HOST_POLICY = { kind: "desktop_web" } satisfies ChatHostPolicy;
-const VELA_SESSION_LOG_PREFIX = "[vela-session-controller]";
-
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function logControllerError(
-  action: string,
-  context: Record<string, unknown>,
-  error: unknown,
-) {
-  let payload: string;
-  try {
-    payload = JSON.stringify({
-      context,
-      error:
-        error instanceof Error
-          ? {
-              cause: error.cause,
-              message: error.message,
-              name: error.name,
-              stack: error.stack,
-            }
-          : { message: String(error) },
-    });
-  } catch (stringifyError) {
-    payload = JSON.stringify({
-      stringify_error:
-        stringifyError instanceof Error ? stringifyError.message : String(stringifyError),
-    });
-  }
-  console.log(`${VELA_SESSION_LOG_PREFIX} ${action} failed`, payload);
-}
 
 export interface VelaChatSessionControllerOptions {
   sessionId: string;
@@ -95,6 +76,7 @@ export interface VelaChatSessionControllerOptions {
   historyPolicy?: VelaConversationHistoryPolicy;
   eventStreamTransport?: VelaEventStreamTransport;
   fetchBackends?: boolean;
+  observability?: VeladClientObservability;
 }
 
 export interface VelaChatSessionController {
@@ -111,14 +93,18 @@ export interface VelaChatSessionController {
   isRespondingToRequest: boolean;
   isStreamConnected: boolean;
   isUpdatingAgentConfig: boolean;
-  messageFollowToken: number;
+  followOutputToken: number;
   model: ReturnType<typeof buildVelaChatControllerRenderModel>;
   pendingAttachments: PendingImageAttachment[];
+  queuedInputs: QueuedComposerInputClientState[];
   requests: PendingRequestsWireView | null;
   session: SessionWire | null;
+  skills: ComposerSkill[];
   attachImages: (files: File[]) => Promise<void>;
   loadOlderConversation: () => Promise<void>;
   refreshAll: () => Promise<void>;
+  refreshBackends: () => Promise<void>;
+  removeQueuedInput: (id: string) => void;
   removeAttachment: (attachmentId: string) => void;
   respondToRequest: (response: RequestDockResponse) => Promise<void>;
   send: () => Promise<void>;
@@ -138,20 +124,23 @@ export function useVelaChatSession({
   historyPolicy = DEFAULT_DESKTOP_CONVERSATION_HISTORY_POLICY,
   eventStreamTransport: providedEventStreamTransport,
   fetchBackends = true,
+  observability,
 }: VelaChatSessionControllerOptions): VelaChatSessionController {
   const [conversation, setConversation] = useState<ConversationWireView | null>(null);
   const [requests, setRequests] = useState<PendingRequestsWireView | null>(null);
   const [session, setSession] = useState<SessionWire | null>(null);
   const [backends, setBackends] = useState<BackendWire[]>([]);
+  const [skills, setSkills] = useState<ComposerSkill[]>([]);
   const [draft, setDraftState] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<PendingImageAttachment[]>([]);
+  const [queuedInputs, setQueuedInputsState] = useState<QueuedComposerInputClientState[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [streamConnected, setStreamConnected] = useState(false);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
   const [isUpdatingAgentConfig, setIsUpdatingAgentConfig] = useState(false);
   const [isRespondingToRequest, setIsRespondingToRequest] = useState(false);
   const [isCancellingSession, setIsCancellingSession] = useState(false);
-  const [messageFollowToken, setMessageFollowToken] = useState(0);
+  const [followOutputToken, setFollowOutputToken] = useState(0);
   const [
     completedInitialHydrationSessionIds,
     setCompletedInitialHydrationSessionIds,
@@ -164,6 +153,14 @@ export function useVelaChatSession({
   const conversationRef = useRef<typeof conversation>(null);
   const conversationCacheRef = useRef(new Map<string, ConversationWireView>());
   const requestsRef = useRef<typeof requests>(null);
+  const queuedInputsRef = useRef<QueuedComposerInputClientState[]>([]);
+  const queueDrainInFlightRef = useRef(false);
+  const followOutputTokenRef = useRef(0);
+  const previousRunningRef = useRef<{ sessionId: string; running: boolean } | null>(null);
+  const previousTailSignatureRef = useRef<{
+    sessionId: string;
+    signature: string | null;
+  } | null>(null);
   activeSessionIdRef.current = activeSessionId;
 
   const ownedClient = useMemo(() => createVeladClient({ baseUrl }), [baseUrl]);
@@ -224,6 +221,24 @@ export function useVelaChatSession({
     [activeSessionId, clientStateStore],
   );
 
+  const commitQueuedInputs = useCallback(
+    (nextQueuedInputs: QueuedComposerInputClientState[]) => {
+      queuedInputsRef.current = nextQueuedInputs;
+      setQueuedInputsState(nextQueuedInputs);
+      if (!activeSessionId) return;
+      if (nextQueuedInputs.length === 0) {
+        clientStateStore?.composerQueue.clear(activeSessionId);
+        return;
+      }
+      clientStateStore?.composerQueue.write(activeSessionId, {
+        sessionId: activeSessionId,
+        items: nextQueuedInputs,
+        updatedAt: Date.now(),
+      });
+    },
+    [activeSessionId, clientStateStore],
+  );
+
   useEffect(() => {
     const cachedConversation = activeSessionId
       ? conversationCacheRef.current.get(activeSessionId) ?? null
@@ -240,9 +255,14 @@ export function useVelaChatSession({
   useEffect(() => {
     if (!activeSessionId) {
       setDraftState("");
+      queuedInputsRef.current = [];
+      setQueuedInputsState([]);
       return;
     }
     setDraftState(clientStateStore?.composerDraft.read(activeSessionId)?.text ?? "");
+    const queued = clientStateStore?.composerQueue.read(activeSessionId)?.items ?? [];
+    queuedInputsRef.current = queued;
+    setQueuedInputsState(queued);
   }, [activeSessionId, clientStateStore]);
 
   const loadConversation = useCallback(async () => {
@@ -255,8 +275,7 @@ export function useVelaChatSession({
       commitConversation(nextConversation);
     } catch (err) {
       if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
-      logControllerError("loadConversation", { requestedSessionId }, err);
-      setError(errorMessage(err));
+      setError(err instanceof Error ? err.message : String(err));
     }
   }, [activeSessionId, client, commitConversation]);
 
@@ -270,8 +289,7 @@ export function useVelaChatSession({
       commitRequests(nextRequests);
     } catch (err) {
       if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
-      logControllerError("loadRequests", { requestedSessionId }, err);
-      setError(errorMessage(err));
+      setError(err instanceof Error ? err.message : String(err));
     }
   }, [activeSessionId, client, commitRequests]);
 
@@ -285,8 +303,7 @@ export function useVelaChatSession({
       setSession(nextSession.session);
     } catch (err) {
       if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
-      logControllerError("loadSession", { requestedSessionId }, err);
-      setError(errorMessage(err));
+      setError(err instanceof Error ? err.message : String(err));
     }
   }, [activeSessionId, client]);
 
@@ -297,33 +314,59 @@ export function useVelaChatSession({
       const nextBackends = await client.getBackends();
       setBackends(nextBackends.backends);
     } catch (err) {
-      logControllerError("loadBackends", { activeSessionId }, err);
-      setError(errorMessage(err));
+      setError(err instanceof Error ? err.message : String(err));
     }
-  }, [activeSessionId, client, fetchBackends]);
+  }, [client, fetchBackends]);
+
+  const loadSkills = useCallback(async () => {
+    const requestedSessionId = activeSessionId;
+    const currentSession = session;
+    if (!requestedSessionId || !currentSession) {
+      setSkills([]);
+      return;
+    }
+    try {
+      const response = await client.listBackendSkills(currentSession.backend, {
+        cwd: currentSession.working_directory,
+      });
+      if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
+      setSkills(toComposerSkills(response.skills));
+    } catch (err) {
+      if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
+      setSkills([]);
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [activeSessionId, client, session]);
 
   const refreshAll = useCallback(async () => {
     const requestedSessionId = activeSessionId;
     if (!requestedSessionId) return;
+    const span = observability?.startSpan("vela.chat.session.load", {
+      attributes: {
+        "vela.session_id": requestedSessionId,
+        "vela.chat.session_load.includes_backends": false,
+      },
+    });
     try {
       setError(null);
-      const [nextConversation, nextRequests, nextSession, nextBackends] = await Promise.all([
+      const [nextConversation, nextRequests, nextSession] = await Promise.all([
         client.getConversation(requestedSessionId),
         client.getPendingRequests(requestedSessionId, { status: "pending" }),
         client.getSession(requestedSessionId),
-        fetchBackends ? client.getBackends() : Promise.resolve(null),
       ]);
       if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
       commitConversation(nextConversation);
       commitRequests(nextRequests);
       setSession(nextSession.session);
-      if (nextBackends) setBackends(nextBackends.backends);
+      span?.setStatus({ code: 1 });
     } catch (err) {
       if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
-      logControllerError("refreshAll", { requestedSessionId }, err);
-      setError(errorMessage(err));
+      if (span && observability) observability.recordError(span, err);
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      span?.end();
     }
-  }, [activeSessionId, client, commitConversation, commitRequests, fetchBackends]);
+  }, [activeSessionId, client, commitConversation, commitRequests, observability]);
 
   useEffect(() => {
     void refreshAll();
@@ -333,8 +376,17 @@ export function useVelaChatSession({
     void loadBackends();
   }, [loadBackends]);
 
-  const activeConversation = readModelForActiveSession(activeSessionId, conversation);
+  useEffect(() => {
+    void loadSkills();
+  }, [loadSkills]);
+
+  const activeConversation =
+    readModelForActiveSession(activeSessionId, conversation) ??
+    (activeSessionId ? conversationCacheRef.current.get(activeSessionId) ?? null : null);
   const activeRequests = pendingRequestsForActiveSession(activeSessionId, requests);
+  const sessionEventStreamAfterId = selectSessionEventStreamAfterId({
+    conversation: activeConversation?.cursor,
+  });
   const isConversationReady = activeConversation !== null;
   const conversationWindow = useMemo(
     () => deriveConversationWindowState({ conversation: activeConversation }),
@@ -369,16 +421,18 @@ export function useVelaChatSession({
       minIntervalMs: 2000,
     });
 
+    const currentAfterId = () =>
+      selectSessionEventStreamAfterId({
+        conversation: readModelForActiveSession(
+          activeSessionId,
+          conversationRef.current,
+        )?.cursor,
+      });
+
     const subscription = subscribeRecoveringSessionEventStream({
       client,
       eventStreamTransport,
-      getAfterId: () =>
-        selectSessionEventStreamAfterId({
-          conversation: readModelForActiveSession(
-            activeSessionId,
-            conversationRef.current,
-          )?.cursor,
-        }),
+      getAfterId: currentAfterId,
       onConnectedChange: setStreamConnected,
       onEvent: (streamEvent) => {
         const currentConversation = readModelForActiveSession(
@@ -414,7 +468,6 @@ export function useVelaChatSession({
       requestsRefreshScheduler.dispose();
       sessionRefreshScheduler.dispose();
       backendsRefreshScheduler.dispose();
-      setStreamConnected(false);
     };
   }, [
     activeSessionId,
@@ -428,13 +481,13 @@ export function useVelaChatSession({
     loadSession,
   ]);
 
-  const loadOlderConversationForSurface = useCallback(async (surface: "background" | "manual") => {
+  const loadOlderConversation = useCallback(async () => {
     if (!activeSessionId || !conversationHistoryPrependPlan.has_older || isLoadingOlder) return;
     const requestedSessionId = activeSessionId;
     const requestedPrependPlan = conversationHistoryPrependPlan;
     try {
       setIsLoadingOlder(true);
-      if (surface === "manual") setError(null);
+      setError(null);
       const older = requestedPrependPlan.conversation
         ? await client.getConversation(requestedSessionId, requestedPrependPlan.conversation)
         : null;
@@ -457,21 +510,7 @@ export function useVelaChatSession({
       }
     } catch (err) {
       if (!isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) return;
-      if (surface === "manual") {
-        logControllerError("loadOlderConversation", {
-          requestedSessionId,
-          surface,
-        }, err);
-        setError(errorMessage(err));
-        return;
-      }
-      logControllerError("loadOlderConversation background", {
-        requestedSessionId,
-        surface,
-      }, err);
-      setCompletedInitialHydrationSessionIds((current) =>
-        rememberCompletedConversationHistoryHydration(current, requestedSessionId),
-      );
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsLoadingOlder(false);
     }
@@ -482,10 +521,6 @@ export function useVelaChatSession({
     conversationHistoryPrependPlan,
     isLoadingOlder,
   ]);
-
-  const loadOlderConversation = useCallback(async () => {
-    await loadOlderConversationForSurface("manual");
-  }, [loadOlderConversationForSurface]);
 
   const shouldAutoPreloadOlder = shouldAutoPreloadOlderConversation({
     activeSessionId,
@@ -499,8 +534,8 @@ export function useVelaChatSession({
 
   useEffect(() => {
     if (!shouldAutoPreloadOlder) return;
-    void loadOlderConversationForSurface("background");
-  }, [loadOlderConversationForSurface, shouldAutoPreloadOlder]);
+    void loadOlderConversation();
+  }, [loadOlderConversation, shouldAutoPreloadOlder]);
 
   const historyPhase = deriveConversationHistoryPhase({
     activeSessionId,
@@ -543,6 +578,35 @@ export function useVelaChatSession({
     });
   }, [activeConversation, activeRequests, activeSessionId, hostPolicy, streamConnected]);
 
+  useEffect(() => {
+    if (!activeSessionId) {
+      previousTailSignatureRef.current = null;
+      return;
+    }
+
+    const nextSignature = deriveFollowOutputTailSignature(model);
+    const previous = previousTailSignatureRef.current;
+    const isNewSession = previous?.sessionId !== activeSessionId;
+    if (!isNewSession && previous?.signature === nextSignature) return;
+
+    previousTailSignatureRef.current = {
+      sessionId: activeSessionId,
+      signature: nextSignature,
+    };
+    if (!nextSignature) return;
+
+    const reason = isNewSession ? "initial_tail" : "tail_changed";
+    const nextToken = followOutputTokenRef.current + 1;
+    followOutputTokenRef.current = nextToken;
+    setFollowOutputToken(nextToken);
+    observeFollowOutputTokenAdvance(observability, {
+      reason,
+      rowCount: model.rows.length,
+      sessionId: activeSessionId,
+      token: nextToken,
+    });
+  }, [activeSessionId, model, observability]);
+
   const sendMessageContent = useCallback(async (messageContent: ClientInputPart[]) => {
     if (messageContent.length === 0 || !activeSessionId) return false;
     try {
@@ -554,43 +618,130 @@ export function useVelaChatSession({
         return false;
       }
       await refreshAll();
-      setMessageFollowToken((current) => current + 1);
       return true;
     } catch (err) {
-      logControllerError("sendUserMessage", {
-        contentPartTypes: messageContent.map((part) => part.type),
-        contentTextLengths: messageContent.map((part) =>
-          part.type === "text" ? part.text.length : null,
-        ),
-        sessionId: activeSessionId,
-      }, err);
-      setError(errorMessage(err));
+      setError(err instanceof Error ? err.message : String(err));
       return false;
     }
   }, [activeSessionId, client, refreshAll]);
 
+  const enqueueMessageContent = useCallback(
+    (messageContent: ClientInputPart[]) => {
+      if (!activeSessionId || messageContent.length === 0) return;
+      const now = Date.now();
+      const queuedInput: QueuedComposerInputClientState = {
+        id: `queued_${now}_${Math.random().toString(36).slice(2, 10)}`,
+        content: messageContent.map(cloneQueueInputPart),
+        previewText: queuedInputPreview(messageContent),
+        createdAt: now,
+      };
+      commitQueuedInputs([...queuedInputsRef.current, queuedInput]);
+    },
+    [activeSessionId, commitQueuedInputs],
+  );
+
   const send = useCallback(async () => {
     const text = draft.trim();
     const imageParts = pendingAttachments.map((attachment) => attachment.part);
+    const skillParts = skillRefInputPartsFromText(text, skills, session?.backend);
     if (!text && imageParts.length === 0) return;
     const messageContent: ClientInputPart[] = [
       ...(text ? [{ type: "text", text } satisfies ClientInputPart] : []),
+      ...skillParts,
       ...imageParts,
     ];
+    if (model.composer.is_running) {
+      enqueueMessageContent(messageContent);
+      commitDraft("");
+      setPendingAttachments([]);
+      return;
+    }
     const accepted = await sendMessageContent(messageContent);
     if (!accepted) return;
     commitDraft("");
     setPendingAttachments([]);
-  }, [commitDraft, draft, pendingAttachments, sendMessageContent]);
+  }, [
+    commitDraft,
+    draft,
+    enqueueMessageContent,
+    model.composer.is_running,
+    pendingAttachments,
+    sendMessageContent,
+    session?.backend,
+    skills,
+  ]);
 
   const sendText = useCallback(async (text: string) => {
     const trimmed = text.trim();
-    if (!trimmed) return;
-    const accepted = await sendMessageContent([{ type: "text", text: trimmed }]);
+    const imageParts = pendingAttachments.map((attachment) => attachment.part);
+    const skillParts = skillRefInputPartsFromText(trimmed, skills, session?.backend);
+    if (!trimmed && imageParts.length === 0) return;
+    const messageContent: ClientInputPart[] = [
+      ...(trimmed ? [{ type: "text", text: trimmed } satisfies ClientInputPart] : []),
+      ...skillParts,
+      ...imageParts,
+    ];
+    if (model.composer.is_running) {
+      enqueueMessageContent(messageContent);
+      commitDraft("");
+      setPendingAttachments([]);
+      return;
+    }
+    const accepted = await sendMessageContent(messageContent);
     if (!accepted) return;
     commitDraft("");
     setPendingAttachments([]);
-  }, [commitDraft, sendMessageContent]);
+  }, [
+    commitDraft,
+    enqueueMessageContent,
+    model.composer.is_running,
+    pendingAttachments,
+    sendMessageContent,
+    session?.backend,
+    skills,
+  ]);
+
+  const removeQueuedInput = useCallback(
+    (id: string) => {
+      commitQueuedInputs(queuedInputsRef.current.filter((item) => item.id !== id));
+    },
+    [commitQueuedInputs],
+  );
+
+  const drainNextQueuedInput = useCallback(async () => {
+    if (!activeSessionId || model.composer.is_running || queueDrainInFlightRef.current) return;
+    const requestedSessionId = activeSessionId;
+    const next = queuedInputsRef.current[0];
+    if (!next) return;
+    queueDrainInFlightRef.current = true;
+    try {
+      const accepted = await sendMessageContent(next.content);
+      if (accepted && isCurrentSessionRequest(activeSessionIdRef.current, requestedSessionId)) {
+        commitQueuedInputs(queuedInputsRef.current.filter((item) => item.id !== next.id));
+      }
+    } finally {
+      queueDrainInFlightRef.current = false;
+    }
+  }, [activeSessionId, commitQueuedInputs, model.composer.is_running, sendMessageContent]);
+
+  useEffect(() => {
+    const previous = previousRunningRef.current;
+    const sessionChanged = previous?.sessionId !== activeSessionId;
+    const wasRunning = !sessionChanged && previous?.running === true;
+    previousRunningRef.current = {
+      sessionId: activeSessionId,
+      running: model.composer.is_running,
+    };
+    if (!activeConversation || model.composer.is_running) return;
+    if (sessionChanged || wasRunning) {
+      void drainNextQueuedInput();
+    }
+  }, [
+    activeConversation,
+    activeSessionId,
+    drainNextQueuedInput,
+    model.composer.is_running,
+  ]);
 
   const stop = useCallback(async () => {
     const requestedSessionId = activeSessionId;
@@ -609,8 +760,7 @@ export function useVelaChatSession({
         await refreshAll();
       }
     } catch (err) {
-      logControllerError("cancelSession", { requestedSessionId }, err);
-      setError(errorMessage(err));
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsCancellingSession(false);
     }
@@ -622,11 +772,7 @@ export function useVelaChatSession({
       const nextAttachments = await buildPendingImageAttachments(files);
       setPendingAttachments((current) => [...current, ...nextAttachments]);
     } catch (err) {
-      logControllerError("attachImages", {
-        fileCount: files.length,
-        fileNames: files.map((file) => file.name),
-      }, err);
-      setError(errorMessage(err));
+      setError(err instanceof Error ? err.message : String(err));
     }
   }, []);
 
@@ -649,11 +795,7 @@ export function useVelaChatSession({
         setSession(updated.session);
         await refreshAll();
       } catch (err) {
-        logControllerError("updateAgentConfig", {
-          patchKeys: Object.keys(patch),
-          sessionId: activeSessionId,
-        }, err);
-        setError(errorMessage(err));
+        setError(err instanceof Error ? err.message : String(err));
       } finally {
         setIsUpdatingAgentConfig(false);
       }
@@ -678,11 +820,7 @@ export function useVelaChatSession({
         }
         await Promise.all([loadRequests(), loadConversation()]);
       } catch (err) {
-        logControllerError("respondToRequest", {
-          responseKind: response.kind,
-          sessionId: activeSessionId,
-        }, err);
-        setError(errorMessage(err));
+        setError(err instanceof Error ? err.message : String(err));
       } finally {
         setIsRespondingToRequest(false);
       }
@@ -704,14 +842,18 @@ export function useVelaChatSession({
     isRespondingToRequest,
     isStreamConnected: streamConnected,
     isUpdatingAgentConfig,
-    messageFollowToken,
+    followOutputToken,
     model,
     pendingAttachments,
+    queuedInputs,
     requests: activeRequests,
     session,
+    skills,
     attachImages,
     loadOlderConversation,
     refreshAll,
+    refreshBackends: loadBackends,
+    removeQueuedInput,
     removeAttachment,
     respondToRequest,
     send,
@@ -721,4 +863,143 @@ export function useVelaChatSession({
     stop,
     updateAgentConfig,
   };
+}
+
+export function deriveFollowOutputTailSignature(model: ChatRenderModel) {
+  const row = findFollowOutputTailRow(model.rows);
+  if (!row) return null;
+  return [
+    model.session_id,
+    row.kind,
+    readRowString(row, "id"),
+    readRowString(row, "key"),
+    readRowString(row, "status"),
+    readRowString(row, "display"),
+    readRowString(row, "createdAt"),
+    readRowString(row, "updatedAt"),
+    readRowNumber(row, "revision"),
+    readRowBoolean(row, "streaming"),
+    visibleRowTextFingerprint(row),
+  ].join("|");
+}
+
+function findFollowOutputTailRow(rows: readonly ChatRenderRow[]) {
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const row = rows[index];
+    if (row) return row;
+  }
+  return null;
+}
+
+function readRowString(row: ChatRenderRow, key: string) {
+  const value = (row as Record<string, unknown>)[key];
+  return typeof value === "string" ? value : "";
+}
+
+function readRowNumber(row: ChatRenderRow, key: string) {
+  const value = (row as Record<string, unknown>)[key];
+  return typeof value === "number" && Number.isFinite(value) ? String(value) : "";
+}
+
+function readRowBoolean(row: ChatRenderRow, key: string) {
+  const value = (row as Record<string, unknown>)[key];
+  return typeof value === "boolean" ? String(value) : "";
+}
+
+function visibleRowTextFingerprint(row: ChatRenderRow) {
+  const values: string[] = [];
+  collectVisibleRowStrings(row, values);
+  const text = values.join("\n");
+  return `${text.length}:${hashString(text)}`;
+}
+
+function collectVisibleRowStrings(value: unknown, output: string[]) {
+  if (typeof value === "string") {
+    output.push(value);
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    for (const item of value) collectVisibleRowStrings(item, output);
+    return;
+  }
+  for (const key of ["text", "label", "title", "summary"]) {
+    const candidate = (value as Record<string, unknown>)[key];
+    if (typeof candidate === "string") output.push(candidate);
+  }
+  for (const key of ["blocks", "parts", "items"]) {
+    collectVisibleRowStrings((value as Record<string, unknown>)[key], output);
+  }
+}
+
+function hashString(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function observeFollowOutputTokenAdvance(
+  observability: VeladClientObservability | undefined,
+  input: {
+    reason: "initial_tail" | "tail_changed";
+    rowCount: number;
+    sessionId: string;
+    token: number;
+  },
+) {
+  if (!observability) return;
+  const attributes = {
+    "vela.follow_output.reason": input.reason,
+    "vela.follow_output.row_count": input.rowCount,
+    "vela.follow_output.token": input.token,
+    "vela.session_id": input.sessionId,
+  };
+  const span = observability.startSpan("vela.chat.follow_output.advance", {
+    attributes,
+  });
+  span.setStatus({ code: 1 });
+  void observability.emitLog?.({
+    attributes,
+    body: "chat follow output token advanced",
+    severityText: "INFO",
+    span,
+  });
+  span.end();
+}
+
+function cloneQueueInputPart(part: ClientInputPart): ComposerQueueInputPart {
+  switch (part.type) {
+    case "text":
+      return { type: "text", text: part.text };
+    case "skill_ref":
+      return {
+        type: "skill_ref",
+        name: part.name,
+        protocol: part.protocol,
+        ...(part.backend ? { backend: part.backend } : {}),
+        ...(part.path ? { path: part.path } : {}),
+      };
+    case "file_ref":
+      return { type: "file_ref", uri: part.uri };
+    case "image_ref":
+      return { type: "image_ref", uri: part.uri };
+    case "image":
+      return { type: "image", data: part.data, mime_type: part.mime_type };
+  }
+}
+
+function queuedInputPreview(content: readonly ClientInputPart[]) {
+  const text = content.find((part): part is Extract<ClientInputPart, { type: "text" }> =>
+    part.type === "text"
+  )?.text.trim();
+  if (text) return text;
+  const imageCount = content.filter((part) => part.type === "image" || part.type === "image_ref")
+    .length;
+  if (imageCount > 0) return `${imageCount} image${imageCount === 1 ? "" : "s"}`;
+  const fileCount = content.filter((part) => part.type === "file_ref").length;
+  if (fileCount > 0) return `${fileCount} file${fileCount === 1 ? "" : "s"}`;
+  return "Queued message";
 }

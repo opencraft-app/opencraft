@@ -96,7 +96,7 @@ function resolvePreferredBackend(backends: BackendWire[], preferredBackends: Bac
 }
 
 function isBackendSelectable(backend: BackendWire) {
-  return backend.status === "available";
+  return backend.status === "available" || backend.status === "degraded";
 }
 
 function isDefaultOption(option: unknown) {

@@ -1,31 +1,49 @@
-import { app, BrowserWindow, ipcMain } from "electron";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { appendFileSync, existsSync, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { createServer } from "node:net";
+import { app, BrowserWindow, dialog, ipcMain, session, shell } from "electron";
+import { fileURLToPath } from "node:url";
+import { dirname, join, resolve } from "node:path";
+import { env as nodeEnv } from "node:process";
+import { VelaLocalTracer } from "../../../packages/vela-observability-client/src";
+import {
+  buildRuntimeProcessEnv,
+  readDesktopSettings,
+  RotatingLogWriter,
+  runtimeLogPath,
+  VeladRuntimeManager,
+  writeDesktopSettings,
+} from "./runtime";
+import { MacosSpeechManager } from "./voice/macos-speech-manager";
+import { WorkMonitorWindowManager } from "./work-monitor";
 
 let mainWindow: BrowserWindow | null = null;
-let veladProcess: ChildProcessWithoutNullStreams | null = null;
-let logWriter: RotatingLogWriter | null = null;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 function runtimeEnv(name: string) {
-  return process.env[name];
+  return nodeEnv[name];
 }
 
-const configuredVeladListenAddr = runtimeEnv("VELA_DESKTOP_VELAD_LISTEN_ADDR") ?? "";
-const externalVeladListenAddr = "127.0.0.1:3857";
-let veladListenAddr = configuredVeladListenAddr;
-let veladReadyPromise: Promise<void> | null = null;
+function applyUserDataOverride() {
+  const userDataDir = runtimeEnv("VELA_DESKTOP_USER_DATA_DIR")?.trim();
+  if (!userDataDir) return;
+  app.setPath("userData", resolve(userDataDir));
+}
+
+applyUserDataOverride();
+
+const remoteDebuggingPort = runtimeEnv("VELA_DESKTOP_REMOTE_DEBUGGING_PORT")?.trim();
+if (!app.isPackaged && remoteDebuggingPort) {
+  app.commandLine.appendSwitch("remote-debugging-port", remoteDebuggingPort);
+}
+
 const maxLogBytes = Number(runtimeEnv("VELA_DESKTOP_LOG_MAX_BYTES") ?? 5 * 1024 * 1024);
 const maxLogFiles = Number(runtimeEnv("VELA_DESKTOP_LOG_MAX_FILES") ?? 5);
 const veladReadyTimeoutMs = Number(runtimeEnv("VELA_DESKTOP_VELAD_READY_TIMEOUT_MS") ?? 15_000);
+const veladShutdownTimeoutMs = Number(runtimeEnv("VELA_DESKTOP_VELAD_SHUTDOWN_TIMEOUT_MS") ?? 5_000);
+const veladRequestTimeoutMs = Number(runtimeEnv("VELA_DESKTOP_VELAD_REQUEST_TIMEOUT_MS") ?? 2_000);
 const macosChromeMetrics = {
-  trafficLightPosition: { x: 24, y: 22 },
-  normalLeadingToolbarInset: 78,
+  trafficLightPosition: { x: 18, y: 18 },
+  normalLeadingToolbarInset: 86,
   fullscreenLeadingToolbarInset: 54,
   normalToolbarCenterY: 24,
   normalToolbarIconSize: 24,
@@ -46,201 +64,68 @@ interface DesktopChromeState {
   toolbarSize: number;
 }
 
-class RotatingLogWriter {
-  private readonly path: string;
-  private readonly maxBytes: number;
-  private readonly maxFiles: number;
-
-  constructor(path: string, maxBytes: number, maxFiles: number) {
-    this.path = path;
-    this.maxBytes = maxBytes;
-    this.maxFiles = maxFiles;
-    mkdirSync(dirname(path), { recursive: true });
-  }
-
-  write(source: string, message: string) {
-    const lines = message
-      .split(/\r?\n/)
-      .map((line) => line.trimEnd())
-      .filter((line) => line.length > 0);
-    if (lines.length === 0) return;
-    const timestamp = new Date().toISOString();
-    const payload = lines.map((line) => `${timestamp} ${source} ${line}`).join("\n") + "\n";
-    this.rotateIfNeeded(Buffer.byteLength(payload));
-    appendFileSync(this.path, payload);
-  }
-
-  private rotateIfNeeded(incomingBytes: number) {
-    const currentBytes = existsSync(this.path) ? statSync(this.path).size : 0;
-    if (currentBytes + incomingBytes <= this.maxBytes) return;
-
-    for (let index = this.maxFiles - 1; index >= 1; index -= 1) {
-      const from = `${this.path}.${index}`;
-      const to = `${this.path}.${index + 1}`;
-      if (existsSync(to)) rmSync(to, { force: true });
-      if (existsSync(from)) renameSync(from, to);
-    }
-    if (existsSync(this.path)) renameSync(this.path, `${this.path}.1`);
-  }
+interface MediaPermissionDetails {
+  mediaTypes?: string[];
 }
 
-function getLogWriter() {
-  if (!logWriter) {
-    logWriter = new RotatingLogWriter(
-      join(app.getPath("userData"), "logs", "vela-desktop.log"),
-      maxLogBytes,
-      maxLogFiles,
-    );
-  }
-  return logWriter;
-}
+const logWriter = new RotatingLogWriter(
+  runtimeLogPath(app.getPath("userData")),
+  maxLogBytes,
+  maxLogFiles,
+);
+const observability = new VelaLocalTracer({
+  serviceName: "vela-desktop-electron",
+  tracerName: "vela.desktop.electron",
+  timeoutMs: veladRequestTimeoutMs,
+});
+const runtimeProcessEnv = buildRuntimeProcessEnv();
+const veladRuntime = new VeladRuntimeManager({
+  host: app,
+  resourcesPath: process.resourcesPath,
+  env: runtimeProcessEnv.env,
+  logger: logWriter,
+  observability,
+  readyTimeoutMs: veladReadyTimeoutMs,
+  shutdownTimeoutMs: veladShutdownTimeoutMs,
+  requestTimeoutMs: veladRequestTimeoutMs,
+});
+const workMonitor = new WorkMonitorWindowManager({
+  preloadPath: join(__dirname, "preload.cjs"),
+  getAnchorWindow: () => mainWindow,
+  loadRenderer: loadRendererWindow,
+});
+const macosSpeech = new MacosSpeechManager({
+  appPath: app.getAppPath(),
+  resourcesPath: process.resourcesPath,
+  platform: process.platform,
+  isPackaged: app.isPackaged,
+  logger: logWriter,
+  env: nodeEnv,
+});
+macosSpeech.onEvent((event) => {
+  mainWindow?.webContents.send("vela:voice-macos-event", event);
+});
 
 function logLine(source: string, message: string) {
-  getLogWriter().write(source, message);
+  logWriter.write(source, message);
 }
 
-function bundledVeladPath() {
-  const packagedPath = join(process.resourcesPath, "bin", "velad");
-  if (existsSync(packagedPath)) return packagedPath;
-  return null;
+function isAudioCapturePermission(permission: string, details?: MediaPermissionDetails) {
+  if (permission !== "media") return false;
+  const mediaTypes = details?.mediaTypes;
+  return !mediaTypes || mediaTypes.length === 0 || mediaTypes.includes("audio");
 }
 
-function bundledVeladDatabaseUrl() {
-  const configuredDatabaseUrl = runtimeEnv("VELAD_DATABASE_URL");
-  if (configuredDatabaseUrl) return configuredDatabaseUrl;
-
-  const dataDir = join(app.getPath("userData"), "runtime", "velad");
-  mkdirSync(dataDir, { recursive: true });
-  return `${pathToFileURL(join(dataDir, "vela.sqlite")).href.replace(/^file:/, "sqlite:")}?mode=rwc`;
-}
-
-function desktopRuntimeEnv() {
-  const home = process.env.HOME ?? app.getPath("home");
-  const pathEntries = [
-    join(home, ".local", "bin"),
-    join(home, ".bun", "bin"),
-    "/opt/homebrew/bin",
-    "/opt/homebrew/sbin",
-    "/usr/local/bin",
-    "/usr/bin",
-    "/bin",
-    "/usr/sbin",
-    "/sbin",
-    process.env.PATH ?? "",
-  ].filter(Boolean);
-  return {
-    ...process.env,
-    PATH: Array.from(new Set(pathEntries.flatMap((entry) => entry.split(":")).filter(Boolean))).join(":"),
-  };
-}
-
-function reserveLoopbackListenAddr() {
-  return new Promise<string>((resolve, reject) => {
-    const server = createServer();
-    server.on("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      if (!address || typeof address === "string") {
-        server.close(() => reject(new Error("Unable to reserve a velad port")));
-        return;
-      }
-      const listenAddr = `127.0.0.1:${address.port}`;
-      server.close((err) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-        resolve(listenAddr);
-      });
-    });
-  });
-}
-
-async function ensureVeladListenAddr() {
-  if (veladListenAddr) return veladListenAddr;
-  veladListenAddr = bundledVeladPath() ? await reserveLoopbackListenAddr() : externalVeladListenAddr;
-  return veladListenAddr;
-}
-
-async function startBundledVelad() {
-  const listenAddr = await ensureVeladListenAddr();
-  const binaryPath = bundledVeladPath();
-  if (!binaryPath) {
-    console.log(`[velad] using external velad at http://${listenAddr}/api/v1`);
-    logLine("[host]", `using external velad at http://${listenAddr}/api/v1`);
-    return;
-  }
-  if (veladProcess) return;
-  const databaseUrl = bundledVeladDatabaseUrl();
-
-  console.log(`[velad] starting bundled velad at ${binaryPath} on ${listenAddr}`);
-  logLine("[host]", `starting bundled velad at ${binaryPath} on ${listenAddr}`);
-  logLine("[host]", `using bundled velad database ${databaseUrl}`);
-  veladProcess = spawn(binaryPath, {
-    env: {
-      ...desktopRuntimeEnv(),
-      VELAD_LISTEN_ADDR: listenAddr,
-      VELAD_DATABASE_URL: databaseUrl,
-      RUST_LOG: process.env.RUST_LOG ?? "warn",
+function attachMediaPermissionHandlers() {
+  session.defaultSession.setPermissionRequestHandler(
+    (_webContents, permission, callback, details) => {
+      callback(isAudioCapturePermission(permission, details as MediaPermissionDetails));
     },
-    stdio: "pipe",
-  });
-  veladProcess.stdout.on("data", (chunk) => {
-    const message = String(chunk).trimEnd();
-    console.log(`[velad] ${message}`);
-    logLine("[velad:stdout]", message);
-  });
-  veladProcess.stderr.on("data", (chunk) => {
-    const message = String(chunk).trimEnd();
-    console.error(`[velad] ${message}`);
-    logLine("[velad:stderr]", message);
-  });
-  veladProcess.on("exit", (code, signal) => {
-    console.log(`[velad] exited code=${code ?? "null"} signal=${signal ?? "null"}`);
-    logLine("[host]", `velad exited code=${code ?? "null"} signal=${signal ?? "null"}`);
-    veladProcess = null;
-  });
-}
-
-async function waitForVeladReady() {
-  await ensureVeladListenAddr();
-  const startedAt = Date.now();
-  const url = `http://${veladListenAddr}/api/v1/backends`;
-  let lastError: unknown = null;
-
-  while (Date.now() - startedAt < veladReadyTimeoutMs) {
-    try {
-      const response = await fetch(url);
-      if (response.ok) {
-        logLine("[host]", `velad ready at ${url}`);
-        return;
-      }
-      lastError = new Error(`velad readiness returned ${response.status}`);
-    } catch (err) {
-      lastError = err;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 120));
-  }
-
-  throw new Error(
-    `velad did not become ready at ${url}: ${
-      lastError instanceof Error ? lastError.message : String(lastError)
-    }`,
   );
-}
-
-async function ensureVeladReady() {
-  if (!veladReadyPromise) {
-    veladReadyPromise = startBundledVelad().then(waitForVeladReady);
-  }
-  return veladReadyPromise;
-}
-
-function stopBundledVelad() {
-  const child = veladProcess;
-  if (!child) return;
-  veladProcess = null;
-  child.kill("SIGTERM");
+  session.defaultSession.setPermissionCheckHandler(
+    (_webContents, permission, _origin, details) =>
+      isAudioCapturePermission(permission, details as MediaPermissionDetails),
+  );
 }
 
 function getDesktopChromeState(window = mainWindow): DesktopChromeState {
@@ -283,9 +168,66 @@ function attachDesktopChromeStateEvents(window: BrowserWindow) {
   window.webContents.on("did-finish-load", emit);
 }
 
+function attachRendererDiagnostics(window: BrowserWindow, label: string) {
+  window.webContents.on("did-start-navigation", (_event, url, isInPlace, isMainFrame) => {
+    logLine(
+      `[${label}:renderer]`,
+      `did-start-navigation main=${isMainFrame} inPlace=${isInPlace} url=${url}`,
+    );
+  });
+  window.webContents.on("did-finish-load", () => {
+    logLine(`[${label}:renderer]`, `did-finish-load url=${window.webContents.getURL()}`);
+  });
+  if (runtimeEnv("VELA_DESKTOP_RENDERER_CONSOLE_LOGS") === "1") {
+    window.webContents.on("console-message", (_event, ...args: unknown[]) => {
+      const first = args[0];
+      const details =
+        first && typeof first === "object"
+          ? (first as {
+              level?: string | number;
+              lineNumber?: number;
+              message?: string;
+              sourceId?: string;
+            })
+          : {
+              level: args[0] as string | number | undefined,
+              message: args[1] as string | undefined,
+              lineNumber: args[2] as number | undefined,
+              sourceId: args[3] as string | undefined,
+            };
+      logLine(
+        `[${label}:renderer]`,
+        `console level=${details.level} ${details.message} (${details.sourceId}:${details.lineNumber})`,
+      );
+    });
+  }
+  window.webContents.on(
+    "did-fail-load",
+    (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      logLine(
+        `[${label}:renderer]`,
+        `did-fail-load code=${errorCode} main=${isMainFrame} url=${validatedURL} ${errorDescription}`,
+      );
+    },
+  );
+  window.webContents.on("render-process-gone", (_event, details) => {
+    logLine(
+      `[${label}:renderer]`,
+      `render-process-gone reason=${details.reason} exitCode=${details.exitCode}`,
+    );
+  });
+}
+
 async function createWindow() {
-  logLine("[host]", `log file ${join(app.getPath("userData"), "logs", "vela-desktop.log")}`);
-  void ensureVeladReady().catch((err) => {
+  logLine("[host]", `log file ${runtimeLogPath(app.getPath("userData"))}`);
+  logLine(
+    "[host]",
+    runtimeProcessEnv.loginShellEnvApplied
+      ? "runtime login shell environment applied"
+      : `runtime using process environment: ${runtimeProcessEnv.loginShellEnvError ?? "login shell environment unavailable"}`,
+  );
+  logLine("[host]", `runtime PATH ${runtimeProcessEnv.env.PATH ?? ""}`);
+  void veladRuntime.ensureReady().catch((err) => {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[velad] bootstrap failed: ${message}`);
     logLine("[host]", `velad bootstrap failed: ${message}`);
@@ -312,22 +254,37 @@ async function createWindow() {
     },
   });
   attachDesktopChromeStateEvents(mainWindow);
+  attachRendererDiagnostics(mainWindow, "main");
 
+  await loadRendererWindow(mainWindow, {});
+}
+
+async function loadRendererWindow(
+  window: BrowserWindow,
+  query: Record<string, string>,
+) {
   const devServerUrl = runtimeEnv("VITE_DEV_SERVER_URL") ?? (!app.isPackaged ? "http://127.0.0.1:5173" : "");
   if (devServerUrl) {
-    await mainWindow.loadURL(devServerUrl);
-  } else {
-    await mainWindow.loadFile(join(__dirname, "../dist/index.html"));
+    const url = new URL(devServerUrl);
+    for (const [key, value] of Object.entries(query)) {
+      url.searchParams.set(key, value);
+    }
+    logLine("[host]", `loading renderer ${url.toString()}`);
+    await window.loadURL(url.toString());
+    return;
   }
+  logLine("[host]", "loading packaged renderer");
+  await window.loadFile(join(__dirname, "../dist/index.html"), { query });
 }
 
 ipcMain.handle("vela:desktop-info", async () => {
-  const logPath = join(app.getPath("userData"), "logs", "vela-desktop.log");
+  const logPath = runtimeLogPath(app.getPath("userData"));
   try {
-    await ensureVeladReady();
+    const info = await veladRuntime.ensureReady();
     return {
       status: "ready",
-      apiBaseUrl: `http://${veladListenAddr}/api/v1`,
+      apiBaseUrl: info.apiBaseUrl,
+      otelBaseUrl: info.otelBaseUrl,
       chromeState: getDesktopChromeState(),
       logPath,
       platform: process.platform,
@@ -344,13 +301,14 @@ ipcMain.handle("vela:desktop-info", async () => {
 });
 
 ipcMain.handle("vela:desktop-bootstrap-retry", async () => {
-  veladReadyPromise = null;
-  const logPath = join(app.getPath("userData"), "logs", "vela-desktop.log");
+  veladRuntime.resetStart();
+  const logPath = runtimeLogPath(app.getPath("userData"));
   try {
-    await ensureVeladReady();
+    const info = await veladRuntime.ensureReady();
     return {
       status: "ready",
-      apiBaseUrl: `http://${veladListenAddr}/api/v1`,
+      apiBaseUrl: info.apiBaseUrl,
+      otelBaseUrl: info.otelBaseUrl,
       chromeState: getDesktopChromeState(),
       logPath,
       platform: process.platform,
@@ -366,6 +324,26 @@ ipcMain.handle("vela:desktop-bootstrap-retry", async () => {
   }
 });
 
+ipcMain.handle("vela:desktop-settings-get", async () =>
+  readDesktopSettings(app.getPath("userData")),
+);
+
+ipcMain.handle("vela:desktop-settings-set", async (_event, patch: unknown) => {
+  if (!isRecord(patch)) {
+    throw new Error("Desktop settings patch must be an object");
+  }
+  const nextPatch: Parameters<typeof writeDesktopSettings>[1] = {};
+  if (typeof patch.defaultBackend === "string") {
+    nextPatch.defaultBackend =
+      patch.defaultBackend as Parameters<typeof writeDesktopSettings>[1]["defaultBackend"];
+  }
+  return writeDesktopSettings(app.getPath("userData"), nextPatch);
+});
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 ipcMain.handle("vela:desktop-chrome-state", async () => getDesktopChromeState());
 
 ipcMain.handle("vela:desktop-leave-fullscreen", async () => {
@@ -376,13 +354,104 @@ ipcMain.handle("vela:desktop-leave-fullscreen", async () => {
   return getDesktopChromeState(window ?? mainWindow);
 });
 
-app.whenReady().then(createWindow);
+ipcMain.handle("vela:desktop-select-working-directory", async () => {
+  const options = {
+    properties: ["openDirectory", "createDirectory"] as const,
+    title: "Choose workspace folder",
+  };
+  const result = mainWindow
+    ? await dialog.showOpenDialog(mainWindow, options)
+    : await dialog.showOpenDialog(options);
+  if (result.canceled) return null;
+  return result.filePaths[0] ?? null;
+});
+
+ipcMain.handle("vela:desktop-show-path-in-folder", async (_event, path: unknown) => {
+  if (typeof path !== "string" || !path.trim()) return false;
+  const targetPath = path.trim();
+  shell.showItemInFolder(targetPath);
+  if (targetPath.endsWith("/") || targetPath.endsWith("\\")) {
+    const error = await shell.openPath(targetPath);
+    return !error;
+  }
+  return true;
+});
+
+ipcMain.handle("vela:work-monitor-open", async (_event, sessionId: unknown) => {
+  if (typeof sessionId !== "string") return { accepted: false };
+  return { accepted: await workMonitor.open(sessionId) };
+});
+
+ipcMain.handle("vela:work-monitor-close", async (event) => ({
+  accepted: workMonitor.closeBySender(event.sender),
+}));
+
+ipcMain.handle("vela:work-monitor-move-by", async (event, deltaX: unknown, deltaY: unknown) => ({
+  accepted:
+    typeof deltaX === "number" &&
+    typeof deltaY === "number" &&
+    workMonitor.moveBySender(event.sender, deltaX, deltaY),
+}));
+
+ipcMain.handle(
+  "vela:session-drag-preview-start",
+  async (_event, sessionId: unknown, screenX: unknown, screenY: unknown) => ({
+    accepted:
+      typeof sessionId === "string" &&
+      typeof screenX === "number" &&
+      typeof screenY === "number" &&
+      await workMonitor.openAtPoint(sessionId, { screenX, screenY }),
+  }),
+);
+
+ipcMain.handle("vela:session-drag-preview-move", async (_event, screenX: unknown, screenY: unknown) => ({
+  accepted:
+    typeof screenX === "number" &&
+    typeof screenY === "number" &&
+    workMonitor.moveToPoint({ screenX, screenY }),
+}));
+
+ipcMain.handle("vela:session-drag-preview-end", async () => {
+  workMonitor.endSessionDragPreview();
+  return { accepted: true };
+});
+
+ipcMain.handle("vela:voice-macos-available", async () => macosSpeech.isAvailable());
+
+ipcMain.handle("vela:voice-macos-start", async (_event, options: unknown) => {
+  const language =
+    isRecord(options) && typeof options.language === "string" ? options.language : undefined;
+  const interimResults =
+    isRecord(options) && typeof options.interimResults === "boolean"
+      ? options.interimResults
+      : undefined;
+  return macosSpeech.start({ language, interimResults });
+});
+
+ipcMain.handle("vela:voice-macos-stop", async () => macosSpeech.stop());
+
+app.whenReady().then(() => {
+  attachMediaPermissionHandlers();
+  return createWindow();
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-app.on("before-quit", () => {
-  stopBundledVelad();
+let quitAfterRuntimeStop = false;
+app.on("before-quit", (event) => {
+  if (quitAfterRuntimeStop) return;
+  event.preventDefault();
   mainWindow = null;
+  void veladRuntime
+    .stop()
+    .catch((err) => {
+      logLine("[host]", `velad stop failed: ${err instanceof Error ? err.message : String(err)}`);
+    })
+    .finally(() => {
+      workMonitor.close();
+      quitAfterRuntimeStop = true;
+      app.exit(0);
+    });
 });

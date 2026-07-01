@@ -1,16 +1,20 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { register } from "node:module";
 import { join } from "node:path";
 import test from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import type { SessionListItemWire } from "../../vela-chat-client/src";
-import {
+
+register(new URL("../../vela-chat-web/tests/css-module-loader.mjs", import.meta.url));
+
+const {
   SessionSidebar,
   VelaDesktopShell,
   browserRuntimeHostBridge,
-} from "../src";
+} = await import("../src");
 
 const root = process.cwd();
 
@@ -58,6 +62,7 @@ test("desktop shell renders the codex-desktop style sidebar frame and main inset
   assert.match(html, /class="vela-sidebar-window-controls"/);
   assert.match(html, /class="vela-window-drag-layer"/);
   assert.match(html, /class="vela-desktop-shell app-shell vela-tri-pane-shell"/);
+  assert.match(html, /--vela-window-leading-content-inset:158px/);
   assert.match(html, /data-slot="sidebar-wrapper"/);
   assert.match(html, /class="vela-sidebar-wrapper"/);
   assert.match(html, /class="vela-sidebar-panel"/);
@@ -115,13 +120,16 @@ test("session sidebar renders the codex-desktop settings menu in the footer", ()
   assert.match(html, /role="menu"/);
   assert.match(html, />Settings</);
   assert.match(html, />Clear chats</);
+  assert.doesNotMatch(html, />Remaining usage</);
+  assert.doesNotMatch(html, />Invite friends</);
+  assert.doesNotMatch(html, />Log out</);
   assert.ok(
     html.indexOf("session-list-surface") < html.indexOf("vela-settings-menu-root"),
     "settings menu should live in the sidebar footer after the session list",
   );
 });
 
-test("session rows use a compact desktop sidebar model with preview, rail, and status", () => {
+test("running session rows stay in the compact text layout", () => {
   const runningSession: SessionListItemWire = {
     ...session,
     id: "ses_running_visual_contract",
@@ -131,7 +139,6 @@ test("session rows use a compact desktop sidebar model with preview, rail, and s
     running: true,
     pending_request_count: 0,
   };
-
   const html = renderToStaticMarkup(
     React.createElement(SessionSidebar, {
       sessions: [runningSession],
@@ -141,12 +148,20 @@ test("session rows use a compact desktop sidebar model with preview, rail, and s
     }),
   );
 
+  assert.doesNotMatch(html, /data-slot="session-thumbnail-preview"/);
+  assert.doesNotMatch(html, /data-conversation-preview="true"/);
   assert.match(html, /class="vela-session-preview"/);
   assert.match(html, /Renderer keeps a small release buffer/);
+  assert.match(html, /class="vela-session-location"/);
+  assert.match(html, />velaChat</);
   assert.match(html, /class="vela-session-rail"/);
-  assert.match(html, /class="vela-session-status-dot"/);
+  assert.doesNotMatch(html, /class="vela-session-status-dot"/);
+  assert.doesNotMatch(html, /class="vela-session-icon"/);
+  assert.doesNotMatch(html, /class="vela-session-badge"/);
+  assert.match(html, /data-activity="running"/);
   assert.match(html, /data-running="true"/);
-  assert.match(html, /Running/);
+  assert.doesNotMatch(html, /data-has-thumbnail/);
+  assert.doesNotMatch(html, /运行中/);
   assert.doesNotMatch(html, /class="[^"]*card/);
 });
 
@@ -188,6 +203,8 @@ test("desktop host uses unified chrome and drag-region semantics", () => {
   assert.match(sidebarShell, /interface WindowToolbarButtonModel/);
   assert.match(sidebarShell, /function ToolbarSidebarIcon/);
   assert.match(sidebarShell, /function ToolbarNewThreadIcon/);
+  assert.match(sidebarShell, /function windowToolbarButtonModels/);
+  assert.match(sidebarShell, /function windowLeadingContentInsetPx/);
   assert.match(sidebarShell, /data-toolbar-button=\{button\.id\}/);
   assert.match(desktopBridge, /showTrafficLights:\s*false/);
   assert.match(settingsPage, /VelaSidebarChrome/);
@@ -206,8 +223,18 @@ test("desktop host uses unified chrome and drag-region semantics", () => {
   assert.match(css, /--vela-window-toolbar-size:\s*20px;/);
   assert.match(css, /--vela-window-toolbar-icon-size:\s*20px;/);
   assert.match(css, /--vela-window-toolbar-icon-scale:\s*1\.12;/);
-  assert.match(css, /--vela-window-toolbar-gap:\s*8px;/);
+  assert.match(css, /--vela-window-toolbar-gap:\s*16px;/);
   assert.match(css, /--vela-window-toolbar-item-gap:\s*0px;/);
+  assert.match(css, /\.vela-chat-topbar\s*\{[^}]*--vela-chat-topbar-leading-padding:\s*var\(--vela-chat-topbar-base-padding-left\);/s);
+  assert.match(css, /\.vela-chat-topbar\s*\{[^}]*min-height:\s*46px;/s);
+  assert.match(css, /\.vela-chat-topbar\s*\{[^}]*padding:\s*6px var\(--vela-chat-topbar-base-padding-right\) 6px var\(--vela-chat-topbar-leading-padding\);/s);
+  assert.match(css, /\.vela-chat-topbar\s*\{[^}]*box-shadow:\s*none;/s);
+  assert.match(css, /\.vela-chat-topbar::after\s*\{[^}]*bottom:\s*0;/s);
+  assert.doesNotMatch(css, /\.vela-chat-topbar::after\s*\{[^}]*top:\s*68px;/s);
+  assert.match(css, /\.vela-desktop-shell\[data-state="collapsed"\] \.vela-chat-topbar,\s*\.vela-desktop-shell\[data-sidebar-presentation="overlay"\] \.vela-chat-topbar\s*\{[^}]*--vela-chat-topbar-leading-padding:\s*max\(/s);
+  assert.match(css, /\.vela-desktop-shell\[data-state="collapsed"\] \.vela-chat-topbar,\s*\.vela-desktop-shell\[data-sidebar-presentation="overlay"\] \.vela-chat-topbar\s*\{[^}]*var\(--vela-window-leading-content-inset\)/s);
+  assert.match(css, /\.vela-desktop-shell:not\(\[data-sidebar-dragging="true"\]\) \.vela-chat-topbar\s*\{[^}]*transition:\s*padding-left var\(--vela-sidebar-toggle-duration\) var\(--vela-sidebar-toggle-ease\);/s);
+  assert.match(css, /\.vela-desktop-shell\[data-sidebar-dragging="true"\] \.vela-chat-topbar\s*\{[^}]*transition:\s*none;/s);
   assert.match(css, /\[data-window-drag-region="true"\]\s*\{[^}]*-webkit-app-region:\s*drag;/s);
   assert.match(css, /\[data-window-drag-region="false"\]/);
   assert.match(css, /\.vela-window-chrome\s*\{[^}]*height:\s*var\(--vela-titlebar-height\);/s);
@@ -234,12 +261,27 @@ test("desktop session list CSS follows the codex-style compact rail layout", () 
   assert.match(css, /\.vela-session-sidebar\s*\{[^}]*user-select:\s*none;/s);
   assert.match(css, /\.search-box\s*\{[^}]*min-height:\s*34px;/s);
   assert.match(css, /\.sidebar-section-heading\s*\{[^}]*text-transform:\s*none;/s);
-  assert.match(css, /\.vela-session-item\s*\{[^}]*--vela-session-rail-width:\s*44px;/s);
-  assert.match(css, /\.vela-session-main\s*\{[^}]*grid-template-columns:\s*18px minmax\(0, 1fr\) var\(--vela-session-rail-width\);/s);
+  assert.match(css, /\.vela-session-item\s*\{[^}]*position:\s*relative;/s);
+  assert.doesNotMatch(css, /--vela-session-rail-width/);
+  assert.match(css, /\.vela-session-main\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/s);
+  assert.match(css, /\.vela-session-main\s*\{[^}]*padding:\s*6px 58px 6px 8px;/s);
   assert.match(css, /\.vela-session-main\s*\{[^}]*min-height:\s*50px;/s);
+  assert.doesNotMatch(css, /\.vela-session-thumbnail-preview/);
+  assert.doesNotMatch(css, /data-has-thumbnail/);
   assert.match(css, /\.vela-session-preview\s*\{[^}]*font-size:\s*12px;/s);
-  assert.match(css, /\.vela-session-rail\s*\{[^}]*justify-self:\s*end;/s);
-  assert.match(css, /\.vela-session-status-dot\s*\{[^}]*width:\s*6px;/s);
+  assert.match(css, /\.vela-session-rail\s*\{[^}]*position:\s*absolute;/s);
+  assert.match(css, /\.vela-session-rail\s*\{[^}]*right:\s*22px;/s);
+  assert.match(css, /\.vela-session-rail\s*\{[^}]*max-width:\s*38px;/s);
+  assert.match(css, /\.vela-session-rail\s*\{[^}]*font-size:\s*10px;/s);
+  assert.match(css, /\.vela-session-rail\s*\{[^}]*font-weight:\s*420;/s);
+  assert.match(css, /\.vela-session-rail\s*\{[^}]*text-align:\s*right;/s);
+  assert.match(css, /\.vela-session-archive-action\s*\{[^}]*position:\s*absolute;/s);
+  assert.match(css, /\.vela-session-item\[data-has-actions="true"\]:hover \.vela-session-archive-action/s);
+  assert.match(css, /\.vela-session-item\[data-has-actions="true"\]:hover \.vela-session-rail/s);
+  assert.doesNotMatch(css, /\.vela-session-actions-trigger/);
+  assert.doesNotMatch(css, /\.vela-session-status-dot/);
+  assert.doesNotMatch(css, /\.vela-session-icon/);
+  assert.doesNotMatch(css, /\.vela-session-badge/);
   assert.doesNotMatch(css, /\.vela-session-item\s*\{[^}]*box-shadow:\s*0 18px/s);
 });
 
@@ -279,15 +321,18 @@ test("desktop main frame stays a neutral host surface while ChatUI owns material
     "utf8",
   );
 
-  assert.match(css, /--vela-main-surface:\s*#ffffff;/);
-  assert.match(css, /--vela-main-surface-radius:\s*16px;/);
-  assert.match(css, /--vela-main-edge-hairline:\s*var\(--vela-sidebar-material-edge\);/);
+  assert.match(css, /--vela-main-surface:\s*rgb\(255 255 255 \/ 92%\);/);
+  assert.match(css, /--vela-main-surface-radius:\s*20px;/);
+  assert.match(css, /--vela-main-edge-hairline:\s*rgba\(60,\s*60,\s*67,\s*0\.13\);/);
   assert.match(css, /\.vela-main-inset\s*\{[^}]*box-sizing:\s*border-box;/s);
   assert.match(css, /\.vela-main-inset\s*\{[^}]*border-top-left-radius:\s*var\(--vela-main-surface-radius\);/s);
   assert.match(css, /\.vela-main-inset\s*\{[^}]*border-left:\s*0;/s);
   assert.match(css, /\.vela-desktop-shell\[data-state="collapsed"\] \.vela-main-inset\s*\{[^}]*border-left-color:\s*transparent;/s);
-  assert.match(css, /\.vela-sidebar-inset::before\s*\{[^}]*background:\s*var\(--vela-main-surface\);/s);
-  assert.match(css, /\.vela-sidebar-inset::before\s*\{[^}]*box-shadow:\s*inset 1px 0 0 var\(--vela-main-edge-hairline\);/s);
+  assert.doesNotMatch(css, /\.vela-desktop-shell\[data-sidebar-presentation="overlay"\] \.vela-main-inset\s*\{[^}]*border-top-left-radius:\s*0;/s);
+  assert.match(css, /\.vela-sidebar-inset::before\s*\{[^}]*linear-gradient\(180deg,\s*rgb\(255 255 255 \/ 98%\) 0%,\s*var\(--vela-main-surface\) 54%\)/s);
+  assert.match(css, /\.vela-sidebar-inset::before\s*\{[^}]*inset 2px 0 0 var\(--vela-main-edge-hairline\)/s);
+  assert.match(css, /\.vela-sidebar-inset::before\s*\{[^}]*backdrop-filter:\s*blur\(18px\) saturate\(1\.08\);/s);
+  assert.doesNotMatch(css, /\.vela-main-inset\s*\{[^}]*box-shadow:/s);
   assert.doesNotMatch(css, /\.vela-main-inset\s*\{[^}]*-webkit-backdrop-filter:/s);
   assert.doesNotMatch(css, /\.vela-main-inset\s*\{[^}]*backdrop-filter:/s);
 });
@@ -328,8 +373,11 @@ test("desktop sidebar toggle motion is main-surface owned and disabled during dr
   assert.match(css, /\.vela-main-inset\s*\{[^}]*left:\s*var\(--vela-sidebar-width, 300px\);/s);
   assert.match(css, /\.vela-desktop-shell\[data-state="collapsed"\] \.vela-main-inset\s*\{[^}]*left:\s*0;/s);
   assert.match(css, /\.vela-desktop-shell:not\(\[data-sidebar-dragging="true"\]\) \.vela-main-inset\s*\{[^}]*transition:/s);
+  assert.match(css, /\.vela-desktop-shell:not\(\[data-sidebar-dragging="true"\]\) \.vela-chat-topbar\s*\{[^}]*transition:\s*padding-left var\(--vela-sidebar-toggle-duration\) var\(--vela-sidebar-toggle-ease\);/s);
   assert.match(css, /\.vela-desktop-shell\[data-sidebar-dragging="true"\] \.vela-main-inset\s*\{[^}]*transition:\s*none;/s);
+  assert.match(css, /\.vela-desktop-shell\[data-sidebar-dragging="true"\] \.vela-chat-topbar\s*\{[^}]*transition:\s*none;/s);
   assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)/);
+  assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)\s*\{[^}]*\.vela-desktop-shell:not\(\[data-sidebar-dragging="true"\]\) \.vela-main-inset,\s*\.vela-desktop-shell:not\(\[data-sidebar-dragging="true"\]\) \.vela-chat-topbar\s*\{[^}]*transition-duration:\s*0\.01ms;/s);
 });
 
 test("desktop main surface renders a codex-style blur veil while covering the sidebar", () => {

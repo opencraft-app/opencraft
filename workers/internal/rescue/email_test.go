@@ -3,6 +3,7 @@ package rescue
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestFormatDownloadTTLLabel(t *testing.T) {
@@ -18,6 +19,34 @@ func TestSESRequestDateFromMessageID(t *testing.T) {
 	got := sesRequestDateFromMessageID("qcloudses-30-1388575217-date-20260608225131-FAKZ1acbygYF1")
 	if got != "2026-06-08" {
 		t.Fatalf("unexpected request date: %q", got)
+	}
+}
+
+func TestSESDeliveryTimeoutDefaultsToTwentyMinutes(t *testing.T) {
+	t.Setenv("RESCUE_EXPORT_SES_DELIVERY_TIMEOUT_SECONDS", "")
+	if got := sesDeliveryTimeout(); got != 20*time.Minute {
+		t.Fatalf("unexpected default delivery timeout: %s", got)
+	}
+
+	t.Setenv("RESCUE_EXPORT_SES_DELIVERY_TIMEOUT_SECONDS", "bad")
+	if got := sesDeliveryTimeout(); got != 20*time.Minute {
+		t.Fatalf("unexpected invalid-env delivery timeout: %s", got)
+	}
+}
+
+func TestSESDeliveryTimeoutResultPreservesWorkflowSuccessFields(t *testing.T) {
+	t.Setenv("RESCUE_EXPORT_SES_DELIVERY_TIMEOUT_SECONDS", "1200")
+	sent := EmailNotificationResult{MessageID: "qcloudses-test", ToEmail: "user@example.com"}
+	result := sesDeliveryTimeoutResult(sent, EmailNotificationResult{DeliverStatus: -1})
+
+	if result.MessageID != sent.MessageID || result.ToEmail != sent.ToEmail {
+		t.Fatalf("timeout result lost sent fields: %+v", result)
+	}
+	if result.EmailDelivered {
+		t.Fatalf("timeout result must not mark email delivered: %+v", result)
+	}
+	if result.DeliverStatus != -1 || !strings.Contains(result.DeliverMessage, "timed out waiting for SES delivery") {
+		t.Fatalf("unexpected timeout delivery result: %+v", result)
 	}
 }
 

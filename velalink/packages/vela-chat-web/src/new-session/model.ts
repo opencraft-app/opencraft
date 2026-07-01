@@ -1,4 +1,9 @@
-import type { AgentConfigWire, BackendKindWire, PermissionModeWire } from "../../../vela-chat-client/src";
+import type {
+  AgentConfigWire,
+  BackendKindWire,
+  ClientInputPart,
+  PermissionModeWire,
+} from "../../../vela-chat-client/src";
 
 export interface NewSessionOption<T extends string = string> {
   id: T;
@@ -20,6 +25,7 @@ export interface NewSessionSubmitInput {
   backend: BackendKindWire;
   workingDirectory: string;
   initialPrompt: string;
+  initialSkillRefs?: Extract<ClientInputPart, { type: "skill_ref" }>[];
   agentConfig: AgentConfigWire;
 }
 

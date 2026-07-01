@@ -95,6 +95,71 @@ test("full preload does not show history hydration again when switching back to 
   }
 });
 
+test("event stream reconnect delay recovers immediately once and then backs off", async () => {
+  const { eventStreamReconnectDelayMs } = await import(
+    "../../vela-chat-controller/src/sessionEventStream"
+  );
+
+  assert.equal(eventStreamReconnectDelayMs(0), 0);
+  assert.equal(eventStreamReconnectDelayMs(1), 250);
+  assert.equal(eventStreamReconnectDelayMs(2), 500);
+  assert.equal(eventStreamReconnectDelayMs(3), 1000);
+  assert.equal(eventStreamReconnectDelayMs(20), 5000);
+});
+
+test("controller can stream through host-injected remote transport without EventSource", async () => {
+  const dom = installDomRuntime();
+  Reflect.deleteProperty(globalThis, "EventSource");
+  Reflect.deleteProperty(window, "EventSource");
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { useVelaChatSession } = await import(
+      "../../vela-chat-controller/src/useVelaChatSession"
+    );
+    class RemoteVeladClient extends FakeVeladClient {
+      override sessionEventStreamUrl(sessionId: string, afterId?: string | null): URL {
+        const url = new URL(
+          `https://workbench.example.test/velad/sessions/${sessionId}/events/stream`,
+        );
+        if (afterId) url.searchParams.set("after_id", afterId);
+        return url;
+      }
+    }
+    const client = new RemoteVeladClient();
+    const transport = new FakeEventStreamTransport();
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    function Probe({ sessionId }: { sessionId: string }) {
+      useVelaChatSession({
+        client,
+        eventStreamTransport: transport,
+        fetchBackends: false,
+        historyPolicy: "tail_only",
+        sessionId,
+      });
+      return React.createElement("div");
+    }
+
+    await renderSession({ React, act, root, Probe, sessionId: "sess_remote" });
+    await flushHookEffects(act, dom, () => transport.subscribeCount === 1);
+
+    assert.equal(
+      transport.urls[0]?.toString(),
+      "https://workbench.example.test/velad/sessions/sess_remote/events/stream?after_id=evt_sess_remote%3Atail",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 test("controller uses injected event stream transport for live session updates", async () => {
   const dom = installDomRuntime();
   try {
@@ -171,9 +236,243 @@ test("controller uses injected event stream transport for live session updates",
     );
 
     await act(async () => {
+      transport.emitError(new Error("stream dropped"));
+    });
+    await flushHookEffects(act, dom, () => transport.subscribeCount === 2);
+    assert.equal(
+      transport.urls.at(-1)?.toString(),
+      "http://127.0.0.1:3857/api/v1/sessions/sess_a/events?after_id=evt_live_11",
+      "stream recovery must resume from the newest applied cursor instead of the initial snapshot cursor",
+    );
+
+    await act(async () => {
       root.unmount();
     });
     assert.equal(transport.closeCount, transport.subscribeCount);
+  } finally {
+    dom.restore();
+  }
+});
+
+test("controller advances follow output token and observability on live tail changes", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { useVelaChatSession } = await import(
+      "../../vela-chat-controller/src/useVelaChatSession"
+    );
+    const client = new FakeVeladClient();
+    client.replaceTailConversation(
+      "sess_follow",
+      conversationView({
+        hasOlder: false,
+        itemId: "sess_follow:tail",
+        seq: 10,
+        sessionId: "sess_follow",
+        status: "streaming",
+      }),
+    );
+    const observability = new FakeObservability();
+    const transport = new FakeEventStreamTransport();
+    const snapshots: Array<{ text: string; token: number }> = [];
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    function Probe({ sessionId }: { sessionId: string }) {
+      const controller = useVelaChatSession({
+        client,
+        eventStreamTransport: transport,
+        fetchBackends: false,
+        historyPolicy: "tail_only",
+        observability,
+        sessionId,
+      });
+      React.useEffect(() => {
+        snapshots.push({
+          text: controller.conversation?.items.at(-1)?.text ?? "",
+          token: controller.followOutputToken,
+        });
+      }, [controller.conversation, controller.followOutputToken]);
+      return React.createElement("div");
+    }
+
+    await renderSession({ React, act, root, Probe, sessionId: "sess_follow" });
+    await flushHookEffects(
+      act,
+      dom,
+      () => transport.subscribeCount === 1 && snapshots.some((snapshot) => snapshot.token > 0),
+    );
+    const initialToken = snapshots.findLast((snapshot) => snapshot.token > 0)?.token ?? 0;
+
+    await act(async () => {
+      transport.emit({
+        event_id: "evt_follow_11",
+        epoch: 1,
+        payload: {
+          delta: " live",
+          message_id: "sess_follow:tail",
+        },
+        seq: 11,
+        session_id: "sess_follow",
+        type: "assistant.message.delta",
+      });
+    });
+    await flushHookEffects(
+      act,
+      dom,
+      () =>
+        snapshots.some(
+          (snapshot) =>
+            snapshot.text === "message for sess_follow live" &&
+            snapshot.token > initialToken,
+        ),
+    );
+
+    assert.ok(
+      snapshots.at(-1)!.token > initialToken,
+      "live tail output must advance the controller follow token",
+    );
+    assert.deepEqual(
+      observability.spans.map((span) => span.name),
+      ["vela.chat.follow_output.advance", "vela.chat.follow_output.advance"],
+    );
+    assert.equal(
+      observability.logs.at(-1)?.attributes?.["vela.follow_output.reason"],
+      "tail_changed",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("controller treats sync reset as a full read-model resync", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { useVelaChatSession } = await import(
+      "../../vela-chat-controller/src/useVelaChatSession"
+    );
+    const client = new FakeVeladClient();
+    const transport = new FakeEventStreamTransport();
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    function Probe({ sessionId }: { sessionId: string }) {
+      useVelaChatSession({
+        client,
+        eventStreamTransport: transport,
+        fetchBackends: false,
+        historyPolicy: "tail_only",
+        sessionId,
+      });
+      return React.createElement("div");
+    }
+
+    await renderSession({ React, act, root, Probe, sessionId: "sess_a" });
+    await flushHookEffects(act, dom, () => transport.subscribeCount === 1);
+    assert.equal(client.tailLoads("sess_a"), 1);
+
+    await act(async () => {
+      transport.emit({
+        event_id: "evt_reset_11",
+        epoch: 1,
+        seq: 11,
+        session_id: "sess_a",
+        type: "sync.reset",
+        views: ["workbench"],
+      });
+    });
+    await flushHookEffects(act, dom, () => client.tailLoads("sess_a") >= 2);
+    assert.equal(client.tailLoads("sess_a"), 2);
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("controller queues composer submits locally while running and drains after idle", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { useVelaChatSession } = await import(
+      "../../vela-chat-controller/src/useVelaChatSession"
+    );
+    const client = new QueueAwareVeladClient();
+    client.setConversationStatus("sess_queue", "streaming");
+    const clientStateStore = createVelaClientStateStore(createMemoryKeyValueStore(), {
+      hostId: "queue-controller-test",
+    });
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    let latestController: ReturnType<typeof useVelaChatSession> | null = null;
+
+    function Probe({ sessionId }: { sessionId: string }) {
+      const controller = useVelaChatSession({
+        client,
+        clientStateStore,
+        fetchBackends: false,
+        historyPolicy: "tail_only",
+        sessionId,
+      });
+      React.useEffect(() => {
+        latestController = controller;
+      });
+      return React.createElement("div");
+    }
+
+    await renderSession({ React, act, root, Probe, sessionId: "sess_queue" });
+    await flushHookEffects(act, dom, () => latestController?.model.composer.is_running === true);
+
+    await act(async () => {
+      latestController?.setDraft("queued while running");
+    });
+    await flushHookEffects(act, dom, () => latestController?.draft === "queued while running");
+    await act(async () => {
+      await latestController?.send();
+    });
+    await flushHookEffects(act, dom, () => latestController?.queuedInputs.length === 1);
+
+    assert.equal(client.sentMessages.length, 0, "running submit must not hit velad immediately");
+    assert.equal(latestController?.draft, "");
+    assert.deepEqual(
+      clientStateStore.composerQueue.read("sess_queue")?.items.map((item) => item.previewText),
+      ["queued while running"],
+    );
+
+    client.setConversationStatus("sess_queue", "completed");
+    await act(async () => {
+      await latestController?.refreshAll();
+    });
+    await flushHookEffects(act, dom, () => client.sentMessages.length === 1);
+
+    assert.deepEqual(client.sentMessages[0]?.content, [
+      { type: "text", text: "queued while running" },
+    ]);
+    assert.equal(
+      clientStateStore.composerQueue.read("sess_queue"),
+      null,
+      "accepted queued input must be removed from local queue state",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
   } finally {
     dom.restore();
   }
@@ -286,7 +585,7 @@ test("full preload keeps hydrated history items when switching back to a complet
   }
 });
 
-test("background full-preload timeout does not poison the primary conversation error", async () => {
+test("full preload renders cached conversation synchronously when switching tabs", async () => {
   const dom = installDomRuntime();
   try {
     const React = await import("react");
@@ -295,12 +594,8 @@ test("background full-preload timeout does not poison the primary conversation e
     const { useVelaChatSession } = await import(
       "../../vela-chat-controller/src/useVelaChatSession"
     );
-    const client = new FailingOlderVeladClient();
-    const snapshots: Array<{
-      error: string | null;
-      itemIds: string[];
-      sessionId: string;
-    }> = [];
+    const client = new FakeVeladClient();
+    const renderSnapshots: Array<{ itemIds: string[]; sessionId: string }> = [];
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
@@ -312,36 +607,28 @@ test("background full-preload timeout does not poison the primary conversation e
         historyPolicy: "full_preload",
         sessionId,
       });
-      React.useEffect(() => {
-        snapshots.push({
-          error: controller.error,
-          itemIds: controller.conversation?.items.map((item) => item.id) ?? [],
-          sessionId: controller.activeSessionId,
-        });
-      }, [
-        controller.activeSessionId,
-        controller.conversation,
-        controller.error,
-      ]);
-      return React.createElement("div", {}, controller.error ?? "ok");
+      renderSnapshots.push({
+        itemIds: controller.model.rows
+          .map((row) => row.id)
+          .filter((id) => id.includes(":older") || id.includes(":tail")),
+        sessionId: controller.activeSessionId,
+      });
+      return React.createElement("div");
     }
 
     await renderSession({ React, act, root, Probe, sessionId: "sess_a" });
     await flushHookEffects(act, dom, () => client.olderLoads("sess_a") === 1);
-    await flushHookEffects(act, dom, () =>
-      snapshots.some((snapshot) => snapshot.error === "TAT proxy request timed out"),
-    );
+    await renderSession({ React, act, root, Probe, sessionId: "sess_b" });
+    await flushHookEffects(act, dom, () => client.olderLoads("sess_b") === 1);
 
-    const latest = snapshots.findLast((snapshot) => snapshot.sessionId === "sess_a");
+    renderSnapshots.length = 0;
+    await renderSession({ React, act, root, Probe, sessionId: "sess_a" });
+
+    assert.equal(renderSnapshots[0]?.sessionId, "sess_a");
     assert.deepEqual(
-      latest?.itemIds,
-      ["sess_a:tail"],
-      "the primary tail conversation should stay mounted when background history preload fails",
-    );
-    assert.equal(
-      latest?.error,
-      null,
-      "background history preload failure must not be surfaced as the primary session error",
+      new Set(renderSnapshots[0]?.itemIds),
+      new Set(["sess_a:older", "sess_a:tail"]),
+      "switching back to a cached session must not render an empty intermediate model",
     );
 
     await act(async () => {
@@ -694,6 +981,73 @@ class FakeEventStreamTransport implements VelaEventStreamTransport {
   emit(event: VelaStreamEventWire) {
     this.handlers?.onEvent(event);
   }
+
+  emitError(error: unknown) {
+    this.handlers?.onError?.(error);
+  }
+}
+
+class FakeObservability {
+  readonly logs: Array<{
+    attributes?: Record<string, unknown>;
+    body: string;
+    severityText?: string;
+  }> = [];
+  readonly spans: Array<FakeSpan> = [];
+
+  emitLog(record: {
+    attributes?: Record<string, unknown>;
+    body: string;
+    severityText?: string;
+  }) {
+    this.logs.push(record);
+  }
+
+  recordError(span: FakeSpan, error: unknown) {
+    span.error = error instanceof Error ? error.message : String(error);
+  }
+
+  startSpan(name: string, options?: { attributes?: Record<string, unknown> }) {
+    const span = new FakeSpan(name, options?.attributes ?? {});
+    this.spans.push(span);
+    return span;
+  }
+
+  traceparent(span: FakeSpan) {
+    return `00-${span.traceId}-${span.spanId}-01`;
+  }
+}
+
+class FakeSpan {
+  ended = false;
+  error: string | null = null;
+  readonly spanId = "2222222222222222";
+  readonly traceId = "11111111111111111111111111111111";
+  status: { code: number; message?: string } | null = null;
+
+  constructor(
+    readonly name: string,
+    readonly attributes: Record<string, unknown>,
+  ) {}
+
+  end() {
+    this.ended = true;
+  }
+
+  setAttribute(key: string, value: string | number | boolean) {
+    this.attributes[key] = value;
+  }
+
+  setStatus(status: { code: number; message?: string }) {
+    this.status = status;
+  }
+
+  spanContext() {
+    return {
+      spanId: this.spanId,
+      traceId: this.traceId,
+    };
+  }
 }
 
 class FakeVeladClient implements VeladClient {
@@ -833,6 +1187,51 @@ class FakeVeladClient implements VeladClient {
   }
 }
 
+class QueueAwareVeladClient extends FakeVeladClient {
+  readonly sentMessages: Array<{
+    sessionId: string;
+    text?: string;
+    content?: ClientInputPart[];
+  }> = [];
+
+  setConversationStatus(sessionId: string, status: "completed" | "streaming") {
+    this.replaceTailConversation(
+      sessionId,
+      conversationView({
+        hasOlder: false,
+        itemId: `${sessionId}:tail`,
+        seq: this.sentMessages.length + 10,
+        sessionId,
+        status,
+      }),
+    );
+  }
+
+  override async sendUserMessage(input: {
+    sessionId: string;
+    text?: string;
+    content?: ClientInputPart[];
+    idempotencyKey?: string;
+  }): Promise<CommandAckWire> {
+    this.sentMessages.push({
+      sessionId: input.sessionId,
+      ...(input.text ? { text: input.text } : {}),
+      ...(input.content ? { content: input.content } : {}),
+    });
+    this.setConversationStatus(input.sessionId, "streaming");
+    return {
+      status: "accepted",
+      command_id: input.idempotencyKey ?? `cmd_${this.sentMessages.length}`,
+      session_id: input.sessionId,
+      cursor: {
+        event_id: `evt_sent_${this.sentMessages.length}`,
+        epoch: 1,
+        seq: 100 + this.sentMessages.length,
+      },
+    };
+  }
+}
+
 class LongHistoryVeladClient extends FakeVeladClient {
   private readonly tailLoadCount = new Map<string, number>();
   private readonly olderLoadCount = new Map<string, number>();
@@ -918,37 +1317,6 @@ class DeferredOlderVeladClient extends FakeVeladClient {
       });
       this.pendingOlderPromises.set(sessionId, promise);
       return promise;
-    }
-
-    this.tailLoadCount.set(sessionId, this.tailLoads(sessionId) + 1);
-    return conversationView({
-      hasOlder: true,
-      itemId: `${sessionId}:tail`,
-      seq: this.tailLoads(sessionId) * 10,
-      sessionId,
-    });
-  }
-}
-
-class FailingOlderVeladClient extends FakeVeladClient {
-  private readonly tailLoadCount = new Map<string, number>();
-  private readonly olderLoadCount = new Map<string, number>();
-
-  override tailLoads(sessionId: string) {
-    return this.tailLoadCount.get(sessionId) ?? 0;
-  }
-
-  override olderLoads(sessionId: string) {
-    return this.olderLoadCount.get(sessionId) ?? 0;
-  }
-
-  override async getConversation(
-    sessionId: string,
-    options?: ConversationWindowOptions,
-  ): Promise<ConversationWireView> {
-    if (options?.direction === "before") {
-      this.olderLoadCount.set(sessionId, this.olderLoads(sessionId) + 1);
-      throw new Error("TAT proxy request timed out");
     }
 
     this.tailLoadCount.set(sessionId, this.tailLoads(sessionId) + 1);

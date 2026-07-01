@@ -3,7 +3,7 @@ use std::fs;
 use vela_backends::{CodexAppServerHost, CodexStdioAppServerHost};
 
 #[test]
-fn codex_stdio_host_uses_legacy_compatible_app_server_launch() {
+fn codex_stdio_host_uses_plain_app_server_launch_without_service_tier_override() {
     let host = CodexStdioAppServerHost::new("/tmp");
 
     assert_eq!(host.command, "codex");

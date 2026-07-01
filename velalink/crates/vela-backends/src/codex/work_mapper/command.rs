@@ -29,11 +29,48 @@ pub(super) fn map_legacy_exec_command_output_delta(method: &str, params: Value) 
     let msg = params.get("msg").cloned().unwrap_or(Value::Null);
     with_raw(
         EventType::TOOL_OUTPUT_DELTA,
-        json!({
-            "tool_id": string_at(&msg, &["call_id"]).unwrap_or_else(|| "codex_command".to_string()),
-            "stream": string_at(&msg, &["stream"]).unwrap_or_else(|| "stdout".to_string()),
-            "delta": string_at(&msg, &["chunk"]).or_else(|| string_at(&msg, &["delta"])).unwrap_or_default(),
-        }),
+        shell_output_delta_payload(
+            string_at(&msg, &["call_id"]).unwrap_or_else(|| "codex_command".to_string()),
+            string_at(&msg, &["stream"]).unwrap_or_else(|| "stdout".to_string()),
+            string_at(&msg, &["chunk"])
+                .or_else(|| string_at(&msg, &["delta"]))
+                .unwrap_or_default(),
+            msg.get("sequence").or_else(|| msg.get("seq")).cloned(),
+            string_at(&msg, &["chunk_id"]).or_else(|| string_at(&msg, &["chunkId"])),
+        ),
+        method,
+        params,
+    )
+}
+
+pub(super) fn map_command_execution_output_delta(method: &str, params: Value) -> BackendOutput {
+    let delta = string_at(&params, &["delta"])
+        .or_else(|| string_at(&params, &["chunk"]))
+        .or_else(|| string_at(&params, &["textDelta"]))
+        .or_else(|| string_at(&params, &["text"]))
+        .or_else(|| string_at(&params, &["content", "text"]))
+        .unwrap_or_default();
+    let tool_id = string_at(&params, &["itemId"])
+        .or_else(|| string_at(&params, &["callId"]))
+        .or_else(|| string_at(&params, &["id"]))
+        .unwrap_or_else(|| "codex_command".to_string());
+    let stream = string_at(&params, &["stream"])
+        .or_else(|| string_at(&params, &["streamId"]))
+        .or_else(|| string_at(&params, &["stream_id"]))
+        .unwrap_or_else(|| "stdout".to_string());
+
+    with_raw(
+        EventType::TOOL_OUTPUT_DELTA,
+        shell_output_delta_payload(
+            tool_id,
+            stream,
+            delta,
+            params
+                .get("sequence")
+                .or_else(|| params.get("seq"))
+                .cloned(),
+            string_at(&params, &["chunkId"]).or_else(|| string_at(&params, &["chunk_id"])),
+        ),
         method,
         params,
     )
@@ -171,4 +208,26 @@ fn shell_tool_payload(
         "detail": Value::Object(detail),
         "error": error,
     })
+}
+
+fn shell_output_delta_payload(
+    tool_id: String,
+    stream: String,
+    delta: String,
+    sequence: Option<Value>,
+    chunk_id: Option<String>,
+) -> Value {
+    let mut payload = Map::new();
+    payload.insert("tool_id".to_string(), Value::String(tool_id));
+    payload.insert("stream_id".to_string(), Value::String(stream.clone()));
+    payload.insert("stream".to_string(), Value::String(stream));
+    payload.insert("delta".to_string(), Value::String(delta));
+    payload.insert("encoding".to_string(), Value::String("utf8".to_string()));
+    if let Some(sequence) = sequence {
+        payload.insert("sequence".to_string(), sequence);
+    }
+    if let Some(chunk_id) = chunk_id {
+        payload.insert("chunk_id".to_string(), Value::String(chunk_id));
+    }
+    Value::Object(payload)
 }

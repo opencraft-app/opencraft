@@ -124,6 +124,27 @@ export type AgentWorkGenericDetailTypeWire = Exclude<
 >;
 export type AgentWorkFileDetailTypeWire = "read" | "edit" | "write";
 export type AgentWorkSearchModeWire = "code" | "web" | "files" | "unknown";
+export type AgentWorkContentPartWire =
+  | AgentWorkTextContentPartWire
+  | AgentWorkJsonContentPartWire
+  | AgentWorkResourceLinkContentPartWire;
+
+export interface AgentWorkTextContentPartWire {
+  type: "text";
+  text: string;
+}
+
+export interface AgentWorkJsonContentPartWire {
+  type: "json";
+  value: unknown;
+}
+
+export interface AgentWorkResourceLinkContentPartWire {
+  type: "resource_link";
+  uri: string;
+  name?: string;
+  mime_type?: string;
+}
 
 export type AgentWorkDetailWire =
   | AgentWorkShellDetailWire
@@ -139,8 +160,19 @@ export interface AgentWorkShellDetailWire {
   output?: string;
   stdout?: string;
   stderr?: string;
+  streams?: AgentWorkShellStreamWire[];
   exit_code?: number;
   error?: string;
+}
+
+export interface AgentWorkShellStreamWire {
+  stream_id: string;
+  stream?: string;
+  text?: string;
+  last_delta?: string;
+  chunk_count?: number;
+  last_sequence?: number;
+  last_chunk_id?: string;
 }
 
 export interface AgentWorkFileDetailWire {
@@ -148,6 +180,7 @@ export interface AgentWorkFileDetailWire {
   file_path?: string;
   path?: string;
   content?: string;
+  content_parts?: AgentWorkContentPartWire[];
   old_string?: string;
   new_string?: string;
   unified_diff?: string;
@@ -158,6 +191,7 @@ export interface AgentWorkSearchDetailWire {
   query?: string;
   mode?: AgentWorkSearchModeWire;
   content?: string;
+  content_parts?: AgentWorkContentPartWire[];
   num_files?: number;
   num_matches?: number;
   duration_ms?: number;
@@ -169,6 +203,7 @@ export interface AgentWorkFetchDetailWire {
   url?: string;
   prompt?: string;
   result?: string;
+  content_parts?: AgentWorkContentPartWire[];
   code?: number;
   code_text?: string;
   bytes?: number;
@@ -177,7 +212,28 @@ export interface AgentWorkFetchDetailWire {
 
 export interface AgentWorkGenericDetailWire {
   type: AgentWorkGenericDetailTypeWire;
-  [key: string]: unknown;
+  tool_id?: string;
+  call_id?: string;
+  name?: string;
+  label?: string;
+  summary?: string;
+  description?: string;
+  text?: string;
+  content?: string;
+  command?: string;
+  cwd?: string;
+  query?: string;
+  file_path?: string;
+  path?: string;
+  url?: string;
+  output?: string;
+  stdout?: string;
+  stderr?: string;
+  error?: string;
+  delta?: string;
+  status?: string;
+  exit_code?: number;
+  content_parts?: AgentWorkContentPartWire[];
 }
 
 export type AgentRequestTypeWire =

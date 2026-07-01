@@ -209,12 +209,11 @@ sudo ./dist/wisp stop
 
 ## Crash Safety Contract
 
-Wisp treats `active/root-upper.img` as a mutable working set for the currently
-running runtime only. The crash-safe recovery boundary is the latest committed
-checkpoint, not the current active image and not an ordinary barrier. After a
-graceful close, the checkpoint is the durable commit point; the next
-start/resume must rebuild `active/root-upper.img` from that checkpoint instead
-of trusting any previous active image.
+Wisp treats `active/root-upper.img` as a mutable working set. The crash-safe
+recovery boundary is the latest committed checkpoint recorded in the remote
+checkpoint manifest, not the current active image and not an ordinary barrier.
+After a graceful close, `active/root-upper.img` is only a boot cache derived
+from that committed checkpoint; the checkpoint is the durable commit point.
 
 Default lifecycle semantics:
 

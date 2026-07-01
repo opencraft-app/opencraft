@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildComposerControlsModel } from "../src/components/composer-controls/model";
+import {
+  buildComposerControlsModel,
+  buildComposerSetupControlsModel,
+} from "../src/components/composer-controls/model";
 import type { BackendWire, SessionWire } from "../../vela-chat-client/src";
 
 test("composer controls are not ready before the session wire truth is loaded", () => {
@@ -32,6 +35,7 @@ test("composer controls derive selected model, reasoning effort, and permission 
       kind: "pi",
       status: "available",
       display_name: "Pi Coding",
+      location: { kind: "local", label: "Local" },
       capabilities: { session_agent_config: true },
       models: [
         {
@@ -108,6 +112,7 @@ test("composer controls disable agent config changes when backend capability is 
       kind: "acp",
       status: "available",
       display_name: "Hermes ACP",
+      location: { kind: "local", label: "Local" },
       capabilities: {
         streaming: true,
         cancel: true,
@@ -126,4 +131,29 @@ test("composer controls disable agent config changes when backend capability is 
   assert.equal(controls.disabled, true);
   assert.equal(controls.selectedModel?.id, "hermes");
   assert.equal(controls.selectedPermissionMode?.id, "auto");
+});
+
+test("composer setup controls use the same model shape as active chat controls", () => {
+  const controls = buildComposerSetupControlsModel({
+    providerLabel: "Codex",
+    selectedModel: "gpt-5.5",
+    selectedReasoningEffort: "high",
+    selectedPermissionMode: "full_access",
+    modelOptions: [{ id: "gpt-5.5", label: "GPT-5.5" }],
+    reasoningEffortOptions: [{ id: "high", label: "High" }],
+    permissionModeOptions: [
+      { id: "auto", label: "Default permissions" },
+      { id: "full_access", label: "Full access" },
+    ],
+  });
+
+  assert.equal(controls.ready, true);
+  assert.equal(controls.disabled, false);
+  assert.equal(controls.providerLabel, "Codex");
+  assert.equal(controls.selectedModel?.id, "gpt-5.5");
+  assert.equal(controls.selectedReasoningEffort?.id, "high");
+  assert.equal(controls.selectedPermissionMode?.id, "full_access");
+  assert.deepEqual(controls.modelOptions[0]?.reasoningEfforts, [
+    { id: "high", label: "High", description: undefined },
+  ]);
 });

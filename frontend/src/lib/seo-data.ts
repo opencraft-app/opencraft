@@ -365,6 +365,7 @@ const DOC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/configuration/channel-feishu": "飞书",
     "/docs/configuration/channel-qq": "QQ",
     "/docs/configuration/skill": "配置技能",
+    "/docs/announcements/public-beta": "LightVela 公测计划及付费版本预告",
     "/docs/faq": "常见问题 FAQ",
   },
   global: {

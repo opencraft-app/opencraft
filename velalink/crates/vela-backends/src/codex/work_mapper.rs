@@ -27,6 +27,11 @@ pub fn map_codex_work_notification(method: &str, params: Value) -> Option<Vec<Ba
         "codex/event/exec_command_end" => {
             Some(vec![command::map_legacy_exec_command_end(method, params)])
         }
+        "item/commandExecution/outputDelta" => {
+            Some(vec![command::map_command_execution_output_delta(
+                method, params,
+            )])
+        }
         _ => None,
     }
 }

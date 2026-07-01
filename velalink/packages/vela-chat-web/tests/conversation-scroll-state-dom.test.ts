@@ -91,6 +91,175 @@ test("conversation persists the current detached scroll offset when switching se
   }
 });
 
+test("conversation emits scroll lifecycle events for tab switch resume diagnostics", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { buildChatRenderModel } = await import("../../vela-chat-render-model/src");
+    const { toWebChatModel } = await import("../src/adapters/toWebBlocks");
+    const { VelaConversation } = await import("../src/components/conversation/VelaConversation");
+
+    const clientStateStore = createVelaClientStateStore(createMemoryKeyValueStore(), {
+      hostId: "scroll-lifecycle-events-test",
+    });
+    const events: Array<Record<string, unknown>> = [];
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const modelFor = (sessionId: string) =>
+      toWebChatModel(
+        buildChatRenderModel(buildLongConversationSurface(sessionId), {
+          kind: "desktop_web",
+        }),
+      );
+
+    await act(async () => {
+      root.render(
+        React.createElement(VelaConversation, {
+          clientStateStore,
+          onScrollLifecycleEvent: (event: Record<string, unknown>) => {
+            events.push(event);
+          },
+          webModel: modelFor("sess_a"),
+        }),
+      );
+    });
+    await flushFrames(act, dom, [16, 32]);
+
+    const scrollElement = container.querySelector(".conversation") as HTMLElement | null;
+    assert.notEqual(scrollElement, null, "expected the conversation scroll element to mount");
+    scrollElement!.scrollTop = 420;
+
+    await act(async () => {
+      root.render(
+        React.createElement(VelaConversation, {
+          clientStateStore,
+          onScrollLifecycleEvent: (event: Record<string, unknown>) => {
+            events.push(event);
+          },
+          webModel: modelFor("sess_b"),
+        }),
+      );
+    });
+
+    const routeLeave = events.find(
+      (event) => event.type === "route_leave_persisted" && event.routeKey === "sess_a",
+    );
+    assert.notEqual(routeLeave, undefined, "switching away should emit a route leave snapshot");
+    assert.equal(routeLeave?.measurementScrollTop, 420);
+    assert.equal(routeLeave?.scrollTop, 420);
+
+    await act(async () => {
+      root.render(
+        React.createElement(VelaConversation, {
+          clientStateStore,
+          onScrollLifecycleEvent: (event: Record<string, unknown>) => {
+            events.push(event);
+          },
+          webModel: modelFor("sess_a"),
+        }),
+      );
+    });
+    await flushFrames(act, dom, [48, 64, 80, 96, 112]);
+
+    const routeEnter = events.findLast(
+      (event) => event.type === "route_enter" && event.routeKey === "sess_a",
+    );
+    assert.notEqual(routeEnter, undefined, "switching back should emit a route enter event");
+    assert.equal(routeEnter?.hasResumeState, true);
+    assert.equal(routeEnter?.scrollTop, 420);
+    assert.equal(
+      events.some(
+        (event) =>
+          event.type === "route_restore_applied" &&
+          event.routeKey === "sess_a" &&
+          event.targetScrollTop === 420,
+      ),
+      true,
+      "returning to a tab should emit the restore target before visual confirmation",
+    );
+    assert.equal(
+      events.some(
+        (event) =>
+          event.type === "route_restore_confirmed" &&
+          event.routeKey === "sess_a" &&
+          event.targetScrollTop === 420 &&
+          event.actualScrollTop === 420,
+      ),
+      true,
+      "route resume diagnostics should confirm the actual DOM scroll position",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
+test("conversation marks default idle debug as uninitialized before route resume settles", async () => {
+  const dom = installDomRuntime();
+  try {
+    const React = await import("react");
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { buildChatRenderModel } = await import("../../vela-chat-render-model/src");
+    const { toWebChatModel } = await import("../src/adapters/toWebBlocks");
+    const { VelaConversation } = await import("../src/components/conversation/VelaConversation");
+
+    const clientStateStore = createVelaClientStateStore(createMemoryKeyValueStore(), {
+      hostId: "scroll-initialized-debug-test",
+    });
+    clientStateStore.conversationScroll.write("sess_a", {
+      followOutput: false,
+      routeKey: "sess_a",
+      scrollTop: 420,
+    });
+    const debugEvents: Array<Record<string, unknown>> = [];
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        React.createElement(VelaConversation, {
+          clientStateStore,
+          onScrollDebugChange: (debug: Record<string, unknown>) => {
+            debugEvents.push(debug);
+          },
+          webModel: toWebChatModel(
+            buildChatRenderModel(buildLongConversationSurface("sess_a"), {
+              kind: "desktop_web",
+            }),
+          ),
+        }),
+      );
+    });
+
+    const initializedDebug = debugEvents.find(
+      (event) => event.routeInitialized === true,
+    );
+    assert.ok(debugEvents.length > 0, "conversation should publish scroll debug");
+    assert.equal(debugEvents[0]?.routeInitialized, false);
+    assert.notEqual(initializedDebug, undefined, "route initialization should publish a debug snapshot");
+    assert.equal(initializedDebug?.routeKey, "sess_a");
+    assert.notEqual(
+      initializedDebug?.routeResumeStatus,
+      "idle",
+      "saved detached route state must not publish initialized idle debug before route resume settles",
+    );
+
+    await act(async () => {
+      root.unmount();
+    });
+  } finally {
+    dom.restore();
+  }
+});
+
 test("conversation route leave prefers the current DOM offset over an older follow-output snapshot", async () => {
   const dom = installDomRuntime();
   try {
@@ -876,7 +1045,7 @@ test("workbench keeps stable chrome mounted while full history is hydrating", as
   }
 });
 
-test("workbench mounts conversation for measurement but hides it during full-history hydration", async () => {
+test("workbench keeps conversation visible during full-history hydration", async () => {
   const dom = installDomRuntime();
   try {
     const React = await import("react");
@@ -909,18 +1078,18 @@ test("workbench mounts conversation for measurement but hides it during full-his
     assert.notEqual(revealGate, null, "workbench should expose an explicit conversation reveal state");
     assert.equal(
       revealGate?.getAttribute("data-conversation-reveal-state"),
-      "measuring",
-      "full-history hydration should mount candidate conversation only for measurement",
+      "revealed",
+      "full-history hydration should not blank the conversation while loading older history",
     );
     assert.equal(
-      revealGate?.getAttribute("aria-hidden"),
-      "true",
-      "candidate conversation should not be exposed while it is only measuring",
+      revealGate?.hasAttribute("aria-hidden"),
+      false,
+      "hydrating conversation content should remain visible to avoid a white-screen transition",
     );
     assert.notEqual(
       revealGate?.querySelector(".conversationShell"),
       null,
-      "measuring state must still mount the real conversation so scroll and layout can settle",
+      "hydrating state must still mount the real conversation so scroll and layout can settle",
     );
 
     await act(async () => {
@@ -966,6 +1135,14 @@ test("workbench reveals ready conversation only after route scroll resume has se
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
+    const revealEvents: Array<{
+      bottomAnchorBlockedReason: string | null;
+      bottomAnchorPendingWork: boolean;
+      bottomAnchorPendingReason: string | null;
+      revealState: string;
+      routeInitialized: boolean;
+      routeResumeStatus: string;
+    }> = [];
 
     await act(async () => {
       root.render(
@@ -976,6 +1153,9 @@ test("workbench reveals ready conversation only after route scroll resume has se
           model: buildChatRenderModel(buildLongConversationSurface("sess_a"), {
             kind: "desktop_web",
           }),
+          onConversationRevealStateChange: (event) => {
+            revealEvents.push(event);
+          },
           onDraftChange: () => {},
           onSubmit: () => {},
         }),
@@ -989,6 +1169,8 @@ test("workbench reveals ready conversation only after route scroll resume has se
       "measuring",
       "a ready read model with pending route restore should remain hidden until scroll settles",
     );
+    assert.equal(revealEvents[0]?.revealState, "measuring");
+    assert.equal(revealEvents[0]?.routeInitialized, false);
 
     await flushFrames(act, dom, [16, 32, 48, 64, 80, 96]);
 
@@ -1002,6 +1184,20 @@ test("workbench reveals ready conversation only after route scroll resume has se
       false,
       "revealed conversation should be visible to assistive technology",
     );
+    assert.equal(
+      revealEvents.some(
+        (event) =>
+          event.revealState === "revealed" &&
+          (event.routeInitialized !== true ||
+            event.bottomAnchorPendingWork !== false),
+      ),
+      false,
+      "reveal-state traces should never report ready conversations as visible before scroll and bottom anchor settle",
+    );
+    assert.equal(revealEvents.at(-1)?.revealState, "revealed");
+    assert.equal(revealEvents.at(-1)?.routeInitialized, true);
+    assert.notEqual(revealEvents.at(-1)?.routeResumeStatus, "pending");
+    assert.equal(revealEvents.at(-1)?.bottomAnchorPendingWork, false);
 
     await act(async () => {
       root.unmount();
@@ -1053,7 +1249,7 @@ test("workbench reveals the first selected web session without requiring a tab s
         }),
       );
     });
-    await flushFrames(act, dom, [16, 32, 48]);
+    await flushFrames(act, dom, [16, 32, 48, 64, 80, 96]);
 
     const revealGate = container.querySelector("[data-conversation-reveal-state]");
     assert.equal(
