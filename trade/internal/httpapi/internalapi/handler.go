@@ -106,6 +106,12 @@ type Deps struct {
 	// 由 LIGHTVELA_TRADE_REGION env 注入；非空且命中 region.regionTable 时优先于 SiteKind 兜底。
 	// DeleteResource handler 装配期一同透传给 region.Resolve。
 	RegionOverride string
+
+	// DianshiAdminStore 提供点石订单和活动参与记录的后台管理能力。
+	//
+	// 用途：GET/DELETE /internal/trade/dianshi/*，供 ctl admin 后台查询/删除点石下单记录，
+	// 以便运营清理 participation 或订单后重试点石下单。允许 nil；nil 时不挂载路由。
+	DianshiAdminStore store.DianshiAdminStore
 }
 
 // Install 把内部 RPC handler 挂载到 gin router 的 /internal/trade 子路径下。
@@ -161,6 +167,12 @@ func Install(router *gin.Engine, deps Deps) {
 	// OrderStatus == nil 时不挂载（生产路径 main.go 必注入；老测试留 nil 兼容）。
 	if deps.OrderStatus != nil {
 		group.POST("/orders/:dealName/query-status", queryOrderStatusHandler(deps.OrderStatus))
+	}
+
+	if deps.DianshiAdminStore != nil {
+		group.GET("/dianshi/orders", listDianshiRecordsHandler(deps.DianshiAdminStore))
+		group.DELETE("/dianshi/orders/:dealName", deleteDianshiOrderHandler(deps.DianshiAdminStore))
+		group.DELETE("/dianshi/participations/:id", deleteDianshiParticipationHandler(deps.DianshiAdminStore))
 	}
 }
 

@@ -287,6 +287,7 @@ export function resolveBakedEnv(comboEnv) {
   const bakedEnv = {
     VITE_REGION: comboEnv.VITE_REGION,
     VITE_AUTH_API_BASE_URL: comboEnv.VITE_AUTH_API_BASE_URL,
+    NEXT_PUBLIC_SITE_URL: comboEnv.NEXT_PUBLIC_SITE_URL,
     VITE_AEGIS_ENABLED: comboEnv.VITE_AEGIS_ENABLED,
   };
   if (comboEnv.VITE_AEGIS_ID) bakedEnv.VITE_AEGIS_ID = comboEnv.VITE_AEGIS_ID;

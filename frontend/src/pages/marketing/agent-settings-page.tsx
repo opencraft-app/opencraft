@@ -4106,6 +4106,7 @@ export const AgentSettingsPage = ({
   const canStartWorkspaceAction = !workspaceActionDisabledReason && !isActiveBotExporting && !isActiveBotImporting;
   const needsEmailBinding = workspaceActionDisabledReason === "请先在账号页绑定邮箱。";
   const workspaceDisabledReasonText = workspaceActionDisabledReason ? translateWorkspaceDisabledReason(workspaceActionDisabledReason) : null;
+  const workspaceInlineDisabledReasonText = needsEmailBinding ? null : workspaceDisabledReasonText;
   const workspaceEmailBindingTooltip = needsEmailBinding ? (
     <>
       <span className="block text-pretty">
@@ -4149,8 +4150,13 @@ export const AgentSettingsPage = ({
   const workspaceCopyLabel = activeWorkspaceTask?.kind === "export" ? t("复制备份信息") : t("复制恢复信息");
   const workspaceRecoveryPanel = activeBot ? (
     <section className="rounded-md border border-black/[0.08] bg-white p-5 shadow-sm">
-      <div className="mb-4">
+      <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1">
         <h3 className="text-base font-semibold text-black/90 text-balance">{t("Agent 备份与恢复")}</h3>
+        {needsEmailBinding && (
+          <AppLink to="/account" className="text-xs font-medium text-black/45 underline underline-offset-2 transition-colors hover:text-black/70">
+            {t("需前往账号页绑定邮箱")}
+          </AppLink>
+        )}
       </div>
       <div className="mb-4 rounded-md border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-xs leading-relaxed text-black/65">
         <ul className="list-disc space-y-1 pl-4 text-pretty">
@@ -4236,8 +4242,8 @@ export const AgentSettingsPage = ({
             </WorkspaceActionTooltip>
           </div>
         </div>
-        {workspaceDisabledReasonText && (
-          <p className="mt-3 text-xs leading-5 text-black/45">{workspaceDisabledReasonText}</p>
+        {workspaceInlineDisabledReasonText && (
+          <p className="mt-3 text-xs leading-5 text-black/45">{workspaceInlineDisabledReasonText}</p>
         )}
         {workspaceError && (
           <div className="mt-3 flex gap-2 rounded-md border border-red-500/15 bg-red-500/[0.04] px-3 py-2 text-xs leading-relaxed text-red-600" role="status" aria-live="polite">

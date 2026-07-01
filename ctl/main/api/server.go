@@ -157,6 +157,7 @@ func newRouter(handler *instanceHandler, bh *bundleHandler, ph *passHandler) htt
 	// orderHandler 在函数内部实例化避免修改现有 newRouter 调用点的签名。
 	// 后续如需 mock orderHandler，可抽出为可选参数。
 	oh := &orderHandler{logic: orderlogic.NewLogic()}
+	dh := &dianshiAdminHandler{tradeAdapter: adapterfactory.DefaultAdapterFactory.TradeAdapter()}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		writeSuccess(w, r, http.StatusOK, map[string]string{"status": "ok"})
@@ -198,6 +199,7 @@ func newRouter(handler *instanceHandler, bh *bundleHandler, ph *passHandler) htt
 	// 其他子路径 fall-through 到 trailing-slash prefix handler 并按子路径解析。
 	mux.HandleFunc("/v1/passes/", ph.handleUserPassesByID)
 	mux.HandleFunc("/admin/api/ctl/passes/", ph.handleAdminPassesByID)
+	mux.HandleFunc("/admin/api/ctl/dianshi/", dh.handleAdminDianshi)
 	// 内部反向回调（trade -> ctl）：
 	//   - 裸路径 /internal/ctl/passes 承载 GET 互斥占用查询（Q66 拍板）
 	//   - 子路径 /internal/ctl/passes/{action} 承载 POST 生命周期动作（complete / 后续 renew/isolate/destroy）
@@ -325,6 +327,7 @@ func normalizePath(path string) string {
 		"/v1/integrations/agentchat/introspect",
 		"/admin/api/ctl/bundles", "/admin/api/ctl/passes", "/admin/api/ctl/passes/order",
 		"/admin/api/ctl/passes/order-and-pay",
+		"/admin/api/ctl/dianshi/orders",
 		"/internal/ctl/passes",
 		"/internal/ctl/passes/complete":
 		return path
@@ -383,6 +386,12 @@ func normalizePath(path string) string {
 	//   /admin/api/ctl/passes/{pass_id}/refund  → /admin/api/ctl/passes/{passId}/refund
 	if strings.HasPrefix(path, "/admin/api/ctl/passes/") && strings.HasSuffix(path, "/refund") {
 		return "/admin/api/ctl/passes/{passId}/refund"
+	}
+	if strings.HasPrefix(path, "/admin/api/ctl/dianshi/orders/") {
+		return "/admin/api/ctl/dianshi/orders/{dealName}"
+	}
+	if strings.HasPrefix(path, "/admin/api/ctl/dianshi/participations/") {
+		return "/admin/api/ctl/dianshi/participations/{id}"
 	}
 	// 订单状态反查入口路径归一（v1.7.32）：
 	//   /v1/orders/{deal_name}/status → /v1/orders/{dealName}/status
