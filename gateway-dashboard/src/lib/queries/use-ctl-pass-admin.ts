@@ -56,25 +56,6 @@ export interface CtlRefundPassResult {
   submitted_at: string;
 }
 
-export interface CtlDianshiOrder {
-  id: number;
-  big_order_id: string;
-  deal_name: string;
-  external_user_id: string;
-  uin: string;
-  app_id: string;
-  bundle_id: string;
-  order_type: string;
-  status: string;
-  resource_type: string;
-  resource_id: string;
-  activity_id: number;
-  act_id: number;
-  pay_url?: string;
-  created_time: string;
-  updated_time: string;
-}
-
 export interface CtlDianshiParticipation {
   id: number;
   uin: string;
@@ -107,14 +88,9 @@ export interface CtlPassFilters {
 
 export interface CtlDianshiRecordFilters {
   userID?: string;
-  uin?: string;
-  activityID?: string;
-  bundleID?: string;
-  dealName?: string;
 }
 
 interface CtlDianshiRecordsData {
-  orders?: CtlDianshiOrder[];
   participations?: CtlDianshiParticipation[];
 }
 
@@ -155,34 +131,18 @@ export function useCtlAdminPasses(filters: CtlPassFilters) {
   });
 }
 
-function hasDianshiRecordFilter(filters: CtlDianshiRecordFilters) {
-  return Boolean(
-    filters.userID?.trim() ||
-    filters.uin?.trim() ||
-    filters.activityID?.trim() ||
-    filters.bundleID?.trim() ||
-    filters.dealName?.trim()
-  );
-}
-
 export function useCtlDianshiRecords(filters: CtlDianshiRecordFilters) {
   return useQuery({
     queryKey: ["ctl-admin", "dianshi-records", filters],
-    enabled: hasDianshiRecordFilter(filters),
     queryFn: async () => {
       const envelope = await apiClient<CtlEnvelope<CtlDianshiRecordsData>>("ctl/admin/dianshi/orders", {
         params: {
           external_user_id: filters.userID?.trim() || undefined,
-          uin: filters.uin?.trim() || undefined,
-          activity_id: filters.activityID?.trim() || undefined,
-          bundle_id: filters.bundleID?.trim() || undefined,
-          deal_name: filters.dealName?.trim() || undefined,
           limit: 100,
         },
       });
       const data = unwrapCtlData(envelope);
       return {
-        orders: data.orders ?? [],
         participations: data.participations ?? [],
       };
     },
@@ -230,20 +190,6 @@ export function useCtlDestroyPass() {
       ).then(unwrapCtlData),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["ctl-admin", "passes"] });
-    },
-  });
-}
-
-export function useCtlDeleteDianshiOrder() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (dealName: string) =>
-      apiClient<CtlEnvelope<CtlDeleteDianshiRecordResult>>(
-        `ctl/admin/dianshi/orders/${encodeURIComponent(dealName)}`,
-        { method: "DELETE" }
-      ).then(unwrapCtlData),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["ctl-admin", "dianshi-records"] });
     },
   });
 }
