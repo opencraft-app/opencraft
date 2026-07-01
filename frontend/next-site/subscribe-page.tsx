@@ -97,6 +97,10 @@ interface PlanInfo {
   soldOut?: boolean;
   /* 暂无报价：按钮禁用，价格位显示占位「—」，features 正常显示，不走「当日名额已满」兜底 */
   priceUnavailable?: boolean;
+  /* 询价加载中：中间态（用户已切换 durationKey，但新时长的价格尚未返回）。
+     此时应保留上一时长的旧价与旧单位（视觉稳定，不跳成徽章），但 CTA 仍需禁用+拦截点击，
+     并在价格数字旁展示一个小 spinner 提示正在加载。与 priceUnavailable（永久缺价）解耦。 */
+  pricingLoading?: boolean;
   /* 未上线占位：按钮禁用，展示「即将上线 / 敬请期待」，保留正常价格 */
   comingSoon?: boolean;
   /* 免费套餐：跳过支付弹窗，直接创建 */
@@ -165,10 +169,13 @@ const AI_DURATION_TABS: AiDurationTabDef[] = [
   { key: "yearly", period: 12, time_unit: "m", zhLabel: "年付" },
 ];
 
-/* i18n 静态标记：AI_DURATION_TABS 的 zhLabel 是动态变量，extract 脚本扫不到 t() 调用 */
+/* i18n 静态标记：AI_DURATION_TABS 的 zhLabel 与 priceUnit 的年付文案、询价中占位文案都是动态变量，extract 脚本扫不到 t() 调用 */
 const __markAiDurationTabsForI18n = (t: (zh: string, opts?: Record<string, unknown>) => string): void => {
   void t("月付");
   void t("年付");
+  void t("/ 月");
+  void t("/ 年");
+  void t("询价中...");
 };
 
 const iconStyle = { width: 16, height: 16, color: colors.warmGray300, strokeWidth: 1.5 };
@@ -237,7 +244,20 @@ const __markBundleTypeTabsForI18n = (t: (zh: string, opts?: Record<string, unkno
   void t("其他");
 };
 
-const mapBundleToPlan = (bundle: Bundle, index: number, t: (zh: string, opts?: Record<string, unknown>) => string, paidBillingEnabled: boolean): PlanInfo => {
+const mapBundleToPlan = (
+  bundle: Bundle,
+  index: number,
+  t: (zh: string, opts?: Record<string, unknown>) => string,
+  paidBillingEnabled: boolean,
+  /* 当前选中的付费时长（面向所有 bundle_type）。默认 monthly 保持向后兼容：
+     - 未开启计费开关/国际站限时免费视觉：调用处可不传，单位经后面逆矩阵处理为"/ 月"
+     - 开启计费开关后已选年付时：应传入 "yearly" 以保证价格单位与后端 real_total_cost 口径一致 */
+  durationKey: "monthly" | "yearly" = "monthly",
+  /* 询价中占位标记：仅在「用户已切换 durationKey，但对应时长的询价请求尚未返回」的中间态传 true。
+     此时 bundle.price 仍是上一时长（如月付）的旧价，若原样展示会出现「¥49 / 年」这种严重误导，
+     故价格换成 "——"、单位清空、CTA 禁用，直到新价格回来。 */
+  isPricingLoading: boolean = false,
+): PlanInfo => {
   /* 静态标记，运行时一次性调用以让字典加载后端下发中文的翻译 */
   __markBundleBackendStringsForI18n(t);
   const features: PlanFeature[] = [];
@@ -319,6 +339,11 @@ const mapBundleToPlan = (bundle: Bundle, index: number, t: (zh: string, opts?: R
   const realPriceYuan =
     paid && bundle.price ? centsToYuan(bundle.price.real_total_cost) : null;
   const priceUnavailable = paid && !bundle.price && !soldOut;
+  /* 询价中中间态：用户已切换 durationKey、但新时长的询价尚未返回。此时 bundle.price 仍是旧时长的价。
+     方案 B1：视觉上保留旧价 + 旧单位（不切成新单位，避免「旧价 + 新单位」的误导组合），
+     价格数字旁加一个小 spinner 让用户感知正在加载；CTA 侧独立通过 pricingLoading 保持 disabled + 拦截点击。
+     不再合并进 priceUnavailable —— 徽章路径只服务永久缺价场景，中间态保留成熟数字视觉更稳定。 */
+  const showPricingPlaceholder = paid && isPricingLoading && !soldOut;
 
   let price = "";
   let promoTag: string | undefined;
@@ -332,12 +357,15 @@ const mapBundleToPlan = (bundle: Bundle, index: number, t: (zh: string, opts?: R
     promoTag = soldOut ? undefined : t("限时免费");
   }
 
-  /** 国内站价格不可用时按「暂无报价」展示禁用 CTA，避免点击后报错 */
+  /** 国内站价格不可用时按「暂无报价」展示禁用 CTA，避免点击后报错。
+   *  询价加载中时专门细分为 "询价中..."，区别于永久性的 "暂无报价"。 */
   const ctaLabel = soldOut
     ? t("已售罄")
-    : priceUnavailable
-      ? t("暂无报价")
-      : t("立即开通");
+    : showPricingPlaceholder
+      ? t("询价中...")
+      : priceUnavailable
+        ? t("暂无报价")
+        : t("立即开通");
 
   return {
     id: bundle.bundle_id,
@@ -346,8 +374,18 @@ const mapBundleToPlan = (bundle: Bundle, index: number, t: (zh: string, opts?: R
     name: t(bundle.bundle_name),
     badge: soldOut ? t("已售罄") : undefined,
     badgeStyle: soldOut ? "tag" : undefined,
+    /* 价格：中间态保留旧价原样展示，视觉稳定不跳变；CTA 由 pricingLoading 兜底禁用。 */
     price,
-    priceUnit: isGlobal ? "/ month" : t("/ 月"),
+    /* 价格单位需与当前 durationKey 一致，且中间态必须与旧价口径一致：
+       - 未付费（限时免费视觉）：paid=false 就一定是默认月价锚点，单位固定为"/ 月"
+       - 已付费：paid=true 时，当前价格已是后端按 durationKey 询价回来的 real_total_cost；
+         年付回来的是 12 个月总价，若单位仍写"/ 月"会误导用户，必须同步切换为"/ 年"。
+       - 询价加载中（showPricingPlaceholder）：此时 bundle.price 还是旧时长的价，
+         为避免「旧价 + 新单位」的误导，单位强制回退为"/ 月"，与旧价口径保持一致，
+         直到新价格返回后再随 durationKey 一并切成"/ 年"。 */
+    priceUnit: paid && durationKey === "yearly" && !showPricingPlaceholder
+      ? (isGlobal ? "/ year" : t("/ 年"))
+      : (isGlobal ? "/ month" : t("/ 月")),
     /* 国际站中英文都展示促销标签：英文为 Limited free，中文为限时免费；国内站保持原有中文标签。 */
     promoTag,
     description: t("尝鲜体验，从一个 Agent 开始"),
@@ -356,9 +394,12 @@ const mapBundleToPlan = (bundle: Bundle, index: number, t: (zh: string, opts?: R
     ctaStyle: index === 0 ? "primary" : "outline",
     featured: index === 0,
     maxBots: bundle.agent_quota || 1,
-    /* 真实售罄走 soldOut；询价缺失走 priceUnavailable，二者互斥 */
+    /* 真实缺价走 priceUnavailable（触发徽章 + CTA 禁用 + 点击拦截）；
+       询价加载中走 pricingLoading（不触发徽章、保留旧价视觉，但 CTA 仍禁用 + 拦截点击）。
+       两者语义解耦：一个是永久性缺价，一个是短暂中间态，视觉表现刻意区分以获得更稳定的用户感知。 */
     soldOut,
     priceUnavailable,
+    pricingLoading: showPricingPlaceholder,
     /* 国际站继续走免费试用；国内站走付费下单 */
     skipPayment: !paid,
     availableCount: bundle.bundle_sales_available_count,
@@ -598,8 +639,9 @@ const PlanCard = ({
   const isSoldOut = plan.soldOut === true;
   const isComingSoon = plan.comingSoon === true;
   const isPriceUnavailable = plan.priceUnavailable === true;
-  /* 售罄 / 未上线 / 暂无报价：按钮永远禁用 */
-  const disabled = isSoldOut || isComingSoon || isPriceUnavailable || subscribing || quotaWouldExceed;
+  /* 售罄 / 未上线 / 暂无报价 / 询价加载中：按钮禁用。
+     询价加载中虽然价格数字仍在展示（旧价），但为避免用户以旧价口径提交订单，CTA 必须 disabled。 */
+  const disabled = isSoldOut || isComingSoon || isPriceUnavailable || plan.pricingLoading === true || subscribing || quotaWouldExceed;
 
   return (
     <motion.div
@@ -752,7 +794,7 @@ const PlanCard = ({
                 padding: "6px 12px",
               }}
             >
-              {t("价格更新中")}
+              {t("询价中")}
             </span>
           </div>
         ) : plan.price ? (
@@ -1428,13 +1470,15 @@ export const SubscribePage = ({
      retryToken 用于错误重试：++retryToken 会让 loadKey 变更 → useEffect 重跑，
      自然享受同一套 cancelled 竞态保护，无需重复抽取加载函数。 */
   const [retryToken, setRetryToken] = useState(0);
-  /* AI tab 是否需要带参询价：仅当选中非默认时长（当前即年付）时为 true。
-     月付为默认，与首屏无参调用返回的价格等价，直接复用即可。 */
+  /* 是否需要带参询价：仅当计费开关开启且选中非默认时长（当前即年付）时为 true。
+     月付为默认，与首屏无参调用返回的价格等价，直接复用即可。
+     注：不再区分 bundle_type——general / ai 等所有付费套餐共用同一份询价结果，
+     后端已确认所有 bundle_type 都支持 { time_span, time_unit } 询价。 */
   const needsAiPriceQuery =
-    paidBillingActive && selectedBundleTab === "ai" && aiDurationKey !== "monthly";
+    paidBillingActive && aiDurationKey !== "monthly";
   const loadKey = useMemo(() => {
     const base = needsAiPriceQuery
-      ? `ai:${aiDurationKey}`
+      ? `paid:${aiDurationKey}`
       : "__initial__";
     return `${base}#${retryToken}`;
   }, [needsAiPriceQuery, aiDurationKey, retryToken]);
@@ -1476,12 +1520,23 @@ export const SubscribePage = ({
     /* 防御性过滤：bundle_type === "free" 是免费试用套餐（走 CreateTrialPass 链路，不下单不计费），
        后端语义上不应出现在订阅付费页；即使运营误推或后端未来口径变更，前端也明确不展示。 */
     const purchasable = bundles.filter((b) => b.bundle_type !== "free");
-    const fromBackend = purchasable.map((b, idx) => mapBundleToPlan(b, idx, t, paidBillingActive));
+    /* 询价中中间态识别：仅当已存在旧数据 (bundles != null) 且此刻仍在加载时才成立。
+       - 首屏加载：bundles 为 null，走上层 loader 分支，不会走到这里
+       - 切换 durationKey：bundles 保留旧数据、bundlesLoading=true → 触发占位符
+       - 加载完成：bundlesLoading=false，恢复正常渲染
+       仅对 paidBillingActive 生效由 mapBundleToPlan 内部 paid 门控进一步收敛。 */
+    const isPricingLoading = bundlesLoading;
+    const fromBackend = purchasable.map((b, idx) =>
+      mapBundleToPlan(b, idx, t, paidBillingActive, aiDurationKey, isPricingLoading),
+    );
     /* 国内站一律以后端返回为准，不再补占位卡；
        国际站维持既有策略：付费开关关闭时补两张「敬请期待」占位卡。 */
     if (!isGlobal) return fromBackend;
     return paidBillingActive ? fromBackend : [...fromBackend, ...buildPlaceholderPlans(t)];
-  }, [bundles, paidBillingActive, t]);
+    /* aiDurationKey 影响 priceUnit 文案（/月 vs /年），必须进依赖数组；
+       bundlesLoading 影响询价中占位符，也必须进依赖数组；
+       正常路径下切换时长会先触发 loadKey → bundlesLoading 变更连带重算。 */
+  }, [bundles, bundlesLoading, paidBillingActive, t, aiDurationKey]);
 
   /**
    * 按 `bundleType` 把 planList 分组：
@@ -1624,9 +1679,9 @@ export const SubscribePage = ({
       return;
     }
     /* 阶段一：下单拿 deal_names + auth_code
-       AI 增强版下单：优先使用当前选中的付费时长（AI_DURATION_TABS），
-       其他 tab 或未开启计费开关时沿用 bundle 自带 time_span/time_unit（老逻辑）。 */
-    const useAiDuration = paidBillingActive && plan.bundleType === "ai";
+       计费开关开启时：所有 bundle_type 统一使用当前选中的付费时长（AI_DURATION_TABS 状态即全局时长选择），
+       未开启计费开关时沿用 bundle 自带 time_span/time_unit（老逻辑）。 */
+    const useAiDuration = paidBillingActive;
     const order = await repositories.plans.createPassOrder({
       bundle_id: plan.raw.bundle_id,
       period: useAiDuration ? aiDuration.period : plan.raw.time_span,
@@ -1777,8 +1832,9 @@ export const SubscribePage = ({
     const plan = planList.find((p) => p.id === planId);
     if (!plan) return;
 
-    /* 售罄 / 未上线 / 暂无报价 套餐按钮已 disabled，这里再加一层保护 */
-    if (plan.soldOut || plan.comingSoon || plan.priceUnavailable) return;
+    /* 售罄 / 未上线 / 暂无报价 / 询价加载中 套餐按钮已 disabled，这里再加一层保护，
+       防止浏览器绕过 disabled 或竞态触发时以旧价/无价的口径下单。 */
+    if (plan.soldOut || plan.comingSoon || plan.priceUnavailable || plan.pricingLoading) return;
 
     /* 检查龙虾个数是否已达该套餐上限 */
     if (bots.length >= plan.maxBots) {
@@ -2094,8 +2150,9 @@ export const SubscribePage = ({
             </div>
           )}
 
-          {/* AI 增强版付费时长子 Tab — 仅开启计费开关且当前 tab 为 AI 时展示 */}
-          {paidBillingActive && selectedBundleTab === "ai" && (
+          {/* 付费时长子 Tab — 计费开关开启即展示，作用于所有 bundle_type（general / ai / 其他），
+              切换后重新询价并影响所有可购买套餐的展示价格与下单参数。 */}
+          {paidBillingActive && (
             <div
               style={{
                 display: "flex",
