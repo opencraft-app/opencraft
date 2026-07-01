@@ -252,6 +252,56 @@ func (s *MySQLStore) FindReusableDianshiOrder(
 	return order, nil
 }
 
+// ListDianshiOrders 查询点石来源订单，用于后台管理排障和重试。
+func (s *MySQLStore) ListDianshiOrders(ctx context.Context, filter DianshiRecordFilter) ([]*TradeOrder, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("trade_order: store is nil")
+	}
+	where, args := buildDianshiFilterWhere(filter, true)
+	q := selectTradeOrderColumns + where + `
+		 ORDER BY created_time DESC, id DESC
+		 LIMIT ?
+	`
+	args = append(args, normalizedDianshiLimit(filter.Limit))
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("trade_order: list dianshi: %w", err)
+	}
+	defer rows.Close()
+
+	result := make([]*TradeOrder, 0)
+	for rows.Next() {
+		order, err := scanTradeOrder(rows)
+		if err != nil {
+			return nil, fmt.Errorf("trade_order: scan dianshi: %w", err)
+		}
+		result = append(result, order)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("trade_order: rows dianshi: %w", err)
+	}
+	return result, nil
+}
+
+// DeleteDianshiOrder 删除点石来源订单。限定 source='dianshi'，避免误删计费订单。
+func (s *MySQLStore) DeleteDianshiOrder(ctx context.Context, dealName string) (int64, error) {
+	if s == nil || s.db == nil {
+		return 0, fmt.Errorf("trade_order: store is nil")
+	}
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM trade_order WHERE deal_name = ? AND source = ?`,
+		dealName, OrderSourceDianshi,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("trade_order: delete dianshi dealName=%s: %w", dealName, err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("trade_order: delete rows affected: %w", err)
+	}
+	return affected, nil
+}
+
 const selectTradeOrderColumns = `
 		SELECT id, big_order_id, deal_name, external_user_id, uin, app_id,
 		       sub_product_code, bundle_id, order_type, period, time_unit, goods_num,
