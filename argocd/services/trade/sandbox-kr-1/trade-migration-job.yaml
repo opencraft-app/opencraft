@@ -41,10 +41,10 @@ spec:
                 sleep 5
               done
               mysql --host="$MYSQL_HOST" --port=3306 --user=root --password="$MYSQL_ROOT_PASSWORD" <<SQL  # pragma: allowlist secret
-              CREATE DATABASE IF NOT EXISTS `trade_sandbox_kr_1` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+              CREATE DATABASE IF NOT EXISTS \`trade_sandbox_kr_1\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
               CREATE USER IF NOT EXISTS 'trade'@'%' IDENTIFIED BY '${TRADE_DB_PASSWORD}';  # pragma: allowlist secret
               ALTER USER 'trade'@'%' IDENTIFIED BY '${TRADE_DB_PASSWORD}';  # pragma: allowlist secret
-              GRANT ALL PRIVILEGES ON `trade_sandbox_kr_1`.* TO 'trade'@'%';
+              GRANT ALL PRIVILEGES ON \`trade_sandbox_kr_1\`.* TO 'trade'@'%';
               FLUSH PRIVILEGES;
               SQL
       containers:
