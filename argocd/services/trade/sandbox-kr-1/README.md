@@ -10,5 +10,6 @@ Runtime notes:
 - site kind: `intl`
 - trade region override: `ap-singapore`
 - DB job catalog: `argocd/catalogs/playground/seoul-playground/sandbox-kr-1/trade.yaml`
+- DB readiness catalog: `argocd/catalogs/playground/seoul-playground/sandbox-kr-1/trade.yaml`
 
 The runtime secret is sourced from `../../../secrets/sandbox-kr-1/trade-runtime-secrets.sops.yaml`.

@@ -119,6 +119,36 @@ class DbContractVerifierTests(unittest.TestCase):
         self.assertEqual(env_secret_values, {})
         self.assertEqual(node_selector, {"pool": "general-bj8"})
 
+    def test_korea_playground_catalog_resolves_namespace_and_cluster(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            catalog = repo_root / "argocd/catalogs/playground/seoul-playground/sandbox-kr-1/trade.yaml"
+            catalog.parent.mkdir(parents=True)
+            catalog.write_text(
+                "\n".join(
+                    [
+                        "service: trade",
+                        "env: sandbox-kr-1",
+                        "destinationName: seoul-sandbox",
+                        "playgroundCluster: seoul-sandbox",
+                        "namespace: lightvela-playground-sandbox-kr-1",
+                        "sourcePath: argocd/services/trade/sandbox-kr-1",
+                        "",
+                    ]
+                )
+            )
+
+            cluster_name = resolve_kubeconfig_cluster_name(repo_root, "sandbox-kr-1", "trade")
+            namespace = resolve_verifier_namespace(
+                repo_root,
+                "sandbox-kr-1",
+                "trade",
+                {"namespace": "trade"},
+            )
+
+        self.assertEqual(cluster_name, "seoul-sandbox")
+        self.assertEqual(namespace, "lightvela-playground-sandbox-kr-1")
+
     def test_ctl_runtime_env_can_use_secret_resolver_without_inline_password(self) -> None:
         verifier = {
             "service_platform_env_file": "argocd/services/ctl/{env}/ctl-platform.env",
