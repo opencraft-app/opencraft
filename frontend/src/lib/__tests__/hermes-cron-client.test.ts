@@ -24,6 +24,7 @@ import { AUTH_UNAUTHORIZED_EVENT, writeStoredAuthToken } from "@/repositories/ht
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
   writeStoredAuthToken(null);
 });
 
@@ -499,6 +500,17 @@ describe("runCronJobAsTest", () => {
     return /--name '([^']+)'/.exec(command)?.[1] ?? "";
   }
 
+  /**
+   * `runCronJobAsTest` 在读取投递结果前会等待一段宽限期（见实现里的
+   * `TEST_RUN_DELIVERY_GRACE_MS`），避免抢在通知真正投递完成前删掉临时任务。
+   * 测试里用假时钟把这段等待瞬间推进掉，不必真的等待。
+   */
+  async function runWithAdvancedTimers<T>(work: Promise<T>): Promise<T> {
+    vi.useFakeTimers();
+    const [result] = await Promise.all([work, vi.advanceTimersByTimeAsync(10_000)]);
+    return result;
+  }
+
   it("clones a disposable once-off job, runs it, and cleans it up without touching the original job id", async () => {
     let capturedMarker = "";
     let ranTempJob = false;
@@ -529,7 +541,7 @@ describe("runCronJobAsTest", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await runCronJobAsTest("bot-1", baseJob);
+    const result = await runWithAdvancedTimers(runCronJobAsTest("bot-1", baseJob));
 
     expect(result.deliveryError).toBeNull();
     expect(result.output).toBe("Run triggered.");
@@ -573,7 +585,7 @@ describe("runCronJobAsTest", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await runCronJobAsTest("bot-1", baseJob);
+    const result = await runWithAdvancedTimers(runCronJobAsTest("bot-1", baseJob));
 
     expect(result.deliveryError).toBe("wecom home channel not set; run /sethome");
   });
@@ -603,7 +615,7 @@ describe("runCronJobAsTest", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(runCronJobAsTest("bot-1", baseJob)).rejects.toThrow("agent crashed");
+    await expect(runWithAdvancedTimers(runCronJobAsTest("bot-1", baseJob))).rejects.toThrow("agent crashed");
 
     const allCommands = fetchMock.mock.calls.map((_, i) => extractCommand(fetchMock, i));
     expect(allCommands.some((c) => c === `hermes cron remove 'temp-1'`)).toBe(true);
@@ -642,7 +654,7 @@ describe("runCronJobAsTest", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await runCronJobAsTest("bot-1", { ...baseJob, deliver: "origin" });
+    await runWithAdvancedTimers(runCronJobAsTest("bot-1", { ...baseJob, deliver: "origin" }));
 
     const allCommands = fetchMock.mock.calls.map((_, i) => extractCommand(fetchMock, i));
     const createCommand = allCommands.find((c) => c.includes("hermes cron create")) ?? "";

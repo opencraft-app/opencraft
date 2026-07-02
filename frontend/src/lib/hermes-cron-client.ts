@@ -958,12 +958,30 @@ export interface CronTestRunResult {
   deliveryError: string | null;
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * 测试运行后、清理临时任务前的宽限时长（毫秒）。
+ *
+ * 背景：`hermes cron run <id>` 命令返回，只代表 Agent 会话本身跑完了
+ * （Hermes 内部 `last_status`）；Hermes 官方文档明确承认「投递失败大量场景
+ * 是静默的」，且未说明通知投递（尤其是像企业微信这种需要额外网络请求的
+ * 渠道）是否保证在命令返回前就已完全落地。如果投递环节存在任何异步延迟，
+ * 我们这边「读完 last_delivery_error 就立刻 remove 临时任务」的动作就可能
+ * 抢在真正投递之前把任务删了——投递逻辑如果需要按 id 回查任务的 deliver
+ * 配置，任务已被删除就会导致静默丢弃通知，且不会有任何报错（表现为「测试
+ * 运行成功」但用户什么都没收到）。这里的宽限等待是为了消除这个时序竞争。
+ */
+const TEST_RUN_DELIVERY_GRACE_MS = 3000;
+
 /**
  * 测试运行：立即把 job 的 prompt/skills/deliver 真实执行一次，且**绝不触碰原任务**。
  *
  * 做法：创建一个用完即焚的临时一次性任务（同 prompt/skills/deliver，但不带
  * 生效窗口/daily_times 门控脚本，避免被门控直接跳过执行），立即对这个临时任务
- * 触发执行，读取它的真实投递结果，再把它删除。
+ * 触发执行，等待通知投递的宽限期后读取它的真实投递结果，再把它删除。
  *
  * 为什么不能直接对原 job 调用 `hermes cron run <job.id>`：
  * - 一次性(once)任务：Hermes 执行后会写 `last_run_at`，导致
@@ -992,6 +1010,9 @@ export async function runCronJobAsTest(botId: string, job: CronJob): Promise<Cro
   }
   try {
     const execResult = await runCronJob(botId, tempId);
+    // 给通知投递留出宽限期，避免在真正投递完成前就把临时任务删掉
+    // （见 TEST_RUN_DELIVERY_GRACE_MS 注释）。
+    await delay(TEST_RUN_DELIVERY_GRACE_MS);
     const rawAfterRun = await readRawCronJobRecordById(botId, tempId);
     const deliveryErrorRaw = rawAfterRun?.last_delivery_error;
     const deliveryError = typeof deliveryErrorRaw === "string" && deliveryErrorRaw.trim()
