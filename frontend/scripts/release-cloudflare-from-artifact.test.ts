@@ -72,7 +72,7 @@ function makeGlobalManifest() {
     },
     bakedEnv: {
       VITE_REGION: "global",
-      VITE_AUTH_API_BASE_URL: "https://lightclaw.tech",
+      VITE_AUTH_API_BASE_URL: "https://api-sandbox-kr-1.lightclaw.tech",
       VITE_AEGIS_ENABLED: "true",
       VITE_AEGIS_ID: "2ellOCK3ozed3owgOj",
       VITE_AEGIS_HOST_URL: "https://rumt-sg.com",
