@@ -618,6 +618,16 @@ export function artifactIdentitiesMatch(a, b) {
     && a?.identity?.provenanceIdentitySha256 === b?.identity?.provenanceIdentitySha256;
 }
 
+function artifactSourceAndComboMatch(a, b) {
+  return a?.sourceSha === b?.sourceSha
+    && a?.comboId === b?.comboId;
+}
+
+function shouldReuseExistingArtifactOnConflict(env) {
+  const raw = env.FRONTEND_ARTIFACT_EXISTING_POLICY?.trim().toLowerCase() ?? "";
+  return raw === "reuse" || raw === "reuse-existing";
+}
+
 export function archiveFrontendArtifact({ combo, projectName, comboEnv, env = process.env, log = console.log, dryRun = false, workDir } = {}) {
   const repository = env.FRONTEND_ARTIFACT_REPOSITORY?.trim();
   const sourceSha = env.FRONTEND_ARTIFACT_SOURCE_SHA?.trim();
@@ -650,6 +660,10 @@ export function archiveFrontendArtifact({ combo, projectName, comboEnv, env = pr
         }
         const existing = readManifest(existingManifestPath);
         if (!artifactIdentitiesMatch(existing, manifest)) {
+          if (shouldReuseExistingArtifactOnConflict(env) && artifactSourceAndComboMatch(existing, manifest)) {
+            log(`${colorText("frontend artifact exists for same source/combo with different identity; reuse existing:", "yellow", env)} ${highlightArtifactRef(ref, env)}`);
+            return { manifest: existing, manifestPath: existingManifestPath, archivePath: join(existingDir, ARCHIVE_FILE), ref, skippedPush: true, reusedExisting: true };
+          }
           throw new Error(`frontend artifact ${ref} already exists with different identity`);
         }
         log(`${colorText("frontend artifact exists with matching identity; skip push:", "yellow", env)} ${highlightArtifactRef(ref, env)}`);
