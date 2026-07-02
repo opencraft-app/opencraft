@@ -14,6 +14,7 @@ import type { LanguageSwitcherVariant } from "@/components/site/language-switche
 import { useOpenClaw } from "@/contexts/openclaw-context";
 import { useRealnamePhoneVerificationEnabled } from "@/contexts/runtime-config-context";
 import { useSession } from "@/contexts/session-context";
+import { REALNAME_LEVEL } from "@/domain/types";
 import { useT } from "@/i18n/t";
 import { isCN, isGlobal } from "@/lib/region";
 import { oauthErrorMessage } from "@/lib/oauth";
@@ -93,7 +94,7 @@ export const LandingPageView = ({
     if (isCN) {
       const user = session?.user;
       const realnameVerified = realnamePhoneVerificationEnabled
-        ? user?.realnameLevel === "phone_3fa"
+        ? user?.realnameLevel === REALNAME_LEVEL.PHONE_3FA
         : Boolean(user?.realnameVerified);
       if (!realnameVerified) {
         navigateTo(`${ACCOUNT_PATH}?${REALNAME_REQUIRED_QUERY_KEY}=1`);
@@ -108,7 +109,7 @@ export const LandingPageView = ({
     // 已登录且已订阅：有智能体则进 agent 默认页（/agents），
     // 没有智能体则进入创建流程，而不是直接跳到人设设置页。
     navigateTo(bots.length > 0 ? AGENTS_HOME_PATH : getAgentCreatingPath(true));
-  }, [navigateTo, isAuthenticated, isSubscribed, bots.length, session.user, realnamePhoneVerificationEnabled]);
+  }, [navigateTo, isAuthenticated, isSubscribed, bots.length, session?.user, realnamePhoneVerificationEnabled]);
 
   // 首页主按钮文案：
   //   - 未登录 → 「立即创建」

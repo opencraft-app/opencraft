@@ -2229,7 +2229,7 @@ export const AccountPage = () => {
               style={{ background: "rgba(255, 161, 0, 0.1)", border: "1px solid rgba(255, 161, 0, 0.35)" }}
             >
               <ShieldAlert className="mt-0.5 h-5 w-5 flex-shrink-0" style={{ color: "var(--color-warning, #C67B1E)" }} />
-              <p className="m-0 text-sm" style={{ color: "rgba(0,0,0,0.75)", lineHeight: 1.5 }}>
+              <p className="m-0 text-sm" style={{ color: "var(--color-warning-text, rgba(0,0,0,0.75))", lineHeight: 1.5 }}>
                 {realnameRequiredTip}
               </p>
             </motion.div>

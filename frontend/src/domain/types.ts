@@ -42,6 +42,13 @@ export interface User {
   createdAt: string;
 }
 
+/** 实名等级常量（后端 realnameLevel 取值，避免魔法字符串） */
+export const REALNAME_LEVEL = {
+  NONE: "none",
+  IDCARD_2FA: "idcard_2fa",
+  PHONE_3FA: "phone_3fa",
+} as const;
+
 export interface Bot {
   id: string;
   sandboxId?: string;
