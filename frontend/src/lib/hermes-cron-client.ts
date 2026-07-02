@@ -854,17 +854,17 @@ export async function resumeCronJob(botId: string, id: string): Promise<void> {
 /**
  * 测试运行：立即手动触发一个 cron job 执行一次（不等原定调度时间）。
  *
- * Hermes 没有「仅立即执行单个任务」的命令：
- * - `hermes cron run <id>` 只是把该任务标记为「下一次调度器 tick 时运行」；
- * - 调度器默认每 60s tick 一次，为尽快执行，紧接着再手动触发一次 `hermes cron tick`。
+ * `hermes cron run <id>` 本身就是「立即触发执行」：新建一个独立 Agent 会话、跑
+ * prompt、按 deliver 投递结果，命令返回即代表这次执行已经跑完（成功/失败）。
  *
- * ⚠️ `hermes cron tick` 是全局动作，会顺带触发所有此刻到期的任务；这是当前 Hermes
- * 能力下实现「秒级测试运行」的唯一方式。执行为异步：命令返回不代表任务已跑完，
- * 结果需通过「最近执行记录」查询。
+ * ⚠️ 之前这里还会额外调用一次 `hermes cron tick`，是对 Hermes 能力的误解——
+ * Hermes CLI 并没有 `cron tick` 子命令（tick 只是调度器内部周期函数的名字，不是
+ * 可执行的 CLI 命令），额外调用一条不存在的子命令必定报错，导致「测试运行」
+ * 即使 `cron run` 已经成功也总是被判定为失败。这里去掉这条多余且必错的调用，
+ * 做法与「发送测试消息」一致：一条命令、直接拿 exec 的成功/失败结果。
  */
-export async function runCronJob(botId: string, id: string): Promise<void> {
-  await execCommand(botId, `hermes cron run ${shellQuote(id)}`);
-  await execCommand(botId, "hermes cron tick");
+export async function runCronJob(botId: string, id: string): Promise<DebugExecPayload> {
+  return execCommand(botId, `hermes cron run ${shellQuote(id)}`);
 }
 
 export async function removeCronJob(botId: string, id: string): Promise<void> {

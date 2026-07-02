@@ -12,6 +12,7 @@ import {
   parseEffectiveWindowScript,
   parseLightVelaCronScript,
   parseCronListOutput,
+  runCronJob,
   shellQuote,
   splitLastRunValue,
 } from "../hermes-cron-client";
@@ -426,6 +427,30 @@ describe("createCronJob auth handling", () => {
 
     expect(listener).toHaveBeenCalledTimes(1);
     window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, listener);
+  });
+});
+
+describe("runCronJob", () => {
+  it("issues a single `hermes cron run <id>` command and returns its result on success", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(okExec("Run triggered."));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const payload = await runCronJob("bot-1", "job-1");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as { command: string };
+    expect(body.command).toBe("hermes cron run 'job-1'");
+    // 不应再拼接不存在的 `hermes cron tick` 子命令
+    expect(body.command).not.toContain("tick");
+    expect(payload.output).toBe("Run triggered.");
+  });
+
+  it("propagates a CronCommandError when the underlying `cron run` fails, without any extra tick call", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(failedExec("job not found"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(runCronJob("bot-1", "missing-job")).rejects.toThrow("job not found");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 

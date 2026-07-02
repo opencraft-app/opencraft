@@ -251,14 +251,6 @@ function ImmediateTooltipText({ label, message }: { label: string; message: stri
   );
 }
 
-/** 取某任务在最近执行记录中最新一条的时间戳（毫秒）；无则返回 0。runs 已按时间倒序 */
-function latestRunAtMsForJob(runs: CronRunRecord[], jobId: string): number {
-  const r = runs.find((x) => x.job_id === jobId);
-  if (!r) return 0;
-  const ms = Date.parse(r.run_at);
-  return Number.isNaN(ms) ? 0 : ms;
-}
-
 export function AutomationsPanel({ botId }: { botId: string | null }) {
   const t = useT();
   const [jobs, setJobs] = useState<CronJob[]>([]);
@@ -455,46 +447,28 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
   }, [botId, refreshAll, showError, t]);
 
   /**
-   * 测试运行：立即触发一次执行（hermes cron run + tick），随后轮询「最近执行」，
-   * 拿到本次新产生的执行记录后，用图标短暂结果态 + toast 反馈成功/失败。
+   * 测试运行：立即触发一次执行（`hermes cron run <id>`）。
+   *
+   * 做法与「发送测试消息」（见下方 `handleSendTestMessage`）一致：只发一条命令，
+   * 命令返回即代表这次执行已经跑完，直接用它的成功/失败反馈结果——不再额外调用
+   * 一条不存在的 `hermes cron tick` 子命令（那条调用必错，是之前「测试运行总是
+   * 失败」的根因），也不再依赖「轮询最近执行 + 15s 超时」这套间接判断。
    */
   const handleTestRun = useCallback(async (job: CronJob) => {
     if (!botId || testState[job.id] === "running") return;
     setTestState((s) => ({ ...s, [job.id]: "running" }));
     showNotice(t("正在测试运行，请稍候…"), "info", 0);
-    const prevLatestMs = latestRunAtMsForJob(recentRuns, job.id);
     try {
       await runCronJob(botId, job.id);
+      flashTestResult(job.id, "ok");
+      showNotice(t("测试运行成功"), "success");
+      void refreshRecentRuns(undefined, false);
     } catch (err) {
       const message = err instanceof CronCommandError ? err.message : err instanceof Error ? err.message : String(err);
       flashTestResult(job.id, "fail");
-      showNotice(t("无法运行：{{message}}", { message }), "error");
-      return;
+      showNotice(t("测试运行失败：{{message}}", { message }), "error");
     }
-    const started = Date.now();
-    const poll = async () => {
-      const runs = await refreshRecentRuns(undefined, false);
-      const latest = runs.find((r) => r.job_id === job.id);
-      const latestMs = latest ? Date.parse(latest.run_at) : Number.NaN;
-      if (latest && (!prevLatestMs || (!Number.isNaN(latestMs) && latestMs > prevLatestMs))) {
-        const ok = (latest.status || "").toLowerCase() !== "failed";
-        flashTestResult(job.id, ok ? "ok" : "fail");
-        showNotice(ok ? t("测试运行成功") : t("测试运行失败，点开任务可查看输出"), ok ? "success" : "error");
-        return;
-      }
-      if (Date.now() - started > 15000) {
-        setTestState((s) => {
-          const next = { ...s };
-          delete next[job.id];
-          return next;
-        });
-        showNotice(t("仍在执行中，稍后可在「最近执行」查看结果"), "info");
-        return;
-      }
-      window.setTimeout(() => { void poll(); }, 2000);
-    };
-    window.setTimeout(() => { void poll(); }, 2000);
-  }, [botId, testState, showNotice, flashTestResult, refreshRecentRuns, recentRuns, t]);
+  }, [botId, testState, showNotice, flashTestResult, refreshRecentRuns, t]);
 
   if (!botId) {
     return (
@@ -2222,6 +2196,7 @@ function AutomationFormModal({
         channel,
         t("发送失败，请检查通道配置或稍后重试"),
         t("发送失败，请先在微信中向 Hermes Agent 发送任意消息，或稍后重试"),
+        t("发送失败，请先在企业微信对话中发送 /set-home，或在下方填写 Chat ID 后重试"),
       ), t));
     }
   }, [botId, chatIdErrors, deliverChatIds, showTestSendToast, t]);
@@ -2606,7 +2581,7 @@ function AutomationFormModal({
                         <InlineCopyText value="/set-home" />
                       </span>
                     )}
-                    {selected && key === "feishu" && (
+                    {selected && (key === "feishu" || key === "wecom") && (
                       <span className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>{t("支持通过默认的 home 对话或指定 Chat ID 发送通知")}</span>
                     )}
                     {selected && (key === "telegram" || key === "discord") && (
@@ -2676,6 +2651,44 @@ function AutomationFormModal({
                             {t("进入飞书应用，在希望发送通知的私聊或群聊中，向 Hermes Agent 发送提示词")}
                             <InlineCopyText value={t("查一下当前对话的oc_ chat ID")} />
                             {t("，正常会回复前缀为oc_的一长串字符。")}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {selected && key === "wecom" && (
+                    <div className="mt-1.5 space-y-1.5 pl-5">
+                      <div className="flex items-center gap-1">
+                        <span className="w-[104px] shrink-0 whitespace-nowrap text-sm text-black/50" style={MODAL_HELP_TEXT_STYLE}>{t("Chat ID（可选）")}</span>
+                        <input
+                          type="text"
+                          value={deliverChatIds[key] ?? ""}
+                          maxLength={CHAT_ID_MAX_LENGTH}
+                          onChange={(e) => handleChatIdChange(key, e.target.value)}
+                          placeholder={t("可留空，即通过默认的 home 对话通知；也可指定 Chat ID 通知")}
+                          className="min-w-0 flex-1 rounded-lg border border-black/10 bg-white px-3 py-1.5 text-[12px] placeholder:text-[12px] placeholder:text-black/35 focus:border-black/30 focus:outline-none"
+                          style={{ fontSize: 12, lineHeight: "18px" }}
+                        />
+                      </div>
+                      {chatIdErrors[key] ? (
+                        <div
+                          className="rounded-md border border-red-500/20 bg-red-500/[0.06] px-2.5 py-1.5 text-[12px] text-red-600"
+                          style={{ lineHeight: "18px" }}
+                        >
+                          {chatIdErrors[key]}
+                        </div>
+                      ) : null}
+                      <div className="space-y-2 text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <CircleHelp className="h-3.5 w-3.5 shrink-0 text-black/35" />
+                            <span>{t("什么是 home 对话？")}</span>
+                          </div>
+                          <p className="mt-1 pl-5">
+                            {t("在企业微信目标对话中向 Hermes Agent 发送")}
+                            <InlineCopyText value="/set-home" />
+                            {t("即可将其设为 home 对话。若设置后仍提示未设置，可稍后重试，或直接在下方填写 Chat ID 指定通知目标。")}
                           </p>
                         </div>
                       </div>
@@ -3732,8 +3745,16 @@ export function formatTestSendError(
   return formatted ? joinTestSendError(fallback, formatted) : fallback;
 }
 
-export function getTestSendFailureFallback(platform: string, fallback: string, weixinFallback: string): string {
-  return normalizeHermesChannelKey(platform) === "weixin" ? weixinFallback : fallback;
+export function getTestSendFailureFallback(
+  platform: string,
+  fallback: string,
+  weixinFallback: string,
+  wecomFallback: string = fallback,
+): string {
+  const key = normalizeHermesChannelKey(platform);
+  if (key === "weixin") return weixinFallback;
+  if (key === "wecom") return wecomFallback;
+  return fallback;
 }
 
 function formatKnownTestSendError(message: string, t?: (s: string, vars?: Record<string, unknown>) => string): string {
