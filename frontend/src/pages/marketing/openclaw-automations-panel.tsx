@@ -14,7 +14,7 @@
  * - 生效日期区间通过 Hermes 官方 pre-run script gate 实现：区间外返回 wakeAgent=false
  */
 
-import { AlertTriangle, Activity, BellRing, BriefcaseBusiness, CalendarRange, CheckCircle2, ChevronDown, CircleHelp, Clock, Droplets, Eraser, Eye, FolderKanban, LayoutTemplate, Loader2, Newspaper, Pause, Pencil, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, X } from "lucide-react";
+import { AlertTriangle, Activity, BellRing, BriefcaseBusiness, CalendarRange, CheckCircle2, ChevronDown, CircleHelp, Clock, Droplets, Eraser, Eye, FolderKanban, LayoutTemplate, Loader2, Newspaper, Pause, Pencil, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, X, Zap } from "lucide-react";
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
@@ -29,6 +29,7 @@ import {
   listCronJobs,
   listRecentCronRuns,
   pauseCronJob,
+  runCronJob,
   writeEffectiveWindowScript,
   removeCronJob,
   resumeCronJob,
@@ -55,18 +56,18 @@ const CHINESE_TEXT_RE = /[\u3400-\u9fff\uf900-\ufaff]/;
 const CHINESE_TEXT_RE_GLOBAL = /[\u3400-\u9fff\uf900-\ufaff]/g;
 
 /** 顶部 toast；与 settings 主页 SkillInstallToast 视觉一致 */
-function ErrorToast({ message, onClose, tone = "error" }: { message: string; onClose: () => void; tone?: "error" | "success" }) {
+function ErrorToast({ message, onClose, tone = "error" }: { message: string; onClose: () => void; tone?: "error" | "success" | "info" }) {
   const t = useT();
-  const Icon = tone === "success" ? CheckCircle2 : AlertTriangle;
+  const Icon = tone === "success" ? CheckCircle2 : tone === "info" ? Loader2 : AlertTriangle;
   return createPortal(
     <div className="fixed inset-x-0 top-4 z-[300] flex justify-center px-4" role="status" aria-live="polite">
       <div
         className={
           "inline-flex max-w-[min(92vw,720px)] items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-white shadow-lg " +
-          (tone === "success" ? "bg-[#0F8A4B]" : "bg-[#B91C1C]")
+          (tone === "success" ? "bg-[#0F8A4B]" : tone === "info" ? "bg-black/80" : "bg-[#B91C1C]")
         }
       >
-        <Icon className="h-4 w-4 shrink-0" />
+        <Icon className={"h-4 w-4 shrink-0" + (tone === "info" ? " animate-spin" : "")} />
         <span className="truncate">{message}</span>
         <button
           type="button"
@@ -250,6 +251,14 @@ function ImmediateTooltipText({ label, message }: { label: string; message: stri
   );
 }
 
+/** 取某任务在最近执行记录中最新一条的时间戳（毫秒）；无则返回 0。runs 已按时间倒序 */
+function latestRunAtMsForJob(runs: CronRunRecord[], jobId: string): number {
+  const r = runs.find((x) => x.job_id === jobId);
+  if (!r) return 0;
+  const ms = Date.parse(r.run_at);
+  return Number.isNaN(ms) ? 0 : ms;
+}
+
 export function AutomationsPanel({ botId }: { botId: string | null }) {
   const t = useT();
   const [jobs, setJobs] = useState<CronJob[]>([]);
@@ -270,6 +279,11 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
   /** 待确认删除的 job；非空时弹确认弹窗 */
   const [confirmDeleteJob, setConfirmDeleteJob] = useState<CronJob | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  /** 每个任务的测试运行状态：running=运行中，ok/fail=短暂结果态（1.8s 后自动回到 idle） */
+  const [testState, setTestState] = useState<Record<string, "running" | "ok" | "fail">>({});
+  const [notice, setNotice] = useState<{ message: string; tone: "success" | "error" | "info" } | null>(null);
+  const noticeTimerRef = useRef<number | null>(null);
+  const testTimersRef = useRef<Record<string, number>>({});
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   /** 列表加载失败的 inline 错误（与 toast 分离：list 失败不 toast，避免首屏刷屏） */
   const [listError, setListError] = useState<string | null>(null);
@@ -319,6 +333,32 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
   }, []);
   useEffect(() => () => {
     if (errorTimerRef.current) window.clearTimeout(errorTimerRef.current);
+    if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
+    Object.values(testTimersRef.current).forEach((tid) => window.clearTimeout(tid));
+  }, []);
+
+  const showNotice = useCallback((message: string, tone: "success" | "error" | "info", autoHideMs = 3000) => {
+    if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
+    setNotice({ message, tone });
+    if (autoHideMs > 0) {
+      noticeTimerRef.current = window.setTimeout(() => {
+        setNotice(null);
+        noticeTimerRef.current = null;
+      }, autoHideMs);
+    }
+  }, []);
+
+  const flashTestResult = useCallback((id: string, result: "ok" | "fail") => {
+    setTestState((s) => ({ ...s, [id]: result }));
+    if (testTimersRef.current[id]) window.clearTimeout(testTimersRef.current[id]);
+    testTimersRef.current[id] = window.setTimeout(() => {
+      setTestState((s) => {
+        const next = { ...s };
+        delete next[id];
+        return next;
+      });
+      delete testTimersRef.current[id];
+    }, 1800);
   }, []);
 
   const refreshCreatedJobs = useCallback(async (manageLoading = true) => {
@@ -344,17 +384,19 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
     }
   }, [botId]);
 
-  const refreshRecentRuns = useCallback(async (currentJobs?: CronJob[], manageLoading = true) => {
+  const refreshRecentRuns = useCallback(async (currentJobs?: CronJob[], manageLoading = true): Promise<CronRunRecord[]> => {
     if (!botId) {
       setRecentRuns([]);
-      return;
+      return [];
     }
     if (manageLoading) setLoadingRecentRuns(true);
     try {
       const runs = await listRecentCronRuns(botId, currentJobs ?? jobsRef.current, 10);
       setRecentRuns(runs);
+      return runs;
     } catch {
       setRecentRuns([]);
+      return [];
     } finally {
       if (manageLoading) setLoadingRecentRuns(false);
     }
@@ -412,6 +454,48 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
     }
   }, [botId, refreshAll, showError, t]);
 
+  /**
+   * 测试运行：立即触发一次执行（hermes cron run + tick），随后轮询「最近执行」，
+   * 拿到本次新产生的执行记录后，用图标短暂结果态 + toast 反馈成功/失败。
+   */
+  const handleTestRun = useCallback(async (job: CronJob) => {
+    if (!botId || testState[job.id] === "running") return;
+    setTestState((s) => ({ ...s, [job.id]: "running" }));
+    showNotice(t("正在测试运行，请稍候…"), "info", 0);
+    const prevLatestMs = latestRunAtMsForJob(recentRuns, job.id);
+    try {
+      await runCronJob(botId, job.id);
+    } catch (err) {
+      const message = err instanceof CronCommandError ? err.message : err instanceof Error ? err.message : String(err);
+      flashTestResult(job.id, "fail");
+      showNotice(t("无法运行：{{message}}", { message }), "error");
+      return;
+    }
+    const started = Date.now();
+    const poll = async () => {
+      const runs = await refreshRecentRuns(undefined, false);
+      const latest = runs.find((r) => r.job_id === job.id);
+      const latestMs = latest ? Date.parse(latest.run_at) : Number.NaN;
+      if (latest && (!prevLatestMs || (!Number.isNaN(latestMs) && latestMs > prevLatestMs))) {
+        const ok = (latest.status || "").toLowerCase() !== "failed";
+        flashTestResult(job.id, ok ? "ok" : "fail");
+        showNotice(ok ? t("测试运行成功") : t("测试运行失败，点开任务可查看输出"), ok ? "success" : "error");
+        return;
+      }
+      if (Date.now() - started > 15000) {
+        setTestState((s) => {
+          const next = { ...s };
+          delete next[job.id];
+          return next;
+        });
+        showNotice(t("仍在执行中，稍后可在「最近执行」查看结果"), "info");
+        return;
+      }
+      window.setTimeout(() => { void poll(); }, 2000);
+    };
+    window.setTimeout(() => { void poll(); }, 2000);
+  }, [botId, testState, showNotice, flashTestResult, refreshRecentRuns, recentRuns, t]);
+
   if (!botId) {
     return (
       <div className="rounded-xl p-8 text-center text-sm text-black/60" style={PANEL_CARD_STYLE}>
@@ -423,6 +507,7 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
   return (
     <div className="space-y-4">
       {errorMessage && <ErrorToast message={errorMessage} onClose={() => setErrorMessage(null)} />}
+      {notice && <ErrorToast message={notice.message} tone={notice.tone} onClose={() => setNotice(null)} />}
 
       <AgentSectionHeader
         title={t("自动任务")}
@@ -534,6 +619,8 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
                   key={job.id}
                   job={job}
                   busy={busyId === job.id}
+                  testState={testState[job.id] ?? "idle"}
+                  onTestRun={() => handleTestRun(job)}
                   onView={() => setViewingJob(job)}
                   onEdit={() => setEditingJob(job)}
                   onPause={() => handleAction(job, "pause")}
@@ -778,6 +865,8 @@ function RecentCronRunDetailModal({ run, onClose }: { run: CronRunRecord; onClos
 function CronJobCard({
   job,
   busy,
+  testState,
+  onTestRun,
   onView,
   onEdit,
   onPause,
@@ -786,6 +875,8 @@ function CronJobCard({
 }: {
   job: CronJob;
   busy: boolean;
+  testState: "idle" | "running" | "ok" | "fail";
+  onTestRun: () => void;
   onView: () => void;
   onEdit: () => void;
   onPause: () => void;
@@ -846,6 +937,17 @@ function CronJobCard({
           )}
         </div>
         <div className="flex shrink-0 items-center">
+          <CronActionButton label={t("测试运行")} onClick={onTestRun} disabled={busy || testState === "running"}>
+            {testState === "running" ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : testState === "ok" ? (
+              <CheckCircle2 className="h-3 w-3 text-[#0F8A4B]" />
+            ) : testState === "fail" ? (
+              <X className="h-3 w-3 text-[#B91C1C]" />
+            ) : (
+              <Zap className="h-3 w-3" />
+            )}
+          </CronActionButton>
           <CronActionButton label={t("查看")} onClick={onView}>
             <Eye className="h-3 w-3" />
           </CronActionButton>
@@ -2441,6 +2543,7 @@ function AutomationFormModal({
                 : ([
                   { key: "weixin", label: t("微信"), comingSoon: false },
                   { key: "qqbot", label: "QQ", comingSoon: false },
+                  { key: "wecom", label: t("企业微信"), comingSoon: false },
                   { key: "feishu", label: t("飞书"), comingSoon: false },
                 ] as const)
             ).map(({ key, label, comingSoon }) => {

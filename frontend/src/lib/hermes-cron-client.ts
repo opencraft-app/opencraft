@@ -851,6 +851,22 @@ export async function resumeCronJob(botId: string, id: string): Promise<void> {
   await execCommand(botId, `hermes cron resume ${shellQuote(id)}`);
 }
 
+/**
+ * 测试运行：立即手动触发一个 cron job 执行一次（不等原定调度时间）。
+ *
+ * Hermes 没有「仅立即执行单个任务」的命令：
+ * - `hermes cron run <id>` 只是把该任务标记为「下一次调度器 tick 时运行」；
+ * - 调度器默认每 60s tick 一次，为尽快执行，紧接着再手动触发一次 `hermes cron tick`。
+ *
+ * ⚠️ `hermes cron tick` 是全局动作，会顺带触发所有此刻到期的任务；这是当前 Hermes
+ * 能力下实现「秒级测试运行」的唯一方式。执行为异步：命令返回不代表任务已跑完，
+ * 结果需通过「最近执行记录」查询。
+ */
+export async function runCronJob(botId: string, id: string): Promise<void> {
+  await execCommand(botId, `hermes cron run ${shellQuote(id)}`);
+  await execCommand(botId, "hermes cron tick");
+}
+
 export async function removeCronJob(botId: string, id: string): Promise<void> {
   await execCommand(botId, `hermes cron remove ${shellQuote(id)}`);
 }
