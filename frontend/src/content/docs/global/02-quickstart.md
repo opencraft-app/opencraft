@@ -24,7 +24,7 @@
 
 ## 1. 登录 LightVela
 
-访问 [lightvela.com](https://lightvela.com)，点击右上角「登录」。在登录对话框中选择 Google 或 GitHub 账号，勾选协议后完成授权。
+访问 [lightvela.ai](https://lightvela.ai)，点击右上角「登录」。在登录对话框中选择 Google 或 GitHub 账号，勾选协议后完成授权。
 
 ![](./images/2-1.webp)
 
