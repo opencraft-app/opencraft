@@ -19,7 +19,13 @@ import { isCN, isGlobal } from "@/lib/region";
 import { oauthErrorMessage } from "@/lib/oauth";
 import { captureProductEvent, PRODUCT_ANALYTICS_EVENTS, PRODUCT_ANALYTICS_LOCATIONS } from "@/observability/posthog";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
-import { AGENTS_HOME_PATH, SUBSCRIBE_PATH, ACCOUNT_PATH, getAgentCreatingPath } from "@/lib/agent-routes";
+import {
+  AGENTS_HOME_PATH,
+  SUBSCRIBE_PATH,
+  ACCOUNT_PATH,
+  REALNAME_REQUIRED_QUERY_KEY,
+  getAgentCreatingPath,
+} from "@/lib/agent-routes";
 
 import HeroSection from "@/imports/Frame2147230025/sections/HeroSection";
 import BrandIconsSection from "@/imports/Frame2147230025/sections/BrandIconsSection";
@@ -85,12 +91,12 @@ export const LandingPageView = ({
     // 国内站：已登录用户在进入创建流程前，必须先完成实名认证。
     // 未实名则跳转账号管理页，并通过 query 触发页面顶部的实名提醒 tips。
     if (isCN) {
-      const user = session.user;
+      const user = session?.user;
       const realnameVerified = realnamePhoneVerificationEnabled
         ? user?.realnameLevel === "phone_3fa"
         : Boolean(user?.realnameVerified);
       if (!realnameVerified) {
-        navigateTo(`${ACCOUNT_PATH}?realname_required=1`);
+        navigateTo(`${ACCOUNT_PATH}?${REALNAME_REQUIRED_QUERY_KEY}=1`);
         return;
       }
     }

@@ -37,6 +37,7 @@ import {
 import { getBillingErrorCode, resolveBillingErrorMessage } from "@/lib/billing-error";
 import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
 import { isCN, isGlobal } from "@/lib/region";
+import { REALNAME_REQUIRED_QUERY_KEY } from "@/lib/agent-routes";
 import { cn } from "@/lib/utils";
 import { buildPayPlan } from "@/lib/wx-pay";
 import { QRCodeSVG } from "qrcode.react";
@@ -1914,14 +1915,14 @@ export const AccountPage = () => {
   useEffect(() => {
     // 国际站无实名概念，即便被手动拼接该 query 也不展示中文提醒
     if (isGlobal) return;
-    if (searchParams.get("realname_required") !== "1") return;
+    if (searchParams.get(REALNAME_REQUIRED_QUERY_KEY) !== "1") return;
 
     const next = new URLSearchParams(searchParams);
-    next.delete("realname_required");
+    next.delete(REALNAME_REQUIRED_QUERY_KEY);
     setSearchParams(next, { replace: true });
 
     setRealnameRequiredTip(t("创建 LightVela 前，请先完成实名认证。"));
-  }, [searchParams, setSearchParams, t]);
+  }, [searchParams, setSearchParams, t, isGlobal]);
 
   // 实名认证完成后自动清除提醒
   useEffect(() => {
@@ -2227,7 +2228,7 @@ export const AccountPage = () => {
               className="mb-6 flex items-start gap-3 rounded-xl px-4 py-3"
               style={{ background: "rgba(255, 161, 0, 0.1)", border: "1px solid rgba(255, 161, 0, 0.35)" }}
             >
-              <ShieldAlert className="mt-0.5 h-5 w-5 flex-shrink-0" style={{ color: "#C67B1E" }} />
+              <ShieldAlert className="mt-0.5 h-5 w-5 flex-shrink-0" style={{ color: "var(--color-warning, #C67B1E)" }} />
               <p className="m-0 text-sm" style={{ color: "rgba(0,0,0,0.75)", lineHeight: 1.5 }}>
                 {realnameRequiredTip}
               </p>
