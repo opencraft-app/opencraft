@@ -357,6 +357,8 @@ type logic struct {
 	bundleLogic bundlelogic.Logic
 }
 
+const allowedFreeTrialBundleID = "bundle_free_trial_01"
+
 // NewLogic 创建 Pass Logic
 func NewLogic() Logic {
 	return &logic{
@@ -367,6 +369,9 @@ func NewLogic() Logic {
 func (l *logic) CreateTrialPass(userID string, bundleID string) (*PassDetail, error) {
 	if userID == "" || bundleID == "" {
 		return nil, errcode.ErrPassInvalidParam
+	}
+	if bundleID != allowedFreeTrialBundleID {
+		return nil, errcode.ErrPassTrialBundleNotAllowed
 	}
 	if err := ensureShadowBindingIfRequired(userID, errcode.ErrPassShadowBindingRequired); err != nil {
 		return nil, err

@@ -1,4 +1,4 @@
-# 当前技术规格
+# Agent 控制台左侧导航视觉升级规格
 
 > 当前需求：参考 `lightvela-next-figma.zip` 与截图，仅升级 `/agents/*` 控制台左侧导航样式。
 
@@ -16,3 +16,7 @@
 - `pnpm i18n:extract` / `pnpm i18n:check`：新增“更多操作”文案后字典完整。
 - `pnpm check`：类型检查通过。
 - 本地 Next 预览 `/agents/channels/` 和 `/agents/memory/` 返回 200，确认非左栏区域没有因撤销而破坏渲染。
+
+## 已合入 master 的相关基线
+
+- 诊断中心 Agent 备份与恢复交互优化已在 `origin/master` 中实现；本分支只在其基础上保留左侧导航视觉升级，不修改备份/恢复业务逻辑。

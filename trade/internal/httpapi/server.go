@@ -71,6 +71,10 @@ type ServerConfig struct {
 	// ActivityStore 为 nil 时 ActivityDB 也可为 nil（不使用）。
 	ActivityDB *sql.DB
 
+	// DianshiAdminStore 是点石后台管理查询/删除订单与参与记录的 DAO。
+	// 生产路径注入 mysqlStore；nil 时不挂载 /internal/trade/dianshi/*。
+	DianshiAdminStore store.DianshiAdminStore
+
 	// JifeiClient 是 trade → jifei CGW 出向客户端（D-2 销毁链路用户主动入口用）。
 	//
 	// 设计稿：.tmp/trade-pass-destroy-design.md §3.5 + §3.6
@@ -260,6 +264,8 @@ func NewRouter(cfg ServerConfig) *gin.Engine {
 			SiteKind: cfg.SiteKind,
 			// 北京 2 预发布接入 2026-06-12：region 字段 override，与 SiteKind 同路径。
 			RegionOverride: cfg.RegionOverride,
+			// 点石后台管理查询/删除入口。
+			DianshiAdminStore: cfg.DianshiAdminStore,
 		})
 	}
 

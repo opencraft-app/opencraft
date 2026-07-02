@@ -1,4 +1,4 @@
-# 当前执行计划
+# 需求名: Agent 控制台左侧导航视觉升级
 
 > 当前需求：参考 `lightvela-next-figma.zip` 与截图，仅升级 `/agents/*` 控制台左侧导航样式。
 
@@ -8,9 +8,7 @@
 - [x] 撤销顶栏、通道页卡片、记忆页、内容区壳层和全局页面背景相关视觉改动。
 - [x] 完成 i18n、类型检查和本地预览 smoke。
 
-> 近期 master 已合入需求：国内站 `/docs` 新增 LightVela 产品公告目录，并让首页公告跳转到文档页。
-
-- [x] Planner/Developer: 梳理公告内容模型与 docs 接入点。
-- [x] Developer: 接入 Fumadocs 同步和 docs route manifest。
-- [x] Developer: 更新首页公告条跳转，并移除旧独立公告路由。
-- [x] Reviewer: 运行质量门禁与页面 smoke。
+> 已合入 master 的近期基线：
+>
+> - 国内站 `/docs` 新增 LightVela 产品公告目录，并让首页公告跳转到文档页。
+> - 诊断中心 Agent 备份与恢复交互优化，包含任务确认弹窗、任务控制台、错误文案和相关测试。

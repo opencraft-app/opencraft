@@ -22,6 +22,10 @@ vi.mock("aegis-web-sdk", () => ({
 }));
 
 describe("resolveAegisConfig", () => {
+  it("treats a missing bundler env as disabled", () => {
+    expect(resolveAegisConfig(null as never, "cn")).toBeNull();
+  });
+
   it("does not enable RUM for dev builds", () => {
     expect(resolveAegisConfig({ PROD: false, VITE_AEGIS_ID: "rum-id" }, "cn")).toBeNull();
   });
