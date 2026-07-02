@@ -11,6 +11,7 @@ COPY src ./src
 COPY next-site ./next-site
 COPY vendor ./vendor
 COPY assets ./assets
+COPY patches ./patches
 
 ARG VITE_AUTH_API_BASE_URL
 ARG NEXT_PUBLIC_AUTH_API_BASE_URL
