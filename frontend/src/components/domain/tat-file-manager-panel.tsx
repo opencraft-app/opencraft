@@ -798,6 +798,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
       setRenamingName(null);
       setRenameDraft("");
       await loadPath(path);
+      setStatus("ready");
       setNotice(t("已重命名。"));
     } catch (renameError) {
       setError(translateFileManagerError(renameError, t("重命名失败")));

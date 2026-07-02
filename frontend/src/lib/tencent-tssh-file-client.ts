@@ -5,6 +5,7 @@ import { decodeTencentPtyFrame, extractTencentPtyError } from "@/lib/tencent-pty
 const DEFAULT_TAT_FILE_TIMEOUT_SECONDS = 3600;
 const DEFAULT_TSSH_START_DELAY_MS = 200;
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+const EXEC_REQUEST_TIMEOUT_BUFFER_MS = 5_000;
 const DEFAULT_UPLOAD_CHUNK_BYTES = 256 * 1024;
 const DEFAULT_READ_SIZE_BYTES = 1024 * 1024;
 
@@ -158,6 +159,11 @@ const getCustomData = (message: unknown) => {
 
 const makeRequestId = () => `file_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 
+const execRequestTimeoutMs = (timeoutSeconds: number, fallbackTimeoutMs: number) => {
+  const commandTimeoutMs = Math.max(0, timeoutSeconds) * 1000 + EXEC_REQUEST_TIMEOUT_BUFFER_MS;
+  return Math.max(fallbackTimeoutMs, commandTimeoutMs);
+};
+
 export const joinTsshPath = (basePath: string, name: string) => {
   const base = basePath.trim() || "/";
   if (base === "/") {
@@ -296,10 +302,11 @@ export class TencentTsshFileClient {
 
   async execCommand(cmd: string, timeout = 60) {
     await this.connect();
+    const timeoutSeconds = Math.max(0, timeout);
     return this.sendExecRequest("PtyExecCmdStream", {
       Cmd: cmd,
-      Timeout: timeout,
-    });
+      Timeout: timeoutSeconds,
+    }, execRequestTimeoutMs(timeoutSeconds, this.requestTimeoutMs));
   }
 
   async fileInfo(path: string) {
@@ -477,7 +484,7 @@ export class TencentTsshFileClient {
     });
   }
 
-  private sendExecRequest(type: string, data: Record<string, unknown>) {
+  private sendExecRequest(type: string, data: Record<string, unknown>, timeoutMs: number) {
     return new Promise<TsshExecCommandResult>((resolve, reject) => {
       const requestId = this.trackPending({
         kind: "exec",
@@ -485,17 +492,17 @@ export class TencentTsshFileClient {
         reject,
         timer: 0,
         chunks: [],
-      });
+      }, timeoutMs);
       this.sendBson(type, requestId, data);
     });
   }
 
-  private trackPending(request: PendingRequest) {
+  private trackPending(request: PendingRequest, timeoutMs = this.requestTimeoutMs) {
     const requestId = makeRequestId();
     request.timer = window.setTimeout(() => {
       this.pending.delete(requestId);
       request.reject(new Error("TAT file request timed out"));
-    }, this.requestTimeoutMs);
+    }, timeoutMs);
     this.pending.set(requestId, request);
     return requestId;
   }
