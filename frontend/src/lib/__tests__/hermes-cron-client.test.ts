@@ -501,13 +501,14 @@ describe("runCronJobAsTest", () => {
   }
 
   /**
-   * `runCronJobAsTest` 在读取投递结果前会等待一段宽限期（见实现里的
-   * `TEST_RUN_DELIVERY_GRACE_MS`），避免抢在通知真正投递完成前删掉临时任务。
-   * 测试里用假时钟把这段等待瞬间推进掉，不必真的等待。
+   * `runCronJobAsTest` 在读到 `last_run_at` 真正落地前会轮询等待（见实现里的
+   * `waitForCronJobExecuted` / `TEST_RUN_POLL_TIMEOUT_MS`），避免抢在调度器
+   * tick 真正执行完之前就把临时任务删掉。测试里用假时钟把轮询间隔瞬间推进掉，
+   * 不必真的等待。
    */
   async function runWithAdvancedTimers<T>(work: Promise<T>): Promise<T> {
     vi.useFakeTimers();
-    const [result] = await Promise.all([work, vi.advanceTimersByTimeAsync(10_000)]);
+    const [result] = await Promise.all([work, vi.advanceTimersByTimeAsync(60_000)]);
     return result;
   }
 
@@ -526,8 +527,8 @@ describe("runCronJobAsTest", () => {
       }
       if (cmd.includes("cat ~/.hermes/cron/jobs.json")) {
         const record = ranTempJob
-          ? { id: "temp-1", name: capturedMarker, last_delivery_error: null }
-          : { id: "temp-1", name: capturedMarker, last_delivery_error: null };
+          ? { id: "temp-1", name: capturedMarker, last_run_at: "2026-07-02T21:55:03+08:00", last_delivery_error: null }
+          : { id: "temp-1", name: capturedMarker, last_run_at: null, last_delivery_error: null };
         return okExec(JSON.stringify([record]));
       }
       if (cmd === `hermes cron run 'temp-1'`) {
@@ -570,8 +571,13 @@ describe("runCronJobAsTest", () => {
       }
       if (cmd.includes("cat ~/.hermes/cron/jobs.json")) {
         const record = ranTempJob
-          ? { id: "temp-1", name: capturedMarker, last_delivery_error: "wecom home channel not set; run /sethome" }
-          : { id: "temp-1", name: capturedMarker, last_delivery_error: null };
+          ? {
+              id: "temp-1",
+              name: capturedMarker,
+              last_run_at: "2026-07-02T21:55:03+08:00",
+              last_delivery_error: "wecom home channel not set; run /sethome",
+            }
+          : { id: "temp-1", name: capturedMarker, last_run_at: null, last_delivery_error: null };
         return okExec(JSON.stringify([record]));
       }
       if (cmd === `hermes cron run 'temp-1'`) {
@@ -642,7 +648,12 @@ describe("runCronJobAsTest", () => {
             { id: "job-1", origin: { platform: "wecom", chat_id: "wecom-chat-abc" } },
           ]));
         }
-        return okExec(JSON.stringify([{ id: "temp-1", name: capturedMarker, last_delivery_error: null }]));
+        return okExec(JSON.stringify([{
+          id: "temp-1",
+          name: capturedMarker,
+          last_run_at: "2026-07-02T21:55:03+08:00",
+          last_delivery_error: null,
+        }]));
       }
       if (cmd === `hermes cron run 'temp-1'`) {
         return okExec("Run triggered.");

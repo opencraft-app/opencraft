@@ -963,25 +963,62 @@ function delay(ms: number): Promise<void> {
 }
 
 /**
- * 测试运行后、清理临时任务前的宽限时长（毫秒）。
+ * 轮询间隔 / 超时上限（毫秒）。
  *
- * 背景：`hermes cron run <id>` 命令返回，只代表 Agent 会话本身跑完了
- * （Hermes 内部 `last_status`）；Hermes 官方文档明确承认「投递失败大量场景
- * 是静默的」，且未说明通知投递（尤其是像企业微信这种需要额外网络请求的
- * 渠道）是否保证在命令返回前就已完全落地。如果投递环节存在任何异步延迟，
- * 我们这边「读完 last_delivery_error 就立刻 remove 临时任务」的动作就可能
- * 抢在真正投递之前把任务删了——投递逻辑如果需要按 id 回查任务的 deliver
- * 配置，任务已被删除就会导致静默丢弃通知，且不会有任何报错（表现为「测试
- * 运行成功」但用户什么都没收到）。这里的宽限等待是为了消除这个时序竞争。
+ * 关键修正（2026-07-02 实测证实）：`hermes cron run <id>` **不是同步执行**——
+ * 它只是把目标 job 的 `next_run_at` 改写成"当前时间 + 几秒"就立刻返回，真正
+ * 的执行要等 Hermes 调度器的下一次 tick 才会发生。CLI 自己回显的文案写得很
+ * 清楚："It will run on the next scheduler tick."
+ *
+ * 之前这里按"命令返回 = 已经跑完"的错误假设写了一个固定 3s 的 sleep 再读
+ * 结果；只要调度器 tick 周期比 3s 长（线上验证过：触发后 3~5s，`last_run_at`
+ * 仍是 null），就会在 Agent 真正被唤醒之前把临时任务删掉——表现为「测试运行
+ * 成功」但用户什么通知都没收到的假阳性，且没有任何报错暴露这个问题。
+ *
+ * 现在改成轮询 `last_run_at` 字段：只有它从 null/空变成非空，才代表 Hermes
+ * 端真的完成了这次执行（无论成功失败）。tick 周期没有公开文档说明具体多长，
+ * 所以超时上限给得比较宽松；一旦超时仍未执行，明确报错而不是静默当作成功。
  */
-const TEST_RUN_DELIVERY_GRACE_MS = 3000;
+const TEST_RUN_POLL_INTERVAL_MS = 1500;
+const TEST_RUN_POLL_TIMEOUT_MS = 45_000;
+
+/**
+ * 轮询直到临时任务真正被调度器执行完（`last_run_at` 从空变为非空），或超时。
+ *
+ * `hermes cron run <id>` 只是把 `next_run_at` 拨到近未来去排队，真正执行发生
+ * 在调度器的下一次 tick；`last_run_at` 由 Hermes 在那次 tick 里执行完才写入，
+ * 是唯一能用来判断"是否已经真正跑过"的字段（`run` 命令本身的 exit code /
+ * 文案完全不反映这一点）。超时后抛错，不静默当作成功。
+ */
+async function waitForCronJobExecuted(
+  botId: string,
+  jobId: string,
+  pollIntervalMs = TEST_RUN_POLL_INTERVAL_MS,
+  timeoutMs = TEST_RUN_POLL_TIMEOUT_MS,
+): Promise<Record<string, unknown>> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const record = await readRawCronJobRecordById(botId, jobId);
+    const lastRunAt = record?.last_run_at;
+    if (typeof lastRunAt === "string" && lastRunAt.trim()) {
+      return record as Record<string, unknown>;
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `测试运行超时：等待 ${Math.round(timeoutMs / 1000)} 秒后调度器仍未执行该任务，请稍后重试`,
+      );
+    }
+    await delay(pollIntervalMs);
+  }
+}
 
 /**
  * 测试运行：立即把 job 的 prompt/skills/deliver 真实执行一次，且**绝不触碰原任务**。
  *
  * 做法：创建一个用完即焚的临时一次性任务（同 prompt/skills/deliver，但不带
  * 生效窗口/daily_times 门控脚本，避免被门控直接跳过执行），立即对这个临时任务
- * 触发执行，等待通知投递的宽限期后读取它的真实投递结果，再把它删除。
+ * 触发执行，轮询等到它真正被调度器执行完（见 `waitForCronJobExecuted`）后
+ * 读取真实投递结果，再把它删除。
  *
  * 为什么不能直接对原 job 调用 `hermes cron run <job.id>`：
  * - 一次性(once)任务：Hermes 执行后会写 `last_run_at`，导致
@@ -1010,10 +1047,9 @@ export async function runCronJobAsTest(botId: string, job: CronJob): Promise<Cro
   }
   try {
     const execResult = await runCronJob(botId, tempId);
-    // 给通知投递留出宽限期，避免在真正投递完成前就把临时任务删掉
-    // （见 TEST_RUN_DELIVERY_GRACE_MS 注释）。
-    await delay(TEST_RUN_DELIVERY_GRACE_MS);
-    const rawAfterRun = await readRawCronJobRecordById(botId, tempId);
+    // `run` 命令本身只是把任务排队，真正执行要等调度器 tick——轮询直到
+    // `last_run_at` 真正落地，而不是靠固定 sleep 猜一个时长。
+    const rawAfterRun = await waitForCronJobExecuted(botId, tempId);
     const deliveryErrorRaw = rawAfterRun?.last_delivery_error;
     const deliveryError = typeof deliveryErrorRaw === "string" && deliveryErrorRaw.trim()
       ? deliveryErrorRaw.trim()
