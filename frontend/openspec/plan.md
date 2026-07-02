@@ -70,6 +70,10 @@
   - 角色：Developer
   - 影响文件：`frontend/src/lib/hermes-cron-client.ts`、`frontend/src/pages/marketing/scenario-tasks/ScenarioInstallModal.tsx`、`frontend/src/lib/__tests__/hermes-cron-client.test.ts`
   - 验收方式：`acli gateway qr-url --platform <platform> --wait true` 通过 `debug/exec` SSE 流式读取 stdout，一旦输出二维码链接就立即展示；关闭、重新生成或手动刷新时会取消旧请求。
+- [x] 17. 修复 frontend 分支预览发布器拉取 master runtime 的鉴权失败。
+  - 角色：Developer
+  - 影响文件：`.ci/frontend-preview.yml`、`.ci/runtime/tests/contract_tests/test_release_bundle_contracts.py`
+  - 验收方式：预览流水线自举阶段通过 `.ci/init.sh` 的 `ci_git_fetch_origin` 拉取 master runtime，可使用 SSH 或 Git WOA token fallback，不再依赖 CI checkout 的匿名 HTTP `origin`。
 
 ## 验收重点
 
@@ -81,4 +85,5 @@
 - 微信 / QQ 扫码接入使用流式 debug/exec，不能用同步等待命令结束的方式阻塞二维码展示。
 - 场景试跑下发后立即开始，开始试跑后不阻塞在等待弹窗里。
 - 国际站首版不展示场景任务入口。
+- 分支预览发布器能在 CI checkout 的 `origin` 缺少 HTTP 凭证时继续拉取 master runtime。
 - 不影响现有模板、添加、编辑、暂停、恢复、删除和最近执行。
