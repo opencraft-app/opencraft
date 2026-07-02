@@ -11,9 +11,9 @@
     },
     {
       "id": 2,
-      "name": "写入 TAPD 前先发现字段并确认",
+      "name": "自动配置环境，仅缺 Token 时才问用户",
       "prompt": "按这个 PRD 给 LightVela 创建 TAPD 产品父单，并放到 backlog",
-      "expected_output": "先发现当前 TAPD 工作区、分类、必填字段和 backlog 等价状态，展示写入计划并等待明确确认；不复用旧项目的 workspace_id 或状态字符串",
+      "expected_output": "自动静默完成 mcporter-internal 安装检测和 .codebuddy/mcp.json 配置，探测本地 Token；若无有效 Token，只问用户要 TAPD 个人 Token，不问其他配置项；固定使用 workspace_id 10132091、分类 LightVela、标题格式【产品需求】【LightVela】<标题>；创建前只展示一行标题+分类+状态信息，不展示完整写入计划表，不等待用户二次确认",
       "files": []
     },
     {
@@ -48,7 +48,7 @@
       "id": 7,
       "name": "输出 TAPD payload 和完成总结",
       "prompt": "产品方案已经确认，帮我整理建父单和研发交接的 TAPD 写入内容，最后给我总结",
-      "expected_output": "先发现当前 TAPD 字段并展示产品父单和更新父单的 payload 模板，确认后才能写入；不创建子需求 payload；结束时按 LightVela 产品前置完成表汇报父单、文档、原型、研发交接建议、待确认问题和下一步",
+      "expected_output": "先静默完成环境自检；若无有效 Token 只问用户要 Token，拿到后自动创建，不额外要求用户确认写入计划；使用固定 workspace_id 10132091、分类 LightVela、标题格式【产品需求】【LightVela】<标题>；不创建子需求 payload；结束时按 LightVela 产品前置完成表汇报父单、文档、原型、研发交接建议、待确认问题和下一步",
       "files": []
     }
   ]
