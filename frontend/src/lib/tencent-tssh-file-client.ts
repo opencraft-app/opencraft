@@ -30,6 +30,13 @@ type PendingRequest =
       resolve: (payload: unknown) => void;
       reject: (error: Error) => void;
       timer: number;
+    }
+  | {
+      kind: "exec";
+      resolve: (result: TsshExecCommandResult) => void;
+      reject: (error: Error) => void;
+      timer: number;
+      chunks: Uint8Array[];
     };
 
 export interface TsshFileClientOptions {
@@ -75,6 +82,11 @@ export interface TsshUploadProgress {
   chunks: number;
 }
 
+export interface TsshExecCommandResult {
+  exitCode: number | null;
+  output: string;
+}
+
 export interface TsshDownloadChunkSink {
   write(chunk: Uint8Array, offset: number): Promise<void> | void;
 }
@@ -99,6 +111,17 @@ const normalizeBytes = (value: unknown): Uint8Array => {
     return value.buffer;
   }
   return new Uint8Array();
+};
+
+const concatBytes = (chunks: Uint8Array[]) => {
+  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+  const output = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    output.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return output;
 };
 
 const normalizeFileInfo = (value: unknown): TsshFileInfo | null => {
@@ -269,6 +292,14 @@ export class TencentTsshFileClient {
       IsDir: isDir,
     });
     return isRecord(payload) && payload.Deleted === true;
+  }
+
+  async execCommand(cmd: string, timeout = 60) {
+    await this.connect();
+    return this.sendExecRequest("PtyExecCmdStream", {
+      Cmd: cmd,
+      Timeout: timeout,
+    });
   }
 
   async fileInfo(path: string) {
@@ -446,6 +477,19 @@ export class TencentTsshFileClient {
     });
   }
 
+  private sendExecRequest(type: string, data: Record<string, unknown>) {
+    return new Promise<TsshExecCommandResult>((resolve, reject) => {
+      const requestId = this.trackPending({
+        kind: "exec",
+        resolve,
+        reject,
+        timer: 0,
+        chunks: [],
+      });
+      this.sendBson(type, requestId, data);
+    });
+  }
+
   private trackPending(request: PendingRequest) {
     const requestId = makeRequestId();
     request.timer = window.setTimeout(() => {
@@ -523,6 +567,20 @@ export class TencentTsshFileClient {
       }
       case "single": {
         this.resolvePending(customData, request, payload);
+        return;
+      }
+      case "exec": {
+        const data = normalizeBytes(payload?.Data);
+        if (data.byteLength > 0) {
+          request.chunks.push(data.slice());
+        }
+        if (payload?.IsLast === true) {
+          const output = new TextDecoder().decode(concatBytes(request.chunks));
+          this.resolvePending(customData, request, {
+            exitCode: typeof payload.ExitCode === "number" ? payload.ExitCode : null,
+            output,
+          });
+        }
         return;
       }
     }
