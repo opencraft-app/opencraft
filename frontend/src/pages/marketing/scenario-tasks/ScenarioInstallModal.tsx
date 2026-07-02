@@ -1,10 +1,10 @@
 import { CheckCircle2, Loader2, MessageCircle, QrCode, RefreshCw, ScanLine } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { QRCodeSVG } from "qrcode.react";
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useT } from "@/i18n/t";
-import { execCommand } from "@/lib/hermes-cron-client";
+import { execCommandStream } from "@/lib/hermes-cron-client";
 import type { ScenarioTaskField, ScenarioTaskPack } from "./scenario-packs";
 import {
   buildScenarioTaskDraft,
@@ -405,34 +405,71 @@ function GatewayQrConnectDialog({
   const [status, setStatus] = useState<GatewayQrStatus>("creating");
   const [qrValue, setQrValue] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const command = useMemo(() => buildGatewayQrUrlCommand(target), [target]);
   const channelLabel = formatScenarioDeliveryTargetLabel(target, t);
 
   const startGatewayQr = useCallback(async () => {
+    abortRef.current?.abort();
+    const abortController = new AbortController();
+    abortRef.current = abortController;
     setStatus("creating");
     setQrValue("");
     setErrorMessage(null);
 
+    let streamedOutput = "";
+    let hasQrValue = false;
     try {
-      const result = await execCommand(botId, command);
-      const output = result.output.trim();
+      const result = await execCommandStream(botId, command, {
+        signal: abortController.signal,
+        onOutput: (output) => {
+          if (abortController.signal.aborted) return;
+          streamedOutput = output;
+          const parsedQrValue = extractGatewayQrValue(output);
+          if (!parsedQrValue) return;
+          hasQrValue = true;
+          setQrValue(parsedQrValue);
+          setStatus("waiting_qr");
+        },
+      });
+      if (abortController.signal.aborted) return;
+      const output = result.output.trim() || streamedOutput.trim();
       const parsedQrValue = extractGatewayQrValue(output);
       if (parsedQrValue) {
+        hasQrValue = true;
         setQrValue(parsedQrValue);
         setStatus("waiting_qr");
+      }
+      if (hasQrValue) {
+        await onConnected();
         return;
       }
-      setStatus("waiting_qr");
-      setErrorMessage(t("二维码生成完成，但没有解析到二维码链接。请扫码后刷新状态，或重试。"));
+      setStatus("failed");
+      setErrorMessage(t("二维码生成完成，但没有解析到二维码链接。请重试。"));
     } catch (error) {
+      if (abortController.signal.aborted) return;
+      if (hasQrValue) {
+        setStatus("waiting_qr");
+        setErrorMessage(t("等待扫码结果超时。二维码可能仍可使用，扫码后请刷新状态；如果失败请重新生成。"));
+        return;
+      }
       setStatus("failed");
       setErrorMessage(error instanceof Error ? error.message : t("二维码生成失败"));
     }
-  }, [botId, command, t]);
+  }, [botId, command, onConnected, t]);
 
   useEffect(() => {
     void startGatewayQr();
   }, [startGatewayQr]);
+
+  useEffect(() => () => {
+    abortRef.current?.abort();
+  }, []);
+
+  const handleConnected = useCallback(async () => {
+    abortRef.current?.abort();
+    await onConnected();
+  }, [onConnected]);
 
   return (
     <Dialog open onOpenChange={(open) => {
@@ -490,7 +527,7 @@ function GatewayQrConnectDialog({
               </div>
               <button
                 type="button"
-                onClick={() => void onConnected()}
+                onClick={() => void handleConnected()}
                 disabled={status === "creating"}
                 className="inline-flex h-9 items-center justify-center rounded-md bg-black text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
               >

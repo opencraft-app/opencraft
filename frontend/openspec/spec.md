@@ -93,6 +93,8 @@ type ScenarioTaskDraft = {
 - `weixin`：仅当现有通道状态显示微信已扫码接入后可试跑或添加；未接入时在当前弹窗内通过 `debug/exec` 执行 `acli gateway qr-url --platform weixin --wait true` 获取二维码。
 - `qqbot`：仅当现有通道状态显示 QQ 已扫码接入后可试跑或添加；未接入时在当前弹窗内通过 `debug/exec` 执行 `acli gateway qr-url --platform qqbot --wait true` 获取二维码。
 - 不再在场景安装流程内展示 `local` 作为用户可选项，也不再引导用户跳转到 `/agents/channels`。
+- `--wait true` 会让命令在扫码完成前保持运行，因此二维码接入必须走 `Accept: text/event-stream` 的流式 `debug/exec`，实时读取 stdout；不能使用同步 `execCommand` 等命令结束后再解析二维码。
+- 用户关闭弹窗、重新生成二维码或手动刷新通道状态时，需要 abort 当前流式请求，避免旧请求继续 pending。
 
 点击“先跑一次”后：
 

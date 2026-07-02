@@ -101,7 +101,17 @@ export interface DebugExecPayload {
   status: string;
   exit_code: number;
   output: string;
+  invocation_id?: string;
+  command_id?: string;
+  start_time?: string;
+  end_time?: string;
 }
+
+export interface ExecCommandStreamOptions {
+  signal?: AbortSignal;
+  onOutput?: (output: string) => void;
+}
+
 interface ApiEnvelope<T> {
   code?: number | string;
   data: T;
@@ -245,6 +255,142 @@ export async function execCommand(botId: string, command: string): Promise<Debug
     });
   }
   return payload;
+}
+
+export async function execCommandStream(
+  botId: string,
+  command: string,
+  options: ExecCommandStreamOptions = {},
+): Promise<DebugExecPayload> {
+  const baseUrl = resolveConfiguredAuthApiBaseUrl();
+  if (baseUrl === null) {
+    throw new Error("[hermes-cron] auth API base URL not configured");
+  }
+  const headers = new Headers({
+    "Content-Type": "application/json",
+    "Accept": "text/event-stream",
+  });
+  const token = readStoredAuthToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  const url = `${baseUrl.replace(/\/+$/, "")}/v1/instances/${encodeURIComponent(botId)}/debug/exec`;
+  const resp = await fetch(url, {
+    method: "POST",
+    credentials: "include",
+    headers,
+    signal: options.signal,
+    body: JSON.stringify({ command, run_as_user: "agentuser" }),
+  });
+  if (!resp.ok) {
+    if (resp.status === 401 || resp.status === 403) {
+      writeStoredAuthToken(null);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event(AUTH_UNAUTHORIZED_EVENT));
+      }
+      throw new CronCommandError({
+        command,
+        output: "登录已过期，请重新登录",
+        status: `HTTP ${resp.status}`,
+        exitCode: -1,
+      });
+    }
+    let detail = "";
+    try {
+      const errBody = (await resp.json()) as DebugExecErrorPayload;
+      detail = errBody?.message ?? errBody?.error ?? "";
+    } catch { /* ignore */ }
+    throw new CronCommandError({
+      command,
+      output: detail || `HTTP ${resp.status}`,
+      status: `HTTP ${resp.status}`,
+      exitCode: -1,
+    });
+  }
+
+  const reader = resp.body?.getReader();
+  if (!reader) {
+    throw new CronCommandError({
+      command,
+      output: "response body is not readable",
+      status: "BAD_RESPONSE",
+      exitCode: -1,
+    });
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let accumulatedOutput = "";
+  let finalPayload: DebugExecPayload | null = null;
+
+  const handleEvent = (part: string) => {
+    const parsed = parseDebugExecSseEvent(part);
+    if (!parsed) return;
+    if ((parsed.eventType === "stdout" || parsed.eventType === "stderr") && typeof parsed.data.chunk === "string") {
+      accumulatedOutput += parsed.data.chunk;
+      options.onOutput?.(accumulatedOutput);
+      return;
+    }
+    if (parsed.eventType === "finished" && isRecord(parsed.data.response)) {
+      const response = parsed.data.response;
+      finalPayload = {
+        status: typeof response.status === "string" ? response.status : "SUCCESS",
+        exit_code: typeof response.exit_code === "number" ? response.exit_code : 0,
+        output: typeof response.output === "string" ? response.output : accumulatedOutput,
+        invocation_id: typeof response.invocation_id === "string" ? response.invocation_id : typeof parsed.data.invocation_id === "string" ? parsed.data.invocation_id : undefined,
+        command_id: typeof response.command_id === "string" ? response.command_id : typeof parsed.data.command_id === "string" ? parsed.data.command_id : undefined,
+        start_time: typeof response.start_time === "string" ? response.start_time : undefined,
+        end_time: typeof response.end_time === "string" ? response.end_time : undefined,
+      };
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() ?? "";
+    for (const part of parts) handleEvent(part);
+  }
+  buffer += decoder.decode();
+  if (buffer.trim()) handleEvent(buffer);
+
+  const payload = finalPayload ?? {
+    status: accumulatedOutput ? "SUCCESS" : "FAILED",
+    exit_code: accumulatedOutput ? 0 : 1,
+    output: accumulatedOutput,
+  };
+  const ok = payload.exit_code === 0 && payload.status?.toUpperCase() !== "FAILED";
+  if (!ok) {
+    throw new CronCommandError({
+      command,
+      output: payload.output || accumulatedOutput,
+      status: payload.status || "FAILED",
+      exitCode: payload.exit_code ?? -1,
+    });
+  }
+  return payload;
+}
+
+function parseDebugExecSseEvent(part: string): { eventType: string; data: Record<string, unknown> } | null {
+  const lines = part.split("\n");
+  let eventType = "";
+  let dataStr = "";
+  for (const line of lines) {
+    if (line.startsWith("event: ")) eventType = line.slice(7).trim();
+    else if (line.startsWith("data: ")) dataStr += line.slice(6);
+  }
+  if (!dataStr) return null;
+  try {
+    const data = JSON.parse(dataStr) as unknown;
+    return isRecord(data) ? { eventType, data } : null;
+  } catch {
+    return null;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function buildDebugExecDetailsOutput(details: DebugExecErrorPayload["details"]): string {

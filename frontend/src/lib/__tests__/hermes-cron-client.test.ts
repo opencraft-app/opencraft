@@ -6,6 +6,7 @@ import {
   createCronJob,
   createCronJobWithScriptRollback,
   execCommand,
+  execCommandStream,
   listCronJobs,
   listRecentCronRuns,
   parseCronRunFilesOutput,
@@ -389,6 +390,24 @@ describe("createCronJob auth handling", () => {
     expect(body.command).toContain("agent_skipped");
 	  });
 
+  it("streams debug exec stdout chunks before the command finishes", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(streamExec([
+      "event: stdout\ndata: {\"chunk\":\"QR: https://qr.example.com/abc\"}\n\n",
+      "event: finished\ndata: {\"response\":{\"status\":\"SUCCESS\",\"exit_code\":0,\"output\":\"connected\"}}\n\n",
+    ]));
+    vi.stubGlobal("fetch", fetchMock);
+    const outputs: string[] = [];
+
+    const payload = await execCommandStream("bot-1", "acli gateway qr-url --platform weixin --wait true", {
+      onOutput: (output) => outputs.push(output),
+    });
+
+    expect(outputs).toEqual(["QR: https://qr.example.com/abc"]);
+    expect(payload).toMatchObject({ status: "SUCCESS", exit_code: 0, output: "connected" });
+    const headers = fetchMock.mock.calls[0]?.[1]?.headers as Headers;
+    expect(headers.get("Accept")).toBe("text/event-stream");
+  });
+
   it("removes a prepared LightVela script when cron create fails", async () => {
     const script = "lightvela-effective-window-job-1.py";
     const fetchMock = vi.fn()
@@ -452,6 +471,20 @@ function failedExec(output: string) {
         status: "FAILED",
         exit_code: 1,
         output,
+      },
+    }),
+  };
+}
+
+function streamExec(chunks: string[]) {
+  const encoder = new TextEncoder();
+  return {
+    ok: true,
+    status: 200,
+    body: new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+        controller.close();
       },
     }),
   };

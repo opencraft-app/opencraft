@@ -66,6 +66,10 @@
   - 角色：Developer + Reviewer
   - 影响文件：`frontend/src/pages/marketing/openclaw-automations-panel.tsx`、`frontend/src/pages/marketing/scenario-tasks/ScenarioInstallModal.tsx`、`frontend/src/pages/marketing/scenario-tasks/ScenarioEnableConfirmModal.tsx`、`frontend/src/pages/marketing/scenario-tasks/ScenarioRunPreview.tsx`
   - 验收方式：`isGlobal` 为 true 时不展示场景任务入口和相关弹窗；新增场景弹窗使用项目 Dialog primitive；旧的等待结果预览组件和文案不再保留。
+- [x] 16. 修复微信 / QQ 扫码接入命令一直 pending 时无法展示二维码的问题。
+  - 角色：Developer
+  - 影响文件：`frontend/src/lib/hermes-cron-client.ts`、`frontend/src/pages/marketing/scenario-tasks/ScenarioInstallModal.tsx`、`frontend/src/lib/__tests__/hermes-cron-client.test.ts`
+  - 验收方式：`acli gateway qr-url --platform <platform> --wait true` 通过 `debug/exec` SSE 流式读取 stdout，一旦输出二维码链接就立即展示；关闭、重新生成或手动刷新时会取消旧请求。
 
 ## 验收重点
 
@@ -74,6 +78,7 @@
 - 试跑结束后可以添加为常态化自动任务。
 - 场景器首版只保留微信 / QQ 主动推送；未连接通道时先引导在弹窗内扫码连接，再试跑。
 - 已扫码接入微信或 QQ 时，可以把试跑和常态任务结果推送到对应通道。
+- 微信 / QQ 扫码接入使用流式 debug/exec，不能用同步等待命令结束的方式阻塞二维码展示。
 - 场景试跑下发后立即开始，开始试跑后不阻塞在等待弹窗里。
 - 国际站首版不展示场景任务入口。
 - 不影响现有模板、添加、编辑、暂停、恢复、删除和最近执行。
