@@ -646,15 +646,17 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
         )}
       />
 
-      <ScenarioTaskGrid
-        packs={SCENARIO_TASK_PACKS}
-        installedScenarioIds={installedScenarioIds}
-        compact={visibleJobs.length > 0}
-        onRunOnce={openScenarioInstaller}
-        onSchedule={openScenarioInstaller}
-      />
+      {!isGlobal && (
+        <ScenarioTaskGrid
+          packs={SCENARIO_TASK_PACKS}
+          installedScenarioIds={installedScenarioIds}
+          compact={visibleJobs.length > 0}
+          onRunOnce={openScenarioInstaller}
+          onSchedule={openScenarioInstaller}
+        />
+      )}
 
-      {scenarioReminderNotice && (
+      {!isGlobal && scenarioReminderNotice && (
         <ScenarioReminderBanner
           notice={scenarioReminderNotice}
           onDismiss={() => setScenarioReminderNotice(null)}
@@ -778,7 +780,7 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
         />
       )}
 
-      {scenarioInstallPack && (
+      {!isGlobal && scenarioInstallPack && (
         <ScenarioInstallModal
           pack={scenarioInstallPack}
           botId={botId}
@@ -794,7 +796,7 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
         />
       )}
 
-      {scenarioEnableConfirmOpen && scenarioDraft && (
+      {!isGlobal && scenarioEnableConfirmOpen && scenarioDraft && (
         <ScenarioEnableConfirmModal
           pack={getScenarioTaskPack(scenarioDraft.scenarioId)}
           draft={scenarioDraft}

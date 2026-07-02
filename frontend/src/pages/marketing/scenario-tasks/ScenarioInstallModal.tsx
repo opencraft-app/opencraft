@@ -1,8 +1,8 @@
-import { CheckCircle2, Loader2, MessageCircle, QrCode, RefreshCw, ScanLine, X } from "lucide-react";
+import { CheckCircle2, Loader2, MessageCircle, QrCode, RefreshCw, ScanLine } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
 import { QRCodeSVG } from "qrcode.react";
 
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useT } from "@/i18n/t";
 import { execCommand } from "@/lib/hermes-cron-client";
 import type { ScenarioTaskField, ScenarioTaskPack } from "./scenario-packs";
@@ -68,26 +68,16 @@ export function ScenarioInstallModal({
     setValues((current) => ({ ...current, [key]: value }));
   };
 
-  return createPortal(
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 py-3" role="dialog" aria-modal="true" onClick={onClose}>
-      <div
-        className="relative max-h-[calc(100vh-24px)] w-full max-w-[680px] overflow-y-auto rounded-lg bg-white p-6 shadow-2xl"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute right-4 top-4 inline-flex h-7 w-7 items-center justify-center rounded-full text-black/50 transition hover:bg-black/[0.04] hover:text-black/80"
-          aria-label={t("关闭")}
-        >
-          <X className="h-4 w-4" />
-        </button>
-
-        <div className="mb-5 pr-8">
+  return (
+    <Dialog open onOpenChange={(open) => {
+      if (!open && !submitting) onClose();
+    }}>
+      <DialogContent className="max-h-[calc(100vh-24px)] w-[calc(100vw-2rem)] max-w-[680px] overflow-y-auto rounded-lg bg-white p-6 shadow-2xl md:w-[680px]">
+        <DialogHeader className="mb-5 pr-8">
           <p className="text-xs font-medium text-black/42">{t("场景任务")}</p>
-          <h2 className="mt-1 text-lg font-semibold text-black/90">{t("设置场景任务")}</h2>
-          <p className="mt-1 text-sm leading-6 text-black/55">{pack.name} · {pack.description}</p>
-        </div>
+          <DialogTitle className="mt-1 text-lg font-semibold text-black/90">{t("设置场景任务")}</DialogTitle>
+          <DialogDescription className="mt-1 text-sm leading-6 text-black/55">{pack.name} · {pack.description}</DialogDescription>
+        </DialogHeader>
 
         <ScenarioStepIndicator step={step} onChange={setStep} />
 
@@ -199,9 +189,8 @@ export function ScenarioInstallModal({
             </>
           )}
         </div>
-      </div>
-    </div>,
-    document.body,
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -445,22 +434,20 @@ function GatewayQrConnectDialog({
     void startGatewayQr();
   }, [startGatewayQr]);
 
-  return createPortal(
-    <div className="fixed inset-0 z-[240] flex items-center justify-center bg-black/45 px-4 py-3" role="dialog" aria-modal="true" onClick={onClose}>
-      <div className="relative w-full max-w-[360px] rounded-md bg-white p-5 text-center shadow-2xl" onClick={(event) => event.stopPropagation()}>
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute right-3 top-3 inline-flex h-7 w-7 items-center justify-center rounded-full text-black/45 transition hover:bg-black/[0.04] hover:text-black/80"
-          aria-label={t("关闭")}
-        >
-          <X className="h-4 w-4" />
-        </button>
+  return (
+    <Dialog open onOpenChange={(open) => {
+      if (!open) onClose();
+    }}>
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-[360px] rounded-md bg-white p-5 text-center shadow-2xl md:w-[360px]">
         <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-md bg-[#07C160]/10">
           <ScanLine className="h-5 w-5 text-[#07C160]" />
         </div>
-        <h3 className="text-base font-semibold text-black/90">{t("{{channel}}扫码接入", { channel: channelLabel })}</h3>
-        <p className="mt-1 text-sm font-medium text-[#07C160]">{status === "creating" ? t("正在生成二维码") : t("请扫码完成接入")}</p>
+        <DialogHeader className="mb-0 space-y-1 text-center">
+          <DialogTitle className="text-base font-semibold text-black/90">{t("{{channel}}扫码接入", { channel: channelLabel })}</DialogTitle>
+          <DialogDescription className="text-sm font-medium text-[#07C160]">
+            {status === "creating" ? t("正在生成二维码") : t("请扫码完成接入")}
+          </DialogDescription>
+        </DialogHeader>
         <div className="mx-auto mt-4 flex h-52 w-52 items-center justify-center rounded-md border border-black/[0.08] bg-black/[0.025]">
           {qrValue ? (
             <GatewayQrValuePreview value={qrValue} alt={t("{{channel}}接入二维码", { channel: channelLabel })} />
@@ -512,9 +499,8 @@ function GatewayQrConnectDialog({
             </>
           )}
         </div>
-      </div>
-    </div>,
-    document.body,
+      </DialogContent>
+    </Dialog>
   );
 }
 

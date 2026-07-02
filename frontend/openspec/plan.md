@@ -62,6 +62,10 @@
   - 角色：Developer
   - 影响文件：`frontend/src/pages/marketing/scenario-tasks/scenario-task-builder.ts`、`frontend/src/pages/marketing/scenario-tasks/ScenarioInstallModal.tsx`、`frontend/src/pages/marketing/openclaw-automations-panel.tsx`、`frontend/openspec/spec.md`
   - 验收方式：一次性场景试跑默认创建为当前时间后数秒执行；开始试跑后关闭配置弹窗，向微信 / QQ 发送接单确认消息，在自动任务页提示结果稍后推送，并保留添加为自动任务入口。
+- [x] 15. 国际站首版屏蔽场景任务入口，并修复 review 发现的弹窗可访问性和废弃代码问题。
+  - 角色：Developer + Reviewer
+  - 影响文件：`frontend/src/pages/marketing/openclaw-automations-panel.tsx`、`frontend/src/pages/marketing/scenario-tasks/ScenarioInstallModal.tsx`、`frontend/src/pages/marketing/scenario-tasks/ScenarioEnableConfirmModal.tsx`、`frontend/src/pages/marketing/scenario-tasks/ScenarioRunPreview.tsx`
+  - 验收方式：`isGlobal` 为 true 时不展示场景任务入口和相关弹窗；新增场景弹窗使用项目 Dialog primitive；旧的等待结果预览组件和文案不再保留。
 
 ## 验收重点
 
@@ -71,4 +75,5 @@
 - 场景器首版只保留微信 / QQ 主动推送；未连接通道时先引导在弹窗内扫码连接，再试跑。
 - 已扫码接入微信或 QQ 时，可以把试跑和常态任务结果推送到对应通道。
 - 场景试跑下发后立即开始，开始试跑后不阻塞在等待弹窗里。
+- 国际站首版不展示场景任务入口。
 - 不影响现有模板、添加、编辑、暂停、恢复、删除和最近执行。

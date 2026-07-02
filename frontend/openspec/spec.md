@@ -18,6 +18,7 @@ frontend/src/pages/marketing/scenario-tasks/
 `openclaw-automations-panel.tsx` 只负责：
 
 - 展示场景任务区。
+- 通过 `isGlobal` 在国际站屏蔽场景任务入口和相关弹窗。
 - 持有当前安装 draft / preview 状态。
 - 调用 `createCronJobWithScriptRollback` 创建一次性和周期 Cron。
 - 调用 `refreshAll` / `refreshRecentRuns` 刷新列表。
@@ -75,6 +76,8 @@ type ScenarioTaskDraft = {
 
 `ScenarioTaskGrid` 渲染四个 `ScenarioTaskCard`，位置在 header 和已生效 / 最近执行分段之间。无自动任务时作为主空态；已有自动任务时仍展示为紧凑推荐区。
 
+国际站首版不渲染 `ScenarioTaskGrid`、`ScenarioInstallModal`、`ScenarioEnableConfirmModal` 和场景提示条。
+
 `ScenarioInstallModal` 是两步弹窗：
 
 1. `任务本身`：展示场景目标字段和任务摘要，减少产品逻辑解释文案。
@@ -101,6 +104,8 @@ type ScenarioTaskDraft = {
 - 对应一次性任务在已生效任务卡片里显示“立即开始”。
 
 `ScenarioEnableConfirmModal` 展示任务名称、频率、回传位置和关注摘要，确认后创建周期 Cron。
+
+上述场景弹窗必须使用项目已有的 Radix Dialog primitive，保留焦点管理、Escape 关闭和 `aria-modal` 等基础可访问性能力。
 
 ## 状态流
 
