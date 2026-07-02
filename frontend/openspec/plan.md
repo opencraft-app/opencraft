@@ -74,6 +74,10 @@
   - 角色：Developer
   - 影响文件：`.ci/frontend-preview.yml`、`.ci/runtime/tests/contract_tests/test_release_bundle_contracts.py`
   - 验收方式：预览流水线自举阶段通过 `.ci/init.sh` 的 `ci_git_fetch_origin` 拉取 master runtime，可使用 SSH 或 Git WOA token fallback，不再依赖 CI checkout 的匿名 HTTP `origin`。
+- [x] 18. 隔离 frontend 分支预览双产物构建的 Next 缓存。
+  - 角色：Developer
+  - 影响文件：`frontend/package.json`、`frontend/scripts/clean-next-build-state.mjs`、`.ci/runtime/commands/publish_frontend_preview.sh`、`frontend/scripts/build-release-artifacts.mjs`
+  - 验收方式：每次 `build:next`、preview variant 构建和 release artifact 构建前都会清理 `.next`，避免 `cn -> global` 顺序构建复用 webpack cache 导致第二段国际站构建失败。
 
 ## 验收重点
 
@@ -86,4 +90,5 @@
 - 场景试跑下发后立即开始，开始试跑后不阻塞在等待弹窗里。
 - 国际站首版不展示场景任务入口。
 - 分支预览发布器能在 CI checkout 的 `origin` 缺少 HTTP 凭证时继续拉取 master runtime。
+- 分支预览的国内站和国际站构建互不复用 `.next` / webpack cache。
 - 不影响现有模板、添加、编辑、暂停、恢复、删除和最近执行。

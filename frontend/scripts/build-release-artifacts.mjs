@@ -105,6 +105,7 @@ export async function runFrontendArtifactBuildCommand(scriptName, env = process.
   }
 
   rmSync(outputDir, { recursive: true, force: true });
+  rmSync(".next", { recursive: true, force: true });
   rmSync("out", { recursive: true, force: true });
   await runner(nodeBin(env), ["scripts/subset-fonts.mjs"], env);
   await runner(nodeBin(env), ["scripts/sync-fumadocs-content.mjs"], env);

@@ -69,7 +69,7 @@ build_next_preview_variant() {
   local output_dir="$4"
 
   echo "构建 frontend next 预览产物：variant=${variant} region=${region} output=${output_dir}"
-  rm -rf out "$output_dir"
+  rm -rf .next out "$output_dir"
   (
     export VITE_REGION="$region"
     export NEXT_PUBLIC_REGION="$region"

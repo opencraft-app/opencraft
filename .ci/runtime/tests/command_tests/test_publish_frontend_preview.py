@@ -15,6 +15,7 @@ class PublishFrontendPreviewTests(unittest.TestCase):
         self.assertIn('FRONTEND_NEXT_GLOBAL_DIR="$FRONTEND_DIR/out-global"', source)
         self.assertIn('FRONTEND_PREVIEW_CN_ARTIFACT_DIR="$FRONTEND_NEXT_CN_DIR"', source)
         self.assertIn('FRONTEND_PREVIEW_INTL_ARTIFACT_DIR="$FRONTEND_NEXT_GLOBAL_DIR"', source)
+        self.assertIn('rm -rf .next out "$output_dir"', source)
         self.assertIn('du -sh "$FRONTEND_PREVIEW_CN_ARTIFACT_DIR" "$FRONTEND_PREVIEW_INTL_ARTIFACT_DIR"', source)
         self.assertIn('upload_staticpages_preview cn "$FRONTEND_PREVIEW_CN_ARTIFACT_DIR"', source)
         self.assertIn('upload_staticpages_preview intl "$FRONTEND_PREVIEW_INTL_ARTIFACT_DIR"', source)
