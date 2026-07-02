@@ -7,6 +7,8 @@ const shortSha = sourceSha.slice(0, 12);
 const repository = "registry.example.com/lightclaw/frontend-pages";
 const cnRef = `${repository}:${shortSha}-cf-cn-lightvela-staging`;
 const globalRef = `${repository}:${shortSha}-cf-global-lightvela-intl-staging`;
+const CN_AUTH_API_BASE_URL = "https://lightclaw.tech";
+const GLOBAL_AUTH_API_BASE_URL = "https://api-sandbox-kr-1.lightclaw.tech";
 const baseEnv = {
   FRONTEND_RELEASE_MATRIX: "cf:cn-lightvela-staging",
   FRONTEND_ARTIFACT_REPOSITORY: repository,
@@ -38,7 +40,7 @@ function makeCfManifest(overrides: Record<string, unknown> = {}) {
     },
     bakedEnv: {
       VITE_REGION: "cn",
-      VITE_AUTH_API_BASE_URL: "https://lightclaw.tech",
+      VITE_AUTH_API_BASE_URL: CN_AUTH_API_BASE_URL,
       VITE_AEGIS_ENABLED: "true",
       VITE_AEGIS_ID: "4e66EF5XoPEXx3y8lw",
       VITE_AEGIS_HOST_URL: "https://rumt-zh.com",
@@ -72,7 +74,7 @@ function makeGlobalManifest() {
     },
     bakedEnv: {
       VITE_REGION: "global",
-      VITE_AUTH_API_BASE_URL: "https://api-sandbox-kr-1.lightclaw.tech",
+      VITE_AUTH_API_BASE_URL: GLOBAL_AUTH_API_BASE_URL,
       VITE_AEGIS_ENABLED: "true",
       VITE_AEGIS_ID: "2ellOCK3ozed3owgOj",
       VITE_AEGIS_HOST_URL: "https://rumt-sg.com",
