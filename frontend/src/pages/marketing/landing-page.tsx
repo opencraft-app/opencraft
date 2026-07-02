@@ -12,13 +12,14 @@ import { LoginModal } from "@/components/site/login-modal";
 import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/site/public-site-header";
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
 import { useOpenClaw } from "@/contexts/openclaw-context";
+import { useRealnamePhoneVerificationEnabled } from "@/contexts/runtime-config-context";
 import { useSession } from "@/contexts/session-context";
 import { useT } from "@/i18n/t";
-import { isGlobal } from "@/lib/region";
+import { isCN, isGlobal } from "@/lib/region";
 import { oauthErrorMessage } from "@/lib/oauth";
 import { captureProductEvent, PRODUCT_ANALYTICS_EVENTS, PRODUCT_ANALYTICS_LOCATIONS } from "@/observability/posthog";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
-import { AGENTS_HOME_PATH, SUBSCRIBE_PATH, getAgentCreatingPath } from "@/lib/agent-routes";
+import { AGENTS_HOME_PATH, SUBSCRIBE_PATH, ACCOUNT_PATH, getAgentCreatingPath } from "@/lib/agent-routes";
 
 import HeroSection from "@/imports/Frame2147230025/sections/HeroSection";
 import BrandIconsSection from "@/imports/Frame2147230025/sections/BrandIconsSection";
@@ -57,8 +58,9 @@ export const LandingPageView = ({
   renderLink,
 }: LandingPageViewProps) => {
   const t = useT();
-  const { isAuthenticated } = useSession();
+  const { isAuthenticated, session } = useSession();
   const { bots, isSubscribed } = useOpenClaw();
+  const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
   const oauthError = useMemo(() => new URLSearchParams(locationSearch).get("oauth_error"), [locationSearch]);
   const oauthInitialError = useMemo(() => oauthErrorMessage(oauthError), [oauthError]);
   const [showLogin, setShowLogin] = useState(false);
@@ -80,6 +82,18 @@ export const LandingPageView = ({
       navigateTo(AGENTS_HOME_PATH);
       return;
     }
+    // 国内站：已登录用户在进入创建流程前，必须先完成实名认证。
+    // 未实名则跳转账号管理页，并通过 query 触发页面顶部的实名提醒 tips。
+    if (isCN) {
+      const user = session.user;
+      const realnameVerified = realnamePhoneVerificationEnabled
+        ? user?.realnameLevel === "phone_3fa"
+        : Boolean(user?.realnameVerified);
+      if (!realnameVerified) {
+        navigateTo(`${ACCOUNT_PATH}?realname_required=1`);
+        return;
+      }
+    }
     // 已登录但未订阅：先去订阅页
     if (!isSubscribed) {
       navigateTo(SUBSCRIBE_PATH);
@@ -88,10 +102,15 @@ export const LandingPageView = ({
     // 已登录且已订阅：有智能体则进 agent 默认页（/agents），
     // 没有智能体则进入创建流程，而不是直接跳到人设设置页。
     navigateTo(bots.length > 0 ? AGENTS_HOME_PATH : getAgentCreatingPath(true));
-  }, [navigateTo, isAuthenticated, isSubscribed, bots.length]);
+  }, [navigateTo, isAuthenticated, isSubscribed, bots.length, session.user, realnamePhoneVerificationEnabled]);
 
-  // 已登录态下，首页主按钮文案改为「我的智能体伙伴」
-  const ctaLabel = isAuthenticated ? t("我的智能体伙伴") : t("立即创建");
+  // 首页主按钮文案：
+  //   - 未登录 → 「立即创建」
+  //   - 已登录但未订阅 → 「立即创建」（点击去订阅）
+  //   - 已登录且已订阅但无智能体 → 「立即创建」（点击进创建流程）
+  //   - 已登录且已订阅且有智能体 → 「我的智能体伙伴」（点击进 agent 主页）
+  const showAgentPartnerLabel = isAuthenticated && isSubscribed && bots.length > 0;
+  const ctaLabel = showAgentPartnerLabel ? t("我的智能体伙伴") : t("立即创建");
   const renderFooterLink: RenderFooterLink | undefined = renderLink
     ? ({ "aria-label": ariaLabel, children, className, href, onClick }) =>
         renderLink({ ariaLabel, children, className, href, onClick })
