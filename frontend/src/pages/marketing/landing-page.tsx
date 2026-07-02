@@ -17,6 +17,8 @@ import { useT } from "@/i18n/t";
 import { isGlobal } from "@/lib/region";
 import { oauthErrorMessage } from "@/lib/oauth";
 import { captureProductEvent, PRODUCT_ANALYTICS_EVENTS, PRODUCT_ANALYTICS_LOCATIONS } from "@/observability/posthog";
+import { DATONG_PAGE_IDS } from "@/observability/datong";
+import { trackDatongClick } from "@/observability/datong-tracker";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { AGENTS_HOME_PATH, SUBSCRIBE_PATH, getAgentCreatingPath } from "@/lib/agent-routes";
 
@@ -71,9 +73,23 @@ export const LandingPageView = ({
     navigateTo("/", { replace: true });
   }, [authControls, navigateTo, oauthError]);
 
-  const handleCreateClick = useCallback(() => {
+  const handleCreateClick = useCallback((origin: 'hero' | 'header' | 'footer' = 'hero') => {
     captureProductEvent(PRODUCT_ANALYTICS_EVENTS.LANDING_CTA_CLICKED, {
       location: PRODUCT_ANALYTICS_LOCATIONS.PUBLIC_LANDING,
+    });
+    const target = !isAuthenticated
+      ? AGENTS_HOME_PATH
+      : !isSubscribed
+        ? SUBSCRIBE_PATH
+        : bots.length > 0
+          ? AGENTS_HOME_PATH
+          : getAgentCreatingPath(true);
+    trackDatongClick(`${origin}_create_now_btn`, {
+      pgid: DATONG_PAGE_IDS.HOME,
+      params: {
+        has_bots: bots.length > 0,
+        target,
+      },
     });
     // 未登录：进入创建流程入口（产品壳内会引导登录）
     if (!isAuthenticated) {
@@ -107,19 +123,19 @@ export const LandingPageView = ({
           currentPath={currentPath}
           locale={publicLocale}
           localized={publicLocalized}
-          onCreateClick={handleCreateClick}
+          onCreateClick={() => handleCreateClick('header')}
           onLoginClick={authControls ? undefined : () => setShowLogin(true)}
           position="absolute"
           renderLink={renderLink}
           renderLanguageSwitcher={renderLanguageSwitcher}
         />
-        <HeroSection onCreateClick={handleCreateClick} ctaLabel={ctaLabel} />
+        <HeroSection onCreateClick={() => handleCreateClick('hero')} ctaLabel={ctaLabel} />
       </div>
       <BrandIconsSection />
       <FeatureSection />
       <CardsSection />
       <ProcessSection />
-      <CtaSection onCreateClick={handleCreateClick} ctaLabel={ctaLabel} />
+      <CtaSection onCreateClick={() => handleCreateClick('footer')} ctaLabel={ctaLabel} />
       {isGlobal ? <LightVelaFooter renderLink={renderFooterLink} /> : <LegalFooter icpPlacement="right" />}
       {!authControls ? (
         <LoginModal

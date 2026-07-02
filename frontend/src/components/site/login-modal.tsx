@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Loader2, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { useRepositories } from "@/contexts/repository-context";
@@ -18,9 +18,45 @@ import {
 import { assetUrl } from "@/lib/asset-url";
 import { isGlobal } from "@/lib/region";
 import { captureProductEvent, PRODUCT_ANALYTICS_EVENTS, PRODUCT_ANALYTICS_LOCATIONS } from "@/observability/posthog";
+import { trackDatongEvent } from "@/observability/datong-tracker";
+import { DATONG_EVENTS } from "@/observability/datong";
 
 const qqLogo = assetUrl("/login/qq-logo.png");
 const wechatLogo = assetUrl("/login/wechat-logo.png");
+
+/**
+ * OAuth 登录是整页跳转（redirectToOAuthStart → 第三方 → 回跳 → 重新 hydrate session），
+ * 跳转前的 provider 在回跳后已丢失。这里用 sessionStorage 把 provider 暂存到回跳后，
+ * 供 login_success 上报 `method` 参数使用。上报后清除。
+ *
+ * is_new_user：后端 AuthSessionSnapshot / User 暂未下发该字段，本期不上报，
+ * 待后端补字段后再加。
+ */
+const LOGIN_PROVIDER_STORAGE_KEY = "lc_login_provider";
+
+const rememberLoginProvider = (provider: OAuthProvider) => {
+  try {
+    sessionStorage.setItem(LOGIN_PROVIDER_STORAGE_KEY, provider);
+  } catch {
+    /* sessionStorage 不可用时静默降级：method 字段缺失，不阻断登录 */
+  }
+};
+
+const readLoginProvider = (): string | undefined => {
+  try {
+    return sessionStorage.getItem(LOGIN_PROVIDER_STORAGE_KEY) ?? undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const clearLoginProvider = () => {
+  try {
+    sessionStorage.removeItem(LOGIN_PROVIDER_STORAGE_KEY);
+  } catch {
+    /* ignore */
+  }
+};
 
 /**
  * OAuth 按钮在弹窗中的视觉配置
@@ -149,6 +185,8 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
   const [agreed, setAgreed] = useState(false);
   const [showAgreeHint, setShowAgreeHint] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 确保 login_success 只上报一次（session.stage 变化可能触发多次 useEffect）
+  const loginReportedRef = useRef(false);
 
   useEffect(() => setMounted(true), []);
   useEffect(() => installShowGitHubLoginHelper(), []);
@@ -157,6 +195,16 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
   useEffect(() => {
     if (!open) return;
     if (session.stage === "authenticated" && session.user) {
+      if (!loginReportedRef.current) {
+        loginReportedRef.current = true;
+        const loginMethod = readLoginProvider();
+        trackDatongEvent(DATONG_EVENTS.LOGIN_SUCCESS, {
+          params: {
+            method: loginMethod ?? "unknown",
+          },
+        });
+        clearLoginProvider();
+      }
       onClose();
       onSuccess?.();
     }
@@ -202,6 +250,7 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
     if (!loginUrl) return;
     setError(null);
     captureProductEvent(PRODUCT_ANALYTICS_EVENTS.OAUTH_PROVIDER_CLICKED, { provider });
+    rememberLoginProvider(provider);
     redirectToOAuthStart(loginUrl);
   };
 

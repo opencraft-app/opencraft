@@ -25,6 +25,8 @@ import {
 import { buildPayPlan } from "@/lib/wx-pay";
 import { AGENTS_HOME_PATH } from "@/lib/agent-routes";
 import { captureProductEvent, PRODUCT_ANALYTICS_EVENTS } from "@/observability/posthog";
+import { trackDatongEvent } from "@/observability/datong-tracker";
+import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
 import { QRCodeSVG } from "qrcode.react";
 
 /* ─── Notion DESIGN.md Tokens ─── */
@@ -1626,6 +1628,20 @@ export const SubscribePage = ({
       plan_name: plan.name,
       bot_status: createdBot.status,
     });
+    trackDatongEvent(DATONG_EVENTS.SUBSCRIBE_PAY_SUCCESS, {
+      pgid: DATONG_PAGE_IDS.SUBSCRIBE,
+      params: {
+        plan: plan.id,
+        plan_name: plan.name,
+      },
+    });
+    trackDatongEvent(DATONG_EVENTS.AGENT_CREATE_SUCCESS, {
+      pgid: DATONG_PAGE_IDS.SUBSCRIBE,
+      params: {
+        bot_id: createdBot.id,
+        plan: plan.id,
+      },
+    });
     subscribe();
     setModalStep("closed");
     setSelectedPlan(null);
@@ -1673,6 +1689,14 @@ export const SubscribePage = ({
    * 此时跳过下单、直接走 finalizeBot（与免费链路一致）。
    */
   const startPaidPassOrder = useCallback(async (plan: PlanInfo) => {
+    trackDatongEvent(DATONG_EVENTS.SUBSCRIBE_CHECKOUT_START, {
+      pgid: DATONG_PAGE_IDS.SUBSCRIBE,
+      params: {
+        plan: plan.id,
+        plan_name: plan.name,
+        billing_period: paidBillingActive ? aiDuration.period : plan.raw.time_span,
+      },
+    });
     if (isSubscribed) {
       /* 已有有效 pass，直接创建实例即可 */
       await finalizeBot(plan);
