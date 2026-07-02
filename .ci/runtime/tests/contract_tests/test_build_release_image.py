@@ -18,6 +18,7 @@ from contracts.build_release_image import (  # noqa: E402
     image_for_target,
     main,
     playground_frontend_auth_api_base_url,
+    playground_frontend_region,
     resolve_docker_build_args,
 )
 from contracts.bundles import ImageTarget  # noqa: E402
@@ -28,7 +29,21 @@ class BuildReleaseImageTests(unittest.TestCase):
     def test_frontend_playground_build_bakes_env_scoped_auth_api_base(self) -> None:
         self.assertEqual(
             resolve_docker_build_args("frontend", "sandbox-bj-7"),
-            {"VITE_AUTH_API_BASE_URL": "https://api-sandbox-bj-7.lightclaw.tech"},
+            {
+                "NEXT_PUBLIC_AUTH_API_BASE_URL": "https://api-sandbox-bj-7.lightclaw.tech",
+                "NEXT_PUBLIC_REGION": "cn",
+                "VITE_AUTH_API_BASE_URL": "https://api-sandbox-bj-7.lightclaw.tech",
+                "VITE_REGION": "cn",
+            },
+        )
+        self.assertEqual(
+            resolve_docker_build_args("frontend", "sandbox-kr-1"),
+            {
+                "NEXT_PUBLIC_AUTH_API_BASE_URL": "https://api-sandbox-kr-1.lightclaw.tech",
+                "NEXT_PUBLIC_REGION": "global",
+                "VITE_AUTH_API_BASE_URL": "https://api-sandbox-kr-1.lightclaw.tech",
+                "VITE_REGION": "global",
+            },
         )
 
     def test_playground_frontend_auth_api_base_uses_env_name(self) -> None:
@@ -40,6 +55,10 @@ class BuildReleaseImageTests(unittest.TestCase):
             playground_frontend_auth_api_base_url("sandbox-kr-1"),
             "https://api-sandbox-kr-1.lightclaw.tech",
         )
+
+    def test_playground_frontend_region_uses_cluster_region(self) -> None:
+        self.assertEqual(playground_frontend_region("sandbox-bj-7"), "cn")
+        self.assertEqual(playground_frontend_region("sandbox-kr-1"), "global")
 
     def test_frontend_non_playground_build_has_no_extra_build_args(self) -> None:
         self.assertEqual(resolve_docker_build_args("frontend", "shprod"), {})
@@ -60,11 +79,19 @@ class BuildReleaseImageTests(unittest.TestCase):
             target,
             "registry.example.com/lightclaw/frontend:frontend-sandbox-bj-7-abc123",
             "linux/amd64",
-            {"VITE_AUTH_API_BASE_URL": "https://api-sandbox-bj-7.lightclaw.tech"},
+            {
+                "NEXT_PUBLIC_AUTH_API_BASE_URL": "https://api-sandbox-bj-7.lightclaw.tech",
+                "NEXT_PUBLIC_REGION": "cn",
+                "VITE_AUTH_API_BASE_URL": "https://api-sandbox-bj-7.lightclaw.tech",
+                "VITE_REGION": "cn",
+            },
         )
 
         self.assertIn("--build-arg", command)
+        self.assertIn("NEXT_PUBLIC_AUTH_API_BASE_URL=https://api-sandbox-bj-7.lightclaw.tech", command)
+        self.assertIn("NEXT_PUBLIC_REGION=cn", command)
         self.assertIn("VITE_AUTH_API_BASE_URL=https://api-sandbox-bj-7.lightclaw.tech", command)
+        self.assertIn("VITE_REGION=cn", command)
         self.assertEqual(command[-1], "frontend")
 
     def test_image_for_target_matches_docker_build_image_ref(self) -> None:

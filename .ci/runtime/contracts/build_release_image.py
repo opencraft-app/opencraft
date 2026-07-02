@@ -13,7 +13,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from contracts.bundles import ImageTarget, is_playground_env, load_bundle, load_manifest, require_build_metadata
+from contracts.bundles import ImageTarget, is_playground_env, load_bundle, load_manifest, playground_region, require_build_metadata
 from contracts.image_existence import ImageCheckResult, verify_images
 
 
@@ -23,6 +23,12 @@ REPO_ROOT = RUNTIME_DIR.parents[1]
 
 def playground_frontend_auth_api_base_url(env: str) -> str:
     return f"https://api-{env}.lightclaw.tech"
+
+
+def playground_frontend_region(env: str) -> str:
+    if playground_region(env) == "kr":
+        return "global"
+    return "cn"
 
 
 def parse_args() -> argparse.Namespace:
@@ -43,23 +49,23 @@ def parse_args() -> argparse.Namespace:
 
 def docker_login(image_repo: str) -> None:
     raw_username = os.environ.get("REGISTRY_USERNAME", "")
-    raw_password = os.environ.get("REGISTRY_PASSWORD", "")
+    raw_credential = os.environ.get("REGISTRY_PASSWORD", "")
     username = raw_username.strip()
-    password = raw_password.strip()
-    if not username or not password:
+    credential = raw_credential.strip()
+    if not username or not credential:
         return
 
     registry = image_repo.split("/", 1)[0]
     try:
         subprocess.run(
             ["docker", "login", "-u", username, "--password-stdin", registry],
-            input=password.encode(),
+            input=credential.encode(),
             check=True,
             capture_output=True,
         )
     except subprocess.CalledProcessError as exc:
         source = os.environ.get("REGISTRY_PASSWORD_SOURCE", "unknown")
-        fingerprint = hashlib.sha256(password.encode()).hexdigest()[:12]
+        fingerprint = hashlib.sha256(credential.encode()).hexdigest()[:12]
         print(
             (
                 "docker login failed: "
@@ -68,9 +74,9 @@ def docker_login(image_repo: str) -> None:
                 f"username_raw_len={len(raw_username)} "
                 f"username_len={len(username)} "
                 f"password_source={source} "
-                f"password_raw_len={len(raw_password)} "
-                f"password_len={len(password)} "
-                f"password_trimmed={'yes' if raw_password != password else 'no'} "
+                f"password_raw_len={len(raw_credential)} "
+                f"password_len={len(credential)} "
+                f"password_trimmed={'yes' if raw_credential != credential else 'no'} "
                 f"password_fingerprint={fingerprint}"
             ),
             file=sys.stderr,
@@ -112,7 +118,14 @@ def all_target_images_exist(targets: list[ImageTarget], tag: str) -> tuple[bool,
 
 def resolve_docker_build_args(service: str, env: str) -> dict[str, str]:
     if service == "frontend" and is_playground_env(env):
-        return {"VITE_AUTH_API_BASE_URL": playground_frontend_auth_api_base_url(env)}
+        auth_api_base_url = playground_frontend_auth_api_base_url(env)
+        region = playground_frontend_region(env)
+        return {
+            "NEXT_PUBLIC_AUTH_API_BASE_URL": auth_api_base_url,
+            "NEXT_PUBLIC_REGION": region,
+            "VITE_AUTH_API_BASE_URL": auth_api_base_url,
+            "VITE_REGION": region,
+        }
     return {}
 
 
