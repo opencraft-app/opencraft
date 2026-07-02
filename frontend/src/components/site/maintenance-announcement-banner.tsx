@@ -12,6 +12,7 @@
  */
 
 import { Megaphone, X } from "lucide-react";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useT } from "@/i18n/t";
 import { stripPublicSiteLocalePrefix } from "@/lib/public-site-routing";
@@ -34,54 +35,9 @@ const ANNOUNCEMENT_HREF = "/docs/announcements/public-beta";
 /** 公告条占据的页面高度（px）。 */
 export const ANNOUNCEMENT_BANNER_HEIGHT_PX = 36;
 
-function useBrowserPathname() {
-  const [pathname, setPathname] = useState<string | null>(null);
-
-  useEffect(() => {
-    let frame = 0;
-    const updatePathname = () => {
-      window.cancelAnimationFrame(frame);
-      frame = window.requestAnimationFrame(() => setPathname(window.location.pathname));
-    };
-
-    const originalPushState = window.history.pushState;
-    const originalReplaceState = window.history.replaceState;
-
-    const patchedPushState: typeof window.history.pushState = function patchedPushState(...args) {
-      const result = originalPushState.apply(this, args);
-      updatePathname();
-      return result;
-    };
-
-    const patchedReplaceState: typeof window.history.replaceState = function patchedReplaceState(...args) {
-      const result = originalReplaceState.apply(this, args);
-      updatePathname();
-      return result;
-    };
-
-    updatePathname();
-    window.addEventListener("popstate", updatePathname);
-    window.history.pushState = patchedPushState;
-    window.history.replaceState = patchedReplaceState;
-
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.removeEventListener("popstate", updatePathname);
-      if (window.history.pushState === patchedPushState) {
-        window.history.pushState = originalPushState;
-      }
-      if (window.history.replaceState === patchedReplaceState) {
-        window.history.replaceState = originalReplaceState;
-      }
-    };
-  }, []);
-
-  return pathname;
-}
-
 export function MaintenanceAnnouncementBanner() {
   const t = useT();
-  const pathname = useBrowserPathname();
+  const pathname = usePathname();
   const message = t("LightVela 预计将于 2026 年 7 月 15 日正式开启公测，内测用户将享受 1 个月延期权益。");
   // 默认不显示，挂载时再读 localStorage —— 避免 SSR / 首屏 flash 不一致
   const [dismissed, setDismissed] = useState(true);
