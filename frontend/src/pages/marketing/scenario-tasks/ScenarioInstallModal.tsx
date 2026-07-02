@@ -1,9 +1,10 @@
-import { Loader2, MessageCircle, Monitor, QrCode, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { CheckCircle2, Loader2, MessageCircle, QrCode, RefreshCw, ScanLine, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { QRCodeSVG } from "qrcode.react";
 
 import { useT } from "@/i18n/t";
-import { AGENT_SECTION_PATH_BY_ID } from "@/lib/agent-routes";
+import { execCommand } from "@/lib/hermes-cron-client";
 import type { ScenarioTaskField, ScenarioTaskPack } from "./scenario-packs";
 import {
   buildScenarioTaskDraft,
@@ -12,34 +13,56 @@ import {
   type ScenarioTaskDraft,
 } from "./scenario-task-builder";
 
+type ScenarioPushDeliveryTarget = Exclude<ScenarioDeliveryTarget, "local">;
+type GatewayQrStatus = "creating" | "waiting_qr" | "failed";
+type ScenarioInstallStep = "task" | "delivery";
+
 export function ScenarioInstallModal({
   pack,
+  botId,
   submitting,
   initialValues,
   initialDeliver,
   enabledChannels,
   channelStatus,
+  onRefreshChannels,
   onClose,
   onRunOnce,
   onEnableDirect,
 }: {
   pack: ScenarioTaskPack;
+  botId: string;
   submitting: boolean;
   initialValues?: Record<string, string>;
   initialDeliver?: string;
   enabledChannels: Set<string> | null;
   channelStatus: "loading" | "ready";
+  onRefreshChannels: () => Promise<void>;
   onClose: () => void;
   onRunOnce: (draft: ScenarioTaskDraft) => void;
   onEnableDirect: (draft: ScenarioTaskDraft) => void;
 }) {
   const t = useT();
+  const [step, setStep] = useState<ScenarioInstallStep>("task");
   const [values, setValues] = useState<Record<string, string>>(() => {
     const entries = pack.fields.map((field) => [field.key, initialValues?.[field.key] ?? field.defaultValue]);
     return Object.fromEntries(entries);
   });
-  const [deliverTarget, setDeliverTarget] = useState<ScenarioDeliveryTarget>(() => normalizeScenarioDeliverTarget(initialDeliver ?? "local"));
+  const [deliverTarget, setDeliverTarget] = useState<ScenarioPushDeliveryTarget>(() => selectInitialPushDeliverTarget(initialDeliver, enabledChannels));
   const draft = useMemo(() => buildScenarioTaskDraft({ pack, values, deliver: deliverTarget }), [deliverTarget, pack, values]);
+  const selectedChannelConnected = channelStatus === "ready" && enabledChannels?.has(deliverTarget) === true;
+  const actionDisabled = submitting || !selectedChannelConnected;
+  const isTaskStep = step === "task";
+
+  useEffect(() => {
+    if (channelStatus !== "ready" || !enabledChannels) return;
+    setDeliverTarget((current) => {
+      if (enabledChannels.has(current)) return current;
+      if (enabledChannels.has("weixin")) return "weixin";
+      if (enabledChannels.has("qqbot")) return "qqbot";
+      return current;
+    });
+  }, [channelStatus, enabledChannels]);
 
   const updateValue = (key: string, value: string) => {
     setValues((current) => ({ ...current, [key]: value }));
@@ -66,46 +89,67 @@ export function ScenarioInstallModal({
           <p className="mt-1 text-sm leading-6 text-black/55">{pack.name} · {pack.description}</p>
         </div>
 
-        <div className="grid gap-4">
-          <section className="rounded-md border border-black/[0.08] bg-white p-4">
-            <h3 className="text-sm font-semibold text-black/85">{t("目标信息")}</h3>
-            <div className="mt-3 grid gap-3">
-              {pack.fields.map((field) => (
-                <ScenarioFieldControl
-                  key={field.key}
-                  field={field}
-                  value={values[field.key] ?? field.defaultValue}
-                  onChange={(value) => updateValue(field.key, value)}
+        <ScenarioStepIndicator step={step} onChange={setStep} />
+
+        <div className="mt-4 grid gap-4">
+          {isTaskStep ? (
+            <>
+              <section className="rounded-md border border-black/[0.08] bg-white p-4">
+                <h3 className="text-sm font-semibold text-black/85">{t("任务设置")}</h3>
+                <div className="mt-3 grid gap-3">
+                  {pack.fields.map((field) => (
+                    <ScenarioFieldControl
+                      key={field.key}
+                      field={field}
+                      value={values[field.key] ?? field.defaultValue}
+                      onChange={(value) => updateValue(field.key, value)}
+                    />
+                  ))}
+                </div>
+                {pack.safetyNote && (
+                  <p className="mt-3 rounded-md border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-xs leading-5 text-[#8A5A00]">
+                    {pack.safetyNote}
+                  </p>
+                )}
+              </section>
+
+              <section className="rounded-md border border-black/[0.08] bg-white p-4">
+                <h3 className="text-sm font-semibold text-black/85">{t("任务摘要")}</h3>
+                <p className="mt-2 line-clamp-6 whitespace-pre-line text-xs leading-5 text-black/55">{draft.generatedPrompt}</p>
+              </section>
+            </>
+          ) : (
+            <section className="rounded-md border border-black/[0.08] bg-white p-4">
+              <h3 className="text-sm font-semibold text-black/85">{t("执行与回传")}</h3>
+              <ScenarioDeliverPicker
+                botId={botId}
+                value={deliverTarget}
+                enabledChannels={enabledChannels}
+                channelStatus={channelStatus}
+                onRefreshChannels={onRefreshChannels}
+                onChange={setDeliverTarget}
+              />
+              <dl className="mt-3 grid gap-2 text-sm">
+                <SummaryRow
+                  label={t("试跑方式")}
+                  value={(
+                    <>
+                      {t("一次性执行，")}
+                      <strong className="font-semibold text-black/88">{t("下发后立即开始")}</strong>
+                    </>
+                  )}
                 />
-              ))}
-            </div>
-          </section>
-
-          <section className="rounded-md border border-black/[0.08] bg-white p-4">
-            <h3 className="text-sm font-semibold text-black/85">{t("执行与回传")}</h3>
-            <ScenarioDeliverPicker
-              value={deliverTarget}
-              enabledChannels={enabledChannels}
-              channelStatus={channelStatus}
-              onChange={setDeliverTarget}
-            />
-            <dl className="mt-3 grid gap-2 text-sm">
-              <SummaryRow label={t("试跑方式")} value={t("一次性 Cron，约 2 分钟后执行")} />
-              <SummaryRow label={t("常态频率")} value={pack.defaultFrequencyLabel} />
-              <SummaryRow label={t("回传方式")} value={draft.generatedDeliverLabel} />
-              <SummaryRow label={t("任务名称")} value={draft.generatedName} />
-            </dl>
-            {pack.safetyNote && (
-              <p className="mt-3 rounded-md border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-xs leading-5 text-[#8A5A00]">
-                {pack.safetyNote}
-              </p>
-            )}
-          </section>
-
-          <section className="rounded-md border border-black/[0.08] bg-white p-4">
-            <h3 className="text-sm font-semibold text-black/85">{t("试跑摘要")}</h3>
-            <p className="mt-2 line-clamp-5 whitespace-pre-line text-xs leading-5 text-black/55">{draft.generatedPrompt}</p>
-          </section>
+                <SummaryRow label={t("常态频率")} value={pack.defaultFrequencyLabel} />
+                <SummaryRow label={t("回传方式")} value={draft.generatedDeliverLabel} />
+                <SummaryRow label={t("任务名称")} value={draft.generatedName} />
+              </dl>
+              {!selectedChannelConnected && (
+                <p className="mt-3 rounded-md border border-black/[0.08] bg-black/[0.025] px-3 py-2 text-xs leading-5 text-black/55">
+                  {t("请先在当前弹窗内连接{{channel}}，连接成功后再试跑或添加自动任务。", { channel: formatScenarioDeliveryTargetLabel(deliverTarget, t) })}
+                </p>
+              )}
+            </section>
+          )}
         </div>
 
         <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
@@ -117,23 +161,43 @@ export function ScenarioInstallModal({
           >
             {t("取消")}
           </button>
-          <button
-            type="button"
-            onClick={() => onEnableDirect(draft)}
-            disabled={submitting}
-            className="inline-flex h-9 items-center justify-center rounded-md border border-black/[0.08] bg-white px-4 text-sm font-semibold text-black/75 transition hover:bg-black/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {t("直接添加为自动任务")}
-          </button>
-          <button
-            type="button"
-            onClick={() => onRunOnce(draft)}
-            disabled={submitting}
-            className="inline-flex h-9 min-w-[112px] items-center justify-center gap-2 rounded-md bg-black px-4 text-sm font-semibold text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            {t("先跑一次")}
-          </button>
+          {isTaskStep ? (
+            <button
+              type="button"
+              onClick={() => setStep("delivery")}
+              className="inline-flex h-9 min-w-[112px] items-center justify-center rounded-md bg-black px-4 text-sm font-semibold text-white transition hover:bg-black/85"
+            >
+              {t("下一步")}
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => setStep("task")}
+                disabled={submitting}
+                className="inline-flex h-9 items-center justify-center rounded-md border border-black/[0.08] bg-white px-4 text-sm font-semibold text-black/65 transition hover:bg-black/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {t("上一步")}
+              </button>
+              <button
+                type="button"
+                onClick={() => onEnableDirect(draft)}
+                disabled={actionDisabled}
+                className="inline-flex h-9 items-center justify-center rounded-md border border-black/[0.08] bg-white px-4 text-sm font-semibold text-black/75 transition hover:bg-black/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {t("直接添加为自动任务")}
+              </button>
+              <button
+                type="button"
+                onClick={() => onRunOnce(draft)}
+                disabled={actionDisabled}
+                className="inline-flex h-9 min-w-[112px] items-center justify-center gap-2 rounded-md bg-black px-4 text-sm font-semibold text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                {t("先跑一次")}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>,
@@ -141,41 +205,88 @@ export function ScenarioInstallModal({
   );
 }
 
+function ScenarioStepIndicator({
+  step,
+  onChange,
+}: {
+  step: ScenarioInstallStep;
+  onChange: (step: ScenarioInstallStep) => void;
+}) {
+  const t = useT();
+  const steps: Array<{ key: ScenarioInstallStep; index: string; label: string }> = [
+    { key: "task", index: "1", label: t("任务本身") },
+    { key: "delivery", index: "2", label: t("消息通道") },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 gap-2" role="tablist" aria-label={t("场景任务配置步骤")}>
+      {steps.map((item) => {
+        const active = item.key === step;
+        return (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => onChange(item.key)}
+            className={
+              "flex h-10 items-center gap-2 rounded-md border px-3 text-left text-sm font-semibold transition " +
+              (active
+                ? "border-black bg-black text-white"
+                : "border-black/[0.08] bg-white text-black/58 hover:bg-black/[0.04] hover:text-black/80")
+            }
+            role="tab"
+            aria-selected={active}
+            aria-current={active ? "step" : undefined}
+          >
+            <span
+              className={
+                "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold " +
+                (active ? "bg-white text-black" : "bg-black/[0.06] text-black/55")
+              }
+            >
+              {item.index}
+            </span>
+            <span className="truncate">{item.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function ScenarioDeliverPicker({
+  botId,
   value,
   enabledChannels,
   channelStatus,
+  onRefreshChannels,
   onChange,
 }: {
-  value: ScenarioDeliveryTarget;
+  botId: string;
+  value: ScenarioPushDeliveryTarget;
   enabledChannels: Set<string> | null;
   channelStatus: "loading" | "ready";
-  onChange: (value: ScenarioDeliveryTarget) => void;
+  onRefreshChannels: () => Promise<void>;
+  onChange: (value: ScenarioPushDeliveryTarget) => void;
 }) {
   const t = useT();
+  const [connectTarget, setConnectTarget] = useState<ScenarioPushDeliveryTarget | null>(null);
   const options: Array<{
-    key: ScenarioDeliveryTarget;
+    key: ScenarioPushDeliveryTarget;
     label: string;
     description: string;
-    Icon: typeof Monitor;
+    connectLabel: string;
   }> = [
-    {
-      key: "local",
-      label: t("网页 / 最近执行"),
-      description: t("不主动推送，在自动任务页查看结果"),
-      Icon: Monitor,
-    },
     {
       key: "weixin",
       label: t("微信"),
-      description: t("复用已扫码接入的微信个人号"),
-      Icon: MessageCircle,
+      description: t("扫码接入微信个人号后，任务结果主动推送到微信"),
+      connectLabel: t("连接微信"),
     },
     {
       key: "qqbot",
       label: "QQ",
-      description: t("复用已扫码接入的 QQ 机器人"),
-      Icon: MessageCircle,
+      description: t("配置 QQ 机器人后，任务结果主动推送到 QQ"),
+      connectLabel: t("连接 QQ"),
     },
   ];
 
@@ -189,52 +300,221 @@ function ScenarioDeliverPicker({
             {t("读取通道状态中")}
           </span>
         ) : (
-          <a
-            href={AGENT_SECTION_PATH_BY_ID.channel}
+          <button
+            type="button"
+            onClick={() => void onRefreshChannels()}
             className="inline-flex items-center gap-1 text-xs font-medium text-black/55 underline decoration-black/25 underline-offset-4 transition hover:text-black"
           >
-            <QrCode className="h-3.5 w-3.5" />
-            {t("去通道扫码接入")}
-          </a>
+            <RefreshCw className="h-3.5 w-3.5" />
+            {t("刷新通道状态")}
+          </button>
         )}
       </div>
-      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
-        {options.map(({ key, label, description, Icon }) => {
-          const connected = key === "local" || enabledChannels?.has(key) === true;
-          const disabled = key !== "local" && (channelStatus === "loading" || !connected);
+      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {options.map(({ key, label, description, connectLabel }) => {
+          const connected = enabledChannels?.has(key) === true;
+          const statusKnown = channelStatus === "ready" && enabledChannels !== null;
           const active = value === key;
           return (
-            <button
+            <div
               key={key}
-              type="button"
-              onClick={() => {
-                if (!disabled) onChange(key);
-              }}
-              disabled={disabled}
               className={
-                "flex min-h-[76px] items-start gap-2 rounded-md border px-3 py-2.5 text-left transition " +
+                "rounded-md border transition " +
                 (active
                   ? "border-black bg-black text-white"
                   : "border-black/[0.08] bg-white text-black/70 hover:bg-black/[0.035]") +
-                (disabled ? " cursor-not-allowed opacity-45 hover:bg-white" : "")
+                (channelStatus === "loading" ? " opacity-60" : "")
               }
-              aria-pressed={active}
             >
-              <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${active ? "text-white" : "text-black/45"}`} />
-              <span className="min-w-0">
-                <span className="block text-sm font-semibold">{label}</span>
-                <span className={`mt-0.5 block text-[11px] leading-4 ${active ? "text-white/70" : "text-black/42"}`}>
-                  {disabled ? t("未扫码接入") : description}
+              <button
+                type="button"
+                onClick={() => onChange(key)}
+                className="flex min-h-[92px] w-full items-start gap-2 px-3 py-2.5 text-left"
+                aria-pressed={active}
+              >
+                <MessageCircle className={`mt-0.5 h-4 w-4 shrink-0 ${active ? "text-white" : "text-black/45"}`} />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold">{label}</span>
+                  <span className={`mt-0.5 block text-[11px] leading-4 ${active ? "text-white/70" : "text-black/42"}`}>
+                    {connected ? description : t("未接入，连接后才能推送")}
+                  </span>
                 </span>
-              </span>
-            </button>
+                {connected && (
+                  <CheckCircle2 className={`mt-0.5 h-4 w-4 shrink-0 ${active ? "text-white" : "text-[#0F8A4B]"}`} />
+                )}
+              </button>
+              {statusKnown && !connected && (
+                <div className="px-3 pb-3">
+                  <button
+                    type="button"
+                    onClick={() => setConnectTarget(key)}
+                    className={
+                      "inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[11px] font-semibold transition " +
+                      (active
+                        ? "border-white/30 bg-white/10 text-white hover:bg-white/15"
+                        : "border-black/[0.08] bg-black/[0.03] text-black/65 hover:bg-black/[0.06]")
+                    }
+                  >
+                    <QrCode className="h-3.5 w-3.5" />
+                    {connectLabel}
+                  </button>
+                </div>
+              )}
+            </div>
           );
         })}
       </div>
-      <p className="mt-2 text-xs leading-5 text-black/42">
-        {t("微信和 QQ 仅支持已扫码接入的通道；未接入时先去通道页完成扫码。")}
-      </p>
+      {connectTarget && (
+        <ScenarioChannelConnectDialog
+          botId={botId}
+          target={connectTarget}
+          onClose={() => setConnectTarget(null)}
+          onConnected={async (target) => {
+            await onRefreshChannels();
+            onChange(target);
+            setConnectTarget(null);
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+function ScenarioChannelConnectDialog({
+  botId,
+  target,
+  onClose,
+  onConnected,
+}: {
+  botId: string;
+  target: ScenarioPushDeliveryTarget;
+  onClose: () => void;
+  onConnected: (target: ScenarioPushDeliveryTarget) => Promise<void>;
+}) {
+  return (
+    <GatewayQrConnectDialog
+      botId={botId}
+      target={target}
+      onClose={onClose}
+      onConnected={() => onConnected(target)}
+    />
+  );
+}
+
+function GatewayQrConnectDialog({
+  botId,
+  target,
+  onClose,
+  onConnected,
+}: {
+  botId: string;
+  target: ScenarioPushDeliveryTarget;
+  onClose: () => void;
+  onConnected: () => Promise<void>;
+}) {
+  const t = useT();
+  const [status, setStatus] = useState<GatewayQrStatus>("creating");
+  const [qrValue, setQrValue] = useState("");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const command = useMemo(() => buildGatewayQrUrlCommand(target), [target]);
+  const channelLabel = formatScenarioDeliveryTargetLabel(target, t);
+
+  const startGatewayQr = useCallback(async () => {
+    setStatus("creating");
+    setQrValue("");
+    setErrorMessage(null);
+
+    try {
+      const result = await execCommand(botId, command);
+      const output = result.output.trim();
+      const parsedQrValue = extractGatewayQrValue(output);
+      if (parsedQrValue) {
+        setQrValue(parsedQrValue);
+        setStatus("waiting_qr");
+        return;
+      }
+      setStatus("waiting_qr");
+      setErrorMessage(t("二维码生成完成，但没有解析到二维码链接。请扫码后刷新状态，或重试。"));
+    } catch (error) {
+      setStatus("failed");
+      setErrorMessage(error instanceof Error ? error.message : t("二维码生成失败"));
+    }
+  }, [botId, command, t]);
+
+  useEffect(() => {
+    void startGatewayQr();
+  }, [startGatewayQr]);
+
+  return createPortal(
+    <div className="fixed inset-0 z-[240] flex items-center justify-center bg-black/45 px-4 py-3" role="dialog" aria-modal="true" onClick={onClose}>
+      <div className="relative w-full max-w-[360px] rounded-md bg-white p-5 text-center shadow-2xl" onClick={(event) => event.stopPropagation()}>
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-3 top-3 inline-flex h-7 w-7 items-center justify-center rounded-full text-black/45 transition hover:bg-black/[0.04] hover:text-black/80"
+          aria-label={t("关闭")}
+        >
+          <X className="h-4 w-4" />
+        </button>
+        <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-md bg-[#07C160]/10">
+          <ScanLine className="h-5 w-5 text-[#07C160]" />
+        </div>
+        <h3 className="text-base font-semibold text-black/90">{t("{{channel}}扫码接入", { channel: channelLabel })}</h3>
+        <p className="mt-1 text-sm font-medium text-[#07C160]">{status === "creating" ? t("正在生成二维码") : t("请扫码完成接入")}</p>
+        <div className="mx-auto mt-4 flex h-52 w-52 items-center justify-center rounded-md border border-black/[0.08] bg-black/[0.025]">
+          {qrValue ? (
+            <GatewayQrValuePreview value={qrValue} alt={t("{{channel}}接入二维码", { channel: channelLabel })} />
+          ) : status === "failed" ? (
+            <div className="px-4 text-xs leading-5 text-[#B91C1C]">{errorMessage || t("请重试")}</div>
+          ) : (
+            <div className="flex flex-col items-center gap-2 text-black/45">
+              <Loader2 className="h-7 w-7 animate-spin" />
+              <span className="text-xs">{t("正在生成二维码")}</span>
+            </div>
+          )}
+        </div>
+        {errorMessage && status !== "failed" && (
+          <p className="mt-3 text-xs leading-5 text-[#B91C1C]">{errorMessage}</p>
+        )}
+        <div className="mt-4 grid gap-2">
+          {status === "failed" ? (
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={onClose} className="inline-flex h-9 flex-1 items-center justify-center rounded-md border border-black/[0.08] text-sm font-semibold text-black/65">
+                {t("关闭")}
+              </button>
+              <button type="button" onClick={() => void startGatewayQr()} className="inline-flex h-9 flex-1 items-center justify-center rounded-md bg-black text-sm font-semibold text-white">
+                {t("重试")}
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={onClose} className="inline-flex h-9 items-center justify-center rounded-md border border-black/[0.08] text-sm font-semibold text-black/65">
+                  {t("取消")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void startGatewayQr()}
+                  disabled={status === "creating"}
+                  className="inline-flex h-9 items-center justify-center rounded-md border border-black/[0.08] text-sm font-semibold text-black/65 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {t("重新生成")}
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => void onConnected()}
+                disabled={status === "creating"}
+                className="inline-flex h-9 items-center justify-center rounded-md bg-black text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {t("我已扫码，刷新状态")}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -330,11 +610,130 @@ function ScenarioFieldControl({
   );
 }
 
-function SummaryRow({ label, value }: { label: string; value: string }) {
+function SummaryRow({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="grid grid-cols-[96px_minmax(0,1fr)] gap-3">
       <dt className="text-black/42">{label}</dt>
       <dd className="min-w-0 text-black/76">{value}</dd>
     </div>
   );
+}
+
+function selectInitialPushDeliverTarget(initialDeliver: string | undefined, enabledChannels: Set<string> | null): ScenarioPushDeliveryTarget {
+  const normalized = normalizeScenarioDeliverTarget(initialDeliver ?? "");
+  if (normalized === "weixin" || normalized === "qqbot") return normalized;
+  if (enabledChannels?.has("weixin")) return "weixin";
+  if (enabledChannels?.has("qqbot")) return "qqbot";
+  return "weixin";
+}
+
+function formatScenarioDeliveryTargetLabel(target: ScenarioPushDeliveryTarget, t: ReturnType<typeof useT>): string {
+  return target === "weixin" ? t("微信") : "QQ";
+}
+
+function buildGatewayQrUrlCommand(target: ScenarioPushDeliveryTarget): string {
+  const platform = target === "weixin" ? "weixin" : "qqbot";
+  return `acli gateway qr-url --platform ${platform} --wait true`;
+}
+
+function GatewayQrValuePreview({ value, alt }: { value: string; alt: string }) {
+  const [imageFailed, setImageFailed] = useState(false);
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [value]);
+
+  if (looksLikeQrImageUrl(value) && !imageFailed) {
+    return (
+      <img
+        src={value}
+        alt={alt}
+        onError={() => setImageFailed(true)}
+        className="h-44 w-44 rounded-md bg-white object-contain"
+      />
+    );
+  }
+
+  return (
+    <div className="rounded-md bg-white p-2">
+      <QRCodeSVG value={value} size={176} level="M" includeMargin={false} />
+    </div>
+  );
+}
+
+function extractGatewayQrValue(output: string): string {
+  const jsonValue = extractGatewayQrValueFromJson(output);
+  if (jsonValue) return jsonValue;
+
+  const urlPattern = /(?:https?:\/\/|weixin:\/\/|mqqapi:\/\/|qq:\/\/)[^\s"'<>，。；、)）\]}]+/g;
+  const matches = output.match(urlPattern) ?? [];
+  return matches.at(-1)?.trim() ?? "";
+}
+
+function extractGatewayQrValueFromJson(output: string): string {
+  const trimmed = output.trim();
+  const candidates = [trimmed];
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    candidates.push(trimmed.slice(firstBrace, lastBrace + 1));
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate) as unknown;
+      const found = findGatewayQrValue(parsed);
+      if (found) return found;
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return "";
+}
+
+function findGatewayQrValue(value: unknown): string {
+  if (typeof value === "string") {
+    return extractGatewayQrValueFromText(value);
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findGatewayQrValue(item);
+      if (found) return found;
+    }
+    return "";
+  }
+  if (!isRecord(value)) return "";
+
+  for (const key of ["qr_url", "qrUrl", "qrcode_url", "qrCodeUrl", "url", "link"]) {
+    const property = value[key];
+    if (typeof property === "string") {
+      const found = extractGatewayQrValueFromText(property);
+      if (found) return found;
+    }
+  }
+
+  for (const property of Object.values(value)) {
+    const found = findGatewayQrValue(property);
+    if (found) return found;
+  }
+  return "";
+}
+
+function extractGatewayQrValueFromText(value: string): string {
+  const trimmed = value.trim();
+  if (/^(https?:\/\/|weixin:\/\/|mqqapi:\/\/|qq:\/\/)/.test(trimmed)) return trimmed;
+  const match = trimmed.match(/(?:https?:\/\/|weixin:\/\/|mqqapi:\/\/|qq:\/\/)[^\s"'<>，。；、)）\]}]+/);
+  return match?.[0] ?? "";
+}
+
+function looksLikeQrImageUrl(value: string): boolean {
+  const lower = value.toLowerCase();
+  return lower.startsWith("data:image/")
+    || /\.(?:png|jpe?g|webp|gif|svg)(?:[?#]|$)/.test(lower)
+    || lower.includes("qrcode")
+    || lower.includes("/qr/");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }

@@ -37,7 +37,7 @@ describe("scenario task builder", () => {
       expect(draft.oneShotJobName).toBe(`试跑 - ${pack.name}`);
       expect(draft.generatedPrompt.length).toBeGreaterThan(80);
       expect(draft.generatedDeliver).toBe("local");
-      expect(draft.oneShotSchedule).toMatch(/^2026-07-02T09:02/);
+      expect(draft.oneShotSchedule).toBe("2026-07-02T09:00:05");
       expect(draft.recurringSchedule).toBe(pack.defaultSchedule);
     }
   });
@@ -76,8 +76,37 @@ describe("scenario task builder", () => {
     expect(draft.generatedPrompt).not.toContain("启发");
   });
 
+  it("explicitly guides realtime scenarios to use bounded Hermes tools", () => {
+    for (const pack of SCENARIO_TASK_PACKS) {
+      const draft = buildScenarioTaskDraft({
+        pack,
+        values: {},
+        now: new Date(2026, 6, 2, 9, 0, 0),
+      });
+
+      expect(draft.generatedPrompt).toContain("datetime");
+      expect(draft.generatedPrompt).toContain("web_search");
+      expect(draft.generatedPrompt).toContain("web_fetch");
+      expect(draft.generatedPrompt).toContain("最多检索 3 组关键词");
+      expect(draft.generatedPrompt).toContain("最多打开 4 个网页来源");
+      expect(draft.generatedPrompt).toContain("保留来源名称或链接");
+    }
+  });
+
+  it("asks the World Cup brief to fast-fail when there is no active tournament context", () => {
+    const pack = getScenarioTaskPack("world-cup-daily");
+    const draft = buildScenarioTaskDraft({
+      pack,
+      values: {},
+      now: new Date(2026, 6, 2, 9, 0, 0),
+    });
+
+    expect(draft.generatedPrompt).toContain("先确认当前是否处于世界杯比赛期");
+    expect(draft.generatedPrompt).toContain("暂停任务建议");
+  });
+
   it("builds a one-shot schedule after the requested current time", () => {
-    expect(buildOneShotSchedule(new Date(2026, 6, 2, 9, 0, 30))).toBe("2026-07-02T09:02");
+    expect(buildOneShotSchedule(new Date(2026, 6, 2, 9, 0, 30))).toBe("2026-07-02T09:00:35");
   });
 
   it("keeps selected scan-code channels as the Cron deliver target", () => {

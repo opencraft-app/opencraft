@@ -21,15 +21,15 @@
 - [x] 4. 新增 `ScenarioInstallModal`。
   - 角色：Implementer
   - 影响文件：`frontend/src/pages/marketing/scenario-tasks/ScenarioInstallModal.tsx`
-  - 验收方式：按场景填写少量字段，展示默认频率、网页 / 最近执行回传和试跑摘要，提交后返回 draft。
-- [x] 5. 新增 `ScenarioRunPreview` 和 `ScenarioEnableConfirmModal`。
+  - 验收方式：按场景填写少量字段，分步展示任务设置、任务摘要、执行频率和微信 / QQ 回传，提交后返回 draft。
+- [x] 5. 新增试跑提示承接和 `ScenarioEnableConfirmModal`。
   - 角色：Implementer
-  - 影响文件：`frontend/src/pages/marketing/scenario-tasks/ScenarioRunPreview.tsx`、`frontend/src/pages/marketing/scenario-tasks/ScenarioEnableConfirmModal.tsx`
-  - 验收方式：展示试跑中/成功/超时/失败状态，成功或超时后可进入常态任务确认。
+  - 影响文件：`frontend/src/pages/marketing/openclaw-automations-panel.tsx`、`frontend/src/pages/marketing/scenario-tasks/ScenarioEnableConfirmModal.tsx`
+  - 验收方式：试跑创建成功后在自动任务页提示已开始处理、结果稍后推送，并可进入常态任务确认。
 - [x] 6. 在 `AutomationsPanel` 中接入 Cron 创建和轮询。
   - 角色：Developer
   - 影响文件：`frontend/src/pages/marketing/openclaw-automations-panel.tsx`
-  - 验收方式：点击“先跑一次”创建一次性 Cron，轮询最近执行，确认后创建周期 Cron，并刷新已生效任务。
+  - 验收方式：点击“先跑一次”创建一次性执行任务，创建成功后刷新已生效任务和最近执行；用户可通过页面提示或最近执行查看结果，并能继续添加周期自动任务。
 - [x] 7. 更新 i18n 字典。
   - 角色：Developer
   - 影响文件：`frontend/src/i18n/generated/zh-CN.json`、`frontend/src/i18n/generated/en-US.json`、`frontend/src/i18n/generated/zh-to-key.json`
@@ -41,13 +41,34 @@
 - [x] 9. 在场景安装步骤中复用微信 / QQ 扫码通道回传。
   - 角色：Developer
   - 影响文件：`frontend/src/pages/marketing/scenario-tasks/ScenarioInstallModal.tsx`、`frontend/src/pages/marketing/scenario-tasks/scenario-task-builder.ts`、`frontend/src/pages/marketing/openclaw-automations-panel.tsx`
-  - 验收方式：已扫码接入微信 / QQ 时可选择对应回传目标；未接入时禁用并跳转通道页；试跑和常态 Cron 共用同一份 deliver。
+  - 验收方式：已扫码接入微信 / QQ 时可选择对应回传目标；未接入时禁用试跑 / 添加，并在场景弹窗内完成扫码连接；试跑和常态 Cron 共用同一份 deliver。
+- [x] 10. 收紧四个场景提示词，显式指定执行工具和信息获取方式。
+  - 角色：Developer
+  - 影响文件：`frontend/src/pages/marketing/scenario-tasks/scenario-packs.ts`、`frontend/src/pages/marketing/scenario-tasks/__tests__/scenario-task-builder.test.ts`
+  - 验收方式：世界杯等实时类场景的生成 prompt 明确优先使用联网搜索/网页浏览/可用 CLI 工具，避免模型自行泛化导致执行时间过长。
+- [x] 11. 场景安装弹窗内联完成微信 / QQ 连接。
+  - 角色：Implementer + Developer
+  - 影响文件：`frontend/src/pages/marketing/scenario-tasks/ScenarioInstallModal.tsx`、`frontend/src/pages/marketing/openclaw-automations-panel.tsx`
+  - 验收方式：场景定时任务只保留微信和 QQ 两个交付选项；未连接时可在当前弹窗内打开连接子弹窗，不再引导去通道页。
+- [x] 12. 通道连接改为实例内 exec 调用 `acli gateway qr-url`。
+  - 角色：Developer
+  - 影响文件：`frontend/src/pages/marketing/scenario-tasks/ScenarioInstallModal.tsx`、`frontend/openspec/spec.md`
+  - 验收方式：微信 / QQ 连接子弹窗都通过 `debug/exec` 执行 `acli gateway qr-url --platform <platform> --wait true` 获取二维码，不再调用前端 Repository 通道配置 API。
+- [x] 13. 将场景安装弹窗拆为任务设置和消息通道两步。
+  - 角色：Implementer
+  - 影响文件：`frontend/src/pages/marketing/scenario-tasks/ScenarioInstallModal.tsx`、`frontend/openspec/spec.md`
+  - 验收方式：第一步只展示任务设置和任务摘要；第二步展示执行与回传；去掉“当前首版仅保留微信和 QQ”等内部产品逻辑解释文案。
+- [x] 14. 将场景试跑改为下发后立即开始。
+  - 角色：Developer
+  - 影响文件：`frontend/src/pages/marketing/scenario-tasks/scenario-task-builder.ts`、`frontend/src/pages/marketing/scenario-tasks/ScenarioInstallModal.tsx`、`frontend/src/pages/marketing/openclaw-automations-panel.tsx`、`frontend/openspec/spec.md`
+  - 验收方式：一次性场景试跑默认创建为当前时间后数秒执行；开始试跑后关闭配置弹窗，向微信 / QQ 发送接单确认消息，在自动任务页提示结果稍后推送，并保留添加为自动任务入口。
 
 ## 验收重点
 
 - 四个场景全部首发。
-- 试跑采用一次性 Cron + 最近执行。
+- 试跑采用一次性执行 + 最近执行，底层复用现有 Cron 能力。
 - 试跑结束后可以添加为常态化自动任务。
-- 无外部通道时默认网页 / 最近执行，不阻断试跑。
+- 场景器首版只保留微信 / QQ 主动推送；未连接通道时先引导在弹窗内扫码连接，再试跑。
 - 已扫码接入微信或 QQ 时，可以把试跑和常态任务结果推送到对应通道。
+- 场景试跑下发后立即开始，开始试跑后不阻塞在等待弹窗里。
 - 不影响现有模板、添加、编辑、暂停、恢复、删除和最近执行。

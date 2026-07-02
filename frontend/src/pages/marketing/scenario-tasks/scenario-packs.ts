@@ -45,6 +45,12 @@ function valueOf(
   return fields.find((field) => field.key === key)?.defaultValue ?? "";
 }
 
+const realtimeToolInstruction = [
+  "执行要求：先调用 datetime 确认当前日期和时区；实时信息必须优先调用 web_search 检索，必要时再用 web_fetch 打开 1-2 个权威来源核对。",
+  "不要进行开放式长时间浏览；同一任务最多检索 3 组关键词、最多打开 4 个网页来源。信息不足时直接说明未确认，不要编造。",
+  "输出时保留来源名称或链接，方便我回看。",
+].join("\n");
+
 const stockFields: ScenarioTaskField[] = [
   {
     key: "focusScope",
@@ -212,6 +218,8 @@ export const SCENARIO_TASK_PACKS: ScenarioTaskPack[] = [
       const style = valueOf(stockFields, values, "style");
       return [
         "请生成一份 A 股财经早报，供我在开盘前快速了解市场信息。",
+        realtimeToolInstruction,
+        "优先搜索交易所公告、主流财经媒体、指数/板块公开行情和公司公告；如果某个来源无法打开，换一个权威来源即可，不要反复重试。",
         `关注范围：${focusScope}。`,
         `自选内容：${watchlist || "无特别自选内容"}。`,
         `输出风格：${style}。`,
@@ -237,6 +245,8 @@ export const SCENARIO_TASK_PACKS: ScenarioTaskPack[] = [
       const reminderMode = valueOf(worldCupFields, values, "reminderMode");
       return [
         "请生成一份世界杯今日赛况简报。",
+        realtimeToolInstruction,
+        "优先搜索 FIFA/赛事官网、主流体育媒体或比分平台；先确认当前是否处于世界杯比赛期，若赛事已结束或当天无赛程，直接说明并给出暂停任务建议。",
         `关注球队：${teams || "全赛事"}。`,
         `剧透模式：${spoilerMode}。`,
         `提醒模式：${reminderMode}。`,
@@ -262,6 +272,8 @@ export const SCENARIO_TASK_PACKS: ScenarioTaskPack[] = [
       const blockedTopics = valueOf(dailyNewsFields, values, "blockedTopics");
       return [
         "请生成一份每日新闻摘要，信息要清爽、准确，并尽量带来源。",
+        realtimeToolInstruction,
+        "优先搜索权威媒体、政府/机构公告和主流新闻源；每条重要新闻只需核对 1-2 个来源，不要做深度长文采集。",
         `关注地区/分类：${categories}。`,
         `信息密度：${density}。`,
         `立场偏好：${stance}。`,
@@ -286,6 +298,8 @@ export const SCENARIO_TASK_PACKS: ScenarioTaskPack[] = [
       const depth = valueOf(aiDigestFields, values, "depth");
       return [
         "请生成一份 AI 行业发展动态摘要。",
+        realtimeToolInstruction,
+        "优先搜索模型/产品官方博客、论文页面、GitHub 项目、主流科技媒体和研究机构公告；每条动态用最短路径确认发布日期与核心事实。",
         `关注方向：${focusArea}。`,
         `使用目的：${purpose}。`,
         `输出深度：${depth}。`,

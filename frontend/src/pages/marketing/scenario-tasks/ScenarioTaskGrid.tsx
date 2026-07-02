@@ -1,4 +1,4 @@
-import { BrainCircuit, CheckCircle2, Newspaper, Play, Timer, TrendingUp, Trophy } from "lucide-react";
+import { BrainCircuit, CheckCircle2, Newspaper, Play, TrendingUp, Trophy } from "lucide-react";
 
 import { useT } from "@/i18n/t";
 import type { ScenarioTaskId, ScenarioTaskPack } from "./scenario-packs";
@@ -41,10 +41,6 @@ export function ScenarioTaskGrid({
             {t("先让 Hermes 替你长期盯一件事；选一个场景先跑一次，结果有用后再添加为自动任务。")}
           </p>
         </div>
-        <span className="inline-flex items-center gap-1 rounded-full bg-black/[0.04] px-2.5 py-1 text-[11px] font-medium text-black/45">
-          <Timer className="h-3.5 w-3.5" />
-          {t("一次试跑后可常态化")}
-        </span>
       </div>
 
       <div className={`mt-3 grid grid-cols-1 gap-3 ${compact ? "lg:grid-cols-4" : "sm:grid-cols-2 xl:grid-cols-4"}`}>

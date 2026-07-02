@@ -21,7 +21,7 @@ const SCENARIO_DELIVER_LABELS: Record<ScenarioDeliveryTarget, string> = {
   qqbot: "QQ",
 };
 
-export function buildOneShotSchedule(now = new Date(), delayMs = 2 * 60_000): string {
+export function buildOneShotSchedule(now = new Date(), delayMs = 5_000): string {
   const next = new Date(now.getTime() + delayMs);
   const pad = (value: number) => String(value).padStart(2, "0");
   return [
@@ -34,6 +34,8 @@ export function buildOneShotSchedule(now = new Date(), delayMs = 2 * 60_000): st
     pad(next.getHours()),
     ":",
     pad(next.getMinutes()),
+    ":",
+    pad(next.getSeconds()),
   ].join("");
 }
 

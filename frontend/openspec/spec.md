@@ -12,7 +12,6 @@ frontend/src/pages/marketing/scenario-tasks/
   scenario-task-builder.ts
   ScenarioTaskGrid.tsx
   ScenarioInstallModal.tsx
-  ScenarioRunPreview.tsx
   ScenarioEnableConfirmModal.tsx
 ```
 
@@ -22,6 +21,7 @@ frontend/src/pages/marketing/scenario-tasks/
 - 持有当前安装 draft / preview 状态。
 - 调用 `createCronJobWithScriptRollback` 创建一次性和周期 Cron。
 - 调用 `refreshAll` / `refreshRecentRuns` 刷新列表。
+- 场景试跑创建成功后关闭配置弹窗，通过消息通道接单确认和页面提示条给用户“已开始处理，结果稍后推送”的预期。
 - 处理 toast 和错误文案。
 
 ## 方案取舍
@@ -63,9 +63,11 @@ type ScenarioTaskDraft = {
 `scenario-task-builder.ts` 负责：
 
 - 根据场景字段生成 prompt。
-- 生成一次性 schedule，默认当前时间后 2 分钟。
+- 实时类场景 prompt 显式指定 `datetime` / `web_search` / `web_fetch` 的有界使用方式，避免 Agent 做开放式长时间浏览。
+- 同一任务最多检索 3 组关键词、打开 4 个网页来源，并保留来源名称或链接。
+- 生成一次性 schedule，默认当前时间后数秒执行，避免传到 Hermes 时被判定为过去时间。
 - 生成周期 schedule。
-- 生成 deliver，默认 `local`；只允许 `local` / `weixin` / `qqbot` 三种场景回传目标。
+- 生成 deliver；底层 builder 保留 `local` 兼容历史数据，场景安装 UI 首版只允许 `weixin` / `qqbot` 两种主动推送目标。
 - 识别试跑任务和常态任务。
 - 从最近执行中匹配试跑结果。
 
@@ -73,32 +75,30 @@ type ScenarioTaskDraft = {
 
 `ScenarioTaskGrid` 渲染四个 `ScenarioTaskCard`，位置在 header 和已生效 / 最近执行分段之间。无自动任务时作为主空态；已有自动任务时仍展示为紧凑推荐区。
 
-`ScenarioInstallModal` 是单页弹窗：
+`ScenarioInstallModal` 是两步弹窗：
 
-1. 场景目标字段。
-2. 执行与回传摘要，并复用 `acli channel status` 结果展示微信 / QQ 扫码接入状态。
-3. 试跑确认。
+1. `任务本身`：展示场景目标字段和任务摘要，减少产品逻辑解释文案。
+2. `消息通道`：展示执行与回传摘要，并复用 `acli channel status` 结果展示微信 / QQ 扫码接入状态。
 
 底部按钮：
 
-- 主按钮：`先跑一次`
-- 次按钮：`取消`
-- 链接按钮：`直接添加为自动任务`
+- 第一步：`取消` / `下一步`
+- 第二步：`取消` / `上一步` / `直接添加为自动任务` / `先跑一次`
 
 回传目标：
 
-- `local`：默认项，结果留在最近执行中查看。
-- `weixin`：仅当现有通道状态显示微信已扫码接入时可选。
-- `qqbot`：仅当现有通道状态显示 QQ 已扫码接入时可选。
-- 未接入微信 / QQ 时，弹窗提供跳转到 `/agents/channels` 的扫码接入口，不在场景器内重做扫码流程。
+- `weixin`：仅当现有通道状态显示微信已扫码接入后可试跑或添加；未接入时在当前弹窗内通过 `debug/exec` 执行 `acli gateway qr-url --platform weixin --wait true` 获取二维码。
+- `qqbot`：仅当现有通道状态显示 QQ 已扫码接入后可试跑或添加；未接入时在当前弹窗内通过 `debug/exec` 执行 `acli gateway qr-url --platform qqbot --wait true` 获取二维码。
+- 不再在场景安装流程内展示 `local` 作为用户可选项，也不再引导用户跳转到 `/agents/channels`。
 
-`ScenarioRunPreview` 展示试跑状态：
+点击“先跑一次”后：
 
-- `creating_preview_job`
-- `waiting_preview_run`
-- `preview_succeeded`
-- `preview_timeout`
-- `preview_failed`
+- 前端创建下发后立即开始的一次性任务。
+- 创建成功后立即关闭 `ScenarioInstallModal`，切回自动任务页。
+- 前端尽快通过 `hermes send` 向所选微信 / QQ 推送一条接单确认消息，说明场景已开始处理、结果会稍后推送。
+- 页面展示轻量提示条：已开始试跑、结果稍后推送、结果也会出现在最近执行。
+- 提示条保留“添加为自动任务”入口，避免等待弹窗关闭后丢失常态化路径。
+- 对应一次性任务在已生效任务卡片里显示“立即开始”。
 
 `ScenarioEnableConfirmModal` 展示任务名称、频率、回传位置和关注摘要，确认后创建周期 Cron。
 
@@ -108,18 +108,9 @@ type ScenarioTaskDraft = {
 idle
   -> editing
   -> creating_preview_job
-  -> waiting_preview_run
-  -> preview_succeeded
+  -> preview_scheduled_notice
   -> enabling_recurring_job
   -> recurring_enabled
-
-waiting_preview_run
-  -> preview_timeout
-  -> preview_failed
-
-preview_succeeded
-  -> editing
-  -> enabling_recurring_job
 ```
 
 ## Cron 策略
@@ -158,9 +149,9 @@ v1 不依赖后端 metadata。匹配优先级：
 
 轮询策略：
 
-- 创建一次性 Cron 后立即刷新 jobs 和 recent runs。
-- 每 4 秒刷新一次，最多 2 分钟。
-- 超时后保留“添加为自动任务”入口，同时提示任务可能仍在执行，可去最近执行查看。
+- 创建一次性执行任务后立即刷新 jobs 和 recent runs。
+- v1 不再打开等待结果弹窗，也不在前台持续轮询；结果通过所选消息通道主动推送，并可在最近执行中查看。
+- 添加为自动任务入口放在页面提示条和场景卡入口中承接。
 
 ## 测试
 
@@ -170,6 +161,7 @@ v1 不依赖后端 metadata。匹配优先级：
   - 四个场景都能生成有效 draft。
   - A股 prompt 包含非投资建议。
   - AI 动态 prompt 不包含 LightVela 启发小节。
+  - 实时类场景 prompt 显式限制 `datetime` / `web_search` / `web_fetch`、3 组关键词、4 个网页来源和来源保留。
   - 一次性 schedule 晚于当前时间。
   - 周期 schedule 符合默认频率。
   - 最近执行匹配优先 job name / prompt。
@@ -182,7 +174,7 @@ v1 不依赖后端 metadata。匹配优先级：
 
 ## 风险与降级
 
-- 最近执行延迟：展示超时状态和刷新入口。
+- 最近执行延迟：消息通道主动推送优先，最近执行作为补充查看入口。
 - Cron 创建失败：保留 draft，显示错误 toast。
-- 外部通道不可用：默认 `local`，微信 / QQ 未扫码接入时禁用对应选项，不阻塞试跑。
+- 外部通道不可用：场景器首版要求用户先连接微信 / QQ；底层 builder 保留 `local` 仅用于历史数据兼容。
 - 任务数已达上限：复用现有上限确认逻辑，不绕开限制。
