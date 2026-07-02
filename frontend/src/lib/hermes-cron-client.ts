@@ -852,19 +852,155 @@ export async function resumeCronJob(botId: string, id: string): Promise<void> {
 }
 
 /**
- * 测试运行：立即手动触发一个 cron job 执行一次（不等原定调度时间）。
+ * 底层原语：立即手动触发**指定 id** 的 cron job 执行一次。
  *
  * `hermes cron run <id>` 本身就是「立即触发执行」：新建一个独立 Agent 会话、跑
  * prompt、按 deliver 投递结果，命令返回即代表这次执行已经跑完（成功/失败）。
  *
- * ⚠️ 之前这里还会额外调用一次 `hermes cron tick`，是对 Hermes 能力的误解——
- * Hermes CLI 并没有 `cron tick` 子命令（tick 只是调度器内部周期函数的名字，不是
- * 可执行的 CLI 命令），额外调用一条不存在的子命令必定报错，导致「测试运行」
- * 即使 `cron run` 已经成功也总是被判定为失败。这里去掉这条多余且必错的调用，
- * 做法与「发送测试消息」一致：一条命令、直接拿 exec 的成功/失败结果。
+ * ⚠️ 这里的"成功"只代表 Agent 本身跑成功了（Hermes 内部 `last_status`），
+ * **不代表通知真的投递出去了**——投递失败会被单独记录在 `last_delivery_error`
+ * 字段里，CLI 的 exit code / 文案完全不反映这一点。所以：
+ * - 直接暴露给「测试运行」UI 用这个原语是不够的，必须额外检查 `last_delivery_error`；
+ * - 而且直接对**原任务**调用这个命令会真正推进它的调度状态（一次性任务会被
+ *   直接标记为 completed+禁用，永远不会在原定时间触发了；周期任务的下次执行
+ *   时间也会被这次手动触发悄悄重新计算）。
+ *
+ * 因此 UI 层的「测试运行」不要直接调这个函数，应该用下面的 `runCronJobAsTest`。
+ * 这个原语仍保留导出，供其确实需要对已知 id 立即触发（例如临时任务）的场景使用。
  */
 export async function runCronJob(botId: string, id: string): Promise<DebugExecPayload> {
   return execCommand(botId, `hermes cron run ${shellQuote(id)}`);
+}
+
+/** 生成一个几乎不可能撞车的临时任务名，仅用于创建后立刻按名字反查 id */
+export function buildTestRunMarker(jobId: string): string {
+  return `__lvtest_${jobId.slice(0, 8)}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** 立即触发用的一次性 schedule：当前时间 + 60s，格式与表单里的 onceDate 一致 */
+function buildImmediateOnceSchedule(): string {
+  const d = new Date(Date.now() + 60_000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** 从 ~/.hermes/cron/jobs.json 里按 id 读出未经 `hermes cron list` 文本裁剪的原始字段（如 origin / last_delivery_error） */
+async function readRawCronJobRecordById(botId: string, jobId: string): Promise<Record<string, unknown> | null> {
+  const text = await readCronJobsJsonFile(botId);
+  if (!text) return null;
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    const arr: unknown[] = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray((parsed as { jobs?: unknown[] })?.jobs)
+        ? (parsed as { jobs: unknown[] }).jobs
+        : [];
+    for (const raw of arr) {
+      if (raw && typeof raw === "object" && String((raw as Record<string, unknown>).id ?? "") === jobId) {
+        return raw as Record<string, unknown>;
+      }
+    }
+  } catch { /* ignore parse失败，走上层兜底 */ }
+  return null;
+}
+
+/** 按 name 精确匹配反查 job id（临时任务创建后用这个拿到它的真实 id） */
+async function findCronJobIdByExactName(botId: string, name: string): Promise<string | null> {
+  const text = await readCronJobsJsonFile(botId);
+  if (!text) return null;
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    const arr: unknown[] = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray((parsed as { jobs?: unknown[] })?.jobs)
+        ? (parsed as { jobs: unknown[] }).jobs
+        : [];
+    for (const raw of arr) {
+      const r = raw as Record<string, unknown>;
+      if (r && r.name === name) {
+        const id = String(r.id ?? "");
+        if (id) return id;
+      }
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
+/**
+ * `deliver === "origin"`（或逗号分隔目标里含 "origin" 这个 token）时，把它替换
+ * 成具体的 `platform:chat_id`。
+ *
+ * 原因：`origin` 依赖任务创建时持久化下来的 `job.origin`（真实聊天会话里创建
+ * 才会有），而我们用 CLI 重新创建的临时克隆任务不会有这个上下文，如果不手动把
+ * 它换成具体目标，临时任务的 `origin` 投递就会走 Hermes 的兜底逻辑（遍历各平台
+ * home channel），可能跟原任务的真实投递目标不一致。
+ */
+async function resolveConcreteDeliverForTestRun(botId: string, job: CronJob): Promise<string> {
+  const tokens = job.deliver.split(",").map((token) => token.trim()).filter(Boolean);
+  if (!tokens.includes("origin")) return job.deliver;
+  const raw = await readRawCronJobRecordById(botId, job.id);
+  const origin = raw?.origin as { platform?: unknown; chat_id?: unknown } | undefined;
+  const hasConcreteOrigin = origin
+    && typeof origin.platform === "string"
+    && origin.platform
+    && origin.chat_id !== undefined
+    && origin.chat_id !== null
+    && String(origin.chat_id) !== "";
+  if (!hasConcreteOrigin) return job.deliver;
+  const concreteOrigin = `${String((origin as { platform: string }).platform)}:${String((origin as { chat_id: unknown }).chat_id)}`;
+  return tokens.map((token) => (token === "origin" ? concreteOrigin : token)).join(",");
+}
+
+export interface CronTestRunResult {
+  /** 临时任务这次执行的原始 exec 输出 */
+  output: string;
+  /** 非空表示 Agent 跑成功了，但通知投递失败（来自 Hermes `last_delivery_error`） */
+  deliveryError: string | null;
+}
+
+/**
+ * 测试运行：立即把 job 的 prompt/skills/deliver 真实执行一次，且**绝不触碰原任务**。
+ *
+ * 做法：创建一个用完即焚的临时一次性任务（同 prompt/skills/deliver，但不带
+ * 生效窗口/daily_times 门控脚本，避免被门控直接跳过执行），立即对这个临时任务
+ * 触发执行，读取它的真实投递结果，再把它删除。
+ *
+ * 为什么不能直接对原 job 调用 `hermes cron run <job.id>`：
+ * - 一次性(once)任务：Hermes 执行后会写 `last_run_at`，导致
+ *   `compute_next_run` 返回 `None`，任务立刻被标记为 `completed` 并禁用——
+ *   原定时间永远不会再触发了，这与"测试不影响原任务"的要求直接冲突。
+ * - 周期(interval)任务：手动触发会用**这次触发的时间**重新计算下次执行时间，
+ *   悄悄让周期节奏产生漂移。
+ * - 门控脚本（生效时间窗口/每日多个时间点）：如果当前时刻不在窗口内，Hermes
+ *   会直接跳过执行（Agent 都不会被唤醒），达不到"不管几点都要立刻真实跑一次"
+ *   的要求——所以临时任务不带这个门控脚本。
+ */
+export async function runCronJobAsTest(botId: string, job: CronJob): Promise<CronTestRunResult> {
+  const deliver = await resolveConcreteDeliverForTestRun(botId, job);
+  const marker = buildTestRunMarker(job.id);
+  await createCronJob(botId, {
+    schedule: buildImmediateOnceSchedule(),
+    prompt: job.prompt,
+    name: marker,
+    skills: job.skills,
+    deliver,
+    // 有意不传 script：跳过生效窗口/daily_times 门控，保证立刻真实执行一次
+  });
+  const tempId = await findCronJobIdByExactName(botId, marker);
+  if (!tempId) {
+    throw new Error("测试运行失败：未能定位临时任务，请稍后重试");
+  }
+  try {
+    const execResult = await runCronJob(botId, tempId);
+    const rawAfterRun = await readRawCronJobRecordById(botId, tempId);
+    const deliveryErrorRaw = rawAfterRun?.last_delivery_error;
+    const deliveryError = typeof deliveryErrorRaw === "string" && deliveryErrorRaw.trim()
+      ? deliveryErrorRaw.trim()
+      : null;
+    return { output: execResult.output, deliveryError };
+  } finally {
+    await removeCronJob(botId, tempId).catch(() => { /* 清理失败不影响本次结果 */ });
+  }
 }
 
 export async function removeCronJob(botId: string, id: string): Promise<void> {

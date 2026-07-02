@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildEffectiveWindowScript,
   buildCreateCommand,
+  buildTestRunMarker,
   createCronJob,
   createCronJobWithScriptRollback,
   execCommand,
@@ -13,8 +14,10 @@ import {
   parseLightVelaCronScript,
   parseCronListOutput,
   runCronJob,
+  runCronJobAsTest,
   shellQuote,
   splitLastRunValue,
+  type CronJob,
 } from "../hermes-cron-client";
 import { AUTH_UNAUTHORIZED_EVENT, writeStoredAuthToken } from "@/repositories/http-repositories";
 
@@ -451,6 +454,199 @@ describe("runCronJob", () => {
 
     await expect(runCronJob("bot-1", "missing-job")).rejects.toThrow("job not found");
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("buildTestRunMarker", () => {
+  it("embeds the source job id prefix so the marker stays traceable", () => {
+    const marker = buildTestRunMarker("dcb4fee9e45f1234");
+
+    expect(marker).toMatch(/^__lvtest_dcb4fee9_/);
+  });
+
+  it("never collides across consecutive calls for the same job", () => {
+    const markers = new Set(Array.from({ length: 20 }, () => buildTestRunMarker("job-1")));
+
+    expect(markers.size).toBe(20);
+  });
+});
+
+describe("runCronJobAsTest", () => {
+  const baseJob: CronJob = {
+    id: "job-1",
+    name: "喝水提醒",
+    prompt: "提醒我喝水",
+    schedule: { kind: "interval", expr: "every 2h", display: "every 2h" },
+    skills: ["health"],
+    enabled: true,
+    state: "scheduled",
+    deliver: "wecom",
+    next_run_at: "2026-07-02T20:00:00+08:00",
+    last_run_at: "2026-07-02T18:00:00+08:00",
+    last_status: "ok",
+    created_at: null,
+    script: "",
+    effective_window: null,
+    lightvela_schedule: null,
+  };
+
+  function extractCommand(fetchMock: ReturnType<typeof vi.fn>, callIndex: number): string {
+    const body = JSON.parse(String(fetchMock.mock.calls[callIndex]?.[1]?.body)) as { command: string };
+    return body.command;
+  }
+
+  function extractMarkerFromCreateCommand(command: string): string {
+    return /--name '([^']+)'/.exec(command)?.[1] ?? "";
+  }
+
+  it("clones a disposable once-off job, runs it, and cleans it up without touching the original job id", async () => {
+    let capturedMarker = "";
+    let ranTempJob = false;
+    const fetchMock = vi.fn(async (_url: unknown, init: { body?: string }) => {
+      const command = JSON.parse(String(init?.body)) as { command: string };
+      const cmd = command.command;
+      if (cmd.includes("hermes cron create")) {
+        capturedMarker = extractMarkerFromCreateCommand(cmd);
+        return okExec("Job created.");
+      }
+      if (cmd.includes("lightvela-jobs-meta.json") && cmd.startsWith("python3")) {
+        return okExec("");
+      }
+      if (cmd.includes("cat ~/.hermes/cron/jobs.json")) {
+        const record = ranTempJob
+          ? { id: "temp-1", name: capturedMarker, last_delivery_error: null }
+          : { id: "temp-1", name: capturedMarker, last_delivery_error: null };
+        return okExec(JSON.stringify([record]));
+      }
+      if (cmd === `hermes cron run 'temp-1'`) {
+        ranTempJob = true;
+        return okExec("Run triggered.");
+      }
+      if (cmd === `hermes cron remove 'temp-1'`) {
+        return okExec("Removed.");
+      }
+      throw new Error(`unexpected command in test: ${cmd}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await runCronJobAsTest("bot-1", baseJob);
+
+    expect(result.deliveryError).toBeNull();
+    expect(result.output).toBe("Run triggered.");
+    // 原任务 id 全程不应出现在任何 `cron run` / `cron remove` 命令里
+    const allCommands = fetchMock.mock.calls.map((_, i) => extractCommand(fetchMock, i));
+    expect(allCommands.some((c) => c === `hermes cron run 'job-1'`)).toBe(false);
+    expect(allCommands.some((c) => c === `hermes cron remove 'job-1'`)).toBe(false);
+    expect(allCommands.some((c) => c === `hermes cron remove 'temp-1'`)).toBe(true);
+    // 临时任务的 schedule 必须是具体的一次性时间点（once 语义），而不是原任务的 interval
+    const createCommand = allCommands.find((c) => c.includes("hermes cron create")) ?? "";
+    expect(createCommand).not.toContain("every 2h");
+  });
+
+  it("surfaces a non-null deliveryError when the agent ran but delivery failed", async () => {
+    let capturedMarker = "";
+    let ranTempJob = false;
+    const fetchMock = vi.fn(async (_url: unknown, init: { body?: string }) => {
+      const command = JSON.parse(String(init?.body)) as { command: string };
+      const cmd = command.command;
+      if (cmd.includes("hermes cron create")) {
+        capturedMarker = extractMarkerFromCreateCommand(cmd);
+        return okExec("Job created.");
+      }
+      if (cmd.includes("lightvela-jobs-meta.json") && cmd.startsWith("python3")) {
+        return okExec("");
+      }
+      if (cmd.includes("cat ~/.hermes/cron/jobs.json")) {
+        const record = ranTempJob
+          ? { id: "temp-1", name: capturedMarker, last_delivery_error: "wecom home channel not set; run /sethome" }
+          : { id: "temp-1", name: capturedMarker, last_delivery_error: null };
+        return okExec(JSON.stringify([record]));
+      }
+      if (cmd === `hermes cron run 'temp-1'`) {
+        ranTempJob = true;
+        return okExec("Run triggered.");
+      }
+      if (cmd === `hermes cron remove 'temp-1'`) {
+        return okExec("Removed.");
+      }
+      throw new Error(`unexpected command in test: ${cmd}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await runCronJobAsTest("bot-1", baseJob);
+
+    expect(result.deliveryError).toBe("wecom home channel not set; run /sethome");
+  });
+
+  it("still removes the temporary job when the manual run itself fails, and propagates the error", async () => {
+    let capturedMarker = "";
+    const fetchMock = vi.fn(async (_url: unknown, init: { body?: string }) => {
+      const command = JSON.parse(String(init?.body)) as { command: string };
+      const cmd = command.command;
+      if (cmd.includes("hermes cron create")) {
+        capturedMarker = extractMarkerFromCreateCommand(cmd);
+        return okExec("Job created.");
+      }
+      if (cmd.includes("lightvela-jobs-meta.json") && cmd.startsWith("python3")) {
+        return okExec("");
+      }
+      if (cmd.includes("cat ~/.hermes/cron/jobs.json")) {
+        return okExec(JSON.stringify([{ id: "temp-1", name: capturedMarker, last_delivery_error: null }]));
+      }
+      if (cmd === `hermes cron run 'temp-1'`) {
+        return failedExec("agent crashed");
+      }
+      if (cmd === `hermes cron remove 'temp-1'`) {
+        return okExec("Removed.");
+      }
+      throw new Error(`unexpected command in test: ${cmd}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(runCronJobAsTest("bot-1", baseJob)).rejects.toThrow("agent crashed");
+
+    const allCommands = fetchMock.mock.calls.map((_, i) => extractCommand(fetchMock, i));
+    expect(allCommands.some((c) => c === `hermes cron remove 'temp-1'`)).toBe(true);
+  });
+
+  it("resolves a bare `origin` deliver token into the original job's concrete platform:chat_id before cloning", async () => {
+    let capturedMarker = "";
+    let catCallCount = 0;
+    const fetchMock = vi.fn(async (_url: unknown, init: { body?: string }) => {
+      const command = JSON.parse(String(init?.body)) as { command: string };
+      const cmd = command.command;
+      if (cmd.includes("hermes cron create")) {
+        capturedMarker = extractMarkerFromCreateCommand(cmd);
+        return okExec("Job created.");
+      }
+      if (cmd.includes("lightvela-jobs-meta.json") && cmd.startsWith("python3")) {
+        return okExec("");
+      }
+      if (cmd.includes("cat ~/.hermes/cron/jobs.json")) {
+        catCallCount += 1;
+        if (catCallCount === 1) {
+          // 第一次读取：resolveConcreteDeliverForTestRun 查询原任务的 origin 字段
+          return okExec(JSON.stringify([
+            { id: "job-1", origin: { platform: "wecom", chat_id: "wecom-chat-abc" } },
+          ]));
+        }
+        return okExec(JSON.stringify([{ id: "temp-1", name: capturedMarker, last_delivery_error: null }]));
+      }
+      if (cmd === `hermes cron run 'temp-1'`) {
+        return okExec("Run triggered.");
+      }
+      if (cmd === `hermes cron remove 'temp-1'`) {
+        return okExec("Removed.");
+      }
+      throw new Error(`unexpected command in test: ${cmd}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await runCronJobAsTest("bot-1", { ...baseJob, deliver: "origin" });
+
+    const allCommands = fetchMock.mock.calls.map((_, i) => extractCommand(fetchMock, i));
+    const createCommand = allCommands.find((c) => c.includes("hermes cron create")) ?? "";
+    expect(createCommand).toContain("--deliver 'wecom:wecom-chat-abc'");
   });
 });
 

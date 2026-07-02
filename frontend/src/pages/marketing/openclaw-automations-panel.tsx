@@ -29,7 +29,7 @@ import {
   listCronJobs,
   listRecentCronRuns,
   pauseCronJob,
-  runCronJob,
+  runCronJobAsTest,
   writeEffectiveWindowScript,
   removeCronJob,
   resumeCronJob,
@@ -447,21 +447,29 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
   }, [botId, refreshAll, showError, t]);
 
   /**
-   * 测试运行：立即触发一次执行（`hermes cron run <id>`）。
+   * 测试运行：立即真实执行一次（`runCronJobAsTest`）。
    *
-   * 做法与「发送测试消息」（见下方 `handleSendTestMessage`）一致：只发一条命令，
-   * 命令返回即代表这次执行已经跑完，直接用它的成功/失败反馈结果——不再额外调用
-   * 一条不存在的 `hermes cron tick` 子命令（那条调用必错，是之前「测试运行总是
-   * 失败」的根因），也不再依赖「轮询最近执行 + 15s 超时」这套间接判断。
+   * 不直接对原 job 调用 `hermes cron run <job.id>`——那样会真正推进原任务的
+   * 调度状态（一次性任务会被直接标记完成+禁用，永远不会在原定时间再触发）。
+   * 而是克隆一个用完即焚的临时任务代理执行，原任务的状态完全不受影响。
+   *
+   * 执行完成后还要检查 `deliveryError`：Agent 跑成功只代表 `last_status`
+   * 正常，不代表通知真的投递出去了——投递失败会单独记录在 `last_delivery_error`
+   * 里，必须一并检查才能准确反馈「测试运行成功」还是「执行了但没发出通知」。
    */
   const handleTestRun = useCallback(async (job: CronJob) => {
     if (!botId || testState[job.id] === "running") return;
     setTestState((s) => ({ ...s, [job.id]: "running" }));
     showNotice(t("正在测试运行，请稍候…"), "info", 0);
     try {
-      await runCronJob(botId, job.id);
-      flashTestResult(job.id, "ok");
-      showNotice(t("测试运行成功"), "success");
+      const result = await runCronJobAsTest(botId, job);
+      if (result.deliveryError) {
+        flashTestResult(job.id, "fail");
+        showNotice(t("任务已执行，但通知投递失败：{{message}}", { message: result.deliveryError }), "error");
+      } else {
+        flashTestResult(job.id, "ok");
+        showNotice(t("测试运行成功"), "success");
+      }
       void refreshRecentRuns(undefined, false);
     } catch (err) {
       const message = err instanceof CronCommandError ? err.message : err instanceof Error ? err.message : String(err);
@@ -2196,7 +2204,7 @@ function AutomationFormModal({
         channel,
         t("发送失败，请检查通道配置或稍后重试"),
         t("发送失败，请先在微信中向 Hermes Agent 发送任意消息，或稍后重试"),
-        t("发送失败，请先在企业微信对话中发送 /set-home，或在下方填写 Chat ID 后重试"),
+        t("发送失败，请先在企业微信对话中向 Hermes Agent 发送 /sethome，将该对话设为 home 对话后重试"),
       ), t));
     }
   }, [botId, chatIdErrors, deliverChatIds, showTestSendToast, t]);
@@ -2578,18 +2586,21 @@ function AutomationFormModal({
                     {selected && key === "qqbot" && (
                       <span className="inline-flex items-center text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
                         {t("如未生效，可尝试向绑定的QQ机器人发送")}
-                        <InlineCopyText value="/set-home" />
+                        <InlineCopyText value="/sethome" />
                       </span>
                     )}
-                    {selected && (key === "feishu" || key === "wecom") && (
+                    {selected && key === "feishu" && (
                       <span className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>{t("支持通过默认的 home 对话或指定 Chat ID 发送通知")}</span>
+                    )}
+                    {selected && key === "wecom" && (
+                      <span className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>{t("通过默认的 home 对话发送通知")}</span>
                     )}
                     {selected && (key === "telegram" || key === "discord") && (
                       <span className="inline-flex items-center text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
                         {t("请先在")}
                         {label}
                         {t("对话中发送")}
-                        <InlineCopyText value="/set-home" />
+                        <InlineCopyText value="/sethome" />
                         {t("给机器人")}
                       </span>
                     )}
@@ -2638,7 +2649,7 @@ function AutomationFormModal({
                           </div>
                           <p className="mt-1 pl-5">
                             {t("扫码连接飞书后，默认的对话即为home对话。如需切换，可在其他对话中发送")}
-                            <InlineCopyText value="/set-home" />
+                            <InlineCopyText value="/sethome" />
                             {t("。")}
                           </p>
                         </div>
@@ -2659,26 +2670,6 @@ function AutomationFormModal({
 
                   {selected && key === "wecom" && (
                     <div className="mt-1.5 space-y-1.5 pl-5">
-                      <div className="flex items-center gap-1">
-                        <span className="w-[104px] shrink-0 whitespace-nowrap text-sm text-black/50" style={MODAL_HELP_TEXT_STYLE}>{t("Chat ID（可选）")}</span>
-                        <input
-                          type="text"
-                          value={deliverChatIds[key] ?? ""}
-                          maxLength={CHAT_ID_MAX_LENGTH}
-                          onChange={(e) => handleChatIdChange(key, e.target.value)}
-                          placeholder={t("可留空，即通过默认的 home 对话通知；也可指定 Chat ID 通知")}
-                          className="min-w-0 flex-1 rounded-lg border border-black/10 bg-white px-3 py-1.5 text-[12px] placeholder:text-[12px] placeholder:text-black/35 focus:border-black/30 focus:outline-none"
-                          style={{ fontSize: 12, lineHeight: "18px" }}
-                        />
-                      </div>
-                      {chatIdErrors[key] ? (
-                        <div
-                          className="rounded-md border border-red-500/20 bg-red-500/[0.06] px-2.5 py-1.5 text-[12px] text-red-600"
-                          style={{ lineHeight: "18px" }}
-                        >
-                          {chatIdErrors[key]}
-                        </div>
-                      ) : null}
                       <div className="space-y-2 text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
                         <div>
                           <div className="flex items-center gap-1.5">
@@ -2687,8 +2678,8 @@ function AutomationFormModal({
                           </div>
                           <p className="mt-1 pl-5">
                             {t("在企业微信目标对话中向 Hermes Agent 发送")}
-                            <InlineCopyText value="/set-home" />
-                            {t("即可将其设为 home 对话。若设置后仍提示未设置，可稍后重试，或直接在下方填写 Chat ID 指定通知目标。")}
+                            <InlineCopyText value="/sethome" />
+                            {t("即可将该对话设为 home 对话，之后的通知都会发到这个对话里。若发送后仍提示未设置，请稍后重试。")}
                           </p>
                         </div>
                       </div>
