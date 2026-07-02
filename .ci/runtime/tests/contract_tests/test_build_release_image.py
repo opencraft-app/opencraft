@@ -71,7 +71,7 @@ class BuildReleaseImageTests(unittest.TestCase):
             name="frontend",
             image_key=None,
             dockerfile="frontend/deploy/Dockerfile",
-            build_context="frontend",
+            build_context=".",
             image_repo="registry.example.com/lightclaw/frontend",
         )
 
@@ -92,7 +92,7 @@ class BuildReleaseImageTests(unittest.TestCase):
         self.assertIn("NEXT_PUBLIC_REGION=cn", command)
         self.assertIn("VITE_AUTH_API_BASE_URL=https://api-sandbox-bj-7.lightclaw.tech", command)
         self.assertIn("VITE_REGION=cn", command)
-        self.assertEqual(command[-1], "frontend")
+        self.assertEqual(command[-1], ".")
 
     def test_image_for_target_matches_docker_build_image_ref(self) -> None:
         target = ImageTarget(
