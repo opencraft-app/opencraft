@@ -120,6 +120,7 @@ metadata:
     ingress.cloud.tencent.com/modification-protection: "false"
     ingress.cloud.tencent.com/tke-service-config: frontend-public-config
     ingress.cloud.tencent.com/direct-access: "true"
+    ingress.cloud.tencent.com/pass-to-target: "true"
     ingress.cloud.tencent.com/rewrite-support: "true"
     ingress.cloud.tencent.com/auto-rewrite: "true"
 spec:
