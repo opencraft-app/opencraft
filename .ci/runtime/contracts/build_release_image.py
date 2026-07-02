@@ -112,7 +112,7 @@ def encode_built_output(built: dict[str, str], has_explicit_targets: bool) -> st
 
 def all_target_images_exist(targets: list[ImageTarget], tag: str) -> tuple[bool, list[ImageCheckResult]]:
     images = [image_for_target(target, tag) for target in targets]
-    results = verify_images(images)
+    results = verify_images(images, log_missing_errors=False)
     return all(result.exists for result in results), results
 
 

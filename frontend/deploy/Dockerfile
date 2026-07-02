@@ -2,16 +2,7 @@ FROM node:22-alpine AS build
 
 WORKDIR /frontend
 
-COPY frontend/package.json frontend/pnpm-lock.yaml frontend/.npmrc ./
-
-COPY frontend/tsconfig.json frontend/tsconfig.app.json frontend/next-env.d.ts frontend/next.config.mjs frontend/postcss.config.mjs frontend/source.config.ts frontend/mdx-components.tsx ./
-COPY frontend/public ./public
-COPY frontend/scripts ./scripts
-COPY frontend/src ./src
-COPY frontend/next-site ./next-site
-COPY frontend/vendor ./vendor
-COPY frontend/assets ./assets
-COPY frontend/patches ./patches
+COPY frontend ./
 COPY velalink /velalink
 
 ARG VITE_AUTH_API_BASE_URL

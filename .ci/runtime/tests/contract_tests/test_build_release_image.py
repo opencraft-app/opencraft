@@ -167,7 +167,7 @@ class BuildReleaseImageTests(unittest.TestCase):
             mock.patch("contracts.build_release_image.build_target") as build:
             self.assertEqual(main(), 0)
 
-            verify.assert_called_once_with([expected_image])
+            verify.assert_called_once_with([expected_image], log_missing_errors=False)
             build.assert_not_called()
             self.assertEqual((Path(tmp) / "image.txt").read_text().strip(), expected_image)
 
@@ -204,10 +204,11 @@ class BuildReleaseImageTests(unittest.TestCase):
             mock.patch("contracts.build_release_image.require_build_metadata", return_value=bundle), \
             mock.patch("contracts.build_release_image.verify_images", return_value=[
                 ImageCheckResult(expected_image, False),
-            ]), \
+            ]) as verify, \
             mock.patch("contracts.build_release_image.build_target", return_value=expected_image) as build:
             self.assertEqual(main(), 0)
 
+            verify.assert_called_once_with([expected_image], log_missing_errors=False)
             build.assert_called_once_with(
                 ImageTarget(
                     name="user-auth",
