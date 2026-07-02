@@ -38,15 +38,15 @@ import {
   fetchSkillFiles,
   fetchSkillSetDetail,
   fetchSkillSets,
+  type SkillHubKnownSkillSetScene,
   type SkillHubSkillSet,
-  type SkillHubSkillSetScene,
 } from "@/lib/skillhub-api";
 
-type ExpertFilterId = "all" | SkillHubSkillSetScene;
+type ExpertFilterId = "all" | SkillHubKnownSkillSetScene;
 type ExpertView = "list" | "grid";
 
 interface ExpertSceneOption {
-  value: SkillHubSkillSetScene;
+  value: SkillHubKnownSkillSetScene;
   label: string;
   role: string;
   icon: ElementType;
@@ -211,21 +211,24 @@ export async function resolveAvailablePackageSkillSlugs(
   return getUniqueSkillSlugs(checkedSkillSlugs.filter((skillSlug): skillSlug is string => !!skillSlug));
 }
 
-function getPackageScene(pkg: Pick<SkillHubSkillSet, "scene">, fallback: ExpertFilterId): SkillHubSkillSetScene | undefined {
-  if (pkg.scene && EXPERT_SCENE_MAP.has(pkg.scene)) return pkg.scene;
+function isKnownExpertScene(scene: string | undefined): scene is SkillHubKnownSkillSetScene {
+  return !!scene && EXPERT_SCENE_MAP.has(scene as SkillHubKnownSkillSetScene);
+}
+
+function getPackageScene(
+  pkg: Pick<SkillHubSkillSet, "scene">,
+  fallback: ExpertFilterId,
+): SkillHubKnownSkillSetScene | undefined {
+  if (isKnownExpertScene(pkg.scene)) return pkg.scene;
   return fallback === "all" ? undefined : fallback;
 }
 
-function getExpertRole(scene: SkillHubSkillSetScene | undefined, t: ReturnType<typeof useT>): string {
+function getExpertRole(scene: SkillHubKnownSkillSetScene | undefined, t: ReturnType<typeof useT>): string {
   return scene ? EXPERT_SCENE_MAP.get(scene)?.role ?? t("技能包") : t("技能包");
 }
 
 function getPackageSummary(pkg: SkillHubSkillSet, t: ReturnType<typeof useT>): string {
   return pkg.summary || pkg.remark || t("精选技能包组合，适合直接接入完整工作流。");
-}
-
-function isSupportedExpertPackage(pkg: Pick<SkillHubSkillSet, "scene">): boolean {
-  return !!pkg.scene && EXPERT_SCENE_MAP.has(pkg.scene);
 }
 
 export function buildInstallSkillCommand(skillSlug: string): string {
@@ -552,12 +555,10 @@ async function fetchExperts(params: {
     page: params.page,
     pageSize: EXPERT_PAGE_SIZE,
   });
-  const supportedPackages = (response.skillSets ?? []).filter(isSupportedExpertPackage);
+  const packages = response.skillSets ?? [];
   return {
-    packages: supportedPackages,
-    total: params.activeFilter === "all"
-      ? supportedPackages.length
-      : response.total ?? supportedPackages.length,
+    packages,
+    total: response.total ?? packages.length,
   };
 }
 

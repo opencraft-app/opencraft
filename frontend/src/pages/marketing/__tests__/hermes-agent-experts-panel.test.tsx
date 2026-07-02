@@ -420,9 +420,9 @@ describe("hermes agent experts panel", () => {
     await waitFor(() => expect(screen.queryByText("正在加载技能包")).not.toBeInTheDocument());
   });
 
-  it("loads the SkillHub scene expert catalog and hides scene-less generic packages", async () => {
+  it("loads all SkillHub packages including unknown or missing scenes", async () => {
     vi.mocked(fetchSkillSets).mockImplementation(async () => ({
-      total: 3,
+      total: 4,
       skillSets: [{
             id: 1,
             slug: "test-automation",
@@ -443,6 +443,16 @@ describe("hermes agent experts panel", () => {
             createdAt: 0,
             updatedAt: 0,
           }, {
+            id: 4,
+            slug: "mysticism-ziwei-doushu",
+            displayName: "紫微斗数",
+            summary: "新增分类摘要",
+            remark: "",
+            scene: "mysticism",
+            skillCount: 6,
+            createdAt: 0,
+            updatedAt: 0,
+          }, {
             id: 3,
             slug: "finance-quant-backtesting",
             displayName: "量化回测",
@@ -458,8 +468,10 @@ describe("hermes agent experts panel", () => {
     render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
 
     expect(await screen.findByRole("button", { name: /自动化测试/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /分析师/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /紫微斗数/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /量化回测/ })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /分析师/ })).not.toBeInTheDocument();
+    expect(screen.getAllByText("技能包").length).toBeGreaterThan(0);
     expect(fetchSkillSets).toHaveBeenCalledWith({
       keyword: "",
       scene: undefined,

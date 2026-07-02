@@ -54,7 +54,7 @@ export interface SkillHubSoulListResponse {
   souls: SkillHubSoul[];
 }
 
-export type SkillHubSkillSetScene =
+export type SkillHubKnownSkillSetScene =
   | "academic"
   | "design"
   | "ecommerce"
@@ -66,6 +66,8 @@ export type SkillHubSkillSetScene =
   | "marketing"
   | "media"
   | "tech";
+
+export type SkillHubSkillSetScene = SkillHubKnownSkillSetScene | (string & {});
 
 /** SkillHub 技能包列表项（SkillSet） */
 export interface SkillHubSkillSet {

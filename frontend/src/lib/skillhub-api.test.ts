@@ -100,6 +100,14 @@ describe("skillhub-api", () => {
         "https://lightmake.cloud/api/v1/skillsets?keyword=report&scene=finance&page=2&pageSize=6",
       );
     });
+
+    it("allows newly-added SkillHub scenes without frontend type changes", async () => {
+      const fetchMock = mockFetch({ skillSets: [] });
+      await fetchSkillSets({ scene: "mysticism" });
+      expect(fetchMock).toHaveBeenCalledWith(
+        "https://lightmake.cloud/api/v1/skillsets?scene=mysticism",
+      );
+    });
   });
 
   describe("fetchSkillSetDetail", () => {
