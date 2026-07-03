@@ -888,18 +888,23 @@ function isTestRunMarkerName(name: string): boolean {
 }
 
 /**
- * 「测试运行」临时任务用的一次性 schedule：当前时间 + 60s。
+ * 「测试运行」临时任务用的一次性 schedule。
  *
- * ⚠️ 格式只到分钟精度（无秒），这个 60s 偏移量不是随便选的：由于格式化会
- * 丢弃秒数，任意时刻落在当前分钟内剩余的时间必然 < 60s，所以偏移量必须
- * ≥ 60s 才能保证 100% 落在一个**未来的分钟**，否则当前时刻越接近分钟末尾，
- * 偏移量不够大就可能被截断回当前分钟（等价于"现在"甚至被判定为已过期）。
- * 不要把这个值调小。
+ * 直接用 Hermes 官方文档给出的**相对延迟**一次性写法（`30m` / `2h` / `1d`
+ * 这一族），而不是自己拼 ISO 时间戳——这是关键教训：
+ *
+ * - 之前这里自己拼了个 `YYYY-MM-DDTHH:MM`（**故意砍掉了秒位**）的 ISO 字符串，
+ *   而官方 ISO 示例是带秒的完整格式 `2026-03-15T09:00:00`。这个自造的、缺秒的
+ *   格式很可能压根没被解析器正确识别，导致临时任务的 `next_run_at` 算错/为空，
+ *   调度器永远扫不到它——这正是「测试运行怎么等都不执行」的根因。
+ * - 相对延迟 `2m` 是文档直接给出的一次性任务示例，一定被解析器接受，且天然
+ *   就是"未来 2 分钟"，不存在分钟精度截断那套自找的心智负担。
+ * - 为什么是 `2m` 而不是 `1m`：调度器 tick 周期固定 60s，`2m` 能稳妥覆盖
+ *   "创建到下一次 tick 对齐"的最坏情况；秒级单位（`s`）文档未提及且 60s tick
+ *   粒度下无意义，不用。
  */
 function buildImmediateOnceSchedule(): string {
-  const d = new Date(Date.now() + 60_000);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return "2m";
 }
 
 /** 从 ~/.hermes/cron/jobs.json 里按 id 读出未经 `hermes cron list` 文本裁剪的原始字段（如 origin / last_delivery_error） */
@@ -999,10 +1004,10 @@ function delay(ms: number): Promise<void> {
  *    tick 自然执行"这条已验证路径（见 `runCronJobAsTest` 的实现与注释）。
  *
  * 因此这里的轮询超时要覆盖的最坏情况变成：
- *   `buildImmediateOnceSchedule()` 因为只有分钟精度，理论最坏要等接近
- *   120s 才进入目标分钟（见该函数注释）+ 调度器下一次 tick 的最坏对齐延迟
- *   （~60s）+ Agent 实际跑一次 prompt 的执行余量。三者加起来预留到 4 分钟，
- *   一旦超时仍未执行，明确报错而不是静默当作成功。
+ *   `buildImmediateOnceSchedule()` 用的相对延迟 `2m`（精确「创建时刻 + 2 分钟」，
+ *   无分钟截断问题）+ 调度器下一次 tick 的最坏对齐延迟（~60s）+ Agent 实际跑
+ *   一次 prompt 的执行余量。三者加起来预留到 4 分钟，一旦超时仍未执行，明确报错
+ *   而不是静默当作成功。
  */
 const TEST_RUN_POLL_INTERVAL_MS = 3000;
 const TEST_RUN_POLL_TIMEOUT_MS = 240_000;
