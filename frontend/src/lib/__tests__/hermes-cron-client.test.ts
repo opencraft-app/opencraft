@@ -352,6 +352,31 @@ describe("effective window script", () => {
   });
 });
 
+describe("listCronJobs", () => {
+  it("filters out disposable __lvtest_ temp jobs created by runCronJobAsTest", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(okExec(`
+  6e8b6fc74896 [active]
+    Name:      喝水提醒
+    Schedule:  every 2h
+    Deliver:   local
+
+  aa11bb22cc33 [active]
+    Name:      __lvtest_6e8b6fc7_abc123
+    Schedule:  once at 2026-07-03T12:00
+    Deliver:   local
+`))
+      .mockResolvedValueOnce(okExec(""))
+      .mockResolvedValueOnce(okExec(""));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const jobs = await listCronJobs("bot-1");
+
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]?.name).toBe("喝水提醒");
+  });
+});
+
 describe("createCronJob auth handling", () => {
   it("surfaces debug exec failure details from HTTP error bodies", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce({
@@ -501,20 +526,21 @@ describe("runCronJobAsTest", () => {
   }
 
   /**
-   * `runCronJobAsTest` 在读到 `last_run_at` 真正落地前会轮询等待（见实现里的
-   * `waitForCronJobExecuted` / `TEST_RUN_POLL_TIMEOUT_MS`），避免抢在调度器
-   * tick 真正执行完之前就把临时任务删掉。测试里用假时钟把轮询间隔瞬间推进掉，
-   * 不必真的等待。
+   * `runCronJobAsTest` 现在不再调用 `hermes cron run` 强制触发，而是完全依赖
+   * 临时任务按自己的 schedule 被调度器自然 tick 到执行——`waitForCronJobExecuted`
+   * 轮询 `last_run_at` 直到非空或超时（见 `TEST_RUN_POLL_INTERVAL_MS` /
+   * `TEST_RUN_POLL_TIMEOUT_MS`）。测试里用假时钟把轮询间隔瞬间推进掉，不必真的
+   * 等待；`advanceMs` 允许超时场景传入更大的推进量。
    */
-  async function runWithAdvancedTimers<T>(work: Promise<T>): Promise<T> {
+  async function runWithAdvancedTimers<T>(work: Promise<T>, advanceMs = 60_000): Promise<T> {
     vi.useFakeTimers();
-    const [result] = await Promise.all([work, vi.advanceTimersByTimeAsync(60_000)]);
+    const [result] = await Promise.all([work, vi.advanceTimersByTimeAsync(advanceMs)]);
     return result;
   }
 
-  it("clones a disposable once-off job, runs it, and cleans it up without touching the original job id", async () => {
+  it("clones a disposable once-off job, waits for it to run naturally, and cleans it up without touching the original job id", async () => {
     let capturedMarker = "";
-    let ranTempJob = false;
+    let catCallCount = 0;
     const fetchMock = vi.fn(async (_url: unknown, init: { body?: string }) => {
       const command = JSON.parse(String(init?.body)) as { command: string };
       const cmd = command.command;
@@ -526,14 +552,13 @@ describe("runCronJobAsTest", () => {
         return okExec("");
       }
       if (cmd.includes("cat ~/.hermes/cron/jobs.json")) {
-        const record = ranTempJob
-          ? { id: "temp-1", name: capturedMarker, last_run_at: "2026-07-02T21:55:03+08:00", last_delivery_error: null }
-          : { id: "temp-1", name: capturedMarker, last_run_at: null, last_delivery_error: null };
+        catCallCount += 1;
+        // 前两次读取模拟"调度器还没到点执行"；第三次开始视为已被 tick 自然执行完
+        const executed = catCallCount >= 3;
+        const record = executed
+          ? { id: "temp-1", name: capturedMarker, last_run_at: "2026-07-02T21:55:03+08:00", last_status: "ok", last_delivery_error: null }
+          : { id: "temp-1", name: capturedMarker, last_run_at: null, last_status: null, last_delivery_error: null };
         return okExec(JSON.stringify([record]));
-      }
-      if (cmd === `hermes cron run 'temp-1'`) {
-        ranTempJob = true;
-        return okExec("Run triggered.");
       }
       if (cmd === `hermes cron remove 'temp-1'`) {
         return okExec("Removed.");
@@ -545,10 +570,11 @@ describe("runCronJobAsTest", () => {
     const result = await runWithAdvancedTimers(runCronJobAsTest("bot-1", baseJob));
 
     expect(result.deliveryError).toBeNull();
-    expect(result.output).toBe("Run triggered.");
-    // 原任务 id 全程不应出现在任何 `cron run` / `cron remove` 命令里
+    expect(result.output).toBe("ok");
     const allCommands = fetchMock.mock.calls.map((_, i) => extractCommand(fetchMock, i));
-    expect(allCommands.some((c) => c === `hermes cron run 'job-1'`)).toBe(false);
+    // 不应再强制触发：既不催原任务，也不催临时任务
+    expect(allCommands.some((c) => c.startsWith("hermes cron run"))).toBe(false);
+    // 原任务 id 全程不应出现在任何 `cron remove` 命令里
     expect(allCommands.some((c) => c === `hermes cron remove 'job-1'`)).toBe(false);
     expect(allCommands.some((c) => c === `hermes cron remove 'temp-1'`)).toBe(true);
     // 临时任务的 schedule 必须是具体的一次性时间点（once 语义），而不是原任务的 interval
@@ -558,7 +584,7 @@ describe("runCronJobAsTest", () => {
 
   it("surfaces a non-null deliveryError when the agent ran but delivery failed", async () => {
     let capturedMarker = "";
-    let ranTempJob = false;
+    let catCallCount = 0;
     const fetchMock = vi.fn(async (_url: unknown, init: { body?: string }) => {
       const command = JSON.parse(String(init?.body)) as { command: string };
       const cmd = command.command;
@@ -570,19 +596,18 @@ describe("runCronJobAsTest", () => {
         return okExec("");
       }
       if (cmd.includes("cat ~/.hermes/cron/jobs.json")) {
-        const record = ranTempJob
+        catCallCount += 1;
+        const executed = catCallCount >= 3;
+        const record = executed
           ? {
               id: "temp-1",
               name: capturedMarker,
               last_run_at: "2026-07-02T21:55:03+08:00",
+              last_status: "ok",
               last_delivery_error: "wecom home channel not set; run /sethome",
             }
-          : { id: "temp-1", name: capturedMarker, last_run_at: null, last_delivery_error: null };
+          : { id: "temp-1", name: capturedMarker, last_run_at: null, last_status: null, last_delivery_error: null };
         return okExec(JSON.stringify([record]));
-      }
-      if (cmd === `hermes cron run 'temp-1'`) {
-        ranTempJob = true;
-        return okExec("Run triggered.");
       }
       if (cmd === `hermes cron remove 'temp-1'`) {
         return okExec("Removed.");
@@ -596,7 +621,7 @@ describe("runCronJobAsTest", () => {
     expect(result.deliveryError).toBe("wecom home channel not set; run /sethome");
   });
 
-  it("still removes the temporary job when the manual run itself fails, and propagates the error", async () => {
+  it("still removes the temporary job when the scheduler never executes it in time, and reports a timeout error", async () => {
     let capturedMarker = "";
     const fetchMock = vi.fn(async (_url: unknown, init: { body?: string }) => {
       const command = JSON.parse(String(init?.body)) as { command: string };
@@ -609,10 +634,10 @@ describe("runCronJobAsTest", () => {
         return okExec("");
       }
       if (cmd.includes("cat ~/.hermes/cron/jobs.json")) {
-        return okExec(JSON.stringify([{ id: "temp-1", name: capturedMarker, last_delivery_error: null }]));
-      }
-      if (cmd === `hermes cron run 'temp-1'`) {
-        return failedExec("agent crashed");
+        // last_run_at 一直是空：模拟调度器一直没有自然执行这个临时任务
+        return okExec(JSON.stringify([
+          { id: "temp-1", name: capturedMarker, last_run_at: null, last_status: null, last_delivery_error: null },
+        ]));
       }
       if (cmd === `hermes cron remove 'temp-1'`) {
         return okExec("Removed.");
@@ -621,11 +646,12 @@ describe("runCronJobAsTest", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(runWithAdvancedTimers(runCronJobAsTest("bot-1", baseJob))).rejects.toThrow("agent crashed");
+    await expect(runWithAdvancedTimers(runCronJobAsTest("bot-1", baseJob), 245_000))
+      .rejects.toThrow("测试运行超时");
 
     const allCommands = fetchMock.mock.calls.map((_, i) => extractCommand(fetchMock, i));
     expect(allCommands.some((c) => c === `hermes cron remove 'temp-1'`)).toBe(true);
-  });
+  }, 15_000);
 
   it("resolves a bare `origin` deliver token into the original job's concrete platform:chat_id before cloning", async () => {
     let capturedMarker = "";
@@ -648,15 +674,15 @@ describe("runCronJobAsTest", () => {
             { id: "job-1", origin: { platform: "wecom", chat_id: "wecom-chat-abc" } },
           ]));
         }
+        // 后续读取：findCronJobIdByExactName / waitForCronJobExecuted 轮询临时任务，
+        // 这里直接给出已执行完的记录，跳过多轮轮询
         return okExec(JSON.stringify([{
           id: "temp-1",
           name: capturedMarker,
           last_run_at: "2026-07-02T21:55:03+08:00",
+          last_status: "ok",
           last_delivery_error: null,
         }]));
-      }
-      if (cmd === `hermes cron run 'temp-1'`) {
-        return okExec("Run triggered.");
       }
       if (cmd === `hermes cron remove 'temp-1'`) {
         return okExec("Removed.");

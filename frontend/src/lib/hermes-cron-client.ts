@@ -291,7 +291,10 @@ export async function listCronJobs(botId: string): Promise<CronJob[]> {
   const payload = await execCommand(botId, command);
   const text = (payload.output || "").trimEnd();
   if (!text.trim() || /no scheduled jobs/i.test(text)) return [];
-  const jobs = parseCronListOutput(text);
+  // 「测试运行」会创建用完即焚的临时任务（名字带 __lvtest_ 前缀，见
+  // `buildTestRunMarker`），执行完会自动删除；但删除前存在的短暂窗口内
+  // 如果用户恰好刷新列表，不应该让这类内部实现细节暴露给前端。
+  const jobs = parseCronListOutput(text).filter((job) => !isTestRunMarkerName(job.name));
   // hermes cron list 文本输出不含 prompt；额外尝试读 jobs.json 补 prompt 字段
   // 文件不存在/读不到时静默跳过，仅影响 prompt 显示，不影响列表本身
   try {
@@ -852,32 +855,47 @@ export async function resumeCronJob(botId: string, id: string): Promise<void> {
 }
 
 /**
- * 底层原语：立即手动触发**指定 id** 的 cron job 执行一次。
+ * 底层原语：手动触发**指定 id** 的 cron job 执行一次。
  *
- * `hermes cron run <id>` 本身就是「立即触发执行」：新建一个独立 Agent 会话、跑
- * prompt、按 deliver 投递结果，命令返回即代表这次执行已经跑完（成功/失败）。
+ * `hermes cron run <id>` 官方语义是「立即触发执行」：新建一个独立 Agent 会话、
+ * 跑 prompt、按 deliver 投递结果。但实测证实这条"强制立即触发"路径在这套
+ * CLI/debug-exec 环境下不可靠——触发后即使轮询等满一个完整调度器 tick 周期
+ * （90s）仍可能完全没有执行，原因未完全定位（不是纯粹的等待时间不够）。
  *
- * ⚠️ 这里的"成功"只代表 Agent 本身跑成功了（Hermes 内部 `last_status`），
+ * ⚠️ 另外这里的"成功"只代表 Agent 本身跑成功了（Hermes 内部 `last_status`），
  * **不代表通知真的投递出去了**——投递失败会被单独记录在 `last_delivery_error`
- * 字段里，CLI 的 exit code / 文案完全不反映这一点。所以：
- * - 直接暴露给「测试运行」UI 用这个原语是不够的，必须额外检查 `last_delivery_error`；
- * - 而且直接对**原任务**调用这个命令会真正推进它的调度状态（一次性任务会被
- *   直接标记为 completed+禁用，永远不会在原定时间触发了；周期任务的下次执行
- *   时间也会被这次手动触发悄悄重新计算）。
+ * 字段里，CLI 的 exit code / 文案完全不反映这一点。
  *
- * 因此 UI 层的「测试运行」不要直接调这个函数，应该用下面的 `runCronJobAsTest`。
- * 这个原语仍保留导出，供其确实需要对已知 id 立即触发（例如临时任务）的场景使用。
+ * 因此 `runCronJobAsTest` 现在**不再使用**这个原语，而是完全依赖"普通一次性
+ * 任务到点被调度器自然执行"这条已被生产环境验证可靠的路径（见其函数注释）。
+ * 这个原语仍保留导出（且有独立单测覆盖其命令拼接行为），但当前没有内部调用方；
+ * 如需恢复"强制立即触发"语义，务必先在真实环境里重新验证其可靠性。
  */
 export async function runCronJob(botId: string, id: string): Promise<DebugExecPayload> {
   return execCommand(botId, `hermes cron run ${shellQuote(id)}`);
 }
 
+const TEST_RUN_MARKER_PREFIX = "__lvtest_";
+
 /** 生成一个几乎不可能撞车的临时任务名，仅用于创建后立刻按名字反查 id */
 export function buildTestRunMarker(jobId: string): string {
-  return `__lvtest_${jobId.slice(0, 8)}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  return `${TEST_RUN_MARKER_PREFIX}${jobId.slice(0, 8)}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** 立即触发用的一次性 schedule：当前时间 + 60s，格式与表单里的 onceDate 一致 */
+/** 判断是否为「测试运行」创建的用完即焚临时任务，供 `listCronJobs` 过滤 */
+function isTestRunMarkerName(name: string): boolean {
+  return name.startsWith(TEST_RUN_MARKER_PREFIX);
+}
+
+/**
+ * 「测试运行」临时任务用的一次性 schedule：当前时间 + 60s。
+ *
+ * ⚠️ 格式只到分钟精度（无秒），这个 60s 偏移量不是随便选的：由于格式化会
+ * 丢弃秒数，任意时刻落在当前分钟内剩余的时间必然 < 60s，所以偏移量必须
+ * ≥ 60s 才能保证 100% 落在一个**未来的分钟**，否则当前时刻越接近分钟末尾，
+ * 偏移量不够大就可能被截断回当前分钟（等价于"现在"甚至被判定为已过期）。
+ * 不要把这个值调小。
+ */
 function buildImmediateOnceSchedule(): string {
   const d = new Date(Date.now() + 60_000);
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -965,31 +983,29 @@ function delay(ms: number): Promise<void> {
 /**
  * 轮询间隔 / 超时上限（毫秒）。
  *
- * 关键修正（2026-07-02 实测证实，2026-07-03 查得官方文档确认根因）：
- * `hermes cron run <id>` **不是同步执行**——它只是把目标 job 的 `next_run_at`
- * 改写成"当前时间 + 几秒"就立刻返回，真正的执行要等 Hermes 调度器的下一次
- * tick 才会发生。CLI 自己回显的文案写得很清楚："It will run on the next
- * scheduler tick."
+ * 关键修正历史：
+ * 1. （2026-07-02）`hermes cron run <id>` **不是同步执行**——它只是把目标
+ *    job 的 `next_run_at` 改写成"当前时间 + 几秒"就立刻返回，真正的执行要
+ *    等 Hermes 调度器的下一次 tick 才会发生。之前按"命令返回 = 已经跑完"
+ *    的错误假设写了固定 3s 的 sleep 再读结果，会在 Agent 真正被唤醒之前就
+ *    把临时任务删掉，造成「测试运行成功」但用户什么通知都没收到的假阳性。
+ * 2. （2026-07-03 上午）改成轮询 `last_run_at`，超时从 45s 上调到 90s——
+ *    官方文档确认调度器 tick 周期固定 60s，45s 比一个 tick 周期还短。
+ * 3. （2026-07-03 实测发现）即使等满 90s，`hermes cron run` 触发的任务仍
+ *    可能不执行——说明问题不是等待时间不够，而是这套 CLI/debug-exec 环境下
+ *    `hermes cron run` 的"强制立即触发"语义本身不可靠。而**普通定时任务到
+ *    点自然执行**这条路径是被生产环境验证过确实可靠的。所以 `runCronJobAsTest`
+ *    现在不再调用 `hermes cron run`，而是完全复用"普通一次性任务到点被
+ *    tick 自然执行"这条已验证路径（见 `runCronJobAsTest` 的实现与注释）。
  *
- * 官方文档（cron-internals）证实：调度器 tick 周期**固定 60 秒**，且没有
- * "强制立即触发所有到期任务"的公开接口（`hermes cron tick` 不是文档列出的
- * CLI 子命令，本文件与其单测已明确不再拼接它，见 `runCronJob`）。也就是说
- * `hermes cron run` 之后最坏情况要等满一个 tick 周期（~60s）才会真正执行，
- * 触发时机刚好错过一次 tick 就是这种最坏情况。
- *
- * 之前这里按"命令返回 = 已经跑完"的错误假设写了一个固定 3s 的 sleep 再读
- * 结果；只要调度器 tick 周期比 3s 长（线上验证过：触发后 3~5s，`last_run_at`
- * 仍是 null），就会在 Agent 真正被唤醒之前把临时任务删掉——表现为「测试运行
- * 成功」但用户什么通知都没收到的假阳性，且没有任何报错暴露这个问题。
- *
- * 现在改成轮询 `last_run_at` 字段：只有它从 null/空变成非空，才代表 Hermes
- * 端真的完成了这次执行（无论成功失败）。超时上限必须覆盖「最坏情况的一个完整
- * tick 周期（60s）+ Agent 实际跑一次 prompt 的耗时余量」，否则会在任务真正
- * 被执行前就先报超时，变成另一种形式的假阳性/误报。一旦超时仍未执行，明确
- * 报错而不是静默当作成功。
+ * 因此这里的轮询超时要覆盖的最坏情况变成：
+ *   `buildImmediateOnceSchedule()` 因为只有分钟精度，理论最坏要等接近
+ *   120s 才进入目标分钟（见该函数注释）+ 调度器下一次 tick 的最坏对齐延迟
+ *   （~60s）+ Agent 实际跑一次 prompt 的执行余量。三者加起来预留到 4 分钟，
+ *   一旦超时仍未执行，明确报错而不是静默当作成功。
  */
-const TEST_RUN_POLL_INTERVAL_MS = 1500;
-const TEST_RUN_POLL_TIMEOUT_MS = 90_000;
+const TEST_RUN_POLL_INTERVAL_MS = 3000;
+const TEST_RUN_POLL_TIMEOUT_MS = 240_000;
 
 /**
  * 轮询直到临时任务真正被调度器执行完（`last_run_at` 从空变为非空），或超时。
@@ -1022,22 +1038,31 @@ async function waitForCronJobExecuted(
 }
 
 /**
- * 测试运行：立即把 job 的 prompt/skills/deliver 真实执行一次，且**绝不触碰原任务**。
+ * 测试运行：把 job 的 prompt/skills/deliver 真实执行一次，且**绝不触碰原任务**。
  *
  * 做法：创建一个用完即焚的临时一次性任务（同 prompt/skills/deliver，但不带
- * 生效窗口/daily_times 门控脚本，避免被门控直接跳过执行），立即对这个临时任务
- * 触发执行，轮询等到它真正被调度器执行完（见 `waitForCronJobExecuted`）后
- * 读取真实投递结果，再把它删除。
+ * 生效窗口/daily_times 门控脚本，避免被门控直接跳过执行；名字带 `__lvtest_`
+ * 前缀，`listCronJobs` 会把这类任务从列表里过滤掉，不在前端展示），让它按
+ * 自己的 schedule 到点被调度器**自然执行**（不额外催），轮询等到它真正执行
+ * 完（见 `waitForCronJobExecuted`）后读取真实投递结果，再把它删除。
  *
- * 为什么不能直接对原 job 调用 `hermes cron run <job.id>`：
+ * 为什么不调用 `hermes cron run <id>` 去强制立即触发（哪怕是对临时任务）：
+ * 实测证实 `hermes cron run` 在这套 CLI/debug-exec 环境下"强制立即触发"这
+ * 条路径不可靠——触发后轮询等满 90s（覆盖一个完整 60s tick 周期）仍可能
+ * 完全没有执行。而**普通一次性任务到点被调度器自然扫到执行**这条路径已经
+ * 被生产环境反复验证是可靠工作的（这也是「自动任务」功能本身能用的前提）。
+ * 所以这里完全复用后一条已验证路径：只创建临时任务、只等待，不再额外调用
+ * `run` 去催——用「确定能跑但慢」换掉「可能更快但已知不可靠」。
+ *
+ * 为什么不能直接对原 job 做类似操作（改 schedule 到近未来）：
  * - 一次性(once)任务：Hermes 执行后会写 `last_run_at`，导致
  *   `compute_next_run` 返回 `None`，任务立刻被标记为 `completed` 并禁用——
  *   原定时间永远不会再触发了，这与"测试不影响原任务"的要求直接冲突。
- * - 周期(interval)任务：手动触发会用**这次触发的时间**重新计算下次执行时间，
- *   悄悄让周期节奏产生漂移。
+ * - 周期(interval)任务：改了 schedule 再改回去存在竞态与遗留风险，悄悄让
+ *   周期节奏产生漂移。
  * - 门控脚本（生效时间窗口/每日多个时间点）：如果当前时刻不在窗口内，Hermes
- *   会直接跳过执行（Agent 都不会被唤醒），达不到"不管几点都要立刻真实跑一次"
- *   的要求——所以临时任务不带这个门控脚本。
+ *   会直接跳过执行（Agent 都不会被唤醒），达不到"不管几点都要真实跑一次"的
+ *   要求——所以临时任务不带这个门控脚本。
  */
 export async function runCronJobAsTest(botId: string, job: CronJob): Promise<CronTestRunResult> {
   const deliver = await resolveConcreteDeliverForTestRun(botId, job);
@@ -1048,22 +1073,23 @@ export async function runCronJobAsTest(botId: string, job: CronJob): Promise<Cro
     name: marker,
     skills: job.skills,
     deliver,
-    // 有意不传 script：跳过生效窗口/daily_times 门控，保证立刻真实执行一次
+    // 有意不传 script：跳过生效窗口/daily_times 门控，保证到点真实执行一次
   });
   const tempId = await findCronJobIdByExactName(botId, marker);
   if (!tempId) {
     throw new Error("测试运行失败：未能定位临时任务，请稍后重试");
   }
   try {
-    const execResult = await runCronJob(botId, tempId);
-    // `run` 命令本身只是把任务排队，真正执行要等调度器 tick——轮询直到
-    // `last_run_at` 真正落地，而不是靠固定 sleep 猜一个时长。
+    // 有意不调用 hermes cron run 强制触发：让它像任何普通一次性任务一样，
+    // 由调度器在到达 schedule 时间后的下一次 tick 自然执行（原因见函数注释）。
     const rawAfterRun = await waitForCronJobExecuted(botId, tempId);
     const deliveryErrorRaw = rawAfterRun?.last_delivery_error;
     const deliveryError = typeof deliveryErrorRaw === "string" && deliveryErrorRaw.trim()
       ? deliveryErrorRaw.trim()
       : null;
-    return { output: execResult.output, deliveryError };
+    const lastStatusRaw = rawAfterRun?.last_status;
+    const output = typeof lastStatusRaw === "string" && lastStatusRaw.trim() ? lastStatusRaw.trim() : "ok";
+    return { output, deliveryError };
   } finally {
     await removeCronJob(botId, tempId).catch(() => { /* 清理失败不影响本次结果 */ });
   }
