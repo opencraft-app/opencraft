@@ -64,6 +64,28 @@ coscmd_with_retry() {
   done
 }
 
+cos_object_size() {
+  "$coscmd_bin" -c "$coscmd_config" info "$1" 2>/dev/null | awk '
+    $1 == "Content-Length" {
+      print $2
+      exit
+    }
+  '
+}
+
+cos_upload_if_needed() {
+  local local_path object expected_size existing_size
+  local_path="$1"
+  object="$2"
+  expected_size="$(wc -c <"$local_path" | tr -d '[:space:]')"
+  existing_size="$(cos_object_size "$object" || true)"
+  if [[ -n "$existing_size" && "$existing_size" == "$expected_size" ]]; then
+    echo "[wisp-publish] skip upload; object already exists size=$existing_size object=$object" >&2
+    return 0
+  fi
+  coscmd_with_retry upload -f -y "$local_path" "$object"
+}
+
 sha="$(sha256sum "$artifact" 2>/dev/null | awk '{print $1}')"
 if [[ -z "$sha" ]]; then
   sha="$(shasum -a 256 "$artifact" | awk '{print $1}')"
@@ -89,7 +111,7 @@ object="${object_prefix%/}/${stem}-${short}${ext}"
 if [[ "$dry_run" == "1" ]]; then
   echo "DRY_RUN=1" >&2
 else
-  coscmd_with_retry upload -f -y "$artifact" "$object"
+  cos_upload_if_needed "$artifact" "$object"
   coscmd_with_retry putobjectacl "$object" --grant-read anyone
 fi
 
