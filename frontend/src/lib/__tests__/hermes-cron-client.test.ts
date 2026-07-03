@@ -529,8 +529,8 @@ describe("buildTestRunMarker", () => {
   });
 });
 
-describe("parseCronRunFilesOutput display name", () => {
-  it("renders a test-run temp job as its clean 「{原任务名}测试运行」 in run history", () => {
+describe("parseCronRunFilesOutput filters test-run temp jobs", () => {
+  it("drops a test-run temp job from run history instead of surfacing it (CR P2)", () => {
     const tempName = buildTestRunMarker("abc12345ffff", "喝水提醒");
     const runs = parseCronRunFilesOutput(JSON.stringify([{
       job_id: "temp-xyz",
@@ -540,7 +540,30 @@ describe("parseCronRunFilesOutput display name", () => {
       job_name: tempName,
     }]), []);
 
-    expect(runs[0]?.job_name).toBe("喝水提醒测试运行");
+    expect(runs).toEqual([]);
+  });
+
+  it("keeps normal jobs while dropping interleaved test-run temp jobs", () => {
+    const tempName = buildTestRunMarker("abc12345ffff", "喝水提醒");
+    const runs = parseCronRunFilesOutput(JSON.stringify([
+      {
+        job_id: "real-1",
+        run_at: "2026-07-03T02:00:00+00:00",
+        output_path: "/home/agentuser/.hermes/cron/output/real-1/a.md",
+        mtime_ms: 1780711200000,
+        job_name: "喝水提醒",
+      },
+      {
+        job_id: "temp-xyz",
+        run_at: "2026-07-03T02:20:16+00:00",
+        output_path: "/home/agentuser/.hermes/cron/output/temp-xyz/b.md",
+        mtime_ms: 1780712416000,
+        job_name: tempName,
+      },
+    ]), []);
+
+    expect(runs.map((r) => r.job_id)).toEqual(["real-1"]);
+    expect(runs[0]?.job_name).toBe("喝水提醒");
   });
 });
 
@@ -850,6 +873,80 @@ describe("runCronJobAsTest", () => {
 
     const allCommands = fetchMock.mock.calls.map((_, i) => extractCommand(fetchMock, i));
     expect(allCommands.some((c) => c === `hermes cron remove 'temp-1'`)).toBe(true);
+  }, 15_000);
+
+  it("retries locating the temp job when jobs.json is momentarily stale after create (CR P1)", async () => {
+    // create 已成功，但 jobs.json 有写入延迟：前两次反查读不到该 marker，第三次才出现。
+    // 应靠重试拿到 tempId 正常继续，而不是直接判「未能定位」而报错。
+    let capturedMarker = "";
+    let lookupCatCount = 0;
+    const fetchMock = vi.fn(async (_url: unknown, init: { body?: string }) => {
+      const command = JSON.parse(String(init?.body)) as { command: string };
+      const cmd = command.command;
+      if (cmd.startsWith("hermes send ")) return okExec("Sent.");
+      if (cmd.includes("hermes cron create")) {
+        capturedMarker = extractMarkerFromCreateCommand(cmd);
+        return okExec("Job created.");
+      }
+      if (cmd.includes("lightvela-jobs-meta.json") && cmd.startsWith("python3")) {
+        return okExec("");
+      }
+      if (cmd.includes("cat ~/.hermes/cron/jobs.json")) {
+        lookupCatCount += 1;
+        // 前两次：jobs.json 尚未写入该临时任务（模拟写入延迟）→ 空数组
+        if (lookupCatCount <= 2) return okExec("[]");
+        // 第三次起：该 marker 记录出现，且已执行完，可直接返回结果
+        return okExec(JSON.stringify([
+          { id: "temp-1", name: capturedMarker, last_run_at: "2026-07-02T21:55:03+08:00", last_status: "ok", last_delivery_error: null },
+        ]));
+      }
+      if (cmd === `hermes cron remove 'temp-1'`) return okExec("Removed.");
+      throw new Error(`unexpected command in test: ${cmd}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await runWithAdvancedTimers(runCronJobAsTest("bot-1", baseJob));
+    expect(result.output).toBe("ok");
+    const allCommands = fetchMock.mock.calls.map((_, i) => extractCommand(fetchMock, i));
+    // 临时任务最终被定位并清理
+    expect(allCommands.some((c) => c === `hermes cron remove 'temp-1'`)).toBe(true);
+  }, 15_000);
+
+  it("attempts a name-based cleanup and throws when the temp job can never be located after create (CR P1)", async () => {
+    // create 成功但 jobs.json 始终读不到该 marker（写入丢失/解析不到）：重试耗尽后，
+    // 必须走兜底清理路径（按 marker 名再反查一次去删），不能直接裸抛而留下残留任务。
+    let capturedMarker = "";
+    let removeByNameLookupSeen = false;
+    let catCount = 0;
+    const fetchMock = vi.fn(async (_url: unknown, init: { body?: string }) => {
+      const command = JSON.parse(String(init?.body)) as { command: string };
+      const cmd = command.command;
+      if (cmd.startsWith("hermes send ")) return okExec("Sent.");
+      if (cmd.includes("hermes cron create")) {
+        capturedMarker = extractMarkerFromCreateCommand(cmd);
+        return okExec("Job created.");
+      }
+      if (cmd.includes("lightvela-jobs-meta.json") && cmd.startsWith("python3")) {
+        return okExec("");
+      }
+      if (cmd.includes("cat ~/.hermes/cron/jobs.json")) {
+        catCount += 1;
+        // 前几次是 lookup 重试；最后一次（重试耗尽后）是兜底清理的反查——都读不到该 marker
+        void capturedMarker;
+        if (catCount > 4) removeByNameLookupSeen = true;
+        return okExec("[]");
+      }
+      throw new Error(`unexpected command in test: ${cmd}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(runWithAdvancedTimers(runCronJobAsTest("bot-1", baseJob)))
+      .rejects.toThrow("未能定位临时任务");
+    // 兜底清理确实尝试过再反查一次（catCount 超过纯 lookup 的重试次数）
+    expect(removeByNameLookupSeen).toBe(true);
+    const allCommands = fetchMock.mock.calls.map((_, i) => extractCommand(fetchMock, i));
+    // 反查不到 id，不会误删任何任务；但也绝不会残留一个已 run 的临时任务
+    expect(allCommands.some((c) => c.startsWith("hermes cron remove"))).toBe(false);
   }, 15_000);
 
   it("resolves a bare `origin` deliver token into the original job's concrete platform:chat_id before cloning", async () => {

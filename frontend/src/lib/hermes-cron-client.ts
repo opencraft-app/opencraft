@@ -490,14 +490,14 @@ async function archiveCronJobMetadata(botId: string): Promise<void> {
 }
 
 /**
- * 把执行记录里要展示给用户的任务名规范化。
+ * 把执行记录里要展示给用户的任务名规范化（纵深防御，第二道防线）。
  *
- * 「测试运行」创建的临时任务名字（见 `buildTestRunMarker`）由「可读部分 +
- * 末尾一段不可见的零宽 marker」组成，可读部分本身就是「{原任务名}测试运行」。
- * 这里的处理：
- *   - 是测试运行临时任务 → 剥掉零宽 marker，直接用可读部分（`{原任务名}测试运行`）；
- *     万一可读部分意外为空，退一步按 marker 里编码的原 jobId 前缀反查原任务名拼一个，
- *     再兜底成「测试运行」，绝不把零宽/内部串暴露出去。
+ * 正常情况下 `parseCronRunFilesOutput` 已在入口把测试运行临时任务记录整条过滤掉
+ * （见 CR P2），不会再走到这里带 marker 的名字。但万一有边界场景漏过（如 archive
+ * meta 缺失只剩 output 目录、名字来源异常），这里再兜一层：识别到零宽 marker 就
+ * 剥掉 marker/反查原任务名，绝不把零宽字符或内部临时串暴露给用户。
+ *   - 是测试运行临时任务 → 剥掉零宽 marker，用可读部分（`{原任务名}测试运行`）；
+ *     可读部分意外为空则按 marker 里编码的原 jobId 前缀反查原任务名，再兜底成「测试运行」。
  *   - 非测试运行任务 → 原样返回。
  */
 function displayNameForRun(rawName: string, jobs: CronJob[]): string {
@@ -531,6 +531,14 @@ export function parseCronRunFilesOutput(text: string, jobs: CronJob[]): CronRunR
     const job = jobsById.get(jobId);
     const rowSchedule = normalizeRunSchedule(row.job_schedule);
     const rawName = job?.name || stringValue(row.job_name) || jobId;
+    // 「测试运行」创建的临时任务是内部实现细节，不应出现在「最近执行」里：它的
+    // cron output 目录在任务删除后仍存在，archive/jobs_meta 里也可能留有其 meta，
+    // 导致这里解析出带零宽 marker 的临时任务名/临时 job id。凡是 job.name 或
+    // archive 里的 job_name 任一命中 marker，都直接过滤掉，避免内部实现细节
+    // （零宽 marker 名 / 临时 job id）泄漏到用户界面（见 CR P2）。
+    if (isTestRunMarkerName(job?.name ?? "") || isTestRunMarkerName(stringValue(row.job_name))) {
+      continue;
+    }
     records.push({
       id: `${jobId}:${outputPath || runAt}`,
       job_id: jobId,
@@ -1084,6 +1092,42 @@ async function findCronJobIdByExactName(botId: string, name: string): Promise<st
   return null;
 }
 
+/** 临时任务定位重试参数：覆盖 jobs.json 写入延迟 / 短暂读失败的窗口 */
+const TEMP_JOB_LOOKUP_RETRIES = 3;
+const TEMP_JOB_LOOKUP_INTERVAL_MS = 500;
+
+/**
+ * 按 name 精确反查 job id，失败重试若干次。
+ *
+ * `createCronJob` 已成功但 jobs.json 可能有写入延迟 / 短暂读失败 / 解析不到 marker，
+ * 首次读不到不代表任务没建成。这里带几次快重试（间隔 {@link TEMP_JOB_LOOKUP_INTERVAL_MS}），
+ * 尽量拿到刚创建的临时任务 id，避免误判「没定位到」而走清理+报错路径（见 CR P1）。
+ */
+async function findCronJobIdByExactNameWithRetry(
+  botId: string,
+  name: string,
+  retries = TEMP_JOB_LOOKUP_RETRIES,
+  intervalMs = TEMP_JOB_LOOKUP_INTERVAL_MS,
+): Promise<string | null> {
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const id = await findCronJobIdByExactName(botId, name);
+    if (id) return id;
+    if (attempt < retries) await delay(intervalMs);
+  }
+  return null;
+}
+
+/**
+ * 兜底清理：即便反查不到 id，也尽力把「name 精确匹配」的临时任务删掉。
+ *
+ * 用于 create 成功但 lookup 最终失败的场景（见 CR P1）：先再尝试反查一次 id 去删，
+ * 保证任何已创建的临时任务都不会残留后被调度器真实执行。best-effort，找不到就放弃。
+ */
+async function removeCronJobByExactName(botId: string, name: string): Promise<void> {
+  const id = await findCronJobIdByExactName(botId, name);
+  if (id) await removeCronJob(botId, id);
+}
+
 /**
  * 把 Hermes / acli 返回的通道名归一化成投递用的 platform key。
  *
@@ -1405,9 +1449,22 @@ export async function startCronTestRun(botId: string, job: CronJob): Promise<Sta
     deliver,
     // 有意不传 script：跳过生效窗口/daily_times 门控，保证到点真实执行一次
   });
-  const tempId = await findCronJobIdByExactName(botId, marker);
+  // create 已成功 → 临时任务几乎肯定已经落进 cron。从这里开始，任何后续失败都必须
+  // 保证「已创建的临时任务能被删除」，否则它会在约 2 分钟后被调度器真实执行并投递，
+  // 违背「测试失败不产生后续副作用」的预期（见 CR P1）。
+  //
+  // lookup 用 marker 名精确反查 tempId，但 jobs.json 可能有写入延迟 / 短暂读失败 /
+  // 解析不到 marker，首次读可能拿不到。这里带重试；仍拿不到时不直接裸抛，而是先按
+  // marker 名做一次兜底删除（`hermes cron remove --name` 语义走不了，用 list 反查
+  // 一次或直接按名删），把已创建的临时任务清掉，再抛错。
+  let tempId = await findCronJobIdByExactNameWithRetry(botId, marker);
   if (!tempId) {
-    throw new Error("测试运行失败：未能定位临时任务，请稍后重试");
+    // 兜底：即便反查不到 id，也尽力按 marker 名把这个已创建的临时任务删掉，
+    // 避免它残留后被调度器真实执行。best-effort，失败也不阻断错误上抛。
+    await removeCronJobByExactName(botId, marker).catch(() => {
+      /* 兜底清理失败不影响错误上抛 */
+    });
+    throw new Error("测试运行失败：未能定位临时任务，已尝试清理，请稍后重试");
   }
   // 前置阶段到此结束（这些都很快）。剩下的长跑阶段封进 completion，交给调用方处理。
   const completion = (async (): Promise<CronTestRunResult> => {
