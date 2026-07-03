@@ -45,7 +45,7 @@ const CN_SIDEBAR: DocGroup[] = [
   {
     title: "产品公告",
     items: [
-      { slug: "announcements/public-beta", title: "公测计划及付费版本预告" },
+      { slug: "announcements/public-beta", title: "LightVela 付费版本公告" },
     ],
   },
   {
