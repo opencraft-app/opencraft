@@ -452,6 +452,34 @@ AI 生成需求确认文档后，用户可能需要进一步澄清或调整需�
 - skill 内引用的 `references/`、`scripts/`、`DEPENDENCIES.md` 等资源，以该 skill 目录为相对路径解析。
 - `.skills/` 是历史旧目录；新增或迁移的团队共享技能应放入 `.agents/skills/`。
 
+#### Product Skills subtree 同步约定
+
+LightVela 产品前置需求梳理使用团队统一产品 skills 仓库作为上游源：
+
+- 上游仓库：`git@git.woa.com:TencentLightCloud/product-ai.git`
+- 上游分支：`master`
+- 上游路径：`skills/lightvela/prd-init`
+- 本仓库落点：`.agents/skills/product-skills/prd-init`
+- 本地 skill 名：`prd-init`
+
+当用户要求“使用 `.agents/skills/product-skills/prd-init` / `prd-init` 做 LightVela 产品前置、PRD、TAPD 产品需求建单或研发交接”时，AI 在读取该 skill 前，应先尝试从 `product-ai` 最新 `master` 按 subtree 方式同步这个目录：
+
+1. 使用 SSH 拉取 `product-ai` 最新 `master`。
+2. 将 `skills/lightvela/prd-init` split 成独立 Git 历史。
+3. 将 split ref 以 subtree merge 方式合入 `.agents/skills/product-skills/prd-init`。
+4. 不要手工复制覆盖；同步提交必须保留 subtree 关系。
+5. 提交信息必须记录：
+   - `git-subtree-dir: .agents/skills/product-skills/prd-init`
+   - `git-subtree-split: <split commit>`
+   - `Original-upstream-repo: git@git.woa.com:TencentLightCloud/product-ai.git`
+   - `Original-upstream-path: skills/lightvela/prd-init`
+6. 同步后至少验证：
+   - `.agents/skills/product-skills/prd-init/SKILL.md` 存在且 frontmatter `name: prd-init`
+   - `evals/evals.json` 能通过 `python3 -m json.tool`
+   - subtree 目录文件与最新 split ref 一致
+
+如果当前工作区有无关脏改动，必须在干净分支或独立 worktree 中完成同步，避免把产品需求梳理和其他开发改动混在一起。如果网络、权限或工蜂访问失败，使用当前仓库内已有的 `prd-init` 副本继续产品前置，并在结果中说明本轮未能刷新上游。
+
 当任务需要工蜂能力时（包括但不限于分支管理、MR 创建/查询/合并、MR 评论、代码审查、文件操作），AI 必须先读取 `.agents/skills/gongfeng/SKILL.md`，并按其中的工具调用方式执行。
 
 ---
