@@ -47,7 +47,7 @@ const globalCfCombo = {
   region: "global",
   buildCommand: "build:next",
   projectName: "lightvela-intl",
-  authApiBaseUrl: "https://lightclaw.tech",
+  authApiBaseUrl: "https://api-sandbox-kr-1.lightclaw.tech",
   outputDir: "out",
 };
 
@@ -118,9 +118,9 @@ describe("release matrix helpers", () => {
     expect(comboEnv.FRONTEND_RELEASE_REGION).toBe("global");
     expect(comboEnv.CLOUDFLARE_PAGES_PROJECT_NAME).toBe("lightvela-intl");
     expect(comboEnv.CLOUDFLARE_PAGES_DIR).toBe("out");
-    expect(comboEnv.VITE_AUTH_API_BASE_URL).toBe("https://lightclaw.tech");
+    expect(comboEnv.VITE_AUTH_API_BASE_URL).toBe("https://api-sandbox-kr-1.lightclaw.tech");
     expect(comboEnv.NEXT_PUBLIC_REGION).toBe("global");
-    expect(comboEnv.NEXT_PUBLIC_AUTH_API_BASE_URL).toBe("https://lightclaw.tech");
+    expect(comboEnv.NEXT_PUBLIC_AUTH_API_BASE_URL).toBe("https://api-sandbox-kr-1.lightclaw.tech");
     expect(comboEnv.VITE_AEGIS_ENABLED).toBe("true");
     expect(comboEnv.VITE_AEGIS_ID).toBe("2ellOCK3ozed3owgOj");
     expect(comboEnv.VITE_AEGIS_HOST_URL).toBe("https://rumt-sg.com");
@@ -415,6 +415,7 @@ describe("release matrix helpers", () => {
       channel: "cf",
       buildCommand: "build:next",
       projectName: "lightvela-intl",
+      authApiBaseUrl: "https://api-sandbox-kr-1.lightclaw.tech",
       observability: {
         aegis: {
           enabled: "true",

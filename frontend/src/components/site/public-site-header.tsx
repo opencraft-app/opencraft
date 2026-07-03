@@ -187,7 +187,7 @@ export function PublicSiteHeader({
   renderLanguageSwitcher,
   reloadLanguageAfterSwitch = false,
   showNav = true,
-  showLanguageSwitcher = isGlobal && Boolean(onLoginClick),
+  showLanguageSwitcher = Boolean(onLoginClick),
   showUnauthenticatedActions = true,
 }: PublicSiteHeaderProps) {
   const { i18n } = useTranslation();

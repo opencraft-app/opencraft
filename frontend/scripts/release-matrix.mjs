@@ -259,20 +259,28 @@ export function createComboEnvironment(combo, projectName, env = process.env) {
   const aegis = combo.observability?.aegis;
   if (aegis) {
     nextEnv.VITE_AEGIS_ENABLED = aegis.enabled ?? "auto";
+    nextEnv.NEXT_PUBLIC_AEGIS_ENABLED = aegis.enabled ?? "auto";
     if (aegis.id) {
       nextEnv.VITE_AEGIS_ID = aegis.id;
+      nextEnv.NEXT_PUBLIC_AEGIS_ID = aegis.id;
     } else {
       delete nextEnv.VITE_AEGIS_ID;
+      delete nextEnv.NEXT_PUBLIC_AEGIS_ID;
     }
     if (aegis.hostUrl) {
       nextEnv.VITE_AEGIS_HOST_URL = aegis.hostUrl;
+      nextEnv.NEXT_PUBLIC_AEGIS_HOST_URL = aegis.hostUrl;
     } else {
       delete nextEnv.VITE_AEGIS_HOST_URL;
+      delete nextEnv.NEXT_PUBLIC_AEGIS_HOST_URL;
     }
   } else {
     nextEnv.VITE_AEGIS_ENABLED = "false";
+    nextEnv.NEXT_PUBLIC_AEGIS_ENABLED = "false";
     delete nextEnv.VITE_AEGIS_ID;
+    delete nextEnv.NEXT_PUBLIC_AEGIS_ID;
     delete nextEnv.VITE_AEGIS_HOST_URL;
+    delete nextEnv.NEXT_PUBLIC_AEGIS_HOST_URL;
   }
 
   const posthog = combo.observability?.posthog;

@@ -5,6 +5,7 @@ import { decodeTencentPtyFrame, extractTencentPtyError } from "@/lib/tencent-pty
 const DEFAULT_TAT_FILE_TIMEOUT_SECONDS = 3600;
 const DEFAULT_TSSH_START_DELAY_MS = 200;
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+const EXEC_REQUEST_TIMEOUT_BUFFER_MS = 5_000;
 const DEFAULT_UPLOAD_CHUNK_BYTES = 256 * 1024;
 const DEFAULT_READ_SIZE_BYTES = 1024 * 1024;
 
@@ -30,6 +31,13 @@ type PendingRequest =
       resolve: (payload: unknown) => void;
       reject: (error: Error) => void;
       timer: number;
+    }
+  | {
+      kind: "exec";
+      resolve: (result: TsshExecCommandResult) => void;
+      reject: (error: Error) => void;
+      timer: number;
+      chunks: Uint8Array[];
     };
 
 export interface TsshFileClientOptions {
@@ -75,6 +83,11 @@ export interface TsshUploadProgress {
   chunks: number;
 }
 
+export interface TsshExecCommandResult {
+  exitCode: number | null;
+  output: string;
+}
+
 export interface TsshDownloadChunkSink {
   write(chunk: Uint8Array, offset: number): Promise<void> | void;
 }
@@ -99,6 +112,17 @@ const normalizeBytes = (value: unknown): Uint8Array => {
     return value.buffer;
   }
   return new Uint8Array();
+};
+
+const concatBytes = (chunks: Uint8Array[]) => {
+  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+  const output = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    output.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return output;
 };
 
 const normalizeFileInfo = (value: unknown): TsshFileInfo | null => {
@@ -134,6 +158,11 @@ const getCustomData = (message: unknown) => {
 };
 
 const makeRequestId = () => `file_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
+
+const execRequestTimeoutMs = (timeoutSeconds: number, fallbackTimeoutMs: number) => {
+  const commandTimeoutMs = Math.max(0, timeoutSeconds) * 1000 + EXEC_REQUEST_TIMEOUT_BUFFER_MS;
+  return Math.max(fallbackTimeoutMs, commandTimeoutMs);
+};
 
 export const joinTsshPath = (basePath: string, name: string) => {
   const base = basePath.trim() || "/";
@@ -269,6 +298,15 @@ export class TencentTsshFileClient {
       IsDir: isDir,
     });
     return isRecord(payload) && payload.Deleted === true;
+  }
+
+  async execCommand(cmd: string, timeout = 60) {
+    await this.connect();
+    const timeoutSeconds = Math.max(0, timeout);
+    return this.sendExecRequest("PtyExecCmdStream", {
+      Cmd: cmd,
+      Timeout: timeoutSeconds,
+    }, execRequestTimeoutMs(timeoutSeconds, this.requestTimeoutMs));
   }
 
   async fileInfo(path: string) {
@@ -446,12 +484,25 @@ export class TencentTsshFileClient {
     });
   }
 
-  private trackPending(request: PendingRequest) {
+  private sendExecRequest(type: string, data: Record<string, unknown>, timeoutMs: number) {
+    return new Promise<TsshExecCommandResult>((resolve, reject) => {
+      const requestId = this.trackPending({
+        kind: "exec",
+        resolve,
+        reject,
+        timer: 0,
+        chunks: [],
+      }, timeoutMs);
+      this.sendBson(type, requestId, data);
+    });
+  }
+
+  private trackPending(request: PendingRequest, timeoutMs = this.requestTimeoutMs) {
     const requestId = makeRequestId();
     request.timer = window.setTimeout(() => {
       this.pending.delete(requestId);
       request.reject(new Error("TAT file request timed out"));
-    }, this.requestTimeoutMs);
+    }, timeoutMs);
     this.pending.set(requestId, request);
     return requestId;
   }
@@ -523,6 +574,20 @@ export class TencentTsshFileClient {
       }
       case "single": {
         this.resolvePending(customData, request, payload);
+        return;
+      }
+      case "exec": {
+        const data = normalizeBytes(payload?.Data);
+        if (data.byteLength > 0) {
+          request.chunks.push(data.slice());
+        }
+        if (payload?.IsLast === true) {
+          const output = new TextDecoder().decode(concatBytes(request.chunks));
+          this.resolvePending(customData, request, {
+            exitCode: typeof payload.ExitCode === "number" ? payload.ExitCode : null,
+            output,
+          });
+        }
         return;
       }
     }
