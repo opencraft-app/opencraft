@@ -6,6 +6,7 @@ import {
   getWorkspaceTaskPhaseLabel,
   isWorkspaceActionRunning,
   selectCurrentWorkspaceTask,
+  shouldShowWorkspaceRecoveryPanel,
   type WorkspaceActionKind,
 } from "../agent-workspace-recovery";
 import type { WorkerActionStatusResult } from "@/repositories/types";
@@ -70,5 +71,11 @@ describe("workspace recovery helpers", () => {
       "当前已有 Agent 备份任务运行中。",
     );
     expect(buildWorkspaceActionDisabledReason({ hasActiveBot: true, botRunning: true, hasEmail: true })).toBeNull();
+  });
+
+  it("keeps workspace recovery hidden on global until hidden tools are revealed", () => {
+    expect(shouldShowWorkspaceRecoveryPanel({ isGlobalRegion: false, hiddenToolsRevealed: false })).toBe(true);
+    expect(shouldShowWorkspaceRecoveryPanel({ isGlobalRegion: true, hiddenToolsRevealed: false })).toBe(false);
+    expect(shouldShowWorkspaceRecoveryPanel({ isGlobalRegion: true, hiddenToolsRevealed: true })).toBe(true);
   });
 });

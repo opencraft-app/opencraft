@@ -87,6 +87,7 @@ import {
   getWorkspaceTaskPhaseLabel,
   isWorkspaceActionRunning,
   selectCurrentWorkspaceTask,
+  shouldShowWorkspaceRecoveryPanel,
   type WorkspaceActionKind,
 } from "@/pages/marketing/agent-workspace-recovery";
 import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
@@ -3762,28 +3763,32 @@ export const AgentSettingsPage = ({
     runCommand: commandAdapter.runCommand,
     getInvocationTask: commandAdapter.getInvocationTask,
   }), [commandAdapter]);
+  const shouldExposeWorkspaceRecoveryPanel = shouldShowWorkspaceRecoveryPanel({
+    isGlobalRegion: isGlobal,
+    hiddenToolsRevealed: showHiddenAgentTools,
+  });
 
   useEffect(() => {
-    if (activeSection !== "diagnostics" || !activeBot?.id) return;
+    if (!shouldExposeWorkspaceRecoveryPanel || activeSection !== "diagnostics" || !activeBot?.id) return;
     void loadRescueExportStatus(activeBot.id).catch(() => undefined);
     void loadHermesImportStatus(activeBot.id).catch(() => undefined);
-  }, [activeSection, activeBot?.id, loadRescueExportStatus, loadHermesImportStatus]);
+  }, [activeSection, activeBot?.id, loadRescueExportStatus, loadHermesImportStatus, shouldExposeWorkspaceRecoveryPanel]);
 
   useEffect(() => {
-    if (activeSection !== "diagnostics" || !activeBot?.id || !isRescueExportRunning(activeExportStatus)) return;
+    if (!shouldExposeWorkspaceRecoveryPanel || activeSection !== "diagnostics" || !activeBot?.id || !isRescueExportRunning(activeExportStatus)) return;
     const timer = window.setInterval(() => {
       void loadRescueExportStatus(activeBot.id).catch(() => undefined);
     }, RESCUE_EXPORT_POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [activeSection, activeBot?.id, activeExportStatus?.phase, loadRescueExportStatus]);
+  }, [activeSection, activeBot?.id, activeExportStatus?.phase, loadRescueExportStatus, shouldExposeWorkspaceRecoveryPanel]);
 
   useEffect(() => {
-    if (activeSection !== "diagnostics" || !activeBot?.id || !isRescueExportRunning(activeImportStatus)) return;
+    if (!shouldExposeWorkspaceRecoveryPanel || activeSection !== "diagnostics" || !activeBot?.id || !isRescueExportRunning(activeImportStatus)) return;
     const timer = window.setInterval(() => {
       void loadHermesImportStatus(activeBot.id).catch(() => undefined);
     }, RESCUE_EXPORT_POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [activeSection, activeBot?.id, activeImportStatus?.phase, loadHermesImportStatus]);
+  }, [activeSection, activeBot?.id, activeImportStatus?.phase, loadHermesImportStatus, shouldExposeWorkspaceRecoveryPanel]);
 
   useEffect(() => {
     return installOpenClawConsoleHelpers({
@@ -4166,7 +4171,7 @@ export const AgentSettingsPage = ({
     return workspaceDetailsOpen ? t("收起备份或恢复详情") : t("查看备份或恢复详情");
   };
   const workspaceCopyLabel = activeWorkspaceTask?.kind === "export" ? t("复制备份信息") : t("复制恢复信息");
-  const workspaceRecoveryPanel = activeBot ? (
+  const workspaceRecoveryPanel = shouldExposeWorkspaceRecoveryPanel && activeBot ? (
     <section className="rounded-md border border-black/[0.08] bg-white p-5 shadow-sm">
       <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1">
         <h3 className="text-base font-semibold text-black/90 text-balance">{t("Agent 备份与恢复")}</h3>
@@ -4337,7 +4342,7 @@ export const AgentSettingsPage = ({
       {showHeader && <ProductReturnHomeHeader reloadLanguageAfterSwitch />}
 
       <Dialog
-        open={Boolean(workspaceConfirm)}
+        open={shouldExposeWorkspaceRecoveryPanel && Boolean(workspaceConfirm)}
         onOpenChange={(open) => {
           if (!open) setWorkspaceConfirm(null);
         }}
