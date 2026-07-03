@@ -5,7 +5,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 goarch="${GOARCH:-amd64}"
 out="${DST_ROOTFS_DIR:-$repo_root/assets/rootfs/rootfs/alpine-$goarch}"
 rootfs_url="${ALPINE_ROOTFS_URL:-}"
-alpine_mirror="${ALPINE_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.23}"
+alpine_mirror="${ALPINE_MIRROR:-https://mirrors.tencent.com/alpine/v3.23}"
 apk_repository="${ALPINE_APK_REPOSITORY:-$alpine_mirror}"
 builder_image="${WISP_ROOTFS_DIR_BUILDER_IMAGE:-alpine:3.23}"
 

@@ -66,7 +66,7 @@ validate_wisp_package_artifact() {
         -v "$artifact_dir:/artifact:ro" \
         -v "$tmp_dir:/extract" \
         "${WISP_EROFS_IMAGE:-alpine:3.23}" sh -ceu '
-          printf "%s\n%s\n" "'"${WISP_EROFS_APK_REPOSITORY:-https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.23}"'/main" "'"${WISP_EROFS_APK_REPOSITORY:-https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.23}"'/community" > /etc/apk/repositories
+          printf "%s\n%s\n" "'"${WISP_EROFS_APK_REPOSITORY:-https://mirrors.tencent.com/alpine/v3.23}"'/main" "'"${WISP_EROFS_APK_REPOSITORY:-https://mirrors.tencent.com/alpine/v3.23}"'/community" > /etc/apk/repositories
           apk add --no-cache erofs-utils >/dev/null
           for path in / /assets /assets/bin /assets/bin/crun /assets/bin/tini /assets/rootfs /assets/rootfs/rootfs; do
             dump.erofs --path="$path" "/artifact/'"$artifact_base"'" >"/tmp/erofs-path.txt"
@@ -136,7 +136,7 @@ GOOS="${GOOS:-linux}"
 GOARCH="${GOARCH:-${LINUX_GOARCH:-amd64}}"
 export GOOS GOARCH
 export WISP_APT_MIRROR="${WISP_APT_MIRROR:-${CLOUDAGENT_WISP_APT_MIRROR:-http://mirrors.cloud.tencent.com/debian}}"
-export ALPINE_MIRROR="${ALPINE_MIRROR:-${CLOUDAGENT_WISP_ALPINE_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.23}}"
+export ALPINE_MIRROR="${ALPINE_MIRROR:-${CLOUDAGENT_WISP_ALPINE_MIRROR:-https://mirrors.tencent.com/alpine/v3.23}}"
 export ALPINE_APK_REPOSITORY="${ALPINE_APK_REPOSITORY:-$ALPINE_MIRROR}"
 
 CRUN_BINARY="${WISP_CRUN_BINARY:-$WISP_DIR/assets/bin/crun/crun-$GOARCH}"

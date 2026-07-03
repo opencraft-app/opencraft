@@ -32,7 +32,7 @@ package_erofs="${WISP_PACKAGE_EROFS:-0}"
 package_tar_gz="${WISP_PACKAGE_TAR_GZ:-1}"
 flatten_rootfs="${WISP_PACKAGE_FLATTEN_ROOTFS:-$package_erofs}"
 erofs_image="${WISP_EROFS_IMAGE:-alpine:3.23}"
-erofs_apk_repository="${WISP_EROFS_APK_REPOSITORY:-https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.23}"
+erofs_apk_repository="${WISP_EROFS_APK_REPOSITORY:-https://mirrors.tencent.com/alpine/v3.23}"
 erofs_compression="${WISP_EROFS_COMPRESSION:-lz4}"
 
 if [[ "$package_erofs" != "1" && "$package_tar_gz" != "1" ]]; then
