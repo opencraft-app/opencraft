@@ -13,6 +13,7 @@ import {
   parseEffectiveWindowScript,
   parseLightVelaCronScript,
   parseCronListOutput,
+  pickFallbackChannelFromStatusOutput,
   runCronJob,
   runCronJobAsTest,
   shellQuote,
@@ -757,6 +758,175 @@ describe("runCronJobAsTest", () => {
     // 即时回执也必须发到解析后的具体 origin 目标，而不是裸 `origin`
     const sendCommand = allCommands.find((c) => c.startsWith("hermes send ")) ?? "";
     expect(sendCommand).toContain("--to 'wecom:wecom-chat-abc'");
+  });
+
+  it("falls back to a connected home channel when deliver is `origin` but the origin context is null", async () => {
+    // 复现线上真实故障：在网页「自动任务」面板/无会话上下文下创建的任务，
+    // deliver 存成 `origin` 但 origin 落库为 null。若原样保留 `origin`，临时
+    // 任务投递会静默丢弃（任务照记 ok，用户啥也收不到）。修复后应兜底到该
+    // bot 已连接的 home channel（此处 wecom）。
+    let capturedMarker = "";
+    let catCallCount = 0;
+    const fetchMock = vi.fn(async (_url: unknown, init: { body?: string }) => {
+      const command = JSON.parse(String(init?.body)) as { command: string };
+      const cmd = command.command;
+      if (cmd.startsWith("hermes send ")) {
+        return okExec("Sent to wecom home channel (chat_id: WangHao)");
+      }
+      if (cmd === "acli channel status") {
+        // wecom / weixin / qqbot 已连接，feishu 断开；按优先级应选 wecom
+        return okExec(JSON.stringify({
+          success: true,
+          data: {
+            platforms: [
+              { name: "feishu", status: "disconnected" },
+              { name: "wecom", status: "connected" },
+              { name: "weixin", status: "connected" },
+              { name: "qqbot", status: "connected" },
+            ],
+          },
+        }));
+      }
+      if (cmd.includes("hermes cron create")) {
+        capturedMarker = extractMarkerFromCreateCommand(cmd);
+        return okExec("Job created.");
+      }
+      if (cmd.includes("lightvela-jobs-meta.json") && cmd.startsWith("python3")) {
+        return okExec("");
+      }
+      if (cmd.includes("cat ~/.hermes/cron/jobs.json")) {
+        catCallCount += 1;
+        if (catCallCount === 1) {
+          // resolveConcreteDeliverForTestRun 查询原任务 origin —— 线上真实结构：null
+          return okExec(JSON.stringify([{ id: "job-1", origin: null }]));
+        }
+        return okExec(JSON.stringify([{
+          id: "temp-1",
+          name: capturedMarker,
+          last_run_at: "2026-07-02T21:55:03+08:00",
+          last_status: "ok",
+          last_delivery_error: null,
+        }]));
+      }
+      if (cmd === `hermes cron remove 'temp-1'`) {
+        return okExec("Removed.");
+      }
+      throw new Error(`unexpected command in test: ${cmd}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await runWithAdvancedTimers(runCronJobAsTest("bot-1", { ...baseJob, deliver: "origin" }));
+
+    const allCommands = fetchMock.mock.calls.map((_, i) => extractCommand(fetchMock, i));
+    // 临时任务不再带裸 `origin`，而是兜底到已连接的 wecom home channel
+    const createCommand = allCommands.find((c) => c.includes("hermes cron create")) ?? "";
+    expect(createCommand).toContain("--deliver 'wecom'");
+    expect(createCommand).not.toContain("--deliver 'origin'");
+    // 即时回执也发到 wecom（而不是无处可投的裸 origin）
+    const sendCommand = allCommands.find((c) => c.startsWith("hermes send ")) ?? "";
+    expect(sendCommand).toContain("--to 'wecom'");
+  });
+
+  it("keeps the bare `origin` deliver when no channel is connected (nothing to fall back to)", async () => {
+    let capturedMarker = "";
+    let catCallCount = 0;
+    const fetchMock = vi.fn(async (_url: unknown, init: { body?: string }) => {
+      const command = JSON.parse(String(init?.body)) as { command: string };
+      const cmd = command.command;
+      if (cmd.startsWith("hermes send ")) {
+        return okExec("Sent.");
+      }
+      if (cmd === "acli channel status") {
+        // 所有通道都断开：兜底选不出目标，只能原样保留 origin
+        return okExec(JSON.stringify({
+          success: true,
+          data: { platforms: [{ name: "wecom", status: "disconnected" }] },
+        }));
+      }
+      if (cmd.includes("hermes cron create")) {
+        capturedMarker = extractMarkerFromCreateCommand(cmd);
+        return okExec("Job created.");
+      }
+      if (cmd.includes("lightvela-jobs-meta.json") && cmd.startsWith("python3")) {
+        return okExec("");
+      }
+      if (cmd.includes("cat ~/.hermes/cron/jobs.json")) {
+        catCallCount += 1;
+        if (catCallCount === 1) {
+          return okExec(JSON.stringify([{ id: "job-1", origin: null }]));
+        }
+        return okExec(JSON.stringify([{
+          id: "temp-1",
+          name: capturedMarker,
+          last_run_at: "2026-07-02T21:55:03+08:00",
+          last_status: "ok",
+          last_delivery_error: null,
+        }]));
+      }
+      if (cmd === `hermes cron remove 'temp-1'`) {
+        return okExec("Removed.");
+      }
+      throw new Error(`unexpected command in test: ${cmd}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await runWithAdvancedTimers(runCronJobAsTest("bot-1", { ...baseJob, deliver: "origin" }));
+
+    const allCommands = fetchMock.mock.calls.map((_, i) => extractCommand(fetchMock, i));
+    const createCommand = allCommands.find((c) => c.includes("hermes cron create")) ?? "";
+    expect(createCommand).toContain("--deliver 'origin'");
+  });
+});
+
+describe("pickFallbackChannelFromStatusOutput", () => {
+  const buildStatus = (platforms: Array<{ name: string; status: string }>) =>
+    JSON.stringify({ success: true, data: { platforms } });
+
+  it("picks wecom first when multiple channels are connected", () => {
+    expect(pickFallbackChannelFromStatusOutput(buildStatus([
+      { name: "feishu", status: "disconnected" },
+      { name: "wecom", status: "connected" },
+      { name: "weixin", status: "connected" },
+      { name: "qqbot", status: "connected" },
+    ]))).toBe("wecom");
+  });
+
+  it("respects priority order: weixin before qqbot before feishu", () => {
+    expect(pickFallbackChannelFromStatusOutput(buildStatus([
+      { name: "qqbot", status: "connected" },
+      { name: "feishu", status: "connected" },
+      { name: "weixin", status: "connected" },
+    ]))).toBe("weixin");
+    expect(pickFallbackChannelFromStatusOutput(buildStatus([
+      { name: "feishu", status: "connected" },
+      { name: "qqbot", status: "connected" },
+    ]))).toBe("qqbot");
+  });
+
+  it("normalizes aliases (openclaw-wecom / lark) to notification keys", () => {
+    expect(pickFallbackChannelFromStatusOutput(buildStatus([
+      { name: "openclaw-lark", status: "running" },
+    ]))).toBe("feishu");
+    expect(pickFallbackChannelFromStatusOutput(buildStatus([
+      { name: "openclaw-wecom", status: "ready" },
+    ]))).toBe("wecom");
+  });
+
+  it("returns null when no channel is connected", () => {
+    expect(pickFallbackChannelFromStatusOutput(buildStatus([
+      { name: "wecom", status: "disconnected" },
+      { name: "weixin", status: "disconnected" },
+    ]))).toBeNull();
+  });
+
+  it("returns null for empty / unparseable output", () => {
+    expect(pickFallbackChannelFromStatusOutput("")).toBeNull();
+    expect(pickFallbackChannelFromStatusOutput("not json at all")).toBeNull();
+  });
+
+  it("tolerates leading log noise before the JSON body", () => {
+    const noisy = `some log line\n${buildStatus([{ name: "telegram", status: "connected" }])}\ntrailing`;
+    expect(pickFallbackChannelFromStatusOutput(noisy)).toBe("telegram");
   });
 });
 

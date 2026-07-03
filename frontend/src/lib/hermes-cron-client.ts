@@ -950,13 +950,110 @@ async function findCronJobIdByExactName(botId: string, name: string): Promise<st
 }
 
 /**
+ * 把 Hermes / acli 返回的通道名归一化成投递用的 platform key。
+ *
+ * 与 `openclaw-automations-panel.tsx` 里的 `normalizeHermesChannelKey` 保持一致
+ * （此处独立一份，避免 lib 反向依赖 page 组件文件）。
+ */
+function normalizeChannelKeyForDeliver(channel: string): string {
+  const normalized = channel.trim().toLowerCase();
+  if (["wechat", "weixin", "openclaw-weixin", "openclaw-wechat"].includes(normalized)) return "weixin";
+  if (["qq", "qqbot", "qq-bot", "qqbotplugin", "openclaw-qqbot", "openclaw-qq"].includes(normalized)) return "qqbot";
+  if (["wecom", "wework", "work-weixin", "work-wechat", "openclaw-wecom"].includes(normalized)) return "wecom";
+  if (["feishu", "lark", "larksuite", "openclaw-feishu", "openclaw-lark"].includes(normalized)) return "feishu";
+  if (["telegram", "tg", "openclaw-telegram", "openclaw-tg"].includes(normalized)) return "telegram";
+  if (["whatsapp", "whats-app", "whatsapp-business", "whatsapp_business", "openclaw-whatsapp"].includes(normalized)) return "whatsapp";
+  if (["discord", "openclaw-discord"].includes(normalized)) return "discord";
+  return normalized;
+}
+
+/**
+ * deliver=origin 但 origin 为空时，兜底选哪个 home channel 的优先级。
+ * 排在前面的优先。国内 IM（企业微信/微信/QQ）优先，其次飞书，再是国际通道。
+ */
+const DELIVER_FALLBACK_CHANNEL_PRIORITY = [
+  "wecom",
+  "weixin",
+  "qqbot",
+  "feishu",
+  "telegram",
+  "whatsapp",
+  "discord",
+] as const;
+
+/**
+ * 从 `acli channel status` 的 JSON 输出里，按优先级挑一个已连接的通道 platform 名。
+ *
+ * 纯函数（不涉及网络/exec），便于单测。返回的是**不带 chat_id 的 platform 名**
+ * （如 `"wecom"`），直接投到该平台的 home channel——已验证 `hermes send --to wecom`
+ * 能直达用户（Sent to wecom home channel）。解析失败或无已连接通道时返回 null。
+ */
+export function pickFallbackChannelFromStatusOutput(output: string): string | null {
+  const trimmed = (output || "").trim();
+  if (!trimmed) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    const start = trimmed.indexOf("{");
+    const end = trimmed.lastIndexOf("}");
+    if (start < 0 || end <= start) return null;
+    try {
+      parsed = JSON.parse(trimmed.slice(start, end + 1));
+    } catch {
+      return null;
+    }
+  }
+  const root = parsed as { data?: { platforms?: unknown }; platforms?: unknown } | null;
+  const rawPlatforms = root?.data?.platforms ?? root?.platforms;
+  if (!Array.isArray(rawPlatforms)) return null;
+  const connected = new Set<string>();
+  for (const entry of rawPlatforms) {
+    if (!entry || typeof entry !== "object") continue;
+    const item = entry as { name?: unknown; status?: unknown; enabled?: unknown };
+    const name = typeof item.name === "string" ? item.name : "";
+    if (!name) continue;
+    const status = typeof item.status === "string" ? item.status.toLowerCase() : "";
+    const ok = item.enabled === true || ["connected", "enabled", "running", "ready"].includes(status);
+    if (ok) connected.add(normalizeChannelKeyForDeliver(name));
+  }
+  if (connected.size === 0) return null;
+  for (const key of DELIVER_FALLBACK_CHANNEL_PRIORITY) {
+    if (connected.has(key)) return key;
+  }
+  // 优先级表里没有的其它已连接通道，取任意一个兜底
+  return [...connected][0] ?? null;
+}
+
+/**
+ * 从 `acli channel status` 的输出里挑一个已连接的通道，作为 deliver 兜底目标。
+ * 拉取失败返回 null（调用方会退回原样 origin）。
+ */
+async function resolveFallbackHomeChannel(botId: string): Promise<string | null> {
+  try {
+    const payload = await execCommand(botId, "acli channel status");
+    return pickFallbackChannelFromStatusOutput(payload.output || "");
+  } catch {
+    return null;
+  }
+}
+
+/**
  * `deliver === "origin"`（或逗号分隔目标里含 "origin" 这个 token）时，把它替换
- * 成具体的 `platform:chat_id`。
+ * 成具体的投递目标。
  *
  * 原因：`origin` 依赖任务创建时持久化下来的 `job.origin`（真实聊天会话里创建
  * 才会有），而我们用 CLI 重新创建的临时克隆任务不会有这个上下文，如果不手动把
- * 它换成具体目标，临时任务的 `origin` 投递就会走 Hermes 的兜底逻辑（遍历各平台
- * home channel），可能跟原任务的真实投递目标不一致。
+ * 它换成具体目标，临时任务的 `origin` 投递就会走 Hermes 的兜底逻辑，可能跟原
+ * 任务的真实投递目标不一致。
+ *
+ * 两级还原：
+ * 1. 原任务持久化了 concrete origin（`{platform, chat_id}`）→ 换成 `platform:chat_id`；
+ * 2. 原任务 `origin` 为空（典型：在网页「自动任务」面板创建的任务——网页不是
+ *    IM 会话，没有"原对话"上下文，`origin` 存成 null）→ 此时若原样保留 `origin`，
+ *    临时任务投递会**静默丢弃**（任务照记 ok，但用户啥也收不到）。改为兜底到该
+ *    bot 已连接的 home channel（如 `wecom`），保证测试运行的通知能真正到达用户。
+ *    连一个已连接通道都没有时，才退回原样的 `origin`（此时确实无处可投）。
  */
 async function resolveConcreteDeliverForTestRun(botId: string, job: CronJob): Promise<string> {
   const tokens = job.deliver.split(",").map((token) => token.trim()).filter(Boolean);
@@ -969,9 +1066,17 @@ async function resolveConcreteDeliverForTestRun(botId: string, job: CronJob): Pr
     && origin.chat_id !== undefined
     && origin.chat_id !== null
     && String(origin.chat_id) !== "";
-  if (!hasConcreteOrigin) return job.deliver;
-  const concreteOrigin = `${String((origin as { platform: string }).platform)}:${String((origin as { chat_id: unknown }).chat_id)}`;
-  return tokens.map((token) => (token === "origin" ? concreteOrigin : token)).join(",");
+  if (hasConcreteOrigin) {
+    const concreteOrigin = `${String((origin as { platform: string }).platform)}:${String((origin as { chat_id: unknown }).chat_id)}`;
+    return tokens.map((token) => (token === "origin" ? concreteOrigin : token)).join(",");
+  }
+  // origin 为空：兜底到该 bot 已连接的 home channel，避免临时任务通知静默丢弃。
+  const fallback = await resolveFallbackHomeChannel(botId);
+  if (!fallback) return job.deliver;
+  const replaced = tokens.map((token) => (token === "origin" ? fallback : token));
+  // 去重：万一 tokens 里已经显式含有 fallback 平台，避免出现 "wecom,wecom"
+  const deduped = [...new Set(replaced)];
+  return deduped.join(",");
 }
 
 export interface CronTestRunResult {
