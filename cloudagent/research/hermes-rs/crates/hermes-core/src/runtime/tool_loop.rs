@@ -24,6 +24,37 @@ impl AgentExecutor {
             let name = tool_call.function.name.clone();
             let args_str = tool_call.function.arguments.clone();
 
+            let args: serde_json::Value = match serde_json::from_str(&args_str) {
+                Ok(a) => a,
+                Err(e) => {
+                    warn!(
+                        tool_call_id = %tool_call.id,
+                        tool = %name,
+                        arguments_len = args_str.len(),
+                        error = %e,
+                        "Rejecting tool call with invalid JSON arguments"
+                    );
+                    return Err(Error::InvalidToolArgs {
+                        name,
+                        details: format!(
+                            "function.arguments must be a valid JSON object string: {e}"
+                        ),
+                    });
+                }
+            };
+            if !args.is_object() {
+                warn!(
+                    tool_call_id = %tool_call.id,
+                    tool = %name,
+                    arguments_len = args_str.len(),
+                    "Rejecting tool call with non-object arguments"
+                );
+                return Err(Error::InvalidToolArgs {
+                    name,
+                    details: "function.arguments must decode to a JSON object".to_string(),
+                });
+            }
+
             debug!(tool = %name, args = %args_str, "Executing tool");
             self.emit(AgentEvent::ToolStart {
                 tool_call_id: tool_call.id.clone(),
@@ -31,18 +62,6 @@ impl AgentExecutor {
                 arguments: args_str.clone(),
             })
             .await;
-
-            let args: serde_json::Value = match serde_json::from_str(&args_str) {
-                Ok(a) => a,
-                Err(e) => {
-                    warn!(tool = %name, error = %e, "Failed to parse tool arguments");
-                    results.push((
-                        name,
-                        ToolResult::error(&tool_call.id, format!("Invalid JSON: {}", e)),
-                    ));
-                    continue;
-                }
-            };
 
             if !router.contains(&name).await {
                 error!(tool = %name, "Tool not found");

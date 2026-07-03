@@ -9,12 +9,13 @@ use std::time::Duration;
 use tokio::sync::{mpsc, RwLock};
 use tracing::{debug, error, info, instrument, warn};
 
-use crate::client::{Message, OpenAIClient};
+use crate::client::{Message, OpenAIClient, ToolCall};
 use crate::config::{runtime_config, BehaviorSettings};
 use crate::error::{Error, Result};
 use crate::events::{AgentEvent, AgentEventSink};
 use crate::hooks::{GateHook, NoopGateHook, PromptTransformHook};
 use crate::memory::MemoryManager;
+use crate::runtime::tool_calls::normalize_tool_calls;
 use crate::runtime::tool_loop::check_cancelled;
 use crate::runtime_host::{session_id, SessionSandbox};
 use crate::tools::ToolRegistry;
@@ -292,6 +293,18 @@ impl AgentExecutor {
 
             match response {
                 Ok((response_text, reasoning_text, tool_calls)) => {
+                    let tool_calls = match normalize_tool_calls_for_history(tool_calls) {
+                        Ok(tool_calls) => tool_calls,
+                        Err(error) => {
+                            warn!(error = %error, "Rejected invalid tool call before history append");
+                            self.emit(AgentEvent::Error {
+                                error: error.to_string(),
+                            })
+                            .await;
+                            return Err(error);
+                        }
+                    };
+
                     // Add assistant message to conversation
                     let mut assistant_msg = Message::assistant(&response_text);
                     if !reasoning_text.is_empty() {
@@ -395,6 +408,10 @@ impl AgentExecutor {
             }
         }
     }
+}
+
+fn normalize_tool_calls_for_history(tool_calls: Vec<ToolCall>) -> Result<Vec<ToolCall>> {
+    normalize_tool_calls(tool_calls)
 }
 
 /// Builder for creating an AgentExecutor.
@@ -640,6 +657,21 @@ mod tests {
         assert_eq!(prompt, "hello\n\nhooked");
     }
 
+    #[test]
+    fn invalid_tool_call_arguments_are_rejected_before_history_append() {
+        let error = normalize_tool_calls_for_history(vec![ToolCall {
+            id: "call_bad_terminal".to_string(),
+            function: crate::client::ToolCallFunction {
+                name: "terminal".to_string(),
+                arguments: "{".to_string(),
+            },
+        }])
+        .expect_err("partial JSON arguments must not be recorded as assistant tool_calls");
+
+        assert!(matches!(error, Error::InvalidToolArgs { .. }));
+        assert!(error.to_string().contains("valid JSON object"));
+    }
+
     struct CountingTool {
         count: Arc<std::sync::atomic::AtomicUsize>,
     }
@@ -710,5 +742,59 @@ mod tests {
             .as_deref()
             .unwrap_or_default()
             .contains("denied by policy"));
+    }
+
+    #[tokio::test]
+    async fn executor_rejects_malformed_arguments_without_tool_result() {
+        let registry = ToolRegistry::new(Duration::from_secs(1));
+        let agent = AgentExecutor::new(
+            AgentConfig::default(),
+            OpenAIClient::new(crate::client::ClientConfig::default()),
+            registry,
+        );
+
+        let error = agent
+            .execute_tools(
+                vec![ToolCall {
+                    id: "call_bad_terminal".to_string(),
+                    function: crate::client::ToolCallFunction {
+                        name: "terminal".to_string(),
+                        arguments: "{".to_string(),
+                    },
+                }],
+                None,
+            )
+            .await
+            .expect_err("malformed arguments must fail the turn before tool execution");
+
+        assert!(matches!(error, Error::InvalidToolArgs { .. }));
+        assert!(error.to_string().contains("valid JSON object"));
+    }
+
+    #[tokio::test]
+    async fn executor_rejects_non_object_arguments_without_tool_result() {
+        let registry = ToolRegistry::new(Duration::from_secs(1));
+        let agent = AgentExecutor::new(
+            AgentConfig::default(),
+            OpenAIClient::new(crate::client::ClientConfig::default()),
+            registry,
+        );
+
+        let error = agent
+            .execute_tools(
+                vec![ToolCall {
+                    id: "call_bad_terminal".to_string(),
+                    function: crate::client::ToolCallFunction {
+                        name: "terminal".to_string(),
+                        arguments: "\"pwd\"".to_string(),
+                    },
+                }],
+                None,
+            )
+            .await
+            .expect_err("non-object arguments must fail the turn before tool execution");
+
+        assert!(matches!(error, Error::InvalidToolArgs { .. }));
+        assert!(error.to_string().contains("JSON object"));
     }
 }
