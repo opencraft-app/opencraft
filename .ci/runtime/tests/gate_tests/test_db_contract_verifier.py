@@ -556,7 +556,30 @@ class DbContractVerifierTests(unittest.TestCase):
 
         self.assertEqual(resolver.call_args.args[3], "lightclaw-auth")
 
-    def test_playground_ctl_runtime_env_uses_catalog_database_and_runtime_root_secret(self) -> None:
+    def test_playground_ctl_runtime_env_preserves_resolved_ctl_db_secret(self) -> None:
+        env_values = {
+            "MYSQL_HOST": "10.15.224.4",
+            "MYSQL_PORT": "3306",
+            "CTL_DB": "ctl",
+            "CTL_DB_USER": "root",
+        }
+        env_secret_values = {"CTL_DB_PASSWORD": "business-password"}
+
+        with mock.patch("gates.db_contract_verifier.kubectl") as kubectl:
+            apply_playground_ctl_runtime_env(
+                kubeconfig="/tmp/kubeconfig",
+                namespace="lightvela-playground-sandbox-bj-7",
+                env="sandbox-bj-7",
+                service="ctl",
+                env_values=env_values,
+                env_secret_values=env_secret_values,
+            )
+
+        self.assertEqual(env_values["CTL_DB"], "ctl_sandbox_bj_7")
+        self.assertEqual(env_secret_values["CTL_DB_PASSWORD"], "business-password")
+        kubectl.assert_not_called()
+
+    def test_playground_ctl_runtime_env_falls_back_to_runtime_root_secret(self) -> None:
         secret_json = {
             "data": {
                 "MYSQL_ROOT_PASSWORD": "cm9vdC1wYXNzd29yZA==",
@@ -568,7 +591,7 @@ class DbContractVerifierTests(unittest.TestCase):
             "CTL_DB": "ctl",
             "CTL_DB_USER": "root",
         }
-        env_secret_values = {"CTL_DB_PASSWORD": "business-password"}
+        env_secret_values: dict[str, str] = {}
 
         with mock.patch(
             "gates.db_contract_verifier.kubectl",

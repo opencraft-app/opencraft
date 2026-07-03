@@ -280,6 +280,8 @@ def apply_playground_ctl_runtime_env(
     if service != "ctl" or not is_playground_namespace(namespace):
         return
     env_values["CTL_DB"] = default_ctl_database(env)
+    if env_secret_values.get("CTL_DB_PASSWORD", "").strip():
+        return
     if not kubeconfig:
         return
     root_password = kubectl_secret_value(
