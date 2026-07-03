@@ -30,9 +30,15 @@ async fn runtime_info_exposes_local_and_business_protocols() {
     assert_eq!(body["type"], "velad.ready");
     assert_eq!(body["runtime_protocol"], "velad.local.v1");
     assert_eq!(body["api_protocol"], "velachat.v1");
+    assert_eq!(body["otel_protocol"], "otlp.http.json");
     assert_eq!(body["pid"], std::process::id());
     assert_eq!(body["listen_addr"], "127.0.0.1:49321");
     assert_eq!(body["api_base_url"], "http://127.0.0.1:49321/api/v1");
+    assert_eq!(body["otel_base_url"], "http://127.0.0.1:49321");
+    assert_eq!(
+        body["observability_base_url"],
+        "http://127.0.0.1:49321/api/v1/observability"
+    );
     assert_eq!(body["version"], env!("CARGO_PKG_VERSION"));
 }
 

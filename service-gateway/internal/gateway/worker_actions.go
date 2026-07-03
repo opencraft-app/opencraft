@@ -41,6 +41,8 @@ const (
 	rescueArchiveModeGeneric       = "generic"
 	defaultHermesRemotePath        = "/home/agentuser/.hermes"
 	defaultImportUploadTTLSeconds  = 900
+	defaultRescueWaitTimeoutSecs   = 400
+	defaultImportWaitTimeoutSecs   = 360
 )
 
 var workerActionIDSafePattern = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
@@ -486,8 +488,13 @@ func (s *workerActionService) handleCurrent(w http.ResponseWriter, r *http.Reque
 		writeJSONAny(w, http.StatusBadRequest, map[string]string{"error": "unsupported_action"})
 		return
 	}
-	if _, err := s.resolveBotTarget(r.Context(), session, botID); err != nil {
+	target, err := s.resolveBotTarget(r.Context(), session, botID)
+	if err != nil {
 		writeWorkerActionUpstreamError(w, err)
+		return
+	}
+	if target.CloudID == "" || target.Region == "" {
+		writeJSONAny(w, http.StatusBadGateway, map[string]string{"error": "bot_target_unresolved"})
 		return
 	}
 	workflowID := buildWorkerActionWorkflowID(botID, action)
@@ -517,8 +524,13 @@ func (s *workerActionService) handleQuery(w http.ResponseWriter, r *http.Request
 		writeJSONAny(w, http.StatusForbidden, map[string]string{"error": "action_run_forbidden"})
 		return
 	}
-	if _, err := s.resolveBotTarget(r.Context(), session, botID); err != nil {
+	target, err := s.resolveBotTarget(r.Context(), session, botID)
+	if err != nil {
 		writeWorkerActionUpstreamError(w, err)
+		return
+	}
+	if target.CloudID == "" || target.Region == "" {
+		writeJSONAny(w, http.StatusBadGateway, map[string]string{"error": "bot_target_unresolved"})
 		return
 	}
 	status, err := s.backend.QueryWorkflow(r.Context(), actionRunID, r.URL.Query().Get("run_id"), workerActionStatusQueryName)
@@ -705,9 +717,9 @@ func (s *workerActionService) buildHermesImportRequest(raw json.RawMessage, targ
 		COSUploadURLTTLSeconds: s.importUploadTTLSeconds(),
 		TATUsername:            "agentuser",
 		TATWorkingDirectory:    "/home/agentuser",
-		TATWaitTimeoutSeconds:  180,
+		TATWaitTimeoutSeconds:  defaultImportWaitTimeoutSecs,
 		Execute:                true,
-		WaitTimeoutSeconds:     90,
+		WaitTimeoutSeconds:     defaultImportWaitTimeoutSecs,
 		CommandTimeoutSeconds:  1800,
 	}, nil
 }
@@ -776,7 +788,7 @@ func (s *workerActionService) buildRescueExportRequest(raw json.RawMessage, targ
 		COSUploadURLTTLSeconds: s.cfg.RescueExport.COSUploadURLTTLSeconds,
 		Execute:                true,
 		Confirmed:              true,
-		WaitTimeoutSeconds:     90,
+		WaitTimeoutSeconds:     defaultRescueWaitTimeoutSecs,
 		CommandTimeoutSeconds:  1800,
 	}, nil
 }

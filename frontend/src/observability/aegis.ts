@@ -34,16 +34,17 @@ let initPromise: Promise<AegisInstance | null> | null = null;
 let pendingUin: string | undefined;
 
 export function resolveAegisConfig(
-  env: AegisEnv = import.meta.env,
+  env: AegisEnv | null | undefined = import.meta.env as AegisEnv | undefined,
   region: Region = REGION,
 ): AegisConfig | null {
-  const enabled = env.VITE_AEGIS_ENABLED?.trim().toLowerCase() ?? "auto";
-  if (!env.PROD || enabled === "false" || enabled === "0") {
+  const runtimeEnv = env ?? {};
+  const enabled = runtimeEnv.VITE_AEGIS_ENABLED?.trim().toLowerCase() ?? "auto";
+  if (!runtimeEnv.PROD || enabled === "false" || enabled === "0") {
     return null;
   }
 
-  const id = env.VITE_AEGIS_ID?.trim() ?? "";
-  const hostUrl = env.VITE_AEGIS_HOST_URL?.trim() ?? "";
+  const id = runtimeEnv.VITE_AEGIS_ID?.trim() ?? "";
+  const hostUrl = runtimeEnv.VITE_AEGIS_HOST_URL?.trim() ?? "";
   if (!id || !hostUrl) {
     return null;
   }
@@ -56,7 +57,7 @@ export function resolveAegisConfig(
 }
 
 export async function initAegis(
-  env: AegisEnv = import.meta.env,
+  env: AegisEnv | null | undefined = import.meta.env as AegisEnv | undefined,
   region: Region = REGION,
 ): Promise<AegisInstance | null> {
   if (aegis) return aegis;

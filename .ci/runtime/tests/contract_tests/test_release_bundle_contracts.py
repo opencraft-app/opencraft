@@ -353,6 +353,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn('PLAYGROUND_ENV="${PLAYGROUND_ENV#playground/}"', workflow_text)
         self.assertIn('BUILD_ENVS="$(resolve_playground_envs "auto" "$PLAYGROUND_ENV")"', workflow_text)
         self.assertIn('AUTO_PIN_ENVS="$(resolve_playground_envs "auto" "$PLAYGROUND_ENV")"', workflow_text)
+        self.assertIn("skip frontend artifact matrix build for playground branch", workflow_text)
+        self.assertIn("shared Pages artifacts are master-only", workflow_text)
+        self.assertIn("skip Cloudflare artifact release for playground branch", workflow_text)
+        self.assertIn("shared Cloudflare staging is master-only", workflow_text)
         self.assertIn("SHORT_SHA='${{ ci.sha }}'", workflow_text)
         self.assertIn('SHORT_SHA="${BK_CI_GIT_HEAD_COMMITS%%,*}"', workflow_text)
         self.assertNotIn('SHORT_SHA="${{ ci.sha }}"', workflow_text)
@@ -555,7 +559,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         create_script = REPO_ROOT / ".ci/runtime/commands/create_hermes_tat_command.sh"
         invoke_script = REPO_ROOT / ".ci/runtime/commands/invoke_hermes_tat_command.sh"
         repair_script = REPO_ROOT / "images/helpers/config-hermes-python-mirrors.sh"
-        blueprint_id_file = REPO_ROOT / "images/hermes-backend-blueprint-id"
+        blueprint_resolver = REPO_ROOT / "images/helpers/resolve-hermes-backend-blueprint-id.py"
         self.assertTrue(list_script.exists())
         self.assertTrue(refresh_script.exists())
         self.assertTrue(create_script.exists())
@@ -563,8 +567,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertTrue(rollout_script.exists())
         self.assertTrue(refresh_env_script.exists())
         self.assertTrue(repair_vm_script.exists())
-        self.assertTrue(blueprint_id_file.exists())
-        self.assertRegex(blueprint_id_file.read_text().strip(), r"^lhbp-[A-Za-z0-9_-]+$")
+        self.assertTrue(blueprint_resolver.exists())
         self.assertIn("does not patch pools, update SKUs, invoke TAT, or write database rows", list_script.read_text())
         self.assertIn('/template-classes/${TEMPLATE_CLASS_ID}/resolve', refresh_script.read_text())
         self.assertIn('template-classes/{template}/resolve', list_script.read_text())
@@ -579,7 +582,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("tccli tat CreateCommand", create_script_text)
         self.assertIn("--CommandType SHELL", create_script_text)
         self.assertIn("--Content", create_script_text)
-        self.assertIn("images/hermes-backend-blueprint-id", create_script_text)
+        self.assertIn("resolve-hermes-backend-blueprint-id.py", create_script_text)
         self.assertIn("export HERMES_BACKEND_BLUEPRINT_ID", create_script_text)
         self.assertIn("batches run strictly serially", invoke_script.read_text())
         self.assertIn("batch failed; retrying", invoke_script.read_text())

@@ -5,17 +5,18 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 goarch="${GOARCH:-amd64}"
 out="${DST_ROOTFS_DIR:-$repo_root/assets/rootfs/rootfs/alpine-$goarch}"
 rootfs_url="${ALPINE_ROOTFS_URL:-}"
-apk_repository="${ALPINE_APK_REPOSITORY:-https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.23}"
+alpine_mirror="${ALPINE_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.23}"
+apk_repository="${ALPINE_APK_REPOSITORY:-$alpine_mirror}"
 builder_image="${WISP_ROOTFS_DIR_BUILDER_IMAGE:-alpine:3.23}"
 
 case "$goarch" in
   amd64)
     platform="linux/amd64"
-    rootfs_url="${rootfs_url:-https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/x86_64/alpine-minirootfs-3.23.4-x86_64.tar.gz}"
+    rootfs_url="${rootfs_url:-$alpine_mirror/releases/x86_64/alpine-minirootfs-3.23.4-x86_64.tar.gz}"
     ;;
   arm64)
     platform="linux/arm64"
-    rootfs_url="${rootfs_url:-https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/aarch64/alpine-minirootfs-3.23.4-aarch64.tar.gz}"
+    rootfs_url="${rootfs_url:-$alpine_mirror/releases/aarch64/alpine-minirootfs-3.23.4-aarch64.tar.gz}"
     ;;
   *) echo "unsupported GOARCH for alpine rootfs: $goarch" >&2; exit 2 ;;
 esac
@@ -28,9 +29,10 @@ docker run --rm --platform "$platform" \
   -e ROOTFS_URL="$rootfs_url" \
   -e APK_REPOSITORY="$apk_repository" \
   "$builder_image" sh -ceu '
-    apk add --no-cache ca-certificates tar gzip >/dev/null
+    printf "%s\n%s\n" "$APK_REPOSITORY/main" "$APK_REPOSITORY/community" > /etc/apk/repositories
+    apk add --no-cache ca-certificates curl tar gzip >/dev/null
     mkdir -p /work
-    wget -qO /work/rootfs.tar.gz "$ROOTFS_URL"
+    curl -fsSL --retry 3 --retry-delay 1 --connect-timeout 10 -A wisp-release-builder -o /work/rootfs.tar.gz "$ROOTFS_URL"
     tar -xzf /work/rootfs.tar.gz -C /rootfs
     printf "%s\n%s\n" "$APK_REPOSITORY/main" "$APK_REPOSITORY/community" > /rootfs/etc/apk/repositories
     apk --root /rootfs --initdb --no-cache \

@@ -37,6 +37,7 @@ function makeCnManifest(overrides: Record<string, unknown> = {}) {
     bakedEnv: {
       VITE_REGION: "cn",
       VITE_AUTH_API_BASE_URL: "https://api.lightvela.com",
+      NEXT_PUBLIC_SITE_URL: "https://lightvela.com",
       VITE_AEGIS_ENABLED: "true",
       VITE_AEGIS_ID: "4e66EF5XoPEXx3y8lw",
       VITE_AEGIS_HOST_URL: "https://rumt-zh.com",
@@ -132,6 +133,7 @@ describe("EdgeOne release from frontend artifact", () => {
     ["outputDir", { outputDir: "wrong-output" }, "outputDir mismatch"],
     ["VITE_REGION", { bakedEnv: { ...makeCnManifest().bakedEnv, VITE_REGION: "global" } }, "baked env VITE_REGION mismatch"],
     ["VITE_AUTH_API_BASE_URL", { bakedEnv: { ...makeCnManifest().bakedEnv, VITE_AUTH_API_BASE_URL: "https://wrong.example.com" } }, "baked env VITE_AUTH_API_BASE_URL mismatch"],
+    ["NEXT_PUBLIC_SITE_URL", { bakedEnv: { ...makeCnManifest().bakedEnv, NEXT_PUBLIC_SITE_URL: "https://wrong.example.com" } }, "baked env NEXT_PUBLIC_SITE_URL mismatch"],
     ["VITE_AEGIS_ID", { bakedEnv: { ...makeCnManifest().bakedEnv, VITE_AEGIS_ID: "wrong" } }, "baked env VITE_AEGIS_ID mismatch"],
   ])("fails manifest mismatch for %s", (_name, overrides, message) => {
     const calls: string[] = [];

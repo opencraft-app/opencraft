@@ -9,9 +9,11 @@ This app is intentionally thin:
   `vela-chat-web`.
 - Chat state and wire contracts stay in shared packages and Rust crates.
 
-Packaged macOS builds embed the `velad` daemon and start it from the Electron
-main process. Development mode can still point at an external daemon at
-`127.0.0.1:3857` by default, or at `VELA_DESKTOP_VELAD_LISTEN_ADDR` when set.
+Packaged macOS builds embed the local `velad` daemon and start it through the
+Electron runtime manager. The bundled daemon binds `127.0.0.1:0` and reports its
+real address with a `velad.ready` stdout event. Development mode follows the
+same local lifecycle: the dev script builds `target/debug/velad` and lets the
+Electron host spawn it as a child process.
 
 From the repository root:
 
@@ -19,6 +21,31 @@ From the repository root:
 npm install
 npm --prefix apps/vela-desktop-electron run dev
 ```
+
+The root Makefile exposes the same fast feedback loop:
+
+```bash
+make desktop-preview
+```
+
+Use this for Electron shell and work-monitor iteration. It builds
+`target/debug/velad`, starts Vite, launches Electron, and lets the Electron host
+spawn that local daemon. It does not package the app or replace
+`/Applications/Vela.app`.
+
+Renderer, thumbnail, and work-monitor CSS/React changes update through Vite.
+The preview server prefers port `5173`, but if that port is already in use the
+dev script uses Vite's assigned fallback port and passes that exact URL to
+Electron.
+The preview host also sets `VELA_DESKTOP_USER_DATA_DIR` to
+`.tmp/desktop-preview-user-data` under the repo so its runtime SQLite database
+does not share writes with the packaged `/Applications/Vela.app`.
+`make desktop-preview` first clears older dev preview processes from this repo;
+use `make desktop-preview-stop` when you only want to stop the running dev
+preview without starting it again.
+Restart `make desktop-preview` after changing Electron main/preload code or
+window-manager values such as work-monitor width, height, shadow, or
+always-on-top behavior.
 
 Pure web host mode uses the same desktop shell and ChatUI without launching
 Electron. It is the browser equivalent of the desktop window and is useful for
@@ -64,14 +91,30 @@ server-build
        -> desktop-pack
        -> desktop-dist
 
-server-run + desktop-dev
-  -> stack-dev
+desktop-dev
+  -> desktop-preview
 ```
 
 `desktop-pack` and `desktop-dist` are macOS arm64 targets. They build release
 `velad`, copy it into the app resources, and the packaged app starts that daemon
-automatically. Dev targets still use `VELA_DESKTOP_VELAD_LISTEN_ADDR` /
-`VELAD_LISTEN_ADDR`, defaulting to `127.0.0.1:3857`.
+automatically. The Electron dev target builds `velad` in debug mode and passes
+`VELA_DESKTOP_VELAD_PATH=target/debug/velad` plus isolated preview user data to
+the host; it does not connect to an externally managed daemon.
+
+Use `make desktop-install-dev` only when you need to validate the packaged app
+under `/Applications/Vela.app`. `make desktop-pids` shows both dev preview and
+packaged `Vela`/bundled `velad` processes so you can tell which runtime is still
+alive.
+
+## Local runtime
+
+Electron host lifecycle code lives under `electron/runtime/`. It owns local
+`velad` process startup, ready parsing, diagnostics, graceful shutdown, and
+rotating logs. It does not import React renderer code or
+`packages/vela-desktop-shell`.
+
+The local runtime contract is `velad.local.v1`; the business API contract
+remains `velachat.v1` under `/api/v1`.
 
 ## Local logs
 

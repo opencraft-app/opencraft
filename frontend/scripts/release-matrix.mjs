@@ -150,6 +150,7 @@ export function loadReleaseMatrix(matrixPath = process.env.FRONTEND_RELEASE_MATR
       projectName: ensureNonEmptyString(combo.projectName, "projectName", id),
       requiredSecretEnv: ensureStringArray(combo.requiredSecretEnv, "requiredSecretEnv", id),
       authApiBaseUrl: ensureNonEmptyString(combo.authApiBaseUrl, "authApiBaseUrl", id),
+      siteUrl: ensureOptionalString(combo.siteUrl, "siteUrl", id),
       outputDir: ensureNonEmptyString(combo.outputDir, "outputDir", id),
       deployEnv: ensureStringMap(combo.deployEnv, "deployEnv", id),
       observability: ensureObservabilityConfig(combo.observability, id),
@@ -242,6 +243,18 @@ export function createComboEnvironment(combo, projectName, env = process.env) {
     NEXT_PUBLIC_REGION: combo.region,
     NEXT_PUBLIC_AUTH_API_BASE_URL: combo.authApiBaseUrl,
   };
+
+  if (combo.siteUrl) {
+    nextEnv.NEXT_PUBLIC_SITE_URL = combo.siteUrl;
+    nextEnv.SITE_URL = combo.siteUrl;
+    if (combo.region === "global") {
+      nextEnv.NEXT_PUBLIC_GLOBAL_SITE_URL = combo.siteUrl;
+      nextEnv.GLOBAL_SITE_URL = combo.siteUrl;
+    } else if (combo.region === "cn") {
+      nextEnv.NEXT_PUBLIC_CN_SITE_URL = combo.siteUrl;
+      nextEnv.CN_SITE_URL = combo.siteUrl;
+    }
+  }
 
   const aegis = combo.observability?.aegis;
   if (aegis) {

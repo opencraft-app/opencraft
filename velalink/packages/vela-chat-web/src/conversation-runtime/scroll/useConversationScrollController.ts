@@ -77,6 +77,7 @@ export interface ConversationScrollControllerOptions {
   historyStartKey?: unknown;
   isHistoryReady?: boolean;
   isLoadingOlderHistory?: boolean;
+  onLifecycleEvent?: (event: ConversationScrollLifecycleEvent) => void;
   onNearHistoryStart?: () => void;
   transportKey?: "web-scroll" | "web-partial-virtualized";
 }
@@ -102,9 +103,12 @@ export interface ConversationScrollController {
 }
 
 export interface ConversationScrollControllerDebug {
+  routeInitialized: boolean;
+  routeKey: string | null;
   followOutput: boolean;
   bottomAnchorMode: BottomAnchorMode;
   bottomAnchorBlockedReason: BottomAnchorBlockedReason | null;
+  bottomAnchorPendingWork: boolean;
   bottomAnchorPendingReason: BottomAnchorRequestReason | null;
   bottomAnchorLastFulfilledReason: BottomAnchorRequestReason | null;
   routeResumeStatus: ConversationScrollRouteResumeStatus;
@@ -121,6 +125,42 @@ export interface ConversationScrollControllerDebugWrite {
   previousScrollTop: number;
   reason: string;
   source: ConversationScrollWriteSource;
+}
+
+export type ConversationScrollLifecycleEventType =
+  | "route_enter"
+  | "route_leave_persisted"
+  | "route_leave_skipped"
+  | "route_restore_applied"
+  | "route_restore_blocked"
+  | "route_restore_cancelled_by_user"
+  | "route_restore_confirmed"
+  | "route_restore_mismatch"
+  | "route_restore_skipped";
+
+export interface ConversationScrollLifecycleEvent {
+  type: ConversationScrollLifecycleEventType;
+  routeKey: string | null;
+  transportKey: "web-scroll" | "web-partial-virtualized";
+  actualScrollTop?: number | null;
+  anchorTargetScrollTop?: number | null;
+  blockedReason?: BottomAnchorBlockedReason | null;
+  contentHeight?: number | null;
+  deltaPx?: number | null;
+  existingScrollTop?: number | null;
+  followOutput?: boolean | null;
+  hasAnchor?: boolean;
+  hasPendingResumeState?: boolean;
+  hasResumeState?: boolean;
+  isHistoryReady?: boolean;
+  measurementScrollTop?: number | null;
+  reason?: string;
+  scrollTop?: number | null;
+  stableFrames?: number;
+  targetScrollTop?: number | null;
+  userIntent?: BottomAnchorUserIntent;
+  viewportHeight?: number | null;
+  viewportWidth?: number | null;
 }
 
 export type { ConversationScrollRouteResumeStatus } from "./scrollWrite";
@@ -245,10 +285,15 @@ function readInitialRouteScrollTop(
   return Number.isFinite(resumeState.scrollTop) ? resumeState.scrollTop : null;
 }
 
+function finiteNumberOrNull(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 export function useConversationScrollController(
   signals: ConversationScrollControllerSignals,
   options: ConversationScrollControllerOptions = {},
 ): ConversationScrollController {
+  const currentRouteKey = routeKeyFrom(options.historyStartKey);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLElement | null>(null);
   const lastKnownContentHeightRef = useRef(0);
@@ -276,7 +321,9 @@ export function useConversationScrollController(
     useRef<ActiveHistoryPrependAnchor | null>(null);
   const lastScrollWriteRef =
     useRef<ConversationScrollControllerDebugWrite | null>(null);
+  const lastLifecycleEventSignatureRef = useRef<string | null>(null);
   const historyStartReadyRef = useRef(false);
+  const routeInitializedRef = useRef(false);
   const historyReadyActivationFrameRef = useRef<number | null>(null);
   const lastTouchClientYRef = useRef<number | null>(null);
   const userIntentRef = useRef<BottomAnchorUserIntent>("none");
@@ -285,23 +332,46 @@ export function useConversationScrollController(
   const localAnchorSequenceRef = useRef(0);
   const driverRef = useRef<BottomAnchorDriver | null>(null);
   const driverSnapshotRef = useRef<BottomAnchorDriverSnapshot>(emptyDriverSnapshot());
+  const initialRouteSnapshotRef = useRef<{
+    resumeState: ConversationScrollResumeState | null;
+    routeKey: string | null;
+  } | null>(null);
+  if (!initialRouteSnapshotRef.current) {
+    initialRouteSnapshotRef.current = {
+      routeKey: currentRouteKey,
+      resumeState: currentRouteKey
+        ? options.clientStateStore?.conversationScroll.read(currentRouteKey) ?? null
+        : null,
+    };
+  }
+  const initialRouteSnapshot = initialRouteSnapshotRef.current;
+  const initialRouteNeedsResume = Boolean(
+    initialRouteSnapshot.resumeState && !initialRouteSnapshot.resumeState.followOutput,
+  );
   const initialRouteScrollRef = useRef<{
     routeKey: string | null;
     scrollTop: number | null;
   }>({
-    routeKey: null,
-    scrollTop: null,
+    routeKey: initialRouteSnapshot.routeKey,
+    scrollTop: Number.isFinite(initialRouteSnapshot.resumeState?.scrollTop)
+      ? initialRouteSnapshot.resumeState.scrollTop
+      : null,
   });
 
   const [followOutput, setFollowOutputState] = useState(true);
   const [debug, setDebug] = useState<ConversationScrollControllerDebug>({
+    routeInitialized: false,
+    routeKey: currentRouteKey,
     followOutput: true,
     bottomAnchorMode: "sticky_bottom",
     bottomAnchorBlockedReason: null,
+    bottomAnchorPendingWork: false,
     bottomAnchorPendingReason: null,
     bottomAnchorLastFulfilledReason: null,
-    routeResumeStatus: "idle",
-    routeResumeScrollTop: null,
+    routeResumeStatus: initialRouteNeedsResume ? "pending" : "idle",
+    routeResumeScrollTop: initialRouteNeedsResume
+      ? initialRouteSnapshot.resumeState?.scrollTop ?? null
+      : null,
     lastScrollWrite: null,
     lastFollowSignal: signals.followSignal,
     lastLayoutSignal: signals.layoutSignal,
@@ -310,7 +380,6 @@ export function useConversationScrollController(
   optionsRef.current = options;
   latestFollowSignalRef.current = signals.followSignal;
   latestLayoutSignalRef.current = signals.layoutSignal;
-  const currentRouteKey = routeKeyFrom(options.historyStartKey);
   if (initialRouteScrollRef.current.routeKey !== currentRouteKey) {
     initialRouteScrollRef.current = {
       routeKey: currentRouteKey,
@@ -331,12 +400,30 @@ export function useConversationScrollController(
     });
   }
 
+  const emitLifecycleEvent = useCallback(
+    (event: Omit<ConversationScrollLifecycleEvent, "transportKey">) => {
+      const next: ConversationScrollLifecycleEvent = {
+        ...event,
+        transportKey: optionsRef.current.transportKey ?? "web-scroll",
+      };
+      const signature = JSON.stringify(next);
+      if (lastLifecycleEventSignatureRef.current === signature) return;
+      lastLifecycleEventSignatureRef.current = signature;
+      optionsRef.current.onLifecycleEvent?.(next);
+    },
+    [],
+  );
+
   const publishScrollDebug = useCallback(
     (snapshot = driverSnapshotRef.current) => {
       const next: ConversationScrollControllerDebug = {
+        routeInitialized: routeInitializedRef.current,
+        routeKey: routeKeyFrom(optionsRef.current.historyStartKey),
         followOutput: snapshot.mode === "sticky_bottom",
         bottomAnchorMode: snapshot.mode,
         bottomAnchorBlockedReason: snapshot.blockedReason,
+        bottomAnchorPendingWork:
+          snapshot.pendingRequest !== null || snapshot.pendingVerification !== null,
         bottomAnchorPendingReason:
           snapshot.pendingRequest?.reason ?? snapshot.pendingVerification?.reason ?? null,
         bottomAnchorLastFulfilledReason: snapshot.lastFulfilledReason,
@@ -347,9 +434,12 @@ export function useConversationScrollController(
         lastLayoutSignal: latestLayoutSignalRef.current,
       };
       setDebug((current) =>
+        current.routeInitialized === next.routeInitialized &&
+        current.routeKey === next.routeKey &&
         current.followOutput === next.followOutput &&
         current.bottomAnchorMode === next.bottomAnchorMode &&
         current.bottomAnchorBlockedReason === next.bottomAnchorBlockedReason &&
+        current.bottomAnchorPendingWork === next.bottomAnchorPendingWork &&
         current.bottomAnchorPendingReason === next.bottomAnchorPendingReason &&
         current.bottomAnchorLastFulfilledReason === next.bottomAnchorLastFulfilledReason &&
         current.routeResumeStatus === next.routeResumeStatus &&
@@ -502,6 +592,21 @@ export function useConversationScrollController(
 
   const driver = driverRef.current;
 
+  const notifyCurrentLayoutMetrics = useCallback(() => {
+    const measurement = readMeasurementState();
+    driver.handleViewportMetricsChange({
+      previousViewportHeight: 0,
+      previousViewportWidth: 0,
+      viewportHeight: measurement.viewportHeight,
+      viewportWidth: measurement.viewportWidth,
+    });
+    driver.handleContentSizeChange({
+      previousContentHeight: 0,
+      contentHeight: measurement.contentHeight,
+    });
+    publishScrollDebug();
+  }, [driver, publishScrollDebug, readMeasurementState]);
+
   const cancelUserIntentReset = useCallback(() => {
     if (userIntentResetTimeoutRef.current === null) return;
     clearTimeout(userIntentResetTimeoutRef.current);
@@ -550,10 +655,17 @@ export function useConversationScrollController(
       cancelRouteResumeVerification();
       routeResumeStatusRef.current = "idle";
       routeResumeScrollTopRef.current = null;
+      emitLifecycleEvent({
+        type: "route_restore_cancelled_by_user",
+        routeKey: routeKeyFrom(optionsRef.current.historyStartKey),
+        actualScrollTop: finiteNumberOrNull(input.scrollTop),
+        targetScrollTop: finiteNumberOrNull(routeResumeScrollTop),
+        userIntent: input.userIntent,
+      });
       publishScrollDebug();
       return true;
     },
-    [cancelRouteResumeVerification, publishScrollDebug],
+    [cancelRouteResumeVerification, emitLifecycleEvent, publishScrollDebug],
   );
 
   const schedulePersistScrollResume = useCallback(
@@ -648,7 +760,20 @@ export function useConversationScrollController(
           scrollTop: measurement.scrollTop,
         }),
       });
-      if (!state) return;
+      if (!state) {
+        emitLifecycleEvent({
+          type: "route_leave_skipped",
+          routeKey,
+          contentHeight: finiteNumberOrNull(measurement.contentHeight),
+          hasPendingResumeState: pendingScrollResumeStateRef.current !== null,
+          isHistoryReady: historyStartReadyRef.current,
+          measurementScrollTop: finiteNumberOrNull(measurement.scrollTop),
+          reason: "no_snapshot",
+          viewportHeight: finiteNumberOrNull(measurement.viewportHeight),
+          viewportWidth: finiteNumberOrNull(measurement.viewportWidth),
+        });
+        return;
+      }
       const existingState = routeKey
         ? optionsRef.current.clientStateStore?.conversationScroll.read(routeKey) ?? null
         : null;
@@ -658,12 +783,37 @@ export function useConversationScrollController(
           nextState: state,
         })
       ) {
+        emitLifecycleEvent({
+          type: "route_leave_skipped",
+          routeKey,
+          contentHeight: finiteNumberOrNull(measurement.contentHeight),
+          existingScrollTop: finiteNumberOrNull(existingState?.scrollTop),
+          followOutput: state.followOutput,
+          measurementScrollTop: finiteNumberOrNull(measurement.scrollTop),
+          reason: "write_suppressed",
+          scrollTop: finiteNumberOrNull(state.scrollTop),
+          viewportHeight: finiteNumberOrNull(measurement.viewportHeight),
+          viewportWidth: finiteNumberOrNull(measurement.viewportWidth),
+        });
         return;
       }
       schedulePersistScrollResume(state);
       flushPendingScrollResumePersist();
+      emitLifecycleEvent({
+        type: "route_leave_persisted",
+        routeKey,
+        contentHeight: finiteNumberOrNull(measurement.contentHeight),
+        existingScrollTop: finiteNumberOrNull(existingState?.scrollTop),
+        followOutput: state.followOutput,
+        hasAnchor: Boolean(state.anchor),
+        measurementScrollTop: finiteNumberOrNull(measurement.scrollTop),
+        scrollTop: finiteNumberOrNull(state.scrollTop),
+        viewportHeight: finiteNumberOrNull(measurement.viewportHeight),
+        viewportWidth: finiteNumberOrNull(measurement.viewportWidth),
+      });
     },
     [
+      emitLifecycleEvent,
       flushPendingScrollResumePersist,
       readRouteLeaveMeasurementStateForRoute,
       readCapturedScrollAnchorForRoute,
@@ -673,13 +823,30 @@ export function useConversationScrollController(
 
   const completeRouteResumeVerification = useCallback(
     (targetScrollTop: number) => {
+      const actualScrollTop = finiteNumberOrNull(scrollRef.current?.scrollTop);
+      const deltaPx =
+        actualScrollTop === null
+          ? null
+          : Math.abs(actualScrollTop - targetScrollTop);
+      const verification = routeResumeVerificationRef.current;
       pendingScrollResumeStateRef.current = null;
       routeResumeVerificationRef.current = null;
       routeResumeStatusRef.current = "restored";
       routeResumeScrollTopRef.current = targetScrollTop;
+      emitLifecycleEvent({
+        type:
+          deltaPx !== null && deltaPx > ROUTE_RESUME_CONFIRMATION_TOLERANCE_PX
+            ? "route_restore_mismatch"
+            : "route_restore_confirmed",
+        routeKey: routeKeyFrom(optionsRef.current.historyStartKey),
+        actualScrollTop,
+        deltaPx,
+        stableFrames: verification?.stableFrames ?? 0,
+        targetScrollTop: finiteNumberOrNull(targetScrollTop),
+      });
       publishScrollDebug();
     },
-    [publishScrollDebug],
+    [emitLifecycleEvent, publishScrollDebug],
   );
 
   const scheduleRouteResumeConfirmation = useCallback(
@@ -812,6 +979,18 @@ export function useConversationScrollController(
     if (decision.blockedReason) {
       routeResumeStatusRef.current = "pending";
       routeResumeScrollTopRef.current = resumeState.scrollTop;
+      emitLifecycleEvent({
+        type: "route_restore_blocked",
+        routeKey: resumeState.routeKey,
+        blockedReason: decision.blockedReason,
+        contentHeight: finiteNumberOrNull(
+          contentRef.current?.scrollHeight ?? element.scrollHeight,
+        ),
+        isHistoryReady: historyStartReadyRef.current,
+        scrollTop: finiteNumberOrNull(resumeState.scrollTop),
+        viewportHeight: finiteNumberOrNull(element.clientHeight),
+        viewportWidth: finiteNumberOrNull(element.clientWidth),
+      });
       publishScrollDebug();
       return false;
     }
@@ -821,6 +1000,14 @@ export function useConversationScrollController(
       cancelRouteResumeVerification();
       routeResumeStatusRef.current = "idle";
       routeResumeScrollTopRef.current = null;
+      emitLifecycleEvent({
+        type: "route_restore_skipped",
+        routeKey: resumeState.routeKey,
+        followOutput: resumeState.followOutput,
+        hasAnchor: Boolean(resumeState.anchor),
+        reason: "decision_no_restore",
+        scrollTop: finiteNumberOrNull(resumeState.scrollTop),
+      });
       publishScrollDebug();
       return false;
     }
@@ -845,6 +1032,20 @@ export function useConversationScrollController(
     const targetScrollTop = anchorTarget ?? decision.scrollTop;
     routeResumeStatusRef.current = "pending";
     routeResumeScrollTopRef.current = targetScrollTop;
+    emitLifecycleEvent({
+      type: "route_restore_applied",
+      routeKey: resumeState.routeKey,
+      actualScrollTop: finiteNumberOrNull(element.scrollTop),
+      anchorTargetScrollTop: finiteNumberOrNull(anchorTarget),
+      contentHeight: finiteNumberOrNull(
+        contentRef.current?.scrollHeight ?? element.scrollHeight,
+      ),
+      hasAnchor: Boolean(resumeState.anchor),
+      scrollTop: finiteNumberOrNull(resumeState.scrollTop),
+      targetScrollTop: finiteNumberOrNull(targetScrollTop),
+      viewportHeight: finiteNumberOrNull(element.clientHeight),
+      viewportWidth: finiteNumberOrNull(element.clientWidth),
+    });
     driver.reset({ mode: "detached", detachReason: "route_restore" });
     scheduleRouteResumeConfirmation(targetScrollTop);
     publishScrollDebug();
@@ -853,6 +1054,7 @@ export function useConversationScrollController(
     applyScrollWrite,
     cancelRouteResumeVerification,
     driver,
+    emitLifecycleEvent,
     publishScrollDebug,
     scheduleRouteResumeConfirmation,
   ]);
@@ -884,15 +1086,24 @@ export function useConversationScrollController(
             reason: "route_initial_entry",
             requestKey: `${routeKey}:route_initial_entry`,
           });
+          notifyCurrentLayoutMetrics();
         }
         driver.notifyAuthoritativeHistoryMaybeChanged();
+        publishScrollDebug();
       });
     },
-    [cancelHistoryReadyActivation, driver, tryRestoreScrollResume],
+    [
+      cancelHistoryReadyActivation,
+      driver,
+      notifyCurrentLayoutMetrics,
+      publishScrollDebug,
+      tryRestoreScrollResume,
+    ],
   );
 
   useLayoutEffect(() => {
     const routeKey = routeKeyFrom(options.historyStartKey);
+    routeInitializedRef.current = false;
     cancelHistoryReadyActivation();
     cancelRouteResumeVerification();
     driver.reset();
@@ -905,6 +1116,15 @@ export function useConversationScrollController(
       : null;
     pendingScrollResumeStateRef.current =
       resumeState && !resumeState.followOutput ? resumeState : null;
+    emitLifecycleEvent({
+      type: "route_enter",
+      routeKey,
+      followOutput: resumeState?.followOutput ?? null,
+      hasAnchor: Boolean(resumeState?.anchor),
+      hasResumeState: pendingScrollResumeStateRef.current !== null,
+      isHistoryReady: optionsRef.current.isHistoryReady !== false,
+      scrollTop: finiteNumberOrNull(resumeState?.scrollTop),
+    });
     if (pendingScrollResumeStateRef.current) {
       driver.reset({ mode: "detached", detachReason: "route_restore" });
     }
@@ -913,6 +1133,7 @@ export function useConversationScrollController(
       : "idle";
     routeResumeScrollTopRef.current =
       pendingScrollResumeStateRef.current?.scrollTop ?? null;
+    routeInitializedRef.current = true;
     publishScrollDebug();
 
     if (optionsRef.current.isHistoryReady !== false) {
@@ -929,6 +1150,7 @@ export function useConversationScrollController(
     driver,
     cancelHistoryReadyActivation,
     cancelRouteResumeVerification,
+    emitLifecycleEvent,
     flushPendingScrollResumePersist,
     options.historyStartKey,
     persistRouteLeaveScrollResumeSnapshot,

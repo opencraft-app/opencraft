@@ -38,6 +38,10 @@ type TencentConfig struct {
 const (
 	ArchiveModeHermes  = "hermes"
 	ArchiveModeGeneric = "generic"
+
+	DefaultRescueStopType           = "SOFT_FIRST"
+	DefaultRescueWaitTimeoutSeconds = 400
+	DefaultImportWaitTimeoutSeconds = 360
 )
 
 type ExportRequest struct {
@@ -115,6 +119,9 @@ func NormalizeImportRequest(req ImportRequest) ImportRequest {
 	if strings.TrimSpace(req.TATWorkingDirectory) == "" {
 		req.TATWorkingDirectory = "/home/agentuser"
 	}
+	if req.WaitTimeoutSeconds <= 0 {
+		req.WaitTimeoutSeconds = DefaultImportWaitTimeoutSeconds
+	}
 	if req.TATWaitTimeoutSeconds <= 0 {
 		req.TATWaitTimeoutSeconds = req.WaitTimeoutSeconds
 	}
@@ -158,6 +165,15 @@ func NormalizeExportRequest(req ExportRequest) ExportRequest {
 	}
 	if req.CommandTransport == "" {
 		req.CommandTransport = "tat"
+	}
+	if strings.TrimSpace(req.StopType) == "" {
+		req.StopType = DefaultRescueStopType
+	}
+	if req.WaitTimeoutSeconds <= 0 {
+		req.WaitTimeoutSeconds = DefaultRescueWaitTimeoutSeconds
+	}
+	if req.TATWaitTimeoutSeconds <= 0 {
+		req.TATWaitTimeoutSeconds = req.WaitTimeoutSeconds
 	}
 	return req
 }

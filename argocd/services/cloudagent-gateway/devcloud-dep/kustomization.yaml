@@ -72,6 +72,16 @@ replacements:
   - source:
       kind: ConfigMap
       name: cloudagent-gateway-platform-values
+      fieldPath: data.CLOUDAGENT_GATEWAY_TALOS_TEMPLATE
+    targets:
+      - select:
+          kind: ConfigMap
+          name: cloudagent-gateway-config
+        fieldPaths:
+          - data.GATEWAY_TALOS_TEMPLATE
+  - source:
+      kind: ConfigMap
+      name: cloudagent-gateway-platform-values
       fieldPath: data.CLOUDAGENT_GATEWAY_WISP_PACKAGE_URL
     targets:
       - select:

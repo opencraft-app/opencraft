@@ -1,13 +1,13 @@
 import { randomBytes } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { Readable } from "node:stream";
+import type { Attributes } from "@opentelemetry/api";
+import type { VelaLocalSpan, VelaLocalTracer } from "../../../../packages/vela-observability-client/src";
 
 import { bundledVeladDatabaseUrl, bundledVeladPath, desktopRuntimeEnv, type RuntimePathHost } from "./velad-runtime-paths";
 import {
-  apiBaseUrlFromListenAddr,
   infoFromReadyEvent,
   parseVeladReadyLine,
-  readRuntimeInfo,
   requestRuntimeShutdown,
   type VeladRuntimeInfo,
   type VeladRuntimeSnapshot,
@@ -25,6 +25,7 @@ export interface VeladRuntimeManagerOptions {
   readyTimeoutMs?: number;
   shutdownTimeoutMs?: number;
   requestTimeoutMs?: number;
+  observability?: VelaLocalTracer;
 }
 
 type SpawnedVeladProcess = ChildProcessWithoutNullStreams & {
@@ -33,8 +34,9 @@ type SpawnedVeladProcess = ChildProcessWithoutNullStreams & {
 };
 
 export class VeladRuntimeManager {
-  private readonly options: Required<Omit<VeladRuntimeManagerOptions, "env">> & {
+  private readonly options: Required<Omit<VeladRuntimeManagerOptions, "env" | "observability">> & {
     env: NodeJS.ProcessEnv;
+    observability?: VelaLocalTracer;
   };
   private child: SpawnedVeladProcess | null = null;
   private startPromise: Promise<VeladRuntimeInfo> | null = null;
@@ -44,7 +46,7 @@ export class VeladRuntimeManager {
   constructor(options: VeladRuntimeManagerOptions) {
     this.options = {
       env: options.env ?? process.env,
-      fetchImpl: options.fetchImpl ?? fetch,
+      fetchImpl: resolveRuntimeFetch(options.fetchImpl),
       spawnImpl: options.spawnImpl ?? spawn,
       resolveBundledVeladPath: options.resolveBundledVeladPath ?? bundledVeladPath,
       readyTimeoutMs: options.readyTimeoutMs ?? 15_000,
@@ -53,6 +55,7 @@ export class VeladRuntimeManager {
       host: options.host,
       resourcesPath: options.resourcesPath,
       logger: options.logger,
+      observability: options.observability,
     };
   }
 
@@ -81,81 +84,94 @@ export class VeladRuntimeManager {
   async stop() {
     const child = this.child;
     if (!child) return;
-    this.snapshot = { ...this.snapshot, status: "stopping" };
+    return this.withSpan(
+      "electron.velad.stop",
+      {
+        "velad.runtime.mode": "local",
+        "velad.listen_addr": this.snapshot.info?.listenAddr ?? "",
+      },
+      async (span) => {
+        this.snapshot = { ...this.snapshot, status: "stopping" };
 
-    const info = this.snapshot.info;
-    const token = this.managementToken;
-    let exitAfterShutdown: Promise<void> | null = null;
-    if (info && token) {
-      exitAfterShutdown = waitForChildExit(child, this.options.shutdownTimeoutMs);
-      try {
-        await requestRuntimeShutdown(
-          info.apiBaseUrl,
-          token,
-          this.options.fetchImpl,
-          this.options.requestTimeoutMs,
-        );
-      } catch (err) {
-        exitAfterShutdown.catch(() => undefined);
-        exitAfterShutdown = null;
-        this.log("[host]", `velad runtime shutdown request failed: ${errorMessage(err)}`);
+        const info = this.snapshot.info;
+        const token = this.managementToken;
+        let exitAfterShutdown: Promise<void> | null = null;
+        if (info && token) {
+          exitAfterShutdown = waitForChildExit(child, this.options.shutdownTimeoutMs);
+          try {
+            await requestRuntimeShutdown(
+              info.apiBaseUrl,
+              token,
+              this.options.fetchImpl,
+              this.options.requestTimeoutMs,
+            );
+          } catch (err) {
+            exitAfterShutdown.catch(() => undefined);
+            exitAfterShutdown = null;
+            this.log("[host]", `velad runtime shutdown request failed: ${errorMessage(err)}`);
+            span?.setAttribute("velad.shutdown_request_failed", true);
+            span?.setAttribute("velad.shutdown_request_error", errorMessage(err));
+          }
+        }
+
+        try {
+          await (exitAfterShutdown ?? waitForChildExit(child, this.options.shutdownTimeoutMs));
+          this.finishStopped();
+          return;
+        } catch {
+          this.log("[host]", "velad did not exit after runtime shutdown; calling child.kill()");
+          span?.setAttribute("velad.stop_fallback", "child.kill");
+        }
+
+        const exitAfterKill = waitForChildExit(child, this.options.shutdownTimeoutMs);
+        const killSent = child.kill();
+        span?.setAttribute("velad.kill_sent", killSent);
+        this.log("[host]", `velad child.kill() returned ${killSent}`);
+        try {
+          await exitAfterKill;
+          this.finishStopped();
+        } catch {
+          const error = "failed_to_stop";
+          this.snapshot = { status: "failed", error };
+          this.log("[host]", error);
+          throw new Error(error);
+        }
       }
-    }
-
-    try {
-      await (exitAfterShutdown ?? waitForChildExit(child, this.options.shutdownTimeoutMs));
-      this.finishStopped();
-      return;
-    } catch {
-      this.log("[host]", "velad did not exit after runtime shutdown; calling child.kill()");
-    }
-
-    const exitAfterKill = waitForChildExit(child, this.options.shutdownTimeoutMs);
-    const killSent = child.kill();
-    this.log("[host]", `velad child.kill() returned ${killSent}`);
-    try {
-      await exitAfterKill;
-      this.finishStopped();
-    } catch {
-      const error = "failed_to_stop";
-      this.snapshot = { status: "failed", error };
-      this.log("[host]", error);
-      throw new Error(error);
-    }
+    );
   }
 
   private async start() {
-    const externalListenAddr = this.options.env.VELA_DESKTOP_VELAD_LISTEN_ADDR;
-    const binaryPath = this.options.resolveBundledVeladPath(this.options.resourcesPath);
-    if (externalListenAddr || !binaryPath) {
-      return this.useExternalRuntime(externalListenAddr ?? "127.0.0.1:3857");
+    const binaryPath =
+      this.options.env.VELA_DESKTOP_VELAD_PATH?.trim() ||
+      this.options.resolveBundledVeladPath(this.options.resourcesPath);
+    if (!binaryPath) {
+      throw new Error("local velad binary not found");
     }
-    return this.startBundledRuntime(binaryPath);
-  }
-
-  private async useExternalRuntime(listenAddr: string) {
-    this.snapshot = { status: "starting" };
-    const apiBaseUrl = apiBaseUrlFromListenAddr(listenAddr);
-    this.log("[host]", `using external velad at ${apiBaseUrl}`);
-    const readyEvent = await readRuntimeInfo(
-      apiBaseUrl,
-      this.options.fetchImpl,
-      this.options.requestTimeoutMs,
+    return this.withSpan(
+      "electron.velad.start",
+      {
+        "velad.runtime.mode": "local",
+        "velad.external": false,
+      },
+      async (span) => {
+        const info = await this.startLocalRuntime(binaryPath);
+        span?.setAttribute("velad.listen_addr", info.listenAddr);
+        span?.setAttribute("velad.api_base_url", info.apiBaseUrl);
+        span?.setAttribute("velad.otel_base_url", info.otelBaseUrl);
+        return info;
+      }
     );
-    const info = infoFromReadyEvent(readyEvent);
-    this.snapshot = { status: "ready", info };
-    return info;
   }
 
-  private startBundledRuntime(binaryPath: string) {
+  private startLocalRuntime(binaryPath: string) {
     this.snapshot = { status: "starting" };
     this.managementToken = randomBytes(32).toString("hex");
     const databaseUrl = bundledVeladDatabaseUrl(
       this.options.host,
       this.options.env.VELAD_DATABASE_URL,
     );
-    this.log("[host]", `starting bundled velad at ${binaryPath}`);
-    this.log("[host]", `using bundled velad database ${databaseUrl}`);
+    this.log("[host]", `starting local velad at ${binaryPath}`);
+    this.log("[host]", `using local velad database ${databaseUrl}`);
     const child = this.options.spawnImpl(
       binaryPath,
       [
@@ -217,6 +233,7 @@ export class VeladRuntimeManager {
           cleanup();
           const info = infoFromReadyEvent(readyEvent);
           this.snapshot = { status: "ready", info };
+          this.options.observability?.setEndpoint(info.otelBaseUrl);
           this.log("[host]", `velad ready at ${info.apiBaseUrl}`);
           resolve(info);
           return;
@@ -246,6 +263,47 @@ export class VeladRuntimeManager {
   private log(source: string, message: string) {
     this.options.logger.write(source, message);
   }
+
+  private async withSpan<T>(
+    name: string,
+    attributes: Attributes,
+    run: (span: VelaLocalSpan | null) => Promise<T>,
+  ): Promise<T> {
+    const observability = this.options.observability;
+    if (!observability) {
+      return run(null);
+    }
+    const span = observability.startSpan(name, { attributes });
+    try {
+      const value = await run(span);
+      observability.endSpan(span);
+      await this.flushObservability();
+      return value;
+    } catch (err) {
+      observability.recordError(span, err);
+      observability.endSpan(span);
+      await this.flushObservability();
+      throw err;
+    }
+  }
+
+  private async flushObservability() {
+    try {
+      await this.options.observability?.forceFlush();
+    } catch (err) {
+      this.log("[host]", `velad observability flush failed: ${errorMessage(err)}`);
+    }
+  }
+}
+
+function resolveRuntimeFetch(fetchImpl?: typeof fetch): typeof fetch {
+  if (fetchImpl) return fetchImpl;
+  if (typeof globalThis.fetch === "function") {
+    return globalThis.fetch.bind(globalThis) as typeof fetch;
+  }
+  return (async () => {
+    throw new Error("No Electron runtime fetch implementation is available");
+  }) as typeof fetch;
 }
 
 function waitForChildExit(child: SpawnedVeladProcess, timeoutMs: number) {

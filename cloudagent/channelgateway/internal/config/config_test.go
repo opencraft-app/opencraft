@@ -93,6 +93,16 @@ func TestPromptTimeoutFromEnv(t *testing.T) {
 	}
 }
 
+func TestCloudAgentSandboxBackendFromEnv(t *testing.T) {
+	if got := LoadFromEnv().CloudAgentSandboxBackend; got != "" {
+		t.Fatalf("default cloudagent sandbox backend = %q", got)
+	}
+	t.Setenv("CHANNELGATEWAY_CLOUDAGENT_SANDBOX_BACKEND", " talos ")
+	if got := LoadFromEnv().CloudAgentSandboxBackend; got != "talos" {
+		t.Fatalf("env cloudagent sandbox backend = %q", got)
+	}
+}
+
 func TestSessionIdleCloseFromEnv(t *testing.T) {
 	if got := LoadFromEnv().SessionIdleClose; got != time.Minute {
 		t.Fatalf("default session idle close = %s", got)

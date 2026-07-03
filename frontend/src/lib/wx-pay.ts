@@ -68,7 +68,7 @@ export interface BuildPayPlanInput {
   ttlMs?: number;
   /**
    * 中转页绝对 URL 基址。
-   * 默认从 `import.meta.env.VITE_WX_PAY_BRIDGE_BASE_URL` 读取；未配置时回退到
+   * 默认从 `process.env.NEXT_PUBLIC_WX_PAY_BRIDGE_BASE_URL` 读取；未配置时回退到
    * `${window.location.origin}/auth/wechat-pay`。
    *
    * 注意：必须是绝对地址（含 https://），因为它会被微信 oauth2/authorize 当作
@@ -158,8 +158,10 @@ function buildBridgeUrl(input: BuildPayPlanInput & { expiresAt: number }): strin
 
 function resolveBridgeBaseUrl(override?: string): string {
   if (override) return override;
-  const fromEnv = import.meta.env?.VITE_WX_PAY_BRIDGE_BASE_URL;
-  if (typeof fromEnv === "string" && fromEnv.length > 0) return fromEnv;
+  const fromEnv = trimPublicEnv(
+    typeof process !== "undefined" ? process.env.NEXT_PUBLIC_WX_PAY_BRIDGE_BASE_URL : undefined,
+  );
+  if (fromEnv) return fromEnv;
   if (typeof window !== "undefined") {
     return `${window.location.origin}/auth/wechat-pay`;
   }
@@ -168,7 +170,14 @@ function resolveBridgeBaseUrl(override?: string): string {
 }
 
 function readSandboxFromEnv(): boolean {
-  return import.meta.env?.VITE_MIDAS_SANDBOX === "true";
+  return trimPublicEnv(
+    typeof process !== "undefined" ? process.env.NEXT_PUBLIC_MIDAS_SANDBOX : undefined,
+  ) === "true";
+}
+
+function trimPublicEnv(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : undefined;
 }
 
 /**

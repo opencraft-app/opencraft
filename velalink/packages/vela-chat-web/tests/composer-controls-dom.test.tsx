@@ -52,7 +52,7 @@ test("composer controls reserve invisible toolbar space while session truth is l
   }
 });
 
-test("composer controls render styled icon nodes instead of literal fallback glyphs", async () => {
+test("composer controls render icons and expose responsive collapse priorities", async () => {
   const dom = installDomRuntime();
   try {
     const React = await import("react");
@@ -71,12 +71,15 @@ test("composer controls render styled icon nodes instead of literal fallback gly
           controls: {
             ready: true,
             disabled: false,
-            providerLabel: "Hermes ACP",
-            selectedModel: { id: "minimax-m2.7", label: "minimax-m2.7" },
-            selectedPermissionMode: { id: "auto", label: "Auto" },
-            modelOptions: [{ id: "minimax-m2.7", label: "minimax-m2.7" }],
-            reasoningEffortOptions: [],
-            permissionModeOptions: [{ id: "auto", label: "Auto" }],
+            providerLabel: "Codex",
+            selectedModel: { id: "gpt-5.5", label: "GPT-5.5", reasoningEfforts: [] },
+            selectedReasoningEffort: { id: "high", label: "High" },
+            selectedPermissionMode: { id: "auto", label: "Default permissions" },
+            modelOptions: [
+              { id: "gpt-5.5", label: "GPT-5.5", reasoningEfforts: [] },
+            ],
+            reasoningEffortOptions: [{ id: "high", label: "High" }],
+            permissionModeOptions: [{ id: "auto", label: "Default permissions" }],
           },
           placement: "all",
           onChange: () => {},
@@ -84,16 +87,22 @@ test("composer controls render styled icon nodes instead of literal fallback gly
       );
     });
 
-    assert.match(container.textContent ?? "", /minimax-m2\.7/);
-    assert.match(container.textContent ?? "", /Auto/);
-    assert.doesNotMatch(container.textContent ?? "", /[◎▣✣]/);
-    assert.equal(
-      container.querySelectorAll('[data-composer-control-icon="model"]').length,
-      1,
+    const leadingNodes = Array.from(
+      container.querySelectorAll<HTMLElement>(".vela-shell-select-trigger-leading"),
     );
-    assert.equal(
-      container.querySelectorAll('[data-composer-control-icon="permission"]').length,
-      1,
+    assert.equal(leadingNodes.length, 3);
+    assert.equal(leadingNodes.every((node) => node.querySelector("svg")), true);
+    assert.equal(container.textContent?.includes("◎"), false);
+    assert.equal(container.textContent?.includes("▣"), false);
+    assert.equal(container.textContent?.includes("✣"), false);
+    assert.notEqual(
+      container.querySelector('[data-composer-control="permission"]'),
+      null,
+    );
+    assert.notEqual(container.querySelector('[data-composer-control="model"]'), null);
+    assert.notEqual(
+      container.querySelector('[data-composer-control="reasoning"]'),
+      null,
     );
 
     await act(async () => {

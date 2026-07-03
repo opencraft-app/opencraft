@@ -41,8 +41,9 @@ cos_config_value() {
 COSCMD_BIN="${COSCMD_BIN:-coscmd}"
 COSCMD_CONFIG="${COSCMD_CONFIG:-/tmp/cos-agent-sidecar.conf}"
 COS_OBJECT_PREFIX="${COS_OBJECT_PREFIX:-/agent-sidecar/$(date +%Y%m%d)}"
-SIDECAR_LOCAL_PATH="${GATEWAY_AGENT_SIDECAR_BINARY:-$ROOT_DIR/dist/cloudagent-sidecar-linux-amd64}"
-SIDECAR_BASENAME="${CLOUDAGENT_SIDECAR_BASENAME:-cloudagent-sidecar-linux-amd64}"
+AGENT_GOARCH="${CLOUDAGENT_AGENT_GOARCH:-${LINUX_GOARCH:-amd64}}"
+SIDECAR_LOCAL_PATH="${GATEWAY_AGENT_SIDECAR_BINARY:-$ROOT_DIR/dist/cloudagent-sidecar-linux-$AGENT_GOARCH}"
+SIDECAR_BASENAME="${CLOUDAGENT_SIDECAR_BASENAME:-cloudagent-sidecar-linux-$AGENT_GOARCH}"
 SIGNING_KEY_ID="${CLOUDAGENT_AGENT_SIGNING_KEY_ID:-cloudagent-agent-release-v1}"
 AGENT_VERSION_PREFIX="${CLOUDAGENT_AGENT_VERSION_PREFIX:-cloudagent.v1}"
 REGISTRY_FILE="${CLOUDAGENT_AGENT_REGISTRY_FILE:-/tmp/cloudagent-agent-version-registry.json}"
@@ -62,8 +63,8 @@ if [ ! -f "$COSCMD_CONFIG" ]; then
 fi
 
 if [ ! -f "$SIDECAR_LOCAL_PATH" ]; then
-  printf '[signupload] build sidecar: make cloudagent-sidecar-linux\n' >&2
-  make cloudagent-sidecar-linux >&2
+  printf '[signupload] build sidecar: make LINUX_GOARCH=%s cloudagent-sidecar-linux\n' "$AGENT_GOARCH" >&2
+  make "LINUX_GOARCH=$AGENT_GOARCH" cloudagent-sidecar-linux >&2
 fi
 if [ ! -f "$SIDECAR_LOCAL_PATH" ]; then
   printf 'missing sidecar binary after build: %s\n' "$SIDECAR_LOCAL_PATH" >&2
@@ -132,17 +133,18 @@ printf '%s\n' "$PUBLIC_URL" >"$URL_FILE"
 printf '%s\n' "$SIDECAR_SHA" >"$SHA_FILE"
 printf '%s\n' "$PUBLIC_SIG_URL" >"$SIG_URL_FILE"
 
-python3 - "$REGISTRY_FILE" "$AGENT_VERSION" "$PUBLIC_URL" "$SIDECAR_SHA" "$PUBLIC_SIG_URL" "$SIGNING_KEY_ID" <<'PY'
+python3 - "$REGISTRY_FILE" "$AGENT_VERSION" "$PUBLIC_URL" "$SIDECAR_SHA" "$PUBLIC_SIG_URL" "$SIGNING_KEY_ID" "$AGENT_GOARCH" <<'PY'
 import json
 import sys
 
-path, version, url, sha256, sig_url, key_id = sys.argv[1:]
+path, version, url, sha256, sig_url, key_id, arch = sys.argv[1:]
 entry = {
     version: {
         "sidecar_url": url,
         "sidecar_sha256": sha256,
         "sidecar_sig_url": sig_url,
         "signing_key_id": key_id,
+        "arch": arch,
     }
 }
 raw = json.dumps(entry, indent=2, sort_keys=True)

@@ -353,6 +353,8 @@ test("keeps OpenAPI agent work detail fields narrow in surface wire types", asyn
   const detailUnion =
     source.match(/export type AgentWorkDetailWire\s*=[\s\S]*?AgentWorkGenericDetailWire;/)?.[0] ??
     "";
+  const genericDetailInterface =
+    source.match(/export interface AgentWorkGenericDetailWire \{[\s\S]*?\n\}/)?.[0] ?? "";
 
   assert.match(source, /export type AgentWorkDetailTypeWire\s*=/);
   assert.match(source, /export type AgentWorkSearchModeWire\s*=/);
@@ -363,6 +365,9 @@ test("keeps OpenAPI agent work detail fields narrow in surface wire types", asyn
   assert.match(detailUnion, /AgentWorkFetchDetailWire/);
   assert.match(detailUnion, /AgentWorkGenericDetailWire/);
   assert.match(source, /export interface AgentWorkSearchDetailWire \{[\s\S]*?type:\s*"search"[\s\S]*?mode\?:\s*AgentWorkSearchModeWire[\s\S]*?num_matches\?:\s*number/);
+  assert.match(source, /export type AgentWorkContentPartWire\s*=/);
+  assert.match(source, /content_parts\?:\s*AgentWorkContentPartWire\[\]/);
+  assert.doesNotMatch(genericDetailInterface, /\[key:\s*string\]:\s*unknown/);
   assert.doesNotMatch(source, /mode\?:\s*string/);
 });
 

@@ -13,6 +13,7 @@ ARG CARGO_PROFILE_RELEASE_LTO=false
 ARG CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
 ARG CARGO_PROFILE_RELEASE_STRIP=true
 ARG CLOUDAGENT_SIDECAR_RUST_TARGET=x86_64-unknown-linux-musl
+ARG CLOUDAGENT_SIDECAR_GOARCH=amd64
 
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true \
     CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse \
@@ -89,11 +90,18 @@ RUN --mount=type=cache,id=hermes-sidecar-cargo-registry,target=/usr/local/cargo/
     && find src -type f -exec touch {} + \
     && cargo build --locked --release --target-dir /tmp/cargo-target-agent-loader \
     && cd /src/research/hermes-rs \
-    && install -D /tmp/cargo-target/${CLOUDAGENT_SIDECAR_RUST_TARGET}/release/hermes-sidecar /out/cloudagent-sidecar-linux-amd64 \
-    && install -D /tmp/cargo-target-agent-loader/release/cloudagent-agent-loader /out/cloudagent-agent-loader-linux-amd64 \
-    && install -D /tmp/cargo-target-agent-loader/release/cloudagent-agent-sign /out/cloudagent-agent-sign-linux-amd64
+    && install -D /tmp/cargo-target/${CLOUDAGENT_SIDECAR_RUST_TARGET}/release/hermes-sidecar /out/cloudagent-sidecar-linux-${CLOUDAGENT_SIDECAR_GOARCH} \
+    && install -D /tmp/cargo-target/${CLOUDAGENT_SIDECAR_RUST_TARGET}/release/hermes-sidecar /out/cloudagent-sidecar-linux \
+    && install -D /tmp/cargo-target-agent-loader/release/cloudagent-agent-loader /out/cloudagent-agent-loader-linux-${CLOUDAGENT_SIDECAR_GOARCH} \
+    && install -D /tmp/cargo-target-agent-loader/release/cloudagent-agent-loader /out/cloudagent-agent-loader-linux \
+    && install -D /tmp/cargo-target-agent-loader/release/cloudagent-agent-sign /out/cloudagent-agent-sign-linux-${CLOUDAGENT_SIDECAR_GOARCH} \
+    && install -D /tmp/cargo-target-agent-loader/release/cloudagent-agent-sign /out/cloudagent-agent-sign-linux
 
 FROM scratch AS artifact
-COPY --from=build /out/cloudagent-sidecar-linux-amd64 /cloudagent-sidecar-linux-amd64
-COPY --from=build /out/cloudagent-agent-loader-linux-amd64 /cloudagent-agent-loader-linux-amd64
-COPY --from=build /out/cloudagent-agent-sign-linux-amd64 /cloudagent-agent-sign-linux-amd64
+ARG CLOUDAGENT_SIDECAR_GOARCH=amd64
+COPY --from=build /out/cloudagent-sidecar-linux-${CLOUDAGENT_SIDECAR_GOARCH} /cloudagent-sidecar-linux-${CLOUDAGENT_SIDECAR_GOARCH}
+COPY --from=build /out/cloudagent-sidecar-linux /cloudagent-sidecar-linux
+COPY --from=build /out/cloudagent-agent-loader-linux-${CLOUDAGENT_SIDECAR_GOARCH} /cloudagent-agent-loader-linux-${CLOUDAGENT_SIDECAR_GOARCH}
+COPY --from=build /out/cloudagent-agent-loader-linux /cloudagent-agent-loader-linux
+COPY --from=build /out/cloudagent-agent-sign-linux-${CLOUDAGENT_SIDECAR_GOARCH} /cloudagent-agent-sign-linux-${CLOUDAGENT_SIDECAR_GOARCH}
+COPY --from=build /out/cloudagent-agent-sign-linux /cloudagent-agent-sign-linux

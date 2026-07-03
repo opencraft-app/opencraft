@@ -440,6 +440,7 @@ describe("release matrix helpers", () => {
       deployCommand: "deploy:eo",
       projectName: "lightvela",
       authApiBaseUrl: "https://api.lightvela.com",
+      siteUrl: "https://lightvela.com",
       outputDir: "out",
       observability: {
         aegis: {
@@ -467,6 +468,7 @@ describe("release matrix helpers", () => {
       deployCommand: "deploy:eo",
       projectName: "lightvela-intl",
       authApiBaseUrl: "https://api.lightvela.ai",
+      siteUrl: "https://lightvela.ai",
       outputDir: "out",
       observability: {
         aegis: {
@@ -488,6 +490,22 @@ describe("release matrix helpers", () => {
     });
     expect(combo?.requiredSecretEnv).toContain("EDGEONE_API_TOKEN");
     expect(combo?.requiredSecretEnv).toContain("POSTHOG_PROJECT_TOKEN");
+  });
+
+  it("injects the production global site URL for SEO static output", () => {
+    const { combos } = loadReleaseMatrix();
+    const combo = combos.find((item) => item.id === "eo:global-lightvela-intl-prod-next");
+    expect(combo).toBeDefined();
+
+    const comboEnv = createComboEnvironment(combo!, "lightvela-intl", {
+      EDGEONE_API_TOKEN: "token",
+      POSTHOG_PROJECT_TOKEN: "posthog-token",
+    });
+
+    expect(comboEnv.NEXT_PUBLIC_SITE_URL).toBe("https://lightvela.ai");
+    expect(comboEnv.SITE_URL).toBe("https://lightvela.ai");
+    expect(comboEnv.NEXT_PUBLIC_GLOBAL_SITE_URL).toBe("https://lightvela.ai");
+    expect(comboEnv.GLOBAL_SITE_URL).toBe("https://lightvela.ai");
   });
 
   it("keeps release execution unchanged when artifact mode is unset", () => {

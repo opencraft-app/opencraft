@@ -1,6 +1,9 @@
 import { MessageSquareText, Plus, Search } from "lucide-react";
 import type { SessionListItemWire } from "../../../../vela-chat-client/src";
-import { SessionListSurface } from "../../../../vela-chat-web/src/surfaces/SessionListSurface";
+import {
+  SessionListSurface,
+  type SessionDragPreviewInput,
+} from "../../../../vela-chat-web/src/surfaces/SessionListSurface";
 import {
   Sidebar,
   SidebarChromeArea,
@@ -21,14 +24,15 @@ export interface SessionSidebarProps {
   currentSessionId: string | null;
   searchQuery?: string;
   showTrafficLights?: boolean;
-  accountLabel?: string;
-  accountPlanLabel?: string;
   canClearSessions?: boolean;
   canCreateSession?: boolean;
   defaultSettingsMenuOpen?: boolean;
   onCreateSession: () => void;
   onArchiveSession?: (sessionId: string) => void | Promise<void>;
   onClearSessions?: () => void;
+  onSessionDragPreviewEnd?: () => void;
+  onSessionDragPreviewMove?: (input: SessionDragPreviewInput) => void;
+  onSessionDragPreviewStart?: (input: SessionDragPreviewInput) => void;
   onOpenSettings?: () => void;
   onSearch?: (query: string) => void;
   onSelectSession: (sessionId: string) => void;
@@ -47,14 +51,15 @@ export function SessionSidebar({
   currentSessionId,
   searchQuery = "",
   showTrafficLights = false,
-  accountLabel,
-  accountPlanLabel,
   canClearSessions,
   canCreateSession = true,
   defaultSettingsMenuOpen = false,
   onCreateSession,
   onArchiveSession,
   onClearSessions,
+  onSessionDragPreviewEnd,
+  onSessionDragPreviewMove,
+  onSessionDragPreviewStart,
   onOpenSettings,
   onSearch,
   onSelectSession,
@@ -101,14 +106,15 @@ export function SessionSidebar({
               currentSessionId={currentSessionId}
               sessions={sessions}
               onArchiveSession={onArchiveSession}
+              onSessionDragPreviewEnd={onSessionDragPreviewEnd}
+              onSessionDragPreviewMove={onSessionDragPreviewMove}
+              onSessionDragPreviewStart={onSessionDragPreviewStart}
               onSelectSession={onSelectSession}
             />
           </SidebarScrollRegion>
         </SidebarContent>
         <SidebarFixedFooter>
           <SidebarSettingsMenu
-            accountLabel={accountLabel}
-            accountPlanLabel={accountPlanLabel}
             canClearSessions={canClearSessions ?? sessions.length > 0}
             defaultOpen={defaultSettingsMenuOpen}
             onClearSessions={onClearSessions}

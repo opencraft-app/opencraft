@@ -5,7 +5,7 @@
  *   - buildPayPlan：dealName 缺失抛错；正常路径 needCharge 恒为 true、生成 bridgeUrl、expiresAt
  *   - bridgeUrl query 编码协议（dealName/authCode/passId/expiresAt/sandbox/bundleName）
  *   - sandbox 开关传递（参数 / 环境变量两种来源）
- *   - bridgeBaseUrl 优先级：参数 > VITE_WX_PAY_BRIDGE_BASE_URL > window.location.origin
+ *   - bridgeBaseUrl 优先级：参数 > NEXT_PUBLIC_WX_PAY_BRIDGE_BASE_URL > window.location.origin
  *   - encodeBase64Url / decodeBase64Url 互逆 + URL 安全字符
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -141,15 +141,15 @@ describe("wx-pay / buildPayPlan", () => {
       expect(url.searchParams.get(BRIDGE_QUERY_KEYS.sandbox)).toBe("1");
     });
 
-    it("VITE_MIDAS_SANDBOX=true 时默认开启 sandbox", () => {
-      vi.stubEnv("VITE_MIDAS_SANDBOX", "true");
+    it("NEXT_PUBLIC_MIDAS_SANDBOX=true 时默认开启 sandbox", () => {
+      vi.stubEnv("NEXT_PUBLIC_MIDAS_SANDBOX", "true");
       const plan = buildPayPlan({ ...baseInput, bridgeBaseUrl: "https://example.com/b" });
       const url = new URL(plan.bridgeUrl);
       expect(url.searchParams.get(BRIDGE_QUERY_KEYS.sandbox)).toBe("1");
     });
 
     it("sandbox 未开启时不附加 sb 字段", () => {
-      vi.stubEnv("VITE_MIDAS_SANDBOX", "false");
+      vi.stubEnv("NEXT_PUBLIC_MIDAS_SANDBOX", "false");
       const plan = buildPayPlan({ ...baseInput, bridgeBaseUrl: "https://example.com/b" });
       const url = new URL(plan.bridgeUrl);
       expect(url.searchParams.has(BRIDGE_QUERY_KEYS.sandbox)).toBe(false);
@@ -188,14 +188,14 @@ describe("wx-pay / buildPayPlan", () => {
   });
 
   describe("bridgeBaseUrl 解析优先级", () => {
-    it("VITE_WX_PAY_BRIDGE_BASE_URL 配置时被采用（未显式传 bridgeBaseUrl）", () => {
-      vi.stubEnv("VITE_WX_PAY_BRIDGE_BASE_URL", "https://env.example.com/bridge");
+    it("NEXT_PUBLIC_WX_PAY_BRIDGE_BASE_URL 配置时被采用（未显式传 bridgeBaseUrl）", () => {
+      vi.stubEnv("NEXT_PUBLIC_WX_PAY_BRIDGE_BASE_URL", "https://env.example.com/bridge");
       const plan = buildPayPlan(baseInput);
       expect(plan.bridgeUrl.startsWith("https://env.example.com/bridge?")).toBe(true);
     });
 
     it("未配置环境变量时回退到 window.location.origin + /auth/wechat-pay", () => {
-      vi.stubEnv("VITE_WX_PAY_BRIDGE_BASE_URL", "");
+      vi.stubEnv("NEXT_PUBLIC_WX_PAY_BRIDGE_BASE_URL", "");
       const plan = buildPayPlan(baseInput);
       const url = new URL(plan.bridgeUrl);
       expect(url.origin).toBe(window.location.origin);
@@ -203,7 +203,7 @@ describe("wx-pay / buildPayPlan", () => {
     });
 
     it("显式传 bridgeBaseUrl 覆盖环境变量", () => {
-      vi.stubEnv("VITE_WX_PAY_BRIDGE_BASE_URL", "https://env.example.com/bridge");
+      vi.stubEnv("NEXT_PUBLIC_WX_PAY_BRIDGE_BASE_URL", "https://env.example.com/bridge");
       const plan = buildPayPlan({ ...baseInput, bridgeBaseUrl: "https://override.example.com/b" });
       expect(plan.bridgeUrl.startsWith("https://override.example.com/b?")).toBe(true);
     });

@@ -4,8 +4,6 @@ set -euo pipefail
 user="${LIGHTCLAW_RUNTIME_USER:-agentuser}"
 home="$(getent passwd "$user" | cut -d: -f6 || true)"
 [ -n "$home" ] || { echo "skip: user not found: $user" >&2; exit 0; }
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || pwd)"
-blueprint_id_file="${HERMES_BACKEND_BLUEPRINT_ID_FILE:-$script_dir/../hermes-backend-blueprint-id}"
 acli_install_url="${HERMES_ACLI_INSTALL_URL:-${ACLI_INSTALL_URL:-https://acli-1325194254.cos.accelerate.myqcloud.com/acli/install.sh}}"
 
 run_as_target_user() {
@@ -59,8 +57,8 @@ echo "configured Python mirrors for $user at $home"
 
 blueprint_id="${HERMES_BACKEND_BLUEPRINT_ID:-}"
 if [ -z "$blueprint_id" ]; then
-  [ -r "$blueprint_id_file" ] || { echo "missing Hermes backend blueprint id file: $blueprint_id_file" >&2; exit 1; }
-  blueprint_id="$(tr -d '[:space:]' < "$blueprint_id_file")"
+  echo "missing HERMES_BACKEND_BLUEPRINT_ID; resolve it before invoking this repair script" >&2
+  exit 1
 fi
 [[ "$blueprint_id" =~ ^lhbp-[A-Za-z0-9_-]+$ ]] || { echo "invalid Hermes backend blueprint id: ${blueprint_id:-<empty>}" >&2; exit 1; }
 

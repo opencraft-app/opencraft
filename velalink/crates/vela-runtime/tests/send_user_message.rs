@@ -15,6 +15,7 @@ use vela_core::{
     AgentConfig, BackendKind, BlobRef, CanonicalEvent, CommandAck, CommandId, EventType,
     PermissionMode, SessionId, UserMessageBlock,
 };
+use vela_observability::{ObservabilityStore, TraceContext};
 use vela_runtime::{Runtime, SendUserMessage};
 use vela_store::SqliteEventStore;
 
@@ -407,6 +408,40 @@ async fn send_user_message_appends_turn_failed_and_allows_next_turn_after_backen
 }
 
 #[tokio::test]
+async fn send_user_message_does_not_duplicate_backend_emitted_turn_failed() {
+    let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
+    let backend = Arc::new(FailingAfterTurnFailedBackend);
+    let runtime = Runtime::new(store.clone(), backend);
+    let session_id = SessionId::from("ses_runtime_backend_emitted_failure");
+    runtime
+        .create_session(session_id.clone(), BackendKind::Pi, "/tmp/vela")
+        .await
+        .expect("create session");
+
+    runtime
+        .send_user_message(SendUserMessage {
+            session_id: session_id.clone(),
+            idempotency_key: "idem-backend-emitted-failure".to_string(),
+            content: "fail once".to_string(),
+            command_id: None,
+        })
+        .await
+        .expect("send");
+    eventually_contains_event(&store, &session_id, EventType::TURN_FAILED).await;
+    let events = store.list_events(&session_id).await.expect("events");
+    let turn_failed_events = events
+        .iter()
+        .filter(|event| event.event_type == EventType::TURN_FAILED)
+        .collect::<Vec<_>>();
+
+    assert_eq!(turn_failed_events.len(), 1);
+    assert_eq!(
+        turn_failed_events[0].payload["error"].as_str(),
+        Some("provider stream disconnected")
+    );
+}
+
+#[tokio::test]
 async fn send_user_message_queues_distinct_command_while_turn_is_running() {
     let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
     let backend = Arc::new(BlockingBackend::default());
@@ -492,6 +527,60 @@ async fn send_user_message_returns_ack_before_backend_turn_finishes() {
     assert!(matches!(ack, CommandAck::Accepted(_)));
     called.await.expect("backend should still be running");
     backend.release().await;
+}
+
+#[tokio::test]
+async fn cancel_backend_terminalizes_running_turn_and_ignores_late_backend_completion() {
+    let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
+    let backend = Arc::new(BlockingBackend::default());
+    let runtime = Arc::new(Runtime::new(store.clone(), backend.clone()));
+    let session_id = SessionId::from("ses_runtime_cancel_terminalizes_turn");
+    runtime
+        .create_session(session_id.clone(), BackendKind::Pi, "/tmp/vela")
+        .await
+        .expect("create session");
+    let called = backend.arm().await;
+
+    runtime
+        .send_user_message(SendUserMessage {
+            session_id: session_id.clone(),
+            idempotency_key: "idem-cancel".to_string(),
+            content: "hold".to_string(),
+            command_id: None,
+        })
+        .await
+        .expect("send");
+    called.await.expect("backend called");
+
+    runtime
+        .cancel_backend(&session_id)
+        .await
+        .expect("cancel backend");
+
+    let events = eventually_contains_event(&store, &session_id, EventType::TURN_CANCELLED).await;
+    let turn_started = events
+        .iter()
+        .find(|event| event.event_type == EventType::TURN_STARTED)
+        .expect("turn.started");
+    let turn_cancelled = events
+        .iter()
+        .find(|event| event.event_type == EventType::TURN_CANCELLED)
+        .expect("turn.cancelled");
+    assert_eq!(
+        turn_cancelled.payload["turn_id"],
+        turn_started.payload["turn_id"]
+    );
+
+    backend.release().await;
+    sleep(Duration::from_millis(50)).await;
+    let events = store.list_events(&session_id).await.expect("events");
+    assert!(
+        events
+            .iter()
+            .all(|event| event.event_type != EventType::TURN_COMPLETED
+                && event.event_type != EventType::TURN_FAILED),
+        "late backend completion must not overwrite a cancelled turn"
+    );
 }
 
 #[tokio::test]
@@ -746,6 +835,140 @@ async fn backend_output_append_failure_marks_turn_failed() {
 }
 
 #[tokio::test]
+async fn backend_output_append_failure_records_observable_error_detail() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let database_path = dir.path().join("runtime-observable-append-failure.sqlite");
+    let database_url = format!("sqlite://{}?mode=rwc", database_path.display());
+    let store = Arc::new(
+        SqliteEventStore::connect(&database_url)
+            .await
+            .expect("store"),
+    );
+    let observability = ObservabilityStore::connect(&database_url, None)
+        .await
+        .expect("observability");
+    let trigger_pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect(&database_url)
+        .await
+        .expect("trigger pool");
+    sqlx::query(
+        r#"
+        CREATE TRIGGER fail_backend_delta_insert
+        BEFORE INSERT ON events
+        WHEN NEW.event_type = 'assistant.message.delta'
+        BEGIN
+            SELECT RAISE(FAIL, 'forced backend append failure');
+        END;
+        "#,
+    )
+    .execute(&trigger_pool)
+    .await
+    .expect("create trigger");
+
+    let backend = Arc::new(MockBackendAdapter::new(vec![
+        BackendOutput::event(
+            EventType::ASSISTANT_MESSAGE_DELTA,
+            json!({ "delta": "this append will fail" }),
+        ),
+        BackendOutput::event(EventType::TURN_COMPLETED, json!({})),
+    ]));
+    let runtime = Runtime::new(store.clone(), backend).with_observability(observability.clone());
+    let session_id = SessionId::from("ses_runtime_observable_backend_append_failure");
+    runtime
+        .create_session(session_id.clone(), BackendKind::Pi, "/tmp/vela")
+        .await
+        .expect("create session");
+
+    let trace = trace_context();
+    let ack = runtime
+        .send_user_message_with_trace(
+            SendUserMessage {
+                session_id: session_id.clone(),
+                idempotency_key: "idem-observable-append-failure".to_string(),
+                content: "hello".to_string(),
+                command_id: None,
+            },
+            Some(trace.clone()),
+        )
+        .await
+        .expect("send");
+
+    let events = eventually_contains_event(&store, &session_id, EventType::TURN_FAILED).await;
+    let turn_failed = events
+        .iter()
+        .find(|event| event.event_type == EventType::TURN_FAILED)
+        .expect("turn.failed");
+    assert!(
+        turn_failed.payload["error"]
+            .as_str()
+            .unwrap()
+            .contains("forced backend append failure")
+    );
+
+    let errors = eventually_contains_recent_error(&observability).await;
+    let backend_error = errors
+        .iter()
+        .find(|error| error.name == "velad.backend.send")
+        .expect("backend send error");
+    assert!(matches!(ack, CommandAck::Accepted(_)));
+    assert_eq!(
+        backend_error.trace_id.as_deref(),
+        Some(trace.trace_id.as_str())
+    );
+    assert_eq!(
+        backend_error.session_id.as_deref(),
+        Some(session_id.as_str())
+    );
+    assert_eq!(backend_error.backend.as_deref(), Some("pi"));
+    assert!(
+        backend_error
+            .message
+            .contains("forced backend append failure"),
+        "expected concrete append failure in recent errors, got {backend_error:?}"
+    );
+}
+
+#[tokio::test]
+async fn backend_completion_without_terminal_event_is_failed_and_observable() {
+    let store = Arc::new(SqliteEventStore::in_memory().await.expect("store"));
+    let observability = ObservabilityStore::connect("sqlite::memory:", None)
+        .await
+        .expect("observability");
+    let backend = Arc::new(MockBackendAdapter::new(Vec::new()));
+    let runtime = Runtime::new(store.clone(), backend).with_observability(observability.clone());
+    let session_id = SessionId::from("ses_runtime_backend_missing_terminal");
+
+    runtime
+        .create_session(session_id.clone(), BackendKind::Pi, "/tmp/vela")
+        .await
+        .expect("create session");
+    runtime
+        .send_user_message_with_trace(
+            SendUserMessage {
+                session_id: session_id.clone(),
+                idempotency_key: "idem-missing-terminal".to_string(),
+                content: "hello".to_string(),
+                command_id: None,
+            },
+            Some(trace_context()),
+        )
+        .await
+        .expect("send");
+
+    eventually_contains_event(&store, &session_id, EventType::TURN_FAILED).await;
+    let errors = eventually_contains_recent_error(&observability).await;
+    let backend_error = errors
+        .iter()
+        .find(|error| error.name == "velad.backend.send")
+        .expect("backend send error");
+    assert_eq!(
+        backend_error.message,
+        "backend completed without a terminal turn event"
+    );
+}
+
+#[tokio::test]
 async fn user_sequence_fixture_replays_duplicate_and_rejects_mismatch() {
     let steps = support::read_user_sequence_fixture("duplicate_replay_and_mismatch.jsonl");
     let harness = support::RuntimeHarness::new().await;
@@ -948,6 +1171,8 @@ struct FailingOnceBackend {
     calls: Mutex<usize>,
 }
 
+struct FailingAfterTurnFailedBackend;
+
 #[derive(Default)]
 struct RecordingSendBackend {
     inputs: Mutex<Vec<BackendSend>>,
@@ -991,6 +1216,22 @@ impl BackendAdapter for FailingOnceBackend {
             vec![BackendOutput::event(EventType::TURN_COMPLETED, json!({}))],
         )
         .await
+    }
+}
+
+#[async_trait]
+impl BackendAdapter for FailingAfterTurnFailedBackend {
+    async fn stream_user_message(
+        &self,
+        _input: BackendSend,
+        sink: BackendOutputSink,
+    ) -> anyhow::Result<()> {
+        sink.send(BackendOutput::event(
+            EventType::TURN_FAILED,
+            json!({ "error": "provider stream disconnected" }),
+        ))
+        .await?;
+        anyhow::bail!("provider stream disconnected")
     }
 }
 
@@ -1129,4 +1370,28 @@ async fn eventually_contains_event(
     })
     .await
     .unwrap_or_else(|_| panic!("event {event_type:?} should be persisted"))
+}
+
+async fn eventually_contains_recent_error(
+    observability: &ObservabilityStore,
+) -> Vec<vela_observability::ErrorRecord> {
+    timeout(Duration::from_millis(500), async {
+        loop {
+            let errors = observability.recent_errors(10).await.expect("errors");
+            if !errors.is_empty() {
+                return errors;
+            }
+            sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("recent observability error should be persisted")
+}
+
+fn trace_context() -> TraceContext {
+    TraceContext {
+        trace_id: "4bf92f3577b34da6a3ce929d0e0e4736".to_string(),
+        span_id: "00f067aa0ba902b7".to_string(),
+        trace_flags: "01".to_string(),
+    }
 }

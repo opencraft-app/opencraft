@@ -87,6 +87,21 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertIn("promote-devcloud-dep-*", workflow)
         self.assertIn("devcloud-dep) printf 'DevCloud dep' ;;", pin_script)
 
+    def test_shanghai_workers_promote_branches_auto_merge_like_beijing(self) -> None:
+        workflow = (REPO_ROOT / ".ci/gitops-promotion.yml").read_text()
+        policy = policy_for_branch(
+            "promote-shanghai-workers-workers-rescue-exporter-workers-hermes-importer-workers-570650e0406c"
+        )
+
+        self.assertIsNotNone(policy)
+        self.assertEqual(policy.env, "shanghai-workers")
+        self.assertTrue(policy.auto_merge)
+        self.assertTrue(policy.auto_sync)
+        self.assertTrue(policy.cleanup_source_branch)
+        self.assertEqual(policy.verify_mode.value, "argo_convergence")
+        self.assertEqual(policy.kustomize_mode.value, "full")
+        self.assertIn("promote-shanghai-workers-*", workflow)
+
     def test_promotion_workflow_uses_shared_bootstrap_helper(self) -> None:
         workflow = (REPO_ROOT / ".ci/gitops-promotion.yml").read_text()
         helper = (REPO_ROOT / ".ci/runtime/gitops_promotion_bootstrap.sh").read_text()
@@ -96,6 +111,7 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertIn("promote-sandbox-bj-*", workflow)
         self.assertIn("promote-sandbox-kr-*", workflow)
         self.assertIn("promote-devcloud-dep-*", workflow)
+        self.assertIn("promote-shanghai-workers-*", workflow)
         self.assertNotIn("- promote-*", workflow)
         self.assertNotIn("promote-shprod-*", workflow)
         self.assertNotIn("promote-sgprod-*", workflow)

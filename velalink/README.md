@@ -32,32 +32,52 @@ make install
 
 ## Desktop preview workflow
 
-Use the desktop preview target while working on the Electron shell:
+Use the desktop preview target while working on the Electron shell or the
+work-monitor mini window:
 
 ```bash
 make desktop-preview
 ```
 
-This starts the full local development stack:
+This is the fast feedback loop. It does not package or copy anything to
+`/Applications`; it runs the Electron dev host directly.
 
-- `velad` runs on `127.0.0.1:3857`.
-- Vite renderer runs on `http://127.0.0.1:5173/`.
+- `target/debug/velad` is built first.
+- Electron spawns that local `velad` child and waits for the `velad.ready`
+  stdout event.
+- Vite renderer prefers `http://127.0.0.1:5173/`; if that port is busy,
+  the dev script uses Vite's assigned fallback port and prints the actual URL.
 - Electron opens the desktop shell against the Vite renderer.
-- The renderer receives `VITE_VELA_API_BASE_URL=http://127.0.0.1:3857/api/v1`.
-- The Electron preload bridge exposes desktop bootstrap state to the renderer.
+- The preview Electron host uses repo-local `.tmp/desktop-preview-user-data`
+  through `VELA_DESKTOP_USER_DATA_DIR`, so its `velad` SQLite database is
+  isolated from `/Applications/Vela.app`.
+- Renderer/CSS changes update through Vite. Electron main/preload/window-manager
+  changes require restarting `make desktop-preview`.
+- `make desktop-preview` first clears older dev preview processes from this
+  repo. Use `make desktop-preview-stop` when you only want to stop the running
+  dev preview without starting it again.
+
+For work-monitor visual iteration:
+
+1. Run `make desktop-preview`.
+2. Create or open a Codex session and send a message.
+3. The mini window opens from local send intent and then follows the
+   read-model thumbnail state.
+4. Iterate React/CSS in `apps/vela-desktop-electron/src/work-monitor/` or
+   `packages/vela-chat-web/src/thumbnail/`; those are visible without a
+   package/install cycle.
 
 If the preview window shows `Failed to fetch`, check DevTools Network first:
 
-- Good: requests go to `http://127.0.0.1:3857/api/v1/...`.
+- Good: requests go to the `apiBaseUrl` reported by desktop bootstrap.
 - Bad: requests go to `file:///api/v1/...`.
 - `file:///api/v1/...` means the renderer is not using the dev server or the preload bridge did not load.
 
-Before restarting a stuck preview, clear the usual local ports/processes:
+Before restarting a stuck preview, use the Makefile stop target. You should not
+need to kill port `5173` just because it is already occupied:
 
 ```bash
-lsof -tiTCP:5173 -sTCP:LISTEN | xargs -r kill || true
-lsof -tiTCP:3857 -sTCP:LISTEN | xargs -r kill || true
-pkill -f 'node_modules/electron/dist/Electron.app' || true
+make desktop-preview-stop
 make desktop-preview
 ```
 
@@ -88,11 +108,13 @@ make server-upload-cos
 make server-vm-install-command
 make server-vm-install-debug-exec
 make desktop-dev
+make desktop-preview-fast
 make desktop-dev-web
 make desktop-build
 make desktop-pack-dev
 make desktop-dist
 make desktop-clean
+make desktop-pids
 ```
 
 ## VM velad injection workflow
@@ -146,14 +168,9 @@ not commit COS or mono credentials into this repository.
 
 The desktop app is designed to work in two modes:
 
-- Dev preview: `make desktop-preview` starts a local external `velad` and points Electron at it.
+- Dev preview: `make desktop-preview` lets Electron spawn and manage a local
+  debug `velad` with isolated repo-local user data.
 - Packaged app: the app should use the bundled `velad` from the Electron resources when present.
-
-`VELAD_LISTEN_ADDR` controls the server address used by Makefile targets:
-
-```bash
-VELAD_LISTEN_ADDR=127.0.0.1:3860 make desktop-preview
-```
 
 The desktop host passes the resolved API base URL into the renderer through the preload bridge. The renderer should not hard-code `file:///api/v1` or assume the app is always served from HTTP.
 

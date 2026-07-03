@@ -42,6 +42,13 @@ export interface User {
   createdAt: string;
 }
 
+/** 实名等级常量（后端 realnameLevel 取值，避免魔法字符串） */
+export const REALNAME_LEVEL = {
+  NONE: "none",
+  IDCARD_2FA: "idcard_2fa",
+  PHONE_3FA: "phone_3fa",
+} as const;
+
 export interface Bot {
   id: string;
   sandboxId?: string;
@@ -277,6 +284,16 @@ export interface Bundle {
   bundle_sales_state: BundleSalesState;
   created_time?: string;
   updated_time?: string;
+  /**
+   * 套餐分类（用于订阅页按 tab 分组展示），后端字段 `bundle.bundle_type`。
+   * 后端枚举（ctl migration 000023 / 2026-06 联调确认）：
+   *   - "general"  标准版（启航 / 巡游 / 远航）
+   *   - "ai"       AI 增强版（启航 AI / 巡游 AI / 远航 AI）
+   *   - "free"     免费试用套餐（走 CreateTrialPass 链路，订阅页**不展示**，由 planList 上游过滤）
+   * 联调期可能缺失：缺省 / 空串 / 未识别值会被归入"其他"分组（避免页面挂掉）。
+   * 后端新增/调整付费枚举后请同步更新 `subscribe-page.tsx` 中 `BUNDLE_TYPE_TABS` 常量。
+   */
+  bundle_type?: string;
 }
 
 export interface Pass {

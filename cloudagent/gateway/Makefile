@@ -8,7 +8,8 @@ UPX ?= upx
 STRIP ?= strip
 
 DIST_DIR ?= dist
-DOCKER_PLATFORM ?= linux/amd64
+LINUX_GOARCH ?= amd64
+DOCKER_PLATFORM ?= linux/$(LINUX_GOARCH)
 GOFLAGS ?= -trimpath
 LDFLAGS ?= -s -w -buildid=
 UPX_FLAGS ?= --best --lzma
@@ -26,6 +27,12 @@ CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_LTO ?= false
 CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_CODEGEN_UNITS ?= 16
 CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_STRIP ?= true
 
+ifeq ($(LINUX_GOARCH),arm64)
+CLOUDAGENT_SIDECAR_RUST_TARGET ?= aarch64-unknown-linux-musl
+else
+CLOUDAGENT_SIDECAR_RUST_TARGET ?= x86_64-unknown-linux-musl
+endif
+
 ifeq ($(CN_MIRRORS),1)
 CLOUDAGENT_SIDECAR_DEBIAN_MIRROR ?= mirrors.tuna.tsinghua.edu.cn
 CLOUDAGENT_SIDECAR_CARGO_USE_MIRROR ?= 1
@@ -39,11 +46,11 @@ CLOUDAGENT_SIDECAR_CARGO_USE_MIRROR ?= 0
 CLOUDAGENT_SIDECAR_CARGO_REGISTRY_MIRROR ?=
 endif
 
-CLOUDAGENT_SIDECAR_IMAGE ?= gateway-cloudagent-sidecar-builder:local
-CLOUDAGENT_SIDECAR_LINUX := $(DIST_DIR)/cloudagent-sidecar-linux-amd64
-CLOUDAGENT_SIDECAR_LINUX_PACKED := $(DIST_DIR)/cloudagent-sidecar-linux-amd64.upx
-CLOUDAGENT_AGENT_LOADER_LINUX := $(DIST_DIR)/cloudagent-agent-loader-linux-amd64
-CLOUDAGENT_AGENT_SIGN_LINUX := $(DIST_DIR)/cloudagent-agent-sign-linux-amd64
+CLOUDAGENT_SIDECAR_IMAGE ?= gateway-cloudagent-sidecar-builder:$(LINUX_GOARCH)
+CLOUDAGENT_SIDECAR_LINUX := $(DIST_DIR)/cloudagent-sidecar-linux-$(LINUX_GOARCH)
+CLOUDAGENT_SIDECAR_LINUX_PACKED := $(DIST_DIR)/cloudagent-sidecar-linux-$(LINUX_GOARCH).upx
+CLOUDAGENT_AGENT_LOADER_LINUX := $(DIST_DIR)/cloudagent-agent-loader-linux-$(LINUX_GOARCH)
+CLOUDAGENT_AGENT_SIGN_LINUX := $(DIST_DIR)/cloudagent-agent-sign-linux-$(LINUX_GOARCH)
 SERVER := $(DIST_DIR)/gateway-server
 
 .PHONY: help
@@ -97,10 +104,12 @@ $(CLOUDAGENT_SIDECAR_LINUX): $(DIST_DIR) build/cloudagent-sidecar/Dockerfile $(C
 		--build-arg CARGO_PROFILE_RELEASE_LTO=$(CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_LTO) \
 		--build-arg CARGO_PROFILE_RELEASE_CODEGEN_UNITS=$(CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_CODEGEN_UNITS) \
 		--build-arg CARGO_PROFILE_RELEASE_STRIP=$(CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_STRIP) \
+		--build-arg CLOUDAGENT_SIDECAR_RUST_TARGET=$(CLOUDAGENT_SIDECAR_RUST_TARGET) \
+		--build-arg CLOUDAGENT_SIDECAR_GOARCH=$(LINUX_GOARCH) \
 		-f build/cloudagent-sidecar/Dockerfile --target artifact -t $(CLOUDAGENT_SIDECAR_IMAGE) ..
-	container_id="$$( $(DOCKER) create $(CLOUDAGENT_SIDECAR_IMAGE) /cloudagent-sidecar-linux-amd64 )"; \
+	container_id="$$( $(DOCKER) create $(CLOUDAGENT_SIDECAR_IMAGE) /cloudagent-sidecar-linux-$(LINUX_GOARCH) )"; \
 	trap '$(DOCKER) rm -f "$$container_id" >/dev/null 2>&1 || true' EXIT; \
-	$(DOCKER) cp "$$container_id:/cloudagent-sidecar-linux-amd64" $@
+	$(DOCKER) cp "$$container_id:/cloudagent-sidecar-linux-$(LINUX_GOARCH)" $@
 	@chmod +x $@
 
 .PHONY: cloudagent-agent-loader-linux
@@ -119,10 +128,12 @@ $(CLOUDAGENT_AGENT_LOADER_LINUX): $(DIST_DIR) build/cloudagent-sidecar/Dockerfil
 		--build-arg CARGO_PROFILE_RELEASE_LTO=$(CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_LTO) \
 		--build-arg CARGO_PROFILE_RELEASE_CODEGEN_UNITS=$(CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_CODEGEN_UNITS) \
 		--build-arg CARGO_PROFILE_RELEASE_STRIP=$(CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_STRIP) \
+		--build-arg CLOUDAGENT_SIDECAR_RUST_TARGET=$(CLOUDAGENT_SIDECAR_RUST_TARGET) \
+		--build-arg CLOUDAGENT_SIDECAR_GOARCH=$(LINUX_GOARCH) \
 		-f build/cloudagent-sidecar/Dockerfile --target artifact -t $(CLOUDAGENT_SIDECAR_IMAGE) ..
-	container_id="$$( $(DOCKER) create $(CLOUDAGENT_SIDECAR_IMAGE) /cloudagent-agent-loader-linux-amd64 )"; \
+	container_id="$$( $(DOCKER) create $(CLOUDAGENT_SIDECAR_IMAGE) /cloudagent-agent-loader-linux-$(LINUX_GOARCH) )"; \
 	trap '$(DOCKER) rm -f "$$container_id" >/dev/null 2>&1 || true' EXIT; \
-	$(DOCKER) cp "$$container_id:/cloudagent-agent-loader-linux-amd64" $@
+	$(DOCKER) cp "$$container_id:/cloudagent-agent-loader-linux-$(LINUX_GOARCH)" $@
 	@chmod +x $@
 
 .PHONY: cloudagent-agent-sign-linux
@@ -141,10 +152,12 @@ $(CLOUDAGENT_AGENT_SIGN_LINUX): $(DIST_DIR) build/cloudagent-sidecar/Dockerfile 
 		--build-arg CARGO_PROFILE_RELEASE_LTO=$(CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_LTO) \
 		--build-arg CARGO_PROFILE_RELEASE_CODEGEN_UNITS=$(CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_CODEGEN_UNITS) \
 		--build-arg CARGO_PROFILE_RELEASE_STRIP=$(CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_STRIP) \
+		--build-arg CLOUDAGENT_SIDECAR_RUST_TARGET=$(CLOUDAGENT_SIDECAR_RUST_TARGET) \
+		--build-arg CLOUDAGENT_SIDECAR_GOARCH=$(LINUX_GOARCH) \
 		-f build/cloudagent-sidecar/Dockerfile --target artifact -t $(CLOUDAGENT_SIDECAR_IMAGE) ..
-	container_id="$$( $(DOCKER) create $(CLOUDAGENT_SIDECAR_IMAGE) /cloudagent-agent-sign-linux-amd64 )"; \
+	container_id="$$( $(DOCKER) create $(CLOUDAGENT_SIDECAR_IMAGE) /cloudagent-agent-sign-linux-$(LINUX_GOARCH) )"; \
 	trap '$(DOCKER) rm -f "$$container_id" >/dev/null 2>&1 || true' EXIT; \
-	$(DOCKER) cp "$$container_id:/cloudagent-agent-sign-linux-amd64" $@
+	$(DOCKER) cp "$$container_id:/cloudagent-agent-sign-linux-$(LINUX_GOARCH)" $@
 	@chmod +x $@
 
 .PHONY: cloudagent-sidecar-linux-upx

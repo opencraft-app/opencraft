@@ -56,6 +56,7 @@
         "EDGEONE_API_TOKEN"
       ],
       "authApiBaseUrl": "https://api.lightvela.com",
+      "siteUrl": "https://lightvela.com",
       "outputDir": "out",
       "observability": {
         "aegis": {
@@ -82,6 +83,7 @@
         "POSTHOG_PROJECT_TOKEN"
       ],
       "authApiBaseUrl": "https://api.lightvela.ai",
+      "siteUrl": "https://lightvela.ai",
       "outputDir": "out",
       "observability": {
         "aegis": {

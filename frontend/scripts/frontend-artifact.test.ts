@@ -32,6 +32,7 @@ const combo = {
 const comboEnv = {
   VITE_REGION: "global",
   VITE_AUTH_API_BASE_URL: "https://api.lightvela.ai",
+  NEXT_PUBLIC_SITE_URL: "https://lightvela.ai",
   VITE_AEGIS_ENABLED: "true",
   VITE_AEGIS_ID: "2ellOCK3ozed3owgOj",
   VITE_AEGIS_HOST_URL: "https://rumt-sg.com",
@@ -200,6 +201,7 @@ describe("frontend artifact helpers", () => {
       expect(first.bakedEnv).toMatchObject({
         VITE_REGION: "global",
         VITE_AUTH_API_BASE_URL: "https://api.lightvela.ai",
+        NEXT_PUBLIC_SITE_URL: "https://lightvela.ai",
         VITE_AEGIS_ID: "2ellOCK3ozed3owgOj",
       });
       expect(first.identity.contentIdentitySha256).toMatch(/^[0-9a-f]{64}$/);

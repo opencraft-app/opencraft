@@ -1,6 +1,30 @@
+export type VeladFetch = (input: URL | RequestInfo, init?: RequestInit) => Promise<Response>;
+
 export interface VeladClientOptions {
   baseUrl: string;
-  fetch?: typeof fetch;
+  fetch?: VeladFetch;
+  observability?: VeladClientObservability;
+}
+
+export interface VeladObservedSpan {
+  setAttribute: (key: string, value: string | number | boolean) => void;
+  setStatus: (status: { code: number; message?: string }) => void;
+  end: () => void;
+  spanContext?: () => { traceId: string; spanId: string };
+}
+
+export interface VeladClientObservability {
+  startSpan: (name: string, options?: { attributes?: Record<string, unknown> }) => VeladObservedSpan;
+  recordError: (span: VeladObservedSpan, error: unknown) => void;
+  traceparent: (span: unknown) => string;
+  emitLog?: (record: {
+    body: string;
+    severityText?: string;
+    attributes?: Record<string, unknown>;
+    span?: VeladObservedSpan | null;
+    traceId?: string;
+    spanId?: string;
+  }) => void | Promise<void>;
 }
 
 export interface CursorWindow {
@@ -222,6 +246,27 @@ export type AgentWorkGenericDetailTypeWire = Exclude<
   AgentWorkDetailTypeWire,
   "shell" | AgentWorkFileDetailTypeWire | "search" | "fetch"
 >;
+export type AgentWorkContentPartWire =
+  | AgentWorkTextContentPartWire
+  | AgentWorkJsonContentPartWire
+  | AgentWorkResourceLinkContentPartWire;
+
+export interface AgentWorkTextContentPartWire {
+  type: "text";
+  text: string;
+}
+
+export interface AgentWorkJsonContentPartWire {
+  type: "json";
+  value: unknown;
+}
+
+export interface AgentWorkResourceLinkContentPartWire {
+  type: "resource_link";
+  uri: string;
+  name?: string;
+  mime_type?: string;
+}
 
 export type AgentWorkDetailWire =
   | AgentWorkShellDetailWire
@@ -237,8 +282,19 @@ export interface AgentWorkShellDetailWire {
   output?: string;
   stdout?: string;
   stderr?: string;
+  streams?: AgentWorkShellStreamWire[];
   exit_code?: number;
   error?: string;
+}
+
+export interface AgentWorkShellStreamWire {
+  stream_id: string;
+  stream?: string;
+  text?: string;
+  last_delta?: string;
+  chunk_count?: number;
+  last_sequence?: number;
+  last_chunk_id?: string;
 }
 
 export interface AgentWorkFileDetailWire {
@@ -246,6 +302,7 @@ export interface AgentWorkFileDetailWire {
   file_path?: string;
   path?: string;
   content?: string;
+  content_parts?: AgentWorkContentPartWire[];
   old_string?: string;
   new_string?: string;
   unified_diff?: string;
@@ -256,6 +313,7 @@ export interface AgentWorkSearchDetailWire {
   query?: string;
   mode?: AgentWorkSearchModeWire;
   content?: string;
+  content_parts?: AgentWorkContentPartWire[];
   num_files?: number;
   num_matches?: number;
   duration_ms?: number;
@@ -267,6 +325,7 @@ export interface AgentWorkFetchDetailWire {
   url?: string;
   prompt?: string;
   result?: string;
+  content_parts?: AgentWorkContentPartWire[];
   code?: number;
   code_text?: string;
   bytes?: number;
@@ -275,11 +334,34 @@ export interface AgentWorkFetchDetailWire {
 
 export interface AgentWorkGenericDetailWire {
   type: AgentWorkGenericDetailTypeWire;
-  [key: string]: unknown;
+  tool_id?: string;
+  call_id?: string;
+  name?: string;
+  label?: string;
+  summary?: string;
+  description?: string;
+  text?: string;
+  content?: string;
+  command?: string;
+  cwd?: string;
+  query?: string;
+  file_path?: string;
+  path?: string;
+  url?: string;
+  output?: string;
+  stdout?: string;
+  stderr?: string;
+  error?: string;
+  delta?: string;
+  status?: string;
+  exit_code?: number;
+  content_parts?: AgentWorkContentPartWire[];
 }
 
 export type BackendKindWire =
+  | "vela_engine"
   | "codex"
+  | "tcodex"
   | "cloudagent"
   | "claude_code"
   | "pi"
@@ -318,6 +400,16 @@ export interface SessionOperationWire {
   effective_after?: "current_session" | "next_turn";
 }
 
+export type SessionActivityPhaseWire = "idle" | "starting" | "running" | "canceling";
+
+export type SessionActivityAttentionWire = "none" | "waiting_for_user" | "error";
+
+export interface SessionActivityWire {
+  phase: SessionActivityPhaseWire;
+  attention: SessionActivityAttentionWire;
+  pending_request_count: number;
+}
+
 export interface SessionWire {
   id: string;
   backend: BackendKindWire;
@@ -329,6 +421,7 @@ export interface SessionWire {
   model?: string | null;
   agent_config?: AgentConfigWire;
   runtime_info?: SessionRuntimeInfoWire;
+  activity?: SessionActivityWire;
   operations?: Record<string, SessionOperationWire | undefined>;
   metadata?: Record<string, unknown>;
 }
@@ -348,6 +441,7 @@ export interface SessionListItemWire extends SessionSummaryWire {
   last_activity_at: string;
   preview: string;
   pending_request_count: number;
+  activity?: SessionActivityWire;
   running: boolean;
   model?: string | null;
 }
@@ -461,22 +555,39 @@ export interface BackendCapabilitiesWire {
   permission_requests: boolean;
   structured_diff: boolean;
   session_agent_config: boolean;
+  usage_snapshot?: boolean;
   [key: string]: unknown;
+}
+
+export type BackendLocationKindWire = "local" | "remote";
+
+export interface BackendLocationWire {
+  kind: BackendLocationKindWire;
+  label: string;
 }
 
 export interface BackendWire {
   kind: BackendKindWire;
+  backend_type?: BackendKindWire;
   status: BackendStatusWire;
   status_message?: string;
   display_name: string;
+  location: BackendLocationWire;
   capabilities: BackendCapabilitiesWire;
   models: BackendModelWire[];
   permission_modes: PermissionModeOptionWire[];
   features: BackendFeatureWire[];
   diagnostics?: Record<string, unknown>;
+  snapshot_protocol?: string;
+  fetched_at?: string;
 }
 
-export type BackendStatusWire = "available" | "unavailable" | "degraded" | "error";
+export type BackendStatusWire =
+  | "loading"
+  | "available"
+  | "unavailable"
+  | "degraded"
+  | "error";
 
 export interface BackendsWireResponse {
   backends: BackendWire[];
@@ -486,10 +597,210 @@ export interface BackendWireResponse {
   backend: BackendWire;
 }
 
+export type BackendUsageStatusWire = "ok" | "needs_auth" | "unsupported" | "error";
+export type BackendUsageToneWire = "ok" | "warning" | "critical" | "neutral";
+
+export interface BackendUsageSummaryWire {
+  label: string;
+  tone: BackendUsageToneWire;
+}
+
+export interface BackendUsageLimitWire {
+  kind: string;
+  label: string;
+  used_percent?: number;
+  remaining_percent?: number;
+  resets_at?: string;
+  window_duration_mins?: number;
+}
+
+export interface BackendUsageLineWire {
+  label: string;
+  value: string;
+  subtitle?: string;
+}
+
+export interface BackendUsageProfileWire {
+  profile_id: string;
+  display_name: string;
+  status: BackendUsageStatusWire;
+  source: string;
+  summary?: BackendUsageSummaryWire;
+  limits: BackendUsageLimitWire[];
+  usage_lines: BackendUsageLineWire[];
+  detail?: string;
+}
+
+export interface BackendUsageWireResponse {
+  schema: "velad.backend_usage.v1";
+  backend: BackendKindWire;
+  backend_type: BackendKindWire;
+  status: BackendUsageStatusWire;
+  source: string;
+  fetched_at: string;
+  plan_name?: string;
+  summary?: BackendUsageSummaryWire;
+  limits: BackendUsageLimitWire[];
+  usage_lines: BackendUsageLineWire[];
+  profiles: BackendUsageProfileWire[];
+  detail?: string;
+}
+
 export interface BackendProbeResultWire {
   backend: BackendKindWire;
   status: BackendStatusWire;
   message?: string;
+}
+
+export interface BackendSettingsWire {
+  schema: "velad.backend_settings.v1";
+  backend: BackendKindWire;
+  settings: {
+    endpoint?: string;
+    api_key_set?: boolean;
+    model?: string;
+    [key: string]: unknown;
+  };
+  status: "configured" | "unconfigured";
+  missing_fields: string[];
+  updated_at?: string | null;
+}
+
+export interface BackendSettingsWireResponse extends BackendSettingsWire {}
+
+export interface BackendSettingsPatchWire {
+  endpoint?: string;
+  api_key?: string;
+  model?: string;
+}
+
+export interface BackendSkillDescriptorWire {
+  name: string;
+  display_name: string;
+  description?: string;
+  path: string;
+  origin: string;
+  scope: string;
+  protocol: "codex.skills.v1";
+}
+
+export interface BackendSkillsCapabilitiesWire {
+  discovery: boolean;
+  invocation: "native" | "none" | string;
+  requires_text_token: boolean;
+  preferred_token_prefix: "$" | "/" | string;
+  accepted_token_prefixes: string[];
+}
+
+export interface BackendSkillsWireResponse {
+  schema: "velad.backend_skills.v1";
+  backend: BackendKindWire;
+  cwd?: string | null;
+  skill_protocol: "codex.skills.v1";
+  capabilities: BackendSkillsCapabilitiesWire;
+  skills: BackendSkillDescriptorWire[];
+}
+
+export type NodeProviderKindWire = "ssh";
+export type NodeAuthMethodWire = "password";
+export type RuntimeTargetKindWire = "local" | "remote";
+export type RuntimeTargetStatusWire =
+  | "connected"
+  | "connecting"
+  | "ready"
+  | "degraded"
+  | "reconnecting"
+  | "disconnected"
+  | "failed"
+  | "error";
+
+export interface NodeProviderWire {
+  id: NodeProviderKindWire;
+  display_name: string;
+  kind: NodeProviderKindWire;
+  auth_methods: NodeAuthMethodWire[];
+  secret_storage: "local_os_keyring";
+  capabilities: Record<string, unknown>;
+  target_constraints: {
+    os: string[];
+    arch: string[];
+  };
+}
+
+export interface NodeProvidersWireResponse {
+  schema: "velad.node_providers.v1";
+  providers: NodeProviderWire[];
+}
+
+export interface SshNodeWire {
+  host: string;
+  port: number;
+  username: string;
+}
+
+export interface NodeTargetWire {
+  os: string;
+  arch: string;
+}
+
+export interface NodeAuthWire {
+  method: NodeAuthMethodWire;
+  password_configured: boolean;
+  secret_ref?: string | null;
+}
+
+export interface NodeWire {
+  id: string;
+  provider: NodeProviderKindWire;
+  display_name: string;
+  ssh: SshNodeWire;
+  target: NodeTargetWire;
+  auth: NodeAuthWire;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NodesWireResponse {
+  schema: "velad.nodes.v1";
+  nodes: NodeWire[];
+}
+
+export interface NodeWireResponse {
+  schema: "velad.nodes.v1";
+  node: NodeWire;
+}
+
+export interface CreateNodeInput {
+  provider: NodeProviderKindWire;
+  displayName?: string;
+  ssh: SshNodeWire;
+  auth: {
+    method: NodeAuthMethodWire;
+    password: string;
+  };
+  target?: Partial<NodeTargetWire>;
+}
+
+export interface RuntimeTargetWire {
+  id: string;
+  kind: RuntimeTargetKindWire;
+  provider: "local" | NodeProviderKindWire;
+  node_id?: string | null;
+  display_name: string;
+  status: RuntimeTargetStatusWire;
+  transport: Record<string, unknown>;
+  target?: Partial<NodeTargetWire>;
+  compatibility?: Record<string, unknown>;
+}
+
+export interface RuntimeTargetsWireResponse {
+  schema: "velad.runtime_targets.v1";
+  targets: RuntimeTargetWire[];
+}
+
+export interface RuntimeTargetWireResponse {
+  schema: "velad.runtime_targets.v1";
+  target: RuntimeTargetWire;
 }
 
 export interface UpdateAgentConfigWireResponse {
@@ -500,6 +811,13 @@ export interface UpdateAgentConfigWireResponse {
 
 export type ClientInputPart =
   | { type: "text"; text: string }
+  | {
+      type: "skill_ref";
+      name: string;
+      protocol: "codex.skills.v1";
+      backend?: BackendKindWire;
+      path?: string;
+    }
   | { type: "file_ref"; uri: string }
   | { type: "image_ref"; uri: string }
   | { type: "image"; data: string; mime_type: string };

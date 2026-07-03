@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
 import { imgHeroBgNew, imgHeroElement01, imgHeroElement02, imgHeroElement03, imgHeroAvatars } from '../assets';
 import '../motion.css';
 import { useT } from '@/i18n/t';
@@ -16,6 +16,40 @@ export default function HeroSection({ onCreateClick, ctaLabel }: HeroSectionProp
   const t = useT();
   const buttonLabel = ctaLabel ?? t("立即创建");
   const sectionRef = useRef<HTMLElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  // 视频至少已加载首帧后淡入（此前显示静态占位图，避免视频未就绪时的黑屏/空白）
+  const [videoReady, setVideoReady] = useState(false);
+
+  // 关键：静态导出 + 客户端水合场景下，onLoadedData 等 React 合成事件
+  // 可能在监听器绑定前就已触发（视频加载极快）。这里挂载后主动检查/播放，
+  // 并用原生事件兜底，确保 videoReady 一定能被正确置位。
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+
+    const reveal = () => setVideoReady(true);
+
+    // 挂载时若视频已可播放，直接播放并淡入
+    const kick = () => {
+      // HAVE_CURRENT_DATA(2) 及以上表示已有可显示的帧
+      if (v.readyState >= 2) {
+        const p = v.play();
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+        reveal();
+      }
+    };
+
+    kick();
+    v.addEventListener('loadeddata', kick);
+    v.addEventListener('canplay', kick);
+    v.addEventListener('playing', reveal);
+
+    return () => {
+      v.removeEventListener('loadeddata', kick);
+      v.removeEventListener('canplay', kick);
+      v.removeEventListener('playing', reveal);
+    };
+  }, []);
   const [spotlight, setSpotlight] = useState<{ x: number; y: number; visible: boolean }>({ x: 0, y: 0, visible: false });
   const [mouse, setMouse] = useState<{ nx: number; ny: number }>({ nx: 0, ny: 0 });
 
@@ -48,12 +82,32 @@ export default function HeroSection({ onCreateClick, ctaLabel }: HeroSectionProp
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
     >
-      {/* ① 背景图 */}
+      {/* ① 背景：静态图先加载作占位，视频加载完成后淡入替换 */}
       <img
         alt=""
         src={imgHeroBgNew}
         className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none"
         draggable={false}
+      />
+      <video
+        ref={videoRef}
+        src="/videos/hero-bg.mp4"
+        muted
+        playsInline
+        preload="auto"
+        onEnded={(e) => {
+          // 只播放一次，结束后停留在最后一帧
+          const v = e.currentTarget;
+          v.pause();
+          if (v.duration && Number.isFinite(v.duration)) {
+            v.currentTime = Math.max(0, v.duration - 0.05);
+          }
+        }}
+        className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none"
+        style={{
+          opacity: videoReady ? 1 : 0,
+          transition: 'opacity 300ms ease',
+        }}
       />
 
       {/* ① 鼠标光晕层 */}

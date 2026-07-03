@@ -174,6 +174,245 @@ async fn conversation_view_supports_direction_anchor_paging() {
 }
 
 #[tokio::test]
+async fn conversation_view_normalizes_typed_agent_work_detail_fields_to_wire_types() {
+    let (app, _) = test_app_with_backend_outputs(vec![
+        BackendOutput::event(
+            EventType::TOOL_STARTED,
+            json!({
+                "tool_id": "tool_structured_read",
+                "name": "read",
+                "status": "running",
+                "detail": {
+                    "type": "read",
+                    "file_path": "README.md",
+                    "content": [{ "type": "text", "text": "hello" }]
+                }
+            }),
+        ),
+        BackendOutput::event(
+            EventType::TOOL_COMPLETED,
+            json!({
+                "tool_id": "tool_structured_read",
+                "name": "read",
+                "status": "completed",
+                "detail": {
+                    "type": "read",
+                    "file_path": "README.md",
+                    "content": [{ "type": "text", "text": "hello" }]
+                }
+            }),
+        ),
+        BackendOutput::event(EventType::TURN_COMPLETED, json!({})),
+    ])
+    .await;
+    let (_, created) = json_request(
+        app.clone(),
+        Method::POST,
+        "/api/v1/sessions",
+        json!({ "backend": "pi", "working_directory": "/tmp/project" }),
+        Some("ses-conversation-detail-wire"),
+    )
+    .await;
+    let session_id = created["session"]["id"].as_str().unwrap();
+
+    let (status, _) = json_request(
+        app.clone(),
+        Method::POST,
+        &format!("/api/v1/sessions/{session_id}/events"),
+        json!({
+            "events": [{
+                "type": "user.message",
+                "content": [{ "type": "text", "text": "read structured content" }]
+            }]
+        }),
+        Some("cmd-conversation-detail-wire"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    wait_for_session_event(app.clone(), session_id, "turn.completed").await;
+
+    let (status, view) = get_json(
+        app,
+        &format!("/api/v1/sessions/{session_id}/views/conversation?direction=tail&limit=10"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let work = view["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["kind"] == "agent_work")
+        .expect("agent work item");
+
+    assert_eq!(work["detail"]["type"], "read");
+    assert_eq!(work["detail"]["file_path"], "README.md");
+    assert!(
+        work["detail"]["content"].as_str().is_some(),
+        "detail.content must be normalized to a string: {work:#?}"
+    );
+    assert_eq!(work["detail"]["content"], "hello");
+    assert_eq!(work["detail"]["content_parts"][0]["type"], "text");
+    assert_eq!(work["detail"]["content_parts"][0]["text"], "hello");
+    assert!(work["detail"].get("raw_input").is_none());
+    assert!(work["detail"].get("raw_output").is_none());
+}
+
+#[tokio::test]
+async fn conversation_view_projects_generic_agent_work_without_raw_provider_payload() {
+    let generic_detail = json!({
+        "type": "tool",
+        "name": "unknown_tool",
+        "content": { "answer": 42 },
+        "raw_input": { "secret": "input" },
+        "raw_output": { "secret": "output" }
+    });
+    let (app, _) = test_app_with_backend_outputs(vec![
+        BackendOutput::event(
+            EventType::TOOL_STARTED,
+            json!({
+                "tool_id": "tool_generic",
+                "name": "unknown_tool",
+                "status": "running",
+                "detail": generic_detail.clone()
+            }),
+        ),
+        BackendOutput::event(
+            EventType::TOOL_COMPLETED,
+            json!({
+                "tool_id": "tool_generic",
+                "name": "unknown_tool",
+                "status": "completed",
+                "detail": generic_detail.clone()
+            }),
+        ),
+        BackendOutput::event(EventType::TURN_COMPLETED, json!({})),
+    ])
+    .await;
+    let (_, created) = json_request(
+        app.clone(),
+        Method::POST,
+        "/api/v1/sessions",
+        json!({ "backend": "pi", "working_directory": "/tmp/project" }),
+        Some("ses-conversation-generic-detail"),
+    )
+    .await;
+    let session_id = created["session"]["id"].as_str().unwrap();
+
+    let (status, _) = json_request(
+        app.clone(),
+        Method::POST,
+        &format!("/api/v1/sessions/{session_id}/events"),
+        json!({
+            "events": [{
+                "type": "user.message",
+                "content": [{ "type": "text", "text": "run unknown tool" }]
+            }]
+        }),
+        Some("cmd-conversation-generic-detail"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    wait_for_session_event(app.clone(), session_id, "turn.completed").await;
+
+    let (status, view) = get_json(
+        app,
+        &format!("/api/v1/sessions/{session_id}/views/conversation?direction=tail&limit=10"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let work = view["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["kind"] == "agent_work")
+        .expect("agent work item");
+
+    assert_eq!(work["detail"]["type"], "tool");
+    assert_eq!(work["detail"]["name"], "unknown_tool");
+    assert!(
+        work["detail"]["content"]
+            .as_str()
+            .is_some_and(|content| content.contains("answer")),
+        "generic detail.content must be a string preview: {work:#?}"
+    );
+    assert_eq!(work["detail"]["content_parts"][0]["type"], "json");
+    assert_eq!(work["detail"]["content_parts"][0]["value"]["answer"], 42);
+    assert!(work["detail"].get("raw_input").is_none());
+    assert!(work["detail"].get("raw_output").is_none());
+}
+
+#[tokio::test]
+async fn conversation_view_terminal_turn_closes_started_agent_work() {
+    let (app, _) = test_app_with_backend_outputs(vec![
+        BackendOutput::event(
+            EventType::TOOL_STARTED,
+            json!({
+                "tool_id": "tool_readme",
+                "name": "read: ./README.md",
+                "status": "started",
+                "kind": "read"
+            }),
+        ),
+        BackendOutput::event(
+            EventType::ASSISTANT_MESSAGE_DELTA,
+            json!({ "message_id": "msg_answer", "delta": "done" }),
+        ),
+        BackendOutput::event(
+            EventType::TURN_COMPLETED,
+            json!({ "stop_reason": "end_turn" }),
+        ),
+    ])
+    .await;
+    let (_, created) = json_request(
+        app.clone(),
+        Method::POST,
+        "/api/v1/sessions",
+        json!({ "backend": "pi", "working_directory": "/tmp/project" }),
+        Some("ses-conversation-started-work"),
+    )
+    .await;
+    let session_id = created["session"]["id"].as_str().unwrap();
+
+    let (status, _) = json_request(
+        app.clone(),
+        Method::POST,
+        &format!("/api/v1/sessions/{session_id}/events"),
+        json!({
+            "events": [{
+                "type": "user.message",
+                "content": [{ "type": "text", "text": "what is this project" }]
+            }]
+        }),
+        Some("cmd-conversation-started-work"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    wait_for_session_event(app.clone(), session_id, "turn.completed").await;
+
+    let (status, body) = get_json(
+        app,
+        &format!("/api/v1/sessions/{session_id}/views/conversation?direction=tail&limit=20"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let work = body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["kind"] == "agent_work" && item["title"] == "read: ./README.md")
+        .expect("agent work should be present");
+    assert_eq!(work["status"], "completed");
+    assert!(
+        body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| { !(item["kind"] == "agent_work" && item["status"] == "running") }),
+        "terminal turn must not leave agent work running: {body:#?}"
+    );
+}
+
+#[tokio::test]
 async fn conversation_view_rejects_invalid_direction_anchor_combinations() {
     let app = test_app().await;
     let (_, created) = json_request(
@@ -308,6 +547,9 @@ async fn session_list_view_returns_sidebar_ready_items() {
     assert_eq!(item["working_directory"], "/tmp/project");
     assert_eq!(item["agent_config"]["model"], "minimax-m2.7");
     assert_eq!(item["pending_request_count"], 0);
+    assert_eq!(item["activity"]["phase"], "idle");
+    assert_eq!(item["activity"]["attention"], "none");
+    assert_eq!(item["activity"]["pending_request_count"], 0);
     assert_eq!(item["running"], false);
     assert!(
         item.get("created_at")

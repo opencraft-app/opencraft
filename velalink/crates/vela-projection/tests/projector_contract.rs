@@ -298,6 +298,108 @@ fn conversation_absorbs_acp_config_negotiation_warnings_as_diagnostics() {
         conversation.items[0].title.as_deref(),
         Some("real provider warning")
     );
+    assert_eq!(conversation.items[0].status, "completed");
+}
+
+#[test]
+fn conversation_treats_warning_and_error_as_terminal_work() {
+    let events = vec![
+        event_at(
+            1,
+            1,
+            EventType::WARNING_RAISED,
+            json!({ "message": "metadata is missing", "turn_id": "turn_1" }),
+        ),
+        event_at(
+            2,
+            2,
+            EventType::ERROR_RAISED,
+            json!({ "message": "provider failed", "turn_id": "turn_1" }),
+        ),
+    ];
+
+    let conversation = project_conversation(&events);
+
+    assert_eq!(conversation.items.len(), 2);
+    assert_eq!(conversation.items[0].kind, ConversationItemKind::AgentWork);
+    assert_eq!(conversation.items[0].status, "completed");
+    assert_eq!(conversation.items[1].kind, ConversationItemKind::AgentWork);
+    assert_eq!(conversation.items[1].status, "failed");
+}
+
+#[test]
+fn conversation_terminal_turn_closes_live_agent_work() {
+    let events = vec![
+        event_at(
+            1,
+            1,
+            EventType::TURN_STARTED,
+            json!({ "turn_id": "turn_1" }),
+        ),
+        event_at(
+            2,
+            2,
+            EventType::TOOL_STARTED,
+            json!({ "tool_id": "tool_1", "name": "Search", "status": "running", "turn_id": "turn_1" }),
+        ),
+        event_at(
+            3,
+            6,
+            EventType::TURN_COMPLETED,
+            json!({ "turn_id": "turn_1" }),
+        ),
+    ];
+
+    let conversation = project_conversation(&events);
+    let work = conversation
+        .items
+        .iter()
+        .find(|item| item.kind == ConversationItemKind::AgentWork)
+        .expect("agent work");
+
+    assert_eq!(work.status, "completed");
+    assert_eq!(
+        work.updated_at,
+        Utc.with_ymd_and_hms(2026, 6, 18, 10, 0, 6).unwrap()
+    );
+}
+
+#[test]
+fn conversation_terminal_turn_closes_started_agent_work_without_tool_completed() {
+    let events = vec![
+        event_at(
+            1,
+            1,
+            EventType::TURN_STARTED,
+            json!({ "turn_id": "turn_1" }),
+        ),
+        event_at(
+            2,
+            2,
+            EventType::TOOL_STARTED,
+            json!({ "tool_id": "tool_1", "name": "Read file", "status": "started", "turn_id": "turn_1" }),
+        ),
+        event_at(
+            3,
+            6,
+            EventType::TURN_COMPLETED,
+            json!({ "turn_id": "turn_1" }),
+        ),
+    ];
+
+    let conversation = project_conversation(&events);
+    let work = conversation
+        .items
+        .iter()
+        .find(|item| item.kind == ConversationItemKind::AgentWork)
+        .expect("agent work");
+
+    assert_eq!(work.status, "completed");
+    assert_eq!(
+        work.updated_at,
+        Utc.with_ymd_and_hms(2026, 6, 18, 10, 0, 6).unwrap()
+    );
+    assert_eq!(work.source_event_ids.len(), 2);
 }
 
 #[test]
@@ -328,6 +430,61 @@ fn conversation_non_terminal_updates_do_not_resurrect_completed_work() {
     assert_eq!(conversation.items.len(), 1);
     assert_eq!(conversation.items[0].status, "completed");
     assert_eq!(conversation.items[0].detail["delta"], "late output");
+}
+
+#[test]
+fn conversation_accumulates_tool_output_delta_streams() {
+    let events = vec![
+        event_at(
+            1,
+            1,
+            EventType::TOOL_STARTED,
+            json!({
+                "tool_id": "tool_1",
+                "name": "shell",
+                "status": "running",
+                "detail": {
+                    "type": "shell",
+                    "command": "cargo test"
+                }
+            }),
+        ),
+        event_at(
+            2,
+            2,
+            EventType::TOOL_OUTPUT_DELTA,
+            json!({
+                "tool_id": "tool_1",
+                "stream_id": "stdout",
+                "delta": "running ",
+                "sequence": 1
+            }),
+        ),
+        event_at(
+            3,
+            3,
+            EventType::TOOL_OUTPUT_DELTA,
+            json!({
+                "tool_id": "tool_1",
+                "stream_id": "stdout",
+                "delta": "tests\n",
+                "sequence": 2
+            }),
+        ),
+    ];
+
+    let conversation = project_conversation(&events);
+
+    assert_eq!(conversation.items.len(), 1);
+    let detail = &conversation.items[0].detail["detail"];
+    assert_eq!(detail["type"], "shell");
+    assert_eq!(detail["stdout"], "running tests\n");
+    assert_eq!(detail["output"], "running tests\n");
+    assert_eq!(detail["streams"][0]["stream_id"], "stdout");
+    assert_eq!(detail["streams"][0]["text"], "running tests\n");
+    assert_eq!(detail["streams"][0]["chunk_count"], 2);
+    assert_eq!(detail["streams"][0]["last_sequence"], 2);
+    assert_eq!(conversation.items[0].detail["delta"], "tests\n");
 }
 
 #[test]
@@ -389,6 +546,61 @@ fn conversation_tracks_turn_meta_from_runtime_lifecycle() {
 }
 
 #[test]
+fn conversation_terminal_turn_closes_all_live_assistant_messages_for_that_turn() {
+    let events = vec![
+        event_at(
+            1,
+            1,
+            EventType::TURN_STARTED,
+            json!({ "turn_id": "turn_1" }),
+        ),
+        event_at(
+            2,
+            2,
+            EventType::ASSISTANT_MESSAGE_DELTA,
+            json!({ "turn_id": "turn_1", "message_id": "msg_a", "delta": "hello" }),
+        ),
+        event_at(
+            3,
+            3,
+            EventType::ASSISTANT_MESSAGE_DELTA,
+            json!({ "turn_id": "turn_1", "message_id": "msg_b", "delta": "hello" }),
+        ),
+        event_at(
+            4,
+            4,
+            EventType::TURN_COMPLETED,
+            json!({ "turn_id": "turn_1" }),
+        ),
+    ];
+
+    let conversation = project_conversation(&events);
+    let assistant_items = conversation
+        .items
+        .iter()
+        .filter(|item| item.kind == ConversationItemKind::AssistantMessage)
+        .collect::<Vec<_>>();
+
+    assert_eq!(assistant_items.len(), 2);
+    assert!(
+        assistant_items
+            .iter()
+            .all(|item| item.status == "completed"),
+        "terminal turns must not leave duplicate assistant identities streaming"
+    );
+    assert_eq!(
+        assistant_items
+            .iter()
+            .map(|item| item.updated_at)
+            .collect::<Vec<_>>(),
+        vec![
+            Utc.with_ymd_and_hms(2026, 6, 18, 10, 0, 4).unwrap(),
+            Utc.with_ymd_and_hms(2026, 6, 18, 10, 0, 4).unwrap(),
+        ]
+    );
+}
+
+#[test]
 fn conversation_preserves_turn_failure_error_payload() {
     let events = vec![
         event_at(
@@ -420,6 +632,77 @@ fn conversation_preserves_turn_failure_error_payload() {
         conversation.items[1].text.as_deref(),
         Some("No API key found for the selected model.")
     );
+}
+
+#[test]
+fn conversation_treats_cancel_acceptance_as_cancelled_turn_terminalization() {
+    let events = vec![
+        event_at(
+            1,
+            1,
+            EventType::TURN_STARTED,
+            json!({ "turn_id": "turn_1" }),
+        ),
+        event_at(2, 2, EventType::TURN_CANCEL_ACCEPTED, json!({})),
+    ];
+
+    let conversation = project_conversation(&events);
+
+    assert_eq!(conversation.items.len(), 2);
+    assert_eq!(conversation.items[0].kind, ConversationItemKind::TurnMeta);
+    assert_eq!(conversation.items[0].status, "cancelled");
+    assert_eq!(
+        conversation.items[0].updated_at,
+        Utc.with_ymd_and_hms(2026, 6, 18, 10, 0, 2).unwrap()
+    );
+    assert_eq!(conversation.items[1].kind, ConversationItemKind::Status);
+    assert_eq!(conversation.items[1].status, "cancelled");
+    assert_eq!(
+        conversation.items[1].text.as_deref(),
+        Some("Turn cancelled")
+    );
+}
+
+#[test]
+fn conversation_coalesces_duplicate_turn_failure_status_items() {
+    let events = vec![
+        event_at(
+            1,
+            1,
+            EventType::TURN_STARTED,
+            json!({ "turn_id": "turn_1" }),
+        ),
+        event_at(
+            2,
+            2,
+            EventType::TURN_FAILED,
+            json!({ "turn_id": "turn_1", "error": "provider stream disconnected" }),
+        ),
+        event_at(
+            3,
+            3,
+            EventType::TURN_FAILED,
+            json!({ "turn_id": "turn_1", "error": "provider stream disconnected" }),
+        ),
+    ];
+
+    let conversation = project_conversation(&events);
+    let status_items = conversation
+        .items
+        .iter()
+        .filter(|item| item.kind == ConversationItemKind::Status)
+        .collect::<Vec<_>>();
+
+    assert_eq!(conversation.items.len(), 2);
+    assert_eq!(status_items.len(), 1);
+    assert_eq!(status_items[0].status, "failed");
+    assert_eq!(
+        status_items[0].text.as_deref(),
+        Some("provider stream disconnected")
+    );
+    assert_eq!(status_items[0].source_event_ids.len(), 2);
+    assert_eq!(status_items[0].source_event_ranges[0].from_seq, 2);
+    assert_eq!(status_items[0].source_event_ranges[0].to_seq, 3);
 }
 
 #[test]

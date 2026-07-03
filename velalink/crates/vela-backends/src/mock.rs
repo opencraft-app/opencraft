@@ -15,6 +15,7 @@ pub struct MockBackendAdapter {
     resolved_agent_configs: Arc<Mutex<Vec<Option<ResolvedAgentConfig>>>>,
     cancels: Arc<Mutex<Vec<String>>>,
     probes: Arc<Mutex<usize>>,
+    models: Vec<BackendModel>,
     model_discovery_error: Option<String>,
 }
 
@@ -27,8 +28,14 @@ impl MockBackendAdapter {
             resolved_agent_configs: Arc::new(Mutex::new(Vec::new())),
             cancels: Arc::new(Mutex::new(Vec::new())),
             probes: Arc::new(Mutex::new(0)),
+            models: Vec::new(),
             model_discovery_error: None,
         }
+    }
+
+    pub fn with_models(mut self, models: Vec<BackendModel>) -> Self {
+        self.models = models;
+        self
     }
 
     pub fn with_model_discovery_error(mut self, message: impl Into<String>) -> Self {
@@ -79,7 +86,7 @@ impl BackendAdapter for MockBackendAdapter {
         if let Some(message) = &self.model_discovery_error {
             anyhow::bail!("{}", message);
         }
-        Ok(Vec::new())
+        Ok(self.models.clone())
     }
 
     async fn stream_user_message(

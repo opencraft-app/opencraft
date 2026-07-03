@@ -183,6 +183,45 @@ func TestCloudAgentClientSendsWorkspaceKeyWhenCapabilityAdvertised(t *testing.T)
 	}
 }
 
+func TestCloudAgentClientSendsConfiguredSandboxBackend(t *testing.T) {
+	var seenSandboxBackend string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/cloudagent/capabilities":
+			writeTestJSON(t, w, map[string]any{
+				"object":                 "cloudagent.capabilities",
+				"protocol":               "cloudagent.session_events",
+				"version":                "v1",
+				"session_event_protocol": true,
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/cloudagent/sessions":
+			var req struct {
+				SandboxBackend string `json:"sandbox_backend"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Errorf("decode session create: %v", err)
+			}
+			seenSandboxBackend = req.SandboxBackend
+			writeTestJSON(t, w, map[string]any{"session_id": "session-http", "state": "ready"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewCloudAgentClient(server.URL, nil)
+	client.SetSandboxBackend(" talos ")
+	if err := client.Initialize(context.Background()); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	if _, err := client.NewSession(context.Background(), "/workspace", ""); err != nil {
+		t.Fatalf("new session: %v", err)
+	}
+	if seenSandboxBackend != "talos" {
+		t.Fatalf("expected sandbox_backend talos, got %q", seenSandboxBackend)
+	}
+}
+
 func TestCloudAgentClientCloseSessionRequiresAdvertisedCapability(t *testing.T) {
 	var closeCalled atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

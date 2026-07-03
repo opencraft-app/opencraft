@@ -20,12 +20,14 @@ import (
 type LocalRuntimeHostConfig struct {
 	Root           string
 	CommandPrefix  string
+	CommandShell   string
 	AllowHostPaths bool
 }
 
 type LocalRuntimeHost struct {
 	root           string
 	commandPrefix  string
+	commandShell   string
 	allowHostPaths bool
 	mu             sync.Mutex
 	activeMu       sync.Mutex
@@ -36,6 +38,7 @@ type LocalRuntimeHost struct {
 type LocalRuntimeHostInfo struct {
 	Root           string
 	CommandPrefix  string
+	CommandShell   string
 	AllowHostPaths bool
 }
 
@@ -56,6 +59,7 @@ func NewLocalRuntimeHostFromEnv() (*LocalRuntimeHost, error) {
 	return NewLocalRuntimeHost(LocalRuntimeHostConfig{
 		Root:           firstEnv("GATEWAY_LOCAL_RUNTIME_ROOT", "LOCAL_RUNTIME_ROOT"),
 		CommandPrefix:  firstEnv("GATEWAY_LOCAL_RUNTIME_COMMAND_PREFIX", "LOCAL_RUNTIME_COMMAND_PREFIX"),
+		CommandShell:   firstNonEmpty(firstEnv("GATEWAY_LOCAL_RUNTIME_SHELL", "LOCAL_RUNTIME_SHELL"), "/bin/sh"),
 		AllowHostPaths: envFlagDefault("GATEWAY_LOCAL_RUNTIME_ALLOW_HOST_PATHS", true),
 	})
 }
@@ -72,6 +76,7 @@ func NewLocalRuntimeHost(cfg LocalRuntimeHostConfig) (*LocalRuntimeHost, error) 
 	host := &LocalRuntimeHost{
 		root:           root,
 		commandPrefix:  strings.TrimSpace(cfg.CommandPrefix),
+		commandShell:   firstNonEmpty(strings.TrimSpace(cfg.CommandShell), "/bin/sh"),
 		allowHostPaths: cfg.AllowHostPaths,
 	}
 	if err := os.MkdirAll(host.handlesDir(), 0o755); err != nil {
@@ -81,7 +86,6 @@ func NewLocalRuntimeHost(cfg LocalRuntimeHostConfig) (*LocalRuntimeHost, error) 
 }
 
 var _ RuntimeHost = (*LocalRuntimeHost)(nil)
-var _ RuntimeHostSandboxProber = (*LocalRuntimeHost)(nil)
 
 func (h *LocalRuntimeHost) Info() LocalRuntimeHostInfo {
 	if h == nil {
@@ -90,6 +94,7 @@ func (h *LocalRuntimeHost) Info() LocalRuntimeHostInfo {
 	return LocalRuntimeHostInfo{
 		Root:           h.root,
 		CommandPrefix:  h.commandPrefix,
+		CommandShell:   h.commandShell,
 		AllowHostPaths: h.allowHostPaths,
 	}
 }
@@ -212,42 +217,6 @@ func (h *LocalRuntimeHost) RefreshSandboxTimeout(ctx context.Context, id string,
 	return h.writeHandleLocked(handle)
 }
 
-func (h *LocalRuntimeHost) ProbeSandbox(ctx context.Context, id string) (RuntimeHostSandboxProbe, error) {
-	probe := RuntimeHostSandboxProbe{
-		SandboxID: strings.TrimSpace(id),
-		Domain:    runtimeHostTypeLocalWisp,
-		CheckedAt: time.Now().UTC(),
-	}
-	if h == nil || probe.SandboxID == "" {
-		probe.Status = "empty_id"
-		return probe, nil
-	}
-	id, err := validateLocalRuntimeID(probe.SandboxID)
-	if err != nil {
-		return probe, err
-	}
-	if err := ctx.Err(); err != nil {
-		return probe, err
-	}
-	handle, err := h.readHandle(id)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			probe.SandboxID = id
-			probe.Exists = false
-			probe.Status = "not_found"
-			return probe, nil
-		}
-		return probe, err
-	}
-	probe.SandboxID = handle.ID
-	probe.Exists = true
-	probe.Status = "exists"
-	if !handle.ExpiresAt.IsZero() {
-		probe.Detail = "expires_at=" + handle.ExpiresAt.Format(time.RFC3339Nano)
-	}
-	return probe, nil
-}
-
 func (h *LocalRuntimeHost) RunCommand(ctx context.Context, target RuntimeHostTarget, command string, env map[string]string, onStdout func(string) error, onStderr func(string) error) (CommandResult, error) {
 	if h == nil {
 		return CommandResult{}, errors.New("local runtime host is nil")
@@ -275,9 +244,9 @@ func (h *LocalRuntimeHost) RunCommand(ctx context.Context, target RuntimeHostTar
 		commandEnv[key] = value
 	}
 	if h.commandPrefix != "" {
-		command = h.expandCommandPrefix(target, handle) + " " + shellQuote(shellEnvPrefix(commandEnv)+localRuntimeTrackedCommand(command, pidFile, groupFile, true))
+		command = h.expandCommandPrefix(target, handle) + " " + shellQuote(shellEnvPrefix(commandEnv)+localRuntimeTrackedCommand(command, pidFile, groupFile, h.commandShell, true))
 	} else {
-		command = shellEnvPrefix(commandEnv) + localRuntimeTrackedCommand(command, pidFile, groupFile, false)
+		command = shellEnvPrefix(commandEnv) + localRuntimeTrackedCommand(command, pidFile, groupFile, h.commandShell, false)
 	}
 	cmdCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -401,7 +370,8 @@ func (h *LocalRuntimeHost) expandCommandPrefix(target RuntimeHostTarget, handle 
 	return prefix
 }
 
-func localRuntimeTrackedCommand(command, pidFile, groupFile string, setSid bool) string {
+func localRuntimeTrackedCommand(command, pidFile, groupFile, shellPath string, setSid bool) string {
+	shellPath = firstNonEmpty(strings.TrimSpace(shellPath), "/bin/sh")
 	pidDir := filepath.Dir(pidFile)
 	inner := "mkdir -p " + shellQuote(pidDir) + "\n" +
 		"echo $$ > " + shellQuote(pidFile) + "\n" +
@@ -414,10 +384,8 @@ func localRuntimeTrackedCommand(command, pidFile, groupFile string, setSid bool)
 	if !setSid {
 		return inner
 	}
-	return "runner=/bin/sh\n" +
-		"if command -v bash >/dev/null 2>&1; then runner=$(command -v bash); fi\n" +
-		"if command -v setsid >/dev/null 2>&1 && setsid --wait \"$runner\" -lc ':' >/dev/null 2>&1; then exec setsid --wait \"$runner\" -lc " + shellQuote(inner) + "; fi\n" +
-		"exec \"$runner\" -lc " + shellQuote(inner)
+	return "if command -v setsid >/dev/null 2>&1 && setsid --help 2>&1 | grep -q -- '--wait'; then exec setsid --wait " + shellQuote(shellPath) + " -lc " + shellQuote(inner) + "; fi\n" +
+		"exec " + shellQuote(shellPath) + " -lc " + shellQuote(inner)
 }
 
 func (h *LocalRuntimeHost) cancelTrackedLocalRuntimeCommands(ctx context.Context, target RuntimeHostTarget, handle localRuntimeHostHandle) error {

@@ -1,62 +1,222 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { SpanStatusCode } from "@opentelemetry/api";
+import { Folder, FolderOpen } from "lucide-react";
 import {
+  createFetchVelaEventStreamTransport,
   createVeladClient,
+  resolveVeladFetch,
   type BackendKindWire,
-  type BackendWire,
+  type BackendUsageWireResponse,
+  type ClientInputPart,
 } from "../../../packages/vela-chat-client/src";
-import {
-  buildVelaSessionSetupSelection,
-  useVelaChatSession,
-} from "../../../packages/vela-chat-controller/src";
+import { useVelaChatSession } from "../../../packages/vela-chat-controller/src";
 import {
   VelaQueryProvider,
   useArchiveSessionMutation,
   useSessionListViewQuery,
 } from "../../../packages/vela-chat-query/src";
-import type { ChatHostPolicy } from "../../../packages/vela-chat-render-model/src";
-import { ChatSurface } from "../../../packages/vela-chat-web/src";
+import { type ChatHostPolicy } from "../../../packages/vela-chat-render-model/src";
+import {
+  buildSessionLocationInfo,
+  ChatSurface,
+  type ConversationRevealStateEvent,
+  type ConversationScrollControllerDebug,
+  type ConversationScrollLifecycleEvent,
+  type SessionDragPreviewInput,
+  type SessionLocationInfo,
+} from "../../../packages/vela-chat-web/src";
 import {
   SessionSidebar,
   VelaDesktopShell,
   type RuntimeHostBridge,
 } from "../../../packages/vela-desktop-shell/src";
+import { VelaLocalTracer } from "../../../packages/vela-observability-client/src";
 import {
+  endSessionDragPreview,
+  moveSessionDragPreview,
   runtimeHostBridgeForInfo,
+  readDesktopSettings,
   readRuntimeBootstrap,
   readRuntimeChromeState,
   retryRuntimeBootstrap,
+  saveDesktopSettings,
+  selectDesktopWorkingDirectory,
+  showDesktopPathInFolder,
+  startSessionDragPreview,
   subscribeRuntimeChromeState,
   type RuntimeChromeStateResponse,
   type RuntimeHostInfo,
   type RuntimeBootstrap,
 } from "./desktopBridge";
-import { DesktopEmptySurface } from "./DesktopEmptySurface";
 import {
   DesktopSettingsPage,
   DesktopSettingsSidebar,
   type DesktopSettingsPanelId,
 } from "./DesktopSettingsPage";
 import { createRuntimeHostStateStores } from "./hostState";
+import {
+  DesktopNewSessionPage,
+  type DesktopNewSessionSubmitInput,
+} from "./new-session";
+import { normalizeInitialSessionMessage } from "./sessionCreation";
 import "./style.css";
 
 const DEFAULT_WORKING_DIRECTORY = "/";
 const DEFAULT_WEB_API_BASE_URL = "/api/v1";
-const DEFAULT_BACKEND_STORAGE_KEY = "vela-desktop:settings:default-backend";
 const DESKTOP_APP_VERSION = "0.0.1";
-const DESKTOP_BACKEND_PREFERENCE = ["codex", "acp", "pi"] satisfies BackendKindWire[];
+const DESKTOP_BACKEND_PREFERENCE = [
+  "vela_engine",
+  "codex",
+  "tcodex",
+  "acp",
+  "pi",
+] satisfies BackendKindWire[];
 const DESKTOP_SHELL_HOST_POLICY = { kind: "desktop_shell" } satisfies ChatHostPolicy;
 const DESKTOP_SESSION_LIST_OPTIONS = { limit: 80 };
 
 type RuntimeHostStateStores = ReturnType<typeof createRuntimeHostStateStores>;
+type DesktopMainView = "new-session" | "chat";
+
+function conversationScrollLifecycleSeverity(event: ConversationScrollLifecycleEvent) {
+  if (conversationScrollLifecycleErrorMessage(event)) return "ERROR";
+  return "INFO";
+}
+
+function conversationScrollLifecycleErrorMessage(event: ConversationScrollLifecycleEvent) {
+  if (event.type === "route_restore_mismatch") {
+    return `scroll restore mismatch: delta ${event.deltaPx ?? "unknown"}px`;
+  }
+  if (
+    event.type === "route_leave_skipped" &&
+    event.reason === "no_snapshot" &&
+    Math.abs(event.measurementScrollTop ?? 0) > 2
+  ) {
+    return `scroll snapshot missing at ${event.measurementScrollTop}px`;
+  }
+  return "";
+}
+
+function conversationScrollLifecycleAttributes(
+  event: ConversationScrollLifecycleEvent,
+  fallbackSessionId: string,
+) {
+  return {
+    "vela.operation": "vela.chat.scroll_resume",
+    "vela.chat.scroll_resume.event": event.type,
+    "vela.chat.scroll_resume.reason": event.reason ?? "",
+    "vela.chat.scroll_resume.route_key": event.routeKey ?? "",
+    "vela.chat.scroll_resume.transport": event.transportKey,
+    "vela.chat.scroll_resume.blocked_reason": event.blockedReason ?? "",
+    "vela.chat.scroll_resume.scroll_top": event.scrollTop ?? -1,
+    "vela.chat.scroll_resume.measurement_scroll_top": event.measurementScrollTop ?? -1,
+    "vela.chat.scroll_resume.target_scroll_top": event.targetScrollTop ?? -1,
+    "vela.chat.scroll_resume.actual_scroll_top": event.actualScrollTop ?? -1,
+    "vela.chat.scroll_resume.anchor_target_scroll_top": event.anchorTargetScrollTop ?? -1,
+    "vela.chat.scroll_resume.delta_px": event.deltaPx ?? -1,
+    "vela.chat.scroll_resume.existing_scroll_top": event.existingScrollTop ?? -1,
+    "vela.chat.scroll_resume.viewport_height": event.viewportHeight ?? -1,
+    "vela.chat.scroll_resume.viewport_width": event.viewportWidth ?? -1,
+    "vela.chat.scroll_resume.content_height": event.contentHeight ?? -1,
+    "vela.chat.scroll_resume.follow_output": event.followOutput ?? false,
+    "vela.chat.scroll_resume.has_anchor": event.hasAnchor ?? false,
+    "vela.chat.scroll_resume.has_pending_resume_state": event.hasPendingResumeState ?? false,
+    "vela.chat.scroll_resume.has_resume_state": event.hasResumeState ?? false,
+    "vela.chat.scroll_resume.history_ready": event.isHistoryReady ?? false,
+    "vela.chat.scroll_resume.stable_frames": event.stableFrames ?? -1,
+    "vela.chat.scroll_resume.user_intent": event.userIntent ?? "",
+    "vela.session_id": event.routeKey ?? fallbackSessionId,
+  };
+}
+
+function conversationScrollDebugAttributes(
+  debug: ConversationScrollControllerDebug,
+  sessionId: string,
+) {
+  return {
+    "vela.operation": "vela.chat.scroll_resume.debug",
+    "vela.chat.scroll_resume.debug.route_initialized": debug.routeInitialized,
+    "vela.chat.scroll_resume.debug.route_key": debug.routeKey ?? "",
+    "vela.chat.scroll_resume.debug.route_resume_status": debug.routeResumeStatus,
+    "vela.chat.scroll_resume.debug.route_resume_scroll_top":
+      debug.routeResumeScrollTop ?? -1,
+    "vela.chat.scroll_resume.debug.follow_output": debug.followOutput,
+    "vela.chat.scroll_resume.debug.bottom_anchor_mode": debug.bottomAnchorMode,
+    "vela.chat.scroll_resume.debug.bottom_anchor_blocked_reason":
+      debug.bottomAnchorBlockedReason ?? "",
+    "vela.chat.scroll_resume.debug.bottom_anchor_pending_work":
+      debug.bottomAnchorPendingWork,
+    "vela.chat.scroll_resume.debug.bottom_anchor_pending_reason":
+      debug.bottomAnchorPendingReason ?? "",
+    "vela.chat.scroll_resume.debug.bottom_anchor_last_fulfilled_reason":
+      debug.bottomAnchorLastFulfilledReason ?? "",
+    "vela.chat.scroll_resume.debug.last_scroll_write_source":
+      debug.lastScrollWrite?.source ?? "",
+    "vela.chat.scroll_resume.debug.last_scroll_write_next_top":
+      debug.lastScrollWrite?.nextScrollTop ?? -1,
+    "vela.chat.scroll_resume.debug.last_scroll_write_previous_top":
+      debug.lastScrollWrite?.previousScrollTop ?? -1,
+    "vela.chat.scroll_resume.debug.last_scroll_write_reason":
+      debug.lastScrollWrite?.reason ?? "",
+    "vela.chat.scroll_resume.debug.last_follow_signal": debug.lastFollowSignal,
+    "vela.chat.scroll_resume.debug.last_layout_signal": debug.lastLayoutSignal,
+    "vela.session_id": sessionId,
+  };
+}
+
+function conversationRevealStateAttributes(
+  event: ConversationRevealStateEvent,
+  fallbackSessionId: string,
+) {
+  return {
+    "vela.operation": "vela.chat.conversation.reveal_state",
+    "vela.chat.conversation.bottom_anchor_blocked_reason":
+      event.bottomAnchorBlockedReason ?? "",
+    "vela.chat.conversation.bottom_anchor_last_fulfilled_reason":
+      event.bottomAnchorLastFulfilledReason ?? "",
+    "vela.chat.conversation.bottom_anchor_mode": event.bottomAnchorMode,
+    "vela.chat.conversation.bottom_anchor_pending_work":
+      event.bottomAnchorPendingWork,
+    "vela.chat.conversation.bottom_anchor_pending_reason":
+      event.bottomAnchorPendingReason ?? "",
+    "vela.chat.conversation.history_phase": event.historyPhase,
+    "vela.chat.conversation.reveal_state": event.revealState,
+    "vela.chat.conversation.route_initialized": event.routeInitialized,
+    "vela.chat.conversation.route_key": event.routeKey ?? "",
+    "vela.chat.conversation.route_resume_scroll_top": event.routeResumeScrollTop ?? -1,
+    "vela.chat.conversation.route_resume_status": event.routeResumeStatus,
+    "vela.session_id": event.sessionId || fallbackSessionId,
+  };
+}
+
+function chatViewStateAttributes(input: {
+  activeSessionId: string;
+  activeSessionStatus: string;
+  controllerActiveSessionId: string;
+  historyPhase: string;
+  mainView: DesktopMainView;
+  rowCount: number;
+  sessionTitle: string;
+}) {
+  return {
+    "vela.operation": "vela.chat.view_state",
+    "vela.chat.view_state.active_session_id": input.activeSessionId,
+    "vela.chat.view_state.active_session_status": input.activeSessionStatus,
+    "vela.chat.view_state.controller_active_session_id": input.controllerActiveSessionId,
+    "vela.chat.view_state.history_phase": input.historyPhase,
+    "vela.chat.view_state.main_view": input.mainView,
+    "vela.chat.view_state.row_count": input.rowCount,
+    "vela.chat.view_state.session_title": input.sessionTitle,
+    "vela.session_id": input.activeSessionId,
+  };
+}
 
 export function DesktopApp() {
   const hostStateStores = useMemo(() => createRuntimeHostStateStores(), []);
-  const [settingsPanel, setSettingsPanel] =
-    useState<DesktopSettingsPanelId>("general");
   const initialShellLayout = hostStateStores.shellLayoutStore?.read();
   const initialHostInfo = useMemo<RuntimeHostInfo>(
     () => ({
       apiBaseUrl: DEFAULT_WEB_API_BASE_URL,
+      otelBaseUrl: undefined,
       chromeState: {
         platform: "darwin",
         isFullscreen: false,
@@ -64,7 +224,7 @@ export function DesktopApp() {
         reserveTrafficLightGutter: true,
         toolbarCenterY: 28,
         toolbarIconSize: 24,
-        leadingToolbarInset: 84,
+        leadingToolbarInset: 86,
         toolbarSize: 28,
       },
       hostKind: window.velaDesktop ? "electron" : "web",
@@ -74,7 +234,7 @@ export function DesktopApp() {
   );
   const [bootstrap, setBootstrap] = useState<RuntimeBootstrap>({
     status: "starting",
-    message: window.velaDesktop ? "Starting local runtime..." : "Connecting to runtime...",
+    message: window.velaDesktop ? "Starting Vela" : "Connecting",
   });
   const [fallbackHostInfo, setFallbackHostInfo] = useState(initialHostInfo);
   const [isSidebarVisible, setIsSidebarVisible] = useState(
@@ -87,7 +247,7 @@ export function DesktopApp() {
   const loadRuntimeBootstrap = useCallback(async (retry = false) => {
     setBootstrap({
       status: "starting",
-      message: window.velaDesktop ? "Starting local runtime..." : "Connecting to runtime...",
+      message: window.velaDesktop ? "Starting Vela" : "Connecting",
     });
     const nextBootstrap = retry
       ? await retryRuntimeBootstrap()
@@ -100,7 +260,7 @@ export function DesktopApp() {
     let cancelled = false;
     setBootstrap({
       status: "starting",
-      message: window.velaDesktop ? "Starting local runtime..." : "Connecting to runtime...",
+      message: window.velaDesktop ? "Starting Vela" : "Connecting",
     });
     void readRuntimeBootstrap().then((nextBootstrap) => {
       if (cancelled) return;
@@ -165,21 +325,51 @@ function DesktopReadyApp({
   onSidebarVisibilityChange,
   onSidebarWidthChange,
 }: DesktopReadyAppProps) {
-  const [activeSessionId, setActiveSessionId] = useState(
-    () => hostStateStores.sessionSelectionStore?.read()?.sessionId ?? "",
-  );
+  const [activeSessionId, setActiveSessionId] = useState("");
+  const [mainView, setMainView] = useState<DesktopMainView>("new-session");
+  const [settingsPanel, setSettingsPanel] =
+    useState<DesktopSettingsPanelId>("engine");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [selectedBackendKind, setSelectedBackendKind] = useState<BackendKindWire | "">(
-    readDefaultBackendPreference,
-  );
+  const [isCreatingSession, setIsCreatingSession] = useState(false);
+  const [selectedBackendKind, setSelectedBackendKind] = useState<BackendKindWire | "">("");
+  const [backendUsages, setBackendUsages] = useState<
+    Partial<Record<BackendKindWire, BackendUsageWireResponse>>
+  >({});
+  const [hasLoadedDesktopSettings, setHasLoadedDesktopSettings] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [chromeState, setChromeState] = useState<RuntimeChromeStateResponse | undefined>(
     hostInfo.chromeState,
   );
+  const optimisticCreatedSessionIdRef = useRef<string | null>(null);
+  const loggedOptimisticMissingSessionIdRef = useRef<string | null>(null);
+  const lastChatViewStateSignatureRef = useRef("");
+  const lastConversationRevealStateSignatureRef = useRef("");
+  const lastConversationScrollDebugSignatureRef = useRef("");
 
   useEffect(() => {
-    writeDefaultBackendPreference(selectedBackendKind);
-  }, [selectedBackendKind]);
+    let cancelled = false;
+    void readDesktopSettings()
+      .then((settings) => {
+        if (cancelled) return;
+        setSelectedBackendKind(settings.defaultBackend);
+      })
+      .catch((err) => {
+        console.warn("Failed to load desktop settings", err);
+      })
+      .finally(() => {
+        if (!cancelled) setHasLoadedDesktopSettings(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedDesktopSettings) return;
+    void saveDesktopSettings({ defaultBackend: selectedBackendKind }).catch((err) => {
+      console.warn("Failed to save desktop settings", err);
+    });
+  }, [hasLoadedDesktopSettings, selectedBackendKind]);
 
   useEffect(() => {
     if (!activeSessionId) return;
@@ -190,6 +380,32 @@ function DesktopReadyApp({
   }, [activeSessionId, hostStateStores.sessionSelectionStore]);
 
   const apiBaseUrl = hostInfo.apiBaseUrl;
+  const observability = useMemo(
+    () =>
+      new VelaLocalTracer({
+        endpoint: hostInfo.otelBaseUrl,
+        onExportError: (error, context) => {
+          console.warn(
+            `Failed to export ${context.kind} observability payload to ${context.endpoint}`,
+            error,
+          );
+        },
+        serviceName: hostInfo.hostKind === "electron" ? "vela-desktop-renderer" : "vela-web",
+        tracerName: "vela.chat.client",
+      }),
+    [hostInfo.hostKind, hostInfo.otelBaseUrl],
+  );
+  useEffect(() => {
+    const span = observability.startSpan("vela.desktop.renderer.ready", {
+      attributes: {
+        "vela.operation": "vela.desktop.renderer.ready",
+        "vela.api_base_url": hostInfo.apiBaseUrl,
+        "vela.host_kind": hostInfo.hostKind,
+        "vela.otel_base_url": hostInfo.otelBaseUrl,
+      },
+    });
+    observability.endSpan(span, { code: SpanStatusCode.OK });
+  }, [hostInfo.apiBaseUrl, hostInfo.hostKind, hostInfo.otelBaseUrl, observability]);
   useEffect(() => {
     let cancelled = false;
     void readRuntimeChromeState(hostInfo.chromeState).then((nextChromeState) => {
@@ -206,30 +422,204 @@ function DesktopReadyApp({
     () => runtimeHostBridgeForInfo(hostInfo, chromeState),
     [chromeState, hostInfo],
   );
-  const client = useMemo(() => createVeladClient({ baseUrl: apiBaseUrl }), [apiBaseUrl]);
+  const veladFetch = useMemo(() => resolveVeladFetch(), []);
+  const client = useMemo(
+    () => createVeladClient({ baseUrl: apiBaseUrl, fetch: veladFetch, observability }),
+    [apiBaseUrl, observability, veladFetch],
+  );
+  const eventStreamTransport = useMemo(
+    () => createFetchVelaEventStreamTransport(veladFetch, { observability }),
+    [observability, veladFetch],
+  );
   const sessionList = useSessionListViewQuery({
     client,
     options: DESKTOP_SESSION_LIST_OPTIONS,
   });
   const sessions = sessionList.data?.sessions ?? [];
+  const activeSession = useMemo(
+    () => sessions.find((session) => session.id === activeSessionId),
+    [activeSessionId, sessions],
+  );
+  const activeSessionTitle = useMemo(() => {
+    const title = activeSession?.title?.trim();
+    return title || "New chat";
+  }, [activeSession]);
+  const observeConversationScrollLifecycle = useCallback(
+    (event: ConversationScrollLifecycleEvent) => {
+      const attributes = conversationScrollLifecycleAttributes(event, activeSessionId);
+      const errorMessage = conversationScrollLifecycleErrorMessage(event);
+      const span = observability.startSpan("vela.chat.scroll_resume.lifecycle", {
+        attributes,
+      });
+      if (errorMessage) {
+        observability.recordError(span, new Error(errorMessage));
+      }
+      void observability.emitLog({
+        severityText: conversationScrollLifecycleSeverity(event),
+        body: `conversation scroll lifecycle: ${event.type}`,
+        attributes,
+        span,
+      });
+      observability.endSpan(span, {
+        code: errorMessage ? SpanStatusCode.ERROR : SpanStatusCode.OK,
+        message: errorMessage || undefined,
+      });
+    },
+    [activeSessionId, observability],
+  );
+  const observeConversationRevealState = useCallback(
+    (event: ConversationRevealStateEvent) => {
+      const attributes = conversationRevealStateAttributes(event, activeSessionId);
+      const signature = JSON.stringify(attributes);
+      if (lastConversationRevealStateSignatureRef.current === signature) return;
+      lastConversationRevealStateSignatureRef.current = signature;
+      const span = observability.startSpan("vela.chat.conversation.reveal_state", {
+        attributes,
+      });
+      const invalidReveal =
+        event.historyPhase === "ready" &&
+        event.revealState === "revealed" &&
+        !event.routeInitialized;
+      if (invalidReveal) {
+        observability.recordError(
+          span,
+          new Error("conversation revealed before route scroll initialized"),
+        );
+      }
+      observability.endSpan(span, {
+        code: invalidReveal ? SpanStatusCode.ERROR : SpanStatusCode.OK,
+        message: invalidReveal
+          ? "conversation revealed before route scroll initialized"
+          : undefined,
+      });
+    },
+    [activeSessionId, observability],
+  );
+  const activeSessionLocationInfo = useMemo(
+    () => buildSessionLocationInfo(activeSession?.working_directory),
+    [activeSession?.working_directory],
+  );
+  const openActiveSessionLocation = useCallback(() => {
+    if (hostInfo.hostKind !== "electron" || !activeSessionLocationInfo?.path) return;
+    const locationPath = activeSessionLocationInfo.path;
+    const span = observability.startSpan("vela.desktop.open_location", {
+      attributes: {
+        path: locationPath,
+        session_id: activeSessionId ?? "",
+      },
+    });
+    void showDesktopPathInFolder(locationPath)
+      .then((accepted) => {
+        observability.endSpan(span, {
+          code: accepted ? SpanStatusCode.OK : SpanStatusCode.ERROR,
+          message: accepted ? undefined : "desktop host rejected open location",
+        });
+      })
+      .catch((error) => {
+        observability.recordError(span, error);
+        observability.endSpan(span, {
+          code: SpanStatusCode.ERROR,
+          message: error instanceof Error ? error.message : "failed to open location",
+        });
+      });
+  }, [activeSessionId, activeSessionLocationInfo?.path, hostInfo.hostKind, observability]);
   const controller = useVelaChatSession({
     client,
     baseUrl: apiBaseUrl,
     clientStateStore: hostStateStores.clientStateStore,
+    eventStreamTransport,
     hostPolicy: DESKTOP_SHELL_HOST_POLICY,
+    observability,
     sessionId: activeSessionId,
   });
-  const setup = useMemo(
-    () =>
-      buildVelaSessionSetupSelection({
-        backends: controller.backends,
-        selectedBackend: selectedBackendKind,
-        preferredBackends: DESKTOP_BACKEND_PREFERENCE,
-        selectedModel: "",
-        selectedPermissionMode: "",
-        selectedReasoningEffort: "",
+  useEffect(() => {
+    let cancelled = false;
+    const usageBackends = controller.backends.filter(
+      (backend) => backend.capabilities.usage_snapshot === true,
+    );
+    if (usageBackends.length === 0) {
+      setBackendUsages({});
+      return;
+    }
+    void Promise.all(
+      usageBackends.map(async (backend) => {
+        try {
+          return [backend.kind, await client.getBackendUsage(backend.kind)] as const;
+        } catch (err) {
+          console.warn(`Failed to load backend usage for ${backend.kind}`, err);
+          return null;
+        }
       }),
-    [controller.backends, selectedBackendKind],
+    ).then((entries) => {
+      if (cancelled) return;
+      const next: Partial<Record<BackendKindWire, BackendUsageWireResponse>> = {};
+      for (const entry of entries) {
+        if (entry) next[entry[0]] = entry[1];
+      }
+      setBackendUsages(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, controller.backends]);
+  const startSidebarSessionDragPreview = useCallback(
+    (input: SessionDragPreviewInput) => {
+      if (hostInfo.hostKind !== "electron") return;
+      void startSessionDragPreview(input.sessionId, input.point.screenX, input.point.screenY);
+    },
+    [hostInfo.hostKind],
+  );
+  const moveSidebarSessionDragPreview = useCallback(
+    (input: SessionDragPreviewInput) => {
+      if (hostInfo.hostKind !== "electron") return;
+      void moveSessionDragPreview(input.point.screenX, input.point.screenY);
+    },
+    [hostInfo.hostKind],
+  );
+  const endSidebarSessionDragPreview = useCallback(() => {
+    if (hostInfo.hostKind !== "electron") return;
+    void endSessionDragPreview();
+  }, [hostInfo.hostKind]);
+  useEffect(() => {
+    const attributes = chatViewStateAttributes({
+      activeSessionId,
+      activeSessionStatus: activeSession?.status ?? "",
+      controllerActiveSessionId: controller.activeSessionId,
+      historyPhase: controller.historyPhase,
+      mainView,
+      rowCount: controller.model.rows.length,
+      sessionTitle: activeSessionTitle,
+    });
+    const signature = JSON.stringify(attributes);
+    if (lastChatViewStateSignatureRef.current === signature) return;
+    lastChatViewStateSignatureRef.current = signature;
+    const span = observability.startSpan("vela.chat.view_state.snapshot", {
+      attributes,
+    });
+    observability.endSpan(span, { code: SpanStatusCode.OK });
+  }, [
+    activeSession?.status,
+    activeSessionId,
+    activeSessionTitle,
+    controller.activeSessionId,
+    controller.historyPhase,
+    controller.model.rows.length,
+    mainView,
+    observability,
+  ]);
+  const observeConversationScrollDebug = useCallback(
+    (debug: ConversationScrollControllerDebug) => {
+      controller.setConversationScrollDebug(debug);
+      const attributes = conversationScrollDebugAttributes(debug, activeSessionId);
+      const signature = JSON.stringify(attributes);
+      if (lastConversationScrollDebugSignatureRef.current === signature) return;
+      lastConversationScrollDebugSignatureRef.current = signature;
+      const span = observability.startSpan("vela.chat.scroll_resume.debug_snapshot", {
+        attributes,
+      });
+      observability.endSpan(span, { code: SpanStatusCode.OK });
+    },
+    [activeSessionId, controller.setConversationScrollDebug, observability],
   );
   const hostLabel =
     hostBridge.platform === "web"
@@ -237,27 +627,72 @@ function DesktopReadyApp({
       : hostBridge.platform === "macos"
         ? "Electron on macOS"
         : `Electron on ${hostBridge.platform}`;
+  const selectChatSession = useCallback((sessionId: string) => {
+    setError(null);
+    setActiveSessionId(sessionId);
+    setIsSettingsOpen(false);
+    setMainView("chat");
+  }, []);
 
   useEffect(() => {
     if (!sessionList.data) return;
     setError(null);
-    setActiveSessionId((current) =>
-      current && sessionList.data.sessions.some((session) => session.id === current)
-        ? current
-        : sessionList.data.sessions[0]?.id || "",
+    const hasActiveSession = sessionList.data.sessions.some(
+      (session) => session.id === activeSessionId,
     );
-  }, [sessionList.data]);
+    if (hasActiveSession) {
+      if (optimisticCreatedSessionIdRef.current === activeSessionId) {
+        optimisticCreatedSessionIdRef.current = null;
+        loggedOptimisticMissingSessionIdRef.current = null;
+        void observability.emitLog({
+          severityText: "INFO",
+          body: "Created desktop session appeared in refreshed session list",
+          attributes: {
+            "vela.operation": "vela.desktop.session.selection_reconcile",
+            "vela.session_id": activeSessionId,
+            "vela.session_list.count": sessionList.data.sessions.length,
+            "vela.reconcile.result": "created_session_visible",
+          },
+        });
+      }
+      return;
+    }
+    if (activeSessionId && optimisticCreatedSessionIdRef.current === activeSessionId) {
+      if (loggedOptimisticMissingSessionIdRef.current !== activeSessionId) {
+        loggedOptimisticMissingSessionIdRef.current = activeSessionId;
+        void observability.emitLog({
+          severityText: "INFO",
+          body: "Keeping newly created desktop session selected while list refresh catches up",
+          attributes: {
+            "vela.operation": "vela.desktop.session.selection_reconcile",
+            "vela.session_id": activeSessionId,
+            "vela.session_list.count": sessionList.data.sessions.length,
+            "vela.reconcile.result": "optimistic_created_session",
+          },
+        });
+      }
+      return;
+    }
+    if (activeSessionId) {
+      setActiveSessionId("");
+      setMainView("new-session");
+    }
+  }, [activeSessionId, observability, sessionList.data]);
 
   useEffect(() => {
     if (!sessionList.error) return;
-    setError(sessionList.error instanceof Error ? sessionList.error.message : String(sessionList.error));
+    setError(
+      sessionList.error instanceof Error
+        ? sessionList.error.message
+        : String(sessionList.error),
+    );
   }, [sessionList.error]);
 
   const archiveSessionMutation = useArchiveSessionMutation({
     client,
     currentSessionId: activeSessionId || null,
     sessionListOptions: DESKTOP_SESSION_LIST_OPTIONS,
-    onSelectSession: setActiveSessionId,
+    onSelectSession: selectChatSession,
   });
 
   const archiveSession = useCallback(
@@ -272,74 +707,117 @@ function DesktopReadyApp({
     [archiveSessionMutation],
   );
 
-  const refreshSessions = useCallback(async () => {
+  const refreshSessions = useCallback(async (options?: {
+    skipMissingActiveSessionCheck?: boolean;
+  }) => {
     try {
       setError(null);
       const response = await sessionList.refetch();
       if (!response.data) return;
-      setActiveSessionId((current) =>
-        current && response.data.sessions.some((session) => session.id === current)
-          ? current
-          : response.data.sessions[0]?.id || "",
-      );
+      if (
+        !options?.skipMissingActiveSessionCheck &&
+        activeSessionId &&
+        !response.data.sessions.some((session) => session.id === activeSessionId)
+      ) {
+        setActiveSessionId("");
+        setMainView("new-session");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [sessionList]);
+  }, [activeSessionId, sessionList]);
 
-  const buildSessionSetup = useCallback(
-    (backends: BackendWire[]) =>
-      buildVelaSessionSetupSelection({
-        backends,
-        selectedBackend: selectedBackendKind,
-        preferredBackends: DESKTOP_BACKEND_PREFERENCE,
-        selectedModel: "",
-        selectedPermissionMode: "",
-        selectedReasoningEffort: "",
-      }),
-    [selectedBackendKind],
+  const createSession = useCallback(
+    async (input: DesktopNewSessionSubmitInput) => {
+      if (isCreatingSession) return;
+      const trimmedInitialMessage = normalizeInitialSessionMessage(input.initialPrompt);
+      const span = observability.startSpan("vela.desktop.session.create_and_select", {
+        attributes: {
+          "vela.backend": input.backend,
+          "vela.session.has_initial_prompt": trimmedInitialMessage.length > 0,
+          "vela.session.title_length": input.title.length,
+        },
+      });
+      try {
+        setIsCreatingSession(true);
+        setError(null);
+        const created = await client.createSession({
+          backend: input.backend,
+          agentConfig: input.agentConfig,
+          title: input.title,
+          workingDirectory: input.workingDirectory,
+        });
+        optimisticCreatedSessionIdRef.current = created.session.id;
+        selectChatSession(created.session.id);
+        span.setAttribute("vela.session_id", created.session.id);
+        span.setAttribute("vela.desktop.main_view", "chat");
+        if (trimmedInitialMessage) {
+          const initialContent: ClientInputPart[] = [
+            { type: "text", text: trimmedInitialMessage },
+            ...(input.initialSkillRefs ?? []),
+          ];
+          await client.sendUserMessage({
+            sessionId: created.session.id,
+            content: initialContent,
+          });
+        }
+        await refreshSessions({ skipMissingActiveSessionCheck: true });
+        selectChatSession(created.session.id);
+        observability.endSpan(span, { code: SpanStatusCode.OK });
+      } catch (err) {
+        observability.recordError(span, err);
+        observability.endSpan(span);
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setIsCreatingSession(false);
+      }
+    },
+    [
+      client,
+      isCreatingSession,
+      observability,
+      refreshSessions,
+      selectChatSession,
+    ],
   );
 
-  const resolveNewSessionSetup = useCallback(async () => {
-    if (setup.resolvedSelectedBackend) return setup;
-    const nextBackends = await client.getBackends();
-    return buildSessionSetup(nextBackends.backends);
-  }, [buildSessionSetup, client, setup]);
+  const submitChatMessage = useCallback(async () => {
+    await controller.send();
+  }, [controller.send]);
+  const submitChatText = useCallback(
+    async (text: string) => {
+      await controller.sendText(text);
+    },
+    [controller.sendText],
+  );
 
-  const createSession = useCallback(async () => {
-    try {
-      setError(null);
-      const nextSetup = await resolveNewSessionSetup();
-      const backend = nextSetup.resolvedSelectedBackend;
-      if (!backend) {
-        setError("No backend is available yet. Please try again after velad finishes starting.");
-        return;
-      }
-      const created = await client.createSession({
-        backend,
-        agentConfig: nextSetup.setupAgentConfig,
-        title: "New chat",
-        workingDirectory: DEFAULT_WORKING_DIRECTORY,
-      });
-      setActiveSessionId(created.session.id);
-      await refreshSessions();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }, [client, refreshSessions, resolveNewSessionSetup]);
+  const respondToRequest = useCallback(
+    async (response: Parameters<typeof controller.respondToRequest>[0]) => {
+      await controller.respondToRequest(response);
+    },
+    [controller.respondToRequest],
+  );
+
+  const openNewSessionPage = useCallback(() => {
+    setError(null);
+    setActiveSessionId("");
+    setIsSettingsOpen(false);
+    setMainView("new-session");
+  }, []);
 
   const appSidebar = (
     <SessionSidebar
-      currentSessionId={activeSessionId || null}
+      currentSessionId={mainView === "chat" ? activeSessionId || null : null}
       sessions={sessions}
       showTrafficLights={hostBridge.chrome.showTrafficLights}
-      accountLabel={hostLabel}
-      accountPlanLabel="Local desktop"
       canCreateSession
-      onCreateSession={createSession}
+      onCreateSession={openNewSessionPage}
       onArchiveSession={archiveSession}
       onOpenSettings={() => setIsSettingsOpen(true)}
-      onSelectSession={setActiveSessionId}
+      onSessionDragPreviewEnd={endSidebarSessionDragPreview}
+      onSessionDragPreviewMove={moveSidebarSessionDragPreview}
+      onSessionDragPreviewStart={startSidebarSessionDragPreview}
+      onSelectSession={selectChatSession}
     />
   );
   const settingsSidebar = (
@@ -358,7 +836,7 @@ function DesktopReadyApp({
       sidebar={isSettingsOpen ? settingsSidebar : appSidebar}
       sidebarPresentation="auto"
       sidebarWidthPx={sidebarWidthPx}
-      onCreateSession={createSession}
+      onCreateSession={openNewSessionPage}
       onSidebarVisibilityChange={onSidebarVisibilityChange}
       onSidebarWidthChange={onSidebarWidthChange}
       onToggleSidebar={() => onSidebarVisibilityChange(!isSidebarVisible)}
@@ -369,40 +847,113 @@ function DesktopReadyApp({
           apiBaseUrl={apiBaseUrl}
           appVersion={DESKTOP_APP_VERSION}
           backends={controller.backends}
+          backendUsages={backendUsages}
+          client={client}
           hostLabel={hostLabel}
-          logPath={hostInfo.logPath}
           selectedBackend={selectedBackendKind}
-          sessionsCount={sessions.length}
+          onBackendSettingsChange={controller.refreshBackends}
           onSelectedBackendChange={setSelectedBackendKind}
         />
-      ) : activeSessionId ? (
-        <ChatSurface
-          canLoadOlder={controller.canLoadOlder}
-          clientStateStore={hostStateStores.clientStateStore}
-          composerControls={controller.composerControls}
-          draft={controller.draft}
-          error={controller.error ?? error}
-          historyPhase={controller.historyPhase}
-          isLoadingOlder={controller.isLoadingOlder}
-          isRespondingToRequest={controller.isRespondingToRequest}
-          isUpdatingComposerControls={controller.isUpdatingAgentConfig}
-          messageFollowToken={controller.messageFollowToken}
-          model={controller.model}
-          onAgentConfigChange={controller.updateAgentConfig}
-          onAttachImages={controller.attachImages}
-          onConversationScrollDebugChange={controller.setConversationScrollDebug}
-          onDraftChange={controller.setDraft}
-          onLoadOlder={controller.loadOlderConversation}
-          onRemoveAttachment={controller.removeAttachment}
-          onRespondToRequest={controller.respondToRequest}
-          onStop={controller.stop}
-          onSubmit={controller.send}
-          pendingAttachments={controller.pendingAttachments}
-        />
+      ) : mainView === "chat" && activeSessionId ? (
+        <div className="vela-chat-page">
+          <DesktopChatTopbar
+            locationInfo={activeSessionLocationInfo}
+            onOpenLocation={hostInfo.hostKind === "electron" ? openActiveSessionLocation : undefined}
+            title={activeSessionTitle}
+          />
+          <ChatSurface
+            canLoadOlder={controller.canLoadOlder}
+            clientStateStore={hostStateStores.clientStateStore}
+            composerControls={controller.composerControls}
+            draft={controller.draft}
+            error={controller.error ?? error}
+            followOutputToken={controller.followOutputToken}
+            historyPhase={controller.historyPhase}
+            isLoadingOlder={controller.isLoadingOlder}
+            isRespondingToRequest={controller.isRespondingToRequest}
+            isUpdatingComposerControls={controller.isUpdatingAgentConfig}
+            model={controller.model}
+            onAgentConfigChange={controller.updateAgentConfig}
+            onAttachImages={controller.attachImages}
+            onConversationRevealStateChange={observeConversationRevealState}
+            onConversationScrollDebugChange={observeConversationScrollDebug}
+            onConversationScrollLifecycleEvent={observeConversationScrollLifecycle}
+            onDraftChange={controller.setDraft}
+            onLoadOlder={controller.loadOlderConversation}
+            onRemoveAttachment={controller.removeAttachment}
+            onRemoveQueuedInput={controller.removeQueuedInput}
+            onRespondToRequest={respondToRequest}
+            onStop={controller.stop}
+            onSubmit={submitChatMessage}
+            onSubmitText={submitChatText}
+            pendingAttachments={controller.pendingAttachments}
+            queuedInputs={controller.queuedInputs}
+            skills={controller.skills}
+            voiceInput={hostBridge.voiceInput}
+          />
+        </div>
       ) : (
-        <DesktopEmptySurface error={error} />
+        <DesktopNewSessionPage
+          backends={controller.backends}
+          backendUsages={backendUsages}
+          client={client}
+          defaultBackend={selectedBackendKind}
+          defaultWorkingDirectory={DEFAULT_WORKING_DIRECTORY}
+          error={error}
+          isSubmitting={isCreatingSession}
+          preferredBackends={DESKTOP_BACKEND_PREFERENCE}
+          runtimeHostKind={hostInfo.hostKind}
+          voiceInput={hostBridge.voiceInput}
+          onDefaultBackendChange={setSelectedBackendKind}
+          onSelectWorkingDirectory={selectDesktopWorkingDirectory}
+          onSubmit={createSession}
+        />
       )}
     </VelaDesktopShell>
+  );
+}
+
+interface DesktopChatTopbarProps {
+  title: string;
+  locationInfo: SessionLocationInfo | null;
+  onOpenLocation?: () => void;
+}
+
+function DesktopChatTopbar({
+  title,
+  locationInfo,
+  onOpenLocation,
+}: DesktopChatTopbarProps) {
+  const canOpenLocation = Boolean(locationInfo && onOpenLocation);
+  return (
+    <header className="vela-chat-topbar" data-window-drag-region="true">
+      <div className="vela-chat-topbar-title-group">
+        {locationInfo ? (
+          <div
+            className="vela-chat-topbar-location"
+            aria-label={locationInfo.ariaLabel}
+            title={locationInfo.path}
+          >
+            <Folder size={15} strokeWidth={2.1} />
+            <span>{locationInfo.label}</span>
+          </div>
+        ) : null}
+        <div className="vela-chat-topbar-title-line">
+          <h1 className="vela-chat-topbar-title">{title}</h1>
+        </div>
+      </div>
+      {canOpenLocation && locationInfo ? (
+        <button
+          type="button"
+          className="vela-chat-topbar-location-action"
+          aria-label={`Open ${locationInfo.label} in file manager`}
+          title={locationInfo.path}
+          onClick={onOpenLocation}
+        >
+          <FolderOpen size={17} strokeWidth={2.05} />
+        </button>
+      ) : null}
+    </header>
   );
 }
 
@@ -426,14 +977,11 @@ function DesktopBootstrapApp({
   onSidebarWidthChange,
 }: DesktopBootstrapAppProps) {
   const hostBridge = useMemo(() => runtimeHostBridgeForInfo(hostInfo), [hostInfo]);
-  const hostLabel = hostBridge.platform === "macos" ? "Electron on macOS" : "Runtime host";
   const sidebar = (
     <SessionSidebar
       currentSessionId={null}
       sessions={[]}
       showTrafficLights={hostBridge.chrome.showTrafficLights}
-      accountLabel={hostLabel}
-      accountPlanLabel="Local desktop"
       canClearSessions={false}
       canCreateSession={false}
       onCreateSession={() => undefined}
@@ -456,9 +1004,29 @@ function DesktopBootstrapApp({
       {bootstrap.status === "failed" ? (
         <DesktopBootstrapSurface bootstrap={bootstrap} onRetry={onRetry} />
       ) : (
-        <DesktopEmptySurface />
+        <DesktopRuntimeStartingSurface bootstrap={bootstrap} />
       )}
     </VelaDesktopShell>
+  );
+}
+
+function DesktopRuntimeStartingSurface({
+  bootstrap,
+}: {
+  bootstrap: Extract<RuntimeBootstrap, { status: "starting" }>;
+}) {
+  return (
+    <div
+      aria-label={bootstrap.message}
+      className="vela-runtime-bootstrap"
+      role="status"
+      aria-live="polite"
+    >
+      <div className="vela-runtime-bootstrap-card" data-state="starting">
+        <span className="vela-runtime-bootstrap-spinner" aria-hidden="true" />
+        <span className="vela-runtime-bootstrap-label">{bootstrap.message}</span>
+      </div>
+    </div>
   );
 }
 
@@ -471,7 +1039,7 @@ function DesktopBootstrapSurface({
 }) {
   return (
     <div className="vela-runtime-bootstrap" role="alert">
-      <div className="vela-runtime-bootstrap-card">
+      <div className="vela-runtime-bootstrap-card" data-state="failed">
         <div className="vela-runtime-bootstrap-orb" data-state="failed" />
         <div>
           <h1>Runtime could not start</h1>
@@ -485,32 +1053,5 @@ function DesktopBootstrapSurface({
         </button>
       </div>
     </div>
-  );
-}
-
-function readDefaultBackendPreference(): BackendKindWire | "" {
-  if (typeof window === "undefined") return "";
-  const value = window.localStorage.getItem(DEFAULT_BACKEND_STORAGE_KEY);
-  return isBackendKind(value) ? value : "";
-}
-
-function writeDefaultBackendPreference(value: BackendKindWire | "") {
-  if (typeof window === "undefined") return;
-  if (!value) {
-    window.localStorage.removeItem(DEFAULT_BACKEND_STORAGE_KEY);
-    return;
-  }
-  window.localStorage.setItem(DEFAULT_BACKEND_STORAGE_KEY, value);
-}
-
-function isBackendKind(value: string | null): value is BackendKindWire {
-  return (
-    value === "codex" ||
-    value === "cloudagent" ||
-    value === "claude_code" ||
-    value === "pi" ||
-    value === "opencode" ||
-    value === "acp" ||
-    value === "qoder"
   );
 }

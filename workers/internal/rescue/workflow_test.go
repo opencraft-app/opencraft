@@ -149,8 +149,8 @@ func TestExportWorkflowSchedulesCOSAutoDeleteChild(t *testing.T) {
 	emailDelivered := EmailNotificationResult{
 		MessageID:      emailSent.MessageID,
 		ToEmail:        req.NotificationEmail,
-		DeliverStatus:  sesDeliverStatusSuccess,
-		EmailDelivered: true,
+		DeliverStatus:  -1,
+		DeliverMessage: "timed out waiting for SES delivery after 20m0s",
 	}
 
 	env.OnActivity("LocateInstance", mock.Anything, normalizedReq, cfg).Return(instance, nil).Once()
@@ -191,7 +191,7 @@ func TestExportWorkflowSchedulesCOSAutoDeleteChild(t *testing.T) {
 	if result.COSDeleteAfterSeconds != req.COSUploadURLTTLSeconds {
 		t.Fatalf("unexpected delete delay: %d", result.COSDeleteAfterSeconds)
 	}
-	if result.NotificationEmail != req.NotificationEmail || result.EmailMessageID != emailSent.MessageID || !result.EmailDelivered {
+	if result.NotificationEmail != req.NotificationEmail || result.EmailMessageID != emailSent.MessageID || result.EmailDelivered {
 		t.Fatalf("unexpected email result: %+v", result)
 	}
 	encodedStatus, err := env.QueryWorkflow(ExportStatusQuery)
@@ -214,10 +214,22 @@ func TestExportWorkflowSchedulesCOSAutoDeleteChild(t *testing.T) {
 	if status.TATCommand.InvocationID != submitted.InvocationID {
 		t.Fatalf("unexpected status TAT invocation id: %s", status.TATCommand.InvocationID)
 	}
-	if status.NotificationEmail != req.NotificationEmail || status.EmailMessageID != emailSent.MessageID || !status.EmailDelivered {
+	if status.NotificationEmail != req.NotificationEmail || status.EmailMessageID != emailSent.MessageID || status.EmailDelivered {
 		t.Fatalf("unexpected status email fields: %+v", status)
 	}
+	if !statusLogsContainLevel(status.Logs, "warning") {
+		t.Fatalf("expected email delivery warning log: %+v", status.Logs)
+	}
 	env.AssertExpectations(t)
+}
+
+func statusLogsContainLevel(logs []ExportStatusLog, level string) bool {
+	for _, log := range logs {
+		if log.Level == level {
+			return true
+		}
+	}
+	return false
 }
 
 func TestImportWorkflowRunsOverTATAndDeletesUploadObject(t *testing.T) {

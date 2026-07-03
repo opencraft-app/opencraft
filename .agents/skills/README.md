@@ -11,6 +11,7 @@
 | `fixing-accessibility` | 表单、弹窗、交互控件、键盘导航、ARIA、色彩对比度、WCAG 可访问性修复 |
 | `fixing-metadata` | 页面标题、meta description、canonical、Open Graph、Twitter Card、robots、JSON-LD |
 | `fixing-motion-performance` | 动画卡顿、transition 性能、scroll-linked motion、layout thrashing、blur/filter 性能问题 |
+| `product-skills/prd-init` | LightVela 产品前置、PRD 梳理、TAPD 产品需求建单与研发交接 |
 
 ## 使用约定
 

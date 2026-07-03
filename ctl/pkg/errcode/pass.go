@@ -12,6 +12,7 @@ var (
 	ErrPassQuotaExceeded         = Register(New("PASS_QUOTA_EXCEEDED", 403, "consumed quota exceeds bundle agent_quota limit"))
 	ErrPassAlreadyExists         = Register(New("PASS_ALREADY_EXISTS", 409, "user already has an active pass"))
 	ErrPassBundleSoldOut         = Register(New("PASS_BUNDLE_SOLD_OUT", 400, "bundle is sold out"))
+	ErrPassTrialBundleNotAllowed = Register(New("PASS_TRIAL_BUNDLE_NOT_ALLOWED", 400, "only bundle_free_trial_01 can be created via free trial path"))
 
 	// === trade-pass-isolate 设计稿落地（pass.status 拦截）===
 	// 设计稿：.tmp/trade-pass-isolate-design.md §10 Q23 = C1 修订版

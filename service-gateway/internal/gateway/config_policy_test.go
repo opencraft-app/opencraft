@@ -2,9 +2,12 @@ package gateway
 
 import (
 	"net/http"
+	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestDeployConfigsDoNotExposeRetiredPublicRoutes(t *testing.T) {
@@ -66,4 +69,59 @@ func containsString(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func TestProdWorkerActionConfigsDeclareRequiredRuntimeSecretKeys(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve current file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
+
+	envs := []string{"sgprod", "shprod"}
+	requiredSecretKeys := []string{
+		"TEMPORAL_BEARER_TOKEN",
+		"TENCENTCLOUD_SECRET_ID",
+		"TENCENTCLOUD_SECRET_KEY",
+	}
+
+	for _, env := range envs {
+		t.Run(env, func(t *testing.T) {
+			cfg, err := LoadConfigFile(filepath.Join(repoRoot, "argocd", "services", "service-gateway", env, "config.yaml"))
+			if err != nil {
+				t.Fatalf("load config: %v", err)
+			}
+			if !cfg.WorkerActions.Enabled {
+				t.Skip("worker actions disabled")
+			}
+
+			keys, err := loadSOPSStringDataKeys(filepath.Join(repoRoot, "argocd", "secrets", env, "service-gateway-runtime-secrets.sops.yaml"))
+			if err != nil {
+				t.Fatalf("load runtime secret keys: %v", err)
+			}
+			for _, key := range requiredSecretKeys {
+				if _, ok := keys[key]; !ok {
+					t.Fatalf("worker actions enabled but runtime secret is missing %s", key)
+				}
+			}
+		})
+	}
+}
+
+func loadSOPSStringDataKeys(path string) (map[string]struct{}, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var secret struct {
+		StringData map[string]string `yaml:"stringData"`
+	}
+	if err := yaml.Unmarshal(data, &secret); err != nil {
+		return nil, err
+	}
+	keys := make(map[string]struct{}, len(secret.StringData))
+	for key := range secret.StringData {
+		keys[key] = struct{}{}
+	}
+	return keys, nil
 }

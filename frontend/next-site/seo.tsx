@@ -90,7 +90,8 @@ export const SEO_ALL_DOCS_ROUTE_LOCALES = ['zh-cn', 'en-us', 'zh-sg'] as const s
 
 export function siteUrl(): string {
   const envUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL;
-  return trimTrailingSlash(envUrl || 'https://lightvela.com');
+  if (envUrl) return trimTrailingSlash(envUrl);
+  return siteUrlForSeoRegion(isGlobal ? 'global' : 'cn');
 }
 
 export function siteUrlForSeoRegion(region: SeoSiteRegion): string {

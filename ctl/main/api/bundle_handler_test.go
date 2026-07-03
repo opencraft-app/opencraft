@@ -99,6 +99,18 @@ func (s *stubTradeAdapter) QueryOrderStatus(context.Context, string, string) (*t
 	panic("stubTradeAdapter.QueryOrderStatus: not implemented")
 }
 
+func (s *stubTradeAdapter) ListDianshiRecords(context.Context, tradeadapter.DianshiRecordFilter) (*tradeadapter.DianshiRecordsResult, error) {
+	panic("stubTradeAdapter.ListDianshiRecords: not implemented")
+}
+
+func (s *stubTradeAdapter) DeleteDianshiOrder(context.Context, string) (*tradeadapter.DeleteDianshiRecordResult, error) {
+	panic("stubTradeAdapter.DeleteDianshiOrder: not implemented")
+}
+
+func (s *stubTradeAdapter) DeleteDianshiParticipation(context.Context, int64) (*tradeadapter.DeleteDianshiRecordResult, error) {
+	panic("stubTradeAdapter.DeleteDianshiParticipation: not implemented")
+}
+
 func sampleBundleDetails() []*bundlelogic.BundleDetail {
 	return []*bundlelogic.BundleDetail{
 		{

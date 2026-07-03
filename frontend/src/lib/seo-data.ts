@@ -97,7 +97,7 @@ const DEFAULT_OG_IMAGE_PATH = "/lightvela-logo.jpg";
  */
 
 const DEFAULT_SEO_TITLE_BY_REGION: Record<SeoRegion, string> = {
-  cn: "LightVela | 越用越懂你的云端智能伙伴",
+  cn: "LightVela｜云端专属个人 Agent",
   global: "LightVela | Your Personal Cloud AI Agent",
 };
 
@@ -365,6 +365,7 @@ const DOC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs/configuration/channel-feishu": "飞书",
     "/docs/configuration/channel-qq": "QQ",
     "/docs/configuration/skill": "配置技能",
+    "/docs/announcements/public-beta": "LightVela 公测计划及付费版本预告",
     "/docs/faq": "常见问题 FAQ",
   },
   global: {

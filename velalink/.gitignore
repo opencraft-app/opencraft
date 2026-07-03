@@ -11,6 +11,8 @@ target-linux-amd64
 !.env.example
 *.log
 .DS_Store
+.omx/
+apps/vela-desktop-electron/native/**/build/
 app-*.css
 scroll-test.html
 content/对话.md

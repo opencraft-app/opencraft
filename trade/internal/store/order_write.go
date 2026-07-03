@@ -55,6 +55,10 @@ type CreateOrderInput struct {
 	// 填 "jifei"，与 migration 000006 DB DEFAULT 双层一致。在 PlaceOrder / PlaceOrderAndPay 走
 	// jifei 路径时不需显式传值；placeOrderDianshi 须显式传 "dianshi"。
 	Source string
+	// ActivityID / ActID（migration 000008）：点石订单落下单时使用的活动大 ID / 商品大 ID。
+	// jifei 普通订单留 0。
+	ActivityID int64
+	ActID      int64
 	// ResourceID（R-C-5 续费场景必填；新购 INSERT 时留空，由 createResource 收尾 MarkOrderProvisioned 反向回填）：
 	//   - OrderType='create'：留空字符串 → INSERT 落 NULL（与 trade_order.resource_id DEFAULT NULL 一致）
 	//   - OrderType='renew'：必填 = pass_id；renewresource handler 的 trade_order 维度交叉校验依赖此字段
@@ -210,8 +214,8 @@ func (s *MySQLStore) CreateOrder(ctx context.Context, in CreateOrderInput) error
 			big_order_id, deal_name, external_user_id, uin, app_id,
 			sub_product_code, bundle_id, order_type, period, time_unit, goods_num,
 			region_id, pay_mode, goods_detail, pay_url, status,
-			resource_type, resource_id, source, created_time, updated_time
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+			resource_type, resource_id, source, activity_id, act_id, created_time, updated_time
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
 	`
 	var payURLArg interface{}
 	if in.PayURL != "" {
@@ -228,7 +232,7 @@ func (s *MySQLStore) CreateOrder(ctx context.Context, in CreateOrderInput) error
 		in.BigOrderID, in.DealName, in.ExternalUserID, in.Uin, in.AppID,
 		in.SubProductCode, in.BundleID, in.OrderType, in.Period, in.TimeUnit, in.GoodsNum,
 		in.RegionID, in.PayMode, goodsDetailArg, payURLArg, in.Status,
-		in.ResourceType, resourceIDArg, in.Source,
+		in.ResourceType, resourceIDArg, in.Source, in.ActivityID, in.ActID,
 	); err != nil {
 		// MySQL UNIQUE 冲突 errno=1062；驱动层不暴露常量，按 message 子串匹配兜底
 		if isMySQLDuplicateError(err) {
