@@ -11,8 +11,8 @@ use crate::parser::{ToolCallParser, ToolCallStreamParser};
 use crate::runtime::agent::AgentExecutor;
 use crate::runtime::reasoning::{strip_reasoning_tags, ThinkBlockRouter};
 use crate::runtime::tool_calls::{
-    extract_tool_calls_from_choice, merge_stream_tool_call, strip_tool_call_markup,
-    StreamingToolCallAccumulator, ToolCallContentRouter,
+    extract_tool_calls_from_choice, merge_stream_tool_call, normalize_tool_calls,
+    strip_tool_call_markup, StreamingToolCallAccumulator, ToolCallContentRouter,
 };
 use crate::runtime::tool_loop::check_cancelled;
 
@@ -126,6 +126,7 @@ impl AgentExecutor {
             merge_stream_tool_call(&mut tool_calls, tc);
         }
 
+        let tool_calls = normalize_tool_calls(tool_calls)?;
         Ok((accumulated_text, accumulated_reasoning, tool_calls))
     }
 
@@ -167,6 +168,7 @@ impl AgentExecutor {
             .await;
         }
 
+        let tool_calls = normalize_tool_calls(tool_calls)?;
         Ok((content, reasoning, tool_calls))
     }
 }

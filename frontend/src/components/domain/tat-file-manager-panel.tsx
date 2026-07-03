@@ -144,6 +144,8 @@ const managedChildPath = (basePath: string, name: string) => {
   return isManagedPath(nextPath) ? nextPath : null;
 };
 
+const shellQuote = (value: string) => `'${value.replace(/'/g, "'\\''")}'`;
+
 interface FileManagerErrorTranslations {
   directoryNotEmpty: string;
   fileChannelNotConnected: string;
@@ -322,12 +324,15 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
   const pathInputRef = useRef<HTMLInputElement | null>(null);
   const pathControlsRef = useRef<HTMLDivElement | null>(null);
   const createFolderInputRef = useRef<HTMLInputElement | null>(null);
+  const renameInputRef = useRef<HTMLInputElement | null>(null);
   const downloadTriggerIframesRef = useRef<Set<DownloadTriggerIframe>>(new Set());
   const [path, setPath] = useState(DEFAULT_TAT_FILE_PATH);
   const [pathDraft, setPathDraft] = useState(DEFAULT_TAT_FILE_PATH);
   const [pathEditing, setPathEditing] = useState(false);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [newFolderDraft, setNewFolderDraft] = useState("");
+  const [renamingName, setRenamingName] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
   const [files, setFiles] = useState<TsshFileInfo[]>([]);
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [showHiddenFiles, setShowHiddenFiles] = useState(false);
@@ -354,6 +359,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
       : null;
   const selectedDownloadBlockReason = selectedFile && isDirectory(selectedFile) ? t("不支持下载文件夹") : selectedDownloadSizeBlockReason ?? selectedPermissionBlockReason;
   const downloadTooltip = selectedDownloadBlockReason ?? (!selectedFile ? noFileSelectedTitle : undefined);
+  const renameTooltip = !selectedFile ? noFileSelectedTitle : undefined;
   const deleteTooltip = !selectedFile ? noFileSelectedTitle : undefined;
   const parentPathBlocked = path === MANAGED_TAT_FILE_ROOT;
   const parentPathTooltip = parentPathBlocked ? t("不支持返回上一级目录") : t("上级");
@@ -424,6 +430,8 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
     setPathEditing(false);
     setCreatingFolder(false);
     setNewFolderDraft("");
+    setRenamingName(null);
+    setRenameDraft("");
     setFiles([]);
     setSelectedName(null);
     setNotice(null);
@@ -442,6 +450,16 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
     }
     window.requestAnimationFrame(() => createFolderInputRef.current?.focus());
   }, [creatingFolder]);
+
+  useEffect(() => {
+    if (!renamingName) {
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      renameInputRef.current?.focus();
+      renameInputRef.current?.select();
+    });
+  }, [renamingName]);
 
   useEffect(() => {
     if (!pathEditing) {
@@ -682,6 +700,8 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
       setSelectedName(null);
       setCreatingFolder(false);
       setNewFolderDraft("");
+      setRenamingName(null);
+      setRenameDraft("");
       setStatus("ready");
     } catch (loadError) {
       setError(translateFileManagerError(loadError, t("文件列表加载失败")));
@@ -698,6 +718,8 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
 
   const beginCreateFolder = () => {
     setSelectedName(null);
+    setRenamingName(null);
+    setRenameDraft("");
     setNewFolderDraft("");
     setCreatingFolder(true);
   };
@@ -705,6 +727,21 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
   const cancelCreateFolder = () => {
     setCreatingFolder(false);
     setNewFolderDraft("");
+  };
+
+  const beginRenameSelected = () => {
+    if (!selectedFile) {
+      return;
+    }
+    setCreatingFolder(false);
+    setNewFolderDraft("");
+    setRenamingName(selectedFile.name);
+    setRenameDraft(selectedFile.name);
+  };
+
+  const cancelRename = () => {
+    setRenamingName(null);
+    setRenameDraft("");
   };
 
   const createFolder = async () => {
@@ -728,6 +765,43 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
       await loadPath(path);
     } catch (createError) {
       setError(translateFileManagerError(createError, t("创建目录失败")));
+      setStatus("error");
+    }
+  };
+
+  const renameSelected = async () => {
+    const sourceName = renamingName;
+    const name = renameDraft.trim();
+    if (!sourceName || !name) {
+      return;
+    }
+    if (name === sourceName) {
+      cancelRename();
+      return;
+    }
+    const sourcePath = managedChildPath(path, sourceName);
+    const targetPath = managedChildPath(path, name);
+    if (!sourcePath || !targetPath || name.includes("/") || name === "." || name === "..") {
+      setError(t("文件名无效，只能在 {{path}} 目录下重命名。", { path: MANAGED_TAT_FILE_ROOT }));
+      setStatus("error");
+      return;
+    }
+
+    setStatus("working");
+    setError(null);
+    try {
+      const command = `if [ -e ${shellQuote(targetPath)} ]; then echo 'file exists' >&2; exit 1; fi\nmv -- ${shellQuote(sourcePath)} ${shellQuote(targetPath)}`;
+      const result = await runWithReconnectedClient((client) => client.execCommand(command, 60));
+      if (result.exitCode !== 0) {
+        throw new Error(result.output.trim() || `rename command failed with exit code ${result.exitCode ?? "unknown"}`);
+      }
+      setRenamingName(null);
+      setRenameDraft("");
+      await loadPath(path);
+      setStatus("ready");
+      setNotice(t("已重命名。"));
+    } catch (renameError) {
+      setError(translateFileManagerError(renameError, t("重命名失败")));
       setStatus("error");
     }
   };
@@ -918,8 +992,8 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
             {t("上传文件")}
           </Button>
         </div>
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div ref={pathControlsRef} className="flex w-full min-w-0 flex-col gap-2 sm:flex-row xl:flex-1">
+        <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
+          <div ref={pathControlsRef} className="flex w-full min-w-0 flex-wrap items-center gap-2">
             <ActionTooltip label={parentPathTooltip} variant="light">
               <Button
                 type="button"
@@ -933,7 +1007,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
                 <Undo2 className="size-5" />
               </Button>
             </ActionTooltip>
-            <div className="relative min-w-0 sm:flex-1 xl:flex-none xl:basis-4/5">
+            <div className="relative min-w-[min(100%,18rem)] flex-1">
               <Input
                 ref={pathInputRef}
                 className={pathEditing ? undefined : "pr-11"}
@@ -1020,6 +1094,12 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
                 {t("下载")}
               </Button>
             </ActionTooltip>
+            <ActionTooltip label={renameTooltip}>
+              <Button type="button" variant="outline" onClick={beginRenameSelected} disabled={busy || !selectedFile}>
+                <PencilLine className="size-4" />
+                {t("重命名")}
+              </Button>
+            </ActionTooltip>
             <ActionTooltip label={deleteTooltip}>
               <Button type="button" variant="destructive" onClick={() => void deleteSelected()} disabled={busy || !selectedFile}>
                 <Trash2 className="size-4" />
@@ -1099,6 +1179,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
           ) : (
             displayedFiles.map((file) => {
               const selected = selectedName === file.name;
+              const renaming = renamingName === file.name;
               return (
                 <div
                   key={`${file.type}:${file.name}`}
@@ -1109,7 +1190,56 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
                 >
                   <span className="flex min-w-0 items-center gap-2">
                     {fileIconFor(file)}
-                    <span className="truncate font-medium text-[var(--text-primary)]">{file.name}</span>
+                    {renaming ? (
+                      <>
+                        <Input
+                          ref={renameInputRef}
+                          className="h-9 max-w-sm"
+                          value={renameDraft}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={(event) => setRenameDraft(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              void renameSelected();
+                              return;
+                            }
+                            if (event.key === "Escape") {
+                              event.preventDefault();
+                              cancelRename();
+                            }
+                          }}
+                          placeholder={t("请输入文件名")}
+                          disabled={busy}
+                        />
+                        <button
+                          type="button"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-full text-blue-500 transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-40"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void renameSelected();
+                          }}
+                          disabled={busy || !renameDraft.trim()}
+                          aria-label={t("确认重命名")}
+                        >
+                          <CheckCircle className="size-4" />
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[var(--text-tertiary)] transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-40"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            cancelRename();
+                          }}
+                          disabled={busy}
+                          aria-label={t("取消重命名")}
+                        >
+                          <XCircle className="size-4" />
+                        </button>
+                      </>
+                    ) : (
+                      <span className="truncate font-medium text-[var(--text-primary)]">{file.name}</span>
+                    )}
                   </span>
                   <span className="text-[var(--text-secondary)]">{isDirectory(file) ? "-" : formatBytes(file.size)}</span>
                   <span className="text-[var(--text-secondary)]">{formatTime(file.modifyTime)}</span>

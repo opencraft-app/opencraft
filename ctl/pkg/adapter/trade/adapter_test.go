@@ -98,6 +98,40 @@ func TestPlaceOrder_BaseURLMissing(t *testing.T) {
 	}
 }
 
+func TestListDianshiRecords_AllowsEmptyFilter(t *testing.T) {
+	var (
+		gotMethod   string
+		gotPath     string
+		gotRawQuery string
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotRawQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"orders":[],"participations":[]}`)
+	}))
+	defer server.Close()
+
+	adp := newTestAdapter(t, server.URL, "internal-token")
+	result, err := adp.ListDianshiRecords(context.Background(), DianshiRecordFilter{})
+	if err != nil {
+		t.Fatalf("ListDianshiRecords empty filter: %v", err)
+	}
+	if gotMethod != http.MethodGet {
+		t.Fatalf("expected GET, got %s", gotMethod)
+	}
+	if gotPath != "/internal/trade/dianshi/orders" {
+		t.Fatalf("unexpected path: %s", gotPath)
+	}
+	if gotRawQuery != "" {
+		t.Fatalf("expected empty query, got %q", gotRawQuery)
+	}
+	if result == nil || len(result.Orders) != 0 || len(result.Participations) != 0 {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+}
+
 func TestPlaceOrder_NilRequest(t *testing.T) {
 	adp := newTestAdapter(t, "http://example.invalid", "")
 	_, err := adp.PlaceOrder(context.Background(), nil)

@@ -261,7 +261,9 @@ impl ToolCallParser {
         for m in json_candidates {
             let json_str = m.as_str();
             if let Ok(parsed) = serde_json::from_str::<Value>(json_str) {
-                return self.extract_tool_call_from_json(&parsed);
+                if let Some(tool_call) = self.extract_tool_call_from_json(&parsed) {
+                    return Some(tool_call);
+                }
             }
         }
 
@@ -275,9 +277,16 @@ impl ToolCallParser {
 
     /// Extract tool call from parsed JSON
     fn extract_tool_call_from_json(&self, value: &Value) -> Option<ToolCall> {
-        // Handle direct object format: { "name": "...", "arguments": "..." }
+        // Handle direct object format:
+        // { "name": "...", "arguments": "..." }
+        // { "name": "...", "arguments": { ... } }
         let name = value.get("name").and_then(|v: &Value| v.as_str())?;
-        let arguments_str = value.get("arguments").and_then(|v: &Value| v.as_str())?;
+        let arguments = value.get("arguments")?;
+        let arguments_str = match arguments {
+            Value::String(value) => value.clone(),
+            Value::Object(_) => serde_json::to_string(arguments).ok()?,
+            _ => return None,
+        };
         let id = value
             .get("id")
             .and_then(|v: &Value| v.as_str())
@@ -288,7 +297,7 @@ impl ToolCallParser {
             id,
             function: ToolCallFunction {
                 name: name.to_string(),
-                arguments: arguments_str.to_string(),
+                arguments: arguments_str,
             },
         })
     }
@@ -479,7 +488,9 @@ mod tests {
 
         assert_eq!(tool_calls.len(), 1);
         assert_eq!(tool_calls[0].function.name, "get_weather");
-        assert!(tool_calls[0].function.arguments.contains("Tokyo"));
+        let args: serde_json::Value =
+            serde_json::from_str(&tool_calls[0].function.arguments).unwrap();
+        assert_eq!(args["city"], "Tokyo");
     }
 
     #[test]
@@ -547,7 +558,9 @@ Some text here
         let tool_calls = parser.parse(content).unwrap();
 
         assert_eq!(tool_calls.len(), 1);
-        assert!(tool_calls[0].function.arguments.contains("nested"));
+        let args: serde_json::Value =
+            serde_json::from_str(&tool_calls[0].function.arguments).unwrap();
+        assert_eq!(args["nested"]["deep"], "value");
     }
 
     #[test]

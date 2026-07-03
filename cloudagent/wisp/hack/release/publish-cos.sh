@@ -14,6 +14,8 @@ fi
 
 coscmd_bin="${COSCMD_BIN:-coscmd}"
 coscmd_config="${COSCMD_CONFIG:-}"
+cos_python_bin="${COS_PYTHON_BIN:-python3}"
+cos_upload_helper="${COS_UPLOAD_HELPER:-}"
 object_prefix="${COS_OBJECT_PREFIX:-/workspace/$(date -u +%Y%m%d)}"
 dry_run="${COS_PUBLISH_DRY_RUN:-0}"
 
@@ -46,6 +48,87 @@ if [[ -z "$public_base" ]]; then
   public_base="${public_scheme}://${bucket}.cos.${region}.myqcloud.com"
 fi
 
+coscmd_with_retry() {
+  local attempts delay i
+  attempts="${CLOUDAGENT_COSCMD_ATTEMPTS:-4}"
+  delay="${CLOUDAGENT_COSCMD_RETRY_DELAY_SECONDS:-10}"
+  i=1
+  while true; do
+    if "$coscmd_bin" -c "$coscmd_config" "$@"; then
+      return 0
+    fi
+    if [[ "$i" -ge "$attempts" ]]; then
+      return 1
+    fi
+    echo "[wisp-publish] coscmd failed attempt=$i/$attempts command=$1; retry in ${delay}s" >&2
+    sleep "$delay"
+    i=$((i + 1))
+  done
+}
+
+cos_sdk_available() {
+  [[ -n "$cos_upload_helper" && -f "$cos_upload_helper" ]] \
+    && command -v "$cos_python_bin" >/dev/null 2>&1 \
+    && "$cos_python_bin" -c 'import qcloud_cos' >/dev/null 2>&1
+}
+
+cos_sdk_with_retry() {
+  local attempts delay i
+  attempts="${CLOUDAGENT_COS_UPLOAD_ATTEMPTS:-${CLOUDAGENT_COSCMD_ATTEMPTS:-4}}"
+  delay="${CLOUDAGENT_COSCMD_RETRY_DELAY_SECONDS:-10}"
+  i=1
+  while true; do
+    if "$cos_python_bin" "$cos_upload_helper" --config "$coscmd_config" "$@"; then
+      return 0
+    fi
+    if [[ "$i" -ge "$attempts" ]]; then
+      return 1
+    fi
+    echo "[wisp-publish] cos helper failed attempt=$i/$attempts command=$1; retry in ${delay}s" >&2
+    sleep "$delay"
+    i=$((i + 1))
+  done
+}
+
+cos_object_size() {
+  if cos_sdk_available; then
+    cos_sdk_with_retry size "$1"
+    return
+  fi
+  "$coscmd_bin" -c "$coscmd_config" info "$1" 2>/dev/null | awk '
+    $1 == "Content-Length" {
+      print $2
+      exit
+    }
+  '
+}
+
+cos_upload_if_needed() {
+  local local_path object expected_size existing_size
+  local_path="$1"
+  object="$2"
+  expected_size="$(wc -c <"$local_path" | tr -d '[:space:]')"
+  existing_size="$(cos_object_size "$object" || true)"
+  if [[ -n "$existing_size" && "$existing_size" == "$expected_size" ]]; then
+    echo "[wisp-publish] skip upload; object already exists size=$existing_size object=$object" >&2
+    return 0
+  fi
+  if cos_sdk_available; then
+    cos_sdk_with_retry upload "$local_path" "$object"
+  else
+    coscmd_with_retry upload -f -y "$local_path" "$object"
+  fi
+}
+
+cos_put_public_read() {
+  local object="$1"
+  if cos_sdk_available; then
+    cos_sdk_with_retry public-read "$object"
+  else
+    coscmd_with_retry putobjectacl "$object" --grant-read anyone
+  fi
+}
+
 sha="$(sha256sum "$artifact" 2>/dev/null | awk '{print $1}')"
 if [[ -z "$sha" ]]; then
   sha="$(shasum -a 256 "$artifact" | awk '{print $1}')"
@@ -71,8 +154,8 @@ object="${object_prefix%/}/${stem}-${short}${ext}"
 if [[ "$dry_run" == "1" ]]; then
   echo "DRY_RUN=1" >&2
 else
-  "$coscmd_bin" -c "$coscmd_config" upload -f -y "$artifact" "$object"
-  "$coscmd_bin" -c "$coscmd_config" putobjectacl "$object" --grant-read anyone
+  cos_upload_if_needed "$artifact" "$object"
+  cos_put_public_read "$object"
 fi
 
 echo "URL=${public_base}${object}"

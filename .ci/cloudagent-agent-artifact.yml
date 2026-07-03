@@ -34,7 +34,7 @@ stages:
         name: 构建 Agent + Wisp、签名并上传上海 COS
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         env:
           CLOUDAGENT_AGENT_COS_SECRET_ID: ${{ settings.CLOUDAGENT_AGENT_COS_SECRET_ID }}
           CLOUDAGENT_AGENT_COS_SECRET_KEY: ${{ settings.CLOUDAGENT_AGENT_COS_SECRET_KEY }}

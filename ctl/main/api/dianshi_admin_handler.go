@@ -127,10 +127,6 @@ func parseDianshiRecordFilter(r *http.Request) (tradeadapter.DianshiRecordFilter
 		}
 		filter.Limit = limit
 	}
-	if filter.ExternalUserID == "" && filter.Uin == "" && filter.ActivityID == 0 &&
-		filter.BundleID == "" && filter.DealName == "" {
-		return filter, errcode.Wrap(errcode.ErrInvalidParam, "at least one filter is required")
-	}
 	return filter, nil
 }
 

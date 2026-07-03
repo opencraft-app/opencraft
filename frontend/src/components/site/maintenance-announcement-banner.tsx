@@ -1,5 +1,5 @@
 /**
- * LightVela 公测公告条（北京时间 2026-08-16 00:00 自动撤下）
+ * LightVela 付费版本公告条（北京时间 2026-08-16 00:00 自动撤下）
  *
  * 显示位置：仅 landing（"/"）页顶部。
  * 显示条件：国内站首页且未到撤下时刻、且用户未点击关闭。
@@ -12,14 +12,14 @@
  */
 
 import { Megaphone, X } from "lucide-react";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useT } from "@/i18n/t";
-import { useAppLocation } from "@/lib/app-navigation";
 import { stripPublicSiteLocalePrefix } from "@/lib/public-site-routing";
 import { isCN } from "@/lib/region";
 
 /** 这条公告的唯一 ID。下一次发新公告时改这个 key（例如 "0601"），让用户重新看到。 */
-const ANNOUNCEMENT_ID = "0730-public-beta-preview-v2";
+const ANNOUNCEMENT_ID = "0715-paid-version-announcement-v1";
 
 const STORAGE_KEY = `lw-announcement-dismissed:${ANNOUNCEMENT_ID}`;
 
@@ -37,8 +37,10 @@ export const ANNOUNCEMENT_BANNER_HEIGHT_PX = 36;
 
 export function MaintenanceAnnouncementBanner() {
   const t = useT();
-  const location = useAppLocation();
-  const message = t("LightVela 预计将于 2026 年 7 月 15 日正式开启公测，内测用户将享受 1 个月延期权益。");
+  const pathname = usePathname();
+  const message = t(
+    "LightVela 计划将于 2026 年 7 月 15 日起转为付费服务；正式转为付费后，内测用户现有套餐的有效期将额外延长 1 个月。",
+  );
   // 默认不显示，挂载时再读 localStorage —— 避免 SSR / 首屏 flash 不一致
   const [dismissed, setDismissed] = useState(true);
   /** 组件挂载后同步刷新一次"是否已过期"，并在到期时刻 setTimeout 强制隐藏 */
@@ -68,8 +70,9 @@ export function MaintenanceAnnouncementBanner() {
 
   const visible =
     isCN &&
+    pathname !== null &&
     !expired &&
-    VISIBLE_PATHS.has(stripPublicSiteLocalePrefix(location.pathname)) &&
+    VISIBLE_PATHS.has(stripPublicSiteLocalePrefix(pathname)) &&
     !dismissed;
 
   if (!visible) return null;

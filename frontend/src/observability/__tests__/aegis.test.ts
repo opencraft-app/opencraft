@@ -69,6 +69,49 @@ describe("resolveAegisConfig", () => {
       VITE_AEGIS_HOST_URL: "https://rumt-us.com",
     }, "global")?.hostUrl).toBe("https://rumt-us.com");
   });
+
+  it("resolves config from Next public env when NODE_ENV is production", () => {
+    expect(resolveAegisConfig({
+      NODE_ENV: "production",
+      NEXT_PUBLIC_AEGIS_ID: "cn-id",
+      NEXT_PUBLIC_AEGIS_HOST_URL: "https://rumt-zh.com",
+    }, "cn")).toEqual({
+      id: "cn-id",
+      hostUrl: "https://rumt-zh.com",
+      region: "cn",
+    });
+  });
+
+  it("prefers Next public env over legacy Vite env", () => {
+    expect(resolveAegisConfig({
+      NODE_ENV: "production",
+      NEXT_PUBLIC_AEGIS_ID: "next-id",
+      NEXT_PUBLIC_AEGIS_HOST_URL: "https://rumt-next.com",
+      VITE_AEGIS_ID: "vite-id",
+      VITE_AEGIS_HOST_URL: "https://rumt-vite.com",
+    }, "global")).toEqual({
+      id: "next-id",
+      hostUrl: "https://rumt-next.com",
+      region: "global",
+    });
+  });
+
+  it("does not enable RUM outside production even with Next env ids", () => {
+    expect(resolveAegisConfig({
+      NODE_ENV: "development",
+      NEXT_PUBLIC_AEGIS_ID: "cn-id",
+      NEXT_PUBLIC_AEGIS_HOST_URL: "https://rumt-zh.com",
+    }, "cn")).toBeNull();
+  });
+
+  it("respects an explicit Next disable flag in production", () => {
+    expect(resolveAegisConfig({
+      NODE_ENV: "production",
+      NEXT_PUBLIC_AEGIS_ENABLED: "false",
+      NEXT_PUBLIC_AEGIS_ID: "cn-id",
+      NEXT_PUBLIC_AEGIS_HOST_URL: "https://rumt-zh.com",
+    }, "cn")).toBeNull();
+  });
 });
 
 describe("initAegis", () => {
