@@ -71,7 +71,7 @@ func (s *MySQLStore) CreateTicket(ctx context.Context, userID, realm, subject, c
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create ticket: begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
@@ -90,7 +90,7 @@ func (s *MySQLStore) CreateTicket(ctx context.Context, userID, realm, subject, c
 		return nil, fmt.Errorf("insert first message: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create ticket: commit tx: %w", err)
 	}
 	return t, nil
 }
@@ -101,7 +101,8 @@ func (s *MySQLStore) GetTicket(ctx context.Context, id string) (*Ticket, error) 
 		 FROM ticket WHERE id = ?`, id)
 	t := &Ticket{}
 	if err := row.Scan(&t.ID, &t.UserID, &t.Realm, &t.Subject, &t.Category, &t.Status, &t.Assignee, &t.CreatedAt, &t.UpdatedAt); err != nil {
-		return nil, err
+		// 保留 sql.ErrNoRows 语义（%w 可被上层 errors.Is 穿透判断），其余错误附带上下文
+		return nil, fmt.Errorf("get ticket %q: %w", id, err)
 	}
 	return t, nil
 }
@@ -111,7 +112,7 @@ func (s *MySQLStore) ListTicketsByUser(ctx context.Context, userID string) ([]Ti
 		`SELECT id, user_id, realm, subject, category, status, assignee, created_at, updated_at
 		 FROM ticket WHERE user_id = ? ORDER BY updated_at DESC LIMIT 200`, userID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list tickets by user %q: %w", userID, err)
 	}
 	defer rows.Close()
 	return scanTickets(rows)
@@ -132,7 +133,7 @@ func (s *MySQLStore) ListTicketsByRealm(ctx context.Context, realm, status, assi
 	q += " ORDER BY updated_at DESC LIMIT 500"
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list tickets by realm %q: %w", realm, err)
 	}
 	defer rows.Close()
 	return scanTickets(rows)
@@ -143,17 +144,20 @@ func scanTickets(rows *sql.Rows) ([]Ticket, error) {
 	for rows.Next() {
 		var t Ticket
 		if err := rows.Scan(&t.ID, &t.UserID, &t.Realm, &t.Subject, &t.Category, &t.Status, &t.Assignee, &t.CreatedAt, &t.UpdatedAt); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("scan ticket row: %w", err)
 		}
 		out = append(out, t)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate ticket rows: %w", err)
+	}
+	return out, nil
 }
 
 func (s *MySQLStore) UpdateTicketStatus(ctx context.Context, id, status, actorID, note string) (*Ticket, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("update ticket status: begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
@@ -162,17 +166,17 @@ func (s *MySQLStore) UpdateTicketStatus(ctx context.Context, id, status, actorID
 		`UPDATE ticket SET status = ?, updated_at = ? WHERE id = ?`,
 		status, now, id,
 	); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("update ticket %q status: %w", id, err)
 	}
 	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO ticket_audit_log (id, ticket_id, actor_id, action, detail, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
 		uuid.NewString(), id, actorID, "status:"+status, note, now,
 	); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("insert audit log: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("update ticket status: commit tx: %w", err)
 	}
 	return s.GetTicket(ctx, id)
 }
@@ -193,7 +197,7 @@ func (s *MySQLStore) AppendMessage(ctx context.Context, ticketID, authorType, au
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("append message: begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
@@ -202,14 +206,14 @@ func (s *MySQLStore) AppendMessage(ctx context.Context, ticketID, authorType, au
 		 VALUES (?, ?, ?, ?, ?, ?)`,
 		m.ID, m.TicketID, m.AuthorType, m.AuthorID, m.Body, m.CreatedAt,
 	); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("insert message: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE ticket SET updated_at = ? WHERE id = ?`, now, ticketID); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("touch ticket %q updated_at: %w", ticketID, err)
 	}
 	if err := tx.Commit(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("append message: commit tx: %w", err)
 	}
 	return m, nil
 }
@@ -219,16 +223,19 @@ func (s *MySQLStore) ListMessages(ctx context.Context, ticketID string) ([]Ticke
 		`SELECT id, ticket_id, author_type, author_id, body, created_at
 		 FROM ticket_message WHERE ticket_id = ? ORDER BY created_at ASC`, ticketID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list messages for ticket %q: %w", ticketID, err)
 	}
 	defer rows.Close()
 	out := make([]TicketMessage, 0, 8)
 	for rows.Next() {
 		var m TicketMessage
 		if err := rows.Scan(&m.ID, &m.TicketID, &m.AuthorType, &m.AuthorID, &m.Body, &m.CreatedAt); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("scan message row: %w", err)
 		}
 		out = append(out, m)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate message rows: %w", err)
+	}
+	return out, nil
 }

@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 
 	"git.woa.com/wisp/mono/ticket/internal/store"
@@ -32,6 +34,19 @@ func New(s Store) *Service {
 	return &Service{store: s}
 }
 
+// loadTicket 统一处理"查单"错误：记录不存在映射为 ErrNotFound，
+// 其余（DB 连接、扫描等）错误保留原始信息向上包装，避免掩盖真实原因。
+func (s *Service) loadTicket(ctx context.Context, id string) (*store.Ticket, error) {
+	t, err := s.store.GetTicket(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("load ticket %q: %w", id, err)
+	}
+	return t, nil
+}
+
 // --- User ---
 
 func (s *Service) CreateTicket(ctx context.Context, userID, realm, subject, category, body string) (*store.Ticket, error) {
@@ -51,16 +66,16 @@ func (s *Service) ListMyTickets(ctx context.Context, userID string) ([]store.Tic
 }
 
 func (s *Service) GetMyTicketDetail(ctx context.Context, userID, id string) (*store.Ticket, []store.TicketMessage, error) {
-	t, err := s.store.GetTicket(ctx, id)
+	t, err := s.loadTicket(ctx, id)
 	if err != nil {
-		return nil, nil, ErrNotFound
+		return nil, nil, err
 	}
 	if t.UserID != userID {
 		return nil, nil, ErrForbidden
 	}
 	msgs, err := s.store.ListMessages(ctx, id)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("list messages: %w", err)
 	}
 	return t, msgs, nil
 }
@@ -70,9 +85,9 @@ func (s *Service) AppendUserMessage(ctx context.Context, userID, ticketID, body 
 	if body == "" {
 		return nil, ErrInvalidInput
 	}
-	t, err := s.store.GetTicket(ctx, ticketID)
+	t, err := s.loadTicket(ctx, ticketID)
 	if err != nil {
-		return nil, ErrNotFound
+		return nil, err
 	}
 	if t.UserID != userID {
 		return nil, ErrForbidden
@@ -87,16 +102,16 @@ func (s *Service) AdminListTickets(ctx context.Context, realm, status, assignee 
 }
 
 func (s *Service) AdminGetTicketDetail(ctx context.Context, realm, id string) (*store.Ticket, []store.TicketMessage, error) {
-	t, err := s.store.GetTicket(ctx, id)
+	t, err := s.loadTicket(ctx, id)
 	if err != nil {
-		return nil, nil, ErrNotFound
+		return nil, nil, err
 	}
 	if t.Realm != realm {
 		return nil, nil, ErrForbidden
 	}
 	msgs, err := s.store.ListMessages(ctx, id)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("list messages: %w", err)
 	}
 	return t, msgs, nil
 }
@@ -106,9 +121,9 @@ func (s *Service) AdminReply(ctx context.Context, realm, agentID, ticketID, body
 	if body == "" {
 		return nil, ErrInvalidInput
 	}
-	t, err := s.store.GetTicket(ctx, ticketID)
+	t, err := s.loadTicket(ctx, ticketID)
 	if err != nil {
-		return nil, ErrNotFound
+		return nil, err
 	}
 	if t.Realm != realm {
 		return nil, ErrForbidden
@@ -120,9 +135,9 @@ func (s *Service) AdminUpdateStatus(ctx context.Context, realm, agentID, ticketI
 	if !validStatus(status) {
 		return nil, ErrInvalidInput
 	}
-	t, err := s.store.GetTicket(ctx, ticketID)
+	t, err := s.loadTicket(ctx, ticketID)
 	if err != nil {
-		return nil, ErrNotFound
+		return nil, err
 	}
 	if t.Realm != realm {
 		return nil, ErrForbidden

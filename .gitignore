@@ -140,3 +140,4 @@ frontend/.edgeone/*
 !.codebuddy/AGENTS.md
 # === END FEAI MANAGED ===
 .DS_Store
+frontend/.support-feedback/
