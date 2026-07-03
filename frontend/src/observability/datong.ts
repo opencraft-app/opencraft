@@ -85,6 +85,8 @@ export const DATONG_EVENTS = {
   // Docs 搜索（2）
   DOC_SEARCH: "doc_search",
   DOC_SEARCH_RESULT_CLICK: "doc_search_result_click",
+  // 来源追踪（1）—— SDK 初始化成功后立即上报，捕获外部渠道引流（discord/twitter/kol 等）
+  LANDING_REFERRAL: "landing_referral",
 } as const;
 
 export type DatongEvent = (typeof DATONG_EVENTS)[keyof typeof DATONG_EVENTS];
@@ -133,6 +135,93 @@ let pendingUserId: string | undefined;
 let identifiedUserId: string | undefined;
 let activeRegion: Region | undefined;
 let activeAppSurface = "lightvela-web";
+
+/**
+ * URL 来源参数捕获 —— 首次进入站点时从 URL 读取 `from` 及标准 UTM 参数，
+ * 存入 sessionStorage 避免站内跳转后丢失。后续每条事件都携带，便于按来源维度分析转化漏斗。
+ *
+ * 支持的 URL 参数：
+ *   - from           : 业务自定义来源（discord / twitter / kol_xxx 等）
+ *   - utm_source     : 标准 UTM 来源
+ *   - utm_medium     : 标准 UTM 媒介
+ *   - utm_campaign   : 标准 UTM 活动
+ */
+const REF_SOURCE_STORAGE_KEY = "lc_ref_source";
+const REF_SOURCE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 天
+
+type RefSource = {
+  ref_from?: string;
+  utm_source?: string;
+  utm_medium?: string;
+  utm_campaign?: string;
+  captured_at: number;
+};
+
+const readUrlParam = (search: string, key: string): string | undefined => {
+  try {
+    const params = new URLSearchParams(search);
+    const value = params.get(key);
+    return value?.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const captureRefSourceFromUrl = (): RefSource | null => {
+  if (typeof window === "undefined") return null;
+  const search = window.location.search;
+  if (!search) return null;
+  const ref_from = readUrlParam(search, "from");
+  const utm_source = readUrlParam(search, "utm_source");
+  const utm_medium = readUrlParam(search, "utm_medium");
+  const utm_campaign = readUrlParam(search, "utm_campaign");
+  if (!ref_from && !utm_source && !utm_medium && !utm_campaign) return null;
+  return { ref_from, utm_source, utm_medium, utm_campaign, captured_at: Date.now() };
+};
+
+const loadStoredRefSource = (): RefSource | null => {
+  try {
+    const raw = sessionStorage.getItem(REF_SOURCE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as RefSource;
+    if (!parsed.captured_at) return null;
+    // 过期清理
+    if (Date.now() - parsed.captured_at > REF_SOURCE_MAX_AGE_MS) {
+      sessionStorage.removeItem(REF_SOURCE_STORAGE_KEY);
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+};
+
+const storeRefSource = (source: RefSource) => {
+  try {
+    sessionStorage.setItem(REF_SOURCE_STORAGE_KEY, JSON.stringify(source));
+  } catch {
+    /* sessionStorage 不可用时静默降级 */
+  }
+};
+
+/**
+ * 解析当前来源参数：URL 有新参数时捕获并覆盖存储；否则读 sessionStorage 续用。
+ * 返回值注入 publicParams，随每条事件下发。
+ */
+const resolveRefSource = (): Record<string, string> => {
+  const fresh = captureRefSourceFromUrl();
+  if (fresh) {
+    storeRefSource(fresh);
+  }
+  const stored = fresh ?? loadStoredRefSource();
+  if (!stored) return {};
+  const params: Record<string, string> = {};
+  if (stored.ref_from) params.ref_from = stored.ref_from;
+  if (stored.utm_source) params.utm_source = stored.utm_source;
+  if (stored.utm_medium) params.utm_medium = stored.utm_medium;
+  if (stored.utm_campaign) params.utm_campaign = stored.utm_campaign;
+  return params;
+};
 
 // 与 posthog.ts 保持同样的 PII 拦截约定：手动上报的 businessParams 中若命中这些 key 会被丢弃。
 const PII_PROPERTY_KEYS = new Set([
@@ -255,11 +344,21 @@ export async function initDatong(
       // 全站公参：随每一条上报下发，构造时通过 `publicParams` 一次性注入。
       // 项目主登录方式为 email / google / wallet，非 QQ / 微信 / 微博，
       // 因此不传 accountInfo；用户身份统一走 setDatongUser -> setPublicParams({ user_id }) 通路。
+      //
+      // 公参字段说明：
+      //   - app_region  : "cn" / "global"，区分国内站与国际站
+      //   - app_site    : "lightvela-cn" / "lightvela-global"，品牌+区域，便于看板直筛
+      //   - app_surface : "lightvela-web"，前端 surface
+      //   - ref_from    : URL ?from=xxx 捕获的来源（discord / twitter / kol_xxx）
+      //   - utm_*       : 标准 UTM 参数
+      const refSourceParams = resolveRefSource();
       const instance = new UniversalReport({
         beacon: config.appKey,
         publicParams: {
           app_region: config.region,
+          app_site: `lightvela-${config.region}`,
           app_surface: activeAppSurface,
+          ...refSourceParams,
         },
         enableNoCodeTracking: config.enableNoCodeTracking,
       } as ConstructorParameters<typeof UniversalReport>[0]) as unknown as DatongClient;
@@ -267,6 +366,22 @@ export async function initDatong(
       client = instance;
       activeRegion = config.region;
       applyPendingUser();
+
+      // 来源即时上报：SDK 初始化成功后，如果有 URL 来源参数（from / utm_*），
+      // 立即发一条 landing_referral 事件。这样即使用户在当前页面就关闭离开，
+      // 来源数据也已上报，不会因 cookie consent 延迟或未跳转而丢失。
+      if (Object.keys(refSourceParams).length > 0) {
+        client.reportEvent({
+          eventName: DATONG_EVENTS.LANDING_REFERRAL,
+          businessParams: {
+            ...refSourceParams,
+            app_region: config.region,
+            app_site: `lightvela-${config.region}`,
+            app_surface: activeAppSurface,
+          },
+        });
+      }
+
       return client;
     } catch (error: unknown) {
       console.warn("Failed to initialize Datong analytics", error);

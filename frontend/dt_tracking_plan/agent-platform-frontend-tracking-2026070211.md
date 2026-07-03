@@ -1,5 +1,25 @@
 ## 埋点事件表
 
+### 公共参数（每个事件自动携带，由 SDK publicParams 注入）
+
+| 参数 key | 说明 | 取值示例 | 采集时机 |
+|--------|------|--------|--------|
+| `user_id` | 登录后的用户 UID；未登录留空 | `usr_xxx` | SDK 全局 setUserId |
+| `app_region` | 部署区域（编译期常量，打包时注入） | `cn` / `global` | 由 `VITE_REGION` / `NEXT_PUBLIC_REGION` 注入 |
+| `app_site` | 品牌+区域标识，便于看板直筛 | `lightvela-cn` / `lightvela-global` | 由 `app_region` 派生 |
+| `app_surface` | 前端 surface | `lightvela-web` | SDK 初始化时注入 |
+| `ref_from` | URL `?from=xxx` 捕获的外部来源 | `discord` / `twitter` / `kol_xxx` | 首次进入站点时从 URL 读取，存 sessionStorage（30 天过期） |
+| `utm_source` | 标准 UTM 来源 | `google` / `newsletter` | 同上 |
+| `utm_medium` | 标准 UTM 媒介 | `cpc` / `email` | 同上 |
+| `utm_campaign` | 标准 UTM 活动 | `summer_launch` | 同上 |
+| `page_name` | 页面英文标识（等同 `dt_pgid`，冗余便于分析） | `home` / `subscribe` | SDK 页面事件自动填充 |
+
+> ⚠️ 公参统一在 SDK 初始化的 `publicParams` 里注入，业务代码调用埋点 API 时**不需要**手动传入。
+> `ref_from` / `utm_*` 来源参数在首次进入站点时从 URL 捕获并存入 sessionStorage，
+> 站内跳转不丢失；SDK 初始化成功后会立即发一条 `landing_referral` 事件确保来源数据不丢。
+
+### 事件表
+
 | 触发时机 trigger | 示意图 ui | 事件 event_code | 页面 dt_pgid | 元素 dt_eid | 私有参数 udf_kv | 说明 remark |
 |----------|:----:|---------|---------|:------------:|-------|-------|
 | 路由进入首页时 | — | `dt_pgin` 页面曝光 | `home` 首页 | — | `page_name` 页面名称标识 | 覆盖 `/` 与 `/[lang]` |
@@ -85,3 +105,4 @@
 | AI 会话消息失败时 | — | `agent_message_fail` Agent 消息失败 | `agent_chat` Agent 会话页 | — | `bot_id` Agent ID；`session_id` 会话 ID；`error_code` 错误码；`error_msg` 错误消息 | 护栏指标 |
 | 文档搜索接口触发时 | — | `doc_search` 文档搜索 | `docs` 文档中心 | — | `keyword` 搜索词；`result_count` 结果数 | 用于文档搜索使用率 |
 | 文档搜索结果点击时 | — | `doc_search_result_click` 文档搜索结果点击 | `docs` 文档中心 | — | `keyword` 搜索词；`hit_slug` 命中的文档路径；`hit_rank` 命中排名 | — |
+| SDK 初始化成功且 URL 含来源参数时 | — | `landing_referral` 来源捕获 | — | — | `ref_from` 来源渠道；`utm_source` UTM 来源；`utm_medium` UTM 媒介；`utm_campaign` UTM 活动 | 捕获外部渠道引流（discord/twitter/kol 等），SDK init 后立即上报，避免用户未跳转就离开导致来源丢失 |
