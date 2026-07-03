@@ -164,8 +164,9 @@ bucket = ${COS_BUCKET}
 region = ${COS_REGION}
 schema = https
 retry = 5
-max_thread = 8
-part_size = 20
+timeout = ${CLOUDAGENT_AGENT_COS_TIMEOUT_SECONDS:-600}
+max_thread = ${CLOUDAGENT_AGENT_COS_MAX_THREAD:-4}
+part_size = ${CLOUDAGENT_AGENT_COS_PART_SIZE_MB:-8}
 EOF
 
 export COSCMD_CONFIG

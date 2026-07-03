@@ -46,6 +46,24 @@ if [[ -z "$public_base" ]]; then
   public_base="${public_scheme}://${bucket}.cos.${region}.myqcloud.com"
 fi
 
+coscmd_with_retry() {
+  local attempts delay i
+  attempts="${CLOUDAGENT_COSCMD_ATTEMPTS:-4}"
+  delay="${CLOUDAGENT_COSCMD_RETRY_DELAY_SECONDS:-10}"
+  i=1
+  while true; do
+    if "$coscmd_bin" -c "$coscmd_config" "$@"; then
+      return 0
+    fi
+    if [[ "$i" -ge "$attempts" ]]; then
+      return 1
+    fi
+    echo "[wisp-publish] coscmd failed attempt=$i/$attempts command=$1; retry in ${delay}s" >&2
+    sleep "$delay"
+    i=$((i + 1))
+  done
+}
+
 sha="$(sha256sum "$artifact" 2>/dev/null | awk '{print $1}')"
 if [[ -z "$sha" ]]; then
   sha="$(shasum -a 256 "$artifact" | awk '{print $1}')"
@@ -71,8 +89,8 @@ object="${object_prefix%/}/${stem}-${short}${ext}"
 if [[ "$dry_run" == "1" ]]; then
   echo "DRY_RUN=1" >&2
 else
-  "$coscmd_bin" -c "$coscmd_config" upload -f -y "$artifact" "$object"
-  "$coscmd_bin" -c "$coscmd_config" putobjectacl "$object" --grant-read anyone
+  coscmd_with_retry upload -f -y "$artifact" "$object"
+  coscmd_with_retry putobjectacl "$object" --grant-read anyone
 fi
 
 echo "URL=${public_base}${object}"

@@ -24,6 +24,24 @@ require_cmd() {
   fi
 }
 
+coscmd_with_retry() {
+  local attempts delay i
+  attempts="${CLOUDAGENT_COSCMD_ATTEMPTS:-4}"
+  delay="${CLOUDAGENT_COSCMD_RETRY_DELAY_SECONDS:-10}"
+  i=1
+  while true; do
+    if "$COSCMD_BIN" -c "$COSCMD_CONFIG" "$@"; then
+      return 0
+    fi
+    if [ "$i" -ge "$attempts" ]; then
+      return 1
+    fi
+    printf '[signupload] coscmd failed attempt=%s/%s command=%s; retry in %ss\n' "$i" "$attempts" "$1" "$delay" >&2
+    sleep "$delay"
+    i=$((i + 1))
+  done
+}
+
 cos_config_value() {
   local key="$1"
   awk -F '=' -v key="$key" '
@@ -113,14 +131,14 @@ if [ "$DRY_RUN" = "1" ]; then
   printf '[signupload] dry-run enabled; skip COS upload and HEAD checks\n' >&2
 else
   printf '[signupload] upload %s -> %s\n' "$SIDECAR_LOCAL_PATH" "$SIDECAR_OBJECT" >&2
-  "$COSCMD_BIN" -c "$COSCMD_CONFIG" upload -f -y "$SIDECAR_LOCAL_PATH" "$SIDECAR_OBJECT" >&2
+  coscmd_with_retry upload -f -y "$SIDECAR_LOCAL_PATH" "$SIDECAR_OBJECT" >&2
   printf '[signupload] upload %s -> %s\n' "$SIDECAR_SIG_LOCAL_PATH" "$SIDECAR_SIG_OBJECT" >&2
-  "$COSCMD_BIN" -c "$COSCMD_CONFIG" upload -f -y "$SIDECAR_SIG_LOCAL_PATH" "$SIDECAR_SIG_OBJECT" >&2
+  coscmd_with_retry upload -f -y "$SIDECAR_SIG_LOCAL_PATH" "$SIDECAR_SIG_OBJECT" >&2
 
   printf '[signupload] set public-read -> %s\n' "$SIDECAR_OBJECT" >&2
-  "$COSCMD_BIN" -c "$COSCMD_CONFIG" putobjectacl "$SIDECAR_OBJECT" --grant-read anyone >&2
+  coscmd_with_retry putobjectacl "$SIDECAR_OBJECT" --grant-read anyone >&2
   printf '[signupload] set public-read -> %s\n' "$SIDECAR_SIG_OBJECT" >&2
-  "$COSCMD_BIN" -c "$COSCMD_CONFIG" putobjectacl "$SIDECAR_SIG_OBJECT" --grant-read anyone >&2
+  coscmd_with_retry putobjectacl "$SIDECAR_SIG_OBJECT" --grant-read anyone >&2
 
   if command -v curl >/dev/null 2>&1; then
     curl -fsSI --connect-timeout 10 --max-time 30 "$PUBLIC_URL" >/dev/null
