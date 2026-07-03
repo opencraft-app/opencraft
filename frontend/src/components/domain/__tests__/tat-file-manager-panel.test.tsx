@@ -7,6 +7,7 @@ const uploadFileMock = vi.fn();
 const listPathMock = vi.fn<() => Promise<TsshFileInfo[]>>(async () => []);
 const deleteFileMock = vi.fn();
 const createFileMock = vi.fn();
+const execCommandMock = vi.fn();
 const originalServiceWorkerDescriptor = Object.getOwnPropertyDescriptor(navigator, "serviceWorker");
 const tsshFileClientInstances: Array<{ close: ReturnType<typeof vi.fn>; connect: ReturnType<typeof vi.fn>; isReady: ReturnType<typeof vi.fn> }> = [];
 
@@ -101,6 +102,7 @@ vi.mock("@/lib/tencent-tssh-file-client", async () => {
         connect: vi.fn(async () => undefined),
         createFile: createFileMock,
         deleteFile: deleteFileMock,
+        execCommand: execCommandMock,
         isReady: vi.fn(() => true),
         listPath: listPathMock,
         uploadFile: uploadFileMock,
@@ -125,6 +127,8 @@ describe("TatFileManagerPanel upload limits", () => {
     deleteFileMock.mockResolvedValue(undefined);
     createFileMock.mockReset();
     createFileMock.mockResolvedValue(undefined);
+    execCommandMock.mockReset();
+    execCommandMock.mockResolvedValue({ exitCode: 0, output: "" });
     listPathMock.mockReset();
     listPathMock.mockResolvedValue([]);
     tsshFileClientInstances.length = 0;
@@ -364,6 +368,72 @@ describe("TatFileManagerPanel upload limits", () => {
     fireEvent.click(deleteButton);
 
     await waitFor(() => expect(deleteFileMock).toHaveBeenCalledWith("/home/agentuser/.hermes/app.log", false));
+  });
+
+  it("renames the selected file through a TAT exec command", async () => {
+    listPathMock
+      .mockResolvedValueOnce([
+        {
+          type: "-",
+          name: "app.log",
+          size: 42,
+          modifyTime: 0,
+          accessTime: 0,
+          rights: "-rw-r--r--",
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          type: "-",
+          name: "server.log",
+          size: 42,
+          modifyTime: 0,
+          accessTime: 0,
+          rights: "-rw-r--r--",
+        },
+      ]);
+
+    render(<TatFileManagerPanel botId="bot-rename-file" />);
+    const renameButton = await screen.findByRole("button", { name: "重命名" });
+    expect(renameButton).toBeDisabled();
+
+    fireEvent.click(await screen.findByText("app.log"));
+    expect(renameButton).toBeEnabled();
+
+    fireEvent.click(renameButton);
+    const renameInput = screen.getByDisplayValue("app.log");
+    fireEvent.change(renameInput, { target: { value: "server.log" } });
+    fireEvent.click(screen.getByRole("button", { name: "确认重命名" }));
+
+    await waitFor(() => expect(execCommandMock).toHaveBeenCalledOnce());
+    expect(execCommandMock).toHaveBeenCalledWith(
+      "if [ -e '/home/agentuser/.hermes/server.log' ]; then echo 'file exists' >&2; exit 1; fi\nmv -- '/home/agentuser/.hermes/app.log' '/home/agentuser/.hermes/server.log'",
+      60,
+    );
+    await waitFor(() => expect(listPathMock).toHaveBeenLastCalledWith("/home/agentuser/.hermes"));
+    expect(await screen.findByText("已重命名。")).toBeInTheDocument();
+  });
+
+  it("rejects invalid rename targets before executing a command", async () => {
+    listPathMock.mockResolvedValueOnce([
+      {
+        type: "d",
+        name: "logs",
+        size: 0,
+        modifyTime: 0,
+        accessTime: 0,
+        rights: "drwxr-xr-x",
+      },
+    ]);
+
+    render(<TatFileManagerPanel botId="bot-invalid-rename" />);
+    fireEvent.click(await screen.findByText("logs"));
+    fireEvent.click(screen.getByRole("button", { name: "重命名" }));
+    fireEvent.change(screen.getByDisplayValue("logs"), { target: { value: "../logs" } });
+    fireEvent.click(screen.getByRole("button", { name: "确认重命名" }));
+
+    expect(await screen.findByText("文件名无效，只能在 /home/agentuser 目录下重命名。")).toBeInTheDocument();
+    expect(execCommandMock).not.toHaveBeenCalled();
   });
 
   it("selects a file row for download when clicking the row", async () => {

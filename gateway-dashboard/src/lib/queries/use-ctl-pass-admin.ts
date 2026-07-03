@@ -56,6 +56,19 @@ export interface CtlRefundPassResult {
   submitted_at: string;
 }
 
+export interface CtlDianshiParticipation {
+  id: number;
+  uin: string;
+  app_id: string;
+  external_user_id: string;
+  activity_id: number;
+  bundle_id: string;
+  act_id: number;
+  deal_name: string;
+  big_deal_no: string;
+  created_time: string;
+}
+
 interface CtlBundleListData {
   bundles?: CtlBundle[];
 }
@@ -71,6 +84,19 @@ interface CtlDeletePassResult {
 export interface CtlPassFilters {
   userID?: string;
   bundleID?: string;
+}
+
+export interface CtlDianshiRecordFilters {
+  userID?: string;
+}
+
+interface CtlDianshiRecordsData {
+  participations?: CtlDianshiParticipation[];
+}
+
+interface CtlDeleteDianshiRecordResult {
+  deleted: boolean;
+  affected: number;
 }
 
 function unwrapCtlData<T>(envelope: CtlEnvelope<T>): T {
@@ -101,6 +127,24 @@ export function useCtlAdminPasses(filters: CtlPassFilters) {
         },
       });
       return unwrapCtlData(envelope).passes ?? [];
+    },
+  });
+}
+
+export function useCtlDianshiRecords(filters: CtlDianshiRecordFilters) {
+  return useQuery({
+    queryKey: ["ctl-admin", "dianshi-records", filters],
+    queryFn: async () => {
+      const envelope = await apiClient<CtlEnvelope<CtlDianshiRecordsData>>("ctl/admin/dianshi/orders", {
+        params: {
+          external_user_id: filters.userID?.trim() || undefined,
+          limit: 100,
+        },
+      });
+      const data = unwrapCtlData(envelope);
+      return {
+        participations: data.participations ?? [],
+      };
     },
   });
 }
@@ -146,6 +190,20 @@ export function useCtlDestroyPass() {
       ).then(unwrapCtlData),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["ctl-admin", "passes"] });
+    },
+  });
+}
+
+export function useCtlDeleteDianshiParticipation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) =>
+      apiClient<CtlEnvelope<CtlDeleteDianshiRecordResult>>(
+        `ctl/admin/dianshi/participations/${id}`,
+        { method: "DELETE" }
+      ).then(unwrapCtlData),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ctl-admin", "dianshi-records"] });
     },
   });
 }

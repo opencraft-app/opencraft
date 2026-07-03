@@ -18,8 +18,8 @@ export async function generateMetadata({ params }: { params: Promise<{ lang: str
     locale: routeLocale.locale,
     title:
       routeLocale.locale === 'en-US'
-        ? 'LightVela · Your Personal Cloud AI Agent'
-        : 'LightVela 云端专属个人 Agent',
+        ? 'LightVela | Your Personal Cloud AI Agent'
+        : 'LightVela｜云端专属个人 Agent',
     description:
       routeLocale.locale === 'en-US'
         ? 'LightVela is a cloud Agent hosting product from the Tencent Lighthouse team.'

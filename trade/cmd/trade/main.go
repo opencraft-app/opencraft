@@ -166,6 +166,8 @@ func main() {
 			}
 			return nil
 		}(),
+		// 点石后台管理查询/删除入口：用于 admin 侧清理订单/参与记录后重试下单。
+		DianshiAdminStore: mysqlStore,
 		// 迭代 8A 起：内部 RPC 业务 service。
 		InquiryService:    inquirySvc,
 		PlaceOrderService: placeOrderSvc,

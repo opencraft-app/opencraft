@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 )
 
 // ErrBundleActivityNotFound 是 trade_bundle_activity 查无记录的哨兵错误。
@@ -47,6 +49,17 @@ type UserActivityParticipation struct {
 	ActID          int64
 	DealName       string
 	BigDealNo      string
+	CreatedTime    time.Time
+}
+
+// DianshiRecordFilter 是后台查询点石参与记录/订单时共用的过滤条件。
+type DianshiRecordFilter struct {
+	ExternalUserID string
+	Uin            string
+	ActivityID     int64
+	BundleID       string
+	DealName       string
+	Limit          int
 }
 
 // ActivityStore 抽象点石活动相关的 DAO 接口，便于 logic/activity Resolver 单测 mock。
@@ -79,7 +92,16 @@ type ActivityStore interface {
 	) (int64, error)
 }
 
+// DianshiAdminStore 是后台管理点石订单和参与记录所需的 DAO 能力。
+type DianshiAdminStore interface {
+	ListDianshiOrders(ctx context.Context, filter DianshiRecordFilter) ([]*TradeOrder, error)
+	DeleteDianshiOrder(ctx context.Context, dealName string) (int64, error)
+	ListUserActivityParticipations(ctx context.Context, filter DianshiRecordFilter) ([]*UserActivityParticipation, error)
+	DeleteUserActivityParticipation(ctx context.Context, id int64) (int64, error)
+}
+
 var _ ActivityStore = (*MySQLStore)(nil)
+var _ DianshiAdminStore = (*MySQLStore)(nil)
 
 // GetBundleActivityByBundleID 实现 ActivityStore 接口。
 //
@@ -189,4 +211,101 @@ func (s *MySQLStore) InsertUserParticipation(
 		return 0, fmt.Errorf("trade_user_activity_participation: last insert id: %w", err)
 	}
 	return id, nil
+}
+
+// ListUserActivityParticipations 查询点石活动参与记录，用于后台管理排障和重试。
+func (s *MySQLStore) ListUserActivityParticipations(ctx context.Context, filter DianshiRecordFilter) ([]*UserActivityParticipation, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("trade_user_activity_participation: store is nil")
+	}
+	where, args := buildDianshiFilterWhere(filter, false)
+	q := `
+		SELECT id, uin, app_id, external_user_id, activity_id, bundle_id, act_id,
+		       deal_name, big_deal_no, created_time
+		  FROM trade_user_activity_participation
+	` + where + `
+		 ORDER BY created_time DESC, id DESC
+		 LIMIT ?
+	`
+	args = append(args, normalizedDianshiLimit(filter.Limit))
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("trade_user_activity_participation: list: %w", err)
+	}
+	defer rows.Close()
+
+	result := make([]*UserActivityParticipation, 0)
+	for rows.Next() {
+		var row UserActivityParticipation
+		if err := rows.Scan(
+			&row.ID, &row.Uin, &row.AppID, &row.ExternalUserID, &row.ActivityID,
+			&row.BundleID, &row.ActID, &row.DealName, &row.BigDealNo, &row.CreatedTime,
+		); err != nil {
+			return nil, fmt.Errorf("trade_user_activity_participation: scan: %w", err)
+		}
+		result = append(result, &row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("trade_user_activity_participation: rows: %w", err)
+	}
+	return result, nil
+}
+
+// DeleteUserActivityParticipation 删除点石活动参与记录，使用户可重新走点石活动下单。
+func (s *MySQLStore) DeleteUserActivityParticipation(ctx context.Context, id int64) (int64, error) {
+	if s == nil || s.db == nil {
+		return 0, fmt.Errorf("trade_user_activity_participation: store is nil")
+	}
+	res, err := s.db.ExecContext(ctx, `DELETE FROM trade_user_activity_participation WHERE id = ?`, id)
+	if err != nil {
+		return 0, fmt.Errorf("trade_user_activity_participation: delete id=%d: %w", id, err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("trade_user_activity_participation: delete rows affected: %w", err)
+	}
+	return affected, nil
+}
+
+func buildDianshiFilterWhere(filter DianshiRecordFilter, includeSource bool) (string, []any) {
+	clauses := make([]string, 0, 6)
+	args := make([]any, 0, 6)
+	if includeSource {
+		clauses = append(clauses, "source = ?")
+		args = append(args, OrderSourceDianshi)
+	}
+	if v := strings.TrimSpace(filter.ExternalUserID); v != "" {
+		clauses = append(clauses, "external_user_id = ?")
+		args = append(args, v)
+	}
+	if v := strings.TrimSpace(filter.Uin); v != "" {
+		clauses = append(clauses, "uin = ?")
+		args = append(args, v)
+	}
+	if filter.ActivityID > 0 {
+		clauses = append(clauses, "activity_id = ?")
+		args = append(args, filter.ActivityID)
+	}
+	if v := strings.TrimSpace(filter.BundleID); v != "" {
+		clauses = append(clauses, "bundle_id = ?")
+		args = append(args, v)
+	}
+	if v := strings.TrimSpace(filter.DealName); v != "" {
+		clauses = append(clauses, "deal_name = ?")
+		args = append(args, v)
+	}
+	if len(clauses) == 0 {
+		return "", args
+	}
+	return " WHERE " + strings.Join(clauses, " AND "), args
+}
+
+func normalizedDianshiLimit(limit int) int {
+	if limit <= 0 {
+		return 50
+	}
+	if limit > 200 {
+		return 200
+	}
+	return limit
 }

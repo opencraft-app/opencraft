@@ -24,7 +24,7 @@ This tutorial walks through the full process from signing in to receiving a Herm
 
 ## 1. Sign in to LightVela
 
-Visit [lightvela.com](https://lightvela.com) and click "Log in" in the upper-right corner. In the login dialog, choose Google or GitHub, accept the agreements, and complete authorization.
+Visit [lightvela.ai](https://lightvela.ai) and click "Log in" in the upper-right corner. In the login dialog, choose Google or GitHub, accept the agreements, and complete authorization.
 
 ![](./images/2-1.webp)
 

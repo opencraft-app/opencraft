@@ -1,5 +1,5 @@
 /**
- * 语言切换器（仅国际站使用）
+ * 语言 / 站点切换器
  * ──────────────────────────────────────────────────────────────
  * - 通过 `setLocale()` 切换语言，react-i18next 会自动驱动 rerender
  * - 选择结果由 `setLocale()` 内部持久化到 localStorage('lw-locale')
@@ -21,6 +21,7 @@ import { useTranslation } from "react-i18next";
 
 import { setLocale } from "@/i18n";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
+import { shouldLocalizePublicPath, stripPublicSiteLocalePrefix } from "@/lib/public-site-routing";
 import { isGlobal, switchLocaleInPath } from "@/lib/region";
 
 export type LanguageSwitcherVariant = "dropdown" | "inline";
@@ -36,9 +37,11 @@ type Option = {
   label: string;
 };
 
-const EN_OPTION: Option = { value: "en-US", short: "EN", label: "English" };
-const ZH_CN_OPTION: Option = { value: "zh-CN", short: "中", label: "中文" };
-const ZH_SG_OPTION: Option = { value: "zh-SG", short: "中", label: "中文" };
+const EN_OPTION: Option = { value: "en-US", short: "EN", label: "Intl - English" };
+const ZH_CN_OPTION: Option = { value: "zh-CN", short: "中", label: "Intl - 中文" };
+const ZH_SG_OPTION: Option = { value: "zh-SG", short: "中", label: "Intl - 中文" };
+const CHINA_SITE_URL = "https://lightvela.com";
+const INTL_SITE_URL = "https://lightvela.ai";
 
 function chineseOption(): Option {
   return isGlobal ? ZH_SG_OPTION : ZH_CN_OPTION;
@@ -106,6 +109,40 @@ function applyLocaleChange(
   }
 }
 
+function chinaSiteLabel(activeLocale: PublicSiteLocale): string {
+  return activeLocale.startsWith("zh") ? "中国站" : "China Site";
+}
+
+function openChinaSite(): void {
+  if (typeof window === "undefined") return;
+  window.location.assign(CHINA_SITE_URL);
+}
+
+function intlSiteUrlForLocale(value: PublicSiteLocale): string {
+  if (typeof window === "undefined") return INTL_SITE_URL;
+
+  const barePath = stripPublicSiteLocalePrefix(window.location.pathname || "/");
+  const targetPath = value.startsWith("zh") && shouldLocalizePublicPath(barePath)
+    ? (barePath === "/" ? "/zh-sg/" : `/zh-sg${barePath}`)
+    : barePath;
+
+  return `${INTL_SITE_URL}${targetPath}${window.location.search}${window.location.hash}`;
+}
+
+function applyIntlChoice(
+  value: PublicSiteLocale,
+  reloadAfterSwitch: boolean,
+  navigateTo?: LanguageSwitcherNavigate,
+): void {
+  if (isGlobal) {
+    applyLocaleChange(value, reloadAfterSwitch, navigateTo);
+    return;
+  }
+
+  if (typeof window === "undefined") return;
+  window.location.assign(intlSiteUrlForLocale(value));
+}
+
 /**
  * 下拉菜单形态（桌面端用）
  */
@@ -137,7 +174,7 @@ function DropdownSwitcher({
 
   const handlePick = (value: PublicSiteLocale) => {
     setOpen(false);
-    if (value !== active.value) applyLocaleChange(value, reloadAfterSwitch, navigateTo);
+    if (!isGlobal || value !== active.value) applyIntlChoice(value, reloadAfterSwitch, navigateTo);
   };
 
   return (
@@ -160,10 +197,10 @@ function DropdownSwitcher({
       {open && (
         <ul
           role="listbox"
-          className="absolute right-0 top-[calc(100%+6px)] z-50 min-w-[140px] overflow-hidden rounded-xl border border-black/5 bg-white shadow-[0_8px_24px_rgba(0,0,0,0.08)] py-1"
+          className="absolute right-0 top-[calc(100%+6px)] z-50 min-w-[168px] overflow-hidden rounded-xl border border-black/5 bg-white shadow-[0_8px_24px_rgba(0,0,0,0.08)] py-1"
         >
           {options.map((opt) => {
-            const selected = opt.value === active.value;
+            const selected = isGlobal && opt.value === active.value;
             return (
               <li key={opt.value}>
                 <button
@@ -181,6 +218,24 @@ function DropdownSwitcher({
               </li>
             );
           })}
+          <li aria-hidden="true" className="my-1 border-t border-black/10" />
+          <li>
+            <button
+              type="button"
+              role="option"
+              aria-selected={!isGlobal}
+              onClick={() => {
+                setOpen(false);
+                openChinaSite();
+              }}
+              className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-sm transition-colors hover:bg-black/5 ${
+                !isGlobal ? "font-semibold text-black/90" : "font-normal text-black/80"
+              }`}
+            >
+              <span>{chinaSiteLabel(active.value)}</span>
+              {!isGlobal && <Check className="h-[14px] w-[14px]" />}
+            </button>
+          </li>
         </ul>
       )}
     </div>
@@ -204,26 +259,40 @@ function InlineSwitcher({
   const options = [EN_OPTION, chineseOption()] as const;
 
   return (
-    <div className="flex items-center gap-2">
-      {options.map((opt) => {
-        const selected = opt.value === active.value;
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => {
-              if (!selected) applyLocaleChange(opt.value, reloadAfterSwitch, navigateTo);
-            }}
-            className={`inline-flex items-center justify-center h-[32px] px-3 rounded-[100px] text-[13px] transition-colors ${
-              selected
-                ? "bg-black/90 text-white font-semibold"
-                : "bg-[#F5F5F5] text-black/80 border border-[#E6E9EF] hover:bg-black/5"
-            }`}
-          >
-            {opt.label}
-          </button>
-        );
-      })}
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        {options.map((opt) => {
+          const selected = isGlobal && opt.value === active.value;
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => {
+                if (!selected) applyIntlChoice(opt.value, reloadAfterSwitch, navigateTo);
+              }}
+              className={`inline-flex h-[32px] items-center justify-center rounded-[100px] px-3 text-[13px] transition-colors ${
+                selected
+                  ? "bg-black/90 text-white font-semibold"
+                  : "border border-[#E6E9EF] bg-[#F5F5F5] text-black/80 hover:bg-black/5"
+              }`}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+      <div className="h-px bg-black/10" />
+      <button
+        type="button"
+        onClick={openChinaSite}
+        className={`inline-flex h-[32px] w-fit items-center justify-center rounded-[100px] px-3 text-[13px] transition-colors ${
+          !isGlobal
+            ? "bg-black/90 text-white font-semibold"
+            : "border border-[#E6E9EF] bg-[#F5F5F5] text-black/80 hover:bg-black/5"
+        }`}
+      >
+        {chinaSiteLabel(active.value)}
+      </button>
     </div>
   );
 }
