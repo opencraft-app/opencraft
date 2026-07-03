@@ -89,6 +89,16 @@ replacements:
           name: cloudagent-gateway-config
         fieldPaths:
           - data.GATEWAY_WISP_PACKAGE_URL
+      - select:
+          kind: Deployment
+          name: cloudagent-gateway
+        fieldPaths:
+          - spec.template.spec.containers.[name=gateway].env.[name=GATEWAY_WISP_PACKAGE_URL].value
+      - select:
+          kind: Deployment
+          name: cloudagent-runtime-pool-worker
+        fieldPaths:
+          - spec.template.spec.containers.[name=runtime-pool-worker].env.[name=GATEWAY_WISP_PACKAGE_URL].value
   - source:
       kind: ConfigMap
       name: cloudagent-gateway-platform-values
@@ -99,6 +109,16 @@ replacements:
           name: cloudagent-gateway-config
         fieldPaths:
           - data.GATEWAY_WISP_PACKAGE_SHA256
+      - select:
+          kind: Deployment
+          name: cloudagent-gateway
+        fieldPaths:
+          - spec.template.spec.containers.[name=gateway].env.[name=GATEWAY_WISP_PACKAGE_SHA256].value
+      - select:
+          kind: Deployment
+          name: cloudagent-runtime-pool-worker
+        fieldPaths:
+          - spec.template.spec.containers.[name=runtime-pool-worker].env.[name=GATEWAY_WISP_PACKAGE_SHA256].value
   - source:
       kind: ConfigMap
       name: cloudagent-gateway-platform-values
