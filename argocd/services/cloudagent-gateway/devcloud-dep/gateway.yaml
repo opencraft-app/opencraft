@@ -120,6 +120,10 @@ spec:
                 secretKeyRef:
                   name: cloudagent-wisp-secrets
                   key: GATEWAY_WISP_SMH_LIBRARY_SECRET
+            - name: GATEWAY_WISP_PACKAGE_URL
+              value: "REPLACE_ME_DEVCLOUD_DEP_WISP_PACKAGE_URL"
+            - name: GATEWAY_WISP_PACKAGE_SHA256
+              value: "REPLACE_ME_DEVCLOUD_DEP_WISP_PACKAGE_SHA256"
             - name: GATEWAY_RUNTIME_WARM_POOL_DB_DSN
               valueFrom:
                 secretKeyRef:
@@ -213,6 +217,10 @@ spec:
                 secretKeyRef:
                   name: cloudagent-wisp-secrets
                   key: GATEWAY_WISP_SMH_LIBRARY_SECRET
+            - name: GATEWAY_WISP_PACKAGE_URL
+              value: "REPLACE_ME_DEVCLOUD_DEP_WISP_PACKAGE_URL"
+            - name: GATEWAY_WISP_PACKAGE_SHA256
+              value: "REPLACE_ME_DEVCLOUD_DEP_WISP_PACKAGE_SHA256"
             - name: TEMPORAL_AUTH_TOKEN
               valueFrom:
                 secretKeyRef:
