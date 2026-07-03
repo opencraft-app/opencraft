@@ -16,6 +16,9 @@ interface ImportMetaEnv {
   readonly NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN?: string;
   readonly NEXT_PUBLIC_POSTHOG_HOST?: string;
   readonly NEXT_PUBLIC_POSTHOG_UI_HOST?: string;
+  readonly NEXT_PUBLIC_AEGIS_ENABLED?: string;
+  readonly NEXT_PUBLIC_AEGIS_ID?: string;
+  readonly NEXT_PUBLIC_AEGIS_HOST_URL?: string;
 }
 
 interface ImportMeta {
