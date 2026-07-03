@@ -23,7 +23,7 @@
 | `/dashboard/setup`     | `OpenClawSetupPage`    | OpenClaw 初始化设置 |
 | `/dashboard/success`   | `OpenClawSuccessPage`  | 创建成功落地 |
 | `/agents`              | `OpenClawSettingsPage` | Agent 控制台（默认通道页，业务核心） |
-| `/agents/:section`     | `OpenClawSettingsPage` | Agent 能力分区；支持 channels / models / skills / persona / automations / memory / achievements / files / chat；国际站直达 persona / chat 时回到 `/agents` |
+| `/agents/:section`     | `OpenClawSettingsPage` | Agent 能力分区；支持 channels / models / skills / persona / automations / memory / achievements / files / chat / diagnostics；国际站直达 persona / chat 时回到 `/agents` |
 | `/account`             | `AccountPage`          | 个人中心（41KB / 1084 行，含实名认证入口） |
 | `/account/orders`      | `AccountOrdersPage`    | 订单列表（14KB） |
 | `/dashboard`（裸路径） | `<Navigate>`           | 兼容跳 `/agents` |
@@ -121,6 +121,15 @@
   - 灰度/回滚
 - `openclaw-console-helpers.ts` — 控制台辅助函数
 - `openclaw-tat-adapter.ts` — 与 TAT（腾讯自动化工具）适配器
+
+### Agent 诊断中心
+
+- `agent-settings-page.tsx` 在 `/agents/diagnostics` 承载诊断中心。
+- Agent 备份与恢复入口：
+  - 国内站默认展示，维持既有诊断中心路径。
+  - 国际站默认隐藏，不渲染备份 / 恢复面板，不挂载确认弹窗，不查询导出 / 导入状态，也不启动轮询。
+  - 国际站仅在控制台执行 `show()`、令隐藏工具可见后展示，行为与“终端”“浏览器”等隐藏入口保持一致。
+  - 该显隐规则只影响前端诊断入口，不改变后端 worker action、备份包格式或恢复流程。
 
 ### 订阅与账户
 
