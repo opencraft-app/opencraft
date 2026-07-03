@@ -1071,6 +1071,60 @@ func TestACPPromptRuntimeErrorUsesJSONRPCErrorData(t *testing.T) {
 	}
 }
 
+func TestACPPromptProviderErrorOnlyFailsCurrentTurn(t *testing.T) {
+	manager := &recordingACPRuntimeManager{
+		promptErrs: []error{workerError("provider_error", "provider exploded")},
+	}
+	srv := newACPTestServerWithRuntime(t, manager)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", map[string]string{"Authorization": "Bearer test-key"})
+	defer client.close()
+
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})
+	waitForRPCID(t, client, float64(1))
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      2,
+		"method":  "session/new",
+		"params": map[string]any{
+			"cwd":   "/workspace",
+			"_meta": map[string]any{"cloudagent": map[string]any{"outer_runtime": "ags"}},
+		},
+	})
+	sessionID := waitForRPCID(t, client, float64(2))["result"].(map[string]any)["sessionId"].(string)
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      3,
+		"method":  "session/prompt",
+		"params":  map[string]any{"sessionId": sessionID, "prompt": []any{map[string]any{"type": "text", "text": "fail once"}}},
+	})
+	failed := waitForRPCID(t, client, float64(3))
+	errorObject := failed["error"].(map[string]any)
+	if errorObject["code"] != float64(-32000) || errorObject["message"] != "provider exploded" {
+		t.Fatalf("unexpected provider error object: %#v", errorObject)
+	}
+	data := errorObject["data"].(map[string]any)
+	if data["code"] != "provider_error" {
+		t.Fatalf("unexpected provider error data: %#v", data)
+	}
+
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      4,
+		"method":  "session/prompt",
+		"params":  map[string]any{"sessionId": sessionID, "prompt": []any{map[string]any{"type": "text", "text": "continue"}}},
+	})
+	resp := waitForRPCID(t, client, float64(4))
+	if resp["error"] != nil {
+		t.Fatalf("provider failure must not poison session readiness: %#v", resp)
+	}
+	if got := resp["result"].(map[string]any)["stopReason"]; got != "end_turn" {
+		t.Fatalf("expected successful follow-up turn, got %#v", resp)
+	}
+}
+
 func TestACPPromptPreflightRuntimeUnavailableReturnsACPError(t *testing.T) {
 	manager := &recordingACPRuntimeManager{
 		reattachErr: fmt.Errorf("ags http 404 op=run_command sandbox_id=outer_1 domain=ap-beijing.tencentags.com envd_port=49983: The requested resource does not exist"),

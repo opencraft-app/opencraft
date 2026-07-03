@@ -160,3 +160,16 @@ func apiErrorFromWorker(err error) *APIError {
 	}
 	return apiErr("worker_failed", err.Error())
 }
+
+func workerFailureIsTurnScoped(err error) bool {
+	var failure *workerFailure
+	if !errors.As(err, &failure) {
+		return false
+	}
+	switch failure.code {
+	case "provider_error", "tool_call_validation_error", "invalid_tool_arguments":
+		return true
+	default:
+		return false
+	}
+}

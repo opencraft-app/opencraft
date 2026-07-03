@@ -559,6 +559,12 @@ func TestCloudAgentHTTPProtocolFailedRunStreamsPublicSessionError(t *testing.T) 
 	if strings.Contains(replayBody, `"sessionUpdate"`) || strings.Contains(replayBody, `"type":"agent.raw"`) {
 		t.Fatalf("failed non-stream replay leaked internal event shape:\n%s", replayBody)
 	}
+
+	nextRunID := submitCloudAgentHTTPRun(t, srv, sessionID, "job_failed_public_stream_next", "still usable")
+	nextResult := waitCloudAgentRun(t, srv, nextRunID)
+	if nextResult.Status != "failed" || !strings.Contains(nextResult.Error, "provider exploded") {
+		t.Fatalf("provider failure must only fail the turn, got next result %#v", nextResult)
+	}
 }
 
 func TestCloudAgentPublicRunEventPreservesToolResultContent(t *testing.T) {
