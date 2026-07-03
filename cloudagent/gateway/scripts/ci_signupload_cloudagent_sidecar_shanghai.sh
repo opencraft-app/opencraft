@@ -129,6 +129,16 @@ require_env_value CLOUDAGENT_AGENT_COS_SECRET_KEY "$COS_SECRET_KEY"
 require_env_value CLOUDAGENT_AGENT_RELEASE_ED25519_SEED_B64 "$SIGNING_SEED"
 
 ensure_coscmd
+if [ -z "${COS_PYTHON_BIN:-}" ]; then
+  cos_python_candidate="$(dirname "$COSCMD_BIN")/python3"
+  if [ -x "$cos_python_candidate" ]; then
+    COS_PYTHON_BIN="$cos_python_candidate"
+  else
+    COS_PYTHON_BIN="python3"
+  fi
+fi
+export COS_PYTHON_BIN
+export COS_UPLOAD_HELPER="${COS_UPLOAD_HELPER:-$ROOT_DIR/scripts/lib/cos_upload.py}"
 require_cmd docker
 require_cmd make
 require_cmd shasum
