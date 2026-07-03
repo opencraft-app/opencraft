@@ -493,7 +493,21 @@ pub struct StreamingToolCallDelta {
     #[serde(rename = "type", default)]
     pub call_type: Option<String>,
     #[serde(default)]
-    pub function: Option<ToolCallFunction>,
+    pub function: Option<StreamingToolCallFunctionDelta>,
+}
+
+/// Function delta in a streaming tool call.
+///
+/// OpenAI-compatible providers commonly send the first chunk with the function
+/// name and subsequent chunks with only argument fragments. Both fields must be
+/// optional here; otherwise serde drops valid argument-only chunks and leaves a
+/// malformed partial JSON string to be executed.
+#[derive(Debug, Clone, Deserialize)]
+pub struct StreamingToolCallFunctionDelta {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub arguments: Option<String>,
 }
 
 /// SSE streaming response wrapper
@@ -687,6 +701,42 @@ mod tests {
 
         assert_eq!(event.choices[0].delta.content.as_deref(), Some("Done"));
         assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn streaming_tool_call_delta_accepts_argument_only_chunks() {
+        let event: ChatStreamEvent = serde_json::from_value(serde_json::json!({
+            "id": "evt_1",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "demo",
+            "choices": [{
+                "index": 0,
+                "delta": {
+                    "tool_calls": [{
+                        "index": 0,
+                        "function": {
+                            "arguments": "CLOUDAGENT_TOOL_OK\"}"
+                        }
+                    }]
+                },
+                "finish_reason": null
+            }]
+        }))
+        .expect("argument-only streaming tool delta should deserialize");
+
+        let tool_calls = event.choices[0]
+            .delta
+            .tool_calls
+            .as_ref()
+            .expect("tool call delta should be present");
+        let function = tool_calls[0]
+            .function
+            .as_ref()
+            .expect("function delta should be present");
+
+        assert_eq!(function.name.as_deref(), None);
+        assert_eq!(function.arguments.as_deref(), Some("CLOUDAGENT_TOOL_OK\"}"));
     }
 
     #[tokio::test]
