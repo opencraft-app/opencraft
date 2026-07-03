@@ -42,6 +42,28 @@ coscmd_with_retry() {
   done
 }
 
+cos_object_size() {
+  "$COSCMD_BIN" -c "$COSCMD_CONFIG" info "$1" 2>/dev/null | awk '
+    $1 == "Content-Length" {
+      print $2
+      exit
+    }
+  '
+}
+
+cos_upload_if_needed() {
+  local local_path object expected_size existing_size
+  local_path="$1"
+  object="$2"
+  expected_size="$(wc -c <"$local_path" | tr -d '[:space:]')"
+  existing_size="$(cos_object_size "$object" || true)"
+  if [ -n "$existing_size" ] && [ "$existing_size" = "$expected_size" ]; then
+    printf '[signupload] skip upload; object already exists size=%s object=%s\n' "$existing_size" "$object" >&2
+    return 0
+  fi
+  coscmd_with_retry upload -f -y "$local_path" "$object"
+}
+
 cos_config_value() {
   local key="$1"
   awk -F '=' -v key="$key" '
@@ -131,9 +153,9 @@ if [ "$DRY_RUN" = "1" ]; then
   printf '[signupload] dry-run enabled; skip COS upload and HEAD checks\n' >&2
 else
   printf '[signupload] upload %s -> %s\n' "$SIDECAR_LOCAL_PATH" "$SIDECAR_OBJECT" >&2
-  coscmd_with_retry upload -f -y "$SIDECAR_LOCAL_PATH" "$SIDECAR_OBJECT" >&2
+  cos_upload_if_needed "$SIDECAR_LOCAL_PATH" "$SIDECAR_OBJECT" >&2
   printf '[signupload] upload %s -> %s\n' "$SIDECAR_SIG_LOCAL_PATH" "$SIDECAR_SIG_OBJECT" >&2
-  coscmd_with_retry upload -f -y "$SIDECAR_SIG_LOCAL_PATH" "$SIDECAR_SIG_OBJECT" >&2
+  cos_upload_if_needed "$SIDECAR_SIG_LOCAL_PATH" "$SIDECAR_SIG_OBJECT" >&2
 
   printf '[signupload] set public-read -> %s\n' "$SIDECAR_OBJECT" >&2
   coscmd_with_retry putobjectacl "$SIDECAR_OBJECT" --grant-read anyone >&2
