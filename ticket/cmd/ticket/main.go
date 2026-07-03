@@ -25,10 +25,14 @@ func main() {
 
 	svc := service.New(st)
 
-	router := httpapi.NewRouter(svc, httpapi.ServerConfig{
+	router, err := httpapi.NewRouter(svc, httpapi.ServerConfig{
 		AllowedOrigins: cfg.AllowedOrigins,
 		AdminToken:     cfg.AdminToken,
 	})
+	if err != nil {
+		// 常见情形：AdminToken 未配置 → 拒绝启动，避免运营接口被空口令绕过。
+		log.Fatalf("init http router: %v", err)
+	}
 
 	server := &http.Server{
 		Addr:              cfg.Addr,
