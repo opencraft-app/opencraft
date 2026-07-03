@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"crypto/subtle"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -9,8 +8,16 @@ import (
 	"git.woa.com/wisp/mono/ticket/internal/service"
 )
 
-// registerAdminRoutes 挂 /admin/tickets 下的受理接口。
-// realm 隔离由 adminAuthMiddleware 前置注入到 gin context。
+// registerAdminRoutes 挂运营侧 /admin/tickets 路由。
+// realm 隔离由 adminAuthMiddleware（middleware.go）前置注入到 gin context。
+//
+// 本文件使用同包内的 helper：
+//   - writeErr           errors.go
+//   - toTicketDTO(s)     dto.go
+//   - toMessageDTO(s)    dto.go
+//   - adminAuthMiddleware middleware.go
+//
+// Go 同 package 内跨文件符号无需 import，直接可见。
 func registerAdminRoutes(r *gin.Engine, svc *service.Service, adminToken string) {
 	g := r.Group("/admin/tickets", adminAuthMiddleware(adminToken))
 
@@ -75,25 +82,4 @@ func registerAdminRoutes(r *gin.Engine, svc *service.Service, adminToken string)
 		}
 		c.JSON(http.StatusOK, toTicketDTO(*t))
 	})
-}
-
-// adminAuthMiddleware 校验共享 AdminToken + realm/agent header。
-// 后续替换为 admin-gateway 下发的 JWT。
-func adminAuthMiddleware(expected string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		got := c.GetHeader("X-Admin-Token")
-		if expected == "" || subtle.ConstantTimeCompare([]byte(got), []byte(expected)) != 1 {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-			return
-		}
-		realm := c.GetHeader("X-Realm")
-		agent := c.GetHeader("X-Agent-Id")
-		if realm == "" || agent == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-			return
-		}
-		c.Set("realm", realm)
-		c.Set("agent_id", agent)
-		c.Next()
-	}
 }
