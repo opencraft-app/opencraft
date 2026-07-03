@@ -965,10 +965,17 @@ function delay(ms: number): Promise<void> {
 /**
  * 轮询间隔 / 超时上限（毫秒）。
  *
- * 关键修正（2026-07-02 实测证实）：`hermes cron run <id>` **不是同步执行**——
- * 它只是把目标 job 的 `next_run_at` 改写成"当前时间 + 几秒"就立刻返回，真正
- * 的执行要等 Hermes 调度器的下一次 tick 才会发生。CLI 自己回显的文案写得很
- * 清楚："It will run on the next scheduler tick."
+ * 关键修正（2026-07-02 实测证实，2026-07-03 查得官方文档确认根因）：
+ * `hermes cron run <id>` **不是同步执行**——它只是把目标 job 的 `next_run_at`
+ * 改写成"当前时间 + 几秒"就立刻返回，真正的执行要等 Hermes 调度器的下一次
+ * tick 才会发生。CLI 自己回显的文案写得很清楚："It will run on the next
+ * scheduler tick."
+ *
+ * 官方文档（cron-internals）证实：调度器 tick 周期**固定 60 秒**，且没有
+ * "强制立即触发所有到期任务"的公开接口（`hermes cron tick` 不是文档列出的
+ * CLI 子命令，本文件与其单测已明确不再拼接它，见 `runCronJob`）。也就是说
+ * `hermes cron run` 之后最坏情况要等满一个 tick 周期（~60s）才会真正执行，
+ * 触发时机刚好错过一次 tick 就是这种最坏情况。
  *
  * 之前这里按"命令返回 = 已经跑完"的错误假设写了一个固定 3s 的 sleep 再读
  * 结果；只要调度器 tick 周期比 3s 长（线上验证过：触发后 3~5s，`last_run_at`
@@ -976,11 +983,13 @@ function delay(ms: number): Promise<void> {
  * 成功」但用户什么通知都没收到的假阳性，且没有任何报错暴露这个问题。
  *
  * 现在改成轮询 `last_run_at` 字段：只有它从 null/空变成非空，才代表 Hermes
- * 端真的完成了这次执行（无论成功失败）。tick 周期没有公开文档说明具体多长，
- * 所以超时上限给得比较宽松；一旦超时仍未执行，明确报错而不是静默当作成功。
+ * 端真的完成了这次执行（无论成功失败）。超时上限必须覆盖「最坏情况的一个完整
+ * tick 周期（60s）+ Agent 实际跑一次 prompt 的耗时余量」，否则会在任务真正
+ * 被执行前就先报超时，变成另一种形式的假阳性/误报。一旦超时仍未执行，明确
+ * 报错而不是静默当作成功。
  */
 const TEST_RUN_POLL_INTERVAL_MS = 1500;
-const TEST_RUN_POLL_TIMEOUT_MS = 45_000;
+const TEST_RUN_POLL_TIMEOUT_MS = 90_000;
 
 /**
  * 轮询直到临时任务真正被调度器执行完（`last_run_at` 从空变为非空），或超时。
