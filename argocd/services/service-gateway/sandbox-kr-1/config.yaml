@@ -102,6 +102,13 @@ routes:
   upstream: http://chatclaw-runtime.chatclaw-runtime.svc.cluster.local
   access: authenticated
   auth_strategy: session
+- name: trade-jifei-callback
+  prefix: /trade/jifei/callback
+  methods:
+  - POST
+  - OPTIONS
+  upstream: http://trade.lightvela-playground-sandbox-kr-1.svc.cluster.local
+  access: public
 - name: auth
   prefix: /auth
   methods:
