@@ -78,6 +78,7 @@ func TestRuntimeSecretEnvOverridesSharedConfig(t *testing.T) {
 	t.Setenv("CTL_AIGATEWAY_ADMIN_TOKEN", "env-admin-token")
 	t.Setenv("CTL_AIGATEWAY_INTERNAL_SERVICE_TOKEN", "env-internal-token")
 	t.Setenv("CTL_SHADOW_TOKEN", "env-shadow-token")
+	t.Setenv("CTL_INTERNAL_TOKEN", "env-trade-token")
 	ServerConf = &GlobalConfig{
 		RedisConfig: &RedisConfig{
 			Pass: util.EncryptString("toml-redis-pass"),
@@ -96,6 +97,9 @@ func TestRuntimeSecretEnvOverridesSharedConfig(t *testing.T) {
 			Shadow: &ShadowConfig{
 				Token:   "toml-shadow-token",
 				Timeout: 5,
+			},
+			Trade: &TradeConfig{
+				Token: "toml-trade-token",
 			},
 		},
 	}
@@ -122,6 +126,12 @@ func TestRuntimeSecretEnvOverridesSharedConfig(t *testing.T) {
 	}
 	if ServerConf.AdapterConfig.Shadow.Token != "env-shadow-token" {
 		t.Fatalf("shadow token was not overridden from env")
+	}
+	if ServerConf.AdapterConfig.Trade.Token != "env-trade-token" {
+		t.Fatalf("trade token was not overridden from env")
+	}
+	if ServerConf.AdapterConfig.Trade.Timeout != 10 {
+		t.Fatalf("trade timeout default = %d, want 10", ServerConf.AdapterConfig.Trade.Timeout)
 	}
 }
 

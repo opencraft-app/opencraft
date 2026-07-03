@@ -102,6 +102,28 @@ func TestLoad_SiteKindFromEnv(t *testing.T) {
 	}
 }
 
+func TestLoad_ShadowMockBindingFromEnv(t *testing.T) {
+	setRequiredLoadEnv(t)
+	t.Setenv("SHADOW_INTERNAL_BASE_URL", "http://shadow.test")
+	t.Setenv("TRADE_SHADOW_MOCK_ENABLED", "true")
+	t.Setenv("TRADE_SHADOW_MOCK_UIN", " 800000294207 ")
+	t.Setenv("TRADE_SHADOW_MOCK_APP_ID", " 251221987 ")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.ShadowMockEnabled {
+		t.Fatalf("ShadowMockEnabled = false, want true")
+	}
+	if cfg.ShadowMockUin != "800000294207" {
+		t.Fatalf("ShadowMockUin = %q", cfg.ShadowMockUin)
+	}
+	if cfg.ShadowMockAppID != "251221987" {
+		t.Fatalf("ShadowMockAppID = %q", cfg.ShadowMockAppID)
+	}
+}
+
 // TestLoad_RegionOverrideFromEnv 验证 Load() 端到端从 LIGHTVELA_TRADE_REGION env 读取
 // 并写入 Config.RegionOverride 字段（北京 2 预发布接入 2026-06-12 新增）。
 //
