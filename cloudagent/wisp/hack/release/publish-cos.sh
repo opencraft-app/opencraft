@@ -14,6 +14,8 @@ fi
 
 coscmd_bin="${COSCMD_BIN:-coscmd}"
 coscmd_config="${COSCMD_CONFIG:-}"
+cos_python_bin="${COS_PYTHON_BIN:-python3}"
+cos_upload_helper="${COS_UPLOAD_HELPER:-}"
 object_prefix="${COS_OBJECT_PREFIX:-/workspace/$(date -u +%Y%m%d)}"
 dry_run="${COS_PUBLISH_DRY_RUN:-0}"
 
@@ -64,7 +66,35 @@ coscmd_with_retry() {
   done
 }
 
+cos_sdk_available() {
+  [[ -n "$cos_upload_helper" && -f "$cos_upload_helper" ]] \
+    && command -v "$cos_python_bin" >/dev/null 2>&1 \
+    && "$cos_python_bin" -c 'import qcloud_cos' >/dev/null 2>&1
+}
+
+cos_sdk_with_retry() {
+  local attempts delay i
+  attempts="${CLOUDAGENT_COS_UPLOAD_ATTEMPTS:-${CLOUDAGENT_COSCMD_ATTEMPTS:-4}}"
+  delay="${CLOUDAGENT_COSCMD_RETRY_DELAY_SECONDS:-10}"
+  i=1
+  while true; do
+    if "$cos_python_bin" "$cos_upload_helper" --config "$coscmd_config" "$@"; then
+      return 0
+    fi
+    if [[ "$i" -ge "$attempts" ]]; then
+      return 1
+    fi
+    echo "[wisp-publish] cos helper failed attempt=$i/$attempts command=$1; retry in ${delay}s" >&2
+    sleep "$delay"
+    i=$((i + 1))
+  done
+}
+
 cos_object_size() {
+  if cos_sdk_available; then
+    cos_sdk_with_retry size "$1"
+    return
+  fi
   "$coscmd_bin" -c "$coscmd_config" info "$1" 2>/dev/null | awk '
     $1 == "Content-Length" {
       print $2
@@ -83,7 +113,20 @@ cos_upload_if_needed() {
     echo "[wisp-publish] skip upload; object already exists size=$existing_size object=$object" >&2
     return 0
   fi
-  coscmd_with_retry upload -f -y "$local_path" "$object"
+  if cos_sdk_available; then
+    cos_sdk_with_retry upload "$local_path" "$object"
+  else
+    coscmd_with_retry upload -f -y "$local_path" "$object"
+  fi
+}
+
+cos_put_public_read() {
+  local object="$1"
+  if cos_sdk_available; then
+    cos_sdk_with_retry public-read "$object"
+  else
+    coscmd_with_retry putobjectacl "$object" --grant-read anyone
+  fi
 }
 
 sha="$(sha256sum "$artifact" 2>/dev/null | awk '{print $1}')"
@@ -112,7 +155,7 @@ if [[ "$dry_run" == "1" ]]; then
   echo "DRY_RUN=1" >&2
 else
   cos_upload_if_needed "$artifact" "$object"
-  coscmd_with_retry putobjectacl "$object" --grant-read anyone
+  cos_put_public_read "$object"
 fi
 
 echo "URL=${public_base}${object}"
