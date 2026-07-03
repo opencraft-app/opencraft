@@ -1125,6 +1125,57 @@ func TestACPPromptProviderErrorOnlyFailsCurrentTurn(t *testing.T) {
 	}
 }
 
+func TestACPPromptNestedProviderArgumentErrorOnlyFailsCurrentTurn(t *testing.T) {
+	manager := &recordingACPRuntimeManager{
+		promptErrs: []error{workerError("agent_runtime_error", `Agent error: HTTP 400 Bad Request: {"error":{"type":"invalid_request_error","code":"400001","message":"invalid params, invalid function arguments json string, tool_call_id: call_function_1 (2013)"}}`)},
+	}
+	srv := newACPTestServerWithRuntime(t, manager)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", map[string]string{"Authorization": "Bearer test-key"})
+	defer client.close()
+
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})
+	waitForRPCID(t, client, float64(1))
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      2,
+		"method":  "session/new",
+		"params": map[string]any{
+			"cwd":   "/workspace",
+			"_meta": map[string]any{"cloudagent": map[string]any{"outer_runtime": "ags"}},
+		},
+	})
+	sessionID := waitForRPCID(t, client, float64(2))["result"].(map[string]any)["sessionId"].(string)
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      3,
+		"method":  "session/prompt",
+		"params":  map[string]any{"sessionId": sessionID, "prompt": []any{map[string]any{"type": "text", "text": "bad tool args"}}},
+	})
+	failed := waitForRPCID(t, client, float64(3))
+	errorObject := failed["error"].(map[string]any)
+	if errorObject["code"] != float64(-32000) {
+		t.Fatalf("unexpected nested provider error object: %#v", errorObject)
+	}
+	data := errorObject["data"].(map[string]any)
+	if data["code"] != "agent_runtime_error" {
+		t.Fatalf("unexpected nested provider error data: %#v", data)
+	}
+
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      4,
+		"method":  "session/prompt",
+		"params":  map[string]any{"sessionId": sessionID, "prompt": []any{map[string]any{"type": "text", "text": "continue"}}},
+	})
+	resp := waitForRPCID(t, client, float64(4))
+	if resp["error"] != nil {
+		t.Fatalf("nested provider argument failure must not poison session readiness: %#v", resp)
+	}
+}
+
 func TestACPPromptPreflightRuntimeUnavailableReturnsACPError(t *testing.T) {
 	manager := &recordingACPRuntimeManager{
 		reattachErr: fmt.Errorf("ags http 404 op=run_command sandbox_id=outer_1 domain=ap-beijing.tencentags.com envd_port=49983: The requested resource does not exist"),

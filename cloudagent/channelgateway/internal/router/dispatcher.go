@@ -500,8 +500,16 @@ func (d *Dispatcher) handleACPError(ctx context.Context, msg channel.Message, co
 	}
 	reply, ok := d.callbacksOrDefault().HandleACPError(stage, err)
 	if !ok || strings.TrimSpace(reply) == "" {
+		log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=acp_error_unhandled stage=%s category=%s error=%s",
+			logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
+			logValue(conversation.SessionKey), logValue(sessionID), logValue(string(stage)),
+			logValue(classifyACPErrorForLog(stage, err)), logValue(err.Error()))
 		return err
 	}
+	log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=acp_error_fallback stage=%s category=%s reply=%s error=%s",
+		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
+		logValue(conversation.SessionKey), logValue(sessionID), logValue(string(stage)),
+		logValue(classifyACPErrorForLog(stage, err)), logValue(fallbackReplyKind(reply)), logValue(err.Error()))
 	enqueueCtx := ctx
 	var cancel context.CancelFunc
 	if ctx.Err() != nil {
@@ -722,6 +730,38 @@ func isRuntimeOwnershipError(err error) bool {
 	return strings.Contains(message, "runtime_owned") ||
 		strings.Contains(message, "runtime ownership") ||
 		strings.Contains(message, "ownership is held")
+}
+
+func classifyACPErrorForLog(stage CallbackStage, err error) string {
+	switch {
+	case err == nil:
+		return "none"
+	case isRuntimeOwnershipError(err):
+		return "runtime_ownership"
+	case isMissingACPSessionError(err):
+		return "missing_session"
+	case isRecoverableRuntimeError(err):
+		return "runtime_recovery"
+	case stage == CallbackStagePrompt:
+		return "turn_scoped_prompt"
+	default:
+		return "runtime_or_setup"
+	}
+}
+
+func fallbackReplyKind(reply string) string {
+	switch strings.TrimSpace(reply) {
+	case runtimeRecoveryFailedReply:
+		return "runtime_recovery_failed"
+	case runtimeBusyReply:
+		return "runtime_busy"
+	case turnScopedPromptFailedReply:
+		return "turn_scoped_prompt_failed"
+	case resetSessionReply:
+		return "reset_session"
+	default:
+		return "custom"
+	}
 }
 
 func (d *Dispatcher) enqueueTextReply(ctx context.Context, msg channel.Message, sessionID, text string) (store.OutboxRecord, error) {

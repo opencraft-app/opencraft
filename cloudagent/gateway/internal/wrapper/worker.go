@@ -170,6 +170,29 @@ func workerFailureIsTurnScoped(err error) bool {
 	case "provider_error", "tool_call_validation_error", "invalid_tool_arguments":
 		return true
 	default:
-		return false
+		return workerFailureMessageIsTurnScoped(failure.message)
 	}
+}
+
+func workerFailureCode(err error) string {
+	var failure *workerFailure
+	if errors.As(err, &failure) {
+		return failure.code
+	}
+	return ""
+}
+
+func workerFailureMessageIsTurnScoped(message string) bool {
+	message = strings.ToLower(message)
+	for _, marker := range []string{
+		"invalid function arguments json string",
+		"invalid_tool_arguments",
+		"tool_call_validation_error",
+		"provider_error",
+	} {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return strings.Contains(message, "tool_call_id") && strings.Contains(message, "invalid params")
 }
