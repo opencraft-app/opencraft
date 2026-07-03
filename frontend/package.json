@@ -43,6 +43,7 @@
     "@tencent/i18n": "^2.0.30",
     "@tencent/tcb-jssdk": "2.0.27",
     "@tencent/tea-sdk-lightclaw": "1.6.1",
+    "@tencent/universal-report": "4.7.4",
     "@types/mdx": "^2.0.14",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
@@ -102,7 +103,9 @@
       "@tencent/tcb-jssdk",
       "core-js-pure"
     ],
-    "overrides": {},
+    "overrides": {
+      "xlsx": "0.18.5"
+    },
     "patchedDependencies": {
       "@tencent/agentchat-claw-components@0.3.1": "patches/@tencent__agentchat-claw-components@0.3.1.patch"
     }

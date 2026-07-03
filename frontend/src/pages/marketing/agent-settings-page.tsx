@@ -111,6 +111,8 @@ import {
   RESET_BLOCK_REASON,
 } from "@/pages/marketing/openclaw-reset-config";
 import { toast } from "@/lib/toast";
+import { trackDatongEvent } from "@/observability/datong-tracker";
+import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
 
 const AgentChatPanel = lazy(() =>
   import("@/pages/marketing/agent-chat-panel").then((module) => ({ default: module.AgentChatPanel })),
@@ -3978,6 +3980,7 @@ export const AgentSettingsPage = ({
   const handleConfirmCreate = async () => {
     setDirectCreating(true);
     setDirectCreateError(null);
+    const createStart = Date.now();
     try {
       const newBot = await addBot({
         name: t("我的Hermes"),
@@ -3986,6 +3989,13 @@ export const AgentSettingsPage = ({
         intro: "",
         soulTemplateId: undefined,
         status: "running",
+      });
+      trackDatongEvent(DATONG_EVENTS.AGENT_CREATE_SUCCESS, {
+        pgid: DATONG_PAGE_IDS.AGENT_CREATING,
+        params: {
+          bot_id: newBot.id,
+          create_duration_ms: Date.now() - createStart,
+        },
       });
       setShowCreateConfirm(false);
       // 进入页面内 loading 状态，带上新 bot id 供轮询定位

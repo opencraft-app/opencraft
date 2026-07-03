@@ -14,6 +14,8 @@ import type { PublicSiteLocale } from '@/lib/public-site-navigation';
 import { isGlobal } from '@/lib/region';
 import { cn } from '@/lib/utils';
 import { AGENTS_HOME_PATH, getAgentCreatingPath } from '@/lib/agent-routes';
+import { DATONG_PAGE_IDS } from '@/observability/datong';
+import { trackDatongClick } from '@/observability/datong-tracker';
 
 import { renderNextLanguageSwitcher } from './language-switcher';
 
@@ -66,6 +68,20 @@ function PublicHeaderAuthControls({
   }, [oauthError]);
 
   const goToCreate = () => {
+    const target = !isAuthenticated
+      ? 'login_modal'
+      : isSubscribed
+        ? bots.length > 0
+          ? AGENTS_HOME_PATH
+          : getAgentCreatingPath(true)
+        : '/subscribe';
+    trackDatongClick('header_create_now_btn', {
+      pgid: DATONG_PAGE_IDS.HOME,
+      params: {
+        has_bots: bots.length > 0,
+        target,
+      },
+    });
     if (!isAuthenticated) {
       setShowLogin(true);
       return;
@@ -118,7 +134,10 @@ function PublicHeaderAuthControls({
         </button>
         <button
           type="button"
-          onClick={() => setShowLogin(true)}
+          onClick={() => {
+            trackDatongClick('header_login_btn', { pgid: DATONG_PAGE_IDS.HOME });
+            setShowLogin(true);
+          }}
           className={cn(
             'inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] px-4 font-heading text-sm font-medium shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-colors',
             secondaryButtonClass[appearance],
@@ -131,7 +150,13 @@ function PublicHeaderAuthControls({
       <div className="ml-auto flex items-center gap-2 md:hidden">
         <button
           type="button"
-          onClick={() => setShowLogin(true)}
+          onClick={() => {
+            trackDatongClick('header_login_btn', {
+              pgid: DATONG_PAGE_IDS.HOME,
+              params: { surface: 'mobile' },
+            });
+            setShowLogin(true);
+          }}
           className={cn(
             'inline-flex h-[32px] cursor-pointer items-center justify-center rounded-[100px] px-3 font-heading text-[13px] font-medium shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-colors',
             secondaryButtonClass[appearance],
