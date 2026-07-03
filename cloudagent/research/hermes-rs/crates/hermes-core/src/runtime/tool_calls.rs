@@ -26,15 +26,20 @@ impl StreamingToolCallAccumulator {
                         state.id = Some(id.clone());
                     }
                     if let Some(function) = &delta.function {
-                        if !function.name.is_empty() {
-                            if state.name.is_empty() || function.name.starts_with(&state.name) {
-                                state.name = function.name.clone();
-                            } else if !state.name.ends_with(&function.name) {
-                                state.name.push_str(&function.name);
+                        if let Some(name) = function.name.as_deref().filter(|name| !name.is_empty())
+                        {
+                            if state.name.is_empty() || name.starts_with(&state.name) {
+                                state.name = name.to_string();
+                            } else if !state.name.ends_with(name) {
+                                state.name.push_str(name);
                             }
                         }
-                        if !function.arguments.is_empty() {
-                            state.arguments.push_str(&function.arguments);
+                        if let Some(arguments) = function
+                            .arguments
+                            .as_deref()
+                            .filter(|arguments| !arguments.is_empty())
+                        {
+                            state.arguments.push_str(arguments);
                         }
                     }
                 }
@@ -381,9 +386,9 @@ mod tests {
                         index: 0,
                         id: Some("call_function_terminal_1".to_string()),
                         call_type: Some("function".to_string()),
-                        function: Some(ToolCallFunction {
-                            name: "terminal".to_string(),
-                            arguments: r#"{"command":"pwd"#.to_string(),
+                        function: Some(crate::client::StreamingToolCallFunctionDelta {
+                            name: Some("terminal".to_string()),
+                            arguments: Some(r#"{"command":"pwd"#.to_string()),
                         }),
                     }]),
                 },
@@ -406,9 +411,9 @@ mod tests {
                         index: 0,
                         id: None,
                         call_type: Some("function".to_string()),
-                        function: Some(ToolCallFunction {
-                            name: String::new(),
-                            arguments: r#" && cat hello.txt"}"#.to_string(),
+                        function: Some(crate::client::StreamingToolCallFunctionDelta {
+                            name: None,
+                            arguments: Some(r#" && cat hello.txt"}"#.to_string()),
                         }),
                     }]),
                 },
@@ -423,6 +428,66 @@ mod tests {
         assert_eq!(
             tool_calls[0].function.arguments,
             r#"{"command":"pwd && cat hello.txt"}"#
+        );
+    }
+
+    #[test]
+    fn streaming_tool_call_accumulator_keeps_deserialized_argument_only_chunks() {
+        let first: crate::client::ChatStreamEvent = serde_json::from_value(serde_json::json!({
+            "id": "evt_1",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "test-model",
+            "choices": [{
+                "index": 0,
+                "delta": {
+                    "tool_calls": [{
+                        "index": 0,
+                        "id": "call_terminal_1",
+                        "type": "function",
+                        "function": {
+                            "name": "terminal",
+                            "arguments": "{\"command\":\"printf "
+                        }
+                    }]
+                },
+                "finish_reason": null
+            }]
+        }))
+        .expect("first tool chunk should deserialize");
+
+        let second: crate::client::ChatStreamEvent = serde_json::from_value(serde_json::json!({
+            "id": "evt_2",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "test-model",
+            "choices": [{
+                "index": 0,
+                "delta": {
+                    "tool_calls": [{
+                        "index": 0,
+                        "function": {
+                            "arguments": "CLOUDAGENT_TOOL_OK\"}"
+                        }
+                    }]
+                },
+                "finish_reason": "tool_calls"
+            }]
+        }))
+        .expect("argument-only tool chunk should deserialize");
+
+        let mut accumulator = StreamingToolCallAccumulator::default();
+        accumulator.feed_event(&first);
+        accumulator.feed_event(&second);
+
+        let normalized =
+            normalize_tool_calls(accumulator.finish()).expect("merged tool args should normalize");
+        assert_eq!(normalized.len(), 1);
+        assert_eq!(normalized[0].id, "call_terminal_1");
+        assert_eq!(normalized[0].function.name, "terminal");
+        assert_eq!(
+            normalized[0].function.arguments,
+            r#"{"command":"printf CLOUDAGENT_TOOL_OK"}"#
         );
     }
 
