@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
 use crate::client::{ChatStreamEvent, ToolCall};
+use crate::error::{Error, Result};
+use serde_json::Value;
 
 #[derive(Debug, Default)]
 pub(crate) struct StreamingToolCallAccumulator {
@@ -95,6 +97,48 @@ pub(crate) fn merge_stream_tool_call(tool_calls: &mut Vec<ToolCall>, tool_call: 
     } else {
         tool_calls.push(tool_call);
     }
+}
+
+pub(crate) fn normalize_tool_calls(tool_calls: Vec<ToolCall>) -> Result<Vec<ToolCall>> {
+    tool_calls
+        .into_iter()
+        .map(normalize_tool_call)
+        .collect::<Result<Vec<_>>>()
+}
+
+fn normalize_tool_call(mut tool_call: ToolCall) -> Result<ToolCall> {
+    let tool_name = tool_call.function.name.trim();
+    if tool_name.is_empty() {
+        return Err(Error::InvalidToolArgs {
+            name: "<unknown>".to_string(),
+            details: "tool call function name is empty".to_string(),
+        });
+    }
+
+    tool_call.function.name = tool_name.to_string();
+    tool_call.function.arguments =
+        normalize_tool_arguments(&tool_call.function.name, &tool_call.function.arguments)?;
+    Ok(tool_call)
+}
+
+fn normalize_tool_arguments(tool_name: &str, arguments: &str) -> Result<String> {
+    let trimmed = arguments.trim();
+    if trimmed.is_empty() {
+        return Ok("{}".to_string());
+    }
+
+    let value = serde_json::from_str::<Value>(trimmed).map_err(|error| Error::InvalidToolArgs {
+        name: tool_name.to_string(),
+        details: format!("function.arguments must be a valid JSON object string: {error}"),
+    })?;
+    if !value.is_object() {
+        return Err(Error::InvalidToolArgs {
+            name: tool_name.to_string(),
+            details: "function.arguments must decode to a JSON object".to_string(),
+        });
+    }
+
+    serde_json::to_string(&value).map_err(Error::JsonDecode)
 }
 
 #[derive(Default)]
@@ -259,6 +303,63 @@ mod tests {
         }]));
 
         assert!(tool_calls.is_empty());
+    }
+
+    #[test]
+    fn normalize_tool_calls_compacts_valid_json_arguments() {
+        let normalized = normalize_tool_calls(vec![ToolCall {
+            id: "call_1".to_string(),
+            function: ToolCallFunction {
+                name: " terminal ".to_string(),
+                arguments: " { \"command\" : \"pwd\" } ".to_string(),
+            },
+        }])
+        .expect("valid tool call should normalize");
+
+        assert_eq!(normalized[0].function.name, "terminal");
+        assert_eq!(normalized[0].function.arguments, "{\"command\":\"pwd\"}");
+    }
+
+    #[test]
+    fn normalize_tool_calls_turns_empty_arguments_into_object() {
+        let normalized = normalize_tool_calls(vec![ToolCall {
+            id: "call_1".to_string(),
+            function: ToolCallFunction {
+                name: "datetime".to_string(),
+                arguments: "".to_string(),
+            },
+        }])
+        .expect("empty arguments represent no-arg function calls");
+
+        assert_eq!(normalized[0].function.arguments, "{}");
+    }
+
+    #[test]
+    fn normalize_tool_calls_rejects_malformed_arguments() {
+        let error = normalize_tool_calls(vec![ToolCall {
+            id: "call_bad".to_string(),
+            function: ToolCallFunction {
+                name: "terminal".to_string(),
+                arguments: "{\"command\":".to_string(),
+            },
+        }])
+        .expect_err("malformed arguments must not enter history");
+
+        assert!(error.to_string().contains("Invalid tool arguments"));
+    }
+
+    #[test]
+    fn normalize_tool_calls_rejects_non_object_arguments() {
+        let error = normalize_tool_calls(vec![ToolCall {
+            id: "call_bad".to_string(),
+            function: ToolCallFunction {
+                name: "terminal".to_string(),
+                arguments: "\"pwd\"".to_string(),
+            },
+        }])
+        .expect_err("arguments must be JSON objects");
+
+        assert!(error.to_string().contains("JSON object"));
     }
 
     #[test]
