@@ -191,6 +191,13 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
   useEffect(() => setMounted(true), []);
   useEffect(() => installShowGitHubLoginHelper(), []);
 
+  // modal 关闭时重置 loginReportedRef，确保登出后再次登录能正常上报 login_success
+  useEffect(() => {
+    if (!open) {
+      loginReportedRef.current = false;
+    }
+  }, [open]);
+
   // 当用户已登录时自动关闭弹窗并触发 onSuccess
   useEffect(() => {
     if (!open) return;

@@ -40,9 +40,9 @@
 
 | 触发时机 | 示意图 | 事件 event_code | 页面 dt_pgid | 元素 dt_eid | 私有参数 udf_kv | 说明 remark |
 |---------|:----:|----------------|-------------|:----------:|----------------|-------------|
-| submit | — | 登录发起 / `login_initiate` | 当前页面ID / `{pgid}` | — | `channel` 登录渠道 email\|google\|wallet | 手动上报 |
-| submit | — | 登录成功 / `login_success` | 当前页面ID / `{pgid}` | — | `channel` 登录渠道；`is_new_user` 是否新用户 | login-modal.tsx 内已埋 |
-| submit | — | 登录失败 / `login_fail` | 当前页面ID / `{pgid}` | — | `channel` 渠道；`err_code` 错误码 | 手动上报 |
+| submit | — | 登录发起 / `login_attempt` | 当前页面ID / `{pgid}` | — | `method` 登录方式(email\|google\|wallet) | 手动上报 |
+| submit | — | 登录成功 / `login_success` | 当前页面ID / `{pgid}` | — | `method` 登录方式；`is_new_user` 是否新用户 | login-modal.tsx 内已埋 |
+| submit | — | 登录失败 / `login_fail` | 当前页面ID / `{pgid}` | — | `method` 渠道；`error_code` 错误码 | 手动上报 |
 
 ---
 
@@ -52,9 +52,9 @@
 |---------|:----:|----------------|-------------|:----------:|----------------|-------------|
 | pv（路由进入） | — | 套餐页曝光 / `dt_pgin` | 订阅页 / `subscribe` | — | — | /subscribe 路由 |
 | click | — | 选择套餐 / `dt_clck` | 订阅页 / `subscribe` | 套餐卡片 / `plan_select_btn` | `plan` 套餐ID；`plan_name` 套餐名 | 声明式 |
-| submit | — | 订阅发起 / `subscribe_initiate` | 订阅页 / `subscribe` | — | `plan` 套餐ID；`plan_name` 套餐名 | subscribe-page.tsx 已埋 |
-| submit | — | 订阅成功 / `subscribe_success` | 订阅页 / `subscribe` | — | `plan` 套餐ID；`plan_name` 套餐名；`amount` 金额 | subscribe-page.tsx 已埋 |
-| submit | — | 订阅失败 / `subscribe_fail` | 订阅页 / `subscribe` | — | `plan` 套餐ID；`err_code` 错误码 | 待补埋点 |
+| submit | — | 发起支付 / `subscribe_checkout_start` | 订阅页 / `subscribe` | — | `plan` 套餐ID；`plan_name` 套餐名 | subscribe-page.tsx 已埋 |
+| submit | — | 支付成功 / `subscribe_pay_success` | 订阅页 / `subscribe` | — | `plan` 套餐ID；`plan_name` 套餐名；`amount` 金额 | subscribe-page.tsx 已埋 |
+| submit | — | 支付失败 / `subscribe_pay_fail` | 订阅页 / `subscribe` | — | `plan` 套餐ID；`error_code` 错误码 | 待补埋点 |
 
 ---
 
@@ -102,9 +102,9 @@
 |---------|:----:|----------------|-------------|:----------:|----------------|-------------|
 | pv（路由进入） | — | Skills 页曝光 / `dt_pgin` | Skills / `agent_skills` | — | `agent_id` AgentID | /agents/[id]/skills |
 | submit | — | 搜索技能 / `skill_search` | Skills / `agent_skills` | — | `keyword` 关键词 | 待补埋点 |
-| submit | — | 安装技能 / `skill_install` | Skills / `agent_skills` | — | `skill_id` 技能ID；`skill_name` 技能名 | 待补埋点 |
+| submit | — | 安装技能 / `skill_install_success` | Skills / `agent_skills` | — | `skill_id` 技能ID；`skill_name` 技能名 | 待补埋点 |
 | click | — | 点击技能包 / `dt_clck` | Skills / `agent_skills` | 技能包卡片 / `skill_pack_card` | `pack_id` 技能包ID | 声明式 |
-| submit | — | 安装技能包 / `skill_pack_install` | Skills / `agent_skills` | — | `pack_id` 技能包ID；`pack_name` 包名 | 待补埋点 |
+| submit | — | 安装技能包 / `skill_pack_install_success` | Skills / `agent_skills` | — | `pack_id` 技能包ID；`pack_name` 包名 | 待补埋点 |
 
 ---
 
@@ -115,7 +115,7 @@
 | pv（路由进入） | — | Soul 页曝光 / `dt_pgin` | Persona / `agent_persona` | — | `agent_id` AgentID | /agents/[id]/persona |
 | click | — | 点击抽取 / `dt_clck` | Persona / `agent_persona` | 抽取按钮 / `soul_draw_btn` | — | 声明式 |
 | click | — | 选择 Soul / `dt_clck` | Persona / `agent_persona` | Soul 卡片 / `soul_select_card` | `soul_id` SoulID | 声明式 |
-| submit | — | Soul 注入成功 / `soul_inject_success` | Persona / `agent_persona` | — | `agent_id` AgentID；`soul_id` SoulID | 待补埋点 |
+| submit | — | Persona 注入成功 / `persona_inject_success` | Persona / `agent_persona` | — | `agent_id` AgentID；`persona_id` PersonaID | 待补埋点 |
 
 ---
 
@@ -125,7 +125,7 @@
 |---------|:----:|----------------|-------------|:----------:|----------------|-------------|
 | pv（路由进入） | — | Automations 页曝光 / `dt_pgin` | Automations / `agent_automations` | — | `agent_id` AgentID | /agents/[id]/automations |
 | click | — | 打开模板 / `dt_clck` | Automations / `agent_automations` | 模板卡片 / `automation_template_card` | `template_id` 模板ID | 声明式 |
-| submit | — | 创建自动任务 / `automation_create` | Automations / `agent_automations` | — | `agent_id` AgentID；`task_type` 任务类型 | 待补埋点 |
+| submit | — | 创建自动任务 / `automation_create_success` | Automations / `agent_automations` | — | `agent_id` AgentID；`task_type` 任务类型 | 待补埋点 |
 | submit | — | 删除自动任务 / `automation_delete` | Automations / `agent_automations` | — | `task_id` 任务ID | 待补埋点 |
 
 ---
@@ -151,7 +151,7 @@
 | submit | — | 消息发送成功 / `agent_message_send_success` | Agent 会话 / `agent_chat` | — | `agent_id` AgentID；`latency_ms` 响应耗时 | 待补埋点 |
 | submit | — | 消息发送失败 / `agent_message_send_fail` | Agent 会话 / `agent_chat` | — | `agent_id` AgentID；`err_code` 错误码 | 待补埋点（护栏） |
 | pv（路由进入） | — | Docs 页曝光 / `dt_pgin` | 文档中心 / `docs` | — | `doc_slug` 文档标识 | /docs 路由 |
-| submit | — | Docs 搜索 / `docs_search` | 文档中心 / `docs` | — | `keyword` 关键词；`result_count` 结果数 | 待补埋点 |
+| submit | — | Docs 搜索 / `doc_search` | 文档中心 / `docs` | — | `keyword` 关键词；`result_count` 结果数 | 待补埋点 |
 | click | — | Docs 搜索结果点击 / `dt_clck` | 文档中心 / `docs` | 搜索结果 / `docs_search_result` | `keyword` 关键词；`doc_slug` 文档标识 | 声明式 |
 
 ---
@@ -199,7 +199,7 @@
 | 30 天趋势 登录成功 | `SELECT dt, COUNT(*) AS logins FROM events WHERE event_code = 'login_success' AND dt >= DATE_SUB(TODAY(), 30) GROUP BY dt ORDER BY dt` |
 | 转化漏斗 - 首页 UV | `SELECT COUNT(DISTINCT user_id) FROM events WHERE event_code = 'dt_pgin' AND dt_pgid = 'home' AND dt >= DATE_SUB(TODAY(), 7)` |
 | 转化漏斗 - 订阅页 UV | `SELECT COUNT(DISTINCT user_id) FROM events WHERE event_code = 'dt_pgin' AND dt_pgid = 'subscribe' AND dt >= DATE_SUB(TODAY(), 7)` |
-| 转化漏斗 - 订阅成功 UV | `SELECT COUNT(DISTINCT user_id) FROM events WHERE event_code = 'subscribe_success' AND dt >= DATE_SUB(TODAY(), 7)` |
+| 转化漏斗 - 订阅成功 UV | `SELECT COUNT(DISTINCT user_id) FROM events WHERE event_code = 'subscribe_pay_success' AND dt >= DATE_SUB(TODAY(), 7)` |
 | 转化漏斗 - Agent 创建成功 UV | `SELECT COUNT(DISTINCT user_id) FROM events WHERE event_code = 'agent_create_success' AND dt >= DATE_SUB(TODAY(), 7)` |
 | CTA 位置分布 | `SELECT dt_eid, COUNT(*) AS clicks FROM events WHERE event_code = 'dt_clck' AND dt_eid IN ('hero_create_now_btn', 'header_create_now_btn', 'footer_create_now_btn') AND dt >= DATE_SUB(TODAY(), 7) GROUP BY dt_eid` |
 | TOP 页面 by PV | `SELECT dt_pgid, COUNT(*) AS pv FROM events WHERE event_code = 'dt_pgin' AND dt >= TODAY() GROUP BY dt_pgid ORDER BY pv DESC LIMIT 10` |
@@ -231,19 +231,19 @@
 
 | 图卡 | 计算逻辑 (伪 SQL) |
 |------|-------------------|
-| 今日订阅成功数 | `SELECT COUNT(*) FROM events WHERE event_code = 'subscribe_success' AND dt >= TODAY()` |
-| 今日付费金额 | `SELECT SUM(CAST(amount AS BIGINT)) FROM events WHERE event_code = 'subscribe_success' AND dt >= TODAY()` |
-| 支付发起数 | `SELECT COUNT(*) FROM events WHERE event_code = 'subscribe_initiate' AND dt >= TODAY()` |
-| 支付成功率 | `SELECT (SUM(CASE WHEN event_code = 'subscribe_success' THEN 1 ELSE 0 END) * 1.0 / NULLIF(SUM(CASE WHEN event_code = 'subscribe_initiate' THEN 1 ELSE 0 END), 0)) AS success_rate FROM events WHERE event_code IN ('subscribe_initiate', 'subscribe_success') AND dt >= TODAY()` |
+| 今日订阅成功数 | `SELECT COUNT(*) FROM events WHERE event_code = 'subscribe_pay_success' AND dt >= TODAY()` |
+| 今日付费金额 | `SELECT SUM(CAST(amount AS BIGINT)) FROM events WHERE event_code = 'subscribe_pay_success' AND dt >= TODAY()` |
+| 支付发起数 | `SELECT COUNT(*) FROM events WHERE event_code = 'subscribe_checkout_start' AND dt >= TODAY()` |
+| 支付成功率 | `SELECT (SUM(CASE WHEN event_code = 'subscribe_pay_success' THEN 1 ELSE 0 END) * 1.0 / NULLIF(SUM(CASE WHEN event_code = 'subscribe_checkout_start' THEN 1 ELSE 0 END), 0)) AS success_rate FROM events WHERE event_code IN ('subscribe_checkout_start', 'subscribe_pay_success') AND dt >= TODAY()` |
 | 漏斗 - 订阅页 UV | `SELECT COUNT(DISTINCT user_id) FROM events WHERE event_code = 'dt_pgin' AND dt_pgid = 'subscribe' AND dt >= DATE_SUB(TODAY(), 7)` |
 | 漏斗 - 选择套餐 UV | `SELECT COUNT(DISTINCT user_id) FROM events WHERE event_code = 'dt_clck' AND dt_eid = 'plan_select_btn' AND dt >= DATE_SUB(TODAY(), 7)` |
-| 漏斗 - 发起支付 UV | `SELECT COUNT(DISTINCT user_id) FROM events WHERE event_code = 'subscribe_initiate' AND dt >= DATE_SUB(TODAY(), 7)` |
-| 漏斗 - 支付成功 UV | `SELECT COUNT(DISTINCT user_id) FROM events WHERE event_code = 'subscribe_success' AND dt >= DATE_SUB(TODAY(), 7)` |
-| 套餐选择分布 | `SELECT plan_name, COUNT(*) AS cnt FROM events WHERE event_code = 'subscribe_initiate' AND dt >= DATE_SUB(TODAY(), 7) GROUP BY plan_name ORDER BY cnt DESC` |
-| 30 天订阅成功趋势 | `SELECT dt, COUNT(*) AS success_cnt FROM events WHERE event_code = 'subscribe_success' AND dt >= DATE_SUB(TODAY(), 30) GROUP BY dt ORDER BY dt` |
-| 30 天支付发起趋势 | `SELECT dt, COUNT(*) AS initiate_cnt FROM events WHERE event_code = 'subscribe_initiate' AND dt >= DATE_SUB(TODAY(), 30) GROUP BY dt ORDER BY dt` |
-| 各套餐转化率 | `SELECT plan_name, (SUM(CASE WHEN event_code = 'subscribe_success' THEN 1 ELSE 0 END) * 1.0 / NULLIF(SUM(CASE WHEN event_code = 'subscribe_initiate' THEN 1 ELSE 0 END), 0)) AS rate FROM events WHERE event_code IN ('subscribe_initiate', 'subscribe_success') AND dt >= DATE_SUB(TODAY(), 30) GROUP BY plan_name` |
-| 支付失败 TOP 原因 | `SELECT err_code, COUNT(*) AS cnt FROM events WHERE event_code = 'subscribe_fail' AND dt >= DATE_SUB(TODAY(), 30) GROUP BY err_code ORDER BY cnt DESC LIMIT 10` |
+| 漏斗 - 发起支付 UV | `SELECT COUNT(DISTINCT user_id) FROM events WHERE event_code = 'subscribe_checkout_start' AND dt >= DATE_SUB(TODAY(), 7)` |
+| 漏斗 - 支付成功 UV | `SELECT COUNT(DISTINCT user_id) FROM events WHERE event_code = 'subscribe_pay_success' AND dt >= DATE_SUB(TODAY(), 7)` |
+| 套餐选择分布 | `SELECT plan_name, COUNT(*) AS cnt FROM events WHERE event_code = 'subscribe_checkout_start' AND dt >= DATE_SUB(TODAY(), 7) GROUP BY plan_name ORDER BY cnt DESC` |
+| 30 天订阅成功趋势 | `SELECT dt, COUNT(*) AS success_cnt FROM events WHERE event_code = 'subscribe_pay_success' AND dt >= DATE_SUB(TODAY(), 30) GROUP BY dt ORDER BY dt` |
+| 30 天支付发起趋势 | `SELECT dt, COUNT(*) AS initiate_cnt FROM events WHERE event_code = 'subscribe_checkout_start' AND dt >= DATE_SUB(TODAY(), 30) GROUP BY dt ORDER BY dt` |
+| 各套餐转化率 | `SELECT plan_name, (SUM(CASE WHEN event_code = 'subscribe_pay_success' THEN 1 ELSE 0 END) * 1.0 / NULLIF(SUM(CASE WHEN event_code = 'subscribe_checkout_start' THEN 1 ELSE 0 END), 0)) AS rate FROM events WHERE event_code IN ('subscribe_checkout_start', 'subscribe_pay_success') AND dt >= DATE_SUB(TODAY(), 30) GROUP BY plan_name` |
+| 支付失败 TOP 原因 | `SELECT error_code, COUNT(*) AS cnt FROM events WHERE event_code = 'subscribe_pay_fail' AND dt >= DATE_SUB(TODAY(), 30) GROUP BY error_code ORDER BY cnt DESC LIMIT 10` |
 
 **dt 是小时级分区字段，格式 `yyyyMMddHH`（如 `2026070210` = 2026年7月2日10时），注意年是要写4位，月是2位，日是2位、时是2位**
 
