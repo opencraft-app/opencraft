@@ -144,14 +144,6 @@ export function SupportPage({
     pageDesc: isEnglish
       ? 'Share your experience, report bugs, or suggest features to help us improve LightVela.'
       : t('您可以将使用 LightVela 过程中的任何体验问题或需求建议告诉我们，帮助我们变得更好！'),
-    testModeTitle: isEnglish ? 'Test mode' : '测试模式',
-    testModeBanner: isEnglish
-      ? 'Login checks are temporarily disabled so the form can be submitted directly during local testing. Switch `authRequired` back to `true` before release.'
-      : '登录校验已临时关闭，表单可直接填写提交。上线前需将 authRequired 改回 true。',
-    devAccountPlaceholder: isEnglish
-      ? 'Enter any account ID (e.g. usr_test_xxx); test mode allows manual input'
-      : '输入任意账号ID（如 usr_test_xxx），测试模式可自填',
-    devAccountHint: isEnglish ? 'Test mode: you can submit directly without logging in' : '测试模式：直接填写即可，不需要登录',
     contactHintPrimary: isEnglish
       ? 'Leave a phone number or email if you’d like a follow-up.'
       : '可留下手机号或邮箱；',
@@ -160,14 +152,7 @@ export function SupportPage({
       : '手机号如：+86 133xxxx8888，邮箱如：1234@gmail.com',
   };
 
-  // ── DEV TEST MODE ──────────────────────────────────────────
-  // 临时旁路登录，方便在本地直接填写表单测试完整提交流程。
-  // 生产上线前需删除此段（恢复 authRequired = true）。
-  const authRequired = false;
-  const [devAccountId, setDevAccountId] = useState('');
-  const effectiveUserId = authRequired ? userId : (userId || devAccountId.trim());
-  // ───────────────────────────────────────────────────────────
-
+  const effectiveUserId = userId;
   /* Form state */
   const [feedbackType, setFeedbackType] = useState<FeedbackType | ''>('');
   const [otherText, setOtherText] = useState('');
@@ -233,7 +218,7 @@ export function SupportPage({
   const validate = (): boolean => {
     const errs: Record<string, string> = {};
     if (!effectiveUserId) {
-      errs.accountId = authRequired ? t('请先登录后再提交反馈') : t('请填写账号ID（测试模式）');
+      errs.accountId = t('请先登录后再提交反馈');
     }
     if (!feedbackType) {
       errs.feedbackType = t('请选择反馈类型');
@@ -296,7 +281,7 @@ export function SupportPage({
     if (!authReady) {
       return;
     }
-    if (authRequired && (!isAuthenticated || !userId)) {
+    if (!isAuthenticated || !userId) {
       setErrors((prev) => ({ ...prev, accountId: t('请先登录后再提交反馈') }));
       openLoginModal();
       return;
@@ -349,7 +334,7 @@ export function SupportPage({
   };
 
   const handleUploadTrigger = () => {
-    if (authRequired && (!isAuthenticated || !userId)) {
+    if (!isAuthenticated || !userId) {
       setErrors((prev) => ({ ...prev, accountId: t('请先登录后再上传附件') }));
       openLoginModal();
       return;
@@ -408,13 +393,6 @@ export function SupportPage({
                     </p>
                   </div>
 
-              {/* DEV TEST BANNER */}
-              {!authRequired && (
-                <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                  ⚠️ <strong>{pageCopy.testModeTitle}</strong>：{pageCopy.testModeBanner}
-                </div>
-              )}
-
               {/* 01 账号 ID */}
               <div className="space-y-3">
                 <Label className="flex items-center gap-1.5">
@@ -436,17 +414,6 @@ export function SupportPage({
                     <p className="text-xs text-[var(--text-tertiary)]">
                       {t('已自动读取当前登录账号ID；如需更换账号，请先切换登录身份后再提交。')}
                     </p>
-                  </>
-                ) : !authRequired ? (
-                  <>
-                    <Input
-                      type="text"
-                      value={devAccountId}
-                      onChange={(e) => setDevAccountId(e.target.value)}
-                      placeholder={pageCopy.devAccountPlaceholder}
-                      className={cn(errors.accountId && 'border-red-400 focus-visible:ring-red-400/20')}
-                    />
-                    <p className="text-xs text-amber-700">{pageCopy.devAccountHint}</p>
                   </>
                 ) : (
                   <div
@@ -590,7 +557,7 @@ export function SupportPage({
                     </svg>
                   </div>
                   <p className="text-xs text-[var(--text-secondary)]">
-                    {(isAuthenticated && userId) || !authRequired
+                    {isAuthenticated && userId
                       ? t('点击上传或拖拽图片/文件至此处')
                       : t('请先登录，登录后可上传图片或文件')}
                   </p>
@@ -599,7 +566,7 @@ export function SupportPage({
                   ref={fileInputRef}
                   type="file"
                   multiple
-                  disabled={authRequired && !isAuthenticated && !userId}
+                  disabled={!isAuthenticated || !userId}
                   className="hidden"
                   onChange={handleFileChange}
                 />
@@ -639,7 +606,7 @@ export function SupportPage({
                 <Button type="submit" disabled={isSubmitting} size="lg" className="px-12">
                   {isSubmitting
                     ? t('提交中...')
-                    : (isAuthenticated && userId) || !authRequired
+                    : isAuthenticated && userId
                       ? t('提交')
                       : !authReady
                         ? t('正在读取登录状态...')
