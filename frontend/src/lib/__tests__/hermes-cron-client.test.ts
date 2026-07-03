@@ -632,6 +632,102 @@ describe("runCronJobAsTest", () => {
     expect(sendIndex).toBeLessThan(createIndex);
   });
 
+  it("sends one `hermes send` per target for a comma-separated multi-IM deliver (send --to only accepts a single platform)", async () => {
+    // `hermes send --to` 只接受单个目标：把 'wecom,qqbot' 整串传进去会报
+    // `Unknown platform: wecom,qqbot` 并 exit 1。所以多选 IM 的即时回执必须按逗号
+    // 拆开、对每个目标各发一条 `hermes send`，用户勾选的每个 IM 才都能收到。
+    let capturedMarker = "";
+    let catCallCount = 0;
+    const fetchMock = vi.fn(async (_url: unknown, init: { body?: string }) => {
+      const command = JSON.parse(String(init?.body)) as { command: string };
+      const cmd = command.command;
+      if (cmd.startsWith("hermes send ")) {
+        return okExec("Sent.");
+      }
+      if (cmd.includes("hermes cron create")) {
+        capturedMarker = extractMarkerFromCreateCommand(cmd);
+        return okExec("Job created.");
+      }
+      if (cmd.includes("lightvela-jobs-meta.json") && cmd.startsWith("python3")) {
+        return okExec("");
+      }
+      if (cmd.includes("cat ~/.hermes/cron/jobs.json")) {
+        catCallCount += 1;
+        const executed = catCallCount >= 3;
+        const record = executed
+          ? { id: "temp-1", name: capturedMarker, last_run_at: "2026-07-02T21:55:03+08:00", last_status: "ok", last_delivery_error: null }
+          : { id: "temp-1", name: capturedMarker, last_run_at: null, last_status: null, last_delivery_error: null };
+        return okExec(JSON.stringify([record]));
+      }
+      if (cmd === `hermes cron remove 'temp-1'`) {
+        return okExec("Removed.");
+      }
+      throw new Error(`unexpected command in test: ${cmd}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const multiJob: CronJob = { ...baseJob, deliver: "wecom,qqbot" };
+    const result = await runWithAdvancedTimers(runCronJobAsTest("bot-1", multiJob));
+    expect(result.deliveryError).toBeNull();
+
+    const allCommands = fetchMock.mock.calls.map((_, i) => extractCommand(fetchMock, i));
+    const sendCommands = allCommands.filter((c) => c.startsWith("hermes send "));
+    // 关键：两个 IM 各一条独立的 send，且都不能出现被拒的整串多目标 'wecom,qqbot'
+    expect(sendCommands.some((c) => c.includes("--to 'wecom'"))).toBe(true);
+    expect(sendCommands.some((c) => c.includes("--to 'qqbot'"))).toBe(true);
+    expect(sendCommands.every((c) => !c.includes("--to 'wecom,qqbot'"))).toBe(true);
+    // 每条都带约定文案
+    expect(sendCommands.every((c) => c.includes("已收到测试请求"))).toBe(true);
+    // 临时任务的 deliver 仍是完整多目标（cron create --deliver 支持逗号多目标，不拆）
+    const createCommand = allCommands.find((c) => c.includes("hermes cron create"));
+    expect(createCommand).toContain("--deliver 'wecom,qqbot'");
+  });
+
+  it("keeps delivering to the remaining targets even if one target's `hermes send` fails", async () => {
+    // 每个目标独立 best-effort：wecom 发失败不影响 qqbot，也不影响主流程。
+    let capturedMarker = "";
+    let catCallCount = 0;
+    const fetchMock = vi.fn(async (_url: unknown, init: { body?: string }) => {
+      const command = JSON.parse(String(init?.body)) as { command: string };
+      const cmd = command.command;
+      if (cmd.startsWith("hermes send ")) {
+        if (cmd.includes("--to 'wecom'")) return failedExec("wecom flaked");
+        return okExec("Sent.");
+      }
+      if (cmd.includes("hermes cron create")) {
+        capturedMarker = extractMarkerFromCreateCommand(cmd);
+        return okExec("Job created.");
+      }
+      if (cmd.includes("lightvela-jobs-meta.json") && cmd.startsWith("python3")) {
+        return okExec("");
+      }
+      if (cmd.includes("cat ~/.hermes/cron/jobs.json")) {
+        catCallCount += 1;
+        const executed = catCallCount >= 3;
+        const record = executed
+          ? { id: "temp-1", name: capturedMarker, last_run_at: "2026-07-02T21:55:03+08:00", last_status: "ok", last_delivery_error: null }
+          : { id: "temp-1", name: capturedMarker, last_run_at: null, last_status: null, last_delivery_error: null };
+        return okExec(JSON.stringify([record]));
+      }
+      if (cmd === `hermes cron remove 'temp-1'`) {
+        return okExec("Removed.");
+      }
+      throw new Error(`unexpected command in test: ${cmd}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const multiJob: CronJob = { ...baseJob, deliver: "wecom,qqbot" };
+    // wecom 那条失败被吞掉，主流程仍正常跑完
+    const result = await runWithAdvancedTimers(runCronJobAsTest("bot-1", multiJob));
+    expect(result.deliveryError).toBeNull();
+
+    const allCommands = fetchMock.mock.calls.map((_, i) => extractCommand(fetchMock, i));
+    const sendCommands = allCommands.filter((c) => c.startsWith("hermes send "));
+    // 两个目标都尝试发过（wecom 虽失败也发起了请求）
+    expect(sendCommands.some((c) => c.includes("--to 'wecom'"))).toBe(true);
+    expect(sendCommands.some((c) => c.includes("--to 'qqbot'"))).toBe(true);
+  });
+
   it("surfaces a non-null deliveryError when the agent ran but delivery failed", async () => {
     let capturedMarker = "";
     let catCallCount = 0;
@@ -702,7 +798,8 @@ describe("runCronJobAsTest", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(runWithAdvancedTimers(runCronJobAsTest("bot-1", baseJob), 245_000))
+    // 推进量要越过 TEST_RUN_POLL_TIMEOUT_MS（现为 300s，见 hermes-cron-client）才能触发超时。
+    await expect(runWithAdvancedTimers(runCronJobAsTest("bot-1", baseJob), 305_000))
       .rejects.toThrow("测试运行超时");
 
     const allCommands = fetchMock.mock.calls.map((_, i) => extractCommand(fetchMock, i));

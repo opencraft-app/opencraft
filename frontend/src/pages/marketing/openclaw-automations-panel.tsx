@@ -29,11 +29,11 @@ import {
   listCronJobs,
   listRecentCronRuns,
   pauseCronJob,
-  runCronJobAsTest,
   writeEffectiveWindowScript,
   removeCronJob,
   resumeCronJob,
   shellQuote,
+  startCronTestRun,
   type CronEffectiveWindow,
   type CronJob,
   type CronLightVelaScriptConfig,
@@ -447,35 +447,58 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
   }, [botId, refreshAll, showError, t]);
 
   /**
-   * 测试运行：立即真实执行一次（`runCronJobAsTest`）。
+   * 测试运行：立即真实执行一次（`startCronTestRun`）。
    *
    * 不直接对原 job 调用 `hermes cron run <job.id>`——那样会真正推进原任务的
    * 调度状态（一次性任务会被直接标记完成+禁用，永远不会在原定时间再触发）。
    * 而是克隆一个用完即焚的临时任务代理执行，原任务的状态完全不受影响。
    *
-   * 执行完成后还要检查 `deliveryError`：Agent 跑成功只代表 `last_status`
-   * 正常，不代表通知真的投递出去了——投递失败会单独记录在 `last_delivery_error`
-   * 里，必须一并检查才能准确反馈「测试运行成功」还是「执行了但没发出通知」。
+   * 交互上分两段，避免让用户对着转圈盲等两三分钟：
+   * 1. 前置阶段（`startCronTestRun` await 完成）：即时回执已发到 IM、临时任务已挂上。
+   *    这几步是秒级的，完成即撤掉「正在测试运行」的转圈，提示用户「已在后台执行、去 IM 看结果」。
+   * 2. 后台阶段（`completion`，fire-and-forget）：等临时任务真正被调度器执行完，读取真实投递
+   *    结果。这里仍要检查 `deliveryError`：Agent 跑成功只代表 `last_status` 正常，不代表通知
+   *    真投出去了——投递失败会单独记录在 `last_delivery_error`。后台拿到结果后再补一个短暂的
+   *    成功/失败角标 + toast，但不再阻塞用户。
    */
   const handleTestRun = useCallback(async (job: CronJob) => {
     if (!botId || testState[job.id] === "running") return;
     setTestState((s) => ({ ...s, [job.id]: "running" }));
-    showNotice(t("正在测试运行，请稍候…"), "info", 0);
+    showNotice(t("正在唤起测试运行…"), "info", 0);
+    let started: Awaited<ReturnType<typeof startCronTestRun>>;
     try {
-      const result = await runCronJobAsTest(botId, job);
-      if (result.deliveryError) {
-        flashTestResult(job.id, "fail");
-        showNotice(t("任务已执行，但通知投递失败：{{message}}", { message: result.deliveryError }), "error");
-      } else {
-        flashTestResult(job.id, "ok");
-        showNotice(t("测试运行成功"), "success");
-      }
-      void refreshRecentRuns(undefined, false);
+      // 前置阶段：发完即时回执、挂上临时任务就返回（秒级）。
+      started = await startCronTestRun(botId, job);
     } catch (err) {
+      // 连回执/临时任务都没挂上，才算前置失败——如实报错并撤转圈。
       const message = err instanceof CronCommandError ? err.message : err instanceof Error ? err.message : String(err);
       flashTestResult(job.id, "fail");
       showNotice(t("测试运行失败：{{message}}", { message }), "error");
+      return;
     }
+    // 前置成功：即时回执已发出、任务已在后台跑。立刻撤转圈，不再让用户盲等真正执行完。
+    flashTestResult(job.id, "ok");
+    showNotice(t("已在后台执行，请在你的 IM 中查看运行结果"), "success");
+    // 后台阶段 fire-and-forget：等真正执行完后给用户一个明确交代——不再阻塞 UI，但也
+    // 不再「全静默」。三种结局分别提示：
+    //   1. 执行成功且投递成功 → 静默（用户已从 IM 收到结果，无需再打扰）。
+    //   2. 执行了但投递失败（last_delivery_error 有值）→ error toast。
+    //   3. 后台等待超时/异常（调度器迟迟没执行、清理失败等）→ 一条非阻塞的提示 toast，
+    //      避免用户像之前那样「等半天没结果也没任何提示」蒙在鼓里。
+    void started.completion
+      .then((result) => {
+        if (result.deliveryError) {
+          showNotice(t("任务已执行，但通知投递失败：{{message}}", { message: result.deliveryError }), "error");
+        }
+        void refreshRecentRuns(undefined, false);
+      })
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        showNotice(
+          t("后台执行未能确认结果：{{message}}。即时回执已发出，任务可能仍在后台运行，请稍后在 IM 中确认。", { message }),
+          "info",
+        );
+      });
   }, [botId, testState, showNotice, flashTestResult, refreshRecentRuns, t]);
 
   if (!botId) {
