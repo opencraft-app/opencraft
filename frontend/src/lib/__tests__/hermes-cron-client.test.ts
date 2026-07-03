@@ -354,7 +354,8 @@ describe("effective window script", () => {
 });
 
 describe("listCronJobs", () => {
-  it("filters out disposable __lvtest_ temp jobs created by runCronJobAsTest", async () => {
+  it("filters out disposable test-run temp jobs by their hidden zero-width marker", async () => {
+    const tempName = buildTestRunMarker("6e8b6fc74896", "喝水提醒");
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(okExec(`
   6e8b6fc74896 [active]
@@ -363,7 +364,7 @@ describe("listCronJobs", () => {
     Deliver:   local
 
   aa11bb22cc33 [active]
-    Name:      __lvtest_6e8b6fc7_abc123
+    Name:      ${tempName}
     Schedule:  once at 2026-07-03T12:00
     Deliver:   local
 `))
@@ -375,6 +376,25 @@ describe("listCronJobs", () => {
 
     expect(jobs).toHaveLength(1);
     expect(jobs[0]?.name).toBe("喝水提醒");
+  });
+
+  it("does not mistake a real task literally named like a test run for a temp job", async () => {
+    // 真实任务名恰好是「XX测试运行」（无隐藏零宽 marker）时，绝不能被当成临时任务过滤掉
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(okExec(`
+  6e8b6fc74896 [active]
+    Name:      喝水提醒测试运行
+    Schedule:  every 2h
+    Deliver:   local
+`))
+      .mockResolvedValueOnce(okExec(""))
+      .mockResolvedValueOnce(okExec(""));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const jobs = await listCronJobs("bot-1");
+
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]?.name).toBe("喝水提醒测试运行");
   });
 });
 
@@ -485,16 +505,42 @@ describe("runCronJob", () => {
 });
 
 describe("buildTestRunMarker", () => {
-  it("embeds the source job id prefix so the marker stays traceable", () => {
-    const marker = buildTestRunMarker("dcb4fee9e45f1234");
+  it("shows a clean human-readable title 「{原任务名}测试运行」 while hiding the marker in zero-width chars", () => {
+    const marker = buildTestRunMarker("dcb4fee9e45f1234", "喝水提醒");
 
-    expect(marker).toMatch(/^__lvtest_dcb4fee9_/);
+    // 去掉所有零宽字符后，用户可见的就是干净的「喝水提醒测试运行」
+    const visible = marker.replace(/[\u200B\u200C\u2063]/g, "");
+    expect(visible).toBe("喝水提醒测试运行");
+    // 原始 name 里确实含隐藏零宽 marker（否则程序无法识别/反查）
+    expect(marker).not.toBe(visible);
+    expect(marker).toMatch(/[\u2063]/);
+  });
+
+  it("falls back to a bare 「测试运行」 when the origin name is missing", () => {
+    const marker = buildTestRunMarker("dcb4fee9e45f1234");
+    const visible = marker.replace(/[\u200B\u200C\u2063]/g, "");
+    expect(visible).toBe("测试运行");
   });
 
   it("never collides across consecutive calls for the same job", () => {
-    const markers = new Set(Array.from({ length: 20 }, () => buildTestRunMarker("job-1")));
+    const markers = new Set(Array.from({ length: 20 }, () => buildTestRunMarker("job-1", "提醒")));
 
     expect(markers.size).toBe(20);
+  });
+});
+
+describe("parseCronRunFilesOutput display name", () => {
+  it("renders a test-run temp job as its clean 「{原任务名}测试运行」 in run history", () => {
+    const tempName = buildTestRunMarker("abc12345ffff", "喝水提醒");
+    const runs = parseCronRunFilesOutput(JSON.stringify([{
+      job_id: "temp-xyz",
+      run_at: "2026-07-03T02:20:16+00:00",
+      output_path: "/home/agentuser/.hermes/cron/output/temp-xyz/2026-07-03T02-20-16.md",
+      mtime_ms: 1780712416000,
+      job_name: tempName,
+    }]), []);
+
+    expect(runs[0]?.job_name).toBe("喝水提醒测试运行");
   });
 });
 

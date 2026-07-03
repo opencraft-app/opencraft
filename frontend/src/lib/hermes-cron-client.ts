@@ -291,7 +291,7 @@ export async function listCronJobs(botId: string): Promise<CronJob[]> {
   const payload = await execCommand(botId, command);
   const text = (payload.output || "").trimEnd();
   if (!text.trim() || /no scheduled jobs/i.test(text)) return [];
-  // 「测试运行」会创建用完即焚的临时任务（名字带 __lvtest_ 前缀，见
+  // 「测试运行」会创建用完即焚的临时任务（名字末尾带一段不可见的零宽 marker，见
   // `buildTestRunMarker`），执行完会自动删除；但删除前存在的短暂窗口内
   // 如果用户恰好刷新列表，不应该让这类内部实现细节暴露给前端。
   const jobs = parseCronListOutput(text).filter((job) => !isTestRunMarkerName(job.name));
@@ -492,18 +492,20 @@ async function archiveCronJobMetadata(botId: string): Promise<void> {
 /**
  * 把执行记录里要展示给用户的任务名规范化。
  *
- * 「测试运行」创建的临时任务名字是 `__lvtest_<原jobId前8位>_<随机后缀>` 这种内部
- * marker（见 `buildTestRunMarker`）——临时任务执行完就被删除，所以在执行记录里
- * 用 jobId 反查不到它，直接显示出来就是一串「代码」，很不优雅。这里把它转成
- * 「{原任务名}测试运行」：
- *   - 能按 marker 里的原 jobId 前缀在现有任务里反查到原任务 → 用原任务名拼；
- *   - 反查不到（原任务也已删除等）→ 兜底成「测试运行」，绝不暴露内部 marker。
- * 非 marker 名字原样返回。
+ * 「测试运行」创建的临时任务名字（见 `buildTestRunMarker`）由「可读部分 +
+ * 末尾一段不可见的零宽 marker」组成，可读部分本身就是「{原任务名}测试运行」。
+ * 这里的处理：
+ *   - 是测试运行临时任务 → 剥掉零宽 marker，直接用可读部分（`{原任务名}测试运行`）；
+ *     万一可读部分意外为空，退一步按 marker 里编码的原 jobId 前缀反查原任务名拼一个，
+ *     再兜底成「测试运行」，绝不把零宽/内部串暴露出去。
+ *   - 非测试运行任务 → 原样返回。
  */
 function displayNameForRun(rawName: string, jobs: CronJob[]): string {
+  if (!isTestRunMarkerName(rawName)) return rawName;
+  const visible = stripTestRunMarker(rawName).trim();
+  if (visible) return visible;
   const idPrefix = parseTestRunMarkerJobIdPrefix(rawName);
-  if (!idPrefix) return rawName;
-  const origin = jobs.find((job) => job.id.startsWith(idPrefix));
+  const origin = idPrefix ? jobs.find((job) => job.id.startsWith(idPrefix)) : undefined;
   const originName = (origin?.name || "").trim();
   return originName ? `${originName}测试运行` : "测试运行";
 }
@@ -938,31 +940,86 @@ export async function runCronJob(botId: string, id: string): Promise<DebugExecPa
   return execCommand(botId, `hermes cron run ${shellQuote(id)}`);
 }
 
-const TEST_RUN_MARKER_PREFIX = "__lvtest_";
+/** 「测试运行」后缀：用户在 IM 标题里看到的可读部分就以它结尾 */
+const TEST_RUN_NAME_SUFFIX = "测试运行";
 
-/** 生成一个几乎不可能撞车的临时任务名，仅用于创建后立刻按名字反查 id */
-export function buildTestRunMarker(jobId: string): string {
-  return `${TEST_RUN_MARKER_PREFIX}${jobId.slice(0, 8)}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+/**
+ * 「测试运行」临时任务名字里嵌入的隐藏 marker。
+ *
+ * 背景：hermes 投递通知时，标题直接取任务的 `name` 字段（`Cronjob Response: <name>`），
+ * 且没有独立的「标题」字段可配。所以标题里必然带 name 的全部内容。而这个 name 又要
+ * 同时承担「程序用的内部标识」——列表过滤、执行完精确定位删除、避免和真实任务撞名。
+ *
+ * 取舍：把内部标识编码成一串**零宽字符**（对用户完全不可见）附在名字末尾。这样
+ *   - IM 标题 / 执行记录里用户只看到干净的「{原任务名}测试运行」；
+ *   - 程序仍能靠这段零宽 marker 100% 可靠地识别临时任务、精确反查其 id 去清理，
+ *     且几乎不可能误伤名字恰好也叫「xx测试运行」的真实任务（真实任务名不会含零宽字符）。
+ *
+ * 编码用两个零宽字符表示 0/1：`\u200B`=0、`\u200C`=1；首尾各夹一个 `\u2063`
+ * （INVISIBLE SEPARATOR）作为 marker 的边界哨兵，便于识别与剥离。
+ */
+const ZW_SENTINEL = "\u2063"; // marker 边界哨兵（不可见）
+const ZW_ZERO = "\u200B"; // 比特 0（不可见）
+const ZW_ONE = "\u200C"; // 比特 1（不可见）
+/** 匹配「哨兵 + 任意个 0/1 零宽位 + 哨兵」这一整段隐藏 marker */
+const ZW_MARKER_RE = new RegExp(`${ZW_SENTINEL}[${ZW_ZERO}${ZW_ONE}]*${ZW_SENTINEL}`);
+
+/** 把一段 ascii 文本编码成零宽比特串（每字符 8 bit） */
+function encodeZeroWidth(payload: string): string {
+  let bits = "";
+  for (const ch of payload) {
+    bits += ch.charCodeAt(0).toString(2).padStart(8, "0");
+  }
+  const zw = bits.replace(/0/g, ZW_ZERO).replace(/1/g, ZW_ONE);
+  return `${ZW_SENTINEL}${zw}${ZW_SENTINEL}`;
+}
+
+/** 把 `encodeZeroWidth` 产生的零宽 marker 解回原始 ascii 文本；解析不出返回空串 */
+function decodeZeroWidth(name: string): string {
+  const match = ZW_MARKER_RE.exec(name);
+  if (!match) return "";
+  const body = match[0].slice(1, -1); // 去掉首尾哨兵
+  const bits = body.replace(new RegExp(ZW_ZERO, "g"), "0").replace(new RegExp(ZW_ONE, "g"), "1");
+  let out = "";
+  for (let i = 0; i + 8 <= bits.length; i += 8) {
+    out += String.fromCharCode(parseInt(bits.slice(i, i + 8), 2));
+  }
+  return out;
+}
+
+/**
+ * 生成「测试运行」临时任务的名字：`{原任务名}测试运行` + 末尾不可见的零宽 marker。
+ *
+ * 可见部分就是投递标题会显示的文案；零宽 marker 里编码了「原 jobId 前 8 位 + 随机串」，
+ * 既保证名字唯一（反查/清理可靠、不撞名），又能供执行记录反解出原 jobId。
+ */
+export function buildTestRunMarker(jobId: string, originName?: string): string {
+  const visible = `${(originName ?? "").trim()}${TEST_RUN_NAME_SUFFIX}`;
+  const token = `${jobId.slice(0, 8)}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  return `${visible}${encodeZeroWidth(token)}`;
 }
 
 /** 判断是否为「测试运行」创建的用完即焚临时任务，供 `listCronJobs` 过滤 */
 function isTestRunMarkerName(name: string): boolean {
-  return name.startsWith(TEST_RUN_MARKER_PREFIX);
+  return ZW_MARKER_RE.test(name);
 }
 
 /**
  * 从测试运行 marker 名字里解析出「原任务 id 的前 8 位」。
  *
- * marker 由 `buildTestRunMarker` 生成，形如 `__lvtest_dcb4fee9_mr4pinvyzd1t82`：
- *   前缀 `__lvtest_` + 原 jobId 前 8 位 + `_` + 随机后缀。
- * 这里把中间那段（原 jobId 前缀）取出来，供执行记录反查原任务名。
- * 解析不出则返回 null。
+ * marker 里零宽段编码的 token 形如 `dcb4fee9_mr4pinvyzd1t82`（原 jobId 前 8 位 + `_` + 随机）。
+ * 这里解出前 8 位，供执行记录反查原任务名。解析不出则返回 null。
  */
 function parseTestRunMarkerJobIdPrefix(name: string): string | null {
   if (!isTestRunMarkerName(name)) return null;
-  const rest = name.slice(TEST_RUN_MARKER_PREFIX.length);
-  const prefix = rest.split("_")[0] ?? "";
+  const token = decodeZeroWidth(name);
+  const prefix = token.split("_")[0] ?? "";
   return prefix || null;
+}
+
+/** 去掉名字里的零宽 marker，得到给用户看的干净文案（`{原任务名}测试运行`） */
+function stripTestRunMarker(name: string): string {
+  return name.replace(ZW_MARKER_RE, "");
 }
 
 /**
@@ -1281,7 +1338,8 @@ async function waitForCronJobExecuted(
  * 做法：先用 `hermes send` 往同一个 IM 通道即时回一句「已收到测试请求…」（让
  * 用户不用盲等，见 `sendChatNotice`），再创建一个用完即焚的临时一次性任务（同
  * prompt/skills/deliver，但不带生效窗口/daily_times 门控脚本，避免被门控直接跳过
- * 执行；名字带 `__lvtest_` 前缀，`listCronJobs` 会把这类任务从列表里过滤掉，不在
+ * 执行；名字形如「{原任务名}测试运行」+ 末尾一段不可见的零宽 marker，`listCronJobs`
+ * 会靠这段零宽 marker 把这类任务从列表里过滤掉，不在
  * 前端展示），让它按自己的 schedule 到点被调度器**自然执行**（不额外催），轮询等到
  * 它真正执行完（见 `waitForCronJobExecuted`）后读取真实投递结果，再把它删除。
  *
@@ -1338,7 +1396,7 @@ export async function startCronTestRun(botId: string, job: CronJob): Promise<Sta
   await sendChatNotice(botId, deliver, TEST_RUN_ACK_MESSAGE).catch(() => {
     /* 即时回执发送失败不影响测试运行主流程 */
   });
-  const marker = buildTestRunMarker(job.id);
+  const marker = buildTestRunMarker(job.id, job.name);
   await createCronJob(botId, {
     schedule: buildImmediateOnceSchedule(),
     prompt: job.prompt,
