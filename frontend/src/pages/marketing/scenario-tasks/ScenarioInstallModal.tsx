@@ -5,7 +5,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useT } from "@/i18n/t";
 import { execCommandStream } from "@/lib/hermes-cron-client";
-import type { ScenarioTaskField, ScenarioTaskPack } from "./scenario-packs";
+import { SCENARIO_MULTISELECT_SEPARATOR, type ScenarioTaskField, type ScenarioTaskPack } from "./scenario-packs";
 import {
   buildScenarioTaskDraft,
   normalizeScenarioDeliverTarget,
@@ -583,7 +583,7 @@ function ScenarioFieldControl({
     );
   }
 
-  const selected = new Set(value.split("/").map((item) => item.trim()).filter(Boolean));
+  const selected = new Set(splitMultiselectValue(value));
   const toggle = (optionValue: string) => {
     const next = new Set(selected);
     if (field.type === "select") {
@@ -592,7 +592,7 @@ function ScenarioFieldControl({
     }
     if (next.has(optionValue)) next.delete(optionValue);
     else next.add(optionValue);
-    onChange(Array.from(next).join(" / "));
+    onChange(Array.from(next).join(SCENARIO_MULTISELECT_SEPARATOR));
   };
 
   return (
@@ -631,6 +631,14 @@ function ScenarioFieldControl({
       )}
     </div>
   );
+}
+
+function splitMultiselectValue(value: string): string[] {
+  const separator = value.includes(SCENARIO_MULTISELECT_SEPARATOR) ? SCENARIO_MULTISELECT_SEPARATOR : " / ";
+  return value
+    .split(separator)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function SummaryRow({ label, value }: { label: string; value: ReactNode }) {

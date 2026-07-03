@@ -35,14 +35,25 @@ export interface ScenarioTaskPack {
   promptBuilder: (values: Record<string, string>) => string;
 }
 
+export const SCENARIO_MULTISELECT_SEPARATOR = "|";
+
+function formatMultiselectValue(value: string): string {
+  return value
+    .split(SCENARIO_MULTISELECT_SEPARATOR)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .join(" / ");
+}
+
 function valueOf(
   fields: readonly ScenarioTaskField[],
   values: Record<string, string>,
   key: string,
 ): string {
+  const field = fields.find((item) => item.key === key);
   const configured = values[key]?.trim();
-  if (configured) return configured;
-  return fields.find((field) => field.key === key)?.defaultValue ?? "";
+  const value = configured || field?.defaultValue || "";
+  return field?.type === "multiselect" ? formatMultiselectValue(value) : value;
 }
 
 const realtimeToolInstruction = [
@@ -56,7 +67,7 @@ const stockFields: ScenarioTaskField[] = [
     key: "focusScope",
     label: "关注范围",
     type: "multiselect",
-    defaultValue: "大盘 / 行业板块 / 热点题材",
+    defaultValue: "大盘|行业板块|热点题材",
     options: [
       { value: "大盘", label: "大盘" },
       { value: "自选股", label: "自选股" },
@@ -120,7 +131,7 @@ const dailyNewsFields: ScenarioTaskField[] = [
     key: "categories",
     label: "关注地区/分类",
     type: "multiselect",
-    defaultValue: "国内 / 国际 / 科技 / 财经",
+    defaultValue: "国内|国际|科技|财经",
     options: [
       { value: "国内", label: "国内" },
       { value: "国际", label: "国际" },
@@ -165,7 +176,7 @@ const aiDigestFields: ScenarioTaskField[] = [
     key: "focusArea",
     label: "关注方向",
     type: "multiselect",
-    defaultValue: "Agent / 模型 / 多模态 / 开源",
+    defaultValue: "Agent|模型|多模态|开源",
     options: [
       { value: "Agent", label: "Agent" },
       { value: "模型", label: "模型" },
@@ -206,7 +217,7 @@ export const SCENARIO_TASK_PACKS: ScenarioTaskPack[] = [
     name: "A股财经早报",
     description: "交易日前开盘前，整理大盘、板块和自选关注点",
     defaultFrequencyLabel: "交易日 08:30",
-    defaultSchedule: "30 8 * * 1,2,3,4,5",
+    defaultSchedule: "30 8 * * 1-5",
     defaultDeliverLabel: "网页 / 最近执行",
     requiredInfoLabel: "关注范围、自选内容、输出风格",
     icon: "trending-up",
@@ -287,7 +298,7 @@ export const SCENARIO_TASK_PACKS: ScenarioTaskPack[] = [
     name: "AI 发展动态",
     description: "追踪 AI 产品、模型、论文、开源和行业动态",
     defaultFrequencyLabel: "工作日 09:30",
-    defaultSchedule: "30 9 * * 1,2,3,4,5",
+    defaultSchedule: "30 9 * * 1-5",
     defaultDeliverLabel: "网页 / 最近执行",
     requiredInfoLabel: "关注方向、使用目的、输出深度",
     icon: "brain-circuit",

@@ -93,6 +93,29 @@ describe("scenario task builder", () => {
     }
   });
 
+  it("uses five-field Hermes cron expressions for business-day scenario schedules", () => {
+    expect(getScenarioTaskPack("stock-morning-brief").defaultSchedule).toBe("30 8 * * 1-5");
+    expect(getScenarioTaskPack("ai-digest").defaultSchedule).toBe("30 9 * * 1-5");
+
+    for (const packId of ["stock-morning-brief", "ai-digest"] as const) {
+      const fields = getScenarioTaskPack(packId).defaultSchedule.split(/\s+/);
+      expect(fields).toHaveLength(5);
+      expect(fields[4]).toBe("1-5");
+    }
+  });
+
+  it("formats multiselect values for prompts without leaking the internal separator", () => {
+    const pack = getScenarioTaskPack("ai-digest");
+    const draft = buildScenarioTaskDraft({
+      pack,
+      values: { focusArea: "Agent|模型/评测" },
+      now: new Date(2026, 6, 2, 9, 0, 0),
+    });
+
+    expect(draft.generatedPrompt).toContain("关注方向：Agent / 模型/评测。");
+    expect(draft.generatedPrompt).not.toContain("Agent|");
+  });
+
   it("asks the World Cup brief to fast-fail when there is no active tournament context", () => {
     const pack = getScenarioTaskPack("world-cup-daily");
     const draft = buildScenarioTaskDraft({
