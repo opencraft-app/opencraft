@@ -544,6 +544,9 @@ describe("runCronJobAsTest", () => {
     const fetchMock = vi.fn(async (_url: unknown, init: { body?: string }) => {
       const command = JSON.parse(String(init?.body)) as { command: string };
       const cmd = command.command;
+      if (cmd.startsWith("hermes send ")) {
+        return okExec("Sent.");
+      }
       if (cmd.includes("hermes cron create")) {
         capturedMarker = extractMarkerFromCreateCommand(cmd);
         return okExec("Job created.");
@@ -582,12 +585,61 @@ describe("runCronJobAsTest", () => {
     expect(createCommand).not.toContain("every 2h");
   });
 
+  it("immediately pushes an acknowledgement to the job's IM channel before the long wait, without blocking on send failure", async () => {
+    let capturedMarker = "";
+    let catCallCount = 0;
+    const fetchMock = vi.fn(async (_url: unknown, init: { body?: string }) => {
+      const command = JSON.parse(String(init?.body)) as { command: string };
+      const cmd = command.command;
+      if (cmd.startsWith("hermes send ")) {
+        // 即使即时回执发送失败，也不能影响后续真正的测试运行
+        return failedExec("delivery flaked");
+      }
+      if (cmd.includes("hermes cron create")) {
+        capturedMarker = extractMarkerFromCreateCommand(cmd);
+        return okExec("Job created.");
+      }
+      if (cmd.includes("lightvela-jobs-meta.json") && cmd.startsWith("python3")) {
+        return okExec("");
+      }
+      if (cmd.includes("cat ~/.hermes/cron/jobs.json")) {
+        catCallCount += 1;
+        const executed = catCallCount >= 2;
+        return okExec(JSON.stringify([executed
+          ? { id: "temp-1", name: capturedMarker, last_run_at: "2026-07-02T21:55:03+08:00", last_status: "ok", last_delivery_error: null }
+          : { id: "temp-1", name: capturedMarker, last_run_at: null, last_status: null, last_delivery_error: null }]));
+      }
+      if (cmd === `hermes cron remove 'temp-1'`) {
+        return okExec("Removed.");
+      }
+      throw new Error(`unexpected command in test: ${cmd}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    // 回执发送失败被吞掉，主流程仍然正常跑完
+    const result = await runWithAdvancedTimers(runCronJobAsTest("bot-1", baseJob));
+    expect(result.deliveryError).toBeNull();
+
+    const allCommands = fetchMock.mock.calls.map((_, i) => extractCommand(fetchMock, i));
+    const sendIndex = allCommands.findIndex((c) => c.startsWith("hermes send "));
+    const createIndex = allCommands.findIndex((c) => c.includes("hermes cron create"));
+    // 即时回执确实发出，发到该任务的 IM 通道（deliver=wecom），且带约定文案
+    expect(sendIndex).toBeGreaterThanOrEqual(0);
+    expect(allCommands[sendIndex]).toContain("--to 'wecom'");
+    expect(allCommands[sendIndex]).toContain("已收到测试请求");
+    // 回执必须发生在创建临时任务（开始漫长等待）之前
+    expect(sendIndex).toBeLessThan(createIndex);
+  });
+
   it("surfaces a non-null deliveryError when the agent ran but delivery failed", async () => {
     let capturedMarker = "";
     let catCallCount = 0;
     const fetchMock = vi.fn(async (_url: unknown, init: { body?: string }) => {
       const command = JSON.parse(String(init?.body)) as { command: string };
       const cmd = command.command;
+      if (cmd.startsWith("hermes send ")) {
+        return okExec("Sent.");
+      }
       if (cmd.includes("hermes cron create")) {
         capturedMarker = extractMarkerFromCreateCommand(cmd);
         return okExec("Job created.");
@@ -626,6 +678,9 @@ describe("runCronJobAsTest", () => {
     const fetchMock = vi.fn(async (_url: unknown, init: { body?: string }) => {
       const command = JSON.parse(String(init?.body)) as { command: string };
       const cmd = command.command;
+      if (cmd.startsWith("hermes send ")) {
+        return okExec("Sent.");
+      }
       if (cmd.includes("hermes cron create")) {
         capturedMarker = extractMarkerFromCreateCommand(cmd);
         return okExec("Job created.");
@@ -659,6 +714,9 @@ describe("runCronJobAsTest", () => {
     const fetchMock = vi.fn(async (_url: unknown, init: { body?: string }) => {
       const command = JSON.parse(String(init?.body)) as { command: string };
       const cmd = command.command;
+      if (cmd.startsWith("hermes send ")) {
+        return okExec("Sent.");
+      }
       if (cmd.includes("hermes cron create")) {
         capturedMarker = extractMarkerFromCreateCommand(cmd);
         return okExec("Job created.");
@@ -696,6 +754,9 @@ describe("runCronJobAsTest", () => {
     const allCommands = fetchMock.mock.calls.map((_, i) => extractCommand(fetchMock, i));
     const createCommand = allCommands.find((c) => c.includes("hermes cron create")) ?? "";
     expect(createCommand).toContain("--deliver 'wecom:wecom-chat-abc'");
+    // 即时回执也必须发到解析后的具体 origin 目标，而不是裸 `origin`
+    const sendCommand = allCommands.find((c) => c.startsWith("hermes send ")) ?? "";
+    expect(sendCommand).toContain("--to 'wecom:wecom-chat-abc'");
   });
 });
 

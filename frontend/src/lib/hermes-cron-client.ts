@@ -981,6 +981,27 @@ export interface CronTestRunResult {
   deliveryError: string | null;
 }
 
+/** 点「测试运行」后立刻推送到 IM 通道的即时回执文案 */
+const TEST_RUN_ACK_MESSAGE = "已收到测试请求，正在唤起任务，请耐心等待…";
+
+/**
+ * 立即往指定 deliver 目标推送一条纯文本消息（`hermes send`）。
+ *
+ * 和 cron 那套「到点由调度器 tick 执行」不同，`hermes send` 是同步的即时投递
+ * 命令（同「设置」里「测试通知通道」用的是同一条命令），不经过调度器、不唤起
+ * Agent/LLM，命令返回即代表已经发出。因此适合用来在测试运行真正开始那段漫长
+ * 等待之前，先给用户的聊天通道回一句「已收到」。
+ *
+ * `deliver` 直接沿用 job 的 deliver 字符串（可能是 `weixin:wx_x,feishu:oc_y`
+ * 这种逗号分隔的多目标），格式与 `hermes send --to` 接受的目标一致。
+ */
+async function sendChatNotice(botId: string, deliver: string, message: string): Promise<void> {
+  const target = deliver.trim();
+  if (!target) return;
+  const command = ["hermes", "send", "--to", shellQuote(target), shellQuote(message)].join(" ");
+  await execCommand(botId, command);
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -1045,11 +1066,12 @@ async function waitForCronJobExecuted(
 /**
  * 测试运行：把 job 的 prompt/skills/deliver 真实执行一次，且**绝不触碰原任务**。
  *
- * 做法：创建一个用完即焚的临时一次性任务（同 prompt/skills/deliver，但不带
- * 生效窗口/daily_times 门控脚本，避免被门控直接跳过执行；名字带 `__lvtest_`
- * 前缀，`listCronJobs` 会把这类任务从列表里过滤掉，不在前端展示），让它按
- * 自己的 schedule 到点被调度器**自然执行**（不额外催），轮询等到它真正执行
- * 完（见 `waitForCronJobExecuted`）后读取真实投递结果，再把它删除。
+ * 做法：先用 `hermes send` 往同一个 IM 通道即时回一句「已收到测试请求…」（让
+ * 用户不用盲等，见 `sendChatNotice`），再创建一个用完即焚的临时一次性任务（同
+ * prompt/skills/deliver，但不带生效窗口/daily_times 门控脚本，避免被门控直接跳过
+ * 执行；名字带 `__lvtest_` 前缀，`listCronJobs` 会把这类任务从列表里过滤掉，不在
+ * 前端展示），让它按自己的 schedule 到点被调度器**自然执行**（不额外催），轮询等到
+ * 它真正执行完（见 `waitForCronJobExecuted`）后读取真实投递结果，再把它删除。
  *
  * 为什么不调用 `hermes cron run <id>` 去强制立即触发（哪怕是对临时任务）：
  * 实测证实 `hermes cron run` 在这套 CLI/debug-exec 环境下"强制立即触发"这
@@ -1071,6 +1093,13 @@ async function waitForCronJobExecuted(
  */
 export async function runCronJobAsTest(botId: string, job: CronJob): Promise<CronTestRunResult> {
   const deliver = await resolveConcreteDeliverForTestRun(botId, job);
+  // 真正的测试执行要等临时任务被调度器 tick 到（约 2 分钟起步），中间用户是「盲等」的。
+  // 所以在开始等待之前，先用 `hermes send` 往同一个 IM 通道即时回一句「已收到」，让用户
+  // 立刻知道请求已进入处理。这条回执是 best-effort：发不出去（比如通道未配置）也绝不能
+  // 影响后面真正的测试运行，因此单独 try/catch 吞掉错误。
+  await sendChatNotice(botId, deliver, TEST_RUN_ACK_MESSAGE).catch(() => {
+    /* 即时回执发送失败不影响测试运行主流程 */
+  });
   const marker = buildTestRunMarker(job.id);
   await createCronJob(botId, {
     schedule: buildImmediateOnceSchedule(),
