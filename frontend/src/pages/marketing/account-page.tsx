@@ -8,6 +8,7 @@ import {
   Loader2,
   Pencil,
   Shield,
+  ShieldAlert,
   ShieldCheck,
   Trash2,
   X,
@@ -36,6 +37,7 @@ import {
 import { getBillingErrorCode, resolveBillingErrorMessage } from "@/lib/billing-error";
 import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
 import { isCN, isGlobal } from "@/lib/region";
+import { REALNAME_REQUIRED_QUERY_KEY } from "@/lib/agent-routes";
 import { cn } from "@/lib/utils";
 import { buildPayPlan } from "@/lib/wx-pay";
 import { QRCodeSVG } from "qrcode.react";
@@ -1816,6 +1818,8 @@ export const AccountPage = () => {
   const [showChangePhoneModal, setShowChangePhoneModal] = useState(false);
   const [realnameSyncRetrying, setRealnameSyncRetrying] = useState(false);
   const [realnameSyncError, setRealnameSyncError] = useState<string | null>(null);
+  // 从首页「立即创建」跳转过来、要求先完成实名认证时的提醒 tips
+  const [realnameRequiredTip, setRealnameRequiredTip] = useState<string | null>(null);
 
   // Email bind —— 国内站微信/QQ 登录用户通过 Magic Link 绑定邮箱
   const [bindEmail, setBindEmail] = useState(user?.email ?? "");
@@ -1906,6 +1910,24 @@ export const AccountPage = () => {
     setEmailBindError(message);
     setEmailBindSuccess(null);
   }, [refreshProfile, searchParams, setSearchParams, t]);
+
+  // 首页「立即创建」→ 未实名跳转到账号页时，展示实名提醒并清理 query
+  useEffect(() => {
+    // 国际站无实名概念，即便被手动拼接该 query 也不展示中文提醒
+    if (isGlobal) return;
+    if (searchParams.get(REALNAME_REQUIRED_QUERY_KEY) !== "1") return;
+
+    const next = new URLSearchParams(searchParams);
+    next.delete(REALNAME_REQUIRED_QUERY_KEY);
+    setSearchParams(next, { replace: true });
+
+    setRealnameRequiredTip(t("创建 LightVela 前，请先完成实名认证。"));
+  }, [searchParams, setSearchParams, t, isGlobal]);
+
+  // 实名认证完成后自动清除提醒
+  useEffect(() => {
+    if (verified) setRealnameRequiredTip(null);
+  }, [verified]);
 
   useEffect(() => {
     if (!hasPendingAvatarAudit && !hasPendingNameAudit) return;
@@ -2195,6 +2217,26 @@ export const AccountPage = () => {
           >
             <h2 style={{ fontSize: "clamp(1.5rem, 3vw, 2rem)", fontWeight: 600, color: "rgba(0,0,0,0.9)", lineHeight: 1.5 }}>{t("账号管理")}</h2>
           </motion.div>
+
+          {/* 实名提醒 tips：从首页「立即创建」跳转、且尚未完成实名认证时展示（仅国内站） */}
+          {realnameRequiredTip && !verified && showRealnameSection && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              role="alert"
+              className="mb-6 flex items-start gap-3 rounded-xl px-4 py-3"
+              style={{
+                background: "var(--color-warning-bg, rgba(255, 161, 0, 0.1))",
+                border: "1px solid var(--color-warning-border, rgba(255, 161, 0, 0.35))",
+              }}
+            >
+              <ShieldAlert className="mt-0.5 h-5 w-5 flex-shrink-0" style={{ color: "var(--color-warning, #C67B1E)" }} />
+              <p className="m-0 text-sm" style={{ color: "var(--color-warning-text, rgba(0,0,0,0.75))", lineHeight: 1.5 }}>
+                {realnameRequiredTip}
+              </p>
+            </motion.div>
+          )}
 
           {/* Sections */}
           <motion.div

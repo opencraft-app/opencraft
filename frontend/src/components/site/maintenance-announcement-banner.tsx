@@ -12,9 +12,9 @@
  */
 
 import { Megaphone, X } from "lucide-react";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useT } from "@/i18n/t";
-import { useAppLocation } from "@/lib/app-navigation";
 import { stripPublicSiteLocalePrefix } from "@/lib/public-site-routing";
 import { isCN } from "@/lib/region";
 
@@ -37,7 +37,7 @@ export const ANNOUNCEMENT_BANNER_HEIGHT_PX = 36;
 
 export function MaintenanceAnnouncementBanner() {
   const t = useT();
-  const location = useAppLocation();
+  const pathname = usePathname();
   const message = t("LightVela 预计将于 2026 年 7 月 15 日正式开启公测，内测用户将享受 1 个月延期权益。");
   // 默认不显示，挂载时再读 localStorage —— 避免 SSR / 首屏 flash 不一致
   const [dismissed, setDismissed] = useState(true);
@@ -68,8 +68,9 @@ export function MaintenanceAnnouncementBanner() {
 
   const visible =
     isCN &&
+    pathname !== null &&
     !expired &&
-    VISIBLE_PATHS.has(stripPublicSiteLocalePrefix(location.pathname)) &&
+    VISIBLE_PATHS.has(stripPublicSiteLocalePrefix(pathname)) &&
     !dismissed;
 
   if (!visible) return null;

@@ -10,6 +10,7 @@ import {
   MessageCircle,
   MessageSquare,
   Loader2,
+  MoreVertical,
   Calendar,
   Mail,
   Database,
@@ -24,9 +25,7 @@ import {
   Files,
   Plus,
   RefreshCw,
-  RotateCw,
   Stethoscope,
-  Trash2,
   Trophy,
   UploadCloud,
   UserRound,
@@ -406,20 +405,8 @@ const RepairToolsIcon = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-const SETTINGS_ICON_TOOLTIP_CLASS =
-  "pointer-events-auto select-text absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium leading-relaxed text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100";
-
 const SETTINGS_ICON_TOOLTIP_ARROW_CLASS =
   "absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white";
-
-function SettingsIconTooltip({ label }: { label: string }) {
-  return (
-    <span role="tooltip" className={SETTINGS_ICON_TOOLTIP_CLASS}>
-      {label}
-      <span className={SETTINGS_ICON_TOOLTIP_ARROW_CLASS} />
-    </span>
-  );
-}
 
 function WorkspaceActionTooltip({ children, content }: { children: ReactNode; content?: ReactNode }) {
   const tooltipId = useId();
@@ -444,7 +431,6 @@ function WorkspaceActionTooltip({ children, content }: { children: ReactNode; co
     </span>
   );
 }
-
 type Channel = "wechat" | "qq" | null;
 type ConnectedChannel = Exclude<Channel, null>;
 type PersonaId = "jarvis" | "luna" | "spark";
@@ -3039,6 +3025,28 @@ export const AgentSettingsPage = ({
   /* Tab 切换 */
   const [activeTabId, setActiveTabId] = useState((visibleBots[0]?.id ?? requestedCreatingBotId) || "creating");
   const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
+  const [isAgentActionMenuOpen, setIsAgentActionMenuOpen] = useState(false);
+  const agentActionMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!isAgentActionMenuOpen) return undefined;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!agentActionMenuRef.current?.contains(event.target as Node)) {
+        setIsAgentActionMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsAgentActionMenuOpen(false);
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isAgentActionMenuOpen]);
+
   // bots 异步加载完成后，若当前 tab 无效则自动切换到第一个可展示 bot
   useEffect(() => {
     if (isCreating) return;
@@ -4106,6 +4114,7 @@ export const AgentSettingsPage = ({
   const canStartWorkspaceAction = !workspaceActionDisabledReason && !isActiveBotExporting && !isActiveBotImporting;
   const needsEmailBinding = workspaceActionDisabledReason === "请先在账号页绑定邮箱。";
   const workspaceDisabledReasonText = workspaceActionDisabledReason ? translateWorkspaceDisabledReason(workspaceActionDisabledReason) : null;
+  const workspaceInlineDisabledReasonText = needsEmailBinding ? null : workspaceDisabledReasonText;
   const workspaceEmailBindingTooltip = needsEmailBinding ? (
     <>
       <span className="block text-pretty">
@@ -4149,8 +4158,13 @@ export const AgentSettingsPage = ({
   const workspaceCopyLabel = activeWorkspaceTask?.kind === "export" ? t("复制备份信息") : t("复制恢复信息");
   const workspaceRecoveryPanel = activeBot ? (
     <section className="rounded-md border border-black/[0.08] bg-white p-5 shadow-sm">
-      <div className="mb-4">
+      <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1">
         <h3 className="text-base font-semibold text-black/90 text-balance">{t("Agent 备份与恢复")}</h3>
+        {needsEmailBinding && (
+          <AppLink to="/account" className="text-xs font-medium text-black/45 underline underline-offset-2 transition-colors hover:text-black/70">
+            {t("需前往账号页绑定邮箱")}
+          </AppLink>
+        )}
       </div>
       <div className="mb-4 rounded-md border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-xs leading-relaxed text-black/65">
         <ul className="list-disc space-y-1 pl-4 text-pretty">
@@ -4236,8 +4250,8 @@ export const AgentSettingsPage = ({
             </WorkspaceActionTooltip>
           </div>
         </div>
-        {workspaceDisabledReasonText && (
-          <p className="mt-3 text-xs leading-5 text-black/45">{workspaceDisabledReasonText}</p>
+        {workspaceInlineDisabledReasonText && (
+          <p className="mt-3 text-xs leading-5 text-black/45">{workspaceInlineDisabledReasonText}</p>
         )}
         {workspaceError && (
           <div className="mt-3 flex gap-2 rounded-md border border-red-500/15 bg-red-500/[0.04] px-3 py-2 text-xs leading-relaxed text-red-600" role="status" aria-live="polite">
@@ -4309,7 +4323,7 @@ export const AgentSettingsPage = ({
   ) : null;
 
   return (
-    <div className="flex min-h-screen flex-col bg-white" style={{ color: "rgba(0,0,0,0.90)" }}>
+    <div className="flex min-h-dvh flex-col bg-white" style={{ color: "rgba(0,0,0,0.90)" }}>
       {showHeader && <ProductReturnHomeHeader reloadLanguageAfterSwitch />}
 
       <Dialog
@@ -4729,7 +4743,7 @@ export const AgentSettingsPage = ({
         <BirthCertificateModal bot={activeBot} onClose={() => setShowBirthCert(false)} />
       )}
 
-      <main className="lw-app-top-pad flex-grow bg-[#F7F8FA] pb-12">
+      <main className="lw-app-top-pad flex-grow bg-white">
         <section className="lw-settings-shell">
           {/* ── Loading 状态 ── */}
           {isInitialBotsLoading && (
@@ -4785,8 +4799,8 @@ export const AgentSettingsPage = ({
 
               return (
                 <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-                  <aside className="lg:sticky lg:top-[84px]">
-                    <div className="rounded-md border border-black/[0.06] bg-white p-3 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
+                  <aside className="lv-agents-sidebar lg:sticky lg:top-[84px]">
+                    <div className="lv-agent-profile-wrap">
                       <div
                         role={visibleBots.length > 1 ? "button" : undefined}
                         tabIndex={visibleBots.length > 1 ? 0 : undefined}
@@ -4801,19 +4815,19 @@ export const AgentSettingsPage = ({
                           }
                         }}
                         className={cn(
-                          "flex w-full items-center gap-3 rounded-md px-2.5 py-2.5 text-left transition-colors",
-                          visibleBots.length > 1 ? "hover:bg-black/[0.035]" : "cursor-default",
+                          "lv-agent-profile",
+                          visibleBots.length > 1 ? "hover:bg-black/[0.025]" : "cursor-default",
                         )}
                         aria-expanded={visibleBots.length > 1 ? isAgentMenuOpen : undefined}
                       >
-                        <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-md border border-black/[0.06] bg-black/[0.03]">
-                          <img src={avatarUrl} alt="" className="h-8 w-8 object-contain" />
+                        <span className="lv-agent-avatar">
+                          <img src={avatarUrl} alt="" />
                         </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-semibold text-black/90" title={activeBot.name}>
+                        <span className="lv-agent-profile-text">
+                          <span className="lv-agent-profile-name" title={activeBot.name}>
                             {truncateBotName(activeBot.name)}
                           </span>
-                          <span className="mt-1 flex items-center gap-1.5 text-xs text-black/45">
+                          <span className="lv-agent-status">
                             {isActiveBotRestarting ? (
                               <Loader2 className="h-3 w-3 animate-spin" />
                             ) : (
@@ -4825,50 +4839,60 @@ export const AgentSettingsPage = ({
                             {isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
                           </span>
                         </span>
-                        <div className="-mr-1.5 ml-auto flex flex-shrink-0 items-center gap-0">
-                          <span className="group relative inline-flex">
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                if (isRestartDisabled) return;
-                                setShowRestartConfirm(true);
-                              }}
-                              aria-disabled={isRestartDisabled}
-                              aria-label={restartTooltip}
-                              className={cn(
-                                "inline-flex h-8 w-6 flex-shrink-0 items-center justify-center rounded-md transition-colors",
-                                isRestartDisabled
-                                  ? "cursor-not-allowed text-black/20"
-                                  : "text-black/35 hover:bg-black/[0.06] hover:text-black/80",
-                              )}
-                            >
-                              {isActiveBotRestarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
-                            </button>
-                            <SettingsIconTooltip label={restartTooltip} />
-                          </span>
-                          <span className="group relative inline-flex">
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                if (deleteDisabled) return;
-                                setDeleteInput("");
-                                setShowDeleteConfirm(true);
-                              }}
-                              aria-disabled={deleteDisabled}
-                              aria-label={deleteTooltip}
-                              className={cn(
-                                "inline-flex h-8 w-6 flex-shrink-0 items-center justify-center rounded-md transition-colors",
-                                deleteDisabled
-                                  ? "cursor-not-allowed text-black/20"
-                                  : "text-black/35 hover:bg-red-500/10 hover:text-red-500",
-                              )}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                            <SettingsIconTooltip label={deleteTooltip} />
-                          </span>
+                        <div
+                          ref={agentActionMenuRef}
+                          className="lv-agent-actions"
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.stopPropagation();
+                            }
+                          }}
+                        >
+                          <button
+                            type="button"
+                            aria-expanded={isAgentActionMenuOpen}
+                            aria-haspopup="menu"
+                            aria-label={t("更多操作")}
+                            className="lv-agent-more"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setIsAgentActionMenuOpen((open) => !open);
+                            }}
+                          >
+                            <MoreVertical className="h-4 w-4" aria-hidden="true" />
+                          </button>
+                          {isAgentActionMenuOpen && (
+                            <div role="menu" className="lv-agent-action-menu" onClick={(event) => event.stopPropagation()}>
+                              <button
+                                type="button"
+                                role="menuitem"
+                                aria-label={restartTooltip}
+                                disabled={isRestartDisabled}
+                                onClick={() => {
+                                  setIsAgentActionMenuOpen(false);
+                                  if (isRestartDisabled) return;
+                                  setShowRestartConfirm(true);
+                                }}
+                              >
+                                {t("重启")}
+                              </button>
+                              <button
+                                type="button"
+                                role="menuitem"
+                                aria-label={deleteTooltip}
+                                disabled={deleteDisabled}
+                                className="is-danger"
+                                onClick={() => {
+                                  setIsAgentActionMenuOpen(false);
+                                  if (deleteDisabled) return;
+                                  setDeleteInput("");
+                                  setShowDeleteConfirm(true);
+                                }}
+                              >
+                                {t("删除")}
+                              </button>
+                            </div>
+                          )}
                         </div>
                         {visibleBots.length > 1 && (
                           <ChevronDown
@@ -4912,9 +4936,9 @@ export const AgentSettingsPage = ({
                         <button
                           type="button"
                           onClick={handleCreateNew}
-                          className="mt-3 flex w-full items-center justify-center gap-2 rounded-md border border-black/[0.08] bg-white px-3 py-2 text-sm font-medium text-black/70 transition-colors hover:bg-black/[0.035] hover:text-black/90"
+                          className="lv-agent-create-button"
                         >
-                          <Plus className="h-4 w-4" />
+                          <Plus className="h-4 w-4" aria-hidden="true" />
                           {t("立即创建")}
                         </button>
                       )}
@@ -4922,7 +4946,7 @@ export const AgentSettingsPage = ({
 
                     <nav
                       aria-label={t("实例配置导航")}
-                      className="mt-4 rounded-md border border-black/[0.06] bg-white p-2 shadow-[0_8px_28px_rgba(15,23,42,0.04)]"
+                      className="lv-agents-nav"
                     >
                       {showHiddenAgentTools ? (
                         <>
@@ -4930,27 +4954,27 @@ export const AgentSettingsPage = ({
                             to={`${AGENT_SECTION_PATH_BY_ID.terminal}${location.search}`}
                             aria-current={activeSection === "terminal" ? "page" : undefined}
                             className={cn(
-                              "lw-settings-nav-item flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 font-medium transition-colors",
+                              "lw-settings-nav-item lv-agents-nav-item",
                               activeSection === "terminal"
-                                ? "bg-black/[0.06] text-black/90"
-                                : "text-black/55 hover:bg-black/[0.035] hover:text-black/85",
+                                ? "is-active"
+                                : "text-black/70 hover:bg-black/[0.025]",
                             )}
                           >
-                            <span className="flex h-5 w-5 items-center justify-center"><TerminalSquare className="h-4 w-4" /></span>
-                            <span className="flex-1 text-left text-[15px]">{t("终端")}</span>
+                            <span className="lv-agents-nav-icon"><TerminalSquare className="h-4 w-4" /></span>
+                            <span className="flex-1 text-left">{t("终端")}</span>
                           </AppLink>
                           <AppLink
                             to={`${AGENT_SECTION_PATH_BY_ID.browser}${location.search}`}
                             aria-current={activeSection === "browser" ? "page" : undefined}
                             className={cn(
-                              "lw-settings-nav-item flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 font-medium transition-colors",
+                              "lw-settings-nav-item lv-agents-nav-item",
                               activeSection === "browser"
-                                ? "bg-black/[0.06] text-black/90"
-                                : "text-black/55 hover:bg-black/[0.035] hover:text-black/85",
+                                ? "is-active"
+                                : "text-black/70 hover:bg-black/[0.025]",
                             )}
                           >
-                            <span className="flex h-5 w-5 items-center justify-center"><Globe2 className="h-4 w-4" /></span>
-                            <span className="flex-1 text-left text-[15px]">{t("浏览器")}</span>
+                            <span className="lv-agents-nav-icon"><Globe2 className="h-4 w-4" /></span>
+                            <span className="flex-1 text-left">{t("浏览器")}</span>
                           </AppLink>
                         </>
                       ) : null}
@@ -4962,14 +4986,14 @@ export const AgentSettingsPage = ({
                             to={`${section.path}${location.search}`}
                             aria-current={isActive ? "page" : undefined}
                             className={cn(
-                              "lw-settings-nav-item flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 font-medium transition-colors",
+                              "lw-settings-nav-item lv-agents-nav-item",
                               isActive
-                                ? "bg-black/[0.06] text-black/90"
-                                : "text-black/55 hover:bg-black/[0.035] hover:text-black/85",
+                                ? "is-active"
+                                : "text-black/70 hover:bg-black/[0.025]",
                             )}
                           >
-                            <span className="flex h-5 w-5 items-center justify-center">{section.icon}</span>
-                            <span className="flex-1 text-left text-[15px]">{section.label}</span>
+                            <span className="lv-agents-nav-icon">{section.icon}</span>
+                            <span className="flex-1 text-left">{section.label}</span>
                             {section.badge && (
                               <span className="rounded-full bg-[#f76724] px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">
                                 {section.badge}
@@ -4985,7 +5009,7 @@ export const AgentSettingsPage = ({
                         href={PRODUCT_FEEDBACK_URL}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="mt-3 flex items-center gap-2 rounded-md px-3 py-2 text-xs font-medium text-black/40 transition-colors hover:bg-black/[0.025] hover:text-black/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/30"
+                        className="lv-agent-feedback-link"
                       >
                         <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" />
                         <span>{t("有建议？提交反馈")}</span>
