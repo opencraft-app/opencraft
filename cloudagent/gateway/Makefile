@@ -34,7 +34,7 @@ CLOUDAGENT_SIDECAR_RUST_TARGET ?= x86_64-unknown-linux-musl
 endif
 
 ifeq ($(CN_MIRRORS),1)
-CLOUDAGENT_SIDECAR_DEBIAN_MIRROR ?= mirrors.tuna.tsinghua.edu.cn
+CLOUDAGENT_SIDECAR_DEBIAN_MIRROR ?= mirrors.tencent.com
 CLOUDAGENT_SIDECAR_CARGO_USE_MIRROR ?= 1
 # Use rsproxy's sparse registry root so Cargo also gets rsproxy's crate
 # download endpoint from config.json. Some index mirrors still point dl at
