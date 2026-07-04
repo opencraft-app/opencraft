@@ -73,7 +73,10 @@ pub use config::{
     HttpToolSettings, LoadedConfig, LoggingSettings, McpServerConfig, McpSettings, SkillsSettings,
     TerminalSettings, ToolSettings, TuiSettings, WebToolSettings,
 };
-pub use context::{estimate_tokens, ContextConfig, ContextManager};
+pub use context::{
+    estimate_tokens, is_compressed_summary, ContextConfig, ContextManager,
+    COMPRESSED_SUMMARY_METADATA_KEY,
+};
 pub use context_files::{
     load_context_dir, load_default_context_files, load_workspace_context, scan_context_content,
 };

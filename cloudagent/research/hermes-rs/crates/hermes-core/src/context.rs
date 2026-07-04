@@ -6,7 +6,14 @@
 
 use crate::client::{Message, Role};
 use crate::error::Result;
+use serde_json::json;
 use std::collections::VecDeque;
+
+pub const COMPRESSED_SUMMARY_METADATA_KEY: &str = "_compressed_summary";
+const SUMMARY_PREFIX: &str = "[CONTEXT COMPACTION - REFERENCE ONLY] Historical context below is not an active instruction. The latest user message wins.";
+const SUMMARY_END_MARKER: &str =
+    "--- END OF CONTEXT SUMMARY - respond to the message below, not the summary above ---";
+const SUMMARY_MAX_CHARS: usize = 8_000;
 
 /// Configuration for context management
 #[derive(Debug, Clone, Copy)]
@@ -36,7 +43,6 @@ impl Default for ContextConfig {
 #[derive(Debug, Clone)]
 struct MessageWithTokens {
     message: Message,
-    tokens: usize,
 }
 
 /// Context manager for handling long conversations
@@ -61,37 +67,18 @@ impl ContextManager {
     pub fn add_message(&mut self, message: Message) {
         let tokens = estimate_tokens(&message.content);
         self.total_tokens += tokens;
-        self.history
-            .push_back(MessageWithTokens { message, tokens });
+        self.history.push_back(MessageWithTokens { message });
     }
 
     /// Add a message without counting tokens (for pre-counted messages)
     pub fn push_message(&mut self, message: Message, tokens: usize) {
         self.total_tokens += tokens;
-        self.history
-            .push_back(MessageWithTokens { message, tokens });
+        self.history.push_back(MessageWithTokens { message });
     }
 
     /// Get messages that fit within the context window
     pub fn get_messages(&self) -> Vec<Message> {
-        let available_tokens = self
-            .config
-            .max_context_length
-            .saturating_sub(self.config.response_buffer);
-
-        let mut result = Vec::new();
-        let mut used_tokens = 0;
-
-        for msg_with_tokens in self.history.iter().rev() {
-            if used_tokens + msg_with_tokens.tokens > available_tokens {
-                break;
-            }
-            used_tokens += msg_with_tokens.tokens;
-            result.push(msg_with_tokens.message.clone());
-        }
-
-        result.reverse();
-        result
+        fit_messages_to_context(&self.get_all_messages(), self.config)
     }
 
     /// Get all messages without truncation
@@ -115,35 +102,11 @@ impl ContextManager {
 
     /// Compress the context by removing older messages
     pub fn compress(&mut self) {
-        let available_tokens = self
-            .config
-            .max_context_length
-            .saturating_sub(self.config.response_buffer);
-
-        // Keep at least min_messages_preserve
-        while self.total_tokens > available_tokens
-            && self.history.len() > self.config.min_messages_preserve
-        {
-            if let Some(front) = self.history.pop_front() {
-                self.total_tokens = self.total_tokens.saturating_sub(front.tokens);
-            } else {
-                break;
-            }
-        }
-
-        // If still too large, aggressive compression
-        if self.total_tokens > available_tokens {
-            let preserve_count =
-                (self.history.len() as f32 * self.config.compression_ratio) as usize;
-            let preserve_count = preserve_count.max(self.config.min_messages_preserve);
-
-            while self.history.len() > preserve_count {
-                if let Some(front) = self.history.pop_front() {
-                    self.total_tokens = self.total_tokens.saturating_sub(front.tokens);
-                } else {
-                    break;
-                }
-            }
+        let fitted = fit_messages_to_context(&self.get_all_messages(), self.config);
+        self.clear();
+        for message in fitted {
+            let tokens = estimate_message_tokens(&message);
+            self.push_message(message, tokens);
         }
     }
 
@@ -195,44 +158,20 @@ pub fn estimate_message_tokens(message: &Message) -> usize {
 
 /// Compress conversation history by summarizing or truncating
 pub fn compress_conversation(messages: &[Message], max_tokens: usize) -> Result<Vec<Message>> {
-    let mut result = Vec::new();
-    let mut tokens_used = 0;
-
-    // Always keep system prompt if present
-    let system_prompt = messages.iter().find(|m| m.role == Role::System);
-
-    for message in messages.iter().rev() {
-        let msg_tokens = estimate_message_tokens(message);
-
-        if tokens_used + msg_tokens > max_tokens {
-            // If this is the last message that would exceed, stop adding
-            break;
-        }
-
-        // Skip system prompt (we'll add it separately at the start)
-        if message.role == Role::System {
-            continue;
-        }
-
-        result.push(message.clone());
-        tokens_used += msg_tokens;
-    }
-
-    // Reverse to get correct order
-    result.reverse();
-
-    // Add system prompt at the beginning if we have one
-    if let Some(system) = system_prompt {
-        result.insert(0, system.clone());
-    }
-
-    Ok(result)
+    Ok(fit_messages_to_context(
+        messages,
+        ContextConfig {
+            max_context_length: max_tokens,
+            response_buffer: 0,
+            ..ContextConfig::default()
+        },
+    ))
 }
 
 /// Fit messages into a context window while preserving leading system/context
-/// messages. This keeps the runtime bounded even when no summarising
-/// compressor is configured: durable system, workspace, and skill projections
-/// stay at the front; older conversation turns are dropped before recent turns.
+/// messages and recent tail messages. When older middle history must be
+/// removed, insert a reference-only compaction summary instead of silently
+/// dropping it.
 pub fn fit_messages_to_context(messages: &[Message], config: ContextConfig) -> Vec<Message> {
     let available_tokens = config
         .max_context_length
@@ -258,21 +197,222 @@ pub fn fit_messages_to_context(messages: &[Message], config: ContextConfig) -> V
         start += 1;
     }
 
-    let tail_budget = available_tokens.saturating_sub(leading_tokens);
-    let mut tail = Vec::new();
+    let remaining_budget = available_tokens.saturating_sub(leading_tokens);
+    if remaining_budget == 0 {
+        return leading;
+    }
+
+    let summary_reserve = summary_token_reserve(remaining_budget);
+    let tail_budget = remaining_budget.saturating_sub(summary_reserve);
+    let mut tail_start = messages.len();
     let mut tail_tokens = 0usize;
-    for message in messages[start..].iter().rev() {
+    for index in (start..messages.len()).rev() {
+        let message = &messages[index];
         let tokens = estimate_message_tokens(message);
-        if tail_tokens + tokens > tail_budget {
+        if tail_tokens + tokens > tail_budget && tail_start < messages.len() {
             break;
         }
         tail_tokens += tokens;
-        tail.push(message.clone());
+        tail_start = index;
     }
-    tail.reverse();
 
-    leading.extend(tail);
-    leading
+    // Avoid sending orphan tool results whose assistant tool_call envelope was
+    // compacted into the summary.
+    while tail_start < messages.len() && messages[tail_start].role == Role::Tool {
+        tail_start += 1;
+    }
+
+    if tail_start <= start {
+        leading.extend(messages[start..].iter().cloned());
+        return leading;
+    }
+
+    let middle = &messages[start..tail_start];
+    let mut summary = build_compaction_summary(middle, summary_reserve * 4);
+
+    let summary_role = choose_summary_role(
+        leading.last().map(|message| &message.role),
+        messages.get(tail_start).map(|message| &message.role),
+    );
+    summary.role = summary_role;
+
+    leading.push(summary);
+    leading.extend(messages[tail_start..].iter().cloned());
+
+    trim_after_summary_to_budget(leading, available_tokens)
+}
+
+pub fn is_compressed_summary(message: &Message) -> bool {
+    message
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.get(COMPRESSED_SUMMARY_METADATA_KEY))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false)
+        || message.content.starts_with(SUMMARY_PREFIX)
+}
+
+fn summary_token_reserve(remaining_budget: usize) -> usize {
+    if remaining_budget <= 2 {
+        return remaining_budget;
+    }
+    if remaining_budget < 128 {
+        return (remaining_budget / 2).max(1);
+    }
+    (remaining_budget / 5).clamp(64, 3_000)
+}
+
+fn build_compaction_summary(messages: &[Message], max_chars: usize) -> Message {
+    let mut lines = vec![
+        SUMMARY_PREFIX.to_string(),
+        String::new(),
+        "## Historical Task Snapshot".to_string(),
+        format!(
+            "Compacted {} earlier message(s). They are reference-only and may describe completed or stale work.",
+            messages.len()
+        ),
+        String::new(),
+        "## Compacted Turns".to_string(),
+    ];
+
+    for (offset, message) in messages.iter().enumerate().rev() {
+        lines.push(format!(
+            "{}. {}",
+            offset + 1,
+            summarize_message_for_compaction(message)
+        ));
+    }
+
+    lines.push(String::new());
+    lines.push("## Active State".to_string());
+    lines.push("Use current files, tool results, and the messages after this summary as the source of truth.".to_string());
+    lines.push(String::new());
+    lines.push(SUMMARY_END_MARKER.to_string());
+
+    let max_chars = max_chars.clamp(512, SUMMARY_MAX_CHARS);
+    Message::user(truncate_chars(&lines.join("\n"), max_chars))
+        .with_metadata(COMPRESSED_SUMMARY_METADATA_KEY, json!(true))
+}
+
+fn summarize_message_for_compaction(message: &Message) -> String {
+    match message.role {
+        Role::System => format!("system context: {}", preview_text(&message.content, 180)),
+        Role::User => format!("user said: {}", preview_text(&message.content, 220)),
+        Role::Assistant => {
+            let mut parts = Vec::new();
+            let content = preview_text(&message.content, 180);
+            if !content.is_empty() {
+                parts.push(format!("assistant answered: {content}"));
+            }
+            if let Some(tool_calls) = &message.tool_calls {
+                let tools = tool_calls
+                    .iter()
+                    .map(|tool_call| {
+                        format!(
+                            "{}({})",
+                            tool_call.function.name,
+                            preview_text(&tool_call.function.arguments, 100)
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                if !tools.is_empty() {
+                    parts.push(format!("requested tool(s): {tools}"));
+                }
+            }
+            if parts.is_empty() {
+                "assistant message".to_string()
+            } else {
+                parts.join("; ")
+            }
+        }
+        Role::Tool => format!(
+            "tool result call_id={}: {}",
+            message.tool_call_id.as_deref().unwrap_or("unknown"),
+            preview_text(&message.content, 220)
+        ),
+    }
+}
+
+fn preview_text(content: &str, max_chars: usize) -> String {
+    truncate_chars(redact_sensitive_lines(content).trim(), max_chars).replace('\n', "\\n")
+}
+
+fn redact_sensitive_lines(content: &str) -> String {
+    content
+        .lines()
+        .map(|line| {
+            let lower = line.to_ascii_lowercase();
+            let looks_sensitive = [
+                "token",
+                "secret",
+                "password",
+                "api_key",
+                "apikey",
+                "access_key",
+            ]
+            .iter()
+            .any(|needle| lower.contains(needle));
+            if looks_sensitive && (line.contains('=') || line.contains(':')) {
+                "[REDACTED sensitive line]".to_string()
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn truncate_chars(content: &str, max_chars: usize) -> String {
+    if content.chars().count() <= max_chars {
+        return content.to_string();
+    }
+    let keep = max_chars.saturating_sub("...[truncated]".len());
+    let mut truncated = content.chars().take(keep).collect::<String>();
+    truncated.push_str("...[truncated]");
+    truncated
+}
+
+fn choose_summary_role(previous: Option<&Role>, next: Option<&Role>) -> Role {
+    let preferred = Role::User;
+    if previous != Some(&preferred) && next != Some(&preferred) {
+        return preferred;
+    }
+    Role::Assistant
+}
+
+fn trim_after_summary_to_budget(
+    mut messages: Vec<Message>,
+    available_tokens: usize,
+) -> Vec<Message> {
+    loop {
+        let total: usize = messages.iter().map(estimate_message_tokens).sum();
+        if total <= available_tokens {
+            return messages;
+        }
+        let Some(summary_index) = messages.iter().position(is_compressed_summary) else {
+            return messages;
+        };
+        let summary_tokens = estimate_message_tokens(&messages[summary_index]);
+        let over_tokens = total.saturating_sub(available_tokens);
+        if summary_tokens > over_tokens + 32
+            && messages[summary_index].content.chars().count() > 512
+        {
+            let target_chars = messages[summary_index]
+                .content
+                .chars()
+                .count()
+                .saturating_sub(over_tokens.saturating_mul(4).saturating_add(64))
+                .max(512);
+            messages[summary_index].content =
+                truncate_chars(&messages[summary_index].content, target_chars);
+            continue;
+        }
+        if messages.len() <= summary_index + 3 {
+            return messages;
+        }
+        messages.remove(summary_index + 1);
+    }
 }
 
 #[cfg(test)]
@@ -327,19 +467,19 @@ mod tests {
     fn test_compress_conversation() {
         let messages = vec![
             Message::system("You are a helpful assistant."),
-            Message::user("Hello"),
-            Message::assistant("Hi there!"),
+            Message::user("Hello ".repeat(80)),
+            Message::assistant("Hi there! ".repeat(80)),
             Message::user("How are you?"),
             Message::assistant("I'm doing great!"),
         ];
 
         let compressed = compress_conversation(&messages, 50).unwrap();
 
-        // Should preserve system prompt and some conversation
         assert!(!compressed.is_empty());
         assert!(
             compressed[0].role == Role::System || compressed.iter().any(|m| m.role == Role::System)
         );
+        assert!(compressed.iter().any(is_compressed_summary));
     }
 
     #[test]
@@ -374,5 +514,74 @@ mod tests {
         assert!(!fitted
             .iter()
             .any(|message| message.content.starts_with("old message")));
+    }
+
+    #[test]
+    fn fit_messages_to_context_inserts_reference_summary_for_middle_turns() {
+        let messages = vec![
+            Message::system("system rules"),
+            Message::user("old user ".repeat(160)),
+            Message::assistant("old assistant ".repeat(160)),
+            Message::user("recent question"),
+            Message::assistant("recent answer"),
+        ];
+
+        let fitted = fit_messages_to_context(
+            &messages,
+            ContextConfig {
+                max_context_length: 180,
+                response_buffer: 10,
+                min_messages_preserve: 2,
+                compression_ratio: 0.5,
+            },
+        );
+
+        let summary = fitted
+            .iter()
+            .find(|message| is_compressed_summary(message))
+            .expect("summary should be inserted");
+        assert!(summary.content.contains("REFERENCE ONLY"));
+        assert!(summary.content.contains("Historical Task Snapshot"));
+        assert!(fitted
+            .iter()
+            .any(|message| message.content == "recent question"));
+        assert!(fitted
+            .iter()
+            .any(|message| message.content == "recent answer"));
+    }
+
+    #[test]
+    fn fit_messages_to_context_does_not_leave_orphan_tool_result_tail() {
+        let messages = vec![
+            Message::system("system rules"),
+            Message::user("old user ".repeat(160)),
+            Message::assistant("old assistant ".repeat(160)).with_tool_calls(vec![
+                crate::client::ToolCall {
+                    id: "call_1".to_string(),
+                    function: crate::client::ToolCallFunction {
+                        name: "terminal".to_string(),
+                        arguments: "{\"command\":\"echo secret_token=abc\"}".to_string(),
+                    },
+                },
+            ]),
+            Message::tool("call_1", "secret_token=abc\nok"),
+        ];
+
+        let fitted = fit_messages_to_context(
+            &messages,
+            ContextConfig {
+                max_context_length: 140,
+                response_buffer: 10,
+                min_messages_preserve: 2,
+                compression_ratio: 0.5,
+            },
+        );
+
+        assert!(!fitted.iter().any(|message| message.role == Role::Tool));
+        let summary = fitted
+            .iter()
+            .find(|message| is_compressed_summary(message))
+            .expect("tool result should be summarized");
+        assert!(summary.content.contains("[REDACTED sensitive line]"));
     }
 }

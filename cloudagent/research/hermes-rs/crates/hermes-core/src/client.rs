@@ -16,6 +16,7 @@ use reqwest::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use tracing::{debug, error, info, instrument};
 
 use crate::config::{runtime_config, ClientSettings};
@@ -269,6 +270,8 @@ pub struct Message {
     pub name: Option<String>,
     pub tool_call_id: Option<String>,
     pub tool_calls: Option<Vec<ToolCall>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<HashMap<String, Value>>,
 }
 
 impl Message {
@@ -281,6 +284,7 @@ impl Message {
             name: None,
             tool_call_id: None,
             tool_calls: None,
+            metadata: None,
         }
     }
 
@@ -308,6 +312,7 @@ impl Message {
             tool_call_id: Some(tool_call_id.into()),
             name: None,
             tool_calls: None,
+            metadata: None,
         }
     }
 
@@ -323,6 +328,15 @@ impl Message {
         if !reasoning.trim().is_empty() {
             self.reasoning = Some(reasoning);
         }
+        self
+    }
+
+    /// Add local metadata. Metadata is persisted locally but never sent to
+    /// OpenAI-compatible providers.
+    pub fn with_metadata(mut self, key: impl Into<String>, value: Value) -> Self {
+        self.metadata
+            .get_or_insert_with(HashMap::new)
+            .insert(key.into(), value);
         self
     }
 
@@ -371,6 +385,7 @@ impl Default for Message {
             name: None,
             tool_call_id: None,
             tool_calls: None,
+            metadata: None,
         }
     }
 }
@@ -656,6 +671,17 @@ mod tests {
 
         assert_eq!(value["role"], "user");
         assert_eq!(value["content"], "Hello, world!");
+    }
+
+    #[test]
+    fn message_metadata_is_local_only() {
+        let msg = Message::user("compressed")
+            .with_metadata("_compressed_summary", serde_json::json!(true));
+        let value = msg.to_value();
+
+        assert_eq!(value["role"], "user");
+        assert!(value.get("_compressed_summary").is_none());
+        assert!(value.get("metadata").is_none());
     }
 
     #[test]
