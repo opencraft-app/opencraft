@@ -12,6 +12,7 @@ impl AgentExecutor {
         TurnContext {
             turn_id: "turn_direct".to_string(),
             run_id: "run_direct".to_string(),
+            session_id: self.session_id.clone(),
             source: "direct".to_string(),
             prompt: prompt.to_string(),
             cwd: std::env::current_dir().unwrap_or_else(|_| ".".into()),

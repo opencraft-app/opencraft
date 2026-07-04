@@ -20,6 +20,7 @@ pub enum TurnStatus {
 pub struct TurnContext {
     pub turn_id: String,
     pub run_id: String,
+    pub session_id: String,
     pub source: String,
     pub prompt: String,
     pub cwd: PathBuf,

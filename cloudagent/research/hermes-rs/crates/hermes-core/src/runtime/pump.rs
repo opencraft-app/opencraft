@@ -84,6 +84,7 @@ impl AgentRuntime {
             let turn = TurnState::queued(TurnContext {
                 turn_id: queued.turn_id.clone(),
                 run_id: queued.run_id.clone(),
+                session_id: queued.request.session_id.clone(),
                 source: queued.mode.as_str().to_string(),
                 prompt: queued.request.prompt.clone(),
                 cwd: queued.request.cwd.clone(),

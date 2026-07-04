@@ -388,13 +388,16 @@ impl SkillResolver {
             }
         }
 
-        let mut plan = build_injection_plan(activations);
+        let mut plan = build_injection_plan(activations, Some(turn.session_id.as_str()));
         plan.skill_index = build_skill_index_prompt(catalog);
         Ok(plan)
     }
 }
 
-fn build_injection_plan(activations: Vec<SkillActivation>) -> SkillInjectionPlan {
+fn build_injection_plan(
+    activations: Vec<SkillActivation>,
+    session_id: Option<&str>,
+) -> SkillInjectionPlan {
     let mut plan = SkillInjectionPlan {
         activations,
         ..SkillInjectionPlan::default()
@@ -402,7 +405,7 @@ fn build_injection_plan(activations: Vec<SkillActivation>) -> SkillInjectionPlan
 
     for activation in &plan.activations {
         let skill = &activation.skill;
-        let block = format_skill_invocation_block(skill, &activation.reason);
+        let block = format_skill_invocation_block(skill, &activation.reason, session_id);
         match skill.injection_point {
             SkillInjectionPoint::Prompt => plan.prompt_blocks.push(block),
             SkillInjectionPoint::Message => plan.message_blocks.push(block),
@@ -441,13 +444,17 @@ pub fn build_skill_index_prompt(catalog: &SkillCatalog) -> String {
     )
 }
 
-fn format_skill_invocation_block(skill: &Skill, reason: &SkillActivationReason) -> String {
+fn format_skill_invocation_block(
+    skill: &Skill,
+    reason: &SkillActivationReason,
+    session_id: Option<&str>,
+) -> String {
     let reason = match reason {
         SkillActivationReason::Explicit => "explicit".to_string(),
         SkillActivationReason::Autoload => "autoload".to_string(),
         SkillActivationReason::Keyword(keyword) => format!("keyword:{keyword}"),
     };
-    let content = preprocess_skill_content(&skill.content, &skill.skill_dir);
+    let content = preprocess_skill_content(&skill.content, &skill.skill_dir, session_id);
     let mut block = format!(
         "[IMPORTANT: The `{}` skill was activated for this turn ({reason}). \
          The full skill content is loaded below.]\n\n{}\n\n\
@@ -471,8 +478,13 @@ fn format_skill_invocation_block(skill: &Skill, reason: &SkillActivationReason) 
     block
 }
 
-fn preprocess_skill_content(content: &str, skill_dir: &Path) -> String {
-    content.replace("${HERMES_SKILL_DIR}", &skill_dir.display().to_string())
+fn preprocess_skill_content(content: &str, skill_dir: &Path, session_id: Option<&str>) -> String {
+    let content = content.replace("${HERMES_SKILL_DIR}", &skill_dir.display().to_string());
+    if let Some(session_id) = session_id.filter(|value| !value.is_empty()) {
+        content.replace("${HERMES_SESSION_ID}", session_id)
+    } else {
+        content
+    }
 }
 
 fn discover_skill_roots(cwd: &Path) -> Vec<PathBuf> {
@@ -1161,6 +1173,7 @@ mod tests {
         let turn = TurnContext {
             turn_id: "turn_1".to_string(),
             run_id: "run_1".to_string(),
+            session_id: "session_1".to_string(),
             source: "prompt".to_string(),
             prompt: "hello".to_string(),
             cwd: tmp.clone(),
@@ -1192,7 +1205,7 @@ mod tests {
         fs::create_dir_all(&skill_dir).unwrap();
         fs::write(
             skill_dir.join("SKILL.md"),
-            "---\nname: templated\nautoload: true\n---\nRun ${HERMES_SKILL_DIR}/scripts/setup.sh\n",
+            "---\nname: templated\nautoload: true\n---\nSession ${HERMES_SESSION_ID} runs ${HERMES_SKILL_DIR}/scripts/setup.sh; missing ${HERMES_UNKNOWN}\n",
         )
         .unwrap();
 
@@ -1200,6 +1213,7 @@ mod tests {
         let turn = TurnContext {
             turn_id: "turn_1".to_string(),
             run_id: "run_1".to_string(),
+            session_id: "session_abc".to_string(),
             source: "prompt".to_string(),
             prompt: "hello".to_string(),
             cwd: tmp.clone(),
@@ -1216,7 +1230,9 @@ mod tests {
         assert!(plan
             .message_text()
             .contains(&skill_dir.display().to_string()));
+        assert!(plan.message_text().contains("Session session_abc runs"));
         assert!(plan.message_text().contains("/scripts/setup.sh"));
+        assert!(plan.message_text().contains("${HERMES_UNKNOWN}"));
 
         cleanup(&tmp);
     }
@@ -1243,6 +1259,7 @@ mod tests {
         let turn = TurnContext {
             turn_id: "turn_1".to_string(),
             run_id: "run_1".to_string(),
+            session_id: "session_1".to_string(),
             source: "prompt".to_string(),
             prompt: "hello".to_string(),
             cwd: tmp.clone(),
