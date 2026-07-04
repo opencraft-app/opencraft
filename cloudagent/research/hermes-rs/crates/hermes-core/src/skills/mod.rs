@@ -63,7 +63,7 @@ pub enum SkillInjectionPoint {
 
 impl Default for SkillInjectionPoint {
     fn default() -> Self {
-        Self::Prompt
+        Self::Message
     }
 }
 
@@ -101,6 +101,7 @@ pub enum SkillActivationReason {
 #[derive(Debug, Clone, Default)]
 pub struct SkillInjectionPlan {
     pub activations: Vec<SkillActivation>,
+    pub skill_index: String,
     pub prompt_blocks: Vec<String>,
     pub message_blocks: Vec<String>,
     pub inference_blocks: Vec<String>,
@@ -109,7 +110,8 @@ pub struct SkillInjectionPlan {
 
 impl SkillInjectionPlan {
     pub fn is_empty(&self) -> bool {
-        self.prompt_blocks.is_empty()
+        self.skill_index.trim().is_empty()
+            && self.prompt_blocks.is_empty()
             && self.message_blocks.is_empty()
             && self.inference_blocks.is_empty()
             && self.provided_tool_skills.is_empty()
@@ -386,7 +388,9 @@ impl SkillResolver {
             }
         }
 
-        Ok(build_injection_plan(activations))
+        let mut plan = build_injection_plan(activations);
+        plan.skill_index = build_skill_index_prompt(catalog);
+        Ok(plan)
     }
 }
 
@@ -398,7 +402,7 @@ fn build_injection_plan(activations: Vec<SkillActivation>) -> SkillInjectionPlan
 
     for activation in &plan.activations {
         let skill = &activation.skill;
-        let block = format_skill_block(skill, &activation.reason);
+        let block = format_skill_invocation_block(skill, &activation.reason);
         match skill.injection_point {
             SkillInjectionPoint::Prompt => plan.prompt_blocks.push(block),
             SkillInjectionPoint::Message => plan.message_blocks.push(block),
@@ -412,30 +416,63 @@ fn build_injection_plan(activations: Vec<SkillActivation>) -> SkillInjectionPlan
     plan
 }
 
-fn format_skill_block(skill: &Skill, reason: &SkillActivationReason) -> String {
+pub fn build_skill_index_prompt(catalog: &SkillCatalog) -> String {
+    if catalog.skills.is_empty() {
+        return String::new();
+    }
+
+    let mut lines = Vec::new();
+    for skill in &catalog.skills {
+        if skill.description.trim().is_empty() {
+            lines.push(format!("- {}", skill.name));
+        } else {
+            lines.push(format!("- {}: {}", skill.name, skill.description.trim()));
+        }
+    }
+
+    format!(
+        "## Skills\n\
+         Cwd-scoped skills are available below. Load full skill bodies only when \
+         selected for this turn; skills are context projections, not tools unless \
+         explicitly declared as tool providers.\n\
+         <available_skills cwd=\"{}\">\n{}\n</available_skills>",
+        catalog.cwd.display(),
+        lines.join("\n")
+    )
+}
+
+fn format_skill_invocation_block(skill: &Skill, reason: &SkillActivationReason) -> String {
     let reason = match reason {
         SkillActivationReason::Explicit => "explicit".to_string(),
         SkillActivationReason::Autoload => "autoload".to_string(),
         SkillActivationReason::Keyword(keyword) => format!("keyword:{keyword}"),
     };
+    let content = preprocess_skill_content(&skill.content, &skill.skill_dir);
     let mut block = format!(
-        "<skill name=\"{}\" version=\"{}\" reason=\"{}\" dir=\"{}\">\n{}\n</skill>",
+        "[IMPORTANT: The `{}` skill was activated for this turn ({reason}). \
+         The full skill content is loaded below.]\n\n{}\n\n\
+         [Skill directory: {}]\n\
+         Resolve relative paths in this skill against that directory.",
         skill.name,
-        skill.version,
-        reason,
-        skill.skill_dir.display(),
-        skill.content.trim()
+        content.trim(),
+        skill.skill_dir.display()
     );
     if !skill.references.is_empty() {
         let mut refs: Vec<_> = skill.references.keys().cloned().collect();
         refs.sort();
-        block.push_str("\n<skill_supporting_files>\n");
+        block.push_str("\n\n[This skill has supporting files:]\n");
         for path in refs {
             block.push_str(&format!("- {}\n", skill.skill_dir.join(&path).display()));
         }
-        block.push_str("</skill_supporting_files>");
+    }
+    if skill.provides_tools {
+        block.push_str("\n[Runtime note: this skill explicitly declares provides_tools=true.]");
     }
     block
+}
+
+fn preprocess_skill_content(content: &str, skill_dir: &Path) -> String {
+    content.replace("${HERMES_SKILL_DIR}", &skill_dir.display().to_string())
 }
 
 fn discover_skill_roots(cwd: &Path) -> Vec<PathBuf> {
@@ -478,26 +515,46 @@ fn find_git_root(start: &Path) -> Option<PathBuf> {
 }
 
 fn load_skills_from_root(root: &Path) -> Vec<Skill> {
-    let entries = match std::fs::read_dir(root) {
-        Ok(entries) => entries,
-        Err(error) => {
-            debug!(root = %root.display(), error = %error, "Could not read skill root");
-            return Vec::new();
-        }
-    };
     let mut skills = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() && path.join("SKILL.md").is_file() {
-            match load_skill(&path) {
+    for skill_file in find_skill_files(root) {
+        if let Some(path) = skill_file.parent() {
+            match load_skill(path) {
                 Ok(skill) => skills.push(skill),
                 Err(error) => {
-                    debug!(path = %path.display(), error = %error, "Could not load skill");
+                    debug!(path = %path.display(), error = %error, "Could not load skill")
                 }
             }
         }
     }
     skills
+}
+
+fn find_skill_files(root: &Path) -> Vec<PathBuf> {
+    fn visit(dir: &Path, out: &mut Vec<PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("");
+            if name.starts_with('.') && name != ".agents" && name != ".codex" && name != ".hermes" {
+                continue;
+            }
+            if path.is_file() && name == "SKILL.md" {
+                out.push(path);
+            } else if path.is_dir() {
+                visit(&path, out);
+            }
+        }
+    }
+
+    let mut files = Vec::new();
+    visit(root, &mut files);
+    files.sort();
+    files
 }
 
 /// Builds explicit skill prompt injections.
@@ -1052,6 +1109,17 @@ mod tests {
             "---\nname: shared\ndescription: nested\n---\nnested skill\n",
         )
         .unwrap();
+        let nested_category_skill = nested
+            .join(".agents")
+            .join("skills")
+            .join("coding")
+            .join("rusty");
+        fs::create_dir_all(&nested_category_skill).unwrap();
+        fs::write(
+            nested_category_skill.join("SKILL.md"),
+            "---\nname: rusty\ndescription: recursive\n---\nrust skill\n",
+        )
+        .unwrap();
 
         let manager = SkillManager::new(tmp.join("global-skills"));
         let catalog = manager.discover_for_cwd(&nested);
@@ -1064,6 +1132,7 @@ mod tests {
         assert_eq!(shared.len(), 1);
         assert_eq!(shared[0].description, "nested");
         assert!(shared[0].content.contains("nested skill"));
+        assert!(catalog.skills.iter().any(|skill| skill.name == "rusty"));
 
         cleanup(&tmp);
     }
@@ -1105,10 +1174,49 @@ mod tests {
 
         assert!(plan.prompt_text().contains("prompt-skill body"));
         assert!(plan.message_text().contains("message-skill body"));
+        assert!(plan.skill_index.contains("prompt-skill"));
+        assert!(plan.skill_index.contains("message-skill"));
+        assert!(plan.skill_index.contains("inference-skill"));
         assert!(plan
             .inference_blocks
             .iter()
             .any(|block| block.contains("inference-skill body")));
+
+        cleanup(&tmp);
+    }
+
+    #[test]
+    fn skills_default_to_message_scaffold_and_template_substitution() {
+        let tmp = make_temp_dir();
+        let skill_dir = tmp.join(".agents").join("skills").join("templated");
+        fs::create_dir_all(&skill_dir).unwrap();
+        fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: templated\nautoload: true\n---\nRun ${HERMES_SKILL_DIR}/scripts/setup.sh\n",
+        )
+        .unwrap();
+
+        let manager = SkillManager::new(tmp.join("global-skills"));
+        let turn = TurnContext {
+            turn_id: "turn_1".to_string(),
+            run_id: "run_1".to_string(),
+            source: "prompt".to_string(),
+            prompt: "hello".to_string(),
+            cwd: tmp.clone(),
+            versions: crate::behavior::BehaviorVersions::default(),
+            skills: SkillSelection::default(),
+        };
+
+        let plan = manager
+            .resolve_for_turn(&turn, &SkillSelection::default())
+            .expect("skill plan");
+
+        assert!(plan.prompt_text().is_empty());
+        assert!(plan.message_text().contains("[IMPORTANT:"));
+        assert!(plan
+            .message_text()
+            .contains(&skill_dir.display().to_string()));
+        assert!(plan.message_text().contains("/scripts/setup.sh"));
 
         cleanup(&tmp);
     }

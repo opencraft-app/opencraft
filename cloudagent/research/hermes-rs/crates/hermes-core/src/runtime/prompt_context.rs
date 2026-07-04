@@ -82,6 +82,10 @@ impl AgentExecutor {
         }
 
         if let Some(plan) = skill_plan {
+            if !plan.skill_index.trim().is_empty() {
+                system_prompt.push_str("\n\n");
+                system_prompt.push_str(plan.skill_index.trim());
+            }
             let skill_prompt = plan.prompt_text();
             if !skill_prompt.trim().is_empty() {
                 system_prompt.push_str("\n\n<skills>\n");
@@ -100,7 +104,7 @@ impl AgentExecutor {
         if let Some(plan) = skill_plan {
             let skill_message = plan.message_text();
             if !skill_message.trim().is_empty() {
-                messages.push(Message::system(format!(
+                messages.push(Message::user(format!(
                     "<turn_skill_messages>\n{}\n</turn_skill_messages>",
                     skill_message.trim()
                 )));

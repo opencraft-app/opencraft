@@ -752,9 +752,15 @@ mod tests {
             .unwrap();
 
         assert!(messages[0].content.contains("prompt skill body"));
+        assert!(messages[0].content.contains("<available_skills"));
         assert!(messages
             .iter()
             .any(|message| message.content.contains("message skill body")));
+        assert!(messages.iter().any(|message| {
+            message.role == crate::client::Role::User
+                && message.content.contains("<turn_skill_messages>")
+                && message.content.contains("message skill body")
+        }));
         let conversation = agent.conversation().await;
         assert_eq!(conversation.len(), 1);
         assert_eq!(conversation[0].content, "hello");
