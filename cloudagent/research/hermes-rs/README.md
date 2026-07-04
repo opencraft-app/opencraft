@@ -30,6 +30,11 @@ A high-performance Rust implementation of the Hermes-Agent orchestration loop fo
 └─────────────────────────────────────────────────────────────┘
 ```
 
+CloudAgent-specific runtime persistence and upgrade boundaries are documented
+in [docs/agent-core-context-projection.md](docs/agent-core-context-projection.md).
+AgentCore owns only the minimal recoverable context projection; gateway
+conversation history remains a protocol/UI read model.
+
 ## Installation
 
 ```bash
