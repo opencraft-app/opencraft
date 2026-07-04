@@ -5,9 +5,7 @@
 //! directories containing a SKILL.md file with YAML front matter.
 
 use crate::error::{Error, Result};
-use crate::hooks::PromptTransformHook;
 use crate::turn::TurnContext;
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -569,68 +567,6 @@ fn find_skill_files(root: &Path) -> Vec<PathBuf> {
     files
 }
 
-/// Builds explicit skill prompt injections.
-#[derive(Debug, Clone)]
-pub struct SkillInjectionPlanner {
-    pub skills_dir: PathBuf,
-}
-
-impl SkillInjectionPlanner {
-    pub fn new(skills_dir: PathBuf) -> Self {
-        Self { skills_dir }
-    }
-
-    pub fn build_explicit_injection(&self, names: &[String]) -> Result<String> {
-        if names.is_empty() {
-            return Ok(String::new());
-        }
-        let mut manager = SkillManager::new(self.skills_dir.clone());
-        manager.load_all()?;
-        let mut blocks = Vec::new();
-        for name in names {
-            let Some(skill) = manager.get(name) else {
-                return Err(Error::Config(format!("Skill '{}' not found", name)));
-            };
-            if !manager.is_available(skill) {
-                return Err(Error::Config(format!("Skill '{}' is not available", name)));
-            }
-            blocks.push(format!(
-                "<skill name=\"{}\">\n{}\n</skill>",
-                skill.name, skill.content
-            ));
-        }
-        Ok(blocks.join("\n\n"))
-    }
-}
-
-/// Prompt transform hook for explicit skill selection.
-#[derive(Debug, Clone)]
-pub struct SkillPromptHook {
-    planner: SkillInjectionPlanner,
-    selected: Vec<String>,
-}
-
-impl SkillPromptHook {
-    pub fn new(skills_dir: PathBuf, selected: Vec<String>) -> Self {
-        Self {
-            planner: SkillInjectionPlanner::new(skills_dir),
-            selected,
-        }
-    }
-}
-
-#[async_trait]
-impl PromptTransformHook for SkillPromptHook {
-    async fn transform_prompt(&self, prompt: String, _turn: &TurnContext) -> Result<String> {
-        let injection = self.planner.build_explicit_injection(&self.selected)?;
-        if injection.trim().is_empty() {
-            Ok(prompt)
-        } else {
-            Ok(format!("{prompt}\n\n<skills>\n{injection}\n</skills>"))
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -1074,28 +1010,6 @@ mod tests {
         assert_eq!(skill.version, "0.1.0");
         assert!(skill.platforms.is_empty());
         assert!(skill.content.contains("# Just content"));
-
-        cleanup(&tmp);
-    }
-
-    #[test]
-    fn test_skill_injection_planner_explicit_selection() {
-        let tmp = make_temp_dir();
-        let skill_dir = tmp.join("skill-a");
-        fs::create_dir_all(&skill_dir).unwrap();
-        fs::write(
-            skill_dir.join("SKILL.md"),
-            "---\nname: skill-a\ndescription: First\nversion: 0.1.0\n---\nUse skill A.\n",
-        )
-        .unwrap();
-
-        let planner = SkillInjectionPlanner::new(tmp.clone());
-        let injection = planner
-            .build_explicit_injection(&["skill-a".to_string()])
-            .unwrap();
-
-        assert!(injection.contains("<skill name=\"skill-a\">"));
-        assert!(injection.contains("Use skill A."));
 
         cleanup(&tmp);
     }
