@@ -9,6 +9,7 @@ pub mod builtin;
 pub mod clarify_tool;
 pub mod code_execution;
 pub mod context;
+pub mod context_engine_tool;
 pub mod datetime_tool;
 pub mod file_tools;
 pub mod http_tool;
@@ -33,6 +34,7 @@ pub use builtin::{
     WebFetchTool, WebSearchTool, WriteFileTool,
 };
 pub use context::ToolContext;
+pub use context_engine_tool::ContextEngineTool;
 pub use provider::{BuiltinToolProvider, ToolProvider};
 pub use registry::ToolRegistry;
 pub use router::ToolRouter;

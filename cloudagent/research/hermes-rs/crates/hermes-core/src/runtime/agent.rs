@@ -12,6 +12,7 @@ use tracing::{debug, error, info, instrument, warn};
 
 use crate::client::{Message, OpenAIClient, ToolCall};
 use crate::config::{runtime_config, BehaviorSettings};
+use crate::context::ContextConfig;
 use crate::context_hints::SubdirectoryContextHintTracker;
 use crate::error::{Error, Result};
 use crate::events::{AgentEvent, AgentEventSink};
@@ -22,7 +23,7 @@ use crate::runtime::tool_calls::normalize_tool_calls;
 use crate::runtime::tool_loop::check_cancelled;
 use crate::runtime_host::{session_id, SessionSandbox};
 use crate::skills::{SkillInjectionPlan, SkillManager, SkillSelection};
-use crate::tools::ToolRegistry;
+use crate::tools::{ContextEngineTool, ToolRegistry};
 use crate::turn::TurnContext;
 
 /// Configuration for the agent executor.
@@ -290,6 +291,7 @@ impl AgentExecutor {
         let mut messages = self
             .build_messages_for_turn(&turn, Some(&skill_plan))
             .await?;
+        self.ensure_runtime_tools_registered().await?;
         let mut iteration = 0;
 
         loop {
@@ -459,6 +461,21 @@ impl AgentExecutor {
         let mut turn = turn.clone();
         turn.skills = selection;
         manager.resolve_for_turn(&turn, &turn.skills)
+    }
+
+    async fn ensure_runtime_tools_registered(&self) -> Result<()> {
+        if self.registry.contains("context_engine").await {
+            return Ok(());
+        }
+        self.registry
+            .register(ContextEngineTool::new(
+                self.conversation.clone(),
+                ContextConfig {
+                    max_context_length: self.config.context_window,
+                    ..ContextConfig::default()
+                },
+            ))
+            .await
     }
 }
 
@@ -758,6 +775,23 @@ mod tests {
         assert_eq!(stats.misses, 2);
 
         let _ = std::fs::remove_dir_all(tmp);
+    }
+
+    #[tokio::test]
+    async fn runtime_tool_registration_adds_context_engine_once() {
+        let registry = ToolRegistry::new(Duration::from_secs(1));
+        let agent = AgentExecutor::new(
+            AgentConfig::default(),
+            OpenAIClient::new(crate::client::ClientConfig::default()),
+            registry.clone(),
+        );
+
+        assert!(!registry.contains("context_engine").await);
+        agent.ensure_runtime_tools_registered().await.unwrap();
+        assert!(registry.contains("context_engine").await);
+        let len_after_first_register = registry.len().await;
+        agent.ensure_runtime_tools_registered().await.unwrap();
+        assert_eq!(registry.len().await, len_after_first_register);
     }
 
     #[tokio::test]
