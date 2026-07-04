@@ -7,11 +7,12 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::client::{Message, OpenAIClient, ToolCall};
 use crate::config::{runtime_config, BehaviorSettings};
+use crate::context_hints::SubdirectoryContextHintTracker;
 use crate::error::{Error, Result};
 use crate::events::{AgentEvent, AgentEventSink};
 use crate::hooks::{GateHook, NoopGateHook, PromptTransformHook};
@@ -79,6 +80,7 @@ pub struct AgentExecutor {
     pub(super) prompt_transform_hooks: Vec<Arc<dyn PromptTransformHook>>,
     pub(super) skills_root_dir: PathBuf,
     pub(super) skills_autoload: bool,
+    pub(super) subdirectory_context_hints: Arc<Mutex<SubdirectoryContextHintTracker>>,
     default_skills: SkillSelection,
 }
 
@@ -98,6 +100,9 @@ impl AgentExecutor {
             prompt_transform_hooks: Vec::new(),
             skills_root_dir: runtime_config().skills.root_dir.clone(),
             skills_autoload: runtime_config().skills.autoload,
+            subdirectory_context_hints: Arc::new(Mutex::new(SubdirectoryContextHintTracker::new(
+                std::env::current_dir().unwrap_or_else(|_| ".".into()),
+            ))),
             default_skills: SkillSelection::default(),
         }
     }
@@ -122,6 +127,9 @@ impl AgentExecutor {
             prompt_transform_hooks: Vec::new(),
             skills_root_dir: runtime_config().skills.root_dir.clone(),
             skills_autoload: runtime_config().skills.autoload,
+            subdirectory_context_hints: Arc::new(Mutex::new(SubdirectoryContextHintTracker::new(
+                std::env::current_dir().unwrap_or_else(|_| ".".into()),
+            ))),
             default_skills: SkillSelection::default(),
         }
     }
@@ -265,6 +273,10 @@ impl AgentExecutor {
         let mut turn = turn.unwrap_or_else(|| self.synthetic_turn_context(&user_query));
         let user_query = self.apply_prompt_transforms(user_query, &turn).await?;
         turn.prompt = user_query.clone();
+        self.subdirectory_context_hints
+            .lock()
+            .await
+            .set_working_dir(&turn.cwd);
         let skill_plan = self.resolve_skills_for_turn(&turn)?;
 
         // Add user message
@@ -1000,5 +1012,80 @@ mod tests {
 
         assert!(matches!(error, Error::InvalidToolArgs { .. }));
         assert!(error.to_string().contains("JSON object"));
+    }
+
+    struct ContextHintReadTool;
+
+    #[async_trait::async_trait]
+    impl crate::tools::ToolHandler for ContextHintReadTool {
+        fn name(&self) -> &str {
+            "read_file"
+        }
+
+        fn description(&self) -> &str {
+            "mock read file"
+        }
+
+        fn schema(&self) -> crate::schema::ToolSchema {
+            crate::schema::ToolSchema::new(
+                "read_file",
+                "mock read file",
+                serde_json::json!({ "type": "object", "properties": {} }),
+            )
+        }
+
+        async fn execute(&self, _args: serde_json::Value, _context: ToolContext) -> ToolResult {
+            ToolResult::success("", serde_json::json!({ "content": "file body" }))
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_tools_appends_subdirectory_context_hint_once() {
+        let tmp =
+            std::env::temp_dir().join(format!("hermes-runtime-subdir-hint-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let subdir = tmp.join("crates").join("demo");
+        std::fs::create_dir_all(&subdir).unwrap();
+        std::fs::write(subdir.join("AGENTS.md"), "demo agent rules").unwrap();
+
+        let registry = ToolRegistry::new(Duration::from_secs(1));
+        registry.register(ContextHintReadTool).await.unwrap();
+        let agent = AgentExecutor::new(
+            AgentConfig::default(),
+            OpenAIClient::new(crate::client::ClientConfig::default()),
+            registry,
+        );
+        agent
+            .subdirectory_context_hints
+            .lock()
+            .await
+            .set_working_dir(&tmp);
+
+        let call = ToolCall {
+            id: "call_read_1".to_string(),
+            function: crate::client::ToolCallFunction {
+                name: "read_file".to_string(),
+                arguments: "{\"path\":\"crates/demo/src/lib.rs\"}".to_string(),
+            },
+        };
+        let first = agent
+            .execute_tools(vec![call.clone()], None)
+            .await
+            .unwrap()
+            .remove(0)
+            .1;
+        assert!(first.content.contains("<subdirectory_context_hints>"));
+        assert!(first.content.contains("crates/demo/AGENTS.md"));
+        assert!(first.content.contains("demo agent rules"));
+
+        let second = agent
+            .execute_tools(vec![call], None)
+            .await
+            .unwrap()
+            .remove(0)
+            .1;
+        assert!(!second.content.contains("<subdirectory_context_hints>"));
+
+        let _ = std::fs::remove_dir_all(tmp);
     }
 }

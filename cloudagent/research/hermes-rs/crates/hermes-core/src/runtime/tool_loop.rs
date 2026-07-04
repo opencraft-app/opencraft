@@ -72,10 +72,24 @@ impl AgentExecutor {
                 continue;
             }
 
-            let result = router
+            let hint_args = args.clone();
+            let mut result = router
                 .dispatch(&name, &tool_call.id, args, tool_context.clone())
                 .await;
             check_cancelled(cancel.as_ref())?;
+            if result.success {
+                let hint = self
+                    .subdirectory_context_hints
+                    .lock()
+                    .await
+                    .maybe_hint_for_tool_call(&name, &hint_args);
+                if let Some(hint) = hint {
+                    if !result.content.is_empty() {
+                        result.content.push_str("\n\n");
+                    }
+                    result.content.push_str(&hint);
+                }
+            }
             debug!(tool = %name, success = result.success, "Tool execution completed");
             results.push((name, result));
         }
