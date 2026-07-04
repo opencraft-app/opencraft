@@ -17,6 +17,7 @@ use crate::error::{Error, Result};
 use crate::events::{AgentEvent, AgentEventSink};
 use crate::hooks::{GateHook, NoopGateHook, PromptTransformHook};
 use crate::memory::MemoryManager;
+use crate::runtime::system_prompt::SystemPromptCache;
 use crate::runtime::tool_calls::normalize_tool_calls;
 use crate::runtime::tool_loop::check_cancelled;
 use crate::runtime_host::{session_id, SessionSandbox};
@@ -81,6 +82,7 @@ pub struct AgentExecutor {
     pub(super) skills_root_dir: PathBuf,
     pub(super) skills_autoload: bool,
     pub(super) subdirectory_context_hints: Arc<Mutex<SubdirectoryContextHintTracker>>,
+    pub(super) system_prompt_cache: Arc<RwLock<SystemPromptCache>>,
     default_skills: SkillSelection,
 }
 
@@ -103,6 +105,7 @@ impl AgentExecutor {
             subdirectory_context_hints: Arc::new(Mutex::new(SubdirectoryContextHintTracker::new(
                 std::env::current_dir().unwrap_or_else(|_| ".".into()),
             ))),
+            system_prompt_cache: Arc::new(RwLock::new(SystemPromptCache::default())),
             default_skills: SkillSelection::default(),
         }
     }
@@ -130,6 +133,7 @@ impl AgentExecutor {
             subdirectory_context_hints: Arc::new(Mutex::new(SubdirectoryContextHintTracker::new(
                 std::env::current_dir().unwrap_or_else(|_| ".".into()),
             ))),
+            system_prompt_cache: Arc::new(RwLock::new(SystemPromptCache::default())),
             default_skills: SkillSelection::default(),
         }
     }
@@ -678,6 +682,80 @@ mod tests {
         assert!(system.contains("<long_term_memory>"));
         assert!(system.contains("[fact] User prefers concise answers"));
         assert!(system.contains("</long_term_memory>"));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn system_prompt_cache_reuses_stable_context_when_volatile_note_changes() {
+        let previous_note = std::env::var("HERMES_CURRENT_TIME_NOTE").ok();
+        std::env::set_var("HERMES_CURRENT_TIME_NOTE", "time one");
+
+        let agent = AgentExecutor::new(
+            AgentConfig::default(),
+            OpenAIClient::new(crate::client::ClientConfig::default()),
+            ToolRegistry::new(Duration::from_secs(1)),
+        );
+
+        let first = agent.build_messages().await.unwrap();
+        assert!(first[0].content.contains("time one"));
+        assert_eq!(agent.system_prompt_cache.read().await.stats().misses, 1);
+
+        std::env::set_var("HERMES_CURRENT_TIME_NOTE", "time two");
+        let second = agent.build_messages().await.unwrap();
+        let stats = agent.system_prompt_cache.read().await.stats();
+        assert_eq!(stats.entries, 1);
+        assert_eq!(stats.hits, 1);
+        assert_eq!(stats.misses, 1);
+        assert!(!second[0].content.contains("time one"));
+        assert!(second[0].content.contains("time two"));
+
+        if let Some(note) = previous_note {
+            std::env::set_var("HERMES_CURRENT_TIME_NOTE", note);
+        } else {
+            std::env::remove_var("HERMES_CURRENT_TIME_NOTE");
+        }
+    }
+
+    #[tokio::test]
+    async fn system_prompt_cache_separates_workspace_context_layers() {
+        let tmp = std::env::temp_dir().join(format!(
+            "hermes-runtime-prompt-cache-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join(".git")).unwrap();
+        let subdir = tmp.join("crates").join("demo");
+        std::fs::create_dir_all(&subdir).unwrap();
+        std::fs::write(tmp.join("AGENTS.md"), "root context").unwrap();
+        std::fs::write(subdir.join("AGENTS.md"), "demo context").unwrap();
+
+        let agent = AgentExecutor::new(
+            AgentConfig::default(),
+            OpenAIClient::new(crate::client::ClientConfig::default()),
+            ToolRegistry::new(Duration::from_secs(1)),
+        );
+
+        let mut root_turn = agent.synthetic_turn_context("");
+        root_turn.cwd = tmp.clone();
+        let root_messages = agent
+            .build_messages_for_turn(&root_turn, None)
+            .await
+            .unwrap();
+        assert!(root_messages[0].content.contains("root context"));
+
+        let mut subdir_turn = agent.synthetic_turn_context("");
+        subdir_turn.cwd = subdir;
+        let subdir_messages = agent
+            .build_messages_for_turn(&subdir_turn, None)
+            .await
+            .unwrap();
+        assert!(subdir_messages[0].content.contains("demo context"));
+
+        let stats = agent.system_prompt_cache.read().await.stats();
+        assert_eq!(stats.entries, 2);
+        assert_eq!(stats.misses, 2);
+
+        let _ = std::fs::remove_dir_all(tmp);
     }
 
     #[tokio::test]

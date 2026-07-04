@@ -14,6 +14,7 @@ mod restore;
 mod sandbox_context;
 pub mod store;
 mod stream;
+mod system_prompt;
 mod tool_calls;
 mod tool_loop;
 mod transcript;
