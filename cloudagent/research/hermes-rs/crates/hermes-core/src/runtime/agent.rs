@@ -19,7 +19,7 @@ use crate::memory::MemoryManager;
 use crate::runtime::tool_calls::normalize_tool_calls;
 use crate::runtime::tool_loop::check_cancelled;
 use crate::runtime_host::{session_id, SessionSandbox};
-use crate::skills::{SkillInjectionPlan, SkillManager};
+use crate::skills::{SkillInjectionPlan, SkillManager, SkillSelection};
 use crate::tools::ToolRegistry;
 use crate::turn::TurnContext;
 
@@ -79,6 +79,7 @@ pub struct AgentExecutor {
     pub(super) prompt_transform_hooks: Vec<Arc<dyn PromptTransformHook>>,
     pub(super) skills_root_dir: PathBuf,
     pub(super) skills_autoload: bool,
+    default_skills: SkillSelection,
 }
 
 impl AgentExecutor {
@@ -97,6 +98,7 @@ impl AgentExecutor {
             prompt_transform_hooks: Vec::new(),
             skills_root_dir: runtime_config().skills.root_dir.clone(),
             skills_autoload: runtime_config().skills.autoload,
+            default_skills: SkillSelection::default(),
         }
     }
 
@@ -120,6 +122,7 @@ impl AgentExecutor {
             prompt_transform_hooks: Vec::new(),
             skills_root_dir: runtime_config().skills.root_dir.clone(),
             skills_autoload: runtime_config().skills.autoload,
+            default_skills: SkillSelection::default(),
         }
     }
 
@@ -141,6 +144,11 @@ impl AgentExecutor {
 
     pub fn with_skills_root_dir(mut self, root_dir: PathBuf) -> Self {
         self.skills_root_dir = root_dir;
+        self
+    }
+
+    pub fn with_default_skills(mut self, selection: SkillSelection) -> Self {
+        self.default_skills = selection;
         self
     }
 
@@ -427,15 +435,32 @@ impl AgentExecutor {
     }
 
     fn resolve_skills_for_turn(&self, turn: &TurnContext) -> Result<SkillInjectionPlan> {
-        if !self.skills_autoload
-            && turn.skills.explicit.is_empty()
-            && turn.skills.disabled.is_empty()
-        {
+        let selection = merge_skill_selection(&self.default_skills, &turn.skills);
+        if !self.skills_autoload && selection.explicit.is_empty() && selection.disabled.is_empty() {
             return Ok(SkillInjectionPlan::default());
         }
         let manager = SkillManager::new(self.skills_root_dir.clone());
-        manager.resolve_for_turn(turn, &turn.skills)
+        let mut turn = turn.clone();
+        turn.skills = selection;
+        manager.resolve_for_turn(&turn, &turn.skills)
     }
+}
+
+fn merge_skill_selection(defaults: &SkillSelection, turn: &SkillSelection) -> SkillSelection {
+    fn append_unique(target: &mut Vec<String>, source: &[String]) {
+        for item in source {
+            if !target.iter().any(|existing| existing == item) {
+                target.push(item.clone());
+            }
+        }
+    }
+
+    let mut merged = SkillSelection::default();
+    append_unique(&mut merged.explicit, &defaults.explicit);
+    append_unique(&mut merged.explicit, &turn.explicit);
+    append_unique(&mut merged.disabled, &defaults.disabled);
+    append_unique(&mut merged.disabled, &turn.disabled);
+    merged
 }
 
 fn normalize_tool_calls_for_history(tool_calls: Vec<ToolCall>) -> Result<Vec<ToolCall>> {
@@ -452,6 +477,7 @@ pub struct AgentExecutorBuilder {
     prompt_transform_hooks: Vec<Arc<dyn PromptTransformHook>>,
     skills_root_dir: Option<PathBuf>,
     skills_autoload: Option<bool>,
+    default_skills: Option<SkillSelection>,
 }
 
 impl AgentExecutorBuilder {
@@ -465,6 +491,7 @@ impl AgentExecutorBuilder {
             prompt_transform_hooks: Vec::new(),
             skills_root_dir: None,
             skills_autoload: None,
+            default_skills: None,
         }
     }
 
@@ -542,6 +569,11 @@ impl AgentExecutorBuilder {
         self
     }
 
+    pub fn default_skills(mut self, selection: SkillSelection) -> Self {
+        self.default_skills = Some(selection);
+        self
+    }
+
     /// Build the agent
     pub fn build(self) -> Result<AgentExecutor> {
         let client = self.client.unwrap_or_else(|| {
@@ -565,6 +597,9 @@ impl AgentExecutorBuilder {
         }
         if let Some(enabled) = self.skills_autoload {
             agent.skills_autoload = enabled;
+        }
+        if let Some(selection) = self.default_skills {
+            agent = agent.with_default_skills(selection);
         }
         for hook in self.prompt_transform_hooks {
             agent = agent.with_prompt_transform_hook(hook);
@@ -765,6 +800,63 @@ mod tests {
         let conversation = agent.conversation().await;
         assert_eq!(conversation.len(), 1);
         assert_eq!(conversation[0].content, "hello");
+
+        let _ = std::fs::remove_dir_all(tmp);
+    }
+
+    #[tokio::test]
+    async fn default_selected_skills_use_turn_scoped_resolver() {
+        let tmp = std::env::temp_dir().join(format!(
+            "hermes-runtime-default-skill-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let skill_dir = tmp.join(".agents").join("skills").join("selected-skill");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: selected-skill\n---\nselected skill body for ${HERMES_SESSION_ID}\n",
+        )
+        .unwrap();
+
+        let agent = AgentExecutor::new(
+            AgentConfig::default(),
+            OpenAIClient::new(crate::client::ClientConfig::default()),
+            ToolRegistry::new(Duration::from_secs(1)),
+        )
+        .with_skills_root_dir(tmp.join("global-skills"))
+        .with_default_skills(SkillSelection {
+            explicit: vec!["selected-skill".to_string()],
+            disabled: Vec::new(),
+        });
+        let turn = TurnContext {
+            turn_id: "turn_1".to_string(),
+            run_id: "run_1".to_string(),
+            session_id: "session_selected".to_string(),
+            source: "prompt".to_string(),
+            prompt: "hello".to_string(),
+            cwd: tmp.clone(),
+            versions: crate::behavior::BehaviorVersions::default(),
+            skills: Default::default(),
+        };
+
+        agent.add_message(Message::user("hello")).await;
+        let plan = agent.resolve_skills_for_turn(&turn).unwrap();
+        let messages = agent
+            .build_messages_for_turn(&turn, Some(&plan))
+            .await
+            .unwrap();
+
+        assert!(plan.prompt_text().is_empty());
+        assert!(messages[0].content.contains("<available_skills"));
+        assert!(messages.iter().any(|message| {
+            message.role == crate::client::Role::User
+                && message.content.contains("<turn_skill_messages>")
+                && message
+                    .content
+                    .contains("selected skill body for session_selected")
+        }));
+        assert_eq!(agent.conversation().await.len(), 1);
 
         let _ = std::fs::remove_dir_all(tmp);
     }
