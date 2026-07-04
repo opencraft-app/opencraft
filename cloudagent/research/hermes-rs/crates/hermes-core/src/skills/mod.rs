@@ -51,18 +51,13 @@ pub struct Skill {
 }
 
 /// Where a skill's primary content is injected for a turn.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SkillInjectionPoint {
     Prompt,
+    #[default]
     Message,
     Inference,
-}
-
-impl Default for SkillInjectionPoint {
-    fn default() -> Self {
-        Self::Message
-    }
 }
 
 /// Turn-scoped skill selection supplied by protocol/session behavior.
@@ -240,7 +235,7 @@ impl SkillManager {
         selection: &SkillSelection,
     ) -> Result<SkillInjectionPlan> {
         let catalog = self.discover_for_cwd(&turn.cwd);
-        let resolver = SkillResolver::default();
+        let resolver = SkillResolver;
         resolver.resolve(&catalog, turn, selection, self)
     }
 
