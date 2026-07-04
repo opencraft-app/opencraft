@@ -2,6 +2,7 @@
 //!
 //! Implements the ReAct (Reason + Act) pattern for LLM-driven tool execution.
 
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,6 +19,7 @@ use crate::memory::MemoryManager;
 use crate::runtime::tool_calls::normalize_tool_calls;
 use crate::runtime::tool_loop::check_cancelled;
 use crate::runtime_host::{session_id, SessionSandbox};
+use crate::skills::{SkillInjectionPlan, SkillManager};
 use crate::tools::ToolRegistry;
 use crate::turn::TurnContext;
 
@@ -75,6 +77,8 @@ pub struct AgentExecutor {
     pub(super) session_id: String,
     pub(super) gate_hook: Arc<dyn GateHook>,
     pub(super) prompt_transform_hooks: Vec<Arc<dyn PromptTransformHook>>,
+    pub(super) skills_root_dir: PathBuf,
+    pub(super) skills_autoload: bool,
 }
 
 impl AgentExecutor {
@@ -91,6 +95,8 @@ impl AgentExecutor {
             session_id: session_id(),
             gate_hook: Arc::new(NoopGateHook),
             prompt_transform_hooks: Vec::new(),
+            skills_root_dir: runtime_config().skills.root_dir.clone(),
+            skills_autoload: runtime_config().skills.autoload,
         }
     }
 
@@ -112,6 +118,8 @@ impl AgentExecutor {
             session_id: session_id(),
             gate_hook: Arc::new(NoopGateHook),
             prompt_transform_hooks: Vec::new(),
+            skills_root_dir: runtime_config().skills.root_dir.clone(),
+            skills_autoload: runtime_config().skills.autoload,
         }
     }
 
@@ -128,6 +136,11 @@ impl AgentExecutor {
 
     pub fn with_prompt_transform_hook(mut self, hook: Arc<dyn PromptTransformHook>) -> Self {
         self.prompt_transform_hooks.push(hook);
+        self
+    }
+
+    pub fn with_skills_root_dir(mut self, root_dir: PathBuf) -> Self {
+        self.skills_root_dir = root_dir;
         self
     }
 
@@ -241,14 +254,18 @@ impl AgentExecutor {
         turn: Option<TurnContext>,
     ) -> Result<Message> {
         info!("Starting agent run");
-        let turn = turn.unwrap_or_else(|| self.synthetic_turn_context(&user_query));
+        let mut turn = turn.unwrap_or_else(|| self.synthetic_turn_context(&user_query));
         let user_query = self.apply_prompt_transforms(user_query, &turn).await?;
+        turn.prompt = user_query.clone();
+        let skill_plan = self.resolve_skills_for_turn(&turn)?;
 
         // Add user message
         self.add_message(Message::user(&user_query)).await;
 
         // Build initial messages including system prompt
-        let mut messages = self.build_messages().await?;
+        let mut messages = self
+            .build_messages_for_turn(&turn, Some(&skill_plan))
+            .await?;
         let mut iteration = 0;
 
         loop {
@@ -408,6 +425,17 @@ impl AgentExecutor {
             }
         }
     }
+
+    fn resolve_skills_for_turn(&self, turn: &TurnContext) -> Result<SkillInjectionPlan> {
+        if !self.skills_autoload
+            && turn.skills.explicit.is_empty()
+            && turn.skills.disabled.is_empty()
+        {
+            return Ok(SkillInjectionPlan::default());
+        }
+        let manager = SkillManager::new(self.skills_root_dir.clone());
+        manager.resolve_for_turn(turn, &turn.skills)
+    }
 }
 
 fn normalize_tool_calls_for_history(tool_calls: Vec<ToolCall>) -> Result<Vec<ToolCall>> {
@@ -422,6 +450,8 @@ pub struct AgentExecutorBuilder {
     memory_manager: Option<MemoryManager>,
     gate_hook: Option<Arc<dyn GateHook>>,
     prompt_transform_hooks: Vec<Arc<dyn PromptTransformHook>>,
+    skills_root_dir: Option<PathBuf>,
+    skills_autoload: Option<bool>,
 }
 
 impl AgentExecutorBuilder {
@@ -433,6 +463,8 @@ impl AgentExecutorBuilder {
             memory_manager: None,
             gate_hook: None,
             prompt_transform_hooks: Vec::new(),
+            skills_root_dir: None,
+            skills_autoload: None,
         }
     }
 
@@ -500,6 +532,16 @@ impl AgentExecutorBuilder {
         self
     }
 
+    pub fn skills_root_dir(mut self, root_dir: PathBuf) -> Self {
+        self.skills_root_dir = Some(root_dir);
+        self
+    }
+
+    pub fn skills_autoload(mut self, enabled: bool) -> Self {
+        self.skills_autoload = Some(enabled);
+        self
+    }
+
     /// Build the agent
     pub fn build(self) -> Result<AgentExecutor> {
         let client = self.client.unwrap_or_else(|| {
@@ -517,6 +559,12 @@ impl AgentExecutorBuilder {
         }
         if let Some(gate_hook) = self.gate_hook {
             agent = agent.with_gate_hook(gate_hook);
+        }
+        if let Some(root_dir) = self.skills_root_dir {
+            agent = agent.with_skills_root_dir(root_dir);
+        }
+        if let Some(enabled) = self.skills_autoload {
+            agent.skills_autoload = enabled;
         }
         for hook in self.prompt_transform_hooks {
             agent = agent.with_prompt_transform_hook(hook);
@@ -655,6 +703,63 @@ mod tests {
             .unwrap();
 
         assert_eq!(prompt, "hello\n\nhooked");
+    }
+
+    #[tokio::test]
+    async fn turn_cwd_skills_are_injected_without_persisting_to_conversation() {
+        let tmp = std::env::temp_dir().join(format!(
+            "hermes-runtime-skill-injection-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let skills_root = tmp.join(".agents").join("skills");
+        let prompt_skill = skills_root.join("prompt-skill");
+        let message_skill = skills_root.join("message-skill");
+        std::fs::create_dir_all(&prompt_skill).unwrap();
+        std::fs::create_dir_all(&message_skill).unwrap();
+        std::fs::write(
+            prompt_skill.join("SKILL.md"),
+            "---\nname: prompt-skill\nautoload: true\ninjection: prompt\n---\nprompt skill body\n",
+        )
+        .unwrap();
+        std::fs::write(
+            message_skill.join("SKILL.md"),
+            "---\nname: message-skill\nautoload: true\ninjection: message\n---\nmessage skill body\n",
+        )
+        .unwrap();
+
+        let agent = AgentExecutor::new(
+            AgentConfig::default(),
+            OpenAIClient::new(crate::client::ClientConfig::default()),
+            ToolRegistry::new(Duration::from_secs(1)),
+        )
+        .with_skills_root_dir(tmp.join("global-skills"));
+        let turn = TurnContext {
+            turn_id: "turn_1".to_string(),
+            run_id: "run_1".to_string(),
+            source: "prompt".to_string(),
+            prompt: "hello".to_string(),
+            cwd: tmp.clone(),
+            versions: crate::behavior::BehaviorVersions::default(),
+            skills: Default::default(),
+        };
+
+        agent.add_message(Message::user("hello")).await;
+        let plan = agent.resolve_skills_for_turn(&turn).unwrap();
+        let messages = agent
+            .build_messages_for_turn(&turn, Some(&plan))
+            .await
+            .unwrap();
+
+        assert!(messages[0].content.contains("prompt skill body"));
+        assert!(messages
+            .iter()
+            .any(|message| message.content.contains("message skill body")));
+        let conversation = agent.conversation().await;
+        assert_eq!(conversation.len(), 1);
+        assert_eq!(conversation[0].content, "hello");
+
+        let _ = std::fs::remove_dir_all(tmp);
     }
 
     #[test]

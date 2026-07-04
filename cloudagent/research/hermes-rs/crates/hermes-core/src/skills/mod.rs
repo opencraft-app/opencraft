@@ -8,8 +8,17 @@ use crate::error::{Error, Result};
 use crate::hooks::PromptTransformHook;
 use crate::turn::TurnContext;
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use tracing::debug;
+
+const WORKSPACE_SKILL_DIRS: &[&str] = &[
+    ".agents/skills",
+    ".codex/skills",
+    ".hermes/skills",
+    "skills",
+];
 
 /// A loaded skill with parsed metadata and content.
 #[derive(Debug, Clone)]
@@ -28,8 +37,91 @@ pub struct Skill {
     pub prerequisites_env: Vec<String>,
     /// Required commands on PATH
     pub prerequisites_commands: Vec<String>,
+    /// Optional activation hints used by turn-time resolution.
+    pub activation_keywords: Vec<String>,
+    /// Whether this skill should be loaded for every turn in its discovered cwd scope.
+    pub autoload: bool,
+    /// Whether this skill explicitly contributes tools. Skills do not provide
+    /// tools by default.
+    pub provides_tools: bool,
+    /// Injection point for the main SKILL.md body.
+    pub injection_point: SkillInjectionPoint,
+    /// Directory containing this skill.
+    pub skill_dir: PathBuf,
     /// Supporting reference files: filename -> content
     pub references: HashMap<String, String>,
+}
+
+/// Where a skill's primary content is injected for a turn.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillInjectionPoint {
+    Prompt,
+    Message,
+    Inference,
+}
+
+impl Default for SkillInjectionPoint {
+    fn default() -> Self {
+        Self::Prompt
+    }
+}
+
+/// Turn-scoped skill selection supplied by protocol/session behavior.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SkillSelection {
+    pub explicit: Vec<String>,
+    pub disabled: Vec<String>,
+}
+
+/// Discovery result for a cwd scope.
+#[derive(Debug, Clone, Default)]
+pub struct SkillCatalog {
+    pub cwd: PathBuf,
+    pub roots: Vec<PathBuf>,
+    pub skills: Vec<Skill>,
+}
+
+/// A resolved skill activation for one turn.
+#[derive(Debug, Clone)]
+pub struct SkillActivation {
+    pub skill: Skill,
+    pub reason: SkillActivationReason,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SkillActivationReason {
+    Explicit,
+    Autoload,
+    Keyword(String),
+}
+
+/// The skill work product consumed by prompt/message/inference assembly.
+#[derive(Debug, Clone, Default)]
+pub struct SkillInjectionPlan {
+    pub activations: Vec<SkillActivation>,
+    pub prompt_blocks: Vec<String>,
+    pub message_blocks: Vec<String>,
+    pub inference_blocks: Vec<String>,
+    pub provided_tool_skills: Vec<String>,
+}
+
+impl SkillInjectionPlan {
+    pub fn is_empty(&self) -> bool {
+        self.prompt_blocks.is_empty()
+            && self.message_blocks.is_empty()
+            && self.inference_blocks.is_empty()
+            && self.provided_tool_skills.is_empty()
+    }
+
+    pub fn prompt_text(&self) -> String {
+        self.prompt_blocks.join("\n\n")
+    }
+
+    pub fn message_text(&self) -> String {
+        self.message_blocks.join("\n\n")
+    }
 }
 
 /// Manages skill discovery, loading, and lifecycle.
@@ -115,6 +207,43 @@ impl SkillManager {
         pairs
     }
 
+    /// Build a cwd-scoped catalog. Workspace-local roots closest to `cwd`
+    /// override outer roots and the global root. This mirrors Hermes' two-step
+    /// model: discover compact metadata first, then load full content only for
+    /// activated skills.
+    pub fn discover_for_cwd(&self, cwd: &Path) -> SkillCatalog {
+        let mut roots = discover_skill_roots(cwd);
+        roots.push(self.skills_dir.clone());
+
+        let mut seen = std::collections::HashSet::new();
+        let mut skills = Vec::new();
+        for root in &roots {
+            for skill in load_skills_from_root(root) {
+                if seen.insert(skill.name.clone()) {
+                    skills.push(skill);
+                }
+            }
+        }
+        skills.sort_by(|a, b| a.name.cmp(&b.name));
+        roots.dedup();
+        SkillCatalog {
+            cwd: cwd.to_path_buf(),
+            roots,
+            skills,
+        }
+    }
+
+    /// Resolve and build separated injections for one turn.
+    pub fn resolve_for_turn(
+        &self,
+        turn: &TurnContext,
+        selection: &SkillSelection,
+    ) -> Result<SkillInjectionPlan> {
+        let catalog = self.discover_for_cwd(&turn.cwd);
+        let resolver = SkillResolver::default();
+        resolver.resolve(&catalog, turn, selection, self)
+    }
+
     /// Check whether a skill is available on the current platform
     /// and all prerequisites are met.
     pub fn is_available(&self, skill: &Skill) -> bool {
@@ -188,6 +317,187 @@ impl SkillManager {
         self.skills.remove(name);
         Ok(())
     }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct SkillResolver;
+
+impl SkillResolver {
+    pub fn resolve(
+        &self,
+        catalog: &SkillCatalog,
+        turn: &TurnContext,
+        selection: &SkillSelection,
+        manager: &SkillManager,
+    ) -> Result<SkillInjectionPlan> {
+        let disabled: std::collections::HashSet<_> =
+            selection.disabled.iter().map(|s| s.as_str()).collect();
+        let mut by_name: HashMap<&str, &Skill> = HashMap::new();
+        for skill in &catalog.skills {
+            by_name.insert(skill.name.as_str(), skill);
+        }
+
+        let mut activations = Vec::new();
+        let mut selected_names = std::collections::HashSet::new();
+
+        for name in &selection.explicit {
+            if disabled.contains(name.as_str()) {
+                continue;
+            }
+            let Some(skill) = by_name.get(name.as_str()) else {
+                return Err(Error::Config(format!("Skill '{}' not found", name)));
+            };
+            if !manager.is_available(skill) {
+                return Err(Error::Config(format!("Skill '{}' is not available", name)));
+            }
+            selected_names.insert(skill.name.clone());
+            activations.push(SkillActivation {
+                skill: (*skill).clone(),
+                reason: SkillActivationReason::Explicit,
+            });
+        }
+
+        let prompt_lc = turn.prompt.to_lowercase();
+        for skill in &catalog.skills {
+            if selected_names.contains(&skill.name) || disabled.contains(skill.name.as_str()) {
+                continue;
+            }
+            if !manager.is_available(skill) {
+                continue;
+            }
+            if skill.autoload {
+                selected_names.insert(skill.name.clone());
+                activations.push(SkillActivation {
+                    skill: skill.clone(),
+                    reason: SkillActivationReason::Autoload,
+                });
+                continue;
+            }
+            if let Some(keyword) = skill
+                .activation_keywords
+                .iter()
+                .find(|keyword| prompt_lc.contains(&keyword.to_lowercase()))
+            {
+                selected_names.insert(skill.name.clone());
+                activations.push(SkillActivation {
+                    skill: skill.clone(),
+                    reason: SkillActivationReason::Keyword(keyword.clone()),
+                });
+            }
+        }
+
+        Ok(build_injection_plan(activations))
+    }
+}
+
+fn build_injection_plan(activations: Vec<SkillActivation>) -> SkillInjectionPlan {
+    let mut plan = SkillInjectionPlan {
+        activations,
+        ..SkillInjectionPlan::default()
+    };
+
+    for activation in &plan.activations {
+        let skill = &activation.skill;
+        let block = format_skill_block(skill, &activation.reason);
+        match skill.injection_point {
+            SkillInjectionPoint::Prompt => plan.prompt_blocks.push(block),
+            SkillInjectionPoint::Message => plan.message_blocks.push(block),
+            SkillInjectionPoint::Inference => plan.inference_blocks.push(block),
+        }
+        if skill.provides_tools {
+            plan.provided_tool_skills.push(skill.name.clone());
+        }
+    }
+
+    plan
+}
+
+fn format_skill_block(skill: &Skill, reason: &SkillActivationReason) -> String {
+    let reason = match reason {
+        SkillActivationReason::Explicit => "explicit".to_string(),
+        SkillActivationReason::Autoload => "autoload".to_string(),
+        SkillActivationReason::Keyword(keyword) => format!("keyword:{keyword}"),
+    };
+    let mut block = format!(
+        "<skill name=\"{}\" version=\"{}\" reason=\"{}\" dir=\"{}\">\n{}\n</skill>",
+        skill.name,
+        skill.version,
+        reason,
+        skill.skill_dir.display(),
+        skill.content.trim()
+    );
+    if !skill.references.is_empty() {
+        let mut refs: Vec<_> = skill.references.keys().cloned().collect();
+        refs.sort();
+        block.push_str("\n<skill_supporting_files>\n");
+        for path in refs {
+            block.push_str(&format!("- {}\n", skill.skill_dir.join(&path).display()));
+        }
+        block.push_str("</skill_supporting_files>");
+    }
+    block
+}
+
+fn discover_skill_roots(cwd: &Path) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    let mut current = if cwd.is_file() {
+        cwd.parent().unwrap_or(cwd).to_path_buf()
+    } else {
+        cwd.to_path_buf()
+    };
+    let git_root = find_git_root(&current);
+    loop {
+        for rel in WORKSPACE_SKILL_DIRS {
+            let candidate = current.join(rel);
+            if candidate.is_dir() {
+                roots.push(candidate);
+            }
+        }
+        if git_root.as_ref().is_some_and(|root| current == *root) {
+            break;
+        }
+        match current.parent() {
+            Some(parent) if parent != current => current = parent.to_path_buf(),
+            _ => break,
+        }
+    }
+    roots
+}
+
+fn find_git_root(start: &Path) -> Option<PathBuf> {
+    let mut current = start.to_path_buf();
+    loop {
+        if current.join(".git").exists() {
+            return Some(current);
+        }
+        match current.parent() {
+            Some(parent) if parent != current => current = parent.to_path_buf(),
+            _ => return None,
+        }
+    }
+}
+
+fn load_skills_from_root(root: &Path) -> Vec<Skill> {
+    let entries = match std::fs::read_dir(root) {
+        Ok(entries) => entries,
+        Err(error) => {
+            debug!(root = %root.display(), error = %error, "Could not read skill root");
+            return Vec::new();
+        }
+    };
+    let mut skills = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() && path.join("SKILL.md").is_file() {
+            match load_skill(&path) {
+                Ok(skill) => skills.push(skill),
+                Err(error) => {
+                    debug!(path = %path.display(), error = %error, "Could not load skill");
+                }
+            }
+        }
+    }
+    skills
 }
 
 /// Builds explicit skill prompt injections.
@@ -282,6 +592,18 @@ fn load_skill(skill_dir: &Path) -> Result<Skill> {
     let platforms = parse_list(front_matter.get("platforms"));
     let prerequisites_env = parse_list(front_matter.get("prerequisites_env"));
     let prerequisites_commands = parse_list(front_matter.get("prerequisites_commands"));
+    let activation_keywords = parse_list(front_matter.get("activation_keywords"))
+        .into_iter()
+        .chain(parse_list(front_matter.get("keywords")))
+        .collect();
+    let autoload = parse_bool(front_matter.get("autoload")).unwrap_or(false);
+    let provides_tools = parse_bool(front_matter.get("provides_tools")).unwrap_or(false);
+    let injection_point = front_matter
+        .get("injection")
+        .or_else(|| front_matter.get("injection_point"))
+        .map(|value| parse_injection_point(value))
+        .transpose()?
+        .unwrap_or_default();
 
     // Load reference files (everything in the skill dir that isn't SKILL.md)
     let mut references = HashMap::new();
@@ -308,6 +630,11 @@ fn load_skill(skill_dir: &Path) -> Result<Skill> {
         platforms,
         prerequisites_env,
         prerequisites_commands,
+        activation_keywords,
+        autoload,
+        provides_tools,
+        injection_point,
+        skill_dir: skill_dir.to_path_buf(),
         references,
     })
 }
@@ -385,6 +712,27 @@ fn parse_list(value: Option<&String>) -> Vec<String> {
         .collect()
 }
 
+fn parse_bool(value: Option<&String>) -> Option<bool> {
+    let value = value?.trim().trim_matches('"').trim_matches('\'');
+    match value.to_ascii_lowercase().as_str() {
+        "true" | "yes" | "1" | "on" => Some(true),
+        "false" | "no" | "0" | "off" => Some(false),
+        _ => None,
+    }
+}
+
+fn parse_injection_point(value: &str) -> Result<SkillInjectionPoint> {
+    match value.trim().trim_matches('"').trim_matches('\'') {
+        "prompt" | "system" | "system_prompt" => Ok(SkillInjectionPoint::Prompt),
+        "message" | "turn_message" => Ok(SkillInjectionPoint::Message),
+        "inference" | "request" | "model_request" => Ok(SkillInjectionPoint::Inference),
+        other => Err(Error::Config(format!(
+            "Unknown skill injection point '{}'",
+            other
+        ))),
+    }
+}
+
 /// Return the current platform as a lowercase string matching common conventions.
 fn current_platform() -> &'static str {
     if cfg!(target_os = "linux") {
@@ -444,6 +792,24 @@ mod tests {
 
     fn cleanup(dir: &Path) {
         let _ = fs::remove_dir_all(dir);
+    }
+
+    fn minimal_skill(name: &str) -> Skill {
+        Skill {
+            name: name.into(),
+            description: "test".into(),
+            version: "1.0.0".into(),
+            content: String::new(),
+            platforms: vec![],
+            prerequisites_env: vec![],
+            prerequisites_commands: vec![],
+            activation_keywords: vec![],
+            autoload: false,
+            provides_tools: false,
+            injection_point: SkillInjectionPoint::Prompt,
+            skill_dir: PathBuf::from("."),
+            references: HashMap::new(),
+        }
     }
 
     fn sample_skill_md() -> &'static str {
@@ -589,16 +955,8 @@ mod tests {
 
     #[test]
     fn test_is_available_platform_match() {
-        let skill = Skill {
-            name: "test".into(),
-            description: "test".into(),
-            version: "1.0.0".into(),
-            content: String::new(),
-            platforms: vec![current_platform().to_string()],
-            prerequisites_env: vec![],
-            prerequisites_commands: vec![],
-            references: HashMap::new(),
-        };
+        let mut skill = minimal_skill("test");
+        skill.platforms = vec![current_platform().to_string()];
 
         let mgr = SkillManager::new(PathBuf::from("."));
         assert!(mgr.is_available(&skill));
@@ -606,16 +964,8 @@ mod tests {
 
     #[test]
     fn test_is_available_platform_mismatch() {
-        let skill = Skill {
-            name: "test".into(),
-            description: "test".into(),
-            version: "1.0.0".into(),
-            content: String::new(),
-            platforms: vec!["plan9".to_string()],
-            prerequisites_env: vec![],
-            prerequisites_commands: vec![],
-            references: HashMap::new(),
-        };
+        let mut skill = minimal_skill("test");
+        skill.platforms = vec!["plan9".to_string()];
 
         let mgr = SkillManager::new(PathBuf::from("."));
         assert!(!mgr.is_available(&skill));
@@ -623,16 +973,7 @@ mod tests {
 
     #[test]
     fn test_is_available_empty_platforms_means_all() {
-        let skill = Skill {
-            name: "test".into(),
-            description: "test".into(),
-            version: "1.0.0".into(),
-            content: String::new(),
-            platforms: vec![],
-            prerequisites_env: vec![],
-            prerequisites_commands: vec![],
-            references: HashMap::new(),
-        };
+        let skill = minimal_skill("test");
 
         let mgr = SkillManager::new(PathBuf::from("."));
         assert!(mgr.is_available(&skill));
@@ -640,16 +981,8 @@ mod tests {
 
     #[test]
     fn test_is_available_missing_env() {
-        let skill = Skill {
-            name: "test".into(),
-            description: "test".into(),
-            version: "1.0.0".into(),
-            content: String::new(),
-            platforms: vec![],
-            prerequisites_env: vec!["HERMES_NONEXISTENT_VAR_12345".into()],
-            prerequisites_commands: vec![],
-            references: HashMap::new(),
-        };
+        let mut skill = minimal_skill("test");
+        skill.prerequisites_env = vec!["HERMES_NONEXISTENT_VAR_12345".into()];
 
         let mgr = SkillManager::new(PathBuf::from("."));
         assert!(!mgr.is_available(&skill));
@@ -694,6 +1027,126 @@ mod tests {
 
         assert!(injection.contains("<skill name=\"skill-a\">"));
         assert!(injection.contains("Use skill A."));
+
+        cleanup(&tmp);
+    }
+
+    #[test]
+    fn discover_for_cwd_prefers_nearest_workspace_skill() {
+        let tmp = make_temp_dir();
+        fs::create_dir(tmp.join(".git")).unwrap();
+        let root_skills = tmp.join(".agents").join("skills").join("shared");
+        fs::create_dir_all(&root_skills).unwrap();
+        fs::write(
+            root_skills.join("SKILL.md"),
+            "---\nname: shared\ndescription: root\n---\nroot skill\n",
+        )
+        .unwrap();
+
+        let nested = tmp.join("packages").join("api");
+        fs::create_dir_all(&nested).unwrap();
+        let nested_skills = nested.join(".agents").join("skills").join("shared");
+        fs::create_dir_all(&nested_skills).unwrap();
+        fs::write(
+            nested_skills.join("SKILL.md"),
+            "---\nname: shared\ndescription: nested\n---\nnested skill\n",
+        )
+        .unwrap();
+
+        let manager = SkillManager::new(tmp.join("global-skills"));
+        let catalog = manager.discover_for_cwd(&nested);
+
+        let shared: Vec<_> = catalog
+            .skills
+            .iter()
+            .filter(|skill| skill.name == "shared")
+            .collect();
+        assert_eq!(shared.len(), 1);
+        assert_eq!(shared[0].description, "nested");
+        assert!(shared[0].content.contains("nested skill"));
+
+        cleanup(&tmp);
+    }
+
+    #[test]
+    fn resolve_for_turn_separates_prompt_message_and_inference_injections() {
+        let tmp = make_temp_dir();
+        let skills_root = tmp.join(".agents").join("skills");
+        for (name, injection) in [
+            ("prompt-skill", "prompt"),
+            ("message-skill", "message"),
+            ("inference-skill", "inference"),
+        ] {
+            let dir = skills_root.join(name);
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(
+                dir.join("SKILL.md"),
+                format!(
+                    "---\nname: {name}\nautoload: true\ninjection: {injection}\n---\n{name} body\n"
+                ),
+            )
+            .unwrap();
+        }
+
+        let manager = SkillManager::new(tmp.join("global-skills"));
+        let turn = TurnContext {
+            turn_id: "turn_1".to_string(),
+            run_id: "run_1".to_string(),
+            source: "prompt".to_string(),
+            prompt: "hello".to_string(),
+            cwd: tmp.clone(),
+            versions: crate::behavior::BehaviorVersions::default(),
+            skills: SkillSelection::default(),
+        };
+
+        let plan = manager
+            .resolve_for_turn(&turn, &SkillSelection::default())
+            .expect("skill plan");
+
+        assert!(plan.prompt_text().contains("prompt-skill body"));
+        assert!(plan.message_text().contains("message-skill body"));
+        assert!(plan
+            .inference_blocks
+            .iter()
+            .any(|block| block.contains("inference-skill body")));
+
+        cleanup(&tmp);
+    }
+
+    #[test]
+    fn skill_is_not_tool_provider_unless_declared() {
+        let tmp = make_temp_dir();
+        let skill_dir = tmp.join(".agents").join("skills").join("plain");
+        fs::create_dir_all(&skill_dir).unwrap();
+        fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: plain\nautoload: true\n---\nplain body\n",
+        )
+        .unwrap();
+        let tool_skill_dir = tmp.join(".agents").join("skills").join("toolish");
+        fs::create_dir_all(&tool_skill_dir).unwrap();
+        fs::write(
+            tool_skill_dir.join("SKILL.md"),
+            "---\nname: toolish\nautoload: true\nprovides_tools: true\n---\ntoolish body\n",
+        )
+        .unwrap();
+
+        let manager = SkillManager::new(tmp.join("global-skills"));
+        let turn = TurnContext {
+            turn_id: "turn_1".to_string(),
+            run_id: "run_1".to_string(),
+            source: "prompt".to_string(),
+            prompt: "hello".to_string(),
+            cwd: tmp.clone(),
+            versions: crate::behavior::BehaviorVersions::default(),
+            skills: SkillSelection::default(),
+        };
+
+        let plan = manager
+            .resolve_for_turn(&turn, &SkillSelection::default())
+            .expect("skill plan");
+
+        assert_eq!(plan.provided_tool_skills, vec!["toolish"]);
 
         cleanup(&tmp);
     }

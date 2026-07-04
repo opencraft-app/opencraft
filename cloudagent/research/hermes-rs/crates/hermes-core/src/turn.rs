@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 
 use crate::behavior::BehaviorVersions;
+use crate::skills::SkillSelection;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TurnStatus {
@@ -23,6 +24,7 @@ pub struct TurnContext {
     pub prompt: String,
     pub cwd: PathBuf,
     pub versions: BehaviorVersions,
+    pub skills: SkillSelection,
 }
 
 #[derive(Debug, Clone)]

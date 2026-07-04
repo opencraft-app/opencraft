@@ -278,6 +278,7 @@ mod tests {
                 prompt: "hello".to_string(),
                 cwd: PathBuf::from("."),
                 versions: BehaviorVersions::default(),
+                skills: Default::default(),
             },
             status: TurnStatus::Running,
         });
@@ -302,6 +303,7 @@ mod tests {
                 prompt: "hello".to_string(),
                 cwd: PathBuf::from("."),
                 versions: BehaviorVersions::default(),
+                skills: Default::default(),
             },
             status: TurnStatus::Running,
         });

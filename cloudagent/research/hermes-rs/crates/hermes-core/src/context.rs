@@ -229,6 +229,52 @@ pub fn compress_conversation(messages: &[Message], max_tokens: usize) -> Result<
     Ok(result)
 }
 
+/// Fit messages into a context window while preserving leading system/context
+/// messages. This keeps the runtime bounded even when no summarising
+/// compressor is configured: durable system, workspace, and skill projections
+/// stay at the front; older conversation turns are dropped before recent turns.
+pub fn fit_messages_to_context(messages: &[Message], config: ContextConfig) -> Vec<Message> {
+    let available_tokens = config
+        .max_context_length
+        .saturating_sub(config.response_buffer);
+    if available_tokens == 0 || messages.is_empty() {
+        return messages.to_vec();
+    }
+
+    let total_tokens: usize = messages.iter().map(estimate_message_tokens).sum();
+    if total_tokens <= available_tokens {
+        return messages.to_vec();
+    }
+
+    let mut leading = Vec::new();
+    let mut leading_tokens = 0usize;
+    let mut start = 0usize;
+    while let Some(message) = messages.get(start) {
+        if message.role != Role::System {
+            break;
+        }
+        leading_tokens = leading_tokens.saturating_add(estimate_message_tokens(message));
+        leading.push(message.clone());
+        start += 1;
+    }
+
+    let tail_budget = available_tokens.saturating_sub(leading_tokens);
+    let mut tail = Vec::new();
+    let mut tail_tokens = 0usize;
+    for message in messages[start..].iter().rev() {
+        let tokens = estimate_message_tokens(message);
+        if tail_tokens + tokens > tail_budget {
+            break;
+        }
+        tail_tokens += tokens;
+        tail.push(message.clone());
+    }
+    tail.reverse();
+
+    leading.extend(tail);
+    leading
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -294,5 +340,39 @@ mod tests {
         assert!(
             compressed[0].role == Role::System || compressed.iter().any(|m| m.role == Role::System)
         );
+    }
+
+    #[test]
+    fn fit_messages_to_context_preserves_leading_system_and_recent_tail() {
+        let messages = vec![
+            Message::system("system rules"),
+            Message::system("turn context"),
+            Message::user("old message ".repeat(100)),
+            Message::assistant("old answer ".repeat(100)),
+            Message::user("recent question"),
+            Message::assistant("recent answer"),
+        ];
+
+        let fitted = fit_messages_to_context(
+            &messages,
+            ContextConfig {
+                max_context_length: 80,
+                response_buffer: 10,
+                min_messages_preserve: 2,
+                compression_ratio: 0.5,
+            },
+        );
+
+        assert_eq!(fitted[0].role, Role::System);
+        assert_eq!(fitted[1].role, Role::System);
+        assert!(fitted
+            .iter()
+            .any(|message| message.content == "recent question"));
+        assert!(fitted
+            .iter()
+            .any(|message| message.content == "recent answer"));
+        assert!(!fitted
+            .iter()
+            .any(|message| message.content.starts_with("old message")));
     }
 }

@@ -37,6 +37,7 @@ mod tests {
                 prompt: prompt.to_string(),
                 cwd: std::path::PathBuf::from("."),
                 versions: crate::behavior::BehaviorVersions::default(),
+                skills: Default::default(),
             },
             resolved_behavior: ResolvedBehavior {
                 agent_version: BUILTIN_V1.to_string(),

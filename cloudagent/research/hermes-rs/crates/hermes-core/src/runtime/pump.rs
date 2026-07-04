@@ -88,6 +88,7 @@ impl AgentRuntime {
                 prompt: queued.request.prompt.clone(),
                 cwd: queued.request.cwd.clone(),
                 versions: queued.request.versions.clone(),
+                skills: queued.request.skills.clone(),
             });
             let turn_context = turn.context.clone();
             {
@@ -250,6 +251,7 @@ mod tests {
                 prompt: "hello".to_string(),
                 cwd: PathBuf::from("."),
                 versions: BehaviorVersions::default(),
+                skills: Default::default(),
             })
             .await
             .unwrap_err();
@@ -305,6 +307,7 @@ mod tests {
                 prompt: "你好".to_string(),
                 cwd: PathBuf::from("."),
                 versions: BehaviorVersions::default(),
+                skills: Default::default(),
             })
             .await
             .expect("first turn succeeds");
@@ -330,6 +333,7 @@ mod tests {
                 prompt: "我刚刚和你打过招呼吗".to_string(),
                 cwd: PathBuf::from("."),
                 versions: BehaviorVersions::default(),
+                skills: Default::default(),
             })
             .await
             .expect("second turn succeeds");
@@ -417,6 +421,7 @@ mod tests {
                     prompt: "normal".to_string(),
                     cwd: PathBuf::from("."),
                     versions: BehaviorVersions::default(),
+                    skills: Default::default(),
                 },
             )
             .await
@@ -430,6 +435,7 @@ mod tests {
                     prompt: "later".to_string(),
                     cwd: PathBuf::from("."),
                     versions: BehaviorVersions::default(),
+                    skills: Default::default(),
                 },
             )
             .await
@@ -443,6 +449,7 @@ mod tests {
                     prompt: "now".to_string(),
                     cwd: PathBuf::from("."),
                     versions: BehaviorVersions::default(),
+                    skills: Default::default(),
                 },
             )
             .await

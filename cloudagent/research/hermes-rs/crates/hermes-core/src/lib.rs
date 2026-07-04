@@ -94,7 +94,11 @@ pub use runtime::{
     RunTurnRequest, RunTurnResult,
 };
 pub use session::{AgentSession, TranscriptBlock, TranscriptEntry, TranscriptRole};
-pub use skills::{Skill, SkillInjectionPlanner, SkillManager, SkillPromptHook};
+pub use skills::{
+    Skill, SkillActivation, SkillActivationReason, SkillCatalog, SkillInjectionPlan,
+    SkillInjectionPlanner, SkillInjectionPoint, SkillManager, SkillPromptHook, SkillResolver,
+    SkillSelection,
+};
 pub use tools::{
     register_builtin_tools, register_builtin_tools_with_sub_agent, BuiltinToolProvider,
     ToolHandler, ToolProvider, ToolRegistry, ToolResult, ToolRouter,
