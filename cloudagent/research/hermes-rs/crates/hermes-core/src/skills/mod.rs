@@ -18,6 +18,13 @@ const WORKSPACE_SKILL_DIRS: &[&str] = &[
     "skills",
 ];
 
+const WORKSPACE_SKILL_BUNDLE_DIRS: &[&str] = &[
+    ".agents/skill-bundles",
+    ".codex/skill-bundles",
+    ".hermes/skill-bundles",
+    "skill-bundles",
+];
+
 /// A loaded skill with parsed metadata and content.
 #[derive(Debug, Clone)]
 pub struct Skill {
@@ -66,6 +73,7 @@ pub enum SkillInjectionPoint {
 pub struct SkillSelection {
     pub explicit: Vec<String>,
     pub disabled: Vec<String>,
+    pub bundles: Vec<String>,
 }
 
 /// Discovery result for a cwd scope.
@@ -74,6 +82,18 @@ pub struct SkillCatalog {
     pub cwd: PathBuf,
     pub roots: Vec<PathBuf>,
     pub skills: Vec<Skill>,
+    pub bundles: Vec<SkillBundle>,
+}
+
+/// A bundle activates multiple skills as one named workflow template.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkillBundle {
+    pub name: String,
+    pub description: String,
+    pub skills: Vec<String>,
+    pub content: String,
+    pub injection_point: SkillInjectionPoint,
+    pub bundle_file: PathBuf,
 }
 
 /// A resolved skill activation for one turn.
@@ -88,6 +108,7 @@ pub enum SkillActivationReason {
     Explicit,
     Autoload,
     Keyword(String),
+    Bundle(String),
 }
 
 /// The skill work product consumed by prompt/message/inference assembly.
@@ -209,6 +230,10 @@ impl SkillManager {
     pub fn discover_for_cwd(&self, cwd: &Path) -> SkillCatalog {
         let mut roots = discover_skill_roots(cwd);
         roots.push(self.skills_dir.clone());
+        let mut bundle_roots = discover_skill_bundle_roots(cwd);
+        if let Some(parent) = self.skills_dir.parent() {
+            bundle_roots.push(parent.join("skill-bundles"));
+        }
 
         let mut seen = std::collections::HashSet::new();
         let mut skills = Vec::new();
@@ -220,11 +245,22 @@ impl SkillManager {
             }
         }
         skills.sort_by(|a, b| a.name.cmp(&b.name));
+        let mut seen_bundles = std::collections::HashSet::new();
+        let mut bundles = Vec::new();
+        for root in &bundle_roots {
+            for bundle in load_bundles_from_root(root) {
+                if seen_bundles.insert(bundle.name.clone()) {
+                    bundles.push(bundle);
+                }
+            }
+        }
+        bundles.sort_by(|a, b| a.name.cmp(&b.name));
         roots.dedup();
         SkillCatalog {
             cwd: cwd.to_path_buf(),
             roots,
             skills,
+            bundles,
         }
     }
 
@@ -331,9 +367,49 @@ impl SkillResolver {
         for skill in &catalog.skills {
             by_name.insert(skill.name.as_str(), skill);
         }
+        let mut bundle_by_name: HashMap<&str, &SkillBundle> = HashMap::new();
+        for bundle in &catalog.bundles {
+            bundle_by_name.insert(bundle.name.as_str(), bundle);
+        }
 
         let mut activations = Vec::new();
+        let mut bundle_blocks = Vec::new();
         let mut selected_names = std::collections::HashSet::new();
+
+        for bundle_name in &selection.bundles {
+            if disabled.contains(bundle_name.as_str()) {
+                continue;
+            }
+            let Some(bundle) = bundle_by_name.get(bundle_name.as_str()) else {
+                return Err(Error::Config(format!(
+                    "Skill bundle '{}' not found",
+                    bundle_name
+                )));
+            };
+            bundle_blocks.push(format_skill_bundle_block(bundle));
+            for skill_name in &bundle.skills {
+                if disabled.contains(skill_name.as_str()) || selected_names.contains(skill_name) {
+                    continue;
+                }
+                let Some(skill) = by_name.get(skill_name.as_str()) else {
+                    return Err(Error::Config(format!(
+                        "Skill '{}' from bundle '{}' not found",
+                        skill_name, bundle.name
+                    )));
+                };
+                if !manager.is_available(skill) {
+                    return Err(Error::Config(format!(
+                        "Skill '{}' from bundle '{}' is not available",
+                        skill_name, bundle.name
+                    )));
+                }
+                selected_names.insert(skill.name.clone());
+                activations.push(SkillActivation {
+                    skill: (*skill).clone(),
+                    reason: SkillActivationReason::Bundle(bundle.name.clone()),
+                });
+            }
+        }
 
         for name in &selection.explicit {
             if disabled.contains(name.as_str()) {
@@ -382,6 +458,13 @@ impl SkillResolver {
         }
 
         let mut plan = build_injection_plan(activations, Some(turn.session_id.as_str()));
+        for (injection_point, block) in bundle_blocks {
+            match injection_point {
+                SkillInjectionPoint::Prompt => plan.prompt_blocks.insert(0, block),
+                SkillInjectionPoint::Message => plan.message_blocks.insert(0, block),
+                SkillInjectionPoint::Inference => plan.inference_blocks.insert(0, block),
+            }
+        }
         plan.skill_index = build_skill_index_prompt(catalog);
         Ok(plan)
     }
@@ -413,7 +496,7 @@ fn build_injection_plan(
 }
 
 pub fn build_skill_index_prompt(catalog: &SkillCatalog) -> String {
-    if catalog.skills.is_empty() {
+    if catalog.skills.is_empty() && catalog.bundles.is_empty() {
         return String::new();
     }
 
@@ -425,15 +508,38 @@ pub fn build_skill_index_prompt(catalog: &SkillCatalog) -> String {
             lines.push(format!("- {}: {}", skill.name, skill.description.trim()));
         }
     }
+    let skill_lines = lines.join("\n");
+
+    let mut bundle_lines = Vec::new();
+    for bundle in &catalog.bundles {
+        let description = bundle.description.trim();
+        let skills = bundle.skills.join(", ");
+        if description.is_empty() {
+            bundle_lines.push(format!("- {}: [{}]", bundle.name, skills));
+        } else {
+            bundle_lines.push(format!("- {}: {} [{}]", bundle.name, description, skills));
+        }
+    }
+    let bundle_section = if bundle_lines.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\n\n<available_skill_bundles cwd=\"{}\">\n{}\n</available_skill_bundles>",
+            catalog.cwd.display(),
+            bundle_lines.join("\n")
+        )
+    };
 
     format!(
         "## Skills\n\
          Cwd-scoped skills are available below. Load full skill bodies only when \
-         selected for this turn; skills are context projections, not tools unless \
+         selected for this turn. Skill bundles select multiple skills as one workflow; \
+         skills are context projections, not tools unless \
          explicitly declared as tool providers.\n\
-         <available_skills cwd=\"{}\">\n{}\n</available_skills>",
+         <available_skills cwd=\"{}\">\n{}\n</available_skills>{}",
         catalog.cwd.display(),
-        lines.join("\n")
+        skill_lines,
+        bundle_section
     )
 }
 
@@ -446,6 +552,7 @@ fn format_skill_invocation_block(
         SkillActivationReason::Explicit => "explicit".to_string(),
         SkillActivationReason::Autoload => "autoload".to_string(),
         SkillActivationReason::Keyword(keyword) => format!("keyword:{keyword}"),
+        SkillActivationReason::Bundle(bundle) => format!("bundle:{bundle}"),
     };
     let content = preprocess_skill_content(&skill.content, &skill.skill_dir, session_id);
     let mut block = format!(
@@ -471,6 +578,28 @@ fn format_skill_invocation_block(
     block
 }
 
+fn format_skill_bundle_block(bundle: &SkillBundle) -> (SkillInjectionPoint, String) {
+    let description = bundle.description.trim();
+    let skills = bundle.skills.join(", ");
+    let mut block = format!(
+        "[IMPORTANT: The `{}` skill bundle was selected for this turn. \
+         It activates these skills together: {}.]",
+        bundle.name, skills
+    );
+    if !description.is_empty() {
+        block.push_str(&format!("\n\n[Bundle description]\n{}", description));
+    }
+    let content = bundle.content.trim();
+    if !content.is_empty() {
+        block.push_str(&format!("\n\n[Bundle workflow]\n{}", content));
+    }
+    block.push_str(&format!(
+        "\n\n[Skill bundle file: {}]",
+        bundle.bundle_file.display()
+    ));
+    (bundle.injection_point.clone(), block)
+}
+
 fn preprocess_skill_content(content: &str, skill_dir: &Path, session_id: Option<&str>) -> String {
     let content = content.replace("${HERMES_SKILL_DIR}", &skill_dir.display().to_string());
     if let Some(session_id) = session_id.filter(|value| !value.is_empty()) {
@@ -481,6 +610,14 @@ fn preprocess_skill_content(content: &str, skill_dir: &Path, session_id: Option<
 }
 
 fn discover_skill_roots(cwd: &Path) -> Vec<PathBuf> {
+    discover_workspace_roots(cwd, WORKSPACE_SKILL_DIRS)
+}
+
+fn discover_skill_bundle_roots(cwd: &Path) -> Vec<PathBuf> {
+    discover_workspace_roots(cwd, WORKSPACE_SKILL_BUNDLE_DIRS)
+}
+
+fn discover_workspace_roots(cwd: &Path, relative_dirs: &[&str]) -> Vec<PathBuf> {
     let mut roots = Vec::new();
     let mut current = if cwd.is_file() {
         cwd.parent().unwrap_or(cwd).to_path_buf()
@@ -489,7 +626,7 @@ fn discover_skill_roots(cwd: &Path) -> Vec<PathBuf> {
     };
     let git_root = find_git_root(&current);
     loop {
-        for rel in WORKSPACE_SKILL_DIRS {
+        for rel in relative_dirs {
             let candidate = current.join(rel);
             if candidate.is_dir() {
                 roots.push(candidate);
@@ -534,6 +671,21 @@ fn load_skills_from_root(root: &Path) -> Vec<Skill> {
     skills
 }
 
+fn load_bundles_from_root(root: &Path) -> Vec<SkillBundle> {
+    let mut bundles = Vec::new();
+    for bundle_file in find_bundle_files(root) {
+        match load_skill_bundle(&bundle_file) {
+            Ok(bundle) => bundles.push(bundle),
+            Err(error) => debug!(
+                path = %bundle_file.display(),
+                error = %error,
+                "Could not load skill bundle"
+            ),
+        }
+    }
+    bundles
+}
+
 fn find_skill_files(root: &Path) -> Vec<PathBuf> {
     fn visit(dir: &Path, out: &mut Vec<PathBuf>) {
         let Ok(entries) = std::fs::read_dir(dir) else {
@@ -549,6 +701,40 @@ fn find_skill_files(root: &Path) -> Vec<PathBuf> {
                 continue;
             }
             if path.is_file() && name == "SKILL.md" {
+                out.push(path);
+            } else if path.is_dir() {
+                visit(&path, out);
+            }
+        }
+    }
+
+    let mut files = Vec::new();
+    visit(root, &mut files);
+    files.sort();
+    files
+}
+
+fn find_bundle_files(root: &Path) -> Vec<PathBuf> {
+    fn visit(dir: &Path, out: &mut Vec<PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("");
+            if name.starts_with('.') && name != ".agents" && name != ".codex" && name != ".hermes" {
+                continue;
+            }
+            if path.is_file()
+                && name != "SKILL.md"
+                && path
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .is_some_and(|extension| matches!(extension, "yaml" | "yml" | "md"))
+            {
                 out.push(path);
             } else if path.is_dir() {
                 visit(&path, out);
@@ -639,6 +825,60 @@ fn load_skill(skill_dir: &Path) -> Result<Skill> {
     })
 }
 
+fn load_skill_bundle(bundle_file: &Path) -> Result<SkillBundle> {
+    let raw = std::fs::read_to_string(bundle_file).map_err(|e| {
+        Error::Config(format!(
+            "Failed to read skill bundle '{}': {}",
+            bundle_file.display(),
+            e
+        ))
+    })?;
+    let file_stem = bundle_file
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| Error::Config("Invalid skill bundle filename".into()))?
+        .to_string();
+    let (metadata, body) = parse_bundle_document(&raw)?;
+
+    let name = metadata
+        .get("name")
+        .cloned()
+        .unwrap_or_else(|| file_stem.clone());
+    let skills = parse_list(
+        metadata
+            .get("skills")
+            .or_else(|| metadata.get("skill_names")),
+    );
+    if skills.is_empty() {
+        return Err(Error::Config(format!(
+            "Skill bundle '{}' must list at least one skill",
+            name
+        )));
+    }
+    let description = metadata.get("description").cloned().unwrap_or_default();
+    let content = metadata
+        .get("guidance")
+        .or_else(|| metadata.get("prompt"))
+        .or_else(|| metadata.get("content"))
+        .cloned()
+        .unwrap_or(body);
+    let injection_point = metadata
+        .get("injection")
+        .or_else(|| metadata.get("injection_point"))
+        .map(|value| parse_injection_point(value))
+        .transpose()?
+        .unwrap_or_default();
+
+    Ok(SkillBundle {
+        name,
+        description,
+        skills,
+        content,
+        injection_point,
+        bundle_file: bundle_file.to_path_buf(),
+    })
+}
+
 /// Parse YAML-like front matter delimited by `---` lines.
 ///
 /// Returns a map of key-value pairs and the remaining body content.
@@ -684,6 +924,70 @@ fn parse_front_matter(raw: &str) -> Result<(HashMap<String, String>, String)> {
     }
 
     Ok((map, body))
+}
+
+fn parse_bundle_document(raw: &str) -> Result<(HashMap<String, String>, String)> {
+    let trimmed = raw.trim_start();
+    if trimmed.starts_with("---") {
+        let (metadata, body) = parse_front_matter(raw)?;
+        return Ok((metadata, body));
+    }
+
+    Ok((parse_key_value_block(raw), String::new()))
+}
+
+fn parse_key_value_block(raw: &str) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    let mut current_list_key: Option<String> = None;
+
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        if let Some(key) = current_list_key.clone() {
+            if let Some(item) = trimmed.strip_prefix("- ") {
+                append_list_item(&mut map, &key, item.trim());
+                continue;
+            }
+        }
+
+        let Some(colon_pos) = trimmed.find(':') else {
+            current_list_key = None;
+            continue;
+        };
+        let key = trimmed[..colon_pos].trim().to_string();
+        let value = trimmed[colon_pos + 1..].trim().to_string();
+        if key.is_empty() {
+            current_list_key = None;
+            continue;
+        }
+        if value.is_empty() {
+            map.entry(key.clone()).or_insert_with(String::new);
+            current_list_key = Some(key);
+        } else {
+            map.insert(key, value);
+            current_list_key = None;
+        }
+    }
+
+    map
+}
+
+fn append_list_item(map: &mut HashMap<String, String>, key: &str, item: &str) {
+    let item = item.trim().trim_matches('"').trim_matches('\'');
+    if item.is_empty() {
+        return;
+    }
+    map.entry(key.to_string())
+        .and_modify(|value| {
+            if !value.is_empty() {
+                value.push_str(", ");
+            }
+            value.push_str(item);
+        })
+        .or_insert_with(|| item.to_string());
 }
 
 /// Parse a YAML-like list value.
@@ -1103,6 +1407,68 @@ mod tests {
             .inference_blocks
             .iter()
             .any(|block| block.contains("inference-skill body")));
+
+        cleanup(&tmp);
+    }
+
+    #[test]
+    fn skill_bundle_expands_to_multiple_skill_activations() {
+        let tmp = make_temp_dir();
+        let skills_root = tmp.join(".agents").join("skills");
+        for name in ["plan-skill", "review-skill"] {
+            let dir = skills_root.join(name);
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(
+                dir.join("SKILL.md"),
+                format!("---\nname: {name}\n---\n{name} body\n"),
+            )
+            .unwrap();
+        }
+        let bundles_root = tmp.join(".agents").join("skill-bundles");
+        fs::create_dir_all(&bundles_root).unwrap();
+        fs::write(
+            bundles_root.join("ship.yaml"),
+            "name: ship\n\
+             description: Ship-ready workflow\n\
+             skills:\n\
+               - plan-skill\n\
+               - review-skill\n\
+             guidance: Run planning before review.\n",
+        )
+        .unwrap();
+
+        let manager = SkillManager::new(tmp.join("global-skills"));
+        let turn = TurnContext {
+            turn_id: "turn_1".to_string(),
+            run_id: "run_1".to_string(),
+            session_id: "session_1".to_string(),
+            source: "prompt".to_string(),
+            prompt: "ship it".to_string(),
+            cwd: tmp.clone(),
+            versions: crate::behavior::BehaviorVersions::default(),
+            skills: SkillSelection::default(),
+        };
+
+        let plan = manager
+            .resolve_for_turn(
+                &turn,
+                &SkillSelection {
+                    bundles: vec!["ship".to_string()],
+                    ..SkillSelection::default()
+                },
+            )
+            .expect("bundle skill plan");
+
+        assert!(plan.skill_index.contains("<available_skill_bundles"));
+        assert!(plan.skill_index.contains("ship"));
+        assert!(plan.message_text().contains("skill bundle was selected"));
+        assert!(plan.message_text().contains("Run planning before review."));
+        assert!(plan.message_text().contains("plan-skill body"));
+        assert!(plan.message_text().contains("review-skill body"));
+        assert_eq!(plan.activations.len(), 2);
+        assert!(plan.activations.iter().all(|activation| {
+            activation.reason == SkillActivationReason::Bundle("ship".to_string())
+        }));
 
         cleanup(&tmp);
     }

@@ -476,6 +476,8 @@ fn merge_skill_selection(defaults: &SkillSelection, turn: &SkillSelection) -> Sk
     append_unique(&mut merged.explicit, &turn.explicit);
     append_unique(&mut merged.disabled, &defaults.disabled);
     append_unique(&mut merged.disabled, &turn.disabled);
+    append_unique(&mut merged.bundles, &defaults.bundles);
+    append_unique(&mut merged.bundles, &turn.bundles);
     merged
 }
 
@@ -918,6 +920,7 @@ mod tests {
         .with_default_skills(SkillSelection {
             explicit: vec!["selected-skill".to_string()],
             disabled: Vec::new(),
+            bundles: Vec::new(),
         });
         let turn = TurnContext {
             turn_id: "turn_1".to_string(),

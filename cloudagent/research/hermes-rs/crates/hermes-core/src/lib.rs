@@ -100,7 +100,7 @@ pub use runtime::{
 };
 pub use session::{AgentSession, TranscriptBlock, TranscriptEntry, TranscriptRole};
 pub use skills::{
-    Skill, SkillActivation, SkillActivationReason, SkillCatalog, SkillInjectionPlan,
+    Skill, SkillActivation, SkillActivationReason, SkillBundle, SkillCatalog, SkillInjectionPlan,
     SkillInjectionPoint, SkillManager, SkillResolver, SkillSelection,
 };
 pub use tools::{
