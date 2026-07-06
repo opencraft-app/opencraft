@@ -302,12 +302,13 @@ func (s *Service) Quote(ctx context.Context, req QuoteRequest) (*QuoteResult, er
 
 	// 6. 拍平 QuoteResult（取首条 data）
 	d := priceResp.Data[0]
+	price, totalCost, realTotalCost := s.quoteAmountFields(d)
 	result := &QuoteResult{
 		BundleID:       req.BundleID,
 		BundleName:     bundle.BundleName,
-		Price:          string(d.Price),
-		TotalCost:      string(d.TotalCost),
-		RealTotalCost:  string(d.RealTotalCost),
+		Price:          price,
+		TotalCost:      totalCost,
+		RealTotalCost:  realTotalCost,
 		Currency:       d.Currency,
 		TimeSpan:       d.TimeSpan,
 		TimeUnit:       d.TimeUnit,
@@ -479,12 +480,13 @@ func (s *Service) QuoteRenew(ctx context.Context, req QuoteRenewRequest) (*Quote
 
 	// 6. 拍平 QuoteResult
 	d := priceResp.Data[0]
+	price, totalCost, realTotalCost := s.quoteAmountFields(d)
 	result := &QuoteResult{
 		BundleID:       req.BundleID,
 		BundleName:     bundle.BundleName,
-		Price:          string(d.Price),
-		TotalCost:      string(d.TotalCost),
-		RealTotalCost:  string(d.RealTotalCost),
+		Price:          price,
+		TotalCost:      totalCost,
+		RealTotalCost:  realTotalCost,
 		Currency:       d.Currency,
 		TimeSpan:       d.TimeSpan,
 		TimeUnit:       d.TimeUnit,
@@ -515,6 +517,88 @@ func (s *Service) QuoteRenew(ctx context.Context, req QuoteRenewRequest) (*Quote
 		result.GoodsNum = req.GoodsNum
 	}
 	return result, nil
+}
+
+func (s *Service) quoteAmountFields(d jifeiclient.GetPriceData) (price, totalCost, realTotalCost string) {
+	price = string(d.Price)
+	totalCost = string(d.TotalCost)
+	realTotalCost = string(d.RealTotalCost)
+
+	if !strings.EqualFold(s.currency, "USD") || d.HighPrecisionPrice == nil {
+		return price, totalCost, realTotalCost
+	}
+	// 国际站高精度金额字段单位为 USD * 1e8；trade 对前端保持“分”单位契约，
+	// 因此这里除以 1e6 输出美分，前端 centsToYuan 再除以 100 后即为 USD 主币种。
+	if v := highPrecisionAmountToCents(string(d.HighPrecisionPrice.PriceHigh)); v != "" {
+		price = v
+	}
+	if v := highPrecisionAmountToCents(string(d.HighPrecisionPrice.TotalCostHigh)); v != "" {
+		totalCost = v
+	}
+	if v := highPrecisionAmountToCents(string(d.HighPrecisionPrice.RealTotalCostHigh)); v != "" {
+		realTotalCost = v
+	}
+	return price, totalCost, realTotalCost
+}
+
+func highPrecisionAmountToCents(raw string) string {
+	return scaleDecimalString(raw, 6)
+}
+
+func scaleDecimalString(raw string, scale int) string {
+	s := strings.TrimSpace(raw)
+	if s == "" || scale < 0 {
+		return ""
+	}
+	negative := false
+	if s[0] == '-' || s[0] == '+' {
+		negative = s[0] == '-'
+		s = strings.TrimSpace(s[1:])
+	}
+	if s == "" {
+		return ""
+	}
+
+	parts := strings.Split(s, ".")
+	if len(parts) > 2 {
+		return ""
+	}
+	intPart := parts[0]
+	fracPart := ""
+	if len(parts) == 2 {
+		fracPart = parts[1]
+	}
+	digits := intPart + fracPart
+	if digits == "" {
+		return ""
+	}
+	for _, ch := range digits {
+		if ch < '0' || ch > '9' {
+			return ""
+		}
+	}
+
+	totalScale := scale + len(fracPart)
+	if len(digits) <= totalScale {
+		digits = strings.Repeat("0", totalScale-len(digits)+1) + digits
+	}
+	point := len(digits) - totalScale
+	whole := strings.TrimLeft(digits[:point], "0")
+	if whole == "" {
+		whole = "0"
+	}
+	frac := strings.TrimRight(digits[point:], "0")
+	if frac == "" {
+		if negative && whole != "0" {
+			return "-" + whole
+		}
+		return whole
+	}
+	out := whole + "." + frac
+	if negative {
+		return "-" + out
+	}
+	return out
 }
 
 // validateQuoteRenewRequest 校验 QuoteRenewRequest 必填字段。
