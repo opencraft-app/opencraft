@@ -81,7 +81,10 @@ pub use context::{
 pub use context_files::{
     load_context_dir, load_default_context_files, load_workspace_context, scan_context_content,
 };
-pub use context_hints::SubdirectoryContextHintTracker;
+pub use context_hints::{
+    ContextHintBatch, ContextHintTracker, HintFile, HintFileScanner, HintInjectionPolicy,
+    SubdirectoryContextHintTracker, ToolResultAugmentor,
+};
 pub use distillation::distill_session_to_memory;
 pub use error::{Error, Result};
 pub use events::{AgentEvent, AgentEventSink, RuntimeHostEvent};

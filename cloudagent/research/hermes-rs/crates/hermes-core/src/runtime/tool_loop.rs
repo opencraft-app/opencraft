@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tracing::{debug, error, warn};
 
 use crate::client::ToolCall;
+use crate::context_hints::ToolResultAugmentor;
 use crate::error::{Error, Result};
 use crate::events::AgentEvent;
 use crate::runtime::agent::AgentExecutor;
@@ -83,11 +84,8 @@ impl AgentExecutor {
                     .lock()
                     .await
                     .maybe_hint_for_tool_call(&name, &hint_args);
-                if let Some(hint) = hint {
-                    if !result.content.is_empty() {
-                        result.content.push_str("\n\n");
-                    }
-                    result.content.push_str(&hint);
+                if let Some(hints) = hint {
+                    ToolResultAugmentor::append_context_hints(&mut result, &hints);
                 }
             }
             debug!(tool = %name, success = result.success, "Tool execution completed");

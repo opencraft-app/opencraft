@@ -13,7 +13,7 @@ use tracing::{debug, error, info, instrument, warn};
 use crate::client::{Message, OpenAIClient, ToolCall};
 use crate::config::{runtime_config, BehaviorSettings};
 use crate::context::ContextConfig;
-use crate::context_hints::SubdirectoryContextHintTracker;
+use crate::context_hints::ContextHintTracker;
 use crate::error::{Error, Result};
 use crate::events::{AgentEvent, AgentEventSink};
 use crate::hooks::{GateHook, NoopGateHook, PromptTransformHook};
@@ -82,7 +82,7 @@ pub struct AgentExecutor {
     pub(super) prompt_transform_hooks: Vec<Arc<dyn PromptTransformHook>>,
     pub(super) skills_root_dir: PathBuf,
     pub(super) skills_autoload: bool,
-    pub(super) subdirectory_context_hints: Arc<Mutex<SubdirectoryContextHintTracker>>,
+    pub(super) subdirectory_context_hints: Arc<Mutex<ContextHintTracker>>,
     pub(super) system_prompt_cache: Arc<RwLock<SystemPromptCache>>,
     default_skills: SkillSelection,
 }
@@ -103,7 +103,7 @@ impl AgentExecutor {
             prompt_transform_hooks: Vec::new(),
             skills_root_dir: runtime_config().skills.root_dir.clone(),
             skills_autoload: runtime_config().skills.autoload,
-            subdirectory_context_hints: Arc::new(Mutex::new(SubdirectoryContextHintTracker::new(
+            subdirectory_context_hints: Arc::new(Mutex::new(ContextHintTracker::new(
                 std::env::current_dir().unwrap_or_else(|_| ".".into()),
             ))),
             system_prompt_cache: Arc::new(RwLock::new(SystemPromptCache::default())),
@@ -131,7 +131,7 @@ impl AgentExecutor {
             prompt_transform_hooks: Vec::new(),
             skills_root_dir: runtime_config().skills.root_dir.clone(),
             skills_autoload: runtime_config().skills.autoload,
-            subdirectory_context_hints: Arc::new(Mutex::new(SubdirectoryContextHintTracker::new(
+            subdirectory_context_hints: Arc::new(Mutex::new(ContextHintTracker::new(
                 std::env::current_dir().unwrap_or_else(|_| ".".into()),
             ))),
             system_prompt_cache: Arc::new(RwLock::new(SystemPromptCache::default())),
@@ -1189,9 +1189,16 @@ mod tests {
             .unwrap()
             .remove(0)
             .1;
-        assert!(first.content.contains("<subdirectory_context_hints>"));
-        assert!(first.content.contains("crates/demo/AGENTS.md"));
-        assert!(first.content.contains("demo agent rules"));
+        let first_json: serde_json::Value = serde_json::from_str(&first.content).unwrap();
+        assert_eq!(first_json["content"], "file body");
+        assert_eq!(
+            first_json["_hermes_context_hints"]["files"][0]["path"],
+            "crates/demo/AGENTS.md"
+        );
+        assert_eq!(
+            first_json["_hermes_context_hints"]["files"][0]["content"],
+            "demo agent rules"
+        );
 
         let second = agent
             .execute_tools(vec![call], None)
