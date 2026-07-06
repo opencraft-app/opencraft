@@ -64,19 +64,20 @@ The expected production-safe order is:
 
 ```text
 build and sync image to ap-beijing, ap-shanghai, ap-singapore
--> read-only preflight Singapore production pools and VM inventory
+-> read-only preflight Beijing sandbox pools and VM inventory
 -> manual gate 1
+-> refresh Beijing sandbox Hermes pools
+-> repair existing Beijing Hermes VMs
+-> read-only preflight Singapore production pools and VM inventory
+-> manual gate 2
 -> refresh Singapore production Hermes pools
 -> repair existing Singapore production Hermes VMs
--> manual gate 2
--> refresh Beijing main sandbox pools
--> repair existing Beijing Hermes VMs
 -> manual gate 3
 -> refresh Shanghai production pools
 -> repair existing Shanghai production Hermes VMs
 ```
 
-Do not skip the Singapore read-only preflight or publish Shanghai before Beijing passes unless the user explicitly requests that risk.
+Beijing sandbox is the test pre-release environment and must roll out before Singapore or Shanghai production. Do not skip the read-only preflight stages or publish Shanghai before Beijing passes unless the user explicitly requests that risk.
 
 ## Verification Checklist
 
@@ -85,6 +86,7 @@ Before claiming success, inspect the pipeline logs for:
 - Build stage printed `HERMES_IMAGE_NAME` and `HERMES_IMAGE_ID_AP_BEIJING`, `HERMES_IMAGE_ID_AP_SHANGHAI`, `HERMES_IMAGE_ID_AP_SINGAPORE`.
 - New-image flow ran `python3 images/build-image.py --runtime hermes ... --with-verify`; reuse flow printed `Reusing existing Hermes CVM image by exact name`.
 - Singapore preflight resolved the ap-singapore image, listed sgprod Hermes VM rows, and failed before manual approval if inventory was empty.
+- Beijing preflight resolved the ap-beijing image, listed beijing-sandbox Hermes VM rows, and failed before manual approval if inventory was empty.
 - Singapore stages use `sgprod:ap-singapore:kubeconfig_sgprod`.
 - Beijing stages use `beijing-sandbox:ap-beijing:kubeconfig_beijing_sandbox`.
 - Shanghai stages use `shprod:ap-shanghai:kubeconfig_shprod`.
