@@ -181,7 +181,7 @@ func Load(path string) (Config, error) {
 	if !cfg.Audit.Stdout && !cfg.Audit.OTLP.Enabled {
 		cfg.Audit.Stdout = true
 	}
-	applyRouteBaseURLOverrides(&cfg)
+	applyRouteEnvOverrides(&cfg)
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -316,15 +316,21 @@ func normalizeRouteMode(mode string) string {
 	return strings.ToLower(strings.TrimSpace(mode))
 }
 
-func applyRouteBaseURLOverrides(cfg *Config) {
+func applyRouteEnvOverrides(cfg *Config) {
 	for i := range cfg.Routes {
 		routeID := strings.TrimSpace(cfg.Routes[i].ID)
 		if routeID == "" {
 			continue
 		}
-		envName := "CLOUDLADDERGATEWAY_ROUTE_" + envToken(routeID) + "_BASE_URL"
-		if value := strings.TrimSpace(os.Getenv(envName)); value != "" {
+		envPrefix := "CLOUDLADDERGATEWAY_ROUTE_" + envToken(routeID)
+		if value := strings.TrimSpace(os.Getenv(envPrefix + "_BASE_URL")); value != "" {
 			cfg.Routes[i].Upstream.BaseURL = value
+		}
+		if value := strings.TrimSpace(os.Getenv(envPrefix + "_HOST_HEADER")); value != "" {
+			if cfg.Routes[i].Upstream.Headers == nil {
+				cfg.Routes[i].Upstream.Headers = map[string]string{}
+			}
+			cfg.Routes[i].Upstream.Headers["Host"] = value
 		}
 	}
 }
