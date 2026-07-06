@@ -9,7 +9,8 @@ import (
 )
 
 // registerUserRoutes 挂用户侧 /tickets 路由。
-// 使用同包内的 helper：writeErr（errors.go）与 toTicketDTO/toMessageDTO（dto.go）。
+// 使用同包内的 helper：writeErr（errors.go）与 toTicketDTO/toMessageDTO（dto.go）、
+// validateUUID/requireNonEmpty/bindAndValidateJSON（validate.go）。
 func registerUserRoutes(r *gin.Engine, svc *service.Service) {
 	g := r.Group("/tickets", userAuthMiddleware())
 
@@ -29,8 +30,16 @@ func registerUserRoutes(r *gin.Engine, svc *service.Service) {
 			Category string `json:"category"`
 			Body     string `json:"body"`
 		}
-		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_body"})
+		if !bindAndValidateJSON(c, &req) {
+			return
+		}
+		if !requireNonEmpty(c, req.Subject, "subject") ||
+			!requireNonEmpty(c, req.Category, "category") ||
+			!requireNonEmpty(c, req.Body, "body") {
+			return
+		}
+		if !requireMaxLength(c, req.Subject, maxSubjectLen, "subject") ||
+			!requireMaxLength(c, req.Body, maxBodyLen, "body") {
 			return
 		}
 		uid := c.GetString("user_id")
@@ -44,6 +53,9 @@ func registerUserRoutes(r *gin.Engine, svc *service.Service) {
 	})
 
 	g.GET("/:id", func(c *gin.Context) {
+		if !validateUUID(c, "id") {
+			return
+		}
 		uid := c.GetString("user_id")
 		t, msgs, err := svc.GetMyTicketDetail(c.Request.Context(), uid, c.Param("id"))
 		if err != nil {
@@ -57,11 +69,19 @@ func registerUserRoutes(r *gin.Engine, svc *service.Service) {
 	})
 
 	g.POST("/:id/messages", func(c *gin.Context) {
+		if !validateUUID(c, "id") {
+			return
+		}
 		var req struct {
 			Body string `json:"body"`
 		}
-		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_body"})
+		if !bindAndValidateJSON(c, &req) {
+			return
+		}
+		if !requireNonEmpty(c, req.Body, "body") {
+			return
+		}
+		if !requireMaxLength(c, req.Body, maxBodyLen, "body") {
 			return
 		}
 		uid := c.GetString("user_id")

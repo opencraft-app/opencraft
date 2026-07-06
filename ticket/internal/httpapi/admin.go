@@ -16,6 +16,7 @@ import (
 //   - toTicketDTO(s)     dto.go
 //   - toMessageDTO(s)    dto.go
 //   - adminAuthMiddleware middleware.go
+//   - validateUUID       validate.go
 //
 // Go 同 package 内跨文件符号无需 import，直接可见。
 func registerAdminRoutes(r *gin.Engine, svc *service.Service, adminToken string) {
@@ -34,6 +35,9 @@ func registerAdminRoutes(r *gin.Engine, svc *service.Service, adminToken string)
 	})
 
 	g.GET("/:id", func(c *gin.Context) {
+		if !validateUUID(c, "id") {
+			return
+		}
 		realm := c.GetString("realm")
 		t, msgs, err := svc.AdminGetTicketDetail(c.Request.Context(), realm, c.Param("id"))
 		if err != nil {
@@ -47,11 +51,19 @@ func registerAdminRoutes(r *gin.Engine, svc *service.Service, adminToken string)
 	})
 
 	g.POST("/:id/reply", func(c *gin.Context) {
+		if !validateUUID(c, "id") {
+			return
+		}
 		var req struct {
 			Body string `json:"body"`
 		}
-		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_body"})
+		if !bindAndValidateJSON(c, &req) {
+			return
+		}
+		if !requireNonEmpty(c, req.Body, "body") {
+			return
+		}
+		if !requireMaxLength(c, req.Body, maxBodyLen, "body") {
 			return
 		}
 		realm := c.GetString("realm")
@@ -65,12 +77,17 @@ func registerAdminRoutes(r *gin.Engine, svc *service.Service, adminToken string)
 	})
 
 	g.PATCH("/:id/status", func(c *gin.Context) {
+		if !validateUUID(c, "id") {
+			return
+		}
 		var req struct {
 			Status string `json:"status"`
 			Note   string `json:"note"`
 		}
-		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_body"})
+		if !bindAndValidateJSON(c, &req) {
+			return
+		}
+		if !requireNonEmpty(c, req.Status, "status") {
 			return
 		}
 		realm := c.GetString("realm")
