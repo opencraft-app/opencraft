@@ -137,6 +137,7 @@ let pendingUserId: string | undefined;
 let identifiedUserId: string | undefined;
 let activeRegion: Region | undefined;
 let activeAppSurface = "lightvela-web";
+let activeAppKey: string | undefined;
 
 /**
  * URL 来源参数捕获 —— 首次进入站点时从 URL 读取 `from` 及标准 UTM 参数，
@@ -367,6 +368,7 @@ export async function initDatong(
 
       client = instance;
       activeRegion = config.region;
+      activeAppKey = config.appKey;
       applyPendingUser();
 
       // 来源即时上报：SDK 初始化成功后，如果有 URL 来源参数（from / utm_*），
@@ -420,10 +422,60 @@ export function disableDatong(): void {
   identifiedUserId = undefined;
   client = null;
   initPromise = null;
+  activeAppKey = undefined;
 }
 
 export function getDatong(): DatongClient | null {
   return client;
+}
+
+/**
+ * 只读诊断快照 —— 用于现网验证 SDK 是否正常初始化、公参是否注入。
+ *
+ * 在浏览器控制台执行：
+ *   __datongDebug()          // 打印诊断信息
+ *   __datongDebug().ready    // true 表示 SDK 已初始化
+ *
+ * 不暴露 appKey 明文，只返回前 8 位 + 掩码。
+ * 仅在浏览器环境挂载，SSR 安全。
+ */
+type DatongDebugSnapshot = {
+  ready: boolean;
+  region: string | undefined;
+  appSite: string;
+  appSurface: string;
+  appKeyMasked: string;
+  userId: string | undefined;
+  hasRefSource: boolean;
+  refFrom: string | undefined;
+  envEnabled: boolean | undefined;
+  envAppKeyPresent: boolean;
+};
+
+export function getDatongDebugSnapshot(): DatongDebugSnapshot {
+  const env = readDatongEnv();
+  const enabledVal = envValue(env, "NEXT_PUBLIC_DATONG_ENABLED", "VITE_DATONG_ENABLED");
+  const appKeyVal = envValue(env, "NEXT_PUBLIC_DATONG_APPKEY", "VITE_DATONG_APPKEY");
+  const stored = loadStoredRefSource();
+  const appKey = activeAppKey ?? appKeyVal ?? "";
+  return {
+    ready: client !== null,
+    region: activeRegion ?? REGION,
+    appSite: `lightvela-${activeRegion ?? REGION}`,
+    appSurface: activeAppSurface,
+    appKeyMasked: appKey ? `${appKey.slice(0, 8)}****` : "(empty)",
+    userId: identifiedUserId,
+    hasRefSource: stored !== null,
+    refFrom: stored?.ref_from,
+    envEnabled: enabledVal ? isTruthy(enabledVal) : undefined,
+    envAppKeyPresent: Boolean(appKeyVal),
+  };
+}
+
+// 浏览器环境挂载到 window.__datongDebug，控制台可直接调用
+if (typeof window !== "undefined") {
+  (window as unknown as { __datongDebug?: () => DatongDebugSnapshot }).__datongDebug =
+    getDatongDebugSnapshot;
 }
 
 function sanitizeBusinessParams(params: DatongBusinessParams | undefined): DatongBusinessParams | undefined {
@@ -481,6 +533,7 @@ export function resetDatongForTest(): void {
   pendingUserId = undefined;
   identifiedUserId = undefined;
   activeRegion = undefined;
+  activeAppKey = undefined;
   activeAppSurface = "lightvela-web";
 }
 
