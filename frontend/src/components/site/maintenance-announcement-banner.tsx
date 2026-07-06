@@ -1,31 +1,57 @@
 /**
- * LightVela 付费版本公告条（北京时间 2026-08-16 00:00 自动撤下）
+ * 首页公告条。
  *
  * 显示位置：仅 landing（"/"）页顶部。
- * 显示条件：国内站首页且未到撤下时刻、且用户未点击关闭。
+ * 显示条件：国内站首页、存在未过期且未关闭的公告。
  * 布局方式：普通文档流顶部条，出现时把首页整体向下推，避免覆盖首屏内容。
  *
- * 关闭行为：localStorage key 带版本号，下次新公告换 ID 即可重新弹。
- *
- * 过期处理：构建期常量 EXPIRES_AT 是北京时间 2026-08-16 00:00 (UTC+8)
- * 对应的 Unix 毫秒，到期后无论 localStorage 状态都不再显示。
+ * 关闭行为：localStorage key 按公告 ID 分别记忆；下一次发新公告时换 ID 即可重新弹。
  */
 
-import { Megaphone, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Megaphone, X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useT } from "@/i18n/t";
 import { stripPublicSiteLocalePrefix } from "@/lib/public-site-routing";
 import { isCN } from "@/lib/region";
+import { cn } from "@/lib/utils";
 
-/** 这条公告的唯一 ID。下一次发新公告时改这个 key（例如 "0601"），让用户重新看到。 */
-const ANNOUNCEMENT_ID = "0715-paid-version-announcement-v1";
+type AnnouncementItem = {
+  id: string;
+  message: string;
+  expiresAt: number;
+  href?: string;
+  actionLabel?: string;
+};
 
-const STORAGE_KEY = `lw-announcement-dismissed:${ANNOUNCEMENT_ID}`;
+/** 公告顺序即轮播顺序；Hermes 版本升级公告必须排在第一位。 */
+const HERMES_UPGRADE_ANNOUNCEMENT_ID = "0706-hermes-agent-upgrade";
+const PAID_VERSION_ANNOUNCEMENT_ID = "0715-paid-version-announcement-v1";
+const ANNOUNCEMENT_IDS = [
+  HERMES_UPGRADE_ANNOUNCEMENT_ID,
+  PAID_VERSION_ANNOUNCEMENT_ID,
+] as const;
 
+/** 北京时间 2026-07-07 02:00:00 = UTC 2026-07-06 18:00:00 */
+const HERMES_UPGRADE_EXPIRES_AT = Date.UTC(
+  2026,
+  6 /* 0-indexed: July */,
+  6,
+  18,
+  0,
+  0,
+);
 /** 北京时间 2026-08-16 00:00:00 = UTC 2026-08-15 16:00:00 */
-const EXPIRES_AT = Date.UTC(2026, 7 /* 0-indexed: August */, 15, 16, 0, 0);
+const PAID_VERSION_EXPIRES_AT = Date.UTC(
+  2026,
+  7 /* 0-indexed: August */,
+  15,
+  16,
+  0,
+  0,
+);
 const MAX_SAFE_TIMEOUT_MS = 2_147_000_000;
+const CAROUSEL_INTERVAL_MS = 6_000;
 
 /** 显示的路径白名单。国际站会先剥离 /en-us、/zh-cn、/zh-sg 等语言前缀。 */
 const VISIBLE_PATHS = new Set<string>(["/"]);
@@ -35,78 +61,185 @@ const ANNOUNCEMENT_HREF = "/docs/announcements/public-beta";
 /** 公告条占据的页面高度（px）。 */
 export const ANNOUNCEMENT_BANNER_HEIGHT_PX = 36;
 
+function getStorageKey(id: string) {
+  return `lw-announcement-dismissed:${id}`;
+}
+
 export function MaintenanceAnnouncementBanner() {
   const t = useT();
   const pathname = usePathname();
-  const message = t(
-    "LightVela 计划将于 2026 年 7 月 15 日起转为付费服务；正式转为付费后，内测用户现有套餐的有效期将额外延长 1 个月。",
-  );
+  const announcements: AnnouncementItem[] = [
+    {
+      id: HERMES_UPGRADE_ANNOUNCEMENT_ID,
+      expiresAt: HERMES_UPGRADE_EXPIRES_AT,
+      message: t(
+        "通知：我们将于北京时间 2026 年 7 月 6 日 22:00 至次日 02:00，对 Hermes Agent 进行后台版本升级，升级期间可能导致智能体对话或任务执行短暂中止，带来不便敬请谅解。",
+      ),
+    },
+    {
+      id: PAID_VERSION_ANNOUNCEMENT_ID,
+      expiresAt: PAID_VERSION_EXPIRES_AT,
+      href: ANNOUNCEMENT_HREF,
+      message: t(
+        "LightVela 计划将于 2026 年 7 月 15 日起转为付费服务；正式转为付费后，内测用户现有套餐的有效期将额外延长 1 个月。",
+      ),
+      actionLabel: t("查看详情"),
+    },
+  ];
   // 默认不显示，挂载时再读 localStorage —— 避免 SSR / 首屏 flash 不一致
-  const [dismissed, setDismissed] = useState(true);
-  /** 组件挂载后同步刷新一次"是否已过期"，并在到期时刻 setTimeout 强制隐藏 */
-  const [expired, setExpired] = useState(() => Date.now() >= EXPIRES_AT);
+  const [dismissedIds, setDismissedIds] = useState<Set<string> | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [paused, setPaused] = useState(false);
 
   useEffect(() => {
     try {
-      setDismissed(window.localStorage.getItem(STORAGE_KEY) === "1");
+      const nextDismissedIds = new Set<string>();
+      for (const id of ANNOUNCEMENT_IDS) {
+        if (window.localStorage.getItem(getStorageKey(id)) === "1") {
+          nextDismissedIds.add(id);
+        }
+      }
+      setDismissedIds(nextDismissedIds);
     } catch {
       // 隐私模式 / 禁用 storage：当作未关闭，正常显示
-      setDismissed(false);
+      setDismissedIds(new Set());
     }
   }, []);
 
-  // 用户挂着浏览器跨过撤下时间的场景：不依赖刷新 / 切路由，到点强制隐藏。
+  // 用户挂着浏览器跨过撤下时间的场景：不依赖刷新 / 切路由，到点强制隐藏最早过期的公告。
   // setTimeout 上限约 24 天；距离过期太久时跳过定时器，后续访问会重新计算过期状态。
   useEffect(() => {
-    const remaining = EXPIRES_AT - Date.now();
-    if (remaining <= 0) {
-      setExpired(true);
-      return;
-    }
+    const remainingTimes = [
+      HERMES_UPGRADE_EXPIRES_AT - now,
+      PAID_VERSION_EXPIRES_AT - now,
+    ].filter((remainingTime) => remainingTime > 0);
+    if (remainingTimes.length === 0) return;
+    const remaining = Math.min(...remainingTimes);
     if (remaining > MAX_SAFE_TIMEOUT_MS) return;
-    const timer = setTimeout(() => setExpired(true), remaining);
+    const timer = setTimeout(() => setNow(Date.now()), remaining);
     return () => clearTimeout(timer);
-  }, []);
+  }, [now]);
+
+  const visibleAnnouncements =
+    dismissedIds === null
+      ? []
+      : announcements.filter(
+          (announcement) =>
+            now < announcement.expiresAt && !dismissedIds.has(announcement.id),
+        );
+
+  useEffect(() => {
+    if (visibleAnnouncements.length === 0) return;
+    setActiveIndex((current) =>
+      current >= visibleAnnouncements.length ? 0 : current,
+    );
+  }, [visibleAnnouncements.length]);
+
+  useEffect(() => {
+    if (paused || visibleAnnouncements.length <= 1) return;
+    const timer = setInterval(() => {
+      setActiveIndex((current) => (current + 1) % visibleAnnouncements.length);
+    }, CAROUSEL_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [paused, visibleAnnouncements.length]);
 
   const visible =
     isCN &&
     pathname !== null &&
-    !expired &&
     VISIBLE_PATHS.has(stripPublicSiteLocalePrefix(pathname)) &&
-    !dismissed;
+    visibleAnnouncements.length > 0;
 
-  if (!visible) return null;
+  const activeAnnouncement =
+    visibleAnnouncements[activeIndex] ?? visibleAnnouncements[0];
+
+  if (!visible || activeAnnouncement == null) return null;
+
+  const showCarouselControls = visibleAnnouncements.length > 1;
+  const goToPreviousAnnouncement = () => {
+    setActiveIndex(
+      (current) =>
+        (current + visibleAnnouncements.length - 1) %
+        visibleAnnouncements.length,
+    );
+  };
+  const goToNextAnnouncement = () => {
+    setActiveIndex((current) => (current + 1) % visibleAnnouncements.length);
+  };
+  const dismissActiveAnnouncement = () => {
+    try {
+      window.localStorage.setItem(getStorageKey(activeAnnouncement.id), "1");
+    } catch {
+      /* 写不进去也无妨，本次 session 视觉上隐藏即可 */
+    }
+    setDismissedIds((current) => {
+      const nextDismissedIds = new Set(current ?? []);
+      nextDismissedIds.add(activeAnnouncement.id);
+      return nextDismissedIds;
+    });
+  };
 
   return (
     <div
       // 公告条强制 36px 单行高（h-9）。喇叭和文案打成一个 inline-flex 整体，
-      // 在 flex-1 容器里居中。X 按钮 absolute 脱离居中流，链接上 pr-8 安全
-      // padding 避免长文字撞到 X。窄屏文案放不下时整组横向滚动看完。
+      // 窄屏时左对齐横向滚动，避免长文案被居中溢出截掉开头；右侧用 margin
+      // 给 absolute 按钮留安全区，避免文字被关闭/轮播按钮遮挡。
       className="relative flex h-9 items-center justify-center border-b border-amber-300 bg-amber-50 px-4 text-sm text-amber-950 shadow-sm"
       role="status"
       aria-live="polite"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocus={() => setPaused(true)}
+      onBlur={() => setPaused(false)}
     >
-      <div className="flex min-w-0 flex-1 justify-center overflow-x-auto whitespace-nowrap">
-        <a
-          href={ANNOUNCEMENT_HREF}
-          className="inline-flex items-center gap-2 pr-8 leading-9 text-amber-950 no-underline hover:underline hover:underline-offset-4"
-        >
-          <Megaphone className="h-4 w-4 shrink-0" aria-hidden="true" />
-          {message}
-          <span className="font-medium">{t("查看详情")}</span>
-        </a>
+      <div
+        className={cn(
+          "mr-8 flex min-w-0 flex-1 justify-start overflow-x-auto whitespace-nowrap sm:justify-center",
+          showCarouselControls ? "sm:mr-24" : null,
+        )}
+      >
+        {activeAnnouncement.href ? (
+          <a
+            href={activeAnnouncement.href}
+            className="inline-flex shrink-0 items-center gap-2 leading-9 text-amber-950 no-underline hover:underline hover:underline-offset-4"
+          >
+            <Megaphone className="h-4 w-4 shrink-0" aria-hidden="true" />
+            {activeAnnouncement.message}
+            {activeAnnouncement.actionLabel ? (
+              <span className="font-medium">{activeAnnouncement.actionLabel}</span>
+            ) : null}
+          </a>
+        ) : (
+          <span className="inline-flex shrink-0 items-center gap-2 leading-9">
+            <Megaphone className="h-4 w-4 shrink-0" aria-hidden="true" />
+            {activeAnnouncement.message}
+          </span>
+        )}
       </div>
+      {showCarouselControls ? (
+        <div className="absolute right-10 top-1/2 hidden -translate-y-1/2 items-center gap-1 sm:flex">
+          <button
+            type="button"
+            aria-label={t("上一条公告")}
+            onClick={goToPreviousAnnouncement}
+            className="rounded p-0.5 transition-colors hover:bg-amber-100"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            aria-label={t("下一条公告")}
+            onClick={goToNextAnnouncement}
+            className="rounded p-0.5 transition-colors hover:bg-amber-100"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      ) : null}
       <button
         type="button"
         aria-label={t("关闭公告")}
-        onClick={() => {
-          try {
-            window.localStorage.setItem(STORAGE_KEY, "1");
-          } catch {
-            /* 写不进去也无妨，本次 session 视觉上隐藏即可 */
-          }
-          setDismissed(true);
-        }}
+        onClick={dismissActiveAnnouncement}
         className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-0.5 transition-colors hover:bg-amber-100"
       >
         <X className="h-4 w-4" />
