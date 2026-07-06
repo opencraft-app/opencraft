@@ -74,6 +74,18 @@ describe("marketing channel copy", () => {
     expect(screen.getByText("现在可以将 Hermes Agent 接入企业微信，在企业微信会话中直接与云端智能伙伴对话。")).toBeInTheDocument();
   });
 
+  it("mentions skill packages in the June changelog", () => {
+    render(
+      <MemoryRouter>
+        <ChangelogPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("2026 年 6 月")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "新增技能包" })).toBeInTheDocument();
+    expect(screen.getByText("LightVela 新增技能包入口，支持浏览 SkillHub 上的精选技能组合，并一键安装到你的 Hermes Agent。")).toBeInTheDocument();
+  });
+
   it("mentions automations in the May changelog", () => {
     render(
       <MemoryRouter>

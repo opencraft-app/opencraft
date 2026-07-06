@@ -164,6 +164,12 @@ function ChangelogContent() {
       month: t("2026 年 6 月"),
       entries: [
         {
+          id: "skill-packages",
+          title: t("新增技能包"),
+          desc: t("LightVela 新增技能包入口，支持浏览 SkillHub 上的精选技能组合，并一键安装到你的 Hermes Agent。"),
+          visual: "none",
+        },
+        {
           id: "cloud-storage",
           title: t("LightVela 支持云存储"),
           desc: t("现在可以在 LightVela 中查看和管理 Hermes Agent 的云存储文件，上传、下载、整理工作资料更方便。"),
