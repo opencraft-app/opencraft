@@ -23,11 +23,13 @@ type DatongEnv = {
 
 // universal-report SDK 客户端类型 —— 采用宽松结构定义，仅暴露业务实际调用的成员，
 // 便于与 SDK 内部私有实现解耦、方便后续版本升级。
+//
+// SDK reportEvent 的 IContext 没有 eid 字段，eid 需放在 businessParams.eid 里，
+// SDK formatContext 从 businessParams.eid 提取并转为 dt_eid 放入 publicParams。
 export type DatongClient = {
   reportEvent: (payload: {
     eventName: string;
     pgid?: string;
-    eid?: string;
     businessParams?: Record<string, unknown>;
   }) => void;
   setPublicParams?: (params: Record<string, unknown>) => void;
@@ -463,9 +465,9 @@ export function reportDatongEvent(
   client.reportEvent({
     eventName,
     pgid: options?.pgid,
-    eid: options?.eid,
     businessParams: {
       ...safeParams,
+      eid: options?.eid,
       app_region: activeRegion ?? REGION,
       app_surface: activeAppSurface,
     },
@@ -515,9 +517,9 @@ export function reportDatongPageEvent(
   client.reportEvent({
     eventName,
     pgid: options?.pgid,
-    eid: options?.eid,
     businessParams: {
       ...safeParams,
+      eid: options?.eid,
       app_region: activeRegion ?? REGION,
       app_surface: activeAppSurface,
     },
