@@ -28,6 +28,27 @@ routes:
 	}
 }
 
+func TestLoadAppliesRouteBaseURLOverride(t *testing.T) {
+	t.Setenv("CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_BASE_URL", "https://api-sandbox-kr-1.lightclaw.tech")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(`
+routes:
+  - id: jifei-callback
+    upstream:
+      base_url: "https://lightclaw.tech"
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got := cfg.Routes[0].Upstream.BaseURL; got != "https://api-sandbox-kr-1.lightclaw.tech" {
+		t.Fatalf("route base_url override = %q", got)
+	}
+}
+
 func TestExampleConfigLoads(t *testing.T) {
 	t.Setenv("CLOUDLADDER_PAYMENT_HMAC_SECRET", "test-secret")
 	cfg, err := Load("../../config.example.yaml")
