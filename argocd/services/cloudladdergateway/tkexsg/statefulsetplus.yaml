@@ -67,6 +67,8 @@ spec:
             secretKeyRef:
               name: cloudladdergateway-callback-secrets
               key: CLOUDLADDER_TENCENT_CALLBACK_TOKEN
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_BASE_URL
+          value: https://api-sandbox-kr-1.lightclaw.tech
         image: csighub.tencentyun.com/skipzhang/cloudladdergateway:604530a7c2ad
         imagePullPolicy: Always
         name: lightvela-proxy
