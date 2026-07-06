@@ -3,6 +3,7 @@ package httpapi
 import (
 	"crypto/subtle"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -121,6 +122,45 @@ func adminAuthMiddleware(expected string) gin.HandlerFunc {
 		}
 		c.Set("realm", realm)
 		c.Set("agent_id", agent)
+		c.Next()
+	}
+}
+
+// supportAgentMiddleware 校验当前登录用户是否在反馈后台运营白名单内。
+//
+// 身份来源：上游鉴权网关在 access: authenticated 路由下注入的 X-User-Id
+// （service-gateway 的 injectIdentityHeaders 同时注入 X-User-Id 与
+// X-Lightclaw-User-ID，本中间件两者都认，优先 X-User-Id）。网关会先剥离
+// 外部传入的同名头再注入自己验证过的身份，因此该头可信。
+//
+// 与 adminAuthMiddleware 的区别：不依赖共享 X-Admin-Token，而是按具体用户
+// ID 做白名单判定，从而支持「按个体运营用户」授权与审计。
+//
+// agentIDs 为空时仅校验登录态（有 X-User-Id 即放行），由上游鉴权网关保证身份可信；
+// 非空时按白名单判定，仅允许指定运营用户访问。
+func supportAgentMiddleware(agentIDs []string) gin.HandlerFunc {
+	allow := make(map[string]struct{}, len(agentIDs))
+	for _, id := range agentIDs {
+		if id = strings.TrimSpace(id); id != "" {
+			allow[id] = struct{}{}
+		}
+	}
+	return func(c *gin.Context) {
+		uid := strings.TrimSpace(c.GetHeader("X-User-Id"))
+		if uid == "" {
+			uid = strings.TrimSpace(c.GetHeader("X-Lightclaw-User-ID"))
+		}
+		if uid == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			return
+		}
+		if len(allow) > 0 {
+			if _, ok := allow[uid]; !ok {
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+				return
+			}
+		}
+		c.Set("user_id", uid)
 		c.Next()
 	}
 }

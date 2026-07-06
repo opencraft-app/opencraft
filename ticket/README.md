@@ -33,3 +33,8 @@ go run ./cmd/ticket-migrate up
 | `TICKET_MYSQL_DSN` | MySQL DSN，指向 `lightvela_ticket` |
 | `TICKET_ADMIN_TOKEN` | 受理后台内网 token |
 | `TICKET_ALLOWED_ORIGINS` | CORS 白名单，逗号分隔 |
+| `SUPPORT_COS_BUCKET_URL` | 反馈桶地址，形如 `https://<bucket>.cos.<region>.myqcloud.com`（由部署侧 Secret 注入，未写死） |
+| `SUPPORT_COS_SECRET_ID` / `SUPPORT_COS_SECRET_KEY` | 反馈桶私有凭证（Secret 注入，前端永不持有） |
+| `SUPPORT_COS_PREFIX` | 桶内前缀，默认 `support-feedback` |
+| `SUPPORT_COS_ACCELERATE` | `true` 开启 COS 全球加速：前端上传/下载走 `cos.accelerate` 公网域名。**必开** |
+| `SUPPORT_COS_INTERNAL` | `true` 开启全球内网加速：仅服务端读桶走 `cos-internal.accelerate`（要求本服务在腾讯云内网 VPC）。**非内网机器切勿开启** |

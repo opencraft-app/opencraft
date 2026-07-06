@@ -9,4 +9,5 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/oapi-codegen/oapi-codegen/v2 v2.6.0
 	github.com/oapi-codegen/runtime v1.1.1
+	github.com/tencentyun/cos-go-sdk-v5 v0.7.73
 )

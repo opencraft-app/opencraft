@@ -9,6 +9,8 @@
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { LoginModal } from '@/components/site/login-modal';
+import { useSession } from '@/contexts/session-context';
 import { isGlobal } from '@/lib/region';
 import type { PublicSiteLocale } from '@/lib/public-site-navigation';
 import type { SupportFeedbackRecord } from '@/lib/support-feedback-cos-client';
@@ -29,7 +31,6 @@ const FEEDBACK_TYPE = {
   Billing: 'billing',
   Security: 'security',
   Docs: 'docs',
-  Compliment: 'compliment',
   Other: 'other',
 } as const;
 
@@ -63,21 +64,19 @@ function getFeedbackTypeLabel(type: string, otherText: string | null, globalSite
     case FEEDBACK_TYPE.ExperienceIssue:
       return globalSite ? 'Experience issue' : '体验问题反馈';
     case FEEDBACK_TYPE.BugReport:
-      return globalSite ? 'Bug report' : 'Bug 反馈';
+      return globalSite ? 'Bug report' : 'Bug/异常';
     case FEEDBACK_TYPE.FeatureRequest:
       return globalSite ? 'Feature request' : '产品功能建议';
     case FEEDBACK_TYPE.Rant:
       return globalSite ? 'Product rant' : '产品吐槽';
     case FEEDBACK_TYPE.Performance:
-      return globalSite ? 'Performance issue' : '性能 / 卡顿问题';
+      return globalSite ? 'Performance issue' : '性能/卡顿问题';
     case FEEDBACK_TYPE.Billing:
-      return globalSite ? 'Billing issue' : '账单 / 计费问题';
+      return globalSite ? 'Billing issue' : '账单/费用问题';
     case FEEDBACK_TYPE.Security:
-      return globalSite ? 'Security / privacy issue' : '安全 / 隐私问题';
+      return globalSite ? 'Security / privacy issue' : '安全/隐私问题';
     case FEEDBACK_TYPE.Docs:
-      return globalSite ? 'Docs / help issue' : '文档 / 帮助问题';
-    case FEEDBACK_TYPE.Compliment:
-      return globalSite ? 'Compliment' : '产品表扬';
+      return globalSite ? 'Docs / help issue' : '文档/帮助问题';
     case FEEDBACK_TYPE.Other: {
       const label = globalSite ? 'Other' : '其他';
       return otherText?.trim() ? `${label} · ${otherText.trim()}` : label;
@@ -87,17 +86,25 @@ function getFeedbackTypeLabel(type: string, otherText: string | null, globalSite
   }
 }
 
+function getCategoryLabel(category: string | null | undefined, globalSite: boolean): string {
+  if (category === 'bug') return globalSite ? 'Bug' : 'Bug/异常';
+  if (category === 'suggestion') return globalSite ? 'Suggestion' : '建议/反馈';
+  return globalSite ? 'Uncategorized' : '未分类';
+}
+
 /* ──────────────────────────────────────────────────────────
  * 主组件
  * ────────────────────────────────────────────────────────── */
 
 export function SupportAdminPage(): ReactElement {
   const { i18n } = useTranslation();
+  const { authReady, isAuthenticated, session } = useSession();
   const isEnglish = isGlobal && !i18n.language.startsWith('zh');
   const locale: 'zh-CN' | 'en-US' = isEnglish ? 'en-US' : 'zh-CN';
   const activePublicLocale: PublicSiteLocale = isGlobal
     ? (isEnglish ? 'en-US' : 'zh-SG')
     : 'zh-CN';
+  const [showLoginModal, setShowLoginModal] = useState(false);
   const copy = {
     eyebrow: isEnglish ? 'Feedback Console' : '反馈查询后台',
     title: isEnglish ? 'LightVela Feedback Console' : 'LightVela 反馈查询后台',
@@ -128,8 +135,8 @@ export function SupportAdminPage(): ReactElement {
     viewDetails: isEnglish ? 'View details' : '查看详情',
     unknownValue: '—',
     configError: isEnglish
-      ? 'Feedback console is not configured. Please set NEXT_PUBLIC_SUPPORT_COS_* env vars first.'
-      : '反馈系统未配置：请先设置 NEXT_PUBLIC_SUPPORT_COS_* 环境变量',
+      ? 'Feedback console is not available. Please check the backend API connection.'
+      : '反馈后台暂不可用：请检查后端服务连接',
     listError: isEnglish ? 'Failed to load feedback list' : '读取反馈列表失败',
     signedUrlError: isEnglish ? 'Failed to generate attachment link' : '无法生成附件访问链接',
     openAttachmentError: isEnglish ? 'Unable to open attachment' : '无法打开附件',
@@ -137,6 +144,7 @@ export function SupportAdminPage(): ReactElement {
 
   const [records, setRecords] = useState<SupportFeedbackRecord[]>([]);
   const [feedbackFilter, setFeedbackFilter] = useState<string>(FEEDBACK_FILTER_ALL);
+  const [categoryFilter, setCategoryFilter] = useState<string>(FEEDBACK_FILTER_ALL);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRecord, setSelectedRecord] = useState<SupportFeedbackRecord | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -145,6 +153,7 @@ export function SupportAdminPage(): ReactElement {
 
   const filteredRecords = useMemo(() => {
     return records.filter((record) => {
+      if (categoryFilter !== FEEDBACK_FILTER_ALL && record.category !== categoryFilter) return false;
       if (feedbackFilter !== FEEDBACK_FILTER_ALL && record.feedbackType !== feedbackFilter) return false;
       if (!searchQuery.trim()) return true;
 
@@ -156,7 +165,7 @@ export function SupportAdminPage(): ReactElement {
         || record.description?.toLowerCase().includes(query),
       );
     });
-  }, [feedbackFilter, records, searchQuery]);
+  }, [categoryFilter, feedbackFilter, records, searchQuery]);
 
   const feedbackTypes = useMemo(() => {
     return Array.from(new Set(records.map((record) => record.feedbackType)));
@@ -168,8 +177,7 @@ export function SupportAdminPage(): ReactElement {
 
     try {
       const mod = await import('@/lib/support-feedback-cos-client');
-      const config = mod.getSupportCosConfig();
-      if (!config || !mod.isSupportCosConfigured()) {
+      if (!mod.isSupportCosConfigured()) {
         throw new Error(copy.configError);
       }
 
@@ -185,13 +193,16 @@ export function SupportAdminPage(): ReactElement {
   };
 
   useEffect(() => {
+    if (!authReady || !isAuthenticated) {
+      return;
+    }
     void loadRecords();
-  }, []);
+  }, [authReady, isAuthenticated]);
 
   const openAttachment = async (storageKey: string) => {
     try {
       const mod = await import('@/lib/support-feedback-cos-client');
-      const url = mod.getSignedAttachmentUrl(storageKey);
+      const url = await mod.getSignedAttachmentUrl(storageKey);
       if (!url) {
         throw new Error(copy.signedUrlError);
       }
@@ -200,6 +211,45 @@ export function SupportAdminPage(): ReactElement {
       setLoadError(error instanceof Error ? error.message : copy.openAttachmentError);
     }
   };
+
+  // 未登录时显示登录提示
+  if (authReady && !isAuthenticated) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-100">
+        <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-sm">
+          <h2 className="text-lg font-semibold text-slate-900">
+            {isEnglish ? 'Sign in required' : '请先登录'}
+          </h2>
+          <p className="mt-2 text-sm text-slate-500">
+            {isEnglish ? 'You need to sign in to access the feedback console.' : '登录后即可访问反馈查询后台。'}
+          </p>
+          <button
+            type="button"
+            onClick={() => setShowLoginModal(true)}
+            className="mt-6 rounded-lg bg-slate-900 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800"
+          >
+            {isEnglish ? 'Sign in' : '登录'}
+          </button>
+          <LoginModal
+            open={showLoginModal}
+            onClose={() => setShowLoginModal(false)}
+            onSuccess={() => setShowLoginModal(false)}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // 登录态加载中
+  if (!authReady) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-100">
+        <div className="text-sm text-slate-400">
+          {isEnglish ? 'Checking login status...' : '正在检查登录状态...'}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
@@ -222,6 +272,11 @@ export function SupportAdminPage(): ReactElement {
               reloadAfterSwitch: false,
               variant: 'dropdown',
             }) : null}
+            {session.user && (
+              <span className="text-xs text-slate-400">
+                {session.user.name || session.user.id}
+              </span>
+            )}
             <a
               href="/support/"
               className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 transition-colors hover:bg-slate-50"
@@ -247,8 +302,15 @@ export function SupportAdminPage(): ReactElement {
           </div>
 
           {loadError && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-              {loadError}
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+              <span>{loadError}</span>
+              <button
+                type="button"
+                onClick={() => setShowLoginModal(true)}
+                className="shrink-0 text-xs font-medium text-red-700 underline hover:text-red-800"
+              >
+                {isEnglish ? 'Re-login' : '重新登录'}
+              </button>
             </div>
           )}
         </div>
@@ -271,6 +333,9 @@ export function SupportAdminPage(): ReactElement {
                 <span className="font-mono text-xs text-slate-400">{selectedRecord.id}</span>
                 <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
                   {getFeedbackTypeLabel(selectedRecord.feedbackType, selectedRecord.otherText, isGlobal)}
+                </span>
+                <span className="rounded bg-blue-50 px-2 py-0.5 text-xs text-blue-600">
+                  {getCategoryLabel(selectedRecord.category, isGlobal)}
                 </span>
               </div>
 
@@ -302,6 +367,64 @@ export function SupportAdminPage(): ReactElement {
                 {selectedRecord.description}
               </p>
             </div>
+
+            {selectedRecord.category === 'bug' && selectedRecord.bugInfo && (
+              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="text-sm font-semibold text-slate-900">{isGlobal ? 'Troubleshooting info' : '排障信息'}</h3>
+                <dl className="mt-3 space-y-3 text-sm text-slate-700">
+                  {selectedRecord.bugInfo.frequency && (
+                    <div>
+                      <dt className="text-xs text-slate-400">{isGlobal ? 'Frequency' : '发生频率'}</dt>
+                      <dd className="mt-1">{selectedRecord.bugInfo.frequency}</dd>
+                    </div>
+                  )}
+                  {selectedRecord.bugInfo.expected && (
+                    <div>
+                      <dt className="text-xs text-slate-400">{isGlobal ? 'Expected' : '期望结果'}</dt>
+                      <dd className="mt-1 whitespace-pre-wrap leading-6">{selectedRecord.bugInfo.expected}</dd>
+                    </div>
+                  )}
+                </dl>
+              </div>
+            )}
+
+            {selectedRecord.profile && (
+              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="text-sm font-semibold text-slate-900">{isGlobal ? 'User profile' : '用户画像'}</h3>
+                <dl className="mt-3 grid gap-3 text-sm text-slate-700 sm:grid-cols-2">
+                  {selectedRecord.profile.source && (
+                    <div>
+                      <dt className="text-xs text-slate-400">{isGlobal ? 'How did they find us' : '了解渠道'}</dt>
+                      <dd className="mt-1">{selectedRecord.profile.source}</dd>
+                    </div>
+                  )}
+                  {selectedRecord.profile.role && (
+                    <div>
+                      <dt className="text-xs text-slate-400">{isGlobal ? 'Role' : '角色'}</dt>
+                      <dd className="mt-1">{selectedRecord.profile.role}</dd>
+                    </div>
+                  )}
+                  {selectedRecord.profile.frequency && (
+                    <div>
+                      <dt className="text-xs text-slate-400">{isGlobal ? 'Usage frequency' : '使用频率'}</dt>
+                      <dd className="mt-1">{selectedRecord.profile.frequency}</dd>
+                    </div>
+                  )}
+                  {selectedRecord.profile.industry && (
+                    <div>
+                      <dt className="text-xs text-slate-400">{isGlobal ? 'Industry' : '行业'}</dt>
+                      <dd className="mt-1">{selectedRecord.profile.industry}</dd>
+                    </div>
+                  )}
+                  {selectedRecord.profile.aiGoal && (
+                    <div className="sm:col-span-2">
+                      <dt className="text-xs text-slate-400">{isGlobal ? 'AI use case' : 'AI 用途'}</dt>
+                      <dd className="mt-1 whitespace-pre-wrap leading-6">{selectedRecord.profile.aiGoal}</dd>
+                    </div>
+                  )}
+                </dl>
+              </div>
+            )}
 
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <h3 className="text-sm font-semibold text-slate-900">{copy.attachments}</h3>
@@ -363,6 +486,16 @@ export function SupportAdminPage(): ReactElement {
               </div>
 
               <select
+                value={categoryFilter}
+                onChange={(event) => setCategoryFilter(event.target.value)}
+                className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
+              >
+                <option value={FEEDBACK_FILTER_ALL}>{isGlobal ? 'All categories' : '全部大类'}</option>
+                <option value="suggestion">{isGlobal ? 'Suggestion' : '建议/反馈'}</option>
+                <option value="bug">{isGlobal ? 'Bug' : 'Bug/异常'}</option>
+              </select>
+
+              <select
                 value={feedbackFilter}
                 onChange={(event) => setFeedbackFilter(event.target.value)}
                 className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
@@ -407,9 +540,14 @@ export function SupportAdminPage(): ReactElement {
                         </td>
                         <td className="px-5 py-4 text-xs text-slate-600">{record.accountId}</td>
                         <td className="px-5 py-4">
-                          <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-                            {getFeedbackTypeLabel(record.feedbackType, record.otherText, isGlobal)}
-                          </span>
+                          <div className="flex flex-col gap-1">
+                            <span className="w-fit rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                              {getFeedbackTypeLabel(record.feedbackType, record.otherText, isGlobal)}
+                            </span>
+                            <span className="w-fit rounded bg-blue-50 px-2 py-0.5 text-xs text-blue-600">
+                              {getCategoryLabel(record.category, isGlobal)}
+                            </span>
+                          </div>
                         </td>
                         <td className="px-5 py-4 text-xs text-slate-500">{record.attachments.length}</td>
                         <td className="px-5 py-4 whitespace-nowrap text-xs text-slate-500">
@@ -433,6 +571,12 @@ export function SupportAdminPage(): ReactElement {
           </div>
         )}
       </div>
+
+      <LoginModal
+        open={showLoginModal}
+        onClose={() => setShowLoginModal(false)}
+        onSuccess={() => setShowLoginModal(false)}
+      />
     </div>
   );
 }

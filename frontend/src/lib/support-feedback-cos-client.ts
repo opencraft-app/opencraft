@@ -1,27 +1,25 @@
 /**
- * 用户反馈 - COS 浏览器直传客户端
+ * 用户反馈 - COS 上传客户端（后端预签名模式）
  * ──────────────────────────────────────────────────────────────
- * 架构：静态站点直接使用 cos-js-sdk-v5 与腾讯云 COS 通讯
- *   - 用户反馈页 putObject 上传 JSON + 附件
- *   - 后台查询页 getBucket + getObject 列出并展示
+ * 架构变更（相比旧版）：
+ *   - 旧版：浏览器直接用 cos-js-sdk-v5 + NEXT_PUBLIC_COS_SECRET_KEY 上传，
+ *           永久密钥暴露在客户端 bundle，任何访客都能拿到。
+ *   - 新版：上传/读取权限一律由 ticket 后端（持有私有密钥）通过预签名 URL 下发。
+ *           浏览器只拿到「短时有效的上传/下载链接」，永远不接触 SecretKey。
  *
- * ⚠️ 安全提示：
- *   - 此模块运行在浏览器，暴露的凭证任何访问站点的人都能拿到
- *   - 生产环境请务必换成 STS 临时凭证签发或最小权限子账号
- *   - 桶保持"私有读写"，通过前端 SDK 携带签名请求
+ * 流程：
+ *   提交：POST /support/feedback/presign → 拿到 record + 各附件的预签名 PUT URL
+ *        → 浏览器直接 PUT 内容到 COS（不经过后端流量）
+ *   后台列表：GET /support/feedback/list（后端服务端聚合 COS 记录）
+ *   后台附件：GET /support/feedback/sign?key= → 拿短期下载链接
+ *
+ * 鉴权：依赖登录态（cookie session），与 /tickets 一致。
  */
 
-import CosSdk from 'cos-js-sdk-v5';
-import type COS from 'cos-js-sdk-v5';
-
+import { resolveConfiguredAuthApiBaseUrl, resolveSupportAdminApiBaseUrl } from '@/lib/auth-api-base';
 import { isGlobal } from '@/lib/region';
 
-const NEXT_PUBLIC_COS_BUCKET = process.env.NEXT_PUBLIC_SUPPORT_COS_BUCKET;
-const NEXT_PUBLIC_COS_REGION = process.env.NEXT_PUBLIC_SUPPORT_COS_REGION;
-const NEXT_PUBLIC_COS_SECRET_ID = process.env.NEXT_PUBLIC_SUPPORT_COS_SECRET_ID;
-const NEXT_PUBLIC_COS_SECRET_KEY = process.env.NEXT_PUBLIC_SUPPORT_COS_SECRET_KEY;
-const NEXT_PUBLIC_COS_PREFIX = (process.env.NEXT_PUBLIC_SUPPORT_COS_PREFIX ?? 'support-feedback')
-  .replace(/^\/+|\/+$/g, '');
+const SUPPORT_API_PREFIX = '/support';
 
 export interface SupportCosConfig {
   bucket: string;
@@ -39,6 +37,31 @@ export interface FeedbackAttachmentRecord {
   storageKey: string;
 }
 
+/** 用户画像（调研问卷，可选填写；仅收集高信号字段）。 */
+export interface SupportFeedbackProfile {
+  /** 从哪里了解到 LightVela */
+  source: string;
+  /** 角色/身份 */
+  role: string;
+  /** 希望用 AI 做什么 */
+  aiGoal: string;
+  /** 使用频率（活跃度画像） */
+  frequency: string;
+  /** 所在行业（行业画像） */
+  industry: string;
+}
+
+/** 反馈大类：建议/反馈（带用户画像）或 Bug（带排障信息）。 */
+export type FeedbackCategory = 'suggestion' | 'bug';
+
+/** Bug 类反馈的排障信息（关键排查字段）。 */
+export interface SupportBugInfo {
+  /** 发生频率 */
+  frequency: string;
+  /** 期望结果 */
+  expected: string;
+}
+
 export interface SupportFeedbackRecord {
   id: string;
   accountId: string;
@@ -53,51 +76,52 @@ export interface SupportFeedbackRecord {
   updatedAt: string;
   attachments: FeedbackAttachmentRecord[];
   contactInfo: string | null;
+  profile?: SupportFeedbackProfile | null;
+  /** 反馈大类（suggestion / bug），用于前端分流与后台筛选。 */
+  category?: FeedbackCategory | null;
+  /** Bug 类排障信息，仅 category==='bug' 时有意义。 */
+  bugInfo?: SupportBugInfo | null;
 }
 
-let cachedClient: COS | null = null;
+/**
+ * 反馈系统是否可用（取决于后端 API base 是否可达）。
+ * 旧版依赖 NEXT_PUBLIC_COS_* 明文密钥，现已移除——前端不再持有任何 COS 凭证。
+ * 主站提交链或 admin 后台链任一可达即视为可用。
+ */
+export function isSupportCosConfigured(): boolean {
+  return resolveConfiguredAuthApiBaseUrl() !== null || resolveSupportAdminApiBaseUrl() !== null;
+}
 
+/**
+ * 兼容旧调用：返回最小配置占位（bucket/region 现由后端决定）。
+ * 后端不可达时返回 null，调用方据此展示「未配置」提示。
+ */
 export function getSupportCosConfig(): SupportCosConfig | null {
-  if (!NEXT_PUBLIC_COS_BUCKET || !NEXT_PUBLIC_COS_REGION) {
+  if (!isSupportCosConfigured()) {
     return null;
   }
-  return {
-    bucket: NEXT_PUBLIC_COS_BUCKET,
-    region: NEXT_PUBLIC_COS_REGION,
-    prefix: NEXT_PUBLIC_COS_PREFIX,
-  };
-}
-
-export function isSupportCosConfigured(): boolean {
-  return Boolean(
-    NEXT_PUBLIC_COS_BUCKET
-      && NEXT_PUBLIC_COS_REGION
-      && NEXT_PUBLIC_COS_SECRET_ID
-      && NEXT_PUBLIC_COS_SECRET_KEY,
-  );
+  return { bucket: '', region: '', prefix: 'support-feedback' };
 }
 
 export function getCurrentFeedbackSite(): FeedbackSite {
   return isGlobal ? 'global' : 'cn';
 }
 
-function ensureClient(): COS {
-  if (!isSupportCosConfigured()) {
-    throw new Error('反馈系统未配置：请设置 NEXT_PUBLIC_SUPPORT_COS_* 环境变量');
+function supportApiBase(): string {
+  const base = resolveConfiguredAuthApiBaseUrl();
+  if (base === null) {
+    throw new Error('反馈系统未配置：缺少后端 API 地址');
   }
-  if (!cachedClient) {
-    cachedClient = new CosSdk({
-      SecretId: NEXT_PUBLIC_COS_SECRET_ID as string,
-      SecretKey: NEXT_PUBLIC_COS_SECRET_KEY as string,
-    });
-  }
-  return cachedClient;
+  return `${base}${SUPPORT_API_PREFIX}`;
 }
 
-function generateId(): string {
-  const rand = crypto.getRandomValues(new Uint8Array(12));
-  const hex = Array.from(rand, (byte) => byte.toString(16).padStart(2, '0')).join('');
-  return `fb_${hex}`;
+/** 反馈后台 base（list/sign），经 admin.lightclaw.tech 暴露。 */
+function supportAdminApiBase(): string {
+  const base = resolveSupportAdminApiBaseUrl();
+  if (base === null) {
+    throw new Error('反馈后台未配置：缺少后台 API 地址');
+  }
+  return `${base}${SUPPORT_API_PREFIX}`;
 }
 
 function buildSubject(description: string): string {
@@ -105,144 +129,16 @@ function buildSubject(description: string): string {
   return firstLine.slice(0, 80);
 }
 
-function safeFileName(name: string): string {
-  return (
-    name
-      .replace(/[^a-zA-Z0-9._-]+/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '') || 'attachment'
-  );
+interface PresignTarget {
+  fileName?: string;
+  key: string;
+  uploadUrl: string;
 }
 
-function getScopedPrefix(prefix: string, site: FeedbackSite): string {
-  return `${prefix}/${site}`;
-}
-
-function getRecordKey(id: string, prefix: string, site: FeedbackSite): string {
-  return `${getScopedPrefix(prefix, site)}/records/${id}.json`;
-}
-
-function getAttachmentKey(id: string, fileName: string, prefix: string, site: FeedbackSite): string {
-  return `${getScopedPrefix(prefix, site)}/attachments/${id}/${Date.now()}-${safeFileName(fileName)}`;
-}
-
-function detectSiteFromKey(key: string, prefix: string): FeedbackSite {
-  return key.startsWith(`${prefix}/global/`) ? 'global' : 'cn';
-}
-
-function normalizeAttachmentRecord(raw: unknown): FeedbackAttachmentRecord | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const attachment = raw as Partial<FeedbackAttachmentRecord>;
-  if (!attachment.storageKey || typeof attachment.storageKey !== 'string') return null;
-
-  return {
-    fileName: typeof attachment.fileName === 'string' && attachment.fileName.trim()
-      ? attachment.fileName
-      : 'attachment',
-    contentType: typeof attachment.contentType === 'string' && attachment.contentType.trim()
-      ? attachment.contentType
-      : 'application/octet-stream',
-    size: typeof attachment.size === 'number' && Number.isFinite(attachment.size)
-      ? attachment.size
-      : 0,
-    storageKey: attachment.storageKey,
-  };
-}
-
-function normalizeFeedbackRecord(raw: unknown, fallbackSite: FeedbackSite): SupportFeedbackRecord | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const record = raw as Partial<SupportFeedbackRecord>;
-  if (!record.id || typeof record.id !== 'string') return null;
-  if (!record.accountId || typeof record.accountId !== 'string') return null;
-  if (!record.feedbackType || typeof record.feedbackType !== 'string') return null;
-  if (!record.description || typeof record.description !== 'string') return null;
-
-  const createdAt = typeof record.createdAt === 'string' && record.createdAt
-    ? record.createdAt
-    : new Date().toISOString();
-  const status: FeedbackStatus = record.status === 'reviewing' || record.status === 'resolved'
-    ? record.status
-    : 'open';
-  const site: FeedbackSite = record.site === 'global' || record.site === 'cn'
-    ? record.site
-    : fallbackSite;
-  const attachments = Array.isArray(record.attachments)
-    ? record.attachments.map(normalizeAttachmentRecord).filter((item): item is FeedbackAttachmentRecord => item !== null)
-    : [];
-
-  return {
-    id: record.id,
-    accountId: record.accountId.trim(),
-    feedbackType: record.feedbackType.trim(),
-    otherText: typeof record.otherText === 'string' && record.otherText.trim() ? record.otherText.trim() : null,
-    description: record.description,
-    subject: typeof record.subject === 'string' && record.subject.trim()
-      ? record.subject
-      : buildSubject(record.description),
-    status,
-    source: 'support-page',
-    site,
-    createdAt,
-    updatedAt: typeof record.updatedAt === 'string' && record.updatedAt ? record.updatedAt : createdAt,
-    attachments,
-    contactInfo: typeof record.contactInfo === 'string' && record.contactInfo.trim()
-      ? record.contactInfo.trim()
-      : null,
-  };
-}
-
-async function putObject(
-  client: COS,
-  config: SupportCosConfig,
-  key: string,
-  body: File | Blob,
-  contentType?: string,
-): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    client.putObject(
-      {
-        Bucket: config.bucket,
-        Region: config.region,
-        Key: key,
-        Body: body,
-        ContentType: contentType,
-      },
-      (error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve();
-      },
-    );
-  });
-}
-
-async function listKeysByPrefix(
-  client: COS,
-  config: SupportCosConfig,
-  prefix: string,
-): Promise<string[]> {
-  return new Promise<string[]>((resolve, reject) => {
-    client.getBucket(
-      {
-        Bucket: config.bucket,
-        Region: config.region,
-        Prefix: prefix,
-        MaxKeys: 1000,
-      },
-      (error, data) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        const list = (data?.Contents || [])
-          .map((item) => item?.Key)
-          .filter((key): key is string => Boolean(key));
-        resolve(list);
-      },
-    );
-  });
+interface PresignResponse {
+  id: string;
+  record: PresignTarget;
+  attachments: PresignTarget[];
 }
 
 export interface CreateSupportFeedbackInput {
@@ -252,34 +148,62 @@ export interface CreateSupportFeedbackInput {
   description: string;
   files?: File[];
   contactInfo?: string | null;
+  profile?: SupportFeedbackProfile | null;
+  category?: FeedbackCategory | null;
+  bugInfo?: SupportBugInfo | null;
 }
 
+/**
+ * 提交反馈：向后端申请预签名 URL → 浏览器直传 COS。
+ * 前端全程不持有 COS 密钥。
+ */
 export async function createSupportFeedback(
   input: CreateSupportFeedbackInput,
 ): Promise<SupportFeedbackRecord> {
-  const config = getSupportCosConfig();
-  if (!config) {
-    throw new Error('反馈系统未配置：缺少 COS bucket/region');
-  }
-  const client = ensureClient();
-  const id = generateId();
-  const now = new Date().toISOString();
+  const base = supportApiBase();
   const site = getCurrentFeedbackSite();
 
+  const presignRes = await fetch(`${base}/feedback/presign`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({
+      site,
+      attachmentFileNames: (input.files ?? []).map((file) => file.name),
+    }),
+  });
+  if (!presignRes.ok) {
+    throw new Error('获取上传签名失败，请稍后重试');
+  }
+  const presign = (await presignRes.json()) as PresignResponse;
+
+  // 1) 上传附件（按文件名顺序对应后端返回的预签名 URL）
   const attachments: FeedbackAttachmentRecord[] = [];
-  for (const file of input.files ?? []) {
-    const storageKey = getAttachmentKey(id, file.name, config.prefix, site);
-    await putObject(client, config, storageKey, file, file.type || 'application/octet-stream');
+  const files = input.files ?? [];
+  for (let i = 0; i < files.length; i += 1) {
+    const file = files[i];
+    const target = presign.attachments[i];
+    if (!target) continue;
+    const putRes = await fetch(target.uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      body: file,
+    });
+    if (!putRes.ok) {
+      throw new Error('附件上传失败，请重试');
+    }
     attachments.push({
       fileName: file.name,
       contentType: file.type || 'application/octet-stream',
       size: file.size,
-      storageKey,
+      storageKey: target.key,
     });
   }
 
+  // 2) 组装并上传记录 JSON
+  const now = new Date().toISOString();
   const record: SupportFeedbackRecord = {
-    id,
+    id: presign.id,
     accountId: input.accountId.trim(),
     feedbackType: input.feedbackType.trim(),
     otherText: input.otherText?.trim() ? input.otherText.trim() : null,
@@ -292,95 +216,64 @@ export async function createSupportFeedback(
     updatedAt: now,
     attachments,
     contactInfo: input.contactInfo?.trim() ? input.contactInfo.trim() : null,
+    profile: input.profile && hasProfile(input.profile) ? input.profile : null,
+    category: input.category ?? null,
+    bugInfo: input.bugInfo ?? null,
   };
 
-  const recordBlob = new Blob([JSON.stringify(record, null, 2)], {
-    type: 'application/json',
+  const recordRes = await fetch(presign.record.uploadUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    body: JSON.stringify(record, null, 2),
   });
-  await putObject(
-    client,
-    config,
-    getRecordKey(id, config.prefix, site),
-    recordBlob,
-    'application/json; charset=utf-8',
-  );
+  if (!recordRes.ok) {
+    throw new Error('反馈记录上传失败，请重试');
+  }
 
   return record;
 }
 
-async function getObjectAsText(
-  client: COS,
-  config: SupportCosConfig,
-  key: string,
-): Promise<string> {
-  return new Promise<string>((resolve, reject) => {
-    client.getObject(
-      {
-        Bucket: config.bucket,
-        Region: config.region,
-        Key: key,
-      },
-      (error, data) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        const body = (data as { Body?: unknown })?.Body;
-        if (typeof body === 'string') {
-          resolve(body);
-          return;
-        }
-        if (body instanceof Blob) {
-          body.text().then(resolve, reject);
-          return;
-        }
-        resolve(String(body ?? ''));
-      },
-    );
-  });
+function hasProfile(p: SupportFeedbackProfile): boolean {
+  return Boolean(
+    p.source?.trim()
+    || p.role?.trim()
+    || p.aiGoal?.trim()
+    || p.frequency?.trim()
+    || p.industry?.trim(),
+  );
 }
 
+/**
+ * 后台列表：由后端服务端聚合 COS 记录，前端不再直读 COS。
+ */
 export async function listSupportFeedback(): Promise<SupportFeedbackRecord[]> {
-  const config = getSupportCosConfig();
-  if (!config) {
-    throw new Error('反馈系统未配置：缺少 COS bucket/region');
-  }
-  const client = ensureClient();
+  const base = supportAdminApiBase();
   const site = getCurrentFeedbackSite();
-  const prefixes = site === 'global'
-    ? [`${config.prefix}/global/records/`]
-    : [`${config.prefix}/cn/records/`, `${config.prefix}/records/`];
-
-  const keys = Array.from(
-    new Set((await Promise.all(prefixes.map((prefix) => listKeysByPrefix(client, config, prefix)))).flat()),
-  );
-
-  const records = await Promise.all(
-    keys.map(async (key) => {
-      const raw = await getObjectAsText(client, config, key);
-      const normalized = normalizeFeedbackRecord(JSON.parse(raw) as unknown, detectSiteFromKey(key, config.prefix));
-      return normalized;
-    }),
-  );
-
-  return records
-    .filter((record): record is SupportFeedbackRecord => record !== null)
-    .filter((record) => record.site === site)
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const res = await fetch(`${base}/feedback/list?site=${encodeURIComponent(site)}`, {
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    throw new Error('读取反馈列表失败');
+  }
+  const data = (await res.json()) as { items: SupportFeedbackRecord[] };
+  return (data.items ?? []).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-export function getSignedAttachmentUrl(storageKey: string): string | null {
-  const config = getSupportCosConfig();
-  if (!config) return null;
+/**
+ * 后台附件：向后端申请短期下载签名 URL。
+ * 注意：现返回 Promise（需 await），调用方拿到 string | null。
+ */
+export async function getSignedAttachmentUrl(storageKey: string): Promise<string | null> {
   try {
-    const client = ensureClient();
-    return client.getObjectUrl({
-      Bucket: config.bucket,
-      Region: config.region,
-      Key: storageKey,
-      Sign: true,
-      Expires: 900,
-    } as unknown as Parameters<COS['getObjectUrl']>[0]) as unknown as string;
+    const base = supportAdminApiBase();
+    const res = await fetch(`${base}/feedback/sign?key=${encodeURIComponent(storageKey)}`, {
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      return null;
+    }
+    const data = (await res.json()) as { url: string };
+    return data.url ?? null;
   } catch {
     return null;
   }
