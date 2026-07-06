@@ -194,6 +194,9 @@ describe("hermes agent experts panel", () => {
     });
     expect(await screen.findByText("完整技能详情")).toBeInTheDocument();
     expect(await screen.findByText("Backend Market Data")).toBeInTheDocument();
+    const sourceLink = await screen.findByRole("link", { name: "源自 SkillHub" });
+    expect(sourceLink).toHaveAttribute("href", "https://skillhub.cn/skillspackage");
+    expect(sourceLink).toHaveAttribute("target", "_blank");
   });
 
   it("shows detail skill count from filtered available package skills", async () => {
@@ -329,11 +332,63 @@ describe("hermes agent experts panel", () => {
     expect(await screen.findByTestId("skill-package-profile-icon")).toBeInTheDocument();
     expect(screen.getByTestId("skill-package-profile-image")).toHaveAttribute(
       "src",
-      "https://cloudcache.tencent-cloud.com/qcloud/tea/app/skillhub/assets/source/ai-buddy-decouple/expert-profiles/finance-quant-backtesting.v20260616.png",
+      "https://cloudcache.tencent-cloud.com/qcloud/tea/app/skillhub/assets/source/ai-buddy-decouple/expert-profiles/finance-quant-backtesting.v20260625.avif",
     );
   });
 
-  it("falls back to an initial when the expert profile image fails", async () => {
+  it("uses uploaded SkillHub package avatars before generated profile images", async () => {
+    vi.mocked(fetchSkillSets).mockResolvedValue({
+      skillSets: [{
+        id: 1,
+        slug: "finance-quant-backtesting",
+        displayName: "量化回测",
+        summary: "列表摘要",
+        remark: "",
+        scene: "finance",
+        avatarUrl: "https://cdn.example.com/skillhub/quant.png",
+        skillCount: 2,
+        skillSlugs: ["market-data", "backtest-engine"],
+        createdAt: 0,
+        updatedAt: 0,
+      }],
+    });
+
+    render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
+
+    expect(await screen.findByTestId("skill-package-profile-image")).toHaveAttribute(
+      "src",
+      "https://cdn.example.com/skillhub/quant.png",
+    );
+  });
+
+  it("falls back from uploaded SkillHub avatars to generated profile images", async () => {
+    vi.mocked(fetchSkillSets).mockResolvedValue({
+      skillSets: [{
+        id: 1,
+        slug: "finance-quant-backtesting",
+        displayName: "量化回测",
+        summary: "列表摘要",
+        remark: "",
+        scene: "finance",
+        avatarUrl: "https://cdn.example.com/skillhub/missing.png",
+        skillCount: 2,
+        skillSlugs: ["market-data", "backtest-engine"],
+        createdAt: 0,
+        updatedAt: 0,
+      }],
+    });
+
+    render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
+
+    fireEvent.error(await screen.findByTestId("skill-package-profile-image"));
+
+    expect(await screen.findByTestId("skill-package-profile-image")).toHaveAttribute(
+      "src",
+      "https://cloudcache.tencent-cloud.com/qcloud/tea/app/skillhub/assets/source/ai-buddy-decouple/expert-profiles/finance-quant-backtesting.v20260625.avif",
+    );
+  });
+
+  it("falls back from a missing generated profile image to a default expert avatar", async () => {
     vi.mocked(fetchSkillSets).mockImplementation(async (params) => ({
       skillSets: !params?.scene
         ? [{
@@ -352,6 +407,36 @@ describe("hermes agent experts panel", () => {
 
     render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
 
+    fireEvent.error(await screen.findByTestId("skill-package-profile-image"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("skill-package-profile-image")).toHaveAttribute(
+        "src",
+        "https://cloudcache.tencent-cloud.com/qcloud/tea/app/skillhub/assets/source/ai-buddy-decouple/expert-profiles/default-female.v20260625.avif",
+      );
+    });
+  });
+
+  it("falls back to an initial when both generated and default expert profile images fail", async () => {
+    vi.mocked(fetchSkillSets).mockImplementation(async (params) => ({
+      skillSets: !params?.scene
+        ? [{
+            id: 1,
+            slug: "finance-missing-icon",
+            displayName: "缺图技能包",
+            summary: "列表摘要",
+            remark: "",
+            scene: "finance",
+            skillCount: 3,
+            createdAt: 0,
+            updatedAt: 0,
+          }]
+        : [],
+    }));
+
+    render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
+
+    fireEvent.error(await screen.findByTestId("skill-package-profile-image"));
     fireEvent.error(await screen.findByTestId("skill-package-profile-image"));
 
     expect(await screen.findByTestId("skill-package-profile-fallback")).toHaveTextContent("缺");
@@ -420,9 +505,9 @@ describe("hermes agent experts panel", () => {
     await waitFor(() => expect(screen.queryByText("正在加载技能包")).not.toBeInTheDocument());
   });
 
-  it("loads all SkillHub packages including unknown or missing scenes", async () => {
+  it("loads SkillHub packages with scenes and filters local dev seed packages without a scene", async () => {
     vi.mocked(fetchSkillSets).mockImplementation(async () => ({
-      total: 4,
+      total: 6,
       skillSets: [{
             id: 1,
             slug: "test-automation",
@@ -440,6 +525,27 @@ describe("hermes agent experts panel", () => {
             summary: "无分类摘要",
             remark: "",
             skillCount: 1,
+            createdAt: 0,
+            updatedAt: 0,
+          }, {
+            id: 5,
+            slug: "content-lyrics",
+            displayName: "歌词创作",
+            summary: "内容创作摘要",
+            remark: "",
+            scene: "content-creation",
+            subScene: "lyrics-songwriting",
+            skillCount: 2,
+            createdAt: 0,
+            updatedAt: 0,
+          }, {
+            id: 6,
+            slug: "lifestyle-nutrition",
+            displayName: "营养健康",
+            summary: "生活摘要",
+            remark: "",
+            scene: "lifestyle",
+            skillCount: 2,
             createdAt: 0,
             updatedAt: 0,
           }, {
@@ -468,16 +574,70 @@ describe("hermes agent experts panel", () => {
     render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
 
     expect(await screen.findByRole("button", { name: /自动化测试/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /分析师/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /分析师/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /紫微斗数/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /歌词创作/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /营养健康/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /量化回测/ })).toBeInTheDocument();
-    expect(screen.getAllByText("技能包").length).toBeGreaterThan(0);
+    expect(screen.getByText("命理占卜顾问")).toBeInTheDocument();
+    expect(screen.getByText("歌词创作专家")).toBeInTheDocument();
+    expect(screen.getByText("生活健康顾问")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "玄学" })).toBeInTheDocument();
     expect(fetchSkillSets).toHaveBeenCalledWith({
       keyword: "",
-      scene: undefined,
       page: 1,
-      pageSize: 60,
+      pageSize: 200,
     });
+  });
+
+  it("filters loaded packages by scene immediately without refetching the catalog", async () => {
+    let fetchCalls = 0;
+    vi.mocked(fetchSkillSets).mockImplementation(() => {
+      fetchCalls += 1;
+      if (fetchCalls > 1) {
+        return new Promise(() => {
+          /* keep unresolved so the test catches stale-list behavior */
+        });
+      }
+      return Promise.resolve({
+        total: 2,
+        skillSets: [{
+          id: 1,
+          slug: "tech-test-automation",
+          displayName: "自动化测试",
+          summary: "技术摘要",
+          remark: "",
+          scene: "tech",
+          skillSlugs: ["test-case-generator"],
+          skillCount: 1,
+          createdAt: 0,
+          updatedAt: 0,
+        }, {
+          id: 2,
+          slug: "finance-quant-backtesting",
+          displayName: "量化回测",
+          summary: "金融摘要",
+          remark: "",
+          scene: "finance",
+          skillSlugs: ["market-data"],
+          skillCount: 1,
+          createdAt: 0,
+          updatedAt: 0,
+        }],
+      });
+    });
+
+    render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
+
+    expect(await screen.findByRole("button", { name: /自动化测试/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /量化回测/ })).toBeInTheDocument();
+    expect(fetchSkillSets).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "金融" }));
+
+    await waitFor(() => expect(screen.queryByRole("button", { name: /自动化测试/ })).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: /量化回测/ })).toBeInTheDocument();
+    expect(fetchSkillSets).toHaveBeenCalledTimes(1);
   });
 
   it("installs package skills one by one without opening detail", async () => {

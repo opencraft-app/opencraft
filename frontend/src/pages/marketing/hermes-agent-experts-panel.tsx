@@ -4,7 +4,7 @@ import {
   BookOpen,
   Clapperboard,
   Check,
-  Code2,
+  Cpu,
   GraduationCap,
   HeartPulse,
   Landmark,
@@ -12,6 +12,7 @@ import {
   List,
   Loader2,
   Megaphone,
+  MoonStar,
   PackageCheck,
   PackageOpen,
   Palette,
@@ -48,7 +49,6 @@ type ExpertView = "list" | "grid";
 interface ExpertSceneOption {
   value: SkillHubKnownSkillSetScene;
   label: string;
-  role: string;
   icon: ElementType;
 }
 
@@ -79,35 +79,69 @@ interface SkillInstallProgress {
   total: number;
 }
 
-const EXPERT_SCENES: ExpertSceneOption[] = [
-  { value: "finance", label: "金融", role: "金融分析技能包", icon: Landmark },
-  { value: "tech", label: "技术", role: "开发工程技能包", icon: Code2 },
-  { value: "design", label: "设计", role: "产品设计技能包", icon: Palette },
-  { value: "marketing", label: "营销", role: "营销增长技能包", icon: Megaphone },
-  { value: "legal", label: "法律", role: "法律合规技能包", icon: Scale },
-  { value: "academic", label: "学术", role: "学术研究技能包", icon: GraduationCap },
-  { value: "education", label: "教育", role: "教育学习技能包", icon: BookOpen },
-  { value: "hr", label: "人力", role: "组织人才技能包", icon: Users },
-  { value: "ecommerce", label: "电商", role: "电商运营技能包", icon: ShoppingCart },
-  { value: "media", label: "媒体", role: "内容创作技能包", icon: Clapperboard },
-  { value: "healthcare", label: "医疗", role: "医疗健康技能包", icon: HeartPulse },
+const EXPERT_FILTER_SCENES: ExpertSceneOption[] = [
+  // Keep the same visible category order as SkillHub's /skillspackage page.
+  { value: "finance", label: "金融", icon: Landmark },
+  { value: "tech", label: "科技", icon: Cpu },
+  { value: "design", label: "设计", icon: Palette },
+  { value: "marketing", label: "营销", icon: Megaphone },
+  { value: "legal", label: "法律", icon: Scale },
+  { value: "academic", label: "学术", icon: GraduationCap },
+  { value: "education", label: "教育", icon: BookOpen },
+  { value: "hr", label: "人力", icon: Users },
+  { value: "ecommerce", label: "电商", icon: ShoppingCart },
+  { value: "media", label: "媒体", icon: Clapperboard },
+  { value: "healthcare", label: "医疗", icon: HeartPulse },
+  { value: "mysticism", label: "玄学", icon: MoonStar },
 ];
 
-const EXPERT_SCENE_MAP = new Map(EXPERT_SCENES.map((scene) => [scene.value, scene] as const));
+const EXPERT_PACKAGE_SCENE_ROLES: Record<SkillHubKnownSkillSetScene, string> = {
+  academic: "学术研究员",
+  "content-creation": "内容创作专家",
+  design: "产品设计顾问",
+  ecommerce: "电商运营专家",
+  education: "学习规划师",
+  finance: "投资分析专家",
+  healthcare: "健康信息顾问",
+  hr: "组织人才顾问",
+  legal: "法律合规顾问",
+  lifestyle: "生活健康顾问",
+  marketing: "营销增长专家",
+  media: "媒体内容专家",
+  mysticism: "命理占卜顾问",
+  tech: "高级开发工程师",
+};
+
+const EXPERT_PACKAGE_SUB_SCENE_ROLES: Record<string, string> = {
+  "fitness-training": "健身训练教练",
+  "health-data-analysis": "健康数据分析师",
+  "lyrics-songwriting": "歌词创作专家",
+  "meditation-mindfulness": "正念冥想教练",
+  "mental-counseling": "心理咨询顾问",
+  "novel-writing": "小说创作专家",
+  "nutrition-meal-plan": "营养健康顾问",
+  "poetry-creation": "诗词创作专家",
+  screenwriting: "剧本创作专家",
+  "story-outlining": "故事大纲策划",
+};
+
+const EXPERT_KNOWN_SCENE_SET = new Set(Object.keys(EXPERT_PACKAGE_SCENE_ROLES) as SkillHubKnownSkillSetScene[]);
 const EXPERT_VIEW_OPTIONS: Array<{ value: ExpertView; label: string; icon: ElementType }> = [
   { value: "list", label: "列表", icon: List },
   { value: "grid", label: "卡片", icon: LayoutGrid },
 ];
 
-const EXPERT_PAGE_SIZE = 60;
+const EXPERT_PAGE_SIZE = 200;
 const INSTALL_ERROR_OUTPUT_LINE_LIMIT = 3;
 const SKILL_INSTALL_DEFAULT_RETRY_DELAYS_MS = [0] as const;
 const SKILL_INSTALL_RATE_LIMIT_RETRY_DELAYS_MS = [2_000, 5_000] as const;
 const AI_BUDDY_ASSET_BASE = "https://cloudcache.tencent-cloud.com/qcloud/tea/app/skillhub/assets/source/ai-buddy-decouple";
-const AI_BUDDY_ASSET_VERSION = "v20260616";
+const AI_BUDDY_EXPERT_PROFILE_VERSION = "v20260625";
+const AI_BUDDY_EXPERT_PROFILE_EXT = "avif";
 const HERMES_SKILLS_LIST_COMMAND = 'cd "$HOME/.hermes/hermes-agent" && COLUMNS=10000 ./venv/bin/python -m hermes_cli.main skills list';
 const SKILLHUB_SELF_UPGRADE_COMMAND = "skillhub self-upgrade";
 const SKILLHUB_DOWNLOAD_URL_TEMPLATE = "https://api.skillhub.cn/api/v1/download?slug={slug}";
+const SKILLHUB_PACKAGE_SOURCE_URL = "https://skillhub.cn/skillspackage";
 const INSTALLED_PACKAGES_STORAGE_PREFIX = "lightvela-experts-installed-packages";
 const TARGET_SKILL_DOC_NAMES = ["skill.md", "readme.md", "skills.md"];
 const PACKAGE_SKILL_SLUG_OVERRIDES: Record<string, Record<string, string>> = {
@@ -211,20 +245,37 @@ export async function resolveAvailablePackageSkillSlugs(
   return getUniqueSkillSlugs(checkedSkillSlugs.filter((skillSlug): skillSlug is string => !!skillSlug));
 }
 
-function isKnownExpertScene(scene: string | undefined): scene is SkillHubKnownSkillSetScene {
-  return !!scene && EXPERT_SCENE_MAP.has(scene as SkillHubKnownSkillSetScene);
+function getKnownExpertScene(scene: string | undefined): SkillHubKnownSkillSetScene | undefined {
+  const normalized = scene?.trim();
+  return normalized && EXPERT_KNOWN_SCENE_SET.has(normalized as SkillHubKnownSkillSetScene)
+    ? normalized as SkillHubKnownSkillSetScene
+    : undefined;
+}
+
+function hasVisibleExpertPackageScene(pkg: Pick<SkillHubSkillSet, "scene">): boolean {
+  return typeof pkg.scene === "string" && pkg.scene.trim().length > 0;
 }
 
 function getPackageScene(
   pkg: Pick<SkillHubSkillSet, "scene">,
   fallback: ExpertFilterId,
 ): SkillHubKnownSkillSetScene | undefined {
-  if (isKnownExpertScene(pkg.scene)) return pkg.scene;
+  const scene = getKnownExpertScene(pkg.scene);
+  if (scene) return scene;
   return fallback === "all" ? undefined : fallback;
 }
 
-function getExpertRole(scene: SkillHubKnownSkillSetScene | undefined, t: ReturnType<typeof useT>): string {
-  return scene ? EXPERT_SCENE_MAP.get(scene)?.role ?? t("技能包") : t("技能包");
+function getExpertRole(
+  pkg: Pick<SkillHubSkillSet, "displayName" | "scene" | "subScene">,
+  fallback: ExpertFilterId,
+  t: ReturnType<typeof useT>,
+): string {
+  const subSceneRole = pkg.subScene ? EXPERT_PACKAGE_SUB_SCENE_ROLES[pkg.subScene] : undefined;
+  if (subSceneRole) return subSceneRole;
+
+  const scene = getPackageScene(pkg, fallback);
+  const sceneRole = scene ? EXPERT_PACKAGE_SCENE_ROLES[scene] : undefined;
+  return sceneRole ?? `${pkg.displayName}${t("专家")}`;
 }
 
 function getPackageSummary(pkg: SkillHubSkillSet, t: ReturnType<typeof useT>): string {
@@ -544,21 +595,43 @@ export function getSkillPackageInstallFailureMessage(
   })}`;
 }
 
+async function fetchAllExpertPackages(keyword: string): Promise<SkillHubSkillSet[]> {
+  let page = 1;
+  let total = 0;
+  const allPackages: SkillHubSkillSet[] = [];
+
+  do {
+    const response = await fetchSkillSets({
+      keyword,
+      page,
+      pageSize: EXPERT_PAGE_SIZE,
+    });
+    const packages = response.skillSets ?? [];
+    allPackages.push(...packages);
+    total = response.total ?? allPackages.length;
+    if (packages.length === 0) break;
+    page += 1;
+  } while (allPackages.length < total);
+
+  return allPackages.filter(hasVisibleExpertPackageScene);
+}
+
+function filterExpertPackagesByScene(
+  packages: SkillHubSkillSet[],
+  activeFilter: ExpertFilterId,
+): SkillHubSkillSet[] {
+  if (activeFilter === "all") return packages;
+  return packages.filter((pkg) => getKnownExpertScene(pkg.scene) === activeFilter);
+}
+
 async function fetchExperts(params: {
   keyword: string;
-  activeFilter: ExpertFilterId;
   page: number;
 }): Promise<{ packages: SkillHubSkillSet[]; total: number }> {
-  const response = await fetchSkillSets({
-    keyword: params.keyword,
-    scene: params.activeFilter === "all" ? undefined : params.activeFilter,
-    page: params.page,
-    pageSize: EXPERT_PAGE_SIZE,
-  });
-  const packages = response.skillSets ?? [];
+  const packages = await fetchAllExpertPackages(params.keyword);
   return {
     packages,
-    total: response.total ?? packages.length,
+    total: packages.length,
   };
 }
 
@@ -594,9 +667,13 @@ export function ExpertsPanel({
   const expertsRequestIdRef = useRef(0);
   const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
 
+  const filteredExpertPackages = useMemo(() => {
+    return filterExpertPackagesByScene(expertPackages, activeFilter);
+  }, [activeFilter, expertPackages]);
+
   const visibleCards = useMemo<ExpertPackageCard[]>(() => {
-    return expertPackages.map((pkg) => ({ pkg }));
-  }, [expertPackages]);
+    return filteredExpertPackages.map((pkg) => ({ pkg }));
+  }, [filteredExpertPackages]);
 
   const hasMoreExperts = expertPackages.length < expertTotal;
 
@@ -658,12 +735,14 @@ export function ExpertsPanel({
 
     if (firstPage) {
       setExpertsLoading(true);
+      setExpertPackages([]);
+      setExpertTotal(0);
     } else {
       setExpertsLoadingMore(true);
     }
     setExpertsError(null);
 
-    fetchExperts({ keyword, activeFilter, page: expertPage })
+    fetchExperts({ keyword, page: expertPage })
       .then((result) => {
         if (currentRequestId !== expertsRequestIdRef.current) return;
         setExpertTotal(result.total);
@@ -682,7 +761,7 @@ export function ExpertsPanel({
         setExpertsLoading(false);
         setExpertsLoadingMore(false);
       });
-  }, [activeFilter, expertPage, expertsRetryNonce, keyword]);
+  }, [expertPage, expertsRetryNonce, keyword]);
 
   useEffect(() => {
     let cancelled = false;
@@ -731,7 +810,7 @@ export function ExpertsPanel({
     if (visibleCards.length === 0) return;
 
     const missingCards = visibleCards.filter(({ pkg }) => {
-      return !packageSkillSlugs.has(pkg.slug);
+      return !packageSkillSlugs.has(pkg.slug) && !Array.isArray(pkg.skillSlugs);
     });
     if (missingCards.length === 0) return;
 
@@ -1036,7 +1115,7 @@ function ExpertSceneFilters({
   const t = useT();
   const filters: Array<{ value: ExpertFilterId; label: string; icon: ElementType }> = [
     { value: "all", label: t("全部"), icon: PackageOpen },
-    ...EXPERT_SCENES,
+    ...EXPERT_FILTER_SCENES,
   ];
 
   return (
@@ -1067,7 +1146,21 @@ function ExpertSceneFilters({
 }
 
 function getExpertProfileImage(slug: string): string {
-  return `${AI_BUDDY_ASSET_BASE}/expert-profiles/${slug}.${AI_BUDDY_ASSET_VERSION}.png`;
+  return `${AI_BUDDY_ASSET_BASE}/expert-profiles/${slug}.${AI_BUDDY_EXPERT_PROFILE_VERSION}.${AI_BUDDY_EXPERT_PROFILE_EXT}`;
+}
+
+function pickDefaultExpertProfileIndex(seed: string): number {
+  let hash = 0;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash = ((hash << 5) - hash + seed.charCodeAt(index)) | 0;
+  }
+
+  return Math.abs(hash) % 2;
+}
+
+function getDefaultExpertProfileImage(seed: string): string {
+  const gender = pickDefaultExpertProfileIndex(seed) === 0 ? "male" : "female";
+  return `${AI_BUDDY_ASSET_BASE}/expert-profiles/default-${gender}.${AI_BUDDY_EXPERT_PROFILE_VERSION}.${AI_BUDDY_EXPERT_PROFILE_EXT}`;
 }
 
 function getExpertInitial(displayName: string): string {
@@ -1075,8 +1168,25 @@ function getExpertInitial(displayName: string): string {
 }
 
 function SkillPackageProfileIcon({ pkg, className }: { pkg: SkillHubSkillSet; className?: string }) {
-  const [failedImageSlug, setFailedImageSlug] = useState<string | null>(null);
-  const imageFailed = failedImageSlug === pkg.slug;
+  const [avatarFailed, setAvatarFailed] = useState(false);
+  const [assetFailed, setAssetFailed] = useState(false);
+  const [defaultFailed, setDefaultFailed] = useState(false);
+  const avatarSrc = pkg.avatarUrl?.trim();
+  const assetSrc = getExpertProfileImage(pkg.slug);
+  const defaultSrc = getDefaultExpertProfileImage(pkg.slug || pkg.displayName);
+  const imageSrc = avatarSrc && !avatarFailed
+    ? avatarSrc
+    : !assetFailed
+      ? assetSrc
+      : defaultFailed
+        ? null
+        : defaultSrc;
+
+  useEffect(() => {
+    setAvatarFailed(false);
+    setAssetFailed(false);
+    setDefaultFailed(false);
+  }, [avatarSrc, pkg.displayName, pkg.slug]);
 
   return (
     <div
@@ -1086,16 +1196,24 @@ function SkillPackageProfileIcon({ pkg, className }: { pkg: SkillHubSkillSet; cl
       )}
       data-testid="skill-package-profile-icon"
     >
-      {imageFailed ? (
-        <span data-testid="skill-package-profile-fallback">{getExpertInitial(pkg.displayName)}</span>
-      ) : (
+      {imageSrc ? (
         <img
-          src={getExpertProfileImage(pkg.slug)}
+          src={imageSrc}
           alt=""
           className="h-full w-full object-cover"
           data-testid="skill-package-profile-image"
-          onError={() => setFailedImageSlug(pkg.slug)}
+          onError={() => {
+            if (imageSrc === avatarSrc) {
+              setAvatarFailed(true);
+            } else if (imageSrc === assetSrc) {
+              setAssetFailed(true);
+            } else {
+              setDefaultFailed(true);
+            }
+          }}
         />
+      ) : (
+        <span data-testid="skill-package-profile-fallback">{getExpertInitial(pkg.displayName)}</span>
       )}
       <span className="sr-only">{pkg.displayName}</span>
     </div>
@@ -1177,7 +1295,7 @@ function ExpertGridCard({
   onInstall: (pkg: SkillHubSkillSet) => void;
 }) {
   const t = useT();
-  const scene = getPackageScene(card.pkg, activeFilter);
+  const role = getExpertRole(card.pkg, activeFilter, t);
   const summary = getPackageSummary(card.pkg, t);
 
   return (
@@ -1199,7 +1317,7 @@ function ExpertGridCard({
           <div className="flex min-w-0 items-center gap-2">
             <h3 className="truncate text-base font-semibold leading-6 text-black/90">{card.pkg.displayName}</h3>
           </div>
-          <p className="mt-1.5 truncate text-xs font-medium leading-5 text-black/48">{getExpertRole(scene, t)}</p>
+          <p className="mt-1.5 truncate text-xs font-medium leading-5 text-black/48">{role}</p>
         </div>
       </div>
       <p className="line-clamp-3 text-[13px] leading-5 text-black/58" style={{ marginTop: 16 }} title={summary}>{summary}</p>
@@ -1235,7 +1353,7 @@ function ExpertListItem({
   onInstall: (pkg: SkillHubSkillSet) => void;
 }) {
   const t = useT();
-  const scene = getPackageScene(card.pkg, activeFilter);
+  const role = getExpertRole(card.pkg, activeFilter, t);
   const summary = getPackageSummary(card.pkg, t);
 
   return (
@@ -1257,7 +1375,7 @@ function ExpertListItem({
           <h3 className="truncate text-lg font-semibold leading-6 text-black/90">{card.pkg.displayName}</h3>
         </div>
         <div className="mb-2 flex min-w-0 flex-wrap items-center">
-          <p className="truncate text-xs font-medium leading-5 text-black/48">{getExpertRole(scene, t)}</p>
+          <p className="truncate text-xs font-medium leading-5 text-black/48">{role}</p>
         </div>
         <p className="line-clamp-2 text-[13px] leading-[24px] text-black/58" title={summary}>{summary}</p>
       </div>
@@ -1297,7 +1415,7 @@ function SkillPackageDetailView({
   const { data, loading, error } = useAsyncResource(detailFetcher, [card.pkg.slug]);
   const [activeSkillIndex, setActiveSkillIndex] = useState(0);
   const detail = data ?? card.pkg;
-  const scene = getPackageScene(detail, activeFilter);
+  const role = getExpertRole(detail, activeFilter, t);
   const candidateSkillSlugs = getPackageSkillSlugs(
     card.pkg.slug,
     data?.skillSlugs ?? card.pkg.skillSlugs ?? [],
@@ -1345,13 +1463,22 @@ function SkillPackageDetailView({
           <div className="min-w-0">
             <h2 className="text-[28px] font-semibold leading-tight text-black/95">{detail.displayName}</h2>
             <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-7 gap-y-1 text-sm font-medium leading-6 text-black/48">
-              <span>{getExpertRole(scene, t)}</span>
+              <span>{role}</span>
               {skillSlugs.length > 0 ? (
                 <span className="inline-flex flex-shrink-0 items-center gap-1.5 text-xs font-light text-black/52">
                   <PackageOpen className="h-3.5 w-3.5" />
                   {t("{{count}} 个技能", { count: skillSlugs.length })}
                 </span>
               ) : null}
+              <a
+                href={SKILLHUB_PACKAGE_SOURCE_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex flex-shrink-0 items-center gap-[3px] text-[13px] font-normal text-[#2563EB] underline-offset-2 transition-colors hover:text-[#1D4ED8] hover:underline"
+              >
+                {t("源自 SkillHub")}
+                <span aria-hidden="true">↗</span>
+              </a>
             </div>
             <p className="mt-5 max-w-5xl text-sm leading-7 text-black/62">
               {getPackageSummary(detail as SkillHubSkillSet, t)}
@@ -1385,7 +1512,7 @@ function SkillPackageDetailView({
           </div>
         ) : skillSlugs.length > 0 ? (
           <div className="space-y-8">
-            <div className="inline-flex max-w-full items-center overflow-x-auto rounded-md bg-[#EEEEEE] p-[3px]">
+            <div className="inline-flex max-w-full items-center overflow-x-auto rounded-[4px] bg-[#EEEEEE] p-[3px]">
               {skillSlugs.map((skillSlug, index) => {
                 const skillDisplayName = skillDisplayNames.data?.get(skillSlug) ?? formatSkillDisplayName(skillSlug);
                 return (
@@ -1394,7 +1521,7 @@ function SkillPackageDetailView({
                     type="button"
                     onClick={() => setActiveSkillIndex(index)}
                     className={cn(
-                      "inline-flex items-center gap-1.5 whitespace-nowrap rounded-[4px] px-4 py-2 text-sm transition-all",
+                      "inline-flex items-center gap-1.5 whitespace-nowrap rounded-[8px] px-4 py-2 text-sm transition-all",
                       index === activeSkillIndex
                         ? "bg-white font-semibold text-black/90 shadow-[0_1px_4px_rgba(0,0,0,0.05)]"
                         : "bg-transparent font-medium text-black/62 hover:text-black/88",
@@ -1470,19 +1597,19 @@ function SkillPackageMarkdown({ content }: { content: string }) {
     code({ className, children }) {
       if (className) {
         return (
-          <code className="block overflow-x-auto rounded-md bg-black/[0.04] px-3 py-2 font-mono text-xs leading-6 text-black/62">
+          <code className="block overflow-x-auto rounded-[4px] bg-black/[0.04] px-3 py-2 font-mono text-xs leading-6 text-black/62">
             {children}
           </code>
         );
       }
       return (
-        <code className="rounded bg-black/[0.05] px-1 py-0.5 font-mono text-xs text-black/62">
+        <code className="rounded-[3px] bg-black/[0.05] px-1 py-0.5 font-mono text-xs text-black/62">
           {children}
         </code>
       );
     },
     pre({ children }) {
-      return <pre className="my-4 overflow-x-auto rounded-md bg-black/[0.04] p-0">{children}</pre>;
+      return <pre className="my-4 overflow-x-auto rounded-[4px] bg-black/[0.04] p-0">{children}</pre>;
     },
     table({ children }) {
       return (

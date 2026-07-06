@@ -2,12 +2,8 @@
  * SkillHub 公共数据接口客户端。
  *
  * 正式环境使用 SkillHub API (`https://api.skillhub.cn`) 读取公共目录数据：
- * 人设（Soul）。本地开发使用 `https://lightmake.cloud` 直连，避免依赖旧 Vite
- * proxy，同时绕开 localhost 不在正式域 CORS 白名单内的问题。
- *
- * 注：`lightmake.cloud` 已为 lightclaw.tech 和 EO Pages 预览域名（如
- * *.edgeone.cool）做好 CORS 反射（`Access-Control-Allow-Origin` 反射 +
- * `Allow-Credentials: true`）。
+ * 人设（Soul）与技能包（SkillSet）。本地开发通过 Next dev rewrite 访问同一个
+ * SkillHub 正式 API，避免 localhost 直连 api.skillhub.cn 时被浏览器 CORS 拦截。
  *
  * 鉴权类接口（活动抽卡 / 我的组合 / 一键安装）需要 SkillHub 的 JWT Cookie，
  * 跨产品场景下要走"mono2 后端代理 + service token"的方案，**不在本模块范围**。
@@ -23,7 +19,7 @@ export function resolveSkillHubApiBase(
   env: SkillHubRuntimeEnv | undefined = import.meta.env,
 ): string {
   const isDev = env?.DEV ?? (typeof process !== "undefined" && process.env.NODE_ENV === "development");
-  return isDev ? "https://lightmake.cloud" : "https://api.skillhub.cn";
+  return isDev ? "/__skillhub_api" : "https://api.skillhub.cn";
 }
 
 const SKILLHUB_API_BASE = resolveSkillHubApiBase();
@@ -56,6 +52,7 @@ export interface SkillHubSoulListResponse {
 
 export type SkillHubKnownSkillSetScene =
   | "academic"
+  | "content-creation"
   | "design"
   | "ecommerce"
   | "education"
@@ -63,8 +60,10 @@ export type SkillHubKnownSkillSetScene =
   | "healthcare"
   | "hr"
   | "legal"
+  | "lifestyle"
   | "marketing"
   | "media"
+  | "mysticism"
   | "tech";
 
 export type SkillHubSkillSetScene = SkillHubKnownSkillSetScene | (string & {});
@@ -78,6 +77,7 @@ export interface SkillHubSkillSet {
   remark: string;
   scene?: SkillHubSkillSetScene;
   subScene?: string;
+  avatarUrl?: string | null;
   skillCount?: number;
   skillSlugs?: string[];
   missing?: string[];
