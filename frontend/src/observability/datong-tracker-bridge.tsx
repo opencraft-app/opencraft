@@ -9,7 +9,7 @@ import {
   readStoredCookieConsent,
   type CookieConsentChangedDetail,
 } from "@/lib/cookie-consent";
-import { disableDatong, getDatong, initDatong, setDatongUser } from "@/observability/datong";
+import { disableDatong, getDatong, initDatong, isDatongDevEnabled, setDatongUser } from "@/observability/datong";
 
 /**
  * 大同埋点桥接组件。
@@ -29,7 +29,9 @@ export const DatongTrackerBridge = () => {
   useEffect(() => {
     const syncConsent = () => {
       const consent = readStoredCookieConsent();
-      if (consent === COOKIE_CONSENT_ACCEPTED) {
+      // dev 模式（NEXT_PUBLIC_DATONG_DEV_ENABLED=true）下跳过 cookie consent 门禁，
+      // 便于本地联调埋点；生产模式仍需用户同意 cookie consent 后才初始化。
+      if (isDatongDevEnabled() || consent === COOKIE_CONSENT_ACCEPTED) {
         void initDatong(undefined, undefined, consent);
         return;
       }
@@ -42,14 +44,14 @@ export const DatongTrackerBridge = () => {
       if (getDatong()) return;
       if (document.visibilityState === "hidden") return;
       const consent = readStoredCookieConsent();
-      if (consent === COOKIE_CONSENT_ACCEPTED) {
+      if (consent === COOKIE_CONSENT_ACCEPTED || isDatongDevEnabled()) {
         void initDatong(undefined, undefined, consent);
       }
     };
 
     const handleConsentChange = (event: Event) => {
       const detail = (event as CustomEvent<CookieConsentChangedDetail>).detail;
-      if (detail.value === COOKIE_CONSENT_ACCEPTED) {
+      if (detail.value === COOKIE_CONSENT_ACCEPTED || isDatongDevEnabled()) {
         void initDatong(undefined, undefined, detail.value);
         return;
       }

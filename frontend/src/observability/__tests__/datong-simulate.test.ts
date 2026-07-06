@@ -94,6 +94,56 @@ describe("大同埋点全链路模拟上报", () => {
       expect(config).toBeNull();
     });
 
+    it("非生产构建但显式打开 dev 开关 → 初始化成功", async () => {
+      const config = resolveDatongConfig(
+        {
+          NODE_ENV: "development",
+          NEXT_PUBLIC_DATONG_ENABLED: "true",
+          NEXT_PUBLIC_DATONG_APPKEY: "0WEB071LS3218EU7",
+          NEXT_PUBLIC_DATONG_DEV_ENABLED: "true",
+        } as never,
+        "cn",
+        "accepted" as CookieConsentValue,
+      );
+      expect(config).toEqual({
+        appKey: "0WEB071LS3218EU7",
+        region: "cn",
+        enableNoCodeTracking: false,
+      });
+    });
+
+    it("dev 开关打开但 appKey 缺失 → 仍不初始化", async () => {
+      const config = resolveDatongConfig(
+        {
+          NODE_ENV: "development",
+          NEXT_PUBLIC_DATONG_ENABLED: "true",
+          NEXT_PUBLIC_DATONG_APPKEY: undefined,
+          NEXT_PUBLIC_DATONG_DEV_ENABLED: "true",
+        } as never,
+        "cn",
+        "accepted" as CookieConsentValue,
+      );
+      expect(config).toBeNull();
+    });
+
+    it("dev 开关打开 + cookie consent 未同意 → 仍初始化（跳过 consent 门禁）", async () => {
+      const config = resolveDatongConfig(
+        {
+          NODE_ENV: "development",
+          NEXT_PUBLIC_DATONG_ENABLED: "true",
+          NEXT_PUBLIC_DATONG_APPKEY: "0WEB071LS3218EU7",
+          NEXT_PUBLIC_DATONG_DEV_ENABLED: "true",
+        } as never,
+        "cn",
+        null,
+      );
+      expect(config).toEqual({
+        appKey: "0WEB071LS3218EU7",
+        region: "cn",
+        enableNoCodeTracking: false,
+      });
+    });
+
     it("cookie consent 未同意不初始化", async () => {
       const config = resolveDatongConfig(PROD_ENV as never, "cn", null);
       expect(config).toBeNull();

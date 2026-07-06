@@ -19,6 +19,9 @@ type DatongEnv = {
   readonly NEXT_PUBLIC_DATONG_APPKEY?: string;
   readonly VITE_DATONG_ENABLED?: string;
   readonly VITE_DATONG_APPKEY?: string;
+  // dev 模式上报开关：本地/预览环境显式打开后，即便非生产构建也允许初始化 SDK。
+  readonly NEXT_PUBLIC_DATONG_DEV_ENABLED?: string;
+  readonly VITE_DATONG_DEV_ENABLED?: string;
 };
 
 // universal-report SDK 客户端类型 —— 采用宽松结构定义，仅暴露业务实际调用的成员，
@@ -263,18 +266,24 @@ const readImportMetaEnv = (): DatongEnv => {
 };
 
 /**
- * 安全读取 Next.js 端的 process.env（Vite 端无 process 全局）。
- * `globalThis` 在浏览器和 Node/Next 运行时均存在，通过宽松索引访问避免类型错误。
+ * 读取 Next.js 端的 process.env。
+ *
+ * ⚠️ 必须直接静态引用 `process.env.NEXT_PUBLIC_*`，Next.js 的 DefinePlugin 才能在构建时
+ * 把这些变量内联到客户端 bundle。通过 `globalThis.process?.env?.XXX` 间接访问会导致
+ * DefinePlugin 静态分析匹配不到，变量不会被内联，浏览器端运行时读不到值。
+ *
+ * 与 aegis.ts / posthog.ts 保持一致的 `typeof process !== "undefined"` 内联三元写法。
  */
-const readNextPublicEnv = (): Pick<DatongEnv, "NEXT_PUBLIC_DATONG_ENABLED" | "NEXT_PUBLIC_DATONG_APPKEY" | "NODE_ENV"> => {
-  const g = globalThis as unknown as { process?: { env?: Record<string, string | undefined> } };
-  const env = g.process?.env ?? {};
-  return {
-    NEXT_PUBLIC_DATONG_ENABLED: env.NEXT_PUBLIC_DATONG_ENABLED,
-    NEXT_PUBLIC_DATONG_APPKEY: env.NEXT_PUBLIC_DATONG_APPKEY,
-    NODE_ENV: env.NODE_ENV,
-  };
-};
+const readNextPublicEnv = (): DatongEnv => ({
+  PROD: typeof process !== "undefined" ? process.env.PROD : undefined,
+  NODE_ENV: typeof process !== "undefined" ? process.env.NODE_ENV : undefined,
+  NEXT_PUBLIC_DATONG_ENABLED:
+    typeof process !== "undefined" ? process.env.NEXT_PUBLIC_DATONG_ENABLED : undefined,
+  NEXT_PUBLIC_DATONG_APPKEY:
+    typeof process !== "undefined" ? process.env.NEXT_PUBLIC_DATONG_APPKEY : undefined,
+  NEXT_PUBLIC_DATONG_DEV_ENABLED:
+    typeof process !== "undefined" ? process.env.NEXT_PUBLIC_DATONG_DEV_ENABLED : undefined,
+});
 
 const readDatongEnv = (): DatongEnv => ({
   ...readImportMetaEnv(),
@@ -294,20 +303,30 @@ const envValue = (
 
 /**
  * 解析大同 SDK 生效条件。默认策略：
- *   1. 只在生产构建启用（NODE_ENV=production 或 PROD=true）
+ *   1. 只在生产构建启用（NODE_ENV=production 或 PROD=true）；
+ *      本地 dev 模式可显式打开 NEXT_PUBLIC_DATONG_DEV_ENABLED / VITE_DATONG_DEV_ENABLED 放行
  *   2. 全球站与国内站均启用（大同双区可用；PostHog 只在 global 启用）
- *   3. 需通过 cookie consent
+ *   3. 需通过 cookie consent（dev 模式下跳过此门禁，便于本地联调）
  *   4. 需要显式打开 NEXT_PUBLIC_DATONG_ENABLED
  *   5. 需要提供 appKey（可从环境变量注入或走 fallback 常量）
  */
+export function isDatongDevEnabled(env: DatongEnv = readDatongEnv()): boolean {
+  return isTruthy(
+    envValue(env, "NEXT_PUBLIC_DATONG_DEV_ENABLED", "VITE_DATONG_DEV_ENABLED"),
+  );
+}
+
 export function resolveDatongConfig(
   env: DatongEnv = readDatongEnv(),
   region: Region = REGION,
   consent: CookieConsentValue | null = readStoredCookieConsent(),
 ): DatongConfig | null {
   const isProduction = isTruthy(env.PROD) || env.NODE_ENV === "production";
-  if (!isProduction) return null;
-  if (consent !== COOKIE_CONSENT_ACCEPTED) return null;
+  const devEnabled = isDatongDevEnabled(env);
+  // 非生产构建且未显式打开 dev 开关时，保持原行为（不初始化）
+  if (!isProduction && !devEnabled) return null;
+  // dev 模式下跳过 cookie consent 门禁，便于本地联调埋点
+  if (!devEnabled && consent !== COOKIE_CONSENT_ACCEPTED) return null;
 
   if (!isTruthy(envValue(env, "NEXT_PUBLIC_DATONG_ENABLED", "VITE_DATONG_ENABLED"))) {
     return null;
