@@ -2,6 +2,7 @@ import { createMDX } from 'fumadocs-mdx/next';
 
 const teaThemeableResetCss = '@tencent/tea-component/dist/tea-themeable.css';
 const teaThemeableNoResetCss = '@tencent/tea-component/dist/tea-no-reset.css';
+const isDevelopment = process.env.NODE_ENV === 'development';
 
 /** @type {import('next').NextConfig} */
 const config = {
@@ -13,6 +14,18 @@ const config = {
   trailingSlash: true,
   allowedDevOrigins: ['lightvela.ai', 'www.lightvela.ai', 'lightvela.com', 'lightvela.tencent.com'],
   pageExtensions: ['next.tsx', 'next.ts'],
+  ...(isDevelopment
+    ? {
+        async rewrites() {
+          return [
+            {
+              source: '/__skillhub_api/:path*',
+              destination: 'https://api.skillhub.cn/:path*',
+            },
+          ];
+        },
+      }
+    : {}),
   images: {
     unoptimized: true,
   },

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ComponentType } f
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useT } from "@/i18n/t";
+import { isCN } from "@/lib/region";
 import {
   ExpertsPanel,
   type ExpertsExecDebugCommand,
@@ -37,6 +38,7 @@ export interface HermesAgentSkillsPanelProps<
   initialSectionSlug?: string;
   instance: TInstance;
   productConfig: TProductConfig;
+  showSkillPackages?: boolean;
   SkillPanel: ComponentType<{
     instance: TInstance;
     featureFlags: TFeatureFlags;
@@ -44,8 +46,11 @@ export interface HermesAgentSkillsPanelProps<
   }>;
 }
 
-export function getInitialAgentSkillsTab(sectionSlug?: string | null): AgentSkillsTab {
-  if (sectionSlug === "experts" || sectionSlug === "packages") return "packages";
+export function getInitialAgentSkillsTab(
+  sectionSlug?: string | null,
+  showSkillPackages = isCN,
+): AgentSkillsTab {
+  if (showSkillPackages && (sectionSlug === "experts" || sectionSlug === "packages")) return "packages";
   return "skills";
 }
 
@@ -60,11 +65,13 @@ export function HermesAgentSkillsPanel<
   initialSectionSlug,
   instance,
   productConfig,
+  showSkillPackages = isCN,
   SkillPanel,
 }: HermesAgentSkillsPanelProps<TInstance, TFeatureFlags, TProductConfig>) {
   const t = useT();
-  const initialTab = getInitialAgentSkillsTab(initialSectionSlug);
+  const initialTab = getInitialAgentSkillsTab(initialSectionSlug, showSkillPackages);
   const [activeTab, setActiveTab] = useState<AgentSkillsTab>(initialTab);
+  const currentTab: AgentSkillsTab = showSkillPackages ? activeTab : "skills";
   const skillPanelRef = useRef<HTMLDivElement>(null);
   const installedSkillSearchPlaceholder = t("搜索已安装技能名称");
 
@@ -73,7 +80,7 @@ export function HermesAgentSkillsPanel<
   }, [initialTab]);
 
   useEffect(() => {
-    if (activeTab !== "skills") return;
+    if (currentTab !== "skills") return;
     const root = skillPanelRef.current;
     syncInstalledSkillSearchPlaceholder(root, installedSkillSearchPlaceholder);
     if (!root) return;
@@ -83,13 +90,13 @@ export function HermesAgentSkillsPanel<
     });
     observer.observe(root, { childList: true, subtree: true });
     return () => observer.disconnect();
-  }, [activeTab, installedSkillSearchPlaceholder]);
+  }, [currentTab, installedSkillSearchPlaceholder]);
 
   return (
     <Tabs
-      value={activeTab}
+      value={currentTab}
       onValueChange={(value) => {
-        if (value === "skills" || value === "packages") {
+        if (value === "skills" || (showSkillPackages && value === "packages")) {
           setActiveTab(value);
         }
       }}
@@ -103,23 +110,25 @@ export function HermesAgentSkillsPanel<
           <TabsTrigger
             value="skills"
             className="min-w-0 rounded-none bg-transparent px-0 py-0 shadow-none transition-colors hover:text-black/70 data-[state=active]:bg-transparent data-[state=active]:shadow-none"
-            style={getAgentSkillsTabStyle(activeTab === "skills")}
+            style={getAgentSkillsTabStyle(currentTab === "skills")}
           >
             {t("技能")}
           </TabsTrigger>
-          <TabsTrigger
-            value="packages"
-            className="min-w-0 rounded-none bg-transparent px-0 py-0 shadow-none transition-colors hover:text-black/70 data-[state=active]:bg-transparent data-[state=active]:shadow-none"
-            style={getAgentSkillsTabStyle(activeTab === "packages")}
-          >
-            {t("技能包")}
-            <span
-              aria-hidden="true"
-              className="ml-1.5 inline-flex h-4 items-center rounded-[4px] bg-[#FF4D2E] px-1.5 text-[10px] font-semibold leading-none text-white shadow-[0_3px_8px_rgba(255,77,46,0.22)]"
+          {showSkillPackages ? (
+            <TabsTrigger
+              value="packages"
+              className="min-w-0 rounded-none bg-transparent px-0 py-0 shadow-none transition-colors hover:text-black/70 data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+              style={getAgentSkillsTabStyle(currentTab === "packages")}
             >
-              NEW
-            </span>
-          </TabsTrigger>
+              {t("技能包")}
+              <span
+                aria-hidden="true"
+                className="ml-1.5 inline-flex h-4 items-center rounded-[4px] bg-[#FF4D2E] px-1.5 text-[10px] font-semibold leading-none text-white shadow-[0_3px_8px_rgba(255,77,46,0.22)]"
+              >
+                NEW
+              </span>
+            </TabsTrigger>
+          ) : null}
         </TabsList>
       </div>
 
@@ -132,9 +141,11 @@ export function HermesAgentSkillsPanel<
           />
         </div>
       </TabsContent>
-      <TabsContent value="packages" className="mt-0">
-        <ExpertsPanel botId={botId} execDebugCommand={execDebugCommand} />
-      </TabsContent>
+      {showSkillPackages ? (
+        <TabsContent value="packages" className="mt-0">
+          <ExpertsPanel botId={botId} execDebugCommand={execDebugCommand} />
+        </TabsContent>
+      ) : null}
     </Tabs>
   );
 }
