@@ -2,7 +2,7 @@
  * 首页公告条。
  *
  * 显示位置：仅 landing（"/"）页顶部。
- * 显示条件：国内站首页、存在未过期且未关闭的公告。
+ * 显示条件：国内站或国际站首页、存在未过期且未关闭的公告。
  * 布局方式：普通文档流顶部条，出现时把首页整体向下推，避免覆盖首屏内容。
  *
  * 关闭行为：localStorage key 按公告 ID 分别记忆；下一次发新公告时换 ID 即可重新弹。
@@ -13,7 +13,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useT } from "@/i18n/t";
 import { stripPublicSiteLocalePrefix } from "@/lib/public-site-routing";
-import { isCN } from "@/lib/region";
+import { isCN, isGlobal } from "@/lib/region";
 import { cn } from "@/lib/utils";
 
 type AnnouncementItem = {
@@ -32,7 +32,7 @@ const ANNOUNCEMENT_IDS = [
   PAID_VERSION_ANNOUNCEMENT_ID,
 ] as const;
 
-/** 北京时间 2026-07-07 02:00:00 = UTC 2026-07-06 18:00:00 */
+/** 北京时间 / 新加坡时间 2026-07-07 02:00:00 = UTC 2026-07-06 18:00:00 */
 const HERMES_UPGRADE_EXPIRES_AT = Date.UTC(
   2026,
   6 /* 0-indexed: July */,
@@ -72,19 +72,27 @@ export function MaintenanceAnnouncementBanner() {
     {
       id: HERMES_UPGRADE_ANNOUNCEMENT_ID,
       expiresAt: HERMES_UPGRADE_EXPIRES_AT,
-      message: t(
-        "通知：我们将于北京时间 2026 年 7 月 6 日 22:00 至次日 02:00，对 Hermes Agent 进行后台版本升级，升级期间可能导致智能体对话或任务执行短暂中止，带来不便敬请谅解。",
-      ),
+      message: isGlobal
+        ? t(
+            "通知：我们将于新加坡时间 2026 年 7 月 6 日 22:00 至次日 02:00，对 Hermes Agent 进行后台版本升级，升级期间可能导致智能体对话或任务执行短暂中止，带来不便敬请谅解。",
+          )
+        : t(
+            "通知：我们将于北京时间 2026 年 7 月 6 日 22:00 至次日 02:00，对 Hermes Agent 进行后台版本升级，升级期间可能导致智能体对话或任务执行短暂中止，带来不便敬请谅解。",
+          ),
     },
-    {
-      id: PAID_VERSION_ANNOUNCEMENT_ID,
-      expiresAt: PAID_VERSION_EXPIRES_AT,
-      href: ANNOUNCEMENT_HREF,
-      message: t(
-        "LightVela 计划将于 2026 年 7 月 15 日起转为付费服务；正式转为付费后，内测用户现有套餐的有效期将额外延长 1 个月。",
-      ),
-      actionLabel: t("查看详情"),
-    },
+    ...(isCN
+      ? [
+          {
+            id: PAID_VERSION_ANNOUNCEMENT_ID,
+            expiresAt: PAID_VERSION_EXPIRES_AT,
+            href: ANNOUNCEMENT_HREF,
+            message: t(
+              "LightVela 计划将于 2026 年 7 月 15 日起转为付费服务；正式转为付费后，内测用户现有套餐的有效期将额外延长 1 个月。",
+            ),
+            actionLabel: t("查看详情"),
+          },
+        ]
+      : []),
   ];
   // 默认不显示，挂载时再读 localStorage —— 避免 SSR / 首屏 flash 不一致
   const [dismissedIds, setDismissedIds] = useState<Set<string> | null>(null);
@@ -145,7 +153,7 @@ export function MaintenanceAnnouncementBanner() {
   }, [paused, visibleAnnouncements.length]);
 
   const visible =
-    isCN &&
+    (isCN || isGlobal) &&
     pathname !== null &&
     VISIBLE_PATHS.has(stripPublicSiteLocalePrefix(pathname)) &&
     visibleAnnouncements.length > 0;
