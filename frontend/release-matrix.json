@@ -34,6 +34,10 @@
       ],
       "authApiBaseUrl": "https://api-sandbox-kr-1.lightclaw.tech",
       "outputDir": "out",
+      "deployEnv": {
+        "NEXT_PUBLIC_PAID_BILLING_ENABLED": "true",
+        "VITE_PAID_BILLING_ENABLED": "true"
+      },
       "observability": {
         "aegis": {
           "enabled": "true",

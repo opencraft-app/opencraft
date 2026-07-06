@@ -49,6 +49,10 @@ const globalCfCombo = {
   projectName: "lightvela-intl",
   authApiBaseUrl: "https://api-sandbox-kr-1.lightclaw.tech",
   outputDir: "out",
+  deployEnv: {
+    NEXT_PUBLIC_PAID_BILLING_ENABLED: "true",
+    VITE_PAID_BILLING_ENABLED: "true",
+  },
 };
 
 const globalCfObservedCombo = {
@@ -121,6 +125,8 @@ describe("release matrix helpers", () => {
     expect(comboEnv.VITE_AUTH_API_BASE_URL).toBe("https://api-sandbox-kr-1.lightclaw.tech");
     expect(comboEnv.NEXT_PUBLIC_REGION).toBe("global");
     expect(comboEnv.NEXT_PUBLIC_AUTH_API_BASE_URL).toBe("https://api-sandbox-kr-1.lightclaw.tech");
+    expect(comboEnv.VITE_PAID_BILLING_ENABLED).toBe("true");
+    expect(comboEnv.NEXT_PUBLIC_PAID_BILLING_ENABLED).toBe("true");
     expect(comboEnv.VITE_AEGIS_ENABLED).toBe("true");
     expect(comboEnv.VITE_AEGIS_ID).toBe("2ellOCK3ozed3owgOj");
     expect(comboEnv.VITE_AEGIS_HOST_URL).toBe("https://rumt-sg.com");

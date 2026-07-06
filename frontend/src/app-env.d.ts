@@ -3,6 +3,7 @@ interface ImportMetaEnv {
   readonly PROD?: boolean;
   readonly VITE_REGION?: "cn" | "global";
   readonly VITE_AUTH_API_BASE_URL?: string;
+  readonly VITE_PAID_BILLING_ENABLED?: string;
   readonly VITE_LOCAL_PREVIEW_AUTH?: string;
   readonly VITE_OAUTH_RELAY_ISSUER_BASE_URL?: string;
   readonly VITE_AEGIS_ENABLED?: string;
@@ -30,5 +31,6 @@ declare namespace NodeJS {
     readonly NEXT_PUBLIC_WX_PAY_PROCESS_VERSION?: string;
     readonly NEXT_PUBLIC_WX_PAY_PRODUCT_ID?: string;
     readonly NEXT_PUBLIC_MIDAS_SANDBOX?: string;
+    readonly NEXT_PUBLIC_PAID_BILLING_ENABLED?: string;
   }
 }

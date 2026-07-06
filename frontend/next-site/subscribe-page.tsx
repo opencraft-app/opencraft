@@ -327,14 +327,13 @@ const mapBundleToPlan = (
    *       国内外一律走「限时免费」视觉（价格锚点 $7.5 / ¥49、显示"限时免费"标签、
    *       skipPayment=true 走免费 createPass），保证灰度期兜底与老用户视觉一致。
    *   - `paidBillingEnabled=true`（开关已开启，新逻辑）：
-   *       国内站（isGlobal=false）消费后端真实价格 bundle.price.real_total_cost；
-   *         无价（trade 故障 / 未登录）时禁用按钮、不展示促销徽章。
-   *       国际站（isGlobal=true）暂时仍保持「限时免费」内测策略，待海外计费闭环后再切换。
+   *       国内站 / 国际站均消费后端真实价格 bundle.price.real_total_cost；
+   *       无价（trade 故障 / 未登录）时禁用按钮、不展示促销徽章。
    */
   const soldOut = bundle.bundle_sales_state === "SOLD_OUT";
-  /* 计费开关未开启时无论国内外都视为免费视觉；开启后仅国内站进入真实计费。 */
-  const paid = paidBillingEnabled && !isGlobal;
-  /** 国内站要展示的真实金额（元）；后端 bundle.price.real_total_cost 单位是分，
+  /* 计费开关未开启时无论国内外都视为免费视觉；开启后进入真实计费。 */
+  const paid = paidBillingEnabled;
+  /** 要展示的真实金额；后端 bundle.price.real_total_cost 单位是分，
    *  展示前需调 centsToYuan 转为元；后端 price 为 null 时返回 null 并标记为「暂无报价」禁用 */
   const realPriceYuan =
     paid && bundle.price ? centsToYuan(bundle.price.real_total_cost) : null;
@@ -349,15 +348,15 @@ const mapBundleToPlan = (
   let promoTag: string | undefined;
   if (paid) {
     price = realPriceYuan != null ? formatYuan(realPriceYuan, bundle.price?.currency ?? "CNY") : "";
-    /* 国内站不再展示"限时免费"标签 */
+    /* 真实计费模式不展示"限时免费"标签 */
     promoTag = undefined;
   } else {
-    /* 国际站：保持当前限时免费视觉 */
+    /* 未开启计费开关时保持当前限时免费视觉 */
     price = isGlobal ? "$7.5" : "¥49";
     promoTag = soldOut ? undefined : t("限时免费");
   }
 
-  /** 国内站价格不可用时按「暂无报价」展示禁用 CTA，避免点击后报错。
+  /** 价格不可用时按「暂无报价」展示禁用 CTA，避免点击后报错。
    *  询价加载中时专门细分为 "询价中..."，区别于永久性的 "暂无报价"。 */
   const ctaLabel = soldOut
     ? t("已售罄")
@@ -386,7 +385,6 @@ const mapBundleToPlan = (
     priceUnit: paid && durationKey === "yearly" && !showPricingPlaceholder
       ? (isGlobal ? "/ year" : t("/ 年"))
       : (isGlobal ? "/ month" : t("/ 月")),
-    /* 国际站中英文都展示促销标签：英文为 Limited free，中文为限时免费；国内站保持原有中文标签。 */
     promoTag,
     description: t("尝鲜体验，从一个 Agent 开始"),
     features,
@@ -400,7 +398,7 @@ const mapBundleToPlan = (
     soldOut,
     priceUnavailable,
     pricingLoading: showPricingPlaceholder,
-    /* 国际站继续走免费试用；国内站走付费下单 */
+    /* 未开启计费开关时走免费试用；开启后走付费下单 */
     skipPayment: !paid,
     availableCount: bundle.bundle_sales_available_count,
     totalCount: bundle.bundle_sales_total_count,

@@ -16,6 +16,13 @@ routes:
   - OPTIONS
   upstream: http://lightclaw-auth.lightvela-playground-sandbox-kr-1.svc.cluster.local
   access: public
+- name: frontend-runtime-config
+  prefix: /v1/frontend/runtime-config
+  methods:
+  - GET
+  - OPTIONS
+  upstream: http://lightclaw-auth.lightvela-playground-sandbox-kr-1.svc.cluster.local
+  access: public
 - name: sandbox
   prefix: /sandboxes
   methods:

@@ -26,9 +26,22 @@ interface RuntimeConfigState {
   refresh: () => Promise<void>;
 }
 
+const readBooleanLike = (value: string | undefined): boolean | null => {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === "true" || normalized === "1" || normalized === "on") return true;
+  if (normalized === "false" || normalized === "0" || normalized === "off") return false;
+  return null;
+};
+
+const readBuildTimePaidBillingDefault = (): boolean =>
+  readBooleanLike(typeof process !== "undefined" ? process.env.NEXT_PUBLIC_PAID_BILLING_ENABLED : undefined) ??
+  readBooleanLike(import.meta.env?.VITE_PAID_BILLING_ENABLED) ??
+  false;
+
 const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   features: {
-    paidBillingEnabled: false,
+    paidBillingEnabled: readBuildTimePaidBillingDefault(),
     realnamePhoneVerificationEnabled: false,
   },
 };
@@ -66,9 +79,7 @@ const readBooleanOverride = (storageKey: string): boolean | null => {
   try {
     const value = window.localStorage.getItem(storageKey)?.trim().toLowerCase();
     if (!value) return null;
-    if (value === "true" || value === "1" || value === "on") return true;
-    if (value === "false" || value === "0" || value === "off") return false;
-    return null;
+    return readBooleanLike(value);
   } catch {
     return null;
   }
@@ -143,8 +154,8 @@ export const RuntimeConfigProvider = ({ children }: PropsWithChildren) => {
 
 export const useRuntimeConfig = () => useContext(RuntimeConfigContext);
 
-const resolvePaidBillingEnabled = (config: RuntimeConfig, cn: boolean): boolean =>
-  cn && config.features.paidBillingEnabled === true;
+const resolvePaidBillingEnabled = (config: RuntimeConfig, _cn: boolean): boolean =>
+  config.features.paidBillingEnabled === true;
 
 const resolveRealnamePhoneVerificationEnabled = (config: RuntimeConfig, cn: boolean): boolean =>
   cn && config.features.realnamePhoneVerificationEnabled === true;
