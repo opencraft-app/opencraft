@@ -49,6 +49,37 @@ routes:
 	}
 }
 
+func TestLoadAppliesRouteHostHeaderOverride(t *testing.T) {
+	t.Setenv("CLOUDLADDERGATEWAY_ROUTE_JIFEI_TEST_HOST_HEADER", "test.trade-intl.billing.tencentyun.com")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(`
+backends:
+  - alias: jifei-test
+    upstream:
+      base_url: "http://9.139.137.40"
+      headers:
+        Host: trade.itd.com
+routes:
+  - id: jifei-test
+    upstream:
+      backend: jifei-test
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	upstream, err := cfg.ResolveUpstream("jifei-test", cfg.Routes[0].Upstream)
+	if err != nil {
+		t.Fatalf("resolve upstream: %v", err)
+	}
+	if got := upstream.Headers["Host"]; got != "test.trade-intl.billing.tencentyun.com" {
+		t.Fatalf("route Host override = %q", got)
+	}
+}
+
 func TestExampleConfigLoads(t *testing.T) {
 	t.Setenv("CLOUDLADDER_PAYMENT_HMAC_SECRET", "test-secret")
 	cfg, err := Load("../../config.example.yaml")
