@@ -11,7 +11,7 @@ const config = {
   output: 'export',
   assetPrefix: process.env.NEXT_PUBLIC_ASSET_PREFIX || undefined,
   trailingSlash: true,
-  allowedDevOrigins: ['lightvela.ai', 'www.lightvela.ai'],
+  allowedDevOrigins: ['lightvela.ai', 'www.lightvela.ai', 'lightvela.com', 'lightvela.tencent.com'],
   pageExtensions: ['next.tsx', 'next.ts'],
   images: {
     unoptimized: true,

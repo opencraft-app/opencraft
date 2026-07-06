@@ -42,7 +42,7 @@
     "@tencent/agentchat-lightvela-panel": "0.3.1",
     "@tencent/i18n": "^2.0.30",
     "@tencent/tcb-jssdk": "2.0.27",
-    "@tencent/tea-sdk-lightclaw": "1.6.1",
+    "@tencent/tea-sdk-lightclaw": "1.9.0",
     "@tencent/universal-report": "4.7.4",
     "@types/mdx": "^2.0.14",
     "@xterm/addon-fit": "^0.11.0",

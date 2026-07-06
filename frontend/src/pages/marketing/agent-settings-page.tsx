@@ -44,7 +44,9 @@ import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { useOpenClaw, type OpenClawBot } from "@/contexts/openclaw-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { useT, t as rawT } from "@/i18n/t";
+import { useTranslation } from "react-i18next";
 import { isCN, isGlobal } from "@/lib/region";
+import type { IModelProvider } from "@tencent/tea-sdk-lightclaw";
 import { useSession } from "@/contexts/session-context";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { AppLink, useAppLocation, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
@@ -169,9 +171,17 @@ type TeaSdkRuntime = {
   ChannelPanel: ComponentType<TeaSdkPanelProps>;
   ModelPanel: ComponentType<TeaSdkPanelProps>;
   SkillPanel: ComponentType<TeaSdkPanelProps>;
+  /** SDK 的 useModelProviders hook（动态 import 获取，避免静态 import 破坏 SSG） */
+  useModelProviders: (params?: {
+    isI18n?: boolean;
+    useEnglish?: boolean;
+    rainbowBaseUrl?: string;
+    app?: string;
+  }) => IModelProvider[];
   createProductConfig: (args: {
     runCommand: TeaSdkProductConfig["runCommand"];
     getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
+    modelProviders?: IModelProvider[];
   }) => TeaSdkProductConfig;
   getGatewayRestartCommand: () => string;
   getProviderSaveCommand: (config: {
@@ -212,11 +222,13 @@ function loadTeaSdkRuntime(): Promise<TeaSdkRuntime> {
         ChannelPanel: sdk.ChannelPanel as unknown as ComponentType<TeaSdkPanelProps>,
         ModelPanel: sdk.ModelPanel as unknown as ComponentType<TeaSdkPanelProps>,
         SkillPanel: sdk.SkillPanel as unknown as ComponentType<TeaSdkPanelProps>,
-        createProductConfig: ({ runCommand, getInvocationTask }) => ({
+        useModelProviders: sdk.useModelProviders,
+        createProductConfig: ({ runCommand, getInvocationTask, modelProviders }) => ({
           ...sdk.createLighthouseConfig({
             agentType: "hermes",
             supportsTencentCloudApi: false,
             isI18n: isGlobal,
+            modelProviders,
           }),
           acliProduct: "lightvela",
           runCommand,
@@ -255,6 +267,7 @@ function TeaSdkSettingsPanel({
   instance,
   featureFlags,
   productConfigArgs,
+  useEnglish,
 }: {
   kind: "channel" | "model" | "skill";
   instance: TeaSdkInstanceInfo;
@@ -263,14 +276,12 @@ function TeaSdkSettingsPanel({
     runCommand: TeaSdkProductConfig["runCommand"];
     getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
   };
+  /** 是否取英文文案（语言维度），传给 SDK useModelProviders */
+  useEnglish: boolean;
 }) {
   const t = useT();
   const [runtime, setRuntime] = useState<TeaSdkRuntime | null>(() => teaSdkRuntimeCache);
   const [error, setError] = useState<string | null>(() => teaSdkRuntimeError?.message ?? null);
-  const productConfig = useMemo(
-    () => runtime ? runtime.createProductConfig(productConfigArgs) : null,
-    [runtime, productConfigArgs],
-  );
 
   useEffect(() => {
     if (teaSdkRuntimeCache) {
@@ -299,9 +310,46 @@ function TeaSdkSettingsPanel({
     );
   }
 
-  if (!runtime || !productConfig) {
+  if (!runtime) {
     return <TeaSdkRuntimeLoading />;
   }
+
+  return (
+    <TeaSdkSettingsPanelReady
+      runtime={runtime}
+      kind={kind}
+      instance={instance}
+      featureFlags={featureFlags}
+      productConfigArgs={productConfigArgs}
+      useEnglish={useEnglish}
+    />
+  );
+}
+
+/** runtime 已就绪的内层组件，无条件调 hook（遵守 Rules of Hooks） */
+function TeaSdkSettingsPanelReady({
+  runtime,
+  kind,
+  instance,
+  featureFlags,
+  productConfigArgs,
+  useEnglish,
+}: {
+  runtime: TeaSdkRuntime;
+  kind: "channel" | "model" | "skill";
+  instance: TeaSdkInstanceInfo;
+  featureFlags: TeaSdkFeatureFlags;
+  productConfigArgs: {
+    runCommand: TeaSdkProductConfig["runCommand"];
+    getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
+  };
+  useEnglish: boolean;
+}) {
+  const modelProviders = runtime.useModelProviders({ isI18n: isGlobal, useEnglish });
+  const productConfig = useMemo(
+    () => runtime.createProductConfig({ ...productConfigArgs, modelProviders }),
+    [runtime, productConfigArgs, modelProviders],
+  );
 
   const Panel =
     kind === "channel"
@@ -328,6 +376,7 @@ function HermesAgentSkillsRuntimePanel({
   initialSectionSlug,
   instance,
   productConfigArgs,
+  useEnglish,
 }: {
   botId: string;
   execDebugCommand: HermesAgentSkillsPanelProps["execDebugCommand"];
@@ -338,14 +387,12 @@ function HermesAgentSkillsRuntimePanel({
     runCommand: TeaSdkProductConfig["runCommand"];
     getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
   };
+  /** 是否取英文文案（语言维度），传给 SDK useModelProviders */
+  useEnglish: boolean;
 }) {
   const t = useT();
   const [runtime, setRuntime] = useState<TeaSdkRuntime | null>(() => teaSdkRuntimeCache);
   const [error, setError] = useState<string | null>(() => teaSdkRuntimeError?.message ?? null);
-  const productConfig = useMemo(
-    () => runtime ? runtime.createProductConfig(productConfigArgs) : null,
-    [runtime, productConfigArgs],
-  );
 
   useEffect(() => {
     if (teaSdkRuntimeCache) {
@@ -374,9 +421,52 @@ function HermesAgentSkillsRuntimePanel({
     );
   }
 
-  if (!runtime || !productConfig) {
+  if (!runtime) {
     return <TeaSdkRuntimeLoading />;
   }
+
+  return (
+    <HermesAgentSkillsRuntimePanelReady
+      runtime={runtime}
+      botId={botId}
+      execDebugCommand={execDebugCommand}
+      featureFlags={featureFlags}
+      initialSectionSlug={initialSectionSlug}
+      instance={instance}
+      productConfigArgs={productConfigArgs}
+      useEnglish={useEnglish}
+    />
+  );
+}
+
+/** runtime 已就绪的内层组件，无条件调 hook（遵守 Rules of Hooks） */
+function HermesAgentSkillsRuntimePanelReady({
+  runtime,
+  botId,
+  execDebugCommand,
+  featureFlags,
+  initialSectionSlug,
+  instance,
+  productConfigArgs,
+  useEnglish,
+}: {
+  runtime: TeaSdkRuntime;
+  botId: string;
+  execDebugCommand: HermesAgentSkillsPanelProps["execDebugCommand"];
+  featureFlags: TeaSdkFeatureFlags;
+  initialSectionSlug?: string;
+  instance: TeaSdkInstanceInfo;
+  productConfigArgs: {
+    runCommand: TeaSdkProductConfig["runCommand"];
+    getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
+  };
+  useEnglish: boolean;
+}) {
+  const modelProviders = runtime.useModelProviders({ isI18n: isGlobal, useEnglish });
+  const productConfig = useMemo(
+    () => runtime.createProductConfig({ ...productConfigArgs, modelProviders }),
+    [runtime, productConfigArgs, modelProviders],
+  );
 
   return (
     <StableTeaSdkPanelHost>
@@ -3759,6 +3849,9 @@ export const AgentSettingsPage = ({
     memoryV2: false,
     qqbotplugin: false,
   }), []);
+  // 从七彩石拉取模型列表移到 TeaSdkSettingsPanel（需 runtime.useModelProviders）
+  const { i18n } = useTranslation();
+  const useEnglish = !!i18n.language?.startsWith("en");
   const sdkProductConfigArgs = useMemo(() => ({
     runCommand: commandAdapter.runCommand,
     getInvocationTask: commandAdapter.getInvocationTask,
@@ -5044,6 +5137,7 @@ export const AgentSettingsPage = ({
                               instance={sdkInstance}
                               featureFlags={sdkFeatureFlags}
                               productConfigArgs={sdkProductConfigArgs}
+                              useEnglish={useEnglish}
                             />
                           )}
                           {activeSection === "model" && (
@@ -5052,6 +5146,7 @@ export const AgentSettingsPage = ({
                               instance={sdkInstance}
                               featureFlags={sdkFeatureFlags}
                               productConfigArgs={sdkProductConfigArgs}
+                              useEnglish={useEnglish}
                             />
                           )}
                           {activeSection === "skill" && (
@@ -5062,6 +5157,7 @@ export const AgentSettingsPage = ({
                               featureFlags={sdkFeatureFlags}
                               initialSectionSlug={initialSectionSlug}
                               productConfigArgs={sdkProductConfigArgs}
+                              useEnglish={useEnglish}
                             />
                           )}
                           {activeSection === "buddy" && (
