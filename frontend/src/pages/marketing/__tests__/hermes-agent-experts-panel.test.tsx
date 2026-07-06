@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { loadExpertPackagesState, saveExpertPackagesState } from "@/lib/expert-package-storage";
@@ -507,7 +507,7 @@ describe("hermes agent experts panel", () => {
 
   it("loads SkillHub packages with scenes and filters local dev seed packages without a scene", async () => {
     vi.mocked(fetchSkillSets).mockImplementation(async () => ({
-      total: 6,
+      total: 7,
       skillSets: [{
             id: 1,
             slug: "test-automation",
@@ -559,6 +559,16 @@ describe("hermes agent experts panel", () => {
             createdAt: 0,
             updatedAt: 0,
           }, {
+            id: 7,
+            slug: "assistant-workflow",
+            displayName: "万能助手",
+            summary: "未知分类摘要",
+            remark: "",
+            scene: "assistant-lab",
+            skillCount: 1,
+            createdAt: 0,
+            updatedAt: 0,
+          }, {
             id: 3,
             slug: "finance-quant-backtesting",
             displayName: "量化回测",
@@ -578,10 +588,14 @@ describe("hermes agent experts panel", () => {
     expect(screen.getByRole("button", { name: /紫微斗数/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /歌词创作/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /营养健康/ })).toBeInTheDocument();
+    const assistantCard = screen.getByRole("button", { name: /万能助手/ });
+    expect(assistantCard).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /量化回测/ })).toBeInTheDocument();
     expect(screen.getByText("命理占卜顾问")).toBeInTheDocument();
     expect(screen.getByText("歌词创作专家")).toBeInTheDocument();
     expect(screen.getByText("生活健康顾问")).toBeInTheDocument();
+    expect(within(assistantCard).getByText("技能包")).toBeInTheDocument();
+    expect(screen.queryByText("万能助手专家")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "玄学" })).toBeInTheDocument();
     expect(fetchSkillSets).toHaveBeenCalledWith({
       keyword: "",

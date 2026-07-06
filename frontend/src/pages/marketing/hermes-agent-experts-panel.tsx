@@ -275,7 +275,7 @@ function getExpertRole(
 
   const scene = getPackageScene(pkg, fallback);
   const sceneRole = scene ? EXPERT_PACKAGE_SCENE_ROLES[scene] : undefined;
-  return sceneRole ?? `${pkg.displayName}${t("专家")}`;
+  return sceneRole ?? t("技能包");
 }
 
 function getPackageSummary(pkg: SkillHubSkillSet, t: ReturnType<typeof useT>): string {
