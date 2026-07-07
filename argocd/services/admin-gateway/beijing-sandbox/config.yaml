@@ -18,10 +18,3 @@ routes:
     methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
     upstream: http://gateway-dashboard-internal.ai-gateway.svc.cluster.local
     access: admin
-  # 用户反馈后台：运营用各自 lightclaw 账号登录（access: authenticated 注入
-  # X-User-Id），由 ticket 的运营白名单(SUPPORT_AGENT_IDS)做二次校验。
-  - name: support-feedback
-    prefix: /support/feedback
-    methods: [GET, POST, OPTIONS]
-    upstream: http://ticket.ticket.svc.cluster.local
-    access: authenticated
