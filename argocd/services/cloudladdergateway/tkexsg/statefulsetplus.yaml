@@ -77,6 +77,8 @@ spec:
           value: https://api-sandbox-kr-1.lightclaw.tech
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_JKT_BASE_URL
           value: https://api-sandbox-kr-1.lightclaw.tech
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_SG_BASE_URL
+          value: https://api-sandbox-kr-1.lightclaw.tech
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_TH_BASE_URL
           value: https://api-sandbox-kr-1.lightclaw.tech
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_TEST_HOST_HEADER
