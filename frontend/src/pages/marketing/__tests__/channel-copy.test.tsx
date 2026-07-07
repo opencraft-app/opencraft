@@ -82,8 +82,9 @@ describe("marketing channel copy", () => {
     );
 
     expect(screen.getByText("2026 年 6 月")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "新增技能包" })).toBeInTheDocument();
-    expect(screen.getByText("LightVela 新增技能包入口，支持浏览 SkillHub 上的精选技能组合，并一键安装到你的 Hermes Agent。")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "新增技能包功能" })).toBeInTheDocument();
+    expect(screen.getByText("提供不同场景的技能包，帮助用户一键快速为 Agent 安装技能组合，覆盖金融、开发、设计、法律、教育等场景")).toBeInTheDocument();
+    expect(screen.getByAltText("新增技能包功能")).toHaveAttribute("src", expect.stringContaining("/assets/changelog/skill-packages.png"));
   });
 
   it("mentions automations in the May changelog", () => {
@@ -105,8 +106,8 @@ describe("marketing channel copy", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getAllByRole("heading", { name: "LightVela内测上线" }).length).toBeGreaterThan(0);
-    expect(screen.getByText("支持一键创建云端 Hermes，支持快速接入 QQ、微信、飞书通道，支持主流模型 API 接入，支持一键安装 Skill 技能。")).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { name: "LightVela 产品内测上线" }).length).toBeGreaterThan(0);
+    expect(screen.getByText("支持一键创建云端 Hermes Agent，支持快速接入 QQ、微信、飞书通道，支持主流模型 API 接入，支持一键安装 Skill 技能。")).toBeInTheDocument();
   });
 
   it("shows the Soul persona entry in the domestic May changelog", () => {
@@ -130,7 +131,7 @@ describe("marketing channel copy", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByAltText("LightVela now supports cloud storage")).toHaveAttribute("src", expect.stringContaining("/assets/changelog/lightvela-cloud-storage-en.png"));
+    expect(screen.getByAltText("LightVela supports cloud storage management")).toHaveAttribute("src", expect.stringContaining("/assets/changelog/lightvela-cloud-storage-en.png"));
     expect(screen.getByAltText("LightVela now supports achievements")).toHaveAttribute("src", expect.stringContaining("/assets/changelog/lightvela-achievements-en.png"));
     expect(screen.getByAltText("LightVela now supports web chat")).toHaveAttribute("src", expect.stringContaining("/assets/changelog/agentchat-web-chat-en.png"));
     expect(screen.getByAltText("LightVela now supports viewing Hermes Agent memory")).toHaveAttribute("src", expect.stringContaining("/assets/changelog/hermes-memory-en.png"));

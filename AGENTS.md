@@ -17,6 +17,8 @@
 | **仓库**       | `git.woa.com/wisp/mono2`          |
 | **TAPD 项目**  | 10132091                          |
 | **默认分支**   | `master`                          |
+| **国内站线上环境域名** | https://lightvela.com       |
+| **国际站线上环境域名** | https://lightvela.ai        |
 | **仓库形态**   | monorepo（多语言、多服务）        |
 | **包管理（FE）**| pnpm（workspace）                 |
 
