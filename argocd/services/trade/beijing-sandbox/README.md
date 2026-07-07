@@ -212,4 +212,4 @@ kubectl --kubeconfig=$KCFG -n trade exec deploy/trade -- \
   → jifei-prod 路由未生效（E 步骤未做完）；检查 cloudladdergateway pod 镜像 tag
 - trade pod 日志 `LIGHTVELA_TRADE_REGION=... is not a registered region`
   → trade-platform.env 的 region 字面量拼错；当前合法值仅 `ap-guangzhou` /
-  `ap-beijing` / `ap-singapore` / 空字符串
+  `ap-beijing` / `ap-shanghai` / `ap-singapore` / 空字符串

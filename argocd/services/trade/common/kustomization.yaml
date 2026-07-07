@@ -167,6 +167,7 @@ replacements:
   #   解耦。取值为腾讯云 region API 字面量 (kebab-case), 已注册:
   #     - "ap-guangzhou" -> 1 / 100001 / 广州 (国内站默认)
   #     - "ap-beijing"   -> 8 / 800001 / 北京 (北京 2 预发布场景: cn 身份 + 北京 region)
+  #     - "ap-shanghai"  -> 4 / 400001 / 上海 (上海正式场景: cn 身份 + 上海 region)
   #     - "ap-singapore" -> 9 / 900001 / Singapore (国际站默认)
   #     - 空字符串 -> 按 LIGHTVELA_SITE_KIND 兜底 (cn -> 广州 / intl -> 新加坡)
   #     - 未注册字面量 -> trade 启动 fail-fast

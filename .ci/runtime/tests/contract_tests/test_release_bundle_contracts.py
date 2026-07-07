@@ -59,6 +59,7 @@ PROD_DB_MIGRATION_WORKFLOWS = {
     ".ci/payment.yml",
     ".ci/sandbox.yml",
     ".ci/subscription.yml",
+    ".ci/trade.yml",
 }
 
 
@@ -777,9 +778,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
             expected_playground_auto_pin_envs="auto",
         )
 
-    def test_trade_workflow_builds_beijing_and_playground(self) -> None:
+    def test_trade_workflow_builds_beijing_shprod_and_playground(self) -> None:
         manifest = load_manifest()
         bundle = require_build_metadata(load_bundle(manifest, "trade", "beijing-sandbox"))
+        shprod_bundle = require_build_metadata(load_bundle(manifest, "trade", "shprod"))
         playground_bundle = require_build_metadata(load_bundle(manifest, "trade", PLAYGROUND_ENV))
         workflow = yaml.safe_load((REPO_ROOT / ".ci/trade.yml").read_text())
 
@@ -793,6 +795,16 @@ class ReleaseBundleContractTests(unittest.TestCase):
             bundle.publish_paths,
         )
         self.assertIn("trade/k8s/base/**", bundle.publish_paths)
+        self.assertEqual(shprod_bundle.image_repo, "lightclaw-shprod.tencentcloudcr.com/lightclaw/trade")
+        self.assertIn("argocd/services/trade/shprod/**", shprod_bundle.publish_paths)
+        self.assertIn("argocd/services/trade/common/**", shprod_bundle.publish_paths)
+        self.assertIn("argocd/apps/shprod/trade.yaml", shprod_bundle.publish_paths)
+        self.assertIn("argocd/projects/shprod-trade.yaml", shprod_bundle.publish_paths)
+        self.assertIn(
+            "argocd/secrets/shprod/trade-runtime-secrets.sops.yaml",
+            shprod_bundle.publish_paths,
+        )
+        self.assertIn("trade/k8s/base/**", shprod_bundle.publish_paths)
         self.assertEqual(playground_bundle.image_repo, "lightclaw-bj8.tencentcloudcr.com/lightclaw/trade")
         self.assertIn(f"argocd/services/trade/{PLAYGROUND_ENV}/**", playground_bundle.publish_paths)
         self.assertIn(
@@ -803,7 +815,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
             workflow,
             expected_service="trade",
             expected_pin_targets="trade",
-            expected_master_build_envs="beijing-sandbox",
+            expected_master_build_envs="beijing-sandbox,shprod",
             expected_master_auto_pin_envs="beijing-sandbox",
             expected_playground_build_envs="auto",
             expected_playground_auto_pin_envs="auto",
@@ -1092,7 +1104,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 self.assertIsNot(params.get("ENABLE_MASTER_PROD_PROMOTE"), False)
 
     def test_service_release_workflows_without_prod_matrix_disable_prod_promote(self) -> None:
-        for workflow_path in [REPO_ROOT / ".ci/staticpages.yml", REPO_ROOT / ".ci/trade.yml"]:
+        for workflow_path in [REPO_ROOT / ".ci/staticpages.yml"]:
             with self.subTest(workflow=workflow_path.name):
                 workflow = yaml.safe_load(workflow_path.read_text()) or {}
                 params = (workflow.get("extends") or {}).get("parameters") or {}
