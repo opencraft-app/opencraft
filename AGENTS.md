@@ -205,8 +205,9 @@
 
 | 系统 | 定位 | 触发命令 |
 |------|------|----------|
-| **⚡ Superpowers** | 需求分析 & 驱动开发 | `/feai-start` |
+| **📝 Product Skills (`prd-init`)** | 产品前置、需求分析、PRD 梳理 | `/feai-start` |
 | **📐 OpenSpec** | 规范沉淀 & 变更管理 | `/feai-archive` |
+| **⚡ Superpowers** | 研发执行辅助 Skills（TDD / plans / review 等） | 按需加载 |
 
 ### 规范文件清单
 
@@ -281,7 +282,7 @@ codesign/                # EdgeOne / 子账号 / 权限模型 / 测试发布协�
 | ----------------------- | -------------------------------------------------------- |
 | 🧪 TDD 测试驱动         | 推荐先写测试再写代码；测试不通过不能合入                 |
 | 📐 OpenSpec 双重角色    | 开发前提供项目上下文，开发后归档沉淀功能规范文档         |
-| ⚡ Superpowers 分析需求 | 用 Superpowers 分析需求、驱动开发、交付代码               |
+| 📝 prd-init 产品前置 | 用 `.agents/skills/product-skills/prd-init` 做产品前置、需求分析和 PRD 梳理 |
 | 🚫 禁止 any（TS 项目）  | 使用 `unknown` 或具体类型替代                            |
 
 ---
