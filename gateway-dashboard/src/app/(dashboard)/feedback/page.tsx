@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ColumnDef } from "@tanstack/react-table";
 import { Eye, Download } from "lucide-react";
 import { toast } from "sonner";
@@ -15,6 +15,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { apiClient, ApiError } from "@/lib/api-client";
 import { formatDateTime } from "@/lib/utils";
 
@@ -23,6 +30,21 @@ interface FeedbackAttachment {
   contentType: string;
   size: number;
   storageKey: string;
+}
+
+/** 用户画像（调研问卷，可选填写），与 ticket 后端 feedbackRecordDTO.profile 对齐。 */
+interface FeedbackProfile {
+  source?: string;
+  role?: string;
+  aiGoal?: string;
+  frequency?: string;
+  industry?: string;
+}
+
+/** Bug 类排障信息，与 ticket 后端 feedbackRecordDTO.bugInfo 对齐。 */
+interface FeedbackBugInfo {
+  frequency?: string;
+  expected?: string;
 }
 
 interface FeedbackRecord {
@@ -34,25 +56,35 @@ interface FeedbackRecord {
   subject: string;
   status: string;
   site: string;
+  /** 反馈大类：建议/反馈 或 Bug，与最新问卷（support-page.tsx）对齐。 */
+  category?: "suggestion" | "bug" | null;
+  profile?: FeedbackProfile | null;
+  bugInfo?: FeedbackBugInfo | null;
   createdAt: string;
   updatedAt: string;
   attachments: FeedbackAttachment[];
   contactInfo?: string | null;
 }
 
-const FEEDBACK_TYPE = {
-  BUG: "bug",
-  FEATURE: "feature",
-  COMPLAINT: "complaint",
-  OTHER: "other",
-} as const;
-
+/** 反馈细分类型，与用户端问卷（support-page.tsx）最新枚举保持一致。 */
 const FEEDBACK_TYPE_LABELS: Record<string, string> = {
-  [FEEDBACK_TYPE.BUG]: "Bug 反馈",
-  [FEEDBACK_TYPE.FEATURE]: "功能建议",
-  [FEEDBACK_TYPE.COMPLAINT]: "投诉",
-  [FEEDBACK_TYPE.OTHER]: "其他",
+  experience_issue: "体验问题反馈",
+  bug_report: "Bug/异常",
+  feature_request: "产品功能建议",
+  rant: "产品吐槽",
+  performance: "性能/卡顿问题",
+  billing: "账单/费用问题",
+  security: "安全/隐私问题",
+  docs: "文档/帮助问题",
+  other: "其他",
 };
+
+const CATEGORY_LABELS: Record<string, string> = {
+  suggestion: "建议/反馈",
+  bug: "Bug/异常",
+};
+
+const CATEGORY_FILTER_ALL = "all";
 
 const FEEDBACK_STATUS = {
   OPEN: "open",
@@ -79,6 +111,19 @@ function feedbackStatusVariant(status: string): "default" | "secondary" | "outli
   }
 }
 
+function feedbackTypeLabel(type: string, otherText?: string | null): string {
+  const label = FEEDBACK_TYPE_LABELS[type] ?? type;
+  if (type === "other" && otherText?.trim()) {
+    return `${label} · ${otherText.trim()}`;
+  }
+  return label;
+}
+
+function categoryLabel(category?: string | null): string {
+  if (!category) return "未分类";
+  return CATEGORY_LABELS[category] ?? "未分类";
+}
+
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
@@ -91,6 +136,7 @@ export default function FeedbackPage() {
   const [records, setRecords] = useState<FeedbackRecord[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [detail, setDetail] = useState<FeedbackRecord | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState<string>(CATEGORY_FILTER_ALL);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
@@ -122,22 +168,23 @@ export default function FeedbackPage() {
     }
   }
 
+  const filteredRecords = useMemo(() => {
+    if (categoryFilter === CATEGORY_FILTER_ALL) return records;
+    return records.filter((record) => (record.category ?? "") === categoryFilter);
+  }, [records, categoryFilter]);
+
   const columns: ColumnDef<FeedbackRecord>[] = [
     { accessorKey: "id", header: "反馈 ID", cell: ({ row }) => <span className="font-mono text-xs">{row.original.id}</span> },
     { accessorKey: "accountId", header: "账号", cell: ({ row }) => <span className="font-mono text-xs">{row.original.accountId}</span> },
     {
+      accessorKey: "category",
+      header: "大类",
+      cell: ({ row }) => <Badge variant="outline">{categoryLabel(row.original.category)}</Badge>,
+    },
+    {
       accessorKey: "feedbackType",
       header: "类型",
-      cell: ({ row }) => {
-        const t = row.original.feedbackType;
-        const label = FEEDBACK_TYPE_LABELS[t] ?? t;
-        return (
-          <span>
-            {label}
-            {row.original.otherText ? `（${row.original.otherText}）` : ""}
-          </span>
-        );
-      },
+      cell: ({ row }) => <span>{feedbackTypeLabel(row.original.feedbackType, row.original.otherText)}</span>,
     },
     { accessorKey: "subject", header: "主题", cell: ({ row }) => <span className="max-w-[240px] truncate">{row.original.subject}</span> },
     {
@@ -161,7 +208,7 @@ export default function FeedbackPage() {
     },
   ];
 
-  const paged = records.slice((page - 1) * pageSize, page * pageSize);
+  const paged = filteredRecords.slice((page - 1) * pageSize, page * pageSize);
 
   return (
     <div className="space-y-6">
@@ -172,12 +219,36 @@ export default function FeedbackPage() {
           {isLoading ? "加载中..." : "加载反馈"}
         </Button>
         <span className="text-sm text-muted-foreground">国内站反馈</span>
+
+        <Select
+          value={categoryFilter}
+          items={[
+            { value: CATEGORY_FILTER_ALL, label: "全部大类" },
+            { value: "suggestion", label: "建议/反馈" },
+            { value: "bug", label: "Bug/异常" },
+          ]}
+          onValueChange={(value: string | null) => {
+            if (value) {
+              setCategoryFilter(value);
+              setPage(1);
+            }
+          }}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={CATEGORY_FILTER_ALL}>全部大类</SelectItem>
+            <SelectItem value="suggestion">建议/反馈</SelectItem>
+            <SelectItem value="bug">Bug/异常</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <DataTable
         columns={columns}
         data={paged}
-        total={records.length}
+        total={filteredRecords.length}
         page={page}
         pageSize={pageSize}
         pageSizeOptions={[20, 50, 100]}
@@ -196,16 +267,44 @@ export default function FeedbackPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-2">
+          <div className="max-h-[70vh] space-y-4 overflow-y-auto py-2">
             <div className="grid grid-cols-2 gap-2 text-sm text-muted-foreground">
               <span>账号：<span className="font-mono">{detail?.accountId}</span></span>
-              <span>类型：{detail ? (FEEDBACK_TYPE_LABELS[detail.feedbackType] ?? detail.feedbackType) : ""}</span>
+              <span>大类：{detail ? categoryLabel(detail.category) : ""}</span>
+              <span>类型：{detail ? feedbackTypeLabel(detail.feedbackType, detail.otherText) : ""}</span>
               <span>状态：{detail ? (FEEDBACK_STATUS_LABELS[detail.status] ?? detail.status) : ""}</span>
               <span>创建：{detail ? formatDateTime(detail.createdAt) : ""}</span>
               <span>更新：{detail ? formatDateTime(detail.updatedAt) : ""}</span>
             </div>
 
             <div className="rounded-md border p-3 text-sm whitespace-pre-wrap">{detail?.description}</div>
+
+            {detail?.category === "bug" && detail.bugInfo && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">排障信息</p>
+                <div className="grid grid-cols-2 gap-2 rounded-md border p-3 text-sm">
+                  {detail.bugInfo.frequency && <span>发生频率：{detail.bugInfo.frequency}</span>}
+                  {detail.bugInfo.expected && (
+                    <span className="col-span-2 whitespace-pre-wrap">期望结果：{detail.bugInfo.expected}</span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {detail?.profile && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">用户画像</p>
+                <div className="grid grid-cols-2 gap-2 rounded-md border p-3 text-sm">
+                  {detail.profile.source && <span>了解渠道：{detail.profile.source}</span>}
+                  {detail.profile.role && <span>角色：{detail.profile.role}</span>}
+                  {detail.profile.frequency && <span>使用频率：{detail.profile.frequency}</span>}
+                  {detail.profile.industry && <span>行业：{detail.profile.industry}</span>}
+                  {detail.profile.aiGoal && (
+                    <span className="col-span-2 whitespace-pre-wrap">AI 用途：{detail.profile.aiGoal}</span>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2">
               <p className="text-sm font-medium">附件（{detail?.attachments.length ?? 0}）</p>

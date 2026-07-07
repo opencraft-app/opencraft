@@ -1,12 +1,11 @@
 /**
  * Support / LightVela Product Feedback — 用户端问卷表单页面
  * ──────────────────────────────────────────────────────────────
- * 对照中文问卷内容 1:1 做英文国际站版本。
+ * 本期仅上线国内站，暂不做多语言支持。
  */
 'use client';
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { useTranslation } from 'react-i18next';
 
 import { LegalFooter } from '@/components/site/legal-footer';
 import type { LanguageSwitcherVariant } from '@/components/site/language-switcher';
@@ -20,7 +19,6 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useSession } from '@/contexts/session-context';
 import { useT } from '@/i18n/t';
-import { isGlobal } from '@/lib/region';
 import { cn } from '@/lib/utils';
 import type { PublicSiteLocale } from '@/lib/public-site-navigation';
 import type { SupportFeedbackProfile, FeedbackCategory } from '@/lib/support-feedback-cos-client';
@@ -159,24 +157,14 @@ export function SupportPage({
   renderLink,
 }: SupportPageProps = {}): React.ReactElement {
   const t = useT();
-  const { i18n } = useTranslation();
   const { session, authReady, isAuthenticated } = useSession();
   const userId = session.user?.id?.trim() ?? '';
-  const isEnglish = isGlobal && !i18n.language.startsWith('zh');
-  const activePublicLocale: PublicSiteLocale = isGlobal
-    ? (isEnglish ? 'en-US' : 'zh-SG')
-    : 'zh-CN';
+  const activePublicLocale: PublicSiteLocale = 'zh-CN';
   const pageCopy = {
-    pageTitle: isEnglish ? 'Product Feedback' : t('产品反馈'),
-    pageDesc: isEnglish
-      ? 'Share your experience, report bugs, or suggest features to help us improve LightVela.'
-      : t('您可以将使用 LightVela 过程中的任何体验问题或需求建议告诉我们，帮助我们变得更好！'),
-    contactHintPrimary: isEnglish
-      ? "Leave an email if you'd like a follow-up."
-      : '可留下微信号或邮箱；',
-    contactHintExamples: isEnglish
-      ? 'Email example: 1234@gmail.com.'
-      : '微信号如：lightvela_demo，邮箱如：1234@gmail.com',
+    pageTitle: t('产品反馈'),
+    pageDesc: t('您可以将使用 LightVela 过程中的任何体验问题或需求建议告诉我们，帮助我们变得更好！'),
+    contactHintPrimary: '可留下微信号或邮箱；',
+    contactHintExamples: '微信号如：lightvela_demo，邮箱如：1234@gmail.com',
   };
 
   const effectiveUserId = userId;
@@ -279,64 +267,64 @@ export function SupportPage({
 
   // Bug 类发生频率选项
   const bugFrequencyOptions: { value: string; label: string }[] = [
-    { value: 'always', label: isEnglish ? 'Every time' : '每次必现' },
-    { value: 'often', label: isEnglish ? 'Often' : '经常发生' },
-    { value: 'sometimes', label: isEnglish ? 'Sometimes' : '偶尔发生' },
-    { value: 'once', label: isEnglish ? 'First time' : '仅出现一次' },
+    { value: 'always', label: '每次必现' },
+    { value: 'often', label: '经常发生' },
+    { value: 'sometimes', label: '偶尔发生' },
+    { value: 'once', label: '仅出现一次' },
   ];
 
   // 调研问卷（选填）用户画像选项 —— 仅收集高信号字段，最少问题拿最多信息
   const profileSourceOptions: { value: string; label: string }[] = [
-    { value: 'search', label: isEnglish ? 'Search engine' : '搜索引擎' },
-    { value: 'friend', label: isEnglish ? 'Friend / colleague' : '朋友/同事推荐' },
-    { value: 'social', label: isEnglish ? 'Social media' : '社交媒体' },
-    { value: 'official', label: isEnglish ? 'Official site / docs' : '官网/文档' },
-    { value: 'community', label: isEnglish ? 'Community / forum' : '社区/论坛' },
-    { value: 'ad', label: isEnglish ? 'Ads' : '广告投放' },
-    { value: 'media', label: isEnglish ? 'News / media' : '新闻/媒体' },
-    { value: 'other', label: isEnglish ? 'Other' : '其他' },
+    { value: 'search', label: '搜索引擎' },
+    { value: 'friend', label: '朋友/同事推荐' },
+    { value: 'social', label: '社交媒体' },
+    { value: 'official', label: '官网/文档' },
+    { value: 'community', label: '社区/论坛' },
+    { value: 'ad', label: '广告投放' },
+    { value: 'media', label: '新闻/媒体' },
+    { value: 'other', label: '其他' },
   ];
   const profileRoleOptions: { value: string; label: string }[] = [
-    { value: 'student', label: isEnglish ? 'Student' : '学生' },
-    { value: 'developer', label: isEnglish ? 'Developer' : '开发者' },
-    { value: 'designer', label: isEnglish ? 'Designer' : '设计师' },
-    { value: 'pm', label: isEnglish ? 'Product Manager' : '产品经理' },
-    { value: 'founder', label: isEnglish ? 'Founder / Entrepreneur' : '创业者' },
-    { value: 'ops', label: isEnglish ? 'Operations / Other' : '运营/其他' },
-    { value: 'researcher', label: isEnglish ? 'Researcher / Academic' : '科研/学术' },
-    { value: 'engineer', label: isEnglish ? 'Engineer (non-dev)' : '工程师（非开发）' },
-    { value: 'marketer', label: isEnglish ? 'Marketer' : '市场/营销' },
-    { value: 'sales', label: isEnglish ? 'Sales / BD' : '销售/商务' },
-    { value: 'hr', label: isEnglish ? 'HR / Recruiting' : '人力/招聘' },
-    { value: 'writer', label: isEnglish ? 'Writer / Content' : '写作/内容' },
-    { value: 'teacher', label: isEnglish ? 'Teacher / Educator' : '教师/教育' },
-    { value: 'freelancer', label: isEnglish ? 'Freelancer' : '自由职业者' },
-    { value: 'analyst', label: isEnglish ? 'Analyst / Consultant' : '分析师/咨询' },
-    { value: 'manager', label: isEnglish ? 'Team Lead / Manager' : '团队负责人/管理者' },
-    { value: 'other', label: isEnglish ? 'Other' : '其他' },
+    { value: 'student', label: '学生' },
+    { value: 'developer', label: '开发者' },
+    { value: 'designer', label: '设计师' },
+    { value: 'pm', label: '产品经理' },
+    { value: 'founder', label: '创业者' },
+    { value: 'ops', label: '运营/其他' },
+    { value: 'researcher', label: '科研/学术' },
+    { value: 'engineer', label: '工程师（非开发）' },
+    { value: 'marketer', label: '市场/营销' },
+    { value: 'sales', label: '销售/商务' },
+    { value: 'hr', label: '人力/招聘' },
+    { value: 'writer', label: '写作/内容' },
+    { value: 'teacher', label: '教师/教育' },
+    { value: 'freelancer', label: '自由职业者' },
+    { value: 'analyst', label: '分析师/咨询' },
+    { value: 'manager', label: '团队负责人/管理者' },
+    { value: 'other', label: '其他' },
   ];
   const profileFrequencyOptions: { value: string; label: string }[] = [
-    { value: 'daily', label: isEnglish ? 'Daily' : '几乎每天' },
-    { value: 'weekly', label: isEnglish ? 'Several times a week' : '每周几次' },
-    { value: 'monthly', label: isEnglish ? 'A few times a month' : '每月几次' },
-    { value: 'occasionally', label: isEnglish ? 'Occasionally' : '偶尔用用' },
-    { value: 'first', label: isEnglish ? 'Just started' : '刚接触' },
+    { value: 'daily', label: '几乎每天' },
+    { value: 'weekly', label: '每周几次' },
+    { value: 'monthly', label: '每月几次' },
+    { value: 'occasionally', label: '偶尔用用' },
+    { value: 'first', label: '刚接触' },
   ];
   const profileIndustryOptions: { value: string; label: string }[] = [
-    { value: 'internet', label: isEnglish ? 'Internet / Software' : '互联网/软件' },
-    { value: 'ai', label: isEnglish ? 'AI / Tech' : 'AI/科技' },
-    { value: 'education', label: isEnglish ? 'Education' : '教育' },
-    { value: 'finance', label: isEnglish ? 'Finance / Insurance' : '金融/保险' },
-    { value: 'media', label: isEnglish ? 'Media / Content' : '媒体/内容' },
-    { value: 'ecommerce', label: isEnglish ? 'E-commerce / Retail' : '电商/零售' },
-    { value: 'healthcare', label: isEnglish ? 'Healthcare / Biotech' : '医疗/生物' },
-    { value: 'manufacturing', label: isEnglish ? 'Manufacturing / Hardware' : '制造/硬件' },
-    { value: 'gaming', label: isEnglish ? 'Gaming / Entertainment' : '游戏/文娱' },
-    { value: 'government', label: isEnglish ? 'Government / Public' : '政府/公共' },
-    { value: 'research', label: isEnglish ? 'Research / Academic' : '科研/学术' },
-    { value: 'freelance', label: isEnglish ? 'Self-employed / Freelance' : '自由职业/个体' },
-    { value: 'student', label: isEnglish ? 'Student' : '学生' },
-    { value: 'other', label: isEnglish ? 'Other' : '其他' },
+    { value: 'internet', label: '互联网/软件' },
+    { value: 'ai', label: 'AI/科技' },
+    { value: 'education', label: '教育' },
+    { value: 'finance', label: '金融/保险' },
+    { value: 'media', label: '媒体/内容' },
+    { value: 'ecommerce', label: '电商/零售' },
+    { value: 'healthcare', label: '医疗/生物' },
+    { value: 'manufacturing', label: '制造/硬件' },
+    { value: 'gaming', label: '游戏/文娱' },
+    { value: 'government', label: '政府/公共' },
+    { value: 'research', label: '科研/学术' },
+    { value: 'freelance', label: '自由职业/个体' },
+    { value: 'student', label: '学生' },
+    { value: 'other', label: '其他' },
   ];
 
   const validate = (): boolean => {
@@ -924,7 +912,7 @@ export function SupportPage({
                   type="text"
                   value={contactInfo}
                   onChange={(e) => setContactInfo(e.target.value)}
-                  placeholder={isEnglish ? t('邮箱（选填）') : t('微信号 / 邮箱（选填）')}
+                  placeholder={t('微信号 / 邮箱（选填）')}
                 />
               </div>
 
