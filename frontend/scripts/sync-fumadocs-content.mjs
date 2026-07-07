@@ -12,7 +12,7 @@ const buildRegion = process.env.NEXT_PUBLIC_REGION || process.env.VITE_REGION ||
 const defaultDocsOutputPrefix = buildRegion === 'global' ? 'en-us' : 'zh-cn';
 
 const cnDocs = [
-  { slug: 'announcements/public-beta', title: 'LightVela 公测计划及付费版本预告', file: 'announcements/public-beta.md', group: '产品公告', description: '' },
+  { slug: 'announcements/public-beta', title: 'LightVela 付费版本公告', file: 'announcements/public-beta.md', group: '产品公告', description: '' },
   { slug: 'overview', title: 'LightVela 是什么', file: '01-overview.md', group: '开始使用', description: '云端托管 Hermes Agent，越聊越懂的智能伙伴。' },
   { slug: 'quickstart', title: '快速开始', file: '02-quickstart.md', group: '开始使用', description: '5 分钟跑通第一个 LightVela 对话。' },
   { slug: 'account', title: '账号与实名认证', file: '03-account.md', group: '开始使用', description: '账号管理与实名认证流程。' },

@@ -59,5 +59,5 @@ create_branch({
 ## 与其他 Skills 的协作
 
 ```
-tapd-requirement-fetch → brainstorming → [用户确认] → branch-auto-create → writing-plans
+tapd-requirement-fetch → prd-init → [用户确认] → branch-auto-create → writing-plans
 ```

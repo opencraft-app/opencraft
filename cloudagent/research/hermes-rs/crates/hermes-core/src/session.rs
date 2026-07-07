@@ -274,10 +274,12 @@ mod tests {
             context: TurnContext {
                 turn_id: "turn_1".to_string(),
                 run_id: "run_1".to_string(),
+                session_id: "session_1".to_string(),
                 source: "prompt".to_string(),
                 prompt: "hello".to_string(),
                 cwd: PathBuf::from("."),
                 versions: BehaviorVersions::default(),
+                skills: Default::default(),
             },
             status: TurnStatus::Running,
         });
@@ -298,10 +300,12 @@ mod tests {
             context: TurnContext {
                 turn_id: "turn_1".to_string(),
                 run_id: "run_1".to_string(),
+                session_id: "session_1".to_string(),
                 source: "prompt".to_string(),
                 prompt: "hello".to_string(),
                 cwd: PathBuf::from("."),
                 versions: BehaviorVersions::default(),
+                skills: Default::default(),
             },
             status: TurnStatus::Running,
         });

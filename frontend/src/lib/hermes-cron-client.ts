@@ -437,7 +437,10 @@ export async function listCronJobs(botId: string): Promise<CronJob[]> {
   const payload = await execCommand(botId, command);
   const text = (payload.output || "").trimEnd();
   if (!text.trim() || /no scheduled jobs/i.test(text)) return [];
-  const jobs = parseCronListOutput(text);
+  // 「测试运行」会创建用完即焚的临时任务（名字末尾带一段不可见的零宽 marker，见
+  // `buildTestRunMarker`），执行完会自动删除；但删除前存在的短暂窗口内
+  // 如果用户恰好刷新列表，不应该让这类内部实现细节暴露给前端。
+  const jobs = parseCronListOutput(text).filter((job) => !isTestRunMarkerName(job.name));
   // hermes cron list 文本输出不含 prompt；额外尝试读 jobs.json 补 prompt 字段
   // 文件不存在/读不到时静默跳过，仅影响 prompt 显示，不影响列表本身
   try {
@@ -632,6 +635,27 @@ async function archiveCronJobMetadata(botId: string): Promise<void> {
   }
 }
 
+/**
+ * 把执行记录里要展示给用户的任务名规范化（纵深防御，第二道防线）。
+ *
+ * 正常情况下 `parseCronRunFilesOutput` 已在入口把测试运行临时任务记录整条过滤掉
+ * （见 CR P2），不会再走到这里带 marker 的名字。但万一有边界场景漏过（如 archive
+ * meta 缺失只剩 output 目录、名字来源异常），这里再兜一层：识别到零宽 marker 就
+ * 剥掉 marker/反查原任务名，绝不把零宽字符或内部临时串暴露给用户。
+ *   - 是测试运行临时任务 → 剥掉零宽 marker，用可读部分（`{原任务名}测试运行`）；
+ *     可读部分意外为空则按 marker 里编码的原 jobId 前缀反查原任务名，再兜底成「测试运行」。
+ *   - 非测试运行任务 → 原样返回。
+ */
+function displayNameForRun(rawName: string, jobs: CronJob[]): string {
+  if (!isTestRunMarkerName(rawName)) return rawName;
+  const visible = stripTestRunMarker(rawName).trim();
+  if (visible) return visible;
+  const idPrefix = parseTestRunMarkerJobIdPrefix(rawName);
+  const origin = idPrefix ? jobs.find((job) => job.id.startsWith(idPrefix)) : undefined;
+  const originName = (origin?.name || "").trim();
+  return originName ? `${originName}测试运行` : "测试运行";
+}
+
 export function parseCronRunFilesOutput(text: string, jobs: CronJob[]): CronRunRecord[] {
   if (!text.trim()) return [];
   let parsed: unknown;
@@ -652,10 +676,19 @@ export function parseCronRunFilesOutput(text: string, jobs: CronJob[]): CronRunR
     if (row.agent_skipped === true) continue;
     const job = jobsById.get(jobId);
     const rowSchedule = normalizeRunSchedule(row.job_schedule);
+    const rawName = job?.name || stringValue(row.job_name) || jobId;
+    // 「测试运行」创建的临时任务是内部实现细节，不应出现在「最近执行」里：它的
+    // cron output 目录在任务删除后仍存在，archive/jobs_meta 里也可能留有其 meta，
+    // 导致这里解析出带零宽 marker 的临时任务名/临时 job id。凡是 job.name 或
+    // archive 里的 job_name 任一命中 marker，都直接过滤掉，避免内部实现细节
+    // （零宽 marker 名 / 临时 job id）泄漏到用户界面（见 CR P2）。
+    if (isTestRunMarkerName(job?.name ?? "") || isTestRunMarkerName(stringValue(row.job_name))) {
+      continue;
+    }
     records.push({
       id: `${jobId}:${outputPath || runAt}`,
       job_id: jobId,
-      job_name: job?.name || stringValue(row.job_name) || jobId,
+      job_name: displayNameForRun(rawName, jobs),
       job_prompt: job?.prompt || stringValue(row.job_prompt),
       schedule: job?.schedule ?? rowSchedule,
       deliver: job?.deliver || stringValue(row.job_deliver),
@@ -965,8 +998,51 @@ async function hydrateEffectiveWindows(botId: string, jobs: CronJob[]): Promise<
   }
 }
 
+/**
+ * `hermes cron create` 的输出里若出现这些错误特征，说明「命令 exit 0 了但其实没建成」。
+ *
+ * 背景（2026-07-03 实测）：`execCommand` 只在 `exit_code !== 0` 或 `status === "FAILED"`
+ * 时抛错。但这套 debug-exec 环境里，`hermes cron create` 遇到部分错误时会把错误打印到
+ * stdout 却仍以 exit 0 返回——于是 `createCronJob` 会「假成功」，上层拿不到任何异常，
+ * 用户既没收到结果也没看到报错。这里对 output 文本做一层内容级校验，命中错误特征就主动
+ * 抛错，把「假成功」转成显式失败。
+ */
+const CRON_CREATE_FAILURE_PATTERNS: RegExp[] = [
+  /\berror\b/i,
+  /\bfailed\b/i,
+  /\bpanic\b/i,
+  /unknown\s+(platform|flag|command|option)/i,
+  /invalid\s+(schedule|argument|value)/i,
+  /usage:/i,
+];
+
+/** 判断 `hermes cron create` 的 stdout 是否暗示「其实没建成」（尽管 exit 0） */
+export function detectCronCreateFailure(output: string): string | null {
+  const clean = (output ?? "")
+    .replace(/\u001b\[[0-9;]*m/g, "")
+    .trim();
+  if (!clean) return null;
+  for (const pattern of CRON_CREATE_FAILURE_PATTERNS) {
+    if (pattern.test(clean)) {
+      // 回一段末尾几行做诊断文案（错误通常在末尾）
+      return clean.split("\n").map((l) => l.trim()).filter(Boolean).slice(-4).join("；") || clean;
+    }
+  }
+  return null;
+}
+
 export async function createCronJob(botId: string, input: CreateCronJobInput): Promise<void> {
-  await execCommand(botId, buildCreateCommand(input));
+  const payload = await execCommand(botId, buildCreateCommand(input));
+  // 二次校验：即便 exit 0，也要看 stdout 里有没有错误特征，避免「假成功」（详见上方注释）。
+  const failure = detectCronCreateFailure(payload.output || "");
+  if (failure) {
+    throw new CronCommandError({
+      command: buildCreateCommand(input),
+      output: failure,
+      status: "CREATE_FAILED",
+      exitCode: payload.exit_code ?? 0,
+    });
+  }
   await archiveCronJobMetadata(botId);
 }
 
@@ -995,6 +1071,576 @@ export async function pauseCronJob(botId: string, id: string): Promise<void> {
 
 export async function resumeCronJob(botId: string, id: string): Promise<void> {
   await execCommand(botId, `hermes cron resume ${shellQuote(id)}`);
+}
+
+/**
+ * 底层原语：手动触发**指定 id** 的 cron job 执行一次。
+ *
+ * `hermes cron run <id>` 官方语义是「立即触发执行」：新建一个独立 Agent 会话、
+ * 跑 prompt、按 deliver 投递结果。但实测证实这条"强制立即触发"路径在这套
+ * CLI/debug-exec 环境下不可靠——触发后即使轮询等满一个完整调度器 tick 周期
+ * （90s）仍可能完全没有执行，原因未完全定位（不是纯粹的等待时间不够）。
+ *
+ * ⚠️ 另外这里的"成功"只代表 Agent 本身跑成功了（Hermes 内部 `last_status`），
+ * **不代表通知真的投递出去了**——投递失败会被单独记录在 `last_delivery_error`
+ * 字段里，CLI 的 exit code / 文案完全不反映这一点。
+ *
+ * 因此 `runCronJobAsTest` 现在**不再使用**这个原语，而是完全依赖"普通一次性
+ * 任务到点被调度器自然执行"这条已被生产环境验证可靠的路径（见其函数注释）。
+ * 这个原语仍保留导出（且有独立单测覆盖其命令拼接行为），但当前没有内部调用方；
+ * 如需恢复"强制立即触发"语义，务必先在真实环境里重新验证其可靠性。
+ */
+export async function runCronJob(botId: string, id: string): Promise<DebugExecPayload> {
+  return execCommand(botId, `hermes cron run ${shellQuote(id)}`);
+}
+
+/** 「测试运行」后缀：用户在 IM 标题里看到的可读部分就以它结尾 */
+const TEST_RUN_NAME_SUFFIX = "测试运行";
+
+/**
+ * 「测试运行」临时任务名字里嵌入的隐藏 marker。
+ *
+ * 背景：hermes 投递通知时，标题直接取任务的 `name` 字段（`Cronjob Response: <name>`），
+ * 且没有独立的「标题」字段可配。所以标题里必然带 name 的全部内容。而这个 name 又要
+ * 同时承担「程序用的内部标识」——列表过滤、执行完精确定位删除、避免和真实任务撞名。
+ *
+ * 取舍：把内部标识编码成一串**零宽字符**（对用户完全不可见）附在名字末尾。这样
+ *   - IM 标题 / 执行记录里用户只看到干净的「{原任务名}测试运行」；
+ *   - 程序仍能靠这段零宽 marker 100% 可靠地识别临时任务、精确反查其 id 去清理，
+ *     且几乎不可能误伤名字恰好也叫「xx测试运行」的真实任务（真实任务名不会含零宽字符）。
+ *
+ * 编码用两个零宽字符表示 0/1：`\u200B`=0、`\u200C`=1；首尾各夹一个 `\u2063`
+ * （INVISIBLE SEPARATOR）作为 marker 的边界哨兵，便于识别与剥离。
+ */
+const ZW_SENTINEL = "\u2063"; // marker 边界哨兵（不可见）
+const ZW_ZERO = "\u200B"; // 比特 0（不可见）
+const ZW_ONE = "\u200C"; // 比特 1（不可见）
+/** 匹配「哨兵 + 任意个 0/1 零宽位 + 哨兵」这一整段隐藏 marker */
+const ZW_MARKER_RE = new RegExp(`${ZW_SENTINEL}[${ZW_ZERO}${ZW_ONE}]*${ZW_SENTINEL}`);
+
+/** 把一段 ascii 文本编码成零宽比特串（每字符 8 bit） */
+function encodeZeroWidth(payload: string): string {
+  let bits = "";
+  for (const ch of payload) {
+    bits += ch.charCodeAt(0).toString(2).padStart(8, "0");
+  }
+  const zw = bits.replace(/0/g, ZW_ZERO).replace(/1/g, ZW_ONE);
+  return `${ZW_SENTINEL}${zw}${ZW_SENTINEL}`;
+}
+
+/** 把 `encodeZeroWidth` 产生的零宽 marker 解回原始 ascii 文本；解析不出返回空串 */
+function decodeZeroWidth(name: string): string {
+  const match = ZW_MARKER_RE.exec(name);
+  if (!match) return "";
+  const body = match[0].slice(1, -1); // 去掉首尾哨兵
+  const bits = body.replace(new RegExp(ZW_ZERO, "g"), "0").replace(new RegExp(ZW_ONE, "g"), "1");
+  let out = "";
+  for (let i = 0; i + 8 <= bits.length; i += 8) {
+    out += String.fromCharCode(parseInt(bits.slice(i, i + 8), 2));
+  }
+  return out;
+}
+
+/**
+ * 生成「测试运行」临时任务的名字：`{原任务名}测试运行` + 末尾不可见的零宽 marker。
+ *
+ * 可见部分就是投递标题会显示的文案；零宽 marker 里编码了「原 jobId 前 8 位 + 随机串」，
+ * 既保证名字唯一（反查/清理可靠、不撞名），又能供执行记录反解出原 jobId。
+ */
+export function buildTestRunMarker(jobId: string, originName?: string): string {
+  const visible = `${(originName ?? "").trim()}${TEST_RUN_NAME_SUFFIX}`;
+  const token = `${jobId.slice(0, 8)}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  return `${visible}${encodeZeroWidth(token)}`;
+}
+
+/** 判断是否为「测试运行」创建的用完即焚临时任务，供 `listCronJobs` 过滤 */
+function isTestRunMarkerName(name: string): boolean {
+  return ZW_MARKER_RE.test(name);
+}
+
+/**
+ * 从测试运行 marker 名字里解析出「原任务 id 的前 8 位」。
+ *
+ * marker 里零宽段编码的 token 形如 `dcb4fee9_mr4pinvyzd1t82`（原 jobId 前 8 位 + `_` + 随机）。
+ * 这里解出前 8 位，供执行记录反查原任务名。解析不出则返回 null。
+ */
+function parseTestRunMarkerJobIdPrefix(name: string): string | null {
+  if (!isTestRunMarkerName(name)) return null;
+  const token = decodeZeroWidth(name);
+  const prefix = token.split("_")[0] ?? "";
+  return prefix || null;
+}
+
+/** 去掉名字里的零宽 marker，得到给用户看的干净文案（`{原任务名}测试运行`） */
+function stripTestRunMarker(name: string): string {
+  return name.replace(ZW_MARKER_RE, "");
+}
+
+/**
+ * 「测试运行」临时任务用的一次性 schedule。
+ *
+ * 直接用 Hermes 官方文档给出的**相对延迟**一次性写法（`30m` / `2h` / `1d`
+ * 这一族），而不是自己拼 ISO 时间戳——这是关键教训：
+ *
+ * - 之前这里自己拼了个 `YYYY-MM-DDTHH:MM`（**故意砍掉了秒位**）的 ISO 字符串，
+ *   而官方 ISO 示例是带秒的完整格式 `2026-03-15T09:00:00`。这个自造的、缺秒的
+ *   格式很可能压根没被解析器正确识别，导致临时任务的 `next_run_at` 算错/为空，
+ *   调度器永远扫不到它——这正是「测试运行怎么等都不执行」的根因。
+ * - 相对延迟 `2m` 是文档直接给出的一次性任务示例，一定被解析器接受，且天然
+ *   就是"未来 2 分钟"，不存在分钟精度截断那套自找的心智负担。
+ * - 为什么是 `2m` 而不是 `1m`：调度器 tick 周期固定 60s，`2m` 能稳妥覆盖
+ *   "创建到下一次 tick 对齐"的最坏情况；秒级单位（`s`）文档未提及且 60s tick
+ *   粒度下无意义，不用。
+ */
+function buildImmediateOnceSchedule(): string {
+  return "2m";
+}
+
+/** 从 ~/.hermes/cron/jobs.json 里按 id 读出未经 `hermes cron list` 文本裁剪的原始字段（如 origin / last_delivery_error） */
+async function readRawCronJobRecordById(botId: string, jobId: string): Promise<Record<string, unknown> | null> {
+  const text = await readCronJobsJsonFile(botId);
+  if (!text) return null;
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    const arr: unknown[] = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray((parsed as { jobs?: unknown[] })?.jobs)
+        ? (parsed as { jobs: unknown[] }).jobs
+        : [];
+    for (const raw of arr) {
+      if (raw && typeof raw === "object" && String((raw as Record<string, unknown>).id ?? "") === jobId) {
+        return raw as Record<string, unknown>;
+      }
+    }
+  } catch { /* ignore parse失败，走上层兜底 */ }
+  return null;
+}
+
+/** 按 name 精确匹配反查 job id（临时任务创建后用这个拿到它的真实 id） */
+async function findCronJobIdByExactName(botId: string, name: string): Promise<string | null> {
+  const text = await readCronJobsJsonFile(botId);
+  if (!text) return null;
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    const arr: unknown[] = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray((parsed as { jobs?: unknown[] })?.jobs)
+        ? (parsed as { jobs: unknown[] }).jobs
+        : [];
+    for (const raw of arr) {
+      const r = raw as Record<string, unknown>;
+      if (r && r.name === name) {
+        const id = String(r.id ?? "");
+        if (id) return id;
+      }
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
+/** 临时任务定位重试参数：覆盖 jobs.json 写入延迟 / 短暂读失败的窗口 */
+const TEMP_JOB_LOOKUP_RETRIES = 3;
+const TEMP_JOB_LOOKUP_INTERVAL_MS = 500;
+
+/**
+ * 按 name 精确反查 job id，失败重试若干次。
+ *
+ * `createCronJob` 已成功但 jobs.json 可能有写入延迟 / 短暂读失败 / 解析不到 marker，
+ * 首次读不到不代表任务没建成。这里带几次快重试（间隔 {@link TEMP_JOB_LOOKUP_INTERVAL_MS}），
+ * 尽量拿到刚创建的临时任务 id，避免误判「没定位到」而走清理+报错路径（见 CR P1）。
+ */
+async function findCronJobIdByExactNameWithRetry(
+  botId: string,
+  name: string,
+  retries = TEMP_JOB_LOOKUP_RETRIES,
+  intervalMs = TEMP_JOB_LOOKUP_INTERVAL_MS,
+): Promise<string | null> {
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const id = await findCronJobIdByExactName(botId, name);
+    if (id) return id;
+    if (attempt < retries) await delay(intervalMs);
+  }
+  return null;
+}
+
+/**
+ * 兜底清理：即便反查不到 id，也尽力把「name 精确匹配」的临时任务删掉。
+ *
+ * 用于 create 成功但 lookup 最终失败的场景（见 CR P1）：先再尝试反查一次 id 去删，
+ * 保证任何已创建的临时任务都不会残留后被调度器真实执行。best-effort，找不到就放弃。
+ */
+async function removeCronJobByExactName(botId: string, name: string): Promise<void> {
+  const id = await findCronJobIdByExactName(botId, name);
+  if (id) await removeCronJob(botId, id);
+}
+
+/**
+ * 把 Hermes / acli 返回的通道名归一化成投递用的 platform key。
+ *
+ * 与 `openclaw-automations-panel.tsx` 里的 `normalizeHermesChannelKey` 保持一致
+ * （此处独立一份，避免 lib 反向依赖 page 组件文件）。
+ */
+function normalizeChannelKeyForDeliver(channel: string): string {
+  const normalized = channel.trim().toLowerCase();
+  if (["wechat", "weixin", "openclaw-weixin", "openclaw-wechat"].includes(normalized)) return "weixin";
+  if (["qq", "qqbot", "qq-bot", "qqbotplugin", "openclaw-qqbot", "openclaw-qq"].includes(normalized)) return "qqbot";
+  if (["wecom", "wework", "work-weixin", "work-wechat", "openclaw-wecom"].includes(normalized)) return "wecom";
+  if (["feishu", "lark", "larksuite", "openclaw-feishu", "openclaw-lark"].includes(normalized)) return "feishu";
+  if (["telegram", "tg", "openclaw-telegram", "openclaw-tg"].includes(normalized)) return "telegram";
+  if (["whatsapp", "whats-app", "whatsapp-business", "whatsapp_business", "openclaw-whatsapp"].includes(normalized)) return "whatsapp";
+  if (["discord", "openclaw-discord"].includes(normalized)) return "discord";
+  return normalized;
+}
+
+/**
+ * deliver=origin 但 origin 为空时，兜底选哪个 home channel 的优先级。
+ * 排在前面的优先。国内 IM（企业微信/微信/QQ）优先，其次飞书，再是国际通道。
+ */
+const DELIVER_FALLBACK_CHANNEL_PRIORITY = [
+  "wecom",
+  "weixin",
+  "qqbot",
+  "feishu",
+  "telegram",
+  "whatsapp",
+  "discord",
+] as const;
+
+/**
+ * 从 `acli channel status` 的 JSON 输出里，按优先级挑一个已连接的通道 platform 名。
+ *
+ * 纯函数（不涉及网络/exec），便于单测。返回的是**不带 chat_id 的 platform 名**
+ * （如 `"wecom"`），直接投到该平台的 home channel——已验证 `hermes send --to wecom`
+ * 能直达用户（Sent to wecom home channel）。解析失败或无已连接通道时返回 null。
+ */
+export function pickFallbackChannelFromStatusOutput(output: string): string | null {
+  const trimmed = (output || "").trim();
+  if (!trimmed) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    const start = trimmed.indexOf("{");
+    const end = trimmed.lastIndexOf("}");
+    if (start < 0 || end <= start) return null;
+    try {
+      parsed = JSON.parse(trimmed.slice(start, end + 1));
+    } catch {
+      return null;
+    }
+  }
+  const root = parsed as { data?: { platforms?: unknown }; platforms?: unknown } | null;
+  const rawPlatforms = root?.data?.platforms ?? root?.platforms;
+  if (!Array.isArray(rawPlatforms)) return null;
+  const connected = new Set<string>();
+  for (const entry of rawPlatforms) {
+    if (!entry || typeof entry !== "object") continue;
+    const item = entry as { name?: unknown; status?: unknown; enabled?: unknown };
+    const name = typeof item.name === "string" ? item.name : "";
+    if (!name) continue;
+    const status = typeof item.status === "string" ? item.status.toLowerCase() : "";
+    const ok = item.enabled === true || ["connected", "enabled", "running", "ready"].includes(status);
+    if (ok) connected.add(normalizeChannelKeyForDeliver(name));
+  }
+  if (connected.size === 0) return null;
+  for (const key of DELIVER_FALLBACK_CHANNEL_PRIORITY) {
+    if (connected.has(key)) return key;
+  }
+  // 优先级表里没有的其它已连接通道，取任意一个兜底
+  return [...connected][0] ?? null;
+}
+
+/**
+ * 从 `acli channel status` 的输出里挑一个已连接的通道，作为 deliver 兜底目标。
+ * 拉取失败返回 null（调用方会退回原样 origin）。
+ */
+async function resolveFallbackHomeChannel(botId: string): Promise<string | null> {
+  try {
+    const payload = await execCommand(botId, "acli channel status");
+    return pickFallbackChannelFromStatusOutput(payload.output || "");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * `deliver === "origin"`（或逗号分隔目标里含 "origin" 这个 token）时，把它替换
+ * 成具体的投递目标。
+ *
+ * 原因：`origin` 依赖任务创建时持久化下来的 `job.origin`（真实聊天会话里创建
+ * 才会有），而我们用 CLI 重新创建的临时克隆任务不会有这个上下文，如果不手动把
+ * 它换成具体目标，临时任务的 `origin` 投递就会走 Hermes 的兜底逻辑，可能跟原
+ * 任务的真实投递目标不一致。
+ *
+ * 两级还原：
+ * 1. 原任务持久化了 concrete origin（`{platform, chat_id}`）→ 换成 `platform:chat_id`；
+ * 2. 原任务 `origin` 为空（典型：在网页「自动任务」面板创建的任务——网页不是
+ *    IM 会话，没有"原对话"上下文，`origin` 存成 null）→ 此时若原样保留 `origin`，
+ *    临时任务投递会**静默丢弃**（任务照记 ok，但用户啥也收不到）。改为兜底到该
+ *    bot 已连接的 home channel（如 `wecom`），保证测试运行的通知能真正到达用户。
+ *    连一个已连接通道都没有时，才退回原样的 `origin`（此时确实无处可投）。
+ */
+async function resolveConcreteDeliverForTestRun(botId: string, job: CronJob): Promise<string> {
+  const tokens = job.deliver.split(",").map((token) => token.trim()).filter(Boolean);
+  if (!tokens.includes("origin")) return job.deliver;
+  const raw = await readRawCronJobRecordById(botId, job.id);
+  const origin = raw?.origin as { platform?: unknown; chat_id?: unknown } | undefined;
+  const hasConcreteOrigin = origin
+    && typeof origin.platform === "string"
+    && origin.platform
+    && origin.chat_id !== undefined
+    && origin.chat_id !== null
+    && String(origin.chat_id) !== "";
+  if (hasConcreteOrigin) {
+    const concreteOrigin = `${String((origin as { platform: string }).platform)}:${String((origin as { chat_id: unknown }).chat_id)}`;
+    return tokens.map((token) => (token === "origin" ? concreteOrigin : token)).join(",");
+  }
+  // origin 为空：兜底到该 bot 已连接的 home channel，避免临时任务通知静默丢弃。
+  const fallback = await resolveFallbackHomeChannel(botId);
+  if (!fallback) return job.deliver;
+  const replaced = tokens.map((token) => (token === "origin" ? fallback : token));
+  // 去重：万一 tokens 里已经显式含有 fallback 平台，避免出现 "wecom,wecom"
+  const deduped = [...new Set(replaced)];
+  return deduped.join(",");
+}
+
+export interface CronTestRunResult {
+  /** 临时任务这次执行的原始 exec 输出 */
+  output: string;
+  /** 非空表示 Agent 跑成功了，但通知投递失败（来自 Hermes `last_delivery_error`） */
+  deliveryError: string | null;
+}
+
+/** 点「测试运行」后立刻推送到 IM 通道的即时回执文案 */
+const TEST_RUN_ACK_MESSAGE = "已收到测试请求，正在唤起任务，请耐心等待…";
+
+/**
+ * 立即往指定 deliver 目标推送一条纯文本消息（`hermes send`）。
+ *
+ * 和 cron 那套「到点由调度器 tick 执行」不同，`hermes send` 是同步的即时投递
+ * 命令（同「设置」里「测试通知通道」用的是同一条命令），不经过调度器、不唤起
+ * Agent/LLM，命令返回即代表已经发出。因此适合用来在测试运行真正开始那段漫长
+ * 等待之前，先给用户的聊天通道回一句「已收到」。
+ *
+ * `deliver` 沿用 job 的 deliver 字符串，**可能是 `weixin:wx_x,feishu:oc_y` 这种
+ * 逗号分隔的多目标**（网页多选 IM 时就会这样，用户勾了几个就要收到几条）。
+ *
+ * 注意：`hermes send --to` 与 `hermes cron create --deliver` 的目标解析规则**不同**——
+ * `cron create --deliver` 支持逗号分隔的多目标，但 `hermes send --to` **只接受单个
+ * 目标**，把 `'wecom,qqbot'` 整串当成一个平台名会直接报 `Unknown platform: wecom,qqbot`
+ * 并以 exit 1 失败（后端 debug-exec 表现为 500）。因此这里必须**按逗号把 deliver 拆开，
+ * 对每个目标各发一条 `hermes send`**，才能让用户创建任务时勾选的每个 IM 都收到即时回执。
+ *
+ * 每个目标独立 best-effort：任一目标发送失败（通道未配置/掉线等）都不影响其它目标，
+ * 也不影响后续真正的测试运行主流程。
+ */
+async function sendChatNotice(botId: string, deliver: string, message: string): Promise<void> {
+  const targets = deliver
+    .split(",")
+    .map((token) => token.trim())
+    .filter(Boolean);
+  if (targets.length === 0) return;
+  const quotedMessage = shellQuote(message);
+  await Promise.allSettled(
+    targets.map((target) =>
+      execCommand(
+        botId,
+        ["hermes", "send", "--to", shellQuote(target), quotedMessage].join(" "),
+      ),
+    ),
+  );
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * 轮询间隔 / 超时上限（毫秒）。
+ *
+ * 关键修正历史：
+ * 1. （2026-07-02）`hermes cron run <id>` **不是同步执行**——它只是把目标
+ *    job 的 `next_run_at` 改写成"当前时间 + 几秒"就立刻返回，真正的执行要
+ *    等 Hermes 调度器的下一次 tick 才会发生。之前按"命令返回 = 已经跑完"
+ *    的错误假设写了固定 3s 的 sleep 再读结果，会在 Agent 真正被唤醒之前就
+ *    把临时任务删掉，造成「测试运行成功」但用户什么通知都没收到的假阳性。
+ * 2. （2026-07-03 上午）改成轮询 `last_run_at`，超时从 45s 上调到 90s——
+ *    官方文档确认调度器 tick 周期固定 60s，45s 比一个 tick 周期还短。
+ * 3. （2026-07-03 实测发现）即使等满 90s，`hermes cron run` 触发的任务仍
+ *    可能不执行——说明问题不是等待时间不够，而是这套 CLI/debug-exec 环境下
+ *    `hermes cron run` 的"强制立即触发"语义本身不可靠。而**普通定时任务到
+ *    点自然执行**这条路径是被生产环境验证过确实可靠的。所以 `runCronJobAsTest`
+ *    现在不再调用 `hermes cron run`，而是完全复用"普通一次性任务到点被
+ *    tick 自然执行"这条已验证路径（见 `runCronJobAsTest` 的实现与注释）。
+ *
+ * 因此这里的轮询超时要覆盖的最坏情况：
+ *   `buildImmediateOnceSchedule()` 用的相对延迟 `2m`（精确「创建时刻 + 2 分钟」，
+ *   无分钟截断问题）+ 调度器下一次 tick 的最坏对齐延迟（~60s）+ Agent 实际跑
+ *   一次 prompt 的执行余量。前两者是硬下限（约 3 分钟），执行余量给 30~60s 足矣。
+ *
+ * 注意（2026-07-03 下午）：现在 UI 走 `startCronTestRun`，发完即时回执就撤转圈、
+ * 剩下的等待丢后台 fire-and-forget，用户已经不再对着 loading 盲等这段时长。所以这个
+ * 超时只用于后台阶段「等多久还没执行就放弃、清理临时任务并把 completion 判为失败」。
+ *
+ * ⚠️ 修正（2026-07-03 傍晚，实测）：之前一度收敛到 180s（3 分钟），但真实观测发现一次
+ * `once` 临时任务从 `run_at` 到点（17:06）到「Agent 真正跑完 prompt 并投递」用了约 3~5
+ * 分钟——180s 会在任务其实还在正常执行时就误判超时。既然用户侧已不盲等（转圈早撤），
+ * 超时放宽对用户完全无感，只影响后台「何时放弃并清理」。因此上调到 300s（5 分钟），
+ * 给「2m 相对延迟 + ~60s tick 对齐 + Agent 跑 prompt 的真实耗时」留足余量，避免把
+ * 「跑得慢但会成功」误判成失败。
+ */
+const TEST_RUN_POLL_INTERVAL_MS = 3000;
+const TEST_RUN_POLL_TIMEOUT_MS = 300_000;
+
+/**
+ * 轮询直到临时任务真正被调度器执行完（`last_run_at` 从空变为非空），或超时。
+ *
+ * `hermes cron run <id>` 只是把 `next_run_at` 拨到近未来去排队，真正执行发生
+ * 在调度器的下一次 tick；`last_run_at` 由 Hermes 在那次 tick 里执行完才写入，
+ * 是唯一能用来判断"是否已经真正跑过"的字段（`run` 命令本身的 exit code /
+ * 文案完全不反映这一点）。超时后抛错，不静默当作成功。
+ */
+async function waitForCronJobExecuted(
+  botId: string,
+  jobId: string,
+  pollIntervalMs = TEST_RUN_POLL_INTERVAL_MS,
+  timeoutMs = TEST_RUN_POLL_TIMEOUT_MS,
+): Promise<Record<string, unknown>> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const record = await readRawCronJobRecordById(botId, jobId);
+    const lastRunAt = record?.last_run_at;
+    if (typeof lastRunAt === "string" && lastRunAt.trim()) {
+      return record as Record<string, unknown>;
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `测试运行超时：等待 ${Math.round(timeoutMs / 1000)} 秒后调度器仍未执行该任务，请稍后重试`,
+      );
+    }
+    await delay(pollIntervalMs);
+  }
+}
+
+/**
+ * 测试运行：把 job 的 prompt/skills/deliver 真实执行一次，且**绝不触碰原任务**。
+ *
+ * 做法：先用 `hermes send` 往同一个 IM 通道即时回一句「已收到测试请求…」（让
+ * 用户不用盲等，见 `sendChatNotice`），再创建一个用完即焚的临时一次性任务（同
+ * prompt/skills/deliver，但不带生效窗口/daily_times 门控脚本，避免被门控直接跳过
+ * 执行；名字形如「{原任务名}测试运行」+ 末尾一段不可见的零宽 marker，`listCronJobs`
+ * 会靠这段零宽 marker 把这类任务从列表里过滤掉，不在
+ * 前端展示），让它按自己的 schedule 到点被调度器**自然执行**（不额外催），轮询等到
+ * 它真正执行完（见 `waitForCronJobExecuted`）后读取真实投递结果，再把它删除。
+ *
+ * 为什么不调用 `hermes cron run <id>` 去强制立即触发（哪怕是对临时任务）：
+ * 实测证实 `hermes cron run` 在这套 CLI/debug-exec 环境下"强制立即触发"这
+ * 条路径不可靠——触发后轮询等满 90s（覆盖一个完整 60s tick 周期）仍可能
+ * 完全没有执行。而**普通一次性任务到点被调度器自然扫到执行**这条路径已经
+ * 被生产环境反复验证是可靠工作的（这也是「自动任务」功能本身能用的前提）。
+ * 所以这里完全复用后一条已验证路径：只创建临时任务、只等待，不再额外调用
+ * `run` 去催——用「确定能跑但慢」换掉「可能更快但已知不可靠」。
+ *
+ * 为什么不能直接对原 job 做类似操作（改 schedule 到近未来）：
+ * - 一次性(once)任务：Hermes 执行后会写 `last_run_at`，导致
+ *   `compute_next_run` 返回 `None`，任务立刻被标记为 `completed` 并禁用——
+ *   原定时间永远不会再触发了，这与"测试不影响原任务"的要求直接冲突。
+ * - 周期(interval)任务：改了 schedule 再改回去存在竞态与遗留风险，悄悄让
+ *   周期节奏产生漂移。
+ * - 门控脚本（生效时间窗口/每日多个时间点）：如果当前时刻不在窗口内，Hermes
+ *   会直接跳过执行（Agent 都不会被唤醒），达不到"不管几点都要真实跑一次"的
+ *   要求——所以临时任务不带这个门控脚本。
+ */
+/**
+ * `startCronTestRun` 的返回：把测试运行拆成「用户可感知的前置阶段」和「后台长跑阶段」。
+ *
+ * - 前置阶段（本函数 await 完成后就返回）：发即时回执 + 创建临时任务 + 定位到它。
+ *   这几步都很快（秒级），完成即代表「请求已收到、任务已挂上、马上会跑」。UI 只要等到
+ *   这里就可以撤掉「正在测试运行」的转圈提示了——不必再让用户盲等真正执行完。
+ * - 后台阶段（`completion`）：等临时任务被调度器 tick 到并执行完（约 2 分钟起步）、读取
+ *   真实投递结果、清理临时任务。这段挂在 `completion` promise 上，调用方可 fire-and-forget
+ *   （不 await），让它在后台自然跑完；也可以 await 拿最终结果（`runCronJobAsTest` 就这么用）。
+ */
+export interface StartedCronTestRun {
+  /** 后台长跑阶段：等待真实执行完成、读取投递结果、清理临时任务。可 await 也可丢后台。 */
+  completion: Promise<CronTestRunResult>;
+}
+
+/**
+ * 启动一次测试运行，但**只等到「即时回执已发 + 临时任务已挂上」这段快操作**就返回，
+ * 把真正漫长的「等调度器执行 + 读结果 + 清理」丢进 `completion` promise 交给调用方决定
+ * 何时（或是否）等待。
+ *
+ * 这样 UI 就能在发完 `hermes send` 回执后立刻撤掉转圈——用户看到 IM 里的「已收到」即可，
+ * 剩下的执行在后台继续，不必再对着 loading 盲等两三分钟。
+ *
+ * 前置阶段里 `sendChatNotice` 是 best-effort（发不出去也不阻断）；但 `createCronJob` /
+ * 定位 tempId 若失败会 throw，让调用方能把「连任务都没挂上」这种真失败反馈出来。
+ */
+export async function startCronTestRun(botId: string, job: CronJob): Promise<StartedCronTestRun> {
+  const deliver = await resolveConcreteDeliverForTestRun(botId, job);
+  // 真正的测试执行要等临时任务被调度器 tick 到（约 2 分钟起步）。在挂任务之前，先用
+  // `hermes send` 往同一个 IM 通道即时回一句「已收到」，让用户立刻知道请求已进入处理，
+  // UI 随即就能撤掉转圈。这条回执是 best-effort：发不出去（比如通道未配置）也绝不能影响
+  // 后面真正的测试运行，因此单独 try/catch 吞掉错误。
+  await sendChatNotice(botId, deliver, TEST_RUN_ACK_MESSAGE).catch(() => {
+    /* 即时回执发送失败不影响测试运行主流程 */
+  });
+  const marker = buildTestRunMarker(job.id, job.name);
+  await createCronJob(botId, {
+    schedule: buildImmediateOnceSchedule(),
+    prompt: job.prompt,
+    name: marker,
+    skills: job.skills,
+    deliver,
+    // 有意不传 script：跳过生效窗口/daily_times 门控，保证到点真实执行一次
+  });
+  // create 已成功 → 临时任务几乎肯定已经落进 cron。从这里开始，任何后续失败都必须
+  // 保证「已创建的临时任务能被删除」，否则它会在约 2 分钟后被调度器真实执行并投递，
+  // 违背「测试失败不产生后续副作用」的预期（见 CR P1）。
+  //
+  // lookup 用 marker 名精确反查 tempId，但 jobs.json 可能有写入延迟 / 短暂读失败 /
+  // 解析不到 marker，首次读可能拿不到。这里带重试；仍拿不到时不直接裸抛，而是先按
+  // marker 名做一次兜底删除（`hermes cron remove --name` 语义走不了，用 list 反查
+  // 一次或直接按名删），把已创建的临时任务清掉，再抛错。
+  let tempId = await findCronJobIdByExactNameWithRetry(botId, marker);
+  if (!tempId) {
+    // 兜底：即便反查不到 id，也尽力按 marker 名把这个已创建的临时任务删掉，
+    // 避免它残留后被调度器真实执行。best-effort，失败也不阻断错误上抛。
+    await removeCronJobByExactName(botId, marker).catch(() => {
+      /* 兜底清理失败不影响错误上抛 */
+    });
+    throw new Error("测试运行失败：未能定位临时任务，已尝试清理，请稍后重试");
+  }
+  // 前置阶段到此结束（这些都很快）。剩下的长跑阶段封进 completion，交给调用方处理。
+  const completion = (async (): Promise<CronTestRunResult> => {
+    try {
+      // 有意不调用 hermes cron run 强制触发：让它像任何普通一次性任务一样，
+      // 由调度器在到达 schedule 时间后的下一次 tick 自然执行（原因见函数注释）。
+      const rawAfterRun = await waitForCronJobExecuted(botId, tempId);
+      const deliveryErrorRaw = rawAfterRun?.last_delivery_error;
+      const deliveryError = typeof deliveryErrorRaw === "string" && deliveryErrorRaw.trim()
+        ? deliveryErrorRaw.trim()
+        : null;
+      const lastStatusRaw = rawAfterRun?.last_status;
+      const output = typeof lastStatusRaw === "string" && lastStatusRaw.trim() ? lastStatusRaw.trim() : "ok";
+      return { output, deliveryError };
+    } finally {
+      await removeCronJob(botId, tempId).catch(() => { /* 清理失败不影响本次结果 */ });
+    }
+  })();
+  return { completion };
+}
+
+/**
+ * 完整同步语义：发回执 + 挂临时任务 + 等它真正执行完 + 读结果 + 清理，全部 await 完才返回。
+ *
+ * 实际是 `startCronTestRun` 的「等到底」组合。UI 若希望「发完回执即撤转圈、后台继续跑」，
+ * 应直接用 `startCronTestRun` 拿到 `completion` 后自行 fire-and-forget，不要用这个。
+ */
+export async function runCronJobAsTest(botId: string, job: CronJob): Promise<CronTestRunResult> {
+  const { completion } = await startCronTestRun(botId, job);
+  return completion;
 }
 
 export async function removeCronJob(botId: string, id: string): Promise<void> {

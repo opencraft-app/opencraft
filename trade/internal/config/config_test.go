@@ -107,7 +107,7 @@ func TestLoad_SiteKindFromEnv(t *testing.T) {
 //
 // 关键不变量：
 //   - 未设 env / 空字符串 → cfg.RegionOverride = ""，trade 出向走 SiteKind 兜底
-//   - 已注册的 region 字面量（ap-guangzhou / ap-beijing / ap-singapore）→ 写入字面量原值
+//   - 已注册的 region 字面量（ap-guangzhou / ap-beijing / ap-shanghai / ap-singapore）→ 写入字面量原值
 //   - 大小写 / 前后空白由 Load 直接 trim 但不 lower（lower 由 region.LookupByRegion 内部做）
 //   - 未注册的 region 字面量 → Load 返回 error（fail-fast）
 func TestLoad_RegionOverrideFromEnv(t *testing.T) {
@@ -119,6 +119,7 @@ func TestLoad_RegionOverrideFromEnv(t *testing.T) {
 	}{
 		{"unset env keeps RegionOverride empty", "", "", false},
 		{"ap-beijing override accepted", "ap-beijing", "ap-beijing", false},
+		{"ap-shanghai override accepted", "ap-shanghai", "ap-shanghai", false},
 		{"ap-guangzhou override accepted", "ap-guangzhou", "ap-guangzhou", false},
 		{"ap-singapore override accepted", "ap-singapore", "ap-singapore", false},
 		{"surrounding whitespace trimmed", "  ap-beijing  ", "ap-beijing", false},

@@ -1425,8 +1425,50 @@ func TestDispatcherEnqueuesFallbackWhenPromptFails(t *testing.T) {
 		t.Fatalf("handle inbound should enqueue fallback: %v", err)
 	}
 	reply := claimOneReply(t, ctx, st, lease)
-	if !strings.Contains(reply.Text, runtimeRecoveryFailedReply) || !strings.Contains(reply.Text, "/reset") {
-		t.Fatalf("expected recovery fallback reply, got %#v", reply)
+	if strings.Contains(reply.Text, runtimeRecoveryFailedReply) || strings.Contains(reply.Text, "/reset") {
+		t.Fatalf("prompt failure must not claim runtime recovery failed, got %#v", reply)
+	}
+	if !strings.Contains(reply.Text, turnScopedPromptFailedReply) {
+		t.Fatalf("expected turn-scoped prompt failure reply, got %#v", reply)
+	}
+}
+
+func TestDispatcherProviderToolArgumentErrorDoesNotClaimRuntimeRecoveryFailed(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	account := store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main"}
+	lease, err := st.AcquireChannelLease(ctx, "wecom-a", "owner-a", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
+	client := &fakeACP{
+		promptErrs: []error{errors.New(`Agent error: HTTP 400 Bad Request: {"error":{"message":"invalid params, invalid function arguments json string, tool_call_id: call_function_1 (2013)"}}`)},
+		sessionID:  "session-a",
+	}
+	dispatcher := NewDispatcher(st, account, client, "/workspace")
+	err = dispatcher.HandleInbound(ctx, channel.Message{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            channel.TypeWeCom,
+		ExternalMessageID:      "msg-a",
+		ExternalConversationID: "chat-a",
+		ChatType:               channel.ChatDM,
+		Kind:                   channel.MessageText,
+		Text:                   "df -h 看看？",
+		Raw:                    json.RawMessage(`{"ok":true}`),
+	})
+	if err != nil {
+		t.Fatalf("handle inbound should enqueue turn-scoped tool failure reply: %v", err)
+	}
+	reply := claimOneReply(t, ctx, st, lease)
+	if strings.Contains(reply.Text, runtimeRecoveryFailedReply) || strings.Contains(reply.Text, "/reset") {
+		t.Fatalf("tool argument failure must not claim runtime recovery failed, got %#v", reply)
+	}
+	if !strings.Contains(reply.Text, turnScopedPromptFailedReply) {
+		t.Fatalf("expected turn-scoped failure reply, got %#v", reply)
 	}
 }
 
@@ -1538,7 +1580,10 @@ func TestDispatcherPromptTimeoutCanStillFailLongPrompt(t *testing.T) {
 		t.Fatalf("dispatcher should honor prompt timeout: elapsed=%s", elapsed)
 	}
 	reply := claimOneReply(t, context.Background(), st, lease)
-	if !strings.Contains(reply.Text, runtimeRecoveryFailedReply) {
+	if strings.Contains(reply.Text, runtimeRecoveryFailedReply) || strings.Contains(reply.Text, "/reset") {
+		t.Fatalf("prompt timeout must not claim runtime recovery failed, got %#v", reply)
+	}
+	if !strings.Contains(reply.Text, turnScopedPromptFailedReply) {
 		t.Fatalf("expected prompt timeout fallback reply, got %#v", reply)
 	}
 }

@@ -7,7 +7,7 @@ import {
 } from "@/lib/public-site-routing";
 
 export type PublicSiteLocale = "zh-CN" | "zh-SG" | "en-US";
-export type PublicSiteSection = "overview" | "changelog" | "docs" | "about";
+export type PublicSiteSection = "overview" | "changelog" | "docs" | "about" | "support";
 
 export type PublicSiteNavItem = {
   section: PublicSiteSection;
@@ -21,6 +21,7 @@ export const PUBLIC_SITE_NAV_ITEMS: readonly PublicSiteNavItem[] = [
   { section: "changelog", href: "/changelog", label: { "zh-CN": "更新日志", "zh-SG": "更新日志", "en-US": "Changelog" } },
   { section: "docs", href: "/docs/overview", label: { "zh-CN": "产品文档", "zh-SG": "产品文档", "en-US": "Docs" } },
   { section: "about", href: "/about", label: { "zh-CN": "关于我们", "zh-SG": "关于我们", "en-US": "About" } },
+  { section: "support", href: "/support", label: { "zh-CN": "产品反馈", "zh-SG": "产品反馈", "en-US": "Feedback" } },
 ] as const;
 
 const DEFAULT_PUBLIC_URL_LOCALE = defaultPublicUrlLang(DEFAULT_LOCALE);

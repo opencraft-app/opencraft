@@ -14,7 +14,7 @@
  * - 生效日期区间通过 Hermes 官方 pre-run script gate 实现：区间外返回 wakeAgent=false
  */
 
-import { AlertTriangle, Activity, BellRing, BriefcaseBusiness, CalendarRange, CheckCircle2, ChevronDown, CircleHelp, Clock, Droplets, Eraser, Eye, FolderKanban, LayoutTemplate, Loader2, Newspaper, Pause, Pencil, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, X } from "lucide-react";
+import { AlertTriangle, Activity, BellRing, BriefcaseBusiness, CalendarRange, CheckCircle2, ChevronDown, CircleHelp, Clock, Droplets, Eraser, Eye, FolderKanban, LayoutTemplate, Loader2, Newspaper, Pause, Pencil, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, X, Zap } from "lucide-react";
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
@@ -38,6 +38,7 @@ import {
   removeCronJob,
   resumeCronJob,
   shellQuote,
+  startCronTestRun,
   type CronEffectiveWindow,
   type CronJob,
   type CronLightVelaScriptConfig,
@@ -65,18 +66,18 @@ type ScenarioReminderNotice = {
 };
 
 /** 顶部 toast；与 settings 主页 SkillInstallToast 视觉一致 */
-function ErrorToast({ message, onClose, tone = "error" }: { message: string; onClose: () => void; tone?: "error" | "success" }) {
+function ErrorToast({ message, onClose, tone = "error" }: { message: string; onClose: () => void; tone?: "error" | "success" | "info" }) {
   const t = useT();
-  const Icon = tone === "success" ? CheckCircle2 : AlertTriangle;
+  const Icon = tone === "success" ? CheckCircle2 : tone === "info" ? Loader2 : AlertTriangle;
   return createPortal(
     <div className="fixed inset-x-0 top-4 z-[300] flex justify-center px-4" role="status" aria-live="polite">
       <div
         className={
           "inline-flex max-w-[min(92vw,720px)] items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-white shadow-lg " +
-          (tone === "success" ? "bg-[#0F8A4B]" : "bg-[#B91C1C]")
+          (tone === "success" ? "bg-[#0F8A4B]" : tone === "info" ? "bg-black/80" : "bg-[#B91C1C]")
         }
       >
-        <Icon className="h-4 w-4 shrink-0" />
+        <Icon className={"h-4 w-4 shrink-0" + (tone === "info" ? " animate-spin" : "")} />
         <span className="truncate">{message}</span>
         <button
           type="button"
@@ -366,12 +367,15 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
   /** 待确认删除的 job；非空时弹确认弹窗 */
   const [confirmDeleteJob, setConfirmDeleteJob] = useState<CronJob | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  /** 每个任务的测试运行状态：running=运行中，ok/fail=短暂结果态（1.8s 后自动回到 idle） */
+  const [testState, setTestState] = useState<Record<string, "running" | "ok" | "fail">>({});
+  const [notice, setNotice] = useState<{ message: string; tone: "success" | "error" | "info" } | null>(null);
+  const noticeTimerRef = useRef<number | null>(null);
+  const testTimersRef = useRef<Record<string, number>>({});
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   /** 列表加载失败的 inline 错误（与 toast 分离：list 失败不 toast，避免首屏刷屏） */
   const [listError, setListError] = useState<string | null>(null);
   const errorTimerRef = useRef<number | null>(null);
-  const successTimerRef = useRef<number | null>(null);
   const jobsRef = useRef<CronJob[]>([]);
   const visibleJobs = useMemo(() => jobs.filter((job) => !isCronJobExpiredBeyondGrace(job)), [jobs]);
   const jobLimitReached = visibleJobs.length >= MAX_CRON_JOBS_PER_BOT;
@@ -421,20 +425,34 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
     }, 5000);
   }, []);
 
-  const showSuccess = useCallback((message: string) => {
-    if (successTimerRef.current) {
-      window.clearTimeout(successTimerRef.current);
-    }
-    setSuccessMessage(message);
-    successTimerRef.current = window.setTimeout(() => {
-      setSuccessMessage(null);
-      successTimerRef.current = null;
-    }, 5000);
-  }, []);
-
   useEffect(() => () => {
     if (errorTimerRef.current) window.clearTimeout(errorTimerRef.current);
-    if (successTimerRef.current) window.clearTimeout(successTimerRef.current);
+    if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
+    Object.values(testTimersRef.current).forEach((tid) => window.clearTimeout(tid));
+  }, []);
+
+  const showNotice = useCallback((message: string, tone: "success" | "error" | "info", autoHideMs = 3000) => {
+    if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
+    setNotice({ message, tone });
+    if (autoHideMs > 0) {
+      noticeTimerRef.current = window.setTimeout(() => {
+        setNotice(null);
+        noticeTimerRef.current = null;
+      }, autoHideMs);
+    }
+  }, []);
+
+  const flashTestResult = useCallback((id: string, result: "ok" | "fail") => {
+    setTestState((s) => ({ ...s, [id]: result }));
+    if (testTimersRef.current[id]) window.clearTimeout(testTimersRef.current[id]);
+    testTimersRef.current[id] = window.setTimeout(() => {
+      setTestState((s) => {
+        const next = { ...s };
+        delete next[id];
+        return next;
+      });
+      delete testTimersRef.current[id];
+    }, 1800);
   }, []);
 
   const refreshCreatedJobs = useCallback(async (manageLoading = true) => {
@@ -460,7 +478,7 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
     }
   }, [botId]);
 
-  const refreshRecentRuns = useCallback(async (currentJobs?: CronJob[], manageLoading = true) => {
+  const refreshRecentRuns = useCallback(async (currentJobs?: CronJob[], manageLoading = true): Promise<CronRunRecord[]> => {
     if (!botId) {
       setRecentRuns([]);
       return [];
@@ -539,13 +557,13 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
       setScenarioPreviewStatus(null);
       setScenarioReminderNotice({ draft: nextDraft, kind: "preview" });
       setActiveView("created");
-      showSuccess(t("已开始试跑，结果会稍后推送"));
+      showNotice(t("已开始试跑，结果会稍后推送"), "success");
     } catch (err) {
       const message = err instanceof CronCommandError ? err.message : err instanceof Error ? err.message : String(err);
       setScenarioPreviewStatus(null);
       showError(t("创建场景试跑失败：{{message}}", { message }));
     }
-  }, [botId, jobLimitReached, refreshCreatedJobs, refreshRecentRuns, showError, showSuccess, t]);
+  }, [botId, jobLimitReached, refreshCreatedJobs, refreshRecentRuns, showError, showNotice, t]);
 
   const handleScenarioEnableDirect = useCallback((draft: ScenarioTaskDraft) => {
     setScenarioInstallPack(null);
@@ -576,13 +594,13 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
       await refreshAll();
       setScenarioPreviewStatus(null);
       setScenarioReminderNotice({ draft: scenarioDraft, kind: "recurring" });
-      showSuccess(t("已添加为自动任务，后续会按设置频率提醒"));
+      showNotice(t("已添加为自动任务，后续会按设置频率提醒"), "success");
     } catch (err) {
       const message = err instanceof CronCommandError ? err.message : err instanceof Error ? err.message : String(err);
       setScenarioPreviewStatus(null);
       showError(t("添加场景自动任务失败：{{message}}", { message }));
     }
-  }, [botId, jobLimitReached, refreshAll, scenarioDraft, showError, showSuccess, t]);
+  }, [botId, jobLimitReached, refreshAll, scenarioDraft, showError, showNotice, t]);
 
   const handleAction = useCallback(async (
     job: CronJob,
@@ -608,6 +626,61 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
     }
   }, [botId, refreshAll, showError, t]);
 
+  /**
+   * 测试运行：立即真实执行一次（`startCronTestRun`）。
+   *
+   * 不直接对原 job 调用 `hermes cron run <job.id>`——那样会真正推进原任务的
+   * 调度状态（一次性任务会被直接标记完成+禁用，永远不会在原定时间再触发）。
+   * 而是克隆一个用完即焚的临时任务代理执行，原任务的状态完全不受影响。
+   *
+   * 交互上分两段，避免让用户对着转圈盲等两三分钟：
+   * 1. 前置阶段（`startCronTestRun` await 完成）：即时回执已发到 IM、临时任务已挂上。
+   *    这几步是秒级的，完成即撤掉「正在测试运行」的转圈，提示用户「已在后台执行、去 IM 看结果」。
+   * 2. 后台阶段（`completion`，fire-and-forget）：等临时任务真正被调度器执行完，读取真实投递
+   *    结果。这里仍要检查 `deliveryError`：Agent 跑成功只代表 `last_status` 正常，不代表通知
+   *    真投出去了——投递失败会单独记录在 `last_delivery_error`。后台拿到结果后再补一个短暂的
+   *    成功/失败角标 + toast，但不再阻塞用户。
+   */
+  const handleTestRun = useCallback(async (job: CronJob) => {
+    if (!botId || testState[job.id] === "running") return;
+    setTestState((s) => ({ ...s, [job.id]: "running" }));
+    showNotice(t("正在唤起测试运行…"), "info", 0);
+    let started: Awaited<ReturnType<typeof startCronTestRun>>;
+    try {
+      // 前置阶段：发完即时回执、挂上临时任务就返回（秒级）。
+      started = await startCronTestRun(botId, job);
+    } catch (err) {
+      // 连回执/临时任务都没挂上，才算前置失败——如实报错并撤转圈。
+      const message = err instanceof CronCommandError ? err.message : err instanceof Error ? err.message : String(err);
+      flashTestResult(job.id, "fail");
+      showNotice(t("测试运行失败：{{message}}", { message }), "error");
+      return;
+    }
+    // 前置成功：即时回执已发出、任务已在后台跑。立刻撤转圈，不再让用户盲等真正执行完。
+    flashTestResult(job.id, "ok");
+    showNotice(t("已在后台执行，请在你的 IM 中查看运行结果"), "success");
+    // 后台阶段 fire-and-forget：等真正执行完后给用户一个明确交代——不再阻塞 UI，但也
+    // 不再「全静默」。三种结局分别提示：
+    //   1. 执行成功且投递成功 → 静默（用户已从 IM 收到结果，无需再打扰）。
+    //   2. 执行了但投递失败（last_delivery_error 有值）→ error toast。
+    //   3. 后台等待超时/异常（调度器迟迟没执行、清理失败等）→ 一条非阻塞的提示 toast，
+    //      避免用户像之前那样「等半天没结果也没任何提示」蒙在鼓里。
+    void started.completion
+      .then((result) => {
+        if (result.deliveryError) {
+          showNotice(t("任务已执行，但通知投递失败：{{message}}", { message: result.deliveryError }), "error");
+        }
+        void refreshRecentRuns(undefined, false);
+      })
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        showNotice(
+          t("后台执行未能确认结果：{{message}}。即时回执已发出，任务可能仍在后台运行，请稍后在 IM 中确认。", { message }),
+          "info",
+        );
+      });
+  }, [botId, testState, showNotice, flashTestResult, refreshRecentRuns, t]);
+
   if (!botId) {
     return (
       <div className="rounded-xl p-8 text-center text-sm text-black/60" style={PANEL_CARD_STYLE}>
@@ -619,7 +692,7 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
   return (
     <div className="space-y-4">
       {errorMessage && <ErrorToast message={errorMessage} onClose={() => setErrorMessage(null)} />}
-      {successMessage && <ErrorToast message={successMessage} tone="success" onClose={() => setSuccessMessage(null)} />}
+      {notice && <ErrorToast message={notice.message} tone={notice.tone} onClose={() => setNotice(null)} />}
 
       <AgentSectionHeader
         title={t("自动任务")}
@@ -754,6 +827,8 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
                   key={job.id}
                   job={job}
                   busy={busyId === job.id}
+                  testState={testState[job.id] ?? "idle"}
+                  onTestRun={() => handleTestRun(job)}
                   onView={() => setViewingJob(job)}
                   onEdit={() => setEditingJob(job)}
                   onPause={() => handleAction(job, "pause")}
@@ -1024,6 +1099,8 @@ function RecentCronRunDetailModal({ run, onClose }: { run: CronRunRecord; onClos
 function CronJobCard({
   job,
   busy,
+  testState,
+  onTestRun,
   onView,
   onEdit,
   onPause,
@@ -1032,6 +1109,8 @@ function CronJobCard({
 }: {
   job: CronJob;
   busy: boolean;
+  testState: "idle" | "running" | "ok" | "fail";
+  onTestRun: () => void;
   onView: () => void;
   onEdit: () => void;
   onPause: () => void;
@@ -1092,6 +1171,17 @@ function CronJobCard({
           )}
         </div>
         <div className="flex shrink-0 items-center">
+          <CronActionButton label={t("测试运行")} onClick={onTestRun} disabled={busy || testState === "running"}>
+            {testState === "running" ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : testState === "ok" ? (
+              <CheckCircle2 className="h-3 w-3 text-[#0F8A4B]" />
+            ) : testState === "fail" ? (
+              <X className="h-3 w-3 text-[#B91C1C]" />
+            ) : (
+              <Zap className="h-3 w-3" />
+            )}
+          </CronActionButton>
           <CronActionButton label={t("查看")} onClick={onView}>
             <Eye className="h-3 w-3" />
           </CronActionButton>
@@ -2374,6 +2464,7 @@ function AutomationFormModal({
         channel,
         t("发送失败，请检查通道配置或稍后重试"),
         t("发送失败，请先在微信中向 Hermes Agent 发送任意消息，或稍后重试"),
+        t("发送失败，请先在企业微信对话中向 Hermes Agent 发送 /sethome，将该对话设为 home 对话后重试"),
       ), t));
     }
   }, [botId, chatIdErrors, deliverChatIds, showTestSendToast, t]);
@@ -2695,6 +2786,7 @@ function AutomationFormModal({
                 : ([
                   { key: "weixin", label: t("微信"), comingSoon: false },
                   { key: "qqbot", label: "QQ", comingSoon: false },
+                  { key: "wecom", label: t("企业微信"), comingSoon: false },
                   { key: "feishu", label: t("飞书"), comingSoon: false },
                 ] as const)
             ).map(({ key, label, comingSoon }) => {
@@ -2754,18 +2846,21 @@ function AutomationFormModal({
                     {selected && key === "qqbot" && (
                       <span className="inline-flex items-center text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
                         {t("如未生效，可尝试向绑定的QQ机器人发送")}
-                        <InlineCopyText value="/set-home" />
+                        <InlineCopyText value="/sethome" />
                       </span>
                     )}
                     {selected && key === "feishu" && (
                       <span className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>{t("支持通过默认的 home 对话或指定 Chat ID 发送通知")}</span>
+                    )}
+                    {selected && key === "wecom" && (
+                      <span className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>{t("通过默认的 home 对话发送通知")}</span>
                     )}
                     {selected && (key === "telegram" || key === "discord") && (
                       <span className="inline-flex items-center text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
                         {t("请先在")}
                         {label}
                         {t("对话中发送")}
-                        <InlineCopyText value="/set-home" />
+                        <InlineCopyText value="/sethome" />
                         {t("给机器人")}
                       </span>
                     )}
@@ -2814,7 +2909,7 @@ function AutomationFormModal({
                           </div>
                           <p className="mt-1 pl-5">
                             {t("扫码连接飞书后，默认的对话即为home对话。如需切换，可在其他对话中发送")}
-                            <InlineCopyText value="/set-home" />
+                            <InlineCopyText value="/sethome" />
                             {t("。")}
                           </p>
                         </div>
@@ -2827,6 +2922,24 @@ function AutomationFormModal({
                             {t("进入飞书应用，在希望发送通知的私聊或群聊中，向 Hermes Agent 发送提示词")}
                             <InlineCopyText value={t("查一下当前对话的oc_ chat ID")} />
                             {t("，正常会回复前缀为oc_的一长串字符。")}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {selected && key === "wecom" && (
+                    <div className="mt-1.5 space-y-1.5 pl-5">
+                      <div className="space-y-2 text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <CircleHelp className="h-3.5 w-3.5 shrink-0 text-black/35" />
+                            <span>{t("什么是 home 对话？")}</span>
+                          </div>
+                          <p className="mt-1 pl-5">
+                            {t("在企业微信目标对话中向 Hermes Agent 发送")}
+                            <InlineCopyText value="/sethome" />
+                            {t("即可将该对话设为 home 对话，之后的通知都会发到这个对话里。若发送后仍提示未设置，请稍后重试。")}
                           </p>
                         </div>
                       </div>
@@ -3887,8 +4000,16 @@ export function formatTestSendError(
   return formatted ? joinTestSendError(fallback, formatted) : fallback;
 }
 
-export function getTestSendFailureFallback(platform: string, fallback: string, weixinFallback: string): string {
-  return normalizeHermesChannelKey(platform) === "weixin" ? weixinFallback : fallback;
+export function getTestSendFailureFallback(
+  platform: string,
+  fallback: string,
+  weixinFallback: string,
+  wecomFallback: string = fallback,
+): string {
+  const key = normalizeHermesChannelKey(platform);
+  if (key === "weixin") return weixinFallback;
+  if (key === "wecom") return wecomFallback;
+  return fallback;
 }
 
 function formatKnownTestSendError(message: string, t?: (s: string, vars?: Record<string, unknown>) => string): string {

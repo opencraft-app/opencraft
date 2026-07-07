@@ -44,7 +44,9 @@ import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { useOpenClaw, type OpenClawBot } from "@/contexts/openclaw-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { useT, t as rawT } from "@/i18n/t";
+import { useTranslation } from "react-i18next";
 import { isCN, isGlobal } from "@/lib/region";
+import type { IModelProvider } from "@tencent/tea-sdk-lightclaw";
 import { useSession } from "@/contexts/session-context";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { AppLink, useAppLocation, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
@@ -87,6 +89,7 @@ import {
   getWorkspaceTaskPhaseLabel,
   isWorkspaceActionRunning,
   selectCurrentWorkspaceTask,
+  shouldShowWorkspaceRecoveryPanel,
   type WorkspaceActionKind,
 } from "@/pages/marketing/agent-workspace-recovery";
 import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
@@ -168,9 +171,17 @@ type TeaSdkRuntime = {
   ChannelPanel: ComponentType<TeaSdkPanelProps>;
   ModelPanel: ComponentType<TeaSdkPanelProps>;
   SkillPanel: ComponentType<TeaSdkPanelProps>;
+  /** SDK 的 useModelProviders hook（动态 import 获取，避免静态 import 破坏 SSG） */
+  useModelProviders: (params?: {
+    isI18n?: boolean;
+    useEnglish?: boolean;
+    rainbowBaseUrl?: string;
+    app?: string;
+  }) => IModelProvider[];
   createProductConfig: (args: {
     runCommand: TeaSdkProductConfig["runCommand"];
     getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
+    modelProviders?: IModelProvider[];
   }) => TeaSdkProductConfig;
   getGatewayRestartCommand: () => string;
   getProviderSaveCommand: (config: {
@@ -211,16 +222,39 @@ function loadTeaSdkRuntime(): Promise<TeaSdkRuntime> {
         ChannelPanel: sdk.ChannelPanel as unknown as ComponentType<TeaSdkPanelProps>,
         ModelPanel: sdk.ModelPanel as unknown as ComponentType<TeaSdkPanelProps>,
         SkillPanel: sdk.SkillPanel as unknown as ComponentType<TeaSdkPanelProps>,
-        createProductConfig: ({ runCommand, getInvocationTask }) => ({
-          ...sdk.createLighthouseConfig({
+        useModelProviders: sdk.useModelProviders,
+        createProductConfig: ({ runCommand, getInvocationTask, modelProviders }) => {
+          const config = sdk.createLighthouseConfig({
             agentType: "hermes",
             supportsTencentCloudApi: false,
             isI18n: isGlobal,
-          }),
-          acliProduct: "lightvela",
-          runCommand,
-          getInvocationTask,
-        }),
+            modelProviders,
+          });
+          // SDK 的 getFilteredModelProviderList 用 IS_I18N（来自 window.LOGIN_INFO.area）
+          // 做国内/国际站过滤，但 mono2 不设置 window.LOGIN_INFO，导致 IS_I18N 恒为 false，
+          // 国际站会错误隐藏 OpenAI/Anthropic 等海外 provider。这里用 mono2 的 isGlobal
+          // 覆盖过滤逻辑，绕过 SDK 的模块级常量。
+          const hiddenProviders = isGlobal
+            ? sdk.I18N_HIDDEN_PROVIDERS
+            : sdk.DOMESTIC_HIDDEN_PROVIDERS;
+          return {
+            ...config,
+            acliProduct: "lightvela",
+            runCommand,
+            getInvocationTask,
+            getFilteredModelProviders: (region?: string) => {
+              const filtered = config.modelProviders.filter(
+                (p) => !hiddenProviders.includes(p.value),
+              );
+              if (region === "ap-hongkong") {
+                return filtered.filter(
+                  (p) => !sdk.HK_REGION_HIDDEN_PROVIDERS.includes(p.value),
+                );
+              }
+              return filtered;
+            },
+          };
+        },
         getGatewayRestartCommand: () => hermesGatewayCommands.getRestartCommand(),
         getProviderSaveCommand: (config) => hermesModelCommands.getProviderSaveCommand(config),
         getModelSwitchCommand: (modelFullId) => hermesModelCommands.getModelSwitchCommand(modelFullId),
@@ -254,6 +288,7 @@ function TeaSdkSettingsPanel({
   instance,
   featureFlags,
   productConfigArgs,
+  useEnglish,
 }: {
   kind: "channel" | "model" | "skill";
   instance: TeaSdkInstanceInfo;
@@ -262,14 +297,12 @@ function TeaSdkSettingsPanel({
     runCommand: TeaSdkProductConfig["runCommand"];
     getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
   };
+  /** 是否取英文文案（语言维度），传给 SDK useModelProviders */
+  useEnglish: boolean;
 }) {
   const t = useT();
   const [runtime, setRuntime] = useState<TeaSdkRuntime | null>(() => teaSdkRuntimeCache);
   const [error, setError] = useState<string | null>(() => teaSdkRuntimeError?.message ?? null);
-  const productConfig = useMemo(
-    () => runtime ? runtime.createProductConfig(productConfigArgs) : null,
-    [runtime, productConfigArgs],
-  );
 
   useEffect(() => {
     if (teaSdkRuntimeCache) {
@@ -298,9 +331,46 @@ function TeaSdkSettingsPanel({
     );
   }
 
-  if (!runtime || !productConfig) {
+  if (!runtime) {
     return <TeaSdkRuntimeLoading />;
   }
+
+  return (
+    <TeaSdkSettingsPanelReady
+      runtime={runtime}
+      kind={kind}
+      instance={instance}
+      featureFlags={featureFlags}
+      productConfigArgs={productConfigArgs}
+      useEnglish={useEnglish}
+    />
+  );
+}
+
+/** runtime 已就绪的内层组件，无条件调 hook（遵守 Rules of Hooks） */
+function TeaSdkSettingsPanelReady({
+  runtime,
+  kind,
+  instance,
+  featureFlags,
+  productConfigArgs,
+  useEnglish,
+}: {
+  runtime: TeaSdkRuntime;
+  kind: "channel" | "model" | "skill";
+  instance: TeaSdkInstanceInfo;
+  featureFlags: TeaSdkFeatureFlags;
+  productConfigArgs: {
+    runCommand: TeaSdkProductConfig["runCommand"];
+    getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
+  };
+  useEnglish: boolean;
+}) {
+  const modelProviders = runtime.useModelProviders({ isI18n: isGlobal, useEnglish });
+  const productConfig = useMemo(
+    () => runtime.createProductConfig({ ...productConfigArgs, modelProviders }),
+    [runtime, productConfigArgs, modelProviders],
+  );
 
   const Panel =
     kind === "channel"
@@ -327,6 +397,7 @@ function HermesAgentSkillsRuntimePanel({
   initialSectionSlug,
   instance,
   productConfigArgs,
+  useEnglish,
 }: {
   botId: string;
   execDebugCommand: HermesAgentSkillsPanelProps["execDebugCommand"];
@@ -337,14 +408,12 @@ function HermesAgentSkillsRuntimePanel({
     runCommand: TeaSdkProductConfig["runCommand"];
     getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
   };
+  /** 是否取英文文案（语言维度），传给 SDK useModelProviders */
+  useEnglish: boolean;
 }) {
   const t = useT();
   const [runtime, setRuntime] = useState<TeaSdkRuntime | null>(() => teaSdkRuntimeCache);
   const [error, setError] = useState<string | null>(() => teaSdkRuntimeError?.message ?? null);
-  const productConfig = useMemo(
-    () => runtime ? runtime.createProductConfig(productConfigArgs) : null,
-    [runtime, productConfigArgs],
-  );
 
   useEffect(() => {
     if (teaSdkRuntimeCache) {
@@ -373,9 +442,52 @@ function HermesAgentSkillsRuntimePanel({
     );
   }
 
-  if (!runtime || !productConfig) {
+  if (!runtime) {
     return <TeaSdkRuntimeLoading />;
   }
+
+  return (
+    <HermesAgentSkillsRuntimePanelReady
+      runtime={runtime}
+      botId={botId}
+      execDebugCommand={execDebugCommand}
+      featureFlags={featureFlags}
+      initialSectionSlug={initialSectionSlug}
+      instance={instance}
+      productConfigArgs={productConfigArgs}
+      useEnglish={useEnglish}
+    />
+  );
+}
+
+/** runtime 已就绪的内层组件，无条件调 hook（遵守 Rules of Hooks） */
+function HermesAgentSkillsRuntimePanelReady({
+  runtime,
+  botId,
+  execDebugCommand,
+  featureFlags,
+  initialSectionSlug,
+  instance,
+  productConfigArgs,
+  useEnglish,
+}: {
+  runtime: TeaSdkRuntime;
+  botId: string;
+  execDebugCommand: HermesAgentSkillsPanelProps["execDebugCommand"];
+  featureFlags: TeaSdkFeatureFlags;
+  initialSectionSlug?: string;
+  instance: TeaSdkInstanceInfo;
+  productConfigArgs: {
+    runCommand: TeaSdkProductConfig["runCommand"];
+    getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
+  };
+  useEnglish: boolean;
+}) {
+  const modelProviders = runtime.useModelProviders({ isI18n: isGlobal, useEnglish });
+  const productConfig = useMemo(
+    () => runtime.createProductConfig({ ...productConfigArgs, modelProviders }),
+    [runtime, productConfigArgs, modelProviders],
+  );
 
   return (
     <StableTeaSdkPanelHost>
@@ -3758,32 +3870,39 @@ export const AgentSettingsPage = ({
     memoryV2: false,
     qqbotplugin: false,
   }), []);
+  // 从七彩石拉取模型列表移到 TeaSdkSettingsPanel（需 runtime.useModelProviders）
+  const { i18n } = useTranslation();
+  const useEnglish = !!i18n.language?.startsWith("en");
   const sdkProductConfigArgs = useMemo(() => ({
     runCommand: commandAdapter.runCommand,
     getInvocationTask: commandAdapter.getInvocationTask,
   }), [commandAdapter]);
+  const shouldExposeWorkspaceRecoveryPanel = shouldShowWorkspaceRecoveryPanel({
+    isGlobalRegion: isGlobal,
+    hiddenToolsRevealed: showHiddenAgentTools,
+  });
 
   useEffect(() => {
-    if (activeSection !== "diagnostics" || !activeBot?.id) return;
+    if (!shouldExposeWorkspaceRecoveryPanel || activeSection !== "diagnostics" || !activeBot?.id) return;
     void loadRescueExportStatus(activeBot.id).catch(() => undefined);
     void loadHermesImportStatus(activeBot.id).catch(() => undefined);
-  }, [activeSection, activeBot?.id, loadRescueExportStatus, loadHermesImportStatus]);
+  }, [activeSection, activeBot?.id, loadRescueExportStatus, loadHermesImportStatus, shouldExposeWorkspaceRecoveryPanel]);
 
   useEffect(() => {
-    if (activeSection !== "diagnostics" || !activeBot?.id || !isRescueExportRunning(activeExportStatus)) return;
+    if (!shouldExposeWorkspaceRecoveryPanel || activeSection !== "diagnostics" || !activeBot?.id || !isRescueExportRunning(activeExportStatus)) return;
     const timer = window.setInterval(() => {
       void loadRescueExportStatus(activeBot.id).catch(() => undefined);
     }, RESCUE_EXPORT_POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [activeSection, activeBot?.id, activeExportStatus?.phase, loadRescueExportStatus]);
+  }, [activeSection, activeBot?.id, activeExportStatus?.phase, loadRescueExportStatus, shouldExposeWorkspaceRecoveryPanel]);
 
   useEffect(() => {
-    if (activeSection !== "diagnostics" || !activeBot?.id || !isRescueExportRunning(activeImportStatus)) return;
+    if (!shouldExposeWorkspaceRecoveryPanel || activeSection !== "diagnostics" || !activeBot?.id || !isRescueExportRunning(activeImportStatus)) return;
     const timer = window.setInterval(() => {
       void loadHermesImportStatus(activeBot.id).catch(() => undefined);
     }, RESCUE_EXPORT_POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [activeSection, activeBot?.id, activeImportStatus?.phase, loadHermesImportStatus]);
+  }, [activeSection, activeBot?.id, activeImportStatus?.phase, loadHermesImportStatus, shouldExposeWorkspaceRecoveryPanel]);
 
   useEffect(() => {
     return installOpenClawConsoleHelpers({
@@ -4166,7 +4285,7 @@ export const AgentSettingsPage = ({
     return workspaceDetailsOpen ? t("收起备份或恢复详情") : t("查看备份或恢复详情");
   };
   const workspaceCopyLabel = activeWorkspaceTask?.kind === "export" ? t("复制备份信息") : t("复制恢复信息");
-  const workspaceRecoveryPanel = activeBot ? (
+  const workspaceRecoveryPanel = shouldExposeWorkspaceRecoveryPanel && activeBot ? (
     <section className="rounded-md border border-black/[0.08] bg-white p-5 shadow-sm">
       <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1">
         <h3 className="text-base font-semibold text-black/90 text-balance">{t("Agent 备份与恢复")}</h3>
@@ -4337,7 +4456,7 @@ export const AgentSettingsPage = ({
       {showHeader && <ProductReturnHomeHeader reloadLanguageAfterSwitch />}
 
       <Dialog
-        open={Boolean(workspaceConfirm)}
+        open={shouldExposeWorkspaceRecoveryPanel && Boolean(workspaceConfirm)}
         onOpenChange={(open) => {
           if (!open) setWorkspaceConfirm(null);
         }}
@@ -5039,6 +5158,7 @@ export const AgentSettingsPage = ({
                               instance={sdkInstance}
                               featureFlags={sdkFeatureFlags}
                               productConfigArgs={sdkProductConfigArgs}
+                              useEnglish={useEnglish}
                             />
                           )}
                           {activeSection === "model" && (
@@ -5047,6 +5167,7 @@ export const AgentSettingsPage = ({
                               instance={sdkInstance}
                               featureFlags={sdkFeatureFlags}
                               productConfigArgs={sdkProductConfigArgs}
+                              useEnglish={useEnglish}
                             />
                           )}
                           {activeSection === "skill" && (
@@ -5057,6 +5178,7 @@ export const AgentSettingsPage = ({
                               featureFlags={sdkFeatureFlags}
                               initialSectionSlug={initialSectionSlug}
                               productConfigArgs={sdkProductConfigArgs}
+                              useEnglish={useEnglish}
                             />
                           )}
                           {activeSection === "buddy" && (

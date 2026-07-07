@@ -354,6 +354,7 @@ impl DaemonState {
                     prompt: query,
                     cwd,
                     versions,
+                    skills: Default::default(),
                 },
             )
                     .await

@@ -14,6 +14,7 @@ mod restore;
 mod sandbox_context;
 pub mod store;
 mod stream;
+mod system_prompt;
 mod tool_calls;
 mod tool_loop;
 mod transcript;
@@ -31,6 +32,7 @@ use crate::events::{AgentEvent, AgentEventSink};
 use crate::runtime::agent::AgentExecutor;
 use crate::runtime::store::RuntimeStore;
 use crate::session::{AgentSession, TranscriptRole};
+use crate::skills::SkillSelection;
 use serde::{Deserialize, Serialize};
 
 pub use actor::{
@@ -45,6 +47,8 @@ pub struct RunTurnRequest {
     pub prompt: String,
     pub cwd: PathBuf,
     pub versions: BehaviorVersions,
+    #[serde(default)]
+    pub skills: SkillSelection,
 }
 
 impl RunTurnRequest {
@@ -55,6 +59,7 @@ impl RunTurnRequest {
             prompt: prompt.into(),
             cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
             versions: BehaviorVersions::default(),
+            skills: SkillSelection::default(),
         }
     }
 }

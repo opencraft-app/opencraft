@@ -399,6 +399,16 @@ describe("getTestSendFailureFallback", () => {
   it("keeps the generic fallback for other platforms", () => {
     expect(getTestSendFailureFallback("feishu", "通用失败", "微信失败")).toBe("通用失败");
   });
+
+  it("uses the more specific WeCom home-channel hint for wecom aliases when provided", () => {
+    expect(getTestSendFailureFallback("wecom", "通用失败", "微信失败", "企微失败")).toBe("企微失败");
+    expect(getTestSendFailureFallback("wework", "通用失败", "微信失败", "企微失败")).toBe("企微失败");
+    expect(getTestSendFailureFallback("openclaw-wecom", "通用失败", "微信失败", "企微失败")).toBe("企微失败");
+  });
+
+  it("falls back to the generic message for wecom when no wecom-specific hint is provided", () => {
+    expect(getTestSendFailureFallback("wecom", "通用失败", "微信失败")).toBe("通用失败");
+  });
 });
 
 describe("cron date parsing and expiration filtering", () => {

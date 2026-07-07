@@ -24,6 +24,87 @@ require_cmd() {
   fi
 }
 
+coscmd_with_retry() {
+  local attempts delay i
+  attempts="${CLOUDAGENT_COSCMD_ATTEMPTS:-4}"
+  delay="${CLOUDAGENT_COSCMD_RETRY_DELAY_SECONDS:-10}"
+  i=1
+  while true; do
+    if "$COSCMD_BIN" -c "$COSCMD_CONFIG" "$@"; then
+      return 0
+    fi
+    if [ "$i" -ge "$attempts" ]; then
+      return 1
+    fi
+    printf '[signupload] coscmd failed attempt=%s/%s command=%s; retry in %ss\n' "$i" "$attempts" "$1" "$delay" >&2
+    sleep "$delay"
+    i=$((i + 1))
+  done
+}
+
+cos_sdk_available() {
+  [ -f "$COS_UPLOAD_HELPER" ] \
+    && command -v "$COS_PYTHON_BIN" >/dev/null 2>&1 \
+    && "$COS_PYTHON_BIN" -c 'import qcloud_cos' >/dev/null 2>&1
+}
+
+cos_sdk_with_retry() {
+  local attempts delay i
+  attempts="${CLOUDAGENT_COS_UPLOAD_ATTEMPTS:-${CLOUDAGENT_COSCMD_ATTEMPTS:-4}}"
+  delay="${CLOUDAGENT_COSCMD_RETRY_DELAY_SECONDS:-10}"
+  i=1
+  while true; do
+    if "$COS_PYTHON_BIN" "$COS_UPLOAD_HELPER" --config "$COSCMD_CONFIG" "$@"; then
+      return 0
+    fi
+    if [ "$i" -ge "$attempts" ]; then
+      return 1
+    fi
+    printf '[signupload] cos helper failed attempt=%s/%s command=%s; retry in %ss\n' "$i" "$attempts" "$1" "$delay" >&2
+    sleep "$delay"
+    i=$((i + 1))
+  done
+}
+
+cos_object_size() {
+  if cos_sdk_available; then
+    cos_sdk_with_retry size "$1"
+    return
+  fi
+  "$COSCMD_BIN" -c "$COSCMD_CONFIG" info "$1" 2>/dev/null | awk '
+    $1 == "Content-Length" {
+      print $2
+      exit
+    }
+  '
+}
+
+cos_upload_if_needed() {
+  local local_path object expected_size existing_size
+  local_path="$1"
+  object="$2"
+  expected_size="$(wc -c <"$local_path" | tr -d '[:space:]')"
+  existing_size="$(cos_object_size "$object" || true)"
+  if [ -n "$existing_size" ] && [ "$existing_size" = "$expected_size" ]; then
+    printf '[signupload] skip upload; object already exists size=%s object=%s\n' "$existing_size" "$object" >&2
+    return 0
+  fi
+  if cos_sdk_available; then
+    cos_sdk_with_retry upload "$local_path" "$object"
+  else
+    coscmd_with_retry upload -f -y "$local_path" "$object"
+  fi
+}
+
+cos_put_public_read() {
+  local object="$1"
+  if cos_sdk_available; then
+    cos_sdk_with_retry public-read "$object"
+  else
+    coscmd_with_retry putobjectacl "$object" --grant-read anyone
+  fi
+}
+
 cos_config_value() {
   local key="$1"
   awk -F '=' -v key="$key" '
@@ -40,6 +121,8 @@ cos_config_value() {
 
 COSCMD_BIN="${COSCMD_BIN:-coscmd}"
 COSCMD_CONFIG="${COSCMD_CONFIG:-/tmp/cos-agent-sidecar.conf}"
+COS_PYTHON_BIN="${COS_PYTHON_BIN:-python3}"
+COS_UPLOAD_HELPER="${COS_UPLOAD_HELPER:-$ROOT_DIR/scripts/lib/cos_upload.py}"
 COS_OBJECT_PREFIX="${COS_OBJECT_PREFIX:-/agent-sidecar/$(date +%Y%m%d)}"
 AGENT_GOARCH="${CLOUDAGENT_AGENT_GOARCH:-${LINUX_GOARCH:-amd64}}"
 SIDECAR_LOCAL_PATH="${GATEWAY_AGENT_SIDECAR_BINARY:-$ROOT_DIR/dist/cloudagent-sidecar-linux-$AGENT_GOARCH}"
@@ -113,14 +196,14 @@ if [ "$DRY_RUN" = "1" ]; then
   printf '[signupload] dry-run enabled; skip COS upload and HEAD checks\n' >&2
 else
   printf '[signupload] upload %s -> %s\n' "$SIDECAR_LOCAL_PATH" "$SIDECAR_OBJECT" >&2
-  "$COSCMD_BIN" -c "$COSCMD_CONFIG" upload -f -y "$SIDECAR_LOCAL_PATH" "$SIDECAR_OBJECT" >&2
+  cos_upload_if_needed "$SIDECAR_LOCAL_PATH" "$SIDECAR_OBJECT" >&2
   printf '[signupload] upload %s -> %s\n' "$SIDECAR_SIG_LOCAL_PATH" "$SIDECAR_SIG_OBJECT" >&2
-  "$COSCMD_BIN" -c "$COSCMD_CONFIG" upload -f -y "$SIDECAR_SIG_LOCAL_PATH" "$SIDECAR_SIG_OBJECT" >&2
+  cos_upload_if_needed "$SIDECAR_SIG_LOCAL_PATH" "$SIDECAR_SIG_OBJECT" >&2
 
   printf '[signupload] set public-read -> %s\n' "$SIDECAR_OBJECT" >&2
-  "$COSCMD_BIN" -c "$COSCMD_CONFIG" putobjectacl "$SIDECAR_OBJECT" --grant-read anyone >&2
+  cos_put_public_read "$SIDECAR_OBJECT" >&2
   printf '[signupload] set public-read -> %s\n' "$SIDECAR_SIG_OBJECT" >&2
-  "$COSCMD_BIN" -c "$COSCMD_CONFIG" putobjectacl "$SIDECAR_SIG_OBJECT" --grant-read anyone >&2
+  cos_put_public_read "$SIDECAR_SIG_OBJECT" >&2
 
   if command -v curl >/dev/null 2>&1; then
     curl -fsSI --connect-timeout 10 --max-time 30 "$PUBLIC_URL" >/dev/null

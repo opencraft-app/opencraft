@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
 use crate::client::{ChatStreamEvent, ToolCall};
+use crate::error::{Error, Result};
+use serde_json::Value;
 
 #[derive(Debug, Default)]
 pub(crate) struct StreamingToolCallAccumulator {
@@ -24,15 +26,20 @@ impl StreamingToolCallAccumulator {
                         state.id = Some(id.clone());
                     }
                     if let Some(function) = &delta.function {
-                        if !function.name.is_empty() {
-                            if state.name.is_empty() || function.name.starts_with(&state.name) {
-                                state.name = function.name.clone();
-                            } else if !state.name.ends_with(&function.name) {
-                                state.name.push_str(&function.name);
+                        if let Some(name) = function.name.as_deref().filter(|name| !name.is_empty())
+                        {
+                            if state.name.is_empty() || name.starts_with(&state.name) {
+                                state.name = name.to_string();
+                            } else if !state.name.ends_with(name) {
+                                state.name.push_str(name);
                             }
                         }
-                        if !function.arguments.is_empty() {
-                            state.arguments.push_str(&function.arguments);
+                        if let Some(arguments) = function
+                            .arguments
+                            .as_deref()
+                            .filter(|arguments| !arguments.is_empty())
+                        {
+                            state.arguments.push_str(arguments);
                         }
                     }
                 }
@@ -95,6 +102,48 @@ pub(crate) fn merge_stream_tool_call(tool_calls: &mut Vec<ToolCall>, tool_call: 
     } else {
         tool_calls.push(tool_call);
     }
+}
+
+pub(crate) fn normalize_tool_calls(tool_calls: Vec<ToolCall>) -> Result<Vec<ToolCall>> {
+    tool_calls
+        .into_iter()
+        .map(normalize_tool_call)
+        .collect::<Result<Vec<_>>>()
+}
+
+fn normalize_tool_call(mut tool_call: ToolCall) -> Result<ToolCall> {
+    let tool_name = tool_call.function.name.trim();
+    if tool_name.is_empty() {
+        return Err(Error::InvalidToolArgs {
+            name: "<unknown>".to_string(),
+            details: "tool call function name is empty".to_string(),
+        });
+    }
+
+    tool_call.function.name = tool_name.to_string();
+    tool_call.function.arguments =
+        normalize_tool_arguments(&tool_call.function.name, &tool_call.function.arguments)?;
+    Ok(tool_call)
+}
+
+fn normalize_tool_arguments(tool_name: &str, arguments: &str) -> Result<String> {
+    let trimmed = arguments.trim();
+    if trimmed.is_empty() {
+        return Ok("{}".to_string());
+    }
+
+    let value = serde_json::from_str::<Value>(trimmed).map_err(|error| Error::InvalidToolArgs {
+        name: tool_name.to_string(),
+        details: format!("function.arguments must be a valid JSON object string: {error}"),
+    })?;
+    if !value.is_object() {
+        return Err(Error::InvalidToolArgs {
+            name: tool_name.to_string(),
+            details: "function.arguments must decode to a JSON object".to_string(),
+        });
+    }
+
+    serde_json::to_string(&value).map_err(Error::JsonDecode)
 }
 
 #[derive(Default)]
@@ -262,6 +311,63 @@ mod tests {
     }
 
     #[test]
+    fn normalize_tool_calls_compacts_valid_json_arguments() {
+        let normalized = normalize_tool_calls(vec![ToolCall {
+            id: "call_1".to_string(),
+            function: ToolCallFunction {
+                name: " terminal ".to_string(),
+                arguments: " { \"command\" : \"pwd\" } ".to_string(),
+            },
+        }])
+        .expect("valid tool call should normalize");
+
+        assert_eq!(normalized[0].function.name, "terminal");
+        assert_eq!(normalized[0].function.arguments, "{\"command\":\"pwd\"}");
+    }
+
+    #[test]
+    fn normalize_tool_calls_turns_empty_arguments_into_object() {
+        let normalized = normalize_tool_calls(vec![ToolCall {
+            id: "call_1".to_string(),
+            function: ToolCallFunction {
+                name: "datetime".to_string(),
+                arguments: "".to_string(),
+            },
+        }])
+        .expect("empty arguments represent no-arg function calls");
+
+        assert_eq!(normalized[0].function.arguments, "{}");
+    }
+
+    #[test]
+    fn normalize_tool_calls_rejects_malformed_arguments() {
+        let error = normalize_tool_calls(vec![ToolCall {
+            id: "call_bad".to_string(),
+            function: ToolCallFunction {
+                name: "terminal".to_string(),
+                arguments: "{\"command\":".to_string(),
+            },
+        }])
+        .expect_err("malformed arguments must not enter history");
+
+        assert!(error.to_string().contains("Invalid tool arguments"));
+    }
+
+    #[test]
+    fn normalize_tool_calls_rejects_non_object_arguments() {
+        let error = normalize_tool_calls(vec![ToolCall {
+            id: "call_bad".to_string(),
+            function: ToolCallFunction {
+                name: "terminal".to_string(),
+                arguments: "\"pwd\"".to_string(),
+            },
+        }])
+        .expect_err("arguments must be JSON objects");
+
+        assert!(error.to_string().contains("JSON object"));
+    }
+
+    #[test]
     fn streaming_tool_call_accumulator_merges_split_native_deltas() {
         let mut accumulator = StreamingToolCallAccumulator::default();
 
@@ -280,9 +386,9 @@ mod tests {
                         index: 0,
                         id: Some("call_function_terminal_1".to_string()),
                         call_type: Some("function".to_string()),
-                        function: Some(ToolCallFunction {
-                            name: "terminal".to_string(),
-                            arguments: r#"{"command":"pwd"#.to_string(),
+                        function: Some(crate::client::StreamingToolCallFunctionDelta {
+                            name: Some("terminal".to_string()),
+                            arguments: Some(r#"{"command":"pwd"#.to_string()),
                         }),
                     }]),
                 },
@@ -305,9 +411,9 @@ mod tests {
                         index: 0,
                         id: None,
                         call_type: Some("function".to_string()),
-                        function: Some(ToolCallFunction {
-                            name: String::new(),
-                            arguments: r#" && cat hello.txt"}"#.to_string(),
+                        function: Some(crate::client::StreamingToolCallFunctionDelta {
+                            name: None,
+                            arguments: Some(r#" && cat hello.txt"}"#.to_string()),
                         }),
                     }]),
                 },
@@ -322,6 +428,66 @@ mod tests {
         assert_eq!(
             tool_calls[0].function.arguments,
             r#"{"command":"pwd && cat hello.txt"}"#
+        );
+    }
+
+    #[test]
+    fn streaming_tool_call_accumulator_keeps_deserialized_argument_only_chunks() {
+        let first: crate::client::ChatStreamEvent = serde_json::from_value(serde_json::json!({
+            "id": "evt_1",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "test-model",
+            "choices": [{
+                "index": 0,
+                "delta": {
+                    "tool_calls": [{
+                        "index": 0,
+                        "id": "call_terminal_1",
+                        "type": "function",
+                        "function": {
+                            "name": "terminal",
+                            "arguments": "{\"command\":\"printf "
+                        }
+                    }]
+                },
+                "finish_reason": null
+            }]
+        }))
+        .expect("first tool chunk should deserialize");
+
+        let second: crate::client::ChatStreamEvent = serde_json::from_value(serde_json::json!({
+            "id": "evt_2",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "test-model",
+            "choices": [{
+                "index": 0,
+                "delta": {
+                    "tool_calls": [{
+                        "index": 0,
+                        "function": {
+                            "arguments": "CLOUDAGENT_TOOL_OK\"}"
+                        }
+                    }]
+                },
+                "finish_reason": "tool_calls"
+            }]
+        }))
+        .expect("argument-only tool chunk should deserialize");
+
+        let mut accumulator = StreamingToolCallAccumulator::default();
+        accumulator.feed_event(&first);
+        accumulator.feed_event(&second);
+
+        let normalized =
+            normalize_tool_calls(accumulator.finish()).expect("merged tool args should normalize");
+        assert_eq!(normalized.len(), 1);
+        assert_eq!(normalized[0].id, "call_terminal_1");
+        assert_eq!(normalized[0].function.name, "terminal");
+        assert_eq!(
+            normalized[0].function.arguments,
+            r#"{"command":"printf CLOUDAGENT_TOOL_OK"}"#
         );
     }
 

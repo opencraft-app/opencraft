@@ -37,6 +37,7 @@ const navItems = [
   { label: "概览", href: "/dashboard", icon: BarChart3 },
   { type: "separator" as const },
   { label: "用户", href: "/users", icon: Users },
+  { label: "用户反馈", href: "/feedback", icon: MessageSquareMore },
   { label: "密钥", href: "/api-keys", icon: KeyRound },
   { label: "开通", href: "/provision", icon: Rocket },
   { type: "separator" as const },

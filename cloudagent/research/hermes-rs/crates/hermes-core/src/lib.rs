@@ -44,6 +44,7 @@ pub mod client;
 pub mod config;
 pub mod context;
 pub mod context_files;
+pub mod context_hints;
 pub mod distillation;
 pub mod error;
 pub mod events;
@@ -73,9 +74,16 @@ pub use config::{
     HttpToolSettings, LoadedConfig, LoggingSettings, McpServerConfig, McpSettings, SkillsSettings,
     TerminalSettings, ToolSettings, TuiSettings, WebToolSettings,
 };
-pub use context::{estimate_tokens, ContextConfig, ContextManager};
+pub use context::{
+    estimate_tokens, is_compressed_summary, ContextConfig, ContextManager,
+    COMPRESSED_SUMMARY_METADATA_KEY,
+};
 pub use context_files::{
     load_context_dir, load_default_context_files, load_workspace_context, scan_context_content,
+};
+pub use context_hints::{
+    ContextHintBatch, ContextHintTracker, HintFile, HintFileScanner, HintInjectionPolicy,
+    SubdirectoryContextHintTracker, ToolResultAugmentor,
 };
 pub use distillation::distill_session_to_memory;
 pub use error::{Error, Result};
@@ -94,7 +102,10 @@ pub use runtime::{
     RunTurnRequest, RunTurnResult,
 };
 pub use session::{AgentSession, TranscriptBlock, TranscriptEntry, TranscriptRole};
-pub use skills::{Skill, SkillInjectionPlanner, SkillManager, SkillPromptHook};
+pub use skills::{
+    Skill, SkillActivation, SkillActivationReason, SkillBundle, SkillCatalog, SkillInjectionPlan,
+    SkillInjectionPoint, SkillManager, SkillResolver, SkillSelection,
+};
 pub use tools::{
     register_builtin_tools, register_builtin_tools_with_sub_agent, BuiltinToolProvider,
     ToolHandler, ToolProvider, ToolRegistry, ToolResult, ToolRouter,

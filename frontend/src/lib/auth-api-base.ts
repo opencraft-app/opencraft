@@ -50,3 +50,39 @@ export const resolveConfiguredAuthApiBaseUrl = () => {
 
   return null;
 };
+
+/**
+ * 反馈后台（/support/feedback/list、/sign）专用 base。
+ * 优先使用 NEXT_PUBLIC_SUPPORT_ADMIN_API_BASE_URL 显式覆盖；
+ * 其次在 admin.lightclaw.tech（含预览子域）上同域回指；
+ * 兜底沿用主站鉴权 base（本地开发 / 主站直连仍可工作）。
+ *
+ * 与 resolveConfiguredAuthApiBaseUrl 的区别：反馈后台的读取接口
+ * 经 admin-gateway(admin.lightclaw.tech) 暴露，由运营白名单(SUPPORT_AGENT_IDS)
+ * 控制；而用户提交(presign) 经主站 service-gateway。两者鉴权链不同。
+ */
+export const resolveSupportAdminApiBaseUrl = () => {
+  const configured = (
+    (typeof process !== "undefined" ? process.env.NEXT_PUBLIC_SUPPORT_ADMIN_API_BASE_URL : undefined)
+    ?? import.meta.env?.VITE_SUPPORT_ADMIN_API_BASE_URL
+  )?.trim();
+
+  if (configured && configured.length > 0) {
+    if (configured.toLowerCase() === "mock") {
+      return null;
+    }
+    if (configured.toLowerCase() === "local-proxy") {
+      return "";
+    }
+    return configured.replace(/\/$/, "");
+  }
+
+  if (typeof window !== "undefined") {
+    const hostname = window.location.hostname;
+    if (hostname === "admin.lightclaw.tech" || hostname.endsWith(".admin.lightclaw.tech")) {
+      return "https://admin.lightclaw.tech";
+    }
+  }
+
+  return resolveConfiguredAuthApiBaseUrl();
+};

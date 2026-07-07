@@ -2,22 +2,28 @@
 //!
 //! Implements the ReAct (Reason + Act) pattern for LLM-driven tool execution.
 
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use tracing::{debug, error, info, instrument, warn};
 
-use crate::client::{Message, OpenAIClient};
+use crate::client::{Message, OpenAIClient, ToolCall};
 use crate::config::{runtime_config, BehaviorSettings};
+use crate::context::ContextConfig;
+use crate::context_hints::ContextHintTracker;
 use crate::error::{Error, Result};
 use crate::events::{AgentEvent, AgentEventSink};
 use crate::hooks::{GateHook, NoopGateHook, PromptTransformHook};
 use crate::memory::MemoryManager;
+use crate::runtime::system_prompt::SystemPromptCache;
+use crate::runtime::tool_calls::normalize_tool_calls;
 use crate::runtime::tool_loop::check_cancelled;
 use crate::runtime_host::{session_id, SessionSandbox};
-use crate::tools::ToolRegistry;
+use crate::skills::{SkillInjectionPlan, SkillManager, SkillSelection};
+use crate::tools::{ContextEngineTool, ToolRegistry};
 use crate::turn::TurnContext;
 
 /// Configuration for the agent executor.
@@ -74,6 +80,11 @@ pub struct AgentExecutor {
     pub(super) session_id: String,
     pub(super) gate_hook: Arc<dyn GateHook>,
     pub(super) prompt_transform_hooks: Vec<Arc<dyn PromptTransformHook>>,
+    pub(super) skills_root_dir: PathBuf,
+    pub(super) skills_autoload: bool,
+    pub(super) subdirectory_context_hints: Arc<Mutex<ContextHintTracker>>,
+    pub(super) system_prompt_cache: Arc<RwLock<SystemPromptCache>>,
+    default_skills: SkillSelection,
 }
 
 impl AgentExecutor {
@@ -90,6 +101,13 @@ impl AgentExecutor {
             session_id: session_id(),
             gate_hook: Arc::new(NoopGateHook),
             prompt_transform_hooks: Vec::new(),
+            skills_root_dir: runtime_config().skills.root_dir.clone(),
+            skills_autoload: runtime_config().skills.autoload,
+            subdirectory_context_hints: Arc::new(Mutex::new(ContextHintTracker::new(
+                std::env::current_dir().unwrap_or_else(|_| ".".into()),
+            ))),
+            system_prompt_cache: Arc::new(RwLock::new(SystemPromptCache::default())),
+            default_skills: SkillSelection::default(),
         }
     }
 
@@ -111,6 +129,13 @@ impl AgentExecutor {
             session_id: session_id(),
             gate_hook: Arc::new(NoopGateHook),
             prompt_transform_hooks: Vec::new(),
+            skills_root_dir: runtime_config().skills.root_dir.clone(),
+            skills_autoload: runtime_config().skills.autoload,
+            subdirectory_context_hints: Arc::new(Mutex::new(ContextHintTracker::new(
+                std::env::current_dir().unwrap_or_else(|_| ".".into()),
+            ))),
+            system_prompt_cache: Arc::new(RwLock::new(SystemPromptCache::default())),
+            default_skills: SkillSelection::default(),
         }
     }
 
@@ -127,6 +152,16 @@ impl AgentExecutor {
 
     pub fn with_prompt_transform_hook(mut self, hook: Arc<dyn PromptTransformHook>) -> Self {
         self.prompt_transform_hooks.push(hook);
+        self
+    }
+
+    pub fn with_skills_root_dir(mut self, root_dir: PathBuf) -> Self {
+        self.skills_root_dir = root_dir;
+        self
+    }
+
+    pub fn with_default_skills(mut self, selection: SkillSelection) -> Self {
+        self.default_skills = selection;
         self
     }
 
@@ -240,14 +275,23 @@ impl AgentExecutor {
         turn: Option<TurnContext>,
     ) -> Result<Message> {
         info!("Starting agent run");
-        let turn = turn.unwrap_or_else(|| self.synthetic_turn_context(&user_query));
+        let mut turn = turn.unwrap_or_else(|| self.synthetic_turn_context(&user_query));
         let user_query = self.apply_prompt_transforms(user_query, &turn).await?;
+        turn.prompt = user_query.clone();
+        self.subdirectory_context_hints
+            .lock()
+            .await
+            .set_working_dir(&turn.cwd);
+        let skill_plan = self.resolve_skills_for_turn(&turn)?;
 
         // Add user message
         self.add_message(Message::user(&user_query)).await;
 
         // Build initial messages including system prompt
-        let mut messages = self.build_messages().await?;
+        let mut messages = self
+            .build_messages_for_turn(&turn, Some(&skill_plan))
+            .await?;
+        self.ensure_runtime_tools_registered().await?;
         let mut iteration = 0;
 
         loop {
@@ -292,6 +336,18 @@ impl AgentExecutor {
 
             match response {
                 Ok((response_text, reasoning_text, tool_calls)) => {
+                    let tool_calls = match normalize_tool_calls_for_history(tool_calls) {
+                        Ok(tool_calls) => tool_calls,
+                        Err(error) => {
+                            warn!(error = %error, "Rejected invalid tool call before history append");
+                            self.emit(AgentEvent::Error {
+                                error: error.to_string(),
+                            })
+                            .await;
+                            return Err(error);
+                        }
+                    };
+
                     // Add assistant message to conversation
                     let mut assistant_msg = Message::assistant(&response_text);
                     if !reasoning_text.is_empty() {
@@ -395,6 +451,55 @@ impl AgentExecutor {
             }
         }
     }
+
+    fn resolve_skills_for_turn(&self, turn: &TurnContext) -> Result<SkillInjectionPlan> {
+        let selection = merge_skill_selection(&self.default_skills, &turn.skills);
+        if !self.skills_autoload && selection.explicit.is_empty() && selection.disabled.is_empty() {
+            return Ok(SkillInjectionPlan::default());
+        }
+        let manager = SkillManager::new(self.skills_root_dir.clone());
+        let mut turn = turn.clone();
+        turn.skills = selection;
+        manager.resolve_for_turn(&turn, &turn.skills)
+    }
+
+    async fn ensure_runtime_tools_registered(&self) -> Result<()> {
+        if self.registry.contains("context_engine").await {
+            return Ok(());
+        }
+        self.registry
+            .register(ContextEngineTool::new(
+                self.conversation.clone(),
+                ContextConfig {
+                    max_context_length: self.config.context_window,
+                    ..ContextConfig::default()
+                },
+            ))
+            .await
+    }
+}
+
+fn merge_skill_selection(defaults: &SkillSelection, turn: &SkillSelection) -> SkillSelection {
+    fn append_unique(target: &mut Vec<String>, source: &[String]) {
+        for item in source {
+            if !target.iter().any(|existing| existing == item) {
+                target.push(item.clone());
+            }
+        }
+    }
+
+    let mut merged = SkillSelection::default();
+    append_unique(&mut merged.explicit, &defaults.explicit);
+    append_unique(&mut merged.explicit, &turn.explicit);
+    append_unique(&mut merged.disabled, &defaults.disabled);
+    append_unique(&mut merged.disabled, &turn.disabled);
+    append_unique(&mut merged.bundles, &defaults.bundles);
+    append_unique(&mut merged.bundles, &turn.bundles);
+    merged
+}
+
+fn normalize_tool_calls_for_history(tool_calls: Vec<ToolCall>) -> Result<Vec<ToolCall>> {
+    normalize_tool_calls(tool_calls)
 }
 
 /// Builder for creating an AgentExecutor.
@@ -405,6 +510,9 @@ pub struct AgentExecutorBuilder {
     memory_manager: Option<MemoryManager>,
     gate_hook: Option<Arc<dyn GateHook>>,
     prompt_transform_hooks: Vec<Arc<dyn PromptTransformHook>>,
+    skills_root_dir: Option<PathBuf>,
+    skills_autoload: Option<bool>,
+    default_skills: Option<SkillSelection>,
 }
 
 impl AgentExecutorBuilder {
@@ -416,6 +524,9 @@ impl AgentExecutorBuilder {
             memory_manager: None,
             gate_hook: None,
             prompt_transform_hooks: Vec::new(),
+            skills_root_dir: None,
+            skills_autoload: None,
+            default_skills: None,
         }
     }
 
@@ -483,6 +594,21 @@ impl AgentExecutorBuilder {
         self
     }
 
+    pub fn skills_root_dir(mut self, root_dir: PathBuf) -> Self {
+        self.skills_root_dir = Some(root_dir);
+        self
+    }
+
+    pub fn skills_autoload(mut self, enabled: bool) -> Self {
+        self.skills_autoload = Some(enabled);
+        self
+    }
+
+    pub fn default_skills(mut self, selection: SkillSelection) -> Self {
+        self.default_skills = Some(selection);
+        self
+    }
+
     /// Build the agent
     pub fn build(self) -> Result<AgentExecutor> {
         let client = self.client.unwrap_or_else(|| {
@@ -500,6 +626,15 @@ impl AgentExecutorBuilder {
         }
         if let Some(gate_hook) = self.gate_hook {
             agent = agent.with_gate_hook(gate_hook);
+        }
+        if let Some(root_dir) = self.skills_root_dir {
+            agent = agent.with_skills_root_dir(root_dir);
+        }
+        if let Some(enabled) = self.skills_autoload {
+            agent.skills_autoload = enabled;
+        }
+        if let Some(selection) = self.default_skills {
+            agent = agent.with_default_skills(selection);
         }
         for hook in self.prompt_transform_hooks {
             agent = agent.with_prompt_transform_hook(hook);
@@ -566,6 +701,97 @@ mod tests {
         assert!(system.contains("<long_term_memory>"));
         assert!(system.contains("[fact] User prefers concise answers"));
         assert!(system.contains("</long_term_memory>"));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn system_prompt_cache_reuses_stable_context_when_volatile_note_changes() {
+        let previous_note = std::env::var("HERMES_CURRENT_TIME_NOTE").ok();
+        std::env::set_var("HERMES_CURRENT_TIME_NOTE", "time one");
+
+        let agent = AgentExecutor::new(
+            AgentConfig::default(),
+            OpenAIClient::new(crate::client::ClientConfig::default()),
+            ToolRegistry::new(Duration::from_secs(1)),
+        );
+
+        let first = agent.build_messages().await.unwrap();
+        assert!(first[0].content.contains("time one"));
+        assert_eq!(agent.system_prompt_cache.read().await.stats().misses, 1);
+
+        std::env::set_var("HERMES_CURRENT_TIME_NOTE", "time two");
+        let second = agent.build_messages().await.unwrap();
+        let stats = agent.system_prompt_cache.read().await.stats();
+        assert_eq!(stats.entries, 1);
+        assert_eq!(stats.hits, 1);
+        assert_eq!(stats.misses, 1);
+        assert!(!second[0].content.contains("time one"));
+        assert!(second[0].content.contains("time two"));
+
+        if let Some(note) = previous_note {
+            std::env::set_var("HERMES_CURRENT_TIME_NOTE", note);
+        } else {
+            std::env::remove_var("HERMES_CURRENT_TIME_NOTE");
+        }
+    }
+
+    #[tokio::test]
+    async fn system_prompt_cache_separates_workspace_context_layers() {
+        let tmp = std::env::temp_dir().join(format!(
+            "hermes-runtime-prompt-cache-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join(".git")).unwrap();
+        let subdir = tmp.join("crates").join("demo");
+        std::fs::create_dir_all(&subdir).unwrap();
+        std::fs::write(tmp.join("AGENTS.md"), "root context").unwrap();
+        std::fs::write(subdir.join("AGENTS.md"), "demo context").unwrap();
+
+        let agent = AgentExecutor::new(
+            AgentConfig::default(),
+            OpenAIClient::new(crate::client::ClientConfig::default()),
+            ToolRegistry::new(Duration::from_secs(1)),
+        );
+
+        let mut root_turn = agent.synthetic_turn_context("");
+        root_turn.cwd = tmp.clone();
+        let root_messages = agent
+            .build_messages_for_turn(&root_turn, None)
+            .await
+            .unwrap();
+        assert!(root_messages[0].content.contains("root context"));
+
+        let mut subdir_turn = agent.synthetic_turn_context("");
+        subdir_turn.cwd = subdir;
+        let subdir_messages = agent
+            .build_messages_for_turn(&subdir_turn, None)
+            .await
+            .unwrap();
+        assert!(subdir_messages[0].content.contains("demo context"));
+
+        let stats = agent.system_prompt_cache.read().await.stats();
+        assert_eq!(stats.entries, 2);
+        assert_eq!(stats.misses, 2);
+
+        let _ = std::fs::remove_dir_all(tmp);
+    }
+
+    #[tokio::test]
+    async fn runtime_tool_registration_adds_context_engine_once() {
+        let registry = ToolRegistry::new(Duration::from_secs(1));
+        let agent = AgentExecutor::new(
+            AgentConfig::default(),
+            OpenAIClient::new(crate::client::ClientConfig::default()),
+            registry.clone(),
+        );
+
+        assert!(!registry.contains("context_engine").await);
+        agent.ensure_runtime_tools_registered().await.unwrap();
+        assert!(registry.contains("context_engine").await);
+        let len_after_first_register = registry.len().await;
+        agent.ensure_runtime_tools_registered().await.unwrap();
+        assert_eq!(registry.len().await, len_after_first_register);
     }
 
     #[tokio::test]
@@ -640,6 +866,143 @@ mod tests {
         assert_eq!(prompt, "hello\n\nhooked");
     }
 
+    #[tokio::test]
+    async fn turn_cwd_skills_are_injected_without_persisting_to_conversation() {
+        let tmp = std::env::temp_dir().join(format!(
+            "hermes-runtime-skill-injection-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let skills_root = tmp.join(".agents").join("skills");
+        let prompt_skill = skills_root.join("prompt-skill");
+        let message_skill = skills_root.join("message-skill");
+        std::fs::create_dir_all(&prompt_skill).unwrap();
+        std::fs::create_dir_all(&message_skill).unwrap();
+        std::fs::write(
+            prompt_skill.join("SKILL.md"),
+            "---\nname: prompt-skill\nautoload: true\ninjection: prompt\n---\nprompt skill body\n",
+        )
+        .unwrap();
+        std::fs::write(
+            message_skill.join("SKILL.md"),
+            "---\nname: message-skill\nautoload: true\ninjection: message\n---\nmessage skill body\n",
+        )
+        .unwrap();
+
+        let agent = AgentExecutor::new(
+            AgentConfig::default(),
+            OpenAIClient::new(crate::client::ClientConfig::default()),
+            ToolRegistry::new(Duration::from_secs(1)),
+        )
+        .with_skills_root_dir(tmp.join("global-skills"));
+        let turn = TurnContext {
+            turn_id: "turn_1".to_string(),
+            run_id: "run_1".to_string(),
+            session_id: "session_1".to_string(),
+            source: "prompt".to_string(),
+            prompt: "hello".to_string(),
+            cwd: tmp.clone(),
+            versions: crate::behavior::BehaviorVersions::default(),
+            skills: Default::default(),
+        };
+
+        agent.add_message(Message::user("hello")).await;
+        let plan = agent.resolve_skills_for_turn(&turn).unwrap();
+        let messages = agent
+            .build_messages_for_turn(&turn, Some(&plan))
+            .await
+            .unwrap();
+
+        assert!(messages[0].content.contains("prompt skill body"));
+        assert!(messages[0].content.contains("<available_skills"));
+        assert!(messages
+            .iter()
+            .any(|message| message.content.contains("message skill body")));
+        assert!(messages.iter().any(|message| {
+            message.role == crate::client::Role::User
+                && message.content.contains("<turn_skill_messages>")
+                && message.content.contains("message skill body")
+        }));
+        let conversation = agent.conversation().await;
+        assert_eq!(conversation.len(), 1);
+        assert_eq!(conversation[0].content, "hello");
+
+        let _ = std::fs::remove_dir_all(tmp);
+    }
+
+    #[tokio::test]
+    async fn default_selected_skills_use_turn_scoped_resolver() {
+        let tmp = std::env::temp_dir().join(format!(
+            "hermes-runtime-default-skill-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let skill_dir = tmp.join(".agents").join("skills").join("selected-skill");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: selected-skill\n---\nselected skill body for ${HERMES_SESSION_ID}\n",
+        )
+        .unwrap();
+
+        let agent = AgentExecutor::new(
+            AgentConfig::default(),
+            OpenAIClient::new(crate::client::ClientConfig::default()),
+            ToolRegistry::new(Duration::from_secs(1)),
+        )
+        .with_skills_root_dir(tmp.join("global-skills"))
+        .with_default_skills(SkillSelection {
+            explicit: vec!["selected-skill".to_string()],
+            disabled: Vec::new(),
+            bundles: Vec::new(),
+        });
+        let turn = TurnContext {
+            turn_id: "turn_1".to_string(),
+            run_id: "run_1".to_string(),
+            session_id: "session_selected".to_string(),
+            source: "prompt".to_string(),
+            prompt: "hello".to_string(),
+            cwd: tmp.clone(),
+            versions: crate::behavior::BehaviorVersions::default(),
+            skills: Default::default(),
+        };
+
+        agent.add_message(Message::user("hello")).await;
+        let plan = agent.resolve_skills_for_turn(&turn).unwrap();
+        let messages = agent
+            .build_messages_for_turn(&turn, Some(&plan))
+            .await
+            .unwrap();
+
+        assert!(plan.prompt_text().is_empty());
+        assert!(messages[0].content.contains("<available_skills"));
+        assert!(messages.iter().any(|message| {
+            message.role == crate::client::Role::User
+                && message.content.contains("<turn_skill_messages>")
+                && message
+                    .content
+                    .contains("selected skill body for session_selected")
+        }));
+        assert_eq!(agent.conversation().await.len(), 1);
+
+        let _ = std::fs::remove_dir_all(tmp);
+    }
+
+    #[test]
+    fn invalid_tool_call_arguments_are_rejected_before_history_append() {
+        let error = normalize_tool_calls_for_history(vec![ToolCall {
+            id: "call_bad_terminal".to_string(),
+            function: crate::client::ToolCallFunction {
+                name: "terminal".to_string(),
+                arguments: "{".to_string(),
+            },
+        }])
+        .expect_err("partial JSON arguments must not be recorded as assistant tool_calls");
+
+        assert!(matches!(error, Error::InvalidToolArgs { .. }));
+        assert!(error.to_string().contains("valid JSON object"));
+    }
+
     struct CountingTool {
         count: Arc<std::sync::atomic::AtomicUsize>,
     }
@@ -710,5 +1073,141 @@ mod tests {
             .as_deref()
             .unwrap_or_default()
             .contains("denied by policy"));
+    }
+
+    #[tokio::test]
+    async fn executor_rejects_malformed_arguments_without_tool_result() {
+        let registry = ToolRegistry::new(Duration::from_secs(1));
+        let agent = AgentExecutor::new(
+            AgentConfig::default(),
+            OpenAIClient::new(crate::client::ClientConfig::default()),
+            registry,
+        );
+
+        let error = agent
+            .execute_tools(
+                vec![ToolCall {
+                    id: "call_bad_terminal".to_string(),
+                    function: crate::client::ToolCallFunction {
+                        name: "terminal".to_string(),
+                        arguments: "{".to_string(),
+                    },
+                }],
+                None,
+            )
+            .await
+            .expect_err("malformed arguments must fail the turn before tool execution");
+
+        assert!(matches!(error, Error::InvalidToolArgs { .. }));
+        assert!(error.to_string().contains("valid JSON object"));
+    }
+
+    #[tokio::test]
+    async fn executor_rejects_non_object_arguments_without_tool_result() {
+        let registry = ToolRegistry::new(Duration::from_secs(1));
+        let agent = AgentExecutor::new(
+            AgentConfig::default(),
+            OpenAIClient::new(crate::client::ClientConfig::default()),
+            registry,
+        );
+
+        let error = agent
+            .execute_tools(
+                vec![ToolCall {
+                    id: "call_bad_terminal".to_string(),
+                    function: crate::client::ToolCallFunction {
+                        name: "terminal".to_string(),
+                        arguments: "\"pwd\"".to_string(),
+                    },
+                }],
+                None,
+            )
+            .await
+            .expect_err("non-object arguments must fail the turn before tool execution");
+
+        assert!(matches!(error, Error::InvalidToolArgs { .. }));
+        assert!(error.to_string().contains("JSON object"));
+    }
+
+    struct ContextHintReadTool;
+
+    #[async_trait::async_trait]
+    impl crate::tools::ToolHandler for ContextHintReadTool {
+        fn name(&self) -> &str {
+            "read_file"
+        }
+
+        fn description(&self) -> &str {
+            "mock read file"
+        }
+
+        fn schema(&self) -> crate::schema::ToolSchema {
+            crate::schema::ToolSchema::new(
+                "read_file",
+                "mock read file",
+                serde_json::json!({ "type": "object", "properties": {} }),
+            )
+        }
+
+        async fn execute(&self, _args: serde_json::Value, _context: ToolContext) -> ToolResult {
+            ToolResult::success("", serde_json::json!({ "content": "file body" }))
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_tools_appends_subdirectory_context_hint_once() {
+        let tmp =
+            std::env::temp_dir().join(format!("hermes-runtime-subdir-hint-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let subdir = tmp.join("crates").join("demo");
+        std::fs::create_dir_all(&subdir).unwrap();
+        std::fs::write(subdir.join("AGENTS.md"), "demo agent rules").unwrap();
+
+        let registry = ToolRegistry::new(Duration::from_secs(1));
+        registry.register(ContextHintReadTool).await.unwrap();
+        let agent = AgentExecutor::new(
+            AgentConfig::default(),
+            OpenAIClient::new(crate::client::ClientConfig::default()),
+            registry,
+        );
+        agent
+            .subdirectory_context_hints
+            .lock()
+            .await
+            .set_working_dir(&tmp);
+
+        let call = ToolCall {
+            id: "call_read_1".to_string(),
+            function: crate::client::ToolCallFunction {
+                name: "read_file".to_string(),
+                arguments: "{\"path\":\"crates/demo/src/lib.rs\"}".to_string(),
+            },
+        };
+        let first = agent
+            .execute_tools(vec![call.clone()], None)
+            .await
+            .unwrap()
+            .remove(0)
+            .1;
+        let first_json: serde_json::Value = serde_json::from_str(&first.content).unwrap();
+        assert_eq!(first_json["content"], "file body");
+        assert_eq!(
+            first_json["_hermes_context_hints"]["files"][0]["path"],
+            "crates/demo/AGENTS.md"
+        );
+        assert_eq!(
+            first_json["_hermes_context_hints"]["files"][0]["content"],
+            "demo agent rules"
+        );
+
+        let second = agent
+            .execute_tools(vec![call], None)
+            .await
+            .unwrap()
+            .remove(0)
+            .1;
+        assert!(!second.content.contains("<subdirectory_context_hints>"));
+
+        let _ = std::fs::remove_dir_all(tmp);
     }
 }

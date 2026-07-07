@@ -20,7 +20,16 @@ export interface WorkspaceActionErrorDescription {
   detail?: string;
 }
 
+export interface WorkspaceRecoveryVisibilityInput {
+  isGlobalRegion: boolean;
+  hiddenToolsRevealed: boolean;
+}
+
 const WORKSPACE_ACTION_TERMINAL_PHASES = new Set(["completed", "failed"]);
+
+export function shouldShowWorkspaceRecoveryPanel(input: WorkspaceRecoveryVisibilityInput) {
+  return !input.isGlobalRegion || input.hiddenToolsRevealed;
+}
 
 export function isWorkspaceActionRunning(status: WorkerActionStatusResult | null | undefined) {
   if (!status) return false;

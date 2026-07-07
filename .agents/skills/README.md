@@ -12,6 +12,9 @@
 | `fixing-metadata` | 页面标题、meta description、canonical、Open Graph、Twitter Card、robots、JSON-LD |
 | `fixing-motion-performance` | 动画卡顿、transition 性能、scroll-linked motion、layout thrashing、blur/filter 性能问题 |
 | `product-skills/prd-init` | LightVela 产品前置、PRD 梳理、TAPD 产品需求建单与研发交接 |
+| `lv-international-docs` | LightVela 国际站文档维护，编辑/翻译/审查 `lightvela.ai/docs`、`global/`、`en/`、文档图片与 sidebar/slug |
+| `lv-longform-content` | LightVela 长篇内容写作，生成教程系列、功能介绍系列、应用场景系列、英文博客/文章草稿 |
+| `lv-seo-geo` | LightVela SEO/GEO 优化，检查关键词、sitemap、canonical/hreflang、内部链接、AI 搜索可抽取性 |
 
 ## 使用约定
 

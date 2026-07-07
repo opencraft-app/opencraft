@@ -1,0 +1,6 @@
+service: ticket
+env: beijing-sandbox
+project: beijing-sandbox
+destinationName: beijing-sandbox
+namespace: ticket
+sourcePath: argocd/services/ticket/beijing-sandbox
