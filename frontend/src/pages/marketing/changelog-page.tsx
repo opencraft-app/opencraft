@@ -46,8 +46,8 @@ type ChangelogEntry = {
   id: string;
   title: string;
   desc?: string;
-  /** 卡片视觉样式：lobster=上线图 / cloudStorage=云存储图 / achievements=成就图 / schedule=自动任务图 / chat=网页对话图 / memory=记忆页图 / none=无图 */
-  visual: "lobster" | "cloudStorage" | "achievements" | "wecom" | "soul" | "schedule" | "chat" | "memory" | "none";
+  /** 卡片视觉样式：lobster=上线图 / cloudStorage=云存储图 / skillPackages=技能包图 / achievements=成就图 / schedule=自动任务图 / chat=网页对话图 / memory=记忆页图 / none=无图 */
+  visual: "lobster" | "cloudStorage" | "skillPackages" | "achievements" | "wecom" | "soul" | "schedule" | "chat" | "memory" | "none";
 };
 
 type ChangelogMonthGroup = {
@@ -60,7 +60,7 @@ type ChangelogMonthGroup = {
    配图卡片 — 还原 Figma 设计稿中的插图卡片
    ═══════════════════════════════════════════════════════════════ */
 
-function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "achievements" | "wecom" | "soul" | "schedule" | "chat" | "memory" }) {
+function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillPackages" | "achievements" | "wecom" | "soul" | "schedule" | "chat" | "memory" }) {
   const t = useT();
   const { i18n } = useTranslation();
   const useGlobalAssets = isGlobal || !i18n.language.startsWith("zh");
@@ -70,6 +70,8 @@ function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "achiev
       ? useGlobalAssets
         ? "/assets/changelog/lightvela-cloud-storage-en.png"
         : "/assets/changelog/lightvela-cloud-storage.webp"
+      : variant === "skillPackages"
+      ? "/assets/changelog/skill-packages.png"
       : variant === "achievements"
       ? useGlobalAssets
         ? "/assets/changelog/lightvela-achievements-en.png"
@@ -95,7 +97,9 @@ function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "achiev
         : "/assets/changelog/lightvela-launch.webp";
   const altText =
     variant === "cloudStorage"
-      ? t("LightVela 支持云存储")
+      ? t("LightVela 支持云存储管理")
+      : variant === "skillPackages"
+      ? t("新增技能包功能")
       : variant === "achievements"
       ? t("LightVela 支持成就模块")
       : variant === "wecom"
@@ -108,10 +112,12 @@ function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "achiev
       ? t("LightVela 支持设置自动任务")
       : variant === "soul"
         ? t("Soul 人设能力上线")
-        : t("LightVela内测上线");
+        : t("LightVela 产品内测上线");
   const aspectRatio =
     variant === "cloudStorage"
       ? useGlobalAssets ? "1280 / 935" : "2140 / 1532"
+      : variant === "skillPackages"
+      ? "2328 / 1370"
       : variant === "achievements"
       ? useGlobalAssets ? "1275 / 663" : "2140 / 1198"
       : variant === "wecom"
@@ -133,13 +139,15 @@ function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "achiev
         width: "100%",
         maxWidth: "710px",
         aspectRatio,
-        backgroundColor: "#FFF5EE",
+        backgroundColor: variant === "skillPackages" ? "#FFFFFF" : "#FFF5EE",
+        border: variant === "skillPackages" ? "1px solid rgba(0,0,0,0.08)" : "none",
+        boxShadow: variant === "skillPackages" ? "0 8px 24px rgba(0,0,0,0.06)" : "none",
       }}
     >
       <img
         src={assetUrl(imgPath)}
         alt={altText}
-        className={`absolute inset-0 h-full w-full ${variant === "lobster" ? "object-cover" : "object-contain"}`}
+        className={`absolute inset-0 h-full w-full rounded-[inherit] ${variant === "lobster" ? "object-cover" : "object-contain"}`}
         loading="lazy"
       />
     </div>
@@ -155,17 +163,27 @@ function ChangelogContent() {
   /* 数据驱动；每条文案直接通过翻译函数调用字面量，以便被 i18n-extract 扫描。
      国内站与国际站的渠道事实不同，使用 isGlobal 编译期分支分别维护。 */
   const launchDesc = isGlobal
-    ? t("支持一键创建云端 Hermes，支持快速接入Telegram、WhatsApp、Discord 等通道，支持主流模型 API 接入，支持一键安装 Skill 技能。")
-    : t("支持一键创建云端 Hermes，支持快速接入 QQ、微信、飞书通道，支持主流模型 API 接入，支持一键安装 Skill 技能。");
+    ? t("支持一键创建云端 Hermes Agent，支持快速接入Telegram、WhatsApp、Discord 等通道，支持主流模型 API 接入，支持一键安装 Skill 技能。")
+    : t("支持一键创建云端 Hermes Agent，支持快速接入 QQ、微信、飞书通道，支持主流模型 API 接入，支持一键安装 Skill 技能。");
 
   const changelogGroups: ChangelogMonthGroup[] = [
     {
       id: "2026-06",
       month: t("2026 年 6 月"),
       entries: [
+        ...(!isGlobal
+          ? [
+              {
+                id: "skill-packages",
+                title: t("新增技能包功能"),
+                desc: t("提供不同场景的技能包，帮助用户一键快速为 Agent 安装技能组合，覆盖金融、开发、设计、法律、教育等场景"),
+                visual: "skillPackages" as const,
+              },
+            ]
+          : []),
         {
           id: "cloud-storage",
-          title: t("LightVela 支持云存储"),
+          title: t("LightVela 支持云存储管理"),
           desc: t("现在可以在 LightVela 中查看和管理 Hermes Agent 的云存储文件，上传、下载、整理工作资料更方便。"),
           visual: "cloudStorage",
         },
@@ -227,7 +245,7 @@ function ChangelogContent() {
       entries: [
         {
           id: "beta-launch",
-          title: t("LightVela内测上线"),
+          title: t("LightVela 产品内测上线"),
           desc: launchDesc,
           visual: "lobster",
         },
@@ -268,10 +286,11 @@ function ChangelogContent() {
             style={{
               color: "rgba(0,0,0,0.5)",
               lineHeight: 1.5,
-              maxWidth: "480px",
+              maxWidth: "none",
+              whiteSpace: "nowrap",
             }}
           >
-            {t("记录每一个版本的成长，持续迭代，只为给你更好的体验。")}
+            {t("记录每一次产品迭代与功能上线，让你清晰了解 LightVela 的持续进化。")}
           </motion.p>
         </motion.div>
 
