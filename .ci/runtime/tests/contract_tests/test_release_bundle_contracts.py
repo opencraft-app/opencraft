@@ -584,7 +584,13 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("selected = []", refresh_script.read_text())
         self.assertIn("SKU endpoint unavailable; pool patch will continue", refresh_script.read_text())
         self.assertIn("print_pool_discovery_debug", refresh_script.read_text())
-        self.assertNotIn("reuse=", (REPO_ROOT / "images/hermes-image-trigger").read_text())
+        trigger_text = (REPO_ROOT / "images/hermes-image-trigger").read_text()
+        committed_reuse_pins = [
+            match.group(1)
+            for match in re.finditer(r"(?:^|\s)reuse=([^\s]*)", trigger_text)
+            if match.group(1)
+        ]
+        self.assertEqual([], committed_reuse_pins)
         create_script_text = create_script.read_text()
         self.assertIn("tccli tat CreateCommand", create_script_text)
         self.assertIn("--CommandType SHELL", create_script_text)
