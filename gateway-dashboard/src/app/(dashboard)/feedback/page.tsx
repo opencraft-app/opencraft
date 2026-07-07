@@ -9,13 +9,6 @@ import { DataTable } from "@/components/shared/data-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -80,7 +73,8 @@ function formatBytes(n: number): string {
 }
 
 export default function FeedbackPage() {
-  const [site, setSite] = useState<"cn" | "global">("cn");
+  // 本期仅上线国内站反馈；国际站暂未在后台暴露（后端数据已按 cn/global 隔离）。
+  const SITE = "cn" as const;
   const [records, setRecords] = useState<FeedbackRecord[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [detail, setDetail] = useState<FeedbackRecord | null>(null);
@@ -91,7 +85,7 @@ export default function FeedbackPage() {
     setIsLoading(true);
     try {
       const data = await apiClient<{ items: FeedbackRecord[] }>(
-        `support-feedback/list?site=${site}`
+        `support-feedback/list?site=${SITE}`
       );
       setRecords(data.items ?? []);
       setPage(1);
@@ -142,7 +136,6 @@ export default function FeedbackPage() {
         </Badge>
       ),
     },
-    { accessorKey: "site", header: "站点", cell: ({ row }) => (row.original.site === "global" ? "国际站" : "国内站") },
     { accessorKey: "createdAt", header: "创建时间", cell: ({ row }) => formatDateTime(row.original.createdAt) },
     {
       id: "actions",
@@ -162,18 +155,10 @@ export default function FeedbackPage() {
       <PageHeader title="用户反馈" description="查看用户提交的反馈与附件。" />
 
       <div className="flex flex-wrap items-center gap-3">
-        <Select value={site} onValueChange={(v) => setSite(v as "cn" | "global")}>
-          <SelectTrigger className="w-36">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="cn">国内站</SelectItem>
-            <SelectItem value="global">国际站</SelectItem>
-          </SelectContent>
-        </Select>
         <Button onClick={load} disabled={isLoading}>
           {isLoading ? "加载中..." : "加载反馈"}
         </Button>
+        <span className="text-sm text-muted-foreground">国内站反馈</span>
       </div>
 
       <DataTable
@@ -202,7 +187,6 @@ export default function FeedbackPage() {
             <div className="grid grid-cols-2 gap-2 text-sm text-muted-foreground">
               <span>账号：<span className="font-mono">{detail?.accountId}</span></span>
               <span>类型：{detail ? (FEEDBACK_TYPE_LABELS[detail.feedbackType] ?? detail.feedbackType) : ""}</span>
-              <span>站点：{detail?.site === "global" ? "国际站" : "国内站"}</span>
               <span>状态：{detail ? (FEEDBACK_STATUS_LABELS[detail.status] ?? detail.status) : ""}</span>
               <span>创建：{detail ? formatDateTime(detail.createdAt) : ""}</span>
               <span>更新：{detail ? formatDateTime(detail.updatedAt) : ""}</span>
