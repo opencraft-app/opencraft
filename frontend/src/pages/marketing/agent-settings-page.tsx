@@ -223,17 +223,38 @@ function loadTeaSdkRuntime(): Promise<TeaSdkRuntime> {
         ModelPanel: sdk.ModelPanel as unknown as ComponentType<TeaSdkPanelProps>,
         SkillPanel: sdk.SkillPanel as unknown as ComponentType<TeaSdkPanelProps>,
         useModelProviders: sdk.useModelProviders,
-        createProductConfig: ({ runCommand, getInvocationTask, modelProviders }) => ({
-          ...sdk.createLighthouseConfig({
+        createProductConfig: ({ runCommand, getInvocationTask, modelProviders }) => {
+          const config = sdk.createLighthouseConfig({
             agentType: "hermes",
             supportsTencentCloudApi: false,
             isI18n: isGlobal,
             modelProviders,
-          }),
-          acliProduct: "lightvela",
-          runCommand,
-          getInvocationTask,
-        }),
+          });
+          // SDK 的 getFilteredModelProviderList 用 IS_I18N（来自 window.LOGIN_INFO.area）
+          // 做国内/国际站过滤，但 mono2 不设置 window.LOGIN_INFO，导致 IS_I18N 恒为 false，
+          // 国际站会错误隐藏 OpenAI/Anthropic 等海外 provider。这里用 mono2 的 isGlobal
+          // 覆盖过滤逻辑，绕过 SDK 的模块级常量。
+          const hiddenProviders = isGlobal
+            ? sdk.I18N_HIDDEN_PROVIDERS
+            : sdk.DOMESTIC_HIDDEN_PROVIDERS;
+          return {
+            ...config,
+            acliProduct: "lightvela",
+            runCommand,
+            getInvocationTask,
+            getFilteredModelProviders: (region?: string) => {
+              const filtered = config.modelProviders.filter(
+                (p) => !hiddenProviders.includes(p.value),
+              );
+              if (region === "ap-hongkong") {
+                return filtered.filter(
+                  (p) => !sdk.HK_REGION_HIDDEN_PROVIDERS.includes(p.value),
+                );
+              }
+              return filtered;
+            },
+          };
+        },
         getGatewayRestartCommand: () => hermesGatewayCommands.getRestartCommand(),
         getProviderSaveCommand: (config) => hermesModelCommands.getProviderSaveCommand(config),
         getModelSwitchCommand: (modelFullId) => hermesModelCommands.getModelSwitchCommand(modelFullId),
