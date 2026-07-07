@@ -30,12 +30,16 @@ routes:
 
 func TestLoadAppliesRouteBaseURLOverride(t *testing.T) {
 	t.Setenv("CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_BASE_URL", "https://api-sandbox-kr-1.lightclaw.tech")
+	t.Setenv("CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_JP_BASE_URL", "https://api-sandbox-kr-1.lightclaw.tech")
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(path, []byte(`
 routes:
   - id: jifei-callback
     upstream:
       base_url: "https://lightclaw.tech"
+  - id: jifei-callback-jp
+    upstream:
+      base_url: "https://kr.lightclaw.tech"
 `), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
@@ -46,6 +50,9 @@ routes:
 	}
 	if got := cfg.Routes[0].Upstream.BaseURL; got != "https://api-sandbox-kr-1.lightclaw.tech" {
 		t.Fatalf("route base_url override = %q", got)
+	}
+	if got := cfg.Routes[1].Upstream.BaseURL; got != "https://api-sandbox-kr-1.lightclaw.tech" {
+		t.Fatalf("regional route base_url override = %q", got)
 	}
 }
 

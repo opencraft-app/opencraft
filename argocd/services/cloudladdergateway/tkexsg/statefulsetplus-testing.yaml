@@ -69,6 +69,16 @@ spec:
               key: CLOUDLADDER_TENCENT_CALLBACK_TOKEN
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_BASE_URL
           value: https://api-sandbox-kr-1.lightclaw.tech
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_HK_BASE_URL
+          value: https://api-sandbox-kr-1.lightclaw.tech
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_JP_BASE_URL
+          value: https://api-sandbox-kr-1.lightclaw.tech
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_KR_BASE_URL
+          value: https://api-sandbox-kr-1.lightclaw.tech
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_JKT_BASE_URL
+          value: https://api-sandbox-kr-1.lightclaw.tech
+        - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_TH_BASE_URL
+          value: https://api-sandbox-kr-1.lightclaw.tech
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_TEST_HOST_HEADER
           value: test.trade-intl.billing.tencentyun.com
         image: csighub.tencentyun.com/skipzhang/cloudladdergateway:604530a7c2ad
