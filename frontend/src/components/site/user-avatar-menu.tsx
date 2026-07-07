@@ -1,15 +1,13 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Bot, LayoutDashboard, User, LogOut, ChevronDown, MessageCircle } from "lucide-react";
+import { Bot, LayoutDashboard, User, LogOut, ChevronDown } from "lucide-react";
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { useState, useRef, useEffect } from "react";
-import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { useOpenClaw } from "@/contexts/openclaw-context";
 import { useSession } from "@/contexts/session-context";
 import { useT } from "@/i18n/t";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { AGENTS_HOME_PATH, AGENT_SECTION_PATH_BY_ID, shouldShowWorkbenchEntry } from "@/lib/agent-routes";
-import { isCN } from "@/lib/region";
 
 type RevealWorkbenchHost = Window & {
   show?: (...args: unknown[]) => unknown;
@@ -177,18 +175,7 @@ export const UserAvatarMenu = () => {
                 <User className={menuIconClass} />
                 {t("账号管理")}
               </Link>
-              {isCN ? (
-                <a
-                  href={PRODUCT_FEEDBACK_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={() => setOpen(false)}
-                  className={menuItemClass}
-                >
-                  <MessageCircle className={menuIconClass} aria-hidden="true" />
-                  {t("产品反馈")}
-                </a>
-              ) : null}
+
             </div>
 
             {/* Logout */}

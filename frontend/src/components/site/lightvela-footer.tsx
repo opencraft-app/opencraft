@@ -44,6 +44,10 @@ const getFooterSections = (t: (zh: string) => string): FooterSection[] => [
         label: t("关于我们"),
         to: "/about",
       },
+      {
+        label: t("帮助与反馈"),
+        to: "/support",
+      },
     ],
   },
   {

@@ -87,6 +87,26 @@ replacements:
 - source:
     kind: ConfigMap
     name: gateway-dashboard-platform-values
+    fieldPath: data.GATEWAY_DASHBOARD_TICKET_API_URL
+  targets:
+  - select:
+      kind: ConfigMap
+      name: gateway-dashboard-config
+    fieldPaths:
+    - data.TICKET_API_URL
+- source:
+    kind: ConfigMap
+    name: gateway-dashboard-platform-values
+    fieldPath: data.GATEWAY_DASHBOARD_SUPPORT_FEEDBACK_AGENT_ID
+  targets:
+  - select:
+      kind: ConfigMap
+      name: gateway-dashboard-config
+    fieldPaths:
+    - data.SUPPORT_FEEDBACK_AGENT_ID
+- source:
+    kind: ConfigMap
+    name: gateway-dashboard-platform-values
     fieldPath: data.GATEWAY_DASHBOARD_CLS_TOPIC_ID
   targets:
   - select:

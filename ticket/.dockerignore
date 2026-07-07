@@ -1,0 +1,21 @@
+# 构建产物 / 依赖目录
+bin/
+out/
+vendor/
+
+# 版本控制与编辑器
+.git/
+.gitignore
+.idea/
+.vscode/
+
+# 文档与非构建资源（不参与 go build）
+README.md
+AGENTS.md
+api/
+tools.go
+
+# 本地环境文件
+*.env
+.env*
+*.log
