@@ -47,6 +47,8 @@ npm run build
 | `AUTH_ADMIN_API_URL` | No | 指向 `user-auth` 管理 API 的 BFF 上游；仅认证侧页面使用，公网 AI Gateway 专用模式下可不配置 |
 | `SANDBOX_API_URL` | No | 指向 `sandbox-api` 的内部管理上游；仅 sandbox 页面使用，公网 AI Gateway 专用模式下可不配置 |
 | `CTL_API_URL` | No | 指向 `ctl-api` 的内部管理上游；仅 CTL 页面使用，公网 AI Gateway 专用模式下可不配置 |
+| `TICKET_API_URL` | No | 指向 `ticket` 管理上游；仅「用户反馈」页使用。未配置时该页接口返回 500 |
+| `SUPPORT_FEEDBACK_AGENT_ID` | No | 白名单内运营账号的 lightclaw 用户 ID，由 BFF 作为 `X-User-Id` 注入 ticket 以通过 `SUPPORT_AGENT_IDS` 校验；需与 ticket 的 `SUPPORT_AGENT_IDS` 一致。未配置时反馈接口恒 401 |
 | `ADMIN_TOKEN` | Yes | Dashboard 登录所用的管理员 token |
 | `ADMIN_SESSION_SECRET` | Recommended | Dashboard 无状态服务端 session cookie 的加密/签名密钥；未设置时回退到 `ADMIN_TOKEN` |
 | `AUTH_ADMIN_TOKEN` | No | `user-auth /admin/*` 专用 token；未设置时回退到 `ADMIN_TOKEN` |
