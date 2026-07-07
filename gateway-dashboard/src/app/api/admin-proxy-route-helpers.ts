@@ -80,7 +80,8 @@ export async function buildModuleAdminProxyRequest(
 
   if (options.extraHeaders) {
     for (const [key, value] of Object.entries(options.extraHeaders)) {
-      if (value) {
+      // 仅跳过 undefined；允许空字符串作为合法头值。
+      if (value !== undefined) {
         headers.set(key, value);
       }
     }

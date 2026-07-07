@@ -40,26 +40,39 @@ interface FeedbackRecord {
   contactInfo?: string | null;
 }
 
+const FEEDBACK_TYPE = {
+  BUG: "bug",
+  FEATURE: "feature",
+  COMPLAINT: "complaint",
+  OTHER: "other",
+} as const;
+
 const FEEDBACK_TYPE_LABELS: Record<string, string> = {
-  bug: "Bug 反馈",
-  feature: "功能建议",
-  complaint: "投诉",
-  other: "其他",
+  [FEEDBACK_TYPE.BUG]: "Bug 反馈",
+  [FEEDBACK_TYPE.FEATURE]: "功能建议",
+  [FEEDBACK_TYPE.COMPLAINT]: "投诉",
+  [FEEDBACK_TYPE.OTHER]: "其他",
 };
 
+const FEEDBACK_STATUS = {
+  OPEN: "open",
+  REVIEWING: "reviewing",
+  RESOLVED: "resolved",
+} as const;
+
 const FEEDBACK_STATUS_LABELS: Record<string, string> = {
-  open: "待处理",
-  reviewing: "处理中",
-  resolved: "已解决",
+  [FEEDBACK_STATUS.OPEN]: "待处理",
+  [FEEDBACK_STATUS.REVIEWING]: "处理中",
+  [FEEDBACK_STATUS.RESOLVED]: "已解决",
 };
 
 function feedbackStatusVariant(status: string): "default" | "secondary" | "outline" {
   switch (status) {
-    case "open":
+    case FEEDBACK_STATUS.OPEN:
       return "outline";
-    case "reviewing":
+    case FEEDBACK_STATUS.REVIEWING:
       return "secondary";
-    case "resolved":
+    case FEEDBACK_STATUS.RESOLVED:
       return "default";
     default:
       return "outline";
