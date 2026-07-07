@@ -47,6 +47,26 @@ interface FeedbackBugInfo {
   expected?: string;
 }
 
+/** 反馈细分类型枚举，与用户端问卷（support-page.tsx）最新 9 类保持一致。 */
+const FEEDBACK_TYPE = {
+  ExperienceIssue: "experience_issue",
+  BugReport: "bug_report",
+  FeatureRequest: "feature_request",
+  Rant: "rant",
+  Performance: "performance",
+  Billing: "billing",
+  Security: "security",
+  Docs: "docs",
+  Other: "other",
+} as const;
+
+/** 反馈大类枚举：建议/反馈 或 Bug，与最新问卷（support-page.tsx）对齐。 */
+const FEEDBACK_CATEGORY = {
+  Suggestion: "suggestion",
+  Bug: "bug",
+} as const;
+type FeedbackCategoryValue = (typeof FEEDBACK_CATEGORY)[keyof typeof FEEDBACK_CATEGORY];
+
 interface FeedbackRecord {
   id: string;
   accountId: string;
@@ -56,8 +76,7 @@ interface FeedbackRecord {
   subject: string;
   status: string;
   site: string;
-  /** 反馈大类：建议/反馈 或 Bug，与最新问卷（support-page.tsx）对齐。 */
-  category?: "suggestion" | "bug" | null;
+  category?: FeedbackCategoryValue | null;
   profile?: FeedbackProfile | null;
   bugInfo?: FeedbackBugInfo | null;
   createdAt: string;
@@ -66,22 +85,21 @@ interface FeedbackRecord {
   contactInfo?: string | null;
 }
 
-/** 反馈细分类型，与用户端问卷（support-page.tsx）最新枚举保持一致。 */
 const FEEDBACK_TYPE_LABELS: Record<string, string> = {
-  experience_issue: "体验问题反馈",
-  bug_report: "Bug/异常",
-  feature_request: "产品功能建议",
-  rant: "产品吐槽",
-  performance: "性能/卡顿问题",
-  billing: "账单/费用问题",
-  security: "安全/隐私问题",
-  docs: "文档/帮助问题",
-  other: "其他",
+  [FEEDBACK_TYPE.ExperienceIssue]: "体验问题反馈",
+  [FEEDBACK_TYPE.BugReport]: "Bug/异常",
+  [FEEDBACK_TYPE.FeatureRequest]: "产品功能建议",
+  [FEEDBACK_TYPE.Rant]: "产品吐槽",
+  [FEEDBACK_TYPE.Performance]: "性能/卡顿问题",
+  [FEEDBACK_TYPE.Billing]: "账单/费用问题",
+  [FEEDBACK_TYPE.Security]: "安全/隐私问题",
+  [FEEDBACK_TYPE.Docs]: "文档/帮助问题",
+  [FEEDBACK_TYPE.Other]: "其他",
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
-  suggestion: "建议/反馈",
-  bug: "Bug/异常",
+  [FEEDBACK_CATEGORY.Suggestion]: "建议/反馈",
+  [FEEDBACK_CATEGORY.Bug]: "Bug/异常",
 };
 
 const CATEGORY_FILTER_ALL = "all";
@@ -113,7 +131,7 @@ function feedbackStatusVariant(status: string): "default" | "secondary" | "outli
 
 function feedbackTypeLabel(type: string, otherText?: string | null): string {
   const label = FEEDBACK_TYPE_LABELS[type] ?? type;
-  if (type === "other" && otherText?.trim()) {
+  if (type === FEEDBACK_TYPE.Other && otherText?.trim()) {
     return `${label} · ${otherText.trim()}`;
   }
   return label;
@@ -224,8 +242,8 @@ export default function FeedbackPage() {
           value={categoryFilter}
           items={[
             { value: CATEGORY_FILTER_ALL, label: "全部大类" },
-            { value: "suggestion", label: "建议/反馈" },
-            { value: "bug", label: "Bug/异常" },
+            { value: FEEDBACK_CATEGORY.Suggestion, label: "建议/反馈" },
+            { value: FEEDBACK_CATEGORY.Bug, label: "Bug/异常" },
           ]}
           onValueChange={(value: string | null) => {
             if (value) {
@@ -239,8 +257,8 @@ export default function FeedbackPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={CATEGORY_FILTER_ALL}>全部大类</SelectItem>
-            <SelectItem value="suggestion">建议/反馈</SelectItem>
-            <SelectItem value="bug">Bug/异常</SelectItem>
+            <SelectItem value={FEEDBACK_CATEGORY.Suggestion}>建议/反馈</SelectItem>
+            <SelectItem value={FEEDBACK_CATEGORY.Bug}>Bug/异常</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -279,7 +297,7 @@ export default function FeedbackPage() {
 
             <div className="rounded-md border p-3 text-sm whitespace-pre-wrap">{detail?.description}</div>
 
-            {detail?.category === "bug" && detail.bugInfo && (
+            {detail?.category === FEEDBACK_CATEGORY.Bug && detail.bugInfo && (
               <div className="space-y-2">
                 <p className="text-sm font-medium">排障信息</p>
                 <div className="grid grid-cols-2 gap-2 rounded-md border p-3 text-sm">
