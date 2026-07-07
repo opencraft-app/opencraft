@@ -1,0 +1,34 @@
+# SSM manifest for trade · shprod
+#
+# 用途：由 scripts/export_ssm_to_sops.py 读取 Tencent Cloud SSM secret，
+# 加密落到 argocd/secrets/shprod/trade-runtime-secrets.sops.yaml。
+#
+# SecretString(JSON) 必须包含：
+#   - TRADE_DB_PASSWORD
+#   - LIGHTCLAW_INTERNAL_SERVICE_TOKEN
+#   - TRADE_TENCENT_BILLING_SIGNATURE_KEY
+#   - JIFEI_BILLING_APP_ID
+#   - JIFEI_BILLING_APP_SECRET
+#
+# 注意：
+#   - LIGHTCLAW_INTERNAL_SERVICE_TOKEN 需要与 ctl 内部 token 对齐。
+#   - 正式环境不要写入任何 mock shadow 配置。
+defaults:
+  region: ap-shanghai
+  version_id: SSM_Current
+  age_recipients:
+    - age1q4s9kt3h5n0fgmez4kyp7tsahgjhuxpyeteye8lp46kqkyvardusctl258
+
+items:
+  - id: trade-runtime-secrets
+    secret_name: mono-shprod-trade-runtime-secrets
+    namespace: trade
+    kubernetes_resource_name: trade-runtime-secrets
+    kubernetes_resource_kind: Secret
+    output_path: argocd/secrets/shprod/trade-runtime-secrets.sops.yaml
+    secret_type: Opaque
+    labels:
+      app.kubernetes.io/name: trade
+      app.kubernetes.io/managed-by: argocd
+    annotations:
+      managed-by: export_ssm_to_sops.py

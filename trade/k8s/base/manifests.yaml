@@ -90,6 +90,7 @@ data:
   #   - 取值为腾讯云 region API 字面量（kebab-case 全小写），已注册：
   #     · "ap-guangzhou" → 1 / 100001 / "广州"
   #     · "ap-beijing"   → 8 / 800001 / "北京"（北京 2 预发布使用）
+  #     · "ap-shanghai"  → 4 / 400001 / "上海"（上海正式使用）
   #     · "ap-singapore" → 9 / 900001 / "Singapore"
   #   - 留空字符串 → 按 LIGHTVELA_SITE_KIND 兜底（cn → 广州 / intl → 新加坡）。
   #   - 未注册字面量（例："ap-tokyo" / "bj" 拼写错误）→ trade 启动 fail-fast。

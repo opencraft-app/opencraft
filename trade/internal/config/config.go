@@ -83,6 +83,7 @@ type Config struct {
 	// 接入 2026-06-12 新增）。取值为腾讯云 region 字面量（kebab-case 全小写），例：
 	//   - "ap-guangzhou" → 1 / 100001 / "广州"
 	//   - "ap-beijing"   → 8 / 800001 / "北京"
+	//   - "ap-shanghai"  → 4 / 400001 / "上海"
 	//   - "ap-singapore" → 9 / 900001 / "Singapore"
 	//
 	// 取值优先级：override 非空且命中 region.regionTable 时优先于 SiteKind 兑底；空字符串
@@ -169,7 +170,7 @@ func Load() (Config, error) {
 		if _, ok := region.LookupByRegion(cfg.RegionOverride); !ok {
 			return Config{}, fmt.Errorf(
 				"LIGHTVELA_TRADE_REGION=%q is not a registered region; "+
-					"supported: ap-guangzhou / ap-beijing / ap-singapore",
+					"supported: ap-guangzhou / ap-beijing / ap-shanghai / ap-singapore",
 				cfg.RegionOverride)
 		}
 	}
