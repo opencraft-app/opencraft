@@ -151,6 +151,47 @@ func TestExampleConfigLoads(t *testing.T) {
 	}
 }
 
+func TestExampleConfigIncludesRegionalJifeiCallbacks(t *testing.T) {
+	cfg, err := Load("../../config.example.yaml")
+	if err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+
+	wantBaseURL := map[string]string{
+		"jifei-callback-bj":    "https://lightclaw.tech",
+		"jifei-callback-sh":    "https://api.lightvela.com",
+		"jifei-callback-gz":    "https://lightclaw.tech",
+		"jifei-callback-cd":    "https://lightclaw.tech",
+		"jifei-callback-nj":    "https://lightclaw.tech",
+		"jifei-callback-hk":    "https://kr.lightclaw.tech",
+		"jifei-callback-jp": "https://kr.lightclaw.tech",
+		"jifei-callback-kr":    "https://kr.lightclaw.tech",
+		"jifei-callback-jkt":   "https://kr.lightclaw.tech",
+		"jifei-callback-sg":    "https://api.lightvela.ai",
+		"jifei-callback-th":   "https://kr.lightclaw.tech",
+	}
+
+	for _, route := range cfg.Routes {
+		want, ok := wantBaseURL[route.ID]
+		if !ok {
+			continue
+		}
+		if route.Condition != `request.method == "POST"` {
+			t.Fatalf("route %q condition = %q", route.ID, route.Condition)
+		}
+		if got := route.Upstream.BaseURL; got != want {
+			t.Fatalf("route %q base_url = %q, want %q", route.ID, got, want)
+		}
+		if len(route.Upstream.AllowedMethods) != 1 || route.Upstream.AllowedMethods[0] != "POST" {
+			t.Fatalf("route %q allowed_methods = %#v", route.ID, route.Upstream.AllowedMethods)
+		}
+		delete(wantBaseURL, route.ID)
+	}
+	for routeID := range wantBaseURL {
+		t.Fatalf("example config missing regional callback route %q", routeID)
+	}
+}
+
 func TestLoadValidatesSignedHTTPRouteMode(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(path, []byte(`
