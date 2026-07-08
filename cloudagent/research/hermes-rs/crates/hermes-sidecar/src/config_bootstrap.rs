@@ -4,7 +4,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use hermes_core::{
     install_runtime_config, register_builtin_tools_with_sub_agent, AgentConfig, AgentEvent,
-    AgentRuntime, AppConfig, BehaviorSettings, MemoryManager, OpenAIClient, SkillPromptHook,
+    AgentRuntime, AppConfig, BehaviorSettings, MemoryManager, OpenAIClient, SkillSelection,
     ToolNameGateHook, ToolRegistry,
 };
 use tokio::sync::mpsc;
@@ -83,11 +83,13 @@ pub(crate) async fn build_agent(
         agent = agent.with_gate_hook(Arc::new(ToolNameGateHook::deny_tools(denied_tools)));
     }
     let selected_skills = split_env_list("CLOUDAGENT_SELECTED_SKILLS");
-    if !selected_skills.is_empty() {
-        agent = agent.with_prompt_transform_hook(Arc::new(SkillPromptHook::new(
-            runtime.config.skills.root_dir.clone(),
-            selected_skills,
-        )));
+    let selected_skill_bundles = split_env_list("CLOUDAGENT_SELECTED_SKILL_BUNDLES");
+    if !selected_skills.is_empty() || !selected_skill_bundles.is_empty() {
+        agent = agent.with_default_skills(SkillSelection {
+            explicit: selected_skills,
+            disabled: Vec::new(),
+            bundles: selected_skill_bundles,
+        });
     }
     Ok(AgentRuntime::from_agent(agent))
 }

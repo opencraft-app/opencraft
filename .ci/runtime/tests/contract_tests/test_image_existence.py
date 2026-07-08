@@ -3,6 +3,7 @@ import subprocess
 import unittest
 import sys
 import json
+from unittest import mock
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -18,6 +19,7 @@ from contracts.image_existence import (  # noqa: E402
     emit,
     image_references,
     verify_images,
+    verify_images_with_retry,
 )
 
 
@@ -82,6 +84,30 @@ class ImageExistenceTests(unittest.TestCase):
 
         self.assertEqual(len(results), 1)
         self.assertFalse(results[0].exists)
+
+    def test_verify_images_with_retry_waits_for_missing_image(self) -> None:
+        calls = 0
+
+        def fake_run(command, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return subprocess.CompletedProcess(command, 1, stdout="", stderr="manifest unknown")
+            return subprocess.CompletedProcess(command, 0, stdout='{"Descriptor":{"digest":"sha256:abc"}}', stderr="")
+
+        with redirect_stderr(StringIO()), mock.patch("contracts.image_existence.time.sleep") as sleep:
+            results = verify_images_with_retry(
+                ["registry.example.com/app/demo:v1"],
+                docker_bin="docker",
+                skip_login=True,
+                retries=1,
+                retry_interval_seconds=2,
+                run=fake_run,
+            )
+
+        self.assertTrue(results[0].exists)
+        self.assertEqual(results[0].digest, "sha256:abc")
+        sleep.assert_called_once_with(2)
 
     def test_dotenv_output_quotes_json_for_shell_source(self) -> None:
         output = StringIO()

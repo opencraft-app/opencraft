@@ -158,3 +158,12 @@ routes:
         path: /auth/oauth/github/callback
       - method: GET
         path: /auth/email/bind/confirm
+  # 用户反馈系统：用户提交(presign) 与运营读取(list/sign) 均走此路由。
+  # 网关仅做登录态校验(access: authenticated 注入 X-User-Id)，
+  # 具体权限(presign 任意登录用户 / list·sign 白名单)由 ticket 内部判定。
+  - name: support-feedback
+    prefix: /support/feedback
+    methods: [GET, POST, OPTIONS]
+    upstream: http://ticket.ticket.svc.cluster.local
+    access: authenticated
+    auth_strategy: session

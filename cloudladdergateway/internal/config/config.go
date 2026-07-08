@@ -181,6 +181,7 @@ func Load(path string) (Config, error) {
 	if !cfg.Audit.Stdout && !cfg.Audit.OTLP.Enabled {
 		cfg.Audit.Stdout = true
 	}
+	applyRouteEnvOverrides(&cfg)
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -313,6 +314,40 @@ func (c Config) Validate() error {
 
 func normalizeRouteMode(mode string) string {
 	return strings.ToLower(strings.TrimSpace(mode))
+}
+
+func applyRouteEnvOverrides(cfg *Config) {
+	for i := range cfg.Routes {
+		routeID := strings.TrimSpace(cfg.Routes[i].ID)
+		if routeID == "" {
+			continue
+		}
+		envPrefix := "CLOUDLADDERGATEWAY_ROUTE_" + envToken(routeID)
+		if value := strings.TrimSpace(os.Getenv(envPrefix + "_BASE_URL")); value != "" {
+			cfg.Routes[i].Upstream.BaseURL = value
+		}
+		if value := strings.TrimSpace(os.Getenv(envPrefix + "_HOST_HEADER")); value != "" {
+			if cfg.Routes[i].Upstream.Headers == nil {
+				cfg.Routes[i].Upstream.Headers = map[string]string{}
+			}
+			cfg.Routes[i].Upstream.Headers["Host"] = value
+		}
+	}
+}
+
+func envToken(value string) string {
+	var b strings.Builder
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r - 'a' + 'A')
+		case r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
 }
 
 func trustedHost(upstream UpstreamConfig) (string, bool) {

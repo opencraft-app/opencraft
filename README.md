@@ -5,9 +5,9 @@
 
 ## 这是什么项目
 
-这是 `Lightclaw` 的主 monorepo。
+这是 `LightVela` 的主 monorepo。
 
-`Lightclaw` 当前是一套围绕“用户申请机器人实例 -> 分配 sandbox 运行环境 -> 通过 gateway 对外提供能力 -> 前后台分别管理和使用”的完整系统。这个仓库承载的不是单个服务，而是整条主链路：
+`LightVela` 当前是一套围绕“用户申请机器人实例 -> 分配 sandbox 运行环境 -> 通过 gateway 对外提供能力 -> 前后台分别管理和使用”的完整系统。这个仓库承载的不是单个服务，而是整条主链路：
 
 - 用户前台与营销站点：`frontend`
 - 用户认证、邀请与账户体系：`user/auth`
@@ -716,7 +716,7 @@ ccr.ccs.tencentyun.com/clawhub/<service>:<tag>
 - [images](images)
   - 镜像辅助内容、envd daemon 源码、agent/helper、小工具镜像
 - [ctl](ctl)
-  - 当前 Lightclaw 主链路的一部分
+  - 当前 LightVela 主链路的一部分
   - 负责实例资源、bot 归属事实等控制面能力
 - [ai-gateway](ai-gateway)
   - 独立 AI 网关方向服务
@@ -740,7 +740,7 @@ ccr.ccs.tencentyun.com/clawhub/<service>:<tag>
 - 独立旁支服务
 - 镜像与运维辅助材料
 
-所以这个仓库不是“一个应用”，而是一个以 `Lightclaw` 为中心的小型平台仓库。
+所以这个仓库不是“一个应用”，而是一个以 `LightVela` 为中心的小型平台仓库。
 # 测试环境 user-assets 桶
 
 资源由 [infra_pulumi](infra_pulumi) 纳管：

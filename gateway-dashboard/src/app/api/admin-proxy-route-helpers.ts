@@ -10,7 +10,8 @@ export type AdminProxyModule =
   | "subscription"
   | "sandbox"
   | "ctl"
-  | "ctl-admin";
+  | "ctl-admin"
+  | "support-feedback";
 
 interface BuildModuleAdminProxyRequestOptions {
   module: AdminProxyModule;
@@ -18,6 +19,7 @@ interface BuildModuleAdminProxyRequestOptions {
   upstreamBaseURL: string;
   upstreamToken?: string;
   forwardBrowserToken?: boolean;
+  extraHeaders?: Record<string, string>;
 }
 
 interface ProxyModuleAdminRequestOptions {
@@ -28,6 +30,7 @@ interface ProxyModuleAdminRequestOptions {
   requireAdminTokenValidation?: boolean;
   validationBaseURL?: string;
   forwardBrowserToken?: boolean;
+  extraHeaders?: Record<string, string>;
 }
 
 const upstreamPathPrefixes: Record<AdminProxyModule, string> = {
@@ -37,6 +40,9 @@ const upstreamPathPrefixes: Record<AdminProxyModule, string> = {
   sandbox: "/internal",
   ctl: "/internal",
   "ctl-admin": "/admin/api/ctl",
+  // ticket 反馈后台：经 supportAgentMiddleware 校验 X-User-Id（白名单），
+  // 由 dashboard BFF 注入配置的运营账号 ID，dashboard 本身已 admin 登录。
+  "support-feedback": "/support/feedback",
 };
 
 interface BuiltAdminProxyRequest {
@@ -70,6 +76,15 @@ export async function buildModuleAdminProxyRequest(
   const token = resolveAdminToken(browserToken, options.upstreamToken, options.forwardBrowserToken ?? true);
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  if (options.extraHeaders) {
+    for (const [key, value] of Object.entries(options.extraHeaders)) {
+      // 仅跳过 undefined；允许空字符串作为合法头值。
+      if (value !== undefined) {
+        headers.set(key, value);
+      }
+    }
   }
 
   const init: BuiltAdminProxyRequest["init"] = {
@@ -148,6 +163,7 @@ export async function proxyModuleAdminRequest(
       upstreamBaseURL: options.upstreamBaseURL,
       upstreamToken: options.upstreamToken,
       forwardBrowserToken: options.forwardBrowserToken,
+      extraHeaders: options.extraHeaders,
     });
     const response = await fetch(built.url.toString(), built.init);
     return buildAdminProxyResponse(

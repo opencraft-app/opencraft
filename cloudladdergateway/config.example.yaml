@@ -611,6 +611,123 @@ routes:
       timeout: 10s
       allowed_methods: ["POST"]
 
+  # ===========================================================================
+  # jifei → clgateway → trade 入向回调地域路由（方案一：routeId 区分地域）
+  #
+  # 国内站地域部署在 tkexgz：
+  #   - jifei-callback-sh 路由到上海正式集群
+  #   - jifei-callback-bj / gz / cd / nj 路由到北京 sandbox 集群
+  #
+  # 国际站地域部署在 tkexsg：
+  #   - jifei-callback-sg 路由到新加坡正式集群
+  #   - jifei-callback-hk / tokyo / kr / jkt / bkk 路由到首尔集群
+  #
+  # 调用形态：
+  #   /v1/proxy/jifei-callback-<region>/trade/jifei/callback
+  #
+  # clgateway 会把 *path=/trade/jifei/callback 拼到各 route 的 base_url 上，
+  # 因此 trade 侧仍只接收 POST /trade/jifei/callback，不需要为地域后缀新增 handler。
+  # 保留上方 jifei-callback 指向 lightclaw.tech 作为历史兼容入口。
+  # ===========================================================================
+  - id: jifei-callback-bj
+    description: "国内站北京地域 jifei 回调入口，路由到北京 sandbox 集群"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-callback-sh
+    description: "国内站上海地域 jifei 回调入口，路由到上海正式集群"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://api.lightvela.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-callback-gz
+    description: "国内站广州地域 jifei 回调入口，路由到北京 sandbox 集群"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-callback-cd
+    description: "国内站成都地域 jifei 回调入口，路由到北京 sandbox 集群"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-callback-nj
+    description: "国内站南京地域 jifei 回调入口，路由到北京 sandbox 集群"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-callback-hk
+    description: "国际站香港地域 jifei 回调入口，路由到首尔集群"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://kr.lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-callback-jp
+    description: "国际站东京地域 jifei 回调入口，路由到首尔集群"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://kr.lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-callback-kr
+    description: "国际站首尔地域 jifei 回调入口，路由到首尔集群"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://kr.lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-callback-jkt
+    description: "国际站雅加达地域 jifei 回调入口，路由到首尔集群"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://kr.lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-callback-sg
+    description: "国际站新加坡地域 jifei 回调入口，路由到新加坡正式集群"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://api.lightvela.ai"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - id: jifei-callback-th
+    description: "国际站曼谷地域 jifei 回调入口，路由到首尔集群"
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://kr.lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
   - id: tcapi-account-cn-dev
     description: "Signed tunnel for TencentCloud account API domestic dev endpoint."
     mode: signed_http_tunnel

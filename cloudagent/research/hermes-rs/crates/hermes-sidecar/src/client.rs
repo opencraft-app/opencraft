@@ -876,11 +876,9 @@ fn print_prompt_response_line(
     saw_result: &mut bool,
     input_id: Option<&str>,
 ) -> Result<()> {
-    match serde_json::from_str::<PromptResponseLine>(line)
-        .with_context(|| format!("failed to parse daemon line '{}'", line))?
-    {
-        parsed => print_prompt_response_line_with_seq(&parsed, None, input_id, saw_result),
-    }
+    let parsed = serde_json::from_str::<PromptResponseLine>(line)
+        .with_context(|| format!("failed to parse daemon line '{}'", line))?;
+    print_prompt_response_line_with_seq(&parsed, None, input_id, saw_result)
 }
 
 fn print_prompt_response_line_with_seq(

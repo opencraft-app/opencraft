@@ -169,6 +169,7 @@ pub(crate) mod tests {
                     prompt: "next".to_string(),
                     cwd: PathBuf::from("."),
                     versions: BehaviorVersions::default(),
+                    skills: Default::default(),
                 },
             )
             .await

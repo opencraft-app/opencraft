@@ -25,7 +25,7 @@ function TestSkillPanel() {
   );
 }
 
-const renderPanel = (initialSectionSlug?: string) => {
+const renderPanel = (initialSectionSlug?: string, showSkillPackages = true) => {
   const execDebugCommand: ExpertsExecDebugCommand = vi.fn();
   render(
     <HermesAgentSkillsPanel
@@ -35,6 +35,7 @@ const renderPanel = (initialSectionSlug?: string) => {
       initialSectionSlug={initialSectionSlug}
       instance={{ InstanceId: "bot-1", RegionId: 1 }}
       productConfig={{} as never}
+      showSkillPackages={showSkillPackages}
       SkillPanel={TestSkillPanel}
     />,
   );
@@ -73,5 +74,17 @@ describe("HermesAgentSkillsPanel", () => {
 
     expect(screen.getByRole("tab", { name: "技能包" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByText("技能包列表")).toBeInTheDocument();
+  });
+
+  it("hides the skill package tab outside the CN site", () => {
+    expect(getInitialAgentSkillsTab("experts", false)).toBe("skills");
+    expect(getInitialAgentSkillsTab("packages", false)).toBe("skills");
+
+    renderPanel("packages", false);
+
+    expect(screen.getByRole("tab", { name: "技能" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByRole("tab", { name: "技能包" })).not.toBeInTheDocument();
+    expect(screen.queryByText("技能包列表")).not.toBeInTheDocument();
+    expect(screen.getByText("单技能安装面板")).toBeInTheDocument();
   });
 });
