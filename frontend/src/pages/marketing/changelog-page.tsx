@@ -60,7 +60,7 @@ type ChangelogMonthGroup = {
    配图卡片 — 还原 Figma 设计稿中的插图卡片
    ═══════════════════════════════════════════════════════════════ */
 
-function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillPackages" | "achievements" | "wecom" | "soul" | "schedule" | "chat" | "memory" }) {
+function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillPackages" | "achievements" | "wecom" | "soul" | "schedule" | "chat" | "memory" | "skill-package" }) {
   const t = useT();
   const { i18n } = useTranslation();
   const useGlobalAssets = isGlobal || !i18n.language.startsWith("zh");
@@ -90,6 +90,8 @@ function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillP
       ? useGlobalAssets
         ? "/assets/changelog/scheduled-tasks-en.png"
         : "/assets/changelog/scheduled-tasks.webp"
+      : variant === "skill-package"
+      ? "/assets/changelog/lightvela-skill-package.png"
       : variant === "soul"
       ? "/assets/changelog/soul-persona.webp"
       : useGlobalAssets
@@ -110,6 +112,8 @@ function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillP
       ? t("LightVela支持查看Hermes Agent记忆")
       : variant === "schedule"
       ? t("LightVela 支持设置自动任务")
+      : variant === "skill-package"
+      ? t("LightVela 支持技能包")
       : variant === "soul"
         ? t("Soul 人设能力上线")
         : t("LightVela 产品内测上线");
@@ -128,6 +132,8 @@ function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillP
       ? useGlobalAssets ? "1637 / 961" : "2326 / 1322"
       : variant === "schedule"
         ? useGlobalAssets ? "1784 / 882" : "1952 / 806"
+        : variant === "skill-package"
+        ? "2330 / 1334"
         : variant === "soul"
           ? "2044 / 748"
           : "710 / 360";
@@ -167,6 +173,22 @@ function ChangelogContent() {
     : t("支持一键创建云端 Hermes Agent，支持快速接入 QQ、微信、飞书通道，支持主流模型 API 接入，支持一键安装 Skill 技能。");
 
   const changelogGroups: ChangelogMonthGroup[] = [
+    {
+      id: "2026-07",
+      month: t("2026 年 7 月"),
+      entries: [
+        ...(!isGlobal
+          ? [
+              {
+                id: "skill-package",
+                title: t("LightVela 支持技能包"),
+                desc: t("快速安装技能组合，让 Agent 从单点技能走向完整工作流。"),
+                visual: "skill-package" as const,
+              },
+            ]
+          : []),
+      ],
+    },
     {
       id: "2026-06",
       month: t("2026 年 6 月"),
