@@ -21,3 +21,5 @@
 - `gateway-dashboard` 的公网入口仍经 `admin-gateway`
 - 历史 direct-access 直连清单已删除，不再属于正式主线
 - `generated/` 一律不提交 Git
+
+<!-- retrigger 2026-07-08: shprod gateway-dashboard release after billing dependency rollout. -->
