@@ -11,6 +11,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from contracts.bundles import ImageTarget, is_playground_env, load_bundle, load_manifest, require_build_metadata
@@ -37,6 +38,18 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip docker build when the exact target image tag already exists in the remote registry",
     )
+    parser.add_argument(
+        "--push-verify-timeout-seconds",
+        type=int,
+        default=int(os.environ.get("RELEASE_IMAGE_PUSH_VERIFY_TIMEOUT_SECONDS", "300")),
+        help="Seconds to wait for a pushed image manifest to become readable in the remote registry",
+    )
+    parser.add_argument(
+        "--push-verify-interval-seconds",
+        type=int,
+        default=int(os.environ.get("RELEASE_IMAGE_PUSH_VERIFY_INTERVAL_SECONDS", "5")),
+        help="Seconds between pushed image manifest visibility checks",
+    )
     parser.add_argument("--image-output-file", help="Optional file path to receive the built image ref")
     return parser.parse_args()
 
@@ -45,7 +58,7 @@ def docker_login(image_repo: str) -> None:
     raw_username = os.environ.get("REGISTRY_USERNAME", "")
     raw_password = os.environ.get("REGISTRY_PASSWORD", "")
     username = raw_username.strip()
-    password = raw_password.strip()
+    password = raw_password.strip()  # pragma: allowlist secret -- registry credential variable, not a literal secret
     if not username or not password:
         return
 
@@ -171,7 +184,47 @@ def docker_daemon_available() -> bool:
         return False
 
 
-def build_target(target: ImageTarget, tag: str, platform: str, push: bool, build_args: dict[str, str]) -> str:
+def wait_for_remote_image(
+    image: str,
+    *,
+    timeout_seconds: int,
+    interval_seconds: int,
+) -> ImageCheckResult:
+    deadline = time.monotonic() + max(timeout_seconds, 0)
+    attempt = 0
+    last_result = ImageCheckResult(image=image, exists=False)
+
+    while True:
+        attempt += 1
+        results = verify_images([image])
+        last_result = results[0]
+        if last_result.exists and last_result.digest:
+            print(f"pushed image is visible: {image} digest={last_result.digest}")
+            return last_result
+
+        if time.monotonic() >= deadline:
+            break
+
+        sleep_seconds = max(interval_seconds, 1)
+        print(f"pushed image is not visible yet; retrying in {sleep_seconds}s: {image} attempt={attempt}")
+        time.sleep(sleep_seconds)
+
+    raise RuntimeError(
+        f"pushed image did not become visible before timeout: {image} "
+        f"timeout_seconds={timeout_seconds} exists={last_result.exists} digest={last_result.digest or '-'}"
+    )
+
+
+def build_target(
+    target: ImageTarget,
+    tag: str,
+    platform: str,
+    push: bool,
+    build_args: dict[str, str],
+    *,
+    push_verify_timeout_seconds: int = 300,
+    push_verify_interval_seconds: int = 5,
+) -> str:
     image = image_for_target(target, tag)
     cmd = docker_build_command(target, image, platform, build_args)
     if build_args:
@@ -188,6 +241,11 @@ def build_target(target: ImageTarget, tag: str, platform: str, push: bool, build
     if push:
         docker_login(target.image_repo)
         subprocess.run(["docker", "push", image], check=True)
+        wait_for_remote_image(
+            image,
+            timeout_seconds=push_verify_timeout_seconds,
+            interval_seconds=push_verify_interval_seconds,
+        )
     return image
 
 
@@ -229,7 +287,15 @@ def main() -> int:
                 return 0
             print("remote release image missing; continue with docker build")
         for target in targets:
-            image = build_target(target, args.tag, args.platform, args.push, build_args)
+            image = build_target(
+                target,
+                args.tag,
+                args.platform,
+                args.push,
+                build_args,
+                push_verify_timeout_seconds=args.push_verify_timeout_seconds,
+                push_verify_interval_seconds=args.push_verify_interval_seconds,
+            )
             built[image_key(args.service, target)] = image
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
