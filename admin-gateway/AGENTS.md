@@ -15,3 +15,5 @@
   - 镜像 repo：`lightclaw-*/lightclaw/admin-gateway`
   - GitOps pin：`argocd/services/admin-gateway/<env>/admin-gateway-platform.env`
 - 当前构建实现仍临时复用 `service-gateway/Dockerfile` 和 `service-gateway` build context；这是构建实现复用，不再是发布镜像共享
+
+<!-- retrigger 2026-07-08: shprod admin-gateway release after billing dependency rollout. -->
