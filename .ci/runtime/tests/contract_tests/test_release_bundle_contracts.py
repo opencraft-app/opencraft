@@ -467,43 +467,46 @@ class ReleaseBundleContractTests(unittest.TestCase):
         stage_by_name = {stage.get("name"): stage for stage in stages}
 
         build_stage = stage_by_name["构建 Hermes CVM 镜像"]
+        beijing_preflight_stage = stage_by_name["预检北京主沙箱 Hermes 更新目标"]
+        beijing_approval_stage = stage_by_name["确认刷新并修补北京主沙箱 Hermes"]
+        beijing_refresh_stage = stage_by_name["刷新北京主沙箱 Hermes pools"]
+        beijing_repair_stage = stage_by_name["升级存量北京主沙箱 Hermes VM"]
         singapore_preflight_stage = stage_by_name["预检新加坡生产 Hermes 更新目标"]
         singapore_approval_stage = stage_by_name["确认刷新并修补新加坡生产 Hermes"]
         singapore_refresh_stage = stage_by_name["刷新新加坡生产 Hermes pools"]
         singapore_repair_stage = stage_by_name["升级存量新加坡生产 Hermes VM"]
-        beijing_approval_stage = stage_by_name["确认刷新并修补北京主沙箱 Hermes"]
-        beijing_refresh_stage = stage_by_name["刷新北京主沙箱 Hermes pools"]
-        beijing_repair_stage = stage_by_name["升级存量北京主沙箱 Hermes VM"]
         shanghai_approval_stage = stage_by_name["确认刷新并修补上海生产 Hermes"]
         shanghai_refresh_stage = stage_by_name["刷新上海生产 Hermes pools"]
         shanghai_repair_stage = stage_by_name["升级存量上海生产 Hermes VM"]
         prod_if = "${{ ci.branch }} == master"
         reviewers = ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang"]
-        singapore_reviews = (((singapore_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
         beijing_reviews = (((beijing_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
+        singapore_reviews = (((singapore_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
         shanghai_reviews = (((shanghai_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
 
+        self.assertEqual(beijing_approval_stage.get("if"), prod_if)
+        self.assertEqual(beijing_preflight_stage.get("if"), prod_if)
+        self.assertEqual(beijing_refresh_stage.get("if"), prod_if)
+        self.assertEqual(beijing_repair_stage.get("if"), prod_if)
         self.assertEqual(singapore_approval_stage.get("if"), prod_if)
         self.assertEqual(singapore_preflight_stage.get("if"), prod_if)
         self.assertEqual(singapore_refresh_stage.get("if"), prod_if)
         self.assertEqual(singapore_repair_stage.get("if"), prod_if)
-        self.assertEqual(beijing_approval_stage.get("if"), prod_if)
-        self.assertEqual(beijing_refresh_stage.get("if"), prod_if)
-        self.assertEqual(beijing_repair_stage.get("if"), prod_if)
         self.assertEqual(shanghai_approval_stage.get("if"), prod_if)
         self.assertEqual(shanghai_refresh_stage.get("if"), prod_if)
         self.assertEqual(shanghai_repair_stage.get("if"), prod_if)
-        self.assertEqual(singapore_reviews.get("reviewers"), reviewers)
         self.assertEqual(beijing_reviews.get("reviewers"), reviewers)
+        self.assertEqual(singapore_reviews.get("reviewers"), reviewers)
         self.assertEqual(shanghai_reviews.get("reviewers"), reviewers)
-        self.assertLess(stages.index(build_stage), stages.index(singapore_preflight_stage))
+        self.assertLess(stages.index(build_stage), stages.index(beijing_preflight_stage))
+        self.assertLess(stages.index(beijing_preflight_stage), stages.index(beijing_approval_stage))
+        self.assertLess(stages.index(beijing_approval_stage), stages.index(beijing_refresh_stage))
+        self.assertLess(stages.index(beijing_refresh_stage), stages.index(beijing_repair_stage))
+        self.assertLess(stages.index(beijing_repair_stage), stages.index(singapore_preflight_stage))
         self.assertLess(stages.index(singapore_preflight_stage), stages.index(singapore_approval_stage))
         self.assertLess(stages.index(singapore_approval_stage), stages.index(singapore_refresh_stage))
         self.assertLess(stages.index(singapore_refresh_stage), stages.index(singapore_repair_stage))
-        self.assertLess(stages.index(singapore_repair_stage), stages.index(beijing_approval_stage))
-        self.assertLess(stages.index(beijing_approval_stage), stages.index(beijing_refresh_stage))
-        self.assertLess(stages.index(beijing_refresh_stage), stages.index(beijing_repair_stage))
-        self.assertLess(stages.index(beijing_repair_stage), stages.index(shanghai_approval_stage))
+        self.assertLess(stages.index(singapore_repair_stage), stages.index(shanghai_approval_stage))
         self.assertLess(stages.index(shanghai_approval_stage), stages.index(shanghai_refresh_stage))
         self.assertLess(stages.index(shanghai_refresh_stage), stages.index(shanghai_repair_stage))
 
@@ -530,6 +533,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("HERMES_REPAIR_ENV_SPEC", workflow_text)
         self.assertIn("sgprod:ap-singapore:kubeconfig_sgprod", workflow_text)
         self.assertIn("HERMES_SINGAPORE_HERMES_LEGACY_POOL_IDS", workflow_text)
+        self.assertIn("预检北京主沙箱 Hermes 更新目标", workflow_text)
+        self.assertIn("hermes-beijing-sandbox-preflight-vms", workflow_text)
+        self.assertIn("No Beijing Hermes VM rows found; abort before manual approval", workflow_text)
+        self.assertIn("resolve_hermes_image_id.py --region ap-beijing --image-name \"$HERMES_IMAGE_NAME\"", workflow_text)
         self.assertIn("预检新加坡生产 Hermes 更新目标", workflow_text)
         self.assertIn("hermes-sgprod-preflight-vms", workflow_text)
         self.assertIn("No Singapore Hermes VM rows found; abort before manual approval", workflow_text)
@@ -541,8 +548,8 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("shprod:ap-shanghai:kubeconfig_shprod", workflow_text)
         self.assertIn("HERMES_SHANGHAI_HERMES_LEGACY_POOL_IDS", workflow_text)
         self.assertIn("pool-bj8,pool-c0,pool-c1,pool-c2,pool-c3,pool-c4,pool-c5", workflow_text)
-        self.assertLess(workflow_text.index("sgprod:ap-singapore:kubeconfig_sgprod"), workflow_text.index("beijing-sandbox:ap-beijing:kubeconfig_beijing_sandbox"))
-        self.assertLess(workflow_text.index("beijing-sandbox:ap-beijing:kubeconfig_beijing_sandbox"), workflow_text.index("shprod:ap-shanghai:kubeconfig_shprod"))
+        self.assertLess(workflow_text.index("beijing-sandbox:ap-beijing:kubeconfig_beijing_sandbox"), workflow_text.index("sgprod:ap-singapore:kubeconfig_sgprod"))
+        self.assertLess(workflow_text.index("sgprod:ap-singapore:kubeconfig_sgprod"), workflow_text.index("shprod:ap-shanghai:kubeconfig_shprod"))
         self.assertNotIn("<<'PY'", workflow_text)
         self.assertNotIn("默认目标：shprod", workflow_text)
         self.assertNotIn('HERMES_TAT_COMMAND_ID is required for existing Hermes VM upgrade', workflow_text)
