@@ -2119,11 +2119,25 @@ export const SubscribePage = ({
                 marginTop: 8,
               }}
             >
-              {freeGuideAllowed
-                ? t(
-                    "内测期间限时免费。期满后，新用户可享启航版 14 天免费试用；到期后需手动续费，未续费不会产生任何费用。",
-                  )
-                : t("一键创建云端 Hermes Agent")}
+              {freeGuideAllowed ? (
+                <>
+                  {t("当前LightVela为内测阶段，内测期间限时免费。")}
+                  <a
+                    href="/docs/announcements/public-beta/"
+                    style={{
+                      color: colors.primary,
+                      fontWeight: 500,
+                      textDecoration: "none",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {t("查看详情")}
+                    {" >>"}
+                  </a>
+                </>
+              ) : (
+                t("一键创建云端 Hermes Agent")
+              )}
             </p>
             {/* {bots.length > 0 && (
               <p
