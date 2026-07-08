@@ -5,6 +5,8 @@ import { useNavigate } from "react-router-dom";
 import { LegalFooter } from "@/components/site/legal-footer";
 import { useT } from "@/i18n/t";
 import { AGENTS_HOME_PATH, getAgentCreatingPath } from "@/lib/agent-routes";
+import { DATONG_PAGE_IDS } from "@/observability/datong";
+import { trackDatongClick } from "@/observability/datong-tracker";
 import { fadeInUp, staggerContainer, titleReveal, viewportConfig } from "./constants";
 
 export function CTAFooterSection({
@@ -23,14 +25,27 @@ export function CTAFooterSection({
 
   const handleCreateClick = () => {
     if (!isLoggedIn) {
+      trackDatongClick("footer_create_now_btn", {
+        pgid: DATONG_PAGE_IDS.HOME,
+        params: { has_bots: hasBots, target: "login" },
+      });
       onLoginClick();
       return;
     }
     if (isSubscribed) {
       /* 已订阅：直接进入我的龙虾页面（无龙虾时自动创建） */
-      navigate(hasBots ? AGENTS_HOME_PATH : getAgentCreatingPath(true));
+      const target = hasBots ? AGENTS_HOME_PATH : getAgentCreatingPath(true);
+      trackDatongClick("footer_create_now_btn", {
+        pgid: DATONG_PAGE_IDS.HOME,
+        params: { has_bots: hasBots, target },
+      });
+      navigate(target);
     } else {
       /* 未订阅：去选套餐 */
+      trackDatongClick("footer_create_now_btn", {
+        pgid: DATONG_PAGE_IDS.HOME,
+        params: { has_bots: hasBots, target: "/subscribe" },
+      });
       navigate("/subscribe");
     }
   };

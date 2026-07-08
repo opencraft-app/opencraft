@@ -31,10 +31,15 @@ const AGENT_SECTION_PGID: Record<AgentSectionId, DatongPageId> = {
 
 /** 顶级路径前缀 → pgid，命中后立即返回。 */
 const STATIC_PATH_MAP: ReadonlyArray<[RegExp, DatongPageId]> = [
+  // 本地化路由（/[lang]/...）
   [/^\/(zh|en|zh-CN|en-US|zh-cn|en-us)\/?$/i, DATONG_PAGE_IDS.HOME],
   [/^\/(zh|en|zh-CN|en-US|zh-cn|en-us)\/about\b/i, DATONG_PAGE_IDS.ABOUT],
   [/^\/(zh|en|zh-CN|en-US|zh-cn|en-us)\/changelog\b/i, DATONG_PAGE_IDS.CHANGELOG],
   [/^\/(zh|en|zh-CN|en-US|zh-cn|en-us)\/docs(?:\/|$)/i, DATONG_PAGE_IDS.DOCS],
+  [/^\/(zh|en|zh-CN|en-US|zh-cn|en-us)\/cookie-policy\b/i, DATONG_PAGE_IDS.COOKIE_POLICY],
+  [/^\/(zh|en|zh-CN|en-US|zh-cn|en-us)\/privacy-policy\b/i, DATONG_PAGE_IDS.PRIVACY_POLICY],
+  [/^\/(zh|en|zh-CN|en-US|zh-cn|en-us)\/open-source-licenses\b/i, DATONG_PAGE_IDS.OPEN_SOURCE_LICENSES],
+  // 非本地化路由
   [/^\/about\b/, DATONG_PAGE_IDS.ABOUT],
   [/^\/changelog\b/, DATONG_PAGE_IDS.CHANGELOG],
   [/^\/docs(?:\/|$)/, DATONG_PAGE_IDS.DOCS],

@@ -35,6 +35,8 @@ import {
   SoulFaceCard,
   SoulSpecRenderer,
 } from "@/pages/marketing/openclaw-buddy-cards";
+import { DATONG_PAGE_IDS } from "@/observability/datong";
+import { trackDatongClick } from "@/observability/datong-tracker";
 
 /** 跑灯顺序：左→右、上→下，蛇形闭合避免抖动 */
 const CYCLE_ORDER = [0, 1, 2, 5, 4, 3];
@@ -165,6 +167,10 @@ export function DrawSoulModal({
 
   const handleStart = useCallback(() => {
     if (drawablePool.length === 0) return;
+    trackDatongClick("persona_draw_btn", {
+      pgid: DATONG_PAGE_IDS.AGENT_PERSONA,
+      params: {},
+    });
     const soul = drawablePool[Math.floor(Math.random() * drawablePool.length)]!;
     setWinnerSoul(soul);
     setWinnerIdx(Math.floor(Math.random() * 6));
@@ -173,7 +179,13 @@ export function DrawSoulModal({
   }, [drawablePool]);
 
   const handleConfirm = useCallback(() => {
-    if (winnerSoul) onPick(winnerSoul);
+    if (winnerSoul) {
+      trackDatongClick("persona_confirm_btn", {
+        pgid: DATONG_PAGE_IDS.AGENT_PERSONA,
+        params: { persona_id: winnerSoul.slug },
+      });
+      onPick(winnerSoul);
+    }
   }, [onPick, winnerSoul]);
 
   if (!open) return null;

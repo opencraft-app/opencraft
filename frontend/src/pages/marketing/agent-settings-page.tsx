@@ -114,7 +114,7 @@ import {
   RESET_BLOCK_REASON,
 } from "@/pages/marketing/openclaw-reset-config";
 import { toast } from "@/lib/toast";
-import { trackDatongEvent } from "@/observability/datong-tracker";
+import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
 
 const AgentChatPanel = lazy(() =>
@@ -1275,6 +1275,10 @@ export const ChannelSection = () => {
       return;
     }
 
+    trackDatongClick("channel_connect_btn", {
+      pgid: DATONG_PAGE_IDS.AGENT_CHANNELS,
+      params: { bot_id: selectedBot.id, channel_type: "wechat" },
+    });
     setShowQrModal(true);
     setWxStatus("creating");
     setWxQrUrl("");
@@ -1408,6 +1412,10 @@ export const ChannelSection = () => {
       return;
     }
 
+    trackDatongClick("channel_connect_btn", {
+      pgid: DATONG_PAGE_IDS.AGENT_CHANNELS,
+      params: { bot_id: selectedBot.id, channel_type: "qq" },
+    });
     setSubmitting(true);
     setChannelNotice(null);
     try {
@@ -1415,6 +1423,10 @@ export const ChannelSection = () => {
         appId: qqAppId,
         appSecret: qqAppSecret,
         account: qqAccount || undefined,
+      });
+      trackDatongEvent(DATONG_EVENTS.CHANNEL_CONNECT_SUCCESS, {
+        pgid: DATONG_PAGE_IDS.AGENT_CHANNELS,
+        params: { bot_id: selectedBot.id, channel_type: "qq" },
       });
       const nextChannels: ConnectedChannel[] = selectedBot.connectedChannels.includes("qq")
         ? selectedBot.connectedChannels
@@ -2389,6 +2401,10 @@ const ChannelModal = ({ bot, onClose }: { bot: { id: string; name: string; conne
         if (status) setWxStatus(status);
         if (snapshot.error_message) setWxError(snapshot.error_message);
         if (status === "success") {
+          trackDatongEvent(DATONG_EVENTS.CHANNEL_CONNECT_SUCCESS, {
+            pgid: DATONG_PAGE_IDS.AGENT_CHANNELS,
+            params: { bot_id: botId, channel_type: "wechat" },
+          });
           const next: ConnectedChannel[] = connectedChannels.includes("wechat") ? connectedChannels : [...connectedChannels, "wechat"];
           updateBot(botId, { connectedChannels: next });
           return;
@@ -2404,6 +2420,10 @@ const ChannelModal = ({ bot, onClose }: { bot: { id: string; name: string; conne
   /* ── 启动微信扫码流程 ── */
   const handleWechatAuth = useCallback(async () => {
     cancelledRef.current = false;
+    trackDatongClick("channel_connect_btn", {
+      pgid: DATONG_PAGE_IDS.AGENT_CHANNELS,
+      params: { bot_id: bot.id, channel_type: "wechat" },
+    });
     setShowQrModal(true);
     setWxStatus("creating");
     setWxQrUrl("");
@@ -2509,6 +2529,10 @@ const ChannelModal = ({ bot, onClose }: { bot: { id: string; name: string; conne
 
   const handleQqSubmit = async () => {
     if (!qqAppId.trim() || !qqAppSecret.trim()) return;
+    trackDatongClick("channel_connect_btn", {
+      pgid: DATONG_PAGE_IDS.AGENT_CHANNELS,
+      params: { bot_id: bot.id, channel_type: "qq" },
+    });
     setSubmitting(true);
     setChannelNotice(null);
     try {
@@ -2516,6 +2540,10 @@ const ChannelModal = ({ bot, onClose }: { bot: { id: string; name: string; conne
         appId: qqAppId,
         appSecret: qqAppSecret,
         account: qqAccount || undefined,
+      });
+      trackDatongEvent(DATONG_EVENTS.CHANNEL_CONNECT_SUCCESS, {
+        pgid: DATONG_PAGE_IDS.AGENT_CHANNELS,
+        params: { bot_id: bot.id, channel_type: "qq" },
       });
       const nextChannels: ConnectedChannel[] = connectedChannels.includes("qq")
         ? connectedChannels
@@ -3378,6 +3406,10 @@ export const AgentSettingsPage = ({
       return false;
     }
 
+    trackDatongEvent(DATONG_EVENTS.MEMORY_QUOTA_UPDATE, {
+      pgid: DATONG_PAGE_IDS.AGENT_MEMORY,
+      params: { bot_id: activeBotId, target, old_quota: existingChars, new_quota: value },
+    });
     setSavingMemoryLimitTarget(target);
     setMemoryLimitSaveError(null);
     try {
@@ -3482,6 +3514,10 @@ export const AgentSettingsPage = ({
 
   const handleDelete = async () => {
     if (!activeBot || deleteInput !== activeBot.name) return;
+    trackDatongClick("agent_delete_btn", {
+      pgid: DATONG_PAGE_IDS.AGENTS_HOME,
+      params: { bot_id: activeBot.id },
+    });
     setDeleteError(null);
     try {
       await deleteBot(activeBot.id);
@@ -3520,6 +3556,10 @@ export const AgentSettingsPage = ({
     const targetBotId = activeBot?.id;
     if (!targetBotId) return;
 
+    trackDatongEvent(DATONG_EVENTS.DIAGNOSTICS_ACTION, {
+      pgid: DATONG_PAGE_IDS.AGENT_DIAGNOSTICS,
+      params: { bot_id: targetBotId, action: "reset_config" },
+    });
     setResetting(true);
     try {
       const result = await repositories.bots.resetInstanceConfig(targetBotId);
@@ -3595,6 +3635,10 @@ export const AgentSettingsPage = ({
     const targetBotId = activeBot?.id;
     if (!targetBotId) return;
 
+    trackDatongEvent(DATONG_EVENTS.DIAGNOSTICS_ACTION, {
+      pgid: DATONG_PAGE_IDS.AGENT_DIAGNOSTICS,
+      params: { bot_id: targetBotId, action: "reset_agent" },
+    });
     setResettingAcli(true);
     setAcliResetConsole([`$ ${ACLI_RESET_COMMAND}`]);
     setShowAcliResetConfirm(false);
@@ -3650,6 +3694,10 @@ export const AgentSettingsPage = ({
   const handleRestartGateway = async () => {
     if (getRestartBlockReason(activeBot, restartingBotIds)) return;
     const targetBotId = activeBot!.id;
+    trackDatongClick("agent_restart_btn", {
+      pgid: DATONG_PAGE_IDS.AGENTS_HOME,
+      params: { bot_id: targetBotId },
+    });
     setRestartingBotIds((prev) => new Set(prev).add(targetBotId));
     setRestartErrors((prev) => clearErrorForBot(prev, targetBotId));
     try {
@@ -4082,6 +4130,10 @@ export const AgentSettingsPage = ({
   ]);
 
   const handleCreateNew = () => {
+    trackDatongClick("agent_create_start_btn", {
+      pgid: DATONG_PAGE_IDS.AGENTS_HOME,
+      params: { bots_count: bots.length },
+    });
     if (createLimitMessage) {
       setDirectCreateError(createLimitMessage);
       return;
@@ -4097,6 +4149,10 @@ export const AgentSettingsPage = ({
   };
 
   const handleConfirmCreate = async () => {
+    trackDatongClick("agent_create_confirm_btn", {
+      pgid: DATONG_PAGE_IDS.AGENT_CREATING,
+      params: {},
+    });
     setDirectCreating(true);
     setDirectCreateError(null);
     const createStart = Date.now();

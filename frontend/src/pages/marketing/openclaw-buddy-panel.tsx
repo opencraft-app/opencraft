@@ -45,6 +45,8 @@ import {
   getGlobalChineseSoulSpec,
 } from "@/lib/soul-global-chinese-data";
 import { SoulSpecPanel } from "@/components/soul-spec-panel";
+import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
+import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
 import {
   loadBuddyState,
   saveBuddyState,
@@ -478,6 +480,11 @@ export function BuddyPanel({
     const soul = localizedDrawnSouls.find((s) => toCanonicalSlug(s.slug) === canonical);
     if (!soul) return;
 
+    trackDatongClick("persona_inject_btn", {
+      pgid: DATONG_PAGE_IDS.AGENT_PERSONA,
+      params: { bot_id: botId ?? "", persona_id: canonical },
+    });
+
     showToast({ kind: "applying" }, 0);
 
     // 最短转圈时长：避免极快返回时按钮一闪而过、用户无感知。
@@ -554,6 +561,10 @@ export function BuddyPanel({
           throw new Error(`exec exit ${result.exitCode}: ${result.output}`);
         }
         await ensureMinSpin();
+        trackDatongEvent(DATONG_EVENTS.PERSONA_INJECT_SUCCESS, {
+          pgid: DATONG_PAGE_IDS.AGENT_PERSONA,
+          params: { bot_id: botId, persona_id: canonical, persona_source: "draw" },
+        });
         setAppliedSlug(selectedSlug);
         // 文件已写入 → 触发重新读取真实 SOUL.md，同步 Equipped 指示器。
         setEquippedRefreshTick((n) => n + 1);
@@ -565,6 +576,10 @@ export function BuddyPanel({
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error("[buddy] inject SOUL.md to bot failed, fallback to download:", err);
+        trackDatongEvent(DATONG_EVENTS.PERSONA_INJECT_FAIL, {
+          pgid: DATONG_PAGE_IDS.AGENT_PERSONA,
+          params: { bot_id: botId, persona_id: canonical, error_code: "inject_failed" },
+        });
         // 写入失败 → 不打断用户，降级走浏览器下载
       }
     }

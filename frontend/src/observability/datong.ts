@@ -19,18 +19,25 @@ type DatongEnv = {
   readonly NEXT_PUBLIC_DATONG_APPKEY?: string;
   readonly VITE_DATONG_ENABLED?: string;
   readonly VITE_DATONG_APPKEY?: string;
+  // dev 模式上报开关：本地/预览环境显式打开后，即便非生产构建也允许初始化 SDK。
+  readonly NEXT_PUBLIC_DATONG_DEV_ENABLED?: string;
+  readonly VITE_DATONG_DEV_ENABLED?: string;
 };
 
 // universal-report SDK 客户端类型 —— 采用宽松结构定义，仅暴露业务实际调用的成员，
 // 便于与 SDK 内部私有实现解耦、方便后续版本升级。
+//
+// SDK reportEvent 的 IContext 没有 eid 字段，eid 需放在 businessParams.eid 里，
+// SDK formatContext 从 businessParams.eid 提取并转为 dt_eid 放入 publicParams。
 export type DatongClient = {
   reportEvent: (payload: {
     eventName: string;
     pgid?: string;
-    eid?: string;
     businessParams?: Record<string, unknown>;
   }) => void;
   setPublicParams?: (params: Record<string, unknown>) => void;
+  // startReport 刷新 waitReport 缓存的事件，开始真正上报
+  startReport?: () => void;
 };
 
 export type DatongConfig = {
@@ -125,6 +132,97 @@ export const DATONG_PAGE_IDS = {
 
 export type DatongPageId = (typeof DATONG_PAGE_IDS)[keyof typeof DATONG_PAGE_IDS];
 
+/**
+ * pgid → 中文页面名映射。
+ *
+ * dt_pgid 列存英文标识（与埋点计划一致），page_name 列存中文名（便于看板直接展示）。
+ * 与 dt_tracking_plan/agent-platform-frontend-tracking-2026070211.md 的页面命名对齐。
+ */
+const PAGE_NAME_MAP: Record<string, string> = {
+  home: "首页",
+  about: "关于我们",
+  changelog: "更新日志",
+  docs: "文档中心",
+  cookie_policy: "Cookie 政策",
+  privacy_policy: "隐私政策",
+  open_source_licenses: "开源许可",
+  plans: "套餐选择页",
+  plan_select: "套餐比对页",
+  subscribe: "支付页",
+  account: "账户中心",
+  account_orders: "我的订单",
+  agents_home: "Agent 首页",
+  agent_creating: "Agent 创建向导",
+  agent_workbench: "Agent 工作台",
+  agent_chat: "Agent 会话页",
+  agent_channels: "IM 通道页",
+  agent_models: "模型配置页",
+  agent_skills: "技能页",
+  agent_persona: "人设页",
+  agent_automations: "自动任务页",
+  agent_memory: "记忆页",
+  agent_files: "云存储页",
+  agent_diagnostics: "诊断页",
+};
+
+/** 根据 pgid 解析中文页面名，未匹配时回退为 pgid 英文原值。 */
+function resolvePageName(pgid: string | undefined): string | undefined {
+  if (!pgid) return undefined;
+  return PAGE_NAME_MAP[pgid] ?? pgid;
+}
+
+/**
+ * eid → 中文元素名映射。
+ *
+ * dt_eid 列存英文标识（与埋点计划一致），ename 列存中文名（便于看板直接展示）。
+ * 与 dt_tracking_plan/agent-platform-frontend-tracking-2026070211.md 的元素命名对齐。
+ */
+const ELEMENT_NAME_MAP: Record<string, string> = {
+  // 首页
+  header_create_now_btn: "顶栏创建按钮",
+  hero_create_now_btn: "Hero区创建按钮",
+  footer_create_now_btn: "底部创建按钮",
+  header_login_btn: "顶栏登录按钮",
+  header_docs_link: "顶栏文档入口",
+  header_pricing_link: "顶栏定价入口",
+  language_switcher_btn: "语言切换",
+  // 套餐页
+  plan_card: "套餐卡片",
+  plan_select_btn: "选择套餐按钮",
+  billing_period_toggle: "计费周期切换",
+  // 支付页
+  pay_now_btn: "立即支付按钮",
+  // 账户页
+  orders_entry_link: "订单入口",
+  // Agent 首页
+  agent_create_start_btn: "开始创建按钮",
+  agent_create_confirm_btn: "确认创建按钮",
+  agent_enter_console_btn: "进入控制台按钮",
+  agent_restart_btn: "重启按钮",
+  agent_delete_btn: "删除按钮",
+  // Channels 页
+  channel_guide_btn: "通道Guide按钮",
+  channel_connect_btn: "通道Connect按钮",
+  // Skills 页
+  skills_search_input: "技能搜索框",
+  skill_item_card: "技能卡片",
+  skill_pack_card: "技能包卡片",
+  // Persona 页
+  persona_draw_btn: "人设抽取按钮",
+  persona_confirm_btn: "添加此人设按钮",
+  persona_select_card: "人设选择卡片",
+  persona_inject_btn: "人设注入按钮",
+  // Automations 页
+  automation_template_card: "自动任务模板卡片",
+  automation_create_btn: "添加自动任务按钮",
+};
+
+/** 根据 eid 解析中文元素名，未匹配时回退为 eid 英文原值。 */
+function resolveElementName(eid: string | undefined): string | undefined {
+  if (!eid) return undefined;
+  return ELEMENT_NAME_MAP[eid] ?? eid;
+}
+
 /** 手动上报的业务参数值类型（避免上报对象/循环引用）。 */
 export type DatongBusinessParamValue = string | number | boolean | null | undefined;
 export type DatongBusinessParams = Record<string, DatongBusinessParamValue>;
@@ -135,6 +233,9 @@ let pendingUserId: string | undefined;
 let identifiedUserId: string | undefined;
 let activeRegion: Region | undefined;
 let activeAppSurface = "lightvela-web";
+let activeAppKey: string | undefined;
+// waitReport 模式：SDK 初始化后事件缓存不上报，等用户身份确定后 startReport 刷新。
+let reportStarted = false;
 
 /**
  * URL 来源参数捕获 —— 首次进入站点时从 URL 读取 `from` 及标准 UTM 参数，
@@ -260,18 +361,24 @@ const readImportMetaEnv = (): DatongEnv => {
 };
 
 /**
- * 安全读取 Next.js 端的 process.env（Vite 端无 process 全局）。
- * `globalThis` 在浏览器和 Node/Next 运行时均存在，通过宽松索引访问避免类型错误。
+ * 读取 Next.js 端的 process.env。
+ *
+ * ⚠️ 必须直接静态引用 `process.env.NEXT_PUBLIC_*`，Next.js 的 DefinePlugin 才能在构建时
+ * 把这些变量内联到客户端 bundle。通过 `globalThis.process?.env?.XXX` 间接访问会导致
+ * DefinePlugin 静态分析匹配不到，变量不会被内联，浏览器端运行时读不到值。
+ *
+ * 与 aegis.ts / posthog.ts 保持一致的 `typeof process !== "undefined"` 内联三元写法。
  */
-const readNextPublicEnv = (): Pick<DatongEnv, "NEXT_PUBLIC_DATONG_ENABLED" | "NEXT_PUBLIC_DATONG_APPKEY" | "NODE_ENV"> => {
-  const g = globalThis as unknown as { process?: { env?: Record<string, string | undefined> } };
-  const env = g.process?.env ?? {};
-  return {
-    NEXT_PUBLIC_DATONG_ENABLED: env.NEXT_PUBLIC_DATONG_ENABLED,
-    NEXT_PUBLIC_DATONG_APPKEY: env.NEXT_PUBLIC_DATONG_APPKEY,
-    NODE_ENV: env.NODE_ENV,
-  };
-};
+const readNextPublicEnv = (): DatongEnv => ({
+  PROD: typeof process !== "undefined" ? process.env.PROD : undefined,
+  NODE_ENV: typeof process !== "undefined" ? process.env.NODE_ENV : undefined,
+  NEXT_PUBLIC_DATONG_ENABLED:
+    typeof process !== "undefined" ? process.env.NEXT_PUBLIC_DATONG_ENABLED : undefined,
+  NEXT_PUBLIC_DATONG_APPKEY:
+    typeof process !== "undefined" ? process.env.NEXT_PUBLIC_DATONG_APPKEY : undefined,
+  NEXT_PUBLIC_DATONG_DEV_ENABLED:
+    typeof process !== "undefined" ? process.env.NEXT_PUBLIC_DATONG_DEV_ENABLED : undefined,
+});
 
 const readDatongEnv = (): DatongEnv => ({
   ...readImportMetaEnv(),
@@ -291,20 +398,30 @@ const envValue = (
 
 /**
  * 解析大同 SDK 生效条件。默认策略：
- *   1. 只在生产构建启用（NODE_ENV=production 或 PROD=true）
+ *   1. 只在生产构建启用（NODE_ENV=production 或 PROD=true）；
+ *      本地 dev 模式可显式打开 NEXT_PUBLIC_DATONG_DEV_ENABLED / VITE_DATONG_DEV_ENABLED 放行
  *   2. 全球站与国内站均启用（大同双区可用；PostHog 只在 global 启用）
- *   3. 需通过 cookie consent
+ *   3. 需通过 cookie consent（dev 模式下跳过此门禁，便于本地联调）
  *   4. 需要显式打开 NEXT_PUBLIC_DATONG_ENABLED
  *   5. 需要提供 appKey（可从环境变量注入或走 fallback 常量）
  */
+export function isDatongDevEnabled(env: DatongEnv = readDatongEnv()): boolean {
+  return isTruthy(
+    envValue(env, "NEXT_PUBLIC_DATONG_DEV_ENABLED", "VITE_DATONG_DEV_ENABLED"),
+  );
+}
+
 export function resolveDatongConfig(
   env: DatongEnv = readDatongEnv(),
   region: Region = REGION,
   consent: CookieConsentValue | null = readStoredCookieConsent(),
 ): DatongConfig | null {
   const isProduction = isTruthy(env.PROD) || env.NODE_ENV === "production";
-  if (!isProduction) return null;
-  if (consent !== COOKIE_CONSENT_ACCEPTED) return null;
+  const devEnabled = isDatongDevEnabled(env);
+  // 非生产构建且未显式打开 dev 开关时，保持原行为（不初始化）
+  if (!isProduction && !devEnabled) return null;
+  // dev 模式下跳过 cookie consent 门禁，便于本地联调埋点
+  if (!devEnabled && consent !== COOKIE_CONSENT_ACCEPTED) return null;
 
   if (!isTruthy(envValue(env, "NEXT_PUBLIC_DATONG_ENABLED", "VITE_DATONG_ENABLED"))) {
     return null;
@@ -342,8 +459,9 @@ export async function initDatong(
   initPromise = (async () => {
     try {
       // 全站公参：随每一条上报下发，构造时通过 `publicParams` 一次性注入。
-      // 项目主登录方式为 email / google / wallet，非 QQ / 微信 / 微博，
-      // 因此不传 accountInfo；用户身份统一走 setDatongUser -> setPublicParams({ user_id }) 通路。
+      // 注意：大同平台 ETL 只解析预定义的公参字段（dt_ 前缀），app_region / app_site /
+      // app_surface 等自定义 key 不会进入数据表列，因此同时也在 businessParams 里携带。
+
       //
       // 公参字段说明：
       //   - app_region  : "cn" / "global"，区分国内站与国际站
@@ -361,10 +479,17 @@ export async function initDatong(
           ...refSourceParams,
         },
         enableNoCodeTracking: config.enableNoCodeTracking,
+        // 禁用 SDK 自动 PV 上报（initPage → reportPV），由 DatongPageEffect 手动管理
+        // dt_pgin / dt_pgout，支持自定义 pgid 路由解析、私参、停留时长。
+        isDisableInitPage: true,
+        // waitReport: 事件缓存不上报，等 setDatongUser 确定 user_id 后 startReport 刷新。
+        // 确保所有上报事件都携带 user_id，避免匿名事件丢失用户身份。
+        waitReport: true,
       } as ConstructorParameters<typeof UniversalReport>[0]) as unknown as DatongClient;
 
       client = instance;
       activeRegion = config.region;
+      activeAppKey = config.appKey;
       applyPendingUser();
 
       // 来源即时上报：SDK 初始化成功后，如果有 URL 来源参数（from / utm_*），
@@ -373,11 +498,10 @@ export async function initDatong(
       if (Object.keys(refSourceParams).length > 0) {
         client.reportEvent({
           eventName: DATONG_EVENTS.LANDING_REFERRAL,
+          pgid: DATONG_PAGE_IDS.HOME,
           businessParams: {
             ...refSourceParams,
-            app_region: config.region,
-            app_site: `lightvela-${config.region}`,
-            app_surface: activeAppSurface,
+            page_name: resolvePageName(DATONG_PAGE_IDS.HOME),
           },
         });
       }
@@ -405,6 +529,8 @@ function applyPendingUser(): void {
   if (identifiedUserId === pendingUserId) return;
   client.setPublicParams?.({ user_id: pendingUserId });
   identifiedUserId = pendingUserId;
+  // 用户身份确定后开启上报（flush waitReport 缓存的事件）
+  startDatongReport();
 }
 
 /** 与 setPostHogUser 对称的用户身份注入。传 null/undefined 表示登出。 */
@@ -413,15 +539,76 @@ export function setDatongUser(userId: string | null | undefined): void {
   applyPendingUser();
 }
 
+/**
+ * 开启上报：flush waitReport 缓存的事件。
+ * 幂等，多次调用安全。由 setDatongUser（用户登录后）或 DatongTrackerBridge（authReady 后）触发。
+ */
+export function startDatongReport(): void {
+  if (!client || reportStarted) return;
+  reportStarted = true;
+  client.startReport?.();
+}
+
 /** 关闭上报（cookie consent 撤回时调用）；保留 pendingUserId 供再次同意后 re-identify。 */
 export function disableDatong(): void {
   identifiedUserId = undefined;
   client = null;
   initPromise = null;
+  activeAppKey = undefined;
+  reportStarted = false;
 }
 
 export function getDatong(): DatongClient | null {
   return client;
+}
+
+/**
+ * 只读诊断快照 —— 用于现网验证 SDK 是否正常初始化、公参是否注入。
+ *
+ * 在浏览器控制台执行：
+ *   __datongDebug()          // 打印诊断信息
+ *   __datongDebug().ready    // true 表示 SDK 已初始化
+ *
+ * 不暴露 appKey 明文，只返回前 8 位 + 掩码。
+ * 仅在浏览器环境挂载，SSR 安全。
+ */
+type DatongDebugSnapshot = {
+  ready: boolean;
+  region: string | undefined;
+  appSite: string;
+  appSurface: string;
+  appKeyMasked: string;
+  userId: string | undefined;
+  hasRefSource: boolean;
+  refFrom: string | undefined;
+  envEnabled: boolean | undefined;
+  envAppKeyPresent: boolean;
+};
+
+export function getDatongDebugSnapshot(): DatongDebugSnapshot {
+  const env = readDatongEnv();
+  const enabledVal = envValue(env, "NEXT_PUBLIC_DATONG_ENABLED", "VITE_DATONG_ENABLED");
+  const appKeyVal = envValue(env, "NEXT_PUBLIC_DATONG_APPKEY", "VITE_DATONG_APPKEY");
+  const stored = loadStoredRefSource();
+  const appKey = activeAppKey ?? appKeyVal ?? "";
+  return {
+    ready: client !== null,
+    region: activeRegion ?? REGION,
+    appSite: `lightvela-${activeRegion ?? REGION}`,
+    appSurface: activeAppSurface,
+    appKeyMasked: appKey ? `${appKey.slice(0, 8)}****` : "(empty)",
+    userId: identifiedUserId,
+    hasRefSource: stored !== null,
+    refFrom: stored?.ref_from,
+    envEnabled: enabledVal ? isTruthy(enabledVal) : undefined,
+    envAppKeyPresent: Boolean(appKeyVal),
+  };
+}
+
+// 浏览器环境挂载到 window.__datongDebug，控制台可直接调用
+if (typeof window !== "undefined") {
+  (window as unknown as { __datongDebug?: () => DatongDebugSnapshot }).__datongDebug =
+    getDatongDebugSnapshot;
 }
 
 function sanitizeBusinessParams(params: DatongBusinessParams | undefined): DatongBusinessParams | undefined {
@@ -463,11 +650,11 @@ export function reportDatongEvent(
   client.reportEvent({
     eventName,
     pgid: options?.pgid,
-    eid: options?.eid,
     businessParams: {
       ...safeParams,
-      app_region: activeRegion ?? REGION,
-      app_surface: activeAppSurface,
+      eid: options?.eid,
+      ename: resolveElementName(options?.eid),
+      page_name: resolvePageName(options?.pgid),
     },
   });
 }
@@ -479,7 +666,9 @@ export function resetDatongForTest(): void {
   pendingUserId = undefined;
   identifiedUserId = undefined;
   activeRegion = undefined;
+  activeAppKey = undefined;
   activeAppSurface = "lightvela-web";
+  reportStarted = false;
 }
 
 /** SDK 保留的事件名（非业务自定义），与业务事件常量分离维护。 */
@@ -515,11 +704,11 @@ export function reportDatongPageEvent(
   client.reportEvent({
     eventName,
     pgid: options?.pgid,
-    eid: options?.eid,
     businessParams: {
       ...safeParams,
-      app_region: activeRegion ?? REGION,
-      app_surface: activeAppSurface,
+      eid: options?.eid,
+      ename: resolveElementName(options?.eid),
+      page_name: resolvePageName(options?.pgid),
     },
   });
 }

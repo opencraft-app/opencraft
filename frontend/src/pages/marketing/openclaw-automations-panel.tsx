@@ -44,6 +44,8 @@ import {
   type CronLightVelaScriptConfig,
   type CronRunRecord,
 } from "@/lib/hermes-cron-client";
+import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
+import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
 
 const PANEL_CARD_STYLE: React.CSSProperties = {
   border: "1px solid rgba(0,0,0,0.06)",
@@ -848,6 +850,10 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
           channelStatus={channelStatus}
           onClose={() => setCreating(false)}
           onSaved={async () => {
+            trackDatongEvent(DATONG_EVENTS.AUTOMATION_CREATE_SUCCESS, {
+              pgid: DATONG_PAGE_IDS.AGENT_AUTOMATIONS,
+              params: { bot_id: botId ?? "" },
+            });
             setCreating(false);
             await refreshAll();
           }}
@@ -884,6 +890,7 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
       {templatePickerOpen && (
         <AutomationTemplateModal
           templates={templates}
+          botId={botId}
           onClose={() => setTemplatePickerOpen(false)}
           onSelect={(template) => {
             setTemplatePickerOpen(false);
@@ -901,6 +908,10 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
           channelStatus={channelStatus}
           onClose={() => setCreatingFromTemplate(null)}
           onSaved={async () => {
+            trackDatongEvent(DATONG_EVENTS.AUTOMATION_CREATE_SUCCESS, {
+              pgid: DATONG_PAGE_IDS.AGENT_AUTOMATIONS,
+              params: { bot_id: botId ?? "" },
+            });
             setCreatingFromTemplate(null);
             await refreshAll();
           }}
@@ -956,6 +967,10 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
           onConfirm={async () => {
             const target = confirmDeleteJob;
             setConfirmDeleteJob(null);
+            trackDatongEvent(DATONG_EVENTS.AUTOMATION_DELETE, {
+              pgid: DATONG_PAGE_IDS.AGENT_AUTOMATIONS,
+              params: { bot_id: botId ?? "", task_id: target.id },
+            });
             await handleAction(target, "remove");
           }}
         />
@@ -1597,10 +1612,12 @@ function InlineCopyText({ value }: { value: string }) {
 
 function AutomationTemplateModal({
   templates,
+  botId,
   onClose,
   onSelect,
 }: {
   templates: AutomationTemplate[];
+  botId: string;
   onClose: () => void;
   onSelect: (template: AutomationTemplate) => void;
 }) {
@@ -1635,7 +1652,13 @@ function AutomationTemplateModal({
               <button
                 key={template.id}
                 type="button"
-                onClick={() => onSelect(template)}
+                onClick={() => {
+                  trackDatongClick("automation_template_card", {
+                    pgid: DATONG_PAGE_IDS.AGENT_AUTOMATIONS,
+                    params: { bot_id: botId ?? "", template_id: template.id },
+                  });
+                  onSelect(template);
+                }}
                 className={`group flex min-h-[132px] flex-col rounded-xl border border-l-[3px] border-black/10 ${tone.accentClass} bg-white p-4 text-left shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition-all duration-200 hover:bg-black/[0.015] hover:shadow-[0_12px_24px_rgba(15,23,42,0.07)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/20`}
               >
                 <div>
@@ -2471,6 +2494,12 @@ function AutomationFormModal({
 
   const handleSubmit = useCallback(async () => {
     if (!canSubmit) return;
+    if (mode === "create") {
+      trackDatongClick("automation_create_btn", {
+        pgid: DATONG_PAGE_IDS.AGENT_AUTOMATIONS,
+        params: { bot_id: botId },
+      });
+    }
     const effectiveWindow = shouldShowEffectiveWindow
       ? buildEffectiveWindowFromInputs(
         effectiveWindowEnabled ? effectiveStartAt : "",

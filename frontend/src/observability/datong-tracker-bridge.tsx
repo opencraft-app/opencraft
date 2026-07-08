@@ -9,7 +9,7 @@ import {
   readStoredCookieConsent,
   type CookieConsentChangedDetail,
 } from "@/lib/cookie-consent";
-import { disableDatong, getDatong, initDatong, setDatongUser } from "@/observability/datong";
+import { disableDatong, getDatong, initDatong, isDatongDevEnabled, setDatongUser, startDatongReport } from "@/observability/datong";
 
 /**
  * 大同埋点桥接组件。
@@ -23,13 +23,15 @@ import { disableDatong, getDatong, initDatong, setDatongUser } from "@/observabi
  * 与 ProductAnalyticsBridge / RumUserBridge 并列。
  */
 export const DatongTrackerBridge = () => {
-  const { isAuthenticated, session } = useSession();
+  const { isAuthenticated, session, authReady } = useSession();
   const userId = isAuthenticated ? session.user?.id : null;
 
   useEffect(() => {
     const syncConsent = () => {
       const consent = readStoredCookieConsent();
-      if (consent === COOKIE_CONSENT_ACCEPTED) {
+      // dev 模式（NEXT_PUBLIC_DATONG_DEV_ENABLED=true）下跳过 cookie consent 门禁，
+      // 便于本地联调埋点；生产模式仍需用户同意 cookie consent 后才初始化。
+      if (isDatongDevEnabled() || consent === COOKIE_CONSENT_ACCEPTED) {
         void initDatong(undefined, undefined, consent);
         return;
       }
@@ -42,14 +44,14 @@ export const DatongTrackerBridge = () => {
       if (getDatong()) return;
       if (document.visibilityState === "hidden") return;
       const consent = readStoredCookieConsent();
-      if (consent === COOKIE_CONSENT_ACCEPTED) {
+      if (consent === COOKIE_CONSENT_ACCEPTED || isDatongDevEnabled()) {
         void initDatong(undefined, undefined, consent);
       }
     };
 
     const handleConsentChange = (event: Event) => {
       const detail = (event as CustomEvent<CookieConsentChangedDetail>).detail;
-      if (detail.value === COOKIE_CONSENT_ACCEPTED) {
+      if (detail.value === COOKIE_CONSENT_ACCEPTED || isDatongDevEnabled()) {
         void initDatong(undefined, undefined, detail.value);
         return;
       }
@@ -69,7 +71,12 @@ export const DatongTrackerBridge = () => {
 
   useEffect(() => {
     setDatongUser(userId);
-  }, [userId]);
+    // authReady 后无论是否登录都开启上报，避免匿名用户事件永远缓存在 waitReport 队列里。
+    // 已登录用户会在 setDatongUser → applyPendingUser 中提前 startReport，此处幂等。
+    if (authReady) {
+      startDatongReport();
+    }
+  }, [userId, authReady]);
 
   return null;
 };
