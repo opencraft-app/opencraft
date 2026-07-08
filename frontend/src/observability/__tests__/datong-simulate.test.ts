@@ -19,9 +19,11 @@ vi.mock("@/lib/region", () => ({
 }));
 
 // Mock UniversalReport SDK —— vi.hoisted 确保 mock 函数在 vi.mock factory 执行前可用
-const { mockReportEvent, mockSetPublicParams } = vi.hoisted(() => ({
+const { mockReportEvent, mockSetPublicParams, mockSetAccountInfo, mockStartReport } = vi.hoisted(() => ({
   mockReportEvent: vi.fn(),
   mockSetPublicParams: vi.fn(),
+  mockSetAccountInfo: vi.fn(),
+  mockStartReport: vi.fn(),
 }));
 
 vi.mock("@tencent/universal-report", () => {
@@ -33,6 +35,8 @@ vi.mock("@tencent/universal-report", () => {
       }
       reportEvent = mockReportEvent;
       setPublicParams = mockSetPublicParams;
+      setAccountInfo = mockSetAccountInfo;
+      startReport = mockStartReport;
     },
   };
 });
@@ -43,6 +47,7 @@ import {
   reportDatongEvent,
   reportDatongPageEvent,
   setDatongUser,
+  startDatongReport,
   disableDatong,
   getDatong,
   resetDatongForTest,
@@ -64,6 +69,8 @@ describe("大同埋点全链路模拟上报", () => {
     resetDatongForTest();
     mockReportEvent.mockClear();
     mockSetPublicParams.mockClear();
+    mockSetAccountInfo.mockClear();
+    mockStartReport.mockClear();
     // 模拟 sessionStorage
     const store = new Map<string, string>();
     vi.stubGlobal("sessionStorage", {
@@ -189,6 +196,25 @@ describe("大同埋点全链路模拟上报", () => {
       expect(mockSetPublicParams).toHaveBeenCalledWith({ user_id: "usr_12345" });
     });
 
+    it("waitReport 模式：initDatong 后不自动 startReport", async () => {
+      await initDatong(PROD_ENV as never, "cn", "accepted" as CookieConsentValue);
+      expect(mockStartReport).not.toHaveBeenCalled();
+    });
+
+    it("waitReport 模式：setDatongUser 注入 user_id 后触发 startReport", async () => {
+      await initDatong(PROD_ENV as never, "cn", "accepted" as CookieConsentValue);
+      setDatongUser("usr_12345");
+      expect(mockStartReport).toHaveBeenCalledTimes(1);
+    });
+
+    it("waitReport 模式：startDatongReport 幂等，多次调用不重复", async () => {
+      await initDatong(PROD_ENV as never, "cn", "accepted" as CookieConsentValue);
+      setDatongUser("usr_12345");
+      startDatongReport();
+      startDatongReport();
+      expect(mockStartReport).toHaveBeenCalledTimes(1);
+    });
+
     it("disableDatong 清除 client", async () => {
       await initDatong(PROD_ENV as never, "cn", "accepted" as CookieConsentValue);
       expect(getDatong()).not.toBeNull();
@@ -211,8 +237,6 @@ describe("大同埋点全链路模拟上报", () => {
       const call = mockReportEvent.mock.calls[0][0];
       expect(call.eventName).toBe("login_success");
       expect(call.businessParams.method).toBe("google");
-      expect(call.businessParams.app_region).toBe("cn");
-      expect(call.businessParams.app_surface).toBe("lightvela-web");
     });
 
     it("subscribe_pay_success 上报正确事件名和参数", () => {
@@ -260,7 +284,7 @@ describe("大同埋点全链路模拟上报", () => {
       await initDatong(PROD_ENV as never, "cn", "accepted" as CookieConsentValue);
     });
 
-    it("trackDatongClick: eid 在 businessParams.eid 中，不在顶层", () => {
+    it("trackDatongClick: eid 在 pageParams.eid 中，不在顶层", () => {
       trackDatongClick("header_create_now_btn", {
         pgid: DATONG_PAGE_IDS.HOME,
         params: { has_bots: false, target: "/agents" },
@@ -269,16 +293,16 @@ describe("大同埋点全链路模拟上报", () => {
       const call = mockReportEvent.mock.calls[0][0];
       expect(call.eventName).toBe("dt_clck");
       expect(call.pgid).toBe("home");
-      // 关键断言：eid 必须在 businessParams 中
-      expect(call.businessParams.eid).toBe("header_create_now_btn");
+      // 关键断言：eid 必须在 pageParams 中
+      expect(call.pageParams.eid).toBe("header_create_now_btn");
       // 顶层不应有 eid 字段
       expect(call.eid).toBeUndefined();
       // 其他参数也保留
-      expect(call.businessParams.has_bots).toBe(false);
-      expect(call.businessParams.target).toBe("/agents");
+      expect(call.pageParams.has_bots).toBe(false);
+      expect(call.pageParams.target).toBe("/agents");
     });
 
-    it("reportDatongPageEvent: dt_imp 事件的 eid 在 businessParams.eid", () => {
+    it("reportDatongPageEvent: dt_imp 事件的 eid 在 pageParams.eid", () => {
       reportDatongPageEvent(DATONG_PAGE_EVENTS.ELEMENT_IMPRESSION, {
         pgid: DATONG_PAGE_IDS.PLANS,
         eid: "plan_card",
@@ -288,12 +312,12 @@ describe("大同埋点全链路模拟上报", () => {
       const call = mockReportEvent.mock.calls[0][0];
       expect(call.eventName).toBe("dt_imp");
       expect(call.pgid).toBe("plans");
-      expect(call.businessParams.eid).toBe("plan_card");
+      expect(call.pageParams.eid).toBe("plan_card");
       expect(call.eid).toBeUndefined();
-      expect(call.businessParams.plan).toBe("pro");
+      expect(call.pageParams.plan).toBe("pro");
     });
 
-    it("reportDatongPageEvent: dt_clck 事件的 eid 在 businessParams.eid", () => {
+    it("reportDatongPageEvent: dt_clck 事件的 eid 在 pageParams.eid", () => {
       reportDatongPageEvent(DATONG_PAGE_EVENTS.ELEMENT_CLICK, {
         pgid: DATONG_PAGE_IDS.SUBSCRIBE,
         eid: "pay_now_btn",
@@ -302,7 +326,7 @@ describe("大同埋点全链路模拟上报", () => {
 
       const call = mockReportEvent.mock.calls[0][0];
       expect(call.eventName).toBe("dt_clck");
-      expect(call.businessParams.eid).toBe("pay_now_btn");
+      expect(call.pageParams.eid).toBe("pay_now_btn");
       expect(call.eid).toBeUndefined();
     });
   });

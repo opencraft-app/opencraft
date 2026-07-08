@@ -9,7 +9,7 @@ import {
   readStoredCookieConsent,
   type CookieConsentChangedDetail,
 } from "@/lib/cookie-consent";
-import { disableDatong, getDatong, initDatong, isDatongDevEnabled, setDatongUser } from "@/observability/datong";
+import { disableDatong, getDatong, initDatong, isDatongDevEnabled, setDatongUser, startDatongReport } from "@/observability/datong";
 
 /**
  * 大同埋点桥接组件。
@@ -23,7 +23,7 @@ import { disableDatong, getDatong, initDatong, isDatongDevEnabled, setDatongUser
  * 与 ProductAnalyticsBridge / RumUserBridge 并列。
  */
 export const DatongTrackerBridge = () => {
-  const { isAuthenticated, session } = useSession();
+  const { isAuthenticated, session, authReady } = useSession();
   const userId = isAuthenticated ? session.user?.id : null;
 
   useEffect(() => {
@@ -71,7 +71,12 @@ export const DatongTrackerBridge = () => {
 
   useEffect(() => {
     setDatongUser(userId);
-  }, [userId]);
+    // authReady 后无论是否登录都开启上报，避免匿名用户事件永远缓存在 waitReport 队列里。
+    // 已登录用户会在 setDatongUser → applyPendingUser 中提前 startReport，此处幂等。
+    if (authReady) {
+      startDatongReport();
+    }
+  }, [userId, authReady]);
 
   return null;
 };

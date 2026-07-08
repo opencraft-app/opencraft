@@ -7,6 +7,8 @@ import { useTranslation } from "react-i18next";
 
 import { LanguageSwitcher, type LanguageSwitcherVariant } from "@/components/site/language-switcher";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
+import { DATONG_PAGE_IDS } from "@/observability/datong";
+import { trackDatongClick } from "@/observability/datong-tracker";
 import {
   isPublicSiteNavActive,
   PUBLIC_SITE_NAV_ITEMS,
@@ -226,6 +228,15 @@ export function PublicSiteHeader({
   const logoHref = publicSiteHref("/", locale, { localized });
   const textColorClass = textClass[appearance];
   const handleCreateClick = onCreateClick ?? onLoginClick;
+  const trackedCreateClick = handleCreateClick
+    ? () => {
+        trackDatongClick("header_create_now_btn", {
+          pgid: DATONG_PAGE_IDS.HOME,
+          params: { target: isAuthenticated ? "/agents" : "login" },
+        });
+        handleCreateClick();
+      }
+    : undefined;
   const createHref = "/agents";
   const loginHref = "/auth/sign-in";
   const renderLanguage = (variant: LanguageSwitcherVariant) => (
@@ -306,10 +317,10 @@ export function PublicSiteHeader({
 
         {!usesAuthControlsSlot && showUnauthenticatedActions && !authLoading && !isAuthenticated && (
           <div className="hidden shrink-0 items-center gap-3 md:flex">
-            {handleCreateClick ? (
+            {trackedCreateClick ? (
               <button
                 type="button"
-                onClick={handleCreateClick}
+                onClick={trackedCreateClick}
                 className="inline-flex h-[36px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] border border-black/90 bg-black/90 px-5 font-heading text-sm font-medium text-white shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-all hover:-translate-y-[1px] hover:shadow-lg"
               >
                 {copy.createNow}
@@ -406,13 +417,13 @@ export function PublicSiteHeader({
 
               {!usesAuthControlsSlot && showUnauthenticatedActions && !authLoading && !isAuthenticated && (
                 <div className="border-t border-black/5 pt-3">
-                  {handleCreateClick ? (
+                  {trackedCreateClick ? (
                     <button
                       type="button"
                       data-testid="site-header-mobile-create"
                       onClick={() => {
                         setMenuOpen(false);
-                        handleCreateClick();
+                        trackedCreateClick();
                       }}
                       className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-full bg-black/90 px-5 py-3 text-[14px] font-medium text-white"
                     >

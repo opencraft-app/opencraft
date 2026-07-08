@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>用户行为数据看板</title>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6/css/all.min.css">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: #f6f7fb; color: #0f172a; }
+    .dashboard { display: flex; flex-direction: column; gap: 20px; padding: 24px; max-width: 1400px; margin: 0 auto; }
+    .header { background: linear-gradient(135deg, #0052D9 0%, #0066FF 100%); padding: 28px 24px 20px; border-radius: 16px; color: white; }
+    .header-content { display: flex; justify-content: space-between; align-items: center; }
+    .title { font-size: 28px; font-weight: 800; letter-spacing: 0.5px; }
+    .subtitle { font-size: 13px; opacity: 0.9; margin-top: 6px; }
+    .header-right { text-align: right; }
+    .update-time { font-size: 12px; opacity: 0.85; }
+    .badge { display: inline-block; background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 12px; font-size: 12px; margin-top: 8px; }
+    .filter-bar { background: #ffffff; padding: 16px 20px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.04); display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+    .filter-group { display: flex; align-items: center; gap: 8px; }
+    .filter-label { font-size: 13px; color: #64748b; font-weight: 500; }
+    input[type="date"] { padding: 8px 12px; border: 1px solid rgba(0,0,0,0.15); border-radius: 6px; font-size: 13px; outline: none; transition: all 0.2s; }
+    input[type="date"]:focus { border-color: #0052D9; box-shadow: 0 0 0 3px rgba(0,82,217,0.1); }
+    select { padding: 8px 12px; border: 1px solid rgba(0,0,0,0.15); border-radius: 6px; font-size: 13px; outline: none; background: white; cursor: pointer; transition: all 0.2s; }
+    select:focus { border-color: #0052D9; box-shadow: 0 0 0 3px rgba(0,82,217,0.1); }
+    .btn { padding: 8px 20px; border: none; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s; }
+    .btn-primary { background: #0052D9; color: white; }
+    .btn-primary:hover { background: #0045B8; }
+    .btn-secondary { background: white; color: #0f172a; border: 1px solid rgba(0,0,0,0.15); }
+    .btn-secondary:hover { background: #f8f9fa; }
+    .metrics-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+    .metric-card { background: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.04); border-left: 4px solid #0052D9; transition: all 0.3s; }
+    .metric-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.12), 0 16px 32px rgba(0,0,0,0.08); }
+    .metric-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .metric-icon { font-size: 24px; }
+    .metric-label { font-size: 13px; color: #64748b; font-weight: 500; }
+    .metric-value { font-size: 32px; font-weight: 800; color: #0f172a; margin: 8px 0; }
+    .metric-footer { font-size: 12px; color: #64748b; }
+    .metric-trend { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-left: 8px; }
+    .trend-up { background: #E8F8F2; color: #2BA471; }
+    .trend-down { background: #FFF0ED; color: #D54941; }
+    .charts-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+    .chart-card { background: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.04); }
+    .chart-card.full-width { grid-column: 1 / -1; }
+    .chart-title { font-size: 16px; font-weight: 700; color: #0f172a; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
+    .chart-container { width: 100%; height: 320px; position: relative; }
+    .loading-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; }
+    .loading-spinner { font-size: 32px; color: #0052D9; animation: spin 1s linear infinite; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .loading-text { font-size: 13px; color: #64748b; margin-top: 12px; }
+    .empty-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,0.95); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; }
+    .empty-icon { font-size: 48px; color: #cbd5e1; margin-bottom: 12px; }
+    .empty-text { font-size: 14px; color: #64748b; }
+    .footer { text-align: center; padding: 16px 0 20px; border-top: 1px solid rgba(0,0,0,0.06); margin-top: 20px; }
+    .footer-text { font-size: 12px; color: #999; letter-spacing: 0.5px; }
+    .hidden { display: none !important; }
+    @media (max-width: 768px) {
+      .charts-row { grid-template-columns: 1fr; }
+      .filter-bar { flex-direction: column; align-items: stretch; }
+      .filter-group { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="dashboard">
+    <!-- region:header -->
+    <div class="header">
+      <div class="header-content">
+        <div>
+          <div class="title">📊 用户行为数据看板</div>
+          <div class="subtitle">实时监控用户行为数据 · 数据来源：erichuyuehu的个人空间智能用数知识库</div>
+        </div>
+        <div class="header-right">
+          <div class="update-time" id="update-time">最近更新：--</div>
+          <div class="badge">🎯 实时监控</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- region:filter-bar -->
+    <div class="filter-bar">
+      <div class="filter-group">
+        <span class="filter-label">开始时间</span>
+        <input type="date" id="start-date" value="2026-07-02" onchange="reloadCharts()">
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">结束时间</span>
+        <input type="date" id="end-date" onchange="reloadCharts()">
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">平台</span>
+        <select id="platform-filter" onchange="reloadCharts()">
+          <option value="">全部平台</option>
+          <option value="H5">H5</option>
+          <option value="iOS">iOS</option>
+          <option value="Android">Android</option>
+        </select>
+      </div>
+      <div style="flex: 1;"></div>
+      <button class="btn btn-secondary" onclick="resetFilters()">
+        <i class="fa-solid fa-rotate-left"></i> 重置
+      </button>
+      <button class="btn btn-primary" onclick="refreshAllCharts()">
+        <i class="fa-solid fa-rotate"></i> 刷新数据
+      </button>
+    </div>
+
+    <!-- region:metrics -->
+    <div class="metrics-row">
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-label">总用户数 (UV)</span>
+          <span class="metric-icon">👥</span>
+        </div>
+        <div class="metric-value" id="total-uv">--</div>
+        <div class="metric-footer">唯一访问用户数</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-label">总访问量 (PV)</span>
+          <span class="metric-icon">📄</span>
+        </div>
+        <div class="metric-value" id="total-pv">--</div>
+        <div class="metric-footer">页面浏览总数</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-label">页面进入次数</span>
+          <span class="metric-icon">🚪</span>
+        </div>
+        <div class="metric-value" id="total-pgin">--</div>
+        <div class="metric-footer">dt_pgin 事件计数</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-label">页面离开次数</span>
+          <span class="metric-icon">🚶</span>
+        </div>
+        <div class="metric-value" id="total-pgout">--</div>
+        <div class="metric-footer">dt_pgout 事件计数</div>
+      </div>
+    </div>
+
+    <!-- region:chart-trend -->
+    <div class="charts-row">
+      <div class="chart-card full-width">
+        <div class="chart-title">
+          <span>📈 UV/PV 趋势分析</span>
+          <span style="font-size: 12px; color: #64748b;">按小时统计</span>
+        </div>
+        <div class="chart-container" id="trend-chart">
+          <div class="loading-overlay" id="trend-loading">
+            <i class="fa-solid fa-spinner loading-spinner"></i>
+            <div class="loading-text">加载中...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- region:chart-distribution -->
+    <div class="charts-row">
+      <div class="chart-card">
+        <div class="chart-title">
+          <span>📊 事件类型分布</span>
+        </div>
+        <div class="chart-container" id="event-dist-chart">
+          <div class="loading-overlay" id="event-dist-loading">
+            <i class="fa-solid fa-spinner loading-spinner"></i>
+            <div class="loading-text">加载中...</div>
+          </div>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">
+          <span>📱 平台分布</span>
+        </div>
+        <div class="chart-container" id="platform-dist-chart">
+          <div class="loading-overlay" id="platform-dist-loading">
+            <i class="fa-solid fa-spinner loading-spinner"></i>
+            <div class="loading-text">加载中...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- region:chart-page -->
+    <div class="charts-row">
+      <div class="chart-card full-width">
+        <div class="chart-title">
+          <span>📄 各页面访问量 TOP 15</span>
+          <span style="font-size: 12px; color: #64748b;">按页面统计</span>
+        </div>
+        <div class="chart-container" id="page-dist-chart">
+          <div class="loading-overlay" id="page-dist-loading">
+            <i class="fa-solid fa-spinner loading-spinner"></i>
+            <div class="loading-text">加载中...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- region:chart-channel -->
+    <div class="charts-row">
+      <div class="chart-card full-width">
+        <div class="chart-title">
+          <span>🔗 各渠道来源分布</span>
+          <span style="font-size: 12px; color: #64748b;">按 ref_from 统计（dt_pgin 事件）</span>
+        </div>
+        <div class="chart-container" id="channel-dist-chart">
+          <div class="loading-overlay" id="channel-dist-loading">
+            <i class="fa-solid fa-spinner loading-spinner"></i>
+            <div class="loading-text">加载中...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- region:footer -->
+    <div class="footer">
+      <span class="footer-text">© AI原生看板 Powered By Dola</span>
+    </div>
+  </div>
+
+  <script>
+    // API域名前缀配置
+    function getApiPrefix() {
+      const hostname = window.location.hostname;
+      if (hostname.startsWith('pre.')) {
+        return 'https://pre.dola.woa.com';
+      } else if (hostname.startsWith('test')) {
+        return 'https://test.dola.woa.com';
+      } else if (hostname.includes('dola')) {
+        return 'https://dola.woa.com';
+      } else {
+        return 'https://test.dola.woa.com';
+      }
+    }
+
+    // 数据服务层
+    const DataService = {
+      async fetch(sql, assetId, forceRefresh) {
+        try {
+          const response = await fetch(`${getApiPrefix()}/knowledge-workshop/openapi/execute_dashboard_sql`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sql,
+              assetId: Array.isArray(assetId) ? assetId : [assetId],
+              forceRefresh: forceRefresh === true
+            }),
+            credentials: 'include'
+          });
+          const res = await response.json();
+          if (res.code === 0 && res.data?.success) {
+            return res.data.result;
+          }
+          throw new Error(res.data?.errorMsg || res.message || '未知错误');
+        } catch (e) {
+          console.error('SQL Execution Failed:', e);
+          throw e;
+        }
+      }
+    };
+
+    // SQL查询配置
+    const assetId = 'b9bcdf45-10eb-4327-9c52-1126f0a86249';
+    window.__PAGE_QUERIES__ = [
+      {
+        id: 'overview_metrics',
+        sql: `SELECT COUNT(DISTINCT uin) AS total_uv, COUNT(*) AS total_pv, SUM(CASE WHEN event_code = 'dt_pgin' THEN 1 ELSE 0 END) AS total_pgin, SUM(CASE WHEN event_code = 'dt_pgout' THEN 1 ELSE 0 END) AS total_pgout FROM dt_sr_export.dt_lite_pwnlm6jlch WHERE DATE(event_time) >= '{{start_date}}' AND DATE(event_time) <= '{{end_date}}' {{platform_condition}}`,
+        assetId: assetId,
+        params: {
+          start_date: { bindTo: '#start-date' },
+          end_date: { bindTo: '#end-date' },
+          platform_condition: { bindTo: '#platform-filter', transform: (val) => val ? `AND platform = '${val}'` : '' }
+        }
+      },
+      {
+        id: 'hourly_trend',
+        sql: `SELECT DATE_FORMAT(event_time, '%Y-%m-%d %H:00') AS hour_time, COUNT(DISTINCT uin) AS uv, COUNT(*) AS pv FROM dt_sr_export.dt_lite_pwnlm6jlch WHERE DATE(event_time) >= '{{start_date}}' AND DATE(event_time) <= '{{end_date}}' {{platform_condition}} GROUP BY DATE_FORMAT(event_time, '%Y-%m-%d %H:00') ORDER BY hour_time ASC`,
+        assetId: assetId,
+        params: {
+          start_date: { bindTo: '#start-date' },
+          end_date: { bindTo: '#end-date' },
+          platform_condition: { bindTo: '#platform-filter', transform: (val) => val ? `AND platform = '${val}'` : '' }
+        }
+      },
+      {
+        id: 'event_distribution',
+        sql: `SELECT event_code, COUNT(*) AS event_count FROM dt_sr_export.dt_lite_pwnlm6jlch WHERE DATE(event_time) >= '{{start_date}}' AND DATE(event_time) <= '{{end_date}}' {{platform_condition}} GROUP BY event_code ORDER BY event_count DESC`,
+        assetId: assetId,
+        params: {
+          start_date: { bindTo: '#start-date' },
+          end_date: { bindTo: '#end-date' },
+          platform_condition: { bindTo: '#platform-filter', transform: (val) => val ? `AND platform = '${val}'` : '' }
+        }
+      },
+      {
+        id: 'platform_distribution',
+        sql: `SELECT platform, COUNT(*) AS count FROM dt_sr_export.dt_lite_pwnlm6jlch WHERE DATE(event_time) >= '{{start_date}}' AND DATE(event_time) <= '{{end_date}}' {{platform_condition}} GROUP BY platform ORDER BY count DESC`,
+        assetId: assetId,
+        params: {
+          start_date: { bindTo: '#start-date' },
+          end_date: { bindTo: '#end-date' },
+          platform_condition: { bindTo: '#platform-filter', transform: (val) => val ? `AND platform = '${val}'` : '' }
+        }
+      },
+      {
+        id: 'page_distribution',
+        sql: `SELECT COALESCE(dt_pgid, '未知页面') AS page, COUNT(*) AS page_view FROM dt_sr_export.dt_lite_pwnlm6jlch WHERE DATE(event_time) >= '{{start_date}}' AND DATE(event_time) <= '{{end_date}}' {{platform_condition}} GROUP BY dt_pgid ORDER BY page_view DESC LIMIT 15`,
+        assetId: assetId,
+        params: {
+          start_date: { bindTo: '#start-date' },
+          end_date: { bindTo: '#end-date' },
+          platform_condition: { bindTo: '#platform-filter', transform: (val) => val ? `AND platform = '${val}'` : '' }
+        }
+      },
+      {
+        id: 'channel_distribution',
+        sql: `SELECT COALESCE(NULLIF(ref_from, ''), '直接访问') AS channel, COUNT(DISTINCT uin) AS uv, COUNT(*) AS visits FROM dt_sr_export.dt_lite_pwnlm6jlch WHERE DATE(event_time) >= '{{start_date}}' AND DATE(event_time) <= '{{end_date}}' {{platform_condition}} GROUP BY channel ORDER BY visits DESC LIMIT 15`,
+        assetId: assetId,
+        params: {
+          start_date: { bindTo: '#start-date' },
+          end_date: { bindTo: '#end-date' },
+          platform_condition: { bindTo: '#platform-filter', transform: (val) => val ? `AND platform = '${val}'` : '' }
+        }
+      }
+    ];
+
+    // 图表实例
+    let trendChart = null;
+    let eventDistChart = null;
+    let platformDistChart = null;
+    let pageDistChart = null;
+    let channelDistChart = null;
+
+    // 构建SQL
+    function buildSql(queryId) {
+      const query = window.__PAGE_QUERIES__.find(q => q.id === queryId);
+      if (!query) return '';
+      let sql = query.sql;
+      Object.keys(query.params).forEach(key => {
+        const p = query.params[key];
+        const el = document.querySelector(p.bindTo);
+        let value = el ? el.value : '';
+        if (p.transform) {
+          value = p.transform(value);
+        }
+        sql = sql.replace(new RegExp('\\{\\{' + key + '\\}\\}', 'g'), value);
+      });
+      return sql;
+    }
+
+    // 显示Loading
+    function showLoading(queryId) {
+      const loadingMap = {
+        'overview_metrics': null,
+        'hourly_trend': 'trend-loading',
+        'event_distribution': 'event-dist-loading',
+        'platform_distribution': 'platform-dist-loading',
+        'page_distribution': 'page-dist-loading',
+        'channel_distribution': 'channel-dist-loading'
+      };
+      const loadingId = loadingMap[queryId];
+      if (loadingId) {
+        const el = document.getElementById(loadingId);
+        if (el) el.classList.remove('hidden');
+      }
+    }
+
+    // 隐藏Loading
+    function hideLoading(queryId) {
+      const loadingMap = {
+        'overview_metrics': null,
+        'hourly_trend': 'trend-loading',
+        'event_distribution': 'event-dist-loading',
+        'platform_distribution': 'platform-dist-loading',
+        'page_distribution': 'page-dist-loading',
+        'channel_distribution': 'channel-dist-loading'
+      };
+      const loadingId = loadingMap[queryId];
+      if (loadingId) {
+        const el = document.getElementById(loadingId);
+        if (el) el.classList.add('hidden');
+      }
+    }
+
+    // 显示空状态
+    function showEmpty(chartId) {
+      const container = document.getElementById(chartId);
+      if (!container) return;
+      let emptyOverlay = container.querySelector('.empty-overlay');
+      if (!emptyOverlay) {
+        emptyOverlay = document.createElement('div');
+        emptyOverlay.className = 'empty-overlay';
+        emptyOverlay.innerHTML = '<i class="fa-solid fa-inbox empty-icon"></i><div class="empty-text">暂无数据</div>';
+        container.appendChild(emptyOverlay);
+      }
+      emptyOverlay.classList.remove('hidden');
+    }
+
+    // 隐藏空状态
+    function hideEmpty(chartId) {
+      const container = document.getElementById(chartId);
+      if (!container) return;
+      const emptyOverlay = container.querySelector('.empty-overlay');
+      if (emptyOverlay) {
+        emptyOverlay.classList.add('hidden');
+      }
+    }
+
+    // 更新卡片
+    function updateCard(queryId, result) {
+      hideLoading(queryId);
+      
+      if (!result || !result.resultData || result.resultData.length === 0) {
+        if (queryId === 'hourly_trend') {
+          showEmpty('trend-chart');
+          if (trendChart) trendChart.clear();
+        } else if (queryId === 'event_distribution') {
+          showEmpty('event-dist-chart');
+          if (eventDistChart) eventDistChart.clear();
+        } else if (queryId === 'platform_distribution') {
+          showEmpty('platform-dist-chart');
+          if (platformDistChart) platformDistChart.clear();
+        } else if (queryId === 'page_distribution') {
+          showEmpty('page-dist-chart');
+          if (pageDistChart) pageDistChart.clear();
+        } else if (queryId === 'channel_distribution') {
+          showEmpty('channel-dist-chart');
+          if (channelDistChart) channelDistChart.clear();
+        }
+        return;
+      }
+
+      const rows = result.resultData;
+      const meta = result.resultMeta;
+
+      if (queryId === 'overview_metrics') {
+        const row = rows[0];
+        document.getElementById('total-uv').textContent = row[0] || '0';
+        document.getElementById('total-pv').textContent = row[1] || '0';
+        document.getElementById('total-pgin').textContent = row[2] || '0';
+        document.getElementById('total-pgout').textContent = row[3] || '0';
+      } else if (queryId === 'hourly_trend') {
+        hideEmpty('trend-chart');
+        const hours = rows.map(r => r[0]);
+        const uvData = rows.map(r => r[1]);
+        const pvData = rows.map(r => r[2]);
+        
+        if (!trendChart) {
+          trendChart = echarts.init(document.getElementById('trend-chart'));
+        }
+        
+        const trendOption = {
+          tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+          legend: { data: ['UV', 'PV'], top: 0 },
+          grid: { top: 40, right: 20, bottom: 30, left: 50 },
+          xAxis: { type: 'category', data: hours, axisLabel: { rotate: 45, fontSize: 11 } },
+          yAxis: [
+            { type: 'value', name: 'UV', position: 'left' },
+            { type: 'value', name: 'PV', position: 'right' }
+          ],
+          series: [
+            { name: 'UV', type: 'line', data: uvData, smooth: true, yAxisIndex: 0, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{offset: 0, color: 'rgba(0,82,217,0.3)'}, {offset: 1, color: 'rgba(0,82,217,0.02)'}]) }, itemStyle: { color: '#0052D9' } },
+            { name: 'PV', type: 'line', data: pvData, smooth: true, yAxisIndex: 1, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{offset: 0, color: 'rgba(43,164,113,0.3)'}, {offset: 1, color: 'rgba(43,164,113,0.02)'}]) }, itemStyle: { color: '#2BA471' } }
+          ]
+        };
+        trendChart.setOption(trendOption);
+      } else if (queryId === 'event_distribution') {
+        hideEmpty('event-dist-chart');
+        const eventData = rows.map(r => ({ name: r[0], value: r[1] }));
+        
+        if (!eventDistChart) {
+          eventDistChart = echarts.init(document.getElementById('event-dist-chart'));
+        }
+        
+        const eventOption = {
+          tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+          legend: { orient: 'vertical', right: 10, top: 'center' },
+          series: [{
+            type: 'pie',
+            radius: ['40%', '70%'],
+            center: ['40%', '50%'],
+            avoidLabelOverlap: false,
+            itemStyle: { borderRadius: 8, borderColor: '#fff', borderWidth: 2 },
+            label: { show: false },
+            emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' } },
+            labelLine: { show: false },
+            data: eventData
+          }]
+        };
+        eventDistChart.setOption(eventOption);
+      } else if (queryId === 'platform_distribution') {
+        hideEmpty('platform-dist-chart');
+        const platformData = rows.map(r => ({ name: r[0] || '未知', value: r[1] }));
+        
+        if (!platformDistChart) {
+          platformDistChart = echarts.init(document.getElementById('platform-dist-chart'));
+        }
+        
+        const platformOption = {
+          tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+          grid: { top: 20, right: 20, bottom: 30, left: 50 },
+          xAxis: { type: 'category', data: platformData.map(d => d.name) },
+          yAxis: { type: 'value' },
+          series: [{
+            type: 'bar',
+            data: platformData.map(d => d.value),
+            itemStyle: {
+              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                {offset: 0, color: '#0052D9'},
+                {offset: 1, color: '#0066FF'}
+              ]),
+              borderRadius: [8, 8, 0, 0]
+            }
+          }]
+        };
+        platformDistChart.setOption(platformOption);
+      } else if (queryId === 'page_distribution') {
+        hideEmpty('page-dist-chart');
+        const pageData = rows.map(r => ({ name: r[0] || '未知页面', value: Number(r[1]) || 0 }));
+        
+        if (!pageDistChart) {
+          pageDistChart = echarts.init(document.getElementById('page-dist-chart'));
+      channelDistChart = echarts.init(document.getElementById('channel-dist-chart'));
+        }
+        
+        const pageOption = {
+          tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+          grid: { top: 20, right: 20, bottom: 80, left: 60 },
+          xAxis: { type: 'category', data: pageData.map(d => d.name), axisLabel: { rotate: 45, fontSize: 11 } },
+          yAxis: { type: 'value', name: '访问量' },
+          series: [{
+            type: 'bar',
+            data: pageData.map(d => d.value),
+            itemStyle: {
+              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                {offset: 0, color: '#0052D9'},
+                {offset: 1, color: '#0066FF'}
+              ]),
+              borderRadius: [8, 8, 0, 0]
+            },
+            label: {
+              show: true,
+              position: 'top',
+              fontSize: 10,
+              color: '#64748b'
+            }
+          }]
+        };
+        pageDistChart.setOption(pageOption);
+      } else if (queryId === 'channel_distribution') {
+        hideEmpty('channel-dist-chart');
+        const channelData = rows.map(r => ({ name: r[0] || '直接访问', value: Number(r[2]) || 0 }));
+
+        if (!channelDistChart) {
+          channelDistChart = echarts.init(document.getElementById('channel-dist-chart'));
+        }
+
+        const channelOption = {
+          tooltip: { trigger: 'item', formatter: '{b}: {c} 次访问 ({d}%)' },
+          legend: { orient: 'vertical', right: 10, top: 'center' },
+          series: [{
+            type: 'pie',
+            radius: ['40%', '70%'],
+            center: ['40%', '50%'],
+            avoidLabelOverlap: false,
+            itemStyle: { borderRadius: 8, borderColor: '#fff', borderWidth: 2 },
+            label: { show: false },
+            emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' } },
+            labelLine: { show: false },
+            data: channelData
+          }]
+        };
+        channelDistChart.setOption(channelOption);
+      }
+    }
+
+    // 显示错误
+    function showError(queryId, message) {
+      hideLoading(queryId);
+      console.error(`Query ${queryId} failed:`, message);
+    }
+
+    // 加载所有数据
+    async function loadAllData(forceRefresh) {
+      window.__PAGE_QUERIES__.forEach(query => showLoading(query.id));
+
+      const tasks = window.__PAGE_QUERIES__.map(query => {
+        return DataService.fetch(buildSql(query.id), query.assetId, forceRefresh)
+          .then(result => ({ id: query.id, data: result }))
+          .catch(e => Promise.reject({ queryId: query.id, message: e.message }));
+      });
+
+      const results = await Promise.allSettled(tasks);
+      results.forEach(r => {
+        if (r.status === 'fulfilled') {
+          updateCard(r.value.id, r.value.data);
+        } else {
+          showError(r.reason.queryId, r.reason.message);
+        }
+      });
+
+      const timeEl = document.getElementById('update-time');
+      if (timeEl) timeEl.textContent = '最近更新：' + new Date().toLocaleString('zh-CN');
+    }
+
+    // 重新加载图表
+    async function reloadCharts() {
+      await loadAllData(false);
+    }
+
+    // 强制刷新所有图表
+    async function refreshAllCharts() {
+      const btn = document.querySelector('.btn-primary');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 刷新中...';
+      }
+      await loadAllData(true);
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-rotate"></i> 刷新数据';
+      }
+    }
+
+    // 重置筛选器
+    function resetFilters() {
+      document.getElementById('start-date').value = '2026-07-02';
+      const today = new Date().toISOString().split('T')[0];
+      document.getElementById('end-date').value = today;
+      document.getElementById('platform-filter').value = '';
+      reloadCharts();
+    }
+
+    // 初始化
+    document.addEventListener('DOMContentLoaded', function() {
+      // 设置默认结束日期为今天
+      const today = new Date().toISOString().split('T')[0];
+      document.getElementById('end-date').value = today;
+      
+      // 初始化图表
+      trendChart = echarts.init(document.getElementById('trend-chart'));
+      eventDistChart = echarts.init(document.getElementById('event-dist-chart'));
+      platformDistChart = echarts.init(document.getElementById('platform-dist-chart'));
+      pageDistChart = echarts.init(document.getElementById('page-dist-chart'));
+      channelDistChart = echarts.init(document.getElementById('channel-dist-chart'));
+      
+      // 加载数据
+      loadAllData(false);
+    });
+
+    // 响应式
+    window.addEventListener('resize', function() {
+      if (trendChart) trendChart.resize();
+      if (eventDistChart) eventDistChart.resize();
+      if (platformDistChart) platformDistChart.resize();
+      if (pageDistChart) pageDistChart.resize();
+      if (channelDistChart) channelDistChart.resize();
+    });
+  </script>
+</body>
+</html>

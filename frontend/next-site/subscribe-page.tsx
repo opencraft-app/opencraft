@@ -25,7 +25,7 @@ import {
 import { buildPayPlan } from "@/lib/wx-pay";
 import { AGENTS_HOME_PATH } from "@/lib/agent-routes";
 import { captureProductEvent, PRODUCT_ANALYTICS_EVENTS } from "@/observability/posthog";
-import { trackDatongEvent } from "@/observability/datong-tracker";
+import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
 import { QRCodeSVG } from "qrcode.react";
 
@@ -1859,6 +1859,15 @@ export const SubscribePage = ({
     /* 售罄 / 未上线 / 暂无报价 / 询价加载中 套餐按钮已 disabled，这里再加一层保护，
        防止浏览器绕过 disabled 或竞态触发时以旧价/无价的口径下单。 */
     if (plan.soldOut || plan.comingSoon || plan.priceUnavailable || plan.pricingLoading) return;
+
+    /* 上报「立即开通」按钮点击 */
+    trackDatongClick("plan_select_btn", {
+      pgid: DATONG_PAGE_IDS.SUBSCRIBE,
+      params: {
+        plan: plan.id,
+        billing_period: paidBillingActive ? aiDuration.period : plan.raw.time_span,
+      },
+    });
 
     /* 检查龙虾个数是否已达该套餐上限 */
     if (bots.length >= plan.maxBots) {
