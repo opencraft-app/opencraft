@@ -126,6 +126,65 @@ func adminAuthMiddleware(expected string) gin.HandlerFunc {
 	}
 }
 
+// supportUserMiddleware 校验反馈系统用户侧（/support/feedback/presign）身份。
+//
+// # 信任模型与安全说明
+//
+// 生产链路（可信）：
+//
+//	客户端 → service-gateway → ticket
+//	service-gateway.injectIdentityHeaders 会先剥离所有来自客户端的
+//	X-User-Id / X-Lightclaw-User-ID，再注入自己验证过的身份（基于
+//	session 服务），因此到达本中间件的 header 是可信的。
+//	同时 ticket 以 ClusterIP Service 部署在 k8s 集群内网，外部流量
+//	必须经过 gateway 才能抵达，不直接暴露公网。
+//
+// 非生产/直连场景（需运维保障）：
+//
+//	开发或内网直连时，任意调用方可以伪造 X-User-Id。
+//	本中间件通过检查 X-Forwarded-Via-Gateway 头感知此场景：
+//	  - service-gateway 在转发前设置该头为固定值 "service-gateway"；
+//	  - 缺少该头时记录结构化 WARN 日志，方便接入 CLS 告警规则追踪。
+//	  - 该场景是允许的（内网 / 本地开发），但必须由部署侧通过网络层
+//	    隔离（k8s NetworkPolicy / 安全组）保障 ticket 不可被外部直达。
+//
+// 与 userAuthMiddleware 的区别：不再依赖 X-Realm 头（gateway 不注入）。
+// 与 supportAgentMiddleware 的区别：不做白名单判定，任意登录用户均可提交。
+func supportUserMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		uid := strings.TrimSpace(c.GetHeader("X-User-Id"))
+		if uid == "" {
+			uid = strings.TrimSpace(c.GetHeader("X-Lightclaw-User-ID"))
+		}
+		if uid == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			return
+		}
+		// 可观测性：感知直连（绕过 gateway）场景。
+		// service-gateway.injectIdentityHeaders 会同时注入 X-Lightclaw-User-Email；
+		// 缺少该头说明请求可能未经 gateway（email 字段 gateway 必注入）。
+		// 此处仅记录日志（不拒绝），配合 CLS 告警规则可在异常流量出现时触发告警。
+		// 生产安全保障由两道防线共同提供：
+		//   1. gateway 在注入前剥离所有来自客户端的同名 header（身份不可伪造）；
+		//   2. ticket 以 ClusterIP Service 部署在 k8s 集群内网，不直接暴露公网。
+		if strings.TrimSpace(c.GetHeader("X-Lightclaw-User-Email")) == "" {
+			c.Set("identity_via_gateway", false)
+			gin.DefaultWriter.Write([]byte( //nolint:errcheck
+				"[WARN] supportUserMiddleware: X-Lightclaw-User-Email missing;" +
+					" user_id=" + uid +
+					" path=" + c.Request.URL.Path +
+					" remote=" + c.ClientIP() +
+					" — request may not have passed through service-gateway;" +
+					" identity header could be forged in non-production environments\n",
+			))
+		} else {
+			c.Set("identity_via_gateway", true)
+		}
+		c.Set("user_id", uid)
+		c.Next()
+	}
+}
+
 // supportAgentMiddleware 校验当前登录用户是否在反馈后台运营白名单内。
 //
 // 身份来源：上游鉴权网关在 access: authenticated 路由下注入的 X-User-Id

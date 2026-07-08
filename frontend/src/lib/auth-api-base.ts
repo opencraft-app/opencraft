@@ -1,6 +1,25 @@
 export const isLightVelaEdgeOnePreviewHostname = (hostname: string): boolean =>
   hostname.startsWith("lightvela-preview-") && hostname.endsWith(".edgeone.cool");
 
+/**
+ * 已知的 lightclaw.pages.dev 前端子域到对应 sandbox 后端 host 的映射。
+ *
+ * 用途：非 production 环境下（例如 bj82.lightclaw.pages.dev），前端不能一律
+ * 落回 https://lightclaw.tech；需要落到与自己同环境的 service-gateway 公网
+ * host，例如 https://api-bj82.lightclaw.tech，否则 session cookie 与 CORS
+ * 白名单都对不上。
+ *
+ * 该映射来自仓库现网配置（argocd/services/service-gateway/*）：
+ *   - beijing-sandbox    → lightclaw.tech
+ *   - beijing-sandbox-2  → api-bj82.lightclaw.tech
+ *   - sandbox-bj-7       → api-sandbox-bj-7.lightclaw.tech
+ */
+/** @internal 暴露给单测使用；运行时应通过 resolveConfiguredAuthApiBaseUrl 间接访问。 */
+export const PAGES_DEV_SUBDOMAIN_TO_API_HOST: Record<string, string> = {
+  "bj82.lightclaw.pages.dev": "https://api-bj82.lightclaw.tech",
+  "sandbox-bj-7.lightclaw.pages.dev": "https://api-sandbox-bj-7.lightclaw.tech",
+};
+
 export const resolveConfiguredAuthApiBaseUrl = () => {
   const configured = (
     (typeof process !== "undefined" ? process.env.NEXT_PUBLIC_AUTH_API_BASE_URL : undefined)
@@ -22,6 +41,12 @@ export const resolveConfiguredAuthApiBaseUrl = () => {
     const hostname = window.location.hostname;
     if (hostname === "localhost" || hostname === "127.0.0.1") {
       return "https://lightclaw.tech";
+    }
+    // 命中 sandbox 专属子域时，路由到对应 sandbox 后端 host。
+    // 合法性校验：必须以 https:// 开头，防止映射表配置错误时返回无效值。
+    const sandboxHost = PAGES_DEV_SUBDOMAIN_TO_API_HOST[hostname];
+    if (sandboxHost && sandboxHost.startsWith("https://")) {
+      return sandboxHost;
     }
     if (
       hostname === "lightclaw.tech"

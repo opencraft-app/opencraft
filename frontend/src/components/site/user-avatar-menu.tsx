@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Bot, LayoutDashboard, User, LogOut, ChevronDown } from "lucide-react";
+import { Bot, LayoutDashboard, MessageSquare, User, LogOut, ChevronDown } from "lucide-react";
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { useState, useRef, useEffect } from "react";
@@ -174,6 +174,14 @@ export const UserAvatarMenu = () => {
               >
                 <User className={menuIconClass} />
                 {t("账号管理")}
+              </Link>
+              <Link
+                href="/support"
+                onClick={() => setOpen(false)}
+                className={menuItemClass}
+              >
+                <MessageSquare className={menuIconClass} />
+                {t("用户反馈")}
               </Link>
 
             </div>
