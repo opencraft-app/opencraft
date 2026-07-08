@@ -26,7 +26,7 @@ metadata:
   annotations:
     description: ""
     polaris.tkex.cloud.tencentyun.com/namespace: Production
-    polaris.tkex.cloud.tencentyun.com/polaris-site-zone: china
+    polaris.tkex.cloud.tencentyun.com/polaris-site-zone: singapore
     polaris.tkex.cloud.tencentyun.com/service: clgateway-intl
     polaris.tkex.cloud.tencentyun.com/sync-mode: general-sync
     polaris.tkex.cloud.tencentyun.com/weight: "100"
