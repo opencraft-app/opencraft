@@ -126,6 +126,31 @@ func adminAuthMiddleware(expected string) gin.HandlerFunc {
 	}
 }
 
+// supportUserMiddleware 校验反馈系统用户侧（/support/feedback/presign）身份。
+//
+// 与 userAuthMiddleware 的区别：不再依赖 X-Realm 头。
+// 身份来源：上游鉴权网关在 access: authenticated 路由下注入的
+// X-User-Id / X-Lightclaw-User-ID（service-gateway.injectIdentityHeaders
+// 同时注入两者）。网关会先剥离外部传入的同名头再注入自己验证过的身份，
+// 因此在生产链路中该头可信；开发/内网直连场景由部署侧保证。
+//
+// 与 supportAgentMiddleware 的区别：不做白名单判定——任意登录用户
+// 都可提交反馈；运营白名单仅用于 /list、/sign 后台读取通道。
+func supportUserMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		uid := strings.TrimSpace(c.GetHeader("X-User-Id"))
+		if uid == "" {
+			uid = strings.TrimSpace(c.GetHeader("X-Lightclaw-User-ID"))
+		}
+		if uid == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			return
+		}
+		c.Set("user_id", uid)
+		c.Next()
+	}
+}
+
 // supportAgentMiddleware 校验当前登录用户是否在反馈后台运营白名单内。
 //
 // 身份来源：上游鉴权网关在 access: authenticated 路由下注入的 X-User-Id

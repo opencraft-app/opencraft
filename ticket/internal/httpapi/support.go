@@ -186,22 +186,22 @@ type feedbackAttachmentDTO struct {
 }
 
 type feedbackRecordDTO struct {
-	ID           string                 `json:"id"`
-	AccountID    string                 `json:"accountId"`
-	FeedbackType string                 `json:"feedbackType"`
-	OtherText    *string                `json:"otherText"`
-	Description  string                 `json:"description"`
-	Subject      string                 `json:"subject"`
-	Status       string                 `json:"status"`
-	Source       string                 `json:"source"`
-	Site         string                 `json:"site"`
-	CreatedAt    string                 `json:"createdAt"`
-	UpdatedAt    string                 `json:"updatedAt"`
+	ID           string                  `json:"id"`
+	AccountID    string                  `json:"accountId"`
+	FeedbackType string                  `json:"feedbackType"`
+	OtherText    *string                 `json:"otherText"`
+	Description  string                  `json:"description"`
+	Subject      string                  `json:"subject"`
+	Status       string                  `json:"status"`
+	Source       string                  `json:"source"`
+	Site         string                  `json:"site"`
+	CreatedAt    string                  `json:"createdAt"`
+	UpdatedAt    string                  `json:"updatedAt"`
 	Attachments  []feedbackAttachmentDTO `json:"attachments"`
-	ContactInfo  *string                `json:"contactInfo"`
-	Profile      map[string]any         `json:"profile,omitempty"`
-	Category     string                 `json:"category"`
-	BugInfo      map[string]any         `json:"bugInfo,omitempty"`
+	ContactInfo  *string                 `json:"contactInfo"`
+	Profile      map[string]any          `json:"profile,omitempty"`
+	Category     string                  `json:"category"`
+	BugInfo      map[string]any          `json:"bugInfo,omitempty"`
 }
 
 func normalizeAttachment(raw map[string]any) *feedbackAttachmentDTO {
@@ -340,22 +340,25 @@ func (c *SupportCosClient) listFeedback(ctx context.Context, site string) ([]fee
 	keySet := make(map[string]struct{})
 	for _, prefix := range prefixes {
 		resp, _, err := c.internalClient.Bucket.Get(ctx, &cos.BucketGetOptions{
-			Prefix:   prefix,
-			MaxKeys:  1000,
+			Prefix:  prefix,
+			MaxKeys: 1000,
 		})
 		if err != nil {
 			return nil, err
 		}
 		for _, obj := range resp.Contents {
-			if obj.Key != nil {
-				keySet[*obj.Key] = struct{}{}
+			// cos-go-sdk-v5 v0.7.73 起 Object.Key 是 string 而非 *string；
+			// 空串视为无 key，跳过。
+			if obj.Key != "" {
+				keySet[obj.Key] = struct{}{}
 			}
 		}
 	}
 
 	records := make([]feedbackRecordDTO, 0, len(keySet))
 	for key := range keySet {
-		objResp, err := c.internalClient.Object.Get(ctx, key)
+		// Object.Get 在当前 SDK 版本要求第三个参数（*ObjectGetOptions），nil 即使用默认。
+		objResp, err := c.internalClient.Object.Get(ctx, key, nil)
 		if err != nil {
 			continue
 		}
@@ -392,13 +395,14 @@ type presignTarget struct {
 }
 
 type presignResponse struct {
-	ID         string         `json:"id"`
-	Record     presignTarget  `json:"record"`
+	ID          string          `json:"id"`
+	Record      presignTarget   `json:"record"`
 	Attachments []presignTarget `json:"attachments"`
 }
 
 // registerSupportRoutes 挂反馈系统路由。
-//   - /presign（用户提交）：userAuthMiddleware，任意登录用户可调用。
+//   - /presign（用户提交）：supportUserMiddleware，任意登录用户可调用。
+//     身份来自上游鉴权网关注入的 X-User-Id / X-Lightclaw-User-ID，不依赖 X-Realm。
 //   - /list、/sign（后台读取/下载）：supportAgentMiddleware，仅白名单内运营可调用。
 //     身份来自上游鉴权网关在 access: authenticated 路由下注入的 X-User-Id
 //     （即运营各自 lightclaw 账号的登录态），不再依赖共享 X-Admin-Token。
@@ -416,7 +420,13 @@ func registerSupportRoutes(r *gin.Engine, svc *service.Service, cosClient *Suppo
 	}
 
 	// 用户侧：提交反馈（任意登录用户）。
-	userGroup := r.Group("/support/feedback", userAuthMiddleware())
+	//
+	// 身份来源与运营侧一致：上游鉴权网关在 access: authenticated 路由下
+	// 注入的 X-User-Id / X-Lightclaw-User-ID。与老 /tickets 骨架期用的
+	// userAuthMiddleware 不同的是：这里不再依赖 X-Realm 头
+	// （service-gateway.injectIdentityHeaders 并不注入 X-Realm，
+	// 若沿用 userAuthMiddleware 会把合法登录请求恒判 401）。
+	userGroup := r.Group("/support/feedback", supportUserMiddleware())
 	userGroup.POST("/presign", func(c *gin.Context) {
 		var req presignRequest
 		if !bindAndValidateJSON(c, &req) {
@@ -459,8 +469,8 @@ func registerSupportRoutes(r *gin.Engine, svc *service.Service, cosClient *Suppo
 		}
 
 		c.JSON(http.StatusOK, presignResponse{
-			ID:         id,
-			Record:     presignTarget{Key: recordKey, UploadURL: recordURL.String()},
+			ID:          id,
+			Record:      presignTarget{Key: recordKey, UploadURL: recordURL.String()},
 			Attachments: attachments,
 		})
 	})
