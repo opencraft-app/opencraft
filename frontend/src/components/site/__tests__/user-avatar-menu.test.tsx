@@ -175,4 +175,24 @@ describe("UserAvatarMenu", () => {
 
     expect(screen.getByRole("link", { name: "工作台" })).toHaveAttribute("href", "/agents/workbench");
   });
+
+  it("renders a user feedback entry linking to /support", () => {
+    useSession.mockReturnValue({
+      session: {
+        user: { name: "海盐小猫", avatarUrl: "https://example.com/avatar.png" },
+        currentSubscription: { code: "launch" },
+      },
+      signOut: vi.fn(),
+    });
+    useOpenClaw.mockReturnValue({
+      activePass: null,
+    });
+
+    render(<UserAvatarMenu />);
+
+    fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
+
+    const feedbackLink = screen.getByRole("link", { name: "用户反馈" });
+    expect(feedbackLink).toHaveAttribute("href", "/support");
+  });
 });
