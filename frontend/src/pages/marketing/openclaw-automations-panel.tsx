@@ -20,6 +20,11 @@ import { createPortal } from "react-dom";
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { useT } from "@/i18n/t";
 import { isGlobal } from "@/lib/region";
+import { ScenarioEnableConfirmModal } from "./scenario-tasks/ScenarioEnableConfirmModal";
+import { ScenarioInstallModal } from "./scenario-tasks/ScenarioInstallModal";
+import { ScenarioTaskGrid } from "./scenario-tasks/ScenarioTaskGrid";
+import { getScenarioTaskPack, SCENARIO_TASK_PACKS, type ScenarioTaskId, type ScenarioTaskPack } from "./scenario-tasks/scenario-packs";
+import { buildScenarioTaskDraft, isScenarioRecurringJobName, type ScenarioTaskDraft } from "./scenario-tasks/scenario-task-builder";
 import {
   CronCommandError,
   createCronJobWithScriptRollback,
@@ -54,6 +59,11 @@ const AUTOMATION_PROMPT_MAX_LENGTH = 1000;
 const CHAT_ID_MAX_LENGTH = 60;
 const CHINESE_TEXT_RE = /[\u3400-\u9fff\uf900-\ufaff]/;
 const CHINESE_TEXT_RE_GLOBAL = /[\u3400-\u9fff\uf900-\ufaff]/g;
+type ScenarioMutationStatus = "creating" | "enabling";
+type ScenarioReminderNotice = {
+  draft: ScenarioTaskDraft;
+  kind: "preview" | "recurring";
+};
 
 /** 顶部 toast；与 settings 主页 SkillInstallToast 视觉一致 */
 function ErrorToast({ message, onClose, tone = "error" }: { message: string; onClose: () => void; tone?: "error" | "success" | "info" }) {
@@ -81,6 +91,87 @@ function ErrorToast({ message, onClose, tone = "error" }: { message: string; onC
     </div>,
     document.body,
   );
+}
+
+function ScenarioReminderBanner({
+  notice,
+  onDismiss,
+  onViewCreated,
+  onEnable,
+}: {
+  notice: ScenarioReminderNotice;
+  onDismiss: () => void;
+  onViewCreated: () => void;
+  onEnable: () => void;
+}) {
+  const t = useT();
+  const pack = getScenarioTaskPack(notice.draft.scenarioId);
+  const isPreview = notice.kind === "preview";
+
+  return (
+    <section className="flex flex-wrap items-start justify-between gap-3 rounded-md border border-black/[0.08] bg-white px-4 py-3 text-sm shadow-[0_4px_24px_rgba(0,0,0,0.03),0_1px_2px_rgba(0,0,0,0.02)]">
+      <div className="flex min-w-0 flex-1 gap-3">
+        <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[#EEF4FF] text-[#315FAD]">
+          <BellRing className="h-4 w-4" />
+        </span>
+        <div className="min-w-0">
+          <h3 className="truncate font-semibold text-black/88" title={notice.draft.generatedName}>
+            {isPreview
+              ? t("已开始试跑：{{name}}", { name: notice.draft.generatedName })
+              : t("已添加自动任务：{{name}}", { name: notice.draft.generatedName })}
+          </h3>
+          <p className="mt-1 text-xs leading-5 text-black/55">
+            {isPreview
+              ? t("Hermes 已开始处理，结果会稍后推送到{{deliver}}，也会出现在最近执行。", { deliver: notice.draft.generatedDeliverLabel })
+              : t("后续会按{{frequency}}自动提醒，也可以在已生效任务里管理。", { frequency: pack.defaultFrequencyLabel })}
+          </p>
+        </div>
+      </div>
+      <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+        {isPreview && (
+          <button
+            type="button"
+            onClick={onEnable}
+            className="inline-flex h-8 items-center justify-center rounded-md bg-black px-3 text-xs font-semibold text-white transition hover:bg-black/85"
+          >
+            {t("添加为自动任务")}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onViewCreated}
+          className="inline-flex h-8 items-center justify-center rounded-md border border-black/[0.08] bg-white px-3 text-xs font-semibold text-black/65 transition hover:bg-black/[0.04]"
+        >
+          {t("查看已生效任务")}
+        </button>
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-black/45 transition hover:bg-black/[0.04] hover:text-black/80"
+          aria-label={t("关闭")}
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+    </section>
+  );
+}
+
+async function sendScenarioStartNotice(
+  botId: string,
+  draft: ScenarioTaskDraft,
+  t: ReturnType<typeof useT>,
+): Promise<void> {
+  if (draft.generatedDeliver === "local") return;
+  const message = t("{{name}} 已开始处理，结果会稍后推送到{{deliver}}。", {
+    name: draft.generatedName,
+    deliver: draft.generatedDeliverLabel,
+  });
+  try {
+    await execCommand(botId, buildHermesSendCommand(draft.generatedDeliver, "", message));
+  } catch {
+    // 接单确认消息失败不影响试跑任务本身，结果仍会按 Cron deliver 回传。
+  }
 }
 
 function useHoverTooltipPosition<T extends HTMLElement>() {
@@ -263,6 +354,11 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
   const [creating, setCreating] = useState(false);
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [creatingFromTemplate, setCreatingFromTemplate] = useState<AutomationTemplate | null>(null);
+  const [scenarioInstallPack, setScenarioInstallPack] = useState<ScenarioTaskPack | null>(null);
+  const [scenarioDraft, setScenarioDraft] = useState<ScenarioTaskDraft | null>(null);
+  const [scenarioPreviewStatus, setScenarioPreviewStatus] = useState<ScenarioMutationStatus | null>(null);
+  const [scenarioReminderNotice, setScenarioReminderNotice] = useState<ScenarioReminderNotice | null>(null);
+  const [scenarioEnableConfirmOpen, setScenarioEnableConfirmOpen] = useState(false);
   const [pendingCreateMode, setPendingCreateMode] = useState<"blank" | "template" | null>(null);
   const [confirmCreateOverLimit, setConfirmCreateOverLimit] = useState(false);
   const [viewingJob, setViewingJob] = useState<CronJob | null>(null);
@@ -284,6 +380,11 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
   const visibleJobs = useMemo(() => jobs.filter((job) => !isCronJobExpiredBeyondGrace(job)), [jobs]);
   const jobLimitReached = visibleJobs.length >= MAX_CRON_JOBS_PER_BOT;
   const templates = useMemo(() => getAutomationTemplates(t), [t]);
+  const installedScenarioIds = useMemo(() => new Set(
+    SCENARIO_TASK_PACKS
+      .filter((pack) => visibleJobs.some((job) => isScenarioRecurringJobName({ generatedName: pack.name }, job.name) && !isOnceCronJob(job)))
+      .map((pack) => pack.id),
+  ), [visibleJobs]);
 
   const refreshChannelStatus = useCallback(async () => {
     if (!botId) {
@@ -323,6 +424,7 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
       errorTimerRef.current = null;
     }, 5000);
   }, []);
+
   useEffect(() => () => {
     if (errorTimerRef.current) window.clearTimeout(errorTimerRef.current);
     if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
@@ -421,6 +523,84 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
   useEffect(() => {
     void refreshChannelStatus();
   }, [refreshChannelStatus]);
+
+  const openScenarioInstaller = useCallback((pack: ScenarioTaskPack) => {
+    setScenarioInstallPack(pack);
+  }, []);
+
+  const handleScenarioRunOnce = useCallback(async (draft: ScenarioTaskDraft) => {
+    if (!botId) return;
+    if (jobLimitReached) {
+      showError(t("自动任务数量已达上限，请先删除不需要的任务后再试跑场景"));
+      return;
+    }
+    const pack = getScenarioTaskPack(draft.scenarioId);
+    const nextDraft = buildScenarioTaskDraft({
+      pack,
+      values: draft.values,
+      now: new Date(),
+      deliver: draft.generatedDeliver,
+    });
+    setScenarioDraft(nextDraft);
+    setScenarioPreviewStatus("creating");
+    try {
+      await createCronJobWithScriptRollback(botId, {
+        name: nextDraft.oneShotJobName,
+        prompt: nextDraft.generatedPrompt,
+        schedule: nextDraft.oneShotSchedule,
+        deliver: nextDraft.generatedDeliver,
+      });
+      void sendScenarioStartNotice(botId, nextDraft, t);
+      const list = await refreshCreatedJobs(false);
+      await refreshRecentRuns(list ?? jobsRef.current, false);
+      setScenarioInstallPack(null);
+      setScenarioPreviewStatus(null);
+      setScenarioReminderNotice({ draft: nextDraft, kind: "preview" });
+      setActiveView("created");
+      showNotice(t("已开始试跑，结果会稍后推送"), "success");
+    } catch (err) {
+      const message = err instanceof CronCommandError ? err.message : err instanceof Error ? err.message : String(err);
+      setScenarioPreviewStatus(null);
+      showError(t("创建场景试跑失败：{{message}}", { message }));
+    }
+  }, [botId, jobLimitReached, refreshCreatedJobs, refreshRecentRuns, showError, showNotice, t]);
+
+  const handleScenarioEnableDirect = useCallback((draft: ScenarioTaskDraft) => {
+    setScenarioInstallPack(null);
+    setScenarioDraft(draft);
+    setScenarioEnableConfirmOpen(true);
+    setScenarioReminderNotice(null);
+  }, []);
+
+  const handleScenarioEnableConfirm = useCallback(async () => {
+    if (!botId || !scenarioDraft) return;
+    const scenarioTrialJob = jobsRef.current.find((job) => job.name === scenarioDraft.oneShotJobName && isOnceCronJob(job));
+    if (jobLimitReached && !scenarioTrialJob) {
+      showError(t("自动任务数量已达上限，请先删除不需要的任务后再启用场景"));
+      return;
+    }
+    setScenarioPreviewStatus("enabling");
+    try {
+      if (jobLimitReached && scenarioTrialJob) {
+        await removeCronJob(botId, scenarioTrialJob.id);
+      }
+      await createCronJobWithScriptRollback(botId, {
+        name: scenarioDraft.generatedName,
+        prompt: scenarioDraft.generatedPrompt,
+        schedule: scenarioDraft.recurringSchedule,
+        deliver: scenarioDraft.generatedDeliver,
+      });
+      setScenarioEnableConfirmOpen(false);
+      await refreshAll();
+      setScenarioPreviewStatus(null);
+      setScenarioReminderNotice({ draft: scenarioDraft, kind: "recurring" });
+      showNotice(t("已添加为自动任务，后续会按设置频率提醒"), "success");
+    } catch (err) {
+      const message = err instanceof CronCommandError ? err.message : err instanceof Error ? err.message : String(err);
+      setScenarioPreviewStatus(null);
+      showError(t("添加场景自动任务失败：{{message}}", { message }));
+    }
+  }, [botId, jobLimitReached, refreshAll, scenarioDraft, showError, showNotice, t]);
 
   const handleAction = useCallback(async (
     job: CronJob,
@@ -539,6 +719,29 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
         )}
       />
 
+      {!isGlobal && (
+        <ScenarioTaskGrid
+          packs={SCENARIO_TASK_PACKS}
+          installedScenarioIds={installedScenarioIds}
+          compact={visibleJobs.length > 0}
+          onRunOnce={openScenarioInstaller}
+          onSchedule={openScenarioInstaller}
+        />
+      )}
+
+      {!isGlobal && scenarioReminderNotice && (
+        <ScenarioReminderBanner
+          notice={scenarioReminderNotice}
+          onDismiss={() => setScenarioReminderNotice(null)}
+          onViewCreated={() => setActiveView("created")}
+          onEnable={() => {
+            setScenarioDraft(scenarioReminderNotice.draft);
+            setScenarioReminderNotice(null);
+            setScenarioEnableConfirmOpen(true);
+          }}
+        />
+      )}
+
       <div className="flex items-center justify-between gap-3">
         <div className="inline-flex rounded-lg bg-black/[0.04] p-1">
           <button
@@ -649,6 +852,32 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
             await refreshAll();
           }}
           onError={showError}
+        />
+      )}
+
+      {!isGlobal && scenarioInstallPack && (
+        <ScenarioInstallModal
+          pack={scenarioInstallPack}
+          botId={botId}
+          submitting={scenarioPreviewStatus === "creating" || scenarioPreviewStatus === "enabling"}
+          initialValues={scenarioDraft?.scenarioId === scenarioInstallPack.id ? scenarioDraft.values : undefined}
+          initialDeliver={scenarioDraft?.scenarioId === scenarioInstallPack.id ? scenarioDraft.generatedDeliver : undefined}
+          enabledChannels={enabledChannels}
+          channelStatus={channelStatus}
+          onRefreshChannels={refreshChannelStatus}
+          onClose={() => setScenarioInstallPack(null)}
+          onRunOnce={handleScenarioRunOnce}
+          onEnableDirect={handleScenarioEnableDirect}
+        />
+      )}
+
+      {!isGlobal && scenarioEnableConfirmOpen && scenarioDraft && (
+        <ScenarioEnableConfirmModal
+          pack={getScenarioTaskPack(scenarioDraft.scenarioId)}
+          draft={scenarioDraft}
+          busy={scenarioPreviewStatus === "enabling"}
+          onCancel={() => setScenarioEnableConfirmOpen(false)}
+          onConfirm={handleScenarioEnableConfirm}
         />
       )}
 
@@ -917,7 +1146,7 @@ function CronJobCard({
             )}
             {expired && (
               <span className="rounded-full bg-black/[0.08] px-2 py-0.5 text-xs text-black/60">
-                {t("已过期")}
+                {t("已执行")}
               </span>
             )}
             {paused && (
@@ -1029,6 +1258,10 @@ export function isCronJobExpiredBeyondGrace(job: CronJob): boolean {
   return !Number.isNaN(d.getTime()) && Date.now() - d.getTime() > EXPIRED_CRON_JOB_HIDE_AFTER_MS;
 }
 
+function isScenarioTrialJob(job: CronJob): boolean {
+  return isOnceCronJob(job) && job.name.startsWith("试跑 - ");
+}
+
 /** 把 cron schedule + next_run_at 翻译成人话。
  *  - once：输出「单次 2026-05-26 09:00」，过期状态由卡片标签展示
  *  - interval：every 30m → 每 30 分钟；every 60m → 每 1 小时
@@ -1042,6 +1275,10 @@ function formatScheduleFriendly(
   if (job.lightvela_schedule?.kind === "daily_times") {
     const times = normalizeDailyTimes(job.lightvela_schedule.times);
     return t("每天 {{at}}", { at: times.join("、") });
+  }
+
+  if (isScenarioTrialJob(job)) {
+    return t("立即开始");
   }
 
   const display = (job.schedule.display || job.schedule.expr || "").trim();
@@ -1196,9 +1433,11 @@ function CronJobDetailModal({
 }) {
   const t = useT();
   const paused = isCronJobPaused(job);
+  const isOnceJob = isOnceCronJob(job);
   const nextRunAt = getEffectiveWindowStatus(job.effective_window) === "ended" ? null : job.next_run_at;
   const name = job.name || t("未命名任务");
-  const showEffectiveWindow = !isOnceCronJob(job);
+  const showEffectiveWindow = !isOnceJob;
+  const nextRunLabel = isOnceJob ? "—" : nextRunAt ? formatTime(nextRunAt) : "—";
   return createPortal(
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 py-8"
@@ -1240,9 +1479,7 @@ function CronJobDetailModal({
               value={formatLastRun(lastAgentRun.run_at, lastAgentRun.status, t)}
             />
           )}
-          {nextRunAt && (
-            <DetailRow label={t("下次执行")} value={formatTime(nextRunAt)} />
-          )}
+          <DetailRow label={t("下次执行")} value={nextRunLabel} />
           {showEffectiveWindow && (
             <DetailRow
               label={t("生效时间段")}
@@ -3631,7 +3868,7 @@ export function buildHermesSendTarget(platform: string, chatId: string): string 
   return normalizedChatId ? `${normalizedPlatform}:${normalizedChatId}` : normalizedPlatform;
 }
 
-export function buildHermesSendTestCommand(platform: string, chatId: string, message: string): string {
+export function buildHermesSendCommand(platform: string, chatId: string, message: string): string {
   return [
     "hermes",
     "send",
@@ -3639,6 +3876,10 @@ export function buildHermesSendTestCommand(platform: string, chatId: string, mes
     shellQuote(buildHermesSendTarget(platform, chatId)),
     shellQuote(message),
   ].join(" ");
+}
+
+export function buildHermesSendTestCommand(platform: string, chatId: string, message: string): string {
+  return buildHermesSendCommand(platform, chatId, message);
 }
 
 type HermesChannelStatusEntry = {
