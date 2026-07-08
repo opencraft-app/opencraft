@@ -94,3 +94,4 @@ go test ./...
 - 避免大段粘贴日志或生成冗长解释，优先给出最小可复现命令。
 
 <!-- ci-retrigger: 2026-06-04 republish sandbox/k8s/base to gitops to restore POD_NAMESPACE-aware ingressproxy shard routing for sandbox-bj-7 (overwritten by 1c0bbf021 promote) -->
+<!-- ci-retrigger: 2026-07-08 build sandbox shprod images from latest master for billing rollout -->
