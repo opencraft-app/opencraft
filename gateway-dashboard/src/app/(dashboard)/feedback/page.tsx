@@ -322,86 +322,6 @@ export default function FeedbackPage() {
     }
   }
 
-  // ⚠ 本地调试专用：注入 3 条示例数据，用于肉眼验证筛选/搜索/详情弹窗表现。
-  // 上线前需删除（含 UI 按钮）。
-  function injectDemoRecords() {
-    const now = new Date().toISOString();
-    const demo: FeedbackRecord[] = [
-      {
-        id: "fb_demo_suggestion_experience",
-        accountId: "usr_demo_alice",
-        feedbackType: FEEDBACK_TYPE.ExperienceIssue,
-        otherText: null,
-        description: "登录后头像旁边的下拉打开慢，建议加个轻量的 loading。",
-        subject: "登录后头像下拉打开慢",
-        site: "cn",
-        category: FEEDBACK_CATEGORY.Suggestion,
-        profile: {
-          source: "朋友/同事推荐",
-          role: "产品经理",
-          aiGoal: "把日常的用户访谈自动整理成周报",
-          frequency: "几乎每天",
-          industry: "互联网/软件",
-        },
-        bugInfo: null,
-        createdAt: now,
-        updatedAt: now,
-        attachments: [],
-        contactInfo: "alice@example.com",
-      },
-      {
-        id: "fb_demo_bug_upload",
-        accountId: "usr_demo_bob",
-        feedbackType: FEEDBACK_TYPE.BugReport,
-        otherText: null,
-        description: "上传附件时报“获取上传签名失败，请稍后重试”，多次重试也不行。",
-        subject: "上传附件时提示获取签名失败",
-        site: "cn",
-        category: FEEDBACK_CATEGORY.Bug,
-        profile: null,
-        bugInfo: {
-          frequency: "每次必现",
-          expected: "点击上传后能正常拿到预签名并成功上传。",
-        },
-        createdAt: now,
-        updatedAt: now,
-        attachments: [
-          {
-            fileName: "screenshot.png",
-            contentType: "image/png",
-            size: 128 * 1024,
-            storageKey: "support-feedback/cn/attachments/fb_demo_bug_upload/screenshot.png",
-          },
-        ],
-        contactInfo: "wx: bob_demo",
-      },
-      {
-        id: "fb_demo_suggestion_feature",
-        accountId: "usr_demo_charlie",
-        feedbackType: FEEDBACK_TYPE.FeatureRequest,
-        otherText: null,
-        description: "希望反馈后台能按账号 ID 与关键词搜索，量大时找不到。",
-        subject: "反馈后台希望增加搜索/筛选",
-        site: "cn",
-        category: FEEDBACK_CATEGORY.Suggestion,
-        profile: {
-          source: "官网/文档",
-          role: "运营/其他",
-          aiGoal: "从大量用户反馈里快速定位同一问题",
-          frequency: "每周几次",
-          industry: "互联网/软件",
-        },
-        bugInfo: null,
-        createdAt: now,
-        updatedAt: now,
-        attachments: [],
-        contactInfo: null,
-      },
-    ];
-    setRecords(demo);
-    setPage(1);
-  }
-
   const filteredRecords = useMemo(() => {
     return records.filter((record) => {
       if (categoryFilter !== CATEGORY_FILTER_ALL) {
@@ -654,10 +574,6 @@ export default function FeedbackPage() {
         <div className="flex flex-wrap items-center gap-3">
           <Button onClick={load} disabled={isLoading}>
             {isLoading ? "加载中..." : "加载反馈"}
-          </Button>
-          {/* ⚠ 本地调试专用按钮，上线前需删除。 */}
-          <Button variant="outline" onClick={injectDemoRecords} disabled={isLoading}>
-            注入示例数据
           </Button>
           <span className="text-sm text-muted-foreground">国内站反馈</span>
 

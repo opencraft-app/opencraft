@@ -357,8 +357,9 @@ func (c *SupportCosClient) listFeedback(ctx context.Context, site string) ([]fee
 
 	records := make([]feedbackRecordDTO, 0, len(keySet))
 	for key := range keySet {
-		// Object.Get 在当前 SDK 版本要求第三个参数（*ObjectGetOptions），nil 即使用默认。
-		objResp, err := c.internalClient.Object.Get(ctx, key, nil)
+		// Object.Get 在当前 SDK 版本要求第三个参数（*ObjectGetOptions）；
+		// 显式传空选项体（而非 nil）使语义更清晰，且未来 SDK 升级时更容易定位。
+		objResp, err := c.internalClient.Object.Get(ctx, key, &cos.ObjectGetOptions{})
 		if err != nil {
 			continue
 		}
