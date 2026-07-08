@@ -34,7 +34,6 @@ export type DatongClient = {
     eventName: string;
     pgid?: string;
     businessParams?: Record<string, unknown>;
-    pageParams?: Record<string, unknown>;
   }) => void;
   setPublicParams?: (params: Record<string, unknown>) => void;
   // startReport 刷新 waitReport 缓存的事件，开始真正上报
@@ -705,7 +704,7 @@ export function reportDatongPageEvent(
   client.reportEvent({
     eventName,
     pgid: options?.pgid,
-    pageParams: {
+    businessParams: {
       ...safeParams,
       eid: options?.eid,
       ename: resolveElementName(options?.eid),
