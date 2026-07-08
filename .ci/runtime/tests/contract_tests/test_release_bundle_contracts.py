@@ -625,15 +625,21 @@ class ReleaseBundleContractTests(unittest.TestCase):
         workflow_text = (REPO_ROOT / ".ci/frontend-preview.yml").read_text()
 
         self.assertIn('FRONTEND_PREVIEW_RUNTIME_REF="${FRONTEND_PREVIEW_RUNTIME_REF:-origin/master}"', workflow_text)
-        self.assertIn("git fetch --no-tags --depth=1 origin +master:refs/remotes/origin/master", workflow_text)
+        self.assertIn("GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}", workflow_text)
+        self.assertIn("source .ci/init.sh", workflow_text)
+        self.assertIn("ci_git_fetch_origin --no-tags --depth=1 +refs/heads/master:refs/remotes/origin/master", workflow_text)
         self.assertIn('git archive --format=tar "$FRONTEND_PREVIEW_RUNTIME_REF" .ci', workflow_text)
         self.assertIn('bash "$FRONTEND_PREVIEW_RUNTIME_CI_DIR/runtime/commands/publish_frontend_preview.sh"', workflow_text)
         self.assertNotIn('"$PNPM_BIN" exec vite build', workflow_text)
 
         command_text = (REPO_ROOT / ".ci/runtime/commands/publish_frontend_preview.sh").read_text()
         self.assertIn('"$PNPM_BIN" run build:next', command_text)
+        self.assertIn('rm -rf .next out "$output_dir"', command_text)
         self.assertIn('source "$CI_DIR/init.sh"', command_text)
         self.assertIn('python3 "$CI_DIR/runtime/commands/upload_staticpages_preview.py"', command_text)
+
+        package_json = json.loads((REPO_ROOT / "frontend/package.json").read_text())
+        self.assertIn("node scripts/clean-next-build-state.mjs", package_json["scripts"]["build:next"])
 
     def test_frontend_preview_builds_cn_and_intl_with_separate_api_bases(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/runtime/commands/publish_frontend_preview.sh").read_text()
