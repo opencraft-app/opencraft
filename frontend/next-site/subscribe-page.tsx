@@ -8,7 +8,10 @@ import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } fro
 import { useOpenClaw } from "@/contexts/openclaw-context";
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
-import { usePaidBillingEnabled } from "@/contexts/runtime-config-context";
+import {
+  usePaidBillingEnabled,
+  useRealnamePhoneVerificationEnabled,
+} from "@/contexts/runtime-config-context";
 import { InviteCodeModal } from "@/components/site/login-modal";
 import { RepositoryError } from "@/repositories/http-repositories";
 import type { Bundle } from "@/domain/types";
@@ -263,6 +266,15 @@ const mapBundleToPlan = (
      此时 bundle.price 仍是上一时长（如月付）的旧价，若原样展示会出现「¥49 / 年」这种严重误导，
      故价格换成 "——"、单位清空、CTA 禁用，直到新价格回来。 */
   isPricingLoading: boolean = false,
+  /* 当前用户是否已开通套餐：仅用于转化引导文案。
+     未开通套餐（新用户）时，第一张主推卡（启航 Launch，index===0）的 CTA 文案改为「免费开通」，
+     以降低开通决策门槛、提升注册到开通转化；已开通用户维持原「立即开通」文案。 */
+  isSubscribed: boolean = false,
+  /* 「免费开通」引导的前提开关：仅当付费计费开关与实名手机验证开关同时关闭时才允许改文案。
+     （对应 localStorage 覆盖 lightclaw:features.paidBillingEnabled=false
+       与 lightclaw:features.realnamePhoneVerificationEnabled=false 的场景）
+     两开关任一开启时，一律维持原「立即开通」文案，不做免费引导。 */
+  freeGuideAllowed: boolean = false,
 ): PlanInfo => {
   /* 静态标记，运行时一次性调用以让字典加载后端下发中文的翻译 */
   __markBundleBackendStringsForI18n(t);
@@ -364,14 +376,23 @@ const mapBundleToPlan = (
   }
 
   /** 国内站价格不可用时按「暂无报价」展示禁用 CTA，避免点击后报错。
-   *  询价加载中时专门细分为 "询价中..."，区别于永久性的 "暂无报价"。 */
+   *  询价加载中时专门细分为 "询价中..."，区别于永久性的 "暂无报价"。
+   *
+   *  转化引导：正常可购买态下，第一张主推卡（启航 Launch，index===0）在用户未开通套餐时，
+   *  文案由「立即开通」改为「免费开通」；已开通用户及其他套餐卡维持「立即开通」。
+   *  前提：仅当付费计费开关与实名手机验证开关同时关闭（freeGuideAllowed=true）时才生效，
+   *  任一开关开启时一律维持「立即开通」。
+   *  售罄 / 询价中 / 暂无报价等禁用态文案优先级更高，不受此引导文案影响。 */
+  const isFeaturedFreeGuide = freeGuideAllowed && index === 0 && !isSubscribed;
   const ctaLabel = soldOut
     ? t("已售罄")
     : showPricingPlaceholder
       ? t("询价中...")
       : priceUnavailable
         ? t("暂无报价")
-        : t("立即开通");
+        : isFeaturedFreeGuide
+          ? t("免费开通")
+          : t("立即开通");
 
   return {
     id: bundle.bundle_id,
@@ -394,7 +415,9 @@ const mapBundleToPlan = (
       : (isGlobal ? "/ month" : t("/ 月")),
     /* 国际站中英文都展示促销标签：英文为 Limited free，中文为限时免费；国内站保持原有中文标签。 */
     promoTag,
-    description: t("尝鲜体验，从一个 Agent 开始"),
+    /* freeGuideAllowed（两开关同时关闭）时去掉卡片描述「尝鲜体验，从一个 Agent 开始」，
+       其余情况维持原文案。 */
+    description: freeGuideAllowed ? "" : t("尝鲜体验，从一个 Agent 开始"),
     features,
     ctaLabel,
     ctaStyle: index === 0 ? "primary" : "outline",
@@ -732,18 +755,20 @@ const PlanCard = ({
               {plan.badge}
             </span>
           )}
-          {/* Description - 移到套餐名下方 */}
-          <p
-            style={{
-              fontSize: 14,
-              fontWeight: 400,
-              lineHeight: 1.43,
-              color: colors.warmGray500,
-              margin: 0,
-            }}
-          >
-            {plan.description}
-          </p>
+          {/* Description - 移到套餐名下方；为空时不渲染，避免留下空段落间距 */}
+          {plan.description ? (
+            <p
+              style={{
+                fontSize: 14,
+                fontWeight: 400,
+                lineHeight: 1.43,
+                color: colors.warmGray500,
+                margin: 0,
+              }}
+            >
+              {plan.description}
+            </p>
+          ) : null}
         </div>
 
         {/* Price - 未上线占位卡：有价格时正常展示价格，无价格时显示「敬请期待」；售罄套餐用「已售罄」遮盖价格 */}
@@ -1437,6 +1462,12 @@ export const SubscribePage = ({
 
   const paidBillingEnabled = usePaidBillingEnabled();
   const paidBillingActive = isPaidBillingEnabled(paidBillingEnabled);
+  const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
+  /* 「免费开通」引导前提：付费计费开关与实名手机验证开关必须同时关闭。
+     对应 localStorage 覆盖 lightclaw:features.paidBillingEnabled=false
+     且 lightclaw:features.realnamePhoneVerificationEnabled=false 的场景。
+     任一开关开启时不做免费引导，CTA 维持「立即开通」。 */
+  const freeGuideAllowed = !paidBillingEnabled && !realnamePhoneVerificationEnabled;
   const quotaExceeded = bots.length >= user.plan.maxBots;
   const header = (
     <SubscribePageHeader
@@ -1537,7 +1568,17 @@ export const SubscribePage = ({
        仅对 paidBillingActive 生效由 mapBundleToPlan 内部 paid 门控进一步收敛。 */
     const isPricingLoading = bundlesLoading;
     const fromBackend = displayable.map((b, idx) => {
-      const plan = mapBundleToPlan(b, idx, t, paidBillingActive, aiDurationKey, isPricingLoading);
+      /* 保留 isSubscribed / freeGuideAllowed 两个参数，用于启航版卡片「免费开通」引导文案与内测免费副标题门控。 */
+      const plan = mapBundleToPlan(
+        b,
+        idx,
+        t,
+        paidBillingActive,
+        aiDurationKey,
+        isPricingLoading,
+        isSubscribed,
+        freeGuideAllowed,
+      );
       return paidBillingActive ? plan : { ...plan, bundleType: undefined };
     });
     if (paidBillingActive) return fromBackend;
@@ -1546,8 +1587,10 @@ export const SubscribePage = ({
     return [...fromBackend, ...placeholders];
     /* aiDurationKey 影响 priceUnit 文案（/月 vs /年），必须进依赖数组；
        bundlesLoading 影响询价中占位符，也必须进依赖数组；
+       isSubscribed 影响启航 Launch 卡的「免费开通/立即开通」引导文案，必须进依赖数组；
+       freeGuideAllowed 是「免费开通」引导的前提开关，同样影响文案，必须进依赖数组；
        正常路径下切换时长会先触发 loadKey → bundlesLoading 变更连带重算。 */
-  }, [bundles, bundlesLoading, paidBillingActive, t, aiDurationKey]);
+  }, [bundles, bundlesLoading, paidBillingActive, t, aiDurationKey, isSubscribed, freeGuideAllowed]);
 
   /**
    * 按 `bundleType` 把 planList 分组：
@@ -2076,7 +2119,25 @@ export const SubscribePage = ({
                 marginTop: 8,
               }}
             >
-              {t("一键创建云端 Hermes Agent")}
+              {freeGuideAllowed ? (
+                <>
+                  {t("当前LightVela为内测阶段，内测期间限时免费。")}
+                  <a
+                    href="/docs/announcements/public-beta/"
+                    style={{
+                      color: colors.primary,
+                      fontWeight: 500,
+                      textDecoration: "none",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {t("查看详情")}
+                    {" >>"}
+                  </a>
+                </>
+              ) : (
+                t("一键创建云端 Hermes Agent")
+              )}
             </p>
             {/* {bots.length > 0 && (
               <p
