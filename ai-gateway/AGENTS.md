@@ -28,3 +28,4 @@
 ## CI Trigger Notes
 
 - 2026-07-08: ci-retrigger for shprod ai-gateway release image build.
+- 2026-07-08: ci-retrigger after release image visibility gate retry fix.
