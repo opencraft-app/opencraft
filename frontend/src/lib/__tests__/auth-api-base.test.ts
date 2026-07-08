@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
+import { resolveConfiguredAuthApiBaseUrl, PAGES_DEV_SUBDOMAIN_TO_API_HOST } from "@/lib/auth-api-base";
 
 const stubLocation = (hostname: string) => {
   Object.defineProperty(window, "location", {
@@ -59,5 +59,24 @@ describe("resolveConfiguredAuthApiBaseUrl", () => {
     stubLocation("other.lightclaw.pages.dev");
 
     expect(resolveConfiguredAuthApiBaseUrl()).toBe("https://lightclaw.tech");
+  });
+
+  it("ignores sandbox host mapping when mapped value is not a valid https URL", () => {
+    // 回归：PAGES_DEV_SUBDOMAIN_TO_API_HOST 配置错误时（如 value 不以 https:// 开头）
+    // 不应返回无效值，而是 fallback 到后续兜底策略。
+
+    // 1. 验证现有映射表里所有 value 均符合 https:// 格式。
+    for (const host of Object.values(PAGES_DEV_SUBDOMAIN_TO_API_HOST)) {
+      expect(host, `mapping value "${host}" should start with https://`).toMatch(/^https:\/\//);
+    }
+
+    // 2. 临时注入一条格式非法的映射，验证合法性校验能过滤掉它。
+    const testKey = "bad-config.lightclaw.pages.dev";
+    (PAGES_DEV_SUBDOMAIN_TO_API_HOST as Record<string, string>)[testKey] = "//invalid-no-scheme";
+    stubLocation(testKey);
+    // 不合法时应 fallback：testKey 属于 .lightclaw.pages.dev，兜底返回 https://lightclaw.tech。
+    expect(resolveConfiguredAuthApiBaseUrl()).toBe("https://lightclaw.tech");
+    // 清理临时注入，避免影响其他用例。
+    delete (PAGES_DEV_SUBDOMAIN_TO_API_HOST as Record<string, string>)[testKey];
   });
 });

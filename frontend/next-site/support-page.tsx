@@ -60,6 +60,91 @@ interface SupportFeedbackDraft {
   bugExpected: string;
 }
 
+/* ──────────────────────────────────────────────────────────
+ * 问卷选项常量
+ *
+ * 设计说明：value 与 label 故意保持一致（"code = label"）。
+ * 原因：dashboard 侧只做只读展示，COS 存储的是人类可读中文；
+ * 如果 value 是英文 code，dashboard 还要维护一份 code→label 映射，
+ * 运营排查时也看不懂原始数据。
+ *
+ * 使用 `as const` 目的：让 TS 推断出字面量联合类型，消除魔法字符串。
+ * 任何引用单个 value（如表单校验）都从常量取，拼写错误会在编译期报错。
+ * ────────────────────────────────────────────────────────── */
+
+/** Bug 类发生频率选项。 */
+export const BUG_FREQUENCY_OPTIONS = [
+  { value: '每次必现', label: '每次必现' },
+  { value: '经常发生', label: '经常发生' },
+  { value: '偶尔发生', label: '偶尔发生' },
+  { value: '仅出现一次', label: '仅出现一次' },
+] as const;
+export type BugFrequency = (typeof BUG_FREQUENCY_OPTIONS)[number]['value'];
+
+/** 了解渠道选项。 */
+export const PROFILE_SOURCE_OPTIONS = [
+  { value: '搜索引擎', label: '搜索引擎' },
+  { value: '朋友/同事推荐', label: '朋友/同事推荐' },
+  { value: '社交媒体', label: '社交媒体' },
+  { value: '官网/文档', label: '官网/文档' },
+  { value: '社区/论坛', label: '社区/论坛' },
+  { value: '广告投放', label: '广告投放' },
+  { value: '新闻/媒体', label: '新闻/媒体' },
+  { value: '其他', label: '其他' },
+] as const;
+export type ProfileSource = (typeof PROFILE_SOURCE_OPTIONS)[number]['value'];
+
+/** 角色选项。 */
+export const PROFILE_ROLE_OPTIONS = [
+  { value: '学生', label: '学生' },
+  { value: '开发者', label: '开发者' },
+  { value: '设计师', label: '设计师' },
+  { value: '产品经理', label: '产品经理' },
+  { value: '创业者', label: '创业者' },
+  { value: '运营/其他', label: '运营/其他' },
+  { value: '科研/学术', label: '科研/学术' },
+  { value: '工程师（非开发）', label: '工程师（非开发）' },
+  { value: '市场/营销', label: '市场/营销' },
+  { value: '销售/商务', label: '销售/商务' },
+  { value: '人力/招聘', label: '人力/招聘' },
+  { value: '写作/内容', label: '写作/内容' },
+  { value: '教师/教育', label: '教师/教育' },
+  { value: '自由职业者', label: '自由职业者' },
+  { value: '分析师/咨询', label: '分析师/咨询' },
+  { value: '团队负责人/管理者', label: '团队负责人/管理者' },
+  { value: '其他', label: '其他' },
+] as const;
+export type ProfileRole = (typeof PROFILE_ROLE_OPTIONS)[number]['value'];
+
+/** 使用频率选项。 */
+export const PROFILE_FREQUENCY_OPTIONS = [
+  { value: '几乎每天', label: '几乎每天' },
+  { value: '每周几次', label: '每周几次' },
+  { value: '每月几次', label: '每月几次' },
+  { value: '偶尔用用', label: '偶尔用用' },
+  { value: '刚接触', label: '刚接触' },
+] as const;
+export type ProfileFrequency = (typeof PROFILE_FREQUENCY_OPTIONS)[number]['value'];
+
+/** 行业选项。 */
+export const PROFILE_INDUSTRY_OPTIONS = [
+  { value: '互联网/软件', label: '互联网/软件' },
+  { value: 'AI/科技', label: 'AI/科技' },
+  { value: '教育', label: '教育' },
+  { value: '金融/保险', label: '金融/保险' },
+  { value: '媒体/内容', label: '媒体/内容' },
+  { value: '电商/零售', label: '电商/零售' },
+  { value: '医疗/生物', label: '医疗/生物' },
+  { value: '制造/硬件', label: '制造/硬件' },
+  { value: '游戏/文娱', label: '游戏/文娱' },
+  { value: '政府/公共', label: '政府/公共' },
+  { value: '科研/学术', label: '科研/学术' },
+  { value: '自由职业/个体', label: '自由职业/个体' },
+  { value: '学生', label: '学生' },
+  { value: '其他', label: '其他' },
+] as const;
+export type ProfileIndustry = (typeof PROFILE_INDUSTRY_OPTIONS)[number]['value'];
+
 const SUPPORT_FEEDBACK_DRAFT_STORAGE_KEY = 'lightvela-support-feedback-draft-v1';
 
 function isFeedbackType(value: unknown): value is FeedbackType {
@@ -268,70 +353,14 @@ export function SupportPage({
     (opt) => opt.value !== 'bug_report' && opt.value !== 'security',
   );
 
-  // Bug 类发生频率选项。value 直接采用中文文案：
-  // 反馈系统未来无国际化诉求，且 dashboard 只做只读展示；把 code 与 label 合一
-  // 可让 COS 里的 record 直接是"人话"，避免后台再维护一份 code→label 映射。
-  const bugFrequencyOptions: { value: string; label: string }[] = [
-    { value: '每次必现', label: '每次必现' },
-    { value: '经常发生', label: '经常发生' },
-    { value: '偶尔发生', label: '偶尔发生' },
-    { value: '仅出现一次', label: '仅出现一次' },
-  ];
+  // Bug 类发生频率选项（模块级常量 BUG_FREQUENCY_OPTIONS）。
+  const bugFrequencyOptions = BUG_FREQUENCY_OPTIONS;
 
-  // 调研问卷（选填）用户画像选项 —— 仅收集高信号字段，最少问题拿最多信息。
-  // 同上，value 与 label 保持一致；dashboard 直接展示 profile.* 原文即可。
-  const profileSourceOptions: { value: string; label: string }[] = [
-    { value: '搜索引擎', label: '搜索引擎' },
-    { value: '朋友/同事推荐', label: '朋友/同事推荐' },
-    { value: '社交媒体', label: '社交媒体' },
-    { value: '官网/文档', label: '官网/文档' },
-    { value: '社区/论坛', label: '社区/论坛' },
-    { value: '广告投放', label: '广告投放' },
-    { value: '新闻/媒体', label: '新闻/媒体' },
-    { value: '其他', label: '其他' },
-  ];
-  const profileRoleOptions: { value: string; label: string }[] = [
-    { value: '学生', label: '学生' },
-    { value: '开发者', label: '开发者' },
-    { value: '设计师', label: '设计师' },
-    { value: '产品经理', label: '产品经理' },
-    { value: '创业者', label: '创业者' },
-    { value: '运营/其他', label: '运营/其他' },
-    { value: '科研/学术', label: '科研/学术' },
-    { value: '工程师（非开发）', label: '工程师（非开发）' },
-    { value: '市场/营销', label: '市场/营销' },
-    { value: '销售/商务', label: '销售/商务' },
-    { value: '人力/招聘', label: '人力/招聘' },
-    { value: '写作/内容', label: '写作/内容' },
-    { value: '教师/教育', label: '教师/教育' },
-    { value: '自由职业者', label: '自由职业者' },
-    { value: '分析师/咨询', label: '分析师/咨询' },
-    { value: '团队负责人/管理者', label: '团队负责人/管理者' },
-    { value: '其他', label: '其他' },
-  ];
-  const profileFrequencyOptions: { value: string; label: string }[] = [
-    { value: '几乎每天', label: '几乎每天' },
-    { value: '每周几次', label: '每周几次' },
-    { value: '每月几次', label: '每月几次' },
-    { value: '偶尔用用', label: '偶尔用用' },
-    { value: '刚接触', label: '刚接触' },
-  ];
-  const profileIndustryOptions: { value: string; label: string }[] = [
-    { value: '互联网/软件', label: '互联网/软件' },
-    { value: 'AI/科技', label: 'AI/科技' },
-    { value: '教育', label: '教育' },
-    { value: '金融/保险', label: '金融/保险' },
-    { value: '媒体/内容', label: '媒体/内容' },
-    { value: '电商/零售', label: '电商/零售' },
-    { value: '医疗/生物', label: '医疗/生物' },
-    { value: '制造/硬件', label: '制造/硬件' },
-    { value: '游戏/文娱', label: '游戏/文娱' },
-    { value: '政府/公共', label: '政府/公共' },
-    { value: '科研/学术', label: '科研/学术' },
-    { value: '自由职业/个体', label: '自由职业/个体' },
-    { value: '学生', label: '学生' },
-    { value: '其他', label: '其他' },
-  ];
+  // 调研问卷（选填）用户画像选项（模块级常量）。
+  const profileSourceOptions = PROFILE_SOURCE_OPTIONS;
+  const profileRoleOptions = PROFILE_ROLE_OPTIONS;
+  const profileFrequencyOptions = PROFILE_FREQUENCY_OPTIONS;
+  const profileIndustryOptions = PROFILE_INDUSTRY_OPTIONS;
 
   const validate = (): boolean => {
     const errs: Record<string, string> = {};
