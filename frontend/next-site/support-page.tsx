@@ -51,12 +51,13 @@ interface SupportFeedbackDraft {
   otherText: string;
   description: string;
   contactInfo: string;
-  profileSource: string;
-  profileRole: string;
+  // 以下字段类型与模块级常量推断出的字面量联合类型对齐，消除魔法字符串。
+  profileSource: ProfileSource | '';
+  profileRole: ProfileRole | '';
   profileAiGoal: string;
-  profileFrequency: string;
-  profileIndustry: string;
-  bugFrequency: string;
+  profileFrequency: ProfileFrequency | '';
+  profileIndustry: ProfileIndustry | '';
+  bugFrequency: BugFrequency | '';
   bugExpected: string;
 }
 

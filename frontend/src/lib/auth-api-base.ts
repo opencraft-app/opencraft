@@ -9,7 +9,19 @@ export const isLightVelaEdgeOnePreviewHostname = (hostname: string): boolean =>
  * host，例如 https://api-bj82.lightclaw.tech，否则 session cookie 与 CORS
  * 白名单都对不上。
  *
- * 该映射来自仓库现网配置（argocd/services/service-gateway/*）：
+ * 为什么不用环境变量：
+ *   每个 sandbox 前端已由 argocd overlay 静态部署，没有在线的 Node.js 运行时
+ *   来注入运行时 env。这里的映射与 argocd/services/service-gateway/* 保持同步，
+ *   是"前端能感知到自己运行在哪个 sandbox"的唯一可靠手段。
+ *
+ * 新增 sandbox 时的操作步骤：
+ *   1. 在 argocd/services/service-gateway/<new-env>/config.yaml 确认
+ *      service-gateway 的公网 host（通常是 api-<env>.lightclaw.tech）；
+ *   2. 在本映射表追加一条
+ *      "<env-name>.lightclaw.pages.dev": "https://api-<env>.lightclaw.tech"；
+ *   3. 验证 value 以 https:// 开头（resolveConfiguredAuthApiBaseUrl 会做格式校验）。
+ *
+ * 当前环境映射来自（argocd/services/service-gateway/*）：
  *   - beijing-sandbox    → lightclaw.tech
  *   - beijing-sandbox-2  → api-bj82.lightclaw.tech
  *   - sandbox-bj-7       → api-sandbox-bj-7.lightclaw.tech
