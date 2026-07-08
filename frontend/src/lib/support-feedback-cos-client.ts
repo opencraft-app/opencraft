@@ -17,7 +17,6 @@
  */
 
 import { resolveConfiguredAuthApiBaseUrl, resolveSupportAdminApiBaseUrl } from '@/lib/auth-api-base';
-import { isGlobal } from '@/lib/region';
 
 const SUPPORT_API_PREFIX = '/support';
 
@@ -28,7 +27,11 @@ export interface SupportCosConfig {
 }
 
 export type FeedbackStatus = 'open' | 'reviewing' | 'resolved';
-export type FeedbackSite = 'cn' | 'global';
+// 本期仅上线国内站反馈，暂不支持 'global'。
+export type FeedbackSite = 'cn';
+
+/** 当前上线的反馈站点标识；避免魔法字符串直接散落在调用处。 */
+export const FEEDBACK_SITE_CN = 'cn' as const satisfies FeedbackSite;
 
 export interface FeedbackAttachmentRecord {
   fileName: string;
@@ -103,8 +106,9 @@ export function getSupportCosConfig(): SupportCosConfig | null {
   return { bucket: '', region: '', prefix: 'support-feedback' };
 }
 
+// 本期仅上线国内站反馈，暂不做多语言/国际站支持。
 export function getCurrentFeedbackSite(): FeedbackSite {
-  return isGlobal ? 'global' : 'cn';
+  return FEEDBACK_SITE_CN;
 }
 
 function supportApiBase(): string {

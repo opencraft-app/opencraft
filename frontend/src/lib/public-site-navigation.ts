@@ -21,7 +21,9 @@ export const PUBLIC_SITE_NAV_ITEMS: readonly PublicSiteNavItem[] = [
   { section: "changelog", href: "/changelog", label: { "zh-CN": "更新日志", "zh-SG": "更新日志", "en-US": "Changelog" } },
   { section: "docs", href: "/docs/overview", label: { "zh-CN": "产品文档", "zh-SG": "产品文档", "en-US": "Docs" } },
   { section: "about", href: "/about", label: { "zh-CN": "关于我们", "zh-SG": "关于我们", "en-US": "About" } },
-  { section: "support", href: "/support", label: { "zh-CN": "产品反馈", "zh-SG": "产品反馈", "en-US": "Feedback" } },
+  // 「产品反馈」不再作为顶部导航项，改为从用户头像菜单入口进入 /support。
+  // 页面本身与 legal-footer 链接保留；section 类型继续保留 "support"，
+  // 以兼容 /support 路径的 nav 高亮判定与其它引用。
 ] as const;
 
 const DEFAULT_PUBLIC_URL_LOCALE = defaultPublicUrlLang(DEFAULT_LOCALE);

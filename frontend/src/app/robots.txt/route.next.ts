@@ -7,7 +7,6 @@ export function GET() {
     [
       'User-agent: *',
       'Allow: /',
-      'Disallow: /support/lv-console-0925/',
       `Sitemap: ${siteUrl()}/sitemap.xml`,
       '',
     ].join('\n'),
