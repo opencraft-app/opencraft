@@ -128,12 +128,15 @@ export const LandingPageView = ({
   }, [navigateTo, isAuthenticated, isSubscribed, bots.length, session?.user, realnamePhoneVerificationEnabled]);
 
   // 首页主按钮文案：
-  //   - 未登录 → 「立即创建」
-  //   - 已登录但未订阅 → 「立即创建」（点击去订阅）
+  //   - 未开通套餐（!isSubscribed，含未登录）→ 「免费试用」（转化引导，降低开通决策门槛）
   //   - 已登录且已订阅但无智能体 → 「立即创建」（点击进创建流程）
   //   - 已登录且已订阅且有智能体 → 「我的智能体伙伴」（点击进 agent 主页）
   const showAgentPartnerLabel = isAuthenticated && isSubscribed && bots.length > 0;
-  const ctaLabel = showAgentPartnerLabel ? t("我的智能体伙伴") : t("立即创建");
+  const ctaLabel = showAgentPartnerLabel
+    ? t("我的智能体伙伴")
+    : !isSubscribed
+      ? t("免费试用")
+      : t("立即创建");
   const renderFooterLink: RenderFooterLink | undefined = renderLink
     ? ({ "aria-label": ariaLabel, children, className, href, onClick }) =>
         renderLink({ ariaLabel, children, className, href, onClick })

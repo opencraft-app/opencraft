@@ -14,7 +14,7 @@
 // 沿调用链注入，**不在本包做 site 决策**（避免 region 包被业务语义污染）。
 //
 // v1.7.x 北京 2 预发布接入（2026-06-12）：新增 region override 路径，Resolve 第二参数
-// `regionOverride`（腾讯云 region 字面量，例：ap-beijing / ap-guangzhou / ap-singapore）
+// `regionOverride`（腾讯云 region 字面量，例：ap-shanghai / ap-beijing / ap-guangzhou / ap-singapore）
 // 非空且命中 `regionTable` 时优先于 siteKind 兜底，用于"国内站身份 + 北京 region 字段"
 // 这种 site/region 解耦的部署场景。命名表唯一来源在本文件 `regionTable`，调用方零感知。
 //
@@ -83,6 +83,7 @@ type LighthouseRegion struct {
 var regionTable = map[string]LighthouseRegion{
 	"ap-guangzhou": {RegionID: LighthouseRegionID, ZoneID: LighthouseZoneID, RegionName: LighthouseRegionName},
 	"ap-beijing":   {RegionID: 8, ZoneID: 800001, RegionName: "北京"},
+	"ap-shanghai":  {RegionID: 4, ZoneID: 400001, RegionName: "上海"},
 	"ap-singapore": {RegionID: LighthouseIntlRegionID, ZoneID: LighthouseIntlZoneID, RegionName: LighthouseIntlRegionName},
 }
 

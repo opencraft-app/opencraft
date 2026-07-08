@@ -38,6 +38,7 @@ stages:
           STATICPAGES_UPLOAD_TOKEN: ${{ settings.STATICPAGES_UPLOAD_TOKEN }}
           SOPS_AGE_KEY: ${{ settings.SOPS_AGE_KEY }}
           SOPS_AGE_KEY_FILE: ${{ settings.SOPS_AGE_KEY_FILE }}
+          GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
         steps:
           - checkout: self
             name: 拉取代码
@@ -74,7 +75,8 @@ stages:
               trap cleanup_frontend_preview_runtime EXIT
 
               echo "frontend 预览发布器来源：${FRONTEND_PREVIEW_RUNTIME_REF}"
-              git fetch --no-tags --depth=1 origin +master:refs/remotes/origin/master
+              source .ci/init.sh
+              ci_git_fetch_origin --no-tags --depth=1 +refs/heads/master:refs/remotes/origin/master
               git archive --format=tar "$FRONTEND_PREVIEW_RUNTIME_REF" .ci | tar -xf - -C "$FRONTEND_PREVIEW_RUNTIME_DIR"
               FRONTEND_PREVIEW_RUNTIME_CI_DIR="$FRONTEND_PREVIEW_RUNTIME_DIR/.ci"
 

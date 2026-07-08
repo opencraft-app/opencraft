@@ -87,6 +87,9 @@ frontend/AGENTS.md                 # 前端子项目 — AI 行为指引（本�
 ├── project.local.json             # 本地项目配置（动态、不提交）
 └── mcp.json                       # MCP 服务配置
 
+../.agents/skills/product-skills/
+└── prd-init/                       # /feai-start 产品前置、需求分析、PRD 梳理
+
 ../.codebuddy/commands/            # 命令文件（IDE 中立）
 ├── feai-start.md                  # /feai-start
 ├── feai-archive.md                # /feai-archive
@@ -119,6 +122,7 @@ DESIGN.md                          # 前端 UI 约定（圆角 / 弹窗 / toolti
 | 创建 MR / 合并请求 / merge request | `../.codebuddy/skills/team-extensions/mr-auto-submit.md` |
 | 代码审查 / CR / review / 检查代码 | `../.codebuddy/skills/team-extensions/cr-check.md` |
 | 写单测 / 单元测试 / 测试用例 | `../.codebuddy/skills/team-extensions/unit-test-development.md` |
+| 产品前置 / PRD / 需求分析 / 需求梳理 | `../.agents/skills/product-skills/prd-init/SKILL.md` |
 | 获取需求 / TAPD / 需求详情 | `../.codebuddy/skills/team-extensions/tapd-requirement-fetch.md` |
 | FE-AI 标记 / 数据采集 | `../.codebuddy/skills/team-extensions/ai-usage-tracking.md` |
 | MR 提了 / 推上去了 / MR 开好了 | `../.codebuddy/commands/feai-archive.md` — **主动询问**用户是否运行 `/feai-archive` |
@@ -163,7 +167,7 @@ DESIGN.md                          # 前端 UI 约定（圆角 / 弹窗 / toolti
 
 | 命令            | 用途                                                         |
 | --------------- | ------------------------------------------------------------ |
-| `/feai-start`   | 启动开发流程（需求分析 → 开发 → MR）                         |
+| `/feai-start`   | 启动开发流程（prd-init 产品前置 → 开发 → MR）                 |
 | `/feai-archive` | 归档沉淀（MR 提了之后；trigger G22）                         |
 | `/feai-init`    | 项目初始化（生成深度信息：常用命令、目录结构、代码风格等）   |
 | `/feai-review`  | 主动 CR（提交前对本次 git diff 做三级问题检查）              |

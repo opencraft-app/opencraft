@@ -106,7 +106,7 @@ type ServerConfig struct {
 
 	// RegionOverride（北京 2 预发布接入 2026-06-12 新增）：腾讯云 region 字面量 override。
 	//
-	// 取值：空 / "ap-guangzhou" / "ap-beijing" / "ap-singapore" 等（注册在 region.regionTable）。
+	// 取值：空 / "ap-guangzhou" / "ap-beijing" / "ap-shanghai" / "ap-singapore" 等（注册在 region.regionTable）。
 	// 由 LIGHTVELA_TRADE_REGION env 注入，未注册字面量在 config.Load 期 fail-fast。
 	// 与 SiteKind 同路径透穿到上述 5 个下游注入点。
 	RegionOverride string

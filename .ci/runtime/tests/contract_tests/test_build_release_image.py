@@ -19,6 +19,7 @@ from contracts.build_release_image import (  # noqa: E402
     main,
     playground_frontend_auth_api_base_url,
     resolve_docker_build_args,
+    wait_for_remote_image,
 )
 from contracts.bundles import ImageTarget  # noqa: E402
 from contracts.image_existence import ImageCheckResult  # noqa: E402
@@ -102,6 +103,54 @@ class BuildReleaseImageTests(unittest.TestCase):
                 build_target(target, "workers-test", "linux/amd64", True, {})
 
         run.assert_not_called()
+
+    def test_build_target_waits_for_pushed_image_visibility(self) -> None:
+        target = ImageTarget(
+            name="workers",
+            image_key=None,
+            dockerfile="workers/Dockerfile",
+            build_context="workers",
+            image_repo="registry.example.com/lightclaw/workers",
+        )
+
+        with mock.patch("contracts.build_release_image.docker_daemon_available", return_value=True), \
+            mock.patch("contracts.build_release_image.docker_login") as login, \
+            mock.patch("contracts.build_release_image.wait_for_remote_image") as wait, \
+            mock.patch("contracts.build_release_image.subprocess.run") as run:
+            image = build_target(
+                target,
+                "workers-test",
+                "linux/amd64",
+                True,
+                {},
+                push_verify_timeout_seconds=17,
+                push_verify_interval_seconds=3,
+            )
+
+        self.assertEqual(image, "registry.example.com/lightclaw/workers:workers-test")
+        login.assert_called_once_with(target.image_repo)
+        wait.assert_called_once_with(
+            "registry.example.com/lightclaw/workers:workers-test",
+            timeout_seconds=17,
+            interval_seconds=3,
+        )
+        self.assertEqual(run.call_args_list[-1].args[0], ["docker", "push", image])
+
+    def test_wait_for_remote_image_retries_until_digest_is_visible(self) -> None:
+        image = "registry.example.com/lightclaw/workers:workers-test"
+
+        with mock.patch(
+            "contracts.build_release_image.verify_images",
+            side_effect=[
+                [ImageCheckResult(image, False)],
+                [ImageCheckResult(image, True, "sha256:workers")],
+            ],
+        ) as verify, mock.patch("contracts.build_release_image.time.sleep") as sleep:
+            result = wait_for_remote_image(image, timeout_seconds=30, interval_seconds=2)
+
+        self.assertEqual(result.digest, "sha256:workers")
+        self.assertEqual(verify.call_count, 2)
+        sleep.assert_called_once_with(2)
 
     def test_main_reuses_existing_remote_image_without_building(self) -> None:
         target = ImageTarget(
@@ -193,6 +242,8 @@ class BuildReleaseImageTests(unittest.TestCase):
                 "linux/amd64",
                 True,
                 {},
+                push_verify_timeout_seconds=300,
+                push_verify_interval_seconds=5,
             )
             self.assertEqual((Path(tmp) / "image.txt").read_text().strip(), expected_image)
 

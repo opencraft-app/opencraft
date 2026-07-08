@@ -17,6 +17,13 @@ type SeoPage = {
   index?: boolean;
   alternates?: Record<string, string>;
   keywords?: readonly string[];
+  /**
+   * 是否让页面 title 跳过 root layout 的 `%s | LightVela` 模板（用 `title.absolute`）。
+   * 默认 false：title 走模板，追加 `| LightVela` 后缀。
+   * 首页（home / landing）传 true：title 已自带品牌名（如「LightVela｜云端专属个人 Agent」），
+   * 无需再追加后缀，避免出现「LightVela … | LightVela」的重复品牌名。
+   */
+  titleAbsolute?: boolean;
 };
 
 type SeoSiteRegion = 'cn' | 'global';
@@ -170,6 +177,7 @@ export function createPublicMetadata({
   index = true,
   alternates = buildPublicAlternates(path),
   keywords = DEFAULT_KEYWORDS[locale],
+  titleAbsolute = false,
 }: SeoPage): Metadata {
   const normalizedPath = normalizePath(path);
   const canonical = absoluteUrl(normalizedPath);
@@ -177,7 +185,10 @@ export function createPublicMetadata({
 
   return {
     metadataBase: new URL(siteUrl()),
-    title,
+    /* titleAbsolute=true 时用 { absolute } 跳过 root layout 的 `%s | LightVela` 模板，
+       让首页 title 保持自带品牌名、不追加后缀；其余页面仍走模板追加 `| LightVela`。
+       openGraph / twitter 的 title 是独立纯字符串，不受模板影响，无需 absolute。 */
+    title: titleAbsolute ? { absolute: title } : title,
     description,
     keywords: [...keywords],
     alternates: {

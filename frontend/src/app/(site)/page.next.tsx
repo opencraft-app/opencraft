@@ -10,6 +10,8 @@ export const metadata: Metadata = createPublicMetadata({
     DEFAULT_PUBLIC_ROUTE_LOCALE.locale === 'en-US'
       ? 'LightVela | Your Personal Cloud AI Agent'
       : 'LightVela｜云端专属个人 Agent',
+  /* 首页 title 已自带品牌名，跳过 root 模板，避免重复的 `| LightVela` 后缀 */
+  titleAbsolute: true,
   description:
     DEFAULT_PUBLIC_ROUTE_LOCALE.locale === 'en-US'
       ? 'LightVela is a cloud Agent hosting product from the Tencent Lighthouse team.'

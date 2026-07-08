@@ -62,6 +62,12 @@ func TestResolve(t *testing.T) {
 			want:           LighthouseRegion{RegionID: 8, ZoneID: 800001, RegionName: "北京"},
 		},
 		{
+			name:           "cn + ap-shanghai override returns shanghai",
+			siteKind:       "cn",
+			regionOverride: "ap-shanghai",
+			want:           LighthouseRegion{RegionID: 4, ZoneID: 400001, RegionName: "上海"},
+		},
+		{
 			name:           "intl + ap-beijing override returns beijing (override wins over siteKind)",
 			siteKind:       "intl",
 			regionOverride: "ap-beijing",
@@ -118,6 +124,9 @@ func TestLookupByRegion(t *testing.T) {
 		}, true},
 		{"ap-beijing", "ap-beijing", LighthouseRegion{
 			RegionID: 8, ZoneID: 800001, RegionName: "北京",
+		}, true},
+		{"ap-shanghai", "ap-shanghai", LighthouseRegion{
+			RegionID: 4, ZoneID: 400001, RegionName: "上海",
 		}, true},
 		{"ap-singapore", "ap-singapore", LighthouseRegion{
 			RegionID: LighthouseIntlRegionID, ZoneID: LighthouseIntlZoneID, RegionName: LighthouseIntlRegionName,
