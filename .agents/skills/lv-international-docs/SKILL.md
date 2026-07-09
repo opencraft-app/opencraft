@@ -18,6 +18,13 @@ description: 维护 LightVela 国际站文档（https://lightvela.ai/docs）的�
 - 如果当前页面由国内站和国际站共享，先为国际站创建或补齐独立文件，再在国际站文件里修改。
 - 推荐先写或修改国际站中文稿（`global/`），再自动翻译或本地化英文稿（`en/`）。
 - 英文文档中的截图或 UI 图片不能含中文界面。若缺英文版图片，最终回复必须明确提醒。
+- 国际站文档出现渠道/社媒平台列表时，必须以国际站实际支持的渠道为准，先确认国际站一共有多少通道，再决定是否补齐或重排。
+- 国际站渠道列表的优先排序固定为：Telegram / WhatsApp / Discord / WeChat / 其他国际站已支持渠道。任何以其他社媒平台开头的排序都要调整为这个顺序。
+- 用户要求检查、更新或替换文档图片时，必须用 Browser 打开国际站对应真实页面，对比文档图与同一页面的实际 UI，并用页面截图替换过期图片；中英文文档都要处理。
+- 图片更新必须直接覆盖 markdown 当前引用的既有仓库图片文件，不要新增替代文件、不要只返回 markdown、不要让 docs 继续引用旧图。
+- 只有旧图明显是 LightVela 站内 UI 且能在真实站点复现时才替换；第三方平台、手机 App、BotFather、Discord Developer Portal、WhatsApp、QQ/WeCom/Lark 管理后台等非 LightVela 站内截图不要替换。
+- 截图前必须等待 `loading...`、`Loading...`、`加载中...`、骨架屏或空白占位消失，并确认真实内容已经加载；不能把 loading 状态截图写入文档。
+- 需要点击 `Connect` / `+ 连接` 后出现二维码、Token、AppID/AppSecret、code 等敏感输入或展示时，必须截图对应弹窗并用灰色遮罩覆盖二维码中心或输入值区域后再覆盖旧图。
 
 ## 先读代码事实
 
@@ -56,9 +63,20 @@ description: 维护 LightVela 国际站文档（https://lightvela.ai/docs）的�
    - 扫描目标 markdown 的 `![](...)` 和 `<img src="...">`。
    - 英文文档若引用中文 UI 图片，要检查 `frontend/src/content/docs/images/` 是否有 `-en` 版本。
    - 如果中文稿新增图片，英文稿通常需要英文截图，命名为同 basename + `-en`，例如 `telegram-step.webp` -> `telegram-step-en.webp`。
+   - 如果用户说“检查图片 / 更新图片 / 替换截图 / 图片不对”等相近需求，必须使用 Browser 打开 `lightvela.ai` 上的同一功能页面做视觉核对；只截取页面内容，不包含 Chrome 标签栏、书签栏或浏览器外壳。
+   - 针对同一文档页面，中文国际站与英文国际站都要核对并替换：中文用 `zh-sg` 对应页面截图，英文用 `en-us` 或默认英文对应页面截图。
+   - 先从目标 markdown 提取当前引用的图片路径，只覆盖这些现有文件；不要为了“更好看”另存新文件再改引用。
+   - 旧图不是 LightVela 站内 UI 时不要替换，即使真实网站有相似入口。
+   - 截图前等待真实内容出现，禁止截到 `loading...`、`Loading...`、`加载中...` 或骨架屏。
+   - 如果截图内容包含二维码、Token、AppID/AppSecret、验证码、随机填入的 code 或其他凭据形态内容，落盘前用灰色矩形遮住敏感中心区域。
    - 如果缺英文图，最终回复必须明确列出待补英文图片。
 
-6. 验证：
+6. 渠道列表检查：
+   - 扫描目标 markdown 中的渠道/社媒列表，尤其是 `Telegram / WhatsApp / ...`、`Telegram、WhatsApp、...`、`Telegram / WhatsApp / …`、`Telegram、WhatsApp、…` 这类写法。
+   - 如果列表看起来在列举所有渠道但不完整，先从国际站代码或 `lightvela.ai` 真实页面确认完整渠道数和名称，再补齐。
+   - 如果列表只是示例，也要按国际站排序保留必要示例，不能用国内站或旧文档顺序。
+
+7. 验证：
    - 小文档改动至少检查链接、图片路径、sidebar slug 是否存在。
    - 涉及 sidebar、route 或 metadata 时，建议运行前端类型检查或相关测试。
    - 若只改 markdown 且未运行测试，最终说明未运行。
