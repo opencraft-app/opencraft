@@ -611,17 +611,38 @@ EOF
 
 ---
 
-### [STEP 6/8] 产品前置与需求分析（prd-init）
+### [STEP 6/8] 需求澄清（prd-init）+ 技术设计探索（brainstorming）
 
 > 对应规则 G12（Skill 调用强制规则）
+>
+> ⚡ **Skill 路由规则（v0.35+）**：
+> - **需求澄清**（用户是谁、场景、范围边界、站点范围、TAPD 建单）→ 使用 `prd-init`
+> - **技术设计探索**（架构方案、组件拆分、边界 case、实现策略）→ 使用 `brainstorming`，且只聚焦技术侧，**不重复问产品范围**
+> - **快速修复模式**（`--quick`）→ prd-init 简化为一次性确认，跳过 brainstorming
+
+#### 6.1 需求澄清（prd-init，强制）
 
 1. 调用 `.agents/skills/product-skills/prd-init` skill（**强制 use_skill tool call**，不可口头跳过）
    - 调用前按 `AGENTS.md` 的 Product Skills subtree 同步约定，先尝试从 `product-ai` 最新 `master` 刷新 `prd-init`；失败则使用仓库内现有副本继续，并在结果中说明。
 2. 按 skill 指导与用户完成 LightVela 产品前置和需求澄清
 3. 生成需求确认文档，并明确输出一个英文 `feature slug`（仅 `[a-z0-9-]`）
-4. ⏸️ **等待用户确认**，禁止跳过此步骤直接进入 STEP 7
+4. ⏸️ **等待用户确认**，禁止跳过此步骤直接进入 6.2
 
-> 快速修复模式（`--quick`）下，`prd-init` 简化为一次性确认提问，不生成完整确认文档。
+> 快速修复模式（`--quick`）下，`prd-init` 简化为一次性确认提问，不生成完整确认文档，直接跳过 6.2 进入 STEP 7。
+
+#### 6.2 技术设计探索（brainstorming，条件触发）
+
+> 仅当需求涉及非平凡技术设计（新架构、组件重构、复杂状态管理、性能优化等）时触发。
+> 简单需求（文案修改、样式调整、小 Bug 修复）可跳过此步。
+> ⚠️ 产品范围已在 6.1 prd-init 阶段确认，本步骤**只探索技术实现方案**，不重复问用户场景和范围。
+
+1. 调用 `brainstorming` skill（**强制 use_skill tool call**）
+2. 聚焦探索：
+   - 技术方案与备选方案（提供 2-3 个选项）
+   - 组件结构与状态管理策略
+   - 边界情况与错误处理
+   - 性能考量
+3. 产出技术设计方向，供 STEP 7/8 规划使用
 
 **STEP 6 完成时强制埋点（对应澄清轮次追踪）**：
 
@@ -1022,7 +1043,7 @@ echo '{"stage":"start.planConfirmed","phase":"end","ts":'$NOW_MS'}' \
 ### 快速修复模式（`--quick`）省略项
 
 - ❌ STEP 1.3 / 1.4（L3 / L4 防遗忘扫描）
-- ❌ STEP 6（prd-init）— 改为简短确认
+- ❌ STEP 6.1（prd-init）— 改为简短确认；STEP 6.2（brainstorming）— 跳过
 - ❌ STEP 7（Figma 分析）
 - ❌ 阶段 4B（TAPD 分支关联）
 - ❌ 阶段 6（L1 归档强提醒）
@@ -1097,7 +1118,8 @@ fi
 | STEP 1 P0 文件加载失败 | 停止，提示用户检查 `<base>/openspec/` 目录 |
 | STEP 3 插件缺失且安装失败 | 停止，输出手动安装指南 |
 | STEP 4 工作区不干净 | 停止等待用户处理，禁止替用户决定 |
-| STEP 6 prd-init skill 未真实调用 | 视为违反 G12，回退重新调用 |
+| STEP 6.1 prd-init skill 未真实调用 | 视为违反 G12，回退重新调用 |
+| STEP 6.2 brainstorming skill 未真实调用（非 --quick 模式且需求涉及非平凡技术设计时） | 视为违反 G12，回退重新调用 |
 | STEP 7 Figma MCP 不可用 | sub-agent 返回失败摘要，提示启用 MCP 或继续无 Figma 模式 |
 | STEP 7 sub-agent 产物缺失 | 重派一次；仍失败则降级（用户手动提供 section 清单） |
 | STEP 8 plan.md 无有效任务 | 回到 STEP 6 或 STEP 8 重新生成 |
