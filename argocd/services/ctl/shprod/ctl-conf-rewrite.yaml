@@ -19,7 +19,26 @@ data:
 
     [api.instance]
     default_template_class_id = "hermes"
+    default_template_id = "pool-1779142341361006934-114"
     default_sku_id = "sku-hermes-2c4g"
+    candidate_template_ids = ["pool-1779142341361006934-114", "pool-1779142637960095668-265", "pool-1780305211975190544-2478", "pool-1782454138147183486-5972"]
+
+    # bundle.instance_spec_id 非空时，ctl 会走 per-spec pool 选择；若这里缺配
+    # spec_pools，CreateInstance 会直接返回 BUNDLE_INSTANCE_SPEC_NO_POOL。
+    # shprod 2C4G 规格使用当前 sandbox 中 active 的 Hermes 2C4G 池。
+    [[api.instance.spec_pools]]
+    spec_id                = "spec-2c4g50g"
+    sku_id                 = "sku-hermes-2c4g"
+    default_template_id    = "pool-1779142341361006934-114"
+    candidate_template_ids = ["pool-1779142341361006934-114", "pool-1779142637960095668-265", "pool-1780305211975190544-2478", "pool-1782454138147183486-5972"]
+
+    # shprod 4C8G 规格使用独立 template class 和资源池，供后续付费 bundle 使用。
+    [[api.instance.spec_pools]]
+    spec_id                = "spec-4c8g80g"
+    template_class_id      = "openclaw-4c8g80g"
+    sku_id                 = "sku-hermes-4c8g"
+    default_template_id    = "pool-sh-4c8g80g-01"
+    candidate_template_ids = ["pool-sh-4c8g80g-01"]
 
     [db]
     host = "10.15.192.13"
