@@ -176,7 +176,7 @@ describe("UserAvatarMenu", () => {
     expect(screen.getByRole("link", { name: "工作台" })).toHaveAttribute("href", "/agents/workbench");
   });
 
-  it("renders a user feedback entry linking to /support", () => {
+  it("keeps the product feedback menu item hidden until show() reveals it", () => {
     useSession.mockReturnValue({
       session: {
         user: { name: "海盐小猫", avatarUrl: "https://example.com/avatar.png" },
@@ -191,8 +191,13 @@ describe("UserAvatarMenu", () => {
     render(<UserAvatarMenu />);
 
     fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
+    expect(screen.queryByRole("link", { name: "产品反馈" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "用户反馈" })).not.toBeInTheDocument();
 
-    const feedbackLink = screen.getByRole("link", { name: "用户反馈" });
-    expect(feedbackLink).toHaveAttribute("href", "/support");
+    act(() => {
+      (window as Window & { show?: () => boolean }).show?.();
+    });
+
+    expect(screen.getByRole("link", { name: "产品反馈" })).toHaveAttribute("href", "/support");
   });
 });
