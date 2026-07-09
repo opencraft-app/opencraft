@@ -2,22 +2,6 @@ version: v2.0
 name: 构建 ticket
 
 on:
-  push:
-    branches:
-      - master
-      - playground/sandbox-bj-*
-      - playground/sandbox-kr-*
-    paths:
-      - ticket/**
-      - argocd/services/ticket/**
-      - argocd/apps/*/ticket.yaml
-      - argocd/catalogs/sandbox/beijing-sandbox/ticket.yaml
-      - argocd/catalogs/playground/beijing-playground/*/ticket.yaml
-      - argocd/catalogs/playground/seoul-playground/*/ticket.yaml
-      - argocd/secrets/*/ticket-runtime-secrets.sops.yaml
-    paths-ignore:
-      - OWNERS
-      - "**/OWNERS"
   manual: enabled
 
 concurrency:
@@ -26,16 +10,17 @@ concurrency:
   queue-length: 20
   queue-timeout-minutes: 480
 
-extends:
-  template: service-release.yml
-  # Refresh compiled Stream pipeline after service-release template changes.
-  parameters:
-    SERVICE: ticket
-    BUNDLE: ticket
-    DISPLAY_NAME: ticket
-    DEFAULT_TARGET_ENV: beijing-sandbox
-    MASTER_BUILD_ENVS: beijing-sandbox
-    MASTER_AUTO_PIN_ENVS: beijing-sandbox
-    ENABLE_MASTER_PROD_DB_MIGRATION: true
-    PLAYGROUND_BUILD_ENVS: auto
-    PLAYGROUND_AUTO_PIN_ENVS: auto
+jobs:
+  disabled:
+    runs-on:
+      self-hosted: true
+      pool-name: env
+    steps:
+      - checkout: self
+        name: 拉取代码
+        with:
+          fetchDepth: 1
+      - name: ticket release bundle contract disabled
+        shell: bash
+        run: |
+          echo "ticket release bundle contract is temporarily disabled."

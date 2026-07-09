@@ -102,3 +102,4 @@
 
 - `ctl` 流水线的 webhook paths 监听 `ctl/**`；当只修复共享 CI runtime 但需要重跑 ctl gate 时，可用本文件承载无运行时影响的触发说明变更。
 - 2026-07-09 trigger note：ticket sandbox profile 修复合入后，重跑 ctl gate 以恢复 shprod promote 链路。
+- 2026-07-09 trigger note：ticket release bundle contract 临时下线后，重跑 ctl gate 以解除 ticket closure 阻塞。
