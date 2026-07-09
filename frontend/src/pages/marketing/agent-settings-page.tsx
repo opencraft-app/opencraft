@@ -177,7 +177,7 @@ type TeaSdkRuntime = {
     useEnglish?: boolean;
     rainbowBaseUrl?: string;
     app?: string;
-  }) => IModelProvider[];
+  }) => IModelProvider[] | undefined;
   createProductConfig: (args: {
     runCommand: TeaSdkProductConfig["runCommand"];
     getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
@@ -217,12 +217,16 @@ function loadTeaSdkRuntime(): Promise<TeaSdkRuntime> {
       const hermesScripts = lightVelaHermesScripts.hermes;
       const hermesGatewayCommands = hermesScripts.gateway;
       const hermesModelCommands = hermesScripts.model;
+      const useModelProviders: TeaSdkRuntime["useModelProviders"] =
+        typeof sdk.useModelProviders === "function"
+          ? sdk.useModelProviders
+          : () => undefined;
 
       const runtime: TeaSdkRuntime = {
         ChannelPanel: sdk.ChannelPanel as unknown as ComponentType<TeaSdkPanelProps>,
         ModelPanel: sdk.ModelPanel as unknown as ComponentType<TeaSdkPanelProps>,
         SkillPanel: sdk.SkillPanel as unknown as ComponentType<TeaSdkPanelProps>,
-        useModelProviders: sdk.useModelProviders,
+        useModelProviders,
         createProductConfig: ({ runCommand, getInvocationTask, modelProviders }) => {
           const config = sdk.createLighthouseConfig({
             agentType: "hermes",
