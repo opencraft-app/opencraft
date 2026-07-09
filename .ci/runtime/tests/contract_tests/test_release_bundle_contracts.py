@@ -30,6 +30,7 @@ AUTO_RELEASE_WORKFLOWS = {
     "sandbox": (".ci/sandbox.yml", "beijing-sandbox,shprod,sgprod", "sandbox"),
     "service-gateway": (".ci/service-gateway.yml", "beijing-sandbox,shprod,sgprod", "service-gateway"),
     "subscription": (".ci/subscription.yml", "beijing-sandbox,shprod,sgprod", "subscription"),
+    "ticket": (".ci/ticket.yml", "beijing-sandbox", "ticket"),
     "user-auth": (".ci/lightclaw-auth.yml", "beijing-sandbox,shprod,sgprod", "lightclaw-auth"),
 }
 
@@ -49,6 +50,7 @@ BUSINESS_WORKFLOWS = {
     ".ci/service-gateway.yml",
     ".ci/staticpages.yml",
     ".ci/subscription.yml",
+    ".ci/ticket.yml",
     ".ci/trade.yml",
 }
 
@@ -59,6 +61,7 @@ PROD_DB_MIGRATION_WORKFLOWS = {
     ".ci/payment.yml",
     ".ci/sandbox.yml",
     ".ci/subscription.yml",
+    ".ci/ticket.yml",
     ".ci/trade.yml",
 }
 
