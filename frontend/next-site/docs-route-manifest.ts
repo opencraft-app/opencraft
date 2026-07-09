@@ -67,6 +67,9 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "faq",
       "using-lightvela-safely"
+    ],
+    [
+      "contact-us"
     ]
   ],
   "zh-cn": [
@@ -112,6 +115,9 @@ export const DOCS_ROUTE_SLUGS = {
     ],
     [
       "faq"
+    ],
+    [
+      "contact-us"
     ]
   ],
   "zh-sg": [
@@ -178,6 +184,9 @@ export const DOCS_ROUTE_SLUGS = {
     [
       "faq",
       "using-lightvela-safely"
+    ],
+    [
+      "contact-us"
     ]
   ]
 } as const satisfies Record<DocsRouteLocale, readonly (readonly string[])[]>;

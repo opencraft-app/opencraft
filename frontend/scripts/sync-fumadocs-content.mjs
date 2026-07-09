@@ -24,6 +24,7 @@ const cnDocs = [
   { slug: 'configuration/channel-qq', title: '配置通道 - QQ', file: 'configuration/channel-qq.md', group: '配置指南', description: '通过 QQ 与 Hermes Agent 对话。' },
   { slug: 'configuration/skill', title: '配置技能', file: 'configuration/skill.md', group: '配置指南', description: '安装技能包，扩展 Hermes 能力。' },
   { slug: 'faq', title: '常见问题 FAQ', file: '07-faq.md', group: '参考', description: 'LightVela 常见问题。' },
+  { slug: 'contact-us', title: '联系我们', file: 'contact-us.md', group: '参考', description: '加入 LightVela 内测交流群，与产品团队面对面交流。继续把使用问题、产品建议和真实场景反馈给我们。' },
 ];
 
 const globalDocs = [
@@ -197,6 +198,16 @@ const globalDocs = [
       'zh-CN': '安全、负责任地使用 LightVela 的建议。',
     },
   },
+  {
+    slug: 'contact-us',
+    title: { 'en-US': 'Contact Us', 'zh-CN': '联系我们' },
+    file: 'contact-us.md',
+    group: { 'en-US': 'Reference', 'zh-CN': '参考' },
+    description: {
+      'en-US': 'Join the LightVela beta community, talk to the product team directly, and keep sending us your usage questions, product suggestions, and real-world feedback.',
+      'zh-CN': '加入 LightVela 内测交流群，与产品团队面对面交流。继续把使用问题、产品建议和真实场景反馈给我们。',
+    },
+  },
 ];
 
 const docSets = [
@@ -362,7 +373,7 @@ function writeMetaForDocSet(docSet) {
     `${JSON.stringify(
       {
         title: docSet.title,
-        pages: [...(isCnLocale ? ['announcements'] : []), 'overview', 'quickstart', ...(isCnLocale ? ['account'] : []), 'core-concepts', 'configuration', 'faq'],
+        pages: [...(isCnLocale ? ['announcements'] : []), 'overview', 'quickstart', ...(isCnLocale ? ['account'] : []), 'core-concepts', 'configuration', 'faq', 'contact-us'],
       },
       null,
       2,

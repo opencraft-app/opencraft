@@ -72,7 +72,10 @@ const CN_SIDEBAR: DocGroup[] = [
   },
   {
     title: "参考",
-    items: [{ slug: "faq", title: "常见问题 FAQ" }],
+    items: [
+      { slug: "faq", title: "常见问题 FAQ" },
+      { slug: "contact-us", title: "联系我们" },
+    ],
   },
 ];
 
@@ -116,6 +119,7 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
         title: "安全使用 LightVela",
         titleEn: "Using LightVela Safely",
       },
+      { slug: "contact-us", title: "联系我们", titleEn: "Contact Us" },
     ],
   },
 ];
@@ -140,6 +144,7 @@ const CN_SLUG_TO_FILE: Record<string, string> = {
   "configuration/skill": "configuration/skill.md",
   "announcements/public-beta": "announcements/public-beta.md",
   faq: "07-faq.md",
+  "contact-us": "contact-us.md",
 };
 
 const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
@@ -160,6 +165,7 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "configuration/agent-chat": "configuration/agent-chat.md",
   faq: "07-faq.md",
   "faq/using-lightvela-safely": "faq/using-lightvela-safely.md",
+  "contact-us": "contact-us.md",
 };
 
 export const SLUG_TO_FILE: Record<string, string> = isGlobal
