@@ -11,6 +11,9 @@ on:
       - ticket/**
       - argocd/services/ticket/**
       - argocd/apps/*/ticket.yaml
+      - argocd/catalogs/sandbox/beijing-sandbox/ticket.yaml
+      - argocd/catalogs/playground/beijing-playground/*/ticket.yaml
+      - argocd/catalogs/playground/seoul-playground/*/ticket.yaml
       - argocd/secrets/*/ticket-runtime-secrets.sops.yaml
     paths-ignore:
       - OWNERS

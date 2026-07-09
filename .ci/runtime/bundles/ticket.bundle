@@ -1,0 +1,47 @@
+bundles:
+  ticket:
+    owner: ticket
+    source: ticket
+    db_contract:
+      mode: migration
+      db_job_service: ticket
+      migration_operation: migration
+      migration_paths:
+      - ticket/migrations/**
+      expected_migration_source: ticket/migrations
+      verifier:
+        namespace: ticket
+        configmap: ticket-runtime-config
+        secret: ticket-runtime-secrets
+        database_env: TICKET_DB
+        user_env: TICKET_DB_USER
+        password_env: TICKET_DB_PASSWORD
+    reason: Ticket service release bundle for Argo-managed support feedback rollout
+      and DB job contract.
+    allowed_paths:
+    - ticket/k8s/base
+    - ticket/Dockerfile
+    - ticket/migrations
+    exit_condition: Can be removed only after ticket is folded into another support
+      feedback runtime and no longer ships as an independent service.
+    publish_paths:
+    - argocd/services/ticket/{env}/**
+    - argocd/services/ticket/common/**
+    - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+    - argocd/catalogs/playground/beijing-playground/{env}/ticket.yaml
+    - argocd/secrets/{env}/ticket-runtime-secrets.sops.yaml
+    - ticket/k8s/base/**
+    publish_paths_by_env:
+      beijing-sandbox:
+      - argocd/services/ticket/beijing-sandbox/**
+      - argocd/services/ticket/common/**
+      - argocd/services/ticket/profiles/sandbox/**
+      - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+      - argocd/catalogs/sandbox/beijing-sandbox/ticket.yaml
+      - argocd/secrets/beijing-sandbox/ticket-runtime-secrets.sops.yaml
+      - ticket/k8s/base/**
+    dockerfile: ticket/Dockerfile
+    build_context: ticket
+    image_repo:
+      beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/ticket
+      sandbox-kr-*: lightclaw-kr1.tencentcloudcr.com/lightclaw/ticket
