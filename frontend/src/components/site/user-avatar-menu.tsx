@@ -175,14 +175,16 @@ export const UserAvatarMenu = () => {
                 <User className={menuIconClass} />
                 {t("账号管理")}
               </Link>
-              <Link
-                href="/support"
-                onClick={() => setOpen(false)}
-                className={menuItemClass}
-              >
-                <MessageSquare className={menuIconClass} />
-                {t("用户反馈")}
-              </Link>
+              {workbenchRevealed ? (
+                <Link
+                  href="/support"
+                  onClick={() => setOpen(false)}
+                  className={menuItemClass}
+                >
+                  <MessageSquare className={menuIconClass} />
+                  {t("产品反馈")}
+                </Link>
+              ) : null}
 
             </div>
 
