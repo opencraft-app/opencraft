@@ -3,6 +3,10 @@ catalog_publish_exemptions_by_env:
     argocd/catalogs/sandbox/beijing-sandbox/session.yaml: session has no CI build
       contract or release workflow; deploy-facing catalog is tracked but not promotable
       by release-bundle CI.
+    argocd/catalogs/sandbox/beijing-sandbox/ticket.yaml: ticket release bundle
+      contract is temporarily disabled while ctl shprod rollout is unblocked; the
+      deploy-facing catalog remains tracked but is not promotable by release-bundle
+      CI.
   beijing-sandbox-2:
     argocd/catalogs/sandbox/beijing-sandbox-2/session.yaml: session has no CI build
       contract or release workflow; deploy-facing catalog is tracked but not promotable
