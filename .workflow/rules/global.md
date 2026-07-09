@@ -135,7 +135,7 @@ L 级需求中，Leader 的唯一职责是调度和审核。禁止 Leader 直接
 ```
 [STEP 1/6] 正在执行：读取 .workflow/project.yaml 确认工作流配置
 [STEP 2/6] 正在执行：加载 P0 文件（current_state.md、plan.md）
-[STEP 3/6] 正在执行：调用 brainstorming skill 进行需求分析
+[STEP 3/6] 正在执行：调用 prd-init skill 进行需求澄清 + brainstorming skill 进行技术设计探索
 ```
 
 **未输出步骤编号即执行操作，视为跳步违规。**
@@ -199,7 +199,7 @@ AI:  好的，进入 STEP 2...      ← ❌ 没有 SKIP-ARCHIVE 二次确认
 | STEP 结束时 | `timeline.log` 追加 `{stage,phase:"end",ts,tokenIn,tokenOut}`（`userIdleRatio` v0.31 起 deprecated，允许留空；v0.34 下线了原 `outputChars` 输出侧估算路径） |
 | `/feai-review` 出结论时 | `gates.log` 追加 `{batch,attempt,result,failedChecks,rejectReason,durationSec}` |
 | 用户回复 `SKIP-ARCHIVE` 时 | `explicit-skips.log` 追加 `{rule:"G22",reason,at}` |
-| brainstorming 完成时 | `clarification.log` 追加 `{rounds,hasFigma}` |
+| prd-init 完成时 | `clarification.log` 追加 `{rounds,hasFigma}` |
 
 ### AI 自报字段（核心约束）
 

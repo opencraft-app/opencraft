@@ -39,11 +39,11 @@
 
 ## 执行流程
 
-### Phase 1：需求分析
+### Phase 1：需求澄清 + 技术设计探索
 
-1. 调用 `brainstorming` skill
-2. 分析：
-   - 用户真实意图与需求边界
+1. 调用 `prd-init` skill 进行需求澄清（用户意图、场景、范围边界、站点范围、TAPD 建单）
+2. 调用 `brainstorming` skill 进行技术设计探索（⚠️ 产品范围已由 prd-init 确认，只探索技术方案）
+3. 分析：
    - 受影响的模块与组件（参照 `current_state.md` 与 `specs/`）
    - 技术选型与备选方案（提供 2-3 个选项）
 
@@ -88,10 +88,11 @@
 
 | # | 检查项 | 状态 |
 |---|--------|------|
-| 1 | `brainstorming` skill 已真实调用（G12） | |
-| 2 | `writing-plans` skill 已真实调用（G12） | |
-| 3 | `proposal.md` 包含背景、目标、非目标、受影响模块 | |
-| 4 | `spec.md` 包含接口设计、组件设计、边界情况 | |
-| 5 | `plan.md` 包含任务列表、依赖关系、并行分析 | |
-| 6 | 所有产物路径都在 `openspec/` 下（G21） | |
-| 7 | 步骤编号 `[STEP N/M]` 已输出（G20） | |
+| 1 | `prd-init` skill 已真实调用（G12） | |
+| 2 | `brainstorming` skill 已真实调用（G12） | |
+| 3 | `writing-plans` skill 已真实调用（G12） | |
+| 4 | `proposal.md` 包含背景、目标、非目标、受影响模块 | |
+| 5 | `spec.md` 包含接口设计、组件设计、边界情况 | |
+| 6 | `plan.md` 包含任务列表、依赖关系、并行分析 | |
+| 7 | 所有产物路径都在 `openspec/` 下（G21） | |
+| 8 | 步骤编号 `[STEP N/M]` 已输出（G20） | |
