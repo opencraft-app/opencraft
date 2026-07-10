@@ -107,6 +107,38 @@ description: LightVela 专用 SEO/GEO 技能。用户要求审查、编辑或规
 
 不要为了 SEO 加无意义链接。每个链接都要帮助用户继续完成下一步。
 
+### ⚠️ 链接必须用真实路由，不能用 markdown 源文件名
+
+这是常犯错误：把 docs 的 markdown 源文件名当成 URL。源文件名形如 `01-overview.md`、`02-quickstart.md`、`04-core-concepts.md`，其中的 `01-`/`02-`/`04-` 数字前缀**只是为了排序，不是路由 slug**。直接写成 `https://lightvela.ai/docs/01-overview` 一定是 404。
+
+正确的真实路由（已验证）：
+
+| 错误（源文件名） | 正确（真实 URL） |
+| --- | --- |
+| `/docs/01-overview` | `/docs/overview` |
+| `/docs/02-quickstart` | `/docs/quickstart` |
+| `/docs/04-core-concepts` | `/docs/core-concepts` |
+| `/docs/05-configuration` | `/docs/configuration` |
+| `/docs/03-account` | `/docs/account` |
+
+常用真实 docs 路径：`/docs/overview`、`/docs/quickstart`、`/docs/core-concepts`、`/docs/configuration`、`/docs/configuration/model`、`/docs/configuration/skill`、`/docs/configuration/automation`、`/docs/configuration/channel-telegram`（及 whatsapp/discord/qq/wecom/feishu/wechat）、`/docs/faq`、`/docs/faq/using-lightvela-safely`。
+
+**生成任何内部链接前必须核对：**
+1. slug 是否存在于 `frontend/next-site/docs-route-manifest.ts` 的 `DOCS_ROUTE_SLUGS`；
+2. URL 是否出现在 `frontend/src/lib/seo-data.ts` 的页面级 key 里；
+3. 能否在 `frontend/src/app/sitemap.xml/route.next.ts` 的生成路径里对上。
+
+三个对不上的链接，一律不要写。拿不准时优先用上面的“常用真实 docs 路径”，或回退到 `/docs/overview` 这种确定存在的，不要编造。docs 站点基底路径是 `/docs`（见 `frontend/next-site/source.ts` 的 `baseUrl: '/docs'`）；默认站点是 `https://lightvela.ai`（国际站）/ `https://lightvela.com`（国内站）。
+
+### 内链要在正文里分散，不要只堆在文末
+
+内部链接应当**出现在正文自然提及概念的地方**（行内链接），而不是只在结尾聚成一堆或放一个“相关阅读”块。规则：
+
+- 至少 2-3 个内链分布在正文不同 section（开头/中段/结尾都要有），不是只集中在最后一段。
+- 链接要与所在句子的上下文真实相关（讲 skills 时链到 skill 配置页；讲 automations 时链到 automation 配置页）。
+- 同一页面的内链不要重复指向（同一个目标链接出现一次即可，除非明显需要）。
+- 仍然遵守“不堆塞、每个链接帮读者走下一步”。
+
 ## 输出语言
 
 用户用中文提问时，用中文回复。改英文页面时，页面正文和 metadata 用英文。

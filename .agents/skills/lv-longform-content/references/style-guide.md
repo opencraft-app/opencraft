@@ -8,23 +8,23 @@ Default article length: 900-1,500 words unless the user gives a target length.
 
 ## Output Channel
 
-Choose one output channel before writing:
+Choose one output channel before writing. Language and form (text vs Markdown) default from the channel per the table in `SKILL.md` (语言与形式默认值); honour any explicit language/form the user gave and never ask about them separately.
 
-- `social-media`: produce the article in chat unless the user asks to save it. Default language is English unless the user asks for Chinese or bilingual output.
-- `techpedia`: for Tencent Techpedia、腾讯技术百科、开发者社区、开发者文章, produce Markdown files, not chat-only output. Always create one Chinese version and one English version.
+- `social-media`: produce the article in chat unless the user asks to save it. Default language is English unless the user asks for Chinese or bilingual output. Default form is in-chat text, **not** `.md` (covers X / blog / 公众号 long posts).
+- `techpedia`: for Tencent Techpedia、腾讯技术百科、开发者社区、开发者文章, produce Markdown files, not chat-only output. Always create both a Chinese version and an English version (`.zh.md` + `.en.md`) — this is a fixed, bundled default.
 
-If the user does not specify the channel, ask one short clarification question before drafting.
+If the user does not specify the channel (or mode/topic), run the consolidated intake in `SKILL.md`; do not ask about language or form in a separate round.
 
 Use this shape:
 
 ```markdown
 Article Title
-[Image: Recommended hero image or product screenshot]
+[RECOMMEND ADD IMAGE: Recommended hero image or product screenshot — <why it belongs here>]
 Opening paragraphs...
 
 Section Heading
 Body...
-[Image: Recommended screenshot or diagram for this moment]
+[RECOMMEND ADD IMAGE: Screenshot or diagram for this moment — <what it shows / why>]
 
 Section Heading
 Body...
@@ -35,11 +35,11 @@ Closing paragraphs...
 Join LightVela's Community for More Updates!
 Discord:
 Join our Discord community — scan the QR code to connect with builders and get updates.
-![LightVela Discord QR](</Users/cassidyshi/Documents/LightVela mono2/.agents/skills/lv-longform-content/assets/lightvela-discord-qr.png>)
+![LightVela Discord QR](https://dscache-intl.cloudcachetci.com/upload/nodir/disc_LV-23c00256e06401213046ab1142a1db7438ecc40b.png)
 
 WhatsApp:
 Join our WhatsApp group — scan the QR code to try LightVela and chat with us directly.
-![LightVela WhatsApp QR](</Users/cassidyshi/Documents/LightVela mono2/.agents/skills/lv-longform-content/assets/lightvela-whatsapp-qr.png>)
+![LightVela WhatsApp QR](https://dscache-intl.cloudcachetci.com/upload/nodir/whatsapp_LV-e2089814c4615f98fdae3c9d457ceee4b3654f9f.png)
 ```
 
 Voice rules:
@@ -52,7 +52,7 @@ Voice rules:
 - Use examples and short quoted prompts where the user needs to see exactly what to type.
 - Keep the ending grounded: what the user can now do, why it matters, and what the pattern unlocks.
 - Always append the Community Ending after the article's normal closing. The Discord and WhatsApp QR images are real assets, not `[Image]` placeholders.
-- Use explicit image placeholders: `[Image: <what to add here>]`. Do not use a bare `[Image]`.
+- Use the fixed image recommendation format defined in `SKILL.md` (图片建议固定模板). Inside the article, put a standalone bracketed line at each image spot: `[RECOMMEND ADD IMAGE: <what to add> — <why it belongs here>]`. Do not use a bare `[Image]` or arbitrary variants.
 - Keep image density fair: usually 2-4 images for a long article, up to 5 only for a screenshot-heavy tutorial.
 
 Avoid:
@@ -73,12 +73,12 @@ Join LightVela's Community for More Updates!
 Discord:
 Join our Discord community — scan the QR code to connect with builders and get updates.
 
-![LightVela Discord QR](</Users/cassidyshi/Documents/LightVela mono2/.agents/skills/lv-longform-content/assets/lightvela-discord-qr.png>)
+![LightVela Discord QR](https://dscache-intl.cloudcachetci.com/upload/nodir/disc_LV-23c00256e06401213046ab1142a1db7438ecc40b.png)
 
 WhatsApp:
 Join our WhatsApp group — scan the QR code to try LightVela and chat with us directly.
 
-![LightVela WhatsApp QR](</Users/cassidyshi/Documents/LightVela mono2/.agents/skills/lv-longform-content/assets/lightvela-whatsapp-qr.png>)
+![LightVela WhatsApp QR](https://dscache-intl.cloudcachetci.com/upload/nodir/whatsapp_LV-e2089814c4615f98fdae3c9d457ceee4b3654f9f.png)
 ```
 
 ## Image Planning
@@ -90,7 +90,7 @@ Before finalizing, decide whether images improve the article. Prefer images that
 - Simple diagram for a workflow, lifecycle, or architecture explanation.
 - Result screenshot near verification or outcome.
 
-Do not overfill the article with images. If an image is recommended, mark the exact position in the article with `[Image: <specific recommendation>]`.
+Do not overfill the article with images. If an image is recommended, mark the exact position in the article with a standalone `[RECOMMEND ADD IMAGE: <specific recommendation> — <why>]` line.
 
 After the article is produced, also include a short chat summary:
 
@@ -123,7 +123,7 @@ Recommended structure:
 
 ```markdown
 <Outcome-focused title>
-[Image: Hero screenshot showing the finished setup or target workflow]
+[RECOMMEND ADD IMAGE: Hero screenshot showing the finished setup or target workflow — <what the reader sees when it's done>]
 Why this setup matters, what the guide will help the user do.
 
 Before You Start
@@ -131,7 +131,7 @@ Prerequisites, accounts, tokens, model/channel/skill requirements, safety notes.
 
 Step 1: <Action>
 Clear instruction and product context.
-[Image: Screenshot of the UI after completing this milestone]
+[RECOMMEND ADD IMAGE: Screenshot of the UI after completing this milestone — <what state to confirm>]
 
 Step 2: <Action>
 Continue with exact clicks, fields, commands, or prompts.
@@ -154,11 +154,11 @@ Short closing that restates the completed outcome.
 Join LightVela's Community for More Updates!
 Discord:
 Join our Discord community — scan the QR code to connect with builders and get updates.
-![LightVela Discord QR](</Users/cassidyshi/Documents/LightVela mono2/.agents/skills/lv-longform-content/assets/lightvela-discord-qr.png>)
+![LightVela Discord QR](https://dscache-intl.cloudcachetci.com/upload/nodir/disc_LV-23c00256e06401213046ab1142a1db7438ecc40b.png)
 
 WhatsApp:
 Join our WhatsApp group — scan the QR code to try LightVela and chat with us directly.
-![LightVela WhatsApp QR](</Users/cassidyshi/Documents/LightVela mono2/.agents/skills/lv-longform-content/assets/lightvela-whatsapp-qr.png>)
+![LightVela WhatsApp QR](https://dscache-intl.cloudcachetci.com/upload/nodir/whatsapp_LV-e2089814c4615f98fdae3c9d457ceee4b3654f9f.png)
 ```
 
 Style notes:
@@ -166,7 +166,7 @@ Style notes:
 - Make the first paragraph immediately useful.
 - Number steps only when the sequence matters.
 - Include safety notes near the action that creates risk, such as tokens, API keys, permissions, or public channels.
-- Add `[Image: <specific screenshot>]` after major UI milestones.
+- Add `[RECOMMEND ADD IMAGE: <specific screenshot> — <why>]` after major UI milestones.
 - Include short prompt examples in fenced code blocks when users should type something into Hermes.
 
 ## Feature Introduction Series
@@ -175,11 +175,13 @@ Use for `LV 长篇内容（功能介绍系列）`.
 
 Purpose: introduce a product capability and explain why users should care.
 
+> ⚠️ **Audience: non-technical users.** You may read the codebase to confirm the feature is real (per `SKILL.md` 功能相关内容必须基于真实代码), but the article itself must NOT expose backend details — no file paths, API endpoints, field names, proto, config keys, Go/TS types, or service/dir names. Code is the source of truth for facts, not the vocabulary. Rewrite every mechanism in plain product language (e.g. "give your Agent a persona profile", not "materialize a SOUL.md into the sandbox workspace"). Only keep implementation detail when the reader is explicitly a developer.
+
 Recommended structure:
 
 ```markdown
 Introducing <feature>: <human benefit> with LightVela
-[Image: Product screenshot or simple visual showing the feature]
+[RECOMMEND ADD IMAGE: Product screenshot or simple visual showing the feature — <the capability at a glance>]
 Start from the existing LightVela/Hermes context and the user problem this feature answers.
 
 What Is <Feature>?
@@ -187,11 +189,11 @@ Define the capability in simple product language.
 
 Why It Matters
 Explain the user need and what changes after the feature exists.
-[Image: Before/after visual or user-facing state]
+[RECOMMEND ADD IMAGE: Before/after visual or user-facing state — <what changed for the user>]
 
 How It Works
 Explain entry points, core actions, states, and result.
-[Image: Screenshot or diagram of the workflow]
+[RECOMMEND ADD IMAGE: Screenshot or diagram of the workflow — <entry points and states>]
 
 What You Can Do With It
 Give 2-4 concrete examples in prose.
@@ -202,11 +204,11 @@ Close with the product direction and what this first version unlocks.
 Join LightVela's Community for More Updates!
 Discord:
 Join our Discord community — scan the QR code to connect with builders and get updates.
-![LightVela Discord QR](</Users/cassidyshi/Documents/LightVela mono2/.agents/skills/lv-longform-content/assets/lightvela-discord-qr.png>)
+![LightVela Discord QR](https://dscache-intl.cloudcachetci.com/upload/nodir/disc_LV-23c00256e06401213046ab1142a1db7438ecc40b.png)
 
 WhatsApp:
 Join our WhatsApp group — scan the QR code to try LightVela and chat with us directly.
-![LightVela WhatsApp QR](</Users/cassidyshi/Documents/LightVela mono2/.agents/skills/lv-longform-content/assets/lightvela-whatsapp-qr.png>)
+![LightVela WhatsApp QR](https://dscache-intl.cloudcachetci.com/upload/nodir/whatsapp_LV-e2089814c4615f98fdae3c9d457ceee4b3654f9f.png)
 ```
 
 Style notes:
@@ -226,23 +228,23 @@ Recommended structure:
 
 ```markdown
 I made a <scenario> agent in <channel> with LightVela
-[Image: Hero image showing the channel or finished assistant]
+[RECOMMEND ADD IMAGE: Hero image showing the channel or finished assistant — <where the story lives>]
 Open with a specific annoyance, recurring task, or personal need.
 
 Starting With <Channel or Entry Point>
 Why this channel/workflow fit the user's real behavior.
-[Image: Screenshot of the channel or entry point]
+[RECOMMEND ADD IMAGE: Screenshot of the channel or entry point — <how the user gets in>]
 
 Giving Hermes The Right Tools
 Explain skills, model, memory, channel, or configuration used.
-[Image: Screenshot of skills, model, memory, or configuration]
+[RECOMMEND ADD IMAGE: Screenshot of skills, model, memory, or configuration — <the tools wired in>]
 
 Turning It Into <Specific Assistant>
 Show example prompts and what Hermes returns or helps with.
 
 Automating The Assistant
 If relevant, explain scheduled or repeated tasks with Automations.
-[Image: Screenshot of the automation schedule or repeated result]
+[RECOMMEND ADD IMAGE: Screenshot of the automation schedule or repeated result — <the repeatable payoff>]
 
 What I Learned
 Extract the product pattern.
@@ -253,11 +255,11 @@ End emotionally but practically: what became easier, what stayed online, what fe
 Join LightVela's Community for More Updates!
 Discord:
 Join our Discord community — scan the QR code to connect with builders and get updates.
-![LightVela Discord QR](</Users/cassidyshi/Documents/LightVela mono2/.agents/skills/lv-longform-content/assets/lightvela-discord-qr.png>)
+![LightVela Discord QR](https://dscache-intl.cloudcachetci.com/upload/nodir/disc_LV-23c00256e06401213046ab1142a1db7438ecc40b.png)
 
 WhatsApp:
 Join our WhatsApp group — scan the QR code to try LightVela and chat with us directly.
-![LightVela WhatsApp QR](</Users/cassidyshi/Documents/LightVela mono2/.agents/skills/lv-longform-content/assets/lightvela-whatsapp-qr.png>)
+![LightVela WhatsApp QR](https://dscache-intl.cloudcachetci.com/upload/nodir/whatsapp_LV-e2089814c4615f98fdae3c9d457ceee4b3654f9f.png)
 ```
 
 Style notes:
@@ -273,13 +275,14 @@ Style notes:
 Before finalizing, check:
 
 - The selected mode matches the prompt.
-- The output channel is known. If not, ask whether this is social media or Tencent Techpedia/开发者社区.
+- The output channel is known. If mode/channel/topic are not all clear, run the consolidated intake from `SKILL.md` (never ask about language or form separately).
 - The title matches the series style.
-- The article begins with a narrative/product hook and `[Image: <specific recommendation>]`.
-- Image placeholders appear at natural screenshot moments, with fair density.
+- The article begins with a narrative/product hook and a `[RECOMMEND ADD IMAGE: <specific recommendation> — <why>]` hero line.
+- Image spots appear at natural screenshot moments, with fair density, all using the fixed `[RECOMMEND ADD IMAGE: <what> — <why>]` format.
 - The final chat response lists all recommended image placements and what each image should show.
 - For Techpedia/开发者社区, two Markdown files exist: Chinese and English.
 - The Community Ending appears after the normal article closing, with both QR image links intact.
 - The product mechanics are clear enough to act on.
 - The piece sounds like LightVela/Hermes, not a generic AI SaaS blog.
 - No attached example content is copied beyond structural inspiration.
+- SEO/GEO: opening contains the main keyword once; at least one clear definition sentence; meaningful internal links woven through the body (not only at the end), each pointing to a real verified route (never a markdown source filename like `/docs/01-overview` — use `/docs/overview`); no keyword stuffing. (Full link-verification procedure and route list belongs to `lv-seo-geo`.)
