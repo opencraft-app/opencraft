@@ -2,6 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::client::{ChatStreamEvent, Message, Role, ToolCall};
 use crate::error::{Error, Result};
+use crate::schema::ToolSchema;
+use crate::tools::ToolResult;
 use serde_json::Value;
 
 #[derive(Debug, Default)]
@@ -116,6 +118,7 @@ pub(crate) struct ProviderMessageSanitization {
     pub invalid_assistant_tool_messages: usize,
     pub dropped_tool_results: usize,
     pub normalized_tool_calls: usize,
+    pub repaired_tool_calls: usize,
 }
 
 impl ProviderMessageSanitization {
@@ -123,15 +126,18 @@ impl ProviderMessageSanitization {
         self.invalid_assistant_tool_messages > 0
             || self.dropped_tool_results > 0
             || self.normalized_tool_calls > 0
+            || self.repaired_tool_calls > 0
     }
 }
 
 pub(crate) fn sanitize_messages_for_provider(
     messages: &[Message],
+    tool_schemas: &[ToolSchema],
 ) -> (Vec<Message>, ProviderMessageSanitization) {
     let mut sanitized = Vec::with_capacity(messages.len());
     let mut stats = ProviderMessageSanitization::default();
     let mut pending_tool_call_ids = BTreeSet::new();
+    let schemas = tool_schema_map(tool_schemas);
 
     for message in messages {
         match message.role {
@@ -140,21 +146,36 @@ pub(crate) fn sanitize_messages_for_provider(
                 let mut sanitized_message = message.clone();
 
                 if let Some(tool_calls) = sanitized_message.tool_calls.take() {
-                    match normalize_tool_calls(tool_calls.clone()) {
-                        Ok(normalized) if !normalized.is_empty() => {
-                            if !tool_calls_equal(&normalized, &tool_calls) {
-                                stats.normalized_tool_calls += normalized.len();
+                    let mut normalized = Vec::with_capacity(tool_calls.len());
+                    let mut invalid_count = 0;
+                    let mut repaired_count = 0;
+
+                    for tool_call in tool_calls.clone() {
+                        match normalize_tool_call_for_provider(tool_call, &schemas) {
+                            Ok((tool_call, repaired)) => {
+                                if repaired {
+                                    repaired_count += 1;
+                                }
+                                normalized.push(tool_call);
                             }
-                            for tool_call in &normalized {
-                                pending_tool_call_ids.insert(tool_call.id.clone());
+                            Err(_) => {
+                                invalid_count += 1;
                             }
-                            sanitized_message.tool_calls = Some(normalized);
                         }
-                        Ok(_) => {}
-                        Err(_) => {
-                            stats.invalid_assistant_tool_messages += 1;
-                            sanitized_message.tool_calls = None;
+                    }
+
+                    if !normalized.is_empty() {
+                        if !tool_calls_equal(&normalized, &tool_calls) {
+                            stats.normalized_tool_calls += normalized.len();
                         }
+                        stats.repaired_tool_calls += repaired_count;
+                        for tool_call in &normalized {
+                            pending_tool_call_ids.insert(tool_call.id.clone());
+                        }
+                        sanitized_message.tool_calls = Some(normalized);
+                    }
+                    if invalid_count > 0 {
+                        stats.invalid_assistant_tool_messages += invalid_count;
                     }
                 }
 
@@ -181,6 +202,52 @@ pub(crate) fn sanitize_messages_for_provider(
     (sanitized, stats)
 }
 
+#[derive(Debug, Clone, Default)]
+pub(crate) struct PreparedToolCalls {
+    pub history_tool_calls: Vec<ToolCall>,
+    pub executable_tool_calls: Vec<ToolCall>,
+    pub rejected_tool_results: Vec<(String, ToolResult)>,
+    pub repaired_tool_calls: usize,
+}
+
+pub(crate) fn prepare_tool_calls_for_history(
+    tool_calls: Vec<ToolCall>,
+    tool_schemas: &[ToolSchema],
+) -> Result<PreparedToolCalls> {
+    let schemas = tool_schema_map(tool_schemas);
+    let mut prepared = PreparedToolCalls::default();
+
+    for tool_call in tool_calls {
+        match normalize_tool_call_for_schema(tool_call.clone(), &schemas) {
+            Ok(normalized) => {
+                prepared.history_tool_calls.push(normalized.clone());
+                prepared.executable_tool_calls.push(normalized);
+            }
+            Err(error) => {
+                let tool_name = tool_call.function.name.trim();
+                let Some(schema) = schemas.get(tool_name) else {
+                    return Err(error);
+                };
+                let Some(repaired) = repair_tool_call_for_provider(tool_call, schema) else {
+                    return Err(error);
+                };
+                let error_text = format!(
+                    "Invalid arguments for tool '{}': {}. The tool was not executed; call it again with valid arguments.",
+                    repaired.function.name, error
+                );
+                prepared.rejected_tool_results.push((
+                    repaired.function.name.clone(),
+                    ToolResult::error(&repaired.id, error_text),
+                ));
+                prepared.history_tool_calls.push(repaired);
+                prepared.repaired_tool_calls += 1;
+            }
+        }
+    }
+
+    Ok(prepared)
+}
+
 fn normalize_tool_call(mut tool_call: ToolCall) -> Result<ToolCall> {
     let tool_name = tool_call.function.name.trim();
     if tool_name.is_empty() {
@@ -194,6 +261,58 @@ fn normalize_tool_call(mut tool_call: ToolCall) -> Result<ToolCall> {
     tool_call.function.arguments =
         normalize_tool_arguments(&tool_call.function.name, &tool_call.function.arguments)?;
     Ok(tool_call)
+}
+
+fn normalize_tool_call_for_schema(
+    tool_call: ToolCall,
+    schemas: &BTreeMap<&str, &ToolSchema>,
+) -> Result<ToolCall> {
+    let normalized = normalize_tool_call(tool_call)?;
+    if let Some(schema) = schemas.get(normalized.function.name.as_str()) {
+        let arguments =
+            serde_json::from_str::<Value>(&normalized.function.arguments).map_err(|error| {
+                Error::InvalidToolArgs {
+                    name: normalized.function.name.clone(),
+                    details: format!(
+                        "function.arguments must be a valid JSON object string: {error}"
+                    ),
+                }
+            })?;
+        schema.validate_args(&arguments)?;
+    }
+    Ok(normalized)
+}
+
+fn normalize_tool_call_for_provider(
+    tool_call: ToolCall,
+    schemas: &BTreeMap<&str, &ToolSchema>,
+) -> Result<(ToolCall, bool)> {
+    match normalize_tool_call_for_schema(tool_call.clone(), schemas) {
+        Ok(normalized) => Ok((normalized, false)),
+        Err(error) => {
+            let tool_name = tool_call.function.name.trim();
+            if let Some(schema) = schemas.get(tool_name) {
+                if let Some(repaired) = repair_tool_call_for_provider(tool_call, schema) {
+                    return Ok((repaired, true));
+                }
+            }
+            Err(error)
+        }
+    }
+}
+
+fn repair_tool_call_for_provider(mut tool_call: ToolCall, schema: &ToolSchema) -> Option<ToolCall> {
+    let arguments = schema.provider_safe_args()?;
+    tool_call.function.name = schema.name.clone();
+    tool_call.function.arguments = serde_json::to_string(&arguments).ok()?;
+    Some(tool_call)
+}
+
+fn tool_schema_map(tool_schemas: &[ToolSchema]) -> BTreeMap<&str, &ToolSchema> {
+    tool_schemas
+        .iter()
+        .map(|schema| (schema.name.as_str(), schema))
+        .collect()
 }
 
 fn tool_calls_equal(left: &[ToolCall], right: &[ToolCall]) -> bool {
@@ -461,7 +580,7 @@ mod tests {
             Message::user("continue"),
         ];
 
-        let (sanitized, stats) = sanitize_messages_for_provider(&messages);
+        let (sanitized, stats) = sanitize_messages_for_provider(&messages, &[]);
 
         assert_eq!(stats.invalid_assistant_tool_messages, 1);
         assert_eq!(stats.dropped_tool_results, 1);
@@ -486,7 +605,7 @@ mod tests {
             Message::tool("call_ok", "/workspace"),
         ];
 
-        let (sanitized, stats) = sanitize_messages_for_provider(&messages);
+        let (sanitized, stats) = sanitize_messages_for_provider(&messages, &[]);
 
         assert_eq!(stats.invalid_assistant_tool_messages, 0);
         assert_eq!(stats.dropped_tool_results, 0);
@@ -508,11 +627,99 @@ mod tests {
             Message::user("hello"),
         ];
 
-        let (sanitized, stats) = sanitize_messages_for_provider(&messages);
+        let (sanitized, stats) = sanitize_messages_for_provider(&messages, &[]);
 
         assert_eq!(stats.dropped_tool_results, 1);
         assert_eq!(sanitized.len(), 1);
         assert_eq!(sanitized[0].content, "hello");
+    }
+
+    #[test]
+    fn sanitize_messages_for_provider_repairs_schema_invalid_tool_call() {
+        let read_file = ToolSchema::new(
+            "read_file",
+            "Read a file",
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string" }
+                },
+                "required": ["path"]
+            }),
+        );
+        let messages = vec![
+            Message::user("read a file"),
+            Message::assistant("").with_tool_calls(vec![ToolCall {
+                id: "call_bad_read".to_string(),
+                function: ToolCallFunction {
+                    name: "read_file".to_string(),
+                    arguments: r#"{"text":"{\"path\": "}"#.to_string(),
+                },
+            }]),
+            Message::tool("call_bad_read", "Invalid JSON: EOF while parsing a value"),
+            Message::user("continue"),
+        ];
+
+        let (sanitized, stats) = sanitize_messages_for_provider(&messages, &[read_file]);
+
+        assert_eq!(stats.invalid_assistant_tool_messages, 0);
+        assert_eq!(stats.dropped_tool_results, 0);
+        assert_eq!(stats.repaired_tool_calls, 1);
+        let tool_calls = sanitized[1]
+            .tool_calls
+            .as_ref()
+            .expect("schema-invalid known tool call should be repaired");
+        assert_eq!(tool_calls[0].id, "call_bad_read");
+        assert_eq!(tool_calls[0].function.name, "read_file");
+        assert_eq!(tool_calls[0].function.arguments, r#"{"path":""}"#);
+        assert_eq!(sanitized[2].tool_call_id.as_deref(), Some("call_bad_read"));
+    }
+
+    #[test]
+    fn prepare_tool_calls_for_history_converts_schema_invalid_call_to_tool_error() {
+        let read_file = ToolSchema::new(
+            "read_file",
+            "Read a file",
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string" }
+                },
+                "required": ["path"]
+            }),
+        );
+
+        let prepared = prepare_tool_calls_for_history(
+            vec![ToolCall {
+                id: "call_bad_read".to_string(),
+                function: ToolCallFunction {
+                    name: "read_file".to_string(),
+                    arguments: r#"{"text":"{\"path\": "}"#.to_string(),
+                },
+            }],
+            &[read_file],
+        )
+        .expect("known schema-invalid tool calls should become model-visible tool errors");
+
+        assert_eq!(prepared.history_tool_calls.len(), 1);
+        assert_eq!(
+            prepared.history_tool_calls[0].function.arguments,
+            r#"{"path":""}"#
+        );
+        assert!(prepared.executable_tool_calls.is_empty());
+        assert_eq!(prepared.rejected_tool_results.len(), 1);
+        assert_eq!(prepared.rejected_tool_results[0].0, "read_file");
+        assert_eq!(
+            prepared.rejected_tool_results[0].1.tool_call_id,
+            "call_bad_read"
+        );
+        assert!(!prepared.rejected_tool_results[0].1.success);
+        assert!(prepared.rejected_tool_results[0]
+            .1
+            .error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Missing required field: path"));
     }
 
     #[test]

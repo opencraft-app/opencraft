@@ -2,6 +2,7 @@
 //!
 //! Implements the ReAct (Reason + Act) pattern for LLM-driven tool execution.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -10,7 +11,7 @@ use std::time::Duration;
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tracing::{debug, error, info, instrument, warn};
 
-use crate::client::{Message, OpenAIClient, ToolCall};
+use crate::client::{Message, OpenAIClient};
 use crate::config::{runtime_config, BehaviorSettings};
 use crate::context::ContextConfig;
 use crate::context_hints::ContextHintTracker;
@@ -19,7 +20,7 @@ use crate::events::{AgentEvent, AgentEventSink};
 use crate::hooks::{GateHook, NoopGateHook, PromptTransformHook};
 use crate::memory::MemoryManager;
 use crate::runtime::system_prompt::SystemPromptCache;
-use crate::runtime::tool_calls::{normalize_tool_calls, sanitize_messages_for_provider};
+use crate::runtime::tool_calls::{prepare_tool_calls_for_history, sanitize_messages_for_provider};
 use crate::runtime::tool_loop::check_cancelled;
 use crate::runtime_host::{session_id, SessionSandbox};
 use crate::skills::{SkillInjectionPlan, SkillManager, SkillSelection};
@@ -318,12 +319,14 @@ impl AgentExecutor {
             // Get tool schemas
             let tools = self.registry.get_schemas().await;
 
-            let (provider_messages, sanitization) = sanitize_messages_for_provider(&messages);
+            let (provider_messages, sanitization) =
+                sanitize_messages_for_provider(&messages, &tools);
             if sanitization.changed() {
                 warn!(
                     invalid_assistant_tool_messages = sanitization.invalid_assistant_tool_messages,
                     dropped_tool_results = sanitization.dropped_tool_results,
                     normalized_tool_calls = sanitization.normalized_tool_calls,
+                    repaired_tool_calls = sanitization.repaired_tool_calls,
                     "Sanitized outbound provider messages"
                 );
             }
@@ -346,8 +349,10 @@ impl AgentExecutor {
 
             match response {
                 Ok((response_text, reasoning_text, tool_calls)) => {
-                    let tool_calls = match normalize_tool_calls_for_history(tool_calls) {
-                        Ok(tool_calls) => tool_calls,
+                    let prepared_tool_calls = match prepare_tool_calls_for_history(
+                        tool_calls, &tools,
+                    ) {
+                        Ok(prepared) => prepared,
                         Err(error) => {
                             warn!(error = %error, "Rejected invalid tool call before history append");
                             self.emit(AgentEvent::Error {
@@ -357,6 +362,13 @@ impl AgentExecutor {
                             return Err(error);
                         }
                     };
+                    if prepared_tool_calls.repaired_tool_calls > 0 {
+                        warn!(
+                            repaired_tool_calls = prepared_tool_calls.repaired_tool_calls,
+                            "Repaired invalid tool calls before history append"
+                        );
+                    }
+                    let tool_calls = prepared_tool_calls.history_tool_calls.clone();
 
                     // Add assistant message to conversation
                     let mut assistant_msg = Message::assistant(&response_text);
@@ -383,7 +395,24 @@ impl AgentExecutor {
 
                     // Execute tools and add results
                     check_cancelled(cancel.as_ref())?;
-                    let tool_results = self.execute_tools(tool_calls, cancel.clone()).await?;
+                    let executed_results = self
+                        .execute_tools(prepared_tool_calls.executable_tool_calls, cancel.clone())
+                        .await?;
+                    let mut tool_results_by_id = BTreeMap::new();
+                    for (name, result) in prepared_tool_calls
+                        .rejected_tool_results
+                        .into_iter()
+                        .chain(executed_results)
+                    {
+                        tool_results_by_id.insert(result.tool_call_id.clone(), (name, result));
+                    }
+                    let mut tool_results = Vec::with_capacity(tool_calls.len());
+                    for tool_call in &tool_calls {
+                        if let Some(result) = tool_results_by_id.remove(&tool_call.id) {
+                            tool_results.push(result);
+                        }
+                    }
+                    tool_results.extend(tool_results_by_id.into_values());
                     check_cancelled(cancel.as_ref())?;
 
                     for (name, result) in &tool_results {
@@ -506,10 +535,6 @@ fn merge_skill_selection(defaults: &SkillSelection, turn: &SkillSelection) -> Sk
     append_unique(&mut merged.bundles, &defaults.bundles);
     append_unique(&mut merged.bundles, &turn.bundles);
     merged
-}
-
-fn normalize_tool_calls_for_history(tool_calls: Vec<ToolCall>) -> Result<Vec<ToolCall>> {
-    normalize_tool_calls(tool_calls)
 }
 
 /// Builder for creating an AgentExecutor.
@@ -1000,13 +1025,16 @@ mod tests {
 
     #[test]
     fn invalid_tool_call_arguments_are_rejected_before_history_append() {
-        let error = normalize_tool_calls_for_history(vec![ToolCall {
-            id: "call_bad_terminal".to_string(),
-            function: crate::client::ToolCallFunction {
-                name: "terminal".to_string(),
-                arguments: "{".to_string(),
-            },
-        }])
+        let error = prepare_tool_calls_for_history(
+            vec![ToolCall {
+                id: "call_bad_terminal".to_string(),
+                function: crate::client::ToolCallFunction {
+                    name: "terminal".to_string(),
+                    arguments: "{".to_string(),
+                },
+            }],
+            &[],
+        )
         .expect_err("partial JSON arguments must not be recorded as assistant tool_calls");
 
         assert!(matches!(error, Error::InvalidToolArgs { .. }));
