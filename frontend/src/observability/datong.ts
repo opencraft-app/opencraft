@@ -22,6 +22,12 @@ type DatongEnv = {
   // dev 模式上报开关：本地/预览环境显式打开后，即便非生产构建也允许初始化 SDK。
   readonly NEXT_PUBLIC_DATONG_DEV_ENABLED?: string;
   readonly VITE_DATONG_DEV_ENABLED?: string;
+  // 部署环境标识：staging / production，区分预发与正式
+  readonly NEXT_PUBLIC_APP_ENV?: string;
+  readonly VITE_APP_ENV?: string;
+  // 认证 API 地址，用于推断部署环境（staging 域名含 lightclaw）
+  readonly NEXT_PUBLIC_AUTH_API_BASE_URL?: string;
+  readonly VITE_AUTH_API_BASE_URL?: string;
 };
 
 // universal-report SDK 客户端类型 —— 采用宽松结构定义，仅暴露业务实际调用的成员，
@@ -43,6 +49,7 @@ export type DatongClient = {
 export type DatongConfig = {
   appKey: string;
   region: Region;
+  appEnv: string;
   enableNoCodeTracking: boolean;
 };
 
@@ -378,6 +385,13 @@ const readNextPublicEnv = (): DatongEnv => ({
     typeof process !== "undefined" ? process.env.NEXT_PUBLIC_DATONG_APPKEY : undefined,
   NEXT_PUBLIC_DATONG_DEV_ENABLED:
     typeof process !== "undefined" ? process.env.NEXT_PUBLIC_DATONG_DEV_ENABLED : undefined,
+  NEXT_PUBLIC_APP_ENV:
+    typeof process !== "undefined" ? process.env.NEXT_PUBLIC_APP_ENV : undefined,
+  NEXT_PUBLIC_AUTH_API_BASE_URL:
+    typeof process !== "undefined" ? process.env.NEXT_PUBLIC_AUTH_API_BASE_URL : undefined,
+  // VITE_AUTH_API_BASE_URL 通过 next.config.mjs env 桥接后可在客户端读取
+  VITE_AUTH_API_BASE_URL:
+    typeof process !== "undefined" ? process.env.VITE_AUTH_API_BASE_URL : undefined,
 });
 
 const readDatongEnv = (): DatongEnv => ({
@@ -411,6 +425,28 @@ export function isDatongDevEnabled(env: DatongEnv = readDatongEnv()): boolean {
   );
 }
 
+/**
+ * 推断部署环境标识（staging / production）。
+ *
+ * 优先级：
+ *   1. 显式环境变量 NEXT_PUBLIC_APP_ENV / VITE_APP_ENV（release-matrix 注入）
+ *   2. 从 AUTH_API_BASE_URL 推断（CI 构建脚本的通用标识）
+ *      - 含 lightclaw → staging（预发域名）
+ *      - 含 lightvela → production（正式域名）
+ *   3. 默认 production
+ */
+function resolveAppEnv(env: DatongEnv): string {
+  const explicit = envValue(env, "NEXT_PUBLIC_APP_ENV", "VITE_APP_ENV");
+  if (explicit) return explicit.trim();
+
+  const authUrl = envValue(env, "NEXT_PUBLIC_AUTH_API_BASE_URL", "VITE_AUTH_API_BASE_URL") ?? "";
+  if (authUrl.includes("localhost") || authUrl.includes("127.0.0.1")) return "development";
+  if (authUrl.includes("lightclaw")) return "staging";
+  if (authUrl.includes("lightvela")) return "production";
+
+  return "production";
+}
+
 export function resolveDatongConfig(
   env: DatongEnv = readDatongEnv(),
   region: Region = REGION,
@@ -433,6 +469,7 @@ export function resolveDatongConfig(
   return {
     appKey,
     region,
+    appEnv: resolveAppEnv(env),
     enableNoCodeTracking: false,
   };
 }
@@ -467,6 +504,7 @@ export async function initDatong(
       //   - app_region  : "cn" / "global"，区分国内站与国际站
       //   - app_site    : "lightvela-cn" / "lightvela-global"，品牌+区域，便于看板直筛
       //   - app_surface : "lightvela-web"，前端 surface
+      //   - app_env     : "staging" / "production"，区分预发与正式环境
       //   - ref_from    : URL ?from=xxx 捕获的来源（discord / twitter / kol_xxx）
       //   - utm_*       : 标准 UTM 参数
       const refSourceParams = resolveRefSource();
@@ -476,6 +514,7 @@ export async function initDatong(
           app_region: config.region,
           app_site: `lightvela-${config.region}`,
           app_surface: activeAppSurface,
+          app_env: config.appEnv,
           ...refSourceParams,
         },
         enableNoCodeTracking: config.enableNoCodeTracking,

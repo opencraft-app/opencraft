@@ -115,6 +115,7 @@ describe("大同埋点全链路模拟上报", () => {
       expect(config).toEqual({
         appKey: "0WEB071LS3218EU7",
         region: "cn",
+        appEnv: "production",
         enableNoCodeTracking: false,
       });
     });
@@ -147,6 +148,7 @@ describe("大同埋点全链路模拟上报", () => {
       expect(config).toEqual({
         appKey: "0WEB071LS3218EU7",
         region: "cn",
+        appEnv: "production",
         enableNoCodeTracking: false,
       });
     });
@@ -179,6 +181,7 @@ describe("大同埋点全链路模拟上报", () => {
       expect(config).toEqual({
         appKey: "0WEB071LS3218EU7",
         region: "cn",
+        appEnv: "production",
         enableNoCodeTracking: false,
       });
     });
