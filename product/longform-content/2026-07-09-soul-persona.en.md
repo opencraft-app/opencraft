@@ -59,14 +59,14 @@ If you already have a Hermes Agent you use daily, the next move is simple: give 
 
 ---
 
-Join LightVela's Community for More Updates!
+## Join LightVela's Community for More Updates!
 
-Discord:
-Join our Discord community — scan the QR code to connect with builders and get updates.
+**Visit us at [LightVela](https://lightvela.ai)**
+
+**Discord** — scan the QR code to join our Discord community and connect with builders for the latest updates.
 
 ![LightVela Discord QR](https://dscache-intl.cloudcachetci.com/upload/nodir/disc_LV-23c00256e06401213046ab1142a1db7438ecc40b.png)
 
-WhatsApp:
-Join our WhatsApp group — scan the QR code to try LightVela and chat with us directly.
+**WhatsApp** — scan the QR code to join our WhatsApp group, try LightVela, and chat with us directly.
 
 ![LightVela WhatsApp QR](https://dscache-intl.cloudcachetci.com/upload/nodir/whatsapp_LV-e2089814c4615f98fdae3c9d457ceee4b3654f9f.png)

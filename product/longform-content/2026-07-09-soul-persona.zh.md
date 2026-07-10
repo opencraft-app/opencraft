@@ -2,9 +2,9 @@
 
 [RECOMMEND ADD IMAGE: LightVela 的人设（Soul）选择页，展示几张人设卡片，比如自信型、调皮的猫、禅意僧侣、贱萌吗喽 —— 让读者一眼看到可选的人设阵容。]
 
-LightVela 是一个[云端托管的个人 AI Agent 平台](https://lightvela.ai/docs/overview)，大多数人最早是通过 Hermes Agent 认识它的——一个常驻在线、可以接到 Telegram、WhatsApp、Discord 等频道的 AI 助手。能力虽然够强，但一个刚上手的 Hermes Agent 并没有自己的性格。你问它问题，它给你标准答案；你跟它聊心事，它还是给你标准答案。问题不在能力，而在它没有一个稳定的"自我"去承载语气、节奏和态度。
+LightVela 是一个[云端托管的个人 AI Agent 平台](https://lightvela.ai/zh-sg/docs/overview)，大多数人最早是通过 Hermes Agent 认识它的——一个常驻在线、可以接到 Telegram、WhatsApp、Discord 等频道的 AI 助手。能力虽然够强，但一个刚上手的 Hermes Agent 并没有自己的性格。你问它问题，它给你标准答案；你跟它聊心事，它还是给你标准答案。问题不在能力，而在它没有一个稳定的"自我"去承载语气、节奏和态度。
 
-这正是新功能 **Soul（人设）** 要补上的缺口。Soul 是 LightVela 的人设系统：一份结构化规格，给每个 Hermes Agent 一个稳定一致的性格，让它在每一次会话里都保持同样的说话方式、做事风格和情绪温度。（如果你对 Agent 这个概念本身还比较陌生，可以先看一眼[核心概念](https://lightvela.ai/docs/core-concepts)页再往下读。）
+这正是新功能 **Soul（人设）** 要补上的缺口。Soul 是 LightVela 的人设系统：一份结构化规格，给每个 Hermes Agent 一个稳定一致的性格，让它在每一次会话里都保持同样的说话方式、做事风格和情绪温度。（如果你对 Agent 这个概念本身还比较陌生，可以先看一眼[核心概念](https://lightvela.ai/zh-sg/docs/core-concepts)页再往下读。）
 
 ## 什么是 Soul（人设）？
 
@@ -26,7 +26,7 @@ LightVela 是一个[云端托管的个人 AI Agent 平台](https://lightvela.ai/
 
 Soul 把人设变成了产品里正式的一部分，而不是散落在提示词里的私货。这意味着三件事变了。
 
-第一，人设是**可选、可换的**。你想让 Agent 当毒舌顾问就挂毒舌型，想让它在群里整活就换幽默型，一次只挂一个，清清楚楚。（人设只是 Agent 配置的其中一层，其余配置见[配置文档](https://lightvela.ai/docs/configuration)。）
+第一，人设是**可选、可换的**。你想让 Agent 当毒舌顾问就挂毒舌型，想让它在群里整活就换幽默型，一次只挂一个，清清楚楚。（人设只是 Agent 配置的其中一层，其余配置见[配置文档](https://lightvela.ai/zh-sg/docs/configuration)。）
 
 第二，人设是**结构化的**。不再是凭感觉写一句话，五个维度都被明确定义，所以行为从第一句到第一百句都保持一致。
 
@@ -36,13 +36,13 @@ Soul 把人设变成了产品里正式的一部分，而不是散落在提示词
 
 在你这一侧，流程很短：
 
-1. **选一个人设**。设置 Hermes Agent 时，从人设目录里挑一个。LightVela 维护着一份精选目录，更丰富的社区目录在 SkillHub——也就是你浏览和安装[技能](https://lightvela.ai/docs/configuration/skill)的同一个地方。
+1. **选一个人设**。设置 Hermes Agent 时，从人设目录里挑一个。LightVela 维护着一份精选目录，更丰富的社区目录在 SkillHub——也就是你浏览和安装[技能](https://lightvela.ai/zh-sg/docs/configuration/skill)的同一个地方。
 2. **一键注入**。LightVela 把人设保存到你的 Agent 身上，让它成为 Agent 行为方式的一部分——不是那种会渐渐失效的临时指令。
 3. **开一个新会话**。用 `/new` 开启一个新会话，它会一上来就以这个人设出场。
 
 [RECOMMEND ADD IMAGE: 创建 Agent 时选择人设的那一步，旁边是一张用 /new 开新会话、Agent 已经在用人设口吻回复的截图 —— 让读者看到"选人设 → 注入 → 看到效果"这条完整链路。]
 
-这里有个值得说的设计选择：人设是被固化到 Agent 身上的，而不是每次都当成提示词重新念一遍。这就是它为什么稳——性格成了 Agent 配置的一部分，每个新会话只是顺着这份性格继续。你也可以把 Soul 配合定时[自动任务](https://lightvela.ai/docs/configuration/automation)一起用，这样即使是无人值守的周期任务，也会按人设的口吻跑。
+这里有个值得说的设计选择：人设是被固化到 Agent 身上的，而不是每次都当成提示词重新念一遍。这就是它为什么稳——性格成了 Agent 配置的一部分，每个新会话只是顺着这份性格继续。你也可以把 Soul 配合定时[自动任务](https://lightvela.ai/zh-sg/docs/configuration/automation)一起用，这样即使是无人值守的周期任务，也会按人设的口吻跑。
 
 ## 你可以用它做什么
 
@@ -55,18 +55,18 @@ Soul 把人设变成了产品里正式的一部分，而不是散落在提示词
 
 这是 Soul 的第一个版本：一份结构化、可切换、跟着会话走的人设层。它解锁的方向很明确——人设会越来越像 Agent 的一个"设置项"：可以来自官方目录，可以来自 SkillHub 社区，未来也可以是你自己沉淀出来的私有 Soul。
 
-如果你已经有一个用顺手的 Hermes Agent，下一步很简单：给它挂一个人设，然后用 `/new` 重新开一个会话，感受一下"它变了个人"的那一下。刚接触 LightVela？可以从[快速上手](https://lightvela.ai/docs/quickstart)开始。
+如果你已经有一个用顺手的 Hermes Agent，下一步很简单：给它挂一个人设，然后用 `/new` 重新开一个会话，感受一下"它变了个人"的那一下。刚接触 LightVela？可以从[快速上手](https://lightvela.ai/zh-sg/docs/quickstart)开始。
 
 ---
 
-Join LightVela's Community for More Updates!
+## 加入 LightVela 社区，获取更多动态！
 
-Discord:
-Join our Discord community — scan the QR code to connect with builders and get updates.
+**访问 [LightVela](https://lightvela.ai)**
+
+**Discord** —— 扫码加入我们的 Discord 社区，与开发者交流、获取最新动态。
 
 ![LightVela Discord QR](https://dscache-intl.cloudcachetci.com/upload/nodir/disc_LV-23c00256e06401213046ab1142a1db7438ecc40b.png)
 
-WhatsApp:
-Join our WhatsApp group — scan the QR code to try LightVela and chat with us directly.
+**WhatsApp** —— 扫码加入我们的 WhatsApp 群组，体验 LightVela、直接和我们聊聊。
 
 ![LightVela WhatsApp QR](https://dscache-intl.cloudcachetci.com/upload/nodir/whatsapp_LV-e2089814c4615f98fdae3c9d457ceee4b3654f9f.png)
