@@ -134,10 +134,36 @@ description: LightVela 专用 SEO/GEO 技能。用户要求审查、编辑或规
 
 内部链接应当**出现在正文自然提及概念的地方**（行内链接），而不是只在结尾聚成一堆或放一个“相关阅读”块。规则：
 
-- 至少 2-3 个内链分布在正文不同 section（开头/中段/结尾都要有），不是只集中在最后一段。
+- 至少 2-3 个内链分布在正文不同 section（开头 / 中段 / 结尾都要有），不是只集中在最后一段。
 - 链接要与所在句子的上下文真实相关（讲 skills 时链到 skill 配置页；讲 automations 时链到 automation 配置页）。
 - 同一页面的内链不要重复指向（同一个目标链接出现一次即可，除非明显需要）。
 - 仍然遵守“不堆塞、每个链接帮读者走下一步”。
+
+### ⚠️ 内链要跟随文章语言，对应到本地化 URL（sitemap 已发多语版本）
+
+LightVela 站点是多语的，sitemap 已经发出每个页面的本地化版本（`en-us` / `zh-cn` / `zh-sg`，带 `hreflang` alternates）。**生成内链时必须跟随文章语言，指向对应语言的 URL**，而不是一律用英文默认 URL。这同时是 GEO / UX 的硬性要求。
+
+URL 结构（已验证，来自 `frontend/next-site/seo.tsx` 的 `localizedDocsPath` / `localizedPublicPath`、`siteUrlForSeoRegion`、`docs-route-manifest.ts` 的 `DOCS_ROUTE_SLUGS`）：
+
+| 文章语言 | docs URL | public 页 URL | 站点 origin |
+| --- | --- | --- | --- |
+| 英文 / 默认 | `https://lightvela.ai/docs/<slug>` | `https://lightvela.ai/<page>` | 国际站 `lightvela.ai` |
+| 中文（国际站，zh-sg） | `https://lightvela.ai/zh-sg/docs/<slug>` | `https://lightvela.ai/zh-sg/<page>` | 国际站 `lightvela.ai` |
+| 中文（国内站，zh-cn） | `https://lightvela.com/zh-cn/docs/<slug>` | `https://lightvela.com/zh-cn/<page>` | 国内站 `lightvela.com` |
+
+约定：
+
+- slug 依然必须去掉源文件名的数字前缀（`overview`，不是 `01-overview`），并已在 `DOCS_ROUTE_SLUGS` 里核对存在。
+- **中文文章统一用 `zh-sg`（国际站）那条**：`https://lightvela.ai/zh-sg/docs/<slug>`。只有当文章明确面向国内站场景时才用 `https://lightvela.com/zh-cn/...`。
+- 同一篇文章里不要中英混链；英文文章用英文默认路径，中文文章用 `zh-sg` 路径，始终成套。
+- 同时被两种语言引用的目标（比如 techpedia 同时出 `.zh.md` 和 `.en.md`），两个文件各自链对应语言的版本。
+
+示例：
+
+- 英文文章 → `[quickstart](https://lightvela.ai/docs/quickstart)`
+- 中文文章 → `[快速上手](https://lightvela.ai/zh-sg/docs/quickstart)`
+
+拿不准某 slug 在中文站是否提供时，去 `DOCS_ROUTE_SLUGS["zh-sg"]`（或 `"zh-cn"`）里查；该 locale 下没有的 slug，回退到英文默认路径，并在最终回复里说明。
 
 ## 输出语言
 

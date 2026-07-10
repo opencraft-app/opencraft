@@ -121,7 +121,7 @@ description: 生成 LightVela 长篇营销/产品文章的专用技能。用户�
 3. 评估是否需要图片。推荐少量、高价值图片，通常 2-4 张；教程最多 5 张。**每个图片位置都必须用下方「图片建议固定模板」的 `[RECOMMEND ADD IMAGE: ...]` 方括号格式**，不要写裸 `[Image]`，也不要随意换花样。
 4. 语气保持亲近、直接、有轻微叙事感。多写具体产品动作，少写抽象宣传。
 5. 默认产出完整文章，不要只给大纲，除非用户明确要求大纲。
-6. 每篇完整文章末尾都追加固定 Community ending，包含 Discord 和 WhatsApp 邀请文案与真实二维码图片。二维码必须使用固定托管 CDN URL（不要用本地路径、不要用占位符）：Discord `https://dscache-intl.cloudcachetci.com/upload/nodir/disc_LV-23c00256e06401213046ab1142a1db7438ecc40b.png`，WhatsApp `https://dscache-intl.cloudcachetci.com/upload/nodir/whatsapp_LV-e2089814c4615f98fdae3c9d457ceee4b3654f9f.png`。
+6. 每篇完整文章末尾都追加固定 Community ending，包含 Discord 和 WhatsApp 邀请文案与真实二维码图片。**结尾文案语言跟随文章语言**：英文文章用英文版文案，中文文章（如 techpedia 的 `.zh.md`）用中文版文案；两套文案见 `references/style-guide.md` 的 Community Ending，照原样输出，不要自创排版。Markdown（`.md`）输出时的结尾结构：先用二级标题作结尾标题（英文 `## Join LightVela's Community for More Updates!` / 中文 `## 加入 LightVela 社区，获取更多动态！`），标题下一行是官网链接「Visit us at [LightVela](https://lightvela.ai)」 / 「访问 [LightVela](https://lightvela.ai)」，再下来是粗体 Discord / WhatsApp 标签与对应二维码。二维码在两套里都用同一组固定托管 CDN URL（不要用本地路径、不要用占位符）：Discord `https://dscache-intl.cloudcachetci.com/upload/nodir/disc_LV-23c00256e06401213046ab1142a1db7438ecc40b.png`，WhatsApp `https://dscache-intl.cloudcachetci.com/upload/nodir/whatsapp_LV-e2089814c4615f98fdae3c9d457ceee4b3654f9f.png`。
 
 ## 输出规则
 
@@ -145,6 +145,8 @@ description: 生成 LightVela 长篇营销/产品文章的专用技能。用户�
 - **加有意义的内部链接，且要分布在正文各处**：在正文自然提及概念的地方加行内链接（开头/中段/结尾都要有），而不是只在文末堆一排。链接要与所在句子真实相关（讲 skills 时链到 skill 配置页；讲 automations 时链到 automation 配置页）。每个链接都要帮读者走下一步，不为 SEO 硬塞。
 
 **⚠️ 内链 URL 必须用真实路由，不能用 markdown 源文件名。** docs 的源文件名（如 `01-overview.md`、`02-quickstart.md`）里的数字前缀只是排序，不是 slug——写成 `lightvela.ai/docs/01-overview` 会 404。正确路径是去掉数字前缀的 slug（如 `/docs/overview`、`/docs/quickstart`、`/docs/core-concepts`、`/docs/configuration`、`/docs/configuration/skill`、`/docs/configuration/automation`）。生成任何 docs 内链前必须核对 slug 是否真实存在：完整的校验流程、真实路径清单、国内/国际站域名见 `../lv-seo-geo/SKILL.md` 的「内链/Backlink 要求」；拿不准就用确定存在的 `/docs/overview`，不要编造路径。
+
+**⚠️ 内链要跟随文章语言对应本地化 URL。** 站点是多语的，sitemap 已发 `en-us` / `zh-cn` / `zh-sg` 多语版本。中文文章（如 techpedia 的 `.zh.md`）必须用中文 URL，英文文章用英文默认 URL，不要一律用英文。默认约定：英文 → `https://lightvela.ai/docs/<slug>`；中文 → `https://lightvela.ai/zh-sg/docs/<slug>`（国际站 zh-sg；明确面向国内站时才用 `https://lightvela.com/zh-cn/docs/<slug>`）。同一篇文章内不中英混链；techpedia 的 `.zh.md` 与 `.en.md` 各自链对应语言版本。完整 URL 表与校验流程见 `../lv-seo-geo/SKILL.md` 的「内链要跟随文章语言」。
 - **H1/H2 说清主题**：标题用能概括主题的实词，不要纯情绪化标题。
 - **不要关键词堆砌**：宁可少用，必须服务于解释；本技能的“避免营销口号/AI hype”规则同样适用。
 
