@@ -12,7 +12,12 @@ const config = {
   output: 'export',
   assetPrefix: process.env.NEXT_PUBLIC_ASSET_PREFIX || undefined,
   trailingSlash: true,
-  allowedDevOrigins: ['lightvela.ai', 'www.lightvela.ai', 'lightvela.com', 'lightvela.tencent.com', 'localhost', '127.0.0.1'],
+  // 桥接 VITE_AUTH_API_BASE_URL 到客户端 bundle，供 datong.ts 推断部署环境使用。
+  // Next.js 只内联 NEXT_PUBLIC_* 变量，VITE_* 需通过 env 显式暴露到客户端。
+  env: {
+    VITE_AUTH_API_BASE_URL: process.env.NEXT_PUBLIC_AUTH_API_BASE_URL || process.env.VITE_AUTH_API_BASE_URL || '',
+  },
+  allowedDevOrigins: ['lightvela.ai', 'www.lightvela.ai', 'lightvela.com', 'lightvela.tencent.com', 'localhost', '127.0.0.1', 'lightclaw.pages.dev'],
   pageExtensions: ['next.tsx', 'next.ts'],
   ...(isDevelopment
     ? {

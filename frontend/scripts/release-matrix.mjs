@@ -150,6 +150,7 @@ export function loadReleaseMatrix(matrixPath = process.env.FRONTEND_RELEASE_MATR
       projectName: ensureNonEmptyString(combo.projectName, "projectName", id),
       requiredSecretEnv: ensureStringArray(combo.requiredSecretEnv, "requiredSecretEnv", id),
       authApiBaseUrl: ensureNonEmptyString(combo.authApiBaseUrl, "authApiBaseUrl", id),
+      appEnv: ensureOptionalString(combo.appEnv, "appEnv", id) ?? "production",
       siteUrl: ensureOptionalString(combo.siteUrl, "siteUrl", id),
       outputDir: ensureNonEmptyString(combo.outputDir, "outputDir", id),
       deployEnv: ensureStringMap(combo.deployEnv, "deployEnv", id),
@@ -242,6 +243,8 @@ export function createComboEnvironment(combo, projectName, env = process.env) {
     VITE_AUTH_API_BASE_URL: combo.authApiBaseUrl,
     NEXT_PUBLIC_REGION: combo.region,
     NEXT_PUBLIC_AUTH_API_BASE_URL: combo.authApiBaseUrl,
+    NEXT_PUBLIC_APP_ENV: combo.appEnv ?? "production",
+    VITE_APP_ENV: combo.appEnv ?? "production",
   };
 
   if (combo.siteUrl) {
