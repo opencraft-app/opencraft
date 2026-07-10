@@ -228,6 +228,42 @@ Chinese:
 - “Install skills”
 - “Set up automations”
 
+### ⚠️ 用真实路由，不要用 markdown 源文件名
+
+最常见的内链错误：把 docs 的 markdown 源文件名直接当成 URL。源文件名形如 `01-overview.md`、`02-quickstart.md`、`04-core-concepts.md`，其中的 `01-` / `02-` / `04-` 数字前缀**只是为了排序，不是路由 slug**。写成 `https://lightvela.ai/docs/01-overview` 一定是 404。
+
+错误 → 正确对照：
+
+| 错误（源文件名） | 正确（真实 URL） |
+| --- | --- |
+| `/docs/01-overview` | `/docs/overview` |
+| `/docs/02-quickstart` | `/docs/quickstart` |
+| `/docs/03-account` | `/docs/account` |
+| `/docs/04-core-concepts` | `/docs/core-concepts` |
+| `/docs/05-configuration` | `/docs/configuration` |
+| `/docs/07-faq` | `/docs/faq` |
+
+**生成任何 docs 内链前，必须核对 slug 真实存在：**
+
+1. slug 出现在 `frontend/next-site/docs-route-manifest.ts` 的 `DOCS_ROUTE_SLUGS`（注意按 locale 分组：`en-us` / `zh-cn` / `zh-sg`）；
+2. URL path 出现在 `frontend/src/lib/seo-data.ts` 的页面级 key（如 `"/docs/overview"`）；
+3. 能在 `frontend/src/app/sitemap.xml/route.next.ts` 的生成路径里对上（sitemap 由 `DOCS_ROUTE_SLUGS` + public paths 生成，不是手写）。
+
+三项任一对不上就不要写该链接。拿不准时优先用上方「常见内链目标」里确定存在的路径，或回退到 `/docs/overview`，**绝不编造路径**。
+
+补充事实：docs 站点基底路径是 `/docs`（`frontend/next-site/source.ts` 的 `baseUrl: '/docs'`）；默认站点 origin 是 `https://lightvela.ai`（国际站）/ `https://lightvela.com`（国内站），见 `frontend/next-site/seo.tsx` 的 `siteUrlForSeoRegion`。
+
+### 内链要在正文里分散，不要只堆在文末
+
+内部链接应当**出现在正文自然提及概念的地方**（行内链接），而不是只在结尾聚成一堆或放一个“相关阅读”块。
+
+- 至少 2-3 个内链分布在正文不同 section（开头 / 中段 / 结尾都要有），不是只集中在最后一段。
+- 链接要与所在句子的上下文真实相关（讲 skills 时链到 skill 配置页；讲 automations 时链到 automation 配置页）。
+- 同一目标的链接在同一页出现一次即可，除非明显需要重复。
+- 仍遵守“不堆塞、每个链接帮读者走下一步”。
+
+这条规则同样适用于 `lv-longform-content` 产出的长篇内容：不要把全部内链扔进结尾段，要在正文各 section 自然散布。
+
 ## 修改 SEO 数据时的测试提示
 
 若修改这些文件，优先运行相关测试或至少指出未运行：
