@@ -1,6 +1,6 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use crate::client::{ChatStreamEvent, ToolCall};
+use crate::client::{ChatStreamEvent, Message, Role, ToolCall};
 use crate::error::{Error, Result};
 use serde_json::Value;
 
@@ -111,6 +111,76 @@ pub(crate) fn normalize_tool_calls(tool_calls: Vec<ToolCall>) -> Result<Vec<Tool
         .collect::<Result<Vec<_>>>()
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ProviderMessageSanitization {
+    pub invalid_assistant_tool_messages: usize,
+    pub dropped_tool_results: usize,
+    pub normalized_tool_calls: usize,
+}
+
+impl ProviderMessageSanitization {
+    pub(crate) fn changed(&self) -> bool {
+        self.invalid_assistant_tool_messages > 0
+            || self.dropped_tool_results > 0
+            || self.normalized_tool_calls > 0
+    }
+}
+
+pub(crate) fn sanitize_messages_for_provider(
+    messages: &[Message],
+) -> (Vec<Message>, ProviderMessageSanitization) {
+    let mut sanitized = Vec::with_capacity(messages.len());
+    let mut stats = ProviderMessageSanitization::default();
+    let mut pending_tool_call_ids = BTreeSet::new();
+
+    for message in messages {
+        match message.role {
+            Role::Assistant => {
+                pending_tool_call_ids.clear();
+                let mut sanitized_message = message.clone();
+
+                if let Some(tool_calls) = sanitized_message.tool_calls.take() {
+                    match normalize_tool_calls(tool_calls.clone()) {
+                        Ok(normalized) if !normalized.is_empty() => {
+                            if !tool_calls_equal(&normalized, &tool_calls) {
+                                stats.normalized_tool_calls += normalized.len();
+                            }
+                            for tool_call in &normalized {
+                                pending_tool_call_ids.insert(tool_call.id.clone());
+                            }
+                            sanitized_message.tool_calls = Some(normalized);
+                        }
+                        Ok(_) => {}
+                        Err(_) => {
+                            stats.invalid_assistant_tool_messages += 1;
+                            sanitized_message.tool_calls = None;
+                        }
+                    }
+                }
+
+                sanitized.push(sanitized_message);
+            }
+            Role::Tool => {
+                let keep_tool_result = message
+                    .tool_call_id
+                    .as_ref()
+                    .is_some_and(|tool_call_id| pending_tool_call_ids.remove(tool_call_id));
+                if keep_tool_result {
+                    sanitized.push(message.clone());
+                } else {
+                    stats.dropped_tool_results += 1;
+                }
+            }
+            _ => {
+                pending_tool_call_ids.clear();
+                sanitized.push(message.clone());
+            }
+        }
+    }
+
+    (sanitized, stats)
+}
+
 fn normalize_tool_call(mut tool_call: ToolCall) -> Result<ToolCall> {
     let tool_name = tool_call.function.name.trim();
     if tool_name.is_empty() {
@@ -124,6 +194,15 @@ fn normalize_tool_call(mut tool_call: ToolCall) -> Result<ToolCall> {
     tool_call.function.arguments =
         normalize_tool_arguments(&tool_call.function.name, &tool_call.function.arguments)?;
     Ok(tool_call)
+}
+
+fn tool_calls_equal(left: &[ToolCall], right: &[ToolCall]) -> bool {
+    left.len() == right.len()
+        && left.iter().zip(right.iter()).all(|(left, right)| {
+            left.id == right.id
+                && left.function.name == right.function.name
+                && left.function.arguments == right.function.arguments
+        })
 }
 
 fn normalize_tool_arguments(tool_name: &str, arguments: &str) -> Result<String> {
@@ -248,7 +327,7 @@ pub(crate) fn strip_tool_call_markup(content: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::client::{ToolCall, ToolCallFunction};
+    use crate::client::{Message, ToolCall, ToolCallFunction};
 
     use super::*;
 
@@ -365,6 +444,75 @@ mod tests {
         .expect_err("arguments must be JSON objects");
 
         assert!(error.to_string().contains("JSON object"));
+    }
+
+    #[test]
+    fn sanitize_messages_for_provider_strips_invalid_legacy_tool_call() {
+        let messages = vec![
+            Message::user("list files"),
+            Message::assistant("I will inspect the workspace").with_tool_calls(vec![ToolCall {
+                id: "call_bad".to_string(),
+                function: ToolCallFunction {
+                    name: "terminal".to_string(),
+                    arguments: "{\"command\":".to_string(),
+                },
+            }]),
+            Message::tool("call_bad", "{\"ok\":false}"),
+            Message::user("continue"),
+        ];
+
+        let (sanitized, stats) = sanitize_messages_for_provider(&messages);
+
+        assert_eq!(stats.invalid_assistant_tool_messages, 1);
+        assert_eq!(stats.dropped_tool_results, 1);
+        assert_eq!(sanitized.len(), 3);
+        assert!(sanitized[1].tool_calls.is_none());
+        assert!(sanitized
+            .iter()
+            .all(|message| message.tool_call_id.as_deref() != Some("call_bad")));
+    }
+
+    #[test]
+    fn sanitize_messages_for_provider_keeps_valid_tool_call_and_result() {
+        let messages = vec![
+            Message::user("pwd"),
+            Message::assistant("").with_tool_calls(vec![ToolCall {
+                id: "call_ok".to_string(),
+                function: ToolCallFunction {
+                    name: " terminal ".to_string(),
+                    arguments: " { \"command\" : \"pwd\" } ".to_string(),
+                },
+            }]),
+            Message::tool("call_ok", "/workspace"),
+        ];
+
+        let (sanitized, stats) = sanitize_messages_for_provider(&messages);
+
+        assert_eq!(stats.invalid_assistant_tool_messages, 0);
+        assert_eq!(stats.dropped_tool_results, 0);
+        assert_eq!(stats.normalized_tool_calls, 1);
+        assert_eq!(sanitized.len(), 3);
+        let tool_calls = sanitized[1]
+            .tool_calls
+            .as_ref()
+            .expect("valid tool calls should be retained");
+        assert_eq!(tool_calls[0].function.name, "terminal");
+        assert_eq!(tool_calls[0].function.arguments, "{\"command\":\"pwd\"}");
+        assert_eq!(sanitized[2].tool_call_id.as_deref(), Some("call_ok"));
+    }
+
+    #[test]
+    fn sanitize_messages_for_provider_drops_orphan_tool_result() {
+        let messages = vec![
+            Message::tool("missing_call", "stale output"),
+            Message::user("hello"),
+        ];
+
+        let (sanitized, stats) = sanitize_messages_for_provider(&messages);
+
+        assert_eq!(stats.dropped_tool_results, 1);
+        assert_eq!(sanitized.len(), 1);
+        assert_eq!(sanitized[0].content, "hello");
     }
 
     #[test]

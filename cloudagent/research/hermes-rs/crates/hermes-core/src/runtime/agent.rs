@@ -19,7 +19,7 @@ use crate::events::{AgentEvent, AgentEventSink};
 use crate::hooks::{GateHook, NoopGateHook, PromptTransformHook};
 use crate::memory::MemoryManager;
 use crate::runtime::system_prompt::SystemPromptCache;
-use crate::runtime::tool_calls::normalize_tool_calls;
+use crate::runtime::tool_calls::{normalize_tool_calls, sanitize_messages_for_provider};
 use crate::runtime::tool_loop::check_cancelled;
 use crate::runtime_host::{session_id, SessionSandbox};
 use crate::skills::{SkillInjectionPlan, SkillManager, SkillSelection};
@@ -318,17 +318,27 @@ impl AgentExecutor {
             // Get tool schemas
             let tools = self.registry.get_schemas().await;
 
+            let (provider_messages, sanitization) = sanitize_messages_for_provider(&messages);
+            if sanitization.changed() {
+                warn!(
+                    invalid_assistant_tool_messages = sanitization.invalid_assistant_tool_messages,
+                    dropped_tool_results = sanitization.dropped_tool_results,
+                    normalized_tool_calls = sanitization.normalized_tool_calls,
+                    "Sanitized outbound provider messages"
+                );
+            }
+
             let response = if self.config.stream {
                 let stream = self
                     .client
-                    .chat_streaming(&self.config.model, &messages, Some(&tools))
+                    .chat_streaming(&self.config.model, &provider_messages, Some(&tools))
                     .await?;
                 self.process_stream(stream, cancel.clone()).await
             } else {
                 check_cancelled(cancel.as_ref())?;
                 let response = self
                     .client
-                    .chat(&self.config.model, &messages, Some(&tools))
+                    .chat(&self.config.model, &provider_messages, Some(&tools))
                     .await?;
                 check_cancelled(cancel.as_ref())?;
                 self.process_response(response).await
