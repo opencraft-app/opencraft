@@ -15,6 +15,14 @@ class MRPlaceholderWorkflowTests(unittest.TestCase):
         self.assertIn("    report-commit-check: true", trigger_block)
         self.assertIn("    block-mr: true", trigger_block)
 
+    def test_new_mr_updates_cancel_older_checks_for_the_same_branch(self) -> None:
+        workflow = (REPO_ROOT / ".ci/mr-placeholder.yml").read_text()
+
+        concurrency_block = workflow.split("concurrency:\n", 1)[1].split("\nstages:\n", 1)[0]
+        self.assertIn("  group: mr-placeholder-${{ ci.branch }}", concurrency_block)
+        self.assertIn("  cancel-in-progress: true", concurrency_block)
+        self.assertIn("  queue-length: 1", concurrency_block)
+
     def test_ci_only_candidate_guard_fallback_is_constrained(self) -> None:
         workflow = (REPO_ROOT / ".ci/mr-placeholder.yml").read_text()
 
