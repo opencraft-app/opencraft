@@ -16,6 +16,8 @@ require (
 	golang.org/x/oauth2 v0.36.0
 )
 
+require github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
+
 require (
 	cloud.google.com/go/compute/metadata v0.8.0 // indirect
 	filippo.io/edwards25519 v1.1.0 // indirect
