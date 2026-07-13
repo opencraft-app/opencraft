@@ -369,8 +369,8 @@ func (d *dao) CreatePassWithQuota(entity *Entity, userID string, agentQuota int6
 // ListDistinctAppIDsByBundleIDs 详见 Dao 接口注释
 func (d *dao) ListDistinctAppIDsByBundleIDs(bundleIDs []string, limit, offset int) ([]int64, int64, error) {
 	// 分页查询 DISTINCT app_id
-	listQuery := d.DB().Distinct(ColumnAppID)
-	countQuery := d.DB() // count 查 DISTINCT 数量，单独构造（避免 DISTINCT 影响 listQuery 状态）
+	listQuery := d.DB().Distinct(ColumnAppID).Where(fmt.Sprintf("%s > ?", ColumnAppID), 0)
+	countQuery := d.DB().Where(fmt.Sprintf("%s > ?", ColumnAppID), 0) // count 查 DISTINCT 数量，单独构造（避免 DISTINCT 影响 listQuery 状态）
 
 	if len(bundleIDs) > 0 {
 		listQuery = listQuery.Where(fmt.Sprintf("%s IN ?", ColumnBundleID), bundleIDs)
