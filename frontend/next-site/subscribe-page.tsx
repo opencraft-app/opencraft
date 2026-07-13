@@ -1633,7 +1633,7 @@ export const SubscribePage = ({
       return;
     }
     if (selectedBundleTab === null || !bundleTabs.some((tab) => tab.key === selectedBundleTab)) {
-      setSelectedBundleTab(bundleTabs[0].key);
+      setSelectedBundleTab(bundleTabs[0]!.key);
     }
   }, [bundleTabs, selectedBundleTab]);
 

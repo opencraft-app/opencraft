@@ -682,6 +682,23 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("rm -rf out", guard_text)
         self.assertNotIn('VITE_BIN="$FRONTEND_GUARD_DIR/node_modules/.bin/vite"', guard_text)
 
+    def test_frontend_mr_guard_reuses_isolated_runner_local_next_caches(self) -> None:
+        guard_text = (REPO_ROOT / "frontend/checks/guard.sh").read_text()
+
+        self.assertIn('FRONTEND_NEXT_CACHE_ROOT="${FRONTEND_NEXT_CACHE_ROOT:-${HOME}/.cache/lightclaw-ci/frontend-next}"', guard_text)
+        self.assertIn('frontend_next_cache_key()', guard_text)
+        self.assertIn('pnpm-lock.yaml', guard_text)
+        self.assertIn('next.config.*', guard_text)
+        self.assertIn('flock -w "$FRONTEND_NEXT_CACHE_LOCK_TIMEOUT_SECONDS" 9', guard_text)
+        self.assertIn('mv -f "$staging_archive" "$cache_archive"', guard_text)
+        self.assertIn('restore_frontend_next_cache cn', guard_text)
+        self.assertIn('save_frontend_next_cache cn', guard_text)
+        self.assertIn('restore_frontend_next_cache global', guard_text)
+        self.assertIn('save_frontend_next_cache global', guard_text)
+        self.assertIn('rm -rf .next out', guard_text)
+        self.assertIn('本机 Next 缓存恢复失败，降级为冷构建', guard_text)
+        self.assertIn('本机 Next 缓存回写失败，不阻断 CI', guard_text)
+
     def test_prod_db_migration_workflow_is_manual_dry_run_then_check_in_then_apply(self) -> None:
         workflow_path = REPO_ROOT / ".ci/db-migration.yml"
         workflow_text = workflow_path.read_text()
