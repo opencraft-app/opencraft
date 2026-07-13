@@ -736,6 +736,10 @@ func (a *integrationSandboxAdapter) GetLogs(_ context.Context, sandboxID string,
 	}, nil
 }
 
+func (a *integrationSandboxAdapter) StartTerminalSession(_ context.Context, sandboxID string) (*psandbox.TerminalSession, error) {
+	return &psandbox.TerminalSession{SandboxID: sandboxID}, nil
+}
+
 func (a *integrationSandboxAdapter) ExecCommand(_ context.Context, _ string, _ string, _ int) (*psandbox.ExecCommandResult, error) {
 	return &psandbox.ExecCommandResult{
 		Status:   "SUCCESS",
@@ -811,6 +815,14 @@ func (a *integrationSandboxAdapter) SendProcessSignal(_ context.Context, _ strin
 	return nil
 }
 
+func (a *integrationSandboxAdapter) CreateSnapshot(_ context.Context, _ string, _ *psandbox.CreateSnapshotRequest) (*psandbox.CreateSnapshotResponse, error) {
+	return &psandbox.CreateSnapshotResponse{}, nil
+}
+
+func (a *integrationSandboxAdapter) GetSnapshotStatus(_ context.Context, _, _ string) (*psandbox.GetSnapshotStatusResponse, error) {
+	return &psandbox.GetSnapshotStatusResponse{}, nil
+}
+
 type integrationAiGatewayAdapter struct {
 	mu                     sync.Mutex
 	ensureUserCalls        int
@@ -818,6 +830,7 @@ type integrationAiGatewayAdapter struct {
 	lastEnsureUserNickname string
 	ensureUserErr          error
 	applySubscriptionCalls int
+	lastApplySubscription  paigateway.ApplySubscriptionRequest
 }
 
 func (a *integrationAiGatewayAdapter) CreateApiKey(_ context.Context, _ string, _ string) (*paigateway.CreateApiKeyResponse, error) {
@@ -852,6 +865,7 @@ func (a *integrationAiGatewayAdapter) GetPlan(_ context.Context, planID string) 
 func (a *integrationAiGatewayAdapter) ApplySubscription(_ context.Context, req *paigateway.ApplySubscriptionRequest) (*paigateway.Subscription, error) {
 	a.mu.Lock()
 	a.applySubscriptionCalls++
+	a.lastApplySubscription = *req
 	a.mu.Unlock()
 	return &paigateway.Subscription{UserID: req.UserID, PlanID: req.PlanID, Status: "active"}, nil
 }
@@ -919,7 +933,7 @@ func completePassReqDefaults(userID, bundleID string) map[string]any {
 func TestCompletePassAPIIntegrationHappyPath(t *testing.T) {
 	h := newAPIIntegrationHarness(t)
 	bundleID := "bundle_complete_happy"
-	seedBundleForPass(t, bundleID, 0, "")
+	seedBundleForPass(t, bundleID, 100, "plan-pro")
 
 	body := completePassReqDefaults(h.userID, bundleID)
 	resp := h.request(t, http.MethodPost, "/internal/ctl/passes/complete", body, nil)
@@ -963,14 +977,37 @@ func TestCompletePassAPIIntegrationHappyPath(t *testing.T) {
 		t.Fatalf("expected bundle avail=9 after deduct, got %d", bundle.BundleSalesAvailCount)
 	}
 
-	// 4) ai-gateway EnsureUser 必须被调用一次
+	// 4) ai-gateway EnsureUser 必须被调用一次，订阅发放使用 trade DealName 幂等。
 	h.aigw.mu.Lock()
 	calls := h.aigw.ensureUserCalls
 	lastUserID := h.aigw.lastEnsureUserID
+	applyReq := h.aigw.lastApplySubscription
 	h.aigw.mu.Unlock()
 	if calls != 1 || lastUserID != h.userID {
 		t.Fatalf("expected EnsureUser called once with userID=%s, got calls=%d userID=%s",
 			h.userID, calls, lastUserID)
+	}
+	dealName := body["deal_name"].(string)
+	if applyReq.IdempotencyKey != "trade:"+dealName {
+		t.Fatalf("idempotency_key = %q, want %q", applyReq.IdempotencyKey, "trade:"+dealName)
+	}
+}
+
+func TestCreateTrialPassUsesDeterministicSubscriptionIdempotencyKey(t *testing.T) {
+	h := newAPIIntegrationHarness(t)
+	bundleID := "bundle_trial_idempotency"
+	seedBundleForPass(t, bundleID, 100, "plan-pro")
+
+	resp := h.request(t, http.MethodPost, "/v1/passes", map[string]any{"bundle_id": bundleID}, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("unexpected create pass status: %d body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	h.aigw.mu.Lock()
+	applyReq := h.aigw.lastApplySubscription
+	h.aigw.mu.Unlock()
+	want := "trial:" + h.userID + ":" + bundleID
+	if applyReq.IdempotencyKey != want {
+		t.Fatalf("idempotency_key = %q, want %q", applyReq.IdempotencyKey, want)
 	}
 }
 

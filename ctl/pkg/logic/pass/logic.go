@@ -27,6 +27,14 @@ import (
 	"gorm.io/gorm"
 )
 
+func trialSubscriptionIdempotencyKey(userID, bundleID string) string {
+	return "trial:" + strings.TrimSpace(userID) + ":" + strings.TrimSpace(bundleID)
+}
+
+func tradeSubscriptionIdempotencyKey(dealName string) string {
+	return "trade:" + strings.TrimSpace(dealName)
+}
+
 // PassDetail 权益详情
 type PassDetail struct {
 	PassID       string
@@ -484,10 +492,11 @@ func (l *logic) CreateTrialPass(userID string, bundleID string) (*PassDetail, er
 		// CalcExpiredTime 走同算法保证 PeriodEnd 完全一致。
 		sub, subErr := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().
 			ApplySubscription(ctx, &aigateway.ApplySubscriptionRequest{
-				UserID:      userID,
-				PlanID:      bundle.AiGatewayPlanID,
-				PeriodValue: bundle.TimeSpan,
-				PeriodUnit:  bundle.TimeUnit,
+				IdempotencyKey: trialSubscriptionIdempotencyKey(userID, bundleID),
+				UserID:         userID,
+				PlanID:         bundle.AiGatewayPlanID,
+				PeriodValue:    bundle.TimeSpan,
+				PeriodUnit:     bundle.TimeUnit,
 			})
 		cancel()
 		if subErr != nil {
@@ -895,10 +904,11 @@ func (l *logic) CompletePass(req *transport.CompletePassRequest) (*PassDetail, e
 		// 同一份 bundle 不再需要按时长配多个 plan — bundle.AiGatewayPlanID 复用。
 		sub, subErr := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().
 			ApplySubscription(ctx, &aigateway.ApplySubscriptionRequest{
-				UserID:      req.UserID,
-				PlanID:      bundle.AiGatewayPlanID,
-				PeriodValue: req.TimeSpan,
-				PeriodUnit:  req.TimeUnit,
+				IdempotencyKey: tradeSubscriptionIdempotencyKey(req.DealName),
+				UserID:         req.UserID,
+				PlanID:         bundle.AiGatewayPlanID,
+				PeriodValue:    req.TimeSpan,
+				PeriodUnit:     req.TimeUnit,
 			})
 		cancel()
 		if subErr != nil {
