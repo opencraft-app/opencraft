@@ -1012,7 +1012,7 @@ const MemoryPanel = ({
   return (
     <div className="space-y-4">
       <AgentSectionHeader
-        title={t("记忆")}
+        title={t("持久记忆")}
         description={t("查看当前 Hermes Agent 的记忆和用户画像文件")}
         actions={(
           <button

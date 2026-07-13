@@ -316,6 +316,7 @@
   "k_34190307": "Restoring from backup will overwrite the target Agent's Hermes Agent related files, including configuration, workspace, memory, installed skills, and other data.",
   "k_34d6b18d": "Delete automation",
   "k_3599c992": "Cast repeated styling demons out of the interface.",
+  "k_35cf01ed": "Persistent Memory",
   "k_35cf5056": "Use a wide spread of distinct Hermes tools in one session.",
   "k_3676ce34": "Access 127.0.0.1:9119 inside the current Agent through TAT.",
   "k_367ee3fd": "Query or export recent Hermes Agent logs to help locate issues",
