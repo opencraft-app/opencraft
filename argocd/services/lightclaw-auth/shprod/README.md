@@ -68,6 +68,7 @@ Shadow runtime secret keys used by the reconciliation worker:
 - `SHADOW_SECRET_ID`
 - `SHADOW_SECRET_KEY`
 - `CLOUDLADDER_SHADOW_HMAC_SECRET`
+- `SHADOW_TENCENT_CALLBACK_TOKEN`
 
 ## Note
 

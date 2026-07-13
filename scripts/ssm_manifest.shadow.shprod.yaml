@@ -7,6 +7,9 @@ defaults:
 items:
   - id: shadow-runtime-secrets
     secret_name: mono-shprod-shadow-runtime-secrets
+    # Required keys in SSM payload:
+    # SHADOW_SECRET_ID, SHADOW_SECRET_KEY, CLOUDLADDER_SHADOW_HMAC_SECRET,
+    # SHADOW_TENCENT_CALLBACK_TOKEN.
     namespace: user-auth
     kubernetes_resource_name: shadow-runtime-secrets
     kubernetes_resource_kind: Secret
