@@ -56,6 +56,8 @@ export interface ExecDebugCommandResult {
   status: string;
   exitCode: number;
   output: string;
+  stdout?: string;
+  stderr?: string;
 }
 
 export type ExpertsExecDebugCommand = (botId: string, command: string) => Promise<ExecDebugCommandResult>;

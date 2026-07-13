@@ -61,6 +61,12 @@ describe("resolveConfiguredAuthApiBaseUrl", () => {
     expect(resolveConfiguredAuthApiBaseUrl()).toBe("https://lightclaw.tech");
   });
 
+  it("routes the international production domain to the international API backend", () => {
+    stubLocation("lightvela.ai");
+
+    expect(resolveConfiguredAuthApiBaseUrl()).toBe("https://api.lightvela.ai");
+  });
+
   it("ignores sandbox host mapping when mapped value is not a valid https URL", () => {
     // 回归：PAGES_DEV_SUBDOMAIN_TO_API_HOST 配置错误时（如 value 不以 https:// 开头）
     // 不应返回无效值，而是 fallback 到后续兜底策略。

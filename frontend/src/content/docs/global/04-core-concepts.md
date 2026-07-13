@@ -27,7 +27,7 @@ LightVela 涉及四个核心概念：Hermes、模型、通道、技能。本页�
 ┌───────┐                   ┌────────┐                   ┌────────┐
 │  模型  │                   │  通道  │                   │  技能   │
 └───────┘                   └────────┘                   └────────┘
- 模型服务商       WeChat/Telegram/WhatsApp/Discord            SkillHub
+ 模型服务商       Telegram/WhatsApp/Discord/WeChat/QQ/WeCom/Lark            SkillHub
 ```
 
 | 概念 | 角色 | 说明 |
@@ -79,20 +79,23 @@ Hermes 具有以下特性：
 
 ## 通道（Channels）
 
-通道指用户与 Hermes 进行对话的聊天平台入口。LightVela 当前支持三个通道：
+通道指用户与 Hermes 进行对话的聊天平台入口。LightVela 国际站当前支持七个通道：
 
 | 通道 | 接入方式 | 适用场景 |
 |---|---|---|
-| WeChat | 扫码自动绑定 | 日常个人使用，适合国内用户 |
 | Telegram | Bot Token 接入 | 个人或团队消息场景，配置简单，适合轻量自动化 |
 | WhatsApp | WhatsApp Business API 接入 | 海外用户沟通、客户服务、通知提醒等场景 |
 | Discord | Bot Token 接入 | 社群运营、开发者社区、游戏/兴趣群组互动 |
+| WeChat | 扫码自动绑定 | 日常个人使用，适合熟悉 WeChat 的用户 |
+| QQ | AppID / AppSecret 接入 | QQ 机器人场景 |
+| WeCom | 扫码授权 | 企业内部协作与办公场景 |
+| Lark | 扫码授权 | 办公协作、富文本与群聊场景 |
 
-WeChat 选择通道后点击「授权接入」生成二维码，使用手机扫码完成授权即可。
+WeChat、WeCom、Lark 选择通道后点击「授权接入」生成二维码，使用手机扫码完成授权即可。
 
-Telegram、WhatsApp、Discord 的相关配置通道仍在搭建中，即将上线启用。
+Telegram、WhatsApp、Discord 和 QQ 按各平台要求填写 Bot Token、Business API 或 AppID / AppSecret 等信息。
 
-各通道的详细接入步骤见 [配置通道 - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md)。
+各通道的详细接入步骤见 [配置通道 - Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [WeChat](./configuration/channel-wechat.md) / [QQ](./configuration/channel-qq.md) / [WeCom](./configuration/channel-wecom.md) / [Lark](./configuration/channel-feishu.md)。
 
 > 💡 **多通道并存**
 >

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, type ComponentType } from "react";
-import { Check, File, Folder, FolderOpen, Link2, Loader2, Maximize2, MessageSquareText, Minimize2, Sparkles } from "lucide-react";
+import { ArrowUp, Check, File, Folder, FolderOpen, Link2, Loader2, Maximize2, MessageSquareText, Minimize2, Sparkles, Upload } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -16,15 +16,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useRepositories } from "@/contexts/repository-context";
 import { useT } from "@/i18n/t";
-import { isCN } from "@/lib/region";
+import { isCN, isGlobal } from "@/lib/region";
 import { joinTsshPath, parentTsshPath, TencentTsshFileClient, type TsshFileInfo } from "@/lib/tencent-tssh-file-client";
+import { cn } from "@/lib/utils";
 import {
   ExpertsPanel,
   type ExpertsExecDebugCommand,
 } from "@/pages/marketing/hermes-agent-experts-panel";
+import { SkillsDemoPanel, type LearnSkillTriggerOptions, type SkillsDemoTab } from "@/pages/marketing/skills-demo/SkillsDemoPanel";
 
 type AgentSkillsTab = "skills" | "packages";
-type LearnSkillSourceKind = "cloud" | "url" | "notes";
+type LearnSkillSourceKind = "cloud" | "url" | "notes" | "upload";
 type LearnSkillStatus = "idle" | "loading" | "learning" | "success" | "error";
 type LearnSkillProgressPhase =
   | "idle"
@@ -354,26 +356,45 @@ const runHermesLearnCli = async (
 function LearnSkillDialog({
   botId,
   onLearned,
+  initialSkillName = "",
+  initialUrl = "",
+  initialNotes = "",
+  triggerLabel,
+  hideNotes = false,
+  hideName = false,
+  inline = false,
 }: {
   botId: string;
   onLearned: () => void;
+  initialSkillName?: string;
+  initialUrl?: string;
+  initialNotes?: string;
+  triggerLabel?: string;
+  hideNotes?: boolean;
+  hideName?: boolean;
+  inline?: boolean;
 }) {
   const repositories = useRepositories();
   const t = useT();
   const urlInputId = useId();
   const nameInputId = useId();
   const extraInputId = useId();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const clientRef = useRef<TencentTsshFileClient | null>(null);
-  const [skillName, setSkillName] = useState("");
-  const [url, setUrl] = useState("");
-  const [notes, setNotes] = useState("");
-  const [notesExpanded, setNotesExpanded] = useState(false);
+  const [skillName, setSkillName] = useState(initialSkillName);
+  const [url, setUrl] = useState(initialUrl);
+  const [notes, setNotes] = useState(initialNotes);
+  const [notesExpanded, setNotesExpanded] = useState(Boolean(initialNotes));
   const [browseOpen, setBrowseOpen] = useState(false);
   const [path, setPath] = useState(LEARN_SKILL_DEFAULT_PATH);
   const [files, setFiles] = useState<TsshFileInfo[]>([]);
-  const [selectedSourceKinds, setSelectedSourceKinds] = useState<LearnSkillSourceKind[]>([]);
+  const [selectedSourceKinds, setSelectedSourceKinds] = useState<LearnSkillSourceKind[]>(() => [
+    ...(initialUrl.trim() ? ["url" as const] : []),
+    ...(initialNotes.trim() ? ["notes" as const] : []),
+  ]);
   const [draftSelectedPaths, setDraftSelectedPaths] = useState<string[]>([]);
   const [selectedSourcePaths, setSelectedSourcePaths] = useState<string[]>([]);
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [status, setStatus] = useState<LearnSkillStatus>("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [progress, setProgress] = useState<LearnSkillProgress>(INITIAL_LEARN_SKILL_PROGRESS);
@@ -460,6 +481,51 @@ function LearnSkillDialog({
     }
   };
 
+  const selectInlineSourceKind = (kind: "cloud" | "url" | "upload") => {
+    const alreadySelected = selectedSourceKinds.includes(kind);
+    setSelectedSourceKinds((current) => {
+      const withoutExternalSources = current.filter((item) => item !== "cloud" && item !== "url" && item !== "upload");
+      return alreadySelected ? withoutExternalSources : [...withoutExternalSources, kind];
+    });
+    if (kind === "cloud" && !alreadySelected) {
+      void openBrowser();
+    } else if (kind !== "cloud") {
+      setBrowseOpen(false);
+    }
+  };
+
+  const uploadInlineFile = async (file: File) => {
+    setStatus("loading");
+    setMessage(null);
+    try {
+      const safeName = file.name.replace(/[\\/]/g, "_");
+      const remotePath = joinTsshPath(LEARN_SKILL_DEFAULT_PATH, safeName);
+      const client = await getClient();
+      await client.uploadFile(remotePath, file, (progress) => {
+        const percent = progress.totalBytes > 0
+          ? Math.round((progress.sentBytes / progress.totalBytes) * 100)
+          : 100;
+        setProgress({
+          phase: "working",
+          percent,
+          label: t("正在上传文件"),
+        });
+      });
+      setSelectedSourceKinds((current) => [
+        ...current.filter((item) => item !== "cloud" && item !== "url" && item !== "upload"),
+        "upload",
+      ]);
+      setSelectedSourcePaths([remotePath]);
+      setUploadedFileName(file.name);
+      setStatus("idle");
+      setProgress({ phase: "complete", percent: 100, label: t("文件已上传") });
+    } catch (error) {
+      setStatus("error");
+      setMessage(error instanceof Error ? error.message : String(error));
+      setProgress((current) => ({ ...current, phase: "error", label: t("上传失败") }));
+    }
+  };
+
   const selectSourceKind = (kind: LearnSkillSourceKind) => {
     setSelectedSourceKinds((current) => current.includes(kind) ? current : [...current, kind]);
   };
@@ -489,7 +555,7 @@ function LearnSkillDialog({
     try {
       const learnArgs = {
         skillName: normalizedName,
-        sourcePaths: isSourceSelected("cloud") ? selectedSourcePaths : [],
+        sourcePaths: isSourceSelected("cloud") || isSourceSelected("upload") ? selectedSourcePaths : [],
         url: isSourceSelected("url") ? url : "",
         notes: isSourceSelected("notes") ? notes : "",
       };
@@ -535,29 +601,269 @@ function LearnSkillDialog({
   const busy = status === "loading" || status === "learning";
   const showProgress = progress.phase !== "idle" || status === "learning" || status === "success";
 
-  return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <Button
-          type="button"
-          size="sm"
-          className="h-9 rounded-md px-3.5 text-sm"
-        >
-          <Sparkles className="size-4" aria-hidden="true" />
-          {t("学习技能")}
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="overflow-hidden rounded-md border border-black/[0.08] bg-white p-0 shadow-xl md:w-[42rem]">
-        <div className="lv-learn-skill-dialog-scroll max-h-[min(92dvh,760px)] overflow-y-auto p-5">
-          <DialogHeader className="mb-5 pr-8">
-            <DialogTitle>{t("学习一个技能")}</DialogTitle>
-            <DialogDescription className="max-w-[27rem] text-pretty leading-6">
-              {t("给你的智能体一个来源，或告诉它任何你想补充的内容，它会把这些内容变成聊天中可复用的技能！")}
-            </DialogDescription>
-          </DialogHeader>
+  const learnBody = (
+    <div className={inline ? "space-y-5" : "lv-learn-skill-dialog-scroll max-h-[min(92dvh,760px)] overflow-y-auto p-5"}>
+      {inline ? (
+        <div className="mb-3 flex min-h-10 flex-wrap items-center justify-between gap-3">
+          <h4 className="text-sm font-semibold text-black/85">{t("速学")}</h4>
+          <p className="text-xs text-black/35 text-pretty">
+            {t("写下你的目标和流程，让 Agent 学会你的个人工作方式")}
+          </p>
+        </div>
+      ) : (
+        <DialogHeader className="mb-5 pr-8">
+          <DialogTitle>{t("学习一个技能")}</DialogTitle>
+          <DialogDescription className="max-w-[27rem] text-pretty leading-6">
+            {t("给你的智能体一个来源，或告诉它任何你想补充的内容，它会把这些内容变成聊天中可复用的技能！")}
+          </DialogDescription>
+        </DialogHeader>
+      )}
 
+      {inline ? (
+        <div className="space-y-4">
+          <div className="relative overflow-hidden rounded-md border border-black/[0.12] bg-white">
+            <Textarea
+              id={extraInputId}
+              value={notes}
+              onFocus={() => selectSourceKind("notes")}
+              onChange={(event) => {
+                selectSourceKind("notes");
+                setNotes(event.target.value);
+              }}
+              className="min-h-[280px] resize-none border-0 bg-transparent px-5 pb-16 pt-5 text-sm leading-6 shadow-none focus-visible:ring-0"
+              placeholder={t("例如：分析某行业最新趋势，并沉淀成可复用的技能...")}
+            />
+            <div className="absolute inset-x-4 bottom-3 flex items-center gap-3">
+              <div className="min-w-0 flex-1 border-b border-black/20">
+                <Label htmlFor={nameInputId} className="sr-only">
+                  {t("命名你的技能")}
+                </Label>
+                <Input
+                  id={nameInputId}
+                  value={skillName}
+                  onChange={(event) => setSkillName(event.target.value)}
+                  className="h-8 rounded-none border-0 bg-transparent px-0 text-sm shadow-none focus-visible:ring-0"
+                  placeholder={t("命名你的技能")}
+                />
+              </div>
+              <Button
+                type="button"
+                aria-label={t("学习")}
+                onClick={() => void learnSkill()}
+                disabled={busy}
+                className="size-9 shrink-0 rounded-full bg-black p-0 text-white hover:bg-black/80"
+              >
+                {busy ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <ArrowUp className="size-4" aria-hidden="true" />}
+              </Button>
+            </div>
+          </div>
+
+          <p className="text-sm font-medium text-black/65">{t("添加来源")}</p>
+
+          <div className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  aria-pressed={isSourceSelected("cloud")}
+                  onClick={() => selectInlineSourceKind("cloud")}
+                  disabled={busy}
+                  className={cn(
+                    "flex items-center gap-2 rounded-md border px-3 py-2.5 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
+                    isSourceSelected("cloud")
+                      ? "border-[#2F6BFF]/40 bg-[#F5F9FF] text-[#2F6BFF]"
+                      : "border-black/10 text-black/65 hover:bg-black/[0.025]",
+                  )}
+                >
+                  <FolderOpen className="size-4" aria-hidden="true" />
+                  {t("云端存储")}
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    if (file) void uploadInlineFile(file);
+                  }}
+                />
+                <button
+                  type="button"
+                  aria-pressed={isSourceSelected("upload")}
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={busy}
+                  className={cn(
+                    "flex items-center gap-2 rounded-md border px-3 py-2.5 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
+                    isSourceSelected("upload")
+                      ? "border-[#2F6BFF]/40 bg-[#F5F9FF] text-[#2F6BFF]"
+                      : "border-black/10 text-black/65 hover:bg-black/[0.025]",
+                  )}
+                >
+                  <Upload className="size-4" aria-hidden="true" />
+                  {t("上传文件")}
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={isSourceSelected("url")}
+                  onClick={() => selectInlineSourceKind("url")}
+                  disabled={busy}
+                  className={cn(
+                    "flex items-center gap-2 rounded-md border px-3 py-2.5 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]",
+                    isSourceSelected("url")
+                      ? "border-[#2F6BFF]/40 bg-[#F5F9FF] text-[#2F6BFF]"
+                      : "border-black/10 text-black/65 hover:bg-black/[0.025]",
+                  )}
+                >
+                  <Link2 className="size-4" aria-hidden="true" />
+                  {t("网址")}
+                </button>
+              </div>
+
+              {uploadedFileName ? <p className="text-xs text-black/50">{uploadedFileName}</p> : null}
+
+              {isSourceSelected("cloud") ? (
+                <div className="space-y-2 rounded-md bg-[#F8FAFC] p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium text-black/70">{t("云端存储目录")}</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="rounded-md bg-white"
+                      onClick={() => void openBrowser()}
+                      disabled={busy}
+                    >
+                      <FolderOpen className="size-4 text-black/55" aria-hidden="true" />
+                      {t("浏览云端存储")}
+                    </Button>
+                  </div>
+                  {browseOpen ? (
+                    <div className="rounded-md border border-black/10 bg-white p-3">
+                      <div className="mb-2 flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="rounded-md"
+                          onClick={() => void loadPath(parentTsshPath(path))}
+                          disabled={busy || path === "/home/agentuser"}
+                        >
+                          {t("上一级")}
+                        </Button>
+                        <span className="min-w-0 flex-1 truncate text-xs text-black/55">{path}</span>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="rounded-md"
+                          onClick={() => void loadPath(path)}
+                          disabled={busy}
+                        >
+                          {t("刷新")}
+                        </Button>
+                      </div>
+                      <div className="max-h-48 overflow-y-auto rounded-md border border-black/5 bg-white">
+                        {status === "loading" ? (
+                          <div className="flex items-center gap-2 px-3 py-4 text-sm text-black/55">
+                            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                            {t("正在加载云端存储...")}
+                          </div>
+                        ) : files.length === 0 ? (
+                          <div className="px-3 py-4 text-sm text-black/55">{t("这个目录里没有文件。")}</div>
+                        ) : (
+                          files.map((file) => {
+                            const remotePath = joinTsshPath(path, file.name);
+                            const directory = isDirectory(file);
+                            const selected = draftSelectedPaths.includes(remotePath);
+                            return (
+                              <div key={remotePath} className="flex items-center gap-2 border-b border-black/5 px-3 py-2 last:border-b-0">
+                                <button
+                                  type="button"
+                                  className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm hover:text-black"
+                                  onClick={() => {
+                                    if (directory) void loadPath(remotePath);
+                                  }}
+                                >
+                                  {directory ? <Folder className="size-4 shrink-0 text-[#b7791f]" aria-hidden="true" /> : <File className="size-4 shrink-0 text-black/45" aria-hidden="true" />}
+                                  <span className="truncate">{file.name}</span>
+                                </button>
+                                {!directory ? (
+                                  <button
+                                    type="button"
+                                    className="inline-flex size-7 items-center justify-center rounded-md border border-black/10 bg-white text-black/60 hover:bg-[var(--surface-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                                    aria-label={selected ? t("取消选择 {{name}}", { name: file.name }) : t("选择 {{name}}", { name: file.name })}
+                                    onClick={() => toggleDraftPath(remotePath)}
+                                  >
+                                    {selected ? <Check className="size-4" aria-hidden="true" /> : null}
+                                  </button>
+                                ) : null}
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                      <div className="mt-3 flex justify-end">
+                        <Button type="button" size="sm" className="rounded-md" onClick={confirmDraftSelection} disabled={draftSelectedPaths.length === 0}>
+                          {t("选择")}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
+                  {selectedSourcePaths.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {selectedSourcePaths.map((selectedPath) => (
+                        <span key={selectedPath} className="inline-flex max-w-full items-center rounded-md border border-black/10 bg-white px-2.5 py-1 text-xs text-black/70">
+                          <span className="truncate">{selectedPath}</span>
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {!isSourceSelected("cloud") && isSourceSelected("url") ? (
+                <div className="space-y-2 rounded-md bg-[#F8FAFC] p-3">
+                  <Label htmlFor={urlInputId} className="text-sm font-medium text-black/70">{t("网址")}</Label>
+                  <Input
+                    id={urlInputId}
+                    value={url}
+                    onFocus={() => selectSourceKind("url")}
+                    onChange={(event) => {
+                      selectSourceKind("url");
+                      setUrl(event.target.value);
+                    }}
+                    className="rounded-md border-black/10 bg-white"
+                    placeholder={t("https://lightvela.ai/（可从任意网站学习）")}
+                  />
+                </div>
+              ) : null}
+          </div>
+
+          {message ? (
+            <p className={status === "error" ? "text-sm text-red-600" : "text-sm text-black/60"} role={status === "error" ? "alert" : "status"}>
+              {message}
+            </p>
+          ) : null}
+
+          {showProgress ? (
+            <div className="rounded-md border border-black/10 bg-[#F8FAFC] p-3">
+              <div className="mb-2 flex items-center justify-between gap-3 text-sm">
+                <span className="font-medium text-[var(--text-primary)]">{progress.label}</span>
+                <span className="shrink-0 text-xs text-black/55">
+                  {progress.phase === "complete" ? t("已完成") : `${progress.percent}%`}
+                  {learnStartedAt !== null ? ` · ${elapsedSeconds}s` : null}
+                </span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-black/10" role="progressbar" aria-label={t("学习技能进度")} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.percent}>
+                <div className="h-full rounded-full bg-[#2F6BFF] transition-[width] duration-300 ease-out" style={{ width: `${progress.percent}%` }} />
+              </div>
+              {progress.detail ? <p className="mt-2 line-clamp-2 text-xs text-black/55">{progress.detail}</p> : null}
+            </div>
+          ) : null}
+        </div>
+      ) : (
           <div className="space-y-5">
-          <div className="space-y-2">
+          {!hideName ? <div className="space-y-2">
             <Label htmlFor={nameInputId}>{t("命名你的技能")}</Label>
             <Input
               id={nameInputId}
@@ -571,7 +877,7 @@ function LearnSkillDialog({
                 {t("输出：{{name}}.md，会保存到智能体技能", { name: normalizeSkillFileName(skillName) })}
               </p>
             ) : null}
-          </div>
+          </div> : null}
 
           <div className="space-y-3">
             <p className="text-sm font-medium leading-none text-[var(--text-secondary)]">
@@ -786,7 +1092,7 @@ function LearnSkillDialog({
                 </div>
               </div>
 
-              <div
+              {!hideNotes ? <div
                 className={`${getLearnSourcePanelClass(isSourceSelected("notes"))} ${busy ? "" : "cursor-pointer"}`}
                 onClick={() => {
                   if (!busy) {
@@ -848,7 +1154,7 @@ function LearnSkillDialog({
                     </div>
                   </div>
                 </div>
-              </div>
+              </div> : null}
             </div>
           </div>
 
@@ -900,8 +1206,29 @@ function LearnSkillDialog({
               {t("学习")}
             </Button>
           </div>
-          </div>
         </div>
+      )}
+      </div>
+  );
+
+  if (inline) {
+    return learnBody;
+  }
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button
+          type="button"
+          size="sm"
+          className="h-9 rounded-md px-3.5 text-sm"
+        >
+          <Sparkles className="size-4" aria-hidden="true" />
+          {triggerLabel ?? t("学习技能")}
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="overflow-hidden rounded-md border border-black/[0.08] bg-white p-0 shadow-xl md:w-[42rem]">
+        {learnBody}
       </DialogContent>
     </Dialog>
   );
@@ -954,8 +1281,9 @@ export function HermesAgentSkillsPanel<
   const currentTab: AgentSkillsTab = showSkillPackages ? activeTab : "skills";
   const skillPanelRef = useRef<HTMLDivElement>(null);
   const installedSkillSearchPlaceholder = t("搜索已安装技能名称");
-  const showLearnSkillCta = !showSkillPackages && currentTab === "skills";
   const [skillPanelRevision, setSkillPanelRevision] = useState(0);
+  const [globalSkillsTab, setGlobalSkillsTab] = useState<SkillsDemoTab>("search");
+  const isGlobalCreateSkillView = isGlobal && currentTab === "skills" && globalSkillsTab === "create";
 
   useEffect(() => {
     setActiveTab(initialTab);
@@ -984,7 +1312,7 @@ export function HermesAgentSkillsPanel<
       }}
       className="min-w-0"
     >
-      <div className="mb-2 flex min-w-0 flex-wrap items-center gap-3">
+      <div className={(isGlobal && currentTab === "skills") ? "mb-1 flex min-w-0 flex-wrap items-center gap-3" : "mb-2 flex min-w-0 flex-wrap items-center gap-3"}>
         <TabsList
           aria-label={t("技能页面切换")}
           className="h-auto justify-start gap-8 rounded-none border-0 bg-transparent p-0 text-black/38 shadow-none"
@@ -994,7 +1322,7 @@ export function HermesAgentSkillsPanel<
             className="min-w-0 rounded-none bg-transparent px-0 py-0 shadow-none transition-colors hover:text-black/70 data-[state=active]:bg-transparent data-[state=active]:shadow-none"
             style={getAgentSkillsTabStyle(currentTab === "skills")}
           >
-            {t("技能")}
+            {isGlobalCreateSkillView ? t("创建你的技能") : t("技能")}
           </TabsTrigger>
           {showSkillPackages ? (
             <TabsTrigger
@@ -1012,24 +1340,50 @@ export function HermesAgentSkillsPanel<
             </TabsTrigger>
           ) : null}
         </TabsList>
-        {showLearnSkillCta ? (
-          <div className="ml-auto flex shrink-0 items-center">
-            <LearnSkillDialog
-              botId={botId}
-              onLearned={() => setSkillPanelRevision((current) => current + 1)}
-            />
-          </div>
-        ) : null}
       </div>
+      {isGlobal && currentTab === "skills" ? (
+        <p className="mb-3 text-sm font-medium leading-6 text-black/50">
+          {isGlobalCreateSkillView
+            ? t("把你的任何个人和工作场景变成可复用技能！")
+            : t("为智能体安装技能。支持 ClawHub 与 skills.sh 两个技能市场，安装后可在对话中自动调用。")}
+        </p>
+      ) : null}
 
       <TabsContent value="skills" className="mt-0">
-        <div ref={skillPanelRef} className="lv-agent-skills-sdk-panel" key={skillPanelRevision}>
-          <SkillPanel
-            instance={instance}
-            featureFlags={featureFlags}
-            productConfig={productConfig}
+        {isGlobal ? (
+          <SkillsDemoPanel
+            botId={botId}
+            execDebugCommand={execDebugCommand}
+            learnSkillPanel={(
+              <LearnSkillDialog
+                botId={botId}
+                onLearned={() => setSkillPanelRevision((current) => current + 1)}
+                inline
+              />
+            )}
+            onTabChange={setGlobalSkillsTab}
+            learnSkillTriggerFactory={(options: LearnSkillTriggerOptions) => (
+              <LearnSkillDialog
+                botId={botId}
+                onLearned={() => setSkillPanelRevision((current) => current + 1)}
+                initialSkillName={options.initialSkillName}
+                initialUrl={options.initialUrl}
+                initialNotes={options.initialNotes}
+                triggerLabel={options.triggerLabel}
+                hideNotes={options.hideNotes}
+                hideName={options.hideName}
+              />
+            )}
           />
-        </div>
+        ) : (
+          <div ref={skillPanelRef} className="lv-agent-skills-sdk-panel" key={skillPanelRevision}>
+            <SkillPanel
+              instance={instance}
+              featureFlags={featureFlags}
+              productConfig={productConfig}
+            />
+          </div>
+        )}
       </TabsContent>
       {showSkillPackages ? (
         <TabsContent value="packages" className="mt-0">
