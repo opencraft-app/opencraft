@@ -26,6 +26,9 @@ func (s *MemoryStore) SavePendingBinding(_ context.Context, userID string, shado
 		existing.LastErrorMessage = ""
 		existing.BasicAuthStatus = ""
 		existing.BasicAuthSyncedAt = nil
+		existing.BasicAuthSourceAttemptID = ""
+		existing.BasicAuthIdentityHash = ""
+		existing.BasicAuthPhoneHash = ""
 		existing.BasicAuthLastErrorCode = ""
 		existing.BasicAuthLastErrorMessage = ""
 		existing.UpdatedAt = now
@@ -91,7 +94,7 @@ func (s *MemoryStore) MarkBindingFailed(_ context.Context, userID string, code s
 	return binding, nil
 }
 
-func (s *MemoryStore) MarkBasicAuthSucceeded(_ context.Context, userID string, now time.Time) (Binding, error) {
+func (s *MemoryStore) MarkBasicAuthSucceeded(_ context.Context, userID string, sourceAttemptID string, identityHash string, phoneHash string, now time.Time) (Binding, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	binding, ok := s.bindings[userID]
@@ -100,6 +103,9 @@ func (s *MemoryStore) MarkBasicAuthSucceeded(_ context.Context, userID string, n
 	}
 	binding.BasicAuthStatus = BasicAuthStatusSucceeded
 	binding.BasicAuthSyncedAt = &now
+	binding.BasicAuthSourceAttemptID = sourceAttemptID
+	binding.BasicAuthIdentityHash = identityHash
+	binding.BasicAuthPhoneHash = phoneHash
 	binding.BasicAuthLastErrorCode = ""
 	binding.BasicAuthLastErrorMessage = ""
 	binding.UpdatedAt = now
@@ -115,6 +121,9 @@ func (s *MemoryStore) MarkBasicAuthFailed(_ context.Context, userID string, code
 		return Binding{}, ErrNotFound
 	}
 	binding.BasicAuthStatus = BasicAuthStatusFailed
+	binding.BasicAuthSourceAttemptID = ""
+	binding.BasicAuthIdentityHash = ""
+	binding.BasicAuthPhoneHash = ""
 	binding.BasicAuthLastErrorCode = code
 	binding.BasicAuthLastErrorMessage = message
 	binding.UpdatedAt = now

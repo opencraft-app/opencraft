@@ -3,6 +3,9 @@ package main
 import (
 	"net/http"
 	"testing"
+	"time"
+
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
 )
 
 func TestParseSameSite(t *testing.T) {
@@ -78,5 +81,43 @@ func TestBuildWeChatOAuthConfigUsesLegacySecretForOfficialAccountFallback(t *tes
 	}
 	if config.OfficialAccount.AppSecret != "legacy-wechat-secret" {
 		t.Fatalf("OfficialAccount.AppSecret = %q, want legacy fallback", config.OfficialAccount.AppSecret)
+	}
+}
+
+func TestBuildRealnameFaceIDConfigUsesDefaults(t *testing.T) {
+	t.Setenv("LIGHTCLAW_REALNAME_ASSURANCE_MODE", "")
+	t.Setenv("TENCENT_REALNAME_FACEID_RULE_ID", "")
+	t.Setenv("TENCENT_REALNAME_FACEID_REDIRECT_URL", "")
+	t.Setenv("REALNAME_ENCRYPTION_KEY", "")
+	t.Setenv("TENCENT_REALNAME_ACCOUNT_ID", "")
+	t.Setenv("LIGHTCLAW_REALNAME_FACEID_DAILY_QUOTA", "")
+	t.Setenv("LIGHTCLAW_REALNAME_FACEID_ATTEMPT_TTL", "")
+	t.Setenv("LIGHTCLAW_REALNAME_FACEID_LEASE_TTL", "")
+
+	cfg := buildRealnameFaceIDConfig()
+	if cfg.Mode != service.RealnameAssuranceModeLegacy {
+		t.Fatalf("Mode = %q, want legacy", cfg.Mode)
+	}
+	if cfg.DailyQuota != 5 || cfg.AttemptTTL != 2*time.Hour || cfg.LeaseTTL != 30*time.Second {
+		t.Fatalf("unexpected defaults: %+v", cfg)
+	}
+}
+
+func TestBuildRealnameFaceIDConfigReadsEnvironment(t *testing.T) {
+	t.Setenv("LIGHTCLAW_REALNAME_ASSURANCE_MODE", "face_required")
+	t.Setenv("TENCENT_REALNAME_FACEID_RULE_ID", "rule-1")
+	t.Setenv("TENCENT_REALNAME_FACEID_REDIRECT_URL", "https://api.example.com/auth/realname/faceid/callback")
+	t.Setenv("REALNAME_ENCRYPTION_KEY", "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=")
+	t.Setenv("TENCENT_REALNAME_ACCOUNT_ID", "acct-1")
+	t.Setenv("LIGHTCLAW_REALNAME_FACEID_DAILY_QUOTA", "7")
+	t.Setenv("LIGHTCLAW_REALNAME_FACEID_ATTEMPT_TTL", "45m")
+	t.Setenv("LIGHTCLAW_REALNAME_FACEID_LEASE_TTL", "15s")
+
+	cfg := buildRealnameFaceIDConfig()
+	if cfg.Mode != service.RealnameAssuranceModeFaceRequired || cfg.RuleID != "rule-1" || cfg.AccountID != "acct-1" || len(cfg.DigestKey) != 32 {
+		t.Fatalf("unexpected faceid config identity fields: %+v", cfg)
+	}
+	if cfg.DailyQuota != 7 || cfg.AttemptTTL != 45*time.Minute || cfg.LeaseTTL != 15*time.Second {
+		t.Fatalf("unexpected faceid timing fields: %+v", cfg)
 	}
 }

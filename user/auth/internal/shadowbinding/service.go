@@ -41,6 +41,16 @@ func New(store Store, client TencentCloudClient, opts Options) *Service {
 
 func (s *Service) Enabled() bool { return s != nil && s.enabled }
 
+func (s *Service) Ready() bool {
+	if s == nil || !s.enabled || s.store == nil || s.client == nil {
+		return false
+	}
+	if reporter, ok := s.client.(interface{ Available() bool }); ok {
+		return reporter.Available()
+	}
+	return true
+}
+
 func (s *Service) GetBindingByUserID(ctx context.Context, userID string) (Binding, error) {
 	if s == nil || s.store == nil {
 		return Binding{}, ErrNotFound
@@ -215,6 +225,12 @@ func (s *Service) SaveBasicAuth(ctx context.Context, in BasicAuthInput) error {
 	if binding.Status != StatusActive {
 		return errors.New("shadow binding is not active")
 	}
+	if binding.BasicAuthStatus == BasicAuthStatusSucceeded &&
+		binding.BasicAuthSourceAttemptID == strings.TrimSpace(in.SourceAttemptID) &&
+		binding.BasicAuthIdentityHash == strings.TrimSpace(in.IdentityHash) &&
+		binding.BasicAuthPhoneHash == strings.TrimSpace(in.PhoneHash) {
+		return nil
+	}
 	if !s.enabled || s.client == nil {
 		return errors.New("shadow binding client is not configured")
 	}
@@ -265,7 +281,14 @@ func (s *Service) SaveBasicAuth(ctx context.Context, in BasicAuthInput) error {
 		)
 		return err
 	}
-	if _, err := s.store.MarkBasicAuthSucceeded(ctx, userID, s.now()); err != nil {
+	if _, err := s.store.MarkBasicAuthSucceeded(
+		ctx,
+		userID,
+		strings.TrimSpace(in.SourceAttemptID),
+		strings.TrimSpace(in.IdentityHash),
+		strings.TrimSpace(in.PhoneHash),
+		s.now(),
+	); err != nil {
 		slog.WarnContext(ctx, "shadow binding basic auth sync state update failed",
 			"user_id", userID,
 			"shadow_user_name", binding.ShadowUserName,

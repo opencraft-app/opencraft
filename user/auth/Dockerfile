@@ -16,6 +16,7 @@ COPY user/auth user/auth
 WORKDIR /src/user/auth
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/lightclaw-auth ./cmd/lightclaw-auth
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/lightclaw-auth-content-audit-worker ./cmd/lightclaw-auth-content-audit-worker
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/lightclaw-auth-realname-faceid-worker ./cmd/lightclaw-auth-realname-faceid-worker
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/lightclaw-auth-migrate ./cmd/lightclaw-auth-migrate
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/lightclaw-auth-seed ./cmd/lightclaw-auth-seed
 
@@ -24,6 +25,7 @@ RUN adduser -D -u 10001 app
 WORKDIR /home/app
 COPY --from=builder /out/lightclaw-auth /usr/local/bin/lightclaw-auth
 COPY --from=builder /out/lightclaw-auth-content-audit-worker /usr/local/bin/lightclaw-auth-content-audit-worker
+COPY --from=builder /out/lightclaw-auth-realname-faceid-worker /usr/local/bin/lightclaw-auth-realname-faceid-worker
 COPY --from=builder /out/lightclaw-auth-migrate /usr/local/bin/lightclaw-auth-migrate
 COPY --from=builder /out/lightclaw-auth-seed /usr/local/bin/lightclaw-auth-seed
 USER app

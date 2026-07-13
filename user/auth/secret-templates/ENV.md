@@ -113,7 +113,10 @@
 | `TENCENT_REALNAME_SECRET_ID` | 腾讯云 FaceID API 密钥 ID | 腾讯云 CAM / SSM |
 | `TENCENT_REALNAME_SECRET_KEY` | 腾讯云 FaceID API 密钥 Key | 腾讯云 CAM / SSM |
 | `TENCENT_REALNAME_ENDPOINT` | FaceID endpoint，默认 `faceid.tencentcloudapi.com` | 腾讯云 FaceID |
-| `REALNAME_ENCRYPTION_KEY` | 32 字节 AES-GCM key 的 base64 编码，用于加密姓名/身份证落库 | 腾讯云 SSM |
+| `TENCENT_REALNAME_FACEID_RULE_ID` | DetectAuth RuleId；需和 LightVela 当前环境共享账号/规则预检结果一致 | 腾讯云 FaceID / SSM |
+| `TENCENT_REALNAME_ACCOUNT_ID` | 当前 FaceID 凭据所属腾讯云账号标识；用于尝试与运行时账号边界校验 | 腾讯云账号 / SSM |
+| `TENCENT_REALNAME_FACEID_REDIRECT_URL` | DetectAuth 回调地址；必须与 RuleId 配置中的回调完全一致 | 腾讯云 FaceID / SSM |
+| `REALNAME_ENCRYPTION_KEY` | 32 字节 AES-GCM key 的 base64 编码，用于加密实名材料，并派生 HMAC 保护长期审计关联值 | 腾讯云 SSM |
 
 ---
 
@@ -160,6 +163,9 @@ LIGHTCLAW_DEVICE_BIND_TOKEN_SECRET=<随机生成的32字节以上强密钥>
 TENCENT_REALNAME_SECRET_ID=xxx
 TENCENT_REALNAME_SECRET_KEY=xxx
 TENCENT_REALNAME_ENDPOINT=faceid.tencentcloudapi.com
+TENCENT_REALNAME_FACEID_RULE_ID=<detectauth-rule-id>
+TENCENT_REALNAME_ACCOUNT_ID=<tencent-cloud-account-id>
+TENCENT_REALNAME_FACEID_REDIRECT_URL=https://api.lightclaw.tech/auth/realname/faceid/callback
 REALNAME_ENCRYPTION_KEY=<32字节base64密钥>
 
 # TAT 设备绑定
