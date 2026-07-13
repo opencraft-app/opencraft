@@ -14,6 +14,7 @@
 - `delete-jobs.yaml`
 - `delete-shared-bootstrap.yaml`
 - `ksops-secret-generator.yaml`
+- `realname-faceid-reconciliation-worker.yaml`
 - `auth-platform.env`
 - `../../../secrets/beijing-sandbox/lightclaw-auth-secrets.sops.yaml`
 - `../../../secrets/beijing-sandbox/lightvela-e2e-auth-secrets.sops.yaml`
@@ -34,6 +35,8 @@
 - `AUTH_WECHAT_APP_ID`
 - `AUTH_WECHAT_REDIRECT_URI`
 - `AUTH_DEPLOYED_AT`
+- `LIGHTCLAW_REALNAME_ASSURANCE_MODE=observe` enables the hidden FaceID flow without changing legacy verification semantics.
+- `SHADOW_BASIC_AUTH_SYNC_ENABLED=true` keeps phone proof and Shadow synchronization in the verification chain.
 - `LIGHTVELA_E2E_AUTH_ENABLED=true` is patched only in this Beijing sandbox overlay.
 
 Secret 键：
@@ -51,6 +54,9 @@ Secret 键：
 - `TENCENT_REALNAME_SECRET_ID`
 - `TENCENT_REALNAME_SECRET_KEY`
 - `TENCENT_REALNAME_ENDPOINT`
+- `TENCENT_REALNAME_FACEID_RULE_ID`
+- `TENCENT_REALNAME_ACCOUNT_ID`
+- `TENCENT_REALNAME_FACEID_REDIRECT_URL`
 - `TENCENT_TAT_SECRET_ID`
 - `TENCENT_TAT_SECRET_KEY`
 - `TENCENT_TAT_REGION`
@@ -63,6 +69,12 @@ Secret 键：
 - `MYSQL_DSN`
 - `MYSQL_ROOT_PASSWORD`
 - `LIGHTVELA_E2E_AUTH_TOKEN` from `lightvela-e2e-auth-secrets`
+
+Shadow runtime secret keys used by the reconciliation worker:
+
+- `SHADOW_SECRET_ID`
+- `SHADOW_SECRET_KEY`
+- `CLOUDLADDER_SHADOW_HMAC_SECRET`
 
 E2E auth:
 

@@ -12,6 +12,8 @@ func NewUnavailableClient(reason string) *UnavailableClient {
 	return &UnavailableClient{reason: strings.TrimSpace(reason)}
 }
 
+func (*UnavailableClient) Available() bool { return false }
+
 func (c *UnavailableClient) SendSMSVerifyCode(context.Context, CloudSendSMSInput) error {
 	if c == nil || c.reason == "" {
 		return errors.New("shadow binding client unavailable")

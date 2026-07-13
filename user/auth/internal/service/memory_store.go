@@ -13,24 +13,26 @@ import (
 )
 
 type MemoryStore struct {
-	mu              sync.Mutex
-	now             func() time.Time
-	nextID          int
-	usersByID       map[string]User
-	usersByEmail    map[string]string
-	usersByPhone    map[string]string
-	oauthUsers      map[string]string
-	subscriptions   map[string]PlanSelection
-	passwordHashes  map[string][]byte
-	smsChallenges   map[string]smsChallenge
-	sessions        map[string]sessionRecord
-	invites         map[string]memoryInviteRecord
-	realnames       map[string]UpdateRealnameInput
-	realnameHistory map[string][]UpdateRealnameInput
-	nextAuditTaskID int64
-	auditTasks       map[int64]*ContentAuditTask
-	emailBindTokens  map[string]memoryEmailBindToken
-	emailBindByToken map[string]string
+	mu                        sync.Mutex
+	now                       func() time.Time
+	nextID                    int
+	usersByID                 map[string]User
+	usersByEmail              map[string]string
+	usersByPhone              map[string]string
+	oauthUsers                map[string]string
+	subscriptions             map[string]PlanSelection
+	passwordHashes            map[string][]byte
+	smsChallenges             map[string]smsChallenge
+	sessions                  map[string]sessionRecord
+	invites                   map[string]memoryInviteRecord
+	realnames                 map[string]UpdateRealnameInput
+	realnameHistory           map[string][]UpdateRealnameInput
+	realnameFaceIDAttempts    map[string]RealnameFaceIDAttempt
+	realnameFaceIDAuditEvents []RealnameFaceIDAuditEvent
+	nextAuditTaskID           int64
+	auditTasks                map[int64]*ContentAuditTask
+	emailBindTokens           map[string]memoryEmailBindToken
+	emailBindByToken          map[string]string
 }
 
 type memoryInviteRecord struct {
@@ -51,21 +53,22 @@ func NewMemoryStore(opts StoreOptions) *MemoryStore {
 	}
 
 	store := &MemoryStore{
-		now:             now,
-		usersByID:       make(map[string]User),
-		usersByEmail:    make(map[string]string),
-		usersByPhone:    make(map[string]string),
-		oauthUsers:      make(map[string]string),
-		subscriptions:   make(map[string]PlanSelection),
-		passwordHashes:  make(map[string][]byte),
-		smsChallenges:   make(map[string]smsChallenge),
-		sessions:        make(map[string]sessionRecord),
-		invites:         make(map[string]memoryInviteRecord),
-		realnames:       make(map[string]UpdateRealnameInput),
-		realnameHistory: make(map[string][]UpdateRealnameInput),
-		auditTasks:       make(map[int64]*ContentAuditTask),
-		emailBindTokens:  make(map[string]memoryEmailBindToken),
-		emailBindByToken: make(map[string]string),
+		now:                    now,
+		usersByID:              make(map[string]User),
+		usersByEmail:           make(map[string]string),
+		usersByPhone:           make(map[string]string),
+		oauthUsers:             make(map[string]string),
+		subscriptions:          make(map[string]PlanSelection),
+		passwordHashes:         make(map[string][]byte),
+		smsChallenges:          make(map[string]smsChallenge),
+		sessions:               make(map[string]sessionRecord),
+		invites:                make(map[string]memoryInviteRecord),
+		realnames:              make(map[string]UpdateRealnameInput),
+		realnameHistory:        make(map[string][]UpdateRealnameInput),
+		realnameFaceIDAttempts: make(map[string]RealnameFaceIDAttempt),
+		auditTasks:             make(map[int64]*ContentAuditTask),
+		emailBindTokens:        make(map[string]memoryEmailBindToken),
+		emailBindByToken:       make(map[string]string),
 	}
 	if opts.SeedDefaultInvites {
 		store.seedDefaultInvites()
@@ -132,6 +135,26 @@ func (s *MemoryStore) VerifyCurrentUserPhoneChallenge(_ context.Context, token s
 	return user, nil
 }
 
+func (s *MemoryStore) ConsumeCurrentUserPhoneChallenge(_ context.Context, token string, code string, now time.Time) (User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, err := s.getSessionRecordLocked(token, now)
+	if err != nil {
+		return User{}, err
+	}
+	user, exists := s.usersByID[record.UserID]
+	if !exists {
+		return User{}, newError("unauthorized", "未登录或登录已失效。", http.StatusUnauthorized)
+	}
+	if user.Phone == "" {
+		return User{}, newError("phone_required", "当前账号未绑定手机号。", http.StatusBadRequest)
+	}
+	if err := s.consumeSMSChallengeLocked(user.Phone, code, now); err != nil {
+		return User{}, err
+	}
+	return user, nil
+}
+
 func (s *MemoryStore) MarkCurrentUserPhoneRealnameVerified(_ context.Context, token string, now time.Time) (User, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -141,6 +164,9 @@ func (s *MemoryStore) MarkCurrentUserPhoneRealnameVerified(_ context.Context, to
 	}
 	user.RealnameLevel = RealnameLevelPhone3FA
 	user.RealnameVerified = true
+	if user.realnameVerifiedAt == nil {
+		user.realnameVerifiedAt = &now
+	}
 	user.UpdatedAt = now
 	s.usersByID[user.ID] = user
 	return user, nil
@@ -174,7 +200,9 @@ func (s *MemoryStore) UpdateCurrentUserPhone(_ context.Context, token string, ne
 	if user.Phone != "" {
 		delete(s.usersByPhone, user.Phone)
 	}
+	s.revokeActiveRealnameFaceIDAttemptsLocked(user.ID, now)
 	user.Phone = newPhone
+	clearFaceIDProjection(&user)
 	user.UpdatedAt = now
 	s.usersByID[user.ID] = user
 	s.usersByPhone[newPhone] = user.ID
@@ -194,11 +222,55 @@ func (s *MemoryStore) CompletePhoneChange(_ context.Context, token string, newPh
 	if user.Phone != "" {
 		delete(s.usersByPhone, user.Phone)
 	}
+	s.revokeActiveRealnameFaceIDAttemptsLocked(user.ID, now)
 	user.Phone = newPhone
+	clearFaceIDProjection(&user)
 	user.UpdatedAt = now
 	s.usersByID[user.ID] = user
 	s.usersByPhone[newPhone] = user.ID
 	return user, nil
+}
+
+func clearFaceIDProjection(user *User) {
+	user.realnameFinalAttemptID = ""
+	user.realnameFaceVerifiedAt = nil
+	user.realnamePhoneVerifiedAt = nil
+	user.realnameIdentityHash = ""
+	user.realnamePhoneHash = ""
+}
+
+func (s *MemoryStore) revokeActiveRealnameFaceIDAttemptsLocked(userID string, now time.Time) {
+	for attemptID, attempt := range s.realnameFaceIDAttempts {
+		if attempt.UserID != userID || !isActiveRealnameFaceIDState(attempt.State) {
+			continue
+		}
+		attempt.State = RealnameFaceIDStateRevoked
+		attempt.NameCiphertext = ""
+		attempt.IDCardCiphertext = ""
+		attempt.BizTokenCiphertext = ""
+		attempt.VerifyURLCiphertext = ""
+		attempt.VerifyURL = ""
+		attempt.ClientIPCiphertext = ""
+		attempt.ClientUACiphertext = ""
+		attempt.LeaseOwner = ""
+		attempt.LeaseUntil = nil
+		attempt.LeaseVersion++
+		attempt.ScrubbedAt = &now
+		attempt.UpdatedAt = now
+		s.realnameFaceIDAttempts[attemptID] = attempt
+		s.realnameFaceIDAuditEvents = append(s.realnameFaceIDAuditEvents, RealnameFaceIDAuditEvent{
+			AttemptID:    attempt.AttemptID,
+			UserID:       attempt.UserID,
+			EventType:    "phone_changed_revoked",
+			State:        attempt.State,
+			RuleID:       attempt.RuleID,
+			AccountID:    attempt.AccountID,
+			IdentityHash: attempt.IdentityHash,
+			PhoneHash:    attempt.CurrentPhoneHash,
+			BizTokenHash: attempt.BizTokenHash,
+			CreatedAt:    now,
+		})
+	}
 }
 
 func (s *MemoryStore) CreatePasswordSession(_ context.Context, input PasswordSignUpInput, passwordHash []byte, now time.Time, sessionTTL time.Duration) (*AuthSession, error) {
@@ -363,6 +435,7 @@ func (s *MemoryStore) UpdateRealname(_ context.Context, token string, input Upda
 	}
 	user.RealnameVerified = true
 	user.RealnameLevel = RealnameLevelIDCard2FA
+	user.realnameVerifiedAt = &input.VerifiedAt
 	s.usersByID[user.ID] = user
 	s.realnames[user.ID] = input
 	s.realnameHistory[user.ID] = append(s.realnameHistory[user.ID], input)
@@ -721,6 +794,35 @@ func (s *MemoryStore) DeleteCurrentUser(_ context.Context, token string, now tim
 	delete(s.subscriptions, user.ID)
 	delete(s.realnames, user.ID)
 	delete(s.realnameHistory, user.ID)
+	for attemptID, attempt := range s.realnameFaceIDAttempts {
+		if attempt.UserID != user.ID {
+			continue
+		}
+		scrubbedAt := now
+		attempt.State = RealnameFaceIDStateRevoked
+		attempt.NameCiphertext = ""
+		attempt.IDCardCiphertext = ""
+		attempt.BizTokenCiphertext = ""
+		attempt.VerifyURLCiphertext = ""
+		attempt.VerifyURL = ""
+		attempt.ClientIPCiphertext = ""
+		attempt.ClientUACiphertext = ""
+		attempt.LeaseOwner = ""
+		attempt.LeaseUntil = nil
+		attempt.LeaseVersion++
+		attempt.ScrubbedAt = &scrubbedAt
+		attempt.UpdatedAt = scrubbedAt
+		s.realnameFaceIDAttempts[attemptID] = attempt
+		s.realnameFaceIDAuditEvents = append(s.realnameFaceIDAuditEvents, RealnameFaceIDAuditEvent{
+			AttemptID: attempt.AttemptID,
+			UserID:    attempt.UserID,
+			EventType: "account_deleted_scrubbed",
+			State:     attempt.State,
+			RuleID:    attempt.RuleID,
+			AccountID: attempt.AccountID,
+			CreatedAt: scrubbedAt,
+		})
+	}
 
 	for key, mappedUserID := range s.oauthUsers {
 		if mappedUserID == user.ID {
@@ -756,6 +858,35 @@ func (s *MemoryStore) DeleteAdminUser(_ context.Context, userID string, _ time.T
 	delete(s.subscriptions, user.ID)
 	delete(s.realnames, user.ID)
 	delete(s.realnameHistory, user.ID)
+	for attemptID, attempt := range s.realnameFaceIDAttempts {
+		if attempt.UserID != user.ID {
+			continue
+		}
+		scrubbedAt := s.now()
+		attempt.State = RealnameFaceIDStateRevoked
+		attempt.NameCiphertext = ""
+		attempt.IDCardCiphertext = ""
+		attempt.BizTokenCiphertext = ""
+		attempt.VerifyURLCiphertext = ""
+		attempt.VerifyURL = ""
+		attempt.ClientIPCiphertext = ""
+		attempt.ClientUACiphertext = ""
+		attempt.LeaseOwner = ""
+		attempt.LeaseUntil = nil
+		attempt.LeaseVersion++
+		attempt.ScrubbedAt = &scrubbedAt
+		attempt.UpdatedAt = scrubbedAt
+		s.realnameFaceIDAttempts[attemptID] = attempt
+		s.realnameFaceIDAuditEvents = append(s.realnameFaceIDAuditEvents, RealnameFaceIDAuditEvent{
+			AttemptID: attempt.AttemptID,
+			UserID:    attempt.UserID,
+			EventType: "account_deleted_scrubbed",
+			State:     attempt.State,
+			RuleID:    attempt.RuleID,
+			AccountID: attempt.AccountID,
+			CreatedAt: scrubbedAt,
+		})
+	}
 
 	for key, mappedUserID := range s.oauthUsers {
 		if mappedUserID == user.ID {

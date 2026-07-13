@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/api"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/avatar"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/tat"
@@ -406,6 +408,103 @@ func TestVerifyRealnameSuccessUpdatesSessionBooleanOnly(t *testing.T) {
 	}
 	if strings.Contains(current.Body.String(), "nameMasked") || strings.Contains(current.Body.String(), "idCardMasked") || strings.Contains(current.Body.String(), "verifiedAt") {
 		t.Fatalf("session leaked realname metadata: %s", current.Body.String())
+	}
+}
+
+func TestRealnameFaceIDHTTPFlowRequiresOwnedAttemptAndConsumesPhoneCode(t *testing.T) {
+	router, svc, provider := newAuthTestRouterWithFaceID()
+	if _, err := svc.SendVerificationCode(context.Background(), "13800138888"); err != nil {
+		t.Fatalf("send login code: %v", err)
+	}
+	session, err := svc.VerifySMS(context.Background(), service.VerifySMSInput{Phone: "13800138888", Code: "123456", Name: "Face User"})
+	if err != nil {
+		t.Fatalf("verify login sms: %v", err)
+	}
+	cookie := &http.Cookie{Name: sessionCookieName, Value: session.Token}
+
+	started := performJSONRequest(t, router, http.MethodPost, "/auth/realname/faceid/attempts", map[string]any{
+		"name": "张三", "idCard": "11010519491231002X", "consent": true,
+	}, cookie)
+	if started.Code != http.StatusOK {
+		t.Fatalf("expected FaceID start 200, got %d: %s", started.Code, started.Body.String())
+	}
+	var attempt api.RealnameFaceIDAttemptResponse
+	decodeJSONResponse(t, started, &attempt)
+	if attempt.AttemptId == "" || provider.detectIn.RedirectURL != "https://api.example.com/auth/realname/faceid/callback" {
+		t.Fatalf("unexpected start response/provider request: %+v %+v", attempt, provider.detectIn)
+	}
+	current := performJSONRequest(t, router, http.MethodGet, "/auth/realname/faceid/attempts/current", nil, cookie)
+	if current.Code != http.StatusOK {
+		t.Fatalf("expected current FaceID attempt 200, got %d: %s", current.Code, current.Body.String())
+	}
+	var currentAttempt api.RealnameFaceIDAttemptResponse
+	decodeJSONResponse(t, current, &currentAttempt)
+	if currentAttempt.AttemptId != attempt.AttemptId {
+		t.Fatalf("expected current attempt %q, got %+v", attempt.AttemptId, currentAttempt)
+	}
+
+	provider.getInfoOut = service.RealnameFaceIDProviderCheckResult{Completed: true, Success: true, RequestID: "req-get-1"}
+	result := performJSONRequest(t, router, http.MethodGet, "/auth/realname/faceid/attempts/"+attempt.AttemptId, nil, cookie)
+	if result.Code != http.StatusOK {
+		t.Fatalf("expected owned result 200, got %d: %s", result.Code, result.Body.String())
+	}
+	decodeJSONResponse(t, result, &attempt)
+	if attempt.State != api.RealnameFaceIDAttemptResponseState("face_succeeded") {
+		t.Fatalf("expected face_succeeded, got %+v", attempt)
+	}
+
+	if _, err := svc.SendVerificationCode(context.Background(), "13800138888"); err != nil {
+		t.Fatalf("send proof code: %v", err)
+	}
+	wrong := performJSONRequest(t, router, http.MethodPost, "/auth/realname/faceid/attempts/"+attempt.AttemptId+"/verify-phone", map[string]any{"code": "000000"}, cookie)
+	if wrong.Code != http.StatusBadRequest {
+		t.Fatalf("expected wrong code 400, got %d: %s", wrong.Code, wrong.Body.String())
+	}
+	verified := performJSONRequest(t, router, http.MethodPost, "/auth/realname/faceid/attempts/"+attempt.AttemptId+"/verify-phone", map[string]any{"code": "123456"}, cookie)
+	if verified.Code != http.StatusOK {
+		t.Fatalf("expected phone proof 200, got %d: %s", verified.Code, verified.Body.String())
+	}
+	decodeJSONResponse(t, verified, &attempt)
+	if attempt.State != api.RealnameFaceIDAttemptResponseState("shadow_pending") {
+		t.Fatalf("expected shadow_pending, got %+v", attempt)
+	}
+}
+
+func TestRealnameFaceIDCallbackReturnsGenericNonCacheableHTML(t *testing.T) {
+	router, _, _ := newAuthTestRouterWithFaceID()
+	recorder := performJSONRequest(t, router, http.MethodGet, "/auth/realname/faceid/callback?BizToken=foreign-token", nil)
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Header().Get("Content-Type"), "text/html") {
+		t.Fatalf("expected callback HTML 200, got %d %q: %s", recorder.Code, recorder.Header().Get("Content-Type"), recorder.Body.String())
+	}
+	if recorder.Header().Get("Cache-Control") != "no-store" || strings.Contains(recorder.Body.String(), "foreign-token") {
+		t.Fatalf("callback must be non-cacheable and must not reflect token: headers=%v body=%s", recorder.Header(), recorder.Body.String())
+	}
+}
+
+func TestRealnameFaceIDHTTPPreservesRolloutConflictAndProviderFailureStatuses(t *testing.T) {
+	router, svc, provider := newAuthTestRouterWithFaceID()
+	if _, err := svc.SendVerificationCode(context.Background(), "13800138889"); err != nil {
+		t.Fatalf("send login code: %v", err)
+	}
+	session, err := svc.VerifySMS(context.Background(), service.VerifySMSInput{Phone: "13800138889", Code: "123456", Name: "Face Status User"})
+	if err != nil {
+		t.Fatalf("verify login sms: %v", err)
+	}
+	cookie := &http.Cookie{Name: sessionCookieName, Value: session.Token}
+
+	legacy := performJSONRequest(t, router, http.MethodPost, "/auth/realname/verify", map[string]any{
+		"name": "张三", "idCard": "11010519491231002X",
+	}, cookie)
+	if legacy.Code != http.StatusConflict {
+		t.Fatalf("expected face-required conflict 409, got %d: %s", legacy.Code, legacy.Body.String())
+	}
+
+	provider.detectErr = errors.New("provider unavailable")
+	started := performJSONRequest(t, router, http.MethodPost, "/auth/realname/faceid/attempts", map[string]any{
+		"name": "张三", "idCard": "11010519491231002X", "consent": true,
+	}, cookie)
+	if started.Code != http.StatusBadGateway {
+		t.Fatalf("expected provider failure 502, got %d: %s", started.Code, started.Body.String())
 	}
 }
 
@@ -1672,6 +1771,30 @@ func newAuthTestRouterWithRealname() *gin.Engine {
 	})
 }
 
+func newAuthTestRouterWithFaceID() (*gin.Engine, *service.Service, *httpStubFaceIDVerifier) {
+	gin.SetMode(gin.TestMode)
+	store := service.NewMemoryStore(service.StoreOptions{Now: fixedHTTPTestNow, SeedDefaultInvites: true})
+	provider := &httpStubFaceIDVerifier{detectOut: service.RealnameFaceIDDetectAuthResult{
+		BizToken: "biz-http", VerifyURL: "https://faceid.example.com/biz-http", RequestID: "req-detect-http",
+	}}
+	svc := service.NewWithStore(store, service.Options{
+		Now:                    fixedHTTPTestNow,
+		SessionTTL:             30 * 24 * time.Hour,
+		DefaultSMSCode:         "123456",
+		RealnameCipher:         httpStubRealnameCipher{},
+		RealnameFaceIDVerifier: provider,
+		RealnameFaceID: service.RealnameFaceIDConfig{
+			Mode: service.RealnameAssuranceModeFaceRequired, RuleID: "rule-http", AccountID: "account-http",
+			RedirectURL: "https://api.example.com/auth/realname/faceid/callback",
+			DigestKey:   []byte("0123456789abcdef0123456789abcdef"),
+		},
+	})
+	return NewRouter(svc, ServerConfig{
+		CookieSecure: true, CookieSameSite: http.SameSiteNoneMode, SessionTTL: 30 * 24 * time.Hour,
+		PublicBaseURL: "https://api.example.com", AdminToken: testAdminToken,
+	}), svc, provider
+}
+
 func performJSONRequest(
 	t *testing.T,
 	router http.Handler,
@@ -1855,6 +1978,25 @@ type httpStubRealnameVerifier struct{}
 
 func (httpStubRealnameVerifier) Verify(_ context.Context, _ string, _ string) (service.RealnameProviderResult, error) {
 	return service.RealnameProviderResult{Result: "0", RequestID: "req-http"}, nil
+}
+
+type httpStubFaceIDVerifier struct {
+	detectIn   service.RealnameFaceIDDetectAuthInput
+	detectOut  service.RealnameFaceIDDetectAuthResult
+	detectErr  error
+	getInfoOut service.RealnameFaceIDProviderCheckResult
+}
+
+func (s *httpStubFaceIDVerifier) DetectAuth(_ context.Context, in service.RealnameFaceIDDetectAuthInput) (service.RealnameFaceIDDetectAuthResult, error) {
+	s.detectIn = in
+	if s.detectErr != nil {
+		return service.RealnameFaceIDDetectAuthResult{}, s.detectErr
+	}
+	return s.detectOut, nil
+}
+
+func (s *httpStubFaceIDVerifier) GetDetectInfoEnhanced(_ context.Context, _ service.RealnameFaceIDGetDetectInfoInput) (service.RealnameFaceIDProviderCheckResult, error) {
+	return s.getInfoOut, nil
 }
 
 type httpStubRealnameCipher struct{}
