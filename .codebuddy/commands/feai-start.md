@@ -623,7 +623,7 @@ EOF
 #### 6.1 需求澄清（prd-init，强制）
 
 1. 调用 `.agents/skills/product-skills/prd-init` skill（**强制 use_skill tool call**，不可口头跳过）
-   - 调用前按 `AGENTS.md` 的 Product Skills subtree 同步约定，先尝试从 `product-ai` 最新 `master` 刷新 `prd-init`；失败则使用仓库内现有副本继续，并在结果中说明。
+   - `mono2/.agents/skills/product-skills` 是主仓目录，直接使用当前分支中的 `prd-init`；不要在调用前从 `product-ai` 反向覆盖。
 2. 按 skill 指导与用户完成 LightVela 产品前置和需求澄清
 3. 生成需求确认文档，并明确输出一个英文 `feature slug`（仅 `[a-z0-9-]`）
 4. ⏸️ **等待用户确认**，禁止跳过此步骤直接进入 6.2
