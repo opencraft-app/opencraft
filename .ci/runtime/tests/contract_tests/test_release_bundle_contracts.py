@@ -127,6 +127,25 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn(f"argocd/secrets/{PLAYGROUND_ENV}/ai-gateway-runtime-secrets.sops.yaml", bundle.publish_paths)
         self.assertNotIn("argocd/catalogs/sandbox/beijing-sandbox-2/ai-gateway.yaml", bundle.publish_paths)
 
+    def test_user_auth_prod_projection_covers_ksops_secret_files(self) -> None:
+        manifest = load_manifest()
+
+        for env in ("shprod", "sgprod"):
+            with self.subTest(env=env):
+                bundle = require_build_metadata(load_bundle(manifest, "user-auth", env))
+                service_root = REPO_ROOT / "argocd" / "services" / "lightclaw-auth" / env
+                referenced_secrets = {
+                    (generator.parent / secret_path).resolve().relative_to(REPO_ROOT).as_posix()
+                    for generator in service_root.glob("ksops*-generator.yaml")
+                    for secret_path in (yaml.safe_load(generator.read_text()) or {}).get("files", [])
+                }
+
+                self.assertFalse(
+                    referenced_secrets - set(bundle.publish_paths),
+                    f"user-auth/{env} publish projection misses KSOPS secrets: "
+                    f"{sorted(referenced_secrets - set(bundle.publish_paths))}",
+                )
+
     def test_korea_playground_env_uses_kr_registry_and_seoul_catalog_root(self) -> None:
         manifest = load_manifest()
 
