@@ -181,6 +181,7 @@ func Load(path string) (Config, error) {
 	if !cfg.Audit.Stdout && !cfg.Audit.OTLP.Enabled {
 		cfg.Audit.Stdout = true
 	}
+	applyBackendEnvOverrides(&cfg)
 	applyRouteEnvOverrides(&cfg)
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
@@ -314,6 +315,25 @@ func (c Config) Validate() error {
 
 func normalizeRouteMode(mode string) string {
 	return strings.ToLower(strings.TrimSpace(mode))
+}
+
+func applyBackendEnvOverrides(cfg *Config) {
+	for i := range cfg.Backends {
+		alias := strings.TrimSpace(cfg.Backends[i].Alias)
+		if alias == "" {
+			continue
+		}
+		envPrefix := "CLOUDLADDERGATEWAY_BACKEND_" + envToken(alias)
+		if value := strings.TrimSpace(os.Getenv(envPrefix + "_BASE_URL")); value != "" {
+			cfg.Backends[i].Upstream.BaseURL = value
+		}
+		if value := strings.TrimSpace(os.Getenv(envPrefix + "_HOST_HEADER")); value != "" {
+			if cfg.Backends[i].Upstream.Headers == nil {
+				cfg.Backends[i].Upstream.Headers = map[string]string{}
+			}
+			cfg.Backends[i].Upstream.Headers["Host"] = value
+		}
+	}
 }
 
 func applyRouteEnvOverrides(cfg *Config) {

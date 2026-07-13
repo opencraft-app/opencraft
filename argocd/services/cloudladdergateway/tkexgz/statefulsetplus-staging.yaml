@@ -67,6 +67,8 @@ spec:
             secretKeyRef:
               key: CLOUDLADDER_TENCENT_CALLBACK_TOKEN
               name: cloudladdergateway-callback-secrets
+        - name: CLOUDLADDERGATEWAY_BACKEND_LIGHTCLAW_AUTH_BEIJING_SANDBOX_BASE_URL
+          value: https://api.lightvela.com
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_BASE_URL
           value: https://lightclaw.tech
         - name: CLOUDLADDERGATEWAY_ROUTE_JIFEI_CALLBACK_BJ_BASE_URL
