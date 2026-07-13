@@ -95,11 +95,12 @@ routes:
 }
 
 func TestLoadAppliesBackendBaseURLOverride(t *testing.T) {
-	t.Setenv("CLOUDLADDERGATEWAY_BACKEND_LIGHTCLAW_AUTH_BEIJING_SANDBOX_BASE_URL", "https://api.lightvela.com")
+	t.Setenv("CLOUDLADDERGATEWAY_TENCENTCLOUD_ACCOUNT_CALLBACK_BASE_URL", "https://api.lightvela.com")
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(path, []byte(`
 backends:
   - alias: lightclaw-auth-beijing-sandbox
+    env_prefix: CLOUDLADDERGATEWAY_TENCENTCLOUD_ACCOUNT_CALLBACK
     upstream:
       base_url: "https://lightclaw.tech"
       timeout: 10s

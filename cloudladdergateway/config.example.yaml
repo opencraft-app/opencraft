@@ -263,6 +263,7 @@ backends:
       allowed_methods: ["POST"]
 
   - alias: lightclaw-auth-beijing-sandbox
+    env_prefix: CLOUDLADDERGATEWAY_TENCENTCLOUD_ACCOUNT_CALLBACK
     upstream:
       base_url: "https://lightclaw.tech"
       timeout: 10s

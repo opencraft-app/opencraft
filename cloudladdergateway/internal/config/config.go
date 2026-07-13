@@ -46,8 +46,9 @@ type PolarisDiscoveryConfig struct {
 }
 
 type BackendConfig struct {
-	Alias    string         `yaml:"alias"`
-	Upstream UpstreamConfig `yaml:"upstream"`
+	Alias     string         `yaml:"alias"`
+	EnvPrefix string         `yaml:"env_prefix"`
+	Upstream  UpstreamConfig `yaml:"upstream"`
 }
 
 type AuthConfig struct {
@@ -323,7 +324,10 @@ func applyBackendEnvOverrides(cfg *Config) {
 		if alias == "" {
 			continue
 		}
-		envPrefix := "CLOUDLADDERGATEWAY_BACKEND_" + envToken(alias)
+		envPrefix := strings.TrimSpace(cfg.Backends[i].EnvPrefix)
+		if envPrefix == "" {
+			envPrefix = "CLOUDLADDERGATEWAY_BACKEND_" + envToken(alias)
+		}
 		if value := strings.TrimSpace(os.Getenv(envPrefix + "_BASE_URL")); value != "" {
 			cfg.Backends[i].Upstream.BaseURL = value
 		}
