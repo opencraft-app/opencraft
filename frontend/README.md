@@ -4,6 +4,7 @@
 > Trigger note 2: README-only change to retrigger frontend update after release-frontend path correction.
 > Trigger note 3: README-only change to publish Cloudflare staging from Next artifacts by default.
 > Trigger note 4: README-only change to republish Cloudflare staging after playground release guard.
+> Trigger note 5: README-only change to refresh shprod frontend for billing bridge verification.
 
 ## 部署形态
 
