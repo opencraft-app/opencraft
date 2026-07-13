@@ -10,6 +10,7 @@ patches:
   - path: delete-namespace.yaml
   - path: delete-default-serviceaccount.yaml
   - path: delete-lightclaw-auth-internal.yaml
+  - path: patch-shadowbinding.yaml
 
 generators:
   - ksops-secret-generator.yaml
