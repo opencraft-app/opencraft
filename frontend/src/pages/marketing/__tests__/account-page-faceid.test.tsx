@@ -19,6 +19,7 @@ const getCurrentRealnameFaceIdAttempt = vi.fn();
 const verifyRealnameFaceIdPhone = vi.fn();
 const finalizeRealnameFaceIdAttempt = vi.fn();
 const verifyRealnamePhone = vi.fn();
+const sendRealnameFaceIdPhoneCode = vi.fn();
 const sendSmsCode = vi.fn();
 
 let currentUser: User;
@@ -98,6 +99,7 @@ vi.mock("@/contexts/repository-context", () => ({
       getCurrentRealnameFaceIdAttempt,
       verifyRealnameFaceIdPhone,
       finalizeRealnameFaceIdAttempt,
+      sendRealnameFaceIdPhoneCode,
       sendSmsCode,
       verifyRealnamePhone,
       retryRealnameSync,
@@ -174,6 +176,7 @@ describe("AccountPage FaceID flow", () => {
     renderTick = 0;
     rerenderPage = null;
     sendSmsCode.mockResolvedValue({ cooldownSeconds: 60 });
+    sendRealnameFaceIdPhoneCode.mockResolvedValue({ cooldownSeconds: 60 });
     refreshProfile.mockResolvedValue(undefined);
     getCurrentRealnameFaceIdAttempt.mockRejectedValue(
       new RepositoryError("not found", 404, "realname_faceid_not_found"),
@@ -460,6 +463,8 @@ describe("AccountPage FaceID flow", () => {
     });
 
     await userEvent.click(screen.getByRole("button", { name: "获取验证码" }));
+    expect(sendRealnameFaceIdPhoneCode).toHaveBeenCalledWith("attempt_success");
+    expect(sendSmsCode).not.toHaveBeenCalled();
     await userEvent.type(screen.getByPlaceholderText("请输入短信验证码"), "123456");
     await userEvent.click(screen.getByRole("button", { name: "完成当前手机号认证" }));
 
@@ -470,6 +475,52 @@ describe("AccountPage FaceID flow", () => {
       expect(screen.getByText("已认证")).toBeInTheDocument();
     });
     expect(screen.queryByText("请先完成刷脸核身，再继续当前手机号认证与 LightVela 同步。")).not.toBeInTheDocument();
+  });
+
+  it("refreshes the attempt instead of showing an SMS cooldown when Shadow proof is reused", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 1024,
+    });
+    let phoneProofReused = false;
+    startRealnameFaceIdAttempt.mockResolvedValue({
+      attemptId: "attempt_reused_phone",
+      verificationUrl: "https://faceid.example.invalid/attempt_reused_phone",
+      expiresAt: "2026-07-13T12:00:00.000Z",
+      state: "phone_pending",
+    });
+    getRealnameFaceIdAttempt.mockImplementation(async () => (
+      phoneProofReused
+        ? {
+            attemptId: "attempt_reused_phone",
+            expiresAt: "2026-07-13T12:00:00.000Z",
+            state: "shadow_pending",
+          }
+        : {
+            attemptId: "attempt_reused_phone",
+            expiresAt: "2026-07-13T12:00:00.000Z",
+            state: "phone_pending",
+          }
+    ));
+    sendRealnameFaceIdPhoneCode.mockImplementation(async () => {
+      phoneProofReused = true;
+      return { cooldownSeconds: 0 };
+    });
+
+    renderAccountPage();
+    await openVerifyModal();
+    await userEvent.type(screen.getByPlaceholderText("请输入真实姓名"), "张三");
+    await userEvent.type(screen.getByPlaceholderText("请输入身份证号码"), "110101199001011234");
+    await userEvent.click(screen.getByRole("checkbox", { name: /我已阅读并同意/ }));
+    await userEvent.click(screen.getByRole("button", { name: "开始刷脸认证" }));
+
+    await waitFor(() => expect(screen.getByText("当前手机号")).toBeInTheDocument());
+    await userEvent.click(screen.getByRole("button", { name: "获取验证码" }));
+
+    expect(sendRealnameFaceIdPhoneCode).toHaveBeenCalledWith("attempt_reused_phone");
+    expect(sendSmsCode).not.toHaveBeenCalled();
+    expect(await screen.findByRole("button", { name: "完成实名同步" })).toBeInTheDocument();
+    expect(screen.queryByText(/重新发送/)).not.toBeInTheDocument();
   });
 
   it("restores a shadow-pending attempt after the modal is reopened", async () => {
