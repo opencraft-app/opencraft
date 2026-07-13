@@ -397,9 +397,13 @@ describe("http repositories auth token bootstrap", () => {
     );
   });
 
-  it("binds phone proof and finalization to the FaceID attempt", async () => {
+  it("sends and binds phone proof through the FaceID attempt endpoints", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ cooldownSeconds: 60 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ attemptId: "attempt_http_3", state: "shadow_pending" }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -411,6 +415,8 @@ describe("http repositories auth token bootstrap", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const repositories = createHttpRepositories("https://lightclaw.tech");
+    await expect(repositories.auth.sendRealnameFaceIdPhoneCode("attempt_http_3"))
+      .resolves.toEqual({ cooldownSeconds: 60 });
     await expect(repositories.auth.verifyRealnameFaceIdPhone("attempt_http_3", { code: "123456" }))
       .resolves.toMatchObject({ state: "shadow_pending" });
     await expect(repositories.auth.finalizeRealnameFaceIdAttempt("attempt_http_3"))
@@ -418,11 +424,16 @@ describe("http repositories auth token bootstrap", () => {
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
+      "https://lightclaw.tech/auth/realname/faceid/attempts/attempt_http_3/send-phone-code",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
       "https://lightclaw.tech/auth/realname/faceid/attempts/attempt_http_3/verify-phone",
       expect.objectContaining({ method: "POST", body: JSON.stringify({ code: "123456" }) }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
+      3,
       "https://lightclaw.tech/auth/realname/faceid/attempts/attempt_http_3/finalize",
       expect.objectContaining({ method: "POST" }),
     );

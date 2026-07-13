@@ -339,7 +339,7 @@ paths:
   /auth/realname/faceid/attempts/{attemptId}/verify-phone:
     post:
       operationId: verifyRealnameFaceIDPhone
-      summary: Consume a current-phone SMS challenge for a FaceID attempt
+      summary: Verify the current phone through Shadow binding for a FaceID attempt
       security:
         - SessionCookie: []
         - SessionBearer: []
@@ -373,6 +373,48 @@ paths:
         '409':
           $ref: '#/components/responses/ErrorResponse'
         '500':
+          $ref: '#/components/responses/ErrorResponse'
+        '502':
+          $ref: '#/components/responses/ErrorResponse'
+        '503':
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/realname/faceid/attempts/{attemptId}/send-phone-code:
+    post:
+      operationId: sendRealnameFaceIDPhoneCode
+      summary: Send a Shadow verification code to the current phone for a FaceID attempt
+      security:
+        - SessionCookie: []
+        - SessionBearer: []
+      parameters:
+        - name: attemptId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Code issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendSmsResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/ErrorResponse'
+        '502':
+          $ref: '#/components/responses/ErrorResponse'
+        '503':
           $ref: '#/components/responses/ErrorResponse'
   /auth/realname/faceid/attempts/{attemptId}/finalize:
     post:

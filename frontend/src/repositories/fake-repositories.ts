@@ -604,6 +604,10 @@ export const createFakeRepositories = (): Repositories => {
         await wait(NETWORK_DELAY_MS / 2);
         return { cooldownSeconds: 60 };
       },
+      async sendRealnameFaceIdPhoneCode() {
+        await wait(NETWORK_DELAY_MS / 2);
+        return { cooldownSeconds: 60 };
+      },
       async verifyRealnamePhone() {
         await wait(NETWORK_DELAY_MS);
         const session = readStoredAuthSession();

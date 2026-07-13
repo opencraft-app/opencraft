@@ -394,13 +394,50 @@ func (h *Handler) GetCurrentRealnameFaceIDAttempt(ctx context.Context, _ api.Get
 	return api.GetCurrentRealnameFaceIDAttempt200JSONResponse(toFaceIDAttemptResponse(attempt)), nil
 }
 
+func (h *Handler) SendRealnameFaceIDPhoneCode(ctx context.Context, request api.SendRealnameFaceIDPhoneCodeRequestObject) (api.SendRealnameFaceIDPhoneCodeResponseObject, error) {
+	clientIP, _ := requestClientMetadata(ctx)
+	cooldown, err := h.service.SendRealnameFaceIDPhoneCode(ctx, tokenFromContext(ctx), request.AttemptId, clientIP)
+	if err != nil {
+		body, status := toErrorBody(err)
+		if status == http.StatusInternalServerError {
+			return nil, err
+		}
+		switch status {
+		case http.StatusUnauthorized:
+			return api.SendRealnameFaceIDPhoneCode401JSONResponse(body), nil
+		case http.StatusForbidden:
+			return api.SendRealnameFaceIDPhoneCode403JSONResponse(body), nil
+		case http.StatusNotFound:
+			return api.SendRealnameFaceIDPhoneCode404JSONResponse(body), nil
+		case http.StatusConflict:
+			return api.SendRealnameFaceIDPhoneCode409JSONResponse(body), nil
+		case http.StatusTooManyRequests:
+			return api.SendRealnameFaceIDPhoneCode429JSONResponse(body), nil
+		case http.StatusBadGateway:
+			return api.SendRealnameFaceIDPhoneCode502JSONResponse(body), nil
+		case http.StatusServiceUnavailable:
+			return api.SendRealnameFaceIDPhoneCode503JSONResponse(body), nil
+		default:
+			return api.SendRealnameFaceIDPhoneCode400JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(body)}, nil
+		}
+	}
+	seconds := int(cooldown.Round(time.Second) / time.Second)
+	if seconds < 0 {
+		seconds = 0
+	}
+	return api.SendRealnameFaceIDPhoneCode200JSONResponse(api.SendSmsResponse{CooldownSeconds: seconds}), nil
+}
+
 func (h *Handler) VerifyRealnameFaceIDPhone(ctx context.Context, request api.VerifyRealnameFaceIDPhoneRequestObject) (api.VerifyRealnameFaceIDPhoneResponseObject, error) {
 	if request.Body == nil {
 		return api.VerifyRealnameFaceIDPhone400JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(api.ErrorResponse{Code: "invalid_request", Message: "请求格式不正确。"})}, nil
 	}
+	clientIP, clientUA := requestClientMetadata(ctx)
 	attempt, err := h.service.VerifyRealnameFaceIDPhone(ctx, tokenFromContext(ctx), service.RealnameFaceIDPhoneProofInput{
 		AttemptID: request.AttemptId,
 		Code:      request.Body.Code,
+		ClientIP:  clientIP,
+		ClientUA:  clientUA,
 	})
 	if err != nil {
 		body, status := toErrorBody(err)
@@ -416,6 +453,10 @@ func (h *Handler) VerifyRealnameFaceIDPhone(ctx context.Context, request api.Ver
 			return api.VerifyRealnameFaceIDPhone404JSONResponse(body), nil
 		case http.StatusConflict:
 			return api.VerifyRealnameFaceIDPhone409JSONResponse(body), nil
+		case http.StatusBadGateway:
+			return api.VerifyRealnameFaceIDPhone502JSONResponse(body), nil
+		case http.StatusServiceUnavailable:
+			return api.VerifyRealnameFaceIDPhone503JSONResponse(body), nil
 		default:
 			return api.VerifyRealnameFaceIDPhone400JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(body)}, nil
 		}
@@ -467,7 +508,7 @@ func (h *Handler) HandleRealnameFaceIDCallback(ctx context.Context, request api.
 		gctx.Header("Referrer-Policy", "no-referrer")
 		gctx.Header("X-Content-Type-Options", "nosniff")
 	}
-	const page = "<!doctype html><html lang=\"zh-CN\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>认证结果已提交</title><body><main><h1>认证结果已提交</h1><p>请返回 LightVela 继续完成手机号验证。</p></main></body></html>"
+	const page = "<!doctype html><html lang=\"zh-CN\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>认证结果已提交</title><body><main><h1>认证结果已提交</h1><p>请返回 LightVela 继续完成实名认证。</p></main></body></html>"
 	return api.HandleRealnameFaceIDCallback200TexthtmlResponse{Body: strings.NewReader(page), ContentLength: int64(len(page))}, nil
 }
 

@@ -109,6 +109,8 @@ routes:
       - method: POST
         path: /auth/invite/prepare
       - method: GET
+        path: /auth/realname/faceid/callback
+      - method: GET
         path: /auth/oauth/qq/start
       - method: GET
         path: /auth/oauth/qq/callback

@@ -1,4 +1,42 @@
-# 当前执行计划：LightVela 场景任务安装器 v1
+# 当前执行计划：FaceID 复用 Shadow 手机验证
+
+> 分支：`codex/faceid-shadow-sms`
+> 规模：M
+
+## 任务清单
+
+- [x] 1. 为已有 active Shadow 绑定补充 FaceID 手机证明复用测试。
+  - 角色：Developer
+  - 影响文件：`user/auth/internal/service/realname_faceid_core_test.go`
+  - 验收方式：刷脸成功后复用当前手机号证明，直接进入 `shadow_pending`，不要求再次输入短信验证码。
+- [x] 2. 为未绑定 Shadow 的账号补充真实短信发送与腾讯验证码校验测试。
+  - 角色：Developer
+  - 影响文件：`user/auth/internal/service/realname_faceid_core_test.go`、`user/auth/internal/httpapi/handler_test.go`
+  - 验收方式：发送接口调用 Shadow `SendSmsVerifyCode`；验证码提交通过 Shadow 绑定校验，不再消费本地 `sms_challenges`。
+- [x] 3. 接入 FaceID 专用 Shadow 短信 API，并更新前端 Repository。
+  - 角色：Developer
+  - 影响文件：`user/auth/api/openapi.yaml`、`user/auth/internal/api/server.gen.go`、`user/auth/internal/httpapi/handler.go`、`user/auth/internal/service/realname_faceid.go`、`frontend/src/repositories/http-repositories.ts`、`frontend/src/repositories/types.ts`、`frontend/src/pages/marketing/account-page.tsx`
+  - 验收方式：已有绑定跳过短信；未绑定账号点击“获取验证码”会真实下发 Shadow 短信并可完成绑定。
+- [x] 4. 运行 auth 与 frontend 目标测试及静态检查。
+  - 角色：Reviewer
+  - 影响文件：测试与检查输出
+  - 验收方式：Go 目标测试、前端目标测试、类型检查和 diff 检查通过。
+  - 结果：auth 全量测试与 `go vet` 通过；frontend `pnpm check` 及 FaceID/Repository 53 个目标测试通过。
+- [x] 5. 放行国内环境 FaceID 回调。
+  - 角色：Developer
+  - 影响文件：`argocd/services/service-gateway/beijing-sandbox/config.yaml`、`argocd/services/service-gateway/shprod/config.yaml`、`service-gateway/internal/gateway/config_policy_test.go`
+  - 验收方式：北京沙箱和上海生产均将 `GET /auth/realname/faceid/callback` 列入 `public_allow`，配置策略测试和 service-gateway 全量测试通过。
+
+## 验收重点
+
+- 必须重新刷脸。
+- 已有 active Shadow 账号复用既有手机号证明，不重复发送短信。
+- 未绑定 Shadow 的账号仍需通过真实 Shadow 短信完成手机号验证与绑定。
+- Shadow 实名同步成功后才最终完成实名认证。
+
+---
+
+# 已完成计划：LightVela 场景任务安装器 v1
 
 > TAPD：[#135720398](https://tapd.woa.com/tapd_fe/10132091/story/detail/1010132091135720398)
 > 分支：`frontsandbox/scenario-task-installer`

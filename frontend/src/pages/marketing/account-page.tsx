@@ -350,7 +350,14 @@ const VerifyIdentityModal = ({
     setSendingCode(true);
     setError(null);
     try {
-      const result = await auth.sendSmsCode({ phone: normalizedPhone });
+      const result = faceIdFlowEnabled && attempt?.attemptId
+        ? await auth.sendRealnameFaceIdPhoneCode(attempt.attemptId)
+        : await auth.sendSmsCode({ phone: normalizedPhone });
+      if (faceIdFlowEnabled && attempt?.attemptId && result.cooldownSeconds <= 0) {
+        const nextAttempt = await auth.getRealnameFaceIdAttempt(attempt.attemptId);
+        await applyAttemptState(nextAttempt);
+        return false;
+      }
       setCooldownSeconds(Math.max(1, result.cooldownSeconds || 60));
       return true;
     } catch (err) {
