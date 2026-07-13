@@ -78,6 +78,10 @@
   - 角色：Developer
   - 影响文件：`frontend/package.json`、`frontend/scripts/clean-next-build-state.mjs`、`.ci/runtime/commands/publish_frontend_preview.sh`、`frontend/scripts/build-release-artifacts.mjs`
   - 验收方式：每次 `build:next`、preview variant 构建和 release artifact 构建前都会清理 `.next`，避免 `cn -> global` 顺序构建复用 webpack cache 导致第二段国际站构建失败。
+- [x] 19. 更新 Agent 记忆页的 `MEMORY.md` 说明文案。
+  - 角色：Developer
+  - 影响文件：`frontend/src/pages/marketing/agent-settings-page.tsx`、`frontend/src/i18n/generated/*.json`
+  - 验收方式：`/agents/memory/` 使用新文案，旧文案不再被源码引用，`pnpm i18n:check` 与 `pnpm check` 通过。
 
 ## 验收重点
 
