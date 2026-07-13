@@ -5,6 +5,16 @@ REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (paren
 
 
 class MRPlaceholderWorkflowTests(unittest.TestCase):
+    def test_only_mr_events_trigger_the_placeholder_check(self) -> None:
+        workflow = (REPO_ROOT / ".ci/mr-placeholder.yml").read_text()
+
+        trigger_block = workflow.split("on:\n", 1)[1].split("\nstages:\n", 1)[0]
+        self.assertNotIn("  push:", trigger_block)
+        self.assertIn("  mr:\n", trigger_block)
+        self.assertIn("    action: [ open, reopen, push-update ]", trigger_block)
+        self.assertIn("    report-commit-check: true", trigger_block)
+        self.assertIn("    block-mr: true", trigger_block)
+
     def test_ci_only_candidate_guard_fallback_is_constrained(self) -> None:
         workflow = (REPO_ROOT / ".ci/mr-placeholder.yml").read_text()
 

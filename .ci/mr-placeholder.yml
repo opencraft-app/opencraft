@@ -2,7 +2,6 @@ version: v2.0
 name: MR 占位检查
 
 on:
-  push: {}
   mr:
     target-branches: [ master ]
     action: [ open, reopen, push-update ]
