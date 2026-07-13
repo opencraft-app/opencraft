@@ -94,6 +94,39 @@ routes:
 	}
 }
 
+func TestLoadAppliesBackendBaseURLOverride(t *testing.T) {
+	t.Setenv("CLOUDLADDERGATEWAY_BACKEND_LIGHTCLAW_AUTH_BEIJING_SANDBOX_BASE_URL", "https://api.lightvela.com")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(`
+backends:
+  - alias: lightclaw-auth-beijing-sandbox
+    upstream:
+      base_url: "https://lightclaw.tech"
+      timeout: 10s
+routes:
+  - id: tencentcloud-account-callback-beijing-sandbox
+    upstream:
+      backend: lightclaw-auth-beijing-sandbox
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	upstream, err := cfg.ResolveUpstream("tencentcloud-account-callback-beijing-sandbox", cfg.Routes[0].Upstream)
+	if err != nil {
+		t.Fatalf("resolve upstream: %v", err)
+	}
+	if got := upstream.BaseURL; got != "https://api.lightvela.com" {
+		t.Fatalf("backend base_url override = %q", got)
+	}
+	if got := cfg.Routes[0].Upstream.Backend; got != "lightclaw-auth-beijing-sandbox" {
+		t.Fatalf("route backend = %q", got)
+	}
+}
+
 func TestExampleConfigLoads(t *testing.T) {
 	t.Setenv("CLOUDLADDER_PAYMENT_HMAC_SECRET", "test-secret")
 	cfg, err := Load("../../config.example.yaml")
@@ -172,17 +205,17 @@ func TestExampleConfigIncludesRegionalJifeiCallbacks(t *testing.T) {
 	}
 
 	wantBaseURL := map[string]string{
-		"jifei-callback-bj":    "https://lightclaw.tech",
-		"jifei-callback-sh":    "https://api.lightvela.com",
-		"jifei-callback-gz":    "https://lightclaw.tech",
-		"jifei-callback-cd":    "https://lightclaw.tech",
-		"jifei-callback-nj":    "https://lightclaw.tech",
-		"jifei-callback-hk":    "https://kr.lightclaw.tech",
-		"jifei-callback-jp": "https://kr.lightclaw.tech",
-		"jifei-callback-kr":    "https://kr.lightclaw.tech",
-		"jifei-callback-jkt":   "https://kr.lightclaw.tech",
-		"jifei-callback-sg":    "https://api.lightvela.ai",
-		"jifei-callback-th":   "https://kr.lightclaw.tech",
+		"jifei-callback-bj":  "https://lightclaw.tech",
+		"jifei-callback-sh":  "https://api.lightvela.com",
+		"jifei-callback-gz":  "https://lightclaw.tech",
+		"jifei-callback-cd":  "https://lightclaw.tech",
+		"jifei-callback-nj":  "https://lightclaw.tech",
+		"jifei-callback-hk":  "https://kr.lightclaw.tech",
+		"jifei-callback-jp":  "https://kr.lightclaw.tech",
+		"jifei-callback-kr":  "https://kr.lightclaw.tech",
+		"jifei-callback-jkt": "https://kr.lightclaw.tech",
+		"jifei-callback-sg":  "https://api.lightvela.ai",
+		"jifei-callback-th":  "https://kr.lightclaw.tech",
 	}
 
 	for _, route := range cfg.Routes {
