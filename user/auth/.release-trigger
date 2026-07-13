@@ -1,3 +1,3 @@
 lightclaw-auth release trigger
-updated_at=2026-05-13T10:46:00Z
-reason=retry sandbox-bj-7 auth after DB readiness kubectl handles transient EOF
+updated_at=2026-07-13T19:15:20Z
+reason=rebuild production candidate after closing shprod KSOPS projection
