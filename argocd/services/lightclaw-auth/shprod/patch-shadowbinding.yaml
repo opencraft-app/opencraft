@@ -52,3 +52,8 @@ spec:
                 secretKeyRef:
                   name: lightclaw-auth-secrets
                   key: LIGHTCLAW_INTERNAL_SERVICE_TOKEN
+            - name: SHADOW_TENCENT_CALLBACK_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: shadow-runtime-secrets
+                  key: SHADOW_TENCENT_CALLBACK_TOKEN

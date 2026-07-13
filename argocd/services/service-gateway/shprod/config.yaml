@@ -108,6 +108,8 @@ routes:
         path: /auth/invite/validate
       - method: POST
         path: /auth/invite/prepare
+      - method: POST
+        path: /auth/internal/tencentcloud/account
       - method: GET
         path: /auth/realname/faceid/callback
       - method: GET
