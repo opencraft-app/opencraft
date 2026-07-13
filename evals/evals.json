@@ -1,12 +1,12 @@
 {
   "skill_name": "prd-init",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "evals": [
     {
       "id": 1,
       "name": "粗糙想法进入产品输入稿",
       "prompt": "老板说 LightVela 的 /agents 页面看不出哪些 skill 已安装，帮我先建一个需求",
-      "expected_output": "识别为 LightVela 产品前置需求，先补齐来源、目标用户、当前痛点、影响面、验收标准和 TAPD 写入计划；在确认前不直接创建 TAPD 单",
+      "expected_output": "识别为 LightVela 产品前置需求，每轮只问一个最影响范围的问题并优先使用选择题；澄清后由 AI 提出 2-3 个产品方案、说明取舍并给出推荐，按用户选择形成产品输入稿，补齐来源、目标用户、当前痛点、影响面和验收标准；产品输入稿确认后实际写入 mono2 的 product/prd/YYYY-MM-DD-<short-title>.md，并返回文件路径；在产品输入稿确认前不直接创建 TAPD 单",
       "files": []
     },
     {
@@ -41,7 +41,7 @@
       "id": 6,
       "name": "需要产品原型而不是 BKUI 原型",
       "prompt": "这个需求要新增一个 agents 工具安装弹窗，PRD 写完后需要产品和前端先确认页面结构",
-      "expected_output": "判断需要产品原型说明，产出目标入口、用户主路径、页面结构、关键组件、加载/空态/错误/权限状态和需要设计/前端确认的问题，不生成 BKUI HTML 原型",
+      "expected_output": "判断需要产品原型说明，产出目标入口、用户主路径、页面结构、关键组件、加载/空态/错误/权限状态和需要设计/前端确认的问题，不生成 BKUI HTML 原型；原型说明默认写入 mono2 的同一份 product/prd/YYYY-MM-DD-<short-title>.md",
       "files": []
     },
     {
@@ -49,6 +49,20 @@
       "name": "输出 TAPD payload 和完成总结",
       "prompt": "产品方案已经确认，帮我整理建父单和研发交接的 TAPD 写入内容，最后给我总结",
       "expected_output": "先静默完成环境自检；若无有效 Token 只问用户要 Token，拿到后自动创建，不额外要求用户确认写入计划；使用固定 workspace_id 10132091、分类 LightVela、标题格式【产品需求】【LightVela】<标题>；不创建子需求 payload；结束时按 LightVela 产品前置完成表汇报父单、文档、原型、研发交接建议、待确认问题和下一步",
+      "files": []
+    },
+    {
+      "id": 8,
+      "name": "逐轮澄清并比较多个产品方案",
+      "prompt": "我想在 LightVela 的 /agents 页面增加一个统一状态面板，把 Skill、MCP 和 Hermes 状态都放进去，细节还没想好，直接帮我出 PRD",
+      "expected_output": "不得一次抛出 3-5 个问题或问卷；每轮只问一个最影响范围的问题，并在可枚举时优先提供选择项和推荐。澄清到足以决策后，由 AI 提出 2-3 个产品方案，说明范围、收益、代价和风险，推荐满足当前目标的最小方案并剔除无证据支持的扩展。用户选择或明确授权按推荐方案继续后，再分段展示产品输入稿并逐步确认；如果发现冲突则回退到单问题澄清，不能直接进入 TAPD 写入",
+      "files": []
+    },
+    {
+      "id": 9,
+      "name": "PRD 固定写入 mono2 product/prd",
+      "prompt": "这个 LightVela 产品方案已经确认，请把 PRD 正式落成文档",
+      "expected_output": "定位 mono2 仓库根目录，必要时创建 product/prd，并把 PRD 实际写入 product/prd/YYYY-MM-DD-<short-title>.md；不要写入 docs/reqs/lightvela，也不要只在聊天中返回正文。产品原型说明和待确认问题默认写在同一 Markdown 文件中，完成后主动返回实际文件路径；如果已有对应 PRD，则更新原文件而不是按新日期重复创建",
       "files": []
     }
   ]
