@@ -71,6 +71,9 @@
       "deployEnv": {
         "EDGEONE_PAGES_AREA": "global",
         "EDGEONE_PAGES_ENV": "production",
+        "NEXT_PUBLIC_WECHAT_PAY_AUTH_BASE_URL": "https://api.lightvela.com",
+        "NEXT_PUBLIC_WX_BUY_HOST": "buy.cloud.tencent.com",
+        "NEXT_PUBLIC_WX_PAY_PRODUCT_ID": "lightvela_pro_v1",
         "NEXT_VERSION_STATIC_ASSETS": "1"
       }
     },
