@@ -860,7 +860,7 @@ const MemoryLimitCard = ({
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-black/85">{title}</p>
-          <p className="mt-1 max-w-[28rem] text-xs leading-relaxed text-black/45">{description}</p>
+          <p className="mt-1 max-w-lg text-pretty text-xs leading-relaxed text-black/45">{description}</p>
         </div>
         <span className="shrink-0 rounded-full bg-black/[0.05] px-2 py-1 text-xs font-medium text-black/60">
           {percent}%
