@@ -366,6 +366,7 @@ func (t *destroyPassTask) cancelAiGatewaySubscription(_ pctx.Context, logger *za
 	logger.Info("destroy pass 5a: gateway CancelSubscription succeeded",
 		zap.String("user_id", userID),
 		zap.String("gateway", cancelSource))
+	gatewayroute.ClearBestEffort(logger, userID, "destroy")
 	metric.DestroyFinalizeStepTotal.WithLabelValues("5a_cancel_subscription", "success").Inc()
 }
 

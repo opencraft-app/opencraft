@@ -53,6 +53,14 @@ func Record(userID string, gateway Gateway, subscriptionID, planID, source strin
 	})
 }
 
+func Clear(userID string) error {
+	userID = strings.TrimSpace(userID)
+	if userID == "" || resource.GormDB == nil {
+		return nil
+	}
+	return modelgateway.NewDao().DeleteByUserID(userID)
+}
+
 func RecordBestEffort(logger *zap.Logger, userID string, gateway Gateway, subscriptionID, planID, source string) {
 	if logger == nil {
 		logger = resource.ZapLogger
@@ -65,6 +73,21 @@ func RecordBestEffort(logger *zap.Logger, userID string, gateway Gateway, subscr
 			zap.String("user_id", userID),
 			zap.String("gateway", gateway),
 			zap.String("source", source),
+			zap.Error(err))
+	}
+}
+
+func ClearBestEffort(logger *zap.Logger, userID string, reason string) {
+	if logger == nil {
+		logger = resource.ZapLogger
+	}
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	if err := Clear(userID); err != nil {
+		logger.Warn("clear user subscription gateway failed",
+			zap.String("user_id", userID),
+			zap.String("reason", reason),
 			zap.Error(err))
 	}
 }

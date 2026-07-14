@@ -17,6 +17,7 @@ type Dao interface {
 
 	GetByUserID(userID string) (*Entity, error)
 	Upsert(entity *Entity) error
+	DeleteByUserID(userID string) error
 	CountByGateway(gateway string) (int64, error)
 }
 
@@ -73,6 +74,17 @@ func (d *dao) Upsert(entity *Entity) error {
 			ColumnLastObservedAt,
 		}),
 	}).Create(entity).Error
+}
+
+func (d *dao) DeleteByUserID(userID string) error {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return fmt.Errorf("user_id is required")
+	}
+	if err := d.DeleteByKeyColumn(userID); err != nil {
+		return fmt.Errorf("delete user subscription gateway: %w", err)
+	}
+	return nil
 }
 
 func (d *dao) CountByGateway(gateway string) (int64, error) {
