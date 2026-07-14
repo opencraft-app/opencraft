@@ -955,7 +955,7 @@ const ChangePhoneModal = ({
   onClose,
   onSuccess,
 }: {
-  currentPhone?: string;
+  currentPhone: string;
   onClose: () => void;
   onSuccess: () => void;
 }) => {
@@ -1065,7 +1065,7 @@ const ChangePhoneModal = ({
           <div className="flex items-center gap-4">
             <div className="flex flex-1 flex-col gap-2">
               <h3 className="m-0" style={{ fontFamily: "PingFang SC", fontWeight: 500, fontSize: 20, lineHeight: "1.6em", color: "rgba(0,0,0,0.9)" }}>
-                {currentPhone ? t("修改安全手机") : t("绑定安全手机")}
+                {t("修改安全手机")}
               </h3>
               <p className="m-0" style={{ fontFamily: "PingFang SC", fontWeight: 400, fontSize: 14, lineHeight: "22px", color: "rgba(0,0,0,0.9)" }}>
                 {t("安全手机用于后续计费、支付和账号安全校验。")}
@@ -1081,9 +1081,7 @@ const ChangePhoneModal = ({
             </button>
           </div>
           <div className="rounded-lg bg-[rgba(7,193,96,0.08)] px-4 py-3 text-sm leading-[22px]" style={{ color: "rgba(0,0,0,0.75)" }}>
-            {currentPhone
-              ? t("当前安全手机：{{phone}}", { phone: currentPhone })
-              : t("当前账号尚未绑定安全手机。")}
+            {t("当前安全手机：{{phone}}", { phone: currentPhone })}
           </div>
         </div>
 
@@ -2173,8 +2171,9 @@ export const AccountPage = () => {
   const [showFaceIdFlow, setShowFaceIdFlow] = useState(false);
   const faceIdBackendEnabled = user?.realnameAssuranceMode === "observe"
     || user?.realnameAssuranceMode === "face_required";
-  const faceIdFlowEnabled = showFaceIdFlow && faceIdBackendEnabled;
-  const phoneProofEnabled = realnamePhoneVerificationEnabled || faceIdFlowEnabled;
+  const hasSafetyPhone = Boolean(user?.phone?.trim());
+  const faceIdFlowEnabled = showFaceIdFlow && faceIdBackendEnabled && hasSafetyPhone;
+  const phoneProofEnabled = hasSafetyPhone && (realnamePhoneVerificationEnabled || faceIdFlowEnabled);
 
   const verified = faceIdFlowEnabled
     ? user?.realnameVerified === true && user?.realnameLevel === REALNAME_LEVEL.PHONE_3FA
@@ -2189,7 +2188,6 @@ export const AccountPage = () => {
     && idCardVerified
     && user?.realnameLevel === REALNAME_LEVEL.PHONE_3FA;
   const realnameSyncStatus = user?.realnameSyncStatus as RealnameSyncStatus | undefined;
-  const hasSafetyPhone = Boolean(user?.phone?.trim());
   const idCardSyncStatus = faceIdFlowEnabled
     ? shadowProofReady ? realnameSyncStatus : undefined
     : idCardVerified && !verified ? realnameSyncStatus : undefined;
@@ -2392,10 +2390,6 @@ export const AccountPage = () => {
   };
 
   const handleOpenVerifyModal = () => {
-    if (phoneProofEnabled && !user?.phone) {
-      setShowChangePhoneModal(true);
-      return;
-    }
     setShowVerifyModal(true);
   };
 
@@ -2403,7 +2397,7 @@ export const AccountPage = () => {
     if (err instanceof RepositoryError) {
       switch (err.code) {
         case "phone_required":
-          return t("当前账号未绑定手机号，请先绑定安全手机。");
+          return t("当前账号未设置安全手机，暂时无法继续认证。");
         case "realname_required":
           return t("请先完成姓名和身份证认证。");
         case "shadow_binding_incomplete":
@@ -2986,13 +2980,11 @@ export const AccountPage = () => {
                           style={{ color: "var(--lw-accent)" }}
                         >
                           {realnameSyncRetrying && <Loader2 className="h-4 w-4 animate-spin" />}
-                          {phoneProofEnabled && !hasSafetyPhone
-                            ? t("绑定安全手机")
-                            : realnameSyncNeedsRetry
-                              ? t("重新同步")
-                              : phoneProofEnabled && idCardVerified
-                                ? t("继续认证")
-                                : t("去认证")}
+                          {realnameSyncNeedsRetry
+                            ? t("重新同步")
+                            : phoneProofEnabled && idCardVerified
+                              ? t("继续认证")
+                              : t("去认证")}
                           {!realnameSyncRetrying && <ChevronRight className="h-4 w-4" />}
                         </button>
                       </div>
@@ -3042,7 +3034,7 @@ export const AccountPage = () => {
             phone={user?.phone}
           />
         )}
-        {showRealnameSection && phoneProofEnabled && showChangePhoneModal && (
+        {showRealnameSection && phoneProofEnabled && user?.phone && showChangePhoneModal && (
           <ChangePhoneModal
             key="change-phone"
             currentPhone={user?.phone}

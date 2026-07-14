@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -281,7 +281,10 @@ describe("AccountPage nickname audit state", () => {
       ((window as Window & typeof globalThis & { show?: () => boolean }).show?.());
     });
 
-    expect(screen.getByText("安全手机")).toBeInTheDocument();
+    const safetyPhoneRow = screen.getByText("安全手机").parentElement;
+    expect(safetyPhoneRow).not.toBeNull();
+    expect(within(safetyPhoneRow!).getByRole("button", { name: /修改/ })).toBeInTheDocument();
+    expect(within(safetyPhoneRow!).queryByRole("button", { name: /绑定/ })).not.toBeInTheDocument();
     expect(screen.getByText("实名认证")).toBeInTheDocument();
   });
 
@@ -415,23 +418,24 @@ describe("AccountPage nickname audit state", () => {
     expect(screen.queryByText("第二步：输入当前手机号收到的短信验证码。")).not.toBeInTheDocument();
   });
 
-  it("requires a safety phone before starting ID-card realname verification", async () => {
-    realnamePhoneVerificationEnabled = true;
+  it("does not expose safety-phone binding or FaceID upgrade without a local phone", () => {
     currentUser = {
       ...currentUser,
       phone: undefined,
-      realnameVerified: false,
-      realnameLevel: undefined,
+      realnameVerified: true,
+      realnameLevel: "idcard_2fa",
+      realnameAssuranceMode: "observe",
     };
 
     renderAccountPage();
 
-    await userEvent.click(screen.getByRole("button", { name: /绑定安全手机/ }));
+    act(() => {
+      ((window as Window & typeof globalThis & { show?: () => boolean }).show?.());
+    });
 
-    expect(screen.getByRole("heading", { name: "绑定安全手机" })).toBeInTheDocument();
-    expect(screen.getByText("当前账号尚未绑定安全手机。")).toBeInTheDocument();
-    expect(screen.queryByText("第一步：提交真实姓名和身份证号。")).not.toBeInTheDocument();
-    expect(screen.queryByPlaceholderText("请输入真实姓名")).not.toBeInTheDocument();
+    expect(screen.queryByText("安全手机")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /绑定安全手机/ })).not.toBeInTheDocument();
+    expect(screen.getByText("已认证")).toBeInTheDocument();
   });
 
   it("shows retry action when ID-card realname passed but LightVela sync failed", async () => {
