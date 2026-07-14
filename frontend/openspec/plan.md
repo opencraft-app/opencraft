@@ -121,6 +121,11 @@
   - 影响文件：`frontend/src/pages/marketing/agent-settings-page.tsx`、`frontend/src/i18n/generated/*.json`
   - 验收方式：`/agents/memory/` 使用新文案，旧文案不再被源码引用，`pnpm i18n:check` 与 `pnpm check` 通过。
 
+- [x] 20. 放宽记忆统计卡片说明文案的单行展示宽度。
+  - 角色：Developer
+  - 影响文件：`frontend/src/pages/marketing/agent-settings-page.tsx`
+  - 验收方式：桌面宽屏下 `MEMORY.md` 中文说明保持单行，中小屏仍可自然换行且不产生横向溢出。
+
 ## 验收重点
 
 - 四个场景全部首发。
