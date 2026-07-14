@@ -418,7 +418,7 @@ describe("AccountPage nickname audit state", () => {
     expect(screen.queryByText("第二步：输入当前手机号收到的短信验证码。")).not.toBeInTheDocument();
   });
 
-  it("does not expose safety-phone binding or FaceID upgrade without a local phone", () => {
+  it("keeps safety-phone binding hidden but marks three-factor verification incomplete without a local phone", () => {
     currentUser = {
       ...currentUser,
       phone: undefined,
@@ -435,7 +435,8 @@ describe("AccountPage nickname audit state", () => {
 
     expect(screen.queryByText("安全手机")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /绑定安全手机/ })).not.toBeInTheDocument();
-    expect(screen.getByText("已认证")).toBeInTheDocument();
+    expect(screen.queryByText("已认证")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "去认证" })).toBeInTheDocument();
   });
 
   it("shows retry action when ID-card realname passed but LightVela sync failed", async () => {

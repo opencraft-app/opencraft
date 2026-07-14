@@ -26,6 +26,7 @@ let currentUser: User;
 let activePass: Pass | null = null;
 let sessionAuthReady = true;
 let sessionIsAuthenticated = true;
+let realnamePhoneVerificationEnabled = true;
 let renderTick = 0;
 let rerenderPage: (() => void) | null = null;
 
@@ -50,7 +51,7 @@ vi.mock("@/i18n/t", () => ({
 
 vi.mock("@/contexts/runtime-config-context", () => ({
   usePaidBillingEnabled: () => false,
-  useRealnamePhoneVerificationEnabled: () => true,
+  useRealnamePhoneVerificationEnabled: () => realnamePhoneVerificationEnabled,
 }));
 
 vi.mock("@/lib/region", () => ({
@@ -173,6 +174,7 @@ describe("AccountPage FaceID flow", () => {
     activePass = null;
     sessionAuthReady = true;
     sessionIsAuthenticated = true;
+    realnamePhoneVerificationEnabled = true;
     renderTick = 0;
     rerenderPage = null;
     sendSmsCode.mockResolvedValue({ cooldownSeconds: 60 });
@@ -198,6 +200,28 @@ describe("AccountPage FaceID flow", () => {
     expect(screen.getByText("完成实名认证后可以发布技能和参与更多社区活动")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "开始刷脸认证" })).not.toBeInTheDocument();
     expect(startRealnameFaceIdAttempt).not.toHaveBeenCalled();
+  });
+
+  it("stops treating legacy ID-card verification as complete after show() even without a phone", () => {
+    realnamePhoneVerificationEnabled = false;
+    currentUser = {
+      ...currentUser,
+      phone: undefined,
+      realnameVerified: true,
+      realnameLevel: "idcard_2fa",
+      realnameAssuranceMode: "observe",
+    };
+
+    renderAccountPage(false);
+    expect(screen.getByText("已认证")).toBeInTheDocument();
+
+    act(() => {
+      (window as Window & { show?: () => boolean }).show?.();
+    });
+
+    expect(screen.queryByText("已认证")).not.toBeInTheDocument();
+    expect(screen.getByText("待完成手机号认证")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "去认证" })).toBeInTheDocument();
   });
 
   it("shows desktop QR polling after FaceID attempt start and moves to the current-phone step only after backend state changes", async () => {
