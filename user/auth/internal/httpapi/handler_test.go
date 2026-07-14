@@ -467,8 +467,8 @@ func TestRealnameFaceIDHTTPFlowRequiresOwnedAttemptAndUsesShadowPhoneCode(t *tes
 		t.Fatalf("expected phone proof 200, got %d: %s", verified.Code, verified.Body.String())
 	}
 	decodeJSONResponse(t, verified, &attempt)
-	if attempt.State != api.RealnameFaceIDAttemptResponseState("shadow_pending") {
-		t.Fatalf("expected shadow_pending, got %+v", attempt)
+	if attempt.State != api.RealnameFaceIDAttemptResponseState("succeeded") {
+		t.Fatalf("expected synchronous FaceID completion, got %+v", attempt)
 	}
 }
 
@@ -1784,12 +1784,13 @@ func newAuthTestRouterWithFaceID() (*gin.Engine, *service.Service, *httpStubFace
 		Now:     fixedHTTPTestNow,
 	})
 	svc := service.NewWithStore(store, service.Options{
-		Now:                    fixedHTTPTestNow,
-		SessionTTL:             30 * 24 * time.Hour,
-		DefaultSMSCode:         "123456",
-		RealnameCipher:         httpStubRealnameCipher{},
-		RealnameFaceIDVerifier: provider,
-		ShadowBinding:          shadowSvc,
+		Now:                        fixedHTTPTestNow,
+		SessionTTL:                 30 * 24 * time.Hour,
+		DefaultSMSCode:             "123456",
+		RealnameCipher:             httpStubRealnameCipher{},
+		RealnameFaceIDVerifier:     provider,
+		ShadowBinding:              shadowSvc,
+		ShadowBasicAuthSyncEnabled: true,
 		RealnameFaceID: service.RealnameFaceIDConfig{
 			Mode: service.RealnameAssuranceModeFaceRequired, RuleID: "rule-http", AccountID: "account-http",
 			RedirectURL: "https://api.example.com/auth/realname/faceid/callback",

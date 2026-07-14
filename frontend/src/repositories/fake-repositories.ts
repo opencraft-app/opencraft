@@ -544,7 +544,13 @@ export const createFakeRepositories = (): Repositories => {
         if (record.state !== "face_succeeded" && record.state !== "phone_pending") {
           throw new Error("请先完成人脸核身。");
         }
-        record.state = "shadow_pending";
+        record.state = "succeeded";
+        updateStoredUser((user) => ({
+          ...user,
+          realnameVerified: true,
+          realnameLevel: "phone_3fa",
+          realnameSyncStatus: "succeeded",
+        }));
         return toPublicFaceIdAttempt(record);
       },
       async finalizeRealnameFaceIdAttempt(attemptId) {

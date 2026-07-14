@@ -77,7 +77,6 @@ const InfoRow = ({
 /* ─── Verify Identity Modal ─── */
 
 const FACE_ID_PENDING_POLL_DELAYS_MS = [250, 500, 1000, 1500, 2000, 3000, 5000, 8000, 10000];
-const FACE_ID_SHADOW_POLL_DELAYS_MS = [300, 600, 1200, 1800, 3000, 5000, 8000, 10000];
 
 type VerifyIdentityModalStage = "identity" | "face" | "phone" | "shadow";
 
@@ -150,7 +149,7 @@ const VerifyIdentityModal = ({
   const canSubmitLegacyIdentity = canSubmitIdentity;
   const canSubmitFaceIdIdentity = canSubmitIdentity && consent;
   const canSubmitPhone = normalizedPhone.length > 0 && smsCode.trim().length >= 4;
-  const shadowFailed = stage === "shadow" && !attempt && realnameSyncStatus === "failed";
+  const shadowFailed = !faceIdFlowEnabled && stage === "shadow" && !attempt && realnameSyncStatus === "failed";
   const shadowPending = stage === "shadow" && (
     awaitingFinalRefresh
     || attempt?.state === "shadow_pending"
@@ -232,7 +231,7 @@ const VerifyIdentityModal = ({
         return false;
       case "shadow_pending":
         setStage("shadow");
-        return true;
+        return false;
       case "succeeded":
         setStage("shadow");
         setAwaitingFinalRefresh(true);
@@ -278,9 +277,9 @@ const VerifyIdentityModal = ({
 
   useEffect(() => {
     if (!faceIdFlowEnabled || !attempt?.attemptId) return;
-    if (attempt.state !== "pending" && attempt.state !== "shadow_pending") return;
+    if (attempt.state !== "pending") return;
 
-    const delays = attempt.state === "pending" ? FACE_ID_PENDING_POLL_DELAYS_MS : FACE_ID_SHADOW_POLL_DELAYS_MS;
+    const delays = FACE_ID_PENDING_POLL_DELAYS_MS;
     let cancelled = false;
     let timerId: number | undefined;
     let index = 0;
@@ -292,22 +291,14 @@ const VerifyIdentityModal = ({
         const shouldContinue = await applyAttemptState(nextAttempt);
         if (!shouldContinue || cancelled) return;
         if (index >= delays.length) {
-          setPollError(
-            attempt.state === "pending"
-              ? t("刷脸结果同步较慢，请稍后刷新当前状态。")
-              : t("最终认证状态同步较慢，请稍后刷新当前状态。"),
-          );
+          setPollError(t("刷脸结果同步较慢，请稍后刷新当前状态。"));
           return;
         }
         timerId = window.setTimeout(poll, delays[index] ?? delays[delays.length - 1]);
         index += 1;
       } catch {
         if (!cancelled) {
-          setPollError(
-            attempt.state === "pending"
-              ? t("刷脸结果同步较慢，请稍后刷新当前状态。")
-              : t("最终认证状态同步较慢，请稍后刷新当前状态。"),
-          );
+          setPollError(t("刷脸结果同步较慢，请稍后刷新当前状态。"));
         }
       }
     };
@@ -325,7 +316,7 @@ const VerifyIdentityModal = ({
 
   useEffect(() => {
     if (!faceIdFlowEnabled || !attempt?.attemptId) return;
-    if (attempt.state !== "pending" && attempt.state !== "shadow_pending") return;
+    if (attempt.state !== "pending") return;
 
     const refreshPersistedState = () => {
       void auth.getRealnameFaceIdAttempt(attempt.attemptId)
@@ -431,8 +422,6 @@ const VerifyIdentityModal = ({
         if (faceIdFlowEnabled && attempt?.attemptId) {
           const phoneAttempt = await auth.verifyRealnameFaceIdPhone(attempt.attemptId, { code: smsCode.trim() });
           await applyAttemptState(phoneAttempt);
-          const finalizedAttempt = await auth.finalizeRealnameFaceIdAttempt(attempt.attemptId);
-          await applyAttemptState(finalizedAttempt);
         } else {
           await auth.verifyRealnamePhone({ code: smsCode.trim() });
           setStage("shadow");
@@ -451,16 +440,6 @@ const VerifyIdentityModal = ({
       }
 
       if (stage === "shadow") {
-        if (faceIdFlowEnabled && attempt?.state === "shadow_pending") {
-          const finalizedAttempt = await auth.finalizeRealnameFaceIdAttempt(attempt.attemptId);
-          await applyAttemptState(finalizedAttempt);
-          try {
-            await refreshProfile();
-          } catch {
-            setPollError(t("最终认证状态同步较慢，请稍后刷新当前状态。"));
-          }
-          return;
-        }
         if (shadowFailed) {
           await auth.retryRealnameSync();
           try {
@@ -486,7 +465,6 @@ const VerifyIdentityModal = ({
       return verified ? t("更新认证") : t("提交认证");
     }
     if (stage === "phone") return faceIdFlowEnabled ? t("完成当前手机号认证") : t("完成三要素认证");
-    if (faceIdFlowEnabled && attempt?.state === "shadow_pending") return t("完成实名同步");
     if (shadowFailed) return t("重新同步");
     return t("刷新当前状态");
   })();
@@ -499,7 +477,7 @@ const VerifyIdentityModal = ({
       ? canSubmitPhone
       : stage === "face"
         ? Boolean(attempt?.attemptId)
-        : shadowFailed || Boolean(attempt?.attemptId);
+        : !faceIdFlowEnabled && (shadowFailed || Boolean(attempt?.attemptId));
 
   return (
     <motion.div
@@ -916,7 +894,7 @@ const VerifyIdentityModal = ({
             >
               {t("重新开始认证")}
             </button>
-          ) : (
+          ) : faceIdFlowEnabled && stage === "shadow" ? null : (
             <button
               onClick={() => void handleSubmit()}
               disabled={!canSubmit || submitting || awaitingFinalRefresh}
@@ -2215,11 +2193,12 @@ export const AccountPage = () => {
   const idCardSyncStatus = faceIdFlowEnabled
     ? shadowProofReady ? realnameSyncStatus : undefined
     : idCardVerified && !verified ? realnameSyncStatus : undefined;
-  const realnameSyncNeedsRetry = faceIdFlowEnabled
-    ? hasSafetyPhone && shadowProofReady && idCardSyncStatus === "failed"
-    : realnamePhoneVerificationEnabled && hasSafetyPhone && idCardVerified && !verified && (
-      idCardSyncStatus === "failed" || idCardSyncStatus === "pending"
-    );
+  const realnameSyncNeedsRetry = !faceIdFlowEnabled
+    && realnamePhoneVerificationEnabled
+    && hasSafetyPhone
+    && idCardVerified
+    && !verified
+    && (idCardSyncStatus === "failed" || idCardSyncStatus === "pending");
   const realnameStatusLabel = verified
     ? t("已认证")
     : idCardSyncStatus === "failed"
