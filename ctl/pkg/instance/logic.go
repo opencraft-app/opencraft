@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	paigateway "ctl/pkg/adapter/aigateway"
 	adapterfactory "ctl/pkg/adapter/factory"
 	pllmgateway "ctl/pkg/adapter/llmgateway"
 	popenclawgateway "ctl/pkg/adapter/openclawgateway"
@@ -109,7 +110,8 @@ type logic struct {
 	channelLoginSessionDao channelloginsession.Dao
 	quotaDao               quota.Dao
 	sandboxAdapter         psandbox.Adapter
-	aiGatewayAdapter       pllmgateway.Adapter
+	aiGatewayAdapter       paigateway.Adapter
+	llmGatewayAdapter      pllmgateway.Adapter
 	openclawGatewayAdapter popenclawgateway.Adapter
 	producer               mq.Producer
 	operationHistoryDao    operationhistory.Dao
@@ -138,7 +140,8 @@ func NewLogic() Logic {
 		taskDao:                modelfactory.DefaultDaoFactory.TaskDao(nil),
 		quotaDao:               modelfactory.DefaultDaoFactory.UserResourceQuotaDao(nil),
 		sandboxAdapter:         adapterfactory.DefaultAdapterFactory.SandboxAdapter(),
-		aiGatewayAdapter:       adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter(),
+		aiGatewayAdapter:       adapterfactory.DefaultAdapterFactory.AiGatewayAdapter(),
+		llmGatewayAdapter:      adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter(),
 		openclawGatewayAdapter: adapterfactory.DefaultAdapterFactory.OpenClawGatewayAdapter(),
 		producer:               defaultProducer(),
 		operationHistoryDao:    modelfactory.DefaultDaoFactory.OperationHistoryDao(nil),
@@ -173,7 +176,7 @@ func newLogicForTest(instanceDao modelinstance.Dao, quotaDao quota.Dao, sandboxA
 		taskDao:                modelfactory.DefaultDaoFactory.TaskDao(nil),
 		quotaDao:               quotaDao,
 		sandboxAdapter:         sandboxAdapter,
-		aiGatewayAdapter:       aiGatewayAdapter,
+		llmGatewayAdapter:      aiGatewayAdapter,
 		// Mia: test helper should not accidentally inherit a half-dead global Redis client.
 		// Inline task execution already covers the business path we care about here.
 		producer:             noopProducer{},

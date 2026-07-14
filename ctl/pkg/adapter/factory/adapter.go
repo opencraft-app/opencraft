@@ -24,6 +24,7 @@ type AdapterFactory interface {
 	SandboxAdapter() sandbox.Adapter
 	StsAdapter() sts.Adapter
 	WhitelistAdapter() whitelist.Adapter
+	AiGatewayAdapter() aigateway.Adapter
 	LLMGatewayAdapter() llmgateway.Adapter
 	OpenClawGatewayAdapter() openclawgateway.Adapter
 	ShadowAdapter() shadow.Adapter

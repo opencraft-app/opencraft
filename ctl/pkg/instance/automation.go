@@ -66,6 +66,9 @@ func buildInstanceGatewayURL(entity *modelinstance.Entity) (string, error) {
 	if config.ServerConf != nil && config.ServerConf.AdapterConfig != nil && config.ServerConf.AdapterConfig.LLMGateway != nil {
 		port = config.ServerConf.AdapterConfig.LLMGateway.DefaultGatewayPort
 	}
+	if port <= 0 && config.ServerConf != nil && config.ServerConf.AdapterConfig != nil && config.ServerConf.AdapterConfig.AiGateway != nil {
+		port = config.ServerConf.AdapterConfig.AiGateway.DefaultGatewayPort
+	}
 	if port <= 0 {
 		port = 18789
 	}
@@ -109,7 +112,8 @@ func (l *logic) ensureAutomationGatewayAuthMaterial(ctx pctx.Context, entity *mo
 	}
 	previousKeyID := strings.TrimSpace(entity.AiGatewayKeyID)
 
-	apiKeyResp, err := l.createAiGatewayApiKey(ctx, ctx.GetUserID(), entity.InstanceId)
+	backend := l.resolveProvisionGateway(ctx, ctx.GetUserID(), entity.InstanceId)
+	apiKeyResp, err := l.createAiGatewayApiKey(ctx, backend, ctx.GetUserID(), entity.InstanceId)
 	if err != nil {
 		return errcode.Wrap(errcode.ErrInstanceAutomationUnavailable, "create ai-gateway key for automation: %v", err)
 	}
@@ -118,7 +122,12 @@ func (l *logic) ensureAutomationGatewayAuthMaterial(ctx pctx.Context, entity *mo
 		_ = l.revokeAiGatewayApiKey(ctx, apiKeyResp.KeyID)
 		return errcode.Wrap(errcode.ErrInstanceAutomationUnavailable, "generate automation gateway token: %v", err)
 	}
-	if err := l.configureOnboard(ctx, entity.SandboxId, apiKeyResp.APIKey, gatewayAuthToken); err != nil {
+	gwConf, err := l.gatewayRuntimeConfig(backend)
+	if err != nil {
+		_ = l.revokeAiGatewayApiKey(ctx, apiKeyResp.KeyID)
+		return errcode.Wrap(errcode.ErrInstanceAutomationUnavailable, "resolve automation gateway config: %v", err)
+	}
+	if err := l.configureOnboard(ctx, entity.SandboxId, apiKeyResp.APIKey, gatewayAuthToken, gwConf); err != nil {
 		_ = l.revokeAiGatewayApiKey(ctx, apiKeyResp.KeyID)
 		return errcode.Wrap(errcode.ErrInstanceAutomationUnavailable, "configure automation gateway auth material: %v", err)
 	}

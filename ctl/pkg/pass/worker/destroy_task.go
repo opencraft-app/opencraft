@@ -14,11 +14,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	adapterfactory "ctl/pkg/adapter/factory"
 	pctx "ctl/pkg/context"
 	instanceasync "ctl/pkg/instance"
+	"ctl/pkg/logic/gatewayroute"
 	"ctl/pkg/metric"
 	daoFactory "ctl/pkg/model/factory"
 	modelinstance "ctl/pkg/model/instance"
@@ -318,17 +320,62 @@ func (t *destroyPassTask) cancelAiGatewaySubscription(_ pctx.Context, logger *za
 	}
 	callCtx, cancel := context.WithTimeout(context.Background(), cancelSubscriptionCallTimeout)
 	defer cancel()
-	if err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().CancelSubscription(callCtx, userID); err != nil {
-		// best-effort：失败仅记 Warn，不阻塞后续 5b/5c
-		logger.Warn("destroy pass 5a: ai-gateway CancelSubscription failed (best-effort, parent task still proceeds)",
+	cancelSource := "llmgateway"
+	if gateway, ok, err := gatewayroute.Get(userID); err != nil {
+		logger.Warn("destroy pass 5a: get recorded subscription gateway failed, fallback to probe",
 			zap.String("user_id", userID),
+			zap.Error(err))
+	} else if ok {
+		switch gateway {
+		case gatewayroute.GatewayAIGateway:
+			cancelSource = "ai-gateway"
+		case gatewayroute.GatewayLLMGateway:
+			cancelSource = "llmgateway"
+		default:
+			logger.Warn("destroy pass 5a: unknown recorded subscription gateway, fallback to probe",
+				zap.String("user_id", userID),
+				zap.String("gateway", gateway))
+		}
+	} else if legacyAdapter := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter(); legacyAdapter != nil {
+		legacySub, legacyErr := legacyAdapter.GetActiveSubscription(callCtx, userID)
+		if legacyErr == nil && legacySub != nil {
+			cancelSource = "ai-gateway"
+			gatewayroute.RecordBestEffort(logger, userID, gatewayroute.GatewayAIGateway, legacySub.ID, legacySub.PlanID, gatewayroute.SourceDetectActiveSubscription)
+		} else if legacyErr != nil && !isLegacyGatewayDisabled(legacyErr) {
+			logger.Warn("destroy pass 5a: get ai-gateway active subscription failed, try llmgateway cancel",
+				zap.String("user_id", userID),
+				zap.Error(legacyErr))
+		}
+	}
+
+	var err error
+	if cancelSource == "ai-gateway" {
+		err = adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().CancelSubscription(callCtx, userID)
+	} else {
+		err = adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().CancelSubscription(callCtx, userID)
+	}
+	if err != nil {
+		// best-effort：失败仅记 Warn，不阻塞后续 5b/5c
+		logger.Warn("destroy pass 5a: gateway CancelSubscription failed (best-effort, parent task still proceeds)",
+			zap.String("user_id", userID),
+			zap.String("gateway", cancelSource),
 			zap.Error(err))
 		metric.DestroyFinalizeStepTotal.WithLabelValues("5a_cancel_subscription", "failed").Inc()
 		return
 	}
-	logger.Info("destroy pass 5a: ai-gateway CancelSubscription succeeded",
-		zap.String("user_id", userID))
+	logger.Info("destroy pass 5a: gateway CancelSubscription succeeded",
+		zap.String("user_id", userID),
+		zap.String("gateway", cancelSource))
 	metric.DestroyFinalizeStepTotal.WithLabelValues("5a_cancel_subscription", "success").Inc()
+}
+
+func isLegacyGatewayDisabled(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "ai-gateway base_url not configured") ||
+		strings.Contains(msg, "ai-gateway internal_service_token not configured")
 }
 
 // movePassToHistory 5b：dao.MoveToHistory（删 pass 行 + 写 history_pass，单事务）

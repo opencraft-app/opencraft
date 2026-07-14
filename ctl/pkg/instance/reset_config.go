@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"ctl/pkg/config"
 	pctx "ctl/pkg/context"
 	"ctl/pkg/errcode"
 	modelinstance "ctl/pkg/model/instance"
@@ -16,19 +15,21 @@ func (l *logic) ResetInstanceConfig(ctx pctx.Context, instanceID string) (*trans
 	if err != nil {
 		return nil, err
 	}
-	gwConf := currentLLMGatewayConfig()
-	if gwConf == nil || strings.TrimSpace(gwConf.DefaultBaseURL) == "" || strings.TrimSpace(gwConf.DefaultModelID) == "" {
-		return nil, errcode.Wrap(errcode.ErrInternalServer, "default_base_url or default_model_id not configured")
-	}
 	if !l.aiGatewayProvisioningEnabled() {
 		return nil, errcode.Wrap(errcode.ErrInternalServer, "ai-gateway adapter not configured")
 	}
 
-	if err := l.ensureAiGatewayUser(ctx, ctx.GetUserID(), "", entity.InstanceId); err != nil {
+	backend := l.resolveProvisionGateway(ctx, ctx.GetUserID(), entity.InstanceId)
+	gwConf, err := l.gatewayRuntimeConfig(backend)
+	if err != nil || strings.TrimSpace(gwConf.DefaultBaseURL) == "" || strings.TrimSpace(gwConf.DefaultModelID) == "" {
+		return nil, errcode.Wrap(errcode.ErrInternalServer, "default_base_url or default_model_id not configured")
+	}
+
+	if err := l.ensureAiGatewayUser(ctx, backend, ctx.GetUserID(), "", entity.InstanceId); err != nil {
 		return nil, err
 	}
 
-	apiKeyResp, err := l.createAiGatewayApiKey(ctx, ctx.GetUserID(), entity.InstanceId)
+	apiKeyResp, err := l.createAiGatewayApiKey(ctx, backend, ctx.GetUserID(), entity.InstanceId)
 	if err != nil {
 		return nil, err
 	}
@@ -57,11 +58,4 @@ func (l *logic) ResetInstanceConfig(ctx pctx.Context, instanceID string) (*trans
 			APIKey:       apiKeyResp.APIKey,
 		},
 	}, nil
-}
-
-func currentLLMGatewayConfig() *config.LLMGatewayConfig {
-	if config.ServerConf == nil || config.ServerConf.AdapterConfig == nil {
-		return nil
-	}
-	return config.ServerConf.AdapterConfig.LLMGateway
 }

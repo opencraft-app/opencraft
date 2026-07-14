@@ -34,10 +34,10 @@ func TestResetInstanceConfigCreatesNewKeyPersistsAndRevokesOldKey(t *testing.T) 
 		createResp: &pllmgateway.CreateApiKeyResponse{KeyID: "key-new", KeyPrefix: "sk-new", APIKey: "sk-new-secret"},
 	}
 	logic := &logic{
-		instanceDao:      instanceDao,
-		sandboxAdapter:   sandboxAdapter,
-		aiGatewayAdapter: aiGatewayAdapter,
-		logger:           zap.NewNop(),
+		instanceDao:       instanceDao,
+		sandboxAdapter:    sandboxAdapter,
+		llmGatewayAdapter: aiGatewayAdapter,
+		logger:            zap.NewNop(),
 	}
 
 	resp, err := logic.ResetInstanceConfig(pctx.NewContext(nil).WithUserID("user-reset"), "ins-reset-1")
@@ -101,9 +101,9 @@ func TestResetInstanceConfigRejectsMissingDefaultProviderConfigBeforeCreatingKey
 	}
 	aiGatewayAdapter := &createTaskLLMGatewayAdapterStub{}
 	logic := &logic{
-		instanceDao:      instanceDao,
-		aiGatewayAdapter: aiGatewayAdapter,
-		logger:           zap.NewNop(),
+		instanceDao:       instanceDao,
+		llmGatewayAdapter: aiGatewayAdapter,
+		logger:            zap.NewNop(),
 	}
 
 	_, err := logic.ResetInstanceConfig(pctx.NewContext(nil).WithUserID("user-reset"), "ins-reset-1")
@@ -140,9 +140,9 @@ func TestResetInstanceConfigFailsWhenOldKeyCannotBeRevoked(t *testing.T) {
 		revokeErrByKeyID: map[string]error{"key-old": errors.New("revoke failed")},
 	}
 	logic := &logic{
-		instanceDao:      instanceDao,
-		aiGatewayAdapter: aiGatewayAdapter,
-		logger:           zap.NewNop(),
+		instanceDao:       instanceDao,
+		llmGatewayAdapter: aiGatewayAdapter,
+		logger:            zap.NewNop(),
 	}
 
 	_, err := logic.ResetInstanceConfig(pctx.NewContext(nil).WithUserID("user-reset"), "ins-reset-1")
@@ -178,9 +178,9 @@ func TestResetInstanceConfigRejectsInstanceOwnedByAnotherUser(t *testing.T) {
 	}
 	aiGatewayAdapter := &createTaskLLMGatewayAdapterStub{}
 	logic := &logic{
-		instanceDao:      instanceDao,
-		aiGatewayAdapter: aiGatewayAdapter,
-		logger:           zap.NewNop(),
+		instanceDao:       instanceDao,
+		llmGatewayAdapter: aiGatewayAdapter,
+		logger:            zap.NewNop(),
 	}
 
 	_, err := logic.ResetInstanceConfig(pctx.NewContext(nil).WithUserID("user-reset"), "ins-reset-1")

@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
+	paigateway "ctl/pkg/adapter/aigateway"
 	adapterfactory "ctl/pkg/adapter/factory"
 	pllmgateway "ctl/pkg/adapter/llmgateway"
 	popenclawgateway "ctl/pkg/adapter/openclawgateway"
@@ -329,6 +330,7 @@ type inlineStubAdapterFactory struct {
 func (f *inlineStubAdapterFactory) SandboxAdapter() psandbox.Adapter       { return f.sandbox }
 func (f *inlineStubAdapterFactory) StsAdapter() sts.Adapter                { return nil }
 func (f *inlineStubAdapterFactory) WhitelistAdapter() whitelist.Adapter    { return nil }
+func (f *inlineStubAdapterFactory) AiGatewayAdapter() paigateway.Adapter   { return nil }
 func (f *inlineStubAdapterFactory) LLMGatewayAdapter() pllmgateway.Adapter { return f.aigateway }
 func (f *inlineStubAdapterFactory) OpenClawGatewayAdapter() popenclawgateway.Adapter {
 	return nil

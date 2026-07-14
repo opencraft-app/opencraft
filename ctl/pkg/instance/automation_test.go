@@ -138,7 +138,7 @@ func TestListAutomationSchedulesBackfillsGatewayAuthMaterialForRunningInstance(t
 			entity: entity,
 		},
 		sandboxAdapter:         sandbox,
-		aiGatewayAdapter:       aiGateway,
+		llmGatewayAdapter:      aiGateway,
 		openclawGatewayAdapter: adapter,
 		logger:                 zap.NewNop(),
 	}

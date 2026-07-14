@@ -225,7 +225,7 @@ func TestRunCreateInstanceTaskProvisionsAiGatewayOnCreate(t *testing.T) {
 	logic := &logic{
 		instanceDao:        instanceDao,
 		sandboxAdapter:     sandboxAdapter,
-		aiGatewayAdapter:   aiGatewayAdapter,
+		llmGatewayAdapter:  aiGatewayAdapter,
 		logger:             zap.NewNop(),
 		defaultTemplate:    "tpl-create",
 		candidateTemplates: []string{"tpl-create"},
@@ -311,7 +311,7 @@ func TestRunCreateInstanceTaskFailsWhenAiGatewayOnboardFails(t *testing.T) {
 	logic := &logic{
 		instanceDao:        instanceDao,
 		sandboxAdapter:     sandboxAdapter,
-		aiGatewayAdapter:   aiGatewayAdapter,
+		llmGatewayAdapter:  aiGatewayAdapter,
 		logger:             zap.NewNop(),
 		defaultTemplate:    "tpl-create",
 		candidateTemplates: []string{"tpl-create"},
@@ -358,7 +358,7 @@ func TestRunCreateInstanceTaskFailsWhenEnsureAiGatewayUserFails(t *testing.T) {
 	logic := &logic{
 		instanceDao:        instanceDao,
 		sandboxAdapter:     sandboxAdapter,
-		aiGatewayAdapter:   aiGatewayAdapter,
+		llmGatewayAdapter:  aiGatewayAdapter,
 		logger:             zap.NewNop(),
 		defaultTemplate:    "tpl-create",
 		candidateTemplates: []string{"tpl-create"},

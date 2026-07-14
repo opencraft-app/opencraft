@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"ctl/pkg/adapter/aigateway"
 	adapterfactory "ctl/pkg/adapter/factory"
 	"ctl/pkg/adapter/llmgateway"
 	"ctl/pkg/adapter/openclawgateway"
@@ -81,6 +82,7 @@ type stubAdapterFactory struct {
 func (f *stubAdapterFactory) SandboxAdapter() sandbox.Adapter                 { return nil }
 func (f *stubAdapterFactory) StsAdapter() sts.Adapter                         { return nil }
 func (f *stubAdapterFactory) WhitelistAdapter() whitelist.Adapter             { return nil }
+func (f *stubAdapterFactory) AiGatewayAdapter() aigateway.Adapter             { return nil }
 func (f *stubAdapterFactory) LLMGatewayAdapter() llmgateway.Adapter           { return f.aigateway }
 func (f *stubAdapterFactory) OpenClawGatewayAdapter() openclawgateway.Adapter { return nil }
 func (f *stubAdapterFactory) ShadowAdapter() shadow.Adapter                   { return nil }

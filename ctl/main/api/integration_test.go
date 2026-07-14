@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	paigateway "ctl/pkg/adapter/aigateway"
 	adapterfactory "ctl/pkg/adapter/factory"
 	pllmgateway "ctl/pkg/adapter/llmgateway"
 	popenclawgateway "ctl/pkg/adapter/openclawgateway"
@@ -132,6 +133,7 @@ type apiIntegrationAdapterFactory struct {
 func (f *apiIntegrationAdapterFactory) SandboxAdapter() psandbox.Adapter                 { return nil }
 func (f *apiIntegrationAdapterFactory) StsAdapter() sts.Adapter                          { return nil }
 func (f *apiIntegrationAdapterFactory) WhitelistAdapter() whitelist.Adapter              { return nil }
+func (f *apiIntegrationAdapterFactory) AiGatewayAdapter() paigateway.Adapter             { return nil }
 func (f *apiIntegrationAdapterFactory) LLMGatewayAdapter() pllmgateway.Adapter           { return f.aigateway }
 func (f *apiIntegrationAdapterFactory) OpenClawGatewayAdapter() popenclawgateway.Adapter { return nil }
 func (f *apiIntegrationAdapterFactory) ShadowAdapter() shadow.Adapter                    { return nil }
