@@ -189,6 +189,10 @@
   - 角色：Developer
   - 影响文件：`frontend/src/pages/marketing/account-page.tsx`、`frontend/src/pages/marketing/__tests__/account-page-faceid.test.tsx`、`frontend/src/i18n/generated/*.json`
   - 验收方式：`show()` 后，存量 `idcard_2fa` 用户显示“需重新完成认证”，不再显示“待完成手机号认证”；定向测试和 i18n 检查通过。
+- [x] 23. 修复无手机号用户创建 FaceID attempt 时的 MySQL 非空约束错误。
+  - 角色：Developer
+  - 影响文件：`user/auth/internal/service/mysql_store_realname_faceid.go`
+  - 验收方式：`current_phone_hash` 在手机号缺失时持久化为空字符串而非 `NULL`；干净用户 MySQL 集成用例和 `user/auth` 全量测试通过。
 
 ## 验收重点
 
