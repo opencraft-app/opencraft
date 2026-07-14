@@ -9,9 +9,6 @@ const config = {
   reactStrictMode: true,
   devIndicators: false,
   transpilePackages: ['velachat'],
-  experimental: {
-    turbopackFileSystemCacheForBuild: true,
-  },
   output: 'export',
   assetPrefix: process.env.NEXT_PUBLIC_ASSET_PREFIX || undefined,
   trailingSlash: true,
