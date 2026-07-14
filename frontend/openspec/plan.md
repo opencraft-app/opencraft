@@ -1,4 +1,25 @@
-# 当前执行计划：FaceID 复用 Shadow 手机验证
+# 当前执行计划：Hermes 默认头像高清替换
+
+> 分支：`frontsandbox/hermes-avatar`
+> 规模：S
+> 范围：仅替换 Hermes 公共默认头像资产，不调整用户账号头像、组件结构或交互逻辑。
+
+## 任务清单
+
+- [x] 1. 将“我的 Hermes”等场景共用的默认头像替换为用户提供的高清图片。
+  - 角色：Developer + Reviewer
+  - 影响文件：`frontend/public/hermes_logo.png`
+  - 验收方式：目标文件与用户提供的 `nousresearch.png` 内容一致，保持 640×640 PNG 与透明通道；现有 `/hermes_logo.png` 引用继续有效，`git diff --check` 通过。
+  - 结果：目标文件与源图片 SHA-256 一致；本地静态资源请求返回 HTTP 200、`image/png` 和 17,597 字节。
+
+## 验收重点
+
+- “我的 Hermes”、创建成功页和默认头像回退继续复用同一 `/hermes_logo.png` 公共路径。
+- 不修改账号用户头像逻辑，也不新增重复图片资源或组件分支。
+
+---
+
+# 已完成计划：FaceID 复用 Shadow 手机验证
 
 > 分支：`codex/faceid-shadow-sms`
 > 规模：M
@@ -125,17 +146,14 @@
   - 角色：Developer
   - 影响文件：`frontend/src/pages/marketing/agent-settings-page.tsx`
   - 验收方式：桌面宽屏下 `MEMORY.md` 中文说明保持单行，中小屏仍可自然换行且不产生横向溢出。
+- [x] 21. 下线自动任务页的场景任务卡片并保留注释实现。
+  - 角色：Developer
+  - 影响文件：`frontend/src/pages/marketing/openclaw-automations-panel.tsx`
+  - 验收方式：自动任务页不再渲染“场景任务”标题、说明和预设场景卡片，相关实现以注释形式保留，模板、添加、已生效任务与最近执行入口保持可用，`pnpm check` 通过。
 
 ## 验收重点
 
-- 四个场景全部首发。
-- 试跑采用一次性执行 + 最近执行，底层复用现有 Cron 能力。
-- 试跑结束后可以添加为常态化自动任务。
-- 场景器首版只保留微信 / QQ 主动推送；未连接通道时先引导在弹窗内扫码连接，再试跑。
-- 已扫码接入微信或 QQ 时，可以把试跑和常态任务结果推送到对应通道。
-- 微信 / QQ 扫码接入使用流式 debug/exec，不能用同步等待命令结束的方式阻塞二维码展示。
-- 场景试跑下发后立即开始，开始试跑后不阻塞在等待弹窗里。
-- 国际站首版不展示场景任务入口。
+- 国内站与国际站均不展示场景任务卡片。
 - 分支预览发布器能在 CI checkout 的 `origin` 缺少 HTTP 凭证时继续拉取 master runtime。
 - 分支预览的国内站和国际站构建互不复用 `.next` / webpack cache。
 - 不影响现有模板、添加、编辑、暂停、恢复、删除和最近执行。

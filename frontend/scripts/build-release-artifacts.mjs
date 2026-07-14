@@ -110,7 +110,7 @@ export async function runFrontendArtifactBuildCommand(scriptName, env = process.
   await runner(nodeBin(env), ["scripts/subset-fonts.mjs"], env);
   await runner(nodeBin(env), ["scripts/sync-fumadocs-content.mjs"], env);
   await runner(pnpmBin(env), ["exec", "fumadocs-mdx"], env);
-  await runner(pnpmBin(env), ["exec", "next", "build", "--webpack"], env);
+  await runner(pnpmBin(env), ["exec", "next", "build"], env);
   await runner(nodeBin(env), ["scripts/version-next-static-assets.mjs"], env);
   await runner(nodeBin(env), ["scripts/fix-next-static-html-lang.mjs"], env);
   await runner(nodeBin(env), ["scripts/format-next-static-html.mjs"], env);

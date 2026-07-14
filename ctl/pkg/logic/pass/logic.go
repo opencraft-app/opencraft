@@ -1128,6 +1128,9 @@ func (l *logic) CreatePassOrder(userID string, req *transport.CreatePassOrderReq
 	placeCancel()
 	if placeErr != nil {
 		logger.Warn("create pass order: trade.PlaceOrder failed", zap.Error(placeErr))
+		if err := mapTradePlaceOrderError(placeErr); err != nil {
+			return nil, err
+		}
 		return nil, fmt.Errorf("trade place order: %w", placeErr)
 	}
 	if placeResp == nil || placeResp.DealName == "" {
@@ -1162,6 +1165,14 @@ func (l *logic) CreatePassOrder(userID string, req *transport.CreatePassOrderReq
 	}
 
 	return result, nil
+}
+
+func mapTradePlaceOrderError(err error) error {
+	var tradeErr *tradeadapter.Error
+	if errors.As(err, &tradeErr) && tradeErr.Code == "BindingNotFound" {
+		return errcode.ErrPassShadowBindingRequired
+	}
+	return nil
 }
 
 // CreatePassOrderUrl v1.7.31 接口拆分：拉取支付 URL。
@@ -1274,6 +1285,9 @@ func (l *logic) CreatePassOrderAndPay(userID string, req *transport.CreatePassOr
 	placeCancel()
 	if placeErr != nil {
 		logger.Warn("create pass order and pay: trade.PlaceOrderAndPay failed", zap.Error(placeErr))
+		if err := mapTradePlaceOrderError(placeErr); err != nil {
+			return nil, err
+		}
 		return nil, fmt.Errorf("trade place order and pay: %w", placeErr)
 	}
 	if placeResp == nil || placeResp.DealName == "" {

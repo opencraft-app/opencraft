@@ -672,6 +672,7 @@
   "k_7373c258": "Failed to load skill packages",
   "k_73f2f211": "{{name}} has started processing. The result will be sent to {{deliver}} later.",
   "k_7431c3a7": "Invalid link",
+  "k_7439e269": "No security phone is set for this account, so verification cannot continue.",
   "k_7468f3e5": "Restore defaults",
   "k_74a0409d": "Delete agent",
   "k_74dda100": "Current Account",
