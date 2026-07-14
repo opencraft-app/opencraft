@@ -124,7 +124,7 @@
 
 ### 自动任务与场景任务内部实现
 
-- `/agents/automations` 由 `openclaw-automations-panel.tsx` 承载，复用
+- `/agents/automations` 由 `hermes-agent-automations-panel.tsx` 承载，复用
   `lib/hermes-cron-client.ts` 管理普通自动任务模板、创建、编辑、暂停、恢复、删除和最近执行。
 - `pages/marketing/scenario-tasks/` 保留场景配置、prompt/schedule builder、安装弹窗、启用确认弹窗和目标单测。
 - **当前产品状态（2026-07-14 起）**：国内站与国际站均不渲染 `ScenarioTaskGrid`，也不提供场景任务的用户可达入口；现有普通自动任务能力不受影响。不得仅根据目录仍存在就推断场景卡片已经上线。

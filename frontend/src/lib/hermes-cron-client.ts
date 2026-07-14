@@ -81,6 +81,16 @@ export interface CreateCronJobInput {
   script?: string;
 }
 
+export interface EditCronJobPatch {
+  schedule?: string;
+  prompt?: string;
+  name?: string;
+  deliver?: string;
+  script?: string;
+  /** undefined = keep existing; [] = clear; non-empty = replace with these slugs */
+  skills?: string[];
+}
+
 /** 命令失败时抛出，message 已准备好直接进 toast */
 export class CronCommandError extends Error {
   readonly command: string;
@@ -178,6 +188,24 @@ export function buildCreateCommand(input: CreateCronJobInput): string {
   }
   if (input.script) {
     parts.push("--script", shellQuote(input.script));
+  }
+  return parts.join(" ");
+}
+
+/** 拼装编辑命令；Skill 使用三态区分保持、替换与清空。 */
+export function buildEditCommand(id: string, patch: EditCronJobPatch): string {
+  const parts = ["hermes", "cron", "edit", shellQuote(id)];
+  if (patch.schedule !== undefined) parts.push("--schedule", shellQuote(patch.schedule));
+  if (patch.prompt !== undefined) parts.push("--prompt", shellQuote(patch.prompt));
+  if (patch.name !== undefined) parts.push("--name", shellQuote(patch.name));
+  if (patch.deliver !== undefined) parts.push("--deliver", shellQuote(patch.deliver));
+  if (patch.script !== undefined) parts.push("--script", shellQuote(patch.script));
+  if (patch.skills !== undefined) {
+    if (patch.skills.length === 0) {
+      parts.push("--clear-skills");
+    } else {
+      for (const skill of patch.skills) parts.push("--skill", shellQuote(skill));
+    }
   }
   return parts.join(" ");
 }
@@ -1277,7 +1305,7 @@ async function removeCronJobByExactName(botId: string, name: string): Promise<vo
 /**
  * 把 Hermes / acli 返回的通道名归一化成投递用的 platform key。
  *
- * 与 `openclaw-automations-panel.tsx` 里的 `normalizeHermesChannelKey` 保持一致
+ * 与 `hermes-agent-automations-panel.tsx` 里的 `normalizeHermesChannelKey` 保持一致
  * （此处独立一份，避免 lib 反向依赖 page 组件文件）。
  */
 function normalizeChannelKeyForDeliver(channel: string): string {
@@ -1651,13 +1679,7 @@ export async function removeCronJob(botId: string, id: string): Promise<void> {
 export async function editCronJob(
   botId: string,
   id: string,
-  patch: { schedule?: string; prompt?: string; name?: string; deliver?: string; script?: string },
+  patch: EditCronJobPatch,
 ): Promise<void> {
-  const parts = ["hermes", "cron", "edit", shellQuote(id)];
-  if (patch.schedule !== undefined) parts.push("--schedule", shellQuote(patch.schedule));
-  if (patch.prompt !== undefined) parts.push("--prompt", shellQuote(patch.prompt));
-  if (patch.name !== undefined) parts.push("--name", shellQuote(patch.name));
-  if (patch.deliver !== undefined) parts.push("--deliver", shellQuote(patch.deliver));
-  if (patch.script !== undefined) parts.push("--script", shellQuote(patch.script));
-  await execCommand(botId, parts.join(" "));
+  await execCommand(botId, buildEditCommand(id, patch));
 }

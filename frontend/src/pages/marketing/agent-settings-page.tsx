@@ -80,7 +80,7 @@ import {
 import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
 import { HermesAgentSkillsPanel, type HermesAgentSkillsPanelProps } from "@/pages/marketing/hermes-agent-skills-panel";
 import { AchievementsPanel } from "@/pages/marketing/openclaw-achievements-panel";
-import { AutomationsPanel } from "@/pages/marketing/openclaw-automations-panel";
+import { HermesAgentAutomationsPanel } from "@/pages/marketing/hermes-agent-automations-panel";
 import { shouldShowAgentSettingsDataLoading } from "@/pages/marketing/agent-settings-loading";
 import { StableTeaSdkPanelHost } from "@/pages/marketing/agent-settings-sdk-stable-host";
 import {
@@ -5248,7 +5248,7 @@ export const AgentSettingsPage = ({
                             <AchievementsPanel botId={activeBot.id} botName={activeBot.name} />
                           )}
                           {activeSection === "automations" && (
-                            <AutomationsPanel botId={activeBot.id} />
+                            <HermesAgentAutomationsPanel botId={activeBot.id} />
                           )}
                           {activeSection === "diagnostics" && (
                             <AgentDiagnosticsPanel

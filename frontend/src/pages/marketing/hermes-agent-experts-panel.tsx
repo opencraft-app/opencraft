@@ -30,6 +30,11 @@ import remarkGfm from "remark-gfm";
 import { useT } from "@/i18n/t";
 import { loadExpertPackagesState, saveExpertPackagesState } from "@/lib/expert-package-storage";
 import { shellQuote } from "@/lib/hermes-cron-client";
+import {
+  buildInstalledSkillsListCommand,
+  getUniqueSkillSlugs,
+  parseInstalledSkillSlugs,
+} from "@/lib/hermes-skills-client";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { useAsyncResource } from "@/services/use-async-resource";
@@ -138,7 +143,6 @@ const SKILL_INSTALL_RATE_LIMIT_RETRY_DELAYS_MS = [2_000, 5_000] as const;
 const AI_BUDDY_ASSET_BASE = "https://cloudcache.tencent-cloud.com/qcloud/tea/app/skillhub/assets/source/ai-buddy-decouple";
 const AI_BUDDY_EXPERT_PROFILE_VERSION = "v20260625";
 const AI_BUDDY_EXPERT_PROFILE_EXT = "avif";
-const HERMES_SKILLS_LIST_COMMAND = 'cd "$HOME/.hermes/hermes-agent" && COLUMNS=10000 ./venv/bin/python -m hermes_cli.main skills list';
 const SKILLHUB_SELF_UPGRADE_COMMAND = "skillhub self-upgrade";
 const SKILLHUB_DOWNLOAD_URL_TEMPLATE = "https://api.skillhub.cn/api/v1/download?slug={slug}";
 const SKILLHUB_PACKAGE_SOURCE_URL = "https://skillhub.cn/skillspackage";
@@ -155,18 +159,6 @@ const PACKAGE_MISSING_SKILL_SLUGS: Record<string, string[]> = {
 const SKILL_DISPLAY_NAME_OVERRIDES: Record<string, string> = {
   "code-review-assistant": "code-review-assistant",
 };
-
-export function getUniqueSkillSlugs(skillSlugs: string[]): string[] {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const slug of skillSlugs) {
-    const normalized = slug.trim();
-    if (!normalized || seen.has(normalized)) continue;
-    seen.add(normalized);
-    result.push(normalized);
-  }
-  return result;
-}
 
 function getInstalledPackagesStorageKey(botId: string): string {
   return `${INSTALLED_PACKAGES_STORAGE_PREFIX}:${botId}`;
@@ -286,10 +278,6 @@ export function buildInstallSkillCommand(skillSlug: string): string {
   return `env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE=${shellQuote(SKILLHUB_DOWNLOAD_URL_TEMPLATE)} acli skills install ${shellQuote(skillSlug)}`;
 }
 
-export function buildInstalledSkillsListCommand(): string {
-  return HERMES_SKILLS_LIST_COMMAND;
-}
-
 export function buildSkillHubSelfUpgradeCommand(): string {
   return SKILLHUB_SELF_UPGRADE_COMMAND;
 }
@@ -379,56 +367,6 @@ function isSkillInstallRateLimited(output: string): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
-}
-
-function readInstalledSkillSlug(value: unknown): string {
-  if (typeof value === "string") return value.trim();
-  if (!isRecord(value)) return "";
-  const name = value.name;
-  const slug = value.slug;
-  if (typeof name === "string" && name.trim()) return name.trim();
-  if (typeof slug === "string" && slug.trim()) return slug.trim();
-  return "";
-}
-
-function parseInstalledSkillsTable(output: string): string[] {
-  const slugs: string[] = [];
-  for (const line of output.split("\n")) {
-    if (!line.includes("│")) continue;
-    const cells = line
-      .split("│")
-      .slice(1, -1)
-      .map((cell) => cell.trim());
-    if (cells.length < 1 || cells[0] === "Name") continue;
-    if (cells[0]) slugs.push(cells[0]);
-  }
-  return slugs;
-}
-
-export function parseInstalledSkillSlugs(output: string): string[] {
-  if (!output.trim()) return [];
-
-  try {
-    const parsed = JSON.parse(output) as unknown;
-    const payload = isRecord(parsed) && parsed.success === true && isRecord(parsed.data) ? parsed.data : parsed;
-    const items = isRecord(payload) && Array.isArray(payload.skills)
-      ? payload.skills
-      : Array.isArray(payload)
-        ? payload
-        : [];
-    if (items.length > 0) {
-      return getUniqueSkillSlugs(items.map(readInstalledSkillSlug));
-    }
-  } catch {
-    /* Non-JSON output falls through to table/plain text parsing. */
-  }
-
-  const tableSlugs = parseInstalledSkillsTable(output);
-  if (tableSlugs.length > 0) {
-    return getUniqueSkillSlugs(tableSlugs);
-  }
-
-  return getUniqueSkillSlugs(output.split("\n").map((line) => line.trim()));
 }
 
 async function executeInstallSkillCommand(
