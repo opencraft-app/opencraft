@@ -221,6 +221,17 @@ default_compatibility = "openai"
 default_gateway_port = 18789
 default_provider_id = ""
 
+[adapter.llmgateway]
+base_url = "https://llmgw-control.lightvela.com"
+admin_token = "${CTL_TEST_LLMGATEWAY_ADMIN_TOKEN}"
+internal_service_token = "${CTL_TEST_LLMGATEWAY_INTERNAL_TOKEN}"
+timeout = 10
+default_base_url = "https://llmgw-inner.lightvela.com/v1"
+default_model_id = "auto"
+default_compatibility = "openai"
+default_gateway_port = 18789
+default_provider_id = ""
+
 #配置名称：adapter.shadow
 #配置含义：shadow 服务适配器配置，用于查询用户绑定信息（shadow account）
 #配置项结构与含义：

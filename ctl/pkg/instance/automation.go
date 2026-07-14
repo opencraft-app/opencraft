@@ -63,8 +63,8 @@ func buildInstanceGatewayURL(entity *modelinstance.Entity) (string, error) {
 		return "", errcode.Wrap(errcode.ErrInstanceAutomationUnavailable, "instance gateway is not ready")
 	}
 	port := 0
-	if config.ServerConf != nil && config.ServerConf.AdapterConfig != nil && config.ServerConf.AdapterConfig.AiGateway != nil {
-		port = config.ServerConf.AdapterConfig.AiGateway.DefaultGatewayPort
+	if config.ServerConf != nil && config.ServerConf.AdapterConfig != nil && config.ServerConf.AdapterConfig.LLMGateway != nil {
+		port = config.ServerConf.AdapterConfig.LLMGateway.DefaultGatewayPort
 	}
 	if port <= 0 {
 		port = 18789

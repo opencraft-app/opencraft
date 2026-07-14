@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	paigateway "ctl/pkg/adapter/aigateway"
 	adapterfactory "ctl/pkg/adapter/factory"
+	pllmgateway "ctl/pkg/adapter/llmgateway"
 	popenclawgateway "ctl/pkg/adapter/openclawgateway"
 	psandbox "ctl/pkg/adapter/sandbox"
 	"ctl/pkg/adapter/shadow"
@@ -50,7 +50,7 @@ type apiIntegrationHarness struct {
 	server  *httptest.Server
 	client  *http.Client
 	sandbox *integrationSandboxAdapter
-	aigw    *integrationAiGatewayAdapter
+	aigw    *integrationLLMGatewayAdapter
 	userID  string
 }
 
@@ -73,7 +73,7 @@ func newAPIIntegrationHarness(t *testing.T) *apiIntegrationHarness {
 			},
 		},
 		AdapterConfig: &config.AdapterConfig{
-			AiGateway: &config.AiGatewayConfig{
+			LLMGateway: &config.LLMGatewayConfig{
 				DefaultGatewayPort: 18789,
 			},
 		},
@@ -91,7 +91,7 @@ func newAPIIntegrationHarness(t *testing.T) *apiIntegrationHarness {
 	userID := "usr_api_integration"
 	ctx := testutil.NewContext(t, userID)
 	sandbox := &integrationSandboxAdapter{}
-	aigw := &integrationAiGatewayAdapter{}
+	aigw := &integrationLLMGatewayAdapter{}
 
 	logic := instancelogic.NewLogicForTest(
 		modelfactory.DefaultDaoFactory.InstanceDao(ctx),
@@ -126,13 +126,13 @@ func newAPIIntegrationHarness(t *testing.T) *apiIntegrationHarness {
 }
 
 type apiIntegrationAdapterFactory struct {
-	aigateway paigateway.Adapter
+	aigateway pllmgateway.Adapter
 }
 
 func (f *apiIntegrationAdapterFactory) SandboxAdapter() psandbox.Adapter                 { return nil }
 func (f *apiIntegrationAdapterFactory) StsAdapter() sts.Adapter                          { return nil }
 func (f *apiIntegrationAdapterFactory) WhitelistAdapter() whitelist.Adapter              { return nil }
-func (f *apiIntegrationAdapterFactory) AiGatewayAdapter() paigateway.Adapter             { return f.aigateway }
+func (f *apiIntegrationAdapterFactory) LLMGatewayAdapter() pllmgateway.Adapter           { return f.aigateway }
 func (f *apiIntegrationAdapterFactory) OpenClawGatewayAdapter() popenclawgateway.Adapter { return nil }
 func (f *apiIntegrationAdapterFactory) ShadowAdapter() shadow.Adapter                    { return nil }
 func (f *apiIntegrationAdapterFactory) TradeAdapter() trade.Adapter                      { return nil }
@@ -823,21 +823,21 @@ func (a *integrationSandboxAdapter) GetSnapshotStatus(_ context.Context, _, _ st
 	return &psandbox.GetSnapshotStatusResponse{}, nil
 }
 
-type integrationAiGatewayAdapter struct {
+type integrationLLMGatewayAdapter struct {
 	mu                     sync.Mutex
 	ensureUserCalls        int
 	lastEnsureUserID       string
 	lastEnsureUserNickname string
 	ensureUserErr          error
 	applySubscriptionCalls int
-	lastApplySubscription  paigateway.ApplySubscriptionRequest
+	lastApplySubscription  pllmgateway.ApplySubscriptionRequest
 }
 
-func (a *integrationAiGatewayAdapter) CreateApiKey(_ context.Context, _ string, _ string) (*paigateway.CreateApiKeyResponse, error) {
+func (a *integrationLLMGatewayAdapter) CreateApiKey(_ context.Context, _ string, _ string) (*pllmgateway.CreateApiKeyResponse, error) {
 	return nil, nil
 }
 
-func (a *integrationAiGatewayAdapter) EnsureUser(_ context.Context, userID string, nickname string) (*paigateway.EnsureUserResponse, error) {
+func (a *integrationLLMGatewayAdapter) EnsureUser(_ context.Context, userID string, nickname string) (*pllmgateway.EnsureUserResponse, error) {
 	a.mu.Lock()
 	a.ensureUserCalls++
 	a.lastEnsureUserID = userID
@@ -847,41 +847,41 @@ func (a *integrationAiGatewayAdapter) EnsureUser(_ context.Context, userID strin
 	if err != nil {
 		return nil, err
 	}
-	return &paigateway.EnsureUserResponse{UserID: userID, Result: "created"}, nil
+	return &pllmgateway.EnsureUserResponse{UserID: userID, Result: "created"}, nil
 }
 
-func (a *integrationAiGatewayAdapter) RevokeApiKey(_ context.Context, _ string) error {
+func (a *integrationLLMGatewayAdapter) RevokeApiKey(_ context.Context, _ string) error {
 	return nil
 }
 
-func (a *integrationAiGatewayAdapter) GetUserUsage(_ context.Context, _ string) (*paigateway.UserUsageResponse, error) {
-	return &paigateway.UserUsageResponse{}, nil
+func (a *integrationLLMGatewayAdapter) GetUserUsage(_ context.Context, _ string) (*pllmgateway.UserUsageResponse, error) {
+	return &pllmgateway.UserUsageResponse{}, nil
 }
 
-func (a *integrationAiGatewayAdapter) GetPlan(_ context.Context, planID string) (*paigateway.Plan, error) {
-	return &paigateway.Plan{ID: planID, IsActive: true}, nil
+func (a *integrationLLMGatewayAdapter) GetPlan(_ context.Context, planID string) (*pllmgateway.Plan, error) {
+	return &pllmgateway.Plan{ID: planID, IsActive: true}, nil
 }
 
-func (a *integrationAiGatewayAdapter) ApplySubscription(_ context.Context, req *paigateway.ApplySubscriptionRequest) (*paigateway.Subscription, error) {
+func (a *integrationLLMGatewayAdapter) ApplySubscription(_ context.Context, req *pllmgateway.ApplySubscriptionRequest) (*pllmgateway.Subscription, error) {
 	a.mu.Lock()
 	a.applySubscriptionCalls++
 	a.lastApplySubscription = *req
 	a.mu.Unlock()
-	return &paigateway.Subscription{UserID: req.UserID, PlanID: req.PlanID, Status: "active"}, nil
+	return &pllmgateway.Subscription{UserID: req.UserID, PlanID: req.PlanID, Status: "active"}, nil
 }
 
-func (a *integrationAiGatewayAdapter) ExtendSubscription(_ context.Context, req *paigateway.ExtendSubscriptionRequest) (*paigateway.ExtendSubscriptionResponse, error) {
-	return &paigateway.ExtendSubscriptionResponse{
-		Subscription: &paigateway.Subscription{UserID: req.UserID, Status: "active"},
+func (a *integrationLLMGatewayAdapter) ExtendSubscription(_ context.Context, req *pllmgateway.ExtendSubscriptionRequest) (*pllmgateway.ExtendSubscriptionResponse, error) {
+	return &pllmgateway.ExtendSubscriptionResponse{
+		Subscription: &pllmgateway.Subscription{UserID: req.UserID, Status: "active"},
 		Updated:      true,
 	}, nil
 }
 
-func (a *integrationAiGatewayAdapter) CancelSubscription(_ context.Context, _ string) error {
+func (a *integrationLLMGatewayAdapter) CancelSubscription(_ context.Context, _ string) error {
 	return nil
 }
 
-func (a *integrationAiGatewayAdapter) GetActiveSubscription(_ context.Context, _ string) (*paigateway.Subscription, error) {
+func (a *integrationLLMGatewayAdapter) GetActiveSubscription(_ context.Context, _ string) (*pllmgateway.Subscription, error) {
 	return nil, nil
 }
 

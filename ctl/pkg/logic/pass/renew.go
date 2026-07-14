@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"ctl/pkg/adapter/aigateway"
 	adapterfactory "ctl/pkg/adapter/factory"
+	"ctl/pkg/adapter/llmgateway"
 	pctx "ctl/pkg/context"
 	"ctl/pkg/errcode"
 	instanceasync "ctl/pkg/instance"
@@ -276,10 +276,10 @@ func renewLogger() *zap.Logger {
 // 200 OK + updated=false 不报错；退费向前缩短同样安全（向前缩短一次后再调
 // updated=false）。
 //
-// 例外：ErrAiGatewayPlanNotFound 表示该用户在 ai-gateway 端从未通过
+// 例外：ErrLLMGatewayPlanNotFound 表示该用户在 ai-gateway 端从未通过
 // ApplySubscription 建立订阅（如付费产品迁移到免费试用期外的边缘场景），记 Warn
 // + 当作成功放过（不阻断 pass 主链路 — 用户本来就没 AI 订阅，不存在"对齐"目标）；
-// caller 收到 nil 视同成功。其它错误（含 ErrAiGatewayRouteNotFound 路由 404）
+// caller 收到 nil 视同成功。其它错误（含 ErrLLMGatewayRouteNotFound 路由 404）
 // 一律透传给 caller，由 caller 决定重试 / failTask / Warn 不阻断。
 func AlignAiGatewaySubscriptionPeriodEnd(logger *zap.Logger, userID, passID string, newPeriodEnd time.Time) error {
 	if logger == nil {
@@ -293,13 +293,13 @@ func AlignAiGatewaySubscriptionPeriodEnd(logger *zap.Logger, userID, passID stri
 	ctx, cancel := context.WithTimeout(context.Background(), extendAiGatewayCallTimeout)
 	defer cancel()
 
-	resp, err := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().
-		ExtendSubscription(ctx, &aigateway.ExtendSubscriptionRequest{
+	resp, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().
+		ExtendSubscription(ctx, &llmgateway.ExtendSubscriptionRequest{
 			UserID:       userID,
 			NewPeriodEnd: newPeriodEnd,
 		})
 	if err != nil {
-		if errors.Is(err, aigateway.ErrAiGatewayPlanNotFound) {
+		if errors.Is(err, llmgateway.ErrLLMGatewayPlanNotFound) {
 			logger.Warn("ai-gateway has no active subscription for user, skipping align",
 				zap.String("user_id", userID),
 				zap.String("pass_id", passID))

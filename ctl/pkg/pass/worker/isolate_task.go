@@ -359,8 +359,8 @@ func (t *isolatePassTask) execute(ctx pctx.Context) (string, error) {
 	// 退费向前缩短。生命周期隔离分支（NewDeadline == nil）不动 ai-gateway：pass.expired_time
 	// 本身也不变，ai-gateway 保持原值与 ctl 自然一致。
 	//
-	// 失败语义（与隔离父 task 永不放弃对偶）：调用失败（非 ErrAiGatewayPlanNotFound
-	// / 非 ErrAiGatewayRouteNotFound）返 err 让父 task 重试 30s × INT64_MAX。路由 404
+	// 失败语义（与隔离父 task 永不放弃对偶）：调用失败（非 ErrLLMGatewayPlanNotFound
+	// / 非 ErrLLMGatewayRouteNotFound）返 err 让父 task 重试 30s × INT64_MAX。路由 404
 	// 则在调试期不阻断主链（记 Warn），避免 ai-gateway 镜像迟后于 R-MR-4 时完全阻住隔离
 	// 完成。UserID 为空（老 payload 兑现场景）跳过并 Warn。
 	if t.in.NewDeadline != nil {

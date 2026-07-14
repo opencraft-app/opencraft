@@ -318,7 +318,7 @@ func (t *destroyPassTask) cancelAiGatewaySubscription(_ pctx.Context, logger *za
 	}
 	callCtx, cancel := context.WithTimeout(context.Background(), cancelSubscriptionCallTimeout)
 	defer cancel()
-	if err := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().CancelSubscription(callCtx, userID); err != nil {
+	if err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().CancelSubscription(callCtx, userID); err != nil {
 		// best-effort：失败仅记 Warn，不阻塞后续 5b/5c
 		logger.Warn("destroy pass 5a: ai-gateway CancelSubscription failed (best-effort, parent task still proceeds)",
 			zap.String("user_id", userID),

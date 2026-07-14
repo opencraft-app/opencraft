@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"ctl/pkg/adapter/aigateway"
 	adapterfactory "ctl/pkg/adapter/factory"
+	"ctl/pkg/adapter/llmgateway"
 	tradeadapter "ctl/pkg/adapter/trade"
 	"ctl/pkg/authcode"
 	"ctl/pkg/config"
@@ -431,7 +431,7 @@ func (l *logic) CreateTrialPass(userID string, bundleID string) (*PassDetail, er
 		zap.String("user_id", userID),
 		zap.String("bundle_id", bundleID),
 	)
-	ensured, ensureErr := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().EnsureUser(ensureCtx, userID, "")
+	ensured, ensureErr := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().EnsureUser(ensureCtx, userID, "")
 	ensureCancel()
 	if ensureErr != nil {
 		resource.ZapLogger.Warn("pass ensure-user failed",
@@ -491,8 +491,8 @@ func (l *logic) CreateTrialPass(userID string, bundleID string) (*PassDetail, er
 		// R-MR-3 v0.3.0：透传 bundle.TimeSpan/TimeUnit 给 ai-gateway，
 		// 让其内部按 (NOW + period) 算 PeriodEnd（Q9=i1 真源），与 ctl
 		// CalcExpiredTime 走同算法保证 PeriodEnd 完全一致。
-		sub, subErr := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().
-			ApplySubscription(ctx, &aigateway.ApplySubscriptionRequest{
+		sub, subErr := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().
+			ApplySubscription(ctx, &llmgateway.ApplySubscriptionRequest{
 				IdempotencyKey: trialSubscriptionIdempotencyKey(userID, bundleID),
 				UserID:         userID,
 				PlanID:         bundle.AiGatewayPlanID,
@@ -686,7 +686,7 @@ func (l *logic) fillCredit(d *PassDetail) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	sub, err := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().GetActiveSubscription(ctx, d.UserID)
+	sub, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().GetActiveSubscription(ctx, d.UserID)
 	if err != nil {
 		resource.ZapLogger.Warn("fill credit: get ai-gateway active subscription failed",
 			zap.String("pass_id", d.PassID),
@@ -865,7 +865,7 @@ func (l *logic) CompletePass(req *transport.CompletePassRequest) (*PassDetail, e
 	// 步骤 5：确保 ai-gateway 里的业务用户存在
 	ensureCtx, ensureCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	logger.Info("complete pass ensure-user started")
-	ensured, ensureErr := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().EnsureUser(ensureCtx, req.UserID, "")
+	ensured, ensureErr := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().EnsureUser(ensureCtx, req.UserID, "")
 	ensureCancel()
 	if ensureErr != nil {
 		logger.Warn("complete pass ensure-user failed", zap.Error(ensureErr))
@@ -917,8 +917,8 @@ func (l *logic) CompletePass(req *transport.CompletePassRequest) (*PassDetail, e
 		// R-MR-3 v0.3.0：透传 req.TimeSpan/TimeUnit（trade 已持有用户实际购买
 		// 时长），让 ai-gateway 按 (NOW + period) 算 PeriodEnd（Q9=i1 真源）。
 		// 同一份 bundle 不再需要按时长配多个 plan — bundle.AiGatewayPlanID 复用。
-		sub, subErr := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().
-			ApplySubscription(ctx, &aigateway.ApplySubscriptionRequest{
+		sub, subErr := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().
+			ApplySubscription(ctx, &llmgateway.ApplySubscriptionRequest{
 				IdempotencyKey: tradeSubscriptionIdempotencyKey(req.DealName),
 				UserID:         req.UserID,
 				PlanID:         bundle.AiGatewayPlanID,

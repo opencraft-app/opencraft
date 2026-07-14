@@ -16,7 +16,7 @@ func (l *logic) ResetInstanceConfig(ctx pctx.Context, instanceID string) (*trans
 	if err != nil {
 		return nil, err
 	}
-	gwConf := currentAiGatewayConfig()
+	gwConf := currentLLMGatewayConfig()
 	if gwConf == nil || strings.TrimSpace(gwConf.DefaultBaseURL) == "" || strings.TrimSpace(gwConf.DefaultModelID) == "" {
 		return nil, errcode.Wrap(errcode.ErrInternalServer, "default_base_url or default_model_id not configured")
 	}
@@ -59,9 +59,9 @@ func (l *logic) ResetInstanceConfig(ctx pctx.Context, instanceID string) (*trans
 	}, nil
 }
 
-func currentAiGatewayConfig() *config.AiGatewayConfig {
+func currentLLMGatewayConfig() *config.LLMGatewayConfig {
 	if config.ServerConf == nil || config.ServerConf.AdapterConfig == nil {
 		return nil
 	}
-	return config.ServerConf.AdapterConfig.AiGateway
+	return config.ServerConf.AdapterConfig.LLMGateway
 }

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	paigateway "ctl/pkg/adapter/aigateway"
+	pllmgateway "ctl/pkg/adapter/llmgateway"
 	psandbox "ctl/pkg/adapter/sandbox"
 	"ctl/pkg/config"
 	pctx "ctl/pkg/context"
@@ -1677,7 +1677,7 @@ func (l *logic) persistGatewayAuthTokenWithStatuses(ctx pctx.Context, entity *mo
 }
 
 // createAiGatewayApiKey 调用 AI-Gateway 为用户创建 API Key
-func (l *logic) createAiGatewayApiKey(ctx pctx.Context, userID, instanceID string) (*paigateway.CreateApiKeyResponse, error) {
+func (l *logic) createAiGatewayApiKey(ctx pctx.Context, userID, instanceID string) (*pllmgateway.CreateApiKeyResponse, error) {
 	if l.aiGatewayAdapter == nil {
 		return nil, fmt.Errorf("aiGatewayAdapter not configured")
 	}
@@ -1744,10 +1744,10 @@ func currentPodNameForDebug() string {
 
 func (l *logic) aiGatewayProvisioningEnabled() bool {
 	conf := config.ServerConf.AdapterConfig
-	if conf == nil || conf.AiGateway == nil {
+	if conf == nil || conf.LLMGateway == nil {
 		return false
 	}
-	return strings.TrimSpace(conf.AiGateway.BaseURL) != ""
+	return strings.TrimSpace(conf.LLMGateway.BaseURL) != ""
 }
 
 func (l *logic) ensureAiGatewayUser(ctx pctx.Context, userID, nickname, instanceID string) error {
@@ -1833,7 +1833,7 @@ func (l *logic) configureOnboard(ctx pctx.Context, sandboxID string, apiKey stri
 		return fmt.Errorf("gateway auth token is empty")
 	}
 
-	gwConf := config.ServerConf.AdapterConfig.AiGateway
+	gwConf := config.ServerConf.AdapterConfig.LLMGateway
 	baseURL := gwConf.DefaultBaseURL      // 技术债：后续从 provisionResp 读取
 	modelID := gwConf.DefaultModelID      // 技术债：后续从 provisionResp 读取
 	compat := gwConf.DefaultCompatibility // 技术债：后续从 provisionResp 读取

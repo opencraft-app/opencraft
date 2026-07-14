@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"time"
 
-	"ctl/pkg/adapter/aigateway"
 	adapterfactory "ctl/pkg/adapter/factory"
+	"ctl/pkg/adapter/llmgateway"
 	"ctl/pkg/config"
 	"ctl/pkg/errcode"
 	"ctl/pkg/logic/objectid"
@@ -176,9 +176,9 @@ func validateCreditPlanPeriod(credit int64, timeSpan int, timeUnit, aiGatewayPla
 	// 调用 ai-gateway 校验 Plan 一致性
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	plan, err := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().GetPlan(ctx, aiGatewayPlanID)
+	plan, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().GetPlan(ctx, aiGatewayPlanID)
 	if err != nil {
-		if errors.Is(err, aigateway.ErrAiGatewayPlanNotFound) {
+		if errors.Is(err, llmgateway.ErrLLMGatewayPlanNotFound) {
 			return errcode.Wrap(errcode.ErrBundlePlanNotFound, "plan %s not found in ai-gateway", aiGatewayPlanID)
 		}
 		return errcode.Wrap(errcode.ErrBundleAiGatewayUnavailable, "%v", err)

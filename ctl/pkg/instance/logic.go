@@ -9,8 +9,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	paigateway "ctl/pkg/adapter/aigateway"
 	adapterfactory "ctl/pkg/adapter/factory"
+	pllmgateway "ctl/pkg/adapter/llmgateway"
 	popenclawgateway "ctl/pkg/adapter/openclawgateway"
 	psandbox "ctl/pkg/adapter/sandbox"
 	"ctl/pkg/config"
@@ -109,7 +109,7 @@ type logic struct {
 	channelLoginSessionDao channelloginsession.Dao
 	quotaDao               quota.Dao
 	sandboxAdapter         psandbox.Adapter
-	aiGatewayAdapter       paigateway.Adapter
+	aiGatewayAdapter       pllmgateway.Adapter
 	openclawGatewayAdapter popenclawgateway.Adapter
 	producer               mq.Producer
 	operationHistoryDao    operationhistory.Dao
@@ -138,7 +138,7 @@ func NewLogic() Logic {
 		taskDao:                modelfactory.DefaultDaoFactory.TaskDao(nil),
 		quotaDao:               modelfactory.DefaultDaoFactory.UserResourceQuotaDao(nil),
 		sandboxAdapter:         adapterfactory.DefaultAdapterFactory.SandboxAdapter(),
-		aiGatewayAdapter:       adapterfactory.DefaultAdapterFactory.AiGatewayAdapter(),
+		aiGatewayAdapter:       adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter(),
 		openclawGatewayAdapter: adapterfactory.DefaultAdapterFactory.OpenClawGatewayAdapter(),
 		producer:               defaultProducer(),
 		operationHistoryDao:    modelfactory.DefaultDaoFactory.OperationHistoryDao(nil),
@@ -154,15 +154,15 @@ func NewLogic() Logic {
 	}
 }
 
-func NewLogicForTest(instanceDao modelinstance.Dao, quotaDao quota.Dao, sandboxAdapter psandbox.Adapter, aiGatewayAdapter paigateway.Adapter, opHistoryDao operationhistory.Dao, logger *zap.Logger, defaultTemplate string, candidateTemplates ...string) Logic {
+func NewLogicForTest(instanceDao modelinstance.Dao, quotaDao quota.Dao, sandboxAdapter psandbox.Adapter, aiGatewayAdapter pllmgateway.Adapter, opHistoryDao operationhistory.Dao, logger *zap.Logger, defaultTemplate string, candidateTemplates ...string) Logic {
 	return newLogicForTest(instanceDao, quotaDao, sandboxAdapter, aiGatewayAdapter, opHistoryDao, logger, "", defaultTemplate, candidateTemplates...)
 }
 
-func NewLogicForTestWithTemplateClass(instanceDao modelinstance.Dao, quotaDao quota.Dao, sandboxAdapter psandbox.Adapter, aiGatewayAdapter paigateway.Adapter, opHistoryDao operationhistory.Dao, logger *zap.Logger, templateClassID string, defaultTemplate string, candidateTemplates ...string) Logic {
+func NewLogicForTestWithTemplateClass(instanceDao modelinstance.Dao, quotaDao quota.Dao, sandboxAdapter psandbox.Adapter, aiGatewayAdapter pllmgateway.Adapter, opHistoryDao operationhistory.Dao, logger *zap.Logger, templateClassID string, defaultTemplate string, candidateTemplates ...string) Logic {
 	return newLogicForTest(instanceDao, quotaDao, sandboxAdapter, aiGatewayAdapter, opHistoryDao, logger, templateClassID, defaultTemplate, candidateTemplates...)
 }
 
-func newLogicForTest(instanceDao modelinstance.Dao, quotaDao quota.Dao, sandboxAdapter psandbox.Adapter, aiGatewayAdapter paigateway.Adapter, opHistoryDao operationhistory.Dao, logger *zap.Logger, templateClassID string, defaultTemplate string, candidateTemplates ...string) Logic {
+func newLogicForTest(instanceDao modelinstance.Dao, quotaDao quota.Dao, sandboxAdapter psandbox.Adapter, aiGatewayAdapter pllmgateway.Adapter, opHistoryDao operationhistory.Dao, logger *zap.Logger, templateClassID string, defaultTemplate string, candidateTemplates ...string) Logic {
 	if logger == nil {
 		logger = zap.NewNop()
 	}

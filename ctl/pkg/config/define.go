@@ -216,6 +216,22 @@ type AiGatewayConfig struct {
 	DefaultProviderID    string `toml:"default_provider_id"`   // provider 标识，默认自动生成
 }
 
+// LLMGatewayConfig llmgateway/new_api 适配器配置。
+//
+// BaseURL 指向控制面（/api/admin 与 /api/internal）；DefaultBaseURL 指向
+// OpenAI 兼容流量面，通常带 /v1。
+type LLMGatewayConfig struct {
+	BaseURL              string `toml:"base_url"`
+	AdminToken           string `toml:"admin_token"`
+	InternalServiceToken string `toml:"internal_service_token"`
+	Timeout              int    `toml:"timeout"`
+	DefaultBaseURL       string `toml:"default_base_url"`
+	DefaultModelID       string `toml:"default_model_id"`
+	DefaultCompatibility string `toml:"default_compatibility"`
+	DefaultGatewayPort   int    `toml:"default_gateway_port"`
+	DefaultProviderID    string `toml:"default_provider_id"`
+}
+
 // BundleConfig 套餐相关全局配置
 type BundleConfig struct {
 	CreditTokenRatio int64 `toml:"credit_token_ratio"` // credit → token 的转换倍率，1 credit = N token
@@ -297,10 +313,11 @@ type AdapterConfig struct {
 		Hostname string `toml:"hostname"`
 	}
 
-	Sandbox   *SandboxConfig   `toml:"sandbox"`
-	AiGateway *AiGatewayConfig `toml:"aigateway"`
-	Shadow    *ShadowConfig    `toml:"shadow"`
-	Trade     *TradeConfig     `toml:"trade"`
+	Sandbox    *SandboxConfig    `toml:"sandbox"`
+	AiGateway  *AiGatewayConfig  `toml:"aigateway"`
+	LLMGateway *LLMGatewayConfig `toml:"llmgateway"`
+	Shadow     *ShadowConfig     `toml:"shadow"`
+	Trade      *TradeConfig      `toml:"trade"`
 }
 
 // TracingConfig ...
