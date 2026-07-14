@@ -37,6 +37,7 @@ import {
 import { getBillingErrorCode, resolveBillingErrorMessage } from "@/lib/billing-error";
 import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
 import { isCN, isGlobal } from "@/lib/region";
+import { AccountPreviewStateSwitcher } from "@/components/dev/account-preview-state-switcher";
 import { REALNAME_REQUIRED_QUERY_KEY } from "@/lib/agent-routes";
 import { cn } from "@/lib/utils";
 import { buildPayPlan } from "@/lib/wx-pay";
@@ -967,7 +968,8 @@ const ChangePhoneModal = ({
   onClose,
   onSuccess,
 }: {
-  currentPhone: string;
+  /** 当前已绑定手机号；为空表示「首次绑定」形态 */
+  currentPhone?: string;
   onClose: () => void;
   onSuccess: () => void;
 }) => {
@@ -1077,7 +1079,7 @@ const ChangePhoneModal = ({
           <div className="flex items-center gap-4">
             <div className="flex flex-1 flex-col gap-2">
               <h3 className="m-0" style={{ fontFamily: "PingFang SC", fontWeight: 500, fontSize: 20, lineHeight: "1.6em", color: "rgba(0,0,0,0.9)" }}>
-                {t("修改安全手机")}
+                {currentPhone ? t("修改安全手机") : t("绑定安全手机")}
               </h3>
               <p className="m-0" style={{ fontFamily: "PingFang SC", fontWeight: 400, fontSize: 14, lineHeight: "22px", color: "rgba(0,0,0,0.9)" }}>
                 {t("安全手机用于后续计费、支付和账号安全校验。")}
@@ -1092,9 +1094,11 @@ const ChangePhoneModal = ({
               <X className="h-5 w-5" />
             </button>
           </div>
-          <div className="rounded-lg bg-[rgba(7,193,96,0.08)] px-4 py-3 text-sm leading-[22px]" style={{ color: "rgba(0,0,0,0.75)" }}>
-            {t("当前安全手机：{{phone}}", { phone: currentPhone })}
-          </div>
+          {currentPhone && (
+            <div className="rounded-lg bg-[rgba(7,193,96,0.08)] px-4 py-3 text-sm leading-[22px]" style={{ color: "rgba(0,0,0,0.75)" }}>
+              {t("当前安全手机：{{phone}}", { phone: currentPhone })}
+            </div>
+          )}
         </div>
 
         <div style={{ height: 1, background: "#E9ECF1" }} />
@@ -1102,7 +1106,7 @@ const ChangePhoneModal = ({
         <div className="flex flex-col" style={{ gap: 24, padding: "24px 32px" }}>
           <div className="flex flex-col" style={{ gap: 8 }}>
             <label style={{ fontFamily: "PingFang SC", fontWeight: 500, fontSize: 14, lineHeight: "22px", color: "rgba(0,0,0,0.9)" }}>
-              {t("新手机号")} <span style={{ color: "#cf3d4c" }}>*</span>
+              {currentPhone ? t("新手机号") : t("手机号")} <span style={{ color: "#cf3d4c" }}>*</span>
             </label>
             <div className="flex gap-2">
               <input
@@ -1198,12 +1202,191 @@ const ChangePhoneModal = ({
                 {t("更新中...")}
               </>
             ) : (
-              t("确认修改")
+              currentPhone ? t("确认修改") : t("确认绑定")
             )}
           </button>
           <p className="m-0 text-center" style={{ fontFamily: "PingFang SC", fontWeight: 400, fontSize: 12, lineHeight: "24px", color: "rgba(0,0,0,0.3)" }}>
-            {t("验证码通过后会更新安全手机；同步失败时不会修改当前账号手机号。")}
+            {currentPhone
+              ? t("验证码通过后会更新安全手机；同步失败时不会修改当前账号手机号。")
+              : t("验证码通过后会绑定安全手机；同步失败时不会绑定。")}
           </p>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
+/* ─── Bind Email Modal ─── */
+
+const BindEmailModal = ({
+  onClose,
+}: {
+  onClose: () => void;
+}) => {
+  const t = useT();
+  const { auth } = useRepositories();
+  const [email, setEmail] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
+
+  const canSubmit = EMAIL_REGEX.test(email.trim()) && !submitting && cooldownSeconds <= 0;
+
+  useEffect(() => {
+    if (cooldownSeconds <= 0) return;
+    const timer = window.setTimeout(() => setCooldownSeconds((current) => Math.max(0, current - 1)), 1000);
+    return () => window.clearTimeout(timer);
+  }, [cooldownSeconds]);
+
+  const mapErrorMessage = (err: unknown): string => {
+    if (err instanceof RepositoryError) {
+      switch (err.code) {
+        case "invalid_email":
+          return t("邮箱格式不正确，请检查后重试。");
+        case "email_already_bound":
+          return t("当前账号已绑定邮箱。");
+        case "email_bind_cooldown":
+          return t("发送过于频繁，请稍后再试。");
+        case "email_bind_disabled":
+        case "email_bind_unavailable":
+          return t("邮箱绑定服务暂未开放，请稍后再试。");
+        case "email_send_failed":
+          return t("验证邮件发送失败，请稍后重试。");
+        default:
+          break;
+      }
+      if (err.status === 429) {
+        return t("发送过于频繁，请稍后再试。");
+      }
+      return err.message || t("发送验证邮件失败，请稍后重试。");
+    }
+    return t("网络异常，请稍后再试。");
+  };
+
+  const handleSend = async () => {
+    const trimmed = email.trim();
+    if (!EMAIL_REGEX.test(trimmed) || submitting || cooldownSeconds > 0) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      // 复用 master 现有接口：发送验证邮件，用户点击 magic link（后端 ConfirmEmailBind）后完成绑定。
+      const response = await auth.requestEmailBind({ email: trimmed });
+      const seconds = Math.max(1, response.cooldownSeconds ?? 60);
+      setCooldownSeconds(seconds);
+      setSent(true);
+    } catch (err) {
+      setError(mapErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-[100] flex items-center justify-center"
+      style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)" }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+    >
+      <motion.div
+        className="relative mx-4 w-full max-w-[520px] overflow-hidden bg-white"
+        style={{
+          borderRadius: 12,
+          border: "1px solid #E6E9EF",
+          boxShadow: "0px 24px 48px -12px rgba(0, 0, 0, 0.15)",
+        }}
+        initial={{ opacity: 0, scale: 0.96, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 10 }}
+        transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
+      >
+        <div className="flex flex-col gap-4" style={{ padding: "32px 32px 24px" }}>
+          <div className="flex items-center gap-4">
+            <div className="flex flex-1 flex-col gap-2">
+              <h3 className="m-0" style={{ fontFamily: "PingFang SC", fontWeight: 500, fontSize: 20, lineHeight: "1.6em", color: "rgba(0,0,0,0.9)" }}>
+                {t("绑定邮箱")}
+              </h3>
+              <p className="m-0" style={{ fontFamily: "PingFang SC", fontWeight: 400, fontSize: 14, lineHeight: "22px", color: "rgba(0,0,0,0.9)" }}>
+                {t("绑定邮箱后可用于接收导出完成通知等重要消息。")}
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[rgba(0,0,0,0.04)]"
+              style={{ color: "rgba(0,0,0,0.5)" }}
+              aria-label={t("关闭")}
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+
+        <div style={{ height: 1, background: "#E9ECF1" }} />
+
+        <div className="flex flex-col" style={{ gap: 24, padding: "24px 32px 32px" }}>
+          <div className="flex flex-col" style={{ gap: 8 }}>
+            <label style={{ fontFamily: "PingFang SC", fontWeight: 500, fontSize: 14, lineHeight: "22px", color: "rgba(0,0,0,0.9)" }}>
+              {t("邮箱地址")} <span style={{ color: "#cf3d4c" }}>*</span>
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                placeholder={t("请输入邮箱地址")}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full focus:outline-none"
+                style={{
+                  background: "rgba(255,255,255,0.9)",
+                  border: "1px solid #E9ECF1",
+                  borderRadius: 8,
+                  padding: "6px 16px",
+                  fontFamily: "PingFang SC",
+                  fontWeight: 400,
+                  fontSize: 14,
+                  lineHeight: "24px",
+                  color: "rgba(0,0,0,0.9)",
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => void handleSend()}
+                disabled={!canSubmit}
+                className="flex-shrink-0 rounded-lg px-4 text-sm font-medium transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+                style={{ border: "1px solid #202020", color: "#202020" }}
+              >
+                {submitting
+                  ? t("发送中...")
+                  : cooldownSeconds > 0
+                    ? t("重新发送 {{seconds}}s").replace("{{seconds}}", String(cooldownSeconds))
+                    : t("发送验证邮件")}
+              </button>
+            </div>
+          </div>
+
+          {sent && (
+            <div
+              className="flex items-start gap-2 rounded-lg"
+              style={{ background: "rgba(40, 93, 255, 0.06)", padding: "10px 12px" }}
+            >
+              <ShieldCheck className="mt-0.5 h-[18px] w-[18px] flex-shrink-0" style={{ color: "var(--lw-accent)" }} />
+              <span style={{ fontFamily: "PingFang SC", fontWeight: 400, fontSize: 13, lineHeight: "20px", color: "rgba(0,0,0,0.75)" }}>
+                {t("验证邮件已发送，请前往邮箱点击链接完成验证。")}
+                <br />
+                {t("若未收到，请检查垃圾邮件，或在倒计时结束后重新发送。")}
+              </span>
+            </div>
+          )}
+
+          {error && (
+            <p className="m-0 text-[13px]" style={{ color: "#cf3d4c" }}>
+              {error}
+            </p>
+          )}
         </div>
       </motion.div>
     </motion.div>
@@ -2222,6 +2405,8 @@ export const AccountPage = () => {
   const [showAccountRenewTools, setShowAccountRenewTools] = useState(false);
   const showRealnameSection = !isGlobal;
   const showSafetyPhoneSection = phoneProofEnabled && !isGlobal && showSafetyPhoneTools;
+  // 独立手机绑定行：国内站常驻展示（不依赖实名/隐藏入口），支持首次绑定与修改。
+  const showPhoneBindSection = isCN;
   const showEmailBindSection = isCN;
   const [showVerifyModal, setShowVerifyModal] = useState(false);
   const [showChangePhoneModal, setShowChangePhoneModal] = useState(false);
@@ -2230,12 +2415,13 @@ export const AccountPage = () => {
   // 从首页「立即创建」跳转过来、要求先完成实名认证时的提醒 tips
   const [realnameRequiredTip, setRealnameRequiredTip] = useState<string | null>(null);
 
-  // Email bind —— 国内站微信/QQ 登录用户通过 Magic Link 绑定邮箱
-  const [bindEmail, setBindEmail] = useState(user?.email ?? "");
-  const [emailBindSubmitting, setEmailBindSubmitting] = useState(false);
+  // Email bind —— 国内站微信/QQ 登录用户通过 Magic Link 绑定邮箱。
+  // 邮箱输入/发送验证邮件的交互已收敛进 BindEmailModal；这里仅保留 OAuth 回跳
+  // （?email_bound / ?email_bind_error）结果提示所需的状态。
   const [emailBindError, setEmailBindError] = useState<string | null>(null);
   const [emailBindSuccess, setEmailBindSuccess] = useState<string | null>(null);
-  const [emailBindCooldown, setEmailBindCooldown] = useState(0);
+  // 绑定邮箱弹窗开关（点击「去绑定」打开，仅首次绑定，无换绑/解绑）
+  const [showBindEmailModal, setShowBindEmailModal] = useState(false);
   const [copiedUserId, setCopiedUserId] = useState(false);
   const copyResetTimer = useRef<number | null>(null);
 
@@ -2275,14 +2461,6 @@ export const AccountPage = () => {
   const pendingName = user?.nameAuditStatus === "pending" ? user.pendingName?.trim() ?? "" : "";
   const hasPendingNameAudit = pendingName.length > 0;
   const nameAuditFailed = user?.nameAuditStatus === "failed";
-
-  useEffect(() => {
-    if (emailBindCooldown <= 0) return;
-    const timer = window.setInterval(() => {
-      setEmailBindCooldown((prev) => Math.max(0, prev - 1));
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [emailBindCooldown]);
 
   useEffect(() => {
     const bound = searchParams.get("email_bound");
@@ -2445,49 +2623,6 @@ export const AccountPage = () => {
 
   const handlePhoneChangeSuccess = () => {
     setShowChangePhoneModal(false);
-  };
-
-  const mapEmailBindError = (err: unknown): string => {
-    if (err instanceof RepositoryError) {
-      switch (err.code) {
-        case "invalid_email":
-          return t("邮箱格式不正确，请检查后重试。");
-        case "email_already_bound":
-          return t("当前账号已绑定邮箱。");
-        case "email_bind_cooldown":
-          return t("发送过于频繁，请稍后再试。");
-        case "email_bind_disabled":
-        case "email_bind_unavailable":
-          return t("邮箱绑定服务暂未开放，请稍后再试。");
-        case "email_send_failed":
-          return t("验证邮件发送失败，请稍后重试。");
-        default:
-          break;
-      }
-      if (err.status === 429) {
-        return t("发送过于频繁，请稍后再试。");
-      }
-      return err.message || t("发送验证邮件失败，请稍后重试。");
-    }
-    return t("网络异常，请稍后再试。");
-  };
-
-  const handleRequestEmailBind = async () => {
-    const trimmed = bindEmail.trim();
-    if (!EMAIL_REGEX.test(trimmed) || emailBindSubmitting || emailBindCooldown > 0) return;
-    setEmailBindSubmitting(true);
-    setEmailBindError(null);
-    setEmailBindSuccess(null);
-    try {
-      const response = await auth.requestEmailBind({ email: trimmed });
-      const seconds = Math.max(0, response.cooldownSeconds ?? 0);
-      setEmailBindCooldown(seconds);
-      setEmailBindSuccess(t("验证邮件已发送，请前往邮箱点击链接完成绑定。"));
-    } catch (err) {
-      setEmailBindError(mapEmailBindError(err));
-    } finally {
-      setEmailBindSubmitting(false);
-    }
   };
 
   const handleCopyUserId = async () => {
@@ -2771,6 +2906,33 @@ export const AccountPage = () => {
                             <Pencil className="h-3.5 w-3.5" />
                           </button>
                         </div>
+                        {user?.id && (
+                          <div className="flex min-w-0 items-center gap-1">
+                            <span
+                              className="truncate"
+                              style={{
+                                fontSize: 12,
+                                lineHeight: "18px",
+                                color: "rgba(0,0,0,0.35)",
+                                fontFamily: "JetBrains Mono, monospace",
+                                maxWidth: 300,
+                              }}
+                              title={user.id}
+                            >
+                              {t("id: {{id}}").replace("{{id}}", user.id)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => void handleCopyUserId()}
+                              className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded transition-colors hover:bg-[rgba(0,0,0,0.04)]"
+                              aria-label={t("复制")}
+                              title={copiedUserId ? t("已复制") : t("复制")}
+                              style={{ color: copiedUserId ? "var(--color-success)" : "rgba(0,0,0,0.35)" }}
+                            >
+                              {copiedUserId ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                            </button>
+                          </div>
+                        )}
                         {hasPendingNameAudit && (
                           <p className="text-xs" style={{ color: "rgba(0,0,0,0.5)", lineHeight: 1.5 }}>
                             {t("当前对外显示：")}<span style={{ color: "rgba(0,0,0,0.78)" }}>{user?.name || t("未设置")}</span>
@@ -2831,43 +2993,16 @@ export const AccountPage = () => {
                 </div>
               </div>
 
-              {user?.id && (
-                <div className="flex flex-col gap-12 px-8 py-8">
-                  <div className="flex items-center justify-between gap-4">
-                    <span className="text-sm flex-shrink-0" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>
-                      {t("账号 ID")}
-                    </span>
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span
-                        className="truncate text-sm"
-                        style={{ color: "rgba(0,0,0,0.9)", fontFamily: "JetBrains Mono, monospace", maxWidth: 260 }}
-                        title={user.id}
-                      >
-                        {user.id}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => void handleCopyUserId()}
-                        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-[rgba(0,0,0,0.04)]"
-                        aria-label={t("复制")}
-                        title={copiedUserId ? t("已复制") : t("复制")}
-                        style={{ color: copiedUserId ? "var(--color-success)" : "var(--text-tertiary)" }}
-                      >
-                        {copiedUserId ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
+              {/* 账号 ID 已上移至昵称下方展示 */}
 
               {(showEmailBindSection || showRealnameSection) && (
-                /* Bottom: info rows —— 安全手机 / 实名认证 / 绑定邮箱 */
-                <div className="flex flex-col gap-12 px-8 pb-8">
+                /* Bottom: info rows —— 安全手机 / 实名认证 / 邮箱 */
+                <div className="flex flex-col gap-12 px-8 pb-8 pt-8">
                   {showEmailBindSection && (
                     <div className="flex flex-col gap-3">
                       <div className="flex items-center justify-between gap-4">
                         <span className="text-sm flex-shrink-0" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>
-                          {t("绑定邮箱")}
+                          {t("邮箱")}
                         </span>
                         {user?.emailVerified ? (
                           <div className="flex min-w-0 items-center gap-2">
@@ -2879,41 +3014,17 @@ export const AccountPage = () => {
                             </span>
                           </div>
                         ) : (
-                          <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
-                            <input
-                              type="email"
-                              value={bindEmail}
-                              onChange={(e) => setBindEmail(e.target.value)}
-                              placeholder={t("请输入邮箱地址")}
-                              className="lw-input min-w-0 max-w-[280px] flex-1"
-                              autoComplete="email"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => void handleRequestEmailBind()}
-                              disabled={
-                                emailBindSubmitting
-                                || emailBindCooldown > 0
-                                || !EMAIL_REGEX.test(bindEmail.trim())
-                              }
-                              className="inline-flex flex-shrink-0 items-center justify-center gap-1.5 rounded-full bg-black/90 px-4 py-2 text-sm font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {emailBindSubmitting ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : emailBindCooldown > 0 ? (
-                                t("{{seconds}} 秒", { seconds: emailBindCooldown })
-                              ) : (
-                                t("发送验证邮件")
-                              )}
-                            </button>
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setShowBindEmailModal(true)}
+                            className="flex items-center gap-1 text-sm transition-colors hover:opacity-80"
+                            style={{ color: "var(--lw-accent)" }}
+                          >
+                            {t("去绑定")}
+                            <ChevronRight className="h-4 w-4" />
+                          </button>
                         )}
                       </div>
-                      {!user?.emailVerified && (
-                        <p className="m-0 text-xs" style={{ color: "rgba(0,0,0,0.45)", lineHeight: 1.5 }}>
-                          {t("绑定邮箱后可用于接收导出完成通知等重要消息。")}
-                        </p>
-                      )}
                       {emailBindSuccess && (
                         <p className="m-0 text-xs" style={{ color: "var(--color-success)", lineHeight: 1.5 }}>
                           {emailBindSuccess}
@@ -2924,6 +3035,30 @@ export const AccountPage = () => {
                           {emailBindError}
                         </p>
                       )}
+                    </div>
+                  )}
+
+                  {showPhoneBindSection && (
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-sm flex-shrink-0" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>
+                        {t("安全手机")}
+                      </span>
+                      <div className="flex min-w-0 items-center gap-3">
+                        {user?.phone && (
+                          <span className="truncate text-sm" style={{ color: "rgba(0,0,0,0.9)", maxWidth: 260 }}>
+                            {user.phone}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setShowChangePhoneModal(true)}
+                          className="flex flex-shrink-0 items-center gap-1 text-sm transition-colors hover:opacity-80"
+                          style={{ color: "var(--lw-accent)" }}
+                        >
+                          {user?.phone ? t("修改") : t("去绑定")}
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
                   )}
 
@@ -3046,12 +3181,18 @@ export const AccountPage = () => {
             phone={user?.phone}
           />
         )}
-        {showRealnameSection && phoneProofEnabled && user?.phone && showChangePhoneModal && (
+        {(showPhoneBindSection || (showRealnameSection && phoneProofEnabled)) && showChangePhoneModal && (
           <ChangePhoneModal
             key="change-phone"
             currentPhone={user?.phone}
             onClose={() => setShowChangePhoneModal(false)}
             onSuccess={handlePhoneChangeSuccess}
+          />
+        )}
+        {showEmailBindSection && !user?.emailVerified && showBindEmailModal && (
+          <BindEmailModal
+            key="bind-email"
+            onClose={() => setShowBindEmailModal(false)}
           />
         )}
         {showDeleteModal && (
@@ -3069,6 +3210,8 @@ export const AccountPage = () => {
   return (
     <ProductPageShell afterFooter={pageOverlays}>
       {pageContent}
+      {/* 本地 mock 预览专用：交互状态切换器（生产/真实后端环境自动隐藏，不影响线上） */}
+      <AccountPreviewStateSwitcher />
     </ProductPageShell>
   );
 };

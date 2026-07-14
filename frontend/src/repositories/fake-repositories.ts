@@ -19,6 +19,7 @@ import type {
   WorkspaceMessage,
 } from "@/domain/types";
 import { planCatalog } from "@/domain/plan-catalog";
+import { getAccountPreviewOverrides } from "@/repositories/account-preview-states";
 import type { OAuthProvider, WeChatOAuthMode } from "@/lib/oauth";
 import type {
   BotRepository,
@@ -85,6 +86,40 @@ const mockUser = (input: { email?: string; phone?: string; name?: string }): Use
     inviteRequired: false,
     createdAt: nowIso(),
   };
+};
+
+// ─────────────────────────────────────────────────────────────────────────
+// 账号管理页 —— 本地假数据交互状态预设
+//
+// 目的：用真实账号页组件 + 假数据，覆盖所有交互状态，便于本地预览调试。
+// 用法：访问 /account?state=<key>，getSession 会按 key 返回对应的完整假用户；
+//       或用页面右下角的「预览状态切换器」直接点选。
+// 预设清单集中维护在 account-preview-states.ts（切换器与本文件共用）。
+// ─────────────────────────────────────────────────────────────────────────
+const ACCOUNT_PREVIEW_BASE_USER: User = {
+  id: "usr_01hxa2f",
+  name: "本地预览用户",
+  phone: "13800138000",
+  email: undefined,
+  avatarUrl: "/auth/profile/avatar",
+  inviteRequired: false,
+  createdAt: nowIso(),
+};
+
+/** 从当前 URL 读取 ?state= 预设 key（仅浏览器环境）。 */
+const readAccountPreviewStateKey = (): string | null => {
+  if (typeof window === "undefined") return null;
+  try {
+    const key = new URLSearchParams(window.location.search).get("state");
+    return key && key.trim().length > 0 ? key.trim() : null;
+  } catch {
+    return null;
+  }
+};
+
+/** 构造带交互状态预设的账号预览用户。 */
+const buildAccountPreviewUser = (stateKey: string | null): User => {
+  return { ...ACCOUNT_PREVIEW_BASE_USER, createdAt: nowIso(), ...getAccountPreviewOverrides(stateKey) };
 };
 
 const toSessionSnapshot = (user: User): AuthSessionSnapshot => ({
@@ -412,11 +447,18 @@ export const createFakeRepositories = (): Repositories => {
       },
       async getSession() {
         await wait(NETWORK_DELAY_MS);
+        // 账号页交互状态预览：URL 带 ?state= 时，按预设强制重置会话（便于切换状态查看）。
+        const previewStateKey = readAccountPreviewStateKey();
+        if (previewStateKey) {
+          const previewSession = toSessionSnapshot(buildAccountPreviewUser(previewStateKey));
+          writeStoredAuthSession(previewSession);
+          return previewSession;
+        }
         const session = readStoredAuthSession();
         if (session) return session;
         if (!LOCAL_PREVIEW_AUTH_ENABLED) return null;
 
-        const previewSession = toSessionSnapshot(mockUser({ name: "本地预览用户", phone: "13800138000" }));
+        const previewSession = toSessionSnapshot(buildAccountPreviewUser(null));
         writeStoredAuthSession(previewSession);
         return previewSession;
       },
