@@ -127,6 +127,7 @@ type Logic interface {
 
 	// GetPasses 查询所有 Pass（后台管理用）
 	GetPasses(userID *string, bundleID *string) ([]*PassDetail, error)
+	GetPassesPage(userID *string, bundleID *string, status *string, page, pageSize int) ([]*PassDetail, int64, error)
 
 	// ModifyPass 修改 Pass（如延期、换绑套餐）
 	ModifyPass(passID string, req *ModifyPassFields) (*PassDetail, error)
@@ -552,6 +553,20 @@ func (l *logic) GetPasses(userID *string, bundleID *string) ([]*PassDetail, erro
 	details := entitiesToDetails(entities)
 	l.fillCredits(details)
 	return details, nil
+}
+
+func (l *logic) GetPassesPage(userID *string, bundleID *string, status *string, page, pageSize int) ([]*PassDetail, int64, error) {
+	if page <= 0 || pageSize <= 0 {
+		return nil, 0, errcode.Wrap(errcode.ErrInvalidParam, "page and page_size must be positive")
+	}
+	dao := modelfactory.DefaultDaoFactory.PassDao(nil)
+	entities, total, err := dao.ListByFiltersPage(userID, bundleID, status, pageSize, (page-1)*pageSize)
+	if err != nil {
+		return nil, 0, fmt.Errorf("get passes page: %w", err)
+	}
+	details := entitiesToDetails(entities)
+	l.fillCredits(details)
+	return details, total, nil
 }
 
 func (l *logic) ModifyPass(passID string, req *ModifyPassFields) (*PassDetail, error) {

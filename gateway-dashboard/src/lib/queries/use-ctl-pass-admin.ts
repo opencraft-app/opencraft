@@ -75,6 +75,9 @@ interface CtlBundleListData {
 
 interface CtlPassListData {
   passes?: CtlPass[];
+  total?: number;
+  page?: number;
+  page_size?: number;
 }
 
 interface CtlDeletePassResult {
@@ -84,14 +87,22 @@ interface CtlDeletePassResult {
 export interface CtlPassFilters {
   userID?: string;
   bundleID?: string;
+  status?: string;
+  page?: number;
+  pageSize?: number;
 }
 
 export interface CtlDianshiRecordFilters {
   userID?: string;
+  page?: number;
+  pageSize?: number;
 }
 
 interface CtlDianshiRecordsData {
   participations?: CtlDianshiParticipation[];
+  participations_total?: number;
+  page?: number;
+  page_size?: number;
 }
 
 interface CtlDeleteDianshiRecordResult {
@@ -124,9 +135,18 @@ export function useCtlAdminPasses(filters: CtlPassFilters) {
         params: {
           user_id: filters.userID || undefined,
           bundle_id: filters.bundleID || undefined,
+          status: filters.status && filters.status !== "all" ? filters.status : undefined,
+          page: filters.page,
+          page_size: filters.pageSize,
         },
       });
-      return unwrapCtlData(envelope).passes ?? [];
+      const data = unwrapCtlData(envelope);
+      return {
+        passes: data.passes ?? [],
+        total: data.total ?? data.passes?.length ?? 0,
+        page: data.page ?? filters.page ?? 1,
+        page_size: data.page_size ?? filters.pageSize ?? 20,
+      };
     },
   });
 }
@@ -138,12 +158,16 @@ export function useCtlDianshiRecords(filters: CtlDianshiRecordFilters) {
       const envelope = await apiClient<CtlEnvelope<CtlDianshiRecordsData>>("ctl/admin/dianshi/orders", {
         params: {
           external_user_id: filters.userID?.trim() || undefined,
-          limit: 100,
+          page: filters.page,
+          page_size: filters.pageSize,
         },
       });
       const data = unwrapCtlData(envelope);
       return {
         participations: data.participations ?? [],
+        total: data.participations_total ?? data.participations?.length ?? 0,
+        page: data.page ?? filters.page ?? 1,
+        page_size: data.page_size ?? filters.pageSize ?? 20,
       };
     },
   });
