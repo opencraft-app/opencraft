@@ -138,6 +138,31 @@ replacements:
           name: trade-config
         fieldPaths:
           - data.TRADE_SHADOW_MOCK_ENABLED
+  # TRADE_INQUIRY_FALLBACK_UIN / TRADE_INQUIRY_FALLBACK_APP_ID:
+  #   询价专用 shadow binding 兜底身份。仅在 inquiry.Quote 遇到未绑定或空 uin 时用于
+  #   展示价格；付费下单仍由 placeorder 强校验真实 shadow binding。
+  #   两个字段必须同进同退；不启用的环境也要在 trade-platform.env 中声明为空字符串，
+  #   以便 common component replacement 在所有环境下稳定 build。
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.TRADE_INQUIRY_FALLBACK_UIN
+    targets:
+      - select:
+          kind: ConfigMap
+          name: trade-config
+        fieldPaths:
+          - data.TRADE_INQUIRY_FALLBACK_UIN
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.TRADE_INQUIRY_FALLBACK_APP_ID
+    targets:
+      - select:
+          kind: ConfigMap
+          name: trade-config
+        fieldPaths:
+          - data.TRADE_INQUIRY_FALLBACK_APP_ID
   # ===========================================================================
   # LIGHTVELA_SITE_KIND (v1.7.x 国际站接入 B3):
   #   trade 内部部署站点语义字面量, 与 ctl/shadow/sandbox 的 LIGHTVELA_SITE_KIND env
