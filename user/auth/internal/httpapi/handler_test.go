@@ -472,6 +472,54 @@ func TestRealnameFaceIDHTTPFlowRequiresOwnedAttemptAndUsesShadowPhoneCode(t *tes
 	}
 }
 
+func TestRealnameFaceIDHTTPFlowAcceptsPhoneForCleanUser(t *testing.T) {
+	router, _, provider := newAuthTestRouterWithFaceID()
+	signUp := performJSONRequest(t, router, http.MethodPost, "/auth/password/sign-up", map[string]any{
+		"name": "Clean Face User", "email": "clean-face-http@example.invalid", "password": "password123",
+	})
+	if signUp.Code != http.StatusOK {
+		t.Fatalf("expected clean user sign-up 200, got %d: %s", signUp.Code, signUp.Body.String())
+	}
+	cookie := sessionCookieFromRecorder(t, signUp)
+	started := performJSONRequest(t, router, http.MethodPost, "/auth/realname/faceid/attempts", map[string]any{
+		"name": "张三", "idCard": "11010519491231002X", "consent": true,
+	}, cookie)
+	if started.Code != http.StatusOK {
+		t.Fatalf("expected clean-user FaceID start 200, got %d: %s", started.Code, started.Body.String())
+	}
+	var attempt api.RealnameFaceIDAttemptResponse
+	decodeJSONResponse(t, started, &attempt)
+	provider.getInfoOut = service.RealnameFaceIDProviderCheckResult{Completed: true, Success: true, RequestID: "req-clean-http"}
+	result := performJSONRequest(t, router, http.MethodGet, "/auth/realname/faceid/attempts/"+attempt.AttemptId, nil, cookie)
+	if result.Code != http.StatusOK {
+		t.Fatalf("expected clean-user face result 200, got %d: %s", result.Code, result.Body.String())
+	}
+	phone := "13800138889"
+	sent := performJSONRequest(t, router, http.MethodPost, "/auth/realname/faceid/attempts/"+attempt.AttemptId+"/send-phone-code", map[string]any{"phone": phone}, cookie)
+	if sent.Code != http.StatusOK {
+		t.Fatalf("expected clean-user Shadow phone code 200, got %d: %s", sent.Code, sent.Body.String())
+	}
+	verified := performJSONRequest(t, router, http.MethodPost, "/auth/realname/faceid/attempts/"+attempt.AttemptId+"/verify-phone", map[string]any{
+		"phone": phone, "code": "123456",
+	}, cookie)
+	if verified.Code != http.StatusOK {
+		t.Fatalf("expected clean-user phone proof 200, got %d: %s", verified.Code, verified.Body.String())
+	}
+	decodeJSONResponse(t, verified, &attempt)
+	if attempt.State != api.RealnameFaceIDAttemptResponseState("succeeded") {
+		t.Fatalf("expected clean-user synchronous completion, got %+v", attempt)
+	}
+	current := performJSONRequest(t, router, http.MethodGet, "/auth/session", nil, cookie)
+	if current.Code != http.StatusOK {
+		t.Fatalf("expected clean-user session 200, got %d: %s", current.Code, current.Body.String())
+	}
+	var body sessionResponseBody
+	decodeJSONResponse(t, current, &body)
+	if body.Session.User == nil || body.Session.User.Phone == nil || *body.Session.User.Phone != phone || !body.Session.User.RealnameVerified {
+		t.Fatalf("expected clean-user phone and final realname in session, got %+v", body.Session.User)
+	}
+}
+
 func TestRealnameFaceIDCallbackReturnsGenericNonCacheableHTML(t *testing.T) {
 	router, _, _ := newAuthTestRouterWithFaceID()
 	recorder := performJSONRequest(t, router, http.MethodGet, "/auth/realname/faceid/callback?BizToken=foreign-token", nil)

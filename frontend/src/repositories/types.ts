@@ -116,8 +116,8 @@ export interface AuthRepository {
   startRealnameFaceIdAttempt(input: { name: string; idCard: string; consent: boolean }): Promise<RealnameFaceIdAttempt>;
   getCurrentRealnameFaceIdAttempt(): Promise<RealnameFaceIdAttempt>;
   getRealnameFaceIdAttempt(attemptId: string): Promise<RealnameFaceIdAttempt>;
-  sendRealnameFaceIdPhoneCode(attemptId: string): Promise<SendSmsCodeResult>;
-  verifyRealnameFaceIdPhone(attemptId: string, input: { code: string }): Promise<RealnameFaceIdAttempt>;
+  sendRealnameFaceIdPhoneCode(attemptId: string, input?: { phone?: string }): Promise<SendSmsCodeResult>;
+  verifyRealnameFaceIdPhone(attemptId: string, input: { code: string; phone?: string }): Promise<RealnameFaceIdAttempt>;
   finalizeRealnameFaceIdAttempt(attemptId: string): Promise<RealnameFaceIdAttempt>;
   /** 实名认证：POST /auth/realname/verify */
   verifyRealname(input: { name: string; idCard: string }): Promise<RealnameVerifyResult>;

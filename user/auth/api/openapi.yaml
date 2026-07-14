@@ -391,6 +391,11 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RealnameFaceIDPhoneCodeRequest'
       responses:
         '200':
           description: Code issued
@@ -744,6 +749,13 @@ components:
         - code
       properties:
         code:
+          type: string
+        phone:
+          type: string
+    RealnameFaceIDPhoneCodeRequest:
+      type: object
+      properties:
+        phone:
           type: string
     RealnameFaceIDAttemptResponse:
       type: object

@@ -115,6 +115,88 @@ func (s *MySQLStore) ApplyRealnameFaceIDTransitionWithAudit(ctx context.Context,
 	return true, nil
 }
 
+func (s *MySQLStore) ApplyRealnameFaceIDPhoneProof(ctx context.Context, attempt RealnameFaceIDAttempt, expectedState string, expectedLeaseVersion int64, phone string, event RealnameFaceIDAuditEvent) (User, bool, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return User{}, false, fmt.Errorf("begin realname faceid phone proof: %w", err)
+	}
+	defer rollback(tx)
+	var storedState string
+	var storedLeaseVersion int64
+	var scrubbedAt sql.NullTime
+	if err := tx.QueryRowContext(ctx, `
+		SELECT state, lease_version, scrubbed_at
+		FROM realname_faceid_attempts
+		WHERE attempt_id = ?
+		FOR UPDATE
+	`, attempt.AttemptID).Scan(&storedState, &storedLeaseVersion, &scrubbedAt); err != nil {
+		return User{}, false, fmt.Errorf("lock realname faceid phone proof attempt: %w", err)
+	}
+	if storedState != expectedState || storedLeaseVersion != expectedLeaseVersion || scrubbedAt.Valid {
+		if err := tx.Commit(); err != nil {
+			return User{}, false, fmt.Errorf("commit stale realname faceid phone proof: %w", err)
+		}
+		return User{}, false, nil
+	}
+	normalizedPhone := normalizePhone(phone)
+	var storedPhone string
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(phone, '') FROM users WHERE id = ? FOR UPDATE`, attempt.UserID).Scan(&storedPhone); err != nil {
+		return User{}, false, fmt.Errorf("lock realname faceid phone proof user: %w", err)
+	}
+	if storedPhone != "" && normalizePhone(storedPhone) != normalizedPhone {
+		return User{}, false, newError("realname_phone_mismatch", "当前手机号已变更，请重新开始实名认证。", http.StatusConflict)
+	}
+	var existingUserID string
+	err = tx.QueryRowContext(ctx, `SELECT id FROM users WHERE phone = ? FOR UPDATE`, normalizedPhone).Scan(&existingUserID)
+	if err == nil && existingUserID != attempt.UserID {
+		return User{}, false, newError("phone_in_use", "该手机号已绑定其他账号。", http.StatusConflict)
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return User{}, false, fmt.Errorf("query realname faceid phone owner: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE users SET phone = ?, updated_at = ? WHERE id = ?`, normalizedPhone, attempt.UpdatedAt, attempt.UserID); err != nil {
+		if isMySQLDuplicate(err) {
+			return User{}, false, newError("phone_in_use", "该手机号已绑定其他账号。", http.StatusConflict)
+		}
+		return User{}, false, fmt.Errorf("bind realname faceid phone: %w", err)
+	}
+	result, err := tx.ExecContext(ctx, `
+		UPDATE realname_faceid_attempts
+		SET state = ?, current_phone_hash = ?, phone_verified_hash = ?, phone_verified_at = ?, updated_at = ?
+		WHERE attempt_id = ? AND state = ? AND lease_version = ? AND scrubbed_at IS NULL
+	`, attempt.State, nullableString(attempt.CurrentPhoneHash), nullableString(attempt.PhoneVerifiedHash), attempt.PhoneVerifiedAt, attempt.UpdatedAt,
+		attempt.AttemptID, expectedState, expectedLeaseVersion)
+	if err != nil {
+		return User{}, false, fmt.Errorf("apply realname faceid phone proof: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return User{}, false, fmt.Errorf("read realname faceid phone proof result: %w", err)
+	}
+	if rows != 1 {
+		return User{}, false, newError("realname_faceid_state_changed", "本次实名认证状态已变更，请重新开始。", http.StatusConflict)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO realname_faceid_audit_events (
+			attempt_id, user_id, event_type, state, rule_id, account_id, request_id,
+			identity_hash, phone_hash, biz_token_hash, created_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, nullableString(event.AttemptID), nullableString(event.UserID), event.EventType, nullableString(event.State),
+		nullableString(event.RuleID), nullableString(event.AccountID), nullableString(event.RequestID),
+		nullableString(event.IdentityHash), nullableString(event.PhoneHash), nullableString(event.BizTokenHash), event.CreatedAt); err != nil {
+		return User{}, false, fmt.Errorf("insert realname faceid phone proof audit: %w", err)
+	}
+	row := tx.QueryRowContext(ctx, `SELECT `+mysqlUserSelectColumns("", s.contentAuditEnabled)+` FROM users WHERE id = ?`, attempt.UserID)
+	user, err := s.scanUserRow(row)
+	if err != nil {
+		return User{}, false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return User{}, false, fmt.Errorf("commit realname faceid phone proof: %w", err)
+	}
+	return user, true, nil
+}
+
 func (s *MySQLStore) ApplyRealnameFaceIDReconcile(ctx context.Context, attempt RealnameFaceIDAttempt, expectedLeaseVersion int64, expectedLeaseOwner string) (bool, error) {
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE realname_faceid_attempts

@@ -1567,5 +1567,8 @@
   "k_f2042cde": "Organize today's progress and tomorrow's priorities every evening",
   "k_f3c22c93": "Review today's important items, write a short summary, and remind me of the top 3 things to prioritize tomorrow.",
   "k_f753d9f8": "This plan is temporarily sold out",
-  "k_f88676e2": "After the code is verified, the shadow account is synced and the local phone number is updated. If sync fails, the current account phone will not change."
+  "k_f88676e2": "After the code is verified, the shadow account is synced and the local phone number is updated. If sync fails, the current account phone will not change.",
+  "k_0eea2d3c": "Enter the phone number to use for identity verification.",
+  "k_1e5a8862": "Reverification required",
+  "k_e6cfd835": "Complete phone verification"
 }

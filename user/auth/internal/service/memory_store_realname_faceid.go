@@ -239,6 +239,35 @@ func (s *MemoryStore) ApplyRealnameFaceIDReconcileWithAudit(_ context.Context, a
 	return true, nil
 }
 
+func (s *MemoryStore) ApplyRealnameFaceIDPhoneProof(_ context.Context, attempt RealnameFaceIDAttempt, expectedState string, expectedLeaseVersion int64, phone string, event RealnameFaceIDAuditEvent) (User, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, ok := s.realnameFaceIDAttempts[attempt.AttemptID]
+	if !ok || current.State != expectedState || current.LeaseVersion != expectedLeaseVersion || current.ScrubbedAt != nil {
+		return User{}, false, nil
+	}
+	user, ok := s.usersByID[attempt.UserID]
+	if !ok {
+		return User{}, false, newError("user_not_found", "用户不存在。", http.StatusNotFound)
+	}
+	normalizedPhone := normalizePhone(phone)
+	if user.Phone != "" && normalizePhone(user.Phone) != normalizedPhone {
+		return User{}, false, newError("realname_phone_mismatch", "当前手机号已变更，请重新开始实名认证。", http.StatusConflict)
+	}
+	if existingUserID, exists := s.usersByPhone[normalizedPhone]; exists && existingUserID != user.ID {
+		return User{}, false, newError("phone_in_use", "该手机号已绑定其他账号。", http.StatusConflict)
+	}
+	if user.Phone == "" {
+		user.Phone = normalizedPhone
+		user.UpdatedAt = attempt.UpdatedAt
+		s.usersByID[user.ID] = user
+		s.usersByPhone[normalizedPhone] = user.ID
+	}
+	s.realnameFaceIDAttempts[attempt.AttemptID] = attempt
+	s.realnameFaceIDAuditEvents = append(s.realnameFaceIDAuditEvents, event)
+	return user, true, nil
+}
+
 func (s *MemoryStore) ActivateRealnameFaceIDAttempt(_ context.Context, userID string, attemptID string, currentPhone string, identityHash string, phoneHash string, faceVerifiedAt time.Time, phoneVerifiedAt time.Time, now time.Time) (User, RealnameFaceIDAttempt, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
