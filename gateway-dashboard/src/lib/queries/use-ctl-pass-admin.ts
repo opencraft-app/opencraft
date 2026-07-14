@@ -75,6 +75,9 @@ interface CtlBundleListData {
 
 interface CtlPassListData {
   passes?: CtlPass[];
+  total?: number;
+  page?: number;
+  page_size?: number;
 }
 
 interface CtlDeletePassResult {
@@ -84,6 +87,9 @@ interface CtlDeletePassResult {
 export interface CtlPassFilters {
   userID?: string;
   bundleID?: string;
+  status?: string;
+  page?: number;
+  pageSize?: number;
 }
 
 export interface CtlDianshiRecordFilters {
@@ -124,9 +130,18 @@ export function useCtlAdminPasses(filters: CtlPassFilters) {
         params: {
           user_id: filters.userID || undefined,
           bundle_id: filters.bundleID || undefined,
+          status: filters.status && filters.status !== "all" ? filters.status : undefined,
+          page: filters.page,
+          page_size: filters.pageSize,
         },
       });
-      return unwrapCtlData(envelope).passes ?? [];
+      const data = unwrapCtlData(envelope);
+      return {
+        passes: data.passes ?? [],
+        total: data.total ?? data.passes?.length ?? 0,
+        page: data.page ?? filters.page ?? 1,
+        page_size: data.page_size ?? filters.pageSize ?? 20,
+      };
     },
   });
 }
