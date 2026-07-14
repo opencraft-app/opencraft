@@ -1,4 +1,25 @@
-# 当前执行计划：FaceID 复用 Shadow 手机验证
+# 当前执行计划：Hermes 默认头像高清替换
+
+> 分支：`frontsandbox/hermes-avatar`
+> 规模：S
+> 范围：仅替换 Hermes 公共默认头像资产，不调整用户账号头像、组件结构或交互逻辑。
+
+## 任务清单
+
+- [x] 1. 将“我的 Hermes”等场景共用的默认头像替换为用户提供的高清图片。
+  - 角色：Developer + Reviewer
+  - 影响文件：`frontend/public/hermes_logo.png`
+  - 验收方式：目标文件与用户提供的 `nousresearch.png` 内容一致，保持 640×640 PNG 与透明通道；现有 `/hermes_logo.png` 引用继续有效，`git diff --check` 通过。
+  - 结果：目标文件与源图片 SHA-256 一致；本地静态资源请求返回 HTTP 200、`image/png` 和 17,597 字节。
+
+## 验收重点
+
+- “我的 Hermes”、创建成功页和默认头像回退继续复用同一 `/hermes_logo.png` 公共路径。
+- 不修改账号用户头像逻辑，也不新增重复图片资源或组件分支。
+
+---
+
+# 已完成计划：FaceID 复用 Shadow 手机验证
 
 > 分支：`codex/faceid-shadow-sms`
 > 规模：M
