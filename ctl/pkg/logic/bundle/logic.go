@@ -182,7 +182,7 @@ func validateCreditPlanPeriod(credit int64, timeSpan int, timeUnit, aiGatewayPla
 		if errors.Is(err, llmgateway.ErrLLMGatewayPlanNotFound) {
 			legacyAdapter := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter()
 			if legacyAdapter == nil {
-				return errcode.Wrap(errcode.ErrBundlePlanNotFound, "plan %s not found in llmgateway", aiGatewayPlanID)
+				return errcode.Wrap(errcode.ErrBundleAiGatewayUnavailable, "ai-gateway adapter unavailable while validating legacy plan %s", aiGatewayPlanID)
 			}
 			legacyPlan, legacyErr := legacyAdapter.GetPlan(ctx, aiGatewayPlanID)
 			if legacyErr == nil {

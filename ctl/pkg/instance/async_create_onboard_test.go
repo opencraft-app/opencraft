@@ -178,6 +178,9 @@ func (s *createTaskLLMGatewayAdapterStub) RevokeApiKey(_ context.Context, keyID 
 func (s *createTaskLLMGatewayAdapterStub) GetUserUsage(_ context.Context, _ string) (*pllmgateway.UserUsageResponse, error) {
 	return &pllmgateway.UserUsageResponse{}, nil
 }
+func (s *createTaskLLMGatewayAdapterStub) GetActiveSubscription(_ context.Context, _ string) (*pllmgateway.Subscription, error) {
+	return nil, nil
+}
 
 func installCreateTaskAiGatewayConfig(t *testing.T) {
 	t.Helper()

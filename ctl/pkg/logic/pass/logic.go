@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"ctl/pkg/adapter/aigateway"
 	adapterfactory "ctl/pkg/adapter/factory"
 	"ctl/pkg/adapter/llmgateway"
 	tradeadapter "ctl/pkg/adapter/trade"
@@ -779,12 +780,7 @@ func getCompatibleActiveSubscriptionTokenBalance(ctx context.Context, userID str
 }
 
 func isLegacyGatewayDisabled(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "ai-gateway base_url not configured") ||
-		strings.Contains(msg, "ai-gateway internal_service_token not configured")
+	return errors.Is(err, aigateway.ErrAiGatewayNotConfigured)
 }
 
 // jifeiCurDeadlineLocation 是 jifei 协议层时间字面值的固定时区（北京时间 UTC+8）。

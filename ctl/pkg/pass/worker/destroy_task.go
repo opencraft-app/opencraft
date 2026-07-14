@@ -14,9 +14,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
+	"ctl/pkg/adapter/aigateway"
 	adapterfactory "ctl/pkg/adapter/factory"
 	pctx "ctl/pkg/context"
 	instanceasync "ctl/pkg/instance"
@@ -371,12 +371,7 @@ func (t *destroyPassTask) cancelAiGatewaySubscription(_ pctx.Context, logger *za
 }
 
 func isLegacyGatewayDisabled(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "ai-gateway base_url not configured") ||
-		strings.Contains(msg, "ai-gateway internal_service_token not configured")
+	return errors.Is(err, aigateway.ErrAiGatewayNotConfigured)
 }
 
 // movePassToHistory 5b：dao.MoveToHistory（删 pass 行 + 写 history_pass，单事务）

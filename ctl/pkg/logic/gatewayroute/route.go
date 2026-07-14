@@ -1,6 +1,7 @@
 package gatewayroute
 
 import (
+	"errors"
 	"strings"
 	"time"
 
@@ -21,6 +22,8 @@ const (
 	SourceManual                   = modelgateway.SourceManual
 )
 
+var ErrUserIDRequired = errors.New("user_id is required")
+
 func Get(userID string) (Gateway, bool, error) {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
@@ -40,6 +43,10 @@ func Get(userID string) (Gateway, bool, error) {
 }
 
 func Record(userID string, gateway Gateway, subscriptionID, planID, source string) error {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return ErrUserIDRequired
+	}
 	if resource.GormDB == nil {
 		return nil
 	}

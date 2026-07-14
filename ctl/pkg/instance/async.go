@@ -1869,12 +1869,7 @@ func isAiGatewayKeyNotFound(err error) bool {
 }
 
 func isLegacyGatewayDisabled(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "ai-gateway base_url not configured") ||
-		strings.Contains(msg, "ai-gateway internal_service_token not configured")
+	return errors.Is(err, paigateway.ErrAiGatewayNotConfigured)
 }
 
 func currentPodNameForDebug() string {
