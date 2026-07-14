@@ -207,7 +207,7 @@
 
 | 系统 | 定位 | 触发命令 |
 |------|------|----------|
-| **📝 Product Skills (`prd-init`)** | 产品前置、需求分析、PRD 梳理 | `/feai-start` |
+| **📝 Product Skills (`prd-creator`)** | 产品前置、需求分析、PRD 梳理 | `/feai-start` |
 | **📐 OpenSpec** | 规范沉淀 & 变更管理 | `/feai-archive` |
 | **⚡ Superpowers** | 研发执行辅助 Skills（TDD / plans / review 等） | 按需加载 |
 
@@ -284,7 +284,7 @@ codesign/                # EdgeOne / 子账号 / 权限模型 / 测试发布协�
 | ----------------------- | -------------------------------------------------------- |
 | 🧪 TDD 测试驱动         | 推荐先写测试再写代码；测试不通过不能合入                 |
 | 📐 OpenSpec 双重角色    | 开发前提供项目上下文，开发后归档沉淀功能规范文档         |
-| 📝 prd-init 产品前置 | 用 `.agents/skills/product-skills/prd-init` 做产品前置、需求分析和 PRD 梳理 |
+| 📝 prd-creator 产品前置 | 用 `.agents/skills/product-skills/prd-creator` 做产品前置、需求分析和 PRD 梳理 |
 | 🚫 禁止 any（TS 项目）  | 使用 `unknown` 或具体类型替代                            |
 
 ---
@@ -465,7 +465,7 @@ LightVela 产品 Skills 以 mono2 为主仓，`product-ai` 只保留下游分发
 - 副仓仓库：`git@git.woa.com:TencentLightCloud/product-ai.git`
 - 副仓路径：`skills/lightvela`
 
-所有 LightVela 产品 Skills 的内容变更都必须先在 `.agents/skills/product-skills` 完成并合入 mono2 `master`。使用本仓库内的 `prd-init`、`lv-seo-geo` 或 `lv-vibe-coding` 时，直接读取当前分支中的主仓版本；不要在调用前从 `product-ai` 反向覆盖。
+所有 LightVela 产品 Skills 的内容变更都必须先在 `.agents/skills/product-skills` 完成并合入 mono2 `master`。使用本仓库内的 `prd-creator`、`lv-seo-geo` 或 `lv-vibe-coding` 时，直接读取当前分支中的主仓版本；不要在调用前从 `product-ai` 反向覆盖。
 
 将主仓更新同步到 `product-ai` 时：
 
@@ -480,7 +480,7 @@ LightVela 产品 Skills 以 mono2 为主仓，`product-ai` 只保留下游分发
 5. 同步后至少验证：
    - 两个 subtree 根目录的文件列表和内容完全一致
    - 各子目录 `SKILL.md` 的 frontmatter `name` 与目录用途一致
-   - `prd-init/evals/evals.json` 能通过 `python3 -m json.tool`
+   - `prd-creator/evals/evals.json` 能通过 `python3 -m json.tool`
 
 如果当前工作区有无关脏改动，必须在干净分支或独立 worktree 中完成主仓修改或副仓同步，避免混入其他开发改动。网络、权限或工蜂访问失败不影响使用 mono2 当前分支中的主仓版本，但必须在结果中说明 `product-ai` 尚未刷新。
 

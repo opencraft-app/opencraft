@@ -1,5 +1,5 @@
 ---
-name: prd-init
+name: prd-creator
 description: 当 LightVela、Hermes、OpenClaw、SkillHub、MCP 或 Agent 控制台相关工作还停留在想法、反馈、Issue/问题单、老板口头需求、模糊 TAPD 单或未完成 PRD 阶段，并且需要做产品前置、PRD 梳理、TAPD 产品需求建单或研发交接时使用。需求涉及国内站 lightvela.com、国际站 lightvela.ai、双站同步发布、站点差异化发布或国际站是否同步时，也使用本技能先明确产品范围。
 ---
 
