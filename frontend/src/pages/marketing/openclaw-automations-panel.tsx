@@ -22,9 +22,12 @@ import { useT } from "@/i18n/t";
 import { isGlobal } from "@/lib/region";
 import { ScenarioEnableConfirmModal } from "./scenario-tasks/ScenarioEnableConfirmModal";
 import { ScenarioInstallModal } from "./scenario-tasks/ScenarioInstallModal";
-import { ScenarioTaskGrid } from "./scenario-tasks/ScenarioTaskGrid";
-import { getScenarioTaskPack, SCENARIO_TASK_PACKS, type ScenarioTaskId, type ScenarioTaskPack } from "./scenario-tasks/scenario-packs";
-import { buildScenarioTaskDraft, isScenarioRecurringJobName, type ScenarioTaskDraft } from "./scenario-tasks/scenario-task-builder";
+// 场景任务入口暂时下线，保留依赖便于后续恢复。
+// import { ScenarioTaskGrid } from "./scenario-tasks/ScenarioTaskGrid";
+// import { getScenarioTaskPack, SCENARIO_TASK_PACKS, type ScenarioTaskId, type ScenarioTaskPack } from "./scenario-tasks/scenario-packs";
+import { getScenarioTaskPack, type ScenarioTaskPack } from "./scenario-tasks/scenario-packs";
+// import { buildScenarioTaskDraft, isScenarioRecurringJobName, type ScenarioTaskDraft } from "./scenario-tasks/scenario-task-builder";
+import { buildScenarioTaskDraft, type ScenarioTaskDraft } from "./scenario-tasks/scenario-task-builder";
 import {
   CronCommandError,
   createCronJobWithScriptRollback,
@@ -382,11 +385,11 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
   const visibleJobs = useMemo(() => jobs.filter((job) => !isCronJobExpiredBeyondGrace(job)), [jobs]);
   const jobLimitReached = visibleJobs.length >= MAX_CRON_JOBS_PER_BOT;
   const templates = useMemo(() => getAutomationTemplates(t), [t]);
-  const installedScenarioIds = useMemo(() => new Set(
-    SCENARIO_TASK_PACKS
-      .filter((pack) => visibleJobs.some((job) => isScenarioRecurringJobName({ generatedName: pack.name }, job.name) && !isOnceCronJob(job)))
-      .map((pack) => pack.id),
-  ), [visibleJobs]);
+  // const installedScenarioIds = useMemo(() => new Set(
+  //   SCENARIO_TASK_PACKS
+  //     .filter((pack) => visibleJobs.some((job) => isScenarioRecurringJobName({ generatedName: pack.name }, job.name) && !isOnceCronJob(job)))
+  //     .map((pack) => pack.id),
+  // ), [visibleJobs]);
 
   const refreshChannelStatus = useCallback(async () => {
     if (!botId) {
@@ -526,9 +529,9 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
     void refreshChannelStatus();
   }, [refreshChannelStatus]);
 
-  const openScenarioInstaller = useCallback((pack: ScenarioTaskPack) => {
-    setScenarioInstallPack(pack);
-  }, []);
+  // const openScenarioInstaller = useCallback((pack: ScenarioTaskPack) => {
+  //   setScenarioInstallPack(pack);
+  // }, []);
 
   const handleScenarioRunOnce = useCallback(async (draft: ScenarioTaskDraft) => {
     if (!botId) return;
@@ -721,6 +724,7 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
         )}
       />
 
+      {/* 场景任务入口暂时下线，保留实现便于后续恢复。
       {!isGlobal && (
         <ScenarioTaskGrid
           packs={SCENARIO_TASK_PACKS}
@@ -730,6 +734,7 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
           onSchedule={openScenarioInstaller}
         />
       )}
+      */}
 
       {!isGlobal && scenarioReminderNotice && (
         <ScenarioReminderBanner
