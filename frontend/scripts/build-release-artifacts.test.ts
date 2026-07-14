@@ -38,7 +38,7 @@ describe("build release artifacts", () => {
         PNPM_BIN: "pnpm-bin",
       }, async (command: string, args: string[]) => {
         calls.push(`${command} ${args.join(" ")}`);
-        if (command === "pnpm-bin" && args.join(" ") === "exec next build --webpack") {
+        if (command === "pnpm-bin" && args.join(" ") === "exec next build") {
           mkdirSync("out/api", { recursive: true });
           writeFileSync("out/index.html", "<html></html>");
           writeFileSync("out/api/search", "{}");
@@ -55,7 +55,7 @@ describe("build release artifacts", () => {
         "node-bin scripts/subset-fonts.mjs",
         "node-bin scripts/sync-fumadocs-content.mjs",
         "pnpm-bin exec fumadocs-mdx",
-        "pnpm-bin exec next build --webpack",
+        "pnpm-bin exec next build",
         "node-bin scripts/version-next-static-assets.mjs",
         "node-bin scripts/fix-next-static-html-lang.mjs",
         "node-bin scripts/format-next-static-html.mjs",
