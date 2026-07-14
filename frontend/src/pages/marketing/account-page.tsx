@@ -2172,7 +2172,7 @@ export const AccountPage = () => {
   const faceIdBackendEnabled = user?.realnameAssuranceMode === "observe"
     || user?.realnameAssuranceMode === "face_required";
   const hasSafetyPhone = Boolean(user?.phone?.trim());
-  const faceIdFlowEnabled = showFaceIdFlow && faceIdBackendEnabled && hasSafetyPhone;
+  const faceIdFlowEnabled = showFaceIdFlow && faceIdBackendEnabled;
   const phoneProofEnabled = hasSafetyPhone && (realnamePhoneVerificationEnabled || faceIdFlowEnabled);
 
   const verified = faceIdFlowEnabled
@@ -2956,7 +2956,7 @@ export const AccountPage = () => {
                       </div>
                     ) : (
                       <div className="flex items-center gap-3">
-                        {phoneProofEnabled && (idCardVerified || realnameSyncError) && (
+                        {(phoneProofEnabled || faceIdFlowEnabled) && (idCardVerified || realnameSyncError) && (
                           <div className="flex flex-col items-end gap-1">
                             {realnameStatusLabel && (
                               <span
