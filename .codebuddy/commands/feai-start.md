@@ -1,7 +1,7 @@
 # `/feai-start` — 启动开发流程
 
 > 前端 AI 编程工具（frontend-ai-dev-tools）的核心开发入口命令。
-> 整合 OpenSpec 上下文加载 + `prd-init` 产品前置 + 团队工具链（TAPD/MR/CR），一个命令启动完整开发流程。
+> 整合 OpenSpec 上下文加载 + `prd-creator` 产品前置 + 团队工具链（TAPD/MR/CR），一个命令启动完整开发流程。
 >
 > 📄 流程选择矩阵、信任模式、MCP 错误恢复等通用规范请参考 `AGENTS.md`。
 
@@ -16,7 +16,7 @@
 - ❌ 禁止跳过 `git status` 前置检查就创建/切换分支（违反 G8）
 - ❌ 禁止在 plan.md 状态判定为"未归档"（1.2 三信号公式返回 B/C）时直接进入 STEP 2，除非用户回复 `SKIP-ARCHIVE` 二次确认（违反 G22）
 - ❌ 禁止跳过任一 STEP（违反 G18）
-- ❌ 禁止 SLUG 漂移（v0.31+ 关键约束）：`prd-init` 输出的英文 feature slug → STEP 4.2 EXPECTED_BRANCH → 实际 git 创建的分支名 → STEP 4.3 公式产出的 CHANGE_NAME → metrics 目录名，**必须从头到尾保持完全一致**。任何环节（包括"分支名太长不好看"的人工/AI 截断、`prd-init` 用业务长名 + 4.2.1 用业务短名）都不允许。一旦在 STEP 4.3 漂移目录自检触发，**必须 exit 1 阻断**，禁止 AI 与用户协商"凑活合并"。
+- ❌ 禁止 SLUG 漂移（v0.31+ 关键约束）：`prd-creator` 输出的英文 feature slug → STEP 4.2 EXPECTED_BRANCH → 实际 git 创建的分支名 → STEP 4.3 公式产出的 CHANGE_NAME → metrics 目录名，**必须从头到尾保持完全一致**。任何环节（包括"分支名太长不好看"的人工/AI 截断、`prd-creator` 用业务长名 + 4.2.1 用业务短名）都不允许。一旦在 STEP 4.3 漂移目录自检触发，**必须 exit 1 阻断**，禁止 AI 与用户协商"凑活合并"。
 - ✅ 每一步必须输出 `[STEP N/8]` 格式的步骤追踪（G20）
 - ✅ 完成 8 步规划后才进入「执行后续」（阶段 4B/4C/4D/5/6）
 
@@ -386,7 +386,7 @@ git diff --name-only "${ARCHIVE_SHA}..HEAD" ${SCOPE_PATH} \
 > 对应规则 G16
 
 1. 读取 `<base>/.workflow/project.yaml` 中的 `dependencies.plugins` 配置
-2. 逐一验证所需插件/本地 skill（尝试加载任一 skill 如 `.agents/skills/product-skills/prd-init/SKILL.md`）
+2. 逐一验证所需插件/本地 skill（尝试加载任一 skill 如 `.agents/skills/product-skills/prd-creator/SKILL.md`）
 3. 检测到缺失：
    - 输出：「⚠️ 检测到缺失插件：{插件名}，正在安装...」
    - 执行：`/install-plugin {name}@{source}`
@@ -442,7 +442,7 @@ git status --porcelain
 RAW_USER=$(git config user.name 2>/dev/null || whoami)
 SLUG_USER=$(echo "$RAW_USER" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | sed -E 's/[^a-z0-9-]+//g; s/-+/-/g; s/^-+|-+$//g')
 MMDD=$(date +%m%d)
-SLUG="<由 prd-init 输出的英文 feature slug>"   # 同样需 slug 化为 [a-z0-9-]
+SLUG="<由 prd-creator 输出的英文 feature slug>"   # 同样需 slug 化为 [a-z0-9-]
 EXPECTED_BRANCH="feat/${SLUG_USER}-${MMDD}-${SLUG}"
 
 # 强校验
@@ -452,7 +452,7 @@ echo "$EXPECTED_BRANCH" | grep -Eq '^(feat|fix|feature|hotfix|chore)/[a-z0-9-]+-
 
 不通过的常见原因 → AI 必须**显式提示用户并停下**，不得静默 fallback：
 - `git config user.name` 返回空或纯中文 → 让用户手动指定英文短名
-- `slug` 含中文/特殊字符 → 让用户回到 `prd-init` 重新输出英文 feature slug
+- `slug` 含中文/特殊字符 → 让用户回到 `prd-creator` 重新输出英文 feature slug
 
 **4.2.2 当前已在 `feat/...` / `fix/...` 等分支（沿用现有分支）**
 
@@ -543,7 +543,7 @@ ORPHAN_DIRS=$(find "<base>/.codebuddy/.cache/metrics" -maxdepth 1 -mindepth 1 -t
   ! -name "$CHANGE_NAME" ! -name ".pending" -mmin -60 2>/dev/null)
 if [ -n "$ORPHAN_DIRS" ]; then
   cat <<EOF
-🔴 检测到本次 /feai-start 期间生成的孤儿 metrics 目录（疑似 AI 在 STEP 1-3 违规自造 change-name，或 prd-init 输出 SLUG 与最终分支名不一致）：
+🔴 检测到本次 /feai-start 期间生成的孤儿 metrics 目录（疑似 AI 在 STEP 1-3 违规自造 change-name，或 prd-creator 输出 SLUG 与最终分支名不一致）：
 $ORPHAN_DIRS
    预期目录：$FINAL_DIR
    分支名：$(git rev-parse --abbrev-ref HEAD)
@@ -569,7 +569,7 @@ fi
 
 > 对应规则 G11 / G17
 
-根据 `prd-init` 前的初步评估或 `--quick` / `--full` 参数判定：
+根据 `prd-creator` 前的初步评估或 `--quick` / `--full` 参数判定：
 
 | 级别 | 判定标准 | Agent 模式 | OpenSpec 产物 |
 |------|---------|-----------|--------------|
@@ -611,30 +611,30 @@ EOF
 
 ---
 
-### [STEP 6/8] 需求澄清（prd-init）+ 技术设计探索（brainstorming）
+### [STEP 6/8] 需求澄清（prd-creator）+ 技术设计探索（brainstorming）
 
 > 对应规则 G12（Skill 调用强制规则）
 >
 > ⚡ **Skill 路由规则（v0.35+）**：
-> - **需求澄清**（用户是谁、场景、范围边界、站点范围、TAPD 建单）→ 使用 `prd-init`
+> - **需求澄清**（用户是谁、场景、范围边界、站点范围、TAPD 建单）→ 使用 `prd-creator`
 > - **技术设计探索**（架构方案、组件拆分、边界 case、实现策略）→ 使用 `brainstorming`，且只聚焦技术侧，**不重复问产品范围**
-> - **快速修复模式**（`--quick`）→ prd-init 简化为一次性确认，跳过 brainstorming
+> - **快速修复模式**（`--quick`）→ prd-creator 简化为一次性确认，跳过 brainstorming
 
-#### 6.1 需求澄清（prd-init，强制）
+#### 6.1 需求澄清（prd-creator，强制）
 
-1. 调用 `.agents/skills/product-skills/prd-init` skill（**强制 use_skill tool call**，不可口头跳过）
-   - `mono2/.agents/skills/product-skills` 是主仓目录，直接使用当前分支中的 `prd-init`；不要在调用前从 `product-ai` 反向覆盖。
+1. 调用 `.agents/skills/product-skills/prd-creator` skill（**强制 use_skill tool call**，不可口头跳过）
+   - `mono2/.agents/skills/product-skills` 是主仓目录，直接使用当前分支中的 `prd-creator`；不要在调用前从 `product-ai` 反向覆盖。
 2. 按 skill 指导与用户完成 LightVela 产品前置和需求澄清
 3. 生成需求确认文档，并明确输出一个英文 `feature slug`（仅 `[a-z0-9-]`）
 4. ⏸️ **等待用户确认**，禁止跳过此步骤直接进入 6.2
 
-> 快速修复模式（`--quick`）下，`prd-init` 简化为一次性确认提问，不生成完整确认文档，直接跳过 6.2 进入 STEP 7。
+> 快速修复模式（`--quick`）下，`prd-creator` 简化为一次性确认提问，不生成完整确认文档，直接跳过 6.2 进入 STEP 7。
 
 #### 6.2 技术设计探索（brainstorming，条件触发）
 
 > 仅当需求涉及非平凡技术设计（新架构、组件重构、复杂状态管理、性能优化等）时触发。
 > 简单需求（文案修改、样式调整、小 Bug 修复）可跳过此步。
-> ⚠️ 产品范围已在 6.1 prd-init 阶段确认，本步骤**只探索技术实现方案**，不重复问用户场景和范围。
+> ⚠️ 产品范围已在 6.1 prd-creator 阶段确认，本步骤**只探索技术实现方案**，不重复问用户场景和范围。
 
 1. 调用 `brainstorming` skill（**强制 use_skill tool call**）
 2. 聚焦探索：
@@ -647,7 +647,7 @@ EOF
 **STEP 6 完成时强制埋点（对应澄清轮次追踪）**：
 
 ```bash
-# ROUNDS：本次 prd-init 与用户的需求澄清问答来回轮数（AI 自数）
+# ROUNDS：本次 prd-creator 与用户的需求澄清问答来回轮数（AI 自数）
 # HAS_FIGMA：本需求是否涉及 Figma UI 还原（true/false）
 ROUNDS=3
 HAS_FIGMA=false
@@ -661,14 +661,14 @@ echo '{"rounds":'${ROUNDS:-null}',"hasFigma":'$HAS_FIGMA'}' \
 **STEP 6 埋点（v0.31+ 统一规约）**：
 
 ```bash
-# STEP 6 开始（prd-init skill 调用前）
+# STEP 6 开始（prd-creator skill 调用前）
 NOW_MS=$(python3 -c 'import time;print(int(time.time()*1000))' 2>/dev/null || date +%s000)
 echo '{"stage":"start.step6","phase":"begin","ts":'$NOW_MS'}' \
   >> "$METRICS_DIR/timeline.log" 2>/dev/null || true
 
 # STEP 6 结束（用户确认需求分析后）
 # ⚠️ 仅在平台 usage 元数据中看到真实 token 时才赋值
-TOKEN_IN=        # prd-init 含完整对话历史，token 通常较大；仅当能从 usage 元数据读到时填
+TOKEN_IN=        # prd-creator 含完整对话历史，token 通常较大；仅当能从 usage 元数据读到时填
 TOKEN_OUT=       # 同上
 IDLE=            # 苏格拉底式问答：用户思考 + 回复占大头；仅当能从 timestamp 明确算出时才填
 NOW_MS=$(python3 -c 'import time;print(int(time.time()*1000))' 2>/dev/null || date +%s000)
@@ -689,13 +689,13 @@ echo '{"stage":"start.step6","phase":"end","ts":'$NOW_MS',"tokenIn":'${TOKEN_IN:
 
 满足以下任一即进入本步骤：
 - 用户消息包含 `figma.com` URL
-- `prd-init` 阶段确认本需求涉及 UI 还原
+- `prd-creator` 阶段确认本需求涉及 UI 还原
 
 **不满足 → 跳到 STEP 8**（纯逻辑/重构需求无需 Figma 分析）。
 
 #### 7.2 派发 sub-agent
 
-从用户消息或 `prd-init` 结论提取：
+从用户消息或 `prd-creator` 结论提取：
 - `figmaUrl`、`feature`（与分支名后缀一致的英文 slug）、`rootNodeId`、`scope`
 
 通过 `Agent` 工具派发 `figma-analyzer`，prompt 模板：
@@ -856,7 +856,7 @@ jq -nc --arg called "$SKILL_CALLED" --arg reason "${SKILL_REASON:-}" --argjson t
 
 ```bash
 # ⚠️ 1. 字段全部由当前会话上下文填充，禁止用占位符（如 {需求名}）写入文件
-# ⚠️ 2. TAPD 字段：能从 prd-init 阶段推出 story id 才写，否则填用户输入的文字描述
+# ⚠️ 2. TAPD 字段：能从 prd-creator 阶段推出 story id 才写，否则填用户输入的文字描述
 # ⚠️ 3. 当前阶段：plan.md 用户确认后此处固定填"规划已完成（plan.md 已确认），等待进入执行阶段"
 # ⚠️ 4. 必须用 awk / sed / python 做"段落级替换或追加"，禁止 cat > 整文件覆盖
 #       否则会丢失「上一个需求」「历史归档」段（这两段是项目级长期记忆）
@@ -1043,7 +1043,7 @@ echo '{"stage":"start.planConfirmed","phase":"end","ts":'$NOW_MS'}' \
 ### 快速修复模式（`--quick`）省略项
 
 - ❌ STEP 1.3 / 1.4（L3 / L4 防遗忘扫描）
-- ❌ STEP 6.1（prd-init）— 改为简短确认；STEP 6.2（brainstorming）— 跳过
+- ❌ STEP 6.1（prd-creator）— 改为简短确认；STEP 6.2（brainstorming）— 跳过
 - ❌ STEP 7（Figma 分析）
 - ❌ 阶段 4B（TAPD 分支关联）
 - ❌ 阶段 6（L1 归档强提醒）
@@ -1118,7 +1118,7 @@ fi
 | STEP 1 P0 文件加载失败 | 停止，提示用户检查 `<base>/openspec/` 目录 |
 | STEP 3 插件缺失且安装失败 | 停止，输出手动安装指南 |
 | STEP 4 工作区不干净 | 停止等待用户处理，禁止替用户决定 |
-| STEP 6.1 prd-init skill 未真实调用 | 视为违反 G12，回退重新调用 |
+| STEP 6.1 prd-creator skill 未真实调用 | 视为违反 G12，回退重新调用 |
 | STEP 6.2 brainstorming skill 未真实调用（非 --quick 模式且需求涉及非平凡技术设计时） | 视为违反 G12，回退重新调用 |
 | STEP 7 Figma MCP 不可用 | sub-agent 返回失败摘要，提示启用 MCP 或继续无 Figma 模式 |
 | STEP 7 sub-agent 产物缺失 | 重派一次；仍失败则降级（用户手动提供 section 清单） |
