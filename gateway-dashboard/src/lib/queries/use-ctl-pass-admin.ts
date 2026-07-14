@@ -94,10 +94,15 @@ export interface CtlPassFilters {
 
 export interface CtlDianshiRecordFilters {
   userID?: string;
+  page?: number;
+  pageSize?: number;
 }
 
 interface CtlDianshiRecordsData {
   participations?: CtlDianshiParticipation[];
+  participations_total?: number;
+  page?: number;
+  page_size?: number;
 }
 
 interface CtlDeleteDianshiRecordResult {
@@ -153,12 +158,16 @@ export function useCtlDianshiRecords(filters: CtlDianshiRecordFilters) {
       const envelope = await apiClient<CtlEnvelope<CtlDianshiRecordsData>>("ctl/admin/dianshi/orders", {
         params: {
           external_user_id: filters.userID?.trim() || undefined,
-          limit: 100,
+          page: filters.page,
+          page_size: filters.pageSize,
         },
       });
       const data = unwrapCtlData(envelope);
       return {
         participations: data.participations ?? [],
+        total: data.participations_total ?? data.participations?.length ?? 0,
+        page: data.page ?? filters.page ?? 1,
+        page_size: data.page_size ?? filters.pageSize ?? 20,
       };
     },
   });

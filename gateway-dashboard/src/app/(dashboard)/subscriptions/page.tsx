@@ -67,6 +67,8 @@ export default function SubscriptionsPage() {
   const [status, setStatus] = useState("all");
   const [passPage, setPassPage] = useState(1);
   const [passPageSize, setPassPageSize] = useState(20);
+  const [dianshiPage, setDianshiPage] = useState(1);
+  const [dianshiPageSize, setDianshiPageSize] = useState(20);
   const [refundTarget, setRefundTarget] = useState<CtlPass | null>(null);
   const [destroyTarget, setDestroyTarget] = useState<CtlPass | null>(null);
   const [deleteDianshiParticipationTarget, setDeleteDianshiParticipationTarget] =
@@ -84,6 +86,8 @@ export default function SubscriptionsPage() {
   const destroyPass = useCtlDestroyPass();
   const dianshiRecords = useCtlDianshiRecords({
     userID: userID.trim() || undefined,
+    page: dianshiPage,
+    pageSize: dianshiPageSize,
   });
   const deleteDianshiParticipation = useCtlDeleteDianshiParticipation();
 
@@ -387,6 +391,7 @@ export default function SubscriptionsPage() {
               onChange={(event) => {
                 setUserID(event.target.value);
                 setPassPage(1);
+                setDianshiPage(1);
               }}
               className="max-w-md"
             />
@@ -477,7 +482,15 @@ export default function SubscriptionsPage() {
               <DataTable
                 columns={dianshiParticipationColumns}
                 data={dianshiParticipationItems}
-                total={dianshiParticipationItems.length}
+                total={dianshiRecords.data?.total ?? 0}
+                page={dianshiRecords.data?.page ?? dianshiPage}
+                pageSize={dianshiRecords.data?.page_size ?? dianshiPageSize}
+                pageSizeOptions={[20, 50, 100]}
+                onPageChange={setDianshiPage}
+                onPageSizeChange={(size) => {
+                  setDianshiPageSize(size);
+                  setDianshiPage(1);
+                }}
                 isLoading={dianshiRecords.isLoading}
               />
             </div>
