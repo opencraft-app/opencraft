@@ -531,7 +531,7 @@ export const createFakeRepositories = (): Repositories => {
         }
         return toPublicFaceIdAttempt(record);
       },
-      async verifyRealnameFaceIdPhone(attemptId, { code }) {
+      async verifyRealnameFaceIdPhone(attemptId, { code, phone }) {
         await wait(NETWORK_DELAY_MS);
         const session = readStoredAuthSession();
         const record = fakeFaceIdAttempts.get(attemptId);
@@ -541,12 +541,20 @@ export const createFakeRepositories = (): Repositories => {
         if (!code.trim()) {
           throw new Error("验证码不能为空。");
         }
+        const candidatePhone = phone?.trim() || session.user.phone?.trim() || "";
+        if (!/^1\d{10}$/.test(candidatePhone)) {
+          throw new Error("手机号格式不正确。");
+        }
+        if (session.user.phone?.trim() && session.user.phone.trim() !== candidatePhone) {
+          throw new Error("当前手机号已变更，请重新开始实名认证。");
+        }
         if (record.state !== "face_succeeded" && record.state !== "phone_pending") {
           throw new Error("请先完成人脸核身。");
         }
         record.state = "succeeded";
         updateStoredUser((user) => ({
           ...user,
+          phone: candidatePhone,
           realnameVerified: true,
           realnameLevel: "phone_3fa",
           realnameSyncStatus: "succeeded",
@@ -610,7 +618,7 @@ export const createFakeRepositories = (): Repositories => {
         await wait(NETWORK_DELAY_MS / 2);
         return { cooldownSeconds: 60 };
       },
-      async sendRealnameFaceIdPhoneCode() {
+      async sendRealnameFaceIdPhoneCode(_attemptId, _input) {
         await wait(NETWORK_DELAY_MS / 2);
         return { cooldownSeconds: 60 };
       },

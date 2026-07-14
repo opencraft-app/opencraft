@@ -220,7 +220,7 @@ describe("AccountPage FaceID flow", () => {
     });
 
     expect(screen.queryByText("已认证")).not.toBeInTheDocument();
-    expect(screen.getByText("待完成手机号认证")).toBeInTheDocument();
+    expect(screen.getByText("需重新完成认证")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "去认证" })).toBeInTheDocument();
   });
 
@@ -315,6 +315,94 @@ describe("AccountPage FaceID flow", () => {
 
     expect(startRealnameFaceIdAttempt).toHaveBeenCalledTimes(1);
     expect(await screen.findByText("请使用微信或手机扫码完成人脸核身")).toBeInTheDocument();
+  });
+
+  it("requires a fresh FaceID attempt for legacy ID-card verification", async () => {
+    currentUser = {
+      ...currentUser,
+      realnameVerified: true,
+      realnameLevel: "idcard_2fa",
+      realnameAssuranceMode: "observe",
+    };
+    startRealnameFaceIdAttempt.mockResolvedValue({
+      attemptId: "attempt_legacy_idcard",
+      verificationUrl: "https://faceid.example.invalid/attempt_legacy_idcard",
+      expiresAt: "2026-07-13T12:00:00.000Z",
+      state: "pending",
+    });
+
+    renderAccountPage();
+    await userEvent.click(screen.getByRole("button", { name: "继续认证" }));
+
+    expect(screen.getByPlaceholderText("请输入真实姓名")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("请输入身份证号码")).toBeInTheDocument();
+    expect(screen.queryByText("当前手机号")).not.toBeInTheDocument();
+
+    await userEvent.type(screen.getByPlaceholderText("请输入真实姓名"), "张三");
+    await userEvent.type(screen.getByPlaceholderText("请输入身份证号码"), "110101199001011234");
+    await userEvent.click(screen.getByRole("checkbox", { name: /我已阅读并同意/ }));
+    await userEvent.click(screen.getByRole("button", { name: "开始刷脸认证" }));
+
+    expect(startRealnameFaceIdAttempt).toHaveBeenCalledWith({
+      name: "张三",
+      idCard: "110101199001011234",
+      consent: true,
+    });
+    expect(await screen.findByText("请使用微信或手机扫码完成人脸核身")).toBeInTheDocument();
+  });
+
+  it("collects and verifies a phone only after a clean user finishes FaceID", async () => {
+    currentUser = {
+      ...currentUser,
+      phone: undefined,
+      realnameVerified: false,
+      realnameLevel: undefined,
+      realnameAssuranceMode: "observe",
+    };
+    startRealnameFaceIdAttempt.mockResolvedValue({
+      attemptId: "attempt_clean_user",
+      verificationUrl: "https://faceid.example.invalid/attempt_clean_user",
+      expiresAt: "2026-07-13T12:00:00.000Z",
+      state: "pending",
+    });
+    getRealnameFaceIdAttempt.mockResolvedValue({
+      attemptId: "attempt_clean_user",
+      expiresAt: "2026-07-13T12:00:00.000Z",
+      state: "phone_pending",
+    });
+    verifyRealnameFaceIdPhone.mockResolvedValue({ attemptId: "attempt_clean_user", state: "succeeded" });
+    refreshProfile.mockImplementation(async () => {
+      currentUser = {
+        ...currentUser,
+        phone: "13800138123",
+        realnameVerified: true,
+        realnameLevel: "phone_3fa",
+        realnameSyncStatus: "succeeded",
+      };
+      rerenderPage?.();
+    });
+
+    renderAccountPage();
+    await openVerifyModal();
+    expect(screen.queryByPlaceholderText("请输入中国大陆手机号")).not.toBeInTheDocument();
+    await userEvent.type(screen.getByPlaceholderText("请输入真实姓名"), "张三");
+    await userEvent.type(screen.getByPlaceholderText("请输入身份证号码"), "110101199001011234");
+    await userEvent.click(screen.getByRole("checkbox", { name: /我已阅读并同意/ }));
+    await userEvent.click(screen.getByRole("button", { name: "开始刷脸认证" }));
+
+    const phoneInput = await screen.findByPlaceholderText("请输入中国大陆手机号");
+    expect(phoneInput).toBeEnabled();
+    await userEvent.type(phoneInput, "13800138123");
+    await userEvent.click(screen.getByRole("button", { name: "获取验证码" }));
+    expect(sendRealnameFaceIdPhoneCode).toHaveBeenCalledWith("attempt_clean_user", { phone: "13800138123" });
+    await userEvent.type(screen.getByPlaceholderText("请输入短信验证码"), "123456");
+    await userEvent.click(screen.getByRole("button", { name: "完成手机号认证" }));
+
+    expect(verifyRealnameFaceIdPhone).toHaveBeenCalledWith("attempt_clean_user", {
+      phone: "13800138123",
+      code: "123456",
+    });
+    await waitFor(() => expect(screen.getByText("已认证")).toBeInTheDocument());
   });
 
   it("does not treat focus or callback-like query changes as success", async () => {
@@ -459,10 +547,15 @@ describe("AccountPage FaceID flow", () => {
     });
 
     await userEvent.click(screen.getByRole("button", { name: "获取验证码" }));
-    expect(sendRealnameFaceIdPhoneCode).toHaveBeenCalledWith("attempt_success");
+    expect(sendRealnameFaceIdPhoneCode).toHaveBeenCalledWith("attempt_success", { phone: "15625128341" });
     expect(sendSmsCode).not.toHaveBeenCalled();
     await userEvent.type(screen.getByPlaceholderText("请输入短信验证码"), "123456");
     await userEvent.click(screen.getByRole("button", { name: "完成当前手机号认证" }));
+
+    expect(verifyRealnameFaceIdPhone).toHaveBeenCalledWith("attempt_success", {
+      phone: "15625128341",
+      code: "123456",
+    });
 
     await waitFor(() => {
       expect(refreshProfile).toHaveBeenCalled();
@@ -515,7 +608,7 @@ describe("AccountPage FaceID flow", () => {
     await waitFor(() => expect(screen.getByText("当前手机号")).toBeInTheDocument());
     await userEvent.click(screen.getByRole("button", { name: "获取验证码" }));
 
-    expect(sendRealnameFaceIdPhoneCode).toHaveBeenCalledWith("attempt_reused_phone");
+    expect(sendRealnameFaceIdPhoneCode).toHaveBeenCalledWith("attempt_reused_phone", { phone: "15625128341" });
     expect(sendSmsCode).not.toHaveBeenCalled();
     await waitFor(() => expect(refreshProfile).toHaveBeenCalled());
     expect(finalizeRealnameFaceIdAttempt).not.toHaveBeenCalled();

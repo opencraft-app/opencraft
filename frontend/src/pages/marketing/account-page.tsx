@@ -117,15 +117,14 @@ const VerifyIdentityModal = ({
   const initialStage: VerifyIdentityModalStage = faceIdFlowEnabled
     ? !verified && realnameLevel === REALNAME_LEVEL.PHONE_3FA
       ? "shadow"
-      : !verified && realnameLevel === REALNAME_LEVEL.IDCARD_2FA
-        ? "phone"
-        : "identity"
+      : "identity"
     : hasIdCardVerified
       ? "phone"
       : "identity";
   const [stage, setStage] = useState<VerifyIdentityModalStage>(initialStage);
   const [realName, setRealName] = useState("");
   const [idNumber, setIdNumber] = useState("");
+  const [phoneInput, setPhoneInput] = useState(normalizedPhone);
   const [smsCode, setSmsCode] = useState("");
   const [consent, setConsent] = useState(false);
   const [sendingCode, setSendingCode] = useState(false);
@@ -145,10 +144,12 @@ const VerifyIdentityModal = ({
   );
 
   const ID_CARD_REGEX = /^\d{17}[\dXx]$/;
+  const PHONE_REGEX = /^1\d{10}$/;
+  const phoneForVerification = normalizedPhone || phoneInput.trim();
   const canSubmitIdentity = realName.trim().length >= 2 && ID_CARD_REGEX.test(idNumber.trim());
   const canSubmitLegacyIdentity = canSubmitIdentity;
   const canSubmitFaceIdIdentity = canSubmitIdentity && consent;
-  const canSubmitPhone = normalizedPhone.length > 0 && smsCode.trim().length >= 4;
+  const canSubmitPhone = PHONE_REGEX.test(phoneForVerification) && smsCode.trim().length >= 4;
   const shadowFailed = !faceIdFlowEnabled && stage === "shadow" && !attempt && realnameSyncStatus === "failed";
   const shadowPending = stage === "shadow" && (
     awaitingFinalRefresh
@@ -182,7 +183,7 @@ const VerifyIdentityModal = ({
     if (err instanceof RepositoryError) {
       switch (err.code) {
         case "phone_required":
-          return t("当前账号未绑定手机号，请先使用手机号登录或绑定手机号。");
+          return t("请输入用于实名认证的手机号。");
         case "sms_code_not_found":
           return t("请先获取短信验证码。");
         case "sms_code_expired":
@@ -337,13 +338,13 @@ const VerifyIdentityModal = ({
   }, [applyAttemptState, attempt?.attemptId, attempt?.state, auth, faceIdFlowEnabled]);
 
   const sendPhoneCode = async () => {
-    if (!normalizedPhone || sendingCode || cooldownSeconds > 0) return false;
+    if (!PHONE_REGEX.test(phoneForVerification) || sendingCode || cooldownSeconds > 0) return false;
     setSendingCode(true);
     setError(null);
     try {
       const result = faceIdFlowEnabled && attempt?.attemptId
-        ? await auth.sendRealnameFaceIdPhoneCode(attempt.attemptId)
-        : await auth.sendSmsCode({ phone: normalizedPhone });
+        ? await auth.sendRealnameFaceIdPhoneCode(attempt.attemptId, { phone: phoneForVerification })
+        : await auth.sendSmsCode({ phone: phoneForVerification });
       if (faceIdFlowEnabled && attempt?.attemptId && result.cooldownSeconds <= 0) {
         const nextAttempt = await auth.getRealnameFaceIdAttempt(attempt.attemptId);
         await applyAttemptState(nextAttempt);
@@ -364,6 +365,7 @@ const VerifyIdentityModal = ({
     setAttempt(null);
     setError(null);
     setPollError(null);
+    setPhoneInput(normalizedPhone);
     setSmsCode("");
     setAwaitingFinalRefresh(false);
   };
@@ -420,7 +422,10 @@ const VerifyIdentityModal = ({
 
       if (stage === "phone") {
         if (faceIdFlowEnabled && attempt?.attemptId) {
-          const phoneAttempt = await auth.verifyRealnameFaceIdPhone(attempt.attemptId, { code: smsCode.trim() });
+          const phoneAttempt = await auth.verifyRealnameFaceIdPhone(attempt.attemptId, {
+            phone: phoneForVerification,
+            code: smsCode.trim(),
+          });
           await applyAttemptState(phoneAttempt);
         } else {
           await auth.verifyRealnamePhone({ code: smsCode.trim() });
@@ -464,7 +469,10 @@ const VerifyIdentityModal = ({
       if (faceIdFlowEnabled) return t("开始刷脸认证");
       return verified ? t("更新认证") : t("提交认证");
     }
-    if (stage === "phone") return faceIdFlowEnabled ? t("完成当前手机号认证") : t("完成三要素认证");
+    if (stage === "phone") {
+      if (!faceIdFlowEnabled) return t("完成三要素认证");
+      return normalizedPhone ? t("完成当前手机号认证") : t("完成手机号认证");
+    }
     if (shadowFailed) return t("重新同步");
     return t("刷新当前状态");
   })();
@@ -770,16 +778,20 @@ const VerifyIdentityModal = ({
                     color: "rgba(0,0,0,0.9)",
                   }}
                 >
-                  {t("当前手机号")}
+                  {normalizedPhone ? t("当前手机号") : t("手机号")} <span style={{ color: "#cf3d4c" }}>*</span>
                 </label>
                 <div className="flex gap-2">
                   <input
-                    type="text"
-                    value={normalizedPhone || t("未绑定手机号")}
-                    disabled
+                    type="tel"
+                    inputMode="numeric"
+                    autoComplete="tel"
+                    placeholder={normalizedPhone ? undefined : t("请输入中国大陆手机号")}
+                    value={phoneForVerification}
+                    onChange={(event) => setPhoneInput(event.target.value.replace(/\D/g, "").slice(0, 11))}
+                    disabled={Boolean(normalizedPhone)}
                     className="w-full focus:outline-none"
                     style={{
-                      background: "#F2F4F8",
+                      background: normalizedPhone ? "#F2F4F8" : "rgba(255,255,255,0.9)",
                       border: "1px solid #E9ECF1",
                       borderRadius: 8,
                       padding: "6px 16px",
@@ -787,13 +799,13 @@ const VerifyIdentityModal = ({
                       fontWeight: 400,
                       fontSize: 14,
                       lineHeight: "24px",
-                      color: normalizedPhone ? "rgba(0,0,0,0.9)" : "rgba(0,0,0,0.3)",
+                      color: "rgba(0,0,0,0.9)",
                     }}
                   />
                   <button
                     type="button"
                     onClick={() => void sendPhoneCode()}
-                    disabled={!normalizedPhone || sendingCode || cooldownSeconds > 0}
+                    disabled={!PHONE_REGEX.test(phoneForVerification) || sendingCode || cooldownSeconds > 0}
                     className="flex-shrink-0 rounded-lg px-4 text-sm font-medium transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
                     style={{ border: "1px solid #202020", color: "#202020" }}
                   >
@@ -2204,7 +2216,7 @@ export const AccountPage = () => {
       : idCardSyncStatus === "pending"
         ? t("实名信息同步中")
         : idCardVerified
-          ? t("待完成手机号认证")
+          ? t("需重新完成认证")
           : "";
   const [showSafetyPhoneTools, setShowSafetyPhoneTools] = useState(false);
   const [showAccountRenewTools, setShowAccountRenewTools] = useState(false);
