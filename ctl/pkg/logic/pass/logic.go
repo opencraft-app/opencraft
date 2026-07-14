@@ -20,6 +20,7 @@ import (
 	bundlemodel "ctl/pkg/model/bundle"
 	modelfactory "ctl/pkg/model/factory"
 	passmodel "ctl/pkg/model/pass"
+	subscriptiongateway "ctl/pkg/model/subscriptiongateway"
 	"ctl/pkg/resource"
 	"ctl/pkg/transport"
 
@@ -33,6 +34,35 @@ func trialSubscriptionIdempotencyKey(userID, bundleID string) string {
 
 func tradeSubscriptionIdempotencyKey(dealName string) string {
 	return "trade:" + strings.TrimSpace(dealName)
+}
+
+func recordAIGatewaySubscriptionBestEffort(logger *zap.Logger, userID, planID string, sub *aigateway.Subscription) {
+	if resource.GormDB == nil {
+		return
+	}
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	subscriptionID := ""
+	if sub != nil {
+		subscriptionID = sub.ID
+	}
+	if err := subscriptiongateway.NewDao().Upsert(&subscriptiongateway.Entity{
+		UserID:         userID,
+		Gateway:        subscriptiongateway.GatewayAIGateway,
+		SubscriptionID: subscriptionID,
+		PlanID:         planID,
+		Source:         subscriptiongateway.SourceApplySubscription,
+		LastObservedAt: time.Now().UTC(),
+	}); err != nil {
+		logger.Warn("record user subscription gateway failed",
+			zap.String("user_id", userID),
+			zap.String("gateway", subscriptiongateway.GatewayAIGateway),
+			zap.String("plan_id", planID),
+			zap.String("subscription_id", subscriptionID),
+			zap.Error(err),
+		)
+	}
 }
 
 // PassDetail 权益详情
@@ -503,6 +533,7 @@ func (l *logic) CreateTrialPass(userID string, bundleID string) (*PassDetail, er
 		if subErr != nil {
 			return nil, fmt.Errorf("apply ai-gateway subscription: %w", subErr)
 		}
+		recordAIGatewaySubscriptionBestEffort(resource.ZapLogger, userID, bundle.AiGatewayPlanID, sub)
 		if sub != nil {
 			resource.ZapLogger.Info("pass subscription applied",
 				zap.String("pass_id", passID),
@@ -929,6 +960,7 @@ func (l *logic) CompletePass(req *transport.CompletePassRequest) (*PassDetail, e
 		if subErr != nil {
 			return nil, fmt.Errorf("apply ai-gateway subscription: %w", subErr)
 		}
+		recordAIGatewaySubscriptionBestEffort(logger, req.UserID, bundle.AiGatewayPlanID, sub)
 		if sub != nil {
 			logger.Info("complete pass subscription applied",
 				zap.String("pass_id", passID),
