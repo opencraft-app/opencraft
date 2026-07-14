@@ -383,33 +383,18 @@ describe("AccountPage FaceID flow", () => {
     expect(retryRealnameSync).not.toHaveBeenCalled();
   });
 
-  it("keeps final verification false while Shadow is pending or failed, then allows retry without another face scan", async () => {
+  it("does not expose a manual Shadow retry while the backend owns FaceID completion", async () => {
     currentUser = {
       ...currentUser,
       realnameLevel: "phone_3fa",
       realnameSyncStatus: "failed",
       realnameVerified: false,
     };
-    retryRealnameSync.mockResolvedValue({
-      ok: true,
-      user: currentUser,
-      realnameSyncStatus: "pending",
-      shadowBindingStatus: "pending",
-    });
-    refreshProfile.mockImplementation(async () => {
-      currentUser = {
-        ...currentUser,
-        realnameSyncStatus: "pending",
-      };
-      rerenderPage?.();
-    });
-
     renderAccountPage();
-    await userEvent.click(screen.getByRole("button", { name: /重新同步/ }));
+    await userEvent.click(screen.getByRole("button", { name: /继续认证/ }));
 
-    expect(retryRealnameSync).toHaveBeenCalledTimes(1);
-    expect(refreshProfile).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("实名信息同步中")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /重新同步/ })).not.toBeInTheDocument();
+    expect(retryRealnameSync).not.toHaveBeenCalled();
     expect(screen.queryByText("已认证")).not.toBeInTheDocument();
     expect(startRealnameFaceIdAttempt).not.toHaveBeenCalled();
   });
@@ -421,26 +406,13 @@ describe("AccountPage FaceID flow", () => {
       expiresAt: "2026-07-13T12:00:00.000Z",
       state: "pending",
     });
-    getRealnameFaceIdAttempt
-      .mockResolvedValueOnce({
-        attemptId: "attempt_success",
-        verificationUrl: "https://faceid.example.invalid/attempt_success",
-        expiresAt: "2026-07-13T12:00:00.000Z",
-        state: "phone_pending",
-      })
-      .mockResolvedValueOnce({
-        attemptId: "attempt_success",
-        verificationUrl: "https://faceid.example.invalid/attempt_success",
-        expiresAt: "2026-07-13T12:00:00.000Z",
-        state: "shadow_pending",
-      })
-      .mockResolvedValueOnce({
-        attemptId: "attempt_success",
-        expiresAt: "2026-07-13T12:00:00.000Z",
-        state: "succeeded",
-      });
-    verifyRealnameFaceIdPhone.mockResolvedValue({ attemptId: "attempt_success", state: "shadow_pending" });
-    finalizeRealnameFaceIdAttempt.mockResolvedValue({ attemptId: "attempt_success", state: "succeeded" });
+    getRealnameFaceIdAttempt.mockResolvedValue({
+      attemptId: "attempt_success",
+      verificationUrl: "https://faceid.example.invalid/attempt_success",
+      expiresAt: "2026-07-13T12:00:00.000Z",
+      state: "phone_pending",
+    });
+    verifyRealnameFaceIdPhone.mockResolvedValue({ attemptId: "attempt_success", state: "succeeded" });
     refreshProfile.mockImplementation(async () => {
       currentUser = {
         ...currentUser,
@@ -474,6 +446,8 @@ describe("AccountPage FaceID flow", () => {
     await waitFor(() => {
       expect(screen.getByText("已认证")).toBeInTheDocument();
     });
+    expect(finalizeRealnameFaceIdAttempt).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "完成实名同步" })).not.toBeInTheDocument();
     expect(screen.queryByText("请先完成刷脸核身，再继续当前手机号认证与 LightVela 同步。")).not.toBeInTheDocument();
   });
 
@@ -494,7 +468,7 @@ describe("AccountPage FaceID flow", () => {
         ? {
             attemptId: "attempt_reused_phone",
             expiresAt: "2026-07-13T12:00:00.000Z",
-            state: "shadow_pending",
+            state: "succeeded",
           }
         : {
             attemptId: "attempt_reused_phone",
@@ -519,19 +493,21 @@ describe("AccountPage FaceID flow", () => {
 
     expect(sendRealnameFaceIdPhoneCode).toHaveBeenCalledWith("attempt_reused_phone");
     expect(sendSmsCode).not.toHaveBeenCalled();
-    expect(await screen.findByRole("button", { name: "完成实名同步" })).toBeInTheDocument();
+    await waitFor(() => expect(refreshProfile).toHaveBeenCalled());
+    expect(finalizeRealnameFaceIdAttempt).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "完成实名同步" })).not.toBeInTheDocument();
     expect(screen.queryByText(/重新发送/)).not.toBeInTheDocument();
   });
 
-  it("restores a shadow-pending attempt after the modal is reopened", async () => {
+  it("does not expose a frontend finalize action for a shadow-pending attempt", async () => {
     getCurrentRealnameFaceIdAttempt.mockResolvedValue({ attemptId: "attempt_restore", state: "shadow_pending" });
-    finalizeRealnameFaceIdAttempt.mockResolvedValue({ attemptId: "attempt_restore", state: "succeeded" });
 
     renderAccountPage();
     await openVerifyModal();
 
-    expect(await screen.findByRole("button", { name: "完成实名同步" })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "完成实名同步" }));
-    expect(finalizeRealnameFaceIdAttempt).toHaveBeenCalledWith("attempt_restore");
+    await waitFor(() => expect(screen.getByText("正在确认最终实名结果")).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "完成实名同步" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "刷新当前状态" })).not.toBeInTheDocument();
+    expect(finalizeRealnameFaceIdAttempt).not.toHaveBeenCalled();
   });
 });

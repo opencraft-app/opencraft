@@ -553,10 +553,14 @@ func (s *Service) SendRealnameFaceIDPhoneCode(ctx context.Context, token string,
 	if s.shadowBinding == nil || !s.shadowBinding.Enabled() {
 		return 0, newError("shadow_binding_disabled", "Lightvela 账号同步暂未启用。", http.StatusServiceUnavailable)
 	}
-	if _, reused, reuseErr := s.reuseActiveShadowPhoneProof(ctx, store, session.User.ID, session.User.Phone, attempt); reuseErr != nil {
+	if reusedAttempt, reused, reuseErr := s.reuseActiveShadowPhoneProof(ctx, store, session.User.ID, session.User.Phone, attempt); reuseErr != nil {
 		return 0, reuseErr
 	} else if reused {
-		return 0, nil
+		_, _, completeErr := s.completeRealnameFaceIDAttempt(ctx, store, session, reusedAttempt, RealnameFaceIDFinalizeInput{
+			AttemptID: reusedAttempt.AttemptID,
+			ClientIP:  clientIP,
+		})
+		return 0, completeErr
 	}
 	return s.SendShadowBindingCode(ctx, session.User.Phone, clientIP)
 }
@@ -594,7 +598,12 @@ func (s *Service) VerifyRealnameFaceIDPhone(ctx context.Context, token string, i
 	if reused, ok, reuseErr := s.reuseActiveShadowPhoneProof(ctx, store, session.User.ID, session.User.Phone, attempt); reuseErr != nil {
 		return RealnameFaceIDAttempt{}, reuseErr
 	} else if ok {
-		return reused, nil
+		_, completed, completeErr := s.completeRealnameFaceIDAttempt(ctx, store, session, reused, RealnameFaceIDFinalizeInput{
+			AttemptID: reused.AttemptID,
+			ClientIP:  input.ClientIP,
+			ClientUA:  input.ClientUA,
+		})
+		return completed, completeErr
 	}
 	code := strings.TrimSpace(input.Code)
 	if code == "" {
@@ -635,7 +644,12 @@ func (s *Service) VerifyRealnameFaceIDPhone(ctx context.Context, token string, i
 	if !applied {
 		return RealnameFaceIDAttempt{}, newError("realname_faceid_state_changed", "本次实名认证状态已变更，请重新开始。", http.StatusConflict)
 	}
-	return attempt, nil
+	_, completed, err := s.completeRealnameFaceIDAttempt(ctx, store, session, attempt, RealnameFaceIDFinalizeInput{
+		AttemptID: attempt.AttemptID,
+		ClientIP:  input.ClientIP,
+		ClientUA:  input.ClientUA,
+	})
+	return completed, err
 }
 
 func (s *Service) reuseActiveShadowPhoneProof(ctx context.Context, store faceIDStore, userID string, phone string, attempt RealnameFaceIDAttempt) (RealnameFaceIDAttempt, bool, error) {
@@ -689,25 +703,30 @@ func (s *Service) FinalizeRealnameFaceIDAttempt(ctx context.Context, token strin
 	if attempt.UserID != session.User.ID {
 		return RealnameVerifyResult{}, newError("realname_faceid_not_found", "实名认证尝试不存在。", http.StatusNotFound)
 	}
+	result, _, err := s.completeRealnameFaceIDAttempt(ctx, store, session, attempt, input)
+	return result, err
+}
+
+func (s *Service) completeRealnameFaceIDAttempt(ctx context.Context, store faceIDStore, session *AuthSession, attempt RealnameFaceIDAttempt, input RealnameFaceIDFinalizeInput) (RealnameVerifyResult, RealnameFaceIDAttempt, error) {
 	now := s.now()
 	if !attempt.BusinessExpiresAt.After(now) {
-		return RealnameVerifyResult{}, newError("realname_faceid_expired", "本次实名认证已过期，请重新开始。", http.StatusConflict)
+		return RealnameVerifyResult{}, RealnameFaceIDAttempt{}, newError("realname_faceid_expired", "本次实名认证已过期，请重新开始。", http.StatusConflict)
 	}
 	if attempt.FaceVerifiedAt == nil || attempt.PhoneVerifiedAt == nil {
-		return RealnameVerifyResult{}, newError("realname_faceid_incomplete", "实名认证尚未完成。", http.StatusConflict)
+		return RealnameVerifyResult{}, RealnameFaceIDAttempt{}, newError("realname_faceid_incomplete", "实名认证尚未完成。", http.StatusConflict)
 	}
 	if s.hashRealnamePhone(session.User.Phone) != attempt.PhoneVerifiedHash {
-		return RealnameVerifyResult{}, newError("realname_phone_mismatch", "当前手机号已变更，请重新开始实名认证。", http.StatusConflict)
+		return RealnameVerifyResult{}, RealnameFaceIDAttempt{}, newError("realname_phone_mismatch", "当前手机号已变更，请重新开始实名认证。", http.StatusConflict)
 	}
 	if s.shadowBinding == nil || !s.shadowBinding.Enabled() {
-		return RealnameVerifyResult{}, newError("shadow_binding_disabled", "Lightvela 账号同步暂未启用。", http.StatusServiceUnavailable)
+		return RealnameVerifyResult{}, RealnameFaceIDAttempt{}, newError("shadow_binding_disabled", "Lightvela 账号同步暂未启用。", http.StatusServiceUnavailable)
 	}
 	if !s.shadowBasicAuthSyncEnabled {
-		return RealnameVerifyResult{}, newError("shadow_basic_auth_sync_disabled", "Lightvela 实名信息同步暂未启用。", http.StatusServiceUnavailable)
+		return RealnameVerifyResult{}, RealnameFaceIDAttempt{}, newError("shadow_basic_auth_sync_disabled", "Lightvela 实名信息同步暂未启用。", http.StatusServiceUnavailable)
 	}
 	binding, err := s.shadowBinding.GetBindingByUserID(ctx, session.User.ID)
 	if err != nil {
-		return RealnameVerifyResult{}, newError("shadow_binding_incomplete", "影子账号绑定尚未完成，请稍后重试。", http.StatusBadGateway)
+		return RealnameVerifyResult{}, RealnameFaceIDAttempt{}, newError("shadow_binding_incomplete", "影子账号绑定尚未完成，请稍后重试。", http.StatusBadGateway)
 	}
 	correlated := binding.BasicAuthStatus == shadowbinding.BasicAuthStatusSucceeded &&
 		strings.TrimSpace(binding.BasicAuthSourceAttemptID) == attempt.AttemptID &&
@@ -715,22 +734,22 @@ func (s *Service) FinalizeRealnameFaceIDAttempt(ctx context.Context, token strin
 		strings.TrimSpace(binding.BasicAuthPhoneHash) == attempt.PhoneVerifiedHash
 	if !correlated {
 		if err := s.syncStoredFaceIDShadowBasicAuth(ctx, session.User.ID, attempt, input.ClientIP, input.ClientUA); err != nil {
-			return RealnameVerifyResult{}, newError("shadow_basic_auth_failed", "Lightvela 实名信息同步失败，请稍后重试。", http.StatusBadGateway)
+			return RealnameVerifyResult{}, RealnameFaceIDAttempt{}, newError("shadow_basic_auth_failed", "Lightvela 实名信息同步失败，请稍后重试。", http.StatusBadGateway)
 		}
 		binding, err = s.shadowBinding.GetBindingByUserID(ctx, session.User.ID)
 		if err != nil {
-			return RealnameVerifyResult{}, newError("shadow_binding_incomplete", "影子账号绑定尚未完成，请稍后重试。", http.StatusBadGateway)
+			return RealnameVerifyResult{}, RealnameFaceIDAttempt{}, newError("shadow_binding_incomplete", "影子账号绑定尚未完成，请稍后重试。", http.StatusBadGateway)
 		}
 	}
 	if binding.BasicAuthStatus != shadowbinding.BasicAuthStatusSucceeded ||
 		strings.TrimSpace(binding.BasicAuthSourceAttemptID) != attempt.AttemptID ||
 		strings.TrimSpace(binding.BasicAuthIdentityHash) != attempt.IdentityHash ||
 		strings.TrimSpace(binding.BasicAuthPhoneHash) != attempt.PhoneVerifiedHash {
-		return RealnameVerifyResult{}, newError("shadow_basic_auth_invariant_failed", "Lightvela 实名信息同步状态不匹配，请稍后重试。", http.StatusConflict)
+		return RealnameVerifyResult{}, RealnameFaceIDAttempt{}, newError("shadow_basic_auth_invariant_failed", "Lightvela 实名信息同步状态不匹配，请稍后重试。", http.StatusConflict)
 	}
-	user, _, err := store.ActivateRealnameFaceIDAttempt(ctx, session.User.ID, attempt.AttemptID, session.User.Phone, attempt.IdentityHash, attempt.PhoneVerifiedHash, *attempt.FaceVerifiedAt, *attempt.PhoneVerifiedAt, now)
+	user, completed, err := store.ActivateRealnameFaceIDAttempt(ctx, session.User.ID, attempt.AttemptID, session.User.Phone, attempt.IdentityHash, attempt.PhoneVerifiedHash, *attempt.FaceVerifiedAt, *attempt.PhoneVerifiedAt, now)
 	if err != nil {
-		return RealnameVerifyResult{}, err
+		return RealnameVerifyResult{}, RealnameFaceIDAttempt{}, err
 	}
 	return RealnameVerifyResult{
 		OK:                  true,
@@ -738,7 +757,7 @@ func (s *Service) FinalizeRealnameFaceIDAttempt(ctx context.Context, token strin
 		NameMasked:          user.Name,
 		RealnameLevel:       user.RealnameLevel,
 		ShadowBindingStatus: shadowbinding.StatusActive,
-	}, nil
+	}, completed, nil
 }
 
 func (s *Service) ReconcilePendingRealnameFaceIDAttempts(ctx context.Context, owner string, limit int) (int, error) {
@@ -784,9 +803,16 @@ func (s *Service) GetOwnedRealnameFaceIDAttempt(ctx context.Context, token strin
 		}
 	}
 	if attempt.State == RealnameFaceIDStateFaceSucceeded {
-		attempt, _, err = s.reuseActiveShadowPhoneProof(ctx, store, session.User.ID, session.User.Phone, attempt)
+		var reused bool
+		attempt, reused, err = s.reuseActiveShadowPhoneProof(ctx, store, session.User.ID, session.User.Phone, attempt)
 		if err != nil {
 			return RealnameFaceIDAttempt{}, err
+		}
+		if reused {
+			_, attempt, err = s.completeRealnameFaceIDAttempt(ctx, store, session, attempt, RealnameFaceIDFinalizeInput{AttemptID: attempt.AttemptID})
+			if err != nil {
+				return RealnameFaceIDAttempt{}, err
+			}
 		}
 	}
 	if err := s.hydrateAttemptVerifyURL(&attempt); err != nil {
@@ -1000,13 +1026,27 @@ func (s *Service) syncStoredFaceIDShadowBasicAuth(ctx context.Context, userID st
 	if err != nil {
 		return fmt.Errorf("decrypt faceid attempt id card: %w", err)
 	}
+	clientIP = strings.TrimSpace(clientIP)
+	if clientIP == "" && attempt.ClientIPCiphertext != "" {
+		clientIP, err = s.realnameCipher.Decrypt(attempt.ClientIPCiphertext)
+		if err != nil {
+			return fmt.Errorf("decrypt faceid attempt client ip: %w", err)
+		}
+	}
+	clientUA = strings.TrimSpace(clientUA)
+	if clientUA == "" && attempt.ClientUACiphertext != "" {
+		clientUA, err = s.realnameCipher.Decrypt(attempt.ClientUACiphertext)
+		if err != nil {
+			return fmt.Errorf("decrypt faceid attempt client ua: %w", err)
+		}
+	}
 	return s.shadowBinding.SaveBasicAuth(ctx, shadowbinding.BasicAuthInput{
 		UserID:          userID,
 		AccountType:     0,
 		Name:            name,
 		IDCard:          idCard,
-		ClientIP:        strings.TrimSpace(clientIP),
-		ClientUA:        strings.TrimSpace(clientUA),
+		ClientIP:        clientIP,
+		ClientUA:        clientUA,
 		SourceAttemptID: attempt.AttemptID,
 		IdentityHash:    attempt.IdentityHash,
 		PhoneHash:       attempt.PhoneVerifiedHash,

@@ -23,7 +23,7 @@ describe("fake repositories FaceID flow", () => {
     window.localStorage.clear();
   });
 
-  it("walks the fake FaceID attempt through face, phone, shadow, and final activation", async () => {
+  it("completes the fake FaceID attempt during phone verification", async () => {
     const repositories = createFakeRepositories();
     await repositories.auth.signInWithCode({ phone: "15625128341" });
 
@@ -34,16 +34,14 @@ describe("fake repositories FaceID flow", () => {
     });
     expect(started.state).toBe("pending");
 
-		await expect(repositories.auth.verifyRealnameFaceIdPhone(started.attemptId, { code: "123456" })).rejects.toThrow();
+    await expect(repositories.auth.verifyRealnameFaceIdPhone(started.attemptId, { code: "123456" })).rejects.toThrow();
 
     expect((await repositories.auth.getRealnameFaceIdAttempt(started.attemptId)).state).toBe("pending");
     expect((await repositories.auth.getRealnameFaceIdAttempt(started.attemptId)).state).toBe("face_succeeded");
     expect((await repositories.auth.getRealnameFaceIdAttempt(started.attemptId)).state).toBe("phone_pending");
 
-		const phoneResult = await repositories.auth.verifyRealnameFaceIdPhone(started.attemptId, { code: "123456" });
-		expect(phoneResult.state).toBe("shadow_pending");
-		expect((await repositories.auth.getCurrentRealnameFaceIdAttempt()).attemptId).toBe(started.attemptId);
-		expect((await repositories.auth.finalizeRealnameFaceIdAttempt(started.attemptId)).state).toBe("succeeded");
+    const phoneResult = await repositories.auth.verifyRealnameFaceIdPhone(started.attemptId, { code: "123456" });
+    expect(phoneResult.state).toBe("succeeded");
 
     const profile = await repositories.auth.getProfile();
     expect(profile.realnameVerified).toBe(true);
