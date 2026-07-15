@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lightclaw-auth-config
+  namespace: user-auth
+data:
+  LIGHTCLAW_PHONE_AUTH_ENABLED: "true"
+  LIGHTCLAW_SMS_REGION: "ap-guangzhou"
+  LIGHTCLAW_SMS_ENDPOINT: "sms.internal.tencentcloudapi.com"
+  LIGHTCLAW_SMS_SDK_APP_ID: "1401097405"
+  LIGHTCLAW_SMS_SIGN_NAME: "腾讯云"
+  LIGHTCLAW_SMS_TEMPLATE_ID: "2683912"

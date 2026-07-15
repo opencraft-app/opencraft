@@ -2,6 +2,7 @@ import { MemoryRouter } from "react-router-dom";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setGitHubLoginVisible } from "@/lib/github-login-visibility";
+import { setPhoneLoginVisible } from "@/lib/phone-login-visibility";
 import * as oauthModule from "@/lib/oauth";
 import type { OAuthProvider, WeChatOAuthMode } from "@/lib/oauth";
 import { SignInPage } from "@/pages/auth/sign-in-page";
@@ -33,6 +34,7 @@ vi.mock("@/contexts/repository-context", () => ({
 describe("SignInPage (国内站 默认 isGlobal=false)", () => {
   beforeEach(() => {
     setGitHubLoginVisible(false);
+    setPhoneLoginVisible(false);
     Object.defineProperty(window.navigator, "userAgent", {
       value: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
       configurable: true,
@@ -61,8 +63,24 @@ describe("SignInPage (国内站 默认 isGlobal=false)", () => {
     expect(screen.getByRole("button", { name: "使用微信登录" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "使用 GitHub 登录" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "使用 Google 登录" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "使用手机号登录" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "游客体验" })).toBeInTheDocument();
     expect(screen.getByText("选择一种方式开始体验。")).toBeInTheDocument();
+  });
+
+  it("调用 show_phone_login() 后才展示手机号入口", async () => {
+    render(
+      <MemoryRouter>
+        <SignInPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByRole("button", { name: "使用手机号登录" })).not.toBeInTheDocument();
+    (window.show_phone_login as () => boolean)();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "使用手机号登录" })).toBeInTheDocument();
+    });
   });
 
   it("调用 show_github_login() 彩蛋后才展示 GitHub 登录", async () => {

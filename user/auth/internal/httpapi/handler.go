@@ -968,7 +968,7 @@ func (h *Handler) VerifySmsCode(ctx context.Context, request api.VerifySmsCodeRe
 		inviteCode = h.inviteTicketFromRequest(gctx)
 	}
 	session, err := h.service.VerifySMS(ctx, service.VerifySMSInput{
-		Name:       request.Body.Name,
+		Name:       optionalStringValue(request.Body.Name),
 		Phone:      request.Body.Phone,
 		Code:       request.Body.Code,
 		InviteCode: inviteCode,
