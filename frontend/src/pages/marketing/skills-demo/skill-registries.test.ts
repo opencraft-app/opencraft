@@ -9,6 +9,7 @@ import {
   buildSkillsshUninstallCommand,
   getPopularityTier,
   mergeInstalledSources,
+  sortByPopular,
   skillIdentity,
   type InstalledSkill,
 } from "./skill-registries";
@@ -73,10 +74,11 @@ describe("domestic SkillHub command and response handling", () => {
           category: "knowledge-management",
           description_zh: "帮助整理知识资料",
           downloads: 12_345,
+          iconUrl: "https://cdn.example.com/builder-radar.png",
           installs: 123,
           name: "Builder Radar",
           slug: "builder-radar",
-          source: "community",
+          source: "clawhub",
         }],
       },
     }));
@@ -86,6 +88,8 @@ describe("domestic SkillHub command and response handling", () => {
       description: "帮助整理知识资料",
       category: "knowledge-management",
       downloads: 12_345,
+      iconUrl: "https://cdn.example.com/builder-radar.png",
+      sourceRegistry: "clawhub",
     })]);
 
     const installed = parseSkillhubList(JSON.stringify({
@@ -110,5 +114,15 @@ describe("skill popularity display", () => {
     expect(getPopularityTier({ registry: "skillhub", downloads: 10_001, installs: 0 })).toBe(1);
     expect(getPopularityTier({ registry: "skillhub", downloads: 10_000, installs: 99_999 })).toBeUndefined();
     expect(getPopularityTier({ registry: "skillhub", downloads: undefined })).toBeUndefined();
+  });
+
+  it("ranks domestic results by downloads while international results use installs", () => {
+    const sorted = sortByPopular([
+      { registry: "skillhub", rawId: "domestic-low", slug: "domestic-low", name: "Domestic low", installs: 99_999, downloads: 100 },
+      { registry: "skillhub", rawId: "domestic-high", slug: "domestic-high", name: "Domestic high", installs: 1, downloads: 20_000 },
+      { registry: "skills-sh", rawId: "global-high", slug: "global-high", name: "Global high", installs: 30_000, downloads: 1 },
+    ]);
+
+    expect(sorted.map((skill) => skill.name)).toEqual(["Global high", "Domestic high", "Domestic low"]);
   });
 });

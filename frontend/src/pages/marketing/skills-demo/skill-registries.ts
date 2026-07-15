@@ -33,6 +33,8 @@ export type Registry = "clawhub" | "skills-sh" | "skillhub";
 export interface Skill {
   /** 来源 registry */
   registry: Registry;
+  /** 展示来源；国内 SkillHub 镜像可能来自 ClawHub，但安装仍走 SkillHub。 */
+  sourceRegistry?: Extract<Registry, "clawhub" | "skillhub">;
   /** 安装命令使用的原始标识：ClawHub=slug，skills.sh=完整 id */
   rawId: string;
   /** 短 slug，用于展示 / 已安装列表匹配 */
@@ -42,6 +44,7 @@ export interface Skill {
   description?: string;
   installs?: number;
   downloads?: number;
+  iconUrl?: string;
   score?: number;
   /** ClawHub 作者 handle */
   author?: string;
@@ -299,6 +302,7 @@ interface SkillhubSearchItem {
   description?: string;
   description_zh?: string;
   downloads?: number;
+  iconUrl?: string;
   installs?: number;
   name?: string;
   score?: number;
@@ -311,12 +315,14 @@ function mapSkillhubItem(item: SkillhubSearchItem): Skill | null {
   if (!slug) return null;
   return {
     registry: "skillhub",
+    sourceRegistry: item.source?.trim().toLowerCase() === "clawhub" ? "clawhub" : "skillhub",
     rawId: slug,
     slug,
     name: item.name?.trim() || slug,
     description: item.description_zh?.trim() || item.description?.trim() || undefined,
     installs: typeof item.installs === "number" ? item.installs : undefined,
     downloads: typeof item.downloads === "number" ? item.downloads : undefined,
+    iconUrl: item.iconUrl?.trim() || undefined,
     score: typeof item.score === "number" ? item.score : undefined,
     sourceOrg: item.source?.trim() || undefined,
     category: item.category?.trim() || undefined,
@@ -400,10 +406,14 @@ export function mergeSkills(clawhub: Skill[], skillssh: Skill[], skillhub: Skill
   return [...clawhub, ...skillssh, ...skillhub];
 }
 
+function popularitySortValue(skill: Pick<Skill, "registry" | "installs" | "downloads">): number {
+  return skill.registry === "skillhub" ? (skill.downloads ?? 0) : (skill.installs ?? 0);
+}
+
 export function sortByPopular(skills: Skill[]): Skill[] {
   if (!Array.isArray(skills)) return [];
   return [...skills].sort(
-    (a, b) => (b.installs ?? 0) - (a.installs ?? 0) || a.name.localeCompare(b.name),
+    (a, b) => popularitySortValue(b) - popularitySortValue(a) || a.name.localeCompare(b.name),
   );
 }
 
@@ -444,8 +454,14 @@ export function mergeInstalledSources(
 
 // ─── 数据层接口 ───────────────────────────────────────────────────────────────
 
+export type SkillSearchSort = "score" | "downloads";
+
+export type SkillSearchOptions = {
+  sortBy?: SkillSearchSort;
+};
+
 export interface SkillsDataLayer {
-  search(keyword: string): Promise<{ clawhub: Skill[]; skillssh: Skill[]; skillhub: Skill[] }>;
+  search(keyword: string, options?: SkillSearchOptions): Promise<{ clawhub: Skill[]; skillssh: Skill[]; skillhub: Skill[] }>;
   listInstalled(): Promise<InstalledSkill[]>;
   install(skill: Skill): Promise<InstallResult>;
   /** 卸载已安装技能。ClawHub 走 acli clawhub uninstall；skills.sh 走对称子命令（未确认时调用会失败）。 */
@@ -717,11 +733,11 @@ export function createLiveDataLayer(
 
 // ─── 国内站数据层（SkillHub HTTP + acli skills） ───────────────────────────────
 
-async function fetchSkillhubSkills(params: { keyword?: string; pageSize: number }): Promise<Skill[]> {
+async function fetchSkillhubSkills(params: { keyword?: string; pageSize: number; sortBy?: SkillSearchSort }): Promise<Skill[]> {
   const query = new URLSearchParams({
     page: "1",
     pageSize: String(params.pageSize),
-    sortBy: "score",
+    sortBy: params.sortBy ?? "score",
     order: "desc",
   });
   if (params.keyword?.trim()) query.set("keyword", params.keyword.trim());
@@ -748,9 +764,14 @@ export function createDomesticDataLayer(
   };
 
   return {
-    async search(keyword: string) {
+    async search(keyword: string, options?: SkillSearchOptions) {
       try {
-        return { clawhub: [], skillssh: [], skillhub: await fetchSkillhubSkills({ keyword, pageSize: 24 }) };
+        // 热门时让 SkillHub 先按 downloads 排名，避免高下载 ClawHub 镜像被 score 结果挤掉。
+        return {
+          clawhub: [],
+          skillssh: [],
+          skillhub: await fetchSkillhubSkills({ keyword, pageSize: 50, sortBy: options?.sortBy }),
+        };
       } catch {
         return { clawhub: [], skillssh: [], skillhub: [] };
       }
@@ -814,7 +835,7 @@ export type PopularityTier = 1;
 export function getPopularityTier(
   skill: Pick<Skill, "registry" | "installs" | "downloads">,
 ): PopularityTier | undefined {
-  const value = skill.registry === "skillhub" ? skill.downloads : skill.installs;
+  const value = popularitySortValue(skill);
   if (typeof value !== "number") return undefined;
   const threshold = skill.registry === "skillhub" ? 10_000 : 20_000;
   return value > threshold ? 1 : undefined;

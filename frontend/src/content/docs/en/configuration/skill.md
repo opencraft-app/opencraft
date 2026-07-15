@@ -106,7 +106,7 @@ Wait a moment. After installation succeeds, the skill appears in the "Installed 
 
 ### 4. Confirm availability in conversation
 
-Return to a connected channel (WeChat / Telegram / WhatsApp / Discord). First ask Hermes to update its skill list, then check the currently available skills:
+Return to a connected channel (Telegram / WhatsApp / Discord / WeChat / QQ / WeCom / Lark). First ask Hermes to update its skill list, then check the currently available skills:
 
 ```
 Please update your skill list
@@ -126,7 +126,7 @@ In addition to using the console panel, you can also ask Hermes to install a ski
 
 ### 1. Confirm the conversation channel is available
 
-First make sure Hermes is connected to at least one channel (WeChat / Telegram / WhatsApp / Discord) and can currently chat normally.
+First make sure Hermes is connected to at least one channel (Telegram / WhatsApp / Discord / WeChat / QQ / WeCom / Lark) and can currently chat normally.
 
 ### 2. Tell Hermes which skill to install
 

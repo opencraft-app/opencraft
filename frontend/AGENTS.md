@@ -222,6 +222,15 @@ DESIGN.md                          # 前端 UI 约定（圆角 / 弹窗 / toolti
 - **高风险页面**：`src/pages/marketing/openclaw-settings-page.tsx` 是 `/agents` Agent 控制台主页面，体量大、同时承载 SDK、Hermes、通道、模型、自动任务等逻辑。改动时保持小步、局部、可验证；优先抽取局部 helper 并补针对性测试，不要顺手做大重构。
 - **UI 修改补充**：修改设置页、Agent console、弹窗、tooltip 或共享视觉样式前，先读取 `DESIGN.md`，避免和项目既有圆角、弹窗间距、tooltip 行为约定冲突。
 
+### SkillHub 技能搜索接口
+
+- 国内站 SDK `SkillPanel` 的技能搜索必须使用当前 SkillHub 接口：
+  `https://api.skillhub.cn/api/skills?page=1&pageSize=24&sortBy=score&order=desc&keyword=<keyword>`。
+- 不要继续使用旧的 `https://lightmake.cloud/api/skills`。该地址是旧镜像/旧目录，可能缺少新发布的 SkillHub 技能，例如 `builder-radar`。
+- 当前 `@tencent/tea-sdk-lightclaw@1.9.0` 的 `useSkillOperations` 仍将 `https://lightmake.cloud` 作为默认地址；不要直接修改 `node_modules`。优先在 SDK 仓库修复默认地址并发布新版本，或由宿主通过 SDK 的 `skillHubApiUrl` 参数显式传入正确地址，再升级 `frontend/package.json` 与 `pnpm-lock.yaml`。
+- 国内站的搜索请求来自 SDK，国际站自建 Skills 页面使用自己的 registry 数据层；修改一侧的搜索接口时必须确认目标站点，不能误把国内 SDK 的接口改动扩展到国际站。
+- 本地开发已有 `/__skillhub_api/*` 到 `https://api.skillhub.cn/*` 的 Next rewrite（见 `next.config.mjs`）；生产静态站不能依赖该开发 rewrite，应使用正式 API 地址或正式后端代理。
+
 ### 通用编码原则（与具体项目无关，永久有效）
 
 - 🚫 禁止 `any`：使用 `unknown` 或具体类型替代

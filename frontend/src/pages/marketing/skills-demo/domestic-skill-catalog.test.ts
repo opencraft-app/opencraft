@@ -19,11 +19,12 @@ describe("domestic SkillHub catalog", () => {
     expect(DOMESTIC_FEATURED_SKILLS.every(({ skill }) => skill.registry === "skillhub")).toBe(true);
   });
 
-  it("keeps three fixed categories with six skills each", () => {
+  it("keeps four fixed categories with six skills each", () => {
     expect(DOMESTIC_SKILL_CATEGORIES.map((category) => category.label.zh)).toEqual([
       "理财分析",
       "内容创建",
       "常用工具",
+      "教育学习",
     ]);
     expect(DOMESTIC_SKILL_CATEGORIES.every((category) => category.skills.length === 6)).toBe(true);
     expect(DOMESTIC_SKILL_CATEGORIES.flatMap((category) => category.skills).every((skill) => skill.registry === "skillhub")).toBe(true);

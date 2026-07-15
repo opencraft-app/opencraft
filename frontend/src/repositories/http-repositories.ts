@@ -1001,13 +1001,15 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
       // 优先识别 details 字段：只要带 details.output / details.exit_code，
       // 就视为命令已经执行过，返回标准化结果让上层解析。
       const details = (body as {
-        details?: { status?: string; exit_code?: number; output?: string };
+        details?: { status?: string; exit_code?: number; output?: string; stdout?: string; stderr?: string };
       } | null)?.details;
       if (details && (typeof details.output === "string" || typeof details.exit_code === "number")) {
         return {
           status: details.status ?? "",
           exitCode: typeof details.exit_code === "number" ? details.exit_code : -1,
           output: details.output ?? "",
+          stdout: details.stdout,
+          stderr: details.stderr,
         };
       }
 
@@ -1033,12 +1035,16 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
         status: string;
         exit_code: number;
         output: string;
+        stdout?: string;
+        stderr?: string;
       }> | null;
       const data = envelope?.data;
       return {
         status: data?.status ?? "",
         exitCode: data?.exit_code ?? -1,
         output: data?.output ?? "",
+        stdout: data?.stdout,
+        stderr: data?.stderr,
       };
     },
 

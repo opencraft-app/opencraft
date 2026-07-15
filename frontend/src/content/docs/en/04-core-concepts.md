@@ -27,7 +27,7 @@ LightVela involves four core concepts: Hermes, models, channels, and skills. Thi
 ┌───────┐                   ┌────────┐                   ┌────────┐
 │ Model │                   │Channel │                   │ Skill  │
 └───────┘                   └────────┘                   └────────┘
- Model provider    WeChat/Telegram/WhatsApp/Discord            SkillHub
+ Model provider    Telegram/WhatsApp/Discord/WeChat/QQ/WeCom/Lark            SkillHub
 ```
 
 | Concept | Role | Description |
@@ -83,16 +83,19 @@ Channels are the messaging platform entry points where users chat with Hermes. L
 
 | Channel | Access method | Use case |
 |---|---|---|
-| WeChat | QR-code authorization | Daily personal use, suitable for users in China |
 | Telegram | Bot Token access | Personal or team messaging, simple setup, suitable for lightweight automation |
 | WhatsApp | WhatsApp Business API access | International user communication, customer service, notifications, and reminders |
 | Discord | Bot Token access | Community operations, developer communities, gaming or interest groups |
+| WeChat | QR-code authorization | Daily personal use, suitable for users familiar with WeChat |
+| QQ | AppID / AppSecret access | QQ bot scenarios |
+| WeCom | QR-code authorization | Enterprise collaboration and office scenarios |
+| Lark | QR-code authorization | Office collaboration, rich text, and group chat scenarios |
 
-For WeChat, choose the channel and click "Authorize Access" to generate a QR code. Scan it with your phone to complete authorization.
+For WeChat, WeCom, and Lark, choose the channel and click "Authorize Access" to generate a QR code. Scan it with your phone to complete authorization.
 
-Telegram, WhatsApp, and Discord configuration channels are still under construction and will be available soon.
+For Telegram, WhatsApp, Discord, and QQ, follow each platform's requirements to provide a Bot Token, Business API setup, or AppID / AppSecret.
 
-Detailed access steps for each channel: [Configure Channel - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md).
+Detailed access steps for each channel: [Configure Channel - Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [WeChat](./configuration/channel-wechat.md) / [QQ](./configuration/channel-qq.md) / [WeCom](./configuration/channel-wecom.md) / [Lark](./configuration/channel-feishu.md).
 
 > 💡 **Multiple channels can coexist**
 >

@@ -106,7 +106,7 @@ LightVela 管理台在「技能」按键中提供可视化的技能配置入口�
 
 ### 4. 在对话中确认可用
 
-回到已接入的通道（WeChat / Telegram / WhatsApp / Discord），首先让 Hermes 更新一下技能列表，再查看当前可用技能：
+回到已接入的通道（Telegram / WhatsApp / Discord / WeChat / QQ / WeCom / Lark），首先让 Hermes 更新一下技能列表，再查看当前可用技能：
 
 ```
 更新一下你的技能列表
@@ -126,7 +126,7 @@ LightVela 管理台在「技能」按键中提供可视化的技能配置入口�
 
 ### 1. 确认对话通道可用
 
-首先确保 Hermes 已接入至少一个通道（WeChat / Telegram / WhatsApp / Discord），且当前能够正常对话。
+首先确保 Hermes 已接入至少一个通道（Telegram / WhatsApp / Discord / WeChat / QQ / WeCom / Lark），且当前能够正常对话。
 
 ### 2. 告诉 Hermes 要安装的技能
 

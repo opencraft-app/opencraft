@@ -62,6 +62,12 @@ import {
   createMonoDebugExecAdapter,
 } from "@/pages/marketing/openclaw-tat-adapter";
 import { createLightVelaCommandExecutor } from "@/pages/marketing/openclaw-command-executor";
+import {
+  buildModelConnectivityTestResult,
+  ModelPanelButton,
+  type ModelConnectivityTestResult,
+  type ModelPanelButtonProps,
+} from "@/pages/marketing/hermes-model-connectivity";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-console-helpers";
 import {
   buildHermesMemoryReadCommand,
@@ -165,6 +171,7 @@ type TeaSdkPanelProps = {
   instance: TeaSdkInstanceInfo;
   featureFlags: TeaSdkFeatureFlags;
   productConfig: TeaSdkProductConfig;
+  renderButton?: (props: ModelPanelButtonProps) => ReactNode;
 };
 
 type TeaSdkRuntime = {
@@ -293,6 +300,7 @@ function TeaSdkSettingsPanel({
   featureFlags,
   productConfigArgs,
   useEnglish,
+  modelConnectivityTest,
 }: {
   kind: "channel" | "model" | "skill";
   instance: TeaSdkInstanceInfo;
@@ -303,6 +311,7 @@ function TeaSdkSettingsPanel({
   };
   /** 是否取英文文案（语言维度），传给 SDK useModelProviders */
   useEnglish: boolean;
+  modelConnectivityTest?: () => Promise<ModelConnectivityTestResult>;
 }) {
   const t = useT();
   const [runtime, setRuntime] = useState<TeaSdkRuntime | null>(() => teaSdkRuntimeCache);
@@ -347,6 +356,7 @@ function TeaSdkSettingsPanel({
       featureFlags={featureFlags}
       productConfigArgs={productConfigArgs}
       useEnglish={useEnglish}
+      modelConnectivityTest={modelConnectivityTest}
     />
   );
 }
@@ -359,6 +369,7 @@ function TeaSdkSettingsPanelReady({
   featureFlags,
   productConfigArgs,
   useEnglish,
+  modelConnectivityTest,
 }: {
   runtime: TeaSdkRuntime;
   kind: "channel" | "model" | "skill";
@@ -369,6 +380,7 @@ function TeaSdkSettingsPanelReady({
     getInvocationTask: TeaSdkProductConfig["getInvocationTask"];
   };
   useEnglish: boolean;
+  modelConnectivityTest?: () => Promise<ModelConnectivityTestResult>;
 }) {
   const modelProviders = runtime.useModelProviders({ isI18n: isGlobal, useEnglish });
   const productConfig = useMemo(
@@ -383,12 +395,19 @@ function TeaSdkSettingsPanelReady({
         ? runtime.ModelPanel
         : runtime.SkillPanel;
 
+  const renderButton = kind === "model" && modelConnectivityTest
+    ? (buttonProps: ModelPanelButtonProps) => (
+      <ModelPanelButton {...buttonProps} onTest={modelConnectivityTest} />
+    )
+    : undefined;
+
   return (
     <StableTeaSdkPanelHost>
       <Panel
         instance={instance}
         featureFlags={featureFlags}
         productConfig={productConfig}
+        renderButton={renderButton}
       />
     </StableTeaSdkPanelHost>
   );
@@ -3929,6 +3948,13 @@ export const AgentSettingsPage = ({
     runCommand: commandAdapter.runCommand,
     getInvocationTask: commandAdapter.getInvocationTask,
   }), [commandAdapter]);
+  const modelConnectivityTest = useCallback(async (): Promise<ModelConnectivityTestResult> => {
+    if (!activeBotId) {
+      throw new Error(t("请先选择一个 Agent"));
+    }
+    const result = await repositories.bots.execDebugCommand(activeBotId, "acli model test");
+    return buildModelConnectivityTestResult(result);
+  }, [activeBotId, repositories, t]);
   const shouldExposeWorkspaceRecoveryPanel = shouldShowWorkspaceRecoveryPanel({
     isGlobalRegion: isGlobal,
     hiddenToolsRevealed: showHiddenAgentTools,
@@ -5228,6 +5254,7 @@ export const AgentSettingsPage = ({
                               featureFlags={sdkFeatureFlags}
                               productConfigArgs={sdkProductConfigArgs}
                               useEnglish={useEnglish}
+                              modelConnectivityTest={modelConnectivityTest}
                             />
                           )}
                           {activeSection === "skill" && (

@@ -44,7 +44,7 @@ description: 维护 LightVela 国内站和国际站 Agent Skills 页面时使用
 - 可选：显示名称、用途、布局数量、顺序、颜色主题或详情说明；未提供时由 AI 根据 skills.sh 页面/README 和当前样式补齐。
 - 默认保持每类 6 张、桌面端 2 列 × 3 行；如需调整，确认目标数量和展示顺序。
 
-国际站分类仍由前端手工配置；国内站 Discover 分类也由前端手工配置，唯一真源为 `frontend/src/pages/marketing/skills-demo/domestic-skill-catalog.ts`。国内站当前固定为 `理财分析`、`内容创建`、`常用工具` 三类，每类 6 张 SkillHub 技能，顺序不按热门接口运行时重排。不能仅根据展示名称猜 slug，也不能把国际站 skills.sh ID 复制到国内安装命令。
+国际站分类仍由前端手工配置；国内站 Discover 分类也由前端手工配置，唯一真源为 `frontend/src/pages/marketing/skills-demo/domestic-skill-catalog.ts`。国内站当前固定为 `理财分析`、`内容创建`、`常用工具`、`教育学习` 四类，每类 6 张 SkillHub 技能，顺序不按热门接口运行时重排。不能仅根据展示名称猜 slug，也不能把国际站 skills.sh ID 复制到国内安装命令。
 
 分类名称、布局或主题修改不等于修改分类内技能；如果要增删或移动具体技能，使用 **Edit Category Skills / 编辑分类技能**。
 
@@ -97,7 +97,7 @@ description: 维护 LightVela 国内站和国际站 Agent Skills 页面时使用
 
 每张固定分类卡可点击打开详情弹窗并安装。详情文案唯一真源为 `frontend/src/pages/marketing/skills-demo/curated-skill-overviews.ts`，每个完整 skills.sh ID 必须有一份独立的推荐页内容；不要复用“同类技能”的泛化文案，也不要只保留一句话简介。先浏览该技能自己的 skills.sh 页面、README 或可信来源，再按以下固定英文结构维护并在页面中原样呈现这些英文标题：
 
-国内站 Discover 不使用这份固定 skills.sh 分类配置：精选和分类均来自 `domestic-skill-catalog.ts` 的人工配置。精选固定为 6 张、每页 3 张；分类固定为 `理财分析`、`内容创建`、`常用工具`，每类 6 张。搜索仍通过 SkillHub API 动态查询，但搜索结果不会改写精选或分类。新增或调整国内分类时，要求用户提供 SkillHub 页面链接或完整 slug、分类归属和展示顺序。
+国内站 Discover 不使用这份固定 skills.sh 分类配置：精选和分类均来自 `domestic-skill-catalog.ts` 的人工配置。精选固定为 6 张、每页 3 张；分类固定为 `理财分析`、`内容创建`、`常用工具`、`教育学习`，每类 6 张。搜索仍通过 SkillHub API 动态查询，但搜索结果不会改写精选或分类。新增或调整国内分类时，要求用户提供 SkillHub 页面链接或完整 slug、分类归属和展示顺序。
 
 国内站当前固定清单：
 
@@ -105,6 +105,7 @@ description: 维护 LightVela 国内站和国际站 Agent Skills 页面时使用
 - 理财分析：`valuation-analysis`、`financial-report-analysis`、`stock-selecter`、`xiaohongshu-content-tools`、`quant-backtest-strategy`、`topnews`
 - 内容创建：`unclecheng-reduce-ai-perception-v2`、`douyin-copy-extract`、`g113593`、`weixin-article-writer`、`lingyi-wx-viral-script-generator`、`govwriter-pro`
 - 常用工具：`tencent-docs`、`pdf-image-text-extractor`、`pptx-generator`、`gongwenformat-pro`、`meeting-notes-assistant`、`bid-tender-master`
+- 教育学习：`k12-smart-teacher`、`interview-simulator`、`academic-learning-assistant`、`subject-hyn`、`academic-paper-writing-assistant`、`novel-evaluator`
 
 ```md
 # What Is This?
@@ -148,13 +149,13 @@ description: 维护 LightVela 国内站和国际站 Agent Skills 页面时使用
 ### 当前详情模板覆盖状态
 
 - 当前国际站 24 个固定分类技能和 6 个 Featured 技能都已在 `frontend/src/pages/marketing/skills-demo/curated-skill-overviews.ts` 中使用同一套完整模板，并在 `curated-skill-overviews.zh.ts` 中维护中文版本。
-- 当前国内站 3 个 Featured 技能和 18 个分类技能使用 SkillHub slug，并在 `curated-skill-overviews.zh.ts` 中维护中文完整模板；国内站页面使用中文详情。未来若同一条配置需要在中英文页面复用，必须同时维护英文和中文详情，不能只补其中一种语言。
+- 当前国内站 6 个 Featured 技能和 24 个分类技能使用 SkillHub slug，并在 `curated-skill-overviews.zh.ts` 中维护中文完整模板；国内站页面使用中文详情。未来若同一条配置需要在中英文页面复用，必须同时维护英文和中文详情，不能只补其中一种语言。
 - 模板包含 `What Is This?`、`Overview`、`Who Should Use This`、`Problems It Solves`、`Key Capabilities`、`How to Use It?`、`Basic Usage` 和示例提示词；中文版本保持相同结构和信息完整度。
 - Featured 和 Category 点击后复用同一个详情弹窗；新增、替换或移动技能时，国内站先按 SkillHub 页面/接口描述核对技能，国际站按 skills.sh 链接核对技能，再维护对应语言的完整模板内容和测试。
 
 写作规则：面向用户、简洁、实用，英文和中文都使用自然、清晰的用户文案；每节保持 2–4 个要点；不能夸大或编造 skills.sh/README 未支持的能力。新增或修改固定分类技能时，必须同步新增或更新中英文完整结构、示例提示词和单元测试；旧的 `Skill Name / One-line Value / Best For / Recommended Input / Output / Why Install` 六行摘要不是当前详情格式，不能恢复。分类标题不显示总数；卡片显示来源徽标和可选火焰热度，不显示具体安装量。
 
-下载量仅用于搜索结果排序和热度展示，不影响固定分类的顺序。国际站使用 `installs > 20,000`，国内站使用 SkillHub 的 `downloads > 10,000`；达到对应阈值时显示一个橙色火焰图标和 `Popular / 热门` 文案，其余不显示。排序仍使用原始 `installs` 数值。国内站搜索结果直接使用 SkillHub 返回的 `downloads`，固定精选/分类卡使用 `domestic-skill-catalog.ts` 中的下载量快照；没有匹配到真实 SkillHub 数据的卡片不显示热门，不能用 `installs` 快照冒充 `downloads`。国际站固定分类技能使用开发时从 skills.sh 拉取的一次性安装量快照，运行时不再通过 ACLI 搜索刷新。
+热门排序和热度展示不影响固定分类的顺序。国际站按 `installs` 排序，并在 `installs > 20,000` 时显示橙色火焰图标和 `Popular / 热门`；国内站按 SkillHub 的 `downloads` 排序，并在 `downloads > 10,000` 时显示该标记。国内站搜索结果直接使用 SkillHub 返回的 `downloads`，固定精选/分类卡使用 `domestic-skill-catalog.ts` 中的下载量快照；没有匹配到真实 SkillHub 数据的卡片不显示热门，不能用 `installs` 快照冒充 `downloads`。国际站固定分类技能使用开发时从 skills.sh 拉取的一次性安装量快照，运行时不再通过 ACLI 搜索刷新。
 
 分类推荐不受顶部搜索关键词、来源筛选或 Popular/Name 排序影响。新增或编辑分类技能时，要求用户提供具体技能的完整 skills.sh 页面链接、操作类型和展示顺序；默认维持每类 6 张的 2×3 格式，但用户可明确要求其他数量。
 
@@ -202,7 +203,7 @@ Discover 页面用三层方式帮助用户找到技能：**搜索**用于精确�
 
 - **顶部搜索栏**：同时查询 skills.sh 和 ClawHub，支持来源筛选及 Popular/Name 排序；默认展示前 12 个结果，超过 12 个可展开全部。搜索结果来自 registry 返回数据，前端不凭名称手工猜测技能 ID。
 - **Featured 精选**：人工运营的重点推荐区，用于突出希望用户优先看到的技能。当前为 3 张一页的横向卡片，包含主题横幅、标题/副标题、技能信息和安装按钮；新增、删除、排序和文案都需要人工指定。
-- **Categories 分类**：人工定义的固定运营入口。国际站按 Market Analysis、Content Creation、Research、DevTools 组织；国内站按理财分析、内容创建、常用工具组织。两站每类固定 6 张卡，不按运行时热门结果重排；用户点击卡片可查看该技能的结构化说明并安装。
+- **Categories 分类**：人工定义的固定运营入口。国际站按 Market Analysis、Content Creation、Research、DevTools 组织；国内站按理财分析、内容创建、常用工具、教育学习组织。两站每类固定 6 张卡，不按运行时热门结果重排；用户点击卡片可查看该技能的结构化说明并安装。
 
 维护时需要人工提供运营意图和配置：搜索逻辑通常不改；新增或编辑分类要提供中英文名称、具体技能的完整 skills.sh 页面链接、操作类型、显示顺序和用途；新增或编辑 Featured 要提供具体技能的完整 skills.sh 页面链接，标题、描述、完整中英文详情和独立主题横幅默认由 AI 生成，也支持人工覆盖；所有改动保持当前卡片样式、安装状态和国际站中英文 i18n，最后一页可自然少于 3 张。
 
@@ -212,7 +213,7 @@ Discover 页面用三层方式帮助用户找到技能：**搜索**用于精确�
 
 ### Discover 顶部搜索
 
-国际站搜索输入防抖约 300ms，同时查询 ClawHub 和 skills.sh；国内站搜索只查询 SkillHub API。来源下拉在国内站默认 SkillHub，在国际站默认所有来源。Popular/Name 只影响搜索结果，不改变两站的精选或固定分类。搜索结果按安装数降序或名称排序，但卡片不显示具体安装量；超过 20,000 installs 时显示一个橙色火焰和 `Popular / 热门`。标题显示完整结果数；默认只渲染前 12 条（2 列 × 6 条），超过 12 条时标题右侧显示 `View all / Hide all`，展开后显示全部结果。更改搜索词、来源或排序后重新收起到前 12 条。
+国际站搜索输入防抖约 300ms，同时查询 ClawHub 和 skills.sh；国内站搜索只查询 SkillHub API，热门模式请求 `sortBy=downloads`，名称模式请求相关性排序，并拉取最多 50 条候选后再由前端按来源和热门排序。Skills 页顶部右侧显示可点击的来源标识：国内站为 SkillHub，国际站为 skills.sh，并按当前语言提供中英文文案。来源下拉在两站都显示：国际站为所有来源 / skills.sh / ClawHub，国内站为所有来源 / SkillHub / ClawHub。国内站 SkillHub 镜像中 `source: clawhub` 的技能展示为 ClawHub，但安装仍走 `acli skills`；未标记为 ClawHub 的结果展示为 SkillHub。Popular/Name 只影响搜索结果，不改变两站的精选或固定分类。搜索结果按对应站点的热门字段降序或名称排序，但卡片不显示具体安装量；达到站点热门阈值时显示橙色火焰和 `Popular / 热门`。标题显示完整结果数；默认只渲染前 12 条（2 列 × 6 条），超过 12 条时标题右侧显示 `View all / Hide all`，展开后显示全部结果。更改搜索词、来源或排序后重新收起到前 12 条。
 
 搜索结果、Featured 和分类推荐的搜索/数据状态彼此独立：搜索控件不改变 Featured 或分类推荐。无关键词时不展示搜索结果区，直接显示 Featured 和分类；有关键词时搜索结果位于 Featured 上方。
 
@@ -225,7 +226,7 @@ Discover 页面用三层方式帮助用户找到技能：**搜索**用于精确�
 - ClawHub 安装/卸载：`acli clawhub install '<slug>'` / `acli clawhub uninstall '<slug>'`
 - skills.sh 安装/卸载：在登录 Shell 中执行 `bash -lc 'cd "$HOME" && acli skills-sh install <组织/仓库/技能名>'`，卸载保持同样的登录 Shell 结构。
 - 已安装列表：分别调用 `acli clawhub list` 和 `acli skills-sh list`，按 `registry + rawId` 合并完全相同的技能。
-- 国内站搜索：`GET https://api.skillhub.cn/api/skills?page=1&pageSize=24&sortBy=score&order=desc&keyword=<keyword>`；国内精选和分类不依赖无关键词热门结果，而是读取 `domestic-skill-catalog.ts` 的固定配置。
+- 国内站搜索：`GET https://api.skillhub.cn/api/skills?page=1&pageSize=50&sortBy=downloads&order=desc&keyword=<keyword>`（热门模式；名称模式使用 `sortBy=score`）；国内精选和分类不依赖无关键词热门结果，而是读取 `domestic-skill-catalog.ts` 的固定配置。
 - 国内站已安装/安装/卸载：`acli skills list`、`acli skills install '<slug>'`、`acli skills uninstall '<slug>'`。
 
 技能身份必须使用 `registry + rawId`；`name` 和短 `slug` 只能用于展示，不能用于 React key、安装中状态、已安装状态或卸载状态。skills.sh 的搜索结果优先使用完整 `id`；解析已安装列表时优先读取 `id/rawId`，只有旧版 ACLI 只返回短 slug 时才使用降级值，并保留本次会话点击的完整 ID，避免同名或同 slug 的不同技能同时变成已安装。

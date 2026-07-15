@@ -86,6 +86,7 @@ export type SkillsDemoTab = "discover" | "experts" | "create" | "installed";
 
 const SEARCH_RESULTS_PREVIEW_LIMIT = 12;
 const FEATURED_BATCH_SIZE = 3;
+const SKILL_ICON_FALLBACK = "/assets/skills/gemini.svg";
 
 type FeaturedSkillId =
   | "self-improving-agent"
@@ -667,6 +668,33 @@ function RegistryBadge({ registry }: { registry: Registry }) {
   );
 }
 
+function SkillIcon({
+  skill,
+  className,
+  loading = "lazy",
+}: {
+  skill: Skill;
+  className: string;
+  loading?: "eager" | "lazy";
+}) {
+  const src = skill.registry === "skillhub" && skill.iconUrl ? skill.iconUrl : SKILL_ICON_FALLBACK;
+  return (
+    <img
+      src={src}
+      alt=""
+      aria-hidden="true"
+      width={36}
+      height={36}
+      loading={loading}
+      className={className}
+      onError={(event) => {
+        event.currentTarget.onerror = null;
+        event.currentTarget.src = SKILL_ICON_FALLBACK;
+      }}
+    />
+  );
+}
+
 function SkillCard({
   skill,
   installed,
@@ -686,14 +714,7 @@ function SkillCard({
   const popularityTier = getPopularityTier(skill);
   const content = (
     <>
-      <img
-        src="/assets/skills/gemini.svg"
-        alt=""
-        aria-hidden="true"
-        width={36}
-        height={36}
-        className="mt-0.5 size-9 shrink-0 object-contain"
-      />
+      <SkillIcon skill={skill} className="mt-0.5 size-9 shrink-0 object-contain" />
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-semibold text-black/90">{skill.name}</div>
         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-black/45">
@@ -707,7 +728,7 @@ function SkillCard({
           ) : null}
         </div>
         <div className="mt-1 flex items-center gap-2 text-[11px] text-black/55">
-          <RegistryBadge registry={skill.registry} />
+          <RegistryBadge registry={skill.sourceRegistry ?? skill.registry} />
           {popularityTier ? (
             <span className="inline-flex items-center gap-1 text-[#C66A1A]" aria-label={t("热门")} title={t("热门")}>
               <Flame className="size-3.5" aria-hidden="true" />
@@ -928,15 +949,7 @@ function FeaturedSkillCard({
         </div>
       </div>
       <div className="pointer-events-none relative z-10 flex min-h-0 items-center gap-3 px-3.5 py-2 transition-colors group-hover:bg-black/[0.025]">
-        <img
-          src="/assets/skills/gemini.svg"
-          alt=""
-          aria-hidden="true"
-          width={36}
-          height={36}
-          loading="lazy"
-          className="size-9 shrink-0 object-contain"
-        />
+        <SkillIcon skill={entry.skill} className="size-9 shrink-0 object-contain" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-semibold text-black/90">
             {entry.skill.name}
@@ -986,14 +999,7 @@ function InstalledSkillCard({
   const t = useT();
   return (
     <li className="flex items-start gap-3 rounded-md border border-black/[0.06] bg-white px-3.5 py-3 transition-colors hover:border-black/[0.12] hover:bg-black/[0.025]">
-      <img
-        src="/assets/skills/gemini.svg"
-        alt=""
-        aria-hidden="true"
-        width={36}
-        height={36}
-        className="mt-0.5 size-9 shrink-0 object-contain"
-      />
+      <SkillIcon skill={skill} className="mt-0.5 size-9 shrink-0 object-contain" />
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-semibold text-black/90">{skill.name}</div>
         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-black/45">
@@ -1441,7 +1447,7 @@ export function SkillsDemoPanel({
   const [keyword, setKeyword] = useState("");
   const [activeTab, setActiveTab] = useState<SkillsDemoTab>(initialTab);
   const [debounced, setDebounced] = useState("");
-  const [registryFilter, setRegistryFilter] = useState<RegistryFilter>(isDomestic ? "skillhub" : "all");
+  const [registryFilter, setRegistryFilter] = useState<RegistryFilter>("all");
   const [sortMode, setSortMode] = useState<SortMode>("popular");
   const [searchResultsExpanded, setSearchResultsExpanded] = useState(false);
   const [registryMenuOpen, setRegistryMenuOpen] = useState(false);
@@ -1508,7 +1514,7 @@ export function SkillsDemoPanel({
     }
     setSearching(true);
     dataLayer
-      .search(kw)
+      .search(kw, { sortBy: isDomestic && sortMode === "popular" ? "downloads" : "score" })
       .then((res) => {
         if (cancelled) return;
         setClawhubResults(res.clawhub);
@@ -1527,7 +1533,7 @@ export function SkillsDemoPanel({
     return () => {
       cancelled = true;
     };
-  }, [dataLayer, debounced]);
+  }, [dataLayer, debounced, isDomestic, sortMode]);
 
   const installedIdentitySet = useMemo(() => {
     const set = new Set<string>();
@@ -1546,10 +1552,10 @@ export function SkillsDemoPanel({
       registryFilter === "all"
         ? mergeSkills(clawhubResults, skillsshResults, skillhubResults)
         : registryFilter === "clawhub"
-          ? clawhubResults
+          ? mergeSkills(clawhubResults, [], skillhubResults.filter((skill) => (skill.sourceRegistry ?? skill.registry) === "clawhub"))
           : registryFilter === "skills-sh"
             ? skillsshResults
-            : skillhubResults;
+            : skillhubResults.filter((skill) => (skill.sourceRegistry ?? skill.registry) === "skillhub");
     return sortMode === "popular" ? sortByPopular(pool) : sortByName(pool);
   }, [clawhubResults, skillhubResults, skillsshResults, registryFilter, sortMode]);
 
@@ -1720,16 +1726,15 @@ export function SkillsDemoPanel({
                   </button>
                 ) : null}
               </div>
-              {!isDomestic ? (
-                <Select
-                  open={registryMenuOpen}
-                  onOpenChange={setRegistryMenuOpen}
-                  value={registryFilter}
-                  onValueChange={(value) => {
-                    if (value !== "all" && value !== "skills-sh" && value !== "clawhub" && value !== "skillhub") return;
-                    setRegistryFilter(value);
-                  }}
-                >
+              <Select
+                open={registryMenuOpen}
+                onOpenChange={setRegistryMenuOpen}
+                value={registryFilter}
+                onValueChange={(value) => {
+                  if (value !== "all" && value !== "skills-sh" && value !== "clawhub" && value !== "skillhub") return;
+                  setRegistryFilter(value);
+                }}
+              >
                   <SelectTrigger
                     aria-label={t("来源")}
                     className="!h-10 w-[132px] shrink-0 !rounded-md !border-black/10 !bg-white !px-3 text-xs font-semibold text-black/75 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-shadow hover:!border-black/16 hover:shadow-[0_2px_7px_rgba(0,0,0,0.07)] data-[state=open]:!border-black/20 data-[state=open]:shadow-[0_3px_10px_rgba(0,0,0,0.09)]"
@@ -1746,15 +1751,21 @@ export function SkillsDemoPanel({
                       {t("所有来源")}
                     </SelectItem>
                     <SelectSeparator className="mx-1" />
-                    <SelectItem value="skills-sh" className="!rounded-sm py-2 text-xs font-medium data-[highlighted]:bg-black/[0.04] data-[highlighted]:shadow-[0_1px_3px_rgba(0,0,0,0.05)] data-[state=checked]:bg-black/[0.035]">
-                      skills.sh
-                    </SelectItem>
+                    {!isDomestic ? (
+                      <SelectItem value="skills-sh" className="!rounded-sm py-2 text-xs font-medium data-[highlighted]:bg-black/[0.04] data-[highlighted]:shadow-[0_1px_3px_rgba(0,0,0,0.05)] data-[state=checked]:bg-black/[0.035]">
+                        skills.sh
+                      </SelectItem>
+                    ) : null}
+                    {isDomestic ? (
+                      <SelectItem value="skillhub" className="!rounded-sm py-2 text-xs font-medium data-[highlighted]:bg-black/[0.04] data-[highlighted]:shadow-[0_1px_3px_rgba(0,0,0,0.05)] data-[state=checked]:bg-black/[0.035]">
+                        SkillHub
+                      </SelectItem>
+                    ) : null}
                     <SelectItem value="clawhub" className="!rounded-sm py-2 text-xs font-medium data-[highlighted]:bg-black/[0.04] data-[highlighted]:shadow-[0_1px_3px_rgba(0,0,0,0.05)] data-[state=checked]:bg-black/[0.035]">
                       ClawHub
                     </SelectItem>
                   </SelectContent>
                 </Select>
-              ) : null}
               <div className="flex shrink-0 items-center gap-1 rounded-[10px] bg-black/[0.04] p-0.5">
                 <button
                   type="button"

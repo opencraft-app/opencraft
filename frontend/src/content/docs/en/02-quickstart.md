@@ -10,7 +10,7 @@ This tutorial walks through the full process from signing in to receiving a Herm
 
 - Activating the Launch plan and creating a Hermes instance
 
-- Connecting WeChat / Telegram / WhatsApp / Discord channels
+- Connecting Telegram / WhatsApp / Discord / WeChat / QQ / WeCom / Lark channels
 
 - Sending a message in WeChat and receiving a reply
 

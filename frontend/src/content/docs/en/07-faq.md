@@ -90,7 +90,7 @@ Not in the current version. Each Hermes can have only one active model. To compa
 
 ## Channels
 
-### Can WeChat, Telegram, WhatsApp, and Discord be connected at the same time?
+### Can Telegram, WhatsApp, Discord, WeChat, QQ, WeCom, and Lark be connected at the same time?
 
 Yes. Multiple channels point to the same Hermes instance and share memory and Agent behavior.
 

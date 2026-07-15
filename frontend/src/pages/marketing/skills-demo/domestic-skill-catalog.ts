@@ -43,6 +43,45 @@ const DOMESTIC_DOWNLOAD_SNAPSHOT: Readonly<Record<string, number>> = {
   "gongwenformat-pro": 12_046,
   "meeting-notes-assistant": 4_577,
   "bid-tender-master": 3_740,
+  "k12-smart-teacher": 7_312,
+  "interview-simulator": 22_301,
+  "academic-learning-assistant": 945,
+  "subject-hyn": 1_000,
+  "academic-paper-writing-assistant": 949,
+  "novel-evaluator": 4_674,
+};
+
+const DOMESTIC_ICON_SNAPSHOT: Readonly<Record<string, string>> = {
+  "find-skill-skillhub": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/a00e31c7-8d6a-4e65-84fc-16a177f95674.png",
+  "image-prompt-skill": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/e9a58ede-ead5-43fd-9523-d1ba7f1b78cd.png",
+  poster: "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/e9a58ede-ead5-43fd-9523-d1ba7f1b78cd.png",
+  "ecommerce-product-selector": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/5a1e9830-80e4-4cbb-8d00-cee893ca9555.png",
+  "tencent-news": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/2d8152d9-7618-454e-9d87-2487f1b4457f.png",
+  weather: "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/81015f94-5620-494e-bbd6-ac3268e7ccd3.png",
+  "valuation-analysis": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/401a454b-4b16-4aee-a18c-4e3467ca48f1.png",
+  "financial-report-analysis": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/f7fabcfa-0496-4dc7-9258-df9b7c751850.png",
+  "stock-selecter": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/a78375f1-773e-4817-b4f3-0557b6afd777.png",
+  "xiaohongshu-content-tools": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/2d8152d9-7618-454e-9d87-2487f1b4457f.png",
+  "quant-backtest-strategy": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/c0bd7863-2689-46f1-941c-e45be1317e90.png",
+  topnews: "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/a78375f1-773e-4817-b4f3-0557b6afd777.png",
+  "unclecheng-reduce-ai-perception-v2": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/81015f94-5620-494e-bbd6-ac3268e7ccd3.png",
+  "douyin-copy-extract": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/a4e49550-e527-4406-b761-c4f2e607b757.png",
+  g113593: "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/0c9b068f-f22e-44e2-96fe-d2b6f5b43b07.png",
+  "weixin-article-writer": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/5a1e9830-80e4-4cbb-8d00-cee893ca9555.png",
+  "lingyi-wx-viral-script-generator": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/f7fabcfa-0496-4dc7-9258-df9b7c751850.png",
+  "govwriter-pro": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/a4e49550-e527-4406-b761-c4f2e607b757.png",
+  "tencent-docs": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/a4e49550-e527-4406-b761-c4f2e607b757.png",
+  "pdf-image-text-extractor": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/5a1e9830-80e4-4cbb-8d00-cee893ca9555.png",
+  "pptx-generator": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/5a1e9830-80e4-4cbb-8d00-cee893ca9555.png",
+  "gongwenformat-pro": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/e9a58ede-ead5-43fd-9523-d1ba7f1b78cd.png",
+  "meeting-notes-assistant": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/2d8152d9-7618-454e-9d87-2487f1b4457f.png",
+  "bid-tender-master": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/c5e5faab-b8e1-489d-a489-8b56ffc52c07.png",
+  "k12-smart-teacher": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/a78375f1-773e-4817-b4f3-0557b6afd777.png",
+  "interview-simulator": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/401a454b-4b16-4aee-a18c-4e3467ca48f1.png",
+  "academic-learning-assistant": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/5a1e9830-80e4-4cbb-8d00-cee893ca9555.png",
+  "subject-hyn": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/e9a58ede-ead5-43fd-9523-d1ba7f1b78cd.png",
+  "academic-paper-writing-assistant": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/0c9b068f-f22e-44e2-96fe-d2b6f5b43b07.png",
+  "novel-evaluator": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/9bcddb03-161b-42cd-bf2e-cf0159d85bd7.png",
 };
 
 function skill(
@@ -59,6 +98,7 @@ function skill(
     description,
     installs,
     downloads: DOMESTIC_DOWNLOAD_SNAPSHOT[rawId],
+    iconUrl: DOMESTIC_ICON_SNAPSHOT[rawId],
     sourceOrg: "SkillHub",
   };
 }
@@ -167,6 +207,18 @@ export const DOMESTIC_SKILL_CATEGORIES: readonly DomesticSkillCategory[] = [
       skill("gongwenformat-pro", "公文排版", "将 Markdown、TXT 或 DOCX 转换为符合 GB/T 9704-2012 的 Word 文档。", 239),
       skill("meeting-notes-assistant", "Meeting Notes Assistant", "从会议录音生成结构化会议纪要，提取结论、待办和关键词，并支持多种输出格式。", 24),
       skill("bid-tender-master", "标书大师｜全行业AI标书生成助手", "根据项目名称和预算生成覆盖货物、服务和工程行业的投标文件。", 0),
+    ],
+  },
+  {
+    id: "education-learning",
+    label: { en: "Education & Learning", zh: "教育学习" },
+    skills: [
+      skill("k12-smart-teacher", "K12智能老师", "支持作业批改、错题分析和基础/提高/挑战三层练习生成，覆盖多个学段和学科。", 207),
+      skill("interview-simulator", "Interview Simulator", "模拟不同职位和经验水平的面试，提供技术、行为和案例问题以及反馈评分。", 981),
+      skill("academic-learning-assistant", "学科专家生成", "提供覆盖多学段、多学科的个性化学习辅导、作业批改和薄弱点练习支持。", 64),
+      skill("subject-hyn", "课题小助手", "辅助教师修改、优化和规范课题申请评审书及课题申报材料。", 36),
+      skill("academic-paper-writing-assistant", "学术论文全能写作助手", "根据提纲和研究材料辅助生成实证或定性案例论文，并整理数据、图表和文献内容。", 0),
+      skill("novel-evaluator", "小说评分系统", "从情节、人物、文笔、世界观、情感和创新六个维度量化评估小说。", 614),
     ],
   },
 ] as const;

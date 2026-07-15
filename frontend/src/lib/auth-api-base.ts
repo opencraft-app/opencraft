@@ -75,6 +75,9 @@ export const resolveConfiguredAuthApiBaseUrl = () => {
     if (hostname === "lightclaw.site" || hostname === "www.lightclaw.site") {
       return "https://api.lightclaw.site";
     }
+    if (hostname === "lightvela.ai") {
+      return "https://api.lightvela.ai";
+    }
     if (
       hostname === "lightvela.com"
       || hostname === "www.lightvela.com"
