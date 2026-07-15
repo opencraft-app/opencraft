@@ -1978,12 +1978,6 @@ const SubscriptionSection = ({
           <h3 className="text-[18px] md:text-[20px]" style={{ fontWeight: 500, color: "rgba(0,0,0,0.9)", lineHeight: 1.6 }}>
             {t("订阅套餐")}
           </h3>
-          <span
-            className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold"
-            style={{ background: "rgba(20,122,86,0.08)", color: "#147A56" }}
-          >
-            {t("内测期免费体验")}
-          </span>
         </div>
       </div>
       <div className="space-y-5 px-5 py-6 md:px-8 md:py-8">

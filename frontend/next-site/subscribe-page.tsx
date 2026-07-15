@@ -479,8 +479,15 @@ const mapBundleToPlan = (
    *  售罄 / 询价中 / 暂无报价等禁用态文案优先级更高，不受此引导文案影响。 */
   const isFeaturedFreeGuide = freeGuideAllowed && index === 0 && !isSubscribed;
   /* 命中当前已订阅套餐：CTA 固定为「当前订阅」，优先级最高（覆盖售罄/询价/引导等文案）。
-     暂不支持升级 / 更换套餐，所有卡按钮由外层 subscriptionLocked 统一禁用。 */
-  const isCurrentPlan = currentBundleId != null && bundle.bundle_id === currentBundleId;
+     暂不支持升级 / 更换套餐，所有卡按钮由外层 subscriptionLocked 统一禁用。
+     别名映射：老免费版 bundle_free_trial_01 视为 bundle_launch_01 的前身，匹配同一张卡。 */
+  const CURRENT_BUNDLE_ALIASES: Record<string, string[]> = {
+    "bundle_launch_01": ["bundle_free_trial_01"],
+  };
+  const isCurrentPlan = currentBundleId != null && (
+    bundle.bundle_id === currentBundleId ||
+    CURRENT_BUNDLE_ALIASES[bundle.bundle_id]?.includes(currentBundleId) === true
+  );
   const ctaLabel = isCurrentPlan
     ? t("当前订阅")
     : soldOut
