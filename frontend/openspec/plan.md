@@ -1,3 +1,38 @@
+# 当前执行计划：干净用户三要素实名闭环
+
+> 分支：`codex/force-idcard-reface`
+> 规模：M
+> 范围：支持无两要素、无本地手机号、无 Shadow 绑定的用户完成实名；不恢复独立“绑定安全手机”入口。
+
+## 任务清单
+
+- [x] 1. 用服务层和 HTTP 测试锁定干净用户流程及手机号安全边界。
+  - 角色：Developer
+  - 影响文件：`user/auth/internal/service/*realname_faceid*_test.go`、`user/auth/internal/httpapi/handler_test.go`
+  - 验收方式：覆盖无手机号可创建刷脸尝试、刷脸后发送/校验候选手机号、手机号冲突与篡改拒绝、既有手机号兼容。
+- [x] 2. 扩展 FaceID 手机验证 API，并在 Shadow 验证成功后原子写入本地手机号与推进状态。
+  - 角色：Developer
+  - 影响文件：`user/auth/api/openapi.yaml`、生成 API、FaceID service、Memory/MySQL store、HTTP handler
+  - 验收方式：服务端状态严格按 `identity -> face -> phone -> shadow -> completed` 推进；attempt/audit 只保存手机号哈希，不保存明文。
+- [x] 3. 前端在无手机号时仅于刷脸成功后展示可编辑手机号，并随发送/校验请求提交。
+  - 角色：Developer
+  - 影响文件：`frontend/src/pages/marketing/account-page.tsx`、Repository 类型/实现/测试
+  - 验收方式：干净用户可完成全流程；已有手机号仍不可在该流程中替换；独立绑定入口继续隐藏。
+- [x] 4. 运行 auth 全量测试、Go 静态检查、frontend 目标测试、类型检查与 i18n 检查。
+  - 角色：Reviewer
+  - 影响文件：测试与检查输出
+  - 验收方式：相关新增测试通过，无已知回归；任何既有基线失败单独记录。
+  - 结果：auth `go test ./...` 与 `go vet ./...` 通过；frontend 57 条目标测试、`pnpm check`、`pnpm i18n:check` 通过。MySQL 集成测试在配置 `LIGHTCLAW_AUTH_TEST_DSN` 时执行。
+
+## 验收重点
+
+- 干净用户必须先填写姓名身份证并完成新一次刷脸，不能直接进入手机号验证。
+- 手机号必须通过 Shadow 真实短信验证；Shadow 创建/绑定成功后才写入本地手机号并完成 `phone_3fa`。
+- 已有本地手机号的用户沿用当前号码且不能借实名流程换号。
+- 不提供独立“绑定安全手机”产品入口。
+
+---
+
 # 当前执行计划：Hermes 默认头像高清替换
 
 > 分支：`frontsandbox/hermes-avatar`
@@ -150,6 +185,14 @@
   - 角色：Developer
   - 影响文件：`frontend/src/pages/marketing/openclaw-automations-panel.tsx`
   - 验收方式：自动任务页不再渲染“场景任务”标题、说明和预设场景卡片，相关实现以注释形式保留，模板、添加、已生效任务与最近执行入口保持可用，`pnpm check` 通过。
+- [x] 22. 统一存量两要素用户的三要素认证状态文案。
+  - 角色：Developer
+  - 影响文件：`frontend/src/pages/marketing/account-page.tsx`、`frontend/src/pages/marketing/__tests__/account-page-faceid.test.tsx`、`frontend/src/i18n/generated/*.json`
+  - 验收方式：`show()` 后，存量 `idcard_2fa` 用户显示“需重新完成认证”，不再显示“待完成手机号认证”；定向测试和 i18n 检查通过。
+- [x] 23. 修复无手机号用户创建 FaceID attempt 时的 MySQL 非空约束错误。
+  - 角色：Developer
+  - 影响文件：`user/auth/internal/service/mysql_store_realname_faceid.go`
+  - 验收方式：`current_phone_hash` 在手机号缺失时持久化为空字符串而非 `NULL`；干净用户 MySQL 集成用例和 `user/auth` 全量测试通过。
 
 ## 验收重点
 

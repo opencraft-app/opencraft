@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -46,6 +47,61 @@ func TestMySQLStorePersistsImpersonationSessionMetadata(t *testing.T) {
 	}
 	if !current.Impersonated || current.ImpersonationReason != "MySQL round trip" {
 		t.Fatalf("expected mysql impersonation metadata, got impersonated=%v reason=%q", current.Impersonated, current.ImpersonationReason)
+	}
+}
+
+func TestMySQLApplyRealnameFaceIDPhoneProofBindsCleanUserAtomically(t *testing.T) {
+	dsn := os.Getenv("LIGHTCLAW_AUTH_TEST_DSN")
+	if dsn == "" {
+		t.Skip("LIGHTCLAW_AUTH_TEST_DSN is not set")
+	}
+	if err := internalmigrations.Run(dsn); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+	store, err := NewMySQLStore(dsn, StoreOptions{Now: fixedNow, SeedDefaultInvites: true})
+	if err != nil {
+		t.Fatalf("open mysql store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.db.Close() })
+	now := fixedNow().Add(time.Duration(time.Now().UnixNano()%1_000_000) * time.Nanosecond)
+	session, err := store.CreatePasswordSession(context.Background(), PasswordSignUpInput{
+		Name: "Clean FaceID MySQL", Email: "clean-faceid-mysql-" + time.Now().Format("20060102150405.000000000") + "@example.com",
+	}, []byte("hash"), now, time.Hour)
+	if err != nil {
+		t.Fatalf("create clean faceid user: %v", err)
+	}
+	attemptID := "rfid-clean-phone-" + time.Now().Format("150405.000000000")
+	faceAt, phoneAt := now.Add(-time.Minute), now
+	attempt := RealnameFaceIDAttempt{
+		AttemptID: attemptID, UserID: session.User.ID, State: RealnameFaceIDStateFaceSucceeded,
+		IdentityHash:      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		BusinessExpiresAt: now.Add(time.Hour), FaceVerifiedAt: &faceAt, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := store.CreateRealnameFaceIDAttempt(context.Background(), attempt); err != nil {
+		t.Fatalf("create clean phone attempt: %v", err)
+	}
+	phone := fmt.Sprintf("138%08d", time.Now().UnixNano()%100000000)
+	attempt.CurrentPhoneHash = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	attempt.PhoneVerifiedHash = attempt.CurrentPhoneHash
+	attempt.PhoneVerifiedAt = &phoneAt
+	attempt.State = RealnameFaceIDStateShadowPending
+	user, applied, err := store.ApplyRealnameFaceIDPhoneProof(context.Background(), attempt, RealnameFaceIDStateFaceSucceeded, 0, phone, RealnameFaceIDAuditEvent{
+		AttemptID: attemptID, UserID: session.User.ID, EventType: "phone_verified_via_shadow", State: attempt.State,
+		IdentityHash: attempt.IdentityHash, PhoneHash: attempt.PhoneVerifiedHash, CreatedAt: now,
+	})
+	if err != nil || !applied || user.Phone != phone {
+		t.Fatalf("apply clean-user phone proof: applied=%v user=%+v err=%v", applied, user, err)
+	}
+	stored, err := store.GetRealnameFaceIDAttempt(context.Background(), attemptID)
+	if err != nil || stored.State != RealnameFaceIDStateShadowPending || stored.PhoneVerifiedHash != attempt.PhoneVerifiedHash {
+		t.Fatalf("load clean-user phone proof: attempt=%+v err=%v", stored, err)
+	}
+	var auditCount int
+	if err := store.db.QueryRowContext(context.Background(), `SELECT COUNT(1) FROM realname_faceid_audit_events WHERE attempt_id = ? AND event_type = 'phone_verified_via_shadow'`, attemptID).Scan(&auditCount); err != nil {
+		t.Fatalf("count clean-user phone audits: %v", err)
+	}
+	if auditCount != 1 {
+		t.Fatalf("expected one clean-user phone audit, got %d", auditCount)
 	}
 }
 

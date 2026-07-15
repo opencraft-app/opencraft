@@ -75,8 +75,9 @@ func TestRuntimeSecretEnvOverridesSharedConfig(t *testing.T) {
 	t.Setenv("CTL_REDIS_PASS", "env-redis-pass")
 	t.Setenv("CTL_DB_PASSWORD", "env-db-password")
 	t.Setenv("CTL_MQ_STREAM_KEY", "env-stream-key")
-	t.Setenv("CTL_AIGATEWAY_ADMIN_TOKEN", "env-admin-token")
-	t.Setenv("CTL_AIGATEWAY_INTERNAL_SERVICE_TOKEN", "env-internal-token")
+	t.Setenv("CTL_LLMGATEWAY_ADMIN_TOKEN", "env-llm-admin-token")
+	t.Setenv("CTL_LLMGATEWAY_INTERNAL_SERVICE_TOKEN", "env-llm-internal-token")
+	t.Setenv("CTL_LLMGATEWAY_BASE_URL", "https://llmgateway.example.com")
 	t.Setenv("CTL_SHADOW_TOKEN", "env-shadow-token")
 	ServerConf = &GlobalConfig{
 		RedisConfig: &RedisConfig{
@@ -92,6 +93,10 @@ func TestRuntimeSecretEnvOverridesSharedConfig(t *testing.T) {
 			AiGateway: &AiGatewayConfig{
 				AdminToken:           "toml-admin-token",
 				InternalServiceToken: "toml-internal-token",
+			},
+			LLMGateway: &LLMGatewayConfig{
+				AdminToken:           "toml-llm-admin-token",
+				InternalServiceToken: "toml-llm-internal-token",
 			},
 			Shadow: &ShadowConfig{
 				Token:   "toml-shadow-token",
@@ -114,14 +119,60 @@ func TestRuntimeSecretEnvOverridesSharedConfig(t *testing.T) {
 	if ServerConf.MQConfig.StreamKey != "env-stream-key" {
 		t.Fatalf("mq stream key was not overridden from env")
 	}
-	if ServerConf.AdapterConfig.AiGateway.AdminToken != "env-admin-token" {
-		t.Fatalf("aigateway admin token was not overridden from env")
+	if ServerConf.AdapterConfig.LLMGateway.AdminToken != "env-llm-admin-token" {
+		t.Fatalf("llmgateway admin token was not overridden from env")
 	}
-	if ServerConf.AdapterConfig.AiGateway.InternalServiceToken != "env-internal-token" {
-		t.Fatalf("aigateway internal token was not overridden from env")
+	if ServerConf.AdapterConfig.LLMGateway.InternalServiceToken != "env-llm-internal-token" {
+		t.Fatalf("llmgateway internal token was not overridden from env")
+	}
+	if !ServerConf.AdapterConfig.LLMGateway.Enabled {
+		t.Fatal("llmgateway should be enabled when all explicit runtime settings are present")
 	}
 	if ServerConf.AdapterConfig.Shadow.Token != "env-shadow-token" {
 		t.Fatalf("shadow token was not overridden from env")
+	}
+}
+
+func TestParseAdapterConfRequiresCompleteExplicitLLMGatewaySettings(t *testing.T) {
+	tests := []struct {
+		name          string
+		baseURL       string
+		adminToken    string
+		internalToken string
+		wantEnabled   bool
+	}{
+		{name: "complete", baseURL: "https://llmgateway.example.com", adminToken: "admin", internalToken: "internal", wantEnabled: true},
+		{name: "missing base url", adminToken: "admin", internalToken: "internal"},
+		{name: "missing admin token", baseURL: "https://llmgateway.example.com", internalToken: "internal"},
+		{name: "missing internal token", baseURL: "https://llmgateway.example.com", adminToken: "admin"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			original := ServerConf
+			t.Cleanup(func() { ServerConf = original })
+			t.Setenv("CTL_LLMGATEWAY_BASE_URL", tt.baseURL)
+			t.Setenv("CTL_LLMGATEWAY_ADMIN_TOKEN", tt.adminToken)
+			t.Setenv("CTL_LLMGATEWAY_INTERNAL_SERVICE_TOKEN", tt.internalToken)
+			ServerConf = &GlobalConfig{
+				AdapterConfig: &AdapterConfig{
+					AiGateway: &AiGatewayConfig{
+						BaseURL:              "https://legacy.example.com",
+						AdminToken:           "legacy-admin",
+						InternalServiceToken: "legacy-internal",
+					},
+				},
+			}
+
+			parseAdapterConf()
+
+			if got := ServerConf.AdapterConfig.LLMGateway.Enabled; got != tt.wantEnabled {
+				t.Fatalf("LLMGateway.Enabled = %v, want %v", got, tt.wantEnabled)
+			}
+			if !tt.wantEnabled && ServerConf.AdapterConfig.LLMGateway.BaseURL != "https://legacy.example.com" {
+				t.Fatalf("disabled LLMGateway.BaseURL = %q, want legacy endpoint", ServerConf.AdapterConfig.LLMGateway.BaseURL)
+			}
+		})
 	}
 }
 

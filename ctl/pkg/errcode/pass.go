@@ -1,18 +1,19 @@
 package errcode
 
 var (
-	ErrPassNotFound              = Register(New("PASS_NOT_FOUND", 404, "pass not found"))
-	ErrPassInvalidParam          = Register(New("PASS_INVALID_PARAM", 400, "invalid pass parameters"))
-	ErrPassInvalidTimeUnit       = Register(New("PASS_INVALID_TIME_UNIT", 400, "invalid time unit, must be m"))
-	ErrPassExpired               = Register(New("PASS_EXPIRED", 403, "pass has expired"))
-	ErrPassBundleOffline         = Register(New("PASS_BUNDLE_OFFLINE", 400, "cannot create pass for offline bundle"))
-	ErrPassNoFieldToUpdate       = Register(New("PASS_NO_FIELD_TO_UPDATE", 400, "no field to update"))
-	ErrPassShadowBindingNotFound = Register(New("PASS_SHADOW_BINDING_NOT_FOUND", 404, "shadow binding not found for user"))
-	ErrPassShadowBindingRequired = Register(New("PASS_SHADOW_BINDING_REQUIRED", 403, "shadow account binding required"))
-	ErrPassQuotaExceeded         = Register(New("PASS_QUOTA_EXCEEDED", 403, "consumed quota exceeds bundle agent_quota limit"))
-	ErrPassAlreadyExists         = Register(New("PASS_ALREADY_EXISTS", 409, "user already has an active pass"))
-	ErrPassBundleSoldOut         = Register(New("PASS_BUNDLE_SOLD_OUT", 400, "bundle is sold out"))
-	ErrPassTrialBundleNotAllowed = Register(New("PASS_TRIAL_BUNDLE_NOT_ALLOWED", 400, "only bundle_free_trial_01 can be created via free trial path"))
+	ErrPassNotFound                  = Register(New("PASS_NOT_FOUND", 404, "pass not found"))
+	ErrPassInvalidParam              = Register(New("PASS_INVALID_PARAM", 400, "invalid pass parameters"))
+	ErrPassInvalidTimeUnit           = Register(New("PASS_INVALID_TIME_UNIT", 400, "invalid time unit, must be m"))
+	ErrPassExpired                   = Register(New("PASS_EXPIRED", 403, "pass has expired"))
+	ErrPassBundleOffline             = Register(New("PASS_BUNDLE_OFFLINE", 400, "cannot create pass for offline bundle"))
+	ErrPassNoFieldToUpdate           = Register(New("PASS_NO_FIELD_TO_UPDATE", 400, "no field to update"))
+	ErrPassShadowBindingNotFound     = Register(New("PASS_SHADOW_BINDING_NOT_FOUND", 404, "shadow binding not found for user"))
+	ErrPassShadowBindingRequired     = Register(New("PASS_SHADOW_BINDING_REQUIRED", 403, "shadow account binding required"))
+	ErrPassQuotaExceeded             = Register(New("PASS_QUOTA_EXCEEDED", 403, "consumed quota exceeds bundle agent_quota limit"))
+	ErrPassAlreadyExists             = Register(New("PASS_ALREADY_EXISTS", 409, "user already has an active pass"))
+	ErrPassBundleSoldOut             = Register(New("PASS_BUNDLE_SOLD_OUT", 400, "bundle is sold out"))
+	ErrPassTrialBundleNotAllowed     = Register(New("PASS_TRIAL_BUNDLE_NOT_ALLOWED", 400, "only bundle_free_trial_01 can be created via free trial path"))
+	ErrPassGatewaySubscriptionFailed = Register(New("PASS_GATEWAY_SUBSCRIPTION_FAILED", 400, "gateway subscription apply failed"))
 
 	// === trade-pass-isolate 设计稿落地（pass.status 拦截）===
 	// 设计稿：.tmp/trade-pass-isolate-design.md §10 Q23 = C1 修订版

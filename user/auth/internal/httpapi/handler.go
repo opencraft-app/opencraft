@@ -396,7 +396,15 @@ func (h *Handler) GetCurrentRealnameFaceIDAttempt(ctx context.Context, _ api.Get
 
 func (h *Handler) SendRealnameFaceIDPhoneCode(ctx context.Context, request api.SendRealnameFaceIDPhoneCodeRequestObject) (api.SendRealnameFaceIDPhoneCodeResponseObject, error) {
 	clientIP, _ := requestClientMetadata(ctx)
-	cooldown, err := h.service.SendRealnameFaceIDPhoneCode(ctx, tokenFromContext(ctx), request.AttemptId, clientIP)
+	phone := ""
+	if request.Body != nil && request.Body.Phone != nil {
+		phone = *request.Body.Phone
+	}
+	cooldown, err := h.service.SendRealnameFaceIDPhoneCode(ctx, tokenFromContext(ctx), service.RealnameFaceIDPhoneCodeInput{
+		AttemptID: request.AttemptId,
+		Phone:     phone,
+		ClientIP:  clientIP,
+	})
 	if err != nil {
 		body, status := toErrorBody(err)
 		if status == http.StatusInternalServerError {
@@ -433,8 +441,13 @@ func (h *Handler) VerifyRealnameFaceIDPhone(ctx context.Context, request api.Ver
 		return api.VerifyRealnameFaceIDPhone400JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(api.ErrorResponse{Code: "invalid_request", Message: "请求格式不正确。"})}, nil
 	}
 	clientIP, clientUA := requestClientMetadata(ctx)
+	phone := ""
+	if request.Body.Phone != nil {
+		phone = *request.Body.Phone
+	}
 	attempt, err := h.service.VerifyRealnameFaceIDPhone(ctx, tokenFromContext(ctx), service.RealnameFaceIDPhoneProofInput{
 		AttemptID: request.AttemptId,
+		Phone:     phone,
 		Code:      request.Body.Code,
 		ClientIP:  clientIP,
 		ClientUA:  clientUA,
