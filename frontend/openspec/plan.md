@@ -1,3 +1,31 @@
+# 当前执行计划：清理 Agent 创建完成后的 URL creating 参数
+
+> 分支：`frontsandbox/fix-agents-creating-query`
+> 规模：S
+> 范围：修复开通 Pass 后创建参数未清理，以及 Agent 功能 Tab 继承创建参数后无法正常跳转的问题。
+
+## 任务清单
+
+- [x] 1. 定位 `/agents` 创建中 URL 参数的写入、轮询和实例成功识别链路。
+  - 角色：Developer
+  - 影响文件：`frontend/src/pages/marketing/agent-settings-page.tsx` 及相关测试。
+  - 验收方式：明确 `creating` / `plan` 参数为何未在实例就绪后清理。
+  - 结果：订阅页创建实例后写入 `creating` 和未消费的 `plan`；Agent 功能 Tab 又无条件继承 `location.search`，导致 section 页面重新进入创建流程并被终态跳转拉回 `/agents`。
+- [x] 2. 收敛创建参数和 Agent section 路由契约，并补充针对性回归测试。
+  - 角色：Developer + Reviewer
+  - 影响文件：`frontend/next-site/subscribe-page.tsx`、`frontend/src/lib/agent-routes.ts`、`frontend/src/lib/__tests__/agent-routes.test.ts`、`frontend/src/pages/marketing/agent-settings-page.tsx`
+  - 验收方式：创建入口只携带 `creating`；实例进入终态后 replace 回 `/agents`；功能 Tab 不继承创建参数；目标测试与 `pnpm check` 通过。
+  - 结果：套餐页改用统一的 `getAgentCreatingPath`，不再传递无消费方的 `plan`；创建终态保持回 `/agents` 的产品语义；Agent section URL 改用显式白名单，当前不透传任何 query；16 条相关测试、`pnpm check` 与 `git diff --check` 通过。
+
+## 验收重点
+
+- 不影响创建中等待页展示。
+- 不影响刷新恢复时从已有 provisioning 实例回写 `creating` 参数。
+- 清理 URL 使用 replace，避免浏览器历史栈多出一条创建中 URL。
+- 功能 Tab 不得继承 `creating` 或其他未声明的查询参数。
+
+---
+
 # 自动任务调用 Skill Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:test-driven-development` and `superpowers:verification-before-completion` to execute this plan task-by-task. The approved `/feai-start` orchestration for this M-sized change is `single_agent`, so implementation stays in the current agent lane.

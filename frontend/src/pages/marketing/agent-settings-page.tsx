@@ -49,12 +49,13 @@ import { isCN, isGlobal } from "@/lib/region";
 import type { IModelProvider } from "@tencent/tea-sdk-lightclaw";
 import { useSession } from "@/contexts/session-context";
 import { avatarImageUrl } from "@/lib/avatar-image";
-import { AppLink, useAppLocation, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
+import { AppLink, useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
 import { AUTH_SERVICE_UNAVAILABLE_MESSAGE, readStoredAuthToken } from "@/repositories/http-repositories";
 import {
   AGENTS_HOME_PATH,
   AGENT_SECTION_PATH_BY_ID,
+  getAgentSectionHref,
   type AgentSettingsSectionId,
 } from "@/lib/agent-routes";
 import type { WorkerActionStatusResult } from "@/repositories/types";
@@ -3113,7 +3114,6 @@ export const AgentSettingsPage = ({
 } = {}) => {
   const t = useT();
   const navigate = useAppNavigate();
-  const location = useAppLocation();
   const [searchParams] = useAppSearchParams();
   const creatingParam = searchParams.get("creating")?.trim() ?? "";
   const requestedCreatingBotId = creatingParam && creatingParam !== "true" ? creatingParam : "";
@@ -3156,8 +3156,6 @@ export const AgentSettingsPage = ({
     () => findCompletedCreatingBot(visibleBots, requestedCreatingBotId),
     [visibleBots, requestedCreatingBotId],
   );
-
-
   /* 实例内部的子页面切换：由 Next /agents/<section> 路由在服务端校验，client 只接收已归一化 sectionId。 */
   const activeSection = sectionId ?? DEFAULT_AGENT_SECTION;
 
@@ -5140,7 +5138,7 @@ export const AgentSettingsPage = ({
                       {showHiddenAgentTools ? (
                         <>
                           <AppLink
-                            to={`${AGENT_SECTION_PATH_BY_ID.terminal}${location.search}`}
+                            to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.terminal, searchParams)}
                             aria-current={activeSection === "terminal" ? "page" : undefined}
                             className={cn(
                               "lw-settings-nav-item lv-agents-nav-item",
@@ -5153,7 +5151,7 @@ export const AgentSettingsPage = ({
                             <span className="flex-1 text-left">{t("终端")}</span>
                           </AppLink>
                           <AppLink
-                            to={`${AGENT_SECTION_PATH_BY_ID.browser}${location.search}`}
+                            to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.browser, searchParams)}
                             aria-current={activeSection === "browser" ? "page" : undefined}
                             className={cn(
                               "lw-settings-nav-item lv-agents-nav-item",
@@ -5172,7 +5170,7 @@ export const AgentSettingsPage = ({
                         return (
                           <AppLink
                             key={section.id}
-                            to={`${section.path}${location.search}`}
+                            to={getAgentSectionHref(section.path, searchParams)}
                             aria-current={isActive ? "page" : undefined}
                             className={cn(
                               "lw-settings-nav-item lv-agents-nav-item",
