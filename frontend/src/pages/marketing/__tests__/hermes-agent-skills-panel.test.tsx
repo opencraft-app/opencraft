@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -135,23 +135,23 @@ describe("HermesAgentSkillsPanel", () => {
     tsshMocks.listPathMock.mockReset();
   });
 
-  it("defaults to the skill tab and can switch to skill packages", async () => {
+  it("defaults to the domestic Skills Demo and can switch to Experts", async () => {
     renderPanel("skills");
 
-    const skillsTab = screen.getByRole("tab", { name: "技能" });
-    const packagesTab = screen.getByRole("tab", { name: "技能包" });
+    const outerTabs = within(screen.getByRole("tablist", { name: "技能页面切换" }));
+    const demoTabs = within(screen.getByRole("tablist", { name: "技能市场页面切换" }));
+    const skillsTab = outerTabs.getByRole("tab", { name: "技能" });
+    const expertsTab = demoTabs.getByRole("tab", { name: "专家" });
 
     expect(skillsTab).toHaveAttribute("aria-selected", "true");
     expect(skillsTab).toHaveStyle({ fontSize: "18px", fontWeight: "600", lineHeight: "24px" });
-    expect(packagesTab).toHaveStyle({ color: "rgba(0, 0, 0, 0.38)", fontSize: "18px" });
-    expect(screen.getByText("单技能安装面板")).toBeInTheDocument();
-    expect(screen.getByTestId("sdk-skill-panel").closest(".lv-agent-skills-sdk-panel")).not.toBeNull();
-    expect(screen.getByPlaceholderText("搜索已安装技能名称")).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "技能包" })).not.toBeInTheDocument();
+    expect(screen.getByText("从 SkillHub 搜索、安装和管理技能，也可以创建属于你的技能。")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("搜索 SkillHub 中的技能")).toBeInTheDocument();
 
-    await userEvent.click(packagesTab);
+    await userEvent.click(expertsTab);
 
-    expect(screen.getByRole("tab", { name: "技能包" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tab", { name: "技能包" })).toHaveStyle({ color: "rgba(0, 0, 0, 0.95)" });
+    expect(expertsTab).toHaveAttribute("aria-selected", "true");
     expect(screen.getByText("技能包列表")).toBeInTheDocument();
   });
 
@@ -161,23 +161,23 @@ describe("HermesAgentSkillsPanel", () => {
 
     renderPanel("experts");
 
-    expect(screen.getByRole("tab", { name: "技能包" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "专家" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByText("技能包列表")).toBeInTheDocument();
   });
 
-  it("hides the skill package tab outside the CN site", () => {
+  it("hides the skill package tab outside the CN site", async () => {
     expect(getInitialAgentSkillsTab("experts", false)).toBe("skills");
     expect(getInitialAgentSkillsTab("packages", false)).toBe("skills");
 
     renderPanel("packages", false);
 
-    expect(screen.getByRole("tab", { name: "技能" })).toHaveAttribute("aria-selected", "true");
+    expect(within(screen.getByRole("tablist", { name: "技能页面切换" })).getByRole("tab", { name: "技能" })).toHaveAttribute("aria-selected", "true");
     expect(screen.queryByRole("tab", { name: "技能包" })).not.toBeInTheDocument();
-    expect(screen.queryByText("技能包列表")).not.toBeInTheDocument();
-    expect(screen.getByText("单技能安装面板")).toBeInTheDocument();
+    await userEvent.click(within(screen.getByRole("tablist", { name: "技能市场页面切换" })).getByRole("tab", { name: "技能" }));
+    expect(screen.getByPlaceholderText("搜索 SkillHub 中的技能")).toBeInTheDocument();
   });
 
-  it("shows the learn skill dialog on the international skills page", async () => {
+  it("runs Quick Learn from the Create Skill tab", async () => {
     const { execDebugCommand } = renderPanel("skills", false);
     tsshMocks.getTerminalSessionMock.mockResolvedValue({
       wsUrl: "wss://example.test/tssh",
@@ -197,59 +197,36 @@ describe("HermesAgentSkillsPanel", () => {
       return [];
     });
 
-    await userEvent.click(screen.getByRole("button", { name: "Learn a Skill" }));
+    await userEvent.click(screen.getByRole("tab", { name: "创建技能" }));
 
-    expect(screen.getByRole("heading", { name: "Learn a skill" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Name your skill")).toHaveAttribute("placeholder", "MySkill");
-    expect(screen.getByText("Select learning sources")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Cloud storage. Upload documents, configuration, or project materials so your Agent can learn from existing files." })).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByRole("button", { name: "URL. Paste a public tutorial, doc, or web page so your Agent can distill it into a reusable skill." })).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByRole("button", { name: "Additional notes. Write down your goal and process so your Agent can learn your personal workflow." })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getAllByText("速学").length).toBeGreaterThan(0);
+    expect(screen.getByLabelText("Name your skill")).toHaveAttribute("placeholder", "Name your skill");
+    expect(screen.getByText("添加来源")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cloud storage" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "URL" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.queryByText("Cloud storage directory")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Browse cloud storage" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Drag or upload files" })).not.toBeInTheDocument();
-    expect(screen.getByLabelText("URL")).toHaveAttribute(
-      "placeholder",
-      "https://lightvela.ai/ (learn from any website)",
-    );
-    expect(screen.getByLabelText("Additional notes")).toHaveAttribute(
-      "placeholder",
-      "e.g. analyze the latest trends in an industry and turn them into a reusable skill...",
-    );
-    expect(screen.getByRole("button", { name: "Expand additional notes" })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Expand additional notes" }));
-    expect(screen.getByRole("button", { name: "Collapse additional notes" })).toBeInTheDocument();
-
-    await userEvent.click(screen.getByText("Paste a public tutorial, doc, or web page so your Agent can distill it into a reusable skill."));
-    expect(screen.getByRole("button", { name: "URL. Paste a public tutorial, doc, or web page so your Agent can distill it into a reusable skill." })).toHaveAttribute("aria-pressed", "true");
-    await userEvent.click(screen.getByText("Paste a public tutorial, doc, or web page so your Agent can distill it into a reusable skill."));
-    expect(screen.getByRole("button", { name: "URL. Paste a public tutorial, doc, or web page so your Agent can distill it into a reusable skill." })).toHaveAttribute("aria-pressed", "false");
-    await userEvent.click(screen.getByText("Write down your goal and process so your Agent can learn your personal workflow."));
-    expect(screen.getByRole("button", { name: "Additional notes. Write down your goal and process so your Agent can learn your personal workflow." })).toHaveAttribute("aria-pressed", "true");
-    await userEvent.click(screen.getByText("Write down your goal and process so your Agent can learn your personal workflow."));
-    expect(screen.getByRole("button", { name: "Additional notes. Write down your goal and process so your Agent can learn your personal workflow." })).toHaveAttribute("aria-pressed", "false");
+    const quickLearnNotes = screen.getAllByRole("textbox").find((element) => element.tagName === "TEXTAREA");
+    expect(quickLearnNotes).toBeDefined();
 
     await userEvent.type(screen.getByLabelText("Name your skill"), "MySkill");
-    await userEvent.type(screen.getByLabelText("URL"), "https://lightvela.ai/docs");
     await userEvent.type(
-      screen.getByLabelText("Additional notes"),
+      quickLearnNotes!,
       "how to find the best trends",
     );
-    expect(screen.getByRole("button", { name: "URL. Paste a public tutorial, doc, or web page so your Agent can distill it into a reusable skill." })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "Additional notes. Write down your goal and process so your Agent can learn your personal workflow." })).toHaveAttribute("aria-pressed", "true");
-    await userEvent.click(screen.getByRole("button", { name: "Learn" }));
+    await userEvent.click(screen.getByLabelText("Learn"));
 
     expect(tsshMocks.execCommandMock).toHaveBeenCalledOnce();
     const [command, timeout] = tsshMocks.execCommandMock.mock.calls[0] as [string, number];
     expect(timeout).toBe(900);
     expect(command).toContain("hermes");
     expect(command).toContain("chat --toolsets \"$TOOLSETS\" -q");
-    expect(command).toContain("web,terminal,file,skills");
+    expect(command).toContain("terminal,file,skills");
     expect(command).toContain("/learn Create a reusable Hermes skill named");
-    expect(command).toContain("web_extract");
     expect(command).toContain("MySkill");
-    expect(command).toContain("https://lightvela.ai/docs");
-    expect(execDebugCommand).not.toHaveBeenCalled();
+    expect(command).toContain("how to find the best trends");
+    expect(execDebugCommand).toHaveBeenCalledWith("bot-1", "acli skills list");
     expect(
       await screen.findByText("Complete. Created /home/agentuser/.hermes/skills/MySkill/SKILL.md. Refreshing Agent Skills."),
     ).toBeInTheDocument();
@@ -277,13 +254,13 @@ describe("HermesAgentSkillsPanel", () => {
       return [];
     });
 
-    await userEvent.click(screen.getByRole("button", { name: "Learn a Skill" }));
+    await userEvent.click(screen.getByRole("tab", { name: "创建技能" }));
     await userEvent.type(screen.getByLabelText("Name your skill"), "微信配置steps");
     await userEvent.type(
-      screen.getByLabelText("Additional notes"),
+      screen.getAllByRole("textbox").find((element) => element.tagName === "TEXTAREA")!,
       "微信配置步骤",
     );
-    await userEvent.click(screen.getByRole("button", { name: "Learn" }));
+    await userEvent.click(screen.getByLabelText("Learn"));
 
     expect(
       await screen.findByText(

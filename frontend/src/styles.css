@@ -76,6 +76,11 @@ html {
   scrollbar-gutter: stable;
 }
 
+/* Radix Select already has a stable gutter here; avoid adding a second width offset. */
+body.lv-skills-source-menu-open {
+  padding-right: 0 !important;
+}
+
 html.lw-settings-scrollbar-stable {
   overflow-y: auto;
   scrollbar-gutter: stable;
@@ -121,6 +126,29 @@ html.lw-settings-scrollbar-stable {
   border: 3px solid transparent;
   border-radius: 999px;
   background-clip: padding-box;
+}
+
+.lv-curated-skill-dialog-scroll {
+  scrollbar-color: rgba(15, 23, 42, 0.24) transparent;
+  scrollbar-width: thin;
+}
+
+.lv-curated-skill-dialog-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.lv-curated-skill-dialog-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.lv-curated-skill-dialog-scroll::-webkit-scrollbar-thumb {
+  border: 3px solid #fff;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.24);
+}
+
+.lv-curated-skill-dialog-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(15, 23, 42, 0.38);
 }
 
 .lv-learn-skill-dialog-scroll::-webkit-scrollbar-thumb:hover {

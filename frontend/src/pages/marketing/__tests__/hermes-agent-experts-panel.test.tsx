@@ -13,6 +13,8 @@ import {
   getSkillHubErrorMessage,
   getPackageSkillSlugs,
   getSkillPackageInstallFailureMessage,
+  getEnglishPackageFrontmatterValue,
+  getExpertSkillDocumentPath,
   isSkillInstallAlreadyExists,
   getUniqueSkillSlugs,
   installSkillSlugs,
@@ -197,6 +199,31 @@ describe("hermes agent experts panel", () => {
     const sourceLink = await screen.findByRole("link", { name: "源自 SkillHub" });
     expect(sourceLink).toHaveAttribute("href", "https://skillhub.cn/skillspackage");
     expect(sourceLink).toHaveAttribute("target", "_blank");
+  });
+
+  it("selects the locale-specific expert skill document before legacy fallbacks", () => {
+    const files = [
+      "README.md",
+      "identify.md",
+      "identify_en.md",
+      "SKILL.md",
+    ];
+    expect(getExpertSkillDocumentPath(files, "en")).toBe("identify_en.md");
+    expect(getExpertSkillDocumentPath(files, "zh")).toBe("identify.md");
+    expect(getExpertSkillDocumentPath(["README.md"], "en")).toBe("README.md");
+  });
+
+  it("parses folded English package descriptions from frontmatter", () => {
+    expect(getEnglishPackageFrontmatterValue(`---
+description: >-
+  English package description that
+  continues on the next line.
+metadata:
+  locale: en-US
+---
+# Package`, "description")).toBe(
+      "English package description that continues on the next line.",
+    );
   });
 
   it("shows detail skill count from filtered available package skills", async () => {
@@ -442,41 +469,6 @@ describe("hermes agent experts panel", () => {
     expect(await screen.findByTestId("skill-package-profile-fallback")).toHaveTextContent("缺");
   });
 
-  it("switches between list and card views", async () => {
-    vi.mocked(fetchSkillSets).mockImplementation(async (params) => ({
-      skillSets: !params?.scene || params.scene === "finance"
-        ? [{
-            id: 1,
-            slug: "quant-backtest",
-            displayName: "量化回测",
-            summary: "列表摘要",
-            remark: "",
-            scene: "finance",
-            skillCount: 2,
-            createdAt: 0,
-            updatedAt: 0,
-          }]
-        : [],
-    }));
-
-    render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
-
-    expect(await screen.findByRole("button", { name: /量化回测/ })).toBeInTheDocument();
-    const cardViewButton = screen.getByRole("button", { name: "卡片" });
-    const listViewButton = screen.getByRole("button", { name: "列表" });
-    expect(cardViewButton).toHaveAttribute("data-tooltip", "卡片");
-    expect(cardViewButton).toHaveTextContent("");
-    expect(screen.getByRole("tooltip", { name: "卡片" })).toBeInTheDocument();
-    expect(listViewButton).toHaveAttribute("data-tooltip", "列表");
-    expect(listViewButton).toHaveTextContent("");
-    expect(screen.getByRole("tooltip", { name: "列表" })).toBeInTheDocument();
-
-    fireEvent.click(cardViewButton);
-    expect(cardViewButton).toHaveAttribute("aria-pressed", "true");
-    fireEvent.click(listViewButton);
-    expect(listViewButton).toHaveAttribute("aria-pressed", "true");
-  });
-
   it("uses the parent skills tab as the package title instead of rendering a duplicate package heading", async () => {
     vi.mocked(fetchSkillSets).mockResolvedValue({
       skillSets: [],
@@ -484,7 +476,6 @@ describe("hermes agent experts panel", () => {
 
     render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
 
-    expect(await screen.findByText("快速安装技能组合，让 Agent 从单点技能走向完整工作流")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("搜索技能包")).toHaveClass("lv-agent-search-box-input");
     expect(screen.queryByRole("heading", { name: "技能包" })).not.toBeInTheDocument();
   });
@@ -497,7 +488,6 @@ describe("hermes agent experts panel", () => {
 
     render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
 
-    expect(screen.getByText("快速安装技能组合，让 Agent 从单点技能走向完整工作流")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("搜索技能包")).toBeInTheDocument();
     expect(screen.getByText("正在加载技能包")).toBeInTheDocument();
 
@@ -690,7 +680,7 @@ describe("hermes agent experts panel", () => {
 
     render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "安装" }));
+    fireEvent.click(await screen.findByRole("button", { name: "召唤" }));
 
     await waitFor(() => {
       expect(execDebugCommand).toHaveBeenCalledWith("bot-1", "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install 'backtest-engine'");
@@ -743,10 +733,10 @@ describe("hermes agent experts panel", () => {
 
     render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "安装" }));
+    fireEvent.click(await screen.findByRole("button", { name: "召唤" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "已安装" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "已召唤" })).toBeDisabled();
     });
     expect(saveExpertPackagesState).toHaveBeenCalledWith("bot-1", {
       installedPackageSlugs: ["legal-contract-drafting"],
@@ -796,9 +786,9 @@ describe("hermes agent experts panel", () => {
 
     render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "安装" }));
+    fireEvent.click(await screen.findByRole("button", { name: "召唤" }));
 
-    expect(await screen.findByRole("button", { name: "安装中 1/2" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "召唤中 1/2" })).toBeDisabled();
     resolveFirstInstall?.({ status: "success", exitCode: 0, output: "" });
     await waitFor(() => {
       expect(execDebugCommand).toHaveBeenCalledWith("bot-1", buildInstallSkillCommand("backtest-engine"));
@@ -846,7 +836,7 @@ describe("hermes agent experts panel", () => {
 
     render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "安装" }));
+    fireEvent.click(await screen.findByRole("button", { name: "召唤" }));
 
     await waitFor(() => {
       expect(execDebugCommand).toHaveBeenCalledWith("bot-1", "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install 'backtest-engine'");
@@ -1016,10 +1006,10 @@ describe("hermes agent experts panel", () => {
 
     render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "安装" }));
+    fireEvent.click(await screen.findByRole("button", { name: "召唤" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "已安装" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "已召唤" })).toBeDisabled();
     });
     expect(saveExpertPackagesState).toHaveBeenCalledWith("bot-1", {
       installedPackageSlugs: ["tech-test-automation"],
@@ -1074,7 +1064,7 @@ describe("hermes agent experts panel", () => {
 
     render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "安装" }));
+    fireEvent.click(await screen.findByRole("button", { name: "召唤" }));
 
     expect(await screen.findByText(/失败：backtest-engine/)).toHaveTextContent("missing dependency");
   });
@@ -1122,10 +1112,10 @@ describe("hermes agent experts panel", () => {
 
     render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "安装" }));
+    fireEvent.click(await screen.findByRole("button", { name: "召唤" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "已安装" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "已召唤" })).toBeDisabled();
     });
     expect(screen.queryByText(/失败：market-data/)).not.toBeInTheDocument();
   });
@@ -1166,15 +1156,15 @@ describe("hermes agent experts panel", () => {
 
     const firstRender = render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "安装" }));
+    fireEvent.click(await screen.findByRole("button", { name: "召唤" }));
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "已安装" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "已召唤" })).toBeDisabled();
     });
 
     firstRender.unmount();
     render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
 
-    expect(await screen.findByRole("button", { name: "已安装" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "已召唤" })).toBeDisabled();
   });
 
   it("restores installed package state from Vibebase like applied Soul state", async () => {
@@ -1205,7 +1195,7 @@ describe("hermes agent experts panel", () => {
 
     render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
 
-    expect(await screen.findByRole("button", { name: "已安装" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "已召唤" })).toBeDisabled();
     expect(loadExpertPackagesState).toHaveBeenCalledWith("bot-1");
   });
 
@@ -1244,7 +1234,7 @@ describe("hermes agent experts panel", () => {
 
     render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
 
-    const installedButton = await screen.findByRole("button", { name: "已安装" });
+    const installedButton = await screen.findByRole("button", { name: "已召唤" });
     expect(installedButton).toBeDisabled();
     expect(execDebugCommand).toHaveBeenCalledWith("bot-1", buildInstalledSkillsListCommand());
   });

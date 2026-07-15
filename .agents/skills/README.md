@@ -16,6 +16,7 @@
 | `lv-international-docs` | LightVela 国际站文档维护，编辑/翻译/审查 `lightvela.ai/docs`、`global/`、`en/`、文档图片与 sidebar/slug |
 | `lv-longform-content` | LightVela 长篇内容写作，生成教程系列、功能介绍系列、应用场景系列、英文博客/文章草稿 |
 | `lv-seo-geo` | LightVela SEO/GEO 优化，检查关键词、sitemap、canonical/hreflang、内部链接、AI 搜索可抽取性 |
+| `lv-sitepage-skills` | 维护国内站和国际站 Agent Skills 的 Discover 分类、Featured 精选、搜索、来源、My Skills、Create Skill 和分页规范 |
 
 ## 使用约定
 
