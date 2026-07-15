@@ -81,35 +81,42 @@ const FACE_ID_PENDING_POLL_DELAYS_MS = [250, 500, 1000, 1500, 2000, 3000, 5000, 
 
 type VerifyIdentityModalStage = "identity" | "face" | "phone" | "shadow";
 
-/* ─── Realname 3-step progress indicator (身份证 → 人脸 → 手机号) ─── */
-
-const REALNAME_STEP_KEYS: VerifyIdentityModalStage[] = ["identity", "face", "phone"];
+/* ─── Realname progress indicator ───
+ * 新用户（未绑手机）：身份证 → 人脸 → 手机号（3 步）
+ * 已实名/已绑手机用户：身份证 → 人脸（2 步，手机号已绑无需再验证）
+ */
 
 const RealnameStepper = ({
   stage,
   t,
+  includePhoneStep,
 }: {
   stage: VerifyIdentityModalStage;
   t: (text: string) => string;
+  /** 是否包含「手机验证」步：未绑手机的新用户为 true（3 步），已绑手机用户为 false（2 步） */
+  includePhoneStep: boolean;
 }) => {
+  const stepKeys: VerifyIdentityModalStage[] = includePhoneStep
+    ? ["identity", "face", "phone"]
+    : ["identity", "face"];
   const labels: Record<string, string> = {
     identity: t("身份信息"),
     face: t("人脸核身"),
     phone: t("手机验证"),
   };
-  // shadow（同步）视为最后一步（手机）之后的完成态，进度停在第 3 步且全部完成。
-  const currentIndex = stage === "shadow" ? REALNAME_STEP_KEYS.length : REALNAME_STEP_KEYS.indexOf(stage);
+  // shadow（同步）视为最后一步之后的完成态，进度停在最后一步且全部完成。
+  const currentIndex = stage === "shadow" ? stepKeys.length : stepKeys.indexOf(stage);
 
   return (
-    <div className="flex items-center" style={{ padding: "4px 0" }}>
-      {REALNAME_STEP_KEYS.map((key, index) => {
+    <div className="flex items-center justify-center" style={{ padding: "4px 0" }}>
+      {stepKeys.map((key, index) => {
         const isDone = index < currentIndex;
         const isActive = index === currentIndex;
         const dotBg = isActive ? "#202020" : isDone ? "#202020" : "rgba(0,0,0,0.06)";
         const dotColor = isActive || isDone ? "#FFFFFF" : "rgba(0,0,0,0.4)";
         const labelColor = isActive ? "rgba(0,0,0,0.9)" : isDone ? "rgba(0,0,0,0.6)" : "rgba(0,0,0,0.35)";
         return (
-          <div key={key} className="flex items-center" style={{ flex: index < REALNAME_STEP_KEYS.length - 1 ? 1 : "0 0 auto" }}>
+          <div key={key} className="flex flex-shrink-0 items-center">
             <div className="flex flex-shrink-0 items-center gap-2">
               <span
                 className="flex items-center justify-center rounded-full"
@@ -133,14 +140,13 @@ const RealnameStepper = ({
                 {labels[key]}
               </span>
             </div>
-            {index < REALNAME_STEP_KEYS.length - 1 && (
+            {index < stepKeys.length - 1 && (
               <span
-                className="mx-3"
                 style={{
-                  flex: 1,
+                  width: 96,
                   height: 1,
-                  minWidth: 20,
-                  background: index < currentIndex ? "#202020" : "rgba(0,0,0,0.1)",
+                  margin: "0 12px",
+                  background: index < currentIndex ? "#202020" : "rgba(0,0,0,0.15)",
                   transition: "background 0.2s ease",
                 }}
               />
@@ -607,7 +613,7 @@ const VerifyIdentityModal = ({
               >
                 {faceIdFlowEnabled
                   ? verified
-                    ? t("重新刷脸并完成当前手机号与 LightVela 同步后，新的实名信息才会生效。")
+                    ? ""
                     : t("请先完成刷脸核身，再继续当前手机号认证与 LightVela 同步。")
                   : verified
                     ? t("重新提交真实姓名和身份证号，通过核验后将更新当前实名信息。")
@@ -650,7 +656,7 @@ const VerifyIdentityModal = ({
             >
               {faceIdFlowEnabled
                 ? verified
-                  ? t("当前账号已完成实名。修改后会覆盖当前实名信息，后台保留变更记录。")
+                  ? t("当前账号已完成实名。修改后会覆盖当前实名信息。")
                   : stage === "identity"
                     ? t("第一步：提交真实姓名、身份证号，并发起刷脸核身。")
                     : stage === "face"
@@ -659,7 +665,7 @@ const VerifyIdentityModal = ({
                         ? t("第三步：输入当前手机号收到的短信验证码。")
                         : t("第四步：等待 LightVela 实名同步完成。")
                 : verified
-                  ? t("当前账号已完成实名。修改后会覆盖当前实名信息，后台保留变更记录。")
+                  ? t("当前账号已完成实名。修改后会覆盖当前实名信息。")
                   : stage === "identity"
                     ? phoneVerificationEnabled
                       ? t("第一步：提交真实姓名和身份证号。")
@@ -669,9 +675,9 @@ const VerifyIdentityModal = ({
           </div>
         </div>
 
-        {faceIdFlowEnabled && !verified && (
+        {faceIdFlowEnabled && stage !== "shadow" && (
           <div style={{ padding: "0 32px 20px" }}>
-            <RealnameStepper stage={stage} t={t} />
+            <RealnameStepper stage={stage} t={t} includePhoneStep={!normalizedPhone} />
           </div>
         )}
 
@@ -792,7 +798,7 @@ const VerifyIdentityModal = ({
                     className="mt-1 h-4 w-4 rounded border-[#D1D5DB]"
                     aria-label={t("我已阅读并同意实名认证与刷脸核身说明")}
                   />
-                  <span>{t("我已阅读并同意实名认证与刷脸核身说明，知道最终实名状态以后端确认结果为准。")}</span>
+                  <span>{t("我已阅读并同意实名认证与刷脸核身说明")}</span>
                 </label>
               )}
             </>
@@ -1027,7 +1033,7 @@ const VerifyIdentityModal = ({
             }}
           >
             {faceIdFlowEnabled
-              ? t("你的姓名、身份证号和核身过程仅用于本次实名认证；最终成功以服务端持久状态和当前会话刷新结果为准。")
+              ? t("你的姓名、身份证号和核身过程仅用于本次实名认证")
               : phoneVerificationEnabled
                 ? t("你的姓名、身份证号和手机号将加密传输并存储，平台仅保留脱敏信息用于展示。认证信息不会用于其他用途。")
                 : t("你的姓名和身份证号将加密传输并存储，平台仅保留脱敏信息用于展示。认证信息不会用于其他用途。")}
@@ -1156,11 +1162,8 @@ const ChangePhoneModal = ({
           <div className="flex items-center gap-4">
             <div className="flex flex-1 flex-col gap-2">
               <h3 className="m-0" style={{ fontFamily: "PingFang SC", fontWeight: 500, fontSize: 20, lineHeight: "1.6em", color: "rgba(0,0,0,0.9)" }}>
-                {currentPhone ? t("修改安全手机") : t("绑定安全手机")}
+                {currentPhone ? t("修改绑定手机号") : t("绑定安全手机")}
               </h3>
-              <p className="m-0" style={{ fontFamily: "PingFang SC", fontWeight: 400, fontSize: 14, lineHeight: "22px", color: "rgba(0,0,0,0.9)" }}>
-                {t("安全手机用于后续计费、支付和账号安全校验。")}
-              </p>
             </div>
             <button
               onClick={onClose}
@@ -1173,7 +1176,7 @@ const ChangePhoneModal = ({
           </div>
           {currentPhone && (
             <div className="rounded-lg bg-[rgba(7,193,96,0.08)] px-4 py-3 text-sm leading-[22px]" style={{ color: "rgba(0,0,0,0.75)" }}>
-              {t("当前安全手机：{{phone}}", { phone: currentPhone })}
+              {t("当前绑定手机号：{{phone}}", { phone: currentPhone })}
             </div>
           )}
         </div>
@@ -1282,11 +1285,11 @@ const ChangePhoneModal = ({
               currentPhone ? t("确认修改") : t("确认绑定")
             )}
           </button>
-          <p className="m-0 text-center" style={{ fontFamily: "PingFang SC", fontWeight: 400, fontSize: 12, lineHeight: "24px", color: "rgba(0,0,0,0.3)" }}>
-            {currentPhone
-              ? t("验证码通过后会更新安全手机；同步失败时不会修改当前账号手机号。")
-              : t("验证码通过后会绑定安全手机；同步失败时不会绑定。")}
-          </p>
+          {!currentPhone && (
+            <p className="m-0 text-center" style={{ fontFamily: "PingFang SC", fontWeight: 400, fontSize: 12, lineHeight: "24px", color: "rgba(0,0,0,0.3)" }}>
+              {t("验证码通过后会绑定安全手机；同步失败时不会绑定。")}
+            </p>
+          )}
         </div>
       </motion.div>
     </motion.div>
@@ -3115,7 +3118,7 @@ export const AccountPage = () => {
 
                   {showSafetyPhoneSection && (
                     <div className="flex items-center justify-between">
-                      <span className="text-sm" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>{t("安全手机")}</span>
+                      <span className="text-sm" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>{t("手机号")}</span>
                       <div className="flex items-center gap-3">
                         <span className="text-sm" style={{ color: user?.phone ? "rgba(0,0,0,0.9)" : "rgba(0,0,0,0.5)" }}>
                           {user?.phone || t("未绑定")}
