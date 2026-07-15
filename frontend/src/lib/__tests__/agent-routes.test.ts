@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   AGENT_SECTION_PATH_BY_ID,
+  getAgentCreatingPath,
   getAgentSectionFromSlug,
+  getAgentSectionHref,
   shouldShowWorkbenchEntry,
 } from "@/lib/agent-routes";
 
@@ -29,5 +31,19 @@ describe("agent route constants", () => {
 
   it("shows the workbench entry after the console reveal hook runs", () => {
     expect(shouldShowWorkbenchEntry({ hostname: "lightclaw.tech", revealed: true })).toBe(true);
+  });
+
+  it("builds the agent creating url with the requested instance id", () => {
+    expect(getAgentCreatingPath("ins-123")).toBe("/agents?creating=ins-123");
+    expect(getAgentCreatingPath(true)).toBe("/agents?creating=true");
+  });
+
+  it("does not carry creation flow params into agent section routes", () => {
+    expect(
+      getAgentSectionHref(
+        AGENT_SECTION_PATH_BY_ID.model,
+        new URLSearchParams("creating=ins-123&plan=bundle_cruise_01&from=subscribe"),
+      ),
+    ).toBe("/agents/models");
   });
 });
