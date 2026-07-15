@@ -12,7 +12,7 @@ import {
   usePaidBillingEnabled,
   useRealnamePhoneVerificationEnabled,
 } from "@/contexts/runtime-config-context";
-import { InviteCodeModal } from "@/components/site/login-modal";
+import { InviteCodeModal, LoginModal } from "@/components/site/login-modal";
 import { RepositoryError } from "@/repositories/http-repositories";
 import type { Bundle, BundlePrice, BundleDescriptionEntry } from "@/domain/types";
 import { REALNAME_LEVEL } from "@/domain/types";
@@ -581,13 +581,13 @@ const makePlaceholderBundle = (id: string, name: string, agentQuota: number): Bu
  * 仅在点击订阅按钮时才引导登录（见 handleSubscribe 的 !isLoggedIn → login()）。
  *
  * 价格为线上确认值（金额敏感）：
- *   - 启航标准版：月付 ¥49 / 季付 ¥147（月×3，无折扣）
- *   - 巡游标准版：月付 ¥99 / 季付 ¥297（月×3，无折扣）
+ *   - 启航标准版：月付 ¥45 / 季付 ¥135（月×3，无折扣）
+ *   - 巡游标准版：月付 ¥95 / 季付 ¥285（月×3，无折扣）
  * AI 增强版与远航统一「敬请期待」、不展示价格（price=null，由 planTiers 强制），故无需静态金额。
  * ⚠️ 后端调整线上价格时请同步更新此表，避免未登录静态价与登录后询价价不一致。 */
 const STATIC_TIER_PRICE_YUAN: Record<"launch" | "cruise", Record<"monthly" | "quarterly", number>> = {
-  launch: { monthly: 49, quarterly: 147 },
-  cruise: { monthly: 99, quarterly: 297 },
+  launch: { monthly: 45, quarterly: 135 },
+  cruise: { monthly: 95, quarterly: 285 },
 };
 
 /** 静态价格构造器：入参以「元」为单位，内部转「分」以与后端询价 BundlePrice 口径一致（discount=1.0 不打折）。 */
@@ -616,7 +616,9 @@ const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
   const base = {
     bundle_state: "ONLINE" as const,
     time_unit: "m" as const,
-    bundle_sales_available_count: 99,
+    /* 未登录纯静态展示不露出「今日剩余 N/M 份」名额提示：available === total 时，
+       PlanCard 的 `availableCount < totalCount` 条件不成立，名额行不渲染。 */
+    bundle_sales_available_count: 100,
     bundle_sales_total_count: 100,
     bundle_sales_state: "AVAILABLE" as const,
   };
@@ -643,7 +645,7 @@ const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
       bundle_type: "general",
       description: STATIC_GENERAL_DESC,
       agent_quota: 1,
-      credit: 0,
+      credit: 100,
       price: buildStaticPrice(STATIC_TIER_PRICE_YUAN.launch[durationKey]),
       time_span: span,
     },
@@ -666,7 +668,7 @@ const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
       bundle_type: "general",
       description: STATIC_GENERAL_DESC,
       agent_quota: 1,
-      credit: 0,
+      credit: 200,
       price: buildStaticPrice(STATIC_TIER_PRICE_YUAN.cruise[durationKey]),
       time_span: span,
     },
@@ -689,7 +691,7 @@ const buildStaticBundles = (durationKey: "monthly" | "quarterly"): Bundle[] => {
       bundle_type: "general",
       description: STATIC_GENERAL_DESC,
       agent_quota: 3,
-      credit: 0,
+      credit: 500,
       price: null,
       time_span: 1,
     },
@@ -1823,10 +1825,12 @@ export const SubscribePage = ({
      这里在组件函数体顺序执行一次，与 t 同生命周期，避免放在 useEffect 的异步路径里漏扣。 */
   __markBundleTypeTabsForI18n(t);
   const navigate = useAppNavigate();
-  const { isLoggedIn, login, isSubscribed, subscribe, addBot, bots, user, refreshPasses, activePass } = useOpenClaw();
+  const { isLoggedIn, isSubscribed, subscribe, addBot, bots, user, refreshPasses, activePass } = useOpenClaw();
   const { authReady, isAuthenticated, session } = useSession();
   const repositories = useRepositories();
   const [subscribingPlanId, setSubscribingPlanId] = useState<string | null>(null);
+  /* 未登录用户点「订阅」时弹出的登录引导弹窗开关（见 handleSubscribe）。 */
+  const [showLoginModal, setShowLoginModal] = useState(false);
   const [error, setError] = useState<SubscribeError | null>(null);
   const [modalStep, setModalStep] = useState<ModalStep>("closed");
   const [selectedPlan, setSelectedPlan] = useState<PlanInfo | null>(null);
@@ -2336,7 +2340,9 @@ export const SubscribePage = ({
     /* 功能点2b：进页不再强制登录，未登录用户可浏览静态价；
        点「订阅」按钮时再引导登录，登录后回到本页继续操作。 */
     if (!isLoggedIn) {
-      login();
+      /* 未登录：弹出登录弹窗引导登录（OAuth 整页跳转）。
+         登录回跳后进入已登录态定价页，用户再次点「订阅」即走下方实名判断链路。 */
+      setShowLoginModal(true);
       return;
     }
 
@@ -2386,7 +2392,7 @@ export const SubscribePage = ({
     /* 付费套餐：进入确认订单弹窗 */
     setSelectedPlan(plan);
     setModalStep("confirm");
-  }, [planList, bots.length, executeCreateBot, session.stage, session.user, isLoggedIn, login, realnamePhoneVerificationEnabled, navigate]);
+  }, [planList, bots.length, executeCreateBot, session.stage, session.user, isLoggedIn, realnamePhoneVerificationEnabled, navigate]);
 
   /* 邀请码激活成功后：自动继续用户之前点击的套餐流程 */
   const handleInviteSuccess = useCallback(() => {
@@ -2780,6 +2786,13 @@ export const SubscribePage = ({
         open={showInviteCode}
         onClose={handleCloseInviteModal}
         onSuccess={handleInviteSuccess}
+      />
+
+      {/* Login Modal — 未登录点「订阅」时引导登录；登录成功仅关闭弹窗，
+          OAuth 整页跳转回跳后即为已登录态定价页。 */}
+      <LoginModal
+        open={showLoginModal}
+        onClose={() => setShowLoginModal(false)}
       />
 
       {/* Responsive: collapse to single column on mobile */}
