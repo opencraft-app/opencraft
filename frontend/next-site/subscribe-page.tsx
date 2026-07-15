@@ -248,7 +248,7 @@ const iconForKey = (key: string): React.ReactNode => {
  */
 const CAPABILITY_DESC_KEYS = new Set<string>([
   "7*24小时在线", "7×24小时在线", "7×24 在线", "7*24 在线",
-  "极简配置面板", "自动任务", "技能安装", "技能包", "技能/技能包",
+  "极简配置面板", "自动任务", "技能安装", "技能包", "精选技能/技能包",
   "连接主流聊天通道", "接入主流模型 API", "长期记忆", "人设注入", "Agent 自主进化", "诊断中心",
 ]);
 const isCapabilityDescKey = (rawKey: string): boolean => {
@@ -391,15 +391,15 @@ const mapBundleToPlan = (
   }
   /* ─── Agent 核心能力点（固定顺序，所有套餐一致，统一展示在规格项下方）───
      顺序：Agent 自主进化 → 7*24小时在线 → 极简配置面板 → 连接主流聊天通道 → 接入主流模型 API
-          → 技能/技能包 → 人设注入 → 自动任务 → 长期记忆 → 诊断中心。
-     技能项不再按 tier 区分「技能安装 / 技能包」，所有套餐统一「技能/技能包」。 */
+          → 精选技能/技能包 → 人设注入 → 自动任务 → 长期记忆 → 诊断中心。
+     技能项不再按 tier 区分「技能安装 / 技能包」，所有套餐统一「精选技能/技能包」。 */
   const capabilityPoints: PlanFeature[] = [
     { icon: iconMap.evolution, label: t("Agent 自主进化"), hasCheck: true },
     { icon: iconMap.clock, label: t("7*24小时在线"), hasCheck: true },
     { icon: iconMap.settings, label: t("极简配置面板"), hasCheck: true },
     { icon: iconMap.channel, label: t("连接主流聊天通道"), hasCheck: true },
     { icon: iconMap.modelApi, label: t("接入主流模型 API"), hasCheck: true },
-    { icon: iconMap.skill, label: t("技能/技能包"), hasCheck: true },
+    { icon: iconMap.skill, label: t("精选技能/技能包"), hasCheck: true },
     { icon: iconMap.persona, label: t("人设注入"), hasCheck: true },
     { icon: iconMap.automation, label: t("自动任务"), hasCheck: true },
     { icon: iconMap.memory, label: t("长期记忆"), hasCheck: true },
@@ -745,7 +745,7 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
       { iconKey: "settings", label: "极简配置面板", hasCheck: true },
       { iconKey: "channel", label: "连接主流聊天通道", hasCheck: true },
       { iconKey: "modelApi", label: "接入主流模型 API", hasCheck: true },
-      { iconKey: "skill", label: "技能/技能包", hasCheck: true },
+      { iconKey: "skill", label: "精选技能/技能包", hasCheck: true },
       { iconKey: "persona", label: "人设注入", hasCheck: true },
       { iconKey: "automation", label: "自动任务", hasCheck: true },
       { iconKey: "memory", label: "长期记忆", hasCheck: true },
@@ -776,7 +776,7 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
       { iconKey: "settings", label: "极简配置面板", hasCheck: true },
       { iconKey: "channel", label: "连接主流聊天通道", hasCheck: true },
       { iconKey: "modelApi", label: "接入主流模型 API", hasCheck: true },
-      { iconKey: "skill", label: "技能/技能包", hasCheck: true },
+      { iconKey: "skill", label: "精选技能/技能包", hasCheck: true },
       { iconKey: "persona", label: "人设注入", hasCheck: true },
       { iconKey: "automation", label: "自动任务", hasCheck: true },
       { iconKey: "memory", label: "长期记忆", hasCheck: true },
@@ -808,7 +808,7 @@ const __markPlaceholderPlansForI18n = (t: (zh: string, opts?: Record<string, unk
   void t("4核 8G 内存");
   void t("极简配置面板");
   void t("自动任务");
-  void t("技能/技能包");
+  void t("精选技能/技能包");
   void t("人设注入");
   void t("连接主流聊天通道");
   void t("接入主流模型 API");
