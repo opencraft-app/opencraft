@@ -18,6 +18,7 @@ import (
 
 	"ctl/pkg/adapter/aigateway"
 	adapterfactory "ctl/pkg/adapter/factory"
+	"ctl/pkg/config"
 	pctx "ctl/pkg/context"
 	instanceasync "ctl/pkg/instance"
 	"ctl/pkg/logic/gatewayroute"
@@ -320,7 +321,10 @@ func (t *destroyPassTask) cancelAiGatewaySubscription(_ pctx.Context, logger *za
 	}
 	callCtx, cancel := context.WithTimeout(context.Background(), cancelSubscriptionCallTimeout)
 	defer cancel()
-	cancelSource := "llmgateway"
+	cancelSource := "ai-gateway"
+	if config.LLMGatewayEnabled() {
+		cancelSource = "llmgateway"
+	}
 	if gateway, ok, err := gatewayroute.Get(userID); err != nil {
 		logger.Warn("destroy pass 5a: get recorded subscription gateway failed, fallback to probe",
 			zap.String("user_id", userID),
@@ -330,7 +334,13 @@ func (t *destroyPassTask) cancelAiGatewaySubscription(_ pctx.Context, logger *za
 		case gatewayroute.GatewayAIGateway:
 			cancelSource = "ai-gateway"
 		case gatewayroute.GatewayLLMGateway:
-			cancelSource = "llmgateway"
+			if config.LLMGatewayEnabled() {
+				cancelSource = "llmgateway"
+			} else {
+				logger.Warn("destroy pass 5a: recorded llmgateway subscription ignored because llmgateway is disabled",
+					zap.String("user_id", userID))
+				cancelSource = "ai-gateway"
+			}
 		default:
 			logger.Warn("destroy pass 5a: unknown recorded subscription gateway, fallback to probe",
 				zap.String("user_id", userID),

@@ -10,6 +10,7 @@ import (
 	"ctl/pkg/adapter/aigateway"
 	adapterfactory "ctl/pkg/adapter/factory"
 	"ctl/pkg/adapter/llmgateway"
+	"ctl/pkg/config"
 	pctx "ctl/pkg/context"
 	"ctl/pkg/errcode"
 	instanceasync "ctl/pkg/instance"
@@ -330,6 +331,12 @@ func AlignAiGatewaySubscriptionPeriodEnd(logger *zap.Logger, userID, passID stri
 				zap.Bool("updated", resp != nil && resp.Updated))
 			return nil
 		case gatewayroute.GatewayLLMGateway:
+			if !config.LLMGatewayEnabled() {
+				logger.Warn("recorded llmgateway subscription ignored because llmgateway is disabled",
+					zap.String("user_id", userID),
+					zap.String("pass_id", passID))
+				break
+			}
 			resp, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().
 				ExtendSubscription(ctx, &llmgateway.ExtendSubscriptionRequest{
 					UserID:       userID,
@@ -381,6 +388,13 @@ func AlignAiGatewaySubscriptionPeriodEnd(logger *zap.Logger, userID, passID stri
 		if !errors.Is(legacyErr, aigateway.ErrAiGatewayPlanNotFound) && !isLegacyGatewayDisabled(legacyErr) {
 			return legacyErr
 		}
+	}
+
+	if !config.LLMGatewayEnabled() {
+		logger.Info("skip llmgateway subscription period_end align because llmgateway is disabled",
+			zap.String("user_id", userID),
+			zap.String("pass_id", passID))
+		return nil
 	}
 
 	resp, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().

@@ -28,6 +28,7 @@ import (
 	"ctl/pkg/adapter/sts"
 	"ctl/pkg/adapter/trade"
 	"ctl/pkg/adapter/whitelist"
+	"ctl/pkg/config"
 
 	"go.uber.org/zap"
 )
@@ -99,9 +100,19 @@ func installStubAiGateway(stub *stubLLMGatewayAdapter) func() {
 	}
 }
 
+func enableLLMGatewayForRenewTest(t *testing.T) {
+	t.Helper()
+	original := config.ServerConf
+	config.ServerConf = &config.GlobalConfig{AdapterConfig: &config.AdapterConfig{
+		LLMGateway: &config.LLMGatewayConfig{Enabled: true},
+	}}
+	t.Cleanup(func() { config.ServerConf = original })
+}
+
 // TestAlignAiGatewaySubscriptionPeriodEnd_Success 验证：ai-gateway 返 200 + updated=true 时
 // helper 返 nil，且请求体里的 user_id / new_period_end 与入参完全一致。
 func TestAlignAiGatewaySubscriptionPeriodEnd_Success(t *testing.T) {
+	enableLLMGatewayForRenewTest(t)
 	wantPeriodEnd := time.Date(2026, 7, 23, 9, 6, 0, 0, time.UTC)
 	stub := &stubLLMGatewayAdapter{
 		extendResp: &llmgateway.ExtendSubscriptionResponse{
@@ -132,6 +143,7 @@ func TestAlignAiGatewaySubscriptionPeriodEnd_Success(t *testing.T) {
 // TestAlignAiGatewaySubscriptionPeriodEnd_IdempotentNoOp 验证：ai-gateway CAS 幂等返 updated=false
 // 时 helper 同样返 nil（视为幂等成功）。
 func TestAlignAiGatewaySubscriptionPeriodEnd_IdempotentNoOp(t *testing.T) {
+	enableLLMGatewayForRenewTest(t)
 	stub := &stubLLMGatewayAdapter{
 		extendResp: &llmgateway.ExtendSubscriptionResponse{
 			Subscription: &llmgateway.Subscription{UserID: "uin_test"},
@@ -151,6 +163,7 @@ func TestAlignAiGatewaySubscriptionPeriodEnd_IdempotentNoOp(t *testing.T) {
 // 无 active 订阅（ErrLLMGatewayPlanNotFound）时 helper 降级为 nil，不阻断 pass renew
 // 主链；这与异步 renewPassTask 行为一致，与 R-MR-4 §5.2 文档语义对齐。
 func TestAlignAiGatewaySubscriptionPeriodEnd_PlanNotFoundDegradesToNil(t *testing.T) {
+	enableLLMGatewayForRenewTest(t)
 	stub := &stubLLMGatewayAdapter{
 		extendErr: llmgateway.ErrLLMGatewayPlanNotFound,
 	}
@@ -167,6 +180,7 @@ func TestAlignAiGatewaySubscriptionPeriodEnd_PlanNotFoundDegradesToNil(t *testin
 // 任何 err 都必须透传给 caller，让 caller 触发重试（强一致语义；trade callback 重投
 // 同步分支 / 父 task fail 重投异步分支）。
 func TestAlignAiGatewaySubscriptionPeriodEnd_OtherErrorPropagates(t *testing.T) {
+	enableLLMGatewayForRenewTest(t)
 	upstreamErr := errors.New("ai-gateway 503 service unavailable")
 	stub := &stubLLMGatewayAdapter{extendErr: upstreamErr}
 	t.Cleanup(installStubAiGateway(stub))
@@ -186,6 +200,7 @@ func TestAlignAiGatewaySubscriptionPeriodEnd_OtherErrorPropagates(t *testing.T) 
 // 不能像 ErrLLMGatewayPlanNotFound 那样被降级为 nil — 否则 ai-gateway 部署事故
 // 会被背面遮蔽，pass.expired_time 推进了但 ai-gateway period_end 永远没动。
 func TestAlignAiGatewaySubscriptionPeriodEnd_RouteNotFoundPropagates(t *testing.T) {
+	enableLLMGatewayForRenewTest(t)
 	stub := &stubLLMGatewayAdapter{extendErr: llmgateway.ErrLLMGatewayRouteNotFound}
 	t.Cleanup(installStubAiGateway(stub))
 
@@ -199,6 +214,28 @@ func TestAlignAiGatewaySubscriptionPeriodEnd_RouteNotFoundPropagates(t *testing.
 	}
 	if errors.Is(err, llmgateway.ErrLLMGatewayPlanNotFound) {
 		t.Fatalf("RouteNotFound must NOT be degraded as PlanNotFound, got %v", err)
+	}
+}
+
+func TestAlignAiGatewaySubscriptionPeriodEnd_SkipsLLMGatewayWhenDisabled(t *testing.T) {
+	original := config.ServerConf
+	config.ServerConf = &config.GlobalConfig{AdapterConfig: &config.AdapterConfig{
+		LLMGateway: &config.LLMGatewayConfig{Enabled: false},
+	}}
+	t.Cleanup(func() { config.ServerConf = original })
+
+	stub := &stubLLMGatewayAdapter{
+		extendErr: errors.New("must not call llmgateway"),
+	}
+	t.Cleanup(installStubAiGateway(stub))
+
+	err := AlignAiGatewaySubscriptionPeriodEnd(zap.NewNop(), "uin_test", "pass-test",
+		time.Date(2026, 7, 23, 9, 6, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("AlignAiGatewaySubscriptionPeriodEnd expected nil when llmgateway is disabled, got %v", err)
+	}
+	if stub.calls != 0 {
+		t.Fatalf("expected llmgateway ExtendSubscription not called when disabled, got %d calls", stub.calls)
 	}
 }
 
