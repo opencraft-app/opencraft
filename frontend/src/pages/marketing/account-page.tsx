@@ -601,24 +601,28 @@ const VerifyIdentityModal = ({
               >
                 {verified ? t("修改实名认证") : t("实名认证")}
               </h3>
-              <p
-                className="m-0"
-                style={{
-                  fontFamily: "PingFang SC",
-                  fontWeight: 400,
-                  fontSize: 14,
-                  lineHeight: "22px",
-                  color: "rgba(0,0,0,0.9)",
-                }}
-              >
-                {faceIdFlowEnabled
-                  ? verified
-                    ? ""
-                    : t("请先完成刷脸核身，再继续当前手机号认证与 LightVela 同步。")
+              {(() => {
+                const subtitle = faceIdFlowEnabled
+                  ? ""
                   : verified
                     ? t("重新提交真实姓名和身份证号，通过核验后将更新当前实名信息。")
-                    : t("完成实名认证后可以发布技能和参与更多社区活动")}
-              </p>
+                    : t("完成实名认证后可以发布技能和参与更多社区活动");
+                if (!subtitle) return null;
+                return (
+                  <p
+                    className="m-0"
+                    style={{
+                      fontFamily: "PingFang SC",
+                      fontWeight: 400,
+                      fontSize: 14,
+                      lineHeight: "22px",
+                      color: "rgba(0,0,0,0.9)",
+                    }}
+                  >
+                    {subtitle}
+                  </p>
+                );
+              })()}
             </div>
             <button
               onClick={onClose}
@@ -630,49 +634,49 @@ const VerifyIdentityModal = ({
             </button>
           </div>
 
-          <div
-            className="flex items-center gap-1"
-            style={{
-              background: verified ? "rgba(7, 193, 96, 0.1)" : "rgba(255, 161, 0, 0.1)",
-              borderRadius: 8,
-              padding: "4px 12px",
-            }}
-          >
-            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center">
-              {verified ? (
-                <ShieldCheck className="h-[18px] w-[18px]" style={{ color: "var(--color-success)" }} />
-              ) : (
-                <Shield className="h-[18px] w-[18px]" style={{ color: "#FFA100" }} />
-              )}
-            </div>
-            <span
-              style={{
-                fontFamily: "PingFang SC",
-                fontWeight: 400,
-                fontSize: 14,
-                lineHeight: "22px",
-                color: "rgba(0,0,0,0.9)",
-              }}
-            >
-              {faceIdFlowEnabled
-                ? verified
-                  ? t("当前账号已完成实名。修改后会覆盖当前实名信息。")
-                  : stage === "identity"
-                    ? t("第一步：提交真实姓名、身份证号，并发起刷脸核身。")
-                    : stage === "face"
-                      ? t("第二步：完成刷脸核身。")
-                      : stage === "phone"
-                        ? t("第三步：输入当前手机号收到的短信验证码。")
-                        : t("第四步：等待 LightVela 实名同步完成。")
-                : verified
-                  ? t("当前账号已完成实名。修改后会覆盖当前实名信息。")
-                  : stage === "identity"
-                    ? phoneVerificationEnabled
-                      ? t("第一步：提交真实姓名和身份证号。")
-                      : t("当前未认证，请完善信息并提交认证。")
-                    : t("第二步：输入当前手机号收到的短信验证码。")}
-            </span>
-          </div>
+          {(() => {
+            const hintText = faceIdFlowEnabled
+              ? verified
+                ? t("当前账号已完成实名。修改后会覆盖当前实名信息。")
+                : ""
+              : verified
+                ? t("当前账号已完成实名。修改后会覆盖当前实名信息。")
+                : stage === "identity"
+                  ? phoneVerificationEnabled
+                    ? t("第一步：提交真实姓名和身份证号。")
+                    : t("当前未认证，请完善信息并提交认证。")
+                  : t("第二步：输入当前手机号收到的短信验证码。");
+            if (!hintText) return null;
+            return (
+              <div
+                className="flex items-center gap-1"
+                style={{
+                  background: verified ? "rgba(7, 193, 96, 0.1)" : "rgba(255, 161, 0, 0.1)",
+                  borderRadius: 8,
+                  padding: "4px 12px",
+                }}
+              >
+                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center">
+                  {verified ? (
+                    <ShieldCheck className="h-[18px] w-[18px]" style={{ color: "var(--color-success)" }} />
+                  ) : (
+                    <Shield className="h-[18px] w-[18px]" style={{ color: "#FFA100" }} />
+                  )}
+                </div>
+                <span
+                  style={{
+                    fontFamily: "PingFang SC",
+                    fontWeight: 400,
+                    fontSize: 14,
+                    lineHeight: "22px",
+                    color: "rgba(0,0,0,0.9)",
+                  }}
+                >
+                  {hintText}
+                </span>
+              </div>
+            );
+          })()}
         </div>
 
         {faceIdFlowEnabled && stage !== "shadow" && (
@@ -806,46 +810,51 @@ const VerifyIdentityModal = ({
 
           {stage === "face" && (
             <div className="flex flex-col gap-4">
-              <div className="rounded-xl border border-[#E9ECF1] bg-[#F9F8F7] p-5">
-                <p className="m-0 text-sm font-medium" style={{ color: "rgba(0,0,0,0.9)" }}>
-                  {t("请使用微信或手机扫码完成人脸核身")}
-                </p>
-                <p className="mb-0 mt-2 text-sm" style={{ color: "rgba(0,0,0,0.58)", lineHeight: "22px" }}>
-                  {attempt?.state === "failed"
-                    ? t("本次刷脸未通过，请重新发起认证。")
-                    : attempt?.state === "expired"
-                      ? t("本次刷脸已过期，请重新发起认证。")
-                      : t("等待刷脸结果")}
-                </p>
-              </div>
-
-              {!faceNeedsRestart && attempt?.verificationUrl && (
-                isMobileViewport ? (
-                  <div className="rounded-xl border border-[#E9ECF1] p-5">
-                    <p className="m-0 text-sm font-medium" style={{ color: "rgba(0,0,0,0.9)" }}>{t("当前设备为移动端")}</p>
+              {faceNeedsRestart || !attempt?.verificationUrl ? (
+                <div className="rounded-xl border border-[#E9ECF1] bg-[#F9F8F7] p-5">
+                  <p className="m-0 text-sm font-medium" style={{ color: "rgba(0,0,0,0.9)" }}>
+                    {t("请使用手机扫码完成人脸核身")}
+                  </p>
+                  <p className="mb-0 mt-2 text-sm" style={{ color: "rgba(0,0,0,0.58)", lineHeight: "22px" }}>
+                    {attempt?.state === "failed"
+                      ? t("本次刷脸未通过，请重新发起认证。")
+                      : attempt?.state === "expired"
+                        ? t("本次刷脸已过期，请重新发起认证。")
+                        : t("等待刷脸结果")}
+                  </p>
+                </div>
+              ) : isMobileViewport ? (
+                <div className="rounded-xl border border-[#E9ECF1] bg-[#F9F8F7] p-5">
+                  <p className="m-0 text-sm font-medium" style={{ color: "rgba(0,0,0,0.9)" }}>{t("当前设备为移动端")}</p>
+                  <p className="mb-0 mt-2 text-sm" style={{ color: "rgba(0,0,0,0.58)", lineHeight: "22px" }}>
+                    {t("请直接打开腾讯核身页面，完成刷脸后再返回这里等待状态同步。")}
+                  </p>
+                  <a
+                    href={attempt.verificationUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-4 inline-flex items-center justify-center rounded-full bg-[#202020] px-5 py-3 text-sm font-medium text-white"
+                  >
+                    {t("打开刷脸页面")}
+                  </a>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-4 rounded-xl border border-[#E9ECF1] bg-[#F9F8F7] p-6">
+                  <div className="w-full">
+                    <p className="m-0 text-sm font-medium" style={{ color: "rgba(0,0,0,0.9)" }}>
+                      {t("请使用手机扫码完成人脸核身")}
+                    </p>
                     <p className="mb-0 mt-2 text-sm" style={{ color: "rgba(0,0,0,0.58)", lineHeight: "22px" }}>
-                      {t("请直接打开腾讯核身页面，完成刷脸后再返回这里等待状态同步。")}
-                    </p>
-                    <a
-                      href={attempt.verificationUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-4 inline-flex items-center justify-center rounded-full bg-[#202020] px-5 py-3 text-sm font-medium text-white"
-                    >
-                      {t("打开刷脸页面")}
-                    </a>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-4 rounded-xl border border-[#E9ECF1] p-6">
-                    <p className="m-0 text-sm font-medium" style={{ color: "rgba(0,0,0,0.9)" }}>{t("核身二维码")}</p>
-                    <div className="rounded-xl border border-[#E9ECF1] bg-white p-4">
-                      <QRCodeSVG value={attempt.verificationUrl} size={184} level="M" includeMargin={false} />
-                    </div>
-                    <p className="m-0 text-xs" style={{ color: "rgba(0,0,0,0.45)" }}>
-                      {t("有效期至：{{time}}", { time: formatFaceIdExpiry(attempt.expiresAt) })}
+                      {t("等待刷脸结果")}
                     </p>
                   </div>
-                )
+                  <div className="rounded-xl border border-[#E9ECF1] bg-white p-4">
+                    <QRCodeSVG value={attempt.verificationUrl} size={184} level="M" includeMargin={false} />
+                  </div>
+                  <p className="m-0 text-xs" style={{ color: "rgba(0,0,0,0.45)" }}>
+                    {t("有效期至：{{time}}", { time: formatFaceIdExpiry(attempt.expiresAt) })}
+                  </p>
+                </div>
               )}
             </div>
           )}
