@@ -802,7 +802,18 @@ const VerifyIdentityModal = ({
                     className="mt-1 h-4 w-4 rounded border-[#D1D5DB]"
                     aria-label={t("我已阅读并同意实名认证与刷脸核身说明")}
                   />
-                  <span>{t("我已阅读并同意实名认证与刷脸核身说明")}</span>
+                  <span>
+                    {t("我已阅读并同意实名认证与刷脸核身说明及")}
+                    <a
+                      href="https://privacy.qq.com/document/preview/a955b796edc34796b6e81d4f4df006f3"
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ color: "var(--lw-accent)", textDecoration: "none" }}
+                    >
+                      {t("《隐私协议》")}
+                    </a>
+                  </span>
                 </label>
               )}
             </>
