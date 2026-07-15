@@ -209,6 +209,77 @@ func parseAdapterConf() {
 	if ServerConf.AdapterConfig.AiGateway.DefaultCompatibility == "" {
 		ServerConf.AdapterConfig.AiGateway.DefaultCompatibility = "openai"
 	}
+
+	if ServerConf.AdapterConfig.LLMGateway == nil {
+		ServerConf.AdapterConfig.LLMGateway = &LLMGatewayConfig{}
+	}
+	if value := firstNonEmptyEnv("CTL_LLMGATEWAY_BASE_URL"); value != "" {
+		ServerConf.AdapterConfig.LLMGateway.BaseURL = value
+	}
+	if value := firstNonEmptyEnv("CTL_LLMGATEWAY_ADMIN_TOKEN", "CTL_AIGATEWAY_ADMIN_TOKEN"); value != "" {
+		ServerConf.AdapterConfig.LLMGateway.AdminToken = value
+	}
+	if value := firstNonEmptyEnv("CTL_LLMGATEWAY_INTERNAL_SERVICE_TOKEN", "CTL_AIGATEWAY_INTERNAL_SERVICE_TOKEN"); value != "" {
+		ServerConf.AdapterConfig.LLMGateway.InternalServiceToken = value
+	}
+	if value := firstNonEmptyEnv("CTL_LLMGATEWAY_DEFAULT_BASE_URL"); value != "" {
+		ServerConf.AdapterConfig.LLMGateway.DefaultBaseURL = value
+	}
+	if value := firstNonEmptyEnv("CTL_LLMGATEWAY_DEFAULT_MODEL_ID"); value != "" {
+		ServerConf.AdapterConfig.LLMGateway.DefaultModelID = value
+	}
+	fillLLMGatewayFromLegacyAiGateway(ServerConf.AdapterConfig.LLMGateway, ServerConf.AdapterConfig.AiGateway)
+	if ServerConf.AdapterConfig.LLMGateway.Timeout <= 0 {
+		ServerConf.AdapterConfig.LLMGateway.Timeout = 10
+	}
+	if ServerConf.AdapterConfig.LLMGateway.DefaultGatewayPort <= 0 {
+		ServerConf.AdapterConfig.LLMGateway.DefaultGatewayPort = 18789
+	}
+	if ServerConf.AdapterConfig.LLMGateway.DefaultCompatibility == "" {
+		ServerConf.AdapterConfig.LLMGateway.DefaultCompatibility = "openai"
+	}
+}
+
+func fillLLMGatewayFromLegacyAiGateway(dst *LLMGatewayConfig, legacy *AiGatewayConfig) {
+	if dst == nil || legacy == nil {
+		return
+	}
+	if dst.BaseURL == "" {
+		dst.BaseURL = legacy.BaseURL
+	}
+	if dst.AdminToken == "" {
+		dst.AdminToken = legacy.AdminToken
+	}
+	if dst.InternalServiceToken == "" {
+		dst.InternalServiceToken = legacy.InternalServiceToken
+	}
+	if dst.Timeout <= 0 {
+		dst.Timeout = legacy.Timeout
+	}
+	if dst.DefaultBaseURL == "" {
+		dst.DefaultBaseURL = legacy.DefaultBaseURL
+	}
+	if dst.DefaultModelID == "" {
+		dst.DefaultModelID = legacy.DefaultModelID
+	}
+	if dst.DefaultCompatibility == "" {
+		dst.DefaultCompatibility = legacy.DefaultCompatibility
+	}
+	if dst.DefaultGatewayPort <= 0 {
+		dst.DefaultGatewayPort = legacy.DefaultGatewayPort
+	}
+	if dst.DefaultProviderID == "" {
+		dst.DefaultProviderID = legacy.DefaultProviderID
+	}
+}
+
+func firstNonEmptyEnv(names ...string) string {
+	for _, name := range names {
+		if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func parseAllServiceRoleConf() {

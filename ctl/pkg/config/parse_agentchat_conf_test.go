@@ -75,8 +75,8 @@ func TestRuntimeSecretEnvOverridesSharedConfig(t *testing.T) {
 	t.Setenv("CTL_REDIS_PASS", "env-redis-pass")
 	t.Setenv("CTL_DB_PASSWORD", "env-db-password")
 	t.Setenv("CTL_MQ_STREAM_KEY", "env-stream-key")
-	t.Setenv("CTL_AIGATEWAY_ADMIN_TOKEN", "env-admin-token")
-	t.Setenv("CTL_AIGATEWAY_INTERNAL_SERVICE_TOKEN", "env-internal-token")
+	t.Setenv("CTL_LLMGATEWAY_ADMIN_TOKEN", "env-llm-admin-token")
+	t.Setenv("CTL_LLMGATEWAY_INTERNAL_SERVICE_TOKEN", "env-llm-internal-token")
 	t.Setenv("CTL_SHADOW_TOKEN", "env-shadow-token")
 	ServerConf = &GlobalConfig{
 		RedisConfig: &RedisConfig{
@@ -92,6 +92,10 @@ func TestRuntimeSecretEnvOverridesSharedConfig(t *testing.T) {
 			AiGateway: &AiGatewayConfig{
 				AdminToken:           "toml-admin-token",
 				InternalServiceToken: "toml-internal-token",
+			},
+			LLMGateway: &LLMGatewayConfig{
+				AdminToken:           "toml-llm-admin-token",
+				InternalServiceToken: "toml-llm-internal-token",
 			},
 			Shadow: &ShadowConfig{
 				Token:   "toml-shadow-token",
@@ -114,11 +118,11 @@ func TestRuntimeSecretEnvOverridesSharedConfig(t *testing.T) {
 	if ServerConf.MQConfig.StreamKey != "env-stream-key" {
 		t.Fatalf("mq stream key was not overridden from env")
 	}
-	if ServerConf.AdapterConfig.AiGateway.AdminToken != "env-admin-token" {
-		t.Fatalf("aigateway admin token was not overridden from env")
+	if ServerConf.AdapterConfig.LLMGateway.AdminToken != "env-llm-admin-token" {
+		t.Fatalf("llmgateway admin token was not overridden from env")
 	}
-	if ServerConf.AdapterConfig.AiGateway.InternalServiceToken != "env-internal-token" {
-		t.Fatalf("aigateway internal token was not overridden from env")
+	if ServerConf.AdapterConfig.LLMGateway.InternalServiceToken != "env-llm-internal-token" {
+		t.Fatalf("llmgateway internal token was not overridden from env")
 	}
 	if ServerConf.AdapterConfig.Shadow.Token != "env-shadow-token" {
 		t.Fatalf("shadow token was not overridden from env")

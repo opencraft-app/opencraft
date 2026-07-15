@@ -16,9 +16,12 @@ const (
 	ColumnSource         = "source"
 	ColumnLastObservedAt = "last_observed_at"
 
-	GatewayAIGateway = "ai_gateway"
+	GatewayAIGateway  = "ai_gateway"
+	GatewayLLMGateway = "llm_gateway"
 
-	SourceApplySubscription = "apply_subscription"
+	SourceApplySubscription        = "apply_subscription"
+	SourceDetectActiveSubscription = "detect_active_subscription"
+	SourceManual                   = "manual"
 )
 
 type Entity struct {

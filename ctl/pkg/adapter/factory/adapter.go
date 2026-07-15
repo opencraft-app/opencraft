@@ -5,6 +5,7 @@ package factory
 import (
 	"ctl/pkg/adapter/aigateway"
 	"ctl/pkg/adapter/client"
+	"ctl/pkg/adapter/llmgateway"
 	"ctl/pkg/adapter/openclawgateway"
 	"ctl/pkg/adapter/sandbox"
 	"ctl/pkg/adapter/shadow"
@@ -24,6 +25,7 @@ type AdapterFactory interface {
 	StsAdapter() sts.Adapter
 	WhitelistAdapter() whitelist.Adapter
 	AiGatewayAdapter() aigateway.Adapter
+	LLMGatewayAdapter() llmgateway.Adapter
 	OpenClawGatewayAdapter() openclawgateway.Adapter
 	ShadowAdapter() shadow.Adapter
 	TradeAdapter() trade.Adapter
@@ -37,6 +39,8 @@ type adapterFactory struct {
 	sandbox             sandbox.Adapter
 	aigatewayOnce       sync.Once
 	aigateway           aigateway.Adapter
+	llmgatewayOnce      sync.Once
+	llmgateway          llmgateway.Adapter
 	openclawGatewayOnce sync.Once
 	openclawGateway     openclawgateway.Adapter
 	shadowOnce          sync.Once
@@ -70,6 +74,15 @@ func (f *adapterFactory) AiGatewayAdapter() aigateway.Adapter {
 			config.ServerConf.AdapterConfig.AiGateway, resource.ZapLogger)
 	})
 	return f.aigateway
+}
+
+// LLMGatewayAdapter ...
+func (f *adapterFactory) LLMGatewayAdapter() llmgateway.Adapter {
+	f.llmgatewayOnce.Do(func() {
+		f.llmgateway = llmgateway.NewLLMGatewayAdapter(
+			config.ServerConf.AdapterConfig.LLMGateway, resource.ZapLogger)
+	})
+	return f.llmgateway
 }
 
 func (f *adapterFactory) OpenClawGatewayAdapter() openclawgateway.Adapter {

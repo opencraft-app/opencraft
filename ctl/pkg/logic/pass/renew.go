@@ -9,9 +9,11 @@ import (
 
 	"ctl/pkg/adapter/aigateway"
 	adapterfactory "ctl/pkg/adapter/factory"
+	"ctl/pkg/adapter/llmgateway"
 	pctx "ctl/pkg/context"
 	"ctl/pkg/errcode"
 	instanceasync "ctl/pkg/instance"
+	"ctl/pkg/logic/gatewayroute"
 	bundlemodel "ctl/pkg/model/bundle"
 	modelfactory "ctl/pkg/model/factory"
 	passmodel "ctl/pkg/model/pass"
@@ -276,10 +278,10 @@ func renewLogger() *zap.Logger {
 // 200 OK + updated=false 不报错；退费向前缩短同样安全（向前缩短一次后再调
 // updated=false）。
 //
-// 例外：ErrAiGatewayPlanNotFound 表示该用户在 ai-gateway 端从未通过
+// 例外：ErrLLMGatewayPlanNotFound 表示该用户在 ai-gateway 端从未通过
 // ApplySubscription 建立订阅（如付费产品迁移到免费试用期外的边缘场景），记 Warn
 // + 当作成功放过（不阻断 pass 主链路 — 用户本来就没 AI 订阅，不存在"对齐"目标）；
-// caller 收到 nil 视同成功。其它错误（含 ErrAiGatewayRouteNotFound 路由 404）
+// caller 收到 nil 视同成功。其它错误（含 ErrLLMGatewayRouteNotFound 路由 404）
 // 一律透传给 caller，由 caller 决定重试 / failTask / Warn 不阻断。
 func AlignAiGatewaySubscriptionPeriodEnd(logger *zap.Logger, userID, passID string, newPeriodEnd time.Time) error {
 	if logger == nil {
@@ -293,24 +295,115 @@ func AlignAiGatewaySubscriptionPeriodEnd(logger *zap.Logger, userID, passID stri
 	ctx, cancel := context.WithTimeout(context.Background(), extendAiGatewayCallTimeout)
 	defer cancel()
 
-	resp, err := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().
-		ExtendSubscription(ctx, &aigateway.ExtendSubscriptionRequest{
+	if gateway, ok, err := gatewayroute.Get(userID); err != nil {
+		logger.Warn("get recorded subscription gateway failed, fallback to probe",
+			zap.String("user_id", userID),
+			zap.String("pass_id", passID),
+			zap.Error(err))
+	} else if ok {
+		switch gateway {
+		case gatewayroute.GatewayAIGateway:
+			legacyAdapter := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter()
+			if legacyAdapter == nil {
+				return fmt.Errorf("recorded ai-gateway subscription but ai-gateway adapter is nil")
+			}
+			resp, err := legacyAdapter.ExtendSubscription(ctx, &aigateway.ExtendSubscriptionRequest{
+				UserID:       userID,
+				NewPeriodEnd: newPeriodEnd,
+			})
+			if err != nil {
+				if errors.Is(err, aigateway.ErrAiGatewayPlanNotFound) {
+					logger.Warn("recorded ai-gateway subscription not found, skipping align",
+						zap.String("user_id", userID),
+						zap.String("pass_id", passID))
+					return nil
+				}
+				return err
+			}
+			if resp != nil && resp.Subscription != nil {
+				gatewayroute.RecordBestEffort(logger, userID, gatewayroute.GatewayAIGateway, resp.Subscription.ID, resp.Subscription.PlanID, gatewayroute.SourceDetectActiveSubscription)
+			}
+			logger.Info("ai-gateway subscription period_end aligned",
+				zap.String("user_id", userID),
+				zap.String("pass_id", passID),
+				zap.Time("new_period_end", newPeriodEnd),
+				zap.Bool("updated", resp != nil && resp.Updated))
+			return nil
+		case gatewayroute.GatewayLLMGateway:
+			resp, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().
+				ExtendSubscription(ctx, &llmgateway.ExtendSubscriptionRequest{
+					UserID:       userID,
+					NewPeriodEnd: newPeriodEnd,
+				})
+			if err != nil {
+				if errors.Is(err, llmgateway.ErrLLMGatewayPlanNotFound) {
+					logger.Warn("recorded llmgateway subscription not found, skipping align",
+						zap.String("user_id", userID),
+						zap.String("pass_id", passID))
+					return nil
+				}
+				return err
+			}
+			if resp != nil && resp.Subscription != nil {
+				gatewayroute.RecordBestEffort(logger, userID, gatewayroute.GatewayLLMGateway, resp.Subscription.ID, resp.Subscription.PlanID, gatewayroute.SourceDetectActiveSubscription)
+			}
+			logger.Info("llmgateway subscription period_end aligned",
+				zap.String("user_id", userID),
+				zap.String("pass_id", passID),
+				zap.Time("new_period_end", newPeriodEnd),
+				zap.Bool("updated", resp != nil && resp.Updated))
+			return nil
+		default:
+			logger.Warn("unknown recorded subscription gateway, fallback to probe",
+				zap.String("user_id", userID),
+				zap.String("pass_id", passID),
+				zap.String("gateway", gateway))
+		}
+	}
+
+	if legacyAdapter := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter(); legacyAdapter != nil {
+		legacyResp, legacyErr := legacyAdapter.
+			ExtendSubscription(ctx, &aigateway.ExtendSubscriptionRequest{
+				UserID:       userID,
+				NewPeriodEnd: newPeriodEnd,
+			})
+		if legacyErr == nil {
+			if legacyResp != nil && legacyResp.Subscription != nil {
+				gatewayroute.RecordBestEffort(logger, userID, gatewayroute.GatewayAIGateway, legacyResp.Subscription.ID, legacyResp.Subscription.PlanID, gatewayroute.SourceDetectActiveSubscription)
+			}
+			logger.Info("ai-gateway subscription period_end aligned",
+				zap.String("user_id", userID),
+				zap.String("pass_id", passID),
+				zap.Time("new_period_end", newPeriodEnd),
+				zap.Bool("updated", legacyResp != nil && legacyResp.Updated)) // false = 等值幂等 no-op
+			return nil
+		}
+		if !errors.Is(legacyErr, aigateway.ErrAiGatewayPlanNotFound) && !isLegacyGatewayDisabled(legacyErr) {
+			return legacyErr
+		}
+	}
+
+	resp, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().
+		ExtendSubscription(ctx, &llmgateway.ExtendSubscriptionRequest{
 			UserID:       userID,
 			NewPeriodEnd: newPeriodEnd,
 		})
 	if err != nil {
-		if errors.Is(err, aigateway.ErrAiGatewayPlanNotFound) {
-			logger.Warn("ai-gateway has no active subscription for user, skipping align",
+		if errors.Is(err, llmgateway.ErrLLMGatewayPlanNotFound) {
+			logger.Warn("no active subscription for user in ai-gateway or llmgateway, skipping align",
 				zap.String("user_id", userID),
 				zap.String("pass_id", passID))
 			return nil
 		}
 		return err
 	}
-	logger.Info("ai-gateway subscription period_end aligned",
+	if resp != nil && resp.Subscription != nil {
+		gatewayroute.RecordBestEffort(logger, userID, gatewayroute.GatewayLLMGateway, resp.Subscription.ID, resp.Subscription.PlanID, gatewayroute.SourceDetectActiveSubscription)
+	}
+	logger.Info("llmgateway subscription period_end aligned",
 		zap.String("user_id", userID),
 		zap.String("pass_id", passID),
 		zap.Time("new_period_end", newPeriodEnd),
-		zap.Bool("updated", resp.Updated)) // false = 等值幂等 no-op
+		zap.Bool("updated", resp != nil && resp.Updated)) // false = 等值幂等 no-op
 	return nil
 }

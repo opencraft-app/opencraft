@@ -113,6 +113,17 @@ default_compatibility = "openai"
 default_gateway_port = 18789
 default_provider_id = ""
 
+[adapter.llmgateway]
+base_url = ""
+admin_token = ""
+internal_service_token = ""
+timeout = 10
+default_base_url = ""
+default_model_id = ""
+default_compatibility = "openai"
+default_gateway_port = 18789
+default_provider_id = ""
+
 [adapter.lightpro]
 api_static_url = ""
 api_dynamic_url_suffix = "api.lightpro.polaris:9580"
