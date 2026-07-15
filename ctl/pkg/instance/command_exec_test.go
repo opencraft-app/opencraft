@@ -848,6 +848,7 @@ func TestConfigureOnboardUsesProcessStream(t *testing.T) {
 	})
 	config.ServerConf.AdapterConfig = &config.AdapterConfig{
 		LLMGateway: &config.LLMGatewayConfig{
+			Enabled:              true,
 			DefaultBaseURL:       "http://gateway.example.com",
 			DefaultModelID:       "kimi-k2.5",
 			DefaultCompatibility: "openai",

@@ -82,6 +82,7 @@ func TestResetInstanceConfigRejectsMissingDefaultProviderConfigBeforeCreatingKey
 	config.ServerConf = &config.GlobalConfig{
 		AdapterConfig: &config.AdapterConfig{
 			LLMGateway: &config.LLMGatewayConfig{
+				Enabled:        true,
 				BaseURL:        "https://llmgateway.test",
 				DefaultBaseURL: "https://model.internal/v1",
 			},
