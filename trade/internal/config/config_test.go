@@ -151,3 +151,46 @@ func TestLoad_RegionOverrideFromEnv(t *testing.T) {
 		})
 	}
 }
+
+func TestLoad_InquiryFallbackIdentityFromEnv(t *testing.T) {
+	cases := []struct {
+		name      string
+		uin       string
+		appID     string
+		wantUin   string
+		wantAppID string
+		wantErr   bool
+	}{
+		{"unset disables fallback", "", "", "", "", false},
+		{"both configured", "330500000004", "1447552654", "330500000004", "1447552654", false},
+		{"surrounding whitespace trimmed", "  330500000004  ", "  1447552654  ", "330500000004", "1447552654", false},
+		{"uin only fails fast", "330500000004", "", "", "", true},
+		{"app id only fails fast", "", "1447552654", "", "", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("TRADE_MYSQL_DSN", "user:pass@tcp(127.0.0.1:3306)/trade")
+			t.Setenv("LIGHTCLAW_INTERNAL_SERVICE_TOKEN", "tk-test")
+			t.Setenv("CTL_INTERNAL_BASE_URL", "http://ctl.test")
+			t.Setenv("SHADOW_INTERNAL_BASE_URL", "http://shadow.test")
+			t.Setenv("TRADE_INQUIRY_FALLBACK_UIN", tc.uin)
+			t.Setenv("TRADE_INQUIRY_FALLBACK_APP_ID", tc.appID)
+
+			cfg, err := Load()
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("Load() expected error, got nil (uin=%q appID=%q)",
+						cfg.InquiryFallbackUin, cfg.InquiryFallbackAppID)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load() unexpected error = %v", err)
+			}
+			if cfg.InquiryFallbackUin != tc.wantUin || cfg.InquiryFallbackAppID != tc.wantAppID {
+				t.Errorf("fallback identity = %q/%q, want %q/%q",
+					cfg.InquiryFallbackUin, cfg.InquiryFallbackAppID, tc.wantUin, tc.wantAppID)
+			}
+		})
+	}
+}

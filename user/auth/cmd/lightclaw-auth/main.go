@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"log/slog"
 	"net/http"
 	"os"
@@ -32,17 +33,28 @@ func main() {
 	contentAuditClient := buildContentAuditClient(logger, contentAuditConfig)
 	stores := newStores(contentAuditConfig.Enabled)
 	shadowBinding := buildShadowBindingService(stores.shadow, logger)
+	realnameClient := buildRealnameClient(logger)
+	realnameCipher := buildRealnameCipher(logger)
+	realnameFaceIDConfig := buildRealnameFaceIDConfig()
+	shadowBasicAuthSyncEnabled := envOrDefault("SHADOW_BASIC_AUTH_SYNC_ENABLED", "false") == "true"
+	_, durableStore := stores.auth.(*service.MySQLStore)
+	if err := service.ValidateRealnameFaceIDStartup(realnameFaceIDConfig, realnameClient, realnameCipher, shadowBinding, shadowBasicAuthSyncEnabled, durableStore); err != nil {
+		logger.Error("invalid realname FaceID startup config", "err", err)
+		os.Exit(1)
+	}
 	publicBaseURL := envOrDefault("LIGHTCLAW_PUBLIC_BASE_URL", "https://lightclaw.tech")
 	frontendBaseURL := envOrDefault("LIGHTCLAW_FRONTEND_BASE_URL", publicBaseURL)
 	authService := service.NewWithStore(stores.auth, service.Options{
 		SessionTTL:                 sessionTTL,
 		DefaultSMSCode:             envOrDefault("LIGHTCLAW_DEV_SMS_CODE", ""),
-		RealnameVerifier:           buildRealnameVerifier(logger),
-		RealnameCipher:             buildRealnameCipher(logger),
+		RealnameVerifier:           realnameClient,
+		RealnameFaceIDVerifier:     realnameClient,
+		RealnameCipher:             realnameCipher,
+		RealnameFaceID:             realnameFaceIDConfig,
 		ContentAudit:               contentAuditConfig,
 		ContentAuditClient:         contentAuditClient,
 		ShadowBinding:              shadowBinding,
-		ShadowBasicAuthSyncEnabled: envOrDefault("SHADOW_BASIC_AUTH_SYNC_ENABLED", "false") == "true",
+		ShadowBasicAuthSyncEnabled: shadowBasicAuthSyncEnabled,
 		EmailBind: service.EmailBindConfig{
 			Enabled:         envOrDefault("LIGHTCLAW_EMAIL_BIND_ENABLED", "false") == "true",
 			TokenTTL:        time.Duration(envInt64OrDefault("LIGHTCLAW_EMAIL_BIND_TOKEN_TTL_SECONDS", 1800)) * time.Second,
@@ -382,7 +394,7 @@ func buildGitHubOAuthConfig() *httpapi.GitHubOAuthConfig {
 	}
 }
 
-func buildRealnameVerifier(logger *slog.Logger) service.RealnameVerifier {
+func buildRealnameClient(logger *slog.Logger) *realname.Client {
 	secretID := strings.TrimSpace(os.Getenv("TENCENT_REALNAME_SECRET_ID"))
 	secretKey := strings.TrimSpace(os.Getenv("TENCENT_REALNAME_SECRET_KEY"))
 	if secretID == "" || secretKey == "" {
@@ -400,6 +412,27 @@ func buildRealnameVerifier(logger *slog.Logger) service.RealnameVerifier {
 	}
 	logger.Info("realname verifier enabled")
 	return client
+}
+
+func buildRealnameFaceIDConfig() service.RealnameFaceIDConfig {
+	return service.RealnameFaceIDConfig{
+		Mode:        service.RealnameAssuranceMode(strings.TrimSpace(envOrDefault("LIGHTCLAW_REALNAME_ASSURANCE_MODE", "legacy"))),
+		RuleID:      strings.TrimSpace(os.Getenv("TENCENT_REALNAME_FACEID_RULE_ID")),
+		AccountID:   strings.TrimSpace(os.Getenv("TENCENT_REALNAME_ACCOUNT_ID")),
+		RedirectURL: strings.TrimSpace(os.Getenv("TENCENT_REALNAME_FACEID_REDIRECT_URL")),
+		DigestKey:   decodeRealnameDigestKey(os.Getenv("REALNAME_ENCRYPTION_KEY")),
+		DailyQuota:  int(envInt64OrDefault("LIGHTCLAW_REALNAME_FACEID_DAILY_QUOTA", 5)),
+		AttemptTTL:  parseDurationEnv("LIGHTCLAW_REALNAME_FACEID_ATTEMPT_TTL", 2*time.Hour),
+		LeaseTTL:    parseDurationEnv("LIGHTCLAW_REALNAME_FACEID_LEASE_TTL", 30*time.Second),
+	}
+}
+
+func decodeRealnameDigestKey(value string) []byte {
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(value))
+	if err != nil || len(decoded) != 32 {
+		return nil
+	}
+	return decoded
 }
 
 func buildTATRegisterIssuer(logger *slog.Logger) tat.RegisterCodeIssuer {

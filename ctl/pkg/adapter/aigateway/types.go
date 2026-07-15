@@ -65,12 +65,13 @@ type Plan struct {
 // plan.PeriodValue / plan.PeriodUnit 兜底。CTL 端 R-MR-3 改造后默认会传入
 // bundle.TimeSpan/TimeUnit 或 req.TimeSpan/TimeUnit。
 type ApplySubscriptionRequest struct {
-	UserID      string `json:"user_id"`
-	PlanID      string `json:"plan_id"`
-	Nickname    string `json:"nickname,omitempty"`
-	Phone       string `json:"phone,omitempty"`
-	PeriodValue int    `json:"period_value,omitempty"`
-	PeriodUnit  string `json:"period_unit,omitempty"` // "m" / "d" / "y" / "months" / "days" / "years"
+	IdempotencyKey string `json:"idempotency_key"`
+	UserID         string `json:"user_id"`
+	PlanID         string `json:"plan_id"`
+	Nickname       string `json:"nickname,omitempty"`
+	Phone          string `json:"phone,omitempty"`
+	PeriodValue    int    `json:"period_value,omitempty"`
+	PeriodUnit     string `json:"period_unit,omitempty"` // "m" / "d" / "y" / "months" / "days" / "years"
 }
 
 // CancelSubscriptionRequest 取消订阅请求体

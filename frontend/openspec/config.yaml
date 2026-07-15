@@ -47,7 +47,7 @@ context: |
               编译期常量（优先由 `NEXT_PUBLIC_REGION` 注入，保留 `VITE_REGION` 作为发布脚本兼容 env）
               用于国内 / 国际站差异化：OAuth 渠道、首页平台卡片、法律页脚、默认语言等
   - 测试: Vitest 4 + @testing-library/react + @testing-library/user-event + jsdom
-  - 构建: Next 静态导出（`next build --webpack` + Fumadocs MDX + 后处理脚本）
+  - 构建: Next 静态导出（Turbopack `next build` + Fumadocs MDX + 后处理脚本）
               区域化：`pnpm build:cn` / `pnpm build:global`
   - 包管理: pnpm（workspace 形式，与 `tea-sdk-lightclaw` monorepo 联动）
   - 部署: Cloudflare Pages（静态托管，`pnpm deploy:cf`）+ shprod（Kubernetes Pod）双形态

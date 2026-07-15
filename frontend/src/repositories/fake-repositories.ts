@@ -19,10 +19,13 @@ import type {
   WorkspaceMessage,
 } from "@/domain/types";
 import { planCatalog } from "@/domain/plan-catalog";
+import { getAccountPreviewOverrides } from "@/repositories/account-preview-states";
 import type { OAuthProvider, WeChatOAuthMode } from "@/lib/oauth";
 import type {
   BotRepository,
   DashboardSnapshot,
+  RealnameFaceIdAttempt,
+  RealnameFaceIdAttemptState,
   Repositories,
   SettingsSnapshot,
   WorkspaceSnapshot,
@@ -41,6 +44,18 @@ const FAKE_RESET_PROVIDER_NAME = "custom";
 const FAKE_RESET_BASE_URL = "https://api.example.invalid";
 const FAKE_RESET_MODEL_ID = "fake-model";
 const FAKE_RESET_API = "chat_completions";
+const FACE_ID_ATTEMPT_LIFETIME_MS = 10 * 60 * 1000;
+
+type FakeFaceIdAttemptRecord = {
+  attemptId: string;
+  userId: string;
+  state: RealnameFaceIdAttemptState;
+  verificationUrl: string;
+  expiresAt: string;
+  facePollCount: number;
+};
+
+const fakeFaceIdAttempts = new Map<string, FakeFaceIdAttemptRecord>();
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -71,6 +86,40 @@ const mockUser = (input: { email?: string; phone?: string; name?: string }): Use
     inviteRequired: false,
     createdAt: nowIso(),
   };
+};
+
+// ─────────────────────────────────────────────────────────────────────────
+// 账号管理页 —— 本地假数据交互状态预设
+//
+// 目的：用真实账号页组件 + 假数据，覆盖所有交互状态，便于本地预览调试。
+// 用法：访问 /account?state=<key>，getSession 会按 key 返回对应的完整假用户；
+//       或用页面右下角的「预览状态切换器」直接点选。
+// 预设清单集中维护在 account-preview-states.ts（切换器与本文件共用）。
+// ─────────────────────────────────────────────────────────────────────────
+const ACCOUNT_PREVIEW_BASE_USER: User = {
+  id: "usr_01hxa2f",
+  name: "本地预览用户",
+  phone: "13800138000",
+  email: undefined,
+  avatarUrl: "/auth/profile/avatar",
+  inviteRequired: false,
+  createdAt: nowIso(),
+};
+
+/** 从当前 URL 读取 ?state= 预设 key（仅浏览器环境）。 */
+const readAccountPreviewStateKey = (): string | null => {
+  if (typeof window === "undefined") return null;
+  try {
+    const key = new URLSearchParams(window.location.search).get("state");
+    return key && key.trim().length > 0 ? key.trim() : null;
+  } catch {
+    return null;
+  }
+};
+
+/** 构造带交互状态预设的账号预览用户。 */
+const buildAccountPreviewUser = (stateKey: string | null): User => {
+  return { ...ACCOUNT_PREVIEW_BASE_USER, createdAt: nowIso(), ...getAccountPreviewOverrides(stateKey) };
 };
 
 const toSessionSnapshot = (user: User): AuthSessionSnapshot => ({
@@ -109,6 +158,19 @@ const writeStoredAuthSession = (session: AuthSessionSnapshot | null) => {
   window.localStorage.setItem(FAKE_AUTH_STORAGE_KEY, JSON.stringify(session));
 };
 
+const updateStoredUser = (mutate: (user: User) => User) => {
+  const session = readStoredAuthSession();
+  if (!session) {
+    return null;
+  }
+  const next = {
+    ...session,
+    user: mutate(session.user),
+  } satisfies AuthSessionSnapshot;
+  writeStoredAuthSession(next);
+  return next;
+};
+
 const revokeBlobAvatarUrl = (avatarUrl?: string) => {
   if (typeof URL === "undefined" || typeof URL.revokeObjectURL !== "function") {
     return;
@@ -116,6 +178,23 @@ const revokeBlobAvatarUrl = (avatarUrl?: string) => {
   if (avatarUrl?.startsWith("blob:")) {
     URL.revokeObjectURL(avatarUrl);
   }
+};
+
+const toPublicFaceIdAttempt = (record: FakeFaceIdAttemptRecord): RealnameFaceIdAttempt => ({
+  attemptId: record.attemptId,
+  state: record.state,
+  verificationUrl: record.verificationUrl,
+  expiresAt: record.expiresAt,
+});
+
+const expireFakeAttemptIfNeeded = (record: FakeFaceIdAttemptRecord) => {
+  if (record.state === "succeeded" || record.state === "failed" || record.state === "expired") {
+    return record;
+  }
+  if (new Date(record.expiresAt).getTime() <= Date.now()) {
+    record.state = "expired";
+  }
+  return record;
 };
 
 const baseBilling: BillingSummary = {
@@ -368,11 +447,18 @@ export const createFakeRepositories = (): Repositories => {
       },
       async getSession() {
         await wait(NETWORK_DELAY_MS);
+        // 账号页交互状态预览：URL 带 ?state= 时，按预设强制重置会话（便于切换状态查看）。
+        const previewStateKey = readAccountPreviewStateKey();
+        if (previewStateKey) {
+          const previewSession = toSessionSnapshot(buildAccountPreviewUser(previewStateKey));
+          writeStoredAuthSession(previewSession);
+          return previewSession;
+        }
         const session = readStoredAuthSession();
         if (session) return session;
         if (!LOCAL_PREVIEW_AUTH_ENABLED) return null;
 
-        const previewSession = toSessionSnapshot(mockUser({ name: "本地预览用户", phone: "13800138000" }));
+        const previewSession = toSessionSnapshot(buildAccountPreviewUser(null));
         writeStoredAuthSession(previewSession);
         return previewSession;
       },
@@ -425,6 +511,117 @@ export const createFakeRepositories = (): Repositories => {
         revokeBlobAvatarUrl(session?.user.avatarUrl);
         writeStoredAuthSession(null);
       },
+      async startRealnameFaceIdAttempt({ consent }) {
+        await wait(NETWORK_DELAY_MS);
+        const session = readStoredAuthSession();
+        if (!session) {
+          throw new Error("未登录或登录已失效。");
+        }
+        if (!consent) {
+          throw new Error("请先阅读并同意相关说明。");
+        }
+
+        const attemptId = `fake-faceid-${Math.random().toString(36).slice(2, 10)}`;
+        const record: FakeFaceIdAttemptRecord = {
+          attemptId,
+          userId: session.user.id,
+          state: "pending",
+          verificationUrl: `https://faceid.example.invalid/${attemptId}`,
+          expiresAt: new Date(Date.now() + FACE_ID_ATTEMPT_LIFETIME_MS).toISOString(),
+          facePollCount: 0,
+        };
+        fakeFaceIdAttempts.set(attemptId, record);
+        return toPublicFaceIdAttempt(record);
+      },
+      async getCurrentRealnameFaceIdAttempt() {
+        await wait(NETWORK_DELAY_MS / 2);
+        const session = readStoredAuthSession();
+        if (!session) {
+          throw new Error("未登录或登录已失效。");
+        }
+        const record = Array.from(fakeFaceIdAttempts.values())
+          .filter((item) => item.userId === session.user.id)
+          .reverse()
+          .find((item) => !["succeeded", "failed", "expired"].includes(item.state));
+        if (!record) {
+          throw Object.assign(new Error("实名认证记录不存在。"), { status: 404 });
+        }
+        return toPublicFaceIdAttempt(expireFakeAttemptIfNeeded(record));
+      },
+      async getRealnameFaceIdAttempt(attemptId) {
+        await wait(NETWORK_DELAY_MS / 2);
+        const session = readStoredAuthSession();
+        if (!session) {
+          throw new Error("未登录或登录已失效。");
+        }
+        const record = fakeFaceIdAttempts.get(attemptId);
+        if (!record || record.userId !== session.user.id) {
+          throw new Error("实名认证记录不存在。");
+        }
+
+        expireFakeAttemptIfNeeded(record);
+        if (record.state === "pending") {
+          record.facePollCount += 1;
+          if (record.facePollCount >= 2) {
+            record.state = "face_succeeded";
+          }
+          return toPublicFaceIdAttempt(record);
+        }
+        if (record.state === "face_succeeded") {
+          record.state = "phone_pending";
+          return toPublicFaceIdAttempt(record);
+        }
+        return toPublicFaceIdAttempt(record);
+      },
+      async verifyRealnameFaceIdPhone(attemptId, { code, phone }) {
+        await wait(NETWORK_DELAY_MS);
+        const session = readStoredAuthSession();
+        const record = fakeFaceIdAttempts.get(attemptId);
+        if (!session || !record || record.userId !== session.user.id) {
+          throw new Error("实名认证记录不存在。");
+        }
+        if (!code.trim()) {
+          throw new Error("验证码不能为空。");
+        }
+        const candidatePhone = phone?.trim() || session.user.phone?.trim() || "";
+        if (!/^1\d{10}$/.test(candidatePhone)) {
+          throw new Error("手机号格式不正确。");
+        }
+        if (session.user.phone?.trim() && session.user.phone.trim() !== candidatePhone) {
+          throw new Error("当前手机号已变更，请重新开始实名认证。");
+        }
+        if (record.state !== "face_succeeded" && record.state !== "phone_pending") {
+          throw new Error("请先完成人脸核身。");
+        }
+        record.state = "succeeded";
+        updateStoredUser((user) => ({
+          ...user,
+          phone: candidatePhone,
+          realnameVerified: true,
+          realnameLevel: "phone_3fa",
+          realnameSyncStatus: "succeeded",
+        }));
+        return toPublicFaceIdAttempt(record);
+      },
+      async finalizeRealnameFaceIdAttempt(attemptId) {
+        await wait(NETWORK_DELAY_MS);
+        const session = readStoredAuthSession();
+        const record = fakeFaceIdAttempts.get(attemptId);
+        if (!session || !record || record.userId !== session.user.id) {
+          throw new Error("实名认证记录不存在。");
+        }
+        if (record.state !== "shadow_pending" && record.state !== "succeeded") {
+          throw new Error("实名认证尚未完成。");
+        }
+        record.state = "succeeded";
+        updateStoredUser((user) => ({
+          ...user,
+          realnameVerified: true,
+          realnameLevel: "phone_3fa",
+          realnameSyncStatus: "succeeded",
+        }));
+        return toPublicFaceIdAttempt(record);
+      },
       async verifyRealname({ name, idCard }) {
         await wait(NETWORK_DELAY_MS);
         const session = readStoredAuthSession();
@@ -463,26 +660,37 @@ export const createFakeRepositories = (): Repositories => {
         await wait(NETWORK_DELAY_MS / 2);
         return { cooldownSeconds: 60 };
       },
+      async sendRealnameFaceIdPhoneCode(_attemptId, _input) {
+        await wait(NETWORK_DELAY_MS / 2);
+        return { cooldownSeconds: 60 };
+      },
       async verifyRealnamePhone() {
         await wait(NETWORK_DELAY_MS);
         const session = readStoredAuthSession();
         if (!session) {
           throw new Error("未登录或登录已失效。");
         }
+        const activeAttempt = Array.from(fakeFaceIdAttempts.values()).find((item) => item.userId === session.user.id && (
+          item.state === "face_succeeded" || item.state === "phone_pending"
+        ));
+        if (!activeAttempt) {
+          throw new Error("请先完成人脸核身。");
+        }
+        activeAttempt.state = "shadow_pending";
         writeStoredAuthSession({
           ...session,
           user: {
             ...session.user,
-            realnameVerified: true,
+            realnameVerified: false,
             realnameLevel: "phone_3fa",
-            realnameSyncStatus: "succeeded",
+            realnameSyncStatus: "pending",
           },
         });
         return {
           ok: true,
           realnameLevel: "phone_3fa",
-          realnameSyncStatus: "succeeded",
-          shadowBindingStatus: "active",
+          realnameSyncStatus: "pending",
+          shadowBindingStatus: "pending",
         };
       },
       async retryRealnameSync() {
@@ -491,21 +699,27 @@ export const createFakeRepositories = (): Repositories => {
         if (!session) {
           throw new Error("未登录或登录已失效。");
         }
+        const activeAttempt = Array.from(fakeFaceIdAttempts.values()).find((item) => item.userId === session.user.id && (
+          item.state === "shadow_pending" || item.state === "failed" || item.state === "phone_pending"
+        ));
+        if (activeAttempt) {
+          activeAttempt.state = "shadow_pending";
+        }
         const next = {
           ...session,
           user: {
             ...session.user,
-            realnameVerified: true,
+            realnameVerified: false,
             realnameLevel: "phone_3fa",
-            realnameSyncStatus: "succeeded" as const,
+            realnameSyncStatus: "pending" as const,
           },
         };
         writeStoredAuthSession(next);
         return {
           ok: true,
           user: next.user,
-          realnameSyncStatus: "succeeded" as const,
-          shadowBindingStatus: "active",
+          realnameSyncStatus: "pending" as const,
+          shadowBindingStatus: "pending",
         };
       },
       async sendPhoneChangeCode() {

@@ -137,16 +137,16 @@ description: 生成 LightVela 长篇营销/产品文章的专用技能。用户�
 
 ## SEO / GEO 优化（面向搜索引擎与 AI 搜索）
 
-本技能不重复 SEO 细则；**完整 SEO/GEO 检查交由 `lv-seo-geo` 技能**（`../lv-seo-geo/SKILL.md` + `references/seo-geo-rules.md`）。但写长文时就要顺手做对这几件事，让产出既对人友好，也容易被搜索引擎和 ChatGPT/Perplexity/Google AI Overview 这类生成式搜索抓取：
+本技能不重复 SEO 细则；**完整 SEO/GEO 检查交由 `lv-seo-geo` 技能**（`../product-skills/lv-seo-geo/SKILL.md` + `references/seo-geo-rules.md`）。但写长文时就要顺手做对这几件事，让产出既对人友好，也容易被搜索引擎和 ChatGPT/Perplexity/Google AI Overview 这类生成式搜索抓取：
 
 - **开头自然带主关键词**：第一屏让主题词出现一次即可，不堆砌。英文核心词参考 `lv-seo-geo`：LightVela / cloud AI agent / personal AI agent / AI assistant / Hermes Agent / agent hosting / always-on AI agent / AI agent with memory / automations / skills；中文核心词：LightVela / 云端 Agent / 个人 Agent / AI 助手 / Hermes Agent / 云端托管 / 长期记忆 / 自动任务 / 技能。只挑和这篇主题真正相关的几个用。
 - **写“定义句”**：用一句清楚的陈述句把概念说死，例如 “LightVela is a cloud-hosted personal AI agent platform.” / “A Soul is a structured persona spec for a Hermes Agent.” 生成式搜索最容易抽取这种句式。
 - **用问答式 / 场景式段落**：在解释功能时顺带覆盖“它是什么 / 为什么需要 / 怎么用 / 和谁相关”几个角度，便于被当成答案抽取。
 - **加有意义的内部链接，且要分布在正文各处**：在正文自然提及概念的地方加行内链接（开头/中段/结尾都要有），而不是只在文末堆一排。链接要与所在句子真实相关（讲 skills 时链到 skill 配置页；讲 automations 时链到 automation 配置页）。每个链接都要帮读者走下一步，不为 SEO 硬塞。
 
-**⚠️ 内链 URL 必须用真实路由，不能用 markdown 源文件名。** docs 的源文件名（如 `01-overview.md`、`02-quickstart.md`）里的数字前缀只是排序，不是 slug——写成 `lightvela.ai/docs/01-overview` 会 404。正确路径是去掉数字前缀的 slug（如 `/docs/overview`、`/docs/quickstart`、`/docs/core-concepts`、`/docs/configuration`、`/docs/configuration/skill`、`/docs/configuration/automation`）。生成任何 docs 内链前必须核对 slug 是否真实存在：完整的校验流程、真实路径清单、国内/国际站域名见 `../lv-seo-geo/SKILL.md` 的「内链/Backlink 要求」；拿不准就用确定存在的 `/docs/overview`，不要编造路径。
+**⚠️ 内链 URL 必须用真实路由，不能用 markdown 源文件名。** docs 的源文件名（如 `01-overview.md`、`02-quickstart.md`）里的数字前缀只是排序，不是 slug——写成 `lightvela.ai/docs/01-overview` 会 404。正确路径是去掉数字前缀的 slug（如 `/docs/overview`、`/docs/quickstart`、`/docs/core-concepts`、`/docs/configuration`、`/docs/configuration/skill`、`/docs/configuration/automation`）。生成任何 docs 内链前必须核对 slug 是否真实存在：完整的校验流程、真实路径清单、国内/国际站域名见 `../product-skills/lv-seo-geo/SKILL.md` 的「内链/Backlink 要求」；拿不准就用确定存在的 `/docs/overview`，不要编造路径。
 
-**⚠️ 内链要跟随文章语言对应本地化 URL。** 站点是多语的，sitemap 已发 `en-us` / `zh-cn` / `zh-sg` 多语版本。中文文章（如 techpedia 的 `.zh.md`）必须用中文 URL，英文文章用英文默认 URL，不要一律用英文。默认约定：英文 → `https://lightvela.ai/docs/<slug>`；中文 → `https://lightvela.ai/zh-sg/docs/<slug>`（国际站 zh-sg；明确面向国内站时才用 `https://lightvela.com/zh-cn/docs/<slug>`）。同一篇文章内不中英混链；techpedia 的 `.zh.md` 与 `.en.md` 各自链对应语言版本。完整 URL 表与校验流程见 `../lv-seo-geo/SKILL.md` 的「内链要跟随文章语言」。
+**⚠️ 内链要跟随文章语言对应本地化 URL。** 站点是多语的，sitemap 已发 `en-us` / `zh-cn` / `zh-sg` 多语版本。中文文章（如 techpedia 的 `.zh.md`）必须用中文 URL，英文文章用英文默认 URL，不要一律用英文。默认约定：英文 → `https://lightvela.ai/docs/<slug>`；中文 → `https://lightvela.ai/zh-sg/docs/<slug>`（国际站 zh-sg；明确面向国内站时才用 `https://lightvela.com/zh-cn/docs/<slug>`）。同一篇文章内不中英混链；techpedia 的 `.zh.md` 与 `.en.md` 各自链对应语言版本。完整 URL 表与校验流程见 `../product-skills/lv-seo-geo/SKILL.md` 的「内链要跟随文章语言」。
 - **H1/H2 说清主题**：标题用能概括主题的实词，不要纯情绪化标题。
 - **不要关键词堆砌**：宁可少用，必须服务于解释；本技能的“避免营销口号/AI hype”规则同样适用。
 

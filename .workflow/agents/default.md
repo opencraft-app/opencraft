@@ -36,15 +36,15 @@
 
 ### 阶段一：规划（Planning）
 
-**绑定 Skill：** `prd-init`（需求澄清）→ `brainstorming`（技术设计）→ `writing-plans`
+**绑定 Skill：** `prd-creator`（需求澄清）→ `brainstorming`（技术设计）→ `writing-plans`
 
 1. 上下文加载 + 状态检测（按 G18 启动拦截执行）
 2. 分支管理（按 G8 确保不在主分支上开发）
 3. 需求规模判定（S / M / L）
    - S：单文件改动 / bug 修复，可在当前 single_agent 模式继续
    - M / L：建议切换到多 Agent 模式（参见 `.workflow/agents/leader.md`）
-4. 调用 `prd-init` skill 进行需求澄清（用户意图、场景、范围、站点、TAPD）
-5. 调用 `brainstorming` skill 进行技术设计探索（⚠️ 产品范围已由 prd-init 确认，只探索技术方案）
+4. 调用 `prd-creator` skill 进行需求澄清（用户意图、场景、范围、站点、TAPD）
+5. 调用 `brainstorming` skill 进行技术设计探索（⚠️ 产品范围已由 prd-creator 确认，只探索技术方案）
 6. 调用 `writing-plans` skill 输出 OpenSpec 文件：`proposal.md` / `spec.md` / `plan.md`
 7. 等待用户确认 plan.md
 8. **通过 `.workflow/checklists/gate-planning.md` 门禁检查**
@@ -105,7 +105,7 @@
 | # | 检查项 |
 |---|--------|
 | 1 | 已按优先级加载初始化文件 |
-| 2 | prd-init / brainstorming / writing-plans skill 已真实调用（G12） |
+| 2 | prd-creator / brainstorming / writing-plans skill 已真实调用（G12） |
 | 3 | plan.md 含有效任务列表（G3） |
 | 4 | 每个任务都有对应的测试（如适用） |
 | 5 | 所有测试 / 类型检查 / lint 通过 |

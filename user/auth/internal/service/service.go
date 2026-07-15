@@ -40,17 +40,19 @@ var (
 )
 
 type Options struct {
-	Now                func() time.Time
-	SMSCooldown        time.Duration
-	SMSCodeTTL         time.Duration
-	SessionTTL         time.Duration
-	DefaultSMSCode     string
-	SeedDemoUser       bool
-	RealnameVerifier   RealnameVerifier
-	RealnameCipher     RealnameCipher
-	ContentAudit       ContentAuditConfig
-	ContentAuditClient ContentAuditClient
-	ShadowBinding      *shadowbinding.Service
+	Now                    func() time.Time
+	SMSCooldown            time.Duration
+	SMSCodeTTL             time.Duration
+	SessionTTL             time.Duration
+	DefaultSMSCode         string
+	SeedDemoUser           bool
+	RealnameVerifier       RealnameVerifier
+	RealnameFaceIDVerifier RealnameFaceIDVerifier
+	RealnameCipher         RealnameCipher
+	RealnameFaceID         RealnameFaceIDConfig
+	ContentAudit           ContentAuditConfig
+	ContentAuditClient     ContentAuditClient
+	ShadowBinding          *shadowbinding.Service
 	// ShadowBasicAuthSyncEnabled gates the external SaveBasicAuthForSaaS side
 	// effect and the user-facing sync status. Keep it off by default so the
 	// shadow binding code can land before product rollout.
@@ -86,8 +88,16 @@ type User struct {
 	EmailVerified          bool
 	RealnameLevel          string
 	RealnameSyncStatus     string
+	RealnameAssuranceMode  string
 	CreatedAt              time.Time
 	UpdatedAt              time.Time
+
+	realnameVerifiedAt      *time.Time
+	realnameFinalAttemptID  string
+	realnameFaceVerifiedAt  *time.Time
+	realnamePhoneVerifiedAt *time.Time
+	realnameIdentityHash    string
+	realnamePhoneHash       string
 }
 
 type RealnameVerifyInput struct {
@@ -313,7 +323,9 @@ type Service struct {
 	defaultSMSCode             string
 	store                      Store
 	realnameVerifier           RealnameVerifier
+	realnameFaceIDVerifier     RealnameFaceIDVerifier
 	realnameCipher             RealnameCipher
+	realnameFaceID             RealnameFaceIDConfig
 	contentAudit               ContentAuditConfig
 	contentAuditClient         ContentAuditClient
 	shadowBinding              *shadowbinding.Service
@@ -367,7 +379,9 @@ func NewWithStore(store Store, opts Options) *Service {
 		defaultSMSCode:             normalizeFixedSMSCode(opts.DefaultSMSCode),
 		store:                      store,
 		realnameVerifier:           opts.RealnameVerifier,
+		realnameFaceIDVerifier:     opts.RealnameFaceIDVerifier,
 		realnameCipher:             opts.RealnameCipher,
+		realnameFaceID:             normalizeRealnameFaceIDConfig(opts.RealnameFaceID),
 		contentAudit:               opts.ContentAudit,
 		contentAuditClient:         opts.ContentAuditClient,
 		shadowBinding:              opts.ShadowBinding,
@@ -501,6 +515,9 @@ func (s *Service) VerifyPhoneChange(ctx context.Context, token string, input Pho
 		if err != nil {
 			return PhoneChangeVerifyResult{}, err
 		}
+		if s.realnameFaceID.Mode == RealnameAssuranceModeFaceRequired {
+			return PhoneChangeVerifyResult{OK: true, User: s.projectUserForAssuranceMode(ctx, user), ShadowBindingStatus: bindingStatusOrDisabled(updatedBinding.Status)}, nil
+		}
 		if isAtLeastRealnameLevel(user.RealnameLevel, RealnameLevelIDCard2FA) || user.RealnameVerified {
 			if err := s.syncStoredShadowBasicAuth(ctx, user.ID, input.ClientIP, input.ClientUA, false); err != nil {
 				return PhoneChangeVerifyResult{}, shadowBasicAuthError(ctx, err, user.ID, updatedBinding)
@@ -538,7 +555,7 @@ func (s *Service) VerifyPhoneChange(ctx context.Context, token string, input Pho
 	if err != nil {
 		return PhoneChangeVerifyResult{}, err
 	}
-	return PhoneChangeVerifyResult{OK: true, User: user, ShadowBindingStatus: shadowStatus}, nil
+	return PhoneChangeVerifyResult{OK: true, User: s.projectUserForAssuranceMode(ctx, user), ShadowBindingStatus: shadowStatus}, nil
 }
 
 func (s *Service) cloudPhoneCodesEnabled() bool {
@@ -718,6 +735,7 @@ func (s *Service) CurrentSession(ctx context.Context, token string) (*AuthSessio
 	if err != nil {
 		return nil, err
 	}
+	session.User = s.projectUserForAssuranceMode(ctx, session.User)
 	return s.decorateCurrentSessionRealnameSyncStatus(ctx, session), nil
 }
 
@@ -782,6 +800,9 @@ func (s *Service) CreateImpersonationSession(ctx context.Context, userID string,
 }
 
 func (s *Service) VerifyRealname(ctx context.Context, token string, input RealnameVerifyInput) (RealnameVerifyResult, error) {
+	if s.realnameFaceID.Mode == RealnameAssuranceModeFaceRequired {
+		return RealnameVerifyResult{}, newError("realname_faceid_required", "请使用人脸实名认证流程完成认证。", http.StatusConflict)
+	}
 	trimmedToken := strings.TrimSpace(token)
 	if trimmedToken == "" {
 		return RealnameVerifyResult{}, newError("unauthorized", "未登录或登录已失效。", http.StatusUnauthorized)
@@ -1006,6 +1027,9 @@ func (s *Service) syncShadowBasicAuth(ctx context.Context, userID, name, idCard,
 }
 
 func (s *Service) VerifyRealnamePhone(ctx context.Context, token string, input RealnamePhoneVerifyInput) (RealnamePhoneVerifyResult, error) {
+	if s.realnameFaceID.Mode == RealnameAssuranceModeFaceRequired {
+		return RealnamePhoneVerifyResult{}, newError("realname_faceid_required", "请使用人脸实名认证流程完成认证。", http.StatusConflict)
+	}
 	trimmedToken := strings.TrimSpace(token)
 	if trimmedToken == "" {
 		return RealnamePhoneVerifyResult{}, newError("unauthorized", "未登录或登录已失效。", http.StatusUnauthorized)
@@ -1061,6 +1085,9 @@ func (s *Service) VerifyRealnamePhone(ctx context.Context, token string, input R
 }
 
 func (s *Service) RetryRealnameSync(ctx context.Context, token string, clientIP, clientUA string) (RealnameSyncRetryResult, error) {
+	if s.realnameFaceID.Mode == RealnameAssuranceModeFaceRequired {
+		return RealnameSyncRetryResult{}, newError("realname_faceid_required", "请使用人脸实名认证流程完成认证。", http.StatusConflict)
+	}
 	trimmedToken := strings.TrimSpace(token)
 	if trimmedToken == "" {
 		return RealnameSyncRetryResult{}, newError("unauthorized", "未登录或登录已失效。", http.StatusUnauthorized)
@@ -1298,7 +1325,11 @@ func (s *Service) FindUserByID(ctx context.Context, userID string) (User, error)
 	if trimmedUserID == "" {
 		return User{}, newError("user_not_found", "用户不存在。", 404)
 	}
-	return s.store.FindUserByID(ctx, trimmedUserID)
+	user, err := s.store.FindUserByID(ctx, trimmedUserID)
+	if err != nil {
+		return User{}, err
+	}
+	return s.projectUserForAssuranceMode(ctx, user), nil
 }
 
 func (s *Service) UpdateProfile(ctx context.Context, token string, name string) (User, error) {

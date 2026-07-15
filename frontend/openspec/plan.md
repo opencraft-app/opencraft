@@ -1,4 +1,118 @@
-# 当前执行计划：LightVela 场景任务安装器 v1
+# 当前执行计划：公开测试公告付费表格展示调整
+
+> 分支：`frontsandbox/public-beta-launch-ai-price-79`
+> 规模：S
+> 范围：仅调整 `/docs/announcements/public-beta` 公告中付费方案展示。
+
+## 任务清单
+
+- [x] 1. 调整付费方案说明、远航版字段和含 AI 积分版本表格展示，并运行文档改动的基础校验。
+  - 角色：Developer + Reviewer
+  - 影响文件：`frontend/src/content/docs/announcements/public-beta.md`
+  - 验收方式：公告付费方案按最新策略展示，`git diff --check` 与 `pnpm check` 通过。
+  - 结果：说明文案已补充含 AI 积分版本敬请期待；远航版价格和 Agent 标为敬请期待，独立环境展示为 `4 核 8GB x 3`；含 AI 积分版本表格已加回且月度价格、Agent 标为敬请期待。
+
+## 验收重点
+
+- 不改动订阅/支付逻辑。
+
+---
+
+# 当前执行计划：干净用户三要素实名闭环
+
+> 分支：`codex/force-idcard-reface`
+> 规模：M
+> 范围：支持无两要素、无本地手机号、无 Shadow 绑定的用户完成实名；不恢复独立“绑定安全手机”入口。
+
+## 任务清单
+
+- [x] 1. 用服务层和 HTTP 测试锁定干净用户流程及手机号安全边界。
+  - 角色：Developer
+  - 影响文件：`user/auth/internal/service/*realname_faceid*_test.go`、`user/auth/internal/httpapi/handler_test.go`
+  - 验收方式：覆盖无手机号可创建刷脸尝试、刷脸后发送/校验候选手机号、手机号冲突与篡改拒绝、既有手机号兼容。
+- [x] 2. 扩展 FaceID 手机验证 API，并在 Shadow 验证成功后原子写入本地手机号与推进状态。
+  - 角色：Developer
+  - 影响文件：`user/auth/api/openapi.yaml`、生成 API、FaceID service、Memory/MySQL store、HTTP handler
+  - 验收方式：服务端状态严格按 `identity -> face -> phone -> shadow -> completed` 推进；attempt/audit 只保存手机号哈希，不保存明文。
+- [x] 3. 前端在无手机号时仅于刷脸成功后展示可编辑手机号，并随发送/校验请求提交。
+  - 角色：Developer
+  - 影响文件：`frontend/src/pages/marketing/account-page.tsx`、Repository 类型/实现/测试
+  - 验收方式：干净用户可完成全流程；已有手机号仍不可在该流程中替换；独立绑定入口继续隐藏。
+- [x] 4. 运行 auth 全量测试、Go 静态检查、frontend 目标测试、类型检查与 i18n 检查。
+  - 角色：Reviewer
+  - 影响文件：测试与检查输出
+  - 验收方式：相关新增测试通过，无已知回归；任何既有基线失败单独记录。
+  - 结果：auth `go test ./...` 与 `go vet ./...` 通过；frontend 57 条目标测试、`pnpm check`、`pnpm i18n:check` 通过。MySQL 集成测试在配置 `LIGHTCLAW_AUTH_TEST_DSN` 时执行。
+
+## 验收重点
+
+- 干净用户必须先填写姓名身份证并完成新一次刷脸，不能直接进入手机号验证。
+- 手机号必须通过 Shadow 真实短信验证；Shadow 创建/绑定成功后才写入本地手机号并完成 `phone_3fa`。
+- 已有本地手机号的用户沿用当前号码且不能借实名流程换号。
+- 不提供独立“绑定安全手机”产品入口。
+
+---
+
+# 当前执行计划：Hermes 默认头像高清替换
+
+> 分支：`frontsandbox/hermes-avatar`
+> 规模：S
+> 范围：仅替换 Hermes 公共默认头像资产，不调整用户账号头像、组件结构或交互逻辑。
+
+## 任务清单
+
+- [x] 1. 将“我的 Hermes”等场景共用的默认头像替换为用户提供的高清图片。
+  - 角色：Developer + Reviewer
+  - 影响文件：`frontend/public/hermes_logo.png`
+  - 验收方式：目标文件与用户提供的 `nousresearch.png` 内容一致，保持 640×640 PNG 与透明通道；现有 `/hermes_logo.png` 引用继续有效，`git diff --check` 通过。
+  - 结果：目标文件与源图片 SHA-256 一致；本地静态资源请求返回 HTTP 200、`image/png` 和 17,597 字节。
+
+## 验收重点
+
+- “我的 Hermes”、创建成功页和默认头像回退继续复用同一 `/hermes_logo.png` 公共路径。
+- 不修改账号用户头像逻辑，也不新增重复图片资源或组件分支。
+
+---
+
+# 已完成计划：FaceID 复用 Shadow 手机验证
+
+> 分支：`codex/faceid-shadow-sms`
+> 规模：M
+
+## 任务清单
+
+- [x] 1. 为已有 active Shadow 绑定补充 FaceID 手机证明复用测试。
+  - 角色：Developer
+  - 影响文件：`user/auth/internal/service/realname_faceid_core_test.go`
+  - 验收方式：刷脸成功后复用当前手机号证明，直接进入 `shadow_pending`，不要求再次输入短信验证码。
+- [x] 2. 为未绑定 Shadow 的账号补充真实短信发送与腾讯验证码校验测试。
+  - 角色：Developer
+  - 影响文件：`user/auth/internal/service/realname_faceid_core_test.go`、`user/auth/internal/httpapi/handler_test.go`
+  - 验收方式：发送接口调用 Shadow `SendSmsVerifyCode`；验证码提交通过 Shadow 绑定校验，不再消费本地 `sms_challenges`。
+- [x] 3. 接入 FaceID 专用 Shadow 短信 API，并更新前端 Repository。
+  - 角色：Developer
+  - 影响文件：`user/auth/api/openapi.yaml`、`user/auth/internal/api/server.gen.go`、`user/auth/internal/httpapi/handler.go`、`user/auth/internal/service/realname_faceid.go`、`frontend/src/repositories/http-repositories.ts`、`frontend/src/repositories/types.ts`、`frontend/src/pages/marketing/account-page.tsx`
+  - 验收方式：已有绑定跳过短信；未绑定账号点击“获取验证码”会真实下发 Shadow 短信并可完成绑定。
+- [x] 4. 运行 auth 与 frontend 目标测试及静态检查。
+  - 角色：Reviewer
+  - 影响文件：测试与检查输出
+  - 验收方式：Go 目标测试、前端目标测试、类型检查和 diff 检查通过。
+  - 结果：auth 全量测试与 `go vet` 通过；frontend `pnpm check` 及 FaceID/Repository 53 个目标测试通过。
+- [x] 5. 放行国内环境 FaceID 回调。
+  - 角色：Developer
+  - 影响文件：`argocd/services/service-gateway/beijing-sandbox/config.yaml`、`argocd/services/service-gateway/shprod/config.yaml`、`service-gateway/internal/gateway/config_policy_test.go`
+  - 验收方式：北京沙箱和上海生产均将 `GET /auth/realname/faceid/callback` 列入 `public_allow`，配置策略测试和 service-gateway 全量测试通过。
+
+## 验收重点
+
+- 必须重新刷脸。
+- 已有 active Shadow 账号复用既有手机号证明，不重复发送短信。
+- 未绑定 Shadow 的账号仍需通过真实 Shadow 短信完成手机号验证与绑定。
+- Shadow 实名同步成功后才最终完成实名认证。
+
+---
+
+# 已完成计划：LightVela 场景任务安装器 v1
 
 > TAPD：[#135720398](https://tapd.woa.com/tapd_fe/10132091/story/detail/1010132091135720398)
 > 分支：`frontsandbox/scenario-task-installer`
@@ -78,6 +192,27 @@
   - 角色：Developer
   - 影响文件：`frontend/package.json`、`frontend/scripts/clean-next-build-state.mjs`、`.ci/runtime/commands/publish_frontend_preview.sh`、`frontend/scripts/build-release-artifacts.mjs`
   - 验收方式：每次 `build:next`、preview variant 构建和 release artifact 构建前都会清理 `.next`，避免 `cn -> global` 顺序构建复用 webpack cache 导致第二段国际站构建失败。
+- [x] 19. 更新 Agent 记忆页的 `MEMORY.md` 说明文案。
+  - 角色：Developer
+  - 影响文件：`frontend/src/pages/marketing/agent-settings-page.tsx`、`frontend/src/i18n/generated/*.json`
+  - 验收方式：`/agents/memory/` 使用新文案，旧文案不再被源码引用，`pnpm i18n:check` 与 `pnpm check` 通过。
+
+- [x] 20. 放宽记忆统计卡片说明文案的单行展示宽度。
+  - 角色：Developer
+  - 影响文件：`frontend/src/pages/marketing/agent-settings-page.tsx`
+  - 验收方式：桌面宽屏下 `MEMORY.md` 中文说明保持单行，中小屏仍可自然换行且不产生横向溢出。
+- [x] 21. 下线自动任务页的场景任务卡片并保留注释实现。
+  - 角色：Developer
+  - 影响文件：`frontend/src/pages/marketing/openclaw-automations-panel.tsx`
+  - 验收方式：自动任务页不再渲染“场景任务”标题、说明和预设场景卡片，相关实现以注释形式保留，模板、添加、已生效任务与最近执行入口保持可用，`pnpm check` 通过。
+- [x] 22. 统一存量两要素用户的三要素认证状态文案。
+  - 角色：Developer
+  - 影响文件：`frontend/src/pages/marketing/account-page.tsx`、`frontend/src/pages/marketing/__tests__/account-page-faceid.test.tsx`、`frontend/src/i18n/generated/*.json`
+  - 验收方式：`show()` 后，存量 `idcard_2fa` 用户显示“需重新完成认证”，不再显示“待完成手机号认证”；定向测试和 i18n 检查通过。
+- [x] 23. 修复无手机号用户创建 FaceID attempt 时的 MySQL 非空约束错误。
+  - 角色：Developer
+  - 影响文件：`user/auth/internal/service/mysql_store_realname_faceid.go`
+  - 验收方式：`current_phone_hash` 在手机号缺失时持久化为空字符串而非 `NULL`；干净用户 MySQL 集成用例和 `user/auth` 全量测试通过。
 
 ## 验收重点
 
@@ -199,6 +334,7 @@
 - 微信 / QQ 扫码接入使用流式 debug/exec，不能用同步等待命令结束的方式阻塞二维码展示。
 - 场景试跑下发后立即开始，开始试跑后不阻塞在等待弹窗里。
 - 国际站首版不展示场景任务入口。
+- 国内站与国际站均不展示场景任务卡片。
 - 分支预览发布器能在 CI checkout 的 `origin` 缺少 HTTP 凭证时继续拉取 master runtime。
 - 分支预览的国内站和国际站构建互不复用 `.next` / webpack cache。
 - 不影响现有模板、添加、编辑、暂停、恢复、删除和最近执行。

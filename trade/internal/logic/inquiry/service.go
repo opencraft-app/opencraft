@@ -21,6 +21,7 @@ package inquiry
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -124,6 +125,11 @@ type Deps struct {
 	// 合法性已由 config.Load 在启动期 fail-fast 校验；本处只负责透透到 region.Resolve。
 	RegionOverride string
 
+	// InquiryFallbackUin / InquiryFallbackAppID 是询价专用兜底身份。仅 Quote 在 shadow binding
+	// 不存在或返回半残数据时使用；付费下单链路在 placeorder 包内仍强校验 shadow binding。
+	InquiryFallbackUin   string
+	InquiryFallbackAppID string
+
 	// ActivityResolver 是点石活动通道判定 helper（设计稿 .tmp/dianshi-activity-bundle-design.md
 	// §5.2）。可选注入：
 	//   - 非 nil：Quote 在反查 trade_bundle_definition 之后插入分叉点判定；命中点石走
@@ -199,6 +205,8 @@ func (s *Service) Quote(ctx context.Context, req QuoteRequest) (*QuoteResult, er
 	}
 
 	// 1.5 shadow 反查（8B-1）：当 Uin 未由调用方显式提供时，从 externalUserId 反查云账号身份。
+	// 询价是展示链路，允许未绑定影子账号的用户使用配置化兜底账号拿价格；付费下单仍由
+	// placeorder 包强校验 shadow binding，不复用本策略。
 	if strings.TrimSpace(req.Uin) == "" && s.deps.ShadowClient != nil {
 		if strings.TrimSpace(req.ExternalUserID) == "" {
 			return nil, fmt.Errorf("%w: external_user_id is required when uin is missing", ErrInvalidInput)
@@ -206,17 +214,22 @@ func (s *Service) Quote(ctx context.Context, req QuoteRequest) (*QuoteResult, er
 		binding, err := s.deps.ShadowClient.GetBindingByExternalUserID(ctx, req.ExternalUserID)
 		if err != nil {
 			if errors.Is(err, shadowclient.ErrBindingNotFound) {
-				return nil, fmt.Errorf("%w: externalUserId=%s", ErrBindingNotFound, req.ExternalUserID)
+				if !s.applyInquiryFallbackIdentity(&req, "shadow binding not found") {
+					return nil, fmt.Errorf("%w: externalUserId=%s", ErrBindingNotFound, req.ExternalUserID)
+				}
+			} else {
+				return nil, fmt.Errorf("inquiry: shadow GetBindingByExternalUserID: %w", err)
 			}
-			return nil, fmt.Errorf("inquiry: shadow GetBindingByExternalUserID: %w", err)
-		}
-		if strings.TrimSpace(binding.Uin) == "" {
-			return nil, fmt.Errorf("%w: shadow returned empty uin for externalUserId=%s",
-				ErrBindingNotFound, req.ExternalUserID)
-		}
-		req.Uin = binding.Uin
-		if req.AppID == "" {
-			req.AppID = binding.AppID
+		} else if strings.TrimSpace(binding.Uin) == "" {
+			if !s.applyInquiryFallbackIdentity(&req, "shadow binding empty uin") {
+				return nil, fmt.Errorf("%w: shadow returned empty uin for externalUserId=%s",
+					ErrBindingNotFound, req.ExternalUserID)
+			}
+		} else {
+			req.Uin = binding.Uin
+			if req.AppID == "" {
+				req.AppID = binding.AppID
+			}
 		}
 	}
 
@@ -248,7 +261,7 @@ func (s *Service) Quote(ctx context.Context, req QuoteRequest) (*QuoteResult, er
 	//   - DB 错 → 落 warn 日志后回落 jifei，不让单次询价 5xx
 	//   - useDianshi=true → 走 quoteDianshi，绕过下方 jifei 路径
 	if s.deps.ActivityResolver != nil {
-		mapping, useDianshi, resolveErr := s.deps.ActivityResolver.ResolveForInquiry(ctx, req.BundleID, req.Uin)
+		mapping, useDianshi, resolveErr := s.deps.ActivityResolver.ResolveForInquiry(ctx, req.BundleID, req.Uin, req.TimeSpan, req.TimeUnit)
 		if resolveErr != nil {
 			log.Printf("[activity-resolver] inquiry resolve failed bundleId=%s uin=%s err=%v (fallback jifei)",
 				req.BundleID, req.Uin, resolveErr)
@@ -340,6 +353,21 @@ func (s *Service) Quote(ctx context.Context, req QuoteRequest) (*QuoteResult, er
 		result.GoodsNum = req.GoodsNum
 	}
 	return result, nil
+}
+
+func (s *Service) applyInquiryFallbackIdentity(req *QuoteRequest, reason string) bool {
+	fallbackUin := strings.TrimSpace(s.deps.InquiryFallbackUin)
+	fallbackAppID := strings.TrimSpace(s.deps.InquiryFallbackAppID)
+	if fallbackUin == "" || fallbackAppID == "" {
+		return false
+	}
+	log.Printf("[inquiry] %s externalUserId=%s; use configured fallback uin=%s appId=%s for quote only",
+		reason, req.ExternalUserID, fallbackUin, fallbackAppID)
+	req.Uin = fallbackUin
+	if req.AppID == "" {
+		req.AppID = fallbackAppID
+	}
+	return true
 }
 
 // QuoteRenewRequest 是单次"续费询价"的入参。
@@ -692,8 +720,7 @@ func (s *Service) quoteDianshi(
 	//   - data[].product_code / sub_product_code → 同名字段
 	//   - data[].pid         → Pid（jifei 体系 pid，点石内部已与 jifei 联通；BundleDefinition 兜底）
 	//
-	// Discount：点石 policy_detail 字段集与 jifei 不完全对齐，trade 不再尝试解析；保留 0 让前端按
-	// (TotalCost - RealTotalCost) 自行计算更稳。
+	// Discount：点石 policy_detail.total 是接口出参里的整数百分比口径（例：0=免费，50=5 折）。
 	result := &QuoteResult{
 		BundleID:       req.BundleID,
 		BundleName:     bundle.BundleName,
@@ -707,6 +734,9 @@ func (s *Service) quoteDianshi(
 		ProductCode:    d.ProductCode,
 		SubProductCode: d.SubProductCode,
 		Pid:            d.Pid,
+	}
+	if discount, ok := parseDianshiPolicyTotal(d.PolicyDetail); ok {
+		result.Discount = discount
 	}
 	// 与 jifei 路径同款兜底：jifei / 点石返空字段时回填 BundleDefinition / req 值
 	if result.ProductCode == "" {
@@ -732,6 +762,21 @@ func (s *Service) quoteDianshi(
 		req.BundleID, req.Uin, mapping.ActivityID, mapping.ActID,
 		result.Price, result.TotalCost, result.RealTotalCost)
 	return result, nil
+}
+
+type dianshiPolicyDetail struct {
+	Total float64 `json:"total"`
+}
+
+func parseDianshiPolicyTotal(raw json.RawMessage) (float64, bool) {
+	if len(raw) == 0 {
+		return 0, false
+	}
+	var detail dianshiPolicyDetail
+	if err := json.Unmarshal(raw, &detail); err != nil {
+		return 0, false
+	}
+	return detail.Total, true
 }
 
 // formatAmount 把点石返的整数金额（pent=分）转字符串保持与 jifei Price/TotalCost 同源

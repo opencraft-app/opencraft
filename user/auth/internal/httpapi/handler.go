@@ -92,7 +92,7 @@ func (h *Handler) ValidateInviteCode(ctx context.Context, request api.ValidateIn
 	if err != nil {
 		return api.ValidateInviteCode200JSONResponse(api.InviteValidation{
 			Code:    request.Body.Code,
-			State:   api.Invalid,
+			State:   api.InviteValidationStateInvalid,
 			Message: err.Error(),
 		}), nil
 	}
@@ -241,6 +241,8 @@ func (h *Handler) VerifyRealname(ctx context.Context, request api.VerifyRealname
 		switch status {
 		case http.StatusUnauthorized:
 			return api.VerifyRealname401JSONResponse(body), nil
+		case http.StatusConflict:
+			return api.VerifyRealname409JSONResponse(body), nil
 		case http.StatusBadGateway:
 			return api.VerifyRealname502JSONResponse(body), nil
 		case http.StatusServiceUnavailable:
@@ -283,7 +285,7 @@ func (h *Handler) VerifyRealnamePhone(ctx context.Context, request api.VerifyRea
 	result, err := h.service.VerifyRealnamePhone(ctx, tokenFromContext(ctx), service.RealnamePhoneVerifyInput{Code: request.Body.Code, ClientIP: clientIP, ClientUA: clientUA})
 	if err != nil {
 		body, status := toErrorBody(err)
-		if status >= http.StatusInternalServerError {
+		if status >= http.StatusInternalServerError && status != http.StatusBadGateway && status != http.StatusServiceUnavailable {
 			return nil, err
 		}
 		switch status {
@@ -291,6 +293,12 @@ func (h *Handler) VerifyRealnamePhone(ctx context.Context, request api.VerifyRea
 			return api.VerifyRealnamePhone401JSONResponse(body), nil
 		case http.StatusForbidden:
 			return api.VerifyRealnamePhone403JSONResponse(body), nil
+		case http.StatusConflict:
+			return api.VerifyRealnamePhone409JSONResponse(body), nil
+		case http.StatusBadGateway:
+			return api.VerifyRealnamePhone502JSONResponse(body), nil
+		case http.StatusServiceUnavailable:
+			return api.VerifyRealnamePhone503JSONResponse(body), nil
 		default:
 			return api.VerifyRealnamePhone400JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(body)}, nil
 		}
@@ -305,6 +313,245 @@ func (h *Handler) VerifyRealnamePhone(ctx context.Context, request api.VerifyRea
 		response.RealnameSyncStatus = &status
 	}
 	return api.VerifyRealnamePhone200JSONResponse(response), nil
+}
+
+func (h *Handler) StartRealnameFaceIDAttempt(ctx context.Context, request api.StartRealnameFaceIDAttemptRequestObject) (api.StartRealnameFaceIDAttemptResponseObject, error) {
+	if request.Body == nil {
+		return api.StartRealnameFaceIDAttempt400JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(api.ErrorResponse{Code: "invalid_request", Message: "请求格式不正确。"})}, nil
+	}
+	clientIP, clientUA := requestClientMetadata(ctx)
+	result, err := h.service.StartRealnameFaceIDAttempt(ctx, tokenFromContext(ctx), service.RealnameFaceIDStartInput{
+		Name:            request.Body.Name,
+		IDCard:          request.Body.IdCard,
+		ConsentAccepted: request.Body.Consent,
+		ClientIP:        clientIP,
+		ClientUA:        clientUA,
+	})
+	if err != nil {
+		body, status := toErrorBody(err)
+		if status == http.StatusInternalServerError {
+			return nil, err
+		}
+		switch status {
+		case http.StatusUnauthorized:
+			return api.StartRealnameFaceIDAttempt401JSONResponse(body), nil
+		case http.StatusTooManyRequests:
+			return api.StartRealnameFaceIDAttempt429JSONResponse(body), nil
+		case http.StatusBadGateway:
+			return api.StartRealnameFaceIDAttempt502JSONResponse(body), nil
+		case http.StatusServiceUnavailable:
+			return api.StartRealnameFaceIDAttempt503JSONResponse(body), nil
+		default:
+			return api.StartRealnameFaceIDAttempt400JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(body)}, nil
+		}
+	}
+	attempt, err := h.service.GetOwnedRealnameFaceIDAttempt(ctx, tokenFromContext(ctx), result.AttemptID, false)
+	if err != nil {
+		return nil, err
+	}
+	return api.StartRealnameFaceIDAttempt200JSONResponse(toFaceIDAttemptResponse(attempt)), nil
+}
+
+func (h *Handler) GetRealnameFaceIDAttempt(ctx context.Context, request api.GetRealnameFaceIDAttemptRequestObject) (api.GetRealnameFaceIDAttemptResponseObject, error) {
+	attempt, err := h.service.GetOwnedRealnameFaceIDAttempt(ctx, tokenFromContext(ctx), request.AttemptId, true)
+	if err != nil {
+		body, status := toErrorBody(err)
+		if status == http.StatusInternalServerError {
+			return nil, err
+		}
+		switch status {
+		case http.StatusUnauthorized:
+			return api.GetRealnameFaceIDAttempt401JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(body)}, nil
+		case http.StatusNotFound:
+			return api.GetRealnameFaceIDAttempt404JSONResponse(body), nil
+		case http.StatusBadGateway:
+			return api.GetRealnameFaceIDAttempt502JSONResponse(body), nil
+		default:
+			return api.GetRealnameFaceIDAttempt409JSONResponse(body), nil
+		}
+	}
+	return api.GetRealnameFaceIDAttempt200JSONResponse(toFaceIDAttemptResponse(attempt)), nil
+}
+
+func (h *Handler) GetCurrentRealnameFaceIDAttempt(ctx context.Context, _ api.GetCurrentRealnameFaceIDAttemptRequestObject) (api.GetCurrentRealnameFaceIDAttemptResponseObject, error) {
+	attempt, err := h.service.GetCurrentRealnameFaceIDAttempt(ctx, tokenFromContext(ctx))
+	if err != nil {
+		body, status := toErrorBody(err)
+		if status == http.StatusInternalServerError {
+			return nil, err
+		}
+		switch status {
+		case http.StatusUnauthorized:
+			return api.GetCurrentRealnameFaceIDAttempt401JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(body)}, nil
+		case http.StatusNotFound:
+			return api.GetCurrentRealnameFaceIDAttempt404JSONResponse(body), nil
+		case http.StatusBadGateway:
+			return api.GetCurrentRealnameFaceIDAttempt502JSONResponse(body), nil
+		default:
+			return api.GetCurrentRealnameFaceIDAttempt409JSONResponse(body), nil
+		}
+	}
+	return api.GetCurrentRealnameFaceIDAttempt200JSONResponse(toFaceIDAttemptResponse(attempt)), nil
+}
+
+func (h *Handler) SendRealnameFaceIDPhoneCode(ctx context.Context, request api.SendRealnameFaceIDPhoneCodeRequestObject) (api.SendRealnameFaceIDPhoneCodeResponseObject, error) {
+	clientIP, _ := requestClientMetadata(ctx)
+	phone := ""
+	if request.Body != nil && request.Body.Phone != nil {
+		phone = *request.Body.Phone
+	}
+	cooldown, err := h.service.SendRealnameFaceIDPhoneCode(ctx, tokenFromContext(ctx), service.RealnameFaceIDPhoneCodeInput{
+		AttemptID: request.AttemptId,
+		Phone:     phone,
+		ClientIP:  clientIP,
+	})
+	if err != nil {
+		body, status := toErrorBody(err)
+		if status == http.StatusInternalServerError {
+			return nil, err
+		}
+		switch status {
+		case http.StatusUnauthorized:
+			return api.SendRealnameFaceIDPhoneCode401JSONResponse(body), nil
+		case http.StatusForbidden:
+			return api.SendRealnameFaceIDPhoneCode403JSONResponse(body), nil
+		case http.StatusNotFound:
+			return api.SendRealnameFaceIDPhoneCode404JSONResponse(body), nil
+		case http.StatusConflict:
+			return api.SendRealnameFaceIDPhoneCode409JSONResponse(body), nil
+		case http.StatusTooManyRequests:
+			return api.SendRealnameFaceIDPhoneCode429JSONResponse(body), nil
+		case http.StatusBadGateway:
+			return api.SendRealnameFaceIDPhoneCode502JSONResponse(body), nil
+		case http.StatusServiceUnavailable:
+			return api.SendRealnameFaceIDPhoneCode503JSONResponse(body), nil
+		default:
+			return api.SendRealnameFaceIDPhoneCode400JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(body)}, nil
+		}
+	}
+	seconds := int(cooldown.Round(time.Second) / time.Second)
+	if seconds < 0 {
+		seconds = 0
+	}
+	return api.SendRealnameFaceIDPhoneCode200JSONResponse(api.SendSmsResponse{CooldownSeconds: seconds}), nil
+}
+
+func (h *Handler) VerifyRealnameFaceIDPhone(ctx context.Context, request api.VerifyRealnameFaceIDPhoneRequestObject) (api.VerifyRealnameFaceIDPhoneResponseObject, error) {
+	if request.Body == nil {
+		return api.VerifyRealnameFaceIDPhone400JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(api.ErrorResponse{Code: "invalid_request", Message: "请求格式不正确。"})}, nil
+	}
+	clientIP, clientUA := requestClientMetadata(ctx)
+	phone := ""
+	if request.Body.Phone != nil {
+		phone = *request.Body.Phone
+	}
+	attempt, err := h.service.VerifyRealnameFaceIDPhone(ctx, tokenFromContext(ctx), service.RealnameFaceIDPhoneProofInput{
+		AttemptID: request.AttemptId,
+		Phone:     phone,
+		Code:      request.Body.Code,
+		ClientIP:  clientIP,
+		ClientUA:  clientUA,
+	})
+	if err != nil {
+		body, status := toErrorBody(err)
+		if status == http.StatusInternalServerError {
+			return nil, err
+		}
+		switch status {
+		case http.StatusUnauthorized:
+			return api.VerifyRealnameFaceIDPhone401JSONResponse(body), nil
+		case http.StatusForbidden:
+			return api.VerifyRealnameFaceIDPhone403JSONResponse(body), nil
+		case http.StatusNotFound:
+			return api.VerifyRealnameFaceIDPhone404JSONResponse(body), nil
+		case http.StatusConflict:
+			return api.VerifyRealnameFaceIDPhone409JSONResponse(body), nil
+		case http.StatusBadGateway:
+			return api.VerifyRealnameFaceIDPhone502JSONResponse(body), nil
+		case http.StatusServiceUnavailable:
+			return api.VerifyRealnameFaceIDPhone503JSONResponse(body), nil
+		default:
+			return api.VerifyRealnameFaceIDPhone400JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(body)}, nil
+		}
+	}
+	return api.VerifyRealnameFaceIDPhone200JSONResponse(toFaceIDAttemptResponse(attempt)), nil
+}
+
+func (h *Handler) FinalizeRealnameFaceIDAttempt(ctx context.Context, request api.FinalizeRealnameFaceIDAttemptRequestObject) (api.FinalizeRealnameFaceIDAttemptResponseObject, error) {
+	clientIP, clientUA := requestClientMetadata(ctx)
+	_, err := h.service.FinalizeRealnameFaceIDAttempt(ctx, tokenFromContext(ctx), service.RealnameFaceIDFinalizeInput{
+		AttemptID: request.AttemptId,
+		ClientIP:  clientIP,
+		ClientUA:  clientUA,
+	})
+	if err != nil {
+		body, status := toErrorBody(err)
+		if status == http.StatusInternalServerError {
+			return nil, err
+		}
+		switch status {
+		case http.StatusUnauthorized:
+			return api.FinalizeRealnameFaceIDAttempt401JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(body)}, nil
+		case http.StatusNotFound:
+			return api.FinalizeRealnameFaceIDAttempt404JSONResponse(body), nil
+		case http.StatusBadGateway:
+			return api.FinalizeRealnameFaceIDAttempt502JSONResponse(body), nil
+		case http.StatusServiceUnavailable:
+			return api.FinalizeRealnameFaceIDAttempt503JSONResponse(body), nil
+		default:
+			return api.FinalizeRealnameFaceIDAttempt409JSONResponse(body), nil
+		}
+	}
+	attempt, err := h.service.GetOwnedRealnameFaceIDAttempt(ctx, tokenFromContext(ctx), request.AttemptId, false)
+	if err != nil {
+		return nil, err
+	}
+	return api.FinalizeRealnameFaceIDAttempt200JSONResponse(toFaceIDAttemptResponse(attempt)), nil
+}
+
+func (h *Handler) HandleRealnameFaceIDCallback(ctx context.Context, request api.HandleRealnameFaceIDCallbackRequestObject) (api.HandleRealnameFaceIDCallbackResponseObject, error) {
+	bizToken := strings.TrimSpace(request.Params.BizToken)
+	if bizToken == "" {
+		return api.HandleRealnameFaceIDCallback400JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(api.ErrorResponse{Code: "invalid_request", Message: "请求格式不正确。"})}, nil
+	}
+	_, _ = h.service.ReconcileRealnameFaceIDAttempt(ctx, "", bizToken, "callback")
+	if gctx := ginContext(ctx); gctx != nil {
+		gctx.Header("Cache-Control", "no-store")
+		gctx.Header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'")
+		gctx.Header("Referrer-Policy", "no-referrer")
+		gctx.Header("X-Content-Type-Options", "nosniff")
+	}
+	const page = "<!doctype html><html lang=\"zh-CN\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>认证结果已提交</title><body><main><h1>认证结果已提交</h1><p>请返回 LightVela 继续完成实名认证。</p></main></body></html>"
+	return api.HandleRealnameFaceIDCallback200TexthtmlResponse{Body: strings.NewReader(page), ContentLength: int64(len(page))}, nil
+}
+
+func requestClientMetadata(ctx context.Context) (string, string) {
+	if gctx := ginContext(ctx); gctx != nil {
+		return gctx.ClientIP(), gctx.Request.UserAgent()
+	}
+	return "", ""
+}
+
+func toFaceIDAttemptResponse(attempt service.RealnameFaceIDAttempt) api.RealnameFaceIDAttemptResponse {
+	state := attempt.State
+	switch state {
+	case service.RealnameFaceIDStateCreated, service.RealnameFaceIDStateChecking:
+		state = service.RealnameFaceIDStatePending
+	case service.RealnameFaceIDStateLateIgnored, service.RealnameFaceIDStateRevoked:
+		state = service.RealnameFaceIDStateFailed
+	}
+	response := api.RealnameFaceIDAttemptResponse{
+		AttemptId: attempt.AttemptID,
+		State:     api.RealnameFaceIDAttemptResponseState(state),
+	}
+	if attempt.VerifyURL != "" {
+		response.VerificationUrl = ptrString(attempt.VerifyURL)
+	}
+	if !attempt.BusinessExpiresAt.IsZero() {
+		expiresAt := attempt.BusinessExpiresAt.UTC()
+		response.ExpiresAt = &expiresAt
+	}
+	return response
 }
 
 func (h *Handler) SendShadowBindingSMS(ctx *gin.Context) {
@@ -403,7 +650,7 @@ func (h *Handler) GetShadowBinding(ctx context.Context, _ api.GetShadowBindingRe
 	binding, err := h.service.CurrentShadowBinding(ctx, tokenFromContext(ctx))
 	if err != nil {
 		body, status := toErrorBody(err)
-		if status >= http.StatusInternalServerError {
+		if status >= http.StatusInternalServerError && status != http.StatusBadGateway && status != http.StatusServiceUnavailable {
 			return nil, err
 		}
 		return api.GetShadowBinding401JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(body)}, nil
@@ -432,7 +679,7 @@ func (h *Handler) RetryRealnameSync(ctx context.Context, _ api.RetryRealnameSync
 	result, err := h.service.RetryRealnameSync(ctx, tokenFromContext(ctx), clientIP, clientUA)
 	if err != nil {
 		body, status := toErrorBody(err)
-		if status >= http.StatusInternalServerError {
+		if status >= http.StatusInternalServerError && status != http.StatusBadGateway && status != http.StatusServiceUnavailable {
 			return nil, err
 		}
 		switch status {
@@ -440,6 +687,8 @@ func (h *Handler) RetryRealnameSync(ctx context.Context, _ api.RetryRealnameSync
 			return api.RetryRealnameSync401JSONResponse(body), nil
 		case http.StatusForbidden:
 			return api.RetryRealnameSync403JSONResponse(body), nil
+		case http.StatusConflict:
+			return api.RetryRealnameSync409JSONResponse(body), nil
 		case http.StatusBadGateway:
 			return api.RetryRealnameSync502JSONResponse(body), nil
 		case http.StatusServiceUnavailable:
@@ -851,6 +1100,10 @@ func (h *Handler) toAPIUser(ctx context.Context, user service.User) api.User {
 	}
 	if strings.TrimSpace(user.RealnameLevel) != "" {
 		response.RealnameLevel = &user.RealnameLevel
+	}
+	if strings.TrimSpace(user.RealnameAssuranceMode) != "" {
+		mode := api.UserRealnameAssuranceMode(user.RealnameAssuranceMode)
+		response.RealnameAssuranceMode = &mode
 	}
 	if strings.TrimSpace(user.RealnameSyncStatus) != "" {
 		status := api.UserRealnameSyncStatus(user.RealnameSyncStatus)

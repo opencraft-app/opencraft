@@ -879,7 +879,7 @@ const MemoryLimitCard = ({
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-black/85">{title}</p>
-          <p className="mt-1 max-w-[28rem] text-xs leading-relaxed text-black/45">{description}</p>
+          <p className="mt-1 max-w-lg text-pretty text-xs leading-relaxed text-black/45">{description}</p>
         </div>
         <span className="shrink-0 rounded-full bg-black/[0.05] px-2 py-1 text-xs font-medium text-black/60">
           {percent}%
@@ -1031,7 +1031,7 @@ const MemoryPanel = ({
   return (
     <div className="space-y-4">
       <AgentSectionHeader
-        title={t("记忆")}
+        title={t("持久记忆")}
         description={t("查看当前 Hermes Agent 的记忆和用户画像文件")}
         actions={(
           <button
@@ -1068,7 +1068,7 @@ const MemoryPanel = ({
             <MemoryLimitCard
               target="memory"
               title={t("记忆统计")}
-              description={t("MEMORY.md：帮 Agent 长期记住项目背景、运行环境和常用约定。")}
+              description={t("MEMORY.md：跨会话长期记忆文件，主要保存项目环境事实、工作约定和经验教训等。")}
               used={snapshot.memoryChars}
               limit={snapshot.memoryCharLimit}
               isSaving={savingLimitTarget === "memory"}

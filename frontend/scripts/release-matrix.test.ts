@@ -452,9 +452,21 @@ describe("release matrix helpers", () => {
       deployEnv: {
         EDGEONE_PAGES_AREA: "global",
         EDGEONE_PAGES_ENV: "production",
+        NEXT_PUBLIC_WECHAT_PAY_AUTH_BASE_URL: "https://api.lightvela.com",
+        NEXT_PUBLIC_WX_BUY_HOST: "buy.cloud.tencent.com",
+        NEXT_PUBLIC_WX_PAY_PRODUCT_ID: "lightvela_pro_v1",
       },
     });
     expect(combo?.requiredSecretEnv).toContain("EDGEONE_API_TOKEN");
+    expect(createComboEnvironment(combo!, combo!.projectName).NEXT_PUBLIC_WECHAT_PAY_AUTH_BASE_URL).toBe(
+      "https://api.lightvela.com",
+    );
+    expect(createComboEnvironment(combo!, combo!.projectName).NEXT_PUBLIC_WX_BUY_HOST).toBe(
+      "buy.cloud.tencent.com",
+    );
+    expect(createComboEnvironment(combo!, combo!.projectName).NEXT_PUBLIC_WX_PAY_PRODUCT_ID).toBe(
+      "lightvela_pro_v1",
+    );
   });
 
   it("includes the production global EdgeOne lightvela intl project in the release matrix", () => {

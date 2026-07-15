@@ -66,8 +66,8 @@ func setupTestEnv(t *testing.T) (*goredis.Client, string) {
 			BaseURL: "http://localhost:0",
 		}
 	}
-	if config.ServerConf.AdapterConfig.AiGateway == nil {
-		config.ServerConf.AdapterConfig.AiGateway = &config.AiGatewayConfig{}
+	if config.ServerConf.AdapterConfig.LLMGateway == nil {
+		config.ServerConf.AdapterConfig.LLMGateway = &config.LLMGatewayConfig{}
 	}
 
 	return client, streamKey

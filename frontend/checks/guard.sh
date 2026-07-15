@@ -99,8 +99,10 @@ if [[ ! -x "$FRONTEND_GUARD_DIR/node_modules/.bin/next" ]]; then
   echo "frontend 约束：本地 next 仍不可用" >&2
   exit 1
 fi
+rm -rf .next out
 NEXT_PUBLIC_AUTH_API_BASE_URL=https://api.lightvela.ai VITE_AUTH_API_BASE_URL=https://api.lightvela.ai "$PNPM_BIN" build:cn
-rm -rf out
+
+rm -rf .next out
 NEXT_PUBLIC_AUTH_API_BASE_URL=https://lightclaw.tech VITE_AUTH_API_BASE_URL=https://lightclaw.tech "$PNPM_BIN" build:global
 
 echo "frontend 约束：全部通过"

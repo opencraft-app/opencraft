@@ -93,8 +93,11 @@ func (h *passHandler) createTrialPassUser(w http.ResponseWriter, r *http.Request
 
 // getPasses GET /admin/api/ctl/passes — 后台管理
 func (h *passHandler) getPasses(w http.ResponseWriter, r *http.Request) {
+	const maxAdminPassPageSize = 100
+
 	var userID *string
 	var bundleID *string
+	var status *string
 
 	if uid := strings.TrimSpace(r.URL.Query().Get("user_id")); uid != "" {
 		userID = &uid
@@ -102,8 +105,22 @@ func (h *passHandler) getPasses(w http.ResponseWriter, r *http.Request) {
 	if bid := strings.TrimSpace(r.URL.Query().Get("bundle_id")); bid != "" {
 		bundleID = &bid
 	}
+	if st := strings.TrimSpace(r.URL.Query().Get("status")); st != "" && st != "all" {
+		status = &st
+	}
 
-	details, err := h.logic.GetPasses(userID, bundleID)
+	page, pageSize, err := parsePagination(r)
+	if err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))
+		return
+	}
+	if pageSize > maxAdminPassPageSize {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam,
+			"page_size %d exceeds max %d", pageSize, maxAdminPassPageSize))
+		return
+	}
+
+	details, total, err := h.logic.GetPassesPage(userID, bundleID, status, page, pageSize)
 	if err != nil {
 		writeHTTPError(w, r, err)
 		return
@@ -113,7 +130,12 @@ func (h *passHandler) getPasses(w http.ResponseWriter, r *http.Request) {
 	for _, d := range details {
 		passes = append(passes, detailToPassResponse(d))
 	}
-	writeSuccess(w, r, http.StatusOK, &transport.ListPassesResponse{Passes: passes})
+	writeSuccess(w, r, http.StatusOK, &transport.ListPassesResponse{
+		Passes:   passes,
+		Total:    total,
+		Page:     page,
+		PageSize: pageSize,
+	})
 }
 
 // modifyPass PUT /admin/api/ctl/passes — 后台管理

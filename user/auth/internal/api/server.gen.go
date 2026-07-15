@@ -9,7 +9,9 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -19,6 +21,7 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/gin-gonic/gin"
+	"github.com/oapi-codegen/runtime"
 	strictgin "github.com/oapi-codegen/runtime/strictmiddleware/gin"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
@@ -30,25 +33,58 @@ const (
 
 // Defines values for InviteValidationState.
 const (
-	Expired InviteValidationState = "expired"
-	Idle    InviteValidationState = "idle"
-	Invalid InviteValidationState = "invalid"
-	Used    InviteValidationState = "used"
-	Valid   InviteValidationState = "valid"
+	InviteValidationStateExpired InviteValidationState = "expired"
+	InviteValidationStateIdle    InviteValidationState = "idle"
+	InviteValidationStateInvalid InviteValidationState = "invalid"
+	InviteValidationStateUsed    InviteValidationState = "used"
+	InviteValidationStateValid   InviteValidationState = "valid"
 )
 
 // Valid indicates whether the value is a known member of the InviteValidationState enum.
 func (e InviteValidationState) Valid() bool {
 	switch e {
-	case Expired:
+	case InviteValidationStateExpired:
 		return true
-	case Idle:
+	case InviteValidationStateIdle:
 		return true
-	case Invalid:
+	case InviteValidationStateInvalid:
 		return true
-	case Used:
+	case InviteValidationStateUsed:
 		return true
-	case Valid:
+	case InviteValidationStateValid:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RealnameFaceIDAttemptResponseState.
+const (
+	RealnameFaceIDAttemptResponseStateExpired       RealnameFaceIDAttemptResponseState = "expired"
+	RealnameFaceIDAttemptResponseStateFaceSucceeded RealnameFaceIDAttemptResponseState = "face_succeeded"
+	RealnameFaceIDAttemptResponseStateFailed        RealnameFaceIDAttemptResponseState = "failed"
+	RealnameFaceIDAttemptResponseStatePending       RealnameFaceIDAttemptResponseState = "pending"
+	RealnameFaceIDAttemptResponseStatePhonePending  RealnameFaceIDAttemptResponseState = "phone_pending"
+	RealnameFaceIDAttemptResponseStateShadowPending RealnameFaceIDAttemptResponseState = "shadow_pending"
+	RealnameFaceIDAttemptResponseStateSucceeded     RealnameFaceIDAttemptResponseState = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the RealnameFaceIDAttemptResponseState enum.
+func (e RealnameFaceIDAttemptResponseState) Valid() bool {
+	switch e {
+	case RealnameFaceIDAttemptResponseStateExpired:
+		return true
+	case RealnameFaceIDAttemptResponseStateFaceSucceeded:
+		return true
+	case RealnameFaceIDAttemptResponseStateFailed:
+		return true
+	case RealnameFaceIDAttemptResponseStatePending:
+		return true
+	case RealnameFaceIDAttemptResponseStatePhonePending:
+		return true
+	case RealnameFaceIDAttemptResponseStateShadowPending:
+		return true
+	case RealnameFaceIDAttemptResponseStateSucceeded:
 		return true
 	default:
 		return false
@@ -157,6 +193,27 @@ func (e UserNameAuditStatus) Valid() bool {
 	}
 }
 
+// Defines values for UserRealnameAssuranceMode.
+const (
+	FaceRequired UserRealnameAssuranceMode = "face_required"
+	Legacy       UserRealnameAssuranceMode = "legacy"
+	Observe      UserRealnameAssuranceMode = "observe"
+)
+
+// Valid indicates whether the value is a known member of the UserRealnameAssuranceMode enum.
+func (e UserRealnameAssuranceMode) Valid() bool {
+	switch e {
+	case FaceRequired:
+		return true
+	case Legacy:
+		return true
+	case Observe:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for UserRealnameSyncStatus.
 const (
 	UserRealnameSyncStatusFailed    UserRealnameSyncStatus = "failed"
@@ -242,6 +299,35 @@ type PasswordSignUpRequest struct {
 // ProfileResponse defines model for ProfileResponse.
 type ProfileResponse struct {
 	User User `json:"user"`
+}
+
+// RealnameFaceIDAttemptResponse defines model for RealnameFaceIDAttemptResponse.
+type RealnameFaceIDAttemptResponse struct {
+	AttemptId       string                             `json:"attemptId"`
+	ExpiresAt       *time.Time                         `json:"expiresAt,omitempty"`
+	State           RealnameFaceIDAttemptResponseState `json:"state"`
+	VerificationUrl *string                            `json:"verificationUrl,omitempty"`
+}
+
+// RealnameFaceIDAttemptResponseState defines model for RealnameFaceIDAttemptResponse.State.
+type RealnameFaceIDAttemptResponseState string
+
+// RealnameFaceIDPhoneCodeRequest defines model for RealnameFaceIDPhoneCodeRequest.
+type RealnameFaceIDPhoneCodeRequest struct {
+	Phone *string `json:"phone,omitempty"`
+}
+
+// RealnameFaceIDPhoneRequest defines model for RealnameFaceIDPhoneRequest.
+type RealnameFaceIDPhoneRequest struct {
+	Code  string  `json:"code"`
+	Phone *string `json:"phone,omitempty"`
+}
+
+// RealnameFaceIDStartRequest defines model for RealnameFaceIDStartRequest.
+type RealnameFaceIDStartRequest struct {
+	Consent bool   `json:"consent"`
+	IdCard  string `json:"idCard"`
+	Name    string `json:"name"`
 }
 
 // RealnamePhoneVerifyRequest defines model for RealnamePhoneVerifyRequest.
@@ -359,9 +445,10 @@ type User struct {
 	PendingAvatarUrl *string `json:"pendingAvatarUrl,omitempty"`
 
 	// PendingName Pending nickname waiting for content safety approval.
-	PendingName   *string `json:"pendingName,omitempty"`
-	Phone         *string `json:"phone,omitempty"`
-	RealnameLevel *string `json:"realnameLevel,omitempty"`
+	PendingName           *string                    `json:"pendingName,omitempty"`
+	Phone                 *string                    `json:"phone,omitempty"`
+	RealnameAssuranceMode *UserRealnameAssuranceMode `json:"realnameAssuranceMode,omitempty"`
+	RealnameLevel         *string                    `json:"realnameLevel,omitempty"`
 
 	// RealnameSyncStatus Status of syncing the verified real-name identity to the account system.
 	RealnameSyncStatus *UserRealnameSyncStatus `json:"realnameSyncStatus,omitempty"`
@@ -373,6 +460,9 @@ type UserAvatarAuditStatus string
 
 // UserNameAuditStatus Nickname content safety status.
 type UserNameAuditStatus string
+
+// UserRealnameAssuranceMode defines model for User.RealnameAssuranceMode.
+type UserRealnameAssuranceMode string
 
 // UserRealnameSyncStatus Status of syncing the verified real-name identity to the account system.
 type UserRealnameSyncStatus string
@@ -388,6 +478,11 @@ type VerifySmsRequest struct {
 // UpdateProfileAvatarMultipartBody defines parameters for UpdateProfileAvatar.
 type UpdateProfileAvatarMultipartBody struct {
 	File openapi_types.File `json:"file"`
+}
+
+// HandleRealnameFaceIDCallbackParams defines parameters for HandleRealnameFaceIDCallback.
+type HandleRealnameFaceIDCallbackParams struct {
+	BizToken string `form:"BizToken" json:"BizToken"`
 }
 
 // RequestEmailBindJSONRequestBody defines body for RequestEmailBind for application/json ContentType.
@@ -413,6 +508,15 @@ type UpdateProfileJSONRequestBody = UpdateProfileRequest
 
 // UpdateProfileAvatarMultipartRequestBody defines body for UpdateProfileAvatar for multipart/form-data ContentType.
 type UpdateProfileAvatarMultipartRequestBody UpdateProfileAvatarMultipartBody
+
+// StartRealnameFaceIDAttemptJSONRequestBody defines body for StartRealnameFaceIDAttempt for application/json ContentType.
+type StartRealnameFaceIDAttemptJSONRequestBody = RealnameFaceIDStartRequest
+
+// SendRealnameFaceIDPhoneCodeJSONRequestBody defines body for SendRealnameFaceIDPhoneCode for application/json ContentType.
+type SendRealnameFaceIDPhoneCodeJSONRequestBody = RealnameFaceIDPhoneCodeRequest
+
+// VerifyRealnameFaceIDPhoneJSONRequestBody defines body for VerifyRealnameFaceIDPhone for application/json ContentType.
+type VerifyRealnameFaceIDPhoneJSONRequestBody = RealnameFaceIDPhoneRequest
 
 // VerifyRealnameJSONRequestBody defines body for VerifyRealname for application/json ContentType.
 type VerifyRealnameJSONRequestBody = RealnameVerifyRequest
@@ -458,6 +562,27 @@ type ServerInterface interface {
 	// Upload and replace the current user's avatar
 	// (PUT /auth/profile/avatar)
 	UpdateProfileAvatar(c *gin.Context)
+	// Start a FaceID real-name verification attempt
+	// (POST /auth/realname/faceid/attempts)
+	StartRealnameFaceIDAttempt(c *gin.Context)
+	// Read the current recoverable FaceID attempt for the authenticated user
+	// (GET /auth/realname/faceid/attempts/current)
+	GetCurrentRealnameFaceIDAttempt(c *gin.Context)
+	// Reconcile and read an owned FaceID attempt
+	// (GET /auth/realname/faceid/attempts/{attemptId})
+	GetRealnameFaceIDAttempt(c *gin.Context, attemptId string)
+	// Synchronize an attempt to Shadow and activate final verification
+	// (POST /auth/realname/faceid/attempts/{attemptId}/finalize)
+	FinalizeRealnameFaceIDAttempt(c *gin.Context, attemptId string)
+	// Send a Shadow verification code to the current phone for a FaceID attempt
+	// (POST /auth/realname/faceid/attempts/{attemptId}/send-phone-code)
+	SendRealnameFaceIDPhoneCode(c *gin.Context, attemptId string)
+	// Verify the current phone through Shadow binding for a FaceID attempt
+	// (POST /auth/realname/faceid/attempts/{attemptId}/verify-phone)
+	VerifyRealnameFaceIDPhone(c *gin.Context, attemptId string)
+	// Receive a Tencent FaceID browser redirect
+	// (GET /auth/realname/faceid/callback)
+	HandleRealnameFaceIDCallback(c *gin.Context, params HandleRealnameFaceIDCallbackParams)
 	// Retry syncing current user's verified real-name identity to the account system
 	// (POST /auth/realname/sync/retry)
 	RetryRealnameSync(c *gin.Context)
@@ -650,6 +775,185 @@ func (siw *ServerInterfaceWrapper) UpdateProfileAvatar(c *gin.Context) {
 	siw.Handler.UpdateProfileAvatar(c)
 }
 
+// StartRealnameFaceIDAttempt operation middleware
+func (siw *ServerInterfaceWrapper) StartRealnameFaceIDAttempt(c *gin.Context) {
+
+	c.Set(SessionCookieScopes, []string{})
+
+	c.Set(SessionBearerScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.StartRealnameFaceIDAttempt(c)
+}
+
+// GetCurrentRealnameFaceIDAttempt operation middleware
+func (siw *ServerInterfaceWrapper) GetCurrentRealnameFaceIDAttempt(c *gin.Context) {
+
+	c.Set(SessionCookieScopes, []string{})
+
+	c.Set(SessionBearerScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCurrentRealnameFaceIDAttempt(c)
+}
+
+// GetRealnameFaceIDAttempt operation middleware
+func (siw *ServerInterfaceWrapper) GetRealnameFaceIDAttempt(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "attemptId" -------------
+	var attemptId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "attemptId", c.Param("attemptId"), &attemptId, runtime.BindStyledParameterOptions{Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter attemptId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(SessionCookieScopes, []string{})
+
+	c.Set(SessionBearerScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetRealnameFaceIDAttempt(c, attemptId)
+}
+
+// FinalizeRealnameFaceIDAttempt operation middleware
+func (siw *ServerInterfaceWrapper) FinalizeRealnameFaceIDAttempt(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "attemptId" -------------
+	var attemptId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "attemptId", c.Param("attemptId"), &attemptId, runtime.BindStyledParameterOptions{Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter attemptId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(SessionCookieScopes, []string{})
+
+	c.Set(SessionBearerScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.FinalizeRealnameFaceIDAttempt(c, attemptId)
+}
+
+// SendRealnameFaceIDPhoneCode operation middleware
+func (siw *ServerInterfaceWrapper) SendRealnameFaceIDPhoneCode(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "attemptId" -------------
+	var attemptId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "attemptId", c.Param("attemptId"), &attemptId, runtime.BindStyledParameterOptions{Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter attemptId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(SessionCookieScopes, []string{})
+
+	c.Set(SessionBearerScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.SendRealnameFaceIDPhoneCode(c, attemptId)
+}
+
+// VerifyRealnameFaceIDPhone operation middleware
+func (siw *ServerInterfaceWrapper) VerifyRealnameFaceIDPhone(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "attemptId" -------------
+	var attemptId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "attemptId", c.Param("attemptId"), &attemptId, runtime.BindStyledParameterOptions{Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter attemptId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(SessionCookieScopes, []string{})
+
+	c.Set(SessionBearerScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.VerifyRealnameFaceIDPhone(c, attemptId)
+}
+
+// HandleRealnameFaceIDCallback operation middleware
+func (siw *ServerInterfaceWrapper) HandleRealnameFaceIDCallback(c *gin.Context) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params HandleRealnameFaceIDCallbackParams
+
+	// ------------- Required query parameter "BizToken" -------------
+
+	if paramValue := c.Query("BizToken"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument BizToken is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "BizToken", c.Request.URL.Query(), &params.BizToken, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter BizToken: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.HandleRealnameFaceIDCallback(c, params)
+}
+
 // RetryRealnameSync operation middleware
 func (siw *ServerInterfaceWrapper) RetryRealnameSync(c *gin.Context) {
 
@@ -832,6 +1136,13 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.PUT(options.BaseURL+"/auth/profile", wrapper.UpdateProfile)
 	router.GET(options.BaseURL+"/auth/profile/avatar", wrapper.GetProfileAvatar)
 	router.PUT(options.BaseURL+"/auth/profile/avatar", wrapper.UpdateProfileAvatar)
+	router.POST(options.BaseURL+"/auth/realname/faceid/attempts", wrapper.StartRealnameFaceIDAttempt)
+	router.GET(options.BaseURL+"/auth/realname/faceid/attempts/current", wrapper.GetCurrentRealnameFaceIDAttempt)
+	router.GET(options.BaseURL+"/auth/realname/faceid/attempts/:attemptId", wrapper.GetRealnameFaceIDAttempt)
+	router.POST(options.BaseURL+"/auth/realname/faceid/attempts/:attemptId/finalize", wrapper.FinalizeRealnameFaceIDAttempt)
+	router.POST(options.BaseURL+"/auth/realname/faceid/attempts/:attemptId/send-phone-code", wrapper.SendRealnameFaceIDPhoneCode)
+	router.POST(options.BaseURL+"/auth/realname/faceid/attempts/:attemptId/verify-phone", wrapper.VerifyRealnameFaceIDPhone)
+	router.GET(options.BaseURL+"/auth/realname/faceid/callback", wrapper.HandleRealnameFaceIDCallback)
 	router.POST(options.BaseURL+"/auth/realname/sync/retry", wrapper.RetryRealnameSync)
 	router.POST(options.BaseURL+"/auth/realname/verify", wrapper.VerifyRealname)
 	router.POST(options.BaseURL+"/auth/realname/verify-phone", wrapper.VerifyRealnamePhone)
@@ -894,6 +1205,15 @@ type RequestEmailBind429JSONResponse ErrorResponse
 func (response RequestEmailBind429JSONResponse) VisitRequestEmailBindResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(429)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RequestEmailBind500JSONResponse ErrorResponse
+
+func (response RequestEmailBind500JSONResponse) VisitRequestEmailBindResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -1063,6 +1383,15 @@ func (response SignUpWithPassword409JSONResponse) VisitSignUpWithPasswordRespons
 	return json.NewEncoder(w).Encode(response)
 }
 
+type SignUpWithPassword502JSONResponse ErrorResponse
+
+func (response SignUpWithPassword502JSONResponse) VisitSignUpWithPasswordResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 type GetProfileRequestObject struct {
 }
 
@@ -1200,6 +1529,496 @@ func (response UpdateProfileAvatar503JSONResponse) VisitUpdateProfileAvatarRespo
 	return json.NewEncoder(w).Encode(response)
 }
 
+type StartRealnameFaceIDAttemptRequestObject struct {
+	Body *StartRealnameFaceIDAttemptJSONRequestBody
+}
+
+type StartRealnameFaceIDAttemptResponseObject interface {
+	VisitStartRealnameFaceIDAttemptResponse(w http.ResponseWriter) error
+}
+
+type StartRealnameFaceIDAttempt200JSONResponse RealnameFaceIDAttemptResponse
+
+func (response StartRealnameFaceIDAttempt200JSONResponse) VisitStartRealnameFaceIDAttemptResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type StartRealnameFaceIDAttempt400JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response StartRealnameFaceIDAttempt400JSONResponse) VisitStartRealnameFaceIDAttemptResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type StartRealnameFaceIDAttempt401JSONResponse ErrorResponse
+
+func (response StartRealnameFaceIDAttempt401JSONResponse) VisitStartRealnameFaceIDAttemptResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type StartRealnameFaceIDAttempt429JSONResponse ErrorResponse
+
+func (response StartRealnameFaceIDAttempt429JSONResponse) VisitStartRealnameFaceIDAttemptResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(429)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type StartRealnameFaceIDAttempt500JSONResponse ErrorResponse
+
+func (response StartRealnameFaceIDAttempt500JSONResponse) VisitStartRealnameFaceIDAttemptResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type StartRealnameFaceIDAttempt502JSONResponse ErrorResponse
+
+func (response StartRealnameFaceIDAttempt502JSONResponse) VisitStartRealnameFaceIDAttemptResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type StartRealnameFaceIDAttempt503JSONResponse ErrorResponse
+
+func (response StartRealnameFaceIDAttempt503JSONResponse) VisitStartRealnameFaceIDAttemptResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetCurrentRealnameFaceIDAttemptRequestObject struct {
+}
+
+type GetCurrentRealnameFaceIDAttemptResponseObject interface {
+	VisitGetCurrentRealnameFaceIDAttemptResponse(w http.ResponseWriter) error
+}
+
+type GetCurrentRealnameFaceIDAttempt200JSONResponse RealnameFaceIDAttemptResponse
+
+func (response GetCurrentRealnameFaceIDAttempt200JSONResponse) VisitGetCurrentRealnameFaceIDAttemptResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetCurrentRealnameFaceIDAttempt401JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response GetCurrentRealnameFaceIDAttempt401JSONResponse) VisitGetCurrentRealnameFaceIDAttemptResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetCurrentRealnameFaceIDAttempt404JSONResponse ErrorResponse
+
+func (response GetCurrentRealnameFaceIDAttempt404JSONResponse) VisitGetCurrentRealnameFaceIDAttemptResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetCurrentRealnameFaceIDAttempt409JSONResponse ErrorResponse
+
+func (response GetCurrentRealnameFaceIDAttempt409JSONResponse) VisitGetCurrentRealnameFaceIDAttemptResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetCurrentRealnameFaceIDAttempt500JSONResponse ErrorResponse
+
+func (response GetCurrentRealnameFaceIDAttempt500JSONResponse) VisitGetCurrentRealnameFaceIDAttemptResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetCurrentRealnameFaceIDAttempt502JSONResponse ErrorResponse
+
+func (response GetCurrentRealnameFaceIDAttempt502JSONResponse) VisitGetCurrentRealnameFaceIDAttemptResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetRealnameFaceIDAttemptRequestObject struct {
+	AttemptId string `json:"attemptId"`
+}
+
+type GetRealnameFaceIDAttemptResponseObject interface {
+	VisitGetRealnameFaceIDAttemptResponse(w http.ResponseWriter) error
+}
+
+type GetRealnameFaceIDAttempt200JSONResponse RealnameFaceIDAttemptResponse
+
+func (response GetRealnameFaceIDAttempt200JSONResponse) VisitGetRealnameFaceIDAttemptResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetRealnameFaceIDAttempt401JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response GetRealnameFaceIDAttempt401JSONResponse) VisitGetRealnameFaceIDAttemptResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetRealnameFaceIDAttempt404JSONResponse ErrorResponse
+
+func (response GetRealnameFaceIDAttempt404JSONResponse) VisitGetRealnameFaceIDAttemptResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetRealnameFaceIDAttempt409JSONResponse ErrorResponse
+
+func (response GetRealnameFaceIDAttempt409JSONResponse) VisitGetRealnameFaceIDAttemptResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetRealnameFaceIDAttempt500JSONResponse ErrorResponse
+
+func (response GetRealnameFaceIDAttempt500JSONResponse) VisitGetRealnameFaceIDAttemptResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetRealnameFaceIDAttempt502JSONResponse ErrorResponse
+
+func (response GetRealnameFaceIDAttempt502JSONResponse) VisitGetRealnameFaceIDAttemptResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type FinalizeRealnameFaceIDAttemptRequestObject struct {
+	AttemptId string `json:"attemptId"`
+}
+
+type FinalizeRealnameFaceIDAttemptResponseObject interface {
+	VisitFinalizeRealnameFaceIDAttemptResponse(w http.ResponseWriter) error
+}
+
+type FinalizeRealnameFaceIDAttempt200JSONResponse RealnameFaceIDAttemptResponse
+
+func (response FinalizeRealnameFaceIDAttempt200JSONResponse) VisitFinalizeRealnameFaceIDAttemptResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type FinalizeRealnameFaceIDAttempt401JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response FinalizeRealnameFaceIDAttempt401JSONResponse) VisitFinalizeRealnameFaceIDAttemptResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type FinalizeRealnameFaceIDAttempt404JSONResponse ErrorResponse
+
+func (response FinalizeRealnameFaceIDAttempt404JSONResponse) VisitFinalizeRealnameFaceIDAttemptResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type FinalizeRealnameFaceIDAttempt409JSONResponse ErrorResponse
+
+func (response FinalizeRealnameFaceIDAttempt409JSONResponse) VisitFinalizeRealnameFaceIDAttemptResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type FinalizeRealnameFaceIDAttempt500JSONResponse ErrorResponse
+
+func (response FinalizeRealnameFaceIDAttempt500JSONResponse) VisitFinalizeRealnameFaceIDAttemptResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type FinalizeRealnameFaceIDAttempt502JSONResponse ErrorResponse
+
+func (response FinalizeRealnameFaceIDAttempt502JSONResponse) VisitFinalizeRealnameFaceIDAttemptResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type FinalizeRealnameFaceIDAttempt503JSONResponse ErrorResponse
+
+func (response FinalizeRealnameFaceIDAttempt503JSONResponse) VisitFinalizeRealnameFaceIDAttemptResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SendRealnameFaceIDPhoneCodeRequestObject struct {
+	AttemptId string `json:"attemptId"`
+	Body      *SendRealnameFaceIDPhoneCodeJSONRequestBody
+}
+
+type SendRealnameFaceIDPhoneCodeResponseObject interface {
+	VisitSendRealnameFaceIDPhoneCodeResponse(w http.ResponseWriter) error
+}
+
+type SendRealnameFaceIDPhoneCode200JSONResponse SendSmsResponse
+
+func (response SendRealnameFaceIDPhoneCode200JSONResponse) VisitSendRealnameFaceIDPhoneCodeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SendRealnameFaceIDPhoneCode400JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response SendRealnameFaceIDPhoneCode400JSONResponse) VisitSendRealnameFaceIDPhoneCodeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SendRealnameFaceIDPhoneCode401JSONResponse ErrorResponse
+
+func (response SendRealnameFaceIDPhoneCode401JSONResponse) VisitSendRealnameFaceIDPhoneCodeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SendRealnameFaceIDPhoneCode403JSONResponse ErrorResponse
+
+func (response SendRealnameFaceIDPhoneCode403JSONResponse) VisitSendRealnameFaceIDPhoneCodeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SendRealnameFaceIDPhoneCode404JSONResponse ErrorResponse
+
+func (response SendRealnameFaceIDPhoneCode404JSONResponse) VisitSendRealnameFaceIDPhoneCodeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SendRealnameFaceIDPhoneCode409JSONResponse ErrorResponse
+
+func (response SendRealnameFaceIDPhoneCode409JSONResponse) VisitSendRealnameFaceIDPhoneCodeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SendRealnameFaceIDPhoneCode429JSONResponse ErrorResponse
+
+func (response SendRealnameFaceIDPhoneCode429JSONResponse) VisitSendRealnameFaceIDPhoneCodeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(429)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SendRealnameFaceIDPhoneCode500JSONResponse ErrorResponse
+
+func (response SendRealnameFaceIDPhoneCode500JSONResponse) VisitSendRealnameFaceIDPhoneCodeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SendRealnameFaceIDPhoneCode502JSONResponse ErrorResponse
+
+func (response SendRealnameFaceIDPhoneCode502JSONResponse) VisitSendRealnameFaceIDPhoneCodeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SendRealnameFaceIDPhoneCode503JSONResponse ErrorResponse
+
+func (response SendRealnameFaceIDPhoneCode503JSONResponse) VisitSendRealnameFaceIDPhoneCodeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type VerifyRealnameFaceIDPhoneRequestObject struct {
+	AttemptId string `json:"attemptId"`
+	Body      *VerifyRealnameFaceIDPhoneJSONRequestBody
+}
+
+type VerifyRealnameFaceIDPhoneResponseObject interface {
+	VisitVerifyRealnameFaceIDPhoneResponse(w http.ResponseWriter) error
+}
+
+type VerifyRealnameFaceIDPhone200JSONResponse RealnameFaceIDAttemptResponse
+
+func (response VerifyRealnameFaceIDPhone200JSONResponse) VisitVerifyRealnameFaceIDPhoneResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type VerifyRealnameFaceIDPhone400JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response VerifyRealnameFaceIDPhone400JSONResponse) VisitVerifyRealnameFaceIDPhoneResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type VerifyRealnameFaceIDPhone401JSONResponse ErrorResponse
+
+func (response VerifyRealnameFaceIDPhone401JSONResponse) VisitVerifyRealnameFaceIDPhoneResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type VerifyRealnameFaceIDPhone403JSONResponse ErrorResponse
+
+func (response VerifyRealnameFaceIDPhone403JSONResponse) VisitVerifyRealnameFaceIDPhoneResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type VerifyRealnameFaceIDPhone404JSONResponse ErrorResponse
+
+func (response VerifyRealnameFaceIDPhone404JSONResponse) VisitVerifyRealnameFaceIDPhoneResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type VerifyRealnameFaceIDPhone409JSONResponse ErrorResponse
+
+func (response VerifyRealnameFaceIDPhone409JSONResponse) VisitVerifyRealnameFaceIDPhoneResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type VerifyRealnameFaceIDPhone500JSONResponse ErrorResponse
+
+func (response VerifyRealnameFaceIDPhone500JSONResponse) VisitVerifyRealnameFaceIDPhoneResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type VerifyRealnameFaceIDPhone502JSONResponse ErrorResponse
+
+func (response VerifyRealnameFaceIDPhone502JSONResponse) VisitVerifyRealnameFaceIDPhoneResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type VerifyRealnameFaceIDPhone503JSONResponse ErrorResponse
+
+func (response VerifyRealnameFaceIDPhone503JSONResponse) VisitVerifyRealnameFaceIDPhoneResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type HandleRealnameFaceIDCallbackRequestObject struct {
+	Params HandleRealnameFaceIDCallbackParams
+}
+
+type HandleRealnameFaceIDCallbackResponseObject interface {
+	VisitHandleRealnameFaceIDCallbackResponse(w http.ResponseWriter) error
+}
+
+type HandleRealnameFaceIDCallback200TexthtmlResponse struct {
+	Body          io.Reader
+	ContentLength int64
+}
+
+func (response HandleRealnameFaceIDCallback200TexthtmlResponse) VisitHandleRealnameFaceIDCallbackResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "text/html")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type HandleRealnameFaceIDCallback400JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response HandleRealnameFaceIDCallback400JSONResponse) VisitHandleRealnameFaceIDCallbackResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 type RetryRealnameSyncRequestObject struct {
 }
 
@@ -1239,6 +2058,15 @@ type RetryRealnameSync403JSONResponse ErrorResponse
 func (response RetryRealnameSync403JSONResponse) VisitRetryRealnameSyncResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RetryRealnameSync409JSONResponse ErrorResponse
+
+func (response RetryRealnameSync409JSONResponse) VisitRetryRealnameSyncResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -1292,6 +2120,15 @@ type VerifyRealname401JSONResponse ErrorResponse
 func (response VerifyRealname401JSONResponse) VisitVerifyRealnameResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type VerifyRealname409JSONResponse ErrorResponse
+
+func (response VerifyRealname409JSONResponse) VisitVerifyRealnameResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -1354,6 +2191,33 @@ type VerifyRealnamePhone403JSONResponse ErrorResponse
 func (response VerifyRealnamePhone403JSONResponse) VisitVerifyRealnamePhoneResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type VerifyRealnamePhone409JSONResponse ErrorResponse
+
+func (response VerifyRealnamePhone409JSONResponse) VisitVerifyRealnamePhoneResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type VerifyRealnamePhone502JSONResponse ErrorResponse
+
+func (response VerifyRealnamePhone502JSONResponse) VisitVerifyRealnamePhoneResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type VerifyRealnamePhone503JSONResponse ErrorResponse
+
+func (response VerifyRealnamePhone503JSONResponse) VisitVerifyRealnamePhoneResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -1568,6 +2432,27 @@ type StrictServerInterface interface {
 	// Upload and replace the current user's avatar
 	// (PUT /auth/profile/avatar)
 	UpdateProfileAvatar(ctx context.Context, request UpdateProfileAvatarRequestObject) (UpdateProfileAvatarResponseObject, error)
+	// Start a FaceID real-name verification attempt
+	// (POST /auth/realname/faceid/attempts)
+	StartRealnameFaceIDAttempt(ctx context.Context, request StartRealnameFaceIDAttemptRequestObject) (StartRealnameFaceIDAttemptResponseObject, error)
+	// Read the current recoverable FaceID attempt for the authenticated user
+	// (GET /auth/realname/faceid/attempts/current)
+	GetCurrentRealnameFaceIDAttempt(ctx context.Context, request GetCurrentRealnameFaceIDAttemptRequestObject) (GetCurrentRealnameFaceIDAttemptResponseObject, error)
+	// Reconcile and read an owned FaceID attempt
+	// (GET /auth/realname/faceid/attempts/{attemptId})
+	GetRealnameFaceIDAttempt(ctx context.Context, request GetRealnameFaceIDAttemptRequestObject) (GetRealnameFaceIDAttemptResponseObject, error)
+	// Synchronize an attempt to Shadow and activate final verification
+	// (POST /auth/realname/faceid/attempts/{attemptId}/finalize)
+	FinalizeRealnameFaceIDAttempt(ctx context.Context, request FinalizeRealnameFaceIDAttemptRequestObject) (FinalizeRealnameFaceIDAttemptResponseObject, error)
+	// Send a Shadow verification code to the current phone for a FaceID attempt
+	// (POST /auth/realname/faceid/attempts/{attemptId}/send-phone-code)
+	SendRealnameFaceIDPhoneCode(ctx context.Context, request SendRealnameFaceIDPhoneCodeRequestObject) (SendRealnameFaceIDPhoneCodeResponseObject, error)
+	// Verify the current phone through Shadow binding for a FaceID attempt
+	// (POST /auth/realname/faceid/attempts/{attemptId}/verify-phone)
+	VerifyRealnameFaceIDPhone(ctx context.Context, request VerifyRealnameFaceIDPhoneRequestObject) (VerifyRealnameFaceIDPhoneResponseObject, error)
+	// Receive a Tencent FaceID browser redirect
+	// (GET /auth/realname/faceid/callback)
+	HandleRealnameFaceIDCallback(ctx context.Context, request HandleRealnameFaceIDCallbackRequestObject) (HandleRealnameFaceIDCallbackResponseObject, error)
 	// Retry syncing current user's verified real-name identity to the account system
 	// (POST /auth/realname/sync/retry)
 	RetryRealnameSync(ctx context.Context, request RetryRealnameSyncRequestObject) (RetryRealnameSyncResponseObject, error)
@@ -1922,6 +2807,218 @@ func (sh *strictHandler) UpdateProfileAvatar(ctx *gin.Context) {
 	}
 }
 
+// StartRealnameFaceIDAttempt operation middleware
+func (sh *strictHandler) StartRealnameFaceIDAttempt(ctx *gin.Context) {
+	var request StartRealnameFaceIDAttemptRequestObject
+
+	var body StartRealnameFaceIDAttemptJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.Status(http.StatusBadRequest)
+		ctx.Error(err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.StartRealnameFaceIDAttempt(ctx, request.(StartRealnameFaceIDAttemptRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "StartRealnameFaceIDAttempt")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(StartRealnameFaceIDAttemptResponseObject); ok {
+		if err := validResponse.VisitStartRealnameFaceIDAttemptResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetCurrentRealnameFaceIDAttempt operation middleware
+func (sh *strictHandler) GetCurrentRealnameFaceIDAttempt(ctx *gin.Context) {
+	var request GetCurrentRealnameFaceIDAttemptRequestObject
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetCurrentRealnameFaceIDAttempt(ctx, request.(GetCurrentRealnameFaceIDAttemptRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetCurrentRealnameFaceIDAttempt")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(GetCurrentRealnameFaceIDAttemptResponseObject); ok {
+		if err := validResponse.VisitGetCurrentRealnameFaceIDAttemptResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetRealnameFaceIDAttempt operation middleware
+func (sh *strictHandler) GetRealnameFaceIDAttempt(ctx *gin.Context, attemptId string) {
+	var request GetRealnameFaceIDAttemptRequestObject
+
+	request.AttemptId = attemptId
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetRealnameFaceIDAttempt(ctx, request.(GetRealnameFaceIDAttemptRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetRealnameFaceIDAttempt")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(GetRealnameFaceIDAttemptResponseObject); ok {
+		if err := validResponse.VisitGetRealnameFaceIDAttemptResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// FinalizeRealnameFaceIDAttempt operation middleware
+func (sh *strictHandler) FinalizeRealnameFaceIDAttempt(ctx *gin.Context, attemptId string) {
+	var request FinalizeRealnameFaceIDAttemptRequestObject
+
+	request.AttemptId = attemptId
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.FinalizeRealnameFaceIDAttempt(ctx, request.(FinalizeRealnameFaceIDAttemptRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "FinalizeRealnameFaceIDAttempt")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(FinalizeRealnameFaceIDAttemptResponseObject); ok {
+		if err := validResponse.VisitFinalizeRealnameFaceIDAttemptResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SendRealnameFaceIDPhoneCode operation middleware
+func (sh *strictHandler) SendRealnameFaceIDPhoneCode(ctx *gin.Context, attemptId string) {
+	var request SendRealnameFaceIDPhoneCodeRequestObject
+
+	request.AttemptId = attemptId
+
+	var body SendRealnameFaceIDPhoneCodeJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		if !errors.Is(err, io.EOF) {
+			ctx.Status(http.StatusBadRequest)
+			ctx.Error(err)
+			return
+		}
+	} else {
+		request.Body = &body
+	}
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.SendRealnameFaceIDPhoneCode(ctx, request.(SendRealnameFaceIDPhoneCodeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SendRealnameFaceIDPhoneCode")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(SendRealnameFaceIDPhoneCodeResponseObject); ok {
+		if err := validResponse.VisitSendRealnameFaceIDPhoneCodeResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// VerifyRealnameFaceIDPhone operation middleware
+func (sh *strictHandler) VerifyRealnameFaceIDPhone(ctx *gin.Context, attemptId string) {
+	var request VerifyRealnameFaceIDPhoneRequestObject
+
+	request.AttemptId = attemptId
+
+	var body VerifyRealnameFaceIDPhoneJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.Status(http.StatusBadRequest)
+		ctx.Error(err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.VerifyRealnameFaceIDPhone(ctx, request.(VerifyRealnameFaceIDPhoneRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "VerifyRealnameFaceIDPhone")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(VerifyRealnameFaceIDPhoneResponseObject); ok {
+		if err := validResponse.VisitVerifyRealnameFaceIDPhoneResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// HandleRealnameFaceIDCallback operation middleware
+func (sh *strictHandler) HandleRealnameFaceIDCallback(ctx *gin.Context, params HandleRealnameFaceIDCallbackParams) {
+	var request HandleRealnameFaceIDCallbackRequestObject
+
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.HandleRealnameFaceIDCallback(ctx, request.(HandleRealnameFaceIDCallbackRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "HandleRealnameFaceIDCallback")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(HandleRealnameFaceIDCallbackResponseObject); ok {
+		if err := validResponse.VisitHandleRealnameFaceIDCallbackResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // RetryRealnameSync operation middleware
 func (sh *strictHandler) RetryRealnameSync(ctx *gin.Context) {
 	var request RetryRealnameSyncRequestObject
@@ -2182,47 +3279,57 @@ func (sh *strictHandler) VerifySmsCode(ctx *gin.Context) {
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
-	"P7wJNg+b/wUAAP//4MrZ2Nk9AAA=",
+	"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",
+	"cKmm3599/020vdn+LwAA//8P2bu2k1gAAA==",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

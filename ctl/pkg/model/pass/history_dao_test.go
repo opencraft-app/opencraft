@@ -315,3 +315,52 @@ func TestHistoryDao_Insert_NilEntity_Rejected(t *testing.T) {
 		t.Fatalf("expected error for nil entity")
 	}
 }
+
+func TestListDistinctAppIDsByBundleIDs_ExcludesZeroAppID(t *testing.T) {
+	setupSQLite(t)
+	dao := pass.NewDao()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	trial := newPassEntity("p-trial", "u-trial", now.Add(time.Hour))
+	trial.BundleID = "bundle-target"
+	trial.AppID = 0
+	if err := dao.Create(trial); err != nil {
+		t.Fatalf("seed trial pass: %v", err)
+	}
+
+	paid := newPassEntity("p-paid", "u-paid", now.Add(time.Hour))
+	paid.BundleID = "bundle-target"
+	paid.AppID = 12345
+	if err := dao.Create(paid); err != nil {
+		t.Fatalf("seed paid pass: %v", err)
+	}
+
+	other := newPassEntity("p-other", "u-other", now.Add(time.Hour))
+	other.BundleID = "bundle-other"
+	other.AppID = 67890
+	if err := dao.Create(other); err != nil {
+		t.Fatalf("seed other pass: %v", err)
+	}
+
+	appIDs, total, err := dao.ListDistinctAppIDsByBundleIDs([]string{"bundle-target"}, 10, 0)
+	if err != nil {
+		t.Fatalf("ListDistinctAppIDsByBundleIDs: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("total should exclude app_id=0, got %d", total)
+	}
+	if len(appIDs) != 1 || appIDs[0] != 12345 {
+		t.Fatalf("appIDs should only include positive app_id in target bundle, got %+v", appIDs)
+	}
+
+	allAppIDs, allTotal, err := dao.ListDistinctAppIDsByBundleIDs(nil, 10, 0)
+	if err != nil {
+		t.Fatalf("ListDistinctAppIDsByBundleIDs all: %v", err)
+	}
+	if allTotal != 2 {
+		t.Fatalf("all total should exclude app_id=0, got %d", allTotal)
+	}
+	if len(allAppIDs) != 2 || allAppIDs[0] != 12345 || allAppIDs[1] != 67890 {
+		t.Fatalf("all appIDs should exclude zero and remain sorted, got %+v", allAppIDs)
+	}
+}

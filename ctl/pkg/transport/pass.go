@@ -25,7 +25,7 @@ type CompletePassRequest struct {
 	TimeUnit  string `json:"time_unit"`            // 时长单位 "m"（月）/ "d"（天）（必填）
 	Uin       int64  `json:"uin"`                  // 腾讯云主账号 uin（必填）
 	AppID     int64  `json:"app_id"`               // 腾讯云 appId（必填）
-	DealName  string `json:"deal_name"`            // jifei 订单号（必填，仅记日志，pass 表不持久化）
+	DealName  string `json:"deal_name"`            // jifei 订单号（必填，用于生成 ai-gateway 订阅幂等键；pass 表不持久化）
 	RenewFlag string `json:"renew_flag,omitempty"` // 续费标记，v4 收敛：协议层预留字段，本期 logic 内部写死 MANUAL_RENEW，trade 透传值暂不生效
 }
 
@@ -78,7 +78,10 @@ type PassResponse struct {
 
 // ListPassesResponse 查询 Pass 列表响应（admin / internal 接口使用）
 type ListPassesResponse struct {
-	Passes []*PassResponse `json:"passes"`
+	Passes   []*PassResponse `json:"passes"`
+	Total    int64           `json:"total,omitempty"`
+	Page     int             `json:"page,omitempty"`
+	PageSize int             `json:"page_size,omitempty"`
 }
 
 // UserPassResponse 是用户面 GET /v1/passes / POST /v1/passes 响应单条 pass（v1.7.23 B18）。

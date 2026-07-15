@@ -246,6 +246,19 @@ default_compatibility = "openai"
 default_gateway_port = 18789
 default_provider_id = ""
 
+[adapter.llmgateway]
+# 控制面地址（/api/admin 与 /api/internal），不要带 /v1
+base_url = ""
+admin_token = ""
+internal_service_token = ""
+timeout = 10
+# OpenAI 兼容流量面地址，通常带 /v1
+default_base_url = ""
+default_model_id = ""
+default_compatibility = "openai"
+default_gateway_port = 18789
+default_provider_id = ""
+
 #配置名称：adapter.shadow
 #配置含义：shadow 服务适配器配置，用于查询用户绑定信息（shadow account）
 #配置项结构与含义：

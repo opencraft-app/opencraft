@@ -4,3 +4,10 @@ kind: Component
 patches:
   - path: delete-shared-namespace.yaml
   - path: delete-shared-serviceaccount.yaml
+  - target:
+      kind: ConfigMap
+      name: service-gateway-platform-values
+    patch: |-
+      - op: add
+        path: /data/SERVICE_GATEWAY_REALNAME_WALL_ENABLED
+        value: "false"

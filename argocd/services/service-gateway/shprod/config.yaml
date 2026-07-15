@@ -70,6 +70,17 @@ routes:
     upstream: http://ctl-api.ctl.svc.cluster.local
     access: authenticated
     require_realname: true
+    optional_auth_allow:
+      - method: POST
+        path: /v1/passes/order-url
+      - method: POST
+        path: /v1/passes/{pass_id}/renew/order-url
+  - name: ctl-orders
+    prefix: /v1/orders
+    methods: [GET, OPTIONS]
+    upstream: http://ctl-api.ctl.svc.cluster.local
+    access: authenticated
+    auth_strategy: session
   - name: subscriptions
     prefix: /subscriptions
     methods: [GET, POST, OPTIONS]
@@ -87,6 +98,11 @@ routes:
     methods: [POST, OPTIONS]
     upstream: http://lightclaw-auth.user-auth.svc.cluster.local
     access: public
+  - name: trade-jifei-callback
+    prefix: /trade/jifei/callback
+    methods: [POST, OPTIONS]
+    upstream: http://trade.trade.svc.cluster.local
+    access: public
   - name: auth
     prefix: /auth
     methods: [GET, POST, PUT, DELETE, OPTIONS]
@@ -103,6 +119,10 @@ routes:
         path: /auth/invite/validate
       - method: POST
         path: /auth/invite/prepare
+      - method: POST
+        path: /auth/internal/tencentcloud/account
+      - method: GET
+        path: /auth/realname/faceid/callback
       - method: GET
         path: /auth/oauth/qq/start
       - method: GET

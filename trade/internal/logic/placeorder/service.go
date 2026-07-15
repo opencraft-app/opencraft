@@ -256,7 +256,7 @@ func (s *Service) PlaceOrder(ctx context.Context, req PlaceOrderRequest) (*Place
 	// 与询价侧不同：placeOrder 的 Resolver DB 错必须 5xx（不做 graceful-degrade），
 	// 否则会让用户绕过点石下单走 jifei 拿原价单 + 留下 participation 缺失的脏数据。
 	if s.deps.ActivityResolver != nil {
-		mapping, useDianshi, resolveErr := s.deps.ActivityResolver.ResolveForPlaceOrder(ctx, req.BundleID, req.Uin)
+		mapping, useDianshi, resolveErr := s.deps.ActivityResolver.ResolveForPlaceOrder(ctx, req.BundleID, req.Uin, req.Period, req.TimeUnit)
 		if resolveErr != nil {
 			return nil, fmt.Errorf("placeorder: activity resolve bundleId=%s uin=%s: %w",
 				req.BundleID, req.Uin, resolveErr)
@@ -696,7 +696,7 @@ func (s *Service) PlaceOrderAndPay(ctx context.Context, req PlaceOrderRequest) (
 	// placeOrderDianshi 私有方法（jifei generateDealsAndPay 与 generateDeals 在点石路径下
 	// 都收敛到同一个点石 do_goods 出向调用，区别仅在 jifei 路径上的 SDK 拆分）。
 	if s.deps.ActivityResolver != nil {
-		mapping, useDianshi, resolveErr := s.deps.ActivityResolver.ResolveForPlaceOrder(ctx, req.BundleID, req.Uin)
+		mapping, useDianshi, resolveErr := s.deps.ActivityResolver.ResolveForPlaceOrder(ctx, req.BundleID, req.Uin, req.Period, req.TimeUnit)
 		if resolveErr != nil {
 			return nil, fmt.Errorf("placeorder: activity resolve bundleId=%s uin=%s: %w",
 				req.BundleID, req.Uin, resolveErr)

@@ -48,6 +48,22 @@ export interface RealnameVerifyResult {
   shadowBindingStatus?: string;
 }
 
+export type RealnameFaceIdAttemptState =
+  | "pending"
+  | "face_succeeded"
+  | "phone_pending"
+  | "shadow_pending"
+  | "succeeded"
+  | "failed"
+  | "expired";
+
+export interface RealnameFaceIdAttempt {
+  attemptId: string;
+  state: RealnameFaceIdAttemptState;
+  verificationUrl?: string;
+  expiresAt?: string;
+}
+
 export interface RealnamePhoneVerifyResult {
   ok: boolean;
   realnameLevel: string;
@@ -97,6 +113,12 @@ export interface AuthRepository {
   updateProfile(input: { name: string }): Promise<User>;
   uploadAvatar(file: File): Promise<User>;
   deleteAccount(): Promise<void>;
+  startRealnameFaceIdAttempt(input: { name: string; idCard: string; consent: boolean }): Promise<RealnameFaceIdAttempt>;
+  getCurrentRealnameFaceIdAttempt(): Promise<RealnameFaceIdAttempt>;
+  getRealnameFaceIdAttempt(attemptId: string): Promise<RealnameFaceIdAttempt>;
+  sendRealnameFaceIdPhoneCode(attemptId: string, input?: { phone?: string }): Promise<SendSmsCodeResult>;
+  verifyRealnameFaceIdPhone(attemptId: string, input: { code: string; phone?: string }): Promise<RealnameFaceIdAttempt>;
+  finalizeRealnameFaceIdAttempt(attemptId: string): Promise<RealnameFaceIdAttempt>;
   /** 实名认证：POST /auth/realname/verify */
   verifyRealname(input: { name: string; idCard: string }): Promise<RealnameVerifyResult>;
   sendSmsCode(input: { phone: string }): Promise<SendSmsCodeResult>;

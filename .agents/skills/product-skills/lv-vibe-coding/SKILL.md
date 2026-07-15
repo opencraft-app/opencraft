@@ -18,7 +18,7 @@ description: LightVela Vibe Coding / AI Coding 流程指南，适用于需求澄
 ```
 【第 1 步】需求定义：提 issue（需求单）
         ↓
-【第 2 步】开发：拉最新 master → 开分支 → /feai-start（需求澄清已切到 prd-init） → 编写代码 → /feai-review
+【第 2 步】开发：拉最新 master → 开分支 → /feai-start（需求澄清已切到 prd-creator） → 编写代码 → /feai-review
         ↓
 【第 3 步】本地/预览环境验证效果
         ↓
@@ -160,7 +160,7 @@ AI 会自动：
 
 **记住这份 issue**：后面开分支、写 commit、提 MR，全都会带上这个 issue 编号，方便一路追溯"为什么要做这个改动"。
 
-> 📌 **issue 创建成功之后**：**下一步进入"四、第 2-3 步·开发 + 本地预览"**。记下 issue 编号（如 `#123`），待会 `/feai-start` 会先调用 `prd-init` 做需求澄清，再进入 plan / 分支流程。
+> 📌 **issue 创建成功之后**：**下一步进入"四、第 2-3 步·开发 + 本地预览"**。记下 issue 编号（如 `#123`），待会 `/feai-start` 会先调用 `prd-creator` 做需求澄清，再进入 plan / 分支流程。
 
 ---
 
@@ -171,7 +171,7 @@ AI 会自动：
 ```
        ┌─────────────────┐    ┌─────────────────┐    ┌──────────────────┐
        │  /feai-start    │───▶│  /feai-review   │───▶│  /feai-archive   │
-       │  issue → prd-init 澄清   │    │  批次门禁 CR    │    │  沉淀 OpenSpec   │
+       │  issue → prd-creator 澄清   │    │  批次门禁 CR    │    │  沉淀 OpenSpec   │
        │   → 分支 → plan.md    │    │  (每 1-3 任务)  │    │  → commit → MR   │
        └─────────────────┘    └─────────────────┘    └──────────────────┘
              ↑                          ↑                       ↓
@@ -185,18 +185,18 @@ git checkout master
 git pull origin master        # 保证你是在最新代码基础上开分支
 ```
 
-### 4.2 `/feai-start` — issue → prd-init 澄清 → 分支 → plan.md
+### 4.2 `/feai-start` — issue → prd-creator 澄清 → 分支 → plan.md
 
 **做什么**（AI 会自己走 8 步，你只用回答问题）：
 
 1. 加载 `openspec/` 上下文
-2. 调用 `prd-init` 做一轮需求澄清 / 产品前置（**这里可以直接把 issue 链接/编号丢给它**）
+2. 调用 `prd-creator` 做一轮需求澄清 / 产品前置（**这里可以直接把 issue 链接/编号丢给它**）
 3. 生成 `openspec/proposal.md` + `openspec/plan.md`
 4. **等你确认 plan** ← 这一步不要跳
 5. 创建分支（`frontsandbox/<slug>`）
 6. 后续进入执行阶段（每批 1-3 任务）
 
-> ⚠️ **现在前端 workflow 里的 `/feai-start`，需求澄清阶段已经切到 `prd-init`**。所以你看到它先澄清需求、再落 plan / 分支，是正常流程，不是跑偏。
+> ⚠️ **现在前端 workflow 里的 `/feai-start`，需求澄清阶段已经切到 `prd-creator`**。所以你看到它先澄清需求、再落 plan / 分支，是正常流程，不是跑偏。
 
 **重要**：**先 `cd frontend/`（或其他子服务）再敲命令**，不然 `AGENTS.md` / `openspec/` 会污染仓库根。
 
@@ -627,7 +627,7 @@ git add frontend/src/i18n/generated/zh-to-key.json
 - [ ] 加前端 owner（sarahzzhang）和后端 owner（skipzhang）好友
 - [ ] **完整跑一遍全流程练手**（哪怕是个玩具需求）：
   1. 对 AI 说"给 mono2 快速提个 issue：在个人页面加一个 Hello 世界横幅"，确认 issue 创建成功
-  2. `/feai-start` 带上 issue → `prd-init` 澄清 → 拉分支 → 开发 → `/feai-review`
+  2. `/feai-start` 带上 issue → `prd-creator` 澄清 → 拉分支 → 开发 → `/feai-review`
   3. 本地/预览环境看效果
   4. `/feai-archive` → commit → 拉最新 master 解决冲突（如果有）→ push → 提 MR
   5. @Fanny 触发 CR（当作练手，不用真找 owner 合并，体验一下流程即可）

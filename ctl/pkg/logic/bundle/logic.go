@@ -10,6 +10,7 @@ import (
 
 	"ctl/pkg/adapter/aigateway"
 	adapterfactory "ctl/pkg/adapter/factory"
+	"ctl/pkg/adapter/llmgateway"
 	"ctl/pkg/config"
 	"ctl/pkg/errcode"
 	"ctl/pkg/logic/objectid"
@@ -29,10 +30,16 @@ type BundleDetail struct {
 	//   - general : 普通付费套餐
 	//   - ai      : AI 增强付费套餐
 	// 取值由 ctl/pkg/model/bundle.BundleType* 常量统一约束。
-	BundleType      string
-	Description     string // JSON: [{"Key":"...","Value":"..."}]
-	BundleState     string
-	AgentQuota      int64
+	BundleType  string
+	Description string // JSON: [{"Key":"...","Value":"..."}]
+	// Features 功能特性列表 JSON 字符串（[]DisplayFeature），user-facing 出参下发。
+	Features string
+	// Tagline 一句话卖点，空串表示未配置。
+	Tagline string
+	// Promotion 促销角标 JSON 字符串（*DisplayPromotion，可空），空串表示无促销。
+	Promotion   string
+	BundleState string
+	AgentQuota  int64
 	Credit          int64  // 用户可见积分额度
 	TimeSpan        int    // 套餐周期数值
 	TimeUnit        string // 套餐周期单位 "m"=月 / "d"=天
@@ -56,10 +63,15 @@ type BundleDetail struct {
 type ModifyBundleFields struct {
 	BundleName *string `json:"bundle_name,omitempty"`
 	// BundleType 套餐类型，nil 表示不修改；非 nil 时必须为 free / general / ai。
-	BundleType      *string `json:"bundle_type,omitempty"`
-	Description     *string `json:"description,omitempty"`
-	BundleState     *string `json:"bundle_state,omitempty"`
-	AgentQuota      *int64  `json:"agent_quota,omitempty"`
+	BundleType  *string `json:"bundle_type,omitempty"`
+	Description *string `json:"description,omitempty"`
+	// Features / Tagline / Promotion 展示化字段，nil = 不修改。
+	// Features / Promotion 为 raw JSON string。
+	Features    *string `json:"features,omitempty"`
+	Tagline     *string `json:"tagline,omitempty"`
+	Promotion   *string `json:"promotion,omitempty"`
+	BundleState *string `json:"bundle_state,omitempty"`
+	AgentQuota  *int64  `json:"agent_quota,omitempty"`
 	Credit          *int64  `json:"credit,omitempty"`
 	TimeSpan        *int    `json:"time_span,omitempty"`
 	TimeUnit        *string `json:"time_unit,omitempty"`
@@ -83,6 +95,7 @@ type Logic interface {
 	//   - 空字符串 → 兼容期 fallback 到全局默认 spec-2c4g50g
 	//   - 非空 → 必须在 instancespec.KnownSpecs 字典中，否则报 ErrBundleInstanceSpecNotFound
 	ImportBundle(bundleID string, bundleName string, bundleType string, description string,
+		features string, tagline string, promotion string,
 		agentQuota int64, credit int64, timeSpan int, timeUnit string, aiGatewayPlanID string,
 		instanceSpecID string, staticSoldOut bool, salesAvailCount int, salesTotalCount int) (*BundleDetail, error)
 
@@ -173,15 +186,37 @@ func validateCreditPlanPeriod(credit int64, timeSpan int, timeUnit, aiGatewayPla
 		return errcode.Wrap(errcode.ErrBundlePlanMismatch, "credit>0 but ai_gateway_plan_id is empty")
 	}
 
-	// 调用 ai-gateway 校验 Plan 一致性
+	// 调用网关校验 Plan 一致性。LLMGateway 显式开启时优先查新网关；关闭时只走 legacy ai-gateway。
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	plan, err := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().GetPlan(ctx, aiGatewayPlanID)
-	if err != nil {
-		if errors.Is(err, aigateway.ErrAiGatewayPlanNotFound) {
-			return errcode.Wrap(errcode.ErrBundlePlanNotFound, "plan %s not found in ai-gateway", aiGatewayPlanID)
+	var plan *llmgateway.Plan
+	if config.LLMGatewayEnabled() {
+		var err error
+		plan, err = adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().GetPlan(ctx, aiGatewayPlanID)
+		if err != nil && !errors.Is(err, llmgateway.ErrLLMGatewayPlanNotFound) {
+			return errcode.Wrap(errcode.ErrBundleAiGatewayUnavailable, "%v", err)
 		}
-		return errcode.Wrap(errcode.ErrBundleAiGatewayUnavailable, "%v", err)
+	}
+	if plan == nil {
+		legacyAdapter := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter()
+		if legacyAdapter == nil {
+			return errcode.Wrap(errcode.ErrBundleAiGatewayUnavailable, "ai-gateway adapter unavailable while validating legacy plan %s", aiGatewayPlanID)
+		}
+		legacyPlan, legacyErr := legacyAdapter.GetPlan(ctx, aiGatewayPlanID)
+		if legacyErr == nil {
+			plan = &llmgateway.Plan{
+				ID:            legacyPlan.ID,
+				Name:          legacyPlan.Name,
+				MonthlyTokens: legacyPlan.MonthlyTokens,
+				PeriodValue:   legacyPlan.PeriodValue,
+				PeriodUnit:    legacyPlan.PeriodUnit,
+				IsActive:      legacyPlan.IsActive,
+			}
+		} else if errors.Is(legacyErr, aigateway.ErrAiGatewayPlanNotFound) {
+			return errcode.Wrap(errcode.ErrBundlePlanNotFound, "plan %s not found in configured gateway", aiGatewayPlanID)
+		} else {
+			return errcode.Wrap(errcode.ErrBundleAiGatewayUnavailable, "%v", legacyErr)
+		}
 	}
 
 	expectedTokens := credit * creditTokenRatio()
@@ -204,6 +239,7 @@ func validateCreditPlanPeriod(credit int64, timeSpan int, timeUnit, aiGatewayPla
 }
 
 func (l *logic) ImportBundle(bundleID string, bundleName string, bundleType string, description string,
+	features string, tagline string, promotion string,
 	agentQuota int64, credit int64, timeSpan int, timeUnit string, aiGatewayPlanID string,
 	instanceSpecID string, staticSoldOut bool, salesAvailCount int, salesTotalCount int) (*BundleDetail, error) {
 
@@ -233,6 +269,14 @@ func (l *logic) ImportBundle(bundleID string, bundleName string, bundleType stri
 			"unknown instance_spec_id: %s", instanceSpecID)
 	}
 
+	// 展示化字段校验：features / promotion 若非空必须是合法 JSON（DB 列类型为 JSON）。
+	if features != "" && !json.Valid([]byte(features)) {
+		return nil, errcode.Wrap(errcode.ErrBundleConfigInvalid, "features must be valid JSON")
+	}
+	if promotion != "" && !json.Valid([]byte(promotion)) {
+		return nil, errcode.Wrap(errcode.ErrBundleConfigInvalid, "promotion must be valid JSON")
+	}
+
 	// 如果没有提供 bundleID，生成一个
 	if bundleID == "" {
 		bundleID = objectid.NewLogic().GenerateBundleId()
@@ -243,6 +287,9 @@ func (l *logic) ImportBundle(bundleID string, bundleName string, bundleType stri
 		BundleName:            bundleName,
 		BundleType:            bundleType,
 		Description:           description,
+		Features:              features,
+		Tagline:               tagline,
+		Promotion:             promotion,
 		BundleState:           bundlemodel.StateOffline, // 导入默认 OFFLINE
 		AgentQuota:            agentQuota,
 		Credit:                credit,
@@ -301,6 +348,21 @@ func (l *logic) ModifyBundles(bundleIDs []string, req *ModifyBundleFields) (int6
 			return 0, errcode.Wrap(errcode.ErrBundleConfigInvalid, "description must be valid JSON")
 		}
 		updates[bundlemodel.ColumnDescription] = *req.Description
+	}
+	if req.Features != nil {
+		if *req.Features != "" && !json.Valid([]byte(*req.Features)) {
+			return 0, errcode.Wrap(errcode.ErrBundleConfigInvalid, "features must be valid JSON")
+		}
+		updates[bundlemodel.ColumnFeatures] = *req.Features
+	}
+	if req.Tagline != nil {
+		updates[bundlemodel.ColumnTagline] = *req.Tagline
+	}
+	if req.Promotion != nil {
+		if *req.Promotion != "" && !json.Valid([]byte(*req.Promotion)) {
+			return 0, errcode.Wrap(errcode.ErrBundleConfigInvalid, "promotion must be valid JSON")
+		}
+		updates[bundlemodel.ColumnPromotion] = *req.Promotion
 	}
 	if req.BundleState != nil {
 		state := *req.BundleState
@@ -436,6 +498,9 @@ func entityToDetail(e *bundlemodel.Entity) *BundleDetail {
 		BundleName:            e.BundleName,
 		BundleType:            e.BundleType,
 		Description:           e.Description,
+		Features:              e.Features,
+		Tagline:               e.Tagline,
+		Promotion:             e.Promotion,
 		BundleState:           e.BundleState,
 		AgentQuota:            e.AgentQuota,
 		Credit:                e.Credit,

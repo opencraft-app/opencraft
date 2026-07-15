@@ -30,12 +30,12 @@ type fakeResolver struct {
 	resolvePlaceCalls   atomic.Int32
 }
 
-func (f *fakeResolver) ResolveForInquiry(_ context.Context, _, _ string) (*activity.Mapping, bool, error) {
+func (f *fakeResolver) ResolveForInquiry(_ context.Context, _, _ string, _ int, _ string) (*activity.Mapping, bool, error) {
 	f.resolveInquiryCalls.Add(1)
 	return f.mapping, f.useDianshi, f.err
 }
 
-func (f *fakeResolver) ResolveForPlaceOrder(_ context.Context, _, _ string) (*activity.Mapping, bool, error) {
+func (f *fakeResolver) ResolveForPlaceOrder(_ context.Context, _, _ string, _ int, _ string) (*activity.Mapping, bool, error) {
 	f.resolvePlaceCalls.Add(1)
 	return f.mapping, f.useDianshi, f.err
 }

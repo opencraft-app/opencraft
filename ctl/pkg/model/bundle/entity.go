@@ -9,6 +9,9 @@ const (
 	ColumnBundleType            = "bundle_type"
 	ColumnBundleName            = "bundle_name"
 	ColumnDescription           = "description"
+	ColumnFeatures              = "features"
+	ColumnTagline               = "tagline"
+	ColumnPromotion             = "promotion"
 	ColumnBundleState           = "bundle_state"
 	ColumnAgentQuota            = "agent_quota"
 	ColumnCredit                = "credit"
@@ -62,7 +65,15 @@ type Entity struct {
 	BundleType      string `gorm:"column:bundle_type"`
 	BundleName      string `gorm:"column:bundle_name"`
 	Description     string `gorm:"column:description;type:text"` // JSON: [{"Key":"...","Value":"..."}]
-	BundleState     string `gorm:"column:bundle_state;index:idx_bundle_state"`
+	// Features 功能特性列表（JSON 字符串），user-facing 出参下发替代订阅页前端硬编码能力位。
+	// 格式：[{"key","label","value","included","highlight"}]；空配置为 ""，前端回退旧逻辑。
+	Features string `gorm:"column:features;type:json"`
+	// Tagline 套餐一句话卖点（PRD 2026-07-14 功能点 7），空串表示未配置。
+	Tagline string `gorm:"column:tagline"`
+	// Promotion 促销角标（JSON 字符串，可空）：{"label","kind","discount","first_period_only"}。
+	// 无促销为 ""，user-facing 出参不下发 promotion 字段。
+	Promotion   string `gorm:"column:promotion;type:json"`
+	BundleState string `gorm:"column:bundle_state;index:idx_bundle_state"`
 	AgentQuota      int64  `gorm:"column:agent_quota"`
 	Credit          int64  `gorm:"column:credit"`             // 用户可见积分额度（对应 credit × credit_token_ratio 个 Token）
 	TimeSpan        int    `gorm:"column:time_span"`          // 套餐周期数值
