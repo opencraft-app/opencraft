@@ -81,6 +81,77 @@ const FACE_ID_PENDING_POLL_DELAYS_MS = [250, 500, 1000, 1500, 2000, 3000, 5000, 
 
 type VerifyIdentityModalStage = "identity" | "face" | "phone" | "shadow";
 
+/* ─── Realname 3-step progress indicator (身份证 → 人脸 → 手机号) ─── */
+
+const REALNAME_STEP_KEYS: VerifyIdentityModalStage[] = ["identity", "face", "phone"];
+
+const RealnameStepper = ({
+  stage,
+  t,
+}: {
+  stage: VerifyIdentityModalStage;
+  t: (text: string) => string;
+}) => {
+  const labels: Record<string, string> = {
+    identity: t("身份信息"),
+    face: t("人脸核身"),
+    phone: t("手机验证"),
+  };
+  // shadow（同步）视为最后一步（手机）之后的完成态，进度停在第 3 步且全部完成。
+  const currentIndex = stage === "shadow" ? REALNAME_STEP_KEYS.length : REALNAME_STEP_KEYS.indexOf(stage);
+
+  return (
+    <div className="flex items-center" style={{ padding: "4px 0" }}>
+      {REALNAME_STEP_KEYS.map((key, index) => {
+        const isDone = index < currentIndex;
+        const isActive = index === currentIndex;
+        const dotBg = isActive ? "#202020" : isDone ? "#202020" : "rgba(0,0,0,0.06)";
+        const dotColor = isActive || isDone ? "#FFFFFF" : "rgba(0,0,0,0.4)";
+        const labelColor = isActive ? "rgba(0,0,0,0.9)" : isDone ? "rgba(0,0,0,0.6)" : "rgba(0,0,0,0.35)";
+        return (
+          <div key={key} className="flex items-center" style={{ flex: index < REALNAME_STEP_KEYS.length - 1 ? 1 : "0 0 auto" }}>
+            <div className="flex flex-shrink-0 items-center gap-2">
+              <span
+                className="flex items-center justify-center rounded-full"
+                style={{
+                  width: 22,
+                  height: 22,
+                  background: dotBg,
+                  color: dotColor,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  fontFamily: "PingFang SC",
+                  transition: "background 0.2s ease",
+                }}
+              >
+                {isDone ? <Check className="h-3.5 w-3.5" /> : index + 1}
+              </span>
+              <span
+                className="whitespace-nowrap"
+                style={{ fontSize: 13, fontWeight: isActive ? 500 : 400, color: labelColor, fontFamily: "PingFang SC" }}
+              >
+                {labels[key]}
+              </span>
+            </div>
+            {index < REALNAME_STEP_KEYS.length - 1 && (
+              <span
+                className="mx-3"
+                style={{
+                  flex: 1,
+                  height: 1,
+                  minWidth: 20,
+                  background: index < currentIndex ? "#202020" : "rgba(0,0,0,0.1)",
+                  transition: "background 0.2s ease",
+                }}
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 const formatFaceIdExpiry = (value?: string) => {
   if (!value) return "";
   const date = new Date(value);
@@ -597,6 +668,12 @@ const VerifyIdentityModal = ({
             </span>
           </div>
         </div>
+
+        {faceIdFlowEnabled && !verified && (
+          <div style={{ padding: "0 32px 20px" }}>
+            <RealnameStepper stage={stage} t={t} />
+          </div>
+        )}
 
         <div style={{ height: 1, background: "#E9ECF1" }} />
 
@@ -2363,11 +2440,11 @@ export const AccountPage = () => {
   const [guestLoading, setGuestLoading] = useState(false);
   const [guestError, setGuestError] = useState<string | null>(null);
   const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
-  const [showFaceIdFlow, setShowFaceIdFlow] = useState(false);
   const faceIdBackendEnabled = user?.realnameAssuranceMode === "observe"
     || user?.realnameAssuranceMode === "face_required";
   const hasSafetyPhone = Boolean(user?.phone?.trim());
-  const faceIdFlowEnabled = showFaceIdFlow && faceIdBackendEnabled;
+  // 灰度结束：实名人脸流程默认放开，只要后端具备能力即启用（身份证 → 人脸 → 手机号 三步）。
+  const faceIdFlowEnabled = faceIdBackendEnabled;
   const phoneProofEnabled = hasSafetyPhone && (realnamePhoneVerificationEnabled || faceIdFlowEnabled);
 
   const verified = faceIdFlowEnabled
@@ -2404,9 +2481,8 @@ export const AccountPage = () => {
   const [showSafetyPhoneTools, setShowSafetyPhoneTools] = useState(false);
   const [showAccountRenewTools, setShowAccountRenewTools] = useState(false);
   const showRealnameSection = !isGlobal;
-  const showSafetyPhoneSection = phoneProofEnabled && !isGlobal && showSafetyPhoneTools;
-  // 独立手机绑定行：国内站常驻展示（不依赖实名/隐藏入口），支持首次绑定与修改。
-  const showPhoneBindSection = isCN;
+  // 灰度结束：实名认证完成后展示「安全手机」行（不再依赖隐藏入口）。
+  const showSafetyPhoneSection = phoneProofEnabled && !isGlobal && verified;
   const showEmailBindSection = isCN;
   const [showVerifyModal, setShowVerifyModal] = useState(false);
   const [showChangePhoneModal, setShowChangePhoneModal] = useState(false);
@@ -2435,7 +2511,6 @@ export const AccountPage = () => {
     host.show = () => {
       setShowSafetyPhoneTools(true);
       setShowAccountRenewTools(true);
-      setShowFaceIdFlow(true);
       consoleRef.info("账号隐藏入口已显示。");
       return true;
     };
@@ -3038,30 +3113,6 @@ export const AccountPage = () => {
                     </div>
                   )}
 
-                  {showPhoneBindSection && (
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="text-sm flex-shrink-0" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>
-                        {t("安全手机")}
-                      </span>
-                      <div className="flex min-w-0 items-center gap-3">
-                        {user?.phone && (
-                          <span className="truncate text-sm" style={{ color: "rgba(0,0,0,0.9)", maxWidth: 260 }}>
-                            {user.phone}
-                          </span>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => setShowChangePhoneModal(true)}
-                          className="flex flex-shrink-0 items-center gap-1 text-sm transition-colors hover:opacity-80"
-                          style={{ color: "var(--lw-accent)" }}
-                        >
-                          {user?.phone ? t("修改") : t("去绑定")}
-                          <ChevronRight className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
                   {showSafetyPhoneSection && (
                     <div className="flex items-center justify-between">
                       <span className="text-sm" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>{t("安全手机")}</span>
@@ -3181,7 +3232,7 @@ export const AccountPage = () => {
             phone={user?.phone}
           />
         )}
-        {(showPhoneBindSection || (showRealnameSection && phoneProofEnabled)) && showChangePhoneModal && (
+        {showRealnameSection && phoneProofEnabled && showChangePhoneModal && (
           <ChangePhoneModal
             key="change-phone"
             currentPhone={user?.phone}
