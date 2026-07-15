@@ -134,11 +134,34 @@ func (h *bundleHandler) importBundle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// features / promotion 序列化为 JSON 字符串存储；空配置存空串（前端回退旧硬编码）。
+	var featuresJSON string
+	if len(req.Features) > 0 {
+		b, err := json.Marshal(req.Features)
+		if err != nil {
+			writeHTTPError(w, r, errcode.Wrap(errcode.ErrBundleConfigInvalid, "invalid features"))
+			return
+		}
+		featuresJSON = string(b)
+	}
+	var promotionJSON string
+	if req.Promotion != nil {
+		b, err := json.Marshal(req.Promotion)
+		if err != nil {
+			writeHTTPError(w, r, errcode.Wrap(errcode.ErrBundleConfigInvalid, "invalid promotion"))
+			return
+		}
+		promotionJSON = string(b)
+	}
+
 	detail, err := h.logic.ImportBundle(
 		req.BundleID,
 		req.BundleName,
 		req.BundleType,
 		string(descJSON),
+		featuresJSON,
+		req.Tagline,
+		promotionJSON,
 		req.AgentQuota,
 		req.Credit,
 		req.TimeSpan,
@@ -184,6 +207,9 @@ func (h *bundleHandler) modifyBundles(w http.ResponseWriter, r *http.Request) {
 		BundleName:            req.BundleName,
 		BundleType:            req.BundleType,
 		Description:           req.Description,
+		Features:              req.Features,
+		Tagline:               req.Tagline,
+		Promotion:             req.Promotion,
 		BundleState:           req.BundleState,
 		AgentQuota:            req.AgentQuota,
 		Credit:                req.Credit,
@@ -478,6 +504,9 @@ func detailToAdminResponse(d *bundlelogic.BundleDetail) *transport.BundleRespons
 		BundleName:            d.BundleName,
 		BundleType:            d.BundleType,
 		Description:           parseJSONDescription(d.Description),
+		Features:              parseFeatures(d.Features),
+		Tagline:               d.Tagline,
+		Promotion:             parsePromotion(d.Promotion),
 		BundleState:           d.BundleState,
 		AgentQuota:            d.AgentQuota,
 		Credit:                d.Credit,
@@ -516,6 +545,9 @@ func detailToUserResponse(d *bundlelogic.BundleDetail, quote *tradeadapter.Bundl
 		AgentQuota:       d.AgentQuota,
 		Credit:           d.Credit,
 		BundleSalesState: d.BundleSalesState,
+		Features:         parseFeatures(d.Features),
+		Tagline:          d.Tagline,
+		Promotion:        parsePromotion(d.Promotion),
 		Price:            nil,
 	}
 	if spec, ok := instancespec.ResolveByID(d.InstanceSpecID); ok {
@@ -589,6 +621,36 @@ func parseJSONDescription(desc string) interface{} {
 		return desc // 解析失败则返回原始字符串
 	}
 	return parsed
+}
+
+// parseFeatures 将 features JSON 字符串解析为结构化数组；空 / 解析失败时返回空数组
+// （前端据此回退旧硬编码兜底，保证灰度期不炸）。始终返回非 nil slice，避免前端 null 判空。
+func parseFeatures(raw string) []transport.DisplayFeature {
+	features := []transport.DisplayFeature{}
+	if raw == "" {
+		return features
+	}
+	if err := json.Unmarshal([]byte(raw), &features); err != nil {
+		return []transport.DisplayFeature{}
+	}
+	return features
+}
+
+// parsePromotion 将 promotion JSON 字符串解析为结构化对象；空 / "null" / 解析失败时返回 nil
+// （无促销时出参不下发 promotion 字段）。
+func parsePromotion(raw string) *transport.DisplayPromotion {
+	if raw == "" {
+		return nil
+	}
+	var p transport.DisplayPromotion
+	if err := json.Unmarshal([]byte(raw), &p); err != nil {
+		return nil
+	}
+	if p.Label == "" && p.Kind == "" {
+		// "null" / "{}" 等空对象视为无促销。
+		return nil
+	}
+	return &p
 }
 
 // handleAdminInstanceSpecs 处理 GET /admin/api/ctl/instance-specs（设计稿 §10 Q8=a）。

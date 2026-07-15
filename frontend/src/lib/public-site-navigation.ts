@@ -7,7 +7,7 @@ import {
 } from "@/lib/public-site-routing";
 
 export type PublicSiteLocale = "zh-CN" | "zh-SG" | "en-US";
-export type PublicSiteSection = "overview" | "changelog" | "docs" | "about" | "support";
+export type PublicSiteSection = "overview" | "pricing" | "changelog" | "docs" | "about" | "support";
 
 export type PublicSiteNavItem = {
   section: PublicSiteSection;
@@ -18,6 +18,8 @@ export type PublicSiteNavItem = {
 
 export const PUBLIC_SITE_NAV_ITEMS: readonly PublicSiteNavItem[] = [
   { section: "overview", href: "/", label: { "zh-CN": "概览", "zh-SG": "概览", "en-US": "Overview" } },
+  // 功能点2a：「定价」入口仅国内站（zh-CN，cnOnly）展示，指向订阅套餐页 /subscribe；未登录可浏览静态价格。
+  { section: "pricing", href: "/subscribe", label: { "zh-CN": "定价", "zh-SG": "定价", "en-US": "Pricing" }, cnOnly: true },
   { section: "changelog", href: "/changelog", label: { "zh-CN": "更新日志", "zh-SG": "更新日志", "en-US": "Changelog" } },
   { section: "docs", href: "/docs/overview", label: { "zh-CN": "产品文档", "zh-SG": "产品文档", "en-US": "Docs" } },
   { section: "about", href: "/about", label: { "zh-CN": "关于我们", "zh-SG": "关于我们", "en-US": "About" } },
