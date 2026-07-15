@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { PhoneLoginForm } from "@/components/auth/phone-login-form";
 import { useRepositories } from "@/contexts/repository-context";
 import { useSession } from "@/contexts/session-context";
 import { installShowGitHubLoginHelper, useGitHubLoginVisibility } from "@/lib/github-login-visibility";
+import { installShowPhoneLoginHelper, usePhoneLoginVisibility } from "@/lib/phone-login-visibility";
 import {
   ALLOW_GITHUB_EASTER_EGG,
   oauthErrorMessage,
@@ -57,14 +59,17 @@ export const SignInPage = () => {
   const repositories = useRepositories();
   const { signInAsGuest } = useSession();
   const showGitHubLoginEgg = useGitHubLoginVisibility();
+  const showPhoneLogin = usePhoneLoginVisibility();
   const oauthError = new URLSearchParams(location.search).get("oauth_error");
   const errorMessage = oauthErrorMessage(oauthError);
 
   const [guestLoading, setGuestLoading] = useState(false);
   const [guestError, setGuestError] = useState<string | null>(null);
   const [oauthPrompt, setOAuthPrompt] = useState<string | null>(null);
+  const [phoneLoginOpen, setPhoneLoginOpen] = useState(false);
 
   useEffect(() => installShowGitHubLoginHelper(), []);
+  useEffect(() => installShowPhoneLoginHelper(), []);
 
   const getOAuthStartUrlForProvider = (provider: OAuthProvider) => {
     if (provider !== "wechat") {
@@ -135,6 +140,15 @@ export const SignInPage = () => {
             </Button>
           );
         })}
+        {showPhoneLogin ? (
+          phoneLoginOpen ? (
+            <PhoneLoginForm onSignedIn={() => navigate("/", { replace: true })} />
+          ) : (
+            <Button type="button" variant="outline" className={OUTLINE_CLASS} onClick={() => setPhoneLoginOpen(true)}>
+              使用手机号登录
+            </Button>
+          )
+        ) : null}
         <Button
           onClick={handleGuestLogin}
           disabled={guestLoading}

@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setGitHubLoginVisible } from "@/lib/github-login-visibility";
+import { setPhoneLoginVisible } from "@/lib/phone-login-visibility";
 import { CN_PRIVACY_POLICY_URL } from "@/constants/legal";
 import * as oauthModule from "@/lib/oauth";
 import { LoginModal } from "@/components/site/login-modal";
@@ -39,6 +40,7 @@ vi.mock("@/contexts/session-context", () => ({
 describe("LoginModal (国内站 默认 isGlobal=false)", () => {
   beforeEach(() => {
     setGitHubLoginVisible(false);
+    setPhoneLoginVisible(false);
     Object.defineProperty(window.navigator, "userAgent", {
       value: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
       configurable: true,
@@ -68,6 +70,18 @@ describe("LoginModal (国内站 默认 isGlobal=false)", () => {
     expect(screen.getByRole("button", { name: "微信微信账号登录" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "GitHub 登录" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Google 登录" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "手机号登录" })).not.toBeInTheDocument();
+  });
+
+  it("彩蛋 show_phone_login() 触发后展示手机号入口", async () => {
+    render(<LoginModal open onClose={vi.fn()} />);
+
+    expect(screen.queryByRole("button", { name: "手机号登录" })).not.toBeInTheDocument();
+    (window.show_phone_login as () => boolean)();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "手机号登录" })).toBeInTheDocument();
+    });
   });
 
   it("国内站隐私协议跳转腾讯隐私中心", () => {

@@ -9,6 +9,7 @@ resources:
 
 patches:
   - path: patch-realname-faceid.yaml
+  - path: patch-phone-auth.yaml
 
 generatorOptions:
   disableNameSuffixHash: true

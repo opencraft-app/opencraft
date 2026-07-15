@@ -3,11 +3,13 @@ import { Loader2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
+import { PhoneLoginForm } from "@/components/auth/phone-login-form";
 import { useRepositories } from "@/contexts/repository-context";
 import { useSession } from "@/contexts/session-context";
 import { CN_PRIVACY_POLICY_URL } from "@/constants/legal";
 import { useT } from "@/i18n/t";
 import { installShowGitHubLoginHelper, useGitHubLoginVisibility } from "@/lib/github-login-visibility";
+import { installShowPhoneLoginHelper, usePhoneLoginVisibility } from "@/lib/phone-login-visibility";
 import {
   ALLOW_GITHUB_EASTER_EGG,
   redirectToOAuthStart,
@@ -180,16 +182,19 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
   const { session } = useSession();
   const t = useT();
   const showGitHubLogin = useGitHubLoginVisibility();
+  const showPhoneLogin = usePhoneLoginVisibility();
 
   const [mounted, setMounted] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [showAgreeHint, setShowAgreeHint] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [phoneLoginOpen, setPhoneLoginOpen] = useState(false);
   // 确保 login_success 只上报一次（session.stage 变化可能触发多次 useEffect）
   const loginReportedRef = useRef(false);
 
   useEffect(() => setMounted(true), []);
   useEffect(() => installShowGitHubLoginHelper(), []);
+  useEffect(() => installShowPhoneLoginHelper(), []);
 
   // modal 关闭时重置 loginReportedRef，确保登出后再次登录能正常上报 login_success
   useEffect(() => {
@@ -344,6 +349,21 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
                   );
                 });
               })()}
+              {showPhoneLogin ? (
+                phoneLoginOpen ? (
+                  <PhoneLoginForm beforeAction={checkAgreed} />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setPhoneLoginOpen(true)}
+                    aria-disabled={!agreed}
+                    className={`${BUTTON_BASE_CLASS} ${!agreed ? AGREEMENT_PENDING_BUTTON_CLASS : ""}`}
+                    style={{ background: "#fff", borderColor: "#E6E9EF", color: "#202020" }}
+                  >
+                    <span>{t("手机号登录")}</span>
+                  </button>
+                )
+              ) : null}
             </div>
 
             {/* Agreement — 放在登录按钮下方，必须先同意 */}

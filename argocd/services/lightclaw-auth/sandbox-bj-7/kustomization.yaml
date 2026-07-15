@@ -16,3 +16,4 @@ patches:
 - path: patch-playground-db.yaml
 - path: patch-playground-replicas.yaml
 - path: patch-shadowbinding.yaml
+- path: patch-phone-auth.yaml

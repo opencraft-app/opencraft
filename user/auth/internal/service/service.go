@@ -31,6 +31,9 @@ const (
 	AuthMethodOAuth         = "oauth"
 	AuthMethodPassword      = "password"
 	AuthMethodImpersonation = "impersonation"
+
+	PhoneAuthFlowExistingUserLocal = "existing_user_local"
+	PhoneAuthFlowNewUserShadow     = "new_user_shadow"
 )
 
 var (
@@ -45,6 +48,7 @@ type Options struct {
 	SMSCodeTTL             time.Duration
 	SessionTTL             time.Duration
 	DefaultSMSCode         string
+	PhoneAuth              PhoneAuthConfig
 	SeedDemoUser           bool
 	RealnameVerifier       RealnameVerifier
 	RealnameFaceIDVerifier RealnameFaceIDVerifier
@@ -58,6 +62,15 @@ type Options struct {
 	// shadow binding code can land before product rollout.
 	ShadowBasicAuthSyncEnabled bool
 	EmailBind                  EmailBindConfig
+}
+
+type PhoneAuthSMSSender interface {
+	SendVerificationCode(ctx context.Context, phone string, code string, expiryMinutes int) error
+}
+
+type PhoneAuthConfig struct {
+	Enabled   bool
+	SMSSender PhoneAuthSMSSender
 }
 
 type Error struct {
@@ -289,6 +302,18 @@ type AuthSession struct {
 	AuthMethod          string
 }
 
+type PhoneAuthChallenge struct {
+	Phone            string
+	UserID           string
+	Flow             string
+	CodeHash         string
+	ExpiresAt        time.Time
+	CooldownUntil    time.Time
+	RemainingRetries int
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
 const impersonationSessionTTL = 30 * time.Minute
 
 type VerifySMSInput struct {
@@ -321,6 +346,7 @@ type Service struct {
 	smsCodeTTL                 time.Duration
 	sessionTTL                 time.Duration
 	defaultSMSCode             string
+	phoneAuth                  PhoneAuthConfig
 	store                      Store
 	realnameVerifier           RealnameVerifier
 	realnameFaceIDVerifier     RealnameFaceIDVerifier
@@ -377,6 +403,7 @@ func NewWithStore(store Store, opts Options) *Service {
 		smsCodeTTL:                 defaultDuration(opts.SMSCodeTTL, 5*time.Minute),
 		sessionTTL:                 defaultDuration(opts.SessionTTL, 30*24*time.Hour),
 		defaultSMSCode:             normalizeFixedSMSCode(opts.DefaultSMSCode),
+		phoneAuth:                  opts.PhoneAuth,
 		store:                      store,
 		realnameVerifier:           opts.RealnameVerifier,
 		realnameFaceIDVerifier:     opts.RealnameFaceIDVerifier,
@@ -394,6 +421,9 @@ func (s *Service) SendVerificationCode(ctx context.Context, phone string) (time.
 	normalized := normalizePhone(phone)
 	if !isValidPhone(normalized) {
 		return 0, newError("invalid_phone", "手机号格式不正确。", 400)
+	}
+	if s.phoneAuth.Enabled {
+		return s.sendPhoneAuthVerificationCode(ctx, normalized)
 	}
 	code, err := s.issueSMSCode()
 	if err != nil {
@@ -468,8 +498,165 @@ func (s *Service) VerifySMS(ctx context.Context, input VerifySMSInput) (*AuthSes
 	if !isValidPhone(input.Phone) {
 		return nil, newError("invalid_phone", "手机号格式不正确。", 400)
 	}
+	if s.phoneAuth.Enabled {
+		return s.verifyPhoneAuthSMS(ctx, input)
+	}
 
 	return s.store.CompleteSMSVerification(ctx, input, s.now(), s.sessionTTL)
+}
+
+func (s *Service) sendPhoneAuthVerificationCode(ctx context.Context, phone string) (time.Duration, error) {
+	user, err := s.store.FindUserByPhone(ctx, phone)
+	switch {
+	case err == nil:
+		useShadow, shadowErr := s.shouldUseShadowPhoneAuth(ctx, user.ID)
+		if shadowErr != nil {
+			return 0, shadowErr
+		}
+		if useShadow {
+			return s.sendNewUserPhoneAuthCode(ctx, phone, user.ID)
+		}
+		return s.sendExistingUserPhoneAuthCode(ctx, user)
+	case isUserNotFound(err):
+		return s.sendNewUserPhoneAuthCode(ctx, phone, "")
+	default:
+		return 0, err
+	}
+}
+
+func (s *Service) shouldUseShadowPhoneAuth(ctx context.Context, userID string) (bool, error) {
+	if s.shadowBinding == nil {
+		return false, nil
+	}
+	binding, err := s.shadowBinding.GetBindingByUserID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, shadowbinding.ErrNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return binding.Status != shadowbinding.StatusActive, nil
+}
+
+func (s *Service) sendExistingUserPhoneAuthCode(ctx context.Context, user User) (time.Duration, error) {
+	if s.phoneAuth.SMSSender == nil {
+		return 0, newError("phone_auth_unavailable", "手机号登录短信服务暂不可用。", http.StatusServiceUnavailable)
+	}
+	code, err := s.issueSMSCode()
+	if err != nil {
+		return 0, err
+	}
+	codeHash, err := bcrypt.GenerateFromPassword([]byte(code), bcrypt.DefaultCost)
+	if err != nil {
+		return 0, fmt.Errorf("hash phone auth sms code: %w", err)
+	}
+	cooldown, err := s.store.SendPhoneAuthChallenge(ctx, PhoneAuthChallenge{
+		Phone:    user.Phone,
+		UserID:   user.ID,
+		Flow:     PhoneAuthFlowExistingUserLocal,
+		CodeHash: string(codeHash),
+	}, s.now(), s.smsCodeTTL, s.smsCooldown)
+	if err != nil {
+		return 0, err
+	}
+	if err := s.phoneAuth.SMSSender.SendVerificationCode(ctx, user.Phone, code, ceilMinutes(s.smsCodeTTL)); err != nil {
+		_ = s.store.DeletePhoneAuthChallenge(ctx, user.Phone)
+		return 0, newError("phone_auth_sms_failed", "登录验证码发送失败，请稍后重试。", http.StatusBadGateway)
+	}
+	return cooldown, nil
+}
+
+func (s *Service) sendNewUserPhoneAuthCode(ctx context.Context, phone string, userID string) (time.Duration, error) {
+	if s.shadowBinding == nil || !s.shadowBinding.Enabled() {
+		return 0, newError("phone_auth_unavailable", "手机号登录暂未启用。", http.StatusServiceUnavailable)
+	}
+	cooldown, err := s.store.SendPhoneAuthChallenge(ctx, PhoneAuthChallenge{
+		Phone:  phone,
+		UserID: userID,
+		Flow:   PhoneAuthFlowNewUserShadow,
+	}, s.now(), s.smsCodeTTL, s.smsCooldown)
+	if err != nil {
+		return 0, err
+	}
+	if err := s.shadowBinding.SendVerificationSMS(ctx, phone, ""); err != nil {
+		_ = s.store.DeletePhoneAuthChallenge(ctx, phone)
+		return 0, newError("shadow_sms_failed", "发送 Lightvela 安全手机验证码失败，请稍后重试。", http.StatusBadGateway)
+	}
+	return cooldown, nil
+}
+
+func (s *Service) verifyPhoneAuthSMS(ctx context.Context, input VerifySMSInput) (*AuthSession, error) {
+	challenge, err := s.store.GetPhoneAuthChallenge(ctx, input.Phone)
+	if err != nil {
+		return nil, err
+	}
+	switch challenge.Flow {
+	case PhoneAuthFlowExistingUserLocal:
+		return s.verifyExistingUserPhoneAuthSMS(ctx, input)
+	case PhoneAuthFlowNewUserShadow:
+		return s.verifyNewUserPhoneAuthSMS(ctx, input, challenge)
+	default:
+		return nil, newError("sms_code_not_found", "请先获取验证码。", http.StatusBadRequest)
+	}
+}
+
+func (s *Service) verifyExistingUserPhoneAuthSMS(ctx context.Context, input VerifySMSInput) (*AuthSession, error) {
+	challenge, err := s.store.VerifyAndConsumePhoneAuthChallenge(ctx, input.Phone, input.Code, s.now())
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(challenge.UserID) != "" {
+		user, err := s.store.FindUserByID(ctx, challenge.UserID)
+		if err != nil {
+			return nil, err
+		}
+		return s.store.CreateSession(ctx, user, s.now(), s.sessionTTL)
+	}
+	user, err := s.store.FindUserByPhone(ctx, input.Phone)
+	if err != nil {
+		return nil, err
+	}
+	return s.store.CreateSession(ctx, user, s.now(), s.sessionTTL)
+}
+
+func (s *Service) verifyNewUserPhoneAuthSMS(ctx context.Context, input VerifySMSInput, challenge PhoneAuthChallenge) (*AuthSession, error) {
+	if _, err := s.store.ConsumePhoneAuthChallengePreview(ctx, input.Phone, s.now()); err != nil {
+		return nil, err
+	}
+	if s.shadowBinding == nil || !s.shadowBinding.Enabled() {
+		return nil, newError("phone_auth_unavailable", "手机号登录暂未启用。", http.StatusServiceUnavailable)
+	}
+	userID := strings.TrimSpace(challenge.UserID)
+	user, err := s.store.FindOrCreatePhoneAuthUser(ctx, input.Phone, input.Name, s.now())
+	if err != nil {
+		return nil, err
+	}
+	if userID != "" && user.ID != userID {
+		user, err = s.store.FindUserByID(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	binding, err := s.shadowBinding.BindShadowAccount(ctx, shadowbinding.BindInput{
+		UserID:     user.ID,
+		Phone:      input.Phone,
+		VerifyCode: input.Code,
+		Force:      true,
+	})
+	if err != nil {
+		if isCloudVerifyCodeMismatch(err) {
+			_ = s.store.FailPhoneAuthChallenge(ctx, input.Phone, s.now())
+			return nil, newError("invalid_sms_code", "验证码不正确。", http.StatusBadRequest)
+		}
+		return nil, shadowBindingError(ctx, err, user.ID)
+	}
+	if binding.Status != shadowbinding.StatusActive {
+		return nil, newError("shadow_binding_incomplete", "影子账号绑定尚未完成，请稍后重试。", http.StatusBadGateway)
+	}
+	if _, err := s.store.ConsumePhoneAuthChallenge(ctx, input.Phone, s.now()); err != nil {
+		return nil, err
+	}
+	return s.store.CreateSession(ctx, user, s.now(), s.sessionTTL)
 }
 
 func (s *Service) VerifyPhoneChange(ctx context.Context, token string, input PhoneChangeVerifyInput) (PhoneChangeVerifyResult, error) {
@@ -1502,6 +1689,25 @@ func (s *Service) issueSMSCode() (string, error) {
 
 	value := int(raw[0])<<16 | int(raw[1])<<8 | int(raw[2])
 	return fmt.Sprintf("%06d", value%1_000_000), nil
+}
+
+func ceilMinutes(value time.Duration) int {
+	if value <= 0 {
+		return 1
+	}
+	minutes := int(value / time.Minute)
+	if value%time.Minute != 0 {
+		minutes++
+	}
+	if minutes <= 0 {
+		return 1
+	}
+	return minutes
+}
+
+func isUserNotFound(err error) bool {
+	var authErr *Error
+	return errors.As(err, &authErr) && authErr.Code == "user_not_found"
 }
 
 func clonePlan(plan *PlanSelection) *PlanSelection {

@@ -21,8 +21,17 @@ const (
 
 type Store interface {
 	ValidateInvite(ctx context.Context, code string) (InviteValidation, error)
+	FindUserByPhone(ctx context.Context, phone string) (User, error)
 	SendVerificationCode(ctx context.Context, phone string, code string, now time.Time, ttl time.Duration, cooldown time.Duration) (time.Duration, error)
 	CompleteSMSVerification(ctx context.Context, input VerifySMSInput, now time.Time, sessionTTL time.Duration) (*AuthSession, error)
+	FindOrCreatePhoneAuthUser(ctx context.Context, phone string, name string, now time.Time) (User, error)
+	SendPhoneAuthChallenge(ctx context.Context, challenge PhoneAuthChallenge, now time.Time, ttl time.Duration, cooldown time.Duration) (time.Duration, error)
+	GetPhoneAuthChallenge(ctx context.Context, phone string) (PhoneAuthChallenge, error)
+	ConsumePhoneAuthChallengePreview(ctx context.Context, phone string, now time.Time) (PhoneAuthChallenge, error)
+	VerifyAndConsumePhoneAuthChallenge(ctx context.Context, phone string, code string, now time.Time) (PhoneAuthChallenge, error)
+	ConsumePhoneAuthChallenge(ctx context.Context, phone string, now time.Time) (PhoneAuthChallenge, error)
+	FailPhoneAuthChallenge(ctx context.Context, phone string, now time.Time) error
+	DeletePhoneAuthChallenge(ctx context.Context, phone string) error
 	ValidateCurrentUserPhoneChallenge(ctx context.Context, token string, code string, now time.Time) (User, error)
 	ConsumeCurrentUserPhoneChallenge(ctx context.Context, token string, code string, now time.Time) (User, error)
 	VerifyCurrentUserPhoneChallenge(ctx context.Context, token string, code string, now time.Time) (User, error)
