@@ -350,9 +350,10 @@ const mapBundleToPlan = (
     /* 统一走 i18n 字典：当前语言是 en-US 则查英文，zh-CN 则回显原文。
        动态参数 extract 脚本扫不到，为此在 __markBundleBackendStringsForI18n 中静态列举。 */
     const label = t(rawKey);
-    /* 「独立环境」统一前端展示规格，避免后端 Value 为空导致卡片露馅 */
+    /* 「独立环境」统一前端展示规格，避免后端 Value 为空导致卡片露馅；
+       匹配 key 仍用后端下发的「独立环境」，展示文案统一为「云端独立环境」 */
     if (rawKey === "独立环境") {
-      envFeature = { icon: iconForKey(rawKey), label, value: envSpec };
+      envFeature = { icon: iconForKey(rawKey), label: t("云端独立环境"), value: envSpec };
       continue;
     }
     /* 「专属云端存储」前端按 tier 统一展示容量，避免后端缺值 */
@@ -384,7 +385,7 @@ const mapBundleToPlan = (
   features.push(...otherFeatures);
   /* 规格项兜底：后端缺失「独立环境」「专属云端存储」时补齐，仍固定排在能力点上方 */
   if (!envFeature) {
-    features.push({ icon: iconMap.monitor, label: t("独立环境"), value: envSpec });
+    features.push({ icon: iconMap.monitor, label: t("云端独立环境"), value: envSpec });
   }
   if (!storageFeature) {
     features.push({ icon: iconMap.hardDrive, label: t("专属云端存储"), value: storageSpec });
@@ -737,7 +738,7 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
     description: "日常主力，让智能化成为习惯",
     features: [
       { iconKey: "user", label: "Agent", value: "1 个" },
-      { iconKey: "monitor", label: "独立环境", value: "4核 8G 内存" },
+      { iconKey: "monitor", label: "云端独立环境", value: "4核 8G 内存" },
       { iconKey: "hardDrive", label: "专属云端存储", value: "80G" },
       { iconKey: "zap", label: "模型积分", value: "-" },
       { iconKey: "evolution", label: "Agent 自主进化", hasCheck: true },
@@ -768,7 +769,7 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
     description: "体验进阶，专业玩家的配置",
     features: [
       { iconKey: "user", label: "Agent", value: "3 个" },
-      { iconKey: "monitor", label: "独立环境", value: "4核 8G 内存" },
+      { iconKey: "monitor", label: "云端独立环境", value: "4核 8G 内存" },
       { iconKey: "hardDrive", label: "专属云端存储", value: "80G" },
       { iconKey: "zap", label: "模型积分", value: "-" },
       { iconKey: "evolution", label: "Agent 自主进化", hasCheck: true },
@@ -805,6 +806,7 @@ const __markPlaceholderPlansForI18n = (t: (zh: string, opts?: Record<string, unk
   void t("体验进阶，专业玩家的配置");
   void t("1 个");
   void t("3 个");
+  void t("云端独立环境");
   void t("4核 8G 内存");
   void t("极简配置面板");
   void t("自动任务");
