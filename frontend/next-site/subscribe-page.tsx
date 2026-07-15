@@ -3,7 +3,7 @@ import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
 import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, ArrowRight, Check, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, Loader2, Wifi, CalendarClock, Puzzle, MessageSquare, Brain } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, Loader2, Wifi, CalendarClock, Puzzle, MessageSquare, Brain, UserCog, Stethoscope, Cpu } from "lucide-react";
 import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { useOpenClaw } from "@/contexts/openclaw-context";
 import { useSession } from "@/contexts/session-context";
@@ -192,7 +192,7 @@ const iconStyle = { width: 16, height: 16, color: colors.warmGray300, strokeWidt
 
 /* ─── Icon 映射（用于纯数据 → JSX 转换）─── */
 
-type IconKey = "user" | "monitor" | "hardDrive" | "clock" | "settings" | "zap" | "wifi" | "headphones" | "check" | "automation" | "skill" | "channel" | "memory" | "evolution";
+type IconKey = "user" | "monitor" | "hardDrive" | "clock" | "settings" | "zap" | "wifi" | "headphones" | "check" | "automation" | "skill" | "channel" | "memory" | "evolution" | "persona" | "diagnostics" | "modelApi";
 
 const iconMap: Record<IconKey, React.ReactNode> = {
   user: <User {...iconStyle} />,
@@ -209,8 +209,14 @@ const iconMap: Record<IconKey, React.ReactNode> = {
   skill: <Puzzle {...iconStyle} />,
   channel: <MessageSquare {...iconStyle} />,
   memory: <Brain {...iconStyle} />,
-  /* Hermes Agent 自主进化：用 Sparkles 表达「持续进化 / 智能升级」 */
+  /* Agent 自主进化：用 Sparkles 表达「持续进化 / 智能升级」 */
   evolution: <Sparkles {...iconStyle} />,
+  /* 人设注入：用 UserCog 表达「可配置的人格 / 角色设定」 */
+  persona: <UserCog {...iconStyle} />,
+  /* 诊断中心：用 Stethoscope 表达「运行状态检查 / 问题诊断」 */
+  diagnostics: <Stethoscope {...iconStyle} />,
+  /* 接入主流模型 API：用 Cpu 表达「模型 / 算力接入」 */
+  modelApi: <Cpu {...iconStyle} />,
 };
 
 /**
@@ -233,6 +239,21 @@ const iconForKey = (key: string): React.ReactNode => {
   if (k.includes("环境") || k.includes("environment")) return iconMap.monitor;
   if (k.includes("配置") || k.includes("config")) return iconMap.settings;
   return iconMap.check;
+};
+
+/**
+ * Agent 核心能力点在卡片下方按固定顺序统一渲染（见 mapBundleToPlan）。
+ * 后端 description 里若也下发了同类项（最典型的是「7*24小时在线」），
+ * 这里将其从 otherFeatures 中过滤掉，避免与固定能力点重复或打乱顺序。
+ */
+const CAPABILITY_DESC_KEYS = new Set<string>([
+  "7*24小时在线", "7×24小时在线", "7×24 在线", "7*24 在线",
+  "极简配置面板", "自动任务", "技能安装", "技能包", "Skills 技能/技能包",
+  "连接主流聊天通道", "接入主流模型 API", "长期记忆", "人设注入", "Agent 自主进化", "诊断中心",
+]);
+const isCapabilityDescKey = (rawKey: string): boolean => {
+  if (CAPABILITY_DESC_KEYS.has(rawKey)) return true;
+  return /24/.test(rawKey) && /(在线|online)/i.test(rawKey);
 };
 
 /**
@@ -301,6 +322,8 @@ const mapBundleToPlan = (
   const isVoyageTier = bundleNm.includes("远航") || nmLower.includes("voyage");
   /* 独立环境规格：启航 2核4G；巡游 / 远航 升配 4核8G。 */
   const envSpec = isLaunchTier ? t("2核 4G 内存") : t("4核 8G 内存");
+  /* 专属云端存储：启航 50G；巡游 / 远航 升配 80G。 */
+  const storageSpec = isLaunchTier ? "50G" : "80G";
   /* 一句话文案按 tier 差异化（PRD 需求2）。命中 tier 时直接使用 tier 文案，不受 freeGuideAllowed 清空；
      未命中 tier（如免费试用卡）保持原有兜底逻辑。 */
   const tierTagline = isLaunchTier
@@ -332,11 +355,14 @@ const mapBundleToPlan = (
       envFeature = { icon: iconForKey(rawKey), label, value: envSpec };
       continue;
     }
-    /* 「专属云端存储」前端统一展示容量，避免后端缺值 */
+    /* 「专属云端存储」前端按 tier 统一展示容量，避免后端缺值 */
     if (rawKey === "专属云端存储") {
-      storageFeature = { icon: iconMap.hardDrive, label, value: "50G" };
+      storageFeature = { icon: iconMap.hardDrive, label, value: storageSpec };
       continue;
     }
+    /* 能力点（7*24小时在线 / 自动任务 / 技能 / 多通道 / 长期记忆 / 极简配置面板 / 人设注入 / 自主进化）
+       统一在下方按固定顺序渲染，这里跳过后端 description 里的同类项，避免重复与乱序。 */
+    if (isCapabilityDescKey(rawKey)) continue;
     /* 后端 Value 为空时，用右侧勾替代，避免卡片右侧空白 */
     if (!entry.Value) {
       otherFeatures.push({ icon: iconForKey(rawKey), label, hasCheck: true });
@@ -356,48 +382,30 @@ const mapBundleToPlan = (
     });
   }
   features.push(...otherFeatures);
-  /* 如果 features 比较少，填几个通用卖点（顺序：独立环境 → 专属云端存储 → 7×24 在线）*/
+  /* 规格项兜底：后端缺失「独立环境」「专属云端存储」时补齐，仍固定排在能力点上方 */
   if (!envFeature) {
     features.push({ icon: iconMap.monitor, label: t("独立环境"), value: envSpec });
   }
   if (!storageFeature) {
-    features.push({ icon: iconMap.hardDrive, label: t("专属云端存储"), value: "50G" });
+    features.push({ icon: iconMap.hardDrive, label: t("专属云端存储"), value: storageSpec });
   }
-  if (features.length < 4 && !features.some((f) => f.label === t("7×24 在线"))) {
-    features.push({ icon: iconMap.clock, label: t("7×24 在线"), hasCheck: true });
-  }
-  /* Hermes Agent 自主进化：核心能力点，固定展示在「7×24 在线」之前。
-     注意 7×24 既可能来自后端 description（如「7*24小时在线」，已随 otherFeatures 入列），
-     也可能来自上面的兜底项，因此按「含 24 且含 在线/online」识别其位置，插到它前面；
-     若确实没有 7×24 项则直接追加，保证末尾展示。 */
-  if (!features.some((f) => f.label === t("Hermes Agent 自主进化"))) {
-    const evolutionFeature: PlanFeature = {
-      icon: iconMap.evolution,
-      label: t("Hermes Agent 自主进化"),
-      hasCheck: true,
-    };
-    const onlineIdx = features.findIndex((f) => /24/.test(f.label) && /(在线|online)/i.test(f.label));
-    if (onlineIdx >= 0) {
-      features.splice(onlineIdx, 0, evolutionFeature);
-    } else {
-      features.push(evolutionFeature);
-    }
-  }
-  if (isGlobal && !features.some((f) => f.label === t("极简配置面板"))) {
-    features.push({ icon: iconMap.settings, label: t("极简配置面板"), hasCheck: true });
-  }
-  /* Agent 核心能力点：自动任务 / 技能（包）/ 多平台通道 / 长期记忆——所有套餐均支持，去重后追加。
-     技能维度按 tier 分级：启航为单技能一键安装，巡游 / 远航升级为技能包（场景化技能组合）。 */
-  const skillCapability: PlanFeature = isLaunchTier
-    ? { icon: iconMap.skill, label: t("技能安装"), hasCheck: true }
-    : { icon: iconMap.skill, label: t("技能包"), hasCheck: true };
-  const agentCapabilities: PlanFeature[] = [
+  /* ─── Agent 核心能力点（固定顺序，所有套餐一致，统一展示在规格项下方）───
+     顺序：Agent 自主进化 → 7*24小时在线 → 极简配置面板 → 连接主流聊天通道 → 接入主流模型 API
+          → Skills 技能/技能包 → 人设注入 → 自动任务 → 长期记忆 → 诊断中心。
+     技能项不再按 tier 区分「技能安装 / 技能包」，所有套餐统一「Skills 技能/技能包」。 */
+  const capabilityPoints: PlanFeature[] = [
+    { icon: iconMap.evolution, label: t("Agent 自主进化"), hasCheck: true },
+    { icon: iconMap.clock, label: t("7*24小时在线"), hasCheck: true },
+    { icon: iconMap.settings, label: t("极简配置面板"), hasCheck: true },
+    { icon: iconMap.channel, label: t("连接主流聊天通道"), hasCheck: true },
+    { icon: iconMap.modelApi, label: t("接入主流模型 API"), hasCheck: true },
+    { icon: iconMap.skill, label: t("Skills 技能/技能包"), hasCheck: true },
+    { icon: iconMap.persona, label: t("人设注入"), hasCheck: true },
     { icon: iconMap.automation, label: t("自动任务"), hasCheck: true },
-    skillCapability,
-    { icon: iconMap.channel, label: t("微信、QQ等多通道"), hasCheck: true },
     { icon: iconMap.memory, label: t("长期记忆"), hasCheck: true },
+    { icon: iconMap.diagnostics, label: t("诊断中心"), hasCheck: true },
   ];
-  for (const cap of agentCapabilities) {
+  for (const cap of capabilityPoints) {
     if (!features.some((f) => f.label === cap.label)) features.push(cap);
   }
 
@@ -732,13 +740,16 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
       { iconKey: "monitor", label: "独立环境", value: "4核 8G 内存" },
       { iconKey: "hardDrive", label: "专属云端存储", value: "80G" },
       { iconKey: "zap", label: "模型积分", value: "-" },
-      { iconKey: "automation", label: "自动任务", hasCheck: true },
-      { iconKey: "skill", label: "技能包", hasCheck: true },
-      { iconKey: "channel", label: "微信、QQ等多通道", hasCheck: true },
-      { iconKey: "memory", label: "长期记忆", hasCheck: true },
-      { iconKey: "evolution", label: "Hermes Agent 自主进化", hasCheck: true },
-      { iconKey: "clock", label: "7×24 在线", hasCheck: true },
+      { iconKey: "evolution", label: "Agent 自主进化", hasCheck: true },
+      { iconKey: "clock", label: "7*24小时在线", hasCheck: true },
       { iconKey: "settings", label: "极简配置面板", hasCheck: true },
+      { iconKey: "channel", label: "连接主流聊天通道", hasCheck: true },
+      { iconKey: "modelApi", label: "接入主流模型 API", hasCheck: true },
+      { iconKey: "skill", label: "Skills 技能/技能包", hasCheck: true },
+      { iconKey: "persona", label: "人设注入", hasCheck: true },
+      { iconKey: "automation", label: "自动任务", hasCheck: true },
+      { iconKey: "memory", label: "长期记忆", hasCheck: true },
+      { iconKey: "diagnostics", label: "诊断中心", hasCheck: true },
     ],
     ctaLabel: "即将上线",
     ctaStyle: "outline-dark",
@@ -760,14 +771,16 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
       { iconKey: "monitor", label: "独立环境", value: "4核 8G 内存" },
       { iconKey: "hardDrive", label: "专属云端存储", value: "80G" },
       { iconKey: "zap", label: "模型积分", value: "-" },
-      { iconKey: "automation", label: "自动任务", hasCheck: true },
-      { iconKey: "skill", label: "技能包", hasCheck: true },
-      { iconKey: "channel", label: "微信、QQ等多通道", hasCheck: true },
-      { iconKey: "memory", label: "长期记忆", hasCheck: true },
-      { iconKey: "evolution", label: "Hermes Agent 自主进化", hasCheck: true },
-      { iconKey: "clock", label: "7×24 在线", hasCheck: true },
+      { iconKey: "evolution", label: "Agent 自主进化", hasCheck: true },
+      { iconKey: "clock", label: "7*24小时在线", hasCheck: true },
       { iconKey: "settings", label: "极简配置面板", hasCheck: true },
-      { iconKey: "zap", label: "新功能优先体验", hasCheck: true },
+      { iconKey: "channel", label: "连接主流聊天通道", hasCheck: true },
+      { iconKey: "modelApi", label: "接入主流模型 API", hasCheck: true },
+      { iconKey: "skill", label: "Skills 技能/技能包", hasCheck: true },
+      { iconKey: "persona", label: "人设注入", hasCheck: true },
+      { iconKey: "automation", label: "自动任务", hasCheck: true },
+      { iconKey: "memory", label: "长期记忆", hasCheck: true },
+      { iconKey: "diagnostics", label: "诊断中心", hasCheck: true },
     ],
     ctaLabel: "即将上线",
     ctaStyle: "outline-dark",
@@ -794,13 +807,15 @@ const __markPlaceholderPlansForI18n = (t: (zh: string, opts?: Record<string, unk
   void t("3 个");
   void t("4核 8G 内存");
   void t("极简配置面板");
-  void t("新功能优先体验");
   void t("自动任务");
-  void t("技能安装");
-  void t("技能包");
-  void t("微信、QQ等多通道");
+  void t("Skills 技能/技能包");
+  void t("人设注入");
+  void t("连接主流聊天通道");
+  void t("接入主流模型 API");
   void t("长期记忆");
-  void t("Hermes Agent 自主进化");
+  void t("Agent 自主进化");
+  void t("7*24小时在线");
+  void t("诊断中心");
 };
 
 /** 将纯数据占位套餐转为带 JSX + i18n 的 PlanInfo */
