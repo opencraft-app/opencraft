@@ -1708,7 +1708,13 @@ func (l *logic) resolveProvisionGateway(ctx pctx.Context, userID, instanceID str
 		case gatewayroute.GatewayAIGateway:
 			return gatewayBackendAiGateway
 		case gatewayroute.GatewayLLMGateway:
-			return gatewayBackendLLMGateway
+			if gatewayroute.NewAllocationGateway() == gatewayroute.GatewayLLMGateway {
+				return gatewayBackendLLMGateway
+			}
+			l.logger.Warn("resolve instance gateway backend: llmgateway route disabled by explicit configuration gate, use ai-gateway",
+				zap.String("instance_id", instanceID),
+				zap.String("user_id", userID))
+			return gatewayBackendAiGateway
 		default:
 			l.logger.Warn("resolve instance gateway backend: unknown recorded subscription gateway, fallback to probe",
 				zap.String("instance_id", instanceID),
@@ -1732,6 +1738,9 @@ func (l *logic) resolveProvisionGateway(ctx pctx.Context, userID, instanceID str
 				zap.String("user_id", userID),
 				zap.Error(err))
 		}
+	}
+	if gatewayroute.NewAllocationGateway() != gatewayroute.GatewayLLMGateway {
+		return gatewayBackendAiGateway
 	}
 	if l.llmGatewayAdapter != nil {
 		sub, err := l.llmGatewayAdapter.GetActiveSubscription(ctx, userID)

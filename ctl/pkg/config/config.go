@@ -213,20 +213,23 @@ func parseAdapterConf() {
 	if ServerConf.AdapterConfig.LLMGateway == nil {
 		ServerConf.AdapterConfig.LLMGateway = &LLMGatewayConfig{}
 	}
-	if value := firstNonEmptyEnv("CTL_LLMGATEWAY_BASE_URL"); value != "" {
-		ServerConf.AdapterConfig.LLMGateway.BaseURL = value
-	}
-	if value := firstNonEmptyEnv("CTL_LLMGATEWAY_ADMIN_TOKEN", "CTL_AIGATEWAY_ADMIN_TOKEN"); value != "" {
-		ServerConf.AdapterConfig.LLMGateway.AdminToken = value
-	}
-	if value := firstNonEmptyEnv("CTL_LLMGATEWAY_INTERNAL_SERVICE_TOKEN", "CTL_AIGATEWAY_INTERNAL_SERVICE_TOKEN"); value != "" {
-		ServerConf.AdapterConfig.LLMGateway.InternalServiceToken = value
-	}
-	if value := firstNonEmptyEnv("CTL_LLMGATEWAY_DEFAULT_BASE_URL"); value != "" {
-		ServerConf.AdapterConfig.LLMGateway.DefaultBaseURL = value
-	}
-	if value := firstNonEmptyEnv("CTL_LLMGATEWAY_DEFAULT_MODEL_ID"); value != "" {
-		ServerConf.AdapterConfig.LLMGateway.DefaultModelID = value
+	llmGatewayBaseURL := firstNonEmptyEnv("CTL_LLMGATEWAY_BASE_URL")
+	llmGatewayAdminToken := firstNonEmptyEnv("CTL_LLMGATEWAY_ADMIN_TOKEN")
+	llmGatewayInternalToken := firstNonEmptyEnv("CTL_LLMGATEWAY_INTERNAL_SERVICE_TOKEN")
+	ServerConf.AdapterConfig.LLMGateway.Enabled = llmGatewayBaseURL != "" &&
+		llmGatewayAdminToken != "" && llmGatewayInternalToken != ""
+	if ServerConf.AdapterConfig.LLMGateway.Enabled {
+		ServerConf.AdapterConfig.LLMGateway.BaseURL = llmGatewayBaseURL
+		ServerConf.AdapterConfig.LLMGateway.AdminToken = llmGatewayAdminToken
+		ServerConf.AdapterConfig.LLMGateway.InternalServiceToken = llmGatewayInternalToken
+		if value := firstNonEmptyEnv("CTL_LLMGATEWAY_DEFAULT_BASE_URL"); value != "" {
+			ServerConf.AdapterConfig.LLMGateway.DefaultBaseURL = value
+		}
+		if value := firstNonEmptyEnv("CTL_LLMGATEWAY_DEFAULT_MODEL_ID"); value != "" {
+			ServerConf.AdapterConfig.LLMGateway.DefaultModelID = value
+		}
+	} else {
+		resetLLMGatewayForLegacyFallback(ServerConf.AdapterConfig.LLMGateway)
 	}
 	fillLLMGatewayFromLegacyAiGateway(ServerConf.AdapterConfig.LLMGateway, ServerConf.AdapterConfig.AiGateway)
 	if ServerConf.AdapterConfig.LLMGateway.Timeout <= 0 {
@@ -238,6 +241,26 @@ func parseAdapterConf() {
 	if ServerConf.AdapterConfig.LLMGateway.DefaultCompatibility == "" {
 		ServerConf.AdapterConfig.LLMGateway.DefaultCompatibility = "openai"
 	}
+}
+
+func resetLLMGatewayForLegacyFallback(conf *LLMGatewayConfig) {
+	if conf == nil {
+		return
+	}
+	conf.BaseURL = ""
+	conf.AdminToken = ""
+	conf.InternalServiceToken = ""
+	conf.Timeout = 0
+	conf.DefaultBaseURL = ""
+	conf.DefaultModelID = ""
+	conf.DefaultCompatibility = ""
+	conf.DefaultGatewayPort = 0
+	conf.DefaultProviderID = ""
+}
+
+func LLMGatewayEnabled() bool {
+	return ServerConf != nil && ServerConf.AdapterConfig != nil &&
+		ServerConf.AdapterConfig.LLMGateway != nil && ServerConf.AdapterConfig.LLMGateway.Enabled
 }
 
 func fillLLMGatewayFromLegacyAiGateway(dst *LLMGatewayConfig, legacy *AiGatewayConfig) {

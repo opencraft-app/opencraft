@@ -221,6 +221,7 @@ type AiGatewayConfig struct {
 // BaseURL 指向控制面（/api/admin 与 /api/internal）；DefaultBaseURL 指向
 // OpenAI 兼容流量面，通常带 /v1。
 type LLMGatewayConfig struct {
+	Enabled              bool   `toml:"-"`
 	BaseURL              string `toml:"base_url"`
 	AdminToken           string `toml:"admin_token"`
 	InternalServiceToken string `toml:"internal_service_token"`
