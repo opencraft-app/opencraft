@@ -362,6 +362,7 @@ function WorkbenchEmbeddedReadyApp({
   return (
     <WorkbenchHostSurface
       activeSessionId={activeSessionId || null}
+      botName={bot?.name ?? null}
       error={controller.error ?? error}
       isLoading={isLoadingSessions || !activeSessionId}
       onCreateSession={createSession}
@@ -401,6 +402,7 @@ function WorkbenchEmbeddedReadyApp({
 
 function WorkbenchHostSurface({
   activeSessionId,
+  botName,
   children,
   error,
   isLoading,
@@ -410,6 +412,7 @@ function WorkbenchHostSurface({
   sessions,
 }: {
   activeSessionId?: string | null;
+  botName?: string | null;
   children?: ReactNode;
   error: string | null;
   isLoading: boolean;
@@ -419,6 +422,7 @@ function WorkbenchHostSurface({
   sessions?: SessionListItemWire[];
 }) {
   const visibleSessions = sessions ?? [];
+  const railTitle = botName?.trim() || "Hermes";
 
   return (
     <section
@@ -430,7 +434,7 @@ function WorkbenchHostSurface({
         <div className={styles.sessionRailTop}>
           <div>
             <div className={styles.eyebrow}>Workbench</div>
-            <h2 className={styles.railTitle}>Hermes宝宝</h2>
+            <h2 className={styles.railTitle}>{railTitle}</h2>
           </div>
           <button
             className={styles.iconButton}

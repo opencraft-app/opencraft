@@ -4,16 +4,11 @@ import (
 	"errors"
 	"net/http"
 	"os"
-	"slices"
 	"strings"
 	"time"
 
-	pctx "ctl/pkg/context"
 	"ctl/pkg/errcode"
-	instancebirth "ctl/pkg/instancebirth"
-	modelfactory "ctl/pkg/model/factory"
 	modelinstance "ctl/pkg/model/instance"
-	instancebirthprofile "ctl/pkg/model/instancebirthprofile"
 	"ctl/pkg/resource"
 	"ctl/pkg/transport"
 	"gorm.io/gorm"
@@ -71,12 +66,6 @@ func (h *instanceHandler) handleInternalBots(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	profiles, err := loadBirthProfiles(r, entities)
-	if err != nil {
-		writeHTTPError(w, r, err)
-		return
-	}
-
 	items := make([]*transport.BotSummaryResponse, 0, len(entities))
 	for _, entity := range entities {
 		var timeoutAt *time.Time
@@ -84,24 +73,15 @@ func (h *instanceHandler) handleInternalBots(w http.ResponseWriter, r *http.Requ
 			t := entity.TimeoutAt
 			timeoutAt = &t
 		}
-		var bornNumber *int
-		var bornDate string
-		if profile, ok := profiles[entity.InstanceId]; ok && profile != nil {
-			bornDate = profile.BornDateForChina
-			n := profile.BornNumberForChina
-			bornNumber = &n
-		}
 		items = append(items, &transport.BotSummaryResponse{
-			InstanceID:         entity.InstanceId,
-			Name:               entity.DisplayName,
-			UserID:             entity.UserId,
-			SandboxID:          entity.SandboxId,
-			Status:             entity.Status,
-			CreatedAt:          entity.CreatedAt,
-			UpdatedAt:          entity.UpdatedAt,
-			TimeoutAt:          timeoutAt,
-			BornDateForChina:   bornDate,
-			BornNumberForChina: bornNumber,
+			InstanceID: entity.InstanceId,
+			Name:       entity.DisplayName,
+			UserID:     entity.UserId,
+			SandboxID:  entity.SandboxId,
+			Status:     entity.Status,
+			CreatedAt:  entity.CreatedAt,
+			UpdatedAt:  entity.UpdatedAt,
+			TimeoutAt:  timeoutAt,
 		})
 	}
 
@@ -114,8 +94,9 @@ func (h *instanceHandler) handleInternalBots(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *instanceHandler) handleInternalBotSubresource(w http.ResponseWriter, r *http.Request) {
-	if strings.HasSuffix(r.URL.Path, "/borncard") {
-		h.handleInternalBotBornCard(w, r)
+	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/internal/bots/"), "/")
+	if path == "" || strings.Contains(path, "/") {
+		writeHTTPError(w, r, errcode.ErrNotFound)
 		return
 	}
 	h.handleInternalBot(w, r)
@@ -201,123 +182,4 @@ func (h *instanceHandler) handleInternalBot(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeSuccess(w, r, http.StatusOK, resp)
-}
-
-func (h *instanceHandler) handleInternalBotBornCard(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
-		return
-	}
-
-	instanceID := strings.TrimSpace(strings.Trim(strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/internal/bots/"), "/borncard"), "/"))
-	resp, err := h.loadBotBornCard(r, instanceID, "")
-	if err != nil {
-		writeHTTPError(w, r, err)
-		return
-	}
-	writeJSON(w, r, http.StatusOK, resp)
-}
-
-func (h *instanceHandler) loadBotBornCard(r *http.Request, instanceID string, userID string) (*transport.BotBornCardResponse, error) {
-	if instanceID == "" {
-		return nil, errcode.ErrInstanceInvalidParam
-	}
-
-	var entity modelinstance.Entity
-	query := resource.GormDB.WithContext(r.Context()).
-		Model(&modelinstance.Entity{}).
-		Where(modelinstance.ColumnInstanceID+" = ?", instanceID)
-	if userID != "" {
-		query = query.Where(modelinstance.ColumnUserID+" = ?", userID)
-	}
-	if err := query.First(&entity).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errcode.ErrNotFound
-		}
-		return nil, err
-	}
-
-	profiles, err := loadBirthProfiles(r, []modelinstance.Entity{entity})
-	if err != nil {
-		return nil, err
-	}
-	profile, ok := profiles[entity.InstanceId]
-	if !ok || profile == nil {
-		return nil, errcode.ErrNotFound
-	}
-
-	var timeoutAt *time.Time
-	if !entity.TimeoutAt.IsZero() {
-		t := entity.TimeoutAt
-		timeoutAt = &t
-	}
-
-	return &transport.BotBornCardResponse{
-		InstanceID:         entity.InstanceId,
-		Name:               entity.DisplayName,
-		UserID:             entity.UserId,
-		SandboxID:          entity.SandboxId,
-		Status:             entity.Status,
-		CreatedAt:          entity.CreatedAt,
-		UpdatedAt:          entity.UpdatedAt,
-		TimeoutAt:          timeoutAt,
-		BornDateForChina:   profile.BornDateForChina,
-		BornNumberForChina: profile.BornNumberForChina,
-	}, nil
-}
-
-func loadBirthProfiles(r *http.Request, entities []modelinstance.Entity) (map[string]*instancebirthprofile.Entity, error) {
-	ctx := resourceContext(r)
-	dao := modelfactory.DefaultDaoFactory.InstanceBirthProfileDao(ctx)
-	ids := make([]string, 0, len(entities))
-	for _, entity := range entities {
-		ids = append(ids, entity.InstanceId)
-	}
-
-	buildMap := func(rows []instancebirthprofile.Entity) map[string]*instancebirthprofile.Entity {
-		out := make(map[string]*instancebirthprofile.Entity, len(rows))
-		for idx := range rows {
-			row := rows[idx]
-			out[row.InstanceID] = &row
-		}
-		return out
-	}
-
-	rows, err := dao.ListByInstanceIDs(ctx, ids)
-	if err != nil {
-		return nil, err
-	}
-	profiles := buildMap(rows)
-	missingDates := make([]string, 0)
-	for _, entity := range entities {
-		if _, ok := profiles[entity.InstanceId]; ok {
-			continue
-		}
-		day := instancebirth.ChinaDateString(entity.CreatedAt)
-		if !slices.Contains(missingDates, day) {
-			missingDates = append(missingDates, day)
-		}
-	}
-	if len(missingDates) == 0 {
-		return profiles, nil
-	}
-
-	svc := instancebirth.NewService(modelfactory.DefaultDaoFactory.InstanceDao(ctx), dao)
-	for _, day := range missingDates {
-		if err := svc.RebuildForChinaDate(ctx, day); err != nil {
-			return nil, err
-		}
-	}
-
-	rows, err = dao.ListByInstanceIDs(ctx, ids)
-	if err != nil {
-		return nil, err
-	}
-	return buildMap(rows), nil
-}
-
-func resourceContext(r *http.Request) pctx.Context {
-	ctx, _ := r.Context().(pctx.Context)
-	return ctx
 }

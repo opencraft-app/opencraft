@@ -4,7 +4,6 @@ package processor
 import (
 	"ctl/pkg/context"
 	instancetask "ctl/pkg/instance/worker"
-	instancebirthworker "ctl/pkg/instancebirth/worker"
 	passtask "ctl/pkg/pass/worker"
 	"ctl/pkg/taskruntime"
 	taskcommon "ctl/pkg/taskruntime/common"
@@ -13,9 +12,8 @@ import (
 type prepareTaskFunc func(ctx context.Context, data []byte) (task taskruntime.ServiceTask, in, out interface{}, err error)
 
 var pfMap = map[string]prepareTaskFunc{
-	taskcommon.TaskNameCreateInstance:            instancetask.PrepareCreateTask,
-	taskcommon.TaskNameDestroyInstance:           instancetask.PrepareDestroyTask,
-	taskcommon.TaskNameBuildInstanceBirthProfile: instancebirthworker.PrepareBuildBirthProfileTask,
+	taskcommon.TaskNameCreateInstance:  instancetask.PrepareCreateTask,
+	taskcommon.TaskNameDestroyInstance: instancetask.PrepareDestroyTask,
 
 	// trade-pass-isolate 父子 task（设计稿 §10 Q22-I-E）
 	taskcommon.TaskNameIsolateInstance: instancetask.PrepareIsolateInstanceTask,

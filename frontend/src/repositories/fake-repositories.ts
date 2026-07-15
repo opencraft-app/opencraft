@@ -1094,33 +1094,6 @@ const createBotRepository = (): BotRepository => {
       };
     },
 
-    async getBotBornCard(botId) {
-      await wait(NETWORK_DELAY_MS / 2);
-      const bot = botStore.get(botId);
-      if (!bot) {
-        throw new Error("Bot 不存在，请先创建。");
-      }
-
-      const createdDate = new Date(bot.createdAt);
-      const bornDateForChina = `${createdDate.getUTCFullYear()}-${String(createdDate.getUTCMonth() + 1).padStart(2, "0")}-${String(createdDate.getUTCDate()).padStart(2, "0")}`;
-      let bornNumber = 0;
-      for (let i = 0; i < bot.id.length; i++) {
-        bornNumber = ((bornNumber << 3) + bornNumber) + bot.id.charCodeAt(i);
-      }
-
-      return {
-        instanceId: bot.id,
-        userId: "usr_mock",
-        sandboxId: `sb_${bot.id}`,
-        status: bot.status,
-        createdAt: bot.createdAt,
-        updatedAt: bot.createdAt,
-        timeoutAt: undefined,
-        bornDateForChina,
-        bornNumberForChina: (Math.abs(bornNumber) % 500) + 1,
-      };
-    },
-
     async configureQQChannel(botId, input) {
       await wait(NETWORK_DELAY_MS);
       const bot = botStore.get(botId);

@@ -9,6 +9,7 @@ import {
 } from "@/repositories/http-repositories";
 
 const AUTH_TOKEN_STORAGE_KEY = "lightclaw-auth-token-v1";
+const HTTP_BOT_DRAFTS_STORAGE_KEY = "lightclaw-http-bot-drafts-v1";
 
 describe("http repositories auth token bootstrap", () => {
   beforeEach(() => {
@@ -351,6 +352,94 @@ describe("http repositories auth token bootstrap", () => {
     );
   });
 
+  it("uses ctl instance name before stale local bot drafts", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    window.localStorage.setItem(
+      HTTP_BOT_DRAFTS_STORAGE_KEY,
+      JSON.stringify({
+        ins_123456: {
+          name: "Hermes宝宝",
+        },
+      }),
+    );
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            total: 1,
+            page: 1,
+            page_size: 20,
+            items: [
+              {
+                instance_id: "ins_123456",
+                name: "我的Hermes",
+                status: "Running",
+                created_at: "2026-03-24T00:00:00Z",
+              },
+            ],
+          },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const snapshot = await repositories.bots.getDashboardSnapshot("live");
+
+    expect(snapshot.bots[0]).toEqual(
+      expect.objectContaining({
+        id: "ins_123456",
+        name: "我的Hermes",
+      }),
+    );
+  });
+
+  it("falls back to the regional default name when ctl instance name is empty", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            total: 1,
+            page: 1,
+            page_size: 20,
+            items: [
+              {
+                instance_id: "ins_empty_name",
+                name: "   ",
+                status: "Running",
+                created_at: "2026-03-24T00:00:00Z",
+              },
+            ],
+          },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const snapshot = await repositories.bots.getDashboardSnapshot("live");
+
+    expect(snapshot.bots[0]).toEqual(
+      expect.objectContaining({
+        id: "ins_empty_name",
+        name: "我的Hermes",
+      }),
+    );
+  });
+
   it("normalizes ctl instance status variants", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi.fn().mockResolvedValue(
@@ -400,6 +489,7 @@ describe("http repositories auth token bootstrap", () => {
           message: "success",
           data: {
             instance_id: "ins_newbot",
+            name: "新实例 Bot",
             status: "Running",
             created_at: "2026-03-24T00:00:00Z",
           },
@@ -426,7 +516,7 @@ describe("http repositories auth token bootstrap", () => {
       "https://lightclaw.tech/v1/instances",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ timeout: 3600 }),
+        body: JSON.stringify({ timeout: 3600, name: "新实例 Bot" }),
       }),
     );
   });
@@ -440,6 +530,7 @@ describe("http repositories auth token bootstrap", () => {
           message: "success",
           data: {
             instance_id: "ins_creating",
+            name: "创建中 Bot",
             status: "Creating",
             created_at: "2026-03-24T00:00:00Z",
           },

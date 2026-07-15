@@ -186,7 +186,6 @@ context: |
   - createBot / destroyBot / updateBotProfile
   - sendWorkspaceMessage                               工作台消息
   - getTerminalSession / execDebugCommand              终端/调试
-  - getBotBornCard                                     Bot 诞生卡片
   - configureQQChannel                                 QQ 通道配置
   - createWeixinLoginSession / getWeixinLoginSession /
     cancelWeixinLoginSession / subscribeWeixinLoginSessionEvents    微信登录全流程（SSE）
