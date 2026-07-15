@@ -21,6 +21,7 @@ package inquiry
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -260,7 +261,7 @@ func (s *Service) Quote(ctx context.Context, req QuoteRequest) (*QuoteResult, er
 	//   - DB 错 → 落 warn 日志后回落 jifei，不让单次询价 5xx
 	//   - useDianshi=true → 走 quoteDianshi，绕过下方 jifei 路径
 	if s.deps.ActivityResolver != nil {
-		mapping, useDianshi, resolveErr := s.deps.ActivityResolver.ResolveForInquiry(ctx, req.BundleID, req.Uin)
+		mapping, useDianshi, resolveErr := s.deps.ActivityResolver.ResolveForInquiry(ctx, req.BundleID, req.Uin, req.TimeSpan, req.TimeUnit)
 		if resolveErr != nil {
 			log.Printf("[activity-resolver] inquiry resolve failed bundleId=%s uin=%s err=%v (fallback jifei)",
 				req.BundleID, req.Uin, resolveErr)
@@ -719,8 +720,7 @@ func (s *Service) quoteDianshi(
 	//   - data[].product_code / sub_product_code → 同名字段
 	//   - data[].pid         → Pid（jifei 体系 pid，点石内部已与 jifei 联通；BundleDefinition 兜底）
 	//
-	// Discount：点石 policy_detail 字段集与 jifei 不完全对齐，trade 不再尝试解析；保留 0 让前端按
-	// (TotalCost - RealTotalCost) 自行计算更稳。
+	// Discount：点石 policy_detail.total 是接口出参里的整数百分比口径（例：0=免费，50=5 折）。
 	result := &QuoteResult{
 		BundleID:       req.BundleID,
 		BundleName:     bundle.BundleName,
@@ -734,6 +734,9 @@ func (s *Service) quoteDianshi(
 		ProductCode:    d.ProductCode,
 		SubProductCode: d.SubProductCode,
 		Pid:            d.Pid,
+	}
+	if discount, ok := parseDianshiPolicyTotal(d.PolicyDetail); ok {
+		result.Discount = discount
 	}
 	// 与 jifei 路径同款兜底：jifei / 点石返空字段时回填 BundleDefinition / req 值
 	if result.ProductCode == "" {
@@ -759,6 +762,21 @@ func (s *Service) quoteDianshi(
 		req.BundleID, req.Uin, mapping.ActivityID, mapping.ActID,
 		result.Price, result.TotalCost, result.RealTotalCost)
 	return result, nil
+}
+
+type dianshiPolicyDetail struct {
+	Total float64 `json:"total"`
+}
+
+func parseDianshiPolicyTotal(raw json.RawMessage) (float64, bool) {
+	if len(raw) == 0 {
+		return 0, false
+	}
+	var detail dianshiPolicyDetail
+	if err := json.Unmarshal(raw, &detail); err != nil {
+		return 0, false
+	}
+	return detail.Total, true
 }
 
 // formatAmount 把点石返的整数金额（pent=分）转字符串保持与 jifei Price/TotalCost 同源
