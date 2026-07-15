@@ -69,10 +69,11 @@ stages:
 
               FRONTEND_PREVIEW_RUNTIME_REF="${FRONTEND_PREVIEW_RUNTIME_REF:-origin/master}"
               FRONTEND_PREVIEW_RUNTIME_DIR="$(mktemp -d)"
-              cleanup_frontend_preview_runtime() {
-                rm -rf "$FRONTEND_PREVIEW_RUNTIME_DIR"
+              FRONTEND_PREVIEW_SOURCE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/frontend-preview-source.XXXXXX")"
+              cleanup_frontend_preview() {
+                rm -rf "$FRONTEND_PREVIEW_RUNTIME_DIR" "$FRONTEND_PREVIEW_SOURCE_DIR"
               }
-              trap cleanup_frontend_preview_runtime EXIT
+              trap cleanup_frontend_preview EXIT
 
               echo "frontend 预览发布器来源：${FRONTEND_PREVIEW_RUNTIME_REF}"
               source .ci/init.sh
@@ -82,4 +83,7 @@ stages:
 
               export FRONTEND_PREVIEW_BRANCH="${{ ci.branch }}"
               export FRONTEND_PREVIEW_SHA="${{ ci.sha }}"
+              echo "frontend 预览独立源码目录：${FRONTEND_PREVIEW_SOURCE_DIR}"
+              git archive --format=tar "$FRONTEND_PREVIEW_SHA" | tar -xf - -C "$FRONTEND_PREVIEW_SOURCE_DIR"
+              export REPO_ROOT="$FRONTEND_PREVIEW_SOURCE_DIR"
               bash "$FRONTEND_PREVIEW_RUNTIME_CI_DIR/runtime/commands/publish_frontend_preview.sh"
