@@ -182,7 +182,7 @@ Expected: 全部 PASS，原有解析、测试运行和有效期脚本测试无�
 - Create: `frontend/src/pages/marketing/automation-skill-picker.tsx`
 - Create: `frontend/src/pages/marketing/__tests__/automation-skill-picker.test.tsx`
 
-**验收方式：** Testing Library 覆盖默认值、搜索、选择/清空、loading、空态、失败重试、不可用绑定、非交互提示和 ARIA。
+**验收方式：** Testing Library 覆盖默认提示、搜索、选择、loading、空态、失败重试、不可用绑定、不显示清空项与辅助提示，以及 ARIA。
 
 - [x] **Step 1: 先写组件失败测试**
 
@@ -199,10 +199,10 @@ interface AutomationSkillPickerProps {
 
 至少验证：
 
-- 初始 trigger 显示“不调用 Skill”；
+- 初始 trigger 显示灰色未选择提示；
 - 输入 `news` 只保留 `finance-news`；
 - 选择后 `onChange("finance-news")`；
-- 点击“不调用 Skill”触发 `onChange("")`；
+- 下拉只展示已安装 Skill，不提供“不调用 Skill”选项；
 - error 显示重试且调用 `onRetry`；
 - ready 空数组显示前往 `/agents/skills`；
 - value 不在 ready 列表时仍显示 slug 和“不可用”；
@@ -348,7 +348,7 @@ Expected: 全部 PASS。
 
 - [x] **Step 1: 汇总新增中文 key**
 
-至少包含：调用 Skill、不调用 Skill、搜索已安装 Skill、暂无已安装 Skill、前往技能管理、加载失败、重试、不可用、状态确认中、暂无法确认、非交互运行提示、Skill 已不可用的保存错误。
+至少包含：调用技能、请选择自动任务需要调用的技能、搜索已安装的技能、暂无已安装 Skill、前往技能管理、加载失败、重试、不可用、状态确认中、暂无法确认、Skill 已不可用的保存错误。
 
 - [x] **Step 2: 运行提取脚本**
 
@@ -406,10 +406,10 @@ Expected: 两条命令 exit 0。
 
 在 CN 配置下验证：
 
-- 创建默认不调用 Skill；
+- 创建默认未选择 Skill；
 - 搜索并选择一个已安装 Skill；
 - 创建结果详情显示绑定；
-- 编辑保持、更换、移除；
+- 编辑保持和更换；
 - 空列表和加载失败仍可创建普通任务；
 - 已卸载绑定显示不可用且不自动清空；
 - 页面无控制台错误。
@@ -452,6 +452,62 @@ Directive: 保持 undefined=不修改、[]=清空的 Skill 编辑语义
 Tested: 待实现后填写
 Not-tested: 待实现后填写
 ```
+
+### Task 8: 修复 Skill 下拉点击外部不收起
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/automation-skill-picker.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/automation-skill-picker.test.tsx`
+
+- [x] 点击选择器外部区域时关闭下拉并清空搜索词，选择器内部交互保持不变。
+- [x] 新增回归测试，并通过自动任务 Skill 目标测试集 179/179 与 `pnpm check`。
+
+### Task 9: 优化 Skill 字段中文文案与默认提示
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/automation-skill-picker.tsx`
+- Modify: `frontend/src/pages/marketing/hermes-agent-automations-panel.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/automation-skill-picker.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+- [x] 将字段标题统一为“调用技能”。
+- [x] 未选择技能时展示灰色提示“请选择自动任务需要调用的技能”。
+- [x] 自动任务 Skill 目标测试集 179/179、`pnpm check` 与 `pnpm i18n:check` 通过。
+
+### Task 10: 精简 Skill 下拉选项与辅助提示
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/automation-skill-picker.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/automation-skill-picker.test.tsx`
+- Modify: `frontend/openspec/proposal.md`
+- Modify: `frontend/openspec/spec.md`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+- [x] 下拉列表不再展示“不调用 Skill”选项。
+- [x] 删除选择器下方的无人值守执行提示文案。
+- [x] 自动任务 Skill 目标测试集 178/178、`pnpm check` 与 `pnpm i18n:check` 通过。
+
+### Task 11: 优化 Skill 选择器提示与单行布局
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/automation-skill-picker.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/automation-skill-picker.test.tsx`
+- Modify: `frontend/openspec/proposal.md`
+- Modify: `frontend/openspec/spec.md`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+- [x] 默认提示改为“请选择自动任务需要调用的技能”。
+- [x] 搜索提示改为“搜索已安装的技能”。
+- [x] 下拉中的 Skill 展示名称与 slug 改为同一行展示，并在空间不足时截断。
+- [x] 自动任务 Skill 目标测试集 178/178、`pnpm check` 与 `pnpm i18n:check` 通过。
 
 ## 3. 规划门禁结论
 

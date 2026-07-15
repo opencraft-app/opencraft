@@ -1,5 +1,5 @@
-import { AlertTriangle, Check, ChevronDown, CircleHelp, Loader2, Search } from "lucide-react";
-import { useId, useMemo, useState } from "react";
+import { AlertTriangle, Check, ChevronDown, Loader2, Search } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { useT } from "@/i18n/t";
 import { AGENT_SECTION_PATH_BY_ID } from "@/lib/agent-routes";
@@ -66,9 +66,10 @@ export function AutomationSkillPicker({
 }: AutomationSkillPickerProps) {
   const t = useT();
   const listboxId = useId();
+  const pickerRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const selectedName = value ? getSkillLabel(value) : t("不调用 Skill");
+  const selectedName = value ? getSkillLabel(value) : t("请选择自动任务需要调用的技能");
   const selectedUnavailable = Boolean(
     value && loadState.status === "ready" && !loadState.slugs.includes(value),
   );
@@ -91,16 +92,29 @@ export function AutomationSkillPicker({
     setQuery("");
   };
 
+  useEffect(() => {
+    if (!open) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (pickerRef.current?.contains(event.target as Node)) return;
+      setOpen(false);
+      setQuery("");
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [open]);
+
   return (
     <div className="mt-4">
       <label className="block text-sm font-medium text-black/80">
-        {t("调用 Skill")}
+        {t("调用技能")}
         <span className="ml-1 text-xs font-normal text-black/40">{t("（可选）")}</span>
       </label>
-      <div className="relative mt-1.5">
+      <div ref={pickerRef} className="relative mt-1.5">
         <button
           type="button"
-          aria-label={t("调用 Skill")}
+          aria-label={t("调用技能")}
           aria-haspopup="listbox"
           aria-expanded={open}
           aria-controls={open ? listboxId : undefined}
@@ -115,7 +129,7 @@ export function AutomationSkillPicker({
           }}
           className="flex w-full items-center justify-between gap-3 rounded-lg border border-black/10 bg-white px-3 py-2 text-left text-sm text-black/85 transition hover:border-black/20 focus:border-black/30 focus:outline-none"
         >
-          <span className="min-w-0 truncate">{selectedName}</span>
+          <span className={`min-w-0 truncate ${value ? "" : "text-black/35"}`}>{selectedName}</span>
           <span className="flex shrink-0 items-center gap-2">
             {selectedUnavailable && (
               <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700">
@@ -136,8 +150,8 @@ export function AutomationSkillPicker({
                 <Search className="h-4 w-4 shrink-0 text-black/35" />
                 <input
                   type="search"
-                  aria-label={t("搜索已安装 Skill")}
-                  placeholder={t("搜索已安装 Skill")}
+                  aria-label={t("搜索已安装的技能")}
+                  placeholder={t("搜索已安装的技能")}
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   className="min-w-0 flex-1 bg-transparent text-sm text-black/85 placeholder:text-black/35 focus:outline-none"
@@ -147,17 +161,6 @@ export function AutomationSkillPicker({
             </div>
 
             <div id={listboxId} role="listbox" aria-label={t("已安装 Skill")} className="max-h-64 overflow-y-auto p-1.5">
-              <button
-                type="button"
-                role="option"
-                aria-selected={!value}
-                onClick={() => choose("")}
-                className="flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm text-black/75 transition hover:bg-black/[0.04]"
-              >
-                <span>{t("不调用 Skill")}</span>
-                {!value && <Check className="h-4 w-4 text-black/70" />}
-              </button>
-
               {showSelectedFallback && (
                 <button
                   type="button"
@@ -166,9 +169,9 @@ export function AutomationSkillPicker({
                   onClick={() => choose(value)}
                   className="flex w-full items-center justify-between gap-3 rounded-md bg-amber-500/[0.06] px-2.5 py-2 text-left"
                 >
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium text-black/80">{selectedName}</span>
-                    <span className="block truncate font-mono text-xs text-black/40">{value}</span>
+                  <span className="flex min-w-0 items-baseline gap-2 overflow-hidden">
+                    <span className="truncate text-sm font-medium text-black/80">{selectedName}</span>
+                    <span className="truncate font-mono text-xs text-black/40">{value}</span>
                   </span>
                   <span className="shrink-0 text-xs font-medium text-amber-700">
                     {selectedUnavailable ? t("不可用") : t("暂无法确认")}
@@ -187,9 +190,9 @@ export function AutomationSkillPicker({
                     onClick={() => choose(slug)}
                     className="flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-2 text-left transition hover:bg-black/[0.04]"
                   >
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium text-black/80">{displayName}</span>
-                      <span className="block truncate font-mono text-xs text-black/40">{slug}</span>
+                    <span className="flex min-w-0 items-baseline gap-2 overflow-hidden">
+                      <span className="truncate text-sm font-medium text-black/80">{displayName}</span>
+                      <span className="truncate font-mono text-xs text-black/40">{slug}</span>
                     </span>
                     {value === slug && <Check className="h-4 w-4 shrink-0 text-black/70" />}
                   </button>
@@ -238,10 +241,6 @@ export function AutomationSkillPicker({
           </div>
         )}
       </div>
-      <p className="mt-1.5 flex items-start gap-1.5 text-xs leading-5 text-black/40">
-        <CircleHelp className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-        <span>{t("自动任务在非交互环境中运行，请确认该 Skill 支持无人值守执行")}</span>
-      </p>
     </div>
   );
 }

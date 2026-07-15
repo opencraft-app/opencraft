@@ -82,7 +82,7 @@ type InstalledSkillLoadState =
 
 ### Requirement SKILL-PICKER-1：可选单选
 
-创建和编辑弹窗必须在“任务说明”之后、“生效时间段”之前渲染“调用 Skill（可选）”。默认值为空，且同一时刻最多选中一个真实 slug。
+创建和编辑弹窗必须在“任务说明”之后、“生效时间段”之前渲染“调用技能（可选）”。默认值为空，触发器显示“请选择自动任务需要调用的技能”，且同一时刻最多选中一个真实 slug。
 
 #### Scenario：普通任务
 
@@ -95,23 +95,20 @@ type InstalledSkillLoadState =
 
 - Given 已安装列表包含 `finance-news`
 - When 用户选择该项
-- Then 选择器显示展示名称与 `finance-news`
+- Then 选择器在同一行显示展示名称与 `finance-news`
 - And 表单保存值严格等于 `finance-news`
 
 ### Requirement SKILL-PICKER-2：搜索与键盘语义
 
-选择器必须是产品内自定义下拉，不使用原生 `<select>`。触发器应提供 `aria-expanded`，搜索框提供明确 label/placeholder，选项使用可识别的单选语义。搜索空结果与已安装列表为空必须是两个不同状态。
+选择器必须是产品内自定义下拉，不使用原生 `<select>`。触发器应提供 `aria-expanded`，搜索框的 label/placeholder 统一为“搜索已安装的技能”，选项使用可识别的单选语义。每个 Skill 的展示名称和 slug 必须在同一行展示并在空间不足时截断。搜索空结果与已安装列表为空必须是两个不同状态。
 
 ### Requirement SKILL-PICKER-3：加载和错误
 
 - `loading`：显示加载态，不清空表单其他输入。
-- `ready + []`：显示“暂无已安装 Skill”、前往技能管理入口和“不调用 Skill”。
-- `error`：显示加载失败、重试入口和“不调用 Skill”。
-- 已选但不可用：保留 slug，标记“不可用”，允许更换或移除。
-
-### Requirement SKILL-PICKER-4：非交互提示
-
-选择器必须显示“自动任务在非交互环境中运行，请确认该 Skill 支持无人值守执行”或语义一致的中英文提示。不得声称系统已经自动检测兼容性。
+- `ready + []`：显示“暂无已安装 Skill”和前往技能管理入口。
+- `error`：显示加载失败和重试入口。
+- 已选但不可用：保留 slug，标记“不可用”，允许更换。
+- 下拉选项仅展示已安装 Skill，不展示“不调用 Skill”。
 
 ## 7. 创建与编辑命令
 
@@ -143,7 +140,7 @@ skills: selectedSkill ? [selectedSkill] : undefined
 ### 7.4 提交前失效检查
 
 - 创建时选择 Skill，或编辑时更换 Skill：保存前必须使用当前列表验证所选 slug。
-- 编辑弹窗打开时绑定可用、保存前刷新确认已经卸载：阻止保存，提示重新选择或移除。
+- 编辑弹窗打开时绑定可用、保存前刷新确认已经卸载：阻止保存，提示重新选择。
 - 编辑弹窗打开时绑定已经不可用且用户未修改 Skill：允许保存其他字段，patch 不触碰 Skill，以满足“不自动解绑”。
 - 重新验证失败时：未绑定的普通任务仍可提交；新建或变更后的 Skill 绑定不得使用无法确认的陈旧选择提交。
 
@@ -199,11 +196,11 @@ skills: selectedSkill ? [selectedSkill] : undefined
 
 ### 组件测试
 
-- 默认“不调用 Skill”。
-- 搜索、选择、切换和清空。
+- 默认显示未选择提示。
+- 搜索、选择和切换，不展示“不调用 Skill”选项。
 - loading、空态、失败重试。
 - 已绑定但不可用的保留与标记。
-- 非交互提示与基本 ARIA 属性。
+- 基本 ARIA 属性。
 
 ### 项目门禁
 

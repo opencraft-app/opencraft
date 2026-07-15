@@ -1581,7 +1581,7 @@ function CronJobDetailModal({
           <NameIdDetailRow name={name} id={job.id} />
           <DetailRow label={t("任务说明")} value={job.prompt || "—"} pre />
           <DetailRow
-            label={t("调用 Skill")}
+            label={t("调用技能")}
             value={(
               <AutomationSkillBindingSummary
                 value={job.skills[0] ?? ""}
