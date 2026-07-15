@@ -1,3 +1,23 @@
+# 当前执行计划：公开测试公告付费表格展示调整
+
+> 分支：`frontsandbox/public-beta-launch-ai-price-79`
+> 规模：S
+> 范围：仅调整 `/docs/announcements/public-beta` 公告中付费方案展示。
+
+## 任务清单
+
+- [x] 1. 调整付费方案说明、远航版字段和含 AI 积分版本表格展示，并运行文档改动的基础校验。
+  - 角色：Developer + Reviewer
+  - 影响文件：`frontend/src/content/docs/announcements/public-beta.md`
+  - 验收方式：公告付费方案按最新策略展示，`git diff --check` 与 `pnpm check` 通过。
+  - 结果：说明文案已补充含 AI 积分版本敬请期待；远航版价格和 Agent 标为敬请期待，独立环境展示为 `4 核 8GB x 3`；含 AI 积分版本表格已加回且月度价格、Agent 标为敬请期待。
+
+## 验收重点
+
+- 不改动订阅/支付逻辑。
+
+---
+
 # 当前执行计划：干净用户三要素实名闭环
 
 > 分支：`codex/force-idcard-reface`
