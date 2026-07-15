@@ -1265,6 +1265,12 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
       method: "GET",
     });
   },
+  async sendRealnameFaceIdPhoneCode(attemptId, input) {
+    return request(baseUrl, `/auth/realname/faceid/attempts/${encodeURIComponent(attemptId)}/send-phone-code`, {
+      method: "POST",
+      body: input,
+    });
+  },
   async verifyRealnameFaceIdPhone(attemptId, input) {
     return request(baseUrl, `/auth/realname/faceid/attempts/${encodeURIComponent(attemptId)}/verify-phone`, {
       method: "POST",

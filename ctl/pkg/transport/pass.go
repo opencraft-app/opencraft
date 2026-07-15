@@ -78,7 +78,10 @@ type PassResponse struct {
 
 // ListPassesResponse 查询 Pass 列表响应（admin / internal 接口使用）
 type ListPassesResponse struct {
-	Passes []*PassResponse `json:"passes"`
+	Passes   []*PassResponse `json:"passes"`
+	Total    int64           `json:"total,omitempty"`
+	Page     int             `json:"page,omitempty"`
+	PageSize int             `json:"page_size,omitempty"`
 }
 
 // UserPassResponse 是用户面 GET /v1/passes / POST /v1/passes 响应单条 pass（v1.7.23 B18）。

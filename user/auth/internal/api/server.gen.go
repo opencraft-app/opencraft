@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -311,9 +312,15 @@ type RealnameFaceIDAttemptResponse struct {
 // RealnameFaceIDAttemptResponseState defines model for RealnameFaceIDAttemptResponse.State.
 type RealnameFaceIDAttemptResponseState string
 
+// RealnameFaceIDPhoneCodeRequest defines model for RealnameFaceIDPhoneCodeRequest.
+type RealnameFaceIDPhoneCodeRequest struct {
+	Phone *string `json:"phone,omitempty"`
+}
+
 // RealnameFaceIDPhoneRequest defines model for RealnameFaceIDPhoneRequest.
 type RealnameFaceIDPhoneRequest struct {
-	Code string `json:"code"`
+	Code  string  `json:"code"`
+	Phone *string `json:"phone,omitempty"`
 }
 
 // RealnameFaceIDStartRequest defines model for RealnameFaceIDStartRequest.
@@ -505,6 +512,9 @@ type UpdateProfileAvatarMultipartRequestBody UpdateProfileAvatarMultipartBody
 // StartRealnameFaceIDAttemptJSONRequestBody defines body for StartRealnameFaceIDAttempt for application/json ContentType.
 type StartRealnameFaceIDAttemptJSONRequestBody = RealnameFaceIDStartRequest
 
+// SendRealnameFaceIDPhoneCodeJSONRequestBody defines body for SendRealnameFaceIDPhoneCode for application/json ContentType.
+type SendRealnameFaceIDPhoneCodeJSONRequestBody = RealnameFaceIDPhoneCodeRequest
+
 // VerifyRealnameFaceIDPhoneJSONRequestBody defines body for VerifyRealnameFaceIDPhone for application/json ContentType.
 type VerifyRealnameFaceIDPhoneJSONRequestBody = RealnameFaceIDPhoneRequest
 
@@ -564,7 +574,10 @@ type ServerInterface interface {
 	// Synchronize an attempt to Shadow and activate final verification
 	// (POST /auth/realname/faceid/attempts/{attemptId}/finalize)
 	FinalizeRealnameFaceIDAttempt(c *gin.Context, attemptId string)
-	// Consume a current-phone SMS challenge for a FaceID attempt
+	// Send a Shadow verification code to the current phone for a FaceID attempt
+	// (POST /auth/realname/faceid/attempts/{attemptId}/send-phone-code)
+	SendRealnameFaceIDPhoneCode(c *gin.Context, attemptId string)
+	// Verify the current phone through Shadow binding for a FaceID attempt
 	// (POST /auth/realname/faceid/attempts/{attemptId}/verify-phone)
 	VerifyRealnameFaceIDPhone(c *gin.Context, attemptId string)
 	// Receive a Tencent FaceID browser redirect
@@ -852,6 +865,34 @@ func (siw *ServerInterfaceWrapper) FinalizeRealnameFaceIDAttempt(c *gin.Context)
 	siw.Handler.FinalizeRealnameFaceIDAttempt(c, attemptId)
 }
 
+// SendRealnameFaceIDPhoneCode operation middleware
+func (siw *ServerInterfaceWrapper) SendRealnameFaceIDPhoneCode(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "attemptId" -------------
+	var attemptId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "attemptId", c.Param("attemptId"), &attemptId, runtime.BindStyledParameterOptions{Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter attemptId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(SessionCookieScopes, []string{})
+
+	c.Set(SessionBearerScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.SendRealnameFaceIDPhoneCode(c, attemptId)
+}
+
 // VerifyRealnameFaceIDPhone operation middleware
 func (siw *ServerInterfaceWrapper) VerifyRealnameFaceIDPhone(c *gin.Context) {
 
@@ -1099,6 +1140,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/auth/realname/faceid/attempts/current", wrapper.GetCurrentRealnameFaceIDAttempt)
 	router.GET(options.BaseURL+"/auth/realname/faceid/attempts/:attemptId", wrapper.GetRealnameFaceIDAttempt)
 	router.POST(options.BaseURL+"/auth/realname/faceid/attempts/:attemptId/finalize", wrapper.FinalizeRealnameFaceIDAttempt)
+	router.POST(options.BaseURL+"/auth/realname/faceid/attempts/:attemptId/send-phone-code", wrapper.SendRealnameFaceIDPhoneCode)
 	router.POST(options.BaseURL+"/auth/realname/faceid/attempts/:attemptId/verify-phone", wrapper.VerifyRealnameFaceIDPhone)
 	router.GET(options.BaseURL+"/auth/realname/faceid/callback", wrapper.HandleRealnameFaceIDCallback)
 	router.POST(options.BaseURL+"/auth/realname/sync/retry", wrapper.RetryRealnameSync)
@@ -1752,6 +1794,105 @@ func (response FinalizeRealnameFaceIDAttempt503JSONResponse) VisitFinalizeRealna
 	return json.NewEncoder(w).Encode(response)
 }
 
+type SendRealnameFaceIDPhoneCodeRequestObject struct {
+	AttemptId string `json:"attemptId"`
+	Body      *SendRealnameFaceIDPhoneCodeJSONRequestBody
+}
+
+type SendRealnameFaceIDPhoneCodeResponseObject interface {
+	VisitSendRealnameFaceIDPhoneCodeResponse(w http.ResponseWriter) error
+}
+
+type SendRealnameFaceIDPhoneCode200JSONResponse SendSmsResponse
+
+func (response SendRealnameFaceIDPhoneCode200JSONResponse) VisitSendRealnameFaceIDPhoneCodeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SendRealnameFaceIDPhoneCode400JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response SendRealnameFaceIDPhoneCode400JSONResponse) VisitSendRealnameFaceIDPhoneCodeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SendRealnameFaceIDPhoneCode401JSONResponse ErrorResponse
+
+func (response SendRealnameFaceIDPhoneCode401JSONResponse) VisitSendRealnameFaceIDPhoneCodeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SendRealnameFaceIDPhoneCode403JSONResponse ErrorResponse
+
+func (response SendRealnameFaceIDPhoneCode403JSONResponse) VisitSendRealnameFaceIDPhoneCodeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SendRealnameFaceIDPhoneCode404JSONResponse ErrorResponse
+
+func (response SendRealnameFaceIDPhoneCode404JSONResponse) VisitSendRealnameFaceIDPhoneCodeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SendRealnameFaceIDPhoneCode409JSONResponse ErrorResponse
+
+func (response SendRealnameFaceIDPhoneCode409JSONResponse) VisitSendRealnameFaceIDPhoneCodeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SendRealnameFaceIDPhoneCode429JSONResponse ErrorResponse
+
+func (response SendRealnameFaceIDPhoneCode429JSONResponse) VisitSendRealnameFaceIDPhoneCodeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(429)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SendRealnameFaceIDPhoneCode500JSONResponse ErrorResponse
+
+func (response SendRealnameFaceIDPhoneCode500JSONResponse) VisitSendRealnameFaceIDPhoneCodeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SendRealnameFaceIDPhoneCode502JSONResponse ErrorResponse
+
+func (response SendRealnameFaceIDPhoneCode502JSONResponse) VisitSendRealnameFaceIDPhoneCodeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SendRealnameFaceIDPhoneCode503JSONResponse ErrorResponse
+
+func (response SendRealnameFaceIDPhoneCode503JSONResponse) VisitSendRealnameFaceIDPhoneCodeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 type VerifyRealnameFaceIDPhoneRequestObject struct {
 	AttemptId string `json:"attemptId"`
 	Body      *VerifyRealnameFaceIDPhoneJSONRequestBody
@@ -1820,6 +1961,24 @@ type VerifyRealnameFaceIDPhone500JSONResponse ErrorResponse
 func (response VerifyRealnameFaceIDPhone500JSONResponse) VisitVerifyRealnameFaceIDPhoneResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type VerifyRealnameFaceIDPhone502JSONResponse ErrorResponse
+
+func (response VerifyRealnameFaceIDPhone502JSONResponse) VisitVerifyRealnameFaceIDPhoneResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type VerifyRealnameFaceIDPhone503JSONResponse ErrorResponse
+
+func (response VerifyRealnameFaceIDPhone503JSONResponse) VisitVerifyRealnameFaceIDPhoneResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -2285,7 +2444,10 @@ type StrictServerInterface interface {
 	// Synchronize an attempt to Shadow and activate final verification
 	// (POST /auth/realname/faceid/attempts/{attemptId}/finalize)
 	FinalizeRealnameFaceIDAttempt(ctx context.Context, request FinalizeRealnameFaceIDAttemptRequestObject) (FinalizeRealnameFaceIDAttemptResponseObject, error)
-	// Consume a current-phone SMS challenge for a FaceID attempt
+	// Send a Shadow verification code to the current phone for a FaceID attempt
+	// (POST /auth/realname/faceid/attempts/{attemptId}/send-phone-code)
+	SendRealnameFaceIDPhoneCode(ctx context.Context, request SendRealnameFaceIDPhoneCodeRequestObject) (SendRealnameFaceIDPhoneCodeResponseObject, error)
+	// Verify the current phone through Shadow binding for a FaceID attempt
 	// (POST /auth/realname/faceid/attempts/{attemptId}/verify-phone)
 	VerifyRealnameFaceIDPhone(ctx context.Context, request VerifyRealnameFaceIDPhoneRequestObject) (VerifyRealnameFaceIDPhoneResponseObject, error)
 	// Receive a Tencent FaceID browser redirect
@@ -2757,6 +2919,44 @@ func (sh *strictHandler) FinalizeRealnameFaceIDAttempt(ctx *gin.Context, attempt
 	}
 }
 
+// SendRealnameFaceIDPhoneCode operation middleware
+func (sh *strictHandler) SendRealnameFaceIDPhoneCode(ctx *gin.Context, attemptId string) {
+	var request SendRealnameFaceIDPhoneCodeRequestObject
+
+	request.AttemptId = attemptId
+
+	var body SendRealnameFaceIDPhoneCodeJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		if !errors.Is(err, io.EOF) {
+			ctx.Status(http.StatusBadRequest)
+			ctx.Error(err)
+			return
+		}
+	} else {
+		request.Body = &body
+	}
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.SendRealnameFaceIDPhoneCode(ctx, request.(SendRealnameFaceIDPhoneCodeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SendRealnameFaceIDPhoneCode")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(SendRealnameFaceIDPhoneCodeResponseObject); ok {
+		if err := validResponse.VisitSendRealnameFaceIDPhoneCodeResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // VerifyRealnameFaceIDPhone operation middleware
 func (sh *strictHandler) VerifyRealnameFaceIDPhone(ctx *gin.Context, attemptId string) {
 	var request VerifyRealnameFaceIDPhoneRequestObject
@@ -3079,56 +3279,57 @@ func (sh *strictHandler) VerifySmsCode(ctx *gin.Context) {
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
-	"yY9nP34XbW42/wsAAP//mqvPBWBTAAA=",
+	"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",
+	"cKmm3599/020vdn+LwAA//8P2bu2k1gAAA==",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

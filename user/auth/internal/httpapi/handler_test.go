@@ -22,6 +22,7 @@ import (
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/api"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/avatar"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/shadowbinding"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/tat"
 )
 
@@ -411,7 +412,7 @@ func TestVerifyRealnameSuccessUpdatesSessionBooleanOnly(t *testing.T) {
 	}
 }
 
-func TestRealnameFaceIDHTTPFlowRequiresOwnedAttemptAndConsumesPhoneCode(t *testing.T) {
+func TestRealnameFaceIDHTTPFlowRequiresOwnedAttemptAndUsesShadowPhoneCode(t *testing.T) {
 	router, svc, provider := newAuthTestRouterWithFaceID()
 	if _, err := svc.SendVerificationCode(context.Background(), "13800138888"); err != nil {
 		t.Fatalf("send login code: %v", err)
@@ -453,8 +454,9 @@ func TestRealnameFaceIDHTTPFlowRequiresOwnedAttemptAndConsumesPhoneCode(t *testi
 		t.Fatalf("expected face_succeeded, got %+v", attempt)
 	}
 
-	if _, err := svc.SendVerificationCode(context.Background(), "13800138888"); err != nil {
-		t.Fatalf("send proof code: %v", err)
+	sent := performJSONRequest(t, router, http.MethodPost, "/auth/realname/faceid/attempts/"+attempt.AttemptId+"/send-phone-code", nil, cookie)
+	if sent.Code != http.StatusOK {
+		t.Fatalf("expected Shadow phone code 200, got %d: %s", sent.Code, sent.Body.String())
 	}
 	wrong := performJSONRequest(t, router, http.MethodPost, "/auth/realname/faceid/attempts/"+attempt.AttemptId+"/verify-phone", map[string]any{"code": "000000"}, cookie)
 	if wrong.Code != http.StatusBadRequest {
@@ -465,8 +467,56 @@ func TestRealnameFaceIDHTTPFlowRequiresOwnedAttemptAndConsumesPhoneCode(t *testi
 		t.Fatalf("expected phone proof 200, got %d: %s", verified.Code, verified.Body.String())
 	}
 	decodeJSONResponse(t, verified, &attempt)
-	if attempt.State != api.RealnameFaceIDAttemptResponseState("shadow_pending") {
-		t.Fatalf("expected shadow_pending, got %+v", attempt)
+	if attempt.State != api.RealnameFaceIDAttemptResponseState("succeeded") {
+		t.Fatalf("expected synchronous FaceID completion, got %+v", attempt)
+	}
+}
+
+func TestRealnameFaceIDHTTPFlowAcceptsPhoneForCleanUser(t *testing.T) {
+	router, _, provider := newAuthTestRouterWithFaceID()
+	signUp := performJSONRequest(t, router, http.MethodPost, "/auth/password/sign-up", map[string]any{
+		"name": "Clean Face User", "email": "clean-face-http@example.invalid", "password": "password123",
+	})
+	if signUp.Code != http.StatusOK {
+		t.Fatalf("expected clean user sign-up 200, got %d: %s", signUp.Code, signUp.Body.String())
+	}
+	cookie := sessionCookieFromRecorder(t, signUp)
+	started := performJSONRequest(t, router, http.MethodPost, "/auth/realname/faceid/attempts", map[string]any{
+		"name": "张三", "idCard": "11010519491231002X", "consent": true,
+	}, cookie)
+	if started.Code != http.StatusOK {
+		t.Fatalf("expected clean-user FaceID start 200, got %d: %s", started.Code, started.Body.String())
+	}
+	var attempt api.RealnameFaceIDAttemptResponse
+	decodeJSONResponse(t, started, &attempt)
+	provider.getInfoOut = service.RealnameFaceIDProviderCheckResult{Completed: true, Success: true, RequestID: "req-clean-http"}
+	result := performJSONRequest(t, router, http.MethodGet, "/auth/realname/faceid/attempts/"+attempt.AttemptId, nil, cookie)
+	if result.Code != http.StatusOK {
+		t.Fatalf("expected clean-user face result 200, got %d: %s", result.Code, result.Body.String())
+	}
+	phone := "13800138889"
+	sent := performJSONRequest(t, router, http.MethodPost, "/auth/realname/faceid/attempts/"+attempt.AttemptId+"/send-phone-code", map[string]any{"phone": phone}, cookie)
+	if sent.Code != http.StatusOK {
+		t.Fatalf("expected clean-user Shadow phone code 200, got %d: %s", sent.Code, sent.Body.String())
+	}
+	verified := performJSONRequest(t, router, http.MethodPost, "/auth/realname/faceid/attempts/"+attempt.AttemptId+"/verify-phone", map[string]any{
+		"phone": phone, "code": "123456",
+	}, cookie)
+	if verified.Code != http.StatusOK {
+		t.Fatalf("expected clean-user phone proof 200, got %d: %s", verified.Code, verified.Body.String())
+	}
+	decodeJSONResponse(t, verified, &attempt)
+	if attempt.State != api.RealnameFaceIDAttemptResponseState("succeeded") {
+		t.Fatalf("expected clean-user synchronous completion, got %+v", attempt)
+	}
+	current := performJSONRequest(t, router, http.MethodGet, "/auth/session", nil, cookie)
+	if current.Code != http.StatusOK {
+		t.Fatalf("expected clean-user session 200, got %d: %s", current.Code, current.Body.String())
+	}
+	var body sessionResponseBody
+	decodeJSONResponse(t, current, &body)
+	if body.Session.User == nil || body.Session.User.Phone == nil || *body.Session.User.Phone != phone || !body.Session.User.RealnameVerified {
+		t.Fatalf("expected clean-user phone and final realname in session, got %+v", body.Session.User)
 	}
 }
 
@@ -1777,12 +1827,18 @@ func newAuthTestRouterWithFaceID() (*gin.Engine, *service.Service, *httpStubFace
 	provider := &httpStubFaceIDVerifier{detectOut: service.RealnameFaceIDDetectAuthResult{
 		BizToken: "biz-http", VerifyURL: "https://faceid.example.com/biz-http", RequestID: "req-detect-http",
 	}}
+	shadowSvc := shadowbinding.New(shadowbinding.NewMemoryStore(), httpFaceIDShadowClient{}, shadowbinding.Options{
+		Enabled: true,
+		Now:     fixedHTTPTestNow,
+	})
 	svc := service.NewWithStore(store, service.Options{
-		Now:                    fixedHTTPTestNow,
-		SessionTTL:             30 * 24 * time.Hour,
-		DefaultSMSCode:         "123456",
-		RealnameCipher:         httpStubRealnameCipher{},
-		RealnameFaceIDVerifier: provider,
+		Now:                        fixedHTTPTestNow,
+		SessionTTL:                 30 * 24 * time.Hour,
+		DefaultSMSCode:             "123456",
+		RealnameCipher:             httpStubRealnameCipher{},
+		RealnameFaceIDVerifier:     provider,
+		ShadowBinding:              shadowSvc,
+		ShadowBasicAuthSyncEnabled: true,
 		RealnameFaceID: service.RealnameFaceIDConfig{
 			Mode: service.RealnameAssuranceModeFaceRequired, RuleID: "rule-http", AccountID: "account-http",
 			RedirectURL: "https://api.example.com/auth/realname/faceid/callback",
@@ -1985,6 +2041,27 @@ type httpStubFaceIDVerifier struct {
 	detectOut  service.RealnameFaceIDDetectAuthResult
 	detectErr  error
 	getInfoOut service.RealnameFaceIDProviderCheckResult
+}
+
+type httpFaceIDShadowClient struct{}
+
+func (httpFaceIDShadowClient) SendSMSVerifyCode(context.Context, shadowbinding.CloudSendSMSInput) error {
+	return nil
+}
+
+func (httpFaceIDShadowClient) RegisterShadowAccount(_ context.Context, in shadowbinding.CloudRegisterInput) (shadowbinding.CloudRegisterResult, error) {
+	if in.VerifyCode == "000000" {
+		return shadowbinding.CloudRegisterResult{}, errors.New("VerifyCodeNotMatch")
+	}
+	return shadowbinding.CloudRegisterResult{Uin: 300000000063, OwnerUin: 300000000063, AppID: 1250000000}, nil
+}
+
+func (httpFaceIDShadowClient) UpdatePhoneByAuthCode(context.Context, shadowbinding.CloudUpdatePhoneInput) error {
+	return nil
+}
+
+func (httpFaceIDShadowClient) SaveBasicAuthForSaaS(context.Context, shadowbinding.CloudSaveBasicAuthInput) error {
+	return nil
 }
 
 func (s *httpStubFaceIDVerifier) DetectAuth(_ context.Context, in service.RealnameFaceIDDetectAuthInput) (service.RealnameFaceIDDetectAuthResult, error) {

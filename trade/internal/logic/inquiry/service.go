@@ -124,6 +124,11 @@ type Deps struct {
 	// 合法性已由 config.Load 在启动期 fail-fast 校验；本处只负责透透到 region.Resolve。
 	RegionOverride string
 
+	// InquiryFallbackUin / InquiryFallbackAppID 是询价专用兜底身份。仅 Quote 在 shadow binding
+	// 不存在或返回半残数据时使用；付费下单链路在 placeorder 包内仍强校验 shadow binding。
+	InquiryFallbackUin   string
+	InquiryFallbackAppID string
+
 	// ActivityResolver 是点石活动通道判定 helper（设计稿 .tmp/dianshi-activity-bundle-design.md
 	// §5.2）。可选注入：
 	//   - 非 nil：Quote 在反查 trade_bundle_definition 之后插入分叉点判定；命中点石走
@@ -199,6 +204,8 @@ func (s *Service) Quote(ctx context.Context, req QuoteRequest) (*QuoteResult, er
 	}
 
 	// 1.5 shadow 反查（8B-1）：当 Uin 未由调用方显式提供时，从 externalUserId 反查云账号身份。
+	// 询价是展示链路，允许未绑定影子账号的用户使用配置化兜底账号拿价格；付费下单仍由
+	// placeorder 包强校验 shadow binding，不复用本策略。
 	if strings.TrimSpace(req.Uin) == "" && s.deps.ShadowClient != nil {
 		if strings.TrimSpace(req.ExternalUserID) == "" {
 			return nil, fmt.Errorf("%w: external_user_id is required when uin is missing", ErrInvalidInput)
@@ -206,17 +213,22 @@ func (s *Service) Quote(ctx context.Context, req QuoteRequest) (*QuoteResult, er
 		binding, err := s.deps.ShadowClient.GetBindingByExternalUserID(ctx, req.ExternalUserID)
 		if err != nil {
 			if errors.Is(err, shadowclient.ErrBindingNotFound) {
-				return nil, fmt.Errorf("%w: externalUserId=%s", ErrBindingNotFound, req.ExternalUserID)
+				if !s.applyInquiryFallbackIdentity(&req, "shadow binding not found") {
+					return nil, fmt.Errorf("%w: externalUserId=%s", ErrBindingNotFound, req.ExternalUserID)
+				}
+			} else {
+				return nil, fmt.Errorf("inquiry: shadow GetBindingByExternalUserID: %w", err)
 			}
-			return nil, fmt.Errorf("inquiry: shadow GetBindingByExternalUserID: %w", err)
-		}
-		if strings.TrimSpace(binding.Uin) == "" {
-			return nil, fmt.Errorf("%w: shadow returned empty uin for externalUserId=%s",
-				ErrBindingNotFound, req.ExternalUserID)
-		}
-		req.Uin = binding.Uin
-		if req.AppID == "" {
-			req.AppID = binding.AppID
+		} else if strings.TrimSpace(binding.Uin) == "" {
+			if !s.applyInquiryFallbackIdentity(&req, "shadow binding empty uin") {
+				return nil, fmt.Errorf("%w: shadow returned empty uin for externalUserId=%s",
+					ErrBindingNotFound, req.ExternalUserID)
+			}
+		} else {
+			req.Uin = binding.Uin
+			if req.AppID == "" {
+				req.AppID = binding.AppID
+			}
 		}
 	}
 
@@ -340,6 +352,21 @@ func (s *Service) Quote(ctx context.Context, req QuoteRequest) (*QuoteResult, er
 		result.GoodsNum = req.GoodsNum
 	}
 	return result, nil
+}
+
+func (s *Service) applyInquiryFallbackIdentity(req *QuoteRequest, reason string) bool {
+	fallbackUin := strings.TrimSpace(s.deps.InquiryFallbackUin)
+	fallbackAppID := strings.TrimSpace(s.deps.InquiryFallbackAppID)
+	if fallbackUin == "" || fallbackAppID == "" {
+		return false
+	}
+	log.Printf("[inquiry] %s externalUserId=%s; use configured fallback uin=%s appId=%s for quote only",
+		reason, req.ExternalUserID, fallbackUin, fallbackAppID)
+	req.Uin = fallbackUin
+	if req.AppID == "" {
+		req.AppID = fallbackAppID
+	}
+	return true
 }
 
 // QuoteRenewRequest 是单次"续费询价"的入参。

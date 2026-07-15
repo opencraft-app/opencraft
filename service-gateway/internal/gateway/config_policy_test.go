@@ -71,6 +71,62 @@ func containsString(values []string, target string) bool {
 	return false
 }
 
+func TestFaceIDCallbackIsPublicInDomesticEnvironments(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve current file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
+
+	for _, env := range []string{"beijing-sandbox", "shprod"} {
+		t.Run(env, func(t *testing.T) {
+			cfg, err := LoadConfigFile(filepath.Join(repoRoot, "argocd", "services", "service-gateway", env, "config.yaml"))
+			if err != nil {
+				t.Fatalf("load config: %v", err)
+			}
+			for _, route := range cfg.Routes {
+				if route.Name != "auth" {
+					continue
+				}
+				for _, rule := range route.PublicAllow {
+					if rule.Method == http.MethodGet && rule.Path == "/auth/realname/faceid/callback" {
+						return
+					}
+				}
+			}
+			t.Fatal("FaceID callback must bypass session authentication")
+		})
+	}
+}
+
+func TestTencentCloudAccountCallbackIsPublicInDomesticEnvironments(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve current file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", ".."))
+
+	for _, env := range []string{"beijing-sandbox", "shprod"} {
+		t.Run(env, func(t *testing.T) {
+			cfg, err := LoadConfigFile(filepath.Join(repoRoot, "argocd", "services", "service-gateway", env, "config.yaml"))
+			if err != nil {
+				t.Fatalf("load config: %v", err)
+			}
+			for _, route := range cfg.Routes {
+				if route.Name != "auth" {
+					continue
+				}
+				for _, rule := range route.PublicAllow {
+					if rule.Method == http.MethodPost && rule.Path == "/auth/internal/tencentcloud/account" {
+						return
+					}
+				}
+			}
+			t.Fatal("TencentCloud account callback must bypass session authentication")
+		})
+	}
+}
+
 func TestProdWorkerActionConfigsDeclareRequiredRuntimeSecretKeys(t *testing.T) {
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {

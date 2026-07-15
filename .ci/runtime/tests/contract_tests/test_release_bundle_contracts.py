@@ -127,6 +127,25 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn(f"argocd/secrets/{PLAYGROUND_ENV}/ai-gateway-runtime-secrets.sops.yaml", bundle.publish_paths)
         self.assertNotIn("argocd/catalogs/sandbox/beijing-sandbox-2/ai-gateway.yaml", bundle.publish_paths)
 
+    def test_user_auth_prod_projection_covers_ksops_secret_files(self) -> None:
+        manifest = load_manifest()
+
+        for env in ("shprod", "sgprod"):
+            with self.subTest(env=env):
+                bundle = require_build_metadata(load_bundle(manifest, "user-auth", env))
+                service_root = REPO_ROOT / "argocd" / "services" / "lightclaw-auth" / env
+                referenced_secrets = {
+                    (generator.parent / secret_path).resolve().relative_to(REPO_ROOT).as_posix()
+                    for generator in service_root.glob("ksops*-generator.yaml")
+                    for secret_path in (yaml.safe_load(generator.read_text()) or {}).get("files", [])
+                }
+
+                self.assertFalse(
+                    referenced_secrets - set(bundle.publish_paths),
+                    f"user-auth/{env} publish projection misses KSOPS secrets: "
+                    f"{sorted(referenced_secrets - set(bundle.publish_paths))}",
+                )
+
     def test_korea_playground_env_uses_kr_registry_and_seoul_catalog_root(self) -> None:
         manifest = load_manifest()
 
@@ -641,6 +660,28 @@ class ReleaseBundleContractTests(unittest.TestCase):
         package_json = json.loads((REPO_ROOT / "frontend/package.json").read_text())
         self.assertIn("node scripts/clean-next-build-state.mjs", package_json["scripts"]["build:next"])
 
+    def test_frontend_preview_builds_from_an_isolated_source_directory(self) -> None:
+        workflow_text = (REPO_ROOT / ".ci/frontend-preview.yml").read_text()
+
+        self.assertIn(
+            'FRONTEND_PREVIEW_SOURCE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/frontend-preview-source.XXXXXX")"',
+            workflow_text,
+        )
+        self.assertIn(
+            'git archive --format=tar "$FRONTEND_PREVIEW_SHA" | tar -xf - -C "$FRONTEND_PREVIEW_SOURCE_DIR"',
+            workflow_text,
+        )
+        self.assertIn('export REPO_ROOT="$FRONTEND_PREVIEW_SOURCE_DIR"', workflow_text)
+        self.assertIn('rm -rf "$FRONTEND_PREVIEW_RUNTIME_DIR" "$FRONTEND_PREVIEW_SOURCE_DIR"', workflow_text)
+        self.assertLess(
+            workflow_text.index('git archive --format=tar "$FRONTEND_PREVIEW_SHA"'),
+            workflow_text.index('export REPO_ROOT="$FRONTEND_PREVIEW_SOURCE_DIR"'),
+        )
+        self.assertLess(
+            workflow_text.index('export REPO_ROOT="$FRONTEND_PREVIEW_SOURCE_DIR"'),
+            workflow_text.index('bash "$FRONTEND_PREVIEW_RUNTIME_CI_DIR/runtime/commands/publish_frontend_preview.sh"'),
+        )
+
     def test_frontend_preview_builds_cn_and_intl_with_separate_api_bases(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/runtime/commands/publish_frontend_preview.sh").read_text()
 
@@ -657,9 +698,15 @@ class ReleaseBundleContractTests(unittest.TestCase):
     def test_frontend_mr_guard_runs_typecheck_and_frontend_builds(self) -> None:
         package_json = json.loads((REPO_ROOT / "frontend/package.json").read_text())
         guard_text = (REPO_ROOT / "frontend/checks/guard.sh").read_text()
+        artifact_builder_text = (REPO_ROOT / "frontend/scripts/build-release-artifacts.mjs").read_text()
 
         frontend_scripts = package_json["scripts"]
         self.assertEqual(frontend_scripts["check"], frontend_scripts["check:next"])
+        for script_name in ("build", "build:cn", "build:global", "build:next"):
+            self.assertIn("next build", frontend_scripts[script_name])
+            self.assertNotIn("--webpack", frontend_scripts[script_name])
+        self.assertIn('["exec", "next", "build"]', artifact_builder_text)
+        self.assertNotIn("--webpack", artifact_builder_text)
         recursive_pnpm_scripts = {
             name: script
             for name, script in frontend_scripts.items()
@@ -682,22 +729,16 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("rm -rf out", guard_text)
         self.assertNotIn('VITE_BIN="$FRONTEND_GUARD_DIR/node_modules/.bin/vite"', guard_text)
 
-    def test_frontend_mr_guard_reuses_isolated_runner_local_next_caches(self) -> None:
+    def test_frontend_mr_guard_disables_turbopack_build_cache(self) -> None:
         guard_text = (REPO_ROOT / "frontend/checks/guard.sh").read_text()
+        next_config_text = (REPO_ROOT / "frontend/next.config.mjs").read_text()
 
-        self.assertIn('FRONTEND_NEXT_CACHE_ROOT="${FRONTEND_NEXT_CACHE_ROOT:-${HOME}/.cache/lightclaw-ci/frontend-next}"', guard_text)
-        self.assertIn('frontend_next_cache_key()', guard_text)
-        self.assertIn('pnpm-lock.yaml', guard_text)
-        self.assertIn('next.config.*', guard_text)
-        self.assertIn('flock -w "$FRONTEND_NEXT_CACHE_LOCK_TIMEOUT_SECONDS" 9', guard_text)
-        self.assertIn('mv -f "$staging_archive" "$cache_archive"', guard_text)
-        self.assertIn('restore_frontend_next_cache cn', guard_text)
-        self.assertIn('save_frontend_next_cache cn', guard_text)
-        self.assertIn('restore_frontend_next_cache global', guard_text)
-        self.assertIn('save_frontend_next_cache global', guard_text)
+        self.assertNotIn("turbopackFileSystemCacheForBuild", next_config_text)
+        self.assertNotIn("FRONTEND_NEXT_CACHE", guard_text)
+        self.assertNotIn("frontend_next_cache", guard_text)
+        self.assertNotIn("restore_frontend_next_cache", guard_text)
+        self.assertNotIn("save_frontend_next_cache", guard_text)
         self.assertIn('rm -rf .next out', guard_text)
-        self.assertIn('本机 Next 缓存恢复失败，降级为冷构建', guard_text)
-        self.assertIn('本机 Next 缓存回写失败，不阻断 CI', guard_text)
 
     def test_prod_db_migration_workflow_is_manual_dry_run_then_check_in_then_apply(self) -> None:
         workflow_path = REPO_ROOT / ".ci/db-migration.yml"

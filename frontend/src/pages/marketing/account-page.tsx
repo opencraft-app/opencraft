@@ -77,7 +77,6 @@ const InfoRow = ({
 /* ─── Verify Identity Modal ─── */
 
 const FACE_ID_PENDING_POLL_DELAYS_MS = [250, 500, 1000, 1500, 2000, 3000, 5000, 8000, 10000];
-const FACE_ID_SHADOW_POLL_DELAYS_MS = [300, 600, 1200, 1800, 3000, 5000, 8000, 10000];
 
 type VerifyIdentityModalStage = "identity" | "face" | "phone" | "shadow";
 
@@ -118,15 +117,14 @@ const VerifyIdentityModal = ({
   const initialStage: VerifyIdentityModalStage = faceIdFlowEnabled
     ? !verified && realnameLevel === REALNAME_LEVEL.PHONE_3FA
       ? "shadow"
-      : !verified && realnameLevel === REALNAME_LEVEL.IDCARD_2FA
-        ? "phone"
-        : "identity"
+      : "identity"
     : hasIdCardVerified
       ? "phone"
       : "identity";
   const [stage, setStage] = useState<VerifyIdentityModalStage>(initialStage);
   const [realName, setRealName] = useState("");
   const [idNumber, setIdNumber] = useState("");
+  const [phoneInput, setPhoneInput] = useState(normalizedPhone);
   const [smsCode, setSmsCode] = useState("");
   const [consent, setConsent] = useState(false);
   const [sendingCode, setSendingCode] = useState(false);
@@ -146,11 +144,13 @@ const VerifyIdentityModal = ({
   );
 
   const ID_CARD_REGEX = /^\d{17}[\dXx]$/;
+  const PHONE_REGEX = /^1\d{10}$/;
+  const phoneForVerification = normalizedPhone || phoneInput.trim();
   const canSubmitIdentity = realName.trim().length >= 2 && ID_CARD_REGEX.test(idNumber.trim());
   const canSubmitLegacyIdentity = canSubmitIdentity;
   const canSubmitFaceIdIdentity = canSubmitIdentity && consent;
-  const canSubmitPhone = normalizedPhone.length > 0 && smsCode.trim().length >= 4;
-  const shadowFailed = stage === "shadow" && !attempt && realnameSyncStatus === "failed";
+  const canSubmitPhone = PHONE_REGEX.test(phoneForVerification) && smsCode.trim().length >= 4;
+  const shadowFailed = !faceIdFlowEnabled && stage === "shadow" && !attempt && realnameSyncStatus === "failed";
   const shadowPending = stage === "shadow" && (
     awaitingFinalRefresh
     || attempt?.state === "shadow_pending"
@@ -183,7 +183,7 @@ const VerifyIdentityModal = ({
     if (err instanceof RepositoryError) {
       switch (err.code) {
         case "phone_required":
-          return t("当前账号未绑定手机号，请先使用手机号登录或绑定手机号。");
+          return t("请输入用于实名认证的手机号。");
         case "sms_code_not_found":
           return t("请先获取短信验证码。");
         case "sms_code_expired":
@@ -232,7 +232,7 @@ const VerifyIdentityModal = ({
         return false;
       case "shadow_pending":
         setStage("shadow");
-        return true;
+        return false;
       case "succeeded":
         setStage("shadow");
         setAwaitingFinalRefresh(true);
@@ -278,9 +278,9 @@ const VerifyIdentityModal = ({
 
   useEffect(() => {
     if (!faceIdFlowEnabled || !attempt?.attemptId) return;
-    if (attempt.state !== "pending" && attempt.state !== "shadow_pending") return;
+    if (attempt.state !== "pending") return;
 
-    const delays = attempt.state === "pending" ? FACE_ID_PENDING_POLL_DELAYS_MS : FACE_ID_SHADOW_POLL_DELAYS_MS;
+    const delays = FACE_ID_PENDING_POLL_DELAYS_MS;
     let cancelled = false;
     let timerId: number | undefined;
     let index = 0;
@@ -292,22 +292,14 @@ const VerifyIdentityModal = ({
         const shouldContinue = await applyAttemptState(nextAttempt);
         if (!shouldContinue || cancelled) return;
         if (index >= delays.length) {
-          setPollError(
-            attempt.state === "pending"
-              ? t("刷脸结果同步较慢，请稍后刷新当前状态。")
-              : t("最终认证状态同步较慢，请稍后刷新当前状态。"),
-          );
+          setPollError(t("刷脸结果同步较慢，请稍后刷新当前状态。"));
           return;
         }
         timerId = window.setTimeout(poll, delays[index] ?? delays[delays.length - 1]);
         index += 1;
       } catch {
         if (!cancelled) {
-          setPollError(
-            attempt.state === "pending"
-              ? t("刷脸结果同步较慢，请稍后刷新当前状态。")
-              : t("最终认证状态同步较慢，请稍后刷新当前状态。"),
-          );
+          setPollError(t("刷脸结果同步较慢，请稍后刷新当前状态。"));
         }
       }
     };
@@ -325,7 +317,7 @@ const VerifyIdentityModal = ({
 
   useEffect(() => {
     if (!faceIdFlowEnabled || !attempt?.attemptId) return;
-    if (attempt.state !== "pending" && attempt.state !== "shadow_pending") return;
+    if (attempt.state !== "pending") return;
 
     const refreshPersistedState = () => {
       void auth.getRealnameFaceIdAttempt(attempt.attemptId)
@@ -346,11 +338,18 @@ const VerifyIdentityModal = ({
   }, [applyAttemptState, attempt?.attemptId, attempt?.state, auth, faceIdFlowEnabled]);
 
   const sendPhoneCode = async () => {
-    if (!normalizedPhone || sendingCode || cooldownSeconds > 0) return false;
+    if (!PHONE_REGEX.test(phoneForVerification) || sendingCode || cooldownSeconds > 0) return false;
     setSendingCode(true);
     setError(null);
     try {
-      const result = await auth.sendSmsCode({ phone: normalizedPhone });
+      const result = faceIdFlowEnabled && attempt?.attemptId
+        ? await auth.sendRealnameFaceIdPhoneCode(attempt.attemptId, { phone: phoneForVerification })
+        : await auth.sendSmsCode({ phone: phoneForVerification });
+      if (faceIdFlowEnabled && attempt?.attemptId && result.cooldownSeconds <= 0) {
+        const nextAttempt = await auth.getRealnameFaceIdAttempt(attempt.attemptId);
+        await applyAttemptState(nextAttempt);
+        return false;
+      }
       setCooldownSeconds(Math.max(1, result.cooldownSeconds || 60));
       return true;
     } catch (err) {
@@ -366,6 +365,7 @@ const VerifyIdentityModal = ({
     setAttempt(null);
     setError(null);
     setPollError(null);
+    setPhoneInput(normalizedPhone);
     setSmsCode("");
     setAwaitingFinalRefresh(false);
   };
@@ -422,10 +422,11 @@ const VerifyIdentityModal = ({
 
       if (stage === "phone") {
         if (faceIdFlowEnabled && attempt?.attemptId) {
-          const phoneAttempt = await auth.verifyRealnameFaceIdPhone(attempt.attemptId, { code: smsCode.trim() });
+          const phoneAttempt = await auth.verifyRealnameFaceIdPhone(attempt.attemptId, {
+            phone: phoneForVerification,
+            code: smsCode.trim(),
+          });
           await applyAttemptState(phoneAttempt);
-          const finalizedAttempt = await auth.finalizeRealnameFaceIdAttempt(attempt.attemptId);
-          await applyAttemptState(finalizedAttempt);
         } else {
           await auth.verifyRealnamePhone({ code: smsCode.trim() });
           setStage("shadow");
@@ -444,16 +445,6 @@ const VerifyIdentityModal = ({
       }
 
       if (stage === "shadow") {
-        if (faceIdFlowEnabled && attempt?.state === "shadow_pending") {
-          const finalizedAttempt = await auth.finalizeRealnameFaceIdAttempt(attempt.attemptId);
-          await applyAttemptState(finalizedAttempt);
-          try {
-            await refreshProfile();
-          } catch {
-            setPollError(t("最终认证状态同步较慢，请稍后刷新当前状态。"));
-          }
-          return;
-        }
         if (shadowFailed) {
           await auth.retryRealnameSync();
           try {
@@ -478,8 +469,10 @@ const VerifyIdentityModal = ({
       if (faceIdFlowEnabled) return t("开始刷脸认证");
       return verified ? t("更新认证") : t("提交认证");
     }
-    if (stage === "phone") return faceIdFlowEnabled ? t("完成当前手机号认证") : t("完成三要素认证");
-    if (faceIdFlowEnabled && attempt?.state === "shadow_pending") return t("完成实名同步");
+    if (stage === "phone") {
+      if (!faceIdFlowEnabled) return t("完成三要素认证");
+      return normalizedPhone ? t("完成当前手机号认证") : t("完成手机号认证");
+    }
     if (shadowFailed) return t("重新同步");
     return t("刷新当前状态");
   })();
@@ -492,7 +485,7 @@ const VerifyIdentityModal = ({
       ? canSubmitPhone
       : stage === "face"
         ? Boolean(attempt?.attemptId)
-        : shadowFailed || Boolean(attempt?.attemptId);
+        : !faceIdFlowEnabled && (shadowFailed || Boolean(attempt?.attemptId));
 
   return (
     <motion.div
@@ -785,16 +778,20 @@ const VerifyIdentityModal = ({
                     color: "rgba(0,0,0,0.9)",
                   }}
                 >
-                  {t("当前手机号")}
+                  {normalizedPhone ? t("当前手机号") : t("手机号")} <span style={{ color: "#cf3d4c" }}>*</span>
                 </label>
                 <div className="flex gap-2">
                   <input
-                    type="text"
-                    value={normalizedPhone || t("未绑定手机号")}
-                    disabled
+                    type="tel"
+                    inputMode="numeric"
+                    autoComplete="tel"
+                    placeholder={normalizedPhone ? undefined : t("请输入中国大陆手机号")}
+                    value={phoneForVerification}
+                    onChange={(event) => setPhoneInput(event.target.value.replace(/\D/g, "").slice(0, 11))}
+                    disabled={Boolean(normalizedPhone)}
                     className="w-full focus:outline-none"
                     style={{
-                      background: "#F2F4F8",
+                      background: normalizedPhone ? "#F2F4F8" : "rgba(255,255,255,0.9)",
                       border: "1px solid #E9ECF1",
                       borderRadius: 8,
                       padding: "6px 16px",
@@ -802,13 +799,13 @@ const VerifyIdentityModal = ({
                       fontWeight: 400,
                       fontSize: 14,
                       lineHeight: "24px",
-                      color: normalizedPhone ? "rgba(0,0,0,0.9)" : "rgba(0,0,0,0.3)",
+                      color: "rgba(0,0,0,0.9)",
                     }}
                   />
                   <button
                     type="button"
                     onClick={() => void sendPhoneCode()}
-                    disabled={!normalizedPhone || sendingCode || cooldownSeconds > 0}
+                    disabled={!PHONE_REGEX.test(phoneForVerification) || sendingCode || cooldownSeconds > 0}
                     className="flex-shrink-0 rounded-lg px-4 text-sm font-medium transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
                     style={{ border: "1px solid #202020", color: "#202020" }}
                   >
@@ -909,7 +906,7 @@ const VerifyIdentityModal = ({
             >
               {t("重新开始认证")}
             </button>
-          ) : (
+          ) : faceIdFlowEnabled && stage === "shadow" ? null : (
             <button
               onClick={() => void handleSubmit()}
               disabled={!canSubmit || submitting || awaitingFinalRefresh}
@@ -970,7 +967,7 @@ const ChangePhoneModal = ({
   onClose,
   onSuccess,
 }: {
-  currentPhone?: string;
+  currentPhone: string;
   onClose: () => void;
   onSuccess: () => void;
 }) => {
@@ -1080,7 +1077,7 @@ const ChangePhoneModal = ({
           <div className="flex items-center gap-4">
             <div className="flex flex-1 flex-col gap-2">
               <h3 className="m-0" style={{ fontFamily: "PingFang SC", fontWeight: 500, fontSize: 20, lineHeight: "1.6em", color: "rgba(0,0,0,0.9)" }}>
-                {currentPhone ? t("修改安全手机") : t("绑定安全手机")}
+                {t("修改安全手机")}
               </h3>
               <p className="m-0" style={{ fontFamily: "PingFang SC", fontWeight: 400, fontSize: 14, lineHeight: "22px", color: "rgba(0,0,0,0.9)" }}>
                 {t("安全手机用于后续计费、支付和账号安全校验。")}
@@ -1096,9 +1093,7 @@ const ChangePhoneModal = ({
             </button>
           </div>
           <div className="rounded-lg bg-[rgba(7,193,96,0.08)] px-4 py-3 text-sm leading-[22px]" style={{ color: "rgba(0,0,0,0.75)" }}>
-            {currentPhone
-              ? t("当前安全手机：{{phone}}", { phone: currentPhone })
-              : t("当前账号尚未绑定安全手机。")}
+            {t("当前安全手机：{{phone}}", { phone: currentPhone })}
           </div>
         </div>
 
@@ -2188,8 +2183,9 @@ export const AccountPage = () => {
   const [showFaceIdFlow, setShowFaceIdFlow] = useState(false);
   const faceIdBackendEnabled = user?.realnameAssuranceMode === "observe"
     || user?.realnameAssuranceMode === "face_required";
+  const hasSafetyPhone = Boolean(user?.phone?.trim());
   const faceIdFlowEnabled = showFaceIdFlow && faceIdBackendEnabled;
-  const phoneProofEnabled = realnamePhoneVerificationEnabled || faceIdFlowEnabled;
+  const phoneProofEnabled = hasSafetyPhone && (realnamePhoneVerificationEnabled || faceIdFlowEnabled);
 
   const verified = faceIdFlowEnabled
     ? user?.realnameVerified === true && user?.realnameLevel === REALNAME_LEVEL.PHONE_3FA
@@ -2204,15 +2200,15 @@ export const AccountPage = () => {
     && idCardVerified
     && user?.realnameLevel === REALNAME_LEVEL.PHONE_3FA;
   const realnameSyncStatus = user?.realnameSyncStatus as RealnameSyncStatus | undefined;
-  const hasSafetyPhone = Boolean(user?.phone?.trim());
   const idCardSyncStatus = faceIdFlowEnabled
     ? shadowProofReady ? realnameSyncStatus : undefined
     : idCardVerified && !verified ? realnameSyncStatus : undefined;
-  const realnameSyncNeedsRetry = faceIdFlowEnabled
-    ? hasSafetyPhone && shadowProofReady && idCardSyncStatus === "failed"
-    : realnamePhoneVerificationEnabled && hasSafetyPhone && idCardVerified && !verified && (
-      idCardSyncStatus === "failed" || idCardSyncStatus === "pending"
-    );
+  const realnameSyncNeedsRetry = !faceIdFlowEnabled
+    && realnamePhoneVerificationEnabled
+    && hasSafetyPhone
+    && idCardVerified
+    && !verified
+    && (idCardSyncStatus === "failed" || idCardSyncStatus === "pending");
   const realnameStatusLabel = verified
     ? t("已认证")
     : idCardSyncStatus === "failed"
@@ -2220,7 +2216,7 @@ export const AccountPage = () => {
       : idCardSyncStatus === "pending"
         ? t("实名信息同步中")
         : idCardVerified
-          ? t("待完成手机号认证")
+          ? t("需重新完成认证")
           : "";
   const [showSafetyPhoneTools, setShowSafetyPhoneTools] = useState(false);
   const [showAccountRenewTools, setShowAccountRenewTools] = useState(false);
@@ -2406,10 +2402,6 @@ export const AccountPage = () => {
   };
 
   const handleOpenVerifyModal = () => {
-    if (phoneProofEnabled && !user?.phone) {
-      setShowChangePhoneModal(true);
-      return;
-    }
     setShowVerifyModal(true);
   };
 
@@ -2417,7 +2409,7 @@ export const AccountPage = () => {
     if (err instanceof RepositoryError) {
       switch (err.code) {
         case "phone_required":
-          return t("当前账号未绑定手机号，请先绑定安全手机。");
+          return t("当前账号未设置安全手机，暂时无法继续认证。");
         case "realname_required":
           return t("请先完成姓名和身份证认证。");
         case "shadow_binding_incomplete":
@@ -2976,7 +2968,7 @@ export const AccountPage = () => {
                       </div>
                     ) : (
                       <div className="flex items-center gap-3">
-                        {phoneProofEnabled && (idCardVerified || realnameSyncError) && (
+                        {(phoneProofEnabled || faceIdFlowEnabled) && (idCardVerified || realnameSyncError) && (
                           <div className="flex flex-col items-end gap-1">
                             {realnameStatusLabel && (
                               <span
@@ -3000,13 +2992,11 @@ export const AccountPage = () => {
                           style={{ color: "var(--lw-accent)" }}
                         >
                           {realnameSyncRetrying && <Loader2 className="h-4 w-4 animate-spin" />}
-                          {phoneProofEnabled && !hasSafetyPhone
-                            ? t("绑定安全手机")
-                            : realnameSyncNeedsRetry
-                              ? t("重新同步")
-                              : phoneProofEnabled && idCardVerified
-                                ? t("继续认证")
-                                : t("去认证")}
+                          {realnameSyncNeedsRetry
+                            ? t("重新同步")
+                            : phoneProofEnabled && idCardVerified
+                              ? t("继续认证")
+                              : t("去认证")}
                           {!realnameSyncRetrying && <ChevronRight className="h-4 w-4" />}
                         </button>
                       </div>
@@ -3056,7 +3046,7 @@ export const AccountPage = () => {
             phone={user?.phone}
           />
         )}
-        {showRealnameSection && phoneProofEnabled && showChangePhoneModal && (
+        {showRealnameSection && phoneProofEnabled && user?.phone && showChangePhoneModal && (
           <ChangePhoneModal
             key="change-phone"
             currentPhone={user?.phone}

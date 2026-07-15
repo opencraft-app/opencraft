@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	paigateway "ctl/pkg/adapter/aigateway"
+	pllmgateway "ctl/pkg/adapter/llmgateway"
 	psandbox "ctl/pkg/adapter/sandbox"
 	"ctl/pkg/config"
 	pctx "ctl/pkg/context"
@@ -136,9 +136,9 @@ func (s *createTaskSandboxAdapterStub) GetSnapshotStatus(context.Context, string
 	panic("unexpected call")
 }
 
-type createTaskAiGatewayAdapterStub struct {
-	paigateway.Adapter
-	createResp  *paigateway.CreateApiKeyResponse
+type createTaskLLMGatewayAdapterStub struct {
+	pllmgateway.Adapter
+	createResp  *pllmgateway.CreateApiKeyResponse
 	createCalls int
 	ensureErr   error
 	ensureCalls []struct {
@@ -149,14 +149,14 @@ type createTaskAiGatewayAdapterStub struct {
 	revoked          []string
 }
 
-func (s *createTaskAiGatewayAdapterStub) CreateApiKey(_ context.Context, _ string, _ string) (*paigateway.CreateApiKeyResponse, error) {
+func (s *createTaskLLMGatewayAdapterStub) CreateApiKey(_ context.Context, _ string, _ string) (*pllmgateway.CreateApiKeyResponse, error) {
 	s.createCalls++
 	if s.createResp != nil {
 		return s.createResp, nil
 	}
-	return &paigateway.CreateApiKeyResponse{KeyID: "key-create-1", APIKey: "api-create-1"}, nil
+	return &pllmgateway.CreateApiKeyResponse{KeyID: "key-create-1", APIKey: "api-create-1"}, nil
 }
-func (s *createTaskAiGatewayAdapterStub) EnsureUser(_ context.Context, userID string, nickname string) (*paigateway.EnsureUserResponse, error) {
+func (s *createTaskLLMGatewayAdapterStub) EnsureUser(_ context.Context, userID string, nickname string) (*pllmgateway.EnsureUserResponse, error) {
 	s.ensureCalls = append(s.ensureCalls, struct {
 		userID   string
 		nickname string
@@ -164,9 +164,9 @@ func (s *createTaskAiGatewayAdapterStub) EnsureUser(_ context.Context, userID st
 	if s.ensureErr != nil {
 		return nil, s.ensureErr
 	}
-	return &paigateway.EnsureUserResponse{UserID: userID, Result: "created"}, nil
+	return &pllmgateway.EnsureUserResponse{UserID: userID, Result: "created"}, nil
 }
-func (s *createTaskAiGatewayAdapterStub) RevokeApiKey(_ context.Context, keyID string) error {
+func (s *createTaskLLMGatewayAdapterStub) RevokeApiKey(_ context.Context, keyID string) error {
 	s.revoked = append(s.revoked, keyID)
 	if s.revokeErrByKeyID != nil {
 		if err := s.revokeErrByKeyID[keyID]; err != nil {
@@ -175,8 +175,11 @@ func (s *createTaskAiGatewayAdapterStub) RevokeApiKey(_ context.Context, keyID s
 	}
 	return nil
 }
-func (s *createTaskAiGatewayAdapterStub) GetUserUsage(_ context.Context, _ string) (*paigateway.UserUsageResponse, error) {
-	return &paigateway.UserUsageResponse{}, nil
+func (s *createTaskLLMGatewayAdapterStub) GetUserUsage(_ context.Context, _ string) (*pllmgateway.UserUsageResponse, error) {
+	return &pllmgateway.UserUsageResponse{}, nil
+}
+func (s *createTaskLLMGatewayAdapterStub) GetActiveSubscription(_ context.Context, _ string) (*pllmgateway.Subscription, error) {
+	return nil, nil
 }
 
 func installCreateTaskAiGatewayConfig(t *testing.T) {
@@ -185,8 +188,9 @@ func installCreateTaskAiGatewayConfig(t *testing.T) {
 	prev := config.ServerConf
 	config.ServerConf = &config.GlobalConfig{
 		AdapterConfig: &config.AdapterConfig{
-			AiGateway: &config.AiGatewayConfig{
-				BaseURL:              "https://aigateway.test",
+			LLMGateway: &config.LLMGatewayConfig{
+				Enabled:              true,
+				BaseURL:              "https://llmgateway.test",
 				DefaultBaseURL:       "https://model.internal/v1",
 				DefaultModelID:       "kimi-k2.5",
 				DefaultCompatibility: "openai",
@@ -218,14 +222,14 @@ func TestRunCreateInstanceTaskProvisionsAiGatewayOnCreate(t *testing.T) {
 			{{Stdout: "model set ok", Status: "running"}, {Ended: true, ExitCode: 0, Status: "SUCCESS"}},
 		},
 	}
-	aiGatewayAdapter := &createTaskAiGatewayAdapterStub{
-		createResp: &paigateway.CreateApiKeyResponse{KeyID: "key-create-1", APIKey: "api-create-1"},
+	aiGatewayAdapter := &createTaskLLMGatewayAdapterStub{
+		createResp: &pllmgateway.CreateApiKeyResponse{KeyID: "key-create-1", APIKey: "api-create-1"},
 	}
 
 	logic := &logic{
 		instanceDao:        instanceDao,
 		sandboxAdapter:     sandboxAdapter,
-		aiGatewayAdapter:   aiGatewayAdapter,
+		llmGatewayAdapter:  aiGatewayAdapter,
 		logger:             zap.NewNop(),
 		defaultTemplate:    "tpl-create",
 		candidateTemplates: []string{"tpl-create"},
@@ -304,14 +308,14 @@ func TestRunCreateInstanceTaskFailsWhenAiGatewayOnboardFails(t *testing.T) {
 			{{Stderr: "model set failed", Status: "running"}, {Ended: true, ExitCode: 1, Status: "FAILED", Error: "exit status 1"}},
 		},
 	}
-	aiGatewayAdapter := &createTaskAiGatewayAdapterStub{
-		createResp: &paigateway.CreateApiKeyResponse{KeyID: "key-create-fail", APIKey: "api-create-fail"},
+	aiGatewayAdapter := &createTaskLLMGatewayAdapterStub{
+		createResp: &pllmgateway.CreateApiKeyResponse{KeyID: "key-create-fail", APIKey: "api-create-fail"},
 	}
 
 	logic := &logic{
 		instanceDao:        instanceDao,
 		sandboxAdapter:     sandboxAdapter,
-		aiGatewayAdapter:   aiGatewayAdapter,
+		llmGatewayAdapter:  aiGatewayAdapter,
 		logger:             zap.NewNop(),
 		defaultTemplate:    "tpl-create",
 		candidateTemplates: []string{"tpl-create"},
@@ -351,14 +355,14 @@ func TestRunCreateInstanceTaskFailsWhenEnsureAiGatewayUserFails(t *testing.T) {
 		createResp: &psandbox.Sandbox{SandboxID: "sbx-create-ensure-user-fail", TemplateID: "tpl-create"},
 		pools:      []psandbox.Pool{{ID: "tpl-create", Status: "active", CapacityState: "active"}},
 	}
-	aiGatewayAdapter := &createTaskAiGatewayAdapterStub{
+	aiGatewayAdapter := &createTaskLLMGatewayAdapterStub{
 		ensureErr: errors.New("ensure user failed"),
 	}
 
 	logic := &logic{
 		instanceDao:        instanceDao,
 		sandboxAdapter:     sandboxAdapter,
-		aiGatewayAdapter:   aiGatewayAdapter,
+		llmGatewayAdapter:  aiGatewayAdapter,
 		logger:             zap.NewNop(),
 		defaultTemplate:    "tpl-create",
 		candidateTemplates: []string{"tpl-create"},

@@ -41,8 +41,8 @@
 
 ### Phase 1：需求澄清 + 技术设计探索
 
-1. 调用 `prd-init` skill 进行需求澄清（用户意图、场景、范围边界、站点范围、TAPD 建单）
-2. 调用 `brainstorming` skill 进行技术设计探索（⚠️ 产品范围已由 prd-init 确认，只探索技术方案）
+1. 调用 `prd-creator` skill 进行需求澄清（用户意图、场景、范围边界、站点范围、TAPD 建单）
+2. 调用 `brainstorming` skill 进行技术设计探索（⚠️ 产品范围已由 prd-creator 确认，只探索技术方案）
 3. 分析：
    - 受影响的模块与组件（参照 `current_state.md` 与 `specs/`）
    - 技术选型与备选方案（提供 2-3 个选项）
@@ -88,7 +88,7 @@
 
 | # | 检查项 | 状态 |
 |---|--------|------|
-| 1 | `prd-init` skill 已真实调用（G12） | |
+| 1 | `prd-creator` skill 已真实调用（G12） | |
 | 2 | `brainstorming` skill 已真实调用（G12） | |
 | 3 | `writing-plans` skill 已真实调用（G12） | |
 | 4 | `proposal.md` 包含背景、目标、非目标、受影响模块 | |

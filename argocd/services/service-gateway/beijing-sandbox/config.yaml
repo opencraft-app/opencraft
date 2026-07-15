@@ -141,6 +141,8 @@ routes:
       - method: POST
         path: /auth/internal/tencentcloud/account
       - method: GET
+        path: /auth/realname/faceid/callback
+      - method: GET
         path: /auth/oauth/qq/start
       - method: GET
         path: /auth/oauth/qq/callback

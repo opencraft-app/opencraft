@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	paigateway "ctl/pkg/adapter/aigateway"
+	pllmgateway "ctl/pkg/adapter/llmgateway"
 	psandbox "ctl/pkg/adapter/sandbox"
 	"ctl/pkg/config"
 	pctx "ctl/pkg/context"
@@ -77,14 +77,14 @@ func (d *failingUpdateInstanceDao) UpdateWithStatusPrecondition(ctx pctx.Context
 	return d.Dao.UpdateWithStatusPrecondition(ctx, id, fromStatuses, updates)
 }
 
-type aiGatewayAdapterStub struct {
-	createResp    *paigateway.CreateApiKeyResponse
+type llmGatewayAdapterStub struct {
+	createResp    *pllmgateway.CreateApiKeyResponse
 	createErr     error
 	revokedKeyIDs []string
 	revokeErr     error
 }
 
-func (s *aiGatewayAdapterStub) CreateApiKey(_ context.Context, _ string, _ string) (*paigateway.CreateApiKeyResponse, error) {
+func (s *llmGatewayAdapterStub) CreateApiKey(_ context.Context, _ string, _ string) (*pllmgateway.CreateApiKeyResponse, error) {
 	if s.createErr != nil {
 		return nil, s.createErr
 	}
@@ -94,50 +94,51 @@ func (s *aiGatewayAdapterStub) CreateApiKey(_ context.Context, _ string, _ strin
 	return s.createResp, nil
 }
 
-func (s *aiGatewayAdapterStub) EnsureUser(_ context.Context, userID string, nickname string) (*paigateway.EnsureUserResponse, error) {
-	return &paigateway.EnsureUserResponse{UserID: userID, Result: "created"}, nil
+func (s *llmGatewayAdapterStub) EnsureUser(_ context.Context, userID string, nickname string) (*pllmgateway.EnsureUserResponse, error) {
+	return &pllmgateway.EnsureUserResponse{UserID: userID, Result: "created"}, nil
 }
 
-func (s *aiGatewayAdapterStub) RevokeApiKey(_ context.Context, keyID string) error {
+func (s *llmGatewayAdapterStub) RevokeApiKey(_ context.Context, keyID string) error {
 	s.revokedKeyIDs = append(s.revokedKeyIDs, keyID)
 	return s.revokeErr
 }
 
-func (s *aiGatewayAdapterStub) GetUserUsage(_ context.Context, _ string) (*paigateway.UserUsageResponse, error) {
-	return &paigateway.UserUsageResponse{}, nil
+func (s *llmGatewayAdapterStub) GetUserUsage(_ context.Context, _ string) (*pllmgateway.UserUsageResponse, error) {
+	return &pllmgateway.UserUsageResponse{}, nil
 }
 
-func (s *aiGatewayAdapterStub) GetPlan(_ context.Context, _ string) (*paigateway.Plan, error) {
+func (s *llmGatewayAdapterStub) GetPlan(_ context.Context, _ string) (*pllmgateway.Plan, error) {
 	return nil, fmt.Errorf("plan lookup not configured")
 }
 
-func (s *aiGatewayAdapterStub) ApplySubscription(_ context.Context, _ *paigateway.ApplySubscriptionRequest) (*paigateway.Subscription, error) {
+func (s *llmGatewayAdapterStub) ApplySubscription(_ context.Context, _ *pllmgateway.ApplySubscriptionRequest) (*pllmgateway.Subscription, error) {
 	return nil, fmt.Errorf("subscription apply not configured")
 }
 
-func (s *aiGatewayAdapterStub) ExtendSubscription(_ context.Context, _ *paigateway.ExtendSubscriptionRequest) (*paigateway.ExtendSubscriptionResponse, error) {
+func (s *llmGatewayAdapterStub) ExtendSubscription(_ context.Context, _ *pllmgateway.ExtendSubscriptionRequest) (*pllmgateway.ExtendSubscriptionResponse, error) {
 	return nil, fmt.Errorf("subscription extend not configured")
 }
 
-func (s *aiGatewayAdapterStub) CancelSubscription(_ context.Context, _ string) error {
+func (s *llmGatewayAdapterStub) CancelSubscription(_ context.Context, _ string) error {
 	return nil
 }
 
-func (s *aiGatewayAdapterStub) GetActiveSubscription(_ context.Context, _ string) (*paigateway.Subscription, error) {
+func (s *llmGatewayAdapterStub) GetActiveSubscription(_ context.Context, _ string) (*pllmgateway.Subscription, error) {
 	return nil, nil
 }
 
-func installAiGatewayConfigForTest(t *testing.T, conf *config.AiGatewayConfig) {
+func installAiGatewayConfigForTest(t *testing.T, conf *config.LLMGatewayConfig) {
 	t.Helper()
+	conf.Enabled = true
 
 	if config.ServerConf.AdapterConfig == nil {
 		config.ServerConf.AdapterConfig = &config.AdapterConfig{}
 	}
 
-	original := config.ServerConf.AdapterConfig.AiGateway
-	config.ServerConf.AdapterConfig.AiGateway = conf
+	original := config.ServerConf.AdapterConfig.LLMGateway
+	config.ServerConf.AdapterConfig.LLMGateway = conf
 	t.Cleanup(func() {
-		config.ServerConf.AdapterConfig.AiGateway = original
+		config.ServerConf.AdapterConfig.LLMGateway = original
 	})
 }
 
@@ -1461,7 +1462,7 @@ func TestDestroyInstanceRevokesTrackedAiGatewayKey(t *testing.T) {
 		t.Fatalf("seed instance: %v", err)
 	}
 
-	aiGateway := &aiGatewayAdapterStub{}
+	aiGateway := &llmGatewayAdapterStub{}
 	logic := instancelogic.NewLogicForTest(
 		modelfactory.DefaultDaoFactory.InstanceDao(ctx),
 		modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx),
@@ -1483,7 +1484,7 @@ func TestDestroyInstanceRevokesTrackedAiGatewayKey(t *testing.T) {
 
 func TestCreateInstanceSkipsAiGatewayOnboardWhenConfigMissing(t *testing.T) {
 	testutil.NewMySQLDB(t, "..", "..", "migrations")
-	installAiGatewayConfigForTest(t, &config.AiGatewayConfig{
+	installAiGatewayConfigForTest(t, &config.LLMGatewayConfig{
 		BaseURL:        "http://ai-gateway.internal",
 		Timeout:        10,
 		DefaultModelID: "",
@@ -1502,7 +1503,7 @@ func TestCreateInstanceSkipsAiGatewayOnboardWhenConfigMissing(t *testing.T) {
 	}
 
 	sandboxStub := &sandboxAdapterStub{createResp: &psandbox.Sandbox{SandboxID: "sbx-aigw-missing"}}
-	aiGateway := &aiGatewayAdapterStub{
+	aiGateway := &llmGatewayAdapterStub{
 		createErr: fmt.Errorf("CreateApiKey should not be called"),
 	}
 	logic := instancelogic.NewLogicForTest(
@@ -1546,7 +1547,7 @@ func TestCreateInstanceSkipsAiGatewayOnboardWhenConfigMissing(t *testing.T) {
 
 func TestCreateInstanceSkipsAiGatewayOnboardCommandDuringCreate(t *testing.T) {
 	testutil.NewMySQLDB(t, "..", "..", "migrations")
-	installAiGatewayConfigForTest(t, &config.AiGatewayConfig{
+	installAiGatewayConfigForTest(t, &config.LLMGatewayConfig{
 		BaseURL:              "http://ai-gateway.internal",
 		Timeout:              10,
 		DefaultBaseURL:       "https://api.example.com/v1",
@@ -1577,7 +1578,7 @@ func TestCreateInstanceSkipsAiGatewayOnboardCommandDuringCreate(t *testing.T) {
 			}, nil
 		},
 	}
-	aiGateway := &aiGatewayAdapterStub{
+	aiGateway := &llmGatewayAdapterStub{
 		createErr: fmt.Errorf("CreateApiKey should not be called"),
 	}
 	logic := instancelogic.NewLogicForTest(
@@ -1624,7 +1625,7 @@ func TestCreateInstanceSkipsAiGatewayOnboardCommandDuringCreate(t *testing.T) {
 
 func TestCreateInstanceSkipsAiGatewayProvisioningDuringCreate(t *testing.T) {
 	testutil.NewMySQLDB(t, "..", "..", "migrations")
-	installAiGatewayConfigForTest(t, &config.AiGatewayConfig{
+	installAiGatewayConfigForTest(t, &config.LLMGatewayConfig{
 		BaseURL:              "http://ai-gateway.internal",
 		Timeout:              10,
 		DefaultBaseURL:       "https://api.example.com/v1",
@@ -1652,8 +1653,8 @@ func TestCreateInstanceSkipsAiGatewayProvisioningDuringCreate(t *testing.T) {
 			return &psandbox.ExecCommandResult{Status: "SUCCESS", ExitCode: 0}, nil
 		},
 	}
-	aiGateway := &aiGatewayAdapterStub{
-		createResp: &paigateway.CreateApiKeyResponse{KeyID: "key-success", APIKey: "sk'a-success"},
+	aiGateway := &llmGatewayAdapterStub{
+		createResp: &pllmgateway.CreateApiKeyResponse{KeyID: "key-success", APIKey: "sk'a-success"},
 	}
 	logic := instancelogic.NewLogicForTest(
 		modelfactory.DefaultDaoFactory.InstanceDao(ctx),

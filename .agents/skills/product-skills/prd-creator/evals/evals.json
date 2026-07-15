@@ -1,12 +1,12 @@
 {
-  "skill_name": "prd-init",
-  "version": "1.3.0",
+  "skill_name": "prd-creator",
+  "version": "1.5.0",
   "evals": [
     {
       "id": 1,
       "name": "粗糙想法进入产品输入稿",
       "prompt": "老板说 LightVela 的 /agents 页面看不出哪些 skill 已安装，帮我先建一个需求",
-      "expected_output": "识别为 LightVela 产品前置需求，每轮只问一个最影响范围的问题并优先使用选择题；澄清后由 AI 提出 2-3 个产品方案、说明取舍并给出推荐，按用户选择形成产品输入稿，补齐来源、目标用户、当前痛点、影响面和验收标准；产品输入稿确认后实际写入 mono2 的 product/prd/YYYY-MM-DD-<short-title>.md，并返回文件路径；在产品输入稿确认前不直接创建 TAPD 单",
+      "expected_output": "识别为 LightVela 产品前置需求，每轮只问一个最影响范围的问题并优先使用选择题；澄清后由 AI 提出 2-3 个产品方案、说明取舍并给出推荐，按用户选择形成产品输入稿，补齐来源、目标用户、当前痛点、影响面和验收标准；产品输入稿确认后实际写入 mono2 的 product/prd/YYYY-MM-DD-<short-title>.md，并返回文件路径；在产品输入稿确认前不直接创建 TAPD 单，定稿并完成 TAPD 后还需进入工蜂 MR 评审",
       "files": []
     },
     {
@@ -48,7 +48,7 @@
       "id": 7,
       "name": "输出 TAPD payload 和完成总结",
       "prompt": "产品方案已经确认，帮我整理建父单和研发交接的 TAPD 写入内容，最后给我总结",
-      "expected_output": "先静默完成环境自检；若无有效 Token 只问用户要 Token，拿到后自动创建，不额外要求用户确认写入计划；使用固定 workspace_id 10132091、分类 LightVela、标题格式【产品需求】【LightVela】<标题>；不创建子需求 payload；结束时按 LightVela 产品前置完成表汇报父单、文档、原型、研发交接建议、待确认问题和下一步",
+      "expected_output": "先静默完成环境自检；若无有效 Token 只问用户要 Token，拿到后自动创建，不额外要求用户确认写入计划；使用固定 workspace_id 10132091、分类 LightVela、标题格式【产品需求】【LightVela】<标题>；不创建子需求 payload；PRD 定稿并完成 TAPD 后提交工蜂 MR；结束时按 LightVela 产品前置完成表汇报父单、文档、原型、工蜂 MR、研发交接建议、待确认问题和下一步",
       "files": []
     },
     {
@@ -69,7 +69,28 @@
       "id": 10,
       "name": "PRD 固定写入 mono2 product/prd",
       "prompt": "这个 LightVela 产品方案已经确认，请把 PRD 正式落成文档",
-      "expected_output": "定位 mono2 仓库根目录，必要时创建 product/prd，并把 PRD 实际写入 product/prd/YYYY-MM-DD-<short-title>.md；不要写入 docs/reqs/lightvela，也不要只在聊天中返回正文。产品原型说明和待确认问题默认写在同一 Markdown 文件中，完成后主动返回实际文件路径；如果已有对应 PRD，则更新原文件而不是按新日期重复创建",
+      "expected_output": "定位 mono2 仓库根目录，必要时创建 product/prd，并把 PRD 实际写入 product/prd/YYYY-MM-DD-<short-title>.md；不要写入 docs/reqs/lightvela，也不要只在聊天中返回正文。产品原型说明和待确认问题默认写在同一 Markdown 文件中，完成后主动返回实际文件路径；如果已有对应 PRD，则更新原文件而不是按新日期重复创建；完成 TAPD 写入后继续准备干净分支和工蜂 MR，不能把本地文档当作最终落库完成",
+      "files": []
+    },
+    {
+      "id": 11,
+      "name": "PRD 定稿后提交工蜂 MR",
+      "prompt": "这个 LightVela PRD 和 TAPD 都确认好了，把需求文档提交到远端工蜂仓库评审",
+      "expected_output": "读取根 AGENTS.md 和 gongfeng Skill；从最新 origin/master 准备 codex/prd-<short-title> 干净分支，工作区有无关改动时使用独立 worktree；默认只纳入目标 product/prd 文件。commit、push 和创建 MR 前一次性展示文件范围、diff 摘要、Lore commit message、MR 标题描述与 TAPD 关联并等待明确确认；确认后验证 get_current_user 鉴权，运行 git diff --check，提交并推送，通过 Gongfeng 创建目标 master 的工蜂 MR 并关联 TAPD；最后按来源分支核对并返回真实 MR 编号和完整链接，不能把 commit 或 push 当作 MR 已完成",
+      "files": []
+    },
+    {
+      "id": 12,
+      "name": "清晰输入也要先做范围预判",
+      "prompt": "需求已经比较明确：在 /agents 首页增加 Agent 健康状态面板，面向管理员展示 Skill、MCP 和 Hermes 的异常与诊断入口；同时新增组织级用量配额中心，并支持运营周报导出。请按这些细节直接出一份完整 PRD",
+      "expected_output": "即使输入已经较清晰，也要在详细澄清或出稿前判断是否混合了多个可以独立交付、独立验收的产品目标；必要时拆成相互关联的子需求，说明关系和建议顺序，并只对第一个子需求继续澄清，不能因为描述详细而把多个目标揉进同一份 PRD",
+      "files": []
+    },
+    {
+      "id": 13,
+      "name": "PRD 写入前集中自检",
+      "prompt": "这个 LightVela 产品输入稿已经确认，请直接写文件并建 TAPD：产品目标是减少管理员排查 Agent 异常的时间；本次范围包含健康状态面板、组织配额中心和运营周报；方案细节里还留着 TBD；验收标准只有‘页面能打开’。",
+      "expected_output": "写入本地 PRD、TAPD 或进入工蜂 MR 前，必须先重新通读并在原稿内修正：清除 TBD、TODO、空字段和模糊表述；检查目标—范围—方案—验收之间是否矛盾或断链；把不能支撑目标或不能在一个需求中独立交付验收的内容移出或拆分；消除可能产生两种解释的歧义；验收标准必须能够证明目标。自检未通过时不得写入或提交",
       "files": []
     }
   ]
