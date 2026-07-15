@@ -2,10 +2,14 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { loadExpertPackagesState, saveExpertPackagesState } from "@/lib/expert-package-storage";
+import {
+  buildInstalledSkillsListCommand,
+  getUniqueSkillSlugs,
+  parseInstalledSkillSlugs,
+} from "@/lib/hermes-skills-client";
 import { fetchSkillFile, fetchSkillDetail, fetchSkillFiles, fetchSkillSetDetail, fetchSkillSets } from "@/lib/skillhub-api";
 
 import {
-  buildInstalledSkillsListCommand,
   buildInstallSkillCommand,
   buildSkillHubSelfUpgradeCommand,
   ExpertsPanel,
@@ -14,9 +18,7 @@ import {
   getPackageSkillSlugs,
   getSkillPackageInstallFailureMessage,
   isSkillInstallAlreadyExists,
-  getUniqueSkillSlugs,
   installSkillSlugs,
-  parseInstalledSkillSlugs,
   resolveAvailablePackageSkillSlugs,
   stripMarkdownFrontmatter,
 } from "../hermes-agent-experts-panel";

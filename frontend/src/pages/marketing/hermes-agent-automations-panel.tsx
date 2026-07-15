@@ -20,6 +20,14 @@ import { createPortal } from "react-dom";
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { useT } from "@/i18n/t";
 import { isGlobal } from "@/lib/region";
+import {
+  listInstalledSkillSlugs,
+  type InstalledSkillLoadState,
+} from "@/lib/hermes-skills-client";
+import {
+  AutomationSkillBindingSummary,
+  AutomationSkillPicker,
+} from "./automation-skill-picker";
 import { ScenarioEnableConfirmModal } from "./scenario-tasks/ScenarioEnableConfirmModal";
 import { ScenarioInstallModal } from "./scenario-tasks/ScenarioInstallModal";
 // 场景任务入口暂时下线，保留依赖便于后续恢复。
@@ -69,6 +77,40 @@ type ScenarioReminderNotice = {
   draft: ScenarioTaskDraft;
   kind: "preview" | "recurring";
 };
+
+export function toCreateCronSkills(selectedSkill: string): string[] | undefined {
+  return selectedSkill ? [selectedSkill] : undefined;
+}
+
+export function toEditCronSkills(initialSkills: string[], selectedSkill: string): string[] | undefined {
+  const initialSelectedSkill = initialSkills[0] ?? "";
+  if (selectedSkill === initialSelectedSkill) return undefined;
+  return selectedSkill ? [selectedSkill] : [];
+}
+
+export type AutomationSkillSelectionIssue = "unavailable" | "unverified";
+
+export function getAutomationSkillSelectionIssue({
+  mode,
+  initialSkills,
+  selectedSkill,
+  initialSkillWasAvailable,
+  verificationState,
+}: {
+  mode: "create" | "edit";
+  initialSkills: string[];
+  selectedSkill: string;
+  initialSkillWasAvailable: boolean | null;
+  verificationState: InstalledSkillLoadState;
+}): AutomationSkillSelectionIssue | null {
+  if (!selectedSkill) return null;
+  const initialSelectedSkill = initialSkills[0] ?? "";
+  const selectionChanged = selectedSkill !== initialSelectedSkill;
+  const needsVerification = mode === "create" || selectionChanged || initialSkillWasAvailable === true;
+  if (!needsVerification) return null;
+  if (verificationState.status !== "ready") return "unverified";
+  return verificationState.slugs.includes(selectedSkill) ? null : "unavailable";
+}
 
 /** 顶部 toast；与 settings 主页 SkillInstallToast 视觉一致 */
 function ErrorToast({ message, onClose, tone = "error" }: { message: string; onClose: () => void; tone?: "error" | "success" | "info" }) {
@@ -347,11 +389,17 @@ function ImmediateTooltipText({ label, message }: { label: string; message: stri
   );
 }
 
-export function AutomationsPanel({ botId }: { botId: string | null }) {
+export function HermesAgentAutomationsPanel({ botId }: { botId: string | null }) {
   const t = useT();
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [enabledChannels, setEnabledChannels] = useState<Set<string> | null>(null);
   const [channelStatus, setChannelStatus] = useState<"loading" | "ready">("loading");
+  const [installedSkillLoadState, setInstalledSkillLoadState] = useState<InstalledSkillLoadState>({
+    status: "idle",
+    slugs: [],
+    error: null,
+  });
+  const installedSkillSlugsRef = useRef<string[]>([]);
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [loadingRecentRuns, setLoadingRecentRuns] = useState(false);
   const [recentRuns, setRecentRuns] = useState<CronRunRecord[]>([]);
@@ -406,6 +454,36 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
       setEnabledChannels(null);
     } finally {
       setChannelStatus("ready");
+    }
+  }, [botId]);
+
+  const refreshInstalledSkills = useCallback(async (): Promise<InstalledSkillLoadState> => {
+    if (!botId) {
+      installedSkillSlugsRef.current = [];
+      const nextState: InstalledSkillLoadState = { status: "ready", slugs: [], error: null };
+      setInstalledSkillLoadState(nextState);
+      return nextState;
+    }
+
+    setInstalledSkillLoadState({
+      status: "loading",
+      slugs: installedSkillSlugsRef.current,
+      error: null,
+    });
+    try {
+      const slugs = await listInstalledSkillSlugs(botId);
+      installedSkillSlugsRef.current = slugs;
+      const nextState: InstalledSkillLoadState = { status: "ready", slugs, error: null };
+      setInstalledSkillLoadState(nextState);
+      return nextState;
+    } catch (error) {
+      const nextState: InstalledSkillLoadState = {
+        status: "error",
+        slugs: installedSkillSlugsRef.current,
+        error: error instanceof Error ? error.message : String(error),
+      };
+      setInstalledSkillLoadState(nextState);
+      return nextState;
     }
   }, [botId]);
 
@@ -528,6 +606,12 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
   useEffect(() => {
     void refreshChannelStatus();
   }, [refreshChannelStatus]);
+
+  useEffect(() => {
+    installedSkillSlugsRef.current = [];
+    setInstalledSkillLoadState({ status: "idle", slugs: [], error: null });
+    void refreshInstalledSkills();
+  }, [botId, refreshInstalledSkills]);
 
   // const openScenarioInstaller = useCallback((pack: ScenarioTaskPack) => {
   //   setScenarioInstallPack(pack);
@@ -853,6 +937,8 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
           mode="create"
           enabledChannels={enabledChannels}
           channelStatus={channelStatus}
+          skillLoadState={installedSkillLoadState}
+          onRefreshSkills={refreshInstalledSkills}
           onClose={() => setCreating(false)}
           onSaved={async () => {
             trackDatongEvent(DATONG_EVENTS.AUTOMATION_CREATE_SUCCESS, {
@@ -911,6 +997,8 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
           template={creatingFromTemplate}
           enabledChannels={enabledChannels}
           channelStatus={channelStatus}
+          skillLoadState={installedSkillLoadState}
+          onRefreshSkills={refreshInstalledSkills}
           onClose={() => setCreatingFromTemplate(null)}
           onSaved={async () => {
             trackDatongEvent(DATONG_EVENTS.AUTOMATION_CREATE_SUCCESS, {
@@ -947,6 +1035,8 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
           initialJob={editingJob}
           enabledChannels={enabledChannels}
           channelStatus={channelStatus}
+          skillLoadState={installedSkillLoadState}
+          onRefreshSkills={refreshInstalledSkills}
           onClose={() => setEditingJob(null)}
           onSaved={async () => {
             setEditingJob(null);
@@ -960,6 +1050,7 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
         <CronJobDetailModal
           job={viewingJob}
           lastAgentRun={getLastAgentRunForJob(viewingJob, recentRuns)}
+          skillLoadState={installedSkillLoadState}
           onClose={() => setViewingJob(null)}
         />
       )}
@@ -982,6 +1073,10 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
       )}
     </div>
   );
+}
+
+export function shouldShowRecentRunsLimitHint(runCount: number): boolean {
+  return runCount >= 10;
 }
 
 function RecentCronRunsPanel({ runs }: { runs: CronRunRecord[] }) {
@@ -1045,11 +1140,13 @@ function RecentCronRunsPanel({ runs }: { runs: CronRunRecord[] }) {
           />
         )}
       </section>
-      <div className="flex justify-center pt-1">
-        <p className="text-center text-[11px] leading-4 text-black/35">
-          {t("最多展示最近 10 条执行记录")}
-        </p>
-      </div>
+      {shouldShowRecentRunsLimitHint(runs.length) && (
+        <div className="flex justify-center pt-1">
+          <p className="text-center text-[11px] leading-4 text-black/35">
+            {t("最多展示最近 10 条执行记录")}
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -1445,10 +1542,12 @@ export function parseOnceScheduleDate(display: string, nextRunAt: string | null)
 function CronJobDetailModal({
   job,
   lastAgentRun,
+  skillLoadState,
   onClose,
 }: {
   job: CronJob;
   lastAgentRun: CronRunRecord | null;
+  skillLoadState: InstalledSkillLoadState;
   onClose: () => void;
 }) {
   const t = useT();
@@ -1492,6 +1591,15 @@ function CronJobDetailModal({
         <dl className="overflow-hidden rounded-md border border-black/[0.08] bg-white text-sm divide-y divide-black/[0.06]">
           <NameIdDetailRow name={name} id={job.id} />
           <DetailRow label={t("任务说明")} value={job.prompt || "—"} pre />
+          <DetailRow
+            label={t("调用技能")}
+            value={(
+              <AutomationSkillBindingSummary
+                value={job.skills[0] ?? ""}
+                loadState={skillLoadState}
+              />
+            )}
+          />
           <DetailRow label={t("执行时间")} value={formatScheduleDetailValue(job, t)} />
           {lastAgentRun && (
             <DetailRow
@@ -2289,13 +2397,15 @@ interface ScheduleChangeCheck {
   originalSchedule: string;
 }
 
-function AutomationFormModal({
+export function AutomationFormModal({
   botId,
   mode,
   initialJob,
   template,
   enabledChannels,
   channelStatus,
+  skillLoadState,
+  onRefreshSkills,
   onClose,
   onSaved,
   onError,
@@ -2306,6 +2416,8 @@ function AutomationFormModal({
   template?: AutomationTemplate;
   enabledChannels: Set<string> | null;
   channelStatus: "loading" | "ready";
+  skillLoadState: InstalledSkillLoadState;
+  onRefreshSkills: () => Promise<InstalledSkillLoadState>;
   onClose: () => void;
   onSaved: () => void;
   onError: (message: string) => void;
@@ -2314,6 +2426,20 @@ function AutomationFormModal({
   const templateSchedule = mode === "create" ? template?.schedule : undefined;
   const [name, setName] = useState(initialJob?.name ?? template?.name ?? "");
   const [prompt, setPrompt] = useState(initialJob?.prompt ?? template?.prompt ?? "");
+  const initialSelectedSkill = initialJob?.skills[0] ?? "";
+  const [selectedSkill, setSelectedSkill] = useState(initialSelectedSkill);
+  const initialSkillWasAvailableRef = useRef<boolean | null>(
+    initialSelectedSkill && skillLoadState.status === "ready"
+      ? skillLoadState.slugs.includes(initialSelectedSkill)
+      : null,
+  );
+
+  useEffect(() => {
+    if (!initialSelectedSkill || initialSkillWasAvailableRef.current !== null) return;
+    if (skillLoadState.status === "ready") {
+      initialSkillWasAvailableRef.current = skillLoadState.slugs.includes(initialSelectedSkill);
+    }
+  }, [initialSelectedSkill, skillLoadState]);
 
   const initialScheduleSource = useMemo(
     () => (initialJob?.schedule.display || initialJob?.schedule.expr || "").trim(),
@@ -2536,6 +2662,28 @@ function AutomationFormModal({
     }
     setSubmitting(true);
     try {
+      const initialSkills = initialJob?.skills ?? [];
+      const skillSelectionChanged = selectedSkill !== (initialSkills[0] ?? "");
+      let verificationState = skillLoadState;
+      if (selectedSkill && (mode === "create" || skillSelectionChanged || initialSkillWasAvailableRef.current === true)) {
+        verificationState = await onRefreshSkills();
+      }
+      const skillSelectionIssue = getAutomationSkillSelectionIssue({
+        mode,
+        initialSkills,
+        selectedSkill,
+        initialSkillWasAvailable: initialSkillWasAvailableRef.current,
+        verificationState,
+      });
+      if (skillSelectionIssue === "unavailable") {
+        onError(t("所选 Skill 已不可用，请重新选择或取消绑定"));
+        return;
+      }
+      if (skillSelectionIssue === "unverified") {
+        onError(t("暂时无法确认所选 Skill 是否可用，请重试"));
+        return;
+      }
+
       const deliver = buildDeliverString(deliverPlatforms, deliverChatIds);
       const scriptConfig: CronLightVelaScriptConfig | null = effectiveWindow || dailyTimesForScript
         ? {
@@ -2558,6 +2706,7 @@ function AutomationFormModal({
           schedule,
           deliver,
           script,
+          skills: toCreateCronSkills(selectedSkill),
         }, script);
       } else if (initialJob) {
         const patch: Parameters<typeof editCronJob>[2] = {};
@@ -2567,6 +2716,8 @@ function AutomationFormModal({
         if (nextPrompt !== (initialJob.prompt ?? "")) patch.prompt = nextPrompt;
         if (!scheduleUneditable && scheduleChanged) patch.schedule = schedule;
         if (deliver !== (initialJob.deliver || "")) patch.deliver = deliver;
+        const nextSkills = toEditCronSkills(initialJob.skills, selectedSkill);
+        if (nextSkills !== undefined) patch.skills = nextSkills;
         if (canEditEffectiveWindow) {
           const originalWindow = initialJob.effective_window;
           const windowChanged = !areEffectiveWindowsEqual(effectiveWindow, originalWindow);
@@ -2601,7 +2752,7 @@ function AutomationFormModal({
     } finally {
       setSubmitting(false);
     }
-  }, [botId, canSubmit, mode, initialJob, name, prompt, schedule, scheduleUneditable, originalSchedule, kind, onceDate, initial, scheduleChanged, deliverPlatforms, deliverChatIds, effectiveStartAt, effectiveEndAt, effectiveWindowEnabled, intervalWeekdays, canEditEffectiveWindow, shouldShowEffectiveWindow, dailyTimesForScript, onSaved, onError, t]);
+  }, [botId, canSubmit, mode, initialJob, name, prompt, selectedSkill, skillLoadState, onRefreshSkills, schedule, scheduleUneditable, originalSchedule, kind, onceDate, initial, scheduleChanged, deliverPlatforms, deliverChatIds, effectiveStartAt, effectiveEndAt, effectiveWindowEnabled, intervalWeekdays, canEditEffectiveWindow, shouldShowEffectiveWindow, dailyTimesForScript, onSaved, onError, t]);
 
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 py-3" role="dialog" aria-modal="true">
@@ -2635,7 +2786,7 @@ function AutomationFormModal({
             onChange={(e) => setName(e.target.value.slice(0, 60))}
             maxLength={60}
             placeholder={t("请输入自动任务名称")}
-            className="mt-1.5 w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm placeholder:text-sm placeholder:text-black/35 focus:border-black/30 focus:outline-none"
+            className="mt-1.5 w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm placeholder:text-sm placeholder:text-black/35 focus:border-black/30 focus:outline-none"
             style={{ ...MODAL_COMPACT_CONTROL_TEXT_STYLE, marginTop: 6 }}
           />
         </div>
@@ -2712,11 +2863,18 @@ function AutomationFormModal({
             onChange={(e) => setPrompt(e.target.value.slice(0, AUTOMATION_PROMPT_MAX_LENGTH))}
             rows={5}
             maxLength={AUTOMATION_PROMPT_MAX_LENGTH}
-            placeholder={t("请用提示词的形式描述需要执行的任务，比如：提醒我喝水")}
+            placeholder={t("请用提示词的形式描述需要执行的任务，比如：提醒我喝水，或者使用 xxx 技能帮我执行任务等")}
             className="mt-1.5 w-full resize-none rounded-md border border-black/10 bg-white px-3 py-2 text-sm placeholder:text-sm placeholder:text-black/35 focus:border-black/30 focus:outline-none"
             style={{ ...MODAL_COMPACT_CONTROL_TEXT_STYLE, marginTop: 6 }}
           />
         </div>
+
+        <AutomationSkillPicker
+          value={selectedSkill}
+          loadState={skillLoadState}
+          onChange={setSelectedSkill}
+          onRetry={() => void onRefreshSkills()}
+        />
 
         {/* 生效时间段 */}
         {shouldShowEffectiveWindow && (

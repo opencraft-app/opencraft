@@ -1,221 +1,233 @@
-# 技术规格：干净用户三要素实名闭环
+# 自动任务调用 Skill：技术规格
 
-## 状态与信任边界
+## 1. 目的
 
-```text
-created
-  -> face_succeeded
-  -> phone_pending
-  -> shadow_pending
-  -> completed
-```
+在 LightVela Agent 控制台的自动任务创建、编辑和详情链路中，提供零个或一个 Hermes Skill 的绑定能力。实现必须复用 Hermes Cron 已有协议，保持历史任务与普通任务兼容，并对 Skill 列表失败和已绑定 Skill 失效提供显式状态。
 
-- 创建 attempt 不再要求会话用户已有手机号。
-- `send-phone-code` 与 `verify-phone` 接受可选 `phone`：无本地手机号时必填；已有本地手机号时省略并回退到会话手机号，显式传入时必须完全一致。
-- 首次发送验证码时将候选手机号哈希绑定到 attempt；后续发送和校验必须匹配该哈希，避免中途换号。
-- 发送前校验本地手机号唯一性；真正写入 `users.phone` 只发生在 Shadow 已验证并激活之后。
-- 本地手机号写入与 attempt 进入 `shadow_pending` 使用专用存储事务，避免通用改号逻辑撤销当前 FaceID attempt。
-- Shadow 基础实名同步成功后才将 attempt 完成并激活用户 `phone_3fa`。
+## 2. 术语
 
-## 前端交互
+- **真实 slug**：Hermes 已安装 Skill 列表返回的目录/标识值，是唯一允许写入 Cron job 的值。
+- **展示名称**：由真实 slug 格式化得到的可读文本，仅用于展示与搜索，不参与持久化。
+- **可用绑定**：job 保存的 slug 当前存在于该 Agent 的已安装 Skill 列表中。
+- **不可用绑定**：已成功加载安装列表，且 job 保存的 slug 不在列表中。
+- **未知状态**：安装列表仍在加载或加载失败，无法判断绑定是否仍可用。
+- **普通任务**：未绑定任何 Skill 的 Cron job。
 
-- identity 阶段始终收集姓名和身份证号。
-- FaceID 成功后，已有手机号显示为只读；无手机号显示手机号输入框。
-- 获取验证码和提交验证码均携带无手机号用户填写的候选手机号。
-- 页面不展示独立安全手机绑定入口，也不提供跳过刷脸直达手机号阶段的路径。
-
-## 测试
-
-- 服务层：干净用户成功链路、手机号冲突、attempt 中途换号、已有手机号兼容。
-- HTTP/API：发送和校验请求体中的可选手机号。
-- 前端：无手机号用户从身份信息开始，经刷脸后输入手机号并完成；已有手机号仍只读。
-
----
-
-# 技术规格：LightVela 场景任务安装器 v1
-
-## 集成点
-
-主入口在 `frontend/src/pages/marketing/openclaw-automations-panel.tsx`。
-
-新增场景任务模块：
+## 3. 架构与数据流
 
 ```text
-frontend/src/pages/marketing/scenario-tasks/
-  scenario-packs.ts
-  scenario-task-builder.ts
-  ScenarioTaskGrid.tsx
-  ScenarioInstallModal.tsx
-  ScenarioEnableConfirmModal.tsx
+Hermes `skills list`
+        ↓
+hermes-skills-client（命令、解析、去重、展示名）
+        ↓
+HermesAgentAutomationsPanel（idle/loading/ready/error）
+        ├── AutomationSkillPicker（搜索、选择、空态、重试）
+        ├── AutomationFormModal（create/edit 映射）
+        └── CronJobDetailModal（绑定状态展示）
+                         ↓
+hermes-cron-client（create/edit 命令）
+                         ↓
+Hermes Cron job.skills
 ```
 
-`openclaw-automations-panel.tsx` 只负责：
+Skill 列表状态必须与 Cron job 列表状态解耦。Skill 查询失败不得清空已有 job 绑定，不得触发 Cron 列表失败，也不得阻止未选择 Skill 的表单提交。
 
-- 展示场景任务区。
-- 通过 `isGlobal` 在国际站屏蔽场景任务入口和相关弹窗。
-- 持有当前安装 draft / preview 状态。
-- 调用 `createCronJobWithScriptRollback` 创建一次性和周期 Cron。
-- 调用 `refreshAll` / `refreshRecentRuns` 刷新列表。
-- 场景试跑创建成功后关闭配置弹窗，通过消息通道接单确认和页面提示条给用户“已开始处理，结果稍后推送”的预期。
-- 处理 toast 和错误文案。
+## 4. 共享已安装 Skill 能力
 
-## 方案取舍
+### 4.1 命令
 
-1. 推荐方案：前端场景安装器 + 复用 Hermes Cron。
-   - 优点：不新增后端接口，能直接落在现有 `/agents/automations` 体验里，最快完成“先跑一次 -> 添加为自动任务”的闭环。
-   - 缺点：最近执行匹配依赖任务名 / prompt 兜底，不如 metadata 稳定。
+共享模块必须继续使用当前已验证命令：
 
-2. 备选方案：新增后端 `runScenarioOnce` 接口。
-   - 优点：试跑状态、结果和 metadata 更可控。
-   - 缺点：跨后端和运行时，超出 v1 节奏，也会把当前产品验证变重。
+```sh
+cd "$HOME/.hermes/hermes-agent" && COLUMNS=10000 ./venv/bin/python -m hermes_cli.main skills list
+```
 
-3. 备选方案：独立场景市场页面。
-   - 优点：长期可扩展到更多场景和 SkillHub 商品化。
-   - 缺点：冷启动路径变长，且 v1 目标是让用户在自动任务页直接达成首个结果。
+### 4.2 输出解析
 
-因此 v1 选择方案 1，并把 metadata 与专用试跑接口作为后续优化方向。
+解析器必须支持：
 
-## 数据模型
+1. `{ success: true, data: { skills: [...] } }` 形式的 JSON；
+2. 顶层 Skill 数组 JSON；
+3. Hermes 竖线表格输出；
+4. 每行一个 slug 的纯文本兜底。
+
+输出必须 trim、去空值、按首次出现顺序去重。保存值必须来自解析后的真实 slug。
+
+### 4.3 展示名称
+
+展示名称由 slug 按 `-` / `_` 分词并格式化，仅用于 UI。搜索必须同时匹配展示名称和原始 slug，大小写不敏感。任何代码都不得根据展示名称反向拼接保存 slug。
+
+### 4.4 复用边界
+
+`hermes-agent-experts-panel.tsx` 与自动任务页面必须共同 import 共享 helper。自动任务页面不得 import 专家包页面模块；共享模块不得依赖 React 页面组件。
+
+## 5. Skill 列表状态模型
 
 ```ts
-type ScenarioTaskId = "stock-morning-brief" | "world-cup-daily" | "daily-news" | "ai-digest";
-
-type ScenarioTaskDraft = {
-  scenarioId: ScenarioTaskId;
-  values: Record<string, string>;
-  generatedName: string;
-  generatedPrompt: string;
-  generatedDeliver: string;
-  generatedDeliverLabel: string;
-  oneShotSchedule: string;
-  recurringSchedule: string;
-  oneShotJobName: string;
-};
+type InstalledSkillLoadState =
+  | { status: "idle" | "loading"; slugs: string[]; error: null }
+  | { status: "ready"; slugs: string[]; error: null }
+  | { status: "error"; slugs: string[]; error: string };
 ```
 
-四个场景配置集中在 `scenario-packs.ts`，包含名称、描述、默认频率、字段、提示、安全说明和图标 key。React 组件只消费配置，不在 JSX 中拼长 prompt。
+要求：
 
-`scenario-task-builder.ts` 负责：
+- `botId` 变化时重新加载，不能复用另一个 Agent 的结果。
+- 刷新失败时可以保留上次 slugs 供只读展示，但状态必须是 `error`，不能把缓存结果声明为当前可用。
+- 选择器必须提供显式重试入口。
+- `botId` 为空时进入 `ready + []`，不发命令。
+- Skill 加载失败不弹出阻塞整个自动任务面板的全局错误。
 
-- 根据场景字段生成 prompt。
-- 实时类场景 prompt 显式指定 `datetime` / `web_search` / `web_fetch` 的有界使用方式，避免 Agent 做开放式长时间浏览。
-- 同一任务最多检索 3 组关键词、打开 4 个网页来源，并保留来源名称或链接。
-- 生成一次性 schedule，默认当前时间后数秒执行，避免传到 Hermes 时被判定为过去时间。
-- 生成周期 schedule。
-- 生成 deliver；底层 builder 保留 `local` 兼容历史数据，场景安装 UI 首版只允许 `weixin` / `qqbot` 两种主动推送目标。
-- 识别试跑任务和常态任务。
-- 从最近执行中匹配试跑结果。
+## 6. 选择器
 
-## UI
+### Requirement SKILL-PICKER-1：可选单选
 
-`ScenarioTaskGrid` 渲染四个 `ScenarioTaskCard`，位置在 header 和已生效 / 最近执行分段之间。无自动任务时作为主空态；已有自动任务时仍展示为紧凑推荐区。
+创建和编辑弹窗必须在“任务说明”之后、“生效时间段”之前渲染“调用技能（可选）”。默认值为空，触发器显示“选择你希望 Agent 稳定调用的技能”，且同一时刻最多选中一个真实 slug。“调用技能”后必须提供帮助入口，通过 hover 或键盘 focus 展示“在此处选择技能后，Agent 会在执行任务前加载该技能，相比仅在任务说明中通过提示词要求调用技能更加稳定。”。
 
-国际站首版不渲染 `ScenarioTaskGrid`、`ScenarioInstallModal`、`ScenarioEnableConfirmModal` 和场景提示条。
+#### Scenario：普通任务
 
-`ScenarioInstallModal` 是两步弹窗：
+- Given 用户打开创建弹窗
+- When 用户不选择 Skill 并提交
+- Then 表单不传 `skills`
+- And 现有创建行为保持不变
 
-1. `任务本身`：展示场景目标字段和任务摘要，减少产品逻辑解释文案。
-2. `消息通道`：展示执行与回传摘要，并复用 `acli channel status` 结果展示微信 / QQ 扫码接入状态。
+#### Scenario：选择 Skill
 
-底部按钮：
+- Given 已安装列表包含 `finance-news`
+- When 用户选择该项
+- Then 选择器在同一行显示展示名称与 `finance-news`
+- And 表单保存值严格等于 `finance-news`
 
-- 第一步：`取消` / `下一步`
-- 第二步：`取消` / `上一步` / `直接添加为自动任务` / `先跑一次`
+### Requirement SKILL-PICKER-2：搜索与键盘语义
 
-回传目标：
+选择器必须是产品内自定义下拉，不使用原生 `<select>`。触发器应提供 `aria-expanded`，搜索框的 label/placeholder 统一为“搜索已安装的技能”，选项使用可识别的单选语义。每个 Skill 的展示名称和 slug 必须在同一行展示并在空间不足时截断。搜索空结果与已安装列表为空必须是两个不同状态。
 
-- `weixin`：仅当现有通道状态显示微信已扫码接入后可试跑或添加；未接入时在当前弹窗内通过 `debug/exec` 执行 `acli gateway qr-url --platform weixin --wait true` 获取二维码。
-- `qqbot`：仅当现有通道状态显示 QQ 已扫码接入后可试跑或添加；未接入时在当前弹窗内通过 `debug/exec` 执行 `acli gateway qr-url --platform qqbot --wait true` 获取二维码。
-- 不再在场景安装流程内展示 `local` 作为用户可选项，也不再引导用户跳转到 `/agents/channels`。
-- `--wait true` 会让命令在扫码完成前保持运行，因此二维码接入必须走 `Accept: text/event-stream` 的流式 `debug/exec`，实时读取 stdout；不能使用同步 `execCommand` 等命令结束后再解析二维码。
-- 用户关闭弹窗、重新生成二维码或手动刷新通道状态时，需要 abort 当前流式请求，避免旧请求继续 pending。
+### Requirement SKILL-PICKER-3：任务说明保持独立
 
-点击“先跑一次”后：
+Skill 选择只建立 Cron 执行绑定，不得自动生成、替换或清空任务说明，也不得为此读取 SkillHub 文档或摘要。
 
-- 前端创建下发后立即开始的一次性任务。
-- 创建成功后立即关闭 `ScenarioInstallModal`，切回自动任务页。
-- 前端尽快通过 `hermes send` 向所选微信 / QQ 推送一条接单确认消息，说明场景已开始处理、结果会稍后推送。
-- 页面展示轻量提示条：已开始试跑、结果稍后推送、结果也会出现在最近执行。
-- 提示条保留“添加为自动任务”入口，避免等待弹窗关闭后丢失常态化路径。
-- 对应一次性任务在已生效任务卡片里显示“立即开始”。
+#### Scenario：空任务说明选择 Skill
 
-`ScenarioEnableConfirmModal` 展示任务名称、频率、回传位置和关注摘要，确认后创建周期 Cron。
+- Given 用户尚未填写任务说明
+- When 用户选择一个已安装 Skill
+- Then 任务说明保持为空
+- And Skill 绑定仍可正常保存
 
-上述场景弹窗必须使用项目已有的 Radix Dialog primitive，保留焦点管理、Escape 关闭和 `aria-modal` 等基础可访问性能力。
+#### Scenario：已有任务说明选择或切换 Skill
 
-## 状态流
+- Given 任务说明已由用户、模板或历史任务提供
+- When 用户选择或切换 Skill
+- Then 任务说明保持原内容
 
-```text
-idle
-  -> editing
-  -> creating_preview_job
-  -> preview_scheduled_notice
-  -> enabling_recurring_job
-  -> recurring_enabled
-```
+#### Scenario：清除 Skill
 
-## Cron 策略
+- Given 用户已选择 Skill 且任务说明存在内容
+- When 用户清除 Skill 选择
+- Then 任务说明保持原内容
 
-一次性试跑：
+### Requirement SKILL-PICKER-4：加载和错误
+
+- `loading`：显示加载态，不清空表单其他输入。
+- `ready + []`：显示“暂无已安装 Skill”和前往技能管理入口。
+- `error`：显示加载失败和重试入口。
+- 已选但不可用：保留 slug，标记“不可用”，允许更换。
+- 下拉选项仅展示已安装 Skill，不展示“不调用 Skill”。
+
+## 7. 创建与编辑命令
+
+### 7.1 创建
 
 ```ts
-{
-  name: `试跑 - ${scenario.name}`,
-  prompt: draft.generatedPrompt,
-  schedule: draft.oneShotSchedule,
-  deliver: draft.generatedDeliver
-}
+skills: selectedSkill ? [selectedSkill] : undefined
 ```
 
-常态任务：
+- 有选择时生成且只生成一个 `--skill '<slug>'`。
+- 无选择时不生成 `--skill` 或 `--clear-skills`。
 
-```ts
-{
-  name: draft.generatedName,
-  prompt: draft.generatedPrompt,
-  schedule: draft.recurringSchedule,
-  deliver: draft.generatedDeliver
-}
-```
+### 7.2 编辑
 
-试跑任务和常态任务来自同一份 draft，只替换 schedule 和 name。
+`EditCronJobPatch.skills` 使用以下三态：
 
-## 最近执行匹配
+| patch 值 | CLI | 含义 |
+| --- | --- | --- |
+| `undefined` | 不生成 Skill flag | 保持原绑定，不触碰现有列表 |
+| `[slug]` | `--skill '<slug>'` | 用一个 Skill 替换原列表 |
+| `[]` | `--clear-skills` | 清空原列表 |
 
-v1 不依赖后端 metadata。匹配优先级：
+命令构造必须抽为纯函数并独立测试，所有 slug 必须使用现有 `shellQuote`。
 
-1. `run.job_name === draft.oneShotJobName`
-2. `run.job_prompt === draft.generatedPrompt`
-3. `run.job_name` 包含场景名称，且 `run.run_at` 晚于试跑发起时间
+### 7.3 外部多 Skill 任务
 
-轮询策略：
+一期 UI 仅回显首个 Skill，但若用户未修改 Skill 字段，patch 必须保持 `skills === undefined`，从而保留外部 CLI 创建的完整多 Skill 列表。用户主动更换或清空时，才收敛为一期的零/单 Skill模型。
 
-- 创建一次性执行任务后立即刷新 jobs 和 recent runs。
-- v1 不再打开等待结果弹窗，也不在前台持续轮询；结果通过所选消息通道主动推送，并可在最近执行中查看。
-- 添加为自动任务入口放在页面提示条和场景卡入口中承接。
+### 7.4 提交前失效检查
 
-## 测试
+- 创建时选择 Skill，或编辑时更换 Skill：保存前必须使用当前列表验证所选 slug。
+- 编辑弹窗打开时绑定可用、保存前刷新确认已经卸载：阻止保存，提示重新选择。
+- 编辑弹窗打开时绑定已经不可用且用户未修改 Skill：允许保存其他字段，patch 不触碰 Skill，以满足“不自动解绑”。
+- 重新验证失败时：未绑定的普通任务仍可提交；新建或变更后的 Skill 绑定不得使用无法确认的陈旧选择提交。
 
-新增单测：
+## 8. 详情展示
 
-- `scenario-task-builder.test.ts`
-  - 四个场景都能生成有效 draft。
-  - A股 prompt 包含非投资建议。
-  - AI 动态 prompt 不包含 LightVela 启发小节。
-  - 实时类场景 prompt 显式限制 `datetime` / `web_search` / `web_fetch`、3 组关键词、4 个网页来源和来源保留。
-  - 一次性 schedule 晚于当前时间。
-  - 周期 schedule 符合默认频率。
-  - 最近执行匹配优先 job name / prompt。
+`CronJobDetailModal` 必须新增“调用 Skill”字段：
 
-更新现有测试：
+| job.skills | 列表状态 | 展示 |
+| --- | --- | --- |
+| `[]` | 任意 | 不调用 Skill |
+| `[slug]` | ready 且包含 slug | 展示名称 + slug |
+| `[slug]` | ready 且不包含 slug | 展示名称 + slug + 不可用 |
+| `[slug]` | loading | 展示名称 + slug + 状态确认中 |
+| `[slug]` | error | 展示名称 + slug + 暂无法确认 |
 
-- `openclaw-automations-panel.test.ts`
-  - 如组件导出纯 helper，只补 helper 级测试。
-  - 避免在本轮把整页测试扩展为脆弱的 DOM 集成测试。
+不可用状态只影响提示，不得修改 job、不触发自动清除，也不得在测试运行时移除 `job.skills`。
 
-## 风险与降级
+## 9. 兼容性、隐私与国际化
 
-- 最近执行延迟：消息通道主动推送优先，最近执行作为补充查看入口。
-- Cron 创建失败：保留 draft，显示错误 toast。
-- 外部通道不可用：场景器首版要求用户先连接微信 / QQ；底层 builder 保留 `local` 仅用于历史数据兼容。
-- 任务数已达上限：复用现有上限确认逻辑，不绕开限制。
+### 9.1 兼容性
+
+- `CronJob.skills` 缺失或空数组继续按普通任务处理。
+- 现有 create、edit、test run、pause、resume、remove 行为不变。
+- 测试运行继续携带 `job.skills`，不新增降级逻辑。
+- 不新增路由、后端字段、数据库迁移或特性开关。
+
+### 9.2 隐私
+
+- 不新增记录任务说明全文、Skill 内容或用户自定义 Skill 名称的日志。
+- 不把 prompt 或 slug 加入现有大同埋点参数。
+- 错误提示可以显示当前用户已经可见的 slug，但不得把 Skill 文件内容发送到埋点或普通日志。
+
+### 9.3 国际化
+
+所有新增中文 key 必须通过现有 `useT()` 接入，并运行 `pnpm i18n:extract` 更新：
+
+- `src/i18n/generated/zh-CN.json`
+- `src/i18n/generated/en-US.json`
+- `src/i18n/generated/zh-to-key.json`
+
+国内站和国际站必须验证创建、编辑、详情、清空、空态、错误态和不可用态。
+
+## 10. 测试要求
+
+### 单元测试
+
+- 已安装 Skill JSON、表格、纯文本解析与去重。
+- 展示名和搜索匹配。
+- create 命令有/无 Skill。
+- edit 命令保持/替换/清空 Skill。
+- 表单 create/edit 三态映射及外部多 Skill 不误覆盖。
+- 可用、不可用、loading、error 详情状态判定。
+
+### 组件测试
+
+- 默认显示未选择提示。
+- 搜索、选择和切换，不展示“不调用 Skill”选项。
+- loading、空态、失败重试。
+- 已绑定但不可用的保留与标记。
+- 基本 ARIA 属性。
+
+### 项目门禁
+
+- 目标 Vitest 测试通过。
+- `pnpm i18n:check` 通过。
+- `pnpm check` 通过。
+- 国内站与国际站本地页面完成可见验证。

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildEffectiveWindowScript,
   buildCreateCommand,
+  buildEditCommand,
   buildTestRunMarker,
   createCronJob,
   createCronJobWithScriptRollback,
@@ -248,6 +249,41 @@ describe("buildCreateCommand", () => {
       name: "morning",
       script: "lightvela-effective-window-job-1.py",
     })).toBe("hermes cron create '0 9 * * *' 'hello' --name 'morning' --script 'lightvela-effective-window-job-1.py'");
+  });
+
+  it("attaches one selected Skill slug", () => {
+    expect(buildCreateCommand({
+      schedule: "0 9 * * *",
+      prompt: "summarize news",
+      name: "morning news",
+      skills: ["finance-news"],
+    })).toBe("hermes cron create '0 9 * * *' 'summarize news' --name 'morning news' --skill 'finance-news'");
+  });
+});
+
+describe("buildEditCommand", () => {
+  it("leaves the Skill list untouched when the patch omits skills", () => {
+    expect(buildEditCommand("job-1", { name: "daily" })).toBe(
+      "hermes cron edit 'job-1' --name 'daily'",
+    );
+  });
+
+  it("replaces the Skill list and shell-quotes every slug", () => {
+    expect(buildEditCommand("job-1", { skills: ["report's-helper"] })).toBe(
+      "hermes cron edit 'job-1' --skill 'report'\\''s-helper'",
+    );
+  });
+
+  it("keeps Hermes repeated --skill compatibility", () => {
+    expect(buildEditCommand("job-1", { skills: ["first", "second"] })).toBe(
+      "hermes cron edit 'job-1' --skill 'first' --skill 'second'",
+    );
+  });
+
+  it("clears the Skill list only when an empty array is explicit", () => {
+    expect(buildEditCommand("job-1", { skills: [] })).toBe(
+      "hermes cron edit 'job-1' --clear-skills",
+    );
   });
 });
 

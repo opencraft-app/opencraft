@@ -11,6 +11,7 @@ import {
   formatEffectiveWindowTooltipLines,
   formatScheduleTooltip,
   formatTestSendError,
+  getAutomationSkillSelectionIssue,
   getTestSendFailureFallback,
   getLastAgentRunForJob,
   getEffectiveWindowStatus,
@@ -26,12 +27,88 @@ import {
   parseInitialSchedule,
   parseOnceScheduleDate,
   sanitizeClockTimeDraft,
+  shouldShowRecentRunsLimitHint,
   shouldRejectPastOnceSchedule,
-} from "../openclaw-automations-panel";
+  toCreateCronSkills,
+  toEditCronSkills,
+} from "../hermes-agent-automations-panel";
 import type { CronJob, CronRunRecord } from "@/lib/hermes-cron-client";
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+describe("recent run limit hint", () => {
+  it("shows the hint only when at least 10 runs are displayed", () => {
+    expect(shouldShowRecentRunsLimitHint(0)).toBe(false);
+    expect(shouldShowRecentRunsLimitHint(1)).toBe(false);
+    expect(shouldShowRecentRunsLimitHint(9)).toBe(false);
+    expect(shouldShowRecentRunsLimitHint(10)).toBe(true);
+    expect(shouldShowRecentRunsLimitHint(11)).toBe(true);
+  });
+});
+
+describe("automation Skill form mapping", () => {
+  it("omits Skill input for ordinary tasks and stores one selected slug", () => {
+    expect(toCreateCronSkills("")).toBeUndefined();
+    expect(toCreateCronSkills("finance-news")).toEqual(["finance-news"]);
+  });
+
+  it("distinguishes keeping, replacing and clearing an edit binding", () => {
+    expect(toEditCronSkills(["finance-news"], "finance-news")).toBeUndefined();
+    expect(toEditCronSkills(["finance-news"], "market-data")).toEqual(["market-data"]);
+    expect(toEditCronSkills(["finance-news"], "")).toEqual([]);
+  });
+
+  it("does not collapse an external multi-Skill task when its first binding is unchanged", () => {
+    expect(toEditCronSkills(["first", "second"], "first")).toBeUndefined();
+  });
+
+  it("rejects a new or changed binding that is missing or cannot be verified", () => {
+    expect(getAutomationSkillSelectionIssue({
+      mode: "create",
+      initialSkills: [],
+      selectedSkill: "finance-news",
+      initialSkillWasAvailable: null,
+      verificationState: { status: "ready", slugs: [], error: null },
+    })).toBe("unavailable");
+
+    expect(getAutomationSkillSelectionIssue({
+      mode: "edit",
+      initialSkills: ["finance-news"],
+      selectedSkill: "market-data",
+      initialSkillWasAvailable: true,
+      verificationState: { status: "error", slugs: ["finance-news"], error: "network failed" },
+    })).toBe("unverified");
+  });
+
+  it("allows ordinary tasks and unchanged historical unavailable bindings", () => {
+    expect(getAutomationSkillSelectionIssue({
+      mode: "create",
+      initialSkills: [],
+      selectedSkill: "",
+      initialSkillWasAvailable: null,
+      verificationState: { status: "error", slugs: [], error: "network failed" },
+    })).toBeNull();
+
+    expect(getAutomationSkillSelectionIssue({
+      mode: "edit",
+      initialSkills: ["removed-skill"],
+      selectedSkill: "removed-skill",
+      initialSkillWasAvailable: false,
+      verificationState: { status: "ready", slugs: [], error: null },
+    })).toBeNull();
+  });
+
+  it("detects a binding that became unavailable while the edit form was open", () => {
+    expect(getAutomationSkillSelectionIssue({
+      mode: "edit",
+      initialSkills: ["finance-news"],
+      selectedSkill: "finance-news",
+      initialSkillWasAvailable: true,
+      verificationState: { status: "ready", slugs: [], error: null },
+    })).toBe("unavailable");
+  });
 });
 
 describe("buildScheduleString and parseInitialSchedule", () => {

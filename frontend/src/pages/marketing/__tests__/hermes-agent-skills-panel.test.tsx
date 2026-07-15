@@ -85,9 +85,9 @@ vi.mock("../hermes-agent-experts-panel", () => ({
   ExpertsPanel: () => <div>技能包列表</div>,
 }));
 
-function TestSkillPanel() {
+function TestSkillPanel({ skillHubApiUrl }: { skillHubApiUrl?: string }) {
   return (
-    <div data-testid="sdk-skill-panel">
+    <div data-testid="sdk-skill-panel" data-skillhub-api-url={skillHubApiUrl}>
       单技能安装面板
       <input className="lh-std-skill-panel__installed-search-input" placeholder="搜索技能名称" />
     </div>
@@ -146,6 +146,7 @@ describe("HermesAgentSkillsPanel", () => {
     expect(packagesTab).toHaveStyle({ color: "rgba(0, 0, 0, 0.38)", fontSize: "18px" });
     expect(screen.getByText("单技能安装面板")).toBeInTheDocument();
     expect(screen.getByTestId("sdk-skill-panel").closest(".lv-agent-skills-sdk-panel")).not.toBeNull();
+    expect(screen.getByTestId("sdk-skill-panel")).toHaveAttribute("data-skillhub-api-url", "https://api.skillhub.cn");
     expect(screen.getByPlaceholderText("搜索已安装技能名称")).toBeInTheDocument();
 
     await userEvent.click(packagesTab);
