@@ -41,6 +41,7 @@ export interface Skill {
   name: string;
   description?: string;
   installs?: number;
+  downloads?: number;
   score?: number;
   /** ClawHub 作者 handle */
   author?: string;
@@ -297,6 +298,7 @@ interface SkillhubSearchItem {
   category?: string;
   description?: string;
   description_zh?: string;
+  downloads?: number;
   installs?: number;
   name?: string;
   score?: number;
@@ -314,6 +316,7 @@ function mapSkillhubItem(item: SkillhubSearchItem): Skill | null {
     name: item.name?.trim() || slug,
     description: item.description_zh?.trim() || item.description?.trim() || undefined,
     installs: typeof item.installs === "number" ? item.installs : undefined,
+    downloads: typeof item.downloads === "number" ? item.downloads : undefined,
     score: typeof item.score === "number" ? item.score : undefined,
     sourceOrg: item.source?.trim() || undefined,
     category: item.category?.trim() || undefined,
@@ -805,10 +808,14 @@ export function formatInstalls(value?: number): string {
   return String(value);
 }
 
-/** 仅用于展示热度徽标；排序仍使用原始 installs 数值。 */
+/** 仅用于展示热度徽标；国际站看 installs，国内站看 SkillHub downloads。 */
 export type PopularityTier = 1;
 
-export function getPopularityTier(value?: number): PopularityTier | undefined {
+export function getPopularityTier(
+  skill: Pick<Skill, "registry" | "installs" | "downloads">,
+): PopularityTier | undefined {
+  const value = skill.registry === "skillhub" ? skill.downloads : skill.installs;
   if (typeof value !== "number") return undefined;
-  return value > 20_000 ? 1 : undefined;
+  const threshold = skill.registry === "skillhub" ? 10_000 : 20_000;
+  return value > threshold ? 1 : undefined;
 }

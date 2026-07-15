@@ -18,6 +18,33 @@ export type DomesticFeaturedSkill = {
   heroClassName: string;
 };
 
+// Snapshot from SkillHub on 2026-07-15. Fixed cards do not refresh this at runtime.
+const DOMESTIC_DOWNLOAD_SNAPSHOT: Readonly<Record<string, number>> = {
+  "find-skill-skillhub": 18_004,
+  "image-prompt-skill": 7_852,
+  poster: 15_691,
+  "ecommerce-product-selector": 8_405,
+  "tencent-news": 8_027,
+  "valuation-analysis": 20_710,
+  "financial-report-analysis": 3_798,
+  "stock-selecter": 9_846,
+  "xiaohongshu-content-tools": 3_311,
+  "quant-backtest-strategy": 3_911,
+  topnews: 10_819,
+  "unclecheng-reduce-ai-perception-v2": 37_283,
+  "douyin-copy-extract": 17_472,
+  g113593: 13_681,
+  "weixin-article-writer": 10_734,
+  "lingyi-wx-viral-script-generator": 10_503,
+  "govwriter-pro": 7_434,
+  "tencent-docs": 149_853,
+  "pdf-image-text-extractor": 30_994,
+  "pptx-generator": 20_994,
+  "gongwenformat-pro": 12_046,
+  "meeting-notes-assistant": 4_577,
+  "bid-tender-master": 3_740,
+};
+
 function skill(
   rawId: string,
   name: string,
@@ -31,6 +58,7 @@ function skill(
     name,
     description,
     installs,
+    downloads: DOMESTIC_DOWNLOAD_SNAPSHOT[rawId],
     sourceOrg: "SkillHub",
   };
 }

@@ -683,7 +683,7 @@ function SkillCard({
   description?: string;
 }) {
   const t = useT();
-  const popularityTier = getPopularityTier(skill.installs);
+  const popularityTier = getPopularityTier(skill);
   const content = (
     <>
       <img
@@ -1591,13 +1591,13 @@ export function SkillsDemoPanel({
         const result = await dataLayer.install(skill);
         if (result.ok) {
           setKnownInstalledIds((current) => new Set(current).add(id));
-          toast.success({ content: t("已安装技能 {{name}}", { name: skill.name }) });
+          toast.success(t("下载成功"));
           await refreshInstalled();
         } else {
-          toast.error({ content: result.message || t("安装失败") });
+          toast.error(result.message || t("安装失败"));
         }
       } catch (error) {
-        toast.error({ content: error instanceof Error ? error.message : t("安装失败") });
+        toast.error(error instanceof Error ? error.message : t("安装失败"));
       } finally {
         setInstallingId(null);
       }
@@ -1619,13 +1619,13 @@ export function SkillsDemoPanel({
             next.delete(key);
             return next;
           });
-          toast.success({ content: t("已删除技能 {{name}}", { name: skill.name }) });
+          toast.success(t("卸载成功"));
           await refreshInstalled();
         } else {
-          toast.error({ content: result.message || t("删除失败") });
+          toast.error(result.message || t("删除失败"));
         }
       } catch (error) {
-        toast.error({ content: error instanceof Error ? error.message : t("删除失败") });
+        toast.error(error instanceof Error ? error.message : t("删除失败"));
       } finally {
         setUninstallingKey(null);
       }

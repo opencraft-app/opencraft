@@ -72,6 +72,7 @@ describe("domestic SkillHub command and response handling", () => {
         skills: [{
           category: "knowledge-management",
           description_zh: "帮助整理知识资料",
+          downloads: 12_345,
           installs: 123,
           name: "Builder Radar",
           slug: "builder-radar",
@@ -84,6 +85,7 @@ describe("domestic SkillHub command and response handling", () => {
       rawId: "builder-radar",
       description: "帮助整理知识资料",
       category: "knowledge-management",
+      downloads: 12_345,
     })]);
 
     const installed = parseSkillhubList(JSON.stringify({
@@ -99,9 +101,14 @@ describe("domestic SkillHub command and response handling", () => {
 });
 
 describe("skill popularity display", () => {
-  it("shows one Popular badge only above 20,000 installs", () => {
-    expect(getPopularityTier(20_001)).toBe(1);
-    expect(getPopularityTier(20_000)).toBeUndefined();
-    expect(getPopularityTier(undefined)).toBeUndefined();
+  it("uses installs above 20,000 for international registries", () => {
+    expect(getPopularityTier({ registry: "skills-sh", installs: 20_001 })).toBe(1);
+    expect(getPopularityTier({ registry: "skills-sh", installs: 20_000 })).toBeUndefined();
+  });
+
+  it("uses downloads above 10,000 for domestic SkillHub results", () => {
+    expect(getPopularityTier({ registry: "skillhub", downloads: 10_001, installs: 0 })).toBe(1);
+    expect(getPopularityTier({ registry: "skillhub", downloads: 10_000, installs: 99_999 })).toBeUndefined();
+    expect(getPopularityTier({ registry: "skillhub", downloads: undefined })).toBeUndefined();
   });
 });
