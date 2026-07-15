@@ -1681,7 +1681,7 @@ export function SkillsDemoPanel({
               value="experts"
               className="relative !h-9 !min-w-0 !rounded-none !bg-transparent !px-0 !py-0 pb-2 text-sm font-medium text-black/55 !shadow-none transition-colors after:absolute after:bottom-[-1px] after:left-0 after:h-0.5 after:w-full after:bg-transparent hover:text-black/80 data-[state=active]:!bg-transparent data-[state=active]:text-black/90 data-[state=active]:!shadow-none data-[state=active]:after:bg-black"
             >
-              {t("专家")}
+              {t("技能包")}
             </TabsTrigger>
           ) : null}
           <TabsTrigger

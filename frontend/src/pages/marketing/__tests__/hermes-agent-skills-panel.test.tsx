@@ -141,11 +141,11 @@ describe("HermesAgentSkillsPanel", () => {
     const outerTabs = within(screen.getByRole("tablist", { name: "技能页面切换" }));
     const demoTabs = within(screen.getByRole("tablist", { name: "技能市场页面切换" }));
     const skillsTab = outerTabs.getByRole("tab", { name: "技能" });
-    const expertsTab = demoTabs.getByRole("tab", { name: "专家" });
+    const expertsTab = demoTabs.getByRole("tab", { name: "技能包" });
 
     expect(skillsTab).toHaveAttribute("aria-selected", "true");
     expect(skillsTab).toHaveStyle({ fontSize: "18px", fontWeight: "600", lineHeight: "24px" });
-    expect(screen.queryByRole("tab", { name: "技能包" })).not.toBeInTheDocument();
+    expect(expertsTab).toBeInTheDocument();
     expect(screen.getByText("从 SkillHub 搜索、安装和管理技能，也可以创建属于你的技能。")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("搜索 SkillHub 中的技能")).toBeInTheDocument();
 
@@ -161,18 +161,18 @@ describe("HermesAgentSkillsPanel", () => {
 
     renderPanel("experts");
 
-    expect(screen.getByRole("tab", { name: "专家" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "技能包" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByText("技能包列表")).toBeInTheDocument();
   });
 
-  it("hides the skill package tab outside the CN site", async () => {
+  it("keeps the Skills demo package tab independent of the legacy outer tab", async () => {
     expect(getInitialAgentSkillsTab("experts", false)).toBe("skills");
     expect(getInitialAgentSkillsTab("packages", false)).toBe("skills");
 
     renderPanel("packages", false);
 
     expect(within(screen.getByRole("tablist", { name: "技能页面切换" })).getByRole("tab", { name: "技能" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.queryByRole("tab", { name: "技能包" })).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "技能包" })).toBeInTheDocument();
     await userEvent.click(within(screen.getByRole("tablist", { name: "技能市场页面切换" })).getByRole("tab", { name: "技能" }));
     expect(screen.getByPlaceholderText("搜索 SkillHub 中的技能")).toBeInTheDocument();
   });
