@@ -12,11 +12,9 @@ import { LoginModal } from "@/components/site/login-modal";
 import { PublicSiteHeader, type RenderPublicSiteHeaderLink } from "@/components/site/public-site-header";
 import type { LanguageSwitcherVariant } from "@/components/site/language-switcher";
 import { useOpenClaw } from "@/contexts/openclaw-context";
-import { useRealnamePhoneVerificationEnabled } from "@/contexts/runtime-config-context";
 import { useSession } from "@/contexts/session-context";
-import { REALNAME_LEVEL } from "@/domain/types";
 import { useT } from "@/i18n/t";
-import { isCN, isGlobal } from "@/lib/region";
+import { isGlobal } from "@/lib/region";
 import { oauthErrorMessage } from "@/lib/oauth";
 import { captureProductEvent, PRODUCT_ANALYTICS_EVENTS, PRODUCT_ANALYTICS_LOCATIONS } from "@/observability/posthog";
 import { DATONG_PAGE_IDS } from "@/observability/datong";
@@ -25,8 +23,6 @@ import type { PublicSiteLocale } from "@/lib/public-site-navigation";
 import {
   AGENTS_HOME_PATH,
   SUBSCRIBE_PATH,
-  ACCOUNT_PATH,
-  REALNAME_REQUIRED_QUERY_KEY,
   getAgentCreatingPath,
 } from "@/lib/agent-routes";
 
@@ -67,9 +63,8 @@ export const LandingPageView = ({
   renderLink,
 }: LandingPageViewProps) => {
   const t = useT();
-  const { isAuthenticated, session } = useSession();
+  const { isAuthenticated } = useSession();
   const { bots, isSubscribed } = useOpenClaw();
-  const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
   const oauthError = useMemo(() => new URLSearchParams(locationSearch).get("oauth_error"), [locationSearch]);
   const oauthInitialError = useMemo(() => oauthErrorMessage(oauthError), [oauthError]);
   const [showLogin, setShowLogin] = useState(false);
@@ -105,18 +100,8 @@ export const LandingPageView = ({
       navigateTo(AGENTS_HOME_PATH);
       return;
     }
-    // 国内站：已登录用户在进入创建流程前，必须先完成实名认证。
-    // 未实名则跳转账号管理页，并通过 query 触发页面顶部的实名提醒 tips。
-    if (isCN) {
-      const user = session?.user;
-      const realnameVerified = realnamePhoneVerificationEnabled
-        ? user?.realnameLevel === REALNAME_LEVEL.PHONE_3FA
-        : Boolean(user?.realnameVerified);
-      if (!realnameVerified) {
-        navigateTo(`${ACCOUNT_PATH}?${REALNAME_REQUIRED_QUERY_KEY}=1`);
-        return;
-      }
-    }
+    // 功能点1：首页「创建」不再前置实名认证，已登录用户直接进入后续流程。
+    // 实名引导下沉到订阅套餐页点「订阅」按钮时通过 tips 提示，降低前置门槛、提升转化。
     // 已登录但未订阅：先去订阅页
     if (!isSubscribed) {
       navigateTo(SUBSCRIBE_PATH);
@@ -125,7 +110,7 @@ export const LandingPageView = ({
     // 已登录且已订阅：有智能体则进 agent 默认页（/agents），
     // 没有智能体则进入创建流程，而不是直接跳到人设设置页。
     navigateTo(bots.length > 0 ? AGENTS_HOME_PATH : getAgentCreatingPath(true));
-  }, [navigateTo, isAuthenticated, isSubscribed, bots.length, session?.user, realnamePhoneVerificationEnabled]);
+  }, [navigateTo, isAuthenticated, isSubscribed, bots.length]);
 
   // 首页主按钮文案：
   //   - 未开通套餐（!isSubscribed，含未登录）→ 「免费试用」（转化引导，降低开通决策门槛）
