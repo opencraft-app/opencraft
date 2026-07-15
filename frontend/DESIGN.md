@@ -28,10 +28,12 @@
 
 设置页里的自定义 hover/focus 悬浮提示，默认使用文件管理器当前统一后的 tooltip 样式。
 
-- 触发器外层使用 `group relative inline-flex`。
-- Tooltip 展示在触发器上方，居中对齐：`absolute bottom-full left-1/2 mb-2 -translate-x-1/2`。
+- 无裁剪祖先的简单场景，触发器外层可以使用 `group relative inline-flex`。
+- 内联 Tooltip 默认展示在触发器上方并居中对齐：`absolute bottom-full left-1/2 mb-2 -translate-x-1/2`；位于滚动或裁剪容器时改用下述 Portal 规则。
 - 视觉样式：白底深色字，`border border-[var(--border-subtle)]`，`rounded-md`，`px-3 py-1.5`，`text-[11px] font-medium`，轻阴影如 `0 8px 24px rgba(15,23,42,0.12)`。
 - Tooltip 底部带白底小三角，可以用一个 `h-2 w-2 rotate-45` 的方块实现，并给三角加底边/右边边框衔接气泡。
 - 行为：Tooltip 本体必须允许鼠标进入和文本选择，使用 `pointer-events-auto select-text`，不要使用 `pointer-events-none`。默认 `opacity-0`，`group-hover` 和必要的 `group-focus-within` 时显示，过渡时间保持短。
 - 可复制性：当鼠标从触发器移到 tooltip 气泡内时，气泡应保持可见，用户可以拖拽选择并复制里面的文案。使用 portal 或 JS 控制显隐的 tooltip，需要在触发器与气泡之间保留短暂 hover 缓冲，或让气泡自身的 `mouseenter` / `mouseleave` 参与显隐状态。
+- 裁剪边界（强制）：只要 Tooltip 触发器位于 `overflow-hidden`、`overflow-auto`、`overflow-y-auto`、滚动弹窗或其他会建立裁剪区域的祖先内，禁止把 Tooltip 作为该容器内的 `absolute` 子元素。必须通过 `createPortal(..., document.body)` 或项目统一浮层组件渲染为 `fixed` 浮层，并基于触发器的 `getBoundingClientRect()` 定位；窗口 resize 或祖先滚动时需要同步更新位置。
+- `z-index` 无法突破祖先的 overflow clipping。发现 Tooltip 被弹窗、面板或滚动区截断时，不要通过继续提高 `z-index` 修复；验收时至少检查浮层已脱离裁剪容器，并验证贴近容器边缘时仍完整可见。
 - 不要用浏览器原生 `title` 来替代这个样式；禁用按钮需要解释原因时，也使用这套 tooltip，例如 `未选择文件`。

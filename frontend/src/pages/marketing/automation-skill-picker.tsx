@@ -1,5 +1,6 @@
-import { AlertTriangle, Check, ChevronDown, Loader2, Search } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { AlertTriangle, Check, ChevronDown, CircleHelp, Loader2, Search, X } from "lucide-react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { useT } from "@/i18n/t";
 import { AGENT_SECTION_PATH_BY_ID } from "@/lib/agent-routes";
@@ -24,6 +25,11 @@ export interface AutomationSkillBindingSummaryProps {
 function getSkillLabel(slug: string): string {
   return formatInstalledSkillDisplayName(slug) || slug;
 }
+
+const HELP_TOOLTIP_MAX_WIDTH = 320;
+const HELP_TOOLTIP_VIEWPORT_MARGIN = 16;
+const HELP_TOOLTIP_GAP = 8;
+const HELP_TOOLTIP_CLOSE_DELAY_MS = 120;
 
 export function AutomationSkillBindingSummary({
   value,
@@ -66,10 +72,17 @@ export function AutomationSkillPicker({
 }: AutomationSkillPickerProps) {
   const t = useT();
   const listboxId = useId();
+  const helpTooltipId = useId();
   const pickerRef = useRef<HTMLDivElement>(null);
+  const helpButtonRef = useRef<HTMLButtonElement>(null);
+  const helpCloseTimerRef = useRef<number | null>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const selectedName = value ? getSkillLabel(value) : t("请选择自动任务需要调用的技能");
+  const [helpTooltipOpen, setHelpTooltipOpen] = useState(false);
+  const [helpTooltipPosition, setHelpTooltipPosition] = useState({ left: 0, top: 0 });
+  const selectedName = value
+    ? getSkillLabel(value)
+    : t("选择你希望 Agent 稳定调用的技能");
   const selectedUnavailable = Boolean(
     value && loadState.status === "ready" && !loadState.slugs.includes(value),
   );
@@ -92,6 +105,53 @@ export function AutomationSkillPicker({
     setQuery("");
   };
 
+  const clearSelection = () => {
+    onChange("");
+    setOpen(false);
+    setQuery("");
+  };
+
+  const clearHelpCloseTimer = useCallback(() => {
+    if (helpCloseTimerRef.current === null) return;
+    window.clearTimeout(helpCloseTimerRef.current);
+    helpCloseTimerRef.current = null;
+  }, []);
+
+  const updateHelpTooltipPosition = useCallback(() => {
+    const rect = helpButtonRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const tooltipWidth = Math.min(
+      HELP_TOOLTIP_MAX_WIDTH,
+      Math.max(0, window.innerWidth - HELP_TOOLTIP_VIEWPORT_MARGIN * 2),
+    );
+    const halfWidth = tooltipWidth / 2;
+    const centeredLeft = rect.left + rect.width / 2;
+    const left = Math.min(
+      Math.max(centeredLeft, HELP_TOOLTIP_VIEWPORT_MARGIN + halfWidth),
+      window.innerWidth - HELP_TOOLTIP_VIEWPORT_MARGIN - halfWidth,
+    );
+
+    setHelpTooltipPosition({
+      left,
+      top: rect.top - HELP_TOOLTIP_GAP,
+    });
+  }, []);
+
+  const showHelpTooltip = () => {
+    clearHelpCloseTimer();
+    updateHelpTooltipPosition();
+    setHelpTooltipOpen(true);
+  };
+
+  const scheduleHelpTooltipClose = () => {
+    clearHelpCloseTimer();
+    helpCloseTimerRef.current = window.setTimeout(() => {
+      setHelpTooltipOpen(false);
+      helpCloseTimerRef.current = null;
+    }, HELP_TOOLTIP_CLOSE_DELAY_MS);
+  };
+
   useEffect(() => {
     if (!open) return;
 
@@ -105,12 +165,56 @@ export function AutomationSkillPicker({
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, [open]);
 
+  useEffect(() => {
+    if (!helpTooltipOpen) return;
+
+    window.addEventListener("resize", updateHelpTooltipPosition);
+    window.addEventListener("scroll", updateHelpTooltipPosition, true);
+    return () => {
+      window.removeEventListener("resize", updateHelpTooltipPosition);
+      window.removeEventListener("scroll", updateHelpTooltipPosition, true);
+    };
+  }, [helpTooltipOpen, updateHelpTooltipPosition]);
+
+  useEffect(() => () => clearHelpCloseTimer(), [clearHelpCloseTimer]);
+
   return (
     <div className="mt-4">
-      <label className="block text-sm font-medium text-black/80">
-        {t("调用技能")}
-        <span className="ml-1 text-xs font-normal text-black/40">{t("（可选）")}</span>
-      </label>
+      <div className="flex items-center gap-1 text-sm font-medium text-black/80">
+        <span>{t("调用技能")}</span>
+        <span
+          className="relative inline-flex"
+          onMouseEnter={showHelpTooltip}
+          onMouseLeave={scheduleHelpTooltipClose}
+        >
+          <button
+            ref={helpButtonRef}
+            type="button"
+            aria-label={t("为什么选择调用技能更稳定")}
+            aria-describedby={helpTooltipId}
+            onFocus={showHelpTooltip}
+            onBlur={scheduleHelpTooltipClose}
+            className="inline-flex size-4 items-center justify-center rounded-full text-black/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/30"
+          >
+            <CircleHelp className="size-3.5" aria-hidden="true" />
+          </button>
+        </span>
+        {helpTooltipOpen && typeof document !== "undefined" && createPortal(
+          <span
+            id={helpTooltipId}
+            role="tooltip"
+            onMouseEnter={showHelpTooltip}
+            onMouseLeave={scheduleHelpTooltipClose}
+            style={{ left: helpTooltipPosition.left, top: helpTooltipPosition.top }}
+            className="pointer-events-auto fixed z-[260] w-80 max-w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-full select-text rounded-md border border-[var(--border-subtle)] bg-white px-3 py-2 text-pretty text-[11px] font-medium leading-relaxed text-[var(--text-primary)] shadow-[0_8px_24px_rgba(15,23,42,0.12)]"
+          >
+            {t("在此处选择技能后，Agent 会在执行任务前加载该技能，相比仅在任务说明中通过提示词要求调用技能更加稳定。")}
+            <span className="absolute left-1/2 top-full size-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white" />
+          </span>,
+          document.body,
+        )}
+        <span className="text-xs font-normal text-black/40">{t("（可选）")}</span>
+      </div>
       <div ref={pickerRef} className="relative mt-1.5">
         <button
           type="button"
@@ -127,7 +231,7 @@ export function AutomationSkillPicker({
             setOpen(false);
             setQuery("");
           }}
-          className="flex w-full items-center justify-between gap-3 rounded-lg border border-black/10 bg-white px-3 py-2 text-left text-sm text-black/85 transition hover:border-black/20 focus:border-black/30 focus:outline-none"
+          className="flex w-full items-center justify-between gap-3 rounded-md border border-black/10 bg-white py-2 pl-3 pr-11 text-left text-sm text-black/85 transition hover:border-black/20 focus:border-black/30 focus:outline-none"
         >
           <span className={`min-w-0 truncate ${value ? "" : "text-black/35"}`}>{selectedName}</span>
           <span className="flex shrink-0 items-center gap-2">
@@ -139,14 +243,29 @@ export function AutomationSkillPicker({
             {selectedUnknown && loadState.status === "error" && (
               <span className="text-xs text-black/40">{t("暂无法确认")}</span>
             )}
-            <ChevronDown className={`h-4 w-4 text-black/40 transition ${open ? "rotate-180" : ""}`} />
           </span>
         </button>
 
+        {value ? (
+          <button
+            type="button"
+            aria-label={t("移除已选择的技能")}
+            onClick={clearSelection}
+            className="group/clear absolute right-0 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-md text-black/40 focus:outline-none focus-visible:bg-black/[0.04] focus-visible:ring-2 focus-visible:ring-black/15"
+          >
+            <ChevronDown className="absolute size-4 transition-opacity duration-150 group-hover/clear:opacity-0 group-focus-visible/clear:opacity-0" />
+            <X className="size-4 opacity-0 transition-opacity duration-150 group-hover/clear:opacity-100 group-focus-visible/clear:opacity-100" />
+          </button>
+        ) : (
+          <span className="pointer-events-none absolute right-0 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center text-black/40">
+            <ChevronDown className={`size-4 transition-transform duration-150 ${open ? "rotate-180" : ""}`} />
+          </span>
+        )}
+
         {open && (
           <div className="absolute z-40 mt-1.5 w-full overflow-hidden rounded-lg border border-black/10 bg-white shadow-xl">
-            <div className="border-b border-black/[0.06] p-2">
-              <label className="flex items-center gap-2 rounded-md bg-black/[0.035] px-2.5 py-2">
+            <div className="border-b border-black/[0.06] p-1.5">
+              <label className="flex items-center gap-2 rounded-md bg-black/[0.035] px-2.5 py-1.5">
                 <Search className="h-4 w-4 shrink-0 text-black/35" />
                 <input
                   type="search"
@@ -160,14 +279,14 @@ export function AutomationSkillPicker({
               </label>
             </div>
 
-            <div id={listboxId} role="listbox" aria-label={t("已安装 Skill")} className="max-h-64 overflow-y-auto p-1.5">
+            <div id={listboxId} role="listbox" aria-label={t("已安装 Skill")} className="max-h-48 overflow-y-auto p-1">
               {showSelectedFallback && (
                 <button
                   type="button"
                   role="option"
                   aria-selected="true"
                   onClick={() => choose(value)}
-                  className="flex w-full items-center justify-between gap-3 rounded-md bg-amber-500/[0.06] px-2.5 py-2 text-left"
+                  className="flex w-full items-center justify-between gap-3 rounded-md bg-amber-500/[0.06] px-2.5 py-1.5 text-left"
                 >
                   <span className="flex min-w-0 items-baseline gap-2 overflow-hidden">
                     <span className="truncate text-sm font-medium text-black/80">{selectedName}</span>
@@ -188,7 +307,7 @@ export function AutomationSkillPicker({
                     role="option"
                     aria-selected={value === slug}
                     onClick={() => choose(slug)}
-                    className="flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-2 text-left transition hover:bg-black/[0.04]"
+                    className="flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-1.5 text-left transition hover:bg-black/[0.04]"
                   >
                     <span className="flex min-w-0 items-baseline gap-2 overflow-hidden">
                       <span className="truncate text-sm font-medium text-black/80">{displayName}</span>

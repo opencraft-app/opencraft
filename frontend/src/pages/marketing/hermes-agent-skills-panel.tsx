@@ -923,6 +923,7 @@ export interface HermesAgentSkillsPanelProps<
     instance: TInstance;
     featureFlags: TFeatureFlags;
     productConfig: TProductConfig;
+    skillHubApiUrl?: string;
   }>;
 }
 
@@ -1028,6 +1029,7 @@ export function HermesAgentSkillsPanel<
             instance={instance}
             featureFlags={featureFlags}
             productConfig={productConfig}
+            skillHubApiUrl="https://api.skillhub.cn"
           />
         </div>
       </TabsContent>

@@ -82,7 +82,7 @@ type InstalledSkillLoadState =
 
 ### Requirement SKILL-PICKER-1：可选单选
 
-创建和编辑弹窗必须在“任务说明”之后、“生效时间段”之前渲染“调用技能（可选）”。默认值为空，触发器显示“请选择自动任务需要调用的技能”，且同一时刻最多选中一个真实 slug。
+创建和编辑弹窗必须在“任务说明”之后、“生效时间段”之前渲染“调用技能（可选）”。默认值为空，触发器显示“选择你希望 Agent 稳定调用的技能”，且同一时刻最多选中一个真实 slug。“调用技能”后必须提供帮助入口，通过 hover 或键盘 focus 展示“在此处选择技能后，Agent 会在执行任务前加载该技能，相比仅在任务说明中通过提示词要求调用技能更加稳定。”。
 
 #### Scenario：普通任务
 
@@ -102,7 +102,30 @@ type InstalledSkillLoadState =
 
 选择器必须是产品内自定义下拉，不使用原生 `<select>`。触发器应提供 `aria-expanded`，搜索框的 label/placeholder 统一为“搜索已安装的技能”，选项使用可识别的单选语义。每个 Skill 的展示名称和 slug 必须在同一行展示并在空间不足时截断。搜索空结果与已安装列表为空必须是两个不同状态。
 
-### Requirement SKILL-PICKER-3：加载和错误
+### Requirement SKILL-PICKER-3：任务说明保持独立
+
+Skill 选择只建立 Cron 执行绑定，不得自动生成、替换或清空任务说明，也不得为此读取 SkillHub 文档或摘要。
+
+#### Scenario：空任务说明选择 Skill
+
+- Given 用户尚未填写任务说明
+- When 用户选择一个已安装 Skill
+- Then 任务说明保持为空
+- And Skill 绑定仍可正常保存
+
+#### Scenario：已有任务说明选择或切换 Skill
+
+- Given 任务说明已由用户、模板或历史任务提供
+- When 用户选择或切换 Skill
+- Then 任务说明保持原内容
+
+#### Scenario：清除 Skill
+
+- Given 用户已选择 Skill 且任务说明存在内容
+- When 用户清除 Skill 选择
+- Then 任务说明保持原内容
+
+### Requirement SKILL-PICKER-4：加载和错误
 
 - `loading`：显示加载态，不清空表单其他输入。
 - `ready + []`：显示“暂无已安装 Skill”和前往技能管理入口。

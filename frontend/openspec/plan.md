@@ -509,6 +509,165 @@ Not-tested: 待实现后填写
 - [x] 下拉中的 Skill 展示名称与 slug 改为同一行展示，并在空间不足时截断。
 - [x] 自动任务 Skill 目标测试集 178/178、`pnpm check` 与 `pnpm i18n:check` 通过。
 
+### Task 12: 选择 Skill 后生成推荐任务说明
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/hermes-agent-automations-panel.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/hermes-agent-automations-panel.test.ts`
+- Modify: `frontend/src/pages/marketing/__tests__/automation-skill-picker.test.tsx`
+- Modify: `frontend/src/lib/skillhub-api.ts`（仅在现有详情接口不足时）
+
+- [x] 选择 Skill 且任务说明为空时，根据 SkillHub 的 Skill 说明生成并填入推荐任务说明。
+- [x] 用户已经输入任务说明时不自动覆盖；更换 Skill 也保留用户内容。
+- [x] Skill 详情加载失败时不阻断选择与普通任务创建，并保持任务说明不变。
+- [x] 补充自动生成、保护已有内容和失败降级测试；目标测试集 5 个文件 185/185、`pnpm check`、`pnpm i18n:check` 与 `git diff --check` 通过。
+
+### Task 13: 为已选择 Skill 增加快捷清除入口
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/automation-skill-picker.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/automation-skill-picker.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+- [x] 已选择 Skill 时，右侧下拉图标区域 hover 或键盘聚焦后切换为叉号。
+- [x] 点击叉号清空 Skill 选择、关闭下拉并清空搜索，不触发展开操作。
+- [x] 未选择 Skill 时继续显示普通下拉箭头，选择器主体交互保持不变。
+- [x] 清除按钮提供中英文可访问名称；目标测试集 5 个文件 186/186、`pnpm check`、`pnpm i18n:check` 与 `git diff --check` 通过。
+
+### Task 14: 跟踪系统提示词来源并联动 Skill 选择
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/hermes-agent-automations-panel.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/automation-skill-picker.test.tsx`
+- Modify: `frontend/openspec/proposal.md`
+- Modify: `frontend/openspec/spec.md`
+
+- [x] 弹窗内记录最后一次系统生成的完整提示词，不写入任务数据或后端。
+- [x] 清除 Skill 时同步清空未修改的系统提示词；用户编辑、模板和历史任务说明继续保留。
+- [x] 切换 Skill 时替换未修改的系统提示词；用户一旦编辑便停止自动覆盖。
+- [x] 补充清除、切换和用户编辑保护测试；目标测试集 5 个文件 189/189、`pnpm check`、`pnpm i18n:check` 与 `git diff --check` 通过。
+
+### Task 15: 补充 Skill 默认提示的运行方式说明
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/automation-skill-picker.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/automation-skill-picker.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+- Modify: `frontend/openspec/proposal.md`
+- Modify: `frontend/openspec/spec.md`
+
+- [x] 未选择 Skill 时，默认提示展示“选择你希望 Agent 稳定调用的技能”。
+- [x] 提示继续使用现有灰色占位样式和单行截断，不改变选择器交互。
+- [x] 选择器组件测试 16/16、`pnpm check`、`pnpm i18n:check` 与 `git diff --check` 通过。
+
+### Task 16: 统一名称和 Skill 选择框圆角
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/hermes-agent-automations-panel.tsx`
+- Modify: `frontend/src/pages/marketing/automation-skill-picker.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/automation-skill-picker.test.tsx`
+
+- [x] 名称输入框和 Skill 选择框使用与任务说明一致的 `rounded-md` 圆角。
+- [x] 下拉菜单容器和现有选择、清除交互保持不变。
+- [x] 选择器组件测试 17/17 通过。
+
+### Task 17: 移除选择 Skill 后自动生成任务说明
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/hermes-agent-automations-panel.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/automation-skill-picker.test.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/hermes-agent-automations-panel.test.ts`
+- Modify: `frontend/openspec/proposal.md`
+- Modify: `frontend/openspec/spec.md`
+- Modify: `product/prd/2026-07-14-automation-skill-invocation.md`
+
+- [x] 选择、切换或清除 Skill 时，任务说明始终保持用户当前填写内容，不再自动生成、替换或清空。
+- [x] 删除 SkillHub 提示词读取、兜底生成及系统提示词来源跟踪代码。
+- [x] 保留 Skill 选择、清除、创建和编辑提交行为，并补充回归测试。
+- [x] 同步更新 PRD、OpenSpec 和当前状态；目标测试集 5 个文件 183/183、`pnpm check`、`pnpm i18n:check` 与 `git diff --check` 通过。
+
+### Task 18: 为“调用技能”补充稳定性说明 Tooltip
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/automation-skill-picker.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/automation-skill-picker.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+- Modify: `frontend/openspec/spec.md`
+- Modify: `product/prd/2026-07-14-automation-skill-invocation.md`
+
+- [x] 在“调用技能”后增加帮助图标，Tooltip 文案为“在此处选择技能后，Agent 会在执行任务前加载该技能，相比仅在任务说明中通过提示词要求调用技能更加稳定。”
+- [x] Tooltip 沿用项目白底轻边框样式，并同时支持鼠标 hover 与键盘 focus。
+- [x] 帮助按钮提供可访问名称，并通过 `aria-describedby` 关联 Tooltip。
+- [x] 目标测试集 5 个文件 184/184、`pnpm check`、`pnpm i18n:check` 与 `git diff --check` 通过。
+
+### Task 19: 调整调用 Skill 稳定性提示文案
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/automation-skill-picker.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/automation-skill-picker.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+- Modify: `frontend/openspec/spec.md`
+- Modify: `product/prd/2026-07-14-automation-skill-invocation.md`
+
+- [x] Tooltip 精确调整为“在此处选择技能后，Agent 会在执行任务前加载该技能，相比仅在任务说明中通过提示词要求调用技能更加稳定。”
+- [x] 保持帮助图标、hover、键盘 focus 与可访问性行为不变。
+- [x] 选择器组件测试 15/15、`pnpm check`、`pnpm i18n:check` 与 `git diff --check` 通过。
+
+### Task 20: 补充任务说明占位示例
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/hermes-agent-automations-panel.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/automation-skill-picker.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+- [x] 任务说明占位文案调整为“请用提示词的形式描述需要执行的任务，比如：提醒我喝水，或者使用 xxx 技能帮我执行任务等”。
+- [x] 仅补充手工提示词示例，不改变 Skill 选择与任务说明相互独立的行为。
+- [x] 选择器组件测试 15/15、`pnpm check`、`pnpm i18n:check` 与 `git diff --check` 通过。
+
+### Task 21: 修复弹窗内 Tooltip 被裁剪
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/automation-skill-picker.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/automation-skill-picker.test.tsx`
+- Modify: `frontend/DESIGN.md`
+
+- [x] 将“调用技能”Tooltip 通过 Portal 渲染到 `document.body`，使用 fixed 定位脱离弹窗滚动容器的 overflow 裁剪边界。
+- [x] 保留鼠标 hover、键盘 focus、Tooltip 文案选择复制和 `aria-describedby` 关联能力。
+- [x] 在 `DESIGN.md` 固化规则：滚动/裁剪容器内的 Tooltip 必须 Portal 化，不能用提高 z-index 规避 overflow clipping。
+- [x] 选择器组件测试 15/15、`pnpm check`、`pnpm i18n:check` 与 `git diff --check` 通过。
+
+### Task 22: 收紧 Skill 下拉菜单高度与纵向间距
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/automation-skill-picker.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/automation-skill-picker.test.tsx`
+
+- [x] 将 Skill 列表最大高度从 16rem 收紧到 12rem，减少展开菜单的整体占用空间。
+- [x] 收紧搜索区、列表内边距和选项上下间距，保持字体、单行展示、搜索与选择逻辑不变。
+- [x] 选择器组件测试 15/15、`pnpm check` 与 `git diff --check` 通过。
+
 ## 3. 规划门禁结论
 
 - [x] 已确认需求范围、排除项和 13 条验收标准。

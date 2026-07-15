@@ -27,6 +27,7 @@ import {
   parseInitialSchedule,
   parseOnceScheduleDate,
   sanitizeClockTimeDraft,
+  shouldShowRecentRunsLimitHint,
   shouldRejectPastOnceSchedule,
   toCreateCronSkills,
   toEditCronSkills,
@@ -35,6 +36,16 @@ import type { CronJob, CronRunRecord } from "@/lib/hermes-cron-client";
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+describe("recent run limit hint", () => {
+  it("shows the hint only when at least 10 runs are displayed", () => {
+    expect(shouldShowRecentRunsLimitHint(0)).toBe(false);
+    expect(shouldShowRecentRunsLimitHint(1)).toBe(false);
+    expect(shouldShowRecentRunsLimitHint(9)).toBe(false);
+    expect(shouldShowRecentRunsLimitHint(10)).toBe(true);
+    expect(shouldShowRecentRunsLimitHint(11)).toBe(true);
+  });
 });
 
 describe("automation Skill form mapping", () => {

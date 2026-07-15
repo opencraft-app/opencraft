@@ -1075,6 +1075,10 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
   );
 }
 
+export function shouldShowRecentRunsLimitHint(runCount: number): boolean {
+  return runCount >= 10;
+}
+
 function RecentCronRunsPanel({ runs }: { runs: CronRunRecord[] }) {
   const t = useT();
   const [viewingRun, setViewingRun] = useState<CronRunRecord | null>(null);
@@ -1136,11 +1140,13 @@ function RecentCronRunsPanel({ runs }: { runs: CronRunRecord[] }) {
           />
         )}
       </section>
-      <div className="flex justify-center pt-1">
-        <p className="text-center text-[11px] leading-4 text-black/35">
-          {t("最多展示最近 10 条执行记录")}
-        </p>
-      </div>
+      {shouldShowRecentRunsLimitHint(runs.length) && (
+        <div className="flex justify-center pt-1">
+          <p className="text-center text-[11px] leading-4 text-black/35">
+            {t("最多展示最近 10 条执行记录")}
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -2391,7 +2397,7 @@ interface ScheduleChangeCheck {
   originalSchedule: string;
 }
 
-function AutomationFormModal({
+export function AutomationFormModal({
   botId,
   mode,
   initialJob,
@@ -2780,7 +2786,7 @@ function AutomationFormModal({
             onChange={(e) => setName(e.target.value.slice(0, 60))}
             maxLength={60}
             placeholder={t("请输入自动任务名称")}
-            className="mt-1.5 w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm placeholder:text-sm placeholder:text-black/35 focus:border-black/30 focus:outline-none"
+            className="mt-1.5 w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm placeholder:text-sm placeholder:text-black/35 focus:border-black/30 focus:outline-none"
             style={{ ...MODAL_COMPACT_CONTROL_TEXT_STYLE, marginTop: 6 }}
           />
         </div>
@@ -2857,7 +2863,7 @@ function AutomationFormModal({
             onChange={(e) => setPrompt(e.target.value.slice(0, AUTOMATION_PROMPT_MAX_LENGTH))}
             rows={5}
             maxLength={AUTOMATION_PROMPT_MAX_LENGTH}
-            placeholder={t("请用提示词的形式描述需要执行的任务，比如：提醒我喝水")}
+            placeholder={t("请用提示词的形式描述需要执行的任务，比如：提醒我喝水，或者使用 xxx 技能帮我执行任务等")}
             className="mt-1.5 w-full resize-none rounded-md border border-black/10 bg-white px-3 py-2 text-sm placeholder:text-sm placeholder:text-black/35 focus:border-black/30 focus:outline-none"
             style={{ ...MODAL_COMPACT_CONTROL_TEXT_STYLE, marginTop: 6 }}
           />
