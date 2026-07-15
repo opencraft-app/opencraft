@@ -453,12 +453,18 @@ const mapBundleToPlan = (
       if (isLaunch) {
         if (withToken) {
           promoTag = t("首月 6 折");
-        } else {
+        } else if (backendDiscount === 0) {
+          /* 启航01 discount=0 时展示「免费 14 天」 */
           promoTag = t("免费 14 天");
           isZeroDownFreeTrial = true;
         }
       } else if (isCruise) {
-        promoTag = withToken ? t("首月 6 折") : t("首月 5 折");
+        if (withToken) {
+          promoTag = t("首月 6 折");
+        } else if (backendDiscount === 0.5) {
+          /* 巡游01 discount=0.5（50%）时展示「首月 5 折」 */
+          promoTag = t("首月 5 折");
+        }
       } else {
         promoTag = undefined;
       }
@@ -1717,7 +1723,7 @@ const PaymentPendingModal = ({
             {t("请完成支付")}
           </h3>
           <p style={{ fontSize: 13, color: colors.warmGray500, margin: "0 0 24px" }}>
-            {t("请使用微信扫描下方二维码，授权后即可在微信内完成签约")}
+            {t("请使用微信扫描下方二维码完成支付")}
           </p>
 
           {/* bridge 模式：渲染中转页 URL 的二维码，用户在微信扫码后由中转页负责走 OAuth + wxSign */}
@@ -1737,7 +1743,11 @@ const PaymentPendingModal = ({
             </div>
           )}
 
-          {/* 底部按钮区：左「刷新」（描边白底，重新生成二维码）+ 右「完成」（实色，等价于「我已完成支付」） */}
+          <p style={{ fontSize: 13, color: colors.warmGray500, textAlign: "center", margin: "0 0 20px" }}>
+            {t("支付完成后，需等待约15秒完成下单")}
+          </p>
+
+          {/* 底部按钮区：仅「刷新」（重新生成二维码） */}
           <div style={{ display: "flex", flexDirection: "row", gap: 12 }}>
             <button
               onClick={onRefresh}
@@ -1764,25 +1774,6 @@ const PaymentPendingModal = ({
               }}
             >
               {refreshing ? t("刷新中...") : t("刷新")}
-            </button>
-            <button
-              onClick={onManualConfirm}
-              style={{
-                flex: 1,
-                padding: "12px 16px",
-                borderRadius: 8,
-                border: "none",
-                background: colors.primary,
-                color: colors.white,
-                fontSize: 15,
-                fontWeight: 600,
-                cursor: "pointer",
-                transition: "background 0.15s",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = colors.primaryHover; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = colors.primary; }}
-            >
-              {t("完成")}
             </button>
           </div>
         </div>
@@ -1833,6 +1824,7 @@ export const SubscribePage = ({
      这里在组件函数体顺序执行一次，与 t 同生命周期，避免放在 useEffect 的异步路径里漏扣。 */
   __markBundleTypeTabsForI18n(t);
   const navigate = useAppNavigate();
+  const [hoveredDurationTab, setHoveredDurationTab] = useState<string | null>(null);
   const { isLoggedIn, isSubscribed, subscribe, addBot, bots, user, refreshPasses, activePass, latestPass } = useOpenClaw();
   const { authReady, isAuthenticated, session } = useSession();
   const repositories = useRepositories();
@@ -2612,29 +2604,67 @@ export const SubscribePage = ({
             >
               {AI_DURATION_TABS.map((tab) => {
                 const active = tab.key === aiDurationKey;
+                const isComingSoon = tab.key === "quarterly";
                 return (
-                  <button
+                  <span
                     key={tab.key}
-                    type="button"
-                    role="tab"
-                    aria-selected={active}
-                    onClick={() => setAiDurationKey(tab.key)}
-                    disabled={bundlesLoading}
-                    style={{
-                      padding: "6px 16px",
-                      borderRadius: 9999,
-                      border: `1px solid ${active ? colors.black : colors.border}`,
-                      background: active ? colors.black : colors.white,
-                      color: active ? colors.white : colors.warmGray500,
-                      fontSize: 13,
-                      fontWeight: 500,
-                      cursor: bundlesLoading ? "not-allowed" : "pointer",
-                      opacity: bundlesLoading && !active ? 0.6 : 1,
-                      transition: "all 0.2s ease",
-                    }}
+                    style={{ position: "relative", display: "inline-block" }}
+                    onMouseEnter={() => setHoveredDurationTab(tab.key)}
+                    onMouseLeave={() => setHoveredDurationTab(null)}
                   >
-                    {t(tab.zhLabel)}
-                  </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      onClick={() => !isComingSoon && setAiDurationKey(tab.key)}
+                      disabled={bundlesLoading || isComingSoon}
+                      style={{
+                        padding: "6px 16px",
+                        borderRadius: 9999,
+                        border: `1px solid ${active ? colors.black : colors.border}`,
+                        background: active ? colors.black : colors.white,
+                        color: active ? colors.white : colors.warmGray500,
+                        fontSize: 13,
+                        fontWeight: 500,
+                        cursor: (bundlesLoading || isComingSoon) ? "not-allowed" : "pointer",
+                        opacity: (bundlesLoading && !active) || isComingSoon ? 0.6 : 1,
+                        transition: "all 0.2s ease",
+                      }}
+                    >
+                      {t(tab.zhLabel)}
+                    </button>
+                    {isComingSoon && hoveredDurationTab === tab.key && (
+                      <span
+                        style={{
+                          position: "absolute",
+                          top: "-32px",
+                          left: "50%",
+                          transform: "translateX(-50%)",
+                          background: "rgba(0,0,0,0.8)",
+                          color: "#fff",
+                          fontSize: 12,
+                          padding: "4px 10px",
+                          borderRadius: 6,
+                          whiteSpace: "nowrap",
+                          pointerEvents: "none",
+                          zIndex: 10,
+                        }}
+                      >
+                        {t("即将上线")}
+                        <span
+                          style={{
+                            position: "absolute",
+                            bottom: "-4px",
+                            left: "50%",
+                            transform: "translateX(-50%) rotate(45deg)",
+                            width: 8,
+                            height: 8,
+                            background: "rgba(0,0,0,0.8)",
+                          }}
+                        />
+                      </span>
+                    )}
+                  </span>
                 );
               })}
             </div>
