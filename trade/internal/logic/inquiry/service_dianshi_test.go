@@ -27,12 +27,12 @@ type fakeResolver struct {
 	calls      int
 }
 
-func (f *fakeResolver) ResolveForInquiry(_ context.Context, _, _ string) (*activity.Mapping, bool, error) {
+func (f *fakeResolver) ResolveForInquiry(_ context.Context, _, _ string, _ int, _ string) (*activity.Mapping, bool, error) {
 	f.calls++
 	return f.mapping, f.useDianshi, f.err
 }
 
-func (f *fakeResolver) ResolveForPlaceOrder(_ context.Context, _, _ string) (*activity.Mapping, bool, error) {
+func (f *fakeResolver) ResolveForPlaceOrder(_ context.Context, _, _ string, _ int, _ string) (*activity.Mapping, bool, error) {
 	f.calls++
 	return f.mapping, f.useDianshi, f.err
 }

@@ -260,7 +260,7 @@ func (s *Service) Quote(ctx context.Context, req QuoteRequest) (*QuoteResult, er
 	//   - DB 错 → 落 warn 日志后回落 jifei，不让单次询价 5xx
 	//   - useDianshi=true → 走 quoteDianshi，绕过下方 jifei 路径
 	if s.deps.ActivityResolver != nil {
-		mapping, useDianshi, resolveErr := s.deps.ActivityResolver.ResolveForInquiry(ctx, req.BundleID, req.Uin)
+		mapping, useDianshi, resolveErr := s.deps.ActivityResolver.ResolveForInquiry(ctx, req.BundleID, req.Uin, req.TimeSpan, req.TimeUnit)
 		if resolveErr != nil {
 			log.Printf("[activity-resolver] inquiry resolve failed bundleId=%s uin=%s err=%v (fallback jifei)",
 				req.BundleID, req.Uin, resolveErr)
