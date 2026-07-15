@@ -800,10 +800,10 @@ const VerifyIdentityModal = ({
                     checked={consent}
                     onChange={(e) => setConsent(e.target.checked)}
                     className="mt-1 h-4 w-4 rounded border-[#D1D5DB]"
-                    aria-label={t("我已阅读并同意实名认证与刷脸核身说明")}
+                    aria-label={t("我已阅读《隐私协议》并同意进行身份核验")}
                   />
                   <span>
-                    {t("我已阅读并同意实名认证与刷脸核身说明及")}
+                    {t("我已阅读")}
                     <a
                       href="https://privacy.qq.com/document/preview/a955b796edc34796b6e81d4f4df006f3"
                       target="_blank"
@@ -813,6 +813,7 @@ const VerifyIdentityModal = ({
                     >
                       {t("《隐私协议》")}
                     </a>
+                    {t("并同意进行身份核验")}
                   </span>
                 </label>
               )}
