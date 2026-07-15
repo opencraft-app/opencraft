@@ -51,6 +51,8 @@ interface OpenClawContextValue {
   botsLoading: boolean;
   /** 当前用户的权益最新快照（来自 GET /v1/passes） */
   activePass: Pass | null;
+  /** 用户最新的 pass（即使已过期），用于定价页匹配"当前订阅"套餐 */
+  latestPass: Pass | null;
   login: () => void;
   logout: () => void;
   subscribe: () => void;
@@ -143,6 +145,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
 
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [activePass, setActivePass] = useState<Pass | null>(null);
+  const [latestPass, setLatestPass] = useState<Pass | null>(null);
   const [bots, setBots] = useState<OpenClawBot[]>([]);
   const [botsLoading, setBotsLoading] = useState(false);
   const fetchedRef = useRef(false);
@@ -164,6 +167,11 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       const active = passes.find((p) => !p.deleted_time && new Date(p.expired_time).getTime() > now) ?? null;
       setActivePass(active);
       setIsSubscribed(Boolean(active));
+      // 保存最新的 pass（即使已过期），用于定价页匹配"当前订阅"套餐
+      const latest = passes
+        .filter((p) => !p.deleted_time)
+        .sort((a, b) => new Date(b.expired_time).getTime() - new Date(a.expired_time).getTime())[0] ?? null;
+      setLatestPass(latest);
     } catch {
       /* 接口失败不阻断其他流程，保持现有状态 */
     }
@@ -252,6 +260,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
     } else if (!isAuthenticated && session.authReady) {
       setIsSubscribed(false);
       setActivePass(null);
+      setLatestPass(null);
       setBots([]);
       fetchedRef.current = false;
     }
@@ -265,6 +274,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
   const logout = useCallback(() => {
     setIsSubscribed(false);
     setActivePass(null);
+    setLatestPass(null);
     setBots([]);
     fetchedRef.current = false;
     void sessionSignOut();
@@ -329,6 +339,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       bots,
       botsLoading,
       activePass,
+      latestPass,
       login,
       logout,
       subscribe,
@@ -339,7 +350,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       deleteBot,
       refreshBots,
     }),
-    [isAuthenticated, isSubscribed, user, bots, botsLoading, activePass, login, logout, subscribe, refreshPasses, updateUser, addBot, updateBot, deleteBot, refreshBots],
+    [isAuthenticated, isSubscribed, user, bots, botsLoading, activePass, latestPass, login, logout, subscribe, refreshPasses, updateUser, addBot, updateBot, deleteBot, refreshBots],
   );
 
   return <OpenClawContext value={value}>{children}</OpenClawContext>;

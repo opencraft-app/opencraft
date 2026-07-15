@@ -2217,6 +2217,8 @@ export const AccountPage = () => {
   const [realnameSyncError, setRealnameSyncError] = useState<string | null>(null);
   // 从首页「立即创建」跳转过来、要求先完成实名认证时的提醒 tips
   const [realnameRequiredTip, setRealnameRequiredTip] = useState<string | null>(null);
+  // 实名完成后需要跳回的页面路径（从 return_to query 读取，仅站内路径）
+  const [realnameReturnTo, setRealnameReturnTo] = useState<string | null>(null);
 
   // Email bind —— 国内站微信/QQ 登录用户通过 Magic Link 绑定邮箱
   const [bindEmail, setBindEmail] = useState(user?.email ?? "");
@@ -2315,17 +2317,30 @@ export const AccountPage = () => {
     if (isGlobal) return;
     if (searchParams.get(REALNAME_REQUIRED_QUERY_KEY) !== "1") return;
 
+    // 读取 return_to（仅站内路径，防开放重定向），实名完成后自动跳回
+    const returnTo = searchParams.get("return_to") ?? "";
+    if (returnTo.startsWith("/") && !returnTo.startsWith("//")) {
+      setRealnameReturnTo(returnTo);
+    }
+
     const next = new URLSearchParams(searchParams);
     next.delete(REALNAME_REQUIRED_QUERY_KEY);
+    next.delete("return_to");
     setSearchParams(next, { replace: true });
 
     setRealnameRequiredTip(t("创建 LightVela 前，请先完成实名认证。"));
   }, [searchParams, setSearchParams, t, isGlobal]);
 
-  // 实名认证完成后自动清除提醒
+  // 实名认证完成后自动清除提醒；若有 return_to 则自动跳回原页面
   useEffect(() => {
-    if (verified) setRealnameRequiredTip(null);
-  }, [verified]);
+    if (!verified) return;
+    setRealnameRequiredTip(null);
+    if (realnameReturnTo) {
+      const target = realnameReturnTo;
+      setRealnameReturnTo(null);
+      navigate(target);
+    }
+  }, [verified, realnameReturnTo, navigate]);
 
   useEffect(() => {
     if (!hasPendingAvatarAudit && !hasPendingNameAudit) return;

@@ -27,7 +27,7 @@ import {
   isPassRequiresRenewError,
 } from "@/lib/billing-error";
 import { buildPayPlan } from "@/lib/wx-pay";
-import { AGENTS_HOME_PATH, ACCOUNT_PATH, REALNAME_REQUIRED_QUERY_KEY } from "@/lib/agent-routes";
+import { AGENTS_HOME_PATH, ACCOUNT_PATH, REALNAME_REQUIRED_QUERY_KEY, SUBSCRIBE_PATH } from "@/lib/agent-routes";
 import { captureProductEvent, PRODUCT_ANALYTICS_EVENTS } from "@/observability/posthog";
 import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
@@ -489,8 +489,9 @@ const mapBundleToPlan = (
       ? t("询价中...")
       : priceUnavailable
         ? t("暂无报价")
-        : /* 需求4：可享免费 14 天 0 元下单，或内测「免费订阅」引导态，一律显示「免费订阅」 */
-          isZeroDownFreeTrial || isFeaturedFreeGuide
+        : /* 需求4：可享免费 14 天 0 元下单，或内测「免费订阅」引导态，一律显示「免费订阅」。
+             已订阅用户不展示「免费订阅」引导（当前套餐走 isCurrentPlan →「当前订阅」优先级更高）。 */
+          !isSubscribed && (isZeroDownFreeTrial || isFeaturedFreeGuide)
           ? t("免费订阅")
           : t("立即订阅");
 
@@ -1415,7 +1416,7 @@ const PlanCard = ({
                 }
               }}
             >
-              {subscriptionLocked ? plan.ctaLabel : isSoldOut ? plan.ctaLabel : subscribing ? t("正在创建...") : quotaWouldExceed ? t("已达上限（{{current}}/{{max}}）", { current: currentBots, max: plan.maxBots }) : plan.ctaLabel}
+              {subscriptionLocked ? plan.ctaLabel : isSoldOut ? plan.ctaLabel : subscribing ? t("正在创建...") : plan.ctaLabel}
             </button>
           ) : (
             <button
@@ -1452,7 +1453,7 @@ const PlanCard = ({
                 }
               }}
             >
-              {subscriptionLocked ? plan.ctaLabel : isSoldOut ? plan.ctaLabel : subscribing ? t("正在创建...") : quotaWouldExceed ? t("已达上限（{{current}}/{{max}}）", { current: currentBots, max: plan.maxBots }) : plan.ctaLabel}
+              {subscriptionLocked ? plan.ctaLabel : isSoldOut ? plan.ctaLabel : subscribing ? t("正在创建...") : plan.ctaLabel}
             </button>
           )}
         </div>
@@ -1825,7 +1826,7 @@ export const SubscribePage = ({
      这里在组件函数体顺序执行一次，与 t 同生命周期，避免放在 useEffect 的异步路径里漏扣。 */
   __markBundleTypeTabsForI18n(t);
   const navigate = useAppNavigate();
-  const { isLoggedIn, isSubscribed, subscribe, addBot, bots, user, refreshPasses, activePass } = useOpenClaw();
+  const { isLoggedIn, isSubscribed, subscribe, addBot, bots, user, refreshPasses, activePass, latestPass } = useOpenClaw();
   const { authReady, isAuthenticated, session } = useSession();
   const repositories = useRepositories();
   const [subscribingPlanId, setSubscribingPlanId] = useState<string | null>(null);
@@ -1858,7 +1859,6 @@ export const SubscribePage = ({
      且 lightclaw:features.realnamePhoneVerificationEnabled=false 的场景。
      任一开关开启时不做免费引导，CTA 维持「立即开通」。 */
   const freeGuideAllowed = !paidBillingEnabled && !realnamePhoneVerificationEnabled;
-  const quotaExceeded = bots.length >= user.plan.maxBots;
   const header = (
     <SubscribePageHeader
       authControls={authControls}
@@ -1984,10 +1984,11 @@ export const SubscribePage = ({
         paidBillingActive,
         aiDurationKey,
         isPricingLoading,
-        isSubscribed,
+        isSubscribed || bots.length > 0,
         freeGuideAllowed,
-        /* 已订阅套餐的 bundle_id：命中当前卡时 CTA 显示「当前订阅」。国际站/未订阅时为 null。 */
-        activePass?.bundle_id ?? null,
+        /* 已订阅套餐的 bundle_id：命中当前卡时 CTA 显示「当前订阅」。
+           activePass 为 null（pass 过期）时回退到 latestPass，仍能匹配用户曾订阅的套餐。 */
+        activePass?.bundle_id ?? latestPass?.bundle_id ?? null,
       );
       return paidBillingActive ? plan : { ...plan, bundleType: undefined };
     });
@@ -2000,7 +2001,7 @@ export const SubscribePage = ({
        isSubscribed 影响启航 Launch 卡的「免费开通/立即开通」引导文案，必须进依赖数组；
        freeGuideAllowed 是「免费开通」引导的前提开关，同样影响文案，必须进依赖数组；
        正常路径下切换时长会先触发 loadKey → bundlesLoading 变更连带重算。 */
-  }, [bundles, bundlesLoading, paidBillingActive, t, aiDurationKey, isSubscribed, freeGuideAllowed, activePass?.bundle_id]);
+  }, [bundles, bundlesLoading, paidBillingActive, t, aiDurationKey, isSubscribed, bots.length, freeGuideAllowed, activePass?.bundle_id, latestPass?.bundle_id]);
 
   /**
    * 需求3：按 tier（启航 / 巡游 / 远航）把 planList 分组，取代原「标准版 / AI 增强版」全局 tab。
@@ -2378,7 +2379,7 @@ export const SubscribePage = ({
         ? u?.realnameLevel === REALNAME_LEVEL.PHONE_3FA
         : Boolean(u?.realnameVerified);
       if (!realnameOk) {
-        navigate(`${ACCOUNT_PATH}?${REALNAME_REQUIRED_QUERY_KEY}=1`);
+        navigate(`${ACCOUNT_PATH}/?${REALNAME_REQUIRED_QUERY_KEY}=1&return_to=${encodeURIComponent(SUBSCRIBE_PATH + "/")}`);
         return;
       }
     }
@@ -2479,75 +2480,6 @@ export const SubscribePage = ({
   /* v1.7.30 后端联调文档明确「前端不需要轮询支付状态」——
      原轮询 listMyPasses 的 useEffect 已删除，SDK callback / 用户手动确认均会走 finalizeBot 接棒。 */
 
-  if (quotaExceeded) {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh", background: colors.white, color: colors.black }}>
-        {header}
-        <main style={{ flexGrow: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "96px 24px 64px" }}>
-          <div style={{ maxWidth: 480, textAlign: "center" }}>
-            <div
-              style={{
-                width: 64,
-                height: 64,
-                borderRadius: 16,
-                background: "rgba(0,0,0,0.04)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                margin: "0 auto 32px",
-              }}
-            >
-              <Sparkles style={{ width: 32, height: 32, color: colors.warmGray500 }} />
-            </div>
-            <h2 style={{ fontSize: 20, fontWeight: 700, color: colors.black, marginBottom: 16 }}>{t("已达创建上限")}</h2>
-            <p style={{ fontSize: 14, color: colors.warmGray300, marginBottom: 40, lineHeight: 1.6 }}>
-              {t("当前 {{plan}} 套餐最多可创建 {{max}} 个 Hermes，你已达到上限。", { plan: user.plan.name, max: user.plan.maxBots })}
-            </p>
-            <AppLink
-              to={AGENTS_HOME_PATH}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "12px 24px",
-                borderRadius: 8,
-                background: colors.primary,
-                color: colors.white,
-                fontSize: 15,
-                fontWeight: 600,
-                textDecoration: "none",
-                transition: "background 0.2s",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = colors.primaryHover; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = colors.primary; }}
-            >
-              {t("管理我的智能体伙伴")} <ArrowRight style={{ width: 16, height: 16 }} />
-            </AppLink>
-            <div style={{ marginTop: 24 }}>
-              <AppLink
-                to="/"
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 4,
-                  fontSize: 14,
-                  color: colors.warmGray300,
-                  textDecoration: "none",
-                  transition: "color 0.2s",
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = colors.primary; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = colors.warmGray300; }}
-              >
-                <ArrowLeft style={{ width: 14, height: 14 }} /> {t("返回首页")}
-              </AppLink>
-            </div>
-          </div>
-        </main>
-        <LegalFooter />
-      </div>
-    );
-  }
-
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh", background: colors.white, color: colors.black }}>
       {header}
@@ -2645,7 +2577,7 @@ export const SubscribePage = ({
                   <>
                     {t("请前往")}{" "}
                     <AppLink
-                      to="/account"
+                      to={`${ACCOUNT_PATH}/?${REALNAME_REQUIRED_QUERY_KEY}=1&return_to=${encodeURIComponent(SUBSCRIBE_PATH + "/")}`}
                       style={{ color: "#cf3d4c", fontWeight: 700, textDecoration: "underline", textUnderlineOffset: 3 }}
                     >
                       {t("我的账号")}
@@ -2747,8 +2679,8 @@ export const SubscribePage = ({
                   subscribingPlanId={subscribingPlanId}
                   currentBots={bots.length}
                   reserveCreditTabSpace={planTiers.some((tt) => tt.variants.length > 1)}
-                  /* 已有生效订阅：暂不支持升级/更换套餐，所有卡按钮禁用（当前套餐卡文案为「当前订阅」）。 */
-                  subscriptionLocked={isSubscribed}
+                  /* 已有生效订阅或有智能体：暂不支持升级/更换套餐，所有卡按钮禁用（当前套餐卡文案为「当前订阅」）。 */
+                  subscriptionLocked={isSubscribed || bots.length > 0}
                 />
               ))}
             </motion.div>
