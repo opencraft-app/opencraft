@@ -24,6 +24,7 @@ type Store interface {
 	SendVerificationCode(ctx context.Context, phone string, code string, now time.Time, ttl time.Duration, cooldown time.Duration) (time.Duration, error)
 	CompleteSMSVerification(ctx context.Context, input VerifySMSInput, now time.Time, sessionTTL time.Duration) (*AuthSession, error)
 	ValidateCurrentUserPhoneChallenge(ctx context.Context, token string, code string, now time.Time) (User, error)
+	ConsumeCurrentUserPhoneChallenge(ctx context.Context, token string, code string, now time.Time) (User, error)
 	VerifyCurrentUserPhoneChallenge(ctx context.Context, token string, code string, now time.Time) (User, error)
 	MarkCurrentUserPhoneRealnameVerified(ctx context.Context, token string, now time.Time) (User, error)
 	ValidatePhoneChangeTarget(ctx context.Context, token string, newPhone string, now time.Time) (User, error)

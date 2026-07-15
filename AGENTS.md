@@ -207,7 +207,7 @@
 
 | 系统 | 定位 | 触发命令 |
 |------|------|----------|
-| **📝 Product Skills (`prd-init`)** | 产品前置、需求分析、PRD 梳理 | `/feai-start` |
+| **📝 Product Skills (`prd-creator`)** | 产品前置、需求分析、PRD 梳理 | `/feai-start` |
 | **📐 OpenSpec** | 规范沉淀 & 变更管理 | `/feai-archive` |
 | **⚡ Superpowers** | 研发执行辅助 Skills（TDD / plans / review 等） | 按需加载 |
 
@@ -284,7 +284,7 @@ codesign/                # EdgeOne / 子账号 / 权限模型 / 测试发布协�
 | ----------------------- | -------------------------------------------------------- |
 | 🧪 TDD 测试驱动         | 推荐先写测试再写代码；测试不通过不能合入                 |
 | 📐 OpenSpec 双重角色    | 开发前提供项目上下文，开发后归档沉淀功能规范文档         |
-| 📝 prd-init 产品前置 | 用 `.agents/skills/product-skills/prd-init` 做产品前置、需求分析和 PRD 梳理 |
+| 📝 prd-creator 产品前置 | 用 `.agents/skills/product-skills/prd-creator` 做产品前置、需求分析和 PRD 梳理 |
 | 🚫 禁止 any（TS 项目）  | 使用 `unknown` 或具体类型替代                            |
 
 ---
@@ -455,33 +455,34 @@ AI 生成需求确认文档后，用户可能需要进一步澄清或调整需�
 - skill 内引用的 `references/`、`scripts/`、`DEPENDENCIES.md` 等资源，以该 skill 目录为相对路径解析。
 - `.skills/` 是历史旧目录；新增或迁移的团队共享技能应放入 `.agents/skills/`。
 
-#### Product Skills subtree 同步约定
+#### Product Skills subtree 所有权与同步约定
 
-LightVela 产品前置需求梳理使用团队统一产品 skills 仓库作为上游源：
+LightVela 产品 Skills 以 mono2 为主仓，`product-ai` 只保留下游分发副本：
 
-- 上游仓库：`git@git.woa.com:TencentLightCloud/product-ai.git`
-- 上游分支：`master`
-- 上游路径：`skills/lightvela/prd-init`
-- 本仓库落点：`.agents/skills/product-skills/prd-init`
-- 本地 skill 名：`prd-init`
+- 主仓仓库：`git@git.woa.com:wisp/mono2.git`
+- 主仓分支：`master`
+- 主仓路径：`.agents/skills/product-skills`
+- 副仓仓库：`git@git.woa.com:TencentLightCloud/product-ai.git`
+- 副仓路径：`skills/lightvela`
 
-当用户要求“使用 `.agents/skills/product-skills/prd-init` / `prd-init` 做 LightVela 产品前置、PRD、TAPD 产品需求建单或研发交接”时，AI 在读取该 skill 前，应先尝试从 `product-ai` 最新 `master` 按 subtree 方式同步这个目录：
+所有 LightVela 产品 Skills 的内容变更都必须先在 `.agents/skills/product-skills` 完成并合入 mono2 `master`。使用本仓库内的 `prd-creator`、`lv-seo-geo` 或 `lv-vibe-coding` 时，直接读取当前分支中的主仓版本；不要在调用前从 `product-ai` 反向覆盖。
 
-1. 使用 SSH 拉取 `product-ai` 最新 `master`。
-2. 将 `skills/lightvela/prd-init` split 成独立 Git 历史。
-3. 将 split ref 以 subtree merge 方式合入 `.agents/skills/product-skills/prd-init`。
-4. 不要手工复制覆盖；同步提交必须保留 subtree 关系。
-5. 提交信息必须记录：
-   - `git-subtree-dir: .agents/skills/product-skills/prd-init`
-   - `git-subtree-split: <split commit>`
-   - `Original-upstream-repo: git@git.woa.com:TencentLightCloud/product-ai.git`
-   - `Original-upstream-path: skills/lightvela/prd-init`
-6. 同步后至少验证：
-   - `.agents/skills/product-skills/prd-init/SKILL.md` 存在且 frontmatter `name: prd-init`
-   - `evals/evals.json` 能通过 `python3 -m json.tool`
-   - subtree 目录文件与最新 split ref 一致
+将主仓更新同步到 `product-ai` 时：
 
-如果当前工作区有无关脏改动，必须在干净分支或独立 worktree 中完成同步，避免把产品需求梳理和其他开发改动混在一起。如果网络、权限或工蜂访问失败，使用当前仓库内已有的 `prd-init` 副本继续产品前置，并在结果中说明本轮未能刷新上游。
+1. 从 mono2 最新 `master` 执行 `git subtree split --prefix=.agents/skills/product-skills`，生成独立历史。
+2. 在 `product-ai` 的干净分支或独立 worktree 中，将 split ref 以 subtree merge 方式合入 `skills/lightvela`。
+3. 不要手工复制覆盖，也不要把 `product-ai` 的修改反向同步到 mono2；需要修改 Skill 时回到主仓路径提交。
+4. `product-ai` 的同步提交必须记录：
+   - `git-subtree-dir: skills/lightvela`
+   - `git-subtree-split: <mono2 split commit>`
+   - `Original-upstream-repo: git@git.woa.com:wisp/mono2.git`
+   - `Original-upstream-path: .agents/skills/product-skills`
+5. 同步后至少验证：
+   - 两个 subtree 根目录的文件列表和内容完全一致
+   - 各子目录 `SKILL.md` 的 frontmatter `name` 与目录用途一致
+   - `prd-creator/evals/evals.json` 能通过 `python3 -m json.tool`
+
+如果当前工作区有无关脏改动，必须在干净分支或独立 worktree 中完成主仓修改或副仓同步，避免混入其他开发改动。网络、权限或工蜂访问失败不影响使用 mono2 当前分支中的主仓版本，但必须在结果中说明 `product-ai` 尚未刷新。
 
 当任务需要工蜂能力时（包括但不限于分支管理、MR 创建/查询/合并、MR 评论、代码审查、文件操作），AI 必须先读取 `.agents/skills/gongfeng/SKILL.md`，并按其中的工具调用方式执行。
 

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	paigateway "ctl/pkg/adapter/aigateway"
+	pllmgateway "ctl/pkg/adapter/llmgateway"
 	"ctl/pkg/config"
 	pctx "ctl/pkg/context"
 	"ctl/pkg/errcode"
@@ -30,14 +30,14 @@ func TestResetInstanceConfigCreatesNewKeyPersistsAndRevokesOldKey(t *testing.T) 
 		},
 	}
 	sandboxAdapter := &createTaskSandboxAdapterStub{}
-	aiGatewayAdapter := &createTaskAiGatewayAdapterStub{
-		createResp: &paigateway.CreateApiKeyResponse{KeyID: "key-new", KeyPrefix: "sk-new", APIKey: "sk-new-secret"},
+	aiGatewayAdapter := &createTaskLLMGatewayAdapterStub{
+		createResp: &pllmgateway.CreateApiKeyResponse{KeyID: "key-new", KeyPrefix: "sk-new", APIKey: "sk-new-secret"},
 	}
 	logic := &logic{
-		instanceDao:      instanceDao,
-		sandboxAdapter:   sandboxAdapter,
-		aiGatewayAdapter: aiGatewayAdapter,
-		logger:           zap.NewNop(),
+		instanceDao:       instanceDao,
+		sandboxAdapter:    sandboxAdapter,
+		llmGatewayAdapter: aiGatewayAdapter,
+		logger:            zap.NewNop(),
 	}
 
 	resp, err := logic.ResetInstanceConfig(pctx.NewContext(nil).WithUserID("user-reset"), "ins-reset-1")
@@ -81,8 +81,9 @@ func TestResetInstanceConfigRejectsMissingDefaultProviderConfigBeforeCreatingKey
 	prev := config.ServerConf
 	config.ServerConf = &config.GlobalConfig{
 		AdapterConfig: &config.AdapterConfig{
-			AiGateway: &config.AiGatewayConfig{
-				BaseURL:        "https://aigateway.test",
+			LLMGateway: &config.LLMGatewayConfig{
+				Enabled:        true,
+				BaseURL:        "https://llmgateway.test",
 				DefaultBaseURL: "https://model.internal/v1",
 			},
 		},
@@ -99,11 +100,11 @@ func TestResetInstanceConfigRejectsMissingDefaultProviderConfigBeforeCreatingKey
 			CreatedAt:  time.Now().UTC(),
 		},
 	}
-	aiGatewayAdapter := &createTaskAiGatewayAdapterStub{}
+	aiGatewayAdapter := &createTaskLLMGatewayAdapterStub{}
 	logic := &logic{
-		instanceDao:      instanceDao,
-		aiGatewayAdapter: aiGatewayAdapter,
-		logger:           zap.NewNop(),
+		instanceDao:       instanceDao,
+		llmGatewayAdapter: aiGatewayAdapter,
+		logger:            zap.NewNop(),
 	}
 
 	_, err := logic.ResetInstanceConfig(pctx.NewContext(nil).WithUserID("user-reset"), "ins-reset-1")
@@ -135,14 +136,14 @@ func TestResetInstanceConfigFailsWhenOldKeyCannotBeRevoked(t *testing.T) {
 			CreatedAt:      time.Now().UTC(),
 		},
 	}
-	aiGatewayAdapter := &createTaskAiGatewayAdapterStub{
-		createResp:       &paigateway.CreateApiKeyResponse{KeyID: "key-new", KeyPrefix: "sk-new", APIKey: "sk-new-secret"},
+	aiGatewayAdapter := &createTaskLLMGatewayAdapterStub{
+		createResp:       &pllmgateway.CreateApiKeyResponse{KeyID: "key-new", KeyPrefix: "sk-new", APIKey: "sk-new-secret"},
 		revokeErrByKeyID: map[string]error{"key-old": errors.New("revoke failed")},
 	}
 	logic := &logic{
-		instanceDao:      instanceDao,
-		aiGatewayAdapter: aiGatewayAdapter,
-		logger:           zap.NewNop(),
+		instanceDao:       instanceDao,
+		llmGatewayAdapter: aiGatewayAdapter,
+		logger:            zap.NewNop(),
 	}
 
 	_, err := logic.ResetInstanceConfig(pctx.NewContext(nil).WithUserID("user-reset"), "ins-reset-1")
@@ -176,11 +177,11 @@ func TestResetInstanceConfigRejectsInstanceOwnedByAnotherUser(t *testing.T) {
 			CreatedAt:  time.Now().UTC(),
 		},
 	}
-	aiGatewayAdapter := &createTaskAiGatewayAdapterStub{}
+	aiGatewayAdapter := &createTaskLLMGatewayAdapterStub{}
 	logic := &logic{
-		instanceDao:      instanceDao,
-		aiGatewayAdapter: aiGatewayAdapter,
-		logger:           zap.NewNop(),
+		instanceDao:       instanceDao,
+		llmGatewayAdapter: aiGatewayAdapter,
+		logger:            zap.NewNop(),
 	}
 
 	_, err := logic.ResetInstanceConfig(pctx.NewContext(nil).WithUserID("user-reset"), "ins-reset-1")

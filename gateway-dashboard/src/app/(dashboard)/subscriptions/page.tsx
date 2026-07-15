@@ -65,6 +65,10 @@ export default function SubscriptionsPage() {
   const [userID, setUserID] = useState("");
   const [bundleID, setBundleID] = useState("all");
   const [status, setStatus] = useState("all");
+  const [passPage, setPassPage] = useState(1);
+  const [passPageSize, setPassPageSize] = useState(20);
+  const [dianshiPage, setDianshiPage] = useState(1);
+  const [dianshiPageSize, setDianshiPageSize] = useState(20);
   const [refundTarget, setRefundTarget] = useState<CtlPass | null>(null);
   const [destroyTarget, setDestroyTarget] = useState<CtlPass | null>(null);
   const [deleteDianshiParticipationTarget, setDeleteDianshiParticipationTarget] =
@@ -74,22 +78,21 @@ export default function SubscriptionsPage() {
   const passes = useCtlAdminPasses({
     userID: userID.trim() || undefined,
     bundleID: bundleID === "all" ? undefined : bundleID,
+    status,
+    page: passPage,
+    pageSize: passPageSize,
   });
   const refundPass = useCtlRefundPass();
   const destroyPass = useCtlDestroyPass();
   const dianshiRecords = useCtlDianshiRecords({
     userID: userID.trim() || undefined,
+    page: dianshiPage,
+    pageSize: dianshiPageSize,
   });
   const deleteDianshiParticipation = useCtlDeleteDianshiParticipation();
 
   const bundleItems = bundles.data ?? [];
-  const passItems = useMemo(() => {
-    const items = passes.data ?? [];
-    if (status === "all") {
-      return items;
-    }
-    return items.filter((item) => item.status === status);
-  }, [passes.data, status]);
+  const passItems = passes.data?.passes ?? [];
 
   const dianshiParticipationItems = dianshiRecords.data?.participations ?? [];
 
@@ -385,10 +388,20 @@ export default function SubscriptionsPage() {
             <Input
               placeholder="用户 ID"
               value={userID}
-              onChange={(event) => setUserID(event.target.value)}
+              onChange={(event) => {
+                setUserID(event.target.value);
+                setPassPage(1);
+                setDianshiPage(1);
+              }}
               className="max-w-md"
             />
-            <Select value={bundleID} onValueChange={(value) => setBundleID(value ?? "all")}>
+            <Select
+              value={bundleID}
+              onValueChange={(value) => {
+                setBundleID(value ?? "all");
+                setPassPage(1);
+              }}
+            >
               <SelectTrigger className="w-[220px]">
                 <SelectValue placeholder="Bundle" />
               </SelectTrigger>
@@ -401,7 +414,13 @@ export default function SubscriptionsPage() {
                 ))}
               </SelectContent>
             </Select>
-            <Select value={status} onValueChange={(value) => setStatus(value ?? "all")}>
+            <Select
+              value={status}
+              onValueChange={(value) => {
+                setStatus(value ?? "all");
+                setPassPage(1);
+              }}
+            >
               <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="Pass 状态" />
               </SelectTrigger>
@@ -423,7 +442,15 @@ export default function SubscriptionsPage() {
           <DataTable
             columns={passColumns}
             data={passItems}
-            total={passItems.length}
+            total={passes.data?.total ?? 0}
+            page={passes.data?.page ?? passPage}
+            pageSize={passes.data?.page_size ?? passPageSize}
+            pageSizeOptions={[20, 50, 100]}
+            onPageChange={setPassPage}
+            onPageSizeChange={(size) => {
+              setPassPageSize(size);
+              setPassPage(1);
+            }}
             isLoading={passes.isLoading}
           />
         </CardContent>
@@ -455,7 +482,15 @@ export default function SubscriptionsPage() {
               <DataTable
                 columns={dianshiParticipationColumns}
                 data={dianshiParticipationItems}
-                total={dianshiParticipationItems.length}
+                total={dianshiRecords.data?.total ?? 0}
+                page={dianshiRecords.data?.page ?? dianshiPage}
+                pageSize={dianshiRecords.data?.page_size ?? dianshiPageSize}
+                pageSizeOptions={[20, 50, 100]}
+                onPageChange={setDianshiPage}
+                onPageSizeChange={(size) => {
+                  setDianshiPageSize(size);
+                  setDianshiPage(1);
+                }}
                 isLoading={dianshiRecords.isLoading}
               />
             </div>

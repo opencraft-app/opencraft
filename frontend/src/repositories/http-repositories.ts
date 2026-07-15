@@ -1216,6 +1216,39 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
       writeStoredAuthToken(null);
     }
   },
+  async startRealnameFaceIdAttempt(input) {
+    return request(baseUrl, "/auth/realname/faceid/attempts", {
+      method: "POST",
+      body: input,
+    });
+  },
+  async getCurrentRealnameFaceIdAttempt() {
+    return request(baseUrl, "/auth/realname/faceid/attempts/current", {
+      method: "GET",
+    });
+  },
+  async getRealnameFaceIdAttempt(attemptId) {
+    return request(baseUrl, `/auth/realname/faceid/attempts/${encodeURIComponent(attemptId)}`, {
+      method: "GET",
+    });
+  },
+  async sendRealnameFaceIdPhoneCode(attemptId, input) {
+    return request(baseUrl, `/auth/realname/faceid/attempts/${encodeURIComponent(attemptId)}/send-phone-code`, {
+      method: "POST",
+      body: input,
+    });
+  },
+  async verifyRealnameFaceIdPhone(attemptId, input) {
+    return request(baseUrl, `/auth/realname/faceid/attempts/${encodeURIComponent(attemptId)}/verify-phone`, {
+      method: "POST",
+      body: input,
+    });
+  },
+  async finalizeRealnameFaceIdAttempt(attemptId) {
+    return request(baseUrl, `/auth/realname/faceid/attempts/${encodeURIComponent(attemptId)}/finalize`, {
+      method: "POST",
+    });
+  },
   async verifyRealname(input) {
     return request<RealnameVerifyResult>(baseUrl, "/auth/realname/verify", {
       method: "POST",

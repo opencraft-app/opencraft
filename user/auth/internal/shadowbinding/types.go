@@ -31,6 +31,9 @@ type Binding struct {
 	LastErrorMessage          string
 	BasicAuthStatus           string
 	BasicAuthSyncedAt         *time.Time
+	BasicAuthSourceAttemptID  string
+	BasicAuthIdentityHash     string
+	BasicAuthPhoneHash        string
 	BasicAuthLastErrorCode    string
 	BasicAuthLastErrorMessage string
 	CreatedAt                 time.Time
@@ -52,7 +55,7 @@ type Store interface {
 	GetBindingByShadowUserName(ctx context.Context, shadowUserName string) (Binding, error)
 	MarkBindingActive(ctx context.Context, userID string, uin, ownerUin, appID int64, now time.Time) (Binding, error)
 	MarkBindingFailed(ctx context.Context, userID string, code string, message string, now time.Time) (Binding, error)
-	MarkBasicAuthSucceeded(ctx context.Context, userID string, now time.Time) (Binding, error)
+	MarkBasicAuthSucceeded(ctx context.Context, userID string, sourceAttemptID string, identityHash string, phoneHash string, now time.Time) (Binding, error)
 	MarkBasicAuthFailed(ctx context.Context, userID string, code string, message string, now time.Time) (Binding, error)
 	IssueAuthCode(ctx context.Context, userID string, purpose string, ttl time.Duration, now time.Time) (AuthCode, error)
 	ConsumeAuthCode(ctx context.Context, code string, now time.Time) (AuthCode, error)
@@ -77,12 +80,15 @@ type PhoneChangeInput struct {
 }
 
 type BasicAuthInput struct {
-	UserID      string
-	AccountType int64
-	Name        string
-	IDCard      string
-	ClientIP    string
-	ClientUA    string
+	UserID          string
+	AccountType     int64
+	Name            string
+	IDCard          string
+	ClientIP        string
+	ClientUA        string
+	SourceAttemptID string
+	IdentityHash    string
+	PhoneHash       string
 }
 
 type CloudRegisterInput struct {

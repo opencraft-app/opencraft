@@ -847,7 +847,8 @@ func TestConfigureOnboardUsesProcessStream(t *testing.T) {
 		config.ServerConf.AdapterConfig = origAdapterConf
 	})
 	config.ServerConf.AdapterConfig = &config.AdapterConfig{
-		AiGateway: &config.AiGatewayConfig{
+		LLMGateway: &config.LLMGatewayConfig{
+			Enabled:              true,
 			DefaultBaseURL:       "http://gateway.example.com",
 			DefaultModelID:       "kimi-k2.5",
 			DefaultCompatibility: "openai",
@@ -869,7 +870,11 @@ func TestConfigureOnboardUsesProcessStream(t *testing.T) {
 	}
 	ctx := pctx.NewContext(nil).WithUserID("user-1")
 
-	if err := logic.configureOnboard(ctx, "sbx-1", "sk-test", "gw-token-test"); err != nil {
+	if err := logic.configureOnboard(ctx, "sbx-1", "sk-test", "gw-token-test", &gatewayRuntimeConfig{
+		DefaultBaseURL:       "https://llmgw-inner.example.com/v1",
+		DefaultModelID:       "auto",
+		DefaultCompatibility: "openai",
+	}); err != nil {
 		t.Fatalf("configure onboard: %v", err)
 	}
 	if len(adapter.calls) != 0 {

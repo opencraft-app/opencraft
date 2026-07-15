@@ -559,8 +559,47 @@ func TestQuote_ShadowClient_SkippedWhenUinProvided(t *testing.T) {
 	}
 }
 
-// shadow 反查返 ErrBindingNotFound → service 映射为 inquiry.ErrBindingNotFound 业务错。
-func TestQuote_ShadowClient_BindingNotFound(t *testing.T) {
+// shadow 反查返 ErrBindingNotFound → 仅询价链路使用固定账号兜底，付费下单仍强校验。
+func TestQuote_ShadowClient_BindingNotFoundUsesFallbackIdentity(t *testing.T) {
+	const (
+		fallbackUin   = "fallback-uin"
+		fallbackAppID = "fallback-app"
+	)
+	shadow := &fakeShadow{
+		getBindingFn: func(_ context.Context, _ string) (*shadowclient.Binding, error) {
+			return nil, shadowclient.ErrBindingNotFound
+		},
+	}
+	jifei := &fakeJifei{
+		getPriceFn: func(_ context.Context, _ *jifeiclient.GetPriceRequest) (*jifeiclient.GetPriceResponse, error) {
+			return stdJifeiPriceResp(), nil
+		},
+	}
+	svc := New(Deps{
+		CTLClient:            &fakeCTL{getBundleByIDFn: func(_ context.Context, _ string) (*ctlclient.BundleDetail, error) { return stdBundle(), nil }},
+		BundleStore:          &fakeBundleStore{def: stdDef()},
+		JifeiClient:          jifei,
+		ShadowClient:         shadow,
+		InquiryFallbackUin:   fallbackUin,
+		InquiryFallbackAppID: fallbackAppID,
+	})
+	req := stdQuoteReq()
+	req.Uin = ""
+	req.AppID = ""
+	if _, err := svc.Quote(context.Background(), req); err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if jifei.lastGetPriceArgs == nil {
+		t.Fatal("expected jifei GetPrice to be called")
+	}
+	if jifei.lastGetPriceArgs.OwnerUin != fallbackUin || jifei.lastGetPriceArgs.Uin != fallbackUin {
+		t.Errorf("jifei OwnerUin/Uin = %q/%q, want fallback %s",
+			jifei.lastGetPriceArgs.OwnerUin, jifei.lastGetPriceArgs.Uin, fallbackUin)
+	}
+}
+
+// shadow 反查返 ErrBindingNotFound 且未配置询价兜底 → 保持原业务错语义。
+func TestQuote_ShadowClient_BindingNotFoundWithoutFallback(t *testing.T) {
 	shadow := &fakeShadow{
 		getBindingFn: func(_ context.Context, _ string) (*shadowclient.Binding, error) {
 			return nil, shadowclient.ErrBindingNotFound
@@ -633,27 +672,41 @@ func TestQuote_ShadowClient_NoIdentityAnchor(t *testing.T) {
 	}
 }
 
-// shadow 返回成功但 Uin 为空 → 也算 binding not found（防御 shadow 写入半残数据）。
-func TestQuote_ShadowClient_EmptyUinReturned(t *testing.T) {
+// shadow 返回成功但 Uin 为空 → 询价链路同样使用固定账号兜底（防御 shadow 半残数据）。
+func TestQuote_ShadowClient_EmptyUinReturnedUsesFallbackIdentity(t *testing.T) {
+	const (
+		fallbackUin   = "fallback-uin"
+		fallbackAppID = "fallback-app"
+	)
 	shadow := &fakeShadow{
 		getBindingFn: func(_ context.Context, _ string) (*shadowclient.Binding, error) {
 			return &shadowclient.Binding{UserID: "user-1", Uin: "", AppID: "12345"}, nil
 		},
 	}
+	jifei := &fakeJifei{
+		getPriceFn: func(_ context.Context, _ *jifeiclient.GetPriceRequest) (*jifeiclient.GetPriceResponse, error) {
+			return stdJifeiPriceResp(), nil
+		},
+	}
 	svc := New(Deps{
-		CTLClient:    &fakeCTL{},
-		BundleStore:  &fakeBundleStore{def: stdDef()},
-		JifeiClient:  &fakeJifei{},
-		ShadowClient: shadow,
+		CTLClient:            &fakeCTL{getBundleByIDFn: func(_ context.Context, _ string) (*ctlclient.BundleDetail, error) { return stdBundle(), nil }},
+		BundleStore:          &fakeBundleStore{def: stdDef()},
+		JifeiClient:          jifei,
+		ShadowClient:         shadow,
+		InquiryFallbackUin:   fallbackUin,
+		InquiryFallbackAppID: fallbackAppID,
 	})
 	req := stdQuoteReq()
 	req.Uin = ""
-	_, err := svc.Quote(context.Background(), req)
-	if err == nil {
-		t.Fatal("want err")
+	req.AppID = ""
+	if _, err := svc.Quote(context.Background(), req); err != nil {
+		t.Fatalf("unexpected err: %v", err)
 	}
-	if !errors.Is(err, ErrBindingNotFound) {
-		t.Errorf("err = %v, want ErrBindingNotFound", err)
+	if jifei.lastGetPriceArgs == nil {
+		t.Fatal("expected jifei GetPrice to be called")
+	}
+	if jifei.lastGetPriceArgs.Uin != fallbackUin {
+		t.Errorf("jifei.Uin = %q, want fallback %s", jifei.lastGetPriceArgs.Uin, fallbackUin)
 	}
 }
 

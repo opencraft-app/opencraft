@@ -12,10 +12,12 @@
 | `fixing-accessibility` | 表单、弹窗、交互控件、键盘导航、ARIA、色彩对比度、WCAG 可访问性修复 |
 | `fixing-metadata` | 页面标题、meta description、canonical、Open Graph、Twitter Card、robots、JSON-LD |
 | `fixing-motion-performance` | 动画卡顿、transition 性能、scroll-linked motion、layout thrashing、blur/filter 性能问题 |
-| `product-skills/prd-init` | LightVela 产品前置、PRD 梳理、TAPD 产品需求建单与研发交接 |
+| `product-skills` | LightVela 产品线 Skills 聚合入口与 mono2 主仓目录 |
+| `product-skills/prd-creator` | LightVela 产品前置、PRD 梳理、TAPD 产品需求建单与研发交接 |
+| `product-skills/lv-seo-geo` | LightVela SEO/GEO 优化，检查关键词、sitemap、canonical/hreflang、内部链接、AI 搜索可抽取性 |
+| `product-skills/lv-vibe-coding` | LightVela 从需求澄清、Issue、开发、评审、MR 到发布回归的 Vibe Coding 协作流程 |
 | `lv-international-docs` | LightVela 国际站文档维护，编辑/翻译/审查 `lightvela.ai/docs`、`global/`、`en/`、文档图片与 sidebar/slug |
 | `lv-longform-content` | LightVela 长篇内容写作，生成教程系列、功能介绍系列、应用场景系列、英文博客/文章草稿 |
-| `lv-seo-geo` | LightVela SEO/GEO 优化，检查关键词、sitemap、canonical/hreflang、内部链接、AI 搜索可抽取性 |
 
 ## 使用约定
 

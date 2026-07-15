@@ -18,12 +18,17 @@ type DianshiRecordFilter struct {
 	BundleID       string
 	DealName       string
 	Limit          int
+	Page           int
+	PageSize       int
 }
 
 // DianshiRecordsResult 与 trade /internal/trade/dianshi/orders 响应对齐。
 type DianshiRecordsResult struct {
-	Orders         []*DianshiOrder         `json:"orders"`
-	Participations []*DianshiParticipation `json:"participations"`
+	Orders              []*DianshiOrder         `json:"orders"`
+	Participations      []*DianshiParticipation `json:"participations"`
+	ParticipationsTotal int64                   `json:"participations_total"`
+	Page                int                     `json:"page,omitempty"`
+	PageSize            int                     `json:"page_size,omitempty"`
 }
 
 type DianshiOrder struct {
@@ -85,6 +90,12 @@ func (a *adapter) ListDianshiRecords(ctx context.Context, filter DianshiRecordFi
 	}
 	if filter.Limit > 0 {
 		query.Set("limit", strconv.Itoa(filter.Limit))
+	}
+	if filter.Page > 0 {
+		query.Set("page", strconv.Itoa(filter.Page))
+	}
+	if filter.PageSize > 0 {
+		query.Set("page_size", strconv.Itoa(filter.PageSize))
 	}
 
 	endpoint := strings.TrimRight(a.config.BaseURL, "/") + "/internal/trade/dianshi/orders"

@@ -8,6 +8,13 @@ import (
 	"time"
 )
 
+func nullableString(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
+}
+
 type MySQLStore struct{ db *sql.DB }
 
 func NewMySQLStore(db *sql.DB) *MySQLStore { return &MySQLStore{db: db} }
@@ -23,6 +30,9 @@ func (s *MySQLStore) SavePendingBinding(ctx context.Context, userID string, shad
 				last_error_message = NULL,
 				basic_auth_status = NULL,
 				basic_auth_synced_at = NULL,
+				basic_auth_source_attempt_id = NULL,
+				basic_auth_identity_hash = NULL,
+				basic_auth_phone_hash = NULL,
 				basic_auth_last_error_code = NULL,
 				basic_auth_last_error_message = NULL,
 				updated_at = VALUES(updated_at)
@@ -38,6 +48,7 @@ func (s *MySQLStore) GetBindingByUserID(ctx context.Context, userID string) (Bin
 			SELECT user_id, shadow_user_name, COALESCE(uin, 0), COALESCE(owner_uin, 0), COALESCE(app_id, 0), status,
 			       COALESCE(last_error_code, ''), COALESCE(last_error_message, ''),
 			       COALESCE(basic_auth_status, ''), basic_auth_synced_at,
+			       COALESCE(basic_auth_source_attempt_id, ''), COALESCE(basic_auth_identity_hash, ''), COALESCE(basic_auth_phone_hash, ''),
 			       COALESCE(basic_auth_last_error_code, ''), COALESCE(basic_auth_last_error_message, ''),
 			       created_at, updated_at
 			FROM shadow_bindings
@@ -51,6 +62,7 @@ func (s *MySQLStore) GetBindingByShadowUserName(ctx context.Context, shadowUserN
 			SELECT user_id, shadow_user_name, COALESCE(uin, 0), COALESCE(owner_uin, 0), COALESCE(app_id, 0), status,
 			       COALESCE(last_error_code, ''), COALESCE(last_error_message, ''),
 			       COALESCE(basic_auth_status, ''), basic_auth_synced_at,
+			       COALESCE(basic_auth_source_attempt_id, ''), COALESCE(basic_auth_identity_hash, ''), COALESCE(basic_auth_phone_hash, ''),
 			       COALESCE(basic_auth_last_error_code, ''), COALESCE(basic_auth_last_error_message, ''),
 			       created_at, updated_at
 			FROM shadow_bindings
@@ -62,7 +74,7 @@ func (s *MySQLStore) GetBindingByShadowUserName(ctx context.Context, shadowUserN
 func scanBinding(row *sql.Row, operation string) (Binding, error) {
 	var binding Binding
 	var basicAuthSyncedAt sql.NullTime
-	if err := row.Scan(&binding.UserID, &binding.ShadowUserName, &binding.Uin, &binding.OwnerUin, &binding.AppID, &binding.Status, &binding.LastErrorCode, &binding.LastErrorMessage, &binding.BasicAuthStatus, &basicAuthSyncedAt, &binding.BasicAuthLastErrorCode, &binding.BasicAuthLastErrorMessage, &binding.CreatedAt, &binding.UpdatedAt); errors.Is(err, sql.ErrNoRows) {
+	if err := row.Scan(&binding.UserID, &binding.ShadowUserName, &binding.Uin, &binding.OwnerUin, &binding.AppID, &binding.Status, &binding.LastErrorCode, &binding.LastErrorMessage, &binding.BasicAuthStatus, &basicAuthSyncedAt, &binding.BasicAuthSourceAttemptID, &binding.BasicAuthIdentityHash, &binding.BasicAuthPhoneHash, &binding.BasicAuthLastErrorCode, &binding.BasicAuthLastErrorMessage, &binding.CreatedAt, &binding.UpdatedAt); errors.Is(err, sql.ErrNoRows) {
 		return Binding{}, ErrNotFound
 	} else if err != nil {
 		return Binding{}, fmt.Errorf("%s: %w", operation, err)
@@ -103,12 +115,12 @@ func (s *MySQLStore) MarkBindingFailed(ctx context.Context, userID string, code 
 	return s.GetBindingByUserID(ctx, userID)
 }
 
-func (s *MySQLStore) MarkBasicAuthSucceeded(ctx context.Context, userID string, now time.Time) (Binding, error) {
+func (s *MySQLStore) MarkBasicAuthSucceeded(ctx context.Context, userID string, sourceAttemptID string, identityHash string, phoneHash string, now time.Time) (Binding, error) {
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE shadow_bindings
-		SET basic_auth_status = ?, basic_auth_synced_at = ?, basic_auth_last_error_code = NULL, basic_auth_last_error_message = NULL, updated_at = ?
+		SET basic_auth_status = ?, basic_auth_synced_at = ?, basic_auth_source_attempt_id = ?, basic_auth_identity_hash = ?, basic_auth_phone_hash = ?, basic_auth_last_error_code = NULL, basic_auth_last_error_message = NULL, updated_at = ?
 		WHERE user_id = ?
-	`, BasicAuthStatusSucceeded, now, now, userID)
+	`, BasicAuthStatusSucceeded, now, nullableString(sourceAttemptID), nullableString(identityHash), nullableString(phoneHash), now, userID)
 	if err != nil {
 		return Binding{}, fmt.Errorf("mark shadow basic auth succeeded: %w", err)
 	}
@@ -121,7 +133,7 @@ func (s *MySQLStore) MarkBasicAuthSucceeded(ctx context.Context, userID string, 
 func (s *MySQLStore) MarkBasicAuthFailed(ctx context.Context, userID string, code string, message string, now time.Time) (Binding, error) {
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE shadow_bindings
-		SET basic_auth_status = ?, basic_auth_last_error_code = ?, basic_auth_last_error_message = ?, updated_at = ?
+		SET basic_auth_status = ?, basic_auth_source_attempt_id = NULL, basic_auth_identity_hash = NULL, basic_auth_phone_hash = NULL, basic_auth_last_error_code = ?, basic_auth_last_error_message = ?, updated_at = ?
 		WHERE user_id = ?
 	`, BasicAuthStatusFailed, code, message, now, userID)
 	if err != nil {

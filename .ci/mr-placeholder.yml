@@ -2,13 +2,18 @@ version: v2.0
 name: MR 占位检查
 
 on:
-  push: {}
   mr:
     target-branches: [ master ]
     action: [ open, reopen, push-update ]
     report-commit-check: true
     block-mr: true
   manual: enabled
+
+concurrency:
+  group: mr-placeholder-${{ ci.branch }}
+  cancel-in-progress: true
+  queue-length: 1
+  queue-timeout-minutes: 60
 
 stages:
   - name: MR 占位检查

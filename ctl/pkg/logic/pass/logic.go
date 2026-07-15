@@ -11,11 +11,13 @@ import (
 
 	"ctl/pkg/adapter/aigateway"
 	adapterfactory "ctl/pkg/adapter/factory"
+	"ctl/pkg/adapter/llmgateway"
 	tradeadapter "ctl/pkg/adapter/trade"
 	"ctl/pkg/authcode"
 	"ctl/pkg/config"
 	"ctl/pkg/errcode"
 	bundlelogic "ctl/pkg/logic/bundle"
+	"ctl/pkg/logic/gatewayroute"
 	"ctl/pkg/logic/objectid"
 	bundlemodel "ctl/pkg/model/bundle"
 	modelfactory "ctl/pkg/model/factory"
@@ -33,6 +35,63 @@ func trialSubscriptionIdempotencyKey(userID, bundleID string) string {
 
 func tradeSubscriptionIdempotencyKey(dealName string) string {
 	return "trade:" + strings.TrimSpace(dealName)
+}
+
+type newPassSubscriptionRequest struct {
+	IdempotencyKey string
+	UserID         string
+	PlanID         string
+	PeriodValue    int
+	PeriodUnit     string
+}
+
+type newPassSubscription struct {
+	ID      string
+	PlanID  string
+	Gateway gatewayroute.Gateway
+}
+
+func ensureNewPassGatewayUser(ctx context.Context, userID, nickname string) (bool, error) {
+	if gatewayroute.NewAllocationGateway() == gatewayroute.GatewayLLMGateway {
+		resp, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().EnsureUser(ctx, userID, nickname)
+		return resp != nil && resp.Result == "created", err
+	}
+	resp, err := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().EnsureUser(ctx, userID, nickname)
+	return resp != nil && resp.Result == "created", err
+}
+
+func applyNewPassGatewaySubscription(ctx context.Context, req newPassSubscriptionRequest) (*newPassSubscription, error) {
+	if gatewayroute.NewAllocationGateway() == gatewayroute.GatewayLLMGateway {
+		sub, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().ApplySubscription(ctx, &llmgateway.ApplySubscriptionRequest{
+			IdempotencyKey: req.IdempotencyKey,
+			UserID:         req.UserID,
+			PlanID:         req.PlanID,
+			PeriodValue:    req.PeriodValue,
+			PeriodUnit:     req.PeriodUnit,
+		})
+		if err != nil {
+			return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "apply llmgateway subscription: %v", err)
+		}
+		if sub == nil {
+			return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "apply llmgateway subscription returned empty subscription")
+		}
+		return &newPassSubscription{ID: sub.ID, PlanID: sub.PlanID, Gateway: gatewayroute.GatewayLLMGateway}, nil
+	}
+
+	sub, err := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().ApplySubscription(ctx, &aigateway.ApplySubscriptionRequest{
+		IdempotencyKey: req.IdempotencyKey,
+		UserID:         req.UserID,
+		PlanID:         req.PlanID,
+		PeriodValue:    req.PeriodValue,
+		PeriodUnit:     req.PeriodUnit,
+	})
+	if err != nil {
+		return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "apply ai-gateway subscription: %v", err)
+	}
+	if sub == nil {
+		return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "apply ai-gateway subscription returned empty subscription")
+	}
+	return &newPassSubscription{ID: sub.ID, PlanID: sub.PlanID, Gateway: gatewayroute.GatewayAIGateway}, nil
 }
 
 // PassDetail 权益详情
@@ -127,6 +186,7 @@ type Logic interface {
 
 	// GetPasses 查询所有 Pass（后台管理用）
 	GetPasses(userID *string, bundleID *string) ([]*PassDetail, error)
+	GetPassesPage(userID *string, bundleID *string, status *string, page, pageSize int) ([]*PassDetail, int64, error)
 
 	// ModifyPass 修改 Pass（如延期、换绑套餐）
 	ModifyPass(passID string, req *ModifyPassFields) (*PassDetail, error)
@@ -424,13 +484,13 @@ func (l *logic) CreateTrialPass(userID string, bundleID string) (*PassDetail, er
 		}
 	}
 
-	// 步骤 5：确保 ai-gateway 里的业务用户存在
+	// 步骤 5：在当前环境选定的网关中确保业务用户存在。
 	ensureCtx, ensureCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	resource.ZapLogger.Info("pass ensure-user started",
 		zap.String("user_id", userID),
 		zap.String("bundle_id", bundleID),
 	)
-	ensured, ensureErr := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().EnsureUser(ensureCtx, userID, "")
+	created, ensureErr := ensureNewPassGatewayUser(ensureCtx, userID, "")
 	ensureCancel()
 	if ensureErr != nil {
 		resource.ZapLogger.Warn("pass ensure-user failed",
@@ -438,12 +498,12 @@ func (l *logic) CreateTrialPass(userID string, bundleID string) (*PassDetail, er
 			zap.String("bundle_id", bundleID),
 			zap.Error(ensureErr),
 		)
-		return nil, fmt.Errorf("ensure ai-gateway user: %w", ensureErr)
+		return nil, fmt.Errorf("ensure gateway user: %w", ensureErr)
 	}
 	resource.ZapLogger.Info("pass ensure-user succeeded",
 		zap.String("user_id", userID),
 		zap.String("bundle_id", bundleID),
-		zap.Bool("created", ensured != nil && ensured.Result == "created"),
+		zap.Bool("created", created),
 	)
 
 	// 步骤 6：扣减 bundle 可售卖余量（原子操作，并发安全）
@@ -484,25 +544,25 @@ func (l *logic) CreateTrialPass(userID string, bundleID string) (*PassDetail, er
 	}
 
 	// 步骤 9：AI Token 订阅联动（严格一致）
-	// credit > 0 时调 ai-gateway ApplySubscription；credit == 0 时跳过
+	// credit > 0 时向选定网关开通订阅；credit == 0 时跳过。
 	if bundle.Credit > 0 {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		// R-MR-3 v0.3.0：透传 bundle.TimeSpan/TimeUnit 给 ai-gateway，
+		// R-MR-3 v0.3.0：透传 bundle.TimeSpan/TimeUnit 给选定网关，
 		// 让其内部按 (NOW + period) 算 PeriodEnd（Q9=i1 真源），与 ctl
 		// CalcExpiredTime 走同算法保证 PeriodEnd 完全一致。
-		sub, subErr := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().
-			ApplySubscription(ctx, &aigateway.ApplySubscriptionRequest{
-				IdempotencyKey: trialSubscriptionIdempotencyKey(userID, bundleID),
-				UserID:         userID,
-				PlanID:         bundle.AiGatewayPlanID,
-				PeriodValue:    bundle.TimeSpan,
-				PeriodUnit:     bundle.TimeUnit,
-			})
+		sub, subErr := applyNewPassGatewaySubscription(ctx, newPassSubscriptionRequest{
+			IdempotencyKey: trialSubscriptionIdempotencyKey(userID, bundleID),
+			UserID:         userID,
+			PlanID:         bundle.AiGatewayPlanID,
+			PeriodValue:    bundle.TimeSpan,
+			PeriodUnit:     bundle.TimeUnit,
+		})
 		cancel()
 		if subErr != nil {
-			return nil, fmt.Errorf("apply ai-gateway subscription: %w", subErr)
+			return nil, fmt.Errorf("apply gateway subscription: %w", subErr)
 		}
 		if sub != nil {
+			gatewayroute.RecordBestEffort(resource.ZapLogger, userID, sub.Gateway, sub.ID, sub.PlanID, gatewayroute.SourceApplySubscription)
 			resource.ZapLogger.Info("pass subscription applied",
 				zap.String("pass_id", passID),
 				zap.String("user_id", userID),
@@ -552,6 +612,20 @@ func (l *logic) GetPasses(userID *string, bundleID *string) ([]*PassDetail, erro
 	details := entitiesToDetails(entities)
 	l.fillCredits(details)
 	return details, nil
+}
+
+func (l *logic) GetPassesPage(userID *string, bundleID *string, status *string, page, pageSize int) ([]*PassDetail, int64, error) {
+	if page <= 0 || pageSize <= 0 {
+		return nil, 0, errcode.Wrap(errcode.ErrInvalidParam, "page and page_size must be positive")
+	}
+	dao := modelfactory.DefaultDaoFactory.PassDao(nil)
+	entities, total, err := dao.ListByFiltersPage(userID, bundleID, status, pageSize, (page-1)*pageSize)
+	if err != nil {
+		return nil, 0, fmt.Errorf("get passes page: %w", err)
+	}
+	details := entitiesToDetails(entities)
+	l.fillCredits(details)
+	return details, total, nil
 }
 
 func (l *logic) ModifyPass(passID string, req *ModifyPassFields) (*PassDetail, error) {
@@ -663,7 +737,7 @@ func (l *logic) fillCredit(d *PassDetail) {
 	}
 	// quotaEntity == nil（用户从未购买过 pass，无配额行）→ total/available 保持零值
 
-	// credit == 0 的 bundle 不需要查 ai-gateway
+	// credit == 0 的 bundle 不需要查网关订阅
 	if bundle.Credit == 0 {
 		d.CreditAvailable = 0
 		return
@@ -671,9 +745,9 @@ func (l *logic) fillCredit(d *PassDetail) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	sub, err := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().GetActiveSubscription(ctx, d.UserID)
+	tokenBalance, found, err := getCompatibleActiveSubscriptionTokenBalance(ctx, d.UserID)
 	if err != nil {
-		resource.ZapLogger.Warn("fill credit: get ai-gateway active subscription failed",
+		resource.ZapLogger.Warn("fill credit: get active subscription failed",
 			zap.String("pass_id", d.PassID),
 			zap.String("user_id", d.UserID),
 			zap.Error(err),
@@ -681,12 +755,100 @@ func (l *logic) fillCredit(d *PassDetail) {
 		d.CreditAvailable = 0
 		return
 	}
-	if sub == nil {
+	if !found {
 		// 无订阅（可能尚未开通或已取消）
 		d.CreditAvailable = 0
 		return
 	}
-	d.CreditAvailable = bundlelogic.TokensToCredit(sub.TokenBalance)
+	d.CreditAvailable = bundlelogic.TokensToCredit(tokenBalance)
+}
+
+func getCompatibleActiveSubscriptionTokenBalance(ctx context.Context, userID string) (int64, bool, error) {
+	if gateway, ok, err := gatewayroute.Get(userID); err != nil {
+		resource.ZapLogger.Warn("get recorded subscription gateway failed, fallback to probe",
+			zap.String("user_id", userID),
+			zap.Error(err))
+	} else if ok {
+		switch gateway {
+		case gatewayroute.GatewayAIGateway:
+			legacyAdapter := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter()
+			if legacyAdapter == nil {
+				return 0, false, fmt.Errorf("recorded ai-gateway subscription but ai-gateway adapter is nil")
+			}
+			sub, err := legacyAdapter.GetActiveSubscription(ctx, userID)
+			if err != nil {
+				return 0, false, err
+			}
+			if sub == nil {
+				return 0, false, nil
+			}
+			gatewayroute.RecordBestEffort(resource.ZapLogger, userID, gatewayroute.GatewayAIGateway, sub.ID, sub.PlanID, gatewayroute.SourceDetectActiveSubscription)
+			return sub.TokenBalance, true, nil
+		case gatewayroute.GatewayLLMGateway:
+			if !config.LLMGatewayEnabled() {
+				resource.ZapLogger.Warn("recorded llmgateway subscription ignored because llmgateway is disabled",
+					zap.String("user_id", userID))
+				break
+			}
+			sub, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().GetActiveSubscription(ctx, userID)
+			if err != nil {
+				return 0, false, err
+			}
+			if sub == nil {
+				return 0, false, nil
+			}
+			gatewayroute.RecordBestEffort(resource.ZapLogger, userID, gatewayroute.GatewayLLMGateway, sub.ID, sub.PlanID, gatewayroute.SourceDetectActiveSubscription)
+			return sub.TokenBalance, true, nil
+		default:
+			resource.ZapLogger.Warn("unknown recorded subscription gateway, fallback to probe",
+				zap.String("user_id", userID),
+				zap.String("gateway", gateway))
+		}
+	}
+
+	var legacyErr error
+	if legacyAdapter := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter(); legacyAdapter != nil {
+		legacySub, err := legacyAdapter.GetActiveSubscription(ctx, userID)
+		legacyErr = err
+		if legacyErr == nil {
+			if legacySub != nil {
+				gatewayroute.RecordBestEffort(resource.ZapLogger, userID, gatewayroute.GatewayAIGateway, legacySub.ID, legacySub.PlanID, gatewayroute.SourceDetectActiveSubscription)
+				return legacySub.TokenBalance, true, nil
+			}
+		} else if !isLegacyGatewayDisabled(legacyErr) {
+			resource.ZapLogger.Warn("get active subscription from ai-gateway failed, try llmgateway",
+				zap.String("user_id", userID),
+				zap.Error(legacyErr),
+			)
+		}
+	}
+
+	if !config.LLMGatewayEnabled() {
+		if legacyErr != nil && !isLegacyGatewayDisabled(legacyErr) {
+			return 0, false, legacyErr
+		}
+		return 0, false, nil
+	}
+
+	llmSub, llmErr := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().GetActiveSubscription(ctx, userID)
+	if llmErr == nil {
+		if llmSub != nil {
+			gatewayroute.RecordBestEffort(resource.ZapLogger, userID, gatewayroute.GatewayLLMGateway, llmSub.ID, llmSub.PlanID, gatewayroute.SourceDetectActiveSubscription)
+			return llmSub.TokenBalance, true, nil
+		}
+		if legacyErr != nil && !isLegacyGatewayDisabled(legacyErr) {
+			return 0, false, legacyErr
+		}
+		return 0, false, nil
+	}
+	if legacyErr != nil && !isLegacyGatewayDisabled(legacyErr) {
+		return 0, false, fmt.Errorf("ai-gateway: %v; llmgateway: %w", legacyErr, llmErr)
+	}
+	return 0, false, llmErr
+}
+
+func isLegacyGatewayDisabled(err error) bool {
+	return errors.Is(err, aigateway.ErrAiGatewayNotConfigured)
 }
 
 // jifeiCurDeadlineLocation 是 jifei 协议层时间字面值的固定时区（北京时间 UTC+8）。
@@ -847,17 +1009,17 @@ func (l *logic) CompletePass(req *transport.CompletePassRequest) (*PassDetail, e
 		}
 	}
 
-	// 步骤 5：确保 ai-gateway 里的业务用户存在
+	// 步骤 5：在当前环境选定的网关中确保业务用户存在。
 	ensureCtx, ensureCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	logger.Info("complete pass ensure-user started")
-	ensured, ensureErr := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().EnsureUser(ensureCtx, req.UserID, "")
+	created, ensureErr := ensureNewPassGatewayUser(ensureCtx, req.UserID, "")
 	ensureCancel()
 	if ensureErr != nil {
 		logger.Warn("complete pass ensure-user failed", zap.Error(ensureErr))
-		return nil, fmt.Errorf("ensure ai-gateway user: %w", ensureErr)
+		return nil, fmt.Errorf("ensure gateway user: %w", ensureErr)
 	}
 	logger.Info("complete pass ensure-user succeeded",
-		zap.Bool("created", ensured != nil && ensured.Result == "created"),
+		zap.Bool("created", created),
 	)
 
 	// 步骤 6：扣减 bundle 可售卖余量（原子操作，并发安全）
@@ -896,25 +1058,25 @@ func (l *logic) CompletePass(req *transport.CompletePassRequest) (*PassDetail, e
 		return nil, fmt.Errorf("calc expired_time: %w", err)
 	}
 
-	// 步骤 9：AI Token 订阅联动（与 CreateTrialPass 一致，credit > 0 时调 ApplySubscription）
+	// 步骤 9：AI Token 订阅联动（与 CreateTrialPass 一致，credit > 0 时向选定网关开通订阅）
 	if bundle.Credit > 0 {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		// R-MR-3 v0.3.0：透传 req.TimeSpan/TimeUnit（trade 已持有用户实际购买
 		// 时长），让 ai-gateway 按 (NOW + period) 算 PeriodEnd（Q9=i1 真源）。
 		// 同一份 bundle 不再需要按时长配多个 plan — bundle.AiGatewayPlanID 复用。
-		sub, subErr := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().
-			ApplySubscription(ctx, &aigateway.ApplySubscriptionRequest{
-				IdempotencyKey: tradeSubscriptionIdempotencyKey(req.DealName),
-				UserID:         req.UserID,
-				PlanID:         bundle.AiGatewayPlanID,
-				PeriodValue:    req.TimeSpan,
-				PeriodUnit:     req.TimeUnit,
-			})
+		sub, subErr := applyNewPassGatewaySubscription(ctx, newPassSubscriptionRequest{
+			IdempotencyKey: tradeSubscriptionIdempotencyKey(req.DealName),
+			UserID:         req.UserID,
+			PlanID:         bundle.AiGatewayPlanID,
+			PeriodValue:    req.TimeSpan,
+			PeriodUnit:     req.TimeUnit,
+		})
 		cancel()
 		if subErr != nil {
-			return nil, fmt.Errorf("apply ai-gateway subscription: %w", subErr)
+			return nil, fmt.Errorf("apply gateway subscription: %w", subErr)
 		}
 		if sub != nil {
+			gatewayroute.RecordBestEffort(logger, req.UserID, sub.Gateway, sub.ID, sub.PlanID, gatewayroute.SourceApplySubscription)
 			logger.Info("complete pass subscription applied",
 				zap.String("pass_id", passID),
 				zap.String("plan_id", bundle.AiGatewayPlanID),
@@ -1029,6 +1191,9 @@ func (l *logic) CreatePassOrder(userID string, req *transport.CreatePassOrderReq
 	placeCancel()
 	if placeErr != nil {
 		logger.Warn("create pass order: trade.PlaceOrder failed", zap.Error(placeErr))
+		if err := mapTradePlaceOrderError(placeErr); err != nil {
+			return nil, err
+		}
 		return nil, fmt.Errorf("trade place order: %w", placeErr)
 	}
 	if placeResp == nil || placeResp.DealName == "" {
@@ -1063,6 +1228,14 @@ func (l *logic) CreatePassOrder(userID string, req *transport.CreatePassOrderReq
 	}
 
 	return result, nil
+}
+
+func mapTradePlaceOrderError(err error) error {
+	var tradeErr *tradeadapter.Error
+	if errors.As(err, &tradeErr) && tradeErr.Code == "BindingNotFound" {
+		return errcode.ErrPassShadowBindingRequired
+	}
+	return nil
 }
 
 // CreatePassOrderUrl v1.7.31 接口拆分：拉取支付 URL。
@@ -1175,6 +1348,9 @@ func (l *logic) CreatePassOrderAndPay(userID string, req *transport.CreatePassOr
 	placeCancel()
 	if placeErr != nil {
 		logger.Warn("create pass order and pay: trade.PlaceOrderAndPay failed", zap.Error(placeErr))
+		if err := mapTradePlaceOrderError(placeErr); err != nil {
+			return nil, err
+		}
 		return nil, fmt.Errorf("trade place order and pay: %w", placeErr)
 	}
 	if placeResp == nil || placeResp.DealName == "" {

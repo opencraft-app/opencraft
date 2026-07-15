@@ -18,6 +18,7 @@ import (
 
 	paigateway "ctl/pkg/adapter/aigateway"
 	adapterfactory "ctl/pkg/adapter/factory"
+	pllmgateway "ctl/pkg/adapter/llmgateway"
 	popenclawgateway "ctl/pkg/adapter/openclawgateway"
 	psandbox "ctl/pkg/adapter/sandbox"
 	"ctl/pkg/adapter/shadow"
@@ -50,7 +51,8 @@ type apiIntegrationHarness struct {
 	server  *httptest.Server
 	client  *http.Client
 	sandbox *integrationSandboxAdapter
-	aigw    *integrationAiGatewayAdapter
+	aigw    *integrationAIGatewayAdapter
+	llmgw   *integrationLLMGatewayAdapter
 	userID  string
 }
 
@@ -73,7 +75,7 @@ func newAPIIntegrationHarness(t *testing.T) *apiIntegrationHarness {
 			},
 		},
 		AdapterConfig: &config.AdapterConfig{
-			AiGateway: &config.AiGatewayConfig{
+			LLMGateway: &config.LLMGatewayConfig{
 				DefaultGatewayPort: 18789,
 			},
 		},
@@ -91,20 +93,21 @@ func newAPIIntegrationHarness(t *testing.T) *apiIntegrationHarness {
 	userID := "usr_api_integration"
 	ctx := testutil.NewContext(t, userID)
 	sandbox := &integrationSandboxAdapter{}
-	aigw := &integrationAiGatewayAdapter{}
+	aigw := &integrationAIGatewayAdapter{}
+	llmgw := &integrationLLMGatewayAdapter{}
 
 	logic := instancelogic.NewLogicForTest(
 		modelfactory.DefaultDaoFactory.InstanceDao(ctx),
 		modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx),
 		sandbox,
-		aigw,
+		llmgw,
 		modelfactory.DefaultDaoFactory.OperationHistoryDao(ctx),
 		zap.NewNop(),
 		"tpl-api-integration",
 	)
 
 	originalFactory := adapterfactory.DefaultAdapterFactory
-	adapterfactory.DefaultAdapterFactory = &apiIntegrationAdapterFactory{aigateway: aigw}
+	adapterfactory.DefaultAdapterFactory = &apiIntegrationAdapterFactory{aigateway: aigw, llmgateway: llmgw}
 	t.Cleanup(func() {
 		adapterfactory.DefaultAdapterFactory = originalFactory
 	})
@@ -121,18 +124,21 @@ func newAPIIntegrationHarness(t *testing.T) *apiIntegrationHarness {
 		client:  server.Client(),
 		sandbox: sandbox,
 		aigw:    aigw,
+		llmgw:   llmgw,
 		userID:  userID,
 	}
 }
 
 type apiIntegrationAdapterFactory struct {
-	aigateway paigateway.Adapter
+	aigateway  paigateway.Adapter
+	llmgateway pllmgateway.Adapter
 }
 
 func (f *apiIntegrationAdapterFactory) SandboxAdapter() psandbox.Adapter                 { return nil }
 func (f *apiIntegrationAdapterFactory) StsAdapter() sts.Adapter                          { return nil }
 func (f *apiIntegrationAdapterFactory) WhitelistAdapter() whitelist.Adapter              { return nil }
 func (f *apiIntegrationAdapterFactory) AiGatewayAdapter() paigateway.Adapter             { return f.aigateway }
+func (f *apiIntegrationAdapterFactory) LLMGatewayAdapter() pllmgateway.Adapter           { return f.llmgateway }
 func (f *apiIntegrationAdapterFactory) OpenClawGatewayAdapter() popenclawgateway.Adapter { return nil }
 func (f *apiIntegrationAdapterFactory) ShadowAdapter() shadow.Adapter                    { return nil }
 func (f *apiIntegrationAdapterFactory) TradeAdapter() trade.Adapter                      { return nil }
@@ -758,7 +764,7 @@ func (a *integrationSandboxAdapter) GetSnapshotStatus(_ context.Context, _, _ st
 	return &psandbox.GetSnapshotStatusResponse{}, nil
 }
 
-type integrationAiGatewayAdapter struct {
+type integrationAIGatewayAdapter struct {
 	mu                     sync.Mutex
 	ensureUserCalls        int
 	lastEnsureUserID       string
@@ -766,13 +772,14 @@ type integrationAiGatewayAdapter struct {
 	ensureUserErr          error
 	applySubscriptionCalls int
 	lastApplySubscription  paigateway.ApplySubscriptionRequest
+	applySubscriptionErr   error
 }
 
-func (a *integrationAiGatewayAdapter) CreateApiKey(_ context.Context, _ string, _ string) (*paigateway.CreateApiKeyResponse, error) {
+func (a *integrationAIGatewayAdapter) CreateApiKey(_ context.Context, _ string, _ string) (*paigateway.CreateApiKeyResponse, error) {
 	return nil, nil
 }
 
-func (a *integrationAiGatewayAdapter) EnsureUser(_ context.Context, userID string, nickname string) (*paigateway.EnsureUserResponse, error) {
+func (a *integrationAIGatewayAdapter) EnsureUser(_ context.Context, userID string, nickname string) (*paigateway.EnsureUserResponse, error) {
 	a.mu.Lock()
 	a.ensureUserCalls++
 	a.lastEnsureUserID = userID
@@ -785,38 +792,109 @@ func (a *integrationAiGatewayAdapter) EnsureUser(_ context.Context, userID strin
 	return &paigateway.EnsureUserResponse{UserID: userID, Result: "created"}, nil
 }
 
-func (a *integrationAiGatewayAdapter) RevokeApiKey(_ context.Context, _ string) error {
+func (a *integrationAIGatewayAdapter) RevokeApiKey(_ context.Context, _ string) error {
 	return nil
 }
 
-func (a *integrationAiGatewayAdapter) GetUserUsage(_ context.Context, _ string) (*paigateway.UserUsageResponse, error) {
+func (a *integrationAIGatewayAdapter) GetUserUsage(_ context.Context, _ string) (*paigateway.UserUsageResponse, error) {
 	return &paigateway.UserUsageResponse{}, nil
 }
 
-func (a *integrationAiGatewayAdapter) GetPlan(_ context.Context, planID string) (*paigateway.Plan, error) {
+func (a *integrationAIGatewayAdapter) GetPlan(_ context.Context, planID string) (*paigateway.Plan, error) {
 	return &paigateway.Plan{ID: planID, IsActive: true}, nil
 }
 
-func (a *integrationAiGatewayAdapter) ApplySubscription(_ context.Context, req *paigateway.ApplySubscriptionRequest) (*paigateway.Subscription, error) {
+func (a *integrationAIGatewayAdapter) ApplySubscription(_ context.Context, req *paigateway.ApplySubscriptionRequest) (*paigateway.Subscription, error) {
 	a.mu.Lock()
 	a.applySubscriptionCalls++
 	a.lastApplySubscription = *req
+	err := a.applySubscriptionErr
 	a.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
 	return &paigateway.Subscription{UserID: req.UserID, PlanID: req.PlanID, Status: "active"}, nil
 }
 
-func (a *integrationAiGatewayAdapter) ExtendSubscription(_ context.Context, req *paigateway.ExtendSubscriptionRequest) (*paigateway.ExtendSubscriptionResponse, error) {
+func (a *integrationAIGatewayAdapter) ExtendSubscription(_ context.Context, req *paigateway.ExtendSubscriptionRequest) (*paigateway.ExtendSubscriptionResponse, error) {
 	return &paigateway.ExtendSubscriptionResponse{
 		Subscription: &paigateway.Subscription{UserID: req.UserID, Status: "active"},
 		Updated:      true,
 	}, nil
 }
 
-func (a *integrationAiGatewayAdapter) CancelSubscription(_ context.Context, _ string) error {
+func (a *integrationAIGatewayAdapter) CancelSubscription(_ context.Context, _ string) error {
 	return nil
 }
 
-func (a *integrationAiGatewayAdapter) GetActiveSubscription(_ context.Context, _ string) (*paigateway.Subscription, error) {
+func (a *integrationAIGatewayAdapter) GetActiveSubscription(_ context.Context, _ string) (*paigateway.Subscription, error) {
+	return nil, nil
+}
+
+type integrationLLMGatewayAdapter struct {
+	mu                     sync.Mutex
+	ensureUserCalls        int
+	lastEnsureUserID       string
+	lastEnsureUserNickname string
+	ensureUserErr          error
+	applySubscriptionCalls int
+	lastApplySubscription  pllmgateway.ApplySubscriptionRequest
+	applySubscriptionErr   error
+}
+
+func (a *integrationLLMGatewayAdapter) CreateApiKey(_ context.Context, _ string, _ string) (*pllmgateway.CreateApiKeyResponse, error) {
+	return nil, nil
+}
+
+func (a *integrationLLMGatewayAdapter) EnsureUser(_ context.Context, userID string, nickname string) (*pllmgateway.EnsureUserResponse, error) {
+	a.mu.Lock()
+	a.ensureUserCalls++
+	a.lastEnsureUserID = userID
+	a.lastEnsureUserNickname = nickname
+	err := a.ensureUserErr
+	a.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	return &pllmgateway.EnsureUserResponse{UserID: userID, Result: "created"}, nil
+}
+
+func (a *integrationLLMGatewayAdapter) RevokeApiKey(_ context.Context, _ string) error {
+	return nil
+}
+
+func (a *integrationLLMGatewayAdapter) GetUserUsage(_ context.Context, _ string) (*pllmgateway.UserUsageResponse, error) {
+	return &pllmgateway.UserUsageResponse{}, nil
+}
+
+func (a *integrationLLMGatewayAdapter) GetPlan(_ context.Context, planID string) (*pllmgateway.Plan, error) {
+	return &pllmgateway.Plan{ID: planID, IsActive: true}, nil
+}
+
+func (a *integrationLLMGatewayAdapter) ApplySubscription(_ context.Context, req *pllmgateway.ApplySubscriptionRequest) (*pllmgateway.Subscription, error) {
+	a.mu.Lock()
+	a.applySubscriptionCalls++
+	a.lastApplySubscription = *req
+	err := a.applySubscriptionErr
+	a.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	return &pllmgateway.Subscription{UserID: req.UserID, PlanID: req.PlanID, Status: "active"}, nil
+}
+
+func (a *integrationLLMGatewayAdapter) ExtendSubscription(_ context.Context, req *pllmgateway.ExtendSubscriptionRequest) (*pllmgateway.ExtendSubscriptionResponse, error) {
+	return &pllmgateway.ExtendSubscriptionResponse{
+		Subscription: &pllmgateway.Subscription{UserID: req.UserID, Status: "active"},
+		Updated:      true,
+	}, nil
+}
+
+func (a *integrationLLMGatewayAdapter) CancelSubscription(_ context.Context, _ string) error {
+	return nil
+}
+
+func (a *integrationLLMGatewayAdapter) GetActiveSubscription(_ context.Context, _ string) (*pllmgateway.Subscription, error) {
 	return nil, nil
 }
 
@@ -925,6 +1003,85 @@ func TestCompletePassAPIIntegrationHappyPath(t *testing.T) {
 	dealName := body["deal_name"].(string)
 	if applyReq.IdempotencyKey != "trade:"+dealName {
 		t.Fatalf("idempotency_key = %q, want %q", applyReq.IdempotencyKey, "trade:"+dealName)
+	}
+}
+
+func TestCompletePassAPIIntegrationAIGatewaySubscriptionFailureIsNonRetryable(t *testing.T) {
+	h := newAPIIntegrationHarness(t)
+	bundleID := "bundle_complete_aigateway_apply_failed"
+	seedBundleForPass(t, bundleID, 100, "plan-pro")
+
+	h.aigw.mu.Lock()
+	h.aigw.applySubscriptionErr = fmt.Errorf("ai-gateway upstream apply failed")
+	h.aigw.mu.Unlock()
+
+	body := completePassReqDefaults(h.userID, bundleID)
+	resp := h.request(t, http.MethodPost, "/internal/ctl/passes/complete", body, nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for non-retryable gateway subscription failure, got %d body=%s",
+			resp.StatusCode, readBody(t, resp))
+	}
+	bodyStr := readBody(t, resp)
+	if !strings.Contains(bodyStr, "PASS_GATEWAY_SUBSCRIPTION_FAILED") {
+		t.Fatalf("expected PASS_GATEWAY_SUBSCRIPTION_FAILED, got body=%s", bodyStr)
+	}
+
+	var passCount int64
+	if err := resource.GormDB.Table("pass").
+		Where("user_id = ?", h.userID).Count(&passCount).Error; err != nil {
+		t.Fatalf("count pass: %v", err)
+	}
+	if passCount != 0 {
+		t.Fatalf("expected no pass row after subscription failure, got %d", passCount)
+	}
+
+	var bundle bundlemodel.Entity
+	if err := resource.GormDB.Table(bundlemodel.TableName).
+		Where("bundle_id = ?", bundleID).First(&bundle).Error; err != nil {
+		t.Fatalf("load bundle: %v", err)
+	}
+	if bundle.BundleSalesAvailCount != 10 {
+		t.Fatalf("expected bundle avail rollback to 10, got %d", bundle.BundleSalesAvailCount)
+	}
+}
+
+func TestCompletePassAPIIntegrationLLMGatewaySubscriptionFailureIsNonRetryable(t *testing.T) {
+	h := newAPIIntegrationHarness(t)
+	config.ServerConf.AdapterConfig.LLMGateway.Enabled = true
+	bundleID := "bundle_complete_llmgateway_apply_failed"
+	seedBundleForPass(t, bundleID, 100, "plan-pro")
+
+	h.llmgw.mu.Lock()
+	h.llmgw.applySubscriptionErr = fmt.Errorf("llmgateway upstream apply failed")
+	h.llmgw.mu.Unlock()
+
+	body := completePassReqDefaults(h.userID, bundleID)
+	resp := h.request(t, http.MethodPost, "/internal/ctl/passes/complete", body, nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for non-retryable gateway subscription failure, got %d body=%s",
+			resp.StatusCode, readBody(t, resp))
+	}
+	bodyStr := readBody(t, resp)
+	if !strings.Contains(bodyStr, "PASS_GATEWAY_SUBSCRIPTION_FAILED") {
+		t.Fatalf("expected PASS_GATEWAY_SUBSCRIPTION_FAILED, got body=%s", bodyStr)
+	}
+
+	var passCount int64
+	if err := resource.GormDB.Table("pass").
+		Where("user_id = ?", h.userID).Count(&passCount).Error; err != nil {
+		t.Fatalf("count pass: %v", err)
+	}
+	if passCount != 0 {
+		t.Fatalf("expected no pass row after subscription failure, got %d", passCount)
+	}
+
+	var bundle bundlemodel.Entity
+	if err := resource.GormDB.Table(bundlemodel.TableName).
+		Where("bundle_id = ?", bundleID).First(&bundle).Error; err != nil {
+		t.Fatalf("load bundle: %v", err)
+	}
+	if bundle.BundleSalesAvailCount != 10 {
+		t.Fatalf("expected bundle avail rollback to 10, got %d", bundle.BundleSalesAvailCount)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -16,6 +17,9 @@ import (
 
 	"go.uber.org/zap"
 )
+
+// ErrAiGatewayNotConfigured 表示 legacy ai-gateway 适配器缺少必要配置。
+var ErrAiGatewayNotConfigured = errors.New("ai-gateway not configured")
 
 // Adapter 定义 AI-Gateway 对外暴露的操作接口
 type Adapter interface {
@@ -93,7 +97,7 @@ func NewAiGatewayAdapter(conf *config.AiGatewayConfig, logger *zap.Logger) *AiGa
 // CreateApiKey 调用 POST /api/admin/users/:user_id/api-keys
 func (a *AiGatewayAdapter) CreateApiKey(ctx context.Context, userID string, name string) (*CreateApiKeyResponse, error) {
 	if a.baseURL == "" {
-		return nil, fmt.Errorf("ai-gateway base_url not configured")
+		return nil, fmt.Errorf("%w: base_url", ErrAiGatewayNotConfigured)
 	}
 
 	req := &CreateApiKeyRequest{Name: name}
@@ -158,7 +162,7 @@ func (a *AiGatewayAdapter) CreateApiKey(ctx context.Context, userID string, name
 // RevokeApiKey 调用 DELETE /api/admin/api-keys/:id
 func (a *AiGatewayAdapter) RevokeApiKey(ctx context.Context, keyID string) error {
 	if a.baseURL == "" {
-		return fmt.Errorf("ai-gateway base_url not configured")
+		return fmt.Errorf("%w: base_url", ErrAiGatewayNotConfigured)
 	}
 	keyID = strings.TrimSpace(keyID)
 	if keyID == "" {
@@ -206,7 +210,7 @@ func (a *AiGatewayAdapter) RevokeApiKey(ctx context.Context, keyID string) error
 // GetUserUsage 调用 GET /api/admin/users/:user_id/usage
 func (a *AiGatewayAdapter) GetUserUsage(ctx context.Context, userID string) (*UserUsageResponse, error) {
 	if a.baseURL == "" {
-		return nil, fmt.Errorf("ai-gateway base_url not configured")
+		return nil, fmt.Errorf("%w: base_url", ErrAiGatewayNotConfigured)
 	}
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
@@ -280,10 +284,10 @@ func (a *AiGatewayAdapter) applyInternalAuth(req *http.Request) {
 // EnsureUser 调用 POST /api/internal/users/ensure
 func (a *AiGatewayAdapter) EnsureUser(ctx context.Context, userID string, nickname string) (*EnsureUserResponse, error) {
 	if a.baseURL == "" {
-		return nil, fmt.Errorf("ai-gateway base_url not configured")
+		return nil, fmt.Errorf("%w: base_url", ErrAiGatewayNotConfigured)
 	}
 	if a.internalToken == "" {
-		return nil, fmt.Errorf("ai-gateway internal_service_token not configured")
+		return nil, fmt.Errorf("%w: internal_service_token", ErrAiGatewayNotConfigured)
 	}
 	userID = strings.TrimSpace(userID)
 	nickname = strings.TrimSpace(nickname)
@@ -359,10 +363,10 @@ var ErrAiGatewayRouteNotFound = fmt.Errorf("ai-gateway route not found (likely d
 // GetPlan 调用 GET /api/internal/plans/:id
 func (a *AiGatewayAdapter) GetPlan(ctx context.Context, planID string) (*Plan, error) {
 	if a.baseURL == "" {
-		return nil, fmt.Errorf("ai-gateway base_url not configured")
+		return nil, fmt.Errorf("%w: base_url", ErrAiGatewayNotConfigured)
 	}
 	if a.internalToken == "" {
-		return nil, fmt.Errorf("ai-gateway internal_service_token not configured")
+		return nil, fmt.Errorf("%w: internal_service_token", ErrAiGatewayNotConfigured)
 	}
 	planID = strings.TrimSpace(planID)
 	if planID == "" {
@@ -415,10 +419,10 @@ func (a *AiGatewayAdapter) GetPlan(ctx context.Context, planID string) (*Plan, e
 // (NOW + period) 算 PeriodEnd（Q9=i1 真源）；未传时回退 plan 兜底（Q10=j1）。
 func (a *AiGatewayAdapter) ApplySubscription(ctx context.Context, req *ApplySubscriptionRequest) (*Subscription, error) {
 	if a.baseURL == "" {
-		return nil, fmt.Errorf("ai-gateway base_url not configured")
+		return nil, fmt.Errorf("%w: base_url", ErrAiGatewayNotConfigured)
 	}
 	if a.internalToken == "" {
-		return nil, fmt.Errorf("ai-gateway internal_service_token not configured")
+		return nil, fmt.Errorf("%w: internal_service_token", ErrAiGatewayNotConfigured)
 	}
 	if req == nil {
 		return nil, fmt.Errorf("ai-gateway apply-subscription req is nil")
@@ -478,10 +482,10 @@ func (a *AiGatewayAdapter) ApplySubscription(ctx context.Context, req *ApplySubs
 // CancelSubscription 调用 POST /api/internal/subscriptions/cancel
 func (a *AiGatewayAdapter) CancelSubscription(ctx context.Context, userID string) error {
 	if a.baseURL == "" {
-		return fmt.Errorf("ai-gateway base_url not configured")
+		return fmt.Errorf("%w: base_url", ErrAiGatewayNotConfigured)
 	}
 	if a.internalToken == "" {
-		return fmt.Errorf("ai-gateway internal_service_token not configured")
+		return fmt.Errorf("%w: internal_service_token", ErrAiGatewayNotConfigured)
 	}
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
@@ -530,10 +534,10 @@ func (a *AiGatewayAdapter) CancelSubscription(ctx context.Context, userID string
 // 无订阅或用户不存在时返回 (nil, nil)，调用方按需处理
 func (a *AiGatewayAdapter) GetActiveSubscription(ctx context.Context, userID string) (*Subscription, error) {
 	if a.baseURL == "" {
-		return nil, fmt.Errorf("ai-gateway base_url not configured")
+		return nil, fmt.Errorf("%w: base_url", ErrAiGatewayNotConfigured)
 	}
 	if a.internalToken == "" {
-		return nil, fmt.Errorf("ai-gateway internal_service_token not configured")
+		return nil, fmt.Errorf("%w: internal_service_token", ErrAiGatewayNotConfigured)
 	}
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
@@ -620,10 +624,10 @@ func decodeSubscription(body []byte) (*Subscription, error) {
 // 不动 token_balance：月度刷新 scheduler 自然按月回血，无需 R-D 链路操心 token。
 func (a *AiGatewayAdapter) ExtendSubscription(ctx context.Context, req *ExtendSubscriptionRequest) (*ExtendSubscriptionResponse, error) {
 	if a.baseURL == "" {
-		return nil, fmt.Errorf("ai-gateway base_url not configured")
+		return nil, fmt.Errorf("%w: base_url", ErrAiGatewayNotConfigured)
 	}
 	if a.internalToken == "" {
-		return nil, fmt.Errorf("ai-gateway internal_service_token not configured")
+		return nil, fmt.Errorf("%w: internal_service_token", ErrAiGatewayNotConfigured)
 	}
 	if req == nil {
 		return nil, fmt.Errorf("ai-gateway extend-subscription req is nil")

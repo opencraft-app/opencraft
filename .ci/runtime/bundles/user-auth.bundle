@@ -35,6 +35,14 @@ bundles:
     - user/auth/k8s/base/**
     - user/auth/k8s/overlays/{env}/**
     publish_paths_by_env:
+      shprod:
+      - argocd/services/lightclaw-auth/shprod/**
+      - argocd/apps/shprod/lightclaw-auth.yaml
+      - argocd/secrets/shprod/lightclaw-auth-secrets.sops.yaml
+      - argocd/secrets/shprod/lightclaw-auth-content-audit-secrets.sops.yaml
+      - argocd/secrets/shprod/shadow-runtime-secrets.sops.yaml
+      - user/auth/k8s/base/**
+      - user/auth/k8s/overlays/shprod/**
       beijing-sandbox:
       - argocd/services/lightclaw-auth/beijing-sandbox/**
       - argocd/services/lightclaw-auth/common/**

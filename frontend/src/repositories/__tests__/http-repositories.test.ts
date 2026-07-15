@@ -306,6 +306,140 @@ describe("http repositories auth token bootstrap", () => {
     );
   });
 
+  it("starts a FaceID attempt with the new contract", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          attemptId: "attempt_http_1",
+          verificationUrl: "https://faceid.example.invalid/attempt_http_1",
+          expiresAt: "2026-07-13T12:00:00.000Z",
+          state: "pending",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const result = await repositories.auth.startRealnameFaceIdAttempt({
+      name: "张三",
+      idCard: "110101199001011234",
+      consent: true,
+    });
+
+    expect(result).toEqual({
+      attemptId: "attempt_http_1",
+      verificationUrl: "https://faceid.example.invalid/attempt_http_1",
+      expiresAt: "2026-07-13T12:00:00.000Z",
+      state: "pending",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://lightclaw.tech/auth/realname/faceid/attempts",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          name: "张三",
+          idCard: "110101199001011234",
+          consent: true,
+        }),
+      }),
+    );
+  });
+
+  it("reads an owned FaceID attempt result", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          attemptId: "attempt_http_2",
+          state: "shadow_pending",
+          verificationUrl: "https://faceid.example.invalid/attempt_http_2",
+          expiresAt: "2026-07-13T12:05:00.000Z",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const result = await repositories.auth.getRealnameFaceIdAttempt("attempt_http_2");
+
+    expect(result).toEqual({
+      attemptId: "attempt_http_2",
+      state: "shadow_pending",
+      verificationUrl: "https://faceid.example.invalid/attempt_http_2",
+      expiresAt: "2026-07-13T12:05:00.000Z",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://lightclaw.tech/auth/realname/faceid/attempts/attempt_http_2",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("restores the current recoverable FaceID attempt", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ attemptId: "attempt_current", state: "shadow_pending" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    await expect(repositories.auth.getCurrentRealnameFaceIdAttempt()).resolves.toMatchObject({
+      attemptId: "attempt_current",
+      state: "shadow_pending",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://lightclaw.tech/auth/realname/faceid/attempts/current",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("sends and binds phone proof through the FaceID attempt endpoints", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ cooldownSeconds: 60 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ attemptId: "attempt_http_3", state: "shadow_pending" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ attemptId: "attempt_http_3", state: "succeeded" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    await expect(repositories.auth.sendRealnameFaceIdPhoneCode("attempt_http_3", { phone: "13800138123" }))
+      .resolves.toEqual({ cooldownSeconds: 60 });
+    await expect(repositories.auth.verifyRealnameFaceIdPhone("attempt_http_3", { code: "123456", phone: "13800138123" }))
+      .resolves.toMatchObject({ state: "shadow_pending" });
+    await expect(repositories.auth.finalizeRealnameFaceIdAttempt("attempt_http_3"))
+      .resolves.toMatchObject({ state: "succeeded" });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "https://lightclaw.tech/auth/realname/faceid/attempts/attempt_http_3/send-phone-code",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ phone: "13800138123" }) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "https://lightclaw.tech/auth/realname/faceid/attempts/attempt_http_3/verify-phone",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ code: "123456", phone: "13800138123" }) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "https://lightclaw.tech/auth/realname/faceid/attempts/attempt_http_3/finalize",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
   it("loads dashboard bots from ctl instances", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi.fn().mockResolvedValue(
