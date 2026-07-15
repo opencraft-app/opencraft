@@ -2262,12 +2262,6 @@ const SubscriptionSection = ({
           <h3 className="text-[18px] md:text-[20px]" style={{ fontWeight: 500, color: "rgba(0,0,0,0.9)", lineHeight: 1.6 }}>
             {t("订阅套餐")}
           </h3>
-          <span
-            className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold"
-            style={{ background: "rgba(20,122,86,0.08)", color: "#147A56" }}
-          >
-            {t("内测期免费体验")}
-          </span>
         </div>
       </div>
       <div className="space-y-5 px-5 py-6 md:px-8 md:py-8">
@@ -2359,21 +2353,11 @@ const SubscriptionSection = ({
         )}
 
         {/* 续费 / 销毁按钮区：仅国内站 + 可操作 pass 时展示 */}
-        {((showAccountRenewTools && canRenew) || canDelete) && operablePass && (
+        {(canDelete) && operablePass && (
           <>
             <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
             <div className="flex flex-wrap items-center gap-3">
-              {showAccountRenewTools && canRenew && (
-                <button
-                  type="button"
-                  onClick={() => setRenewModalOpen(true)}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-full px-5 py-2.5 text-sm font-semibold text-white transition-all hover:-translate-y-[1px] hover:shadow-[0_4px_12px_rgba(0,0,0,0.15)]"
-                  style={{ background: "#202020" }}
-                >
-                  <Zap className="h-4 w-4" />
-                  {passStatus === "active" ? t("立即续费") : t("恢复使用")}
-                </button>
-              )}
+              {/* 续费按钮暂隐藏 */}
               {canDelete && (
                 <button
                   type="button"
@@ -2514,6 +2498,8 @@ export const AccountPage = () => {
   const [realnameSyncError, setRealnameSyncError] = useState<string | null>(null);
   // 从首页「立即创建」跳转过来、要求先完成实名认证时的提醒 tips
   const [realnameRequiredTip, setRealnameRequiredTip] = useState<string | null>(null);
+  // 实名完成后需要跳回的页面路径（从 return_to query 读取，仅站内路径）
+  const [realnameReturnTo, setRealnameReturnTo] = useState<string | null>(null);
 
   // Email bind —— 国内站微信/QQ 登录用户通过 Magic Link 绑定邮箱。
   // 邮箱输入/发送验证邮件的交互已收敛进 BindEmailModal；这里仅保留 OAuth 回跳
@@ -2604,17 +2590,30 @@ export const AccountPage = () => {
     if (isGlobal) return;
     if (searchParams.get(REALNAME_REQUIRED_QUERY_KEY) !== "1") return;
 
+    // 读取 return_to（仅站内路径，防开放重定向），实名完成后自动跳回
+    const returnTo = searchParams.get("return_to") ?? "";
+    if (returnTo.startsWith("/") && !returnTo.startsWith("//")) {
+      setRealnameReturnTo(returnTo);
+    }
+
     const next = new URLSearchParams(searchParams);
     next.delete(REALNAME_REQUIRED_QUERY_KEY);
+    next.delete("return_to");
     setSearchParams(next, { replace: true });
 
     setRealnameRequiredTip(t("创建 LightVela 前，请先完成实名认证。"));
   }, [searchParams, setSearchParams, t, isGlobal]);
 
-  // 实名认证完成后自动清除提醒
+  // 实名认证完成后自动清除提醒；若有 return_to 则自动跳回原页面
   useEffect(() => {
-    if (verified) setRealnameRequiredTip(null);
-  }, [verified]);
+    if (!verified) return;
+    setRealnameRequiredTip(null);
+    if (realnameReturnTo) {
+      const target = realnameReturnTo;
+      setRealnameReturnTo(null);
+      navigate(target);
+    }
+  }, [verified, realnameReturnTo, navigate]);
 
   useEffect(() => {
     if (!hasPendingAvatarAudit && !hasPendingNameAudit) return;

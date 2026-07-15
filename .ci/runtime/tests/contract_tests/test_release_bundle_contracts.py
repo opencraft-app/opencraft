@@ -660,6 +660,28 @@ class ReleaseBundleContractTests(unittest.TestCase):
         package_json = json.loads((REPO_ROOT / "frontend/package.json").read_text())
         self.assertIn("node scripts/clean-next-build-state.mjs", package_json["scripts"]["build:next"])
 
+    def test_frontend_preview_builds_from_an_isolated_source_directory(self) -> None:
+        workflow_text = (REPO_ROOT / ".ci/frontend-preview.yml").read_text()
+
+        self.assertIn(
+            'FRONTEND_PREVIEW_SOURCE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/frontend-preview-source.XXXXXX")"',
+            workflow_text,
+        )
+        self.assertIn(
+            'git archive --format=tar "$FRONTEND_PREVIEW_SHA" | tar -xf - -C "$FRONTEND_PREVIEW_SOURCE_DIR"',
+            workflow_text,
+        )
+        self.assertIn('export REPO_ROOT="$FRONTEND_PREVIEW_SOURCE_DIR"', workflow_text)
+        self.assertIn('rm -rf "$FRONTEND_PREVIEW_RUNTIME_DIR" "$FRONTEND_PREVIEW_SOURCE_DIR"', workflow_text)
+        self.assertLess(
+            workflow_text.index('git archive --format=tar "$FRONTEND_PREVIEW_SHA"'),
+            workflow_text.index('export REPO_ROOT="$FRONTEND_PREVIEW_SOURCE_DIR"'),
+        )
+        self.assertLess(
+            workflow_text.index('export REPO_ROOT="$FRONTEND_PREVIEW_SOURCE_DIR"'),
+            workflow_text.index('bash "$FRONTEND_PREVIEW_RUNTIME_CI_DIR/runtime/commands/publish_frontend_preview.sh"'),
+        )
+
     def test_frontend_preview_builds_cn_and_intl_with_separate_api_bases(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/runtime/commands/publish_frontend_preview.sh").read_text()
 
