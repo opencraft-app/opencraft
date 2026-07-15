@@ -2075,21 +2075,11 @@ const SubscriptionSection = ({
         )}
 
         {/* 续费 / 销毁按钮区：仅国内站 + 可操作 pass 时展示 */}
-        {((showAccountRenewTools && canRenew) || canDelete) && operablePass && (
+        {(canDelete) && operablePass && (
           <>
             <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
             <div className="flex flex-wrap items-center gap-3">
-              {showAccountRenewTools && canRenew && (
-                <button
-                  type="button"
-                  onClick={() => setRenewModalOpen(true)}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-full px-5 py-2.5 text-sm font-semibold text-white transition-all hover:-translate-y-[1px] hover:shadow-[0_4px_12px_rgba(0,0,0,0.15)]"
-                  style={{ background: "#202020" }}
-                >
-                  <Zap className="h-4 w-4" />
-                  {passStatus === "active" ? t("立即续费") : t("恢复使用")}
-                </button>
-              )}
+              {/* 续费按钮暂隐藏 */}
               {canDelete && (
                 <button
                   type="button"
