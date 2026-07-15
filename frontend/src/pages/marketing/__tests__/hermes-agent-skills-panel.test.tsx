@@ -2,7 +2,6 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { TsshFileInfo } from "@/lib/tencent-tssh-file-client";
 import type { ExpertsExecDebugCommand } from "../hermes-agent-experts-panel";
 import {
   getInitialAgentSkillsTab,
@@ -94,19 +93,6 @@ function TestSkillPanel() {
   );
 }
 
-const tsshEntry = (name: string, type: TsshFileInfo["type"]): TsshFileInfo => ({
-  accessTime: 0,
-  modifyTime: 0,
-  name,
-  size: 0,
-  type,
-});
-
-const tsshRecentEntry = (name: string, type: TsshFileInfo["type"]): TsshFileInfo => ({
-  ...tsshEntry(name, type),
-  modifyTime: Math.floor(Date.now() / 1000),
-});
-
 const renderPanel = (initialSectionSlug?: string, showSkillPackages = true) => {
   const execDebugCommand: ExpertsExecDebugCommand = vi.fn();
   render(
@@ -177,95 +163,10 @@ describe("HermesAgentSkillsPanel", () => {
     expect(screen.getByPlaceholderText("搜索 SkillHub 中的技能")).toBeInTheDocument();
   });
 
-  it("runs Quick Learn from the Create Skill tab", async () => {
-    const { execDebugCommand } = renderPanel("skills", false);
-    tsshMocks.getTerminalSessionMock.mockResolvedValue({
-      wsUrl: "wss://example.test/tssh",
-      token: "terminal-session-token",
-    });
-    tsshMocks.execCommandMock.mockResolvedValue({
-      exitCode: 0,
-      output: "Learning...\n__LIGHTVELA_HERMES_LEARN_COMPLETE__\n",
-    });
-    tsshMocks.listPathMock.mockImplementation(async (path: string) => {
-      if (path === "/home/agentuser/.hermes/skills") {
-        return [tsshEntry("MySkill", "d")];
-      }
-      if (path === "/home/agentuser/.hermes/skills/MySkill") {
-        return [tsshEntry("SKILL.md", "-")];
-      }
-      return [];
-    });
-
-    await userEvent.click(screen.getByRole("tab", { name: "创建技能" }));
-
-    expect(screen.getAllByText("速学").length).toBeGreaterThan(0);
-    expect(screen.getByLabelText("Name your skill")).toHaveAttribute("placeholder", "Name your skill");
-    expect(screen.getByText("添加来源")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Cloud storage" })).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByRole("button", { name: "URL" })).toHaveAttribute("aria-pressed", "false");
-    expect(screen.queryByText("Cloud storage directory")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Browse cloud storage" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Drag or upload files" })).not.toBeInTheDocument();
-    const quickLearnNotes = screen.getAllByRole("textbox").find((element) => element.tagName === "TEXTAREA");
-    expect(quickLearnNotes).toBeDefined();
-
-    await userEvent.type(screen.getByLabelText("Name your skill"), "MySkill");
-    await userEvent.type(
-      quickLearnNotes!,
-      "how to find the best trends",
-    );
-    await userEvent.click(screen.getByLabelText("Learn"));
-
-    expect(tsshMocks.execCommandMock).toHaveBeenCalledOnce();
-    const [command, timeout] = tsshMocks.execCommandMock.mock.calls[0] as [string, number];
-    expect(timeout).toBe(900);
-    expect(command).toContain("hermes");
-    expect(command).toContain("chat --toolsets \"$TOOLSETS\" -q");
-    expect(command).toContain("terminal,file,skills");
-    expect(command).toContain("/learn Create a reusable Hermes skill named");
-    expect(command).toContain("MySkill");
-    expect(command).toContain("how to find the best trends");
-    expect(execDebugCommand).toHaveBeenCalledWith("bot-1", "acli skills list");
-    expect(
-      await screen.findByText("Complete. Created /home/agentuser/.hermes/skills/MySkill/SKILL.md. Refreshing Agent Skills."),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("progressbar", { name: "Learn skill progress" })).toHaveAttribute("aria-valuenow", "100");
-    expect(screen.getAllByText(/Complete/).length).toBeGreaterThan(0);
-  });
-
-  it("accepts a recently created slugged skill folder for non-English skill names", async () => {
+  it("hides the Create Skill tab for now", () => {
     renderPanel("skills", false);
-    tsshMocks.getTerminalSessionMock.mockResolvedValue({
-      wsUrl: "wss://example.test/tssh",
-      token: "terminal-session-token",
-    });
-    tsshMocks.execCommandMock.mockResolvedValue({
-      exitCode: 0,
-      output: "Learning...\n__LIGHTVELA_HERMES_LEARN_COMPLETE__\n",
-    });
-    tsshMocks.listPathMock.mockImplementation(async (path: string) => {
-      if (path === "/home/agentuser/.hermes/skills") {
-        return [tsshRecentEntry("wechat-configure-steps", "d")];
-      }
-      if (path === "/home/agentuser/.hermes/skills/wechat-configure-steps") {
-        return [tsshRecentEntry("SKILL.md", "-")];
-      }
-      return [];
-    });
 
-    await userEvent.click(screen.getByRole("tab", { name: "创建技能" }));
-    await userEvent.type(screen.getByLabelText("Name your skill"), "微信配置steps");
-    await userEvent.type(
-      screen.getAllByRole("textbox").find((element) => element.tagName === "TEXTAREA")!,
-      "微信配置步骤",
-    );
-    await userEvent.click(screen.getByLabelText("Learn"));
-
-    expect(
-      await screen.findByText(
-        "Complete. Created /home/agentuser/.hermes/skills/wechat-configure-steps/SKILL.md. Refreshing Agent Skills.",
-      ),
-    ).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "创建技能" })).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText("搜索 SkillHub 中的技能")).toBeInTheDocument();
   });
 });

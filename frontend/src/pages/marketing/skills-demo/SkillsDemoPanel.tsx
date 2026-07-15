@@ -1445,7 +1445,7 @@ export function SkillsDemoPanel({
   );
 
   const [keyword, setKeyword] = useState("");
-  const [activeTab, setActiveTab] = useState<SkillsDemoTab>(initialTab);
+  const [activeTab, setActiveTab] = useState<SkillsDemoTab>(initialTab === "create" ? "discover" : initialTab);
   const [debounced, setDebounced] = useState("");
   const [registryFilter, setRegistryFilter] = useState<RegistryFilter>("all");
   const [sortMode, setSortMode] = useState<SortMode>("popular");
@@ -1463,6 +1463,10 @@ export function SkillsDemoPanel({
   const [knownInstalledIds, setKnownInstalledIds] = useState<Set<string>>(new Set());
   const [featuredBatch, setFeaturedBatch] = useState(0);
   const [selectedSkillDetails, setSelectedSkillDetails] = useState<SkillDetailsEntry | null>(null);
+
+  useEffect(() => {
+    setActiveTab(initialTab === "create" ? "discover" : initialTab);
+  }, [initialTab]);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
@@ -1659,7 +1663,7 @@ export function SkillsDemoPanel({
       <Tabs
         value={activeTab}
         onValueChange={(value) => {
-          if (value !== "discover" && value !== "experts" && value !== "create" && value !== "installed") return;
+          if (value !== "discover" && value !== "experts" && value !== "installed") return;
           const nextTab = value as SkillsDemoTab;
           setActiveTab(nextTab);
           onTabChange?.(nextTab);
@@ -1694,12 +1698,6 @@ export function SkillsDemoPanel({
                 {installed.length}
               </span>
             ) : null}
-          </TabsTrigger>
-          <TabsTrigger
-            value="create"
-            className="relative ml-auto !h-9 !min-w-0 !rounded-none !bg-transparent !px-0 !py-0 pb-2 text-sm font-medium text-black/55 !shadow-none transition-colors after:absolute after:bottom-[-1px] after:left-0 after:h-0.5 after:w-full after:bg-transparent hover:text-black/80 data-[state=active]:!bg-transparent data-[state=active]:text-black/90 data-[state=active]:!shadow-none data-[state=active]:after:bg-black"
-          >
-            {t("创建技能")}
           </TabsTrigger>
         </TabsList>
 
@@ -1968,13 +1966,6 @@ export function SkillsDemoPanel({
           )}
         </TabsContent>
 
-        <TabsContent value="create" className="mt-0">
-          <CreateSkillPanel
-            learnSkillTrigger={learnSkillTrigger}
-            learnSkillPanel={learnSkillPanel}
-            learnSkillTriggerFactory={learnSkillTriggerFactory}
-          />
-        </TabsContent>
       </Tabs>
     </div>
   );
