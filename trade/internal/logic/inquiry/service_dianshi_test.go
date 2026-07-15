@@ -9,6 +9,7 @@ package inquiry
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -66,8 +67,9 @@ func newFakeDianshiSuccess() *fakeDianshi {
 		priceResp: &dianshiclient.GetPriceResponse{
 			PriceItems: []dianshiclient.PriceItem{{
 				ActID: 1862147936410255, AmountUnit: "pent", Currency: "CNY", Pid: 1016641,
-				Price: 990, TotalCost: 990, RealCost: 0, // 限时免费 0 元
-				ProductCode: "p_lighthouse", SubProductCode: "sp_lighthouse_lightvela_ai_mc",
+				Price: 9500, TotalCost: 9500, RealCost: 4750, // 点石 5 折，真实出参 policy_detail.total=50
+				PolicyDetail: json.RawMessage(`{"activity":50,"combine":50,"common":100,"total":50,"user":100}`),
+				ProductCode:  "p_lighthouse", SubProductCode: "sp_lighthouse_lightvela_ai_mc",
 				TimeSpan: 1, TimeUnit: "m",
 			}},
 		},
@@ -129,8 +131,11 @@ func TestQuote_DianshiBranch_NotParticipated(t *testing.T) {
 	if got, _ := prefParam["bundleId"].(string); got != "bundle_launch_01" {
 		t.Errorf("preference_param.bundleId=%v want bundle_launch_01", prefParam["bundleId"])
 	}
-	if res.RealTotalCost != "0" || res.TotalCost != "990" {
-		t.Errorf("RealTotalCost=%s TotalCost=%s want 0/990", res.RealTotalCost, res.TotalCost)
+	if res.RealTotalCost != "4750" || res.TotalCost != "9500" {
+		t.Errorf("RealTotalCost=%s TotalCost=%s want 4750/9500", res.RealTotalCost, res.TotalCost)
+	}
+	if res.Discount != 50 {
+		t.Errorf("Discount=%v want 50", res.Discount)
 	}
 }
 
