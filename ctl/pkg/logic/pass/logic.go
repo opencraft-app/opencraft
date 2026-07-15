@@ -69,8 +69,11 @@ func applyNewPassGatewaySubscription(ctx context.Context, req newPassSubscriptio
 			PeriodValue:    req.PeriodValue,
 			PeriodUnit:     req.PeriodUnit,
 		})
-		if err != nil || sub == nil {
-			return nil, err
+		if err != nil {
+			return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "apply llmgateway subscription: %v", err)
+		}
+		if sub == nil {
+			return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "apply llmgateway subscription returned empty subscription")
 		}
 		return &newPassSubscription{ID: sub.ID, PlanID: sub.PlanID, Gateway: gatewayroute.GatewayLLMGateway}, nil
 	}
@@ -82,8 +85,11 @@ func applyNewPassGatewaySubscription(ctx context.Context, req newPassSubscriptio
 		PeriodValue:    req.PeriodValue,
 		PeriodUnit:     req.PeriodUnit,
 	})
-	if err != nil || sub == nil {
-		return nil, err
+	if err != nil {
+		return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "apply ai-gateway subscription: %v", err)
+	}
+	if sub == nil {
+		return nil, errcode.Wrap(errcode.ErrPassGatewaySubscriptionFailed, "apply ai-gateway subscription returned empty subscription")
 	}
 	return &newPassSubscription{ID: sub.ID, PlanID: sub.PlanID, Gateway: gatewayroute.GatewayAIGateway}, nil
 }
@@ -779,6 +785,11 @@ func getCompatibleActiveSubscriptionTokenBalance(ctx context.Context, userID str
 			gatewayroute.RecordBestEffort(resource.ZapLogger, userID, gatewayroute.GatewayAIGateway, sub.ID, sub.PlanID, gatewayroute.SourceDetectActiveSubscription)
 			return sub.TokenBalance, true, nil
 		case gatewayroute.GatewayLLMGateway:
+			if !config.LLMGatewayEnabled() {
+				resource.ZapLogger.Warn("recorded llmgateway subscription ignored because llmgateway is disabled",
+					zap.String("user_id", userID))
+				break
+			}
 			sub, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().GetActiveSubscription(ctx, userID)
 			if err != nil {
 				return 0, false, err
@@ -810,6 +821,13 @@ func getCompatibleActiveSubscriptionTokenBalance(ctx context.Context, userID str
 				zap.Error(legacyErr),
 			)
 		}
+	}
+
+	if !config.LLMGatewayEnabled() {
+		if legacyErr != nil && !isLegacyGatewayDisabled(legacyErr) {
+			return 0, false, legacyErr
+		}
+		return 0, false, nil
 	}
 
 	llmSub, llmErr := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().GetActiveSubscription(ctx, userID)

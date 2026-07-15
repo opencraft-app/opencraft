@@ -174,33 +174,36 @@ func validateCreditPlanPeriod(credit int64, timeSpan int, timeUnit, aiGatewayPla
 		return errcode.Wrap(errcode.ErrBundlePlanMismatch, "credit>0 but ai_gateway_plan_id is empty")
 	}
 
-	// 调用网关校验 Plan 一致性。新套餐优先查 LLMGateway；存量套餐仍兼容 AiGateway。
+	// 调用网关校验 Plan 一致性。LLMGateway 显式开启时优先查新网关；关闭时只走 legacy ai-gateway。
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	plan, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().GetPlan(ctx, aiGatewayPlanID)
-	if err != nil {
-		if errors.Is(err, llmgateway.ErrLLMGatewayPlanNotFound) {
-			legacyAdapter := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter()
-			if legacyAdapter == nil {
-				return errcode.Wrap(errcode.ErrBundleAiGatewayUnavailable, "ai-gateway adapter unavailable while validating legacy plan %s", aiGatewayPlanID)
-			}
-			legacyPlan, legacyErr := legacyAdapter.GetPlan(ctx, aiGatewayPlanID)
-			if legacyErr == nil {
-				plan = &llmgateway.Plan{
-					ID:            legacyPlan.ID,
-					Name:          legacyPlan.Name,
-					MonthlyTokens: legacyPlan.MonthlyTokens,
-					PeriodValue:   legacyPlan.PeriodValue,
-					PeriodUnit:    legacyPlan.PeriodUnit,
-					IsActive:      legacyPlan.IsActive,
-				}
-			} else if errors.Is(legacyErr, aigateway.ErrAiGatewayPlanNotFound) {
-				return errcode.Wrap(errcode.ErrBundlePlanNotFound, "plan %s not found in ai-gateway or llmgateway", aiGatewayPlanID)
-			} else {
-				return errcode.Wrap(errcode.ErrBundleAiGatewayUnavailable, "%v", legacyErr)
-			}
-		} else {
+	var plan *llmgateway.Plan
+	if config.LLMGatewayEnabled() {
+		var err error
+		plan, err = adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().GetPlan(ctx, aiGatewayPlanID)
+		if err != nil && !errors.Is(err, llmgateway.ErrLLMGatewayPlanNotFound) {
 			return errcode.Wrap(errcode.ErrBundleAiGatewayUnavailable, "%v", err)
+		}
+	}
+	if plan == nil {
+		legacyAdapter := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter()
+		if legacyAdapter == nil {
+			return errcode.Wrap(errcode.ErrBundleAiGatewayUnavailable, "ai-gateway adapter unavailable while validating legacy plan %s", aiGatewayPlanID)
+		}
+		legacyPlan, legacyErr := legacyAdapter.GetPlan(ctx, aiGatewayPlanID)
+		if legacyErr == nil {
+			plan = &llmgateway.Plan{
+				ID:            legacyPlan.ID,
+				Name:          legacyPlan.Name,
+				MonthlyTokens: legacyPlan.MonthlyTokens,
+				PeriodValue:   legacyPlan.PeriodValue,
+				PeriodUnit:    legacyPlan.PeriodUnit,
+				IsActive:      legacyPlan.IsActive,
+			}
+		} else if errors.Is(legacyErr, aigateway.ErrAiGatewayPlanNotFound) {
+			return errcode.Wrap(errcode.ErrBundlePlanNotFound, "plan %s not found in configured gateway", aiGatewayPlanID)
+		} else {
+			return errcode.Wrap(errcode.ErrBundleAiGatewayUnavailable, "%v", legacyErr)
 		}
 	}
 
