@@ -308,6 +308,8 @@ const mapBundleToPlan = (
      命中当前卡时，CTA 文案改为「当前订阅」；配合外层 subscriptionLocked 让所有卡按钮禁用
      （暂不支持升级/更换套餐）。未订阅或国际站无 activePass 时传 null。 */
   currentBundleId: string | null = null,
+  /* 是否已登录：未登录时按套餐名直接展示促销标签，不依赖后端 discount 字段。 */
+  isLoggedIn: boolean = true,
 ): PlanInfo => {
   /* 静态标记，运行时一次性调用以让字典加载后端下发中文的翻译 */
   __markBundleBackendStringsForI18n(t);
@@ -440,7 +442,20 @@ const mapBundleToPlan = (
      当前口径：国内付费启航标准版（非 AI 增强、无后端折扣）享 14 天免费试用、首单 0 元。 */
   let isZeroDownFreeTrial = false;
   if (paid) {
-    price = realPriceYuan != null ? formatYuan(realPriceYuan, bundle.price?.currency ?? "CNY") : "";
+    /* 未登录静态页面：启航 discount=0（免费试用），巡游 discount=50%（首月 5 折），按折扣调整展示价 */
+    let displayPriceYuan = realPriceYuan;
+    if (!isLoggedIn && realPriceYuan != null) {
+      const nm = bundle.bundle_name ?? "";
+      const isLaunch = nm.includes("启航") || nm.toLowerCase().includes("launch");
+      const isCruise = nm.includes("巡游") || nm.toLowerCase().includes("cruise");
+      const notAi = bundle.bundle_type !== "ai";
+      if (isLaunch && notAi) {
+        displayPriceYuan = 0; // 免费 14 天 → ¥0
+      } else if (isCruise && notAi) {
+        displayPriceYuan = +(realPriceYuan * 0.5).toFixed(2); // 首月 5 折
+      }
+    }
+    price = displayPriceYuan != null ? formatYuan(displayPriceYuan, bundle.price?.currency ?? "CNY") : "";
     /* 国内站不再展示"限时免费"标签 */
     const backendDiscount = bundle.price?.discount;
     if (typeof backendDiscount === "number" && backendDiscount > 0 && backendDiscount < 1) {
@@ -453,16 +468,16 @@ const mapBundleToPlan = (
       if (isLaunch) {
         if (withToken) {
           promoTag = t("首月 6 折");
-        } else if (backendDiscount === 0) {
-          /* 启航01 discount=0 时展示「免费 14 天」 */
-          promoTag = t("免费 14 天");
+        } else if (!isLoggedIn || backendDiscount === 0) {
+          /* 启航01：未登录直接展示「免费 14 天」；已登录需 discount=0 */
+          promoTag = t("首单免费 14 天");
           isZeroDownFreeTrial = true;
         }
       } else if (isCruise) {
         if (withToken) {
           promoTag = t("首月 6 折");
-        } else if (backendDiscount === 0.5) {
-          /* 巡游01 discount=0.5（50%）时展示「首月 5 折」 */
+        } else if (!isLoggedIn || backendDiscount === 50) {
+          /* 巡游01：未登录直接展示「首月 5 折」；已登录需 discount=50 */
           promoTag = t("首月 5 折");
         }
       } else {
@@ -1988,6 +2003,7 @@ export const SubscribePage = ({
         /* 已订阅套餐的 bundle_id：命中当前卡时 CTA 显示「当前订阅」。
            activePass 为 null（pass 过期）时回退到 latestPass，仍能匹配用户曾订阅的套餐。 */
         activePass?.bundle_id ?? latestPass?.bundle_id ?? null,
+        isLoggedIn,
       );
       return paidBillingActive ? plan : { ...plan, bundleType: undefined };
     });
@@ -2000,7 +2016,7 @@ export const SubscribePage = ({
        isSubscribed 影响启航 Launch 卡的「免费开通/立即开通」引导文案，必须进依赖数组；
        freeGuideAllowed 是「免费开通」引导的前提开关，同样影响文案，必须进依赖数组；
        正常路径下切换时长会先触发 loadKey → bundlesLoading 变更连带重算。 */
-  }, [bundles, bundlesLoading, paidBillingActive, t, aiDurationKey, isSubscribed, bots.length, freeGuideAllowed, activePass?.bundle_id, latestPass?.bundle_id]);
+  }, [bundles, bundlesLoading, paidBillingActive, t, aiDurationKey, isSubscribed, bots.length, freeGuideAllowed, activePass?.bundle_id, latestPass?.bundle_id, isLoggedIn]);
 
   /**
    * 需求3：按 tier（启航 / 巡游 / 远航）把 planList 分组，取代原「标准版 / AI 增强版」全局 tab。
