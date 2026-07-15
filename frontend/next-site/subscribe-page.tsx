@@ -308,6 +308,8 @@ const mapBundleToPlan = (
      命中当前卡时，CTA 文案改为「当前订阅」；配合外层 subscriptionLocked 让所有卡按钮禁用
      （暂不支持升级/更换套餐）。未订阅或国际站无 activePass 时传 null。 */
   currentBundleId: string | null = null,
+  /* 是否已登录：未登录时按套餐名直接展示促销标签，不依赖后端 discount 字段。 */
+  isLoggedIn: boolean = true,
 ): PlanInfo => {
   /* 静态标记，运行时一次性调用以让字典加载后端下发中文的翻译 */
   __markBundleBackendStringsForI18n(t);
@@ -440,7 +442,20 @@ const mapBundleToPlan = (
      当前口径：国内付费启航标准版（非 AI 增强、无后端折扣）享 14 天免费试用、首单 0 元。 */
   let isZeroDownFreeTrial = false;
   if (paid) {
-    price = realPriceYuan != null ? formatYuan(realPriceYuan, bundle.price?.currency ?? "CNY") : "";
+    /* 未登录静态页面：启航 discount=0（免费试用），巡游 discount=50%（首月 5 折），按折扣调整展示价 */
+    let displayPriceYuan = realPriceYuan;
+    if (!isLoggedIn && realPriceYuan != null) {
+      const nm = bundle.bundle_name ?? "";
+      const isLaunch = nm.includes("启航") || nm.toLowerCase().includes("launch");
+      const isCruise = nm.includes("巡游") || nm.toLowerCase().includes("cruise");
+      const notAi = bundle.bundle_type !== "ai";
+      if (isLaunch && notAi) {
+        displayPriceYuan = 0; // 免费 14 天 → ¥0
+      } else if (isCruise && notAi) {
+        displayPriceYuan = +(realPriceYuan * 0.5).toFixed(2); // 首月 5 折
+      }
+    }
+    price = displayPriceYuan != null ? formatYuan(displayPriceYuan, bundle.price?.currency ?? "CNY") : "";
     /* 国内站不再展示"限时免费"标签 */
     const backendDiscount = bundle.price?.discount;
     if (typeof backendDiscount === "number" && backendDiscount > 0 && backendDiscount < 1) {
@@ -453,12 +468,18 @@ const mapBundleToPlan = (
       if (isLaunch) {
         if (withToken) {
           promoTag = t("首月 6 折");
-        } else {
-          promoTag = t("免费 14 天");
+        } else if (!isLoggedIn || backendDiscount === 0) {
+          /* 启航01：未登录直接展示「免费 14 天」；已登录需 discount=0 */
+          promoTag = t("首单免费 14 天");
           isZeroDownFreeTrial = true;
         }
       } else if (isCruise) {
-        promoTag = withToken ? t("首月 6 折") : t("首月 5 折");
+        if (withToken) {
+          promoTag = t("首月 6 折");
+        } else if (!isLoggedIn || backendDiscount === 50) {
+          /* 巡游01：未登录直接展示「首月 5 折」；已登录需 discount=50 */
+          promoTag = t("首月 5 折");
+        }
       } else {
         promoTag = undefined;
       }
@@ -1717,7 +1738,7 @@ const PaymentPendingModal = ({
             {t("请完成支付")}
           </h3>
           <p style={{ fontSize: 13, color: colors.warmGray500, margin: "0 0 24px" }}>
-            {t("请使用微信扫描下方二维码，授权后即可在微信内完成签约")}
+            {t("请使用微信扫描下方二维码完成支付")}
           </p>
 
           {/* bridge 模式：渲染中转页 URL 的二维码，用户在微信扫码后由中转页负责走 OAuth + wxSign */}
@@ -1737,7 +1758,11 @@ const PaymentPendingModal = ({
             </div>
           )}
 
-          {/* 底部按钮区：左「刷新」（描边白底，重新生成二维码）+ 右「完成」（实色，等价于「我已完成支付」） */}
+          <p style={{ fontSize: 13, color: colors.warmGray500, textAlign: "center", margin: "0 0 20px" }}>
+            {t("支付完成后，需等待约15秒完成下单")}
+          </p>
+
+          {/* 底部按钮区：仅「刷新」（重新生成二维码） */}
           <div style={{ display: "flex", flexDirection: "row", gap: 12 }}>
             <button
               onClick={onRefresh}
@@ -1764,25 +1789,6 @@ const PaymentPendingModal = ({
               }}
             >
               {refreshing ? t("刷新中...") : t("刷新")}
-            </button>
-            <button
-              onClick={onManualConfirm}
-              style={{
-                flex: 1,
-                padding: "12px 16px",
-                borderRadius: 8,
-                border: "none",
-                background: colors.primary,
-                color: colors.white,
-                fontSize: 15,
-                fontWeight: 600,
-                cursor: "pointer",
-                transition: "background 0.15s",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = colors.primaryHover; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = colors.primary; }}
-            >
-              {t("完成")}
             </button>
           </div>
         </div>
@@ -1833,6 +1839,7 @@ export const SubscribePage = ({
      这里在组件函数体顺序执行一次，与 t 同生命周期，避免放在 useEffect 的异步路径里漏扣。 */
   __markBundleTypeTabsForI18n(t);
   const navigate = useAppNavigate();
+  const [hoveredDurationTab, setHoveredDurationTab] = useState<string | null>(null);
   const { isLoggedIn, isSubscribed, subscribe, addBot, bots, user, refreshPasses, activePass, latestPass } = useOpenClaw();
   const { authReady, isAuthenticated, session } = useSession();
   const repositories = useRepositories();
@@ -1996,6 +2003,7 @@ export const SubscribePage = ({
         /* 已订阅套餐的 bundle_id：命中当前卡时 CTA 显示「当前订阅」。
            activePass 为 null（pass 过期）时回退到 latestPass，仍能匹配用户曾订阅的套餐。 */
         activePass?.bundle_id ?? latestPass?.bundle_id ?? null,
+        isLoggedIn,
       );
       return paidBillingActive ? plan : { ...plan, bundleType: undefined };
     });
@@ -2008,7 +2016,7 @@ export const SubscribePage = ({
        isSubscribed 影响启航 Launch 卡的「免费开通/立即开通」引导文案，必须进依赖数组；
        freeGuideAllowed 是「免费开通」引导的前提开关，同样影响文案，必须进依赖数组；
        正常路径下切换时长会先触发 loadKey → bundlesLoading 变更连带重算。 */
-  }, [bundles, bundlesLoading, paidBillingActive, t, aiDurationKey, isSubscribed, bots.length, freeGuideAllowed, activePass?.bundle_id, latestPass?.bundle_id]);
+  }, [bundles, bundlesLoading, paidBillingActive, t, aiDurationKey, isSubscribed, bots.length, freeGuideAllowed, activePass?.bundle_id, latestPass?.bundle_id, isLoggedIn]);
 
   /**
    * 需求3：按 tier（启航 / 巡游 / 远航）把 planList 分组，取代原「标准版 / AI 增强版」全局 tab。
@@ -2612,29 +2620,67 @@ export const SubscribePage = ({
             >
               {AI_DURATION_TABS.map((tab) => {
                 const active = tab.key === aiDurationKey;
+                const isComingSoon = tab.key === "quarterly";
                 return (
-                  <button
+                  <span
                     key={tab.key}
-                    type="button"
-                    role="tab"
-                    aria-selected={active}
-                    onClick={() => setAiDurationKey(tab.key)}
-                    disabled={bundlesLoading}
-                    style={{
-                      padding: "6px 16px",
-                      borderRadius: 9999,
-                      border: `1px solid ${active ? colors.black : colors.border}`,
-                      background: active ? colors.black : colors.white,
-                      color: active ? colors.white : colors.warmGray500,
-                      fontSize: 13,
-                      fontWeight: 500,
-                      cursor: bundlesLoading ? "not-allowed" : "pointer",
-                      opacity: bundlesLoading && !active ? 0.6 : 1,
-                      transition: "all 0.2s ease",
-                    }}
+                    style={{ position: "relative", display: "inline-block" }}
+                    onMouseEnter={() => setHoveredDurationTab(tab.key)}
+                    onMouseLeave={() => setHoveredDurationTab(null)}
                   >
-                    {t(tab.zhLabel)}
-                  </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      onClick={() => !isComingSoon && setAiDurationKey(tab.key)}
+                      disabled={bundlesLoading || isComingSoon}
+                      style={{
+                        padding: "6px 16px",
+                        borderRadius: 9999,
+                        border: `1px solid ${active ? colors.black : colors.border}`,
+                        background: active ? colors.black : colors.white,
+                        color: active ? colors.white : colors.warmGray500,
+                        fontSize: 13,
+                        fontWeight: 500,
+                        cursor: (bundlesLoading || isComingSoon) ? "not-allowed" : "pointer",
+                        opacity: (bundlesLoading && !active) || isComingSoon ? 0.6 : 1,
+                        transition: "all 0.2s ease",
+                      }}
+                    >
+                      {t(tab.zhLabel)}
+                    </button>
+                    {isComingSoon && hoveredDurationTab === tab.key && (
+                      <span
+                        style={{
+                          position: "absolute",
+                          top: "-32px",
+                          left: "50%",
+                          transform: "translateX(-50%)",
+                          background: "rgba(0,0,0,0.8)",
+                          color: "#fff",
+                          fontSize: 12,
+                          padding: "4px 10px",
+                          borderRadius: 6,
+                          whiteSpace: "nowrap",
+                          pointerEvents: "none",
+                          zIndex: 10,
+                        }}
+                      >
+                        {t("即将上线")}
+                        <span
+                          style={{
+                            position: "absolute",
+                            bottom: "-4px",
+                            left: "50%",
+                            transform: "translateX(-50%) rotate(45deg)",
+                            width: 8,
+                            height: 8,
+                            background: "rgba(0,0,0,0.8)",
+                          }}
+                        />
+                      </span>
+                    )}
+                  </span>
                 );
               })}
             </div>
