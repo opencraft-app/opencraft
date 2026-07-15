@@ -116,6 +116,10 @@ routes:
       - method: POST
         path: /auth/password/forgot
       - method: POST
+        path: /auth/sms/send
+      - method: POST
+        path: /auth/sms/verify
+      - method: POST
         path: /auth/invite/validate
       - method: POST
         path: /auth/invite/prepare
