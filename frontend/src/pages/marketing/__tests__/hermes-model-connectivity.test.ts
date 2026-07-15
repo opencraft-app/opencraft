@@ -5,7 +5,7 @@ import {
 } from "@/pages/marketing/hermes-model-connectivity";
 
 describe("parseAcliModelTestOutput", () => {
-  it("parses the JSON returned by acli model test", () => {
+  it("parses the JSON returned by acli model probe", () => {
     const parsed = parseAcliModelTestOutput(JSON.stringify({
       data: {
         model: "deepseek-v4-flash",
@@ -23,7 +23,7 @@ describe("parseAcliModelTestOutput", () => {
   });
 
   it("ignores shell prompts and ANSI output around the JSON", () => {
-    const output = "agentuser@VM:~$ acli model test\n\u001b[32m{\"success\":true,\"data\":{\"message\":\"ok\"}}\u001b[0m\nagentuser@VM:~$";
+    const output = "agentuser@VM:~$ acli model probe\n\u001b[32m{\"success\":true,\"data\":{\"message\":\"ok\"}}\u001b[0m\nagentuser@VM:~$";
     expect(parseAcliModelTestOutput(output)?.data?.message).toBe("ok");
   });
 

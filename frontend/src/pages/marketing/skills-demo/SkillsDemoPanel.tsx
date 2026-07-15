@@ -920,7 +920,7 @@ function FeaturedSkillCard({
   const t = useT();
 
   return (
-    <li className="group relative grid h-[202px] grid-rows-[2fr_1fr] overflow-hidden rounded-lg border border-black/[0.06] bg-white shadow-sm transition-colors hover:border-black/[0.12] hover:bg-black/[0.025]">
+    <li className="group relative grid h-[202px] grid-rows-[2fr_1fr] overflow-hidden rounded-lg border border-black/[0.06] bg-white transition-colors hover:border-black/[0.12] hover:bg-black/[0.025]">
       <button
         type="button"
         onClick={() => onOpenDetails(entry.skill)}
@@ -1766,49 +1766,53 @@ export function SkillsDemoPanel({
                     </SelectItem>
                   </SelectContent>
                 </Select>
-              <div className="flex shrink-0 items-center gap-1 rounded-[10px] bg-black/[0.04] p-0.5">
-                <button
-                  type="button"
-                  onClick={() => setSortMode("popular")}
-                  className={cn(
-                    "h-9 rounded-[7px] px-2.5 text-xs font-semibold transition-all",
-                    sortMode === "popular"
-                      ? "bg-white text-black/85 shadow-[0_1px_4px_rgba(0,0,0,0.08)]"
-                      : "text-black/45 hover:text-black/70",
-                  )}
-                >
-                  {t("热门")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSortMode("name")}
-                  className={cn(
-                    "h-9 rounded-[7px] px-2.5 text-xs font-semibold transition-all",
-                    sortMode === "name"
-                      ? "bg-white text-black/85 shadow-[0_1px_4px_rgba(0,0,0,0.08)]"
-                      : "text-black/45 hover:text-black/70",
-                  )}
-                >
-                  {t("名称")}
-                </button>
-              </div>
             </div>
 
             {hasSearch ? (
               <section>
-                <div className="mb-2 flex items-center justify-between gap-3">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
                   <SectionTitle count={visibleResults.length} className="mb-0 text-base">
                     {t("搜索结果")}
                   </SectionTitle>
-                  {visibleResults.length > SEARCH_RESULTS_PREVIEW_LIMIT ? (
-                    <button
-                      type="button"
-                      onClick={() => setSearchResultsExpanded((expanded) => !expanded)}
-                      className="shrink-0 text-sm font-semibold text-black/50 transition-colors hover:text-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2"
-                    >
-                      {shouldShowAllSearchResults ? t("收起全部") : t("查看全部")}
-                    </button>
-                  ) : null}
+                  <div className="flex min-w-0 flex-wrap items-center justify-end gap-3">
+                    {!searching && visibleResults.length > 0 ? (
+                      <div className="flex shrink-0 items-center gap-1 rounded-md bg-black/[0.04] p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setSortMode("popular")}
+                        className={cn(
+                          "h-8 rounded-md px-2 text-[11px] font-semibold transition-all",
+                          sortMode === "popular"
+                            ? "bg-white text-black/85 shadow-[0_1px_4px_rgba(0,0,0,0.08)]"
+                            : "text-black/45 hover:text-black/70",
+                        )}
+                      >
+                        {t("热门")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSortMode("name")}
+                        className={cn(
+                          "h-8 rounded-md px-2 text-[11px] font-semibold transition-all",
+                          sortMode === "name"
+                            ? "bg-white text-black/85 shadow-[0_1px_4px_rgba(0,0,0,0.08)]"
+                            : "text-black/45 hover:text-black/70",
+                        )}
+                      >
+                        {t("名称")}
+                      </button>
+                      </div>
+                    ) : null}
+                    {visibleResults.length > SEARCH_RESULTS_PREVIEW_LIMIT ? (
+                      <button
+                        type="button"
+                        onClick={() => setSearchResultsExpanded((expanded) => !expanded)}
+                        className="shrink-0 text-sm font-semibold text-black/50 transition-colors hover:text-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2"
+                      >
+                        {shouldShowAllSearchResults ? t("收起全部") : t("查看全部")}
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
                 {searching ? (
                   <div className="flex items-center gap-2 rounded-md bg-white px-4 py-6 text-sm text-black/45">

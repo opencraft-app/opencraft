@@ -3952,7 +3952,7 @@ export const AgentSettingsPage = ({
     if (!activeBotId) {
       throw new Error(t("请先选择一个 Agent"));
     }
-    const result = await repositories.bots.execDebugCommand(activeBotId, "acli model test");
+    const result = await repositories.bots.execDebugCommand(activeBotId, "acli model probe");
     return buildModelConnectivityTestResult(result);
   }, [activeBotId, repositories, t]);
   const shouldExposeWorkspaceRecoveryPanel = shouldShowWorkspaceRecoveryPanel({
