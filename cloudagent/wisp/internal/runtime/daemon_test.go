@@ -52,6 +52,12 @@ func TestClassifyError(t *testing.T) {
 			code:   "invalid_request",
 		},
 		{
+			name:   "invalid workspace name",
+			err:    errors.New(`workspace name "../escape" contains unsupported character '/'`),
+			status: http.StatusBadRequest,
+			code:   "invalid_request",
+		},
+		{
 			name:   "already running",
 			err:    errors.New("wisp daemon already running (pid 123)"),
 			status: http.StatusConflict,
@@ -67,6 +73,28 @@ func TestClassifyError(t *testing.T) {
 					tc.err, got.Status, got.Code, tc.status, tc.code)
 			}
 		})
+	}
+}
+
+func TestRuntimeForWispRejectsTraversalName(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.jsonnet")
+	if err := os.WriteFile(configPath, []byte(`{
+  WISP_NAME: "default",
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ConfigFile = configPath
+	d := NewDaemon(New(cfg))
+	if _, err := d.runtimeForWispLocked("../escape"); err == nil {
+		t.Fatal("runtimeForWispLocked should reject traversal workspace name")
+	} else if got := classifyError(err); got.Status != http.StatusBadRequest {
+		t.Fatalf("status=%d code=%s err=%v", got.Status, got.Code, err)
 	}
 }
 

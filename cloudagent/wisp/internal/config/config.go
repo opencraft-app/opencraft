@@ -149,7 +149,10 @@ func LoadContainer(path, name string) (Config, error) {
 	if name == "" {
 		return Load(path)
 	}
-	overlayPath := ContainerOverlayPath(path, name)
+	overlayPath, err := ContainerOverlayPath(path, name)
+	if err != nil {
+		return Config{}, err
+	}
 	if _, err := os.Stat(overlayPath); err != nil {
 		if os.IsNotExist(err) {
 			return Config{}, fmt.Errorf("container %s not found", name)
@@ -177,6 +180,9 @@ func loadWithOverlay(path, overlayPath string) (Config, error) {
 		OverlayConfigFile: overlayPath,
 	}
 	cfg.WispName = get(env, "WISP_NAME", "default")
+	if err := ValidateWorkspaceName(cfg.WispName); err != nil {
+		return Config{}, err
+	}
 	cfg.RemoteBackend = normalizeRemoteBackend(get(env, "REMOTE_BACKEND", "cos"))
 	cfg.JFSRoot = get(env, "JFS_ROOT", "/jfs")
 	cfg.COSEnabled = getBool(env, "COS_ENABLED", false)
@@ -320,7 +326,7 @@ func DefaultOverlayPath(basePath string) (string, error) {
 	if name == "" {
 		name = "default"
 	}
-	return ContainerOverlayPath(basePath, name), nil
+	return ContainerOverlayPath(basePath, name)
 }
 
 func ContainerConfigDir(basePath string) string {
@@ -333,8 +339,28 @@ func ContainerConfigDir(basePath string) string {
 	return filepath.Join(baseDir, "containers")
 }
 
-func ContainerOverlayPath(basePath, name string) string {
-	return filepath.Join(ContainerConfigDir(basePath), name, "overlay.jsonnet")
+func ValidateWorkspaceName(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("workspace name must not be empty")
+	}
+	if len(name) > 128 {
+		return fmt.Errorf("workspace name %q is too long", name)
+	}
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			continue
+		}
+		return fmt.Errorf("workspace name %q contains unsupported character %q", name, r)
+	}
+	return nil
+}
+
+func ContainerOverlayPath(basePath, name string) (string, error) {
+	if err := ValidateWorkspaceName(name); err != nil {
+		return "", err
+	}
+	return filepath.Join(ContainerConfigDir(basePath), strings.TrimSpace(name), "overlay.jsonnet"), nil
 }
 
 func parseJSONNetFile(path string) (map[string]string, error) {
@@ -408,8 +434,8 @@ func SetEnvValue(path, key, value string) error {
 
 func SetWorkspaceLayout(path string, cfg Config, name string) error {
 	name = strings.TrimSpace(name)
-	if name == "" {
-		return fmt.Errorf("workspace name must not be empty")
+	if err := ValidateWorkspaceName(name); err != nil {
+		return err
 	}
 
 	tempRootBase := filepath.Dir(cfg.TempRoot)
@@ -550,7 +576,10 @@ func RemoteWorkspaceName(name string) string {
 }
 
 func SetContainerEnvValue(basePath, name, key, value string) error {
-	overlayPath := ContainerOverlayPath(basePath, name)
+	overlayPath, err := ContainerOverlayPath(basePath, name)
+	if err != nil {
+		return err
+	}
 	values, err := parseOptionalJSONNetFile(overlayPath)
 	if err != nil {
 		return err
@@ -560,7 +589,10 @@ func SetContainerEnvValue(basePath, name, key, value string) error {
 }
 
 func RemoveContainerOverlay(basePath, name string) error {
-	overlayPath := ContainerOverlayPath(basePath, name)
+	overlayPath, err := ContainerOverlayPath(basePath, name)
+	if err != nil {
+		return err
+	}
 	if err := os.Remove(overlayPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove overlay %s: %w", overlayPath, err)
 	}

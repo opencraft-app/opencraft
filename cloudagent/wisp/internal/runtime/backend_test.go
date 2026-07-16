@@ -45,7 +45,10 @@ func TestEnsureWorkspaceBackendProvisionedSMH(t *testing.T) {
 	if !tokenSeen || !createSeen {
 		t.Fatalf("tokenSeen=%v createSeen=%v", tokenSeen, createSeen)
 	}
-	overlay := config.ContainerOverlayPath(configPath, "demo")
+	overlay, err := config.ContainerOverlayPath(configPath, "demo")
+	if err != nil {
+		t.Fatalf("ContainerOverlayPath: %v", err)
+	}
 	data, err := os.ReadFile(overlay)
 	if err != nil {
 		t.Fatal(err)
@@ -75,7 +78,10 @@ func TestEnsureWorkspaceBackendProvisionedSMHSkipsWhenSpaceExists(t *testing.T) 
 	if _, err := ensureWorkspaceBackendProvisioned(context.Background(), configPath, cfg, "demo"); err != nil {
 		t.Fatal(err)
 	}
-	overlay := config.ContainerOverlayPath(configPath, "demo")
+	overlay, err := config.ContainerOverlayPath(configPath, "demo")
+	if err != nil {
+		t.Fatalf("ContainerOverlayPath: %v", err)
+	}
 	data, err := os.ReadFile(overlay)
 	if err != nil {
 		t.Fatal(err)
@@ -110,7 +116,10 @@ func TestDaemonBackendBindWritesIdentityAndKeepsTokenInMemory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	overlay := config.ContainerOverlayPath(configPath, "demo")
+	overlay, err := config.ContainerOverlayPath(configPath, "demo")
+	if err != nil {
+		t.Fatalf("ContainerOverlayPath: %v", err)
+	}
 	data, err := os.ReadFile(overlay)
 	if err != nil {
 		t.Fatal(err)
