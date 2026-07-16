@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"net/netip"
 	"net/url"
 	"os"
 	"slices"
@@ -82,6 +83,7 @@ type Handler struct {
 	realnameWallEnabled    bool
 	workerActions          *workerActionService
 	workerActionBackend    workerActionBackend
+	trustedProxyCIDRs      []netip.Prefix
 }
 
 type accessLogSink interface {
@@ -179,6 +181,10 @@ func NewHandler(cfg Config, opts ...Option) (http.Handler, error) {
 		return nil, errors.New("auth service url is required")
 	}
 
+	trustedProxyCIDRs, err := parseTrustedProxyCIDRs(cfg.TrustedProxyCIDRs)
+	if err != nil {
+		return nil, fmt.Errorf("parse trusted_proxy_cidrs: %w", err)
+	}
 	authTransport := newUpstreamTransport(defaultResponseHeaderTimeout)
 
 	routes := make([]compiledRoute, 0, len(cfg.Routes))
@@ -200,7 +206,7 @@ func NewHandler(cfg Config, opts ...Option) (http.Handler, error) {
 
 		routes = append(routes, compiledRoute{
 			route: route,
-			proxy: newSingleHostReverseProxy(target, newUpstreamTransport(responseHeaderTimeout), route.Prefix, route.RewritePrefix, route.UpstreamBearerTokenEnv),
+			proxy: newSingleHostReverseProxy(target, newUpstreamTransport(responseHeaderTimeout), route.Prefix, route.RewritePrefix, route.UpstreamBearerTokenEnv, trustedProxyCIDRs),
 		})
 		if subscriptionServiceURL == "" && hasRoutePrefix("/subscriptions/current", route.Prefix) {
 			subscriptionServiceURL = strings.TrimRight(target.String(), "/")
@@ -225,6 +231,7 @@ func NewHandler(cfg Config, opts ...Option) (http.Handler, error) {
 		adminBridgeCookieTTL:  defaultAdminBridgeCookieTTL,
 		adminBridgeSecure:     true,
 		realnameWallEnabled:   true,
+		trustedProxyCIDRs:     trustedProxyCIDRs,
 	}
 	for _, opt := range opts {
 		opt(handler)
@@ -1102,7 +1109,7 @@ func (h *Handler) logRequest(start time.Time, route compiledRoute, session *sess
 		Status:     status,
 		DurationMS: time.Since(start).Milliseconds(),
 		RouteName:  route.route.Name,
-		RemoteAddr: remoteAddr(r),
+		RemoteAddr: h.remoteAddr(r),
 		UserAgent:  r.UserAgent(),
 		Referer:    r.Referer(),
 		Origin:     r.Header.Get("Origin"),
@@ -1170,16 +1177,8 @@ func (r *statusRecorder) Push(target string, opts *http.PushOptions) error {
 	return pusher.Push(target, opts)
 }
 
-func remoteAddr(r *http.Request) string {
-	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); forwarded != "" {
-		parts := strings.Split(forwarded, ",")
-		return strings.TrimSpace(parts[0])
-	}
-	host, _, found := strings.Cut(r.RemoteAddr, ":")
-	if found {
-		return host
-	}
-	return r.RemoteAddr
+func (h *Handler) remoteAddr(r *http.Request) string {
+	return canonicalClientIP(r, h.trustedProxyCIDRs)
 }
 
 func (h *Handler) observeRequest(start time.Time, route string, r *http.Request, status int) {
@@ -1189,13 +1188,16 @@ func (h *Handler) observeRequest(start time.Time, route string, r *http.Request,
 	h.metrics.ObserveRequest(r.Method, route, r.URL.Path, status, time.Since(start))
 }
 
-func newSingleHostReverseProxy(target *url.URL, transport http.RoundTripper, routePrefix string, rewritePrefix string, upstreamBearerTokenEnv string) *httputil.ReverseProxy {
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	originalDirector := proxy.Director
-	proxy.Director = func(req *http.Request) {
-		originalDirector(req)
-		req.URL.Path = rewriteRoutePath(req.URL.Path, routePrefix, rewritePrefix)
-		req.URL.RawPath = ""
+func newSingleHostReverseProxy(target *url.URL, transport http.RoundTripper, routePrefix string, rewritePrefix string, upstreamBearerTokenEnv string, trustedProxyCIDRs []netip.Prefix) *httputil.ReverseProxy {
+	proxy := &httputil.ReverseProxy{}
+	proxy.Rewrite = func(req *httputil.ProxyRequest) {
+		clientIP := canonicalClientIP(req.In, trustedProxyCIDRs)
+		req.SetURL(target)
+		// Preserve the original host to match NewSingleHostReverseProxy behavior.
+		req.Out.Host = req.In.Host
+		req.Out.URL.Path = rewriteRoutePath(req.Out.URL.Path, routePrefix, rewritePrefix)
+		req.Out.URL.RawPath = ""
+		setCanonicalClientIPHeaders(req.Out.Header, clientIP)
 	}
 	proxy.Transport = withUpstreamBearerToken(transport, upstreamBearerTokenEnv)
 	proxy.ModifyResponse = func(resp *http.Response) error {

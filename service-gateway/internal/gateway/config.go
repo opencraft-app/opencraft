@@ -36,10 +36,11 @@ type Route struct {
 }
 
 type Config struct {
-	AuthServiceURL string              `yaml:"auth_service_url"`
-	AllowedOrigins []string            `yaml:"allowed_origins"`
-	Routes         []Route             `yaml:"routes"`
-	WorkerActions  WorkerActionsConfig `yaml:"worker_actions"`
+	AuthServiceURL    string              `yaml:"auth_service_url"`
+	AllowedOrigins    []string            `yaml:"allowed_origins"`
+	TrustedProxyCIDRs []string            `yaml:"trusted_proxy_cidrs"`
+	Routes            []Route             `yaml:"routes"`
+	WorkerActions     WorkerActionsConfig `yaml:"worker_actions"`
 }
 
 type WorkerActionsConfig struct {

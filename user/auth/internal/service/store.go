@@ -22,15 +22,19 @@ const (
 type Store interface {
 	ValidateInvite(ctx context.Context, code string) (InviteValidation, error)
 	FindUserByPhone(ctx context.Context, phone string) (User, error)
-	SendVerificationCode(ctx context.Context, phone string, code string, now time.Time, ttl time.Duration, cooldown time.Duration) (time.Duration, error)
+	IncrementVerificationRateLimit(ctx context.Context, key VerificationRateLimitKey, now time.Time, window time.Duration) (int, time.Duration, error)
+	SendVerificationCode(ctx context.Context, phone string, code string, now time.Time, ttl time.Duration, cooldown time.Duration, maxFailures int) (time.Duration, error)
+	ReserveExternalSMSChallenge(ctx context.Context, phone string, reservationID string, now time.Time) (ExternalSMSReservation, error)
+	RejectExternalSMSChallenge(ctx context.Context, reservation ExternalSMSReservation, now time.Time) error
+	ConsumeExternalSMSChallenge(ctx context.Context, reservation ExternalSMSReservation) error
 	CompleteSMSVerification(ctx context.Context, input VerifySMSInput, now time.Time, sessionTTL time.Duration) (*AuthSession, error)
 	FindOrCreatePhoneAuthUser(ctx context.Context, phone string, name string, now time.Time) (User, error)
-	SendPhoneAuthChallenge(ctx context.Context, challenge PhoneAuthChallenge, now time.Time, ttl time.Duration, cooldown time.Duration) (time.Duration, error)
+	SendPhoneAuthChallenge(ctx context.Context, challenge PhoneAuthChallenge, now time.Time, ttl time.Duration, cooldown time.Duration, maxFailures int) (time.Duration, error)
 	GetPhoneAuthChallenge(ctx context.Context, phone string) (PhoneAuthChallenge, error)
-	ConsumePhoneAuthChallengePreview(ctx context.Context, phone string, now time.Time) (PhoneAuthChallenge, error)
+	ReserveExternalPhoneAuthChallenge(ctx context.Context, phone string, reservationID string, now time.Time) (PhoneAuthChallenge, error)
+	RejectExternalPhoneAuthChallenge(ctx context.Context, challenge PhoneAuthChallenge, now time.Time) error
+	ConsumeExternalPhoneAuthChallenge(ctx context.Context, challenge PhoneAuthChallenge) error
 	VerifyAndConsumePhoneAuthChallenge(ctx context.Context, phone string, code string, now time.Time) (PhoneAuthChallenge, error)
-	ConsumePhoneAuthChallenge(ctx context.Context, phone string, now time.Time) (PhoneAuthChallenge, error)
-	FailPhoneAuthChallenge(ctx context.Context, phone string, now time.Time) error
 	DeletePhoneAuthChallenge(ctx context.Context, phone string) error
 	ValidateCurrentUserPhoneChallenge(ctx context.Context, token string, code string, now time.Time) (User, error)
 	ConsumeCurrentUserPhoneChallenge(ctx context.Context, token string, code string, now time.Time) (User, error)
@@ -77,6 +81,12 @@ type Store interface {
 	DisableAdminInvite(ctx context.Context, code string, now time.Time) error
 	RequestEmailBind(ctx context.Context, token string, email string, tokenHash string, now time.Time, tokenTTL time.Duration, cooldown time.Duration) (time.Duration, error)
 	ConfirmEmailBind(ctx context.Context, tokenHash string, now time.Time) (User, error)
+}
+
+type ExternalSMSReservation struct {
+	Phone      string
+	Generation int64
+	ID         string
 }
 
 type CreateNameAuditInput struct {

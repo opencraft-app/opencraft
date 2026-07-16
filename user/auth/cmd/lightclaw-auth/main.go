@@ -48,8 +48,7 @@ func main() {
 	publicBaseURL := envOrDefault("LIGHTCLAW_PUBLIC_BASE_URL", "https://lightclaw.tech")
 	frontendBaseURL := envOrDefault("LIGHTCLAW_FRONTEND_BASE_URL", publicBaseURL)
 	authService := service.NewWithStore(stores.auth, service.Options{
-		SessionTTL:     sessionTTL,
-		DefaultSMSCode: envOrDefault("LIGHTCLAW_DEV_SMS_CODE", ""),
+		SessionTTL: sessionTTL,
 		PhoneAuth: service.PhoneAuthConfig{
 			Enabled:   phoneAuthEnabled,
 			SMSSender: phoneAuthSMSSender,
@@ -94,6 +93,7 @@ func main() {
 		E2EAuthToken:               envOrDefault("LIGHTVELA_E2E_AUTH_TOKEN", ""),
 		ShadowBindingInternalToken: envOrDefault("SHADOW_BINDING_INTERNAL_TOKEN", ""),
 		ShadowTencentCallbackToken: envOrDefault("SHADOW_TENCENT_CALLBACK_TOKEN", envOrDefault("SHADOW_CALLBACK_TOKEN", "")),
+		TrustedProxyCIDRs:          parseCSVEnv("LIGHTCLAW_TRUSTED_PROXY_CIDRS"),
 	})
 
 	address := envOrDefault("LIGHTCLAW_AUTH_ADDR", ":8081")

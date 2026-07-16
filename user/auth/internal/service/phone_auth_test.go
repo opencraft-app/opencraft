@@ -2,7 +2,10 @@ package service
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"testing"
+	"time"
 
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/shadowbinding"
 	"golang.org/x/crypto/bcrypt"
@@ -15,8 +18,8 @@ func TestPhoneAuthEnabledExistingUserUsesLocalCodeAndPreservesName(t *testing.T)
 	})
 
 	legacy := NewWithStore(store, Options{
-		Now:            fixedNow,
-		DefaultSMSCode: "111111",
+		Now:                       fixedNow,
+		VerificationCodeGenerator: fixedVerificationCode("111111"),
 	})
 	if _, err := legacy.SendVerificationCode(context.Background(), "13800138131"); err != nil {
 		t.Fatalf("seed send failed: %v", err)
@@ -81,8 +84,8 @@ func TestPhoneAuthDisabledKeepsLegacyNameUpdateBehavior(t *testing.T) {
 		SeedDefaultInvites: true,
 	})
 	svc := NewWithStore(store, Options{
-		Now:            fixedNow,
-		DefaultSMSCode: "111111",
+		Now:                       fixedNow,
+		VerificationCodeGenerator: fixedVerificationCode("111111"),
 	})
 
 	if _, err := svc.SendVerificationCode(context.Background(), "13800138134"); err != nil {
@@ -172,6 +175,74 @@ func TestPhoneAuthEnabledUnknownPhoneUsesShadowAndAllowsMissingName(t *testing.T
 	}
 	if binding.Status != shadowbinding.StatusActive {
 		t.Fatalf("expected active shadow binding before session issuance, got %+v", binding)
+	}
+}
+
+func TestExternalPhoneAuthReservationIsSingleFlightAndGenerationBound(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{Now: fixedNow})
+	now := fixedNow()
+	firstChallenge := PhoneAuthChallenge{Phone: "13800138135", Flow: PhoneAuthFlowNewUserShadow}
+	if _, err := store.SendPhoneAuthChallenge(context.Background(), firstChallenge, now, 5*time.Minute, time.Minute, 5); err != nil {
+		t.Fatalf("send first phone auth challenge: %v", err)
+	}
+	first, err := store.ReserveExternalPhoneAuthChallenge(context.Background(), firstChallenge.Phone, "reservation-1", now)
+	if err != nil {
+		t.Fatalf("reserve first phone auth challenge: %v", err)
+	}
+	if _, err := store.ReserveExternalPhoneAuthChallenge(context.Background(), firstChallenge.Phone, "reservation-2", now); err == nil {
+		t.Fatal("parallel phone auth reservation must be rejected")
+	}
+
+	secondNow := now.Add(time.Minute)
+	if _, err := store.SendPhoneAuthChallenge(context.Background(), firstChallenge, secondNow, 5*time.Minute, time.Minute, 5); err != nil {
+		t.Fatalf("send replacement phone auth challenge: %v", err)
+	}
+	if err := store.ConsumeExternalPhoneAuthChallenge(context.Background(), first); err != nil {
+		t.Fatalf("consume stale phone auth reservation: %v", err)
+	}
+	second, err := store.ReserveExternalPhoneAuthChallenge(context.Background(), firstChallenge.Phone, "reservation-3", secondNow)
+	if err != nil {
+		t.Fatalf("stale reservation must not delete replacement phone auth challenge: %v", err)
+	}
+	if second.Generation == first.Generation {
+		t.Fatalf("replacement phone auth challenge must advance generation: first=%d second=%d", first.Generation, second.Generation)
+	}
+}
+
+func TestNewUserPhoneAuthStopsAfterFiveWrongShadowCodes(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{Now: fixedNow})
+	shadowClient := &stubShadowRegisterClient{}
+	shadowSvc := shadowbinding.New(shadowbinding.NewMemoryStore(), shadowClient, shadowbinding.Options{Enabled: true, Now: fixedNow})
+	svc := NewWithStore(store, Options{
+		Now: fixedNow,
+		PhoneAuth: PhoneAuthConfig{
+			Enabled:   true,
+			SMSSender: &stubPhoneAuthSMSSender{},
+		},
+		ShadowBinding: shadowSvc,
+	})
+	phone := "13800138136"
+	if _, err := svc.SendVerificationCode(context.Background(), phone); err != nil {
+		t.Fatalf("send phone auth code: %v", err)
+	}
+	shadowClient.err = errors.New("[TencentCloudSDKError] Code=OperationDenied.VerifyCodeNotMatch, Message=phone verify code error")
+	for attempt := 1; attempt <= 5; attempt++ {
+		_, err := svc.VerifySMS(context.Background(), VerifySMSInput{Phone: phone, Code: "wrong"})
+		var authErr *Error
+		if !errors.As(err, &authErr) || authErr.Code != "invalid_sms_code" {
+			t.Fatalf("attempt %d: expected invalid_sms_code, got %#v", attempt, err)
+		}
+	}
+	if shadowClient.calls != 5 {
+		t.Fatalf("expected five provider attempts, got %d", shadowClient.calls)
+	}
+	_, err := svc.VerifySMS(context.Background(), VerifySMSInput{Phone: phone, Code: "wrong"})
+	var authErr *Error
+	if !errors.As(err, &authErr) || authErr.Code != "sms_code_not_found" || authErr.Status != http.StatusBadRequest {
+		t.Fatalf("expected exhausted challenge to require a new code, got %#v", err)
+	}
+	if shadowClient.calls != 5 {
+		t.Fatalf("exhausted challenge must block provider calls, got %d", shadowClient.calls)
 	}
 }
 

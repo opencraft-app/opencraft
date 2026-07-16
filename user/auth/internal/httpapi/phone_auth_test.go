@@ -20,9 +20,9 @@ func TestVerifySmsCodeAcceptsMissingNameWhenPhoneAuthEnabled(t *testing.T) {
 		SeedDefaultInvites: true,
 	})
 	seedSvc := service.NewWithStore(store, service.Options{
-		Now:            fixedHTTPTestNow,
-		SessionTTL:     30 * 24 * time.Hour,
-		DefaultSMSCode: "111111",
+		Now:                       fixedHTTPTestNow,
+		SessionTTL:                30 * 24 * time.Hour,
+		VerificationCodeGenerator: fixedVerificationCode("111111"),
 	})
 	if _, err := seedSvc.SendVerificationCode(context.Background(), "13800138133"); err != nil {
 		t.Fatalf("seed send failed: %v", err)
