@@ -13,6 +13,11 @@ if str(SCRIPTS_DIR) not in sys.path:
 from export_ssm_to_sops import SOPS_ENCRYPTED_REGEX, encrypt_yaml  # noqa: E402
 
 
+def completed_process(args: object, stdout: str = "", stderr: str = ""):
+    # Test fixtures construct CompletedProcess objects directly; no subprocess is launched here.
+    return subprocess.CompletedProcess(args, 0, stdout=stdout, stderr=stderr)  # nosemgrep: dangerous-subprocess-use-audit
+
+
 class ExportSsmToSopsTests(unittest.TestCase):
     def test_encrypt_yaml_only_encrypts_resource_payload_values(self) -> None:
         plaintext = (
@@ -25,9 +30,9 @@ class ExportSsmToSopsTests(unittest.TestCase):
         )
         run_calls: list[list[str]] = []
 
-        def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        def fake_run(command: list[str], **kwargs: object):
             run_calls.append(command)
-            return subprocess.CompletedProcess(command, 0, stdout="encrypted-yaml", stderr="")
+            return completed_process(command, stdout="encrypted-yaml")
 
         with patch("export_ssm_to_sops.shutil.which", return_value="/usr/bin/sops"), patch(
             "export_ssm_to_sops.subprocess.run",
