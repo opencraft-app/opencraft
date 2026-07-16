@@ -34,12 +34,37 @@ ANSI_RESET = "\033[0m"
 ANSI_BOLD_GREEN = "\033[1;32m"
 ANSI_BOLD_YELLOW = "\033[1;33m"
 ANSI_CYAN = "\033[36m"
+PYTHON_EXECUTABLE_RE = re.compile(r"^python(?:3(?:\.\d+)*)?$")
+ALLOWED_COMMAND_EXECUTABLES = {"git"}
 
 
 def color(text: str, code: str) -> str:
     if os.environ.get("NO_COLOR"):
         return text
     return f"{code}{text}{ANSI_RESET}"
+
+
+def is_python_executable(executable: str) -> bool:
+    return bool(PYTHON_EXECUTABLE_RE.fullmatch(Path(executable).name))
+
+
+def validate_command(command: list[str]) -> list[str]:
+    if not command or not all(isinstance(part, str) and part for part in command):
+        raise ValueError("command must be a non-empty list of non-empty strings")
+    executable = command[0]
+    if "\x00" in executable:
+        raise ValueError("command executable must not contain NUL bytes")
+    if executable not in ALLOWED_COMMAND_EXECUTABLES and not is_python_executable(executable):
+        raise ValueError(f"unsupported command executable: {executable}")
+    return command
+
+
+def run_command(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+    safe_command = validate_command(command)
+    return subprocess.run(  # nosemgrep: dangerous-subprocess-use-audit,dangerous-subprocess-use-tainted-env-args
+        safe_command,
+        **kwargs,
+    )
 
 
 def resolve_python_bin() -> str:
@@ -56,7 +81,7 @@ def resolve_python_bin() -> str:
         if not candidate or candidate in seen:
             continue
         seen.add(candidate)
-        result = subprocess.run(
+        result = run_command(
             [candidate, "-c", "import yaml"],
             capture_output=True,
             text=True,
@@ -99,7 +124,7 @@ def parse_args() -> argparse.Namespace:
 def run(command: list[str], *, cwd: Path = REPO_ROOT, capture: bool = False) -> str:
     printable = " ".join(shlex.quote(part) for part in command)
     print(f"+ {printable}", flush=True)
-    result = subprocess.run(
+    result = run_command(
         command,
         cwd=cwd,
         capture_output=capture,
@@ -509,7 +534,7 @@ def add_worktree(path: Path, ref: str) -> None:
 
 
 def remove_worktree(path: Path) -> None:
-    subprocess.run(["git", "worktree", "remove", "--force", str(path)], cwd=REPO_ROOT, check=False)
+    run_command(["git", "worktree", "remove", "--force", str(path)], cwd=REPO_ROOT, check=False)
 
 
 def project_gitops(bundle_service: str, env: str, source_sha: str, gitops_dir: Path) -> None:
