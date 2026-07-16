@@ -440,7 +440,9 @@ func (r *Runtime) logStopState(ctx context.Context, phase, checkpointID string) 
 	}
 	checkpointStat := "not_requested"
 	if checkpointID != "" {
-		checkpointStat = r.imageFingerprintForLog(filepath.Join(r.cfg.CheckpointsRoot, checkpointID, "root-upper.img"))
+		if _, checkpointImg, err := r.checkpointImagePath(checkpointID); err == nil {
+			checkpointStat = r.imageFingerprintForLog(checkpointImg)
+		}
 	}
 	r.log("runtime.stop_state phase=%s container=%s container_state=%s active_img=%s active_fingerprint=%s checkpoint=%s checkpoint_fingerprint=%s loop_dev=%s loop_attached=%t mounts=%s",
 		phase,
@@ -741,11 +743,10 @@ func (r *Runtime) createCheckpoint(ctx context.Context, checkpointID, class, tri
 	if err := r.ensureDirs(); err != nil {
 		return CheckpointMetadata{}, err
 	}
-	checkpointID = strings.TrimSpace(checkpointID)
-	if checkpointID == "" || strings.Contains(checkpointID, "/") || checkpointID == "." || checkpointID == ".." {
-		return CheckpointMetadata{}, fmt.Errorf("invalid checkpoint id: %q", checkpointID)
+	checkpointID, checkpointDir, err := r.checkpointDirPath(checkpointID)
+	if err != nil {
+		return CheckpointMetadata{}, err
 	}
-	checkpointDir := filepath.Join(r.cfg.CheckpointsRoot, checkpointID)
 	checkpointImg := filepath.Join(checkpointDir, "root-upper.img")
 	if _, err := os.Stat(checkpointDir); err == nil {
 		return CheckpointMetadata{}, fmt.Errorf("checkpoint already exists: %s", checkpointID)
@@ -973,11 +974,10 @@ func (r *Runtime) RestoreCheckpoint(ctx context.Context, checkpointID string) er
 	if err := requireRoot(); err != nil {
 		return err
 	}
-	checkpointID = strings.TrimSpace(checkpointID)
-	if checkpointID == "" || strings.Contains(checkpointID, "/") || checkpointID == "." || checkpointID == ".." {
-		return fmt.Errorf("invalid checkpoint id: %q", checkpointID)
+	checkpointID, checkpointImg, err := r.checkpointImagePath(checkpointID)
+	if err != nil {
+		return err
 	}
-	checkpointImg := filepath.Join(r.cfg.CheckpointsRoot, checkpointID, "root-upper.img")
 	info, err := os.Stat(checkpointImg)
 	if err != nil {
 		return fmt.Errorf("checkpoint image not found: %s", checkpointImg)
@@ -1041,14 +1041,10 @@ func (r *Runtime) RestoreCheckpoint(ctx context.Context, checkpointID string) er
 }
 
 func (r *Runtime) promoteCheckpointToActive(ctx context.Context, checkpointID string) error {
-	checkpointID = strings.TrimSpace(checkpointID)
-	if checkpointID == "" {
-		return errors.New("checkpoint id is required")
+	checkpointID, checkpointImg, err := r.checkpointImagePath(checkpointID)
+	if err != nil {
+		return err
 	}
-	if strings.Contains(checkpointID, "/") || checkpointID == "." || checkpointID == ".." {
-		return fmt.Errorf("invalid checkpoint id: %q", checkpointID)
-	}
-	checkpointImg := filepath.Join(r.cfg.CheckpointsRoot, checkpointID, "root-upper.img")
 	if _, err := os.Stat(checkpointImg); err != nil {
 		return fmt.Errorf("checkpoint image not found: %s: %w", checkpointImg, err)
 	}
@@ -1199,14 +1195,10 @@ func (r *Runtime) GetCheckpoint(ctx context.Context, checkpointID string) (Check
 	if err := requireRoot(); err != nil {
 		return CheckpointMetadata{}, err
 	}
-	checkpointID = strings.TrimSpace(checkpointID)
-	if checkpointID == "" {
-		return CheckpointMetadata{}, errors.New("checkpoint id is required")
+	checkpointID, dir, err := r.checkpointDirPath(checkpointID)
+	if err != nil {
+		return CheckpointMetadata{}, err
 	}
-	if strings.Contains(checkpointID, "/") || checkpointID == "." || checkpointID == ".." {
-		return CheckpointMetadata{}, fmt.Errorf("invalid checkpoint id: %q", checkpointID)
-	}
-	dir := filepath.Join(r.cfg.CheckpointsRoot, checkpointID)
 	if _, err := os.Stat(dir); err != nil {
 		if os.IsNotExist(err) {
 			return CheckpointMetadata{}, fmt.Errorf("checkpoint not found: %s", checkpointID)
@@ -1231,11 +1223,10 @@ func (r *Runtime) DeleteCheckpoint(ctx context.Context, checkpointID string) err
 	if err := requireRoot(); err != nil {
 		return err
 	}
-	checkpointID = strings.TrimSpace(checkpointID)
-	if checkpointID == "" {
-		return errors.New("checkpoint id is required")
+	checkpointID, dir, err := r.checkpointDirPath(checkpointID)
+	if err != nil {
+		return err
 	}
-	dir := filepath.Join(r.cfg.CheckpointsRoot, checkpointID)
 	if _, err := os.Stat(dir); err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("checkpoint not found: %s", checkpointID)
@@ -1247,6 +1238,33 @@ func (r *Runtime) DeleteCheckpoint(ctx context.Context, checkpointID string) err
 	}
 	r.log("Checkpoint deleted: %s", checkpointID)
 	return nil
+}
+
+func (r *Runtime) checkpointDirPath(checkpointID string) (string, string, error) {
+	checkpointID, err := validateCheckpointID(checkpointID)
+	if err != nil {
+		return "", "", err
+	}
+	return checkpointID, filepath.Join(r.cfg.CheckpointsRoot, checkpointID), nil
+}
+
+func (r *Runtime) checkpointImagePath(checkpointID string) (string, string, error) {
+	checkpointID, dir, err := r.checkpointDirPath(checkpointID)
+	if err != nil {
+		return "", "", err
+	}
+	return checkpointID, filepath.Join(dir, "root-upper.img"), nil
+}
+
+func validateCheckpointID(checkpointID string) (string, error) {
+	checkpointID = strings.TrimSpace(checkpointID)
+	if checkpointID == "" {
+		return "", errors.New("checkpoint id is required")
+	}
+	if strings.Contains(checkpointID, "/") || checkpointID == "." || checkpointID == ".." {
+		return "", fmt.Errorf("invalid checkpoint id: %q", checkpointID)
+	}
+	return checkpointID, nil
 }
 
 func (r *Runtime) ensureJuiceFSCloneSupported(target string) error {
