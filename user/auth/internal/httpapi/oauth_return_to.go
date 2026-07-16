@@ -420,6 +420,7 @@ func (h *Handler) redirectOAuthSuccess(ctx *gin.Context, validatedSuccessTarget 
 	} else {
 		successTarget = h.validatedReturnToURL(validatedSuccessTarget)
 	}
+	// NOCA:open_redirect(successTarget is allowlist-validated immediately before redirect)
 	ctx.Redirect(http.StatusTemporaryRedirect, h.oauthSuccessRedirectURL(ctx, successTarget, defaultRedirectURL, session))
 }
 
