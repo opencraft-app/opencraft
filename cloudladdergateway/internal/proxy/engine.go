@@ -144,9 +144,11 @@ func NewEngine(cfg config.Config, opts ...EngineOption) (*Engine, error) {
 			if method == "" {
 				method = http.MethodPost
 			}
-			if !isSupportedHTTPMethod(method) {
+			canonicalMethod, ok := canonicalHTTPMethod(method)
+			if !ok {
 				return nil, fmt.Errorf("route %q webhook %q method: %w: %s", routeCfg.ID, webhookCfg.ID, ErrInvalidMethod, method)
 			}
+			method = canonicalMethod
 			route.Webhooks = append(route.Webhooks, Webhook{
 				ID:                  webhookCfg.ID,
 				URL:                 strings.TrimRight(webhookCfg.URL, "/"),
@@ -181,11 +183,13 @@ func (e *Engine) Invoke(ctx context.Context, req Request) (Response, error) {
 	if req.Method == "" {
 		req.Method = http.MethodPost
 	}
-	if !isSupportedHTTPMethod(req.Method) {
+	method, ok := canonicalHTTPMethod(req.Method)
+	if !ok {
 		err := fmt.Errorf("%w: %s", ErrInvalidMethod, req.Method)
 		e.recordAudit(ctx, req, req.RouteID, "", 0, start, err, 0, 0)
 		return Response{}, err
 	}
+	req.Method = method
 	req.RequestID = ensureRequestID(req.RequestID, req.Headers)
 	req.Caller = ensureCaller(req.Caller, req.Attributes, req.Headers)
 	if req.Path == "" {
@@ -366,6 +370,11 @@ func (e *Engine) deliverWebhook(ctx context.Context, route Route, webhook Webhoo
 	if webhook.ForwardOriginal {
 		method = req.Method
 	}
+	canonicalMethod, ok := canonicalHTTPMethod(method)
+	if !ok {
+		return WebhookDelivery{ID: webhook.ID, Mode: webhook.Mode, Status: "failed", Error: fmt.Errorf("%w: %s", ErrInvalidMethod, method).Error(), TargetURL: targetURL}
+	}
+	method = canonicalMethod
 	httpReq, err := http.NewRequestWithContext(webhookCtx, method, targetURL, bytes.NewReader(payload))
 	if err != nil {
 		return WebhookDelivery{ID: webhook.ID, Mode: webhook.Mode, Status: "failed", Error: err.Error(), TargetURL: targetURL}
@@ -518,9 +527,11 @@ func normalizeMethods(methods []string) ([]string, error) {
 		if method == "" {
 			continue
 		}
-		if !isSupportedHTTPMethod(method) {
+		canonicalMethod, ok := canonicalHTTPMethod(method)
+		if !ok {
 			return nil, fmt.Errorf("%w: %s", ErrInvalidMethod, method)
 		}
+		method = canonicalMethod
 		out = append(out, method)
 	}
 	return out, nil
@@ -530,20 +541,28 @@ func methodAllowed(allowed []string, method string) bool {
 	return len(allowed) == 0 || slices.Contains(allowed, strings.ToUpper(method))
 }
 
-func isSupportedHTTPMethod(method string) bool {
+func canonicalHTTPMethod(method string) (string, bool) {
 	switch strings.ToUpper(strings.TrimSpace(method)) {
-	case http.MethodConnect,
-		http.MethodDelete,
-		http.MethodGet,
-		http.MethodHead,
-		http.MethodOptions,
-		http.MethodPatch,
-		http.MethodPost,
-		http.MethodPut,
-		http.MethodTrace:
-		return true
+	case http.MethodConnect:
+		return http.MethodConnect, true
+	case http.MethodDelete:
+		return http.MethodDelete, true
+	case http.MethodGet:
+		return http.MethodGet, true
+	case http.MethodHead:
+		return http.MethodHead, true
+	case http.MethodOptions:
+		return http.MethodOptions, true
+	case http.MethodPatch:
+		return http.MethodPatch, true
+	case http.MethodPost:
+		return http.MethodPost, true
+	case http.MethodPut:
+		return http.MethodPut, true
+	case http.MethodTrace:
+		return http.MethodTrace, true
 	default:
-		return false
+		return "", false
 	}
 }
 
