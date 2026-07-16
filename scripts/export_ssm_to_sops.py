@@ -31,6 +31,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -42,6 +44,22 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SOPS_ENCRYPTED_REGEX = "^(data|stringData)$"
+SAFE_IDENTIFIER_RE = "^[A-Za-z][A-Za-z0-9-]*$"
+
+
+def validate_command_args(cmd: list[str], context: str) -> list[str]:
+    if not cmd:
+        raise ValueError(f"{context} command must not be empty")
+    normalized: list[str] = []
+    for arg in cmd:
+        if not isinstance(arg, str):
+            raise TypeError(f"{context} argument must be str")
+        if not arg:
+            raise ValueError(f"{context} argument must not be empty")
+        if "\x00" in arg:
+            raise ValueError(f"{context} argument must not contain NUL")
+        normalized.append(arg)
+    return normalized
 
 
 def parse_args() -> argparse.Namespace:
@@ -94,6 +112,9 @@ def load_manifest(path: Path) -> dict[str, Any]:
 
 
 def run_tccli(service: str, action: str, *, region: str, payload: dict[str, Any]) -> dict[str, Any]:
+    for label, value in (("service", service), ("action", action), ("region", region)):
+        if not re.fullmatch(SAFE_IDENTIFIER_RE, value):
+            raise ValueError(f"invalid tccli {label}: {value}")
     last_error: Exception | None = None
     for attempt in range(3):
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as tmp:
@@ -110,7 +131,11 @@ def run_tccli(service: str, action: str, *, region: str, payload: dict[str, Any]
             "--cli-input-json",
             f"file://{tmp_path}",
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(  # nosemgrep: dangerous-subprocess-use-audit
+            validate_command_args(cmd, "tccli"),
+            capture_output=True,
+            text=True,
+        )
         Path(tmp_path).unlink(missing_ok=True)
 
         if result.returncode == 0:
@@ -212,7 +237,7 @@ def dump_yaml(doc: dict[str, Any]) -> str:
 def encrypt_yaml(plaintext: str, recipients: list[str], filename_override: str) -> str:
     if not recipients:
         raise ValueError("missing age recipients for sops encryption")
-    if subprocess.run(["command", "-v", "sops"], shell=True, capture_output=True, text=True).returncode != 0:
+    if shutil.which("sops") is None:
         raise RuntimeError("sops is not installed")
 
     cmd = [
@@ -231,7 +256,12 @@ def encrypt_yaml(plaintext: str, recipients: list[str], filename_override: str) 
         ",".join(recipients),
         "/dev/stdin",
     ]
-    result = subprocess.run(cmd, input=plaintext, capture_output=True, text=True)
+    result = subprocess.run(  # nosemgrep: dangerous-subprocess-use-audit
+        validate_command_args(cmd, "sops"),
+        input=plaintext,
+        capture_output=True,
+        text=True,
+    )
     if result.returncode != 0:
         raise RuntimeError(f"sops encrypt failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}")
     return result.stdout

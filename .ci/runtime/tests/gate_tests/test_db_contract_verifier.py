@@ -586,6 +586,13 @@ class DbContractVerifierTests(unittest.TestCase):
         self.assertEqual(run.call_count, 2)
         sleep.assert_called_once_with(3)
 
+    def test_kubectl_rejects_empty_dynamic_args_before_subprocess(self) -> None:
+        with mock.patch("gates.db_contract_verifier.subprocess.run") as run:
+            with self.assertRaisesRegex(ValueError, "kubectl argument must not be empty"):
+                kubectl("/tmp/kubeconfig", ["get", ""])
+
+        run.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

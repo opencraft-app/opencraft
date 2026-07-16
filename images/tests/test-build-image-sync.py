@@ -15,6 +15,10 @@ SPEC.loader.exec_module(build_image)
 
 
 class ImageSyncTests(unittest.TestCase):
+    def test_tccli_command_rejects_empty_dynamic_arguments(self):
+        with self.assertRaisesRegex(ValueError, "tccli argument must not be empty"):
+            build_image.run_tccli("cvm", "DescribeImages", "ap-seoul", ["--ImageIds", ""])
+
     def test_hermes_deploy_injects_resolved_backend_blueprint_id(self):
         calls = []
         original_ensure = build_image.ensure_remote_build_assets
