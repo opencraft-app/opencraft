@@ -137,11 +137,15 @@ func (c Config) GetAdminRoot() string {
 }
 
 func Load(path string) (Config, error) {
-	overlayPath, err := DefaultOverlayPath(path)
+	configPath, err := normalizeConfigFilePath(path)
 	if err != nil {
 		return Config{}, err
 	}
-	return loadWithOverlay(path, overlayPath)
+	overlayPath, err := DefaultOverlayPath(configPath)
+	if err != nil {
+		return Config{}, err
+	}
+	return loadWithOverlay(configPath, overlayPath)
 }
 
 func LoadContainer(path, name string) (Config, error) {
@@ -149,7 +153,11 @@ func LoadContainer(path, name string) (Config, error) {
 	if name == "" {
 		return Load(path)
 	}
-	overlayPath, err := ContainerOverlayPath(path, name)
+	configPath, err := normalizeConfigFilePath(path)
+	if err != nil {
+		return Config{}, err
+	}
+	overlayPath, err := ContainerOverlayPath(configPath, name)
 	if err != nil {
 		return Config{}, err
 	}
@@ -159,10 +167,11 @@ func LoadContainer(path, name string) (Config, error) {
 		}
 		return Config{}, fmt.Errorf("stat container overlay %s: %w", overlayPath, err)
 	}
-	return loadWithOverlay(path, overlayPath)
+	return loadWithOverlay(configPath, overlayPath)
 }
 
 func loadWithOverlay(path, overlayPath string) (Config, error) {
+	path, overlayPath = filepath.Clean(path), filepath.Clean(overlayPath)
 	baseEnv, err := parseJSONNetFile(path)
 	if err != nil {
 		return Config{}, err
@@ -316,7 +325,11 @@ func DefaultConfigPath() string {
 
 func DefaultOverlayPath(basePath string) (string, error) {
 	if path := os.Getenv("WISP_CONFIG_OVERLAY"); path != "" {
-		return path, nil
+		return normalizeConfigFilePath(path)
+	}
+	basePath, err := normalizeConfigFilePath(basePath)
+	if err != nil {
+		return "", err
 	}
 	baseEnv, err := parseJSONNetFile(basePath)
 	if err != nil {
@@ -327,6 +340,22 @@ func DefaultOverlayPath(basePath string) (string, error) {
 		name = "default"
 	}
 	return ContainerOverlayPath(basePath, name)
+}
+
+func normalizeConfigFilePath(path string) (string, error) {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return "", fmt.Errorf("config path must not be empty")
+	}
+	cleaned := filepath.Clean(trimmed)
+	if filepath.IsAbs(cleaned) {
+		return cleaned, nil
+	}
+	abs, err := filepath.Abs(cleaned)
+	if err != nil {
+		return "", fmt.Errorf("resolve config path %s: %w", trimmed, err)
+	}
+	return filepath.Clean(abs), nil
 }
 
 func ContainerConfigDir(basePath string) string {

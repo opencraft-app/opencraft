@@ -176,6 +176,52 @@ func TestLoadFileOverridesProcessEnv(t *testing.T) {
 	}
 }
 
+func TestLoadNormalizesConfigAndOverlayPaths(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	dir := t.TempDir()
+	configDir := filepath.Join(dir, "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+	basePath := filepath.Join(configDir, "config.jsonnet")
+	if err := os.WriteFile(basePath, []byte(`{"WISP_NAME":"path-clean"}`+"\n"), 0o644); err != nil {
+		t.Fatalf("write base config: %v", err)
+	}
+	overlayPath := filepath.Join(configDir, "overlay.jsonnet")
+	if err := os.WriteFile(overlayPath, []byte(`{"REMOTE_BACKEND":"smh"}`+"\n"), 0o644); err != nil {
+		t.Fatalf("write overlay config: %v", err)
+	}
+	if err := os.Chdir(configDir); err != nil {
+		t.Fatalf("chdir config dir: %v", err)
+	}
+	defer func() {
+		_ = os.Chdir(wd)
+	}()
+	t.Setenv("WISP_CONFIG_OVERLAY", filepath.Join(".", "overlay.jsonnet"))
+	wantBasePath, err := filepath.Abs(filepath.Join(".", "config.jsonnet"))
+	if err != nil {
+		t.Fatalf("resolve base config: %v", err)
+	}
+	wantOverlayPath, err := filepath.Abs(filepath.Join(".", "overlay.jsonnet"))
+	if err != nil {
+		t.Fatalf("resolve overlay config: %v", err)
+	}
+
+	cfg, err := Load(filepath.Join(".", "config.jsonnet"))
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.ConfigFile != wantBasePath {
+		t.Fatalf("ConfigFile=%q want %q", cfg.ConfigFile, wantBasePath)
+	}
+	if cfg.OverlayConfigFile != wantOverlayPath {
+		t.Fatalf("OverlayConfigFile=%q want %q", cfg.OverlayConfigFile, wantOverlayPath)
+	}
+}
+
 func TestLoadAdminRootDerivesAdminPaths(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.jsonnet")
