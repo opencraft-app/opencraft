@@ -96,21 +96,17 @@ func (h *Handler) readValidatedReturnToFromRequest(request *http.Request) string
 	return h.validatedReturnToURL(rawURL)
 }
 
-func setOAuthReturnToCookie(ctx *gin.Context, cookieName string, cookiePath string, rawURL string, cookieSecure bool, ttl time.Duration, validate func(string) string) {
+func setOAuthReturnToCookie(ctx *gin.Context, cookieName string, cookiePath string, validatedURL string, cookieSecure bool, ttl time.Duration) {
 	if ctx == nil {
 		return
 	}
-	if validate == nil {
-		validate = validatedReturnToURL
-	}
-	validated := validate(rawURL)
-	if validated == "" {
+	if strings.TrimSpace(validatedURL) == "" {
 		clearOAuthReturnToCookie(ctx, cookieName, cookiePath, cookieSecure)
 		return
 	}
 	http.SetCookie(ctx.Writer, &http.Cookie{
 		Name:     cookieName,
-		Value:    validated,
+		Value:    validatedURL,
 		Path:     cookiePath,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
