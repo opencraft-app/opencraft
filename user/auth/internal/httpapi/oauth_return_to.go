@@ -382,29 +382,28 @@ func appendQueryParamToReturnTo(rawURL string, name string, value string) string
 	return parsed.String()
 }
 
-func (h *Handler) oauthSuccessRedirectURL(ctx *gin.Context, returnTo string, defaultRedirectURL string, session *service.AuthSession) string {
-	validated := h.validatedReturnToURL(returnTo)
-	if validated == "" {
+func (h *Handler) oauthSuccessRedirectURL(ctx *gin.Context, validatedSuccessTarget string, defaultRedirectURL string, session *service.AuthSession) string {
+	if validatedSuccessTarget == "" {
 		return defaultRedirectURL
 	}
-	if isDeviceBindReturnTo(validated) {
-		token, expiresAt, err := h.deviceBindTokens.Issue(session, validated)
+	if isDeviceBindReturnTo(validatedSuccessTarget) {
+		token, expiresAt, err := h.deviceBindTokens.Issue(session, validatedSuccessTarget)
 		if err != nil {
 			if ctx != nil {
 				requestLogger(ctx, nil).Error("issue device bind token failed", "err", err)
 			}
-			return appendOAuthErrorToReturnTo(validated, "device_bind_token_unavailable")
+			return appendOAuthErrorToReturnTo(validatedSuccessTarget, "device_bind_token_unavailable")
 		}
-		return appendDeviceBindTokenToReturnTo(validated, token, expiresAt)
+		return appendDeviceBindTokenToReturnTo(validatedSuccessTarget, token, expiresAt)
 	}
 	if session == nil {
-		return validated
+		return validatedSuccessTarget
 	}
-	return appendSessionTokenToReturnTo(validated, session.Token)
+	return appendSessionTokenToReturnTo(validatedSuccessTarget, session.Token)
 }
 
-func (h *Handler) redirectOAuthSuccess(ctx *gin.Context, returnTo string, defaultRedirectURL string, session *service.AuthSession) {
-	ctx.Redirect(http.StatusTemporaryRedirect, h.oauthSuccessRedirectURL(ctx, returnTo, defaultRedirectURL, session))
+func (h *Handler) redirectOAuthSuccess(ctx *gin.Context, validatedSuccessTarget string, defaultRedirectURL string, session *service.AuthSession) {
+	ctx.Redirect(http.StatusTemporaryRedirect, h.oauthSuccessRedirectURL(ctx, validatedSuccessTarget, defaultRedirectURL, session))
 }
 
 func appendOAuthErrorToReturnTo(rawURL string, code string) string {

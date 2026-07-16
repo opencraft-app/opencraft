@@ -226,7 +226,8 @@ func (h *Handler) handleQQOAuthCallbackAfterState(ctx *gin.Context, code string,
 	h.clearInviteTicketCookie(ctx)
 	h.syncOAuthAvatar(requestCtx, logger, "qq", session.User.ID, identity.AvatarURL, session.User.AvatarSource)
 	h.setSessionCookie(ctx, session.Token)
-	h.redirectOAuthSuccess(ctx, returnTo, h.qqOAuth.successFrontendURL(ctx.Request, "/", session.Token), session)
+	validatedSuccessTarget := h.validatedReturnToURL(returnTo)
+	h.redirectOAuthSuccess(ctx, validatedSuccessTarget, h.qqOAuth.successFrontendURL(ctx.Request, "/", session.Token), session)
 }
 
 func (h *Handler) clearQQOAuthStateCookie(ctx *gin.Context) {
