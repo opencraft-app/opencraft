@@ -26,7 +26,7 @@ LightVela 目前提供的产品是 **Hermes**，一个基于大语言模型的 A
 
 * 希望使用 AI Agent，但不具备服务器、容器、API 鉴权等技术背景的用户
 
-* 希望通过日常聊天软件（Telegram / WhatsApp / Discord / WeChat / QQ / WeCom / Lark）与 AI 交互，而非独立 App 的用户
+* 希望通过日常聊天软件（WeChat / Telegram / WhatsApp / Discord）与 AI 交互，而非独立 App 的用户
 
 * 偏好使用多种大语言模型服务商的用户（支持 ChatGPT、Claude、Gemini、Deepseek、Qwen、Zhipu、Hunyuan 等）
 
@@ -50,7 +50,7 @@ LightVela 目前提供的产品是 **Hermes**，一个基于大语言模型的 A
 
 * **多模型支持**：支持接入国内主流大语言模型、各家 Coding Plan 包月套餐，以及任何 OpenAI 兼容端点，具体见 [配置模型](./configuration/model.md)
 
-* **多通道接入**：支持通过 Telegram、WhatsApp、Discord、WeChat、QQ、WeCom、Lark 与 Hermes 进行对话
+* **多通道接入**：支持通过 WeChat、Telegram、WhatsApp、Discord 与 Hermes 进行对话
 
 * **技能扩展**：通过 [SkillHub](https://skillhub.tencent.com) 安装技能包，扩展 Hermes 的能力边界
 
@@ -65,7 +65,7 @@ LightVela 目前提供的产品是 **Hermes**，一个基于大语言模型的 A
 LightVela 在云端为用户运行一个专属的 Hermes 实例，并通过适配层接入用户指定的聊天平台。
 
 ```
-用户（在 Telegram / WhatsApp / Discord / WeChat / QQ / WeCom / Lark 中发送消息）
+用户（在 WeChat / Telegram / WhatsApp / Discord 中发送消息）
       ↓
 LightVela 云端的 Hermes 实例（用户专属）
       ↓
@@ -78,7 +78,7 @@ LightVela 云端的 Hermes 实例（用户专属）
 
 1. **模型**：Hermes 调用的大语言模型。启航套餐预置体验积分，可直接使用；也可配置自有 API Key
 
-2. **通道**：与 Hermes 对话的聊天平台（Telegram / WhatsApp / Discord / WeChat / QQ / WeCom / Lark）
+2. **通道**：与 Hermes 对话的聊天平台（WeChat / Telegram / WhatsApp / Discord）
 
 3. **技能**（可选）：扩展 Hermes 的能力
 
@@ -121,3 +121,4 @@ LightVela 采用套餐化计费。开通一个套餐即获得一个可用的 Her
 * **[核心概念](./04-core-concepts.md)** — Hermes、模型、通道、技能四项核心概念说明
 
 * **[配置总览](./05-configuration.md)** — 管理台功能与配置流程
+

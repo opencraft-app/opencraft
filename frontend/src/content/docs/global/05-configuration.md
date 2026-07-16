@@ -66,17 +66,17 @@ LightVela 的所有配置集中在「我的 Hermes」管理台中，由三个配
 
 | 通道 | 接入方式 | 所需条件 |
 |---|---|---|
+| WeChat | 扫码授权 | 一台装有微信的手机 |
 | Telegram | Bot Token 接入 | 通过 BotFather 创建 Telegram Bot，并获取 Bot Token |
 | WhatsApp | WhatsApp Business API 接入 | 需要 Meta 开发者账号、WhatsApp Business Account，并完成 Cloud API 基础配置 |
 | Discord | Bot Token 接入 | 在 Discord Developer Portal 创建 Application，添加 Bot，并邀请到服务器 |
-| WeChat | 扫码授权 | 一台装有微信的手机 |
 | QQ | AppID / AppSecret 接入 | 一个 QQ 账号；在 QQ 开放平台创建机器人并获取 AppID / AppSecret |
 | 企业微信（WeCom） | 扫码授权 | 一台装有企业微信的手机 |
 | 飞书（Lark） | 扫码授权 | 一台装有飞书的手机或已登录飞书的桌面端 |
 
 **按键提供**：通道下拉、「授权接入」按钮、所选通道的介绍与「查看详情」链接、「已接入通道」列表。
 
-详细操作请参见 [配置通道 - Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [WeChat](./configuration/channel-wechat.md) / [QQ](./configuration/channel-qq.md) / [企业微信](./configuration/channel-wecom.md) / [飞书](./configuration/channel-feishu.md)。
+详细操作请参见 [配置通道 - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [QQ](./configuration/channel-qq.md) / [企业微信](./configuration/channel-wecom.md) / [飞书](./configuration/channel-feishu.md)。
 
 ---
 
@@ -148,7 +148,7 @@ LightVela 的所有配置集中在「我的 Hermes」管理台中，由三个配
 
 - [配置模型](./configuration/model.md) — 模型来源、API Key 获取、选型建议
 
-- [配置通道 - Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [WeChat](./configuration/channel-wechat.md) / [QQ](./configuration/channel-qq.md) / [企业微信](./configuration/channel-wecom.md) / [飞书](./configuration/channel-feishu.md)
+- [配置通道 - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [QQ](./configuration/channel-qq.md) / [企业微信](./configuration/channel-wecom.md) / [飞书](./configuration/channel-feishu.md)
 
 - [配置技能](./configuration/skill.md) — SkillHub 使用与技能安装
 
