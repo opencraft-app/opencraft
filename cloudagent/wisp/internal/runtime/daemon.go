@@ -255,8 +255,8 @@ func (d *Daemon) shutdown(ctx context.Context) {
 		_ = d.adminTCPLn.Close()
 	}
 	_ = d.releaseSingleInstanceLock()
-	_ = os.Remove(d.rt.cfg.EnvSocketHostPath)
-	_ = os.Remove(d.rt.cfg.AdminSocketPath)
+	_ = removeDaemonFile(d.rt.cfg.EnvSocketHostPath)
+	_ = removeDaemonFile(d.rt.cfg.AdminSocketPath)
 }
 
 func (d *Daemon) adminMux() http.Handler {
@@ -308,8 +308,10 @@ func (d *Daemon) envMux() http.Handler {
 
 func (d *Daemon) ensureEnvListenerLocked() error {
 	if d.envLn != nil {
-		if info, err := os.Stat(d.rt.cfg.EnvSocketHostPath); err == nil && info.Mode()&os.ModeSocket != 0 {
-			return nil
+		if path, err := normalizeDaemonFilePath(d.rt.cfg.EnvSocketHostPath); err == nil {
+			if info, err := os.Stat(path); err == nil && info.Mode()&os.ModeSocket != 0 {
+				return nil
+			}
 		}
 		if err := d.closeEnvListenerLocked(); err != nil {
 			return err
@@ -337,7 +339,7 @@ func (d *Daemon) closeEnvListenerLocked() error {
 		_ = d.envLn.Close()
 		d.envLn = nil
 	}
-	_ = os.Remove(d.rt.cfg.EnvSocketHostPath)
+	_ = removeDaemonFile(d.rt.cfg.EnvSocketHostPath)
 	return nil
 }
 
@@ -1038,10 +1040,14 @@ func CallUnixJSON(ctx context.Context, socketPath, method, urlPath string, body 
 }
 
 func listenUnix(path string, mode os.FileMode) (net.Listener, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	path, err := normalizeDaemonFilePath(path)
+	if err != nil {
 		return nil, err
 	}
-	_ = os.Remove(path)
+	if err := ensureDaemonFileParent(path); err != nil {
+		return nil, err
+	}
+	_ = removeDaemonFile(path)
 	ln, err := net.Listen("unix", path)
 	if err != nil {
 		return nil, err
@@ -1054,8 +1060,11 @@ func listenUnix(path string, mode os.FileMode) (net.Listener, error) {
 }
 
 func (d *Daemon) acquireSingleInstanceLock() error {
-	path := d.rt.cfg.DaemonLockFile
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	path, err := normalizeDaemonFilePath(d.rt.cfg.DaemonLockFile)
+	if err != nil {
+		return err
+	}
+	if err := ensureDaemonFileParent(path); err != nil {
 		return err
 	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
@@ -1098,14 +1107,48 @@ func (d *Daemon) releaseSingleInstanceLock() error {
 	if d.lockFile == nil {
 		return nil
 	}
-	path := d.rt.cfg.DaemonLockFile
+	path, err := normalizeDaemonFilePath(d.rt.cfg.DaemonLockFile)
+	if err != nil {
+		return err
+	}
 	f := d.lockFile
 	d.lockFile = nil
 	_ = f.Truncate(0)
 	_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 	_ = f.Close()
-	_ = os.Remove(path)
+	_ = removeDaemonFile(path)
 	return nil
+}
+
+func normalizeDaemonFilePath(path string) (string, error) {
+	path, err := normalizeLocalFilePath(path)
+	if err != nil {
+		return "", err
+	}
+	if path == string(os.PathSeparator) {
+		return "", errors.New("daemon file path must not be root")
+	}
+	return path, nil
+}
+
+func ensureDaemonFileParent(path string) error {
+	path, err := normalizeDaemonFilePath(path)
+	if err != nil {
+		return err
+	}
+	dir := filepath.Dir(path)
+	if dir == string(os.PathSeparator) {
+		return nil
+	}
+	return os.MkdirAll(dir, 0o755)
+}
+
+func removeDaemonFile(path string) error {
+	path, err := normalizeDaemonFilePath(path)
+	if err != nil {
+		return err
+	}
+	return os.Remove(path)
 }
 
 func readPIDFile(f *os.File) int {
