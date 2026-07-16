@@ -1245,7 +1245,15 @@ func (r *Runtime) checkpointDirPath(checkpointID string) (string, string, error)
 	if err != nil {
 		return "", "", err
 	}
-	return checkpointID, filepath.Join(r.cfg.CheckpointsRoot, checkpointID), nil
+	root, err := normalizeLocalFilePath(r.cfg.CheckpointsRoot)
+	if err != nil {
+		return "", "", err
+	}
+	dir := filepath.Clean(filepath.Join(root, checkpointID))
+	if !pathWithinRoot(root, dir) {
+		return "", "", fmt.Errorf("invalid checkpoint path: %s", checkpointID)
+	}
+	return checkpointID, dir, nil
 }
 
 func (r *Runtime) checkpointImagePath(checkpointID string) (string, string, error) {
@@ -1265,6 +1273,19 @@ func validateCheckpointID(checkpointID string) (string, error) {
 		return "", fmt.Errorf("invalid checkpoint id: %q", checkpointID)
 	}
 	return checkpointID, nil
+}
+
+func pathWithinRoot(root, path string) bool {
+	root = filepath.Clean(root)
+	path = filepath.Clean(path)
+	if path == root {
+		return true
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	return rel != "." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) && rel != ".."
 }
 
 func (r *Runtime) ensureJuiceFSCloneSupported(target string) error {
