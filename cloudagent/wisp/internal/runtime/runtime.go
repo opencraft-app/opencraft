@@ -2898,6 +2898,10 @@ func (r *Runtime) extractBlankActiveImageTemplateTar(ctx context.Context) (bool,
 }
 
 func sparseCopyFile(src, dst string) error {
+	dst, err := normalizeLocalFilePath(dst)
+	if err != nil {
+		return err
+	}
 	in, err := os.Open(src)
 	if err != nil {
 		return err
@@ -2944,6 +2948,18 @@ func sparseCopyFile(src, dst string) error {
 		return err
 	}
 	return out.Truncate(size)
+}
+
+func normalizeLocalFilePath(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", errors.New("file path is required")
+	}
+	abs, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(abs), nil
 }
 
 var errSparseSeekUnsupported = errors.New("sparse seek unsupported")
