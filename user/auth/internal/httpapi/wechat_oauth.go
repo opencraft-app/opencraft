@@ -527,19 +527,7 @@ func (w *wechatOAuth) frontendURL(request *http.Request, path string) string {
 }
 
 func (w *wechatOAuth) successFrontendURL(request *http.Request, path string, sessionToken string) string {
-	redirectURL := w.frontendURL(request, path)
-	if strings.TrimSpace(sessionToken) == "" {
-		return redirectURL
-	}
-
-	parsed, err := url.Parse(redirectURL)
-	if err != nil {
-		return redirectURL
-	}
-	fragment := url.Values{}
-	fragment.Set("session_token", strings.TrimSpace(sessionToken))
-	parsed.Fragment = fragment.Encode()
-	return parsed.String()
+	return oauthSuccessFrontendURL(w.frontendBaseURLForRequest(request), path, sessionToken)
 }
 
 func (w *wechatOAuth) frontendBaseURLForRequest(request *http.Request) string {
