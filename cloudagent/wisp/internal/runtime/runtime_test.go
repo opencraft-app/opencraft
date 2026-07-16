@@ -529,19 +529,35 @@ func TestEnsureActiveImageUsesBlankTemplateTarWhenRootUpperSizeUnset(t *testing.
 
 func TestEnsureActiveImageUsesBlankSparseTemplateWhenRootUpperSizeUnset(t *testing.T) {
 	root := t.TempDir()
-	template := filepath.Join(root, "root-upper-default.sparse")
+	templateDir := filepath.Join(root, "templates")
+	if err := os.MkdirAll(templateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	template := filepath.Join(templateDir, "root-upper-default.sparse")
 	payload := sparseRootUpperMagic + "\n" +
 		`{"size":1024,"extents":[{"offset":0,"length":3},{"offset":100,"length":4}]}` + "\n" +
 		"abc" + "tail"
 	if err := os.WriteFile(template, []byte(payload), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(templateDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore wd: %v", err)
+		}
+	})
 	active := filepath.Join(root, "state", "active", "root-upper.img")
 	rt := New(config.Config{
 		ActiveImg:            active,
 		RootUpperSize:        "",
 		DefaultRootUpperSize: "5G",
-		BlankRootUpperSparse: template,
+		BlankRootUpperSparse: filepath.Join(".", "root-upper-default.sparse"),
 	})
 	if err := rt.ensureActiveImage(context.Background()); err != nil {
 		t.Fatal(err)
