@@ -403,6 +403,10 @@ func (h *Handler) oauthSuccessRedirectURL(ctx *gin.Context, returnTo string, def
 	return appendSessionTokenToReturnTo(validated, session.Token)
 }
 
+func (h *Handler) redirectOAuthSuccess(ctx *gin.Context, returnTo string, defaultRedirectURL string, session *service.AuthSession) {
+	ctx.Redirect(http.StatusTemporaryRedirect, h.oauthSuccessRedirectURL(ctx, returnTo, defaultRedirectURL, session))
+}
+
 func appendOAuthErrorToReturnTo(rawURL string, code string) string {
 	parsed, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil {
