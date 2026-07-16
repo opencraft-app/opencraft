@@ -1795,7 +1795,7 @@ export function SkillsDemoPanel({
               >
                   <SelectTrigger
                     aria-label={t("来源")}
-                    className="!h-10 w-[132px] shrink-0 !rounded-md !border-black/10 !bg-white !px-3 text-xs font-semibold text-black/75 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-shadow hover:!border-black/16 hover:shadow-[0_2px_7px_rgba(0,0,0,0.07)] data-[state=open]:!border-black/20 data-[state=open]:shadow-[0_3px_10px_rgba(0,0,0,0.09)]"
+                    className="lv-skills-source-select-trigger !h-10 w-[132px] shrink-0 !rounded-[12px] !border-black/10 !bg-white !px-3 text-xs font-semibold text-black/75 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-shadow hover:!border-black/16 hover:shadow-[0_2px_7px_rgba(0,0,0,0.07)] data-[state=open]:!border-black/20 data-[state=open]:shadow-[0_3px_10px_rgba(0,0,0,0.09)]"
                   >
                     <SelectValue />
                   </SelectTrigger>
@@ -1834,12 +1834,12 @@ export function SkillsDemoPanel({
                   </SectionTitle>
                   <div className="flex min-w-0 flex-wrap items-center justify-end gap-3">
                     {!searching && visibleResults.length > 0 ? (
-                      <div className="flex shrink-0 items-center gap-1 rounded-md bg-black/[0.04] p-0.5">
+                      <div className="lv-skills-sort-control flex shrink-0 items-center gap-1 rounded-[12px] bg-black/[0.04] p-0.5">
                       <button
                         type="button"
                         onClick={() => setSortMode("popular")}
                         className={cn(
-                          "h-8 rounded-md px-2 text-[11px] font-semibold transition-all",
+                          "h-8 rounded-[12px] px-2 text-[11px] font-semibold transition-all",
                           sortMode === "popular"
                             ? "bg-white text-black/85 shadow-[0_1px_4px_rgba(0,0,0,0.08)]"
                             : "text-black/45 hover:text-black/70",
@@ -1851,7 +1851,7 @@ export function SkillsDemoPanel({
                         type="button"
                         onClick={() => setSortMode("name")}
                         className={cn(
-                          "h-8 rounded-md px-2 text-[11px] font-semibold transition-all",
+                          "h-8 rounded-[12px] px-2 text-[11px] font-semibold transition-all",
                           sortMode === "name"
                             ? "bg-white text-black/85 shadow-[0_1px_4px_rgba(0,0,0,0.08)]"
                             : "text-black/45 hover:text-black/70",
