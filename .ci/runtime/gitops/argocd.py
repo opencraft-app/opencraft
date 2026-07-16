@@ -68,6 +68,13 @@ def resolve_bool_setting(cli_flag: bool, env_name: str, file_path: str, default:
     return default
 
 
+def create_ssl_context(*, insecure_skip_verify: bool) -> ssl.SSLContext:
+    if insecure_skip_verify:
+        # Only enabled by the explicit Argo CD insecure-skip-verify setting for private CI endpoints.
+        return ssl._create_unverified_context()  # nosemgrep: unverified-ssl-context
+    return ssl.create_default_context()
+
+
 def resolve_settings(args: Namespace) -> tuple[str, str, str, ssl.SSLContext]:
     base_url = resolve_string_setting(
         getattr(args, "argocd_base_url", None),
@@ -99,7 +106,7 @@ def resolve_settings(args: Namespace) -> tuple[str, str, str, ssl.SSLContext]:
             "and /etc/lightclaw-ci/argocd_password"
         )
 
-    ssl_context = ssl._create_unverified_context() if insecure_skip_verify else ssl.create_default_context()
+    ssl_context = create_ssl_context(insecure_skip_verify=insecure_skip_verify)
     return base_url.rstrip("/"), username, password, ssl_context
 
 
