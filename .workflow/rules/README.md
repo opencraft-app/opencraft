@@ -14,10 +14,19 @@
 ```
 .workflow/rules/
 ├── README.md              ← 本说明文件（AI 不需要加载，会自动跳过）
-├── code-style.md          ← 代码风格（缩进、命名、导入顺序）
-├── component-rules.md     ← 组件设计约束（命名、Props 规范、文件大小）
-├── styling-rules.md       ← 样式约束（用 Tailwind / CSS Module / 某 UI 库）
-├── data-flow.md           ← 数据流与状态管理约束
+├── global.md              ← P0 短铁律（默认加载）
+├── context-budget.md      ← P0 / AGENTS.md / 按需上下文预算规则
+├── context-recovery.md    ← runtime summary / handoff / verification ledger
+├── agent-dispatch.md      ← 调查型 sub-agent / 增量验证上下文预算
+├── flow-cost.md           ← S/M/L 流程强度、review/archive 降本策略与模型分流（成本与模型分层）
+├── terminal-output.md     ← 长终端输出治理规则
+├── team-state.md          ← 多人 / 多 Agent 文件归属与共享状态边界
+├── workflow-strict.md     ← 严格流程 / 进度沟通 / 路径 / 未归档细则（按需）
+├── workflow-reporting.md  ← 用量审计 / JSON 鲁棒性（按需）
+├── code-style.md          ← 代码风格（项目按需新增）
+├── component-rules.md     ← 组件设计约束（项目按需新增）
+├── styling-rules.md       ← 样式约束（项目按需新增）
+├── data-flow.md           ← 数据流与状态管理约束（项目按需新增）
 └── ...                    ← 按需新增
 ```
 

@@ -11,9 +11,12 @@
 - [ ] 涉及的 spec 已更新或新增到 `openspec/specs/`
 - [ ] 不在范围内的"待办事项"已记录到 `openspec/changes/` 或 issue
 - [ ] 临时调试文件 / 截图 / 草稿已清理或归档
-- [ ] `openspec/current_state.md` 已追加本次归档的历史记录（项目级长期记忆）
-- [ ] `openspec/current_state.md` 的「## 当前进行中」段已被移除（避免状态分裂）
+- [ ] `openspec/current_state.md` 未写入本次需求历史、上一个需求摘要或当前会话状态；历史事实以 `openspec/changes/*.md` 为准
+- [ ] 如存在旧版「## 当前进行中」「历史归档」「上一个需求」等段落，已移除或迁移到本次归档单文件
+- [ ] 已评估本次变更是否影响稳定架构 / 模块索引；如影响，`openspec/current_state.md` 已做段落级最小更新；否则保持不变
 - [ ] `openspec/plan.md` / `proposal.md` / `spec.md` 已重置为带「上一需求归档于 YYYY-MM-DD：{需求名}」指纹的占位语（grep "上一需求归档于" 命中 3 次）
+- [ ] 如存在 `.workflow/runtime/verification-ledger.md`，已从中提炼验证摘要；未用 ledger 替代真实验证结果
+- [ ] 已执行本地 AI 用量审计：`metadata.localUsageAudit` 有结果，或明确降级为 `null` 且不阻塞归档
 
 ---
 
