@@ -98,6 +98,71 @@ func TestRuntimeForWispRejectsTraversalName(t *testing.T) {
 	}
 }
 
+func TestListenUnixNormalizesSocketPath(t *testing.T) {
+	dir := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore wd: %v", err)
+		}
+	})
+
+	ln, err := listenUnix(filepath.Join(".", "sockets", "nested", "..", "api.sock"), 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	socketPath := filepath.Join(dir, "sockets", "api.sock")
+	info, err := os.Stat(socketPath)
+	if err != nil {
+		t.Fatalf("stat normalized socket: %v", err)
+	}
+	if info.Mode()&os.ModeSocket == 0 {
+		t.Fatalf("expected socket mode, got %v", info.Mode())
+	}
+	if _, err := listenUnix(string(os.PathSeparator), 0o600); err == nil || !strings.Contains(err.Error(), "must not be root") {
+		t.Fatalf("listen root err=%v", err)
+	}
+}
+
+func TestDaemonLockFileNormalizesPath(t *testing.T) {
+	dir := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore wd: %v", err)
+		}
+	})
+
+	d := NewDaemon(New(config.Config{DaemonLockFile: filepath.Join(".", "locks", "..", "daemon.lock")}))
+	if err := d.acquireSingleInstanceLock(); err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(dir, "daemon.lock")
+	if _, err := os.Stat(lockPath); err != nil {
+		t.Fatalf("stat normalized lock file: %v", err)
+	}
+	if err := d.releaseSingleInstanceLock(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+		t.Fatalf("expected lock file removed, stat err=%v", err)
+	}
+}
+
 func TestDecodeRuntimeRequestRejectsTraversalName(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/v1/runtime/start?name=../escape", strings.NewReader(`{}`))
 	if _, err := decodeRuntimeRequest(req); err == nil {
