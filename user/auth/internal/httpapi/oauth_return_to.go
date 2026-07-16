@@ -414,7 +414,13 @@ func (h *Handler) oauthSuccessRedirectURL(ctx *gin.Context, validatedSuccessTarg
 }
 
 func (h *Handler) redirectOAuthSuccess(ctx *gin.Context, validatedSuccessTarget string, defaultRedirectURL string, session *service.AuthSession) {
-	ctx.Redirect(http.StatusTemporaryRedirect, h.oauthSuccessRedirectURL(ctx, validatedSuccessTarget, defaultRedirectURL, session))
+	successTarget := ""
+	if h == nil {
+		successTarget = validatedReturnToURL(validatedSuccessTarget)
+	} else {
+		successTarget = h.validatedReturnToURL(validatedSuccessTarget)
+	}
+	ctx.Redirect(http.StatusTemporaryRedirect, h.oauthSuccessRedirectURL(ctx, successTarget, defaultRedirectURL, session))
 }
 
 func appendOAuthErrorToReturnTo(rawURL string, code string) string {
