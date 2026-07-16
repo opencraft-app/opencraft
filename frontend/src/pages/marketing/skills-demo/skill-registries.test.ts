@@ -4,13 +4,18 @@ import {
   buildSkillhubInstallCommand,
   buildSkillhubListCommand,
   buildSkillhubUninstallCommand,
+  createDomesticDataLayer,
+  createLiveDataLayer,
   buildSkillsshInstallCommand,
   buildSkillsshSearchCommand,
   buildSkillsshUninstallCommand,
   getPopularityTier,
   mergeInstalledSources,
+  parseInstallOk,
+  parseUninstallOk,
   sortByPopular,
   skillIdentity,
+  type Skill,
   type InstalledSkill,
 } from "./skill-registries";
 import { parseSkillhubList, parseSkillhubSearch } from "./skill-registries";
@@ -101,6 +106,81 @@ describe("domestic SkillHub command and response handling", () => {
       rawId: "builder-radar",
       sourceLabel: "SkillHub",
     })]);
+
+    const tableInstalled = parseSkillhubList([
+      "┌───────────────┬─────────┐",
+      "│ 名称          │ 版本    │",
+      "├───────────────┼─────────┤",
+      "│ builder-radar │ 1.0.0   │",
+      "└───────────────┴─────────┘",
+    ].join("\n"));
+    expect(tableInstalled).toEqual([expect.objectContaining({ rawId: "builder-radar" })]);
+
+    const numericIdOnly = parseSkillhubList(JSON.stringify({
+      success: true,
+      data: { skills: [{ id: "12345", name: "Builder Radar" }] },
+    }));
+    expect(numericIdOnly).toEqual([]);
+
+    const englishSearch = parseSkillhubSearch(JSON.stringify({
+      data: {
+        skills: [{
+          slug: "builder-radar",
+          name: "构建雷达",
+          displayNameEn: "Builder Radar",
+          description_zh: "帮助整理知识资料",
+          descriptionEn: "Helps organize project knowledge.",
+        }],
+      },
+    }), "en");
+    expect(englishSearch).toEqual([expect.objectContaining({
+      name: "Builder Radar",
+      description: "Helps organize project knowledge.",
+    })]);
+  });
+});
+
+describe("install and uninstall result handling", () => {
+  const failedOutput = JSON.stringify({
+    success: false,
+    status: "installed",
+    data: { status: "installed" },
+    error: { code: "INSTALL_FAILED", message: "download failed" },
+  });
+
+  it("does not treat a failed envelope as successful when exit code is zero", () => {
+    expect(parseInstallOk(failedOutput)).toBe(false);
+    expect(parseUninstallOk(failedOutput)).toBe(false);
+    expect(parseInstallOk(JSON.stringify({ success: true, data: { status: "installed" } }))).toBe(true);
+    expect(parseUninstallOk(JSON.stringify({ success: true, data: { status: "uninstalled" } }))).toBe(true);
+  });
+
+  it("does not persist a false success for either registry data layer", async () => {
+    const execDebugCommand = async () => ({
+      status: "SUCCESS",
+      exitCode: 0,
+      output: failedOutput,
+    });
+    const globalSkill: Skill = {
+      registry: "clawhub",
+      rawId: "failed-skill",
+      slug: "failed-skill",
+      name: "Failed skill",
+    };
+    const domesticSkill: Skill = {
+      registry: "skillhub",
+      rawId: "failed-skill",
+      slug: "failed-skill",
+      name: "Failed skill",
+    };
+
+    const live = createLiveDataLayer("bot-1", execDebugCommand);
+    expect(await live.install(globalSkill)).toEqual({ ok: false, message: failedOutput });
+    expect(await live.uninstall(globalSkill)).toEqual({ ok: false, message: failedOutput });
+
+    const domestic = createDomesticDataLayer("bot-1", execDebugCommand);
+    expect(await domestic.install(domesticSkill)).toEqual({ ok: false, message: failedOutput });
+    expect(await domestic.uninstall(domesticSkill)).toEqual({ ok: false, message: failedOutput });
   });
 });
 

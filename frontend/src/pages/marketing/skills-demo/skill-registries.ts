@@ -300,7 +300,11 @@ function parseSkillsshList(raw: string): InstalledSkill[] {
 interface SkillhubSearchItem {
   category?: string;
   description?: string;
+  descriptionEn?: string;
+  description_en?: string;
   description_zh?: string;
+  displayNameEn?: string;
+  display_name_en?: string;
   downloads?: number;
   iconUrl?: string;
   installs?: number;
@@ -308,18 +312,32 @@ interface SkillhubSearchItem {
   score?: number;
   slug?: string;
   source?: string;
+  summaryEn?: string;
+  summary_en?: string;
 }
 
-function mapSkillhubItem(item: SkillhubSearchItem): Skill | null {
+type SkillhubLanguage = "zh" | "en";
+
+function mapSkillhubItem(item: SkillhubSearchItem, language: SkillhubLanguage): Skill | null {
   const slug = item.slug?.trim() || "";
   if (!slug) return null;
+  const name = language === "en"
+    ? item.displayNameEn?.trim() || item.display_name_en?.trim() || item.name?.trim() || slug
+    : item.name?.trim() || slug;
+  const description = language === "en"
+    ? item.descriptionEn?.trim()
+      || item.description_en?.trim()
+      || item.summaryEn?.trim()
+      || item.summary_en?.trim()
+      || item.description?.trim()
+    : item.description_zh?.trim() || item.description?.trim();
   return {
     registry: "skillhub",
     sourceRegistry: item.source?.trim().toLowerCase() === "clawhub" ? "clawhub" : "skillhub",
     rawId: slug,
     slug,
-    name: item.name?.trim() || slug,
-    description: item.description_zh?.trim() || item.description?.trim() || undefined,
+    name,
+    description: description || undefined,
     installs: typeof item.installs === "number" ? item.installs : undefined,
     downloads: typeof item.downloads === "number" ? item.downloads : undefined,
     iconUrl: item.iconUrl?.trim() || undefined,
@@ -330,13 +348,13 @@ function mapSkillhubItem(item: SkillhubSearchItem): Skill | null {
 }
 
 /** 解析 SkillHub `/api/skills` 的公共响应，兼容 code/data 和直接 data 两种包装。 */
-export function parseSkillhubSearch(raw: string): Skill[] {
+export function parseSkillhubSearch(raw: string, language: SkillhubLanguage = "zh"): Skill[] {
   const parsed = extractJsonObject(raw);
   if (!isRecord(parsed)) return [];
   const outerData = isRecord(parsed.data) ? parsed.data : parsed;
   if (!isRecord(outerData) || !Array.isArray(outerData.skills)) return [];
   return (outerData.skills as SkillhubSearchItem[])
-    .map(mapSkillhubItem)
+    .map((item) => mapSkillhubItem(item, language))
     .filter((skill): skill is Skill => skill !== null);
 }
 
@@ -355,7 +373,7 @@ function parseSkillhubListTable(raw: string): SkillhubListItem[] {
   return raw.split("\n")
     .filter((line) => line.includes("│"))
     .map((line) => line.split("│").slice(1, -1).map((cell) => cell.trim()))
-    .filter((cells) => cells.length > 0 && cells[0] && cells[0] !== "Name")
+    .filter((cells) => cells.length > 0 && cells[0] && cells[0] !== "Name" && cells[0] !== "名称")
     .map(([name, version]) => ({ name, version }));
 }
 
@@ -366,7 +384,10 @@ export function parseSkillhubList(raw: string): InstalledSkill[] {
     : parseSkillhubListTable(raw);
 
   return items.map((item) => {
-    const rawId = (item.slug ?? item.id ?? item.rawId ?? item.name ?? "").trim();
+    const explicitId = item.slug ?? item.rawId ?? item.id;
+    const rawId = explicitId
+      ? (/^\d+$/.test(explicitId.trim()) ? "" : explicitId.trim())
+      : (item.name ?? "").trim();
     if (!rawId) return null;
     const name = (item.display_name ?? item.displayName ?? item.name ?? rawId).trim();
     return {
@@ -381,8 +402,10 @@ export function parseSkillhubList(raw: string): InstalledSkill[] {
   }).filter((skill): skill is InstalledSkill => skill !== null);
 }
 
-function parseInstallOk(raw: string): boolean {
-  const parsed = dataEnvelope(extractJsonObject(raw));
+export function parseInstallOk(raw: string): boolean {
+  const envelope = extractJsonObject(raw);
+  if (!isRecord(envelope) || ("success" in envelope && envelope.success !== true)) return false;
+  const parsed = dataEnvelope(envelope);
   if (isRecord(parsed)) {
     if (parsed.success === true) return true;
     const status = parsed.status;
@@ -392,8 +415,10 @@ function parseInstallOk(raw: string): boolean {
 }
 
 /** 解析 acli uninstall 输出：`{ name, status: 'uninstalled' }` 或 `{ success: true }` 都算成功。 */
-function parseUninstallOk(raw: string): boolean {
-  const parsed = dataEnvelope(extractJsonObject(raw));
+export function parseUninstallOk(raw: string): boolean {
+  const envelope = extractJsonObject(raw);
+  if (!isRecord(envelope) || ("success" in envelope && envelope.success !== true)) return false;
+  const parsed = dataEnvelope(envelope);
   if (isRecord(parsed)) {
     if (parsed.success === true) return true;
     const status = parsed.status;
@@ -709,7 +734,8 @@ export function createLiveDataLayer(
           : buildClawhubInstallCommand(skill.rawId);
       try {
         const output = await run(command);
-        return { ok: parseInstallOk(output) || true, message: undefined };
+        const ok = parseInstallOk(output);
+        return { ok, message: ok ? undefined : output.trim() || undefined };
       } catch (error) {
         return { ok: false, message: error instanceof Error ? error.message : String(error) };
       }
@@ -721,7 +747,8 @@ export function createLiveDataLayer(
           : buildClawhubUninstallCommand(skill.rawId);
       try {
         const output = await run(command);
-        return { ok: parseUninstallOk(output) || true, message: undefined };
+        const ok = parseUninstallOk(output);
+        return { ok, message: ok ? undefined : output.trim() || undefined };
       } catch (error) {
         return { ok: false, message: error instanceof Error ? error.message : String(error) };
       }
@@ -735,7 +762,12 @@ export function createLiveDataLayer(
 
 // ─── 国内站数据层（SkillHub HTTP + acli skills） ───────────────────────────────
 
-async function fetchSkillhubSkills(params: { keyword?: string; pageSize: number; sortBy?: SkillSearchSort }): Promise<Skill[]> {
+async function fetchSkillhubSkills(params: {
+  keyword?: string;
+  pageSize: number;
+  sortBy?: SkillSearchSort;
+  lang?: SkillhubLanguage;
+}): Promise<Skill[]> {
   const query = new URLSearchParams({
     page: "1",
     pageSize: String(params.pageSize),
@@ -743,15 +775,17 @@ async function fetchSkillhubSkills(params: { keyword?: string; pageSize: number;
     order: "desc",
   });
   if (params.keyword?.trim()) query.set("keyword", params.keyword.trim());
+  if (params.lang) query.set("lang", params.lang);
 
   const response = await fetch(`${resolveSkillHubApiBase()}/api/skills?${query.toString()}`);
   if (!response.ok) throw new Error(`SkillHub ${response.status} ${response.statusText}`);
-  return parseSkillhubSearch(JSON.stringify(await response.json()));
+  return parseSkillhubSearch(JSON.stringify(await response.json()), params.lang);
 }
 
 export function createDomesticDataLayer(
   botId: string,
   execDebugCommand: ExpertsExecDebugCommand,
+  language: SkillhubLanguage = "zh",
 ): SkillsDataLayer {
   const run = async (command: string): Promise<string> => {
     const result = await execDebugCommand(botId, command);
@@ -772,7 +806,7 @@ export function createDomesticDataLayer(
         return {
           clawhub: [],
           skillssh: [],
-          skillhub: await fetchSkillhubSkills({ keyword, pageSize: 50, sortBy: options?.sortBy }),
+          skillhub: await fetchSkillhubSkills({ keyword, pageSize: 50, sortBy: options?.sortBy, lang: language }),
         };
       } catch {
         return { clawhub: [], skillssh: [], skillhub: [] };
@@ -787,23 +821,25 @@ export function createDomesticDataLayer(
     },
     async install(skill: Skill) {
       try {
-        await run(buildSkillhubInstallCommand(skill.rawId));
-        return { ok: true };
+        const output = await run(buildSkillhubInstallCommand(skill.rawId));
+        const ok = parseInstallOk(output);
+        return { ok, message: ok ? undefined : output.trim() || undefined };
       } catch (error) {
         return { ok: false, message: error instanceof Error ? error.message : String(error) };
       }
     },
     async uninstall(skill: Skill) {
       try {
-        await run(buildSkillhubUninstallCommand(skill.rawId));
-        return { ok: true };
+        const output = await run(buildSkillhubUninstallCommand(skill.rawId));
+        const ok = parseUninstallOk(output);
+        return { ok, message: ok ? undefined : output.trim() || undefined };
       } catch (error) {
         return { ok: false, message: error instanceof Error ? error.message : String(error) };
       }
     },
     async getPopular() {
       try {
-        return { clawhub: [], skillssh: [], skillhub: await fetchSkillhubSkills({ pageSize: 100 }) };
+        return { clawhub: [], skillssh: [], skillhub: await fetchSkillhubSkills({ pageSize: 100, lang: language }) };
       } catch {
         return { clawhub: [], skillssh: [], skillhub: [] };
       }
@@ -815,8 +851,9 @@ export function createSkillsDataLayer(
   botId: string,
   execDebugCommand: ExpertsExecDebugCommand,
   mode: "global" | "domestic" = "global",
+  language: SkillhubLanguage = "zh",
 ): SkillsDataLayer {
-  if (mode === "domestic") return createDomesticDataLayer(botId, execDebugCommand);
+  if (mode === "domestic") return createDomesticDataLayer(botId, execDebugCommand, language);
   return SKILLS_DEMO_LIVE
     ? createLiveDataLayer(botId, execDebugCommand)
     : createMockDataLayer();

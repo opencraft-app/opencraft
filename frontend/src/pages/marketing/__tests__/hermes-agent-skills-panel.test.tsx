@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ExpertsExecDebugCommand } from "../hermes-agent-experts-panel";
 import {
+  getSafeUploadFileName,
   getInitialAgentSkillsTab,
   HermesAgentSkillsPanel,
 } from "../hermes-agent-skills-panel";
@@ -168,5 +169,13 @@ describe("HermesAgentSkillsPanel", () => {
 
     expect(screen.queryByRole("tab", { name: "创建技能" })).not.toBeInTheDocument();
     expect(screen.getByPlaceholderText("搜索 SkillHub 中的技能")).toBeInTheDocument();
+  });
+});
+
+describe("inline upload file names", () => {
+  it("keeps uploaded files inside the configured remote directory", () => {
+    expect(getSafeUploadFileName("../../secrets.txt")).toBe("secrets.txt");
+    expect(getSafeUploadFileName("..")).toBe("uploaded-file");
+    expect(getSafeUploadFileName("report.pdf")).toBe("report.pdf");
   });
 });

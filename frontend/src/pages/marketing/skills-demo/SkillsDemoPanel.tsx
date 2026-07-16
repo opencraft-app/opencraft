@@ -1476,8 +1476,8 @@ export function SkillsDemoPanel({
     },
   };
   const dataLayer = useMemo(
-    () => createSkillsDataLayer(botId, execDebugCommand, mode),
-    [botId, execDebugCommand, mode],
+    () => createSkillsDataLayer(botId, execDebugCommand, mode, isChinese ? "zh" : "en"),
+    [botId, execDebugCommand, isChinese, mode],
   );
 
   const [keyword, setKeyword] = useState("");

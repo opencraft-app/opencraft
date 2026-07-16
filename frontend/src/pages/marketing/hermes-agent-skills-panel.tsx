@@ -48,6 +48,11 @@ type LearnSkillProgress = {
 };
 
 const LEARN_SKILL_DEFAULT_PATH = "/home/agentuser/.hermes";
+
+export function getSafeUploadFileName(fileName: string): string {
+  const basename = fileName.split(/[\\/]/).pop()?.trim() ?? "";
+  return basename && basename !== "." && basename !== ".." ? basename : "uploaded-file";
+}
 const LEARNED_SKILL_ROOTS = [
   "/home/agentuser/.hermes/skills",
   "/home/agentuser/.codex/skills",
@@ -504,7 +509,7 @@ function LearnSkillDialog({
     setStatus("loading");
     setMessage(null);
     try {
-      const safeName = file.name.replace(/[\\/]/g, "_");
+      const safeName = getSafeUploadFileName(file.name);
       const remotePath = joinTsshPath(LEARN_SKILL_DEFAULT_PATH, safeName);
       const client = await getClient();
       await client.uploadFile(remotePath, file, (progress) => {
@@ -1286,6 +1291,7 @@ export function HermesAgentSkillsPanel<
   const { i18n } = useTranslation();
   const globalExpertLanguage = i18n.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
   const useSkillsDemo = isGlobal || isCN;
+  // Keep the SDK-backed outer packages tab for non-domestic hosts that explicitly enable it.
   const showOuterSkillPackages = showSkillPackages && !isGlobal && !useSkillsDemo;
   const initialTab = getInitialAgentSkillsTab(initialSectionSlug, showSkillPackages);
   const initialGlobalSkillsTab: SkillsDemoTab = useSkillsDemo && (initialSectionSlug === "experts" || initialSectionSlug === "packages")
