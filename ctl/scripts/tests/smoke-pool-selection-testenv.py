@@ -35,6 +35,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -65,15 +66,25 @@ class SmokeFailure(RuntimeError):
     pass
 
 
+ENV_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+
+def checked_output(command: list[str], **kwargs: object) -> str:
+    # This smoke test executes explicit argv lists; shell use is limited to a static loader script below.
+    return subprocess.check_output(command, **kwargs)  # nosemgrep: dangerous-subprocess-use-audit
+
+
 def resolve_kubeconfig_via_shell(env_name: str) -> str:
     if not env_name:
         return ""
-    cmd = (
-        f"source deploy/envs/{env_name}/platform.env >/dev/null 2>&1; "
+    if not ENV_NAME_RE.fullmatch(env_name):
+        return ""
+    script = (
+        'source "deploy/envs/$1/platform.env" >/dev/null 2>&1; '
         "printf '%s' \"${DEPLOY_KUBECONFIG:-}\""
     )
     try:
-        output = subprocess.check_output(["bash", "-lc", cmd], text=True).strip()
+        output = checked_output(["bash", "-lc", script, "bash", env_name], text=True).strip()
         return output
     except subprocess.CalledProcessError:
         return ""
@@ -93,7 +104,7 @@ def kubectl_logs(
     last_output = ""
     for _ in range(3):
         try:
-            return subprocess.check_output(cmd, text=True, stderr=subprocess.STDOUT, env=env)
+            return checked_output(cmd, text=True, stderr=subprocess.STDOUT, env=env)
         except subprocess.CalledProcessError as err:
             last_output = (err.output or "").strip()
             time.sleep(1)

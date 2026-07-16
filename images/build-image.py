@@ -511,11 +511,12 @@ def run_ssh_command(
     cmd = build_ssh_cmd(ssh_host, ssh_port, remote_cmd, extra_opts=extra_opts)
     if identity_file:
         cmd[1:1] = ["-i", identity_file]
+    cmd = validate_command_args(cmd, "ssh command")
     attempt = 1
     max_attempts = SSH_RETRY_ATTEMPTS if retry_policy == "transport_safe" else 1
     while True:
         log(f"  $ {' '.join(cmd)}")
-        result = subprocess.run(
+        result = subprocess.run(  # nosemgrep: dangerous-subprocess-use-audit
             cmd,
             capture_output=capture_output,
             text=True,

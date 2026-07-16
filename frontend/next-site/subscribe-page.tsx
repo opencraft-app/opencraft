@@ -91,7 +91,9 @@ interface PlanInfo {
   price: string;
   priceUnit?: string;
   priceNote?: string;
-  /* 促销标签（如“限时免费”），展在价格右侧，粉色小徐章风格 */
+  /* 原价（折扣前价格）：有折扣时展在活动价右侧，小字删除线灰色。无折扣时为 undefined。 */
+  originalPrice?: string;
+  /* 促销标签（如“限时免费”），挪到套餐名右侧，粉色小徐章风格 */
   promoTag?: string;
   description: string;
   features: PlanFeature[];
@@ -437,13 +439,17 @@ const mapBundleToPlan = (
   const showPricingPlaceholder = paid && isPricingLoading && !soldOut;
 
   let price = "";
+  let originalPrice: string | undefined;
   let promoTag: string | undefined;
   /* 需求4：是否可享受「免费 14 天 0 元下单」——命中即把 CTA 文案改为「免费开通」。
      当前口径：国内付费启航标准版（非 AI 增强、无后端折扣）享 14 天免费试用、首单 0 元。 */
   let isZeroDownFreeTrial = false;
   if (paid) {
+    const currency = bundle.price?.currency ?? "CNY";
     /* 未登录静态页面：启航 discount=0（免费试用），巡游 discount=50%（首月 5 折），按折扣调整展示价 */
     let displayPriceYuan = realPriceYuan;
+    /* 原价（折扣前）：未登录时即 realPriceYuan（后端下发的原价）；已登录时取后端 total_cost。 */
+    let originalPriceYuan: number | null = null;
     if (!isLoggedIn && realPriceYuan != null) {
       const nm = bundle.bundle_name ?? "";
       const isLaunch = nm.includes("启航") || nm.toLowerCase().includes("launch");
@@ -451,11 +457,24 @@ const mapBundleToPlan = (
       const notAi = bundle.bundle_type !== "ai";
       if (isLaunch && notAi) {
         displayPriceYuan = 0; // 免费 14 天 → ¥0
+        originalPriceYuan = realPriceYuan; // 原价展示
       } else if (isCruise && notAi) {
         displayPriceYuan = +(realPriceYuan * 0.5).toFixed(2); // 首月 5 折
+        originalPriceYuan = realPriceYuan; // 原价展示
+      }
+    } else if (isLoggedIn && bundle.price) {
+      /* 已登录：后端 real_total_cost 为折后价，total_cost 为原价；有折扣时展示原价删除线。 */
+      const backendOriginalYuan = centsToYuan(bundle.price.total_cost);
+      if (
+        backendOriginalYuan != null &&
+        displayPriceYuan != null &&
+        backendOriginalYuan > displayPriceYuan
+      ) {
+        originalPriceYuan = backendOriginalYuan;
       }
     }
-    price = displayPriceYuan != null ? formatYuan(displayPriceYuan, bundle.price?.currency ?? "CNY") : "";
+    price = displayPriceYuan != null ? formatYuan(displayPriceYuan, currency) : "";
+    originalPrice = originalPriceYuan != null ? formatYuan(originalPriceYuan, currency) : undefined;
     /* 国内站不再展示"限时免费"标签 */
     const backendDiscount = bundle.price?.discount;
     if (typeof backendDiscount === "number" && backendDiscount > 0 && backendDiscount < 1) {
@@ -532,6 +551,8 @@ const mapBundleToPlan = (
     badgeStyle: soldOut ? "tag" : undefined,
     /* 价格：中间态保留旧价原样展示，视觉稳定不跳变；CTA 由 pricingLoading 兜底禁用。 */
     price,
+    /* 原价（折扣前）：有折扣时展在活动价右侧删除线；询价加载中不展示，避免误导。 */
+    originalPrice: showPricingPlaceholder ? undefined : originalPrice,
     /* 价格单位需与当前 durationKey 一致，且中间态必须与旧价口径一致：
        - 未付费（限时免费视觉）：paid=false 就一定是默认月价锚点，单位固定为"/ 月"
        - 已付费：paid=true 时，当前价格已是后端按 durationKey 询价回来的 real_total_cost；
@@ -1058,19 +1079,46 @@ const PlanCard = ({
       <div style={{ display: "flex", flexDirection: "column", flex: 1, padding: "32px 28px 28px" }}>
         {/* Header: Name + Description */}
         <div style={{ marginBottom: 16 }}>
-          <h3
+          <div
             style={{
-              fontSize: 22,
-              fontWeight: 700,
-              letterSpacing: "-0.25px",
-              lineHeight: 1.27,
-              color: colors.black,
-              margin: 0,
+              display: "flex",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 8,
               marginBottom: 12,
             }}
           >
-            {plan.name}
-          </h3>
+            <h3
+              style={{
+                fontSize: 22,
+                fontWeight: 700,
+                letterSpacing: "-0.25px",
+                lineHeight: 1.27,
+                color: colors.black,
+                margin: 0,
+              }}
+            >
+              {plan.name}
+            </h3>
+            {/* 促销小徐章：挪到套餐名右侧，粉色背景 + 深色文字，醒目告诉用户促销信息 */}
+            {plan.promoTag && (
+              <span
+                style={{
+                  fontSize: isGlobal ? 11 : 12,
+                  fontWeight: 600,
+                  lineHeight: 1,
+                  color: "#D14081",
+                  background: "#FDE7F0",
+                  border: "1px solid #F7B8D2",
+                  borderRadius: 999,
+                  padding: isGlobal ? "3px 8px" : "4px 10px",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {plan.promoTag}
+              </span>
+            )}
+          </div>
           {plan.badge && plan.badgeStyle === "tag" && (
             <span
               style={{
@@ -1273,24 +1321,22 @@ const PlanCard = ({
                 {plan.priceUnit || plan.priceNote}
               </span>
             )}
-            {/* 促销小徐章：位于价格右侧，粉色背景 + 深色文字，醒目告诉用户"限时免费" */}
-            {plan.promoTag && (
+            {/* 原价（折扣前）：紧跟活动价右侧，小字灰色删除线，突出优惠力度 */}
+            {plan.originalPrice && (
               <span
                 style={{
-                  fontSize: isGlobal ? 11 : 12,
-                  fontWeight: 600,
+                  fontSize: 14,
+                  fontWeight: 400,
                   lineHeight: 1,
-                  color: "#D14081",
-                  background: "#FDE7F0",
-                  border: "1px solid #F7B8D2",
-                  borderRadius: 999,
-                  padding: isGlobal ? "3px 8px" : "4px 10px",
-                  marginLeft: isGlobal ? 6 : 8,
+                  color: colors.warmGray300,
+                  textDecoration: "line-through",
+                  alignSelf: "flex-end",
+                  marginBottom: 4,
+                  marginLeft: 6,
                   whiteSpace: "nowrap",
-                  alignSelf: "center",
                 }}
               >
-                {plan.promoTag}
+                {plan.originalPrice}
               </span>
             )}
           </div>
