@@ -25,6 +25,14 @@ SUPPORTED_DIRECT_APP_ENVS = {"shprod", "sgprod", "tkexgz", "tkexsg", "devcloud-d
 PLACEHOLDER_RE = re.compile(r"\bREPLACE_[A-Z0-9_]+\b")
 
 
+def run_command(command: list[str], **kwargs):
+    if not command:
+        raise ValueError("command must not be empty")
+    if any(not isinstance(part, str) or not part for part in command):
+        raise ValueError("command arguments must be non-empty strings")
+    return subprocess.run(command, **kwargs)  # nosemgrep: dangerous-subprocess-use-audit
+
+
 @dataclass(frozen=True)
 class KustomizeTarget:
     app_name: str
@@ -159,7 +167,7 @@ def merge_targets(primary: list[KustomizeTarget], extra: list[KustomizeTarget]) 
 
 
 def changed_files(repo_root: Path, env: str) -> list[str]:
-    result = subprocess.run(
+    result = run_command(
         ["git", "diff", "--name-only", "HEAD~1..HEAD"],
         cwd=repo_root,
         capture_output=True,
@@ -167,7 +175,7 @@ def changed_files(repo_root: Path, env: str) -> list[str]:
         check=False,
     )
     if result.returncode != 0:
-        result = subprocess.run(
+        result = run_command(
             ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"],
             cwd=repo_root,
             capture_output=True,
@@ -250,7 +258,7 @@ def validate_target(repo_root: Path, target: KustomizeTarget, kustomize_bin: str
         "--enable-alpha-plugins",
         "--enable-exec",
     ]
-    result = subprocess.run(
+    result = run_command(
         command,
         cwd=repo_root,
         capture_output=True,

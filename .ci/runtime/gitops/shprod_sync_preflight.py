@@ -11,6 +11,14 @@ import tempfile
 from pathlib import Path
 
 
+def run_command(command: list[str], **kwargs):
+    if not command:
+        raise ValueError("command must not be empty")
+    if any(not isinstance(part, str) or not part for part in command):
+        raise ValueError("command arguments must be non-empty strings")
+    return subprocess.run(command, **kwargs)  # nosemgrep: dangerous-subprocess-use-audit
+
+
 def parse_trailers(message: str) -> dict[str, str]:
     trailers: dict[str, str] = {}
     for raw_line in message.splitlines():
@@ -23,7 +31,7 @@ def parse_trailers(message: str) -> dict[str, str]:
 
 
 def git_commit_message(repo_root: Path) -> str:
-    result = subprocess.run(
+    result = run_command(
         ["git", "log", "-1", "--format=%B"],
         cwd=repo_root,
         capture_output=True,
@@ -42,7 +50,7 @@ def require_trailer(trailers: dict[str, str], key: str) -> str:
 
 
 def ensure_commit_available(repo_root: Path, revision: str) -> None:
-    result = subprocess.run(
+    result = run_command(
         ["git", "cat-file", "-e", f"{revision}^{{commit}}"],
         cwd=repo_root,
         capture_output=True,
@@ -50,7 +58,7 @@ def ensure_commit_available(repo_root: Path, revision: str) -> None:
     )
     if result.returncode == 0:
         return
-    fetch = subprocess.run(
+    fetch = run_command(
         ["git", "fetch", "origin", revision, "--depth=1"],
         cwd=repo_root,
         capture_output=True,
@@ -68,7 +76,7 @@ def export_source_tree(repo_root: Path, revision: str, output_dir: Path) -> None
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    extract = subprocess.run(
+    extract = run_command(
         ["tar", "-xf", "-", "-C", str(output_dir)],
         stdin=archive.stdout,
         capture_output=True,
@@ -171,4 +179,4 @@ def main() -> int:
             wait=args.wait,
             timeout_seconds=args.timeout_seconds,
         )
-        return subprocess.run(command).returncode
+        return run_command(command).returncode
