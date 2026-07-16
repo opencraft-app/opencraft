@@ -718,7 +718,8 @@ func TestCleanUserCompletesFaceIDWithNewPhoneAndShadowBinding(t *testing.T) {
 		},
 	})
 	session := mustPasswordSession(t, svc, "clean-full-faceid@example.invalid")
-	phone := "13800138123"
+	firstPhone := "13800138123"
+	phone := "13800138124"
 	started, err := svc.StartRealnameFaceIDAttempt(context.Background(), session.Token, RealnameFaceIDStartInput{
 		Name: "张三", IDCard: "11010519491231002X", ClientIP: "127.0.0.1", ClientUA: "agent", ConsentAccepted: true,
 	})
@@ -734,20 +735,36 @@ func TestCleanUserCompletesFaceIDWithNewPhoneAndShadowBinding(t *testing.T) {
 	store.mu.Unlock()
 
 	cooldown, err := svc.SendRealnameFaceIDPhoneCode(context.Background(), session.Token, RealnameFaceIDPhoneCodeInput{
-		AttemptID: started.AttemptID, Phone: phone, ClientIP: "127.0.0.1",
+		AttemptID: started.AttemptID, Phone: firstPhone, ClientIP: "127.0.0.1",
 	})
 	if err != nil {
 		t.Fatalf("send clean-user phone code: %v", err)
 	}
-	if cooldown <= 0 || shadowClient.lastSMS.Phone != phone {
+	if cooldown <= 0 || shadowClient.lastSMS.Phone != firstPhone {
 		t.Fatalf("expected Shadow SMS for candidate phone, cooldown=%s input=%+v", cooldown, shadowClient.lastSMS)
 	}
+	shadowClient.err = errors.New("[TencentCloudSDKError] Code=LimitExceeded.PhoneNumBound, Message=Phone number binding exceeds limit")
 	_, err = svc.VerifyRealnameFaceIDPhone(context.Background(), session.Token, RealnameFaceIDPhoneProofInput{
-		AttemptID: started.AttemptID, Phone: "13800138124", Code: "888888", ClientIP: "127.0.0.1", ClientUA: "agent",
+		AttemptID: started.AttemptID, Phone: firstPhone, Code: "888888", ClientIP: "127.0.0.1", ClientUA: "agent",
 	})
 	var authErr *Error
-	if !errors.As(err, &authErr) || authErr.Code != "realname_phone_mismatch" || shadowClient.calls != 0 {
-		t.Fatalf("candidate phone must not change after SMS, err=%#v registerCalls=%d", err, shadowClient.calls)
+	if !errors.As(err, &authErr) || authErr.Code != "phone_in_use" || shadowClient.calls != 1 {
+		t.Fatalf("expected first candidate to be rejected as already bound, err=%#v registerCalls=%d", err, shadowClient.calls)
+	}
+	shadowClient.err = nil
+	if _, err := svc.SendRealnameFaceIDPhoneCode(context.Background(), session.Token, RealnameFaceIDPhoneCodeInput{
+		AttemptID: started.AttemptID, Phone: phone, ClientIP: "127.0.0.1",
+	}); err != nil {
+		t.Fatalf("send replacement phone code: %v", err)
+	}
+	if shadowClient.smsCalls != 2 || shadowClient.lastSMS.Phone != phone {
+		t.Fatalf("expected Shadow SMS for replacement phone, calls=%d input=%+v", shadowClient.smsCalls, shadowClient.lastSMS)
+	}
+	_, err = svc.VerifyRealnameFaceIDPhone(context.Background(), session.Token, RealnameFaceIDPhoneProofInput{
+		AttemptID: started.AttemptID, Phone: firstPhone, Code: "888888", ClientIP: "127.0.0.1", ClientUA: "agent",
+	})
+	if !errors.As(err, &authErr) || authErr.Code != "realname_phone_mismatch" || shadowClient.calls != 1 {
+		t.Fatalf("old candidate must not verify after replacement SMS, err=%#v registerCalls=%d", err, shadowClient.calls)
 	}
 
 	verified, err := svc.VerifyRealnameFaceIDPhone(context.Background(), session.Token, RealnameFaceIDPhoneProofInput{
@@ -766,7 +783,7 @@ func TestCleanUserCompletesFaceIDWithNewPhoneAndShadowBinding(t *testing.T) {
 	if current.User.Phone != phone || current.User.RealnameLevel != RealnameLevelPhone3FA || !current.User.RealnameVerified {
 		t.Fatalf("expected phone_3fa user with bound phone, got %+v", current.User)
 	}
-	if shadowClient.calls != 1 || shadowClient.basicAuthCalls != 1 || shadowClient.lastRegister.Phone != phone {
+	if shadowClient.calls != 2 || shadowClient.basicAuthCalls != 1 || shadowClient.lastRegister.Phone != phone {
 		t.Fatalf("expected Shadow binding and basic auth for candidate phone, register=%d basicAuth=%d input=%+v", shadowClient.calls, shadowClient.basicAuthCalls, shadowClient.lastRegister)
 	}
 }
