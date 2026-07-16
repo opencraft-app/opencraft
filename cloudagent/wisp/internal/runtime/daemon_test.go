@@ -98,6 +98,15 @@ func TestRuntimeForWispRejectsTraversalName(t *testing.T) {
 	}
 }
 
+func TestDecodeRuntimeRequestRejectsTraversalName(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/v1/runtime/start?name=../escape", strings.NewReader(`{}`))
+	if _, err := decodeRuntimeRequest(req); err == nil {
+		t.Fatal("decodeRuntimeRequest should reject traversal workspace name")
+	} else if got := classifyError(err); got.Status != http.StatusBadRequest {
+		t.Fatalf("status=%d code=%s err=%v", got.Status, got.Code, err)
+	}
+}
+
 func TestNormalizeWispPath(t *testing.T) {
 	tests := []struct {
 		in      string
