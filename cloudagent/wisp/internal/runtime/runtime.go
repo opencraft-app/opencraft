@@ -2901,7 +2901,11 @@ func (r *Runtime) extractBlankActiveImageTemplateTar(ctx context.Context) (bool,
 }
 
 func sparseCopyFile(src, dst string) error {
-	dst, err := normalizeLocalFilePath(dst)
+	src, err := normalizeLocalFilePath(src)
+	if err != nil {
+		return err
+	}
+	dst, err = normalizeLocalFilePath(dst)
 	if err != nil {
 		return err
 	}

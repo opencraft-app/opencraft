@@ -69,6 +69,43 @@ func TestNormalizeLocalFilePathRejectsEmptyPath(t *testing.T) {
 	}
 }
 
+func TestSparseCopyFileNormalizesSourceAndDestination(t *testing.T) {
+	dir := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore wd: %v", err)
+		}
+	})
+	if err := os.MkdirAll("src", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll("out", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join("src", "root-upper.img"), []byte("root-upper"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	dst := filepath.Join("out", "nested", "..", "copy.img")
+	if err := sparseCopyFile(filepath.Join(".", "src", "root-upper.img"), dst); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join("out", "copy.img"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "root-upper" {
+		t.Fatalf("copied content=%q", string(got))
+	}
+}
+
 func TestJuiceFSScriptEnvDoesNotLeakSMHSecret(t *testing.T) {
 	t.Setenv("PATH", "/usr/bin")
 	t.Setenv("UNRELATED_SECRET", "do-not-leak")
