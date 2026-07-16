@@ -777,7 +777,11 @@ func (d *Daemon) runtimeForNameLocked(name string) (*Runtime, error) {
 func decodeRuntimeRequest(r *http.Request) (runtimeRequest, error) {
 	name := strings.TrimSpace(r.URL.Query().Get("name"))
 	if r.Method == http.MethodGet || r.Body == nil {
-		return runtimeRequest{Name: name}, nil
+		validatedName, err := validateRuntimeRequestName(name)
+		if err != nil {
+			return runtimeRequest{}, err
+		}
+		return runtimeRequest{Name: validatedName}, nil
 	}
 	defer r.Body.Close()
 	body, err := io.ReadAll(r.Body)
@@ -785,7 +789,11 @@ func decodeRuntimeRequest(r *http.Request) (runtimeRequest, error) {
 		return runtimeRequest{}, badRequest("could not read request body", nil)
 	}
 	if len(bytes.TrimSpace(body)) == 0 {
-		return runtimeRequest{Name: name}, nil
+		validatedName, err := validateRuntimeRequestName(name)
+		if err != nil {
+			return runtimeRequest{}, err
+		}
+		return runtimeRequest{Name: validatedName}, nil
 	}
 	var req runtimeRequest
 	if err := json.Unmarshal(body, &req); err != nil {
@@ -794,7 +802,23 @@ func decodeRuntimeRequest(r *http.Request) (runtimeRequest, error) {
 	if strings.TrimSpace(req.Name) == "" {
 		req.Name = name
 	}
+	validatedName, err := validateRuntimeRequestName(req.Name)
+	if err != nil {
+		return runtimeRequest{}, err
+	}
+	req.Name = validatedName
 	return req, nil
+}
+
+func validateRuntimeRequestName(name string) (string, error) {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return "", nil
+	}
+	if err := config.ValidateWorkspaceName(trimmed); err != nil {
+		return "", badRequest("invalid container name", map[string]any{"name": trimmed})
+	}
+	return trimmed, nil
 }
 
 func decodeBackendBindRequest(r *http.Request, nameFromPath string) (backendBindRequest, error) {
