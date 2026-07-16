@@ -205,6 +205,64 @@ func TestReadValidatedReturnToFromRequest(t *testing.T) {
 	}
 }
 
+func TestOAuthStartRejectsExternalReturnToAcrossProviders(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		router     *gin.Engine
+		startPath  string
+		cookieName string
+	}{
+		{
+			name:       "wechat",
+			router:     newAuthTestRouterWithWeChat(&stubWeChatOAuthClient{}),
+			startPath:  "/auth/oauth/wechat/start",
+			cookieName: wechatOAuthReturnToCookieName,
+		},
+		{
+			name:       "google",
+			router:     newAuthTestRouterWithGoogle(&stubGoogleOAuthClient{}),
+			startPath:  "/auth/oauth/google/start",
+			cookieName: googleOAuthReturnToCookieName,
+		},
+		{
+			name:       "qq",
+			router:     newAuthTestRouterWithQQ(&stubQQOAuthClient{}),
+			startPath:  "/auth/oauth/qq/start",
+			cookieName: qqOAuthReturnToCookieName,
+		},
+		{
+			name:       "github",
+			router:     newAuthTestRouterWithGitHub(&stubGitHubOAuthClient{}),
+			startPath:  "/auth/oauth/github/start",
+			cookieName: githubOAuthReturnToCookieName,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			recorder := performJSONRequest(
+				t,
+				tc.router,
+				http.MethodGet,
+				tc.startPath+"?return_to="+url.QueryEscape("https://evil.example.com/dashboard"),
+				nil,
+			)
+			if recorder.Code != http.StatusTemporaryRedirect {
+				t.Fatalf("expected 307 from oauth start, got %d: %s", recorder.Code, recorder.Body.String())
+			}
+			cookie := cookieFromRecorderByName(t, recorder, tc.cookieName)
+			if cookie.Value != "" || cookie.MaxAge >= 0 {
+				t.Fatalf("expected invalid return_to cookie to be cleared, got value=%q max_age=%d", cookie.Value, cookie.MaxAge)
+			}
+		})
+	}
+}
+
 func TestAppendSessionTokenToReturnTo(t *testing.T) {
 	t.Parallel()
 
