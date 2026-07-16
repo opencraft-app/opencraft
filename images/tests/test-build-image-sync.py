@@ -4,6 +4,7 @@
 import importlib.util
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
@@ -15,6 +16,13 @@ SPEC.loader.exec_module(build_image)
 
 
 class ImageSyncTests(unittest.TestCase):
+    def test_ssh_command_rejects_empty_dynamic_arguments(self):
+        with mock.patch.object(build_image.subprocess, "run") as run:
+            with self.assertRaisesRegex(ValueError, "ssh command argument must not be empty"):
+                build_image.run_ssh_command("ubuntu@example.com", "22", "")
+
+        run.assert_not_called()
+
     def test_tccli_command_rejects_empty_dynamic_arguments(self):
         with self.assertRaisesRegex(ValueError, "tccli argument must not be empty"):
             build_image.run_tccli("cvm", "DescribeImages", "ap-seoul", ["--ImageIds", ""])
