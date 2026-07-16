@@ -9,6 +9,8 @@ allowed_origins:
   - https://www.lightvela.com
   - https://lightclaw.site
   - https://api.lightclaw.site
+trusted_proxy_cidrs:
+  - 100.64.0.0/10
 worker_actions:
   enabled: true
   temporal:

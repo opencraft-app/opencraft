@@ -31,6 +31,10 @@ const (
 	testDeviceBindSecret = "test-device-bind-secret"
 )
 
+func fixedVerificationCode(code string) func(int) (string, error) {
+	return func(int) (string, error) { return code, nil }
+}
+
 func TestSetSessionCookieUsesConfiguredCrossSiteAttributes(t *testing.T) {
 	t.Parallel()
 
@@ -62,6 +66,53 @@ func TestSetSessionCookieUsesConfiguredCrossSiteAttributes(t *testing.T) {
 	}
 	if cookie.Name != sessionCookieName {
 		t.Fatalf("expected cookie name %q, got %q", sessionCookieName, cookie.Name)
+	}
+}
+
+func TestRequestClientMetadataIgnoresCustomClientIPHeader(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/auth/sms/send", nil)
+	ctx.Request.RemoteAddr = "10.0.0.12:32000"
+	ctx.Request.Header.Set("X-Forwarded-For", "198.51.100.77")
+	ctx.Request.Header.Set("X-Lightclaw-Client-IP", "1.203.100.246")
+
+	clientIP, _ := requestClientMetadata(ctx)
+	if clientIP != "198.51.100.77" {
+		t.Fatalf("expected Gin's trusted-proxy result, got %q", clientIP)
+	}
+}
+
+func TestRequestClientMetadataUsesForwardingOnlyFromTrustedProxy(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	if err := router.SetTrustedProxies([]string{"10.0.0.0/8"}); err != nil {
+		t.Fatalf("set trusted proxies: %v", err)
+	}
+	router.GET("/client-ip", func(ctx *gin.Context) {
+		clientIP, _ := requestClientMetadata(ctx)
+		ctx.String(http.StatusOK, clientIP)
+	})
+
+	trusted := httptest.NewRequest(http.MethodGet, "/client-ip", nil)
+	trusted.RemoteAddr = "10.0.0.12:32000"
+	trusted.Header.Set("X-Forwarded-For", "1.203.100.246")
+	trustedRecorder := httptest.NewRecorder()
+	router.ServeHTTP(trustedRecorder, trusted)
+	if got := trustedRecorder.Body.String(); got != "1.203.100.246" {
+		t.Fatalf("trusted proxy client IP = %q", got)
+	}
+
+	untrusted := httptest.NewRequest(http.MethodGet, "/client-ip", nil)
+	untrusted.RemoteAddr = "192.0.2.44:32000"
+	untrusted.Header.Set("X-Forwarded-For", "1.203.100.246")
+	untrustedRecorder := httptest.NewRecorder()
+	router.ServeHTTP(untrustedRecorder, untrusted)
+	if got := untrustedRecorder.Body.String(); got != "192.0.2.44" {
+		t.Fatalf("untrusted peer client IP = %q", got)
 	}
 }
 
@@ -1122,6 +1173,29 @@ func TestSendSmsCodeReturnsCooldownWhenPhoneAuthIsEnabled(t *testing.T) {
 	}
 }
 
+func TestVerifySmsCodeReturnsTooManyRequestsAfterRateLimit(t *testing.T) {
+	t.Parallel()
+
+	router := newAuthTestRouter()
+	for i := 0; i < 10; i++ {
+		recorder := performJSONRequest(t, router, http.MethodPost, "/auth/sms/verify", map[string]any{
+			"phone": "13800138000",
+			"code":  "000000",
+		})
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("attempt %d expected 400, got %d: %s", i+1, recorder.Code, recorder.Body.String())
+		}
+	}
+
+	recorder := performJSONRequest(t, router, http.MethodPost, "/auth/sms/verify", map[string]any{
+		"phone": "13800138000",
+		"code":  "000000",
+	})
+	if recorder.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestVerifySmsCodeCreatesSessionWhenCodeMatches(t *testing.T) {
 	t.Parallel()
 
@@ -1881,7 +1955,7 @@ func newAuthTestRouterWithFaceID() (*gin.Engine, *service.Service, *httpStubFace
 	svc := service.NewWithStore(store, service.Options{
 		Now:                        fixedHTTPTestNow,
 		SessionTTL:                 30 * 24 * time.Hour,
-		DefaultSMSCode:             "123456",
+		VerificationCodeGenerator:  fixedVerificationCode("123456"),
 		RealnameCipher:             httpStubRealnameCipher{},
 		RealnameFaceIDVerifier:     provider,
 		ShadowBinding:              shadowSvc,

@@ -24,13 +24,9 @@ type AnnouncementItem = {
   actionLabel?: string;
 };
 
-/** 公告顺序即轮播顺序；Hermes 版本升级公告必须排在第一位。 */
+/** 公告顺序即轮播顺序。 */
 const HERMES_UPGRADE_ANNOUNCEMENT_ID = "0706-hermes-agent-upgrade";
-const PAID_VERSION_ANNOUNCEMENT_ID = "0715-paid-version-announcement-v1";
-const ANNOUNCEMENT_IDS = [
-  HERMES_UPGRADE_ANNOUNCEMENT_ID,
-  PAID_VERSION_ANNOUNCEMENT_ID,
-] as const;
+const ANNOUNCEMENT_IDS = [HERMES_UPGRADE_ANNOUNCEMENT_ID] as const;
 
 /** 北京时间 / 新加坡时间 2026-07-07 02:00:00 = UTC 2026-07-06 18:00:00 */
 const HERMES_UPGRADE_EXPIRES_AT = Date.UTC(
@@ -41,22 +37,11 @@ const HERMES_UPGRADE_EXPIRES_AT = Date.UTC(
   0,
   0,
 );
-/** 北京时间 2026-08-16 00:00:00 = UTC 2026-08-15 16:00:00 */
-const PAID_VERSION_EXPIRES_AT = Date.UTC(
-  2026,
-  7 /* 0-indexed: August */,
-  15,
-  16,
-  0,
-  0,
-);
 const MAX_SAFE_TIMEOUT_MS = 2_147_000_000;
 const CAROUSEL_INTERVAL_MS = 6_000;
 
 /** 显示的路径白名单。国际站会先剥离 /en-us、/zh-cn、/zh-sg 等语言前缀。 */
 const VISIBLE_PATHS = new Set<string>(["/"]);
-
-const ANNOUNCEMENT_HREF = "/docs/announcements/public-beta";
 
 /** 公告条占据的页面高度（px）。 */
 export const ANNOUNCEMENT_BANNER_HEIGHT_PX = 36;
@@ -80,19 +65,6 @@ export function MaintenanceAnnouncementBanner() {
             "通知：我们将于北京时间 2026 年 7 月 6 日 22:00 至次日 02:00，对 Hermes Agent 进行后台版本升级，升级期间可能导致智能体对话或任务执行短暂中止，带来不便敬请谅解。",
           ),
     },
-    ...(isCN
-      ? [
-          {
-            id: PAID_VERSION_ANNOUNCEMENT_ID,
-            expiresAt: PAID_VERSION_EXPIRES_AT,
-            href: ANNOUNCEMENT_HREF,
-            message: t(
-              "LightVela 计划将于 2026 年 7 月 15 日起转为付费服务；正式转为付费后，内测用户现有套餐的有效期将额外延长 1 个月。",
-            ),
-            actionLabel: t("查看详情"),
-          },
-        ]
-      : []),
   ];
   // 默认不显示，挂载时再读 localStorage —— 避免 SSR / 首屏 flash 不一致
   const [dismissedIds, setDismissedIds] = useState<Set<string> | null>(null);
@@ -118,10 +90,9 @@ export function MaintenanceAnnouncementBanner() {
   // 用户挂着浏览器跨过撤下时间的场景：不依赖刷新 / 切路由，到点强制隐藏最早过期的公告。
   // setTimeout 上限约 24 天；距离过期太久时跳过定时器，后续访问会重新计算过期状态。
   useEffect(() => {
-    const remainingTimes = [
-      HERMES_UPGRADE_EXPIRES_AT - now,
-      PAID_VERSION_EXPIRES_AT - now,
-    ].filter((remainingTime) => remainingTime > 0);
+    const remainingTimes = [HERMES_UPGRADE_EXPIRES_AT - now].filter(
+      (remainingTime) => remainingTime > 0,
+    );
     if (remainingTimes.length === 0) return;
     const remaining = Math.min(...remainingTimes);
     if (remaining > MAX_SAFE_TIMEOUT_MS) return;

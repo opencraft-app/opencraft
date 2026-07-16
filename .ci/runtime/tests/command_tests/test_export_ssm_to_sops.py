@@ -27,19 +27,30 @@ class ExportSsmToSopsTests(unittest.TestCase):
 
         def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
             run_calls.append(command)
-            if command == ["command", "-v", "sops"]:
-                return subprocess.CompletedProcess(command, 0, stdout="/usr/bin/sops\n", stderr="")
             return subprocess.CompletedProcess(command, 0, stdout="encrypted-yaml", stderr="")
 
-        with patch("export_ssm_to_sops.subprocess.run", side_effect=fake_run):
+        with patch("export_ssm_to_sops.shutil.which", return_value="/usr/bin/sops"), patch(
+            "export_ssm_to_sops.subprocess.run",
+            side_effect=fake_run,
+        ):
             encrypted = encrypt_yaml(plaintext, ["age1example"], "argocd/secrets/demo.sops.yaml")
 
         self.assertEqual(encrypted, "encrypted-yaml")
-        sops_command = run_calls[1]
+        self.assertEqual(len(run_calls), 1)
+        sops_command = run_calls[0]
         self.assertIn("--encrypted-regex", sops_command)
         self.assertEqual(sops_command[sops_command.index("--encrypted-regex") + 1], SOPS_ENCRYPTED_REGEX)
         self.assertIn("--mac-only-encrypted", sops_command)
         self.assertNotIn("--unencrypted-regex", sops_command)
+
+    def test_encrypt_yaml_checks_sops_without_shell(self) -> None:
+        with patch("export_ssm_to_sops.shutil.which", return_value=None), patch(
+            "export_ssm_to_sops.subprocess.run",
+        ) as run:
+            with self.assertRaisesRegex(RuntimeError, "sops is not installed"):
+                encrypt_yaml("kind: Secret\n", ["age1example"], "demo.sops.yaml")
+
+        run.assert_not_called()
 
 
 if __name__ == "__main__":

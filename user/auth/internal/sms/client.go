@@ -2,14 +2,43 @@ package sms
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
+	tencenterrors "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/errors"
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"
 	tencentsms "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sms/v20210111"
 )
+
+type DeliveryError struct {
+	Code    string
+	Message string
+	Cause   error
+}
+
+func (e *DeliveryError) Error() string {
+	if e.Code == "" {
+		return e.Message
+	}
+	return fmt.Sprintf("sms delivery failed: code=%s message=%s", e.Code, e.Message)
+}
+
+func (e *DeliveryError) Unwrap() error { return e.Cause }
+
+func (e *DeliveryError) VerificationHTTPStatus() int {
+	code := strings.ToLower(strings.TrimSpace(e.Code))
+	switch {
+	case strings.HasPrefix(code, "limitexceeded"):
+		return 429
+	case strings.Contains(code, "inblacklist") || strings.Contains(code, "phonenumberblacklist"):
+		return 403
+	default:
+		return 502
+	}
+}
 
 type Config struct {
 	SecretID   string
@@ -90,7 +119,7 @@ func (c *Client) SendVerificationCode(ctx context.Context, phone string, code st
 			"region", c.region,
 			"err", err,
 		)
-		return fmt.Errorf("send sms: %w", err)
+		return &DeliveryError{Code: tencentErrorCode(err), Message: err.Error(), Cause: err}
 	}
 	if resp == nil || resp.Response == nil {
 		return fmt.Errorf("send sms: empty response")
@@ -112,7 +141,7 @@ func (c *Client) SendVerificationCode(ctx context.Context, phone string, code st
 			if message == "" {
 				message = codeValue
 			}
-			return fmt.Errorf("send sms rejected: %s", message)
+			return &DeliveryError{Code: codeValue, Message: message}
 		}
 	}
 	slog.InfoContext(ctx, "phone auth sms sent",
@@ -122,6 +151,14 @@ func (c *Client) SendVerificationCode(ctx context.Context, phone string, code st
 		"template_id", c.templateID,
 	)
 	return nil
+}
+
+func tencentErrorCode(err error) string {
+	var sdkErr *tencenterrors.TencentCloudSDKError
+	if errors.As(err, &sdkErr) {
+		return sdkErr.Code
+	}
+	return ""
 }
 
 func ptrStringValue(value *string) string {

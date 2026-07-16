@@ -666,6 +666,13 @@ func (s *Service) VerifyRealnameFaceIDPhone(ctx context.Context, token string, i
 	if code == "" {
 		return RealnameFaceIDAttempt{}, newError("invalid_sms_code", "验证码不能为空。", http.StatusBadRequest)
 	}
+	if err := s.enforceVerificationCheckLimits(ctx, VerificationChannelSMS, phone, input.ClientIP); err != nil {
+		return RealnameFaceIDAttempt{}, err
+	}
+	reservation, err := s.reserveExternalSMSChallenge(ctx, phone)
+	if err != nil {
+		return RealnameFaceIDAttempt{}, err
+	}
 	binding, err := s.shadowBinding.BindShadowAccount(ctx, shadowbinding.BindInput{
 		UserID:     session.User.ID,
 		Phone:      phone,
@@ -674,7 +681,11 @@ func (s *Service) VerifyRealnameFaceIDPhone(ctx context.Context, token string, i
 		VerifyCode: code,
 	})
 	if err != nil {
+		_ = s.store.RejectExternalSMSChallenge(ctx, reservation, s.now())
 		return RealnameFaceIDAttempt{}, shadowBindingError(ctx, err, session.User.ID)
+	}
+	if err := s.store.ConsumeExternalSMSChallenge(ctx, reservation); err != nil {
+		return RealnameFaceIDAttempt{}, err
 	}
 	if binding.Status != shadowbinding.StatusActive {
 		return RealnameFaceIDAttempt{}, newError("shadow_binding_incomplete", "影子账号绑定尚未完成，请稍后重试。", http.StatusBadGateway)

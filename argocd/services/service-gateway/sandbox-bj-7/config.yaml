@@ -1,6 +1,8 @@
 auth_service_url: http://lightclaw-auth.lightvela-playground-sandbox-bj-7.svc.cluster.local
 allowed_origins:
 - "*"
+trusted_proxy_cidrs:
+- 100.64.0.0/10
 routes:
 - name: users
   prefix: /users

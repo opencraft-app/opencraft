@@ -4,6 +4,8 @@ allowed_origins:
   - https://api.lightvela.ai
   - https://lightvela.com
   - https://www.lightvela.com
+trusted_proxy_cidrs:
+  - 100.64.0.0/10
 worker_actions:
   enabled: true
   temporal:
