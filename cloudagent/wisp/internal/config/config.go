@@ -171,7 +171,14 @@ func LoadContainer(path, name string) (Config, error) {
 }
 
 func loadWithOverlay(path, overlayPath string) (Config, error) {
-	path, overlayPath = filepath.Clean(path), filepath.Clean(overlayPath)
+	path, err := normalizeConfigFilePath(path)
+	if err != nil {
+		return Config{}, err
+	}
+	overlayPath, err = normalizeConfigFilePath(overlayPath)
+	if err != nil {
+		return Config{}, err
+	}
 	baseEnv, err := parseJSONNetFile(path)
 	if err != nil {
 		return Config{}, err
