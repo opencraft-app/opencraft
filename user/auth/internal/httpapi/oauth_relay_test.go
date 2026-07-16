@@ -98,3 +98,20 @@ func TestOAuthRelayCurrentCallbackMatching(t *testing.T) {
 		t.Fatal("expected different sandbox callback to be rejected")
 	}
 }
+
+func TestRelayCallbackURLWithOriginalQueryRejectsUntrustedTarget(t *testing.T) {
+	if _, err := relayCallbackURLWithOriginalQuery("qq", "https://evil.example.com/auth/oauth/qq/callback", "code=abc&state=relay"); err == nil {
+		t.Fatal("expected untrusted relay callback target to be rejected")
+	}
+}
+
+func TestRelayCallbackURLWithOriginalQueryCanonicalizesTrustedTarget(t *testing.T) {
+	got, err := relayCallbackURLWithOriginalQuery("qq", "https://api-sandbox-bj-7.lightclaw.tech/auth/oauth/qq/callback", "code=abc&state=relay")
+	if err != nil {
+		t.Fatalf("relay callback url: %v", err)
+	}
+	want := "https://api-sandbox-bj-7.lightclaw.tech/auth/oauth/qq/callback?code=abc&state=relay"
+	if got != want {
+		t.Fatalf("relay callback url = %q, want %q", got, want)
+	}
+}

@@ -143,7 +143,7 @@ func (h *Handler) HandleGitHubOAuthCallback(ctx *gin.Context) {
 			return
 		}
 		if isOAuthRelayIssuerCallback(ctx.Request, relayState) {
-			target, err := relayCallbackURLWithOriginalQuery(relayState.TargetCallbackURI, ctx.Request.URL.RawQuery)
+			target, err := relayCallbackURLWithOriginalQuery("github", relayState.TargetCallbackURI, ctx.Request.URL.RawQuery)
 			if err != nil {
 				logger.Warn("github oauth relay callback failed", "stage", "target_query", "err", err)
 				ctx.Redirect(http.StatusTemporaryRedirect, h.githubOAuth.frontendURL(ctx.Request, "/?oauth_error=github_state_mismatch"))
