@@ -996,6 +996,10 @@ func (r *Runtime) runtimeInfo(ctx context.Context) (RuntimeInfo, error) {
 }
 
 func CallUnixJSON(ctx context.Context, socketPath, method, urlPath string, body any, out any) error {
+	socketPath, err := normalizeDaemonFilePath(socketPath)
+	if err != nil {
+		return err
+	}
 	if !strings.HasPrefix(urlPath, "/") {
 		urlPath = "/" + urlPath
 	}

@@ -132,6 +132,47 @@ func TestListenUnixNormalizesSocketPath(t *testing.T) {
 	}
 }
 
+func TestCallUnixJSONNormalizesSocketPath(t *testing.T) {
+	dir := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore wd: %v", err)
+		}
+	})
+
+	ln, err := listenUnix(filepath.Join(".", "api.sock"), 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"name":"ok"}`))
+	})}
+	go func() {
+		_ = server.Serve(ln)
+	}()
+	t.Cleanup(func() {
+		_ = server.Close()
+		_ = ln.Close()
+	})
+
+	var out struct {
+		Name string `json:"name"`
+	}
+	if err := CallUnixJSON(context.Background(), filepath.Join(".", "nested", "..", "api.sock"), http.MethodGet, "/info", nil, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Name != "ok" {
+		t.Fatalf("Name=%q", out.Name)
+	}
+}
+
 func TestDaemonLockFileNormalizesPath(t *testing.T) {
 	dir := t.TempDir()
 	oldWD, err := os.Getwd()
