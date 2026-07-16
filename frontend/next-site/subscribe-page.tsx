@@ -27,7 +27,7 @@ import {
   isPassRequiresRenewError,
 } from "@/lib/billing-error";
 import { buildPayPlan } from "@/lib/wx-pay";
-import { AGENTS_HOME_PATH, ACCOUNT_PATH, REALNAME_REQUIRED_QUERY_KEY, SUBSCRIBE_PATH } from "@/lib/agent-routes";
+import { ACCOUNT_PATH, getAgentCreatingPath, REALNAME_REQUIRED_QUERY_KEY, SUBSCRIBE_PATH } from "@/lib/agent-routes";
 import { captureProductEvent, PRODUCT_ANALYTICS_EVENTS } from "@/observability/posthog";
 import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
@@ -2143,7 +2143,7 @@ export const SubscribePage = ({
     setModalStep("closed");
     setSelectedPlan(null);
     setPaymentContext(null);
-    navigate(`${AGENTS_HOME_PATH}?creating=${encodeURIComponent(createdBot.id)}&plan=${encodeURIComponent(plan.id)}`);
+    navigate(getAgentCreatingPath(createdBot.id));
   }, [addBot, subscribe, navigate]);
 
   /**

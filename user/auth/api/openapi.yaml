@@ -1008,7 +1008,6 @@ components:
     VerifySmsRequest:
       type: object
       required:
-        - name
         - phone
         - code
       properties:

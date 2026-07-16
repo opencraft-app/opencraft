@@ -76,9 +76,10 @@ html {
   scrollbar-gutter: stable;
 }
 
-/* Radix Select already has a stable gutter here; avoid adding a second width offset. */
-body.lv-skills-source-menu-open {
+/* The settings shell keeps its own stable gutter, so Radix must not add another width offset. */
+html.lw-settings-scrollbar-stable body[data-scroll-locked] {
   padding-right: 0 !important;
+  margin-right: 0 !important;
 }
 
 html.lw-settings-scrollbar-stable {
@@ -1425,7 +1426,7 @@ code {
 ._lh-claw-bot-panel .lv-agent-search-box-icon,
 ._lh-claw-bot-panel .lv-agent-skills-sdk-panel .lh-std-skill-panel__search-icon {
   position: absolute;
-  left: 14px;
+  left: 12px;
   top: 50%;
   display: flex;
   width: 16px;
@@ -1447,9 +1448,9 @@ code {
   box-sizing: border-box;
   width: 100%;
   height: 40px;
-  padding: 0 40px 0 38px;
+  padding: 0 36px;
   border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 12px;
+  border-radius: 12px !important;
   background: #fff;
   color: rgba(0, 0, 0, 0.88);
   font-size: 14px;
@@ -1461,6 +1462,13 @@ code {
 ._lh-claw-bot-panel .lv-agent-search-box-input:focus,
 ._lh-claw-bot-panel .lv-agent-skills-sdk-panel .lh-std-skill-panel__search-input:focus {
   border-color: rgba(0, 0, 0, 0.2);
+}
+
+/* All Skills / Skill Packages search inputs use one shared radius in both regions. */
+.lv-skills-search-input,
+.lv-agent-search-box-input,
+.lh-std-skill-panel__search-input {
+  border-radius: 12px !important;
 }
 
 ._lh-claw-bot-panel .lv-agent-search-box-input::placeholder,

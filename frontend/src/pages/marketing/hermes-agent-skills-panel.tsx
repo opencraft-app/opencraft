@@ -1256,6 +1256,7 @@ export interface HermesAgentSkillsPanelProps<
     instance: TInstance;
     featureFlags: TFeatureFlags;
     productConfig: TProductConfig;
+    skillHubApiUrl?: string;
   }>;
 }
 

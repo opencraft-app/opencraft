@@ -343,7 +343,9 @@ export function parseSkillhubSearch(raw: string): Skill[] {
 interface SkillhubListItem {
   display_name?: string;
   displayName?: string;
+  id?: string;
   name?: string;
+  rawId?: string;
   slug?: string;
   source?: string;
   version?: string;
@@ -364,7 +366,7 @@ export function parseSkillhubList(raw: string): InstalledSkill[] {
     : parseSkillhubListTable(raw);
 
   return items.map((item) => {
-    const rawId = (item.slug ?? item.name ?? "").trim();
+    const rawId = (item.slug ?? item.id ?? item.rawId ?? item.name ?? "").trim();
     if (!rawId) return null;
     const name = (item.display_name ?? item.displayName ?? item.name ?? rawId).trim();
     return {

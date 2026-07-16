@@ -8,7 +8,8 @@ items:
   secret_name: mono-shprod-lightclaw-auth-secrets
   # Required real-name keys in SSM payload:
   # TENCENT_REALNAME_SECRET_ID, TENCENT_REALNAME_SECRET_KEY,
-  # TENCENT_REALNAME_ENDPOINT, REALNAME_ENCRYPTION_KEY.
+  # TENCENT_REALNAME_ENDPOINT, REALNAME_ENCRYPTION_KEY,
+  # LIGHTCLAW_SMS_SECRET_ID, LIGHTCLAW_SMS_SECRET_KEY.
   namespace: user-auth
   kubernetes_resource_name: lightclaw-auth-secrets
   kubernetes_resource_kind: Secret

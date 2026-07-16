@@ -23,6 +23,7 @@ type MemoryStore struct {
 	subscriptions             map[string]PlanSelection
 	passwordHashes            map[string][]byte
 	smsChallenges             map[string]smsChallenge
+	phoneAuthChallenges       map[string]PhoneAuthChallenge
 	sessions                  map[string]sessionRecord
 	invites                   map[string]memoryInviteRecord
 	realnames                 map[string]UpdateRealnameInput
@@ -61,6 +62,7 @@ func NewMemoryStore(opts StoreOptions) *MemoryStore {
 		subscriptions:          make(map[string]PlanSelection),
 		passwordHashes:         make(map[string][]byte),
 		smsChallenges:          make(map[string]smsChallenge),
+		phoneAuthChallenges:    make(map[string]PhoneAuthChallenge),
 		sessions:               make(map[string]sessionRecord),
 		invites:                make(map[string]memoryInviteRecord),
 		realnames:              make(map[string]UpdateRealnameInput),
@@ -81,6 +83,20 @@ func NewMemoryStore(opts StoreOptions) *MemoryStore {
 
 func (s *MemoryStore) ValidateInvite(_ context.Context, code string) (InviteValidation, error) {
 	return InviteValidation{Code: strings.TrimSpace(code), State: "valid", Message: "邀请码校验已关闭。"}, nil
+}
+
+func (s *MemoryStore) FindUserByPhone(_ context.Context, phone string) (User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	userID, exists := s.usersByPhone[phone]
+	if !exists {
+		return User{}, newError("user_not_found", "用户不存在。", http.StatusNotFound)
+	}
+	user, exists := s.usersByID[userID]
+	if !exists {
+		return User{}, newError("user_not_found", "用户不存在。", http.StatusNotFound)
+	}
+	return user, nil
 }
 
 func (s *MemoryStore) SendVerificationCode(_ context.Context, phone string, code string, now time.Time, ttl time.Duration, cooldown time.Duration) (time.Duration, error) {
@@ -112,11 +128,115 @@ func (s *MemoryStore) CompleteSMSVerification(_ context.Context, input VerifySMS
 	if err := s.consumeSMSChallengeLocked(input.Phone, input.Code, now); err != nil {
 		return nil, err
 	}
-	user, created := s.findOrCreatePhoneUserLocked(input.Phone, strings.TrimSpace(input.Name), now)
+	user, created := s.findOrCreatePhoneUserLocked(input.Phone, strings.TrimSpace(input.Name), now, true)
 	if created {
 		s.usersByID[user.ID] = user
 	}
 	return s.createSessionLocked(user, now, sessionTTL, AuthMethodSMS)
+}
+
+func (s *MemoryStore) FindOrCreatePhoneAuthUser(_ context.Context, phone string, name string, now time.Time) (User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	user, created := s.findOrCreatePhoneUserLocked(phone, strings.TrimSpace(name), now, false)
+	if created {
+		s.usersByID[user.ID] = user
+	}
+	return user, nil
+}
+
+func (s *MemoryStore) SendPhoneAuthChallenge(_ context.Context, challenge PhoneAuthChallenge, now time.Time, ttl time.Duration, cooldown time.Duration) (time.Duration, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	existing, exists := s.phoneAuthChallenges[challenge.Phone]
+	if exists && existing.CooldownUntil.After(now) {
+		return 0, &Error{
+			Code:       "sms_cooldown",
+			Message:    "验证码发送过于频繁，请稍后再试。",
+			Status:     http.StatusTooManyRequests,
+			RetryAfter: existing.CooldownUntil.Sub(now),
+		}
+	}
+
+	s.phoneAuthChallenges[challenge.Phone] = PhoneAuthChallenge{
+		Phone:            challenge.Phone,
+		UserID:           strings.TrimSpace(challenge.UserID),
+		Flow:             challenge.Flow,
+		CodeHash:         challenge.CodeHash,
+		ExpiresAt:        now.Add(ttl),
+		CooldownUntil:    now.Add(cooldown),
+		RemainingRetries: 5,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+	return cooldown, nil
+}
+
+func (s *MemoryStore) GetPhoneAuthChallenge(_ context.Context, phone string) (PhoneAuthChallenge, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	challenge, exists := s.phoneAuthChallenges[phone]
+	if !exists {
+		return PhoneAuthChallenge{}, newError("sms_code_not_found", "请先获取验证码。", http.StatusBadRequest)
+	}
+	return challenge, nil
+}
+
+func (s *MemoryStore) ConsumePhoneAuthChallengePreview(_ context.Context, phone string, now time.Time) (PhoneAuthChallenge, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.validatePhoneAuthChallengeLocked(phone, now)
+}
+
+func (s *MemoryStore) VerifyAndConsumePhoneAuthChallenge(_ context.Context, phone string, code string, now time.Time) (PhoneAuthChallenge, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	challenge, err := s.validatePhoneAuthChallengeCodeLocked(phone, code, now)
+	if err != nil {
+		return PhoneAuthChallenge{}, err
+	}
+	delete(s.phoneAuthChallenges, phone)
+	return challenge, nil
+}
+
+func (s *MemoryStore) ConsumePhoneAuthChallenge(_ context.Context, phone string, now time.Time) (PhoneAuthChallenge, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	challenge, err := s.validatePhoneAuthChallengeLocked(phone, now)
+	if err != nil {
+		return PhoneAuthChallenge{}, err
+	}
+	delete(s.phoneAuthChallenges, phone)
+	return challenge, nil
+}
+
+func (s *MemoryStore) FailPhoneAuthChallenge(_ context.Context, phone string, now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	challenge, exists := s.phoneAuthChallenges[phone]
+	if !exists {
+		return nil
+	}
+	if !challenge.ExpiresAt.After(now) {
+		delete(s.phoneAuthChallenges, phone)
+		return nil
+	}
+	challenge.RemainingRetries--
+	challenge.UpdatedAt = now
+	if challenge.RemainingRetries <= 0 {
+		delete(s.phoneAuthChallenges, phone)
+		return nil
+	}
+	s.phoneAuthChallenges[phone] = challenge
+	return nil
+}
+
+func (s *MemoryStore) DeletePhoneAuthChallenge(_ context.Context, phone string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.phoneAuthChallenges, phone)
+	return nil
 }
 
 func (s *MemoryStore) VerifyCurrentUserPhoneChallenge(_ context.Context, token string, code string, now time.Time) (User, error) {
@@ -1202,6 +1322,36 @@ func (s *MemoryStore) validateSMSChallengeLocked(phone string, code string, now 
 	return nil
 }
 
+func (s *MemoryStore) validatePhoneAuthChallengeLocked(phone string, now time.Time) (PhoneAuthChallenge, error) {
+	challenge, exists := s.phoneAuthChallenges[phone]
+	if !exists {
+		return PhoneAuthChallenge{}, newError("sms_code_not_found", "请先获取验证码。", http.StatusBadRequest)
+	}
+	if !challenge.ExpiresAt.After(now) {
+		delete(s.phoneAuthChallenges, phone)
+		return PhoneAuthChallenge{}, newError("sms_code_expired", "验证码已过期，请重新获取。", http.StatusBadRequest)
+	}
+	return challenge, nil
+}
+
+func (s *MemoryStore) validatePhoneAuthChallengeCodeLocked(phone string, code string, now time.Time) (PhoneAuthChallenge, error) {
+	challenge, err := s.validatePhoneAuthChallengeLocked(phone, now)
+	if err != nil {
+		return PhoneAuthChallenge{}, err
+	}
+	if strings.TrimSpace(code) == "" || bcrypt.CompareHashAndPassword([]byte(challenge.CodeHash), []byte(strings.TrimSpace(code))) != nil {
+		challenge.RemainingRetries--
+		challenge.UpdatedAt = now
+		if challenge.RemainingRetries <= 0 {
+			delete(s.phoneAuthChallenges, phone)
+		} else {
+			s.phoneAuthChallenges[phone] = challenge
+		}
+		return PhoneAuthChallenge{}, newError("invalid_sms_code", "验证码不正确。", http.StatusBadRequest)
+	}
+	return challenge, nil
+}
+
 func (s *MemoryStore) validatePhoneChangeTargetLocked(token string, newPhone string, now time.Time) (User, error) {
 	record, err := s.getSessionRecordLocked(token, now)
 	if err != nil {
@@ -1228,10 +1378,10 @@ func (s *MemoryStore) validatePhoneChangeLocked(token string, newPhone string, c
 	return user, nil
 }
 
-func (s *MemoryStore) findOrCreatePhoneUserLocked(phone string, name string, now time.Time) (User, bool) {
+func (s *MemoryStore) findOrCreatePhoneUserLocked(phone string, name string, now time.Time, updateExistingName bool) (User, bool) {
 	if userID, exists := s.usersByPhone[phone]; exists {
 		user := s.usersByID[userID]
-		if name != "" && user.Name != name {
+		if updateExistingName && name != "" && user.Name != name {
 			user.Name = name
 			s.usersByID[userID] = user
 		}

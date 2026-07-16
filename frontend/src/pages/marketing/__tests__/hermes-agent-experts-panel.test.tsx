@@ -2,10 +2,14 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { loadExpertPackagesState, saveExpertPackagesState } from "@/lib/expert-package-storage";
+import {
+  buildInstalledSkillsListCommand,
+  getUniqueSkillSlugs,
+  parseInstalledSkillSlugs,
+} from "@/lib/hermes-skills-client";
 import { fetchSkillFile, fetchSkillDetail, fetchSkillFiles, fetchSkillSetDetail, fetchSkillSets } from "@/lib/skillhub-api";
 
 import {
-  buildInstalledSkillsListCommand,
   buildInstallSkillCommand,
   buildSkillHubSelfUpgradeCommand,
   ExpertsPanel,
@@ -16,9 +20,7 @@ import {
   getEnglishPackageFrontmatterValue,
   getExpertSkillDocumentPath,
   isSkillInstallAlreadyExists,
-  getUniqueSkillSlugs,
   installSkillSlugs,
-  parseInstalledSkillSlugs,
   resolveAvailablePackageSkillSlugs,
   stripMarkdownFrontmatter,
 } from "../hermes-agent-experts-panel";
@@ -476,7 +478,7 @@ metadata:
 
     render(<ExpertsPanel botId="bot-1" execDebugCommand={vi.fn()} />);
 
-    expect(screen.getByPlaceholderText("搜索技能包")).toHaveClass("lv-agent-search-box-input");
+    expect(screen.getByPlaceholderText("搜索技能包")).toHaveClass("lv-skills-search-input", "lv-agent-search-box-input");
     expect(screen.queryByRole("heading", { name: "技能包" })).not.toBeInTheDocument();
   });
 

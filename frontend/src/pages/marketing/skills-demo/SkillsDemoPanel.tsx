@@ -87,6 +87,42 @@ export type SkillsDemoTab = "discover" | "experts" | "create" | "installed";
 const SEARCH_RESULTS_PREVIEW_LIMIT = 12;
 const FEATURED_BATCH_SIZE = 3;
 const SKILL_ICON_FALLBACK = "/assets/skills/gemini.svg";
+const KNOWN_INSTALLED_IDS_STORAGE_PREFIX = "lightvela-skills-demo-known-installed";
+
+function knownInstalledIdsStorageKey(botId: string): string {
+  return `${KNOWN_INSTALLED_IDS_STORAGE_PREFIX}:${botId}`;
+}
+
+function readKnownInstalledIds(botId: string): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = window.localStorage.getItem(knownInstalledIdsStorageKey(botId));
+    const parsed = raw ? JSON.parse(raw) : null;
+    return new Set(
+      Array.isArray(parsed)
+        ? parsed.filter((value): value is string => typeof value === "string" && value.length > 0)
+        : [],
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+function writeKnownInstalledIds(botId: string, ids: Set<string>): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(knownInstalledIdsStorageKey(botId), JSON.stringify([...ids]));
+  } catch {
+    // Ignore storage failures; the live installed list remains authoritative when it contains full IDs.
+  }
+}
+
+function rememberedIdMatchesSkill(id: string, skill: Pick<Skill, "registry" | "rawId" | "slug">): boolean {
+  const prefix = `${skill.registry}:`;
+  if (!id.startsWith(prefix)) return false;
+  const rawId = id.slice(prefix.length);
+  return rawId === skill.rawId.trim().toLowerCase() || rawId.split("/").pop() === skill.slug.trim().toLowerCase();
+}
 
 type FeaturedSkillId =
   | "self-improving-agent"
@@ -718,7 +754,7 @@ function SkillCard({
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-semibold text-black/90">{skill.name}</div>
         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-black/45">
-          <span className={cn(description ? "line-clamp-2 text-xs leading-4" : "truncate")}>
+          <span className={cn(description ? "line-clamp-1 text-xs leading-4" : "truncate")}>
             {description ?? skill.rawId}
           </span>
           {skill.author ? (
@@ -954,7 +990,7 @@ function FeaturedSkillCard({
           <div className="truncate text-sm font-semibold text-black/90">
             {entry.skill.name}
           </div>
-          <p className="mt-1 line-clamp-1 text-pretty text-[11px] leading-4 text-black/50">
+          <p className="mt-1 line-clamp-1 text-pretty text-xs leading-4 text-black/50">
             {description}
           </p>
         </div>
@@ -1450,7 +1486,6 @@ export function SkillsDemoPanel({
   const [registryFilter, setRegistryFilter] = useState<RegistryFilter>("all");
   const [sortMode, setSortMode] = useState<SortMode>("popular");
   const [searchResultsExpanded, setSearchResultsExpanded] = useState(false);
-  const [registryMenuOpen, setRegistryMenuOpen] = useState(false);
 
   const [clawhubResults, setClawhubResults] = useState<Skill[]>([]);
   const [skillsshResults, setSkillsshResults] = useState<Skill[]>([]);
@@ -1460,7 +1495,7 @@ export function SkillsDemoPanel({
   const [installedLoading, setInstalledLoading] = useState(true);
   const [installingId, setInstallingId] = useState<string | null>(null);
   const [uninstallingKey, setUninstallingKey] = useState<string | null>(null);
-  const [knownInstalledIds, setKnownInstalledIds] = useState<Set<string>>(new Set());
+  const [knownInstalledIds, setKnownInstalledIds] = useState<Set<string>>(() => readKnownInstalledIds(botId));
   const [featuredBatch, setFeaturedBatch] = useState(0);
   const [selectedSkillDetails, setSelectedSkillDetails] = useState<SkillDetailsEntry | null>(null);
 
@@ -1487,14 +1522,8 @@ export function SkillsDemoPanel({
   }, [refreshInstalled]);
 
   useEffect(() => {
-    setKnownInstalledIds(new Set());
+    setKnownInstalledIds(readKnownInstalledIds(botId));
   }, [botId]);
-
-  useEffect(() => {
-    const className = "lv-skills-source-menu-open";
-    document.body.classList.toggle(className, registryMenuOpen);
-    return () => document.body.classList.remove(className);
-  }, [registryMenuOpen]);
 
   // 防抖搜索
   useEffect(() => {
@@ -1545,9 +1574,35 @@ export function SkillsDemoPanel({
     return set;
   }, [installed]);
 
+  const curatedIdentityByShortSlug = useMemo(() => {
+    const configuredSkills = [
+      ...(isDomestic ? DOMESTIC_FEATURED_SKILLS : FEATURED_SKILLS).map((entry) => entry.skill),
+      ...(isDomestic ? DOMESTIC_SKILL_CATEGORIES : CURATED_SKILL_CATEGORIES).flatMap((category) => (
+        category.skills.map((entry) => "skill" in entry ? entry.skill : entry)
+      )),
+    ];
+    const identities = new Map<string, string | null>();
+    configuredSkills.forEach((skill) => {
+      const shortSlugKey = `${skill.registry}:${skill.slug.trim().toLowerCase()}`;
+      const identity = skillIdentity(skill);
+      identities.set(shortSlugKey, identities.has(shortSlugKey) ? null : identity);
+    });
+    return identities;
+  }, [isDomestic]);
+
   const isInstalled = useCallback(
-    (skill: Skill) => installedIdentitySet.has(skillIdentity(skill)) || knownInstalledIds.has(skillIdentity(skill)),
-    [installedIdentitySet, knownInstalledIds],
+    (skill: Skill) => {
+      const identity = skillIdentity(skill);
+      if (installedIdentitySet.has(identity) || knownInstalledIds.has(identity)) return true;
+
+      const curatedIdentity = curatedIdentityByShortSlug.get(`${skill.registry}:${skill.slug.trim().toLowerCase()}`);
+      if (curatedIdentity !== identity) return false;
+      return installed.some((candidate) => (
+        candidate.registry === skill.registry
+        && candidate.rawId.trim().toLowerCase() === skill.slug.trim().toLowerCase()
+      ));
+    },
+    [curatedIdentityByShortSlug, installed, installedIdentitySet, knownInstalledIds],
   );
 
   // 当前结果集（按 registry 过滤）
@@ -1600,7 +1655,11 @@ export function SkillsDemoPanel({
       try {
         const result = await dataLayer.install(skill);
         if (result.ok) {
-          setKnownInstalledIds((current) => new Set(current).add(id));
+          setKnownInstalledIds((current) => {
+            const next = new Set(current).add(id);
+            writeKnownInstalledIds(botId, next);
+            return next;
+          });
           toast.success(t("下载成功"));
           await refreshInstalled();
         } else {
@@ -1612,7 +1671,7 @@ export function SkillsDemoPanel({
         setInstallingId(null);
       }
     },
-    [dataLayer, installingId, refreshInstalled, t],
+    [botId, dataLayer, installingId, refreshInstalled, t],
   );
 
   const handleUninstall = useCallback(
@@ -1626,7 +1685,10 @@ export function SkillsDemoPanel({
         if (result.ok) {
           setKnownInstalledIds((current) => {
             const next = new Set(current);
-            next.delete(key);
+            for (const rememberedId of next) {
+              if (rememberedIdMatchesSkill(rememberedId, skill)) next.delete(rememberedId);
+            }
+            writeKnownInstalledIds(botId, next);
             return next;
           });
           toast.success(t("卸载成功"));
@@ -1640,7 +1702,7 @@ export function SkillsDemoPanel({
         setUninstallingKey(null);
       }
     },
-    [dataLayer, refreshInstalled, t, uninstallingKey],
+    [botId, dataLayer, refreshInstalled, t, uninstallingKey],
   );
 
   return (
@@ -1711,7 +1773,7 @@ export function SkillsDemoPanel({
                   value={keyword}
                   onChange={(e) => setKeyword(e.target.value)}
                   placeholder={isDomestic ? "搜索 SkillHub 中的技能" : t("搜索 ClawHub / skills.sh 中的技能")}
-                  className="h-10 w-full rounded-md border border-black/10 bg-white pl-9 pr-9 text-sm text-black/90 outline-none transition-colors placeholder:text-black/35 focus:border-[#2F6BFF]"
+                  className="lv-skills-search-input h-10 w-full rounded-md border border-black/10 bg-white pl-9 pr-9 text-sm text-black/90 outline-none transition-colors placeholder:text-black/35 focus:border-[#2F6BFF]"
                 />
                 {keyword ? (
                   <button
@@ -1725,8 +1787,6 @@ export function SkillsDemoPanel({
                 ) : null}
               </div>
               <Select
-                open={registryMenuOpen}
-                onOpenChange={setRegistryMenuOpen}
                 value={registryFilter}
                 onValueChange={(value) => {
                   if (value !== "all" && value !== "skills-sh" && value !== "clawhub" && value !== "skillhub") return;

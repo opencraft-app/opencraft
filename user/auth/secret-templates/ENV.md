@@ -141,6 +141,14 @@
 | 变量 | 说明 |
 |------|------|
 | `LIGHTCLAW_DEV_SMS_CODE` | 固定短信验证码，非空时跳过真实短信发送（**生产禁止设置**） |
+| `LIGHTCLAW_PHONE_AUTH_ENABLED` | 是否启用隐藏手机号登录分流；启用后 `/auth/sms/send` 和 `/auth/sms/verify` 会走 `phone_auth_challenges` |
+| `LIGHTCLAW_SMS_SECRET_ID` | 腾讯云短信 SecretId（手机号登录现有用户分支） |
+| `LIGHTCLAW_SMS_SECRET_KEY` | 腾讯云短信 SecretKey（手机号登录现有用户分支） |
+| `LIGHTCLAW_SMS_REGION` | 腾讯云短信地域，默认 `ap-guangzhou` |
+| `LIGHTCLAW_SMS_ENDPOINT` | 腾讯云短信 API endpoint，默认 `sms.internal.tencentcloudapi.com` |
+| `LIGHTCLAW_SMS_SDK_APP_ID` | 腾讯云短信应用 ID，当前默认 `1401097405` |
+| `LIGHTCLAW_SMS_SIGN_NAME` | 腾讯云短信签名，当前默认 `腾讯云` |
+| `LIGHTCLAW_SMS_TEMPLATE_ID` | 腾讯云短信模板 ID，当前默认 `2683912` |
 | `LIGHTCLAW_SEED_DEMO_USER` | `true` 时初始化一个演示用户（**生产禁止设置**） |
 | `LIGHTCLAW_LOG_LEVEL` | 日志级别，默认 `info`，可选 `debug` / `warn` / `error` |
 
@@ -158,6 +166,14 @@ LIGHTCLAW_FRONTEND_BASE_URL=https://lightclaw.pages.dev
 LIGHTCLAW_COOKIE_SECURE=true
 LIGHTCLAW_ADMIN_TOKEN=<随机生成的强密码>
 LIGHTCLAW_DEVICE_BIND_TOKEN_SECRET=<随机生成的32字节以上强密钥>
+LIGHTCLAW_PHONE_AUTH_ENABLED=true
+LIGHTCLAW_SMS_SECRET_ID=xxx
+LIGHTCLAW_SMS_SECRET_KEY=xxx
+LIGHTCLAW_SMS_REGION=ap-guangzhou
+LIGHTCLAW_SMS_ENDPOINT=sms.internal.tencentcloudapi.com
+LIGHTCLAW_SMS_SDK_APP_ID=1401097405
+LIGHTCLAW_SMS_SIGN_NAME=腾讯云
+LIGHTCLAW_SMS_TEMPLATE_ID=2683912
 
 # 实名认证
 TENCENT_REALNAME_SECRET_ID=xxx

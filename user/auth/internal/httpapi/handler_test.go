@@ -529,6 +529,53 @@ func TestRealnameFaceIDCallbackReturnsGenericNonCacheableHTML(t *testing.T) {
 	if recorder.Header().Get("Cache-Control") != "no-store" || strings.Contains(recorder.Body.String(), "foreign-token") {
 		t.Fatalf("callback must be non-cacheable and must not reflect token: headers=%v body=%s", recorder.Header(), recorder.Body.String())
 	}
+	if len(recorder.Result().Cookies()) != 0 {
+		t.Fatalf("callback must not create a browser session: %v", recorder.Result().Cookies())
+	}
+	if !strings.Contains(recorder.Body.String(), "认证结果查询异常") {
+		t.Fatalf("unknown callback must not imply success: %s", recorder.Body.String())
+	}
+}
+
+func TestRealnameFaceIDCallbackRendersReconciledOutcome(t *testing.T) {
+	tests := []struct {
+		name        string
+		provider    service.RealnameFaceIDProviderCheckResult
+		providerErr error
+		wantText    string
+	}{
+		{name: "pending", provider: service.RealnameFaceIDProviderCheckResult{}, wantText: "认证结果处理中"},
+		{name: "failed", provider: service.RealnameFaceIDProviderCheckResult{Completed: true}, wantText: "人脸核身未通过"},
+		{name: "passed", provider: service.RealnameFaceIDProviderCheckResult{Completed: true, Success: true}, wantText: "人脸核身已通过"},
+		{name: "query error", providerErr: errors.New("provider unavailable"), wantText: "认证结果查询异常"},
+		{name: "integrity failure", providerErr: &service.RealnameFaceIDProviderIntegrityError{Reason: "mismatch"}, wantText: "人脸核身未通过"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			router, svc, provider := newAuthTestRouterWithFaceID()
+			if _, err := svc.SendVerificationCode(context.Background(), "13800138888"); err != nil {
+				t.Fatalf("send login code: %v", err)
+			}
+			session, err := svc.VerifySMS(context.Background(), service.VerifySMSInput{Phone: "13800138888", Code: "123456", Name: "Face Callback User"})
+			if err != nil {
+				t.Fatalf("verify login sms: %v", err)
+			}
+			cookie := &http.Cookie{Name: sessionCookieName, Value: session.Token}
+			started := performJSONRequest(t, router, http.MethodPost, "/auth/realname/faceid/attempts", map[string]any{
+				"name": "张三", "idCard": "11010519491231002X", "consent": true,
+			}, cookie)
+			if started.Code != http.StatusOK {
+				t.Fatalf("start FaceID attempt: %d %s", started.Code, started.Body.String())
+			}
+			provider.getInfoOut = tt.provider
+			provider.getInfoErr = tt.providerErr
+			callback := performJSONRequest(t, router, http.MethodGet, "/auth/realname/faceid/callback?BizToken=biz-http", nil)
+			if callback.Code != http.StatusOK || !strings.Contains(callback.Body.String(), tt.wantText) {
+				t.Fatalf("expected callback outcome %q, got %d: %s", tt.wantText, callback.Code, callback.Body.String())
+			}
+		})
+	}
 }
 
 func TestRealnameFaceIDHTTPPreservesRolloutConflictAndProviderFailureStatuses(t *testing.T) {
@@ -2041,6 +2088,7 @@ type httpStubFaceIDVerifier struct {
 	detectOut  service.RealnameFaceIDDetectAuthResult
 	detectErr  error
 	getInfoOut service.RealnameFaceIDProviderCheckResult
+	getInfoErr error
 }
 
 type httpFaceIDShadowClient struct{}
@@ -2073,6 +2121,9 @@ func (s *httpStubFaceIDVerifier) DetectAuth(_ context.Context, in service.Realna
 }
 
 func (s *httpStubFaceIDVerifier) GetDetectInfoEnhanced(_ context.Context, _ service.RealnameFaceIDGetDetectInfoInput) (service.RealnameFaceIDProviderCheckResult, error) {
+	if s.getInfoErr != nil {
+		return service.RealnameFaceIDProviderCheckResult{}, s.getInfoErr
+	}
 	return s.getInfoOut, nil
 }
 

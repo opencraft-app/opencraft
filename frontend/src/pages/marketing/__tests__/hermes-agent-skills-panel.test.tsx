@@ -84,9 +84,9 @@ vi.mock("../hermes-agent-experts-panel", () => ({
   ExpertsPanel: () => <div>技能包列表</div>,
 }));
 
-function TestSkillPanel() {
+function TestSkillPanel({ skillHubApiUrl }: { skillHubApiUrl?: string }) {
   return (
-    <div data-testid="sdk-skill-panel">
+    <div data-testid="sdk-skill-panel" data-skillhub-api-url={skillHubApiUrl}>
       单技能安装面板
       <input className="lh-std-skill-panel__installed-search-input" placeholder="搜索技能名称" />
     </div>
