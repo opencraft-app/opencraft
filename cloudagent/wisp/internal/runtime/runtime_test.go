@@ -106,6 +106,35 @@ func TestSparseCopyFileNormalizesSourceAndDestination(t *testing.T) {
 	}
 }
 
+func TestRemoveLocalDirNormalizesPathAndRejectsRoot(t *testing.T) {
+	dir := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore wd: %v", err)
+		}
+	})
+	if err := os.MkdirAll(filepath.Join("cg", "child"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := removeLocalDir(filepath.Join(".", "cg", "nested", "..", "child")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join("cg", "child")); !os.IsNotExist(err) {
+		t.Fatalf("expected child removed, stat err=%v", err)
+	}
+	if err := removeLocalDir(string(os.PathSeparator)); err == nil || !strings.Contains(err.Error(), "refuse to remove root") {
+		t.Fatalf("remove root err=%v", err)
+	}
+}
+
 func TestJuiceFSScriptEnvDoesNotLeakSMHSecret(t *testing.T) {
 	t.Setenv("PATH", "/usr/bin")
 	t.Setenv("UNRELATED_SECRET", "do-not-leak")

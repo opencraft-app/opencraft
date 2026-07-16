@@ -3938,8 +3938,19 @@ func (r *Runtime) assignContainerToOuterCgroup(ctx context.Context) error {
 
 func (r *Runtime) cleanupOuterCgroup() {
 	for _, dir := range []string{r.cfg.CgroupUserContainer, r.cfg.CgroupRuntimeParent, r.cfg.CgroupUserParent, r.cfg.CgroupParent, r.cfg.CgroupRoot} {
-		_ = os.Remove(dir)
+		_ = removeLocalDir(dir)
 	}
+}
+
+func removeLocalDir(path string) error {
+	path, err := normalizeLocalFilePath(path)
+	if err != nil {
+		return err
+	}
+	if path == string(os.PathSeparator) {
+		return errors.New("refuse to remove root directory")
+	}
+	return os.Remove(path)
 }
 
 func (r *Runtime) containerExists(ctx context.Context) (bool, error) {
