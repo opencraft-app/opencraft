@@ -1,3 +1,21 @@
+# 2026-07-16 Hermes Agent 今晚升级公告
+
+**Goal:** 基于最新 master 更新首页 Hermes Agent 升级公告，让国内站和国际站今晚继续展示升级窗口提醒。
+
+**Scope:** 仅更新首页公告条、对应中英文 i18n 字典和本计划；不调整公告视觉结构、路由、登录态、后端接口或转付费公告逻辑。
+
+## 任务清单
+
+- [x] 1. 将 Hermes Agent 升级公告切换到 2026-07-16 22:00 至 2026-07-17 02:00。
+  - 角色：Developer
+  - 影响文件：`frontend/src/components/site/maintenance-announcement-banner.tsx`、`frontend/src/i18n/generated/*.json`
+  - 验收方式：国内站文案使用北京时间，国际站文案使用新加坡时间；公告 ID 更新，避免复用上一次关闭记忆；过期时间为 UTC 2026-07-16 18:00。
+- [x] 2. 完成双站基础验证。
+  - 角色：Reviewer
+  - 验收方式：`pnpm i18n:check`、`pnpm check`、`NEXT_PUBLIC_REGION=global VITE_REGION=global pnpm check`、关联 Vitest、`git diff --check` 通过。
+
+---
+
 # 当前执行计划：清理 Agent 创建完成后的 URL creating 参数
 
 > 分支：`frontsandbox/fix-agents-creating-query`
