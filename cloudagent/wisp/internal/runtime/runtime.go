@@ -2783,7 +2783,10 @@ type sparseRootUpperExtent struct {
 
 func (r *Runtime) extractBlankActiveImageTemplateSparse(ctx context.Context) (bool, error) {
 	_ = ctx
-	src := strings.TrimSpace(r.cfg.BlankRootUpperSparse)
+	src, err := normalizeLocalFilePath(r.cfg.BlankRootUpperSparse)
+	if err != nil {
+		return false, err
+	}
 	st, err := os.Stat(src)
 	if err != nil {
 		if os.IsNotExist(err) {
