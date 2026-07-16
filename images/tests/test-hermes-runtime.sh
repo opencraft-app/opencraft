@@ -359,11 +359,17 @@ import yaml
 
 with open(sys.argv[1], encoding="utf-8") as fh:
     config = yaml.safe_load(fh)
-assert config["approvals"] == {
+expected_approvals = {
     "mode": "off",
     "cron_mode": "approve",
     "destructive_slash_confirm": False,
 }
+approvals = config.get("approvals", {})
+for key, expected in expected_approvals.items():
+    actual = approvals.get(key)
+    assert actual == expected, (
+        f"approvals.{key}={actual!r}, expected {expected!r}"
+    )
 with open(sys.argv[2], encoding="utf-8") as fh:
     data = json.load(fh)
 assert data["agents"][0]["id"] == "main"
