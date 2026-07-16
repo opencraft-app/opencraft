@@ -28,6 +28,7 @@ import (
 var (
 	ErrNoRoute            = errors.New("no route matched request")
 	ErrMethodDenied       = errors.New("method is not allowed for route")
+	ErrInvalidMethod      = errors.New("method is not supported")
 	ErrBodyTooLarge       = errors.New("body is larger than configured max_body_bytes")
 	ErrSignedHostMismatch = errors.New("signed host does not match route trusted host")
 )
@@ -104,11 +105,15 @@ func NewEngine(cfg config.Config, opts ...EngineOption) (*Engine, error) {
 			return nil, err
 		}
 		timeout, _ := config.ParseDuration(upstreamCfg.Timeout, 30*time.Second)
+		allowedMethods, err := normalizeMethods(upstreamCfg.AllowedMethods)
+		if err != nil {
+			return nil, fmt.Errorf("route %q upstream methods: %w", routeCfg.ID, err)
+		}
 		upstream := Upstream{
 			BaseURL:        strings.TrimRight(upstreamCfg.BaseURL, "/"),
 			Scheme:         strings.TrimSpace(upstreamCfg.Scheme),
 			Timeout:        timeout,
-			AllowedMethods: normalizeMethods(upstreamCfg.AllowedMethods),
+			AllowedMethods: allowedMethods,
 			Headers:        cloneStringMap(upstreamCfg.Headers),
 			HeadersFromEnv: cloneStringMap(upstreamCfg.HeadersFromEnv),
 		}
@@ -138,6 +143,9 @@ func NewEngine(cfg config.Config, opts ...EngineOption) (*Engine, error) {
 			method := strings.ToUpper(strings.TrimSpace(webhookCfg.Method))
 			if method == "" {
 				method = http.MethodPost
+			}
+			if !isSupportedHTTPMethod(method) {
+				return nil, fmt.Errorf("route %q webhook %q method: %w: %s", routeCfg.ID, webhookCfg.ID, ErrInvalidMethod, method)
 			}
 			route.Webhooks = append(route.Webhooks, Webhook{
 				ID:                  webhookCfg.ID,
@@ -172,6 +180,11 @@ func (e *Engine) Invoke(ctx context.Context, req Request) (Response, error) {
 	req.Method = strings.ToUpper(strings.TrimSpace(req.Method))
 	if req.Method == "" {
 		req.Method = http.MethodPost
+	}
+	if !isSupportedHTTPMethod(req.Method) {
+		err := fmt.Errorf("%w: %s", ErrInvalidMethod, req.Method)
+		e.recordAudit(ctx, req, req.RouteID, "", 0, start, err, 0, 0)
+		return Response{}, err
 	}
 	req.RequestID = ensureRequestID(req.RequestID, req.Headers)
 	req.Caller = ensureCaller(req.Caller, req.Attributes, req.Headers)
@@ -498,19 +511,40 @@ func joinURL(baseURL string, path string, rawQuery string) (string, error) {
 	return parsed.String(), nil
 }
 
-func normalizeMethods(methods []string) []string {
+func normalizeMethods(methods []string) ([]string, error) {
 	out := make([]string, 0, len(methods))
 	for _, method := range methods {
 		method = strings.ToUpper(strings.TrimSpace(method))
-		if method != "" {
-			out = append(out, method)
+		if method == "" {
+			continue
 		}
+		if !isSupportedHTTPMethod(method) {
+			return nil, fmt.Errorf("%w: %s", ErrInvalidMethod, method)
+		}
+		out = append(out, method)
 	}
-	return out
+	return out, nil
 }
 
 func methodAllowed(allowed []string, method string) bool {
 	return len(allowed) == 0 || slices.Contains(allowed, strings.ToUpper(method))
+}
+
+func isSupportedHTTPMethod(method string) bool {
+	switch strings.ToUpper(strings.TrimSpace(method)) {
+	case http.MethodConnect,
+		http.MethodDelete,
+		http.MethodGet,
+		http.MethodHead,
+		http.MethodOptions,
+		http.MethodPatch,
+		http.MethodPost,
+		http.MethodPut,
+		http.MethodTrace:
+		return true
+	default:
+		return false
+	}
 }
 
 func readLimited(reader io.Reader, maxBytes int64) ([]byte, error) {
