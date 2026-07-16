@@ -400,6 +400,10 @@ func ContainerOverlayPath(basePath, name string) (string, error) {
 }
 
 func parseJSONNetFile(path string) (map[string]string, error) {
+	path, err := normalizeConfigFilePath(path)
+	if err != nil {
+		return nil, err
+	}
 	vm := jsonnet.MakeVM()
 	vm.Importer(&jsonnet.FileImporter{
 		JPaths: []string{filepath.Dir(path)},
@@ -442,6 +446,10 @@ func parseJSONNetFile(path string) (map[string]string, error) {
 }
 
 func parseOptionalJSONNetFile(path string) (map[string]string, error) {
+	path, err := normalizeConfigFilePath(path)
+	if err != nil {
+		return nil, err
+	}
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
 			return map[string]string{}, nil
