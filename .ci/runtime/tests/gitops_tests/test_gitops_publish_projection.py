@@ -17,9 +17,14 @@ from contracts.bundles import load_bundle  # noqa: E402
 from tests.helpers import git, git_output  # noqa: E402
 
 
+def run_command(command: list[str], **kwargs: object):
+    # Test harness invokes local Python entrypoints with explicit argv lists and shell disabled.
+    return subprocess.run(command, **kwargs)  # nosemgrep: dangerous-subprocess-use-audit
+
+
 class ResolveReleaseBundleTests(unittest.TestCase):
     def test_resolve_release_bundle_exposes_publish_paths(self) -> None:
-        result = subprocess.run(
+        result = run_command(
             [
                 "python3",
                 str(COMMAND_DIR / "resolve_release_bundle.py"),
@@ -50,7 +55,7 @@ class ResolveReleaseBundleTests(unittest.TestCase):
         self.assertIn("user/auth/k8s/base/**", payload["publish_paths"])
 
     def test_resolve_release_bundle_supports_sandbox2_build_metadata(self) -> None:
-        result = subprocess.run(
+        result = run_command(
             [
                 "python3",
                 str(COMMAND_DIR / "resolve_release_bundle.py"),
@@ -76,7 +81,7 @@ class ResolveReleaseBundleTests(unittest.TestCase):
         self.assertNotIn("argocd/apps/beijing-sandbox-2/sandbox-family-appset.yaml", payload["publish_paths"])
 
     def test_resolve_release_bundle_supports_sandbox_multi_image_targets(self) -> None:
-        result = subprocess.run(
+        result = run_command(
             [
                 "python3",
                 str(COMMAND_DIR / "resolve_release_bundle.py"),
@@ -114,7 +119,7 @@ class ResolveReleaseBundleTests(unittest.TestCase):
     def test_resolve_release_bundle_blocks_deploy_only_sandbox2_services(self) -> None:
         for service in ["session"]:
             with self.subTest(service=service):
-                result = subprocess.run(
+                result = run_command(
                     [
                         "python3",
                         str(COMMAND_DIR / "resolve_release_bundle.py"),
@@ -138,7 +143,7 @@ class ResolveReleaseBundleTests(unittest.TestCase):
     def test_resolve_release_bundle_supports_sandbox2_image_services(self) -> None:
         for service in ["ai-gateway", "nextgen-dashboard"]:
             with self.subTest(service=service):
-                result = subprocess.run(
+                result = run_command(
                     [
                         "python3",
                         str(COMMAND_DIR / "resolve_release_bundle.py"),
@@ -163,7 +168,7 @@ class ResolveReleaseBundleTests(unittest.TestCase):
                 self.assertIn("lightclaw-bj8.tencentcloudcr.com/lightclaw/", payload["image"])
 
     def test_resolve_release_bundle_is_independent_of_cwd(self) -> None:
-        result = subprocess.run(
+        result = run_command(
             [
                 "python3",
                 str(COMMAND_DIR / "resolve_release_bundle.py"),
@@ -187,7 +192,7 @@ class ResolveReleaseBundleTests(unittest.TestCase):
         self.assertEqual(payload["env"], "shprod")
 
     def test_resolve_release_bundle_keeps_shprod_leaf_app_path(self) -> None:
-        result = subprocess.run(
+        result = run_command(
             [
                 "python3",
                 str(COMMAND_DIR / "resolve_release_bundle.py"),
@@ -211,7 +216,7 @@ class ResolveReleaseBundleTests(unittest.TestCase):
         self.assertNotIn("argocd/apps/shprod/sandbox-family-appset.yaml", payload["publish_paths"])
 
     def test_build_release_image_reads_manifest_independent_of_cwd(self) -> None:
-        result = subprocess.run(
+        result = run_command(
             [
                 "python3",
                 str(COMMAND_DIR / "build_release_image.py"),
@@ -231,7 +236,7 @@ class ResolveReleaseBundleTests(unittest.TestCase):
         self.assertIn("unknown release bundle: does-not-exist", result.stderr)
 
     def test_ai_gateway_build_context_matches_root_relative_dockerfile(self) -> None:
-        result = subprocess.run(
+        result = run_command(
             [
                 "python3",
                 str(COMMAND_DIR / "resolve_release_bundle.py"),
@@ -391,7 +396,7 @@ class ProjectReleaseBundleTests(unittest.TestCase):
             git(repo, "add", ".")
             git(repo, "commit", "-m", "gitops base")
 
-            result = subprocess.run(
+            result = run_command(
                 [
                     "python3",
                     str(COMMAND_DIR / "project_release_bundle.py"),
@@ -472,7 +477,7 @@ class ProjectReleaseBundleTests(unittest.TestCase):
             git(repo, "add", ".")
             git(repo, "commit", "-m", "gitops playground")
 
-            result = subprocess.run(
+            result = run_command(
                 [
                     "python3",
                     str(COMMAND_DIR / "project_release_bundle.py"),

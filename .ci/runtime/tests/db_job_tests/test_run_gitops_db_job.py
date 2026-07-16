@@ -38,6 +38,7 @@ class RunGitopsDbJobTests(unittest.TestCase):
 
     def test_resolve_kubeconfig_prefers_explicit_file_without_platform_env(self) -> None:
         with tempfile.NamedTemporaryFile() as kubeconfig:
+            kubeconfig.flush()
             with mock.patch.dict(os.environ, {"DB_JOB_KUBECONFIG_FILE": kubeconfig.name}, clear=True):
                 resolved, temp_path = db_job.resolve_kubeconfig(
                     {"PULUMI_ENV_NAME": "beijing-sandbox"},
