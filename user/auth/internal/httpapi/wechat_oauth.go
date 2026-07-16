@@ -344,8 +344,7 @@ func (h *Handler) handleWeChatOAuthCallbackAfterState(ctx *gin.Context, app *wec
 		}
 	}
 	h.setSessionCookie(ctx, session.Token)
-	redirectURL := h.oauthSuccessRedirectURL(ctx, returnTo, h.wechatOAuth.successFrontendURL(ctx.Request, "/", session.Token), session)
-	ctx.Redirect(http.StatusTemporaryRedirect, redirectURL)
+	h.redirectOAuthSuccess(ctx, returnTo, h.wechatOAuth.successFrontendURL(ctx.Request, "/", session.Token), session)
 }
 
 func (h *Handler) clearWeChatOAuthStateCookie(ctx *gin.Context) {
