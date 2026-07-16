@@ -8,12 +8,9 @@ import {
   GraduationCap,
   HeartPulse,
   Landmark,
-  LayoutGrid,
-  List,
   Loader2,
   Megaphone,
   MoonStar,
-  PackageCheck,
   PackageOpen,
   Palette,
   Puzzle,
@@ -49,11 +46,11 @@ import {
 } from "@/lib/skillhub-api";
 
 type ExpertFilterId = "all" | SkillHubKnownSkillSetScene;
-type ExpertView = "list" | "grid";
 
 interface ExpertSceneOption {
   value: SkillHubKnownSkillSetScene;
   label: string;
+  labelEn: string;
   icon: ElementType;
 }
 
@@ -61,6 +58,8 @@ export interface ExecDebugCommandResult {
   status: string;
   exitCode: number;
   output: string;
+  stdout?: string;
+  stderr?: string;
 }
 
 export type ExpertsExecDebugCommand = (botId: string, command: string) => Promise<ExecDebugCommandResult>;
@@ -86,18 +85,18 @@ interface SkillInstallProgress {
 
 const EXPERT_FILTER_SCENES: ExpertSceneOption[] = [
   // Keep the same visible category order as SkillHub's /skillspackage page.
-  { value: "finance", label: "金融", icon: Landmark },
-  { value: "tech", label: "科技", icon: Cpu },
-  { value: "design", label: "设计", icon: Palette },
-  { value: "marketing", label: "营销", icon: Megaphone },
-  { value: "legal", label: "法律", icon: Scale },
-  { value: "academic", label: "学术", icon: GraduationCap },
-  { value: "education", label: "教育", icon: BookOpen },
-  { value: "hr", label: "人力", icon: Users },
-  { value: "ecommerce", label: "电商", icon: ShoppingCart },
-  { value: "media", label: "媒体", icon: Clapperboard },
-  { value: "healthcare", label: "医疗", icon: HeartPulse },
-  { value: "mysticism", label: "玄学", icon: MoonStar },
+  { value: "finance", label: "金融", labelEn: "Finance", icon: Landmark },
+  { value: "tech", label: "科技", labelEn: "Technology", icon: Cpu },
+  { value: "design", label: "设计", labelEn: "Design", icon: Palette },
+  { value: "marketing", label: "营销", labelEn: "Marketing", icon: Megaphone },
+  { value: "legal", label: "法律", labelEn: "Legal", icon: Scale },
+  { value: "academic", label: "学术", labelEn: "Academic", icon: GraduationCap },
+  { value: "education", label: "教育", labelEn: "Education", icon: BookOpen },
+  { value: "hr", label: "人力", labelEn: "Human Resources", icon: Users },
+  { value: "ecommerce", label: "电商", labelEn: "Ecommerce", icon: ShoppingCart },
+  { value: "media", label: "媒体", labelEn: "Media", icon: Clapperboard },
+  { value: "healthcare", label: "医疗", labelEn: "Healthcare", icon: HeartPulse },
+  { value: "mysticism", label: "玄学", labelEn: "Mysticism", icon: MoonStar },
 ];
 
 const EXPERT_PACKAGE_SCENE_ROLES: Record<SkillHubKnownSkillSetScene, string> = {
@@ -131,12 +130,53 @@ const EXPERT_PACKAGE_SUB_SCENE_ROLES: Record<string, string> = {
 };
 
 const EXPERT_KNOWN_SCENE_SET = new Set(Object.keys(EXPERT_PACKAGE_SCENE_ROLES) as SkillHubKnownSkillSetScene[]);
-const EXPERT_VIEW_OPTIONS: Array<{ value: ExpertView; label: string; icon: ElementType }> = [
-  { value: "list", label: "列表", icon: List },
-  { value: "grid", label: "卡片", icon: LayoutGrid },
-];
 
 const EXPERT_PAGE_SIZE = 200;
+// SkillHub currently returns both domestic and international packages from the
+// localized list endpoint. Keep the international catalog aligned with the
+// package slugs supplied by the SkillHub team.
+const INTERNATIONAL_EXPERT_PACKAGE_SLUGS = [
+  "academic/literature-review",
+  "content-creation/lyrics-songwriting",
+  "content-creation/screenwriting",
+  "content-creation/story-outlining-en",
+  "design/interaction-design",
+  "design/prd-writing",
+  "ecommerce/product-selection-en",
+  "ecommerce/user-profiling",
+  "education/lesson-planning",
+  "education/student-assessment",
+  "education/training-program",
+  "finance/financial-report-analysis-en",
+  "finance/quant-backtesting-en",
+  "healthcare/clinical-support",
+  "healthcare/health-report",
+  "healthcare/medical-record-analysis",
+  "healthcare/nursing-plan",
+  "hr/meeting-minutes-en",
+  "hr/ppt-creation",
+  "hr/resume-screening",
+  "legal/contract-drafting",
+  "legal/contract-review",
+  "legal/litigation-strategy",
+  "lifestyle/health-data-analysis-en",
+  "lifestyle/meditation-mindfulness",
+  "lifestyle/mental-counseling",
+  "marketing/ad-copywriting",
+  "media/script-breakdown",
+  "media/storyboard-design",
+  "media/video-editing",
+  "mysticism/tarot-divination",
+  "mysticism/zodiac-fortune",
+  "tech/api-documentation",
+  "tech/bug-troubleshooting",
+  "tech/test-automation",
+] as const;
+const INTERNATIONAL_EXPERT_PACKAGE_API_SLUGS = INTERNATIONAL_EXPERT_PACKAGE_SLUGS.map((slug) => slug.replace("/", "-"));
+const INTERNATIONAL_EXPERT_PACKAGE_SLUG_SET = new Set(INTERNATIONAL_EXPERT_PACKAGE_API_SLUGS);
+const INTERNATIONAL_EXPERT_PACKAGE_ORDER = new Map(
+  INTERNATIONAL_EXPERT_PACKAGE_API_SLUGS.map((slug, index) => [slug, index]),
+);
 const INSTALL_ERROR_OUTPUT_LINE_LIMIT = 3;
 const SKILL_INSTALL_DEFAULT_RETRY_DELAYS_MS = [0] as const;
 const SKILL_INSTALL_RATE_LIMIT_RETRY_DELAYS_MS = [2_000, 5_000] as const;
@@ -147,7 +187,12 @@ const SKILLHUB_SELF_UPGRADE_COMMAND = "skillhub self-upgrade";
 const SKILLHUB_DOWNLOAD_URL_TEMPLATE = "https://api.skillhub.cn/api/v1/download?slug={slug}";
 const SKILLHUB_PACKAGE_SOURCE_URL = "https://skillhub.cn/skillspackage";
 const INSTALLED_PACKAGES_STORAGE_PREFIX = "lightvela-experts-installed-packages";
-const TARGET_SKILL_DOC_NAMES = ["skill.md", "readme.md", "skills.md"];
+const LEGACY_SKILL_DOC_NAMES = ["skill.md", "readme.md", "skills.md"];
+const EXPERT_LANGUAGE_DOC_NAMES = {
+  en: ["identify_en.md", ...LEGACY_SKILL_DOC_NAMES],
+  zh: ["identify.md", ...LEGACY_SKILL_DOC_NAMES],
+} as const;
+type ExpertLanguage = "en" | "zh";
 const PACKAGE_SKILL_SLUG_OVERRIDES: Record<string, Record<string, string>> = {
   "tech-code-review": {
     cody: "code-review-assistant",
@@ -160,6 +205,35 @@ const SKILL_DISPLAY_NAME_OVERRIDES: Record<string, string> = {
   "code-review-assistant": "code-review-assistant",
 };
 
+const EXPERT_PACKAGE_SCENE_ROLES_EN: Record<SkillHubKnownSkillSetScene, string> = {
+  academic: "Academic Researcher",
+  "content-creation": "Content Creation Expert",
+  design: "Product Design Advisor",
+  ecommerce: "Ecommerce Operations Expert",
+  education: "Learning Planner",
+  finance: "Investment Analysis Expert",
+  healthcare: "Health Information Advisor",
+  hr: "People and Organization Advisor",
+  legal: "Legal and Compliance Advisor",
+  lifestyle: "Lifestyle and Health Advisor",
+  marketing: "Marketing Growth Expert",
+  media: "Media Content Expert",
+  mysticism: "Fortune and Divination Advisor",
+  tech: "Senior Development Engineer",
+};
+
+const EXPERT_PACKAGE_SUB_SCENE_ROLES_EN: Record<string, string> = {
+  "fitness-training": "Fitness Training Coach",
+  "health-data-analysis": "Health Data Analyst",
+  "lyrics-songwriting": "Lyric Writing Expert",
+  "meditation-mindfulness": "Mindfulness Coach",
+  "mental-counseling": "Mental Health Counseling Advisor",
+  "novel-writing": "Novel Writing Expert",
+  "nutrition-meal-plan": "Nutrition and Wellness Advisor",
+  "poetry-creation": "Poetry Creation Expert",
+  screenwriting: "Screenwriting Expert",
+  "story-outlining": "Story Outline Planner",
+};
 function getInstalledPackagesStorageKey(botId: string): string {
   return `${INSTALLED_PACKAGES_STORAGE_PREFIX}:${botId}`;
 }
@@ -261,17 +335,83 @@ function getExpertRole(
   pkg: Pick<SkillHubSkillSet, "displayName" | "scene" | "subScene">,
   fallback: ExpertFilterId,
   t: ReturnType<typeof useT>,
+  lang?: ExpertLanguage,
 ): string {
-  const subSceneRole = pkg.subScene ? EXPERT_PACKAGE_SUB_SCENE_ROLES[pkg.subScene] : undefined;
+  const subSceneRoles = lang === "en" ? EXPERT_PACKAGE_SUB_SCENE_ROLES_EN : EXPERT_PACKAGE_SUB_SCENE_ROLES;
+  const sceneRoles = lang === "en" ? EXPERT_PACKAGE_SCENE_ROLES_EN : EXPERT_PACKAGE_SCENE_ROLES;
+  const subSceneRole = pkg.subScene ? subSceneRoles[pkg.subScene] : undefined;
   if (subSceneRole) return subSceneRole;
 
   const scene = getPackageScene(pkg, fallback);
-  const sceneRole = scene ? EXPERT_PACKAGE_SCENE_ROLES[scene] : undefined;
+  const sceneRole = scene ? sceneRoles[scene] : undefined;
   return sceneRole ?? t("技能包");
 }
 
-function getPackageSummary(pkg: SkillHubSkillSet, t: ReturnType<typeof useT>): string {
-  return pkg.summary || pkg.remark || t("精选技能包组合，适合直接接入完整工作流。");
+export function getEnglishPackageFrontmatterValue(content: string | undefined, key: string): string | undefined {
+  if (!content) return undefined;
+  const frontmatter = content.match(/^---\s*\n([\s\S]*?)\n---\s*(?:\n|$)/)?.[1];
+  if (!frontmatter) return undefined;
+
+  const lines = frontmatter.split("\n");
+  const keyPattern = new RegExp(`^${key}\\s*:\\s*(.*)$`);
+  const lineIndex = lines.findIndex((line) => keyPattern.test(line));
+  if (lineIndex < 0) return undefined;
+
+  const match = lines[lineIndex].match(keyPattern);
+  const rawValue = match?.[1]?.trim() ?? "";
+  if ([">", ">-", ">+", "|", "|-", "|+"].includes(rawValue)) {
+    const continuation: string[] = [];
+    for (const line of lines.slice(lineIndex + 1)) {
+      if (line.trim() && !/^\s/.test(line)) break;
+      if (line.trim()) continuation.push(line.trim());
+    }
+    const separator = rawValue.startsWith(">") ? " " : "\n";
+    return continuation.join(separator).trim() || undefined;
+  }
+
+  return rawValue.replace(/^["']|["']$/g, "").trim() || undefined;
+}
+
+function formatEnglishPackageSlug(slug: string): string {
+  return slug
+    .replace(/[\/_-]+/g, " ")
+    .split(/\s+/)
+    .filter((part) => part.toLowerCase() !== "en")
+    .map((part) => part ? `${part[0].toUpperCase()}${part.slice(1)}` : part)
+    .join(" ");
+}
+
+function getLocalizedPackageDisplayName(pkg: SkillHubSkillSet, lang?: ExpertLanguage): string {
+  if (lang !== "en") return pkg.displayName;
+  return pkg.displayNameEn?.trim()
+    || getEnglishPackageFrontmatterValue(pkg.contentEn, "display_name")
+    || formatEnglishPackageSlug(pkg.slug);
+}
+
+function getEnglishPackageSummary(pkg: SkillHubSkillSet): string | undefined {
+  if (pkg.summaryEn?.trim()) return pkg.summaryEn.trim();
+  const frontmatterDescription = getEnglishPackageFrontmatterValue(pkg.contentEn, "description");
+  if (frontmatterDescription) return frontmatterDescription;
+  if (pkg.summary?.trim() && !/[\u3400-\u9fff]/.test(pkg.summary)) return pkg.summary.trim();
+  if (!pkg.contentEn) return undefined;
+
+  const body = stripMarkdownFrontmatter(pkg.contentEn);
+  return body
+    .split(/\n\s*\n/)
+    .map((paragraph) => paragraph.replace(/^#+\s*/, "").trim())
+    .find((paragraph) => paragraph && !paragraph.startsWith("- "));
+}
+
+function getPackageSummary(
+  pkg: SkillHubSkillSet,
+  t: ReturnType<typeof useT>,
+  lang?: ExpertLanguage,
+): string {
+  if (lang === "en") {
+    return getEnglishPackageSummary(pkg)
+      || `A curated skill package for ${getLocalizedPackageDisplayName(pkg, "en")}.`;
+  }
+  return pkg.summary || pkg.summaryEn || pkg.remark || t("精选技能包组合，适合直接接入完整工作流。");
 }
 
 export function buildInstallSkillCommand(skillSlug: string): string {
@@ -286,29 +426,36 @@ export function stripMarkdownFrontmatter(markdown: string): string {
   return markdown.replace(/^---\s*\n[\s\S]*?\n---\s*(?:\n|$)/, "").trim();
 }
 
-function findSkillDocPath(filePaths: string[]): string | null {
-  for (const targetName of TARGET_SKILL_DOC_NAMES) {
+export function getExpertSkillDocumentPath(filePaths: string[], lang?: ExpertLanguage): string | null {
+  const targetNames = lang === "en"
+    ? EXPERT_LANGUAGE_DOC_NAMES.en
+    : EXPERT_LANGUAGE_DOC_NAMES.zh;
+  for (const targetName of targetNames) {
     const matched = filePaths.find((path) => !path.includes("/") && path.toLowerCase() === targetName);
     if (matched) return matched;
   }
   return null;
 }
 
-async function fetchSkillMarkdown(skillSlug: string): Promise<string> {
+async function fetchSkillMarkdown(skillSlug: string, lang?: ExpertLanguage): Promise<string> {
   const files = await fetchSkillFiles(skillSlug);
-  const docPath = findSkillDocPath(files.map((file) => file.path));
+  const docPath = getExpertSkillDocumentPath(files.map((file) => file.path), lang);
   if (!docPath) {
-    throw new Error("未找到 SKILL.md 或 README.md 文件");
+    throw new Error(lang === "en" ? "未找到 identify_en.md 或兼容技能文档" : "未找到 identify.md 或兼容技能文档");
   }
   return stripMarkdownFrontmatter(await fetchSkillFile(skillSlug, docPath));
 }
 
-async function fetchSkillDisplayNames(skillSlugs: string[]): Promise<Map<string, string>> {
+async function fetchSkillDisplayNames(
+  skillSlugs: string[],
+  lang?: ExpertLanguage,
+): Promise<Map<string, string>> {
   const entries = await Promise.all(
     skillSlugs.map(async (skillSlug) => {
       try {
-        const skill = await fetchSkillDetail(skillSlug);
-        return [skillSlug, skill.displayName || formatSkillDisplayName(skillSlug)] as const;
+        const skill = await fetchSkillDetail(skillSlug, lang === "en" ? { lang } : undefined);
+        const displayName = lang === "en" ? skill.displayNameEn || skill.displayName : skill.displayName;
+        return [skillSlug, displayName || formatSkillDisplayName(skillSlug)] as const;
       } catch {
         return [skillSlug, formatSkillDisplayName(skillSlug)] as const;
       }
@@ -533,7 +680,9 @@ export function getSkillPackageInstallFailureMessage(
   })}`;
 }
 
-async function fetchAllExpertPackages(keyword: string): Promise<SkillHubSkillSet[]> {
+async function fetchAllExpertPackages(keyword: string, lang?: string): Promise<SkillHubSkillSet[]> {
+  const expertLanguage = lang === "en" || lang === "zh" ? lang : undefined;
+  const apiLanguage = expertLanguage === "en" ? "en" : undefined;
   let page = 1;
   let total = 0;
   const allPackages: SkillHubSkillSet[] = [];
@@ -541,6 +690,7 @@ async function fetchAllExpertPackages(keyword: string): Promise<SkillHubSkillSet
   do {
     const response = await fetchSkillSets({
       keyword,
+      lang: apiLanguage,
       page,
       pageSize: EXPERT_PAGE_SIZE,
     });
@@ -551,7 +701,26 @@ async function fetchAllExpertPackages(keyword: string): Promise<SkillHubSkillSet
     page += 1;
   } while (allPackages.length < total);
 
-  return allPackages.filter(hasVisibleExpertPackageScene);
+  const visiblePackages = allPackages
+    .filter(hasVisibleExpertPackageScene)
+    .filter((pkg) => !expertLanguage || INTERNATIONAL_EXPERT_PACKAGE_SLUG_SET.has(pkg.slug));
+
+  if (!expertLanguage) return visiblePackages;
+
+  const missingPackages = INTERNATIONAL_EXPERT_PACKAGE_API_SLUGS.filter(
+    (slug) => !visiblePackages.some((pkg) => pkg.slug === slug),
+  );
+  const fetchedMissingPackages = await Promise.all(missingPackages.map(async (slug) => {
+    try {
+      return await fetchSkillSetDetail(slug, apiLanguage ? { lang: apiLanguage } : undefined);
+    } catch {
+      return null;
+    }
+  }));
+
+  return [...visiblePackages, ...fetchedMissingPackages.filter((pkg): pkg is SkillHubSkillSet => Boolean(pkg))]
+    .sort((left, right) => (INTERNATIONAL_EXPERT_PACKAGE_ORDER.get(left.slug) ?? Number.MAX_SAFE_INTEGER)
+      - (INTERNATIONAL_EXPERT_PACKAGE_ORDER.get(right.slug) ?? Number.MAX_SAFE_INTEGER));
 }
 
 function filterExpertPackagesByScene(
@@ -565,8 +734,9 @@ function filterExpertPackagesByScene(
 async function fetchExperts(params: {
   keyword: string;
   page: number;
+  lang?: string;
 }): Promise<{ packages: SkillHubSkillSet[]; total: number }> {
-  const packages = await fetchAllExpertPackages(params.keyword);
+  const packages = await fetchAllExpertPackages(params.keyword, params.lang);
   return {
     packages,
     total: packages.length,
@@ -576,18 +746,16 @@ async function fetchExperts(params: {
 export function ExpertsPanel({
   botId,
   execDebugCommand,
+  lang,
 }: {
   botId: string;
   execDebugCommand: ExpertsExecDebugCommand;
+  lang?: ExpertLanguage;
 }) {
   const t = useT();
   const [activeFilter, setActiveFilter] = useState<ExpertFilterId>("all");
   const [keyword, setKeyword] = useState("");
   const [searchDraft, setSearchDraft] = useState("");
-  const [view, setView] = useState<ExpertView>(() => {
-    if (typeof window === "undefined") return "list";
-    return window.localStorage.getItem("lightvela-experts-view") === "grid" ? "grid" : "list";
-  });
   const [installingSlug, setInstallingSlug] = useState<string | null>(null);
   const [installProgress, setInstallProgress] = useState<SkillInstallProgress | null>(null);
   const [installedSlugs, setInstalledSlugs] = useState<Set<string>>(() => readStoredInstalledPackageSlugs(botId));
@@ -618,15 +786,6 @@ export function ExpertsPanel({
   useEffect(() => {
     installedSlugsRef.current = installedSlugs;
   }, [installedSlugs]);
-
-  const handleViewChange = useCallback((nextView: ExpertView) => {
-    setView(nextView);
-    try {
-      window.localStorage.setItem("lightvela-experts-view", nextView);
-    } catch {
-      /* localStorage may be unavailable in restricted contexts. */
-    }
-  }, []);
 
   const commitSearch = useCallback((value: string) => {
     const nextKeyword = value.trim();
@@ -680,7 +839,7 @@ export function ExpertsPanel({
     }
     setExpertsError(null);
 
-    fetchExperts({ keyword, page: expertPage })
+    fetchExperts({ keyword, page: expertPage, lang })
       .then((result) => {
         if (currentRequestId !== expertsRequestIdRef.current) return;
         setExpertTotal(result.total);
@@ -699,7 +858,7 @@ export function ExpertsPanel({
         setExpertsLoading(false);
         setExpertsLoadingMore(false);
       });
-  }, [expertPage, expertsRetryNonce, keyword]);
+  }, [expertPage, expertsRetryNonce, keyword, lang]);
 
   useEffect(() => {
     let cancelled = false;
@@ -757,7 +916,9 @@ export function ExpertsPanel({
     async function fetchVisiblePackageDetails() {
       await Promise.all(missingCards.map(async ({ pkg }) => {
         try {
-          const detail = await fetchSkillSetDetail(pkg.slug);
+          const detail = lang === "en"
+            ? await fetchSkillSetDetail(pkg.slug, { lang })
+            : await fetchSkillSetDetail(pkg.slug);
           const skillSlugs = await resolveAvailablePackageSkillSlugs(
             pkg.slug,
             detail.skillSlugs ?? pkg.skillSlugs ?? [],
@@ -787,7 +948,7 @@ export function ExpertsPanel({
     return () => {
       cancelled = true;
     };
-  }, [packageSkillSlugs, visibleCards]);
+  }, [lang, packageSkillSlugs, visibleCards]);
 
   const getKnownSkillSlugs = useCallback((pkg: SkillHubSkillSet) => {
     return getPackageSkillSlugs(pkg.slug, packageSkillSlugs.get(pkg.slug) ?? pkg.skillSlugs ?? [], pkg.missing ?? []);
@@ -804,7 +965,9 @@ export function ExpertsPanel({
     if (installingSlug) return;
     setInstallingSlug(pkg.slug);
     try {
-      const detail = await fetchSkillSetDetail(pkg.slug);
+      const detail = lang === "en"
+        ? await fetchSkillSetDetail(pkg.slug, { lang })
+        : await fetchSkillSetDetail(pkg.slug);
       const skillSlugs = await resolveAvailablePackageSkillSlugs(pkg.slug, detail.skillSlugs ?? [], detail.missing ?? []);
       if (skillSlugs.length === 0) {
         toast.error(t("该技能包暂未包含可安装的 skills"));
@@ -844,7 +1007,7 @@ export function ExpertsPanel({
       setInstallingSlug(null);
       setInstallProgress(null);
     }
-  }, [botId, execDebugCommand, installingSlug, t]);
+  }, [botId, execDebugCommand, installingSlug, lang, t]);
 
   const handleOpenDetail = useCallback((card: ExpertPackageCard) => {
     setSelectedCard(card);
@@ -860,6 +1023,7 @@ export function ExpertsPanel({
         isInstalled={isPackageInstalled(selectedCard.pkg)}
         onBack={() => setSelectedCard(null)}
         onInstall={handleInstall}
+        lang={lang}
       />
     );
   }
@@ -867,19 +1031,13 @@ export function ExpertsPanel({
   return (
     <div className="space-y-6">
       <div className="space-y-4">
-        <div className="min-w-0">
-          <p className="text-sm font-medium leading-6 text-black/50">
-            {t("快速安装技能组合，让 Agent 从单点技能走向完整工作流")}
-          </p>
-        </div>
-
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-          <ExpertSearchBox value={searchDraft} onChange={setSearchDraft} onCommit={commitSearch} />
-          <ExpertViewToggle value={view} onChange={handleViewChange} />
+          <ExpertSearchBox value={searchDraft} onChange={setSearchDraft} onCommit={commitSearch} lang={lang} />
         </div>
 
         <ExpertSceneFilters
           activeFilter={activeFilter}
+          lang={lang}
           onChange={(filterId) => {
             setActiveFilter(filterId);
             setExpertPage(1);
@@ -912,39 +1070,21 @@ export function ExpertsPanel({
           </div>
         </div>
       ) : visibleCards.length > 0 ? (
-        view === "grid" ? (
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(380px,100%),1fr))] items-start gap-4">
-            {visibleCards.map((card) => (
-              <ExpertGridCard
-                key={card.pkg.slug}
-                card={card}
-                activeFilter={activeFilter}
-                installingSlug={installingSlug}
-                installProgress={installProgress}
-                isInstalled={isPackageInstalled(card.pkg)}
-                onOpen={handleOpenDetail}
-                onInstall={handleInstall}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="overflow-hidden rounded-md border border-black/6 bg-white">
-            {visibleCards.map((card, index) => (
-              <div key={card.pkg.slug}>
-                {index > 0 ? <div className="mx-5 h-px bg-black/[0.06]" /> : null}
-                <ExpertListItem
-                  card={card}
-                  activeFilter={activeFilter}
-                  installingSlug={installingSlug}
-                  installProgress={installProgress}
-                  isInstalled={isPackageInstalled(card.pkg)}
-                  onOpen={handleOpenDetail}
-                  onInstall={handleInstall}
-                />
-              </div>
-            ))}
-          </div>
-        )
+        <div className="grid grid-cols-1 items-start gap-2 md:grid-cols-2">
+          {visibleCards.map((card) => (
+            <ExpertGridCard
+              key={card.pkg.slug}
+              card={card}
+              activeFilter={activeFilter}
+              lang={lang}
+              installingSlug={installingSlug}
+              installProgress={installProgress}
+              isInstalled={isPackageInstalled(card.pkg)}
+              onOpen={handleOpenDetail}
+              onInstall={handleInstall}
+            />
+          ))}
+        </div>
       ) : (
         <div className="rounded-md bg-white px-5 py-10 text-center text-sm text-black/40">
           {t("没有找到匹配的技能包")}
@@ -971,10 +1111,12 @@ function ExpertSearchBox({
   value,
   onChange,
   onCommit,
+  lang,
 }: {
   value: string;
   onChange: (value: string) => void;
   onCommit: (value: string) => void;
+  lang?: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -992,53 +1134,9 @@ function ExpertSearchBox({
             inputRef.current?.blur();
           }
         }}
-        placeholder="搜索技能包"
-        className="lv-agent-search-box-input"
+        placeholder={lang === "en" ? "Search skill packages" : "搜索技能包"}
+        className="lv-skills-search-input lv-agent-search-box-input"
       />
-    </div>
-  );
-}
-
-function ExpertViewToggle({
-  value,
-  onChange,
-}: {
-  value: ExpertView;
-  onChange: (value: ExpertView) => void;
-}) {
-  return (
-    <div className="flex w-max items-center gap-1 rounded-md bg-black/[0.04] p-0.5">
-      {EXPERT_VIEW_OPTIONS.map((item) => {
-        const Icon = item.icon;
-        const active = value === item.value;
-        const tooltipId = `skill-package-view-${item.value}-tooltip`;
-        return (
-          <span key={item.value} className="group relative inline-flex">
-            <button
-              type="button"
-              onClick={() => onChange(item.value)}
-              aria-label={item.label}
-              aria-describedby={tooltipId}
-              className={cn(
-                "peer lv-agent-view-toggle-btn inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[6px] transition-all",
-                active ? "bg-white text-black/85 shadow-[0_1px_4px_rgba(0,0,0,0.08)]" : "text-black/45 hover:text-black/70",
-              )}
-              data-tooltip={item.label}
-              aria-pressed={active}
-            >
-              <Icon className="h-4 w-4" aria-hidden="true" />
-            </button>
-            <span
-              id={tooltipId}
-              role="tooltip"
-              className="pointer-events-auto absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 select-text whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium leading-relaxed text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-hover:opacity-100 peer-focus-visible:opacity-100"
-            >
-              {item.label}
-              <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white" />
-            </span>
-          </span>
-        );
-      })}
     </div>
   );
 }
@@ -1046,14 +1144,19 @@ function ExpertViewToggle({
 function ExpertSceneFilters({
   activeFilter,
   onChange,
+  lang,
 }: {
   activeFilter: ExpertFilterId;
   onChange: (filterId: ExpertFilterId) => void;
+  lang?: string;
 }) {
   const t = useT();
   const filters: Array<{ value: ExpertFilterId; label: string; icon: ElementType }> = [
     { value: "all", label: t("全部"), icon: PackageOpen },
-    ...EXPERT_FILTER_SCENES,
+    ...EXPERT_FILTER_SCENES.map((filter) => ({
+      ...filter,
+      label: lang === "en" ? filter.labelEn : filter.label,
+    })),
   ];
 
   return (
@@ -1194,7 +1297,7 @@ function InstallButton({
       }}
       disabled={Boolean(installingSlug) || isInstalled}
       className={cn(
-        "inline-flex h-8 items-center justify-center gap-1.5 rounded-md px-3 text-sm font-semibold leading-none transition-colors",
+        "inline-flex h-8 items-center justify-center rounded-md px-3 text-sm font-semibold leading-none transition-colors",
         isInstalled
           ? "bg-[#F4FCF9] text-[#82BDAE]"
           : "bg-black text-white hover:bg-black/85 active:bg-black/95",
@@ -1203,13 +1306,7 @@ function InstallButton({
         className,
       )}
     >
-      {isInstalling ? (
-        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-      ) : isInstalled ? (
-        <Check className="h-3.5 w-3.5" />
-      ) : (
-        <PackageCheck className="h-3.5 w-3.5" />
-      )}
+      {isInstalling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
       {label}
     </button>
   );
@@ -1218,6 +1315,7 @@ function InstallButton({
 function ExpertGridCard({
   card,
   activeFilter,
+  lang,
   installingSlug,
   installProgress,
   isInstalled,
@@ -1226,6 +1324,7 @@ function ExpertGridCard({
 }: {
   card: ExpertPackageCard;
   activeFilter: ExpertFilterId;
+  lang?: ExpertLanguage;
   installingSlug: string | null;
   installProgress: SkillInstallProgress | null;
   isInstalled: boolean;
@@ -1233,8 +1332,8 @@ function ExpertGridCard({
   onInstall: (pkg: SkillHubSkillSet) => void;
 }) {
   const t = useT();
-  const role = getExpertRole(card.pkg, activeFilter, t);
-  const summary = getPackageSummary(card.pkg, t);
+  const role = getExpertRole(card.pkg, activeFilter, t, lang);
+  const summary = getPackageSummary(card.pkg, t, lang);
 
   return (
     <article
@@ -1247,84 +1346,22 @@ function ExpertGridCard({
           onOpen(card);
         }
       }}
-      className="group flex min-h-[164px] cursor-pointer flex-col rounded-md border border-black/6 bg-white px-4 pb-2.5 pt-4 transition-all hover:border-black/12 hover:shadow-[0_10px_28px_rgba(15,23,42,0.055)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/40"
+      className="group flex cursor-pointer items-start gap-3 rounded-md border border-black/[0.06] bg-white px-3.5 py-3 text-left transition-colors hover:border-black/[0.12] hover:bg-black/[0.025] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/40"
     >
-      <div className="flex items-start gap-3">
-        <SkillPackageProfileIcon pkg={card.pkg} />
-        <div className="min-w-0 flex-1 pt-0.5">
-          <div className="flex min-w-0 items-center gap-2">
-            <h3 className="truncate text-base font-semibold leading-6 text-black/90">{card.pkg.displayName}</h3>
-          </div>
-          <p className="mt-1.5 truncate text-xs font-medium leading-5 text-black/48">{role}</p>
-        </div>
-      </div>
-      <p className="line-clamp-3 text-[13px] leading-5 text-black/58" style={{ marginTop: 16 }} title={summary}>{summary}</p>
-      <div className="mt-3.5 flex items-center justify-end">
-        <InstallButton
-          pkg={card.pkg}
-          installingSlug={installingSlug}
-          installProgress={installProgress}
-          isInstalled={isInstalled}
-          onInstall={onInstall}
-          className="h-6 px-2 text-xs"
-        />
-      </div>
-    </article>
-  );
-}
-
-function ExpertListItem({
-  card,
-  activeFilter,
-  installingSlug,
-  installProgress,
-  isInstalled,
-  onOpen,
-  onInstall,
-}: {
-  card: ExpertPackageCard;
-  activeFilter: ExpertFilterId;
-  installingSlug: string | null;
-  installProgress: SkillInstallProgress | null;
-  isInstalled: boolean;
-  onOpen: (card: ExpertPackageCard) => void;
-  onInstall: (pkg: SkillHubSkillSet) => void;
-}) {
-  const t = useT();
-  const role = getExpertRole(card.pkg, activeFilter, t);
-  const summary = getPackageSummary(card.pkg, t);
-
-  return (
-    <article
-      role="button"
-      tabIndex={0}
-      onClick={() => onOpen(card)}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onOpen(card);
-        }
-      }}
-      className="group flex cursor-pointer items-start gap-4 px-4 py-6 text-left transition-colors hover:bg-black/[0.018] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-black/35"
-    >
-      <SkillPackageProfileIcon pkg={card.pkg} />
+      <SkillPackageProfileIcon pkg={card.pkg} className="h-9 w-9 rounded-[8px]" />
       <div className="min-w-0 flex-1">
-        <div className="mb-1 flex items-center gap-2">
-          <h3 className="truncate text-lg font-semibold leading-6 text-black/90">{card.pkg.displayName}</h3>
-        </div>
-        <div className="mb-2 flex min-w-0 flex-wrap items-center">
-          <p className="truncate text-xs font-medium leading-5 text-black/48">{role}</p>
-        </div>
-        <p className="line-clamp-2 text-[13px] leading-[24px] text-black/58" title={summary}>{summary}</p>
+        <h3 className="truncate text-sm font-semibold text-black/90">{getLocalizedPackageDisplayName(card.pkg, lang)}</h3>
+        <p className="mt-1 line-clamp-2 text-xs leading-4 text-black/45" title={summary}>{summary}</p>
+        <div className="mt-1 truncate text-[11px] text-black/50">{role}</div>
       </div>
-      <div className="hidden flex-shrink-0 flex-col items-end gap-3 pt-1 md:flex">
+      <div className="relative shrink-0 self-center">
         <InstallButton
           pkg={card.pkg}
           installingSlug={installingSlug}
           installProgress={installProgress}
           isInstalled={isInstalled}
           onInstall={onInstall}
-          className="h-7 px-2.5 text-xs"
+          className="h-9 px-3"
         />
       </div>
     </article>
@@ -1339,6 +1376,7 @@ function SkillPackageDetailView({
   isInstalled,
   onBack,
   onInstall,
+  lang,
 }: {
   card: ExpertPackageCard;
   activeFilter: ExpertFilterId;
@@ -1347,13 +1385,19 @@ function SkillPackageDetailView({
   isInstalled: boolean;
   onBack: () => void;
   onInstall: (pkg: SkillHubSkillSet) => void;
+  lang?: ExpertLanguage;
 }) {
   const t = useT();
-  const detailFetcher = useCallback(() => fetchSkillSetDetail(card.pkg.slug), [card.pkg.slug]);
+  const detailFetcher = useCallback(
+    () => lang === "en"
+      ? fetchSkillSetDetail(card.pkg.slug, { lang })
+      : fetchSkillSetDetail(card.pkg.slug),
+    [card.pkg.slug, lang],
+  );
   const { data, loading, error } = useAsyncResource(detailFetcher, [card.pkg.slug]);
   const [activeSkillIndex, setActiveSkillIndex] = useState(0);
   const detail = data ?? card.pkg;
-  const role = getExpertRole(detail, activeFilter, t);
+  const role = getExpertRole(detail, activeFilter, t, lang);
   const candidateSkillSlugs = getPackageSkillSlugs(
     card.pkg.slug,
     data?.skillSlugs ?? card.pkg.skillSlugs ?? [],
@@ -1369,9 +1413,9 @@ function SkillPackageDetailView({
   const skillSlugs = availableSkillSlugs.data ?? [];
   const skillSlugsKey = skillSlugs.join("\u0000");
   const skillDisplayNamesFetcher = useCallback(
-    () => fetchSkillDisplayNames(skillSlugs),
+    () => fetchSkillDisplayNames(skillSlugs, lang),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [skillSlugsKey],
+    [lang, skillSlugsKey],
   );
   const skillDisplayNames = useAsyncResource(skillDisplayNamesFetcher, [skillSlugsKey]);
   const activeSkillSlug = skillSlugs[activeSkillIndex] ?? skillSlugs[0];
@@ -1392,14 +1436,14 @@ function SkillPackageDetailView({
         className="inline-flex min-h-8 items-center gap-2 text-sm font-semibold leading-8 text-black/42 transition-colors hover:text-black/78"
       >
         <ArrowLeft className="h-4 w-4" />
-        <span>{t("技能包")} / {detail.displayName}</span>
+        <span>{t("技能包")} / {getLocalizedPackageDisplayName(detail, lang)}</span>
       </button>
 
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex min-w-0 items-start gap-5">
           <SkillPackageProfileIcon pkg={detail} className="h-16 w-16 rounded-[14px]" />
           <div className="min-w-0">
-            <h2 className="text-[28px] font-semibold leading-tight text-black/95">{detail.displayName}</h2>
+            <h2 className="text-[28px] font-semibold leading-tight text-black/95">{getLocalizedPackageDisplayName(detail, lang)}</h2>
             <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-7 gap-y-1 text-sm font-medium leading-6 text-black/48">
               <span>{role}</span>
               {skillSlugs.length > 0 ? (
@@ -1419,7 +1463,7 @@ function SkillPackageDetailView({
               </a>
             </div>
             <p className="mt-5 max-w-5xl text-sm leading-7 text-black/62">
-              {getPackageSummary(detail as SkillHubSkillSet, t)}
+              {getPackageSummary(detail as SkillHubSkillSet, t, lang)}
             </p>
           </div>
         </div>
@@ -1474,7 +1518,7 @@ function SkillPackageDetailView({
               })}
             </div>
 
-            {activeSkillSlug ? <SkillContent slug={activeSkillSlug} /> : null}
+            {activeSkillSlug ? <SkillContent slug={activeSkillSlug} lang={lang} /> : null}
           </div>
         ) : (
           <p className="py-8 text-sm text-black/40">{t("暂无技能模块。")}</p>
@@ -1484,10 +1528,10 @@ function SkillPackageDetailView({
   );
 }
 
-function SkillContent({ slug }: { slug: string }) {
+function SkillContent({ slug, lang }: { slug: string; lang?: ExpertLanguage }) {
   const t = useT();
-  const fetcher = useCallback(() => fetchSkillMarkdown(slug), [slug]);
-  const { data, loading, error } = useAsyncResource(fetcher, [slug]);
+  const fetcher = useCallback(() => fetchSkillMarkdown(slug, lang), [lang, slug]);
+  const { data, loading, error } = useAsyncResource(fetcher, [lang, slug]);
 
   if (loading && !data) {
     return (

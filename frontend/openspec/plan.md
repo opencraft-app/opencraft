@@ -725,7 +725,66 @@ Not-tested: 待实现后填写
 - [x] 收紧搜索区、列表内边距和选项上下间距，保持字体、单行展示、搜索与选择逻辑不变。
 - [x] 选择器组件测试 15/15、`pnpm check` 与 `git diff --check` 通过。
 
-### Task 23: 修正模型切换保护记录的展示语义
+### Task 23: 统一 Skills 分类卡与 Featured 信息排版
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+
+- [x] 国内站与国际站分类卡描述最多展示一行，溢出时显示省略号。
+- [x] Featured 卡片底部名称与描述字号和分类卡保持一致。
+- [x] Skills 目标测试、`pnpm check` 与 `git diff --check` 通过。
+
+### Task 24: 统一技能包搜索框并稳定来源下拉布局
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/styles.css`
+
+- [x] 国内站与国际站技能包搜索框使用和 Skills 搜索框相同的圆角。
+- [x] 国内站与国际站来源下拉展开和关闭时不再引起页面横向位移。
+- [x] Skills 目标测试、`pnpm check`、`pnpm i18n:check` 与 `git diff --check` 通过。
+
+### Task 25: 刷新后保持精选与分类技能的已安装状态
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.ts`
+
+- [x] 持久化前端成功安装后获得的完整技能身份，刷新后继续显示已安装状态。
+- [x] 兼容国内站已安装列表返回 `id/rawId` 的数据形态。
+- [x] Skills 目标测试、`pnpm check`、`pnpm i18n:check` 与 `git diff --check` 通过。
+
+### Task 26: 统一国内外技能搜索框圆角
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/hermes-agent-experts-panel.tsx`
+- Modify: `frontend/src/styles.css`
+- Modify: `frontend/src/pages/marketing/__tests__/hermes-agent-experts-panel.test.tsx`
+
+- [x] Skills 与 Skill Packages 搜索框使用同一个共享样式类和 `12px` 圆角。
+- [x] 国内站、国际站及 SDK 备用搜索框保持一致。
+- [x] Skills 目标测试、`pnpm check` 与 `git diff --check` 通过。
+
+### Task 27: 统一技能搜索框内部间距
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/styles.css`
+
+- [x] Skills 与 Skill Packages 搜索图标和文字的左右内边距保持一致。
+- [x] 国内站与国际站共用同一套内部间距。
+- [x] Skills 目标测试、`pnpm check` 与 `git diff --check` 通过。
+### Task 28: 修正模型切换保护记录的展示语义
 
 **角色：** single_agent / implementation + verification
 
@@ -741,7 +800,7 @@ Not-tested: 待实现后填写
 - [x] 其他成功、失败与普通跳过记录的解析和展示逻辑保持不变。
 - [x] 先补失败测试复现线上输出，再以最小实现修复；目标测试、`pnpm check`、`pnpm i18n:check` 与 `git diff --check` 通过。
 
-### Task 24: 补齐详情中的调用技能语义
+### Task 29: 补齐详情中的调用技能语义
 
 **角色：** single_agent / implementation + verification
 

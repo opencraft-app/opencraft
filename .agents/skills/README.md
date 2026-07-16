@@ -19,6 +19,7 @@
 | `product-skills/lv-vibe-coding` | LightVela 从需求澄清、Issue、开发、评审、MR 到发布回归的 Vibe Coding 协作流程 |
 | `lv-international-docs` | LightVela 国际站文档维护，编辑/翻译/审查 `lightvela.ai/docs`、`global/`、`en/`、文档图片与 sidebar/slug |
 | `lv-longform-content` | LightVela 长篇内容写作，生成教程系列、功能介绍系列、应用场景系列、英文博客/文章草稿 |
+| `lv-sitepage-skills` | 维护国内站和国际站 Agent Skills 的 Discover 分类、Featured 精选、搜索、来源、My Skills、Create Skill 和分页规范 |
 
 ## 使用约定
 

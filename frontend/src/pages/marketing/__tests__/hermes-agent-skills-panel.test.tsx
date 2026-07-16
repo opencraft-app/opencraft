@@ -1,10 +1,10 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { TsshFileInfo } from "@/lib/tencent-tssh-file-client";
 import type { ExpertsExecDebugCommand } from "../hermes-agent-experts-panel";
 import {
+  getSafeUploadFileName,
   getInitialAgentSkillsTab,
   HermesAgentSkillsPanel,
 } from "../hermes-agent-skills-panel";
@@ -94,19 +94,6 @@ function TestSkillPanel({ skillHubApiUrl }: { skillHubApiUrl?: string }) {
   );
 }
 
-const tsshEntry = (name: string, type: TsshFileInfo["type"]): TsshFileInfo => ({
-  accessTime: 0,
-  modifyTime: 0,
-  name,
-  size: 0,
-  type,
-});
-
-const tsshRecentEntry = (name: string, type: TsshFileInfo["type"]): TsshFileInfo => ({
-  ...tsshEntry(name, type),
-  modifyTime: Math.floor(Date.now() / 1000),
-});
-
 const renderPanel = (initialSectionSlug?: string, showSkillPackages = true) => {
   const execDebugCommand: ExpertsExecDebugCommand = vi.fn();
   render(
@@ -135,24 +122,23 @@ describe("HermesAgentSkillsPanel", () => {
     tsshMocks.listPathMock.mockReset();
   });
 
-  it("defaults to the skill tab and can switch to skill packages", async () => {
+  it("defaults to the domestic Skills Demo and can switch to Experts", async () => {
     renderPanel("skills");
 
-    const skillsTab = screen.getByRole("tab", { name: "技能" });
-    const packagesTab = screen.getByRole("tab", { name: "技能包" });
+    const outerTabs = within(screen.getByRole("tablist", { name: "技能页面切换" }));
+    const demoTabs = within(screen.getByRole("tablist", { name: "技能市场页面切换" }));
+    const skillsTab = outerTabs.getByRole("tab", { name: "技能" });
+    const expertsTab = demoTabs.getByRole("tab", { name: "技能包" });
 
     expect(skillsTab).toHaveAttribute("aria-selected", "true");
     expect(skillsTab).toHaveStyle({ fontSize: "18px", fontWeight: "600", lineHeight: "24px" });
-    expect(packagesTab).toHaveStyle({ color: "rgba(0, 0, 0, 0.38)", fontSize: "18px" });
-    expect(screen.getByText("单技能安装面板")).toBeInTheDocument();
-    expect(screen.getByTestId("sdk-skill-panel").closest(".lv-agent-skills-sdk-panel")).not.toBeNull();
-    expect(screen.getByTestId("sdk-skill-panel")).toHaveAttribute("data-skillhub-api-url", "https://api.skillhub.cn");
-    expect(screen.getByPlaceholderText("搜索已安装技能名称")).toBeInTheDocument();
+    expect(expertsTab).toBeInTheDocument();
+    expect(screen.getByText("从 SkillHub 搜索、安装和管理技能，也可以创建属于你的技能。")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("搜索 SkillHub 中的技能")).toBeInTheDocument();
 
-    await userEvent.click(packagesTab);
+    await userEvent.click(expertsTab);
 
-    expect(screen.getByRole("tab", { name: "技能包" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tab", { name: "技能包" })).toHaveStyle({ color: "rgba(0, 0, 0, 0.95)" });
+    expect(expertsTab).toHaveAttribute("aria-selected", "true");
     expect(screen.getByText("技能包列表")).toBeInTheDocument();
   });
 
@@ -166,130 +152,30 @@ describe("HermesAgentSkillsPanel", () => {
     expect(screen.getByText("技能包列表")).toBeInTheDocument();
   });
 
-  it("hides the skill package tab outside the CN site", () => {
+  it("keeps the Skills demo package tab independent of the legacy outer tab", async () => {
     expect(getInitialAgentSkillsTab("experts", false)).toBe("skills");
     expect(getInitialAgentSkillsTab("packages", false)).toBe("skills");
 
     renderPanel("packages", false);
 
-    expect(screen.getByRole("tab", { name: "技能" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.queryByRole("tab", { name: "技能包" })).not.toBeInTheDocument();
-    expect(screen.queryByText("技能包列表")).not.toBeInTheDocument();
-    expect(screen.getByText("单技能安装面板")).toBeInTheDocument();
+    expect(within(screen.getByRole("tablist", { name: "技能页面切换" })).getByRole("tab", { name: "技能" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "技能包" })).toBeInTheDocument();
+    await userEvent.click(within(screen.getByRole("tablist", { name: "技能市场页面切换" })).getByRole("tab", { name: "技能" }));
+    expect(screen.getByPlaceholderText("搜索 SkillHub 中的技能")).toBeInTheDocument();
   });
 
-  it("shows the learn skill dialog on the international skills page", async () => {
-    const { execDebugCommand } = renderPanel("skills", false);
-    tsshMocks.getTerminalSessionMock.mockResolvedValue({
-      wsUrl: "wss://example.test/tssh",
-      token: "terminal-session-token",
-    });
-    tsshMocks.execCommandMock.mockResolvedValue({
-      exitCode: 0,
-      output: "Learning...\n__LIGHTVELA_HERMES_LEARN_COMPLETE__\n",
-    });
-    tsshMocks.listPathMock.mockImplementation(async (path: string) => {
-      if (path === "/home/agentuser/.hermes/skills") {
-        return [tsshEntry("MySkill", "d")];
-      }
-      if (path === "/home/agentuser/.hermes/skills/MySkill") {
-        return [tsshEntry("SKILL.md", "-")];
-      }
-      return [];
-    });
-
-    await userEvent.click(screen.getByRole("button", { name: "Learn a Skill" }));
-
-    expect(screen.getByRole("heading", { name: "Learn a skill" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Name your skill")).toHaveAttribute("placeholder", "MySkill");
-    expect(screen.getByText("Select learning sources")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Cloud storage. Upload documents, configuration, or project materials so your Agent can learn from existing files." })).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByRole("button", { name: "URL. Paste a public tutorial, doc, or web page so your Agent can distill it into a reusable skill." })).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByRole("button", { name: "Additional notes. Write down your goal and process so your Agent can learn your personal workflow." })).toHaveAttribute("aria-pressed", "false");
-    expect(screen.queryByText("Cloud storage directory")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Browse cloud storage" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Drag or upload files" })).not.toBeInTheDocument();
-    expect(screen.getByLabelText("URL")).toHaveAttribute(
-      "placeholder",
-      "https://lightvela.ai/ (learn from any website)",
-    );
-    expect(screen.getByLabelText("Additional notes")).toHaveAttribute(
-      "placeholder",
-      "e.g. analyze the latest trends in an industry and turn them into a reusable skill...",
-    );
-    expect(screen.getByRole("button", { name: "Expand additional notes" })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Expand additional notes" }));
-    expect(screen.getByRole("button", { name: "Collapse additional notes" })).toBeInTheDocument();
-
-    await userEvent.click(screen.getByText("Paste a public tutorial, doc, or web page so your Agent can distill it into a reusable skill."));
-    expect(screen.getByRole("button", { name: "URL. Paste a public tutorial, doc, or web page so your Agent can distill it into a reusable skill." })).toHaveAttribute("aria-pressed", "true");
-    await userEvent.click(screen.getByText("Paste a public tutorial, doc, or web page so your Agent can distill it into a reusable skill."));
-    expect(screen.getByRole("button", { name: "URL. Paste a public tutorial, doc, or web page so your Agent can distill it into a reusable skill." })).toHaveAttribute("aria-pressed", "false");
-    await userEvent.click(screen.getByText("Write down your goal and process so your Agent can learn your personal workflow."));
-    expect(screen.getByRole("button", { name: "Additional notes. Write down your goal and process so your Agent can learn your personal workflow." })).toHaveAttribute("aria-pressed", "true");
-    await userEvent.click(screen.getByText("Write down your goal and process so your Agent can learn your personal workflow."));
-    expect(screen.getByRole("button", { name: "Additional notes. Write down your goal and process so your Agent can learn your personal workflow." })).toHaveAttribute("aria-pressed", "false");
-
-    await userEvent.type(screen.getByLabelText("Name your skill"), "MySkill");
-    await userEvent.type(screen.getByLabelText("URL"), "https://lightvela.ai/docs");
-    await userEvent.type(
-      screen.getByLabelText("Additional notes"),
-      "how to find the best trends",
-    );
-    expect(screen.getByRole("button", { name: "URL. Paste a public tutorial, doc, or web page so your Agent can distill it into a reusable skill." })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "Additional notes. Write down your goal and process so your Agent can learn your personal workflow." })).toHaveAttribute("aria-pressed", "true");
-    await userEvent.click(screen.getByRole("button", { name: "Learn" }));
-
-    expect(tsshMocks.execCommandMock).toHaveBeenCalledOnce();
-    const [command, timeout] = tsshMocks.execCommandMock.mock.calls[0] as [string, number];
-    expect(timeout).toBe(900);
-    expect(command).toContain("hermes");
-    expect(command).toContain("chat --toolsets \"$TOOLSETS\" -q");
-    expect(command).toContain("web,terminal,file,skills");
-    expect(command).toContain("/learn Create a reusable Hermes skill named");
-    expect(command).toContain("web_extract");
-    expect(command).toContain("MySkill");
-    expect(command).toContain("https://lightvela.ai/docs");
-    expect(execDebugCommand).not.toHaveBeenCalled();
-    expect(
-      await screen.findByText("Complete. Created /home/agentuser/.hermes/skills/MySkill/SKILL.md. Refreshing Agent Skills."),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("progressbar", { name: "Learn skill progress" })).toHaveAttribute("aria-valuenow", "100");
-    expect(screen.getAllByText(/Complete/).length).toBeGreaterThan(0);
-  });
-
-  it("accepts a recently created slugged skill folder for non-English skill names", async () => {
+  it("hides the Create Skill tab for now", () => {
     renderPanel("skills", false);
-    tsshMocks.getTerminalSessionMock.mockResolvedValue({
-      wsUrl: "wss://example.test/tssh",
-      token: "terminal-session-token",
-    });
-    tsshMocks.execCommandMock.mockResolvedValue({
-      exitCode: 0,
-      output: "Learning...\n__LIGHTVELA_HERMES_LEARN_COMPLETE__\n",
-    });
-    tsshMocks.listPathMock.mockImplementation(async (path: string) => {
-      if (path === "/home/agentuser/.hermes/skills") {
-        return [tsshRecentEntry("wechat-configure-steps", "d")];
-      }
-      if (path === "/home/agentuser/.hermes/skills/wechat-configure-steps") {
-        return [tsshRecentEntry("SKILL.md", "-")];
-      }
-      return [];
-    });
 
-    await userEvent.click(screen.getByRole("button", { name: "Learn a Skill" }));
-    await userEvent.type(screen.getByLabelText("Name your skill"), "微信配置steps");
-    await userEvent.type(
-      screen.getByLabelText("Additional notes"),
-      "微信配置步骤",
-    );
-    await userEvent.click(screen.getByRole("button", { name: "Learn" }));
+    expect(screen.queryByRole("tab", { name: "创建技能" })).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText("搜索 SkillHub 中的技能")).toBeInTheDocument();
+  });
+});
 
-    expect(
-      await screen.findByText(
-        "Complete. Created /home/agentuser/.hermes/skills/wechat-configure-steps/SKILL.md. Refreshing Agent Skills.",
-      ),
-    ).toBeInTheDocument();
+describe("inline upload file names", () => {
+  it("keeps uploaded files inside the configured remote directory", () => {
+    expect(getSafeUploadFileName("../../secrets.txt")).toBe("secrets.txt");
+    expect(getSafeUploadFileName("..")).toBe("uploaded-file");
+    expect(getSafeUploadFileName("report.pdf")).toBe("report.pdf");
   });
 });

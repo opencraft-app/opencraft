@@ -108,6 +108,14 @@ describe("skillhub-api", () => {
         "/__skillhub_api/api/v1/skillsets?scene=mysticism",
       );
     });
+
+    it("passes the requested locale to the SkillHub endpoint", async () => {
+      const fetchMock = mockFetch({ skillSets: [] });
+      await fetchSkillSets({ lang: "en" });
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/__skillhub_api/api/v1/skillsets?lang=en",
+      );
+    });
   });
 
   describe("fetchSkillSetDetail", () => {
@@ -115,6 +123,14 @@ describe("skillhub-api", () => {
       const fetchMock = mockFetch({ slug: "finance pack", skillSlugs: [] });
       await fetchSkillSetDetail("finance pack");
       expect(fetchMock).toHaveBeenCalledWith("/__skillhub_api/api/v1/skillsets/finance%20pack");
+    });
+
+    it("passes the requested locale for localized package details", async () => {
+      const fetchMock = mockFetch({ slug: "legal-contract-review", skillSlugs: [] });
+      await fetchSkillSetDetail("legal-contract-review", { lang: "en" });
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/__skillhub_api/api/v1/skillsets/legal-contract-review?lang=en",
+      );
     });
   });
 
