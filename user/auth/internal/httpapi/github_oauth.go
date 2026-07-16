@@ -228,7 +228,8 @@ func (h *Handler) handleGitHubOAuthCallbackAfterState(ctx *gin.Context, code str
 	h.clearInviteTicketCookie(ctx)
 	h.syncOAuthAvatar(requestCtx, logger, "github", session.User.ID, identity.AvatarURL, session.User.AvatarSource)
 	h.setSessionCookie(ctx, session.Token)
-	h.redirectOAuthSuccess(ctx, returnTo, h.githubOAuth.successFrontendURL(ctx.Request, "/", session.Token), session)
+	validatedSuccessTarget := h.validatedReturnToURL(returnTo)
+	h.redirectOAuthSuccess(ctx, validatedSuccessTarget, h.githubOAuth.successFrontendURL(ctx.Request, "/", session.Token), session)
 }
 
 func (h *Handler) clearGitHubOAuthStateCookie(ctx *gin.Context) {
