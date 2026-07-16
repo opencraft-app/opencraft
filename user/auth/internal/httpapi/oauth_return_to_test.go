@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
@@ -142,6 +143,38 @@ func TestValidatedReturnToURLAllowsBrowserExtensionCallback(t *testing.T) {
 				t.Fatalf("expected chromium extension return_to to be rejected, got %q", got)
 			}
 		})
+	}
+}
+
+func TestReadValidatedOAuthReturnToCookie(t *testing.T) {
+	t.Parallel()
+
+	handler := &Handler{
+		returnToAllow: buildOAuthReturnToAllowlist([]string{"lightclaw.cn"}),
+	}
+
+	req, err := http.NewRequest(http.MethodGet, "/", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.AddCookie(&http.Cookie{
+		Name:  "oauth_return_to",
+		Value: "https://preview.foo.lightclaw.cn/dashboard",
+	})
+	if got, want := handler.readValidatedOAuthReturnToCookie(req, "oauth_return_to"), "https://preview.foo.lightclaw.cn/dashboard"; got != want {
+		t.Fatalf("readValidatedOAuthReturnToCookie() = %q, want %q", got, want)
+	}
+
+	req, err = http.NewRequest(http.MethodGet, "/", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.AddCookie(&http.Cookie{
+		Name:  "oauth_return_to",
+		Value: "https://evil.example.com/dashboard",
+	})
+	if got := handler.readValidatedOAuthReturnToCookie(req, "oauth_return_to"); got != "" {
+		t.Fatalf("expected external return_to to be rejected, got %q", got)
 	}
 }
 

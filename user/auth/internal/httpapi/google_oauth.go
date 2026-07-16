@@ -163,10 +163,10 @@ func (h *Handler) HandleGoogleOAuthCallback(ctx *gin.Context) {
 		if cookie, err := ctx.Request.Cookie(googleOAuthStateCookieName); err == nil {
 			expectedState = strings.TrimSpace(cookie.Value)
 		}
-		returnTo := readOAuthReturnToCookie(ctx.Request, googleOAuthReturnToCookieName)
+		validatedSuccessTarget := h.readValidatedOAuthReturnToCookie(ctx.Request, googleOAuthReturnToCookieName)
 		h.clearGoogleOAuthStateCookie(ctx)
 		clearOAuthReturnToCookie(ctx, googleOAuthReturnToCookieName, googleOAuthStateCookiePath, h.cookieSecure)
-		h.handleGoogleOAuthCallbackAfterState(ctx, code, relayState.Nonce, expectedState, returnTo, exchangeRedirectURI, logger)
+		h.handleGoogleOAuthCallbackAfterState(ctx, code, relayState.Nonce, expectedState, validatedSuccessTarget, exchangeRedirectURI, logger)
 		return
 	}
 
@@ -174,13 +174,13 @@ func (h *Handler) HandleGoogleOAuthCallback(ctx *gin.Context) {
 	if cookie, err := ctx.Request.Cookie(googleOAuthStateCookieName); err == nil {
 		expectedState = strings.TrimSpace(cookie.Value)
 	}
-	returnTo := readOAuthReturnToCookie(ctx.Request, googleOAuthReturnToCookieName)
+	validatedSuccessTarget := h.readValidatedOAuthReturnToCookie(ctx.Request, googleOAuthReturnToCookieName)
 	h.clearGoogleOAuthStateCookie(ctx)
 	clearOAuthReturnToCookie(ctx, googleOAuthReturnToCookieName, googleOAuthStateCookiePath, h.cookieSecure)
-	h.handleGoogleOAuthCallbackAfterState(ctx, code, state, expectedState, returnTo, exchangeRedirectURI, logger)
+	h.handleGoogleOAuthCallbackAfterState(ctx, code, state, expectedState, validatedSuccessTarget, exchangeRedirectURI, logger)
 }
 
-func (h *Handler) handleGoogleOAuthCallbackAfterState(ctx *gin.Context, code string, state string, expectedState string, returnTo string, exchangeRedirectURI string, logger interface {
+func (h *Handler) handleGoogleOAuthCallbackAfterState(ctx *gin.Context, code string, state string, expectedState string, validatedSuccessTarget string, exchangeRedirectURI string, logger interface {
 	Warn(msg string, keysAndValues ...any)
 	Error(msg string, keysAndValues ...any)
 	Info(msg string, keysAndValues ...any)
@@ -229,7 +229,6 @@ func (h *Handler) handleGoogleOAuthCallbackAfterState(ctx *gin.Context, code str
 	h.clearInviteTicketCookie(ctx)
 	h.syncOAuthAvatar(requestCtx, logger, "google", session.User.ID, identity.AvatarURL, session.User.AvatarSource)
 	h.setSessionCookie(ctx, session.Token)
-	validatedSuccessTarget := h.validatedReturnToURL(returnTo)
 	h.redirectOAuthSuccess(ctx, validatedSuccessTarget, h.googleOAuth.successFrontendURL(ctx.Request, "/", session.Token), session)
 }
 

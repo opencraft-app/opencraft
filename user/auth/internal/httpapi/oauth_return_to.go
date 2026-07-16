@@ -141,6 +141,13 @@ func readOAuthReturnToCookie(request *http.Request, cookieName string) string {
 	return strings.TrimSpace(cookie.Value)
 }
 
+func (h *Handler) readValidatedOAuthReturnToCookie(request *http.Request, cookieName string) string {
+	if h == nil {
+		return validatedReturnToURL(readOAuthReturnToCookie(request, cookieName))
+	}
+	return h.validatedReturnToURL(readOAuthReturnToCookie(request, cookieName))
+}
+
 func validatedReturnToURL(rawURL string) string {
 	return validatedReturnToURLWithAllowlist(rawURL, defaultOAuthReturnToAllowlist())
 }
