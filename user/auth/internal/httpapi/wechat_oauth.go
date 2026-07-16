@@ -200,7 +200,7 @@ func (h *Handler) StartWeChatOAuth(ctx *gin.Context) {
 		Secure:   h.cookieSecure,
 		MaxAge:   int(h.wechatOAuth.stateTTL / time.Second),
 	})
-	setOAuthReturnToCookie(ctx, wechatOAuthReturnToCookieName, wechatOAuthStateCookiePath, readReturnToFromRequest(ctx.Request), h.cookieSecure, h.wechatOAuth.stateTTL, h.validatedReturnToURL)
+	setOAuthReturnToCookie(ctx, wechatOAuthReturnToCookieName, wechatOAuthStateCookiePath, h.readValidatedReturnToFromRequest(ctx.Request), h.cookieSecure, h.wechatOAuth.stateTTL, h.validatedReturnToURL)
 
 	ctx.Redirect(http.StatusTemporaryRedirect, app.authorizeURL(startState.StateParam, startState.RedirectURI, scope))
 }

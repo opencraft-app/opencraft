@@ -178,6 +178,30 @@ func TestReadValidatedOAuthReturnToCookie(t *testing.T) {
 	}
 }
 
+func TestReadValidatedReturnToFromRequest(t *testing.T) {
+	t.Parallel()
+
+	handler := &Handler{
+		returnToAllow: buildOAuthReturnToAllowlist([]string{"lightclaw.cn"}),
+	}
+
+	req, err := http.NewRequest(http.MethodGet, "/?return_to=https%3A%2F%2Fpreview.foo.lightclaw.cn%2Fdashboard", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	if got, want := handler.readValidatedReturnToFromRequest(req), "https://preview.foo.lightclaw.cn/dashboard"; got != want {
+		t.Fatalf("readValidatedReturnToFromRequest() = %q, want %q", got, want)
+	}
+
+	req, err = http.NewRequest(http.MethodGet, "/?return_to=https%3A%2F%2Fevil.example.com%2Fdashboard", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	if got := handler.readValidatedReturnToFromRequest(req); got != "" {
+		t.Fatalf("expected external return_to to be rejected, got %q", got)
+	}
+}
+
 func TestAppendSessionTokenToReturnTo(t *testing.T) {
 	t.Parallel()
 
