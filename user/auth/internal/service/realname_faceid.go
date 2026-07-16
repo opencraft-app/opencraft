@@ -555,7 +555,7 @@ func (s *Service) SendRealnameFaceIDPhoneCode(ctx context.Context, token string,
 	if attempt.FaceVerifiedAt == nil || (attempt.State != RealnameFaceIDStateFaceSucceeded && attempt.State != RealnameFaceIDStatePhonePending) {
 		return 0, newError("realname_faceid_face_required", "请先完成人脸核身。", http.StatusForbidden)
 	}
-	phone, phoneHash, err := s.resolveRealnameFaceIDPhoneCandidate(ctx, token, session, attempt, input.Phone)
+	phone, phoneHash, err := s.resolveRealnameFaceIDPhoneCandidate(ctx, token, session, input.Phone)
 	if err != nil {
 		return 0, err
 	}
@@ -591,7 +591,7 @@ func (s *Service) SendRealnameFaceIDPhoneCode(ctx context.Context, token string,
 	return s.SendShadowBindingCode(ctx, phone, input.ClientIP)
 }
 
-func (s *Service) resolveRealnameFaceIDPhoneCandidate(ctx context.Context, token string, session *AuthSession, attempt RealnameFaceIDAttempt, submittedPhone string) (string, string, error) {
+func (s *Service) resolveRealnameFaceIDPhoneCandidate(ctx context.Context, token string, session *AuthSession, submittedPhone string) (string, string, error) {
 	phone := normalizePhone(submittedPhone)
 	currentPhone := normalizePhone(session.User.Phone)
 	if currentPhone != "" {
@@ -610,11 +610,7 @@ func (s *Service) resolveRealnameFaceIDPhoneCandidate(ctx context.Context, token
 	if !isValidPhone(phone) {
 		return "", "", newError("invalid_phone", "手机号格式不正确。", http.StatusBadRequest)
 	}
-	phoneHash := s.hashRealnamePhone(phone)
-	if attempt.CurrentPhoneHash != "" && attempt.CurrentPhoneHash != phoneHash {
-		return "", "", newError("realname_phone_mismatch", "当前手机号已变更，请重新开始实名认证。", http.StatusConflict)
-	}
-	return phone, phoneHash, nil
+	return phone, s.hashRealnamePhone(phone), nil
 }
 
 func (s *Service) VerifyRealnameFaceIDPhone(ctx context.Context, token string, input RealnameFaceIDPhoneProofInput) (RealnameFaceIDAttempt, error) {
@@ -640,12 +636,15 @@ func (s *Service) VerifyRealnameFaceIDPhone(ctx context.Context, token string, i
 	if attempt.FaceVerifiedAt == nil || (attempt.State != RealnameFaceIDStateFaceSucceeded && attempt.State != RealnameFaceIDStatePhonePending) {
 		return RealnameFaceIDAttempt{}, newError("realname_faceid_face_required", "请先完成人脸核身。", http.StatusForbidden)
 	}
-	phone, currentPhoneHash, err := s.resolveRealnameFaceIDPhoneCandidate(ctx, token, session, attempt, input.Phone)
+	phone, currentPhoneHash, err := s.resolveRealnameFaceIDPhoneCandidate(ctx, token, session, input.Phone)
 	if err != nil {
 		return RealnameFaceIDAttempt{}, err
 	}
 	if attempt.CurrentPhoneHash == "" {
 		return RealnameFaceIDAttempt{}, newError("realname_phone_code_required", "请先获取手机验证码。", http.StatusBadRequest)
+	}
+	if attempt.CurrentPhoneHash != currentPhoneHash {
+		return RealnameFaceIDAttempt{}, newError("realname_phone_mismatch", "当前手机号已变更，请重新开始实名认证。", http.StatusConflict)
 	}
 	if s.shadowBinding == nil || !s.shadowBinding.Enabled() {
 		return RealnameFaceIDAttempt{}, newError("shadow_binding_disabled", "Lightvela 账号同步暂未启用。", http.StatusServiceUnavailable)
