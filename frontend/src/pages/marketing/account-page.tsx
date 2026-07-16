@@ -2092,11 +2092,9 @@ const DELETE_POLL_TIMEOUT_MS = 2 * 60 * 1_000;
 const SubscriptionSection = ({
   subscription,
   pass,
-  showAccountRenewTools,
 }: {
   subscription: { code?: string; status?: string; currentPeriodStart?: string; currentPeriodEnd?: string } | null | undefined;
   pass: Pass | null;
-  showAccountRenewTools: boolean;
 }) => {
   const t = useT();
   const { refreshPasses, user } = useOpenClaw();
@@ -2413,7 +2411,6 @@ const SubscriptionSection = ({
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 type RealnameSyncStatus = "pending" | "failed" | "succeeded";
-type AccountConsoleHost = Window & { console: Console; show?: unknown };
 
 export const AccountPage = () => {
   const t = useT();
@@ -2486,8 +2483,6 @@ export const AccountPage = () => {
         : idCardVerified
           ? t("需重新完成认证")
           : "";
-  const [showSafetyPhoneTools, setShowSafetyPhoneTools] = useState(false);
-  const [showAccountRenewTools, setShowAccountRenewTools] = useState(false);
   const showRealnameSection = !isGlobal;
   // 灰度结束：实名认证完成后展示「安全手机」行（不再依赖隐藏入口）。
   const showSafetyPhoneSection = phoneProofEnabled && !isGlobal && verified;
@@ -2510,29 +2505,6 @@ export const AccountPage = () => {
   const [showBindEmailModal, setShowBindEmailModal] = useState(false);
   const [copiedUserId, setCopiedUserId] = useState(false);
   const copyResetTimer = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (isGlobal || typeof window === "undefined") return undefined;
-
-    const host = window as AccountConsoleHost;
-    const originalShow = host.show;
-    const consoleRef = host.console;
-
-    host.show = () => {
-      setShowSafetyPhoneTools(true);
-      setShowAccountRenewTools(true);
-      consoleRef.info("账号隐藏入口已显示。");
-      return true;
-    };
-
-    return () => {
-      if (originalShow === undefined) {
-        delete host.show;
-      } else {
-        host.show = originalShow;
-      }
-    };
-  }, []);
 
   // Delete account
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -3217,7 +3189,7 @@ export const AccountPage = () => {
             </motion.div>
 
             {/* ── Section 2: Subscription ── */}
-            <SubscriptionSection subscription={subscription} pass={activePass} showAccountRenewTools={showAccountRenewTools} />
+            <SubscriptionSection subscription={subscription} pass={activePass} />
 
             {/* ── Sign out (page bottom) ── */}
             <motion.div variants={fadeIn} className="flex justify-center pt-2">
