@@ -135,6 +135,42 @@ func TestRemoveLocalDirNormalizesPathAndRejectsRoot(t *testing.T) {
 	}
 }
 
+func TestCgroupPathHelpersNormalizePaths(t *testing.T) {
+	dir := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore wd: %v", err)
+		}
+	})
+
+	cgroupDir := filepath.Join(".", "cg", "nested", "..", "user")
+	if err := ensureLocalDir(cgroupDir); err != nil {
+		t.Fatal(err)
+	}
+	wantDir := filepath.Join(dir, "cg", "user")
+	if _, err := os.Stat(wantDir); err != nil {
+		t.Fatalf("expected normalized cgroup dir: %v", err)
+	}
+	got, err := cgroupFilePath(cgroupDir, "cgroup.procs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(wantDir, "cgroup.procs")
+	if got != want {
+		t.Fatalf("cgroupFilePath=%q want %q", got, want)
+	}
+	if err := ensureLocalDir(string(os.PathSeparator)); err == nil || !strings.Contains(err.Error(), "refuse to create root") {
+		t.Fatalf("ensure root err=%v", err)
+	}
+}
+
 func TestJuiceFSScriptEnvDoesNotLeakSMHSecret(t *testing.T) {
 	t.Setenv("PATH", "/usr/bin")
 	t.Setenv("UNRELATED_SECRET", "do-not-leak")

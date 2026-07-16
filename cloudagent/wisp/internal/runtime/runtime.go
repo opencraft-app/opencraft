@@ -3857,7 +3857,7 @@ func (r *Runtime) applyOuterCgroupPolicy(ctx context.Context) error {
 
 func (r *Runtime) configureOuterCgroup() error {
 	for _, dir := range []string{r.cfg.CgroupRoot, r.cfg.CgroupParent, r.cfg.CgroupRuntimeParent, r.cfg.CgroupUserParent, r.cfg.CgroupUserContainer} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := ensureLocalDir(dir); err != nil {
 			return err
 		}
 	}
@@ -3875,8 +3875,8 @@ func (r *Runtime) configureOuterCgroup() error {
 		userMemMax = 268435456
 	}
 	userMemHigh := parseInt64OrDefault(r.cfg.UserMemoryHighBytes, userMemMax*r.cfg.MemoryHighPercent/100)
-	_ = maybeWriteFile(filepath.Join(r.cfg.CgroupUserParent, "memory.max"), strconv.FormatInt(userMemMax, 10))
-	_ = maybeWriteFile(filepath.Join(r.cfg.CgroupUserParent, "memory.high"), strconv.FormatInt(userMemHigh, 10))
+	maybeWriteCgroupFile(r.cfg.CgroupUserParent, "memory.max", strconv.FormatInt(userMemMax, 10))
+	maybeWriteCgroupFile(r.cfg.CgroupUserParent, "memory.high", strconv.FormatInt(userMemHigh, 10))
 
 	totalMilli := int64(runtime.NumCPU() * 1000)
 	userMilli := parseInt64OrDefault(r.cfg.UserCPUMaxMillicores, totalMilli-r.cfg.CPUReserveMillicores)
@@ -3884,13 +3884,13 @@ func (r *Runtime) configureOuterCgroup() error {
 		userMilli = 100
 	}
 	if userMilli >= totalMilli {
-		_ = maybeWriteFile(filepath.Join(r.cfg.CgroupUserParent, "cpu.max"), fmt.Sprintf("max %d", r.cfg.CPUPeriodUS))
+		maybeWriteCgroupFile(r.cfg.CgroupUserParent, "cpu.max", fmt.Sprintf("max %d", r.cfg.CPUPeriodUS))
 	} else {
 		quota := userMilli * r.cfg.CPUPeriodUS / 1000
 		if quota < 1000 {
 			quota = 1000
 		}
-		_ = maybeWriteFile(filepath.Join(r.cfg.CgroupUserParent, "cpu.max"), fmt.Sprintf("%d %d", quota, r.cfg.CPUPeriodUS))
+		maybeWriteCgroupFile(r.cfg.CgroupUserParent, "cpu.max", fmt.Sprintf("%d %d", quota, r.cfg.CPUPeriodUS))
 	}
 
 	userPIDsMax := int64(1024)
@@ -3902,17 +3902,23 @@ func (r *Runtime) configureOuterCgroup() error {
 			userPIDsMax = 32
 		}
 	}
-	_ = maybeWriteFile(filepath.Join(r.cfg.CgroupUserParent, "pids.max"), strconv.FormatInt(userPIDsMax, 10))
-	_ = maybeWriteFile(filepath.Join(r.cfg.CgroupUserContainer, "memory.max"), "max")
-	_ = maybeWriteFile(filepath.Join(r.cfg.CgroupUserContainer, "memory.high"), "max")
-	_ = maybeWriteFile(filepath.Join(r.cfg.CgroupUserContainer, "pids.max"), "max")
-	_ = maybeWriteFile(filepath.Join(r.cfg.CgroupUserContainer, "cpu.max"), fmt.Sprintf("max %d", r.cfg.CPUPeriodUS))
+	maybeWriteCgroupFile(r.cfg.CgroupUserParent, "pids.max", strconv.FormatInt(userPIDsMax, 10))
+	maybeWriteCgroupFile(r.cfg.CgroupUserContainer, "memory.max", "max")
+	maybeWriteCgroupFile(r.cfg.CgroupUserContainer, "memory.high", "max")
+	maybeWriteCgroupFile(r.cfg.CgroupUserContainer, "pids.max", "max")
+	maybeWriteCgroupFile(r.cfg.CgroupUserContainer, "cpu.max", fmt.Sprintf("max %d", r.cfg.CPUPeriodUS))
 	return nil
 }
 
 func (r *Runtime) enableCgroupControllers(dir string) {
-	subtree := filepath.Join(dir, "cgroup.subtree_control")
-	controllersFile := filepath.Join(dir, "cgroup.controllers")
+	subtree, err := cgroupFilePath(dir, "cgroup.subtree_control")
+	if err != nil {
+		return
+	}
+	controllersFile, err := cgroupFilePath(dir, "cgroup.controllers")
+	if err != nil {
+		return
+	}
 	if _, err := os.Stat(subtree); err != nil {
 		return
 	}
@@ -3930,10 +3936,14 @@ func (r *Runtime) assignContainerToOuterCgroup(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(r.cfg.CgroupUserContainer, 0o755); err != nil {
+	if err := ensureLocalDir(r.cfg.CgroupUserContainer); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(r.cfg.CgroupUserContainer, "cgroup.procs"), []byte(pid+"\n"), 0o644)
+	procsFile, err := cgroupFilePath(r.cfg.CgroupUserContainer, "cgroup.procs")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(procsFile, []byte(pid+"\n"), 0o644)
 }
 
 func (r *Runtime) cleanupOuterCgroup() {
@@ -3951,6 +3961,33 @@ func removeLocalDir(path string) error {
 		return errors.New("refuse to remove root directory")
 	}
 	return os.Remove(path)
+}
+
+func ensureLocalDir(path string) error {
+	path, err := normalizeLocalFilePath(path)
+	if err != nil {
+		return err
+	}
+	if path == string(os.PathSeparator) {
+		return errors.New("refuse to create root directory")
+	}
+	return os.MkdirAll(path, 0o755)
+}
+
+func cgroupFilePath(dir, name string) (string, error) {
+	dir, err := normalizeLocalFilePath(dir)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, name), nil
+}
+
+func maybeWriteCgroupFile(dir, name, value string) {
+	path, err := cgroupFilePath(dir, name)
+	if err != nil {
+		return
+	}
+	_ = maybeWriteFile(path, value)
 }
 
 func (r *Runtime) containerExists(ctx context.Context) (bool, error) {
