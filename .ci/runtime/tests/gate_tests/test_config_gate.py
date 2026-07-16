@@ -216,6 +216,13 @@ class ConfigGateTests(unittest.TestCase):
 
         run.assert_not_called()
 
+    def test_run_quiet_rejects_empty_command_before_subprocess(self) -> None:
+        with mock.patch.object(config.subprocess, "run") as run:
+            with self.assertRaisesRegex(ValueError, "command must not be empty"):
+                config.run_quiet([])
+
+        run.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
