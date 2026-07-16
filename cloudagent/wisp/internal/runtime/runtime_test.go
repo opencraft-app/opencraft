@@ -38,6 +38,37 @@ func TestRunDetachedDoesNotWaitForInheritedChildOutputFDs(t *testing.T) {
 	}
 }
 
+func TestNormalizeLocalFilePathCleansRelativePath(t *testing.T) {
+	dir := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore wd: %v", err)
+		}
+	})
+
+	got, err := normalizeLocalFilePath(filepath.Join(".", "nested", "..", "root-upper.img"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(dir, "root-upper.img")
+	if got != want {
+		t.Fatalf("normalizeLocalFilePath=%q want %q", got, want)
+	}
+}
+
+func TestNormalizeLocalFilePathRejectsEmptyPath(t *testing.T) {
+	if _, err := normalizeLocalFilePath(" \t"); err == nil {
+		t.Fatal("expected empty path error")
+	}
+}
+
 func TestJuiceFSScriptEnvDoesNotLeakSMHSecret(t *testing.T) {
 	t.Setenv("PATH", "/usr/bin")
 	t.Setenv("UNRELATED_SECRET", "do-not-leak")
