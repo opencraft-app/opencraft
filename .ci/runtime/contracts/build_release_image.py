@@ -13,6 +13,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 from contracts.bundles import ImageTarget, is_playground_env, load_bundle, load_manifest, require_build_metadata
 from contracts.image_existence import ImageCheckResult, verify_images
@@ -20,6 +21,16 @@ from contracts.image_existence import ImageCheckResult, verify_images
 
 RUNTIME_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = RUNTIME_DIR.parents[1]
+
+
+def validate_command(command: list[str]) -> list[str]:
+    if not command or not all(isinstance(part, str) and part for part in command):
+        raise ValueError("command must be a non-empty list of non-empty strings")
+    return command
+
+
+def run_command(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[Any]:
+    return subprocess.run(validate_command(command), **kwargs)  # nosemgrep: dangerous-subprocess-use-audit
 
 
 def playground_frontend_auth_api_base_url(env: str) -> str:
@@ -64,7 +75,7 @@ def docker_login(image_repo: str) -> None:
 
     registry = image_repo.split("/", 1)[0]
     try:
-        subprocess.run(
+        run_command(
             ["docker", "login", "-u", username, "--password-stdin", registry],
             input=password.encode(),
             check=True,
@@ -165,7 +176,7 @@ def print_runner_diagnostics() -> None:
     ):
         print(f"+ {' '.join(cmd)}")
         try:
-            subprocess.run(cmd, check=False)
+            run_command(cmd, check=False)
         except FileNotFoundError:
             print(f"{cmd[0]}: command not found")
 
@@ -174,7 +185,7 @@ def docker_daemon_available() -> bool:
     if shutil.which("docker") is None:
         return False
     try:
-        return subprocess.run(
+        return run_command(
             ["docker", "info"],
             check=False,
             stdout=subprocess.DEVNULL,
@@ -237,10 +248,10 @@ def build_target(
         if not env_flag("PRINT_RUNNER_DIAGNOSTICS"):
             print_runner_diagnostics()
         raise RuntimeError("docker daemon unavailable")
-    subprocess.run(cmd, cwd=REPO_ROOT, check=True)
+    run_command(cmd, cwd=REPO_ROOT, check=True)
     if push:
         docker_login(target.image_repo)
-        subprocess.run(["docker", "push", image], check=True)
+        run_command(["docker", "push", image], check=True)
         wait_for_remote_image(
             image,
             timeout_seconds=push_verify_timeout_seconds,
