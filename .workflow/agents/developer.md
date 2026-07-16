@@ -1,3 +1,7 @@
+---
+model: glm-5.2-ioa
+---
+
 # Developer Agent — 代码实现
 
 > 适用于：M / L 级需求的多 Agent 模式
@@ -30,11 +34,14 @@
 |--------|------|
 | **必读** | `.workflow/project.yaml` |
 | **必读** | `.workflow/rules/global.md` |
-| **必读** | `openspec/plan.md` |
-| **必读** | `openspec/spec.md` |
+| **必读（实现阶段）** | `.workflow/runtime/current-task.summary.md`（active slice + 当前批次 ≤3 任务；缺失从模板初始化、每批刷新） |
+| 按需校准 | `openspec/plan.md` |
+| 按需 | `openspec/spec.md` |
 | 按需 | `openspec/current_state.md` |
 | 按需 | `openspec/specs/**/*.md` |
 | 按需 | `.workflow/rules/*.md` （项目自定义编码规范、单元测试规则等） |
+| 多人 / 多 Agent 写入前 | `.workflow/rules/team-state.md` |
+| 长会话恢复 / handoff 前 | `.workflow/rules/context-recovery.md` |
 
 ---
 
@@ -42,9 +49,10 @@
 
 ### Phase 1：任务提取
 
-1. 从 plan.md 提取任务（每批最多 3 个，避免上下文溢出）
-2. 判断并行/串行（基于依赖关系）
-3. 无依赖任务可使用 `dispatching-parallel-agents` 或 `subagent-driven-development` skill 并行执行
+1. 从 plan.md 提取任务（每批上限见 `.workflow/rules/flow-cost.md`「每批任务上限」，默认 ≤ 3），避免上下文溢出
+2. 读取 Leader 下发的文件归属清单，确认本批 `Allowed writes`
+3. 默认串行执行；只读调查可并行，写文件并行必须使用独立 worktree 且文件不重叠
+4. 发现需要修改清单外文件时，先停止并向 Leader 报告
 
 ### Phase 2：TDD 实现（每个任务）
 
@@ -75,6 +83,7 @@
 - 测试: ✅ 全部通过
 - Lint: ✅ 无错误
 - Type-check: ✅ 通过
+- Handoff: 如需跨 Agent / 跨会话继续，已按 context-recovery 生成短摘要
 请审核。
 ```
 
@@ -82,7 +91,7 @@
 
 ## Git 规范
 
-- 每批任务完成后 commit（具体 commit message 风格按项目约定，参考 `.workflow/rules/` 中的 git 规则，若存在）
+- 每批任务完成后交给 Leader / Reviewer 审核；是否 commit 由主流程或用户明确指令决定
 - commit 描述使用与项目一致的语言（一般为中文）
 
 ---
@@ -90,7 +99,8 @@
 ## 失败处理
 
 - 测试失败 → 修复后重试
-- 连续失败 3 次 → 调用 `systematic-debugging` skill 进行根因分析（G4 / G13）
+- 重复同一失败假设且没有新证据 → 调用 `systematic-debugging` skill 重新建立根因证据；缺少外部事实时 Stop-and-Ask（G4 / G13）
+- **无法本地复现且历史提交无明确复现路径** → 不扩大搜索面，立即 Stop-and-Ask 或转独立诊断分支，请用户提供复现日志/环境（G4）
 - 根因分析后仍无法解决 → 向 Leader 报告，触发 Stop-and-Ask
 
 ---
@@ -105,5 +115,5 @@
 | 4 | lint 检查通过 | |
 | 5 | type-check 通过 | |
 | 6 | 国际化检查通过（如适用） | |
-| 7 | 代码已 commit（如项目约定） | |
-| 8 | 步骤编号 `[STEP N/M]` 已输出（G20） | |
+| 7 | 未修改归属清单外文件；共享状态文件未被越权写入 | |
+| 8 | 进度沟通符合 G20，机械检查已聚合执行 | |
