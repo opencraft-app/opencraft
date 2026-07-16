@@ -649,6 +649,37 @@ func TestDeleteCheckpointRejectsTraversalID(t *testing.T) {
 	}
 }
 
+func TestCheckpointDirPathNormalizesRootAndStaysWithinRoot(t *testing.T) {
+	root := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore wd: %v", err)
+		}
+	})
+	rt := New(config.Config{
+		CheckpointsRoot: filepath.Join(".", "checkpoints", "..", "checkpoints"),
+	})
+
+	id, dir, err := rt.checkpointDirPath("manual-20260527T010000.000000000Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != "manual-20260527T010000.000000000Z" {
+		t.Fatalf("checkpoint id=%q", id)
+	}
+	wantDir := filepath.Join(root, "checkpoints", id)
+	if dir != wantDir {
+		t.Fatalf("checkpoint dir=%q want %q", dir, wantDir)
+	}
+}
+
 func TestGetAndListCheckpointsFromCloneNames(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Config{
