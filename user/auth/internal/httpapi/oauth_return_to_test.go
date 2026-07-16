@@ -2,10 +2,13 @@ package httpapi
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gin-gonic/gin"
 
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
 )
@@ -237,6 +240,32 @@ func TestOAuthSuccessFrontendURLKeepsRelativeFallback(t *testing.T) {
 	want := "/#session_token=session-123"
 	if got != want {
 		t.Fatalf("oauthSuccessFrontendURL() = %q, want %q", got, want)
+	}
+}
+
+func TestRedirectOAuthSuccessRevalidatesTarget(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	request, err := http.NewRequest(http.MethodGet, "/oauth/callback", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	ctx.Request = request
+	handler := &Handler{
+		returnToAllow: buildOAuthReturnToAllowlist([]string{"lightclaw.cn"}),
+	}
+
+	handler.redirectOAuthSuccess(ctx, "https://evil.example.com/dashboard", "/fallback", &service.AuthSession{
+		Token: "session-123",
+		User:  service.User{ID: "user-123"},
+	})
+
+	if recorder.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("status=%d want %d", recorder.Code, http.StatusTemporaryRedirect)
+	}
+	if got, want := recorder.Header().Get("Location"), "/fallback"; got != want {
+		t.Fatalf("Location=%q want %q", got, want)
 	}
 }
 
