@@ -238,11 +238,19 @@ func isOAuthRelayTargetCallback(request *http.Request, state oauthRelayState) bo
 	return current != "" && current == state.TargetCallbackURI
 }
 
-func relayCallbackURLWithOriginalQuery(target string, rawQuery string) (string, error) {
+func relayCallbackURLWithOriginalQuery(provider string, target string, rawQuery string) (string, error) {
+	if err := validateOAuthRelayTargetCallbackURI(provider, target); err != nil {
+		return "", err
+	}
 	parsed, err := url.Parse(strings.TrimSpace(target))
 	if err != nil {
 		return "", err
 	}
-	parsed.RawQuery = rawQuery
-	return parsed.String(), nil
+	callbackURL := url.URL{
+		Scheme:   "https",
+		Host:     strings.ToLower(strings.TrimSpace(parsed.Hostname())),
+		Path:     oauthProviderCallbackPath(provider),
+		RawQuery: rawQuery,
+	}
+	return callbackURL.String(), nil
 }
