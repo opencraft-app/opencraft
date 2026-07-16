@@ -58,6 +58,7 @@ frontend/.fumadocs-content/
 frontend/.source/
 _research-output
 *.zip
+graphify-out/
 
 # ─── Python ──────────────────────────────────────────
 __pycache__/
