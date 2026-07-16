@@ -383,6 +383,12 @@ func TestAutomaticRealnameFaceIDCompletionHonorsSyncGateAndReplacesStaleShadowCo
 	attempt.FaceVerifiedAt = &faceVerifiedAt
 	store.realnameFaceIDAttempts[attempt.AttemptID] = attempt
 	store.mu.Unlock()
+	if _, err := svc.SendRealnameFaceIDPhoneCode(context.Background(), session.Token, RealnameFaceIDPhoneCodeInput{
+		AttemptID: started.AttemptID,
+		ClientIP:  "127.0.0.1",
+	}); err != nil {
+		t.Fatalf("send FaceID phone code: %v", err)
+	}
 	svc.shadowBasicAuthSyncEnabled = false
 	_, err = svc.VerifyRealnameFaceIDPhone(context.Background(), session.Token, RealnameFaceIDPhoneProofInput{
 		AttemptID: started.AttemptID,
@@ -669,6 +675,12 @@ func TestVerifyRealnameFaceIDPhoneUsesShadowBindingCode(t *testing.T) {
 	attempt.FaceVerifiedAt = &faceVerifiedAt
 	store.realnameFaceIDAttempts[attempt.AttemptID] = attempt
 	store.mu.Unlock()
+	if _, err := svc.SendRealnameFaceIDPhoneCode(context.Background(), session.Token, RealnameFaceIDPhoneCodeInput{
+		AttemptID: started.AttemptID,
+		ClientIP:  "127.0.0.1",
+	}); err != nil {
+		t.Fatalf("send FaceID phone code: %v", err)
+	}
 
 	verified, err := svc.VerifyRealnameFaceIDPhone(context.Background(), session.Token, RealnameFaceIDPhoneProofInput{
 		AttemptID: started.AttemptID, Code: "888888", ClientIP: "127.0.0.1", ClientUA: "agent",

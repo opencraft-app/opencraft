@@ -590,7 +590,8 @@ func (h *Handler) SendShadowBindingSMS(ctx *gin.Context) {
 		return
 	}
 
-	cooldown, err := h.service.SendShadowBindingCode(ctx, request.PhoneNumber, ctx.ClientIP())
+	clientIP, _ := requestClientMetadata(ctx)
+	cooldown, err := h.service.SendShadowBindingCode(ctx, request.PhoneNumber, clientIP)
 	if err != nil {
 		body, status := toErrorBody(err)
 		ctx.JSON(status, body)
@@ -610,10 +611,11 @@ func (h *Handler) VerifyShadowBindingPhone(ctx *gin.Context) {
 		return
 	}
 
+	clientIP, clientUA := requestClientMetadata(ctx)
 	result, err := h.service.VerifyRealnamePhone(ctx, tokenFromContext(ctx), service.RealnamePhoneVerifyInput{
 		Code:     request.PhoneVerifyCode,
-		ClientIP: ctx.ClientIP(),
-		ClientUA: ctx.Request.UserAgent(),
+		ClientIP: clientIP,
+		ClientUA: clientUA,
 	})
 	if err != nil {
 		body, status := toErrorBody(err)
@@ -642,7 +644,8 @@ func (h *Handler) SendPhoneChangeSMS(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, api.ErrorResponse{Code: "invalid_request", Message: "请求格式不正确。"})
 		return
 	}
-	cooldown, err := h.service.SendPhoneChangeCode(ctx, tokenFromContext(ctx), request.Phone, ctx.ClientIP())
+	clientIP, _ := requestClientMetadata(ctx)
+	cooldown, err := h.service.SendPhoneChangeCode(ctx, tokenFromContext(ctx), request.Phone, clientIP)
 	if err != nil {
 		body, status := toErrorBody(err)
 		ctx.JSON(status, body)
@@ -661,11 +664,12 @@ func (h *Handler) VerifyPhoneChange(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, api.ErrorResponse{Code: "invalid_request", Message: "请求格式不正确。"})
 		return
 	}
+	clientIP, clientUA := requestClientMetadata(ctx)
 	result, err := h.service.VerifyPhoneChange(ctx, tokenFromContext(ctx), service.PhoneChangeVerifyInput{
 		Phone:    request.Phone,
 		Code:     request.Code,
-		ClientIP: ctx.ClientIP(),
-		ClientUA: ctx.Request.UserAgent(),
+		ClientIP: clientIP,
+		ClientUA: clientUA,
 	})
 	if err != nil {
 		body, status := toErrorBody(err)
@@ -963,7 +967,8 @@ func (h *Handler) SendSmsCode(ctx context.Context, request api.SendSmsCodeReques
 		})}, nil
 	}
 
-	cooldown, err := h.service.SendVerificationCode(ctx, request.Body.Phone)
+	clientIP, _ := requestClientMetadata(ctx)
+	cooldown, err := h.service.SendVerificationCodeForClient(ctx, request.Body.Phone, clientIP)
 	if err != nil {
 		body, status := toErrorBody(err)
 		if status >= http.StatusInternalServerError {
@@ -972,6 +977,8 @@ func (h *Handler) SendSmsCode(ctx context.Context, request api.SendSmsCodeReques
 		switch status {
 		case http.StatusTooManyRequests:
 			return api.SendSmsCode429JSONResponse(body), nil
+		case http.StatusForbidden:
+			return api.SendSmsCode403JSONResponse(body), nil
 		default:
 			return api.SendSmsCode400JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(body)}, nil
 		}
@@ -1001,6 +1008,7 @@ func (h *Handler) VerifySmsCode(ctx context.Context, request api.VerifySmsCodeRe
 		Phone:      request.Body.Phone,
 		Code:       request.Body.Code,
 		InviteCode: inviteCode,
+		ClientIP:   clientIPFromContext(ctx),
 	})
 	if err != nil {
 		body, status := toErrorBody(err)
@@ -1008,6 +1016,8 @@ func (h *Handler) VerifySmsCode(ctx context.Context, request api.VerifySmsCodeRe
 			return nil, err
 		}
 		switch status {
+		case http.StatusTooManyRequests:
+			return api.VerifySmsCode429JSONResponse(body), nil
 		case http.StatusUnauthorized:
 			return api.VerifySmsCode401JSONResponse(body), nil
 		case http.StatusForbidden:
@@ -1022,6 +1032,11 @@ func (h *Handler) VerifySmsCode(ctx context.Context, request api.VerifySmsCodeRe
 		h.clearInviteTicketCookie(gctx)
 	}
 	return api.VerifySmsCode200JSONResponse(h.toSessionResponse(ctx, session)), nil
+}
+
+func clientIPFromContext(ctx context.Context) string {
+	clientIP, _ := requestClientMetadata(ctx)
+	return clientIP
 }
 
 func ginContext(ctx context.Context) *gin.Context {

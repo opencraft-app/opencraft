@@ -1,6 +1,8 @@
 auth_service_url: http://lightclaw-auth.user-auth.svc.cluster.local
 allowed_origins:
   - "*"
+trusted_proxy_cidrs:
+  - 100.64.0.0/10
 worker_actions:
   enabled: true
   temporal:

@@ -53,6 +53,7 @@ data:
   CONTENT_AUDIT_WORKER_BATCH_SIZE: "20"
   CONTENT_AUDIT_TIMEOUT_MINUTES: "15"
   SHADOW_BASIC_AUTH_SYNC_ENABLED: "false"
+  LIGHTCLAW_TRUSTED_PROXY_CIDRS: ""
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -95,7 +96,7 @@ spec:
                 --port="${MYSQL_PORT}" \
                 --user="${LIGHTCLAW_AUTH_DB_USER}" \
                 --password="${LIGHTCLAW_AUTH_DB_PASSWORD}" \
-                -Nse "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='${LIGHTCLAW_AUTH_DB}' AND TABLE_NAME IN ('users','invites','auth_sessions')" | grep -qx '3'; do
+                -Nse "SELECT IF((SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='${LIGHTCLAW_AUTH_DB}' AND TABLE_NAME IN ('users','invites','auth_sessions','verification_rate_limits')) = 4 AND (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='${LIGHTCLAW_AUTH_DB}' AND TABLE_NAME='sms_challenges' AND COLUMN_NAME IN ('generation','reservation_id')) = 2 AND (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='${LIGHTCLAW_AUTH_DB}' AND TABLE_NAME='phone_auth_challenges' AND COLUMN_NAME IN ('generation','reservation_id')) = 2, 1, 0)" | grep -qx '1'; do
                 echo "waiting for auth schema"
                 sleep 3
               done
