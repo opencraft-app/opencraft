@@ -58,11 +58,13 @@ export interface CronRunRecord {
   job_id: string;
   job_name: string;
   job_prompt: string;
+  skills: string[];
   schedule: CronJob["schedule"] | null;
   deliver: string;
   run_at: string;
   status: string | null;
   output_path: string;
+  skip_reason?: "model_changed";
 }
 
 /** 调用方传给 create() 的入参 */
@@ -143,8 +145,10 @@ interface CronRunFileRow {
   mtime_ms?: unknown;
   output_status?: unknown;
   agent_skipped?: unknown;
+  skip_reason?: unknown;
   job_name?: unknown;
   job_prompt?: unknown;
+  job_skills?: unknown;
   job_schedule?: unknown;
   job_deliver?: unknown;
   job_last_run_at?: unknown;
@@ -545,6 +549,7 @@ function buildListRecentCronRunsCommand(limit: number): string {
     "            jobs_meta[job_id] = {",
     "                'job_name': job.get('name') or job.get('job_name') or '',",
     "                'job_prompt': job.get('prompt') or job.get('job_prompt') or '',",
+    "                'job_skills': job.get('skills') or job.get('job_skills') or [],",
     "                'job_schedule': job.get('schedule') or job.get('job_schedule'),",
     "                'job_deliver': job.get('deliver') or job.get('job_deliver') or '',",
     "                'job_last_run_at': job.get('last_run_at') or job.get('job_last_run_at') or '',",
@@ -565,6 +570,12 @@ function buildListRecentCronRunsCommand(limit: number): string {
     "        return {'output_status': '', 'agent_skipped': False}",
     "    lowered = text.lower()",
     "    compact = ''.join(lowered.split())",
+    "    model_changed = all(marker in lowered for marker in [",
+    "        'skipped to prevent unintended spend',",
+    "        'global inference config drifted since this job was created',",
+    "    ])",
+    "    if model_changed:",
+    "        return {'output_status': 'not_executed', 'agent_skipped': False, 'skip_reason': 'model_changed'}",
     "    agent_skipped = any(marker in compact for marker in [",
     "        '\"wakeagent\":false',",
     "        \"'wakeagent':false\",",
@@ -644,6 +655,7 @@ function buildArchiveCronJobMetadataCommand(): string {
     "            'id': job_id,",
     "            'name': job.get('name') or '',",
     "            'prompt': job.get('prompt') or '',",
+    "            'skills': job.get('skills') or [],",
     "            'schedule': job.get('schedule'),",
     "            'deliver': job.get('deliver') or '',",
     "            'last_run_at': job.get('last_run_at') or '',",
@@ -704,7 +716,15 @@ export function parseCronRunFilesOutput(text: string, jobs: CronJob[]): CronRunR
     if (row.agent_skipped === true) continue;
     const job = jobsById.get(jobId);
     const rowSchedule = normalizeRunSchedule(row.job_schedule);
-    const rawName = job?.name || stringValue(row.job_name) || jobId;
+    const inferredStatus = inferRunStatus(row, job);
+    const modelChanged = row.skip_reason === "model_changed"
+      || isModelConfigDriftMessage(inferredStatus);
+    const rawName = modelChanged
+      ? firstNonModelConfigDriftText(job?.name, row.job_name, jobId)
+      : job?.name || stringValue(row.job_name) || jobId;
+    const jobPrompt = modelChanged
+      ? firstNonModelConfigDriftText(job?.prompt, row.job_prompt)
+      : job?.prompt || stringValue(row.job_prompt);
     // 「测试运行」创建的临时任务是内部实现细节，不应出现在「最近执行」里：它的
     // cron output 目录在任务删除后仍存在，archive/jobs_meta 里也可能留有其 meta，
     // 导致这里解析出带零宽 marker 的临时任务名/临时 job id。凡是 job.name 或
@@ -717,12 +737,14 @@ export function parseCronRunFilesOutput(text: string, jobs: CronJob[]): CronRunR
       id: `${jobId}:${outputPath || runAt}`,
       job_id: jobId,
       job_name: displayNameForRun(rawName, jobs),
-      job_prompt: job?.prompt || stringValue(row.job_prompt),
+      job_prompt: jobPrompt,
+      skills: job?.skills ?? normalizeRunSkills(row.job_skills),
       schedule: job?.schedule ?? rowSchedule,
       deliver: job?.deliver || stringValue(row.job_deliver),
       run_at: runAt,
-      status: inferRunStatus(row, job),
+      status: modelChanged ? "not_executed" : inferredStatus,
       output_path: outputPath,
+      ...(modelChanged ? { skip_reason: "model_changed" as const } : {}),
     });
   }
   return records;
@@ -730,6 +752,28 @@ export function parseCronRunFilesOutput(text: string, jobs: CronJob[]): CronRunR
 
 function stringValue(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+function normalizeRunSkills(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function isModelConfigDriftMessage(value: unknown): boolean {
+  const normalized = stringValue(value).toLowerCase();
+  return normalized.includes("skipped to prevent unintended spend")
+    && normalized.includes("global inference config drifted since this job was created");
+}
+
+function firstNonModelConfigDriftText(...values: unknown[]): string {
+  for (const value of values) {
+    const text = stringValue(value);
+    if (text && !isModelConfigDriftMessage(text)) return text;
+  }
+  return "";
 }
 
 function normalizeRunSchedule(value: unknown): CronJob["schedule"] | null {

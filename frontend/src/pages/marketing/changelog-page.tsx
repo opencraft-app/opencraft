@@ -46,8 +46,8 @@ type ChangelogEntry = {
   id: string;
   title: string;
   desc?: string;
-  /** 卡片视觉样式：lobster=上线图 / cloudStorage=云存储图 / skillPackages=技能包图 / achievements=成就图 / schedule=自动任务图 / chat=网页对话图 / memory=记忆页图 / none=无图 */
-  visual: "lobster" | "cloudStorage" | "skillPackages" | "achievements" | "wecom" | "soul" | "schedule" | "chat" | "memory" | "none";
+  /** 卡片视觉样式：lobster=上线图 / cloudStorage=云存储图 / skillPackages=技能包图 / achievements=成就图 / schedule=自动任务图 / automationSkill=自动任务调用技能图 / chat=网页对话图 / memory=记忆页图 / none=无图 */
+  visual: "lobster" | "cloudStorage" | "skillPackages" | "achievements" | "wecom" | "soul" | "schedule" | "automationSkill" | "chat" | "memory" | "none";
 };
 
 type ChangelogMonthGroup = {
@@ -60,7 +60,7 @@ type ChangelogMonthGroup = {
    配图卡片 — 还原 Figma 设计稿中的插图卡片
    ═══════════════════════════════════════════════════════════════ */
 
-function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillPackages" | "achievements" | "wecom" | "soul" | "schedule" | "chat" | "memory" | "skill-package" }) {
+function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillPackages" | "achievements" | "wecom" | "soul" | "schedule" | "automationSkill" | "chat" | "memory" | "skill-package" }) {
   const t = useT();
   const { i18n } = useTranslation();
   const useGlobalAssets = isGlobal || !i18n.language.startsWith("zh");
@@ -90,6 +90,10 @@ function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillP
       ? useGlobalAssets
         ? "/assets/changelog/scheduled-tasks-en.png"
         : "/assets/changelog/scheduled-tasks.webp"
+      : variant === "automationSkill"
+      ? useGlobalAssets
+        ? "/assets/changelog/automation-skill-invocation-en.png"
+        : "/assets/changelog/automation-skill-invocation.png"
       : variant === "skill-package"
       ? "/assets/changelog/lightvela-skill-package.png"
       : variant === "soul"
@@ -112,6 +116,8 @@ function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillP
       ? t("LightVela支持查看Hermes Agent记忆")
       : variant === "schedule"
       ? t("LightVela 支持设置自动任务")
+      : variant === "automationSkill"
+      ? t("自动任务调用技能设置")
       : variant === "skill-package"
       ? t("LightVela 支持技能包")
       : variant === "soul"
@@ -132,6 +138,8 @@ function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillP
       ? useGlobalAssets ? "1637 / 961" : "2326 / 1322"
       : variant === "schedule"
         ? useGlobalAssets ? "1784 / 882" : "1952 / 806"
+      : variant === "automationSkill"
+        ? "820 / 282"
         : variant === "skill-package"
         ? "2330 / 1334"
         : variant === "soul"
@@ -177,6 +185,12 @@ function ChangelogContent() {
       id: "2026-07",
       month: t("2026 年 7 月"),
       entries: [
+        {
+          id: "automation-skill-invocation",
+          title: t("自动任务支持调用技能"),
+          desc: t("创建或编辑自动任务时，可以选择需要调用的技能。Agent 会在执行任务前加载该技能，帮助自动任务更稳定地调用技能。"),
+          visual: "automationSkill",
+        },
         ...(!isGlobal
           ? [
               {

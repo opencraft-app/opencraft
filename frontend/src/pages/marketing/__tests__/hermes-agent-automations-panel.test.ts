@@ -1,3 +1,5 @@
+import { createElement } from "react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -26,6 +28,7 @@ import {
   parseInitialDeliver,
   parseInitialSchedule,
   parseOnceScheduleDate,
+  RecentCronRunsPanel,
   sanitizeClockTimeDraft,
   shouldShowRecentRunsLimitHint,
   shouldRejectPastOnceSchedule,
@@ -35,6 +38,7 @@ import {
 import type { CronJob, CronRunRecord } from "@/lib/hermes-cron-client";
 
 afterEach(() => {
+  cleanup();
   vi.useRealTimers();
 });
 
@@ -45,6 +49,46 @@ describe("recent run limit hint", () => {
     expect(shouldShowRecentRunsLimitHint(9)).toBe(false);
     expect(shouldShowRecentRunsLimitHint(10)).toBe(true);
     expect(shouldShowRecentRunsLimitHint(11)).toBe(true);
+  });
+
+  it("shows model drift as an unexecuted run with a concise reason", () => {
+    render(createElement(RecentCronRunsPanel, {
+      runs: [makeCronRun({
+        job_name: "每日工作小结",
+        status: "not_executed",
+        skip_reason: "model_changed",
+      })],
+      skillLoadState: { status: "ready", slugs: [], error: null },
+    }));
+
+    expect(screen.getByText("每日工作小结")).toBeTruthy();
+    expect(screen.getByText("未执行")).toBeTruthy();
+    expect(screen.getByText("问题原因：模型切换导致任务未执行")).toBeTruthy();
+  });
+
+  it("shows the bound Skill in the recent-run detail", () => {
+    render(createElement(RecentCronRunsPanel, {
+      runs: [makeCronRun({ skills: ["builder-radar"] })],
+      skillLoadState: { status: "ready", slugs: ["builder-radar"], error: null },
+    }));
+
+    fireEvent.click(screen.getAllByRole("button", { name: "查看任务详情" })[0]!);
+
+    expect(screen.getByText("调用技能")).toBeTruthy();
+    expect(screen.getByText("Builder Radar")).toBeTruthy();
+    expect(screen.getByText("builder-radar")).toBeTruthy();
+  });
+
+  it("shows an unconfigured Skill binding in the recent-run detail", () => {
+    render(createElement(RecentCronRunsPanel, {
+      runs: [makeCronRun({ skills: [] })],
+      skillLoadState: { status: "ready", slugs: [], error: null },
+    }));
+
+    fireEvent.click(screen.getAllByRole("button", { name: "查看任务详情" })[0]!);
+
+    expect(screen.getByText("调用技能")).toBeTruthy();
+    expect(screen.getByText("未配置")).toBeTruthy();
   });
 });
 
@@ -744,6 +788,7 @@ function makeCronRun(overrides: Partial<CronRunRecord>): CronRunRecord {
     job_id: "job-1",
     job_name: "提醒",
     job_prompt: "提醒我喝水",
+    skills: [],
     schedule: { kind: "cron", expr: "0 9 * * *", display: "0 9 * * *" },
     deliver: "local",
     run_at: "2026-06-06T09:00:00+08:00",

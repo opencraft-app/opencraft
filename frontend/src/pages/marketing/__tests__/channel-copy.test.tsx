@@ -55,6 +55,26 @@ afterEach(() => {
 });
 
 describe("marketing channel copy", () => {
+  it("announces reliable Skill invocation for automations in the July changelog", () => {
+    render(
+      <MemoryRouter>
+        <ChangelogPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("2026 年 7 月")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "自动任务支持调用技能" })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "创建或编辑自动任务时，可以选择需要调用的技能。Agent 会在执行任务前加载该技能，帮助自动任务更稳定地调用技能。",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByAltText("自动任务调用技能设置")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/automation-skill-invocation.png"),
+    );
+  });
+
   it("shows WeCom as a supported homepage channel", () => {
     render(<WhereToUseSection />);
 
@@ -131,10 +151,20 @@ describe("marketing channel copy", () => {
       </MemoryRouter>,
     );
 
+    expect(screen.getByRole("heading", { name: "Automations now support Skill invocation" })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "When creating or editing an automation, you can choose the Skill it should use. The Agent loads the Skill before running the task to make Skill invocation more reliable.",
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByAltText("LightVela supports cloud storage management")).toHaveAttribute("src", expect.stringContaining("/assets/changelog/lightvela-cloud-storage-en.png"));
     expect(screen.getByAltText("LightVela now supports achievements")).toHaveAttribute("src", expect.stringContaining("/assets/changelog/lightvela-achievements-en.png"));
     expect(screen.getByAltText("LightVela now supports web chat")).toHaveAttribute("src", expect.stringContaining("/assets/changelog/agentchat-web-chat-en.png"));
     expect(screen.getByAltText("LightVela now supports viewing Hermes Agent memory")).toHaveAttribute("src", expect.stringContaining("/assets/changelog/hermes-memory-en.png"));
     expect(screen.getByAltText("LightVela now supports automations")).toHaveAttribute("src", expect.stringContaining("/assets/changelog/scheduled-tasks-en.png"));
+    expect(screen.getByAltText("Automation Skill invocation settings")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/changelog/automation-skill-invocation-en.png"),
+    );
   });
 });

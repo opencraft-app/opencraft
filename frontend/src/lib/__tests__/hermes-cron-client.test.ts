@@ -119,7 +119,7 @@ describe("parseCronRunFilesOutput", () => {
       name: "Morning sync",
       prompt: "Check overnight alerts.",
       schedule: { kind: "cron", expr: "0 9 * * *", display: "0 9 * * *" },
-      skills: [],
+      skills: ["builder-radar"],
       enabled: true,
       state: "scheduled",
       deliver: "local",
@@ -137,6 +137,7 @@ describe("parseCronRunFilesOutput", () => {
       job_id: "job-1",
       job_name: "Morning sync",
       job_prompt: "Check overnight alerts.",
+      skills: ["builder-radar"],
       schedule: { kind: "cron", expr: "0 9 * * *", display: "0 9 * * *" },
       deliver: "local",
       run_at: "2026-06-06T01:00:00+00:00",
@@ -153,6 +154,7 @@ describe("parseCronRunFilesOutput", () => {
       mtime_ms: 1780712416000,
       job_name: "One shot reminder",
       job_prompt: "Remind me once.",
+      job_skills: ["reminder"],
       job_schedule: "once at 2026-06-06 10:20",
       job_deliver: "local",
       job_last_run_at: "2026-06-06T02:20:16+00:00",
@@ -163,6 +165,7 @@ describe("parseCronRunFilesOutput", () => {
       job_id: "once-1",
       job_name: "One shot reminder",
       job_prompt: "Remind me once.",
+      skills: ["reminder"],
       schedule: { kind: "once", expr: "once at 2026-06-06 10:20", display: "once at 2026-06-06 10:20" },
       deliver: "local",
       status: "ok",
@@ -193,6 +196,61 @@ describe("parseCronRunFilesOutput", () => {
     }]), []);
 
     expect(runs[0]?.status).toBe("failed");
+  });
+
+  it("presents inference config drift as an unexecuted run while preserving the task name", () => {
+    const modelDriftError = "error: RuntimeError: Skipped to prevent unintended spend: global inference config drifted since this job was created (model 'kimi-k2.5' -> 'glm-5-turbo'), and this job is unpinned. No inference call was made.";
+    const runs = parseCronRunFilesOutput(JSON.stringify([{
+      job_id: "hourly-summary",
+      run_at: "2026-07-16T03:29:33+00:00",
+      output_path: "/home/agentuser/.hermes/cron/output/hourly-summary/2026-07-16T03-29-33.md",
+      mtime_ms: 1784172573000,
+      job_name: "每日工作小结",
+      job_prompt: "请帮我回顾今天的工作进展。",
+      job_last_run_at: "2026-07-16T03:29:33+00:00",
+      job_last_status: modelDriftError,
+      output_status: "ok",
+    }]), []);
+
+    expect(runs[0]).toMatchObject({
+      job_name: "每日工作小结",
+      job_prompt: "请帮我回顾今天的工作进展。",
+      status: "not_executed",
+      skip_reason: "model_changed",
+    });
+  });
+
+  it("does not relabel older successful runs when only the latest run hit model drift", () => {
+    const modelDriftError = "error: RuntimeError: Skipped to prevent unintended spend: global inference config drifted since this job was created.";
+    const runs = parseCronRunFilesOutput(JSON.stringify([{
+      job_id: "hourly-summary",
+      run_at: "2026-07-16T02:29:24+00:00",
+      output_path: "/home/agentuser/.hermes/cron/output/hourly-summary/2026-07-16T02-29-24.md",
+      mtime_ms: 1784168964000,
+      output_status: "ok",
+    }]), [{
+      id: "hourly-summary",
+      name: "每日工作小结",
+      prompt: "请帮我回顾今天的工作进展。",
+      schedule: { kind: "cron", expr: "0 * * * *", display: "0 * * * *" },
+      skills: [],
+      enabled: true,
+      state: "scheduled",
+      deliver: "local",
+      next_run_at: null,
+      last_run_at: "2026-07-16T03:29:33+00:00",
+      last_status: modelDriftError,
+      created_at: null,
+      script: "",
+      effective_window: null,
+      lightvela_schedule: null,
+    }]);
+
+    expect(runs[0]).toMatchObject({
+      job_name: "每日工作小结",
+      status: "ok",
+    });
+    expect(runs[0]).not.toHaveProperty("skip_reason");
   });
 
   it("filters scheduler attempts skipped before waking the Agent", () => {
@@ -475,6 +533,8 @@ describe("createCronJob auth handling", () => {
 	    expect(body.command).toContain("lightvela-jobs-meta.json");
     expect(body.command.toLowerCase()).toContain("wakeagent");
     expect(body.command).toContain("agent_skipped");
+    expect(body.command).toContain("global inference config drifted since this job was created");
+    expect(body.command).toContain("model_changed");
 	  });
 
   it("streams debug exec stdout chunks before the command finishes", async () => {
