@@ -425,7 +425,10 @@ func (d *Daemon) handleAdminCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 func workspaceLayoutConfigForCreate(configFile string, baseCfg config.Config, name string) (config.Config, error) {
-	overlayPath := config.ContainerOverlayPath(configFile, name)
+	overlayPath, err := config.ContainerOverlayPath(configFile, name)
+	if err != nil {
+		return config.Config{}, err
+	}
 	if _, err := os.Stat(overlayPath); err != nil {
 		if os.IsNotExist(err) {
 			return baseCfg, nil
@@ -1134,6 +1137,7 @@ func classifyError(err error) *apiError {
 	case strings.Contains(lower, "requires a container name"),
 		strings.Contains(lower, "container name is required"),
 		strings.Contains(lower, "workspace name must not be empty"),
+		strings.Contains(lower, "workspace name") && strings.Contains(lower, "unsupported character"),
 		strings.Contains(lower, "invalid json request body"):
 		return &apiError{Status: http.StatusBadRequest, Code: "invalid_request", Message: msg}
 	case strings.Contains(lower, "runtime is not started"),
