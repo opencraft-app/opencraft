@@ -265,20 +265,7 @@ func (g *githubOAuth) frontendURL(request *http.Request, path string) string {
 }
 
 func (g *githubOAuth) successFrontendURL(request *http.Request, path string, sessionToken string) string {
-	redirectURL := g.frontendURL(request, path)
-	if strings.TrimSpace(sessionToken) == "" {
-		return redirectURL
-	}
-
-	parsed, err := url.Parse(redirectURL)
-	if err != nil {
-		return redirectURL
-	}
-
-	fragment := url.Values{}
-	fragment.Set("session_token", strings.TrimSpace(sessionToken))
-	parsed.Fragment = fragment.Encode()
-	return parsed.String()
+	return oauthSuccessFrontendURL(g.frontendBaseURLForRequest(request), path, sessionToken)
 }
 
 func (g *githubOAuth) redirectURIForRequest(request *http.Request) string {

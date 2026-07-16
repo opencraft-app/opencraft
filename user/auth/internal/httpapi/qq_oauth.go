@@ -264,20 +264,7 @@ func (q *qqOAuth) frontendURL(request *http.Request, path string) string {
 }
 
 func (q *qqOAuth) successFrontendURL(request *http.Request, path string, sessionToken string) string {
-	redirectURL := q.frontendURL(request, path)
-	if strings.TrimSpace(sessionToken) == "" {
-		return redirectURL
-	}
-
-	parsed, err := url.Parse(redirectURL)
-	if err != nil {
-		return redirectURL
-	}
-
-	fragment := url.Values{}
-	fragment.Set("session_token", strings.TrimSpace(sessionToken))
-	parsed.Fragment = fragment.Encode()
-	return parsed.String()
+	return oauthSuccessFrontendURL(q.frontendBaseURLForRequest(request), path, sessionToken)
 }
 
 func (q *qqOAuth) redirectURIForRequest(request *http.Request) string {

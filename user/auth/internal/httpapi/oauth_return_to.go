@@ -326,6 +326,43 @@ func appendSessionTokenToReturnTo(rawURL string, sessionToken string) string {
 	return parsed.String()
 }
 
+func oauthFrontendURL(baseURL string, path string) string {
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if base == "" {
+		return path
+	}
+	if strings.HasPrefix(path, "/") {
+		return base + path
+	}
+	return base + "/" + path
+}
+
+func oauthSuccessFrontendURL(baseURL string, path string, sessionToken string) string {
+	redirectURL := oauthFrontendURL(baseURL, path)
+	if strings.TrimSpace(sessionToken) == "" {
+		return redirectURL
+	}
+
+	parsed, err := url.Parse(redirectURL)
+	if err != nil {
+		return ""
+	}
+	if parsed.Scheme == "" && parsed.Host == "" && strings.HasPrefix(redirectURL, "/") {
+		fragment := url.Values{}
+		fragment.Set("session_token", strings.TrimSpace(sessionToken))
+		parsed.Fragment = fragment.Encode()
+		return parsed.String()
+	}
+	if parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.Opaque != "" {
+		return ""
+	}
+
+	fragment := url.Values{}
+	fragment.Set("session_token", strings.TrimSpace(sessionToken))
+	parsed.Fragment = fragment.Encode()
+	return parsed.String()
+}
+
 func appendQueryParamToReturnTo(rawURL string, name string, value string) string {
 	redirectURL := strings.TrimSpace(rawURL)
 	paramName := strings.TrimSpace(name)

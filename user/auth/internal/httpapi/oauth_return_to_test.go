@@ -155,6 +155,34 @@ func TestAppendSessionTokenToReturnTo(t *testing.T) {
 	}
 }
 
+func TestOAuthSuccessFrontendURLRejectsInvalidBaseURL(t *testing.T) {
+	t.Parallel()
+
+	if got := oauthSuccessFrontendURL("://bad", "/", "session-123"); got != "" {
+		t.Fatalf("expected invalid frontend base url to be rejected, got %q", got)
+	}
+}
+
+func TestOAuthSuccessFrontendURLAppendsSessionToken(t *testing.T) {
+	t.Parallel()
+
+	got := oauthSuccessFrontendURL("https://lightclaw.pages.dev", "/", "session-123")
+	want := "https://lightclaw.pages.dev/#session_token=session-123"
+	if got != want {
+		t.Fatalf("oauthSuccessFrontendURL() = %q, want %q", got, want)
+	}
+}
+
+func TestOAuthSuccessFrontendURLKeepsRelativeFallback(t *testing.T) {
+	t.Parallel()
+
+	got := oauthSuccessFrontendURL("", "/", "session-123")
+	want := "/#session_token=session-123"
+	if got != want {
+		t.Fatalf("oauthSuccessFrontendURL() = %q, want %q", got, want)
+	}
+}
+
 func TestOAuthSuccessRedirectForDeviceBindUsesShortToken(t *testing.T) {
 	t.Parallel()
 
