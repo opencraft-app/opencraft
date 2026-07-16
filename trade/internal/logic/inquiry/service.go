@@ -682,13 +682,14 @@ func (s *Service) quoteDianshi(
 				ActID: mapping.ActID,
 				// preference_param 4 字段拼装来源（联调期实测推翻设计稿 §5.1 "固定 {}"）：
 				//   - regionId       int  ：trade 端 region.Resolve() 映射的 RegionID（s.region 已缓存）
-				//   - timeSpanUnit   str  ：mapping.TimeSpanUnit（trade_bundle_activity.time_span_unit）
+				//   - timeSpanUnit   str  ：仅启航套餐询价使用用户请求周期（如 1m）展示原价；
+				//                            其他点石套餐仍使用 trade_bundle_activity.time_span_unit
 				//   - subProductCode str  ：trade_bundle_definition.sub_product_code（同 jifei 路径同源）
 				//   - bundleId       str  ：mapping.BundleID（与 trade_bundle_activity.bundle_id 同源）
 				// 缺任一字段点石返 returnCode=1100109 缺少参数 / 1100105 商品ID不存在。
 				PreferenceParam: map[string]interface{}{
 					"regionId":       s.region.RegionID,
-					"timeSpanUnit":   mapping.TimeSpanUnit,
+					"timeSpanUnit":   dianshiInquiryTimeSpanUnit(req, mapping),
 					"subProductCode": def.SubProductCode,
 					"bundleId":       mapping.BundleID,
 				},
@@ -762,6 +763,19 @@ func (s *Service) quoteDianshi(
 		req.BundleID, req.Uin, mapping.ActivityID, mapping.ActID,
 		result.Price, result.TotalCost, result.RealTotalCost)
 	return result, nil
+}
+
+const dianshiLaunchBundleID = "bundle_launch_01"
+
+func dianshiInquiryTimeSpanUnit(req QuoteRequest, mapping *activity.Mapping) string {
+	if mapping != nil && mapping.BundleID != dianshiLaunchBundleID {
+		return mapping.TimeSpanUnit
+	}
+	unit := strings.ToLower(strings.TrimSpace(req.TimeUnit))
+	if unit == "" {
+		unit = req.TimeUnit
+	}
+	return strconvFormatInt(int64(req.TimeSpan)) + unit
 }
 
 type dianshiPolicyDetail struct {

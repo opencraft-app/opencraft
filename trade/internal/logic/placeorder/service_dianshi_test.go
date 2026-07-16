@@ -79,7 +79,7 @@ func stdActivityMapping() *activity.Mapping {
 		ActID:            1862147936410255,
 		SecretKey:        "demo_secret",
 		Active:           true,
-		TimeSpanUnit:     "7d",
+		TimeSpanUnit:     "14d",
 		OrderExpiredTime: 1,
 	}
 }
@@ -162,8 +162,8 @@ func TestPlaceOrder_DianshiBranch_HappyPath(t *testing.T) {
 	if got, _ := prefParam["regionId"].(int); got != 1 {
 		t.Errorf("preference_param.regionId=%v want 1", prefParam["regionId"])
 	}
-	if got, _ := prefParam["timeSpanUnit"].(string); got != "7d" {
-		t.Errorf("preference_param.timeSpanUnit=%v want 7d", prefParam["timeSpanUnit"])
+	if got, _ := prefParam["timeSpanUnit"].(string); got != "14d" {
+		t.Errorf("preference_param.timeSpanUnit=%v want 14d", prefParam["timeSpanUnit"])
 	}
 	if got, _ := prefParam["subProductCode"].(string); got != "sp_linux_small" {
 		t.Errorf("preference_param.subProductCode=%v want sp_linux_small", prefParam["subProductCode"])
