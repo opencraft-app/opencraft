@@ -99,11 +99,13 @@ python3 images/build-image.py --runtime hermes --base-image-id img-id352nof --wi
 - 默认运行用户：`agentuser`
 - 默认从 `runtime_hermes.cos_base` 的 `latest.json` 解析 Hermes tarball 和源版本；可用 `--hermes-version` 临时 pin 到指定 COS 目录
 - 解压到 `~/.hermes/hermes-agent`，伪造成本地 git repo 后复用官方 `install.sh --skip-setup --branch main`
+- 不传 `--skip-browser`，由 Hermes 官方 `node-deps` 阶段安装 Playwright Chromium 和相关系统依赖
 - 安装 `@qwen-code/qwen-code`
 - 为 `agentuser` 固化 PyPI mirror：`mirrors.tencent.com` 为 primary，`mirrors.cloud.tencent.com` 为 extra，并预装 `lark-oapi==1.5.3`、`qrcode==7.4.2`
-- 预装 Hermes platform plugin `lightclawbot` 到 `/home/agentuser/.hermes/plugins/lightclawbot`，并在 `/home/agentuser/.hermes/config.yaml` 启用；镜像不写入 `LIGHTCLAW_API_KEY_<UIN>`，实例运行时再注入
+- 预装 Hermes platform plugin `lightclawbot` 到 `/home/agentuser/.hermes/plugins/lightclawbot`，并在 `/home/agentuser/.hermes/config.yaml` 启用；默认写入 `LIGHTCLAW_ALLOW_ALL_USERS=true` 并初始化主 agent，镜像不写入 `LIGHTCLAW_API_KEY_<UIN>`，实例运行时再注入
+- 默认关闭危险命令审批和 destructive slash 二次确认：`approvals.mode=off`、`cron_mode=approve`、`destructive_slash_confirm=false`
 - 为 `agentuser` 的 `~/.hermes/hermes-agent/scripts/whatsapp-bridge` 预装 `@whiskeysockets/baileys@7.0.0-rc.9`、`qrcode-terminal`、`express`、`pino`
-- 安装 `skillhub --cli-only`
+- 仅安装 `skillhub --cli-only`，不预装 `find-skill-skillhub`，并清理 SkillHub 可能创建的 `~/.openclaw`
 - 裁剪 Hermes bundle skills，仅保留核心开发、调试、QA、文档和轻量研究类 skill
 - 安装 `acli` 并以 `acli doctor` 作为 gate
 - 动态解析 Lighthouse 最新非南京 Hermes backend blueprint，并以 `agentuser` 执行 `acli backend upgrade-start --blueprint-id <id> --wait=true --force=true`
