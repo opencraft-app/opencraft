@@ -37,16 +37,17 @@ class RunGitopsDbJobTests(unittest.TestCase):
             )
 
     def test_resolve_kubeconfig_prefers_explicit_file_without_platform_env(self) -> None:
-        with tempfile.NamedTemporaryFile() as kubeconfig:
-            kubeconfig.flush()
-            with mock.patch.dict(os.environ, {"DB_JOB_KUBECONFIG_FILE": kubeconfig.name}, clear=True):
+        with tempfile.TemporaryDirectory() as tmp:
+            kubeconfig = Path(tmp) / "kubeconfig"
+            kubeconfig.write_text("")
+            with mock.patch.dict(os.environ, {"DB_JOB_KUBECONFIG_FILE": str(kubeconfig)}, clear=True):
                 resolved, temp_path = db_job.resolve_kubeconfig(
                     {"PULUMI_ENV_NAME": "beijing-sandbox"},
                     "DB_JOB_KUBECONFIG_B64",
                     "beijing-sandbox",
                 )
 
-        self.assertEqual(resolved, kubeconfig.name)
+        self.assertEqual(resolved, str(kubeconfig))
         self.assertIsNone(temp_path)
 
     def test_resolve_kubeconfig_error_mentions_default_ci_path(self) -> None:
