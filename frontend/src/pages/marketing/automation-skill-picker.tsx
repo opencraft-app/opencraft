@@ -36,7 +36,7 @@ export function AutomationSkillBindingSummary({
   loadState,
 }: AutomationSkillBindingSummaryProps) {
   const t = useT();
-  if (!value) return <span>{t("不调用 Skill")}</span>;
+  if (!value) return <span>{t("未配置")}</span>;
 
   const available = loadState.status === "ready" && loadState.slugs.includes(value);
   const statusLabel = loadState.status === "ready"

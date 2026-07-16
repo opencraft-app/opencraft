@@ -37,8 +37,9 @@ type Mapping struct {
 	ActID      int64
 	SecretKey  string
 	Active     bool
-	// TimeSpanUnit 是点石 preference_param.timeSpanUnit 字面值（如 "7d"）。
-	// 从 store.BundleActivity 透传过来，询价 / 下单两端作为 goods[].preference_param.timeSpanUnit 出向。
+	// TimeSpanUnit 是点石下单 preference_param.timeSpanUnit 字面值（如 "14d"）。
+	// 从 store.BundleActivity 透传过来。询价侧需要展示一个月原价时，会按用户请求周期
+	// 独立生成 timeSpanUnit，不直接复用该值。
 	TimeSpanUnit string
 	// OrderExpiredTime 是点石下单幂等复用窗口，单位小时，支持 0.5。
 	OrderExpiredTime float64

@@ -238,6 +238,10 @@ class RunGitopsDbJobTests(unittest.TestCase):
 
         self.assertEqual(args.kubectl_retries, 5)
 
+    def test_run_command_rejects_empty_command_parts(self) -> None:
+        with self.assertRaisesRegex(ValueError, "non-empty strings"):
+            db_job.run_command(["kubectl", ""])
+
     def test_wait_for_job_retries_transient_get_eof_until_success(self) -> None:
         with (
             mock.patch.object(

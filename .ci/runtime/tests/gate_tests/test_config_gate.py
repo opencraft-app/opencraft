@@ -209,6 +209,20 @@ class ConfigGateTests(unittest.TestCase):
         self.assertEqual(raised.exception.output, "out\n")
         self.assertEqual(raised.exception.stderr, "err\n")
 
+    def test_run_logged_rejects_empty_command_before_subprocess(self) -> None:
+        with mock.patch.object(process.subprocess, "run") as run:
+            with self.assertRaisesRegex(ValueError, "command must not be empty"):
+                config.run_logged([], cwd=Path("/tmp"))
+
+        run.assert_not_called()
+
+    def test_run_quiet_rejects_empty_command_before_subprocess(self) -> None:
+        with mock.patch.object(config.subprocess, "run") as run:
+            with self.assertRaisesRegex(ValueError, "command must not be empty"):
+                config.run_quiet([])
+
+        run.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

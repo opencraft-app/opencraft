@@ -1,3 +1,7 @@
+---
+model: glm-5.2-ioa
+---
+
 # Implementer Agent — UI / 界面还原（通用骨架）
 
 > 适用于：M / L 级需求中涉及"UI 还原"或"界面规格还原"类任务的多 Agent 模式
@@ -46,8 +50,9 @@ Leader → Developer（后）：在 Implementer 产出基础上接入 hooks / AP
 |--------|------|
 | **必读** | `.workflow/project.yaml` |
 | **必读** | `.workflow/rules/global.md` |
-| **必读** | `openspec/plan.md` |
-| **必读** | `openspec/spec.md` |
+| **必读（实现阶段）** | `.workflow/runtime/current-task.summary.md`（active slice + 当前批次 ≤3 任务；缺失从模板初始化、每批刷新，见 `context-recovery.md`） |
+| 按需校准 | `openspec/plan.md` |
+| 按需 | `openspec/spec.md` |
 | 按需 | `openspec/specs/**/*.md` |
 | 按需 | `.workflow/rules/*.md` （项目自定义编码/样式规范） |
 | 按需（capability 注入） | `.workflow/rules/figma-fidelity*.md` （由 figma-fidelity capability 提供，规则号 F1-F14） |

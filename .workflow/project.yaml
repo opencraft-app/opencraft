@@ -80,14 +80,10 @@ workflow:
     - "docs/plans/"
 
   # 步骤追踪（G20）：执行跨阶段工作流时必须输出步骤编号
-  step_tracking:
-    enabled: true
-    format: "[STEP {n}/{total}] 正在执行：{description}"
-
-# ============================================================================
-# 上下文加载协议（v0.9.0 新增）
-# AI 在动手前必须按优先级加载这些文件
-# ============================================================================
+  progress_reporting:
+    mode: milestone
+    long_running_update_seconds: 60
+    decision_cards_without_step_prefix: true
 context_loading:
   # P0：必读，每次都加载
   P0:
@@ -232,12 +228,16 @@ context: |
 
   - 仓库类型: Go 微服务 Monorepo + 前端子目录 (`frontend/`)
   - 前端项目根 (projectRoot): `frontend`
-  - 前端技术栈: React 19 + TypeScript 5.9 + Tailwind v4 + react-router-dom v7
-                + Vite 7 + Vitest 4 + 纯 React Context 状态管理
-  - 区域化构建: 国内站 `pnpm build:cn`（dist-cn）+ 国际站 `pnpm build:global`（dist-global）
+  - 前端技术栈: Next.js 16 (App Router · static export) + React 19 + TypeScript 5.9
+                + Tailwind v4 + Fumadocs MDX + 纯 React Context 状态管理
+                （react-router-dom v7 仅作部分页面兼容依赖；Vite 7 / Vitest 4 仅用于测试，非构建主链）
+  - 区域化构建: 国内站 `pnpm build:cn` + 国际站 `pnpm build:global`（均输出 Next static export `out/`）
                 由 `src/lib/region.ts` 暴露 `isCN` / `isGlobal` 编译期常量
-  - 测试目录约定: 被测文件同级 `__tests__/`，国际站专属测试 `*.global.test.tsx`
-  - 路径别名: `@/*` → `frontend/src/*`（详见 frontend/tsconfig.json）
+  - 部署形态: 国际站 Cloudflare Pages (`pnpm deploy:cf`) / EdgeOne Pages (`pnpm deploy:eo`)；
+              国内站 shprod Kubernetes Pod（走 monorepo 根 release 脚本）
+  - 测试目录约定: 被测文件同级 `__tests__/`，国际站专属测试 `*.global.test.tsx`；运行 `pnpm test`
+  - 静态检查门禁: `pnpm check`（tsc --noEmit）；i18n 门禁 `pnpm i18n:check`
+  - 路径别名: `@/*` → `src/*`、`@next-site/*` → `next-site/*`、`collections/*` → `.source/*`（详见 frontend/tsconfig.json）
 
   ## 后续如何更新业务上下文
 

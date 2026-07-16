@@ -35,6 +35,7 @@ from gitops.playground_environment import (
     load_yaml_mapping,
     render_clone_text,
     resolve_playground_runtime_recipients,
+    run_command,
     run_playground_db_jobs,
     target_conflicts,
     validate_clone_plan,
@@ -43,6 +44,13 @@ from gitops.playground_environment import (
 
 
 class PlaygroundEnvironmentTests(unittest.TestCase):
+    def test_run_command_rejects_empty_command_parts(self) -> None:
+        with patch("gitops.playground_environment.subprocess.run") as run:
+            with self.assertRaisesRegex(ValueError, "non-empty strings"):
+                run_command(["kubectl", ""])
+
+        run.assert_not_called()
+
     def test_default_template_source_includes_frontend(self) -> None:
         self.assertEqual(DEFAULT_FROM_ENV, "sandbox-bj-5")
 

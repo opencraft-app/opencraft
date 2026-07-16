@@ -207,12 +207,13 @@ DESIGN.md                          # 前端 UI 约定（圆角 / 弹窗 / toolti
 - **国内/国际站域名**
   - 国内预览：`https://<branch>.preview.lightclaw.tech`（`frontsandbox/<name>` 分支自动推流）
   - 国际预览：`https://lightvela-preview-hpthlnbc.edgeone.cool`
-  - 生产 API：`https://lightclaw.tech`
+  - 生产 API：`https://lightclaw.tech` / `https://api.lightvela.ai`
 - **主干分支策略**：`master` 同时承载国内 + 国际站，运行时通过 `src/lib/region.ts` 暴露的 `isCN` / `isGlobal` 编译期常量做差异化（构建时 Tree-shake，未命中分支不会进入产物）。
 - **分支自动预览**：把分支推到 `frontsandbox/<name>`（命中 `frontend/**` 路径），CI 自动构建国内 + 国际双产物并发布到 StaticPages，约 2 分钟可访问，**评审/验证首选**，无需手工跑构建。
 - **发布脚本**
-  - 国际站：`pnpm deploy:eo`（EdgeOne Pages，可通过 `EDGEONE_PAGES_PROJECT_NAME` / `EDGEONE_PAGES_ENV` / `EDGEONE_PAGES_DIR` 覆盖）
+  - 国际站：`pnpm deploy:cf`（Cloudflare）或 `pnpm deploy:eo`（EdgeOne Pages，可通过 `EDGEONE_PAGES_PROJECT_NAME` / `EDGEONE_PAGES_ENV` / `EDGEONE_PAGES_DIR` 覆盖）
   - 国内站：`python3 scripts/build-release-image.py --service frontend --env shprod --tag <tag>`（monorepo 根执行，走 Argo CD `shprod`）
+- **本地预览后端**：默认连接真实国际站后端；涉及真实实例能力的页面优先使用真实后端启动，不要默认切换到 mock。
 - **GitNexus 影响面检查约定**（来自仓库根 `CLAUDE.md`）
   - 改动**导出的**函数/组件/类型前：`gitnexus_impact({target: "<symbol>", direction: "upstream"})`
   - 提交前：`gitnexus_detect_changes()` 确认范围

@@ -26,6 +26,35 @@
 
 ---
 
+# 2026 年 7 月 Changelog：自动任务稳定调用技能
+
+**Goal:** 在国内站与国际站 Changelog 中新增一条 2026 年 7 月动态，说明自动任务可显式选择需要调用的技能，并用真实中英文界面截图展示该能力。
+
+**Scope:** 仅更新 Changelog 数据、对应中英文截图、国际化字典和聚焦回归测试；不修改自动任务、Skill 选择器或 Hermes Cron 的既有功能逻辑。
+
+## 任务清单
+
+- [x] 1. 新增中英文 Changelog 动态与地区化截图。
+  - 角色：Developer
+  - 影响文件：`frontend/src/pages/marketing/changelog-page.tsx`、`frontend/public/assets/changelog/automation-skill-invocation*.png`
+  - 验收方式：2026 年 7 月在国内站和国际站均展示“自动任务支持调用技能”动态；国内站使用中文截图，国际站使用英文截图，国际站切换中文后仍保持国际版图片。
+  - 结果：新增 820×282 的中英文真实界面素材；国内站加载中文图，国际站英文与中文模式均加载英文图。
+- [x] 2. 补充回归测试、国际化资源并完成双站验证。
+  - 角色：Reviewer
+  - 影响文件：`frontend/src/pages/marketing/__tests__/channel-copy.test.tsx`、`frontend/src/i18n/generated/*.json`
+  - 验收方式：目标 Vitest、`pnpm check`、`pnpm i18n:check`、`git diff --check` 通过；本地 `/changelog` 中英文展示与图片均可见。
+  - 结果：聚焦测试、TypeScript 检查、i18n 一致性和 diff 检查均通过；浏览器已验证国内站中文、国际站英文及国际站中文三种展示。
+
+## 规划门禁
+
+- 规模：S；执行模式：single_agent。
+- 现有 Changelog 已采用 `isGlobal` 选择地区图片、`useT()` 维护中英文文案，沿用同一模式。
+- 不新增依赖、路由、组件或 API；不改变已有 2026-07 技能包条目的国内站范围。
+- 能力声明：使用真实本地产品界面截图与聚焦浏览器 smoke。
+- 规划门禁结论：通过。
+
+---
+
 # 自动任务调用 Skill Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:test-driven-development` and `superpowers:verification-before-completion` to execute this plan task-by-task. The approved `/feai-start` orchestration for this M-sized change is `single_agent`, so implementation stays in the current agent lane.
@@ -755,6 +784,39 @@ Not-tested: 待实现后填写
 - [x] Skills 与 Skill Packages 搜索图标和文字的左右内边距保持一致。
 - [x] 国内站与国际站共用同一套内部间距。
 - [x] Skills 目标测试、`pnpm check` 与 `git diff --check` 通过。
+### Task 28: 修正模型切换保护记录的展示语义
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/lib/hermes-cron-client.ts`
+- Modify: `frontend/src/lib/__tests__/hermes-cron-client.test.ts`
+- Modify: `frontend/src/pages/marketing/hermes-agent-automations-panel.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/hermes-agent-automations-panel.test.ts`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+- [x] 识别 Hermes 因全局 provider/model 漂移而跳过推理的执行结果，不把原始 RuntimeError 当作任务名称展示。
+- [x] 最近执行记录继续展示原自动任务名称，状态显示“未执行”，原因显示“模型切换导致任务未执行”。
+- [x] 其他成功、失败与普通跳过记录的解析和展示逻辑保持不变。
+- [x] 先补失败测试复现线上输出，再以最小实现修复；目标测试、`pnpm check`、`pnpm i18n:check` 与 `git diff --check` 通过。
+
+### Task 29: 补齐详情中的调用技能语义
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/lib/hermes-cron-client.ts`
+- Modify: `frontend/src/lib/__tests__/hermes-cron-client.test.ts`
+- Modify: `frontend/src/pages/marketing/automation-skill-picker.tsx`
+- Modify: `frontend/src/pages/marketing/hermes-agent-automations-panel.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/*.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+- [x] 自动任务详情未显式绑定技能时展示“未配置”，不再表述为“不调用 Skill”。
+- [x] 最近执行详情增加“调用技能”字段，并展示执行任务显式绑定的技能或“未配置”。
+- [x] 当前任务和已归档的历史任务元数据均保留技能绑定信息，避免单次任务清理后详情字段丢失。
+- [x] 不改变任务说明中的提示词行为，也不推断提示词是否会自行调用技能。
+- [x] 目标测试 4 个文件 154/154、`pnpm check`、`pnpm i18n:check` 与 `git diff --check` 通过，并完成本地页面验证。
 
 ## 3. 规划门禁结论
 

@@ -1,14 +1,14 @@
 ---
 name: tapd-requirement-fetch
 description: '团队扩展 Skill - 从 TAPD 自动获取需求详情，支持 TAPD 链接、Story ID、Bug ID 等多种输入方式'
-extends: prd-creator
+extends: brainstorming
 ---
 
 # TAPD 需求获取
 
 ## 概述
 
-此 Skill 是对本地 `prd-creator` 产品前置流程的团队扩展，自动从 TAPD 获取需求详情。
+此 Skill 是对 Superpowers `brainstorming` 的团队扩展，自动从 TAPD 获取需求详情。
 
 ## 适用场景
 
@@ -47,4 +47,4 @@ tasks_get({ workspace_id: '{workspace_id}', id: '{完整ID}' });
 
 1. 解析输入 → 识别 ID 类型，短 ID 转完整 ID
 2. 调用 TAPD MCP → `stories_get` / `bugs_get`
-3. 提取关键字段 → 传递给 `prd-creator` Skill
+3. 提取关键字段 → 传递给 `brainstorming` Skill

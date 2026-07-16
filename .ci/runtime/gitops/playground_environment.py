@@ -79,6 +79,16 @@ class CloneFile:
     target: Path
 
 
+def validate_command(command: list[str]) -> list[str]:
+    if not command or not all(isinstance(part, str) and part for part in command):
+        raise ValueError("command must be a non-empty list of non-empty strings")
+    return command
+
+
+def run_command(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[Any]:
+    return subprocess.run(validate_command(command), **kwargs)  # nosemgrep: dangerous-subprocess-use-audit
+
+
 @dataclass(frozen=True)
 class GeneratedFile:
     target: Path
@@ -582,7 +592,7 @@ def ctl_legacy_aes_encrypt(value: str) -> str:
     if not openssl:
         raise RuntimeError("missing required command: openssl")
     # Matches ctl/pkg/util/cipher.go: AES-256-CBC, PKCS7 padding, using ASCII md5 hex strings as key/IV bytes.
-    result = subprocess.run(
+    result = run_command(
         [
             openssl,
             "enc",
@@ -704,7 +714,7 @@ def decrypt_sops_yaml_bytes(data: bytes) -> dict[str, Any]:
     env["SOPS_AGE_KEY_FILE"] = str(key_file)
     env.pop("SOPS_AGE_KEY", None)
     try:
-        result = subprocess.run(
+        result = run_command(
             [sops_bin, "--decrypt", "--input-type", "yaml", "--output-type", "yaml", "/dev/stdin"],
             input=data,
             capture_output=True,
@@ -746,7 +756,7 @@ def encrypt_sops_yaml_bytes(payload: dict[str, Any], recipients: Sequence[str], 
     env["SOPS_AGE_KEY_FILE"] = str(key_file)
     env.pop("SOPS_AGE_KEY", None)
     try:
-        result = subprocess.run(cmd, input=plaintext.encode(), capture_output=True, env=env)
+        result = run_command(cmd, input=plaintext.encode(), capture_output=True, env=env)
     finally:
         if temp_key_file is not None:
             temp_key_file.unlink(missing_ok=True)
@@ -1169,7 +1179,9 @@ def resolve_sops_age_key_file() -> tuple[Path, Path | None]:
         with tempfile.NamedTemporaryFile("w", prefix="lightclaw-sops-age.", delete=False) as handle:
             handle.write(env_key)
             handle.write("\n")
-            temp_path = Path(handle.name)
+            handle.flush()
+            temp_name = handle.name
+        temp_path = Path(temp_name)
         temp_path.chmod(0o600)
         return temp_path, temp_path
 
@@ -1280,7 +1292,7 @@ def encrypt_playground_runtime_secret(
     env["SOPS_AGE_KEY_FILE"] = str(key_file)
     env.pop("SOPS_AGE_KEY", None)
     try:
-        result = subprocess.run(cmd, input=plaintext, capture_output=True, text=True, env=env)
+        result = run_command(cmd, input=plaintext, capture_output=True, text=True, env=env)
     finally:
         if temp_key_file is not None:
             temp_key_file.unlink(missing_ok=True)
@@ -1855,7 +1867,7 @@ def check_playground_contract_main(argv: Sequence[str] | None = None) -> int:
 
 
 def run_local_git(repo_root: Path, *args: str) -> str:
-    result = subprocess.run(["git", *args], cwd=repo_root, check=True, capture_output=True, text=True)
+    result = run_command(["git", *args], cwd=repo_root, check=True, capture_output=True, text=True)
     return result.stdout.strip()
 
 
@@ -1891,7 +1903,7 @@ def kubectl_capture(kubeconfig: Path, namespace: str, *args: str, retries: int =
     last: subprocess.CalledProcessError | None = None
     for attempt in range(1, max(retries, 1) + 1):
         try:
-            result = subprocess.run(
+            result = run_command(
                 kubectl_cmd(kubeconfig, namespace, *args),
                 check=True,
                 capture_output=True,
@@ -1912,7 +1924,7 @@ def kubectl_apply(kubeconfig: Path, manifest: dict[str, Any], retries: int = 3) 
     last: subprocess.CalledProcessError | None = None
     for attempt in range(1, max(retries, 1) + 1):
         try:
-            result = subprocess.run(
+            result = run_command(
                 [
                     "kubectl",
                     "--request-timeout=60s",
@@ -2103,7 +2115,7 @@ def run_playground_db_jobs(plan: PlaygroundBootstrapPlan, skip: set[str], timeou
             continue
         print(f"执行 DB job：{key}")
         job_revision = plan.runtime_revision if (service, operation) in PLAYGROUND_REPO_BACKED_DB_JOBS else plan.revision
-        subprocess.run(
+        run_command(
             [
                 sys.executable,
                 str(plan.runtime_root / ".ci/runtime/commands/run_gitops_db_job.py"),
@@ -2537,7 +2549,7 @@ def run_kubectl(kubeconfig: str, namespace: str) -> CheckResult:
         "json",
     ]
     try:
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        result = run_command(cmd, check=True, capture_output=True, text=True)
     except FileNotFoundError:
         return CheckResult("Kubernetes namespace", "warn", ("kubectl not found; skipped",))
     except subprocess.CalledProcessError as exc:

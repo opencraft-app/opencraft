@@ -1,55 +1,117 @@
-# 当前需求状态
+# 项目当前状态（项目地图）
 
-## 自动任务支持调用 Skill
+> 本文件是低频项目地图，供 AI 快速建立全局认知。**不写需求历史、上一个需求摘要或当前会话状态**——
+> 当前需求状态由 `openspec/plan.md` + `.workflow/runtime/current-task.summary.md` 承载。
+> 业务深度上下文（技术栈 / 路由 / 状态 / API / 组件）维护在 `openspec/config.yaml` 的 `context:` 段。
 
-- 阶段：增量开发完成（Task 22：收紧 Skill 下拉菜单高度与纵向间距）
-- 规模：M
-- 执行模式：single_agent
-- 开发分支：`frontsandbox/pablozhong-0714-automation-skill-invocation`
-- 产品来源：已确认 PRD《自动任务支持调用 Skill》
-- 产品父单：[TAPD #136120761](https://tapd.woa.com/tapd_fe/10132091/story/detail/1010132091136120761)
-- OpenSpec：
-  - `openspec/proposal.md`
-  - `openspec/spec.md`
-  - `openspec/plan.md`
-- 规划门禁：通过
-- 实现状态：创建、编辑、详情、中英文国际化、快捷清除、默认提示、稳定性说明 Tooltip 及表单控件圆角统一均已完成；稳定性说明 Tooltip 已改为 Portal 浮层，不再受弹窗滚动容器裁剪；Skill 下拉菜单高度与纵向间距已收紧；Skill 选择与任务说明保持独立
+最后更新：2026-07-16（`/feai-init` 重新生成）
 
-## 已确认方案
+---
 
-1. 抽取共享 Hermes 已安装 Skill 查询/解析模块。
-2. 创建独立的可搜索单选 Skill 组件。
-3. 创建任务时传零个或一个 Skill slug。
-4. 编辑任务时用三态语义区分保持、替换和清空。
-5. 详情展示可用、不可用和未知状态，不自动解绑或静默降级。
-6. Skill 列表失败不阻断普通任务创建。
+## 一、项目概览
 
-## 验证结果
+- **项目**：Lightclaw（lightvela.com 国内站 / lightvela.ai 国际站）—— C 端 AI Agent SaaS
+- **仓库**：`wisp/mono2`（Go 微服务 Monorepo，前端位于 `frontend/` 子目录）
+- **默认分支**：`master`（国内 + 国际站合一，编译期 `isCN` / `isGlobal` 区分）
+- **TAPD**：10132091
+- **业务上下文真源**：`frontend/openspec/config.yaml`（`context:` 段，~270 行高保真上下文）
 
-- 目标测试：5 个文件，184/184 通过。
-- 静态检查：`pnpm check` 通过。
-- 国际化检查：`pnpm i18n:check` 通过，1507/1507。
-- Task 13 组件验证：已选择 Skill 时提供独立清除按钮，图标 hover/键盘聚焦切换为叉号，点击后清空选择且不展开下拉。
-- Task 15 组件验证：未选择 Skill 时展示“选择你希望 Agent 稳定调用的技能”，沿用灰色占位样式和单行截断。
-- Task 15 验证：选择器组件测试 16/16、`pnpm check`、`pnpm i18n:check` 与 `git diff --check` 通过。
-- Task 16 组件验证：名称输入框和 Skill 选择框使用与任务说明一致的 `rounded-md`，下拉菜单容器保持原样；选择器组件测试 17/17 通过。
-- Task 17 组件验证：选择、切换或清除 Skill 均不修改任务说明，也不请求 SkillHub 提示词内容；目标测试集 5 个文件 183/183 通过。
-- Task 17 浏览器回验：当前浏览器插件初始化仍失败（`Cannot redefine property: process`），未能直接点击本地页面；组件交互测试已覆盖相同链路。
-- Task 18 组件验证：“调用技能”帮助按钮通过 `aria-describedby` 关联 Tooltip，并支持 hover 与键盘 focus；目标测试集 5 个文件 184/184 通过。
-- Task 18 浏览器回验：浏览器插件仍受同一初始化错误阻断，未能直接回验悬浮效果。
-- Task 19 组件验证：Tooltip 已替换为最新确认文案，帮助图标与交互保持不变；选择器组件测试 15/15 通过。
-- Task 20 组件验证：任务说明占位文案已补充“使用 xxx 技能”示例，Skill 选择仍不会自动修改任务说明；选择器组件测试 15/15 通过。
-- Task 21 组件验证：Tooltip 通过 Portal 挂载到 `document.body` 并使用 fixed 定位；hover 缓冲、键盘 focus、`aria-describedby` 与文案可选择能力保持不变；选择器组件测试 15/15、`pnpm check`、`pnpm i18n:check` 与 `git diff --check` 通过。
-- Task 22 组件验证：Skill 列表最大高度由 16rem 收紧到 12rem，搜索区、列表和选项纵向间距同步缩小；选择器组件测试 15/15、`pnpm check` 与 `git diff --check` 通过。
-- Task 22 浏览器回验：本地浏览器连接仍受已知初始化错误（`Cannot redefine property: process`）阻断，未能自动点击回验；当前本地预览可刷新后直接目测新间距。
-- 国内站浏览器：已安装 Skill 搜索/选择、创建带 Skill、普通任务无 Skill、详情、编辑替换/移除、空态、失败态和不可用态通过；mock 页面无控制台错误。
-- 国际站浏览器：英文创建、错误态、已安装 Skill 详情和编辑回显通过；mock 页面无控制台错误。
-- 交付状态：代码、验证和提交范围均已确认，目标分支为 `frontsandbox/pablozhong-0714-automation-skill-invocation`。
+---
 
-## 下一步
+## 二、顶层结构（`frontend/`）
 
-展示 Task 22 增量差异并取得确认后，提交并推送到 `frontsandbox/pablozhong-0714-automation-skill-invocation`，更新现有工蜂 MR。
+```
+frontend/
+├── src/
+│   ├── app/                  # Next.js App Router 路由（.next.tsx）
+│   │   ├── layout.next.tsx   # 根布局（HTML shell + metadata）
+│   │   └── (site)/           # site 分组布局（SessionProvider / RepositoryProvider / 主题）
+│   ├── pages/
+│   │   ├── marketing/        # 营销域（落地/控制台/账户/订阅/agent-settings/hermes/buddy）
+│   │   ├── app/              # AppShell 域（workspace/settings/terminal）
+│   │   └── auth/             # 认证域
+│   ├── next-site/            # Next App Router 与 src/pages 之间的 client island 桥接
+│   ├── components/
+│   │   ├── ui/               # 设计系统原子组件（21 个）
+│   │   ├── domain/           # 业务领域组件（18 个）
+│   │   └── site/             # 站点级组件（14 个）
+│   ├── contexts/             # 4 个 Provider（session / openclaw / repository / runtime-config）
+│   ├── repositories/         # Repository Pattern（http / fake / types / account-preview-states）
+│   ├── lib/                  # 工具函数与客户端（region / skillhub-api / tssh / hermes-cron / seo / soul / tat 等）
+│   ├── domain/               # 领域类型与套餐目录
+│   ├── i18n/                 # 中文即 key 方案（index / t.ts / generated/*.json 禁改）
+│   └── router/               # 路由守卫（guards.tsx）
+├── public/                   # 静态资源
+├── scripts/                  # 构建/i18n/部署脚本（含 deploy-cloudflare-pages / deploy-edgeone-pages）
+├── openspec/                 # 业务规范（config.yaml / plan.md / specs/ / changes/archive/）
+└── AGENTS.md                 # 前端子项目 AI 指引（薄入口）
+```
 
-## 上一个已归档需求
+---
 
-「LightVela 场景任务安装器 v1」已于 2026-07-14 归档（21/21 任务完成）。详细记录：`openspec/changes/2026-07-14-scenario-task-installer.md`。
+## 三、核心模块索引
+
+| 模块 | 入口 | spec | 备注 |
+|------|------|------|------|
+| 营销域（落地/控制台/账户/订阅） | `pages/marketing/` | `specs/marketing.md` | Agent 控制台主页已更名 `agent-settings-page.tsx`（232KB），spec 仍用旧名 `openclaw-settings-page.tsx`，**待同步** |
+| 认证 | `pages/auth/` + `contexts/session-context.tsx` | `specs/auth.md` | 手机验证码 / OAuth / 邀请码 / 会话 |
+| Bot 工作台 | `pages/app/workspace-page.tsx` | `specs/bot.md` | AppShell 域：workspace / settings / terminal |
+| 套餐订阅 | `next-site/subscribe-page.tsx` | `specs/plan.md` | 套餐选择 / 支付 / 权益 |
+| Buddy 伙伴系统 | `pages/marketing/openclaw-buddy-*.tsx` | `specs/buddy.md` | 抽卡 / 灵魂测试 / 卡片面板（65KB+） |
+| Agent 桌面宿主 | `pages/marketing/agents-workbench/` | `specs/agents-workbench.md` | VelaWorkbenchDesktopHost + velad-* 桌面端 |
+| Hermes 自动任务 | `pages/marketing/hermes-agent-automations-panel.tsx`（174KB） | （`specs/marketing.md` 已覆盖） | 复用 `lib/hermes-cron-client.ts`（70KB） |
+| Hermes 专家包 | `pages/marketing/hermes-agent-experts-panel.tsx` | （`specs/marketing.md` 已覆盖） | SkillHub 技能包安装 |
+| Hermes 技能面板 | `pages/marketing/hermes-agent-skills-panel.tsx` | （`specs/marketing.md` 已覆盖） | 学习技能 / 已安装技能管理 |
+| 区域化 | `lib/region.ts` | （`config.yaml` 已覆盖） | `isCN` / `isGlobal` 编译期常量 |
+| i18n | `i18n/` + `useT()` | （`config.yaml` 已覆盖） | 中文即 key + `pnpm i18n:check` 门禁 |
+
+---
+
+## 四、架构边界与约束
+
+1. **路由方案**：Next.js App Router（`pageExtensions: ['next.tsx', 'next.ts']`）。`next-site/*` 是 client island 桥接层，复用 `src/pages/*` 页面组件。**不得再新增 `src/router/*` 作为应用入口**（URL 常量放 `lib/agent-routes.ts`）。
+2. **状态管理**：纯 React Context + useReducer，无 Redux/Zustand。4 个 Provider：
+   - `SessionProvider`（会话/用户/订阅，持久化 `lightclaw-ui-session-v1`）
+   - `OpenClawProvider`（OpenClaw 实例 + 创建向导）
+   - `RepositoryProvider`（依赖注入 http/fake 实现）
+   - `RuntimeConfigContext`（运行时配置）
+3. **API 层**：Repository Pattern。所有 API 经 `AuthRepository` / `PlanRepository` / `BotRepository` 接口访问，请求入口 `repositories/http-repositories.ts`，统一 `APIEnvelope<T>` 解包 + 401 广播 `AUTH_UNAUTHORIZED_EVENT`。
+4. **区域化**：`isCN` / `isGlobal` 是编译期常量（`NEXT_PUBLIC_REGION` 注入，兼容 `VITE_REGION`），未命中分支被 Tree-shake。国内 vs 国际差异**必须**走编译期分支，不得用运行时 locale 判断。
+5. **i18n**：业务侧调 `useT()`，参数直接写中文原文；`generated/*.json` 由 `pnpm i18n:extract` 自动生成，**禁止手改**。
+6. **路径别名**：`@/*` → `src/*`、`@next-site/*` → `next-site/*`、`collections/*` → `.source/*`。
+7. **SDK 依赖**：`@tencent/tea-sdk-lightclaw`（控制台内嵌），模型/通道/Coding Plan 等基础配置来自 SDK 的 `createLighthouseConfig`，宿主页面不得临时 patch。`velachat: file:../velalink` 是 subtree 依赖。
+8. **质量门禁**：`pnpm check`（tsc）+ `pnpm test`（vitest）+ `pnpm i18n:check`。当前无 `lint` 脚本。
+
+---
+
+## 五、常用入口与关键链路
+
+| 操作 | 命令 |
+|------|------|
+| 本地开发（真实国际站后端） | `NEXT_PUBLIC_AUTH_API_BASE_URL=https://lightclaw.tech pnpm dev -- -H 127.0.0.1 -p 5174` |
+| 本地开发（国内站） | `pnpm dev:cn` |
+| 本地开发（国际站） | `pnpm dev:global` |
+| 静态检查 | `pnpm check` |
+| 单测 | `pnpm test` |
+| i18n 抽取 / 检查 | `pnpm i18n:extract` / `pnpm i18n:check` |
+| 构建国内站 | `pnpm build:cn` |
+| 构建国际站 | `pnpm build:global` |
+| 部署国际站（CF） | `pnpm deploy:cf` |
+| 部署国际站（EdgeOne） | `pnpm deploy:eo` |
+| 分支预览 | 推 `frontsandbox/<name>` 分支自动构建双产物发布到 StaticPages |
+
+---
+
+## 六、已知技术债与 drift 待修
+
+- `specs/marketing.md` 仍用旧名 `openclaw-settings-page.tsx`（125KB），实际已更名 `agent-settings-page.tsx`（232KB）—— spec 需同步重命名与体量更新（按 init 硬约束本次未覆盖，需单独变更）。
+- `agent-settings-page.tsx` 单文件 232KB，远超健康阈值，需拆分通道配置 / 工具 / 知识库 / 审计 / 模型 / 技能等子模块。
+- `account-page.tsx` 41KB / 1084 行，偏大，应拆分账号信息 / 订阅 / 权益 / 安全中心 / 实名认证。
+- `lib/hermes-cron-client.ts` 70KB 单文件，是最大的 lib 文件。
+- i18n `en-US.json` 需保证发布前 `pnpm i18n:check` 清单为空。
+
+---
+
+## 七、历史归档清单
+
+历史变更归档位于 `openspec/changes/archive/`，按日期命名（如 `2026-07-14-scenario-task-installer.md`）。本文件不重复罗列，需要时直接读取该目录。
