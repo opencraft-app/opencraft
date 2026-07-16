@@ -548,6 +548,23 @@ func TestDeleteCheckpointRemovesCheckpointDir(t *testing.T) {
 	}
 }
 
+func TestDeleteCheckpointRejectsTraversalID(t *testing.T) {
+	root := t.TempDir()
+	rt := New(config.Config{
+		WispName:        "demo",
+		CheckpointsRoot: filepath.Join(root, "checkpoints"),
+	})
+
+	for _, id := range []string{"../escape", "nested/ck1", ".", ".."} {
+		id := id
+		t.Run(id, func(t *testing.T) {
+			if err := rt.DeleteCheckpoint(context.Background(), id); err == nil || !strings.Contains(err.Error(), "invalid checkpoint id") {
+				t.Fatalf("DeleteCheckpoint(%q) err=%v", id, err)
+			}
+		})
+	}
+}
+
 func TestGetAndListCheckpointsFromCloneNames(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Config{
