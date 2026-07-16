@@ -52,7 +52,7 @@ type newPassSubscription struct {
 }
 
 func ensureNewPassGatewayUser(ctx context.Context, userID, nickname string) (bool, error) {
-	if gatewayroute.NewAllocationGateway() == gatewayroute.GatewayLLMGateway {
+	if gatewayroute.NewAllocationGateway(userID) == gatewayroute.GatewayLLMGateway {
 		resp, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().EnsureUser(ctx, userID, nickname)
 		return resp != nil && resp.Result == "created", err
 	}
@@ -61,7 +61,7 @@ func ensureNewPassGatewayUser(ctx context.Context, userID, nickname string) (boo
 }
 
 func applyNewPassGatewaySubscription(ctx context.Context, req newPassSubscriptionRequest) (*newPassSubscription, error) {
-	if gatewayroute.NewAllocationGateway() == gatewayroute.GatewayLLMGateway {
+	if gatewayroute.NewAllocationGateway(req.UserID) == gatewayroute.GatewayLLMGateway {
 		sub, err := adapterfactory.DefaultAdapterFactory.LLMGatewayAdapter().ApplySubscription(ctx, &llmgateway.ApplySubscriptionRequest{
 			IdempotencyKey: req.IdempotencyKey,
 			UserID:         req.UserID,

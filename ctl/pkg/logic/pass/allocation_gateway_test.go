@@ -74,8 +74,12 @@ func TestNewPassAllocationUsesExplicitlyEnabledGateway(t *testing.T) {
 			})
 
 			config.ServerConf = &config.GlobalConfig{AdapterConfig: &config.AdapterConfig{
-				AiGateway:  &config.AiGatewayConfig{BaseURL: "https://legacy.example.com"},
-				LLMGateway: &config.LLMGatewayConfig{Enabled: tt.llmEnabled, BaseURL: "https://llmgateway.example.com"},
+				AiGateway: &config.AiGatewayConfig{BaseURL: "https://legacy.example.com"},
+				LLMGateway: &config.LLMGatewayConfig{
+					Enabled:                    tt.llmEnabled,
+					BaseURL:                    "https://llmgateway.example.com",
+					NewAllocationUserAllowlist: []string{"*"},
+				},
 			}}
 			aiStub := &allocationAIGatewayStub{}
 			llmStub := &allocationLLMGatewayStub{}

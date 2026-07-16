@@ -130,6 +130,7 @@ func (s *llmGatewayAdapterStub) GetActiveSubscription(_ context.Context, _ strin
 func installAiGatewayConfigForTest(t *testing.T, conf *config.LLMGatewayConfig) {
 	t.Helper()
 	conf.Enabled = true
+	conf.NewAllocationUserAllowlist = []string{"*"}
 
 	if config.ServerConf.AdapterConfig == nil {
 		config.ServerConf.AdapterConfig = &config.AdapterConfig{}

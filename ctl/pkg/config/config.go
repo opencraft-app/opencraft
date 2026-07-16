@@ -216,6 +216,9 @@ func parseAdapterConf() {
 	llmGatewayBaseURL := firstNonEmptyEnv("CTL_LLMGATEWAY_BASE_URL")
 	llmGatewayAdminToken := firstNonEmptyEnv("CTL_LLMGATEWAY_ADMIN_TOKEN")
 	llmGatewayInternalToken := firstNonEmptyEnv("CTL_LLMGATEWAY_INTERNAL_SERVICE_TOKEN")
+	ServerConf.AdapterConfig.LLMGateway.NewAllocationUserAllowlist = uniqueNonEmptyCSV(
+		os.Getenv("CTL_LLMGATEWAY_NEW_USER_ALLOWLIST"),
+	)
 	ServerConf.AdapterConfig.LLMGateway.Enabled = llmGatewayBaseURL != "" &&
 		llmGatewayAdminToken != "" && llmGatewayInternalToken != ""
 	if ServerConf.AdapterConfig.LLMGateway.Enabled {
@@ -256,11 +259,30 @@ func resetLLMGatewayForLegacyFallback(conf *LLMGatewayConfig) {
 	conf.DefaultCompatibility = ""
 	conf.DefaultGatewayPort = 0
 	conf.DefaultProviderID = ""
+	conf.NewAllocationUserAllowlist = nil
 }
 
 func LLMGatewayEnabled() bool {
 	return ServerConf != nil && ServerConf.AdapterConfig != nil &&
 		ServerConf.AdapterConfig.LLMGateway != nil && ServerConf.AdapterConfig.LLMGateway.Enabled
+}
+
+// LLMGatewayAllowsNewUser reports whether an unassigned user may be allocated
+// to LLMGateway. Existing user_subscription_gateway records remain authoritative.
+func LLMGatewayAllowsNewUser(userID string) bool {
+	if !LLMGatewayEnabled() {
+		return false
+	}
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return false
+	}
+	for _, allowed := range ServerConf.AdapterConfig.LLMGateway.NewAllocationUserAllowlist {
+		if allowed == "*" || allowed == userID {
+			return true
+		}
+	}
+	return false
 }
 
 func fillLLMGatewayFromLegacyAiGateway(dst *LLMGatewayConfig, legacy *AiGatewayConfig) {
@@ -303,6 +325,23 @@ func firstNonEmptyEnv(names ...string) string {
 		}
 	}
 	return ""
+}
+
+func uniqueNonEmptyCSV(value string) []string {
+	items := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, item := range strings.Split(value, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if _, ok := seen[item]; ok {
+			continue
+		}
+		seen[item] = struct{}{}
+		items = append(items, item)
+	}
+	return items
 }
 
 func parseAllServiceRoleConf() {

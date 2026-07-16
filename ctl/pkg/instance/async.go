@@ -1708,7 +1708,7 @@ func (l *logic) resolveProvisionGateway(ctx pctx.Context, userID, instanceID str
 		case gatewayroute.GatewayAIGateway:
 			return gatewayBackendAiGateway
 		case gatewayroute.GatewayLLMGateway:
-			if gatewayroute.NewAllocationGateway() == gatewayroute.GatewayLLMGateway {
+			if config.LLMGatewayEnabled() {
 				return gatewayBackendLLMGateway
 			}
 			l.logger.Warn("resolve instance gateway backend: llmgateway route disabled by explicit configuration gate, use ai-gateway",
@@ -1739,7 +1739,7 @@ func (l *logic) resolveProvisionGateway(ctx pctx.Context, userID, instanceID str
 				zap.Error(err))
 		}
 	}
-	if gatewayroute.NewAllocationGateway() != gatewayroute.GatewayLLMGateway {
+	if gatewayroute.NewAllocationGateway(userID) != gatewayroute.GatewayLLMGateway {
 		return gatewayBackendAiGateway
 	}
 	if l.llmGatewayAdapter != nil {

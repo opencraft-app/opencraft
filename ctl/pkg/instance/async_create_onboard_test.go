@@ -189,12 +189,13 @@ func installCreateTaskAiGatewayConfig(t *testing.T) {
 	config.ServerConf = &config.GlobalConfig{
 		AdapterConfig: &config.AdapterConfig{
 			LLMGateway: &config.LLMGatewayConfig{
-				Enabled:              true,
-				BaseURL:              "https://llmgateway.test",
-				DefaultBaseURL:       "https://model.internal/v1",
-				DefaultModelID:       "kimi-k2.5",
-				DefaultCompatibility: "openai",
-				DefaultGatewayPort:   18789,
+				Enabled:                    true,
+				BaseURL:                    "https://llmgateway.test",
+				DefaultBaseURL:             "https://model.internal/v1",
+				DefaultModelID:             "kimi-k2.5",
+				DefaultCompatibility:       "openai",
+				DefaultGatewayPort:         18789,
+				NewAllocationUserAllowlist: []string{"*"},
 			},
 		},
 	}
