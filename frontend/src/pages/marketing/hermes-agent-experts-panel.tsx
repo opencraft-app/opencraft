@@ -1279,15 +1279,15 @@ function InstallButton({
   const t = useT();
   const isInstalling = installingSlug === pkg.slug;
   const label = isInstalling && installProgress?.total
-    ? t("召唤中 {{current}}/{{total}}", {
+    ? t("安装中 {{current}}/{{total}}", {
         current: installProgress.current,
         total: installProgress.total,
       })
     : isInstalling
-      ? t("召唤中...")
+      ? t("安装中...")
       : isInstalled
-        ? t("已召唤")
-        : t("召唤");
+        ? t("已安装")
+        : t("安装");
   return (
     <button
       type="button"

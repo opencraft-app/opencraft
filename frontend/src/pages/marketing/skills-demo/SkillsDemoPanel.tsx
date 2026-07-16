@@ -831,7 +831,7 @@ function CuratedSkillDetailsDialog({
   const { overview } = entry;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-6">
+    <div className="fixed inset-0 z-[100] flex overscroll-contain items-center justify-center p-3 sm:p-6">
       <button
         type="button"
         aria-label={t("关闭")}
@@ -1500,6 +1500,15 @@ export function SkillsDemoPanel({
   const [selectedSkillDetails, setSelectedSkillDetails] = useState<SkillDetailsEntry | null>(null);
 
   useEffect(() => {
+    if (!selectedSkillDetails) return;
+
+    document.documentElement.classList.add("lv-curated-skill-dialog-open");
+    return () => {
+      document.documentElement.classList.remove("lv-curated-skill-dialog-open");
+    };
+  }, [selectedSkillDetails]);
+
+  useEffect(() => {
     setActiveTab(initialTab === "create" ? "discover" : initialTab);
   }, [initialTab]);
 
@@ -1828,13 +1837,13 @@ export function SkillsDemoPanel({
 
             {hasSearch ? (
               <section>
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+                <div className="mb-2 flex min-h-9 flex-wrap items-center justify-between gap-3">
                   <SectionTitle count={visibleResults.length} className="mb-0 text-base">
                     {t("搜索结果")}
                   </SectionTitle>
-                  <div className="flex min-w-0 flex-wrap items-center justify-end gap-3">
+                  <div className="flex min-h-9 min-w-0 flex-wrap items-center justify-end gap-3">
                     {!searching && visibleResults.length > 0 ? (
-                      <div className="lv-skills-sort-control flex shrink-0 items-center gap-1 rounded-[12px] bg-black/[0.04] p-0.5">
+                      <div className="lv-skills-sort-control flex h-9 shrink-0 items-center gap-1 rounded-[12px] bg-black/[0.04] p-0.5">
                       <button
                         type="button"
                         onClick={() => setSortMode("popular")}
@@ -1865,7 +1874,7 @@ export function SkillsDemoPanel({
                       <button
                         type="button"
                         onClick={() => setSearchResultsExpanded((expanded) => !expanded)}
-                        className="shrink-0 text-sm font-semibold text-black/50 transition-colors hover:text-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2"
+                        className="shrink-0 whitespace-nowrap text-sm font-semibold text-black/50 transition-colors hover:text-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2"
                       >
                         {shouldShowAllSearchResults ? t("收起全部") : t("查看全部")}
                       </button>

@@ -682,7 +682,7 @@ metadata:
 
     render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "召唤" }));
+    fireEvent.click(await screen.findByRole("button", { name: "安装" }));
 
     await waitFor(() => {
       expect(execDebugCommand).toHaveBeenCalledWith("bot-1", "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install 'backtest-engine'");
@@ -735,10 +735,10 @@ metadata:
 
     render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "召唤" }));
+    fireEvent.click(await screen.findByRole("button", { name: "安装" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "已召唤" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "已安装" })).toBeDisabled();
     });
     expect(saveExpertPackagesState).toHaveBeenCalledWith("bot-1", {
       installedPackageSlugs: ["legal-contract-drafting"],
@@ -788,9 +788,9 @@ metadata:
 
     render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "召唤" }));
+    fireEvent.click(await screen.findByRole("button", { name: "安装" }));
 
-    expect(await screen.findByRole("button", { name: "召唤中 1/2" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "安装中 1/2" })).toBeDisabled();
     resolveFirstInstall?.({ status: "success", exitCode: 0, output: "" });
     await waitFor(() => {
       expect(execDebugCommand).toHaveBeenCalledWith("bot-1", buildInstallSkillCommand("backtest-engine"));
@@ -838,7 +838,7 @@ metadata:
 
     render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "召唤" }));
+    fireEvent.click(await screen.findByRole("button", { name: "安装" }));
 
     await waitFor(() => {
       expect(execDebugCommand).toHaveBeenCalledWith("bot-1", "env SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE='https://api.skillhub.cn/api/v1/download?slug={slug}' acli skills install 'backtest-engine'");
@@ -1008,10 +1008,10 @@ metadata:
 
     render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "召唤" }));
+    fireEvent.click(await screen.findByRole("button", { name: "安装" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "已召唤" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "已安装" })).toBeDisabled();
     });
     expect(saveExpertPackagesState).toHaveBeenCalledWith("bot-1", {
       installedPackageSlugs: ["tech-test-automation"],
@@ -1066,7 +1066,7 @@ metadata:
 
     render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "召唤" }));
+    fireEvent.click(await screen.findByRole("button", { name: "安装" }));
 
     expect(await screen.findByText(/失败：backtest-engine/)).toHaveTextContent("missing dependency");
   });
@@ -1114,10 +1114,10 @@ metadata:
 
     render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "召唤" }));
+    fireEvent.click(await screen.findByRole("button", { name: "安装" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "已召唤" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "已安装" })).toBeDisabled();
     });
     expect(screen.queryByText(/失败：market-data/)).not.toBeInTheDocument();
   });
@@ -1158,15 +1158,15 @@ metadata:
 
     const firstRender = render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "召唤" }));
+    fireEvent.click(await screen.findByRole("button", { name: "安装" }));
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "已召唤" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "已安装" })).toBeDisabled();
     });
 
     firstRender.unmount();
     render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
 
-    expect(await screen.findByRole("button", { name: "已召唤" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "已安装" })).toBeDisabled();
   });
 
   it("restores installed package state from Vibebase like applied Soul state", async () => {
@@ -1197,7 +1197,7 @@ metadata:
 
     render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
 
-    expect(await screen.findByRole("button", { name: "已召唤" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "已安装" })).toBeDisabled();
     expect(loadExpertPackagesState).toHaveBeenCalledWith("bot-1");
   });
 
@@ -1236,7 +1236,7 @@ metadata:
 
     render(<ExpertsPanel botId="bot-1" execDebugCommand={execDebugCommand} />);
 
-    const installedButton = await screen.findByRole("button", { name: "已召唤" });
+    const installedButton = await screen.findByRole("button", { name: "已安装" });
     expect(installedButton).toBeDisabled();
     expect(execDebugCommand).toHaveBeenCalledWith("bot-1", buildInstalledSkillsListCommand());
   });

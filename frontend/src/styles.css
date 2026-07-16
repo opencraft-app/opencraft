@@ -130,26 +130,20 @@ html.lw-settings-scrollbar-stable {
 }
 
 .lv-curated-skill-dialog-scroll {
-  scrollbar-color: rgba(15, 23, 42, 0.24) transparent;
-  scrollbar-width: thin;
+  overscroll-behavior: contain;
+  scrollbar-color: transparent transparent;
+  scrollbar-width: none;
 }
 
 .lv-curated-skill-dialog-scroll::-webkit-scrollbar {
-  width: 10px;
+  display: none;
+  width: 0;
+  height: 0;
 }
 
-.lv-curated-skill-dialog-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.lv-curated-skill-dialog-scroll::-webkit-scrollbar-thumb {
-  border: 3px solid #fff;
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.24);
-}
-
-.lv-curated-skill-dialog-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(15, 23, 42, 0.38);
+html.lv-curated-skill-dialog-open,
+html.lv-curated-skill-dialog-open body {
+  overflow: hidden;
 }
 
 .lv-learn-skill-dialog-scroll::-webkit-scrollbar-thumb:hover {
