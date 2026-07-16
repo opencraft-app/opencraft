@@ -105,16 +105,17 @@ DEFAULT_REMOTE_BUILD_DIR = "/opt/lightclaw-image"
 SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z][A-Za-z0-9-]*$")
 
 
-def validate_command_args(cmd, context):
+def validate_command_args(cmd, context, allow_empty_indices=()):
     if not isinstance(cmd, list):
         raise TypeError(f"{context} command must be an argv list")
     if not cmd:
         raise ValueError(f"{context} command must not be empty")
+    allowed_empty = frozenset(allow_empty_indices)
     normalized = []
-    for arg in cmd:
+    for index, arg in enumerate(cmd):
         if not isinstance(arg, str):
             raise TypeError(f"{context} argument must be str")
-        if not arg:
+        if not arg and index not in allowed_empty:
             raise ValueError(f"{context} argument must not be empty")
         if "\x00" in arg:
             raise ValueError(f"{context} argument must not contain NUL")
@@ -448,9 +449,13 @@ def run_tccli(service, action, region, extra_args=None):
         return {"raw": result.stdout.strip()}
 
 
-def run_cmd(cmd, check=True, timeout=None, input_text=None):
+def run_cmd(cmd, check=True, timeout=None, input_text=None, allow_empty_indices=()):
     """运行本地命令，打印输出。"""
-    cmd = validate_command_args(cmd, "local command")
+    cmd = validate_command_args(
+        cmd,
+        "local command",
+        allow_empty_indices=allow_empty_indices,
+    )
     log(f"  $ {' '.join(cmd)}")
     result = subprocess.run(  # nosemgrep: dangerous-subprocess-use-audit
         cmd,
@@ -1363,18 +1368,21 @@ def create_temp_ssh_keypair_local(dry_run=False):
 
     key_dir = tempfile.mkdtemp(prefix="lightclaw-build-image-key-")
     private_key_path = os.path.join(key_dir, "id_rsa")
-    run_cmd([
-        "ssh-keygen",
-        "-q",
-        "-t",
-        "rsa",
-        "-b",
-        "2048",
-        "-N",
-        "",
-        "-f",
-        private_key_path,
-    ])
+    run_cmd(
+        [
+            "ssh-keygen",
+            "-q",
+            "-t",
+            "rsa",
+            "-b",
+            "2048",
+            "-N",
+            "",
+            "-f",
+            private_key_path,
+        ],
+        allow_empty_indices=(7,),
+    )
     with open(f"{private_key_path}.pub", "r", encoding="utf-8") as f:
         public_key_text = f.read().strip()
     return {
