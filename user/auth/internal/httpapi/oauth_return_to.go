@@ -85,11 +85,15 @@ func buildOAuthReturnToAllowlist(hosts []string) oauthReturnToAllowlist {
 	return allowlist
 }
 
-func readReturnToFromRequest(request *http.Request) string {
+func (h *Handler) readValidatedReturnToFromRequest(request *http.Request) string {
 	if request == nil || request.URL == nil {
 		return ""
 	}
-	return strings.TrimSpace(request.URL.Query().Get("return_to"))
+	rawURL := strings.TrimSpace(request.URL.Query().Get("return_to"))
+	if h == nil {
+		return validatedReturnToURL(rawURL)
+	}
+	return h.validatedReturnToURL(rawURL)
 }
 
 func setOAuthReturnToCookie(ctx *gin.Context, cookieName string, cookiePath string, rawURL string, cookieSecure bool, ttl time.Duration, validate func(string) string) {

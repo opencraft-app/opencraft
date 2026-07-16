@@ -120,7 +120,7 @@ func (h *Handler) StartGoogleOAuth(ctx *gin.Context) {
 		Secure:   h.cookieSecure,
 		MaxAge:   int(h.googleOAuth.stateTTL / time.Second),
 	})
-	setOAuthReturnToCookie(ctx, googleOAuthReturnToCookieName, googleOAuthStateCookiePath, readReturnToFromRequest(ctx.Request), h.cookieSecure, h.googleOAuth.stateTTL, h.validatedReturnToURL)
+	setOAuthReturnToCookie(ctx, googleOAuthReturnToCookieName, googleOAuthStateCookiePath, h.readValidatedReturnToFromRequest(ctx.Request), h.cookieSecure, h.googleOAuth.stateTTL, h.validatedReturnToURL)
 
 	ctx.Redirect(http.StatusTemporaryRedirect, h.googleOAuth.authorizeURL(startState.StateParam, startState.RedirectURI))
 }

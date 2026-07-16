@@ -115,7 +115,7 @@ func (h *Handler) StartQQOAuth(ctx *gin.Context) {
 		Secure:   h.cookieSecure,
 		MaxAge:   int(h.qqOAuth.stateTTL / time.Second),
 	})
-	setOAuthReturnToCookie(ctx, qqOAuthReturnToCookieName, qqOAuthStateCookiePath, readReturnToFromRequest(ctx.Request), h.cookieSecure, h.qqOAuth.stateTTL, h.validatedReturnToURL)
+	setOAuthReturnToCookie(ctx, qqOAuthReturnToCookieName, qqOAuthStateCookiePath, h.readValidatedReturnToFromRequest(ctx.Request), h.cookieSecure, h.qqOAuth.stateTTL, h.validatedReturnToURL)
 
 	ctx.Redirect(http.StatusTemporaryRedirect, h.qqOAuth.authorizeURL(startState.StateParam, startState.RedirectURI))
 }
