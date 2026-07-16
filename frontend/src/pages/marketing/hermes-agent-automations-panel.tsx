@@ -889,7 +889,10 @@ export function HermesAgentAutomationsPanel({ botId }: { botId: string | null })
             {t("加载中…")}
           </div>
         ) : activeView === "recent" ? (
-          <RecentCronRunsPanel runs={recentRuns} />
+          <RecentCronRunsPanel
+            runs={recentRuns}
+            skillLoadState={installedSkillLoadState}
+          />
         ) : visibleJobs.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10 text-sm text-black/50">
             <Clock className="mb-2 h-6 w-6 opacity-50" />
@@ -1079,7 +1082,13 @@ export function shouldShowRecentRunsLimitHint(runCount: number): boolean {
   return runCount >= 10;
 }
 
-function RecentCronRunsPanel({ runs }: { runs: CronRunRecord[] }) {
+export function RecentCronRunsPanel({
+  runs,
+  skillLoadState,
+}: {
+  runs: CronRunRecord[];
+  skillLoadState: InstalledSkillLoadState;
+}) {
   const t = useT();
   const [viewingRun, setViewingRun] = useState<CronRunRecord | null>(null);
   return (
@@ -1114,6 +1123,11 @@ function RecentCronRunsPanel({ runs }: { runs: CronRunRecord[] }) {
                       {run.job_prompt}
                     </p>
                   )}
+                  {run.skip_reason === "model_changed" && (
+                    <p className="mt-1 text-xs leading-relaxed text-black/45">
+                      {t("问题原因：模型切换导致任务未执行")}
+                    </p>
+                  )}
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1.5">
                   <button
@@ -1136,6 +1150,7 @@ function RecentCronRunsPanel({ runs }: { runs: CronRunRecord[] }) {
         {viewingRun && (
           <RecentCronRunDetailModal
             run={viewingRun}
+            skillLoadState={skillLoadState}
             onClose={() => setViewingRun(null)}
           />
         )}
@@ -1157,7 +1172,7 @@ function runToCronJob(run: CronRunRecord): CronJob {
     name: run.job_name,
     prompt: run.job_prompt,
     schedule: run.schedule ?? { kind: "", expr: "", display: "" },
-    skills: [],
+    skills: run.skills,
     enabled: true,
     state: "",
     deliver: run.deliver,
@@ -1171,7 +1186,15 @@ function runToCronJob(run: CronRunRecord): CronJob {
   };
 }
 
-function RecentCronRunDetailModal({ run, onClose }: { run: CronRunRecord; onClose: () => void }) {
+function RecentCronRunDetailModal({
+  run,
+  skillLoadState,
+  onClose,
+}: {
+  run: CronRunRecord;
+  skillLoadState: InstalledSkillLoadState;
+  onClose: () => void;
+}) {
   const t = useT();
   return createPortal(
     <div
@@ -1202,6 +1225,15 @@ function RecentCronRunDetailModal({ run, onClose }: { run: CronRunRecord; onClos
 
         <dl className="mt-5 overflow-hidden rounded-md border border-black/[0.08] bg-white text-sm divide-y divide-black/[0.06]">
           <DetailRow label={t("任务说明")} value={run.job_prompt || "—"} pre />
+          <DetailRow
+            label={t("调用技能")}
+            value={(
+              <AutomationSkillBindingSummary
+                value={run.skills[0] ?? ""}
+                loadState={skillLoadState}
+              />
+            )}
+          />
           <DetailRow label={t("执行时间")} value={run.schedule ? formatScheduleFriendly(runToCronJob(run), t) : "—"} />
           <DetailRow label={t("本次执行")} value={formatTime(run.run_at)} />
           <DeliverDetailRow deliver={run.deliver} />
@@ -1977,6 +2009,7 @@ function formatLastStatus(status: string | null, t: ReturnType<typeof useT>): st
   if (!normalized) return "";
   if (["ok", "success", "succeeded", "done", "completed"].includes(normalized)) return t("执行成功");
   if (["failed", "failure", "error"].includes(normalized)) return t("执行失败");
+  if (normalized === "not_executed") return t("未执行");
   if (["running", "pending"].includes(normalized)) return t("执行中");
   return status || "";
 }

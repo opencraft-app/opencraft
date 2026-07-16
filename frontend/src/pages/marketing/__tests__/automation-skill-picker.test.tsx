@@ -279,7 +279,7 @@ describe("AutomationSkillBindingSummary", () => {
   it("renders the no-Skill fallback", () => {
     render(<AutomationSkillBindingSummary value="" loadState={ready([])} />);
 
-    expect(screen.getByText("不调用 Skill")).toBeInTheDocument();
+    expect(screen.getByText("未配置")).toBeInTheDocument();
   });
 
   it("renders the readable name and persisted slug for an available binding", () => {
