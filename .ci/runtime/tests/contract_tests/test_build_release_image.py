@@ -19,6 +19,7 @@ from contracts.build_release_image import (  # noqa: E402
     main,
     playground_frontend_auth_api_base_url,
     resolve_docker_build_args,
+    run_command,
     wait_for_remote_image,
 )
 from contracts.bundles import ImageTarget  # noqa: E402
@@ -26,6 +27,13 @@ from contracts.image_existence import ImageCheckResult  # noqa: E402
 
 
 class BuildReleaseImageTests(unittest.TestCase):
+    def test_run_command_rejects_empty_command_parts(self) -> None:
+        with mock.patch("contracts.build_release_image.subprocess.run") as run:
+            with self.assertRaisesRegex(ValueError, "non-empty strings"):
+                run_command(["docker", ""])
+
+        run.assert_not_called()
+
     def test_frontend_playground_build_bakes_env_scoped_auth_api_base(self) -> None:
         self.assertEqual(
             resolve_docker_build_args("frontend", "sandbox-bj-7"),
