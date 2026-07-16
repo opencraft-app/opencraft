@@ -14,6 +14,22 @@ from typing import Any
 
 
 BLUEPRINT_ID_RE = re.compile(r"^lhbp-[A-Za-z0-9_-]+$")
+SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z][A-Za-z0-9-]*$")
+
+
+def validate_command_args(cmd: list[str], context: str) -> list[str]:
+    if not cmd:
+        raise ValueError(f"{context} command must not be empty")
+    normalized: list[str] = []
+    for arg in cmd:
+        if not isinstance(arg, str):
+            raise TypeError(f"{context} argument must be str")
+        if not arg:
+            raise ValueError(f"{context} argument must not be empty")
+        if "\x00" in arg:
+            raise ValueError(f"{context} argument must not contain NUL")
+        normalized.append(arg)
+    return normalized
 
 
 def log(message: str) -> None:
@@ -36,6 +52,10 @@ def parse_time(value: str) -> datetime:
 
 
 def run_tccli(region: str, limit: int, offset: int) -> dict[str, Any]:
+    if not SAFE_IDENTIFIER_RE.fullmatch(region):
+        raise ValueError(f"invalid tccli region: {region}")
+    if limit <= 0 or offset < 0:
+        raise ValueError("tccli pagination values must be positive")
     cmd = [
         "tccli",
         "lighthouse",
@@ -49,7 +69,12 @@ def run_tccli(region: str, limit: int, offset: int) -> dict[str, Any]:
         "--output",
         "json",
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    result = subprocess.run(  # nosemgrep: dangerous-subprocess-use-audit
+        validate_command_args(cmd, "tccli"),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
     if result.returncode != 0:
         raise RuntimeError(
             "tccli lighthouse DescribeBlueprints failed "
