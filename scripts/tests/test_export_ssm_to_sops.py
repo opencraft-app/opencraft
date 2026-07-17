@@ -37,6 +37,42 @@ class EncryptionRegexForItemTest(unittest.TestCase):
                 {"ACTUAL_SECRET": "secret"},
             )
 
+    def test_optional_plaintext_keys_may_be_absent(self):
+        regex = MODULE.encryption_regex_for_item(
+            {
+                "optional_plaintext_keys": [
+                    "CTL_LLMGATEWAY_BASE_URL",
+                    "CTL_LLMGATEWAY_NEW_USER_ALLOWLIST",
+                ],
+            },
+            {"CTL_DB_PASSWORD": "secret"},
+        )
+
+        self.assertEqual(regex, MODULE.SOPS_ENCRYPTED_REGEX)
+
+    def test_present_optional_plaintext_keys_are_excluded(self):
+        regex = MODULE.encryption_regex_for_item(
+            {"optional_plaintext_keys": ["CTL_LLMGATEWAY_BASE_URL"]},
+            {
+                "CTL_DB_PASSWORD": "secret",
+                "CTL_LLMGATEWAY_BASE_URL": "https://llmgateway.example.com",
+            },
+        )
+
+        self.assertEqual(regex, "^(CTL_DB_PASSWORD)$")
+
+    def test_environment_defaults_apply_to_future_runtime_item(self):
+        regex = MODULE.encryption_regex_for_item(
+            {},
+            {
+                "CTL_DB_PASSWORD": "secret",
+                "CTL_LLMGATEWAY_BASE_URL": "https://llmgateway.example.com",
+            },
+            defaults={"optional_plaintext_keys": ["CTL_LLMGATEWAY_BASE_URL"]},
+        )
+
+        self.assertEqual(regex, "^(CTL_DB_PASSWORD)$")
+
     def test_default_keeps_existing_subtree_encryption(self):
         regex = MODULE.encryption_regex_for_item({}, {"TOKEN": "secret"})
 
