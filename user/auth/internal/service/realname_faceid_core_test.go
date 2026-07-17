@@ -1005,3 +1005,100 @@ func TestPhoneChangeClearsFinalFaceIDProjection(t *testing.T) {
 }
 
 func ptrTime(v time.Time) *time.Time { return &v }
+
+func TestStartRealnameFaceIDAttemptRejectsTwoFactorMismatchBeforeFace(t *testing.T) {
+	provider := &stubFaceIDVerifier{
+		detectAuthOut: RealnameFaceIDDetectAuthResult{
+			BizToken:  "biz-mismatch",
+			VerifyURL: "https://faceid.example.com/mismatch",
+			RequestID: "req-mismatch",
+		},
+	}
+	verifier := &countingRealnameVerifier{result: RealnameProviderResult{Result: "1", Description: "证件号不匹配"}}
+	svc := NewWithStore(NewMemoryStore(StoreOptions{Now: fixedNow, SeedDefaultInvites: true}), Options{
+		Now:                    fixedNow,
+		RealnameCipher:         stubRealnameCipher{},
+		RealnameVerifier:       verifier,
+		RealnameFaceIDVerifier: provider,
+		RealnameFaceID: RealnameFaceIDConfig{
+			Mode:        RealnameAssuranceModeObserve,
+			RuleID:      "rule-1",
+			AccountID:   "acct-1",
+			RedirectURL: "https://api.example.com/auth/realname/faceid/callback",
+			DigestKey:   []byte("0123456789abcdef0123456789abcdef"),
+			DailyQuota:  5,
+			AttemptTTL:  2 * time.Hour,
+			LeaseTTL:    30 * time.Second,
+		},
+	})
+	session := mustPasswordSessionWithPhone(t, svc, "mismatch-faceid@example.invalid", "13800138120")
+
+	started, err := svc.StartRealnameFaceIDAttempt(context.Background(), session.Token, RealnameFaceIDStartInput{
+		Name:            "张三",
+		IDCard:          "11010519491231002X",
+		ClientIP:        "127.0.0.1",
+		ClientUA:        "agent",
+		ConsentAccepted: true,
+	})
+	var authErr *Error
+	if !errors.As(err, &authErr) || authErr.Code != "realname_mismatch" || authErr.Status != http.StatusBadRequest {
+		t.Fatalf("expected realname_mismatch 400, got %#v", err)
+	}
+	if started.AttemptID != "" {
+		t.Fatalf("expected no attempt created on two-factor mismatch, got %q", started.AttemptID)
+	}
+	if verifier.calls != 1 {
+		t.Fatalf("expected exactly one two-factor verification call, got %d", verifier.calls)
+	}
+	if provider.detectAuthCalls != 0 {
+		t.Fatalf("expected no FaceID DetectAuth call on two-factor mismatch, got %d", provider.detectAuthCalls)
+	}
+}
+
+func TestStartRealnameFaceIDAttemptProceedsToFaceAfterTwoFactorMatch(t *testing.T) {
+	provider := &stubFaceIDVerifier{
+		detectAuthOut: RealnameFaceIDDetectAuthResult{
+			BizToken:  "biz-match",
+			VerifyURL: "https://faceid.example.com/match",
+			RequestID: "req-match",
+		},
+	}
+	verifier := &countingRealnameVerifier{result: RealnameProviderResult{Result: "0"}}
+	svc := NewWithStore(NewMemoryStore(StoreOptions{Now: fixedNow, SeedDefaultInvites: true}), Options{
+		Now:                    fixedNow,
+		RealnameCipher:         stubRealnameCipher{},
+		RealnameVerifier:       verifier,
+		RealnameFaceIDVerifier: provider,
+		RealnameFaceID: RealnameFaceIDConfig{
+			Mode:        RealnameAssuranceModeObserve,
+			RuleID:      "rule-1",
+			AccountID:   "acct-1",
+			RedirectURL: "https://api.example.com/auth/realname/faceid/callback",
+			DigestKey:   []byte("0123456789abcdef0123456789abcdef"),
+			DailyQuota:  5,
+			AttemptTTL:  2 * time.Hour,
+			LeaseTTL:    30 * time.Second,
+		},
+	})
+	session := mustPasswordSessionWithPhone(t, svc, "match-faceid@example.invalid", "13800138121")
+
+	started, err := svc.StartRealnameFaceIDAttempt(context.Background(), session.Token, RealnameFaceIDStartInput{
+		Name:            "张三",
+		IDCard:          "11010519491231002X",
+		ClientIP:        "127.0.0.1",
+		ClientUA:        "agent",
+		ConsentAccepted: true,
+	})
+	if err != nil {
+		t.Fatalf("start attempt after matching two-factor: %v", err)
+	}
+	if started.AttemptID == "" {
+		t.Fatalf("expected an attempt to be created after two-factor match")
+	}
+	if verifier.calls != 1 {
+		t.Fatalf("expected exactly one two-factor verification call, got %d", verifier.calls)
+	}
+	if provider.detectAuthCalls != 1 {
+		t.Fatalf("expected FaceID DetectAuth to run once after two-factor match, got %d", provider.detectAuthCalls)
+	}
+}
