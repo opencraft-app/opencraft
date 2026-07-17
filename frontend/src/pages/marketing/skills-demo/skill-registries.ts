@@ -62,6 +62,8 @@ export interface Skill {
 
 export interface InstalledSkill extends Skill {
   version?: string;
+  /** Registry 同一条记录提供的原生别名；市场 rawId 与本地目录名不同时用于和 Hermes 清单归并。 */
+  nativeAliases?: string[];
   /** 来源归属（双 list 合并判定后的结果） */
   sourceLabel: string;
   registries: Registry[];
@@ -399,9 +401,15 @@ export function parseSkillhubList(raw: string): InstalledSkill[] {
 
   return items.map((item) => {
     const explicitId = item.slug ?? item.rawId ?? item.id;
+    const listedName = (item.name ?? "").trim();
+    const nativeAliases = Array.from(new Set(
+      [explicitId ? listedName : "", item.display_name, item.displayName]
+        .map((value) => value?.trim() ?? "")
+        .filter(Boolean),
+    ));
     const rawId = explicitId
       ? (/^\d+$/.test(explicitId.trim()) ? "" : explicitId.trim())
-      : (item.name ?? "").trim();
+      : listedName;
     if (!rawId) return null;
     const name = (item.display_name ?? item.displayName ?? item.name ?? rawId).trim();
     return {
@@ -411,6 +419,7 @@ export function parseSkillhubList(raw: string): InstalledSkill[] {
       name,
       iconUrl: item.iconUrl?.trim() || undefined,
       version: item.version?.trim() || undefined,
+      nativeAliases: nativeAliases.length > 0 ? nativeAliases : undefined,
       registries: ["skillhub" as Registry],
       sourceLabel: REGISTRY_LABEL.skillhub,
     } satisfies InstalledSkill;
@@ -503,7 +512,44 @@ export function mergeInstalledSources(
   };
   mergeInto(clawhubInstalled, "clawhub");
   mergeInto(skillsshInstalled, "skills-sh");
-  return Array.from(byIdentity.values()).sort((a, b) => a.name.localeCompare(b.name));
+
+  const installed = Array.from(byIdentity.values());
+  const bySlug = new Map<string, InstalledSkill[]>();
+  for (const skill of installed) {
+    const slug = skill.slug.trim().toLowerCase();
+    const matches = bySlug.get(slug) ?? [];
+    matches.push(skill);
+    bySlug.set(slug, matches);
+  }
+
+  const merged: InstalledSkill[] = [];
+  for (const matches of bySlug.values()) {
+    const clawhubSkill = matches.length === 2
+      ? matches.find((skill) => skill.registry === "clawhub")
+      : undefined;
+    const skillsshSkill = matches.length === 2
+      ? matches.find((skill) => skill.registry === "skills-sh")
+      : undefined;
+    if (!clawhubSkill || !skillsshSkill) {
+      merged.push(...matches);
+      continue;
+    }
+
+    const registries = Array.from(new Set<Registry>([
+      ...skillsshSkill.registries,
+      ...clawhubSkill.registries,
+    ]));
+    const skillsshNameIsSlug = skillsshSkill.name.trim().toLowerCase() === skillsshSkill.slug.trim().toLowerCase();
+    merged.push({
+      ...skillsshSkill,
+      name: skillsshNameIsSlug ? clawhubSkill.name : skillsshSkill.name,
+      version: skillsshSkill.version ?? clawhubSkill.version,
+      registries,
+      sourceLabel: registries.map((registry) => REGISTRY_LABEL[registry]).join(" / "),
+    });
+  }
+
+  return merged.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export function mergeInstalledWithHermes(
@@ -519,7 +565,11 @@ export function mergeInstalledWithHermes(
   for (const hermesSkill of hermesInstalled) {
     const normalizedSlug = hermesSkill.slug.trim().toLowerCase();
     const matches = merged.filter((skill) => (
-      skill.registry !== "hermes" && skill.slug.trim().toLowerCase() === normalizedSlug
+      skill.registry !== "hermes"
+      && (
+        skill.slug.trim().toLowerCase() === normalizedSlug
+        || skill.nativeAliases?.some((alias) => alias.toLowerCase() === normalizedSlug)
+      )
     ));
     if (matches.length === 1 && matches[0]) {
       if (!matches[0].registries.includes("hermes")) matches[0].registries.push("hermes");

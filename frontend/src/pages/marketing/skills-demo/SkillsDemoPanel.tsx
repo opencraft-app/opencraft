@@ -756,8 +756,8 @@ function BatchSelectButton({
       disabled={disabled}
       aria-pressed={selected}
       aria-label={selected
-        ? t("取消批量下载 {{name}}", { name: skill.name })
-        : t("选择批量下载 {{name}}", { name: skill.name })}
+        ? t("取消批量安装 {{name}}", { name: skill.name })
+        : t("选择批量安装 {{name}}", { name: skill.name })}
       title={selected ? t("取消选择") : t("选择")}
       className={cn(
         "inline-flex size-5 items-center justify-center rounded-[4px] border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 disabled:opacity-55",
@@ -1853,12 +1853,12 @@ export function SkillsDemoPanel({
       }
       await refreshInstalled();
       if (result.failed.length > 0) {
-        toast.error(t("批量下载完成：成功 {{success}} 个，失败 {{failed}} 个", {
+        toast.error(t("批量安装完成：成功 {{success}} 个，失败 {{failed}} 个", {
           success: result.succeeded.length,
           failed: result.failed.length,
         }));
       } else {
-        toast.success(t("批量下载成功，共 {{count}} 个", { count: result.succeeded.length }));
+        toast.success(t("批量安装成功，共 {{count}} 个", { count: result.succeeded.length }));
       }
     } finally {
       setBatchInstalling(false);
@@ -2106,7 +2106,7 @@ export function SkillsDemoPanel({
                   aria-label={t("搜索技能")}
                   value={keyword}
                   onChange={(e) => setKeyword(e.target.value)}
-                  placeholder={isDomestic ? "搜索 SkillHub 中的技能" : t("搜索 ClawHub / skills.sh 中的技能")}
+                  placeholder={isDomestic ? "搜索 SkillHub 中的技能" : t("搜索 Skills.sh / Clawhub 中的技能")}
                   className="lv-skills-search-input h-10 w-full rounded-md border border-black/10 bg-white pl-9 pr-9 text-sm text-black/90 outline-none transition-colors placeholder:text-black/35 focus:border-[#2F6BFF]"
                 />
                 {keyword ? (
@@ -2130,7 +2130,7 @@ export function SkillsDemoPanel({
                 >
                   <SelectTrigger
                     aria-label={t("来源")}
-                    className="lv-skills-source-select-trigger !h-10 w-[132px] shrink-0 !rounded-[12px] !border-black/10 !bg-white !px-3 text-xs font-semibold text-black/75 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-shadow hover:!border-black/16 hover:shadow-[0_2px_7px_rgba(0,0,0,0.07)] data-[state=open]:!border-black/20 data-[state=open]:shadow-[0_3px_10px_rgba(0,0,0,0.09)]"
+                    className="lv-skills-source-select-trigger !h-10 w-[132px] shrink-0 !justify-center gap-1 !rounded-[12px] !border-black/10 !bg-white !px-3 text-xs font-semibold text-black/75 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-shadow hover:!border-black/16 hover:shadow-[0_2px_7px_rgba(0,0,0,0.07)] data-[state=open]:!border-black/20 data-[state=open]:shadow-[0_3px_10px_rgba(0,0,0,0.09)]"
                   >
                     <SelectValue />
                   </SelectTrigger>
@@ -2164,12 +2164,12 @@ export function SkillsDemoPanel({
                   onClick={() => void handleBatchInstall()}
                   disabled={selectedSkills.length === 0 || batchInstalling || Boolean(installingId)}
                   aria-busy={batchInstalling}
-                  aria-label={t("批量下载")}
-                  title={selectedSkills.length === 0 ? t("请先选择要下载的技能") : t("批量下载")}
+                  aria-label={t("批量安装")}
+                  title={selectedSkills.length === 0 ? t("请先选择要安装的技能") : t("批量安装")}
                   className="inline-flex h-10 w-32 shrink-0 items-center justify-center gap-1.5 rounded-[12px] bg-black px-3 text-xs font-semibold text-white transition-colors hover:bg-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-black/[0.08] disabled:text-black/30"
                 >
                   {batchInstalling ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : null}
-                  <span>{t("批量下载")}</span>
+                  <span>{t("批量安装")}</span>
                   {selectedSkills.length > 0 ? (
                     <span className="tabular-nums">({selectedSkills.length})</span>
                   ) : null}
@@ -2381,7 +2381,7 @@ export function SkillsDemoPanel({
                 disabled={selectedInstalledSkills.length === 0 || uninstallBusy}
                 aria-busy={batchUninstalling}
                 aria-label={t("批量卸载")}
-                className="inline-flex h-9 w-32 shrink-0 items-center justify-center gap-1.5 rounded-[12px] bg-red-600 px-3 text-xs font-semibold text-white transition-colors hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-black/[0.08] disabled:text-black/30"
+                className="inline-flex h-10 w-32 shrink-0 items-center justify-center gap-1.5 rounded-[12px] bg-red-600 px-3 text-xs font-semibold text-white transition-colors hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-black/[0.08] disabled:text-black/30"
               >
                 {batchUninstalling ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : null}
                 <span>{t("批量卸载")}</span>

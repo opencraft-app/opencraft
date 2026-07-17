@@ -140,7 +140,7 @@ describe.each(["global", "domestic"] as const)("SkillsDemoPanel %s mode", (mode)
     const financeSelect = screen.getByRole("button", { name: "选择批量卸载 Finance News" });
     const builderDelete = screen.getByRole("button", { name: "删除技能 Builder Radar" });
     expect(batchButton).toBeDisabled();
-    expect(batchButton).toHaveClass("w-32", "rounded-[12px]");
+    expect(batchButton).toHaveClass("h-10", "w-32", "rounded-[12px]");
     expect(batchButton).not.toHaveClass("w-40");
 
     fireEvent.click(builderSelect);
@@ -203,13 +203,17 @@ describe.each(["global", "domestic"] as const)("SkillsDemoPanel %s mode", (mode)
 
   it("enables batch install after selecting search results and installs every selected skill", async () => {
     const dataLayer = renderPanel(mode);
-    const batchButton = screen.getByRole("button", { name: "批量下载" });
+    const batchButton = screen.getByRole("button", { name: "批量安装" });
     expect(batchButton).toBeDisabled();
-    expect(batchButton).toHaveClass("w-32", "rounded-[12px]");
+    expect(batchButton).toHaveClass("h-10", "w-32", "rounded-[12px]");
+    expect(screen.getByRole("combobox", { name: "来源" })).toHaveClass("!justify-center");
+    expect(screen.getByPlaceholderText(
+      mode === "domestic" ? "搜索 SkillHub 中的技能" : "搜索 Skills.sh / Clawhub 中的技能",
+    )).toBeInTheDocument();
 
     fireEvent.change(screen.getByPlaceholderText(/搜索 .*技能/), { target: { value: "tools" } });
-    const firstSelector = await screen.findByRole("button", { name: "选择批量下载 First" }, { timeout: 3_000 });
-    const secondSelector = screen.getByRole("button", { name: "选择批量下载 Second" });
+    const firstSelector = await screen.findByRole("button", { name: "选择批量安装 First" }, { timeout: 3_000 });
+    const secondSelector = screen.getByRole("button", { name: "选择批量安装 Second" });
     fireEvent.click(firstSelector);
     fireEvent.click(secondSelector);
 
@@ -252,13 +256,13 @@ describe.each(["global", "domestic"] as const)("SkillsDemoPanel %s mode", (mode)
 
   it("selects Featured and category skills for one shared batch install", async () => {
     const dataLayer = renderPanel(mode);
-    const batchButton = screen.getByRole("button", { name: "批量下载" });
+    const batchButton = screen.getByRole("button", { name: "批量安装" });
     const featuredSection = screen.getByText("精选").closest("section") as HTMLElement;
     const categorySection = screen
       .getByText(mode === "domestic" ? "理财分析" : "市场分析")
       .closest("section") as HTMLElement;
-    const featuredSelector = within(featuredSection).getAllByRole("button", { name: /选择批量下载/ })[0];
-    const categorySelector = within(categorySection).getAllByRole("button", { name: /选择批量下载/ })[0];
+    const featuredSelector = within(featuredSection).getAllByRole("button", { name: /选择批量安装/ })[0];
+    const categorySelector = within(categorySection).getAllByRole("button", { name: /选择批量安装/ })[0];
 
     expect(featuredSelector).toBeDefined();
     expect(categorySelector).toBeDefined();

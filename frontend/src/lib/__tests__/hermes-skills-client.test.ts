@@ -36,7 +36,7 @@ describe("hermes skills client", () => {
 
   it("builds a constrained delete command for nested Hermes-native skill directories", () => {
     expect(buildHermesSkillDeleteCommand("finance-news")).toBe(
-      'if test -d "$HOME/.hermes/skills"; then find "$HOME/.hermes/skills" -mindepth 1 -type d -name "finance-news" -exec test -f "{}/SKILL.md" \\; -prune -exec rm -rf -- {} +; fi',
+      'cd "$HOME" && if test -d "$HOME/.hermes/skills"; then find "$HOME/.hermes/skills" -mindepth 1 -type d -name "finance-news" -exec test -f "{}/SKILL.md" \\; -prune -exec rm -rf -- {} +; fi',
     );
     expect(() => buildHermesSkillDeleteCommand("../finance-news")).toThrow("Invalid Hermes skill slug");
     expect(() => buildHermesSkillDeleteCommand("finance/news")).toThrow("Invalid Hermes skill slug");

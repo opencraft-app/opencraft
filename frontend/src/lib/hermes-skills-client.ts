@@ -45,7 +45,7 @@ export function buildHermesSkillDeleteCommand(slug: string): string {
     throw new Error("Invalid Hermes skill slug");
   }
   const skillsRoot = "$HOME/.hermes/skills";
-  return `if test -d "${skillsRoot}"; then find "${skillsRoot}" -mindepth 1 -type d -name "${normalized}" -exec test -f "{}/SKILL.md" \\; -prune -exec rm -rf -- {} +; fi`;
+  return `cd "$HOME" && if test -d "${skillsRoot}"; then find "${skillsRoot}" -mindepth 1 -type d -name "${normalized}" -exec test -f "{}/SKILL.md" \\; -prune -exec rm -rf -- {} +; fi`;
 }
 
 export function getUniqueSkillSlugs(skillSlugs: string[]): string[] {

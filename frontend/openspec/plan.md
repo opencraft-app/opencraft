@@ -978,9 +978,38 @@ Not-tested: 待实现后填写
 - [x] 国内站与国际站的“批量卸载 / Batch Uninstall”使用与“批量下载 / Batch Install”相同的固定 `w-32` 宽度，选中数量变化时不改变宽度。
 - [x] 已安装列表不再渲染技能图标及其 SkillHub 图标链接，仅保留技能信息、批量选择和删除操作。
 - [x] 校验国际站英文为 `Batch Uninstall`，并运行目标 Vitest、`pnpm i18n:check`、`pnpm check` 与 `git diff --check`。
+
+### Task 37: 合并 SkillHub 市场别名与 Hermes 原生技能
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.test.ts`
+
+- [ ] 用 Whistle 真实页面暴露的字段形态补失败测试：SkillHub 原生名称仅出现在 `display_name/displayName` 时，`quant-backtest-strategy` / `onequant-backtest` 与 `valuation-analysis` / `股票价值投资分析 (valuation-analysis)` 各自仍只合并成一条。
+- [ ] SkillHub 已安装解析保留市场 `rawId` 用于身份、安装状态与卸载，并把同一 ACLI 记录的 `name`、`display_name`、`displayName` 保存为精确别名集合；Hermes slug 唯一命中任一别名时优先保留 SkillHub 行。
+- [ ] 保持原生独有技能继续展示；没有任一明确别名精确匹配时不合并，禁止模糊或静态 slug 映射。
+- [ ] 在 Whistle 当前已安装页面复核两个重复案例各只显示一条，再运行目标 Vitest、`pnpm i18n:check`、`pnpm check` 与 `git diff --check`。
 ## 增量修复：统一诊断中心备份卡片阴影
 
 - [x] 将“Agent 备份与恢复”外层卡片阴影与同页“最近日志”卡片保持一致。
   - 角色：Developer + Reviewer
   - 影响文件：`frontend/src/pages/marketing/agent-settings-page.tsx`、`frontend/DESIGN.md`
   - 验收方式：仅调整外层阴影，不改变卡片布局、交互、边框或业务逻辑；在设计规范中记录卡片阴影值与适用边界；`pnpm check` 与 `git diff --check` 通过。
+
+### Task 38: 合并国际站跨来源重复技能并修复 Hermes 删除工作目录
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.test.ts`
+- Modify: `frontend/src/lib/hermes-skills-client.ts`
+- Modify: `frontend/src/lib/__tests__/hermes-skills-client.test.ts`
+
+- [x] 先补失败测试复现同一 `okx-sentiment-tracker` 同时出现在 ClawHub、skills.sh 和 Hermes 清单时被渲染为三条。
+- [x] 仅在跨 registry 的 slug 唯一对应时合并 ClawHub 与 skills.sh 记录；保留 skills.sh 完整 ID 作为可卸载主身份，同 registry 内同 slug 的不同完整 ID 继续分开。
+- [x] 让合并后的唯一 registry 记录继续吸收同 slug 的 Hermes 记录，国际站 My Skills 最终只显示一条。
+- [x] Hermes 删除命令先进入 `$HOME`，避免远端执行用户从不可访问的 `/root` 启动时 `find` 无法恢复初始工作目录。
+- [x] 运行 registry/Hermes 目标 Vitest、`pnpm i18n:check`、`pnpm check` 与 `git diff --check`。

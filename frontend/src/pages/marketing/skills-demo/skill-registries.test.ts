@@ -71,6 +71,40 @@ describe("skills.sh command builders", () => {
     expect(skillIdentity(first)).not.toBe(skillIdentity(second));
     expect(mergeInstalledSources([], [first, second])).toHaveLength(2);
   });
+
+  it("merges one cross-registry slug with its Hermes directory into the skills.sh identity", () => {
+    const clawhubSkill: InstalledSkill = {
+      registry: "clawhub",
+      rawId: "okx-sentiment-tracker",
+      slug: "okx-sentiment-tracker",
+      name: "OKX Sentiment Tracker",
+      registries: ["clawhub"],
+      sourceLabel: "ClawHub",
+    };
+    const skillsshSkill: InstalledSkill = {
+      registry: "skills-sh",
+      rawId: "okx/agent-skills/okx-sentiment-tracker",
+      slug: "okx-sentiment-tracker",
+      name: "okx-sentiment-tracker",
+      registries: ["skills-sh"],
+      sourceLabel: "skills.sh",
+    };
+    const hermesSkills = parseHermesInstalledSkills("okx-sentiment-tracker");
+
+    const installed = mergeInstalledWithHermes(
+      mergeInstalledSources([clawhubSkill], [skillsshSkill]),
+      hermesSkills,
+    );
+
+    expect(installed).toHaveLength(1);
+    expect(installed[0]).toEqual(expect.objectContaining({
+      registry: "skills-sh",
+      rawId: "okx/agent-skills/okx-sentiment-tracker",
+      slug: "okx-sentiment-tracker",
+      name: "OKX Sentiment Tracker",
+      registries: expect.arrayContaining(["clawhub", "skills-sh", "hermes"]),
+    }));
+  });
 });
 
 describe("domestic SkillHub command and response handling", () => {
@@ -192,6 +226,57 @@ describe("Hermes native installed skills", () => {
         uninstallable: true,
       }),
     ]);
+  });
+
+  it.each([
+    {
+      aliasField: "display_name",
+      marketplaceSlug: "quant-backtest-strategy",
+      nativeSlug: "onequant-backtest",
+    },
+    {
+      aliasField: "displayName",
+      marketplaceSlug: "valuation-analysis",
+      nativeSlug: "股票价值投资分析 (valuation-analysis)",
+    },
+  ])("merges SkillHub alias $marketplaceSlug with Hermes native slug $nativeSlug", ({
+    aliasField,
+    marketplaceSlug,
+    nativeSlug,
+  }) => {
+    const registrySkills = parseSkillhubList(JSON.stringify({
+      success: true,
+      data: {
+        skills: [{
+          name: marketplaceSlug,
+          [aliasField]: nativeSlug,
+        }],
+      },
+    }));
+    const hermesSkills = parseHermesInstalledSkills(nativeSlug);
+
+    expect(mergeInstalledWithHermes(registrySkills, hermesSkills)).toEqual([
+      expect.objectContaining({
+        registry: "skillhub",
+        rawId: marketplaceSlug,
+        registries: ["skillhub", "hermes"],
+      }),
+    ]);
+  });
+
+  it("keeps an unrelated Hermes skill when no explicit SkillHub alias matches", () => {
+    const registrySkills = parseSkillhubList(JSON.stringify({
+      success: true,
+      data: {
+        skills: [{
+          slug: "different-marketplace-skill",
+          display_name: "different-native-name",
+        }],
+      },
+    }));
+    const hermesSkills = parseHermesInstalledSkills("onequant-backtest");
+
+    expect(mergeInstalledWithHermes(registrySkills, hermesSkills)).toHaveLength(2);
   });
 
   it("keeps native-only skills alongside registry-installed skills", () => {
