@@ -385,6 +385,18 @@ func (s *Service) StartRealnameFaceIDAttempt(ctx context.Context, token string, 
 	if count >= s.realnameFaceID.DailyQuota {
 		return RealnameFaceIDStartResult{}, &Error{Code: "realname_faceid_quota_exceeded", Message: "今日实名认证尝试次数已达上限。", Status: http.StatusTooManyRequests}
 	}
+	// 进人脸前先做姓名+身份证二要素核验，不匹配直接拦在第一步、不创建 attempt、不进人脸。
+	// 这里只调用核验（不写库、不触发手机/影子绑定），与 legacy VerifyRealname 的实名落库路径区分开，
+	// 避免用户白扫脸后才被告知姓名身份证不匹配。核验器未装配时保持原有行为跳过。
+	if s.realnameVerifier != nil {
+		twoFactorResult, verifyErr := s.realnameVerifier.Verify(ctx, name, idCard)
+		if verifyErr != nil {
+			return RealnameFaceIDStartResult{}, newError("realname_verify_failed", "实名核验失败，请稍后重试。", http.StatusBadGateway)
+		}
+		if strings.TrimSpace(twoFactorResult.Result) != "0" {
+			return RealnameFaceIDStartResult{}, newError("realname_mismatch", "姓名与身份证号不一致，请重新输入。", http.StatusBadRequest)
+		}
+	}
 	attemptID, err := newPrefixedID("rfid")
 	if err != nil {
 		return RealnameFaceIDStartResult{}, fmt.Errorf("generate realname faceid attempt id: %w", err)
