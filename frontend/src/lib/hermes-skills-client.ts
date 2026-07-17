@@ -39,6 +39,15 @@ export function buildInstalledSkillsListCommand(): string {
   return HERMES_SKILLS_LIST_COMMAND;
 }
 
+export function buildHermesSkillDeleteCommand(slug: string): string {
+  const normalized = slug.trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(normalized) || normalized === "." || normalized === "..") {
+    throw new Error("Invalid Hermes skill slug");
+  }
+  const skillsRoot = "$HOME/.hermes/skills";
+  return `if test -d "${skillsRoot}"; then find "${skillsRoot}" -mindepth 1 -type d -name "${normalized}" -exec test -f "{}/SKILL.md" \\; -prune -exec rm -rf -- {} +; fi`;
+}
+
 export function getUniqueSkillSlugs(skillSlugs: string[]): string[] {
   const seen = new Set<string>();
   const result: string[] = [];

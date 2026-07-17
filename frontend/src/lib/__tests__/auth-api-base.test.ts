@@ -39,6 +39,12 @@ describe("resolveConfiguredAuthApiBaseUrl", () => {
     expect(resolveConfiguredAuthApiBaseUrl()).toBe("https://lightclaw.tech");
   });
 
+  it("routes the international LightVela hostname to its dedicated API", () => {
+    stubLocation("lightvela.ai");
+
+    expect(resolveConfiguredAuthApiBaseUrl()).toBe("https://api.lightvela.ai");
+  });
+
   it("routes sandbox-2 pages.dev subdomain to its own sandbox backend host", () => {
     // 关键回归：bj82.lightclaw.pages.dev 不能落回 https://lightclaw.tech，
     // 否则 session cookie / CORS 与真实所在环境 (api-bj82.lightclaw.tech) 错配，

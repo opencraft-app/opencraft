@@ -855,3 +855,126 @@ Not-tested: 待实现后填写
   - 角色：Developer + Reviewer
   - 影响文件：`frontend/src/pages/marketing/hermes-agent-buddy-panel.tsx`、`frontend/src/pages/marketing/agent-settings-page.tsx`、`frontend/src/styles.css`、`frontend/openspec/specs/buddy.md`
   - 验收方式：国内站和国际站均不再渲染“已选人设”；旧文件名无残留引用；已注入卡片状态、选中和注入交互保持不变；目标测试和类型检查通过。
+
+### Task 30: 合并 Hermes 原生技能并支持搜索结果批量安装
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/lib/auth-api-base.ts`
+- Modify: `frontend/src/lib/__tests__/auth-api-base.test.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.test.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Create: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+- [x] `lightvela.ai` 在未配置显式环境变量时解析到 `https://api.lightvela.ai`，且保留恰好 3 行生产代码增量。
+- [x] 国内站和国际站的已安装列表把 registry 安装结果与 Hermes 原生技能结果合并；原生技能显示 `Hermes` 来源且不错误调用 registry 卸载命令。
+- [x] 已安装标签页保持不变，内容统一改成单列列表。
+- [x] 搜索结果中的未安装技能在 `+` 左侧提供可访问的方形选择按钮；已安装技能不可选择。
+- [x] 来源按钮右侧显示“批量下载 / Batch Install”；无选择时禁用，选中一项或多项时启用。
+- [x] 批量安装按选择顺序串行执行，结束后仅刷新一次已安装列表；成功项清除选择，失败项保留并显示成功/失败汇总。
+- [x] 先补失败测试，再实现最小代码；运行 auth/registry 目标测试、`pnpm i18n:extract`、`pnpm i18n:check`、`pnpm check` 与 `git diff --check`。
+
+### Task 31: 下移搜索结果展开按钮并更新国内站说明
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `frontend/src/pages/marketing/hermes-agent-skills-panel.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/hermes-agent-skills-panel.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+- [x] 国内站与国际站的“查看全部 / 收起全部”从搜索结果标题右侧移动到结果列表底部，并使用次级按钮样式。
+- [x] 国内站 Skills 说明改为“为智能体安装技能。支持 SkillHub 技能市场，安装后可在对话中自动调用。”，国际站说明保持不变。
+- [x] 先补失败测试，再运行 Skills 目标测试、`pnpm i18n:extract`、`pnpm i18n:check`、`pnpm check` 与 `git diff --check`。
+
+### Task 32: 扩展全页面批量安装、来源链接与真实卸载
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/lib/hermes-skills-client.ts`
+- Modify: `frontend/src/lib/__tests__/hermes-skills-client.test.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.test.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `frontend/src/pages/marketing/hermes-agent-skills-panel.tsx`
+- Modify: `frontend/src/pages/marketing/__tests__/hermes-agent-skills-panel.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+- [x] 先补失败测试：国内站和国际站的精选与所有分类卡片显示可访问的方形批量选择按钮，并与搜索结果共用顶部批量下载状态和按选择顺序执行的安装队列。
+- [x] 让批量选择覆盖搜索、精选和分类的统一技能身份；已安装技能不可选择，单项或批量安装成功后清除对应选择。
+- [x] 国内站已安装的 SkillHub 技能图标链接到 `https://skillhub.cn/skills/<slug>`；优先显示已知 SkillHub 图标，缺失时使用默认图标；国际站和 Hermes 原生技能不添加该图标链接。
+- [x] 国内站和国际站的所有已安装技能显示垃圾桶；registry 技能调用原有卸载命令，Hermes 原生技能仅在 slug 通过严格校验后真实删除 `~/.hermes/skills/<slug>`，成功后刷新列表。
+- [x] 把来源说明从外层描述行移到“技能 / 技能包 / 已安装”标签线正上方最右侧，移除按钮外框；国内站显示“技能来源于 SkillHub”，国际站显示“技能来源于 Skills.sh 与 ClawHub”，各市场名为独立外链并支持中英文。
+- [x] 运行受影响 Vitest、`pnpm i18n:extract`、`pnpm i18n:check`、`pnpm check` 与 `git diff --check`；检查交互控件的可访问名称、键盘焦点和禁用状态。
+
+### Task 33: 收紧技能安装反馈与列表头布局
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+
+- [x] 国内站和国际站的中文单项安装成功 Toast 从“下载成功”改为“安装成功”。
+- [x] 已安装列表不再展示 SkillHub、Skills.sh、ClawHub 或 Hermes 来源标签，保留合并、去重和删除行为。
+- [x] 来源说明与技能标签共用同一条底部横线，并在最右侧贴近横线上方展示。
+- [x] 批量下载按钮使用更宽的固定宽度，选中数量变化时按钮宽度保持不变。
+- [x] 先补失败测试，再运行受影响 Vitest、`pnpm i18n:extract`、`pnpm i18n:check`、`pnpm check` 与 `git diff --check`。
+
+### Task 34: 修复嵌套 Hermes 技能卸载并收紧批量按钮
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/lib/hermes-skills-client.ts`
+- Modify: `frontend/src/lib/__tests__/hermes-skills-client.test.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+
+- [x] Hermes 原生技能卸载支持 `~/.hermes/skills/<category>/<slug>` 等嵌套目录，并只删除同名且包含 `SKILL.md` 的目录。
+- [x] 原生技能目录已不存在时卸载保持幂等成功，不再显示 `EXIT STATUS 1`。
+- [x] 批量下载按钮与来源选择器使用相同的 12px 圆角，固定宽度从 `w-36` 缩为 `w-32`。
+- [x] 先补失败测试，再运行受影响 Vitest、`pnpm i18n:check`、`pnpm check` 与 `git diff --check`。
+
+### Task 35: 已安装扁平列表与批量卸载
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/skill-registries.test.ts`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+- Modify: `frontend/src/i18n/generated/*.json`
+- Modify: `frontend/openspec/specs/marketing.md`
+
+- [x] 在 `skill-registries.test.ts` 先补失败测试：`uninstallSkillsSequentially(dataLayer, skills)` 按输入顺序调用 `uninstall`，收集 `succeeded` 与带原错误消息的 `failed`，单项抛错不阻断后续技能。
+- [x] 在 `SkillsDemoPanel.test.tsx` 先补双站失败测试：已安装列表使用统一外框和 `divide-y` 扁平行；每行的“选择批量卸载 <name>”按钮位于“删除技能 <name>”左侧；标题行最右侧批量按钮默认禁用，选择两项后显示 `(2)` 并启用。
+- [x] 补双站批量卸载失败测试：点击批量按钮只打开一次确认；确认后按选择顺序卸载，成功项清除、失败项保留、列表只刷新一次；执行期间选择按钮和垃圾桶禁用。
+- [x] 运行 `pnpm exec vitest run --config vitest.config.ts src/pages/marketing/skills-demo/skill-registries.test.ts src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx --reporter=dot`，确认失败点仅来自尚未实现的 helper、扁平列表、选择控件和批量行为。
+- [x] 在 `skill-registries.ts` 新增导出的 `BatchUninstallResult` 与 `uninstallSkillsSequentially(dataLayer: Pick<SkillsDataLayer, "uninstall">, skills: InstalledSkill[])`，使用顺序 `for...of` 并把返回 `ok: false` 与异常都记录为失败。
+- [x] 在 `SkillsDemoPanel.tsx` 增加 `selectedInstalledSkillIds`、`batchUninstalling` 与批量确认状态；刷新列表时按 `registry + rawId` 清理失效选择，单项和批量卸载共用现有真实数据层。
+- [x] 把 `InstalledSkillCard` 收敛为扁平 `InstalledSkillRow`：父 `ul` 使用统一 `border-y divide-y`，行本身无独立边框和圆角；操作区依次渲染方形选择按钮和红色垃圾桶。
+- [x] 把已安装标题改为左右工具栏；非空列表右侧固定显示“批量卸载 / Batch Uninstall”，无选择或执行中禁用，选中时显示稳定宽度的数量；确认弹窗按单项/批量分别显示技能名或选中数量。
+- [x] 批量确认后调用 `uninstallSkillsSequentially`，仅在全部命令完成后刷新一次；成功 identity 从选择中删除，失败 identity 保留；全成功显示“批量卸载成功，共 {{count}} 个”，部分失败显示“批量卸载完成：成功 {{success}} 个，失败 {{failed}} 个”。
+- [x] 运行目标 Vitest 转绿；执行 `pnpm i18n:extract` 并补齐英文 `Batch Uninstall`、批量确认和结果 Toast，再运行 `pnpm i18n:check`、`pnpm check` 与 `git diff --check`。
+
+### Task 36: 对齐批量卸载宽度并移除已安装图标
+
+**角色：** single_agent / implementation + verification
+
+**Files:**
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.tsx`
+- Modify: `frontend/src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx`
+
+- [x] 国内站与国际站的“批量卸载 / Batch Uninstall”使用与“批量下载 / Batch Install”相同的固定 `w-32` 宽度，选中数量变化时不改变宽度。
+- [x] 已安装列表不再渲染技能图标及其 SkillHub 图标链接，仅保留技能信息、批量选择和删除操作。
+- [x] 校验国际站英文为 `Batch Uninstall`，并运行目标 Vitest、`pnpm i18n:check`、`pnpm check` 与 `git diff --check`。

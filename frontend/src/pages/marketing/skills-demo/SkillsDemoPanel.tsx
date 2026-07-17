@@ -45,6 +45,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type React
 import { useTranslation } from "react-i18next";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -57,12 +58,14 @@ import type { ExpertsExecDebugCommand } from "../hermes-agent-experts-panel";
 import {
   createSkillsDataLayer,
   getPopularityTier,
+  installSkillsSequentially,
   mergeSkills,
   REGISTRY_LABEL,
   SKILLS_DEMO_LIVE,
   skillIdentity,
   sortByPopular,
   sortByName,
+  uninstallSkillsSequentially,
   type InstalledSkill,
   type Registry,
   type Skill,
@@ -80,7 +83,7 @@ import {
   type CuratedSkillOverview,
 } from "./curated-skill-overviews";
 
-type RegistryFilter = "all" | Registry;
+type RegistryFilter = "all" | Exclude<Registry, "hermes">;
 type SortMode = "popular" | "name";
 export type SkillsDemoTab = "discover" | "experts" | "create" | "installed";
 
@@ -688,6 +691,7 @@ export type LearnSkillTriggerOptions = {
 function RegistryBadge({ registry }: { registry: Registry }) {
   const isSkillsSh = registry === "skills-sh";
   const isSkillHub = registry === "skillhub";
+  const isHermes = registry === "hermes";
   return (
     <span
       className={cn(
@@ -696,7 +700,9 @@ function RegistryBadge({ registry }: { registry: Registry }) {
           ? "bg-[#FFF6E6] text-[#B26A00]"
           : isSkillHub
             ? "bg-[#EAF6F1] text-[#287458]"
-            : "bg-[#EAF1FF] text-[#2F6BFF]",
+            : isHermes
+              ? "bg-black/[0.06] text-black/60"
+              : "bg-[#EAF1FF] text-[#2F6BFF]",
       )}
     >
       {REGISTRY_LABEL[registry]}
@@ -731,6 +737,40 @@ function SkillIcon({
   );
 }
 
+function BatchSelectButton({
+  skill,
+  selected,
+  disabled,
+  onToggle,
+}: {
+  skill: Skill;
+  selected: boolean;
+  disabled: boolean;
+  onToggle: (skill: Skill) => void;
+}) {
+  const t = useT();
+  return (
+    <button
+      type="button"
+      onClick={() => onToggle(skill)}
+      disabled={disabled}
+      aria-pressed={selected}
+      aria-label={selected
+        ? t("取消批量下载 {{name}}", { name: skill.name })
+        : t("选择批量下载 {{name}}", { name: skill.name })}
+      title={selected ? t("取消选择") : t("选择")}
+      className={cn(
+        "inline-flex size-5 items-center justify-center rounded-[4px] border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 disabled:opacity-55",
+        selected
+          ? "border-black bg-black text-white"
+          : "border-black/20 bg-white text-transparent hover:border-black/40",
+      )}
+    >
+      <Check className="size-3" strokeWidth={2.5} aria-hidden="true" />
+    </button>
+  );
+}
+
 function SkillCard({
   skill,
   installed,
@@ -738,6 +778,8 @@ function SkillCard({
   onInstall,
   onOpenDetails,
   description,
+  selected = false,
+  onToggleSelected,
 }: {
   skill: Skill;
   installed: boolean;
@@ -745,6 +787,8 @@ function SkillCard({
   onInstall: (skill: Skill) => void;
   onOpenDetails?: (skill: Skill) => void;
   description?: string;
+  selected?: boolean;
+  onToggleSelected?: (skill: Skill) => void;
 }) {
   const t = useT();
   const popularityTier = getPopularityTier(skill);
@@ -787,7 +831,7 @@ function SkillCard({
         />
       ) : null}
       <div className="pointer-events-none flex min-w-0 flex-1 items-start gap-3">{content}</div>
-      <div className="relative z-10 shrink-0 self-center">
+      <div className="relative z-10 flex shrink-0 items-center gap-1 self-center">
         {installed ? (
           <span
             className="inline-flex size-9 items-center justify-center text-[#82BDAE]"
@@ -797,16 +841,26 @@ function SkillCard({
             <Check className="size-5" aria-hidden="true" />
           </span>
         ) : (
-          <button
-            type="button"
-            onClick={() => onInstall(skill)}
-            disabled={installing}
-            aria-label={t("安装")}
-            title={t("安装")}
-            className="inline-flex size-9 items-center justify-center border-0 bg-transparent text-[#4B5563] shadow-none transition-colors hover:text-[#374151] disabled:opacity-55"
-          >
-            {installing ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Plus className="size-5" strokeWidth={2.25} aria-hidden="true" />}
-          </button>
+          <>
+            {onToggleSelected ? (
+              <BatchSelectButton
+                skill={skill}
+                selected={selected}
+                disabled={installing}
+                onToggle={onToggleSelected}
+              />
+            ) : null}
+            <button
+              type="button"
+              onClick={() => onInstall(skill)}
+              disabled={installing}
+              aria-label={t("安装")}
+              title={t("安装")}
+              className="inline-flex size-9 items-center justify-center border-0 bg-transparent text-[#4B5563] shadow-none transition-colors hover:text-[#374151] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:opacity-55"
+            >
+              {installing ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Plus className="size-5" strokeWidth={2.25} aria-hidden="true" />}
+            </button>
+          </>
         )}
       </div>
     </li>
@@ -943,6 +997,8 @@ function FeaturedSkillCard({
   installing,
   onInstall,
   onOpenDetails,
+  selected,
+  onToggleSelected,
 }: {
   entry: FeaturedSkillEntry;
   title: string;
@@ -952,6 +1008,8 @@ function FeaturedSkillCard({
   installing: boolean;
   onInstall: (skill: Skill) => void;
   onOpenDetails: (skill: Skill) => void;
+  selected: boolean;
+  onToggleSelected: (skill: Skill) => void;
 }) {
   const t = useT();
 
@@ -1003,59 +1061,87 @@ function FeaturedSkillCard({
             <Check className="size-5" aria-hidden="true" />
           </span>
         ) : (
-          <button
-            type="button"
-            onClick={() => onInstall(entry.skill)}
-            disabled={installing}
-            aria-label={t("安装")}
-            title={t("安装")}
-            className="pointer-events-auto inline-flex size-8 shrink-0 items-center justify-center border-0 bg-transparent text-[#4B5563] shadow-none transition-colors hover:text-[#374151] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:opacity-55"
-          >
-            {installing ? (
-              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-            ) : (
-              <Plus className="size-5" strokeWidth={2.25} aria-hidden="true" />
-            )}
-          </button>
+          <div className="pointer-events-auto flex shrink-0 items-center gap-1">
+            <BatchSelectButton
+              skill={entry.skill}
+              selected={selected}
+              disabled={installing}
+              onToggle={onToggleSelected}
+            />
+            <button
+              type="button"
+              onClick={() => onInstall(entry.skill)}
+              disabled={installing}
+              aria-label={t("安装")}
+              title={t("安装")}
+              className="inline-flex size-8 items-center justify-center border-0 bg-transparent text-[#4B5563] shadow-none transition-colors hover:text-[#374151] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 disabled:opacity-55"
+            >
+              {installing ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Plus className="size-5" strokeWidth={2.25} aria-hidden="true" />
+              )}
+            </button>
+          </div>
         )}
       </div>
     </li>
   );
 }
 
-function InstalledSkillCard({
+function InstalledSkillRow({
   skill,
+  selected,
+  disabled,
   uninstalling,
+  onToggleSelected,
   onUninstall,
 }: {
   skill: InstalledSkill;
+  selected: boolean;
+  disabled: boolean;
   uninstalling: boolean;
+  onToggleSelected: (skill: InstalledSkill) => void;
   onUninstall: (skill: InstalledSkill) => void;
 }) {
   const t = useT();
   return (
-    <li className="flex items-start gap-3 rounded-md border border-black/[0.06] bg-white px-3.5 py-3 transition-colors hover:border-black/[0.12] hover:bg-black/[0.025]">
-      <SkillIcon skill={skill} className="mt-0.5 size-9 shrink-0 object-contain" />
+    <li className="flex items-center gap-3 bg-white px-3.5 py-3 transition-colors hover:bg-black/[0.025]">
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-semibold text-black/90">{skill.name}</div>
         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-black/45">
           <span className="truncate">{skill.rawId}</span>
         </div>
-        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-black/45">
-          {skill.registries.map((registry) => (
-            <RegistryBadge key={registry} registry={registry} />
-          ))}
-          {skill.version ? <span>v{skill.version}</span> : null}
-        </div>
+        {skill.version ? (
+          <div className="mt-1 text-[11px] text-black/45">v{skill.version}</div>
+        ) : null}
       </div>
-      <div className="shrink-0 self-center">
+      <div className="flex shrink-0 items-center gap-1 self-center">
+        <button
+          type="button"
+          onClick={() => onToggleSelected(skill)}
+          disabled={disabled}
+          aria-pressed={selected}
+          aria-label={selected
+            ? t("取消批量卸载 {{name}}", { name: skill.name })
+            : t("选择批量卸载 {{name}}", { name: skill.name })}
+          title={selected ? t("取消选择") : t("选择")}
+          className={cn(
+            "inline-flex size-5 items-center justify-center rounded-[4px] border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 disabled:opacity-55",
+            selected
+              ? "border-red-500 bg-red-500 text-white"
+              : "border-black/20 bg-white text-transparent hover:border-black/40",
+          )}
+        >
+          <Check className="size-3" strokeWidth={2.5} aria-hidden="true" />
+        </button>
         <button
           type="button"
           onClick={() => onUninstall(skill)}
-          disabled={uninstalling}
+          disabled={disabled}
           aria-label={t("删除技能 {{name}}", { name: skill.name })}
           title={t("删除")}
-          className="inline-flex size-9 items-center justify-center rounded-md text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-55"
+          className="inline-flex size-9 items-center justify-center rounded-md text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:opacity-55"
         >
           {uninstalling ? (
             <Loader2 className="size-4 animate-spin" aria-hidden="true" />
@@ -1494,7 +1580,12 @@ export function SkillsDemoPanel({
   const [installed, setInstalled] = useState<InstalledSkill[]>([]);
   const [installedLoading, setInstalledLoading] = useState(true);
   const [installingId, setInstallingId] = useState<string | null>(null);
+  const [batchInstalling, setBatchInstalling] = useState(false);
+  const [selectedSkillIds, setSelectedSkillIds] = useState<Set<string>>(() => new Set());
   const [uninstallingKey, setUninstallingKey] = useState<string | null>(null);
+  const [batchUninstalling, setBatchUninstalling] = useState(false);
+  const [selectedInstalledSkillIds, setSelectedInstalledSkillIds] = useState<Set<string>>(() => new Set());
+  const [pendingUninstall, setPendingUninstall] = useState<InstalledSkill[] | null>(null);
   const [knownInstalledIds, setKnownInstalledIds] = useState<Set<string>>(() => readKnownInstalledIds(botId));
   const [featuredBatch, setFeaturedBatch] = useState(0);
   const [selectedSkillDetails, setSelectedSkillDetails] = useState<SkillDetailsEntry | null>(null);
@@ -1519,8 +1610,13 @@ export function SkillsDemoPanel({
     try {
       const list = await dataLayer.listInstalled();
       setInstalled(list);
+      const availableIds = new Set(list.map((skill) => skillIdentity(skill)));
+      setSelectedInstalledSkillIds((current) => new Set(
+        Array.from(current).filter((id) => availableIds.has(id)),
+      ));
     } catch {
       setInstalled([]);
+      setSelectedInstalledSkillIds(new Set());
     } finally {
       setInstalledLoading(false);
     }
@@ -1583,6 +1679,16 @@ export function SkillsDemoPanel({
     return set;
   }, [installed]);
 
+  const installedByIdentity = useMemo(() => new Map(
+    installed.map((skill) => [skillIdentity(skill), skill]),
+  ), [installed]);
+
+  const selectedInstalledSkills = useMemo(() => (
+    Array.from(selectedInstalledSkillIds)
+      .map((id) => installedByIdentity.get(id))
+      .filter((skill): skill is InstalledSkill => skill !== undefined)
+  ), [installedByIdentity, selectedInstalledSkillIds]);
+
   const curatedIdentityByShortSlug = useMemo(() => {
     const configuredSkills = [
       ...(isDomestic ? DOMESTIC_FEATURED_SKILLS : FEATURED_SKILLS).map((entry) => entry.skill),
@@ -1637,9 +1743,37 @@ export function SkillsDemoPanel({
     ? visibleResults
     : visibleResults.slice(0, SEARCH_RESULTS_PREVIEW_LIMIT);
 
-  const featuredEntries: readonly FeaturedSkillEntry[] = useMemo(() => {
-    return isDomestic ? DOMESTIC_FEATURED_SKILLS : FEATURED_SKILLS;
-  }, [isDomestic]);
+  const featuredEntries: readonly FeaturedSkillEntry[] = useMemo(() => (
+    isDomestic ? DOMESTIC_FEATURED_SKILLS : FEATURED_SKILLS
+  ), [isDomestic]);
+  const skillCategories = useMemo(() => (
+    isDomestic ? DOMESTIC_SKILL_CATEGORIES : CURATED_SKILL_CATEGORIES
+  ), [isDomestic]);
+  const curatedSkills = useMemo(() => [
+    ...featuredEntries.map((entry) => entry.skill),
+    ...skillCategories.flatMap((category) => (
+      category.skills.map((entry) => "skill" in entry ? entry.skill : entry)
+    )),
+  ], [featuredEntries, skillCategories]);
+
+  const selectableSkillsByIdentity = useMemo(() => {
+    const byIdentity = new Map<string, Skill>();
+    [...curatedSkills, ...mergeSkills(clawhubResults, skillsshResults, skillhubResults)].forEach((skill) => {
+      byIdentity.set(skillIdentity(skill), skill);
+    });
+    return byIdentity;
+  }, [clawhubResults, curatedSkills, skillhubResults, skillsshResults]);
+
+  const selectedSkills = useMemo(() => (
+    Array.from(selectedSkillIds)
+      .map((id) => selectableSkillsByIdentity.get(id))
+      .filter((skill): skill is Skill => skill !== undefined && !isInstalled(skill))
+  ), [isInstalled, selectableSkillsByIdentity, selectedSkillIds]);
+
+  useEffect(() => {
+    const curatedIds = new Set(curatedSkills.map((skill) => skillIdentity(skill)));
+    setSelectedSkillIds((current) => new Set(Array.from(current).filter((id) => curatedIds.has(id))));
+  }, [curatedSkills, debounced]);
 
   const featuredBatchCount = Math.max(1, Math.ceil(featuredEntries.length / FEATURED_BATCH_SIZE));
   const featuredBatchIndex = Math.min(featuredBatch, featuredBatchCount - 1);
@@ -1658,7 +1792,7 @@ export function SkillsDemoPanel({
 
   const handleInstall = useCallback(
     async (skill: Skill) => {
-      if (installingId) return;
+      if (installingId || batchInstalling) return;
       const id = skillIdentity(skill);
       setInstallingId(id);
       try {
@@ -1669,7 +1803,12 @@ export function SkillsDemoPanel({
             writeKnownInstalledIds(botId, next);
             return next;
           });
-          toast.success(t("下载成功"));
+          setSelectedSkillIds((current) => {
+            const next = new Set(current);
+            next.delete(id);
+            return next;
+          });
+          toast.success(t("安装成功"));
           await refreshInstalled();
         } else {
           toast.error(result.message || t("安装失败"));
@@ -1680,12 +1819,66 @@ export function SkillsDemoPanel({
         setInstallingId(null);
       }
     },
-    [botId, dataLayer, installingId, refreshInstalled, t],
+    [batchInstalling, botId, dataLayer, installingId, refreshInstalled, t],
   );
+
+  const handleToggleSelected = useCallback((skill: Skill) => {
+    const id = skillIdentity(skill);
+    setSelectedSkillIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleBatchInstall = useCallback(async () => {
+    if (batchInstalling || installingId || selectedSkills.length === 0) return;
+    setBatchInstalling(true);
+    try {
+      const result = await installSkillsSequentially(dataLayer, selectedSkills);
+      const succeededIds = new Set(result.succeeded.map((skill) => skillIdentity(skill)));
+      if (succeededIds.size > 0) {
+        setKnownInstalledIds((current) => {
+          const next = new Set(current);
+          succeededIds.forEach((id) => next.add(id));
+          writeKnownInstalledIds(botId, next);
+          return next;
+        });
+        setSelectedSkillIds((current) => {
+          const next = new Set(current);
+          succeededIds.forEach((id) => next.delete(id));
+          return next;
+        });
+      }
+      await refreshInstalled();
+      if (result.failed.length > 0) {
+        toast.error(t("批量下载完成：成功 {{success}} 个，失败 {{failed}} 个", {
+          success: result.succeeded.length,
+          failed: result.failed.length,
+        }));
+      } else {
+        toast.success(t("批量下载成功，共 {{count}} 个", { count: result.succeeded.length }));
+      }
+    } finally {
+      setBatchInstalling(false);
+    }
+  }, [batchInstalling, botId, dataLayer, installingId, refreshInstalled, selectedSkills, t]);
+
+  const handleToggleInstalledSelected = useCallback((skill: InstalledSkill) => {
+    if (uninstallingKey || batchUninstalling) return;
+    const id = skillIdentity(skill);
+    setSelectedInstalledSkillIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, [batchUninstalling, uninstallingKey]);
 
   const handleUninstall = useCallback(
     async (skill: InstalledSkill) => {
-      if (uninstallingKey) return;
+      if (uninstallingKey || batchUninstalling) return;
       // 卸载按 registry + rawId 识别；旧版 list 若只返回 slug，只能按该返回值下发。
       const key = skillIdentity(skill);
       setUninstallingKey(key);
@@ -1700,6 +1893,11 @@ export function SkillsDemoPanel({
             writeKnownInstalledIds(botId, next);
             return next;
           });
+          setSelectedInstalledSkillIds((current) => {
+            const next = new Set(current);
+            next.delete(key);
+            return next;
+          });
           toast.success(t("卸载成功"));
           await refreshInstalled();
         } else {
@@ -1711,8 +1909,49 @@ export function SkillsDemoPanel({
         setUninstallingKey(null);
       }
     },
-    [botId, dataLayer, refreshInstalled, t, uninstallingKey],
+    [batchUninstalling, botId, dataLayer, refreshInstalled, t, uninstallingKey],
   );
+
+  const handleBatchUninstall = useCallback(async (skills: InstalledSkill[]) => {
+    if (batchUninstalling || uninstallingKey || skills.length === 0) return;
+    setBatchUninstalling(true);
+    try {
+      const result = await uninstallSkillsSequentially(dataLayer, skills);
+      const succeededIds = new Set(result.succeeded.map((skill) => skillIdentity(skill)));
+      if (succeededIds.size > 0) {
+        setSelectedInstalledSkillIds((current) => {
+          const next = new Set(current);
+          succeededIds.forEach((id) => next.delete(id));
+          return next;
+        });
+        setKnownInstalledIds((current) => {
+          const next = new Set(current);
+          for (const rememberedId of next) {
+            if (result.succeeded.some((skill) => rememberedIdMatchesSkill(rememberedId, skill))) {
+              next.delete(rememberedId);
+            }
+          }
+          writeKnownInstalledIds(botId, next);
+          return next;
+        });
+      }
+      await refreshInstalled();
+      if (result.failed.length > 0) {
+        toast.error(t("批量卸载完成：成功 {{success}} 个，失败 {{failed}} 个", {
+          success: result.succeeded.length,
+          failed: result.failed.length,
+        }));
+      } else {
+        toast.success(t("批量卸载成功，共 {{count}} 个", { count: result.succeeded.length }));
+      }
+    } finally {
+      setBatchUninstalling(false);
+    }
+  }, [batchUninstalling, botId, dataLayer, refreshInstalled, t, uninstallingKey]);
+
+  const uninstallBusy = Boolean(uninstallingKey) || batchUninstalling;
+  const pendingUninstallCount = pendingUninstall?.length ?? 0;
+  const pendingSingleUninstall = pendingUninstallCount === 1 ? pendingUninstall?.[0] : undefined;
 
   return (
     <div className={`${CLS} pb-12`}>
@@ -1731,6 +1970,57 @@ export function SkillsDemoPanel({
         onClose={() => setSelectedSkillDetails(null)}
       />
 
+      <Dialog
+        open={pendingUninstall !== null}
+        onOpenChange={(open) => {
+          if (!open && !uninstallBusy) setPendingUninstall(null);
+        }}
+      >
+        <DialogContent className="!rounded-md md:w-[28rem]">
+          <DialogHeader className="mb-5">
+            <DialogTitle>{pendingUninstallCount > 1 ? t("批量卸载技能？") : t("删除技能？")}</DialogTitle>
+            <DialogDescription>
+              {pendingSingleUninstall
+                ? t("这会从智能体中永久删除 {{name}}。", { name: pendingSingleUninstall.name })
+                : pendingUninstallCount > 1
+                  ? t("这会从智能体中永久删除已选择的 {{count}} 个技能。", { count: pendingUninstallCount })
+                  : null}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <DialogClose asChild>
+              <button
+                type="button"
+                disabled={uninstallBusy}
+                className="inline-flex h-9 items-center justify-center rounded-md border border-black/10 bg-white px-4 text-sm font-semibold text-black/65 hover:bg-black/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:opacity-55"
+              >
+                {t("取消")}
+              </button>
+            </DialogClose>
+            <button
+              type="button"
+              disabled={uninstallBusy || pendingUninstall === null}
+              aria-label={pendingSingleUninstall
+                ? t("确认删除 {{name}}", { name: pendingSingleUninstall.name })
+                : pendingUninstallCount > 1
+                  ? t("确认批量卸载 {{count}} 个技能", { count: pendingUninstallCount })
+                  : t("确认删除")}
+              onClick={() => {
+                if (!pendingUninstall) return;
+                const action = pendingSingleUninstall
+                  ? handleUninstall(pendingSingleUninstall)
+                  : handleBatchUninstall(pendingUninstall);
+                void action.finally(() => setPendingUninstall(null));
+              }}
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:opacity-55"
+            >
+              {uninstallBusy ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : null}
+              {pendingUninstallCount > 1 ? t("批量卸载") : t("删除")}
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Tabs
         value={activeTab}
         onValueChange={(value) => {
@@ -1741,36 +2031,70 @@ export function SkillsDemoPanel({
         }}
         className="min-w-0"
       >
-        <TabsList
-          aria-label={t("技能市场页面切换")}
-          className="mb-4 !h-9 w-full !justify-start gap-7 !rounded-none !border-0 !border-b !border-black/[0.08] !bg-transparent !p-0 !shadow-none"
-        >
-          <TabsTrigger
-            value="discover"
-            className="relative !h-9 !min-w-0 !rounded-none !bg-transparent !px-0 !py-0 pb-2 text-sm font-medium text-black/55 !shadow-none transition-colors after:absolute after:bottom-[-1px] after:left-0 after:h-0.5 after:w-full after:bg-transparent hover:text-black/80 data-[state=active]:!bg-transparent data-[state=active]:text-black/90 data-[state=active]:!shadow-none data-[state=active]:after:bg-black"
+        <div className="mb-4 flex min-w-0 items-end gap-4 border-b border-black/[0.08]">
+          <TabsList
+            aria-label={t("技能市场页面切换")}
+            className="!h-9 min-w-0 flex-1 !justify-start gap-4 !rounded-none !border-0 !bg-transparent !p-0 !shadow-none sm:gap-7"
           >
-            {t("技能")}
-          </TabsTrigger>
-          {expertsPanel ? (
             <TabsTrigger
-              value="experts"
+              value="discover"
               className="relative !h-9 !min-w-0 !rounded-none !bg-transparent !px-0 !py-0 pb-2 text-sm font-medium text-black/55 !shadow-none transition-colors after:absolute after:bottom-[-1px] after:left-0 after:h-0.5 after:w-full after:bg-transparent hover:text-black/80 data-[state=active]:!bg-transparent data-[state=active]:text-black/90 data-[state=active]:!shadow-none data-[state=active]:after:bg-black"
             >
-              {t("技能包")}
+              {t("技能")}
             </TabsTrigger>
-          ) : null}
-          <TabsTrigger
-            value="installed"
-            className="relative !h-9 !min-w-0 !rounded-none !bg-transparent !px-0 !py-0 pb-2 text-sm font-medium text-black/55 !shadow-none transition-colors after:absolute after:bottom-[-1px] after:left-0 after:h-0.5 after:w-full after:bg-transparent hover:text-black/80 data-[state=active]:!bg-transparent data-[state=active]:text-black/90 data-[state=active]:!shadow-none data-[state=active]:after:bg-black"
-          >
-            {t("已安装")}
-            {!installedLoading ? (
-              <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-black/[0.06] px-1.5 text-[11px] font-medium text-black/45 tabular-nums">
-                {installed.length}
-              </span>
+            {expertsPanel ? (
+              <TabsTrigger
+                value="experts"
+                className="relative !h-9 !min-w-0 !rounded-none !bg-transparent !px-0 !py-0 pb-2 text-sm font-medium text-black/55 !shadow-none transition-colors after:absolute after:bottom-[-1px] after:left-0 after:h-0.5 after:w-full after:bg-transparent hover:text-black/80 data-[state=active]:!bg-transparent data-[state=active]:text-black/90 data-[state=active]:!shadow-none data-[state=active]:after:bg-black"
+              >
+                {t("技能包")}
+              </TabsTrigger>
             ) : null}
-          </TabsTrigger>
-        </TabsList>
+            <TabsTrigger
+              value="installed"
+              className="relative !h-9 !min-w-0 !rounded-none !bg-transparent !px-0 !py-0 pb-2 text-sm font-medium text-black/55 !shadow-none transition-colors after:absolute after:bottom-[-1px] after:left-0 after:h-0.5 after:w-full after:bg-transparent hover:text-black/80 data-[state=active]:!bg-transparent data-[state=active]:text-black/90 data-[state=active]:!shadow-none data-[state=active]:after:bg-black"
+            >
+              {t("已安装")}
+              {!installedLoading ? (
+                <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-black/[0.06] px-1.5 text-[11px] font-medium text-black/45 tabular-nums">
+                  {installed.length}
+                </span>
+              ) : null}
+            </TabsTrigger>
+          </TabsList>
+          <p className="ml-auto shrink-0 pb-2 text-right text-[10px] font-medium text-black/45 sm:text-xs">
+            {t("技能来源于")} {isDomestic ? (
+              <a
+                href="https://skillhub.cn"
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-sm text-black/65 underline decoration-black/20 underline-offset-2 hover:text-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              >
+                SkillHub
+              </a>
+            ) : (
+              <>
+                <a
+                  href="https://skills.sh"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-sm text-black/65 underline decoration-black/20 underline-offset-2 hover:text-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                >
+                  Skills.sh
+                </a>{" "}
+                {t("与")}{" "}
+                <a
+                  href="https://clawhub.ai/"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-sm text-black/65 underline decoration-black/20 underline-offset-2 hover:text-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                >
+                  ClawHub
+                </a>
+              </>
+            )}
+          </p>
+        </div>
 
         <TabsContent value="discover" className="mt-0">
           <div className="space-y-6">
@@ -1779,6 +2103,7 @@ export function SkillsDemoPanel({
                 <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-black/35" aria-hidden="true" />
                 <input
                   type="text"
+                  aria-label={t("搜索技能")}
                   value={keyword}
                   onChange={(e) => setKeyword(e.target.value)}
                   placeholder={isDomestic ? "搜索 SkillHub 中的技能" : t("搜索 ClawHub / skills.sh 中的技能")}
@@ -1795,13 +2120,14 @@ export function SkillsDemoPanel({
                   </button>
                 ) : null}
               </div>
-              <Select
-                value={registryFilter}
-                onValueChange={(value) => {
-                  if (value !== "all" && value !== "skills-sh" && value !== "clawhub" && value !== "skillhub") return;
-                  setRegistryFilter(value);
-                }}
-              >
+              <div className="flex shrink-0 items-center gap-2">
+                <Select
+                  value={registryFilter}
+                  onValueChange={(value) => {
+                    if (value !== "all" && value !== "skills-sh" && value !== "clawhub" && value !== "skillhub") return;
+                    setRegistryFilter(value);
+                  }}
+                >
                   <SelectTrigger
                     aria-label={t("来源")}
                     className="lv-skills-source-select-trigger !h-10 w-[132px] shrink-0 !rounded-[12px] !border-black/10 !bg-white !px-3 text-xs font-semibold text-black/75 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-shadow hover:!border-black/16 hover:shadow-[0_2px_7px_rgba(0,0,0,0.07)] data-[state=open]:!border-black/20 data-[state=open]:shadow-[0_3px_10px_rgba(0,0,0,0.09)]"
@@ -1833,6 +2159,22 @@ export function SkillsDemoPanel({
                     </SelectItem>
                   </SelectContent>
                 </Select>
+                <button
+                  type="button"
+                  onClick={() => void handleBatchInstall()}
+                  disabled={selectedSkills.length === 0 || batchInstalling || Boolean(installingId)}
+                  aria-busy={batchInstalling}
+                  aria-label={t("批量下载")}
+                  title={selectedSkills.length === 0 ? t("请先选择要下载的技能") : t("批量下载")}
+                  className="inline-flex h-10 w-32 shrink-0 items-center justify-center gap-1.5 rounded-[12px] bg-black px-3 text-xs font-semibold text-white transition-colors hover:bg-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-black/[0.08] disabled:text-black/30"
+                >
+                  {batchInstalling ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : null}
+                  <span>{t("批量下载")}</span>
+                  {selectedSkills.length > 0 ? (
+                    <span className="tabular-nums">({selectedSkills.length})</span>
+                  ) : null}
+                </button>
+              </div>
             </div>
 
             {hasSearch ? (
@@ -1870,15 +2212,6 @@ export function SkillsDemoPanel({
                       </button>
                       </div>
                     ) : null}
-                    {visibleResults.length > SEARCH_RESULTS_PREVIEW_LIMIT ? (
-                      <button
-                        type="button"
-                        onClick={() => setSearchResultsExpanded((expanded) => !expanded)}
-                        className="shrink-0 whitespace-nowrap text-sm font-semibold text-black/50 transition-colors hover:text-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2"
-                      >
-                        {shouldShowAllSearchResults ? t("收起全部") : t("查看全部")}
-                      </button>
-                    ) : null}
                   </div>
                 </div>
                 {searching ? (
@@ -1897,12 +2230,28 @@ export function SkillsDemoPanel({
                         key={`search:${skill.registry}:${skill.rawId}`}
                         skill={skill}
                         installed={isInstalled(skill)}
-                        installing={installingId === skillIdentity(skill)}
+                        installing={
+                          installingId === skillIdentity(skill)
+                          || (batchInstalling && selectedSkillIds.has(skillIdentity(skill)))
+                        }
                         onInstall={handleInstall}
+                        selected={selectedSkillIds.has(skillIdentity(skill))}
+                        onToggleSelected={handleToggleSelected}
                       />
                     ))}
                   </ul>
                 )}
+                {!searching && visibleResults.length > SEARCH_RESULTS_PREVIEW_LIMIT ? (
+                  <div className="mt-3 flex justify-center">
+                    <button
+                      type="button"
+                      onClick={() => setSearchResultsExpanded((expanded) => !expanded)}
+                      className="inline-flex h-9 items-center justify-center rounded-md border border-black/10 bg-white px-4 text-sm font-semibold text-black/60 transition-colors hover:border-black/20 hover:bg-black/[0.025] hover:text-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2"
+                    >
+                      {shouldShowAllSearchResults ? t("收起全部") : t("查看全部")}
+                    </button>
+                  </div>
+                ) : null}
               </section>
             ) : null}
 
@@ -1957,8 +2306,13 @@ export function SkillsDemoPanel({
                             subtitle={copy.subtitle}
                             description={copy.description}
                             installed={isInstalled(entry.skill)}
-                            installing={installingId === skillIdentity(entry.skill)}
+                            installing={
+                              installingId === skillIdentity(entry.skill)
+                              || (batchInstalling && selectedSkillIds.has(skillIdentity(entry.skill)))
+                            }
                             onInstall={handleInstall}
+                            selected={selectedSkillIds.has(skillIdentity(entry.skill))}
+                            onToggleSelected={handleToggleSelected}
                             onOpenDetails={(skill) => setSelectedSkillDetails({
                               skill,
                               overview: getSkillOverview(skill, isChinese),
@@ -1973,7 +2327,7 @@ export function SkillsDemoPanel({
             </section>
 
             <div className="space-y-6">
-              {(isDomestic ? DOMESTIC_SKILL_CATEGORIES : CURATED_SKILL_CATEGORIES).map((category) => (
+              {skillCategories.map((category) => (
                 <section key={category.id}>
                   <SectionTitle className="mb-2 text-base">
                     {isChinese ? category.label.zh : category.label.en}
@@ -1987,8 +2341,13 @@ export function SkillsDemoPanel({
                         key={`discover:${skillIdentity(skill)}`}
                         skill={skill}
                         installed={isInstalled(skill)}
-                        installing={installingId === skillIdentity(skill)}
+                        installing={
+                          installingId === skillIdentity(skill)
+                          || (batchInstalling && selectedSkillIds.has(skillIdentity(skill)))
+                        }
                         onInstall={handleInstall}
+                        selected={selectedSkillIds.has(skillIdentity(skill))}
+                        onToggleSelected={handleToggleSelected}
                         onOpenDetails={() => setSelectedSkillDetails({
                           skill,
                           overview: getSkillOverview(skill, isChinese),
@@ -2011,7 +2370,27 @@ export function SkillsDemoPanel({
         ) : null}
 
         <TabsContent value="installed" className="mt-0">
-          <SectionTitle count={installedLoading ? undefined : installed.length}>{t("已安装")}</SectionTitle>
+          <div className="mb-2 flex min-h-10 items-center justify-between gap-3">
+            <SectionTitle count={installedLoading ? undefined : installed.length} className="mb-0">
+              {t("已安装")}
+            </SectionTitle>
+            {!installedLoading && installed.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setPendingUninstall(selectedInstalledSkills)}
+                disabled={selectedInstalledSkills.length === 0 || uninstallBusy}
+                aria-busy={batchUninstalling}
+                aria-label={t("批量卸载")}
+                className="inline-flex h-9 w-32 shrink-0 items-center justify-center gap-1.5 rounded-[12px] bg-red-600 px-3 text-xs font-semibold text-white transition-colors hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-black/[0.08] disabled:text-black/30"
+              >
+                {batchUninstalling ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : null}
+                <span>{t("批量卸载")}</span>
+                {selectedInstalledSkills.length > 0 ? (
+                  <span className="tabular-nums">({selectedInstalledSkills.length})</span>
+                ) : null}
+              </button>
+            ) : null}
+          </div>
           {installedLoading ? (
             <div className="flex items-center gap-2 rounded-md bg-white px-4 py-6 text-sm text-black/45">
               <Loader2 className="size-4 animate-spin" aria-hidden="true" />
@@ -2022,13 +2401,16 @@ export function SkillsDemoPanel({
               {t("还没有已安装的技能")}
             </div>
           ) : (
-            <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            <ul className="divide-y divide-black/[0.06] border-y border-black/[0.08] bg-white">
               {installed.map((skill) => (
-                <InstalledSkillCard
+                <InstalledSkillRow
                   key={skillIdentity(skill)}
                   skill={skill}
+                  selected={selectedInstalledSkillIds.has(skillIdentity(skill))}
+                  disabled={uninstallBusy}
                   uninstalling={uninstallingKey === skillIdentity(skill)}
-                  onUninstall={handleUninstall}
+                  onToggleSelected={handleToggleInstalledSelected}
+                  onUninstall={(selectedSkill) => setPendingUninstall([selectedSkill])}
                 />
               ))}
             </ul>

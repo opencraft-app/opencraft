@@ -22,12 +22,18 @@
  */
 
 import { shellQuote } from "@/lib/hermes-cron-client";
+import {
+  buildHermesSkillDeleteCommand,
+  buildInstalledSkillsListCommand,
+  formatInstalledSkillDisplayName,
+  parseInstalledSkillSlugs,
+} from "@/lib/hermes-skills-client";
 
 import { resolveSkillHubApiBase } from "@/lib/skillhub-api";
 
 import type { ExpertsExecDebugCommand } from "../hermes-agent-experts-panel";
 
-export type Registry = "clawhub" | "skills-sh" | "skillhub";
+export type Registry = "clawhub" | "skills-sh" | "skillhub" | "hermes";
 
 /** 面板内部统一的技能模型（合并两个 registry 的字段） */
 export interface Skill {
@@ -59,6 +65,8 @@ export interface InstalledSkill extends Skill {
   /** 来源归属（双 list 合并判定后的结果） */
   sourceLabel: string;
   registries: Registry[];
+  /** 兼容旧数据中的卸载能力标记；当前页面为所有已安装来源提供真实卸载。 */
+  uninstallable?: boolean;
 }
 
 export interface InstallResult {
@@ -83,6 +91,7 @@ export const REGISTRY_LABEL: Record<Registry, string> = {
   clawhub: "ClawHub",
   "skills-sh": "skills.sh",
   skillhub: "SkillHub",
+  hermes: "Hermes",
 };
 
 // ─── 命令构造 ────────────────────────────────────────────────────────────────
@@ -138,6 +147,10 @@ export function buildSkillhubUninstallCommand(slug: string): string {
 
 export function buildSkillhubListCommand(): string {
   return "acli skills list";
+}
+
+export function buildHermesSkillsListCommand(): string {
+  return buildInstalledSkillsListCommand();
 }
 
 // ─── 输出解析 ─────────────────────────────────────────────────────────────────
@@ -362,6 +375,7 @@ interface SkillhubListItem {
   display_name?: string;
   displayName?: string;
   id?: string;
+  iconUrl?: string;
   name?: string;
   rawId?: string;
   slug?: string;
@@ -395,11 +409,24 @@ export function parseSkillhubList(raw: string): InstalledSkill[] {
       rawId,
       slug: rawId,
       name,
+      iconUrl: item.iconUrl?.trim() || undefined,
       version: item.version?.trim() || undefined,
       registries: ["skillhub" as Registry],
       sourceLabel: REGISTRY_LABEL.skillhub,
     } satisfies InstalledSkill;
   }).filter((skill): skill is InstalledSkill => skill !== null);
+}
+
+export function parseHermesInstalledSkills(raw: string): InstalledSkill[] {
+  return parseInstalledSkillSlugs(raw).map((slug) => ({
+    registry: "hermes",
+    rawId: slug,
+    slug,
+    name: formatInstalledSkillDisplayName(slug) || slug,
+    registries: ["hermes"],
+    sourceLabel: REGISTRY_LABEL.hermes,
+    uninstallable: true,
+  }));
 }
 
 export function parseInstallOk(raw: string): boolean {
@@ -479,6 +506,32 @@ export function mergeInstalledSources(
   return Array.from(byIdentity.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+export function mergeInstalledWithHermes(
+  registryInstalled: InstalledSkill[],
+  hermesInstalled: InstalledSkill[],
+): InstalledSkill[] {
+  const merged = registryInstalled.map((skill) => ({
+    ...skill,
+    registries: [...skill.registries],
+    uninstallable: skill.uninstallable ?? true,
+  }));
+
+  for (const hermesSkill of hermesInstalled) {
+    const normalizedSlug = hermesSkill.slug.trim().toLowerCase();
+    const matches = merged.filter((skill) => (
+      skill.registry !== "hermes" && skill.slug.trim().toLowerCase() === normalizedSlug
+    ));
+    if (matches.length === 1 && matches[0]) {
+      if (!matches[0].registries.includes("hermes")) matches[0].registries.push("hermes");
+      matches[0].sourceLabel = matches[0].registries.map((registry) => REGISTRY_LABEL[registry]).join(" / ");
+      continue;
+    }
+    merged.push({ ...hermesSkill, registries: [...hermesSkill.registries], uninstallable: true });
+  }
+
+  return merged.sort((a, b) => a.name.localeCompare(b.name));
+}
+
 // ─── 数据层接口 ───────────────────────────────────────────────────────────────
 
 export type SkillSearchSort = "score" | "downloads";
@@ -495,6 +548,52 @@ export interface SkillsDataLayer {
   uninstall(skill: Skill): Promise<InstallResult>;
   /** 默认页（无搜索）的推荐位。mock 返回 fixtures；live 暂返回空，后续可接 trending。 */
   getPopular(): Promise<{ clawhub: Skill[]; skillssh: Skill[]; skillhub: Skill[] }>;
+}
+
+export type BatchInstallResult = {
+  succeeded: Skill[];
+  failed: Array<{ skill: Skill; message?: string }>;
+};
+
+export async function installSkillsSequentially(
+  dataLayer: Pick<SkillsDataLayer, "install">,
+  skills: Skill[],
+): Promise<BatchInstallResult> {
+  const succeeded: Skill[] = [];
+  const failed: BatchInstallResult["failed"] = [];
+  for (const skill of skills) {
+    try {
+      const result = await dataLayer.install(skill);
+      if (result.ok) succeeded.push(skill);
+      else failed.push({ skill, message: result.message });
+    } catch (error) {
+      failed.push({ skill, message: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return { succeeded, failed };
+}
+
+export type BatchUninstallResult = {
+  succeeded: InstalledSkill[];
+  failed: Array<{ skill: InstalledSkill; message?: string }>;
+};
+
+export async function uninstallSkillsSequentially(
+  dataLayer: Pick<SkillsDataLayer, "uninstall">,
+  skills: InstalledSkill[],
+): Promise<BatchUninstallResult> {
+  const succeeded: InstalledSkill[] = [];
+  const failed: BatchUninstallResult["failed"] = [];
+  for (const skill of skills) {
+    try {
+      const result = await dataLayer.uninstall(skill);
+      if (result.ok) succeeded.push(skill);
+      else failed.push({ skill, message: result.message });
+    } catch (error) {
+      failed.push({ skill, message: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return { succeeded, failed };
 }
 
 // ─── Mock fixtures（来自联调样例 JSON） ───────────────────────────────────────
@@ -719,13 +818,18 @@ export function createLiveDataLayer(
       };
     },
     async listInstalled() {
-      const [clawhubRaw, skillsshRaw] = await Promise.allSettled([
+      const [clawhubRaw, skillsshRaw, hermesRaw] = await Promise.allSettled([
         run(buildClawhubListCommand()),
         run(buildSkillsshListCommand()),
+        run(buildHermesSkillsListCommand()),
       ]);
       const clawhubInstalled = clawhubRaw.status === "fulfilled" ? parseClawhubList(clawhubRaw.value) : [];
       const skillsshInstalled = skillsshRaw.status === "fulfilled" ? parseSkillsshList(skillsshRaw.value) : [];
-      return mergeInstalledSources(clawhubInstalled, skillsshInstalled);
+      const hermesInstalled = hermesRaw.status === "fulfilled" ? parseHermesInstalledSkills(hermesRaw.value) : [];
+      return mergeInstalledWithHermes(
+        mergeInstalledSources(clawhubInstalled, skillsshInstalled),
+        hermesInstalled,
+      );
     },
     async install(skill: Skill) {
       const command =
@@ -741,12 +845,14 @@ export function createLiveDataLayer(
       }
     },
     async uninstall(skill: Skill) {
-      const command =
-        skill.registry === "skills-sh"
-          ? buildSkillsshUninstallCommand(skill.rawId)
-          : buildClawhubUninstallCommand(skill.rawId);
       try {
+        const command = skill.registry === "hermes"
+          ? buildHermesSkillDeleteCommand(skill.rawId)
+          : skill.registry === "skills-sh"
+            ? buildSkillsshUninstallCommand(skill.rawId)
+            : buildClawhubUninstallCommand(skill.rawId);
         const output = await run(command);
+        if (skill.registry === "hermes") return { ok: true };
         const ok = parseUninstallOk(output);
         return { ok, message: ok ? undefined : output.trim() || undefined };
       } catch (error) {
@@ -813,11 +919,13 @@ export function createDomesticDataLayer(
       }
     },
     async listInstalled() {
-      try {
-        return parseSkillhubList(await run(buildSkillhubListCommand()));
-      } catch {
-        return [];
-      }
+      const [skillhubRaw, hermesRaw] = await Promise.allSettled([
+        run(buildSkillhubListCommand()),
+        run(buildHermesSkillsListCommand()),
+      ]);
+      const skillhubInstalled = skillhubRaw.status === "fulfilled" ? parseSkillhubList(skillhubRaw.value) : [];
+      const hermesInstalled = hermesRaw.status === "fulfilled" ? parseHermesInstalledSkills(hermesRaw.value) : [];
+      return mergeInstalledWithHermes(skillhubInstalled, hermesInstalled);
     },
     async install(skill: Skill) {
       try {
@@ -830,7 +938,10 @@ export function createDomesticDataLayer(
     },
     async uninstall(skill: Skill) {
       try {
-        const output = await run(buildSkillhubUninstallCommand(skill.rawId));
+        const output = await run(skill.registry === "hermes"
+          ? buildHermesSkillDeleteCommand(skill.rawId)
+          : buildSkillhubUninstallCommand(skill.rawId));
+        if (skill.registry === "hermes") return { ok: true };
         const ok = parseUninstallOk(output);
         return { ok, message: ok ? undefined : output.trim() || undefined };
       } catch (error) {

@@ -1,7 +1,14 @@
+import { execFile } from "node:child_process";
+import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { execCommand } from "@/lib/hermes-cron-client";
 import {
+  buildHermesSkillDeleteCommand,
   buildInstalledSkillsListCommand,
   formatInstalledSkillDisplayName,
   getUniqueSkillSlugs,
@@ -14,6 +21,8 @@ vi.mock("@/lib/hermes-cron-client", () => ({
   execCommand: vi.fn(),
 }));
 
+const execFileAsync = promisify(execFile);
+
 describe("hermes skills client", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -23,6 +32,32 @@ describe("hermes skills client", () => {
     expect(buildInstalledSkillsListCommand()).toBe(
       'cd "$HOME/.hermes/hermes-agent" && COLUMNS=10000 ./venv/bin/python -m hermes_cli.main skills list',
     );
+  });
+
+  it("builds a constrained delete command for nested Hermes-native skill directories", () => {
+    expect(buildHermesSkillDeleteCommand("finance-news")).toBe(
+      'if test -d "$HOME/.hermes/skills"; then find "$HOME/.hermes/skills" -mindepth 1 -type d -name "finance-news" -exec test -f "{}/SKILL.md" \\; -prune -exec rm -rf -- {} +; fi',
+    );
+    expect(() => buildHermesSkillDeleteCommand("../finance-news")).toThrow("Invalid Hermes skill slug");
+    expect(() => buildHermesSkillDeleteCommand("finance/news")).toThrow("Invalid Hermes skill slug");
+    expect(() => buildHermesSkillDeleteCommand("finance; whoami")).toThrow("Invalid Hermes skill slug");
+  });
+
+  it("deletes a nested Hermes-native skill directory and succeeds when it is already absent", async () => {
+    const taskTempDir = await mkdtemp(join(tmpdir(), "hermes-skill-delete-"));
+    const skillDir = join(taskTempDir, ".hermes", "skills", "software-development", "finance-news");
+    const command = buildHermesSkillDeleteCommand("finance-news");
+    const env = { ...process.env, HOME: taskTempDir };
+    try {
+      await mkdir(skillDir, { recursive: true });
+      await writeFile(join(skillDir, "SKILL.md"), "# Finance News\n", "utf8");
+
+      await expect(execFileAsync("/bin/sh", ["-c", command], { env })).resolves.toBeDefined();
+      await expect(access(skillDir)).rejects.toBeDefined();
+      await expect(execFileAsync("/bin/sh", ["-c", command], { env })).resolves.toBeDefined();
+    } finally {
+      await rm(taskTempDir, { recursive: true, force: true });
+    }
   });
 
   it("deduplicates normalized slugs while preserving their first-seen order", () => {

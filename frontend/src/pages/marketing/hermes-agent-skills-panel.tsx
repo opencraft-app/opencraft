@@ -1362,24 +1362,12 @@ export function HermesAgentSkillsPanel<
         </TabsList>
       </div>
       {useSkillsDemo && currentTab === "skills" ? (
-        <p className="mb-3 flex min-w-0 items-center justify-between gap-4 text-sm font-medium leading-6 text-black/50">
-          <span className="min-w-0">
-            {isSkillsDemoCreateView
-              ? t("把你的任何个人和工作场景变成可复用技能！")
-              : isGlobal
-                ? t("为智能体安装技能。支持 ClawHub 与 skills.sh 两个技能市场，安装后可在对话中自动调用。")
-                : "从 SkillHub 搜索、安装和管理技能，也可以创建属于你的技能。"}
-          </span>
-          {!isSkillsDemoCreateView ? (
-            <a
-              href={isGlobal ? "https://skills.sh" : "https://skillhub.cn"}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex shrink-0 items-center rounded-md border border-black/[0.08] bg-white/80 px-2.5 py-1 text-xs font-medium text-black/50 transition-colors hover:border-black/[0.14] hover:bg-black/[0.03] hover:text-black/75"
-            >
-              {isGlobal ? t("来源于 skills.sh") : t("来源于 SkillHub")}
-            </a>
-          ) : null}
+        <p className="mb-3 min-w-0 text-sm font-medium leading-6 text-black/50">
+          {isSkillsDemoCreateView
+            ? t("把你的任何个人和工作场景变成可复用技能！")
+            : isGlobal
+              ? t("为智能体安装技能。支持 ClawHub 与 skills.sh 两个技能市场，安装后可在对话中自动调用。")
+              : "为智能体安装技能。支持 SkillHub 技能市场，安装后可在对话中自动调用。"}
         </p>
       ) : null}
 

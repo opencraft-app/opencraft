@@ -133,7 +133,8 @@ describe("HermesAgentSkillsPanel", () => {
     expect(skillsTab).toHaveAttribute("aria-selected", "true");
     expect(skillsTab).toHaveStyle({ fontSize: "18px", fontWeight: "600", lineHeight: "24px" });
     expect(expertsTab).toBeInTheDocument();
-    expect(screen.getByText("从 SkillHub 搜索、安装和管理技能，也可以创建属于你的技能。")).toBeInTheDocument();
+    expect(screen.getByText("为智能体安装技能。支持 SkillHub 技能市场，安装后可在对话中自动调用。")).toBeInTheDocument();
+    expect(within(screen.getByText("为智能体安装技能。支持 SkillHub 技能市场，安装后可在对话中自动调用。").closest("p") as HTMLElement).queryByRole("link")).toBeNull();
     expect(screen.getByPlaceholderText("搜索 SkillHub 中的技能")).toBeInTheDocument();
 
     await userEvent.click(expertsTab);
