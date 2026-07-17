@@ -1,0 +1,90 @@
+apiVersion: llmgateway.io/v1alpha1
+kind: LLMFleet
+metadata:
+  name: fleet-demo
+  namespace: llmgateway-kro-demo
+spec:
+  runtimeCleanerImage: llmgateway:local
+  newapi:
+    databasePool:
+      admin: {maxOpenConns: 32, maxIdleConns: 2, maxLifetimeSeconds: 60}
+      traffic: {maxOpenConns: 32, maxIdleConns: 2, maxLifetimeSeconds: 60}
+    subscriptionWriteConcurrency: 8
+  shards:
+    - name: shard-a
+      mysqlHost: shared-mysql-a
+      mysqlPort: "3306"
+      mysqlUser: root
+      mysqlPassword: "test-local-password"
+      redisHost: shared-redis-a
+      redisPort: "6379"
+      redisPassword: "test-local-password"
+      maxSets: 32
+      redisDBStart: 10
+      redisDBLimit: 16
+    - name: shard-b
+      mysqlHost: shared-mysql-b
+      mysqlPort: "3306"
+      mysqlUser: root
+      mysqlPassword: "test-local-password"
+      redisHost: shared-redis-b
+      redisPort: "6379"
+      redisPassword: "test-local-password"
+      maxSets: 32
+      redisDBStart: 10
+      redisDBLimit: 16
+  cleanups: []
+  trafficRuntimes: []
+  sets:
+    - name: set-a
+      shardRef: shard-a
+      replicas: 1
+      databaseName: newapi_set_a
+      redisDB: "1"
+      sessionSecret: llmgateway-kro-fleet-set-a-session-secret
+      adminSQLMaxOpenConns: 32
+      adminSQLMaxIdleConns: 2
+      adminSQLMaxLifetimeSeconds: 60
+      trafficSQLMaxOpenConns: 32
+      trafficSQLMaxIdleConns: 2
+      trafficSQLMaxLifetimeSeconds: 60
+      subscriptionWriteConcurrency: 8
+    - name: set-b
+      shardRef: shard-a
+      replicas: 1
+      databaseName: newapi_set_b
+      redisDB: "2"
+      sessionSecret: llmgateway-kro-fleet-set-b-session-secret
+      adminSQLMaxOpenConns: 32
+      adminSQLMaxIdleConns: 2
+      adminSQLMaxLifetimeSeconds: 60
+      trafficSQLMaxOpenConns: 32
+      trafficSQLMaxIdleConns: 2
+      trafficSQLMaxLifetimeSeconds: 60
+      subscriptionWriteConcurrency: 8
+    - name: set-c
+      shardRef: shard-b
+      replicas: 1
+      databaseName: newapi_set_c
+      redisDB: "1"
+      sessionSecret: llmgateway-kro-fleet-set-c-session-secret
+      adminSQLMaxOpenConns: 32
+      adminSQLMaxIdleConns: 2
+      adminSQLMaxLifetimeSeconds: 60
+      trafficSQLMaxOpenConns: 32
+      trafficSQLMaxIdleConns: 2
+      trafficSQLMaxLifetimeSeconds: 60
+      subscriptionWriteConcurrency: 8
+    - name: set-d
+      shardRef: shard-b
+      replicas: 1
+      databaseName: newapi_set_d
+      redisDB: "2"
+      sessionSecret: llmgateway-kro-fleet-set-d-session-secret
+      adminSQLMaxOpenConns: 32
+      adminSQLMaxIdleConns: 2
+      adminSQLMaxLifetimeSeconds: 60
+      trafficSQLMaxOpenConns: 32
+      trafficSQLMaxIdleConns: 2
+      trafficSQLMaxLifetimeSeconds: 60
+      subscriptionWriteConcurrency: 8

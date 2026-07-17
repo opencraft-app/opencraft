@@ -88,6 +88,18 @@ class PromotionPolicyTests(unittest.TestCase):
         self.assertTrue(policy.auto_sync)
         self.assertTrue(policy.cleanup_source_branch)
 
+    def test_beijing_llmgateway_policy_auto_merges_and_syncs(self) -> None:
+        policy = promotion_policy.policy_for_branch("promote-beijing-llmgateway-velagw-abc123")
+
+        self.assertIsNotNone(policy)
+        self.assertEqual(policy.env, "beijing-llmgateway")
+        self.assertEqual(policy.display_name, "北京 LLMGateway 测试")
+        self.assertEqual(policy.kustomize_mode.value, "full")
+        self.assertEqual(policy.verify_mode.value, "argo_convergence")
+        self.assertTrue(policy.auto_merge)
+        self.assertTrue(policy.auto_sync)
+        self.assertTrue(policy.cleanup_source_branch)
+
     def test_tkex_policy_matches_manual_sync_shape(self) -> None:
         for branch, env, display_name in [
             ("promote-tkexgz-cloudladdergateway-tag", "tkexgz", "TKEx 广州内网"),

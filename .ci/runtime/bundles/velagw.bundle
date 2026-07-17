@@ -1,0 +1,31 @@
+bundles:
+  velagw:
+    owner: velagw
+    source: velagw
+    db_contract: none
+    reason: LLMGateway Beijing integration environment release bundle.
+    allowed_paths:
+    - velagw
+    - argocd/apps/beijing-llmgateway
+    - argocd/clusters/beijing-llmgateway.yaml
+    - argocd/projects/beijing-llmgateway.yaml
+    - argocd/root/beijing-llmgateway.yaml
+    - argocd/services/velagw/beijing-llmgateway
+    exit_condition: Can be removed only after velagw moves to a shared platform release contract.
+    publish_paths:
+    - argocd/apps/beijing-llmgateway/velagw.yaml
+    - argocd/clusters/beijing-llmgateway.yaml
+    - argocd/projects/beijing-llmgateway.yaml
+    - argocd/root/beijing-llmgateway.yaml
+    - argocd/services/velagw/beijing-llmgateway/**
+    publish_paths_by_env:
+      beijing-llmgateway:
+      - argocd/apps/beijing-llmgateway/velagw.yaml
+      - argocd/clusters/beijing-llmgateway.yaml
+      - argocd/projects/beijing-llmgateway.yaml
+      - argocd/root/beijing-llmgateway.yaml
+      - argocd/services/velagw/beijing-llmgateway/**
+    dockerfile: velagw/Dockerfile
+    build_context: velagw
+    image_repo:
+      beijing-llmgateway: lightclaw-bj82.tencentcloudcr.com/llmgateway/llmgateway

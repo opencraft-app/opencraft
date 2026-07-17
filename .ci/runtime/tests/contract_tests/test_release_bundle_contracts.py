@@ -50,6 +50,7 @@ BUSINESS_WORKFLOWS = {
     ".ci/staticpages.yml",
     ".ci/subscription.yml",
     ".ci/trade.yml",
+    ".ci/velagw.yml",
 }
 
 PROD_DB_MIGRATION_WORKFLOWS = {
@@ -231,6 +232,28 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("argocd/projects/shanghai-workers.yaml", bundle.publish_paths)
         self.assertIn("argocd/clusters/shanghai-workers.yaml", bundle.publish_paths)
         self.assertIn("argocd/secrets/shanghai-workers/workers-runtime-secrets.sops.yaml", bundle.publish_paths)
+
+    def test_velagw_release_bundle_targets_beijing_llmgateway_cluster(self) -> None:
+        manifest = load_manifest()
+
+        bundle = require_build_metadata(load_bundle(manifest, "velagw", "beijing-llmgateway"))
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/velagw.yml").read_text())
+        parameters = (workflow.get("extends") or {}).get("parameters") or {}
+        app = yaml.safe_load((REPO_ROOT / "argocd/apps/beijing-llmgateway/velagw.yaml").read_text())
+        cluster = yaml.safe_load((REPO_ROOT / "argocd/clusters/beijing-llmgateway.yaml").read_text())
+        workloads = (REPO_ROOT / "argocd/services/velagw/beijing-llmgateway/workloads.yaml").read_text()
+
+        self.assertEqual(bundle.image_repo, "lightclaw-bj82.tencentcloudcr.com/llmgateway/llmgateway")
+        self.assertEqual(parameters.get("SERVICE"), "velagw")
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "beijing-llmgateway")
+        self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "beijing-llmgateway")
+        self.assertEqual(app["spec"]["destination"]["name"], "beijing-llmgateway")
+        self.assertEqual(app["spec"]["source"]["path"], "argocd/services/velagw/beijing-llmgateway")
+        self.assertEqual(cluster["spec"]["namespaces"], ["llmgateway"])
+        self.assertFalse(cluster["spec"]["clusterResources"])
+        self.assertIn("argocd/services/velagw/beijing-llmgateway/**", bundle.publish_paths)
+        self.assertNotIn("kind: Secret", workloads)
+        self.assertNotIn("kind: LLMFleet", workloads)
 
     def test_workers_shanghai_overlay_uses_temporal_worker_deployment(self) -> None:
         rescue_deployment = yaml.safe_load(
@@ -1316,6 +1339,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         required_by_env = {
             "beijing-sandbox": "TCR_BEIJING_PASSWORD",
             "beijing-sandbox-2": "TCR_BEIJING_PASSWORD",
+            "beijing-llmgateway": "TCR_BEIJING_PASSWORD",
             "sandbox-kr-1": "TCR_KR1_PASSWORD",
             "shprod": "TCR_SHPROD_PASSWORD",
             "shanghai-workers": "TCR_SHPROD_PASSWORD",

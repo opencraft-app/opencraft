@@ -122,7 +122,28 @@ git push git@git.woa.com:wisp/velalink.git \
 
 详细说明见 [`velalink/MONO2_SUBTREE.md`](velalink/MONO2_SUBTREE.md)。
 
-### 3. Frontend 发布到 Cloudflare Pages
+### 3. LLMGateway subtree 协作模型
+
+`velagw/` 是 `git@git.woa.com:wisp/velagw.git` 的完整 squash-style subtree。
+mono2 可以直接开发和 review LLMGateway，同时用标准 subtree 命令与独立上游双向同步。
+
+常用命令：
+
+```bash
+# 拉取 velagw 上游 master 到 mono2/velagw
+git subtree pull --prefix=velagw \
+  git@git.woa.com:wisp/velagw.git master --squash
+
+# 从 mono2/velagw 切出可推给 velagw 上游的分支
+git subtree split --prefix=velagw -b velagw/from-mono2-topic
+git push git@git.woa.com:wisp/velagw.git \
+  velagw/from-mono2-topic:codex/from-mono2-topic
+```
+
+源码嵌入不等于发布迁移完成。`velagw/` 接入 mono2 统一 Argo/CD 入口前，仍按其目录内现有发布定义维护。
+详细说明见 [`velagw/MONO2_SUBTREE.md`](velagw/MONO2_SUBTREE.md)。
+
+### 4. Frontend 发布到 Cloudflare Pages
 
 当前 `frontend` 的 Cloudflare Pages 实战发布方式是：
 

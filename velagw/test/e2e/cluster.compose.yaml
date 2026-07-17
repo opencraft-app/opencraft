@@ -1,0 +1,33 @@
+llmgateway:
+  base_url: http://llmgateway:18080
+  control_base_url: http://llmgateway-control:18080
+  traffic_base_url: http://llmgateway-traffic:18080
+  admin_token: test-cluster-token
+  internal_token: test-internal-token
+
+newapi_root:
+  username: set-root
+  password: test-local-password
+
+mock_llm:
+  api_key: test-mockllm-key
+  base_url: http://mockllm:8080
+  model: llmgw-mock-chat
+
+sets:
+  - id: set-a
+    name: local set A
+    base_url: http://newapi-a:3000
+  - id: set-b
+    name: local set B
+    base_url: http://newapi-b:3000
+
+scenario:
+  run_prefix: llmgw-e2e
+  plan:
+    external_id: e2e-pro
+    title: LLMGateway E2E Pro
+    total_amount: 100000
+    duration_unit: month
+    duration_value: 1
+    gateway_period_unit: months
