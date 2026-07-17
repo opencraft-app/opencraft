@@ -855,3 +855,10 @@ Not-tested: 待实现后填写
   - 角色：Developer + Reviewer
   - 影响文件：`frontend/src/pages/marketing/hermes-agent-buddy-panel.tsx`、`frontend/src/pages/marketing/agent-settings-page.tsx`、`frontend/src/styles.css`、`frontend/openspec/specs/buddy.md`
   - 验收方式：国内站和国际站均不再渲染“已选人设”；旧文件名无残留引用；已注入卡片状态、选中和注入交互保持不变；目标测试和类型检查通过。
+
+## 增量修复：统一诊断中心备份卡片阴影
+
+- [x] 将“Agent 备份与恢复”外层卡片阴影与同页“最近日志”卡片保持一致。
+  - 角色：Developer + Reviewer
+  - 影响文件：`frontend/src/pages/marketing/agent-settings-page.tsx`、`frontend/DESIGN.md`
+  - 验收方式：仅调整外层阴影，不改变卡片布局、交互、边框或业务逻辑；在设计规范中记录卡片阴影值与适用边界；`pnpm check` 与 `git diff --check` 通过。
