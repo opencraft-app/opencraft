@@ -1,8 +1,0 @@
-# docs
-
-Component ID: docs
-Source path: docs
-Docs contract level: 0
-
-## Key documentation
-- Mono 项目文档索引: docs/README.md

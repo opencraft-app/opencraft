@@ -1,5 +1,0 @@
-.next/
-.source/
-node_modules/
-npm-debug.log*
-tsconfig.tsbuildinfo

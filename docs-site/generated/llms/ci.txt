@@ -1,9 +1,0 @@
-# .ci
-
-Component ID: ci
-Source path: .ci
-Docs contract level: 0
-
-## Key documentation
-- CI/CD Agent Guide: .ci/AGENTS.md
-- Stream CI Layout: .ci/README.md

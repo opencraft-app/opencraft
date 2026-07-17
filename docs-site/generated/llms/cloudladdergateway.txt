@@ -1,9 +1,0 @@
-# cloudladdergateway
-
-Component ID: cloudladdergateway
-Source path: cloudladdergateway
-Docs contract level: 0
-
-## Key documentation
-- Cloud Ladder Gateway Agent Notes: cloudladdergateway/AGENTS.md
-- cloudladdergateway: cloudladdergateway/README.md

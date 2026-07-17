@@ -1,8 +1,0 @@
-{
-    "server_conf": {
-        "tpl": "${SERVER_CONF_TPL}",
-        "dst": "${SERVER_CONF_DST}",
-        "ln": "",
-        "sudo": false
-    }
-}

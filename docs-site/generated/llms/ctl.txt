@@ -1,9 +1,0 @@
-# ctl
-
-Component ID: ctl
-Source path: ctl
-Docs contract level: 0
-
-## Key documentation
-- CTL Agent Rules: ctl/AGENTS.md
-- ctl - Go 云服务控制面项目模板: ctl/README.md

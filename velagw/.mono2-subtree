@@ -1,5 +1,0 @@
-upstream_repo=git@git.woa.com:wisp/velagw.git
-upstream_branch=codex/mono2-subtree-source
-upstream_commit=7a0543dcd90202f814a45efc8cc7195c7f91289a
-prefix=velagw
-mode=squash-subtree

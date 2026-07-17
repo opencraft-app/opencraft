@@ -1,6 +1,0 @@
-service: trade
-env: beijing-sandbox
-project: beijing-sandbox
-destinationName: beijing-sandbox
-namespace: trade
-sourcePath: argocd/services/trade/beijing-sandbox

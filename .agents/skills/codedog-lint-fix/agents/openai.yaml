@@ -1,3 +1,0 @@
-interface:
-  display_name: "Codedog Lint Fix"
-  short_description: "Analyze and fix CodeDog / CodeLint issues"
