@@ -882,8 +882,10 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
 优先检查：
 
 - `/etc/lightclaw-ci/tcr_beijing_password`
+- `/etc/lightclaw-ci/tcr_beijing_llmgateway_password`
 - `/etc/lightclaw-ci/tcr_shprod_password`
 - `settings.TCR_BEIJING_PASSWORD`
+- `settings.TCR_BEIJING_LLMGATEWAY_PASSWORD`
 - `settings.TCR_SHPROD_PASSWORD`
 - token 是否与用户名 `100045199955` 匹配
 
@@ -945,7 +947,9 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
 这些 Stream settings 需要在平台侧提前配置：
 
 - `TCR_BEIJING_PASSWORD`
-  - 北京镜像推送 token
+  - 北京 `lightclaw-bj8` 镜像推送 token
+- `TCR_BEIJING_LLMGATEWAY_PASSWORD`
+  - 北京 LLMGateway `lightclaw-bj82` 镜像推送 token
 - `TCR_SHPROD_PASSWORD`
   - 上海镜像推送 token
 - `GIT_WOA_PRIVATE_TOKEN`
@@ -968,8 +972,9 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
 - TCR 用户名默认使用 `100045199955`，如需覆盖，可设置环境变量 `TCR_USERNAME`
 - 如果要完全绕开 Stream settings，可在每台 `env` 构建机上预置：
   - `/etc/lightclaw-ci/tcr_beijing_password`
+  - `/etc/lightclaw-ci/tcr_beijing_llmgateway_password`
   - `/etc/lightclaw-ci/tcr_shprod_password`
-  CI 会优先读取这两个本地文件
+  CI 会按目标环境优先读取对应本地文件
 - Git WOA API token 同样支持本地文件优先：
   - `/etc/lightclaw-ci/git_woa_private_token`
   CI 会优先读取该文件

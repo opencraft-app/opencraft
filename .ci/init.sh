@@ -761,6 +761,7 @@ EOF
 ci_load_registry_password() {
   local env_name="$1"
   local beijing_file="${TCR_BEIJING_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_password}"
+  local beijing_llmgateway_file="${TCR_BEIJING_LLMGATEWAY_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_llmgateway_password}"
   local beijing2_file="${TCR_BEIJING_SANDBOX2_PASSWORD_FILE:-${TCR_BEIJING_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_password}}"
   local kr1_file="${TCR_KR1_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_kr1_password}"
   local shprod_file="${TCR_SHPROD_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_shprod_password}"
@@ -770,9 +771,13 @@ ci_load_registry_password() {
   local password_file=""
 
   case "$env_name" in
-    beijing-sandbox|beijing-llmgateway)
+    beijing-sandbox)
       password_var="${TCR_BEIJING_PASSWORD:-}"
       password_file="$beijing_file"
+      ;;
+    beijing-llmgateway)
+      password_var="${TCR_BEIJING_LLMGATEWAY_PASSWORD:-}"
+      password_file="$beijing_llmgateway_file"
       ;;
     beijing-sandbox-2|sandbox-bj-*)
       password_var="${TCR_BEIJING_SANDBOX2_PASSWORD:-${TCR_BEIJING_PASSWORD:-}}"
@@ -831,6 +836,7 @@ ci_load_csighub_username() {
 ci_set_registry_credentials() {
   local env_name="$1"
   local beijing_file="${TCR_BEIJING_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_password}"
+  local beijing_llmgateway_file="${TCR_BEIJING_LLMGATEWAY_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_llmgateway_password}"
   local beijing2_file="${TCR_BEIJING_SANDBOX2_PASSWORD_FILE:-${TCR_BEIJING_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_password}}"
   local kr1_file="${TCR_KR1_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_kr1_password}"
   local shprod_file="${TCR_SHPROD_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_shprod_password}"
@@ -847,11 +853,18 @@ ci_set_registry_credentials() {
   if raw_password="$(ci_load_registry_password "$env_name")"; then
     password="$(printf '%s' "$raw_password" | ci_read_secret_value)"
     case "$env_name" in
-      beijing-sandbox|beijing-llmgateway)
+      beijing-sandbox)
         if [[ -r "$beijing_file" ]]; then
           source="file:$beijing_file"
         else
           source="env:TCR_BEIJING_PASSWORD"
+        fi
+        ;;
+      beijing-llmgateway)
+        if [[ -r "$beijing_llmgateway_file" ]]; then
+          source="file:$beijing_llmgateway_file"
+        else
+          source="env:TCR_BEIJING_LLMGATEWAY_PASSWORD"
         fi
         ;;
       beijing-sandbox-2|sandbox-bj-*)

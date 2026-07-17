@@ -1339,7 +1339,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         required_by_env = {
             "beijing-sandbox": "TCR_BEIJING_PASSWORD",
             "beijing-sandbox-2": "TCR_BEIJING_PASSWORD",
-            "beijing-llmgateway": "TCR_BEIJING_PASSWORD",
+            "beijing-llmgateway": "TCR_BEIJING_LLMGATEWAY_PASSWORD",
             "sandbox-kr-1": "TCR_KR1_PASSWORD",
             "shprod": "TCR_SHPROD_PASSWORD",
             "shanghai-workers": "TCR_SHPROD_PASSWORD",
