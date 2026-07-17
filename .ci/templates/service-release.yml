@@ -153,6 +153,7 @@ stages:
             shell: bash
             env:
               TCR_BEIJING_PASSWORD: ${{ settings.TCR_BEIJING_PASSWORD }}
+              TCR_BEIJING_LLMGATEWAY_PASSWORD: ${{ settings.TCR_BEIJING_LLMGATEWAY_PASSWORD }}
               TCR_KR1_PASSWORD: ${{ settings.TCR_KR1_PASSWORD }}
               TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
               TCR_SGPROD_PASSWORD: ${{ settings.TCR_SGPROD_PASSWORD }}
@@ -225,6 +226,7 @@ stages:
             env:
               GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
               TCR_BEIJING_PASSWORD: ${{ settings.TCR_BEIJING_PASSWORD }}
+              TCR_BEIJING_LLMGATEWAY_PASSWORD: ${{ settings.TCR_BEIJING_LLMGATEWAY_PASSWORD }}
               TCR_KR1_PASSWORD: ${{ settings.TCR_KR1_PASSWORD }}
               TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
               TCR_SGPROD_PASSWORD: ${{ settings.TCR_SGPROD_PASSWORD }}
