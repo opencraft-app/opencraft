@@ -65,21 +65,21 @@ describe("global changelog skill package entry", () => {
     expect(screen.getByRole("heading", { name: "LightVela 支持技能包" })).toBeInTheDocument();
     expect(screen.getByAltText("LightVela 支持技能包")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-skill-packages-global-zh.png"),
+      expect.stringContaining("/assets/changelog/lightvela-skill-packages-global-zh.webp"),
     );
     expect(screen.getByRole("heading", { name: "诊断中心上线，让 Agent 排查更简单" })).toBeInTheDocument();
     expect(screen.getByAltText("诊断中心上线，让 Agent 排查更简单")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-diagnostics-global-zh.png"),
+      expect.stringContaining("/assets/changelog/lightvela-diagnostics-global-zh.webp"),
     );
     expect(screen.getByRole("heading", { name: "Soul 人设能力上线" })).toBeInTheDocument();
     expect(screen.getByAltText("Soul 人设能力上线")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/soul-persona-global-zh.png"),
+      expect.stringContaining("/assets/changelog/soul-persona-global-zh.webp"),
     );
     expect(screen.getByAltText("LightVela 产品内测上线")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-launch-global-zh.png"),
+      expect.stringContaining("/assets/changelog/lightvela-launch-global-zh.webp"),
     );
 
     cleanup();
@@ -94,21 +94,21 @@ describe("global changelog skill package entry", () => {
     expect(screen.getByRole("heading", { name: "LightVela supports Skill Packages" })).toBeInTheDocument();
     expect(screen.getByAltText("LightVela supports Skill Packages")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-skill-packages-global-en.png"),
+      expect.stringContaining("/assets/changelog/lightvela-skill-packages-global-en.webp"),
     );
     expect(screen.getByRole("heading", { name: "Diagnostics Center Is Here for Faster Agent Troubleshooting" })).toBeInTheDocument();
     expect(screen.getByAltText("Diagnostics Center Is Here for Faster Agent Troubleshooting")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-diagnostics-global-en.png"),
+      expect.stringContaining("/assets/changelog/lightvela-diagnostics-global-en.webp"),
     );
     expect(screen.getByRole("heading", { name: "Soul personas are now available" })).toBeInTheDocument();
     expect(screen.getByAltText("Soul personas are now available")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/soul-persona-global-en.png"),
+      expect.stringContaining("/assets/changelog/soul-persona-global-en.webp"),
     );
     expect(screen.getByAltText("LightVela Product Beta Launch")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-launch-global-en.png"),
+      expect.stringContaining("/assets/changelog/lightvela-launch-global-en.webp"),
     );
   });
 });

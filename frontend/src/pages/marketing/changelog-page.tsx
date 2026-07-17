@@ -80,19 +80,19 @@ function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillP
       : variant === "skillsRevamp"
       ? isGlobal
         ? useGlobalChineseAsset
-          ? "/assets/changelog/lightvela-skills-page-global-zh.png"
-          : "/assets/changelog/lightvela-skills-page-global-en.png"
-        : "/assets/changelog/lightvela-skills-page-domestic-zh.png"
+          ? "/assets/changelog/lightvela-skills-page-global-zh.webp"
+          : "/assets/changelog/lightvela-skills-page-global-en.webp"
+        : "/assets/changelog/lightvela-skills-page-domestic-zh.webp"
       : variant === "skillPackagesRevamp"
       ? useGlobalChineseAsset
-        ? "/assets/changelog/lightvela-skill-packages-global-zh.png"
-        : "/assets/changelog/lightvela-skill-packages-global-en.png"
+        ? "/assets/changelog/lightvela-skill-packages-global-zh.webp"
+        : "/assets/changelog/lightvela-skill-packages-global-en.webp"
       : variant === "diagnosticsCenter"
       ? isGlobal
         ? useGlobalChineseAsset
-          ? "/assets/changelog/lightvela-diagnostics-global-zh.png"
-          : "/assets/changelog/lightvela-diagnostics-global-en.png"
-        : "/assets/changelog/lightvela-diagnostics-domestic-zh.png"
+          ? "/assets/changelog/lightvela-diagnostics-global-zh.webp"
+          : "/assets/changelog/lightvela-diagnostics-global-en.webp"
+        : "/assets/changelog/lightvela-diagnostics-domestic-zh.webp"
       : variant === "wecom"
       ? "/assets/changelog/lightvela-wecom-channel.webp"
       : variant === "chat"
@@ -112,17 +112,17 @@ function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "skillP
         ? "/assets/changelog/automation-skill-invocation-en.png"
         : "/assets/changelog/automation-skill-invocation.png"
       : variant === "skill-package"
-      ? "/assets/changelog/lightvela-skill-package-cn.png"
+      ? "/assets/changelog/lightvela-skill-package-cn.webp"
       : variant === "soul"
         ? isGlobal
           ? useGlobalChineseAsset
-            ? "/assets/changelog/soul-persona-global-zh.png"
-            : "/assets/changelog/soul-persona-global-en.png"
-          : "/assets/changelog/soul-persona-domestic-zh.png"
+            ? "/assets/changelog/soul-persona-global-zh.webp"
+            : "/assets/changelog/soul-persona-global-en.webp"
+          : "/assets/changelog/soul-persona-domestic-zh.webp"
       : isGlobal
         ? useGlobalChineseAsset
-          ? "/assets/changelog/lightvela-launch-global-zh.png"
-          : "/assets/changelog/lightvela-launch-global-en.png"
+          ? "/assets/changelog/lightvela-launch-global-zh.webp"
+          : "/assets/changelog/lightvela-launch-global-en.webp"
         : "/assets/changelog/lightvela-launch.webp";
   const altText =
     variant === "cloudStorage"

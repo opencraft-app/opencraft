@@ -66,7 +66,7 @@ describe("marketing channel copy", () => {
     expect(screen.getByRole("heading", { name: "自动任务支持调用技能" })).toBeInTheDocument();
     expect(screen.getByAltText("技能页面全新升级")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-skills-page-domestic-zh.png"),
+      expect.stringContaining("/assets/changelog/lightvela-skills-page-domestic-zh.webp"),
     );
     expect(
       screen.getByText(
@@ -98,7 +98,7 @@ describe("marketing channel copy", () => {
     expect(screen.getByText("集中查看 Hermes Agent 最近日志，并执行模型配置重置、Agent 重装等维护操作，帮助快速定位和解决问题。")).toBeInTheDocument();
     expect(screen.getByAltText("诊断中心上线，让 Agent 排查更简单")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-diagnostics-domestic-zh.png"),
+      expect.stringContaining("/assets/changelog/lightvela-diagnostics-domestic-zh.webp"),
     );
     expect(screen.getByRole("heading", { name: "LightVela 支持企业微信通道" })).toBeInTheDocument();
     expect(screen.getByText("现在可以将 Hermes Agent 接入企业微信，在企业微信会话中直接与云端智能伙伴对话。")).toBeInTheDocument();
@@ -119,7 +119,7 @@ describe("marketing channel copy", () => {
     expect(screen.getByText("快速安装技能组合，让 Agent 从单点技能走向完整工作流。")).toBeInTheDocument();
     expect(screen.getByAltText("LightVela 支持技能包")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/lightvela-skill-package-cn.png"),
+      expect.stringContaining("/assets/changelog/lightvela-skill-package-cn.webp"),
     );
     expect(screen.queryByRole("heading", { name: "新增技能包功能" })).not.toBeInTheDocument();
   });
@@ -159,7 +159,7 @@ describe("marketing channel copy", () => {
     expect(screen.getByText("为 Hermes Agent 抽取并保存专属 Soul 人设，一键注入后通过 /new 开启带有新人设的新会话。")).toBeInTheDocument();
     expect(screen.getByAltText("Soul 人设能力上线")).toHaveAttribute(
       "src",
-      expect.stringContaining("/assets/changelog/soul-persona-domestic-zh.png"),
+      expect.stringContaining("/assets/changelog/soul-persona-domestic-zh.webp"),
     );
     const headings = screen.getAllByRole("heading").map((heading) => heading.textContent);
     expect(headings.indexOf("Soul 人设能力上线")).toBeLessThan(headings.indexOf("LightVela 支持网页内对话"));
