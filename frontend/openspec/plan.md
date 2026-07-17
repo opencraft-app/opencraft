@@ -848,3 +848,10 @@ Not-tested: 待实现后填写
 - [x] plan 含具体角色、文件、测试命令、验收方式和 checkbox。
 - [x] 不在范围内的修改已明确排除。
 - [x] **规划门禁结论：通过，待用户确认后进入实现。**
+
+## 增量修复：移除已选人设展示
+
+- [x] 移除人设页底部的“已选人设”状态标签，并将面板文件重命名为 `hermes-agent-buddy-panel.tsx`。
+  - 角色：Developer + Reviewer
+  - 影响文件：`frontend/src/pages/marketing/hermes-agent-buddy-panel.tsx`、`frontend/src/pages/marketing/agent-settings-page.tsx`、`frontend/src/styles.css`、`frontend/openspec/specs/buddy.md`
+  - 验收方式：国内站和国际站均不再渲染“已选人设”；旧文件名无残留引用；已注入卡片状态、选中和注入交互保持不变；目标测试和类型检查通过。

@@ -78,7 +78,7 @@ import {
   type HermesMemoryLimitTarget,
   type HermesMemoryLimitValidation,
 } from "@/pages/marketing/openclaw-memory";
-import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
+import { BuddyPanel } from "@/pages/marketing/hermes-agent-buddy-panel";
 import { HermesAgentSkillsPanel, type HermesAgentSkillsPanelProps } from "@/pages/marketing/hermes-agent-skills-panel";
 import { AchievementsPanel } from "@/pages/marketing/openclaw-achievements-panel";
 import { HermesAgentAutomationsPanel } from "@/pages/marketing/hermes-agent-automations-panel";
