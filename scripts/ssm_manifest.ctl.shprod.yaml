@@ -3,6 +3,13 @@ defaults:
   version_id: SSM_Current
   age_recipients:
   - age1q4s9kt3h5n0fgmez4kyp7tsahgjhuxpyeteye8lp46kqkyvardusctl258
+  # 上海尚未接入 LLMGateway；这些键出现后按非敏感策略配置明文输出。
+  optional_plaintext_keys:
+  - CTL_LLMGATEWAY_BASE_URL
+  - CTL_LLMGATEWAY_DEFAULT_BASE_URL
+  - CTL_LLMGATEWAY_DEFAULT_MODEL_ID
+  - CTL_LLMGATEWAY_NEW_USER_ALLOWLIST
+  - CTL_LLMGATEWAY_RENEWAL_MIGRATION_ALLOWLIST
 items:
 - id: ctl-conf-common
   secret_name: mono-shprod-ctl-conf-common

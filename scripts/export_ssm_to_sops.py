@@ -17,6 +17,10 @@ items:
     kubernetes_resource_kind: Secret
     output_path: ./out/argocd-sample-secret.sops.yaml
     string_key: EXAMPLE_SECRET
+    plaintext_keys:
+      - NON_SENSITIVE_RUNTIME_POLICY
+    optional_plaintext_keys:
+      - FUTURE_NON_SENSITIVE_POLICY
     labels:
       app.kubernetes.io/name: argocd-sample
     annotations:
@@ -234,7 +238,53 @@ def dump_yaml(doc: dict[str, Any]) -> str:
     return yaml.safe_dump(doc, sort_keys=False, allow_unicode=True)
 
 
-def encrypt_yaml(plaintext: str, recipients: list[str], filename_override: str) -> str:
+def manifest_key_list(item: dict[str, Any], field: str) -> list[str]:
+    keys = item.get(field) or []
+    if not isinstance(keys, list) or any(
+        not isinstance(key, str) or not key for key in keys
+    ):
+        raise ValueError(f"{field} must be a list of non-empty strings")
+    return keys
+
+
+def encryption_regex_for_item(
+    item: dict[str, Any],
+    string_data: dict[str, str],
+    *,
+    defaults: dict[str, Any] | None = None,
+) -> str:
+    defaults = defaults or {}
+    required_plaintext_keys = manifest_key_list(item, "plaintext_keys")
+    optional_plaintext_keys = [
+        *manifest_key_list(defaults, "optional_plaintext_keys"),
+        *manifest_key_list(item, "optional_plaintext_keys"),
+    ]
+    if not required_plaintext_keys and not optional_plaintext_keys:
+        return SOPS_ENCRYPTED_REGEX
+
+    unknown = sorted(set(required_plaintext_keys) - set(string_data))
+    if unknown:
+        raise ValueError(f"unknown plaintext_keys: {', '.join(unknown)}")
+
+    plaintext_keys = set(required_plaintext_keys)
+    plaintext_keys.update(set(optional_plaintext_keys) & set(string_data))
+    if not plaintext_keys:
+        return SOPS_ENCRYPTED_REGEX
+
+    encrypted_keys = sorted(set(string_data) - plaintext_keys)
+    if not encrypted_keys:
+        raise ValueError("plaintext_keys cannot include every key; use a ConfigMap for fully public data")
+    return "^(" + "|".join(re.escape(key) for key in encrypted_keys) + ")$"
+
+
+def encrypt_yaml(
+    plaintext: str,
+    recipients: list[str],
+    filename_override: str,
+    *,
+    encrypted_regex: str = SOPS_ENCRYPTED_REGEX,
+    mac_only_encrypted: bool = True,
+) -> str:
     if not recipients:
         raise ValueError("missing age recipients for sops encryption")
     if shutil.which("sops") is None:
@@ -250,12 +300,13 @@ def encrypt_yaml(plaintext: str, recipients: list[str], filename_override: str) 
         "--filename-override",
         filename_override,
         "--encrypted-regex",
-        SOPS_ENCRYPTED_REGEX,
-        "--mac-only-encrypted",
+        encrypted_regex,
         "--age",
         ",".join(recipients),
         "/dev/stdin",
     ]
+    if mac_only_encrypted:
+        cmd.insert(-3, "--mac-only-encrypted")
     result = subprocess.run(  # nosemgrep: dangerous-subprocess-use-audit
         validate_command_args(cmd, "sops"),
         input=plaintext,
@@ -313,7 +364,16 @@ def main() -> int:
             doc = build_k8s_resource_doc(item, string_data)
             plaintext = dump_yaml(doc)
             output_path = resolve_output_path(manifest_path, output_dir, item["output_path"])
-            rendered = plaintext if args.plaintext else encrypt_yaml(plaintext, recipients, str(output_path))
+            encrypted_regex = encryption_regex_for_item(item, string_data, defaults=defaults)
+            rendered = plaintext if args.plaintext else encrypt_yaml(
+                plaintext,
+                recipients,
+                str(output_path),
+                encrypted_regex=encrypted_regex,
+                # Plaintext policy keys still participate in the SOPS MAC so
+                # they remain integrity protected even though they are visible.
+                mac_only_encrypted=encrypted_regex == SOPS_ENCRYPTED_REGEX,
+            )
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text(rendered)
             print(f"wrote {output_path}")
