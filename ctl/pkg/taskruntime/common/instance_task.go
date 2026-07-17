@@ -212,6 +212,12 @@ type RenewInstanceTaskPayload struct {
 	InstanceID  string `json:"instance_id"`
 	PassID      string `json:"pass_id"`
 	OperationID string `json:"operation_id,omitempty"`
+
+	// TargetGateway is empty for an ordinary renewal. During a forward-only
+	// gateway migration it is set to llm_gateway, which makes the child task
+	// save the new provider/key and restart the Agent even when it was already
+	// running.
+	TargetGateway string `json:"target_gateway,omitempty"`
 }
 
 // === trade-pass-destroy 设计稿落地（pass 销毁父 task payload）===

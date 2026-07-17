@@ -140,6 +140,10 @@ func (t *renewPassTask) execute(ctx pctx.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("get pass: %w", err)
 	}
+	userID := t.in.UserID
+	if userID == "" {
+		userID = passEntity.UserID
+	}
 
 	// 已经到达终态：上一次 execute 已 FinalizeRenewal 推进 active，本次只需 markSuccess
 	if passEntity.Status == modelpass.StatusActive {
@@ -175,13 +179,37 @@ func (t *renewPassTask) execute(ctx pctx.Context) (string, error) {
 		// 状态被外部干预（不太可能，但防御性返错）
 		return "", fmt.Errorf("pass status unexpected: %s (expect renewing)", passEntity.Status)
 	}
+	if passEntity.ExpiredTime.IsZero() {
+		return "", fmt.Errorf("pass expired_time is zero while status=renewing — data corruption?")
+	}
+	newExpired, err := logicpass.CalcExpiredTime(passEntity.ExpiredTime, t.in.TimeSpan, t.in.TimeUnit)
+	if err != nil {
+		return "", fmt.Errorf("calc new expired_time: %w", err)
+	}
+	migration, err := logicpass.PrepareRenewalGatewayMigration(context.Background(), logicpass.RenewalGatewayMigrationInput{
+		UserID:      userID,
+		PassID:      t.in.PassID,
+		BundleID:    passEntity.BundleID,
+		TradeFlowID: t.in.TradeFlowID,
+		TimeSpan:    t.in.TimeSpan,
+		TimeUnit:    t.in.TimeUnit,
+		NewExpired:  newExpired,
+	})
+	if err != nil {
+		return "", fmt.Errorf("prepare renewal gateway migration: %w", err)
+	}
+	migrationRequired := migration != nil && migration.Required
+	targetGateway := ""
+	childMaxExecuteCount := renewInstanceTaskMaxExecuteCount
+	if migrationRequired {
+		targetGateway = logicpass.RenewalMigrationTargetGateway
+		// Migration is forward-only. Once one Agent has accepted the new key,
+		// failed siblings must keep retrying rather than rolling the user back.
+		childMaxExecuteCount = renewPassTaskMaxExecuteCount
+	}
 
 	// 1. 列出该 user 下所有非 Deleted/Failed 的 instance
 	instanceDao := daoFactory.DefaultDaoFactory.InstanceDao(nil)
-	userID := t.in.UserID
-	if userID == "" {
-		userID = passEntity.UserID
-	}
 	instances, err := instanceDao.ListAllByUserIDForIsolate(userID)
 	if err != nil {
 		return "", fmt.Errorf("list user instances: %w", err)
@@ -217,20 +245,21 @@ func (t *renewPassTask) execute(ctx pctx.Context) (string, error) {
 		}
 		// instance 处于 Running/Deleted/Failed 终态时跳过派发
 		// 续费子 task 的目标是 Paused → Running（与 isolate 子 task 的 Running → Paused 对偶反向）
-		if inst.Status == modelinstance.InstanceStatusRunning ||
+		if (!migrationRequired && inst.Status == modelinstance.InstanceStatusRunning) ||
 			inst.Status == modelinstance.InstanceStatusDeleted ||
 			inst.Status == modelinstance.InstanceStatusFailed {
 			continue
 		}
-		if err := instanceasync.EnqueueRenewInstanceTask(
+		if err := instanceasync.EnqueueRenewInstanceTaskWithTarget(
 			ctx,
 			inst.InstanceId,
 			t.in.PassID,
 			userID,
 			t.in.OperationID,
 			t.TaskId,
+			targetGateway,
 			renewInstanceTaskExecuteInterval,
-			renewInstanceTaskMaxExecuteCount,
+			childMaxExecuteCount,
 		); err != nil {
 			// 派发失败让父 task 重试整轮（下一次 execute 会基于 child_registry 跳过已派发的）
 			return "", fmt.Errorf("enqueue renew instance task for %s: %w", inst.InstanceId, err)
@@ -291,17 +320,18 @@ func (t *renewPassTask) execute(ctx pctx.Context) (string, error) {
 	//     R-MR-4 ai-gateway ExtendSubscription 的 newExpired 与 jifei 实际计费时长漂移。
 	//
 	// 防御：passEntity.ExpiredTime 在 active / isolated 续费场景下必非零（DB NOT NULL 约束）
-	if passEntity.ExpiredTime.IsZero() {
-		// 数据漂移：renewing 状态但 expired_time 为零值 — 防御性返错让 reconcile 兜底
-		// （理论不会出现：DDL pass.expired_time NOT NULL，CAS 进 renewing 前必有值）
-		return "", fmt.Errorf("pass expired_time is zero while status=renewing — data corruption?")
+	var updated bool
+	if migrationRequired {
+		updated, err = logicpass.CommitRenewalGatewayMigration(
+			t.in.PassID,
+			newExpired,
+			userID,
+			migration.SubscriptionID,
+			migration.PlanID,
+		)
+	} else {
+		updated, err = passDao.FinalizeRenewal(t.in.PassID, newExpired)
 	}
-	newExpired, err := logicpass.CalcExpiredTime(passEntity.ExpiredTime, t.in.TimeSpan, t.in.TimeUnit)
-	if err != nil {
-		return "", fmt.Errorf("calc new expired_time: %w", err)
-	}
-
-	updated, err := passDao.FinalizeRenewal(t.in.PassID, newExpired)
 	if err != nil {
 		return "", fmt.Errorf("FinalizeRenewal: %w", err)
 	}
@@ -318,7 +348,7 @@ func (t *renewPassTask) execute(ctx pctx.Context) (string, error) {
 	// 把 newExpired 镜像到 ai-gateway，让 ai-gateway 端 PeriodEnd 与 ctl pass.expired_time 完全对齐。
 	// 失败必须父 task fail 重试 — 否则 PeriodEnd 没推进 → ai-gateway scheduler 5min
 	// 内会标 expired → AI 服务断档。详见 logicpass.AlignAiGatewaySubscriptionPeriodEnd doc。
-	if t.in.UserID != "" {
+	if !migrationRequired && t.in.UserID != "" {
 		if err := logicpass.AlignAiGatewaySubscriptionPeriodEnd(logger, t.in.UserID, t.in.PassID, newExpired); err != nil {
 			return "", fmt.Errorf("extend ai-gateway subscription: %w", err)
 		}

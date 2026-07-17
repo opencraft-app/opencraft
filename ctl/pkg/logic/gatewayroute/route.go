@@ -19,6 +19,7 @@ const (
 
 	SourceApplySubscription        = modelgateway.SourceApplySubscription
 	SourceDetectActiveSubscription = modelgateway.SourceDetectActiveSubscription
+	SourceRenewalMigration         = modelgateway.SourceRenewalMigration
 	SourceManual                   = modelgateway.SourceManual
 )
 
