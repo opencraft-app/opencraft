@@ -21,6 +21,7 @@ const (
 
 	SourceApplySubscription        = "apply_subscription"
 	SourceDetectActiveSubscription = "detect_active_subscription"
+	SourceRenewalMigration         = "renewal_migration"
 	SourceManual                   = "manual"
 )
 

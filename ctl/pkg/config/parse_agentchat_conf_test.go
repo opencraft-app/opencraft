@@ -195,6 +195,30 @@ func TestParseAdapterConfLoadsLLMGatewayNewUserAllowlist(t *testing.T) {
 	}
 }
 
+func TestParseAdapterConfLoadsLLMGatewayRenewalMigrationAllowlist(t *testing.T) {
+	original := ServerConf
+	t.Cleanup(func() { ServerConf = original })
+	t.Setenv("CTL_LLMGATEWAY_BASE_URL", "https://llmgateway.example.com")
+	t.Setenv("CTL_LLMGATEWAY_ADMIN_TOKEN", "admin")
+	t.Setenv("CTL_LLMGATEWAY_INTERNAL_SERVICE_TOKEN", "internal")
+	t.Setenv("CTL_LLMGATEWAY_RENEWAL_MIGRATION_ALLOWLIST", " *,usr-canary,* ")
+	ServerConf = &GlobalConfig{AdapterConfig: &AdapterConfig{}}
+
+	parseAdapterConf()
+
+	got := ServerConf.AdapterConfig.LLMGateway.RenewalMigrationUserAllowlist
+	want := []string{"*", "usr-canary"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("RenewalMigrationUserAllowlist = %#v, want %#v", got, want)
+	}
+	if !LLMGatewayAllowsRenewalMigration("usr-any") {
+		t.Fatal("wildcard renewal migration allowlist should match every non-empty user")
+	}
+	if LLMGatewayAllowsRenewalMigration("") {
+		t.Fatal("wildcard renewal migration allowlist must not match an empty user id")
+	}
+}
+
 func TestParseAgentChatConfInitializesMissingBlock(t *testing.T) {
 	original := ServerConf
 	t.Cleanup(func() {

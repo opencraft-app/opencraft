@@ -344,6 +344,13 @@ func EnqueueRollbackRenewPassTask(ctx pctx.Context, passID, userID, operationID 
 //   - parentTaskID 必传，用于父 task 反查 child_registry
 //   - executeInterval / maxExecuteCount：默认 60s × 60 = 1h 重试窗口（与 IsolateInstance 子 task 对偶）
 func EnqueueRenewInstanceTask(ctx pctx.Context, instanceID, passID, userID, operationID, parentTaskID string, executeInterval int64, maxExecuteCount int) error {
+	return EnqueueRenewInstanceTaskWithTarget(ctx, instanceID, passID, userID, operationID, parentTaskID, "", executeInterval, maxExecuteCount)
+}
+
+// EnqueueRenewInstanceTaskWithTarget adds an optional forward-only gateway
+// migration to the ordinary resume task. targetGateway must be empty or
+// llm_gateway.
+func EnqueueRenewInstanceTaskWithTarget(ctx pctx.Context, instanceID, passID, userID, operationID, parentTaskID, targetGateway string, executeInterval int64, maxExecuteCount int) error {
 	if instanceID == "" {
 		return errors.New("instanceID is required")
 	}
@@ -360,9 +367,10 @@ func EnqueueRenewInstanceTask(ctx pctx.Context, instanceID, passID, userID, oper
 		maxExecuteCount = defaultTaskMaxExecuteCount
 	}
 	payload := &common.RenewInstanceTaskPayload{
-		InstanceID:  instanceID,
-		PassID:      passID,
-		OperationID: operationID,
+		InstanceID:    instanceID,
+		PassID:        passID,
+		OperationID:   operationID,
+		TargetGateway: strings.TrimSpace(targetGateway),
 	}
 	// BUG-30 修订：注入 ctx user，让 enqueueTaskWithSchedule 写 task entity.UserID 不为空。
 	if ctx == nil {
@@ -1052,10 +1060,13 @@ func (l *logic) RunRenewInstanceTask(ctx pctx.Context, payload *common.RenewInst
 		}
 		return err
 	}
+	migrateGateway := strings.TrimSpace(payload.TargetGateway)
 	switch entity.Status {
 	case modelinstance.InstanceStatusRunning:
-		logger.Info("renew task: instance already running, short-circuit")
-		return nil
+		if migrateGateway == "" {
+			logger.Info("renew task: instance already running, short-circuit")
+			return nil
+		}
 	case modelinstance.InstanceStatusDeleted, modelinstance.InstanceStatusFailed:
 		logger.Info("renew task: instance in terminal state, no-op",
 			zap.String("status", entity.Status),
@@ -1068,7 +1079,8 @@ func (l *logic) RunRenewInstanceTask(ctx pctx.Context, payload *common.RenewInst
 		return fmt.Errorf("instance status=%s not eligible for renew yet", entity.Status)
 	}
 
-	if entity.SandboxId != "" && !isPendingSandboxID(entity.SandboxId) {
+	wasPaused := entity.Status == modelinstance.InstanceStatusPaused
+	if wasPaused && entity.SandboxId != "" && !isPendingSandboxID(entity.SandboxId) {
 		// ResumeSandbox 默认请求体（不带 timeout 覆盖；timeout 维持 sandbox 服务侧默认值）
 		// 与 ResumeInstance 主路径一致，但本子 task 是系统侧自动续费，不强制重置 timeout
 		if _, err := l.sandboxAdapter.ResumeSandbox(ctx, entity.SandboxId, &psandbox.ResumeSandboxRequest{}); err != nil {
@@ -1091,28 +1103,92 @@ func (l *logic) RunRenewInstanceTask(ctx pctx.Context, payload *common.RenewInst
 				return fmt.Errorf("resume sandbox: %w", err)
 			}
 		}
-	} else {
+	} else if wasPaused {
 		logger.Warn("renew task: instance has no usable sandbox, skip resume call",
 			zap.String("sandbox_id", entity.SandboxId),
 		)
 	}
 
-	if err := l.instanceDao.TransitionStatus(
-		ctx,
-		entity.Id,
-		[]string{modelinstance.InstanceStatusPaused},
-		modelinstance.InstanceStatusRunning,
-	); err != nil {
-		// CAS 失败常见于并发被 ResumeInstance 改了状态：再次 GetByInstanceID 兜底
-		current, getErr := l.instanceDao.GetByInstanceID(ctx, entity.InstanceId)
-		if getErr == nil && current.Status == modelinstance.InstanceStatusRunning {
-			logger.Info("renew task: state already running after CAS reject, success")
-			return nil
+	if wasPaused {
+		if err := l.instanceDao.TransitionStatus(
+			ctx,
+			entity.Id,
+			[]string{modelinstance.InstanceStatusPaused},
+			modelinstance.InstanceStatusRunning,
+		); err != nil {
+			// CAS 失败常见于并发被 ResumeInstance 改了状态：再次 GetByInstanceID 兜底
+			current, getErr := l.instanceDao.GetByInstanceID(ctx, entity.InstanceId)
+			if getErr == nil && current.Status == modelinstance.InstanceStatusRunning {
+				logger.Info("renew task: state already running after CAS reject, continue")
+				entity = current
+			} else {
+				return fmt.Errorf("persist running state: %w", err)
+			}
+		} else {
+			logger.Info("renew task: instance resumed successfully")
+			entity.Status = modelinstance.InstanceStatusRunning
 		}
-		return fmt.Errorf("persist running state: %w", err)
 	}
-	logger.Info("renew task: instance resumed successfully")
+
+	if migrateGateway != "" {
+		if migrateGateway != gatewayroute.GatewayLLMGateway {
+			return fmt.Errorf("unsupported renewal migration target gateway %q", migrateGateway)
+		}
+		if err := l.applyRenewalGatewayMigration(ctx, entity, gatewayBackendLLMGateway); err != nil {
+			return fmt.Errorf("apply renewal gateway migration: %w", err)
+		}
+	}
 	return nil
+}
+
+func (l *logic) applyRenewalGatewayMigration(ctx pctx.Context, entity *modelinstance.Entity, backend gatewayBackend) error {
+	if entity == nil {
+		return fmt.Errorf("instance is nil")
+	}
+	if strings.TrimSpace(entity.SandboxId) == "" || isPendingSandboxID(entity.SandboxId) {
+		return fmt.Errorf("instance has no usable sandbox")
+	}
+	userID := strings.TrimSpace(ctx.GetUserID())
+	if userID == "" {
+		userID = strings.TrimSpace(entity.UserId)
+	}
+	if err := l.ensureAiGatewayUser(ctx, backend, userID, "", entity.InstanceId); err != nil {
+		return err
+	}
+	apiKeyResp, err := l.createAiGatewayApiKey(ctx, backend, userID, entity.InstanceId)
+	if err != nil {
+		return err
+	}
+	gwConf, err := l.gatewayRuntimeConfig(backend)
+	if err != nil {
+		_ = l.revokeGatewayAPIKey(ctx, backend, apiKeyResp.KeyID)
+		return err
+	}
+	if err := l.configureGatewayRuntimeAndRestart(ctx, entity.SandboxId, apiKeyResp.APIKey, gwConf); err != nil {
+		_ = l.revokeGatewayAPIKey(ctx, backend, apiKeyResp.KeyID)
+		return err
+	}
+	if err := l.persistAiGatewayKeyIDWithStatuses(ctx, entity, apiKeyResp.KeyID, []string{modelinstance.InstanceStatusRunning}); err != nil {
+		_ = l.revokeGatewayAPIKey(ctx, backend, apiKeyResp.KeyID)
+		return fmt.Errorf("persist migrated gateway key id: %w", err)
+	}
+	return nil
+}
+
+func (l *logic) revokeGatewayAPIKey(ctx pctx.Context, backend gatewayBackend, keyID string) error {
+	if strings.TrimSpace(keyID) == "" {
+		return nil
+	}
+	if backend == gatewayBackendLLMGateway {
+		if l.llmGatewayAdapter == nil {
+			return fmt.Errorf("llmGatewayAdapter not configured")
+		}
+		return l.llmGatewayAdapter.RevokeApiKey(ctx, keyID)
+	}
+	if l.aiGatewayAdapter == nil {
+		return fmt.Errorf("aiGatewayAdapter not configured")
+	}
+	return l.aiGatewayAdapter.RevokeApiKey(ctx, keyID)
 }
 
 // FinalizeRenewInstanceTaskFailure 子 task RenewInstance 失败兜底
@@ -2065,6 +2141,48 @@ func (l *logic) configureOnboard(ctx pctx.Context, sandboxID string, apiKey stri
 	return nil
 }
 
+// configureGatewayRuntimeAndRestart applies a new platform provider/key and
+// restarts the Agent gateway in the same sandbox process. It intentionally does
+// not reset the whole backend configuration, preserving user-managed providers.
+func (l *logic) configureGatewayRuntimeAndRestart(ctx pctx.Context, sandboxID string, apiKey string, gwConf *gatewayRuntimeConfig) error {
+	if strings.TrimSpace(apiKey) == "" {
+		return fmt.Errorf("api_key is empty")
+	}
+	if gwConf == nil || strings.TrimSpace(gwConf.DefaultBaseURL) == "" || strings.TrimSpace(gwConf.DefaultModelID) == "" {
+		return fmt.Errorf("default_base_url or default_model_id not configured")
+	}
+	installResult, err := l.execSandboxProcessCommand(ctx, sandboxID, "hermes_ensure_model_cli", &psandbox.ProcessStartRequest{
+		Cmd:  "/bin/bash",
+		Args: []string{"-l", "-c", renderHermesEnsureModelCLICommand()},
+	}, 60)
+	if err != nil {
+		return fmt.Errorf("exec ensure hermes model cli command: %w", err)
+	}
+	if !sandboxCommandSucceeded(installResult) {
+		return fmt.Errorf("ensure hermes model cli command failed: %s", sandboxCommandFailureDetail(installResult))
+	}
+
+	command := shellUserCommand(hermesRuntimeUser, renderHermesModelSetAndRestartCommand(
+		gwConf.DefaultModelID,
+		hermesDefaultProviderName,
+		gwConf.DefaultBaseURL,
+		apiKey,
+		gwConf.DefaultCompatibility,
+	))
+	result, err := l.execSandboxProcessCommand(ctx, sandboxID, "hermes_model_set_and_restart", &psandbox.ProcessStartRequest{
+		Cmd:  "/bin/bash",
+		Args: []string{"-l", "-c", command},
+		Env:  shellUserEnv(hermesRuntimeUser),
+	}, 120)
+	if err != nil {
+		return fmt.Errorf("exec hermes model set and restart command: %w", err)
+	}
+	if !sandboxCommandSucceeded(result) {
+		return fmt.Errorf("hermes model set and restart command failed: %s", sandboxCommandFailureDetail(result))
+	}
+	return nil
+}
+
 func renderHermesEnsureModelCLICommand() string {
 	return strings.Join([]string{
 		`if command -v acli >/dev/null 2>&1; then`,
@@ -2162,6 +2280,14 @@ func truncateForLog(value string, max int) string {
 }
 
 func renderHermesModelSetCommand(modelID, providerName, baseURL, apiKey, compat string) string {
+	return renderHermesModelCommand(modelID, providerName, baseURL, apiKey, compat, false)
+}
+
+func renderHermesModelSetAndRestartCommand(modelID, providerName, baseURL, apiKey, compat string) string {
+	return renderHermesModelCommand(modelID, providerName, baseURL, apiKey, compat, true)
+}
+
+func renderHermesModelCommand(modelID, providerName, baseURL, apiKey, compat string, restart bool) string {
 	modelName := hermesModelName(modelID)
 	acliParts := []string{
 		fmt.Sprintf(`--name %s`, shellQuoteArg(providerName)),
@@ -2196,6 +2322,7 @@ func renderHermesModelSetCommand(modelID, providerName, baseURL, apiKey, compat 
 	harnessArgs := strings.Join(harnessParts, " ")
 	secretExport := `ACLI_SECRET_API_KEY=` + shellQuoteArg(apiKey)
 	lines := []string{
+		`set -euo pipefail`,
 		`if command -v acli >/dev/null 2>&1; then`,
 		`  ` + secretExport,
 		fmt.Sprintf(`  save_output="$(acli provider save %s)"`, acliArgs),
@@ -2232,6 +2359,15 @@ func renderHermesModelSetCommand(modelID, providerName, baseURL, apiKey, compat 
 		`  exit 127`,
 		`fi`,
 	)
+	if restart {
+		lines = append(lines,
+			`if command -v acli >/dev/null 2>&1; then`,
+			`  acli gateway restart`,
+			`else`,
+			`  harness gateway restart`,
+			`fi`,
+		)
+	}
 	return strings.Join(lines, "\n")
 }
 

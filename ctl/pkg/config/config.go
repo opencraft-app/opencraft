@@ -219,6 +219,9 @@ func parseAdapterConf() {
 	ServerConf.AdapterConfig.LLMGateway.NewAllocationUserAllowlist = uniqueNonEmptyCSV(
 		os.Getenv("CTL_LLMGATEWAY_NEW_USER_ALLOWLIST"),
 	)
+	ServerConf.AdapterConfig.LLMGateway.RenewalMigrationUserAllowlist = uniqueNonEmptyCSV(
+		os.Getenv("CTL_LLMGATEWAY_RENEWAL_MIGRATION_ALLOWLIST"),
+	)
 	ServerConf.AdapterConfig.LLMGateway.Enabled = llmGatewayBaseURL != "" &&
 		llmGatewayAdminToken != "" && llmGatewayInternalToken != ""
 	if ServerConf.AdapterConfig.LLMGateway.Enabled {
@@ -260,6 +263,7 @@ func resetLLMGatewayForLegacyFallback(conf *LLMGatewayConfig) {
 	conf.DefaultGatewayPort = 0
 	conf.DefaultProviderID = ""
 	conf.NewAllocationUserAllowlist = nil
+	conf.RenewalMigrationUserAllowlist = nil
 }
 
 func LLMGatewayEnabled() bool {
@@ -273,11 +277,25 @@ func LLMGatewayAllowsNewUser(userID string) bool {
 	if !LLMGatewayEnabled() {
 		return false
 	}
+	return userAllowlistMatches(ServerConf.AdapterConfig.LLMGateway.NewAllocationUserAllowlist, userID)
+}
+
+// LLMGatewayAllowsRenewalMigration reports whether an existing legacy user may
+// move to LLMGateway when a pass renewal is processed. This gate is separate
+// from new allocation so operators can roll out both paths independently.
+func LLMGatewayAllowsRenewalMigration(userID string) bool {
+	if !LLMGatewayEnabled() {
+		return false
+	}
+	return userAllowlistMatches(ServerConf.AdapterConfig.LLMGateway.RenewalMigrationUserAllowlist, userID)
+}
+
+func userAllowlistMatches(allowlist []string, userID string) bool {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
 		return false
 	}
-	for _, allowed := range ServerConf.AdapterConfig.LLMGateway.NewAllocationUserAllowlist {
+	for _, allowed := range allowlist {
 		if allowed == "*" || allowed == userID {
 			return true
 		}
