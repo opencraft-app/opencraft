@@ -4344,7 +4344,7 @@ export const AgentSettingsPage = ({
   };
   const workspaceCopyLabel = activeWorkspaceTask?.kind === "export" ? t("复制备份信息") : t("复制恢复信息");
   const workspaceRecoveryPanel = shouldExposeWorkspaceRecoveryPanel && activeBot ? (
-    <section className="rounded-md border border-black/[0.08] bg-white p-5 shadow-sm">
+    <section className="rounded-md border border-black/[0.08] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
       <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1">
         <h3 className="text-base font-semibold text-black/90 text-balance">{t("Agent 备份与恢复")}</h3>
         {needsEmailBinding && (
