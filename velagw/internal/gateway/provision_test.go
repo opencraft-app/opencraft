@@ -1,11 +1,16 @@
 package gateway
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"go.opentelemetry.io/otel"
@@ -588,6 +593,206 @@ func TestCreateExternalKeyClaimsExistingUpstreamUser(t *testing.T) {
 	}
 	if key.UpstreamKeyID != 7 || key.UpstreamKey != "sk-upstream" {
 		t.Fatalf("unexpected key binding: %+v", key)
+	}
+}
+
+func TestCreateExternalKeyReservesCentralIdentityBeforeCreatingUpstreamToken(t *testing.T) {
+	var eventsMu sync.Mutex
+	events := []string{}
+	record := func(event string) {
+		eventsMu.Lock()
+		defer eventsMu.Unlock()
+		events = append(events, event)
+	}
+	upstream := newKeyIssuanceUpstream(t, func() { record("upstream_create") })
+	defer upstream.Close()
+
+	memory := NewMemoryStore()
+	prepareReadyKeyIssuanceUser(t, memory, upstream.URL)
+	store := &keyIssuanceOrderStore{Store: memory, record: record}
+	svc := NewService(store, nil, Options{})
+
+	if _, err := svc.CreateExternalKey(t.Context(), "user-1"); err != nil {
+		t.Fatal(err)
+	}
+	eventsMu.Lock()
+	defer eventsMu.Unlock()
+	if len(events) < 2 || events[0] != "reserve" || events[1] != "upstream_create" {
+		t.Fatalf("issuance events = %v, want reservation before upstream create", events)
+	}
+}
+
+func TestCreateExternalKeyDoesNotReturnKeyWhenRoutePublicationFails(t *testing.T) {
+	upstream := newKeyIssuanceUpstream(t, nil)
+	defer upstream.Close()
+
+	store := NewMemoryStore()
+	prepareReadyKeyIssuanceUser(t, store, upstream.URL)
+	cache := &failingRoutePublicationCache{
+		MemoryAPIKeyRouteCache: NewMemoryAPIKeyRouteCache(0, 100),
+		err:                    errors.New("redis unavailable"),
+	}
+	svc := NewService(store, nil, Options{KeyRouteCache: cache})
+
+	key, err := svc.CreateExternalKey(t.Context(), "user-1")
+	if err == nil {
+		t.Fatalf("expected route publication failure, got key %+v", key)
+	}
+	bindings, listErr := store.ListAPIKeyBindingsByUser(t.Context(), "user-1")
+	if listErr != nil {
+		t.Fatal(listErr)
+	}
+	if len(bindings) != 1 || bindings[0].Status != APIKeyStatusRoutePending {
+		t.Fatalf("bindings after route failure = %+v, want one route_pending binding", bindings)
+	}
+}
+
+func TestCreateExternalKeyRetriesRandomIdentityCollisionAtMostFiveTimes(t *testing.T) {
+	var upstreamCreates atomic.Int32
+	upstream := newKeyIssuanceUpstream(t, func() { upstreamCreates.Add(1) })
+	defer upstream.Close()
+
+	t.Run("fifth candidate succeeds", func(t *testing.T) {
+		memory := NewMemoryStore()
+		prepareReadyKeyIssuanceUser(t, memory, upstream.URL)
+		store := &collisionReservationStore{Store: memory, randomCollisions: 4}
+		svc := NewService(store, nil, Options{
+			ExternalKeyRandom: bytes.NewReader(bytes.Repeat([]byte{9}, externalKeyRandomBytes*externalKeyReservationAttempts)),
+		})
+		if _, err := svc.CreateExternalKey(t.Context(), "user-1"); err != nil {
+			t.Fatal(err)
+		}
+		if store.attempts.Load() != externalKeyReservationAttempts {
+			t.Fatalf("reservation attempts = %d, want %d", store.attempts.Load(), externalKeyReservationAttempts)
+		}
+	})
+
+	t.Run("fifth collision stops without upstream create", func(t *testing.T) {
+		before := upstreamCreates.Load()
+		memory := NewMemoryStore()
+		prepareReadyKeyIssuanceUser(t, memory, upstream.URL)
+		store := &collisionReservationStore{Store: memory, randomCollisions: externalKeyReservationAttempts}
+		svc := NewService(store, nil, Options{
+			ExternalKeyRandom: bytes.NewReader(bytes.Repeat([]byte{8}, externalKeyRandomBytes*externalKeyReservationAttempts)),
+		})
+		if _, err := svc.CreateExternalKey(t.Context(), "user-1"); !errors.Is(err, ErrAPIKeyRandomCollision) {
+			t.Fatalf("error = %v, want random collision", err)
+		}
+		if store.attempts.Load() != externalKeyReservationAttempts {
+			t.Fatalf("reservation attempts = %d, want %d", store.attempts.Load(), externalKeyReservationAttempts)
+		}
+		if upstreamCreates.Load() != before {
+			t.Fatal("upstream token was created after reservation collisions were exhausted")
+		}
+	})
+}
+
+func TestCreateExternalKeyDoesNotRetryPurposeConflict(t *testing.T) {
+	var upstreamCreates atomic.Int32
+	upstream := newKeyIssuanceUpstream(t, func() { upstreamCreates.Add(1) })
+	defer upstream.Close()
+	memory := NewMemoryStore()
+	prepareReadyKeyIssuanceUser(t, memory, upstream.URL)
+	store := &collisionReservationStore{Store: memory, purposeConflict: true}
+	svc := NewService(store, nil, Options{
+		ExternalKeyRandom: bytes.NewReader(bytes.Repeat([]byte{7}, externalKeyRandomBytes*externalKeyReservationAttempts)),
+	})
+
+	if _, err := svc.createExternalKey(t.Context(), "user-1", APIKeyPurposeTrafficProbe); !errors.Is(err, ErrAPIKeyPurposeConflict) {
+		t.Fatalf("error = %v, want purpose conflict", err)
+	}
+	if store.attempts.Load() != 1 {
+		t.Fatalf("reservation attempts = %d, want 1", store.attempts.Load())
+	}
+	if upstreamCreates.Load() != 0 {
+		t.Fatal("upstream token was created after purpose conflict")
+	}
+}
+
+type keyIssuanceOrderStore struct {
+	Store
+	record func(string)
+}
+
+func (s *keyIssuanceOrderStore) ReserveAPIKeyBinding(ctx context.Context, binding APIKeyBinding) error {
+	s.record("reserve")
+	return s.Store.ReserveAPIKeyBinding(ctx, binding)
+}
+
+func (s *keyIssuanceOrderStore) SaveAPIKeyBinding(ctx context.Context, binding APIKeyBinding) error {
+	s.record("save")
+	return s.Store.SaveAPIKeyBinding(ctx, binding)
+}
+
+type failingRoutePublicationCache struct {
+	*MemoryAPIKeyRouteCache
+	err error
+}
+
+type collisionReservationStore struct {
+	Store
+	randomCollisions int32
+	purposeConflict  bool
+	attempts         atomic.Int32
+}
+
+func (s *collisionReservationStore) ReserveAPIKeyBinding(ctx context.Context, binding APIKeyBinding) error {
+	attempt := s.attempts.Add(1)
+	if s.purposeConflict {
+		return ErrAPIKeyPurposeConflict
+	}
+	if attempt <= s.randomCollisions {
+		return ErrAPIKeyRandomCollision
+	}
+	return s.Store.ReserveAPIKeyBinding(ctx, binding)
+}
+
+func (c *failingRoutePublicationCache) SetRoute(context.Context, TrafficRouteSnapshot) error {
+	return c.err
+}
+
+func newKeyIssuanceUpstream(t *testing.T, onCreate func()) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.Path {
+		case "POST /api/user/login":
+			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{"id": 42, "username": "sgw-user-1"}})
+		case "GET /api/user/token":
+			writeTestJSON(t, w, map[string]any{"success": true, "data": "user-access-token"})
+		case "POST /api/token/":
+			if onCreate != nil {
+				onCreate()
+			}
+			writeTestJSON(t, w, map[string]any{"success": true})
+		case "GET /api/token/search":
+			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{"items": []map[string]any{{"id": 7, "name": r.URL.Query().Get("keyword")}}}})
+		case "POST /api/token/7/key":
+			writeTestJSON(t, w, map[string]any{"success": true, "data": map[string]any{"key": "sk-upstream"}})
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+}
+
+func prepareReadyKeyIssuanceUser(t *testing.T, store Store, baseURL string) {
+	t.Helper()
+	if err := store.SaveSet(t.Context(), Set{
+		ID: "set-a", BaseURL: baseURL, TrafficBaseURL: baseURL, Status: SetStatusActive,
+		Setup: true, AdminUserID: 1, AdminAccessToken: "set-admin-token",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveTenant(t.Context(), Tenant{
+		ExternalUserID: "user-1", Backend: UserBackendNew, SetID: "set-a", Status: TenantStatusActive,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveUserBinding(t.Context(), UserBinding{
+		ExternalUserID: "user-1", SetID: "set-a", UpstreamUserID: 42,
+		Username: "sgw-user-1", Password: "password", ProvisionStatus: BindingProvisionStatusUserReady,
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
 

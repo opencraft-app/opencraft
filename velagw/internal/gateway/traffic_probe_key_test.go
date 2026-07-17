@@ -3,12 +3,11 @@ package gateway
 import (
 	"net/http"
 	"net/http/httptest"
-	"sync"
 	"sync/atomic"
 	"testing"
 )
 
-func TestGetOrCreateTrafficProbeKeyReusesFixedKey(t *testing.T) {
+func TestGetOrCreateTrafficProbeKeyReturnsOneTimeV2KeyWithoutPersistingPlaintext(t *testing.T) {
 	var tokenCreates atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -45,37 +44,24 @@ func TestGetOrCreateTrafficProbeKeyReusesFixedKey(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const callers = 8
-	results := make([]TrafficProbeKeyResult, callers)
-	errs := make([]error, callers)
-	var wg sync.WaitGroup
-	for i := 0; i < callers; i++ {
-		wg.Add(1)
-		go func(index int) {
-			defer wg.Done()
-			results[index], errs[index] = svc.GetOrCreateTrafficProbeKey(t.Context(), "probe-user")
-		}(i)
+	result, err := svc.GetOrCreateTrafficProbeKey(t.Context(), "probe-user")
+	if err != nil {
+		t.Fatal(err)
 	}
-	wg.Wait()
-	created := 0
-	for i, result := range results {
-		if errs[i] != nil {
-			t.Fatal(errs[i])
-		}
-		if result.Created {
-			created++
-		}
-		if result.Binding.ExternalKey == "" || result.Binding.ExternalKey != results[0].Binding.ExternalKey {
-			t.Fatalf("fixed key differs at caller %d", i)
-		}
-		if result.Binding.Purpose != APIKeyPurposeTrafficProbe || result.Binding.ExternalKeyHash != hashExternalKey(result.Binding.ExternalKey) {
-			t.Fatalf("unexpected recoverable probe binding: %+v", result.Binding)
-		}
+	if !result.Created || !parseTrafficRouteLookup(result.Binding.ExternalKey).Valid {
+		t.Fatalf("unexpected one-time probe key: %+v", result)
 	}
-	if created != 1 {
-		t.Fatalf("created results = %d, want 1", created)
+	if result.Binding.Purpose != "" || result.Binding.ExternalKeyHash != hashExternalKey(result.Binding.ExternalKey) {
+		t.Fatalf("unexpected one-time probe binding: %+v", result.Binding)
 	}
 	if got := tokenCreates.Load(); got != 1 {
 		t.Fatalf("upstream token creates = %d, want 1", got)
+	}
+	stored, ok, err := store.GetAPIKeyBindingByExternalKeyID(t.Context(), result.Binding.ExternalKeyID)
+	if err != nil || !ok {
+		t.Fatalf("stored probe binding: ok=%v err=%v", ok, err)
+	}
+	if stored.ExternalKey != "" {
+		t.Fatalf("stored external key plaintext = %q", stored.ExternalKey)
 	}
 }

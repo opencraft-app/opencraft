@@ -368,19 +368,22 @@ func (s *Service) deleteCachedTrafficRoutes(ctx context.Context, bindings []APIK
 	if s.options.KeyRouteCache == nil {
 		return fmt.Errorf("route cache is required to revoke Set traffic")
 	}
-	lookups := make([]TrafficRouteLookup, 0, len(bindings)*2)
+	lookups := make([]TrafficRouteLookup, 0, len(bindings))
 	for _, binding := range bindings {
 		lookup := parseTrafficRouteLookup(binding.ExternalKey)
-		if lookup.ExternalKeyID == "" {
-			lookup.ExternalKeyID = binding.ExternalKeyID
-			lookup.KeyShard = keyShardForExternalKeyID(binding.ExternalKeyID)
+		if !lookup.Valid {
+			lookup = TrafficRouteLookup{
+				ExternalKeyID: binding.ExternalKeyID,
+				Version:       binding.KeyVersion,
+				RouteSlot:     binding.RouteSlot,
+				Valid:         binding.KeyVersion == externalKeyVersionV2 && binding.ExternalKeyID != "",
+			}
 		}
 		if lookup.ExternalKeyHash == "" {
 			lookup.ExternalKeyHash = binding.ExternalKeyHash
 		}
-		lookups = append(lookups, lookup)
-		if binding.ExternalKeyHash != "" {
-			lookups = append(lookups, TrafficRouteLookup{ExternalKeyHash: binding.ExternalKeyHash, Legacy: true})
+		if lookup.Valid {
+			lookups = append(lookups, lookup)
 		}
 	}
 	if batch, ok := s.options.KeyRouteCache.(apiKeyRouteBatchDeleter); ok {

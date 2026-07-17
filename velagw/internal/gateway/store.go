@@ -21,6 +21,11 @@ type Store interface {
 	SaveShard(context.Context, Shard) error
 	GetShard(context.Context, string) (Shard, bool, error)
 	ListShards(context.Context) ([]Shard, error)
+	CreateShardExpansion(context.Context, ShardExpansion) (ShardExpansion, bool, error)
+	GetShardExpansion(context.Context, string) (ShardExpansion, bool, error)
+	GetShardExpansionByIdempotencyKey(context.Context, string) (ShardExpansion, bool, error)
+	ListShardExpansions(context.Context, ShardExpansionListOptions) ([]ShardExpansion, error)
+	UpdateShardExpansion(context.Context, ShardExpansion, int64) (ShardExpansion, bool, error)
 	TryAcquireSetOperationLease(context.Context, string, string, string, int, time.Duration, time.Time) (SetOperationLease, bool, error)
 	RenewSetOperationLease(context.Context, SetOperationLease, time.Duration, time.Time) (bool, error)
 	ReleaseSetOperationLease(context.Context, SetOperationLease) (bool, error)
@@ -86,6 +91,9 @@ type Store interface {
 	ReleaseTenantObservationTaskLease(context.Context, TenantObservationTask, time.Time) (bool, error)
 	CompleteTenantObservationTask(context.Context, TenantObservationTask, TenantObservationTaskCompletion, time.Time) (TenantObservationTask, error)
 	SaveAPIKeyBinding(context.Context, APIKeyBinding) error
+	ReserveAPIKeyBinding(context.Context, APIKeyBinding) error
+	TransitionAPIKeyBinding(context.Context, string, string, string, string, int, string, time.Time) (APIKeyBinding, error)
+	ListAPIKeyBindingsByStatus(context.Context, string, int) ([]APIKeyBinding, error)
 	GetAPIKeyBindingByExternalKey(context.Context, string) (APIKeyBinding, bool, error)
 	GetAPIKeyBindingByExternalKeyID(context.Context, string) (APIKeyBinding, bool, error)
 	ListAPIKeyBindingsByUser(context.Context, string) ([]APIKeyBinding, error)
@@ -191,105 +199,111 @@ type Store interface {
 }
 
 type MemoryStore struct {
-	mu                    sync.RWMutex
-	sets                  map[string]Set
-	shards                map[string]Shard
-	setFacts              map[string]SetReconcileFact
-	setRequests           map[string]SetProvisionRequest
-	runtimeLeases         map[string]SetRuntimeLease
-	tenants               map[string]Tenant
-	users                 map[string]UserBinding
-	apiKeysByHash         map[string]APIKeyBinding
-	apiKeysByID           map[string]APIKeyBinding
-	llmSettings           map[string]UserLLMSettings
-	byokSyncTasks         map[string]BYOKSyncTask
-	groupRatioDesired     map[string]GroupRatioDesired
-	groupRatioByUser      map[string]string
-	groupRatioStates      map[string]GroupRatioApplyState
-	entitlementPlans      map[string]Plan
-	setPlans              map[string]SetPlan
-	planPeriods           map[string]PlanPeriod
-	setPlanPeriods        map[string]SetPlanPeriod
-	periodEnds            map[string]SubscriptionPeriodOverlay
-	subscriptionIdem      map[string]SubscriptionIdempotency
-	adminCommands         map[string]AdminCommand
-	adminCommandDedupe    map[string]string
-	assignments           map[string]UserAssignment
-	observations          map[string]TenantObservation
-	observationTasks      map[string]TenantObservationTask
-	channels              map[string]ChannelSpec
-	channelStates         map[string]ChannelSyncState
-	bundles               map[string]ChannelBundle
-	bundleStates          map[string]ChannelBundleSyncState
-	bundleRevisions       map[string]ChannelBundleRevision
-	bundleReleases        map[string]ChannelBundleReleaseRun
-	bundleLocks           map[string]ChannelBundleLock
-	workerJobs            map[string]WorkerJob
-	workerRuns            map[string]WorkerJobRun
-	tenantStatistics      TenantStatistics
-	hasTenantStatistics   bool
-	setOperationLeases    map[string]SetOperationLease
-	tenantDeletionJobs    map[string]TenantDeletionJob
-	tenantDeletionTargets map[string]TenantDeletionTarget
-	tenantDeletionClaims  map[string]string
-	setDecommissionJobs   map[string]SetDecommissionJob
-	setRuntimes           map[string]SetRuntime
-	newAPIReleases        map[string]NewAPIRelease
-	releaseRings          map[string]ReleaseRing
-	releaseRollouts       map[string]ReleaseRollout
-	setUpgradeBatches     map[string]SetUpgradeBatch
-	setUpgradeRuns        map[string]SetUpgradeRun
-	setRuntimeRouteOutbox map[string]SetRuntimeRouteOutbox
+	mu                        sync.RWMutex
+	sets                      map[string]Set
+	shards                    map[string]Shard
+	shardExpansions           map[string]ShardExpansion
+	shardExpansionIdempotency map[string]string
+	activeShardExpansions     map[string]string
+	setFacts                  map[string]SetReconcileFact
+	setRequests               map[string]SetProvisionRequest
+	runtimeLeases             map[string]SetRuntimeLease
+	tenants                   map[string]Tenant
+	users                     map[string]UserBinding
+	apiKeysByHash             map[string]APIKeyBinding
+	apiKeysByID               map[string]APIKeyBinding
+	llmSettings               map[string]UserLLMSettings
+	byokSyncTasks             map[string]BYOKSyncTask
+	groupRatioDesired         map[string]GroupRatioDesired
+	groupRatioByUser          map[string]string
+	groupRatioStates          map[string]GroupRatioApplyState
+	entitlementPlans          map[string]Plan
+	setPlans                  map[string]SetPlan
+	planPeriods               map[string]PlanPeriod
+	setPlanPeriods            map[string]SetPlanPeriod
+	periodEnds                map[string]SubscriptionPeriodOverlay
+	subscriptionIdem          map[string]SubscriptionIdempotency
+	adminCommands             map[string]AdminCommand
+	adminCommandDedupe        map[string]string
+	assignments               map[string]UserAssignment
+	observations              map[string]TenantObservation
+	observationTasks          map[string]TenantObservationTask
+	channels                  map[string]ChannelSpec
+	channelStates             map[string]ChannelSyncState
+	bundles                   map[string]ChannelBundle
+	bundleStates              map[string]ChannelBundleSyncState
+	bundleRevisions           map[string]ChannelBundleRevision
+	bundleReleases            map[string]ChannelBundleReleaseRun
+	bundleLocks               map[string]ChannelBundleLock
+	workerJobs                map[string]WorkerJob
+	workerRuns                map[string]WorkerJobRun
+	tenantStatistics          TenantStatistics
+	hasTenantStatistics       bool
+	setOperationLeases        map[string]SetOperationLease
+	tenantDeletionJobs        map[string]TenantDeletionJob
+	tenantDeletionTargets     map[string]TenantDeletionTarget
+	tenantDeletionClaims      map[string]string
+	setDecommissionJobs       map[string]SetDecommissionJob
+	setRuntimes               map[string]SetRuntime
+	newAPIReleases            map[string]NewAPIRelease
+	releaseRings              map[string]ReleaseRing
+	releaseRollouts           map[string]ReleaseRollout
+	setUpgradeBatches         map[string]SetUpgradeBatch
+	setUpgradeRuns            map[string]SetUpgradeRun
+	setRuntimeRouteOutbox     map[string]SetRuntimeRouteOutbox
 }
 
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		sets:                  map[string]Set{},
-		shards:                map[string]Shard{},
-		setFacts:              map[string]SetReconcileFact{},
-		setRequests:           map[string]SetProvisionRequest{},
-		runtimeLeases:         map[string]SetRuntimeLease{},
-		tenants:               map[string]Tenant{},
-		users:                 map[string]UserBinding{},
-		apiKeysByHash:         map[string]APIKeyBinding{},
-		apiKeysByID:           map[string]APIKeyBinding{},
-		llmSettings:           map[string]UserLLMSettings{},
-		byokSyncTasks:         map[string]BYOKSyncTask{},
-		groupRatioDesired:     map[string]GroupRatioDesired{},
-		groupRatioByUser:      map[string]string{},
-		groupRatioStates:      map[string]GroupRatioApplyState{},
-		entitlementPlans:      map[string]Plan{},
-		setPlans:              map[string]SetPlan{},
-		planPeriods:           map[string]PlanPeriod{},
-		setPlanPeriods:        map[string]SetPlanPeriod{},
-		periodEnds:            map[string]SubscriptionPeriodOverlay{},
-		subscriptionIdem:      map[string]SubscriptionIdempotency{},
-		adminCommands:         map[string]AdminCommand{},
-		adminCommandDedupe:    map[string]string{},
-		assignments:           map[string]UserAssignment{},
-		observations:          map[string]TenantObservation{},
-		observationTasks:      map[string]TenantObservationTask{},
-		channels:              map[string]ChannelSpec{},
-		channelStates:         map[string]ChannelSyncState{},
-		bundles:               map[string]ChannelBundle{},
-		bundleStates:          map[string]ChannelBundleSyncState{},
-		bundleRevisions:       map[string]ChannelBundleRevision{},
-		bundleReleases:        map[string]ChannelBundleReleaseRun{},
-		bundleLocks:           map[string]ChannelBundleLock{},
-		workerJobs:            map[string]WorkerJob{},
-		workerRuns:            map[string]WorkerJobRun{},
-		setOperationLeases:    map[string]SetOperationLease{},
-		tenantDeletionJobs:    map[string]TenantDeletionJob{},
-		tenantDeletionTargets: map[string]TenantDeletionTarget{},
-		tenantDeletionClaims:  map[string]string{},
-		setDecommissionJobs:   map[string]SetDecommissionJob{},
-		setRuntimes:           map[string]SetRuntime{},
-		newAPIReleases:        map[string]NewAPIRelease{},
-		releaseRings:          map[string]ReleaseRing{},
-		releaseRollouts:       map[string]ReleaseRollout{},
-		setUpgradeBatches:     map[string]SetUpgradeBatch{},
-		setUpgradeRuns:        map[string]SetUpgradeRun{},
-		setRuntimeRouteOutbox: map[string]SetRuntimeRouteOutbox{},
+		sets:                      map[string]Set{},
+		shards:                    map[string]Shard{},
+		shardExpansions:           map[string]ShardExpansion{},
+		shardExpansionIdempotency: map[string]string{},
+		activeShardExpansions:     map[string]string{},
+		setFacts:                  map[string]SetReconcileFact{},
+		setRequests:               map[string]SetProvisionRequest{},
+		runtimeLeases:             map[string]SetRuntimeLease{},
+		tenants:                   map[string]Tenant{},
+		users:                     map[string]UserBinding{},
+		apiKeysByHash:             map[string]APIKeyBinding{},
+		apiKeysByID:               map[string]APIKeyBinding{},
+		llmSettings:               map[string]UserLLMSettings{},
+		byokSyncTasks:             map[string]BYOKSyncTask{},
+		groupRatioDesired:         map[string]GroupRatioDesired{},
+		groupRatioByUser:          map[string]string{},
+		groupRatioStates:          map[string]GroupRatioApplyState{},
+		entitlementPlans:          map[string]Plan{},
+		setPlans:                  map[string]SetPlan{},
+		planPeriods:               map[string]PlanPeriod{},
+		setPlanPeriods:            map[string]SetPlanPeriod{},
+		periodEnds:                map[string]SubscriptionPeriodOverlay{},
+		subscriptionIdem:          map[string]SubscriptionIdempotency{},
+		adminCommands:             map[string]AdminCommand{},
+		adminCommandDedupe:        map[string]string{},
+		assignments:               map[string]UserAssignment{},
+		observations:              map[string]TenantObservation{},
+		observationTasks:          map[string]TenantObservationTask{},
+		channels:                  map[string]ChannelSpec{},
+		channelStates:             map[string]ChannelSyncState{},
+		bundles:                   map[string]ChannelBundle{},
+		bundleStates:              map[string]ChannelBundleSyncState{},
+		bundleRevisions:           map[string]ChannelBundleRevision{},
+		bundleReleases:            map[string]ChannelBundleReleaseRun{},
+		bundleLocks:               map[string]ChannelBundleLock{},
+		workerJobs:                map[string]WorkerJob{},
+		workerRuns:                map[string]WorkerJobRun{},
+		setOperationLeases:        map[string]SetOperationLease{},
+		tenantDeletionJobs:        map[string]TenantDeletionJob{},
+		tenantDeletionTargets:     map[string]TenantDeletionTarget{},
+		tenantDeletionClaims:      map[string]string{},
+		setDecommissionJobs:       map[string]SetDecommissionJob{},
+		setRuntimes:               map[string]SetRuntime{},
+		newAPIReleases:            map[string]NewAPIRelease{},
+		releaseRings:              map[string]ReleaseRing{},
+		releaseRollouts:           map[string]ReleaseRollout{},
+		setUpgradeBatches:         map[string]SetUpgradeBatch{},
+		setUpgradeRuns:            map[string]SetUpgradeRun{},
+		setRuntimeRouteOutbox:     map[string]SetRuntimeRouteOutbox{},
 	}
 }
 
@@ -1147,12 +1161,26 @@ func (s *MemoryStore) SaveAPIKeyBinding(_ context.Context, binding APIKeyBinding
 		return err
 	}
 	now := time.Now().UTC()
+	lookup := parseTrafficRouteLookup(binding.ExternalKey)
+	if lookup.Valid {
+		binding.ExternalKeyID = lookup.ExternalKeyID
+		binding.ExternalKeyHash = lookup.ExternalKeyHash
+		binding.SecretHash = lookup.SecretHash
+		binding.KeyVersion = lookup.Version
+		binding.RouteSlot = lookup.RouteSlot
+	}
+	if binding.Status == "" {
+		binding.Status = APIKeyStatusActive
+	}
 	if binding.CreatedAt.IsZero() {
 		if existing, ok := s.apiKeysByID[binding.ExternalKeyID]; ok && !existing.CreatedAt.IsZero() {
 			binding.CreatedAt = existing.CreatedAt
 		} else {
 			binding.CreatedAt = now
 		}
+	}
+	if binding.UpdatedAt.IsZero() {
+		binding.UpdatedAt = now
 	}
 	hash := hashExternalKey(binding.ExternalKey)
 	binding.ExternalKeyHash = hash
@@ -1171,6 +1199,87 @@ func (s *MemoryStore) SaveAPIKeyBinding(_ context.Context, binding APIKeyBinding
 	}
 	s.apiKeysByHash[hash] = binding
 	return nil
+}
+
+func (s *MemoryStore) ReserveAPIKeyBinding(_ context.Context, binding APIKeyBinding) error {
+	var err error
+	binding, err = prepareAPIKeyReservation(binding)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.rejectInactiveTenantWriteLocked(binding.UserID); err != nil {
+		return err
+	}
+	if binding.Purpose != "" {
+		for _, existing := range s.apiKeysByID {
+			if existing.UserID == binding.UserID && existing.Purpose == binding.Purpose {
+				return fmt.Errorf("%w: user=%s purpose=%s", ErrAPIKeyPurposeConflict, binding.UserID, binding.Purpose)
+			}
+		}
+	}
+	if _, exists := s.apiKeysByID[binding.ExternalKeyID]; exists {
+		return fmt.Errorf("%w: external_key_id", ErrAPIKeyRandomCollision)
+	}
+	if _, exists := s.apiKeysByHash[binding.ExternalKeyHash]; exists {
+		return fmt.Errorf("%w: external_key_hash", ErrAPIKeyRandomCollision)
+	}
+	now := time.Now().UTC()
+	if binding.CreatedAt.IsZero() {
+		binding.CreatedAt = now
+	}
+	if binding.UpdatedAt.IsZero() {
+		binding.UpdatedAt = now
+	}
+	s.apiKeysByID[binding.ExternalKeyID] = binding
+	s.apiKeysByHash[binding.ExternalKeyHash] = binding
+	return nil
+}
+
+func (s *MemoryStore) TransitionAPIKeyBinding(_ context.Context, keyID, expectedStatus, nextStatus, upstreamKey string, upstreamKeyID int, lastError string, updatedAt time.Time) (APIKeyBinding, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	binding, ok := s.apiKeysByID[keyID]
+	if !ok || binding.Status != expectedStatus {
+		return APIKeyBinding{}, fmt.Errorf("%w: key=%s expected=%s", ErrAPIKeyStateConflict, keyID, expectedStatus)
+	}
+	if upstreamKey != "" {
+		binding.UpstreamKey = upstreamKey
+	}
+	if upstreamKeyID > 0 {
+		binding.UpstreamKeyID = upstreamKeyID
+	}
+	binding.Status = nextStatus
+	binding.LastError = lastError
+	if updatedAt.IsZero() {
+		updatedAt = time.Now().UTC()
+	}
+	binding.UpdatedAt = updatedAt
+	s.apiKeysByID[keyID] = binding
+	s.apiKeysByHash[binding.ExternalKeyHash] = binding
+	return binding, nil
+}
+
+func (s *MemoryStore) ListAPIKeyBindingsByStatus(_ context.Context, status string, limit int) ([]APIKeyBinding, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	bindings := make([]APIKeyBinding, 0)
+	for _, binding := range s.apiKeysByID {
+		if binding.Status == status {
+			bindings = append(bindings, binding)
+		}
+	}
+	sort.Slice(bindings, func(i, j int) bool {
+		if !bindings[i].UpdatedAt.Equal(bindings[j].UpdatedAt) {
+			return bindings[i].UpdatedAt.Before(bindings[j].UpdatedAt)
+		}
+		return bindings[i].ExternalKeyID < bindings[j].ExternalKeyID
+	})
+	if limit > 0 && len(bindings) > limit {
+		bindings = bindings[:limit]
+	}
+	return bindings, nil
 }
 
 func (s *MemoryStore) GetAPIKeyBindingByExternalKey(_ context.Context, externalKey string) (APIKeyBinding, bool, error) {

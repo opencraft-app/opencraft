@@ -45,7 +45,20 @@ func (s *Server) adminTrafficProbe(w http.ResponseWriter, r *http.Request) {
 	setID := ""
 	keyID := ""
 	keyCreated := false
-	if authorizationKey == "" {
+	directResolved := false
+	if authorizationKey == "" && input.Mode == "set_direct" {
+		target, err := s.svc.ResolveDirectTrafficProbeTargetForUser(r.Context(), input.UserID)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		targetBaseURL = target.BaseURL
+		authorizationKey = target.UpstreamKey
+		userID = target.UserID
+		setID = target.SetID
+		keyID = target.KeyID
+		directResolved = true
+	} else if authorizationKey == "" {
 		probeKey, err := s.svc.GetOrCreateTrafficProbeKey(r.Context(), input.UserID)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
@@ -64,15 +77,18 @@ func (s *Server) adminTrafficProbe(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "set_direct":
-		target, err := s.svc.ResolveDirectTrafficProbeTarget(r.Context(), authorizationKey)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
+		if !directResolved {
+			target, err := s.svc.ResolveDirectTrafficProbeTarget(r.Context(), authorizationKey)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			targetBaseURL = target.BaseURL
+			authorizationKey = target.UpstreamKey
+			userID = target.UserID
+			setID = target.SetID
+			keyID = target.KeyID
 		}
-		targetBaseURL = target.BaseURL
-		authorizationKey = target.UpstreamKey
-		userID = target.UserID
-		setID = target.SetID
 	default:
 		writeError(w, http.StatusBadRequest, "mode must be gateway or set_direct")
 		return

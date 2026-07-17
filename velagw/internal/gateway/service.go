@@ -36,6 +36,9 @@ var (
 	ErrPlanNotReady          = errors.New("plan is not ready in any active set")
 	ErrPlanImmutableConflict = errors.New("plan id already exists with different entitlements")
 	ErrSubscriptionNotFound  = errors.New("active subscription not found")
+	ErrAPIKeyRandomCollision = errors.New("external api key random identity collision")
+	ErrAPIKeyPurposeConflict = errors.New("external api key purpose already exists")
+	ErrAPIKeyStateConflict   = errors.New("external api key state transition conflict")
 	// stdout is reserved for canonical OTLP JSON envelopes. Legacy access logs
 	// remain on stderr until the traffic-plane telemetry rollout is enabled.
 	defaultAccessLogger = log.New(os.Stderr, "", 0)
@@ -232,6 +235,10 @@ func (s *Service) UpsertShard(ctx context.Context, input UpsertShardInput) error
 		Name:                         strings.TrimSpace(input.Name),
 		Kind:                         strings.TrimSpace(input.Kind),
 		Endpoint:                     strings.TrimSpace(input.Endpoint),
+		RedisEndpoint:                strings.TrimSpace(input.RedisEndpoint),
+		SecretName:                   strings.TrimSpace(input.SecretName),
+		RedisDBStart:                 optionalNonNegativeInt(input.RedisDBStart),
+		RedisDBLimit:                 optionalNonNegativeInt(input.RedisDBLimit),
 		Status:                       strings.TrimSpace(input.Status),
 		MaxConnections:               optionalNonNegativeInt(input.MaxConnections),
 		ReservedConnections:          optionalNonNegativeInt(input.ReservedConnections),
@@ -266,6 +273,18 @@ func (s *Service) UpsertShard(ctx context.Context, input UpsertShardInput) error
 		}
 		if strings.TrimSpace(input.Endpoint) == "" {
 			shard.Endpoint = existing.Endpoint
+		}
+		if strings.TrimSpace(input.RedisEndpoint) == "" {
+			shard.RedisEndpoint = existing.RedisEndpoint
+		}
+		if strings.TrimSpace(input.SecretName) == "" {
+			shard.SecretName = existing.SecretName
+		}
+		if input.RedisDBStart == nil {
+			shard.RedisDBStart = existing.RedisDBStart
+		}
+		if input.RedisDBLimit == nil {
+			shard.RedisDBLimit = existing.RedisDBLimit
 		}
 		if strings.TrimSpace(input.Status) == "" {
 			shard.Status = existing.Status
@@ -310,6 +329,9 @@ func (s *Service) UpsertShard(ctx context.Context, input UpsertShardInput) error
 	if shard.MaxSets < 0 {
 		return fmt.Errorf("max_sets must be greater than or equal to zero")
 	}
+	if shard.RedisDBLimit > 0 && shard.RedisDBLimit <= shard.RedisDBStart {
+		return fmt.Errorf("redis DB range must be a non-empty half-open interval")
+	}
 	if shard.AdminSQLMaxOpenConns > 0 && shard.SubscriptionWriteConcurrency*2 > shard.AdminSQLMaxOpenConns {
 		return fmt.Errorf("subscription_write_concurrency requires at least twice as many admin SQL connections")
 	}
@@ -334,9 +356,14 @@ func (s *Service) ListShardDetails(ctx context.Context) ([]ShardDetail, error) {
 	if err != nil {
 		return nil, err
 	}
+	leases, err := s.store.ListSetRuntimeLeases(ctx, SetRuntimeLeaseListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	leaseBySet := runtimeLeaseBySetID(leases)
 	details := make([]ShardDetail, 0, len(shards))
 	for _, shard := range shards {
-		details = append(details, buildShardDetail(shard, sets))
+		details = append(details, buildShardDetail(shard, sets, leaseBySet))
 	}
 	return details, nil
 }
@@ -353,7 +380,11 @@ func (s *Service) GetShardDetail(ctx context.Context, id string) (ShardDetail, e
 	if err != nil {
 		return ShardDetail{}, err
 	}
-	return buildShardDetail(shard, sets), nil
+	leases, err := s.store.ListSetRuntimeLeases(ctx, SetRuntimeLeaseListOptions{})
+	if err != nil {
+		return ShardDetail{}, err
+	}
+	return buildShardDetail(shard, sets, runtimeLeaseBySetID(leases)), nil
 }
 
 func optionalRatio(value *float64, fallback float64) float64 {
@@ -369,7 +400,7 @@ func optionalRatio(value *float64, fallback float64) float64 {
 	return *value
 }
 
-func buildShardDetail(shard Shard, sets []Set) ShardDetail {
+func buildShardDetail(shard Shard, sets []Set, leaseBySet map[string]SetRuntimeLease) ShardDetail {
 	allocatable := shard.MaxConnections - shard.ReservedConnections
 	if allocatable < 0 {
 		allocatable = 0
@@ -388,6 +419,7 @@ func buildShardDetail(shard Shard, sets []Set) ShardDetail {
 			logical = set.NewAPIReplicas * set.SQLMaxOpenConns
 		}
 		detail.LogicalConnections += logical
+		lease := leaseBySet[set.ID]
 		detail.Sets = append(detail.Sets, ShardSetBudget{
 			SetID:              set.ID,
 			Name:               set.Name,
@@ -397,7 +429,24 @@ func buildShardDetail(shard Shard, sets []Set) ShardDetail {
 			SQLMaxOpenConns:    set.SQLMaxOpenConns,
 			SQLMaxIdleConns:    set.SQLMaxIdleConns,
 			LogicalConnections: logical,
+			DatabaseName:       lease.DatabaseName,
+			RedisDB:            lease.RedisDB,
 		})
+	}
+	redisDBs := map[string]bool{}
+	for _, set := range detail.Sets {
+		if set.RedisDB != "" {
+			redisDBs[set.RedisDB] = true
+		}
+	}
+	detail.RedisDBAllocated = len(redisDBs)
+	redisCapacity := shard.RedisDBLimit - shard.RedisDBStart
+	if redisCapacity > 0 {
+		detail.RedisDBAvailable = redisCapacity - detail.RedisDBAllocated
+		if detail.RedisDBAvailable < 0 {
+			detail.RedisDBAvailable = 0
+		}
+		detail.RedisDBUtilization = float64(detail.RedisDBAllocated) / float64(redisCapacity)
 	}
 	detail.RemainingConnections = allocatable - detail.LogicalConnections
 	if detail.RemainingConnections < 0 {
@@ -416,6 +465,14 @@ func buildShardDetail(shard Shard, sets []Set) ShardDetail {
 		detail.CapacityStatus = ShardCapacityOK
 	}
 	return detail
+}
+
+func runtimeLeaseBySetID(leases []SetRuntimeLease) map[string]SetRuntimeLease {
+	result := make(map[string]SetRuntimeLease, len(leases))
+	for _, lease := range leases {
+		result[lease.SetID] = lease
+	}
+	return result
 }
 
 func (s *Service) BootstrapSet(ctx context.Context, setID string) (Set, error) {
@@ -1876,36 +1933,49 @@ func (s *Service) createExternalKeyForBinding(ctx context.Context, binding UserB
 		s.markBindingProvisionFailed(ctx, binding, err)
 		return APIKeyBinding{}, err
 	}
-	externalKeyID := "key-" + randomSecret()
-	externalKeySecret := randomSecret()
+	keyBinding, err := s.reserveExternalKeyBinding(ctx, binding, set, purpose)
+	if err != nil {
+		return APIKeyBinding{}, err
+	}
+	externalKeyID := keyBinding.ExternalKeyID
 	upstreamKey, err := traceGatewayValue(ctx, "newapi.create_user_token", func(spanCtx context.Context) (newapi.UpstreamKey, error) {
 		return client.CreateUserToken(spanCtx, binding.UpstreamUserID, userAccessToken, newapi.CreateTokenRequest{
-			Name:           "sgw-" + externalKeyID,
+			Name:           newAPIExternalTokenName(externalKeyID),
 			ExpiredTime:    -1,
 			UnlimitedQuota: true,
 			Group:          newAPIDefaultGroup,
 		})
 	}, attribute.String("llmgateway.set.id", set.ID), attribute.Int("llmgateway.upstream_user.id", binding.UpstreamUserID), attribute.String("llmgateway.external_key.id", externalKeyID))
 	if err != nil {
+		_, _ = s.store.TransitionAPIKeyBinding(context.WithoutCancel(ctx), externalKeyID, APIKeyStatusReserved, APIKeyStatusError, "", 0, err.Error(), s.nowUTC())
 		s.markBindingProvisionFailed(ctx, binding, err)
 		return APIKeyBinding{}, err
 	}
-	keyBinding := APIKeyBinding{
-		ExternalKey:   formatRoutableExternalKey(externalKeyID, externalKeySecret),
-		ExternalKeyID: externalKeyID,
-		Purpose:       purpose,
-		SetID:         set.ID,
-		UserID:        binding.ExternalUserID,
-		UpstreamKey:   upstreamKey.Key,
-		UpstreamKeyID: upstreamKey.ID,
-		CreatedAt:     s.nowUTC(),
-	}
-	keyBinding.ExternalKeyHash = hashExternalKey(keyBinding.ExternalKey)
-	if err := traceGatewayVoid(ctx, "store.save_api_key_binding", func(spanCtx context.Context) error {
-		return s.store.SaveAPIKeyBinding(spanCtx, keyBinding)
+	if _, err := traceGatewayValue(ctx, "store.save_api_key_upstream", func(spanCtx context.Context) (APIKeyBinding, error) {
+		return s.store.TransitionAPIKeyBinding(spanCtx, externalKeyID, APIKeyStatusReserved, APIKeyStatusUpstreamReady, upstreamKey.Key, upstreamKey.ID, "", s.nowUTC())
 	}, attribute.String("llmgateway.set.id", set.ID), attribute.String("llmgateway.external_key.id", externalKeyID)); err != nil {
 		return APIKeyBinding{}, err
 	}
+	keyBinding.UpstreamKey = upstreamKey.Key
+	keyBinding.UpstreamKeyID = upstreamKey.ID
+	keyBinding.Status = APIKeyStatusUpstreamReady
+	keyBinding.UpdatedAt = s.nowUTC()
+	if _, err := s.store.TransitionAPIKeyBinding(ctx, externalKeyID, APIKeyStatusUpstreamReady, APIKeyStatusRoutePending, "", 0, "", s.nowUTC()); err != nil {
+		return APIKeyBinding{}, err
+	}
+	keyBinding.Status = APIKeyStatusRoutePending
+	if err := traceGatewayVoid(ctx, "route_cache.write_snapshot", func(spanCtx context.Context) error {
+		return s.cacheTrafficRouteSnapshotForBinding(spanCtx, keyBinding, set)
+	}, attribute.String("llmgateway.set.id", set.ID), attribute.String("llmgateway.external_key.id", externalKeyID)); err != nil {
+		_, _ = s.store.TransitionAPIKeyBinding(context.WithoutCancel(ctx), externalKeyID, APIKeyStatusRoutePending, APIKeyStatusRoutePending, "", 0, err.Error(), s.nowUTC())
+		return APIKeyBinding{}, fmt.Errorf("publish external key route: %w", err)
+	}
+	if _, err := s.store.TransitionAPIKeyBinding(ctx, externalKeyID, APIKeyStatusRoutePending, APIKeyStatusActive, "", 0, "", s.nowUTC()); err != nil {
+		return APIKeyBinding{}, err
+	}
+	keyBinding.Status = APIKeyStatusActive
+	keyBinding.LastError = ""
+	keyBinding.UpdatedAt = s.nowUTC()
 	binding.ProvisionStatus = BindingProvisionStatusTokenReady
 	binding.LastProvisionError = ""
 	if err := traceGatewayVoid(ctx, "store.save_user_binding", func(spanCtx context.Context) error {
@@ -1913,10 +1983,54 @@ func (s *Service) createExternalKeyForBinding(ctx context.Context, binding UserB
 	}, attribute.String("llmgateway.set.id", set.ID)); err != nil {
 		return APIKeyBinding{}, err
 	}
-	_ = traceGatewayVoid(ctx, "route_cache.write_snapshot", func(spanCtx context.Context) error {
-		return s.cacheTrafficRouteSnapshotForBinding(spanCtx, keyBinding, set)
-	}, attribute.String("llmgateway.set.id", set.ID), attribute.String("llmgateway.external_key.id", externalKeyID))
 	return keyBinding, nil
+}
+
+const externalKeyReservationAttempts = 5
+
+func newAPIExternalTokenName(externalKeyID string) string {
+	const prefix = "sgw-"
+	const maxNameLength = 20
+
+	externalKeyID = strings.TrimSpace(externalKeyID)
+	if len(externalKeyID) > maxNameLength-len(prefix) {
+		externalKeyID = externalKeyID[:maxNameLength-len(prefix)]
+	}
+	return prefix + externalKeyID
+}
+
+func (s *Service) reserveExternalKeyBinding(ctx context.Context, binding UserBinding, set Set, purpose string) (APIKeyBinding, error) {
+	for attempt := 0; attempt < externalKeyReservationAttempts; attempt++ {
+		material, err := generateExternalKeyV2(s.options.ExternalKeyRandom)
+		if err != nil {
+			return APIKeyBinding{}, err
+		}
+		now := s.nowUTC()
+		candidate := APIKeyBinding{
+			ExternalKey:     material.ExternalKey,
+			ExternalKeyHash: material.ExternalKeyHash,
+			ExternalKeyID:   material.ExternalKeyID,
+			SecretHash:      material.SecretHash,
+			KeyVersion:      material.Version,
+			RouteSlot:       material.RouteSlot,
+			Purpose:         purpose,
+			SetID:           set.ID,
+			UserID:          binding.ExternalUserID,
+			Status:          APIKeyStatusReserved,
+			CreatedAt:       now,
+			UpdatedAt:       now,
+		}
+		err = traceGatewayVoid(ctx, "store.reserve_api_key_binding", func(spanCtx context.Context) error {
+			return s.store.ReserveAPIKeyBinding(spanCtx, candidate)
+		}, attribute.String("llmgateway.set.id", set.ID), attribute.String("llmgateway.external_key.id", candidate.ExternalKeyID))
+		if err == nil {
+			return candidate, nil
+		}
+		if !errors.Is(err, ErrAPIKeyRandomCollision) {
+			return APIKeyBinding{}, err
+		}
+	}
+	return APIKeyBinding{}, fmt.Errorf("reserve external api key after %d attempts: %w", externalKeyReservationAttempts, ErrAPIKeyRandomCollision)
 }
 
 func (s *Service) RevokeExternalKey(ctx context.Context, externalKeyID string) (err error) {
@@ -2320,9 +2434,16 @@ func (s *Service) buildTrafficRouteSnapshot(ctx context.Context, binding APIKeyB
 	if externalKeyHash == "" {
 		externalKeyHash = lookup.ExternalKeyHash
 	}
-	keyShard := lookup.KeyShard
-	if keyShard == "" && binding.ExternalKeyID != "" {
-		keyShard = keyShardForExternalKeyID(binding.ExternalKeyID)
+	keyVersion := binding.KeyVersion
+	routeSlot := binding.RouteSlot
+	secretHash := binding.SecretHash
+	if lookup.Valid {
+		keyVersion = lookup.Version
+		routeSlot = lookup.RouteSlot
+		secretHash = lookup.SecretHash
+	}
+	if keyVersion != externalKeyVersionV2 || strings.TrimSpace(binding.ExternalKeyID) == "" || secretHash == "" {
+		return TrafficRouteSnapshot{}, fmt.Errorf("external key %q has no valid v2 route identity", binding.ExternalKeyID)
 	}
 	enabled := set.Status != SetStatusDisabled
 	if binding.UserID != "" {
@@ -2333,8 +2454,9 @@ func (s *Service) buildTrafficRouteSnapshot(ctx context.Context, binding APIKeyB
 	return TrafficRouteSnapshot{
 		ExternalKeyHash: externalKeyHash,
 		ExternalKeyID:   binding.ExternalKeyID,
-		SecretHash:      lookup.SecretHash,
-		KeyShard:        keyShard,
+		SecretHash:      secretHash,
+		KeyVersion:      keyVersion,
+		RouteSlot:       routeSlot,
 		SetID:           binding.SetID,
 		SetBaseURL:      trafficBaseURLForSet(set),
 		UserID:          binding.UserID,
@@ -2357,7 +2479,11 @@ func trafficBaseURLForSet(set Set) string {
 }
 
 func (s *Service) lookupAPIKeyBinding(ctx context.Context, externalKey string) (APIKeyBinding, bool, error) {
-	externalKeyHash := hashExternalKey(externalKey)
+	lookup := parseTrafficRouteLookup(externalKey)
+	if !lookup.Valid {
+		return APIKeyBinding{}, false, nil
+	}
+	externalKeyHash := lookup.ExternalKeyHash
 	if s.options.KeyRouteCache != nil {
 		if binding, ok, err := s.options.KeyRouteCache.Get(ctx, externalKeyHash); err == nil && ok {
 			s.recordKeyRouteCacheMetric("hit")
@@ -2437,11 +2563,15 @@ func (s *Service) RecognizeExternalKey(ctx context.Context, externalKey string) 
 	if externalKey == "" {
 		return false, nil
 	}
+	lookup := parseTrafficRouteLookup(externalKey)
+	if !lookup.Valid {
+		return false, nil
+	}
 	if s.options.TrafficRouteCacheOnly {
 		if s.options.KeyRouteCache == nil {
 			return false, nil
 		}
-		_, ok, err := s.options.KeyRouteCache.GetRoute(ctx, parseTrafficRouteLookup(externalKey))
+		_, ok, err := s.options.KeyRouteCache.GetRoute(ctx, lookup)
 		return ok, err
 	}
 	_, ok, err := s.lookupAPIKeyBinding(ctx, externalKey)
@@ -2477,7 +2607,9 @@ func (s *Service) cacheTrafficRouteSnapshot(ctx context.Context, snapshot Traffi
 	if snapshot.ExternalKeyID != "" && snapshot.SecretHash == "" {
 		existing, ok, err := s.options.KeyRouteCache.GetRoute(ctx, TrafficRouteLookup{
 			ExternalKeyID: snapshot.ExternalKeyID,
-			KeyShard:      snapshot.KeyShard,
+			Version:       snapshot.KeyVersion,
+			RouteSlot:     snapshot.RouteSlot,
+			Valid:         snapshot.KeyVersion == externalKeyVersionV2,
 		})
 		if err != nil {
 			return err
@@ -2489,8 +2621,9 @@ func (s *Service) cacheTrafficRouteSnapshot(ctx context.Context, snapshot Traffi
 		if snapshot.ExternalKeyHash == "" {
 			snapshot.ExternalKeyHash = existing.ExternalKeyHash
 		}
-		if snapshot.KeyShard == "" {
-			snapshot.KeyShard = existing.KeyShard
+		if snapshot.KeyVersion == 0 {
+			snapshot.KeyVersion = existing.KeyVersion
+			snapshot.RouteSlot = existing.RouteSlot
 		}
 	}
 	return s.options.KeyRouteCache.SetRoute(ctx, snapshot)
@@ -2574,20 +2707,18 @@ func (s *Service) deleteCachedTrafficRoute(ctx context.Context, binding APIKeyBi
 		return nil
 	}
 	lookup := parseTrafficRouteLookup(binding.ExternalKey)
-	if lookup.ExternalKeyID == "" {
-		lookup.ExternalKeyID = binding.ExternalKeyID
-		lookup.KeyShard = keyShardForExternalKeyID(binding.ExternalKeyID)
+	if !lookup.Valid {
+		lookup = TrafficRouteLookup{
+			ExternalKeyID: binding.ExternalKeyID,
+			Version:       binding.KeyVersion,
+			RouteSlot:     binding.RouteSlot,
+			Valid:         binding.KeyVersion == externalKeyVersionV2 && binding.ExternalKeyID != "",
+		}
 	}
 	if lookup.ExternalKeyHash == "" {
 		lookup.ExternalKeyHash = binding.ExternalKeyHash
 	}
-	if err := s.options.KeyRouteCache.DeleteRoute(ctx, lookup); err != nil {
-		return err
-	}
-	if binding.ExternalKeyHash != "" {
-		return s.options.KeyRouteCache.DeleteRoute(ctx, TrafficRouteLookup{ExternalKeyHash: binding.ExternalKeyHash, Legacy: true})
-	}
-	return nil
+	return s.options.KeyRouteCache.DeleteRoute(ctx, lookup)
 }
 
 func (s *Service) emitAccessLog(entry AccessLog) {

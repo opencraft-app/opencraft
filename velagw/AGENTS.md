@@ -400,6 +400,28 @@ LLMGATEWAY_MYSQL_TEST_DSN='user:pass@tcp(host:3306)/llmgateway_it_agent?parseTim
 Do not run destructive cloud tests unless the user explicitly asks for cloud
 validation.
 
+## External API Key Invariants
+
+- Only issue v2 keys in the fixed 95-character `sk-<Base64URL payload>` format.
+  The payload is one version byte, a 4-byte route slot, a 32-byte public Key ID,
+  and a 32-byte Secret.
+- Generate every route slot, Key ID, and Secret with `crypto/rand`. Entropy
+  failure must fail issuance; never add a deterministic or constant fallback.
+- Central MySQL is the identity and state authority. Reserve with a pure
+  `INSERT`; retry only random primary/hash collisions, at most five times.
+  User/purpose conflicts are business conflicts and must not retry.
+- Central MySQL persists the full external key for fixed probe-key reuse and
+  disaster recovery, alongside the Key ID, full-key hash, domain-separated
+  Secret hash, route slot, upstream token, and issuance state. Protect database
+  access and backups as key material. Redis, logs, metrics, and traffic caches
+  must never persist or emit the full external key.
+- Publish Redis only after the MySQL reservation and upstream token are durable.
+  Return the full key only after route publication succeeds and the state is
+  `active`. The route worker may retry `route_pending` records idempotently.
+- The traffic process accepts strict v2 keys only and remains Redis-only. Do not
+  restore v1 parsing or a MySQL fallback. The route slot is stable logical
+  sharding input and must never encode a Set, Redis node, or MySQL instance.
+
 ## Cloud Operations
 
 Kubeconfigs used in this workspace:

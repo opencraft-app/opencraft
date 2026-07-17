@@ -44,18 +44,23 @@ func TestTrafficServerExposesPrometheusMetrics(t *testing.T) {
 	if err := svc.RegisterSet(t.Context(), gateway.RegisterSetInput{ID: "set-a", BaseURL: upstream.URL, Status: gateway.SetStatusActive}); err != nil {
 		t.Fatal(err)
 	}
+	externalKey := externalKeyForHTTPTest(1)
 	if err := store.SaveAPIKeyBinding(t.Context(), gateway.APIKeyBinding{
-		ExternalKey:   "llmgw-ext",
+		ExternalKey:   externalKey,
 		ExternalKeyID: "key-abc",
 		SetID:         "set-a",
 		UpstreamKey:   "sk-upstream",
 	}); err != nil {
 		t.Fatal(err)
 	}
+	savedBinding, ok, err := store.GetAPIKeyBindingByExternalKey(t.Context(), externalKey)
+	if err != nil || !ok {
+		t.Fatalf("saved binding lookup ok=%v err=%v", ok, err)
+	}
 	handler := NewTrafficServer(svc, Config{})
 
 	proxyReq := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
-	proxyReq.Header.Set("Authorization", "Bearer llmgw-ext")
+	proxyReq.Header.Set("Authorization", "Bearer "+externalKey)
 	proxyRec := httptest.NewRecorder()
 	handler.ServeHTTP(proxyRec, proxyReq)
 	if proxyRec.Code != http.StatusOK {
@@ -72,7 +77,7 @@ func TestTrafficServerExposesPrometheusMetrics(t *testing.T) {
 		t.Fatalf("metrics content-type=%q", contentType)
 	}
 	if body := metricsRec.Body.String(); !strings.Contains(body, `llmgateway_traffic_requests_total{`) ||
-		!strings.Contains(body, `external_key_id="key-abc"`) ||
+		!strings.Contains(body, `external_key_id="`+savedBinding.ExternalKeyID+`"`) ||
 		!strings.Contains(body, `set_id="set-a"`) {
 		t.Fatalf("metrics body missing traffic labels:\n%s", body)
 	}

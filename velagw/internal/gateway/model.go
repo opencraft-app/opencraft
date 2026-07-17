@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"io"
 	"time"
 
 	"git.woa.com/wisp/mono2/llmgateway/internal/observability"
@@ -28,6 +29,13 @@ const (
 	BindingProvisionStatusUserReady  = "user_ready"
 	BindingProvisionStatusTokenReady = "token_ready"
 	BindingProvisionStatusFailed     = "failed"
+
+	APIKeyStatusLegacyDisabled = "legacy_disabled"
+	APIKeyStatusReserved       = "reserved"
+	APIKeyStatusUpstreamReady  = "upstream_ready"
+	APIKeyStatusRoutePending   = "route_pending"
+	APIKeyStatusActive         = "active"
+	APIKeyStatusError          = "error"
 
 	ChannelSpecStatusEnabled  = "enabled"
 	ChannelSpecStatusDisabled = "disabled"
@@ -98,6 +106,8 @@ const (
 	WorkerJobReconcileGroupRatios      = "reconcile_group_ratios"
 	WorkerJobCleanupPending            = "cleanup_pending"
 	WorkerJobRefreshTenantStatistics   = "refresh_tenant_statistics"
+	WorkerJobPublishAPIKeyRoutes       = "publish_api_key_routes"
+	WorkerJobReconcileShardExpansions  = "reconcile_shard_expansions"
 
 	GroupRatioSourcePlatform = "platform"
 	GroupRatioSourceBYOK     = "byok"
@@ -655,6 +665,10 @@ type Shard struct {
 	Name                         string    `json:"name"`
 	Kind                         string    `json:"kind"`
 	Endpoint                     string    `json:"endpoint,omitempty"`
+	RedisEndpoint                string    `json:"redis_endpoint,omitempty"`
+	SecretName                   string    `json:"secret_name,omitempty"`
+	RedisDBStart                 int       `json:"redis_db_start,omitempty"`
+	RedisDBLimit                 int       `json:"redis_db_limit,omitempty"`
 	Status                       string    `json:"status"`
 	MaxConnections               int       `json:"max_connections,omitempty"`
 	ReservedConnections          int       `json:"reserved_connections,omitempty"`
@@ -677,6 +691,10 @@ type UpsertShardInput struct {
 	Name                         string   `json:"name"`
 	Kind                         string   `json:"kind"`
 	Endpoint                     string   `json:"endpoint,omitempty"`
+	RedisEndpoint                string   `json:"redis_endpoint,omitempty"`
+	SecretName                   string   `json:"secret_name,omitempty"`
+	RedisDBStart                 *int     `json:"redis_db_start,omitempty"`
+	RedisDBLimit                 *int     `json:"redis_db_limit,omitempty"`
 	Status                       string   `json:"status"`
 	MaxConnections               *int     `json:"max_connections,omitempty"`
 	ReservedConnections          *int     `json:"reserved_connections,omitempty"`
@@ -701,6 +719,8 @@ type ShardSetBudget struct {
 	SQLMaxOpenConns    int    `json:"sql_max_open_conns"`
 	SQLMaxIdleConns    int    `json:"sql_max_idle_conns"`
 	LogicalConnections int    `json:"logical_connections"`
+	DatabaseName       string `json:"database_name,omitempty"`
+	RedisDB            string `json:"redis_db,omitempty"`
 }
 
 type ShardDetail struct {
@@ -710,6 +730,9 @@ type ShardDetail struct {
 	RemainingConnections   int              `json:"remaining_connections"`
 	Utilization            float64          `json:"utilization"`
 	CapacityStatus         string           `json:"capacity_status"`
+	RedisDBAllocated       int              `json:"redis_db_allocated"`
+	RedisDBAvailable       int              `json:"redis_db_available"`
+	RedisDBUtilization     float64          `json:"redis_db_utilization"`
 	Sets                   []ShardSetBudget `json:"sets"`
 }
 
@@ -1248,12 +1271,18 @@ type APIKeyBinding struct {
 	ExternalKey     string    `json:"-"`
 	ExternalKeyHash string    `json:"-"`
 	ExternalKeyID   string    `json:"external_key_id"`
+	SecretHash      string    `json:"-"`
+	KeyVersion      uint8     `json:"key_version"`
+	RouteSlot       uint32    `json:"route_slot"`
 	Purpose         string    `json:"purpose,omitempty"`
 	SetID           string    `json:"set_id"`
 	UserID          string    `json:"user_id"`
 	UpstreamKey     string    `json:"-"`
 	UpstreamKeyID   int       `json:"upstream_key_id"`
+	Status          string    `json:"status"`
+	LastError       string    `json:"last_error,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 type UserLLMSettings struct {
@@ -1932,6 +1961,7 @@ type Options struct {
 	TelemetrySanitizer          *observability.Sanitizer
 	TelemetryCorrelator         *observability.Correlator
 	KeyRouteCache               APIKeyRouteCache
+	ExternalKeyRandom           io.Reader
 	TrafficRouteCacheOnly       bool
 	SetRuntimeRouteRequired     bool
 	TrafficTransportManager     *TransportManager
@@ -1950,15 +1980,17 @@ type TrafficRouteLookup struct {
 	ExternalKeyHash string
 	ExternalKeyID   string
 	SecretHash      string
-	KeyShard        string
-	Legacy          bool
+	Version         uint8
+	RouteSlot       uint32
+	Valid           bool
 }
 
 type TrafficRouteSnapshot struct {
 	ExternalKeyHash string    `json:"external_key_hash,omitempty"`
 	ExternalKeyID   string    `json:"external_key_id"`
 	SecretHash      string    `json:"secret_hash,omitempty"`
-	KeyShard        string    `json:"key_shard,omitempty"`
+	KeyVersion      uint8     `json:"key_version"`
+	RouteSlot       uint32    `json:"route_slot"`
 	SetID           string    `json:"set_id"`
 	SetBaseURL      string    `json:"set_base_url"`
 	UserID          string    `json:"user_id,omitempty"`

@@ -12,7 +12,8 @@ import (
 
 func (s *MySQLStore) ListAPIKeyBindingsByUser(ctx context.Context, userID string) ([]APIKeyBinding, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT external_key_id, external_key, external_key_hash, purpose, set_id, user_id, upstream_key, upstream_key_id, created_at
+		SELECT external_key_id, external_key, external_key_hash, secret_hash, key_version, route_slot,
+			purpose, set_id, user_id, upstream_key, upstream_key_id, status, last_error, created_at, updated_at
 		FROM llmgateway_api_key_bindings
 		WHERE user_id = ?
 		ORDER BY created_at DESC, external_key_id
@@ -34,7 +35,8 @@ func (s *MySQLStore) ListAPIKeyBindingsByUser(ctx context.Context, userID string
 
 func (s *MySQLStore) ListAPIKeyBindingsBySet(ctx context.Context, setID string) ([]APIKeyBinding, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT external_key_id, external_key, external_key_hash, purpose, set_id, user_id, upstream_key, upstream_key_id, created_at
+		SELECT external_key_id, external_key, external_key_hash, secret_hash, key_version, route_slot,
+			purpose, set_id, user_id, upstream_key, upstream_key_id, status, last_error, created_at, updated_at
 		FROM llmgateway_api_key_bindings
 		WHERE set_id = ?
 		ORDER BY created_at DESC, external_key_id

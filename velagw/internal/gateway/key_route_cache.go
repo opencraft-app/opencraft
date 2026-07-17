@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"hash/fnv"
 	"strings"
 	"sync"
 	"time"
@@ -135,12 +134,11 @@ func (c *MemoryAPIKeyRouteCache) Delete(_ context.Context, externalKeyHash strin
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	delete(c.entries, externalKeyHash)
-	delete(c.routes, memoryRouteKey(TrafficRouteLookup{ExternalKeyHash: externalKeyHash, Legacy: true}))
 	return nil
 }
 
 func (c *MemoryAPIKeyRouteCache) GetRoute(_ context.Context, lookup TrafficRouteLookup) (TrafficRouteSnapshot, bool, error) {
-	if c == nil {
+	if c == nil || !lookup.Valid {
 		return TrafficRouteSnapshot{}, false, nil
 	}
 	now := c.nowUTC()
@@ -155,7 +153,7 @@ func (c *MemoryAPIKeyRouteCache) GetRoute(_ context.Context, lookup TrafficRoute
 		_ = c.DeleteRoute(context.Background(), lookup)
 		return TrafficRouteSnapshot{}, false, nil
 	}
-	if lookup.SecretHash != "" && lookup.SecretHash != entry.snapshot.SecretHash {
+	if !equalExternalKeySecretHash(lookup.SecretHash, entry.snapshot.SecretHash) {
 		return TrafficRouteSnapshot{}, false, nil
 	}
 	return entry.snapshot, true, nil
@@ -168,12 +166,13 @@ func (c *MemoryAPIKeyRouteCache) SetRoute(_ context.Context, snapshot TrafficRou
 	lookup := TrafficRouteLookup{
 		ExternalKeyHash: snapshot.ExternalKeyHash,
 		ExternalKeyID:   snapshot.ExternalKeyID,
-		KeyShard:        snapshot.KeyShard,
-		Legacy:          snapshot.ExternalKeyID == "",
+		SecretHash:      snapshot.SecretHash,
+		Version:         snapshot.KeyVersion,
+		RouteSlot:       snapshot.RouteSlot,
+		Valid:           snapshot.KeyVersion == externalKeyVersionV2 && snapshot.ExternalKeyID != "",
 	}
-	if lookup.KeyShard == "" && lookup.ExternalKeyID != "" {
-		lookup.KeyShard = keyShardForExternalKeyID(lookup.ExternalKeyID)
-		snapshot.KeyShard = lookup.KeyShard
+	if !lookup.Valid || snapshot.SecretHash == "" {
+		return fmt.Errorf("traffic route requires a valid v2 key identity and secret hash")
 	}
 	if snapshot.UpdatedAt.IsZero() {
 		snapshot.UpdatedAt = c.nowUTC()
@@ -189,7 +188,7 @@ func (c *MemoryAPIKeyRouteCache) SetRoute(_ context.Context, snapshot TrafficRou
 }
 
 func (c *MemoryAPIKeyRouteCache) DeleteRoute(_ context.Context, lookup TrafficRouteLookup) error {
-	if c == nil {
+	if c == nil || !lookup.Valid {
 		return nil
 	}
 	c.mu.Lock()
@@ -363,7 +362,7 @@ func (c *RedisAPIKeyRouteCache) Delete(ctx context.Context, externalKeyHash stri
 }
 
 func (c *RedisAPIKeyRouteCache) GetRoute(ctx context.Context, lookup TrafficRouteLookup) (TrafficRouteSnapshot, bool, error) {
-	if c == nil || c.client == nil {
+	if c == nil || c.client == nil || !lookup.Valid {
 		return TrafficRouteSnapshot{}, false, nil
 	}
 	raw, err := c.client.Get(ctx, c.lookupRouteKey(lookup)).Bytes()
@@ -377,7 +376,7 @@ func (c *RedisAPIKeyRouteCache) GetRoute(ctx context.Context, lookup TrafficRout
 	if err := json.Unmarshal(raw, &snapshot); err != nil {
 		return TrafficRouteSnapshot{}, false, err
 	}
-	if lookup.SecretHash != "" && lookup.SecretHash != snapshot.SecretHash {
+	if !equalExternalKeySecretHash(lookup.SecretHash, snapshot.SecretHash) {
 		return TrafficRouteSnapshot{}, false, nil
 	}
 	return snapshot, true, nil
@@ -387,8 +386,8 @@ func (c *RedisAPIKeyRouteCache) SetRoute(ctx context.Context, snapshot TrafficRo
 	if c == nil || c.client == nil {
 		return nil
 	}
-	if snapshot.ExternalKeyID != "" && snapshot.KeyShard == "" {
-		snapshot.KeyShard = keyShardForExternalKeyID(snapshot.ExternalKeyID)
+	if snapshot.KeyVersion != externalKeyVersionV2 || snapshot.ExternalKeyID == "" || snapshot.SecretHash == "" {
+		return fmt.Errorf("traffic route requires a valid v2 key identity and secret hash")
 	}
 	if snapshot.UpdatedAt.IsZero() {
 		snapshot.UpdatedAt = time.Now().UTC()
@@ -401,7 +400,7 @@ func (c *RedisAPIKeyRouteCache) SetRoute(ctx context.Context, snapshot TrafficRo
 }
 
 func (c *RedisAPIKeyRouteCache) DeleteRoute(ctx context.Context, lookup TrafficRouteLookup) error {
-	if c == nil || c.client == nil {
+	if c == nil || c.client == nil || !lookup.Valid {
 		return nil
 	}
 	return c.client.Del(ctx, c.lookupRouteKey(lookup)).Err()
@@ -414,6 +413,9 @@ func (c *RedisAPIKeyRouteCache) DeleteRoutes(ctx context.Context, lookups []Traf
 	pipe := c.client.Pipeline()
 	seen := make(map[string]struct{}, len(lookups))
 	for _, lookup := range lookups {
+		if !lookup.Valid {
+			continue
+		}
 		key := c.lookupRouteKey(lookup)
 		if _, ok := seen[key]; ok {
 			continue
@@ -473,33 +475,15 @@ func (c *RedisAPIKeyRouteCache) key(externalKeyHash string) string {
 }
 
 func (c *RedisAPIKeyRouteCache) lookupRouteKey(lookup TrafficRouteLookup) string {
-	if lookup.ExternalKeyID != "" {
-		shard := lookup.KeyShard
-		if shard == "" {
-			shard = keyShardForExternalKeyID(lookup.ExternalKeyID)
-		}
-		return c.routeKey(shard, lookup.ExternalKeyID)
-	}
-	return c.legacyRouteKey(lookup.ExternalKeyHash)
+	return c.routeKey(lookup.RouteSlot, lookup.ExternalKeyID)
 }
 
 func (c *RedisAPIKeyRouteCache) snapshotRouteKey(snapshot TrafficRouteSnapshot) string {
-	if snapshot.ExternalKeyID != "" {
-		shard := snapshot.KeyShard
-		if shard == "" {
-			shard = keyShardForExternalKeyID(snapshot.ExternalKeyID)
-		}
-		return c.routeKey(shard, snapshot.ExternalKeyID)
-	}
-	return c.legacyRouteKey(snapshot.ExternalKeyHash)
+	return c.routeKey(snapshot.RouteSlot, snapshot.ExternalKeyID)
 }
 
-func (c *RedisAPIKeyRouteCache) routeKey(keyShard string, externalKeyID string) string {
-	return fmt.Sprintf("%s:route:{%s}:key:%s", c.namespace, keyShard, externalKeyID)
-}
-
-func (c *RedisAPIKeyRouteCache) legacyRouteKey(externalKeyHash string) string {
-	return fmt.Sprintf("%s:route:{legacy}:hash:%s", c.namespace, externalKeyHash)
+func (c *RedisAPIKeyRouteCache) routeKey(routeSlot uint32, externalKeyID string) string {
+	return fmt.Sprintf("%s:route:{%s}:key:%s", c.namespace, routeSlotTag(routeSlot), externalKeyID)
 }
 
 func (c *RedisAPIKeyRouteCache) setRuntimeKey(setID string) string {
@@ -516,46 +500,5 @@ func setRuntimeSnapshotsEqual(left, right SetRuntimeRouteSnapshot) bool {
 }
 
 func memoryRouteKey(lookup TrafficRouteLookup) string {
-	if lookup.ExternalKeyID != "" {
-		shard := lookup.KeyShard
-		if shard == "" {
-			shard = keyShardForExternalKeyID(lookup.ExternalKeyID)
-		}
-		return shard + "\x00" + lookup.ExternalKeyID
-	}
-	return "legacy\x00" + lookup.ExternalKeyHash
-}
-
-func keyShardForExternalKeyID(externalKeyID string) string {
-	hasher := fnv.New32a()
-	_, _ = hasher.Write([]byte(externalKeyID))
-	return fmt.Sprintf("ks-%03d", int(hasher.Sum32()%256))
-}
-
-func hashExternalKeySecret(secret string) string {
-	return hashExternalKey("llmgateway-key-secret:" + secret)
-}
-
-func parseTrafficRouteLookup(externalKey string) TrafficRouteLookup {
-	externalKey = strings.TrimSpace(externalKey)
-	lookup := TrafficRouteLookup{ExternalKeyHash: hashExternalKey(externalKey), Legacy: true}
-	const prefix = "sk-lgw-v1-"
-	if !strings.HasPrefix(externalKey, prefix) {
-		return lookup
-	}
-	parts := strings.SplitN(strings.TrimPrefix(externalKey, prefix), ".", 3)
-	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
-		return lookup
-	}
-	return TrafficRouteLookup{
-		ExternalKeyHash: lookup.ExternalKeyHash,
-		ExternalKeyID:   parts[1],
-		SecretHash:      hashExternalKeySecret(parts[2]),
-		KeyShard:        parts[0],
-		Legacy:          false,
-	}
-}
-
-func formatRoutableExternalKey(externalKeyID string, secret string) string {
-	return fmt.Sprintf("sk-lgw-v1-%s.%s.%s", keyShardForExternalKeyID(externalKeyID), externalKeyID, secret)
+	return routeSlotTag(lookup.RouteSlot) + "\x00" + lookup.ExternalKeyID
 }

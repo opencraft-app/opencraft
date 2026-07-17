@@ -626,11 +626,19 @@ func syncFleetShards(ctx context.Context, control ControlClient, fleet LLMFleet)
 		if endpoint != "" && strings.TrimSpace(shard.MySQLPort) != "" {
 			endpoint += ":" + strings.TrimSpace(shard.MySQLPort)
 		}
+		redisEndpoint := strings.TrimSpace(shard.RedisHost)
+		if redisEndpoint != "" && strings.TrimSpace(shard.RedisPort) != "" {
+			redisEndpoint += ":" + strings.TrimSpace(shard.RedisPort)
+		}
 		if err := control.UpsertShard(ctx, ShardProjection{
 			ID:                           shard.Name,
 			Name:                         shard.Name,
 			Kind:                         "mysql",
 			Endpoint:                     endpoint,
+			RedisEndpoint:                redisEndpoint,
+			SecretName:                   strings.TrimSpace(shard.SecretName),
+			RedisDBStart:                 shard.RedisDBStart,
+			RedisDBLimit:                 shard.RedisDBLimit,
 			Status:                       status,
 			MaxSets:                      shard.MaxSets,
 			AdminSQLMaxOpenConns:         config.Admin.MaxOpenConns,

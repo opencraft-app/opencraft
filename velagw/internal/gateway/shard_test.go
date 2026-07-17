@@ -70,6 +70,36 @@ func TestShardDetailComputesLogicalConnectionBudget(t *testing.T) {
 	}
 }
 
+func TestShardDetailProjectsRedisDBAllocationPerSet(t *testing.T) {
+	store := NewMemoryStore()
+	svc := NewService(store, nil, Options{})
+	if err := svc.UpsertShard(t.Context(), UpsertShardInput{
+		ID: "shard-a", Kind: ShardKindMySQL, Status: ShardStatusActive,
+		RedisEndpoint: "redis-a.internal:6379", RedisDBStart: testInt(0), RedisDBLimit: testInt(256),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.RegisterSet(t.Context(), RegisterSetInput{ID: "set-a", BaseURL: "http://set-a", Status: SetStatusActive, ShardID: "shard-a"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveSetRuntimeLease(t.Context(), SetRuntimeLease{
+		Source: "prod", Namespace: "llmgateway", Fleet: "prod", SetID: "set-a", ShardRef: "shard-a",
+		DatabaseName: "newapi_set_a", RedisDB: "7",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	detail, err := svc.GetShardDetail(t.Context(), "shard-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.RedisDBAllocated != 1 || detail.RedisDBAvailable != 255 || detail.RedisDBUtilization != 1.0/256.0 {
+		t.Fatalf("redis budget = %+v", detail)
+	}
+	if len(detail.Sets) != 1 || detail.Sets[0].DatabaseName != "newapi_set_a" || detail.Sets[0].RedisDB != "7" {
+		t.Fatalf("set runtime projection = %+v", detail.Sets)
+	}
+}
+
 func TestShardDetailWarnsWhenLogicalBudgetCrossesWatermarks(t *testing.T) {
 	store := NewMemoryStore()
 	svc := NewService(store, nil, Options{})

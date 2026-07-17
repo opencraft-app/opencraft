@@ -312,16 +312,22 @@ func TestCascadeSetDecommissionPurgesTenantStateAndQueuesRuntimeCleanup(t *testi
 	}); err != nil {
 		t.Fatal(err)
 	}
+	externalKey := signedExternalKeyForTest("key-1", "route-secret")
+	lookup := parseTrafficRouteLookup(externalKey)
 	binding := APIKeyBinding{
-		ExternalKey: "sk-route-secret", ExternalKeyID: "key-1", SetID: "set-a", UserID: "user-1",
-		UpstreamKey: "sk-upstream", UpstreamKeyID: 77,
+		ExternalKey: externalKey, ExternalKeyHash: lookup.ExternalKeyHash,
+		ExternalKeyID: lookup.ExternalKeyID, SecretHash: lookup.SecretHash,
+		KeyVersion: lookup.Version, RouteSlot: lookup.RouteSlot,
+		SetID: "set-a", UserID: "user-1", UpstreamKey: "sk-upstream", UpstreamKeyID: 77,
+		Status: APIKeyStatusActive,
 	}
 	if err := store.SaveAPIKeyBinding(t.Context(), binding); err != nil {
 		t.Fatal(err)
 	}
-	lookup := TrafficRouteLookup{ExternalKeyID: binding.ExternalKeyID, KeyShard: keyShardForExternalKeyID(binding.ExternalKeyID)}
 	if err := cache.SetRoute(t.Context(), TrafficRouteSnapshot{
-		ExternalKeyID: binding.ExternalKeyID, KeyShard: lookup.KeyShard, SetID: "set-a", UserID: "user-1",
+		ExternalKeyID: binding.ExternalKeyID, SecretHash: binding.SecretHash,
+		KeyVersion: binding.KeyVersion, RouteSlot: binding.RouteSlot,
+		SetID: "set-a", UserID: "user-1",
 	}); err != nil {
 		t.Fatal(err)
 	}

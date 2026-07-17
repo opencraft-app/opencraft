@@ -79,11 +79,12 @@ flowchart TB
 - **Set** 是租户分片和故障隔离单元。租户首次分配后固定归属一个 Set，常规请求不进行动态一致性哈希迁移。
 - 每个 Set 拥有独立 new-api 数据库名和 Redis DB，不允许两个 Set 复用同一份 Redis 逻辑空间。
 - Set 水位通过 `max_users / warn_users / reserved_users` 描述；新租户选择健康且水位最低的 Set，容量不足时生成新的 provision request。
+- Shard 扩容从运营台提交意图，不直接手填事实。Terraform/Agent 创建 MySQL、Redis 和 Secret，set-manager 从 LLMFleet 回传真实投影，worker 核对资源并等待冒烟验证；只有完整流程结束的 Shard 才应加入容量策略。
 
 ### 租户、密钥与权益
 
 - LLMGateway 保存租户归属、new-api 用户绑定和外部 key；new-api 保存实际用户、token、订阅和额度。
-- 外部 key 使用 `sk-lgw-v1-{key_shard}.{key_id}.{secret}`，Redis 按 `key_shard` 分片保存完整路由快照。
+- 外部 key 使用固定长度的 `sk-<Base64URL payload>` v2 格式；payload 内含版本、稳定路由槽、256 bit Key ID 和 256 bit Secret。Redis 按路由槽分片保存路由快照；中央 MySQL 保存完整 key 用于固定自检 key 复用和故障恢复，并按密钥材料等级保护。
 - `ctl/trade` 通过兼容 API 创建或续发权益；LLMGateway 只负责命令幂等和周期 overlay，实际额度由 new-api subscription 承担。
 - 余额查询聚合用户当前 active subscriptions，不维护另一份完整余额账本。
 
@@ -319,13 +320,22 @@ LLMGATEWAY_KEY_ROUTE_CACHE_NAMESPACE=llmgateway
 
 When `LLMGATEWAY_KEY_ROUTE_CACHE_REDIS_URL` is set, Redis is used as the shared
 route snapshot store. This is required for `llmgateway-traffic`: Redis miss or
-Redis failure never falls back to MySQL. New keys are issued in
-`sk-lgw-v1-{key_shard}.{key_id}.{secret}` format and route to Redis keys such as
-`llmgateway:route:{ks-007}:key:key_xxx`, so Redis Cluster sharding is driven by
-the key shard rather than by MySQL lookups. Route snapshots are persistent Redis
+Redis failure never falls back to MySQL. New keys are fixed-length
+`sk-<Base64URL payload>` v2 keys. Their payload contains a stable 32-bit route
+slot, and route snapshots use Redis keys such as
+`llmgateway:route:{kr-00000007}:key:<external_key_id>`. Redis Cluster sharding is
+therefore driven by the route slot rather than by MySQL lookups. Route snapshots are persistent Redis
 records rather than short-TTL cache entries: key revoke and tenant disable remove
 them, while Set disable marks matching snapshots disabled so traffic returns 503
 without losing the key secret needed for a later re-enable.
+
+Key issuance is fail-closed: reserve the v2 identity in central MySQL with a pure
+insert, create the upstream new-api token, publish the Redis route, and only then
+mark the key active and return it. MySQL stores the complete key for fixed probe
+reuse and disaster recovery, alongside the Key ID, full-key hash,
+domain-separated Secret hash, route slot and state. Redis, logs and metrics never
+store or emit the complete key. Random identity collisions retry at most five
+times; user/purpose conflicts do not retry. `crypto/rand` failure aborts issuance.
 
 LLMGateway only recognizes keys issued into its own new-api Set inventory.
 Unknown keys return `401`; there is no traffic or control-plane fallback to any

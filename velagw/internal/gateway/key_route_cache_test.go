@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"bytes"
 	"testing"
 	"time"
 
@@ -82,7 +83,7 @@ func TestRedisAPIKeyRouteCacheRoundTripAndDelete(t *testing.T) {
 	}
 }
 
-func TestRedisRouteSnapshotUsesKeyShardHashTag(t *testing.T) {
+func TestRedisRouteSnapshotUsesRouteSlotHashTag(t *testing.T) {
 	server, err := miniredis.Run()
 	if err != nil {
 		t.Fatal(err)
@@ -92,13 +93,16 @@ func TestRedisRouteSnapshotUsesKeyShardHashTag(t *testing.T) {
 	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
 	defer client.Close()
 	cache := NewRedisAPIKeyRouteCache(client, time.Minute, "test")
-	keyID := "key-route-123"
-	shard := keyShardForExternalKeyID(keyID)
+	material, err := generateExternalKeyV2(bytes.NewReader(bytes.Repeat([]byte{3}, externalKeyRandomBytes)))
+	if err != nil {
+		t.Fatal(err)
+	}
 	snapshot := TrafficRouteSnapshot{
-		ExternalKeyID:   keyID,
-		ExternalKeyHash: hashExternalKey("sk-lgw-v1"),
-		SecretHash:      hashExternalKeySecret("secret"),
-		KeyShard:        shard,
+		ExternalKeyID:   material.ExternalKeyID,
+		ExternalKeyHash: material.ExternalKeyHash,
+		SecretHash:      material.SecretHash,
+		KeyVersion:      material.Version,
+		RouteSlot:       material.RouteSlot,
 		UserID:          "uin-1",
 		SetID:           "set-a",
 		SetBaseURL:      "http://newapi-a:3000",
@@ -109,17 +113,19 @@ func TestRedisRouteSnapshotUsesKeyShardHashTag(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	redisKey := cache.routeKey(shard, keyID)
+	redisKey := cache.routeKey(material.RouteSlot, material.ExternalKeyID)
 	if !server.Exists(redisKey) {
 		t.Fatalf("route snapshot was not written at %q", redisKey)
 	}
-	if want := "test:route:{" + shard + "}:key:" + keyID; redisKey != want {
+	if want := "test:route:{" + routeSlotTag(material.RouteSlot) + "}:key:" + material.ExternalKeyID; redisKey != want {
 		t.Fatalf("route redis key = %q, want %q", redisKey, want)
 	}
 	got, ok, err := cache.GetRoute(t.Context(), TrafficRouteLookup{
-		ExternalKeyID: keyID,
-		KeyShard:      shard,
-		SecretHash:    snapshot.SecretHash,
+		ExternalKeyID: material.ExternalKeyID,
+		Version:       material.Version,
+		RouteSlot:     material.RouteSlot,
+		SecretHash:    material.SecretHash,
+		Valid:         true,
 	})
 	if err != nil || !ok {
 		t.Fatalf("route snapshot miss: ok=%v err=%v", ok, err)
@@ -139,12 +145,15 @@ func TestRedisRouteSnapshotDoesNotExpireWithKeyCacheTTL(t *testing.T) {
 	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
 	defer client.Close()
 	cache := NewRedisAPIKeyRouteCache(client, time.Second, "test")
-	keyID := "key-route-persistent"
-	shard := keyShardForExternalKeyID(keyID)
+	material, err := generateExternalKeyV2(bytes.NewReader(bytes.Repeat([]byte{4}, externalKeyRandomBytes)))
+	if err != nil {
+		t.Fatal(err)
+	}
 	snapshot := TrafficRouteSnapshot{
-		ExternalKeyID: keyID,
-		SecretHash:    hashExternalKeySecret("secret"),
-		KeyShard:      shard,
+		ExternalKeyID: material.ExternalKeyID,
+		SecretHash:    material.SecretHash,
+		KeyVersion:    material.Version,
+		RouteSlot:     material.RouteSlot,
 		UserID:        "uin-1",
 		SetID:         "set-a",
 		SetBaseURL:    "http://newapi-a:3000",
@@ -158,9 +167,11 @@ func TestRedisRouteSnapshotDoesNotExpireWithKeyCacheTTL(t *testing.T) {
 	server.FastForward(2 * time.Second)
 
 	got, ok, err := cache.GetRoute(t.Context(), TrafficRouteLookup{
-		ExternalKeyID: keyID,
-		KeyShard:      shard,
-		SecretHash:    snapshot.SecretHash,
+		ExternalKeyID: material.ExternalKeyID,
+		Version:       material.Version,
+		RouteSlot:     material.RouteSlot,
+		SecretHash:    material.SecretHash,
+		Valid:         true,
 	})
 	if err != nil || !ok {
 		t.Fatalf("route snapshot expired with cache ttl: ok=%v err=%v", ok, err)
@@ -170,7 +181,7 @@ func TestRedisRouteSnapshotDoesNotExpireWithKeyCacheTTL(t *testing.T) {
 	}
 }
 
-func TestRedisRouteSnapshotBatchDeleteRemovesModernAndLegacyKeys(t *testing.T) {
+func TestRedisRouteSnapshotBatchDeleteRemovesV2KeysAndIgnoresInvalidLookups(t *testing.T) {
 	server, err := miniredis.Run()
 	if err != nil {
 		t.Fatal(err)
@@ -180,19 +191,19 @@ func TestRedisRouteSnapshotBatchDeleteRemovesModernAndLegacyKeys(t *testing.T) {
 	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
 	defer client.Close()
 	cache := NewRedisAPIKeyRouteCache(client, time.Minute, "test")
-	modernLookup := TrafficRouteLookup{ExternalKeyID: "key-modern", KeyShard: keyShardForExternalKeyID("key-modern")}
-	legacyLookup := TrafficRouteLookup{ExternalKeyHash: hashExternalKey("sk-legacy"), Legacy: true}
-	if err := client.Set(t.Context(), cache.lookupRouteKey(modernLookup), "modern", 0).Err(); err != nil {
+	material, err := generateExternalKeyV2(bytes.NewReader(bytes.Repeat([]byte{5}, externalKeyRandomBytes)))
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := client.Set(t.Context(), cache.lookupRouteKey(legacyLookup), "legacy", 0).Err(); err != nil {
+	lookup := parseTrafficRouteLookup(material.ExternalKey)
+	if err := client.Set(t.Context(), cache.lookupRouteKey(lookup), "modern", 0).Err(); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := cache.DeleteRoutes(t.Context(), []TrafficRouteLookup{modernLookup, legacyLookup, modernLookup}); err != nil {
+	if err := cache.DeleteRoutes(t.Context(), []TrafficRouteLookup{lookup, {}, lookup}); err != nil {
 		t.Fatal(err)
 	}
-	if server.Exists(cache.lookupRouteKey(modernLookup)) || server.Exists(cache.lookupRouteKey(legacyLookup)) {
+	if server.Exists(cache.lookupRouteKey(lookup)) {
 		t.Fatal("batch route deletion left cached keys behind")
 	}
 }

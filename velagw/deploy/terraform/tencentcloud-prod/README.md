@@ -153,10 +153,14 @@ tofu apply -parallelism=1 prod-beijing.tfplan
 
 扩 Shard：
 
-1. 在 `shards` 里新增一项，比如 `shard-c`。
-2. `terraform plan/apply` 创建新的 MySQL/Redis。
-3. 把新 shard 作为 set-manager 可选资源池。
-4. 后续新增 Set 时由水位选择器挑选 shard。
+1. 运营台“数据分片”页面提交扩容流程，或调用 `POST /api/admin/shard-expansions`。这一步只记录意图，不产生可分配的 Shard。
+2. 在 Terraform `shards` 中增加同名条目并执行唯一运维入口的 `plan/apply`，创建 MySQL 与 Redis。
+3. 自动化把密码写入 TKE Secret，并调用 `POST /api/admin/shard-expansions/{id}/infrastructure` 回填 endpoint、Secret 名称和 Terraform run 链接；禁止回填密码或云密钥。
+4. 把新 Shard 追加到 LLMFleet。set-manager 会将 MySQL、Redis、DB 区间和连接池事实投影回 LLMGateway；不要调用运营 `POST /api/admin/shards`，该接口已只读。
+5. 通过正常 Set provision 路径创建一个验证 Set，完成数据库、Redis 与 `/v1/chat/completions` 冒烟，并调用 `POST /api/admin/shard-expansions/{id}/verification` 回填结果。
+6. 流程变为“已可用”后，再把该 Shard 加入自动扩 Set 的候选池。后续新增 Set 由水位选择器按最低分配率挑选 Shard。
+
+完整状态机、失败和取消语义见 `docs/superpowers/specs/2026-07-17-shard-expansion-workflow-design.md`。
 
 ## 后续必须补齐
 

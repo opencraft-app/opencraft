@@ -1735,6 +1735,247 @@
         }
       }
     },
+    "/api/admin/shard-expansions": {
+      "get": {
+        "tags": [
+          "Cluster Admin"
+        ],
+        "operationId": "listShardExpansions",
+        "summary": "列出 Shard 扩容流程",
+        "security": [
+          {
+            "AdminBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "扩容流程列表。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShardExpansionListEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Cluster Admin"
+        ],
+        "operationId": "createShardExpansion",
+        "summary": "提交 Shard 扩容意图",
+        "security": [
+          {
+            "AdminBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateShardExpansionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "扩容流程已创建。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShardExpansionEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/admin/shard-expansions/{expansion_id}": {
+      "get": {
+        "tags": [
+          "Cluster Admin"
+        ],
+        "operationId": "getShardExpansion",
+        "summary": "查看 Shard 扩容流程",
+        "security": [
+          {
+            "AdminBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ShardExpansionID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "扩容流程。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShardExpansionEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/shard-expansions/{expansion_id}/infrastructure": {
+      "post": {
+        "tags": [
+          "Cluster Admin"
+        ],
+        "operationId": "recordShardExpansionInfrastructure",
+        "summary": "回填云资源结果",
+        "security": [
+          {
+            "AdminBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ShardExpansionID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShardExpansionInfrastructureRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "资源结果已记录。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShardExpansionEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/shard-expansions/{expansion_id}/verification": {
+      "post": {
+        "tags": [
+          "Cluster Admin"
+        ],
+        "operationId": "recordShardExpansionVerification",
+        "summary": "回填 Shard 冒烟验证结果",
+        "security": [
+          {
+            "AdminBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ShardExpansionID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShardExpansionVerificationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "验证结果已记录。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShardExpansionEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/shard-expansions/{expansion_id}/retry": {
+      "post": {
+        "tags": [
+          "Cluster Admin"
+        ],
+        "operationId": "retryShardExpansion",
+        "summary": "重试失败的 Shard 扩容流程",
+        "security": [
+          {
+            "AdminBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ShardExpansionID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "流程已恢复。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShardExpansionEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/shard-expansions/{expansion_id}/cancel": {
+      "post": {
+        "tags": [
+          "Cluster Admin"
+        ],
+        "operationId": "cancelShardExpansion",
+        "summary": "取消未完成的 Shard 扩容流程",
+        "security": [
+          {
+            "AdminBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ShardExpansionID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "流程已取消。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShardExpansionEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/shards": {
       "get": {
         "tags": [
@@ -1757,33 +1998,6 @@
                 }
               }
             }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "Cluster Admin"
-        ],
-        "operationId": "upsertShard",
-        "summary": "登记或更新数据库分片",
-        "security": [
-          {
-            "AdminBearer": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpsertShardRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/OK"
           }
         }
       }
@@ -2022,56 +2236,96 @@
     },
     "/api/plans/{plan_id}/periods": {
       "get": {
-        "tags": ["Cluster Admin"],
+        "tags": [
+          "Cluster Admin"
+        ],
         "operationId": "listPlanPeriods",
         "summary": "查看权益模板允许的非默认周期",
-        "security": [{"AdminBearer": []}],
-        "parameters": [{"$ref": "#/components/parameters/PlanID"}],
+        "security": [
+          {
+            "AdminBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PlanID"
+          }
+        ],
         "responses": {
           "200": {
             "description": "周期变体列表。",
             "content": {
               "application/json": {
-                "schema": {"$ref": "#/components/schemas/PlanPeriodListEnvelope"}
+                "schema": {
+                  "$ref": "#/components/schemas/PlanPeriodListEnvelope"
+                }
               }
             }
           }
         }
       },
       "post": {
-        "tags": ["Cluster Admin"],
+        "tags": [
+          "Cluster Admin"
+        ],
         "operationId": "registerPlanPeriod",
         "summary": "登记权益模板的非默认周期",
         "description": "登记后为所有 active Set 排队创建独立的 new-api subscription plan。",
-        "security": [{"AdminBearer": []}],
-        "parameters": [{"$ref": "#/components/parameters/PlanID"}],
+        "security": [
+          {
+            "AdminBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PlanID"
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": {"$ref": "#/components/schemas/PlanPeriod"}
+              "schema": {
+                "$ref": "#/components/schemas/PlanPeriod"
+              }
             }
           }
         },
         "responses": {
-          "200": {"$ref": "#/components/responses/OK"},
-          "400": {"$ref": "#/components/responses/OpenAIError"}
+          "200": {
+            "$ref": "#/components/responses/OK"
+          },
+          "400": {
+            "$ref": "#/components/responses/OpenAIError"
+          }
         }
       }
     },
     "/api/plans/{plan_id}/periods/sets": {
       "get": {
-        "tags": ["Cluster Admin"],
+        "tags": [
+          "Cluster Admin"
+        ],
         "operationId": "listPlanPeriodSetStates",
         "summary": "查看周期变体的集群下发状态",
-        "security": [{"AdminBearer": []}],
-        "parameters": [{"$ref": "#/components/parameters/PlanID"}],
+        "security": [
+          {
+            "AdminBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PlanID"
+          }
+        ],
         "responses": {
           "200": {
             "description": "每个周期变体在各 Set 的下发状态。",
             "content": {
               "application/json": {
-                "schema": {"$ref": "#/components/schemas/SetPlanPeriodListEnvelope"}
+                "schema": {
+                  "$ref": "#/components/schemas/SetPlanPeriodListEnvelope"
+                }
               }
             }
           }
@@ -2190,7 +2444,9 @@
             "description": "目标 admin 正在升级；密钥签发已持久化排队。",
             "content": {
               "application/json": {
-                "schema": {"$ref": "#/components/schemas/AdminCommandEnvelope"}
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCommandEnvelope"
+                }
               }
             }
           }
@@ -2240,7 +2496,9 @@
             "description": "目标 admin 正在升级；密钥签发已持久化排队。",
             "content": {
               "application/json": {
-                "schema": {"$ref": "#/components/schemas/AdminCommandEnvelope"}
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCommandEnvelope"
+                }
               }
             }
           }
@@ -3040,79 +3298,323 @@
     },
     "/api/admin/newapi-releases": {
       "get": {
-        "tags": ["Cluster Admin"],
+        "tags": [
+          "Cluster Admin"
+        ],
         "operationId": "adminListNewAPIReleases",
         "summary": "列出不可变 new-api Release",
-        "security": [{"AdminBearer": []}],
-        "responses": {"200": {"description": "Release 列表。", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Envelope"}}}}}
+        "security": [
+          {
+            "AdminBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Release 列表。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
       },
       "post": {
-        "tags": ["Cluster Admin"],
+        "tags": [
+          "Cluster Admin"
+        ],
         "operationId": "adminCreateNewAPIRelease",
         "summary": "登记不可变 new-api Release",
         "description": "镜像必须固定到 sha256 digest；同一 Release ID 不允许修改。",
-        "security": [{"AdminBearer": []}],
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["id", "version", "image"], "properties": {
-          "id": {"type": "string"}, "version": {"type": "string"}, "image": {"type": "string"},
-          "compatibility": {"type": "string", "default": "expand_compatible"},
-          "status": {"type": "string", "enum": ["draft", "verified", "stable", "blocked"]}
-        }}}}},
-        "responses": {"201": {"description": "Release 已登记。", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Envelope"}}}}}
+        "security": [
+          {
+            "AdminBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "version",
+                  "image"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "string"
+                  },
+                  "image": {
+                    "type": "string"
+                  },
+                  "compatibility": {
+                    "type": "string",
+                    "default": "expand_compatible"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "draft",
+                      "verified",
+                      "stable",
+                      "blocked"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Release 已登记。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/admin/release-rings": {
       "get": {
-        "tags": ["Cluster Admin"],
+        "tags": [
+          "Cluster Admin"
+        ],
         "operationId": "adminListReleaseRings",
         "summary": "列出 Fleet 发布环和实际版本分布",
-        "security": [{"AdminBearer": []}],
-        "responses": {"200": {"description": "发布环列表。", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Envelope"}}}}}
+        "security": [
+          {
+            "AdminBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "发布环列表。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
       },
       "post": {
-        "tags": ["Cluster Admin"],
+        "tags": [
+          "Cluster Admin"
+        ],
         "operationId": "adminUpsertReleaseRing",
         "summary": "建立或更新发布环并分配 Set",
-        "security": [{"AdminBearer": []}],
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["id", "name", "serving_release_id"], "properties": {
-          "id": {"type": "string"}, "name": {"type": "string"}, "ordinal": {"type": "integer"},
-          "serving_release_id": {"type": "string"}, "admission_enabled": {"type": "boolean"},
-          "max_parallel": {"type": "integer", "enum": [1]}, "soak_seconds": {"type": "integer"},
-          "set_ids": {"type": "array", "items": {"type": "string"}}
-        }}}}},
-        "responses": {"200": {"description": "发布环已保存。", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Envelope"}}}}}
+        "security": [
+          {
+            "AdminBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "name",
+                  "serving_release_id"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "ordinal": {
+                    "type": "integer"
+                  },
+                  "serving_release_id": {
+                    "type": "string"
+                  },
+                  "admission_enabled": {
+                    "type": "boolean"
+                  },
+                  "max_parallel": {
+                    "type": "integer",
+                    "enum": [
+                      1
+                    ]
+                  },
+                  "soak_seconds": {
+                    "type": "integer"
+                  },
+                  "set_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "发布环已保存。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/admin/release-rollouts": {
       "get": {
-        "tags": ["Cluster Admin"],
+        "tags": [
+          "Cluster Admin"
+        ],
         "operationId": "adminListReleaseRollouts",
         "summary": "列出多 Set 逐个发布记录",
-        "security": [{"AdminBearer": []}],
-        "parameters": [{"name": "ring_id", "in": "query", "schema": {"type": "string"}}, {"name": "limit", "in": "query", "schema": {"type": "integer", "default": 50}}],
-        "responses": {"200": {"description": "Rollout 列表。", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Envelope"}}}}}
+        "security": [
+          {
+            "AdminBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "ring_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rollout 列表。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
       },
       "post": {
-        "tags": ["Cluster Admin"],
+        "tags": [
+          "Cluster Admin"
+        ],
         "operationId": "adminCreateReleaseRollout",
         "summary": "将一个发布环逐个升级到目标 Release",
         "description": "系统固定 max_parallel=1 和 stop_on_failure=true。",
-        "security": [{"AdminBearer": []}],
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["ring_id", "target_release_id"], "properties": {
-          "ring_id": {"type": "string"}, "target_release_id": {"type": "string"},
-          "drain_timeout_seconds": {"type": "integer", "default": 330},
-          "rollback_window_seconds": {"type": "integer", "default": 300}
-        }}}}},
-        "responses": {"202": {"description": "Rollout 已创建。", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Envelope"}}}}}
+        "security": [
+          {
+            "AdminBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "ring_id",
+                  "target_release_id"
+                ],
+                "properties": {
+                  "ring_id": {
+                    "type": "string"
+                  },
+                  "target_release_id": {
+                    "type": "string"
+                  },
+                  "drain_timeout_seconds": {
+                    "type": "integer",
+                    "default": 330
+                  },
+                  "rollback_window_seconds": {
+                    "type": "integer",
+                    "default": 300
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Rollout 已创建。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/admin/release-rollouts/{rollout_id}": {
       "get": {
-        "tags": ["Cluster Admin"],
+        "tags": [
+          "Cluster Admin"
+        ],
         "operationId": "adminGetReleaseRollout",
         "summary": "查看多 Set 发布进度",
-        "security": [{"AdminBearer": []}],
-        "parameters": [{"name": "rollout_id", "in": "path", "required": true, "schema": {"type": "string"}}],
-        "responses": {"200": {"description": "Rollout 聚合状态和底层 Set runs。", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Envelope"}}}}}
+        "security": [
+          {
+            "AdminBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "rollout_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rollout 聚合状态和底层 Set runs。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/admin/set-upgrades": {
@@ -3423,6 +3925,14 @@
         "schema": {
           "type": "string"
         }
+      },
+      "ShardExpansionID": {
+        "name": "expansion_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
       }
     },
     "responses": {
@@ -3458,6 +3968,16 @@
       },
       "NotFound": {
         "description": "资源或资源行不存在。",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Envelope"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "幂等键已被不同请求占用或资源状态冲突。",
         "content": {
           "application/json": {
             "schema": {
@@ -4507,6 +5027,21 @@
             "type": "string",
             "example": "mysql-a.internal:3306"
           },
+          "redis_endpoint": {
+            "type": "string",
+            "example": "redis-a.internal:6379"
+          },
+          "secret_name": {
+            "type": "string",
+            "example": "newapi-shard-a"
+          },
+          "redis_db_start": {
+            "type": "integer"
+          },
+          "redis_db_limit": {
+            "type": "integer",
+            "description": "Redis DB 半开区间的上界，不包含该值。"
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -4585,6 +5120,227 @@
           "id"
         ]
       },
+      "CreateShardExpansionRequest": {
+        "type": "object",
+        "properties": {
+          "idempotency_key": {
+            "type": "string"
+          },
+          "shard_id": {
+            "type": "string",
+            "example": "shard-c"
+          },
+          "name": {
+            "type": "string",
+            "example": "北京分片 C"
+          },
+          "max_sets": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "redis_db_start": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "redis_db_limit": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "max_connections": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "reserved_connections": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "admin_sql_max_open_conns": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "traffic_sql_max_open_conns": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "subscription_write_concurrency": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "idempotency_key",
+          "shard_id",
+          "name",
+          "max_sets",
+          "redis_db_start",
+          "redis_db_limit"
+        ]
+      },
+      "ShardExpansionInfrastructureRequest": {
+        "type": "object",
+        "properties": {
+          "mysql_endpoint": {
+            "type": "string"
+          },
+          "redis_endpoint": {
+            "type": "string"
+          },
+          "secret_name": {
+            "type": "string"
+          },
+          "terraform_run": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "required": [
+          "mysql_endpoint",
+          "redis_endpoint",
+          "secret_name"
+        ]
+      },
+      "ShardExpansionVerificationRequest": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "evidence": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "success"
+        ]
+      },
+      "ShardExpansion": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "shard_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "requested",
+              "waiting_infrastructure",
+              "infrastructure_ready",
+              "waiting_fleet_projection",
+              "verifying",
+              "ready",
+              "error",
+              "cancelled"
+            ]
+          },
+          "retry_status": {
+            "type": "string"
+          },
+          "failed_step": {
+            "type": "string"
+          },
+          "last_error": {
+            "type": "string"
+          },
+          "max_sets": {
+            "type": "integer"
+          },
+          "redis_db_start": {
+            "type": "integer"
+          },
+          "redis_db_limit": {
+            "type": "integer"
+          },
+          "mysql_endpoint": {
+            "type": "string"
+          },
+          "redis_endpoint": {
+            "type": "string"
+          },
+          "secret_name": {
+            "type": "string"
+          },
+          "terraform_run": {
+            "type": "string"
+          },
+          "verification_evidence": {
+            "type": "string"
+          },
+          "fleet_projected_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "verified_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "idempotency_key",
+          "shard_id",
+          "name",
+          "status",
+          "max_sets",
+          "redis_db_start",
+          "redis_db_limit",
+          "version",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "ShardExpansionEnvelope": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Envelope"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ShardExpansion"
+              }
+            }
+          }
+        ]
+      },
+      "ShardExpansionListEnvelope": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Envelope"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ShardExpansion"
+                }
+              }
+            }
+          }
+        ]
+      },
       "ShardSetBudget": {
         "type": "object",
         "properties": {
@@ -4611,6 +5367,12 @@
           },
           "logical_connections": {
             "type": "integer"
+          },
+          "database_name": {
+            "type": "string"
+          },
+          "redis_db": {
+            "type": "string"
           }
         }
       },
@@ -4641,6 +5403,16 @@
               "warn",
               "critical"
             ]
+          },
+          "redis_db_allocated": {
+            "type": "integer"
+          },
+          "redis_db_available": {
+            "type": "integer"
+          },
+          "redis_db_utilization": {
+            "type": "number",
+            "format": "double"
           },
           "sets": {
             "type": "array",
@@ -5281,26 +6053,51 @@
       "PlanPeriod": {
         "type": "object",
         "properties": {
-          "plan_id": {"type": "string", "readOnly": true},
-          "period_value": {"type": "integer", "minimum": 1},
+          "plan_id": {
+            "type": "string",
+            "readOnly": true
+          },
+          "period_value": {
+            "type": "integer",
+            "minimum": 1
+          },
           "period_unit": {
             "type": "string",
-            "enum": ["days", "months", "years"]
+            "enum": [
+              "days",
+              "months",
+              "years"
+            ]
           },
-          "created_at": {"type": "string", "format": "date-time", "readOnly": true},
-          "updated_at": {"type": "string", "format": "date-time", "readOnly": true}
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true
+          }
         },
-        "required": ["period_value", "period_unit"]
+        "required": [
+          "period_value",
+          "period_unit"
+        ]
       },
       "PlanPeriodListEnvelope": {
         "allOf": [
-          {"$ref": "#/components/schemas/Envelope"},
+          {
+            "$ref": "#/components/schemas/Envelope"
+          },
           {
             "type": "object",
             "properties": {
               "data": {
                 "type": "array",
-                "items": {"$ref": "#/components/schemas/PlanPeriod"}
+                "items": {
+                  "$ref": "#/components/schemas/PlanPeriod"
+                }
               }
             }
           }
@@ -5373,32 +6170,70 @@
       "SetPlanPeriod": {
         "type": "object",
         "properties": {
-          "plan_id": {"type": "string"},
-          "period_value": {"type": "integer"},
-          "period_unit": {"type": "string"},
-          "set_id": {"type": "string"},
-          "upstream_plan_id": {"type": "integer"},
+          "plan_id": {
+            "type": "string"
+          },
+          "period_value": {
+            "type": "integer"
+          },
+          "period_unit": {
+            "type": "string"
+          },
+          "set_id": {
+            "type": "string"
+          },
+          "upstream_plan_id": {
+            "type": "integer"
+          },
           "status": {
             "type": "string",
-            "enum": ["pending", "syncing", "ready", "error"]
+            "enum": [
+              "pending",
+              "syncing",
+              "ready",
+              "error"
+            ]
           },
-          "attempts": {"type": "integer"},
-          "last_error": {"type": "string"},
-          "synced_at": {"type": "string", "format": "date-time"},
-          "created_at": {"type": "string", "format": "date-time"},
-          "updated_at": {"type": "string", "format": "date-time"}
+          "attempts": {
+            "type": "integer"
+          },
+          "last_error": {
+            "type": "string"
+          },
+          "synced_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
         },
-        "required": ["plan_id", "period_value", "period_unit", "set_id", "status"]
+        "required": [
+          "plan_id",
+          "period_value",
+          "period_unit",
+          "set_id",
+          "status"
+        ]
       },
       "SetPlanPeriodListEnvelope": {
         "allOf": [
-          {"$ref": "#/components/schemas/Envelope"},
+          {
+            "$ref": "#/components/schemas/Envelope"
+          },
           {
             "type": "object",
             "properties": {
               "data": {
                 "type": "array",
-                "items": {"$ref": "#/components/schemas/SetPlanPeriod"}
+                "items": {
+                  "$ref": "#/components/schemas/SetPlanPeriod"
+                }
               }
             }
           }
@@ -5967,33 +6802,74 @@
       "AdminCommand": {
         "type": "object",
         "properties": {
-          "id": {"type": "string"},
-          "dedupe_key": {"type": "string"},
-          "set_id": {"type": "string"},
-          "user_id": {"type": "string"},
+          "id": {
+            "type": "string"
+          },
+          "dedupe_key": {
+            "type": "string"
+          },
+          "set_id": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string"
+          },
           "kind": {
             "type": "string",
-            "enum": ["apply_subscription", "cancel_subscription", "extend_subscription", "create_external_key"]
+            "enum": [
+              "apply_subscription",
+              "cancel_subscription",
+              "extend_subscription",
+              "create_external_key"
+            ]
           },
           "status": {
             "type": "string",
-            "enum": ["pending", "running", "succeeded", "error", "unknown"]
+            "enum": [
+              "pending",
+              "running",
+              "succeeded",
+              "error",
+              "unknown"
+            ]
           },
-          "attempts": {"type": "integer"},
-          "result": {"type": "string", "description": "完成后的 JSON 结果；可能包含敏感密钥，仅限受信调用方读取。"},
-          "last_error": {"type": "string"},
-          "created_at": {"type": "string", "format": "date-time"},
-          "updated_at": {"type": "string", "format": "date-time"}
+          "attempts": {
+            "type": "integer"
+          },
+          "result": {
+            "type": "string",
+            "description": "完成后的 JSON 结果；可能包含敏感密钥，仅限受信调用方读取。"
+          },
+          "last_error": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
         },
-        "required": ["id", "set_id", "kind", "status"]
+        "required": [
+          "id",
+          "set_id",
+          "kind",
+          "status"
+        ]
       },
       "AdminCommandEnvelope": {
         "allOf": [
-          {"$ref": "#/components/schemas/Envelope"},
+          {
+            "$ref": "#/components/schemas/Envelope"
+          },
           {
             "type": "object",
             "properties": {
-              "data": {"$ref": "#/components/schemas/AdminCommand"}
+              "data": {
+                "$ref": "#/components/schemas/AdminCommand"
+              }
             }
           }
         ]
@@ -6077,9 +6953,18 @@
           "status": {
             "type": "string",
             "enum": [
-              "pending", "upgrading_master", "verifying_compatibility",
-              "preparing", "probing", "switching", "draining", "rollback_switching",
-              "rollback_draining", "completed", "failed", "rolled_back"
+              "pending",
+              "upgrading_master",
+              "verifying_compatibility",
+              "preparing",
+              "probing",
+              "switching",
+              "draining",
+              "rollback_switching",
+              "rollback_draining",
+              "completed",
+              "failed",
+              "rolled_back"
             ]
           },
           "master_upgraded_at": {
@@ -7077,58 +7962,148 @@
       "ChannelBundleDeliveryCounts": {
         "type": "object",
         "properties": {
-          "synced": { "type": "integer" },
-          "pending": { "type": "integer" },
-          "drift": { "type": "integer" },
-          "error": { "type": "integer" },
-          "unchecked": { "type": "integer" },
-          "stale": { "type": "integer" }
+          "synced": {
+            "type": "integer"
+          },
+          "pending": {
+            "type": "integer"
+          },
+          "drift": {
+            "type": "integer"
+          },
+          "error": {
+            "type": "integer"
+          },
+          "unchecked": {
+            "type": "integer"
+          },
+          "stale": {
+            "type": "integer"
+          }
         },
-        "required": ["synced", "pending", "drift", "error", "unchecked", "stale"]
+        "required": [
+          "synced",
+          "pending",
+          "drift",
+          "error",
+          "unchecked",
+          "stale"
+        ]
       },
       "ChannelBundleDeliverySetStatus": {
         "type": "object",
         "properties": {
-          "set_id": { "type": "string" },
-          "set_name": { "type": "string" },
+          "set_id": {
+            "type": "string"
+          },
+          "set_name": {
+            "type": "string"
+          },
           "status": {
             "type": "string",
-            "enum": ["synced", "pending", "drift", "error", "unchecked", "stale"]
+            "enum": [
+              "synced",
+              "pending",
+              "drift",
+              "error",
+              "unchecked",
+              "stale"
+            ]
           },
-          "last_checked_at": { "type": ["string", "null"], "format": "date-time" },
-          "last_error": { "type": "string" },
-          "diff_json": { "type": "string" }
+          "last_checked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "last_error": {
+            "type": "string"
+          },
+          "diff_json": {
+            "type": "string"
+          }
         },
-        "required": ["set_id", "set_name", "status", "last_checked_at"]
+        "required": [
+          "set_id",
+          "set_name",
+          "status",
+          "last_checked_at"
+        ]
       },
       "ChannelBundleDeliveryStatus": {
         "type": "object",
         "properties": {
-          "bundle_id": { "type": "string" },
+          "bundle_id": {
+            "type": "string"
+          },
           "status": {
             "type": "string",
-            "enum": ["empty", "synced", "pending", "drift", "error", "unchecked", "stale"]
+            "enum": [
+              "empty",
+              "synced",
+              "pending",
+              "drift",
+              "error",
+              "unchecked",
+              "stale"
+            ]
           },
-          "eligible_sets": { "type": "integer" },
-          "checked_sets": { "type": "integer" },
-          "coverage_checked_at": { "type": ["string", "null"], "format": "date-time" },
-          "stale_after_seconds": { "type": ["integer", "null"] },
-          "has_stale_results": { "type": "boolean" },
-          "counts": { "$ref": "#/components/schemas/ChannelBundleDeliveryCounts" },
+          "eligible_sets": {
+            "type": "integer"
+          },
+          "checked_sets": {
+            "type": "integer"
+          },
+          "coverage_checked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "stale_after_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "has_stale_results": {
+            "type": "boolean"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/ChannelBundleDeliveryCounts"
+          },
           "sets": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/ChannelBundleDeliverySetStatus" }
+            "items": {
+              "$ref": "#/components/schemas/ChannelBundleDeliverySetStatus"
+            }
           }
         },
-        "required": ["bundle_id", "status", "eligible_sets", "checked_sets", "coverage_checked_at", "stale_after_seconds", "has_stale_results", "counts", "sets"]
+        "required": [
+          "bundle_id",
+          "status",
+          "eligible_sets",
+          "checked_sets",
+          "coverage_checked_at",
+          "stale_after_seconds",
+          "has_stale_results",
+          "counts",
+          "sets"
+        ]
       },
       "ChannelBundleDeliveryStatusEnvelope": {
         "allOf": [
-          { "$ref": "#/components/schemas/Envelope" },
+          {
+            "$ref": "#/components/schemas/Envelope"
+          },
           {
             "type": "object",
             "properties": {
-              "data": { "$ref": "#/components/schemas/ChannelBundleDeliveryStatus" }
+              "data": {
+                "$ref": "#/components/schemas/ChannelBundleDeliveryStatus"
+              }
             }
           }
         ]

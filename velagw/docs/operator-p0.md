@@ -25,13 +25,13 @@ traffic 面的生产形态是 Redis-only，不允许 Redis miss 后回 MySQL 查
 新签发的访问密钥采用可路由格式：
 
 ```text
-sk-lgw-v1-{key_shard}.{key_id}.{secret}
+sk-<Base64URL(version + route_slot + key_id + secret)>
 ```
 
-Redis route key 使用 key shard hash tag：
+完整 Key 固定 95 字符，其中 Key ID 和 Secret 各为 256 bit。中央 MySQL 保存完整 Key、Key ID、完整 Key 哈希、Secret 哈希、路由槽和状态，用于固定自检 Key 复用和故障恢复；数据库访问与备份必须按密钥材料保护。Redis、日志和指标不保存或输出完整 Key。Redis route key 使用 route slot hash tag：
 
 ```text
-llmgateway:route:{ks-007}:key:key_xxx
+llmgateway:route:{kr-00000007}:key:<external_key_id>
 ```
 
 snapshot 中包含 `set_base_url`、`upstream_key`、`route_mode`、`enabled` 等转发所需字段，因此 traffic 不需要读取 `llmgateway_sets`、租户表或 BYOK 表。route snapshot 是持久 Redis 记录，不使用短 TTL；禁用租户和撤销 key 会主动删除 snapshot，禁用 Set 会把该 Set 下的 snapshot 标记为 `enabled=false` 并保留密钥校验信息，BYOK 策略变化会刷新 snapshot。Redis 故障时 traffic 快速失败，不会把压力转移到 MySQL。

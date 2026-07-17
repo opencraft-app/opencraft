@@ -95,25 +95,27 @@ describe("LLMGatewayAPI", () => {
     }
   })
 
-  it("uses bearer auth for shard operations", async () => {
-    const fetcher = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse({ success: true, data: [] }))
-      .mockResolvedValueOnce(jsonResponse({ success: true, data: { shard: { id: "mysql-a" } } }))
-      .mockResolvedValueOnce(jsonResponse({ success: true }))
+  it("uses bearer auth for read-only shards and expansion workflows", async () => {
+		const fetcher = vi
+			.fn()
+			.mockResolvedValueOnce(jsonResponse({ success: true, data: [] }))
+			.mockResolvedValueOnce(jsonResponse({ success: true, data: { shard: { id: "mysql-a" } } }))
+			.mockResolvedValueOnce(jsonResponse({ success: true, data: [] }))
+			.mockResolvedValueOnce(jsonResponse({ success: true, data: { id: "expand-1", status: "requested" } }, { status: 201 }))
 
     const api = new LLMGatewayAPI(fetcher, () => "cluster-token")
 
-    await api.listShards()
-    await api.getShard("mysql-a")
-    await api.upsertShard({
-      id: "mysql-a",
-      name: "MySQL A",
-      kind: "mysql",
-      status: "active",
-      max_connections: 2000,
-      reserved_connections: 200,
-    })
+		await api.listShards()
+		await api.getShard("mysql-a")
+		await api.listShardExpansions()
+		await api.createShardExpansion({
+			idempotency_key: "ops-shard-c",
+			shard_id: "shard-c",
+			name: "北京分片 C",
+			max_sets: 32,
+			redis_db_start: 512,
+			redis_db_limit: 768,
+		})
 
     expect(fetcher).toHaveBeenNthCalledWith(
       1,
@@ -125,21 +127,26 @@ describe("LLMGatewayAPI", () => {
       "/api/admin/shards/mysql-a",
       expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer cluster-token" }) }),
     )
-    expect(fetcher).toHaveBeenNthCalledWith(
-      3,
-      "/api/admin/shards",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({
-          id: "mysql-a",
-          name: "MySQL A",
-          kind: "mysql",
-          status: "active",
-          max_connections: 2000,
-          reserved_connections: 200,
-        }),
-      }),
-    )
+		expect(fetcher).toHaveBeenNthCalledWith(
+			3,
+			"/api/admin/shard-expansions",
+			expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer cluster-token" }) }),
+		)
+		expect(fetcher).toHaveBeenNthCalledWith(
+			4,
+			"/api/admin/shard-expansions",
+			expect.objectContaining({
+				method: "POST",
+				body: JSON.stringify({
+					idempotency_key: "ops-shard-c",
+					shard_id: "shard-c",
+					name: "北京分片 C",
+					max_sets: 32,
+					redis_db_start: 512,
+					redis_db_limit: 768,
+				}),
+			}),
+		)
   })
 
   it("defines an entitlement plan through the control API", async () => {

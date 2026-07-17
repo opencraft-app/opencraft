@@ -279,7 +279,7 @@ func RunWorker(ctx context.Context) error {
 
 func workerPoolNeedsKeyRouteCache(pool string) bool {
 	switch strings.ToLower(strings.TrimSpace(pool)) {
-	case "admin", "byok", "maintenance":
+	case "admin", "byok", "core", "maintenance":
 		return true
 	default:
 		return false

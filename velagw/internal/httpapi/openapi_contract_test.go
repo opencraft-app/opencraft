@@ -33,6 +33,9 @@ func TestOpenAPIIncludesControlPlaneChannelContract(t *testing.T) {
 		"/api/desired-config/export",
 		"/api/desired-config/import",
 		"/api/admin/traffic-probe",
+		"/api/admin/shard-expansions",
+		"/api/admin/shard-expansions/{expansion_id}/infrastructure",
+		"/api/admin/shard-expansions/{expansion_id}/verification",
 	} {
 		if len(spec.Paths[path]) == 0 {
 			t.Fatalf("OpenAPI missing control-plane path %s", path)
@@ -44,6 +47,8 @@ func TestOpenAPIIncludesControlPlaneChannelContract(t *testing.T) {
 		"SetCapacityPolicy":             {"redis_db_start", "redis_db_limit"},
 		"DesiredConfig":                 {"api_version", "kind", "global_options", "channel_bundles"},
 		"TrafficProbeRequest":           {"mode", "api_key", "user_id", "model", "prompt"},
+		"ShardExpansion":                {"shard_id", "status", "redis_db_start", "redis_db_limit", "mysql_endpoint", "redis_endpoint"},
+		"Shard":                         {"endpoint", "redis_endpoint", "redis_db_start", "redis_db_limit"},
 	} {
 		definition, ok := spec.Components.Schemas[schema]
 		if !ok {

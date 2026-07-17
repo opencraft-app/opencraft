@@ -64,6 +64,7 @@ import {
   type SetDecommissionPreview,
   type SetUpgradeRun,
   type ShardDetail,
+  type ShardExpansion,
   type TenantDeletionJob,
   type TenantDetail,
   type TenantObservation,
@@ -1528,6 +1529,11 @@ export function ShardManagementPage({ api }: { api: LLMGatewayAPI }) {
     queryFn: () => api.listShards(),
   })
   const shards = shardsQuery.data || []
+	const expansionsQuery = useQuery({
+		queryKey: ["shard-expansions"],
+		queryFn: () => api.listShardExpansions(),
+	})
+	const expansions = expansionsQuery.data || []
   const selectedShard = shards.find((item) => item.shard.id === selectedShardID) || shards[0]
 
   useEffect(() => {
@@ -1536,8 +1542,11 @@ export function ShardManagementPage({ api }: { api: LLMGatewayAPI }) {
     }
   }, [selectedShardID, shards])
 
-  function invalidateShards() {
-    return queryClient.invalidateQueries({ queryKey: ["shards"] })
+  async function invalidateShards() {
+		await Promise.all([
+			queryClient.invalidateQueries({ queryKey: ["shards"] }),
+			queryClient.invalidateQueries({ queryKey: ["shard-expansions"] }),
+		])
   }
 
   return (
@@ -1560,10 +1569,7 @@ export function ShardManagementPage({ api }: { api: LLMGatewayAPI }) {
               selectedShardID={selectedShard?.shard.id || selectedShardID}
               onSelect={setSelectedShardID}
             />
-            <details className="rounded-md border bg-background">
-              <summary className="cursor-pointer px-4 py-3 text-sm font-medium">高级配置</summary>
-              <div className="border-t p-3"><ShardUpsertCard api={api} onChanged={invalidateShards} /></div>
-            </details>
+			<ShardExpansionCard api={api} expansions={expansions} loading={expansionsQuery.isLoading} onChanged={invalidateShards} />
           </div>
           <ShardDetailPanel detail={selectedShard} />
         </div>
@@ -1645,45 +1651,46 @@ function ShardList({
   )
 }
 
-function ShardUpsertCard({ api, onChanged }: { api: LLMGatewayAPI; onChanged: () => Promise<unknown> }) {
-  const [id, setID] = useState("mysql-a")
-  const [name, setName] = useState("MySQL A")
-  const [endpoint, setEndpoint] = useState("mysql-a.internal:3306")
-  const [maxConnections, setMaxConnections] = useState("2000")
-  const [reservedConnections, setReservedConnections] = useState("200")
-  const [warnRatio, setWarnRatio] = useState("70")
-  const [criticalRatio, setCriticalRatio] = useState("85")
-  const upsert = useMutation({
-    mutationFn: () =>
-      api.upsertShard({
-        id: id.trim(),
-        name: name.trim(),
-        kind: "mysql",
-        endpoint: endpoint.trim(),
-        status: "active",
-        max_connections: numberInput(maxConnections, 2000),
-        reserved_connections: Math.max(0, numberInput(reservedConnections, 0)),
-        warn_ratio: percentInput(warnRatio, 70),
-        critical_ratio: percentInput(criticalRatio, 85),
-      }),
-    onSuccess: () => onChanged(),
-  })
+function ShardExpansionCard({ api, expansions, loading, onChanged }: {
+	api: LLMGatewayAPI
+	expansions: ShardExpansion[]
+	loading: boolean
+	onChanged: () => Promise<unknown>
+}) {
+	const [id, setID] = useState("shard-c")
+	const [name, setName] = useState("北京分片 C")
+	const [maxSets, setMaxSets] = useState("32")
+	const [redisDBStart, setRedisDBStart] = useState("512")
+	const [redisDBLimit, setRedisDBLimit] = useState("768")
+	const create = useMutation({
+		mutationFn: () => api.createShardExpansion({
+			idempotency_key: `console:${id.trim()}:${Date.now()}`,
+			shard_id: id.trim(),
+			name: name.trim(),
+			max_sets: Math.max(1, numberInput(maxSets, 32)),
+			redis_db_start: Math.max(0, numberInput(redisDBStart, 0)),
+			redis_db_limit: Math.max(1, numberInput(redisDBLimit, 256)),
+		}),
+		onSuccess: () => onChanged(),
+	})
+	const retry = useMutation({ mutationFn: (expansionID: string) => api.retryShardExpansion(expansionID), onSuccess: () => onChanged() })
+	const cancel = useMutation({ mutationFn: (expansionID: string) => api.cancelShardExpansion(expansionID), onSuccess: () => onChanged() })
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Plus className="size-4" />
-          登记数据分片
+					申请扩容
         </CardTitle>
-        <CardDescription>记录数据库分片的逻辑连接预算</CardDescription>
+				<CardDescription>提交意图后，系统会跟踪云资源、集群接入和服务验证</CardDescription>
       </CardHeader>
-      <CardContent>
+			<CardContent className="flex flex-col gap-4">
         <form
           className="flex flex-col gap-3"
           onSubmit={(event) => {
             event.preventDefault()
-            upsert.mutate()
+						create.mutate()
           }}
         >
           <Field label="分片 ID">
@@ -1692,32 +1699,95 @@ function ShardUpsertCard({ api, onChanged }: { api: LLMGatewayAPI; onChanged: ()
           <Field label="显示名称">
             <Input value={name} onChange={(event) => setName(event.target.value)} />
           </Field>
-          <Field label="数据库地址">
-            <Input value={endpoint} onChange={(event) => setEndpoint(event.target.value)} />
-          </Field>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="最大连接预算">
-              <Input inputMode="numeric" value={maxConnections} onChange={(event) => setMaxConnections(event.target.value)} />
+						<Field label="最多承载 Set">
+							<Input inputMode="numeric" value={maxSets} onChange={(event) => setMaxSets(event.target.value)} />
             </Field>
-            <Field label="保留连接">
-              <Input inputMode="numeric" value={reservedConnections} onChange={(event) => setReservedConnections(event.target.value)} />
+						<Field label="Redis DB 起点">
+							<Input inputMode="numeric" value={redisDBStart} onChange={(event) => setRedisDBStart(event.target.value)} />
             </Field>
-            <Field label="预警线">
-              <Input inputMode="decimal" value={warnRatio} onChange={(event) => setWarnRatio(event.target.value)} />
-            </Field>
-            <Field label="危险线">
-              <Input inputMode="decimal" value={criticalRatio} onChange={(event) => setCriticalRatio(event.target.value)} />
+						<Field label="Redis DB 终点（不含）">
+							<Input inputMode="numeric" value={redisDBLimit} onChange={(event) => setRedisDBLimit(event.target.value)} />
             </Field>
           </div>
-          {upsert.error ? <p className="text-sm text-destructive">{upsert.error.message}</p> : null}
-          <Button type="submit" disabled={upsert.isPending || id.trim() === ""}>
-            {upsert.isPending ? <Loader2 className="animate-spin" /> : <DatabaseZap />}
-            保存数据分片
+					{create.error ? <p className="text-sm text-destructive">{create.error.message}</p> : null}
+					<Button type="submit" disabled={create.isPending || id.trim() === "" || name.trim() === ""}>
+						{create.isPending ? <Loader2 className="animate-spin" /> : <DatabaseZap />}
+						提交扩容流程
           </Button>
         </form>
+				<div className="border-t pt-4">
+					<div className="mb-3 text-sm font-medium">最近流程</div>
+					{loading ? <div className="h-16 rounded-md bg-muted" /> : null}
+					{!loading && expansions.length === 0 ? <p className="text-sm text-muted-foreground">暂无扩容流程</p> : null}
+					<div className="flex flex-col gap-3">
+						{expansions.slice(0, 5).map((expansion) => (
+							<div key={expansion.id} className="rounded-md border p-3">
+								<div className="flex items-start justify-between gap-3">
+									<div className="min-w-0">
+										<div className="truncate font-medium">{expansion.name || expansion.shard_id}</div>
+										<div className="mt-1 text-xs text-muted-foreground">{shardExpansionNextAction(expansion)}</div>
+									</div>
+									<ShardExpansionBadge status={expansion.status} />
+								</div>
+								<ShardExpansionSteps status={expansion.status} />
+								{expansion.last_error ? <p className="mt-2 text-xs text-destructive">{expansion.last_error}</p> : null}
+								{expansion.status === "error" ? (
+									<div className="mt-3 flex gap-2">
+										<Button size="sm" variant="outline" onClick={() => retry.mutate(expansion.id)} disabled={retry.isPending}><RefreshCw />重试</Button>
+										<Button size="sm" variant="ghost" onClick={() => cancel.mutate(expansion.id)} disabled={cancel.isPending}><Trash2 />取消流程</Button>
+									</div>
+								) : null}
+							</div>
+						))}
+					</div>
+				</div>
       </CardContent>
     </Card>
   )
+}
+
+function ShardExpansionBadge({ status }: { status: string }) {
+	if (status === "ready") return <Badge variant="outline">已可用</Badge>
+	if (status === "error") return <Badge variant="destructive">需要处理</Badge>
+	if (status === "cancelled") return <Badge variant="secondary">已取消</Badge>
+	return <Badge variant="secondary">进行中</Badge>
+}
+
+function ShardExpansionSteps({ status }: { status: string }) {
+	const steps = ["准备云资源", "接入集群", "验证服务", "已可用"]
+	const current = shardExpansionStep(status)
+	return (
+		<div className="mt-3 grid grid-cols-4 gap-1" aria-label="扩容进度">
+			{steps.map((step, index) => (
+				<div key={step} className="min-w-0">
+					<div className={cn("h-1.5 rounded-full", index <= current ? "bg-primary" : "bg-muted")} />
+					<div className="mt-1 truncate text-[11px] text-muted-foreground">{step}</div>
+				</div>
+			))}
+		</div>
+	)
+}
+
+function shardExpansionStep(status: string) {
+	if (["requested", "waiting_infrastructure", "infrastructure_ready"].includes(status)) return 0
+	if (status === "waiting_fleet_projection") return 1
+	if (status === "verifying" || status === "error") return 2
+	if (status === "ready") return 3
+	return -1
+}
+
+function shardExpansionNextAction(expansion: ShardExpansion) {
+	switch (expansion.status) {
+		case "requested": return "正在准备扩容流程"
+		case "waiting_infrastructure": return "等待 Terraform 创建 MySQL 与 Redis"
+		case "infrastructure_ready": return "云资源已就绪，正在接入集群"
+		case "waiting_fleet_projection": return "等待 LLMFleet 确认真实资源"
+		case "verifying": return "请通过正常 Set 路径完成冒烟验证"
+		case "ready": return "扩容流程已完成"
+		case "cancelled": return "流程已停止，不会自动销毁云资源"
+		default: return expansion.last_error || "请处理失败后重试"
+	}
 }
 
 function ShardDetailPanel({ detail }: { detail?: ShardDetail }) {
@@ -1752,6 +1822,16 @@ function ShardDetailPanel({ detail }: { detail?: ShardDetail }) {
         </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 pt-4">
+				<div className="grid gap-3 md:grid-cols-2">
+					<div className="rounded-md border p-3">
+						<div className="text-xs text-muted-foreground">MySQL</div>
+						<div className="mt-1 truncate font-mono text-xs">{shard.endpoint || "等待 LLMFleet 上报"}</div>
+					</div>
+					<div className="rounded-md border p-3">
+						<div className="text-xs text-muted-foreground">Redis</div>
+						<div className="mt-1 truncate font-mono text-xs">{shard.redis_endpoint || "等待 LLMFleet 上报"}</div>
+					</div>
+				</div>
         <div className="grid gap-3 md:grid-cols-4">
           <StateField label="可分配连接" value={formatNumber(detail.allocatable_connections)} />
           <StateField label="已分配连接" value={connectionDataKnown ? formatNumber(detail.logical_connections) : "-"} />
@@ -1774,11 +1854,23 @@ function ShardDetailPanel({ detail }: { detail?: ShardDetail }) {
             逻辑连接 = 每个服务集群的 new-api 副本数 × SQL 最大打开连接数。
           </div>
         </div>
+				<div className="rounded-lg border bg-muted/20 p-4">
+					<div className="flex items-center justify-between gap-3 text-sm">
+						<span className="font-medium">Redis DB</span>
+						<span className="text-muted-foreground">{formatNumber(detail.redis_db_allocated || 0)} 已用 · {formatNumber(detail.redis_db_available || 0)} 可用</span>
+					</div>
+					<div className="mt-3 h-3 overflow-hidden rounded-full bg-background">
+						<div className="h-full bg-primary" style={{ width: `${Math.min(100, Math.round((detail.redis_db_utilization || 0) * 100))}%` }} />
+					</div>
+					<div className="mt-2 text-xs text-muted-foreground">分配区间 [{shard.redis_db_start || 0}, {shard.redis_db_limit || 0})，每个 Set 独占一个 DB。</div>
+				</div>
         <div className="overflow-auto rounded-lg border">
-          <table className="w-full min-w-[760px] text-left text-sm">
+					<table className="w-full min-w-[920px] text-left text-sm">
             <thead className="border-b text-xs text-muted-foreground">
               <tr>
                 <th className="h-10 px-4 font-medium">服务集群</th>
+								<th className="h-10 px-4 font-medium">数据库</th>
+								<th className="h-10 px-4 font-medium">Redis DB</th>
                 <th className="h-10 px-4 font-medium">状态</th>
                 <th className="h-10 px-4 font-medium">副本数</th>
                 <th className="h-10 px-4 font-medium">最大连接</th>
@@ -1789,7 +1881,7 @@ function ShardDetailPanel({ detail }: { detail?: ShardDetail }) {
             <tbody>
               {shardSets.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-muted-foreground">
+									<td colSpan={8} className="px-4 py-8 text-center text-sm text-muted-foreground">
                     暂无服务集群使用这个数据分片。
                   </td>
                 </tr>
@@ -1800,6 +1892,8 @@ function ShardDetailPanel({ detail }: { detail?: ShardDetail }) {
                       <div className="font-medium">{set.name || set.set_id}</div>
                       <div className="text-xs text-muted-foreground">{set.set_id}</div>
                     </td>
+									<td className="px-4 py-3 font-mono text-xs">{set.database_name || "-"}</td>
+									<td className="px-4 py-3 font-mono text-xs">{set.redis_db || "-"}</td>
                     <td className="px-4 py-3">
                       <StatusBadge status={set.status} setup={set.setup} />
                     </td>

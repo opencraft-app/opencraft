@@ -61,6 +61,10 @@ type ShardProjection struct {
 	Name                         string `json:"name"`
 	Kind                         string `json:"kind"`
 	Endpoint                     string `json:"endpoint,omitempty"`
+	RedisEndpoint                string `json:"redis_endpoint,omitempty"`
+	SecretName                   string `json:"secret_name,omitempty"`
+	RedisDBStart                 int    `json:"redis_db_start,omitempty"`
+	RedisDBLimit                 int    `json:"redis_db_limit,omitempty"`
 	Status                       string `json:"status"`
 	MaxSets                      int    `json:"max_sets,omitempty"`
 	AdminSQLMaxOpenConns         int    `json:"admin_sql_max_open_conns,omitempty"`

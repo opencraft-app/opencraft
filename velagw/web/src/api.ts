@@ -129,6 +129,10 @@ export type Shard = {
   name: string
   kind: "mysql" | string
   endpoint?: string
+  redis_endpoint?: string
+  secret_name?: string
+  redis_db_start?: number
+  redis_db_limit?: number
   status: "active" | "disabled" | string
   max_connections?: number
   reserved_connections?: number
@@ -136,18 +140,6 @@ export type Shard = {
   critical_ratio?: number
   created_at: string
   updated_at: string
-}
-
-export type UpsertShardInput = {
-  id: string
-  name?: string
-  kind?: string
-  endpoint?: string
-  status?: string
-  max_connections?: number
-  reserved_connections?: number
-  warn_ratio?: number
-  critical_ratio?: number
 }
 
 export type ShardSetBudget = {
@@ -159,6 +151,8 @@ export type ShardSetBudget = {
   sql_max_open_conns: number
   sql_max_idle_conns: number
   logical_connections: number
+  database_name?: string
+  redis_db?: string
 }
 
 export type ShardDetail = {
@@ -168,7 +162,53 @@ export type ShardDetail = {
   remaining_connections: number
   utilization: number
   capacity_status: "unknown" | "ok" | "warn" | "critical" | string
+  redis_db_allocated: number
+  redis_db_available: number
+  redis_db_utilization: number
   sets: ShardSetBudget[]
+}
+
+export type ShardExpansion = {
+  id: string
+  idempotency_key: string
+  shard_id: string
+  name: string
+  status: string
+  retry_status?: string
+  failed_step?: string
+  last_error?: string
+  max_sets: number
+  redis_db_start: number
+  redis_db_limit: number
+  max_connections?: number
+  reserved_connections?: number
+  admin_sql_max_open_conns?: number
+  traffic_sql_max_open_conns?: number
+  subscription_write_concurrency?: number
+  mysql_endpoint?: string
+  redis_endpoint?: string
+  secret_name?: string
+  terraform_run?: string
+  verification_evidence?: string
+  fleet_projected_at?: string
+  verified_at?: string
+  version: number
+  created_at: string
+  updated_at: string
+}
+
+export type CreateShardExpansionInput = {
+  idempotency_key: string
+  shard_id: string
+  name: string
+  max_sets: number
+  redis_db_start: number
+  redis_db_limit: number
+  max_connections?: number
+  reserved_connections?: number
+  admin_sql_max_open_conns?: number
+  traffic_sql_max_open_conns?: number
+  subscription_write_concurrency?: number
 }
 
 export type EntitlementPlan = {
@@ -1062,13 +1102,33 @@ export class LLMGatewayAPI {
     })
   }
 
-  upsertShard(input: UpsertShardInput) {
-    return this.request<void>("/api/admin/shards", {
-      method: "POST",
-      auth: true,
-      body: JSON.stringify(input),
-    })
-  }
+  listShardExpansions() {
+		return this.request<ShardExpansion[]>("/api/admin/shard-expansions", {
+			auth: true,
+		})
+	}
+
+	createShardExpansion(input: CreateShardExpansionInput) {
+		return this.request<ShardExpansion>("/api/admin/shard-expansions", {
+			method: "POST",
+			auth: true,
+			body: JSON.stringify(input),
+		})
+	}
+
+	retryShardExpansion(id: string) {
+		return this.request<ShardExpansion>(`/api/admin/shard-expansions/${encodeURIComponent(id)}/retry`, {
+			method: "POST",
+			auth: true,
+		})
+	}
+
+	cancelShardExpansion(id: string) {
+		return this.request<ShardExpansion>(`/api/admin/shard-expansions/${encodeURIComponent(id)}/cancel`, {
+			method: "POST",
+			auth: true,
+		})
+	}
 
   getOverview() {
     return this.request<OperationalOverview>("/api/admin/overview", {

@@ -198,22 +198,19 @@ func TestAdminShardsEndpointReturnsLogicalConnectionBudget(t *testing.T) {
 	svc := gateway.NewService(gateway.NewMemoryStore(), nil, gateway.Options{})
 	handler := NewServer(svc, Config{AdminToken: "cluster-token"})
 
-	createShardReq := httptest.NewRequest(http.MethodPost, "/api/admin/shards", bytes.NewBufferString(`{
-		"id":"mysql-a",
-		"name":"主库 A",
-		"kind":"mysql",
-		"endpoint":"mysql-a.internal:3306",
-		"status":"active",
-		"max_connections":2000,
-		"reserved_connections":200,
-		"warn_ratio":0.7,
-		"critical_ratio":0.85
-	}`))
-	createShardReq.Header.Set("Authorization", "Bearer cluster-token")
-	createShardRec := httptest.NewRecorder()
-	handler.ServeHTTP(createShardRec, createShardReq)
-	if createShardRec.Code != http.StatusOK {
-		t.Fatalf("create shard status = %d body = %s", createShardRec.Code, createShardRec.Body.String())
+	if err := svc.UpsertShard(t.Context(), gateway.UpsertShardInput{
+		ID: "mysql-a", Name: "主库 A", Kind: gateway.ShardKindMySQL,
+		Endpoint: "mysql-a.internal:3306", Status: gateway.ShardStatusActive,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	directWriteReq := httptest.NewRequest(http.MethodPost, "/api/admin/shards", bytes.NewBufferString(`{"id":"phantom"}`))
+	directWriteReq.Header.Set("Authorization", "Bearer cluster-token")
+	directWriteRec := httptest.NewRecorder()
+	handler.ServeHTTP(directWriteRec, directWriteReq)
+	if directWriteRec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("direct shard write status = %d body = %s", directWriteRec.Code, directWriteRec.Body.String())
 	}
 
 	createSetReq := httptest.NewRequest(http.MethodPost, "/api/sets", bytes.NewBufferString(`{
@@ -252,6 +249,56 @@ func TestAdminShardsEndpointReturnsLogicalConnectionBudget(t *testing.T) {
 	}
 	if !bytes.Contains(detailRec.Body.Bytes(), []byte(`"set_id":"set-a"`)) {
 		t.Fatalf("set budget missing from detail: %s", detailRec.Body.String())
+	}
+}
+
+func TestAdminShardExpansionWorkflow(t *testing.T) {
+	store := gateway.NewMemoryStore()
+	svc := gateway.NewService(store, nil, gateway.Options{})
+	handler := NewServer(svc, Config{AdminToken: "cluster-token"})
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/admin/shard-expansions", bytes.NewBufferString(`{
+		"idempotency_key":"ops-shard-c",
+		"shard_id":"shard-c",
+		"name":"北京分片 C",
+		"max_sets":32,
+		"redis_db_start":512,
+		"redis_db_limit":768
+	}`))
+	createReq.Header.Set("Authorization", "Bearer cluster-token")
+	createRec := httptest.NewRecorder()
+	handler.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create expansion status = %d body = %s", createRec.Code, createRec.Body.String())
+	}
+	var created struct {
+		Data gateway.ShardExpansion `json:"data"`
+	}
+	if err := json.NewDecoder(createRec.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+	if created.Data.ID == "" || created.Data.Status != gateway.ShardExpansionStatusRequested {
+		t.Fatalf("created expansion = %+v", created.Data)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/admin/shard-expansions", nil)
+	listReq.Header.Set("Authorization", "Bearer cluster-token")
+	listRec := httptest.NewRecorder()
+	handler.ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK || !bytes.Contains(listRec.Body.Bytes(), []byte(`"shard_id":"shard-c"`)) {
+		t.Fatalf("list expansions status = %d body = %s", listRec.Code, listRec.Body.String())
+	}
+
+	infraReq := httptest.NewRequest(http.MethodPost, "/api/admin/shard-expansions/"+created.Data.ID+"/infrastructure", bytes.NewBufferString(`{
+		"mysql_endpoint":"mysql-c.internal:3306",
+		"redis_endpoint":"redis-c.internal:6379",
+		"secret_name":"newapi-shard-c"
+	}`))
+	infraReq.Header.Set("Authorization", "Bearer cluster-token")
+	infraRec := httptest.NewRecorder()
+	handler.ServeHTTP(infraRec, infraReq)
+	if infraRec.Code != http.StatusOK || !bytes.Contains(infraRec.Body.Bytes(), []byte(`"status":"infrastructure_ready"`)) {
+		t.Fatalf("record infrastructure status = %d body = %s", infraRec.Code, infraRec.Body.String())
 	}
 }
 

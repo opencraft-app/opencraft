@@ -142,6 +142,10 @@ func (s *MySQLStore) migrate(ctx context.Context) error {
 			name VARCHAR(255) NOT NULL DEFAULT '',
 			kind VARCHAR(64) NOT NULL DEFAULT 'mysql',
 			endpoint TEXT NOT NULL,
+			redis_endpoint TEXT NOT NULL,
+			secret_name VARCHAR(191) NOT NULL DEFAULT '',
+			redis_db_start BIGINT NOT NULL DEFAULT 0,
+			redis_db_limit BIGINT NOT NULL DEFAULT 0,
 			status VARCHAR(32) NOT NULL DEFAULT 'active',
 			max_connections BIGINT NOT NULL DEFAULT 0,
 			reserved_connections BIGINT NOT NULL DEFAULT 0,
@@ -158,6 +162,40 @@ func (s *MySQLStore) migrate(ctx context.Context) error {
 			created_at DATETIME(6) NOT NULL,
 			updated_at DATETIME(6) NOT NULL,
 			INDEX idx_llmgateway_shards_status (status)
+		)`,
+		`CREATE TABLE IF NOT EXISTS llmgateway_shard_expansions (
+			id VARCHAR(191) PRIMARY KEY,
+			idempotency_key VARCHAR(191) NOT NULL,
+			request_hash CHAR(64) NOT NULL,
+			shard_id VARCHAR(128) NOT NULL,
+			active_shard_id VARCHAR(128) NULL,
+			name VARCHAR(255) NOT NULL,
+			status VARCHAR(48) NOT NULL,
+			retry_status VARCHAR(48) NOT NULL DEFAULT '',
+			failed_step VARCHAR(64) NOT NULL DEFAULT '',
+			last_error TEXT NOT NULL,
+			max_sets BIGINT NOT NULL DEFAULT 0,
+			redis_db_start BIGINT NOT NULL DEFAULT 0,
+			redis_db_limit BIGINT NOT NULL DEFAULT 0,
+			max_connections BIGINT NOT NULL DEFAULT 0,
+			reserved_connections BIGINT NOT NULL DEFAULT 0,
+			admin_sql_max_open_conns BIGINT NOT NULL DEFAULT 0,
+			traffic_sql_max_open_conns BIGINT NOT NULL DEFAULT 0,
+			subscription_write_concurrency BIGINT NOT NULL DEFAULT 0,
+			mysql_endpoint TEXT NOT NULL,
+			redis_endpoint TEXT NOT NULL,
+			secret_name VARCHAR(191) NOT NULL DEFAULT '',
+			terraform_run TEXT NOT NULL,
+			verification_evidence TEXT NOT NULL,
+			fleet_projected_at DATETIME(6) NULL,
+			verified_at DATETIME(6) NULL,
+			version BIGINT NOT NULL DEFAULT 1,
+			created_at DATETIME(6) NOT NULL,
+			updated_at DATETIME(6) NOT NULL,
+			UNIQUE INDEX uk_llmgateway_shard_expansion_idempotency (idempotency_key),
+			UNIQUE INDEX uk_llmgateway_shard_expansion_active_shard (active_shard_id),
+			INDEX idx_llmgateway_shard_expansion_status_updated (status, updated_at),
+			INDEX idx_llmgateway_shard_expansion_shard (shard_id)
 		)`,
 		`CREATE TABLE IF NOT EXISTS llmgateway_set_operation_leases (
 			set_id VARCHAR(128) NOT NULL,
@@ -405,16 +443,24 @@ func (s *MySQLStore) migrate(ctx context.Context) error {
 			external_key_id VARCHAR(128) PRIMARY KEY,
 			external_key VARCHAR(512) NOT NULL DEFAULT '',
 			external_key_hash CHAR(64) NOT NULL,
+			secret_hash CHAR(64) NOT NULL DEFAULT '',
+			key_version TINYINT UNSIGNED NOT NULL DEFAULT 0,
+			route_slot BIGINT UNSIGNED NOT NULL DEFAULT 0,
 			purpose VARCHAR(32) NULL,
 			set_id VARCHAR(128) NOT NULL,
 			user_id VARCHAR(191) NOT NULL,
 			upstream_key TEXT NOT NULL,
 			upstream_key_id BIGINT NOT NULL DEFAULT 0,
+			status VARCHAR(32) NOT NULL DEFAULT 'legacy_disabled',
+			last_error TEXT NULL,
 			created_at DATETIME(6) NOT NULL,
+			updated_at DATETIME(6) NULL,
 			UNIQUE INDEX uk_llmgateway_api_key_hash (external_key_hash),
 			UNIQUE INDEX uk_llmgateway_api_key_user_purpose (user_id, purpose),
 			INDEX idx_llmgateway_api_key_user_id (user_id),
-			INDEX idx_llmgateway_api_key_set_id (set_id)
+			INDEX idx_llmgateway_api_key_set_id (set_id),
+			INDEX idx_llmgateway_api_key_status_updated (status, updated_at),
+			INDEX idx_llmgateway_api_key_route_slot (route_slot, external_key_id)
 		)`,
 		`CREATE TABLE IF NOT EXISTS llmgateway_user_llm_settings (
 			external_user_id VARCHAR(191) PRIMARY KEY,
@@ -898,6 +944,9 @@ func (s *MySQLStore) migrate(ctx context.Context) error {
 	if err := s.migrateShardRuntimeColumns(ctx); err != nil {
 		return err
 	}
+	if err := s.migrateShardExpansionColumns(ctx); err != nil {
+		return err
+	}
 	if err := s.migrateSetEndpointColumns(ctx); err != nil {
 		return err
 	}
@@ -934,6 +983,13 @@ func (s *MySQLStore) migrate(ctx context.Context) error {
 	return nil
 }
 
+func (s *MySQLStore) migrateShardExpansionColumns(ctx context.Context) error {
+	if err := s.ensureMySQLColumn(ctx, "llmgateway_shard_expansions", "active_shard_id", "VARCHAR(128) NULL"); err != nil {
+		return err
+	}
+	return s.ensureMySQLUniqueIndex(ctx, "llmgateway_shard_expansions", "uk_llmgateway_shard_expansion_active_shard", "active_shard_id")
+}
+
 func (s *MySQLStore) migrateAPIKeyRecoveryColumns(ctx context.Context) error {
 	if err := s.ensureMySQLColumn(ctx, "llmgateway_api_key_bindings", "external_key", "VARCHAR(512) NOT NULL DEFAULT ''"); err != nil {
 		return err
@@ -941,7 +997,29 @@ func (s *MySQLStore) migrateAPIKeyRecoveryColumns(ctx context.Context) error {
 	if err := s.ensureMySQLColumn(ctx, "llmgateway_api_key_bindings", "purpose", "VARCHAR(32) NULL"); err != nil {
 		return err
 	}
-	return s.ensureMySQLUniqueIndex(ctx, "llmgateway_api_key_bindings", "uk_llmgateway_api_key_user_purpose", "user_id, purpose")
+	columns := []struct {
+		name       string
+		definition string
+	}{
+		{"secret_hash", "CHAR(64) NOT NULL DEFAULT ''"},
+		{"key_version", "TINYINT UNSIGNED NOT NULL DEFAULT 0"},
+		{"route_slot", "BIGINT UNSIGNED NOT NULL DEFAULT 0"},
+		{"status", "VARCHAR(32) NOT NULL DEFAULT 'legacy_disabled'"},
+		{"last_error", "TEXT NULL"},
+		{"updated_at", "DATETIME(6) NULL"},
+	}
+	for _, column := range columns {
+		if err := s.ensureMySQLColumn(ctx, "llmgateway_api_key_bindings", column.name, column.definition); err != nil {
+			return err
+		}
+	}
+	if err := s.ensureMySQLUniqueIndex(ctx, "llmgateway_api_key_bindings", "uk_llmgateway_api_key_user_purpose", "user_id, purpose"); err != nil {
+		return err
+	}
+	if err := s.ensureMySQLIndex(ctx, "llmgateway_api_key_bindings", "idx_llmgateway_api_key_status_updated", "status, updated_at"); err != nil {
+		return err
+	}
+	return s.ensureMySQLIndex(ctx, "llmgateway_api_key_bindings", "idx_llmgateway_api_key_route_slot", "route_slot, external_key_id")
 }
 
 func (s *MySQLStore) migrateTenantBackendSemantics(ctx context.Context) error {
@@ -1011,6 +1089,10 @@ func (s *MySQLStore) migrateShardRuntimeColumns(ctx context.Context) error {
 		{name: "traffic_sql_max_idle_conns", definition: "BIGINT NOT NULL DEFAULT 0"},
 		{name: "traffic_sql_max_lifetime_seconds", definition: "BIGINT NOT NULL DEFAULT 0"},
 		{name: "subscription_write_concurrency", definition: "BIGINT NOT NULL DEFAULT 0"},
+		{name: "redis_endpoint", definition: "TEXT NULL"},
+		{name: "secret_name", definition: "VARCHAR(191) NOT NULL DEFAULT ''"},
+		{name: "redis_db_start", definition: "BIGINT NOT NULL DEFAULT 0"},
+		{name: "redis_db_limit", definition: "BIGINT NOT NULL DEFAULT 0"},
 	}
 	for _, column := range columns {
 		if err := s.ensureMySQLColumn(ctx, "llmgateway_shards", column.name, column.definition); err != nil {
@@ -1786,16 +1868,21 @@ func (s *MySQLStore) SaveShard(ctx context.Context, shard Shard) error {
 	shard.UpdatedAt = now
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO llmgateway_shards (
-			id, name, kind, endpoint, status, max_connections, reserved_connections,
+			id, name, kind, endpoint, redis_endpoint, secret_name, redis_db_start, redis_db_limit,
+			status, max_connections, reserved_connections,
 			warn_ratio, critical_ratio, max_sets,
 			admin_sql_max_open_conns, admin_sql_max_idle_conns, admin_sql_max_lifetime_seconds,
 			traffic_sql_max_open_conns, traffic_sql_max_idle_conns, traffic_sql_max_lifetime_seconds,
 			subscription_write_concurrency, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
 			name = VALUES(name),
 			kind = VALUES(kind),
 			endpoint = VALUES(endpoint),
+			redis_endpoint = VALUES(redis_endpoint),
+			secret_name = VALUES(secret_name),
+			redis_db_start = VALUES(redis_db_start),
+			redis_db_limit = VALUES(redis_db_limit),
 			status = VALUES(status),
 			max_connections = VALUES(max_connections),
 			reserved_connections = VALUES(reserved_connections),
@@ -1810,7 +1897,8 @@ func (s *MySQLStore) SaveShard(ctx context.Context, shard Shard) error {
 			traffic_sql_max_lifetime_seconds = VALUES(traffic_sql_max_lifetime_seconds),
 			subscription_write_concurrency = VALUES(subscription_write_concurrency),
 			updated_at = VALUES(updated_at)
-	`, shard.ID, shard.Name, shard.Kind, shard.Endpoint, shard.Status, shard.MaxConnections, shard.ReservedConnections,
+	`, shard.ID, shard.Name, shard.Kind, shard.Endpoint, shard.RedisEndpoint, shard.SecretName, shard.RedisDBStart, shard.RedisDBLimit,
+		shard.Status, shard.MaxConnections, shard.ReservedConnections,
 		shard.WarnRatio, shard.CriticalRatio, shard.MaxSets,
 		shard.AdminSQLMaxOpenConns, shard.AdminSQLMaxIdleConns, shard.AdminSQLMaxLifetimeSeconds,
 		shard.TrafficSQLMaxOpenConns, shard.TrafficSQLMaxIdleConns, shard.TrafficSQLMaxLifetimeSeconds,
@@ -1820,7 +1908,8 @@ func (s *MySQLStore) SaveShard(ctx context.Context, shard Shard) error {
 
 func (s *MySQLStore) GetShard(ctx context.Context, id string) (Shard, bool, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, name, kind, endpoint, status, max_connections, reserved_connections,
+		SELECT id, name, kind, endpoint, COALESCE(redis_endpoint, ''), secret_name, redis_db_start, redis_db_limit,
+			status, max_connections, reserved_connections,
 			warn_ratio, critical_ratio, max_sets,
 			admin_sql_max_open_conns, admin_sql_max_idle_conns, admin_sql_max_lifetime_seconds,
 			traffic_sql_max_open_conns, traffic_sql_max_idle_conns, traffic_sql_max_lifetime_seconds,
@@ -1839,7 +1928,8 @@ func (s *MySQLStore) GetShard(ctx context.Context, id string) (Shard, bool, erro
 
 func (s *MySQLStore) ListShards(ctx context.Context) ([]Shard, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, kind, endpoint, status, max_connections, reserved_connections,
+		SELECT id, name, kind, endpoint, COALESCE(redis_endpoint, ''), secret_name, redis_db_start, redis_db_limit,
+			status, max_connections, reserved_connections,
 			warn_ratio, critical_ratio, max_sets,
 			admin_sql_max_open_conns, admin_sql_max_idle_conns, admin_sql_max_lifetime_seconds,
 			traffic_sql_max_open_conns, traffic_sql_max_idle_conns, traffic_sql_max_lifetime_seconds,
@@ -2905,8 +2995,22 @@ func (s *MySQLStore) SaveAPIKeyBinding(ctx context.Context, binding APIKeyBindin
 	if binding.ExternalKeyID == "" {
 		binding.ExternalKeyID = "key-" + hashExternalKey(binding.ExternalKey)[:24]
 	}
+	lookup := parseTrafficRouteLookup(binding.ExternalKey)
+	if lookup.Valid {
+		binding.ExternalKeyID = lookup.ExternalKeyID
+		binding.ExternalKeyHash = lookup.ExternalKeyHash
+		binding.SecretHash = lookup.SecretHash
+		binding.KeyVersion = lookup.Version
+		binding.RouteSlot = lookup.RouteSlot
+	}
 	if binding.CreatedAt.IsZero() {
 		binding.CreatedAt = time.Now().UTC()
+	}
+	if binding.UpdatedAt.IsZero() {
+		binding.UpdatedAt = binding.CreatedAt
+	}
+	if binding.Status == "" {
+		binding.Status = APIKeyStatusActive
 	}
 	hash := hashExternalKey(binding.ExternalKey)
 	binding.ExternalKeyHash = hash
@@ -2921,19 +3025,28 @@ func (s *MySQLStore) SaveAPIKeyBinding(ctx context.Context, binding APIKeyBindin
 		}
 		_, err = tx.ExecContext(ctx, `
 		INSERT INTO llmgateway_api_key_bindings (
-			external_key_id, external_key, external_key_hash, purpose, set_id, user_id, upstream_key, upstream_key_id, created_at
-		) VALUES (?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?)
+			external_key_id, external_key, external_key_hash, secret_hash, key_version, route_slot,
+			purpose, set_id, user_id, upstream_key, upstream_key_id, status, last_error, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?)
 		ON DUPLICATE KEY UPDATE
 			external_key_id = VALUES(external_key_id),
 			external_key = VALUES(external_key),
 			external_key_hash = VALUES(external_key_hash),
+			secret_hash = VALUES(secret_hash),
+			key_version = VALUES(key_version),
+			route_slot = VALUES(route_slot),
 			purpose = VALUES(purpose),
 			set_id = VALUES(set_id),
 			user_id = VALUES(user_id),
 			upstream_key = VALUES(upstream_key),
 			upstream_key_id = VALUES(upstream_key_id),
-			created_at = VALUES(created_at)
-	`, binding.ExternalKeyID, binding.ExternalKey, hash, binding.Purpose, binding.SetID, binding.UserID, binding.UpstreamKey, binding.UpstreamKeyID, binding.CreatedAt)
+			status = VALUES(status),
+			last_error = VALUES(last_error),
+			created_at = VALUES(created_at),
+			updated_at = VALUES(updated_at)
+	`, binding.ExternalKeyID, binding.ExternalKey, hash, binding.SecretHash, binding.KeyVersion, binding.RouteSlot,
+			binding.Purpose, binding.SetID, binding.UserID, binding.UpstreamKey, binding.UpstreamKeyID,
+			binding.Status, binding.LastError, binding.CreatedAt, binding.UpdatedAt)
 		if err != nil {
 			return err
 		}
@@ -2941,12 +3054,108 @@ func (s *MySQLStore) SaveAPIKeyBinding(ctx context.Context, binding APIKeyBindin
 	})
 }
 
+func (s *MySQLStore) ReserveAPIKeyBinding(ctx context.Context, binding APIKeyBinding) error {
+	var err error
+	binding, err = prepareAPIKeyReservation(binding)
+	if err != nil {
+		return err
+	}
+	if binding.CreatedAt.IsZero() {
+		binding.CreatedAt = time.Now().UTC()
+	}
+	if binding.UpdatedAt.IsZero() {
+		binding.UpdatedAt = binding.CreatedAt
+	}
+	return retryMySQLTransientLock(ctx, func() error {
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		if err := rejectDeletingTenantWriteTx(ctx, tx, binding.UserID); err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO llmgateway_api_key_bindings (
+				external_key_id, external_key, external_key_hash, secret_hash, key_version, route_slot,
+				purpose, set_id, user_id, upstream_key, upstream_key_id, status, last_error, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?, '', 0, ?, NULL, ?, ?)
+		`, binding.ExternalKeyID, binding.ExternalKey, binding.ExternalKeyHash, binding.SecretHash, binding.KeyVersion, binding.RouteSlot,
+			binding.Purpose, binding.SetID, binding.UserID, APIKeyStatusReserved, binding.CreatedAt, binding.UpdatedAt)
+		if err != nil {
+			return classifyAPIKeyReservationError(err)
+		}
+		return tx.Commit()
+	})
+}
+
+func (s *MySQLStore) TransitionAPIKeyBinding(ctx context.Context, keyID, expectedStatus, nextStatus, upstreamKey string, upstreamKeyID int, lastError string, updatedAt time.Time) (APIKeyBinding, error) {
+	if updatedAt.IsZero() {
+		updatedAt = time.Now().UTC()
+	}
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE llmgateway_api_key_bindings
+		SET status = ?,
+			upstream_key = CASE WHEN ? = '' THEN upstream_key ELSE ? END,
+			upstream_key_id = CASE WHEN ? <= 0 THEN upstream_key_id ELSE ? END,
+			last_error = NULLIF(?, ''),
+			updated_at = ?
+		WHERE external_key_id = ? AND status = ?
+	`, nextStatus, upstreamKey, upstreamKey, upstreamKeyID, upstreamKeyID, lastError, updatedAt, keyID, expectedStatus)
+	if err != nil {
+		return APIKeyBinding{}, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return APIKeyBinding{}, err
+	}
+	if affected != 1 {
+		return APIKeyBinding{}, fmt.Errorf("%w: key=%s expected=%s", ErrAPIKeyStateConflict, keyID, expectedStatus)
+	}
+	binding, ok, err := s.GetAPIKeyBindingByExternalKeyID(ctx, keyID)
+	if err != nil {
+		return APIKeyBinding{}, err
+	}
+	if !ok {
+		return APIKeyBinding{}, fmt.Errorf("external api key %q disappeared after transition", keyID)
+	}
+	return binding, nil
+}
+
+func (s *MySQLStore) ListAPIKeyBindingsByStatus(ctx context.Context, status string, limit int) ([]APIKeyBinding, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 100
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT external_key_id, external_key, external_key_hash, secret_hash, key_version, route_slot,
+			purpose, set_id, user_id, upstream_key, upstream_key_id, status, last_error, created_at, updated_at
+		FROM llmgateway_api_key_bindings
+		WHERE status = ?
+		ORDER BY updated_at, external_key_id
+		LIMIT ?
+	`, status, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	bindings := make([]APIKeyBinding, 0)
+	for rows.Next() {
+		binding, err := scanAPIKeyBinding(rows)
+		if err != nil {
+			return nil, err
+		}
+		bindings = append(bindings, binding)
+	}
+	return bindings, rows.Err()
+}
+
 func (s *MySQLStore) GetAPIKeyBindingByExternalKey(ctx context.Context, externalKey string) (APIKeyBinding, bool, error) {
 	hash := hashExternalKey(externalKey)
 	row := s.db.QueryRowContext(ctx, `
-		SELECT external_key_id, external_key, external_key_hash, purpose, set_id, user_id, upstream_key, upstream_key_id, created_at
-		FROM llmgateway_api_key_bindings WHERE external_key_hash = ?
-	`, hash)
+		SELECT external_key_id, external_key, external_key_hash, secret_hash, key_version, route_slot,
+			purpose, set_id, user_id, upstream_key, upstream_key_id, status, last_error, created_at, updated_at
+		FROM llmgateway_api_key_bindings WHERE external_key_hash = ? AND status = ?
+	`, hash, APIKeyStatusActive)
 	binding, err := scanAPIKeyBinding(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return APIKeyBinding{}, false, nil
@@ -2961,7 +3170,8 @@ func (s *MySQLStore) GetAPIKeyBindingByExternalKey(ctx context.Context, external
 
 func (s *MySQLStore) GetAPIKeyBindingByExternalKeyID(ctx context.Context, keyID string) (APIKeyBinding, bool, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT external_key_id, external_key, external_key_hash, purpose, set_id, user_id, upstream_key, upstream_key_id, created_at
+		SELECT external_key_id, external_key, external_key_hash, secret_hash, key_version, route_slot,
+			purpose, set_id, user_id, upstream_key, upstream_key_id, status, last_error, created_at, updated_at
 		FROM llmgateway_api_key_bindings WHERE external_key_id = ?
 	`, keyID)
 	binding, err := scanAPIKeyBinding(row)
@@ -4006,6 +4216,10 @@ func scanShard(row scanner) (Shard, error) {
 		&shard.Name,
 		&shard.Kind,
 		&shard.Endpoint,
+		&shard.RedisEndpoint,
+		&shard.SecretName,
+		&shard.RedisDBStart,
+		&shard.RedisDBLimit,
 		&shard.Status,
 		&shard.MaxConnections,
 		&shard.ReservedConnections,
@@ -4139,10 +4353,36 @@ func scanUserBinding(row scanner) (UserBinding, error) {
 func scanAPIKeyBinding(row scanner) (APIKeyBinding, error) {
 	var binding APIKeyBinding
 	var purpose sql.NullString
-	err := row.Scan(&binding.ExternalKeyID, &binding.ExternalKey, &binding.ExternalKeyHash, &purpose, &binding.SetID, &binding.UserID, &binding.UpstreamKey, &binding.UpstreamKeyID, &binding.CreatedAt)
+	var lastError sql.NullString
+	var updatedAt sql.NullTime
+	var routeSlot uint64
+	err := row.Scan(
+		&binding.ExternalKeyID,
+		&binding.ExternalKey,
+		&binding.ExternalKeyHash,
+		&binding.SecretHash,
+		&binding.KeyVersion,
+		&routeSlot,
+		&purpose,
+		&binding.SetID,
+		&binding.UserID,
+		&binding.UpstreamKey,
+		&binding.UpstreamKeyID,
+		&binding.Status,
+		&lastError,
+		&binding.CreatedAt,
+		&updatedAt,
+	)
 	if purpose.Valid {
 		binding.Purpose = purpose.String
 	}
+	if lastError.Valid {
+		binding.LastError = lastError.String
+	}
+	if updatedAt.Valid {
+		binding.UpdatedAt = updatedAt.Time.UTC()
+	}
+	binding.RouteSlot = uint32(routeSlot)
 	return binding, err
 }
 
@@ -4778,4 +5018,19 @@ func isMySQLDuplicateKeyError(err error) bool {
 	}
 	message := strings.ToLower(err.Error())
 	return strings.Contains(message, "error 1062") || strings.Contains(message, "duplicate entry")
+}
+
+func classifyAPIKeyReservationError(err error) error {
+	if !isMySQLDuplicateKeyError(err) {
+		return err
+	}
+	message := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(message, "uk_llmgateway_api_key_user_purpose"):
+		return fmt.Errorf("%w: %v", ErrAPIKeyPurposeConflict, err)
+	case strings.Contains(message, "primary"), strings.Contains(message, "uk_llmgateway_api_key_hash"):
+		return fmt.Errorf("%w: %v", ErrAPIKeyRandomCollision, err)
+	default:
+		return fmt.Errorf("external api key reservation duplicate: %w", err)
+	}
 }

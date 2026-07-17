@@ -117,6 +117,8 @@ func (s *Server) controlRoutes(blockTraffic bool) {
 	s.mux.HandleFunc("/api/admin/jobs", s.requireAdmin(s.adminJobs))
 	s.mux.HandleFunc("/api/admin/jobs/", s.requireAdmin(s.adminJobAction))
 	s.mux.HandleFunc("/api/admin/byok-sync/retry", s.requireAdmin(s.adminRetryBYOKSync))
+	s.mux.HandleFunc("/api/admin/shard-expansions", s.requireAdmin(s.adminShardExpansions))
+	s.mux.HandleFunc("/api/admin/shard-expansions/", s.requireAdmin(s.adminShardExpansionAction))
 	s.mux.HandleFunc("/api/admin/shards", s.requireAdmin(s.adminShards))
 	s.mux.HandleFunc("/api/admin/shards/", s.requireAdmin(s.adminShardAction))
 	s.mux.HandleFunc("/api/admin/set-reconcile-facts", s.requireAdmin(s.adminSetReconcileFacts))
@@ -464,18 +466,102 @@ func (s *Server) adminShards(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, response{Success: true, Data: shards})
 	case http.MethodPost:
-		var req gateway.UpsertShardInput
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusMethodNotAllowed, "Shard 由 LLMFleet 投影，请通过扩容流程创建")
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func (s *Server) adminShardExpansions(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		expansions, err := s.svc.ListShardExpansions(r.Context(), gateway.ShardExpansionListOptions{Limit: queryInt(r, "limit", 100)})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, response{Success: true, Data: expansions})
+	case http.MethodPost:
+		var input gateway.CreateShardExpansionInput
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid json")
 			return
 		}
-		if err := s.svc.UpsertShard(r.Context(), req); err != nil {
+		expansion, err := s.svc.CreateShardExpansion(r.Context(), input)
+		if err != nil {
+			if errors.Is(err, gateway.ErrShardExpansionIdempotencyConflict) {
+				writeError(w, http.StatusConflict, err.Error())
+				return
+			}
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, response{Success: true})
+		writeJSON(w, http.StatusCreated, response{Success: true, Data: expansion})
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func (s *Server) adminShardExpansionAction(w http.ResponseWriter, r *http.Request) {
+	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/admin/shard-expansions/"), "/")
+	parts := strings.Split(path, "/")
+	if len(parts) == 0 || strings.TrimSpace(parts[0]) == "" {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	id, err := url.PathUnescape(parts[0])
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid expansion id")
+		return
+	}
+	switch {
+	case len(parts) == 1 && r.Method == http.MethodGet:
+		expansion, err := s.svc.GetShardExpansion(r.Context(), id)
+		if err != nil {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, response{Success: true, Data: expansion})
+	case len(parts) == 2 && parts[1] == "infrastructure" && r.Method == http.MethodPost:
+		var input gateway.RecordShardExpansionInfrastructureInput
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid json")
+			return
+		}
+		expansion, err := s.svc.RecordShardExpansionInfrastructure(r.Context(), id, input)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, response{Success: true, Data: expansion})
+	case len(parts) == 2 && parts[1] == "verification" && r.Method == http.MethodPost:
+		var input gateway.RecordShardExpansionVerificationInput
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid json")
+			return
+		}
+		expansion, err := s.svc.RecordShardExpansionVerification(r.Context(), id, input)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, response{Success: true, Data: expansion})
+	case len(parts) == 2 && parts[1] == "retry" && r.Method == http.MethodPost:
+		expansion, err := s.svc.RetryShardExpansion(r.Context(), id)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, response{Success: true, Data: expansion})
+	case len(parts) == 2 && parts[1] == "cancel" && r.Method == http.MethodPost:
+		expansion, err := s.svc.CancelShardExpansion(r.Context(), id)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, response{Success: true, Data: expansion})
+	default:
+		writeError(w, http.StatusNotFound, "not found")
 	}
 }
 
@@ -2022,7 +2108,7 @@ func (s *Server) internalAction(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(path, "set-manager/set-upgrade-runs"):
 		s.internalSetUpgradeRuns(w, r, strings.TrimPrefix(path, "set-manager/set-upgrade-runs"))
 	case path == "set-manager/shards":
-		s.adminShards(w, r)
+		s.internalSetManagerShard(w, r)
 	case path == "set-manager/set-provision-requests":
 		s.adminSetProvisionRequests(w, r)
 	case strings.HasPrefix(path, "set-manager/set-provision-requests/"):
@@ -2062,6 +2148,23 @@ func (s *Server) internalAction(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeOpenAIError(w, http.StatusNotFound, "not_found_error", "not_found", "not found")
 	}
+}
+
+func (s *Server) internalSetManagerShard(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var input gateway.UpsertShardInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if err := s.svc.UpsertShard(r.Context(), input); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, response{Success: true})
 }
 
 func (s *Server) internalSetUpgradeRuns(w http.ResponseWriter, r *http.Request, suffix string) {

@@ -3,8 +3,10 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"os"
 	"regexp"
 	"strings"
@@ -623,6 +625,8 @@ func TestMySQLFleetRuntimeFactsAndShardProjectionRoundTrip(t *testing.T) {
 	defer func() { _ = store.Close() }()
 	shard := Shard{
 		ID: "shard-a", Name: "Shard A", Kind: ShardKindMySQL, Status: ShardStatusActive, MaxSets: 32,
+		Endpoint: "mysql-a.internal:3306", RedisEndpoint: "redis-a.internal:6379", SecretName: "newapi-shard-a",
+		RedisDBStart: 256, RedisDBLimit: 512,
 		AdminSQLMaxOpenConns: 32, AdminSQLMaxIdleConns: 2, AdminSQLMaxLifetimeSeconds: 60,
 		TrafficSQLMaxOpenConns: 24, TrafficSQLMaxIdleConns: 2, TrafficSQLMaxLifetimeSeconds: 90,
 		SubscriptionWriteConcurrency: 8,
@@ -634,8 +638,42 @@ func TestMySQLFleetRuntimeFactsAndShardProjectionRoundTrip(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("get shard ok=%v err=%v", ok, err)
 	}
-	if gotShard.MaxSets != 32 || gotShard.AdminSQLMaxOpenConns != 32 || gotShard.TrafficSQLMaxOpenConns != 24 || gotShard.SubscriptionWriteConcurrency != 8 {
+	if gotShard.MaxSets != 32 || gotShard.AdminSQLMaxOpenConns != 32 || gotShard.TrafficSQLMaxOpenConns != 24 || gotShard.SubscriptionWriteConcurrency != 8 ||
+		gotShard.RedisEndpoint != "redis-a.internal:6379" || gotShard.RedisDBStart != 256 || gotShard.RedisDBLimit != 512 {
 		t.Fatalf("shard projection = %+v", gotShard)
+	}
+
+	expansion := ShardExpansion{
+		ID: "expand-c", IdempotencyKey: "ops-expand-c", RequestHash: strings.Repeat("b", 64),
+		ShardID: "shard-c", Name: "Shard C", Status: ShardExpansionStatusRequested,
+		MaxSets: 32, RedisDBStart: 512, RedisDBLimit: 768, Version: 1,
+		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}
+	createdExpansion, created, err := store.CreateShardExpansion(t.Context(), expansion)
+	if err != nil || !created {
+		t.Fatalf("create expansion = %+v created=%t err=%v", createdExpansion, created, err)
+	}
+	replayedExpansion, created, err := store.CreateShardExpansion(t.Context(), expansion)
+	if err != nil || created || replayedExpansion.ID != expansion.ID {
+		t.Fatalf("replay expansion = %+v created=%t err=%v", replayedExpansion, created, err)
+	}
+	expansion.Status = ShardExpansionStatusWaitingInfrastructure
+	updatedExpansion, updated, err := store.UpdateShardExpansion(t.Context(), expansion, 1)
+	if err != nil || !updated || updatedExpansion.Version != 2 {
+		t.Fatalf("update expansion = %+v updated=%t err=%v", updatedExpansion, updated, err)
+	}
+	concurrent := expansion
+	concurrent.ID = "expand-c-duplicate"
+	concurrent.IdempotencyKey = "ops-expand-c-duplicate"
+	if _, _, err := store.CreateShardExpansion(t.Context(), concurrent); !errors.Is(err, ErrShardExpansionAlreadyActive) {
+		t.Fatalf("concurrent expansion error = %v", err)
+	}
+	updatedExpansion.Status = ShardExpansionStatusCancelled
+	if _, updated, err := store.UpdateShardExpansion(t.Context(), updatedExpansion, 2); err != nil || !updated {
+		t.Fatalf("cancel expansion updated=%t err=%v", updated, err)
+	}
+	if _, created, err := store.CreateShardExpansion(t.Context(), concurrent); err != nil || !created {
+		t.Fatalf("replacement expansion created=%t err=%v", created, err)
 	}
 
 	fact := SetReconcileFact{
@@ -758,28 +796,41 @@ func TestMySQLCascadeSetDecommissionPurgesTenantStateBeforeRuntimeCleanup(t *tes
 	}
 }
 
-func TestMySQLAPIKeyBindingPreservesRecoverableExternalKey(t *testing.T) {
+func TestMySQLAPIKeyReservationOmitsPlaintextAndPersistsRecoverableRoute(t *testing.T) {
 	store := newIsolatedMySQLStore(t)
 	defer func() { _ = store.Close() }()
 	ctx := t.Context()
 	if err := store.SaveSet(ctx, Set{ID: "set-a", BaseURL: "http://set-a", TrafficBaseURL: "http://set-a", Status: SetStatusActive}); err != nil {
 		t.Fatal(err)
 	}
-	binding := APIKeyBinding{
-		ExternalKey: "sk-lgw-v1-ks-001.key-probe.secret", ExternalKeyID: "key-probe",
-		Purpose: APIKeyPurposeTrafficProbe, SetID: "set-a", UserID: "user-1",
-		UpstreamKey: "sk-upstream", UpstreamKeyID: 7,
+	material, err := generateExternalKeyV2(bytes.NewReader(bytes.Repeat([]byte{17}, externalKeyRandomBytes)))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := store.SaveAPIKeyBinding(ctx, binding); err != nil {
+	binding := APIKeyBinding{
+		ExternalKey: material.ExternalKey, ExternalKeyHash: material.ExternalKeyHash, ExternalKeyID: material.ExternalKeyID,
+		SecretHash: material.SecretHash, KeyVersion: material.Version, RouteSlot: material.RouteSlot,
+		Purpose: APIKeyPurposeTrafficProbe, SetID: "set-a", UserID: "user-1",
+	}
+	if err := store.ReserveAPIKeyBinding(ctx, binding); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.TransitionAPIKeyBinding(ctx, binding.ExternalKeyID, APIKeyStatusReserved, APIKeyStatusUpstreamReady, "sk-upstream", 7, "", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.TransitionAPIKeyBinding(ctx, binding.ExternalKeyID, APIKeyStatusUpstreamReady, APIKeyStatusRoutePending, "", 0, "", time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
 
-	restored, ok, err := store.GetAPIKeyBindingByExternalKeyID(ctx, binding.ExternalKeyID)
+	restored, ok, err := store.GetAPIKeyBindingByExternalKeyID(ctx, material.ExternalKeyID)
 	if err != nil || !ok {
 		t.Fatalf("restored binding: ok=%v err=%v", ok, err)
 	}
-	if restored.ExternalKey != binding.ExternalKey || restored.ExternalKeyHash != hashExternalKey(binding.ExternalKey) {
-		t.Fatalf("recoverable external key was not preserved: %+v", restored)
+	if restored.ExternalKey != "" {
+		t.Fatalf("external key plaintext was persisted: %q", restored.ExternalKey)
+	}
+	if restored.ExternalKeyHash != material.ExternalKeyHash || restored.SecretHash != material.SecretHash {
+		t.Fatalf("external key route hashes are wrong: %+v", restored)
 	}
 	if restored.Purpose != APIKeyPurposeTrafficProbe {
 		t.Fatalf("purpose = %q", restored.Purpose)
@@ -789,7 +840,7 @@ func TestMySQLAPIKeyBindingPreservesRecoverableExternalKey(t *testing.T) {
 	if err := svc.refreshSetTrafficRoutes(ctx, "set-a"); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := cache.GetRoute(ctx, parseTrafficRouteLookup(binding.ExternalKey)); err != nil || !ok {
+	if _, ok, err := cache.GetRoute(ctx, parseTrafficRouteLookup(material.ExternalKey)); err != nil || !ok {
 		t.Fatalf("rebuilt route from recovered key: ok=%v err=%v", ok, err)
 	}
 }

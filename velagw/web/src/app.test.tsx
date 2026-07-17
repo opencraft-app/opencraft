@@ -246,7 +246,7 @@ describe("ShardManagementPage", () => {
 
     expect(html).toContain("北京数据分片 A")
     expect(html).toContain("暂无服务集群使用这个数据分片")
-    expect(html).toContain("高级配置")
+		expect(html).toContain("申请扩容")
     expect(html).not.toContain("数据分片总览")
   })
 
@@ -287,6 +287,40 @@ describe("ShardManagementPage", () => {
     expect(html).toContain("连接数据待刷新")
     expect(html).not.toContain("0% 已用")
   })
+
+	it("presents read-only MySQL and Redis facts plus the expansion playbook", () => {
+		const queryClient = new QueryClient()
+		queryClient.setQueryData(["shards"], [{
+			shard: {
+				id: "shard-a", name: "北京分片 A", kind: "mysql", status: "active",
+				endpoint: "mysql-a.internal:3306", redis_endpoint: "redis-a.internal:6379",
+				redis_db_start: 0, redis_db_limit: 256,
+			},
+			sets: [{ set_id: "set-a", name: "Set A", status: "active", setup: true, newapi_replicas: 3, sql_max_open_conns: 32, sql_max_idle_conns: 2, logical_connections: 96, database_name: "newapi_set_a", redis_db: "7" }],
+			allocatable_connections: 1000, logical_connections: 96, remaining_connections: 904,
+			utilization: 0.096, capacity_status: "ok", redis_db_allocated: 1,
+			redis_db_available: 255, redis_db_utilization: 1 / 256,
+		}])
+		queryClient.setQueryData(["shard-expansions"], [{
+			id: "expand-1", idempotency_key: "ops-shard-b", shard_id: "shard-b", name: "北京分片 B",
+			status: "waiting_infrastructure", max_sets: 32, redis_db_start: 256, redis_db_limit: 512,
+			version: 2, created_at: "2026-07-17T00:00:00Z", updated_at: "2026-07-17T00:00:01Z",
+		}])
+		const api = new LLMGatewayAPI((async () => new Response(JSON.stringify({ success: true, data: [] }))) as typeof fetch)
+
+		const html = renderToStaticMarkup(
+			<QueryClientProvider client={queryClient}>
+				<ShardManagementPage api={api} />
+			</QueryClientProvider>,
+		)
+
+		expect(html).toContain("申请扩容")
+		expect(html).toContain("准备云资源")
+		expect(html).toContain("redis-a.internal:6379")
+		expect(html).toContain("newapi_set_a")
+		expect(html).toContain("Redis DB")
+		expect(html).not.toContain("登记数据分片")
+	})
 })
 
 describe("console routing", () => {

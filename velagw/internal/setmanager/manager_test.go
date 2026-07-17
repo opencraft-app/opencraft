@@ -1146,13 +1146,20 @@ func TestSyncFleetShardsProjectsCapacityAndEffectivePool(t *testing.T) {
 	fleet.Spec.NewAPI.DatabasePool.Admin = LLMFleetDatabasePool{MaxOpenConns: 32, MaxIdleConns: 2, MaxLifetimeSeconds: 60}
 	fleet.Spec.NewAPI.DatabasePool.Traffic = LLMFleetDatabasePool{MaxOpenConns: 24, MaxIdleConns: 2, MaxLifetimeSeconds: 90}
 	fleet.Spec.NewAPI.SubscriptionWriteConcurrency = 8
-	fleet.Spec.Shards = []LLMFleetShard{{Name: "shard-a", MySQLHost: "mysql.internal", MySQLPort: "3306", MaxSets: 16}}
+	fleet.Spec.Shards = []LLMFleetShard{{
+		Name: "shard-a", MySQLHost: "mysql.internal", MySQLPort: "3306",
+		RedisHost: "redis.internal", RedisPort: "6379", SecretName: "newapi-shard-a",
+		MaxSets: 16, RedisDBStart: 256, RedisDBLimit: 512,
+	}}
 
 	if err := syncFleetShards(t.Context(), ControlClient{BaseURL: server.URL, HTTPClient: server.Client()}, fleet); err != nil {
 		t.Fatal(err)
 	}
 	if got.ID != "shard-a" || got.MaxSets != 16 || got.Endpoint != "mysql.internal:3306" {
 		t.Fatalf("shard projection = %+v", got)
+	}
+	if got.RedisEndpoint != "redis.internal:6379" || got.SecretName != "newapi-shard-a" || got.RedisDBStart != 256 || got.RedisDBLimit != 512 {
+		t.Fatalf("redis projection = %+v", got)
 	}
 	if got.AdminSQLMaxOpenConns != 32 || got.TrafficSQLMaxOpenConns != 24 || got.SubscriptionWriteConcurrency != 8 {
 		t.Fatalf("runtime projection = %+v", got)

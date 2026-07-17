@@ -46,8 +46,9 @@ func TestTrafficServerRoutesKnownKeysAndRejectsUnknownKeys(t *testing.T) {
 	if err := svc.RegisterSet(t.Context(), gateway.RegisterSetInput{ID: "set-a", BaseURL: newUpstream.URL, Status: gateway.SetStatusActive}); err != nil {
 		t.Fatal(err)
 	}
+	externalKey := externalKeyForHTTPTest(2)
 	if err := store.SaveAPIKeyBinding(t.Context(), gateway.APIKeyBinding{
-		ExternalKey:   "sk-new",
+		ExternalKey:   externalKey,
 		ExternalKeyID: "key-new",
 		SetID:         "set-a",
 		UserID:        "user-new",
@@ -66,7 +67,7 @@ func TestTrafficServerRoutesKnownKeysAndRejectsUnknownKeys(t *testing.T) {
 	}
 
 	newReq := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"x"}`))
-	newReq.Header.Set("Authorization", "Bearer sk-new")
+	newReq.Header.Set("Authorization", "Bearer "+externalKey)
 	newRec := httptest.NewRecorder()
 	handler.ServeHTTP(newRec, newReq)
 	if newRec.Code != http.StatusOK || newRec.Body.String() != "new" || newRec.Header().Get("X-Backend") != "new" {

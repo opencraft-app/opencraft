@@ -197,12 +197,12 @@ func TestDefaultTrafficProbeBaseURLMatchesRuntimeTopology(t *testing.T) {
 }
 
 func TestWorkerPoolRouteCacheRequirementIncludesEveryTrafficRouteWriter(t *testing.T) {
-	for _, pool := range []string{"admin", "byok", "maintenance"} {
+	for _, pool := range []string{"admin", "byok", "core", "maintenance"} {
 		if !workerPoolNeedsKeyRouteCache(pool) {
 			t.Fatalf("worker pool %q must initialize the shared route cache", pool)
 		}
 	}
-	for _, pool := range []string{"core", "observer"} {
+	for _, pool := range []string{"observer"} {
 		if workerPoolNeedsKeyRouteCache(pool) {
 			t.Fatalf("worker pool %q does not write traffic routes", pool)
 		}

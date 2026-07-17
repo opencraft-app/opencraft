@@ -3,6 +3,8 @@ package gateway
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/json"
 	"errors"
 	"io"
@@ -127,12 +129,10 @@ func TestProxyRewritesExternalKeyAndRoutesToBoundSet(t *testing.T) {
 	if err := svc.RegisterSet(t.Context(), RegisterSetInput{ID: "set-a", BaseURL: upstream.URL, Status: SetStatusActive}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveAPIKeyBinding(t.Context(), APIKeyBinding{ExternalKey: "llmgw-ext", SetID: "set-a", UpstreamKey: "sk-upstream"}); err != nil {
-		t.Fatal(err)
-	}
+	externalKey, _ := saveTestAPIKey(t, store, "rewrite", APIKeyBinding{SetID: "set-a", UpstreamKey: "sk-upstream"})
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-	req.Header.Set("Authorization", "Bearer llmgw-ext")
+	req.Header.Set("Authorization", "Bearer "+externalKey)
 	rec := httptest.NewRecorder()
 
 	svc.ProxyHTTP(rec, req)
@@ -162,13 +162,11 @@ func TestProxyCancelsUpstreamWhenClientContextIsCanceled(t *testing.T) {
 	if err := svc.RegisterSet(t.Context(), RegisterSetInput{ID: "set-a", BaseURL: "http://upstream", Status: SetStatusActive}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveAPIKeyBinding(t.Context(), APIKeyBinding{ExternalKey: "llmgw-ext", SetID: "set-a", UpstreamKey: "sk-upstream"}); err != nil {
-		t.Fatal(err)
-	}
+	externalKey, _ := saveTestAPIKey(t, store, "cancel", APIKeyBinding{SetID: "set-a", UpstreamKey: "sk-upstream"})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"x"}`)).WithContext(ctx)
-	req.Header.Set("Authorization", "Bearer llmgw-ext")
+	req.Header.Set("Authorization", "Bearer "+externalKey)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -204,14 +202,11 @@ func TestProxyUsesBYOKUpstreamKeyWhenUserPrefersBYOK(t *testing.T) {
 	if err := svc.RegisterSet(t.Context(), RegisterSetInput{ID: "set-a", BaseURL: upstream.URL, Status: SetStatusActive}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveAPIKeyBinding(t.Context(), APIKeyBinding{
-		ExternalKey: "llmgw-ext",
+	externalKey, _ := saveTestAPIKey(t, store, "byok", APIKeyBinding{
 		SetID:       "set-a",
 		UserID:      "user-1",
 		UpstreamKey: "sk-platform-upstream",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	})
 	if err := store.SaveUserLLMSettings(t.Context(), UserLLMSettings{
 		ExternalUserID:    "user-1",
 		Routing:           UserLLMRouting{Mode: LLMRouteBYOKFirst},
@@ -223,7 +218,7 @@ func TestProxyUsesBYOKUpstreamKeyWhenUserPrefersBYOK(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-	req.Header.Set("Authorization", "Bearer llmgw-ext")
+	req.Header.Set("Authorization", "Bearer "+externalKey)
 	rec := httptest.NewRecorder()
 
 	svc.ProxyHTTP(rec, req)
@@ -254,14 +249,11 @@ func TestProxyFallsBackToPlatformKeyWhenBYOKGroupIsNotReady(t *testing.T) {
 	if err := svc.RegisterSet(t.Context(), RegisterSetInput{ID: "set-a", BaseURL: "http://upstream", Status: SetStatusActive}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveAPIKeyBinding(t.Context(), APIKeyBinding{
-		ExternalKey: "llmgw-ext",
+	externalKey, _ := saveTestAPIKey(t, store, "byok-fallback", APIKeyBinding{
 		SetID:       "set-a",
 		UserID:      "user-1",
 		UpstreamKey: "sk-platform-upstream",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	})
 	if err := store.SaveUserLLMSettings(t.Context(), UserLLMSettings{
 		ExternalUserID:    "user-1",
 		Routing:           UserLLMRouting{Mode: LLMRouteBYOKFirst},
@@ -273,7 +265,7 @@ func TestProxyFallsBackToPlatformKeyWhenBYOKGroupIsNotReady(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"auto"}`))
-	req.Header.Set("Authorization", "Bearer llmgw-ext")
+	req.Header.Set("Authorization", "Bearer "+externalKey)
 	rec := httptest.NewRecorder()
 
 	svc.ProxyHTTP(rec, req)
@@ -328,14 +320,11 @@ func TestSaveUserLLMSettingsInvalidatesTrafficRouteCache(t *testing.T) {
 	if err := svc.RegisterSet(t.Context(), RegisterSetInput{ID: "set-a", BaseURL: "http://upstream", Status: SetStatusActive}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveAPIKeyBinding(t.Context(), APIKeyBinding{
-		ExternalKey: "llmgw-ext",
+	externalKey, _ := saveTestAPIKey(t, store, "llm-settings", APIKeyBinding{
 		SetID:       "set-a",
 		UserID:      "user-1",
 		UpstreamKey: "sk-platform-upstream",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	})
 	if err := store.SaveUserLLMSettings(t.Context(), UserLLMSettings{
 		ExternalUserID:    "user-1",
 		Routing:           UserLLMRouting{Mode: LLMRoutePlatformFirst},
@@ -347,7 +336,7 @@ func TestSaveUserLLMSettingsInvalidatesTrafficRouteCache(t *testing.T) {
 	}
 
 	firstReq := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-	firstReq.Header.Set("Authorization", "Bearer llmgw-ext")
+	firstReq.Header.Set("Authorization", "Bearer "+externalKey)
 	firstRec := httptest.NewRecorder()
 	svc.ProxyHTTP(firstRec, firstReq)
 	if firstRec.Code != http.StatusOK {
@@ -368,7 +357,7 @@ func TestSaveUserLLMSettingsInvalidatesTrafficRouteCache(t *testing.T) {
 	}
 
 	secondReq := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-	secondReq.Header.Set("Authorization", "Bearer llmgw-ext")
+	secondReq.Header.Set("Authorization", "Bearer "+externalKey)
 	secondRec := httptest.NewRecorder()
 	svc.ProxyHTTP(secondRec, secondReq)
 	if secondRec.Code != http.StatusOK {
@@ -398,18 +387,14 @@ func TestProxyRejectsAPIKeyForDisabledTenant(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveAPIKeyBinding(t.Context(), APIKeyBinding{
-		ExternalKey:   "llmgw-disabled",
-		ExternalKeyID: "key-disabled",
-		SetID:         "set-a",
-		UserID:        "user-1",
-		UpstreamKey:   "sk-upstream",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	externalKey, _ := saveTestAPIKey(t, store, "disabled", APIKeyBinding{
+		SetID:       "set-a",
+		UserID:      "user-1",
+		UpstreamKey: "sk-upstream",
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-	req.Header.Set("Authorization", "Bearer llmgw-disabled")
+	req.Header.Set("Authorization", "Bearer "+externalKey)
 	rec := httptest.NewRecorder()
 
 	svc.ProxyHTTP(rec, req)
@@ -437,18 +422,14 @@ func TestProxyRejectsAPIKeyForPendingTenant(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveAPIKeyBinding(t.Context(), APIKeyBinding{
-		ExternalKey:   "sk-pending",
-		ExternalKeyID: "key-pending",
-		SetID:         "set-a",
-		UserID:        "user-pending",
-		UpstreamKey:   "sk-upstream",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	externalKey, _ := saveTestAPIKey(t, store, "pending", APIKeyBinding{
+		SetID:       "set-a",
+		UserID:      "user-pending",
+		UpstreamKey: "sk-upstream",
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-	req.Header.Set("Authorization", "Bearer sk-pending")
+	req.Header.Set("Authorization", "Bearer "+externalKey)
 	rec := httptest.NewRecorder()
 	svc.ProxyHTTP(rec, req)
 
@@ -486,18 +467,14 @@ func TestProxyUsesAPIKeyRouteCacheAfterFirstLookup(t *testing.T) {
 	if err := svc.RegisterSet(t.Context(), RegisterSetInput{ID: "set-a", BaseURL: "http://upstream", Status: SetStatusActive}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveAPIKeyBinding(t.Context(), APIKeyBinding{
-		ExternalKey:   "llmgw-ext",
-		ExternalKeyID: "key-abc",
-		SetID:         "set-a",
-		UpstreamKey:   "sk-upstream",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	externalKey, _ := saveTestAPIKey(t, store, "cache", APIKeyBinding{
+		SetID:       "set-a",
+		UpstreamKey: "sk-upstream",
+	})
 
 	for i := 0; i < 2; i++ {
 		req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
-		req.Header.Set("Authorization", "Bearer llmgw-ext")
+		req.Header.Set("Authorization", "Bearer "+externalKey)
 		rec := httptest.NewRecorder()
 
 		svc.ProxyHTTP(rec, req)
@@ -530,11 +507,13 @@ func TestProxyUsesRouteSnapshotWithoutStoreLookups(t *testing.T) {
 
 	externalKeyID := "key-route-only"
 	externalKey := signedExternalKeyForTest(externalKeyID, "route-secret")
+	keyLookup := parseTrafficRouteLookup(externalKey)
 	if err := cache.SetRoute(t.Context(), TrafficRouteSnapshot{
-		ExternalKeyID:   externalKeyID,
+		ExternalKeyID:   keyLookup.ExternalKeyID,
 		ExternalKeyHash: hashExternalKey(externalKey),
-		SecretHash:      hashExternalKeySecret("route-secret"),
-		KeyShard:        keyShardForExternalKeyID(externalKeyID),
+		SecretHash:      keyLookup.SecretHash,
+		KeyVersion:      keyLookup.Version,
+		RouteSlot:       keyLookup.RouteSlot,
 		SetID:           "set-a",
 		SetBaseURL:      "http://snapshot-upstream",
 		UserID:          "user-1",
@@ -579,9 +558,10 @@ func TestProxyUsesSetRuntimeRouteAndRevisionTransport(t *testing.T) {
 
 	externalKeyID := "key-runtime-route"
 	externalKey := signedExternalKeyForTest(externalKeyID, "runtime-secret")
+	keyLookup := parseTrafficRouteLookup(externalKey)
 	if err := cache.SetRoute(t.Context(), TrafficRouteSnapshot{
-		ExternalKeyID: externalKeyID, SecretHash: hashExternalKeySecret("runtime-secret"),
-		KeyShard: keyShardForExternalKeyID(externalKeyID), SetID: "set-a",
+		ExternalKeyID: keyLookup.ExternalKeyID, SecretHash: keyLookup.SecretHash,
+		KeyVersion: keyLookup.Version, RouteSlot: keyLookup.RouteSlot, SetID: "set-a",
 		SetBaseURL: "http://legacy-upstream", UpstreamKey: "sk-upstream", Enabled: true,
 	}); err != nil {
 		t.Fatal(err)
@@ -613,9 +593,10 @@ func TestProxyFailsClosedWhenSetRuntimeRouteIsRequiredAndMissing(t *testing.T) {
 	})
 	externalKeyID := "key-runtime-missing"
 	externalKey := signedExternalKeyForTest(externalKeyID, "runtime-secret")
+	keyLookup := parseTrafficRouteLookup(externalKey)
 	if err := cache.SetRoute(t.Context(), TrafficRouteSnapshot{
-		ExternalKeyID: externalKeyID, SecretHash: hashExternalKeySecret("runtime-secret"),
-		KeyShard: keyShardForExternalKeyID(externalKeyID), SetID: "set-a",
+		ExternalKeyID: keyLookup.ExternalKeyID, SecretHash: keyLookup.SecretHash,
+		KeyVersion: keyLookup.Version, RouteSlot: keyLookup.RouteSlot, SetID: "set-a",
 		SetBaseURL: "http://legacy-upstream", UpstreamKey: "sk-upstream", Enabled: true,
 	}); err != nil {
 		t.Fatal(err)
@@ -725,28 +706,24 @@ func TestRevokeExternalKeyInvalidatesRouteCache(t *testing.T) {
 	if err := svc.RegisterSet(t.Context(), RegisterSetInput{ID: "set-a", BaseURL: "http://upstream", Status: SetStatusActive}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveAPIKeyBinding(t.Context(), APIKeyBinding{
-		ExternalKey:   "llmgw-ext",
-		ExternalKeyID: "key-abc",
-		SetID:         "set-a",
-		UpstreamKey:   "sk-upstream",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	externalKey, externalKeyID := saveTestAPIKey(t, store, "revoke", APIKeyBinding{
+		SetID:       "set-a",
+		UpstreamKey: "sk-upstream",
+	})
 
 	firstReq := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
-	firstReq.Header.Set("Authorization", "Bearer llmgw-ext")
+	firstReq.Header.Set("Authorization", "Bearer "+externalKey)
 	firstRec := httptest.NewRecorder()
 	svc.ProxyHTTP(firstRec, firstReq)
 	if firstRec.Code != http.StatusOK {
 		t.Fatalf("first status = %d body = %s", firstRec.Code, firstRec.Body.String())
 	}
-	if err := svc.RevokeExternalKey(t.Context(), "key-abc"); err != nil {
+	if err := svc.RevokeExternalKey(t.Context(), externalKeyID); err != nil {
 		t.Fatal(err)
 	}
 
 	secondReq := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
-	secondReq.Header.Set("Authorization", "Bearer llmgw-ext")
+	secondReq.Header.Set("Authorization", "Bearer "+externalKey)
 	secondRec := httptest.NewRecorder()
 	svc.ProxyHTTP(secondRec, secondReq)
 
@@ -773,12 +750,10 @@ func TestProxyStripsHopByHopHeadersInBothDirections(t *testing.T) {
 	if err := svc.RegisterSet(t.Context(), RegisterSetInput{ID: "set-a", BaseURL: "http://upstream", Status: SetStatusActive}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveAPIKeyBinding(t.Context(), APIKeyBinding{ExternalKey: "llmgw-ext", SetID: "set-a", UpstreamKey: "sk-upstream"}); err != nil {
-		t.Fatal(err)
-	}
+	externalKey, _ := saveTestAPIKey(t, store, "hop-headers", APIKeyBinding{SetID: "set-a", UpstreamKey: "sk-upstream"})
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-	req.Header.Set("Authorization", "Bearer llmgw-ext")
+	req.Header.Set("Authorization", "Bearer "+externalKey)
 	req.Header.Set("Connection", "X-Request-Hop")
 	req.Header.Set("X-Request-Hop", "must-not-forward")
 	req.Header.Set("Proxy-Connection", "keep-alive")
@@ -806,12 +781,10 @@ func TestProxyFlushesStreamResponses(t *testing.T) {
 	if err := svc.RegisterSet(t.Context(), RegisterSetInput{ID: "set-a", BaseURL: "http://upstream", Status: SetStatusActive}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveAPIKeyBinding(t.Context(), APIKeyBinding{ExternalKey: "llmgw-ext", SetID: "set-a", UpstreamKey: "sk-upstream"}); err != nil {
-		t.Fatal(err)
-	}
+	externalKey, _ := saveTestAPIKey(t, store, "stream", APIKeyBinding{SetID: "set-a", UpstreamKey: "sk-upstream"})
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-	req.Header.Set("Authorization", "Bearer llmgw-ext")
+	req.Header.Set("Authorization", "Bearer "+externalKey)
 	rec := httptest.NewRecorder()
 
 	svc.ProxyHTTP(rec, req)
@@ -836,17 +809,13 @@ func TestProxyAccessLogIncludesRequestRoutingAndUpstreamFields(t *testing.T) {
 	if err := svc.RegisterSet(t.Context(), RegisterSetInput{ID: "set-a", BaseURL: "http://upstream", Status: SetStatusActive}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveAPIKeyBinding(t.Context(), APIKeyBinding{
-		ExternalKey:   "llmgw-ext",
-		ExternalKeyID: "key-abc",
-		SetID:         "set-a",
-		UpstreamKey:   "sk-upstream",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	externalKey, externalKeyID := saveTestAPIKey(t, store, "access-log", APIKeyBinding{
+		SetID:       "set-a",
+		UpstreamKey: "sk-upstream",
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-	req.Header.Set("Authorization", "Bearer llmgw-ext")
+	req.Header.Set("Authorization", "Bearer "+externalKey)
 	rec := httptest.NewRecorder()
 
 	svc.ProxyHTTP(rec, req)
@@ -856,7 +825,7 @@ func TestProxyAccessLogIncludesRequestRoutingAndUpstreamFields(t *testing.T) {
 	}
 	entry := entries[0]
 	if entry.Event != "llmgateway_access" ||
-		entry.ExternalKeyID != "key-abc" ||
+		entry.ExternalKeyID != externalKeyID ||
 		entry.ExternalKeyHashPrefix == "" ||
 		entry.SetID != "set-a" ||
 		entry.Method != http.MethodPost ||
@@ -882,17 +851,13 @@ func TestProxyMetricsExposeTrafficLabelsAndDuration(t *testing.T) {
 	if err := svc.RegisterSet(t.Context(), RegisterSetInput{ID: "set-a", BaseURL: "http://upstream", Status: SetStatusActive}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveAPIKeyBinding(t.Context(), APIKeyBinding{
-		ExternalKey:   "llmgw-ext",
-		ExternalKeyID: "key-abc",
-		SetID:         "set-a",
-		UpstreamKey:   "sk-upstream",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	externalKey, externalKeyID := saveTestAPIKey(t, store, "metrics", APIKeyBinding{
+		SetID:       "set-a",
+		UpstreamKey: "sk-upstream",
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-	req.Header.Set("Authorization", "Bearer llmgw-ext")
+	req.Header.Set("Authorization", "Bearer "+externalKey)
 	rec := httptest.NewRecorder()
 
 	svc.ProxyHTTP(rec, req)
@@ -904,7 +869,7 @@ func TestProxyMetricsExposeTrafficLabelsAndDuration(t *testing.T) {
 
 	metrics := svc.PrometheusMetrics()
 	for _, want := range []string{
-		`llmgateway_traffic_requests_total{external_key_id="key-abc",external_key_hash_prefix="`,
+		`llmgateway_traffic_requests_total{external_key_id="` + externalKeyID + `",external_key_hash_prefix="`,
 		`set_id="set-a"`,
 		`status="200"`,
 		`upstream_status="200"`,
@@ -932,17 +897,13 @@ func TestProxyAccessLogRecordsGatewayErrorType(t *testing.T) {
 	if err := svc.RegisterSet(t.Context(), RegisterSetInput{ID: "set-a", BaseURL: "http://upstream", Status: SetStatusActive}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveAPIKeyBinding(t.Context(), APIKeyBinding{
-		ExternalKey:   "llmgw-ext",
-		ExternalKeyID: "key-abc",
-		SetID:         "set-a",
-		UpstreamKey:   "sk-upstream",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	externalKey, externalKeyID := saveTestAPIKey(t, store, "gateway-error", APIKeyBinding{
+		SetID:       "set-a",
+		UpstreamKey: "sk-upstream",
+	})
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
-	req.Header.Set("Authorization", "Bearer llmgw-ext")
+	req.Header.Set("Authorization", "Bearer "+externalKey)
 	rec := httptest.NewRecorder()
 
 	svc.ProxyHTTP(rec, req)
@@ -954,7 +915,7 @@ func TestProxyAccessLogRecordsGatewayErrorType(t *testing.T) {
 	if entry.Status != http.StatusBadGateway ||
 		entry.UpstreamStatus != 0 ||
 		entry.ErrorType != "upstream_roundtrip_error" ||
-		entry.ExternalKeyID != "key-abc" ||
+		entry.ExternalKeyID != externalKeyID ||
 		entry.SetID != "set-a" ||
 		entry.Streaming {
 		t.Fatalf("unexpected access log entry: %+v", entry)
@@ -1108,5 +1069,23 @@ func (s *failingTrafficStore) GetUserLLMSettings(context.Context, string) (UserL
 }
 
 func signedExternalKeyForTest(externalKeyID string, secret string) string {
-	return formatRoutableExternalKey(externalKeyID, secret)
+	seed := []byte(externalKeyID + "\x00" + secret)
+	first := sha512.Sum512(seed)
+	second := sha256.Sum256(seed)
+	randomBytes := append(append([]byte{}, first[:]...), second[:4]...)
+	material, err := generateExternalKeyV2(bytes.NewReader(randomBytes))
+	if err != nil {
+		panic(err)
+	}
+	return material.ExternalKey
+}
+
+func saveTestAPIKey(t *testing.T, store Store, seed string, binding APIKeyBinding) (string, string) {
+	t.Helper()
+	externalKey := signedExternalKeyForTest(seed, "secret")
+	binding.ExternalKey = externalKey
+	if err := store.SaveAPIKeyBinding(t.Context(), binding); err != nil {
+		t.Fatal(err)
+	}
+	return externalKey, parseTrafficRouteLookup(externalKey).ExternalKeyID
 }

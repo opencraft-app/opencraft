@@ -26,6 +26,8 @@ var defaultWorkerJobs = []WorkerJob{
 	{Name: WorkerJobReconcileGroupRatios, Kind: WorkerJobReconcileGroupRatios, Enabled: true, IntervalSeconds: 30},
 	{Name: WorkerJobCleanupPending, Kind: WorkerJobCleanupPending, Enabled: true, IntervalSeconds: 600},
 	{Name: WorkerJobRefreshTenantStatistics, Kind: WorkerJobRefreshTenantStatistics, Enabled: true, IntervalSeconds: 600},
+	{Name: WorkerJobPublishAPIKeyRoutes, Kind: WorkerJobPublishAPIKeyRoutes, Enabled: true, IntervalSeconds: 30},
+	{Name: WorkerJobReconcileShardExpansions, Kind: WorkerJobReconcileShardExpansions, Enabled: true, IntervalSeconds: 30},
 }
 
 const defaultBYOKSyncBatchSize = 1000
@@ -467,9 +469,56 @@ func (s *Service) runWorkerJobBody(ctx context.Context, job *WorkerJob) (string,
 			return "", fmt.Errorf("tenant statistics snapshot missing after refresh")
 		}
 		return fmt.Sprintf("total=%d new=%d pending=%d active=%d disabled=%d deleted=%d", stats.Total, stats.NewTotal, stats.PendingTotal, stats.ActiveTotal, stats.DisabledTotal, stats.DeletedTotal), nil
+	case WorkerJobReconcileShardExpansions:
+		result, err := s.ReconcileShardExpansions(ctx, 25)
+		return fmt.Sprintf("scanned=%d advanced=%d failed=%d", result.Scanned, result.Advanced, result.Failed), err
+	case WorkerJobPublishAPIKeyRoutes:
+		published, failed, err := s.publishAPIKeyRoutesJob(ctx, 200)
+		return fmt.Sprintf("published=%d failed=%d", published, failed), err
 	default:
 		return "", fmt.Errorf("unknown worker job %q", job.Name)
 	}
+}
+
+func (s *Service) publishAPIKeyRoutesJob(ctx context.Context, limit int) (int, int, error) {
+	if s.options.KeyRouteCache == nil {
+		return 0, 0, fmt.Errorf("key route cache is required")
+	}
+	bindings, err := s.store.ListAPIKeyBindingsByStatus(ctx, APIKeyStatusRoutePending, limit)
+	if err != nil {
+		return 0, 0, err
+	}
+	published := 0
+	failed := 0
+	var firstErr error
+	for _, binding := range bindings {
+		set, ok, publishErr := s.store.GetSet(ctx, binding.SetID)
+		if publishErr == nil && !ok {
+			publishErr = fmt.Errorf("set %q not found", binding.SetID)
+		}
+		if publishErr == nil {
+			publishErr = s.cacheTrafficRouteSnapshotForBinding(ctx, binding, set)
+		}
+		if publishErr != nil {
+			failed++
+			_, _ = s.store.TransitionAPIKeyBinding(context.WithoutCancel(ctx), binding.ExternalKeyID,
+				APIKeyStatusRoutePending, APIKeyStatusRoutePending, "", 0, publishErr.Error(), s.nowUTC())
+			if firstErr == nil {
+				firstErr = publishErr
+			}
+			continue
+		}
+		if _, transitionErr := s.store.TransitionAPIKeyBinding(ctx, binding.ExternalKeyID,
+			APIKeyStatusRoutePending, APIKeyStatusActive, "", 0, "", s.nowUTC()); transitionErr != nil {
+			failed++
+			if firstErr == nil {
+				firstErr = transitionErr
+			}
+			continue
+		}
+		published++
+	}
+	return published, failed, firstErr
 }
 
 func (s *Service) reconcileGroupRatiosJob(ctx context.Context, job *WorkerJob) (int, int, error) {
