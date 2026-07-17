@@ -1,0 +1,99 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: llmgateway-set-manager-runtime
+  namespace: llmgateway
+type: Opaque
+stringData:
+  INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: llmgateway-set-manager
+  namespace: llmgateway
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: llmgateway-set-manager
+  namespace: llmgateway
+rules:
+  - apiGroups: ["llmgateway.io"]
+    resources: ["llmfleets"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: llmgateway-set-manager
+  namespace: llmgateway
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: llmgateway-set-manager
+subjects:
+  - kind: ServiceAccount
+    name: llmgateway-set-manager
+    namespace: llmgateway
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: llmgateway-set-manager
+  namespace: llmgateway
+spec:
+  schedule: "*/1 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          serviceAccountName: llmgateway-set-manager
+          restartPolicy: OnFailure
+          imagePullSecrets:
+            - name: tcr-pull-secret
+          containers:
+            - name: set-manager
+              image: ${LLMGATEWAY_IMAGE}
+              imagePullPolicy: IfNotPresent
+              command: ["/usr/local/bin/llmgateway-set-manager"]
+              env:
+                - name: LLMGATEWAY_CONTROL_URL
+                  value: http://llmgateway-control
+                - name: LLMGATEWAY_INTERNAL_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: llmgateway-set-manager-runtime
+                      key: INTERNAL_SERVICE_TOKEN
+                - name: LLMGATEWAY_SET_MANAGER_SOURCE
+                  value: prod
+                - name: LLMGATEWAY_SET_MANAGER_FLEET
+                  value: prod
+                - name: LLMGATEWAY_SET_UPGRADE_LEASE_SECONDS
+                  value: "90"
+                - name: LLMGATEWAY_SET_UPGRADE_PROBE_MODEL
+                  value: auto
+                - name: LLMGATEWAY_OTEL_STDOUT_ENABLE
+                  value: "true"
+                - name: OTEL_SERVICE_NAME
+                  value: llmgateway-set-manager
+                - name: OTEL_SERVICE_VERSION
+                  value: ${LLMGATEWAY_VERSION}
+                - name: LLMGATEWAY_ENVIRONMENT
+                  value: prod
+                - name: K8S_CLUSTER_NAME
+                  value: ${K8S_CLUSTER_NAME}
+                - name: K8S_NAMESPACE_NAME
+                  valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+                - name: K8S_POD_NAME
+                  valueFrom: {fieldRef: {fieldPath: metadata.name}}
+                - name: K8S_POD_UID
+                  valueFrom: {fieldRef: {fieldPath: metadata.uid}}
+                - name: K8S_CONTAINER_NAME
+                  value: set-manager
+                - name: CLOUD_REGION
+                  value: ${CLOUD_REGION}

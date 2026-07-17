@@ -53,7 +53,22 @@
 | `shadow/` | Go | 影子账号服务 | [shadow/AGENTS.md](shadow/AGENTS.md) |
 | `sandbox/` | Go / 沙箱 | 云主机 Mock | [sandbox/AGENTS.md](sandbox/AGENTS.md) |
 | `infra_pulumi/` | Pulumi / IaC | 基础设施 | [infra_pulumi/AGENTS.md](infra_pulumi/AGENTS.md) |
+| `velagw/` | Go + React | LLMGateway control/data plane upstream subtree | [velagw/MONO2_SUBTREE.md](velagw/MONO2_SUBTREE.md) |
 | `velalink/` | TS + Rust | AI chat/runtime upstream subtree | [velalink/MONO2_SUBTREE.md](velalink/MONO2_SUBTREE.md) |
+
+### LLMGateway subtree 协作模型（P0）
+
+`velagw/` 不是 submodule，也不是一次性复制目录；它是
+`git@git.woa.com:wisp/velagw.git` 的完整 squash-style subtree，供 mono2 内直接阅读、修改、测试和 review。
+
+执行约束：
+
+- 可以直接在 `mono2/velagw/` 下修改代码，保持改动可被 mono2 的 MR 直接 review。
+- 需要共享给 velagw 上游的改动，使用 `git subtree split --prefix=velagw` 切出分支，再推到 `wisp/velagw.git`。
+- 拉取 velagw 上游更新时，使用 `git subtree pull --prefix=velagw ... --squash`，并同步更新 `velagw/.mono2-subtree`。
+- `velagw/` 当前保留独立仓库自身的构建和部署定义；在 mono2 的统一 Argo/CD 发布入口完成迁移前，不要把源码嵌入误判为已经接入 mono2 发布流水线。
+
+标准流程详见 [velagw/MONO2_SUBTREE.md](velagw/MONO2_SUBTREE.md)。
 
 ### Velalink subtree 协作模型（P0）
 

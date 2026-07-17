@@ -1,0 +1,41 @@
+apiVersion: llmgateway.io/v1alpha1
+kind: LLMFleet
+metadata:
+  name: prod
+  namespace: llmgateway
+spec:
+  newapiImage: calciumion/new-api@sha256:3125e24f119fa5e767563226a5208f2902b3faed3f27b69ea275b32c9f04a066
+  runtimeCleanerImage: ${LLMGATEWAY_IMAGE}
+  newapi:
+    databasePool:
+      admin:
+        maxOpenConns: 32
+        maxIdleConns: 2
+        maxLifetimeSeconds: 60
+      traffic:
+        maxOpenConns: 32
+        maxIdleConns: 2
+        maxLifetimeSeconds: 60
+    subscriptionWriteConcurrency: 8
+  shards:
+    - name: shard-a
+      mysqlHost: ${SHARD_A_MYSQL_HOST}
+      mysqlPort: "3306"
+      redisHost: ${SHARD_A_REDIS_HOST}
+      redisPort: "6379"
+      secretName: llmfleet-shard-a
+      maxSets: 32
+      redisDBStart: 0
+      redisDBLimit: 256
+    - name: shard-b
+      mysqlHost: ${SHARD_B_MYSQL_HOST}
+      mysqlPort: "3306"
+      redisHost: ${SHARD_B_REDIS_HOST}
+      redisPort: "6379"
+      secretName: llmfleet-shard-b
+      maxSets: 32
+      redisDBStart: 0
+      redisDBLimit: 256
+  sets: []
+  trafficRuntimes: []
+  cleanups: []

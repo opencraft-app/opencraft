@@ -1,0 +1,5 @@
+region = "ap-beijing"
+bucket = "llmgateway-prod-tfstate-<appid>"
+# Compatibility boundary: this is the existing Beijing production state key.
+# Never rename it to a region-specific suffix without an explicit state migration.
+prefix = "llmgateway/prod"

@@ -1,0 +1,79 @@
+# ============================================================================
+# LLMGateway OpenSpec 项目上下文
+# ============================================================================
+#
+# 本目录记录 llmgateway 的规格、变更提案和实施计划。
+# llmgateway 是 mono2 中面向 new-api 的多 Set 控制面与流量适配层。
+# ============================================================================
+
+schema: spec-driven
+
+context: |
+  # 项目概述
+  LLMGateway 是 mono2 面向多 Set new-api 建设的外层网关。它不修改
+  new-api，不直接写 new-api 数据库，而是通过 new-api 已有 API 管理每个
+  Set 内的用户、token、subscription、channel 和模型调用。
+
+  LLMGateway 的核心职责是把多个单 Set new-api 组织成平台能力：
+  - 多 Set 纳管、初始化、状态观测；
+  - 外部业务 user_id 到 set/upstream_user_id 的映射；
+  - 外部 sk-* key 到 new-api upstream token 的路由；
+  - trade/ctl 使用的订阅、权益、积分查询 facade；
+  - 渠道 desired state、漂移检查和手动同步；
+  - OpenAI-compatible /v1/* 流量代理。
+
+  # 技术栈
+  - 语言: Go
+  - HTTP: net/http ServeMux
+  - 存储: 内存 store 用于本地开发；MySQL store 用于生产控制面状态
+  - 缓存: 本地 L1 key-route cache，可选 Redis 作为跨 pod 共享路由缓存
+  - 前端: React + TypeScript + shadcn/ui + Tailwind + TanStack 方向
+  - 文档: docs-site + Fumadocs + Scalar OpenAPI
+  - E2E: Docker Compose，启动 LLMGateway、两个 new-api Set、每 Set MySQL/Redis 和 mockllm
+
+  # 关键约束
+  - 不修改 new-api 源码。
+  - 不把 new-api 原生 API 直接暴露成平台稳定契约。
+  - LLMGateway 不保存完整积分账本；new-api 是已开通用户的 LLM 权益和扣费真源。
+  - trade 仍负责订单和支付状态；ctl 仍负责业务状态机。
+  - 未开通用户为 pending；未知 key 返回 401；运行时不代理其他网关。
+  - 渠道保存只写 LLMGateway desired state；同步远端必须人工触发。
+  - 漂移不自动覆盖，必须显式 force_drift。
+  - provider API key 可以存 LLMGateway MySQL，但 API 响应不得返回明文。
+  - 生产可以拆分控制面 pod 和流量面 pod，共享 MySQL 与 Redis key-route cache。
+
+  # 稳定接口来源
+  - LLMGateway OpenAPI: docs-site/openapi/llmgateway.json
+  - LLMGateway 中文设计文档: docs-site/content/docs/llmgateway/
+  - LLMGateway 后端入口: llmgateway/internal/httpapi/server.go
+  - LLMGateway 核心模型: llmgateway/internal/gateway/model.go
+
+  # new-api 能力判断
+  new-api 足以作为单 Set 执行面：
+  - setup/login/access token 能支持空 Set 纳管；
+  - admin user API 能创建用户和调整 wallet quota；
+  - token API 能创建 upstream API token；
+  - subscription admin API 能创建 plan、发放/失效用户订阅；
+  - subscription runtime 有 request_id 幂等预扣和 active subscription 扣费；
+  - channel API 能管理 provider channel、拉取模型、测试通道。
+
+  new-api 不负责平台层：
+  - 不理解跨 Set assignment；
+  - 不理解 mono2 外部 user_id；
+  - 不维护 LLMGateway 外部 sk-* key；
+  - 不负责历史系统的数据导出；
+  - 不做全 Set channel desired state 和 drift 管理。
+
+conventions:
+  spec_entry: openspec/spec.md
+  current_state: openspec/current_state.md
+  active_plan: openspec/plan.md
+  long_lived_specs:
+    - openspec/specs/llmgateway-dropin.md
+  change_directories:
+    - openspec/changes/
+
+verification:
+  docs_contract: "cd docs-site && npm test"
+  unit_tests: "cd llmgateway && go test ./..."
+  e2e: "cd llmgateway && bash test/e2e/run.sh"

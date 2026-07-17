@@ -1,0 +1,15 @@
+/llmgateway
+web/dist/
+web/node_modules/
+web/.env
+web/.env.local
+web/tsconfig.tsbuildinfo
+/.env
+/.env.local
+/.superpowers/
+test/e2e/cluster.local.yaml
+test/e2e/.tmp/
+test/e2e/.env
+test/e2e/.env.local
+deploy/k8s/prod/bootstrap/private/*
+!deploy/k8s/prod/bootstrap/private/README.md

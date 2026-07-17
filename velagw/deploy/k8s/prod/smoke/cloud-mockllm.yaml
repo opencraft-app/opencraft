@@ -1,0 +1,121 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloud-mockllm
+  namespace: llmgateway
+data:
+  config.json: |
+    {
+      "listen_addr": "0.0.0.0:8080",
+      "openai": [
+        {
+          "name": "set-upgrade-probe",
+          "match": {
+            "match_type": "contains",
+            "message": {
+              "role": "user",
+              "content": "reply with ok"
+            }
+          },
+          "response": {
+            "id": "chatcmpl-cloud-upgrade-probe",
+            "object": "chat.completion",
+            "created": 1790000000,
+            "model": "llmgw-mock-chat",
+            "choices": [
+              {
+                "index": 0,
+                "message": {"role": "assistant", "content": "ok"},
+                "finish_reason": "stop"
+              }
+            ],
+            "usage": {"prompt_tokens": 3, "completion_tokens": 1, "total_tokens": 4}
+          }
+        },
+        {
+          "name": "user-chat",
+          "match": {
+            "match_type": "contains",
+            "message": {
+              "role": "user",
+              "content": "你好"
+            }
+          },
+          "response": {
+            "id": "chatcmpl-cloud-load",
+            "object": "chat.completion",
+            "created": 1790000000,
+            "model": "llmgw-mock-chat",
+            "choices": [
+              {
+                "index": 0,
+                "message": {"role": "assistant", "content": "cloud mock answer"},
+                "finish_reason": "stop"
+              }
+            ],
+            "usage": {"prompt_tokens": 23, "completion_tokens": 19, "total_tokens": 42}
+          }
+        }
+      ]
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cloud-mockllm
+  namespace: llmgateway
+spec:
+  selector:
+    app: cloud-mockllm
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloud-mockllm
+  namespace: llmgateway
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: cloud-mockllm
+  template:
+    metadata:
+      labels:
+        app: cloud-mockllm
+    spec:
+      imagePullSecrets:
+        - name: tcr-pull-secret
+      containers:
+        - name: mockllm
+          image: lightclaw-bj82.tencentcloudcr.com/llmgateway/llmgateway:mockllm-go-225524
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 3
+            timeoutSeconds: 2
+            failureThreshold: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/mockllm/config.json
+              subPath: config.json
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: cloud-mockllm
