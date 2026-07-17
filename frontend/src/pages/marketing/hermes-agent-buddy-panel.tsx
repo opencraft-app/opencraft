@@ -296,15 +296,6 @@ export function BuddyPanel({
   /** 上一次成功应用到 Agent 的 slug —— 用于按钮上展示「已应用」反馈 */
   const [appliedSlug, setAppliedSlug] = useState<string | null>(null);
 
-  /**
-   * 实际写入 Bot 沙箱 `${HOME}/.hermes/SOUL.md` 的人设（从文件本身读取，
-   * 而非 Vibebase 里的 appliedSlug —— 后者可能与真实文件不一致，比如文件被
-   * 手动改过、或在别处注入过）。canonical slug；null = 未注入 / 读取失败。
-   * 这是 "Equipped" 指示器的唯一事实来源。
-   */
-  const [equippedSoulSlug, setEquippedSoulSlug] = useState<string | null>(null);
-  /** SOUL.md 里原始的 Name 行（用于展示 "." 前的短名）。 */
-  const [equippedSoulRawName, setEquippedSoulRawName] = useState<string | null>(null);
   /** 自增计数器：apply / clear 成功后 +1，驱动重新读取真实 SOUL.md。 */
   const [equippedRefreshTick, setEquippedRefreshTick] = useState(0);
   // 防止切 bot 时旧 debug/exec 结果覆盖新 bot 的 equipped 状态（同 loadReqIdRef 模式）。
@@ -644,8 +635,7 @@ export function BuddyPanel({
   }, [botId, repositories]);
 
   /**
-   * 从 Bot 沙箱读取实际生效的 SOUL.md，解析出 Slug / Name，同步到
-   * equippedSoulSlug / equippedSoulRawName。同时把 appliedSlug 收敛到真实值，
+   * 从 Bot 沙箱读取实际生效的 SOUL.md，解析出 Slug，同时把 appliedSlug 收敛到真实值，
    * 让抽卡盘上的「已注入」徽章与事实保持一致。
    *
    * 读取失败 / 文件不存在 → 视为未注入（null）。
@@ -655,18 +645,15 @@ export function BuddyPanel({
     const activeBotId = botId;
     if (!activeBotId) {
       if (equippedReqIdRef.current !== reqId) return;
-      setEquippedSoulSlug(null);
-      setEquippedSoulRawName(null);
       setAppliedSlug(null);
       return;
     }
-    // 只 cat 出 Slug/Name 两行，避免把整份 markdown（可能合中文）扛到前端。
+    // 只 cat 出 Slug 行，避免把整份 markdown（可能合中文）扛到前端。
     const bash = [
       'set +e',
       'TARGET="${HOME}/.hermes/SOUL.md"',
       'if [ -s "$TARGET" ]; then',
       '  grep -m1 "^Slug:" "$TARGET" 2>/dev/null || true',
-      '  grep -m1 "^Name:" "$TARGET" 2>/dev/null || true',
       'fi',
     ].join('\n');
     try {
@@ -675,18 +662,11 @@ export function BuddyPanel({
       if (equippedReqIdRef.current !== reqId) return;
       const out = result?.output ?? '';
       const slugLine = out.split('\n').find((l) => l.startsWith('Slug:'));
-      const nameLine = out.split('\n').find((l) => l.startsWith('Name:'));
       const rawSlug = slugLine ? slugLine.replace(/^Slug:\s*/, '').trim() : '';
-      const rawName = nameLine ? nameLine.replace(/^Name:\s*/, '').trim() : '';
       if (rawSlug) {
         const canonical = toCanonicalSlug(rawSlug);
-        setEquippedSoulSlug(canonical);
-        setEquippedSoulRawName(rawName || null);
         setAppliedSlug(canonical);
       } else {
-        // 没有 Slug 行（可能是手写的自定义 SOUL.md）——仅当有 Name 时也算「已注入」。
-        setEquippedSoulSlug(rawName ? '__custom__' : null);
-        setEquippedSoulRawName(rawName || null);
         setAppliedSlug(null);
       }
     } catch (err) {
@@ -696,7 +676,7 @@ export function BuddyPanel({
     }
   }, [botId, repositories]);
 
-  // mount / 切 botId / apply / clear 后读取真实 SOUL.md，让 "Equipped" 指示器与文件事实一致。
+  // mount / 切 botId / apply / clear 后读取真实 SOUL.md，让卡片的已注入状态与文件事实一致。
   useEffect(() => {
     void refreshEquippedSoul();
   }, [refreshEquippedSoul, equippedRefreshTick]);
@@ -750,14 +730,6 @@ export function BuddyPanel({
 
   const isApplied = selectedSlug !== null && selectedSlug === appliedSlug;
   const isApplyDisabled = !selectedSlug || toast.kind === "applying" || loadStatus !== "loaded";
-
-  // Equipped 指示器：展示真实 SOUL.md 里人设名「.」前的短名（如 GOAT / YYDS）。
-  // 分隔符兼容 EN 的 `·`（U+00B7）与 CN 的 `・`（U+30FB）。
-  const equippedShortName = useMemo(() => {
-    if (!equippedSoulSlug || !equippedSoulRawName) return null;
-    const sep = equippedSoulRawName.search(/[·・]/);
-    return sep > 0 ? equippedSoulRawName.slice(0, sep).trim() : equippedSoulRawName.trim();
-  }, [equippedSoulSlug, equippedSoulRawName]);
 
   return (
     <div className="lv-buddy-panel relative overflow-hidden rounded-2xl" style={PANEL_CARD_STYLE}>
@@ -954,10 +926,6 @@ export function BuddyPanel({
             <ProgressChip drawn={drawnSouls.length} max={MAX_DRAWS} />
           </div>
         )}
-        <EquippedChip
-          name={equippedShortName}
-          loading={loadStatus === "loading"}
-        />
       </div>
 
       <DrawSoulModal
@@ -1113,28 +1081,6 @@ function ProgressChip({ drawn, max }: { drawn: number; max: number }) {
       <span>
         {drawn}/{max}
       </span>
-    </div>
-  );
-}
-
-/**
- * Equipped 指示器（动作行左侧，与右侧「已抽 N/8」对称）：展示当前真实写入
- * Bot 沙箱 SOUL.md 的人设短名。name 为 null → 显示「无 / None」。
- */
-function EquippedChip({ name, loading }: { name: string | null; loading: boolean }) {
-  const t = useT();
-  return (
-    <div
-      className="lv-buddy-panel__equipped absolute left-0 top-1/2 inline-flex -translate-y-1/2 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium"
-      style={{ background: "rgba(0,0,0,0.05)", color: "rgba(0,0,0,0.65)" }}
-      aria-live="polite"
-    >
-      <span style={{ color: "rgba(0,0,0,0.45)" }}>{t("已选人设：")}</span>
-      {loading ? (
-        <Loader2 className="h-3 w-3 animate-spin" style={{ color: "rgba(0,0,0,0.45)" }} />
-      ) : (
-        <span>{name ?? t("无")}</span>
-      )}
     </div>
   );
 }
