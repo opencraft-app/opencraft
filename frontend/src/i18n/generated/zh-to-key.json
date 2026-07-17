@@ -111,7 +111,6 @@
   "skill_manage 创建、修改或删除操作次数": "k_a69d6e2c",
   "traceback 或异常提及次数": "k_d92678fc",
   "{{action}}失败：{{message}}": "k_7a8a68fc",
-  "{{channel}}不建议频繁通知，否则可能会被限流": "k_d356fac6",
   "{{channel}}扫码接入": "k_875b22ac",
   "{{channel}}接入二维码": "k_7f9e5dd9",
   "{{count}} 个技能": "k_aaa13ecd",

@@ -1716,11 +1716,6 @@ function getDeliverPlatformLabel(platform: string, t: ReturnType<typeof useT>): 
   return platform;
 }
 
-function getNotificationRateLimitWarning(platform: string, label: string, t: ReturnType<typeof useT>): string {
-  if (platform === "weixin") return t("微信不建议频繁通知，否则可能会被限流");
-  return t("{{channel}}不建议频繁通知，否则可能会被限流", { channel: label });
-}
-
 function NameIdDetailRow({ name, id }: { name: string; id: string }) {
   const t = useT();
   return (
@@ -3019,7 +3014,7 @@ export function AutomationFormModal({
               const configured = isHermesNotificationChannelConfigured(enabledChannels, key, comingSoon);
               const blockedByFrequency = key === "weixin" && weixinBlockedByFrequency;
               const selected = deliverPlatforms.includes(key);
-              const showRateLimitWarning = blockedByFrequency || (selected && ["weixin", "qqbot", "wecom", "feishu"].includes(key));
+              const showRateLimitWarning = blockedByFrequency || (selected && key === "weixin");
               const checkboxDisabled = !configured || blockedByFrequency;
               return (
                 <div key={key}>
@@ -3065,7 +3060,7 @@ export function AutomationFormModal({
                     </label>
                     {showRateLimitWarning && (
                       <span className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
-                        {getNotificationRateLimitWarning(key, label, t)}
+                        {t("微信不建议频繁通知，否则可能会被限流")}
                       </span>
                     )}
                     {selected && key === "qqbot" && (
