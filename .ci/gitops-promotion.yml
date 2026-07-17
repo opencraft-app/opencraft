@@ -10,6 +10,7 @@ on:
       - promote-sandbox-kr-*
       - promote-devcloud-dep-*
       - promote-shanghai-workers-*
+      - promote-beijing-llmgateway-*
       - promote-tkexgz-*
       - promote-tkexsg-*
 

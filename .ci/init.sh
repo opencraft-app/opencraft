@@ -770,7 +770,7 @@ ci_load_registry_password() {
   local password_file=""
 
   case "$env_name" in
-    beijing-sandbox)
+    beijing-sandbox|beijing-llmgateway)
       password_var="${TCR_BEIJING_PASSWORD:-}"
       password_file="$beijing_file"
       ;;
@@ -847,7 +847,7 @@ ci_set_registry_credentials() {
   if raw_password="$(ci_load_registry_password "$env_name")"; then
     password="$(printf '%s' "$raw_password" | ci_read_secret_value)"
     case "$env_name" in
-      beijing-sandbox)
+      beijing-sandbox|beijing-llmgateway)
         if [[ -r "$beijing_file" ]]; then
           source="file:$beijing_file"
         else

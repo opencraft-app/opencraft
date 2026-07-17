@@ -1,0 +1,39 @@
+version: v2.0
+name: 构建 velagw
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - velagw/**
+      - argocd/apps/beijing-llmgateway/**
+      - argocd/clusters/beijing-llmgateway.yaml
+      - argocd/projects/beijing-llmgateway.yaml
+      - argocd/root/beijing-llmgateway.yaml
+      - argocd/services/velagw/beijing-llmgateway/**
+    paths-ignore:
+      - OWNERS
+      - "**/OWNERS"
+  manual: enabled
+
+concurrency:
+  group: mono2-service-release-velagw
+  cancel-in-progress: false
+  queue-length: 20
+  queue-timeout-minutes: 480
+
+extends:
+  template: service-release.yml
+  parameters:
+    SERVICE: velagw
+    BUNDLE: velagw
+    DISPLAY_NAME: velagw
+    DEFAULT_TARGET_ENV: beijing-llmgateway
+    MASTER_BUILD_ENVS: beijing-llmgateway
+    MASTER_AUTO_PIN_ENVS: beijing-llmgateway
+    ENABLE_MASTER_PROD_PROMOTE: false
+    PLAYGROUND_BUILD_ENVS: none
+    PLAYGROUND_AUTO_PIN_ENVS: none
+    RUNNER_POOL_NAME: cn-pool
+    PRINT_RUNNER_DIAGNOSTICS: true

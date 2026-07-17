@@ -111,6 +111,17 @@ PROMOTION_POLICIES: tuple[PromotionPolicy, ...] = (
         gate_denied_behavior=GateDeniedBehavior.FAIL,
     ),
     PromotionPolicy(
+        env="beijing-llmgateway",
+        branch_prefix="promote-beijing-llmgateway-",
+        display_name="北京 LLMGateway 测试",
+        auto_merge=True,
+        auto_sync=True,
+        cleanup_source_branch=True,
+        verify_mode=VerifyMode.ARGO_CONVERGENCE,
+        kustomize_mode=KustomizeMode.FULL,
+        gate_denied_behavior=GateDeniedBehavior.FAIL,
+    ),
+    PromotionPolicy(
         env="shprod",
         branch_prefix="promote-shprod-",
         display_name="上海生产",
