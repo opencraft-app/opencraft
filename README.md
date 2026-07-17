@@ -45,6 +45,41 @@
 - 管理终端：`nextgen-dashboard`
 - 环境与云资源：`infra_pulumi`
 
+## Agent 自动化玩法
+
+仓库已经内置工蜂和蓝盾 Skill。用户只需要说明目标，并通过当前本机会话安全提供对应凭据，Agent 就可以按仓库规范完成自动化操作，无需用户手工拼 API 请求。
+
+### 自动创建和管理 MR
+
+- Skill：`.skills/gongfeng/SKILL.md`
+- 能力：创建分支、查询提交、提交并推送代码、创建/查询/评审/合并 MR、管理 MR 评论
+- 所需凭据：工蜂个人访问令牌
+- 典型指令：`提交当前改动，创建 MR 到 master，通过检查后合入`
+
+Agent 会通过 `mcporter-internal call gongfeng.*` 调用工蜂能力，并在执行提交、推送、创建 MR 等不可逆操作前展示变更范围和 MR 信息供用户确认。
+
+### 管理蓝盾流水线
+
+- Skill：`.skills/devops-pipeline/SKILL.md`
+- 能力：查询流水线和构建历史、读取启动参数、启动/停止构建、查询构建状态、修改流水线参数
+- 所需凭据：`BK_CI_ACCESS_TOKEN`
+- 典型指令：`查询 trade 发布流水线，展示启动参数，确认后启动并跟踪到结束`
+
+凭据只应在当前本机会话或本地环境中临时注入，例如：
+
+```text
+工蜂令牌：<GONGFENG_PERSONAL_ACCESS_TOKEN>
+BK_CI_ACCESS_TOKEN：<BK_CI_ACCESS_TOKEN>
+```
+
+安全约束：
+
+- 不要把真实令牌写入 README、脚本、提交信息、流水线参数示例或其他版本控制文件
+- 蓝盾令牌优先通过本地环境变量 `BK_CI_ACCESS_TOKEN` 提供
+- 工蜂令牌只用于当前会话的 `mcporter-internal` 鉴权
+- 启动/停止流水线或修改流水线参数前，Agent 必须展示完整目标和参数并获得用户明确确认
+- 凭据一旦误入提交、日志或公开会话，应立即撤销并重新生成
+
 ## Infra 与 Deploy 标准链路
 
 如果是新 agent / 新同学，只记这几条就够了：
