@@ -283,6 +283,13 @@ func TestTrafficServiceTemplateExposesHTTPSWithTencentCertificateSecret(t *testi
 	}
 }
 
+func TestProductionTrafficRequiresCurrentSetRuntimeRoute(t *testing.T) {
+	raw := readFile(t, "llmgateway-app.yaml.template")
+	docs := decodeYAMLDocuments(t, raw)
+	traffic := deploymentContainer(t, docs, "llmgateway-traffic", "traffic")
+	requireEnv(t, traffic, "LLMGATEWAY_SET_RUNTIME_ROUTE_REQUIRED", "true")
+}
+
 func TestProductionAppsUseProcessScopedRuntimeSecrets(t *testing.T) {
 	raw := readFile(t, "llmgateway-app.yaml.template")
 	content := string(raw)

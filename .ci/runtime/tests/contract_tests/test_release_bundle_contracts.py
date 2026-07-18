@@ -242,6 +242,20 @@ class ReleaseBundleContractTests(unittest.TestCase):
         app = yaml.safe_load((REPO_ROOT / "argocd/apps/beijing-llmgateway/velagw.yaml").read_text())
         cluster = yaml.safe_load((REPO_ROOT / "argocd/clusters/beijing-llmgateway.yaml").read_text())
         workloads = (REPO_ROOT / "argocd/services/velagw/beijing-llmgateway/workloads.yaml").read_text()
+        workload_docs = list(yaml.safe_load_all(workloads))
+        traffic = next(
+            doc
+            for doc in workload_docs
+            if doc
+            and doc.get("kind") == "Deployment"
+            and (doc.get("metadata") or {}).get("name") == "llmgateway-traffic"
+        )
+        traffic_container = next(
+            container
+            for container in traffic["spec"]["template"]["spec"]["containers"]
+            if container.get("name") == "traffic"
+        )
+        traffic_env = {entry["name"]: entry.get("value") for entry in traffic_container.get("env", [])}
 
         self.assertEqual(bundle.image_repo, "lightclaw-bj82.tencentcloudcr.com/llmgateway/llmgateway")
         self.assertEqual(parameters.get("SERVICE"), "velagw")
@@ -254,6 +268,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("argocd/services/velagw/beijing-llmgateway/**", bundle.publish_paths)
         self.assertNotIn("kind: Secret", workloads)
         self.assertNotIn("kind: LLMFleet", workloads)
+        self.assertEqual(traffic_env.get("LLMGATEWAY_SET_RUNTIME_ROUTE_REQUIRED"), "true")
 
     def test_workers_shanghai_overlay_uses_temporal_worker_deployment(self) -> None:
         rescue_deployment = yaml.safe_load(
